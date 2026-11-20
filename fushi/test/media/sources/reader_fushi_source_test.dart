@@ -10,6 +10,7 @@ import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_audio/fushi_audio.dart' show SrtBook, SrtBookRepository;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -21,6 +22,20 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart'
     show InterconnectMangaCatalog;
 import 'package:fushi_engine/sync/ttu_filename.dart';
+
+import '../../helpers/test_platform_services.dart';
+
+/// deleteBook 必须带 AppModel（清 override 封面要它的 thumbnails 目录，BUG-4906）。
+class _DeleteTestAppModel extends AppModel {
+  _DeleteTestAppModel() : super(testPlatformServices());
+  final Directory _thumbs = Directory.systemTemp.createTempSync(
+    'fushi_rfs_thumbs',
+  );
+  @override
+  Directory get thumbnailsDirectory => _thumbs;
+}
+
+final AppModel _app = _DeleteTestAppModel();
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -649,7 +664,7 @@ void main() {
         await db.insertEpubBook(epubBook('Kokoro'));
 
         final DeleteBookResult result = await ReaderFushiSource.instance
-            .deleteBook(db: db, bookKey: 'Kokoro');
+            .deleteBook(db: db, appModel: _app, bookKey: 'Kokoro');
 
         expect(result.deleted, isTrue);
         expect(result.failureReason, isNull);
@@ -693,6 +708,7 @@ void main() {
         final DeleteBookResult result = await ReaderFushiSource.instance
             .deleteBook(
               db: db,
+              appModel: _app,
               bookKey: key,
               scope: DeleteScope.syncEverywhere,
             );
@@ -747,9 +763,18 @@ void main() {
       await seedStats('Kept');
       await seedStats('Wiped');
 
-      await ReaderFushiSource.instance.deleteBook(db: db, bookKey: 'Kept');
+      await ReaderFushiSource.instance.deleteBook(
+        db: db,
+        appModel: _app,
+        bookKey: 'Kept',
+      );
       final DeleteBookResult wiped = await ReaderFushiSource.instance
-          .deleteBook(db: db, bookKey: 'Wiped', deleteStatistics: true);
+          .deleteBook(
+            db: db,
+            appModel: _app,
+            bookKey: 'Wiped',
+            deleteStatistics: true,
+          );
 
       expect(wiped.deleted, isTrue);
       expect(
@@ -788,11 +813,11 @@ void main() {
       // TODO-1359：失败结果必须携带原因（供 toast 展示 + 已写入 ErrorLogService），
       // 不能只回一个信息全无的 bool。
       final DeleteBookResult emptyKeyResult = await ReaderFushiSource.instance
-          .deleteBook(db: db, bookKey: '');
+          .deleteBook(db: db, appModel: _app, bookKey: '');
       expect(emptyKeyResult.deleted, isFalse);
       expect(emptyKeyResult.failureReason, isNotNull);
       final DeleteBookResult missingKeyResult = await ReaderFushiSource.instance
-          .deleteBook(db: db, bookKey: 'no-such-book');
+          .deleteBook(db: db, appModel: _app, bookKey: 'no-such-book');
       expect(missingKeyResult.deleted, isFalse);
       expect(missingKeyResult.failureReason, contains('no-such-book'));
     });
@@ -820,7 +845,12 @@ void main() {
         ).findByUid('srt/paired'))!;
 
         final DeleteBookResult result = await ReaderFushiSource.instance
-            .deleteSrtShelfBook(db: db, book: book, scope: scope);
+            .deleteSrtShelfBook(
+              db: db,
+              appModel: _app,
+              book: book,
+              scope: scope,
+            );
 
         expect(
           result.deleted,
@@ -854,6 +884,7 @@ void main() {
       final DeleteBookResult first = await ReaderFushiSource.instance
           .deleteSrtShelfBook(
             db: db,
+            appModel: _app,
             book: book,
             scope: DeleteScope.syncEverywhere,
           );
@@ -867,7 +898,7 @@ void main() {
       );
 
       final DeleteBookResult again = await ReaderFushiSource.instance
-          .deleteSrtShelfBook(db: db, book: book);
+          .deleteSrtShelfBook(db: db, appModel: _app, book: book);
       expect(again.deleted, isFalse);
       expect(again.failureReason, contains('srt/lonely'));
     });
@@ -932,7 +963,7 @@ void main() {
         );
 
         final DeleteBookResult result = await ReaderFushiSource.instance
-            .deleteBook(db: db, bookKey: 'LockedBook');
+            .deleteBook(db: db, appModel: _app, bookKey: 'LockedBook');
 
         // The DB row (source of truth) is gone → this book is deleted for the
         // user; a leaked on-disk dir must not be reported as a delete failure.
@@ -968,7 +999,9 @@ void main() {
         "'ReaderFushiSource.deleteBook.cleanup'",
       );
       final int diskCleanup = body.indexOf('EpubStorage.deleteBookDir(');
-      final int vacuum = body.indexOf("customStatement('VACUUM')");
+      final int vacuum = body.indexOf(
+        'if (compactDatabase) await compactAfterBookDeleteBestEffort(db);',
+      );
       expect(rowDelete, greaterThanOrEqualTo(0));
       expect(
         cleanupCatch,
@@ -990,7 +1023,8 @@ void main() {
       expect(
         vacuum,
         greaterThan(cleanupCatch),
-        reason: 'VACUUM stays after the cleanup block',
+        reason:
+            'the VACUUM/checkpoint compaction stays after the cleanup block',
       );
     });
 
@@ -1004,7 +1038,7 @@ void main() {
         MediaSource.setDatabase(db);
 
         final DeleteBookResult result = await ReaderFushiSource.instance
-            .deleteBook(db: db, bookKey: 'ghost-shelf-entry');
+            .deleteBook(db: db, appModel: _app, bookKey: 'ghost-shelf-entry');
         expect(result.deleted, isFalse);
         expect(result.failureReason, isNotNull);
         expect(result.failureReason!, isNotEmpty);
@@ -1141,7 +1175,7 @@ void main() {
       // Delete path: deleteBook(parsedKey) must actually remove it and report
       // success (not the false / "删不掉" dead-end).
       final DeleteBookResult delResult = await ReaderFushiSource.instance
-          .deleteBook(db: db, bookKey: parsed);
+          .deleteBook(db: db, appModel: _app, bookKey: parsed);
       expect(delResult.deleted, isTrue);
       expect(await db.getEpubBook(key), isNull);
     });
