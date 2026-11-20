@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-20T14:48:09Z",
+ "generatedAt": "2026-11-20T15:02:04Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "76811fc25da95f3be200a8769d48aafa00522396",
@@ -12,7 +12,7 @@
    "version": "3.4.0",
    "sha": "76811fc25da95f3be200a8769d48aafa00522396",
    "unknown": false,
-   "publishedAt": "2026-11-20T14:47:56Z",
+   "publishedAt": "2026-11-20T15:01:54Z",
    "testflight": true,
    "baseSeq": 29213,
    "prs": [
@@ -24,8 +24,7 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44745158819"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
@@ -95,51 +94,10 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 29116,
-   "version": "3.4.0",
-   "sha": "1fb0de8c3e1fe349e93c255152a8d99a2a88b789",
-   "unknown": false,
-   "publishedAt": "2026-11-19T11:47:17Z",
-   "testflight": false,
-   "baseSeq": 29104,
-   "prs": [
-    3594,
-    3740
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44510567845"
-    },
-    "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44510567845"
-    },
-    "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44510567845"
-    }
-   }
   }
  ],
  "pending": null,
  "prs": {
-  "3594": {
-   "number": 3594,
-   "title": "feat: 免费开源声明、GPLv3 附加条款与按构建信息下发公告",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-19T10:57:45Z",
-   "additions": 3726,
-   "deletions": 20,
-   "labels": []
-  },
   "3681": {
    "number": 3681,
    "title": "漫画 / 小说有声整合：合并 #3665–#3670 并接通批量合成、OCR 签名、用词替换表、系列档案串行写入与漫画按系列跑",
@@ -147,15 +105,6 @@
    "mergedAt": "2026-11-19T12:41:48Z",
    "additions": 37409,
    "deletions": 737,
-   "labels": []
-  },
-  "3740": {
-   "number": 3740,
-   "title": "feat(android): 下载进度通知在 Android 16 上发成 Live Update（Pixel 胶囊 / ColorOS 流体云）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-19T10:55:19Z",
-   "additions": 89,
-   "deletions": 0,
    "labels": []
   },
   "3759": {
