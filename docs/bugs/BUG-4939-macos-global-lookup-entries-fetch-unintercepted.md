@@ -1,0 +1,13 @@
+## BUG-4939 · macOS 应用外查词卡大结果词条取回地址原生不拦截，卡片停在上一次内容
+- **报告**：2026-11-16（用户：应用内反馈 JjwV57oM44，重新提交自 vx4jEYzV-Z；macOS 27.2，Mac16,10，3.3.0-debug.27714）——全局截屏识字后点字查词：首次弹出的卡片空白约 6 秒；之后点不同位置的字，卡片每次都显示同一条「Lock / ロック」，自动朗读的发音却是新词。
+- **真实性**：✅ 真 bug（静态沿代码路径核实；本机 Windows，无 macOS 设备复现）。
+  - 点字查词走 `GlobalLookupController.lookupText` → `_renderStack` → `buildStackRenderScript`，每帧用宿主的 `GlobalLookupEntriesStore` 决定词条投递方式。词条 JSON ≥ `kPopupEntriesFetchMinChars`（32K 码元，多词典常见词很容易超过）时，`register` 返回 `https://fushi.local/popup-entries/glookup/<host>/<token>.json`，卡片页面去 `fetch` 它（`entriesAsync`，根卡等词条到了才报尺寸）。
+  - 这个 https 地址只有 Windows 接得住：`fushi/windows/runner/global_lookup_window.cpp:355` 的 `kGlobalLookupEntriesUrlPrefix` 由 WebView2 `WebResourceRequested` 拦截转给 Dart。macOS 宿主 `fushi/macos/Runner/GlobalLookupOverlay.swift:492-494` 只给 `fushi-popup` / `image` / `dictmedia` 装了 `WKURLSchemeHandler`（WKWebView 不允许接管 https），Linux 卡片 `fushi/linux/lookup_card/card_overlay.cc:486-490` 同样只注册了自定义 scheme。请求落到真网络：macOS 上 `.local` 走 mDNS，要数秒才失败——与「首次空白约 6 秒」吻合。
+  - 卡片 iframe realm 跨查词复用，取回挂着时里面还是上一次渲染的词条；显示门兜底计时一到就把这张旧卡亮出来。取回失败时的回退（`popupEntriesFetchFailed` → `fetchUnavailable` → 字面量重渲）又被令牌作废：`fushi/lib/src/pages/implementations/popup_settings_injection.dart:836` 在令牌已被新查词替换时直接 `return`，用户在 mDNS 超时前点下一个字，旧取回的失败永远报不上来，新一次查词再挂一次——卡片一直停在最后一次走字面量渲染的小结果（「Lock」）上。朗读是 Dart 按新查词结果直接播放的，所以发音是对的。
+  - 日志里的两条 `DictPopupWebview.popupEntriesFetch … HTTP 0` 来自 in-app 弹窗（`dictionary_popup_webview.dart:3240`），不是应用外查词卡这条路径（后者记 `global_lookup.entries_fetch`，日志里没有），只能说明 macOS 上同类取回也在出错，不是本条的直接证据。
+- **根因**：`fushi/lib/src/lookup/global_lookup_render.dart` `GlobalLookupEntriesStore.register`（修前 `:204-209`）不分平台一律登记 https 取回地址——在 P1-B 搬到应用外宿主时（468dae5da9）只接了 Windows 原生拦截，macOS / Linux 宿主的平台边界没有对应能力，Dart 却假定所有宿主都能取回。
+- **[x] ① 已修复** — `GlobalLookupEntriesStore` 加 `fetchSupported`（默认 `globalLookupEntriesFetchSupported` = 只有 Windows），不支持的宿主 `register` 恒返回 null，从第一次查词起就走字面量投递（与 in-app `kPopupEntriesFetchSupported` 按平台能力决定的同一形态）。Windows 行为不变。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/pages/popup_settings_injection_memo_test.dart`「global host without entries interception renders large results inline」：真 `buildFrameSettingsJsParts`，不支持取回的宿主上大结果 `entriesAsync=false`、脚本里是字面量词条、没有 `fetch(`；支持的宿主照旧走取回。
+  - `fushi/test/lookup/global_lookup_entries_fetch_test.dart`：不支持的宿主大结果也不登记；默认判据等于 `Platform.isWindows`；源码守卫钉住 macOS / Linux 原生宿主不拦截取回地址（哪天接上拦截这条会红，提醒同时放开判据）。
+- **备注**：没有 macOS 设备，未在真机复测原始失败路径（截屏识字 → 连续点字）。代价：macOS / Linux 应用外查词卡的 MB 级结果回到字面量投递（BUG-3274 量级的百毫秒解析），要拿回取回的速度得在原生层给同源 scheme（`fushi-popup://assets/popup-entries/...`）接 Dart `getMedia`，再放开判据。显示门在异步词条挂起时会亮出 realm 里的旧卡，这一点在 Windows 上因取回是本地拦截、毫秒级返回而不显形，本条未改。
