@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-20T13:52:54Z",
+ "generatedAt": "2026-11-20T13:57:27Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "76811fc25da95f3be200a8769d48aafa00522396",
@@ -111,7 +111,7 @@
     "url": "https://github.com/hajisensai/Fushi/actions/runs/44745158819"
    },
    "windows": {
-    "state": "queued",
+    "state": "building",
     "url": "https://github.com/hajisensai/Fushi/actions/runs/44745158665"
    },
    "macos": {
