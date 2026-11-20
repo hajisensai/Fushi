@@ -336,6 +336,67 @@ typedef _AiCropsDart =
       Pointer<Size>,
     );
 
+typedef _AiCropsRgbaC =
+    Int32 Function(
+      Pointer<Uint8>,
+      Size,
+      Uint32,
+      Uint32,
+      Size,
+      Double,
+      Double,
+      Pointer<Double>,
+      Size,
+      Int32,
+      Int32,
+      Int32,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+typedef _AiCropsRgbaDart =
+    int Function(
+      Pointer<Uint8>,
+      int,
+      int,
+      int,
+      int,
+      double,
+      double,
+      Pointer<Double>,
+      int,
+      int,
+      int,
+      int,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+typedef _RgbaFitJpegC =
+    Int32 Function(
+      Pointer<Uint8>,
+      Size,
+      Uint32,
+      Uint32,
+      Size,
+      Uint32,
+      Uint32,
+      Uint32,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+typedef _RgbaFitJpegDart =
+    int Function(
+      Pointer<Uint8>,
+      int,
+      int,
+      int,
+      int,
+      int,
+      int,
+      int,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+
 /// 解码出的图像格式（与 image.rs 的 `FORMAT_*` 一致）。
 enum FfcImageFormat { jpeg, png, gif, webp, bmp, tiff, tga, ico, pnm, avif }
 
@@ -957,6 +1018,85 @@ class FushiComputeImage {
   /// [overlay] 后编码成 JPEG（4:4:4）。不放大源图，宽高各限 1..1280，质量限 1..100。
   /// 坏图或非法尺寸 / 覆盖层长度返回 null；缺库 / 缺符号抛硬依赖异常。失败不可改发原图。
   /// 此操作须由调用方放后台 isolate，覆盖层长度恰为 `width * height * 4`。
+  _AiCropsRgbaDart? _aiCropsRgba;
+
+  _AiCropsRgbaDart get _aiCropsRgbaFunction {
+    try {
+      return _aiCropsRgba ??= _lib.library
+          .lookupFunction<_AiCropsRgbaC, _AiCropsRgbaDart>(
+            'ffc_image_ai_crops_rgba',
+          );
+    } on ArgumentError catch (e) {
+      throw _lib.missingSymbols('image ai crops rgba', e.message ?? e);
+    }
+  }
+
+  _RgbaFitJpegDart? _rgbaFitJpeg;
+
+  _RgbaFitJpegDart get _rgbaFitJpegFunction {
+    try {
+      return _rgbaFitJpeg ??= _lib.library
+          .lookupFunction<_RgbaFitJpegC, _RgbaFitJpegDart>(
+            'ffc_image_rgba_fit_jpeg',
+          );
+    } on ArgumentError catch (e) {
+      throw _lib.missingSymbols('image rgba fit jpeg', e.message ?? e);
+    }
+  }
+
+  /// 不透明 RGBA（[width]×[height]，行跨度 [stride]，缺省紧排 `width * 4`）→ 面积平均缩到
+  /// [dstWidth]×[dstHeight]（与源同尺寸则不缩）→ RGB JPEG（[quality] 1..100，4:4:4，alpha
+  /// 丢弃）。不经整帧编码 / 解码；只缩不放，参数不合法抛 [ArgumentError]。
+  Uint8List rgbaFitJpeg(
+    Uint8List rgba, {
+    required int width,
+    required int height,
+    int? stride,
+    required int dstWidth,
+    required int dstHeight,
+    required int quality,
+  }) {
+    final int rowBytes = stride ?? width * 4;
+    if (width <= 0 ||
+        height <= 0 ||
+        rowBytes < width * 4 ||
+        rgba.length < (height - 1) * rowBytes + width * 4 ||
+        dstWidth <= 0 ||
+        dstHeight <= 0 ||
+        dstWidth > width ||
+        dstHeight > height ||
+        quality < 1 ||
+        quality > 100) {
+      throw ArgumentError(
+        'invalid RGBA fit: ${width}x$height stride $rowBytes '
+        '(${rgba.length} B) -> ${dstWidth}x$dstHeight q$quality',
+      );
+    }
+    final _RgbaFitJpegDart fit = _rgbaFitJpegFunction;
+    final Pointer<Uint8> src = _copyIn(rgba);
+    final Pointer<Pointer<Uint8>> outPtr = malloc<Pointer<Uint8>>();
+    final Pointer<Size> outLen = malloc<Size>();
+    try {
+      final int status = fit(
+        src,
+        rgba.length,
+        width,
+        height,
+        rowBytes,
+        dstWidth,
+        dstHeight,
+        quality,
+        outPtr,
+        outLen,
+      );
+      _check('ffc_image_rgba_fit_jpeg', status);
+      return _takeBytes(outPtr, outLen);
+    } finally {
+      malloc.free(outPtr);
+      malloc.free(outLen);
+    }
+  }
+
   Uint8List? compositeRgbaJpeg(
     Uint8List bytes,
     Uint8List overlay, {
@@ -1211,6 +1351,86 @@ class FushiComputeImage {
         throw UnsupportedError('Infinity or NaN toInt');
       }
       _check('ffc_image_ai_crops', status);
+      final Uint8List blob = _takeBytes(outPtr, outLen);
+      final ByteData view = ByteData.sublistView(blob);
+      final List<Uint8List?> crops = <Uint8List?>[];
+      int o = 0;
+      for (int i = 0; i < boxes.length; i++) {
+        final int n = view.getUint32(o, Endian.host);
+        o += 4;
+        if (n == 0xFFFFFFFF) {
+          crops.add(null);
+          continue;
+        }
+        crops.add(Uint8List.sublistView(blob, o, o + n));
+        o += n;
+      }
+      return crops;
+    } finally {
+      malloc.free(rects);
+      malloc.free(outPtr);
+      malloc.free(outLen);
+    }
+  }
+
+  /// [aiCrops] 的原始像素版：输入是**不透明** RGBA（[width]×[height]，行跨度 [stride]，缺省
+  /// 紧排），不经解码；裁出的块编成 RGB PNG。尺寸 / 跨度 / 长度不合法抛 [ArgumentError]，
+  /// 坐标换算后非有限抛 [UnsupportedError]（同 [aiCrops]）。
+  List<Uint8List?> aiCropsRgba(
+    Uint8List rgba, {
+    required int width,
+    required int height,
+    int? stride,
+    required double pageWidth,
+    required double pageHeight,
+    required List<({double left, double top, double right, double bottom})>
+    boxes,
+    required int padding,
+    required int maxSide,
+    required int minSide,
+  }) {
+    final int rowBytes = stride ?? width * 4;
+    if (width <= 0 ||
+        height <= 0 ||
+        rowBytes < width * 4 ||
+        rgba.length < (height - 1) * rowBytes + width * 4) {
+      throw ArgumentError(
+        'invalid RGBA page: ${width}x$height stride $rowBytes '
+        '(${rgba.length} B)',
+      );
+    }
+    final _AiCropsRgbaDart crop = _aiCropsRgbaFunction;
+    final Pointer<Uint8> src = _copyIn(rgba);
+    final Pointer<Double> rects = malloc<Double>(math.max(1, boxes.length * 4));
+    final Pointer<Pointer<Uint8>> outPtr = malloc<Pointer<Uint8>>();
+    final Pointer<Size> outLen = malloc<Size>();
+    try {
+      for (int i = 0; i < boxes.length; i++) {
+        rects[i * 4] = boxes[i].left;
+        rects[i * 4 + 1] = boxes[i].top;
+        rects[i * 4 + 2] = boxes[i].right;
+        rects[i * 4 + 3] = boxes[i].bottom;
+      }
+      final int status = crop(
+        src,
+        rgba.length,
+        width,
+        height,
+        rowBytes,
+        pageWidth,
+        pageHeight,
+        rects,
+        boxes.length,
+        padding,
+        maxSide,
+        minSide,
+        outPtr,
+        outLen,
+      );
+      if (status == FfcStatus.invalidArgument) {
+        throw UnsupportedError('Infinity or NaN toInt');
+      }
+      _check('ffc_image_ai_crops_rgba', status);
       final Uint8List blob = _takeBytes(outPtr, outLen);
       final ByteData view = ByteData.sublistView(blob);
       final List<Uint8List?> crops = <Uint8List?>[];

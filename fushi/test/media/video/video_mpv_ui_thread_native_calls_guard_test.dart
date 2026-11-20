@@ -175,8 +175,9 @@ void main() {
     );
   });
 
-  // 暂停 OCR 截帧不得占 Player 串行锁：截帧 + 纯 Dart 编 PNG 要几百毫秒，持锁期间
-  // play() / pause() 全排队，开着暂停识别时按继续播放要等截帧编完才响应。不持锁
+  // 暂停 OCR 截帧不得占 Player 串行锁：持锁期间 play() / pause() 全排队，开着暂停识别
+  // 时按继续播放要等截帧完才响应。截帧也不得编 PNG（#3828 测量：1080p 纯 Dart 编码约
+  // 0.9 s，编码 + 解码占整条识别链约 95%）：原始像素直接交 OCR 引擎。不持锁
   // 的截帧必须登记进 `_offThreadNativeCalls`，否则 dispose 可能在它还在用句柄时
   // mpv_terminate_destroy。
   test('pause-OCR frame capture does not hold the player lock', () {
@@ -186,7 +187,7 @@ void main() {
       ).readAsStringSync(),
     );
     final int at = controller.indexOf(
-      'Future<Uint8List?> captureFrameWithSubtitles(',
+      'Future<OcrRgbaImage?> captureFrameWithSubtitles(',
     );
     expect(at, isNonNegative, reason: '找不到 captureFrameWithSubtitles');
     final String capture = controller.substring(
@@ -198,6 +199,11 @@ void main() {
       capture,
       contains('synchronized: false'),
       reason: '持锁截帧会把 play()/pause() 卡在截帧 + 编码后面',
+    );
+    expect(
+      capture,
+      contains('fushiRawTransform: rawVideoFrameRgbaTransform'),
+      reason: 'libmpv 截帧要走原始 BGRA → RGBA 变换，不经 PNG 编码 / 解码',
     );
 
     final String patch = maskComments(

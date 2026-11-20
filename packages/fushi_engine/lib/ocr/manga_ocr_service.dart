@@ -145,6 +145,15 @@ abstract interface class MangaOcrPageSession {
   Future<void> close();
 }
 
+/// 页会话的可选能力：识别一整页已在内存里的像素（视频暂停 OCR 的播放器截帧），与
+/// [MangaOcrPageSession.ocrPage] 同一条漫画整页管线（检测器 → 阅读顺序 → 识别 → 补检），
+/// 但不读页图文件、不解码、不落逐页缓存：结果直接交回。
+abstract interface class MangaOcrPagePixelsSession {
+  /// 识别 [image]，返回整页结果（坐标是 [image] 的像素坐标）。会话关闭 / 建会话失败
+  /// 时抛错（与 ocrPage 同语义）；以 `textImagesOnly` 打开的会话上以 [StateError] 失败。
+  Future<OcrPageResult> ocrPagePixels(OcrRgbaImage image);
+}
+
 /// 页会话的可选能力：直接识别一张已裁好的文字图（字幕位图），跳过漫画检测器、补检、
 /// PNG 落盘与逐页缓存。整图当一个块交 RoutingOcrRecognizer（宽≥高 → PP 行检测 + 逐行识别；
 /// 竖排占多数 → 块识别器）。

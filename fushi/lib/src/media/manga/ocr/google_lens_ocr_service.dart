@@ -16,6 +16,7 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_text_join.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
+import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRgbaImage;
 import 'package:fushi_engine/utils/misc/atomic_text_file.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 
@@ -130,6 +131,13 @@ abstract interface class GoogleLensMangaOcrRunner {
   /// 识别一张已取到的页图（在线直读章的逐页识别用；不读写任何缓存）。
   Future<MokuroImage> recognizePageBytes(
     Uint8List source, {
+    required String relativeUrl,
+    required String language,
+  });
+
+  /// 识别一整页内存像素（视频暂停 OCR 的播放器截帧）：不解码，直接缩放编 JPEG 上传。
+  Future<MokuroImage> recognizePagePixels(
+    OcrRgbaImage image, {
     required String relativeUrl,
     required String language,
   });
@@ -315,6 +323,35 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
         await Isolate.run<GoogleLensPreparedImage>(
           () => GoogleLensProtocol.prepareImage(source),
         );
+    return _recognizePrepared(
+      prepared,
+      relativeUrl: relativeUrl,
+      language: language,
+    );
+  }
+
+  @override
+  Future<MokuroImage> recognizePagePixels(
+    OcrRgbaImage image, {
+    required String relativeUrl,
+    required String language,
+  }) async {
+    final GoogleLensPreparedImage prepared =
+        await Isolate.run<GoogleLensPreparedImage>(
+          () => GoogleLensProtocol.prepareRgba(image),
+        );
+    return _recognizePrepared(
+      prepared,
+      relativeUrl: relativeUrl,
+      language: language,
+    );
+  }
+
+  Future<MokuroImage> _recognizePrepared(
+    GoogleLensPreparedImage prepared, {
+    required String relativeUrl,
+    required String language,
+  }) async {
     final Uint8List request = GoogleLensProtocol.makeRequest(
       imageData: prepared.data,
       width: prepared.width,

@@ -385,49 +385,57 @@ MokuroPayload buildMangaPayloadFromResults(
   List<OcrPageResult> results,
 ) {
   assert(pages.length == results.length);
-  final List<MokuroImage> images = <MokuroImage>[];
-  for (int i = 0; i < pages.length && i < results.length; i++) {
-    final OcrPageResult result = results[i];
-    final List<MokuroBlock> blocks = <MokuroBlock>[];
-    for (int b = 0; b < result.blocks.length; b++) {
-      final OcrBlock block = result.blocks[b];
-      blocks.add(
-        MokuroBlock(
-          rectangle: MokuroRect.fromLTRB(
-            block.box.left,
-            block.box.top,
-            block.box.right,
-            block.box.bottom,
-          ),
-          // Re-evaluate cached local blocks so pages produced by the older,
-          // overly strict 1.5 ratio threshold gain queryable vertical regions
-          // without rerunning OCR. Blocks with line geometry already carry the
-          // orientation their lines were laid out in (BUG-2813): overriding it
-          // would spread each row's characters down the row.
-          isVertical: block.lineBoxes != null
-              ? block.vertical
-              : block.vertical || isVerticalBlock(block.box),
-          fontSize: estimateMangaFontSize(block),
-          zIndex: b,
-          lines: block.lines,
-          linesCoords: _linesCoords(block.lineBoxes, block.lineTilt),
-          regions: _textRegions(block),
-          confidence: block.confidence,
+  return MokuroPayload(
+    images: <MokuroImage>[
+      for (int i = 0; i < pages.length && i < results.length; i++)
+        mokuroImageFromOcrPage(results[i], url: pages[i].relativeUrl),
+    ],
+  );
+}
+
+/// 一页 OCR 结果 → [MokuroImage]（[url] 写进结果，尺寸取自识别时的像素值，块按阅读
+/// 顺序赋 zIndex）。[buildMangaPayloadFromResults] 逐页用它；不落盘的内存页（视频暂停
+/// OCR 的播放器截帧）直接用它。
+MokuroImage mokuroImageFromOcrPage(
+  OcrPageResult result, {
+  required String url,
+}) {
+  final List<MokuroBlock> blocks = <MokuroBlock>[];
+  for (int b = 0; b < result.blocks.length; b++) {
+    final OcrBlock block = result.blocks[b];
+    blocks.add(
+      MokuroBlock(
+        rectangle: MokuroRect.fromLTRB(
+          block.box.left,
+          block.box.top,
+          block.box.right,
+          block.box.bottom,
         ),
-      );
-    }
-    images.add(
-      MokuroImage(
-        url: pages[i].relativeUrl,
-        size: MokuroSize(
-          result.imageWidth.toDouble(),
-          result.imageHeight.toDouble(),
-        ),
-        blocks: blocks,
+        // Re-evaluate cached local blocks so pages produced by the older,
+        // overly strict 1.5 ratio threshold gain queryable vertical regions
+        // without rerunning OCR. Blocks with line geometry already carry the
+        // orientation their lines were laid out in (BUG-2813): overriding it
+        // would spread each row's characters down the row.
+        isVertical: block.lineBoxes != null
+            ? block.vertical
+            : block.vertical || isVerticalBlock(block.box),
+        fontSize: estimateMangaFontSize(block),
+        zIndex: b,
+        lines: block.lines,
+        linesCoords: _linesCoords(block.lineBoxes, block.lineTilt),
+        regions: _textRegions(block),
+        confidence: block.confidence,
       ),
     );
   }
-  return MokuroPayload(images: images);
+  return MokuroImage(
+    url: url,
+    size: MokuroSize(
+      result.imageWidth.toDouble(),
+      result.imageHeight.toDouble(),
+    ),
+    blocks: blocks,
+  );
 }
 
 /// 默认页解码：读文件字节 + 原生解码（[decodeImageNative]，自动识别格式）。
