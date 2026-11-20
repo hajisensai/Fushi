@@ -78,6 +78,28 @@ void main() {
       });
     });
 
+    // 导入阶段里文件系统的列目录回调（远端导书失败后的连通性探测、非递归来源逐卷
+    // 现场列目录）不能把进度冲回列目录阶段，否则之后的逐条报告全被丢弃。
+    test('listing callbacks during import do not reset the phase', () async {
+      final SourceScanActivity activity = SourceScanActivity(
+        progressPublishInterval: Duration.zero,
+      );
+      await activity.run(1, () async {
+        activity.beginImport(1, 3);
+        activity.reportImportItem(1, '/media/1/a.epub');
+        activity.reportListing(1, '/media/1', 0);
+        activity.reportImportItem(1, '/media/1/b.epub');
+        expect(
+          activity.progressOf(1),
+          const SourceScanProgress.importing(
+            processed: 2,
+            total: 3,
+            currentPath: '/media/1/b.epub',
+          ),
+        );
+      });
+    });
+
     test('progress notifications are throttled, separate from occupancy', () {
       fakeAsync((FakeAsync async) {
         final SourceScanActivity activity = SourceScanActivity(

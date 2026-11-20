@@ -147,8 +147,13 @@ class SourceScanActivity extends ChangeNotifier {
   /// [sourceId] 此刻的扫描进度；没在扫、或扫描器还没报过进度时为 null。
   SourceScanProgress? progressOf(int sourceId) => _progress[sourceId];
 
-  /// 列目录阶段：已列完 [dirPath]，累计找到 [filesFound] 个文件。
+  /// 列目录阶段：开始列 [dirPath]，此前累计找到 [filesFound] 个文件。
+  ///
+  /// 阶段只进不退：进入导入阶段后文件系统的列目录回调（远端来源导书失败后的连通性
+  /// 探测、非递归来源逐卷现场列漫画目录）不再算列目录进度，否则导入计数被冲成
+  /// 「已找到 0 个文件」且之后的 [reportImportItem] 全被丢弃。
   void reportListing(int sourceId, String dirPath, int filesFound) {
+    if (_progress[sourceId]?.phase == SourceScanPhase.importing) return;
     _report(
       sourceId,
       SourceScanProgress.listing(filesFound: filesFound, currentPath: dirPath),
