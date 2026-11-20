@@ -1117,17 +1117,15 @@ void main() {
       await tester.tap(
         find.byKey(const ValueKey<String>('manga_series_download_pause_all')),
       );
+      await _settle(tester);
+
+      // 旧一轮这时才落地。刷新是串行合并的（CoalescedRefresh）：暂停全部请求的
+      // 那一轮排在旧一轮之后补跑，最终必须停在暂停态。
+      release.complete();
       await _pumpUntil(
         tester,
         find.text(t.manga_series_download_paused_count(count: 3)),
       );
-      expect(
-        find.text(t.manga_series_download_paused_count(count: 3)),
-        findsOneWidget,
-      );
-
-      // 旧一轮这时才落地。
-      release.complete();
       await _settle(tester);
     });
 

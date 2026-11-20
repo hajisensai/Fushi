@@ -1,4 +1,4 @@
-## BUG-4908 · 桌面 sidecar 重启后正在读的在线漫画章剩下的页全部失败
+## BUG-4917 · 桌面 sidecar 重启后正在读的在线漫画章剩下的页全部失败
 - **报告**：2026-11-20（来源：路线图 #3722 manga-18a，代码审读 + 复核成立；组 c43 回到代码复核仍成立）
 - **真实性**：✅ 真 bug（行号为 develop `7745effa2e`）。
   - 桌面 Mihon 运行时装 / 更新 / 卸任何扩展（`invalidateExtensions`，`fushi/lib/src/media/manga/mihon/desktop_mihon_runtime.dart:425`）或清源数据（`:408`）都会 `_restart()`（`:824`）：杀掉 sidecar、清端口与令牌，下次调用起新进程。

@@ -26,7 +26,7 @@ class InterconnectOnlineMangaHostReader implements OnlineMangaHostReader {
   /// 解析不留（下次重试），容量够覆盖「当前章 + 预取下一章」再加几章余量。
   ///
   /// 页表经 [OnlineMangaChapterPageRefs] 持有：桌面 sidecar 一重启（装 / 更新 /
-  /// 卸扩展），缓存里的取页引用整份作废，由它重解析换新（BUG-4908）；源端页数变了
+  /// 卸扩展），缓存里的取页引用整份作废，由它重解析换新（BUG-4917）；源端页数变了
   /// 就把这份页表丢掉，对端下次按新页数重开。
   final Map<String, Future<OnlineMangaChapterPageRefs>> _pageTables =
       <String, Future<OnlineMangaChapterPageRefs>>{};

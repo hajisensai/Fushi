@@ -13,7 +13,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/online_manga_reader_session.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// BUG-4908：桌面 sidecar 一重启（装 / 更新 / 卸任何扩展都会重启），正在读的
+/// BUG-4917：桌面 sidecar 一重启（装 / 更新 / 卸任何扩展都会重启），正在读的
 /// 在线章剩下的页全部失败。页表里的图片 URL 是旧进程的端口与令牌，阅读会话却
 /// 把开会话时解析的那份页引用攥到底。
 ///

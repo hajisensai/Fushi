@@ -153,6 +153,16 @@ typedef MangaDownloadOcrHook =
 /// `mihon_image_pool_width_guard_test.dart` 钉着两边。
 const int kMangaDownloadPageConcurrency = 4;
 
+/// 任务进度（`pages_done`）写库的最小间隔（manga-4）。
+///
+/// 每下完一页写一次库，任务表的每次写都是一个 `watchJobs` 信号：作品页、下载中心、
+/// 阅读器「本章未下载」态都跟着重读。节流只合并中间值：首个值、页齐那一刻、任务因
+/// 暂停 / 取消 / 失败停下时都立即落库（[_ProgressWriter.flush]）。进度仍落库、不改成
+/// 只放内存（所有者定，manga-d8）。
+const Duration kMangaDownloadProgressWriteInterval = Duration(
+  milliseconds: 500,
+);
+
 /// 三次自动重试之间的退避（与 mokuro 队列既有语义一致）。
 const List<Duration> kMangaDownloadRetryBackoff = <Duration>[
   Duration(seconds: 2),
@@ -296,6 +306,53 @@ class _ActiveJob {
   /// 取图线程有限，暂停 / 取消后旧请求不该继续占着）。取消 / 暂停 / 停止时在 token
   /// 置位之后同步调用。
   void Function()? abort;
+}
+
+/// 一个任务的进度写库节流器，见 [kMangaDownloadProgressWriteInterval]。
+class _ProgressWriter {
+  _ProgressWriter({
+    required FushiDatabase database,
+    required String jobId,
+    required int Function() now,
+  }) : _database = database,
+       _jobId = jobId,
+       _now = now;
+
+  final FushiDatabase _database;
+  final String _jobId;
+  final int Function() _now;
+
+  int? _lastWriteAt;
+  ({int done, int total})? _written;
+  ({int done, int total})? _latest;
+
+  /// 记一个新进度；距上次写库不足间隔且还没到页齐时只记在内存。
+  Future<void> report({required int done, required int total}) async {
+    _latest = (done: done, total: total);
+    final int now = _now();
+    final int? last = _lastWriteAt;
+    if (last != null &&
+        done < total &&
+        now - last < kMangaDownloadProgressWriteInterval.inMilliseconds) {
+      return;
+    }
+    await flush();
+  }
+
+  /// 把还没落库的最新进度写下去（任务停下时调）。
+  Future<void> flush() async {
+    final ({int done, int total})? latest = _latest;
+    if (latest == null || latest == _written) return;
+    final int now = _now();
+    _lastWriteAt = now;
+    _written = latest;
+    await _database.updateMangaDownloadJobProgress(
+      _jobId,
+      pagesDone: latest.done,
+      pagesTotal: latest.total,
+      updatedAt: now,
+    );
+  }
 }
 
 class _PageFile {
@@ -994,12 +1051,12 @@ class MangaDownloadService {
         done += 1;
       }
     }
-    await _database.updateMangaDownloadJobProgress(
-      job.jobId,
-      pagesDone: done,
-      pagesTotal: pages.length,
-      updatedAt: _now,
+    final _ProgressWriter progress = _ProgressWriter(
+      database: _database,
+      jobId: job.jobId,
+      now: () => _now,
     );
+    await progress.report(done: done, total: pages.length);
     _reportKeepAlive(job, done: done, total: pages.length);
     final List<int> pending = <int>[
       for (int index = 0; index < pages.length; index++)
@@ -1046,12 +1103,7 @@ class MangaDownloadService {
             token,
           );
           done += 1;
-          await _database.updateMangaDownloadJobProgress(
-            job.jobId,
-            pagesDone: done,
-            pagesTotal: pages.length,
-            updatedAt: _now,
-          );
+          await progress.report(done: done, total: pages.length);
           _reportKeepAlive(job, done: done, total: pages.length);
         } on Object catch (error, stack) {
           firstError ??= error;
@@ -1063,12 +1115,20 @@ class MangaDownloadService {
     }
 
     final int concurrency = pageConcurrency < 1 ? 1 : pageConcurrency;
+    bool completed = false;
     try {
       await Future.wait<void>(<Future<void>>[
         for (int i = 0; i < concurrency; i++) worker(),
       ]);
+      completed = true;
     } finally {
       active.abort = null;
+      // 暂停 / 取消 / 失败停下时，节流攒着的最后进度也要落库（暂停行显示真实页数）。
+      await _flushStoppedProgress(
+        progress,
+        job.jobId,
+        stoppingWithError: !completed || token.isTripped || firstError != null,
+      );
     }
     _throwIfCancelled(token);
     if (firstError != null) {
@@ -1173,6 +1233,12 @@ class MangaDownloadService {
     final MokuroMoeVolumeDownloader downloader = factory();
     active.abort = downloader.cancel;
     MokuroMoeVolumeDownloadEvent? last;
+    final _ProgressWriter progress = _ProgressWriter(
+      database: _database,
+      jobId: job.jobId,
+      now: () => _now,
+    );
+    bool completed = false;
     try {
       await for (final MokuroMoeVolumeDownloadEvent event in downloader.run(
         db: _database,
@@ -1189,12 +1255,7 @@ class MangaDownloadService {
             }
           case MangaDownloadPageProgress pages:
             _setTransfer(job.jobId, null);
-            await _database.updateMangaDownloadJobProgress(
-              job.jobId,
-              pagesDone: pages.done,
-              pagesTotal: pages.total,
-              updatedAt: _now,
-            );
+            await progress.report(done: pages.done, total: pages.total);
             _reportKeepAlive(job, done: pages.done, total: pages.total);
           case null:
             // 字节阶段之后（解包 / 落库前）不再有字节可报。
@@ -1203,6 +1264,7 @@ class MangaDownloadService {
             }
         }
       }
+      completed = true;
     } on MokuroMoeDownloadCancelled {
       _throwIfCancelled(token);
       // 下载器自己中止但服务没要求（不该发生）：按取消收尾。
@@ -1210,6 +1272,15 @@ class MangaDownloadService {
     } finally {
       active.abort = null;
       _setTransfer(job.jobId, null);
+      await _flushStoppedProgress(
+        progress,
+        job.jobId,
+        stoppingWithError:
+            !completed ||
+            token.isTripped ||
+            last == null ||
+            last.stage != MokuroMoeDownloadStage.done,
+      );
     }
     _throwIfCancelled(token);
     if (last == null || last.stage != MokuroMoeDownloadStage.done) {
@@ -1409,6 +1480,26 @@ class MangaDownloadService {
     } on Object catch (error, stack) {
       ErrorLogService.instance.log(
         'MangaDownloadService.deleteChapter ${job.jobId}',
+        error,
+        stack,
+      );
+    }
+  }
+
+  /// 任务停下时把节流攒着的最后进度落库。[stoppingWithError] 为真表示任务正因
+  /// 取消 / 暂停 / 停止 / 失败停下：这时写库失败只记日志，不能顶掉那个异常——否则
+  /// 任务的停下原因（暂停还是失败、失败原因）会被判错。正常跑完时照常抛。
+  static Future<void> _flushStoppedProgress(
+    _ProgressWriter progress,
+    String jobId, {
+    required bool stoppingWithError,
+  }) async {
+    try {
+      await progress.flush();
+    } on Object catch (error, stack) {
+      if (!stoppingWithError) rethrow;
+      ErrorLogService.instance.log(
+        'MangaDownloadService.flushProgress $jobId',
         error,
         stack,
       );

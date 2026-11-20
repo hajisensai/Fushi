@@ -129,7 +129,7 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
 
   /// 每个页引用是哪个 sidecar 进程发的。页图 URL 是那个进程的
   /// `http://127.0.0.1:<端口>/image/...`，只在它活着时有效；装 / 更新 / 卸任何
-  /// 扩展都会 [_restart]，之后旧页表整份作废（BUG-4908）。按进程对象身份比，
+  /// 扩展都会 [_restart]，之后旧页表整份作废（BUG-4917）。按进程对象身份比，
   /// 不按端口比：新进程可能恰好拿到同一个临时端口。
   final Expando<Process> _pageIssuer = Expando<Process>('mihonPageIssuer');
 

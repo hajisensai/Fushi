@@ -2067,11 +2067,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Future<void> _continueSourceReading() async {
     final OnlineMangaLibraryService? service = _shelfLibraryService;
     final OnlineMangaLibraryEntry? entry = _shelfEntry;
-    if (service != null && entry != null && _shelfChapterIndex >= 0) {
+    if (service != null &&
+        entry != null &&
+        _shelfChapterIndex >= 0 &&
+        _shelfChapterIndex < entry.chapters.length) {
       await service.selectChapter(
         bookKey: widget.bookKey,
         entry: entry,
-        chapterIndex: _shelfChapterIndex,
+        chapterKey: entry.chapters[_shelfChapterIndex].key,
       );
     }
     await _flushPosition();
@@ -2433,17 +2436,21 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// [initialPage] 非空 = 章级进度（`manga_chapter_states`）已定好起始页，**不读**
   /// 书级 `reader_positions`——那一行装的是上一章读到哪（BUG-1924）；null = 本地卷，
   /// 按书级位置恢复。
+  ///
+  /// [preparsed]：调用方已读并解析过这份 `manga.json`（已下载判据的产物），直接用，
+  /// 不再读盘解析第二遍。
   Future<void> _loadLocalPayload({
     required EpubBookRow row,
     required String mangaJsonPath,
     int? initialPage,
+    MokuroPayload? preparsed,
   }) async {
     // 锚点是页索引，只对当前这一卷有效。
     _spreadAnchorPage = -1;
     // 朗读的页号同理：换章 / 重载正文即停。
     _readAloud._onChapterReset();
     final File jsonFile = File(mangaJsonPath);
-    if (!jsonFile.existsSync()) {
+    if (preparsed == null && !jsonFile.existsSync()) {
       ErrorLogService.instance.log(
         'MangaFushiPage.load',
         StateError(
@@ -2457,10 +2464,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     final String imagesDir = p.join(p.dirname(mangaJsonPath), 'images');
 
-    final String jsonStr = await jsonFile.readAsString();
     // 大书的 manga.json 解析下放 isolate（不卡 UI）；与 OCR 任务登记处共用同一个
     // 顶层函数（闭包只捕获字符串，恒可发送，见 manga_json_writeback.dart）。
-    MokuroPayload payload = await parseMangaJsonOffUi(jsonStr);
+    MokuroPayload payload =
+        preparsed ?? await parseMangaJsonOffUi(await jsonFile.readAsString());
     // 由 PDF 转来、还没提取过文字层的卷（加这一步之前导入的）：开书时补一次。
     // 判据先看内存里的版本号，只有确实要补才碰 PDFium。
     if (payload.pdfTextLayerVersion == null &&
@@ -2774,7 +2781,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         entry = await service.selectChapter(
           bookKey: row.bookKey,
           entry: entry,
-          chapterIndex: chapterIndex,
+          chapterKey: entry.chapters[chapterIndex].key,
         );
         chapterIndex = entry.currentChapterIndex!;
       }
@@ -2827,10 +2834,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       row.extractDir,
       chapter.key,
     );
-    final bool downloaded = await isChapterDownloaded(
-      row.extractDir,
-      chapter.key,
+    // 判据解析出的 payload 直接交给装载（manga-4）：判「已下载」本来就要读并
+    // 解析整份 manga.json，装载再读一遍是同一份字节的第二次解析。
+    final MokuroPayload? downloadedPayload = await readDownloadedChapterPayload(
+      chapterDir,
+      parse: parseMangaJsonOffUi,
     );
+    final bool downloaded = downloadedPayload != null;
     // 每章进度：切回读过一半的旧章要落回原页，而不是从头开始（v88 前
     // selectChapter 会把唯一那行 reader_positions 清零，上一章位置永久丢失）。
     //
@@ -2912,6 +2922,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       ),
       mangaJsonPath: mangaJson.path,
       initialPage: initialPage,
+      preparsed: downloadedPayload,
     );
   }
 
@@ -2960,7 +2971,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 '\u001f${pages[index].sourceUrl ?? ''}',
         ],
         // 取页引用可能随运行时重启整份作废（桌面 sidecar 装 / 更新 / 卸扩展即重启，
-        // BUG-4908）：经页表持有者取，失效时它重解析换新引用；身份串上面已定，不变。
+        // BUG-4917）：经页表持有者取，失效时它重解析换新引用；身份串上面已定，不变。
         fetchPage: pageRefs.fetch,
         cancelPages: cancellable == null
             ? null
@@ -4151,13 +4162,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           : await service.selectChapter(
               bookKey: row.bookKey,
               entry: entry,
-              chapterIndex: index,
+              chapterKey: entry.chapters[index].key,
             );
+      // 选章按 key 写回、交回库里最新的章表（gap-mangamisc-1）：下标以它为准。
       await _openShelfChapter(
         row: row.copyWith(extractDir: bookDir),
         service: service,
         entry: selected,
-        chapterIndex: index,
+        chapterIndex: selected.currentChapterIndex ?? index,
         landOnLastPage: initialPage == null && landOnLastPage,
         explicitInitialPage: initialPage,
       );

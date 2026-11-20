@@ -22,6 +22,7 @@ import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/download/online_manga_download_gate.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_studio_page.dart';
 import 'package:fushi/src/media/manga/library/manga_book_ocr.dart';
+import 'package:fushi/src/media/manga/library/manga_chapter_download_verdicts.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
 import 'package:fushi/src/media/manga/library/manga_series_download_banner.dart';
 import 'package:fushi/src/media/downloads/manga_download_tasks_section.dart'
@@ -88,6 +89,7 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:path/path.dart' as p;
+import 'package:path/path.dart' show PathMap;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart'
     show MediaLinkEntry;
@@ -253,11 +255,24 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   );
 
   /// 下载状态位（设计稿 2026-09-12 §5）：任务行 + 磁盘判据，两份合成章节行上
-  /// 的一个状态。任务表一变就整体重算。
+  /// 的一个状态。任务表一变就重算；磁盘判据按章缓存，只重判任务行状态变了的章
+  /// （[MangaChapterDownloadVerdicts]，manga-4），刷新串行合并（[_downloadRefresh]）。
   Map<String, MangaDownloadJobRow> _jobs =
       const <String, MangaDownloadJobRow>{};
   Set<String> _downloaded = const <String>{};
   StreamSubscription<void>? _jobsWatch;
+  final MangaChapterDownloadVerdicts _downloadVerdicts =
+      MangaChapterDownloadVerdicts();
+  late final CoalescedRefresh _downloadRefresh = CoalescedRefresh(
+    _refreshDownloadStateOnce,
+  );
+
+  /// 任务目录 → 章 key 的索引（gap-mangamisc-4）：OCR 横幅 / 章节行每次 build 都要
+  /// 把排队的任务目录对回章，逐章算 sha256 + 路径比较是「排队数 × 章数」。书目录或
+  /// 章表变了才重建；[PathMap] 保留 `p.equals` 的比较语义。
+  PathMap<String>? _chapterKeysByDirectory;
+  String? _chapterKeysIndexBookDir;
+  List<OnlineMangaChapter>? _chapterKeysIndexChapters;
 
   /// OCR 进度（BUG-2481）：注册表的「任务集合变了」信号 + 当前任务的事件流。
   /// 页面只观察，不拥有任务（所有权在注册表，BUG-2449）。
@@ -273,11 +288,6 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   /// OCR 任务起止时重读；按代次只认最后一次。
   Set<String> _ocrDone = const <String>{};
   int _ocrDoneGeneration = 0;
-
-  /// [_refreshDownloadState] 的代次（BUG-4913）：任务表一变 `watchJobs` 就发一次、
-  /// 整批动作后还要补一次，几轮读同时在途；读完顺序由磁盘 IO 决定，先开始的那轮
-  /// 可能最后落地，拿它读到的旧任务表盖掉新的。只认最后开始的那轮。
-  int _downloadStateGeneration = 0;
 
   /// 章节多选（反馈 wCgL364tgM）：长按 / 右键 / Ctrl·Shift 点击进入，底栏批量
   /// 识别、标已读、标未读。
@@ -433,15 +443,18 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final String? bookDir = _bookDir;
     final OnlineMangaLibraryEntry? entry = _entry;
     if (bookDir == null || entry == null) return null;
-    for (final OnlineMangaChapter chapter in entry.chapters) {
-      if (p.equals(
-        mangaChapterDirectory(bookDir, chapter.key).path,
-        directory,
-      )) {
-        return chapter.key;
-      }
+    PathMap<String>? index = _chapterKeysByDirectory;
+    if (index == null ||
+        _chapterKeysIndexBookDir != bookDir ||
+        !identical(_chapterKeysIndexChapters, entry.chapters)) {
+      index = _chapterKeysByDirectory = mangaChapterKeysByDirectory(
+        bookDir,
+        entry.chapters.map((OnlineMangaChapter chapter) => chapter.key),
+      );
+      _chapterKeysIndexBookDir = bookDir;
+      _chapterKeysIndexChapters = entry.chapters;
     }
-    return null;
+    return index[directory];
   }
 
   Set<String> get _ocrQueuedChapterKeys => <String>{
@@ -527,7 +540,20 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
 
   /// 重算下载状态位并（首次）订阅任务表。只对在库条目有意义：未入库的作品既没有
   /// 任务也没有章目录。
-  Future<void> _refreshDownloadState() async {
+  ///
+  /// 串行合并（[CoalescedRefresh]）：任务表的每个信号、用户动作都会请求，在跑的
+  /// 那一轮结束后最多再补一轮。[invalidate] 的章 / [full] 全量下一轮必重判磁盘。
+  Future<void> _refreshDownloadState({
+    Iterable<String> invalidate = const <String>[],
+    bool full = false,
+  }) {
+    _downloadVerdicts.invalidate(invalidate);
+    if (full) _downloadVerdicts.invalidateAll();
+    return _downloadRefresh.request();
+  }
+
+  Future<void> _refreshDownloadStateOnce() async {
+    if (!mounted) return;
     final EpubBookRow? row = _row;
     final OnlineMangaLibraryEntry? entry = _entry;
     final AppModel? appModel = _appModelOrNull;
@@ -543,16 +569,18 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         );
       },
     );
-    final int generation = ++_downloadStateGeneration;
     final Map<String, MangaDownloadJobRow> jobs = await downloads.jobsForBook(
       row.bookKey,
     );
     final String bookDir = await _resolveBookDir(row.bookKey);
-    final Set<String> downloaded = await downloadedChapterKeys(
-      bookDir,
-      entry.chapters.map((OnlineMangaChapter chapter) => chapter.key),
+    final Set<String> downloaded = await _downloadVerdicts.resolve(
+      bookDir: bookDir,
+      chapterKeys: <String>[
+        for (final OnlineMangaChapter chapter in entry.chapters) chapter.key,
+      ],
+      jobs: jobs,
     );
-    if (!mounted || generation != _downloadStateGeneration) return;
+    if (!mounted) return;
     final bool downloadedChanged = !setEquals(downloaded, _downloaded);
     setState(() {
       _jobs = jobs;
@@ -753,7 +781,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         );
       }
     }
-    await _refreshDownloadState();
+    await _refreshDownloadState(invalidate: <String>[chapter.key]);
   }
 
   /// 「下载全部」：未下载且没有排队 / 执行中任务的章按章序（旧 → 新）入队。
@@ -1341,38 +1369,37 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         bookKey: bookKey,
         entry: entry,
       );
+      final EpubBookRow? row = await service.database.getEpubBook(bookKey);
       // Kavita：服务器的逐章已读状态并进本地章进度（别的设备读过的章在这里才看得到）。
       Map<String, MangaChapterStateRow>? reconciled;
-      if (updated.runtime == OnlineMangaRuntimeKind.kavita) {
-        final EpubBookRow? stateRow = await service.database.getEpubBook(
-          bookKey,
-        );
-        if (stateRow != null &&
-            await reconcileKavitaChapterStates(
-                  db: service.database,
-                  bookUid: stateRow.uid,
-                  chapters: updated.chapters,
-                  stamps: _kavitaStamps(),
-                ) >
-                0) {
-          reconciled = await _readChapterStates(stateRow);
-          // A bulk import of server read marks: one report, highest chapter.
-          _appModel.reportPagedBookTrackingProgress(bookKey);
-        }
+      if (row != null &&
+          updated.runtime == OnlineMangaRuntimeKind.kavita &&
+          await reconcileKavitaChapterStates(
+                db: service.database,
+                bookUid: row.uid,
+                chapters: updated.chapters,
+                stamps: _kavitaStamps(),
+              ) >
+              0) {
+        reconciled = await _readChapterStates(row);
+        // A bulk import of server read marks: one report, highest chapter.
+        _appModel.reportPagedBookTrackingProgress(bookKey);
       }
-      // 最后一步重读行、读完直接 setState，中间不再 await（BUG-4913）：刷新途中
-      // 用户点的订阅可能已经落库并 setState 过，用刷新那一刻算出的 [updated] 盖回去
-      // 界面就退回旧订阅态。库里此刻的描述符才是两边合起来的结果。
-      final EpubBookRow? row = await service.database.getEpubBook(bookKey);
+      // Kavita 对账隔着几次 await：期间订阅开关可能已落库并 setState，拿对账前读的
+      // 行去 setState 会把页面上的订阅位显示回旧值。重读一次，与下面的 setState 之间
+      // 不再隔 await（gap-mangamisc-1）。
+      final EpubBookRow? latest =
+          row != null && updated.runtime == OnlineMangaRuntimeKind.kavita
+          ? await service.database.getEpubBook(bookKey)
+          : row;
       if (!mounted) return;
-      final OnlineMangaLibraryEntry latest =
-          (row == null
-              ? null
-              : OnlineMangaLibraryEntry.tryParse(row.sourceMetadata)) ??
-          updated;
       setState(() {
-        _entry = latest;
-        if (row != null) _row = row;
+        // 取库里的最新描述符：刷新在飞时别的写方（订阅开关）可能后于本次落库。
+        _entry = latest == null
+            ? updated
+            : OnlineMangaLibraryEntry.tryParse(latest.sourceMetadata) ??
+                  updated;
+        if (latest != null) _row = latest;
         if (reconciled != null) _states = reconciled;
         _refreshSucceeded = true;
       });
@@ -1495,6 +1522,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         _states = const <String, MangaChapterStateRow>{};
         _downloaded = const <String>{};
         _jobs = const <String, MangaDownloadJobRow>{};
+        _downloadVerdicts.clear();
         // 丢掉三样只属于「在库」的状态：当前章、订阅、自动下载。
         _entry = entry.copyWith(
           clearCurrentChapter: true,
@@ -1572,14 +1600,19 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         }
         return;
       }
+      // 按 key 选章、按写回后的章表重算下标（gap-mangamisc-1）：页面手上的章表
+      // 可能比库里旧（刷新刚落库），旧下标交给阅读器会开错章。
       final OnlineMangaLibraryEntry selected = await service.selectChapter(
         bookKey: bookKey,
         entry: entry,
-        chapterIndex: index,
+        chapterKey: chapter.key,
       );
       if (!mounted) return;
       setState(() => _entry = selected);
-      await _openReader(bookKey, chapterIndex: index);
+      await _openReader(
+        bookKey,
+        chapterIndex: selected.currentChapterIndex ?? index,
+      );
       // 从阅读器回来必须重读：读了哪些页、哪章读完了全在阅读器里写的库。
       await _reloadAfterReading();
     } on OnlineMangaUnavailable catch (error, stack) {
@@ -1680,7 +1713,9 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       _states = states;
       _localPosition = position;
     });
-    unawaited(_refreshDownloadState());
+    // 读的过程里章目录可能被别处动过（阅读器预下载走任务表，但互联 / 外部删除
+    // 不一定）：回来时做一次全量复核。
+    unawaited(_refreshDownloadState(full: true));
   }
 
   PrefKavitaMangaSyncStampStore _kavitaStamps() =>
@@ -1745,19 +1780,22 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         failure = error;
       }
     }
-    final PrefKavitaMangaSyncStampStore stamps = _kavitaStamps();
-    for (final OnlineMangaChapter c in targets) {
-      await alignKavitaMangaChapterMark(
-        db: _appModel.database,
-        stamps: stamps,
-        bookUid: bookUid,
-        chapterKey: c.key,
-        read: read,
-        totalPages: _asPages(c.raw['pages']),
-        serverConfirmed: failure == null,
-        knownServerPage: _knownServerPage(c),
-      );
-    }
+    // 整批一次对齐（一个事务、同一时间戳，gap-mangamisc-2）。
+    await alignKavitaMangaChapterMarks(
+      db: _appModel.database,
+      stamps: _kavitaStamps(),
+      bookUid: bookUid,
+      chapters: <KavitaChapterMarkTarget>[
+        for (final OnlineMangaChapter c in targets)
+          (
+            chapterKey: c.key,
+            totalPages: _asPages(c.raw['pages']),
+            knownServerPage: _knownServerPage(c),
+          ),
+      ],
+      read: read,
+      serverConfirmed: failure == null,
+    );
     if (failure != null && mounted) {
       FushiToast.show(
         msg: t.kavita_manga_mark_saved_locally,
@@ -1801,7 +1839,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final String? bookUid = _bookUid;
     if (bookUid == null || chapters.isEmpty) return;
     if (await _markKavitaChapters(chapters, read: read)) {
-      // Kavita：本地状态已由 alignKavitaMangaChapterMark 写好（含页与基线）。
+      // Kavita：本地状态已由 alignKavitaMangaChapterMarks 写好（含页与基线）。
       await _reloadChapterStates();
       _reportTracking();
       return;
