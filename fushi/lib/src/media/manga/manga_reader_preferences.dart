@@ -79,6 +79,16 @@ extension MangaOcrProgressBadgeStyleKey on MangaOcrProgressBadgeStyle {
   };
 }
 
+/// 气泡放大悬停停留时长（毫秒）的默认值与区间。
+const int kMangaBubbleZoomDelayDefault = 350;
+const int kMangaBubbleZoomDelayMin = 150;
+const int kMangaBubbleZoomDelayMax = 1000;
+
+/// 气泡放大倍率（百分比）的默认值与区间：2.4×，可调 2–3×。
+const int kMangaBubbleZoomScaleDefault = 240;
+const int kMangaBubbleZoomScaleMin = 200;
+const int kMangaBubbleZoomScaleMax = 300;
+
 /// Immutable, validated reader defaults. Per-book overrides are sparse JSON:
 /// absent/null fields inherit the current global value, including future changes.
 class MangaReaderPreferences {
@@ -130,6 +140,10 @@ class MangaReaderPreferences {
     this.readerHideThreshold = 13,
     this.einkMode = false,
     this.lookupOnHover = false,
+    this.bubbleZoom = true,
+    this.bubbleZoomHover = 'dwell',
+    this.bubbleZoomDelay = kMangaBubbleZoomDelayDefault,
+    this.bubbleZoomScale = kMangaBubbleZoomScaleDefault,
     this.showOcrBoxes = false,
     this.invertColors = false,
     this.grayscale = false,
@@ -210,6 +224,20 @@ class MangaReaderPreferences {
   final int readerHideThreshold;
   final bool einkMode;
   final bool lookupOnHover;
+
+  /// 气泡原位放大（方案 A）：把 OCR 气泡在原位置放大成浮层，浮层里照常查词。
+  /// 移动端双击气泡触发；桌面按 [bubbleZoomHover] 触发。
+  final bool bubbleZoom;
+
+  /// 桌面鼠标触发放大的方式：`dwell` = 在气泡上停留 [bubbleZoomDelay] 毫秒；
+  /// `ctrl` = 按住 Ctrl 指向气泡；`off` = 不靠悬停触发（双击仍可）。
+  final String bubbleZoomHover;
+
+  /// 悬停停留多久才放大（毫秒）。只路过不弹。
+  final int bubbleZoomDelay;
+
+  /// 放大倍率（百分比，200–300）。气泡放大后放不进视口时自动降到放得下。
+  final int bubbleZoomScale;
   final bool showOcrBoxes;
   final bool invertColors;
   final bool grayscale;
@@ -277,6 +305,10 @@ class MangaReaderPreferences {
     'readerHideThreshold': readerHideThreshold,
     'einkMode': einkMode,
     'lookupOnHover': lookupOnHover,
+    'bubbleZoom': bubbleZoom,
+    'bubbleZoomHover': bubbleZoomHover,
+    'bubbleZoomDelay': bubbleZoomDelay,
+    'bubbleZoomScale': bubbleZoomScale,
     'showOcrBoxes': showOcrBoxes,
     'invertColors': invertColors,
     'grayscale': grayscale,
@@ -386,6 +418,24 @@ class MangaReaderPreferences {
       readerHideThreshold: number('readerHideThreshold', 13, 0, 100),
       einkMode: flag('einkMode', false),
       lookupOnHover: flag('lookupOnHover', false),
+      bubbleZoom: flag('bubbleZoom', true),
+      bubbleZoomHover: text('bubbleZoomHover', 'dwell', <String>{
+        'dwell',
+        'ctrl',
+        'off',
+      }),
+      bubbleZoomDelay: number(
+        'bubbleZoomDelay',
+        kMangaBubbleZoomDelayDefault,
+        kMangaBubbleZoomDelayMin,
+        kMangaBubbleZoomDelayMax,
+      ),
+      bubbleZoomScale: number(
+        'bubbleZoomScale',
+        kMangaBubbleZoomScaleDefault,
+        kMangaBubbleZoomScaleMin,
+        kMangaBubbleZoomScaleMax,
+      ),
       showOcrBoxes: flag('showOcrBoxes', false),
       invertColors: flag('invertColors', false),
       grayscale: flag('grayscale', false),
