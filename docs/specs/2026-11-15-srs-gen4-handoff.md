@@ -4056,3 +4056,27 @@ exit 1；成功 949、失败 9、错误 6、跳过 21，实际执行 964。上�
 - **测试源码里的 BEL（nit）**：改成 `'J\u0007P'`。
 - **每轮全量扫描 / 外来名字限制（第一轮 verify 的 minor / nit）**：第二轮已修（`onlyDirs` 只读自己绑定的目录；
   `serverSrsProfileNameOk` 过滤设备报的名字），本轮核过仍成立，名字挑选同样先过这道过滤。
+
+### 第六波 服务端收尾：第四轮（2026-11-20，同分支续做）
+
+- **同一写入者有两份说明文件时采信哪份仍跟列举顺序走（第三轮复核 major）**：设备升级前把说明文件写在旧根
+  `v3/devices/<设备>/`，升级后 `srsPublishProfileInfo` 写 `v4/devices/<设备>/`，旧那份没有代码删；两份用同一个写入者名
+  `srsV2WriterName(dev)`。`srsListRemoteProfiles` 的 `readInfo` 原先每读一份就无条件覆盖 `nameOf` / `nameAtOf`，先读 `v3`
+  还是 `v4` 由 `listChildren`（`listSync`，不排序）决定，改名后旧根留着旧名，一半机器上取到旧名。根因在列表本身，修在
+  `fushi_engine/lib/srs/srs_profile_link.dart`：同一写入者的名字与 `mergingInto` 只采信**位置优先级最高**的那份——
+  `v4/devices/`（当前发布位置）> `v3/devices/` > `v2/devices/` > 旧格式写入者目录；同级取修改时刻新的（没有时刻排最后）。
+  取舍：位置优先于时刻（旧根那份即使 mtime 更新也不采信，它不会再被当前版本写）；旧那份的 `mergingInto` 同样不采信
+  （v4 那份没有并入标记就是没在并入）。有无笔记、笔记数（取最大）、设备名、`updatedAt` 仍各份都算，不涉及挑选。
+  `names` 改为从最终 `nameOf` 派生、按「说明文件时刻新的在前、同刻按写入者名（UTF-16 码元序）」排，`displayName`
+  （`names.first`）因此也不再跟列举顺序走，旧根留下的旧名也不再出现在 `names` 里（第三轮记的「app 侧没改」一并解决）。
+  测试 `srs_profile_link_test.dart`「同一设备 v3 旧说明文件 + v4 新说明文件：两种列举顺序都只采信 v4 那份」：用把
+  `listChildren` 按名字正序 / 逆序返回的本地目录后端，旧文件比新文件旧、比新文件新各一遍，断言 `nameOf`、`nameAtOf`、
+  `names` 顺序、`displayName`、`mergingInto` 四种组合都一样。
+- **「说明文件最新 = 刚改名的设备」说重了（minor）**：app 端 `SrsProfileLinker.publish` 的签名含笔记数、设备名、并入标记，
+  任何一项变了都重写说明文件，所以时刻是「最近一次改动说明文件」，不是改名时刻。选择照实写进注释（`serverSrsPickReportedName`、
+  `SrsRemoteProfile.nameAtOf`）：几台设备报的名字不同时取最近有活动的那台的名字，名字会随设备活动切换；改名那台在改名时
+  必然重写，所以改名后到别的设备再有活动之前取到新名。没有加「改名时刻」字段：要改说明文件格式且各端都得升级才有用，
+  而几台设备名字不一致本身是用户侧状态，确定性已满足。
+- **「码点最小」不准确（nit）**：注释改成「按 UTF-16 码元序（`String.compareTo`）」，行为不变。
+- **变异实测（本轮）**：`readInfo` 改回无条件覆盖（`chosen = true`）→ 新测试红（逆序时 `nameOf` 为 `OldName`）；`names` 的排序
+  比较器改成恒 0 → 新测试红（逆序时 `names` 为 `[B, NewName]`）。每次 `git checkout --` 还原后工作区干净。
