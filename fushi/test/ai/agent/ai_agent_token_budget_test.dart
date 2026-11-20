@@ -158,7 +158,7 @@ Map<String, Object? Function(Map<String, Object?>)> _sampleResults() =>
 /// 典型会话的模型脚本（OpenAI 兼容应答）。模型只 describe 不在常驻清单里的工具
 /// （常驻工具每轮都在工具表里，不用 describe）；一轮要 describe 的全是常驻工具时
 /// 这一轮不存在。
-List<Map<String, Object?>> _script(Set<String> resident) {
+List<Map<String, Object?>> _script(String scenario, Set<String> resident) {
   Map<String, Object?> calls(List<(String, Map<String, Object?>)> list) =>
       <String, Object?>{
         'choices': <Object?>[
@@ -198,6 +198,29 @@ List<Map<String, Object?>> _script(Set<String> resident) {
     ]);
   }
 
+  const Map<String, Object?> reply = <String, Object?>{
+    'choices': <Object?>[
+      <String, Object?>{
+        'finish_reason': 'stop',
+        'message': <String, Object?>{'role': 'assistant', 'content': '好了。'},
+      },
+    ],
+  };
+  if (scenario == 'list') {
+    // 「我视频库里有哪些作品」：只用一条列库的读操作。
+    final Map<String, Object?>? need = describe(<String>['video.work.list']);
+    return <Map<String, Object?>>[
+      if (need != null)
+        calls(<(String, Map<String, Object?>)>[
+          ('ops__search', <String, Object?>{'query': 'list video works'}),
+        ]),
+      ?need,
+      calls(<(String, Map<String, Object?>)>[
+        ('video__work__list', <String, Object?>{}),
+      ]),
+      reply,
+    ];
+  }
   return <Map<String, Object?>>[
     calls(<(String, Map<String, Object?>)>[
       ('ops__search', <String, Object?>{'query': 'organize video collection'}),
@@ -253,6 +276,22 @@ int _commonPrefix(String a, String b) {
   return i;
 }
 
+/// 一场会话的总量：请求数、按渲染顺序的总字符、与上一轮的公共前缀合计、按理想
+/// 前缀缓存估算的「未命中」字符（总字符 − 公共前缀）、工具表变化的轮数。
+String _summary(List<Map<String, Object?>> sent) {
+  int seg = 0, prefix = 0, toolChanges = 0;
+  for (int r = 0; r < sent.length; r++) {
+    final List<String> b = _segments(sent[r]);
+    seg += b.join().length;
+    if (r == 0) continue;
+    final List<String> a = _segments(sent[r - 1]);
+    prefix += _commonPrefix(a.join(), b.join());
+    if (a.first != b.first) toolChanges++;
+  }
+  return 'rounds=${sent.length} chars=$seg sharedPrefix=$prefix '
+      'uncachedEstimate=${seg - prefix} toolTableChanges=$toolChanges';
+}
+
 void main() {
   final OpContext context = OpContext(ref: _UnusedRef());
   final OpCatalog catalog = buildAppOpCatalog(
@@ -260,8 +299,10 @@ void main() {
     buildDomainOpRoutes(context),
   );
 
-  Future<List<Map<String, Object?>>> runSession() async {
-    final List<Map<String, Object?>> script = _script(<String>{
+  Future<List<Map<String, Object?>>> runSession([
+    String scenario = 'organize',
+  ]) async {
+    final List<Map<String, Object?>> script = _script(scenario, <String>{
       for (final String id in kAiAgentResidentOps)
         if (catalog[id] != null) id,
     });
@@ -388,6 +429,9 @@ void main() {
       'sharedPrefix=$prefixTotal',
     );
 
+    // ignore: avoid_print
+    print('TOKEN|organize session: ${_summary(sent)}');
+
     // 防回归：工具表没变的相邻两轮，后一轮的渲染序列以前一轮全部内容开头。
     for (int r = 1; r < sent.length; r++) {
       final List<String> a = _segments(sent[r - 1]);
@@ -410,6 +454,12 @@ void main() {
         reason: 'round ${r + 1}: 工具表未变时请求必须只在末尾追加',
       );
     }
+  });
+
+  test('只列库的会话（打印 TOKEN| 行）', () async {
+    final List<Map<String, Object?>> sent = await runSession('list');
+    // ignore: avoid_print
+    print('TOKEN|list session: ${_summary(sent)}');
   });
 
   test('常驻清单里的 id 全在操作目录里（写错的 id 会被静默跳过）', () {
