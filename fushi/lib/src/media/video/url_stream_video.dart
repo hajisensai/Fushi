@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
-import 'package:flutter/foundation.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 
 import 'package:fushi/src/media/source_library/stream_auth_scope.dart';
@@ -269,7 +268,8 @@ class UrlStreamVideoClient
     implements
         RemoteVideoClient,
         RemoteVideoStreamHeaders,
-        RemoteVideoSubtitleAudioRefresh {
+        RemoteVideoSubtitleAudioRefresh,
+        RemoteVideoClientConnections {
   UrlStreamVideoClient({
     required this.streamUrl,
     this.subtitleUrl,
@@ -518,8 +518,9 @@ class UrlStreamVideoClient
     int episodeIndex = 0,
   }) async {}
 
-  /// 释放底层 http client（页面 dispose 时调用）。
-  @visibleForTesting
+  /// 释放底层 http client 与来源直链解析器（AList 登录态 / SFTP 的 SSH 连接）。播放页
+  /// 退出收尾用完后经 `RemoteClientTeardown` 调（BUG-4908）。
+  @override
   void close() {
     _httpClient.close();
     urlResolver?.close();
