@@ -33,11 +33,10 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4044 条。点号进各自文件。
+> 共 4043 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4659](bugs/BUG-4659-flatpak-baseapp-state-dir-cross-fs.md) | 🚧 | 🚧 | CI flatpak-baseapp 未命中缓存时 flatpak-builder 报 state dir 与 target dir 不在同一文件系统 |
 | [BUG-4658](bugs/BUG-4658-tooltip-ticker-error-filter-hides-leaks.md) | ✅ | ✅ | main.dart 吞 RawTooltip ticker 错误的过滤会藏掉真实 ticker 泄漏断言 |
 | [BUG-4657](bugs/BUG-4657-dart314-aot-deferred-final-switch-capture.md) | ✅ | ✅ | Dart 3.14.0 AOT 编译推迟 final + switch 赋值 + 闭包捕获时崩溃（全平台 release 红） |
 | [BUG-4656](bugs/BUG-4656-ios-unsigned-ipa-unstripped.md) | ✅ | ✅ | 未签名 IPA 的 Mach-O 没 strip 本地符号 |
