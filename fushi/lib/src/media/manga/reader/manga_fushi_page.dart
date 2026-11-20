@@ -3331,6 +3331,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           '$_pageSessionGeneration|$pageIndex',
           fitWidth,
           loadSource,
+          quality: mangaFitQualityOf(url),
         );
         return WebResourceResponse(
           contentType: fitted != null
@@ -3377,6 +3378,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       p.join(imagesDir, decodedRelative),
       mangaFitWidthOf(url),
       () => File(filePath).readAsBytes(),
+      quality: mangaFitQualityOf(url),
     );
     return WebResourceResponse(
       contentType: fitted != null ? 'image/jpeg' : _mangaMimeForPath(filePath),
@@ -3396,11 +3398,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Future<Uint8List?> _fitPageBytes(
     String key,
     int? fitWidth,
-    Future<Uint8List> Function() loadSource,
-  ) async {
+    Future<Uint8List> Function() loadSource, {
+    required MangaFitQuality quality,
+  }) async {
     if (fitWidth == null) return null;
     try {
-      return await _pageFitter.fit(key, fitWidth, loadSource);
+      return await _pageFitter.fit(key, fitWidth, loadSource, quality: quality);
     } on Object catch (error, stackTrace) {
       ErrorLogService.instance.log('MangaFushiPage.fitPage', error, stackTrace);
       return null;

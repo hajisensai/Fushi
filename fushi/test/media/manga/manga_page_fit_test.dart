@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
+import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi/src/media/manga/reader/manga_page_fit.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
@@ -60,23 +61,147 @@ void main() {
     });
   });
 
+  group('mangaEnhancedFitTarget (画质缩放)', () {
+    test('any real downscale is resampled, not only big savings', () {
+      // 标准档 0.9 倍不转（省得不多），画质档要转：WebView 的缩放会混叠网点。
+      expect(
+        mangaEnhancedFitTarget(
+          sourceWidth: 1000,
+          sourceHeight: 1400,
+          fitWidth: 900,
+        ),
+        (width: 900, height: 1260),
+      );
+    });
+
+    test('near 1:1 serves the original', () {
+      expect(
+        mangaEnhancedFitTarget(
+          sourceWidth: 1000,
+          sourceHeight: 1400,
+          fitWidth: 1024,
+        ),
+        isNull,
+      );
+      expect(
+        mangaEnhancedFitTarget(
+          sourceWidth: 1000,
+          sourceHeight: 1400,
+          fitWidth: 976,
+        ),
+        isNull,
+      );
+    });
+
+    test('low-res sources are pre-upscaled, capped at 2x and pixel budget', () {
+      expect(
+        mangaEnhancedFitTarget(
+          sourceWidth: 720,
+          sourceHeight: 1024,
+          fitWidth: 1216,
+        ),
+        (width: 1216, height: 1729),
+      );
+      // 深度缩放要 8 倍：封顶 2 倍，余下交给 WebView。
+      expect(
+        mangaEnhancedFitTarget(
+          sourceWidth: 720,
+          sourceHeight: 1024,
+          fitWidth: 5760,
+        ),
+        (width: 1440, height: 2048),
+      );
+      // 像素上限：3000×4200 的 2 倍是 2520 万像素，超 1677 万的上限，按面积收。
+      final ({int width, int height})? capped = mangaEnhancedFitTarget(
+        sourceWidth: 3000,
+        sourceHeight: 4200,
+        fitWidth: 6000,
+      );
+      expect(capped, isNotNull);
+      expect(
+        capped!.width * capped.height,
+        lessThanOrEqualTo(kMangaEnhancedMaxPixels),
+      );
+      expect(capped.width, greaterThan(3000 * 1.03));
+    });
+
+    test('URL carries the quality tier', () {
+      MangaFitQuality of(String q) => mangaFitQualityOf(
+        Uri.parse('https://manga.local/img/a.jpg?fit=640$q'),
+      );
+      expect(of('&fq=1'), MangaFitQuality.enhanced);
+      expect(of('&fq=g'), MangaFitQuality.enhancedLinear);
+      expect(of(''), MangaFitQuality.standard);
+      expect(of('&fq=zzz'), MangaFitQuality.standard);
+      expect(
+        MangaFitQuality.fromPreferences(enhanced: false, gammaCorrect: true),
+        MangaFitQuality.standard,
+        reason: 'Gamma 校正只是画质缩放的子开关',
+      );
+    });
+  });
+
   group('MangaPageFitter', () {
+    test('enhanced and standard results are cached separately', () async {
+      final List<MangaFitQuality> modes = <MangaFitQuality>[];
+      final MangaPageFitter fitter = MangaPageFitter(
+        transcoder:
+            (
+              Uint8List bytes,
+              int width, {
+              required MangaFitQuality quality,
+            }) async {
+              modes.add(quality);
+              return Uint8List(quality == MangaFitQuality.enhanced ? 7 : 5);
+            },
+      );
+      Future<Uint8List> load() async => Uint8List(4);
+      expect((await fitter.fit('p', 640, load))!.length, 5);
+      expect(
+        (await fitter.fit(
+          'p',
+          640,
+          load,
+          quality: MangaFitQuality.enhanced,
+        ))!.length,
+        7,
+      );
+      expect(
+        (await fitter.fit(
+          'p',
+          640,
+          load,
+          quality: MangaFitQuality.enhanced,
+        ))!.length,
+        7,
+      );
+      expect(modes, <MangaFitQuality>[
+        MangaFitQuality.standard,
+        MangaFitQuality.enhanced,
+      ]);
+    });
+
     test('one transcode at a time; same page and width deduped', () async {
       int running = 0;
       int maxRunning = 0;
       int transcodes = 0;
       final List<Completer<void>> gates = <Completer<void>>[];
       final MangaPageFitter fitter = MangaPageFitter(
-        transcoder: (Uint8List bytes, int width) async {
-          transcodes++;
-          running++;
-          if (running > maxRunning) maxRunning = running;
-          final Completer<void> gate = Completer<void>();
-          gates.add(gate);
-          await gate.future;
-          running--;
-          return Uint8List(width ~/ 100);
-        },
+        transcoder:
+            (
+              Uint8List bytes,
+              int width, {
+              required MangaFitQuality quality,
+            }) async {
+              transcodes++;
+              running++;
+              if (running > maxRunning) maxRunning = running;
+              final Completer<void> gate = Completer<void>();
+              gates.add(gate);
+              await gate.future;
+              running--;
+              return Uint8List(width ~/ 100);
+            },
       );
       int loads = 0;
       Future<Uint8List> load() async {
@@ -115,10 +240,15 @@ void main() {
         int transcodes = 0;
         final MangaPageFitter fitter = MangaPageFitter(
           maxCacheBytes: 250,
-          transcoder: (Uint8List bytes, int width) async {
-            transcodes++;
-            return width == 1 ? null : Uint8List(100);
-          },
+          transcoder:
+              (
+                Uint8List bytes,
+                int width, {
+                required MangaFitQuality quality,
+              }) async {
+                transcodes++;
+                return width == 1 ? null : Uint8List(100);
+              },
         );
         int loads = 0;
         Future<Uint8List> load() async {
@@ -147,11 +277,16 @@ void main() {
     test('a failing transcode surfaces the error and is not cached', () async {
       int calls = 0;
       final MangaPageFitter fitter = MangaPageFitter(
-        transcoder: (Uint8List bytes, int width) async {
-          calls++;
-          if (calls == 1) throw StateError('native failure');
-          return Uint8List(3);
-        },
+        transcoder:
+            (
+              Uint8List bytes,
+              int width, {
+              required MangaFitQuality quality,
+            }) async {
+              calls++;
+              if (calls == 1) throw StateError('native failure');
+              return Uint8List(3);
+            },
       );
       Future<Uint8List> load() async => Uint8List(4);
       await expectLater(fitter.fit('x', 640, load), throwsStateError);
@@ -160,7 +295,11 @@ void main() {
   });
 
   group('document', () {
-    String doc({required bool fit}) => mangaWindowDocument(
+    String doc({
+      required bool fit,
+      bool enhanced = false,
+      bool gamma = false,
+    }) => mangaWindowDocument(
       const <MokuroImage>[
         MokuroImage(
           url: 'p0.jpg',
@@ -173,6 +312,10 @@ void main() {
       spreadDirection: 'rtl',
       inlineSelectionJs: '',
       fitImagesToDisplay: fit,
+      readerPreferences: MangaReaderPreferences(
+        enhancedScaling: enhanced,
+        gammaCorrectScaling: gamma,
+      ),
     );
 
     test('fit mode leaves src to the script: original never fetched first', () {
@@ -189,6 +332,39 @@ void main() {
         contains('<img src="https://manga.local/img/p0.jpg?s=ab&amp;v=1"'),
       );
       expect(plain, contains('var FIT_IMAGES = false;'));
+    });
+
+    Future<void> runHarness(String document, String harness) async {
+      final int from = document.indexOf('  var FIT_IMAGES = ');
+      final int to = document.indexOf('  function _layoutSource(page){');
+      expect(from, greaterThan(0));
+      expect(to, greaterThan(from));
+      final String section = document.substring(from, to);
+      final String script = harness.replaceFirst('/*SECTION*/', section);
+      final Directory dir = Directory.systemTemp.createTempSync('manga-fit-');
+      try {
+        final File file = File('${dir.path}/verify.js')
+          ..writeAsStringSync(script);
+        final ProcessResult result = await Process.run('node', <String>[
+          file.path,
+        ], runInShell: Platform.isWindows);
+        expect(
+          result.exitCode,
+          0,
+          reason: '${result.stdout}\n${result.stderr}',
+        );
+      } finally {
+        dir.deleteSync(recursive: true);
+      }
+    }
+
+    test('enhanced scaling: finer step and the fq flag on the URL', () async {
+      await runHarness(doc(fit: true, enhanced: true), _enhancedHarness);
+      expect(
+        doc(fit: true, enhanced: true, gamma: true),
+        contains("var FIT_HQ = '&fq=g';"),
+      );
+      expect(doc(fit: true), contains("var FIT_HQ = '';"));
     });
 
     test('_refitPage asks for layout width x dpr x zoom tier', () async {
@@ -264,4 +440,17 @@ assert.equal(cur.img.a.src, base+'&fit=2048','离开屏幕退回 1 档');
 const unknown=mkPage(0,3840,0,'https://manga.local/img/p3.jpg');
 _refitPage(unknown);
 assert.equal(unknown.img.a.src,'https://manga.local/img/p3.jpg','还没排版（缩放未知）先取原图，不卡空白');
+''';
+
+const String _enhancedHarness = r'''
+const assert=require('node:assert/strict');
+var ZOOM=1, CURRENT=0, IS_WEBTOON=false;
+const window={innerWidth:800,innerHeight:1200,devicePixelRatio:2.625};
+const img={a:{'data-src':'https://manga.local/img/p0.jpg?v=1'}, getAttribute(k){ return k in this.a ? this.a[k] : null; }, setAttribute(k,v){ this.a[k]=String(v); }};
+const page={dataset:{pw:'3840'}, __fitScale:0.2, getAttribute(k){ return k==='data-spread' ? '0' : null; }, querySelector(){ return img; }, getBoundingClientRect(){ return {top:0,bottom:10}; }};
+const document={querySelectorAll(){ return [page]; }};
+/*SECTION*/
+_refitPage(page);
+// 3840 × 0.2 × 2.625 = 2016，恰是 32 的整数倍（标准档会取到 2048）。
+assert.equal(img.a.src, 'https://manga.local/img/p0.jpg?v=1&fit=2016&fq=1');
 ''';

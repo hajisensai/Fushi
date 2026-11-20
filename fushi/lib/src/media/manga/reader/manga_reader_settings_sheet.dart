@@ -252,6 +252,16 @@ List<MangaReaderPreferenceDescriptor> mangaReaderPreferenceDescriptors(
     title: t.manga_reader_grayscale,
   ),
   MangaReaderPreferenceDescriptor(
+    key: 'enhancedScaling',
+    kind: MangaReaderPreferenceKind.toggle,
+    title: t.manga_reader_enhanced_scaling,
+  ),
+  MangaReaderPreferenceDescriptor(
+    key: 'gammaCorrectScaling',
+    kind: MangaReaderPreferenceKind.toggle,
+    title: t.manga_reader_gamma_correct_scaling,
+  ),
+  MangaReaderPreferenceDescriptor(
     key: 'customColorFilter',
     kind: MangaReaderPreferenceKind.toggle,
     title: t.manga_reader_custom_color_filter,
@@ -729,6 +739,8 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     'showTapZonesOverlay' => FushiIcons.touch,
     'invertColors' => FushiIcons.darkMode,
     'grayscale' => FushiIcons.filter,
+    'enhancedScaling' => FushiIcons.highQuality,
+    'gammaCorrectScaling' => FushiIcons.brightnessAuto,
     'brightness' => FushiIcons.lightMode,
     'contrast' => FushiIcons.brightnessAuto,
     'saturation' => FushiIcons.appearance,
@@ -946,6 +958,8 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     if (const <String>{
       'invertColors',
       'grayscale',
+      'enhancedScaling',
+      'gammaCorrectScaling',
       'brightness',
       'contrast',
       'saturation',
@@ -1045,6 +1059,10 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
       ),
     ],
     2 => <(String Function(), List<String>)>[
+      (
+        () => t.manga_reader_group_image_quality,
+        <String>['enhancedScaling', 'gammaCorrectScaling'],
+      ),
       (() => t.manga_reader_group_color, <String>['invertColors', 'grayscale']),
       (
         () => t.manga_reader_group_adjust,
