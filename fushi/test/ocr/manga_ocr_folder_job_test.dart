@@ -416,9 +416,14 @@ void main() {
         <int>[2, 3, 2],
         <int>[3, 3, 0],
       ]);
+      // 落盘时刻（completed_at_ms）随运行而变，不属于产物内容。
+      String withoutCompletedAt(String path) => File(
+        path,
+      ).readAsStringSync().replaceAll(RegExp(r',"completed_at_ms":\d+'), '');
+      expect(File(outPath).readAsStringSync(), contains('"completed_at_ms":'));
       expect(
-        File(outPath).readAsStringSync(),
-        File(baselinePath).readAsStringSync(),
+        withoutCompletedAt(outPath),
+        withoutCompletedAt(baselinePath),
         reason: '起点只影响处理顺序，不影响产物内容与页序',
       );
     });
