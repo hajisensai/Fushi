@@ -87,6 +87,13 @@ void main() {
       contains('t.book_scrape_cover'),
       reason: '书卡菜单必须直挂「在线刮削封面」（统一刮削入口层级）。',
     );
+    // 拍板 left3612：有声书 / 字幕书卡对称直挂，同一刮削流程。
+    expect(
+      srtActions,
+      contains('t.book_scrape_cover'),
+      reason: '有声书卡菜单也要直挂「在线刮削封面」（拍板 left3612）。',
+    );
+    expect(srtActions, contains('_scrapeBookItem(item)'));
 
     expect(epubActions, contains('t.view_illustrations'));
     expect(epubActions, contains('t.audiobook_import'));

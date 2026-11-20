@@ -208,6 +208,9 @@ enum GalgameItemAction {
   stats,
   rename,
   cover,
+
+  /// 「在线搜索封面」：在刮削源里搜条目，只取所选候选的封面（不绑元数据）。
+  onlineCover,
   autoCover,
   scrape,
   collect,
@@ -354,6 +357,15 @@ List<GalgameItemMenuItem> galgameItemMenuItems(
     group: DialogActionGroup.organize,
     slot: ItemMenuSlot.edit,
     icon: FushiIcons.image,
+  ),
+  // 拍板 left3612：设置封面也能用刮削源的封面，紧跟「设置封面」（与视频单集
+  // 「选择封面图片」旁的「在线搜索封面」同位）。
+  GalgameItemMenuItem(
+    action: GalgameItemAction.onlineCover,
+    label: t.game_cover_online_search,
+    group: DialogActionGroup.organize,
+    slot: ItemMenuSlot.edit,
+    icon: FushiIcons.travelExplore,
   ),
   GalgameItemMenuItem(
     action: GalgameItemAction.autoCover,
@@ -541,6 +553,12 @@ class GalgameItemActions {
         await _rename();
       case GalgameItemAction.cover:
         await _setCover();
+      case GalgameItemAction.onlineCover:
+        await showGalgameOnlineCoverDialog(
+          context: context,
+          game: game,
+          repo: _repo,
+        );
       case GalgameItemAction.autoCover:
         await _autoCover();
       case GalgameItemAction.scrape:
