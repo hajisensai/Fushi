@@ -32,6 +32,8 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/video/subtitle_transcript_text.dart';
+import 'package:fushi/src/media/video/video_clip_subtitle_image.dart'
+    show buildClipSubtitleStyledSpan;
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/lookup/hover_lookup_modifier.dart';
 
@@ -70,16 +72,22 @@ String formatCueTimestamp(int startMs) =>
 /// - `byRep`：代表行 raw（该组在原列表中的**首个下标**）→ 合成 [AudioCue]（`startMs` 取
 ///   组内最小、`endMs` 取最大，其余字段沿用代表行）；
 /// - `repByRaw`：组内**每个**成员 raw → 该组代表行 raw，供列表把「当前播放句落在某个单字
-///   事件上」映射回唯一渲染的整句行（复用既有代表行机制，高亮/自动滚动零改动）。
+///   事件上」映射回唯一渲染的整句行（复用既有代表行机制，高亮/自动滚动零改动）；
+/// - `membersByRep`：代表行 raw → 组内成员**按拼接顺序**（x 升序），合成句的第 k 个字
+///   就是第 k 个成员。「显示特效字幕」开着时列表逐字取各成员自己的样式（left3545）。
 ///
 /// 合成 cue 是**真 [AudioCue] 对象**而非显示层字符串，故列表的查词、收藏、制卡、搜索
 /// 全部自动作用于整句——收藏判据是 `(text, startMs)` 值语义，不依赖对象身份。
-({Map<int, AudioCue> byRep, Map<int, int> repByRaw}) mergePerCharacterCueGroups(
-  List<AudioCue> cues,
-) {
+({
+  Map<int, AudioCue> byRep,
+  Map<int, int> repByRaw,
+  Map<int, List<AudioCue>> membersByRep,
+})
+mergePerCharacterCueGroups(List<AudioCue> cues) {
   const double kSameRowEps = 0.001;
   final Map<int, AudioCue> merged = <int, AudioCue>{};
   final Map<int, int> repByRaw = <int, int>{};
+  final Map<int, List<AudioCue>> membersByRep = <int, List<AudioCue>>{};
 
   bool isPerCharCue(AudioCue c) =>
       c.markup?.posFraction != null && c.text.characters.length == 1;
@@ -129,6 +137,7 @@ String formatCueTimestamp(int startMs) =>
       for (int k = i; k < j; k++) {
         repByRaw[k] = i;
       }
+      membersByRep[i] = ordered;
       merged[i] = AudioCue()
         ..bookKey = head.bookKey
         ..chapterHref = head.chapterHref
@@ -144,7 +153,7 @@ String formatCueTimestamp(int startMs) =>
     }
     i = j > i ? j : i + 1;
   }
-  return (byRep: merged, repByRaw: repByRaw);
+  return (byRep: merged, repByRaw: repByRaw, membersByRep: membersByRep);
 }
 
 /// 邻接链折叠的最大空隙（BUG-1776）：链尾 endMs 与下一段 startMs 之间 ≤ 本值才视为
@@ -162,6 +171,7 @@ const int _kChainFoldGapMs = 40;
   List<int> indexes,
   Map<int, int> representativeByRaw,
   Map<int, AudioCue> mergedByRep,
+  Map<int, List<AudioCue>> mergedMembersByRep,
   Map<int, int> chainEndMsByRep,
 })
 subtitleTranscriptRows(List<AudioCue> cues) {
@@ -172,8 +182,12 @@ subtitleTranscriptRows(List<AudioCue> cues) {
   // [mergePerCharacterCueGroups]）。组内非组首成员直接映射到组首、不进 reps——它与
   // 下面按 `(startMs, 文本)` 的重复折叠是**同一个代表行机制**的两种成因，故共用一张
   // repByRaw 表：当前播放句落在任一单字事件上，都能定位回那唯一渲染的整句行。
-  final ({Map<int, AudioCue> byRep, Map<int, int> repByRaw}) mergedGroups =
-      mergePerCharacterCueGroups(cues);
+  final ({
+    Map<int, AudioCue> byRep,
+    Map<int, int> repByRaw,
+    Map<int, List<AudioCue>> membersByRep,
+  })
+  mergedGroups = mergePerCharacterCueGroups(cues);
   for (int i = 0; i < cues.length; i++) {
     final int? mergedRep = mergedGroups.repByRaw[i];
     if (mergedRep != null) {
@@ -226,9 +240,61 @@ subtitleTranscriptRows(List<AudioCue> cues) {
     indexes: chained,
     representativeByRaw: repByRaw,
     mergedByRep: mergedGroups.byRep,
+    mergedMembersByRep: mergedGroups.membersByRep,
     chainEndMsByRep: chainEndMsByRep,
   );
 }
+
+/// 「显示特效字幕」开着时，特效行在列表里的富文本（拍板台 left3545：开关是「在字幕
+/// 列表里显示特效字幕的样式」，不是筛选）。
+///
+/// - 判据只读解析层的 [AudioCue.isEffect]（Rust 写一次，Dart 不猜）：普通台词返回
+///   null，照旧按主题色渲染；
+/// - 样式与视频导出 / 画面 overlay「尊重字幕自带样式」同源（[buildClipSubtitleStyledSpan]：
+///   样式表主色、粗斜体 / 下划线 / 删除线、行内 `\c` 覆盖、描边色做柔和描边），字号 /
+///   字体 / 位置 / 动画不跟随，列表行几何照旧由用户字号决定；
+/// - 逐字 `\pos` 拼成的整句（[members] 非 null，见 [mergePerCharacterCueGroups]）逐字取
+///   各成员自己的 markup，组内有一个成员是特效就整句着色；
+/// - 拍平文本必须与 [rowText] 逐字一致才返回：列表的逐字查词按 [rowText] 的 UTF-16
+///   偏移命中，手改过的字幕（`subtitle_text_override`）等对不上的行退回纯文本。
+///
+/// 返回的 span 不带基础样式，由调用方挂在行样式之下继承字号 / 字体。
+InlineSpan? subtitleListEffectSpan({
+  required String rowText,
+  required AudioCue cue,
+  List<AudioCue>? members,
+}) {
+  TextSpan styled(AudioCue c) {
+    final SubtitleMarkup? markup = c.markup;
+    if (markup == null || markup.plainText != c.text) {
+      return TextSpan(text: c.text);
+    }
+    return buildClipSubtitleStyledSpan(
+      markup: markup,
+      base: const TextStyle(),
+      shadowThickness: kSubtitleListEffectOutlineThickness,
+      hardBreaks: false,
+    );
+  }
+
+  final TextSpan span;
+  if (members != null) {
+    if (!members.any((AudioCue m) => m.isEffect)) return null;
+    span = TextSpan(
+      children: <InlineSpan>[for (final AudioCue m in members) styled(m)],
+    );
+  } else {
+    if (!cue.isEffect || cue.markup == null) return null;
+    span = styled(cue);
+  }
+  return span.toPlainText(includeSemanticsLabels: false) == rowText
+      ? span
+      : null;
+}
+
+/// 列表里特效行描边（柔和投影）的半径：列表字号远小于画面字幕，取画面默认的小一档，
+/// 白字 + 黑描边在浅色 / 深色面板上都看得清。
+const double kSubtitleListEffectOutlineThickness = 2;
 
 /// 每个代表行实际呈现的文本与完整时间跨度：逐字卡拉OK 组取合成整句，邻接链折叠行
 /// 的 `endMs` 取整条链的结束（[subtitleTranscriptRows] 的 `chainEndMsByRep`），而不是
@@ -671,10 +737,11 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
   /// 用户切换「点字幕查词」时回调，页面层落 Drift preferences（null 时纯本地切换）。
   final ValueChanged<bool>? onTapLookupChanged;
 
-  /// 「显示特效字幕」初值（拍板台 H7r4mf_z2n）：false = 列表不列出特效字幕（歌词特效 /
-  /// 屏幕字，判据是解析层标出的 [AudioCue.isEffect]），只剩普通台词。全部 / 收藏两档
-  /// 与搜索都在此之上过滤；只影响列表，画面上的字幕照常渲染。默认 false（拍板选项 B
-  /// 原文「默认隐藏特效事件」）。
+  /// 「显示特效字幕」初值（拍板台 H7r4mf_z2n / left3545）：true = 特效字幕行（歌词特效 /
+  /// 屏幕字，判据是解析层标出的 [AudioCue.isEffect]）在列表里按字幕自带样式着色
+  /// （见 [subtitleListEffectSpan]）；false = 与普通台词一样按主题色显示。**不筛选**：
+  /// 开关两态列出的行完全相同（维护者 left3545：「是在字幕列表里面显示特效字幕的样式，
+  /// 不是用来筛选」）。只影响列表，画面上的字幕照常渲染。默认 false。
   final bool initialShowEffects;
 
   /// 用户切换「显示特效字幕」时回调，页面层落 Drift preferences（null 时纯本地切换）。
@@ -865,7 +932,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   VideoSubtitleListFilter? _cachedFilter;
 
   /// [_cachedVisibleIndexes] 算出时的「显示特效字幕」开关（缓存键的一部分）。
-  bool? _cachedShowEffects;
+  /// 「显示特效字幕」开着时各代表行的特效富文本（[subtitleListEffectSpan]，null = 本行
+  /// 不着色）。与 dedup 表同生命周期（[_clearCueCaches] 一起清）；span 不含基础样式，
+  /// 字号 / 当前行配色变化不用作废。
+  final Map<int, InlineSpan?> _cachedEffectSpanByRaw = <int, InlineSpan?>{};
   List<int> _cachedVisibleIndexes = const <int>[];
   Map<int, int> _cachedVisibleIndexByRawIndex = const <int, int>{};
 
@@ -885,6 +955,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   /// [mergePerCharacterCueGroups]）。与 [_cachedDedupCues] 同生命周期、同一次遍历刷新。
   /// 非逐字行不在表内，[_rowCue] 回落原 cue（既有行为逐像素不变）。
   Map<int, AudioCue> _cachedMergedByRep = const <int, AudioCue>{};
+
+  /// 代表行 raw → 逐字组成员（拼接顺序），与 [_cachedMergedByRep] 同一次遍历刷新。
+  Map<int, List<AudioCue>> _cachedMergedMembersByRep =
+      const <int, List<AudioCue>>{};
 
   /// 行高测量缓存（BUG-1034）：库级共享的 [videoSubtitleRowExtentCache]，见
   /// [_rowExtentForCue]。
@@ -996,7 +1070,12 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   /// 高度纳入取最大值，因为 `Row` 的高度是子项高度的最大值。结果按「文本 + 是否加粗」缓存，
   /// 宽度、字号或 textScaler 变化时整体作废——`SliverVariedExtentList` 每次布局都要遍历
   /// 全部条目累加 maxScrollExtent，没有缓存会把 TextPainter 跑进每一帧。
-  double _rowExtentForCue(AudioCue cue, double rowWidth, {required bool bold}) {
+  double _rowExtentForCue(
+    AudioCue cue,
+    double rowWidth, {
+    required bool bold,
+    InlineSpan? effectSpan,
+  }) {
     // 排版环境签名：宽度 / 字号 / textScaler / 字体 / 书写方向 / 时间戳列宽任一
     // 变化，旧行高全部作废（M3E / 经典两种行几何靠 key 前缀区分，可以并存）。
     _rowExtentCache.bind((
@@ -1009,8 +1088,12 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     ));
     // M3E：收藏行在时间戳胶囊下多一颗星，行高可能变高——收藏态进缓存键。
     final bool favorited = _m3e && widget.isCueFavorited(cue);
+    // 特效着色（粗体 / 斜体会改字宽）进键：同文本的纯文本行与着色行各量各的。
+    final String effectKey = effectSpan == null
+        ? ''
+        : 'e${effectSpan.hashCode}';
     final String key =
-        '${_m3e ? 'm' : 'c'}${bold ? 1 : 0}${favorited ? 1 : 0}\u0000${cue.text}';
+        '${_m3e ? 'm' : 'c'}${bold ? 1 : 0}${favorited ? 1 : 0}$effectKey\u0000${cue.text}';
     final double? cached = _rowExtentCache[key];
     if (cached != null) return cached;
     final double extent = _measureRowExtent(
@@ -1018,6 +1101,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       rowWidth,
       bold,
       favorited: favorited,
+      effectSpan: effectSpan,
     );
     _rowExtentCache.store(key, extent);
     return extent;
@@ -1076,6 +1160,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       _rowCue(cues, rawIndex),
       rowWidth,
       bold: _isRowBold(rawIndex),
+      effectSpan: _effectSpanForRow(cues, rawIndex),
     );
     _rowExtentMemo[visibleIndex] = extent;
     return extent;
@@ -1086,10 +1171,12 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     double rowWidth,
     bool bold, {
     bool favorited = false,
+    InlineSpan? effectSpan,
   }) {
     final double textHeight = _measureTextHeight(
       text: text,
       style: _rowTextStyle(bold: bold),
+      effectSpan: effectSpan,
       maxWidth: _rowTextWidth(rowWidth, favorited: favorited),
     );
     // Row 高度 = 子项高度最大值：文本、时间戳单行、动作图标。
@@ -1133,9 +1220,13 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     required TextStyle style,
     required double maxWidth,
     TextHeightBehavior? heightBehavior,
+    InlineSpan? effectSpan,
   }) {
     final TextPainter painter = TextPainter(
-      text: TextSpan(text: text, style: style),
+      // 与 [SubtitleTranscriptText] 渲染特效行同构：特效 span 挂在行样式之下。
+      text: effectSpan == null
+          ? TextSpan(text: text, style: style)
+          : TextSpan(style: style, children: <InlineSpan>[effectSpan]),
       textAlign: TextAlign.start,
       textDirection: _textDirection,
       textScaler: _textScaler,
@@ -1451,6 +1542,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     final double rowExtent = _rowExtentForCue(
       targetCue,
       rowWidth,
+      effectSpan: _effectSpanForRow(cues, currentIndex),
       // 与 [_estimatedScrollOffsetForVisibleIndex] / 真实渲染同源判加粗：目标行正在播放
       // 时加粗，落在静默 gap 里回落到的最近行则不加粗（BUG-1484），否则估算行高偏大。
       bold: _isRowBold(currentIndex),
@@ -1492,11 +1584,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   void _toggleShowEffects() {
     setState(() {
       _showEffects = !_showEffects;
-      _hoveredIndex = -1;
+      // 可见集不变（不筛选），只有特效行的样式 / 行高变：让自动滚动按新行高重新居中。
       _lastScrolledIndex = -1;
-      // 可见集变 → visibleIndex 重排，旧 visibleIndex→key 映射作废（同 [_setFilter]）。
-      _rowKeys.clear();
-      _clearCueCaches();
     });
     widget.onShowEffectsChanged?.call(_showEffects);
     _scheduleScrollToCurrentCue();
@@ -1646,25 +1735,25 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     return count;
   }
 
-  /// 全部 / 收藏两档共用的列表基集合：去重后的代表行（BUG-841），关掉「显示特效字幕」
-  /// （H7r4mf_z2n）时再剔掉**整组都是特效**的代表行。[_visibleCueIndexes] 与
-  /// [_favoriteCueCount] 都只从这里取，保证收藏计数 / 导出可用状态与列表条目一致。
-  ///
-  /// 判定看组内**原始 cue**（`cues[raw]` 的 [AudioCue.isEffect]）而不是 [_rowCue]：
-  /// 逐字卡拉 OK 合成的整句 cue 不带 markup。组内只要有一个成员不是特效（例如代表行是
-  /// 带特效的阴影层、同组还有一份普通拷贝）就保留整句——宁可多列一句，也不把真台词
-  /// 从列表里藏掉。
-  List<int> _listBaseRawIndexes(List<AudioCue> cues) {
-    final List<int> deduped = _dedupedRawIndexes(cues);
-    if (_showEffects) return deduped;
-    final Set<int> repsWithPlainMember = <int>{
-      for (int raw = 0; raw < cues.length; raw++)
-        if (!cues[raw].isEffect) _cachedRepresentativeByRaw[raw] ?? raw,
-    };
-    return <int>[
-      for (final int i in deduped)
-        if (repsWithPlainMember.contains(i)) i,
-    ];
+  /// 全部 / 收藏两档共用的列表基集合：去重后的代表行（BUG-841）。[_visibleCueIndexes]
+  /// 与 [_favoriteCueCount] / 收藏导出都只从这里取，保证收藏计数 / 导出与列表条目一致。
+  /// 「显示特效字幕」不参与（left3545：它只管样式，不筛选）。
+  List<int> _listBaseRawIndexes(List<AudioCue> cues) =>
+      _dedupedRawIndexes(cues);
+
+  /// 代表行 [rawIndex] 的特效富文本（[subtitleListEffectSpan]）；开关关着或本行不是
+  /// 特效时 null。行渲染与行高测量都经这里取，二者同源（BUG-1034）。
+  InlineSpan? _effectSpanForRow(List<AudioCue> cues, int rawIndex) {
+    if (!_showEffects || rawIndex < 0 || rawIndex >= cues.length) return null;
+    final AudioCue rowCue = _rowCue(cues, rawIndex);
+    return _cachedEffectSpanByRaw.putIfAbsent(
+      rawIndex,
+      () => subtitleListEffectSpan(
+        rowText: rowCue.text,
+        cue: cues[rawIndex],
+        members: _cachedMergedMembersByRep[rawIndex],
+      ),
+    );
   }
 
   /// BUG-841：按 `(startMs, 文本)` 折叠重复 cue，返回代表行 raw 下标（升序）并同步
@@ -1683,6 +1772,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     _cachedDedupIndexes = rows.indexes;
     _cachedRepresentativeByRaw = rows.representativeByRaw;
     _cachedMergedByRep = rows.mergedByRep;
+    _cachedMergedMembersByRep = rows.mergedMembersByRep;
+    _cachedEffectSpanByRaw.clear();
     return rows.indexes;
   }
 
@@ -1721,8 +1812,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     if (cacheable &&
         identical(_cachedCues, cues) &&
         _cachedCuesLength == cues.length &&
-        _cachedFilter == _filter &&
-        _cachedShowEffects == _showEffects) {
+        _cachedFilter == _filter) {
       return _cachedVisibleIndexes;
     }
     // BUG-841：两档都以**去重后**的代表行为基（特效叠加同句拷贝只出一行）；收藏
@@ -1749,7 +1839,6 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     _cachedCues = cues;
     _cachedCuesLength = cues.length;
     _cachedFilter = _filter;
-    _cachedShowEffects = _showEffects;
     _cachedVisibleIndexes = indexes;
     _cachedVisibleIndexByRawIndex = <int, int>{
       for (int i = 0; i < indexes.length; i++) indexes[i]: i,
@@ -1797,7 +1886,6 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     _cachedCues = null;
     _cachedCuesLength = -1;
     _cachedFilter = null;
-    _cachedShowEffects = null;
     _cachedVisibleIndexes = const <int>[];
     _cachedVisibleIndexByRawIndex = const <int, int>{};
     _cachedDedupCues = null;
@@ -1807,6 +1895,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     // 与 dedup 表同生命周期（同一次遍历产出）：漏清会让换轨/换片后的列表拿到上一份
     // 字幕的合成整句（TODO-1384）。
     _cachedMergedByRep = const <int, AudioCue>{};
+    _cachedMergedMembersByRep = const <int, List<AudioCue>>{};
+    _cachedEffectSpanByRaw.clear();
   }
 
   void _retainRowKeyFor(int? rawIndex) {
@@ -2128,9 +2218,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                     ),
                   ),
                 ),
-                // H7r4mf_z2n：「显示特效字幕」开关。不放进上面可横向拖动的筛选区：收藏档右侧
-                // 多出导出钮与计数后可滚区被压窄，开关会被裁到视口外（窄面板要横向拖才看得到）。
-                // 放在可滚区外与导出 / 计数同排，任何面板宽度下都直接可见。
+                // H7r4mf_z2n / left3545：「显示特效字幕」开关（列表里给特效行套字幕自带样式，
+                // 不筛选）。经典版式第一行工具组在最窄面板里已满，只能落在第二行；不放进上面
+                // 可横向拖动的筛选区：收藏档右侧多出导出钮与计数后可滚区被压窄，开关会被裁到
+                // 视口外。放在可滚区外与导出 / 计数同排，任何面板宽度下都直接可见。
                 const SizedBox(width: _kClassicFilterRowGap),
                 FushiIconButtonControl(
                   key: const ValueKey<String>(
@@ -2361,7 +2452,13 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                 ),
               ),
             ),
-            text: _buildRowText(cue, textColor, selected, textKey),
+            text: _buildRowText(
+              cue,
+              textColor,
+              selected,
+              textKey,
+              effectSpan: _effectSpanForRow(widget.controller.cues, rawIndex),
+            ),
             trailing: _buildRowActions(cs, cue, rawIndex, selected, favorited),
           ),
         ),
@@ -2395,18 +2492,26 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     AudioCue cue,
     Color textColor,
     bool selected,
-    GlobalKey? textKey,
-  ) {
+    GlobalKey? textKey, {
+    InlineSpan? effectSpan,
+  }) {
     // BUG-1034：与行高测量（[_measureRowExtent]）共用同一样式，断行结果一致，末行不被裁。
     final TextStyle textStyle = _rowTextStyle(bold: selected, color: textColor);
     final void Function(AudioCue, int, Rect)? onLookup = _lookupCue;
     if (onLookup == null) {
       // 无查词能力：整段文本（换行），不叠 tap 层，外层 InkWell 行点击仍 seek。
+      if (effectSpan != null) {
+        return Text.rich(
+          TextSpan(children: <InlineSpan>[effectSpan]),
+          style: textStyle,
+        );
+      }
       return Text(cue.text, style: textStyle);
     }
     return SubtitleTranscriptText(
       text: cue.text,
       style: textStyle,
+      richSpan: effectSpan,
       textKey: textKey,
       onLookup: (int index, Rect rect) => onLookup(cue, index, rect),
       onBackgroundTap: () => widget.onTapCue(cue),
@@ -2759,8 +2864,9 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                             onPressed: _toggleAutoScroll,
                           ),
                         ),
-                        // H7r4mf_z2n：「显示特效字幕」开关，与自动滚动 / 点字幕查词同一种
-                        // 切换钮；放不下时随其余动作收进「⋯」。
+                        // H7r4mf_z2n / left3545：「显示特效字幕」开关（列表里给特效行套字幕
+                        // 自带样式），与自动滚动 / 点字幕查词同一种切换钮，按工具栏规范平铺、
+                        // 放不下时随其余动作收进「⋯」。
                         FushiAdaptiveAction(
                           icon: FushiIcons.animation,
                           label: t.video_subtitle_list_show_effects,
@@ -3149,6 +3255,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                                 textColor,
                                 selected,
                                 textKey,
+                                effectSpan: _effectSpanForRow(
+                                  widget.controller.cues,
+                                  rawIndex,
+                                ),
                               ),
                             ),
                             // 已收藏：行尾常驻实心星（正文为它让位，测量同源）。
