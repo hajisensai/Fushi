@@ -319,6 +319,121 @@ void main() {
     expect(rebuilds, before);
   });
 
+  test('BUG-4906：末尾「下一章」正文已写盘、书行（快照）没写上就中断：'
+      '下次请求按快照判未取、重新取页把快照补齐，之后开书照常补新占位', () async {
+    final WebNovelLibrary lib = library();
+    final String bookKey = await readPage(
+      lib,
+      'syosetu_n9669bk_1.html',
+      ch1Url,
+    );
+    final EpubBookRow before = (await db.getEpubBook(bookKey))!;
+    expect(
+      WebNovelSnapshot.tryParse(before.sourceMetadata)!.chapters,
+      hasLength(1),
+    );
+    _FakeFetcher fetcherFor() => _FakeFetcher(<String, WebNovelFetchedPage>{
+      ch2Url: (
+        html: fixture('syosetu_n9669bk_10.html'),
+        url: Uri.parse(ch2Url),
+      ),
+    });
+    final String placeholder = lnReaderOnlineChapterFile(
+      before.extractDir,
+      1,
+    ).path;
+    final OnlineNovelChapterLoaded? first = await WebNovelChapterLoader(
+      database: db,
+      library: lib,
+      fetcher: fetcherFor(),
+      bookKey: bookKey,
+      extractDir: before.extractDir,
+    ).ensureLoaded(placeholder);
+    expect(first?.index, 1);
+    // 复现中断后的落盘状态：正文文件已换成正文，书行停在取章前（快照只有第 1 章、
+    // `tailNext` 仍指着第 2 话，spine 仍是「第 1 章 + 占位」）。
+    await db.updateEpubBookMihonState(
+      bookKey,
+      sourceMetadata: before.sourceMetadata!,
+      chapterCount: before.chapterCount,
+      chaptersJson: before.chaptersJson,
+    );
+    expect(
+      chapterText(before, 1),
+      isNot(contains(kLnReaderPendingChapterAttribute)),
+    );
+
+    // 重开书：书行 spine（2）比快照章数（1）多，补占位不动。
+    final EpubBookRow stale = (await db.getEpubBook(bookKey))!;
+    expect(
+      await lib.ensureTrailingPlaceholder(
+        stale,
+        pendingText: pending,
+        nextChapterTitle: nextTitle,
+      ),
+      isFalse,
+    );
+
+    // 阅读器请求第 2 章：文件虽已是正文，快照没有这一章 → 重新取页并章。
+    final _FakeFetcher fetcher = fetcherFor();
+    final OnlineNovelChapterLoaded? healed = await WebNovelChapterLoader(
+      database: db,
+      library: lib,
+      fetcher: fetcher,
+      bookKey: bookKey,
+      extractDir: stale.extractDir,
+    ).ensureLoaded(placeholder);
+    expect(fetcher.requested, <String>[ch2Url]);
+    expect(healed?.index, 1);
+    final EpubBookRow repaired = (await db.getEpubBook(bookKey))!;
+    final WebNovelSnapshot snapshot = WebNovelSnapshot.tryParse(
+      repaired.sourceMetadata,
+    )!;
+    expect(snapshot.chapters, hasLength(2));
+    expect(snapshot.tailNext, 'https://ncode.syosetu.com/n9669bk/11/');
+    expect(chapterText(repaired, 1), contains('ゼニスの妊娠がわかった。'));
+
+    // 快照补齐后照常追更：开书补上新的「下一章」占位。
+    final EpubBookRow? prepared = await prepareWebNovelBookForReading(
+      database: db,
+      row: repaired,
+      pendingText: pending,
+      nextChapterTitle: nextTitle,
+      library: lib,
+    );
+    expect(prepared!.chapterCount, 3);
+    expect(
+      chapterText(prepared, 2),
+      contains(kLnReaderPendingChapterAttribute),
+    );
+  });
+
+  test('已取过且快照里有的章：不取页', () async {
+    final WebNovelLibrary lib = library();
+    final String bookKey = await readPage(
+      lib,
+      'syosetu_n9669bk_1.html',
+      ch1Url,
+    );
+    final EpubBookRow row = (await db.getEpubBook(bookKey))!;
+    final _FakeFetcher fetcher = _FakeFetcher(<String, WebNovelFetchedPage>{});
+    final WebNovelChapterLoader loader = WebNovelChapterLoader(
+      database: db,
+      library: lib,
+      fetcher: fetcher,
+      bookKey: bookKey,
+      extractDir: row.extractDir,
+    );
+    // 第 1 章：快照里有、文件是正文。
+    expect(
+      await loader.ensureLoaded(
+        lnReaderOnlineChapterFile(row.extractDir, 0).path,
+      ),
+      isNull,
+    );
+    expect(fetcher.requested, isEmpty);
+  });
+
   test('取回的是验证页 / 不是这一章：拒收，占位页原样保留', () async {
     final WebNovelLibrary lib = library();
     final String bookKey = await readPage(
