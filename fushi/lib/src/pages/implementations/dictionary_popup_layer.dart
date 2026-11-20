@@ -1,4 +1,3 @@
-import 'dart:async' show FutureOr, unawaited;
 import 'dart:math' as math;
 import 'dart:ui' show PointerDeviceKind;
 
@@ -29,7 +28,6 @@ import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
 import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/lookup/swipe_dismiss_wrapper.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_threshold.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -1633,20 +1631,6 @@ class DictionaryPopupLayer extends StatelessWidget {
       swipeDismissible &&
       (enableSwipeToClose || (enableTouchSwipeToClose ?? enableSwipeToClose));
 
-  /// BUG-4911：[_BodySwipeDismissDetector] 的选区探针。起手点落在本层原生 WebView
-  /// 的矩形内、且 WebView 此刻持有非空选区，才算「这次横拖在操作选区」。WebView 未挂载
-  /// （无结果占位 / 加载占位）或起手点在顶栏、外框留白上 → 同步返回 false，滑关照旧。
-  FutureOr<bool> _touchOnNativeSelection(Offset globalStart) {
-    final DictionaryPopupWebViewState? webView = webViewKey.currentState;
-    if (webView == null || !webView.mounted) return false;
-    final RenderObject? box = webView.context.findRenderObject();
-    if (box is! RenderBox || !box.attached || !box.hasSize) return false;
-    if (!(Offset.zero & box.size).contains(box.globalToLocal(globalStart))) {
-      return false;
-    }
-    return webView.hasNativeSelection();
-  }
-
   /// BUG-2770：给顶栏 / 整窗挂滑关包装。鼠标滑关开 → 全指针包装（旧行为）；只有触摸
   /// 滑关开 → `touchOnly` 包装；都关 → 原样返回。
   Widget _wrapSwipeDismiss(Widget child) {
@@ -1762,7 +1746,6 @@ class DictionaryPopupLayer extends StatelessWidget {
     final Widget content = _BodySwipeDismissDetector(
       enableSwipeToClose: bodySwipe,
       onDismiss: onDismiss,
-      touchOnNativeSelection: _touchOnNativeSelection,
       child: surface,
     );
 
@@ -2357,28 +2340,16 @@ class DictionaryPopupLayer extends StatelessWidget {
 /// 用户 2026-11-06：拖动期间弹窗**一动不动**，不再跟手平移 / 淡出 / 补间滑出。Android
 /// 混合合成下那段跟手平移只挪了原生 WebView，Flutter 画的顶栏和卡框原地不动，看起来是
 /// 「正文在框里横着滚」（录屏），让人以为弹窗能左右滚动。见 [SwipeDismissWrapper]。
-///
-/// BUG-4911：raw [Listener] 不进竞技场，也就**不会因为 WebView 赢了竞技场而收不到
-/// 指针**——TODO-896「WebView 声明横拖识别器 → 正文框选到不了本检测器」的前提在
-/// BUG-1242 改成 Listener 后已不成立。触屏上长按选字后横拖扩选、拖选区把手，轨迹
-/// 都是明确横向，抬手就被判成滑关（iPad 漫画阅读器反馈 DrV7fPpWD2「一选字弹窗就
-/// 没了」）。判滑关前先问 [touchOnNativeSelection]：起手点在 WebView 上且 WebView
-/// 持有非空原生选区 = 这次拖动在操作选区，不关窗。
 class _BodySwipeDismissDetector extends StatefulWidget {
   const _BodySwipeDismissDetector({
     required this.enableSwipeToClose,
     required this.onDismiss,
     required this.child,
-    this.touchOnNativeSelection,
   });
 
   final bool enableSwipeToClose;
   final VoidCallback onDismiss;
   final Widget child;
-
-  /// 以起手点全局坐标询问「这次触摸是否落在持有原生选区的 WebView 上」。同步返回
-  /// bool 时当帧判定；返回 Future 时等原生选区的真值回来再判。null = 没有 WebView。
-  final FutureOr<bool> Function(Offset globalStart)? touchOnNativeSelection;
 
   @override
   State<_BodySwipeDismissDetector> createState() =>
@@ -2430,31 +2401,11 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector> {
     _activePointers.remove(event.pointer);
     if (event.pointer != _trackedPointer) return;
     final bool horizontal = _pointerIsHorizontal == true;
-    final Offset? start = _pointerStart;
-    final double accumulated = start == null ? 0 : event.position.dx - start.dx;
+    final double accumulated = _pointerStart == null
+        ? 0
+        : event.position.dx - _pointerStart!.dx;
     _clearTrackedPointer();
-    if (!horizontal || start == null || accumulated.abs() <= _threshold) return;
-    final FutureOr<bool> onSelection =
-        widget.touchOnNativeSelection?.call(start) ?? false;
-    if (onSelection is bool) {
-      if (!onSelection) widget.onDismiss();
-      return;
-    }
-    unawaited(_dismissUnlessSelecting(onSelection));
-  }
-
-  /// BUG-4911：原生选区要跨平台通道问 WebView，回来时本层可能已被别的路径关掉 /
-  /// 换词重建（State 卸载），只在仍挂载时关。问询失败（半销毁 WebView 上
-  /// evaluateJavascript 会抛）记日志并按旧语义关窗——拿不到选区真值时不能让滑关失灵。
-  Future<void> _dismissUnlessSelecting(Future<bool> onSelection) async {
-    bool selecting = false;
-    try {
-      selecting = await onSelection;
-    } catch (e, stack) {
-      ErrorLogService.instance.log('PopupBodySwipe.nativeSelection', e, stack);
-    }
-    if (!mounted || selecting) return;
-    widget.onDismiss();
+    if (horizontal && accumulated.abs() > _threshold) widget.onDismiss();
   }
 
   void _onPointerCancel(PointerCancelEvent event) {
@@ -2480,23 +2431,6 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector> {
       child: widget.child,
     );
   }
-}
-
-/// BUG-4911：测试入口——直接挂本体横滑关闭检测器，注入假的选区探针，锁「触摸拖选
-/// 原生选区不关窗、无选区横滑照关」的契约（widget 测试宿主挂不了真平台 WebView）。
-@visibleForTesting
-Widget debugPopupBodySwipeDismissDetector({
-  required bool enableSwipeToClose,
-  required VoidCallback onDismiss,
-  required Widget child,
-  FutureOr<bool> Function(Offset globalStart)? touchOnNativeSelection,
-}) {
-  return _BodySwipeDismissDetector(
-    enableSwipeToClose: enableSwipeToClose,
-    onDismiss: onDismiss,
-    touchOnNativeSelection: touchOnNativeSelection,
-    child: child,
-  );
 }
 
 /// 尺寸拖拽把手的边长（逻辑像素）。桌面常显、移动端可触摸拖。
