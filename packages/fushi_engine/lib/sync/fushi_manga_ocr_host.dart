@@ -497,17 +497,24 @@ class MangaOcrHostJobManager {
     if (detached) return;
     _jobs.remove(job.id);
     if (_dirSharedWithOtherJob(job, liveOnly: true)) return;
+    final List<FileSystemEntity> entries;
     try {
-      if (job.dir.existsSync()) {
-        for (final FileSystemEntity entity in job.dir.listSync(
-          followLinks: false,
-        )) {
-          if (p.basename(entity.path) == kMangaOcrOutDirName) continue;
-          entity.deleteSync(recursive: true);
-        }
+      if (!job.dir.existsSync()) return;
+      entries = job.dir.listSync(followLinks: false);
+    } on FileSystemException {
+      return; // 清理失败不致命：TTL 孤儿清扫兜底。
+    }
+    // 逐个删、互不连坐：Windows 上某一项还被打开着（在飞的上传正往子目录里写）时
+    // 删它会抛错，旧实现整个循环跟着中止，排在它后面的页图全留在卷目录里，同卷
+    // 下一个任务落回这个目录就会把它们当成自己的页。删不掉的那一项交给 TTL 孤儿
+    // 清扫（在飞的上传回来发现任务已不收会删掉自己的暂存文件）。
+    for (final FileSystemEntity entity in entries) {
+      if (p.basename(entity.path) == kMangaOcrOutDirName) continue;
+      try {
+        entity.deleteSync(recursive: true);
+      } on FileSystemException {
+        // 见上。
       }
-    } catch (_) {
-      // 清理失败不致命：TTL 孤儿清扫兜底。
     }
   }
 
