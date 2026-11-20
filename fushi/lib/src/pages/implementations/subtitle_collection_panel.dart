@@ -1227,11 +1227,11 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
             SubtitleBatchFailureStage.persist =>
               t.video_subtitle_batch_persist_failed,
             // 与本集面板同一套文案（BUG-1844）：key 被拒 / 连不上 / HTTP 状态码。
-            SubtitleBatchFailureStage.download || null =>
-              describeSubtitleFailure(
-                t.video_jimaku_download_failed,
-                item.error,
-              ),
+            SubtitleBatchFailureStage.download ||
+            null => describeSubtitleFailure(
+              t.video_jimaku_download_failed,
+              item.error,
+            ),
           });
         case SubtitleBatchStatus.downloading:
         case SubtitleBatchStatus.pending:
