@@ -2,6 +2,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/links/media_link_editor_dialog.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart';
 import 'package:fushi/src/media/links/work_graph_store.dart';
 import 'package:fushi/src/pages/implementations/work_network_page.dart';
@@ -216,6 +217,78 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
     expect(inferred, 1);
+  });
+
+  testWidgets('顶栏常驻「添加相关条目」与「查找相关作品」：节点多时也在，Enter 打开 / 触发', (
+    WidgetTester tester,
+  ) async {
+    final WorkLinksSeed seed = (await tester.runAsync(
+      () => WorkLinksSeed.create(db),
+    ))!;
+    int inferred = 0;
+    await pumpPage(tester, seed.anime, onInfer: () async => ++inferred);
+    expect(
+      find.byKey(const ValueKey<String>('work-network-empty')),
+      findsNothing,
+    );
+    final Finder infer = find.byKey(
+      const ValueKey<String>('work-network-action-infer'),
+    );
+    final Finder add = find.byKey(
+      const ValueKey<String>('work-network-action-add'),
+    );
+    expect(add, findsOneWidget);
+    expect(infer, findsOneWidget);
+
+    await tabTo(tester, infer);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(inferred, 1);
+
+    await tabTo(tester, add);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.byType(MediaLinkEditorDialog), findsOneWidget);
+    // 关系里有续作 / 外传（任意本机条目都能连成系列）。
+    expect(find.text(t.media_link_relation_sequel), findsOneWidget);
+    expect(find.text(t.media_link_relation_side_story), findsOneWidget);
+  });
+
+  testWidgets('系列栏：刮削的相关作品画出来，未入库的标「未入库」，边标续作', (WidgetTester tester) async {
+    final WorkLinksSeed seed = (await tester.runAsync(
+      () => WorkLinksSeed.create(db),
+    ))!;
+    await tester.runAsync(
+      () => db.replaceSourceCollectionRelations(
+        seed.animeId,
+        'anidb',
+        <CollectionRelationsCompanion>[
+          CollectionRelationsCompanion.insert(
+            collectionId: seed.animeId,
+            relationType: 'sequel',
+            source: 'anidb',
+            subjectId: '9001',
+            title: '某动画 第二季',
+          ),
+        ],
+      ),
+    );
+    await pumpPage(tester, seed.anime);
+    expect(node('web-anidb-9001'), findsOneWidget);
+    expect(find.text('某动画 第二季'), findsOneWidget);
+    expect(find.text(t.media_link_group_series), findsOneWidget);
+    final String animeId =
+        'video_collection-${collectionTagEntryKey(seed.animeId)}';
+    expect(
+      find.byKey(
+        ValueKey<String>(
+          'work-network-edge-$animeId-series_sequel-web-anidb-9001',
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text(t.media_link_relation_sequel), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   for (final Size size in <Size>[

@@ -246,6 +246,50 @@ void main() {
     );
   });
 
+  test('续作 / 外传（sequel / side_story）两端往返；同批里认不出的关系只跳过那一条', () async {
+    final FushiDatabase host = memDb();
+    final FushiDatabase client = memDb();
+    for (final FushiDatabase db in <FushiDatabase>[host, client]) {
+      await seedBook(db, 'vol1');
+      await seedBook(db, 'sequel');
+      await seedBook(db, 'fd');
+    }
+    await host.upsertManualMediaLink(
+      relation: MediaLinkRelation.sequel,
+      from: (kind: MediaLinkKind.book, key: 'vol1'),
+      to: (kind: MediaLinkKind.book, key: 'sequel'),
+    );
+    await host.upsertManualMediaLink(
+      relation: MediaLinkRelation.sideStory,
+      from: (kind: MediaLinkKind.book, key: 'sequel'),
+      to: (kind: MediaLinkKind.book, key: 'fd'),
+    );
+    final Map<String, dynamic> wire = (await loadLocalMediaLinkManifest(
+      host,
+    )).toJson();
+    // 模拟「旧版对端收到它不认识的关系」：同一份清单里塞一条未来关系，只有那一条
+    // 被跳过，其余照常落地（旧版收到 sequel 走的就是这条 tryParse == null 分支）。
+    (wire['links'] as List<Object?>).add(<String, Object?>{
+      'from': <String, Object?>{'kind': 'book', 'key': 'vol1'},
+      'relation': 'future_relation',
+      'to': <String, Object?>{'kind': 'book', 'key': 'fd'},
+      'createdAt': 1,
+      'updatedAt': 1,
+    });
+    final int changed = await applyMediaLinkManifest(
+      client,
+      MediaLinkManifest.fromJson(wire),
+    );
+    expect(changed, 2);
+    expect(
+      <String>{
+        for (final MediaLinkRow r in await client.allMediaLinks())
+          '${r.fromKey}-${r.relation}-${r.toKey}',
+      },
+      <String>{'vol1-sequel-sequel', 'sequel-side_story-fd'},
+    );
+  });
+
   test('未知种类的条目应用时跳过', () async {
     final FushiDatabase db = memDb();
     final int changed = await applyMediaLinkManifest(
