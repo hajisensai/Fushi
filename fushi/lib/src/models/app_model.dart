@@ -1954,17 +1954,6 @@ class AppModel
           await runOnlineMangaUpdateProbe(
             database: database,
             serviceFor: onlineMangaLibraryService,
-            // 订阅且开了「新章自动下载」的条目：新章直接入队（设计稿 §5），
-            // `auto_ocr` 取作品页 chip 的持久值。
-            autoDownload:
-                (
-                  OnlineMangaLibraryEntry entry,
-                  List<OnlineMangaChapter> chapters,
-                ) => mangaDownloadService.enqueueChapters(
-                  entry: entry,
-                  chapters: chapters,
-                  autoOcr: mangaDownloadAutoOcr,
-                ),
           );
         },
         UpdateFeedKind.mangaExtension: () => _runMihonExtensionProbe(
@@ -7819,6 +7808,7 @@ class AppModel
           rootDirectory: manager.rootDirectory,
           adapter: MihonLibraryAdapter(manager),
           updateFeed: updateFeedService,
+          autoDownload: _enqueueSubscribedMangaChapters,
         );
       case OnlineMangaRuntimeKind.aidoku:
         return OnlineMangaLibraryService(
@@ -7826,6 +7816,7 @@ class AppModel
           rootDirectory: aidokuLibraryRoot,
           adapter: const LegacyAidokuLibraryAdapter(),
           updateFeed: updateFeedService,
+          autoDownload: _enqueueSubscribedMangaChapters,
         );
       // 互联对端同样不碰 [mihonManager]：它五端都可用，而 mihonManager 在
       // 没有 Mihon 宿主的平台（iOS）上直接抛 UnsupportedError。
@@ -7834,6 +7825,7 @@ class AppModel
           database: database,
           rootDirectory: interconnectMangaLibraryRoot,
           adapter: const InterconnectLibraryAdapter(),
+          autoDownload: _enqueueSubscribedMangaChapters,
         );
       // 网页漫画同样不碰 [mihonManager]（不依赖任何扩展运行时）；iOS 上由
       // 适配器的合规门回报不可用。
@@ -7844,6 +7836,7 @@ class AppModel
           adapter: WebComicLibraryAdapter(
             adFilterEnabled: () => prefsRepo.webComicAdFilter,
           ),
+          autoDownload: _enqueueSubscribedMangaChapters,
         );
       // Kavita 同样五端可用，不碰 [mihonManager]；服务器配置每次现读偏好。
       case OnlineMangaRuntimeKind.kavita:
@@ -7852,9 +7845,22 @@ class AppModel
           rootDirectory: kavitaMangaLibraryRoot,
           adapter: KavitaLibraryAdapter(servers: () => prefsRepo.kavitaServers),
           updateFeed: updateFeedService,
+          autoDownload: _enqueueSubscribedMangaChapters,
         );
     }
   }
+
+  /// 订阅自动下载的生产入队口（[OnlineMangaLibraryService.autoDownload]）：
+  /// 五个运行时的书架服务共用，不管新章是后台探针还是作品页刷出来的都走这里。
+  /// `auto_ocr` 取作品页 chip 的持久值。
+  Future<void> _enqueueSubscribedMangaChapters(
+    OnlineMangaLibraryEntry entry,
+    List<OnlineMangaChapter> chapters,
+  ) => mangaDownloadService.enqueueChapters(
+    entry: entry,
+    chapters: chapters,
+    autoOcr: mangaDownloadAutoOcr,
+  );
 
   /// 网页漫画书架条目的旧落盘根（只为 [OnlineMangaLibraryService] 的构造参数；
   /// 新条目一律住 `fushi_books`，这里从不写东西）。目录名是持久化名，冻结。
