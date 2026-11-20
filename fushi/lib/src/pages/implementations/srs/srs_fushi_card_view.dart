@@ -1430,8 +1430,10 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
         // 主词典通栏 + 其他词典分列，展开规则跟查词设置（srs_card_defs_layout.dart）。
         '${ref.watch(srsDefsLayoutCssProvider)}'
         // 卡面外观：释义显示前几本词典、释义对齐 / 首行缩进（只改显示，字段不动）。
-        '${srsDefsAppearanceCss(ref.watch(srsCardAppearanceProvider))}',
-    hostScript: kSrsDefsLayoutScript,
+        '${srsDefsAppearanceCss(ref.watch(srsCardAppearanceProvider))}'
+        // 词典插图：对齐查词弹窗的最小宽度，并随「卡面图片大小」放大（外字 / 小图标不动）。
+        '${srsDefsIllustrationCss(ref.watch(srsReviewImageSizeProvider), maxHeight: wide ? '${kSrsReviewLargeImageMaxVh}vh' : '${(_viewport * kSrsReviewLargeImageMaxVh / 100).round()}px')}',
+    hostScript: kSrsDefsIllustrationScript + kSrsDefsLayoutScript,
     onWheel: wide ? null : _onDefsWheel,
     // 释义区不在自动播放清单里（[SrsFushiCardPlan] 只收原生区画出来的媒体）：词典 HTML 里
     // 收起 / 隐藏的 `<audio autoplay>` 不许自己出声，自动播放只走宿主序列（HrB0STYm3E）。
