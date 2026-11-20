@@ -795,6 +795,15 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       canPop: !sectionVisible || (!_hasActiveQuery && !_popup.hasVisiblePopup),
       onPopInvokedWithResult: (didPop, _) {
         if (didPop || !sectionVisible) return;
+        // BUG-4930（反馈 r3wf1i68Qn）：软键盘弹着、搜索框持焦时，返回的语义是
+        // 「收起键盘」（Android 惯例），只收键盘、保留查询与结果。输入第一个字后
+        // canPop 翻成 false，Flutter 才向系统登记 OnBackInvokedCallback——比键盘
+        // 弹起时 IME 登记的回调晚、同优先级后登记者先收，于是导航栏的收键盘 ﹀
+        // 被分发给本页，此前直接落进下面的 _clearSearch 把输入清掉。
+        if (_softKeyboardVisible && _searchFocusNode.hasFocus) {
+          _hideSoftKeyboard();
+          return;
+        }
         if (_popup.hasVisiblePopup) {
           _popNestedPopupAt(_popup.lastVisibleIndex);
         } else if (_hasActiveQuery) {
