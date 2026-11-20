@@ -12662,6 +12662,7 @@
   "video_scrape_diagnostic_share_subject": "Diagnostica scrape video Fushi",
   "video_scrape_episodes": "Episodi",
   "video_scrape_info": "Info serie",
+  "video_scrape_maintenance_active": "Video metadata is being cleaned up. Try again once it finishes.",
   "video_scrape_pending_ai_declined": "AI was not confident enough",
   "video_scrape_pending_ai_failed": "AI request failed",
   "video_scrape_pending_ai_unassigned": "No AI provider assigned to video identification",

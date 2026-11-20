@@ -165,6 +165,7 @@ import 'package:fushi/src/pages/implementations/web_hub_page.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/src/pages/implementations/home_module_swipe.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_error_text.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
@@ -3927,17 +3928,35 @@ class _HomePageState extends BasePageState<HomePage>
     Future<SourceScrapeReport> task,
   ) => _videoScrapeRuntime.observe(task);
 
+  /// 用户手动发起的刮削被刮削门挡回（资料正在清理）时补一条提示：任务根本没开始，
+  /// 任务面板里不会出现它，只发「已在后台开始」等于什么都没说。其余失败照旧只进
+  /// 错误日志（[_observeVideoSourceScrape]）、在任务面板里看。
+  void _reportVideoScrapeRejected(Future<SourceScrapeReport> task) {
+    unawaited(
+      task.then<void>(
+        (SourceScrapeReport _) {},
+        onError: (Object error) {
+          final String? text = videoScrapeMaintenanceText(error);
+          if (text == null) return;
+          FushiToast.show(msg: text, severity: ToastSeverity.warning);
+        },
+      ),
+    );
+  }
+
   Future<void> _scrapeVideoSource(SourceLibraryRow source) async {
     final ({bool proceed, bool grant}) overwrite =
         await _confirmProtectedSidecarOverwrite(<SourceLibraryRow>[source]);
     if (!mounted || !overwrite.proceed) return;
     final VideoSourceScrapeTaskController controller =
         _videoSourceScrapeController;
-    _observeVideoSourceScrape(
-      controller.scrapeSource(
-        source,
-        interactive: true,
-        allowProtectedOverwrite: overwrite.grant,
+    _reportVideoScrapeRejected(
+      _observeVideoSourceScrape(
+        controller.scrapeSource(
+          source,
+          interactive: true,
+          allowProtectedOverwrite: overwrite.grant,
+        ),
       ),
     );
     if (!mounted) return;
@@ -3963,11 +3982,13 @@ class _HomePageState extends BasePageState<HomePage>
     if (!mounted || !overwrite.proceed) return;
     final VideoSourceScrapeTaskController controller =
         _videoSourceScrapeController;
-    _observeVideoSourceScrape(
-      controller.scrapeAllSources(
-        localSources,
-        interactive: true,
-        allowProtectedOverwrite: overwrite.grant,
+    _reportVideoScrapeRejected(
+      _observeVideoSourceScrape(
+        controller.scrapeAllSources(
+          localSources,
+          interactive: true,
+          allowProtectedOverwrite: overwrite.grant,
+        ),
       ),
     );
     if (!mounted) return;

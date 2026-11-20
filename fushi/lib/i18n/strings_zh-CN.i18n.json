@@ -12662,6 +12662,7 @@
   "video_scrape_diagnostic_share_subject": "Fushi 视频刮削诊断",
   "video_scrape_episodes": "话数",
   "video_scrape_info": "条目信息",
+  "video_scrape_maintenance_active": "视频刮削资料正在清理，清理完成后再试",
   "video_scrape_pending_ai_declined": "AI 判断不够确定",
   "video_scrape_pending_ai_failed": "AI 调用失败",
   "video_scrape_pending_ai_unassigned": "没有给视频作品识别指派 AI 提供商",
