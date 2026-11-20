@@ -73,6 +73,7 @@ import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
         DialogActionGroup,
         DialogDangerAction,
         DialogListAction,
+        ItemMenuSlot,
         MediaItemDialogFrame,
         showMediaItemActions;
 import 'package:fushi/src/pages/implementations/collection_relations_section.dart';
@@ -2984,11 +2985,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               title: _episodeDisplayTitle(episode),
               showLaunchAction: false,
               listActions: <DialogListAction>[
+                // 互联下载的发起 / 暂停 / 继续 / 取消显式进主操作行：不写 slot 时内容组
+                // 一律被推断进「更多 ›」二级菜单（#4b 骨架），BUG-3698 要的「就地能停」
+                // 就又藏起来了。同一时刻最多两项（暂停或继续 + 取消），不超主操作上限。
                 if (canDownloadToDevice)
                   DialogListAction(
                     label: t.remote_video_download,
                     icon: FushiIcons.cloudDownload,
                     group: DialogActionGroup.content,
+                    slot: ItemMenuSlot.primary,
                     onPressed: () => pick(_EpisodeMenuAction.downloadToDevice),
                   ),
                 if (taskId != null && downloads!.canPause(taskId))
@@ -2996,6 +3001,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                     label: t.download_task_pause,
                     icon: FushiIcons.pause,
                     group: DialogActionGroup.content,
+                    slot: ItemMenuSlot.primary,
                     onPressed: () => pick(_EpisodeMenuAction.pauseDownload),
                   ),
                 if (taskId != null && downloads!.canRestart(taskId))
@@ -3003,6 +3009,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                     label: t.download_task_resume,
                     icon: FushiIcons.play,
                     group: DialogActionGroup.content,
+                    slot: ItemMenuSlot.primary,
                     onPressed: () => pick(_EpisodeMenuAction.resumeDownload),
                   ),
                 if (taskId != null && downloads!.canCancel(taskId))
@@ -3010,6 +3017,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                     label: t.interconnect_download_cancel,
                     icon: FushiIcons.close,
                     group: DialogActionGroup.content,
+                    slot: ItemMenuSlot.primary,
                     onPressed: () => pick(_EpisodeMenuAction.cancelDownload),
                   ),
                 if (_downloadsAvailable && !hasLocalFiles)
