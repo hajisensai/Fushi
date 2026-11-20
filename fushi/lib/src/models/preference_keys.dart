@@ -73,6 +73,11 @@ const String kMusicScanParserRevisionPrefKeyPrefix =
 /// 与页签顺序同族：设备本地，不进 Profile 快照（ProfileKeys._excludedPrefPrefixes）。
 const String kLibraryManualOrderPrefKeyPrefix = 'library_manual_order::';
 
+/// 「记住每部作品的方向」（拍板台 P9AS-fvjJh）：后缀 = 视频 bookUid，值是这部作品上次
+/// 手动转到的方向（`landscape` / `portrait`，见 `VideoOrientationLock.storageValue`）。
+/// 只在 `video_remember_orientation` 开着时读写。
+const String kVideoOrientationPrefKeyPrefix = 'video_orientation::';
+
 /// 「联网搜索抓前几页网页交给 AI」的一次性确认（String：`''` 没问过 /
 /// [kAiWebSearchPageFetchAllow] / [kAiWebSearchPageFetchDeny]）。跟着 `ai_web_search`
 /// 设备本地：同意的是这台设备上配的那个后端。
@@ -1043,6 +1048,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 默认 false（旧行为：整颗种子全下）。非凭据、跨设备。
   'video_download_skip_extras',
   'video_download_target_source_id',
+  // String（VideoEntryOrientation.storageValue，拍板台 P9AS-fvjJh）：手机 / 平板
+  // 进入视频时的方向——`landscape` 横屏（默认）/ `video_aspect` 按视频比例 /
+  // `sensor` 跟随手机旋转。桌面不读。
+  'video_entry_orientation',
   'video_fit_mode',
   // String（VideoImmersiveControlLayout JSON，空串 = 没改过、按普通布局派生）：
   // 沉浸锁定后屏幕左右侧栏的按钮排列。
@@ -1091,7 +1100,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（[VideoPauseOcrScope] 的 wireName）：暂停时识别画面文字（OCR 点字查词）
   // 的范围——`all` 所有视频（默认）/ `graphic_subtitles` 只在图形字幕时 / `off`。
   'video_pause_ocr_scope',
+  // bool（默认 true，拍板台 P9AS-fvjJh）：手机竖屏看横版视频时用「视频在上、当前句 +
+  // 字幕列表在下」的学习版式；关掉 = 竖屏也是画面铺满、字幕压在画面上。
+  'video_portrait_subtitle_list',
   // 手机字幕遥控器控制卡按钮布局 JSON（VideoRemoteControlLayout，v1 槽位表）。
+  'video_remember_orientation',
   'video_remote_control_layout',
   'video_remote_subtitle',
   // JSON map `{remoteSubtitleKey: [绝对路径...]}`：远端视频按集记下的本机字幕档
@@ -1293,6 +1306,9 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   // 音频缓存键，TtsResumePoint）。
   'tts_resume_',
   'video_danmaku_episode/',
+  // String：`video_orientation::<bookUid>`——「记住每部作品的方向」开着时，这部作品
+  // 上次手动转到的方向（`landscape` / `portrait`，拍板台 P9AS-fvjJh）。
+  kVideoOrientationPrefKeyPrefix,
   // 视频远端断点/播放偏好三件套族（PositionPrefKeys，fushi_library_host_service.dart）：
   // `<前缀><bookUid>` 值键 + `<前缀>at_<bookUid>` 时间戳键，逐字段 LWW 跨设备同步
   //（播放偏好同步泛化批：调轴/音轨/副字幕源/副字幕调轴；看完标记 = 手动标记已看 /

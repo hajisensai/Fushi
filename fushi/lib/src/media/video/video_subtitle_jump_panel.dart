@@ -554,7 +554,7 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
     required this.onCopyCue,
     required this.onFavoriteCue,
     required this.isCueFavorited,
-    required this.onClose,
+    this.onClose,
     this.onEditCue,
     this.onRestoreCue,
     this.onLookupCue,
@@ -617,7 +617,10 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
   final bool Function(AudioCue cue) onCopyCue;
   final Future<void> Function(AudioCue cue) onFavoriteCue;
   final bool Function(AudioCue cue) isCueFavorited;
-  final VoidCallback onClose;
+
+  /// 头部 × 关闭。null = 不出关闭按钮（视频页竖屏学习版式里列表常驻在下半屏，
+  /// 没有「关掉列表」这回事，拍板台 P9AS-fvjJh）。
+  final VoidCallback? onClose;
 
   /// 行菜单「编辑字幕」（反馈 gleDreKAvo / dpAsMkUjKT）：改这一句的文本。null = 不提供
   /// 编辑（菜单不出这一项）。触屏长按行、桌面右键行弹出行菜单。
@@ -2040,21 +2043,22 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                       ),
                   ],
                   <Widget>[
-                    // TODO-637：字幕列表是「带 × 的非阻塞侧栏」——头部带回右上角 × 关闭
-                    // 按钮（BUG-254 当初移除 ×、改点画面 barrier 关闭，但该 barrier 罩在画面
-                    // 字幕查词手势上致画面查不了词，TODO-636）。× 调 onClose（页面层清挖词
-                    // 选择 + 隐藏列表），与 Esc / 控制条字幕按钮三路关闭等价。锁定按钮（原
-                    // TODO-611，唯一作用是门控已删的 barrier）随 barrier 一并移除（TODO-634）。
-                    FushiIconButtonControl(
-                      tooltip: MaterialLocalizations.of(
-                        context,
-                      ).closeButtonTooltip,
-                      icon: FushiIcon(FushiIcons.close, size: iconSize),
-                      color: cs.onSurfaceVariant,
-                      onPressed: widget.onClose,
-                      visualDensity: VisualDensity.compact,
-                      style: _kHeaderIconButtonStyle,
-                    ),
+                    if (widget.onClose != null)
+                      // TODO-637：字幕列表是「带 × 的非阻塞侧栏」——头部带回右上角 × 关闭
+                      // 按钮（BUG-254 当初移除 ×、改点画面 barrier 关闭，但该 barrier 罩在画面
+                      // 字幕查词手势上致画面查不了词，TODO-636）。× 调 onClose（页面层清挖词
+                      // 选择 + 隐藏列表），与 Esc / 控制条字幕按钮三路关闭等价。锁定按钮（原
+                      // TODO-611，唯一作用是门控已删的 barrier）随 barrier 一并移除（TODO-634）。
+                      FushiIconButtonControl(
+                        tooltip: MaterialLocalizations.of(
+                          context,
+                        ).closeButtonTooltip,
+                        icon: FushiIcon(FushiIcons.close, size: iconSize),
+                        color: cs.onSurfaceVariant,
+                        onPressed: widget.onClose,
+                        visualDensity: VisualDensity.compact,
+                        style: _kHeaderIconButtonStyle,
+                      ),
                   ],
                 ],
               ),
@@ -2795,25 +2799,27 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                   ),
                 ),
               ),
-              const SizedBox(width: 4),
-              FushiTooltip(
-                message: MaterialLocalizations.of(context).closeButtonTooltip,
-                child: FushiIconButtonControl(
-                  onPressed: widget.onClose,
-                  // 与同一行工具按钮同尺寸（36）。
-                  style: IconButton.styleFrom(
-                    fixedSize: const Size.square(36),
-                    minimumSize: const Size.square(36),
-                    padding: EdgeInsets.zero,
-                    tapTargetSize: MaterialTapTargetSize.padded,
-                    backgroundColor: FushiDesignTokens.of(
-                      context,
-                    ).surfaces.search,
+              if (widget.onClose != null) ...<Widget>[
+                const SizedBox(width: 4),
+                FushiTooltip(
+                  message: MaterialLocalizations.of(context).closeButtonTooltip,
+                  child: FushiIconButtonControl(
+                    onPressed: widget.onClose,
+                    // 与同一行工具按钮同尺寸（36）。
+                    style: IconButton.styleFrom(
+                      fixedSize: const Size.square(36),
+                      minimumSize: const Size.square(36),
+                      padding: EdgeInsets.zero,
+                      tapTargetSize: MaterialTapTargetSize.padded,
+                      backgroundColor: FushiDesignTokens.of(
+                        context,
+                      ).surfaces.search,
+                    ),
+                    color: cs.onSurface,
+                    icon: const FushiIcon(FushiIcons.close, size: 20),
                   ),
-                  color: cs.onSurface,
-                  icon: const FushiIcon(FushiIcons.close, size: 20),
                 ),
-              ),
+              ],
             ],
           ),
           const SizedBox(height: 8),

@@ -7154,6 +7154,31 @@ class AppModel
   Future<void> setVideoLockWindowAspectRatio(bool value) =>
       prefsRepo.setVideoLockWindowAspectRatio(value);
 
+  /// 手机 / 平板进入视频时的方向（拍板台 P9AS-fvjJh，`VideoEntryOrientation` 落库值）。
+  String get videoEntryOrientation => prefsRepo.videoEntryOrientation;
+
+  Future<void> setVideoEntryOrientation(String value) =>
+      prefsRepo.setVideoEntryOrientation(value);
+
+  /// 手机竖屏看横版视频时用学习版式（视频在上、当前句 + 字幕列表在下），默认开。
+  bool get videoPortraitSubtitleList => prefsRepo.videoPortraitSubtitleList;
+
+  Future<void> setVideoPortraitSubtitleList(bool value) =>
+      prefsRepo.setVideoPortraitSubtitleList(value);
+
+  /// 记住每部作品上次手动转到的方向，默认关。
+  bool get videoRememberOrientation => prefsRepo.videoRememberOrientation;
+
+  Future<void> setVideoRememberOrientation(bool value) =>
+      prefsRepo.setVideoRememberOrientation(value);
+
+  /// 某部作品记住的方向（`landscape` / `portrait`，空串 = 没记过）。
+  String videoOrientationForWork(String bookUid) =>
+      prefsRepo.videoOrientationForWork(bookUid);
+
+  Future<void> setVideoOrientationForWork(String bookUid, String value) =>
+      prefsRepo.setVideoOrientationForWork(bookUid, value);
+
   /// YouTube 显式画质目标高度（0=自动；非 0 起播即选 ≤目标 的最高档，可达 1440p/4K）。
   int get youtubeQualityTargetHeight => prefsRepo.youtubeQualityTargetHeight;
 

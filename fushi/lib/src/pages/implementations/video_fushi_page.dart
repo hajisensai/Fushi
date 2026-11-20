@@ -393,6 +393,8 @@ import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart'
     show WindowFullscreenHost, WindowFullscreenHostPageRoute;
 import 'package:fushi/src/shortcuts/shortcut_action.dart'
     show ShortcutAction, ShortcutScope;
+import 'package:fushi/src/shortcuts/shortcut_labels.dart'
+    show ShortcutActionLabel;
 import 'package:fushi/src/media/video/video_foreground_layers.dart'
     show VideoForegroundLayer, topVideoForegroundLayer;
 import 'package:fushi/src/media/video/video_shader_manager.dart';
@@ -417,6 +419,8 @@ import 'package:fushi_engine/media/video/video_clip_subtitle.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle_burn.dart';
 import 'package:fushi/src/media/video/video_clip_subtitle_image.dart';
 import 'package:fushi/src/media/video/video_episode_panel.dart';
+import 'package:fushi/src/media/video/video_orientation_policy.dart';
+import 'package:fushi/src/media/video/video_portrait_layout.dart';
 import 'package:fushi/src/media/video/video_fullscreen_back_scope.dart';
 import 'package:fushi/src/media/video/video_side_panel.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
@@ -527,6 +531,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show einkSafeDuration, isEinkTheme;
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show
         FushiFloatingTopBar,
@@ -603,6 +608,7 @@ part 'video_fushi/subtitle_text_edit.part.dart';
 part 'video_fushi/companion.part.dart';
 part 'video_fushi/controller_lookup.part.dart';
 part 'video_fushi/study_stats.part.dart';
+part 'video_fushi/portrait.part.dart';
 
 /// 一次「当前主字幕是不是对齐产物」检查：起跑时的代次 + 结果（见
 /// `_startPrimarySubtitleAlignmentCheck`）。
@@ -2624,6 +2630,35 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 本视频「看完再制卡」列表里还没写入 Anki 的卡数（待写入 + 写入失败）。
   final ValueNotifier<int> _stagedMineCount = ValueNotifier<int>(0);
 
+  // ── 竖屏播放（拍板台 P9AS-fvjJh；方法见 portrait.part.dart）──
+
+  /// 本次会话的显式方向（控件栏转屏按钮按过之后）；null = 跟「记住的作品方向」/ 设置。
+  VideoOrientationLock? _orientationOverride;
+
+  /// 当前视频宽高比（尺寸出来前 null）：竖版视频判据与「按视频比例」进入方向用。
+  double? _videoAspectRatio;
+
+  /// 竖屏学习版式下半屏当前页签。
+  final ValueNotifier<VideoPortraitTab> _portraitTab =
+      ValueNotifier<VideoPortraitTab>(VideoPortraitTab.subtitles);
+
+  /// 「竖屏时显示字幕列表」上次看到的值：偏好仓库每次通知都比一下，真变了才重建。
+  bool _portraitSubtitleListPref = true;
+
+  /// 竖屏查词卡是否拉满到视频下沿（否则半屏）。
+  bool _portraitLookupExpanded = false;
+
+  /// 竖屏查词卡拖动条拖动中的实时高度；null = 没在拖。
+  double? _portraitLookupDragHeight;
+
+  /// 竖屏学习版式视频条下沿到屏顶的距离（版式 build 时记下；普通布局为 0）。查词卡
+  /// 停靠几何在根 Overlay 的 layout 回调里读它，不在那里借本页 context 重算。
+  double _portraitVideoBottom = 0;
+
+  /// 视频画面（media_kit [Video] 连同 controls）在横屏布局与竖屏学习版式之间搬家时
+  /// 保留同一个 element，转屏不重建播放器 chrome 的状态。
+  final GlobalKey _videoSurfaceKey = GlobalKey(debugLabel: 'video-surface');
+
   /// 在途的后台制卡任务。离开页面时先等它们暂存完，再统一写入。
   final List<Future<void>> _backgroundMineJobs = <Future<void>>[];
 
@@ -4213,6 +4248,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-611：侧栏面板锁定不持久化。面板一关闭就把锁复位为 false，下次重开默认未锁
     // ——锁生命周期绑定可见性，关闭路径无需逐个复位。
     WidgetsBinding.instance.addObserver(this);
+    // 拍板台 P9AS-fvjJh：播放中在快捷设置里开关「竖屏时显示字幕列表」立即换版式。
+    _portraitSubtitleListPref = appModel.videoPortraitSubtitleList;
+    appModel.prefsRepo.addListener(_onPortraitPrefsChanged);
     _exitFlushCallback = ExitFlushRegistry.instance.register(
       _flushAllForProcessExit,
     );
@@ -4225,8 +4263,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 横屏锁被放宽成含竖屏（旋转锁定下当即翻竖屏 = 掉出全屏）、刚注册的系统栏回调被
     // 置空。见 [VideoDisplayClaim] 与 [_releaseVideoDisplayClaim]。
     VideoDisplayClaim.claim(this);
-    // TODO-099: 进入视频页强制横屏（移动端），退出 [dispose] 还原；桌面 no-op。
-    unawaited(_lockLandscapeForVideo());
+    // TODO-099 → 拍板台 P9AS-fvjJh：进入视频页按方向策略锁方向（默认横屏；设置可改
+    // 按视频比例 / 跟随旋转），退出 [dispose] 还原；桌面 no-op。
+    unawaited(_applyVideoOrientationLock());
     // BUG-973 的「进页隐藏 / 退页恢复 macOS 交通灯」已删除：macOS 改用自绘 MD3 顶栏
     // 后，`main()` 启动时就把三个圆点永久隐藏了（`windowButtonVisibility: false`），
     // 视频页再隐藏一次是重复，退页恢复更会把它们放回来（正是 BUG-973 的症状）。
@@ -6988,6 +7027,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 不碰 BUG-184 的 inset 几何（导航栏真可见时进度条仍正确避让）。桌面 no-op。
     unawaited(_applyVideoImmersiveMode());
     _syncWindowAspectRatioLock();
+    // 拍板台 P9AS-fvjJh：视频就绪时作品 uid 与画面尺寸都有了——记住的作品方向、
+    // 「按视频比例」进入方向在这里落定。
+    _syncVideoAspectRatio(controller);
+    unawaited(_applyVideoOrientationLock());
 
     // 视频就绪后预热查词浮层（BUG-094）：seed 一个常驻隐藏热 WebView，全程复用，
     // 查词不再每次冷加载白屏。放成功分支（缺书/错误态不预热，无视频无需查词）。
@@ -7782,6 +7825,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       FushiDesktopTitleBar.setContentFullscreen(owner: this, enabled: false);
     }
     WidgetsBinding.instance.removeObserver(this);
+    appModel.prefsRepo.removeListener(_onPortraitPrefsChanged);
     // BUG-2105：进程级显示态（系统栏回调 / 横屏锁 / macOS 交通灯）统一在
     // [_releaseVideoDisplayClaim] 里按所有者记账还原——本页不是最后一个持有者
     // （换集期间新页已认领）就不得还原，否则会把新页刚设好的显示态掰掉。
@@ -7908,6 +7952,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _manualFrameOcrRequests.dispose();
     _minesInFlight.dispose();
     _stagedMineCount.dispose();
+    _portraitTab.dispose();
     _longPressSpeedBadge.dispose();
     _subtitleStyleNotifier.dispose();
     _autoAdvanceCountdownTimer?.cancel();
@@ -9095,6 +9140,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                   for (int i = 0; i < _popup.entries.length; i++)
                     _buildNestedPopupLayer(i, screen),
                   ...buildParkedRealmLayers(screen: screen, controller: _popup),
+                  // 竖屏查词卡的拖动条（拍板台 P9AS-fvjJh）：卡片是原生 WebView，
+                  // 拖动条是卡片上沿外的 Flutter 层。对话框期间随卡片一起撤。
+                  if (lookupHostForcesBottomDock &&
+                      _hasVisiblePopup &&
+                      !lookupPopupHiddenByDialog)
+                    _buildPortraitLookupDragHandle(
+                      screen,
+                      Theme.of(context).colorScheme,
+                    ),
                 ],
               );
             },
@@ -10825,6 +10879,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.frameForward:
         return _frameStepButton(controller, forward: true);
       case VideoControlItem.fullscreen:
+        // 移动端是转屏按钮（普通图标按钮，图标 / tooltip 随屏幕横竖变）。
+        if (isMobilePlatform) {
+          return _plainSlotButton(
+            item,
+            controller,
+            desktop: desktop,
+            slot: slot,
+          );
+        }
         return _buildFullscreenButton(desktop: desktop);
       case VideoControlItem.replayCue:
       case VideoControlItem.back:
@@ -11014,8 +11077,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // BUG-221：移动端不提供全屏（[_buildFullscreenButton] 同一判据）。在这道门上
       // 就排除，而不是画成零宽占位——零宽条目照样会被 [VideoControlBar] 当作可收起项
       // 收进「⋯」，菜单里冒出一行点了无效的「全屏」（BUG-2832 审查）。
+      // BUG-221：移动端不进全屏路由。拍板台 P9AS-fvjJh 起移动端这个槽位是「转竖屏 /
+      // 转横屏」按钮（[_toggleVideoScreenOrientation]，只改方向锁、不进全屏路由），
+      // 两端都渲染。
       case VideoControlItem.fullscreen:
-        return !isMobilePlatform;
+        return true;
       case VideoControlItem.back:
       case VideoControlItem.immersiveLock:
       case VideoControlItem.speed:
@@ -11298,6 +11364,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.replayCue:
         return Icons.replay_rounded;
       case VideoControlItem.fullscreen:
+        // 移动端是转屏按钮（拍板台 P9AS-fvjJh）：竖着时「转横屏」画全屏字形，横着时
+        // 「转竖屏」画竖屏手机字形。
+        if (isMobilePlatform) {
+          return _screenIsPortrait(context)
+              ? FushiIcons.fullscreen
+              : FushiIcons.portraitImage;
+        }
         return Icons.fullscreen;
       case VideoControlItem.screenshot:
         return Icons.photo_camera_outlined;
@@ -11387,6 +11460,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.replayCue:
         return t.shortcut_action_video_replay_current_subtitle;
       case VideoControlItem.fullscreen:
+        if (isMobilePlatform) {
+          return _screenIsPortrait(context)
+              ? t.video_control_rotate_landscape
+              : t.video_control_rotate_portrait;
+        }
         return t.video_control_fullscreen;
       case VideoControlItem.screenshot:
         return t.video_control_screenshot;
@@ -11528,6 +11606,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         unawaited(_replayCurrentCueAndKeepControls());
         break;
       case VideoControlItem.fullscreen:
+        // 移动端 = 转竖屏 / 转横屏（拍板台 P9AS-fvjJh），不进全屏路由（BUG-221）。
+        if (isMobilePlatform) {
+          _toggleVideoScreenOrientation();
+          break;
+        }
         // 控制条按钮属指针控制，沉浸锁定态走 full-controls 门控（非快捷键门控）。
         if (_immersiveAllowsFullControls) {
           final BuildContext? ctx = _videoControlsContext;
@@ -12284,16 +12367,40 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (mounted) setState(() {});
   }
 
-  /// TODO-099: 进入视频页时锁横屏（移动端）。只锁本页，不动全 app
-  /// 默认方向策略（保护竖排小说能竖屏）；退出由 [_restoreOrientationOnExit] 还原。
+  /// 视频页此刻该锁的方向集（拍板台 P9AS-fvjJh）：本次会话按过转屏按钮就用它，否则
+  /// 用「记住的作品方向」，再否则按「进入视频时的方向」设置（默认横屏）。判据在纯
+  /// Dart 的 [resolveVideoOrientationLock]。
+  VideoOrientationLock get _videoOrientationLock => resolveVideoOrientationLock(
+    entry: VideoEntryOrientation.fromStorage(appModel.videoEntryOrientation),
+    override: _orientationOverride ?? _rememberedOrientation,
+    videoAspectRatio: _videoAspectRatio,
+  );
+
+  /// TODO-099 → 拍板台 P9AS-fvjJh：按 [_videoOrientationLock] 锁本页方向（移动端）。
+  /// 只锁本页，不动全 app 默认方向策略（保护竖排小说能竖屏）；退出由
+  /// [_restoreOrientationOnExit] 还原。方向集**只**来自 [videoDeviceOrientationsFor]：
+  /// 永不空列表（BUG-221 病根）、永不倒置。已释放显示态的页不再改方向（BUG-2105）。
   /// 桌面门控 no-op（桌面窗口不走设备方向）。
-  Future<void> _lockLandscapeForVideo() async {
+  Future<void> _applyVideoOrientationLock() async {
     if (!isMobilePlatform) return;
-    await SystemChrome.setPreferredOrientations(<DeviceOrientation>[
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
+    if (!VideoDisplayClaim.owns(this)) return;
+    await SystemChrome.setPreferredOrientations(
+      videoDeviceOrientationsFor(_videoOrientationLock),
+    );
   }
+
+  // 竖屏查词卡（拍板台 P9AS-fvjJh 设计图 C）：竖屏时查词卡从底部升起，收起半屏、
+  // 拉满到视频下沿，几何由 portrait.part.dart 给。
+  @override
+  bool get lookupHostForcesBottomDock => _portraitLookupDock;
+
+  @override
+  double lookupHostDockedHeight(Size screen) =>
+      _portraitLookupSheetHeight(screen);
+
+  @override
+  double lookupHostDockTopReserve(Size screen) =>
+      _portraitLookupTopReserve(screen);
 
   /// TODO-158/BUG-219: 视频页持有「沉浸隐藏系统栏」所有权（移动端）。在 [initState]
   /// 显式设、在 [didChangeAppLifecycleState] 的 `resumed` 重申，让系统栏在视频期间

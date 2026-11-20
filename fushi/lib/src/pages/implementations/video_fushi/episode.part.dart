@@ -278,6 +278,8 @@ extension _VideoEpisode on _VideoFushiPageState {
   /// （[_subtitleListVisible]）与任何打开的浮层（[_videoSidePanel]），避免多个
   /// 浏览/设置表面同时争抢视频空间。打开时唤醒控制条让用户看到入口。
   void _toggleEpisodeList() {
+    // 竖屏学习版式：选集是下半屏的一个页签，不在画面上开横轨（拍板台 P9AS-fvjJh）。
+    if (_routeToPortraitPane(VideoPortraitTab.episodes)) return;
     final bool next = !_episodeListVisible.value;
     if (next) {
       _clearRailHover();

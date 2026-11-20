@@ -26,7 +26,7 @@ part of '../video_fushi_page.dart';
 /// ([_enterVideoNativeFullscreen] / [_exitVideoNativeFullscreen]).
 ///
 /// The orientation lifecycle helpers that bracket the native callbacks
-/// ([_lockLandscapeForVideo] / [_applyVideoImmersiveMode] /
+/// ([_applyVideoOrientationLock] / [_applyVideoImmersiveMode] /
 /// [_restoreOrientationOnExit]) intentionally stay in the main shell — they are
 /// page enter/exit orientation ownership, not fullscreen toggling. The dangling
 /// doc comment that was orphaned above `_toggleVideoFullscreen` (it describes the
@@ -457,7 +457,7 @@ extension _VideoFullscreen on _VideoFushiPageState {
   }
 
   Widget _buildFullscreenButton({required bool desktop}) {
-    // BUG-221: 移动端不提供全屏按钮。移动端视频全程横屏沉浸（[_lockLandscapeForVideo] +
+    // BUG-221: 移动端不提供全屏按钮。移动端视频沉浸（[_applyVideoOrientationLock] +
     // [_applyVideoImmersiveMode]），画面已占满，「全屏」无额外语义；进 media_kit 全屏路由
     // 反而引入「退全屏弹回竖屏 + 两段式返回」（全屏路由吞第一次返回）。移动端永不进全屏，
     // 故隐藏入口（与双击不再全屏、[_toggleVideoFullscreen] 移动端 no-op 一致）。
@@ -479,9 +479,10 @@ extension _VideoFullscreen on _VideoFushiPageState {
   /// [defaultEnterNativeFullscreen]。窗口侧与自建全屏路由的 [Video] 都传这个，
   /// 经由 media_kit 的 `state.widget.onEnterFullscreen` 链路生效。
   ///
-  /// 移动端：语义与 [_lockLandscapeForVideo] + [_applyVideoImmersiveMode] 一致——
-  /// 只允许两个横屏 + 沉浸隐栏，**永不 `setPreferredOrientations([])`**（病根是
-  /// media_kit 默认退全屏时放开全部方向把设备弹回竖屏）。
+  /// 移动端：语义与 [_applyVideoOrientationLock] + [_applyVideoImmersiveMode] 一致——
+  /// 方向集取当前方向策略（[videoDeviceOrientationsFor]）+ 沉浸隐栏，**永不
+  /// `setPreferredOrientations([])`**（病根是 media_kit 默认退全屏时放开全部方向把设备
+  /// 弹回竖屏）。
   ///
   /// 桌面：**保留** media_kit 默认 [defaultEnterNativeFullscreen]，它经 MethodChannel
   /// `Utils.EnterNativeFullscreen` 把 OS 窗口切真原生全屏（覆盖任务栏）。桌面分支不碰
@@ -521,18 +522,18 @@ extension _VideoFullscreen on _VideoFushiPageState {
     if (!VideoDisplayClaim.owns(this)) return;
     await _applyVideoImmersiveMode();
     if (!VideoDisplayClaim.owns(this)) return;
-    await SystemChrome.setPreferredOrientations(<DeviceOrientation>[
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
+    // 方向集与进页同一出口（拍板台 P9AS-fvjJh 起不再写死横屏，但仍永不空列表）。
+    await SystemChrome.setPreferredOrientations(
+      videoDeviceOrientationsFor(_videoOrientationLock),
+    );
   }
 
   /// BUG-221: media_kit 全屏「退出」回调，**替换** media_kit 默认
   /// [defaultExitNativeFullscreen]。
   ///
   /// 移动端：media_kit 默认退全屏时调 `setPreferredOrientations([])` 放开全部方向
-  /// （含竖屏/倒置），让设备转回竖屏 = 用户感知的「竖屏模式」。本回调退全屏时**仍只允许
-  /// 两个横屏**（视频页全程横屏，方向唯一拥有者），系统栏保持沉浸隐藏（与窗口态一致，
+  /// （含竖屏/倒置），让设备转回竖屏。本回调退全屏时**仍按当前方向策略锁**（视频页是方向
+  /// 唯一拥有者，[videoDeviceOrientationsFor]），系统栏保持沉浸隐藏（与窗口态一致，
   /// 不在退全屏瞬间闪回系统栏）。真正放开方向交给退页时的 [_restoreOrientationOnExit]。
   ///
   /// 桌面：**保留** media_kit 默认 [defaultExitNativeFullscreen]（MethodChannel
@@ -566,9 +567,9 @@ extension _VideoFullscreen on _VideoFushiPageState {
     if (!VideoDisplayClaim.owns(this)) return;
     await _applyVideoImmersiveMode();
     if (!VideoDisplayClaim.owns(this)) return;
-    await SystemChrome.setPreferredOrientations(<DeviceOrientation>[
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
+    // 方向集与进页同一出口（拍板台 P9AS-fvjJh 起不再写死横屏，但仍永不空列表）。
+    await SystemChrome.setPreferredOrientations(
+      videoDeviceOrientationsFor(_videoOrientationLock),
+    );
   }
 }

@@ -566,56 +566,61 @@ void main() {
       'lib/src/pages/implementations/video_fushi_page.dart',
     );
 
-    test('initState locks landscape on entering the video page', () {
-      final RegExpMatch? body = RegExp(
-        r'void initState\(\) \{(.*?)\n  \}',
-        dotAll: true,
-      ).firstMatch(page);
-      expect(body, isNotNull, reason: 'initState method body not found');
-      expect(
-        body!.group(1),
-        contains('_lockLandscapeForVideo()'),
-        reason: 'initState must lock landscape on entering the page',
-      );
-    });
+    test(
+      'initState locks the orientation policy on entering the video page',
+      () {
+        final RegExpMatch? body = RegExp(
+          r'void initState\(\) \{(.*?)\n  \}',
+          dotAll: true,
+        ).firstMatch(page);
+        expect(body, isNotNull, reason: 'initState method body not found');
+        expect(
+          body!.group(1),
+          contains('_applyVideoOrientationLock()'),
+          reason: 'initState must lock the orientation on entering the page',
+        );
+      },
+    );
 
-    test('the lock method is mobile-gated and locks only landscape', () {
-      final RegExpMatch? body = RegExp(
-        r'Future<void> _lockLandscapeForVideo\(\) async \{(.*?)\n  \}',
-        dotAll: true,
-      ).firstMatch(page);
-      expect(
-        body,
-        isNotNull,
-        reason: '_lockLandscapeForVideo method body not found',
-      );
-      final String b = body!.group(1)!;
-      expect(
-        b,
-        contains('if (!isMobilePlatform) return;'),
-        reason: 'must be mobile-gated (desktop no-op)',
-      );
-      expect(
-        b,
-        contains('setPreferredOrientations'),
-        reason: 'must lock via SystemChrome.setPreferredOrientations',
-      );
-      expect(
-        b,
-        contains('DeviceOrientation.landscapeLeft'),
-        reason: 'landscape lock must include landscapeLeft',
-      );
-      expect(
-        b,
-        contains('DeviceOrientation.landscapeRight'),
-        reason: 'landscape lock must include landscapeRight',
-      );
-      expect(
-        b.contains('DeviceOrientation.portraitUp'),
-        isFalse,
-        reason: 'landscape lock must not re-allow portrait',
-      );
-    });
+    // 拍板台 P9AS-fvjJh：方向不再写死横屏，改由纯 Dart 策略给方向集（默认横屏，
+    // 设置可改按视频比例 / 跟随旋转，转屏按钮随时切换）。病根（BUG-221）是空列表放开
+    // 全部方向，所以守卫钉的是「唯一出口 + 永不空列表 + 已释放显示态的页不再改方向」，
+    // 方向集本身由 video_orientation_policy_test.dart 单测。
+    test(
+      'the lock method is mobile-gated and uses the single orientation policy',
+      () {
+        final RegExpMatch? body = RegExp(
+          r'Future<void> _applyVideoOrientationLock\(\) async \{(.*?)\n  \}',
+          dotAll: true,
+        ).firstMatch(page);
+        expect(
+          body,
+          isNotNull,
+          reason: '_applyVideoOrientationLock method body not found',
+        );
+        final String b = body!.group(1)!;
+        expect(
+          b,
+          contains('if (!isMobilePlatform) return;'),
+          reason: 'must be mobile-gated (desktop no-op)',
+        );
+        expect(
+          b,
+          contains('if (!VideoDisplayClaim.owns(this)) return;'),
+          reason: 'a page that released display ownership must not relock',
+        );
+        expect(
+          b,
+          contains('videoDeviceOrientationsFor(_videoOrientationLock)'),
+          reason: 'orientation set must come from the single policy',
+        );
+        expect(
+          b.contains('<DeviceOrientation>[]'),
+          isFalse,
+          reason: 'never release all orientations (BUG-221)',
+        );
+      },
+    );
 
     test('initState claims display ownership before the three (BUG-2105)', () {
       final RegExpMatch? body = RegExp(
@@ -635,7 +640,7 @@ void main() {
       // macOS 交通灯已不在此列：改用自绘 MD3 顶栏后它们是启动即永久隐藏，
       // 视频页不再认领、也不再还原（见 macos_video_trafficlight_hide_guard_test）。
       for (final String action in <String>[
-        '_lockLandscapeForVideo()',
+        '_applyVideoOrientationLock()',
         '_registerSystemBarsVisibilityCallback()',
       ]) {
         final int at = b.indexOf(action);
