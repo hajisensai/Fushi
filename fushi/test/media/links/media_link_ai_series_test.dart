@@ -4,7 +4,6 @@ import 'package:drift/drift.dart' show DatabaseConnection, Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/library_curate/library_curate_link_ops.dart';
-import 'package:fushi/src/media/links/media_link_inference_host.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_media_link_assistant.dart';
