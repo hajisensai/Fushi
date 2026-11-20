@@ -71,6 +71,16 @@ const String kAiWebSearchPageFetchPref = 'ai_web_search_page_fetch';
 const String kAiWebSearchPageFetchAllow = 'allow';
 const String kAiWebSearchPageFetchDeny = 'deny';
 
+/// 「AI 助手自主联网搜索」（操作 `web.search` / `web.read`）的首次确认（String，
+/// 所有者 2026-11-20「第一次要确认吧」）：`''` 还没同意（助手第一次用时出确认卡，
+/// 用户点同意后写 [kAiAgentWebSearchAllow]）/ [kAiAgentWebSearchAllow] 已同意、不再
+/// 逐次确认 / [kAiAgentWebSearchOff] 用户在设置里关掉（两条操作不可用；再打开回到
+/// `''`，下次用时重新确认）。跟着 `ai_web_search` 设备本地：同意的是把搜索词与网页
+/// 地址发给这台设备上配的那个后端。
+const String kAiAgentWebSearchPref = 'ai_agent_web_search';
+const String kAiAgentWebSearchAllow = 'allow';
+const String kAiAgentWebSearchOff = 'off';
+
 /// 已知的静态偏好键全集（守卫强制）。按字母序。
 const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
@@ -91,6 +101,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 远程使用 AI 助手（会用本机的 AI 指派、调本机操作目录）。与服务端
   // `ai.agent_for_peers` 同一判据：默认关、用户在设置里亲手打开（设备本地）。
   'ai_agent_for_peers',
+  // String：见 [kAiAgentWebSearchPref]。非凭据，设备本地。
+  kAiAgentWebSearchPref,
   // 「哪个功能用哪家 AI」的映射。不含凭据，但跟着 ai_providers 一起设备本地：
   // providers 不跨设备，映射跨过去只会指向一个不存在的 id。
   'ai_feature_providers',
