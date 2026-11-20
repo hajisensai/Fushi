@@ -1984,8 +1984,11 @@ void main() {
 
       final SrsSyncScheduler s = withStore(() async => store);
       addTearDown(s.dispose);
+      final int succeeded = srsSyncRoundsSucceeded.value;
       expect((await s.syncFolderLocations()).ran, 1);
       expect(await tracked(), isTrue);
+      // 成功的一轮记进全局计数（保留副本等「第一次同步成功」的消费方据此重读）。
+      expect(srsSyncRoundsSucceeded.value, succeeded + 1);
 
       // 移除（页面那一步）：配置去掉 + 记进清单。卡片库没开（复习模块没起的等价情形）：什么都不做、不抛，清单留着。
       config.clear();

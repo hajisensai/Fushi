@@ -5,6 +5,7 @@
 // - 设置 › 存储「删除旧版本保留副本」行：有副本时出现、副标题报大小与到期，没有时隐藏；点它 = 确认后删、状态重读。
 // 执行端是假的，不碰保留副本的原生命令（由 Rust retained_tests.rs 覆盖）；牌组库是真的临时库。
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:flutter/gestures.dart' show kSecondaryButton;
@@ -22,6 +23,8 @@ import 'package:fushi/src/settings/settings_schema_storage.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_retained_copy.dart';
 import 'package:fushi/src/srs/srs_storage_host.dart';
+import 'package:fushi/src/srs/srs_sync_progress.dart'
+    show srsSyncRoundsSucceeded;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
@@ -48,14 +51,27 @@ class _Backend implements SrsRetainedCopyBackend {
   final List<String> deleted = <String>[];
   int states = 0;
 
+  /// 内核记下的新代第一次同步成功时刻；null = 还没同步成功过（[_sealed] 的形状）。
+  int? firstSyncAtMs;
+
   @override
   Future<SrsRetainedCopyState> state(String dir, {required int nowMs}) async {
     states++;
     final String? why = refuseState;
     if (why != null) throw SrsCoreException(-1, why);
-    return deleted.isEmpty
+    if (deleted.isNotEmpty) {
+      return const SrsRetainedCopyState(kind: SrsRetainedCopyKind.tombstone);
+    }
+    final int? first = firstSyncAtMs;
+    return first == null
         ? _sealed
-        : const SrsRetainedCopyState(kind: SrsRetainedCopyKind.tombstone);
+        : SrsRetainedCopyState(
+            kind: SrsRetainedCopyKind.sealed,
+            bytes: _sealed.bytes,
+            migratedAtMs: 0,
+            firstSyncAtMs: first,
+            dueAtMs: first + const Duration(days: 14).inMilliseconds,
+          );
   }
 
   @override
@@ -288,7 +304,9 @@ void main() {
 
   // 第五波复核遗留：牌组列表横幅最前的清除收尾提示。出错时显示原因；没出错时根本不挂（横幅是带间距的列表，零高度的
   // 一项也占一条间距，把牌组树往下推——srs_pages_test 手机首页的最后一行就是这样被挤出屏幕的）。
-  testWidgets('牌组列表：清除收尾出错时横幅提示原因；没出错时不挂提示项', (WidgetTester tester) async {
+  testWidgets('牌组列表：清除收尾出错时横幅提示原因（连同下方间距展开）；没出错时零高度、后面不留间距', (
+    WidgetTester tester,
+  ) async {
     final SrsDbStore store = await _storeWithDeck(tester);
     SrsScrubState scrub = (due: true, error: 'database or disk is full');
     await _pump(
@@ -304,6 +322,18 @@ void main() {
       t.srs_scrub_error_notice(reason: 'database or disk is full'),
     );
     expect(notice, findsOneWidget);
+    final Finder slot = find.byType(SrsScrubErrorNotice);
+    // 横幅下面紧跟的那一项（今日计划 / 宽屏的统计带 / 「牌组」小标题，取最上面的）的顶边。
+    double nextTop() =>
+        <String>['srs-home-today', 'srs-home-band', 'srs-home-decks-header']
+            .map((String k) => find.byKey(ValueKey<String>(k)))
+            .where((Finder f) => f.evaluate().isNotEmpty)
+            .map((Finder f) => tester.getTopLeft(f).dy)
+            .reduce(math.min);
+    final double gap =
+        tester.getBottomLeft(slot).dy - tester.getBottomLeft(notice).dy;
+    expect(gap, greaterThan(0), reason: '出错时间距由提示自己带');
+    expect(nextTop(), tester.getBottomLeft(slot).dy, reason: '列表不在它后面另插间距');
 
     scrub = (due: false, error: null);
     ProviderScope.containerOf(
@@ -311,10 +341,11 @@ void main() {
     ).invalidate(srsScrubStateProvider);
     await srsSettle(tester);
     expect(notice, findsNothing);
+    expect(tester.getSize(slot).height, 0, reason: '没出错时零高度');
     expect(
-      find.byKey(const ValueKey<String>('srs-scrub-ok'), skipOffstage: false),
-      findsNothing,
-      reason: '没出错时不挂零高度的提示项',
+      nextTop(),
+      tester.getTopLeft(slot).dy,
+      reason: '零高度的提示项后面不留一条空白（第六波 ①：会把牌组树往下推出屏）',
     );
     expect(tester.takeException(), isNull);
     await _unmount(tester);
@@ -366,6 +397,47 @@ void main() {
     await srsSettle(tester);
     expect(backend.states, 2, reason: '释放之后再看 = 现读');
     expect(seen?.kind, SrsRetainedCopyKind.sealed);
+    expect(tester.takeException(), isNull);
+    await _unmount(tester);
+  });
+
+  // 第六波复核：第一次同步成功之后到期时刻改成「首次同步 + 14 天」；设置页开着时日期要跟着变（等下一轮成功的同步重读
+  // 一次），记下首次同步之后再成功也不重读。
+  testWidgets('保留副本状态：还没记下首次同步时，下一轮成功的同步之后重读一次；记下之后不再重读', (
+    WidgetTester tester,
+  ) async {
+    final SrsDbStore store = await _storeWithDeck(tester);
+    final _Backend backend = _Backend();
+    SrsRetainedCopyState? seen;
+    await _pump(
+      tester,
+      store: store,
+      backend: backend,
+      home: Scaffold(
+        body: Consumer(
+          builder: (BuildContext context, WidgetRef ref, Widget? _) {
+            seen = ref.watch(srsRetainedCopyProvider).valueOrNull?.state;
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+    expect(seen?.firstSyncAtMs, isNull);
+    expect(backend.states, 1);
+
+    backend.firstSyncAtMs = 1767225600000;
+    srsSyncRoundsSucceeded.value++;
+    await srsSettle(tester);
+    expect(backend.states, 2, reason: '第一次同步成功之后重读');
+    expect(seen?.firstSyncAtMs, 1767225600000);
+    expect(
+      seen?.dueAtMs,
+      1767225600000 + const Duration(days: 14).inMilliseconds,
+    );
+
+    srsSyncRoundsSucceeded.value++;
+    await srsSettle(tester);
+    expect(backend.states, 2, reason: '记下首次同步之后再成功不重读');
     expect(tester.takeException(), isNull);
     await _unmount(tester);
   });

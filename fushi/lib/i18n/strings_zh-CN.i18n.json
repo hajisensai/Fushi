@@ -10217,6 +10217,7 @@
   "srs_sync_directory_unidentified": "暂时认不出同步目录（账号或地址还没就绪）",
   "srs_sync_done": "复习数据已同步",
   "srs_sync_failed": "复习数据同步失败：$reason",
+  "srs_sync_folder_new_root_missing": "这个文件夹位置的新格式目录（v4）不见了，只剩让旧版本停下的标记。原来的设置从标记里推不出来，所以不会自动重建。如果 v4 确实被删了，请删掉文件 $path 再同步一次，位置会按各设备上的数据重新建立；如果 v4 其实还在（比如别的同步工具还没把它同步进这个文件夹），等它回来之后再同步。本机的卡片和复习记录不受影响。",
   "srs_sync_heritage_unvouched": "有 ${n} 台旧设备的数据等你确认该设备后才会继续上传",
   "srs_sync_heritage_unvouched_hint": "本机有这些设备的旧历史，在下方设备列表里确认它们之前不替它们上传。确认后下一轮同步会补传。",
   "srs_sync_join_provisional_hint": "这台设备还没加入同步位置上已有的复习数据。照常使用即可，下次同步连上时会自动合并。",

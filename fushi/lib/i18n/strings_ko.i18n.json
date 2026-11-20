@@ -10217,6 +10217,7 @@
   "srs_sync_directory_unidentified": "The sync folder can't be identified yet (account or address not ready)",
   "srs_sync_done": "Review data synced",
   "srs_sync_failed": "Couldn't sync review data: $reason",
+  "srs_sync_folder_new_root_missing": "This folder location's new-format folder (v4) is gone; only the marker that stops older versions is left. Fushi won't rebuild it by itself, because the original settings can't be recovered from that marker. If v4 really was deleted, delete the file $path and sync again: the location is set up again from your devices' data. If v4 is still there (for example, a sync tool hasn't finished copying it into this folder), sync again once it's back. Your local cards and review history are not affected.",
   "srs_sync_heritage_unvouched": "Old history from ${n} devices is waiting for you to confirm them",
   "srs_sync_heritage_unvouched_hint": "This device holds their older history but will not upload it for them until you confirm them in the device list below. Confirm them there and the next sync uploads it.",
   "srs_sync_join_provisional_hint": "This device hasn't joined the review data already on your sync location yet. Keep studying as usual; it will be merged the next time sync connects.",

@@ -67,10 +67,16 @@ void main() {
     expect(cloud, contains('fushi-srs/$dir/v3/meta.json'));
     expect(cloud, isNot(contains('<collection>')));
     expect(cloud, isNot(contains('<集合>')));
+    expect(
+      cloud,
+      t.srs_sync_location_new_root_missing(path: 'fushi-srs/$dir/v3/meta.json'),
+    );
+    // 文件夹位置：磁盘完整路径，用文件夹自己的文案（不再说「这个位置上的 <绝对路径>」）。
     final String usb = p.join('E:', 'srs');
+    final String fence = p.join(usb, 'fushi-srs', dir, 'v3', 'meta.json');
     expect(
       srsNewRootMissingText(dir, folderPath: usb),
-      contains(p.join(usb, 'fushi-srs', dir, 'v3', 'meta.json')),
+      t.srs_sync_folder_new_root_missing(path: fence),
     );
   });
 

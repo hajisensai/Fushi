@@ -974,6 +974,7 @@ class SrsSyncScheduler {
         // 不计：见上。
       } else if (error == null) {
         stats.consecutiveFailures = 0;
+        srsSyncRoundsSucceeded.value++;
       } else {
         _noteRoundFailure(stats, describe, 'report error: $error');
       }
