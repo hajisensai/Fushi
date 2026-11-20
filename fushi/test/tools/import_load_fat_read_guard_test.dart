@@ -67,21 +67,26 @@ void main() {
       });
     }
 
-    test(
-      'reader_fushi_source: only the shelf materialiser reads full rows',
-      () {
-        final String src = read(
-          'lib/src/media/sources/reader_fushi_source.dart',
-        );
-        // getBooksFromDb 需要 chaptersJson 算进度：允许恰好一处全行读。
-        expect(
-          'getAllEpubBooks()'.allMatches(src).length,
-          1,
-          reason: 'epubBookUidByKeyProvider 等只要 uid 的口径走瘦投影',
-        );
-        expect(src.contains('getEpubBookMetas()'), isTrue);
-      },
-    );
+    test('reader_fushi_source: the shelf reads the shelf projection', () {
+      final String src = read('lib/src/media/sources/reader_fushi_source.dart');
+      // novel-9：书架只要每章字数，SQLite 侧 json_each 抽好（getEpubBookShelfRows），
+      // 不再整表读 chaptersJson / tocJson 再在 UI isolate 上逐本 jsonDecode。
+      expect(
+        src.contains('getAllEpubBooks()'),
+        isFalse,
+        reason: '书架与单本重建都走 getEpubBookShelfRows',
+      );
+      expect(src.contains('getEpubBookShelfRows('), isTrue);
+      expect(src.contains('getEpubBookMetas()'), isTrue);
+    });
+
+    test('book_series_grouper reads the series projection', () {
+      final String src = read(
+        '../packages/fushi_engine/lib/media/collections/book_series_grouper.dart',
+      );
+      expect(src.contains('getAllEpubBooks()'), isFalse);
+      expect(src.contains('getEpubBookSeriesFacts()'), isTrue);
+    });
   });
 
   group('watchEpubBookKeys projects only the key column', () {

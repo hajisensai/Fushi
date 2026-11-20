@@ -3255,6 +3255,9 @@ class FushiDatabase extends _$FushiDatabase
           }
         }
       }
+      // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建
+      // （video-36i），每次升 schema 都幂等补一次。
+      await _ensureStatIndexes();
     },
     onCreate: (m) async {
       await m.createAll();
@@ -3277,6 +3280,7 @@ class FushiDatabase extends _$FushiDatabase
       await _ensureAiAgentIndexes();
       await _ensureAiAgentSessionProfileIndex();
       await _ensureAiAgentSessionOriginIndex();
+      await _ensureStatIndexes();
     },
     beforeOpen: (details) async {
       // Second, belt-and-suspenders downgrade guard. drift calls beforeOpen
