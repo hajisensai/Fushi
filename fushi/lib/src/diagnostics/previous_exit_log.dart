@@ -100,11 +100,12 @@ enum PreviousExitKind {
   /// 被厂商系统按应用结束：ColorOS / OxygenOS / realme UI 的 `o-stop`（Android 记成
   /// `OTHER` +「`stop <包名> due to o-stop(<码>)`」，OPlus 框架主动停应用——划掉最近任务、
   /// 一键清理、后台 / 耗电管理），MIUI / HyperOS 的 `SwipeUpClean`（`OTHER` +
-  /// 「`SwipeUpClean`」，在最近任务里上划清掉应用），MIUI / HyperOS 熄屏耗电检查（`OTHER` +
+  /// 「`SwipeUpClean`」，在最近任务里上划清掉应用；「`OneKeyClean`」，一键清理 / 全部清除），
+  /// MIUI / HyperOS 熄屏耗电检查（`OTHER` +
   /// 「`ScreenOffCPUCheckKill over … used … (…%) threshold …`」）。平台给了明确原因，不是
   /// 闪退；真崩溃 / ANR 系统另记 `CRASH*` / `ANR`。否则用户每在最近任务里划掉一次（死时界面
   /// 还在最上层、importance=100，或在跑前台服务、importance=125），下次启动都弹「意外退出」
-  /// （反馈 HqhXJvwgq3 / lN8b_hBgKD）。耗电检查杀进程说明熄屏时真的在吃 CPU，那条记录按
+  /// （反馈 HqhXJvwgq3 / lN8b_hBgKD / PojVLNyNtZ）。耗电检查杀进程说明熄屏时真的在吃 CPU，那条记录按
   /// [androidExitSevere] 落进用户可见的错误日志，不因为不弹闪退报告就藏起来（反馈
   /// Z9FwhY9377）。
   vendorStopped,
@@ -620,6 +621,12 @@ final RegExp _oplusAppStop = RegExp(
 /// `#hw7f_pogDW` 也是它）。整串锚定，子原因前缀可有可无。
 final RegExp _miuiSwipeUpClean = RegExp(r'^(?:\[[A-Z0-9_ ]+\] )?SwipeUpClean$');
 
+/// MIUI / HyperOS 一键清理（最近任务里的「全部清除」、安全中心加速）结束应用时写下的
+/// `ApplicationExitInfo` 描述：原因码 `REASON_OTHER`，描述是 `OneKeyClean`（反馈
+/// PojVLNyNtZ，Xiaomi 22041219G，SDK 34；死时在跑前台服务，importance=125）。整串锚定，
+/// 子原因前缀可有可无。
+final RegExp _miuiOneKeyClean = RegExp(r'^(?:\[[A-Z0-9_ ]+\] )?OneKeyClean$');
+
 /// MIUI / HyperOS 熄屏 CPU 检查杀进程时写下的 `ApplicationExitInfo` 描述：原因码
 /// `REASON_OTHER`，描述形如 `ScreenOffCPUCheckKill over +25m0s475ms used +45m1s910ms
 /// (180.07031%) threshold 6.0`（熄屏窗口里进程 CPU 占比超过阈值，反馈 Z9FwhY9377）。
@@ -633,6 +640,7 @@ final RegExp _miuiScreenOffCpuKill = RegExp(
 final List<RegExp> _vendorStopDescriptions = <RegExp>[
   _oplusAppStop,
   _miuiSwipeUpClean,
+  _miuiOneKeyClean,
   _miuiScreenOffCpuKill,
 ];
 
@@ -657,7 +665,7 @@ bool androidExitSevere(String reason, {String? description}) =>
 /// 「scheduleCrash for '…' failed」——系统结束了够不着的进程，应用里没崩）返回 null，
 /// 交给会话标记。`OTHER` 只在
 /// [description] 是 AOSP 自己写的 appop 变更杀进程描述时才算权限变更、是 OPlus 的
-/// `o-stop` 停应用描述、MIUI / HyperOS 的 `SwipeUpClean` / 熄屏耗电检查描述时算厂商停止
+/// `o-stop` 停应用描述、MIUI / HyperOS 的 `SwipeUpClean` / `OneKeyClean` / 熄屏耗电检查描述时算厂商停止
 /// （[PreviousExitKind.vendorStopped]，见 [_vendorStopDescriptions]），其它照旧 null。
 PreviousExitKind? androidExitKind(String reason, {String? description}) =>
     switch (reason) {
