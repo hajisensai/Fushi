@@ -6,23 +6,30 @@ import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart'
     show DatabaseConnectionUser, QueryRow, Variable, driftRuntimeOptions;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show backupCategoryShownInExport, importSelectableCategories;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/srs/srs_backup_bundle.dart';
+import 'package:fushi_engine/srs/srs_backup_merge.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_reads.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
+import 'package:fushi_srs/fushi_srs.dart';
 import 'package:path/path.dart' as p;
 
+import '../srs/srs_test_support.dart' show SrsTestEngine;
 import 'temp_dir_cleanup.dart';
-import '../../../packages/fushi_engine/test/srs/support/srs_raw_sql.dart';
 
-/// `BackupCategory.srs`（复习）：Rust 的 srs.db 快照（zip 条目 `srs.db`）+ `<support>/srs_media/`
-/// 媒体目录成为备份类别（docs/specs/2026-10-23-srs-rust-store.md §4）。主库条目不带 SRS；
-/// 2026-10-23 之前的老形态备份（SRS 表在主库条目里）恢复 / 合并照样认。部分恢复不带配置档案
-/// 时，SRS 按 profile uid 归位，不留孤儿。
+/// `BackupCategory.srs`（复习）在新代（协议 4，G11-4）上的整包备份 / 还原：
+///
+/// - 导出：`srs/manifest.json` + 每个集合一条 `srs/<n>.bin`（内核 FSRS4EXP 流），不再有 `srs.db` 条目；清单不带 `magic`。
+/// - 覆盖还原：暂存空新代库落库后换上；本机原来的 `srs4.db` 改名留作回退（逐字节原样）；复习数据逐表与源一致。
+/// - 合并还原：经内核 `import` 并入，身份变更（另一个复习库 / 新盐）没确认就不落；同一份合并两次幂等。
+/// - 旧形态：协议 3 的 `srs.db` 条目、SRS 表在主库条目里的 v1 事件备份，还原后卡片 / 笔记 / 日志条数与源一致。
+/// - 失败的还原（坏流 / 清单来自更新版本 / 本机复习库还没迁移）本机逐字节不变。
 void main() {
   setUpAll(() => driftRuntimeOptions.dontWarnAboutMultipleDatabases = true);
 
@@ -40,29 +47,7 @@ void main() {
   });
 
   Future<Archive> readZip(String zipPath) async =>
-      // 整包读进内存再解（archive 3.x 惰性读：流关掉后再取 content 会读坏）。
       ZipDecoder().decodeBytes(await File(zipPath).readAsBytes());
-
-  List<String> srsMediaEntries(Archive archive) => <String>[
-    for (final ArchiveFile f in archive.files)
-      if (f.isFile && f.name.startsWith('srs_media/')) f.name,
-  ];
-
-  Future<int> count(DatabaseConnectionUser db, String sql) async =>
-      (await db.customSelect(sql).getSingle()).data['c'] as int;
-
-  /// srs.db 上的计数（测试专用的原始通道）。
-  Future<int> srsCount(SrsStorage srs, String sql) async =>
-      (await srs.core.customSelect(sql).getSingle()).data['c']! as int;
-
-  Future<bool> hasTable(FushiDatabase db, String table) async =>
-      (await db
-          .customSelect(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
-            variables: <Variable<Object>>[Variable<String>(table)],
-          )
-          .getSingleOrNull()) !=
-      null;
 
   Future<int> insertProfile(FushiDatabase db, String name) async {
     await db.customStatement(
@@ -78,7 +63,7 @@ void main() {
         .read<int>('id');
   }
 
-  Future<String?> uidOfName(FushiDatabase db, String name) async =>
+  Future<String?> uidOfName(DatabaseConnectionUser db, String name) async =>
       (await db
               .customSelect(
                 'SELECT uid FROM profiles WHERE name = ?',
@@ -87,35 +72,13 @@ void main() {
               .getSingleOrNull())
           ?.read<String?>('uid');
 
-  /// srs.db 里 profile_uid 对不上主库任何 profiles.uid 的身份记录数（跨两个文件，在 Dart 里比）。
-  Future<int> orphanSrsRows(FushiDatabase db, SrsStorage srs) async {
-    final Set<String> uids = <String>{
-      for (final QueryRow r
-          in await db
-              .customSelect('SELECT uid FROM profiles WHERE uid IS NOT NULL')
-              .get())
-        r.read<String>('uid'),
-    };
-    return (await srs.core
-            .customSelect('SELECT profile_uid FROM srs_entities')
-            .get())
-        .where((SrsRawRow r) => !uids.contains(r.read<String>('profile_uid')))
-        .length;
-  }
-
-  Future<String?> ownerOf(SrsStorage srs, String id) async =>
-      (await srs.core
-              .customSelect(
-                'SELECT profile_uid FROM srs_entities WHERE id = ?',
-                variables: <Variable<Object>>[Variable<String>(id, srsIdType)],
-              )
-              .getSingleOrNull())
-          ?.read<String>('profile_uid');
-
-  Future<int> noteCount(SrsStorage srs) => srsCount(
-    srs,
-    "SELECT COUNT(*) AS c FROM srs_entities WHERE kind = 'note'",
-  );
+  Future<List<String>> profileNames(
+    DatabaseConnectionUser db,
+  ) async => <String>[
+    for (final QueryRow r
+        in await db.customSelect('SELECT name FROM profiles ORDER BY id').get())
+      r.read<String>('name'),
+  ];
 
   Future<String> addNote(SrsDbStore s, String text) => s.createNote(
     noteTypeId: s.lapisNoteTypeId,
@@ -124,49 +87,73 @@ void main() {
     },
   );
 
-  Future<SrsDbStore> storeOn(SrsStorage srs, String uid, String deviceId) =>
-      SrsDbStore.open(core: srs.core, profileUid: uid, deviceId: deviceId);
+  /// [core] 里 [uid] 的复习数据（内核读命令 `events`：身份记录 / 修改记录 / 复习日志 / 看不懂的事件），逐表排好序。
+  /// [withProfile] 为假时去掉各行里的 profile uid（备份落到另一个 uid 的 profile 上时比内容）。
+  Future<Map<String, List<String>>> tables(
+    SrsCore core,
+    String uid, {
+    bool withProfile = true,
+  }) async {
+    final Map<String, SrsColumns> t = (await srsRead(
+      core,
+      uid,
+      'events',
+      const <String, Object?>{'ordered': true},
+    )).tables;
+    String strip(String json) {
+      if (withProfile) return json;
+      final Map<String, Object?> m =
+          (jsonDecode(json) as Map).cast<String, Object?>()..remove('p');
+      return jsonEncode(m);
+    }
 
-  /// 按 app 的方式（主进程：带一次性搬迁）打开 [dbDir] 下的 srs.db。调用方负责关。
-  Future<SrsStorage> openSrsLikeApp(String dbDir, FushiDatabase db) =>
-      SrsStorage.open(path: SrsStorage.pathIn(dbDir), legacy: db);
+    final SrsColumns e = t['entities']!;
+    return <String, List<String>>{
+      'entities': <String>[
+        for (int i = 0; i < e.rows; i++)
+          '${e.strings('id')[i]}|${e.strings('kind')[i]}|'
+              '${e.strings('payload_json')[i]}',
+      ]..sort(),
+      for (final String name in <String>['edits', 'logs', 'unknown'])
+        name: <String>[
+          for (final String j in t[name]!.strings('json').toList()) strip(j),
+        ]..sort(),
+    };
+  }
 
-  /// 源设备：profile「日语」一条笔记 + 两个媒体文件（另有一个写入中途的 .tmp）。
-  /// [legacy] 为真时模拟还没搬迁的设备：SRS 只在主库老表里，本机没有 srs.db。
+  int count(Map<String, List<String>> t, String table) => t[table]!.length;
+
+  /// 源设备：profile「日语」两条笔记、一次作答 + 两个媒体文件（另有一个写入中途的 .tmp）。
+  /// [legacy]：模拟 2026-10-23 之前的设备——SRS 只在主库老表里（v1 事件），没有复习库。
   Future<
     ({
       FushiDatabase db,
       SrsStorage? srs,
       String dbDir,
       String uid,
-      String noteId,
+      Map<String, List<String>> tables,
       List<String> media,
     })
   >
-  seedSource({bool withSrs = true, bool legacy = false}) async {
+  seedSource({bool legacy = false}) async {
     final String dbDir = p.join(src.path, 'support');
     Directory(dbDir).createSync(recursive: true);
     final FushiDatabase db = FushiDatabase(dbDir);
     final int pid = await insertProfile(db, '日语');
     final String uid = await db.profileUidOf(pid);
-    final SrsStorage srs = await SrsStorage.open(
-      path: legacy
-          ? p.join(src.path, 'scratch_srs.db')
-          : SrsStorage.pathIn(dbDir),
+    final String libDir = legacy ? p.join(src.path, 'scratch_lib') : dbDir;
+    Directory(libDir).createSync(recursive: true);
+    final SrsStorage srs = await SrsStorage.open(directory: libDir);
+    final SrsDbStore store = await SrsDbStore.open(
+      core: srs.core,
+      profileUid: uid,
+      deviceId: 'dev-src',
+      engine: const SrsTestEngine(),
     );
-    final SrsDbStore store = await storeOn(srs, uid, 'dev-src');
-    if (!withSrs) {
-      // 模块打开过（有内置行）但没有任何用户数据。
-      return (
-        db: db,
-        srs: srs,
-        dbDir: dbDir,
-        uid: uid,
-        noteId: '',
-        media: <String>[],
-      );
-    }
-    final String noteId = await addNote(store, '雪');
+    final String n1 = await addNote(store, '雪');
+    await addNote(store, '花');
+    final String card = (await store.cardsOfNote(n1)).first.id;
+    await store.answer(card, 3);
     final SrsMediaStore media = SrsMediaStore(
       SrsMediaStore.directoryFor(Directory(dbDir), uid),
     );
@@ -179,28 +166,15 @@ void main() {
       Uint8List.fromList(utf8.encode('MP3-B')),
     );
     File(p.join(media.root.path, '$a.123.tmp')).writeAsStringSync('half');
+    final Map<String, List<String>> before = await tables(srs.core, uid);
     if (legacy) {
-      for (final MapEntry<String, String> t in kLegacySrsTableDdl.entries) {
-        await db.customStatement(t.value);
-        // 只抄老表有的列：srs.db 之后加的列（schema v4 的 media_refs 等）老形态里本来就没有。
-        final Set<String> legacyCols = <String>{
-          for (final QueryRow c
-              in await db.customSelect('PRAGMA table_info(${t.key})').get())
-            c.read<String>('name'),
-        };
-        for (final SrsRawRow r
-            in await srs.core.customSelect('SELECT * FROM ${t.key}').get()) {
-          final List<String> cols = <String>[
-            for (final String c in r.data.keys)
-              if (legacyCols.contains(c)) c,
-          ];
-          await db.customStatement(
-            'INSERT INTO ${t.key} (${cols.join(', ')}) '
-            'VALUES (${List<String>.filled(cols.length, '?').join(', ')})',
-            <Object?>[for (final String c in cols) r.data[c]],
-          );
-        }
-      }
+      await _writeLegacyTables(
+        db,
+        await srsEventsOf(srs.core, uid),
+        <String, String>{
+          for (final SrsCardCacheRow c in await store.cardsOfNote(n1)) c.id: n1,
+        },
+      );
       await srs.close();
     }
     return (
@@ -208,7 +182,7 @@ void main() {
       srs: legacy ? null : srs,
       dbDir: dbDir,
       uid: uid,
-      noteId: noteId,
+      tables: before,
       media: <String>[a, b],
     );
   }
@@ -221,17 +195,19 @@ void main() {
         srsStorage: () async => srs,
       );
 
-  /// 导出一份（全部类别），然后关掉源设备的两个库。
-  Future<String> exportAll({bool legacy = false}) async {
+  /// 导出一份（全部类别），关掉源设备的库。回 zip 与源的复习数据表。
+  Future<({String zip, String uid, Map<String, List<String>> tables})>
+  exportAll({bool legacy = false}) async {
     final s = await seedSource(legacy: legacy);
     final String zip = p.join(src.path, 'all.zip');
     await serviceFor(s.db, s.dbDir, s.srs).createBackup(zip);
     await s.srs?.close();
     await s.db.close();
-    return zip;
+    return (zip: zip, uid: s.uid, tables: s.tables);
   }
 
-  /// 目标设备：已有一个本机库（覆盖恢复有 bak 可回灌），profile「日语」uid 与源不同。
+  /// 目标设备：已有本机库（覆盖恢复有 bak 可回灌），profile「日语」uid 与源不同；[withLocalNote] 时它在本机复习库里
+  /// 有一条自己的笔记（另一个复习库）。
   Future<String> seedTarget({bool withLocalNote = false}) async {
     final String dbDir = p.join(dst.path, 'support');
     Directory(dbDir).createSync(recursive: true);
@@ -240,9 +216,16 @@ void main() {
       final int pid = await insertProfile(db, '日语');
       final String uid = await db.profileUidOf(pid);
       if (withLocalNote) {
-        final SrsStorage srs = await openSrsLikeApp(dbDir, db);
+        final SrsStorage srs = await SrsStorage.open(directory: dbDir);
         try {
-          await addNote(await storeOn(srs, uid, 'dev-dst'), '花');
+          await addNote(
+            await SrsDbStore.open(
+              core: srs.core,
+              profileUid: uid,
+              deviceId: 'dev-dst',
+            ),
+            '月',
+          );
         } finally {
           await srs.close();
         }
@@ -253,16 +236,16 @@ void main() {
     return dbDir;
   }
 
-  /// 在 [dbDir] 上按 app 的方式开两个库跑 [body]，跑完都关。
-  Future<void> onTarget(
+  /// 在 [dbDir] 上开主库与复习库跑 [body]，跑完都关。
+  Future<T> onTarget<T>(
     String dbDir,
-    Future<void> Function(FushiDatabase db, SrsStorage srs) body,
+    Future<T> Function(FushiDatabase db, SrsStorage srs) body,
   ) async {
     final FushiDatabase db = FushiDatabase(dbDir);
     try {
-      final SrsStorage srs = await openSrsLikeApp(dbDir, db);
+      final SrsStorage srs = await SrsStorage.open(directory: dbDir);
       try {
-        await body(db, srs);
+        return await body(db, srs);
       } finally {
         await srs.close();
       }
@@ -271,426 +254,631 @@ void main() {
     }
   }
 
-  /// 把 zip 里的条目 [name] 写到 [dir]/[name]。
-  String extract(Archive archive, String name, Directory dir) {
-    final String out = p.join(dir.path, name);
-    File(out).writeAsBytesSync(archive.findFile(name)!.content as List<int>);
-    return out;
+  /// 目录里每个文件 → 字节（不含 SQLite 的 -shm：开关库会重建它）。
+  Map<String, List<int>> filesOf(String dir) => <String, List<int>>{
+    for (final FileSystemEntity f in Directory(dir).listSync(recursive: true))
+      if (f is File && !f.path.endsWith('-shm'))
+        p.relative(f.path, from: dir): f.readAsBytesSync(),
+  };
+
+  /// 把 zip [from] 改写成 [to]：去掉名字满足 [drop] 的条目，加上 [add]。
+  Future<void> rewriteZip(
+    String from,
+    String to, {
+    required bool Function(String name) drop,
+    Map<String, List<int>> add = const <String, List<int>>{},
+  }) async {
+    final Archive inArc = await readZip(from);
+    final Archive out = Archive();
+    for (final ArchiveFile f in inArc.files) {
+      if (!f.isFile || drop(f.name)) continue;
+      final List<int> bytes = f.content as List<int>;
+      out.addFile(ArchiveFile(f.name, bytes.length, bytes));
+    }
+    for (final MapEntry<String, List<int>> e in add.entries) {
+      out.addFile(ArchiveFile(e.key, e.value.length, e.value));
+    }
+    File(to).writeAsBytesSync(ZipEncoder().encode(out)!);
   }
 
   test(
-    '导出：预览计数 = 笔记 + 媒体；zip 带 srs.db 快照（本机状态已清）与 srs_media，主库条目不带 SRS',
+    '导出：zip 带 srs/manifest.json 与每个集合一条流、srs_media，不再带 srs.db；主库条目不带 SRS',
     () async {
       final s = await seedSource();
       final BackupService service = serviceFor(s.db, s.dbDir, s.srs);
       final BackupContentSummary live = await service.summarizeLiveContent();
-      expect(live.countFor(BackupCategory.srs), 1 + 2);
+      expect(live.countFor(BackupCategory.srs), 2 + 2);
       expect(backupCategoryShownInExport(BackupCategory.srs, live), isTrue);
-
       final String zip = p.join(src.path, 'all.zip');
       final BackupMeta meta = await service.createBackup(zip);
       await s.srs!.close();
       await s.db.close();
-      expect(meta.srsNoteCount, 1);
+      expect(meta.srsNoteCount, 2);
 
       final Archive archive = await readZip(zip);
-      expect(srsMediaEntries(archive).toSet(), <String>{
-        for (final String name in s.media) 'srs_media/${s.uid}/$name',
-      });
-
-      final Directory ex = Directory(p.join(dst.path, 'ex'))..createSync();
-      extract(archive, 'fushi.db', ex);
-      final FushiDatabase blob = FushiDatabase(ex.path);
-      try {
-        expect(await hasTable(blob, 'srs_entities'), isFalse);
-        expect(await uidOfName(blob, '日语'), s.uid);
-      } finally {
-        await blob.close();
-      }
-      final SrsStorage snap = await SrsStorage.open(
-        path: extract(archive, 'srs.db', ex),
+      final Set<String> names = <String>{
+        for (final ArchiveFile f in archive.files)
+          if (f.isFile) f.name,
+      };
+      expect(names, contains(kSrsBackupManifestEntry));
+      expect(names, contains(srsBackupStreamEntry(0)));
+      expect(names, isNot(contains('srs.db')));
+      expect(
+        names.where((String n) => n.startsWith('srs_media/')).toSet(),
+        <String>{for (final String m in s.media) 'srs_media/${s.uid}/$m'},
       );
-      try {
-        expect(await noteCount(snap), 1);
-        expect(
-          await srsCount(snap, 'SELECT COUNT(*) AS c FROM srs_local_state'),
-          0,
-          reason: '本机状态永不出境',
-        );
-        expect(
-          await srsCount(snap, 'SELECT COUNT(*) AS c FROM srs_event_local'),
-          0,
-        );
-      } finally {
-        await snap.close();
-      }
+      final Map<String, Object?> manifest =
+          (jsonDecode(
+                    utf8.decode(
+                      archive.findFile(kSrsBackupManifestEntry)!.content
+                          as List<int>,
+                    ),
+                  )
+                  as Map)
+              .cast<String, Object?>();
+      expect(manifest.containsKey('magic'), isFalse);
+      expect(manifest['v'], 2);
+      expect(manifest['gen'], 4);
+      final SrsBackupBundleManifest parsed = SrsBackupBundleManifest.parse(
+        archive.findFile(kSrsBackupManifestEntry)!.content as List<int>,
+      );
+      expect(parsed.units, hasLength(1));
+      expect(parsed.units.single.profiles.single.uid, s.uid);
+      expect(parsed.units.single.profiles.single.name, '日语');
 
       final BackupContentSummary viaFile =
           await BackupRestoreService.summarizeBackupFile(zip);
-      expect(viaFile.countFor(BackupCategory.srs), 3);
+      expect(viaFile.countFor(BackupCategory.srs), 4);
       expect(importSelectableCategories, contains(BackupCategory.srs));
     },
   );
 
-  test('导出取消勾选 srs：无 srs.db / srs_media 条目、meta 记为排除', () async {
+  test('导出取消勾选 srs：没有 srs/ 与 srs_media 条目、meta 记为排除', () async {
     final s = await seedSource();
-    final String zip = p.join(src.path, 'nosrs.zip');
-    final BackupMeta meta = await serviceFor(s.db, s.dbDir, s.srs).createBackup(
-      zip,
-      categories: BackupCategory.values.toSet()..remove(BackupCategory.srs),
-    );
-    await s.srs!.close();
-    await s.db.close();
-    expect(meta.srsNoteCount, 0);
-    expect(meta.excludedCategories, contains('srs'));
-
-    final Archive archive = await readZip(zip);
-    expect(srsMediaEntries(archive), isEmpty);
-    expect(archive.findFile('srs.db'), isNull);
-    expect(
-      (await BackupRestoreService.summarizeBackupFile(
-        zip,
-      )).has(BackupCategory.srs),
-      isFalse,
-    );
-  });
-
-  test('导出：本机还没搬迁（SRS 在主库老表、没有 srs.db）→ 老表随主库条目走，设备本地表清空', () async {
-    final s = await seedSource(legacy: true);
-    final String zip = p.join(src.path, 'legacy.zip');
-    final BackupMeta meta = await serviceFor(
-      s.db,
-      s.dbDir,
-      null,
-    ).createBackup(zip);
-    await s.db.close();
-    expect(meta.srsNoteCount, 1);
-    final Archive archive = await readZip(zip);
-    expect(archive.findFile('srs.db'), isNull);
-    final Directory ex = Directory(p.join(dst.path, 'ex'))..createSync();
-    extract(archive, 'fushi.db', ex);
-    final FushiDatabase blob = FushiDatabase(ex.path);
-    try {
-      expect(
-        await count(
-          blob,
-          "SELECT COUNT(*) AS c FROM srs_entities WHERE kind = 'note'",
-        ),
-        1,
-      );
-      expect(await count(blob, 'SELECT COUNT(*) AS c FROM srs_local_state'), 0);
-    } finally {
-      await blob.close();
-    }
-  });
-
-  test('导出不勾 srs、本机还没搬迁：主库条目里的老 SRS 表整张删掉', () async {
-    final s = await seedSource(legacy: true);
-    final String zip = p.join(src.path, 'legacy_nosrs.zip');
-    await serviceFor(s.db, s.dbDir, null).createBackup(
-      zip,
-      categories: BackupCategory.values.toSet()..remove(BackupCategory.srs),
-    );
-    await s.db.close();
-    final Directory ex = Directory(p.join(dst.path, 'ex'))..createSync();
-    extract(await readZip(zip), 'fushi.db', ex);
-    final FushiDatabase blob = FushiDatabase(ex.path);
-    try {
-      expect(await hasTable(blob, 'srs_entities'), isFalse);
-    } finally {
-      await blob.close();
-    }
-  });
-
-  test('导出不勾配置档案但勾 srs：只留拥有 SRS 数据的档案行（uid 来自 srs.db）', () async {
-    final s = await seedSource();
-    await insertProfile(s.db, '无复习');
-    final String zip = p.join(src.path, 'noprof.zip');
+    final String zip = p.join(src.path, 'no_srs.zip');
     await serviceFor(s.db, s.dbDir, s.srs).createBackup(
       zip,
-      categories: BackupCategory.values.toSet()
-        ..remove(BackupCategory.profiles),
+      categories: BackupCategory.values.toSet()..remove(BackupCategory.srs),
     );
     await s.srs!.close();
     await s.db.close();
-    final Directory ex = Directory(p.join(dst.path, 'ex'))..createSync();
-    extract(await readZip(zip), 'fushi.db', ex);
-    final FushiDatabase blob = FushiDatabase(ex.path);
-    try {
-      expect(await uidOfName(blob, '日语'), s.uid);
-      expect(await uidOfName(blob, '无复习'), isNull);
-    } finally {
-      await blob.close();
-    }
+    final Archive archive = await readZip(zip);
+    expect(
+      archive.files.where(
+        (ArchiveFile f) =>
+            f.name.startsWith('srs/') ||
+            f.name.startsWith('srs_media/') ||
+            f.name == 'srs.db',
+      ),
+      isEmpty,
+    );
+    final BackupMeta? meta = BackupMeta.tryParse(
+      utf8.decode(archive.findFile('backup_meta.json')!.content as List<int>),
+    );
+    expect(meta?.excludedCategories, contains(BackupCategory.srs.name));
   });
 
-  test('本机没有 SRS 数据：类别不显示、导出不含任何 srs_media 条目', () async {
-    final s = await seedSource(withSrs: false);
-    final BackupService service = serviceFor(s.db, s.dbDir, s.srs);
-    final BackupContentSummary live = await service.summarizeLiveContent();
-    expect(live.has(BackupCategory.srs), isFalse);
-    expect(backupCategoryShownInExport(BackupCategory.srs, live), isFalse);
-    expect(
-      backupCategoryShownInExport(BackupCategory.profiles, live),
-      isTrue,
-      reason: '只隐藏复习这一项',
+  test('覆盖还原（档案来自备份）：复习数据逐表与源一致；本机原来的 srs4.db 改名留作回退、逐字节原样', () async {
+    final e = await exportAll();
+    final String dbDir = await seedTarget(withLocalNote: true);
+    final List<int> before = File(
+      SrsStorage.gen4PathIn(dbDir),
+    ).readAsBytesSync();
+    await BackupRestoreService.restoreBackup(
+      dbDirectory: dbDir,
+      zipPath: e.zip,
     );
-    final String zip = p.join(src.path, 'plain.zip');
-    await service.createBackup(zip);
-    await s.srs!.close();
-    await s.db.close();
-    expect(srsMediaEntries(await readZip(zip)), isEmpty);
+    final List<File> rollbacks = <File>[
+      for (final FileSystemEntity f in Directory(dbDir).listSync())
+        if (f is File && p.basename(f.path).startsWith('srs4.db.pre-restore-'))
+          f,
+    ];
+    expect(rollbacks, hasLength(1));
+    expect(rollbacks.single.readAsBytesSync(), orderedEquals(before));
     expect(
-      (await BackupRestoreService.summarizeBackupFile(
-        zip,
-      )).has(BackupCategory.srs),
+      Directory(p.join(dbDir, 'srs-restore-staged')).existsSync(),
+      isFalse,
+    );
+    expect(
+      File(p.join(dbDir, 'fushi.db.sync-preserve.json')).existsSync(),
+      isFalse,
+    );
+    await onTarget(dbDir, (FushiDatabase db, SrsStorage srs) async {
+      expect(await uidOfName(db, '日语'), e.uid);
+      expect(await tables(srs.core, e.uid), e.tables);
+    });
+    expect(
+      File(
+        p.join(SrsMediaStore.mediaRootFor(Directory(dbDir)).path, e.uid),
+      ).parent.existsSync(),
+      isTrue,
+    );
+  });
+
+  test('覆盖还原（保留本机档案）：落到同名的本机 profile 上，内容与源一致，不留孤儿', () async {
+    final e = await exportAll();
+    final String dbDir = await seedTarget(withLocalNote: true);
+    final String localUid = (await onTarget(
+      dbDir,
+      (FushiDatabase db, SrsStorage _) async => (await uidOfName(db, '日语'))!,
+    ));
+    await BackupRestoreService.restoreBackup(
+      dbDirectory: dbDir,
+      zipPath: e.zip,
+      importSettings: false,
+    );
+    await onTarget(dbDir, (FushiDatabase db, SrsStorage srs) async {
+      expect(await profileNames(db), <String>['日语']);
+      expect(await uidOfName(db, '日语'), localUid);
+      final Map<String, List<String>> got = await tables(
+        srs.core,
+        localUid,
+        withProfile: false,
+      );
+      expect(count(got, 'logs'), count(e.tables, 'logs'));
+      expect(count(got, 'edits'), count(e.tables, 'edits'));
+      expect(
+        got['entities']!.where((String r) => r.contains('|note|')).length,
+        e.tables['entities']!.where((String r) => r.contains('|note|')).length,
+      );
+    });
+  });
+
+  test('覆盖还原不勾 srs：本机复习库逐字节原样，备份的媒体不落地', () async {
+    final e = await exportAll();
+    final String dbDir = await seedTarget(withLocalNote: true);
+    final List<int> before = File(
+      SrsStorage.gen4PathIn(dbDir),
+    ).readAsBytesSync();
+    await BackupRestoreService.restoreBackup(
+      dbDirectory: dbDir,
+      zipPath: e.zip,
+      categories: BackupCategory.values.toSet()..remove(BackupCategory.srs),
+    );
+    expect(
+      File(SrsStorage.gen4PathIn(dbDir)).readAsBytesSync(),
+      orderedEquals(before),
+    );
+    expect(
+      Directory(
+        p.join(SrsMediaStore.mediaRootFor(Directory(dbDir)).path, e.uid),
+      ).existsSync(),
       isFalse,
     );
   });
 
-  for (final bool legacy in <bool>[false, true]) {
-    final String shape = legacy ? '老形态备份' : '新形态备份';
-
-    test('$shape 覆盖恢复（勾配置档案 + srs）：本机 srs.db 换成备份的、媒体落到支持目录', () async {
-      final String zip = await exportAll(legacy: legacy);
-      final String dstDb = await seedTarget(withLocalNote: true);
-      final s = (uid: await _uidIn(src), noteId: await _noteIn(src, legacy));
-
-      await BackupRestoreService.restoreBackup(
-        dbDirectory: dstDb,
-        zipPath: zip,
-        importSettings: true,
+  group('失败的还原：本机逐字节不变', () {
+    Future<void> expectUntouched(
+      String zip,
+      Matcher error, {
+      bool merge = false,
+    }) async {
+      final String dbDir = await seedTarget(withLocalNote: true);
+      final Map<String, List<int>> before = filesOf(dbDir);
+      await expectLater(
+        merge
+            ? BackupRestoreService.mergeRestoreBackup(
+                dbDirectory: dbDir,
+                zipPath: zip,
+                srsConfirmed: true,
+              )
+            : BackupRestoreService.restoreBackup(
+                dbDirectory: dbDir,
+                zipPath: zip,
+              ),
+        error,
       );
+      final Map<String, List<int>> after = filesOf(dbDir);
+      expect(after.keys.toSet(), before.keys.toSet());
+      for (final String k in before.keys) {
+        expect(after[k], orderedEquals(before[k]!), reason: k);
+      }
+    }
 
-      final Directory mediaDir = SrsMediaStore.directoryFor(
-        Directory(dstDb),
-        s.uid,
+    test('坏的操作流：暂存库落库失败，什么都没换', () async {
+      final e = await exportAll();
+      final String bad = p.join(src.path, 'bad.zip');
+      await rewriteZip(
+        e.zip,
+        bad,
+        drop: (String n) => n == srsBackupStreamEntry(0),
+        add: <String, List<int>>{
+          srsBackupStreamEntry(0): utf8.encode('FSRS4EXP but garbage'),
+        },
       );
-      expect(Directory(mediaDir.path).listSync(), hasLength(2));
-      expect(
-        File('${SrsStorage.pathIn(dstDb)}.restore-new').existsSync(),
-        isFalse,
-        reason: '暂存文件已换进去',
-      );
-      await onTarget(dstDb, (FushiDatabase db, SrsStorage srs) async {
-        expect(await uidOfName(db, '日语'), s.uid, reason: '配置档案来自备份');
-        final SrsDbStore store = await storeOn(srs, s.uid, 'dev-dst');
-        expect(await store.note(s.noteId), isNotNull);
-        expect(await noteCount(srs), 1, reason: '本机原有的笔记随覆盖换掉');
-        expect(await orphanSrsRows(db, srs), 0);
-        expect(await hasTable(db, 'srs_entities'), isFalse, reason: '老表搬完即删');
-      });
+      await expectUntouched(bad, throwsA(anything));
     });
 
-    test('$shape 覆盖恢复勾 srs 不勾配置档案：走 SRS 专用合并，无孤儿行', () async {
-      final String zip = await exportAll(legacy: legacy);
-      final s = (uid: await _uidIn(src), noteId: await _noteIn(src, legacy));
-      final String dstDb = await seedTarget(withLocalNote: true);
-      final FushiDatabase before = FushiDatabase(dstDb);
-      final String? localUid = await uidOfName(before, '日语');
-      await before.close();
-      expect(localUid, isNot(s.uid), reason: '前提：本机档案与备份 uid 不同');
-
-      // importSettings=false：本机设置与配置档案从 bak 回灌（确认框默认）。
-      await BackupRestoreService.restoreBackup(
-        dbDirectory: dstDb,
-        zipPath: zip,
-        importSettings: false,
+    test('清单来自更新的版本：覆盖与合并都在动任何文件之前拒绝', () async {
+      final e = await exportAll();
+      final String newer = p.join(src.path, 'newer.zip');
+      await rewriteZip(
+        e.zip,
+        newer,
+        drop: (String n) => n == kSrsBackupManifestEntry,
+        add: <String, List<int>>{
+          kSrsBackupManifestEntry: utf8.encode(
+            jsonEncode(<String, Object?>{
+              'v': 3,
+              'gen': 5,
+              'collections': <Object?>[],
+            }),
+          ),
+        },
       );
-
-      await onTarget(dstDb, (FushiDatabase db, SrsStorage srs) async {
-        expect(await orphanSrsRows(db, srs), 0);
-        expect(await ownerOf(srs, s.noteId), s.uid);
-        // 覆盖语义：本机原有的 SRS 换成备份的 → 同名档案无笔记未发布 → 采用备份 uid。
-        expect(await uidOfName(db, '日语'), s.uid);
-        final SrsDbStore store = await storeOn(srs, s.uid, 'dev-dst');
-        expect(await store.cardsOfNote(s.noteId), hasLength(1));
-        expect(await hasTable(db, 'srs_entities'), isFalse);
-      });
-      final Directory mediaDir = SrsMediaStore.directoryFor(
-        Directory(dstDb),
-        s.uid,
-      );
-      expect(Directory(mediaDir.path).listSync(), hasLength(2));
-    });
-
-    test('$shape 覆盖恢复不勾 srs：备份的 SRS 与媒体不落地，本机 srs.db 原样保留', () async {
-      final String zip = await exportAll(legacy: legacy);
-      final String dstDb = await seedTarget(withLocalNote: true);
-
-      await BackupRestoreService.restoreBackup(
-        dbDirectory: dstDb,
-        zipPath: zip,
-        importSettings: true,
-        categories: BackupCategory.values.toSet()..remove(BackupCategory.srs),
-      );
-      await onTarget(dstDb, (FushiDatabase db, SrsStorage srs) async {
-        expect(await hasTable(db, 'srs_entities'), isFalse);
-        expect(await noteCount(srs), 1, reason: '本机那条「花」还在');
-        expect(await ownerOf(srs, await _noteIn(src, legacy)), isNull);
-      });
-      expect(
-        SrsMediaStore.mediaRootFor(Directory(dstDb)).existsSync(),
-        isFalse,
+      await expectUntouched(newer, throwsA(isA<SrsBackupTooNewException>()));
+      await cleanupTempDir(dst);
+      dst.createSync(recursive: true);
+      await expectUntouched(
+        newer,
+        throwsA(isA<SrsBackupTooNewException>()),
+        merge: true,
       );
     });
+  });
 
-    test('$shape 合并导入：媒体按文件名取并集、已存在跳过；两次合并幂等', () async {
-      final String zip = await exportAll(legacy: legacy);
-      final s = (uid: await _uidIn(src), noteId: await _noteIn(src, legacy));
-      final String dstDb = await seedTarget();
-      // 本机已有同名文件（同名即同内容；这里故意写不同字节，以证明它没被覆盖）。
-      final Directory mediaDir = SrsMediaStore.directoryFor(
-        Directory(dstDb),
-        s.uid,
-      )..createSync(recursive: true);
-      final List<String> names = <String>[
-        for (final FileSystemEntity e in SrsMediaStore.directoryFor(
-          Directory(p.join(src.path, 'support')),
-          s.uid,
-        ).listSync())
-          if (!e.path.endsWith('.tmp')) p.basename(e.path),
-      ]..sort();
-      final File existing = File(p.join(mediaDir.path, names.first))
-        ..writeAsStringSync('LOCAL');
+  test('本机复习库还没迁移（只有协议 3 的 srs.db）：还原明确拒绝，srs.db 逐字节原样', () async {
+    final e = await exportAll();
+    final String p3 = await _protocol3LibraryFrom(src, e);
+    final String dbDir = p.join(dst.path, 'support');
+    Directory(dbDir).createSync(recursive: true);
+    final FushiDatabase db = FushiDatabase(dbDir);
+    await insertProfile(db, '日语');
+    await db.close();
+    File(p3).copySync(SrsStorage.legacyPathIn(dbDir));
+    final List<int> before = File(
+      SrsStorage.legacyPathIn(dbDir),
+    ).readAsBytesSync();
+    await expectLater(
+      BackupRestoreService.restoreBackup(dbDirectory: dbDir, zipPath: e.zip),
+      throwsA(isA<SrsRestoreBlockedException>()),
+    );
+    expect(
+      File(SrsStorage.legacyPathIn(dbDir)).readAsBytesSync(),
+      orderedEquals(before),
+    );
+    expect(File(SrsStorage.gen4PathIn(dbDir)).existsSync(), isFalse);
+  });
 
-      Future<void> mergeOnce() => BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: dstDb,
-        zipPath: zip,
-        categories: BackupCategory.values.toSet(),
+  test('本机还没迁移：合并只在备份真带复习数据时拒绝（先于改主库）；勾着「复习」但备份里没有复习数据照常合并', () async {
+    final e = await exportAll();
+    final String p3 = await _protocol3LibraryFrom(src, e);
+    final String noSrs = p.join(src.path, 'no_srs_data.zip');
+    await rewriteZip(
+      e.zip,
+      noSrs,
+      drop: (String n) => n.startsWith(kSrsBackupPrefix),
+    );
+    final String dbDir = p.join(dst.path, 'support');
+    Directory(dbDir).createSync(recursive: true);
+    final FushiDatabase db = FushiDatabase(dbDir);
+    await insertProfile(db, '日语');
+    await db.close();
+    File(p3).copySync(SrsStorage.legacyPathIn(dbDir));
+    final Map<String, List<int>> before = filesOf(dbDir);
+
+    await expectLater(
+      BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: dbDir,
+        zipPath: e.zip,
+        srsConfirmed: true,
+      ),
+      throwsA(isA<SrsRestoreBlockedException>()),
+    );
+    // 代际状态探测（`SrsGen4Migration.status`）自己会留下协调锁与旧库的 -wal（不在本模块，原有行为）；除此之外没有
+    // 新文件（没有合并临时库、没有 pre-merge 快照、没有 srs4.db），原有文件逐字节不变。
+    expect(
+      filesOf(dbDir).keys.toSet().difference(before.keys.toSet()),
+      everyElement(isIn(<String>{'srs.db-wal', 'srs.gen.lock'})),
+    );
+    for (final MapEntry<String, List<int>> f in before.entries) {
+      expect(filesOf(dbDir)[f.key], orderedEquals(f.value), reason: f.key);
+    }
+
+    final List<SrsBackupMergeResult> r =
+        await BackupRestoreService.mergeRestoreBackup(
+          dbDirectory: dbDir,
+          zipPath: noSrs,
+          srsConfirmed: true,
+        );
+    expect(r, isEmpty);
+    expect(
+      File(SrsStorage.legacyPathIn(dbDir)).readAsBytesSync(),
+      orderedEquals(before[p.basename(SrsStorage.legacyPathIn(dbDir))]!),
+    );
+    expect(File(SrsStorage.gen4PathIn(dbDir)).existsSync(), isFalse);
+  });
+
+  group('合并还原', () {
+    test('没确认：另一个复习库的数据不落、不建「（备份）」profile；确认后落下，再合并一次什么都不变（幂等）', () async {
+      final e = await exportAll();
+      final String dbDir = await seedTarget(withLocalNote: true);
+      final String localUid = await onTarget(
+        dbDir,
+        (FushiDatabase db, SrsStorage _) async => (await uidOfName(db, '日语'))!,
+      );
+      final Map<String, List<String>> localBefore = await onTarget(
+        dbDir,
+        (FushiDatabase _, SrsStorage srs) => tables(srs.core, localUid),
       );
 
-      await mergeOnce();
-      expect(existing.readAsStringSync(), 'LOCAL', reason: '已存在跳过');
-      expect(File(p.join(mediaDir.path, names.last)).existsSync(), isTrue);
-      expect(
-        File(p.join(dstDb, 'fushi.db.merge-src-srs')).existsSync(),
-        isFalse,
-        reason: 'srs.db 副本用完即删',
-      );
-
-      late int profiles;
-      late int events;
-      Future<(int, int)> fingerprint(FushiDatabase db, SrsStorage srs) async =>
-          (
-            await count(db, 'SELECT COUNT(*) AS c FROM profiles'),
-            await srsCount(
-              srs,
-              'SELECT (SELECT COUNT(*) FROM srs_entities) * 1000 + '
-              '(SELECT COUNT(*) FROM srs_field_edits) AS c',
-            ),
+      final List<SrsBackupMergeResult> declined =
+          await BackupRestoreService.mergeRestoreBackup(
+            dbDirectory: dbDir,
+            zipPath: e.zip,
           );
-      await onTarget(dstDb, (FushiDatabase db, SrsStorage srs) async {
-        (profiles, events) = await fingerprint(db, srs);
-        expect(await orphanSrsRows(db, srs), 0);
-        expect(await noteCount(srs), 1);
+      expect(declined.single.action, SrsBackupMergeAction.declined);
+      await onTarget(dbDir, (FushiDatabase db, SrsStorage srs) async {
+        expect(await profileNames(db), <String>['日语']);
+        expect(await tables(srs.core, localUid), localBefore);
       });
-      final List<String> filesAfterFirst =
-          mediaDir
-              .listSync()
-              .map((FileSystemEntity e) => p.basename(e.path))
-              .toList()
-            ..sort();
 
-      await mergeOnce();
-      await onTarget(dstDb, (FushiDatabase db, SrsStorage srs) async {
-        expect(await fingerprint(db, srs), (profiles, events));
-        expect(await uidOfName(db, '日语（备份 2）'), isNull);
+      final List<SrsBackupMergeResult> first =
+          await BackupRestoreService.mergeRestoreBackup(
+            dbDirectory: dbDir,
+            zipPath: e.zip,
+            srsConfirmed: true,
+          );
+      expect(first.single.action, SrsBackupMergeAction.createdProfile);
+      expect(first.single.profileUid, e.uid);
+      expect(first.single.newEvents, greaterThan(0));
+      final Map<String, List<String>> merged = await onTarget(dbDir, (
+        FushiDatabase db,
+        SrsStorage srs,
+      ) async {
+        expect(await profileNames(db), <String>['日语', '日语（备份）']);
+        expect(await tables(srs.core, localUid), localBefore);
+        return tables(srs.core, e.uid);
       });
-      expect(
-        mediaDir
-            .listSync()
-            .map((FileSystemEntity e) => p.basename(e.path))
-            .toList()
-          ..sort(),
-        filesAfterFirst,
-      );
-      expect(existing.readAsStringSync(), 'LOCAL');
+      expect(merged, e.tables);
+
+      final List<SrsBackupMergeResult> again =
+          await BackupRestoreService.mergeRestoreBackup(
+            dbDirectory: dbDir,
+            zipPath: e.zip,
+            srsConfirmed: true,
+          );
+      expect(again.single.action, SrsBackupMergeAction.sameUid);
+      expect(again.single.newEvents, 0);
+      await onTarget(dbDir, (FushiDatabase db, SrsStorage srs) async {
+        expect(await profileNames(db), <String>['日语', '日语（备份）']);
+        expect(await tables(srs.core, e.uid), merged);
+      });
     });
 
-    test('$shape 合并导入不勾 srs：既不并数据也不拷媒体，也不建 srs.db', () async {
-      final String zip = await exportAll(legacy: legacy);
-      final String dstDb = await seedTarget();
-      await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: dstDb,
-        zipPath: zip,
-        categories: BackupCategory.values.toSet()..remove(BackupCategory.srs),
-      );
-      expect(File(SrsStorage.pathIn(dstDb)).existsSync(), isFalse);
+    test('合并不勾 srs：既不并数据也不拷媒体，也不建复习库', () async {
+      final e = await exportAll();
+      final String dbDir = await seedTarget();
+      final List<SrsBackupMergeResult> r =
+          await BackupRestoreService.mergeRestoreBackup(
+            dbDirectory: dbDir,
+            zipPath: e.zip,
+            categories: BackupCategory.values.toSet()
+              ..remove(BackupCategory.srs),
+            srsConfirmed: true,
+          );
+      expect(r, isEmpty);
+      expect(File(SrsStorage.gen4PathIn(dbDir)).existsSync(), isFalse);
       expect(
-        SrsMediaStore.mediaRootFor(Directory(dstDb)).existsSync(),
+        Directory(
+          p.join(SrsMediaStore.mediaRootFor(Directory(dbDir)).path, e.uid),
+        ).existsSync(),
         isFalse,
       );
     });
-  }
+  });
 
-  test('启动恢复：sidecar 记着 srs=replace 且暂存文件还在 → 换进 srs.db（并清掉旧 -wal）', () async {
-    final String dstDb = await seedTarget(withLocalNote: true);
-    // 暂存一份「备份的」srs.db（与真实流程一样是 Rust 的 VACUUM INTO 快照）：另一个 profile
-    // 的一条笔记。
-    final String staged = '${SrsStorage.pathIn(dstDb)}.restore-new';
-    final SrsStorage other = await SrsStorage.open(
-      path: p.join(dst.path, 'other_srs.db'),
-    );
-    const String otherUid = '01928c3e-0000-7000-8000-00000000beef';
-    final String otherNote = await addNote(
-      await storeOn(other, otherUid, 'dev-x'),
-      '月',
-    );
-    other.core.snapshotInto(staged, stripDeviceLocal: true);
-    await other.close();
-    File('${SrsStorage.pathIn(dstDb)}-wal').writeAsStringSync('stale frames');
-    File(p.join(dstDb, 'fushi.db.sync-preserve.json')).writeAsStringSync(
-      jsonEncode(<String, Object?>{
-        'mode': 'prefs',
-        'prefs': <String, String>{},
-        'srs': 'replace',
-      }),
-    );
-
-    await BackupRestoreService.recoverPendingRestore(dstDb);
-
-    expect(File(staged).existsSync(), isFalse);
-    expect(File('${SrsStorage.pathIn(dstDb)}-wal').existsSync(), isFalse);
-    await onTarget(dstDb, (FushiDatabase db, SrsStorage srs) async {
-      expect(await ownerOf(srs, otherNote), otherUid);
-      expect(await noteCount(srs), 1, reason: '本机原来的「花」随换文件消失');
+  group('旧形态备份：卡片 / 笔记 / 日志条数与源一致', () {
+    test('2026-10-23 之前（SRS 表在主库条目里，v1 事件）：覆盖还原', () async {
+      final e = await exportAll(legacy: true);
+      final Archive archive = await readZip(e.zip);
+      expect(archive.findFile(kSrsBackupManifestEntry), isNull);
+      final String dbDir = await seedTarget();
+      await BackupRestoreService.restoreBackup(
+        dbDirectory: dbDir,
+        zipPath: e.zip,
+      );
+      await onTarget(dbDir, (FushiDatabase db, SrsStorage srs) async {
+        expect(await _hasLegacyTables(db), isFalse);
+        final Map<String, List<String>> got = await tables(srs.core, e.uid);
+        expect(count(got, 'logs'), count(e.tables, 'logs'));
+        expect(_notes(got), _notes(e.tables));
+        expect(_cards(got), _cards(e.tables));
+      });
     });
-    // 重放幂等：再跑一次（sidecar 已删）什么都不动。
-    await BackupRestoreService.recoverPendingRestore(dstDb);
-    expect(File(SrsStorage.pathIn(dstDb)).existsSync(), isTrue);
+
+    test('协议 3 的 srs.db 条目（2026-10-23 起）：合并还原两次，第二次不重复', () async {
+      final e = await exportAll();
+      final String p3 = await _protocol3LibraryFrom(src, e);
+      final String old = p.join(src.path, 'p3.zip');
+      await rewriteZip(
+        e.zip,
+        old,
+        drop: (String n) => n.startsWith('srs/'),
+        add: <String, List<int>>{'srs.db': File(p3).readAsBytesSync()},
+      );
+      final String dbDir = await seedTarget();
+      for (int round = 0; round < 2; round++) {
+        await BackupRestoreService.mergeRestoreBackup(
+          dbDirectory: dbDir,
+          zipPath: old,
+          srsConfirmed: true,
+        );
+      }
+      await onTarget(dbDir, (FushiDatabase db, SrsStorage srs) async {
+        final String uid = (await uidOfName(db, '日语'))!;
+        final Map<String, List<String>> got = await tables(
+          srs.core,
+          uid,
+          withProfile: false,
+        );
+        expect(count(got, 'logs'), count(e.tables, 'logs'));
+        expect(_notes(got), _notes(e.tables));
+        expect(_cards(got), _cards(e.tables));
+      });
+    });
   });
 }
 
-/// 源设备 profile「日语」的 uid（seedSource 之后读，源库已关）。
-Future<String> _uidIn(Directory src) async {
-  final FushiDatabase db = FushiDatabase(p.join(src.path, 'support'));
-  try {
-    return (await db
-            .customSelect("SELECT uid FROM profiles WHERE name = '日语'")
-            .getSingle())
-        .read<String>('uid');
-  } finally {
-    await db.close();
+Iterable<String> _ofKind(Map<String, List<String>> t, String kind) =>
+    t['entities']!
+        .where((String r) => r.split('|')[1] == kind)
+        .map((String r) => r.split('|').first);
+
+List<String> _notes(Map<String, List<String>> t) =>
+    _ofKind(t, 'note').toList()..sort();
+
+List<String> _cards(Map<String, List<String>> t) =>
+    _ofKind(t, 'card').toList()..sort();
+
+Future<bool> _hasLegacyTables(DatabaseConnectionUser db) async =>
+    (await db
+        .customSelect(
+          "SELECT 1 FROM sqlite_master WHERE type = 'table' "
+          "AND name = 'srs_entities'",
+        )
+        .getSingleOrNull()) !=
+    null;
+
+/// 2026-10-23 之前的形态：把 [events]（v1）按旧表定义写进主库 [db]（卡片 → 笔记写进 `srs_cards_cache`）。
+Future<void> _writeLegacyTables(
+  FushiDatabase db,
+  List<SrsEvent> events,
+  Map<String, String> noteOfCard,
+) async {
+  for (final String ddl in kLegacySrsTableDdl.values) {
+    await db.customStatement(ddl);
+  }
+  for (final SrsEvent e in events) {
+    switch (e) {
+      case SrsEntityEvent(:final SrsEntityRecord record):
+        await db.customStatement(
+          'INSERT INTO srs_entities (id, profile_uid, kind, payload_json) '
+          'VALUES (?, ?, ?, ?)',
+          <Object?>[
+            record.id,
+            record.profileUid,
+            record.kind.wire,
+            jsonEncode(record.payload),
+          ],
+        );
+      case SrsEditEvent(:final SrsFieldEdit edit):
+        await db.customStatement(
+          'INSERT INTO srs_field_edits (id, profile_uid, entity_kind, '
+          'entity_id, field_key, writer_id, seq, json) '
+          'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          <Object?>[
+            edit.id,
+            edit.profileUid,
+            edit.entityKind.wire,
+            edit.entityId,
+            edit.fieldKey,
+            edit.dot.writerId,
+            edit.dot.seq,
+            jsonEncode(edit.toJson()),
+          ],
+        );
+      case SrsLogEvent(:final SrsReviewLog log):
+        final Map<String, Object?> j = log.toJson();
+        await db.customStatement(
+          'INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, '
+          'occurred_at, review_type, origin, json) '
+          'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          <Object?>[
+            log.id,
+            log.profileUid,
+            log.cardId,
+            '${j['kind']}',
+            j['rating'],
+            log.occurredAt,
+            '${j['rtype'] ?? 'manual'}',
+            '${j['origin'] ?? 'fushi'}',
+            jsonEncode(j),
+          ],
+        );
+      case SrsUnknownEvent():
+        break;
+    }
+  }
+  final String profile = events.first.toJson()['x'] is Map
+      ? ((events.first.toJson()['x']! as Map)['p'] as String)
+      : '';
+  for (final MapEntry<String, String> c in noteOfCard.entries) {
+    await db.customStatement(
+      'INSERT INTO srs_cards_cache (id, profile_uid, note_id, template_id, '
+      'deck_id) VALUES (?, ?, ?, ?, ?)',
+      <Object?>[c.key, profile, c.value, 't', 'd'],
+    );
   }
 }
 
-/// 源设备那条笔记的 id：新形态从源 srs.db 读，老形态从源主库老表读。
-Future<String> _noteIn(Directory src, bool legacy) async {
-  const String sql = "SELECT id FROM srs_entities WHERE kind = 'note'";
-  final String dbDir = p.join(src.path, 'support');
-  if (legacy) {
-    final FushiDatabase db = FushiDatabase(dbDir);
-    try {
-      return (await db.customSelect(sql).getSingle()).read<String>('id');
-    } finally {
-      await db.close();
-    }
-  }
-  final SrsStorage srs = await SrsStorage.open(path: SrsStorage.pathIn(dbDir));
+/// 一份真的协议 3 库（2026-10-23 起整包备份里的 `srs.db` 条目那种）：把 [e] 的源数据按 v1 事件交给内核
+/// `legacy_backup_import`（只预检），内核用冻结的协议 3 代码在 scratch 目录里备好的那份库就是。
+Future<String> _protocol3LibraryFrom(
+  Directory root,
+  ({String zip, String uid, Map<String, List<String>> tables}) e,
+) async {
+  final Directory work = Directory(p.join(root.path, 'p3work'))
+    ..createSync(recursive: true);
+  final Directory scratch = Directory(p.join(work.path, 'scratch'))
+    ..createSync();
+  final Directory lib = Directory(p.join(work.path, 'lib'))..createSync();
+  // 源数据：从整包备份新形态的流导进一份临时新代库，再读 v1 事件。
+  final Archive archive = ZipDecoder().decodeBytes(
+    File(e.zip).readAsBytesSync(),
+  );
+  final SrsBackupBundleManifest m = SrsBackupBundleManifest.parse(
+    archive.findFile(kSrsBackupManifestEntry)!.content as List<int>,
+  );
+  final String stream = p.join(work.path, '0.bin');
+  File(stream).writeAsBytesSync(
+    archive.findFile(srsBackupStreamEntry(0))!.content as List<int>,
+  );
+  final SrsCore core = SrsCore.open(lib.path);
   try {
-    return (await srs.core.customSelect(sql).getSingle()).read<String>('id');
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await srsLandBackupUnit(
+      core: core,
+      targetUid: e.uid,
+      file: SrsBackupStreamFile(path: stream, unit: m.units.single),
+      confirmed: true,
+      nowMs: now,
+    );
+    final List<SrsEvent> events = await srsEventsOf(core, e.uid);
+    final String jsonl = p.join(work.path, 'events.jsonl');
+    final Map<String, String> noteOfCard = <String, String>{};
+    for (final SrsEvent ev in events) {
+      if (ev is SrsEntityEvent && ev.record.kind == SrsEntityKind.card) {
+        final Object? n = ev.record.payload['noteId'];
+        if (n is String) noteOfCard[ev.record.id] = n;
+      }
+    }
+    await srsWriteLegacyEventsJsonl(
+      events,
+      File(jsonl),
+      noteOfCard: noteOfCard,
+    );
+    // 另一份空的新代库上预检：上面那份里这个集合已经绑在 e.uid 上了。
+    final Directory fresh = Directory(p.join(work.path, 'fresh'))..createSync();
+    final SrsCore other = SrsCore.open(fresh.path);
+    try {
+      await srsLandBackupUnit(
+        core: other,
+        targetUid: e.uid,
+        file: SrsBackupLegacyEventsFile(
+          path: jsonl,
+          scratch: scratch.path,
+          backupProfile: e.uid,
+        ),
+        confirmed: false,
+        preflight: true,
+        nowMs: now,
+      );
+    } finally {
+      other.close();
+    }
   } finally {
-    await srs.close();
+    core.close();
   }
+  return p.join(scratch.path, kSrsDatabaseFileName);
 }

@@ -20,7 +20,7 @@ import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/settings/settings_search_sheet.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
-    show FushiHeightReporter, FushiTopFadeScrim, kFushiFloatingChromeGap;
+    show FushiHeightReporter, FushiTopFadeScrim;
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
     show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_static_masthead.dart';
@@ -267,12 +267,9 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.only(top: kFushiFloatingChromeGap),
-              child: FushiStaticMasthead(
-                key: const ValueKey<String>('settings_home_masthead'),
-                title: t.settings,
-              ),
+            FushiStaticMasthead(
+              key: const ValueKey<String>('settings_home_masthead'),
+              title: t.settings,
             ),
             Expanded(child: content),
           ],

@@ -598,6 +598,7 @@ class RemoteMineResult {
     this.deckName,
     this.errorKind,
     this.errorCode,
+    this.mediaUnavailable = false,
   });
 
   final String result;
@@ -619,6 +620,12 @@ class RemoteMineResult {
   /// `/api/mine/forward` 响应回传给客户端的成功 toast；失败为 `null`。旧客户端
   /// 忽略此字段即旧行为（向后兼容）。
   final String? deckName;
+
+  /// `error` 时：失败出在「从源视频流拿媒体」这一步（流解析失败、裁剪缺音频而中止），还没
+  /// 走到落卡。本机调用方据此判断换一条取媒体的路（网页视频的逐句重放录制）有没有意义；
+  /// Anki 未配置 / 落卡失败 / 时间窗无效等与取媒体无关的失败为 false，换路也是同一处失败。
+  /// 只在本机进程内用，不上 wire（[buildRemoteMineResponse] 不摊它）。
+  final bool mediaUnavailable;
 }
 
 /// [RemoteMineResult.errorKind] 的取值（wire 上用 [name]）。

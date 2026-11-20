@@ -35,10 +35,16 @@ import 'package:fushi_engine/ai/web_knowledge.dart'
         parseWebKnowledgeEnabledIds;
 import 'package:fushi/src/models/preference_keys.dart'
     show
+        kAiAgentWebSearchAllow,
+        kAiAgentWebSearchOff,
+        kAiAgentWebSearchPref,
         kAiWebSearchPageFetchAllow,
         kAiWebSearchPageFetchDeny,
         kAiWebSearchPageFetchPref,
-        kLibraryManualOrderPrefKeyPrefix;
+        kLibraryManualOrderPrefKeyPrefix,
+        kWhatsNewCardDismissedVersionPrefKey,
+        kWhatsNewSeenSeqPrefKey,
+        kWhatsNewSeenVersionPrefKey;
 import 'package:fushi/src/models/library_grid_columns.dart';
 import 'package:fushi/src/stats/study_goal_period.dart' show StudyGoalPeriod;
 import 'package:fushi/src/utils/misc/platform_utils.dart' show WindowSizeClass;
@@ -3579,6 +3585,24 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 「AI 助手自主联网搜索」的首次确认状态：`''` 还没同意 / [kAiAgentWebSearchAllow] /
+  /// [kAiAgentWebSearchOff]（见 [kAiAgentWebSearchPref]）。
+  String get aiAgentWebSearchConsent =>
+      getPref(kAiAgentWebSearchPref, defaultValue: '') as String;
+
+  /// 用户在助手的确认卡上点了同意（由 `web.search` / `web.read` 路由经表态参数写）。
+  Future<void> grantAiAgentWebSearch() async {
+    await setPref(kAiAgentWebSearchPref, kAiAgentWebSearchAllow);
+    notifyListeners();
+  }
+
+  /// 设置页开关：关 = [kAiAgentWebSearchOff]（两条操作不可用）；开 = 回到 `''`
+  /// （还没同意，助手下次用时重新确认），不直接写成已同意。
+  Future<void> setAiAgentWebSearchEnabled(bool enabled) async {
+    await setPref(kAiAgentWebSearchPref, enabled ? '' : kAiAgentWebSearchOff);
+    notifyListeners();
+  }
+
   /// 写入联网搜索后端；null = 清空（写空串，读侧 [WebSearchConfig.tryParse] 视空串
   /// 为没配；偏好层没有带缓存与 LWW 戳的删键入口）。
   Future<void> setAiWebSearch(WebSearchConfig? config) async {
@@ -4293,6 +4317,58 @@ class PreferencesRepository extends ChangeNotifier
       ]),
     );
     notifyListeners();
+  }
+
+  /// 移除了、复习内核还没忘掉的同步位置（JSON 字符串数组，元素是位置身份 `SrsFolderLocation.locationId`）。设备本地。
+  ///
+  /// 移除文件夹位置时与 [srsFolderLocationsKey] 在**同一个事务**里写（[removeSrsFolderLocation]）：配置里去掉、
+  /// 同时记下「内核要忘掉它」；同步调度器起来后（以及每一轮开头）逐个 `location_forget`，忘掉一个划掉一个
+  /// （[markSrsLocationForgotten]）。复习模块没起（没有运行时）、卡片库没打开、内核一时忘不掉都不挡移除，
+  /// 也不会让内核里留下没人能清的状态：这份清单和位置配置一样是设备级的（所有 profile 共用），内核的
+  /// `location_forget` 也在库文件里**每一个** profile 的集合里各忘一次，所以随便哪个 profile 忘掉一次就可以划掉。
+  static const String srsForgetPendingKey = 'srs_sync2_forget_pending';
+
+  Set<String> get srsPendingLocationForgets {
+    final Object? raw = getPref(srsForgetPendingKey, defaultValue: '');
+    if (raw is! String || raw.isEmpty) return const <String>{};
+    try {
+      final Object? j = jsonDecode(raw);
+      if (j is! List) return const <String>{};
+      return <String>{
+        for (final Object? e in j)
+          if (e is String && e.isNotEmpty) e,
+      };
+    } on FormatException {
+      return const <String>{};
+    }
+  }
+
+  /// 从文件夹位置里去掉 [id]，同一个事务里把它的位置身份记进待忘清单（[srsForgetPendingKey]）。没有这个位置 =
+  /// 什么都不写。
+  Future<void> removeSrsFolderLocation(String id) async {
+    final List<SrsFolderLocation> folders = srsFolderLocations;
+    final SrsFolderLocation? gone = folders
+        .where((SrsFolderLocation l) => l.id == id)
+        .firstOrNull;
+    if (gone == null) return;
+    await setPrefs(<String, dynamic>{
+      srsFolderLocationsKey: jsonEncode(<Object?>[
+        for (final SrsFolderLocation l in folders)
+          if (l.id != id) l.toJson(),
+      ]),
+      srsForgetPendingKey: jsonEncode(
+        (<String>{...srsPendingLocationForgets, gone.locationId}.toList()
+          ..sort()),
+      ),
+    });
+    notifyListeners();
+  }
+
+  /// 内核已经忘掉 [locationId]：从待忘清单里划掉。
+  Future<void> markSrsLocationForgotten(String locationId) async {
+    final Set<String> pending = <String>{...srsPendingLocationForgets};
+    if (!pending.remove(locationId)) return;
+    await setPref(srsForgetPendingKey, jsonEncode(pending.toList()..sort()));
   }
 
   /// 复习同步 v2 里这台设备关掉的同步通道位置（JSON 字符串数组，元素是位置身份 = `srs_directory_key.dart`）。
@@ -6564,6 +6640,29 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('update_debug_channel', value);
     notifyListeners();
   }
+
+  /// 「本版新内容」基线：本机最近一次看过的版本串（空串 = 还没定基线）。
+  String get whatsNewSeenVersion =>
+      getPref(kWhatsNewSeenVersionPrefKey, defaultValue: '') as String;
+
+  /// 与 [whatsNewSeenVersion] 配对的 release sequence（0 = 未知）。
+  int get whatsNewSeenSeq =>
+      getPref(kWhatsNewSeenSeqPrefKey, defaultValue: 0) as int;
+
+  Future<void> setWhatsNewSeen({
+    required String version,
+    required int seq,
+  }) async {
+    await setPref(kWhatsNewSeenVersionPrefKey, version);
+    await setPref(kWhatsNewSeenSeqPrefKey, seq);
+  }
+
+  /// 首页「本版新内容」卡片在哪个版本上被关掉（空串 = 没关过）。
+  String get whatsNewCardDismissedVersion =>
+      getPref(kWhatsNewCardDismissedVersionPrefKey, defaultValue: '') as String;
+
+  Future<void> setWhatsNewCardDismissedVersion(String version) =>
+      setPref(kWhatsNewCardDismissedVersionPrefKey, version);
 
   /// 用户手填的「自定义更新代理」（`host:port`，空串=未设）。fake-ip/TUN 模式下系统
   /// 代理只写注册表、Dart HttpClient 读不到时的兜底入口（TODO-871/862）：非空时检查/下载

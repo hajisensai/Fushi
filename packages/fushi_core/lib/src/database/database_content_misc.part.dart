@@ -7,6 +7,16 @@ part of 'database.dart';
 /// [title] 是删前的库内标题（墓碑与歧义复核的判据），[bookUid] 是稳定身份。
 typedef VideoStatisticsIdentity = ({String title, String bookUid});
 
+/// [_FushiDbContentMisc.saveMangaChapterStates] 的一项：一章的新进度。
+/// `pageCount` / `readAt` 为 null = 沿用既有值；`clearRead` = 把已读标记撤掉。
+typedef MangaChapterStateWrite = ({
+  String chapterKey,
+  int lastPage,
+  int? pageCount,
+  int? readAt,
+  bool clearRead,
+});
+
 mixin _FushiDbContentMisc
     on _$FushiDatabase, _FushiDbLibrary, _FushiDbTagsSync {
   // ── dictionary metadata ─────────────────────────────────────────
@@ -211,7 +221,14 @@ mixin _FushiDbContentMisc
   /// 只要 title / uid / importedAt / format 等小列的调用方（书架映射、统计事实面、
   /// 导入重复检查、远端去重）走这里，不再把每本几十 KB 的 `chaptersJson` / `tocJson`
   /// 整库拉一遍再丢掉。
-  Future<List<EpubBookMeta>> getEpubBookMetas() async {
+  ///
+  /// [matchingBookKey]：只取与这本书「同名判定」相关的行——它自己、与它库内标题
+  /// 同名的书、以及标题等于 [orTitle] 的书。统计事实面按书读时靠这一小撮行判
+  /// 「标题在库里是否唯一」（legacy 无身份行按标题反查身份），结果与整库判定一致。
+  Future<List<EpubBookMeta>> getEpubBookMetas({
+    String? matchingBookKey,
+    String? orTitle,
+  }) async {
     final JoinedSelectStatement<HasResultSet, dynamic> query =
         selectOnly(epubBooks)
           ..addColumns(<Expression<Object>>[
@@ -225,6 +242,20 @@ mixin _FushiDbContentMisc
             epubBooks.completedAt,
           ])
           ..orderBy(<OrderingTerm>[OrderingTerm.desc(epubBooks.importedAt)]);
+    if (matchingBookKey != null) {
+      final Expression<bool> sameTitleAsBook = epubBooks.title.isInQuery(
+        selectOnly(epubBooks)
+          ..addColumns(<Expression<Object>>[epubBooks.title])
+          ..where(epubBooks.bookKey.equals(matchingBookKey)),
+      );
+      query.where(
+        orTitle == null || orTitle.isEmpty
+            ? epubBooks.bookKey.equals(matchingBookKey) | sameTitleAsBook
+            : epubBooks.bookKey.equals(matchingBookKey) |
+                  sameTitleAsBook |
+                  epubBooks.title.equals(orTitle),
+      );
+    }
     final List<TypedResult> rows = await query.get();
     return rows
         .map(
@@ -237,6 +268,85 @@ mixin _FushiDbContentMisc
             localAddedAt: row.read(epubBooks.localAddedAt),
             extractDir: row.read(epubBooks.extractDir)!,
             completedAt: row.read(epubBooks.completedAt),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  /// 书架投影（[EpubBookShelfRow]，与 [getAllEpubBooks] 同序：importedAt 降序）。
+  /// [bookKey] 非空时只取那一本（单本重建 MediaItem 与整架同一条派生，不分叉）。
+  ///
+  /// 每章字数在 SQLite 侧用 `json_each` 抽成逗号串，整段 `chapters_json` /
+  /// `toc_json` 不出库。`chapters_json` 不是合法 JSON 数组时（空串、损坏）
+  /// `CASE` 短路，不让一本坏行把整个书架查询炸掉；数组元素不是对象、或
+  /// `characters` 缺失 / 不是数字时该章记 0。`group_concat(... ORDER BY key)`
+  /// 钉死数组顺序（聚合顺序不能依赖扫描顺序）。
+  Future<List<EpubBookShelfRow>> getEpubBookShelfRows({String? bookKey}) async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT book_key, uid, title, author, cover_path, extract_dir, '
+      'chapter_count, format, source_metadata, '
+      // 嵌套 CASE 而不是 AND：SQLite 只保证 CASE 分支惰性求值，AND 两侧
+      // 都可能被求值，而 json_type 碰到非法 JSON 会直接抛错。
+      'CASE WHEN json_valid(chapters_json) THEN '
+      "CASE WHEN json_type(chapters_json) = 'array' THEN ("
+      'SELECT group_concat('
+      "CASE WHEN c.type = 'object' THEN "
+      "CASE WHEN json_type(c.value, '\$.characters') IN ('integer', 'real') "
+      "THEN CAST(json_extract(c.value, '\$.characters') AS INTEGER) "
+      "ELSE 0 END ELSE 0 END, ',' ORDER BY c.key) "
+      'FROM json_each(epub_books.chapters_json) AS c'
+      ') END END AS section_chars '
+      'FROM epub_books '
+      '${bookKey == null ? '' : 'WHERE book_key = ? '}'
+      'ORDER BY imported_at DESC',
+      variables: <Variable<Object>>[
+        if (bookKey != null) Variable<String>(bookKey),
+      ],
+      readsFrom: <ResultSetImplementation<dynamic, dynamic>>{epubBooks},
+    ).get();
+    return rows
+        .map((QueryRow row) {
+          final String? chars = row.read<String?>('section_chars');
+          return EpubBookShelfRow(
+            bookKey: row.read<String>('book_key'),
+            uid: row.read<String>('uid'),
+            title: row.read<String>('title'),
+            author: row.read<String?>('author'),
+            coverPath: row.read<String?>('cover_path'),
+            extractDir: row.read<String>('extract_dir'),
+            chapterCount: row.read<int>('chapter_count'),
+            format: row.read<String>('format'),
+            sourceMetadata: row.read<String?>('source_metadata'),
+            sectionChars: chars == null || chars.isEmpty
+                ? const <int>[]
+                : chars.split(',').map(int.parse).toList(growable: false),
+          );
+        })
+        .toList(growable: false);
+  }
+
+  /// 分卷归组投影（[EpubBookSeriesFacts]，与 [getAllEpubBooks] 同序）：归组只要
+  /// 身份 / 书名 / 格式 / `sourceMetadata`，不把章节与目录 JSON 整表拉出来。
+  Future<List<EpubBookSeriesFacts>> getEpubBookSeriesFacts() async {
+    final JoinedSelectStatement<HasResultSet, dynamic> query =
+        selectOnly(epubBooks)
+          ..addColumns(<Expression<Object>>[
+            epubBooks.bookKey,
+            epubBooks.uid,
+            epubBooks.title,
+            epubBooks.format,
+            epubBooks.sourceMetadata,
+          ])
+          ..orderBy(<OrderingTerm>[OrderingTerm.desc(epubBooks.importedAt)]);
+    final List<TypedResult> rows = await query.get();
+    return rows
+        .map(
+          (TypedResult row) => EpubBookSeriesFacts(
+            bookKey: row.read(epubBooks.bookKey)!,
+            uid: row.read(epubBooks.uid)!,
+            title: row.read(epubBooks.title)!,
+            format: row.read(epubBooks.format)!,
+            sourceMetadata: row.read(epubBooks.sourceMetadata),
           ),
         )
         .toList(growable: false);
@@ -1316,6 +1426,39 @@ mixin _FushiDbContentMisc
     ),
   );
 
+  /// 描述符的读-改-写，在**一个事务里**重读当前 `sourceMetadata` 再写回
+  /// （gap-mangamisc-1）。
+  ///
+  /// 在线漫画描述符有几个写方（源刷新、选章、订阅开关、后台更新探针），各自拿着
+  /// 自己手上的快照整份写回，就会互相回滚：进作品页几秒内点订阅，随后落库的那次
+  /// 源刷新用的是进页时的快照，把订阅位写回旧值。[rewrite] 收到的是事务内读到的
+  /// 当前值，只改它负责的字段；返回 null = 不写。行不存在时不调用 [rewrite]、
+  /// 返回 null。[rewrite] 抛错整个事务回滚、原样抛给调用方。
+  Future<R?> rewriteEpubBookMihonState<R>(
+    String bookKey,
+    ({String sourceMetadata, int chapterCount, String chaptersJson, R result})?
+    Function(String? currentSourceMetadata)
+    rewrite,
+  ) => transaction<R?>(() async {
+    final EpubBookRow? row = await getEpubBook(bookKey);
+    if (row == null) return null;
+    final ({
+      String sourceMetadata,
+      int chapterCount,
+      String chaptersJson,
+      R result,
+    })?
+    next = rewrite(row.sourceMetadata);
+    if (next == null) return null;
+    await updateEpubBookMihonState(
+      bookKey,
+      sourceMetadata: next.sourceMetadata,
+      chapterCount: next.chapterCount,
+      chaptersJson: next.chaptersJson,
+    );
+    return next.result;
+  });
+
   // ── manga_chapter_states（v89）─────────────────────────────────────
   //
   // 「章」的读取状态。为什么不并进 reader_positions：那张表 bookUid 是
@@ -1436,6 +1579,45 @@ mixin _FushiDbContentMisc
         updatedAt: now,
       ),
     );
+  }
+
+  /// 一次写多章的进度（Kavita 对账 / 批量标已读、未读）：**一个事务、同一个
+  /// `updatedAt`**（gap-mangamisc-2）。
+  ///
+  /// 逐章调 [saveMangaChapterState] 时每章各取一次 `DateTime.now()`，按章表顺序
+  /// （新 → 旧）写下来，最后写的最旧那章 `updatedAt` 最大——「继续阅读」按
+  /// `updatedAt` 最大选章，于是落到已读过的旧章。同一时间戳下它按章表顺序取最先
+  /// 出现（最新）的那章。不能把 `updatedAt` 置 0 绕开：同步按它做 LWW。
+  ///
+  /// 每项的列语义同 [saveMangaChapterState]：`pageCount` / `readAt` 为 null 时沿用
+  /// 既有值；`clearRead` 为真时 `readAt` 置空（同 [clearMangaChapterRead]）。
+  Future<void> saveMangaChapterStates({
+    required String bookUid,
+    required List<MangaChapterStateWrite> writes,
+  }) async {
+    if (bookUid.isEmpty || writes.isEmpty) return;
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await transaction(() async {
+      final Map<String, MangaChapterStateRow> existing =
+          await getMangaChapterStates(bookUid);
+      for (final MangaChapterStateWrite write in writes) {
+        if (write.chapterKey.isEmpty) continue;
+        final MangaChapterStateRow? row = existing[write.chapterKey];
+        await into(mangaChapterStates).insertOnConflictUpdate(
+          MangaChapterStatesCompanion.insert(
+            bookUid: bookUid,
+            chapterKey: write.chapterKey,
+            lastPage: Value<int>(write.lastPage),
+            lastFraction: const Value<int>(-1),
+            pageCount: Value<int?>(write.pageCount ?? row?.pageCount),
+            readAt: Value<int?>(
+              write.clearRead ? null : (write.readAt ?? row?.readAt),
+            ),
+            updatedAt: now,
+          ),
+        );
+      }
+    });
   }
 
   /// 显式把一章标回未读（作品页的「标为未读」动作）。

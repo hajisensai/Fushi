@@ -69,6 +69,20 @@ enum SubtitleBatchStatus {
   failed,
 }
 
+/// [SubtitleBatchStatus.failed] 是在哪一步失败的。三步对用户是三件不同的事：没下下来
+/// （换来源 / 等等再试）、下下来了但写不进本地（磁盘满 / 无权限）、写好了但没能设为
+/// 这一集的字幕（数据库 / 宿主登记失败）——后两种说成「下载失败」会让用户去换来源。
+enum SubtitleBatchFailureStage {
+  /// 下载（含从整季包里拆）失败或拿到空内容。
+  download,
+
+  /// 下载到了，对时间轴 / 写盘失败。
+  write,
+
+  /// 已落盘，调用方的持久化回调（设为这一集的字幕）抛错。
+  persist,
+}
+
 /// 一集的批量结果（可变：随处理推进更新 [status] 等）。
 class SubtitleBatchItem {
   SubtitleBatchItem({required this.target, required this.episode});
@@ -95,6 +109,9 @@ class SubtitleBatchItem {
   /// 下架）；面板要把它喂给 `describeSubtitleFailure` 才能说出用户能据以行动的原因，
   /// 所以对象本身得留着。
   Object? error;
+
+  /// [SubtitleBatchStatus.failed] 时失败在哪一步；其余状态为 null。
+  SubtitleBatchFailureStage? failureStage;
 }
 
 /// 解析该集用于匹配的真实集号：优先从视频路径文件名 / 标题解析（`第N話` / `E01` /
@@ -399,6 +416,7 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
     );
     item.status = SubtitleBatchStatus.downloading;
     if (onItemStart != null) await onItemStart(item);
+    SubtitleBatchFailureStage stage = SubtitleBatchFailureStage.download;
     try {
       final SubtitleEpisodeMatch<VideoSubtitleCandidate> match =
           chooseSubtitleForEpisode(
@@ -422,8 +440,10 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
             fromPack ?? await fetchCandidate(best!);
         if (fetched.bytes.isEmpty) {
           item.status = SubtitleBatchStatus.failed;
+          item.failureStage = SubtitleBatchFailureStage.download;
           item.message = 'download';
         } else {
+          stage = SubtitleBatchFailureStage.write;
           if (!dir.existsSync()) dir.createSync(recursive: true);
           final String dest = p.join(
             dir.path,
@@ -446,6 +466,7 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
       }
     } on Object catch (e) {
       item.status = SubtitleBatchStatus.failed;
+      item.failureStage = stage;
       item.message = '$e';
       item.error = e;
     }
@@ -454,6 +475,7 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
         await onItemDone(item);
       } on Object catch (e) {
         item.status = SubtitleBatchStatus.failed;
+        item.failureStage = SubtitleBatchFailureStage.persist;
         item.message = '$e';
         item.error = e;
       }

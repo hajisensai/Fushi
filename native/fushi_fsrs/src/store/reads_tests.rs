@@ -90,7 +90,7 @@ fn decode(b: &[u8]) -> Vec<(String, Vec<Cell>)> {
 /// 发一条命令，返回 (回包 JSON, 各结果表)。
 fn command(core: &SrsCore, req: Value) -> Result<(Value, Vec<(String, Vec<u8>)>), String> {
     let mut files = Vec::new();
-    let v = crate::store::ffi::sync2_dispatch(core, &req, &mut Vec::new(), &mut files)?;
+    let v = crate::store::legacy3::sync2_dispatch(core, &req, &mut Vec::new(), &mut files)?;
     Ok((v, files))
 }
 

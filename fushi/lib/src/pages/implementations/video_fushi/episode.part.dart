@@ -142,12 +142,14 @@ extension _VideoEpisode on _VideoFushiPageState {
         // 执行、`_currentEpisode` 不推进，互联 / Jellyfin / 流媒体书的换集按钮、剧集
         // 列表、连播全部失灵，与本地分支此前那条同形。
         persistInBackground(
-          persist: () => _persistRemotePositionAndReportPlaybackStopped(
-            uid: _activeBookUid,
-            positionMs: curPos,
-            info: currentInfo,
-            client: currentClient,
-            generation: currentGeneration,
+          persist: () => _remoteTeardown.track(
+            () => _persistRemotePositionAndReportPlaybackStopped(
+              uid: _activeBookUid,
+              positionMs: curPos,
+              info: currentInfo,
+              client: currentClient,
+              generation: currentGeneration,
+            ),
           ),
           onPersistError: (Object error, StackTrace stack) => ErrorLogService
               .instance
@@ -250,7 +252,7 @@ extension _VideoEpisode on _VideoFushiPageState {
       // 原生全屏所有权随 initialFullscreen 交给新页：本页不再在 dispose 里释放它，
       // 挂着的一次性重进全屏回调也不得再压路由（本页马上被摘）。
       _ownsHandedOverNativeFullscreen = false;
-      _didInitialFullscreen = true;
+      _initialFullscreen.settle();
       unawaited(navigator.push<void>(nextRoute));
       if (oldFullscreenRoute != null && oldFullscreenRoute.isActive) {
         rootNavigator.removeRoute<void>(oldFullscreenRoute);

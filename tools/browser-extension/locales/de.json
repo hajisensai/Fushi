@@ -487,6 +487,8 @@
   "pc_offset_title": "Zeitversatz",
   "pc_style_title": "Untertitel-Stil",
   "pc_mask_edit": "Untertitel-Abdeckung anpassen",
+  "pc_fullscreen_enter": "Vollbild",
+  "pc_fullscreen_exit": "Vollbild beenden",
   "mask_edit_hint": "Ziehen zum Verschieben, Kanten oder Ecken ziehen zum Ändern der Größe",
   "mask_edit_reset": "Zurücksetzen",
   "mask_edit_done": "Fertig",

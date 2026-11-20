@@ -24,6 +24,7 @@ use crate::store::sync2::tests::{DAY, P, edit};
 use crate::sync2::codec::Writer;
 use crate::sync2::id::{Id, Key};
 use crate::sync2::op::EntKind;
+use crate::sync2::vv::OpId;
 
 const T1: i64 = T0 + 3 * DAY;
 const ME: [u8; 16] = [0xe4; 16];
@@ -141,6 +142,10 @@ fn undo_check_matches_protocol_3() {
     // N1 的字段先改再改：第一次写入已被覆盖（不能撤），第二次能撤；再一次改回第一次的值（按值能撤）。
     a.apply(T1, vec![edit("note", N1, "f/fa", json!("x1"))]);
     a.apply(T1 + 1, vec![edit("note", N1, "f/fa", json!("x2"))]);
+    // N2 倒序撤两步：y1、y2，再写回 y1（撤 y2）——问 y1 那次写入的 dot（已被支配、值又回来了）。
+    a.apply(T1 + 2, vec![edit("note", N2, "f/fa", json!("y1"))]);
+    a.apply(T1 + 3, vec![edit("note", N2, "f/fa", json!("y2"))]);
+    a.apply(T1 + 4, vec![edit("note", N2, "f/fa", json!("y1"))]);
     let mut items: Vec<Value> = Vec::new();
     for (kind, entity) in [("note", N1), ("note", N2)] {
         let h = a.core.sync2_history(P, kind, entity).unwrap();
@@ -322,6 +327,240 @@ fn undo_check_by_any_member_finds_a_lone_write() {
                 f.text()
             );
         }
+    });
+}
+
+// ---------------------------------------------------------------------- 倒序撤销（C6）
+
+/// 新代本机写入（`writes::apply`）的一条修改：(设备, seq)。
+fn wrote(t: &Truth<'_>, col: i64, now: i64, key: &str, v: Value) -> (String, i64) {
+    let it = json!({
+        "e": {"t": "edit", "x": {"p": P, "k": "note", "e": N1, "f": key, "v": v, "ts": "anchored"}},
+        "note": null, "clk": "t",
+    });
+    let gv = writes::apply(t, col, &json!({ "now": now }), &[it]).unwrap();
+    let e = &gv["edits"][0];
+    (e[3].as_str().unwrap().to_owned(), e[4].as_i64().unwrap())
+}
+
+fn ask_n1(t: &Truth<'_>, col: i64, key: &str, dot: &(String, i64)) -> Value {
+    undo_check(
+        t,
+        col,
+        &json!({"items": [{"k": "note", "e": N1, "f": key, "w": dot.0, "s": dot.1}]}),
+    )
+    .unwrap()["r"][0]
+        .clone()
+}
+
+/// 新代原生写入上倒序撤销：两步（one → two → 撤 two 写回 one，再问 one 那次写入）与三步（a → b → c，撤 c 写回 b、
+/// 问 b；撤 b 写回 a、问 a）都能撤。中间穿插别的键上的修改（跨键）不影响。撤完之后又被改成别的值：不能撤（只放宽到
+/// 「唯一活着、值相同、因果见过」，不按值放行）。
+///
+/// 被问的那次写入早已被支配，不在投影行里：投影行的 `ctx` 只覆盖别的要输出的行，拿它判「见没见过」会把第二步判成
+/// 不能撤（C6）。
+#[test]
+fn undo_check_reverse_steps_on_native_writes() {
+    let a = library();
+    let p = Pair::new(&a);
+    let t = Truth::new(&p.g4);
+    let col = p.col;
+    t.tx(|t| t.create_self(col, &Id(ME), &[9; 32], None, T0))
+        .unwrap();
+    // 两步。
+    let one = wrote(&t, col, T1, "f/fa", json!("one"));
+    let two = wrote(&t, col, T1 + 1, "f/fa", json!("two"));
+    assert_eq!(ask_n1(&t, col, "f/fa", &one)["ok"], json!(false));
+    assert_eq!(
+        ask_n1(&t, col, "f/fa", &two),
+        json!({"ok": true, "cur": "two"})
+    );
+    wrote(&t, col, T1 + 2, "f/fb", json!("other key"));
+    wrote(&t, col, T1 + 3, "f/fa", json!("one"));
+    assert_eq!(
+        ask_n1(&t, col, "f/fa", &one),
+        json!({"ok": true, "cur": "one"})
+    );
+    // 撤完又被改成别的值：不能撤。
+    wrote(&t, col, T1 + 4, "f/fa", json!("three"));
+    assert_eq!(
+        ask_n1(&t, col, "f/fa", &one),
+        json!({"ok": false, "cur": "three"})
+    );
+    // 三步（另一个键）。
+    let a1 = wrote(&t, col, T1 + 5, "f/fb", json!("a"));
+    let b1 = wrote(&t, col, T1 + 6, "f/fb", json!("b"));
+    wrote(&t, col, T1 + 7, "f/fb", json!("c"));
+    wrote(&t, col, T1 + 8, "f/fa", json!("cross"));
+    wrote(&t, col, T1 + 9, "f/fb", json!("b"));
+    assert_eq!(
+        ask_n1(&t, col, "f/fb", &b1),
+        json!({"ok": true, "cur": "b"})
+    );
+    assert_eq!(ask_n1(&t, col, "f/fb", &a1)["ok"], json!(false));
+    wrote(&t, col, T1 + 10, "f/fb", json!("a"));
+    assert_eq!(
+        ask_n1(&t, col, "f/fb", &a1),
+        json!({"ok": true, "cur": "a"})
+    );
+    assert!(t.conn().is_autocommit());
+}
+
+/// 别名类上倒序撤销，且跨设备：0xb3 在第二份成员上写 C、在第一份成员上写 D、再按规范号写回 C——用任何成员的号、规范号
+/// 点名 0xb3:1 都能撤。0xb4 没见过 0xb3:3 就也写了 C（并发，两条活着）：不能撤。0xb5 见过两者再写 C（唯一活着、经 0xb3:3
+/// 传递见过 0xb3:1）：能撤；再被 0xb5 改成 E：不能撤。
+///
+/// 「见没见过」从真相层答（`Index::write_sees`）：0xb4:1 见过 0xb3:1、0xb3:2，没见过 0xb3:3。
+#[test]
+fn undo_check_reverse_steps_across_an_alias_class() {
+    with(|t, col| {
+        let w = tests_class::land(t, col);
+        let base = tests_class::base_seen(&w);
+        let put = |dev: u8, seq: u64, seen: &[(u8, u64)], e: Id, f: Id, v: &str| {
+            let body = Body4::Edit(Edit4 {
+                kind: EntKind::Note,
+                entity: Key::Uuid(e),
+                key: format!("f/{}", f.text()),
+                value: json!(v).to_string(),
+                ..crate::gen4::op::tests::native_edit()
+            });
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                native(
+                    t,
+                    &mut ix,
+                    col,
+                    &op(dev, seq, 500 + seq as i64, seen, &body),
+                );
+                ix.settle().map(|_| ())
+            })
+            .unwrap();
+        };
+        let ask = |e: &Id, f: &Id, dev: u8, s: i64| -> Value {
+            undo_check(
+                t,
+                col,
+                &json!({"items": [{"k": "note", "e": e.text(), "f": format!("f/{}", f.text()),
+                    "w": id(dev).text(), "s": s}]}),
+            )
+            .unwrap()["r"][0]
+                .clone()
+        };
+        let all = [
+            (w.note[1], w.field[1]),
+            (w.note[0], w.field[0]),
+            (w.c_note, w.c_field),
+            (w.note[0], w.c_field),
+        ];
+        let seen = [base, (0xb1, 1), (0xb2, 1)];
+        put(0xb3, 1, &seen, w.note[1], w.field[1], "C");
+        put(0xb3, 2, &seen, w.note[0], w.field[0], "D");
+        for (e, f) in all {
+            assert_eq!(ask(&e, &f, 0xb3, 1)["ok"], json!(false));
+        }
+        put(0xb3, 3, &seen, w.c_note, w.c_field, "C");
+        for (e, f) in all {
+            assert_eq!(
+                ask(&e, &f, 0xb3, 1),
+                json!({"ok": true, "cur": "C"}),
+                "{} / {}",
+                e.text(),
+                f.text()
+            );
+        }
+        // 并发的同值写入：两条活着，不能撤。
+        put(
+            0xb4,
+            1,
+            &[base, (0xb1, 1), (0xb2, 1), (0xb3, 2)],
+            w.note[0],
+            w.field[0],
+            "C",
+        );
+        for (e, f) in all {
+            assert_eq!(ask(&e, &f, 0xb3, 1)["ok"], json!(false));
+            assert_eq!(ask(&e, &f, 0xb3, 3)["ok"], json!(false));
+        }
+        // 真相层的判据本身：0xb4:1 见过 0xb3:1 / 0xb3:2，没见过 0xb3:3；见过它自己之前的全部（这里没有）。
+        let k = t
+            .key_of(
+                col,
+                &OpId {
+                    device: id(0xb4),
+                    seq: 1,
+                },
+            )
+            .unwrap()
+            .unwrap();
+        let mut ix = Index::new(t, col);
+        let b3 = id(0xb3).text();
+        assert!(ix.write_sees(k, &b3, 1, None).unwrap());
+        assert!(ix.write_sees(k, &b3, 2, None).unwrap());
+        assert!(!ix.write_sees(k, &b3, 3, None).unwrap());
+        // 见过两者之后写 C：唯一活着、传递见过 0xb3:1。
+        let after = [base, (0xb1, 1), (0xb2, 1), (0xb3, 3), (0xb4, 1)];
+        put(0xb5, 1, &after, w.note[1], w.field[1], "C");
+        for (e, f) in all {
+            assert_eq!(ask(&e, &f, 0xb3, 1), json!({"ok": true, "cur": "C"}));
+        }
+        put(0xb5, 2, &after, w.c_note, w.c_field, "E");
+        for (e, f) in all {
+            assert_eq!(ask(&e, &f, 0xb3, 1), json!({"ok": false, "cur": "E"}));
+        }
+        assert_rebuild_is_identity(t, col);
+    });
+}
+
+/// 「见没见过」这道判据接进裁决之后真的起作用：唯一活着、值与那次写入相同，但它的作者没见过那次写入——不能撤（协议 3
+/// 同一情形按行上下文也判不能撤），不只按值放行。0xf1:1 写 V；0xf2:1 见过它、写 W；0xf3:1 只见过 0xf2:1（依赖里没有
+/// 0xf1）、写回 V：0xf1:1 被 0xf2:1 盖掉、0xf2:1 被 0xf3:1 盖掉，活着的只有 0xf3:1。问 0xf1:1 不能撤、问 0xf3:1 能撤；
+/// 0xf4:1 见过 0xf1:1 与 0xf3:1 再写 V：唯一活着、见过 0xf1:1，能撤。
+///
+/// 原生写入按因果顺序投递时这种依赖（见过 0xf2:1 却没见过它见过的 0xf1:1）造不出来，判据在新代是保险；这里直接喂操作
+/// （同步来的对端操作不可信），钉住它没被放宽。
+#[test]
+fn undo_check_refuses_a_lone_same_value_write_that_never_saw_ours() {
+    with(|t, col| {
+        let w = tests_class::land(t, col);
+        let base = tests_class::base_seen(&w);
+        let put = |dev: u8, seen: &[(u8, u64)], v: &str| {
+            let body = Body4::Edit(Edit4 {
+                kind: EntKind::Note,
+                entity: Key::Uuid(w.note[0]),
+                key: format!("f/{}", w.field[0].text()),
+                value: json!(v).to_string(),
+                ..crate::gen4::op::tests::native_edit()
+            });
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                native(t, &mut ix, col, &op(dev, 1, 600 + dev as i64, seen, &body));
+                ix.settle().map(|_| ())
+            })
+            .unwrap();
+        };
+        let ask = |dev: u8| -> Value {
+            undo_check(
+                t,
+                col,
+                &json!({"items": [{"k": "note", "e": w.note[0].text(),
+                    "f": format!("f/{}", w.field[0].text()), "w": id(dev).text(), "s": 1}]}),
+            )
+            .unwrap()["r"][0]
+                .clone()
+        };
+        let pre = [base, (0xb1, 1), (0xb2, 1)];
+        put(0xf1, &pre, "V");
+        put(0xf2, &[base, (0xb1, 1), (0xb2, 1), (0xf1, 1)], "W");
+        put(0xf3, &[base, (0xb1, 1), (0xb2, 1), (0xf2, 1)], "V");
+        assert_eq!(ask(0xf1), json!({"ok": false, "cur": "V"}));
+        assert_eq!(ask(0xf3), json!({"ok": true, "cur": "V"}));
+        put(
+            0xf4,
+            &[base, (0xb1, 1), (0xb2, 1), (0xf1, 1), (0xf3, 1)],
+            "V",
+        );
+        assert_eq!(ask(0xf1), json!({"ok": true, "cur": "V"}));
+        assert_rebuild_is_identity(t, col);
     });
 }
 

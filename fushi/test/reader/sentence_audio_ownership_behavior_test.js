@@ -4,14 +4,14 @@
 // payload.script 是生产常量 kSentenceAudioOwnershipJs 原文；这里只补一个最小 DOM
 // （nodeType / tagName / nodeValue / 兄弟与父子指针），断言 extendSegments 放宽首尾
 // 的结果与 Hoshi Reader Android 的标点归属一致。
-const fs = require('fs');
-const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const { readPayload, compileScript } = require('./reader_harness_support.js');
+const data = readPayload();
 function assert(value, message) {
   if (!value) throw new Error(message);
 }
 
 const window = {};
-new Function('window', data.script)(window);
+compileScript(['window'], data.script, 'sentence_audio_ownership_behavior_test-1.js')(window);
 const ownership = window.fushiSentenceAudioOwnership;
 assert(ownership && typeof ownership.extendSegments === 'function',
   'script must define window.fushiSentenceAudioOwnership.extendSegments');

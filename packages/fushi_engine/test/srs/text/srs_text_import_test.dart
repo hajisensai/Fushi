@@ -389,4 +389,79 @@ void main() {
     expect(names, isNot(contains('Ghost')));
     expect(names, contains('Real'));
   });
+
+  test(
+    'GUID 列的 guid 在同库另一份 profile 里是另一个笔记类型的笔记：记冲突、不算已添加；同一个笔记类型照常导入（BUG-4907 复核）',
+    () async {
+      const String other = '01928c3e-0000-7000-8000-0000000000c6';
+      final SrsStorage lib = await openTestSrsStorage();
+      int clock = DateTime.utc(2026, 11, 16, 12).millisecondsSinceEpoch;
+      Future<SrsDbStore> open(String uid) => SrsDbStore.open(
+        core: lib.core,
+        profileUid: uid,
+        deviceId: 'dev',
+        trustedClock: SrsTrustedClock(
+          wallClockMs: () => clock++,
+          bootClockMs: () => 0,
+          bootId: 'boot',
+        ),
+      );
+      SrsTextImportOptions into(SrsDbStore s, String noteTypeId) =>
+          SrsTextImportOptions(
+            noteTypeId: noteTypeId,
+            deckId: s.defaultDeckId,
+            fieldColumns: <int>[1, 2],
+            guidColumn: 3,
+            dupeMode: SrsTextDupeMode.update,
+            matchScope: SrsTextMatchScope.noteType,
+          );
+      Future<List<String>> guids(SrsDbStore s) async => <String>[
+        for (final SrsNoteView? n in (await s.notes(
+          await s.entityIds(SrsEntityKind.note),
+        )).values)
+          if (n != null && n.deletedAt == null) n.guid,
+      ]..sort();
+
+      final SrsDbStore p1 = await open(_profile);
+      final SrsDbStore p2 = await open(other);
+      final String lapisId = (await p1.noteTypes())
+          .firstWhere((SrsNoteTypeView t) => t.name == 'Lapis')
+          .id;
+      await runSrsTextImport(
+        store: p1,
+        file: await parse('p1.tsv', 'cat\tv1\tguid-1\n'),
+        options: into(p1, lapisId),
+      );
+      final SrsNoteTypeView fushiCard = (await p2.noteTypes()).firstWhere(
+        (SrsNoteTypeView t) => t.id == p2.fushiCardNoteTypeId,
+      );
+      final SrsImportReport r = await runSrsTextImport(
+        store: p2,
+        file: await parse('p2.tsv', 'cat\tv1\tguid-1\ndog\tv2\tguid-2\n'),
+        options: into(p2, fushiCard.id),
+      );
+      expect(r.notesAdded, 1);
+      expect(
+        <(String, String, String)>[
+          for (final SrsImportNoteIssue i in r.conflictNotes)
+            (i.guid, i.noteType, i.reason),
+        ],
+        <(String, String, String)>[
+          ('guid-1', fushiCard.name, SrsImportIssueReason.otherProfileNoteType),
+        ],
+      );
+      expect(await guids(p2), <String>['guid-2']);
+      expect(await guids(p1), <String>['guid-1']);
+
+      // 合法场景：同一个笔记类型导入同一个 guid（同一份内容，并入后合成一份）照常。
+      final SrsImportReport same = await runSrsTextImport(
+        store: p2,
+        file: await parse('p2-same.tsv', 'cat\tv1\tguid-1\n'),
+        options: into(p2, lapisId),
+      );
+      expect(same.notesAdded, 1);
+      expect(same.conflictNotes, isEmpty);
+      expect(await guids(p2), <String>['guid-1', 'guid-2']);
+    },
+  );
 }

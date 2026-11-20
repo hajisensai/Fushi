@@ -18,6 +18,7 @@ import 'package:fushi/src/media/video/metadata/video_source_scrape_candidate_til
 import 'package:fushi/src/media/video/metadata/video_manual_identity_query.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_issue_text.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_error_text.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
@@ -375,7 +376,8 @@ class _VideoSourceScrapeRunDetailDialogState
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } on Object catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      // 清理期间被刮削门挡回的是类型化错误，出本地化文案而不是 `Bad state: …`。
+      if (mounted) setState(() => _error = videoScrapeErrorText(error));
     } finally {
       if (mounted) setState(() => _rescrapingSource = false);
     }
@@ -420,7 +422,8 @@ class _VideoSourceScrapeRunDetailDialogState
       setState(() => _error = t.video_source_scrape_work_missing);
     } on Object catch (error) {
       if (!mounted) return;
-      setState(() => _error = error.toString());
+      // 同上：手动绑定排进队列后碰上资料清理，整条队列以类型化错误结束。
+      setState(() => _error = videoScrapeErrorText(error));
     } finally {
       if (mounted) setState(() => _busyWorkTitles.remove(issue.workTitle));
     }

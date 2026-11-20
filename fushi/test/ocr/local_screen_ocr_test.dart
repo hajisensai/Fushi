@@ -223,6 +223,35 @@ void main() {
       },
     );
 
+    // 智能遮布关掉 / 离开播放页时识别可能正在 native 侧跑：dispose 必须等它跑完再
+    // 关会话，之后的识别直接拒绝。
+    test('dispose waits for running recognitions before closing', () async {
+      final _FakeService service = _FakeService(ready: true);
+      final LocalScreenOcr ocr = LocalScreenOcr(service, workDir: work);
+      final Completer<void> gate = Completer<void>();
+      service.session.gate = gate;
+      final Future<SystemOcrPageResult> running = ocr.recognizeRgba(
+        Uint8List(4 * 2 * 4),
+        width: 4,
+        height: 2,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(service.session.sizes, hasLength(1));
+      bool disposed = false;
+      final Future<void> disposing = ocr.dispose().then((_) => disposed = true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(disposed, isFalse);
+      expect(service.session.closed, isFalse);
+      gate.complete();
+      expect((await running).lines.single.text, '日本語');
+      await disposing;
+      expect(service.session.closed, isTrue);
+      await expectLater(
+        ocr.recognizeRgba(Uint8List(4), width: 1, height: 1),
+        throwsStateError,
+      );
+    });
+
     test('an image that does not decode is a format error', () async {
       final LocalScreenOcr ocr = LocalScreenOcr(
         _FakeService(ready: true),

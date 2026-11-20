@@ -352,7 +352,13 @@ class FushiFocusController extends ChangeNotifier {
     return entry;
   }
 
-  bool requestById(FushiFocusId id) {
+  /// 把焦点落到登记为 [id] 的目标上。
+  ///
+  /// [reveal] 默认 true：键盘 / 手柄 / 程序化定位把光标送到一个可能在屏外的目标，
+  /// 视口要跟过去。**鼠标按下**带焦点（[FushiFocusTarget] 的 click-to-focus）必须
+  /// 传 false：指针按得到它，它就在屏幕上；此时再 reveal（居中对齐）只会把页面
+  /// 滚走——反馈 1120 #i10：右键合集卡，页面跟着下滚、库页浮动顶栏随之收起。
+  bool requestById(FushiFocusId id, {bool reveal = true}) {
     final FushiFocusTargetEntry? entry = _entries[id];
     if (entry == null || !_entryCanFocus(entry)) return false;
     return _focusCandidate(
@@ -361,16 +367,17 @@ class FushiFocusController extends ChangeNotifier {
         context: entry.context,
         entry: entry,
       ),
+      reveal: reveal,
     );
   }
 
-  /// 显式输入（方向键 / 手柄 / 鼠标点选）把焦点落到 [candidate]：无条件 reveal，
-  /// 这次输入本身就是可见焦点光标。
-  bool _focusCandidate(_FocusCandidate candidate) {
+  /// 显式输入（方向键 / 手柄）把焦点落到 [candidate]：默认无条件 reveal，这次输入
+  /// 本身就是可见焦点光标。鼠标点选经 [requestById] 传 `reveal: false`。
+  bool _focusCandidate(_FocusCandidate candidate, {bool reveal = true}) {
     candidate.node.requestFocus();
     final FushiFocusId? id = candidate.entry?.id;
     _activeId = id;
-    _scheduleReveal(candidate.context, candidate.node);
+    if (reveal) _scheduleReveal(candidate.context, candidate.node);
     if (id != null) notifyListeners();
     return true;
   }

@@ -15,10 +15,12 @@
 //!
 //! 键按 `…/<uid>` 记，删 / 换 uid 时 `profile_purge` 按后缀一并删掉（profile_data.rs）。只动本机，不随同步传。
 
+#[cfg(test)]
 use rusqlite::OptionalExtension;
 use serde_json::{Value, json};
 
 use super::SrsCore;
+#[cfg(test)]
 use super::sync2::sql;
 
 /// `srs_meta` 里绑定状态的键前缀（键 = 前缀 + uid）。
@@ -48,6 +50,7 @@ pub(crate) fn parse(raw: &str) -> Option<Value> {
 
 impl SrsCore {
     /// [profile] 的绑定状态：`{binding: {state, via, at} | null}`。
+    #[cfg(test)]
     pub fn binding_get(&self, profile: &str) -> Result<Value, String> {
         let r = self.reader()?;
         let raw: Option<String> = r
@@ -63,6 +66,7 @@ impl SrsCore {
 
     /// 写 [profile] 的绑定状态（只进不退，见模块注释），返回写完之后的状态（同 [Self::binding_get]）。
     /// 已经 `settled` 时什么都不改；已经 `provisional` 时再写 `provisional` 只换 `via` / `at`。
+    #[cfg(test)]
     pub fn binding_set(
         &self,
         profile: &str,

@@ -13,7 +13,9 @@
 //!   （`transport.rs` `sync2_status` + `devices.rs` `status_extras`）同形：恒有 `device`、`self`、`applied`、`behind`、
 //!   `seenAt`、`name`、`frozen`、`warning`、`digestMismatch`、`gap`、`blocking`、`state`（**同步状态** ok / behind /
 //!   missing / upgrade / retired，不是信任）；还没信任的设备另带 `trust`（pending / rejected）、`trustSince`、
-//!   `heldDeletes`、`heldPurges`；按有没有数据带 `model` / `app` / `platform` / `protocol` / `hint`。`locations` 每行
+//!   `heldDeletes`、`heldPurges`；按有没有数据带 `model` / `app` / `platform` / `protocol` / `hint`；有重切件在等它的
+//!   带 `relayBlocked`（第六波，`cmd/sync_park.rs`：`[{location, author, reason, pieces}]`，`reason` = `purge` /
+//!   `pending` / `rejected`；这样的设备本机还没有日志也补一行，好让用户确认它）。`locations` 每行
 //!   `location`、`uploaded`、`headGen`、`lastOk`。测试 `status_keeps_the_protocol_3_shape` 钉顶层键，
 //!   `status_device_rows_match_protocol_3_key_for_key` 逐行钉设备行的键（含 Dart `SrsDeviceView.fromStatus` 读的）。
 //! - `trust` 的拒绝只对还没信任的设备（协议 3 `reject`）：已可信 / 从没见过的设备报 `trust: device is already trusted`，
@@ -50,6 +52,9 @@ const TEXT_MAX: usize = 64;
 
 /// 设备行里照抄的扩展键（协议 3 `devices.rs` `EXT_KEYS` 同一组）。
 const EXT_KEYS: [&str; 3] = ["model", "app", "platform"];
+
+/// 设备行 `warning`：对端与本机在同一个版本向量下摘要不同（`digestMismatch`）。
+pub(crate) const DIGEST_MISMATCH_WARNING: &str = "digest mismatch at the same version vector";
 
 fn clip(s: &str) -> String {
     s.trim()
@@ -202,6 +207,16 @@ pub fn device_info(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String
     })
 }
 
+/// 本机在集合 [col] 里的人读名（昵称，没有就是型号；都没设过 = 空串）：`identity` 回包的 `name`（`cmd/identity.rs`），
+/// 与 `device_info` 回包的 `name` 同一个取法。
+pub(super) fn self_name(t: &Truth<'_>, col: i64) -> Result<String, String> {
+    let m = parse_obj(meta_get(t, &self_info_key(col))?);
+    Ok(self_view(&m, false)["name"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned())
+}
+
 fn self_view(m: &Map<String, Value>, changed: bool) -> Value {
     let nick = str_of(m, "nick");
     json!({
@@ -222,13 +237,15 @@ fn self_view(m: &Map<String, Value>, changed: bool) -> Value {
 /// - `ops`：这个集合全部设备日志的条数（真相层的操作 + 副本记录 + 空洞不算）；`pending`：收到了、因果还没齐的
 ///   （`op_wait`，G8-4）；`migrated` 恒为 true（新代库本来就是迁移之后的）。
 /// - `devices`：真相层登记过的每台设备；`applied` = 本机日志末尾；`behind` = 各位置上它最新 head 的 seq 减
-///   `applied`（不小于 0）；`name` = 对端自报名（`peers`），没有就是空串；`seenAt` / `warning` 为 null、`frozen` /
-///   `digestMismatch` 为 false（协议 3 的这几项来自旧 head 与旧摘要，新代的对应物由 G8-7 接）；`gap` / `blocking`
+///   `applied`（不小于 0）；`name` = 对端自报名（`peers`），没有就是空串；`seenAt` = 本机见过的它最新 head 的写出时刻
+///   （`plan` 记进 `peers.ext`，没见过 = null）；`frozen` = 本机换身份留下的旧身份（`sync_oldroot.rs`
+///   `former_identities`）；`digestMismatch` = 它最近的 head 与本机上次写的 head 是同一个版本向量、摘要却不同（不自动
+///   重建，见交接说明「G8-7b 同步补全」），此时 `warning` = [DIGEST_MISMATCH_WARNING]，否则 null；`gap` / `blocking`
 ///   = 原生等待缓冲 `op_wait` 里卡住的操作按「卡在谁身上」归账（[stuck]，协议 3 `devices.rs` `stuck` 同一个判据）；
 ///   `state` = 同步状态，判定顺序同协议 3 `status_extras`：本机 ok；对端自报的协议（`peers.ext` 的 `v`）低于本版本
 ///   head 声明的最低读者 [crate::gen4::MIN_READER] = upgrade；有 `gap` / `blocking` = missing；落后 = behind；其余 ok。
-///   `retired`（停用）新代还没有存处——协议 3 的 `sync2_retired/` 标记不迁移（`carry.rs` 文件头），停用命令 `retire`
-///   与它的标记随 G8-7 重建，接上之前不出现。没信任的设备带 `trust`（`pending` / `rejected`）/ `trustSince` / `heldDeletes` / `heldPurges`
+///   本机停用了的设备（G8-7 `retire`，`Truth::retired`）= `retired`，另带 `retiredAt`；协议 3 的 `sync2_retired/` 标记
+///   不迁移（`carry.rs` 文件头）。没信任的设备带 `trust`（`pending` / `rejected`）/ `trustSince` / `heldDeletes` / `heldPurges`
 ///   （`weigh.rs` `distrusted_split` 按作者计）；有补充名的带 `hint`；扩展键与 `protocol` 本机取 `device_info`、对端取
 ///   `peers.ext`。
 /// - `locations`：位置的加密记忆（`loc_state`）与位置上的 head（`loc_heads`）里出现过的位置；`uploaded` /
@@ -257,7 +274,7 @@ pub fn status(t: &Truth<'_>, col: i64) -> Result<Value, String> {
                 ops += n;
             }
         }
-        let pending = t.waiting(col)?.len() as i64;
+        let pending = t.waiting_count(col)? as i64;
         // 位置：加密记忆与 head 里出现过的。
         let mut locs: std::collections::BTreeMap<String, (i64, i64, Option<i64>)> =
             std::collections::BTreeMap::new();
@@ -308,16 +325,28 @@ pub fn status(t: &Truth<'_>, col: i64) -> Result<Value, String> {
         if !rows.iter().any(|(id, _)| *id == me.device) {
             rows.push((me.device, 0));
         }
+        // 停着的重切件（`cmd/sync_park.rs`）挂在等的那台设备一行上：它本机还没有日志（只读过 head 的重切者）也补一行，
+        // 不然用户在同步页上找不到要确认的设备。
+        let blocked = super::sync_park::blocked(t, col)?;
+        for b in &blocked {
+            if !rows.iter().any(|(id, _)| *id == b.wait) {
+                rows.push((b.wait, 0));
+            }
+        }
         // 扣着的删除 / 清除，按作者分开计数（冲突中心「待确认的设备」卡片的条数）。
         let (held_dels, held_purges) = {
             let ix = super::super::derive::Index::new(t, col);
             ix.distrusted_split()?
         };
-        let (gap, blocking) = stuck(t, &devs)?;
+        let retired = t.retired(col)?;
+        let (gap, blocking) = stuck(t, &devs, &retired)?;
         let count_of = |ops: &[crate::sync2::vv::OpId], d: &Id| -> i64 {
             ops.iter().filter(|o| o.device == *d).count() as i64
         };
         let info = parse_obj(meta_get(t, &self_info_key(col))?);
+        let mine_digest = parse_obj(meta_get(t, &super::sync::self_digest_key(col))?);
+        // 本机换身份留下的旧身份（不再写新操作，同步页标「已冻结」）。
+        let former = super::sync_oldroot::former_identities(t, col)?;
         let mut devices = Vec::with_capacity(rows.len());
         for (id, last) in &rows {
             let d = DevRow {
@@ -327,6 +356,18 @@ pub fn status(t: &Truth<'_>, col: i64) -> Result<Value, String> {
             let is_self = d.id == me.device;
             let peer = t.peer(col, &d.id)?;
             let applied = d.last as i64;
+            let seen = parse_obj(peer.as_ref().and_then(|p| p.ext.clone()));
+            // 摘要核对（交接说明「G8-7b 同步补全」摘要一节）：对端最近一份 head 与本机上次写 head 时是同一个版本向量、
+            // 摘要却不同 = 两边见过同一组操作却算出了不同的状态。新代不自动重建（重建会掩盖派生层的缺陷），只报出来。
+            let mismatch = !is_self
+                && seen
+                    .get(super::sync::SEEN_ACK_KEY)
+                    .and_then(Value::as_str)
+                    .is_some_and(|a| str_of(&mine_digest, "ack") == a)
+                && seen
+                    .get(super::sync::SEEN_DIGEST_KEY)
+                    .and_then(Value::as_str)
+                    .is_some_and(|g| str_of(&mine_digest, "digest") != g);
             let behind = head_seq
                 .get(&d.id.0.to_vec())
                 .map_or(0, |s| (s - applied).max(0));
@@ -335,11 +376,11 @@ pub fn status(t: &Truth<'_>, col: i64) -> Result<Value, String> {
                 "self": is_self,
                 "applied": applied,
                 "behind": behind,
-                "seenAt": Value::Null,
+                "seenAt": seen.get(super::sync::SEEN_AT_KEY).cloned().unwrap_or(Value::Null),
                 "name": peer.as_ref().and_then(|p| p.name.clone()).unwrap_or_default(),
-                "frozen": false,
-                "warning": Value::Null,
-                "digestMismatch": false,
+                "frozen": former.contains(&d.id),
+                "warning": if mismatch { json!(DIGEST_MISMATCH_WARNING) } else { Value::Null },
+                "digestMismatch": mismatch,
             });
             let m = row.as_object_mut().expect("object");
             // 扩展信息：本机取 `device_info` 存的，对端取它自报的（`peers.ext`，G8-7 收 head 时写）。协议 3
@@ -371,9 +412,21 @@ pub fn status(t: &Truth<'_>, col: i64) -> Result<Value, String> {
             let b = blocking.get(&d.id).copied().unwrap_or(0);
             m.insert("gap".into(), json!(g));
             m.insert("blocking".into(), json!(b));
-            // `state` 只是同步状态（协议 3 `status_extras` 同一个判定顺序，函数注释）。`retired` 随 G8-7 接。
+            // `state` 只是同步状态（协议 3 `status_extras` 同一个判定顺序，函数注释）：停用（G8-7 `retire`）排在本机之后。
             let state = if is_self {
                 "ok"
+            } else if let Some(r) = retired.get(&d.id) {
+                m.insert(
+                    "retiredAt".into(),
+                    r.get("at").cloned().unwrap_or(Value::Null),
+                );
+                if r.is_null() {
+                    m.insert(
+                        "warning".into(),
+                        json!(super::super::sync_state::RETIRED_RECORD_UNREADABLE),
+                    );
+                }
+                "retired"
             } else if protocol.is_some_and(|p| p < i64::from(crate::gen4::MIN_READER)) {
                 "upgrade"
             } else if g > 0 || b > 0 {
@@ -393,6 +446,21 @@ pub fn status(t: &Truth<'_>, col: i64) -> Result<Value, String> {
                 m.insert("trustSince".into(), json!(since));
                 m.insert("heldDeletes".into(), json!(count_of(&held_dels, &d.id)));
                 m.insert("heldPurges".into(), json!(count_of(&held_purges, &d.id)));
+            }
+            let waits: Vec<Value> = blocked
+                .iter()
+                .filter(|b| b.wait == d.id)
+                .map(|b| {
+                    json!({
+                        "location": b.loc,
+                        "author": b.author.text(),
+                        "reason": b.reason,
+                        "pieces": b.pieces,
+                    })
+                })
+                .collect();
+            if !waits.is_empty() {
+                m.insert("relayBlocked".into(), Value::Array(waits));
             }
             devices.push(row);
         }
@@ -428,11 +496,12 @@ pub fn status(t: &Truth<'_>, col: i64) -> Result<Value, String> {
 /// - `blocking[D]`：别的设备排在队首的那一项在等 D 还没到的操作（依赖里 D 的分量大于本机 D 日志的末尾），记到 D 头上，
 ///   条数是那台设备在缓冲里的项数。空洞（作者签出的已清除区间）没有依赖。
 ///
-/// 新代没有停用设备（协议 3 不再等停用设备的分量，`retired` 随 G8-7 接），所以不做那一层过滤。每台设备一次主键区间
+/// 停用了的设备上的分量不算卡住（协议 3 同口径，收段也不再等它们，`receive.rs` `deps_ready`）。每台设备一次主键区间
 /// 计数、只解码队首一项（设备数次读），不扫整张缓冲表的操作体。
 fn stuck(
     t: &Truth<'_>,
     devs: &[super::super::truth::DevInfo],
+    retired: &std::collections::BTreeMap<Id, Value>,
 ) -> Result<(HashMap<Id, i64>, HashMap<Id, i64>), String> {
     let conn = t.conn();
     let applied: HashMap<Id, u64> = devs.iter().map(|d| (d.id, d.last)).collect();
@@ -463,7 +532,10 @@ fn stuck(
         };
         let op = super::super::sync_state::op_of_bytes(&raw)?;
         for (dep, &s) in &op.deps.0 {
-            if *dep != d.id && s > applied.get(dep).copied().unwrap_or(0) {
+            if *dep != d.id
+                && !retired.contains_key(dep)
+                && s > applied.get(dep).copied().unwrap_or(0)
+            {
                 *blocking.entry(*dep).or_default() += n;
             }
         }

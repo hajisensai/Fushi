@@ -2,6 +2,8 @@
 /// 抽出：互联 host 收上传视频、无头服务端扫描库都要用，对话框只留 UI。
 library;
 
+import 'dart:isolate';
+
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_engine/media/video/external_video.dart'
     show decodedSourceBasename;
@@ -56,38 +58,58 @@ String uniqueVideoBookUid(String base, Set<String> existingKeys) {
   }
 }
 
+/// [parseSubtitleCues] 在调用方 isolate 上直接解析的内容上限（UTF-16 码元数）。
+///
+/// 实测（JIT，本机）：1500 条的 SRT（86K 字符）约 3 ms、1500 条带特效标签的 ASS
+/// （155K）约 6 ms、8000 行的特效字幕 ASS（830K）约 33 ms、30000 行（3.1M，
+/// 卡拉 OK / 招牌特效很重的字幕组 ASS）约 124 ms。64K 以内解析在 2 ms 上下，起一个
+/// isolate 的固定开销反而更大，就地解析；超过的交给 [Isolate.run]。
+const int kSubtitleParseInlineMaxChars = 64 * 1024;
+
 /// 按字幕扩展名路由到对应解析器，返回按 [AudioCue.startMs] 升序排序的 cue。
 ///
-/// 纯函数，无 IO / context 依赖，是 [VideoImportDialog] 的可测核心：
+/// 导入对话框、来源扫描、互联 host 收字幕、远端视频下载都在 UI isolate 上调它
+/// （#3722 video-36g）：大字幕整段同步解析会把 UI 冻住上百毫秒，扫一个满是特效
+/// 字幕的库就是一串卡顿。所以超过 [kSubtitleParseInlineMaxChars] 的内容在
+/// [Isolate.run] 里解析；小内容就地解析。
+///
+/// 只解析，不读文件、不判编码：判编码可能要走移动端的平台通道（只在根 isolate
+/// 可用），调用方先 `readTextWithEncoding` 再交进来。
 /// - `srt` → [SrtParser]
 /// - `vtt` → [VttParser]
 /// - `ass` / `ssa` → [AssParser]
-/// - 其他 → 抛 [ArgumentError]
-List<AudioCue> parseSubtitleCues({
+/// - 其他 → 返回以 [ArgumentError] 完成的 Future（在起 isolate 之前判）
+Future<List<AudioCue>> parseSubtitleCues({
   required String content,
   required String format,
   required String bookUid,
-}) {
+}) async {
   final String normalized = format.toLowerCase();
-  final List<AudioCue> cues;
-  switch (normalized) {
-    case 'srt':
-      cues = SrtParser.parseString(content: content, bookKey: bookUid);
-      break;
-    case 'vtt':
-      cues = VttParser.parseString(content: content, bookKey: bookUid);
-      break;
-    case 'ass':
-    case 'ssa':
-      cues = AssParser.parseString(content: content, bookKey: bookUid);
-      break;
-    default:
-      throw ArgumentError.value(
-        format,
-        'format',
-        'Unsupported subtitle format',
-      );
+  if (!_kSubtitleFormats.contains(normalized)) {
+    throw ArgumentError.value(format, 'format', 'Unsupported subtitle format');
   }
+  if (content.length <= kSubtitleParseInlineMaxChars) {
+    return _parseSubtitleCuesSync(content, normalized, bookUid);
+  }
+  return Isolate.run(
+    () => _parseSubtitleCuesSync(content, normalized, bookUid),
+    debugName: 'parseSubtitleCues',
+  );
+}
+
+const Set<String> _kSubtitleFormats = <String>{'srt', 'vtt', 'ass', 'ssa'};
+
+/// [parseSubtitleCues] 的同步核心；[format] 已小写且在 [_kSubtitleFormats] 里。
+List<AudioCue> _parseSubtitleCuesSync(
+  String content,
+  String format,
+  String bookUid,
+) {
+  final List<AudioCue> cues = switch (format) {
+    'srt' => SrtParser.parseString(content: content, bookKey: bookUid),
+    'vtt' => VttParser.parseString(content: content, bookKey: bookUid),
+    _ => AssParser.parseString(content: content, bookKey: bookUid),
+  };
   cues.sort((AudioCue a, AudioCue b) => a.startMs.compareTo(b.startMs));
   return cues;
 }

@@ -1228,6 +1228,51 @@ fn training_reads_see_a_log_class_once_through_any_member() {
     });
 }
 
+/// RWKV 尾巴只给**代表**出行（`cache.rs` `log_class_rep`：类里操作号最小的那份）：同一次 Anki 复习的两份带盐导入，承袭来的
+/// 那份（设备 0x11，操作号小）先落库、是代表；本机写的那份（0xa1）后落库。`since` 卡在两份之间时增量尾巴里只有后落库的
+/// 那份：它不是代表，不出行（指纹照数它）。代表规则改成「取操作号最大的」或「每份都算」都会多出一行。
+#[test]
+fn the_log_tail_names_a_class_only_through_its_smallest_op() {
+    use super::training::rwkv_log_tail;
+    use crate::store::gen4::derive::Ref;
+    with(|t, col| {
+        let w = land(t, col);
+        let seq = |lid: Id| -> i64 {
+            t.conn()
+                .query_row(
+                    "SELECT s.n FROM log_seq s JOIN log_ix l ON l.col = s.col AND l.card = s.card AND l.k = s.k \
+                     WHERE s.col = ?1 AND l.id = ?2",
+                    rusqlite::params![col, Ref::of(&u(lid))],
+                    |r| r.get(0),
+                )
+                .unwrap()
+        };
+        let (rep, other) = (seq(w.log[0]), seq(w.log[1]));
+        assert!(
+            rep < other,
+            "the heritage copy lands first: {rep} / {other}"
+        );
+        let word = |b: &[u8], k: usize| i64::from_le_bytes(b[8 * k..8 * k + 8].try_into().unwrap());
+        // [count, maxN, newRows, tailRows]
+        let only_other = rwkv_log_tail(t, col, rep, true, true).unwrap();
+        assert_eq!(
+            (
+                word(&only_other, 0),
+                word(&only_other, 1),
+                word(&only_other, 2),
+                word(&only_other, 3)
+            ),
+            (1, other, 1, 0),
+            "the later copy is counted but is not the representative"
+        );
+        // 两份都在尾巴里：只出一行（代表那份，ID 是规范的）。
+        let both = rwkv_log_tail(t, col, rep - 1, true, true).unwrap();
+        assert_eq!((word(&both, 2), word(&both, 3)), (2, 1));
+        assert!(String::from_utf8_lossy(&both).contains(&w.c_log.text()));
+        assert!(t.conn().is_autocommit());
+    });
+}
+
 /// 评分预览（`cmd/preview.rs`）按类：用任何成员卡问都是规范卡的预览（重放那一次复习、笔记与牌组是规范 ID）；按成员给的
 /// 笔记先归一。
 #[test]

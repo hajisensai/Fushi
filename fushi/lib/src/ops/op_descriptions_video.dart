@@ -11,6 +11,7 @@ import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/ops/ctl_video_support.dart'
     show CtlVideoWorkId, ctlVideoConfirmationId;
 import 'package:fushi/src/ops/op_describe_kit.dart';
+import 'package:fushi/src/ops/op_descriptions_video_organize.dart';
 import 'package:fushi/src/ops/op_task_status.dart';
 import 'package:fushi/src/ops/op_descriptions_library.dart'
     show OpUndoScope, opScopedSnapshotUndo, opUndoDisplay;
@@ -43,6 +44,7 @@ List<OpDescription> describeVideoOps(OpDescribeKit kit) {
       ]);
   return <OpDescription>[
     ..._describeScrapeOps(kit, video),
+    ...describeVideoOrganizeOps(kit, video),
     ..._describeDiscoveryOps(kit, discovery, downloads),
     ..._describePlayerOps(kit, video),
     ..._describeSubtitleOps(kit, video),
@@ -223,6 +225,21 @@ List<OpDescription> _describeScrapeOps(
     method: 'POST',
     pattern: '$_video/scrape/cancel',
     summary: 'Cancel the running scrape batch (stops at the next boundary).',
+    risk: OpRisk.irreversible,
+    availability: video,
+  ),
+  OpDescription(
+    id: 'video.relation.refresh',
+    method: 'POST',
+    pattern: '$_video/relations/refresh',
+    summary:
+        'Fill in missing series relations (prequel / sequel) for already '
+        'scraped works. Only touches series relations, never other work '
+        'metadata; the only network use is one TMDB collection request per '
+        'collection whose scraped movie snapshots lack the member list (none '
+        'once filled). Returns counts: tmdb {missing, refreshed, requests, '
+        'failed} (absent without a TMDB key), works, worksWithRelations, rows, '
+        'bound.',
     risk: OpRisk.irreversible,
     availability: video,
   ),

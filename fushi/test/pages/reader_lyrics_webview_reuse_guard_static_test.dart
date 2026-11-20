@@ -133,7 +133,19 @@ void main() {
       contains('unawaited(_loadLyricsPage());'),
       reason: '_loadLyricsPage 经 _lyricsController（停放时为 null）早返回',
     );
-    final String load = methodBody(lyrics, '  Future<void> _loadLyricsPage()');
+    // _loadLyricsPage 只是错误收口包装（调用点全是放飞），装载逻辑在
+    // _loadLyricsPageUnguarded 里。
+    final String guarded = methodBody(
+      lyrics,
+      '  Future<void> _loadLyricsPage()',
+    );
+    expect(guarded, contains('await _loadLyricsPageUnguarded();'));
+    expect(guarded, contains('} catch (e, stack) {'));
+    expect(guarded, contains("'ReaderFushi.loadLyricsPage'"));
+    final String load = methodBody(
+      lyrics,
+      '  Future<void> _loadLyricsPageUnguarded()',
+    );
     expect(
       load,
       contains(

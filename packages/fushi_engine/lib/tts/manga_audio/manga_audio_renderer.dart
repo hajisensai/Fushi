@@ -19,6 +19,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/tts/cast/cast_line_voicing.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_narrator.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render_plan.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
@@ -64,6 +65,18 @@ abstract interface class MangaRenderBackend {
 
   /// 写一段 [ms] 毫秒的静音。
   Future<int> writeSilence({required int ms, required String outputPath});
+
+  /// 能不能用参考音频克隆旁白音色（`manga_audio_narrator.dart`）。不能 = 合成句照旧用
+  /// 各自指派的声音。
+  bool get canCloneNarrator;
+
+  /// 把 [narrator] 的参考片段做成参考音频并登记这个声音，之后 [synthesizeLine] 可以
+  /// 用 `voice: narrator.id`。参考片段剪不出来（书已不在、文件丢了）返回 false，本次
+  /// 不克隆；只有取消可以往外抛。
+  Future<bool> prepareNarrator({
+    required MangaNarratorVoice narrator,
+    required TtsRenderCancelToken cancel,
+  });
 
   /// 整卷生成开跑前把这次要出的句子（不含原样沿用的）交给后端一次：能整批合成的
   /// 引擎（Irodori 批处理 worker：按参考音频组成批、模型只加载一次）在这里先批量合成
@@ -175,6 +188,26 @@ class MangaAudioRenderer {
 
   String _pathOf(String file) => p.join(directory.path, file);
 
+  /// 本卷这次要用的旁白声音（后端不能克隆、没有合格片段、参考音频准备失败 → null）。
+  Future<MangaNarratorVoice?> _narrator(
+    MangaAudioScript script,
+    List<List<MokuroBlock>> pageBlocks,
+    TtsRenderCancelToken cancel,
+  ) async {
+    if (!backend.canCloneNarrator) return null;
+    final MangaNarratorVoice? narrator = mangaNarratorFor(
+      script: script,
+      pageCount: pageBlocks.length,
+    );
+    if (narrator == null) return null;
+    final bool ready = await backend.prepareNarrator(
+      narrator: narrator,
+      cancel: cancel,
+    );
+    cancel.throwIfCancelled();
+    return ready ? narrator : null;
+  }
+
   /// 整卷生成。[previous] 是上一次的清单（沿用没变的句子）；[ledger] 原地更新（调用方
   /// 负责落盘）。清单写到 [manifestFile]。
   Future<MangaRenderOutcome> render({
@@ -191,6 +224,7 @@ class MangaAudioRenderer {
       script: script,
       pageBlocks: pageBlocks,
       defaultVoice: defaultVoice,
+      narrator: await _narrator(script, pageBlocks, cancel),
     );
     final Map<String, MangaRenderedLine> before = <String, MangaRenderedLine>{
       for (final MangaRenderedLine l
@@ -418,6 +452,9 @@ class MangaAudioRenderer {
     final Map<String, MangaBackfillStatus> out =
         <String, MangaBackfillStatus>{};
     onProgress(0, requests.length);
+    final MangaNarratorVoice? narrator = requests.isEmpty
+        ? null
+        : await _narrator(script, pageBlocks, cancel);
     for (int i = 0; i < requests.length; i++) {
       cancel.throwIfCancelled();
       final MangaBackfillRequest req = requests[i];
@@ -425,6 +462,7 @@ class MangaAudioRenderer {
         script: script,
         pageBlocks: pageBlocks,
         defaultVoice: defaultVoice,
+        narrator: narrator,
         manifest: manifest,
         ledger: ledger,
         req: req,
@@ -441,6 +479,7 @@ class MangaAudioRenderer {
     required MangaAudioScript script,
     required List<List<MokuroBlock>> pageBlocks,
     required String defaultVoice,
+    required MangaNarratorVoice? narrator,
     required MangaRenderManifest manifest,
     required CastVoicingLedger ledger,
     required MangaBackfillRequest req,
@@ -451,7 +490,12 @@ class MangaAudioRenderer {
       (MangaRenderedLine l) => l.lineId == req.lineId,
     );
     if (line == null || !inManifest) return MangaBackfillStatus.lineMissing;
-    final String assigned = mangaResolvedVoice(script, line, defaultVoice);
+    final String assigned = mangaSynthVoiceFor(
+      script,
+      line,
+      defaultVoice,
+      narrator,
+    );
     final String? voice =
         req.voice ??
         (req.nextRetryVoice
@@ -536,7 +580,12 @@ class MangaAudioRenderer {
       pageBlocks,
       substitutions: script.substitutions,
     );
-    final String voice = mangaResolvedVoice(script, line, defaultVoice);
+    final String voice = mangaSynthVoiceFor(
+      script,
+      line,
+      defaultVoice,
+      await _narrator(script, pageBlocks, cancel),
+    );
     final MangaRenderItem item = MangaRenderItem(
       line: line,
       text: text,

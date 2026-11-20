@@ -24,13 +24,19 @@ void main() {
       final String code = src.readAsStringSync();
 
       // BUG-1678 之后写有声书行不再是一次整行 saveAudiobook，而是 ensure + 若干
-      // 窄动作（replaceAlignment / replaceAudio / writeHealth）。锚点跟着换成
-      // 「建行」那一步——它恒在最前，配对仍必须排在它之后。
-      final int saveIdx = code.indexOf('ensureAudiobook(widget.bookKey)');
+      // 窄动作（replaceAlignment / replaceAudio / writeHealth）。#3722 c48 起建行 +
+      // 字幕 + 音频收进 `commitAudiobookImportRow`，作为换音频的 commit 跑；锚点跟着
+      // 换成这次调用——它恒在最前，配对仍必须排在它之后。
+      final int saveIdx = code.indexOf('await commitAudiobookImportRow(');
       expect(
         saveIdx,
         greaterThanOrEqualTo(0),
-        reason: '导入路径必须先保证 audiobooks 行存在（ensureAudiobook）',
+        reason: '导入路径必须先保证 audiobooks 行存在（commitAudiobookImportRow）',
+      );
+      expect(
+        code.contains('await repo.ensureAudiobook(bookKey);'),
+        isTrue,
+        reason: 'commitAudiobookImportRow 必须先建行',
       );
 
       // 匹配调用点（带 '('），避免命中 import 的 show 子句（'writeEpubBackedSrtBook;'）。

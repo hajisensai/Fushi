@@ -9,24 +9,35 @@
 //! 写出的日志与旧路径同形（同样的键、同样的 HLC 推进方式、同样记下配置快照 `sc`），意图编码进操作的方式也相同：
 //! 同步协议、段格式、srs.db schema 都不变。
 
+#[cfg(test)]
 use std::collections::BTreeSet;
 
+#[cfg(test)]
 use rusqlite::{Connection, OptionalExtension, params};
+#[cfg(test)]
 use serde_json::{Map, Value, json};
 
+#[cfg(test)]
 use super::{
     Group, Local, Touched, append_local_cached, applied_vv, config, group_of, in_savepoint,
     log_body_of, project_body, replay_touched, sql, stamp_local_config,
 };
+#[cfg(test)]
 use crate::projection::Day;
 use crate::store::SrsCore;
+#[cfg(test)]
 use crate::store::legacy_clock::LegacyClock;
+#[cfg(test)]
 use crate::sync2::id::Id;
+#[cfg(test)]
 use crate::sync2::op::{Body, Intent};
+#[cfg(test)]
 use crate::sync2::replay::{self, Row};
+#[cfg(test)]
 use crate::sync2::sched::Queue;
 
 /// 一项请求展开后的单卡动作。
+#[cfg(test)]
 enum Action {
     /// [skip_new]：已经是新卡的跳过（批量「忘记」）；单卡入口照旧无条件写。
     Reset {
@@ -42,6 +53,7 @@ enum Action {
 }
 
 /// 卡所属笔记（缓存行；没有缓存行 = None，与 Dart 旧路径按缓存行补笔记同一口径）。
+#[cfg(test)]
 fn note_of(c: &Connection, card: &str) -> Result<Option<String>, String> {
     c.prepare_cached(
         "SELECT srs_idt(note_id) AS note_id FROM srs_cards_cache WHERE id = srs_id(?1)",
@@ -53,6 +65,7 @@ fn note_of(c: &Connection, card: &str) -> Result<Option<String>, String> {
 }
 
 /// 「立即重排整组」的候选：缓存里有效牌组在 [deck] 子树内、队列是复习的卡，按 ID 排（写出顺序确定）。
+#[cfg(test)]
 fn review_cards_in(
     c: &Connection,
     profile: &str,
@@ -81,6 +94,7 @@ fn review_cards_in(
 }
 
 /// 请求项 → 单卡动作（`rescheduleDeck` 在这里按牌组子树展开）。
+#[cfg(test)]
 fn expand(
     c: &Connection,
     profile: &str,
@@ -136,6 +150,7 @@ impl SrsCore {
     /// "diagnostics", "nextSeq"}`（后几项与 `apply` 同形，Dart 照样接进修订号与缓存）。
     ///
     /// 日志的 HLC 由旧版时钟（store/legacy_clock.rs）在这里推进：写了几条走几步，推进后的时钟写进本机状态行。
+    #[cfg(test)]
     pub fn sync2_sched_local(&self, profile: &str, now: i64, req: &Value) -> Result<Value, String> {
         let w = self.writer()?;
         in_savepoint(&w, |c| sched_local_on(c, profile, now, req))
@@ -143,7 +158,8 @@ impl SrsCore {
 }
 
 /// [SrsCore::sync2_sched_local] 的本体：在调用方的写连接、调用方开的 SAVEPOINT 里做（不自己取锁；分发器把它与缓存刷新、
-/// 本机状态行合进同一个 SAVEPOINT，store/ffi.rs `local_write`）。
+/// 本机状态行合进同一个 SAVEPOINT，store/legacy3 `local_write`）。
+#[cfg(test)]
 pub(crate) fn sched_local_on(
     c: &Connection,
     profile: &str,
@@ -196,10 +212,11 @@ pub(crate) fn sched_local_on(
         }
         let note = note_of(c, &card)?;
         // 每张卡在它自己的归属组上重放到此刻（同一批里先写的日志已投影，后面的项看得见）。
-        let Group { rows, .. } = group_of(c, &card, note.as_deref())?;
+        let Group { rows, .. } = group_of(c, &card)?;
         let input: Vec<Row<'_>> = rows
             .iter()
             .map(|(_, j, s, i, _)| Row {
+                seed_card: None,
                 json: j,
                 server_time: *s,
                 intent: i.clone(),

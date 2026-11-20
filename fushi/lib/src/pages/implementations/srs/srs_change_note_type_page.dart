@@ -31,6 +31,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 class SrsChangeNoteTypePage extends ConsumerStatefulWidget {
   const SrsChangeNoteTypePage({
@@ -241,7 +242,10 @@ class _SrsChangeNoteTypePageState extends ConsumerState<SrsChangeNoteTypePage> {
       Navigator.of(context).pop(true);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsChangeNoteType.apply', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
       if (mounted) setState(() => _applying = false);
     }
   }

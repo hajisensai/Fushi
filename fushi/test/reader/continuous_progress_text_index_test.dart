@@ -1,13 +1,12 @@
 @Tags(<String>['chrome'])
 library;
 
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show readerFushiEngineSourceUncompacted;
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
+
+import '../helpers/node_runtime.dart';
 
 /// BUG-2903：滚动模式往下滚会卡在某处停一会。
 ///
@@ -19,35 +18,29 @@ import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 void main() {
   test('continuous progress uses the chapter text index with the same numbers '
       'and logarithmic geometry in real Chrome', () async {
-    final String? nodeExe = _resolveNode();
+    final String? nodeExe = resolveNodeExecutable();
     if (nodeExe == null) {
       markTestSkipped('node not found on PATH; skipping JS execution');
       return;
     }
-    final Directory temp = Directory.systemTemp.createTempSync('cprogress-');
-    try {
-      final File payload = File('${temp.path}/engine.json')
-        ..writeAsStringSync(
-          jsonEncode(<String, String>{
-            'engine': ReaderPaginationScripts.engineShell(
-              vnMode: false,
-              continuousMode: true,
-            ),
-          }),
-        );
-      final ProcessResult result = await Process.run(nodeExe, <String>[
-        'test/reader/continuous_progress_text_index_harness.mjs',
-        payload.path,
-      ]).timeout(const Duration(seconds: 120));
-      if (result.exitCode == 77) {
-        markTestSkipped('Chrome unavailable: ${result.stdout}');
-        return;
-      }
-      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
-      expect(result.stdout, contains('PASS 2 browser cases'));
-    } finally {
-      temp.deleteSync(recursive: true);
+    final Map<String, String> payload = <String, String>{
+      'engine': ReaderPaginationScripts.engineShell(
+        vnMode: false,
+        continuousMode: true,
+      ),
+    };
+    final NodeHarnessResult result = await runNodeHarness(
+      nodeExe,
+      'test/reader/continuous_progress_text_index_harness.mjs',
+      payload,
+      timeout: const Duration(seconds: 120),
+    );
+    if (result.exitCode == 77) {
+      markTestSkipped('Chrome unavailable: ${result.stdout}');
+      return;
     }
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    expect(result.stdout, contains('PASS 2 browser cases'));
   }, timeout: const Timeout(Duration(seconds: 150)));
 
   test(
@@ -74,19 +67,4 @@ void main() {
       );
     },
   );
-}
-
-String? _resolveNode() {
-  final List<String> candidates = Platform.isWindows
-      ? <String>['node.exe', 'node']
-      : <String>['node'];
-  for (final String name in candidates) {
-    try {
-      final ProcessResult probe = Process.runSync(name, <String>['--version']);
-      if (probe.exitCode == 0) return name;
-    } on ProcessException {
-      // Try the next executable name.
-    }
-  }
-  return null;
 }

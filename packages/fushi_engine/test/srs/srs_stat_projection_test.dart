@@ -3,13 +3,16 @@
 // - undo / 再答 / 导入 revlog 都随卡片缓存重算；保留原始时刻，日界换了读时重分桶；
 // - 更改笔记类型后旧卡的复习归到新卡；对端并发复习旧卡按合并历史分类；新设备首次同步得出同样的行；
 // - 笔记彻底清除（v2 Purge）后复习照样计入，重建也不丢；
-// - 存量库（缓存修订号 < 2）打开时补齐；
-// - 统计读取路径不再读 srs_review_logs。
-import 'dart:convert';
+// - 统计读取路径不再读复习日志原文。
+// 新代：投影只经公开读命令看（统计页的读取 [statsRowsOf]），参考实现的日志 / 服务器时刻取自导出（`read events`）与
+// `server_times` 读命令。协议 3 的「缓存修订号 1 / 2 的存量库打开时补齐投影」两条已删：新代没有本机状态行的
+// `cacheRev`（派生层是真相的纯函数，配置随 `cache_config_set` 进内核，协议 3 的旧库只经换代迁移整份重建），
+// 对应的保证由「投影行被删光后整份重建复原、且 = 增量 = 参考实现」覆盖（[expectRebuildRestores]：先经原始通道
+// 删掉派生表 `stats` 的行再 [SrsDbStore.rebuildCaches]，只比重建前后同值测不出重建坏掉）。
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:drift/drift.dart' hide isNull;
+import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -26,7 +29,6 @@ import 'support/srs_stats_rows.dart';
 import 'support/srs_test_storage.dart';
 import 'support/srs_sync2_peers.dart';
 import 'support/srs_query_counter.dart';
-import 'support/srs_raw_sql.dart';
 
 const String _uid = '01928c3e-0000-7000-8000-00000000a682';
 
@@ -37,18 +39,14 @@ const int _hourMs = 3600000;
 /// 「成熟」的间隔下限（内核 history.rs 同名常量）。
 const int _matureIntervalDays = 21;
 
-/// 投影表原样的行（按日志 ID 排序；一条日志至多一行）。
-Future<List<String>> projectionRows(SrsCore db) async => <String>[
-  for (final SrsRawRow r
-      in await db
-          .customSelect(
-            'SELECT log_id, card_id, occurred_at, utc_offset_min, rating, kind, '
-            'duration_ms, prev_due_day, maturity_delta FROM srs_stat_reviews '
-            'ORDER BY log_id',
-          )
-          .get())
-    jsonEncode(r.data),
-];
+/// 投影的公开读出（统计页读取，固定 JST 4 点翻日）：每条有效复习一行 `r ...`、每次成熟变化一行 `m ...`，排序后可比。
+/// 新代不再直接看投影表。
+Future<List<String>> projectionRows(SrsDbStore s) =>
+    fromLoader(s, const SrsDayContext(rolloverHour: 4, utcOffsetMin: 540));
+
+/// [projectionRows] 里的复习行数（一条有效复习一行）。
+Future<int> projectedReviews(SrsDbStore s) async =>
+    (await projectionRows(s)).where((String r) => r.startsWith('r ')).length;
 
 /// 统计页读到的复习记录 + 成熟变化（排序后逐条比较）。
 Future<List<String>> fromLoader(SrsDbStore s, SrsDayContext day) async {
@@ -67,30 +65,18 @@ Future<List<String>> fromLoader(SrsDbStore s, SrsDayContext day) async {
 /// - 每个归属组的日志合成一份 [SrsCardHistory] 选取有效日志，按合并历史分类；记录的卡 = 归属卡。
 Future<List<String>> fromReference(SrsDbStore s, SrsDayContext day) async {
   final Map<String, List<SrsReviewLog>> byCard = <String, List<SrsReviewLog>>{};
-  for (final SrsRawRow r
-      in await s.core
-          .customSelect(
-            'SELECT card_id, json FROM srs_review_logs WHERE profile_uid = ?',
-            variables: <Variable<Object>>[
-              Variable<String>(s.profileUid, srsIdType),
-            ],
-          )
-          .get()) {
-    (byCard[r.read<String>('card_id')] ??= <SrsReviewLog>[]).add(
-      SrsReviewLog.fromJson(
-        (jsonDecode(r.read<String>('json')) as Map).cast<String, Object?>(),
-      ),
-    );
+  for (final SrsEvent e in await s.exportAll()) {
+    if (e case SrsLogEvent(:final SrsReviewLog log)) {
+      (byCard[log.cardId] ??= <SrsReviewLog>[]).add(log);
+    }
   }
+  final SrsColumns st = await s.readTable(
+    'server_times',
+    const <String, Object?>{},
+  );
   final Map<String, int> serverTimes = <String, int>{
-    for (final SrsRawRow r
-        in await s.core
-            .customSelect(
-              'SELECT event_id, server_time FROM srs_event_local '
-              'WHERE server_time IS NOT NULL',
-            )
-            .get())
-      r.read<String>('event_id'): r.read<int>('server_time'),
+    for (int i = 0; i < st.strings('id').length; i++)
+      st.strings('id')[i]: st.ints('st')[i],
   };
   final Set<String> visible = <String>{
     for (final SrsCardCacheRow c in await s.allCardRows())
@@ -214,7 +200,6 @@ void main() {
 
   late SrsReadCounter reads;
   late TestSrs srs;
-  late SrsCore db;
   late SrsDbStore store;
 
   Future<SrsDbStore> open() => SrsDbStore.open(
@@ -241,8 +226,7 @@ void main() {
         // 句柄晚释放。
       }
     });
-    srs = await openTestSrsAt('${tmp.path}/srs.db');
-    db = srs.core;
+    srs = openTestSrsIn(tmp.path);
     store = await open();
   });
 
@@ -262,38 +246,35 @@ void main() {
 
   test('增量 = 整份重建 = 参考实现（按卡分组、前身并到继承卡、选取后分类）', () async {
     await scenario();
-    final List<String> incremental = await projectionRows(db);
+    final List<String> incremental = await projectionRows(store);
     expect(incremental, isNotEmpty);
     final List<String> want = await fromReference(store, jst);
     expect(want.where((String s) => s.startsWith('r ')), hasLength(6 * 3 + 3));
     expect(await fromLoader(store, jst), want);
 
-    await store.rebuildCaches();
-    expect(await projectionRows(db), incremental);
+    await expectRebuildRestores(store, 'stats', 'DELETE FROM stats');
+    expect(await projectionRows(store), incremental);
     expect(await fromLoader(store, jst), want);
   });
 
   test('undo 撤掉的复习不在投影里，再答进来；原始时刻保留、日界读时重分桶', () async {
     await importBench(store, 1);
     final String card = (await store.allCardRows()).first.id;
-    final int before = (await projectionRows(db)).length;
+    final int before = await projectedReviews(store);
     final SrsReviewLog l = await store.answer(card, 3, durationMs: 1234);
-    expect(await projectionRows(db), hasLength(before + 1));
+    expect(await projectedReviews(store), before + 1);
     expect(await store.undo(card, l.id), isTrue);
-    expect(await projectionRows(db), hasLength(before));
+    expect(await projectedReviews(store), before);
 
     // JST 次日凌晨 2 点：按 4 点翻日算 10/14，按 0 点翻日算 10/15。
     now = DateTime.utc(2026, 10, 14, 17).millisecondsSinceEpoch;
     final SrsReviewLog again = await store.answer(card, 3, durationMs: 777);
-    final SrsRawRow row = await db
-        .customSelect(
-          'SELECT occurred_at, duration_ms FROM srs_stat_reviews '
-          'WHERE log_id = ?',
-          variables: <Variable<Object>>[Variable<String>(again.id, srsIdType)],
-        )
-        .getSingle();
-    expect(row.read<int>('occurred_at'), now);
-    expect(row.read<int>('duration_ms'), 777);
+    expect(again.occurredAt, now);
+    final StatReviewRow row = (await statsRowsOf(
+      store,
+      day: jst,
+    )).reviews.singleWhere((StatReviewRow r) => r.at == now);
+    expect(row.durationMs, 777);
 
     int dayOf(StatsRows d) =>
         d.reviews.firstWhere((StatReviewRow r) => r.at == now).day;
@@ -308,47 +289,9 @@ void main() {
     expect(await fromLoader(store, jst), await fromReference(store, jst));
   });
 
-  Future<String> cacheRev() async {
-    final String json =
-        (await db.customSelect('SELECT json FROM srs_local_state').getSingle())
-            .read<String>('json');
-    return '${(jsonDecode(json) as Map)['cacheRev']}';
-  }
-
-  test('存量库（缓存修订号 1、投影表为空）打开时补齐', () async {
-    await scenario();
-    final List<String> want = await projectionRows(db);
-    expect(await cacheRev(), '${store.debugCacheRevision}');
-    store.core.debugExecRaw('DELETE FROM srs_stat_reviews');
-    store.core.debugExecRaw(
-      "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 1)",
-    );
-    expect(await projectionRows(db), isEmpty);
-
-    store = await open();
-    expect(await projectionRows(db), want);
-    expect(await cacheRev(), '${store.debugCacheRevision}');
-    expect(await fromLoader(store, jst), await fromReference(store, jst));
-  });
-
-  test('缓存修订号 2 → 当前的升级不动投影（只补笔记缓存的媒体引用）', () async {
-    await scenario();
-    final List<String> want = await projectionRows(db);
-    store.core.debugExecRaw(
-      "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 2)",
-    );
-    store = await open();
-    expect(await projectionRows(db), want);
-    expect(await cacheRev(), '${store.debugCacheRevision}');
-  });
-
   test('统计读取路径不读复习日志表（大量日志：240 条笔记 × 2 卡 × 4 条）', () async {
     await importBench(store, 240);
-    final int logs =
-        (await db
-                .customSelect('SELECT COUNT(*) AS c FROM srs_review_logs')
-                .getSingle())
-            .read<int>('c');
+    final int logs = (await store.exportAll()).whereType<SrsLogEvent>().length;
     expect(logs, greaterThanOrEqualTo(1440));
     reads.reset();
     final StatsRows b = await statsRowsOf(store, day: jst, nowMs: now);
@@ -381,13 +324,13 @@ void main() {
     now += 26 * 3600 * 1000;
     await store.answer(card, 4, durationMs: 2000);
     await store.answer(other, 3, durationMs: 1000);
-    final List<String> before = await projectionRows(db);
+    final List<String> before = await projectionRows(store);
     final List<String> stats = await fromLoader(store, jst);
     expect(stats.where((String s) => s.startsWith('r ')), hasLength(3));
     expect(stats, await fromReference(store, jst));
 
     await store.deleteNote(note);
-    expect(await projectionRows(db), before, reason: '删除只隐藏卡，复习仍归自己');
+    expect(await projectionRows(store), before, reason: '删除只隐藏卡，复习仍归自己');
     final SrsPurgeReport r = await srsPurgeNotesNow(store, <String>[note]);
     expect(r.notes, 1);
     expect(
@@ -395,11 +338,15 @@ void main() {
       isTrue,
       reason: '彻底清除只抹内容：卡行留着（复习历史要用），不再出现在队列',
     );
-    expect(await projectionRows(db), before);
+    expect(await projectionRows(store), before);
     expect(await fromLoader(store, jst), stats);
 
-    await store.rebuildCaches();
-    expect(await projectionRows(db), before, reason: '重建按全部有日志的卡算投影，含已没有缓存行的卡');
+    await expectRebuildRestores(store, 'stats', 'DELETE FROM stats');
+    expect(
+      await projectionRows(store),
+      before,
+      reason: '重建按全部有日志的卡算投影，含已没有缓存行的卡',
+    );
     expect(await fromLoader(store, jst), stats);
     expect(await fromReference(store, jst), stats);
   });
@@ -461,7 +408,7 @@ void main() {
       final String newCard = SrsIds.card(note, vt.templates[0].id, 0);
       expect(await a.cardRow(card2), isNull, reason: '前身卡不再生成，删缓存行；增量与重建同一张表');
 
-      final List<String> incremental = await projectionRows(a.core);
+      final List<String> incremental = await projectionRows(a);
       final List<String> stats = await fromLoader(a, jst);
       final List<String> reviews = <String>[
         for (final String s in stats)
@@ -475,24 +422,24 @@ void main() {
       ]);
       expect(stats, await fromReference(a, jst));
 
-      await a.rebuildCaches();
-      expect(await projectionRows(a.core), incremental);
+      await expectRebuildRestores(a, 'stats', 'DELETE FROM stats');
+      expect(await projectionRows(a), incremental);
       expect(await fromLoader(a, jst), stats);
 
       final SrsDbStore b = await device('b');
       await syncAll(<SrsDbStore>[a, b]);
-      expect(await projectionRows(b.core), incremental);
+      expect(await projectionRows(b), incremental);
       expect(await fromLoader(b, jst), stats);
       expect(await fromReference(b, jst), stats);
 
       // 新规则：换类型后又删笔记，前身与新卡都不可见 → 旧卡的复习归链尾（新卡），不回落到旧卡名下。
       await b.deleteNote(note);
       expect((await b.cardRow(newCard))!.hidden, isTrue);
-      expect(await projectionRows(b.core), incremental);
+      expect(await projectionRows(b), incremental);
       expect(await fromLoader(b, jst), stats);
       expect(await fromReference(b, jst), stats);
-      await b.rebuildCaches();
-      expect(await projectionRows(b.core), incremental);
+      await expectRebuildRestores(b, 'stats', 'DELETE FROM stats');
+      expect(await projectionRows(b), incremental);
     });
 
     test('对端并发复习旧卡（还没收到换类型）：分类与成熟净值按合并历史', () async {
@@ -570,12 +517,12 @@ void main() {
         reason: '成熟净值 = 新卡当前是否成熟（按合并历史的最后状态）',
       );
 
-      expect(await projectionRows(b.core), await projectionRows(a.core));
+      expect(await projectionRows(b), await projectionRows(a));
       expect(await fromLoader(b, jst), stats);
       expect(await fromReference(b, jst), stats);
-      final List<String> incremental = await projectionRows(a.core);
-      await a.rebuildCaches();
-      expect(await projectionRows(a.core), incremental);
+      final List<String> incremental = await projectionRows(a);
+      await expectRebuildRestores(a, 'stats', 'DELETE FROM stats');
+      expect(await projectionRows(a), incremental);
     });
   });
 }

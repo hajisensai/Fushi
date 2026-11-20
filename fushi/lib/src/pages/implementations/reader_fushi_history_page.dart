@@ -39,16 +39,15 @@ import 'package:fushi_engine/media/collections/book_series_key.dart'
 import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:fushi_engine/sync/collection_book_identity_index.dart';
 import 'package:fushi_engine/sync/epub_repackage.dart';
+import 'package:fushi_engine/sync/sync_asset_store.dart'
+    show SyncTransferProgress, syncTransferFractionOnly;
 import 'package:fushi/src/media/kavita/kavita_api_registry.dart';
 import 'package:fushi/src/media/kavita/kavita_progress_refresher.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
-import 'package:fushi/src/media/nsfw/media_nsfw_dialog.dart';
-import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:fushi/src/media/audiobook/srt_book_missing_audio.dart';
 import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_page.dart';
-import 'package:fushi/src/media/manga/audio/manga_audio_studio_page.dart';
 import 'package:fushi/src/media/import/srt_book_attach_epub.dart';
 import 'package:fushi_engine/media/audiobook/srt_book_reimport.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
@@ -64,12 +63,11 @@ import 'package:fushi/src/media/collections/collection_member_view.dart'
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
-import 'package:fushi/src/media/manga/audio/manga_audio_script_page.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_workbench_entry.dart';
 import 'package:fushi/src/media/manga/book_format_convert.dart';
 import 'package:fushi/src/media/manga/book_format_rebuild.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
 import 'package:fushi/src/media/manga/library/manga_book_ocr.dart';
-import 'package:fushi/src/media/manga/audio/manga_audio_import_flow.dart';
 import 'package:fushi/src/media/manga/library/manga_series_page.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_manager_page.dart';
@@ -161,6 +159,8 @@ import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/deletion_propagation_availability.dart';
 import 'package:fushi/src/sync/deletion_prompt_preferences.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
+import 'package:fushi/src/sync/interconnect_download_background_tasks.dart'
+    show interconnectDownloadStageLabel, interconnectDownloadStageStatus;
 import 'package:fushi/src/sync/hidden_remote_books.dart';
 import 'package:fushi/src/sync/remote_book_source_host.dart';
 import 'package:fushi/src/sync/hidden_remote_book.dart';
@@ -616,29 +616,68 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   // `_downloadingBooks` 已删，BUG-1561 书侧补齐）：任务活在 app 级
   // InterconnectDownloadManager，占位卡经 _remoteBookTaskBadge 按任务状态渲染。
 
-  /// 正在下载有声书包的本地书（key = 导入后的本地 bookKey，BUG-990）。远端有声书
-  /// 走「先下 EPUB 后下有声书」两阶段：EPUB 一落库，书架 provider 自动刷新把远端占位
-  /// 卡（带下载转圈）顶替成本地卡，此刻有声书还没落库 → 本地卡若无指示就露出「无转圈
-  /// 的普通书」。下载有声书期间把本地 bookKey 记进这里，本地 EPUB 卡 / SRT 卡据此继续
-  /// 显示加载覆盖层，直到有声书下完（成功或失败都在 finally 清除）。
-  final Set<String> _downloadingAudiobookKeys = <String>{};
+  /// 已在本机落地、但所属下载任务还没跑完的本地书键（本帧快照，取自
+  /// [InterconnectDownloadManager.landedBookKeysSignature]，build 里 watch）。
+  ///
+  /// 远端书是「拉正文 → 导入 + 回填进度 → 拉有声书」一条任务：正文一落库，占位卡
+  /// 就让位给本地卡（[_onRemoteBookLanded]），任务却还在跑。本地 EPUB 卡 / SRT 卡
+  /// 据此继续画**同一个任务**的进度遮罩（阶段名 + 百分比，[_landedDownloadOverlay]），
+  /// 不再是 BUG-990 那个不带数字的转圈。登记在 app 级任务上（不是本页 State），
+  /// 切走书架再回来照样接得上。
+  Set<String> _landedBookKeys = const <String>{};
+
+  /// 正文已落地、有声书包下载失败的本地书键（同上，取自
+  /// [InterconnectDownloadManager.failedLandedBookKeysSignature]）：书卡副行写
+  /// 「有声书下载失败」，书照常可读；补拉入口在书卡菜单（BUG-2505）。
+  Set<String> _failedLandedBookKeys = const <String>{};
 
   /// 已在本机落地、但远端清单还没按新本地状态重新去重的对端书（键 =
   /// [RemoteBookInfo.downloadId]，BUG-3452）。渲染时跳过它们的占位卡；由
   /// [_onRemoteBookLanded] 写入，那一轮远端清单回来后摘除。
   final Set<String> _landedRemoteDownloadIds = <String>{};
 
-  /// 本地卡在「有声书还在下」时叠的居中加载覆盖层（BUG-990）；[bookKey] 不在下载集合
-  /// 时返回 null（不叠）。
-  Widget? _audiobookDownloadingOverlay(String? bookKey) {
-    if (bookKey == null || !_downloadingAudiobookKeys.contains(bookKey)) {
-      return null;
-    }
-    return RemoteDownloadProgressBadge(
-      key: ValueKey<String>('audiobook_downloading_$bookKey'),
-      progress: null,
-      tooltip: t.remote_book_downloading,
+  /// 本地卡在所属下载任务还没跑完时叠的进度遮罩；[bookKey] 不在
+  /// [_landedBookKeys] 时返回 null（不叠）。
+  ///
+  /// 订阅挂在遮罩自己这层 [Consumer] 上、只 select 整数百分比与阶段（BUG-2944 /
+  /// BUG-3337 同范式）：字节回报不整页重建，合集详情页里的成员卡也跟着走。
+  Widget? _landedDownloadOverlay(String? bookKey) {
+    if (bookKey == null || !_landedBookKeys.contains(bookKey)) return null;
+    return Consumer(
+      key: ValueKey<String>('landed_download_$bookKey'),
+      builder: (BuildContext context, WidgetRef ref, Widget? _) {
+        final InterconnectDownloadBadgeState? task = ref.watch(
+          interconnectDownloadManagerProvider.select(
+            (InterconnectDownloadManager m) => m.landedBadgeStateFor(bookKey),
+          ),
+        );
+        if (task == null || task.status != InterconnectDownloadStatus.running) {
+          return const SizedBox.shrink();
+        }
+        return RemoteDownloadProgressBadge(
+          progress: _stageOverlayProgress(task),
+          tooltip: _stageStatusText(task),
+          caption: task.stage == null
+              ? null
+              : interconnectDownloadStageLabel(task.stage!),
+        );
+      },
     );
+  }
+
+  /// 遮罩环的值：导入阶段与尚无回报时为 null（不定态），其余为当前阶段进度。
+  double? _stageOverlayProgress(InterconnectDownloadBadgeState task) =>
+      task.percent < 0 || task.stage == InterconnectDownloadStage.importing
+      ? null
+      : task.percent / 100;
+
+  /// 一行状态文字：多阶段任务写「有声书 45%」，单阶段任务写「45%」。
+  String _stageStatusText(InterconnectDownloadBadgeState task) {
+    final InterconnectDownloadStage? stage = task.stage;
+    if (stage != null) {
+      return interconnectDownloadStageStatus(stage, task.percent);
+    }
+    return task.percent < 0 ? t.remote_book_downloading : '${task.percent}%';
   }
 
   VideoBookRepository get _videoRepo => VideoBookRepository(appModel.database);
@@ -1054,6 +1093,24 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
 
   @override
   Widget build(BuildContext context) {
+    // 「已落地、任务未完」的本地书：只在有书落地 / 任务结束时变（签名按值比较），
+    // 进度回报不触发本页重建——进度由各卡遮罩自己的 Consumer 订阅。
+    final String landedSignature = ref.watch(
+      interconnectDownloadManagerProvider.select(
+        (InterconnectDownloadManager m) => m.landedBookKeysSignature,
+      ),
+    );
+    _landedBookKeys = landedSignature.isEmpty
+        ? const <String>{}
+        : landedSignature.split('\n').toSet();
+    final String failedSignature = ref.watch(
+      interconnectDownloadManagerProvider.select(
+        (InterconnectDownloadManager m) => m.failedLandedBookKeysSignature,
+      ),
+    );
+    _failedLandedBookKeys = failedSignature.isEmpty
+        ? const <String>{}
+        : failedSignature.split('\n').toSet();
     ref.listen<AsyncValue<Map<String, int>>>(
       bookLastReadAtProvider,
       (_, __) => _bumpMemberInfoRevision(),
@@ -2399,19 +2456,30 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             CollectionOrderingItem<_ShelfBookSlot>(
               mediaType: MediaKind.srt,
               entryKey: srt.uid,
-              importedAt: srt.importedAt,
+              // 配了 EPUB 的有声书卡是「这本书」的卡（它顶替书卡，BUG-728），
+              // 按书的入库时刻排：从对端下完有声书那一刻，SRT 卡接替 EPUB 卡
+              // 时留在原位，不按有声书包自带的时刻跳到别处。standalone 用自己的。
+              importedAt: srt.bookKey.isEmpty
+                  ? srt.importedAt
+                  : (_epubImportedAtByKey[srt.bookKey] ?? srt.importedAt),
               payload: _ShelfBookSlot(srt: srt),
             ),
           // v83：本地 epub 折叠身份 = uid（成员表/归属映射同键）；uid 缺失的异常行
           // 沿用 bookKey（与透传成员行同键，仍可折进合集）。
           for (final MediaItem epub in epubBooks)
             if ((_parseBookKey(epub.mediaIdentifier) ?? '') case final String k)
-              CollectionOrderingItem<_ShelfBookSlot>(
-                mediaType: MediaKind.epub,
-                entryKey: _epubUidByKey[k] ?? k,
-                importedAt: _epubImportedAtByKey[k] ?? 0,
-                payload: _ShelfBookSlot(epub: epub),
-              ),
+              // 刚从对端落地、折叠映射还没重载到它的书先不画：此刻它的 uid /
+              // 入库时刻 / 合集归属都查不到，会以「入库时刻 0、不在合集」的散卡
+              // 排到别处闪一下。远端占位卡（带同一条任务的进度）在原位顶着，映射
+              // 重载完与本地卡同一帧交接（[_onRemoteBookLanded]）。
+              if (!_landedBookKeys.contains(k) ||
+                  _epubImportedAtByKey.containsKey(k))
+                CollectionOrderingItem<_ShelfBookSlot>(
+                  mediaType: MediaKind.epub,
+                  entryKey: _epubUidByKey[k] ?? k,
+                  importedAt: _epubImportedAtByKey[k] ?? 0,
+                  payload: _ShelfBookSlot(epub: epub),
+                ),
         ];
     // 远端占位书混入（多端库联合视图 §2.3 任务10）：远端书是 host EPUB 库条目，给
     // **真实 mediaType='epub' + entryKey=bookKey**（downloadId）。v83 后本地成员键
@@ -3928,7 +3996,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
 
   /// 「删除合集」时连同成员本体一起删：按 (mediaType, entryKey) 分派到删书/删视频。
   /// 复用批量删除同一分派纪律（[_batchDeleteConfirm]）——epub 直接删；srt 先 findByUid
-  /// 拿 bookKey 删本体再删 srt 行；video 逐个删并末尾一次 compact。删书本身各自 VACUUM。
+  /// 拿 bookKey 删本体再删 srt 行；video 逐个删并末尾一次 compact。删书同样逐本不回收、
+  /// 末尾（finally）回收一次。
   /// [deleteLocalFiles] / [deleteStatistics] 与视频侧共用同一回调形状。书架合集不提供
   /// 「同时删除本地文件」（书的原件删除自有纪律，走 [ReaderFushiSource.deleteBook]），
   /// 故 [deleteLocalFiles] 恒 false；[deleteStatistics] 来自「同时删除统计数据」勾选，
@@ -3940,6 +4009,32 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     bool deleteStatistics,
   ) async {
     bool anyVideo = false;
+    bool anyBook = false;
+    try {
+      await _deleteCollectionMembersMediaLoop(
+        members,
+        deleteStatistics,
+        onBookDeleted: () => anyBook = true,
+        onVideoDeleted: () => anyVideo = true,
+      );
+    } finally {
+      if (anyBook) {
+        await ReaderFushiSource.compactAfterBookDeleteBestEffort(
+          appModel.database,
+        );
+      }
+      if (anyVideo) {
+        await _videoRepo.compactAfterVideoDeleteBestEffort();
+      }
+    }
+  }
+
+  Future<void> _deleteCollectionMembersMediaLoop(
+    List<MediaCollectionItemRow> members,
+    bool deleteStatistics, {
+    required void Function() onBookDeleted,
+    required void Function() onVideoDeleted,
+  }) async {
     for (final MediaCollectionItemRow m in members) {
       switch (MediaKind.tryParse(m.mediaType)) {
         case MediaKind.epub:
@@ -3949,23 +4044,29 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           final String epubBookKey =
               await appModel.database.resolveEpubBookKeyByUid(m.entryKey) ??
               m.entryKey;
-          await ReaderFushiSource.instance.deleteBook(
-            db: appModel.database,
-            bookKey: epubBookKey,
-            appModel: appModel,
-            deleteStatistics: deleteStatistics,
-          );
+          final DeleteBookResult result = await ReaderFushiSource.instance
+              .deleteBook(
+                db: appModel.database,
+                bookKey: epubBookKey,
+                appModel: appModel,
+                deleteStatistics: deleteStatistics,
+                compactDatabase: false,
+              );
+          if (result.deleted) onBookDeleted();
         case MediaKind.srt:
           final SrtBookRepository repo = SrtBookRepository(appModel.database);
           final SrtBook? book = await repo.findByUid(m.entryKey);
           if (book != null) {
             if (book.bookKey.isNotEmpty) {
-              await ReaderFushiSource.instance.deleteBook(
-                db: appModel.database,
-                bookKey: book.bookKey,
-                appModel: appModel,
-                deleteStatistics: deleteStatistics,
-              );
+              final DeleteBookResult result = await ReaderFushiSource.instance
+                  .deleteBook(
+                    db: appModel.database,
+                    bookKey: book.bookKey,
+                    appModel: appModel,
+                    deleteStatistics: deleteStatistics,
+                    compactDatabase: false,
+                  );
+              if (result.deleted) onBookDeleted();
             }
             // 纯字幕书（bookKey 空）刻意不删统计：它的 legacy 统计与墓碑只能按
             // title 定位，会连坐同名 EPUB 的统计（与书架单删 / 批删同一边界）。
@@ -3977,7 +4078,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             m.entryKey,
             compactDatabase: false,
           );
-          anyVideo = true;
+          onVideoDeleted();
         case MediaKind.game:
           // 游戏成员**刻意跳过**：game 维度只支持解散合集不删本体——游戏本体是
           // 用户安装目录（exe 及其资源），绝不能从合集删除路径连带删除；从库移除
@@ -3988,9 +4089,6 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           // 未知种类（对端未来新增 / '' 哨兵）：本页不认识 → 跳过，不误删。
           break;
       }
-    }
-    if (anyVideo) {
-      await _videoRepo.compactAfterVideoDeleteBestEffort();
     }
   }
 
@@ -4309,10 +4407,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             _remoteAudiobookHasUpdate(
               remoteAudiobookRevisionKeyForBook(bookKey),
             ),
+        audiobookDownloadFailed:
+            bookKey != null && _failedLandedBookKeys.contains(bookKey),
       ),
       tags: bookKey == null ? const <BookTagRow>[] : _bookTags(bookKey),
-      // BUG-990：这本书的有声书包还在下载 → 本地 EPUB 卡继续显示加载覆盖层。
-      loadingOverlay: _audiobookDownloadingOverlay(bookKey),
+      // 这本书的下载任务还没跑完（导入收尾 / 有声书包）→ 本地卡接着画任务进度。
+      loadingOverlay: _landedDownloadOverlay(bookKey),
       // 色块卡的署名行（设计稿 `.bk .vol`）：导入时从书里读出的作者。
       byline: item.author,
       // 刮削过的书点卡先进详情页（[_activateEpubCard]），首块不画「继续」按钮外观。
@@ -4436,7 +4536,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           final String bookKey => MediaNsfwTarget.book(bookKey),
           null => null,
         },
+        // 不放「继续阅读」主按钮：点卡本身负责阅读，菜单里再放一个是重复入口
+        // （与视频卡同一口径，#3803 用户拍板）。
         showLaunchAction: false,
+        progressLabel: _itemMenuProgressLabel(item),
         extraActions: removeFromCollection == null
             ? (MediaItem it) =>
                   _epubExtraActions(it, fromSeriesPage: fromSeriesPage)
@@ -4452,6 +4555,20 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     if (isHistory && mounted) {
       setState(() {});
     }
+  }
+
+  /// 菜单头部的进度行：作者 · 已读百分比（与书卡进度条同一份 [_itemReadFraction]）。
+  String _itemMenuProgressLabel(MediaItem item) {
+    final String? bookKey = _parseBookKey(item.mediaIdentifier);
+    final bool completed =
+        bookKey != null && _completedBookKeys.contains(bookKey);
+    final int percent = (_itemReadFraction(item, completed: completed) * 100)
+        .round();
+    final String? author = item.author;
+    return <String>[
+      if (author != null && author.isNotEmpty) author,
+      '$percent%',
+    ].join(' · ');
   }
 
   /// 漫画作品页的目标。作品页「管理本卷」开的就是本页的 [_showEpubItemMenu]——
@@ -4574,66 +4691,41 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         label: t.dialog_delete,
         onPressed: () => _confirmDeleteEpub(item, bookKey),
       ),
-      DialogQuickAction(
+      // 「查看插画」不属于有声流程：低频项，收进「更多」（#4b）。
+      DialogListAction(
         label: t.view_illustrations,
         icon: Icons.image_outlined,
+        group: DialogActionGroup.content,
         onPressed: () => _openIllustrations(item, bookKey),
       ),
-      // 有声书导入仍受听书模块门控（develop 侧）；「重命名」不受它管。
-      // BUG-3337：漫画卡的快捷格是 OCR 入口（「这里应该是 OCR 吧，为什么是导入
-      // 有声书」）——同受漫画模块门控。
-      if (isManga && modules.isEnabled(ModuleId.manga))
-        DialogQuickAction(
-          label: t.manga_library_ocr_action,
-          icon: Icons.document_scanner_outlined,
-          onPressed: () => _ocrMangaBooks(<String>[bookKey], dialog: true),
-        ),
-      // 漫画有声演出稿：AI 看图标注说话人 / 类型 / 阅读顺序并复核（设计 2026-11-17
-      // manga-audio-mode §4）。在线作品与没 OCR 的卷由页面自己说明原因。
-      if (isManga && modules.isEnabled(ModuleId.manga))
-        DialogQuickAction(
-          label: t.manga_audio_script_title,
-          icon: FushiIcons.voice,
-          onPressed: () {
-            Navigator.pop(context);
-            unawaited(
-              openMangaAudioScriptPage(
-                context,
-                appModel: appModel,
-                bookKey: bookKey,
-              ),
-            );
-          },
-        ),
-      // 漫画有声（2026-11-17 设计 §3）：漫画阅读器现在播成品音频了，BUG-3341 当时
-      // 「漫画阅读器不播有声书」的前提失效，有声入口加回——但不是通用的「导入有声书」
-      // （那条按 EPUB 正文匹配字幕），而是导入漫画有声成品清单。受听书模块门控。
-      if (isManga && modules.isEnabled(ModuleId.listening))
-        DialogQuickAction(
-          label: t.manga_audio_import,
-          icon: Icons.headphones_outlined,
-          onPressed: () {
-            Navigator.pop(context);
-            unawaited(pickAndImportMangaAudio(appModel.database, bookKey));
-          },
-        ),
-      // 漫画有声（演出稿 → 每句一段音频）：受漫画与听书两个模块门控。
+      // 有声漫画工作台（#4，设计稿 #i4）：此前菜单顶部 5 个无文字图标里的 OCR、
+      // 演出稿、导入成品、生成音频 4 个是同一条有声流程，现在都收进工作台的步骤
+      // （识别台词 → 角色与配音 → 演出稿 → 试听与导出），菜单只留这一个入口，
+      // 副行显示进度。受漫画模块门控（步骤内各自再判听书模块）。
       if (isManga &&
           modules.isEnabled(ModuleId.manga) &&
-          modules.isEnabled(ModuleId.listening))
-        DialogQuickAction(
-          label: t.manga_audio_studio_title,
-          icon: FushiIcons.voice,
-          onPressed: () => _openMangaAudioStudio(bookKey),
+          MangaAudioWorkbenchEntry.isAvailable)
+        DialogWorkbenchAction(
+          label: t.manga_audio_workbench_title,
+          icon: Icons.headphones_outlined,
+          subtitle: t.manga_audio_workbench_not_started,
+          loadStatus: () =>
+              MangaAudioWorkbenchEntry.statusLine(context, bookKey),
+          onPressed: () {
+            Navigator.pop(context);
+            unawaited(MangaAudioWorkbenchEntry.open(context, bookKey: bookKey));
+          },
         ),
       if (canAttachAudiobook)
-        DialogQuickAction(
+        DialogListAction(
           label: t.audiobook_import,
           icon: Icons.headphones_outlined,
+          group: DialogActionGroup.content,
           onPressed: () => _openAudiobookImport(item, bookKey),
         ),
+      // 小说的工作台入口「制作有声书」（#4b）。
       if (canOpenAudiobookStudio)
-        DialogQuickAction(
+        DialogWorkbenchAction(
           label: t.audiobook_studio_title,
           icon: FushiIcons.voice,
           onPressed: () => _openAudiobookStudio(bookKey),
@@ -4644,9 +4736,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       // [_RemoteBookState.audiobookOnly]）。同受听书模块门控。
       if (modules.isEnabled(ModuleId.listening) &&
           _remoteAudiobookOnlyFor(bookKey) != null)
-        DialogQuickAction(
+        DialogListAction(
           label: t.remote_book_audiobook_download,
           icon: Icons.cloud_download_outlined,
+          group: DialogActionGroup.content,
           onPressed: () => _downloadRemoteAudiobookOnly(
             _remoteAudiobookOnlyFor(bookKey)!,
             bookKey,
@@ -4677,6 +4770,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       DialogListAction(
         label: t.book_rename,
         icon: Icons.drive_file_rename_outline,
+        slot: ItemMenuSlot.edit,
         onPressed: () => _renameBook(context, item),
       ),
       // 元数据详情页（与视频卡「详情」同一套海报面板外观）：封面 / 刮削资料 /
@@ -4684,6 +4778,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       DialogListAction(
         label: t.book_detail_open_action,
         icon: FushiIcons.info,
+        slot: ItemMenuSlot.primary,
         onPressed: () => _openEpubDetail(item),
       ),
       // 桌面才有文件管理器契约（[currentRevealHost] 在移动端返回 null）——整条隐藏，
@@ -4693,6 +4788,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         DialogListAction(
           label: t.media_file_location_open,
           icon: Icons.folder_open_outlined,
+          slot: ItemMenuSlot.more,
           onPressed: () => _openBookFileLocation(bookKey),
         ),
       // 右键 / 长按反查本书（漫画卷同一身份 bookKey）的学习统计。
@@ -4718,6 +4814,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             ? Icons.check_circle
             : Icons.check_circle_outline,
         group: DialogActionGroup.progress,
+        slot: ItemMenuSlot.primary,
         selected: _completedBookKeys.contains(bookKey),
         onPressed: () => _toggleBookCompleted(bookKey),
       ),
@@ -4736,6 +4833,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         DialogListAction(
           label: t.book_scrape_cover,
           icon: Icons.image_search_outlined,
+          slot: ItemMenuSlot.edit,
           onPressed: () => _scrapeEpubCover(item),
         ),
       // 单卡「加入合集」：与批量三档共用同一 DAO 路径；身份从 bookKey 起步，
@@ -4760,32 +4858,25 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       DialogListAction(
         label: t.media_link_add,
         icon: FushiIcons.link,
+        slot: ItemMenuSlot.edit,
         onPressed: () =>
             _showWorkLinks((kind: MediaLinkKind.book, key: bookKey)),
       ),
       // 私密：不上传排行榜、不推 Bangumi（本地书 / 漫画没有外部分级可依）。
-      DialogListAction(
-        label: t.media_privacy_action,
-        icon: FushiIcons.lock,
-        onPressed: () => showMediaPrivacyDialog(
-          context,
-          db: appModel.database,
-          kind: TagHostKind.epub,
-          entryKey: bookKey,
-          title: item.title,
-        ),
+      mediaPrivacyToggleAction(
+        context,
+        db: appModel.database,
+        kind: TagHostKind.epub,
+        entryKey: bookKey,
+        title: item.title,
       ),
       // NSFW：「模糊 NSFW 封面」开着时书架 / 继续卡的封面打模糊。
-      DialogListAction(
-        label: t.media_nsfw_action,
-        icon: FushiIcons.visibilityOff,
-        onPressed: () => showMediaNsfwDialog(
-          context,
-          db: appModel.database,
-          kind: TagHostKind.epub,
-          entryKey: bookKey,
-          title: item.title,
-        ),
+      mediaNsfwToggleAction(
+        context,
+        db: appModel.database,
+        kind: TagHostKind.epub,
+        entryKey: bookKey,
+        title: item.title,
       ),
       DialogListAction(
         label: t.profile_book_profile,
@@ -4838,6 +4929,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         DialogListAction(
           label: t.manga_series_open_series,
           icon: Icons.auto_stories_outlined,
+          slot: ItemMenuSlot.primary,
           onPressed: () {
             Navigator.pop(context);
             unawaited(

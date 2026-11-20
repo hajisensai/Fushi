@@ -1,3 +1,4 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 import 'package:fushi/src/pages/implementations/library_recovery_page.dart';
@@ -7,6 +8,8 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/storage_usage_actions.dart';
+import 'package:fushi/src/srs/srs_retained_copy.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsRetainedCopyState;
 import 'package:fushi/src/storage/storage_usage_service.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show buildDataStorageLocationSection;
@@ -63,6 +66,23 @@ SettingsDestination buildStorageDestination() {
             ),
             onTap: openLibraryRecoveryPage,
           ),
+          // D32：迁移后封存的旧版本复习库（保留副本）。到期自动删；这里提前删。只在本机有保留副本时出现。
+          SettingsActionItem(
+            id: 'storage.srs_retained_copy',
+            title: t.srs_retained_copy_title,
+            subtitle: t.srs_retained_copy_summary,
+            subtitleBuilder: _srsRetainedCopySubtitle,
+            icon: FushiIcons.delete,
+            destructive: true,
+            visible: (SettingsContext c) =>
+                _srsRetainedCopy(c)?.present ?? false,
+            cli: const SettingsCliAction.unsupported(
+              '删除旧版本保留副本走复习的控制通道：srs.retained.status 看大小与到期，'
+              'srs.retained.delete（confirm: true）删除',
+            ),
+            onTap: (SettingsContext c) =>
+                confirmAndDeleteSrsRetainedCopy(c.context),
+          ),
         ],
       ),
     ],
@@ -98,4 +118,14 @@ SettingsDestination buildStorageDestination() {
       ),
     ],
   );
+}
+
+/// 本机保留副本的状态（后台读，读好之前 / 读不了 = null，行不显示；删完 provider 重读，行跟着消失）。
+SrsRetainedCopyState? _srsRetainedCopy(SettingsContext c) =>
+    c.ref.watch(srsRetainedCopyProvider).valueOrNull?.state;
+
+String? _srsRetainedCopySubtitle(SettingsContext c) {
+  final SrsRetainedCopyState? s = _srsRetainedCopy(c);
+  if (s == null || !s.present) return null;
+  return srsRetainedCopyStatusText(c.context, s);
 }

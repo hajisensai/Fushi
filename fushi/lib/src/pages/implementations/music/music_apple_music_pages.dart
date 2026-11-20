@@ -319,7 +319,6 @@ Widget _styledSection(
       FushiSectionTitle(title),
       if (style == MusicViewStyle.blocks)
         FushiCoverBlocks(
-          layout: shellContentLayoutOf(context),
           staggerEntrance: false,
           itemCount: count,
           itemBuilder: block,

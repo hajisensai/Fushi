@@ -188,4 +188,45 @@ void main() {
       expect(r.prUrl(3090), 'https://github.com/hajisensai/Fushi/pull/3090');
     });
   });
+
+  group('changesBetween（本版新内容）', () {
+    test('区间内各包的 PR 去重合并，区间开头的包在报告里 = complete', () {
+      final DebugPulseReport report = DebugPulseReport.tryParse(sample())!;
+      final DebugPulseRange range = report.changesBetween(
+        afterSeq: 25005,
+        throughSeq: 25034,
+      );
+      expect(range.buildCount, 2);
+      // 3090 在两个包里都出现，只算一次；新包在前。
+      expect(range.prNumbers, <int>[3101, 3100, 3090]);
+      expect(range.direct, hasLength(1));
+      expect(range.complete, isTrue);
+    });
+
+    test('上界之后的包不算；下界之前的包被截掉 → 不完整', () {
+      final DebugPulseReport report = DebugPulseReport.tryParse(sample())!;
+      final DebugPulseRange onlyFirst = report.changesBetween(
+        afterSeq: 25005,
+        throughSeq: 25010,
+      );
+      expect(onlyFirst.prNumbers, <int>[3090]);
+      expect(onlyFirst.complete, isTrue);
+
+      final DebugPulseRange older = report.changesBetween(
+        afterSeq: 24000,
+        throughSeq: 25034,
+      );
+      expect(older.complete, isFalse);
+    });
+
+    test('同一个序号或倒序：空且完整', () {
+      final DebugPulseReport report = DebugPulseReport.tryParse(sample())!;
+      final DebugPulseRange same = report.changesBetween(
+        afterSeq: 25034,
+        throughSeq: 25034,
+      );
+      expect(same.isEmpty, isTrue);
+      expect(same.complete, isTrue);
+    });
+  });
 }

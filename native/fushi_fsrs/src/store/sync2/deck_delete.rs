@@ -3,7 +3,7 @@
 //! 组好修改记录再交给 `apply`，读与写之间隔着好几次往返。
 //!
 //! 一条命令做不完一个大牌组（几万张卡在一个 SAVEPOINT 里会把排队的作答卡住）：命令**分步**，每步自己一个
-//! SAVEPOINT（store/ffi.rs `local_write`：命令本体、缓存刷新、本机状态行一起落），步与步之间别的写入照常插进来。
+//! SAVEPOINT（store/legacy3 `local_write`：命令本体、缓存刷新、本机状态行一起落），步与步之间别的写入照常插进来。
 //!
 //! - 第一步 `plan: true`：只数（要删的笔记 + 要移的卡），有要删的笔记就顺手打还原点（设计 §10.2：批量删除之前自动
 //!   打），不动别的。宿主拿到总数先报一次进度，再发后面的步。
@@ -16,23 +16,32 @@
 //! 相同——同步协议、段格式、srs.db schema 都不变。卡按缓存表的 rowid 序（以前 Dart 那次表扫描的顺序），牌组按
 //! [config::DeckTree::subtree] 的顺序。
 
+#[cfg(test)]
 use std::collections::HashSet;
 
+#[cfg(test)]
 use rusqlite::{Connection, params};
+#[cfg(test)]
 use serde_json::{Value, json};
 
+#[cfg(test)]
 use super::{LegacyApply, append_on, apply_local_on, checkpoint_bodies, config, sql};
+#[cfg(test)]
 use crate::registers;
 
 /// Dart `SrsFieldKeys.deleted`。
+#[cfg(test)]
 const KEY_DELETED: &str = "deleted";
 /// Dart `SrsFieldKeys.cardDeck`。
+#[cfg(test)]
 const KEY_CARD_DECK: &str = "deck";
 
 /// 一步最多处理的实体数（宿主没给 `limit` 时）。
+#[cfg(test)]
 const DEFAULT_LIMIT: i64 = 500;
 
 /// 还没删、且卡全都归在 [sub]（JSON 数组，牌组 ID）这些牌组下的笔记：有卡在别的牌组的不算（删笔记会连带那些卡）。
+#[cfg(test)]
 const NOTES_WHERE: &str = "n.profile_uid = srs_id(?1) AND n.deleted_at IS NULL \
      AND EXISTS (SELECT 1 FROM srs_cards_cache c WHERE c.note_id = n.id \
                  AND c.deck_id IN (SELECT srs_id(value) FROM json_each(?2))) \
@@ -40,9 +49,11 @@ const NOTES_WHERE: &str = "n.profile_uid = srs_id(?1) AND n.deleted_at IS NULL \
                      AND c.deck_id NOT IN (SELECT srs_id(value) FROM json_each(?2)))";
 
 /// 缓存里归在 [sub] 这些牌组下的卡（含隐藏的：恢复笔记后卡不该落在已删除的牌组里）。
+#[cfg(test)]
 const CARDS_WHERE: &str = "c.deck_id IN (SELECT srs_id(value) FROM json_each(?1))";
 
 /// `(id, rowid)`：rowid 在 [after] 之后的至多 [limit] 条笔记（负数 = 不限）。
+#[cfg(test)]
 fn note_rows(
     c: &Connection,
     profile: &str,
@@ -64,6 +75,7 @@ fn note_rows(
 }
 
 /// `(id, rowid)`：rowid 在 [after] 之后的至多 [limit] 张卡（负数 = 不限）。
+#[cfg(test)]
 fn card_rows(
     c: &Connection,
     sub: &str,
@@ -82,6 +94,7 @@ fn card_rows(
 }
 
 /// 「父::子」全名（Dart `SrsDeckTree.fullName`；还原点的名字）。
+#[cfg(test)]
 fn full_name(tree: &config::DeckTree, id: &str) -> String {
     let mut parts: Vec<&str> = Vec::new();
     let mut cur = Some(id);
@@ -102,6 +115,7 @@ fn full_name(tree: &config::DeckTree, id: &str) -> String {
 /// 给 [ids] 每个实体的 [key] 写 [value] 的 `apply` 输入项，值没变的跳过（[registers::write_is_noop]）。项的形状就是
 /// Dart `_applyInput` 为一条修改记录草稿发的那一项。
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 pub(crate) fn push_edits(
     c: &Connection,
     profile: &str,
@@ -135,6 +149,7 @@ pub(crate) fn push_edits(
 /// 回包与 `apply` 同形（`marks` / `replayed` / `changed` / `purged`，Dart 照样接进修订号与缓存），另带：
 /// - `plan`：`{"total": 要删的笔记数 + 要移的卡数, "done": 牌组已不在}`；
 /// - 其余：`{"done", "token", "notes": [这一步删掉的笔记], "count": 这一步按游标处理的实体数（进度）}`。
+#[cfg(test)]
 pub(crate) fn deck_delete_on(
     c: &Connection,
     profile: &str,

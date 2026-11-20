@@ -37,6 +37,9 @@ const List<String> kSrsOps = <String>[
   'server.srs.mining-target.set',
   'server.srs.mining-deck.set',
   'server.srs.rollover-hour.set',
+  'server.srs.migration',
+  'server.srs.migration.start',
+  'server.srs.migration.cancel',
   'server.srs.rwkv-model.set',
 ];
 
@@ -155,7 +158,7 @@ void main() {
         jsonDecode(jsonEncode(record.payload)) as Map<String, Object?>,
       )).status;
 
-  test('目录：八条复习操作、风险分级；选 profile / 默认 / AnkiConnect / 信任设备不进目录、不常驻', () {
+  test('目录：十一条复习操作、风险分级；选 profile / 默认 / AnkiConnect / 信任设备不进目录、不常驻', () {
     final OpCatalog catalog = invoker.catalog;
     for (final String id in kSrsOps) {
       expect(catalog[id], isNotNull, reason: id);
@@ -168,6 +171,10 @@ void main() {
       expect(op.spec.pattern, isNot(contains('devices/trust')), reason: op.id);
     }
     expect(catalog['server.srs.sync']!.risk, OpRisk.irreversible);
+    // 换代迁移（G10-3）：状态只读；开始 / 叫停没有撤销，要表态。
+    expect(catalog['server.srs.migration']!.risk, OpRisk.read);
+    expect(catalog['server.srs.migration.start']!.risk, OpRisk.irreversible);
+    expect(catalog['server.srs.migration.cancel']!.risk, OpRisk.irreversible);
     for (final String id in <String>[
       'server.srs.mining-target.set',
       'server.srs.mining-deck.set',

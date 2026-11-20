@@ -8,15 +8,15 @@
 //   句子屏完整可见（BUG-1244 那版把句子挤到屏左外侧）。
 // - pauseAtCrossedMediaScreen：开图片暂停时跟随先停在图上并发 onImageDetected，
 //   再次跟随（Dart 暂停结束 snapReaderToAudio）落到句子屏；关图片暂停直达句子屏。
-import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
+import { readPayload } from './reader_harness_support.js';
 
+const scripts = readPayload();
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
-const scripts = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const W = 440;
 const H = 956;
 // 竖长插图（与原书 i-0115_01.jpg 同为 7:10）。
