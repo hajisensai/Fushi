@@ -1385,13 +1385,21 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         // A bulk import of server read marks: one report, highest chapter.
         _appModel.reportPagedBookTrackingProgress(bookKey);
       }
+      // Kavita 对账隔着几次 await：期间订阅开关可能已落库并 setState，拿对账前读的
+      // 行去 setState 会把页面上的订阅位显示回旧值。重读一次，与下面的 setState 之间
+      // 不再隔 await（gap-mangamisc-1）。
+      final EpubBookRow? latest =
+          row != null && updated.runtime == OnlineMangaRuntimeKind.kavita
+          ? await service.database.getEpubBook(bookKey)
+          : row;
       if (!mounted) return;
       setState(() {
         // 取库里的最新描述符：刷新在飞时别的写方（订阅开关）可能后于本次落库。
-        _entry = row == null
+        _entry = latest == null
             ? updated
-            : OnlineMangaLibraryEntry.tryParse(row.sourceMetadata) ?? updated;
-        if (row != null) _row = row;
+            : OnlineMangaLibraryEntry.tryParse(latest.sourceMetadata) ??
+                  updated;
+        if (latest != null) _row = latest;
         if (reconciled != null) _states = reconciled;
         _refreshSucceeded = true;
       });
