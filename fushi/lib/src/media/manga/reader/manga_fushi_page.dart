@@ -2939,6 +2939,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           adapter is OnlineMangaPageCancellable
           ? adapter as OnlineMangaPageCancellable
           : null;
+      final OnlineMangaChapterPageRefs pageRefs = OnlineMangaChapterPageRefs(
+        adapter: adapter,
+        entry: entry,
+        chapter: chapter,
+        pages: pages,
+      );
       late final OnlineMangaReaderSession session;
       session = await OnlineMangaReaderSession.open(
         cacheRoot: Directory(
@@ -2951,11 +2957,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             'online\u001f${row.bookKey}\u001f${chapter.key}\u001f$index'
                 '\u001f${pages[index].sourceUrl ?? ''}',
         ],
-        fetchPage: (int index) => adapter.fetchChapterPage(pages[index]),
+        // 取页引用可能随运行时重启整份作废（桌面 sidecar 装 / 更新 / 卸扩展即重启，
+        // BUG-4908）：经页表持有者取，失效时它重解析换新引用；身份串上面已定，不变。
+        fetchPage: pageRefs.fetch,
         cancelPages: cancellable == null
             ? null
             : (Iterable<int> indices) => cancellable.cancelChapterPages(
-                <OnlineMangaPageRef>[for (final int i in indices) pages[i]],
+                <OnlineMangaPageRef>[for (final int i in indices) pageRefs[i]],
               ),
         onPageMeasured: (int index, int width, int height) =>
             _onStreamingPageMeasured(session, index, width, height),
