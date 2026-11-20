@@ -662,6 +662,10 @@ class FushiSyncServer {
   final Map<String, _VideoStreamToken> _videoStreamTokens =
       <String, _VideoStreamToken>{};
 
+  /// 转码 HLS 分段的小 LRU（video-34），键含签发分段的流 token + 段号；token 作废
+  /// （释放流票 / TTL / 上限淘汰 / 吊销）时连同它的段一起清掉。
+  final TranscodeSegmentCache _transcodeSegments = TranscodeSegmentCache();
+
   /// 源文件平均码率（bps）的探测缓存，键 = 路径 + 大小 + 修改时间（文件被替换即
   /// 失效）。`/streamurl` 下发给 client 的「自动」档判据用，ffprobe 每个文件只跑一次。
   final Map<String, int?> _sourceBitrateCache = <String, int?>{};
@@ -1184,6 +1188,7 @@ class FushiSyncServer {
     await _blurayClipRelays.closeAll();
     _discShares.clear();
     _exportCache.dispose();
+    _transcodeSegments.clear();
     // 漫画 P3：host 停机时中止在跑的 OCR 任务（页边界停，断点缓存保留）。
     await _mangaOcrJobs?.disposeAll();
     await _screenOcr?.dispose();
@@ -1725,6 +1730,10 @@ class FushiSyncServer {
   /// BUG-1568 测试钩子：当前驻留的视频流 token 数（验证签发侧 cap 逐出行为）。
   @visibleForTesting
   int get videoStreamTokenCount => _videoStreamTokens.length;
+
+  /// video-34 测试钩子：当前缓存的转码分段数（验证 token 作废时段随之清掉）。
+  @visibleForTesting
+  int get cachedTranscodeSegmentCount => _transcodeSegments.length;
 
   /// BUG-908(a) 测试钩子：当前驻留的音频 token 数（验证 cap 逐出行为）。
   @visibleForTesting
