@@ -39,6 +39,8 @@ import 'package:fushi_engine/media/collections/book_series_key.dart'
 import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:fushi_engine/sync/collection_book_identity_index.dart';
 import 'package:fushi_engine/sync/epub_repackage.dart';
+import 'package:fushi_engine/sync/sync_asset_store.dart'
+    show SyncTransferProgress, syncTransferFractionOnly;
 import 'package:fushi/src/media/kavita/kavita_api_registry.dart';
 import 'package:fushi/src/media/kavita/kavita_progress_refresher.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
@@ -161,6 +163,8 @@ import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/deletion_propagation_availability.dart';
 import 'package:fushi/src/sync/deletion_prompt_preferences.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
+import 'package:fushi/src/sync/interconnect_download_background_tasks.dart'
+    show interconnectDownloadStageLabel, interconnectDownloadStageStatus;
 import 'package:fushi/src/sync/hidden_remote_books.dart';
 import 'package:fushi/src/sync/remote_book_source_host.dart';
 import 'package:fushi/src/sync/hidden_remote_book.dart';
@@ -616,29 +620,68 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   // `_downloadingBooks` 已删，BUG-1561 书侧补齐）：任务活在 app 级
   // InterconnectDownloadManager，占位卡经 _remoteBookTaskBadge 按任务状态渲染。
 
-  /// 正在下载有声书包的本地书（key = 导入后的本地 bookKey，BUG-990）。远端有声书
-  /// 走「先下 EPUB 后下有声书」两阶段：EPUB 一落库，书架 provider 自动刷新把远端占位
-  /// 卡（带下载转圈）顶替成本地卡，此刻有声书还没落库 → 本地卡若无指示就露出「无转圈
-  /// 的普通书」。下载有声书期间把本地 bookKey 记进这里，本地 EPUB 卡 / SRT 卡据此继续
-  /// 显示加载覆盖层，直到有声书下完（成功或失败都在 finally 清除）。
-  final Set<String> _downloadingAudiobookKeys = <String>{};
+  /// 已在本机落地、但所属下载任务还没跑完的本地书键（本帧快照，取自
+  /// [InterconnectDownloadManager.landedBookKeysSignature]，build 里 watch）。
+  ///
+  /// 远端书是「拉正文 → 导入 + 回填进度 → 拉有声书」一条任务：正文一落库，占位卡
+  /// 就让位给本地卡（[_onRemoteBookLanded]），任务却还在跑。本地 EPUB 卡 / SRT 卡
+  /// 据此继续画**同一个任务**的进度遮罩（阶段名 + 百分比，[_landedDownloadOverlay]），
+  /// 不再是 BUG-990 那个不带数字的转圈。登记在 app 级任务上（不是本页 State），
+  /// 切走书架再回来照样接得上。
+  Set<String> _landedBookKeys = const <String>{};
+
+  /// 正文已落地、有声书包下载失败的本地书键（同上，取自
+  /// [InterconnectDownloadManager.failedLandedBookKeysSignature]）：书卡副行写
+  /// 「有声书下载失败」，书照常可读；补拉入口在书卡菜单（BUG-2505）。
+  Set<String> _failedLandedBookKeys = const <String>{};
 
   /// 已在本机落地、但远端清单还没按新本地状态重新去重的对端书（键 =
   /// [RemoteBookInfo.downloadId]，BUG-3452）。渲染时跳过它们的占位卡；由
   /// [_onRemoteBookLanded] 写入，那一轮远端清单回来后摘除。
   final Set<String> _landedRemoteDownloadIds = <String>{};
 
-  /// 本地卡在「有声书还在下」时叠的居中加载覆盖层（BUG-990）；[bookKey] 不在下载集合
-  /// 时返回 null（不叠）。
-  Widget? _audiobookDownloadingOverlay(String? bookKey) {
-    if (bookKey == null || !_downloadingAudiobookKeys.contains(bookKey)) {
-      return null;
-    }
-    return RemoteDownloadProgressBadge(
-      key: ValueKey<String>('audiobook_downloading_$bookKey'),
-      progress: null,
-      tooltip: t.remote_book_downloading,
+  /// 本地卡在所属下载任务还没跑完时叠的进度遮罩；[bookKey] 不在
+  /// [_landedBookKeys] 时返回 null（不叠）。
+  ///
+  /// 订阅挂在遮罩自己这层 [Consumer] 上、只 select 整数百分比与阶段（BUG-2944 /
+  /// BUG-3337 同范式）：字节回报不整页重建，合集详情页里的成员卡也跟着走。
+  Widget? _landedDownloadOverlay(String? bookKey) {
+    if (bookKey == null || !_landedBookKeys.contains(bookKey)) return null;
+    return Consumer(
+      key: ValueKey<String>('landed_download_$bookKey'),
+      builder: (BuildContext context, WidgetRef ref, Widget? _) {
+        final InterconnectDownloadBadgeState? task = ref.watch(
+          interconnectDownloadManagerProvider.select(
+            (InterconnectDownloadManager m) => m.landedBadgeStateFor(bookKey),
+          ),
+        );
+        if (task == null || task.status != InterconnectDownloadStatus.running) {
+          return const SizedBox.shrink();
+        }
+        return RemoteDownloadProgressBadge(
+          progress: _stageOverlayProgress(task),
+          tooltip: _stageStatusText(task),
+          caption: task.stage == null
+              ? null
+              : interconnectDownloadStageLabel(task.stage!),
+        );
+      },
     );
+  }
+
+  /// 遮罩环的值：导入阶段与尚无回报时为 null（不定态），其余为当前阶段进度。
+  double? _stageOverlayProgress(InterconnectDownloadBadgeState task) =>
+      task.percent < 0 || task.stage == InterconnectDownloadStage.importing
+      ? null
+      : task.percent / 100;
+
+  /// 一行状态文字：多阶段任务写「有声书 45%」，单阶段任务写「45%」。
+  String _stageStatusText(InterconnectDownloadBadgeState task) {
+    final InterconnectDownloadStage? stage = task.stage;
+    if (stage != null) {
+      return interconnectDownloadStageStatus(stage, task.percent);
+    }
+    return task.percent < 0 ? t.remote_book_downloading : '${task.percent}%';
   }
 
   VideoBookRepository get _videoRepo => VideoBookRepository(appModel.database);
@@ -1054,6 +1097,24 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
 
   @override
   Widget build(BuildContext context) {
+    // 「已落地、任务未完」的本地书：只在有书落地 / 任务结束时变（签名按值比较），
+    // 进度回报不触发本页重建——进度由各卡遮罩自己的 Consumer 订阅。
+    final String landedSignature = ref.watch(
+      interconnectDownloadManagerProvider.select(
+        (InterconnectDownloadManager m) => m.landedBookKeysSignature,
+      ),
+    );
+    _landedBookKeys = landedSignature.isEmpty
+        ? const <String>{}
+        : landedSignature.split('\n').toSet();
+    final String failedSignature = ref.watch(
+      interconnectDownloadManagerProvider.select(
+        (InterconnectDownloadManager m) => m.failedLandedBookKeysSignature,
+      ),
+    );
+    _failedLandedBookKeys = failedSignature.isEmpty
+        ? const <String>{}
+        : failedSignature.split('\n').toSet();
     ref.listen<AsyncValue<Map<String, int>>>(
       bookLastReadAtProvider,
       (_, __) => _bumpMemberInfoRevision(),
@@ -2399,19 +2460,30 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             CollectionOrderingItem<_ShelfBookSlot>(
               mediaType: MediaKind.srt,
               entryKey: srt.uid,
-              importedAt: srt.importedAt,
+              // 配了 EPUB 的有声书卡是「这本书」的卡（它顶替书卡，BUG-728），
+              // 按书的入库时刻排：从对端下完有声书那一刻，SRT 卡接替 EPUB 卡
+              // 时留在原位，不按有声书包自带的时刻跳到别处。standalone 用自己的。
+              importedAt: srt.bookKey.isEmpty
+                  ? srt.importedAt
+                  : (_epubImportedAtByKey[srt.bookKey] ?? srt.importedAt),
               payload: _ShelfBookSlot(srt: srt),
             ),
           // v83：本地 epub 折叠身份 = uid（成员表/归属映射同键）；uid 缺失的异常行
           // 沿用 bookKey（与透传成员行同键，仍可折进合集）。
           for (final MediaItem epub in epubBooks)
             if ((_parseBookKey(epub.mediaIdentifier) ?? '') case final String k)
-              CollectionOrderingItem<_ShelfBookSlot>(
-                mediaType: MediaKind.epub,
-                entryKey: _epubUidByKey[k] ?? k,
-                importedAt: _epubImportedAtByKey[k] ?? 0,
-                payload: _ShelfBookSlot(epub: epub),
-              ),
+              // 刚从对端落地、折叠映射还没重载到它的书先不画：此刻它的 uid /
+              // 入库时刻 / 合集归属都查不到，会以「入库时刻 0、不在合集」的散卡
+              // 排到别处闪一下。远端占位卡（带同一条任务的进度）在原位顶着，映射
+              // 重载完与本地卡同一帧交接（[_onRemoteBookLanded]）。
+              if (!_landedBookKeys.contains(k) ||
+                  _epubImportedAtByKey.containsKey(k))
+                CollectionOrderingItem<_ShelfBookSlot>(
+                  mediaType: MediaKind.epub,
+                  entryKey: _epubUidByKey[k] ?? k,
+                  importedAt: _epubImportedAtByKey[k] ?? 0,
+                  payload: _ShelfBookSlot(epub: epub),
+                ),
         ];
     // 远端占位书混入（多端库联合视图 §2.3 任务10）：远端书是 host EPUB 库条目，给
     // **真实 mediaType='epub' + entryKey=bookKey**（downloadId）。v83 后本地成员键
@@ -4309,10 +4381,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             _remoteAudiobookHasUpdate(
               remoteAudiobookRevisionKeyForBook(bookKey),
             ),
+        audiobookDownloadFailed:
+            bookKey != null && _failedLandedBookKeys.contains(bookKey),
       ),
       tags: bookKey == null ? const <BookTagRow>[] : _bookTags(bookKey),
-      // BUG-990：这本书的有声书包还在下载 → 本地 EPUB 卡继续显示加载覆盖层。
-      loadingOverlay: _audiobookDownloadingOverlay(bookKey),
+      // 这本书的下载任务还没跑完（导入收尾 / 有声书包）→ 本地卡接着画任务进度。
+      loadingOverlay: _landedDownloadOverlay(bookKey),
       // 色块卡的署名行（设计稿 `.bk .vol`）：导入时从书里读出的作者。
       byline: item.author,
       // 刮削过的书点卡先进详情页（[_activateEpubCard]），首块不画「继续」按钮外观。

@@ -21,6 +21,23 @@ enum InterconnectDownloadStatus { running, paused, completed, failed }
 /// 任务的内容域（下载中心按它选图标 / 分类）。
 enum InterconnectDownloadKind { video, book, audiobook, music }
 
+/// 多阶段任务（远端书 = 拉正文包 → 解包入库 → 拉随书有声书）当前走到的那一步。
+///
+/// 远端书任务此前只有一条 0..1：正文占前半、有声书占后半，于是 EPUB 一落地书架
+/// 就只剩一个不带数字的转圈，用户看不出是在下有声书还是卡住了。阶段让卡片 /
+/// 后台任务弹层写清「有声书 45%」，[InterconnectDownloadTask.progress] 随之改为
+/// **当前阶段**的进度（每进一个阶段从不定态重新开始）。
+enum InterconnectDownloadStage {
+  /// 拉正文包（EPUB / 漫画包 / PDF）。
+  content,
+
+  /// 解包入库、回填对端阅读进度等收尾（不可测，一般一两秒）。
+  importing,
+
+  /// 拉随书有声书包并导入。
+  audiobook,
+}
+
 /// 任务的数据来自哪里（下载中心按它标下载方式 / 外部来源）。
 enum InterconnectDownloadOrigin {
   /// 用户自己的已配对设备或媒体服务器（HTTP 拉取，不算外部来源）。
@@ -48,6 +65,9 @@ class InterconnectDownloadTask {
     this.startedAt,
     this.error,
     this.destPath,
+    this.stages = const <InterconnectDownloadStage>[],
+    this.stage,
+    this.landedBookKey,
   });
 
   /// 稳定任务键（视频用 RemoteVideoInfo.id；与列表去重键一致）。
@@ -83,6 +103,21 @@ class InterconnectDownloadTask {
   /// 或被重新加入成流媒体行，见 `interconnect_download_tasks_section.dart`）。
   final String? destPath;
 
+  /// 本任务会经过的全部阶段（按先后）；单阶段任务（视频 / 音乐 / 纯 SRT 有声书）
+  /// 为空。后台任务弹层据此画「书 ✓ · 有声书 45%」的阶段清单。
+  final List<InterconnectDownloadStage> stages;
+
+  /// 当前阶段；单阶段任务恒为 null。[progress] / 字节都是这一阶段的。
+  final InterconnectDownloadStage? stage;
+
+  /// 任务还在跑、内容已经在本机落地成的那本书（本地 bookKey）。
+  ///
+  /// 远端书的正文一入库，书架上的远端占位卡就让位给本地卡，任务却还要回填进度、
+  /// 拉有声书。本地卡按这个键找到**同一条任务**接着画进度（[InterconnectDownloadManager
+  /// .landedBadgeStateFor]）。记在 app 级任务上而不是书架页 State 上：切走书架、
+  /// 页面重建之后照样接得上。
+  final String? landedBookKey;
+
   bool get isRunning => status == InterconnectDownloadStatus.running;
   bool get isPaused => status == InterconnectDownloadStatus.paused;
 
@@ -92,8 +127,11 @@ class InterconnectDownloadTask {
     bool clearProgress = false,
     int? receivedBytes,
     int? totalBytes,
+    bool clearBytes = false,
     String? error,
     bool clearError = false,
+    InterconnectDownloadStage? stage,
+    String? landedBookKey,
   }) {
     return InterconnectDownloadTask(
       id: id,
@@ -102,11 +140,14 @@ class InterconnectDownloadTask {
       progress: clearProgress ? null : (progress ?? this.progress),
       kind: kind,
       origin: origin,
-      receivedBytes: receivedBytes ?? this.receivedBytes,
-      totalBytes: totalBytes ?? this.totalBytes,
+      receivedBytes: clearBytes ? null : (receivedBytes ?? this.receivedBytes),
+      totalBytes: clearBytes ? null : (totalBytes ?? this.totalBytes),
       startedAt: startedAt,
       error: clearError ? null : (error ?? this.error),
       destPath: destPath,
+      stages: stages,
+      stage: stage ?? this.stage,
+      landedBookKey: landedBookKey ?? this.landedBookKey,
     );
   }
 }
@@ -195,6 +236,7 @@ typedef InterconnectDownloadBadgeState = ({
   InterconnectDownloadStatus status,
   int percent,
   String? error,
+  InterconnectDownloadStage? stage,
 });
 
 /// 合集角标可见的聚合状态（BUG-2944）。
@@ -214,6 +256,7 @@ InterconnectDownloadBadgeState? interconnectDownloadBadgeState(
     status: task.status,
     percent: progress == null ? -1 : (progress * 100).floor(),
     error: task.error,
+    stage: task.stage,
   );
 }
 
@@ -252,6 +295,8 @@ class _DownloadSpec {
     this.resumeRecord,
     this.origin = InterconnectDownloadOrigin.ownDevice,
     this.discardLeftovers,
+    this.stages = const <InterconnectDownloadStage>[],
+    this.landedBookKey,
   });
 
   final String title;
@@ -270,6 +315,13 @@ class _DownloadSpec {
   /// 落点不是单个 `.part` 文件的任务（整盘下载是一整棵目录）自己清半成品；null
   /// 走 [InterconnectDownloadManager.discard] 的单文件残片清单。
   final Future<bool> Function()? discardLeftovers;
+
+  /// 多阶段任务的阶段表（见 [InterconnectDownloadTask.stages]）；空 = 单阶段。
+  final List<InterconnectDownloadStage> stages;
+
+  /// 起跑时内容就已在本机的任务（只补有声书 / 重拉字幕）：本地书键，见
+  /// [InterconnectDownloadTask.landedBookKey]。
+  final String? landedBookKey;
 }
 
 /// **app 级互联下载管理器（TODO-819）**。持有所有进行中/已完成/失败的互联下载任务，
@@ -437,6 +489,37 @@ class InterconnectDownloadManager extends ChangeNotifier {
   /// 管理器则每次通知都整页重建。
   InterconnectDownloadBadgeState? badgeStateFor(String id) =>
       interconnectDownloadBadgeState(_tasks[id]);
+
+  /// 在跑、且内容已落地成本地书 [bookKey] 的那条任务的角标状态（见
+  /// [InterconnectDownloadTask.landedBookKey]）；没有则 null。
+  InterconnectDownloadBadgeState? landedBadgeStateFor(String bookKey) {
+    for (final InterconnectDownloadTask task in _tasks.values) {
+      if (task.isRunning && task.landedBookKey == bookKey) {
+        return interconnectDownloadBadgeState(task);
+      }
+    }
+    return null;
+  }
+
+  /// 此刻「已落地、任务未完」的本地书键（排序后以换行拼接）。书架页按它 select：
+  /// 只在有书落地 / 任务结束时重建，不跟着进度回报重建（字符串按值比较）。
+  String get landedBookKeysSignature =>
+      _landedKeysSignature(InterconnectDownloadStatus.running);
+
+  /// 内容已落地、但任务后半程（有声书包）失败了的本地书键，口径同
+  /// [landedBookKeysSignature]。书架据此在**这本书自己的卡**上写「有声书下载失败」，
+  /// 不另起一张卡；重试（同一任务键）一起跑，这本书就离开这张表。
+  String get failedLandedBookKeysSignature =>
+      _landedKeysSignature(InterconnectDownloadStatus.failed);
+
+  String _landedKeysSignature(InterconnectDownloadStatus status) {
+    final List<String> keys = <String>[
+      for (final InterconnectDownloadTask task in _tasks.values)
+        if (task.status == status && task.landedBookKey != null)
+          task.landedBookKey!,
+    ]..sort();
+    return keys.join('\n');
+  }
 
   /// [aggregateFor] 的角标投影，进度同样量化到整数百分比（BUG-2944）。
   InterconnectDownloadAggregateBadgeState? aggregateBadgeStateFor(
@@ -618,12 +701,18 @@ class InterconnectDownloadManager extends ChangeNotifier {
 
   /// 启动一个远端书下载任务（EPUB / 漫画包，含随书有声书；键 = [bookTaskId]）。
   /// 已在跑（同 [downloadId]）则忽略重复调用，返回当前任务。
+  ///
+  /// [stages] 非空 = 多阶段任务：任务从第一个阶段起跑，[run] 经 [reportStage] /
+  /// [reportBytes] 推进，[InterconnectDownloadTask.progress] 是当前阶段的进度。
   Future<InterconnectDownloadTask> startBookDownload({
     required String downloadId,
     required String title,
     required File dest,
     required InterconnectDownloadRunner run,
     InterconnectDownloadComplete? onComplete,
+    List<InterconnectDownloadStage> stages =
+        const <InterconnectDownloadStage>[],
+    String? landedBookKey,
   }) => _startDownload(
     bookTaskId(downloadId),
     _DownloadSpec(
@@ -633,8 +722,42 @@ class InterconnectDownloadManager extends ChangeNotifier {
       run: _adaptRunner(run),
       onComplete: onComplete,
       pausable: false,
+      stages: stages,
+      landedBookKey: landedBookKey,
     ),
   );
+
+  /// 多阶段任务 [id] 的内容已在本机落地成本地书 [bookKey]（见
+  /// [InterconnectDownloadTask.landedBookKey]）。任务不在跑时什么也不做。
+  void reportLanded(String id, String bookKey) {
+    final InterconnectDownloadTask? task = _tasks[id];
+    if (task == null || !task.isRunning || task.landedBookKey == bookKey) {
+      return;
+    }
+    _tasks[id] = task.copyWith(landedBookKey: bookKey);
+    _notify();
+  }
+
+  /// 多阶段任务 [id] 进入 [stage]：进度与字节清零回到不定态（新阶段的第一次回报
+  /// 立即校正），并**不经节流**通知——阶段切换是用户要立刻看到的状态变化。
+  /// 任务不在跑、不是多阶段任务、或已在该阶段时什么也不做。
+  void reportStage(String id, InterconnectDownloadStage stage) {
+    final InterconnectDownloadTask? task = _tasks[id];
+    if (task == null || !task.isRunning) return;
+    if (!task.stages.contains(stage) || task.stage == stage) return;
+    _tasks[id] = task.copyWith(
+      stage: stage,
+      clearProgress: true,
+      clearBytes: true,
+    );
+    _lastProgressNotify.remove(id);
+    _notify();
+  }
+
+  /// 当前阶段的字节回报（[received] 已收，[total] 未知为 null）；进度随之按字节推。
+  /// 书的正文传输原语只报比例，有声书包的传输会报字节——由 [run] 在有字节时调。
+  void reportBytes(String id, int received, int? total) =>
+      _updateBytes(id, received, total);
 
   /// 启动一个纯 SRT（standalone）远端有声书下载任务（键 = [srtAudiobookTaskId]）。
   /// 已在跑（同 [identity]）则忽略重复调用，返回当前任务。
@@ -719,6 +842,9 @@ class InterconnectDownloadManager extends ChangeNotifier {
       totalBytes: existing?.isPaused == true ? existing!.totalBytes : null,
       startedAt: _now(),
       destPath: spec.dest.path,
+      stages: spec.stages,
+      stage: spec.stages.isEmpty ? null : spec.stages.first,
+      landedBookKey: spec.landedBookKey,
     );
     _tasks[id] = started;
     _lastProgressNotify.remove(id);

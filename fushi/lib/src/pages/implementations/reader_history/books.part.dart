@@ -100,7 +100,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         meta: _srtBookMeta(book, srtItem, audioMissing: audioMissing),
         tags: _srtBookTags(book.uid),
         // BUG-990：两阶段下载末段卡已变 SRT 卡但有声书包仍在下 → 继续显示加载覆盖层。
-        loadingOverlay: _audiobookDownloadingOverlay(book.bookKey),
+        loadingOverlay: _landedDownloadOverlay(book.bookKey),
         byline: srtItem.author,
         // 刮削过的点卡先进详情页（[_activateSrtCard]），首块不画「继续」按钮外观。
         continuesOnTap: _itemScrapeKeyForSrt(book) == null,
