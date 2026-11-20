@@ -47,6 +47,10 @@ const Duration kGraphicSubtitleLivePublishInterval = Duration(
   milliseconds: 1500,
 );
 
+/// 整轨转文字连续这么多条 cue 识别失败（中间没有一条成功）就判整个任务失败：单条失败
+/// 只跳过那一条，但引擎 / 网络整体坏掉时每条都会失败，不能一直空转到轨尾。
+const int kGraphicSubtitleOcrMaxConsecutiveFailures = 8;
+
 /// 边看边识别时下一条该识别的 cue：优先「还没播完」的第一条未开始识别的 cue（离播放头
 /// 最近的将要出现的字幕先有字），播放头之后全开始了再回头补前面的。都开始了返回 null。
 int? pickNextGraphicSubtitleCue(
@@ -90,6 +94,9 @@ List<GraphicSubtitleTextCue> _collectRecognized(
 /// - 识别追上抽轨时等 [sourceDone] 或 [pollInterval] 再读；
 /// - 本地全部识别完后等大模型重读收尾（[onAiProgress] 报进度），再返回最终文字；
 /// - [isCancelled] 为真 / 会话关闭返回 null；识别不可用抛 [GraphicSubtitleOcrUnavailable]。
+/// - 单条 cue 渲染 / 识别出错只跳过这一条（经 [onCueError] 报出，不自动重试），已识别的
+///   文字照常保留；连续 [maxConsecutiveFailures] 条失败、或一条都没识别出而有失败时，
+///   抛最后一个错误让整个任务失败（引擎 / 网络整体坏掉）。
 ///
 /// [render] 把 cue 渲染成像素（默认后台 isolate；测试可注入同步实现）。
 /// 返回全部识别结果（升序）。[onProgress] 报 (已识别, 目前已知总数)。
@@ -104,7 +111,9 @@ Future<List<GraphicSubtitleTextCue>?> recognizeGraphicSubtitleCuesLive({
   void Function(int done, int known)? onProgress,
   void Function(int done, int total)? onAiProgress,
   void Function(Object error, StackTrace stack)? onRefineError,
+  void Function(Object error, StackTrace stack)? onCueError,
   Future<BitmapSubtitleImage> Function(BitmapSubtitleCue cue)? render,
+  int maxConsecutiveFailures = kGraphicSubtitleOcrMaxConsecutiveFailures,
   Duration pollInterval = const Duration(milliseconds: 800),
   Duration resnapshotEvery = const Duration(seconds: 2),
 }) async {
@@ -114,6 +123,10 @@ Future<List<GraphicSubtitleTextCue>?> recognizeGraphicSubtitleCuesLive({
   final Map<int, String> texts = <int, String>{};
   final Set<int> started = <int>{};
   int recognized = 0;
+  int failedCues = 0;
+  int consecutiveFailures = 0;
+  Object? lastCueError;
+  StackTrace? lastCueStack;
   int inFlight = 0;
   bool closed = false;
   Object? failure;
@@ -153,11 +166,25 @@ Future<List<GraphicSubtitleTextCue>?> recognizeGraphicSubtitleCuesLive({
         // 大模型可能比本地慢一步也可能先到（同图去重）：已有重读文字就不回退。
         texts.putIfAbsent(start, () => text);
         recognized++;
+        consecutiveFailures = 0;
         onProgress?.call(recognized, latest.length);
         emit();
-      } catch (error, stack) {
+      } on GraphicSubtitleOcrUnavailable catch (error, stack) {
+        // 引擎不可用是整任务的前提坏了，不是单条的问题。
         failure ??= error;
         failureStack ??= stack;
+      } catch (error, stack) {
+        if (isCancelled()) return;
+        // 单条失败：跳过这一条（已在 started 里，不再重排），其余 cue 继续。
+        failedCues++;
+        consecutiveFailures++;
+        lastCueError = error;
+        lastCueStack = stack;
+        onCueError?.call(error, stack);
+        if (consecutiveFailures >= maxConsecutiveFailures) {
+          failure ??= error;
+          failureStack ??= stack;
+        }
       } finally {
         inFlight--;
         signal();
@@ -215,6 +242,10 @@ Future<List<GraphicSubtitleTextCue>?> recognizeGraphicSubtitleCuesLive({
   }
   await session.drainSubtitleRefinements(onProgress: onAiProgress);
   if (isCancelled() || session.isClosed) return null;
+  if (recognized == 0 && failedCues > 0) {
+    // 一条都没识别出来：不是「这条轨没有文字」，是识别本身坏了。
+    Error.throwWithStackTrace(lastCueError!, lastCueStack!);
+  }
   return _collectRecognized(latest, texts);
 }
 
