@@ -64,8 +64,8 @@ namespace fushi
       CloseHandle(file);
     }
 
-    // 抓新 dump 前把 crashdumps 里 hang-*.dmp 删到只剩 kMaxHangDumpsKept - 1 份
-    // （按最后写入时间删最旧的）。
+    // 抓完新 dump 后把 crashdumps 里 hang-*.dmp 删到只剩 kMaxHangDumpsKept 份
+    // （按最后写入时间删最旧的；刚抓的那份最新，不会被删）。
     void PruneOldHangDumps()
     {
       wchar_t dir[MAX_PATH];
@@ -87,7 +87,7 @@ namespace fushi
           }
         } while (FindNextFileW(find, &data));
         FindClose(find);
-        if (count < kMaxHangDumpsKept || oldest.empty()) return;
+        if (count <= kMaxHangDumpsKept || oldest.empty()) return;
         if (!DeleteFileW((base + L"\\" + oldest).c_str())) return;
       }
     }
@@ -161,15 +161,19 @@ namespace fushi
         }
         dumped_this_stall = true;
         dumps_taken += 1;
-        PruneOldHangDumps();
+        // 顺序有讲究：dump 与 hang_watchdog.log 这两样证据只用栈缓冲和 Win32 调用，
+        // 先落盘；要分配堆内存的（NativeGlog 的 std::string / ofstream、清理旧 dump
+        // 的 std::wstring）放在后面——主线程若正卡在持有堆锁 / CRT 锁的地方，
+        // 看门狗线程在这些调用里跟着阻塞也不会丢掉已抓到的 dump。
         wchar_t dump_path[MAX_PATH] = L"";
         WriteProcessMinidump(L"hang", g_main_thread_id, nullptr, dump_path);
-        NativeGlog("main-thread stall: ongoing ms=" + std::to_string(pending_ms) +
-          " dump=" + (dump_path[0] ? DumpFileName(dump_path) : "(write failed)"));
         wchar_t text[MAX_PATH + 96];
         swprintf_s(text, L"main thread unresponsive >=%llu ms; hang dump=%s",
           pending_ms, dump_path[0] ? dump_path : L"(write failed)");
         AppendHangLogLine(text);
+        NativeGlog("main-thread stall: ongoing ms=" + std::to_string(pending_ms) +
+          " dump=" + (dump_path[0] ? DumpFileName(dump_path) : "(write failed)"));
+        PruneOldHangDumps();
       }
     }
   }  // namespace

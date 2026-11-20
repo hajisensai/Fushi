@@ -44,7 +44,7 @@ namespace fushi
   // 每个进程最多抓几份 hang dump：持续卡死只要一份；反复卡顿留前几次就够看规律。
   constexpr int kMaxHangDumpsPerProcess = 3;
 
-  // crashdumps 目录里 hang-*.dmp 最多保留几份（抓新的之前删最旧的），防止长期
+  // crashdumps 目录里 hang-*.dmp 最多保留几份（抓完新的再删最旧的），防止长期
   // 反复卡顿把磁盘塞满。崩溃 dump（hibiki-*.dmp）不受影响。
   constexpr int kMaxHangDumpsKept = 5;
 
