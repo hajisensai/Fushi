@@ -323,6 +323,7 @@
 | [BUG-4936](bugs/BUG-4936-webkit18-ruby-start-margin-shift.md) | ✅ | ✅ | iOS 18 振假名压进基字（WebKit 18 把注音的负 margin-block-start 也算进位置） |
 | [BUG-4939](bugs/BUG-4939-macos-global-lookup-entries-fetch-unintercepted.md) | ✅ | ✅ | macOS 应用外查词卡大结果词条取回地址原生不拦截，卡片停在上一次内容 |
 | [BUG-4935](bugs/BUG-4935-extension-popup-display-prefs-unsynced.md) | ✅ | ✅ | 浏览器扩展查词弹窗不跟随 App 的自动展开行数、词频聚合等显示偏好 |
+| [BUG-4947](bugs/BUG-4947-audio-source-row-stale-index-removeat.md) | ✅ | ✅ | 音频源对话框连点删除崩溃（RangeError @ List.removeAt） |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
 | [BUG-4903](bugs/BUG-4903-home-desktop-continue-cut-edge-title-concat.md) | ✅ | ✅ | 首页（桌面）「继续」右侧卡被窗口切掉一半、标题拼接成「Re：ゼロ…1<Re：…」 |
