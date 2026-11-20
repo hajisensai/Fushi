@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4236 条。点号进各自文件。
+> 共 4237 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4909](bugs/BUG-4909-manga-import-epub-probe-blocks-ui.md) | ✅ | ✅ | 漫画导入框在 UI isolate 上同步定性 EPUB，批量导入每本 EPUB 解析两遍 |
 | [BUG-4908](bugs/BUG-4908-manga-epub-import-no-actual-byte-cap.md) | ✅ | ✅ | 纯图 EPUB 漫画导入不按实际解出字节封顶、探测白解整本 |
 | [BUG-4907](bugs/BUG-4907-pdf-import-dir-reuse-and-rollback.md) | ✅ | ✅ | PDF 导入书目录存在即复用、失败无条件删除 |
 | [BUG-4906](bugs/BUG-4906-manga-import-skip-duplicate-after-extract.md) | ✅ | ✅ | 漫画批量导入跳过重复卷前先整包解压、逐页读完 |

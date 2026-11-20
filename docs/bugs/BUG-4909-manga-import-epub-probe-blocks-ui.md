@@ -1,0 +1,14 @@
+## BUG-4909 · 漫画导入框在 UI isolate 上同步定性 EPUB，批量导入每本 EPUB 解析两遍
+- **报告**：2026-11-20（路线图 #3722 c39 / manga-3；顺带收 c26 遗留：BUG-4908 备注）
+- **真实性**：✅ 真问题（叠在 c26 #3785 之上回到代码重核）：
+  - 单选 / 预填 / 拖入：`MangaImportDialog._classify`（基线 `fushi/lib/src/media/manga/manga_import_dialog.dart:160`）→ `ImportCarrierResolver.resolve`（`fushi/lib/src/media/import/import_carrier.dart:247`）→ `MangaModule.isImageArchive` → `MangaArchiveImporter._looksLikeImageEpub`（`packages/fushi_engine/lib/media/manga/manga_archive_importer.dart:1029`），全程同步跑在 UI isolate。c26 之后页图已不落盘，但 container / OPF / 所有 spine 文档仍要解出来、整本 XML 解析一遍；文字 EPUB 的 spine 文档就是全部正文，几百 MB 的书界面照样停住。`initState` 预填与 `_handleDialogDrop` 的循环同样同步开包。
+  - 批量：`_classifyCarrierPath` / `_classifyCarrierFile`（基线 `fushi/lib/src/media/manga/import/manga_folder_batch.dart:338-358`）对每本 `.epub` 在 UI isolate 上同步探测一遍，`importArchive` 的 EPUB 分支再完整解析一遍（而且是先把插图在内的整本解进暂存、再判纯图，文字 EPUB 白写一遍插图）。
+  - 原文「批量导入每本解两遍以上」在 c26 后订正为：探测只解 spine 文档 + 导入整本解一遍；对话框批量模式（`_batchCandidates`）本来就只看扩展名、不预定性，那半条前提已不成立。
+  - c26 遗留：探测的 spine 文档解进系统临时目录（`Directory.systemTemp.createTempSync('fushi_manga_epub_probe_')`），崩溃残留 app 内看不见、清不掉。
+- **[x] ① 已修复** —
+  - 引擎：`MangaArchiveImporter.imageEpubRejection(path, probeDir:)` 返回否决理由、不写日志，`probeDir` 给了就解进调用方的目录；`looksLikeImageArchiveInBackground(path, db:)` 在主 isolate 上用 `EpubImporter.createStagingDir(db)` 建书库根下的 `.tmp-*`，判定跑在一次性 isolate，否决理由回主 isolate 记日志，目录用完即删。来源库扫描（app / 服务端）同时带上 db。
+  - 导入器：`importArchive` 的 EPUB 分支先只解非页图条目、判纯图（文字 EPUB 抛新的 `MangaArchiveNotMangaException`，没有图片条目的直接否决），再解页图；两遍共用一个 `ZipExtractionCap`，总预算不变。
+  - 对话框：`ImportCarrierResolver.resolveAsync`（与 `resolve` 共用记忆，同键并发共用一个 Future），漫画框只给异步判据（`MangaModule.probeImageArchive`），预填 / 选文件 / 选文件夹 / 拖入全部异步定性，用代数（`_adoptGeneration`）丢弃被新选择取代或对话框已关后才回来的结果。
+  - 批量：`_resolveBatchCarrier` 只对 `.zip` 开包（后台 isolate，词典包一票否决照旧），`.epub` 不预定性，`MangaArchiveNotMangaException` 计为「不是漫画」。
+- **[x] ② 已增加自动化测试** — `fushi/test/media/manga/manga_import_dialog_async_test.dart`：给定 probeDir 时 spine 文档落在其中、页图不落盘；后台入口带 db 判定正确且书库根无残留；文字 EPUB（插图超单条上限）在 `importArchive` 里抛 `MangaArchiveNotMangaException`（修复前先解插图、报 too large）；批量导入 2 本纯图 + 1 本文字 EPUB 的探测次数为 0（修复前 3）；`resolveAsync` 并发共用一次开包、只给异步判据时同步 `resolve` 抛错；对话框预填 `.epub` 时判定挂起期间照常出帧、回来后才收下，关框后晚到的结果被丢弃。守卫 `manga_import_carrier_memo_guard_test.dart` 改钉 `resolveAsync` + 后台判据。
+- **备注**：书籍导入框（`book_import_dialog.dart`）、操作目录（`ctl_library_import.dart`）、服务端自动导入路由（`import_commands.dart`）仍同步调 `looksLikeImageArchive`（系统临时目录），不在本组文件范围，记为遗留。桌面「300 MB 文字 EPUB 选进漫画框界面不停住」未做真机验证。

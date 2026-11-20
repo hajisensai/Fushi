@@ -52,6 +52,7 @@ class MangaImportDialog extends StatefulWidget {
     this.initialPaths = const <String>[],
     this.mangaOcrRemoteRunner,
     this.ocrEntryDesktopOverride,
+    this.imageArchiveProbe,
     super.key,
   });
 
@@ -70,6 +71,10 @@ class MangaImportDialog extends StatefulWidget {
 
   /// 测试缝：覆盖「是否桌面平台」判定。null = 用真实 [isDesktopPlatform]。
   final bool? ocrEntryDesktopOverride;
+
+  /// 测试缝：`.zip` / `.epub` 的异步开包判定。null = 生产路径
+  /// [MangaModule.probeImageArchive]（后台 isolate + 书库根下的探测目录）。
+  final Future<bool> Function(String path)? imageArchiveProbe;
 
   @override
   State<MangaImportDialog> createState() => _MangaImportDialogState();
@@ -112,9 +117,15 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   /// 同款，守卫 `manga_import_carrier_memo_guard_test.dart`）：`.zip` / `.epub`
   /// 的定性要真开包，而同一路径在一次导入里会被问到不止一次——预填 / 拖入循环 /
   /// 收下路径，每问一次就开一次包。
+  ///
+  /// 只给异步判据（manga-3）：开包跑在后台 isolate，选中一本几百 MB 的文字 EPUB
+  /// 界面不再停住；resolver 没有同步判据，误调同步 `resolve` 会直接抛错而不是
+  /// 悄悄回到 UI isolate 上开包。
   late final ImportCarrierResolver _carrierResolver = ImportCarrierResolver(
     isDirectory: (String pth) => Directory(pth).existsSync(),
-    isImageArchive: MangaModule.isImageArchive,
+    probeImageArchive:
+        widget.imageArchiveProbe ??
+        (String pth) => MangaModule.probeImageArchive(widget.db, pth),
     directoryHasPageImages: MangaModule.directoryHasPageImages,
     directoryCarrierFileCount: MangaModule.directoryCarrierFileCount,
     directoryMokuroFileCount: MangaModule.directoryMokuroFileCount,
@@ -135,18 +146,9 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     final String? initial = initialAll.isEmpty ? null : initialAll.first;
     if (initial != null) {
       // 预填路径来自已判定为漫画的上游（拖放决策层 / 书籍框转交），这里仍重跑一次
-      // 分类以拿到细分载体；万一上游给了非漫画路径，宁可留空也不静默导错东西。
-      final ImportCarrier carrier = _classify(initial);
-      if (carrier.isMangaCapable) {
-        final String path = _importPathFor(initial, carrier);
-        _path = path;
-        _pathName = p.basename(path);
-        _carrier = carrier;
-        _batchVolumeCount = carrier == ImportCarrier.mangaBatchFolder
-            ? MangaModule.directoryCarrierFileCount(path)
-            : 0;
-        _titleCtrl.text = _deriveTitle(path);
-      }
+      // 分类以拿到细分载体；万一上游给了非漫画路径，宁可留空也不静默导错东西
+      // （所以不弹「不支持的格式」）。
+      unawaited(_adoptPath(initial, reportRejection: false));
     }
   }
 
@@ -157,7 +159,12 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     super.dispose();
   }
 
-  ImportCarrier _classify(String path) => _carrierResolver.resolve(path);
+  Future<ImportCarrier> _classify(String path) =>
+      _carrierResolver.resolveAsync(path);
+
+  /// 每次开始收下一个路径 / 一批路径时加一。定性是异步的：用户在上一次定性还没
+  /// 回来时又选了别的（或拖进一批），晚到的旧结果不得覆盖新选择。
+  int _adoptGeneration = 0;
 
   /// 多选里**可能是一卷**的路径：目录或漫画载体扩展名。只看扩展名、不开包——
   /// N 个包在 UI 线程逐个开会卡死；真定性推迟到逐卷导入（那时反正要解压），
@@ -174,6 +181,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
 
   /// 进入逐卷批量模式（不含 setState，调用方决定是否包一层）。
   void _setBatch(List<String> paths) {
+    _adoptGeneration++;
     _batchPaths = List<String>.unmodifiable(paths);
     _path = null;
     _carrier = null;
@@ -357,7 +365,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
         );
         return;
       }
-      if (_adoptPath(path)) unawaited(_discardStaging());
+      if (await _adoptPath(path)) unawaited(_discardStaging());
     } finally {
       _pickerActive = false;
     }
@@ -421,13 +429,14 @@ class _MangaImportDialogState extends State<MangaImportDialog>
         await _discardStaging();
       }
       if (picked.stagingRoot != null) _staging = picked;
-      if (!_adoptPath(picked.path)) await _discardStaging();
+      if (!await _adoptPath(picked.path)) await _discardStaging();
     } finally {
       _pickerActive = false;
     }
   }
 
   void _clearSelection() {
+    _adoptGeneration++;
     setState(() {
       _batchPaths = const <String>[];
       _path = null;
@@ -438,10 +447,18 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   }
 
   /// 收下一个候选路径：先定性，非漫画直接挡回并说明，绝不静默吞掉。
-  /// 返回是否收下。
-  bool _adoptPath(String candidate) {
-    final ImportCarrier carrier = _classify(candidate);
+  /// 返回是否收下；定性期间被更新的选择取代（或对话框已关）也返回 false。
+  ///
+  /// [reportRejection]：非漫画时是否弹「不支持的格式」（预填路径不弹，见 [initState]）。
+  Future<bool> _adoptPath(
+    String candidate, {
+    bool reportRejection = true,
+  }) async {
+    final int generation = ++_adoptGeneration;
+    final ImportCarrier carrier = await _classify(candidate);
+    if (!mounted || generation != _adoptGeneration) return false;
     if (!carrier.isMangaCapable) {
+      if (!reportRejection) return false;
       final String ext = p.extension(candidate).toLowerCase();
       FushiToast.show(
         msg: t.import_unsupported_file_format(
@@ -467,7 +484,10 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     return true;
   }
 
-  void _handleDialogDrop(List<String> paths, Offset _) {
+  void _handleDialogDrop(List<String> paths, Offset _) =>
+      unawaited(_adoptDropped(paths));
+
+  Future<void> _adoptDropped(List<String> paths) async {
     if (importing) return;
     // 拖进本框的东西只有一种可能有意义：漫画。多选（≥2 个像卷的路径）→ 逐卷批量，
     // 不再只收第一个、其余静默丢掉。
@@ -478,9 +498,13 @@ class _MangaImportDialogState extends State<MangaImportDialog>
       return;
     }
     // 单个：取第一个能定性成漫画的路径。
+    final int generation = ++_adoptGeneration;
     for (final String path in paths) {
-      if (_classify(path).isMangaCapable) {
-        if (_adoptPath(path)) unawaited(_discardStaging());
+      final bool manga = (await _classify(path)).isMangaCapable;
+      if (!mounted || generation != _adoptGeneration) return;
+      if (manga) {
+        // 同一路径的判定已在记忆里，这里不再开包。
+        if (await _adoptPath(path)) unawaited(_discardStaging());
         return;
       }
     }
