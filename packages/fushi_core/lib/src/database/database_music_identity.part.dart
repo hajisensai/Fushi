@@ -106,8 +106,8 @@ const List<MusicTrackUidReference> kMusicTrackUidReferences =
       ),
     ];
 
-/// 收藏句存在偏好里（JSON 列表，`FavoriteSentenceRepository`），音乐来源的出处身份是
-/// track uid（`bookKey`）。
+/// v165 之前收藏句存在偏好里的 JSON 列表的键（之后搬进 `favorite_sentences` 表，只剩
+/// 迁移阶梯与旧备份读它）。音乐来源的出处身份是 track uid（`bookKey` / `book_key`）。
 const String kFavoriteSentencesPrefKey = 'favorite_sentences';
 
 /// 一首曲目的「同一个文件」判据：路径键 + CUE 起点 + 音频指纹。
@@ -516,6 +516,23 @@ mixin _FushiDbMusicIdentity on _$FushiDatabase {
   );
 
   Future<void> _rewriteAliasedFavoriteSentences() async {
+    // v165 起收藏句在表里；迁移阶梯 v145–v164 之间调用时表还不存在，偏好里的旧 JSON
+    // 由下面那段改写（随后 v165 原样搬进表）。
+    final bool hasTable = await customSelect(
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' "
+      "AND name = 'favorite_sentences'",
+    ).get().then((List<QueryRow> r) => r.isNotEmpty);
+    if (hasTable) {
+      await customUpdate(
+        'UPDATE favorite_sentences SET book_key = '
+        '(SELECT a.track_uid FROM music_track_uid_aliases a '
+        'WHERE a.alias_uid = favorite_sentences.book_key) '
+        "WHERE source = 'music' AND book_key IN "
+        '(SELECT alias_uid FROM music_track_uid_aliases)',
+        updates: <TableInfo<Table, Object?>>{favoriteSentences},
+        updateKind: UpdateKind.update,
+      );
+    }
     final List<QueryRow> prefRows = await customSelect(
       'SELECT value FROM preferences WHERE key = ?',
       variables: <Variable<Object>>[

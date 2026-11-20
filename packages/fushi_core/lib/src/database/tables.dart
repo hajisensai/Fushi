@@ -1024,6 +1024,37 @@ class FavoriteWords extends Table {
   ];
 }
 
+// ── favorite_sentences（v165）───────────────────────────────────────
+/// 收藏句（阅读器 / 有声书 / 视频 / 游戏 / 漫画 / 音乐 / 网页视频共用，按 [source]
+/// 区分）。v165 之前存在偏好 `favorite_sentences` 的一整段 JSON 里，每次读都要在
+/// 主 isolate 解码整段（实测大库 425 KB、27.6 ms，拍板台 design-nmv-stats-main-isolate）。
+/// 模型与跨设备内容身份见 `FavoriteSentence` / `FavoriteSentenceRepository.itemKeyOf`
+/// （正文 + 出处 + 章节 + 锚点；[id] 只是本机身份）。同步 wire
+/// （`AggregateSnapshot.favoriteSentences`）仍是原 JSON 形状，字节不变。
+@DataClassName('FavoriteSentenceRow')
+class FavoriteSentences extends Table {
+  TextColumn get id => text()();
+  TextColumn get sentence => text()();
+  TextColumn get bookTitle => text().withDefault(const Constant(''))();
+  TextColumn get chapterLabel => text().nullable()();
+
+  /// 收藏时刻（`DateTime.microsecondsSinceEpoch`）：wire 上的 ISO 串精确到微秒，
+  /// 存微秒才能原样写回。
+  IntColumn get createdAtUs => integer()();
+  TextColumn get bookKey => text().nullable()();
+  IntColumn get sectionIndex => integer().nullable()();
+  IntColumn get normCharOffset => integer().nullable()();
+  IntColumn get normCharLength => integer().nullable()();
+  TextColumn get color => text().nullable()();
+  TextColumn get source => text().withDefault(const Constant('book'))();
+  TextColumn get dateKey => text().nullable()();
+  TextColumn get expression => text().nullable()();
+  TextColumn get reading => text().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 // ── mining_statistics ───────────────────────────────────────────────
 /// 制卡计数：卡片本体落在 Anki（外部），这里只按 dateKey + sourceType 记成功制卡
 /// 次数，供阅读/视频统计页展示。与时长/字数统计表同构（按日期累加）。

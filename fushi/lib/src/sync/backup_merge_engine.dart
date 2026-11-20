@@ -15,7 +15,8 @@ import 'package:fushi_engine/sync/aggregate_merge_service.dart';
 import 'package:fushi/src/models/preference_keys.dart'
     show kProfileFallbackIdPrefKey, kWorkProfileSessionPrefKey;
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi_audio/fushi_audio.dart' show FavoriteSentence;
+import 'package:fushi_audio/fushi_audio.dart'
+    show FavoriteSentence, FavoriteSentenceRepository;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 import 'package:fushi_engine/srs/srs_backup_merge.dart'
@@ -197,11 +198,6 @@ class BackupMergeEngine {
   /// iterated when the predicate's placeholders are built.
   List<String> get _reachableVideoArgs => _carriedVideoSourcePaths.toList();
 
-  /// Preference key holding the favorite-sentence JSON list. Mirrors
-  /// `FavoriteSentenceRepository._key`; kept in sync behaviourally by
-  /// `favorite_sentence_merge_import_test.dart`.
-  static const String _favoriteSentencesPrefKey = 'favorite_sentences';
-
   /// Content-config preference keys carrying the local-audio registry (their
   /// referenced `.db` files travel in the backup), merged by
   /// [_mergeAudioSourcePrefs] instead of being dropped as device settings.
@@ -292,7 +288,7 @@ class BackupMergeEngine {
         // 目标库对应的游戏行上（2026-09 用户推翻旧的「游戏不参与合并」决策）。
         await _mergeGalgameSessions();
       }
-      await _mergeFavoriteSentencePrefs();
+      await _mergeFavoriteSentences();
       await _mergeTagsAndMappings();
       await _mergeCollectionTags();
       // v129：作品图谱连接——端点里的合集 id / 游戏 id 是 src 本地身份，要在
@@ -1612,72 +1608,26 @@ class BackupMergeEngine {
     );
   }
 
-  /// Favorite SENTENCES dedupe-UNION. Unlike favorite words / mined sentences
-  /// these are NOT a table but a JSON list stored in the target's and src's
-  /// `preferences` row `favorite_sentences`, so the ATTACH SQL merge cannot
-  /// touch them -- before this the backup's favorite sentences were silently
-  /// dropped. Read both blobs, delegate the union+dedupe to the pure
-  /// [AggregateMergeService.mergeFavoriteSentences] (single source of truth for
-  /// this semantic, shared with online sync), and write the merged blob back.
+  /// Favorite SENTENCES dedupe-UNION（v165 起是 `favorite_sentences` 表；备份库在
+  /// ATTACH 前已迁到当前 schema，旧备份偏好里的 JSON 列表已由 v165 搬进表）。去重
+  /// 并集只由纯函数 [AggregateMergeService.mergeFavoriteSentences] 决定（与在线同步
+  /// 同一语义），结果整表写回（与现有内容相同则不写）。
   ///
-  /// A missing/empty src blob is a no-op; a missing target blob just adopts the
-  /// merged src set. Runs inside the merge transaction, so a failure here rolls
-  /// the whole merge back with everything else.
-  Future<void> _mergeFavoriteSentencePrefs() async {
-    final String? targetRaw = await _readPref(isSrc: false);
-    final String? srcRaw = await _readPref(isSrc: true);
-    // Nothing to merge in from the backup: leave the device's blob untouched.
-    if (srcRaw == null || srcRaw.isEmpty) return;
-
-    final List<FavoriteSentence> localList = _decodeFavoriteSentences(
-      targetRaw,
+  /// 备份没有收藏句 = 不动本机。跑在合并事务里，失败随整个合并回滚。
+  Future<void> _mergeFavoriteSentences() async {
+    if (!await _srcTableExists('favorite_sentences')) return;
+    final List<FavoriteSentence> remote = <FavoriteSentence>[
+      for (final QueryRow row
+          in await _db
+              .customSelect('SELECT * FROM $_srcAlias.favorite_sentences')
+              .get())
+        FavoriteSentenceRepository.fromRow(_db.favoriteSentences.map(row.data)),
+    ];
+    if (remote.isEmpty) return;
+    final FavoriteSentenceRepository repo = FavoriteSentenceRepository(_db);
+    await repo.replaceAll(
+      AggregateMergeService.mergeFavoriteSentences(await repo.getAll(), remote),
     );
-    final List<FavoriteSentence> remoteList = _decodeFavoriteSentences(srcRaw);
-    final List<FavoriteSentence> merged =
-        AggregateMergeService.mergeFavoriteSentences(localList, remoteList);
-
-    final String mergedJson = jsonEncode(
-      merged.map((FavoriteSentence s) => s.toJson()).toList(),
-    );
-    // Upsert the target preference row (INSERT OR REPLACE on the key PK).
-    await _db.customStatement(
-      'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
-      <Object?>[_favoriteSentencesPrefKey, mergedJson],
-    );
-  }
-
-  /// Reads the `favorite_sentences` preference value from either the target
-  /// ([isSrc] false) or the ATTACHed src ([isSrc] true). Returns null when the
-  /// row is absent.
-  Future<String?> _readPref({required bool isSrc}) async {
-    final String table = isSrc ? '$_srcAlias.preferences' : 'preferences';
-    final rows = await _db
-        .customSelect(
-          'SELECT "value" FROM $table WHERE "key" = ?',
-          variables: <Variable<Object>>[
-            Variable<String>(_favoriteSentencesPrefKey),
-          ],
-        )
-        .get();
-    if (rows.isEmpty) return null;
-    return rows.first.data['value'] as String?;
-  }
-
-  /// Decodes a `favorite_sentences` JSON blob into models, tolerating a
-  /// null/empty/malformed value (returns an empty list) so a corrupt pref on
-  /// either side never aborts the whole merge.
-  static List<FavoriteSentence> _decodeFavoriteSentences(String? raw) {
-    if (raw == null || raw.isEmpty) return const <FavoriteSentence>[];
-    try {
-      final dynamic decoded = jsonDecode(raw);
-      if (decoded is! List) return const <FavoriteSentence>[];
-      return decoded
-          .whereType<Map<String, dynamic>>()
-          .map(FavoriteSentence.fromJson)
-          .toList();
-    } catch (_) {
-      return const <FavoriteSentence>[];
-    }
   }
 
   /// BookTags UNION by name (device keeps its own tag row + id on a name clash),

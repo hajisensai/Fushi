@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -8,12 +7,10 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'temp_dir_cleanup.dart';
 
-/// End-to-end proof that a MERGE import now content-merges the
-/// `favorite_sentences` preference blob through the wired
-/// BackupMergeEngine -> AggregateMergeService path. Before TODO-1056 phase A
-/// this blob was never merged (favorite sentences are a pref JSON list, not a
-/// table, so the ATTACH SQL merge could not touch them) and the backup's
-/// sentences were silently dropped.
+/// End-to-end proof that a MERGE import content-merges favorite sentences
+/// through the wired BackupMergeEngine -> AggregateMergeService path (v165 the
+/// `favorite_sentences` table; before that a pref JSON list). Before TODO-1056
+/// phase A the backup's sentences were silently dropped.
 Future<Directory> _tempDir(String prefix) =>
     Directory.systemTemp.createTemp(prefix);
 
@@ -134,10 +131,9 @@ void main() {
         'ローカル限定',
       ]);
 
-      // The stored blob is well-formed JSON (repository re-readable).
-      final String? raw = await after.getPref('favorite_sentences');
-      expect(raw, isNotNull);
-      expect(jsonDecode(raw!) as List<dynamic>, hasLength(3));
+      // v165：收藏句落在表里，旧偏好键不再写。
+      expect(await after.getAllFavoriteSentenceRows(), hasLength(3));
+      expect(await after.getPref('favorite_sentences'), isNull);
     },
   );
 

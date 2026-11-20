@@ -59,6 +59,7 @@ part 'database_theme_song_spans.part.dart';
 part 'database_media_link_ai_verdicts.part.dart';
 part 'database_people.part.dart';
 part 'database_ai_agent.part.dart';
+part 'database_favorite_sentences.part.dart';
 
 /// Thrown when the on-disk database was created by a NEWER build of Fushi than
 /// the one currently running (`db user_version > code schemaVersion`).
@@ -858,6 +859,7 @@ void _requireOneVideoMetadataOwner({
     VideoWatchStatistics,
     VideoHourlyLogs,
     FavoriteWords,
+    FavoriteSentences,
     MiningStatistics,
     MinedSentences,
     MediaSources,
@@ -988,7 +990,8 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbMediaLinkAiVerdicts,
         _FushiDbPeople,
         _FushiDbAiAgent,
-        _FushiDbItemScrape {
+        _FushiDbItemScrape,
+        _FushiDbFavoriteSentences {
   /// [isMainProcess] gates the TODO-905 sidecar rebuild: the main app passes
   /// the default `true` (it may physically delete a poisoned `-wal`/`-shm`),
   /// while the separate `:popup` process passes `false` so it backs off on an
@@ -3272,6 +3275,16 @@ class FushiDatabase extends _$FushiDatabase
       // 复习换代第二段（协议 4，G11-4 / D33）把整包备份的复习部分换成按集合导出的
       // 操作流、服务端备份换成新代复习库：主库 schema 升一档是旧版本拒收新备份的唯一闸门（旧版本见到更新的主库，
       // 在动任何文件之前拒绝整份备份），本身不改任何表。
+      if (from < 165) {
+        // v165：收藏句从偏好 `favorite_sentences` 的整段 JSON 搬进 favorite_sentences
+        // 表（拍板台 design-nmv-stats-main-isolate：统计页签每次在主 isolate 解码整段，
+        // 大库 27.6 ms）。建表 + 搬数据 + 删偏好行；幂等（重跑跳过已搬过的行）。
+        // 旧备份恢复 / 合并导入都先迁移备份库，走的也是这一步。
+        if (!await _tableExists('favorite_sentences')) {
+          await m.createTable(favoriteSentences);
+        }
+        await _migrateFavoriteSentencesPrefToTable();
+      }
       // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建
       // （video-36i），每次升 schema 都幂等补一次。
       await _ensureStatIndexes();

@@ -488,6 +488,12 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
 
   // ── 统计 / 收藏 ────────────────────────────────────────────────────
   PathRebaseColumn(
+    'FavoriteSentences',
+    'source',
+    PathRebaseKind.notAPath,
+    '收藏来源枚举值（book/video/audiobook/lyrics/game/manga/music/web），不是路径。',
+  ),
+  PathRebaseColumn(
     'FavoriteWords',
     'sourceType',
     PathRebaseKind.notAPath,

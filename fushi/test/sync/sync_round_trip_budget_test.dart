@@ -47,9 +47,11 @@ class _CountingDb extends FushiDatabase {
   }
 
   @override
-  Future<List<ReadingStatisticRow>> getAllReadingStatistics() {
+  Future<List<ReadingStatisticRow>> getAllReadingStatistics({
+    String? fromDateKey,
+  }) {
     fullStatsScans++;
-    return super.getAllReadingStatistics();
+    return super.getAllReadingStatistics(fromDateKey: fromDateKey);
   }
 }
 

@@ -1546,12 +1546,12 @@ class BackupService {
       });
 
       // BUG-816: content-registry preference rows follow their OWNING content
-      // category, not `settings` — strip favorites when `books` is unticked,
-      // the font registry when `fonts` is, and the local-audio registry (incl.
-      // the localAudio entries of `audio_source_configs`) when `localAudio` is.
+      // category, not `settings` — the font registry when `fonts` is unticked,
+      // and the local-audio registry (incl. the localAudio entries of
+      // `audio_source_configs`) when `localAudio` is. Favorites (v165 a table
+      // following `books`) went with the table-rule strip above.
       await _stripExcludedContentRegistry(
         tmpDir.path,
-        stripFavorites: !includeBooks,
         stripFonts: !wants(BackupCategory.fonts),
         stripLocalAudio: !wants(BackupCategory.localAudio),
       );
@@ -2149,7 +2149,8 @@ class BackupService {
   /// BUG-816: strips the content-registry preference rows whose OWNING content
   /// category the user unticked, from the standalone export DB copy. Each key is
   /// governed by the feature it belongs to, NOT `settings`:
-  ///  - favorites (`favorite_sentences`)          -> `books`
+  ///  - favorites: v165 起是 `favorite_sentences` 表，归 `books`，由
+  ///    [backupTableRules] 的统一兜底整表清空（不再在这里）
   ///  - font catalog + legacy font prefs          -> `fonts`
   ///  - local-audio registry (`local_audio_dbs`)  -> `localAudio`
   ///  - `audio_source_configs` localAudio entries -> `localAudio` (option B:
@@ -2158,18 +2159,12 @@ class BackupService {
   /// Mirrored on an overwrite import by [_reapplyExcludedContentRegistry].
   static Future<void> _stripExcludedContentRegistry(
     String dbDirectory, {
-    required bool stripFavorites,
     required bool stripFonts,
     required bool stripLocalAudio,
   }) async {
-    if (!stripFavorites && !stripFonts && !stripLocalAudio) return;
+    if (!stripFonts && !stripLocalAudio) return;
     final FushiDatabase db = FushiDatabase(dbDirectory);
     try {
-      if (stripFavorites) {
-        await db.customStatement(
-          "DELETE FROM preferences WHERE key = '$_favoriteSentencesPrefKey'",
-        );
-      }
       if (stripFonts) {
         for (final String k in <String>[
           _fontCatalogPrefKey,

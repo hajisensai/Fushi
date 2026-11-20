@@ -311,6 +311,10 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'favorite_words': BackupTableRule.follows(<BackupCategory>{
     BackupCategory.statistics,
   }),
+  // v165：收藏句（原偏好 `favorite_sentences`，BUG-816 起归「书籍」类别）。
+  'favorite_sentences': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.books,
+  }),
   'activity_events': BackupTableRule.follows(<BackupCategory>{
     BackupCategory.statistics,
   }),

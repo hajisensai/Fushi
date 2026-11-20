@@ -46,7 +46,7 @@
 | Profile | `Profiles`, `ProfileSettings`, `MediaTypeProfiles`, `BookProfiles` |
 | 同步基线 | `SyncBaselines` |
 | 视频 | `VideoBooks`, `VideoWatchStatistics`, `VideoHourlyLogs`, `VideoSubtitleGlossaries`（v119 字幕 AI 校对专名表，随备份「视频」类别，不进合并导入） |
-| 收藏/制卡 | `FavoriteWords`, `MiningStatistics`, `MinedSentences`, `LookupMiningCounters`, `WebMineQueue`, `PendingMineQueue`（后两张设备本地） |
+| 收藏/制卡 | `FavoriteWords`, `FavoriteSentences`（v165，原偏好 `favorite_sentences` 的整段 JSON 搬成表）, `MiningStatistics`, `MinedSentences`, `LookupMiningCounters`, `WebMineQueue`, `PendingMineQueue`（后两张设备本地） |
 | 合集/系列 | `MediaCollections`, `MediaCollectionItems`, `CollectionBookAliases`, `Series`, `ShelfEntries` |
 | 互联 | `FushiPairedPeers` |
 | 游戏库 | `Galgames`, `GalgameSources`, `GalgameSessions` |

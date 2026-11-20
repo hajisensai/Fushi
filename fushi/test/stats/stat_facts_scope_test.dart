@@ -329,4 +329,81 @@ void main() {
       reason: '域范围不收窄计数面（总览 = 各域之和）',
     );
   });
+
+  // 拍板台 design-nmv-stats-main-isolate 第 3 条：阅读 / 游戏页签与观看同形，只读本域。
+  for (final (String kind, bool Function(StatFact) inDomain) domain
+      in <(String, bool Function(StatFact))>[
+        (kActivityMediaBook, (StatFact f) => f.isBook),
+        (kActivityMediaGame, (StatFact f) => f.isGame),
+      ]) {
+    test('StatFactsScope.domain(${domain.$1})：页签用到的切片与全量一致', () async {
+      final FushiDatabase db = await _seeded();
+      await _segment(db, kind: kActivityMediaGame, key: 'g2', title: '游戏二');
+      final StatFacts full = await loadStatFacts(
+        db,
+        activityLimit: 0,
+        includeCounters: true,
+      );
+      final StatFacts scoped = await loadStatFacts(
+        db,
+        activityLimit: 0,
+        includeCounters: true,
+        scope: StatFactsScope.domain(domain.$1),
+      );
+      expect(
+        _keys(scoped.daily.where(domain.$2)),
+        _keys(full.daily.where(domain.$2)),
+      );
+      expect(scoped.daily.where(domain.$2), isNotEmpty);
+      expect(scoped.daily.where((StatFact f) => !domain.$2(f)), isEmpty);
+      expect(
+        _keys(scoped.hourly.where(domain.$2)),
+        _keys(full.hourly.where(domain.$2)),
+      );
+      List<String> sessions(StatFacts f) => f.sessions
+          .where((StudySession s) => s.mediaKind == domain.$1)
+          .map(_sessionKey)
+          .toList();
+      expect(sessions(scoped), sessions(full));
+      expect(
+        scoped.counters.lookupCounters.map(_counterKey).toList()..sort(),
+        full.counters.lookupCounters.map(_counterKey).toList()..sort(),
+        reason: '域范围不收窄计数面（总览 = 各域之和）',
+      );
+    });
+  }
+
+  test('StatFactsScope.since：日面 / 小时面 = 全量里统计日 ≥ 起点的那些', () async {
+    final FushiDatabase db = await _seeded();
+    await _segment(
+      db,
+      kind: kActivityMediaBook,
+      key: 'b1',
+      title: 'seg-b1',
+      dateKey: '2026-11-10',
+    );
+    await _segment(
+      db,
+      kind: kActivityMediaVideo,
+      key: 'v1',
+      title: '番剧',
+      dateKey: '2026-11-12',
+    );
+    final StatFacts full = await loadStatFacts(db, activityLimit: 0);
+    const String from = '2026-11-10';
+    final StatFacts since = await loadStatFacts(
+      db,
+      activityLimit: 0,
+      scope: const StatFactsScope.since(from),
+    );
+    bool inWindow(StatFact f) => f.dateKey.compareTo(from) >= 0;
+    expect(_keys(since.daily), _keys(full.daily.where(inWindow)));
+    expect(since.daily, hasLength(2));
+    expect(_keys(since.hourly), _keys(full.hourly.where(inWindow)));
+    expect(
+      full.daily.where((StatFact f) => !inWindow(f)),
+      isNotEmpty,
+      reason: '种子里有起点之前的段与 legacy 行，范围确实下推了',
+    );
+  });
 }
