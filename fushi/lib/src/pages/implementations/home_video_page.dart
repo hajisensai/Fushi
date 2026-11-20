@@ -11049,7 +11049,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       ErrorLogService.instance.log('video.rescrapeWork', e, stack);
       if (!mounted) return;
       FushiToast.show(
-        msg: t.collection_rescrape_failed,
+        msg: videoScrapeMaintenanceText(e) ?? t.collection_rescrape_failed,
         severity: ToastSeverity.error,
       );
       return;
@@ -11117,7 +11117,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       ErrorLogService.instance.log('video.chooseTmdbOrdering', e, stack);
       if (!mounted) return;
       FushiToast.show(
-        msg: t.collection_rescrape_failed,
+        msg: videoScrapeMaintenanceText(e) ?? t.collection_rescrape_failed,
         severity: ToastSeverity.error,
       );
       return;
