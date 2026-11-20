@@ -110,8 +110,14 @@ import 'package:fushi/src/media/video/video_subtitle_restore_plan.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
+import 'package:fushi/src/media/video/media_server/media_server_config.dart'
+    show MediaServerConfig;
 import 'package:fushi/src/media/video/media_server/media_server_library.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/plex_settings_widget.dart'
+    show rerouteMediaServerAfterFailure;
+import 'package:fushi/src/sync/remote_library_cache.dart'
+    show RemoteLibraryCache, remoteLibraryCacheProvider;
 import 'package:fushi_engine/media/video/media_server_video_path.dart';
 import 'package:fushi_engine/media/video/video_source_fingerprint.dart';
 import 'package:fushi/src/media/video/danmaku_manual_match_panel.dart';
@@ -4463,6 +4469,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // （流地址带令牌、换线路就变，不落库），合集里同一部剧的入库行作连播成员。
       if (isMediaServerVideoPath(row.videoPath)) {
         _setLoadingPhase(_VideoLoadPhase.connecting);
+        // 换线路要失效清单缓存：provider 在 await 之前取（跨 async gap 不碰 ref）。
+        final RemoteLibraryCache remoteCache = ref.read(
+          remoteLibraryCacheProvider,
+        );
+        final SyncRepository syncRepo = SyncRepository(appModel.database);
         try {
           final ({
             RemoteVideoClient client,
@@ -4474,8 +4485,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             row: row,
             database: appModel.database,
             repository: widget.repo,
-            loadConfigs: SyncRepository(appModel.database).getMediaServers,
+            loadConfigs: syncRepo.getMediaServers,
             playlistCollectionId: widget.playlistCollectionId,
+            rerouteAfterFailure: (MediaServerConfig config, Object error) =>
+                rerouteMediaServerAfterFailure(
+                  config,
+                  error,
+                  repo: syncRepo,
+                  cache: remoteCache,
+                ),
           );
           if (!mounted) return;
           _resolvedStreamClient = launch.client;

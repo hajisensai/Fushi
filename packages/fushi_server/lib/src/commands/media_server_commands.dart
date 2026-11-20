@@ -547,19 +547,13 @@ media-server plex ls [--server <name|id> | --url <pms>] [--section <key>] [<rati
     final String token = server.accessToken ?? cred.accountToken!;
     final String? reachable = await firstReachablePlexConnection(
       orderPlexConnections(server.connections),
-      (String uri) async {
-        final PlexApi probe = PlexApi(
-          serverUrl: uri,
-          token: token,
-          clientInfo: info,
-          client: _client(),
-        );
-        try {
-          return (await probe.identity()).isNotEmpty;
-        } finally {
-          probe.close();
-        }
-      },
+      // 无凭据核对 machineIdentifier 是这台服务器，通过后才对选中的地址发 token。
+      (String uri) => verifyPlexServerIdentity(
+        uri,
+        server.clientIdentifier,
+        info,
+        client: _client(),
+      ),
     );
     if (reachable == null) {
       return (

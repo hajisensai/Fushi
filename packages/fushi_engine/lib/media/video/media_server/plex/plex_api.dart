@@ -88,6 +88,62 @@ class PlexApiException implements Exception {
   String toString() => 'PlexApiException($statusCode, $path)';
 }
 
+/// 请求没到达服务器（连不上 / 连接中途断开：`http.ClientException`，含底层
+/// `SocketException`）。与 [PlexApiException]（服务器答了非 2xx）分开，调用方据此
+/// 判断「换一条连接也许能通」（`PlexServerConfig.rerouteAfterFailure`）。
+/// [toString] 与之前抛的 `Exception(message)` 逐字相同（播放页错误文案不变）。
+class PlexTransportException implements Exception {
+  const PlexTransportException(this.message);
+
+  /// 已脱敏的底层错误描述。
+  final String message;
+
+  @override
+  String toString() => 'Exception: $message';
+}
+
+/// [serverUrl] 可达且确实是 [machineIdentifier] 那台服务器：无凭据请求
+/// `/identity` 比对（[PlexApi.identity] 不带 token，这里构造的 [PlexApi] 也
+/// 不持有 token）。登录时挑线路、请求失败后自动换线路、CLI 选连接都走这一处：
+/// 核对通过之前，带 token 的请求一律不发往该地址。
+///
+/// [client] 归本函数所有（结束时关闭）。连不上 / 超时 / 答非 2xx / 非 JSON 都
+/// 原样抛出，由调用方当作「这条不可用」；[machineIdentifier] 为空恒为 false。
+/// 核对与之后的请求之间对面换了机器（TOCTOU）不在防护范围内。
+Future<bool> verifyPlexServerIdentity(
+  String serverUrl,
+  String machineIdentifier,
+  PlexClientInfo clientInfo, {
+  Duration? timeout,
+  http.Client? client,
+}) async {
+  if (machineIdentifier.isEmpty) {
+    client?.close();
+    return false;
+  }
+  final PlexApi api = PlexApi(
+    serverUrl: serverUrl,
+    token: '',
+    clientInfo: clientInfo,
+    client: client,
+  );
+  try {
+    final Future<String> id = api.identity();
+    return (timeout == null ? await id : await id.timeout(timeout)) ==
+        machineIdentifier;
+  } finally {
+    api.close();
+  }
+}
+
+/// [error] 是不是「这条连接不通」类失败：[PlexTransportException]、请求超时
+/// （[PlexApi.kRequestTimeout] 的 [TimeoutException]）或裸 [SocketException]。
+/// 服务器答了话（[PlexApiException]、解析失败、条目不存在）都不算。
+bool isPlexTransportFailure(Object error) =>
+    error is PlexTransportException ||
+    error is TimeoutException ||
+    error is SocketException;
+
 /// 一个媒体库（`/library/sections` 的 `Directory`）。
 class PlexSection {
   const PlexSection({
@@ -358,9 +414,14 @@ class PlexApi {
     return url;
   }
 
-  Map<String, String> get headers => <String, String>{
+  /// 不带凭据的请求头（Accept + `X-Plex-*` 客户端身份头）：[identity] 用它。
+  Map<String, String> get anonymousHeaders => <String, String>{
     'Accept': 'application/json',
     ...clientInfo.headers,
+  };
+
+  Map<String, String> get headers => <String, String>{
+    ...anonymousHeaders,
     'X-Plex-Token': token,
   };
 
@@ -376,14 +437,16 @@ class PlexApi {
   String withToken(String path, [Map<String, String>? query]) =>
       uri(path, <String, String>{...?query, kTokenParam: token}).toString();
 
+  /// [authenticated] 为 false 时不带 `X-Plex-Token`（只有 [identity] 这么用）。
   Future<http.Response> _send(
     String method,
     String path, [
     Map<String, String>? query,
+    bool authenticated = true,
   ]) async {
     try {
       final http.Request req = http.Request(method, uri(path, query));
-      req.headers.addAll(headers);
+      req.headers.addAll(authenticated ? headers : anonymousHeaders);
       final http.StreamedResponse streamed = await _client
           .send(req)
           .timeout(kRequestTimeout);
@@ -396,7 +459,7 @@ class PlexApi {
       return res;
     } on http.ClientException catch (e) {
       // 凭据脱敏在异常构造侧（见 credential_redaction.dart 文件头）。
-      throw Exception(redactCredentialsInText(e.toString()));
+      throw PlexTransportException(redactCredentialsInText(e.toString()));
     }
   }
 
@@ -409,9 +472,16 @@ class PlexApi {
     return parseContainer(jsonDecode(utf8.decode(res.bodyBytes)));
   }
 
-  /// 服务器身份（`/identity`，需要 token 的服务器也放行）：返回 machineIdentifier。
+  /// 服务器身份（`/identity`）：返回 machineIdentifier。**不带 token**——这一步
+  /// 正是用来确认对面是哪台服务器的，确认之前不能把凭据交出去
+  /// （[verifyPlexServerIdentity]）。PMS 的 `/identity` 不要求认证：官方 API
+  /// 文档 https://developer.plex.tv/pms/ 「Get PMS identity」标 Authorizations:
+  /// None；社区 OpenAPI 规范 lukasparke/plex-api-spec 同样记为 `Auth: none`。
   Future<String> identity() async {
-    final Map<String, Object?> c = await getContainer('/identity');
+    final http.Response res = await _send('GET', '/identity', null, false);
+    final Map<String, Object?> c = parseContainer(
+      jsonDecode(utf8.decode(res.bodyBytes)),
+    );
     return _str(c['machineIdentifier']) ?? '';
   }
 
@@ -601,7 +671,7 @@ class PlexApi {
       }
       return res.bodyBytes;
     } on http.ClientException catch (e) {
-      throw Exception(redactCredentialsInText(e.toString()));
+      throw PlexTransportException(redactCredentialsInText(e.toString()));
     }
   }
 
@@ -654,7 +724,7 @@ class PlexApi {
         }
       }
     } on http.ClientException catch (e) {
-      throw Exception(redactCredentialsInText(e.toString()));
+      throw PlexTransportException(redactCredentialsInText(e.toString()));
     }
   }
 
