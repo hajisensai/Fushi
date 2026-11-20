@@ -17,6 +17,13 @@ import 'package:path/path.dart' as p;
 /// 目录活着的判据是旁边的 `<目录名>.lock` 被持有者独占锁住：锁随持有进程退出由操作
 /// 系统释放，所以「能锁上」就说明持有者已经不在了。POSIX 的文件锁按进程计，同一进程
 /// 再锁一次也会成功，因此本进程自己活着的目录另记一份名单，清扫时跳过。
+///
+/// 创建方「建锁文件」和「锁上」是两步，中间锁文件存在却没上锁。共用同一数据目录的
+/// 另一个进程这时清扫会把它判成无主并删掉；POSIX 上删除不受已打开的句柄阻拦，创建方
+/// 随后锁住的是已脱离路径的文件，建出的目录旁没有锁文件，下一次清扫就会把正在跑的
+/// JVM 的目录当孤儿删掉。所以协议是：清扫方只用只读句柄探锁（不会把已删的锁文件重新
+/// 建出来），并在**仍持有探测锁时**删锁文件；创建方阻塞等锁，拿到锁后锁文件路径还在，
+/// 就说明没有清扫方在它之前认领过这个名字，否则换一个新名字重来。
 class MihonSidecarTempDir {
   MihonSidecarTempDir._(this.directory, this._lockFile, this._lock);
 
@@ -36,11 +43,24 @@ class MihonSidecarTempDir {
   static Directory rootOf(Directory dataDirectory) =>
       Directory(p.join(dataDirectory.path, 'sidecar-tmp'));
 
+  /// 测试注入点：创建方建好锁文件、还没锁上时调用，用来模拟别的进程的清扫插进来。
+  @visibleForTesting
+  static Future<void> Function(File lockFile)? debugBeforeLock;
+
   /// 清掉持有者已不在的旧目录，再建一个新目录并锁住。
   static Future<MihonSidecarTempDir> create(Directory dataDirectory) async {
     final Directory root = rootOf(dataDirectory);
     await root.create(recursive: true);
     await sweepStale(root);
+    while (true) {
+      final MihonSidecarTempDir? created = await _tryCreate(root);
+      if (created != null) return created;
+    }
+  }
+
+  /// 用一个新名字建锁文件、锁上、再建目录。锁文件在锁上之前被别的进程的清扫认领删掉
+  /// 时返回 null，由 [create] 换名重来（见类注释）。
+  static Future<MihonSidecarTempDir?> _tryCreate(Directory root) async {
     final String name =
         '$_prefix$pid-${DateTime.now().microsecondsSinceEpoch}-'
         '${Random.secure().nextInt(1 << 32)}';
@@ -50,7 +70,16 @@ class MihonSidecarTempDir {
     final RandomAccessFile lock = await lockFile.open(mode: FileMode.write);
     _liveInThisProcess.add(name);
     try {
-      await lock.lock(FileLock.exclusive);
+      await debugBeforeLock?.call(lockFile);
+      // 阻塞等锁：清扫方的探测锁只在它处理这个名字的短时间内持有。
+      await lock.lock(FileLock.blockingExclusive);
+      // 清扫方删锁文件发生在它放开探测锁之前，所以此刻路径还在，就说明没被认领过；
+      // 名字唯一、清扫方又不会新建文件，路径上的只能是自己手上这一份。
+      if (!lockFile.existsSync()) {
+        _liveInThisProcess.remove(name);
+        await lock.close();
+        return null;
+      }
       final Directory directory = Directory(p.join(root.path, name));
       await directory.create();
       return MihonSidecarTempDir._(directory, lockFile, lock);
@@ -99,22 +128,27 @@ class MihonSidecarTempDir {
         await _deleteIfPresent(directory);
         continue;
       }
+      // 只读打开：锁文件已被别的清扫方删掉时打开失败，而不是把它重新建出来。
       final RandomAccessFile probe;
       try {
-        probe = await lockFile.open(mode: FileMode.append);
+        probe = await lockFile.open();
       } on FileSystemException {
         continue;
       }
       try {
         try {
-          await probe.lock(FileLock.exclusive);
+          // 共享锁与持有者的独占锁互斥；多个清扫方可以同时拿到，各自删的都是无主目录。
+          await probe.lock(FileLock.shared);
         } on FileSystemException {
           continue; // 持有者还活着。
         }
         await _deleteIfPresent(directory);
+        // 持锁期间删锁文件（POSIX 可以），等着锁的创建方拿到锁时就能看出名字已被认领。
+        if (!directory.existsSync()) await _deleteIfPresent(lockFile);
       } finally {
         await probe.close();
       }
+      // Windows 不能删自己还开着的文件，放锁后再删；创建方开着锁文件时这一步删不动。
       if (!directory.existsSync()) await _deleteIfPresent(lockFile);
     }
   }

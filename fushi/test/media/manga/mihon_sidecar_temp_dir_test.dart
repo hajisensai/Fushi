@@ -74,6 +74,38 @@ void main() {
     expect(second.directory.existsSync(), isTrue);
   });
 
+  test('锁文件在锁上前被别的进程的清扫删掉时换名重建，目录旁总有锁文件', () async {
+    // 模拟另一个共用数据目录的进程：在创建方「建好锁文件、还没锁上」的窗口里把锁文件
+    // 判成无主并删掉（POSIX 上删除不受打开的句柄阻拦）。修前创建方照样锁住已脱离路径
+    // 的文件，建出没有锁文件的目录，下一次清扫就把正在跑的 JVM 的目录删了。
+    final List<String> stolen = <String>[];
+    MihonSidecarTempDir.debugBeforeLock = (File lockFile) async {
+      if (stolen.isNotEmpty) return;
+      stolen.add(p.basename(lockFile.path));
+      try {
+        await lockFile.delete();
+      } on FileSystemException {
+        // Windows 上创建方开着的文件删不掉，这个窗口本来就不存在。
+      }
+    };
+    addTearDown(() => MihonSidecarTempDir.debugBeforeLock = null);
+
+    final MihonSidecarTempDir tmp = await MihonSidecarTempDir.create(data);
+    addTearDown(tmp.release);
+
+    expect(stolen, hasLength(1));
+    expect(File('${tmp.directory.path}.lock').existsSync(), isTrue);
+    await MihonSidecarTempDir.sweepStale(root());
+    expect(tmp.directory.existsSync(), isTrue);
+    final List<String> orphanDirs = root()
+        .listSync()
+        .whereType<Directory>()
+        .map((Directory d) => p.basename(d.path))
+        .where((String n) => !File(p.join(root().path, '$n.lock')).existsSync())
+        .toList();
+    expect(orphanDirs, isEmpty);
+  });
+
   test('别的进程锁着的目录不会被清扫', () async {
     final Directory live = Directory(p.join(root().path, 'jvm-7-7-7'))
       ..createSync(recursive: true);
