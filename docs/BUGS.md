@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4238 条。点号进各自文件。
+> 共 4239 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4911](bugs/BUG-4911-audiobook-import-dialog-swap-no-commit.md) | ✅ | ✅ | 应用内「附加 / 换有声书」对话框换音频不带 commit，旧音频在写库前就删了 |
 | [BUG-4910](bugs/BUG-4910-floating-lyric-gap-no-advance.md) | ✅ | ✅ | 句间静音里悬浮字幕不会提前切到下一句（BUG-509 修复不完整） |
 | [BUG-4909](bugs/BUG-4909-shelf-relocate-audio-skips-audiobooks-row.md) | ✅ | ✅ | 书架「重新定位文件」只改 srt 行，EPUB 有声书的 audiobooks 行仍是坏路径 |
 | [BUG-4908](bugs/BUG-4908-book-sync-tombstone-failure-silent.md) | ✅ | ✅ | 同步删除书时墓碑写入失败被吞且无日志 |
