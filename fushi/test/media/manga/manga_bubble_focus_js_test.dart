@@ -425,6 +425,71 @@ assert.equal(fcOn,false);
       );
     });
 
+    test('翻页被拒（书 / 章尽头）：撤销落点、留在当前气泡并回报 state；之后的热区翻页退出逐格读', () async {
+      await runJs(
+        harness('''
+var answers=[];
+_bridge=function(){ return {callHandler:function(){
+  calls.push(Array.prototype.slice.call(arguments).join(':'));
+  var p=Promise.resolve(); answers.push(p); return p;
+}}; };
+(async function(){
+  // ① Dart 答复时没有翻页（没走 _bzAfterTranslate）= 被拒。
+  _fcEnter(C);
+  calls=[];
+  _fcStep(1);
+  assert.equal(fcPendingEdge,'first');
+  await Promise.all(answers); await null;
+  assert.equal(fcOn,true);
+  assert.equal(fcKey,'0:5');
+  assert.equal(fcPendingEdge,null);
+  // state 回报不带落点：Dart 侧据此清掉 _bubbleFocusResume。
+  assert.equal(focusCalls()[focusCalls().length-1],'onMangaBubbleFocus:state:2:3:');
+  // 之后点热区往回翻：不是逐格读自己翻的页 → 退出，不再当成跨页落点。
+  _bzAfterTranslate();
+  assert.equal(fcOn,false);
+  // ② 翻成了（答复前已走 _bzAfterTranslate）：落点照常由翻页落定接手，答复不撤销。
+  var NEXT=[{key:'1:2',l:200,t:100,r:300,b:200}];
+  SEQ=[A,B,C];
+  _fcEnter(C);
+  answers=[];
+  _fcStep(1);
+  _runPageAnim(300,function(){ SEQ=NEXT; });
+  _bzAfterTranslate();
+  await Promise.all(answers); await null;
+  assert.equal(fcPendingEdge,'first');
+  advance(400);
+  assert.equal(fcKey,'1:2');
+})().catch(function(e){ console.error(e); process.exit(1); });
+'''),
+      );
+    });
+
+    test('Flutter 持焦的 Tab / Shift+Tab：只在逐格读开着且不带 Ctrl / Alt / Meta 时跳气泡', () {
+      int? step(
+        LogicalKeyboardKey key, {
+        bool active = true,
+        bool shift = false,
+        bool control = false,
+        bool alt = false,
+        bool meta = false,
+      }) => MangaFushiPage.bubbleFocusTabStep(
+        key,
+        focusActive: active,
+        shift: shift,
+        control: control,
+        alt: alt,
+        meta: meta,
+      );
+      expect(step(LogicalKeyboardKey.tab), 1);
+      expect(step(LogicalKeyboardKey.tab, shift: true), -1);
+      expect(step(LogicalKeyboardKey.tab, active: false), isNull);
+      expect(step(LogicalKeyboardKey.tab, control: true), isNull);
+      expect(step(LogicalKeyboardKey.tab, alt: true), isNull);
+      expect(step(LogicalKeyboardKey.tab, meta: true), isNull);
+      expect(step(LogicalKeyboardKey.arrowRight), isNull);
+    });
+
     test('不是逐格读自己翻的页（点热区 / 拖动）：退出逐格读、保留视图', () async {
       await runJs(
         harness('''

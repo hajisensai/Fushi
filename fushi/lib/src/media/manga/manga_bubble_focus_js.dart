@@ -58,7 +58,7 @@ String mangaBubbleFocusJs({
   var FC_LABEL = ${jsonEncode(focusLabel)};
   var FC_RESUME = '$resumeEdge';
   var fcOn = false, fcKey = null, fcLocal = null, fcDim = null, fcAnim = null;
-  var fcPendingEdge = null, fcLastTap = null, fcWheelT = 0;
+  var fcPendingEdge = null, fcLastTap = null, fcWheelT = 0, fcTurnSeq = 0;
   function _fcSequence(){
     if (!IS_WEBTOON) return _bzSequenceOnScreen();
     // 条漫放大后下一页常在视口外：整份文档里有 OCR 的页都算。
@@ -196,10 +196,25 @@ String mangaBubbleFocusJs({
     if (IS_WEBTOON) return false;
     // 跨页：交给 Dart 翻页；落定后（同窗翻页由 _bzAfterTranslate，换窗重建文档由
     // FC_RESUME）聚焦新跨页的第一个 / 最后一个气泡。
-    fcPendingEdge = dir > 0 ? 'first' : 'last';
+    var edge = dir > 0 ? 'first' : 'last';
+    fcPendingEdge = edge;
     _fcNotify('turn', seq);
     var b = _bridge();
-    if (b) b.callHandler('onMangaTurn', dir > 0 ? 'next' : 'prev');
+    if (!b) return true;
+    var turnSeq = fcTurnSeq;
+    var answer = b.callHandler('onMangaTurn', dir > 0 ? 'next' : 'prev');
+    // Dart 处理完这次翻页（含换章）才答复。答复时既没翻页（没走 _fcAfterTranslate）
+    // 也还在等这个落点 = 翻页被拒（书 / 章尽头、换章中）：撤销落点、留在当前气泡，
+    // 并回报 state 让 Dart 清掉它那份落点。换窗 / 换章重建文档时旧脚本已销毁，不会到这里。
+    if (answer && answer.then) {
+      var settle = function(){
+        if (fcOn && fcPendingEdge === edge && fcTurnSeq === turnSeq) {
+          fcPendingEdge = null;
+          _fcNotify('state', _fcSequence());
+        }
+      };
+      answer.then(settle, settle);
+    }
     return true;
   }
   function _fcFocusEdge(edge){
@@ -212,6 +227,7 @@ String mangaBubbleFocusJs({
   // 翻页后：本来就在等跨页落点就聚焦过去；不是逐格读自己翻的页（点热区 / 拖动）
   // 就退出逐格读，保留当前视图。
   function _fcAfterTranslate(){
+    fcTurnSeq++;
     if (!fcOn) return;
     if (!fcPendingEdge) { _fcExit(true); return; }
     var edge = fcPendingEdge;
@@ -291,7 +307,8 @@ String mangaBubbleFocusJs({
     fcWheelT = now;
     _fcStep(d > 0 ? 1 : -1);
   }, {passive: false, capture: true});
-  // WebView 持焦时的 Tab / Shift+Tab（Flutter 持焦那条在 Dart 的 _handleReaderKey）。
+  // WebView 持焦时的 Tab / Shift+Tab（Flutter 持焦那条在 Dart 的 _handleReaderKey，
+  // 同为固定键：逐格读开着时才拦）。
   window.addEventListener('keydown', function(e){
     if (!fcOn || e.key !== 'Tab' || e.ctrlKey || e.altKey || e.metaKey) return;
     e.preventDefault();

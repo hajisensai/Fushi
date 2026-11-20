@@ -714,6 +714,23 @@ class MangaFushiPage extends BaseSourcePage {
     return rightKey == rtl ? 'prev' : 'next';
   }
 
+  /// 逐格读里 Flutter 持焦时的 Tab / Shift+Tab：返回跳气泡的步长（+1 / -1），
+  /// 不归逐格读时返回 null（Tab 照常交给焦点遍历）。与 WebView 持焦那条
+  /// （`manga_bubble_focus_js.dart` 的 keydown 监听）同口径：固定键、只在逐格读
+  /// 开着时拦、带 Ctrl / Alt / Meta 的组合不拦。
+  static int? bubbleFocusTabStep(
+    LogicalKeyboardKey key, {
+    required bool focusActive,
+    required bool shift,
+    required bool control,
+    required bool alt,
+    required bool meta,
+  }) {
+    if (!focusActive || key != LogicalKeyboardKey.tab) return null;
+    if (control || alt || meta) return null;
+    return shift ? -1 : 1;
+  }
+
   /// 把注册表解析出的 [ShortcutAction] 落成本页的输入动作。
   ///
   /// 键位本身由 `ShortcutRegistry`（`ShortcutScope.manga`）解析，左右方向键的朝向
@@ -3467,12 +3484,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   String _buildWindowDocument(
     String inlineSelectionJs, {
     required int documentGeneration,
+    required String bubbleFocusResume,
   }) {
-    // 新文档里没有气泡放大浮层；逐格读只在「跨页尽头交给翻页」时接着聚焦。
-    _bubbleZoomOpen = false;
-    final String focusResume = _bubbleFocusResume ?? '';
-    _bubbleFocusResume = null;
-    if (focusResume.isEmpty) _bubbleFocusActive = false;
+    // 气泡浮层 / 逐格读状态不在这里改：落点由调用方传入，消费与复位只在真正
+    // 装载新文档的路径上做（[_resetBubbleStateForNewDocument]）。
     final MokuroPayload payload = _payload!;
     final bool isWebtoon = _mode.isContinuous;
 
@@ -3582,7 +3597,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       ).inMilliseconds,
       textStripLayout: _textStripLayout,
       bubbleFocusLabel: t.manga_bubble_focus_enter,
-      bubbleFocusResume: focusResume,
+      bubbleFocusResume: bubbleFocusResume,
       textStripEmptyLabel: t.manga_reader_bubble_text_strip_empty,
     );
   }
@@ -3677,10 +3692,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     );
     try {
       loadStage = 'loadData';
+      final String focusResume = _bubbleFocusResume ?? '';
       final String doc = _buildWindowDocument(
         ReaderSelectionScripts.source(),
         documentGeneration: ticket.generation,
+        bubbleFocusResume: focusResume,
       );
+      // 要换掉的旧文档里的放大浮层 / 逐格读随之作废；落点已交给新文档。
+      _resetBubbleStateForNewDocument(focusResume);
       await _controller!.loadData(
         data: doc,
         baseUrl: WebUri('https://${MangaFushiPage.kMangaHost}/'),
@@ -4290,6 +4309,21 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (event is! KeyDownEvent && !repeat) {
       return KeyEventResult.ignored;
     }
+    // 逐格读的 Tab / Shift+Tab：翻页后焦点被收回 Flutter（onMangaTurn 的 reclaim），
+    // 这里不接，Tab 会落到焦点遍历把焦点挪到顶栏按钮上。
+    final HardwareKeyboard keyboard = HardwareKeyboard.instance;
+    final int? tabStep = MangaFushiPage.bubbleFocusTabStep(
+      event.logicalKey,
+      focusActive: _bubbleFocusActive,
+      shift: keyboard.isShiftPressed,
+      control: keyboard.isControlPressed,
+      alt: keyboard.isAltPressed,
+      meta: keyboard.isMetaPressed,
+    );
+    if (tabStep != null) {
+      _stepBubbleFocusClosingDictionary(tabStep);
+      return KeyEventResult.handled;
+    }
     final MangaReaderInputAction? action = _resolveMangaKeyAction(
       event.logicalKey,
       activeModifierKeys(),
@@ -4371,6 +4405,27 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _runBubbleFocusJs(
       'window.__mangaFocusStep && window.__mangaFocusStep($step);',
     );
+  }
+
+  /// 键盘跳气泡（← → / Tab）：查词弹窗开着时先关掉，再换气泡。
+  void _stepBubbleFocusClosingDictionary(int step) {
+    if (isDictionaryShown) clearDictionaryResult();
+    _stepBubbleFocus(step);
+  }
+
+  /// 换文档时收尾气泡浮层与逐格读的 Dart 侧状态（只在真正装载新文档时调，
+  /// [_buildWindowDocument] 保持纯函数）：新文档里没有放大浮层；逐格读只在
+  /// 「跨页尽头交给翻页」留下落点 [focusResume] 时由新文档接着聚焦，否则退出。
+  void _resetBubbleStateForNewDocument(String focusResume) {
+    _bubbleZoomOpen = false;
+    _bubbleFocusResume = null;
+    if (focusResume.isEmpty && _bubbleFocusActive) {
+      if (mounted) {
+        setState(() => _bubbleFocusActive = false);
+      } else {
+        _bubbleFocusActive = false;
+      }
+    }
   }
 
   void _exitBubbleFocus() {
@@ -4548,8 +4603,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         _ => null,
       };
       if (step != null) {
-        if (isDictionaryShown) clearDictionaryResult();
-        _stepBubbleFocus(step);
+        _stepBubbleFocusClosingDictionary(step);
         return;
       }
       if (action == MangaReaderInputAction.backOrExit) {
