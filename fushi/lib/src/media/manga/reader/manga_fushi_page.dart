@@ -135,6 +135,7 @@ import 'package:fushi/src/media/manga/reader/manga_reader_page_grid.dart';
 import 'package:fushi/src/media/manga/manga_json_writeback.dart'
     show parseMangaJsonOffUi;
 import 'package:fushi/src/media/manga/reader/manga_page_fit.dart';
+import 'package:fushi/src/media/manga/reader/manga_panel_prewarm.dart';
 import 'package:fushi/src/media/manga/reader/manga_page_thumbnail_prefetcher.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_quick_settings_sheet.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_study_stats.dart';
@@ -1379,6 +1380,22 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   int _panelGeneration = 0;
   PanelDetectionStatus? _panelStatus;
 
+  /// 翻页预热分镜检测的单飞调度（manga-21）：检测器内部串行，快速翻页 / 跳页时
+  /// 只追最新的跨页，不给翻过去的页排推理，免得按键时当前页排在陈旧预热后面。
+  late final MangaPanelPrewarmer<({int generation, int spread})>
+  _panelPrewarmer = MangaPanelPrewarmer<({int generation, int spread})>(
+    target: _panelPrewarmTarget,
+    warm: (({int generation, int spread}) target) =>
+        _panelEntriesForSpread(target.spread),
+    onError: (Object error, StackTrace stack) {
+      ErrorLogService.instance.log(
+        'MangaFushiPage.prewarmPanels',
+        error,
+        stack,
+      );
+    },
+  );
+
   /// 工厂回报「模型不可用」（未下载 / 校验失败 / 未装配）时的 [mangaPanelModelRevision]。
   /// 缓存它是因为工厂每次都对 9.8 MB 模型整份算 sha256，不缓存的话每次翻页 / 每次
   /// 制卡都白算一遍；任何入口（设置页 / 制卡对话框）下载完模型都会推进修订号，
@@ -2060,6 +2077,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _pageCurl?.dispose();
     _pageCurl = null;
     _panelGeneration++;
+    _panelPrewarmer.dispose();
     _panelCursor.reset();
     _panelResults.clear();
     // ONNX session 每本书新建一份（模型 9 MB 级），不关就是每开一本书泄漏一份。
@@ -3835,22 +3853,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 才做，第一次按键要等「建检测器 + 读页 + 预处理 + 推理」整条链。只在分镜导航
   /// 开着、且不是条漫时做（与 [_tryPanelTurn] 同一判据）；结果照常经
   /// [_detectPanels] 进 `_panelResults`，换章 / 换模式推进 `_panelGeneration` 后
-  /// 迟到的结果自动作废。
-  void _prewarmPanels() {
-    if (!appModel.mangaPanelNavigation || _mode.isWebtoon) return;
-    unawaited(
-      _panelEntriesForSpread(_currentSpread).catchError((
-        Object error,
-        StackTrace stack,
-      ) {
-        ErrorLogService.instance.log(
-          'MangaFushiPage.prewarmPanels',
-          error,
-          stack,
-        );
-        return const <MangaPanelEntry>[];
-      }),
-    );
+  /// 迟到的结果自动作废。同时只有一个预热在飞，见 [MangaPanelPrewarmer]。
+  void _prewarmPanels() => _panelPrewarmer.request();
+
+  /// 预热目标：当前代际下的当前跨页；开关关着 / 条漫 / 页面已卸载时不预热。
+  ({int generation, int spread})? _panelPrewarmTarget() {
+    if (!mounted || !appModel.mangaPanelNavigation || _mode.isWebtoon) {
+      return null;
+    }
+    return (generation: _panelGeneration, spread: _currentSpread);
   }
 
   void _resetPanelNavigation() {

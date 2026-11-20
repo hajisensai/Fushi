@@ -97,19 +97,35 @@ void main() {
     // 此前检测懒到按下翻页键才做，第一次按键要等整条「建检测器 + 读页 + 推理」。
     // 预热只能挂在导航开关后面：开关关着 / 条漫里预热就是白跑 ONNX 推理。
     final String source = readerPage.readAsStringSync();
-    final int start = source.indexOf('  void _prewarmPanels() {');
+    final String flat = source.replaceAll(RegExp(r'\s+'), '');
+    expect(
+      flat,
+      contains('void_prewarmPanels()=>_panelPrewarmer.request();'),
+      reason: '预热经单飞调度器，不每翻一页都往串行检测器里丢一个',
+    );
+    final int start = source.indexOf(
+      '  ({int generation, int spread})? _panelPrewarmTarget() {',
+    );
     expect(start, isNonNegative);
     final String body = source
         .substring(start, source.indexOf('\n  }\n', start))
         .replaceAll(RegExp(r'\s+'), '');
     expect(
       body,
-      startsWith(
-        'void_prewarmPanels(){if(!appModel.mangaPanelNavigation||'
-        '_mode.isWebtoon)return;',
+      contains(
+        'if(!mounted||!appModel.mangaPanelNavigation||'
+        '_mode.isWebtoon){returnnull;}',
       ),
     );
-    expect(body, contains('_panelEntriesForSpread(_currentSpread)'));
+    expect(
+      body,
+      contains('return(generation:_panelGeneration,spread:_currentSpread);'),
+    );
+    expect(
+      flat,
+      contains('_panelEntriesForSpread(target.spread)'),
+      reason: '预热走与按键同一条检测链，结果进同一份 _panelResults',
+    );
     for (final String caller in <String>[
       'Future<void> _commitMangaSpread(int target) async {',
       'Future<void> _jumpToPage(int oneBasedPage, {double fraction = 0}) async {',
