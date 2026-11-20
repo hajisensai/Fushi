@@ -26,7 +26,6 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/kavita/kavita_api.dart';

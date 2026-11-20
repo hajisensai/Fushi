@@ -550,6 +550,17 @@ void main() {
   group('unreachable server is remembered (manga-d11)', () {
     setUp(() => ErrorLogService.instance.clear());
 
+    bool unreachable(
+      _Server server, {
+      Duration within = const Duration(seconds: 2),
+    }) => reachability.isUnreachable('srv', server.api(), within: within);
+
+    List<ErrorLogEntry> pullDiagnostics() => ErrorLogService
+        .instance
+        .diagnosticEntries
+        .where((ErrorLogEntry e) => e.source == 'KavitaMangaSync.pull')
+        .toList();
+
     // 推送失败原来在 KavitaProgressSync 里被整个吞掉，关章 close() 也不记：离线 /
     // 服务器报错时进度没推出去却无迹可查（路线图 #3722 c12 遗留）。
     test('a failed push leaves one diagnostic and marks the server', () async {
@@ -582,17 +593,6 @@ void main() {
       );
       expect(unreachable(server), isFalse);
     });
-
-    bool unreachable(
-      _Server server, {
-      Duration within = const Duration(seconds: 2),
-    }) => reachability.isUnreachable('srv', server.api(), within: within);
-
-    List<ErrorLogEntry> pullDiagnostics() => ErrorLogService
-        .instance
-        .diagnosticEntries
-        .where((ErrorLogEntry e) => e.source == 'KavitaMangaSync.pull')
-        .toList();
 
     test('second open does not wait for the pull again', () async {
       final Completer<void> hang = Completer<void>();
