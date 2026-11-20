@@ -7,6 +7,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:image/image.dart';
 import 'package:meta/meta.dart';
@@ -1174,18 +1175,25 @@ class NativePlayer extends PlatformPlayer {
       {String? format = 'image/jpeg',
       bool synchronized = true,
       bool includeLibassSubtitles = false}) async {
-    Future<Uint8List?> function() async {
-      if (![
-        'image/jpeg',
-        'image/png',
-        null,
-      ].contains(format)) {
-        throw ArgumentError.value(
-          format,
-          'format',
-          'Supported values are: image/jpeg, image/png, null',
-        );
-      }
+    if (![
+      'image/jpeg',
+      'image/png',
+      null,
+    ].contains(format)) {
+      throw ArgumentError.value(
+        format,
+        'format',
+        'Supported values are: image/jpeg, image/png, null',
+      );
+    }
+    // Fushi patch (#3722 video-4): only the raw capture (`screenshot-raw`, the
+    // part that touches the handle and decides which frame is taken) runs under
+    // [lock]. Encoding to JPEG / PNG is pure Dart, takes hundreds of ms for a
+    // 1080p frame and needs no player state, so it runs after the lock is
+    // released: a `play()` queued right behind a screenshot (mining a card,
+    // then resuming) waits for the capture only, not for the encode. The frame
+    // is still the one current when the request reached the lock.
+    Future<_RawScreenshot?> capture() async {
       if (disposed) {
         throw AssertionError('[Player] has been disposed');
       }
@@ -1198,20 +1206,17 @@ class NativePlayer extends PlatformPlayer {
       }
 
       final call = compute(
-        _screenshot,
+        _screenshotRaw,
         _ScreenshotData(
           ctx.address,
           NativeLibrary.path,
-          format,
           includeLibassSubtitles,
         ),
       );
-      // Fushi patch: the capture (screenshot-raw + pure-Dart PNG/JPEG encode,
-      // hundreds of ms for a 1080p frame) runs on a helper isolate against the
-      // raw handle, so [dispose] must wait for it before
-      // `mpv_terminate_destroy` — same contract as the hook continuations. The
-      // registered future never errors: a failed capture must not keep the
-      // handle from being destroyed.
+      // Fushi patch: the capture runs on a helper isolate against the raw
+      // handle, so [dispose] must wait for it before `mpv_terminate_destroy` —
+      // same contract as the hook continuations. The registered future never
+      // errors: a failed capture must not keep the handle from being destroyed.
       final Future<void> tracked = call.then<void>((_) {}, onError: (_) {});
       _offThreadNativeCalls.add(tracked);
       try {
@@ -1221,11 +1226,16 @@ class NativePlayer extends PlatformPlayer {
       }
     }
 
-    if (synchronized) {
-      return lock.synchronized(function);
-    } else {
-      return function();
+    final raw =
+        synchronized ? await lock.synchronized(capture) : await capture();
+    if (raw == null) {
+      return null;
     }
+    if (format == null) {
+      return raw.bytes.materialize().asUint8List();
+    }
+    // The encode never touches the handle, so [dispose] need not wait for it.
+    return compute(_encodeScreenshot, _ScreenshotEncodeData(raw, format));
   }
 
   /// Internal platform specific identifier for this [Player] instance.
@@ -1250,6 +1260,29 @@ class NativePlayer extends PlatformPlayer {
     String value, {
     bool waitForInitialization = true,
   }) async {
+    // Errors stay silent, as with upstream's synchronous call; callers that
+    // must know whether libmpv accepted the write use [setPropertyWithResult].
+    await setPropertyWithResult(
+      property,
+      value,
+      waitForInitialization: waitForInitialization,
+    );
+  }
+
+  /// Fushi patch (#3722 video-36m): [setProperty] that returns libmpv's result
+  /// code (`>= 0` accepted, negative `mpv_error` rejected: unknown property,
+  /// bad value, not settable at runtime ...). Upstream's write drops the code,
+  /// so a rejected write left no trace at all.
+  ///
+  /// Throws once disposed, like [setProperty]. If the player gets disposed
+  /// while waiting for initialization the result is `MPV_ERROR_UNINITIALIZED`;
+  /// a write still pending when [dispose] runs resolves to `0` (see
+  /// [_completePendingAsyncRequests]).
+  Future<int> setPropertyWithResult(
+    String property,
+    String value, {
+    bool waitForInitialization = true,
+  }) async {
     if (disposed) {
       throw AssertionError('[Player] has been disposed');
     }
@@ -1262,28 +1295,28 @@ class NativePlayer extends PlatformPlayer {
     // already completed every pending request; a request queued now could wait
     // forever for a reply that never reaches Dart.
     if (disposed) {
-      return;
+      return generated.mpv_error.MPV_ERROR_UNINITIALIZED;
     }
 
     final name = property.toNativeUtf8();
     final data = value.toNativeUtf8();
     if (!configuration.async) {
-      mpv.mpv_set_property_string(
+      final result = mpv.mpv_set_property_string(
         ctx,
         name.cast(),
         data.cast(),
       );
       calloc.free(name);
       calloc.free(data);
-      return;
+      return result;
     }
     // Fushi patch (BUG-3507): `mpv_set_property_string` waits for the mpv core
     // lock on the calling (UI) thread, see [getPropertyAsync]. Queue the write
     // instead. libmpv's contract does not order async calls against each other
     // (client.h: "Asynchronous calls may be reordered"), so a caller that needs
     // ordering must await this before its next request. libmpv copies
-    // the name and the value, so both are freed right away. Errors stay silent,
-    // as with the synchronous call.
+    // the name and the value, so both are freed right away. The reply's error
+    // is the result.
     final ptr = calloc<Pointer<Utf8>>(1)..value = data;
     final requestNumber = _asyncRequestNumber++;
     final completer = _setPropertyRequests[requestNumber] = Completer<int>();
@@ -1299,9 +1332,9 @@ class NativePlayer extends PlatformPlayer {
     calloc.free(data);
     if (immediate < 0) {
       _setPropertyRequests.remove(requestNumber);
-      return;
+      return immediate;
     }
-    await completer.future;
+    return completer.future;
   }
 
   /// Retrieves the value of a property from the internal libmpv instance of this [Player].
@@ -3067,23 +3100,41 @@ class NativePlayer extends PlatformPlayer {
 class _ScreenshotData {
   final int ctx;
   final String lib;
-  final String? format;
   final bool includeLibassSubtitles;
 
   const _ScreenshotData(
     this.ctx,
     this.lib,
-    this.format,
     this.includeLibassSubtitles,
   );
 }
 
-Uint8List? _screenshot(_ScreenshotData data) {
+/// Fushi patch (#3722 video-4): a captured BGRA frame. [bytes] is created on
+/// the capture isolate, so handing it to the encode isolate and materializing
+/// it there copies nothing.
+class _RawScreenshot {
+  final int w;
+  final int h;
+  final int stride;
+  final TransferableTypedData bytes;
+
+  const _RawScreenshot(this.w, this.h, this.stride, this.bytes);
+}
+
+class _ScreenshotEncodeData {
+  final _RawScreenshot raw;
+  final String format;
+
+  const _ScreenshotEncodeData(this.raw, this.format);
+}
+
+/// Takes the current frame (`screenshot-raw`) and copies it out of the mpv
+/// node. Runs on a helper isolate (the command takes the mpv core lock).
+_RawScreenshot? _screenshotRaw(_ScreenshotData data) {
   // ---------
   final mpv = generated.MPV(DynamicLibrary.open(data.lib));
   final ctx = Pointer<generated.mpv_handle>.fromAddress(data.ctx);
   // ---------
-  final format = data.format;
   final includeLibassSubtitles = data.includeLibassSubtitles;
   // ---------
 
@@ -3108,7 +3159,7 @@ Uint8List? _screenshot(_ScreenshotData data) {
     result.cast(),
   );
 
-  Uint8List? image;
+  _RawScreenshot? raw;
 
   if (result.ref.format == generated.mpv_format.MPV_FORMAT_NODE_MAP) {
     int? w, h, stride;
@@ -3144,49 +3195,13 @@ Uint8List? _screenshot(_ScreenshotData data) {
     }
 
     if (w != null && h != null && stride != null && bytes != null) {
-      switch (format) {
-        case 'image/jpeg':
-          {
-            final pixels = Image(
-              width: w,
-              height: h,
-              numChannels: 3,
-            );
-            for (final pixel in pixels) {
-              final x = pixel.x;
-              final y = pixel.y;
-              final i = (y * stride) + (x * 4);
-              pixel.b = bytes[i];
-              pixel.g = bytes[i + 1];
-              pixel.r = bytes[i + 2];
-            }
-            image = encodeJpg(pixels);
-            break;
-          }
-        case 'image/png':
-          {
-            final pixels = Image(
-              width: w,
-              height: h,
-              numChannels: 3,
-            );
-            for (final pixel in pixels) {
-              final x = pixel.x;
-              final y = pixel.y;
-              final i = (y * stride) + (x * 4);
-              pixel.b = bytes[i];
-              pixel.g = bytes[i + 1];
-              pixel.r = bytes[i + 2];
-            }
-            image = encodePng(pixels);
-            break;
-          }
-        case null:
-          {
-            image = bytes.sublist(0);
-            break;
-          }
-      }
+      // The only copy: the node is freed below.
+      raw = _RawScreenshot(
+        w,
+        h,
+        stride,
+        TransferableTypedData.fromList(<TypedData>[bytes]),
+      );
     }
   }
 
@@ -3196,7 +3211,30 @@ Uint8List? _screenshot(_ScreenshotData data) {
   calloc.free(arr);
   calloc.free(result.cast());
 
-  return image;
+  return raw;
+}
+
+/// Encodes a [_RawScreenshot] as JPEG / PNG. Pure Dart, no player state.
+Uint8List _encodeScreenshot(_ScreenshotEncodeData data) {
+  final raw = data.raw;
+  final w = raw.w;
+  final h = raw.h;
+  final stride = raw.stride;
+  final bytes = raw.bytes.materialize().asUint8List();
+  final pixels = Image(
+    width: w,
+    height: h,
+    numChannels: 3,
+  );
+  for (final pixel in pixels) {
+    final x = pixel.x;
+    final y = pixel.y;
+    final i = (y * stride) + (x * 4);
+    pixel.b = bytes[i];
+    pixel.g = bytes[i + 1];
+    pixel.r = bytes[i + 2];
+  }
+  return data.format == 'image/png' ? encodePng(pixels) : encodeJpg(pixels);
 }
 
 /// Fushi patch (BUG-3507): arguments of [_hookAddLoadUnload].

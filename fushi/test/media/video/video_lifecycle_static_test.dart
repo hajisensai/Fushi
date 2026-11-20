@@ -486,16 +486,17 @@ void main() {
         // `network-timeout` 必须在 loadfile 的第一个请求发出前生效）。这张表按
         // 源码里的真实顺序排，顺序错了 `indexOf(next, sendAt + 1)` 会返回 -1。
         'await applyNetworkCachePropertiesToPlayer(player, sourceUri);',
+        // #3722 video-19：与片源无关的 mpv 配置 / 音量 / 倍速也排在 open 之前。
+        // BUG-2691：实参包了一层 _mpvConfigForCurrentSource(...)，锚点用调用头。
+        'await applyMpvConfigToPlayer(',
+        'await player.setVolume(initialVolume);',
+        'await player.setRate(initialSpeed);',
         // BUG-528：open 现随 Media(httpHeaders:) 多行下发，锚点用唯一的 `await player.open(`。
         'await player.open(',
         'await player.setSubtitleTrack(SubtitleTrack.no());',
         // 字幕抑制（多行调用）：用其首行锚定。
         'buildSubtitleSuppressionProperties(),',
         'await applyShadersToPlayer(player, _shaderPaths);',
-        // BUG-2691：实参包了一层 _mpvConfigForCurrentSource(...)，锚点用调用头。
-        'await applyMpvConfigToPlayer(',
-        'await player.setVolume(initialVolume);',
-        'await player.setRate(initialSpeed);',
       ];
       for (int i = 0; i < sends.length; i++) {
         final int sendAt = b.indexOf(sends[i]);

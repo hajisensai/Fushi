@@ -1796,8 +1796,9 @@ class VideoPlayerController extends ChangeNotifier
         includeLibassSubtitles: true,
       );
     }
-    // 不占 Player 的串行锁（BUG-3645）：截帧 + 纯 Dart 编 PNG 要几百毫秒，持锁期间
-    // play() / pause() 都得排队——暂停 OCR 开着时按继续播放要等截帧编完才响应。
+    // 不占 Player 的串行锁（BUG-3645）：持锁期间 play() / pause() 都得排队。补丁里
+    // 持锁截帧本来也只锁取原始帧、编码在锁外（BUG-4910），这里连取帧也不排队，暂停
+    // OCR 开着时按继续播放不等它。
     // 公开的 Player.screenshot 不透传 synchronized，只能直接调 NativePlayer。截帧在
     // 辅助 isolate 上跑，句柄销毁前会等它（media_kit 补丁登记进
     // `_offThreadNativeCalls`）。
@@ -3684,8 +3685,9 @@ class VideoPlayerController extends ChangeNotifier
       // `configuration.hwdec == null` 兜底成 **`'auto'`**，并在建控制器时立刻
       // `setProperties({'vo', 'hwdec', 'vid'})` 下发到 libmpv（vendored
       // `third_party/media_kit_video/lib/src/video_controller/native_video_controller/
-      // real.dart:121,159`）。而本类下发用户策略的 [applyMpvConfigToPlayer] 排在
-      // `player.open` **之后**（见本方法末尾），于是首个文件的视频解码链是拿 `auto`
+      // real.dart:121,159`）。而本类下发用户策略的 [applyMpvConfigToPlayer] 当时排在
+      // `player.open` **之后**（#3722 video-19 起已挪到 open 之前，这里的时间窗仍由
+      // configuration 从源头消除），于是首个文件的视频解码链是拿 `auto`
       // 初始化的——`auto` 是 mpv 的**全量**硬解列表（含非 copy 的 `cuda` / `nvdec`），
       // 而 [VideoMpvConfig] 的合法值域只有 `{no, auto-safe, auto-copy}`
       // （`video_mpv_config.dart` 的 `hwdecs` 白名单），**从不允许 `auto`**。
@@ -3907,6 +3909,46 @@ class VideoPlayerController extends ChangeNotifier
     await applyNetworkCachePropertiesToPlayer(player, sourceUri);
     if (!_isCurrentLoad(player, loadToken)) return; // 网络缓存调优后换片/销毁。
 
+    // mpv 画质 / 解码配置与音量、倍速（#3722 video-19）：与片源无关，**在 open 之前**
+    // 按序下发。open 只发出 loadfile 就返回，之后的属性写要排在 mpv 加载文件、建解码链
+    // 那一轮后面逐条回包：真 libmpv 实测（1080p H.264 + AAC 本地样片、31 条配置属性）
+    // 放在 open 后时「open 返回 → 首帧推进」约 360–530 ms（复用 Player 换片约
+    // 170–210 ms），且首个文件的音频输出按默认声道开好后又因 `audio-channels` 重开一次；
+    // 放在 open 前两者都约 80–100 ms、音频输出只开一次。`volume-max` 仍先于音量。
+    // 五平台 libmpv 生效；仅非 libmpv 后端 / 不支持属性 no-op。
+    _mpvConfig = mpvConfig;
+    // 直通是否生效取决于开片倍速与可听音量（见 [resolveAudioSpdif]），这里按本次
+    // 即将下发的初值判定，下面设音量 / 速率时不必再切一次。
+    final VideoMpvConfig effectiveMpvConfig = _mpvConfigForCurrentSource(
+      _mpvConfig,
+    );
+    final double initialOutputVolume = initialVolume
+        .clamp(0.0, maxVolume)
+        .toDouble();
+    await applyMpvConfigToPlayer(
+      player,
+      effectiveMpvConfig,
+      playbackSpeed: initialSpeed,
+      outputVolume: initialOutputVolume,
+    );
+    _appliedAudioSpdif = resolveAudioSpdif(
+      passthrough: effectiveMpvConfig.audioPassthrough,
+      playbackSpeed: initialSpeed,
+      outputVolume: initialOutputVolume,
+    );
+    if (!_isCurrentLoad(player, loadToken)) return; // mpv 配置下发后换片/销毁。
+
+    _setDiscLoadStage('playback-properties');
+    initialVolume = initialVolume.clamp(0.0, maxVolume).toDouble();
+    _lastVolume = initialVolume;
+    if (initialVolume > 0) _muted = false;
+    await player.setVolume(initialVolume);
+    if (!_isCurrentLoad(player, loadToken)) return; // 设音量后换片/销毁。
+
+    _lastSpeed = initialSpeed;
+    await player.setRate(initialSpeed);
+    if (!_isCurrentLoad(player, loadToken)) return; // 设速率后换片/销毁。
+
     _setDiscLoadStage('open');
     await player.open(
       Media(
@@ -4039,39 +4081,6 @@ class VideoPlayerController extends ChangeNotifier
     await applyShadersToPlayer(player, _shaderPaths);
     if (!_isCurrentLoad(player, loadToken)) return; // 着色器下发后换片/销毁。
 
-    // 应用 mpv 画质/解码配置（五平台 libmpv 生效；仅非 libmpv 后端 / 不支持属性 no-op）。
-    _mpvConfig = mpvConfig;
-    // 直通是否生效取决于开片倍速与可听音量（见 [resolveAudioSpdif]），这里按本次
-    // 即将下发的初值判定，下面设音量 / 速率时不必再切一次。
-    final VideoMpvConfig effectiveMpvConfig = _mpvConfigForCurrentSource(
-      _mpvConfig,
-    );
-    final double initialOutputVolume = initialVolume
-        .clamp(0.0, maxVolume)
-        .toDouble();
-    await applyMpvConfigToPlayer(
-      player,
-      effectiveMpvConfig,
-      playbackSpeed: initialSpeed,
-      outputVolume: initialOutputVolume,
-    );
-    _appliedAudioSpdif = resolveAudioSpdif(
-      passthrough: effectiveMpvConfig.audioPassthrough,
-      playbackSpeed: initialSpeed,
-      outputVolume: initialOutputVolume,
-    );
-    if (!_isCurrentLoad(player, loadToken)) return; // mpv 配置下发后换片/销毁。
-
-    _setDiscLoadStage('playback-properties');
-    initialVolume = initialVolume.clamp(0.0, maxVolume).toDouble();
-    _lastVolume = initialVolume;
-    if (initialVolume > 0) _muted = false;
-    await player.setVolume(initialVolume);
-    if (!_isCurrentLoad(player, loadToken)) return; // 设音量后换片/销毁。
-
-    _lastSpeed = initialSpeed;
-    await player.setRate(initialSpeed);
-    if (!_isCurrentLoad(player, loadToken)) return; // 设速率后换片/销毁。
     // 恢复上次位置。主路径已由上面的 `start` 加载参数（[applyMpvStartPosition]）完成
     // ——mpv 在 loadfile 时就定位到断点，不存在「加载完再 seek」的竞态。这里只做两件
     // 收尾：① 用真实 duration 复核 near-end（open 前不可知），命中则把 mpv 拉回 0；
@@ -6000,17 +6009,11 @@ class VideoPlayerController extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 按 map **顺序**逐条下发 mpv 属性；单条失败跳过（与 [applyMpvConfigToPlayer] 同范式）。
+  /// 按 map **顺序**逐条下发 mpv 属性（[setMpvPropertiesInOrder]，被拒留痕后跳过）。
   Future<void> _setMpvProperties(Map<String, String> props) async {
-    final dynamic native = _player?.platform;
-    if (native == null) return;
-    for (final MapEntry<String, String> e in props.entries) {
-      try {
-        await native.setProperty(e.key, e.value);
-      } catch (_) {
-        // 非 libmpv / 属性不接受：跳过这条，继续下一条。
-      }
-    }
+    final Player? player = _player;
+    if (player == null) return;
+    await setMpvPropertiesInOrder(player, props);
   }
 
   /// 读一条 libmpv 字符串属性（[property]），best-effort：非 libmpv 后端（无

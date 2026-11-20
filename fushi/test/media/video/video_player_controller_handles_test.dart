@@ -28,6 +28,12 @@ class _FakeMpv extends PlatformPlayer {
     props[property] = value;
   }
 
+  /// 批量下发（`setMpvPropertiesInOrder`）走的带结果码写法；0 = 接受。
+  Future<int> setPropertyWithResult(String property, String value) async {
+    props[property] = value;
+    return 0;
+  }
+
   Future<String> getPropertyAsync(
     String property, {
     bool waitForInitialization = true,
