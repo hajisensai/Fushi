@@ -94,7 +94,7 @@ void main() {
           ),
         ]),
       );
-      final Set<String> stagingBefore = _mangaStagingDirs();
+      final Set<String> stagingBefore = _mangaStagingDirs(app);
       final int rssBefore = ProcessInfo.currentRss;
       final int peakBefore = ProcessInfo.maxRss;
 
@@ -117,7 +117,7 @@ void main() {
             '$peakBefore) while rejecting the bomb',
       );
       expect(
-        _mangaStagingDirs().difference(stagingBefore),
+        _mangaStagingDirs(app).difference(stagingBefore),
         isEmpty,
         reason: '中止后 staging（含写了一半的页）必须删掉',
       );
@@ -205,7 +205,7 @@ void main() {
           ),
         ]),
       );
-      final Set<String> stagingBefore = _mangaStagingDirs();
+      final Set<String> stagingBefore = _mangaStagingDirs(app);
 
       await expectLater(
         MangaArchiveImporter.importArchive(
@@ -223,7 +223,7 @@ void main() {
           ),
         ),
       );
-      expect(_mangaStagingDirs().difference(stagingBefore), isEmpty);
+      expect(_mangaStagingDirs(app).difference(stagingBefore), isEmpty);
       expect(await db.getAllEpubBooks(), isEmpty);
     });
 
@@ -367,6 +367,97 @@ void main() {
     });
 
     test(
+      'names without the UTF-8 flag are decoded with their real legacy '
+      'encoding (0x5C / 0x7C trail bytes stay inside the character)',
+      () async {
+        // design-zip-cp932-names：逐字节名里「表」「ソ」的尾字节 0x5C 被当成 `\` 多切一级目录，
+        // 「ポ」的尾字节 0x7C 变成 Windows 不许出现在文件名里的 `|`（整本写盘失败）。
+        // 「第1話/」= 91 E6 31 98 62 2F；「ポ」= 83 7C；「表紙/」= 95 5C 8E 86 2F；「ソ」= 83 5C。
+        const List<int> episode = <int>[0x91, 0xE6, 0x31, 0x98, 0x62, 0x2F];
+        const List<int> po = <int>[0x83, 0x7C];
+        const List<int> cover = <int>[0x95, 0x5C, 0x8E, 0x86, 0x2F];
+        const List<int> so = <int>[0x83, 0x5C];
+        Uint8List page(int width) => Uint8List.fromList(
+          img.encodePng(img.Image(width: width, height: 60)),
+        );
+        final String path = p.join(root.path, 'sjis_trail_bytes.zip');
+        File(path).writeAsBytesSync(
+          _buildZip(<_ZipSpec>[
+            _ZipSpec(<int>[
+              ...cover,
+              ...so,
+              ...ascii.encode('1.png'),
+            ], page(10)),
+            _ZipSpec(<int>[
+              ...episode,
+              ...po,
+              ...ascii.encode('10.png'),
+            ], page(30)),
+            _ZipSpec(<int>[
+              ...episode,
+              ...po,
+              ...ascii.encode('2.png'),
+            ], page(20)),
+          ]),
+        );
+
+        final String key = await MangaArchiveImporter.importArchive(
+          db: db,
+          archivePath: path,
+        );
+        final MokuroPayload payload = await _readImportedPayload(db, key);
+        // 页图拷进书目录的 `images/` 下，保留包内子目录结构。
+        expect(payload.images.map((MokuroImage i) => i.url).toList(), <String>[
+          'images/第1話/ポ2.png',
+          'images/第1話/ポ10.png',
+          'images/表紙/ソ1.png',
+        ]);
+        expect(
+          payload.images.map((MokuroImage i) => i.size.width).toList(),
+          <double>[20, 30, 10],
+        );
+      },
+    );
+
+    test(
+      'UTF-8 names without the UTF-8 flag (macOS Archive Utility) keep their '
+      'names and Mokuro OCR',
+      () async {
+        // macOS「压缩」按 UTF-8 写名字、却不置通用位 11。archive 本来就按 UTF-8 解对了；
+        // 本地编码判据没有排除 UTF-8 的维度，这些名字若送去重解会被判成 Shift_JIS
+        // 解成「隨ｬ1蟾ｻ/001.png」这类乱码，清单 img_path 对不上，整本导入失败。
+        Uint8List page(int width) => Uint8List.fromList(
+          img.encodePng(img.Image(width: width, height: 80)),
+        );
+        final String path = p.join(root.path, 'mac.cbz');
+        File(path).writeAsBytesSync(
+          _buildZip(<_ZipSpec>[
+            _ZipSpec(
+              utf8.encode('ポスター.mokuro'),
+              Uint8List.fromList(
+                utf8.encode(_mokuroJson('第1巻/001.png', 'マック', width: 40)),
+              ),
+              utf8Flag: false,
+            ),
+            _ZipSpec(utf8.encode('第1巻/001.png'), page(40), utf8Flag: false),
+          ]),
+        );
+
+        expect(MangaArchiveImporter.looksLikeImageArchive(path), isTrue);
+        final String key = await MangaArchiveImporter.importArchive(
+          db: db,
+          archivePath: path,
+        );
+        final MokuroPayload payload = await _readImportedPayload(db, key);
+        expect(payload.images, hasLength(1));
+        // 页图拷进书目录的 `images/` 下，保留包内子目录结构。
+        expect(payload.images.single.url, 'images/第1巻/001.png');
+        expect(payload.images.single.size.width, 40);
+        expect(payload.images.single.blocks.single.lines, <String>['マック']);
+      },
+    );
+
+    test(
       'ZIP64 records with 8-byte data descriptors import byte-for-byte',
       () async {
         // 超过 4 GiB 的包（或流式写出的包）用 ZIP64：中央目录大小 / 偏移是 0xFFFFFFFF，
@@ -473,7 +564,7 @@ void main() {
       ];
       final String path = p.join(root.path, 'declared_bomb.cbz');
       File(path).writeAsBytesSync(_buildRawZip(entries));
-      final Set<String> stagingBefore = _mangaStagingDirs();
+      final Set<String> stagingBefore = _mangaStagingDirs(app);
 
       await expectLater(
         MangaArchiveImporter.importArchive(db: db, archivePath: path),
@@ -485,7 +576,7 @@ void main() {
           ),
         ),
       );
-      expect(_mangaStagingDirs().difference(stagingBefore), isEmpty);
+      expect(_mangaStagingDirs(app).difference(stagingBefore), isEmpty);
       expect(await db.getAllEpubBooks(), isEmpty);
     });
   });
@@ -918,13 +1009,24 @@ String _writeArchive(
   return path;
 }
 
-/// 系统临时目录里导入器的 staging 目录名（`fushi_manga_archive_*`）。
-Set<String> _mangaStagingDirs() => Directory.systemTemp
-    .listSync(followLinks: false)
-    .whereType<Directory>()
-    .map((Directory dir) => p.basename(dir.path))
-    .where((String name) => name.startsWith('fushi_manga_archive_'))
-    .toSet();
+/// 导入器留下的 staging 目录名。BUG-4840 起 staging 是书库根（[app] 下的
+/// `fushi_books`）里的 `.tmp-*`；系统临时目录里的旧名 `fushi_manga_archive_*` 一并
+/// 盯着——哪天有人把 staging 挪回去，残留也照样被抓到。
+Set<String> _mangaStagingDirs(Directory app) {
+  final Directory booksRoot = Directory(p.join(app.path, 'fushi_books'));
+  return <String>{
+    if (booksRoot.existsSync())
+      for (final Directory dir
+          in booksRoot.listSync(followLinks: false).whereType<Directory>())
+        if (p.basename(dir.path).startsWith(EpubStorage.kStagingDirPrefix))
+          dir.path,
+    for (final Directory dir
+        in Directory.systemTemp
+            .listSync(followLinks: false)
+            .whereType<Directory>())
+      if (p.basename(dir.path).startsWith('fushi_manga_archive_')) dir.path,
+  };
+}
 
 /// raw deflate（zip method 8 的数据格式）。
 Uint8List _deflate(List<int> bytes) =>
@@ -1130,13 +1232,15 @@ String _writeImageEpub(
 }
 
 /// [_buildZip] 的一个条目：[name] 是**原始字节**（可以不是 UTF-8，此时不置通用位
-/// 11），[data] 是解压后的内容。
+/// 11），[data] 是解压后的内容。[utf8Flag] 给了就按它置 / 不置通用位 11（macOS「压缩」
+/// 写 UTF-8 名字却不置标志），否则名字是合法 UTF-8 才置。
 class _ZipSpec {
-  _ZipSpec(this.name, this.data, {this.deflate = false});
+  _ZipSpec(this.name, this.data, {this.deflate = false, this.utf8Flag});
 
   final List<int> name;
   final Uint8List data;
   final bool deflate;
+  final bool? utf8Flag;
 }
 
 /// 按真实压缩工具的记录形状拼 zip。
@@ -1167,7 +1271,9 @@ Uint8List _buildZip(List<_ZipSpec> entries, {bool zip64 = false}) {
   for (final _ZipSpec entry in entries) {
     final Uint8List stored = entry.deflate ? _deflate(entry.data) : entry.data;
     final int crc = getCrc32(entry.data);
-    final int flags = (isUtf8(entry.name) ? 0x0800 : 0) | (zip64 ? 0x08 : 0);
+    final int flags =
+        ((entry.utf8Flag ?? isUtf8(entry.name)) ? 0x0800 : 0) |
+        (zip64 ? 0x08 : 0);
     written.add((offset: out.length, crc: crc, flags: flags, stored: stored));
     out
       ..add(u32(0x04034b50))

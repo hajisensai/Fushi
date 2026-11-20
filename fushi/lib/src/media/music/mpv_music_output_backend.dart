@@ -59,6 +59,8 @@ import 'package:fushi/src/media/music/music_remote_media.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi/src/media/music/server/youtube_music_gate.dart';
+import 'package:fushi/src/media/video/video_mpv_config.dart'
+    show setMpvPropertiesInOrder;
 
 /// 纯函数：整轨文件里的一段 → mpv EDL URI。路径按 UTF-8 字节数加 `%len%` 前缀，
 /// 路径里的逗号 / 等号不会被当成 EDL 分隔符。[endMs] 为 null = 播到文件尾。
@@ -448,9 +450,8 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     _initialised = true;
     final NativePlayer? native = _native;
     if (native == null) return;
-    for (final MapEntry<String, String> e in _initialProperties.entries) {
-      await native.setProperty(e.key, e.value);
-    }
+    // 全仓 mpv 属性批量下发的唯一实现：逐条保序，被拒的单条留痕后跳过（BUG-4911）。
+    await setMpvPropertiesInOrder(_player, _initialProperties);
     native.onLoadHooks.add(_onLoadHook);
     native.onUnloadHooks.add(_onUnloadHook);
     await native.observePropertyChanges('audio-pts', _onAudioPts);

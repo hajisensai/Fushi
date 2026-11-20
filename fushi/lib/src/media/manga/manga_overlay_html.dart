@@ -8,7 +8,11 @@ import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_text_join.dart';
 import 'package:fushi/src/media/manga/reader/manga_page_fit.dart'
-    show kMangaFitQueryParam;
+    show
+        MangaFitQuality,
+        kMangaEnhancedFitStep,
+        kMangaFitEnhancedQueryParam,
+        kMangaFitQueryParam;
 import 'package:fushi/src/ocr/ocr_text_regions.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
@@ -64,6 +68,7 @@ String mangaOcrBoxesHtml(MokuroImage page) {
     buffer.write(
       '<p class="ocr-box" '
       'data-ocr-orientation="$orientation" '
+      'data-manga-block="$blockIndex" '
       'data-manga-sentence="'
       '${_escapeAttr(sentenceAssignments[blockIndex].sentence)}" '
       'data-manga-sentence-group="'
@@ -1102,7 +1107,7 @@ const int kMangaActivityReportIntervalMs = 5000;
 /// 节流 → `onMangaScroll`。viewport resize → `_reanchor` 把语义位置重投影成新视口
 /// 的 px（BUG-1758）。`dragstart` 全程 preventDefault + CSS user-select/user-drag
 /// 禁用，消除桌面拖动时的原生图片/选区残影（「秃瓢」）。手势阈值镜像 reader
-/// （absDx>absDy 判 swipe，小位移判 tap）。spread translateX 在 [_mangaApplyTranslate]
+/// （absDx>absDy 判 swipe，小位移判 tap）。spread translateX 在 `__mangaApplyTranslate`
 /// 按 data-spread 测量。
 /// 翻页动画统一缓动（CSS 过渡与 JS 逐帧滚动动画同一条曲线）。
 const String kMangaPageTurnEasing = 'cubic-bezier(.2,.7,.2,1)';
@@ -1254,7 +1259,10 @@ String _mangaGestureJs({
   // 缩放档只给屏上那一页（跨页模式的当前跨页 / 条漫里与视口相交的页），1 / 2 / 4 / 8：
   // 放大看细节时换更高的档，清晰度不降；屏外的页恒取 1 档，预热的邻页不跟着放大。
   var FIT_IMAGES = $fitImagesToDisplay;
-  var FIT_STEP = 128;
+  // 画质缩放：取整档收细，并在 URL 上带画质档（`fq=1` / `fq=g`）——响应由 URL 完全决定，切开关后
+  // WebView 的 max-age 缓存不会把另一种缩放的图端回来。
+  var FIT_STEP = ${preferences.enhancedScaling ? kMangaEnhancedFitStep : 128};
+  var FIT_HQ = '${_fitQualityQuery(preferences)}';
   function _zoomTier(){
     if (!(ZOOM > 1.01)) return 1;
     return Math.min(8, Math.pow(2, Math.ceil(Math.log(ZOOM) / Math.LN2 - 1e-6)));
@@ -1282,7 +1290,7 @@ String _mangaGestureJs({
     if (!base) return;
     var width = _fitWidthFor(page);
     var next = width > 0
-        ? base + (base.indexOf('?') < 0 ? '?' : '&') + '$kMangaFitQueryParam=' + width
+        ? base + (base.indexOf('?') < 0 ? '?' : '&') + '$kMangaFitQueryParam=' + width + FIT_HQ
         : base;
     if (img.getAttribute('src') !== next) img.setAttribute('src', next);
   }
@@ -1296,6 +1304,13 @@ String _mangaGestureJs({
     }, 200);
   }
   function _layoutSource(page){
+    _layoutSourceBox(page);
+    _refitPage(page);
+  }
+  // 只排版、不换图（manga-22）：拖窗口边框时 resize 一秒几十次，逐次换 `fit=` 档会
+  // 让已加载的页每跨过一个 128 px 档就排一次整张转码，旧档请求也不会被丢弃。
+  // resize 路径只重排盒子，换图交给 200 ms 合并的 _scheduleRefit，停手后只取最终档。
+  function _layoutSourceBox(page){
     var pw = Number(page.dataset.pw), ph = Number(page.dataset.ph);
     var crop = page.__crop || {x:0,y:0,width:pw,height:ph};
     var rotated = ROTATE_WIDE && crop.width > crop.height * 1.15;
@@ -1340,7 +1355,6 @@ String _mangaGestureJs({
     page.style.width = (vw * scaleX) + 'px';
     page.style.height = (vh * scaleY) + 'px';
     page.__fitScale = Math.max(scaleX, scaleY);
-    _refitPage(page);
     // A short vertical page keeps its true hit-test frame. Empty space between
     // pages supplies the viewport-sized paging step without stretching OCR.
     if($isVerticalPaged) page.style.marginBottom=Math.max(${preferences.showPageGaps ? 12 : 0},maxH-vh*scaleY)+'px';
@@ -1413,8 +1427,9 @@ String _mangaGestureJs({
     _layoutSource(page);
   });
   window.addEventListener('resize',function(){
-    document.querySelectorAll('.manga-page').forEach(_layoutSource);
+    document.querySelectorAll('.manga-page').forEach(_layoutSourceBox);
     _applyWidePolicy();
+    _scheduleRefit();
   });
   function _recenterPan(){
     PAN_X = window.innerWidth * (1 - ZOOM) / 2;
@@ -2201,8 +2216,10 @@ String _mangaGestureJs({
     // 换掉的文字层里可能正好有朗读中的那句：按记下的状态重新挂高亮。
     window.__mangaApplySpeaking(false);
   };
-  // 漫画朗读高亮：{page, group} 记在 window.__mangaSpeaking，文字层被替换 / 懒挂
-  // 之后由 __mangaApplySpeaking 重新应用（组号与 data-manga-sentence-group 同源）。
+  // 漫画朗读高亮：{page, blocks} 记在 window.__mangaSpeaking，文字层被替换 / 懒挂
+  // 之后由 __mangaApplySpeaking 重新应用。一句可以跨几个块（一个气泡被 OCR 切成
+  // 两块、同一句分在相邻字幕栏），按块下标（data-manga-block，与 page.blocks 同下标）
+  // 全部框住——现场朗读给的是句子分组里的块，成品音频给的是演出稿的块列表。
   window.__mangaSpeaking = window.__mangaSpeaking || null;
   window.__mangaApplySpeaking = function(scroll){
     var lit = document.querySelectorAll('.ocr-box.manga-speaking');
@@ -2211,17 +2228,22 @@ String _mangaGestureJs({
     if (!s) return;
     var page = document.querySelector('.manga-page[data-page="'+s.page+'"]');
     if (!page) return;
-    var boxes = page.querySelectorAll(
-        '.ocr-box[data-manga-sentence-group="'+s.group+'"]');
+    var boxes = [];
+    for (var b = 0; b < s.blocks.length; b++) {
+      var box = page.querySelector(
+          '.ocr-box[data-manga-block="'+s.blocks[b]+'"]');
+      if (box) boxes.push(box);
+    }
     for (var j = 0; j < boxes.length; j++) boxes[j].classList.add('manga-speaking');
     // 条漫是一整条长图：读到的句子不在视口里就滚到刚好露出它。
     if (scroll && IS_WEBTOON && boxes.length && boxes[0].scrollIntoView) {
       boxes[0].scrollIntoView({block: 'nearest'});
     }
   };
-  // group < 0 = 清除高亮。
-  window.__mangaSetSpeaking = function(page, group){
-    window.__mangaSpeaking = group < 0 ? null : {page: page, group: group};
+  // blocks 为空 / 非数组 = 清除高亮。
+  window.__mangaSetSpeaking = function(page, blocks){
+    window.__mangaSpeaking = (Array.isArray(blocks) && blocks.length)
+        ? {page: page, blocks: blocks} : null;
     window.__mangaApplySpeaking(true);
   };
   document.addEventListener('pointermove', function(e){
@@ -3577,4 +3599,13 @@ String _escapeHtml(String input) {
 
 String _escapeAttr(String input) {
   return _escapeHtml(input).replaceAll('"', '&quot;');
+}
+
+/// 页图 URL 上的画质档后缀（`&fq=…`；标准档为空串）。
+String _fitQualityQuery(MangaReaderPreferences preferences) {
+  final String? value = MangaFitQuality.fromPreferences(
+    enhanced: preferences.enhancedScaling,
+    gammaCorrect: preferences.gammaCorrectScaling,
+  ).urlValue;
+  return value == null ? '' : '&$kMangaFitEnhancedQueryParam=$value';
 }

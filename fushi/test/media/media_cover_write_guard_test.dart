@@ -118,7 +118,13 @@ const Map<String, Set<String>> kNonCoverRawWriters = <String, Set<String>>{
   // 起多了一处裸写：启动期把旧版落在平台 Documents 根的诊断文件（error_log.txt、
   // 崩溃面包屑、activity_*.breadcrumb，按确切文件名白名单筛）rename / copy 进
   // 诊断目录——搬的是日志，不是封面；封面目录在本文件仍只派生不落盘。
-  'lib/src/storage/app_paths.dart': <String>{'migrateLegacyDiagnostics'},
+  // iOS「文件」App 收件箱起又多一处：vacateLegacyIosDocuments 把旧版放在 Documents 里的
+  // 整个书库（nested 的 `<容器>/data` 或 flat 白名单顶层项）整体 rename / 合并搬出
+  // Documents——与数据根迁移同性质的整库搬家，不写任何封面字节、不改封面文件名。
+  'lib/src/storage/app_paths.dart': <String>{
+    'migrateLegacyDiagnostics',
+    'vacateLegacyIosDocuments',
+  },
 };
 
 /// **封面目的地派生点的完整注册表**（TODO-2715 ③）。
@@ -219,13 +225,14 @@ kCoverPathDerivers = <String, (CoverDeriverRole, String)>{
   'lib/src/storage/app_paths.dart': (
     CoverDeriverRole.rawWritesNonCoverAssets,
     '目录派生的定义处，封面目录只派生不落盘。文件里唯一的裸写是 '
-        'migrateLegacyDiagnostics 把旧版诊断文件搬进诊断目录（4w_veZGiQ7），'
-        '与封面无关（逐函数名单见 kNonCoverRawWriters）。',
+        'migrateLegacyDiagnostics 把旧版诊断文件搬进诊断目录（4w_veZGiQ7）、'
+        'vacateLegacyIosDocuments 把旧版 iOS Documents 里的书库整库搬出，'
+        '都与封面无关（逐函数名单见 kNonCoverRawWriters）。',
   ),
-  'lib/main.dart': (
+  'lib/src/media/video/external_video_ingest.dart': (
     CoverDeriverRole.derivesPathOnly,
-    '「用 Fushi 打开」外部视频建行时派生 coversDir 交给 CoverMetaStore 做来源准入，'
-        '抽帧仍由 extractVideoCover 落盘；main 自己一个字节都不写。',
+    '外部打开视频 / 音乐本地 MV 建行时派生 coversDir 给 CoverMetaStore 做准入，'
+        '由 extractVideoCover 落盘；本文件自己一个字节都不写。',
   ),
   // BUG-2569 起 `source_library_scanner.dart` **不再**在此列：扫描入库不碰封面了
   // （不派生 coversDir、不抽帧），封面统一由书架的补齐产线负责。它此前每个文件最坏

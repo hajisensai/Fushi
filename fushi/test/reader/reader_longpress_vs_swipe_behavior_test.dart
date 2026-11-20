@@ -1,9 +1,10 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
+
+import '../helpers/node_runtime.dart';
 
 /// BUG-2919：长按拖选与滑动翻页是并行识别器，长按计时器先 fire 就会让翻页让路，
 /// 用户「翻个页有时都会选中」。这里用 Node 真执行生成的长按 IIFE（伪 DOM + 虚拟
@@ -19,7 +20,7 @@ void main() {
   test(
     'long-press drag-select never steals a page-turn swipe (BUG-2919)',
     () async {
-      final String? nodeExe = _resolveNode();
+      final String? nodeExe = resolveNodeExecutable();
       if (nodeExe == null) {
         markTestSkipped(
           'node not found on PATH; skipping JS behavior execution',
@@ -75,42 +76,17 @@ Future<Map<String, dynamic>> _runHarness(
   String script,
   int swipeDist,
 ) async {
-  final Directory tmp = await Directory.systemTemp.createTemp('bug2919_');
-  try {
-    final File scriptFile = File('${tmp.path}/longpress.js');
-    await scriptFile.writeAsString(script);
-    final ProcessResult result = await Process.run(nodeExe, <String>[
-      'test/reader/reader_longpress_vs_swipe_behavior_test.js',
-      scriptFile.path,
-      '$swipeDist',
-    ], workingDirectory: Directory.current.path);
-    expect(
-      result.exitCode,
-      0,
-      reason:
-          'harness failed.\nstdout:\n${result.stdout}\n'
-          'stderr:\n${result.stderr}',
-    );
-    return jsonDecode(result.stdout.toString().trim()) as Map<String, dynamic>;
-  } finally {
-    await tmp.delete(recursive: true);
-  }
-}
-
-/// Resolve a usable `node` executable, returning null when none is on PATH.
-String? _resolveNode() {
-  final List<String> candidates = Platform.isWindows
-      ? <String>['node.exe', 'node']
-      : <String>['node'];
-  for (final String name in candidates) {
-    try {
-      final ProcessResult probe = Process.runSync(name, <String>['--version']);
-      if (probe.exitCode == 0) {
-        return name;
-      }
-    } on ProcessException {
-      // Not found; try next candidate.
-    }
-  }
-  return null;
+  final NodeHarnessResult result = await runNodeHarness(
+    nodeExe,
+    'test/reader/reader_longpress_vs_swipe_behavior_test.js',
+    <String, Object>{'script': script, 'swipeDist': swipeDist},
+  );
+  expect(
+    result.exitCode,
+    0,
+    reason:
+        'harness failed.\nstdout:\n${result.stdout}\n'
+        'stderr:\n${result.stderr}',
+  );
+  return jsonDecode(result.stdout.trim()) as Map<String, dynamic>;
 }

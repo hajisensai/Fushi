@@ -9,7 +9,9 @@
 //     离开当前栏的卡淡出，焦点自动移到下一条；底部提示可撤销（恢复为上一个决定）；
 //   - 同步：页面可见时每 20 秒、切回页面时立即，带签名请求 /dev/decisions.json，有变化才换卡；
 //     正在写的留言草稿与焦点在换卡后原样恢复；
-//   - 键盘：J/K 移动，1…6 做 / 方案，X 不做，L 以后，N 永远不做，E 没看懂，Y 你定，C 写留言，U 撤销，
+//   - 附件：把文件拖到卡片上、在留言框里粘贴截图、或点「上传附件」选文件，逐个 POST /dev/d/:id/files（multipart），
+//     传完换卡；
+//   - 键盘：J/K 移动，1…6 做 / 方案，X 不做，L 以后，N 永远不做，E 没看懂，D 要设计图，Y 你定，C 写留言，U 撤销，
 //     Ctrl+Enter 只发留言，Esc 离开输入框。
 
 export const DECISIONS_CLIENT_JS = String.raw`(function () {
@@ -35,8 +37,16 @@ export const DECISIONS_CLIENT_JS = String.raw`(function () {
     bad_verdict: '决定不合法',
     not_found: '这条已不存在',
     rate_limited: '操作太频繁，稍等再试',
-    body_too_large: '留言太长了'
+    body_too_large: '留言太长了',
+    no_file: '没有可上传的文件',
+    too_many_files: '每条最多 10 个附件',
+    bad_file_type: '只收 html / md / txt / 图片',
+    bad_file_name: '文件名太长',
+    file_too_large: '单个文件不能超过 10 MB',
+    bad_upload: '上传格式不对'
   };
+  var UPLOAD_EXT = /\.(html?|md|markdown|txt|png|jpe?g|webp|gif|svg)$/i;
+  var UPLOAD_MAX = 10 * 1024 * 1024;
 
   function cards() { return Array.prototype.slice.call(list.querySelectorAll('article.dcard')); }
   function visibleCards() { return cards().filter(function (c) { return !c.hidden; }); }
@@ -267,6 +277,104 @@ export const DECISIONS_CLIENT_JS = String.raw`(function () {
     send(form.closest('article.dcard'), v, text);
   });
 
+  // ---- 附件上传（拖放 / 粘贴 / 选文件） ----
+  function upload(card, files) {
+    if (!card || !card.querySelector('form.dupload')) { toast('这条已结单，不能再传附件', { error: true }); return; }
+    if (card.classList.contains('busy')) return;
+    var id = card.getAttribute('data-id');
+    var action = card.querySelector('form.dupload').action;
+    var ok = [];
+    for (var i = 0; i < files.length; i++) {
+      var f = files[i];
+      if (!UPLOAD_EXT.test(f.name)) { toast(f.name + '：' + ERRORS.bad_file_type, { error: true }); continue; }
+      if (f.size > UPLOAD_MAX) { toast(f.name + '：' + ERRORS.file_too_large, { error: true }); continue; }
+      ok.push(f);
+    }
+    if (!ok.length) return;
+    card.classList.add('busy');
+    toast('正在上传 ' + ok.length + ' 个文件…');
+    var last = null;
+    var chain = Promise.resolve();
+    ok.forEach(function (f) {
+      chain = chain.then(function () {
+        var fd = new FormData();
+        fd.append('file', f, f.name);
+        fd.append('back', stage);
+        return fetch(action, {
+          method: 'POST',
+          body: fd,
+          credentials: 'same-origin',
+          headers: { Accept: 'application/json' }
+        }).then(function (res) {
+          return res.json().catch(function () { return {}; }).then(function (data) {
+            if (!res.ok) throw new Error(f.name + '：' + (ERRORS[data.error] || ('上传失败（' + (data.error || res.status) + '）')));
+            last = data;
+          });
+        });
+      });
+    });
+    chain.then(function () {
+      toast('已上传 ' + ok.length + ' 个文件');
+    }).catch(function (err) {
+      toast(err.message || '网络错误，上传没有完成', { error: true, ms: 8000 });
+    }).then(function () {
+      var now = document.getElementById('d-' + id) || card;
+      now.classList.remove('busy');
+      if (last && last.item) {
+        var el = swap(now, last.item);
+        if (last.sig) { sig = last.sig; list.setAttribute('data-sig', sig); }
+        applyFilter();
+        setCurrent(el, false);
+      }
+    });
+  }
+
+  list.addEventListener('change', function (e) {
+    var t = e.target;
+    if (t.tagName !== 'INPUT' || t.type !== 'file' || !t.files || !t.files.length) return;
+    var files = Array.prototype.slice.call(t.files);
+    t.value = '';
+    upload(t.closest('article.dcard'), files);
+  });
+
+  function hasFiles(e) {
+    var types = e.dataTransfer && e.dataTransfer.types;
+    return !!types && Array.prototype.indexOf.call(types, 'Files') >= 0;
+  }
+  var dragCard = null;
+  function setDrag(c) {
+    if (dragCard === c) return;
+    if (dragCard) dragCard.classList.remove('dragover');
+    dragCard = c;
+    if (c) c.classList.add('dragover');
+  }
+  document.addEventListener('dragover', function (e) {
+    if (!hasFiles(e)) return;
+    // 整页都接住拖放，免得没落在卡片上时浏览器直接打开文件。
+    e.preventDefault();
+    var c = e.target.closest && e.target.closest('article.dcard');
+    var can = c && c.querySelector('form.dupload');
+    e.dataTransfer.dropEffect = can ? 'copy' : 'none';
+    setDrag(can ? c : null);
+  });
+  document.addEventListener('dragleave', function (e) {
+    if (!e.relatedTarget || e.relatedTarget === document.documentElement) setDrag(null);
+  });
+  document.addEventListener('drop', function (e) {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    var c = e.target.closest && e.target.closest('article.dcard');
+    setDrag(null);
+    if (!c) { toast('把文件拖到某一条卡片上'); return; }
+    upload(c, Array.prototype.slice.call(e.dataTransfer.files));
+  });
+  list.addEventListener('paste', function (e) {
+    var files = e.clipboardData && e.clipboardData.files;
+    if (!files || !files.length) return;
+    e.preventDefault();
+    upload(e.target.closest('article.dcard'), Array.prototype.slice.call(files));
+  });
+
   list.addEventListener('input', function (e) {
     if (e.target.tagName === 'TEXTAREA') autoGrow(e.target);
   });
@@ -293,7 +401,7 @@ export const DECISIONS_CLIENT_JS = String.raw`(function () {
     if (k === 'j') { e.preventDefault(); move(1); return; }
     if (k === 'k') { e.preventDefault(); move(-1); return; }
     if (!current || current.hidden) {
-      if ('123456xlneycu'.indexOf(k) >= 0) { move(0); }
+      if ('123456xlnedycu'.indexOf(k) >= 0) { move(0); }
       return;
     }
     if (k === 'c') {

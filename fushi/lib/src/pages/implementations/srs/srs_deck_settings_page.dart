@@ -9,6 +9,7 @@ library;
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -40,10 +41,13 @@ import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 /// 步长输入（「1 10」/「1, 10」，单位分钟）→ 列表；有解析不了的项返回 null。
 List<double>? parseSrsSteps(String text) {
@@ -140,46 +144,151 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   String? _learnError;
   String? _relearnError;
 
+  /// 库里的值填进表单时的样子（进页面、优化 / 恢复参数 / 子牌组继承后重读都会更新）；当前
+  /// [_formSnapshot] 与它不同 = 有没保存的改动，按返回时拦下来问（[_onPopBlocked]）。
+  List<Object?> _baseline = const <Object?>[];
+
+  /// 表单里所有会被保存的项，顺序即 [_formSnapshot] 的顺序。重读（[_load]）时按项比对：与上次基准相同的项
+  /// 换成库里的新值，用户改过的项原样放回。
+  late final List<_FormField> _fields = <_FormField>[
+    _textField(_name),
+    _textField(_newPerDay),
+    _textField(_reviewsPerDay),
+    _valueField<SrsLimitUnit>(
+      () => _limitUnit,
+      (SrsLimitUnit v) => _limitUnit = v,
+    ),
+    _textField(_learnSteps, steps: true),
+    _textField(_relearnSteps, steps: true),
+    _textField(_maxInterval),
+    _valueField<double>(() => _retention, (double v) => _retention = v),
+    _valueField<SrsAlgorithm>(
+      () => _algorithm,
+      (SrsAlgorithm v) => _algorithm = v,
+    ),
+    _valueField<bool>(() => _autoOptimize, (bool v) => _autoOptimize = v),
+    _valueField<bool>(() => _ownParams, (bool v) => _ownParams = v),
+    _valueField<bool>(() => _autoplayAudio, (bool v) => _autoplayAudio = v),
+    _valueField<bool>(
+      () => _replayQuestionAudio,
+      (bool v) => _replayQuestionAudio = v,
+    ),
+    _valueField<SrsNewCardOrder>(
+      () => _newCardOrder,
+      (SrsNewCardOrder v) => _newCardOrder = v,
+    ),
+    _valueField<SrsNewCardMix>(
+      () => _newCardMix,
+      (SrsNewCardMix v) => _newCardMix = v,
+    ),
+    _valueField<SrsReviewCardOrder>(
+      () => _reviewCardOrder,
+      (SrsReviewCardOrder v) => _reviewCardOrder = v,
+    ),
+    _textField(_rwkvMinReviews),
+    _textField(_rwkvRepeatReviews),
+    _textField(_rwkvRepeatSeconds),
+    _textField(_rwkvRefreshEvery),
+    _valueField<bool>(() => _rwkvIgnoreLimit, (bool v) => _rwkvIgnoreLimit = v),
+    _valueField<bool>(() => _newLoadAuto, (bool v) => _newLoadAuto = v),
+    _textField(_newLoadBudget),
+    _textField(_newLoadBoost),
+  ];
+
+  /// 输入框一项：数字框比较时去掉首尾空白；步长按解析后的规范写法比（「1,10」与「1 10」算同一个）。
+  static _FormField _textField(TextEditingController c, {bool steps = false}) {
+    Object? key() {
+      if (!steps) return c.text.trim();
+      final List<double>? parsed = parseSrsSteps(c.text);
+      return parsed == null ? c.text.trim() : _formatSteps(parsed);
+    }
+
+    return (
+      key: key,
+      raw: () => c.text,
+      restore: (Object? v) => c.text = v! as String,
+    );
+  }
+
+  /// 开关 / 选项 / 滑杆一项：值本身就是比较键。
+  static _FormField _valueField<T>(T Function() read, void Function(T) write) =>
+      (key: read, raw: read, restore: (Object? v) => write(v as T));
+
+  List<TextEditingController> get _controllers => <TextEditingController>[
+    _name,
+    _newPerDay,
+    _reviewsPerDay,
+    _learnSteps,
+    _relearnSteps,
+    _maxInterval,
+    _rwkvMinReviews,
+    _rwkvRepeatReviews,
+    _rwkvRepeatSeconds,
+    _rwkvRefreshEvery,
+    _newLoadBudget,
+    _newLoadBoost,
+  ];
+
   @override
   void initState() {
     super.initState();
-    // 每日上限卡片里的联动提示（复习上限 < 10× 新卡、最少复习数超过上限）随输入实时刷新。
-    // RWKV 牌组「还带着步长」的提示随步长输入实时出现 / 消失。
-    for (final TextEditingController c in <TextEditingController>[
-      _newPerDay,
-      _reviewsPerDay,
-      _rwkvMinReviews,
-      _learnSteps,
-      _relearnSteps,
-    ]) {
-      c.addListener(_onLimitsEdited);
+    // 每个输入框一改就重建：每日上限卡片里的联动提示（复习上限 < 10× 新卡、最少复习数超过上限）、
+    // RWKV 牌组「还带着步长」的提示随输入实时刷新；返回拦截（PopScope.canPop）也要跟着
+    // 「有没有没保存的改动」走，漏掉哪个框，改了它再按返回就会不问直接丢。
+    for (final TextEditingController c in _controllers) {
+      c.addListener(_onFormEdited);
     }
     unawaited(_load());
   }
 
-  void _onLimitsEdited() {
+  void _onFormEdited() {
     if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
-    for (final TextEditingController c in <TextEditingController>[
-      _name,
-      _newPerDay,
-      _reviewsPerDay,
-      _learnSteps,
-      _relearnSteps,
-      _maxInterval,
-      _rwkvMinReviews,
-      _rwkvRepeatReviews,
-      _rwkvRepeatSeconds,
-      _rwkvRefreshEvery,
-      _newLoadBudget,
-      _newLoadBoost,
-    ]) {
+    for (final TextEditingController c in _controllers) {
       c.dispose();
     }
     super.dispose();
+  }
+
+  /// 表单里所有会被保存的值（逐项的比较键，见 [_fields]）。
+  List<Object?> _formSnapshot() => <Object?>[
+    for (final _FormField f in _fields) f.key(),
+  ];
+
+  /// 有没保存的改动（载入中 / 载入失败时没有表单，不算）。
+  bool get _dirty =>
+      !_loading && _deck != null && !listEquals(_formSnapshot(), _baseline);
+
+  /// 有改动时按返回（系统返回键、手势、顶栏返回、Esc）：问「保存 / 放弃 / 取消」。保存走
+  /// [_save]（成功后它自己退出，步长不合法或写库失败就留在页面）；放弃直接 [NavigatorState.pop]
+  /// （不经 PopScope）；取消、点遮罩什么都不做。
+  Future<void> _onPopBlocked() async {
+    final NavigatorState navigator = Navigator.of(context);
+    // 直接 pop 不经 PopScope；页面是导航栈里唯一一页（没处可退）时不 pop，与 canPop 为 true 时
+    // maybePop 把返回交给上层的行为一致。
+    void leave() {
+      if (navigator.canPop()) navigator.pop();
+    }
+
+    // 刚保存完的那次 maybePop：此时 canPop 还是上一帧的 false，但已经没有改动了。
+    if (!_dirty) {
+      leave();
+      return;
+    }
+    final _UnsavedChoice? choice = await _showUnsavedDialog(context);
+    if (!mounted) return;
+    switch (choice) {
+      case _UnsavedChoice.save:
+        await _save();
+      case _UnsavedChoice.discard:
+        leave();
+      case _UnsavedChoice.cancel:
+      case null:
+        break;
+    }
   }
 
   void _retryLoad() {
@@ -206,6 +315,17 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       };
       if (!mounted) return;
       setState(() {
+        // 重读（优化 / 恢复参数 / 子牌组继承之后）时表单可能已有没保存的改动：先记下哪些项改过、改成了什么，
+        // 填完库里的新值后放回去——这几个动作不改这些项，重读只是为了刷新参数组 / 归属 / 子树 / 冲突键，
+        // 不能把用户的编辑静默盖掉、再把基准一并重置（那样按返回也不再拦）。
+        final List<Object?> before = _baseline;
+        final bool keepEdits = _deck != null && before.length == _fields.length;
+        final List<Object?> edited = keepEdits
+            ? _formSnapshot()
+            : const <Object?>[];
+        final List<Object?> raws = keepEdits
+            ? <Object?>[for (final _FormField f in _fields) f.raw()]
+            : const <Object?>[];
         _store = store;
         _deck = deck;
         _owner = tree.paramsOwner(deck.id);
@@ -246,6 +366,12 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         _learnSteps.text = _formatSteps(_baselineLearn);
         _relearnSteps.text = _formatSteps(_baselineRelearn);
         _loading = false;
+        _baseline = _formSnapshot();
+        if (keepEdits) {
+          for (int i = 0; i < _fields.length; i++) {
+            if (edited[i] != before[i]) _fields[i].restore(raws[i]);
+          }
+        }
       });
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsDeckSettingsPage.load', e, stack);
@@ -450,6 +576,8 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         await store.editFields(SrsEntityKind.deck, widget.deckId, changes);
       }
       if (!mounted) return;
+      // 已落库：表单此刻的样子就是新的基准，下面的 maybePop 不再被当成「有改动」拦下。
+      _baseline = _formSnapshot();
       bumpSrsRevision(ref);
       FushiToast.show(
         msg: t.srs_settings_saved,
@@ -458,7 +586,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       await Navigator.of(context).maybePop();
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsDeckSettingsPage.save', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -544,7 +675,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       await _load();
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsDeckSettingsPage.optimize', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     } finally {
       if (mounted) setState(() => _optimizing = false);
     }
@@ -584,7 +718,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       await _load();
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsDeckSettingsPage.resetParams', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     }
   }
 
@@ -659,6 +796,22 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     final bool masthead = shellRedesignActive(context);
     final String title = t.srs_deck_settings;
     final String? deckName = _deck?.name;
+    return PopScope<Object?>(
+      canPop: !_dirty,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (!didPop) unawaited(_onPopBlocked());
+      },
+      child: _buildScaffold(context, apple, masthead, title, deckName),
+    );
+  }
+
+  Widget _buildScaffold(
+    BuildContext context,
+    bool apple,
+    bool masthead,
+    String title,
+    String? deckName,
+  ) {
     return FushiPageScaffold(
       title: title,
       subtitle: deckName,
@@ -1452,3 +1605,50 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     return out;
   }
 }
+
+/// 表单里的一项（见 [_SrsDeckSettingsPageState._fields]）：[key] 是比较「改没改」用的值，[raw] / [restore]
+/// 原样取出 / 放回用户的输入。
+typedef _FormField = ({
+  Object? Function() key,
+  Object? Function() raw,
+  void Function(Object? value) restore,
+});
+
+/// 有改动时按返回的三个选择。
+enum _UnsavedChoice { save, discard, cancel }
+
+/// 「设置未保存」对话框：保存（主按钮、默认焦点，Enter 即保存）/ 放弃更改 / 取消。点遮罩、Esc、
+/// 手柄 B 返回 null（= 取消，留在页面）。
+Future<_UnsavedChoice?> _showUnsavedDialog(BuildContext context) =>
+    showAppDialog<_UnsavedChoice>(
+      context: context,
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
+        key: const ValueKey<String>('srs-settings-unsaved-dialog'),
+        icon: const FushiDialogHeroIcon(icon: FushiIcons.warning),
+        title: Text(t.srs_deck_settings_unsaved_title),
+        content: Text(t.srs_deck_settings_unsaved_body),
+        actions: <Widget>[
+          FushiDialogAction(
+            key: const ValueKey<String>('srs-settings-unsaved-cancel'),
+            label: t.cancel,
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(_UnsavedChoice.cancel),
+          ),
+          FushiDialogAction(
+            key: const ValueKey<String>('srs-settings-unsaved-discard'),
+            label: t.srs_deck_settings_unsaved_discard,
+            kind: FushiDialogActionKind.destructive,
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(_UnsavedChoice.discard),
+          ),
+          FushiDialogAction(
+            key: const ValueKey<String>('srs-settings-unsaved-save'),
+            label: t.srs_settings_save,
+            kind: FushiDialogActionKind.primary,
+            autofocus: true,
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(_UnsavedChoice.save),
+          ),
+        ],
+      ),
+    );

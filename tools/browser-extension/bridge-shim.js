@@ -156,14 +156,21 @@ window.flutter_inappwebview = {
               });
             return;
           }
-          var res = (typeof window.fushiEnqueue === 'function')
+          // fushiEnqueue 只在队列真的落盘后才兑现 ok（反馈 heMh1hn8n4：此前同步报成功、写盘
+          // fire-and-forget，写不进去也弹「已加入 N」）。这里必须等它的结果再弹提示。
+          var pending = (typeof window.fushiEnqueue === 'function')
             ? window.fushiEnqueue(args[0], sentence) : { ok: false, reason: 'no-queue' };
-          if (res && res.ok && res.duplicate) toast('✓ ' + fushiShimT('mine_already_queued_n', { n: res.count }));
-          else if (res && res.ok) toast('✓ ' + fushiShimT('mine_queued_n', { n: res.count }) + '\n' + fushiShimT('mine_queued_generate_later'));
-          else if (res && res.reason === 'no-cue') toast('✗ ' + fushiShimT('mine_no_cue'));
-          else toast('✗ ' + fushiShimT('mine_enqueue_failed'));
-          // Queue membership is not an Anki note: preserve that distinction for the button.
-          resolve({ queued: !!(res && res.ok), ankiConnect: false });
+          Promise.resolve(pending).catch(function () {
+            return { ok: false, reason: 'persist-failed' };
+          }).then(function (res) {
+            if (res && res.ok && res.duplicate) toast('✓ ' + fushiShimT('mine_already_queued_n', { n: res.count }));
+            else if (res && res.ok) toast('✓ ' + fushiShimT('mine_queued_n', { n: res.count }) + '\n' + fushiShimT('mine_queued_generate_later'));
+            else if (res && res.reason === 'no-cue') toast('✗ ' + fushiShimT('mine_no_cue'));
+            else if (res && res.reason === 'context-invalidated') toast('✗ ' + fushiShimT('mine_enqueue_context_invalidated'));
+            else toast('✗ ' + fushiShimT('mine_enqueue_failed'));
+            // Queue membership is not an Anki note: preserve that distinction for the button.
+            resolve({ queued: !!(res && res.ok), ankiConnect: false });
+          });
         });
       case 'duplicateCheck':
         // TODO-1176：真查重（+→✓，与 app 内一致）。经 background.js 转发到 server

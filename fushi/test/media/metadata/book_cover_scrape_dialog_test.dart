@@ -227,4 +227,78 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('MangaBaka 源：署名可见；「使用」进卷封面网格，本地卷号那一卷排最前', (
+    WidgetTester tester,
+  ) async {
+    final BookMetadataScraper scraper = BookMetadataScraper(
+      client: MockClient((http.Request req) async {
+        final String body;
+        if (req.url.host == 'api.mangabaka.org' &&
+            req.url.path == '/v1/series/search') {
+          body =
+              '{"data":[{"id":100,"state":"active","title":"Test Manga",'
+              '"native_title":"テスト漫画","authors":["Taro"],"type":"manga",'
+              '"content_rating":"safe","cover":{"raw":{"url":'
+              '"https://images.mangabaka.dev/c","width":1200,"height":1800}}}],'
+              '"pagination":{"next":null}}';
+        } else if (req.url.path == '/v1/series/100/images') {
+          String image(String index) =>
+              '{"id":$index,"index":"$index","index_numeric":$index,'
+              '"type":"volume","language":"ja","note":null,'
+              '"content_rating":"safe","image":{"raw":{"url":'
+              '"https://images.mangabaka.dev/v$index","width":1200,'
+              '"height":1800}}}';
+          body =
+              '{"data":[${image('1')},${image('2')}],'
+              '"pagination":{"next":null}}';
+        } else {
+          body = '{"data":[]}';
+        }
+        return http.Response.bytes(
+          utf8.encode(body),
+          200,
+          headers: const <String, String>{'content-type': 'application/json'},
+        );
+      }),
+    );
+    await tester.pumpWidget(
+      wrap(
+        BookCoverScrapeDialog(
+          initialQuery: 'テスト漫画',
+          volume: 2,
+          scraperOverride: scraper,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final Finder attribution = find.byKey(
+      const ValueKey<String>('book_scrape_mangabaka_attribution'),
+    );
+    expect(attribution, findsNothing);
+
+    // 源是下拉（七个源分段放不下）：先展开，再点 MangaBaka 那一项。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('book_scrape_source_picker')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('MangaBaka').last);
+    await tester.pumpAndSettle();
+    expect(find.text('テスト漫画'), findsWidgets);
+    expect(attribution, findsOneWidget);
+
+    await tester.tap(find.text(t.book_scrape_use));
+    await tester.pumpAndSettle();
+    final Finder v1 = find.byKey(
+      const ValueKey<String>('book_scrape_volume_1'),
+    );
+    final Finder v2 = find.byKey(
+      const ValueKey<String>('book_scrape_volume_2'),
+    );
+    expect(v1, findsOneWidget);
+    expect(v2, findsOneWidget);
+    // 预选的第 2 卷排在第 1 卷前面。
+    expect(tester.getTopLeft(v2).dx, lessThan(tester.getTopLeft(v1).dx));
+    expect(attribution, findsOneWidget);
+  });
 }

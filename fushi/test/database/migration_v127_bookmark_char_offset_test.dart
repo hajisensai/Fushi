@@ -46,7 +46,7 @@ void main() {
         path,
         isMainProcess: false,
       );
-      expect(migrated.schemaVersion, 155);
+      expect(migrated.schemaVersion, 164);
       final List<Bookmark> legacy = await BookmarkRepository(
         migrated,
       ).getBookmarks('book_1');
@@ -61,7 +61,7 @@ void main() {
       await migrated.close();
 
       final sqlite.Database probe = sqlite.sqlite3.open(path);
-      expect(probe.select('PRAGMA user_version').first.values.first, 155);
+      expect(probe.select('PRAGMA user_version').first.values.first, 164);
       expect(columnsOf(probe, 'bookmarks'), contains('char_offset'));
       expect(columnsOf(probe, 'bookmarks'), contains('chapter_key'));
       // 重跑 v127 步：列已在，不得报错、不得清数据。

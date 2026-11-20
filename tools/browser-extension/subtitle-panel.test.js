@@ -107,6 +107,20 @@ function loadController(options = {}) {
     return response;
   }
 
+  // 异步应答的消息（listener return true、稍后才 sendResponse，如面板制卡入队要等落盘）。
+  // 兑现为 { value: 应答 }——装箱防 Promise 吸收：真 chrome 会把同步回的 Promise 序列化成 {}，
+  // 不会等它兑现，替身也不能替它等。
+  function messageAsync(payload) {
+    return new Promise((resolve) => {
+      for (const listener of runtimeListeners) {
+        let answered = false;
+        const keepOpen = listener(payload, {}, (value) => { answered = true; resolve({ value }); });
+        if (answered || keepOpen === true) return;
+      }
+      resolve({ value: undefined });
+    });
+  }
+
   function fire(type, event) {
     for (const listener of docListeners[type] || []) listener(event);
     return event;
@@ -117,7 +131,7 @@ function loadController(options = {}) {
     for (const listener of storageListeners) listener(changes, 'local');
   }
 
-  return { body, video, windowObject, sent, posted, message, fire, storageChange };
+  return { body, video, windowObject, sent, posted, message, messageAsync, fire, storageChange };
 }
 
 const TRACKS = {
@@ -169,7 +183,7 @@ test('generic seek changes video time while Netflix seek keeps the DRM bridge', 
   assert.strictEqual(netflix.posted[0].ms, 1000);
 });
 
-test('track selection, offset and side-panel cue actions are routed through the content controller', () => {
+test('track selection, offset and side-panel cue actions are routed through the content controller', async () => {
   const harness = loadController({
     hostname: 'www.netflix.com', pathname: '/watch/81001', store: TRACKS,
   });
@@ -183,11 +197,33 @@ test('track selection, offset and side-panel cue actions are routed through the 
   });
   assert.strictEqual(response.ok, true);
   assert.ok(harness.sent.some((entry) => entry.prepareLookup === state.cues[0]));
-  response = harness.message({
+  response = (await harness.messageAsync({
     type: 'fushiSubtitleSidePanelMine', fields: { expression: '今日' }, cue: state.cues[0],
-  });
+  })).value;
   assert.strictEqual(response.ok, true);
   assert.ok(harness.sent.some((entry) => entry.mine && entry.mine.expression === '今日'));
+});
+
+// 反馈 heMh1hn8n4：入队只在真落盘后才 ok（异步）。面板制卡必须等那个结果再回侧栏，
+// 写盘失败要如实回 ok:false，而不是同步回一个还没兑现的 Promise / 冒充成功。
+test('side-panel mine waits for the queue write and passes a persist failure through', async () => {
+  const harness = loadController({
+    hostname: 'www.netflix.com', pathname: '/watch/81001', store: TRACKS,
+  });
+  let release;
+  harness.windowObject.fushiMineFromSidePanel = () =>
+    new Promise((resolve) => { release = resolve; });
+  const pending = harness.messageAsync({
+    type: 'fushiSubtitleSidePanelMine', fields: { expression: '今日' }, cue: null,
+  });
+  let settled = false;
+  pending.then(() => { settled = true; });
+  await new Promise((r) => setImmediate(r));
+  assert.strictEqual(settled, false, '落盘之前不得先回应答');
+  release({ ok: false, reason: 'persist-failed' });
+  const response = (await pending).value;
+  assert.strictEqual(response.ok, false);
+  assert.strictEqual(response.reason, 'persist-failed');
 });
 
 

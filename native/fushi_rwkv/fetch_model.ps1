@@ -6,7 +6,7 @@
 #   其余三个文件只在上游提交里。
 # 都不入库。
 #
-# 用法: powershell -ExecutionPolicy Bypass -File native/fushi_rwkv/fetch_model.ps1 [-DestDir <目录>] [-Proxy http://127.0.0.1:34151]
+# 用法: powershell -ExecutionPolicy Bypass -File native/fushi_rwkv/fetch_model.ps1 [-DestDir <目录>] [-Proxy <代理 URL>]
 param(
     [string]$DestDir = (Join-Path $PSScriptRoot 'model'),
     [string]$Proxy = $env:HTTPS_PROXY

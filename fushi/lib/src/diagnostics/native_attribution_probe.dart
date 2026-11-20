@@ -6,6 +6,7 @@
 //
 // - `cpu=[…]`：每个窗口里各线程（按线程名归组，数字折成 #）吃了多少 CPU 秒。在涨内存的那条线程
 //   必然在跑：rayon / fushi-rwkv-# = RWKV，DartWorker = 后台 isolate 里的 FFI，1.raster = 渲染……
+//   `cpuSum=[…]`：进程自启动以来的累计 CPU 与最吃 CPU 的线程组（追熄屏耗电杀进程，反馈 Z9FwhY9377）。
 // - `vm=[…]`：`/proc/self/maps` 里匿名映射按名字（`[anon:scudo:secondary]`、`dart-*`……）归组的
 //   虚拟大小 / 映射数；`sec=[…]`：Scudo secondary（大块分配，各自一段 mmap）的块大小分布——看得出是
 //   一堆同样大小的块在涨（某个循环每轮分配一块没放）还是少数巨块。
@@ -113,6 +114,49 @@ String? describeThreadCpuDelta(
   Map<int, ProcThreadStat> current, {
   int top = kNativeAttributionTop,
 }) {
+  final (int total, String body)? g = _threadGroupDelta(previous, current, top);
+  if (g == null) return null;
+  return 'cpu=${_ticksToSec(g.$1)}s[${g.$2}]';
+}
+
+/// 累计 CPU：`cpuSum=<进程自启动以来>s[<最吃 CPU 的线程组累计> …]`。
+///
+/// 每 30 s 的 `cpu=` 只覆盖最近几个窗口；被厂商熄屏耗电检查杀掉时（MIUI
+/// `ScreenOffCPUCheckKill over +25m used +45m`，反馈 Z9FwhY9377）要回答的是「这半小时里
+/// 谁吃了 45 分钟 CPU」，最后几个窗口里进程又可能已经闲下来。进程总数取 `/proc/self/stat`
+/// （含已退出线程），分组取仍活着的线程的累计——两者差额就是已退出线程吃掉的。
+/// [processTicks] 读不到时总数退回活线程累计之和——不含已退出线程，只是下限，写成
+/// `cpuSum≥…s[…]`，别和真进程总数混读；分组也没有时返回 null。
+@visibleForTesting
+String? describeCumulativeCpu(
+  int? processTicks,
+  Map<int, ProcThreadStat> threads, {
+  int top = kCumulativeCpuTop,
+}) {
+  final (int total, String body)? g = _threadGroupDelta(
+    const <int, ProcThreadStat>{},
+    threads,
+    top,
+  );
+  if (g == null && processTicks == null) return null;
+  final String groups = g == null ? '' : '[${g.$2}]';
+  if (processTicks == null) return 'cpuSum≥${_ticksToSec(g!.$1)}s$groups';
+  return 'cpuSum=${_ticksToSec(processTicks)}s$groups';
+}
+
+/// `cpuSum=` 里列几个线程组。
+const int kCumulativeCpuTop = 3;
+
+String _ticksToSec(int ticks) =>
+    (ticks / kProcClockTicksPerSecond).toStringAsFixed(1);
+
+/// 各线程组在 [previous] → [current] 之间的 CPU 增量：（总节拍，按增量排序的前 [top] 组）。
+/// 没有任何线程吃过 CPU 时返回 null。
+(int, String)? _threadGroupDelta(
+  Map<int, ProcThreadStat> previous,
+  Map<int, ProcThreadStat> current,
+  int top,
+) {
   final Map<String, (int ticks, int threads, int running)> groups =
       <String, (int, int, int)>{};
   int total = 0;
@@ -136,28 +180,40 @@ String? describeThreadCpuDelta(
       groups.entries.where((e) => e.value.$1 > 0).toList()
         ..sort((a, b) => b.value.$1.compareTo(a.value.$1));
   if (busy.isEmpty) return null;
-  String sec(int ticks) =>
-      (ticks / kProcClockTicksPerSecond).toStringAsFixed(1);
   final String body = busy
       .take(top)
       .map((MapEntry<String, (int, int, int)> e) {
         final (int ticks, int threads, int running) = e.value;
-        return '${e.key}${threads > 1 ? '×$threads' : ''} ${sec(ticks)}s'
+        return '${e.key}${threads > 1 ? '×$threads' : ''} ${_ticksToSec(ticks)}s'
             '${running > 0 ? ' R$running' : ''}';
       })
       .join('; ');
-  return 'cpu=${sec(total)}s[$body${busy.length > top ? '; +${busy.length - top}' : ''}]';
+  return (total, '$body${busy.length > top ? '; +${busy.length - top}' : ''}');
+}
+
+/// 本进程自启动以来的 CPU 节拍（`/proc/self/stat` 的 utime+stime，含已退出线程）。
+int? _readProcessTicks() {
+  try {
+    return parseProcThreadStat(
+      File('/proc/self/stat').readAsStringSync(),
+    )?.ticks;
+  } on FileSystemException {
+    return null;
+  }
 }
 
 Map<int, ProcThreadStat> _lastThreads = <int, ProcThreadStat>{};
 
-/// `cpu=…s[组 秒 …]`：上次采样以来各线程组吃的 CPU。
+/// `cpu=…s[组 秒 …] cpuSum=…s[组 秒 …]`：上次采样以来各线程组吃的 CPU，连同进程
+/// 自启动以来的累计（[describeCumulativeCpu]）。
 String? threadCpuProbe() {
   if (!_hasProc) return null;
   final Map<int, ProcThreadStat> now = readProcThreads();
-  final String? out = describeThreadCpuDelta(_lastThreads, now);
+  final String? delta = describeThreadCpuDelta(_lastThreads, now);
   _lastThreads = now;
-  return out;
+  final String? sum = describeCumulativeCpu(_readProcessTicks(), now);
+  final String out = <String?>[delta, sum].whereType<String>().join(' ');
+  return out.isEmpty ? null : out;
 }
 
 /// 一段映射的归组名：`[anon:scudo:secondary]` → `scudo:secondary`，无名匿名 → `anon`，

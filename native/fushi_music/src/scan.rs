@@ -137,7 +137,7 @@ impl Scanner {
         let dirs = if root.is_dir() {
             vec![root]
         } else if root.is_file() {
-            if tags::is_audio_extension(&ext_lower(&root)) {
+            if tags::is_track_extension(&ext_lower(&root)) {
                 let siblings: Vec<PathBuf> = root
                     .parent()
                     .and_then(|d| fs::read_dir(d).ok())
@@ -286,7 +286,7 @@ impl Scanner {
                 items.push(Item::Playlist { path: f.clone() });
                 continue;
             }
-            if covered.contains(f) || !tags::is_audio_extension(&ext_lower(f)) {
+            if covered.contains(f) || !tags::is_track_extension(&ext_lower(f)) {
                 continue;
             }
             items.push(Item::Audio {

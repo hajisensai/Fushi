@@ -9,15 +9,19 @@
 // - 句首逐字配对 ruby（七つの魔剣が支配するII 的原样标记）的基字与注音 → 第一句；
 // - 第二屏（换屏后克隆重建）上的字 → 那一屏的句子。
 // 点空白处与分页模式同样经 getCaretRange 的最近字符兜底（BUG-765），这里不另设判据。
-import fs from 'node:fs';
+//
+// BUG-4839：合成书（SRT / VTT / LRC）的句子不进 sentenceAudioCues，身份在 [data-cue-id]
+// 上。BUG-3738 只补了 frag 这一半，合成书在 VN 下中键与「从此句播放」仍恒拿到 null。
+// 第二个页面不下发任何 cue，只在正文里带 [data-cue-id]，断言两个入口都回 `{type:'sid'}`。
 import assert from 'node:assert/strict';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
+import { readPayload } from './reader_harness_support.js';
 
+const scripts = readPayload();
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
-const scripts = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const W = 1200;
 const H = 800;
 const body = '<p>　<ruby>赤<rt>しやく</rt>銅<rt>どう</rt></ruby>色の髪をした彼の従兄が、大きな弦楽器を抱えて' +
@@ -41,14 +45,19 @@ const config = {
   blurImages: false,
   revealedKeys: [],
 };
-const page = '<!doctype html><html><head><meta charset="utf-8">' +
+const pageFor = (bodyHtml) => '<!doctype html><html><head><meta charset="utf-8">' +
   '<style>' + scripts.css + '</style>' +
   '<script>window.__fushiShells={};' +
   'window.flutter_inappwebview={callHandler:function(){return Promise.resolve(null);}};' +
   scripts.units + '</script>' + scripts.shell +
   '<script>' + scripts.selection +
   ';window.__fushiShells.vn(' + JSON.stringify(config) + ');</script>' +
-  '</head><body>' + body + '</body></html>';
+  '</head><body>' + bodyHtml + '</body></html>';
+const page = pageFor(body);
+// 合成书：句子是带 data-cue-id 的 span（id = sentenceIndex），段首有一截不属于任何句子的字。
+const syntheticBody = '<p>序<span data-cue-id="0">一句目の文章です。</span>' +
+  '<span data-cue-id="1">二句目の<ruby>漢字<rt>かんじ</rt></ruby>です。</span></p>' +
+  '<p><span data-cue-id="2">三句目だけの段落。</span></p>';
 
 const driver = await launchChromeDriver();
 try {
@@ -119,6 +128,70 @@ try {
   assert.equal(r.afterWrapFirst, frag('first'), 'after follow wrapping, first ' + JSON.stringify(r));
   assert.equal(r.afterWrapSecond, frag('second'), 'after follow wrapping, second ' + JSON.stringify(r));
   assert.equal(r.nextScreen, frag('third'), 'a re-cloned screen resolves its own sentence ' + JSON.stringify(r));
+
+  const s = await driver.evalOnPage(pageFor(syntheticBody), `(async () => {
+    for (let i = 0; i < 100 && !(window.fushiReader && window.fushiReader.contentStream); i++) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const reader = window.fushiReader;
+    const find = (ch, inRt) => {
+      const walker = document.createTreeWalker(reader.screen, NodeFilter.SHOW_TEXT);
+      let n;
+      while ((n = walker.nextNode())) {
+        if (!!n.parentElement.closest('rt') !== !!inRt) continue;
+        const k = n.data.indexOf(ch);
+        if (k >= 0) return { node: n, offset: k };
+      }
+      return null;
+    };
+    const hit = (ch, inRt) => {
+      const at = find(ch, inRt);
+      if (!at) return 'missing:' + ch;
+      const rg = document.createRange();
+      rg.setStart(at.node, at.offset);
+      rg.setEnd(at.node, at.offset + 1);
+      const b = rg.getBoundingClientRect();
+      return reader.cueIdAtPoint(b.left + b.width / 2, b.top + b.height / 2);
+    };
+    // 查词载荷 / 「从此句播放」走的入口：直接给（节点, 偏移）。
+    const domHit = (ch, inRt) => {
+      const at = find(ch, inRt);
+      return at ? reader.cueIdAtDomPoint(at.node, at.offset) : 'missing:' + ch;
+    };
+    reader.renderScreen(0, true);
+    await frame();
+    const out = {
+      screens: reader.screens.length,
+      cues: (reader.sentenceAudioCues || []).length,
+      first: hit('一'),
+      second: hit('二'),
+      base: hit('漢'),
+      annotation: hit('か', true),
+      outside: hit('序'),
+      domFirst: domHit('一'),
+      domAnnotation: domHit('か', true),
+      domOutside: domHit('序'),
+    };
+    reader.renderScreen(1, true);
+    await frame();
+    out.nextScreen = hit('三');
+    out.domNextScreen = domHit('三');
+    return out;
+  })()`);
+  const sid = (id) => JSON.stringify({ type: 'sid', id });
+  assert.equal(s.screens, 2, 'synthetic fixture renders two VN screens ' + JSON.stringify(s));
+  assert.equal(s.cues, 0, 'a synthetic book has no sentenceAudioCues ' + JSON.stringify(s));
+  assert.equal(s.first, sid('0'), 'synthetic: first sentence glyph ' + JSON.stringify(s));
+  assert.equal(s.second, sid('1'), 'synthetic: second sentence glyph ' + JSON.stringify(s));
+  assert.equal(s.base, sid('1'), 'synthetic: ruby base glyph ' + JSON.stringify(s));
+  assert.equal(s.annotation, sid('1'), 'synthetic: ruby annotation ' + JSON.stringify(s));
+  assert.equal(s.outside, null, 'synthetic: text outside every sentence resolves to nothing ' + JSON.stringify(s));
+  assert.equal(s.domFirst, sid('0'), 'synthetic: DOM point in the first sentence ' + JSON.stringify(s));
+  assert.equal(s.domAnnotation, sid('1'), 'synthetic: DOM point in an annotation ' + JSON.stringify(s));
+  assert.equal(s.domOutside, null, 'synthetic: DOM point outside every sentence ' + JSON.stringify(s));
+  assert.equal(s.nextScreen, sid('2'), 'synthetic: a re-cloned screen resolves its own sentence ' + JSON.stringify(s));
+  assert.equal(s.domNextScreen, sid('2'), 'synthetic: DOM point on a re-cloned screen ' + JSON.stringify(s));
   console.log('PASS VN pointer seek cue hit-test');
 } finally {
   driver.close();

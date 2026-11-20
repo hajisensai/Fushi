@@ -11,6 +11,12 @@
 #ifndef OutputDir
   #define OutputDir "..\..\build\installer"
 #endif
+; 资源管理器封面缩略图处理器（native/fushi_shell_thumbs）的 CLSID。必须与
+; native/fushi_shell_thumbs/src/lib.rs 的 THUMBNAIL_PROVIDER_CLSID 逐字一致
+; （守卫：native/fushi_shell_thumbs/tests/registration_contract.rs）。开头的 {{ 是 Inno 的花括号转义。
+#define FushiThumbClsid "{{7CEC7E60-07B9-4389-BFC1-7B83D334456E}"
+; IThumbnailProvider 的 shellex 槽位（Windows SDK：shobjidl_core.h）。
+#define ThumbnailShellExKey "ShellEx\{{e357fccd-a995-4576-b01f-234630154e96}"
 
 [Setup]
 AppId={{8F2C1A3E-7B4D-4E9A-9C21-0A1B2C3D4E5F}}
@@ -76,6 +82,9 @@ UsePreviousLanguage=no
 
 CloseApplications=no
 CloseApplicationsFilter=*.exe,*.dll
+; 装 / 卸书籍关联（含封面缩略图处理器）后通知资源管理器重读关联（SHChangeNotify
+; SHCNE_ASSOCCHANGED），不必重启 explorer 就能看到封面。
+ChangesAssociations=yes
 RestartApplications=no
 ; 过渡期双 mutex：老 Hibiki 实例还持有旧名互斥量时，升级安装同样要等它退出。
 AppMutex=FushiSingleInstanceMutex,HibikiSingleInstanceMutex
@@ -167,7 +176,11 @@ Type: files; Name: "{app}\*_windows_*_test.exe"
 
 [Files]
 ; 包含 fushi_update_launcher.exe：应用内更新用它等待当前 fushi.exe 退出后再启动 Inno。
-Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourceDir}\*"; DestDir: "{app}"; Excludes: "\fushi_shell_thumbs.dll"; Flags: ignoreversion recursesubdirs createallsubdirs
+; 资源管理器缩略图处理器卸载时多半正被 explorer.exe 加载着、删不掉：uninsrestartdelete 让它
+; 在下次重启时删除，不在 {app} 留垃圾。（升级时的占用由 [Code] FushiSetAsideThumbnailHandler 处理。）
+; 本地构建的 Release 目录可能没有它（只有 release-desktop.yml 构建并核对它在场），故 skipifsourcedoesntexist。
+Source: "{#SourceDir}\fushi_shell_thumbs.dll"; DestDir: "{app}"; Flags: ignoreversion uninsrestartdelete skipifsourcedoesntexist
 
 [Icons]
 Name: "{group}\Fushi"; Filename: "{app}\fushi.exe"
@@ -233,6 +246,34 @@ Root: HKCU; Subkey: "Software\Classes\.cbr\OpenWithProgids"; ValueType: string; 
 Root: HKCU; Subkey: "Software\Classes\.cb7\OpenWithProgids"; ValueType: string; ValueName: "Fushi.Book"; ValueData: ""; Flags: uninsdeletevalue; Tasks: bookassoc
 Root: HKCU; Subkey: "Software\Classes\.mokuro\OpenWithProgids"; ValueType: string; ValueName: "Fushi.Book"; ValueData: ""; Flags: uninsdeletevalue; Tasks: bookassoc
 
+; 资源管理器封面缩略图（拍板台 WoAtPpuvwm）：epub / cbz / cbr / cb7 / pdf 显示封面而不是
+; Fushi.Book 的 exe 图标。两件（Rust，native/fushi_shell_thumbs）：
+; - {app}\fushi_shell_thumbs.dll：COM 进程内服务器。本安装器按用户（HKCU）注册，而系统的缩略图
+;   隔离进程（COM Surrogate）激活不到 HKCU 里的 CLSID（2026-11-16 实测 REGDB_E_CLASSNOTREG），
+;   所以必须 DisableProcessIsolation=1 进 explorer.exe。它在 explorer 里**不解析任何文件**，
+;   只拿路径（IInitializeWithFile）转交下面的宿主进程，限时 15 秒、限内存 1 GiB 取回像素并校验。
+; - {app}\fushi_shell_thumbs_host.exe：每张缩略图一次性的宿主进程，真正解析不可信文件；
+;   rar / 7z 用随包的 {app}\7za\7z.dll，pdf 用 {app}\pdfium.dll（都按绝对路径加载）。
+;   坏文件崩溃 / 卡死只丢一张缩略图，拖不垮资源管理器。
+;
+; 全部用 HKCU64：本安装器是 32 位进程，HKCU\Software\Classes\CLSID 对 32 位进程会被重定向到
+; Wow6432Node，64 位的资源管理器就找不到这个 CLSID 了。
+Root: HKCU64; Subkey: "Software\Classes\CLSID\{#FushiThumbClsid}"; ValueType: string; ValueData: "Fushi cover thumbnails"; Flags: uninsdeletekey; Tasks: bookassoc
+Root: HKCU64; Subkey: "Software\Classes\CLSID\{#FushiThumbClsid}"; ValueType: dword; ValueName: "DisableProcessIsolation"; ValueData: 1; Tasks: bookassoc
+Root: HKCU64; Subkey: "Software\Classes\CLSID\{#FushiThumbClsid}\InprocServer32"; ValueType: string; ValueData: "{app}\fushi_shell_thumbs.dll"; Tasks: bookassoc
+Root: HKCU64; Subkey: "Software\Classes\CLSID\{#FushiThumbClsid}\InprocServer32"; ValueType: string; ValueName: "ThreadingModel"; ValueData: "Apartment"; Tasks: bookassoc
+; ① 挂在 Fushi.Book 自己身上：用户把某种书设成用 Fushi 打开（UserChoice = Fushi.Book）时，
+;    关联数组里 ProgId 排第一，这里就是生效的那个——正是「文件显示 Fushi 图标」的场景。
+Root: HKCU64; Subkey: "Software\Classes\Fushi.Book\{#ThumbnailShellExKey}"; ValueType: string; ValueData: "{#FushiThumbClsid}"; Tasks: bookassoc
+; ② 兜底挂在 SystemFileAssociations\.<ext> 上：默认打开方式不是 Fushi 时也有封面。
+;    只在该扩展名**还没有**别的缩略图处理器时才写（FushiThumbnailSlotFree），不抢用户装的
+;    CBXShell / SumatraPDF / Acrobat 等；卸载只删我们写的这个子键。
+Root: HKCU64; Subkey: "Software\Classes\SystemFileAssociations\.epub\{#ThumbnailShellExKey}"; ValueType: string; ValueData: "{#FushiThumbClsid}"; Flags: uninsdeletekey; Tasks: bookassoc; Check: FushiThumbnailSlotFree('.epub')
+Root: HKCU64; Subkey: "Software\Classes\SystemFileAssociations\.cbz\{#ThumbnailShellExKey}"; ValueType: string; ValueData: "{#FushiThumbClsid}"; Flags: uninsdeletekey; Tasks: bookassoc; Check: FushiThumbnailSlotFree('.cbz')
+Root: HKCU64; Subkey: "Software\Classes\SystemFileAssociations\.cbr\{#ThumbnailShellExKey}"; ValueType: string; ValueData: "{#FushiThumbClsid}"; Flags: uninsdeletekey; Tasks: bookassoc; Check: FushiThumbnailSlotFree('.cbr')
+Root: HKCU64; Subkey: "Software\Classes\SystemFileAssociations\.cb7\{#ThumbnailShellExKey}"; ValueType: string; ValueData: "{#FushiThumbClsid}"; Flags: uninsdeletekey; Tasks: bookassoc; Check: FushiThumbnailSlotFree('.cb7')
+Root: HKCU64; Subkey: "Software\Classes\SystemFileAssociations\.pdf\{#ThumbnailShellExKey}"; ValueType: string; ValueData: "{#FushiThumbClsid}"; Flags: uninsdeletekey; Tasks: bookassoc; Check: FushiThumbnailSlotFree('.pdf')
+
 ; ── 旧 Hibiki 注册表迁移清理（无条件执行，不挂 videoassoc：用户这次没勾关联
 ;    也要把指向已删除 hibiki.exe 的死键清掉，否则「打开方式」里留一个坏条目）──
 Root: HKCU; Subkey: "Software\Classes\Hibiki.Video"; ValueType: none; Flags: deletekey
@@ -255,6 +296,8 @@ Type: files; Name: "{app}\fushi-update-install-*.log"
 ; 着色器程序磁盘缓存（runner main.cpp ResolveProgramBinaryCacheDirectory，安装目录
 ; 可写时放在 exe 旁）。纯缓存，删了下次启动重编一次即可。
 Type: filesandordirs; Name: "{app}\fushi.exe.ShaderCache"
+; 升级时被 explorer.exe 占着、改名挪开的旧缩略图处理器（见 [Code] FushiSetAsideThumbnailHandler）。
+Type: files; Name: "{app}\fushi_shell_thumbs.dll.*.old"
 
 [Run]
 Filename: "{app}\fushi.exe"; Description: "{cm:LaunchProgram,Fushi}"; Flags: nowait postinstall; Check: ShouldLaunchAppAfterInstall
@@ -794,6 +837,58 @@ begin
   end;
 end;
 
+// ── 资源管理器封面缩略图处理器（fushi_shell_thumbs.dll）──────────────────────────
+//
+// FushiThumbnailSlotFree：某扩展名在合并视图（HKCR，64 位）的 .<ext>\ShellEx 与
+// SystemFileAssociations\.<ext>\ShellEx 下都没有别的缩略图处理器时才返回 True；
+// 已经是我们自己的 CLSID（升级重装）也算空位。
+function FushiThumbnailHandlerOf(const SubKey: String): String;
+begin
+  Result := '';
+  // ThumbnailShellExKey 里是 Inno 的 {{ 转义，过一遍 ExpandConstant 还原成单个花括号。
+  if not RegQueryStringValue(HKCR64, SubKey + ExpandConstant('\{#ThumbnailShellExKey}'), '', Result) then
+    Result := '';
+end;
+
+function FushiThumbnailSlotFree(const Ext: String): Boolean;
+var
+  Ours, A, B: String;
+begin
+  Ours := Uppercase(ExpandConstant('{#FushiThumbClsid}'));
+  A := Uppercase(FushiThumbnailHandlerOf(Ext));
+  B := Uppercase(FushiThumbnailHandlerOf('SystemFileAssociations\' + Ext));
+  Result := ((A = '') or (A = Ours)) and ((B = '') or (B = Ours));
+end;
+
+// 升级时旧的 fushi_shell_thumbs.dll 多半正被 explorer.exe 加载着（进程内处理器），直接覆盖
+// 会因「文件被占用」失败。被加载的 DLL 不能删、但可以改名：ssInstall（复制新文件之前）把它
+// 挪成 *.old，新文件照常落地、新的缩略图请求加载新 DLL；资源管理器经 DllCanUnloadNow 卸掉
+// 旧模块之后，*.old 由下次安装的 ssPostInstall / 卸载清掉。
+procedure FushiSetAsideThumbnailHandler();
+var
+  Dll: String;
+begin
+  Dll := ExpandConstant('{app}\fushi_shell_thumbs.dll');
+  if FileExists(Dll) then
+    RenameFile(Dll, Dll + '.' + GetDateTimeString('yyyymmddhhnnsszzz', #0, #0) + '.old');
+end;
+
+procedure FushiDeleteSetAsideThumbnailHandlers();
+var
+  FindRec: TFindRec;
+begin
+  if FindFirst(ExpandConstant('{app}\fushi_shell_thumbs.dll.*.old'), FindRec) then
+  begin
+    try
+      repeat
+        DeleteFile(ExpandConstant('{app}\') + FindRec.Name);
+      until not FindNext(FindRec);
+    finally
+      FindClose(FindRec);
+    end;
+  end;
+end;
+
 // Fushi 改名的旧名残留清理，全部放在 ssPostInstall（新文件已全部落地之后），
 // 不放 [InstallDelete]：后者在复制前执行，且 Inno 不会在安装失败/取消时回滚删除，
 // 于是任何一次中途失败的升级都会把「还剩个能跑的旧版」变成「一个可执行文件都没有」。
@@ -804,8 +899,15 @@ end;
 // 无法自动改指 fushi.exe、也无法重新固定；用户需要的话得手动再固定一次。
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
+  if CurStep = ssInstall then
+  begin
+    FushiSetAsideThumbnailHandler();
+    Exit;
+  end;
   if CurStep <> ssPostInstall then
     Exit;
+
+  FushiDeleteSetAsideThumbnailHandlers();
 
   { BUG-4028：新文件已全部落地，放开启动门（[Run] 拉起新版在此之后）。 }
   CloseFushiInstallGate();

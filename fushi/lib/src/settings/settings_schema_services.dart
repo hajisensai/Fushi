@@ -261,7 +261,7 @@ SettingsDestination buildServicesDestination() {
                       value: (SettingsContext settingsContext) =>
                           settingsContext.appModel.prefsRepo.getPref(
                                 kVideoAniDbHashEnabledPref,
-                                defaultValue: false,
+                                defaultValue: kVideoAniDbHashEnabledDefault,
                               )
                               as bool,
                       onChanged:
@@ -308,6 +308,27 @@ SettingsDestination buildServicesDestination() {
                               commitVideoMetadataRuntimePreference(
                                 settingsContext,
                                 kVideoAniDbPasswordPref,
+                                value,
+                                trimValue: false,
+                              ),
+                    ),
+                    SettingsTextItem(
+                      id: 'services.metadata.anidb_udp_api_key',
+                      title: t.video_anidb_udp_api_key,
+                      subtitle: t.video_anidb_udp_api_key_hint,
+                      icon: FushiIcons.lock,
+                      secret: true,
+                      value: (SettingsContext settingsContext) =>
+                          settingsContext.appModel.prefsRepo.getPref(
+                                kVideoAniDbUdpApiKeyPref,
+                                defaultValue: '',
+                              )
+                              as String,
+                      onChanged:
+                          (SettingsContext settingsContext, String value) =>
+                              commitVideoMetadataRuntimePreference(
+                                settingsContext,
+                                kVideoAniDbUdpApiKeyPref,
                                 value,
                                 trimValue: false,
                               ),
@@ -382,8 +403,8 @@ SettingsDestination buildServicesDestination() {
                             },
                       ),
                     ),
-                    // HTTP 资料接口与 UDP 是 AniDB 上两条登记（BUG-2623）：随包
-                    // 身份只登记了 UDP，让用户看得到 anime XML 资料链此时不会请求。
+                    // HTTP 资料接口与 UDP 是 AniDB 上两条登记（BUG-2623），
+                    // 状态行只按解析出的 HTTP 身份展示，不借用 UDP 身份。
                     SettingsStatusItem(
                       id: 'services.metadata.anidb_http_api',
                       title: t.video_anidb_http_api,

@@ -1,0 +1,9 @@
+## BUG-4762 · CoverMetaStore 共享加载 / 写锁建在发起者 Zone 里，那个 Zone 停摆后同目录读写全部永久挂住
+- **报告**：2026-11-17（用户：上一批修复的遗留项「CoverMetaStore 的进程级静态状态在测试里跨 Zone 会永久挂住，只在一个测试文件里按目录隔离规避，根治要另做」）
+- **真实性**：✅ 真 bug（修前测试稳定复现：2 条用例 `TimeoutException after 0:00:10`）。根因：
+  - `packages/fushi_engine/lib/media/video/scraper/cover_meta_store.dart:28`（修前行号）`_states` 按目录共享一份进程级状态，其中的 future 由**第一个调用者在自己的 Zone 里**创建：`:319` 初始写锁 `Future<void>.value()`、`:221-225` `_synchronized` 的 `writeLock.then(...)` 锁链、`:237-246` 在途 `loading`。
+  - Dart 的 future 完成后向监听者传播要经该 future **所属 Zone** 的 `scheduleMicrotask`（对已完成 future 的 `then` 同样如此）。发起者 Zone 若不再推进（widget 测试的 fakeAsync 用例结束、在途读盘还在飞），这些共享 future 就永不传播：同目录后来者 `await loading` / 排到 `writeLock` 后面全部永久挂住。
+  - 实际症状：库页进场的自动刮削 sweep（`fushi/lib/src/media/video/scraper/member_cover_cleanup.dart:134` `runMemberCoverCleanup`（:144 进 `VideoCoverMutationGate.runExclusive`））持着 `VideoCoverMutationGate` 读 `CoverMetaStore.all()` 卡死，排在后面的 `deleteVideoBooksWithDecision` 永不开工，`home_video_batch_collection_ops_test.dart` 的批量删除 `pumpAndSettle timed out`。此前只靠「每条用例一个 path_provider 根」规避；`home_video_page_menu_test.dart` 共用一个根，有同样隐患。生产里调用者所在 Zone（根 Zone 或 app 的守护 Zone）都持续推进，未见实际挂死，但契约本身依赖「发起者 Zone 一直推进」。
+- **[x] ① 已修复** — 共享状态只在根 Zone 里创建、推进：`_runDetached` 用 `Zone.root.run` 建锁链、在途加载和 action 本体（只把发起者的 `IOOverrides` 带过去）；初始写锁也建在根 Zone；每个调用者经 `_handOff` 拿一个**自己 Zone 里的 Completer**，监听注册在根 Zone、由完成方在根 Zone 唤醒。某个调用者的 Zone 停摆只挂它自己那份 future，共享链照常前进；同目录的互斥与先后顺序不变。新增 `@visibleForTesting CoverMetaStore.debugResetForTesting()`。`home_video_batch_collection_ops_test.dart` 的按用例隔离规避改回全文件共用一个根（保留为回归证据）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/scraper/cover_meta_store_test.dart`「发起者 Zone 停摆不拖死同目录后来者」两条：fakeAsync 里发起首次加载 / 写入后弃置该 Zone，再从测试 Zone 读写，断言能完成且那次写入照常落盘、顺序不变（修前 2 条超时红，修后绿）。`fushi/test/pages/home_video_batch_collection_ops_test.dart` 共用根：对修前 store 跑红（`pumpAndSettle timed out`，7 执行），修后绿。
+- **备注**：纯 Dart 异步结构问题，无设备相关路径；真机未复测（生产调用者所在 Zone 都持续推进，无可观察差异）。

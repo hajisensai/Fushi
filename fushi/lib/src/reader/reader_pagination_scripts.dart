@@ -1172,6 +1172,13 @@ window.__fushiInstallShell = function(C) {
       ? { start: rect.top, end: rect.bottom }
       : { start: rect.left, end: rect.right };
   },
+  // turnSpan 的批量版：调用方在循环外读好 body 右缘（xr 轴才用得到）传进来，循环内逐矩形
+  // 换算不再各读一次 document.body.getBoundingClientRect()。前提是循环期间不滚动、不改
+  // 排版（buildPaginationMetrics 满足）。axis 须是已解析的轴；非 xr 轴与 turnSpan 完全相同。
+  turnSpanWithin: function(axis, rect, bodyRight) {
+    if (axis === 'xr') return { start: bodyRight - rect.right, end: bodyRight - rect.left };
+    return this.turnSpan(axis, rect);
+  },
   // BUG-493 根因修复：_reanchorPending 的唯一写入口（清旗单点化，_sharedJs 两 shell 共用）。
   // true→false 转换 = 重锚 settle，那一刻（bridge 可用时）callHandler('onReanchorSettled')
   // 通知 Dart 补刷一次进度（webview.part.dart 注册），事件驱动替代旧的 Dart 侧 120ms×8
@@ -1388,6 +1395,9 @@ window.__fushiInstallShell = function(C) {
     if (typeof this._invalidateGeometryReanchor === 'function') {
       this._invalidateGeometryReanchor();
     }
+    // 锚代际：每次替换 / 清除都 +1。延后执行的回调（分页 _alignRangeToPage 的下一帧复核）
+    // 凭它判断「我落页时的那个目标还是不是当前目标」，不是就不再写位置（BUG-4808）。
+    this.__imgAnchorGen = (this.__imgAnchorGen || 0) + 1;
     this.__imgReanchorProgress = null;
     this.__imgReanchorCharOffset = null;
     this.__imgReanchorCharOffsetEnd = -1;
@@ -1475,7 +1485,11 @@ window.__fushiInstallShell = function(C) {
     this.scrollToProgressPaged(rctx, p);
     return true;
   },
+  // gap-readerjs1-2：本文档是否已经给 Dart 发过恢复回执（成功或失败）。初次恢复链
+  // 只该有一个结局；notifyRestoreFailed 据此不在成功回执之后再补一条失败回执。
+  _restoreReceiptSent: false,
   notifyRestoreComplete: function() {
+    this._restoreReceiptSent = true;
     this.perfMark('restoreDone');
     if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
       window.flutter_inappwebview.callHandler(
@@ -1487,6 +1501,36 @@ window.__fushiInstallShell = function(C) {
     if (typeof this.warmPaginationMetrics === 'function') {
       this.warmPaginationMetrics();
     }
+  },
+  // gap-readerjs1-2：初始化 / 初次恢复链同步抛出时的失败出口。原先异常只让
+  // `Promise.all(imagePromises).then(...)` 变成无人处理的 rejected promise，
+  // onRestoreComplete 永远不来，Dart 只能干等 8 秒内容就绪兜底。现在发一条带代际的
+  // onRestoreFailed，Dart 立刻走与兜底同一条收尾（_failNavigation）。已发过回执的
+  // 文档不再补发：失败只代表「还没落地的那次初次恢复」。
+  notifyRestoreFailed: function(error) {
+    try { if (window.console && console.error) console.error('[FushiReader] initial restore failed', error); } catch (_ignored) {}
+    if (this._restoreReceiptSent === true) return;
+    this._restoreReceiptSent = true;
+    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+      window.flutter_inappwebview.callHandler(
+        'onRestoreFailed',
+        String(error && error.message ? error.message : error),
+        C.navigationGeneration
+      );
+    }
+  },
+  // BUG-4906 续：恢复入口把「落定 + 回执」排进 setTimeout 的回调里，回调里抛的异常
+  // 既不在入口返回的 promise 里，也不在初次恢复链里，回执永远不来。凡是负责发回执的
+  // 延后回调都经它包一层：抛出即改发失败回执（已发过回执的文档只记 console.error）。
+  _restoreCallback: function(callback) {
+    var self = this;
+    return function() {
+      try {
+        callback();
+      } catch (callbackError) {
+        self.notifyRestoreFailed(callbackError);
+      }
+    };
   },
   createWalker: function(rootNode) {
     var root = rootNode || document.body;
@@ -1510,6 +1554,49 @@ window.__fushiInstallShell = function(C) {
     this.nodeStartOffsets = offsets;
     if (this.paginationMetrics !== undefined) this.paginationMetrics = null;
   },
+  // BUG-2903：章内文本索引——按文档序列出有可匹配字符的文本节点、各自的章内起始字数与
+  // 章总字数。滚动中的进度回报每帧都要「视口边之前有多少字」（onReaderScroll →
+  // fushiProgressDetails），旧实现每次对整章做三遍 walk（总字数 / calculateProgress /
+  // getLastVisibleCharOffset），后两遍还逐节点 getClientRects——6000 个文本节点的长章
+  // 桌面 Chrome 实测一次 150–200ms，滚轮 rAF 缓动（BUG-2830）在其间整段冻住，体感是
+  // 「往下滚会卡在某处停一会」。索引只依赖 DOM 文本结构，不依赖几何，建一次即可；
+  // 正文 DOM 变化（有声书 span 包裹兜底、注音切换等）由 MutationObserver 记账，取用时
+  // 同步 takeRecords 判脏，不吃异步回调的时序。
+  //
+  // 两个 shell 共用（_sharedJs）：分页的「字符偏移 → 文本节点」（textNodeAtCharOffset：
+  // 恢复落页 / 每次进度采样的页上校验 charOffsetOnCurrentPage）、越界判据与扫描兜底此前
+  // 也各自从章首逐节点 walk——10 万字单章桌面 Chrome 实测章末一次 fushiProgressDetails
+  // 19ms、插图页（caret 落图走扫描兜底）56ms（路线图 m1 / gap-readerjs1-3）。
+  _textIndexCache: null,
+  _textIndexObserver: null,
+  _textIndex: function() {
+    var obs = this._textIndexObserver;
+    if (obs && obs.takeRecords().length > 0) this._textIndexCache = null;
+    var cache = this._textIndexCache;
+    if (cache && cache.body === document.body) return cache;
+    if (!obs) {
+      var self = this;
+      obs = new MutationObserver(function() { self._textIndexCache = null; });
+      this._textIndexObserver = obs;
+    }
+    obs.disconnect();
+    obs.observe(document.body, {childList: true, characterData: true, subtree: true});
+    var nodes = [];
+    var starts = [];
+    var total = 0;
+    var walker = this.createWalker();
+    var node;
+    while (node = walker.nextNode()) {
+      var len = this.countChars(node.textContent);
+      if (len <= 0) continue;
+      nodes.push(node);
+      starts.push(total);
+      total += len;
+    }
+    cache = {body: document.body, nodes: nodes, starts: starts, total: total};
+    this._textIndexCache = cache;
+    return cache;
+  },
   // BUG-492 (TODO-1053 Bug A) 越界判据（分页/连续共用，_sharedJs）：charOffset 是否落在
   // 本章可匹配字符总数之内。恢复端用它护住旧脏收藏——写入端曾把某句错记成相邻章
   // sectionIndex，恢复加载错章后 charOffset 可能超本章字符总数 → 定位静默失败停错位。
@@ -1517,14 +1604,27 @@ window.__fushiInstallShell = function(C) {
   // （countChars / createWalker，furigana 已 REJECT）。>=0 且在范围内返 true。
   charOffsetInRange: function(charOffset) {
     if (typeof charOffset !== 'number' || charOffset < 0) return false;
-    var walker = this.createWalker();
-    var runningOffset = 0;
-    var node;
-    while (node = walker.nextNode()) {
-      runningOffset += this.countChars(node.textContent);
-      if (runningOffset > charOffset) return true;
+    return charOffset < this._textIndex().total;
+  },
+  // 章内第 charOffset 个学习单位落在哪个文本节点：返 {node, remaining}（remaining = 该节点内
+  // 目标单位之前的单位数），越界返 null。分页 scrollToCharOffset 与 charOffsetOnCurrentPage
+  // 共用这一份走查（countChars / createWalker 口径，furigana 已 REJECT）——两处各写一份时
+  // 只改一处就会让「落页」与「页上校验」对同一个偏移给出不同的字。
+  // 走章内文本索引二分：索引只收字数 > 0 的节点，与逐节点累加的「第一个 running + 字数 >
+  // charOffset 的节点」是同一个（零字节点永远不满足那个条件）。
+  textNodeAtCharOffset: function(charOffset) {
+    if (typeof charOffset !== 'number' || charOffset < 0) return null;
+    var index = this._textIndex();
+    if (charOffset >= index.total) return null;
+    var starts = index.starts;
+    var lo = 0;
+    var hi = starts.length - 1;
+    while (lo < hi) {
+      var mid = (lo + hi + 1) >> 1;
+      if (starts[mid] <= charOffset) lo = mid;
+      else hi = mid - 1;
     }
-    return false;
+    return { node: index.nodes[lo], remaining: charOffset - starts[lo] };
   },
   // WebKit vertical text can give a collapsed caret range an all-zero rect,
   // even for an off-screen character. Measure that character instead; treating
@@ -1676,18 +1776,56 @@ window.__fushiInstallShell = function(C) {
   // 恒为 0 → 兜底把任何页都报成章首 0。重锚路径被 scrollToCharOffset 的 `<=0 → 保当前页`
   // 掩住看不出来；统计接入后（fushiProgressDetails 第三/四段）页首角落在插图 / 空行时
   // 整段 [0, 页尾) 被当成本页可见区间，翻走一次就把几千字前文计成已读。仅分页 shell 调用。
+  //
+  // 走章内文本索引二分（与连续 shell 的 _charsBeforeEdge 同构，只换成翻页轴）：multicol 里
+  // 文本节点按文档序沿翻页轴单调排开，二分出第一个不整段在首边之前的节点，再从它起逐个
+  // 累加跨边节点的局部计数，遇到整段在首边之后即止。每次只量 O(log n) 个节点的几何。
   firstVisibleCharOffsetByScanPaged: function() {
     var axis = this.pagedAxis();
     var firstEdge = this.pagedFirstEdge(axis);
-    var walker = this.createWalker();
-    var explored = 0;
-    var node;
-    while (node = walker.nextNode()) {
-      if (this.countChars(node.textContent) > 0) {
-        explored += this.countCharsBeforeViewportPaged(node, axis, firstEdge);
-      }
+    var index = this._textIndex();
+    var nodes = index.nodes;
+    var n = nodes.length;
+    if (n === 0) return 0;
+    var lo = 0;
+    var hi = n;
+    while (lo < hi) {
+      var mid = (lo + hi) >> 1;
+      var j = mid;
+      var side = null;
+      while (j < hi && (side = this._textNodeTurnSide(nodes[j], axis, firstEdge)) === null) j++;
+      if (side === null || side >= 0) hi = mid;
+      else lo = j + 1;
+    }
+    if (lo >= n) return index.total;
+    var explored = index.starts[lo];
+    for (var k = lo; k < n; k++) {
+      var kSide = this._textNodeTurnSide(nodes[k], axis, firstEdge);
+      if (kSide === null) continue;
+      if (kSide > 0) break;
+      explored += this.countCharsBeforeViewportPaged(nodes[k], axis, firstEdge);
     }
     return explored;
+  },
+  // 文本节点沿翻页轴相对首边的位置：-1 整段在首边之前 / 0 跨边 / 1 整段在首边之后 /
+  // null 无几何。判据与 countCharsBeforeViewportPaged 的两个早返回逐条同口径。
+  _textNodeTurnSide: function(node, axis, firstEdge) {
+    var range = document.createRange();
+    range.selectNodeContents(node);
+    var rects = range.getClientRects();
+    var minStart = Infinity;
+    var maxEnd = -Infinity;
+    for (var i = 0; i < rects.length; i++) {
+      var rect = rects[i];
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      var span = this.turnSpan(axis, rect);
+      if (span.start < minStart) minStart = span.start;
+      if (span.end > maxEnd) maxEnd = span.end;
+    }
+    if (minStart === Infinity) return null;
+    if (maxEnd <= firstEdge) return -1;
+    if (minStart >= firstEdge) return 1;
+    return 0;
   },
   // 分页翻页轴上「当前页 content-box 起点」（body-relative）：横排 = padding-left、竖排 =
   // padding-top、竖排对开（xr，到 body 右缘的距离）= padding-right。前页的末列在它之前
@@ -1790,21 +1928,10 @@ window.__fushiInstallShell = function(C) {
   // 其 rect 校验；定位不到 / 零尺寸都按「不在本页」返 false——统计宁可不计。
   charOffsetOnCurrentPage: function(charOffset) {
     if (typeof charOffset !== 'number' || charOffset < 0) return false;
-    var walker = this.createWalker();
-    var node;
-    var runningOffset = 0;
-    var targetNode = null;
-    var remaining = 0;
-    while (node = walker.nextNode()) {
-      var nodeChars = this.countChars(node.textContent);
-      if (runningOffset + nodeChars > charOffset) {
-        targetNode = node;
-        remaining = charOffset - runningOffset;
-        break;
-      }
-      runningOffset += nodeChars;
-    }
-    if (!targetNode) return false;
+    var located = this.textNodeAtCharOffset(charOffset);
+    if (!located) return false;
+    var targetNode = located.node;
+    var remaining = located.remaining;
     var text = targetNode.textContent;
     // 第 k 个单元结束后的下一个码元未必是第 k+1 个单元的首码元：句读 / 括号（「。」）、
     // 西文分词空格、`<p>\n本文` 的前导折叠空白都落在这里，且软换行处它们可能带着一个落在
@@ -2432,35 +2559,57 @@ window.__fushiInstallShell = function(C) {
   /// 优先级与旧的 Dart 三元式逐条相同：`initialFragment` 非空 → `jumpToFragment`；
   /// 否则 `initialCharOffset >= 0` → `restoreToCharOffset`；否则 `restoreProgress`。
   /// 分页 shell 只用单点句首锚（旧实现也只传一个参数）。
+  ///
+  /// BUG-4906 续：恢复入口都是 async 函数，第一个 `await` 之后抛的异常只会让它返回的
+  /// promise 变成 rejected。这里把那个 promise `return` 给外层
+  /// `Promise.all(imagePromises).then(...)`，异步失败才走得到链尾的失败回执
+  /// （[_sharedInitialRestoreCatchJs]）；不 return 时链早已 resolve，异常成了无人处理的
+  /// rejection，Dart 只能等 8 秒兜底。
   static const String _paginatedInitialRestoreJs = '''
     if (C.initialFragment !== null && C.initialFragment !== undefined) {
-      window.fushiReader.jumpToFragment(C.initialFragment);
+      return window.fushiReader.jumpToFragment(C.initialFragment);
     } else if (C.initialCharOffset >= 0) {
-      window.fushiReader.restoreToCharOffset(C.initialCharOffset);
+      return window.fushiReader.restoreToCharOffset(C.initialCharOffset);
     } else {
-      window.fushiReader.restoreProgress(C.initialProgress);
+      return window.fushiReader.restoreProgress(C.initialProgress);
     }''';
 
   /// 连续 shell 版：多一条 BUG-461 的句尾区间对齐分支（`initialCharOffsetEnd >
   /// initialCharOffset` 时透传句尾偏移），其余与 [_paginatedInitialRestoreJs] 相同。
   static const String _continuousInitialRestoreJs = '''
     if (C.initialFragment !== null && C.initialFragment !== undefined) {
-      window.fushiReader.jumpToFragment(C.initialFragment);
+      return window.fushiReader.jumpToFragment(C.initialFragment);
     } else if (C.initialCharOffset >= 0) {
       if (C.initialCharOffsetEnd > C.initialCharOffset) {
-        window.fushiReader.restoreToCharOffset(C.initialCharOffset, C.initialCharOffsetEnd);
+        return window.fushiReader.restoreToCharOffset(C.initialCharOffset, C.initialCharOffsetEnd);
       } else {
-        window.fushiReader.restoreToCharOffset(C.initialCharOffset);
+        return window.fushiReader.restoreToCharOffset(C.initialCharOffset);
       }
     } else {
-      window.fushiReader.restoreProgress(C.initialProgress);
+      return window.fushiReader.restoreProgress(C.initialProgress);
     }''';
 
   /// 有声书 cue 下发：旧实现「有 cue 才注入这一行」，现在「有 cue 才调用」。
+  ///
+  /// gap-readerjs1-2：cue 应用是恢复链上的附属步骤，它抛异常不该连带吞掉位置恢复
+  /// （原先一抛，后面的恢复与 onRestoreComplete 都不执行）。单独隔离、在控制台上报
+  /// 真实错误后照常往下恢复；cue 高亮缺失只影响跟读，正文与位置照常可用。
   static const String _sharedSentenceAudioInitJs = '''
     if (C.sentenceAudioCues !== null && C.sentenceAudioCues !== undefined) {
-      window.fushiReader.applySentenceAudioCues(C.sentenceAudioCues);
+      try {
+        window.fushiReader.applySentenceAudioCues(C.sentenceAudioCues);
+      } catch (cueError) {
+        try { if (window.console && console.error) console.error('[FushiReader] applySentenceAudioCues failed', cueError); } catch (_ignored) {}
+      }
     }''';
+
+  /// gap-readerjs1-2：初次恢复链（`Promise.all(imagePromises).then(...)`）的失败出口。
+  /// 链里任何一步同步抛出（建偏移表 / 恢复函数）都改发失败回执，不再留一条无人处理的
+  /// rejected promise 让 Dart 干等兜底。
+  static const String _sharedInitialRestoreCatchJs = '''
+  }).catch(function(restoreError) {
+    window.fushiReader.notifyRestoreFailed(restoreError);
+  });''';
 
   /// 三种 shell 共用的视口 meta 重写（BUG-1688 第二处：VN shell 原先没跑这段）。
   ///
@@ -2674,6 +2823,9 @@ function _fushiBootInitialize() {
     window.fushiReader.initialize();
   } catch (e) {
     try { if (window.console && console.error) console.error('[FushiReader] boot initialize failed', e); } catch (_ignored) {}
+    // gap-readerjs1-2：initialize 同步抛出时初次恢复链根本没挂上，onRestoreComplete
+    // 永远不来。发失败回执让 Dart 立刻收尾，而不是等 8 秒兜底。
+    try { window.fushiReader.notifyRestoreFailed(e); } catch (_ignored) {}
   }
 }
 window.addEventListener('load', function() {
@@ -3026,6 +3178,11 @@ $kReaderPageTurnJs
     if (context.pageSize <= 0) return false;
     var rect = this.getRect(range);
     var currentScroll = this.getPagePosition(context);
+    // BUG-4808：下面「落页后下一帧再落一次」的回调按**当时仍登记着的揭示目标**重算，不写
+    // 这里捕获的像素值。锚代际在回调前变了（用户翻页 / 新的恢复或揭示替换了目标）= 位置已
+    // 归别人所有，回调不动；没变则重量一次 range（迟到图片在这一帧里把目标顶到别的页时，
+    // 跟到目标的新页而不是把视口拽回旧页）。
+    var anchorGen = this.__imgAnchorGen;
     // TODO-881：落页锚取起始边（竖排 rect.top、横排 rect.left），与
     // restoreToCharOffset / jumpToFragment / scrollToCharOffset 统一。
     // 旧实现用首段 rect 的几何中点（top/bottom 或 left/right 取中），句首落列后
@@ -3055,18 +3212,39 @@ $kReaderPageTurnJs
       this.turnPageAnimated(context, targetScroll, targetScroll > currentScroll, 'fade');
       this.whenPageTurnApplied(function() {
         requestAnimationFrame(function() {
-          if (self.getPagePosition(context) !== targetScroll) {
-            self._setPagePositionNow(context, targetScroll);
-          }
+          self._realignRevealTarget(range, anchorGen, true);
         });
       });
       return true;
     }
     this.setPagePosition(context, targetScroll);
     requestAnimationFrame(function() {
-      self.setPagePosition(context, targetScroll);
+      self._realignRevealTarget(range, anchorGen, false);
     });
     return true;
+  },
+  // _alignRangeToPage 落页后下一帧的复核：揭示目标仍是当前语义锚（代际未变）才按它**现在**
+  // 的几何重新落页。keepPageTurn = 正在播跟读淡入，只在位置不符时瞬时改写、不打断动画
+  // （与旧实现同）；否则经 setPagePosition 无条件重设（防 reflow 把 scroll 归零）。
+  // 卷页预览中（curlPreview 不换锚代际，正文暂时落在相邻页）与 reapplyImageLateAnchor 同样
+  // 处理：不在预览页上写位置（否则正文被写回揭示页，而 _curl.base / target 仍指着预览），
+  // 记 pending，回卷后由 curlRevert 按仍登记着的揭示目标补做，提交翻页则作废。
+  _realignRevealTarget: function(range, anchorGen, keepPageTurn) {
+    if (this.__imgAnchorGen !== anchorGen) return;
+    if (this._curl) {
+      this._curlLateAnchorPending = true;
+      return;
+    }
+    var context = this.getScrollContext();
+    if (context.pageSize <= 0) return;
+    var anchor = this.turnSpan(context.axis, this.getRect(range)).start
+      + this.getPagePosition(context);
+    var targetScroll = this.alignToPage(context, anchor);
+    if (!keepPageTurn) {
+      this.setPagePosition(context, targetScroll);
+    } else if (this.getPagePosition(context) !== targetScroll) {
+      this._setPagePositionNow(context, targetScroll);
+    }
   },
   contentLastPageScroll: function(context) {
     var metrics = this.paginationMetrics || this.buildPaginationMetrics();
@@ -3110,6 +3288,9 @@ $kReaderPageTurnJs
     var progressStops = [];
     var exploredChars = 0;
     var totalChars = 0;
+    // 竖排对开（xr 轴）的坐标要减 body 右缘；整个度量循环不滚动、不改样式，右缘不变，
+    // 循环外读一次（turnSpan 每次调用都读一遍，全章逐矩形就是上万次重复读）。
+    var bodyRight = context.axis === 'xr' ? document.body.getBoundingClientRect().right : 0;
     var walker = this.createWalker();
     var node;
     while (node = walker.nextNode()) {
@@ -3118,15 +3299,17 @@ $kReaderPageTurnJs
       if (nodeLen <= 0) continue;
       var range = document.createRange();
       range.selectNodeContents(node);
+      // 每节点只量一次矩形：首矩形就是 getRect(range) 的结果（同一个 getClientRects()[0]，
+      // 没有矩形才退回包围盒），不再让 getRect 重量一遍。
       var rects = range.getClientRects();
-      var progressRect = this.getRect(range);
+      var progressRect = rects[0] || range.getBoundingClientRect();
       var nodeStartEdge = progressRect && progressRect.width > 0 && progressRect.height > 0
-        ? this.turnSpan(context.axis, progressRect).start + currentScroll
+        ? this.turnSpanWithin(context.axis, progressRect, bodyRight).start + currentScroll
         : null;
       for (var i = 0; i < rects.length; i++) {
         var rect = rects[i];
         if (rect.width <= 0 || rect.height <= 0) continue;
-        var span = this.turnSpan(context.axis, rect);
+        var span = this.turnSpanWithin(context.axis, rect, bodyRight);
         var startEdge = span.start + currentScroll;
         var endEdge = span.end + currentScroll;
         firstContentEdge = firstContentEdge === null ? startEdge : Math.min(firstContentEdge, startEdge);
@@ -3141,7 +3324,7 @@ $kReaderPageTurnJs
     for (var j = 0; j < media.length; j++) {
       var mediaRect = media[j].getBoundingClientRect();
       if (mediaRect.width <= 0 || mediaRect.height <= 0) continue;
-      var mediaSpan = this.turnSpan(context.axis, mediaRect);
+      var mediaSpan = this.turnSpanWithin(context.axis, mediaRect, bodyRight);
       var mediaStart = mediaSpan.start + currentScroll;
       var mediaEnd = mediaSpan.end + currentScroll;
       firstContentEdge = firstContentEdge === null ? mediaStart : Math.min(firstContentEdge, mediaStart);
@@ -3240,15 +3423,17 @@ $kReaderPageTurnJs
   // （offset = caret 位置之前的单位数，node/index = caret 落点，供调用方判该字是否在页内），
   // caret 失败 / 落点无文本节点 / 基址缺失返 null——调用方各自决定降级路径。
   //
-  // getFirstVisibleCharOffset 未改走本函数：它的函数体被 TODO-773 守卫
-  // （paged_first_visible_scan_fallback_guard_test）钉成「三个失败出口各自回退
-  // firstVisibleCharOffsetByScanPaged」+ BUG-2058 口径守卫（study_char_caliber_guard_test）
-  // 要求其函数体内直接出现 fushiStudyUnits；两条守卫都要求逐出口内联，抽公共函数即红。
-  _charOffsetAtPoint: function(x, y) {
+  // textOnly：探点落在**元素**上（插图 `<p><img>` / 空行 / 章容器 / body）也算失败。此时
+  // caret 的 startOffset 是子节点下标不是字符下标，取元素子树首个文本节点会在章容器上算出
+  // 章首附近的假偏移（BUG-2492）；页首探点（getFirstVisibleCharOffset）必须把它当失败去走
+  // 几何扫描。页尾探点（getLastVisibleCharOffset）不传：落在元素上时取子树首个文本节点，
+  // 算不准由 `end <= start` 的二分降级兜住。
+  _charOffsetAtPoint: function(x, y, textOnly) {
     var range = document.caretRangeFromPoint(x, y);
     if (!range || !range.startContainer) return null;
     var target = range.startContainer;
     if (target.nodeType !== Node.TEXT_NODE) {
+      if (textOnly) return null;
       var walker = this.createWalker(target);
       target = walker.nextNode();
       if (!target) return null;
@@ -3364,13 +3549,32 @@ $kReaderPageTurnJs
   // 落点在第一层回调里已被 setPagePosition 同步写死，Dart 收到通知后读到的就是这个
   // 位置；再空等一帧不改变任何落点，只是让「内容就绪」晚 16ms、遮罩多留一帧。故删掉
   // 第二层，保留第一层的「等一帧再重设」防 reflow 语义。
-  _settleAndNotify: function(context, pos) {
+  //
+  // BUG-4808：「重设」的是**语义锚**，不是 16ms 前读到的像素值。旧实现把入口捕获的
+  // (context, pos) 原样写回：这 16ms 内若有迟到的图 load（reapplyImageLateAnchor 已按语义锚
+  // 把视口挪到正确页）、或程序化揭示换了目标，回调就把旧像素位置盖回去，之后没有第二张图
+  // load 就再没人纠正，随后的进度回传还会把错位置落库。现在回调按已登记的锚重算一次
+  // （reapplyImageLateAnchor：字符 / progress / fragment / 揭示目标，与图片 load 同一条路，
+  // 对稳定排版幂等，等价于「重设落点」）；锚已被清（用户翻页 / 滚动意图）说明位置已归别人
+  // 所有，不再写位置。snap 基线一律取**此刻**的真实位置。
+  //
+  // 重算只在**位置被动过**时做：入口刚落定的位置（landed）只用来比较、绝不写回。位置原封
+  // 未动 = 这 16ms 里没有 reflow 把 scroll 归零、也没有别人改写，「重设落点」没有可做的事；
+  // 而重算并不便宜——字符锚要从章首走到锚字、progress 锚要两遍全章计数，都排在通知 Dart
+  // 之前（实测 11 万字 / 8400 个文本节点的章，桌面 Chromium 上章末字符锚 ~100 ms、progress
+  // 中段 ~60 ms，与入口落点本身同量级）。排版在窗口内变了而位置没变的情形各有自己的所有者：
+  // 图片 load 监听自己调 reapplyImageLateAnchor（load 事件还在队列里时也一样，轮到它就
+  // 重锚）；几何 / 样式变化走各自的重锚 token。
+  _settleAndNotify: function() {
     var self = this;
-    setTimeout(function() {
-      self.setPagePosition(context, pos);
-      self.registerSnapScroll(pos);
+    var landed = this.getPagePosition(this.getScrollContext());
+    setTimeout(this._restoreCallback(function() {
+      if (self.getPagePosition(self.getScrollContext()) !== landed) {
+        self.reapplyImageLateAnchor();
+      }
+      self.registerSnapScroll(self.getPagePosition(self.getScrollContext()));
       self.notifyRestoreComplete();
-    }, 16);
+    }), 16);
   },
   restoreProgress: async function(progress) {
     this._invalidateGeometryReanchor();
@@ -3381,8 +3585,7 @@ $kReaderPageTurnJs
     // progressStops 是字符域，按同一 progress 重算 = 落回同一批字符所在页，严格优于停在
     // 被图片顶走的 scroll 上。任一用户翻页(paginate)清资格。
     this.registerImageLateAnchor({progress: progress});
-    var pos = this.getPagePosition(context);
-    this._settleAndNotify(context, pos);
+    this._settleAndNotify();
   },
   // BUG-162: 退出再进的精确恢复——按 section 内绝对字符偏移落到该字符真实所在页
   // （成熟 scrollToCharOffset 路径，是「存→取」不动点），替代粗粒度
@@ -3411,8 +3614,7 @@ $kReaderPageTurnJs
       // 收藏跳转 / 有声书 seek 落中段）在图文混排章完全裸奔，位置漂了还会被落库。
       this.registerImageLateAnchor({charOffset: charOffset});
     }
-    var pos = this.getPagePosition(context);
-    this._settleAndNotify(context, pos);
+    this._settleAndNotify();
   },
   // fragment 落点的纯几何对齐（jumpToFragment 与迟到图片重锚共用同一份换算，避免
   // 重锚复制一份会漂开的算法）。命中返 true 并已 setPagePosition，未命中返 false。
@@ -3440,7 +3642,7 @@ $kReaderPageTurnJs
     // BUG-1140 第二轮：目录/内链跳转同样在图片 decode 之前落点，登记 fragment 锚让迟到
     // 图片 load 后按同一个目标元素重新对齐。
     this.registerImageLateAnchor({fragment: fragment});
-    this._settleAndNotify(context, this.getPagePosition(context));
+    this._settleAndNotify();
     return true;
   },
   paginate: function(direction) {
@@ -3555,34 +3757,15 @@ $kReaderPageTurnJs
     var pr = parseFloat(cs.paddingRight) || 0;
     var x = context.vertical ? (document.body.clientWidth - pr - 2) : (pl + 2);
     var y = pt + 2;
-    var range = document.caretRangeFromPoint(x, y);
-    // TODO-773 P0：竖排切字号/字体/主题后页顶落 ruby/图片/折叠盒 → caretRangeFromPoint 返
-    // null → 旧实现裸 return -1 → beginStyleReanchor 返 -1 → Dart 跳过 commit → CSS 已换但
-    // scrollTop 停残值不滚回 → 文字漂移。改走 firstVisibleCharOffsetByScanPaged 全文累加兜底
-    // （body-relative 首边，与分页 caret 探边同量纲；不裸抄连续版 window 量纲的
-    // firstVisibleCharOffsetByScan）。连续版三失败点早有同形兜底。
-    if (!range || !range.startContainer) return this.firstVisibleCharOffsetByScanPaged();
-    var target = range.startContainer;
-    // BUG-2492：探点落在元素上（插图 `<p><img>` / 空行 / 章容器 `<div>` / body）时，
-    // caret 的 startOffset 是子节点下标不是字符下标；旧写法取该元素**子树首个文本节点**
-    // 再拿子节点下标当字符数，落在章容器上会算出章首附近的假偏移。几何扫描兜底按翻页
-    // 轴数出前页字数，才是这一页真正的首字。
-    if (target.nodeType !== Node.TEXT_NODE) return this.firstVisibleCharOffsetByScanPaged();
-    var baseOffset = this.nodeStartOffsets.get(target);
-    if (baseOffset === undefined) {
-      this.buildNodeOffsets();
-      baseOffset = this.nodeStartOffsets.get(target);
-      if (baseOffset === undefined) return this.firstVisibleCharOffsetByScanPaged();
-    }
-    var localChars = 0;
-    var text = target.textContent;
-    var limit = Math.min(range.startOffset, text.length);
-    for (var i = 0; i < limit; i++) {
-      var cp = text.codePointAt(i);
-      if (window.fushiStudyUnits.isUnitEnd(text, i)) localChars++;
-      if (cp > 0xFFFF) i++;
-    }
-    return baseOffset + localChars;
+    // 三个失败出口——caret 返 null（TODO-773 P0：竖排切字号 / 字体 / 主题后页顶落 ruby /
+    // 图片 / 折叠盒；旧实现裸返负一 → beginStyleReanchor 也返负一 → Dart 跳过 commit → CSS
+    // 已换但 scrollTop 停残值不滚回 → 文字漂移）、探点落在元素上（BUG-2492，见
+    // _charOffsetAtPoint 的 textOnly）、节点基址缺失——都由 _charOffsetAtPoint 返 null 表达，
+    // 这里统一回退 firstVisibleCharOffsetByScanPaged 全文累加兜底（body-relative 首边、沿翻页
+    // 轴，与分页 caret 探边同量纲；不裸抄连续版 window 量纲的 firstVisibleCharOffsetByScan）。
+    // 三出口的行为由 paged_first_visible_scan_axis_behavior_test 用 Node 真跑钉住。
+    var caret = this._charOffsetAtPoint(x, y, true);
+    return caret ? caret.offset : this.firstVisibleCharOffsetByScanPaged();
   },
   scrollToCharOffset: function(charOffset, hintScroll) {
     // TODO-1229 (BUG-594 第 6 次复诉)：charOffset<=0 == 章首区（fvco 归 0：可能是「用户在前导
@@ -3605,21 +3788,10 @@ $kReaderPageTurnJs
       }
       return;
     }
-    var walker = this.createWalker();
-    var node;
-    var runningOffset = 0;
-    var targetNode = null;
-    var remaining = 0;
-    while (node = walker.nextNode()) {
-      var nodeChars = this.countChars(node.textContent);
-      if (runningOffset + nodeChars > charOffset) {
-        targetNode = node;
-        remaining = charOffset - runningOffset;
-        break;
-      }
-      runningOffset += nodeChars;
-    }
-    if (!targetNode) return;
+    var located = this.textNodeAtCharOffset(charOffset);
+    if (!located) return;
+    var targetNode = located.node;
+    var remaining = located.remaining;
     var text = targetNode.textContent;
     // BUG-3651：落到目标单元的首码点，不是「前一单元结束后的下一码元」——后者可能是句读 /
     // 空白分隔符；页首字紧跟在前一页末行的「。」之后时，量到的是那个「。」的字形，整页
@@ -3837,9 +4009,7 @@ $_sharedInitViewport
   document.documentElement.style.setProperty('--page-height', pageHeight + 'px');
   document.documentElement.style.setProperty('--reader-viewport-height', viewportHeight + 'px');
   document.documentElement.style.setProperty('--page-width', pageWidth + 'px');
-  var __imgBox = this._imageMaxBox();
-  document.documentElement.style.setProperty('--fushi-image-max-width', __imgBox.w + 'px');
-  document.documentElement.style.setProperty('--fushi-image-max-height', __imgBox.h + 'px');
+  this._resetImageMaxVars();
   window.fushiReader.pageHeight = pageHeight;
   window.fushiReader.viewportHeight = viewportHeight;
   window.fushiReader.pageWidth = pageWidth;
@@ -3866,7 +4036,7 @@ $initImages
     }
     $sentenceAudioInit
     $initialRestoreScript
-  });
+$_sharedInitialRestoreCatchJs
 };
 window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   // TODO-734：newViewportHeight = 纯 V（Math.round(cssHeight)），newHeight = V + O。
@@ -3881,9 +4051,7 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   document.documentElement.style.setProperty('--reader-viewport-height', newViewportHeight + 'px');
   document.documentElement.style.setProperty('--page-width', newWidth + 'px');
   window.__fushiApplyReaderMargins(newWidth, newViewportHeight);
-  var __imgBox = this._imageMaxBox();
-  document.documentElement.style.setProperty('--fushi-image-max-width', __imgBox.w + 'px');
-  document.documentElement.style.setProperty('--fushi-image-max-height', __imgBox.h + 'px');
+  this._resetImageMaxVars();
   this.pageHeight = newHeight;
   this.viewportHeight = newViewportHeight;
   this.pageWidth = newWidth;
@@ -4031,6 +4199,25 @@ $kSentenceAudioRubyGapJs
     this.__selectionViewportScroll = position;
     if (typeof previous === 'number' && position !== previous) {
       this._clearSelectionOnViewportChange();
+      this._noteEinkScroll(previous, position);
+    }
+  },
+  // 墨水屏「每 N 页全刷」：连续模式没有「翻页」这个动作，按内容轴累计滚过的距离，
+  // 每满一屏回传一次 onEinkScrollPage（Dart 计一页）。一次事件最多算一页：恢复 / 跳转
+  // 这类大跳只是一次换屏，不是翻了几十页。恢复在飞期间的回传由 Dart 侧丢弃。
+  _noteEinkScroll: function(previous, position) {
+    var extent = this.isVertical() ? window.innerWidth : window.innerHeight;
+    if (!(extent > 0)) return;
+    this.__einkScrollAccum =
+      (this.__einkScrollAccum || 0) + Math.abs(position - previous);
+    if (this.__einkScrollAccum < extent) return;
+    this._noteEinkPage();
+  },
+  // 回传一页（Dart `onEinkScrollPage` → 计数），并清零拖动累计。
+  _noteEinkPage: function() {
+    this.__einkScrollAccum = 0;
+    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+      try { window.flutter_inappwebview.callHandler('onEinkScrollPage'); } catch (e) {}
     }
   },
   _writeContinuousScroll: function(pos) {
@@ -4093,44 +4280,6 @@ $kSentenceAudioRubyGapJs
   // BUG-3518：WebKit 上有声书当前句是 Range（不包裹）；getRect 对 Range 同样成立。
   revealRange: function(range) {
     return this.scrollToTarget(range.cloneRange());
-  },
-  // BUG-2903：章内文本索引——按文档序列出有可匹配字符的文本节点、各自的章内起始字数与
-  // 章总字数。滚动中的进度回报每帧都要「视口边之前有多少字」（onReaderScroll →
-  // fushiProgressDetails），旧实现每次对整章做三遍 walk（总字数 / calculateProgress /
-  // getLastVisibleCharOffset），后两遍还逐节点 getClientRects——6000 个文本节点的长章
-  // 桌面 Chrome 实测一次 150–200ms，滚轮 rAF 缓动（BUG-2830）在其间整段冻住，体感是
-  // 「往下滚会卡在某处停一会」。索引只依赖 DOM 文本结构，不依赖几何，建一次即可；
-  // 正文 DOM 变化（有声书 span 包裹兜底、注音切换等）由 MutationObserver 记账，取用时
-  // 同步 takeRecords 判脏，不吃异步回调的时序。
-  _textIndexCache: null,
-  _textIndexObserver: null,
-  _textIndex: function() {
-    var obs = this._textIndexObserver;
-    if (obs && obs.takeRecords().length > 0) this._textIndexCache = null;
-    var cache = this._textIndexCache;
-    if (cache && cache.body === document.body) return cache;
-    if (!obs) {
-      var self = this;
-      obs = new MutationObserver(function() { self._textIndexCache = null; });
-      this._textIndexObserver = obs;
-    }
-    obs.disconnect();
-    obs.observe(document.body, {childList: true, characterData: true, subtree: true});
-    var nodes = [];
-    var starts = [];
-    var total = 0;
-    var walker = this.createWalker();
-    var node;
-    while (node = walker.nextNode()) {
-      var len = this.countChars(node.textContent);
-      if (len <= 0) continue;
-      nodes.push(node);
-      starts.push(total);
-      total += len;
-    }
-    cache = {body: document.body, nodes: nodes, starts: starts, total: total};
-    this._textIndexCache = cache;
-    return cache;
   },
   chapterCharTotal: function() {
     return this._textIndex().total;
@@ -4239,7 +4388,7 @@ $kSentenceAudioRubyGapJs
   // shell 的章首/章末分支（`单层 16ms + 重发滚动后立即通知`）时序一致。
   _settleAndNotify: function() {
     var self = this;
-    setTimeout(function() { self.notifyRestoreComplete(); }, 16);
+    setTimeout(this._restoreCallback(function() { self.notifyRestoreComplete(); }), 16);
   },
   restoreProgress: async function(progress) {
     await document.fonts.ready;
@@ -4252,10 +4401,10 @@ $kSentenceAudioRubyGapJs
       // 后正文整体下移，不重锚就会停在图与正文之间的错位。
       this.registerImageLateAnchor({progress: 0});
       this.scrollToChapterStart();
-      setTimeout(function() {
+      setTimeout(this._restoreCallback(function() {
         self.scrollToChapterStart();
         self.notifyRestoreComplete();
-      }, 16);
+      }), 16);
       return;
     }
     // TODO-1349：progress>=0.99 = 章末（往前翻到上一章的落点），与分页版
@@ -4268,10 +4417,10 @@ $kSentenceAudioRubyGapJs
       // scrollToChapterEnd（连续分支）落到含尾图的真实章末。
       this.registerImageLateAnchor({progress: progress});
       this.scrollToChapterEnd();
-      setTimeout(function() {
+      setTimeout(this._restoreCallback(function() {
         self.scrollToChapterEnd();
         self.notifyRestoreComplete();
-      }, 16);
+      }), 16);
       return;
     }
     // BUG-1140 第二轮：中段 progress 同样登记（理由见分页版 restoreProgress 长注释）。
@@ -4322,6 +4471,10 @@ $kSentenceAudioRubyGapJs
     this.__selectionViewportScroll = after;
     var moved = Math.abs(after - before) > 1;
     if (moved) this._clearSelectionOnViewportChange(true);
+    // 墨水屏「每 N 页全刷」：点击区 / 音量键 / 键盘 / 手柄 / 翻页按钮的一步翻页就是
+    // 一页。上面已把快照推进到 after，稍后到达的 scroll 事件不会再进 _noteEinkScroll，
+    // 所以这里直接计一页并清掉拖动累计（不与半屏拖动叠成两页）。
+    if (moved) this._noteEinkPage();
     if (moved) return "scrolled";
     // 滚到文档尽头：文档内换章的所有者（无缝衔接）认领了就由它换章，不再回 limit 让
     // Dart 从（可能已经换过的）章号再跨一章。认领后视口已对齐到新章，按「滚动了」回报。
@@ -4716,7 +4869,7 @@ $initImages
     }
     $sentenceAudioInit
     $initialRestoreScript
-  });
+$_sharedInitialRestoreCatchJs
 };
 window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   var newHeight = Math.round(cssHeight);

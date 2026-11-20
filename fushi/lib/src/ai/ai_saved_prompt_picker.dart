@@ -6,11 +6,9 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/ai/ai_saved_prompts.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -27,14 +25,15 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 输入框旁的「已保存的提示词」按钮。
 ///
-/// [store] 默认取 `appProvider` 的偏好仓库；测试可注入内存实现。
+/// [storeOf] 由调用方注入（生产传应用偏好仓库，测试可注入内存实现）：本文件不读
+/// `appProvider`，免得把这个通用按钮经 AppModel 拖进 import 大环。
 class AiSavedPromptButton extends StatelessWidget {
   const AiSavedPromptButton({
     required this.scene,
     required this.controller,
     this.enabled = true,
     this.showLabel = false,
-    this.store,
+    required this.storeOf,
     super.key,
   });
 
@@ -50,18 +49,15 @@ class AiSavedPromptButton extends StatelessWidget {
   /// true = 带文字的文字按钮（竖排区块里用）；false = 纯图标按钮（与输入框同行）。
   final bool showLabel;
 
-  /// 存取实现；null = 应用偏好。
-  final AiSavedPromptStore? store;
-
-  AiSavedPromptStore _resolveStore(BuildContext context) =>
-      store ?? ProviderScope.containerOf(context).read(appProvider).prefsRepo;
+  /// 取存取实现（生产 = 应用偏好仓库）；点开时才取，偏好未就绪的早期构建不碰它。
+  final AiSavedPromptStore Function() storeOf;
 
   Future<void> _open(BuildContext context) async {
     final String? picked = await showAiSavedPromptSheet(
       context,
       scene: scene,
       current: controller.text,
-      store: _resolveStore(context),
+      store: storeOf(),
     );
     if (picked == null) return;
     controller.value = TextEditingValue(

@@ -20,10 +20,10 @@ import 'package:fushi_engine/epub/reader_resource_host.dart';
 class EpubBook {
   EpubBook({
     required this.title,
-    required this.chapters,
-    this.toc = const [],
+    required List<EpubChapter> chapters,
+    List<EpubTocItem> toc = const [],
     this.coverHref,
-    this.resources = const {},
+    Map<String, EpubResource> resources = const {},
     this.rootDirectory,
     this.author,
     this.language,
@@ -32,7 +32,9 @@ class EpubBook {
     this.pageProgressionDirection,
     this.primaryWritingMode,
     this.series,
-  });
+  }) : _chapters = chapters,
+       _toc = toc,
+       _resources = resources;
 
   final String title;
   final String? author;
@@ -64,11 +66,41 @@ class EpubBook {
   /// OPF 声明的系列（`belongs-to-collection` / `calibre:series`），没有为 null。
   final EpubSeries? series;
 
-  final List<EpubChapter> chapters;
-  final List<EpubTocItem> toc;
+  /// spine 章节、目录与资源表。打开后只有一种变化：[adoptTrailingChapters]
+  /// （网页小说书阅读中途 spine 末尾长出新章）整体换成更长的新表，已有章节的
+  /// 章号与内容不变。
+  List<EpubChapter> get chapters => _chapters;
+  List<EpubChapter> _chapters;
+  List<EpubTocItem> get toc => _toc;
+  List<EpubTocItem> _toc;
+  Map<String, EpubResource> get resources => _resources;
+  Map<String, EpubResource> _resources;
   final String? coverHref;
-  final Map<String, EpubResource> resources;
   final String? rootDirectory;
+
+  /// 网页小说书阅读中途，解压树的 spine 末尾追加了新章（取回末尾「下一章」占位
+  /// 后续挂下一个占位，novel-d6）：把同一解压树重解析的 [grown] 比本书多出的尾部
+  /// 章节并进来，目录与资源表换成 [grown] 的（刚取回那一章的目录标题也随之更新）。
+  ///
+  /// 只接受「本书是 [grown] 的前缀」：章数更多、且已有每一章的 href 一致；否则
+  /// 不动并返回 false（解压树被别处整本重建过，交给下次开书）。已有章节的章号、
+  /// 内容与按章号的派生缓存都不变；插图表作废（新章可能带图），下次读取时重建。
+  /// 每章字数提示由调用方随新字数表重注（[setChapterCharCountHints]）。
+  bool adoptTrailingChapters(EpubBook grown) {
+    final List<EpubChapter> next = grown.chapters;
+    if (next.length <= _chapters.length) return false;
+    for (int i = 0; i < _chapters.length; i++) {
+      if (next[i].href != _chapters[i].href) return false;
+    }
+    _chapters = List<EpubChapter>.of(<EpubChapter>[
+      ..._chapters,
+      ...next.sublist(_chapters.length),
+    ]);
+    _toc = grown.toc;
+    _resources = <String, EpubResource>{..._resources, ...grown.resources};
+    _images = null;
+    return true;
+  }
 
   /// TODO-723: lazily-built, cached index of every `<img>` in the book, ordered
   /// by spine (reading order) then by DOM order within each chapter. Built once
@@ -106,10 +138,23 @@ class EpubBook {
     final String normalized = normalizeHref(path);
     final EpubResource? resource = resources[normalized];
     if (resource != null) return resource.readBytes();
-    if (rootDirectory == null) return null;
-    final File file = File(p.join(rootDirectory!, normalized));
+    final String? diskPath = rootFilePath(normalized);
+    if (diskPath == null) return null;
+    final File file = File(diskPath);
     if (file.existsSync()) return file.readAsBytesSync();
     return null;
+  }
+
+  /// [path]（相对 EPUB 根的 href）在解压根 [rootDirectory] 下对应的盘上路径。没有
+  /// 解压根、或 href 经 `..` / 绝对路径落到根目录之外时为 null——书里的引用是不可信
+  /// 数据，读（[readResource]）和挪（漫画导入把页图 rename 进 staging）都只认根内
+  /// 文件，与解析器资源表的 `p.isWithin` 校验同一口径。
+  String? rootFilePath(String path) {
+    final String? root = rootDirectory;
+    if (root == null) return null;
+    final String joined = p.normalize(p.join(root, normalizeHref(path)));
+    if (!p.isWithin(p.canonicalize(root), p.canonicalize(joined))) return null;
+    return joined;
   }
 
   String mediaType(String path) {
@@ -770,6 +815,12 @@ class EpubChapter {
   final String? _eagerHtml;
   final String? _filePath;
   String? _lazyHtml;
+  int _contentVersion = 0;
+
+  /// 章节内容版本：[discardCachedHtml]（盘上文件被换掉）一次加一。按章缓存派生
+  /// 数据（书内搜索文本）的消费方拿它判新旧，不必为了比对把 [html] 读进内存
+  /// （lazy 章节一读就常驻在 [_lazyHtml]）。eager 章节恒为 0。
+  int get contentVersion => _contentVersion;
 
   /// The on-disk XHTML backing a lazy chapter; null for an eager one. Derived
   /// caches (the illustration index) fingerprint these files.
@@ -788,7 +839,12 @@ class EpubChapter {
   /// 正文，下次访问 [html] 重新读盘。eager 章节没有盘上文件，不受影响。
   void discardCachedHtml() {
     _lazyHtml = null;
+    _contentVersion++;
   }
+
+  /// 按 [filePath] 读章节 XHTML，与 lazy 章节首次访问 [html] 同一套解码；文件不在
+  /// 返回 `''`。后台 isolate 按路径自读时用它，保证与 UI isolate 读到的逐字相同。
+  static String readHtmlFile(String filePath) => _readChapterFile(filePath);
 
   static String _readChapterFile(String? filePath) {
     if (filePath == null) return '';

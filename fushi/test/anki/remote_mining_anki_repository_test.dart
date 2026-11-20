@@ -1,9 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
+import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart'
+    show isUndeliveredMineFailure;
 import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 import 'package:fushi/src/sync/fushi_remote_mining_client.dart';
@@ -11,10 +14,13 @@ import 'package:fushi/src/sync/sync_backend.dart';
 
 /// 假发送器：捕获转发出去的 payload，返回预设响应，或抛鉴权错。
 class _FakeSender implements RemoteMineSender {
-  _FakeSender(this._response, {this.throwAuth = false});
+  _FakeSender(this._response, {this.throwAuth = false, this.refuse = false});
 
   final Map<String, dynamic>? _response;
   final bool throwAuth;
+
+  /// 主机连上了、制卡端点回 404 / 405（[RemoteMineRefused]）。
+  final bool refuse;
   ForwardedMinePayload? captured;
   final List<List<String>> dupCalls = <List<String>>[];
   RemoteDuplicateCheck dupResult = RemoteDuplicateCheck.notDuplicate;
@@ -25,6 +31,7 @@ class _FakeSender implements RemoteMineSender {
   ) async {
     captured = payload;
     if (throwAuth) throw SyncAuthError('nope');
+    if (refuse) throw const RemoteMineRefused();
     return _response;
   }
 
@@ -375,6 +382,60 @@ void main() {
         contains('Mine to Fushi Interconnect server'),
       );
       expect(outcome.errorDetail, isNot(contains('server-side mining')));
+    });
+
+    test('主机不收卡（RemoteMineRefused）：分类成「已配对设备不收卡」，可进待发队列，文案不说连不上', () async {
+      final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+        local: _FakeLocal(),
+        client: _FakeSender(null, refuse: true),
+        fileByteLoader: (String p) async => null,
+        dictMediaLoader: (String d, String p) => null,
+      );
+
+      final MineOutcome outcome = await repo.mineEntry(
+        rawPayloadJson: '{}',
+        context: const AnkiMiningContext(sentence: ''),
+      );
+
+      expect(outcome.result, MineResult.error);
+      expect(outcome.errorCode, AnkiErrorCode.pairedDeviceMiningUnavailable);
+      expect(
+        outcome.errorDetail,
+        RemoteMiningAnkiRepository.pairedDeviceMiningUnavailableMessage,
+      );
+      expect(outcome.errorDetail, isNot(contains('could not be reached')));
+      expect(isUndeliveredMineFailure(outcome), isTrue);
+    });
+
+    test('「主机不收卡」文案只说看得到的原话（404 / 405），不咬定是没配 Anki / 复习库不可用', () {
+      // 客户端只看得到状态码：主机上没有能写的落点、主机版本没有这个端点都回 404 / 405，分不清。用户实际看到的是
+      // i18n 那句（error_log_service 按错误码取），英文与中文两份连同代码里的常量一起钉住。
+      final Map<String, Object?> en =
+          (jsonDecode(File('lib/i18n/strings.i18n.json').readAsStringSync())
+                  as Map)
+              .cast<String, Object?>();
+      final Map<String, Object?> zh =
+          (jsonDecode(
+                    File('lib/i18n/strings_zh-CN.i18n.json').readAsStringSync(),
+                  )
+                  as Map)
+              .cast<String, Object?>();
+      const String key = 'anki_error_paired_device_mining_unavailable';
+      for (final String text in <String>[
+        RemoteMiningAnkiRepository.pairedDeviceMiningUnavailableMessage,
+        en[key]! as String,
+        zh[key]! as String,
+      ]) {
+        expect(text, contains('404 / 405'), reason: text);
+        expect(text, isNot(contains('no Anki set up')), reason: text);
+        expect(text, isNot(contains('review collection is unavailable')));
+        expect(text, isNot(contains('没有配好 Anki')), reason: text);
+        expect(text, isNot(contains('复习库也不可用')), reason: text);
+      }
+      expect(
+        en[key],
+        RemoteMiningAnkiRepository.pairedDeviceMiningUnavailableMessage,
+      );
     });
 
     test('BUG-1549 主机回传 deckName → 成功 outcome 带主机牌组名', () async {

@@ -294,8 +294,11 @@ bool videoFilenameOrganizeShouldConsultBackend({
   required bool embeddedSessionAlive,
   required bool embeddedHasResumeFiles,
   required String qbBaseUrl,
+  bool remoteHostSelected = false,
 }) {
   if (!downloadsAvailable) return false;
+  // 借互联设备的引擎：种子在对端，本机无从判断有没有，一律问它。
+  if (remoteHostSelected) return true;
   if (embeddedSelected) return embeddedSessionAlive || embeddedHasResumeFiles;
   return qbBaseUrl.trim().isNotEmpty;
 }
@@ -317,17 +320,34 @@ class VideoFilenameOrganizeService {
   final Future<List<VideoDownloadPathMapping>> Function()? _pathMappings;
 
   /// 为 [bookUids] 排计划（只读：不动磁盘、不动库、不动引擎）。
+  ///
+  /// [customTargets] 里点了名的条目不按刮削身份算规范名，目录 / 文件名用调用方
+  /// 给的（[VideoFilenameCustomTarget]，不合法抛 [ArgumentError]）；做种核对、
+  /// 目录合集、撞名与来源库根这些门照旧。它们没有身份可认，作品级 / 季级 sidecar
+  /// 不跟着搬（逐文件的字幕与 NFO 仍跟）。
   Future<VideoFilenameOrganizePlan> plan(
     Iterable<String> bookUids, {
     VideoOrganizeLayout layout = VideoOrganizeLayout.filenameOnly,
+    Map<String, VideoFilenameCustomTarget> customTargets =
+        const <String, VideoFilenameCustomTarget>{},
   }) async {
+    for (final VideoFilenameCustomTarget target in customTargets.values) {
+      final String? reason = invalidVideoCustomTargetReason(target);
+      if (reason != null) throw ArgumentError(reason);
+    }
     final bool directories = layout == VideoOrganizeLayout.directories;
+    // 点名换目录的条目与「归到规范目录」走同一套目录门（库根 / 目录合集）。
+    final bool movesDirectories =
+        directories ||
+        customTargets.values.any(
+          (VideoFilenameCustomTarget t) => t.directorySegments != null,
+        );
     final Map<String, VideoBookRow> rows = <String, VideoBookRow>{
       for (final VideoBookRow row in await _db.allVideoBooks())
         row.bookUid: row,
     };
     final Map<int, String> sourceRoots = <int, String>{
-      if (directories)
+      if (movesDirectories)
         for (final MediaSourceRow source in await _db.getAllMediaSources())
           if (source.transport == 'local' && source.mediaKind == 'video')
             source.id: source.rootPath,
@@ -350,18 +370,27 @@ class VideoFilenameOrganizeService {
         continue;
       }
       final bool playlist = files.length > 1;
-      final VideoFilenameIdentity? identity = await readIdentity(uid);
-      final String? stem = identity == null
+      final VideoFilenameCustomTarget? custom = customTargets[uid];
+      final VideoFilenameIdentity? identity = custom == null
+          ? await readIdentity(uid)
+          : null;
+      final String? stem = custom != null
+          ? custom.stem
+          : identity == null
           ? null
           : canonicalVideoFileStem(identity);
-      final List<String>? segments = identity == null
+      final List<String>? segments = custom != null
+          ? custom.directorySegments
+          : identity == null
           ? null
           : canonicalVideoDirectorySegments(identity);
-      if (stem == null || segments == null) {
+      if (custom == null && (stem == null || segments == null)) {
         drafts.add(_Draft(row, VideoFilenamePlanStatus.noIdentity));
         continue;
       }
-      if (playlist && !directories) {
+      // 这一条换不换目录：规范布局按 [layout]，点名的看它给没给目录。
+      final bool toDirectory = custom == null ? directories : segments != null;
+      if (playlist && (custom == null ? !directories : stem != null)) {
         drafts.add(
           _Draft(row, VideoFilenamePlanStatus.playlistNeedsDirectories),
         );
@@ -369,13 +398,13 @@ class VideoFilenameOrganizeService {
       }
       String? root;
       String? targetDir;
-      if (directories) {
+      if (toDirectory) {
         root = _libraryRootOf(row, files, sourceRoots);
         if (root == null) {
           drafts.add(_Draft(row, VideoFilenamePlanStatus.outsideLibraryRoot));
           continue;
         }
-        targetDir = p.joinAll(<String>[root, ...segments]);
+        targetDir = p.joinAll(<String>[root, ...segments!]);
       }
       final List<String> targetNames = targetDir == null
           ? const <String>[]
@@ -413,14 +442,16 @@ class VideoFilenameOrganizeService {
           moves: moves,
           identity: identity,
           libraryRoot: root,
-          workDirectory: root == null ? null : p.join(root, segments.first),
+          workDirectory: root == null || segments == null || segments.isEmpty
+              ? null
+              : p.join(root, segments.first),
         ),
       );
     }
 
     // 作品级 / 季级 sidecar 先按「全员都在这一批」暂排，一起去问做种；之后条目
     // 可能被做种 / 目录合集挡下，挂靠前再按最终结果复核一遍。
-    final List<_ArtifactMove> artifacts = directories
+    final List<_ArtifactMove> artifacts = movesDirectories
         ? await _workArtifactMoves(drafts, claimed)
         : const <_ArtifactMove>[];
 
@@ -443,7 +474,7 @@ class VideoFilenameOrganizeService {
       }
     }
 
-    final List<VideoFolderCollectionMove> collectionMoves = directories
+    final List<VideoFolderCollectionMove> collectionMoves = movesDirectories
         ? await _folderCollectionMoves(drafts, rows.keys.toSet())
         : const <VideoFolderCollectionMove>[];
 

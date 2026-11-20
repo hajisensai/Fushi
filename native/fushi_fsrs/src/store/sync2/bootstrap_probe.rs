@@ -474,7 +474,7 @@ fn probe_sliced() {
         req["caches"] = serde_json::json!({"defaultDeck": deck});
         let mut blobs = blobs;
         let mut files = Vec::new();
-        crate::store::ffi::sync2_dispatch(&core, &req, &mut blobs, &mut files).unwrap()
+        crate::store::legacy3::sync2_dispatch(&core, &req, &mut blobs, &mut files).unwrap()
     };
     let run = || {
         let t0 = Instant::now();
@@ -762,6 +762,7 @@ fn probe_finish_floor() {
         let input: Vec<Row<'_>> = rows
             .iter()
             .map(|(_, s, _, json, code, arg)| Row {
+                seed_card: None,
                 json,
                 server_time: *s,
                 intent: match code {
@@ -986,7 +987,7 @@ fn probe_channel_floor() {
         req["caches"] = json!({"defaultDeck": deck});
         let mut blobs = blobs;
         let mut files = Vec::new();
-        crate::store::ffi::sync2_dispatch(&core, &req, &mut blobs, &mut files).unwrap()
+        crate::store::legacy3::sync2_dispatch(&core, &req, &mut blobs, &mut files).unwrap()
     };
     cmd(json!({"op": "plan"}), heads.clone());
     let t_all = Instant::now();
@@ -1733,8 +1734,9 @@ fn probe_channel_finish() {
             req["sliceMs"] = serde_json::json!(s);
         }
         let t = Instant::now();
-        let r = crate::store::ffi::sync2_dispatch(&core, &req, &mut Vec::new(), &mut Vec::new())
-            .unwrap();
+        let r =
+            crate::store::legacy3::sync2_dispatch(&core, &req, &mut Vec::new(), &mut Vec::new())
+                .unwrap();
         let d = t.elapsed().as_micros();
         let e = acc.entry(p).or_default();
         e.0 += d;

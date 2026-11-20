@@ -267,6 +267,22 @@ void main() {
       expect(legacy.buffering, isFalse);
     });
 
+    test('eme 标记成 encrypted（字幕生成入口据此不出现）；旧 glue 没有该字段 = 未加密', () {
+      expect(
+        parseWebVideoStatePayload(<String, Object?>{
+          'hasVideo': true,
+          'eme': true,
+        })!.encrypted,
+        isTrue,
+      );
+      expect(
+        parseWebVideoStatePayload(<String, Object?>{
+          'hasVideo': true,
+        })!.encrypted,
+        isFalse,
+      );
+    });
+
     test('YouTube 按需加载的占位轨（lzt）进站点轨清单，与 Netflix 的 nftt 同一清单', () {
       final WebVideoPlaybackState s =
           parseWebVideoStatePayload(<String, Object?>{

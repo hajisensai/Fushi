@@ -34,6 +34,9 @@ function extractMethod(name) {
 
 const hiddenRubyAt = extractMethod('_hiddenFuriganaRubyAt');
 const selectText = extractMethod('selectText');
+// BUG-4711 起 selectText 的同词判据走 designatesCurrentSelection（ruby 组首吸附 + 被点字
+// 落在 matchedRanges 里才算同词）；切生产实现，不写恒 false 的桩。
+const designatesCurrentSelection = extractMethod('designatesCurrentSelection');
 
 function makeClassList(initial) {
   const set = new Set(initial || []);
@@ -78,6 +81,7 @@ function makeHarness(sc) {
     '(function(){ var o = {\n' +
     hiddenRubyAt + ',\n' +
     selectText + ',\n' +
+    designatesCurrentSelection + ',\n' +
     '  selection: null,\n' +
     '  getCharacterAtPoint: function() { calls.getCharacterAtPoint++; return { node: {}, offset: 0 }; },\n' +
     // selectText 用 selectionStartFor 归一同词判据（BUG-3978）；本 harness 只测揭示分流，

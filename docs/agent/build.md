@@ -64,9 +64,38 @@ cd fushi
 flutter build apk --release --target-platform android-arm64 --split-per-abi
 ```
 
+### 新 worktree 第一次 flutter test（2026-11-20）
+
+`tool/setup_worktree.ps1` 在 bootstrap 之后跑 `fushi/tool/worktree_seed.dart` 的两步，都只影响速度，不影响结果；失败时打黄字、退出码原样报出，worktree 照常可用。
+
+- **以前那条「从兄弟 worktree 拷 `fushi/build/test_cache` 的 dill」预热已删除**：它从来没起作用。`test/flutter_test_config.dart` import 了 `package:fushi`，所以任何 fushi 测试编出的 dill 都带源 worktree 绝对路径下的 fushi/lib、packages/*、third_party/*。front_end（Dart 3.13.5 `incremental_compiler.dart` 的 `_initializeFromDill`）发现某个 `package:` 库的路径和本 worktree 的 package_config 对不上，就抛 `PackageChangedError`，被静默吞掉，然后**丢掉整份 dill 冷编**。旧注释里「只重编路径不同的库、复用 SDK 与 pub 部分」的说法是错的；每个 worktree 白拷约 680 MB，首编反而更慢（实测 86 s，冷编 72 s）。
+- **hook 下载产物**（`worktree_seed.dart hooks`）：pdfium_dart 0.2.5 和 sqlite3 3.5.2 的 build hook 原来在每个新 worktree 都从 GitHub 重下一遍（pdfium 约 17 s）。现在从全机缓存 `%LOCALAPPDATA%/fushi-heavy/hook-downloads/` 或兄弟 worktree 拷 `.dart_tool/hooks_runner/shared/` 下按内容寻址的文件：`sqlite3/build/download-*/` 和 `pdfium_dart/build/chromium_*/<平台>/`。只拷大于 0 字节、2 分钟内没再写过的文件，先写临时名再改名。input.json、hook.dill、依赖哈希这些写死了绝对路径的东西不拷。拷之前要校验内容：sqlite3 按目录名里的 sha256 前缀校验（它的 hook 自己还会再验一遍全量哈希）。pdfium 的 hook 只看文件存不存在，还是非原子写入，截断的库会一直到加载时才报错，所以**只拷 sha256 与钉值相符的文件**。钉值表在 `fushi/tool/worktree_seed/hook_downloads.dart`，覆盖 chromium_7811 的 13 个平台：先从上游 bblanchon/pdfium-binaries 下发布包，核对 GitHub 列出的 digest，再对包里的库算哈希；本机已有的 4 个平台（win-x64、android-arm/arm64/x64）文件与钉值一致。**pdfium_dart 升级、换了 chromium 版本号之后，钉值表要按同样的方法补**，否则 pdfium 不再复用（只是变慢，不会出错）。
+- **第三方库编译 seed**（`worktree_seed.dart kernel`）：全机缓存放在 `%LOCALAPPDATA%/fushi-heavy/test-seed/<key>/`，key 由 Flutter SDK 路径、framework / engine / Dart 版本、`pubspec.lock` 的 sha256、`fushi/pubspec.yaml` 的 version 算出，保留最近 4 个。缓存里有 seed 就**拷贝**（不能用硬链接：flutter test 会原地写回这个文件）成 `fushi/build/test_cache/build/<md5>.cache.dill.track.dill`；worktree 里已经有自己的编译缓存时不动。缓存里没有，就在当前 worktree 生成一份：
+  - 生成一个入口，只 import worktree 代码用到的第三方 `package:` 库。仓内包要排除，**依赖仓内包的第三方包也要排除**，例如 marquee 依赖仓内覆盖的 `third_party/fading_edge_scrollview`，带上它 dill 里就会混进 worktree 路径。
+  - 入口放在 `fushi/build/test_seed/`，那里没有 `flutter_test_config.dart`，flutter_tools 找配置找到包根就停。
+  - 经 `tool/heavy.dart` 用真实的 `flutter test` 编一次。编译参数就是 flutter_tools 自己的，不用手工复刻 frontend_server 参数。
+  - 校验 dill 里除入口和 `.dart_tool/` 外不含任何 worktree 路径，才存进缓存；生成期间加 `<key>.lock` 锁防并发。
+
+  正确性由 frontend_server 兜底：它会把 dill 里每个源文件和磁盘逐字节比对，变了的就重编，所以 seed 过期或不全只会慢、不会错。不想做这一步时加 `-SkipTestSeed`。
+- **实测**（2026-11-20，本机，同时有别的会话在跑测试，每格只测一两次，绝对秒数有噪声）。单条只 import flutter_test 的测试，新 worktree 第一次 `heavy flutter test -v`：
+
+  | setup 做了什么 | hooks | Compile | heavy 记的 ran |
+  |---|---|---|---|
+  | 旧版（拷兄弟 dill） | 21.7 s | 81.0 s | 112 s |
+  | 只删掉旧预热（冷编） | 23.0 s | 49.2 s | 79 s |
+  | 现在（hook 产物 + seed，缓存命中） | 2.6 s | 35.4 s | 46 s |
+
+  只比编译（同一个 worktree 清掉 test_cache 后重跑，hooks 已经是热的）：两个 worktree 各测一轮（第二轮顺序反过来）。只 import flutter_test 的测试：无 seed 43.6 s，有 seed 30.0 s / 29.5 s。import `package:fushi` 的组件测试 `test/widgets/fushi_card_focus_test.dart`：无 seed 42.6 s / 50.2 s，有 seed 30.0 s / 34.4 s。测试全部通过。缓存没命中时，setup 生成一次 seed 约 20～30 s（每个 key 全机只付一次），同时也把 hooks 和 unit_test_assets 跑掉了。
+- **没做 / 剩下的**：
+  - 剩下约 30 s 编的是 worktree 自己的代码（fushi/lib 约 2700 个库加 packages/*），front_end 按绝对路径认库，这部分跨 worktree 复用不了。要消掉得让 file URI 与 worktree 路径无关（multi-root scheme，要改 flutter_tools），没验证可行性。
+  - unit_test_assets 和 impellerc 那 5～11 s 按 mtime 判断新旧，不能跨 worktree 复用。
+  - seed 只服务 `fushi/` 的 flutter test，`packages/*` 各自的 `build/test_cache` 没有 seed。
+
 ### TODO-207 release channel invariants
 
 客户端按 stable / beta / debug 三个通道过滤 GitHub Release。stable 只看正式 Latest；beta/debug 扫描最近 releases，但只接受 tag 形如 `v<version>-beta.<seq>` / `v<version>-debug.<seq>+<short-sha>` 且 `prerelease=true` 的 release。旧的 `debug-<sha>` tag 不可比较，客户端会忽略。
+
+**数据库 schema 闸（2026-11-16）**：更新清单每个 asset 带 `dbSchemaVersion`（`tool/publish_update_manifest.sh` 从 `packages/fushi_core/lib/src/database/db_schema_version.dart` 的 `kFushiDbSchemaVersion` 抠出，`merge_update_manifest.py` 原样保留）。客户端选包时比本机 schema 低的 asset 一律跳过，不管发布序号 / 基版本怎么判——装上就是「库比程序新」、app 拒绝打开。所以调试版用户永远不会被推回 schema 更旧的正式版。schema 版本号只在那个常量里改；改写法要同步脚本里的 sed 正则（守卫 `fushi/test/utils/misc/update_checker_db_schema_guard_test.dart`）。
 
 debug 通道发布的是 release-signed debug-channel APK：文件名保留 `-debug.apk` 供客户端过滤，APK 使用 release keystore、写入 `versionName=<version>-debug.<seq>` 和单调 `versionCode`（公式见下「版本号与 build number」），用于覆盖正式签名包并让同一平台后续 debug/beta/formal release 仍可比较。debug push 仍必须是 prerelease / non-Latest，绝不能创建或更新 formal / Latest。
 
@@ -110,6 +139,36 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - 缺库 = 构建失败：Windows / Linux CMake `FATAL_ERROR`（`FUSHI_RWKV_DLL` / `FUSHI_RWKV_SO`）、macOS `fushi/macos/bundle_fushi_rwkv.sh` `exit 1`、iOS 编译前 `fushi/ios/check_fushi_rwkv.sh`（伞形库不导出 `frwkv_abi_version` 即失败）、Android `checkFushiRwkvNative`（挂 `preBuild`）。本地 `tool/bootstrap.ps1` / `bootstrap.sh` 紧接 fushi_compute 编它，`-SkipNativeCompute` 两个一起跳过。守卫 `fushi/test/build/fushi_rwkv_hard_dependency_guard_test.dart`。
 - **CI**：凡用 `setup-fushi-compute` 的 job 紧跟着用 `.github/actions/setup-fushi-rwkv`（同样的 `android-abis`，导出 `FUSHI_RWKV_LIB`）；出包 job 与 fushi_compute 同处各带 rust-cache 构建并出包后核对（APK 每个 ABI、Windows bundle、macOS Frameworks、iOS Runner 导出 `frwkv_*`、服务端 Linux / Windows bundle），dlopen 冒烟比对的 ABI 版本从 `src/lib.rs` 的 `ABI_VERSION` 读、不写死。PR 上 `native-rwkv-gate.yml` 跑三种 CPU 内核的 `cargo test --release`（权重与小模型包按 `fetch_model.sh` 钉的两个 SHA-256 缓存）+ Android 三 ABI 真编与符号核对。
 - **许可**：fushi_rwkv 是 AGPL-3.0-or-later（推理核心搬自 kuma3-anki-core，所有者 2026-10-19 拍板接受，见 `native/fushi_rwkv/UPSTREAM.md`）。动态加载它的四端 app 与静态链它的 iOS 伞形库 / Runner 都随之受 AGPL 约束（GPL-3.0 第 13 条允许与 AGPL-3.0 合并分发）。
+
+## Windows 资源管理器封面缩略图 fushi_shell_thumbs（Rust，只随安装包）
+
+- 源码 `native/fushi_shell_thumbs/`（拍板台 WoAtPpuvwm）：资源管理器里 epub / cbz / cbr / cb7 / pdf 显示封面。两个产物：`fushi_shell_thumbs.dll`（COM 进程内服务器，`IInitializeWithFile` + `IThumbnailProvider`）和 `fushi_shell_thumbs_host.exe`（每张缩略图一次性的宿主进程）。设计与边界见该目录 `README.md`。
+- **不是 app 进程的依赖**：不进 CMake bundle、不进 `tool/native_libs.ps1`；只由 `release-desktop.yml` 的「Build and bundle fushi_shell_thumbs」步（`build_windows_dll.ps1 -InstallDirectory <Release>`，签名之前）放进 Release 目录，`fushi.iss` 的 `bookassoc` 任务按用户（`HKCU64`）注册。
+- **为什么进程内 + 自己的宿主进程**：系统缩略图隔离进程（COM Surrogate）激活不到 HKCU 注册的 CLSID（2026-11-16 实测 `REGDB_E_CLASSNOTREG`），本安装器又是 `PrivilegesRequired=lowest`，所以 `DisableProcessIsolation=1`。explorer 里的 DLL 不解析文件，只把路径交给宿主进程（job 对象限 1 GiB、15 秒超时、普通优先级——低优先级在满载机器上会被饿到超时），宿主用 `{app}\7za\7z.dll`（rar / 7z）和 `{app}\pdfium.dll`（pdf）。升级时被 explorer 占着的旧 DLL 由 `[Code] FushiSetAsideThumbnailHandler` 改名挪开。
+- 本地：`cargo test --profile quick`（端到端测试要 `FUSHI_TEST_7Z_DIR` / `FUSHI_TEST_PDFIUM_DLL`，没给就 SKIP 那几条）；`examples/probe.rs` 对真实文件出 PNG。PR 上 `native-shell-thumbs-gate.yml` 用钉死 SHA-256 的真 7z.dll / pdfium.dll 跑 `cargo test --release --locked`（`FUSHI_THUMBS_REQUIRE_DEPS=1`，缺依赖判红）。
+
+## Android JVM 单测（`fushi/android/app/src/test`）
+
+- CI：`main.yml` 的 `build` job 在 PR 改到 Android / 原生 / 插件 / pubspec（与 R8 校验同一个路径门）时跑
+  `./gradlew :app:testDebugUnitTest`，红就判红；守卫 `fushi/test/build/android_jvm_unit_tests_ci_guard_test.dart`。
+- **新 worktree 里直接能跑（2026-11-20）**：gradle wrapper（`fushi/android/gradlew`、`gradlew.bat`、
+  `gradle/wrapper/gradle-wrapper.jar`，取自 Flutter 3.47.6 的 `bin/cache/artifacts/gradle_wrapper`）入库，不再靠
+  `flutter build apk` 现生成；`checkFushi{Compute,Rwkv,Music,Corpus}Native` 从 `preBuild` 挪到
+  `merge<Variant>JniLibFolders`（把 .so 收进包的任务），所以 JVM 单测与纯编译任务不要求本机有 Android 预编译
+  `.so`，出 APK / AAB 的任务缺库照旧失败。守卫 `fushi/test/build/android_gradle_runs_in_fresh_checkout_guard_test.dart`
+  与四个 `fushi_*_hard_dependency_guard_test.dart`。起因与数据见 [heavy-lease.md](heavy-lease.md)。
+- **出包任务缺 Android `.so` 时自己备（2026-11-20）**：四个 check 之前先跑 `ensureFushiAndroidNative`，缺库且在
+  Windows 上就调 `tool/native_libs.ps1 -Android -Abis <本次要出的 ABI>`：本地戳记 → 本机缓存
+  `%LOCALAPPDATA%\fushi-native-cache`（`FUSHI_NATIVE_CACHE` 可改，每个产物留最近 4 棵源码树）→ 兄弟 worktree →
+  `build_android_so.ps1` 现编（要 cargo-ndk 与 NDK 28.2.13676358），编完进缓存。同一份 `native/<crate>` 源码一台机器
+  只编一次，之后每个新 worktree 是拷贝。也可以手动先跑那条命令。库已齐（CI 出包前自己编）时不做任何事；
+  `native/<crate>` 有未提交改动时按工作区源码编、不进缓存；非 Windows 主机不代劳，check 照旧报错说明怎么编。
+  只管「缺」不管「旧」：库在但源码之后改过时不会自动重编，手动跑 `tool/native_libs.ps1 -Android` 会按戳记重编。
+- 本地定向跑（先在 `fushi/` 下 `flutter pub get` 生成插件注册与 `local.properties`），在 `fushi/android/` 下走租约：
+  `dart ../tool/heavy.dart --check-only -- .\gradlew.bat :app:testDebugUnitTest --tests app.fushi.reader.CrossAppAudioPolicyTest`。
+- 测试类路径上的 `android.jar` 全是抛 `Stub!` / "not mocked" 的桩，也没有 Robolectric：要单测的逻辑抽成不碰 Android
+  类的纯 Java（例：`CrossAppAudioPolicy`、`AnkiChannelHandler.runsOnMainThread`），别让被测类的静态初始化里出现
+  `new Handler(Looper.getMainLooper())` 这类调用。
 
 ## Rust 本地开发循环（quick profile）
 
@@ -166,9 +225,53 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
   加全局状态（分配器、计数器、全局锁）前先想清楚它在 16 个线程下的代价。
 - **sccache（可选）**：`tool/native_libs.ps1` 发现装了就自动挂上。实测只对冷编有用且有限：换一个 target 目录后 146 次可缓存编译只命中 26 次
   （带 build script 的依赖把 `OUT_DIR`——在 target 目录下——编进产物，下游跟着失配），冷编 153 秒 → 92 秒；对「改一行重编」
-  没有帮助（工作区 crate 开了增量，sccache 不缓存增量编译）。缓存目录用 sccache 自己的配置文件指定（Windows 开发机在
-  `D:\dev-cache\sccache`，别落 C 盘）。
-- 旧分支 / 还没合到这份配置的 worktree：本机 `~/.cargo/config.toml` 里放同一段 `[profile.quick]` 即可（Windows 开发机已放）；
+  没有帮助（工作区 crate 开了增量，sccache 不缓存增量编译）。缓存目录用 sccache 自己的配置文件指定（打算放
+  `D:\dev-cache\sccache`、别落 C 盘；**2026-11-17 核对时 Windows 开发机没有配置文件**，用的是默认的
+  `%LOCALAPPDATA%\Mozilla\sccache\cache`，约 6.7 GB）。
+  **它也缓存 C 编译**：cc crate（`cc-rs`）见到 `RUSTC_WRAPPER` 的文件名是 `sccache` 就把 C 编译器也包进去
+  （cc 1.10.0 `src/lib.rs` `rustc_wrapper_fallback`），所以 zstd-sys / libsqlite3-sys 的 `.o` 也进同一个缓存。C 的缓存键
+  不含 target 目录：换一个 `CARGO_TARGET_DIR` 冷编 zstd-sys，25 个 C 编译全部命中（2026-11-17 实测）。手敲的
+  `cargo build` / `cargo test --profile quick` 不设 `RUSTC_WRAPPER`，不经过 sccache。
+- **本机故障：zstd-sys 报 `LNK1106: invalid file or disk full: cannot seek to 0x250E`（2026-11-17）**。表现：
+  `setup_worktree` / `tool/native_libs.ps1` 编 fushi_fsrs 时 zstd-sys 的 build script 失败，lib.exe 打 `libzstd.a` 报
+  `4f97f2375d6aa471-entropy_common.o : fatal error LNK1106`；删掉 build 目录、换 worktree 重编都一样；手敲
+  `cargo build --profile quick` 却能过。PR #3563 / #3577 / #3579 的 worktree 都撞过。
+  - **根因（本机环境，不是仓库脚本）**：sccache 缓存里 entropy_common.c 那一项存的是一个被截断的 COFF 对象。证据：
+    00:01～03:27 之间 24 次失败（14 个不同 worktree、4 个 workflow）报的都是同一个文件、同一个偏移 `0x250E`，
+    而正常的 entropy_common.o 是 10591 字节（`0x295F`），偏移 0x250E 落在文件内——每次读到的是同一份更短的字节，不是随机写坏；
+    24 次全都开着 sccache（日志里有「rustc 编译缓存：sccache」）；C 缓存键不含 target 目录（见上一条），所以删 build 目录、
+    换 worktree 都拿回同一份坏对象；quick profile 能过是因为手敲的命令没挂 sccache，不是因为 profile。03:43 起同样的
+    构建全部恢复（缓存项被重写过），之后再没复现：2026-11-17 13:03 起在新 worktree 里经 sccache 冷编 zstd-sys 与
+    `build_windows_dll.ps1 -IdAudit` 都过了 lib.exe 这一步；把缓存里 720 个 C 对象逐个按 COFF 头核对，没有截断的。
+    坏项当初怎么写进去的没能还原（事后没有现场）；同一时段本机的提交内存（commit charge）顶着上限（见下一条），这是最可能的诱因，
+    但没有直接证据。已排除：磁盘满（D: 剩 296 GB、C: 剩 309 GB）、路径长度（报错的是 out 目录里的相对文件名，
+    其他 worktree 同长度路径能过）、cc 选错工具链（本机 PATH 上没有 gcc / clang / cc，日志里调的是 MSVC 的
+    `HostX64\x64\lib.exe`）、多个构建并发写同一 target（每个 worktree 各有 target，cargo 对同一 target 加锁）。
+  - **处置**：同一个 `.o` 反复报 LNK1106 / 「invalid file」、删 build 目录不管用时，带 `SCCACHE_RECACHE=1` 重编一次——
+    sccache 对这次构建的每个编译都不读缓存、重编并覆盖缓存项（实测 zstd-sys 26 个编译全部「Forced recaches」）：
+    `$env:SCCACHE_RECACHE = '1'; powershell -ExecutionPolicy Bypass -File native/fushi_fsrs/build_windows_dll.ps1 -IdAudit; Remove-Item Env:SCCACHE_RECACHE`。
+    要彻底清就 `sccache --stop-server` 后删缓存目录。不要拿 `-SkipNativeCompute` 绕过去（测试会跑在旧的原生库上），
+    也不要在脚本里加失败重试——坏项在缓存里，重试只会再拿到它。
+- **本机故障：编 fushi_fsrs 时 rustc 报 `memory allocation of N bytes failed`（`STATUS_STACK_BUFFER_OVERRUN`，2026-11-17）**：
+  是整机提交内存耗尽，不是 rustc 或仓库的问题。实测：13:05～13:19 连续两次 `build_windows_dll.ps1 -IdAudit` 在第二份
+  （id_audit）库上报分配 2 MB / 50 MB 失败，当时空闲物理内存还有 20 GB 以上；同期采样提交内存 161.8 / 162.8 GB（页面文件
+  系统托管、上限随用随涨），单个 rustc 只占约 1.5 GB，大头是别的进程（一个与本仓无关的 Python 推理进程 46 GB、58 个
+  claude 进程合计 26 GB）。第三次同样的命令在负载回落后两份库都编过了。处置：先看任务管理器「性能 → 内存 → 已提交」，
+  离上限近就等其他重负载结束或调大页面文件再编；同样不加重试。
+- **改一行重编的时间花在哪**（2026-11-17，rustc 1.95，fushi_fsrs `cargo test --profile quick --lib --no-run`，
+  `RUSTC_WORKSPACE_WRAPPER` 给本 crate 加 `-Ztime-passes`，依赖不受影响；机器上同时有别的会话占满 CPU）：rustc 本体每次
+  15～17 秒，其中宏展开（`expand_crate`，整个 crate 每次重做、不走增量）3.3～4.4 秒、codegen 约 2.8 秒、写增量缓存
+  （`serialize_dep_graph`）1.7～2.6 秒、链接（`run_linker`）link.exe 2.0～3.0 秒 / rust-lld 0.9～2.0 秒，其余是类型检查等
+  查询。cargo 自身的空跑开销 0.4～0.5 秒。**端到端计时在这台机器上不可信**：同一操作在别的会话占满 CPU 时 14～50 秒乱跳，
+  比任何配置差异都大，比较配置要看 `-Ztime-passes` 的分项。
+  - **链接器不换**：rust-lld 每次省约 1 秒（约 6%），但链接器只能按 target 配，不能只给 `quick`——会连带改掉出包的
+    cdylib / staticlib 和 CI 的 Windows 构建，收益配不上这个风险。
+  - **Defender 实时扫描在本机是关的，但卡巴斯基（Kaspersky Internet Security 21.x，服务 `AVP21.26`）开着**，它的文件过滤
+    驱动对每次开文件都生效（增量缓存、`.rlib`、链接产物都在其中）。排除目录要在卡巴斯基界面里由机主手动加
+    （worktree 根、`~/.cargo`、`~/.rustup`、各 target 目录），命令行改不了；加了以后用上面的分项方法复测
+    `serialize_dep_graph` / `run_linker` 再下结论。
+- 旧分支 / 还没合到这份配置的 worktree：本机 `~/.cargo/config.toml` 里放同一段 `[profile.quick]` 即可（Windows 开发机
+  2026-11-17 补上——此前文档写「已放」，实际文件不存在，旧分支上 `--profile quick` 会直接报找不到 profile）；
   `[env]` 那一段只能跟仓库走（要按 worktree 解析路径），旧分支没有。
 
 ## 发布通道
@@ -261,7 +364,6 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 2. 预构建（同一 ref 上两条一起 dispatch；不给 `tag_name` 时两条按同一 commit 算出同一个 `v<version>` / `v<version>-beta.<seq>`，落到同一个 Release）：
 
    ```bash
-   export HTTPS_PROXY=http://127.0.0.1:34151 HTTP_PROXY=http://127.0.0.1:34151
    gh workflow run release.yml         --repo hajisensai/fushi --ref develop -f channel=formal
    gh workflow run release-desktop.yml --repo hajisensai/fushi --ref develop -f channel=formal
    ```
@@ -464,6 +566,24 @@ Linux 静态 torrent bridge。规则：
   件上；save 只排在这些校验之后。
 - 守卫 `fushi/test/build/native_store_names_single_source_guard_test.dart` 钉死以上几条（含
   「PR 门 restore 的每个件都有同 runner、同 CC/CXX 的 develop 生产方」）。
+
+## PR 主门分层：快门每推必跑，全量按需 / 合并后跑（2026-11-18）
+
+**起因（实测）**：近 3 天 `main.yml`（Build Android APK）占全仓 runner 分钟的 59%，把并发槽顶满——Linux job 排队 p75 29 分钟、p90 56 分钟；一次 PR 运行真正干活约 50 分钟，墙钟中位数 102 分钟、p90 199 分钟，被后一次 push 取消而白烧 2394 分钟。近 7 天各会话为等 CI 纯空等约 27 小时（平均每次 67 分钟）。而 PR 上这份全量，`develop` 每次 push 的 `release.yml` 本来就再跑一遍。
+
+**现在的形态**（`main.yml` 的 `plan` job 决定，判据写在它的注释里）：
+
+| 层 | 跑什么 | 什么时候 |
+|---|---|---|
+| 快门 | `build`：analyze + JS 测试（`packages/` 有改动时加包测试）；`affected-tests`：目录枚举守卫整批 + 路径字面量点名的守卫 + 直接 import 改动库的测试 + 改动的测试文件 | 进 `develop` 的 PR，每次 push |
+| 全量 | `unit-tests` 4 片 + 包测试 + R8 / JVM 校验 | 改了原生 / Android / 插件集合 / pubspec / `fushi/tool/` / workflow 自身；进 `main` 的 PR；fork PR；带 `full-ci` 标签；手动 dispatch；改动清单取不到 |
+| 合并后 | `release.yml` 的 4 片单测 + analyze + 包测试 | `develop` / `main` 每次 push（一直如此） |
+
+- **要在某条分支上跑全量**：`gh workflow run main.yml --ref <分支>`（结果挂在同一个 head commit 上，PR 页看得到）；或先给 PR 打 `full-ci` 标签再 push（标签在 push 时读，打完标签不会自动重跑）。
+- **快门不是完备的**：只经传递依赖受影响的测试它选不到。回放最近 80 个已合并 PR，按传递 import 闭包选会选中 1400～3000 个测试文件（import 图里有大环），等于全量，所以不做。这类回归在合并后的 `develop` 上由 `release.yml` 暴露，红了按根因修——这正是「批量合并不逐条等 PR CI，合完看 `develop` 尖端」那条规则本来的做法。
+- 选测与本地预检 `fushi/tool/pre_push_check.dart` 是同一份实现：从选测里删一条规则，等于从 PR 门里删。CI 上放开了 hub 上限（本地默认跳过「被 40 个以上测试 import 的库」）。
+- 回放最近 80 个已合并 PR：72 个会触发主门，其中 50 个走快门、22 个走全量。
+- 守卫：`fushi/test/build/pr_tiered_gate_guard_test.dart`（两层互斥、判不出来一律全量、全量 pattern 是 R8 门的超集、合并后的全量兜底还在）。
 
 ## PR 平台 job 的路径门（2026-09-30）
 

@@ -47,6 +47,12 @@
   成块）留白后按制卡图片质量档裁成卡图，走 `AnkiMiningContext.coverPath`（与漫画卡图同
   一通道，`lib/src/floating_ball/screen_ocr_card_image.dart`）。Android 查词窗在 `:popup`
   进程：原生把定格帧写进 app 缓存 `screen_ocr_card/`，Intent 只带路径 + 块框 / 行框。
+  「高级制卡」对话框里可以像漫画那样手动调卡图（反馈 mOe5HjBtuG）：`DictionaryPageMixin`
+  默认的 `buildAdvancedMiningSections` 把这张截图交给漫画同款裁切分区（截图模式
+  `AdvancedMiningCropSource.screenshot`：无分镜，「整页」叫「整张截图」），预选框就是上面
+  的自动裁切框；确认后的框选 / 打码 / 不要图经 `MiningRequestOverrides` 回到制卡路径，
+  由 `resolveScreenOcrCardImagePlan` 出图。四条链路都已在 Flutter 侧拿到图（Android 读
+  缓存文件），所以不需要新的跨进程传图。
 - 「保持截屏会话」`screen_ocr.keep_capture_session`（Android，默认关）：经
   `setScreenOcrOptions` 下发原生 `ScreenOcrOptions`。同意一次后 MediaProjection 常驻，截完帧
   只摘 VirtualDisplay 的 surface；下一次截屏识字直接挂回 surface 取帧，不弹确认框、不起

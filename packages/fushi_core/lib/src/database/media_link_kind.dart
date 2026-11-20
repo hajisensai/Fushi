@@ -48,13 +48,21 @@ enum MediaLinkKind {
 /// - [adaptation]：原作 → 改编（小说 → 动画、动画 → 游戏……）；
 /// - [themeSong] / [soundtrack]：音乐（曲目 / 专辑）→ 它所属的视频 / 游戏；
 /// - [sameWork]：无方向，落库前按 [canonicalMediaLinkEndpoints] 排序；
-/// - [cast]：声优 / 角色关联（人物页 L5 才有本地端点，先只定义值）。
+/// - [cast]：声优 / 角色关联（人物页 L5 才有本地端点，先只定义值）；
+/// - [sequel]：前作 → 续作（小说续篇、动画 2 期、游戏续作……）；
+/// - [sideStory]：本篇 → 外传 / 番外 / 剧场版 / FD。
+///
+/// [sequel] / [sideStory] 是系列关系：两端是**不同**的作品条目，不并进作品
+/// （不在 `workMergingRelations` 里），只在关系网的「系列」栏画出来。旧版遇到这两个
+/// 值按未知关系跳过（同步 / 备份合并 / 作品图都 `tryParse` 后丢弃）。
 enum MediaLinkRelation {
   adaptation('adaptation', directed: true),
   themeSong('theme_song', directed: true),
   soundtrack('soundtrack', directed: true),
   sameWork('same_work', directed: false),
-  cast('cast', directed: true);
+  cast('cast', directed: true),
+  sequel('sequel', directed: true),
+  sideStory('side_story', directed: true);
 
   const MediaLinkRelation(this.dbValue, {required this.directed});
 
@@ -82,13 +90,36 @@ abstract final class MediaLinkSource {
   static const String vndb = 'vndb';
 
   /// Wikidata id 桥接：VN（P3180 VNDB id）经 based on / derivative work 到动画，
-  /// 读出 AniDB anime id（P5646）后对上本地视频（强判据，仍只作建议）。
+  /// 读出 AniDB anime id（P5646）后对上本地视频（强判据：共享外部 id，按 AI 库管家
+  /// 设计稿 §5.2 直接生效）。
   static const String wikidata = 'wikidata';
 
   /// MAL（Jikan）的 Adaptation 关系 + 本地书 ISBN / 标题匹配（中等判据）。
   static const String mal = 'mal';
 
-  /// AI 辅助裁决（一律只作建议）。
+  /// AI 辅助裁决。按 AI 库管家设计稿 §5.2 的门槛：高置信直接生效
+  /// （`confirmed_by = ai`，见 [MediaLinkConfirmer]），其余写成建议或丢弃。
+  static const String ai = 'ai';
+
+  /// 声纹命中：`video_theme_song_spans` 里某曲目在某作品的集里被比对出来（AI 库管家
+  /// 设计稿 §4.4 第 3 条，最强证据，直接生效）。
+  static const String fingerprint = 'fingerprint';
+
+  /// VGMdb 刮削数据（专辑各语言名）里带作品名 + 关键词（§4.4 第 1 / 2 条，建议）。
+  static const String vgmdb = 'vgmdb';
+
+  /// MusicBrainz 刮削数据（release / release group 标题、release group 的
+  /// Soundtrack 类别）里带作品名（§4.4 第 1 / 2 条，建议）。
+  static const String musicbrainz = 'musicbrainz';
+}
+
+/// 谁让一条连接生效（`media_links.confirmed_by`，schema v159）。NULL = 建议。
+/// `user` 压过 `ai`：用户确认过的连接 AI 不改关系、不改方向、不删除。
+abstract final class MediaLinkConfirmer {
+  /// 用户手动连接 / 用户确认。
+  static const String user = 'user';
+
+  /// AI 按门槛直接生效（可撤销；用户确认后升为 [user]）。
   static const String ai = 'ai';
 }
 
@@ -118,7 +149,8 @@ int compareMediaLinkEndpoints(MediaLinkEndpoint a, MediaLinkEndpoint b) {
 
 /// 一行连接的可见状态。
 enum MediaLinkState {
-  /// 已确认（手动连接，或用户确认过的推断）：详情页「同一作品」区块显示。
+  /// 已生效（手动连接、用户确认过的推断，或 AI 按门槛直接生效的连接）：详情页
+  /// 「同一作品」区块显示。谁让它生效看 `confirmed_by`。
   confirmed,
 
   /// 推断建议（未确认）：只在「可能相关」建议卡里出现。

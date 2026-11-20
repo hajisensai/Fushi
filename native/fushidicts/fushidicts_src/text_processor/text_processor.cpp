@@ -32,6 +32,9 @@ constexpr uint32_t KANA_PROLONGED_SOUND_MARK = 0x30fc;
 constexpr uint32_t HIRAGANA_SMALL_TSU = 0x3063;
 constexpr uint32_t KATAKANA_SMALL_TSU = 0x30c3;
 
+// 上游 30ad52f / 3f0c2d9 / ad0be91：片假名中点（・）。半角 ･（U+FF65）经链首 NFKC 归一成它。
+constexpr char32_t KATAKANA_MIDDLE_DOT = 0x30fb;
+
 constexpr uint32_t HIRAGANA_CONVERSION_RANGE_START = 0x3041;
 constexpr uint32_t HIRAGANA_CONVERSION_RANGE_END = 0x3096;
 
@@ -93,6 +96,13 @@ char32_t get_prolonged_hiragana(char32_t prev) {
 }
 
 bool is_in_range(uint32_t c, uint32_t range_start, uint32_t range_end) { return c >= range_start && c <= range_end; }
+
+// 上游 ad0be91 的字符类（片假名含半角区；中点 U+30FB 不算片假名）。
+bool is_hiragana(char32_t c) { return is_in_range(c, 0x3041, 0x309f); }
+
+bool is_katakana(char32_t c) { return is_in_range(c, 0x30a1, 0x30fa) || is_in_range(c, 0xff66, 0xff9f); }
+
+bool is_sokuon(char32_t c) { return c == HIRAGANA_SMALL_TSU || c == KATAKANA_SMALL_TSU; }
 
 // https://github.com/yomidevs/yomitan/blob/81d17d877fb18c62ba826210bf6db2b7f4d4deed/ext/js/language/ja/japanese.js#L472
 std::u32string hiragana_to_katakana(const std::u32string& text) {
@@ -456,6 +466,57 @@ std::u32string numbers_to_kanji(const std::u32string& text) {
   return result;
 }
 
+// 上游 30ad52f + 3f0c2d9：删片假名中点（カルミナ・ブラーナ → カルミナブラーナ）。不少
+// 国语辞典把外来语人名 / 复合词收成不带点的写法。只删夹在两个字符之间的点：串首 / 串尾
+// 的点删了只会让同一个词条的匹配多吞一个「・」（扫描前缀「カルミナ・」命中カルミナ、
+// 高亮却连点一起）。上游 3f0c2d9 的代码只保留了串尾的点，这里按它提交说明的意图把串首
+// 的点也留下。
+std::u32string strip_middle_dots(const std::u32string& text) {
+  std::u32string result;
+  result.reserve(text.size());
+  for (size_t i = 0; i < text.size(); i++) {
+    if (text[i] != KATAKANA_MIDDLE_DOT || i == 0 || i + 1 == text.size()) {
+      result += text[i];
+    }
+  }
+  return result;
+}
+
+// 上游 ad0be91：原文以「平假名 + 片假名词」收尾时这个片假名词的长度（不含打头的长音
+// 符），否则 0。片假名词前面不是平假名（串首、汉字、标点）时同样是 0。
+size_t katakana_word_length(const std::u32string& text) {
+  size_t start = text.size();
+  while (start > 0 && (is_katakana(text[start - 1]) || text[start - 1] == KANA_PROLONGED_SOUND_MARK)) {
+    start--;
+  }
+  while (start < text.size() && text[start] == KANA_PROLONGED_SOUND_MARK) {
+    start++;
+  }
+  return start > 0 && start < text.size() && is_hiragana(text[start - 1]) ? text.size() - start : 0;
+}
+
+// 上游 ad0be91：[variant] 允许被变形改写的尾部码点数。从两串末尾对齐往前走，原文里遇到
+// 被删字符（っ / 中点）而变体同位置不是促音时停下——再往左的变体文本已经不是原文的样子
+// （中点删掉了、っっ 折叠了），不许变形跨过去。
+//
+// 与上游的差别：一路走完都没停下时返回 SIZE_MAX（不限制）。上游返回走过的长度，对与原文
+// 等长或更短的变体两者等价（改写量不会超过变体长度）；但 fork 有比原文**更长**的变体——
+// 韩语拆字（부드러운 4 个音节 → 10 个兼容字母），上游的写法会把它的改写量限在音节数，
+// ko.json 的长后缀规则就全被误杀。
+//
+// 前提：除删掉 っ / 中点、折叠 っっ 外，预处理不改变原文与变体尾部的码点对应。将来加入
+// 会改长度的处理（上游的单个っ删除、强调序列折叠等）时，尾部逐码点对齐失效，要重写本函数。
+size_t max_rewrite(const std::u32string& source, const std::u32string& variant) {
+  size_t length = 0;
+  for (size_t s = source.size(); s > 0 && length < variant.size(); s--, length++) {
+    const bool removable = is_sokuon(source[s - 1]) || source[s - 1] == KATAKANA_MIDDLE_DOT;
+    if (removable && !is_sokuon(variant[variant.size() - length - 1])) {
+      return length;
+    }
+  }
+  return SIZE_MAX;
+}
+
 // TODO: implement rest of preprocessors
 std::vector<TextProcessor> get_japanese_processors() {
   return {
@@ -503,6 +564,10 @@ std::vector<TextProcessor> get_japanese_processors() {
        }},
       {.options = 1, .process = [](const std::u32string& text, int opt) -> std::u32string {
          return opt == 1 ? numbers_to_kanji(text) : text;
+       }},
+      // 上游 30ad52f：删片假名中点，按上游链序挂在日语链尾。
+      {.options = 1, .process = [](const std::u32string& text, int opt) -> std::u32string {
+         return opt == 1 ? strip_middle_dots(text) : text;
        }}};
 }
 }  // namespace
@@ -835,12 +900,20 @@ void normalize_variants(VariantList& variants) {
 }  // namespace
 
 // https://github.com/yomidevs/yomitan/blob/81d17d877fb18c62ba826210bf6db2b7f4d4deed/ext/js/language/translator.js#L564
-std::vector<TextVariant> text_processor::process(const std::string& src, bool chinese_simp_to_trad) {
+std::vector<TextVariant> text_processor::process(const std::string& src, bool chinese_simp_to_trad,
+                                                 char32_t next_char) {
+  const std::u32string source = utf8::utf8to32(src);
+  // 上游 ad0be91：结尾落在片假名词中间（见头文件 [next_char]）——只认原文、不许还原。
+  const size_t katakana_word = katakana_word_length(source);
+  if (katakana_word > 0 && (is_katakana(next_char) || next_char == KANA_PROLONGED_SOUND_MARK)) {
+    return {TextVariant{.text = src, .steps = 0, .max_rewrite = 0}};
+  }
+
   // 变体表：按拼写升序、同一拼写只留步数最少的一条。结果的顺序会一路带进
   // lookup 的同长度取舍（先到先得，见 lookup.cpp merge_terms），所以这里的次序是
   // 行为的一部分：码点字典序，与此前用 std::map<u32string, int> 时逐字节相同。
   VariantList variants;
-  variants.emplace_back(utf8::utf8to32(src), 0);
+  variants.emplace_back(source, 0);
 
   for (const TextProcessor& processor : all_processors()) {
     // 「不改写」的产物就是 variants 里已有的那些（见 TextProcessor）；改写的产物与
@@ -878,7 +951,11 @@ std::vector<TextVariant> text_processor::process(const std::string& src, bool ch
     if (variants.size() != base) normalize_variants(variants);
   }
 
-  return variants |
-         std::views::transform([](const auto& v) { return TextVariant{utf8::utf32to8(v.first), v.second}; }) |
+  return variants | std::views::transform([&source, katakana_word](const auto& v) {
+           return TextVariant{.text = utf8::utf32to8(v.first),
+                              .steps = v.second,
+                              .min_rewrite = katakana_word,
+                              .max_rewrite = max_rewrite(source, v.first)};
+         }) |
          std::ranges::to<std::vector>();
 }

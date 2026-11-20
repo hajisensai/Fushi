@@ -26,6 +26,12 @@ import 'package:flutter/widgets.dart';
 ///   （缩放 + 亚像素相位）烘焙、边界对齐到物理像素，贴回去不经任何重采样，与实时
 ///   绘制逐像素一致。滚动、进场动画、悬停放大让相位 / 倍数变了，下一帧回实时绘制，
 ///   停稳一帧后重新烘焙。
+///
+///   回实时绘制时**纹理不扔**（只有内容变了才扔）：一旦回到与烘焙位置像素等价的
+///   地方，直接贴回原纹理。这是视频系列墙滚轮卡顿（BUG-4842）的修复：每档滚轮的
+///   140 ms 补间途中是亚像素位置，旧逻辑在那里就把整屏几十个面的纹理全扔了，补间
+///   一落定又在同一个帧末把它们逐个 `toImageSync` 重烘。配合滚轮落点对齐物理像素
+///   （`SmoothWheelScrollScope`），留在视口里的面落定时都是原样贴回。
 /// - **带旋转 / 斜切 / 透视的位置贴重采样纹理。** 这类变换下不存在 1:1 贴图，实时
 ///   绘制本身也是把封面图重采样一遍，于是改按「本节点在屏幕上的最大放大倍数」向上
 ///   取整到设备像素比的 1/4 档烘焙一张（[_resampledRatio]），贴图时双线性采样；只要
@@ -131,7 +137,7 @@ class RenderBakedSurface extends RenderRepaintBoundary {
   /// 刚烘焙完、下一次 paint 要改画纹理（而不是把它当成「内容变了」）。
   bool _showBake = false;
 
-  /// 正在由 [_bake] / [_unbake] 自己标脏（区分于子树传上来的重绘请求）。
+  /// 正在由 [_bake] / [_hide] / [_reshow] 自己标脏（区分于子树传上来的重绘请求）。
   bool _selfMarking = false;
 
   /// 上次 paint 之后子树又请求过重绘（`debugNeedsPaint` 在 release 下不可用）。
@@ -144,8 +150,14 @@ class RenderBakedSurface extends RenderRepaintBoundary {
   int _seenSerial = -1;
   _Placement? _seenPlacement;
 
-  /// 是否处于烘焙态（测试 / 诊断用）。
-  bool get debugIsBaked => _image != null;
+  /// 上一次 paint 画的是纹理（而不是实时绘制）。
+  bool _textureOnScreen = false;
+
+  /// 进程内离屏烘焙（[OffsetLayer.toImageSync]）总次数（测试 / 诊断用）。
+  static int debugBakeCount = 0;
+
+  /// 是否正在贴纹理（测试 / 诊断用）。亚像素途中实时画、纹理留着备用时为 false。
+  bool get debugIsBaked => _image != null && (_textureOnScreen || _showBake);
 
   /// 当前纹理分辨率（每逻辑单位的纹理像素数；未烘焙为 0，测试 / 诊断用）。
   double get debugBakedPixelRatio => _bakedRatio;
@@ -163,6 +175,7 @@ class RenderBakedSurface extends RenderRepaintBoundary {
 
   @override
   void paint(PaintingContext context, Offset offset) {
+    final bool contentChanged = _dirty;
     _dirty = false;
     final ui.Image? image = _image;
     if (_showBake && image != null) {
@@ -175,11 +188,19 @@ class RenderBakedSurface extends RenderRepaintBoundary {
         // 的那一帧（帧末才发现、下一帧才回实时绘制）贴出来是平滑的而不是锯齿。
         Paint()..filterQuality = FilterQuality.low,
       );
+      _textureOnScreen = true;
       _watch(this);
       return;
     }
-    // 走到这里 = 子树内容（或尺寸）变了，或位置变了被 [_unbake] 打回：实时画。
-    _dropBake();
+    // 走到这里 = 子树内容（或尺寸）变了，或位置变了被 [_hide] 打回：实时画。
+    // 只有内容变了才扔纹理；仅仅是位置离开了像素格（[_hide]）就留着，回到
+    // 像素等价的位置时原样贴回（见 [_endOfFrame]）。
+    _textureOnScreen = false;
+    if (contentChanged) {
+      _dropBake();
+    } else {
+      _showBake = false;
+    }
     _liveSerial++;
     super.paint(context, offset);
     _watch(this);
@@ -190,8 +211,18 @@ class RenderBakedSurface extends RenderRepaintBoundary {
     final Matrix4 transform = _physicalTransform();
     final _Placement? now = _Placement.of(transform);
     if (_image != null) {
-      if (!_textureFits(transform, now)) _unbake();
-      return;
+      if (_textureOnScreen || _showBake) {
+        if (!_textureFits(transform, now)) _hide();
+        return;
+      }
+      // 纹理留着、正在实时画（位置离开过像素格）：内容没变又回到了能贴的位置，
+      // 直接贴回，不重新离屏渲染。滚轮一档 = 整数个物理像素（见
+      // `SmoothWheelScrollScope`），补间落定时屏上每个面都走这条。
+      if (_dirty) return;
+      if (_textureFits(transform, now)) {
+        _reshow();
+        return;
+      }
     }
     if (_dirty) return; // 已经标脏，下一帧会实时画。
     final bool contentStable = _seenSerial == _liveSerial;
@@ -306,7 +337,9 @@ class RenderBakedSurface extends RenderRepaintBoundary {
       bottom / p.scale,
     );
     // 等价于 [RenderRepaintBoundary.toImageSync]，只是范围是对齐后的 [bounds]。
+    debugBakeCount++;
     final OffsetLayer layer = this.layer! as OffsetLayer;
+    _image?.dispose();
     _image = layer.toImageSync(bounds, pixelRatio: p.scale);
     _imageBounds = bounds;
     _imageSource = Rect.fromLTWH(0, 0, rightPx - leftPx, bottomPx - topPx);
@@ -334,7 +367,9 @@ class RenderBakedSurface extends RenderRepaintBoundary {
       rightPx / ratio,
       bottomPx / ratio,
     );
+    debugBakeCount++;
     final OffsetLayer layer = this.layer! as OffsetLayer;
+    _image?.dispose();
     _image = layer.toImageSync(bounds, pixelRatio: ratio);
     _imageBounds = bounds;
     _imageSource = Rect.fromLTWH(0, 0, rightPx - leftPx, bottomPx - topPx);
@@ -346,11 +381,19 @@ class RenderBakedSurface extends RenderRepaintBoundary {
     _selfMarking = false;
   }
 
-  /// 位置变了：下一帧回实时绘制（纹理在那次 paint 里释放）。
-  void _unbake() {
+  /// 位置离开了像素格：下一帧回实时绘制，**纹理留着**——内容不变的话，回到与
+  /// 烘焙位置像素等价的地方还能原样贴回（滚轮补间途中是亚像素，落定时又回到像素格上）。
+  void _hide() {
     _showBake = false;
-    _bakedPlacement = null;
     _seenPlacement = null;
+    _selfMarking = true;
+    markNeedsPaint();
+    _selfMarking = false;
+  }
+
+  /// 留着的纹理又贴得上了：下一次 paint 改画纹理。
+  void _reshow() {
+    _showBake = true;
     _selfMarking = true;
     markNeedsPaint();
     _selfMarking = false;

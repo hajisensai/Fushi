@@ -837,6 +837,8 @@ String srsCardFaceBridgeScript(List<String> keys) => webViewKeyBridgeScript(
   forwardRepeats: false,
   stopPropagation: true,
   listenOnWindow: true,
+  // 卡面里的「展开全文」、词典折叠头：Tab / 手柄移上去后 Enter / 空格归控件自己。
+  yieldActivationToKeyboardFocus: true,
 );
 
 /// 卡面按键诊断回调（[kSrsCardKeyDiagScript]）。
@@ -844,7 +846,7 @@ const String kSrsKeyDiagHandler = 'onSrsKeyDiag';
 
 /// 卡面按键取证（OO3O-3ljda）：翻面键（空格 / Enter）在页面里按下、却没被键盘桥接走时，
 /// 在松开那一刻报一次原因——`editable`（焦点在输入框 / contenteditable，桥按设计放行）、
-/// `composing`（IME 组字中）、`missed`（桥没接走：键表里没有 / 弹窗模态让位等）。被桥正常
+/// `composing`（IME 组字中）、`control`（键盘焦点在页内控件上，桥按设计让它自己激活）、`missed`（桥没接走：键表里没有 / 弹窗模态让位等）。被桥正常
 /// 接走（`defaultPrevented`）不报。页面里根本收不到 keydown（first responder 不在
 /// WebView 上）时这里什么都不报，宿主侧的焦点日志补那一半。
 const String kSrsCardKeyDiagScript = r'''
@@ -852,6 +854,12 @@ const String kSrsCardKeyDiagScript = r'''
   if (window.__fushiSrsKeyDiag) return;
   window.__fushiSrsKeyDiag = true;
   var last = null;
+  function control(t){
+    try {
+      return !!(t && t.matches && t.matches('button, summary, a[href], [role="button"]') &&
+        t.matches(':focus-visible'));
+    } catch (err) { return false; }
+  }
   function watched(e){ return e && (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter'); }
   window.addEventListener('keydown', function(e){
     if (!watched(e) || e.repeat) return;
@@ -859,7 +867,7 @@ const String kSrsCardKeyDiagScript = r'''
     var tag = t && t.tagName ? t.tagName.toUpperCase() : '';
     last = { code: e.code, ev: e, bubbled: false,
       editable: tag === 'INPUT' || tag === 'TEXTAREA' || !!(t && t.isContentEditable),
-      composing: !!e.isComposing, target: tag };
+      composing: !!e.isComposing, target: tag, control: control(t) };
   }, true);
   window.addEventListener('keydown', function(e){
     if (last && last.ev === e) last.bubbled = true;
@@ -869,7 +877,8 @@ const String kSrsCardKeyDiagScript = r'''
     last = null;
     if (!k || !watched(e) || e.code !== k.code) return;
     if (k.ev.defaultPrevented) return;
-    var reason = k.composing ? 'composing' : k.editable ? 'editable' : 'missed';
+    var reason = k.composing ? 'composing' : k.editable ? 'editable'
+      : k.control ? 'control' : 'missed';
     try {
       window.flutter_inappwebview.callHandler('onSrsKeyDiag',
         JSON.stringify({ code: k.code, reason: reason, target: k.target, bubbled: k.bubbled }));
@@ -1929,11 +1938,12 @@ void srsWarmCardFace({required String css, required List<String> bodies}) {
   }
 }
 
-/// 卡面是否自己铺底色：只有 Fushi 卡片用了自定义配色（[SrsCardColorSource.custom]）
-/// 时铺它的 surface；跟随 app 主题时与页面背景同色，铺了只会盖住路由层的形状背景。
-/// 原生卡面（`SrsFushiCardView`）与 WebView 外壳共用这一条判据。
+/// 卡面是否自己铺底色：只有 Fushi 卡片用了自定义配色时铺它的 surface
+/// （[SrsCardAppearance.paintsOwnSurface]）；跟随 app 主题时与页面背景同色，铺了只会盖住
+/// 路由层的形状背景。原生卡面（`SrsFushiCardView`）、WebView 外壳 html/body 与模板 `.card`
+/// 底色（[srsCardAppearanceCss]）共用这一条判据。
 bool srsCardPaintsOwnSurface(SrsCardFace face, SrsCardAppearance appearance) =>
-    face.fushiCard && appearance.colorSource == SrsCardColorSource.custom;
+    face.fushiCard && appearance.paintsOwnSurface;
 
 /// 一面卡在给定主题 / 外观下的外壳文档。外观设置只属于 Fushi 卡片
 /// （[SrsCardFace.fushiCard]）：别的类型拿不到它的变量、类名、字体与自定义配色，按自身
@@ -2068,6 +2078,10 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
 
   /// macOS 宿主侧悬停腿（页面收不到 mousemove，BUG-2508）。
   final ReaderHostHoverLookupGate _hostHover = ReaderHostHoverLookupGate();
+
+  /// 卡面滑动的几何量在宿主侧按全局坐标量（页内坐标随卡面跟手平移而偏，见
+  /// [SrsHostPointerTrack]）。
+  final SrsHostPointerTrack _pointerTrack = SrsHostPointerTrack();
 
   /// 取词脚本整段（选区脚本 + 卡面监听）只拼一次。
   static final String _lookupInstallScript = srsCardLookupInstallScript(
@@ -2365,6 +2379,7 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
   }
 
   /// 页内脚本回报的卡面手势（[kSrsGestureHandler]）：页面 CSS 像素换成全局逻辑像素。
+  /// 拖动 / 松手的位移与速度换成宿主侧全局读数（[SrsHostPointerTrack.rebase]）。
   void _onPageGesture(Object? raw) {
     final void Function(SrsCardGestureEvent)? onGesture =
         widget.face.onCardGesture;
@@ -2377,7 +2392,7 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
       viewHeight: box.size.height,
       toGlobal: (Offset local) => MatrixUtils.transformPoint(toGlobal, local),
     );
-    if (event != null) onGesture(event);
+    if (event != null) onGesture(_pointerTrack.rebase(event));
   }
 
   RenderBox? get _box {
@@ -2938,6 +2953,10 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
     // MissingPluginException，channel 号每张卡 +2，复习卡顿）。没有作用域时 [_onHostHover]
     // 自己 no-op。
     return Listener(
+      onPointerDown: _pointerTrack.down,
+      onPointerMove: _pointerTrack.move,
+      onPointerUp: _pointerTrack.up,
+      onPointerCancel: _pointerTrack.cancel,
       onPointerHover: hostOwnsWebViewHoverLookup ? _onHostHover : null,
       child: webView,
     );

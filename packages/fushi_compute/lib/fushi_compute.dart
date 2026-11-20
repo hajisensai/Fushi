@@ -28,4 +28,5 @@ export 'src/parse/subtitle_timing.dart';
 export 'src/parse/tts_split.dart';
 export 'src/signal/ffc_signal.dart';
 export 'src/text/cue_match.dart';
+export 'src/text/legacy_text.dart';
 export 'src/ts/fushi_compute_ts.dart';

@@ -54,8 +54,11 @@ class AiCollectionOrderMember {
     this.season,
     this.episode,
     this.volume,
+    this.bookEpisode,
+    this.bookBonus = false,
+    String? volumeMarkerText,
     this.metadata = const <String, Object?>{},
-  });
+  }) : _volumeMarkerText = volumeMarkerText;
 
   /// 视频成员：季 / 集从文件名解析（与 `VideoFolderGroupCoordinator` 同一个
   /// [parseVideoFilename]），[metadata] 是可选的刮削事实（分集标题、播出日期、
@@ -75,18 +78,39 @@ class AiCollectionOrderMember {
     );
   }
 
-  /// 书成员：卷号从书名解析（与 `BookSeriesGrouper` 同一个 [parseBookSeriesKey]）。
-  factory AiCollectionOrderMember.book({required String title}) =>
-      AiCollectionOrderMember(
-        title: title,
-        volume: parseBookSeriesKey(title)?.volume,
-      );
+  /// 书成员：卷号与话号从书名解析（与 `BookSeriesGrouper` 同一个
+  /// [parseBookSeriesKey]），位置判据与 `BookSeriesOrder` 相同（卷号 → 话号 →
+  /// 同话分段）。
+  factory AiCollectionOrderMember.book({required String title}) {
+    final BookSeriesKey? key = parseBookSeriesKey(title);
+    final BookEpisodeNumber? episode = key?.episode;
+    return AiCollectionOrderMember(
+      title: title,
+      volume: key?.volume,
+      bookEpisode: episode,
+      bookBonus: key?.bonus ?? false,
+      // 已解析成话号的结尾「第N話 前編」不是认不出的卷位标记，只查它前面那段。
+      volumeMarkerText: episode == null ? null : key!.seriesTitle,
+    );
+  }
 
   final String title;
   final String? fileName;
   final int? season;
   final int? episode;
   final num? volume;
+
+  /// 书成员的话号（按话发布的漫画「第N話 前編」，见 [BookSeriesKey.episode]）。
+  final BookEpisodeNumber? bookEpisode;
+
+  /// 书成员是否特典册（排在同卷正篇之后，见 [BookSeriesKey.bonus]）。
+  final bool bookBonus;
+
+  final String? _volumeMarkerText;
+
+  /// 查「规则认不出的卷位标记」用的文本：默认整个书名。
+  String get volumeMarkerText => _volumeMarkerText ?? title;
+
   final Map<String, Object?> metadata;
 }
 
@@ -106,9 +130,10 @@ final RegExp _bookUnparsedVolumeMarker = RegExp(
 /// - 视频：合集里**同时**有带集号与不带集号的成员时，不带集号的那些（SP / OVA /
 ///   特别篇 / 总集篇 / 剧场版……规则只会把它们堆到末尾）。全都没集号的合集
 ///   （手攒播放列表、电影系列）不算——那里没有「正片」可以当锚点。
-/// - 书：卷号冲突的卷（两本不同书解析出同一卷号）、书名带规则认不出的卷位标记
-///   （上 / 下卷、外传、汉字卷号）的卷，以及两本及以上都没有卷号的卷（规则只能
-///   按书名硬排）。仅一本没卷号且无标记的视为第 1 卷，规则排得出。
+/// - 书：位置（卷号 + 话号 + 同话分段，同 `BookSeriesOrder`）冲突的卷（两本不同书
+///   解析出同一位置）、书名带规则认不出的卷位标记（上 / 下卷、外传、汉字卷号）的
+///   卷，以及两本及以上卷号话号都没有的卷（规则只能按书名硬排）。仅一本没位置且
+///   无标记的视为第 1 卷，规则排得出。
 Set<int> collectionOrderAmbiguousIndices(
   List<AiCollectionOrderMember> members,
   AiCollectionOrderKind kind,
@@ -126,19 +151,24 @@ Set<int> collectionOrderAmbiguousIndices(
       };
     case AiCollectionOrderKind.book:
       final Set<int> out = <int>{};
-      final Map<num, List<int>> byVolume = <num, List<int>>{};
+      final Map<BookSeriesPosition, List<int>> byPosition =
+          <BookSeriesPosition, List<int>>{};
       final List<int> unnumbered = <int>[];
       for (int i = 0; i < members.length; i++) {
         final AiCollectionOrderMember m = members[i];
-        if (_bookUnparsedVolumeMarker.hasMatch(m.title)) out.add(i);
-        final num? volume = m.volume;
-        if (volume == null) {
+        if (_bookUnparsedVolumeMarker.hasMatch(m.volumeMarkerText)) out.add(i);
+        final BookSeriesPosition? position = bookSeriesPositionOf(
+          volume: m.volume,
+          episode: m.bookEpisode,
+          bonus: m.bookBonus,
+        );
+        if (position == null) {
           unnumbered.add(i);
         } else {
-          byVolume.putIfAbsent(volume, () => <int>[]).add(i);
+          byPosition.putIfAbsent(position, () => <int>[]).add(i);
         }
       }
-      for (final List<int> same in byVolume.values) {
+      for (final List<int> same in byPosition.values) {
         if (same.length > 1) out.addAll(same);
       }
       if (unnumbered.length > 1) out.addAll(unnumbered);
@@ -147,7 +177,8 @@ Set<int> collectionOrderAmbiguousIndices(
 }
 
 /// 规则序（下标排列）：视频 季（缺省 1）→ 集（缺省殿后）→ 文件名 natural；书
-/// 卷号（缺省第 0 卷）→ 书名 natural。平局按输入下标，结果确定。
+/// 卷号（缺省第 0 卷）→ 话号 → 同话分段（[compareBookSeriesPositionParts]）→ 书名
+/// natural。平局按输入下标，结果确定。
 List<int> ruleOrderCollectionMembers(
   List<AiCollectionOrderMember> members,
   AiCollectionOrderKind kind,
@@ -165,7 +196,14 @@ List<int> ruleOrderCollectionMembers(
         if (c != 0) return c;
         c = naturalCompare(ma.fileName ?? ma.title, mb.fileName ?? mb.title);
       case AiCollectionOrderKind.book:
-        c = (ma.volume ?? 0).compareTo(mb.volume ?? 0);
+        c = compareBookSeriesPositionParts(
+          volumeA: ma.volume,
+          episodeA: ma.bookEpisode,
+          bonusA: ma.bookBonus,
+          volumeB: mb.volume,
+          episodeB: mb.bookEpisode,
+          bonusB: mb.bookBonus,
+        );
         if (c != 0) return c;
         c = naturalCompare(ma.title, mb.title);
     }
@@ -208,7 +246,8 @@ trailers. Place each of them where it belongs in broadcast or story order:
 You order the volumes of one book or manga series into reading order.
 
 Members with "needs_placement": false were already placed by their volume
-numbers; keep their relative order. Members with "needs_placement": true could
+numbers, then chapter numbers ("chapter"; "chapter_part" 1 / 2 / 3 = 前編 /
+中編 / 後編); keep their relative order. Members with "needs_placement": true could
 not be placed by the parser: volume numbers written in kanji (第三巻), 上 / 中 / 下
 (first / middle / last part) volumes, 前編 / 後編, side stories (外伝 / 番外 /
 短編集), special editions, or two different books that parsed to the same
@@ -255,6 +294,10 @@ String buildAiCollectionOrderUserPrompt({
         if (m.season != null) 'season': m.season,
         if (m.episode != null) 'episode': m.episode,
         if (m.volume != null) 'volume': m.volume,
+        if (m.bookEpisode case final BookEpisodeNumber e) ...<String, Object?>{
+          'chapter': e.number,
+          if (e.part != 0) 'chapter_part': e.part,
+        },
         if (m.metadata.isNotEmpty) 'metadata': m.metadata,
         'needs_placement': ambiguous.contains(i),
       }),

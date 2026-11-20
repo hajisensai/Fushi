@@ -4,9 +4,16 @@ import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:fushi/src/models/library_grid_columns.dart'
     show kLibraryGridColumnsPrefKey;
 import 'package:fushi/src/models/preference_keys.dart'
-    show kAnkiSettingsPrefKey, kWorkProfileSessionPrefKey;
+    show
+        kAnkiSettingsPrefKey,
+        kWhatsNewCardDismissedVersionPrefKey,
+        kWhatsNewSeenSeqPrefKey,
+        kWhatsNewSeenVersionPrefKey,
+        kWorkProfileSessionPrefKey;
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
     show kPageBackdropDeviceLocalPrefKeys;
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show ShellLayoutInstallDefault;
 import 'package:fushi/src/web_browser/web_browser_prefs.dart';
 import 'package:fushi/src/models/preferences_repository.dart'
     show
@@ -397,6 +404,23 @@ class SyncRepository {
   // 开关落设备本地（要不要接收 host 凭据是每台设备自己的信任决策，不跨设备跟随）。
   static const _keyInterconnectServiceConfigSync =
       'interconnect_sync_service_config';
+  // 互联「来源共享」（拍板台 wOMR4_Er7s，interconnect_source_share_sync.dart）：
+  // client 侧「接收 host 共享的服务器来源与插件」、host 侧「把来源共享给我的设备」。
+  // 都默认开（维护者要的是自动共享；凭据只发给 host 主人标过「我的设备」的 peer，
+  // 端点另有 HTTPS + per-peer token 两道门）。都落设备本地：要不要收 / 发凭据是每台
+  // 设备自己的信任决策。
+  static const _keyInterconnectSourceShareSync =
+      'interconnect_sync_source_share';
+  static const _keyInterconnectSourceShareHost =
+      'interconnect_source_share_host';
+  // host 主人逐项勾选共享的来源（`kind/id` 的 JSON 数组）。拍板台原文「凭据由用户逐项
+  // 勾选，不能默认全量下发」：默认空 = 一条都不共享。
+  static const _keyInterconnectSourceShareHostItems =
+      'interconnect_source_share_host_items';
+  // client 侧「也接收插件」：插件是第三方可执行代码，host 是谁标的「我的设备」是 host 单方面
+  // 的判断，往本机装代码必须这台设备的主人自己点头。默认关。
+  static const _keyInterconnectSourceSharePlugins =
+      'interconnect_sync_source_share_plugins';
   static const _keyWebDavUrl = 'sync_webdav_url';
   static const _keyWebDavUsername = 'sync_webdav_username';
   static const _keyWebDavPassword = 'sync_webdav_password';
@@ -1064,6 +1088,56 @@ class SyncRepository {
   /// 互联 service-config 同步（host 的外部服务 API key / 服务配置随互联下发）。
   /// 默认 true = 既有行为不变；关掉后本设备不再向 host 请求 service-config，
   /// 已导入的值保持原样（不回滚——那是用户此刻正在用的配置）。
+  /// client 侧：是否接收 host 共享的服务器来源与插件（默认开）。
+  Future<bool> isInterconnectSourceShareEnabled() =>
+      _db.getPrefTyped<bool>(_keyInterconnectSourceShareSync, true);
+  Future<void> setInterconnectSourceShareEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectSourceShareSync, v);
+
+  /// host 侧：是否把本机的服务器来源与插件共享给「我的设备」（默认开）。
+  Future<bool> isInterconnectSourceShareHostEnabled() =>
+      _db.getPrefTyped<bool>(_keyInterconnectSourceShareHost, true);
+  Future<void> setInterconnectSourceShareHostEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectSourceShareHost, v);
+
+  /// client 侧：是否也接收 host 共享的插件包（默认关，见 [_keyInterconnectSourceSharePlugins]）。
+  Future<bool> isInterconnectSourceSharePluginsEnabled() =>
+      _db.getPrefTyped<bool>(_keyInterconnectSourceSharePlugins, false);
+  Future<void> setInterconnectSourceSharePluginsEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectSourceSharePlugins, v);
+
+  /// host 侧：主人勾选共享的来源（`kind/id`）。坏值当空（= 不共享），不会因解析失败多发。
+  Future<Set<String>> getInterconnectSourceShareHostItems() async {
+    final String raw = await _db.getPrefTyped<String>(
+      _keyInterconnectSourceShareHostItems,
+      '',
+    );
+    if (raw.isEmpty) return <String>{};
+    try {
+      final Object? decoded = jsonDecode(raw);
+      return <String>{
+        if (decoded is List)
+          for (final Object? k in decoded)
+            if (k is String && k.isNotEmpty) k,
+      };
+    } on FormatException {
+      return <String>{};
+    }
+  }
+
+  /// 勾选 / 取消勾选一条（[key] = `kind/id`）。
+  Future<void> setInterconnectSourceShareHostItem(
+    String key, {
+    required bool shared,
+  }) async {
+    final Set<String> items = await getInterconnectSourceShareHostItems();
+    if (shared ? !items.add(key) : !items.remove(key)) return;
+    await _db.setPrefTyped<String>(
+      _keyInterconnectSourceShareHostItems,
+      jsonEncode(<String>[...items]..sort()),
+    );
+  }
+
   Future<bool> isInterconnectServiceConfigSyncEnabled() =>
       _db.getPrefTyped<bool>(_keyInterconnectServiceConfigSync, true);
   Future<void> setInterconnectServiceConfigSyncEnabled(bool v) =>
@@ -1974,8 +2048,18 @@ class SyncRepository {
     kStatLegacyProfileIdPrefKey,
     // 主进程此刻打开的作品会话（值是本库自增配置 id，只给本机弹窗进程镜像用）。
     kWorkProfileSessionPrefKey,
+    // 「本版新内容」看到哪个版本：描述这台设备装过的包，跟去别的设备会误判。
+    kWhatsNewSeenVersionPrefKey,
+    kWhatsNewSeenSeqPrefKey,
+    kWhatsNewCardDismissedVersionPrefKey,
     // 库页「每行数量」：合适的列数取决于这台设备的屏幕（BUG-4219）。
     kLibraryGridColumnsPrefKey,
+    // 库页布局出厂判定（G1：新安装 = 拼贴 / 升级上来 = 封面网格 + 待弹选择框）：
+    // 本设备一次性的判定结论。不进 Profile 快照 / 备份 / 设置同步，导入时保留本机
+    // 值——随推荐包或老 Profile 换进来会把新用户重判成老用户（切网格并弹框）。
+    // 有意不放进 [installScopedPrefKeys]：那一类导入时会被清掉、下次启动重判，
+    // 而重判在已有书库的数据上必然得出「升级上来」。
+    ShellLayoutInstallDefault.prefKey,
     // 书架文件夹导入「缺字幕就转录」：几个小时的设备端推理，跑不跑得动是这台设备
     // 的事（手机上开着、恢复到没有 ASR 算力的机器上不该跟着开）。同组的总开关
     // `audiobook_auto_transcribe` 是同步的，这一个有意设成设备本地。
@@ -1986,6 +2070,8 @@ class SyncRepository {
     PreferencesRepository.widgetPrivacyHideProfileKey,
     // 复习同步 v2 的文件夹存储位置：路径是这台设备的磁盘 / 挂载点，换设备恢复带过去没有意义。
     PreferencesRepository.srsFolderLocationsKey,
+    // 移除了、本机复习内核还没忘掉的位置：描述的是这台设备的内核状态，与上一项同一个事务写。
+    PreferencesRepository.srsForgetPendingKey,
     // 复习同步 v2 里关掉的通道位置：是这台设备「在不在那里同步」的选择，别的设备恢复备份不能替它关 / 开。
     PreferencesRepository.srsDisabledLocationsKey,
     // 首次 v2 同步的确认是这台设备做的：别的设备恢复备份带过来不能替它确认。
@@ -2072,6 +2158,13 @@ class SyncRepository {
     // 「要不要接收 host 的 service-config（外部服务 API key）」是每台设备自己的
     // 信任决策，跨设备携带会把 A 机的选择强加给 B 机。
     _keyInterconnectServiceConfigSync,
+    // 来源共享的收 / 发开关与账本（记的是「这台设备从哪台 host 收下了哪条来源」）：
+    // 都只对这台设备成立。
+    _keyInterconnectSourceShareSync,
+    _keyInterconnectSourceShareHost,
+    _keyInterconnectSourceShareHostItems,
+    _keyInterconnectSourceSharePlugins,
+    'interconnect_source_share_ledger',
     // 「当 host 时愿不愿意为对端转码视频」是本机算力的意愿：一台台式机说「可以」，
     // 不代表那台跑着同一份备份的旧笔记本也愿意被烤。
     kInterconnectTranscodeEnabledPref,
@@ -2113,6 +2206,8 @@ class SyncRepository {
     'ai_web_search',
     // 「抓搜索结果网页交给 AI」的同意：同意的是这台设备上配的那个后端，跟着它设备本地。
     'ai_web_search_page_fetch',
+    // 「AI 助手自主联网搜索」的首次确认：同理跟着这台设备配的后端设备本地。
+    'ai_agent_web_search',
     // 「允许已配对设备远程使用 AI 助手」：授权的是这台机器的 AI 指派与操作目录，
     // 只对点它的那台设备成立；漂过去会让另一台设备静默对配对设备开放。
     'ai_agent_for_peers',
@@ -2148,6 +2243,9 @@ class SyncRepository {
     'library_organize_auto',
     'library_organize_auto_since',
     'library_organize_consented',
+    // AI 库管家：自动开关与本机运行记录 / 水位——同理只对这台设备成立。
+    'library_curate_auto',
+    'library_curate_state',
     'video_subtitle_segmenter',
     'video_subtitle_moss_backend',
     // 按系列记住的字幕文件夹（0PZAhFd1RO）：值是这台机器上的外部绝对路径，系列键里
@@ -2183,6 +2281,10 @@ class SyncRepository {
     'usage_stats_install_id',
     'usage_stats_install_pow',
     'usage_stats_last_ping_at',
+    // 服务端通知（updates/notice_feed.dart）：缓存的是发给这台设备这份构建的通知，
+    // 已弹过的记录也只对本机有意义。
+    'notices_cache',
+    'notices_seen',
     // 书架「仅从本机移除」的远端书：语义就是只对这台设备成立，随备份漂到另一台
     // 设备会让那边的同一份远端书也莫名消失。
     'hidden_remote_books',

@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/video_mine_queue_dialog.dart';
 import 'package:fushi/src/mining/video_mine_queue.dart';
+import 'package:fushi/src/mining/web_mine_queue_store.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -56,6 +57,18 @@ class _SlowRepo implements BaseAnkiRepository {
   dynamic noSuchMethod(Invocation i) => super.noSuchMethod(i);
 }
 
+/// 视频来源的制卡统计总数（`mining_statistics`）。
+Future<int> videoMineCount(FushiDatabase db) async {
+  final QueryRow row = await db
+      .customSelect(
+        'SELECT COALESCE(SUM(count), 0) AS n FROM mining_statistics '
+        'WHERE source_type = ?',
+        variables: <Variable<Object>>[Variable<String>(kStatSourceVideo)],
+      )
+      .getSingle();
+  return row.read<int>('n');
+}
+
 void main() {
   late FushiDatabase db;
   late Directory tmp;
@@ -75,7 +88,8 @@ void main() {
     if (tmp.existsSync()) await tmp.delete(recursive: true);
   });
 
-  /// 模拟引擎的固定临时文件名：暂存必须拷走，下一张会覆盖它们。
+  /// 模拟引擎的临时媒体：暂存必须拷走——引擎在暂存返回后就删掉本张卡的私有目录；这里
+  /// 让下一张写同名文件覆盖它，效果一样。
   Future<int> stageOne(String word, {String book = 'remote/emby/1'}) async {
     final File cover = File('${tmp.path}/immersion_clip.avif')
       ..writeAsStringSync('cover-$word');
@@ -136,6 +150,7 @@ void main() {
     ]);
     final VideoMineCommitSummary summary = await queue.commitAll(
       bookUid: 'remote/emby/1',
+      retryFailed: true,
       repo: repo,
       now: () => DateTime(2026, 9, 26, 12),
     );
@@ -154,6 +169,11 @@ void main() {
 
     expect(queue.bundleDir(a).existsSync(), isFalse);
     expect(queue.bundleDir(b).existsSync(), isTrue);
+    // BUG-4813：写完的行直接出表，表里只剩那张失败的。
+    expect(
+      (await db.select(db.webMineQueue).get()).map((WebMineQueueRow r) => r.id),
+      <int>[b],
+    );
     final List<WebMineQueueRow> failed = await queue.failed('remote/emby/1');
     expect(failed.single.id, b);
     expect(failed.single.error, 'duplicate');
@@ -169,18 +189,218 @@ void main() {
     expect(history.single.normCharOffset, isNull);
   });
 
-  test('失败的卡下次写入会重试', () async {
+  test('列表里的「全部写入」（retryFailed）会重试失败的卡', () async {
     await stageOne('走る');
     await queue.commitAll(
       bookUid: 'remote/emby/1',
+      retryFailed: true,
       repo: _Repo(<MineOutcome>[const MineOutcome(MineResult.duplicate)]),
     );
     final VideoMineCommitSummary retry = await queue.commitAll(
       bookUid: 'remote/emby/1',
+      retryFailed: true,
       repo: _Repo(<MineOutcome>[const MineOutcome.success()]),
     );
     expect(retry.succeeded, 1);
     expect(await queue.failed('remote/emby/1'), isEmpty);
+  });
+
+  test('BUG-4813：退出播放页的自动写入只写待写入的，不重跑写入失败的', () async {
+    final int dup = await stageOne('走る');
+    // 第一次退出：重复卡写入失败，留在列表里。
+    final VideoMineCommitSummary? first = await commitPendingVideoMines(
+      queue: Future<VideoMineQueue>.value(queue),
+      bookUid: 'remote/emby/1',
+      repo: _Repo(<MineOutcome>[const MineOutcome(MineResult.duplicate)]),
+      inFlight: const <Future<void>>[],
+    );
+    expect(first!.failed, 1);
+
+    // 第二次退出：只剩失败行 → 什么都不做（不调 Anki、不再报一次失败）。
+    final _Repo untouched = _Repo(<MineOutcome>[]);
+    expect(
+      await commitPendingVideoMines(
+        queue: Future<VideoMineQueue>.value(queue),
+        bookUid: 'remote/emby/1',
+        repo: untouched,
+        inFlight: const <Future<void>>[],
+      ),
+      isNull,
+    );
+    expect(untouched.contexts, isEmpty);
+
+    // 第三次退出：又暂存了一张 → 只写新的那张，失败的那张不跟着重跑。
+    final int fresh = await stageOne('跳ぶ');
+    final _Repo repo = _Repo(<MineOutcome>[const MineOutcome.success()]);
+    final VideoMineCommitSummary? third = await commitPendingVideoMines(
+      queue: Future<VideoMineQueue>.value(queue),
+      bookUid: 'remote/emby/1',
+      repo: repo,
+      inFlight: const <Future<void>>[],
+    );
+    expect(third!.succeeded, 1);
+    expect(third.failed, 0);
+    expect(repo.payloads.single, contains('跳ぶ'));
+    expect(queue.bundleDir(fresh).existsSync(), isFalse);
+
+    // 失败的那张原样留着（原因、暂存媒体都在），角标照旧数得到它。
+    final WebMineQueueRow kept = (await queue.failed('remote/emby/1')).single;
+    expect(kept.id, dup);
+    expect(kept.error, 'duplicate');
+    expect(queue.bundleDir(dup).existsSync(), isTrue);
+    expect(await queue.openCount('remote/emby/1'), 1);
+  });
+
+  test('退出写入排在另一次写入后面、轮到时已无事可做：返回 null，不报「成功 0、失败 0」', () async {
+    await stageOne('走る');
+    final _SlowRepo repo = _SlowRepo();
+    // 列表里的「全部写入」还在写，用户就退出了播放页：退出那一刻这张卡仍是待写入。
+    final Future<VideoMineCommitSummary> manual = queue.commitAll(
+      bookUid: 'remote/emby/1',
+      repo: repo,
+      retryFailed: true,
+    );
+    final Future<VideoMineCommitSummary?> onExit = commitPendingVideoMines(
+      queue: Future<VideoMineQueue>.value(queue),
+      bookUid: 'remote/emby/1',
+      repo: repo,
+      inFlight: const <Future<void>>[],
+    );
+    expect((await manual).succeeded, 1);
+    expect(await onExit, isNull);
+    expect(repo.expressions, <String>['走る']);
+  });
+
+  test('问角标只计数、不删旧版本留下的 done 行；首页首帧的 sweepLegacyDone 才收掉', () async {
+    final int legacy = await stageOne('走る');
+    final int open = await stageOne('跳ぶ');
+    await (db.update(
+      db.webMineQueue,
+    )..where(($WebMineQueueTable t) => t.id.equals(legacy))).write(
+      const WebMineQueueCompanion(
+        status: Value<String>(WebMineQueueStatus.done),
+      ),
+    );
+
+    // 读方法没有删除副作用（#3722 L4）：done 行不计入角标，但仍留在表里。
+    expect(await queue.openCount('remote/emby/1'), 1);
+    final List<WebMineQueueRow> before = await db.select(db.webMineQueue).get();
+    expect(before.map((WebMineQueueRow r) => r.id), <int>[legacy, open]);
+
+    await WebMineQueueStore(db).sweepLegacyDone();
+    final List<WebMineQueueRow> left = await db.select(db.webMineQueue).get();
+    expect(left.map((WebMineQueueRow r) => r.id), <int>[open]);
+    expect(await queue.openCount('remote/emby/1'), 1);
+  });
+
+  test('退出写入先等在途的暂存任务收尾，再读待写入的行', () async {
+    final _Repo repo = _Repo(<MineOutcome>[const MineOutcome.success()]);
+    final VideoMineCommitSummary? summary = await commitPendingVideoMines(
+      queue: Future<VideoMineQueue>.value(queue),
+      bookUid: 'remote/emby/1',
+      repo: repo,
+      // 退出那一刻这张卡还在准备媒体，没进表。
+      inFlight: <Future<void>>[stageOne('走る')],
+    );
+    expect(summary!.succeeded, 1);
+  });
+
+  test('音画同步片段（封面与句子音频是同一个文件）只拷一份，写入时两条路径仍相同', () async {
+    final File clip = File('${tmp.path}/immersion_clip.mp4')
+      ..writeAsStringSync('clip');
+    final int id = await queue.stage(
+      bookUid: 'remote/emby/1',
+      videoKey: 'remote/emby/1#0',
+      fields: <String, String>{'expression': '走る'},
+      context: AnkiMiningContext(
+        sentence: '走るの文。',
+        coverPath: clip.path,
+        sentenceAudioPath: clip.path,
+        synchronizedVideo: true,
+        source: AnkiMiningSource.video,
+        clipStartMs: 1000,
+        clipEndMs: 2500,
+      ),
+      meta: const VideoMineStagedMeta(recordHistory: false),
+    );
+    expect(
+      queue
+          .bundleDir(id)
+          .listSync()
+          .map((FileSystemEntity e) => e.uri.pathSegments.last)
+          .toList()
+        ..sort(),
+      <String>['cover.mp4', 'meta.json'],
+    );
+
+    final _Repo repo = _Repo(<MineOutcome>[const MineOutcome.success()]);
+    final VideoMineCommitSummary summary = await queue.commitAll(
+      bookUid: 'remote/emby/1',
+      retryFailed: true,
+      repo: repo,
+    );
+    expect(summary.succeeded, 1);
+    final AnkiMiningContext context = repo.contexts.single;
+    expect(context.synchronizedVideo, isTrue);
+    expect(context.coverPath, isNotNull);
+    expect(context.sentenceAudioPath, context.coverPath);
+    expect(queue.bundleDir(id).existsSync(), isFalse);
+  });
+
+  test('落卡记账 helper：统计与制卡历史各一笔，库坏了也不抛', () async {
+    await recordVideoMineStat(
+      db,
+      bookKey: 'remote/emby/1',
+      title: '第1話',
+      at: DateTime(2026, 9, 26, 12),
+    );
+    await recordVideoMinedSentence(
+      db,
+      dateKey: '2026-09-26',
+      expression: '走る',
+      reading: 'はしる',
+      glossary: 'to run',
+      sentence: '走るの文。',
+      documentTitle: '作品 - 第1話',
+      bookKey: 'remote/emby/1',
+      sectionIndex: 0,
+      positionMs: 1000,
+      durationMs: 1500,
+      noteId: 11,
+    );
+    final MinedSentenceRow row =
+        (await db.select(db.minedSentences).get()).single;
+    expect(row.source, kStatSourceVideo);
+    expect(row.expression, '走る');
+    expect(row.bookKey, 'remote/emby/1');
+    expect(row.noteId, 11);
+    expect(await videoMineCount(db), 1);
+
+    // 卡已经进了 Anki：记账失败只留日志，不能反过来把制卡报成失败。
+    final FushiDatabase closed = FushiDatabase.forTesting(
+      DatabaseConnection(NativeDatabase.memory()),
+    );
+    await closed.close();
+    await recordVideoMineStat(
+      closed,
+      bookKey: 'remote/emby/1',
+      title: '',
+      at: DateTime(2026, 9, 26, 12),
+    );
+    await recordVideoMinedSentence(
+      closed,
+      dateKey: '2026-09-26',
+      expression: '',
+      reading: '',
+      glossary: '',
+      sentence: '',
+      documentTitle: null,
+      bookKey: null,
+      sectionIndex: null,
+      positionMs: null,
+      durationMs: null,
+      noteId: null,
+    );
   });
 
   test('同一作品并发两次全部写入：串行执行，每张卡只写一次', () async {
@@ -189,16 +409,15 @@ void main() {
     // 每次写入都让出事件循环：没有互斥时，两次 commitAll 会各自读到同一批 pending
     // 行，把每张卡写两遍。
     final _SlowRepo repo = _SlowRepo();
-    final List<VideoMineCommitSummary> summaries = await Future.wait(
-      <Future<VideoMineCommitSummary>>[
-        queue.commitAll(bookUid: 'remote/emby/1', repo: repo),
-        // 调用方每次都新建 VideoMineQueue（弹窗写入 vs 退出写入），锁必须跨实例。
-        VideoMineQueue(
-          db: db,
-          root: Directory('${tmp.path}/${VideoMineQueue.dirName}'),
-        ).commitAll(bookUid: 'remote/emby/1', repo: repo),
-      ],
-    );
+    final List<VideoMineCommitSummary>
+    summaries = await Future.wait(<Future<VideoMineCommitSummary>>[
+      queue.commitAll(bookUid: 'remote/emby/1', retryFailed: true, repo: repo),
+      // 调用方每次都新建 VideoMineQueue（弹窗写入 vs 退出写入），锁必须跨实例。
+      VideoMineQueue(
+        db: db,
+        root: Directory('${tmp.path}/${VideoMineQueue.dirName}'),
+      ).commitAll(bookUid: 'remote/emby/1', retryFailed: true, repo: repo),
+    ]);
     expect(repo.expressions, <String>['走る', '跳ぶ']);
     expect(summaries[0].succeeded, 2);
     expect(summaries[0].failed, 0);
@@ -214,11 +433,13 @@ void main() {
     await stageOne('走る');
     final Future<VideoMineCommitSummary> first = queue.commitAll(
       bookUid: 'remote/emby/1',
+      retryFailed: true,
       repo: _SlowRepo(),
       now: () => throw StateError('boom'),
     );
     final Future<VideoMineCommitSummary> second = queue.commitAll(
       bookUid: 'remote/emby/1',
+      retryFailed: true,
       repo: _SlowRepo(),
     );
     await expectLater(first, throwsStateError);
@@ -233,6 +454,7 @@ void main() {
     final _Repo repo = _Repo(<MineOutcome>[]);
     final VideoMineCommitSummary summary = await queue.commitAll(
       bookUid: 'remote/emby/1',
+      retryFailed: true,
       repo: repo,
     );
     expect(summary.failed, 1);
@@ -251,6 +473,7 @@ void main() {
     await stageOne('泳ぐ');
     final VideoMineCommitSummary summary = await queue.commitAll(
       bookUid: 'remote/emby/1',
+      retryFailed: true,
       repo: _Repo(<MineOutcome>[
         const MineOutcome.success(notice: 'Save to was reset.'),
         const MineOutcome.success(),
@@ -268,6 +491,7 @@ void main() {
     await stageOne('飛ぶ');
     final VideoMineCommitSummary plain = await queue.commitAll(
       bookUid: 'remote/emby/1',
+      retryFailed: true,
       repo: _Repo(<MineOutcome>[const MineOutcome.success()]),
     );
     expect(plain.notice, isNull);
@@ -282,6 +506,7 @@ void main() {
     final int id = await stageOne('走る');
     final VideoMineCommitSummary summary = await queue.commitAll(
       bookUid: 'remote/emby/1',
+      retryFailed: true,
       repo: _Repo(<MineOutcome>[const MineOutcome.queued()]),
     );
     expect(summary.succeeded, 1);

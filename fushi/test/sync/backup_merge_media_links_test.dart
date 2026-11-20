@@ -113,4 +113,90 @@ void main() {
     await verify();
     expect(await target.allMediaLinks(), hasLength(rows), reason: '重复导入幂等');
   });
+
+  group('AI 生效与撤销（v159）', () {
+    const MediaLinkEndpoint novel = (kind: MediaLinkKind.book, key: 'novel');
+    const MediaLinkEndpoint anime = (
+      kind: MediaLinkKind.videoEpisode,
+      key: 'video/anime',
+    );
+
+    Future<MediaLinkAiWrite?> aiApply(
+      FushiDatabase db, {
+      MediaLinkRelation relation = MediaLinkRelation.adaptation,
+      MediaLinkEndpoint from = novel,
+      MediaLinkEndpoint to = anime,
+    }) => db.applyAiMediaLink(
+      relation: relation,
+      from: from,
+      to: to,
+      source: MediaLinkSource.ai,
+      confidence: 0.95,
+    );
+
+    test('撤销 AI 新建的连接后再导入撤销前的备份：仍是撤销状态，推断也不再连', () async {
+      // 备份是撤销之前打的：里面是同一份 AI 生效（时钟停在基线 0）。
+      final String before = await buildSrcDb((FushiDatabase src) async {
+        await aiApply(src);
+      });
+      final FushiDatabase a = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(a.close);
+      final MediaLinkAiWrite w = (await aiApply(a))!;
+      expect(await a.revertAiMediaLink(w.id, previous: w.previous), isTrue);
+
+      await attachAndMerge(a, before);
+      final MediaLinkRow row = (await a.mediaLinkById(w.id))!;
+      expect(
+        mediaLinkStateOf(row),
+        MediaLinkState.removed,
+        reason: '撤销前的备份不得把 AI 生效并回来',
+      );
+      expect(await aiApply(a), isNull, reason: '推断不再对这一对生效');
+
+      // 另一台设备导入撤销之后的备份：同样收敛到撤销状态，哪怕它本机还留着 AI 生效。
+      final String after = await buildSrcDb((FushiDatabase src) async {
+        final MediaLinkAiWrite sw = (await aiApply(src))!;
+        await src.revertAiMediaLink(sw.id, previous: sw.previous);
+      });
+      final FushiDatabase b = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(b.close);
+      await aiApply(b);
+      await attachAndMerge(b, after);
+      expect(
+        mediaLinkStateOf((await b.mediaLinkById(w.id))!),
+        MediaLinkState.removed,
+      );
+    });
+
+    test('备份里否决了 (X, adaptation, Y)、本机 AI 以 same_work 生效：合并后不再生效', () async {
+      final String vetoed = await buildSrcDb((FushiDatabase src) async {
+        await src.upsertManualMediaLink(
+          relation: MediaLinkRelation.adaptation,
+          from: novel,
+          to: anime,
+          at: 10,
+        );
+        await src.removeMediaLink(
+          mediaLinkIdFor(MediaLinkRelation.adaptation, novel, anime),
+          at: 20,
+        );
+      });
+      final FushiDatabase a = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(a.close);
+      final MediaLinkAiWrite w = (await aiApply(
+        a,
+        relation: MediaLinkRelation.sameWork,
+      ))!;
+      await attachAndMerge(a, vetoed);
+      expect(
+        mediaLinkStateOf((await a.mediaLinkById(w.id))!),
+        MediaLinkState.removed,
+        reason: '否决管一整对，不分关系与方向',
+      );
+      expect(
+        await a.mediaLinksForEndpoint(MediaLinkKind.book, 'novel'),
+        isEmpty,
+      );
+    });
+  });
 }

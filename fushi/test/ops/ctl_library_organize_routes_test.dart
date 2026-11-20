@@ -12,7 +12,10 @@ import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
+import 'package:fushi_engine/ai/ai_library_organize_assistant.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/media/collections/library_organize/library_organize_apply.dart';
+import 'package:fushi_engine/media/collections/library_organize/library_organize_plan.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -187,5 +190,104 @@ void main() {
             as Map<String, Object?>;
     expect(undo['undone'], 1);
     expect(await db.getMediaCollectionByNaturalKey('S', 'playlist'), isNull);
+  });
+
+  test('待确认建议：列出、接受（以用户身份合并）、拒绝；已处理的 404', () async {
+    final int one = await db.createMediaCollection('One');
+    final int two = await db.createMediaCollection('Two');
+    final int three = await db.createMediaCollection('Three');
+    for (final (int id, String key) in <(int, String)>[
+      (one, 'a'),
+      (two, 'b'),
+      (three, 'a'),
+    ]) {
+      await db.addToCollection(
+        id,
+        MediaKind.epub,
+        (await db.resolveEpubBookUid(key))!,
+      );
+    }
+    final int runId = await db
+        .into(db.libraryOrganizeRuns)
+        .insert(
+          LibraryOrganizeRunsCompanion.insert(
+            domain: 'books',
+            trigger: 'manual',
+            startedAt: 1,
+            status: 'done',
+          ),
+        );
+    await recordOrganizeProposals(
+      db,
+      runId: runId,
+      proposals: <OrganizeProposal>[
+        OrganizeProposal(
+          kind: OrganizeProposalKind.merge,
+          targetCollectionId: one,
+          sourceCollectionIds: <int>[two],
+          confidence: AiOrganizeConfidence.high,
+        ),
+        OrganizeProposal(
+          kind: OrganizeProposalKind.rename,
+          targetCollectionId: three,
+          newName: 'Third',
+          confidence: AiOrganizeConfidence.high,
+          reason: 'r',
+        ),
+      ],
+    );
+    List<Map<String, Object?>> listOf(Object? r) => <Map<String, Object?>>[
+      for (final Object? p
+          in (r! as Map<String, Object?>)['proposals']! as List<Object?>)
+        p! as Map<String, Object?>,
+    ];
+    final List<Map<String, Object?>> pending = listOf(
+      await call('GET', '$kLibraryOrganizeCtlRoot/proposals'),
+    );
+    expect(pending, hasLength(2));
+    final Map<String, Object?> merge = pending.firstWhere(
+      (Map<String, Object?> p) => p['kind'] == 'merge',
+    );
+    final Map<String, Object?> rename = pending.firstWhere(
+      (Map<String, Object?> p) => p['kind'] == 'rename',
+    );
+    expect(merge['sources'], <String>['Two']);
+    expect(rename['newName'], 'Third');
+
+    expect(
+      await call(
+        'POST',
+        '$kLibraryOrganizeCtlRoot/proposals/${merge['id']}/accept',
+      ),
+      <String, Object?>{'id': merge['id'], 'state': 'accepted'},
+    );
+    expect(await db.getMediaCollectionById(two), isNull);
+    expect(await db.getCollectionItems(one), hasLength(2));
+    expect(
+      await call(
+        'POST',
+        '$kLibraryOrganizeCtlRoot/proposals/${rename['id']}/reject',
+      ),
+      <String, Object?>{'id': rename['id'], 'state': 'rejected'},
+    );
+    expect((await db.getMediaCollectionById(three))!.name, 'Three');
+    expect(
+      listOf(await call('GET', '$kLibraryOrganizeCtlRoot/proposals')),
+      isEmpty,
+    );
+    expect(
+      listOf(
+        await call(
+          'GET',
+          '$kLibraryOrganizeCtlRoot/proposals',
+          body: <String, Object?>{'all': true},
+        ),
+      ),
+      hasLength(2),
+    );
+    await expectLater(
+      call('POST', '$kLibraryOrganizeCtlRoot/proposals/${merge['id']}/accept'),
+      throwsA(isA<CtlFailure>()),
+    );
   });
 }

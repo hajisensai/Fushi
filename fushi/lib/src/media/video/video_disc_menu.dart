@@ -1,5 +1,10 @@
 import 'dart:convert';
 
+import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
+    show blurayAnglePath, kBlurayMaxAngles;
+import 'package:fushi_engine/media/video/dvd/dvd_angle.dart'
+    show dvdTitleAnglePath, kDvdMaxAngles;
+
 /// Which navigation library produced a `disc-navigation-state` snapshot.
 enum VideoDiscType { bluray, dvd }
 
@@ -381,6 +386,31 @@ class VideoDiscResolvedTracks {
   final String? subtitleCodec;
 }
 
+/// The path extraction (FFmpeg, mining, the subtitle pipeline) reads for the
+/// bound title [playlistPath] while the player shows camera angle [angle]
+/// (the `disc-navigation-state` angle: zero-based for libbluray and libdvdnav
+/// alike — the mpv patch reports libdvdnav's 1-based angle minus one; -1 = not
+/// yet reported).
+///
+/// Angle 0 is the title itself. Blu-ray angles 1-8 become the angle member
+/// path (`00001.a2.mpls`, see `bluray_angle.dart`) whose multi-angle PlayItems
+/// read that angle's clips on the title's IN/OUT axis — what libbluray plays.
+/// DVD angles 1-8 become `TITLE_nn.a2.dvdtitle` (`dvd_angle.dart`), which the
+/// FFmpeg `dvdvideo` demuxer reads with `-angle <angle + 1>` — what libdvdnav
+/// plays. An unreported or out-of-range angle has no extraction path (null).
+String? discExtractionPathForAngle(
+  String playlistPath, {
+  required int angle,
+  required bool dvd,
+}) {
+  if (angle < 0 || angle >= (dvd ? kDvdMaxAngles : kBlurayMaxAngles)) {
+    return null;
+  }
+  return dvd
+      ? dvdTitleAnglePath(playlistPath, angle)
+      : blurayAnglePath(playlistPath, angle);
+}
+
 bool videoDiscTitleIdentityMatches(
   VideoDiscNavigationState expected,
   VideoDiscNavigationState? confirmed,
@@ -652,8 +682,32 @@ Future<void> runCheckedVideoDiscCommand(
   List<String> command,
 ) async {
   final int result = await _runVideoDiscCommand(native, command);
-  if (result < 0) throw VideoDiscMenuException('command-failed:$result');
+  if (result < 0) {
+    throw VideoDiscMenuException(videoDiscCommandFailedCode(result));
+  }
 }
+
+/// mpv's generic `MPV_ERROR_COMMAND`: what the shipped `fushi-discnav1` patch
+/// returns when the stream answers a nav command with `STREAM_ERROR` — for a
+/// menu call that is libbluray's `bd_menu_call` refused by the disc's UO mask
+/// (or a DVD root-menu UOP), or a stream that is no longer a navigable disc.
+const int kMpvErrorCommand = -12;
+
+/// The [VideoDiscMenuException.code] of a checked disc command that mpv
+/// answered with the negative [result].
+String videoDiscCommandFailedCode(int result) => 'command-failed:$result';
+
+/// Whether [error], thrown by a top-menu / title-menu call
+/// ([VideoPlayerController.discMenuKey]), means the disc itself refused the
+/// menu call: the disc has no menu layer to return to right now.
+///
+/// Everything else — the navigation still initializing, the session not active
+/// at send time, a missing command result over the media_kit bridge (-1), any
+/// other mpv error — is a failed attempt, not an answer from the disc, and must
+/// not be read as "this disc has no menu".
+bool isVideoDiscMenuCallRefusal(Object error) =>
+    error is VideoDiscMenuException &&
+    error.code == videoDiscCommandFailedCode(kMpvErrorCommand);
 
 /// BUG-3507: goes through the media_kit patch's `commandWithResult`
 /// (`mpv_command_async`). A synchronous `mpv_command` waits for the mpv core

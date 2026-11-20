@@ -23,6 +23,8 @@ import 'package:fushi_core/fushi_core.dart';
 /// 本文件的防假护栏：核心用例先**断言故障态确实成立**（primaryFocus 落在
 /// fallbackNode + activeContext 解析不出路由），再断言 Esc 仍能退页——测试若没
 /// 逼出故障态会先在前置断言上红，不可能退化成「修不修都绿」。
+const String _kZeroTargetPageText = 'zero-target-page';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -94,6 +96,24 @@ void main() {
   /// 的载体——ensureFocus 在这样的页面上才会真的 park 到 fallbackNode。
   Widget emptyDetailPage() =>
       detailPage(members: () async => const <VideoBookRow>[]);
+
+  /// 零受管焦点目标的纯展示页。#3515 起合集详情页的页头返回键是登记过的焦点
+  /// 目标（FushiIconButton，手柄 / 键盘够得到），详情页本身不再是零受管目标页；
+  /// BUG-1349 的故障态（activeContext 解析不出路由）只在零受管目标页上成立，
+  /// 根因又在页面无关的全局 Esc 处理器里，所以两条核心用例改压这张页。页里留
+  /// 一枚未登记的原生按钮：与旧详情页（AppBar 返回键）同形——路由里有可聚焦
+  /// 控件，[FushiFocusController.ensureFocus] 不把焦点回收到 fallbackNode。
+  Widget zeroTargetPage() => Scaffold(
+    body: Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          const Text(_kZeroTargetPageText),
+          TextButton(onPressed: () {}, child: const Text('native')),
+        ],
+      ),
+    ),
+  );
 
   void useTallSurface(WidgetTester tester) {
     tester.view.physicalSize = const Size(1280, 1400);
@@ -239,7 +259,7 @@ void main() {
     );
 
     navKey.currentState!.push(
-      MaterialPageRoute<void>(builder: (_) => emptyDetailPage()),
+      MaterialPageRoute<void>(builder: (_) => zeroTargetPage()),
     );
     await tester.pumpAndSettle();
     assertShadowFaultState(controllerOf(navKey));
@@ -248,7 +268,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.byType(MediaCollectionDetailPage),
+      find.text(_kZeroTargetPageText),
       findsNothing,
       reason:
           'BUG-1349：无效的 activeContext 候选不得遮蔽能解析出路由的 '
@@ -267,7 +287,7 @@ void main() {
     );
 
     navKey.currentState!.push(
-      MaterialPageRoute<void>(builder: (_) => emptyDetailPage()),
+      MaterialPageRoute<void>(builder: (_) => zeroTargetPage()),
     );
     await tester.pumpAndSettle();
     await parkFocusOnFallback(tester, controllerOf(navKey));
@@ -278,7 +298,7 @@ void main() {
     // 钉住 _handleGlobalEscape 的行为翻转面：两个候选 context 都解析不出路由 →
     // 不再视作弹窗吞掉，maybePop 顶层页面。
     expect(
-      find.byType(MediaCollectionDetailPage),
+      find.text(_kZeroTargetPageText),
       findsNothing,
       reason: 'BUG-1349：焦点 park 在 Navigator 之上的兜底节点时 Esc 必须仍能退页',
     );

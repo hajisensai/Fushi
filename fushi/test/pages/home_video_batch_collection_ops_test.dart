@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -16,13 +17,13 @@ import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/series_scrape_seed.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/video_header_more.dart';
 
 /// 块2/3/4 视频库批量合集操作 widget 测试（真写穿内存 DB）：
 ///  - 多选态合集整选（封面卡整卡勾选 → 合集入选中集；成员卡收进详情页不在库页）；
@@ -32,6 +33,14 @@ void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
 
+  // path_provider 根**全文件共用一个**，刻意不按用例隔离、也不重置 CoverMetaStore：
+  // 库页进场的自动刮削 sweep 会跑存量成员封面清理（runMemberCoverCleanup →
+  // CoverMetaStore.all()），而 CoverMetaStore 按目录共享进程级状态（读缓存 /
+  // 在途加载 / 链式写锁）。上一条用例结束时那次读盘还在飞、它的 fakeAsync Zone
+  // 不再推进；store 的共享 future 曾建在发起者 Zone 里，下一条用例进同一目录就
+  // 整条挂住，连带批量删除排在 VideoCoverMutationGate 后面永不开工。store 现在
+  // 只在根 Zone 里推进共享状态（见 CoverMetaStore._runDetached），这里共用一个
+  // 根即是该修复的回归证据。
   late Directory pathProviderDir;
   setUpAll(() {
     pathProviderDir = Directory.systemTemp.createTempSync('fushi_batch_ops_pp');
@@ -58,6 +67,10 @@ void main() {
   late Directory storeDir;
 
   setUp(() async {
+    // 封面写入 / 视频删除共用的进程级锁：上一条用例结束时在飞的 action 永远不会
+    // 释放它，不清的话本文件的批量删除会排进永不移交的队列（进度对话框一直挂着）。
+    // 契约见 VideoCoverMutationGate.debugResetForTesting。
+    VideoCoverMutationGate.debugResetForTesting();
     SharedPreferences.setMockInitialValues(<String, Object>{});
     LocaleSettings.setLocale(AppLocale.zhCn);
     db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -129,8 +142,28 @@ void main() {
   }
 
   Future<void> enterSelectionMode(WidgetTester tester) async {
-    await tester.tap(find.byIcon(FushiIcons.checklist));
+    await tapVideoHeaderMoreEntry(tester, 'library_select_toggle');
     await tester.pumpAndSettle();
+  }
+
+  /// 批量删除 / 解散点头之后：bfa7138bf1（BUG-4709 / 35YfcYO-zR）起删除期间挂着
+  /// 不可点掉的进度对话框（不定态指示器持续出帧），解散 / 删除链路里的真实 IO
+  /// （合集资产 / 文件回收）在 fakeAsync 下不回话，直接 pumpAndSettle 只会对着
+  /// 转圈超时。交替 pump 与 runAsync 让真实 IO 跑完，直到进度对话框自己关掉；
+  /// 30s 上界内没关 = 删除真的卡死，照样失败。
+  Future<void> finishBatchDelete(WidgetTester tester) async {
+    final Finder progress = find.text(t.video_library_delete_progress_title);
+    final DateTime deadline = DateTime.now().add(const Duration(seconds: 30));
+    await tester.pump();
+    while (progress.evaluate().isNotEmpty &&
+        DateTime.now().isBefore(deadline)) {
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      });
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    await tester.pumpAndSettle();
+    expect(progress, findsNothing, reason: '删除结束后进度对话框必须关掉');
   }
 
   testWidgets('块2：合集封面卡勾选 → 整合集入选中集；成员卡不在库页', (WidgetTester tester) async {
@@ -325,7 +358,7 @@ void main() {
     // 纯合集 → 解散确认文案。
     expect(find.text(t.batch_dissolve_confirm(m: 1)), findsOneWidget);
     await tester.tap(find.widgetWithText(TextButton, t.dialog_delete));
-    await tester.pumpAndSettle();
+    await finishBatchDelete(tester);
 
     expect(await db.getMediaCollectionById(cid), isNull, reason: '合集被解散');
     // 媒体本体保留（解散只解除分组）。

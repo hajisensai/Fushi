@@ -11,6 +11,7 @@ MediaCollectionItemRow _item(int collectionId, String mediaType, String key) =>
       mediaType: mediaType,
       entryKey: key,
       sortIndex: 0,
+      pinnedByUser: false,
     );
 
 void main() {

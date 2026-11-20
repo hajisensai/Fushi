@@ -39,10 +39,22 @@ const String _categoryPageHtml = '''<!doctype html><html><body>
 /// - `html.example.com`：GET `/?q=…` 回带分类下拉的搜索页；
 /// - `json.example.com`：GET `/q.php` 回首项带 info_hash / name 的 JSON 数组；
 /// - `post.example.com`：POST `/v1` 回 `{"hits": []}`；
+/// - `rule.example.com`：GET `/s?q=…` 回一张论坛式结果页（要带 `sid=1` Cookie，否则
+///   403）——自动探测认不出，只能靠导入的解析规则；
 /// - 其它（如 `blank.example.com`）：一张什么结构都没有的普通网页。
 http.Response _fakeSites(http.Request request) {
   final Uri u = request.url;
   switch (u.host) {
+    case 'rule.example.com' when u.path == '/s':
+      if (request.headers['Cookie'] != 'sid=1') {
+        return http.Response('login required', 403);
+      }
+      return http.Response(
+        '<table><tr class="r"><td><a class="t" href="/d/1">Movie 1080p</a>'
+        '<a class="m" href="magnet:?xt=urn:btih:'
+        'abcdef0123456789abcdef0123456789abcdef01">m</a></td></tr></table>',
+        200,
+      );
     case 'html.example.com'
         when request.method == 'GET' &&
             u.path == '/' &&
@@ -251,7 +263,10 @@ void main() {
           }, '/bt-sites');
       expect(r.status, 422, reason: r.raw);
       expect(r.json['reason'], 'unrecognized');
-      expect(r.json['error'], 'Unable to recognize this site');
+      expect(
+        r.json['error'],
+        'Unable to recognize this site; add a parser rule for it',
+      );
       for (final String word in <String>[
         'nyaa',
         'apibay',
@@ -372,6 +387,71 @@ void main() {
       expect(removed.status, 200, reason: removed.raw);
       expect(removed.json['btSites'], isEmpty);
       expect(readBtSiteConfigs(prefs), isEmpty);
+    });
+
+    test('导入解析规则：按规则验证后落库；规则回显、Cookie 只报有没有；重新检测不退回自动识别', () async {
+      final AdminApi api = await buildApi();
+      final Map<String, Object?> rule = <String, Object?>{
+        'fushiBtSiteParser': 1,
+        'search': '/s?q={query}',
+        'rows': 'tr.r',
+        'fields': <String, Object?>{'title': 'a.t', 'magnet': 'a.m@href'},
+      };
+
+      // 没有 Cookie：规则请求被拒 → 422 ruleRequestFailed，不落库。
+      final ({int status, Map<String, dynamic> json, String raw}) denied =
+          await call(api, 'POST', <String, Object?>{
+            'url': 'rule.example.com',
+            'domains': <String>['movie'],
+            'parser': rule,
+          }, '/bt-sites');
+      expect(denied.status, 422, reason: denied.raw);
+      expect(denied.json['reason'], 'ruleRequestFailed');
+      expect(readBtSiteConfigs(prefs), isEmpty);
+
+      // 畸形规则 → 400。
+      expect(
+        (await call(api, 'POST', <String, Object?>{
+          'url': 'rule.example.com',
+          'parser': '{"fushiBtSiteParser": 1}',
+        }, '/bt-sites')).status,
+        400,
+      );
+
+      final ({int status, Map<String, dynamic> json, String raw}) r =
+          await call(api, 'POST', <String, Object?>{
+            'url': 'rule.example.com',
+            'domains': <String>['movie', 'manga'],
+            'parser': jsonEncode(rule),
+            'cookie': 'sid=1',
+          }, '/bt-sites');
+      expect(r.status, 200, reason: r.raw);
+      expect(r.raw, isNot(contains('sid=1')), reason: 'Cookie 是凭据，不回显');
+      final Map<String, dynamic> site = Map<String, dynamic>.from(
+        r.json['site'] as Map,
+      );
+      expect(site['cookieSet'], isTrue);
+      expect((site['parser'] as Map)['search'], '/s?q={query}');
+      expect(site['effectiveDomains'], <String>['movie']);
+      final BtSiteConfig stored = readBtSiteConfigs(prefs).single;
+      expect(stored.format, BtSiteFormat.custom);
+      expect(stored.cookie, 'sid=1');
+
+      final String id = stored.id;
+      final ({int status, Map<String, dynamic> json, String raw}) reprobe =
+          await call(api, 'POST', null, '/bt-sites/$id/reprobe');
+      expect(reprobe.status, 200, reason: reprobe.raw);
+      expect(readBtSiteConfigs(prefs).single.format, BtSiteFormat.custom);
+      expect(readBtSiteConfigs(prefs).single.cookie, 'sid=1');
+
+      // 清空规则 = 改回自动识别：这个站认不出 → 422，原配置不动。
+      final ({int status, Map<String, dynamic> json, String raw}) cleared =
+          await call(api, 'PUT', <String, Object?>{
+            'parser': '',
+          }, '/bt-sites/$id');
+      expect(cleared.status, 422, reason: cleared.raw);
+      expect(cleared.json['reason'], 'unrecognized');
+      expect(readBtSiteConfigs(prefs).single.format, BtSiteFormat.custom);
     });
 
     test('编辑：关掉明文放行而地址仍是明文 → 400 不落库', () async {

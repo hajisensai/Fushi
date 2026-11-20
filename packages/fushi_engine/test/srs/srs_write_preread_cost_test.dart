@@ -57,9 +57,11 @@ List<Object?> _signals(SrsDbStore s) => <Object?>[
   s.deckTreeKey,
   s.rwkvScoresKey,
   s.statsFingerprint,
-  s.core.debugSelectRaw('SELECT COUNT(*) AS n FROM sync2_ops').single['n'],
+  // 新代真相表 `ops` 的全部操作与其中的修改记录（种类 2 = Edit），走测试专用的原始通道（这个函数是同步的，
+  // `status` 是异步命令）。协议 3 数的是 `sync2_ops` 与 `srs_field_edits`。
+  s.core.debugSelectRaw('SELECT COUNT(*) AS n FROM ops').single['n'],
   s.core
-      .debugSelectRaw('SELECT COUNT(*) AS n FROM srs_field_edits')
+      .debugSelectRaw('SELECT COUNT(*) AS n FROM ops WHERE kind = 2')
       .single['n'],
 ];
 
@@ -312,16 +314,23 @@ void main() {
       return ids;
     }
 
+    // 被清除的实体数：新代清除索引 `purge_ix`（native/fushi_fsrs/src/store/gen4/schema.rs，一个实体一条或多条
+    // 清除操作），协议 3 是 `sync2_purged`。
     int purged() =>
         s.core
-                .debugSelectRaw('SELECT COUNT(*) AS n FROM sync2_purged')
+                .debugSelectRaw('SELECT COUNT(DISTINCT ent) AS n FROM purge_ix')
                 .single['n']!
             as int;
+
+    // 本机写过的操作条数（内核 `status` 的 `nextSeq` − 1，本机日志的长度）。不数 `status` 的 `ops`（日志里还带内容的
+    // 操作行数）：清除在同一事务里把被清除实体更早的操作落成空洞，`ops` 反而变少（srs_profile_ownership_test 同口径）。
+    Future<int> written() async =>
+        ((await s.sync2Status())['nextSeq']! as int) - 1;
 
     final List<String> five = await make(5, 'a');
     final List<String> many = await make(205, 'b');
     final Map<String, _Cost> costs = <String, _Cost>{};
-    final int opsBefore = (await s.sync2Status())['ops']! as int;
+    final int opsBefore = await written();
     // 空的一批：一条命令都不发。
     expect(
       await _cost(s, 'purge(0)', () => srsPurgeNotesNow(s, const <String>[])),
@@ -334,7 +343,7 @@ void main() {
     expect(report.notes, 5);
     expect(purged(), 5);
     expect(
-      (await s.sync2Status())['ops'],
+      await written(),
       opsBefore + 10,
       reason: '每条笔记一条删除 + 一条 Purge，与逐条发相同',
     );
@@ -343,7 +352,7 @@ void main() {
     });
     expect(report.notes, 205);
     expect(purged(), 210);
-    expect((await s.sync2Status())['ops'], opsBefore + 420);
+    expect(await written(), opsBefore + 420);
 
     expect(costs, <String, _Cost>{
       'purge(5)': (statements: 0, core: 1),

@@ -147,7 +147,7 @@ void main() {
     raw.dispose();
 
     Future<void> check(FushiDatabase db) async {
-      expect(db.schemaVersion, 155);
+      expect(db.schemaVersion, 164);
       expect(
         await _col(db, 'SELECT track_uid FROM music_tracks ORDER BY track_uid'),
         <String>['other', 'win'],

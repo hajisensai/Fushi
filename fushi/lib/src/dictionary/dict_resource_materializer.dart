@@ -9,7 +9,8 @@
 // `AppModel._rebuildDictPathsCacheAsync` → `FushiDicts.scheduleTyped` →
 // `FushiDicts.loadPendingAsync`（逐本 `addTermDict` 是**主 isolate 上的同步 FFI**）→
 // C++ `add_dict` 用 `std::ifstream` 整读 `index.json` / `styles.css` / `dict.zstd`，
-// `mmap` `hash.table` / `bloom.filter` / `blobs.bin` / `media.bin` / `media.idx` 并立即
+// `mmap` 索引（`key.index`，旧式 `hash.table` / `bloom.filter`）、`blobs.bin` /
+// `blobs3.bin` / `media.bin` / `media.idx` 并立即
 // 触页。读到 dataless 文件会在内核里同步等云端把整个文件拉回来，没有任何超时；而
 // AppModel 的 12s 看门狗与 main.dart 的 20s 逃生 UI 都是 Timer，在同步 FFI 阻塞期间
 // 根本不会触发——用户看到的就是冷启动永远转圈。
@@ -197,7 +198,8 @@ class _DirReport {
 ///
 /// 只看目录下的**常规文件**（`listSync(followLinks: false)` 里的 [File]），不硬编码
 /// 文件名清单——引擎文件集合以磁盘为准；典型的是 `index.json` / `styles.css` /
-/// `dict.zstd` / `hash.table` / `bloom.filter` / `blobs.bin` / `media.bin` / `media.idx`。
+/// `dict.zstd` / `key.index`（旧式 `hash.table` / `bloom.filter`）/ `blobs.bin` /
+/// `blobs3.bin` / `media.bin` / `media.idx`。
 /// 子目录与符号链接跳过：引擎不会 mmap 它们。
 void _materializeWorker(_MaterializeRequest request) {
   final SendPort port = request.sendPort;

@@ -831,7 +831,7 @@ void main() {
       );
       expect(
         compactCode(
-          read('lib/src/pages/implementations/media_sources_page.dart'),
+          read('lib/src/pages/implementations/video_import_page.dart'),
         ),
         isNot(contains('animeMihonManager')),
         reason: '视频导入页只剩本地来源，不得再取 animeMihonManager。',
@@ -929,7 +929,7 @@ void main() {
       );
       expect(
         compactCode(
-          read('lib/src/pages/implementations/media_sources_page.dart'),
+          read('lib/src/pages/implementations/book_import_page.dart'),
         ),
         isNot(contains('lnReaderManager')),
         reason: '书导入页只剩本地来源，不得再取 lnReaderManager。',
@@ -1101,9 +1101,38 @@ void main() {
         ),
       );
       expect(gate, isNot(contains('Platform.isIOS')));
+      // 插件中继（拍板台 wOMR4_Er7s 方案 b，维护者 2026-11-16「可以放行」）：本机跑不了插件时
+      // 经互联用「我的设备」host 上的插件。判据在 store_compliance.dart 单独一条，不动
+      // onlineMusicSource（iOS 依然不装插件宿主）；「能用插件」与「能装 / 管理插件」是两道门。
+      expect(
+        gate,
+        contains(
+          'boolgetisMusicPluginRelayClient=>'
+          '!isMusicPluginSourcesAvailable&&interconnectPluginRelayAvailable;',
+        ),
+      );
+      expect(
+        gate,
+        contains(
+          'boolgetisMusicPluginSourcesUsable=>'
+          'isMusicPluginSourcesAvailable||isMusicPluginRelayClient;',
+        ),
+      );
+      expect(
+        compactCode(read('lib/src/models/store_compliance.dart')),
+        contains(
+          'boolinterconnectPluginRelayAvailableOn({requiredboolisIOS})=>true;',
+        ),
+      );
+      expect(interconnectPluginRelayAvailableOn(isIOS: true), isTrue);
+      expect(
+        StoreRestrictedCapability.onlineMusicSource.availableOn(isIOS: true),
+        isFalse,
+        reason: '中继放行不等于 iOS 能装插件：本机插件宿主仍在合规门后。',
+      );
       // 设置 › 音乐：不再挂插件管理（来源管理只在曲库「来源」页，与其他媒体一致），
-      // 歌词来源那行（含插件歌词来源）仍整行 visible 走门（分类正文 / 主从详情 / 搜索
-      // 索引三条路径共用）。
+      // 歌词来源那行（含插件歌词来源）整行 visible 走「能用」门：经中继用 host 歌词插件的
+      // iOS 也要能启停 / 排序；安装（拖放落点 + 安装按钮）仍只在本机能跑插件时出现。
       final String musicSettings = compactCode(
         read('lib/src/settings/settings_schema_music.dart'),
       );
@@ -1113,7 +1142,20 @@ void main() {
         contains(
           "id:'music.lyrics_providers',title:t.music_lyrics_providers_title,"
           'subtitle:t.music_lyrics_providers_hint,icon:FushiIcons.lyrics,'
-          'showIcon:true,visible:(_)=>isMusicPluginSourcesAvailable,',
+          'showIcon:true,visible:(_)=>isMusicPluginSourcesUsable,',
+        ),
+      );
+      expect(
+        musicSettings,
+        contains(
+          'body:(SettingsContextc)=>isMusicPluginSourcesAvailable'
+          '?MusicPluginDropTarget(',
+        ),
+      );
+      expect(
+        musicSettings,
+        contains(
+          ':MusicLyricsProvidersBody(appModel:c.appModel,canInstall:false,)',
         ),
       );
       // 「来源」页「添加」菜单里的插件管理入口：门没过时不出现（插件管理的设置入口
@@ -1134,7 +1176,7 @@ void main() {
           read('lib/src/pages/implementations/music/music_sources_page.dart'),
         ),
         contains(
-          'if(isMusicPluginSourcesAvailable){'
+          'if(isMusicPluginSourcesUsable){'
           'for(finalInstalledMusicPluginpinawaitapp.musicPluginManager.list()){',
         ),
       );
@@ -1152,9 +1194,18 @@ void main() {
       final String app = compactCode(read('lib/src/models/app_model.dart'));
       expect(
         app,
-        contains('if(isMusicPluginSourcesAvailable){musicPluginPlaybackHost='),
+        contains('if(isMusicPluginSourcesUsable){musicPluginPlaybackHost='),
       );
-      expect(app, contains('pluginLyrics:isMusicPluginSourcesAvailable?'));
+      expect(app, contains('pluginLyrics:isMusicPluginSourcesUsable?'));
+      // 中继只在本机跑不了插件时装配；替别人代跑只在本机自己能跑时接线。
+      expect(
+        app,
+        contains('relay:_musicPluginRelay=isMusicPluginRelayClient?'),
+      );
+      expect(
+        app,
+        contains('pluginRelayHost:()=>isMusicPluginSourcesAvailable?'),
+      );
       expect(
         compactCode(read('lib/src/media/music/plugin/music_plugins.dart')),
         contains(

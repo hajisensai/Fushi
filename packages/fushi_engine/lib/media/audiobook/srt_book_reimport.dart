@@ -100,9 +100,11 @@ class SrtBookReimportOutcome {
 /// [audioPaths] / [subtitlePath] 为 null 表示该项不变。两者皆 null 时直接返回
 /// 全 false 的 outcome（无副作用）。
 ///
-/// 顺序刻意为「先解析新字幕 -> 再重建正文（磁盘，原子替换可回滚）-> 最后写库」：
-/// 解析失败或 cue 为空时库与磁盘都还没动；正文重建失败时库也还没动，旧树由
-/// [EpubImporter.rebuildExtractedInPlace] 的 `.bak` 回滚复位。
+/// 顺序刻意为「先解析新字幕 -> 新字幕副本落盘 -> 再重建正文（磁盘，原子替换可
+/// 回滚）-> 写库 -> 最后删旧字幕副本」（BUG-4810）：解析失败或 cue 为空时库与
+/// 磁盘都还没动；拷字幕失败时正文与库都还没动；正文重建失败时库也还没动，旧树由
+/// [EpubImporter.rebuildExtractedInPlace] 的 `.bak` 回滚复位，刚落的新副本收走。
+/// 旧副本在写库之后才删——在那之前它是库里唯一指着的那份。
 ///
 /// [uid] 必须命中既有字幕书，否则抛 [StateError]。
 ///
@@ -199,50 +201,69 @@ Future<SrtBookReimportOutcome> reimportSrtBook({
     cueCount = cues.length;
     throwIfAlignmentCancelled(isCancelled);
 
-    // ① 正文重建（只动磁盘，可回滚）。
-    final EpubBookRow? bodyRow = await _rebuildableBodyRow(db, book);
-    if (bodyRow != null) {
-      report(0.3, messages.buildingEpub);
-      bodyRebuilt = await (debugBodyRebuilder ?? _rebuildGeneratedBody)(
-        db: db,
-        row: bodyRow,
-        book: book,
-        cues: cues,
-      );
-    }
-
-    // ② 持久化新字幕文件。先删旧的：`persistFileWithProgress` 撞同名会退让成
-    // `<stem> _1.<ext>`，不删旧文件就会在持久目录里越堆越多，且旧文件仍占着
-    // 用户以为已经被替换掉的名字。
-    report(0.6, messages.persisting);
+    // ① 新字幕副本先落盘。旧副本此时不动：拷贝失败（磁盘满 / 源读不到）时库里
+    // 指着的那份必须还在。撞同名时新副本退让成 `<stem> _1.<ext>`，旧的在 ④ 删掉，
+    // 持久目录里始终只留一份。
+    report(0.2, messages.persisting);
     final Directory persistDir = await AudiobookStorage.ensurePersistDir(uid);
-    // keepPath：新字幕就是持久目录里那份旧副本（重新喂回自己）时不能先删掉源。
-    await deletePersistedSubtitleCopy(
-      persistDir: persistDir,
-      oldPath: book.srtPath,
-      keepPath: subtitlePath,
-    );
+    final String previousSrt = book.srtPath;
     final String persistedSrt = await AudiobookStorage.persistFileWithProgress(
       File(subtitlePath),
       persistDir,
       onProgress: (int copied, int total) =>
-          report(0.6, messages.copying(p.basename(subtitlePath))),
+          report(0.2, messages.copying(p.basename(subtitlePath))),
     );
 
-    // ③ 落库：cue 整组替换 + 新 srtPath。
-    report(0.8, messages.saving);
-    await repo.saveCues(uid: uid, cues: cues);
-    book.srtPath = persistedSrt;
-    await repo.save(book);
-    if (binding != null) {
-      await bindings.save(
-        binding.copyWith(
-          subtitleOrigin:
-              subtitleOrigin ?? RemoteAudioBinding.subtitleOriginLocal,
-          updatedAt: DateTime.now().millisecondsSinceEpoch,
-        ),
-      );
+    try {
+      // ② 正文重建（只动磁盘，可回滚）。
+      final EpubBookRow? bodyRow = await _rebuildableBodyRow(db, book);
+      if (bodyRow != null) {
+        report(0.3, messages.buildingEpub);
+        bodyRebuilt = await (debugBodyRebuilder ?? _rebuildGeneratedBody)(
+          db: db,
+          row: bodyRow,
+          book: book,
+          cues: cues,
+        );
+      }
+
+      // ③ 落库：cue 整组替换 + 新 srtPath + 远端绑定上的字幕来源，一次提交。
+      report(0.8, messages.saving);
+      await db.transaction(() async {
+        await repo.saveCues(uid: uid, cues: cues);
+        book.srtPath = persistedSrt;
+        await repo.save(book);
+        if (binding != null) {
+          await bindings.save(
+            binding.copyWith(
+              subtitleOrigin:
+                  subtitleOrigin ?? RemoteAudioBinding.subtitleOriginLocal,
+              updatedAt: DateTime.now().millisecondsSinceEpoch,
+            ),
+          );
+        }
+      });
+    } catch (_) {
+      // 没提交成：库里仍是旧字幕。这次新落的副本没有行指着它，收走（新字幕就是
+      // 持久目录里那份旧副本时 `persistFileWithProgress` 返回的是它自己，不能删）。
+      book.srtPath = previousSrt;
+      if (!p.equals(persistedSrt, subtitlePath)) {
+        await deletePersistedSubtitleCopy(
+          persistDir: persistDir,
+          oldPath: persistedSrt,
+          keepPath: previousSrt,
+        );
+      }
+      rethrow;
     }
+
+    // ④ 旧副本已没有行指着它，删掉。keepPath：新字幕就是那份旧副本（重新喂回
+    // 自己）时不删。只删持久目录里的（引用的原件不碰）。
+    await deletePersistedSubtitleCopy(
+      persistDir: persistDir,
+      oldPath: previousSrt,
+      keepPath: persistedSrt,
+    );
   }
 
   if (wantAudio) {

@@ -20,7 +20,7 @@ import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/settings/settings_search_sheet.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
-    show FushiHeightReporter, FushiTopFadeScrim, kFushiFloatingChromeGap;
+    show FushiHeightReporter, FushiTopFadeScrim;
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
     show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_static_masthead.dart';
@@ -34,17 +34,13 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
-import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 
 class SettingsHomePage extends BasePage {
-  const SettingsHomePage({super.key, this.embedded = false, this.onBack});
+  const SettingsHomePage({super.key, this.embedded = false});
 
   final bool embedded;
-
-  /// 非空时在内嵌页头左侧显示返回箭头（宽屏全屏设置切回来源 tab）。
-  final VoidCallback? onBack;
 
   @override
   BasePageState<SettingsHomePage> createState() => _SettingsHomePageState();
@@ -77,10 +73,6 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
   /// 窄屏分类列表已滚离顶部：驱动共享顶部渐隐。
   final ValueNotifier<bool> _narrowScrolledUnder = ValueNotifier<bool>(false);
 
-  /// 嵌入外壳（宽屏全屏设置）里叠放的 [FushiPageHeader] 实测高度（notifier：
-  /// 回报只重建让位那层 MediaQuery，不重建整个设置主页）。
-  final ValueNotifier<double> _shellHeaderHeight = ValueNotifier<double>(0);
-
   void _onNarrowHeaderHeight(double height) {
     if (!mounted || height == _narrowHeaderHeight.value) return;
     // 只在展开态（与 SettingsFloatingHeader 同一阈值）记高度：收缩态胶囊高度
@@ -90,11 +82,6 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
         _narrowScrollController.positions.first.pixels <= 12;
     if (_narrowHeaderHeight.value > 0 && !atRest) return;
     _narrowHeaderHeight.value = height;
-  }
-
-  void _onShellHeaderHeight(double height) {
-    if (!mounted) return;
-    _shellHeaderHeight.value = height;
   }
 
   void _onNarrowScroll() {
@@ -164,7 +151,6 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     _narrowScrollController.dispose();
     _narrowScrolledUnder.dispose();
     _narrowHeaderHeight.dispose();
-    _shellHeaderHeight.dispose();
     super.dispose();
   }
 
@@ -202,16 +188,14 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
             constraints.maxWidth >= kFushiSettingsHomeTwoPaneMinWidth;
         _wide = wide;
         _publishCompanionCategory(wide ? selectedDestinationId.name : null);
-        // MD3：Android 16「设置」。宽屏左导航右详情（页头外壳同旧），窄屏是自带
+        // MD3：Android 16「设置」。宽屏左导航右详情（不另画「设置」页头），窄屏是自带
         // 折叠大标题顶栏的单列（不再套外壳页头，见 _buildMd3NarrowLayout）。
         if (md3) {
           return wide
-              ? _buildEmbeddedShell(
-                  _buildMd3WideLayout(
-                    settingsContext: settingsContext,
-                    destinations: destinations,
-                    selectedDestinationId: selectedDestinationId,
-                  ),
+              ? _buildMd3WideLayout(
+                  settingsContext: settingsContext,
+                  destinations: destinations,
+                  selectedDestinationId: selectedDestinationId,
                 )
               : _buildMd3NarrowLayout(
                   settingsContext: settingsContext,
@@ -268,38 +252,26 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
         );
       },
     );
-    final Widget page = md3 ? content : _buildEmbeddedShell(content);
-    if (!_mastheadHeader) return page;
+    if (!_mastheadHeader) return content;
     // 重设计外壳：窄屏单列顶部一行页头大字（与库页同一套），下面是原版面；各
-    // 版式自己的「设置」标题（MD3 窄屏浮动页头、玻璃窄屏 iOS 大标题、全屏设置的
-    // 返回页头）在 [_mastheadHeader] 下都不再画。
+    // 版式自己的「设置」标题（MD3 窄屏浮动页头、玻璃窄屏 iOS 大标题）在
+    // [_mastheadHeader] 下都不再画。
     //
     // 宽屏主从不画这一行：右窗格的分类页自己有页头大字（「外观与交互」等），
-    // 上面再叠一行「设置」就是两个大标题，右半边还空出一整条。只有带返回的
-    // 全屏设置留着它放返回键。
+    // 上面再叠一行「设置」就是两个大标题，右半边还空出一整条。
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool wide =
             constraints.maxWidth >= kFushiSettingsHomeTwoPaneMinWidth;
-        if (wide && widget.onBack == null) return page;
+        if (wide) return content;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.only(top: kFushiFloatingChromeGap),
-              child: FushiStaticMasthead(
-                key: const ValueKey<String>('settings_home_masthead'),
-                title: t.settings,
-                leading: widget.onBack == null
-                    ? null
-                    : FushiIconButtonControl(
-                        icon: const FushiIcon(FushiIcons.back),
-                        tooltip: t.back,
-                        onPressed: widget.onBack,
-                      ),
-              ),
+            FushiStaticMasthead(
+              key: const ValueKey<String>('settings_home_masthead'),
+              title: t.settings,
             ),
-            Expanded(child: page),
+            Expanded(child: content),
           ],
         );
       },
@@ -456,87 +428,6 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     openSettingsSearchEntry(Navigator.of(context), entry, pushTopLevel: !wide);
   }
 
-  Widget _buildEmbeddedShell(Widget content) {
-    // 页头大字已经带了返回键与页名（见 [build]）。
-    if (!widget.embedded || _mastheadHeader) {
-      return content;
-    }
-    // 自绘顶栏的桌面主窗口（Windows / macOS）已经由应用壳层提供当前 tab 标题；
-    // 设置仍是普通 home tab，左侧主导航始终可见，因此无需再画第二条
-    // 「返回 + 设置」页头。
-    if (FushiDesktopTitleBar.isEnabled) {
-      return content;
-    }
-    // Cupertino 手机（compact 走底栏导航、onBack 为空、无需返回出口）保持原生
-    // 无页头观感，不强加 Material 风页头。只有桌面/平板全屏设置（隐藏图标侧栏、
-    // 由 onBack 提供返回）才需补页头出口——这正是 BUG-009 R2 让 Cupertino 桌面
-    // 从「无出口的三栏混排」恢复成「页头(返回) + 二栏」的地方。Material 维持其
-    // 一贯页头（手机标题 / 桌面带返回箭头）。
-    if (isCupertinoPlatform(context) && widget.onBack == null) {
-      return content;
-    }
-    // 玻璃同理：没有返回出口时不画页头，大标题「设置」由窄屏布局自己画在
-    // 滚动内容顶上（iOS 大标题随内容滚走），宽屏由详情窗格的分类大标题承担。
-    if (isGlassDesign(context) && widget.onBack == null) {
-      return content;
-    }
-    // 全屏嵌入设置统一加自绘页头 + 返回箭头；叶子设置控件仍由各自渲染器保持
-    // Cupertino / Material 皮肤。
-    final Widget header = FushiPageHeader(
-      title: t.settings,
-      leading: widget.onBack != null
-          ? FushiIconButtonControl(
-              icon: const FushiIcon(FushiIcons.back),
-              tooltip: t.back,
-              onPressed: widget.onBack,
-            )
-          : null,
-    );
-    if (isGlassDesign(context) || isCupertinoPlatform(context)) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          header,
-          Expanded(child: content),
-        ],
-      );
-    }
-    // M3E：页头胶囊叠放在正文上（与 FushiPageScaffold 默认同一约定），正文的
-    // MediaQuery 顶部 padding 加上页头实测高度——宽屏右窗格的 kit 壳按它把
-    // 自己的页头放到这条下面、正文滚到两层页头底下；左栏等固定版面用 SafeArea
-    // 让开（见 _buildMd3WideLayout）。
-    final MediaQueryData media = MediaQuery.of(context);
-    return Stack(
-      children: <Widget>[
-        Positioned.fill(
-          child: ValueListenableBuilder<double>(
-            valueListenable: _shellHeaderHeight,
-            child: content,
-            builder: (BuildContext context, double headerHeight, Widget? body) {
-              final double inset = media.padding.top + headerHeight;
-              return MediaQuery(
-                data: media.copyWith(
-                  padding: media.padding.copyWith(top: inset),
-                  viewPadding: media.viewPadding.copyWith(top: inset),
-                ),
-                child: body!,
-              );
-            },
-          ),
-        ),
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          child: FushiHeightReporter(
-            onHeight: _onShellHeaderHeight,
-            child: header,
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildWideLayout({
     required SettingsContext settingsContext,
     required SettingsRenderer renderer,
@@ -616,13 +507,10 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
   }
 
   /// 玻璃窄屏是否自己画 iOS 大标题「设置」：只在没有任何别的页头时画
-  /// （自绘桌面顶栏已经显示标题、带返回的全屏设置有 FushiPageHeader、
+  /// （自绘桌面顶栏已经显示标题、
   /// 非嵌入用法由 FushiPageScaffold 出标题）。
   bool get _glassShowsLargeTitle =>
-      widget.embedded &&
-      widget.onBack == null &&
-      !FushiDesktopTitleBar.isEnabled &&
-      !_mastheadHeader;
+      widget.embedded && !FushiDesktopTitleBar.isEnabled && !_mastheadHeader;
 
   /// 设置搜索栏（M3E 胶囊 / Apple 液态玻璃胶囊，见 [SettingsSearchBar]）。回车
   /// 打开第一条结果，↓ 把焦点交给结果列表。
@@ -824,7 +712,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
       supportingSide: SupportingPaneSide.start,
       supportingWidth: MaterialSettingsRenderer.navPaneWidth,
       showDivider: false,
-      // 左栏是固定版面（搜索框 + 分类列表）：整体让开叠放在上面的外壳页头。
+      // 左栏是固定版面（搜索框 + 分类列表）：整体让开系统状态栏。
       supporting: SafeArea(
         bottom: false,
         child: Padding(
@@ -858,7 +746,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
       ),
       // 详情窗格按 destination id 编码身份（同 _buildWideLayout 的 KeyedSubtree
       // 说明）。全宽：不封顶、不居中（用户 2026-10-04）。
-      // 搜索结果的内边距按 State context 算、读不到外壳页头让位：整体让开。
+      // 搜索结果的内边距按 State context 算、读不到状态栏让位：整体让开。
       primary: _searchQuery.trim().isNotEmpty
           ? SafeArea(
               bottom: false,
@@ -983,7 +871,6 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
                       key: const ValueKey<String>('settings_home_header'),
                       title: t.settings,
                       scrollController: _narrowScrollController,
-                      onBack: widget.onBack,
                     ),
                   ),
                 ),

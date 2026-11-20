@@ -57,7 +57,8 @@ ToastSeverity videoMineCommitSeverity(VideoMineCommitSummary summary) =>
     : ToastSeverity.warning;
 
 /// 离开播放页之后，在后台把 [bookUid] 的待制卡写进 Anki：先等 [inFlight]（还在准备
-/// 媒体的暂存任务）收尾，再 [VideoMineQueue.commitAll]。
+/// 媒体的暂存任务）收尾，再 [VideoMineQueue.commitAll]。只写待写入的行，不重排之前
+/// 写入失败的——那是待制卡列表里「全部写入」的事。
 ///
 /// 结果用全局 toast 报：此时播放页和它左上角的 OSD 都已不在。视频页自己「提示只走
 /// OSD、不用 toast」（BUG-931）约束的是页面在场的时候——toast 会被视频画面挡住；退出
@@ -70,16 +71,13 @@ void commitStagedVideoMinesAfterExit({
 }) {
   unawaited(() async {
     try {
-      await Future.wait(inFlight);
-      final VideoMineQueue resolved = await queue;
-      if ((await resolved.pending(bookUid)).isEmpty &&
-          (await resolved.failed(bookUid)).isEmpty) {
-        return;
-      }
-      final VideoMineCommitSummary summary = await resolved.commitAll(
+      final VideoMineCommitSummary? summary = await commitPendingVideoMines(
+        queue: queue,
         bookUid: bookUid,
         repo: repo,
+        inFlight: inFlight,
       );
+      if (summary == null) return;
       FushiToast.show(
         msg: videoMineCommitMessage(summary),
         severity: videoMineCommitSeverity(summary),
@@ -90,6 +88,31 @@ void commitStagedVideoMinesAfterExit({
       } catch (_) {}
     }
   }());
+}
+
+/// [commitStagedVideoMinesAfterExit] 的写入本体（不报 toast、不吞错，便于测试）：等
+/// [inFlight] 收尾后，把 [bookUid] **待写入**的暂存卡写进 Anki。这一趟一行都没写
+/// （没有待写入的行）返回 `null`——只剩写入失败的行时什么都不做，它们留在列表里等
+/// 用户手动重试（BUG-4813）。
+///
+/// 「有没有待写入的行」只在 [VideoMineQueue.commitAll] 的串行链里面判（看它实际处理
+/// 了几行），不在排队之前先查一遍：排队期间另一次写入（列表里的「全部写入」、
+/// `video mine-send`）可能正好把这些行写完，先查的那一眼就过期了，会报出一条
+/// 「成功 0、失败 0」。
+Future<VideoMineCommitSummary?> commitPendingVideoMines({
+  required Future<VideoMineQueue> queue,
+  required String bookUid,
+  required BaseAnkiRepository repo,
+  required List<Future<void>> inFlight,
+}) async {
+  await Future.wait(inFlight);
+  final VideoMineQueue resolved = await queue;
+  final VideoMineCommitSummary summary = await resolved.commitAll(
+    bookUid: bookUid,
+    repo: repo,
+    retryFailed: false,
+  );
+  return summary.succeeded + summary.failed == 0 ? null : summary;
 }
 
 /// 导出 widget 便于测试直接构造。

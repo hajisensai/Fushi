@@ -19,6 +19,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/deadline_get.dart';
 
 /// `RemoteVideoInfo.id` 的前缀：视频源扩展的一集。
 ///
@@ -45,7 +46,8 @@ class AnimeSourceVideoClient
         RemoteVideoStreamHeaders,
         RemoteVideoStreamVariants,
         RemoteVideoEpisodeNumber,
-        RemoteVideoCollectionIsWork {
+        RemoteVideoCollectionIsWork,
+        RemoteVideoSubtitleAudioRefresh {
   AnimeSourceVideoClient({
     required this.manager,
     required this.context,
@@ -56,6 +58,7 @@ class AnimeSourceVideoClient
     String? Function()? subtitleLanguageResolver,
     AnimeEpisodeDownloader? downloader,
     List<String>? episodeIds,
+    this.subtitleFetchTimeout = kRemoteSubtitleFetchTimeout,
   }) : _subtitleLanguageResolver = subtitleLanguageResolver,
        _downloader = downloader ?? AnimeEpisodeDownloader(),
        episodes = List<MihonEpisode>.unmodifiable(episodes),
@@ -81,6 +84,9 @@ class AnimeSourceVideoClient
 
   /// 整片下载（直链 / HLS 分片），见 [downloadRemoteVideo]。
   final AnimeEpisodeDownloader _downloader;
+
+  /// 字幕下载（[getRemoteVideoSubtitle] 的 HTTP 分支）的总预算，测试可调短。
+  final Duration subtitleFetchTimeout;
 
   /// 默认字幕轨的首选语言码（`resolveSubtitleDownloadLanguage` 的产物，可空）。
   ///
@@ -109,15 +115,31 @@ class AnimeSourceVideoClient
   final Map<String, List<MihonVideo>> _resolvedCandidates =
       <String, List<MihonVideo>>{};
 
-  /// 最近一次 [remoteVideoStreamUrls] 选中的候选：它的头就是当前流的头。
+  /// 「最近一次」槽：最近一次 [remoteVideoStreamUrls] / [downloadRemoteVideo] 选中的
+  /// 候选。只服务**不带集 id** 的入口——[httpHeaderFields]（播放页取当前流的头）与
+  /// 线路菜单的高亮（[streamVariantIndex]）。凡是带集 id 的入口（字幕、默认字幕文件名、
+  /// 字幕生成取音频）一律查 [_chosenByEpisode]，不读这个槽。
   MihonVideo? _currentVideo;
 
   /// 最近一次取流的集 id：播放页的线路菜单（[streamVariants]）列的就是这一集的候选。
   String? _currentEpisodeId;
 
-  /// 最近一次取流挑默认字幕轨时用的语言：[getRemoteVideoSubtitle] 下载默认轨时沿用
-  /// 它而不是再问一次，保证下的就是报给播放页的那一条。
-  String? _defaultSubtitleLanguage;
+  /// 每集最近一次选中的流 + 当时挑默认字幕轨用的语言（BUG：下载中心两集并发时，
+  /// 先下完的那集收尾去下默认字幕，读到的「当前流」已被后开跑的那集覆盖，判成
+  /// 「当前流不是这一集」→ 字幕静默丢失）。按集 id 存，谁也不覆盖谁。
+  final Map<String, _ChosenStream> _chosenByEpisode = <String, _ChosenStream>{};
+
+  /// 记下 [id] 这一集选中的 [chosen]：既进按集的表，也刷新「最近一次」槽。默认字幕
+  /// 语言在此刻问一次并随集记下，[getRemoteVideoSubtitle] 下载默认轨时沿用它而不是
+  /// 再问一次，保证下的就是报给播放页的那一条。
+  void _recordChosen(String id, MihonVideo chosen) {
+    _currentVideo = chosen;
+    _currentEpisodeId = id;
+    _chosenByEpisode[id] = _ChosenStream(
+      video: chosen,
+      subtitleLanguage: preferredSubtitleLanguage,
+    );
+  }
 
   AnimeMihonRuntime get _runtime => manager.animeRuntime;
 
@@ -230,6 +252,7 @@ class AnimeSourceVideoClient
       subtitleLanguageResolver: _subtitleLanguageResolver,
       chooseVideo: _chooseVideo,
       downloader: _downloader,
+      subtitleFetchTimeout: subtitleFetchTimeout,
     );
     copy._pinnedVideos.addAll(_pinnedVideos);
     return copy;
@@ -289,15 +312,19 @@ class AnimeSourceVideoClient
     final String id = episodeVideoId(episode);
     final List<MihonVideo>? cached = _resolvedCandidates[id];
     if (!refresh && cached != null) return cached;
-    final List<MihonVideo> videos = await _runtime.getVideos(
-      context.extension,
-      context.source,
-      episode,
-      preferences: context.preferences,
-    );
+    final List<MihonVideo> videos = await _askExtension(episode);
     _resolvedCandidates[id] = videos;
     return videos;
   }
+
+  /// 向扩展取这一集的候选（不进缓存）。
+  Future<List<MihonVideo>> _askExtension(MihonEpisode episode) =>
+      _runtime.getVideos(
+        context.extension,
+        context.source,
+        episode,
+        preferences: context.preferences,
+      );
 
   /// 为某集钉住一条候选（线路 / 画质）：下一次取该集的流用它，不再走默认策略。
   void pinVideo(MihonEpisode episode, MihonVideo video) {
@@ -440,12 +467,11 @@ class AnimeSourceVideoClient
     final MihonVideo chosen =
         _matchPinned(_pinnedVideos[id], candidates) ??
         _chooseDefault(candidates);
-    _currentVideo = chosen;
-    _currentEpisodeId = id;
+    _recordChosen(id, chosen);
     _rejectTorrent(chosen, episode);
     final MihonVideoTrack? subtitle = defaultSubtitleTrack(
       chosen.subtitleTracks,
-      _defaultSubtitleLanguage = preferredSubtitleLanguage,
+      _chosenByEpisode[id]!.subtitleLanguage,
     );
     final String streamUrl = chosen.resolvedUrl;
     _logIgnoredMpvArgs(chosen);
@@ -539,13 +565,16 @@ class AnimeSourceVideoClient
     int episodeIndex = 0,
     void Function(double progress)? onProgress,
   }) async {
-    final MihonVideo? video = _currentVideo;
-    if (video == null) return;
+    // 按集 id 取这一集自己选中的流：「最近一次」槽可能已被另一集（下载中心并发的
+    // 另一集、连播预取）覆盖。
+    final _ChosenStream? chosen = _chosenByEpisode[id];
+    if (chosen == null) return;
+    final MihonVideo video = chosen.video;
     // 菜单里挑的那一条按下标取；没指定（起播默认字幕）与 [remoteVideoStreamUrls]
     // 同一个挑法，保证下载的就是它报给播放页的那一条。
     final List<MihonVideoTrack> tracks = video.subtitleTracks;
     final MihonVideoTrack? track = embeddedStreamIndex == null
-        ? defaultSubtitleTrack(tracks, _defaultSubtitleLanguage)
+        ? defaultSubtitleTrack(tracks, chosen.subtitleLanguage)
         : (embeddedStreamIndex >= 0 && embeddedStreamIndex < tracks.length
               ? tracks[embeddedStreamIndex]
               : null);
@@ -574,8 +603,12 @@ class AnimeSourceVideoClient
         subtitleUri.scheme == streamUri.scheme &&
         subtitleUri.host == streamUri.host &&
         subtitleUri.port == streamUri.port;
-    final http.Response response = await _httpClient.get(
+    // 起播时默认字幕挡在开流之前：第三方字幕站不回数据时必须有上限，否则页面永远
+    // 停在「正在下载字幕」。到点抛 TimeoutException，播放页照常起播、不挂这条字幕。
+    final http.Response response = await getWithDeadline(
+      _httpClient,
       subtitleUri,
+      timeout: subtitleFetchTimeout,
       headers: sameSite ? _nonEmptyOrNull(streamHeadersFor(video)) : null,
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -587,6 +620,57 @@ class AnimeSourceVideoClient
     await dest.parent.create(recursive: true);
     await dest.writeAsBytes(response.bodyBytes);
     onProgress?.call(1.0);
+  }
+
+  /// 字幕生成拉整集音频前现取地址：与 [downloadRemoteVideo] 一样**重新向扩展取流**
+  /// （签名链接短 TTL，BUG-2617），挑法与起播同一套（钉住的线路 > 扩展排好的默认），
+  /// 但不改当前流（[_currentVideo] 与播放用的请求头保持不动），也不写候选缓存——缓存
+  /// 服务播放页的线路菜单，换成新一轮的候选对象会让菜单认不出当前在放的那一条。
+  ///
+  /// 播放器正从外挂音轨放声音（[currentAudioUrl] 是上一轮那条音轨的地址）时，在新
+  /// 候选里挑同一位置的外挂音轨；否则取流本身（自带音轨）。
+  @override
+  Future<RemoteVideoSubtitleAudio> freshSubtitleAudio(
+    String id, {
+    String? currentAudioUrl,
+  }) async {
+    final MihonEpisode? episode = episodeForVideoId(id);
+    if (episode == null) {
+      throw ArgumentError.value(id, 'id', 'not an episode of this anime');
+    }
+    final MihonVideo? previous = _chosenByEpisode[id]?.video;
+    final List<MihonVideo> candidates = await _askExtension(episode);
+    if (candidates.isEmpty) {
+      throw const MihonRuntimeException(
+        'NO_VIDEOS',
+        'Source did not return any playable video for this episode',
+      );
+    }
+    final MihonVideo chosen =
+        _matchPinned(_pinnedVideos[id], candidates) ??
+        _chooseDefault(candidates);
+    _rejectTorrent(chosen, episode);
+    final Map<String, String> headers = streamHeadersFor(chosen);
+    final int audioIndex = previous == null || currentAudioUrl == null
+        ? -1
+        : externalAudioTracksFor(previous).indexWhere(
+            (RemoteVideoExternalAudioTrack t) => t.url == currentAudioUrl,
+          );
+    final List<RemoteVideoExternalAudioTrack> audio = externalAudioTracksFor(
+      chosen,
+    );
+    // 认不出同一条（扩展这一轮换了音轨表）时取第一条外挂音轨：声音本来就从外挂音轨
+    // 出，流本身多半是 DASH 纯视频。
+    if (currentAudioUrl != null && audio.isNotEmpty) {
+      return RemoteVideoSubtitleAudio(
+        url:
+            audio[audioIndex >= 0 && audioIndex < audio.length ? audioIndex : 0]
+                .url,
+        headers: headers,
+        audioOnly: true,
+      );
+    }
+    return RemoteVideoSubtitleAudio(url: chosen.resolvedUrl, headers: headers);
   }
 
   /// 下载一集到 [dest]：每次（重）跑都**重新向扩展取流**（签名链接短 TTL，重放旧
@@ -620,10 +704,8 @@ class AnimeSourceVideoClient
     final MihonVideo chosen =
         _matchPinned(_pinnedVideos[id], candidates) ??
         _chooseDefault(candidates);
-    _currentVideo = chosen;
-    _currentEpisodeId = id;
+    _recordChosen(id, chosen);
     _rejectTorrent(chosen, episode);
-    _defaultSubtitleLanguage = preferredSubtitleLanguage;
     _logIgnoredMpvArgs(chosen);
     final List<RemoteVideoExternalAudioTrack> audio = externalAudioTracksFor(
       chosen,
@@ -658,17 +740,15 @@ class AnimeSourceVideoClient
   static Map<String, String>? _nonEmptyOrNull(Map<String, String> headers) =>
       headers.isEmpty ? null : headers;
 
-  /// 当前流（[id] 最近一次取流 / 下载选中的那条）默认字幕轨的落盘文件名；没有
-  /// 字幕轨或当前流不是这一集时返回 null。
+  /// [id] 这一集最近一次取流 / 下载选中的那条流的默认字幕轨落盘文件名；这一集
+  /// 还没取过流、或流没有字幕轨时返回 null。
   Future<String?> defaultSubtitleFileName(String id) async {
-    final MihonVideo? video = _currentVideo;
+    final _ChosenStream? chosen = _chosenByEpisode[id];
     final MihonEpisode? episode = episodeForVideoId(id);
-    if (video == null || episode == null || _currentEpisodeId != id) {
-      return null;
-    }
+    if (chosen == null || episode == null) return null;
     final MihonVideoTrack? track = defaultSubtitleTrack(
-      video.subtitleTracks,
-      _defaultSubtitleLanguage,
+      chosen.video.subtitleTracks,
+      chosen.subtitleLanguage,
     );
     return track == null ? null : subtitleFileNameFor(track, episode);
   }
@@ -735,6 +815,15 @@ class _PinnedVariant {
 
   final String label;
   final int index;
+}
+
+/// 某一集选中的流 + 当时挑默认字幕轨用的语言。见
+/// [AnimeSourceVideoClient._chosenByEpisode]。
+class _ChosenStream {
+  const _ChosenStream({required this.video, required this.subtitleLanguage});
+
+  final MihonVideo video;
+  final String? subtitleLanguage;
 }
 
 /// 默认选流策略，与 Aniyomi 播放器的 `HosterLoader.selectBestVideo` 同口径：

@@ -23,7 +23,8 @@ import 'package:fushi/src/ops/op_context.dart';
 /// - 关联作品 = 详情页「关联作品」对话框背后的 [writeManualMediaLink]，候选 = 同一对话框
 ///   的 [loadMediaLinkCandidates]；移除关联 = 已确认卡片长按「移除关联」的 `removeMediaLink`；
 /// - 查找相关作品 = 同一按钮的 [mediaLinkInferCallback]（「作品图谱」AI 已指派时会发
-///   AI 请求，否则只跑确定性规则；MAL / Wikidata 查询照常联网）；
+///   AI 请求，否则只跑确定性规则；MAL / Wikidata 查询照常联网；音乐端点只用本机刮削
+///   数据与声纹缓存找所属动画 / 游戏）；
 /// - 人物 = 人物页的 [loadPersonGraph] / [loadPersonPage] / [decidePersonIdentity] /
 ///   [unmergePersonPair]。
 ///
@@ -209,12 +210,15 @@ List<CtlRoute> buildMediaLinksCtlRoutes(OpContext context) {
         );
       }
       final String? selfIs = call.optString('selfIs');
-      if (relation == MediaLinkRelation.adaptation &&
-          selfIs != 'original' &&
-          selfIs != 'adaptation') {
-        throw const CtlFailure.badRequest(
-          'adaptation 要用 selfIs 说明方向：original（本条是原作）/ adaptation（本条是改编）',
-        );
+      final bool? selfIsFrom = mediaLinkSelfIsFrom(relation, selfIs);
+      if (selfIsFrom == null) {
+        throw CtlFailure.badRequest(switch (relation) {
+          MediaLinkRelation.sequel =>
+            'sequel 要用 selfIs 说明方向：prequel（本条是前作）/ sequel（本条是续作）',
+          MediaLinkRelation.sideStory =>
+            'side_story 要用 selfIs 说明方向：main（本条是本篇）/ side_story（本条是外传）',
+          _ => 'adaptation 要用 selfIs 说明方向：original（本条是原作）/ adaptation（本条是改编）',
+        });
       }
       final String? roleRaw = call.optString('role');
       final ThemeSongRole? role = roleRaw == null
@@ -229,7 +233,7 @@ List<CtlRoute> buildMediaLinksCtlRoutes(OpContext context) {
         self: self,
         target: other,
         relation: relation,
-        selfIsOriginal: selfIs != 'adaptation',
+        selfIsOriginal: selfIsFrom,
         themeSongRole: role,
         episodeRange: call.optString('episodes') ?? '',
         at: at,
@@ -267,29 +271,43 @@ List<CtlRoute> buildMediaLinksCtlRoutes(OpContext context) {
           (mediaLinkInferOverride?.call(context, self)) ??
           mediaLinkInferCallback(ref: context.ref, self: self);
       if (infer == null) {
-        throw const CtlFailure.rejected('音乐条目没有推断来源，不能查找相关作品');
+        throw const CtlFailure.rejected('这个条目没有推断来源，不能查找相关作品');
       }
       final bool ai =
           isAiModuleEnabled(app().moduleVisibility) &&
           resolveMediaLinkAiProvider(app().prefsRepo) != null;
-      final Set<String> before = <String>{
+      final Map<String, MediaLinkRow> before = <String, MediaLinkRow>{
         for (final MediaLinkRow r in await db().mediaLinksForEndpoint(
           self.kind,
           self.key,
           includeRemoved: true,
         ))
-          _rowKey(r),
+          _rowKey(r): r,
       };
       final int added = await infer();
-      final List<Map<String, Object?>> fresh = <Map<String, Object?>>[
-        for (final MediaLinkView v in await loadMediaLinkViews(db(), self))
-          if (!before.contains(_rowKey(v.row))) mediaLinkViewJson(v),
-      ];
+      final List<Map<String, Object?>> fresh = <Map<String, Object?>>[];
+      // AI 把本来就在的建议升成了生效：不是新行，但同样是这一轮的写入，撤销要退回
+      // 那条建议（带上升级前的行）。
+      final List<Map<String, Object?>> upgraded = <Map<String, Object?>>[];
+      for (final MediaLinkView v in await loadMediaLinkViews(db(), self)) {
+        final MediaLinkRow? prior = before[_rowKey(v.row)];
+        if (prior == null) {
+          fresh.add(mediaLinkViewJson(v));
+        } else if (prior.deletedAt == null &&
+            mediaLinkConfirmerOf(prior) == null &&
+            mediaLinkConfirmerOf(v.row) == MediaLinkConfirmer.ai) {
+          upgraded.add(<String, Object?>{
+            ...mediaLinkViewJson(v),
+            'previous': prior.toJson(),
+          });
+        }
+      }
       return <String, Object?>{
         'endpoint': mediaLinkEndpointWire(self),
         'added': added,
         'ai': ai,
         'suggestions': fresh,
+        if (upgraded.isNotEmpty) 'upgraded': upgraded,
       };
     }),
     CtlRoute.get(kPeopleCtlRoot, (CtlCall call) async {
@@ -433,6 +451,8 @@ Map<String, Object?> mediaLinkViewJson(MediaLinkView v) => <String, Object?>{
   'id': mediaLinkIdJson(v.id),
   'relation': v.row.relation,
   'state': v.state.name,
+  // 谁让它生效（user / ai）；建议没有这个键。
+  if (mediaLinkConfirmerOf(v.row) case final String by) 'confirmedBy': by,
   // 另一端是连接的 from 还是 to（adaptation 的 from = 原作，theme_song 的 from = 音乐）。
   'otherIs': v.otherIsFrom ? 'from' : 'to',
   'other': <String, Object?>{

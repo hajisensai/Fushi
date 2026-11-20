@@ -118,12 +118,20 @@ void main() {
     expect(add.label, t.media_source_add);
     expect(add.onTap, isNotNull);
     expect(find.text(t.media_source_section_title), findsWidgets);
-    expect(find.text(t.game_source_scan_hint), findsOneWidget);
     expect(find.text('game-sources'), findsOneWidget);
     expect(sourceBuilds, greaterThan(0));
     expect(viewKey, isNotNull, reason: '区头按钮经这把 key 调 addSource');
-    // 快速导入区（添加游戏 / 拖 exe）仍在，来源区是追加的，不替换它。
-    expect(find.text(t.game_add), findsOneWidget);
+    // 导入稿 v2（IM11）：引导首块 + 两个方式块（添加游戏 / 扫描文件夹）在来源区
+    // 之上，来源区是追加的，不替换它；另写的拖放卡已删。
+    expect(find.text(t.import_guide_game_title), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('import-method-game-add')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('import-method-game-scan-folder')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('library shows real capture count and true empty state', (

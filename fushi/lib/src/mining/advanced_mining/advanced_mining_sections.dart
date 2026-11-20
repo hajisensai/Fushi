@@ -81,11 +81,13 @@ String videoImageModeLabel(VideoMiningImageMode mode) {
   }
 }
 
-/// 漫画取景方式的显示名。
-String mangaCropChoiceLabel(MangaCropChoice choice) {
+/// 漫画取景方式的显示名。[screenshot] = 框的是截屏识字的截图（「整页」叫「整张截图」）。
+String mangaCropChoiceLabel(MangaCropChoice choice, {bool screenshot = false}) {
   switch (choice) {
     case MangaCropChoice.wholePage:
-      return t.popup_advanced_mining_crop_whole_page;
+      return screenshot
+          ? t.popup_advanced_mining_crop_whole_screenshot
+          : t.popup_advanced_mining_crop_whole_page;
     case MangaCropChoice.panel:
       return t.popup_advanced_mining_crop_panel;
     case MangaCropChoice.textArea:

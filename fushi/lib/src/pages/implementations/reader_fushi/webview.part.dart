@@ -234,8 +234,6 @@ extension _ReaderWebView on _ReaderFushiPageState {
       return _notFound('resource not found: $epubPath (resolved: $filePath)');
     }
 
-    Uint8List data = await file.readAsBytes();
-
     // BUG-1203：「这是不是一个该走 HTML 处理链的内容文档」以 **EPUB 自己声明的
     // media-type** 为准，扩展名表只在声明缺失/畸形时兜底。EPUB 不规定内容文档的
     // 文件扩展名，只规定 media-type，所以任何扩展名白名单都必然漏（BUG-1199 补了
@@ -266,6 +264,31 @@ extension _ReaderWebView on _ReaderFushiPageState {
     // `sanitizeXhtml` 是为 HTML5 解析语义写的补偿，切走后不再防护那两类故障。
     String mime = isHtmlDocument ? 'text/html' : extMime;
 
+    // novel-17d：缓存命中不读盘。分类只看路径与 manifest，不需要字节，所以先查
+    // 两份按路径键控的缓存（章节 HTML LRU、样式表净化缓存），命中直接下发；原先先
+    // `readAsBytes` 再查缓存，翻回已读章 / 预取命中时整章字节白读一遍。缓存检查放在
+    // [_ensureOnlineChapter] 与 404 判定之后：在线书取回正文时那一章的条目已被丢弃，
+    // 不会把占位页的缓存当正文发出去。字体分支没有缓存，照常读字节。
+    final bool servesStyledHtml = isHtmlDocument && _settings != null;
+    final Uint8List? cachedBytes = servesStyledHtml
+        ? _cachedChapterHtml(filePath)
+        : (mime == 'text/css' ? _sanitizedCssCache[filePath] : null);
+    if (cachedBytes != null) {
+      return _ReaderResourceResponse(
+        contentType: mime,
+        contentEncoding: _contentEncodingForMime(mime),
+        statusCode: 200,
+        reasonPhrase: 'OK',
+        headers: const <String, String>{
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-cache',
+        },
+        data: cachedBytes,
+      );
+    }
+
+    Uint8List data = await file.readAsBytes();
+
     // 书自带的字体同样可能错设「x = 0 是竖排基线」（见 clearVerticalBaselineFlag）。
     if (_isFontMime(mime) || _isFontMime(declaredMime)) {
       final VerticalBaselineFontResult fixed =
@@ -284,20 +307,19 @@ extension _ReaderWebView on _ReaderFushiPageState {
           !_sanitizedCssCache.containsKey(filePath)) {
         _sanitizedCssCache.remove(_sanitizedCssCache.keys.first);
       }
-      data = _sanitizedCssCache.putIfAbsent(filePath, () {
-        // HBK-AUDIT-118: tolerate non-UTF-8 CSS bytes instead of throwing
-        // (decode + rewrite + encode run natively in one FFI call).
-        return ReaderResourceSanitizer.sanitizeCssBytes(data);
-      });
+      // HBK-AUDIT-118: tolerate non-UTF-8 CSS bytes instead of throwing
+      // (decode + rewrite + encode run natively in one FFI call).
+      data = ReaderResourceSanitizer.sanitizeCssBytes(data);
+      _sanitizedCssCache[filePath] = data;
     }
 
-    if (isHtmlDocument && _settings != null) {
+    if (servesStyledHtml) {
       // BUG-270 (TODO-296 B): repeat chapter visits (forward/back paging,
-      // prefetched chapters) reuse the sanitized + style-injected bytes from
-      // the LRU cache instead of re-reading/decoding/sanitizing/injecting. The
+      // prefetched chapters) are served from the LRU cache above, before the
+      // disk read. Here is the cold miss: sanitize + inject once and cache. The
       // cache is dropped on every style change (_invalidateStyleCache), so a
       // cached entry always carries the current styleTag.
-      data = _chapterHtmlBytes(filePath, data);
+      data = _buildAndCacheChapterHtml(filePath, data);
     }
 
     // TODO-1074 (root cause B): images are immutable on disk and carry no live
@@ -323,25 +345,46 @@ extension _ReaderWebView on _ReaderFushiPageState {
 
   /// 在线小说书 / 网页小说书：WebView 要的章节还是占位页就先取正文写回解压树
   /// （按需取章，见 [OnlineNovelChapterLoader]）。换成正文后丢掉这一章的 sanitize
-  /// 缓存与 [EpubChapter] 的正文缓存，否则会继续下发 / 计数占位页。取不到（断网
+  /// 缓存与 [EpubChapter] 的正文缓存，否则会继续下发 / 计数占位页；并把这一章
+  /// 的字数换成正文的（[_adoptOnlineChapterCharCount]，BUG-4809）。取不到（断网
   /// / 站点挂了 / 插件被删）时照常下发占位页，并提示原因——重进这一章会再取。
+  ///
+  /// 走到这里的不都是导航：连续模式章节无缝衔接在阅读中途用 `fetch` 挂前后邻章，
+  /// 请求同样经拦截层。那种取回的字数先记着，等当前单元结算后才换——无缝换章
+  /// 在 [_onSeamlessChapterActivated]，整章导航就在这里：导航在飞且账本当前单元
+  /// 已空（[_beginNavigation] 结算过了）。
   Future<void> _ensureOnlineChapter(
     OnlineNovelChapterLoader loader,
     String filePath,
   ) async {
+    if (_restoreInFlight && _readLedger.current == null) {
+      _applyDeferredOnlineChapterCharCounts();
+    }
     try {
-      if (!await loader.ensureLoaded(filePath)) return;
+      final OnlineNovelChapterLoaded? loaded = await loader.ensureLoaded(
+        filePath,
+      );
+      if (loaded == null) return;
       _sanitizedHtmlCache.remove(filePath);
-      final int? index = loader.chapterIndexForFile(filePath);
       final EpubBook? book = _book;
-      if (book != null && index != null && index < book.chapters.length) {
-        book.chapters[index].discardCachedHtml();
+      if (book == null || loaded.index >= book.chapters.length) return;
+      book.chapters[loaded.index].discardCachedHtml();
+      if (!mounted) return;
+      _adoptOnlineChapterCharCount(book, loaded);
+      final List<int>? grown = loaded.grownSpineCharacters;
+      // novel-d6：取回的是网页小说书末尾那一章、解压树的 spine 末尾又续挂了新
+      // 占位。在这次请求放行之前并进已打开的书：随后为这一章装页时下发的无缝
+      // 阅读序、「有没有下一章」的判断就已包含新章。
+      if (grown != null && grown.length > book.chapters.length) {
+        await _adoptGrownOnlineSpine(book, grown);
       }
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderFushi.onlineChapter', e, stack);
       if (!mounted) return;
       FushiToast.show(
-        msg: t.novel_online_chapter_failed(error: '$e'),
+        // 归一成用户看得懂的一句（断网 / 超时 / HTTP 状态），不甩异常原文；
+        // 原文已在上面写进错误日志。
+        msg: t.novel_online_chapter_failed(error: describeOnlineSourceError(e)),
         severity: ToastSeverity.error,
       );
     }
@@ -389,17 +432,21 @@ extension _ReaderWebView on _ReaderFushiPageState {
     );
   }
 
-  // BUG-270 (TODO-296 B): return the sanitized + style-injected chapter bytes
-  // for [filePath], serving from the LRU cache on a hit and building+caching on
-  // a miss. [rawData] is the already-read on-disk bytes from _interceptRequest
-  // (avoids a second disk read on the cold path). On an LRU hit the entry is
-  // moved to most-recently-used.
-  Uint8List _chapterHtmlBytes(String filePath, Uint8List rawData) {
+  // BUG-270 (TODO-296 B): the LRU hit path for the sanitized + style-injected
+  // chapter bytes of [filePath]. Looked up *before* any disk read (novel-17d);
+  // a hit is moved to most-recently-used.
+  Uint8List? _cachedChapterHtml(String filePath) {
     final Uint8List? cached = _sanitizedHtmlCache.remove(filePath);
     if (cached != null) {
       _sanitizedHtmlCache[filePath] = cached; // bump to MRU
-      return cached;
     }
+    return cached;
+  }
+
+  // BUG-270: the cold-miss path — [rawData] is the on-disk bytes the resource
+  // branch read after [_cachedChapterHtml] missed; sanitize + inject once and
+  // cache the result.
+  Uint8List _buildAndCacheChapterHtml(String filePath, Uint8List rawData) {
     final Uint8List built = _buildSanitizedChapterHtmlBytes(
       rawData,
       chapterIndex: _chapterIndexForFilePath(filePath),
@@ -409,16 +456,28 @@ extension _ReaderWebView on _ReaderFushiPageState {
   }
 
   // TODO-1128: reverse the served on-disk XHTML path back to its spine index so
-  // the injection pipeline can look up absorbed single-image chapters. Linear
-  // scan over chapters (tens–hundreds), only on the cold cache-miss/prefetch
-  // path — never per frame. Returns -1 when the path is not a chapter document.
+  // the injection pipeline can look up absorbed single-image chapters. Returns
+  // -1 when the path is not a chapter document.
+  //
+  // 路线图 m1 / novel-17e：查表而不是逐章重算路径（每章两次 canonicalize）。表按书建一次，
+  // 章节列表换了（网文追加章节）或解包目录变了才重建，见 [ReaderChapterPathIndex]。
   int _chapterIndexForFilePath(String filePath) {
     final EpubBook? book = _book;
-    if (book == null) return -1;
-    for (int i = 0; i < book.chapters.length; i++) {
-      if (_chapterFilePath(i) == filePath) return i;
+    final String? dir = _extractDir;
+    if (book == null || dir == null) return -1;
+    final List<EpubChapter> chapters = book.chapters;
+    ReaderChapterPathIndex? index = _chapterPathIndex;
+    if (index == null ||
+        !index.describes(source: chapters, count: chapters.length, dir: dir)) {
+      index = ReaderChapterPathIndex.build(
+        source: chapters,
+        count: chapters.length,
+        dir: dir,
+        pathOf: _chapterFilePath,
+      );
+      _chapterPathIndex = index;
     }
-    return -1;
+    return index.indexOf(filePath);
   }
 
   // BUG-270: insert into the LRU, evicting the least-recently-used entry when
@@ -552,6 +611,23 @@ extension _ReaderWebView on _ReaderFushiPageState {
   // 异步 IO：当前帧先收尾，IO 让出主 isolate，净化（单章 ms 级 sync CPU）保留；
   // 真异步后按 _styleEpoch 丢弃跨样式失效的过期结果（styleTag 烤进缓存条目），
   // 在飞守卫此时才真正有防重入意义。
+  /// novel-17f：从 [fromChapter] 沿阅读方向（[_chapterAdvanceDirection]，导航 /
+  /// 无缝换章时采样）翻过章界后真正会加载的章。原先固定取 `+1`：倒着读时预取的是刚
+  /// 离开的下一章，翻上一章照样冷读盘；「插图并入正文」时 `+1` 可能是被吸收的单图章
+  /// ——它从不单独加载（导航经 [_resolveNavChapter] 重定向到宿主），预取白做。这里与
+  /// 翻页走同一张虚拟页表（[EpubSpreadMap.pageTurnTargetChapter]）；表未就绪时退回
+  /// 裸章号 ± 1（与翻页兜底分支一致）。
+  int? _htmlPrefetchTarget(int fromChapter) {
+    final EpubBook? book = _book;
+    if (book == null) return null;
+    final int direction = _chapterAdvanceDirection;
+    final EpubSpreadMap? map = _spreadMap;
+    if (map != null) return map.pageTurnTargetChapter(fromChapter, direction);
+    final int target = fromChapter + direction;
+    if (target < 0 || target >= book.chapters.length) return null;
+    return target;
+  }
+
   void _prefetchAdjacentChapter(int index) {
     if (_settings == null) return;
     final String? filePath = _chapterFilePath(index);
@@ -2315,6 +2391,8 @@ updateLive: function(patch) {
                     parameters: params,
                   );
           ReaderFushiPage.debugCaretSurface = () => _caretSurface.name;
+          ReaderFushiPage.debugChapterCharCounts = () =>
+              List<int>.unmodifiable(_chapterCharCounts);
           ReaderFushiPage.debugEvaluateTopPopup = (String source) async =>
               _webviewTopPopupState?.debugEval(source);
           ReaderFushiPage.debugInjectAudiobookBridge = () =>
@@ -2443,6 +2521,25 @@ updateLive: function(patch) {
           },
         );
 
+        // gap-readerjs1-2：引擎初始化 / 初次恢复链抛异常时的失败回执。
+        // args[0] = 错误描述；args[1] = 文档的 navigationGeneration（同上，缺失/失配丢弃）。
+        controller.addJavaScriptHandler(
+          handlerName: 'onRestoreFailed',
+          callback: (List<dynamic> args) {
+            final int? generation = readerReportedNavigationGeneration(args, 1);
+            if (generation == null) {
+              debugPrint(
+                '[ReaderFushi] onRestoreFailed missing/invalid generation',
+              );
+              return;
+            }
+            _acceptRestoreFailed(
+              reportedGeneration: generation,
+              reason: args.isEmpty ? '' : '${args.first}',
+            );
+          },
+        );
+
         // BUG-493 根因修复：JS 侧 `_reanchorPending` 清旗已单点化（_sharedJs 的
         // `_setReanchorPending`），true→false（重锚 settle）那一刻回调此处。settle 即补
         // 刷一次进度，事件驱动替代旧的 Dart 侧 120ms×8 轮询重试——commit 成功 / gate 不
@@ -2472,6 +2569,17 @@ updateLive: function(patch) {
         controller.addJavaScriptHandler(
           handlerName: 'onReaderScroll',
           callback: (_) => _handleReaderScroll(),
+        );
+
+        // 墨水屏「每 N 页全刷」：连续模式每滚过一屏回传一次（JS `_noteEinkScroll`）。
+        // 恢复 / 换章在飞时的程序化滚动不是用户翻页，丢弃——翻页跨章由
+        // _onRestoreComplete 自己计。
+        controller.addJavaScriptHandler(
+          handlerName: 'onEinkScrollPage',
+          callback: (_) {
+            if (!_readerContentReady || _restoreInFlight || _lyricsMode) return;
+            _noteEinkPageTurn();
+          },
         );
 
         // BUG-117: primary internal-link path. The JS click interceptor (in the
@@ -3330,10 +3438,13 @@ updateLive: function(patch) {
       // MediaQuery——这样后续 resize 才与真正生效的版面宽度比对。
       _lastSyncedWidth = _paginatedWidth;
       _lastSyncedHeight = _paginatedHeight;
-      // BUG-270 (TODO-296 B): warm the next chapter so a forward boundary
-      // page-turn hits the LRU cache instead of disk read + decode + sanitize +
-      // inject. Background, single chapter, dropped if disposed/style-changed.
-      _prefetchAdjacentChapter(chapterSnapshot + 1);
+      // BUG-270 (TODO-296 B): warm the chapter the next boundary page-turn in
+      // the reading direction lands on, so it hits the LRU cache instead of disk
+      // read + decode + sanitize + inject. Background, single chapter, dropped
+      // if disposed/style-changed. novel-17f: direction + absorbed-image
+      // redirect come from [_htmlPrefetchTarget], not a fixed `+1`.
+      final int? prefetchTarget = _htmlPrefetchTarget(chapterSnapshot);
+      if (prefetchTarget != null) _prefetchAdjacentChapter(prefetchTarget);
       // BUG-785: EPUB 正文首次就绪 + 有声书已挂载 → 恢复「上次退出时在歌词模式」。
       // 此刻正文已加载，切歌词等价用户手动切（已知安全），规避 fresh open 直接整页
       // 加载歌词 HTML 跳过 EPUB 的 iOS 白屏。一次性（下面立即清零）防每章重触发；

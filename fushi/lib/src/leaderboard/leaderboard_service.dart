@@ -17,14 +17,14 @@ import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
 
+import 'package:fushi/src/leaderboard/leaderboard_endpoint.dart';
 import 'package:fushi/src/leaderboard/leaderboard_store.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/utils/misc/card_screenshot_downsampler.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
-/// 排行榜服务的默认地址（store 的 `serverUrl` 可覆盖）。
-const String kLeaderboardDefaultBaseUrl = 'https://rank.fushi.moe';
+export 'package:fushi/src/leaderboard/leaderboard_endpoint.dart';
 
 /// 后台同步的最小间隔。
 const Duration kLeaderboardBackgroundSyncInterval = Duration(minutes: 30);

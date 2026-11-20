@@ -200,7 +200,10 @@ void main() {
       );
       expect(src, contains('secondaryBlurEnabled:'));
       expect(src, contains('secondaryHidden:'));
-      expect(src, contains('appModel.videoSecondarySubtitleObscureMode'));
+      expect(
+        src.replaceAll(RegExp(r'\s+'), ''),
+        contains('appModel.videoSecondarySubtitleObscureMode'),
+      );
     });
   });
 }

@@ -41,18 +41,41 @@ void main() {
     expect(injectStart, greaterThan(prepStart));
   });
 
-  test(
-    '_prepareSentenceAudioCuesJson 复用 buildSentenceAudioPayload（含 text 的契约）',
-    () {
-      final String body = readerSrc.substring(prepStart, injectStart);
-      expect(
-        body.contains('AudiobookBridge.buildSentenceAudioPayload('),
-        isTrue,
-        reason:
-            'reader 必须复用 buildSentenceAudioPayload，确保 payload 带 cue 原文 text',
-      );
-    },
-  );
+  test('_prepareSentenceAudioCuesJson 走桥接层的 payload 构造（含 text 的契约）', () {
+    // reader 取本章 payload 走挂在整书 cue 列表上的派生索引
+    // （AudiobookBridge.sentenceAudioCueIndexFor(...).payloadFor(章)）；它与
+    // buildSentenceAudioPayload 共用同一个单条构造函数，见下一条。
+    final String body = readerSrc.substring(prepStart, injectStart);
+    expect(
+      body.contains('AudiobookBridge.sentenceAudioCueIndexFor('),
+      isTrue,
+      reason: 'reader 必须走桥接层的 payload 构造，确保 payload 带 cue 原文 text',
+    );
+    expect(body.contains(').payloadFor(_currentChapter)'), isTrue);
+  });
+
+  test('索引与 buildSentenceAudioPayload 共用同一个单条构造函数', () {
+    expect(
+      RegExp(
+        r'_sentenceAudioPayloadEntry\(cue, frag\)',
+      ).allMatches(bridgeSrc).length,
+      2,
+      reason: 'payload 单条只许有一处构造（字段契约不分叉）：两条路径各调一次',
+    );
+    final int entryStart = bridgeSrc.indexOf(
+      'static Map<String, dynamic> _sentenceAudioPayloadEntry(',
+    );
+    expect(entryStart, greaterThanOrEqualTo(0));
+    expect(
+      bridgeSrc.indexOf("'text': cue.text", entryStart),
+      greaterThan(entryStart),
+    );
+    expect(
+      RegExp(r"'text': cue\.text").allMatches(bridgeSrc).length,
+      1,
+      reason: '别处不得再手写一份 payload map',
+    );
+  });
 
   test('_prepareSentenceAudioCuesJson 不再手写内联 payload map（会漏 text）', () {
     final String body = readerSrc.substring(prepStart, injectStart);

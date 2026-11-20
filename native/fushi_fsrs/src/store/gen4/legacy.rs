@@ -139,54 +139,101 @@ pub fn migration_blockers(conn: &Connection, profile: &str) -> Result<Vec<String
     Ok(out)
 }
 
+/// 并入做到一半留下的标记键（`srs_meta` 里的 `profile_merge/<旧 uid>`，升序；没有 `srs_meta` = 空）。D23 选 ②：并入由
+/// 冻结的旧并入代码（Dart `srs_profile_merge.dart` 驱动）做完，迁移补不了它。
+#[cfg(test)]
+pub fn merge_marks(conn: &Connection) -> Result<Vec<String>, String> {
+    if !table_exists(conn, "srs_meta")? {
+        return Ok(Vec::new());
+    }
+    conn.prepare("SELECT key FROM srs_meta WHERE substr(key, 1, length(?1)) = ?1 ORDER BY key")
+        .map_err(sql)?
+        .query_map([crate::store::profile_data::MERGE_MARKER_PREFIX], |r| {
+            r.get(0)
+        })
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)
+}
+
+/// 一张表里出现过的 profile（uid 文本）的查询，`{t}` 换成表名：按 profile 跳着取（松散索引扫描）——从最小的
+/// `profile_uid` 起，每一步是一次「`profile_uid` 大于上一个」的最小值，走 `profile_uid` 打头的索引就是一次索引查找，
+/// 代价是 profile 数 × log(行数)，不随行数线性涨（`SELECT DISTINCT srs_idt(profile_uid)` 对函数结果去重用不上索引的
+/// 有序去重，要整索引扫一遍：BUG-4011 现场光修改记录就有 64.5 万行）。外层才套 `srs_idt`。EXPLAIN 测试测的就是它
+/// （`prepare_tests.rs` `listing_profiles_seeks_the_profile_index`）。`srs_unknown_events` 没有这样的索引（新版本客户端发来、这一版解析不了的事件，通常没几行）：
+/// 每一步是一次全表扫描。
+pub(crate) const PROFILES_OF_TABLE_SQL: &str = "WITH RECURSIVE u(p) AS (\
+     SELECT (SELECT MIN(profile_uid) FROM {t}) \
+     UNION ALL SELECT (SELECT MIN(profile_uid) FROM {t} WHERE profile_uid > u.p) FROM u WHERE u.p IS NOT NULL\
+     ) SELECT srs_idt(p) FROM u WHERE p IS NOT NULL";
+
+/// 协议 3 一侧记 profile 的三张表（[profiles] 的来源）。
+pub(crate) const LOGGED_TABLES: [&str; 3] = ["sync2_self", "sync2_ops", "sync2_pending"];
+
+/// 投影表（有数据就算一个 profile，不论进没进操作日志）。
+pub(crate) const PROJECTED_TABLES: [&str; 4] = [
+    "srs_entities",
+    "srs_field_edits",
+    "srs_review_logs",
+    "srs_unknown_events",
+];
+
+/// [table] 里出现过的 profile（[PROFILES_OF_TABLE_SQL]）。
+fn profiles_of_table(conn: &Connection, table: &str) -> Result<Vec<String>, String> {
+    conn.prepare(&PROFILES_OF_TABLE_SQL.replace("{t}", table))
+        .map_err(sql)?
+        .query_map([], |r| r.get(0))
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)
+}
+
+/// 投影表里有数据的 profile（uid 文本）：不论有没有进协议 3 的操作日志。缺表的跳过（schema 较老的库）。
+fn projected_profiles(conn: &Connection) -> Result<std::collections::BTreeSet<String>, String> {
+    let mut projected = std::collections::BTreeSet::new();
+    for table in PROJECTED_TABLES {
+        if table_exists(conn, table)? {
+            projected.extend(profiles_of_table(conn, table)?);
+        }
+    }
+    Ok(projected)
+}
+
+/// 协议 3 一侧的 profile（[profiles]；三张表缺一张 = 这个库还没升到有协议 3 的 schema，空）。
+fn logged_profiles(conn: &Connection) -> Result<std::collections::BTreeSet<String>, String> {
+    let mut out = std::collections::BTreeSet::new();
+    for table in LOGGED_TABLES {
+        if !table_exists(conn, table)? {
+            return Ok(Default::default());
+        }
+    }
+    // 与 [profiles] 同一个集合（三张表的并），按表跳着取（`sync2_ops` 是整个操作日志，不整表扫）。
+    for table in LOGGED_TABLES {
+        out.extend(profiles_of_table(conn, table)?);
+    }
+    Ok(out)
+}
+
+/// 旧库里**全部**有数据的 profile（uid 文本，升序）：协议 3 一侧的（[profiles]）并上只在投影表里的（没启用过协议 3、
+/// 删除时没清干净 / 备份并入留下的孤儿 uid）。迁移要给其中每一个缓存配置（`gen4_migrate_profiles`，
+/// G7-2b）；前提补完（`prepare.rs`）把只在投影表里的那些先用冻结的协议 3 代码包进操作日志，迁移后它们的卡片与日志
+/// 一条不丢。缺表的跳过：schema 较老、还没升级的库也列得出来。
+pub fn all_profiles(conn: &Connection) -> Result<Vec<String>, String> {
+    let mut all = logged_profiles(conn)?;
+    all.extend(projected_profiles(conn)?);
+    Ok(all.into_iter().collect())
+}
+
 /// 整个库的、不属于某一个 profile 的旧代收尾（空 = 不拦）。真迁移拦，干跑只报：
 ///
-/// - 并入做到一半：`srs_meta` 里有 `profile_merge/<旧 uid>` 标记（D23 选 ②：迁移前用冻结的旧并入代码做完，§5.5）。
 /// - 有投影数据、却不在操作日志里的 profile（没启用过协议 3：[profiles] 只认 `sync2_*`）：读入器看不见它的数据，迁过去
-///   就丢了。
+///   就丢了。真迁移先由前提补完（`prepare.rs`）把它们包进操作日志，这里只在补完之后核对。
 pub fn library_blockers(conn: &Connection) -> Result<Vec<String>, String> {
-    let mut out = Vec::new();
-    if table_exists(conn, "srs_meta")? {
-        let marks: Vec<String> = conn
-            .prepare("SELECT key FROM srs_meta WHERE substr(key, 1, length(?1)) = ?1 ORDER BY key")
-            .map_err(sql)?
-            .query_map([crate::store::profile_data::MERGE_MARKER_PREFIX], |r| {
-                r.get(0)
-            })
-            .map_err(sql)?
-            .collect::<Result<_, _>>()
-            .map_err(sql)?;
-        for key in marks {
-            out.push(format!("a profile merge is half done ({key})"));
-        }
-    }
-    let logged: std::collections::BTreeSet<String> = if table_exists(conn, "sync2_self")? {
-        profiles(conn)?.into_iter().collect()
-    } else {
-        Default::default()
-    };
-    let mut projected = std::collections::BTreeSet::new();
-    for table in [
-        "srs_entities",
-        "srs_field_edits",
-        "srs_review_logs",
-        "srs_unknown_events",
-    ] {
-        if !table_exists(conn, table)? {
-            continue;
-        }
-        let rows: Vec<String> = conn
-            .prepare(&format!(
-                "SELECT DISTINCT srs_idt(profile_uid) FROM {table}"
-            ))
-            .map_err(sql)?
-            .query_map([], |r| r.get(0))
-            .map_err(sql)?
-            .collect::<Result<_, _>>()
-            .map_err(sql)?;
-        projected.extend(rows);
-    }
-    for p in projected.difference(&logged) {
+    // 并入做到一半（`profile_merge/<旧 uid>`，[merge_marks]）不在这里：G9-5 起照常迁移、标记带进新代库，由 Dart 在新代里
+    // 收尾（`cmd/profile_data.rs` 的 `profile_merge_commit`）。
+    let mut out: Vec<String> = Vec::new();
+    let logged = logged_profiles(conn)?;
+    for p in projected_profiles(conn)?.difference(&logged) {
         out.push(format!(
             "profile {p} has data that is not in the protocol 3 op log yet"
         ));
@@ -887,6 +934,7 @@ pub(crate) mod tests {
                 source: crate::store::sync2::collection_of(P),
                 device: dev.device,
                 uploader: me,
+                author_key: None,
                 t_version: T_VERSION,
                 prev_chain: CHAIN_ZERO,
                 last_chain: last,
@@ -1147,6 +1195,7 @@ pub(crate) mod tests {
                         source,
                         device: dev.device,
                         uploader: Id([0xa1; 16]),
+                        author_key: None,
                         t_version: T_VERSION,
                         prev_chain: *prev,
                         last_chain: *last,

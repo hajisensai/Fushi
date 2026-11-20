@@ -3,7 +3,9 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/audiobook/platform_charset_detector.dart';
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart';
 
 /// BUG-1490：桌面端非 UTF-8 字幕全被误报为「不支持」。
 ///
@@ -265,14 +267,14 @@ void main() {
     });
 
     test('非法字节降级到宽松 UTF-8，绝不抛异常', () async {
-      // Shift-JIS 字节 + 桌面端无 CharsetDetector 实现 = 旧实现在这里抛
+      // 既不是 Unicode 家族、也不是任何本地多字节编码的字节：旧实现在桌面端抛
       // MissingPluginException，整条字幕链失败。现在必须返回一个（有损的）字符串。
-      final Uint8List sjis = Uint8List.fromList(<int>[
+      final Uint8List garbage = Uint8List.fromList(<int>[
         ...utf8.encode('Dialogue: '),
-        0x93, 0xFA, 0x96, 0x7B, 0x8C, 0xEA, // CP932 「日本語」
+        0xFF, 0xFF, 0xFF, //
         0x0A,
       ]);
-      final String text = await readBytes(sjis, 'g.ass');
+      final String text = await readBytes(garbage, 'g.ass');
       expect(
         text.startsWith('Dialogue: '),
         isTrue,
@@ -283,6 +285,106 @@ void main() {
 
     test('空文件不抛', () async {
       expect(await readBytes(Uint8List(0), 'h.ass'), '');
+    });
+  });
+
+  // BUG-4798：桌面三端读 CP932 / GBK / Big5 / EUC-JP 字幕整份变成 U+FFFD。
+  //
+  // 与 app 在桌面端的装配同构：`installPlatformCharsetDetector()` 在测试宿主（同
+  // 桌面三端）上不装插件（它没有桌面实现）→ 落到 Rust 计算内核的
+  // `decodeLegacyText`。夹具与纯 Dart（无头服务端同构）一侧的用例在
+  // packages/fushi_audio/test/（`text_file_io_legacy_decode_test.dart`）。
+  group('readTextWithEncoding（本地多字节编码，桌面端装配）', () {
+    const String fixtureDir =
+        '../packages/fushi_audio/test/fixtures/legacy_text';
+
+    setUp(installPlatformCharsetDetector);
+
+    tearDown(() {
+      platformCharsetDecoder = null;
+    });
+
+    test('桌面端不装配插件（插件只有 android / ios 实现）', () {
+      expect(Platform.isAndroid || Platform.isIOS, isFalse);
+      expect(platformCharsetDecoder, isNull);
+    });
+
+    for (final String name in <String>[
+      'ja_cp932.ass',
+      'ja_eucjp.srt',
+      'zh_gbk.srt',
+      'zh_big5.srt',
+    ]) {
+      test('$name 解回原文', () async {
+        final String expected = utf8.decode(
+          File('$fixtureDir/$name.expected.txt').readAsBytesSync(),
+        );
+        expect(await readTextWithEncoding(File('$fixtureDir/$name')), expected);
+      });
+    }
+
+    test('CP932 的 ASS 解析出日文 cue', () async {
+      final List<AudioCue> cues = await AssParser.parse(
+        assFile: File('$fixtureDir/ja_cp932.ass'),
+        bookKey: 'bug4798',
+      );
+      expect(cues.length, 240);
+      expect(cues[0].text, 'おはよう、今日はいい天気ですね。');
+    });
+
+    test('Windows-1252 的英文字幕不被解成汉字，正文语言仍判英文', () async {
+      // 弯撇号 `’`（0x92）与后一个字母恰好是 Shift_JIS / GBK 的一个合法双字节字；
+      // 末尾一条 `“Wait…”`（0x85 0x94 相邻）让「像 Latin-1」的短标签判据整份判否。
+      // 解成汉字的话 BUG-3069 的字幕语言守卫会把这份英文字幕当成中文。
+      const Map<int, int> cp1252 = <int, int>{
+        0x2019: 0x92,
+        0x201C: 0x93,
+        0x201D: 0x94,
+        0x2026: 0x85,
+      };
+      final StringBuffer doc = StringBuffer();
+      int n = 0;
+      void cue(String line) {
+        n += 1;
+        final String at =
+            '00:${(n ~/ 60).toString().padLeft(2, '0')}:'
+            '${(n % 60).toString().padLeft(2, '0')}';
+        doc.write('$n\r\n$at,000 --> $at,500\r\n$line\r\n\r\n');
+      }
+
+      for (int k = 0; k < 20; k++) {
+        cue('I don\u2019t know what you\u2019re talking about.');
+        cue('It\u2019s fine, we\u2019ll manage.');
+        cue('She\u2019s gone, isn\u2019t she?');
+        cue('They\u2019ve left already.');
+        cue('I\u2019m sure he\u2019d agree.');
+      }
+      cue('\u201CWait\u2026\u201D');
+      final Uint8List bytes = Uint8List.fromList(<int>[
+        for (final int rune in doc.toString().runes) cp1252[rune] ?? rune,
+      ]);
+
+      final String text = await decodeTextBytes(bytes);
+      expect(
+        text,
+        contains('I don\u{FFFD}t know what you\u{FFFD}re talking about.'),
+      );
+      expect(
+        detectSubtitleContentLanguage(text),
+        SubtitleContentLanguage.english,
+      );
+    });
+
+    test('短片段（证据不足）不猜编码，照旧降级到宽松 UTF-8', () async {
+      // CP932 「日本語」只有三个汉字：这点字节按 GBK / Big5 读也说得通。
+      final Uint8List sjis = Uint8List.fromList(<int>[
+        ...utf8.encode('Dialogue: '),
+        0x93, 0xFA, 0x96, 0x7B, 0x8C, 0xEA, //
+        0x0A,
+      ]);
+      final String text = await decodeTextBytes(sjis);
+      expect(text.startsWith('Dialogue: '), isTrue);
+      expect(text.contains('\u{FFFD}'), isTrue);
     });
   });
 

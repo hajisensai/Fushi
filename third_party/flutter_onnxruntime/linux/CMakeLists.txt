@@ -83,13 +83,21 @@ if(NOT USE_SYSTEM_ONNXRUNTIME)
   # Debug output
   message(STATUS "ONNX Runtime version set to: ${ONNXRUNTIME_VERSION}")
 
-  # Determine platform and architecture for download URL
+  # Fushi (PATCHES.md delta #17): fetch ORT from the official NuGet package
+  # instead of the GitHub release tarball. github.com/microsoft/onnxruntime
+  # (repo + every release asset) has returned 404 since 2026-11-17 with no
+  # migration notice; nuget.org still serves the same release. The nupkg is a
+  # zip: headers under build/native/include/, the library under
+  # runtimes/<rid>/native/libonnxruntime.so (SONAME libonnxruntime.so.1, max
+  # GLIBC_2.27). The nupkg is pinned by sha256 -- it is machine code that ends
+  # up in the app bundle. Cleanup condition: when the GitHub release is back
+  # this can stay as-is (NuGet is an equally official channel); only revisit on
+  # a version bump, which must update ONNXRUNTIME_NUPKG_SHA256 too.
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(ONNXRUNTIME_PLATFORM "linux")
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
-      set(ONNXRUNTIME_ARCH "x64")
+      set(ONNXRUNTIME_RID "linux-x64")
     elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
-      set(ONNXRUNTIME_ARCH "aarch64")
+      set(ONNXRUNTIME_RID "linux-arm64")
     else()
       message(FATAL_ERROR "Unsupported architecture: ${CMAKE_SYSTEM_PROCESSOR}")
     endif()
@@ -97,72 +105,61 @@ if(NOT USE_SYSTEM_ONNXRUNTIME)
     message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}")
   endif()
 
-  # Set download URL with correct naming pattern for 1.22.0 Make sure all parts of the version are included
-  message(STATUS "Using ONNX Runtime version: ${ONNXRUNTIME_VERSION}")
-  set(ONNXRUNTIME_URL
-      "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-${ONNXRUNTIME_ARCH}-${ONNXRUNTIME_VERSION}.tgz"
-  )
-
-  message(STATUS "Downloading ONNX Runtime from: ${ONNXRUNTIME_URL}")
-
-  # Create a directory for the downloaded library
-  set(ONNXRUNTIME_DOWNLOAD_DIR "${CMAKE_CURRENT_BINARY_DIR}/onnxruntime")
-
-  # Download and extract ONNX Runtime - using file(DOWNLOAD) for more direct control
-  if(NOT
-     EXISTS
-     "${ONNXRUNTIME_DOWNLOAD_DIR}/onnxruntime-linux-${ONNXRUNTIME_ARCH}-${ONNXRUNTIME_VERSION}/include/onnxruntime_cxx_api.h"
-  )
-    message(STATUS "Downloading ONNX Runtime...")
-    file(MAKE_DIRECTORY ${ONNXRUNTIME_DOWNLOAD_DIR})
-
-    # Download the tarball
-    set(ONNXRUNTIME_TARBALL "${ONNXRUNTIME_DOWNLOAD_DIR}/onnxruntime.tgz")
-    file(DOWNLOAD ${ONNXRUNTIME_URL} ${ONNXRUNTIME_TARBALL} SHOW_PROGRESS)
-
-    # Extract the tarball
-    message(STATUS "Extracting ONNX Runtime...")
-    execute_process(COMMAND ${CMAKE_COMMAND} -E tar xzf ${ONNXRUNTIME_TARBALL}
-                    WORKING_DIRECTORY ${ONNXRUNTIME_DOWNLOAD_DIR})
-
-    # Clean up the tarball
-    file(REMOVE ${ONNXRUNTIME_TARBALL})
-  endif()
-
-  # Set paths to the extracted files
-  set(ONNXRUNTIME_EXTRACT_DIR
-      "${ONNXRUNTIME_DOWNLOAD_DIR}/onnxruntime-linux-${ONNXRUNTIME_ARCH}-${ONNXRUNTIME_VERSION}")
-
-  # Verify the directory exists
-  if(NOT EXISTS ${ONNXRUNTIME_EXTRACT_DIR})
-    message(FATAL_ERROR "ONNX Runtime extraction directory doesn't exist: ${ONNXRUNTIME_EXTRACT_DIR}")
-  endif()
-
-  # Set include and library directories
-  set(ONNXRUNTIME_INCLUDE_DIRS "${ONNXRUNTIME_EXTRACT_DIR}/include")
-
-  # Log directory contents to help with debugging
-  message(STATUS "ONNX Runtime extract directory: ${ONNXRUNTIME_EXTRACT_DIR}")
-  file(GLOB_RECURSE ONNXRUNTIME_FILES "${ONNXRUNTIME_EXTRACT_DIR}/*")
-  foreach(FILE ${ONNXRUNTIME_FILES})
-    message(STATUS "Found file: ${FILE}")
-  endforeach()
-
-  # Find the library files
-  if(EXISTS "${ONNXRUNTIME_EXTRACT_DIR}/lib/libonnxruntime.so")
-    set(ONNXRUNTIME_LIBRARY "${ONNXRUNTIME_EXTRACT_DIR}/lib/libonnxruntime.so")
-  else()
-    # Try to find the library in case the structure changed
-    file(GLOB_RECURSE ONNXRUNTIME_LIB_CANDIDATES
-         "${ONNXRUNTIME_EXTRACT_DIR}/*onnxruntime*${CMAKE_SHARED_LIBRARY_SUFFIX}")
-
-    if(ONNXRUNTIME_LIB_CANDIDATES)
-      list(GET ONNXRUNTIME_LIB_CANDIDATES 0 ONNXRUNTIME_LIBRARY)
-      message(STATUS "Found ONNX Runtime library: ${ONNXRUNTIME_LIBRARY}")
+  if(NOT DEFINED ONNXRUNTIME_NUPKG_SHA256)
+    if(ONNXRUNTIME_VERSION STREQUAL "1.22.0")
+      set(ONNXRUNTIME_NUPKG_SHA256 "d571e63a2329baacb713f441e65ad75284de354db6e1ac435fe4bebbb417986a")
     else()
-      message(FATAL_ERROR "Could not find ONNX Runtime library in extracted files")
+      message(FATAL_ERROR "ONNXRUNTIME_VERSION=${ONNXRUNTIME_VERSION} has no pinned nupkg sha256; "
+                          "pass -DONNXRUNTIME_NUPKG_SHA256=<sha256 of microsoft.ml.onnxruntime.${ONNXRUNTIME_VERSION}.nupkg>")
     endif()
   endif()
+
+  message(STATUS "Using ONNX Runtime version: ${ONNXRUNTIME_VERSION} (${ONNXRUNTIME_RID})")
+  set(ONNXRUNTIME_URL
+      "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/${ONNXRUNTIME_VERSION}/microsoft.ml.onnxruntime.${ONNXRUNTIME_VERSION}.nupkg"
+  )
+
+  set(ONNXRUNTIME_DOWNLOAD_DIR "${CMAKE_CURRENT_BINARY_DIR}/onnxruntime")
+  # Staged in the old tarball layout (include/ + lib/) so the rest of this file
+  # is unchanged.
+  set(ONNXRUNTIME_EXTRACT_DIR "${ONNXRUNTIME_DOWNLOAD_DIR}/onnxruntime-${ONNXRUNTIME_RID}-${ONNXRUNTIME_VERSION}")
+
+  if(NOT EXISTS "${ONNXRUNTIME_EXTRACT_DIR}/include/onnxruntime_cxx_api.h"
+     OR NOT EXISTS "${ONNXRUNTIME_EXTRACT_DIR}/lib/libonnxruntime.so")
+    message(STATUS "Downloading ONNX Runtime from: ${ONNXRUNTIME_URL}")
+    file(MAKE_DIRECTORY ${ONNXRUNTIME_DOWNLOAD_DIR})
+    set(ONNXRUNTIME_NUPKG "${ONNXRUNTIME_DOWNLOAD_DIR}/onnxruntime.nupkg")
+    file(DOWNLOAD ${ONNXRUNTIME_URL} ${ONNXRUNTIME_NUPKG}
+         EXPECTED_HASH SHA256=${ONNXRUNTIME_NUPKG_SHA256}
+         TLS_VERIFY ON
+         STATUS _ort_dl_status)
+    list(GET _ort_dl_status 0 _ort_dl_code)
+    if(NOT _ort_dl_code EQUAL 0)
+      message(FATAL_ERROR "ONNX Runtime download failed: ${_ort_dl_status}")
+    endif()
+
+    set(_ort_unpack "${ONNXRUNTIME_DOWNLOAD_DIR}/nupkg")
+    file(REMOVE_RECURSE ${_ort_unpack} ${ONNXRUNTIME_EXTRACT_DIR})
+    file(MAKE_DIRECTORY ${_ort_unpack})
+    execute_process(COMMAND ${CMAKE_COMMAND} -E tar xf ${ONNXRUNTIME_NUPKG}
+                    WORKING_DIRECTORY ${_ort_unpack}
+                    RESULT_VARIABLE _ort_unpack_rc)
+    if(NOT _ort_unpack_rc EQUAL 0)
+      message(FATAL_ERROR "Extracting ${ONNXRUNTIME_NUPKG} failed: ${_ort_unpack_rc}")
+    endif()
+    file(MAKE_DIRECTORY "${ONNXRUNTIME_EXTRACT_DIR}/include" "${ONNXRUNTIME_EXTRACT_DIR}/lib")
+    file(GLOB _ort_headers "${_ort_unpack}/build/native/include/*.h")
+    file(COPY ${_ort_headers} DESTINATION "${ONNXRUNTIME_EXTRACT_DIR}/include")
+    file(COPY "${_ort_unpack}/runtimes/${ONNXRUNTIME_RID}/native/libonnxruntime.so"
+         DESTINATION "${ONNXRUNTIME_EXTRACT_DIR}/lib")
+    file(REMOVE_RECURSE ${_ort_unpack})
+    file(REMOVE ${ONNXRUNTIME_NUPKG})
+  endif()
+
+  set(ONNXRUNTIME_INCLUDE_DIRS "${ONNXRUNTIME_EXTRACT_DIR}/include")
+  # The nupkg ships a single real file (no .so.1 / .so.1.x symlinks); the
+  # bundling block below falls back to the SONAME libonnxruntime.so.1.
+  set(ONNXRUNTIME_LIBRARY "${ONNXRUNTIME_EXTRACT_DIR}/lib/libonnxruntime.so")
 
   set(ONNXRUNTIME_LIBRARIES ${ONNXRUNTIME_LIBRARY})
 

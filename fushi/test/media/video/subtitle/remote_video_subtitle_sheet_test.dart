@@ -106,6 +106,7 @@ void main() {
     RemoteVideoSubtitleService svc, {
     _Prefs? prefs,
     VideoSubtitleInAppTranscribe? onTranscribeInApp,
+    RemoteVideoSubtitleTarget sheetTarget = target,
   }) async {
     tester.view
       ..physicalSize = const Size(900, 1400)
@@ -116,7 +117,7 @@ void main() {
         home: Scaffold(
           body: RemoteVideoSubtitleSheet(
             service: svc,
-            target: target,
+            target: sheetTarget,
             prefs: prefs ?? _Prefs(),
             onTranscribeInApp: onTranscribeInApp,
           ),
@@ -329,6 +330,215 @@ void main() {
     });
   });
 
+  group('host 播放列表第 2 集起', () {
+    const RemoteVideoSubtitleTarget episode2 = RemoteVideoSubtitleTarget(
+      title: 'K-ON 02',
+      episodes: <RemoteVideoSubtitleEpisode>[
+        RemoteVideoSubtitleEpisode(
+          videoId: 'v1',
+          episodeIndex: 1,
+          title: 'K-ON 02',
+        ),
+      ],
+    );
+
+    testWidgets('老 host（没报 acceptsEpisode）：明确提示更新 host，「开始」不可点，本机转录照常可用', (
+      WidgetTester tester,
+    ) async {
+      final List<bool> handedOff = <bool>[];
+      await pump(
+        tester,
+        service(_Host(const <String>['video_subtitle'])),
+        sheetTarget: episode2,
+        onTranscribeInApp: ({required bool proofread}) =>
+            handedOff.add(proofread),
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('remote-subtitle-episode-unsupported'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(t.video_subtitle_ai_remote_episode_host_outdated),
+        findsOneWidget,
+      );
+      expect(startPressed(tester), isNull);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-save-beside')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-transcribe-start')),
+      );
+      await tester.pumpAndSettle();
+      expect(handedOff, <bool>[false]);
+    });
+
+    testWidgets('新 host（acceptsEpisode）：「开始」可点，提交带集下标', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = _Host(
+        const <String>['video_subtitle'],
+        capability: const <String, Object?>{
+          'video_subtitle': <String, Object?>{'acceptsEpisode': true},
+        },
+      );
+      await pump(tester, service(host), sheetTarget: episode2);
+      expect(
+        find.byKey(
+          const ValueKey<String>('remote-subtitle-episode-unsupported'),
+        ),
+        findsNothing,
+      );
+      expect(startPressed(tester), isNotNull);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-start')),
+      );
+      await tester.pumpAndSettle();
+      expect(host.runs.single['videoId'], 'v1');
+      expect(host.runs.single['episode'], 1);
+    });
+  });
+
+  group('远端原盘会话里库中没有行的 title（discTitle）', () {
+    const RemoteVideoSubtitleTarget bonus = RemoteVideoSubtitleTarget(
+      title: 'Disc · 00005',
+      episodes: <RemoteVideoSubtitleEpisode>[
+        RemoteVideoSubtitleEpisode(
+          videoId: 'disc/main',
+          discTitle: 'BDMV/PLAYLIST/00005.mpls',
+          title: 'Disc · 00005',
+        ),
+      ],
+    );
+
+    testWidgets('老 host（没报 acceptsDiscTitle）：明确提示更新 host，「开始」不可点', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = _Host(
+        const <String>['video_subtitle'],
+        capability: const <String, Object?>{
+          'video_subtitle': <String, Object?>{'acceptsEpisode': true},
+        },
+      );
+      await pump(tester, service(host), sheetTarget: bonus);
+      expect(
+        find.byKey(
+          const ValueKey<String>('remote-subtitle-disc-title-unsupported'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(
+          t.video_subtitle_ai_remote_disc_title_host_outdated,
+        ),
+        findsOneWidget,
+      );
+      expect(startPressed(tester), isNull);
+      expect(host.runs, isEmpty);
+    });
+
+    testWidgets('新 host（acceptsDiscTitle）：「开始」可点，提交带锚点 videoId 与 discTitle', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = _Host(
+        const <String>['video_subtitle'],
+        capability: const <String, Object?>{
+          'video_subtitle': <String, Object?>{'acceptsDiscTitle': true},
+        },
+      );
+      await pump(tester, service(host), sheetTarget: bonus);
+      expect(
+        find.byKey(
+          const ValueKey<String>('remote-subtitle-disc-title-unsupported'),
+        ),
+        findsNothing,
+      );
+      expect(startPressed(tester), isNotNull);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-start')),
+      );
+      await tester.pumpAndSettle();
+      expect(host.runs.single['videoId'], 'disc/main');
+      expect(host.runs.single['discTitle'], 'BDMV/PLAYLIST/00005.mpls');
+      expect(host.runs.single.containsKey('episode'), isFalse);
+    });
+  });
+
+  group('从播放页发起：播放器当前音轨（audioTrack）', () {
+    const RemoteVideoSubtitleTarget playing = RemoteVideoSubtitleTarget(
+      title: 'K-ON 01',
+      episodes: <RemoteVideoSubtitleEpisode>[
+        RemoteVideoSubtitleEpisode(
+          videoId: 'v1',
+          title: 'K-ON 01',
+          audioTrack: 1,
+        ),
+      ],
+    );
+
+    testWidgets('老 host（没报 acceptsAudioTrack）：如实提示将按语言选轨，「开始」照常可点、提交不带音轨', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = _Host(const <String>['video_subtitle']);
+      await pump(tester, service(host), sheetTarget: playing);
+      expect(
+        find.byKey(
+          const ValueKey<String>('remote-subtitle-audio-track-downgraded'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(
+          t.video_subtitle_ai_remote_audio_track_host_outdated,
+        ),
+        findsOneWidget,
+      );
+      expect(startPressed(tester), isNotNull, reason: '降级不是错结果，不拦任务');
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-start')),
+      );
+      await tester.pumpAndSettle();
+      expect(host.runs.single['videoId'], 'v1');
+      expect(host.runs.single.containsKey('audioTrack'), isFalse);
+    });
+
+    testWidgets('新 host（acceptsAudioTrack）：不提示，提交带音轨', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = _Host(
+        const <String>['video_subtitle'],
+        capability: const <String, Object?>{
+          'video_subtitle': <String, Object?>{'acceptsAudioTrack': true},
+        },
+      );
+      await pump(tester, service(host), sheetTarget: playing);
+      expect(
+        find.byKey(
+          const ValueKey<String>('remote-subtitle-audio-track-downgraded'),
+        ),
+        findsNothing,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-start')),
+      );
+      await tester.pumpAndSettle();
+      expect(host.runs.single['audioTrack'], 1);
+    });
+
+    testWidgets('没有播放上下文（整季 / 合集页）：老 host 上也不提示', (WidgetTester tester) async {
+      await pump(tester, service(_Host(const <String>['video_subtitle'])));
+      expect(
+        find.byKey(
+          const ValueKey<String>('remote-subtitle-audio-track-downgraded'),
+        ),
+        findsNothing,
+      );
+    });
+  });
+
   testWidgets('支持的 host：显示在哪台上运行，「开始」可点', (WidgetTester tester) async {
     await pump(tester, service(_Host(<String>['video_subtitle'])));
     expect(
@@ -366,5 +576,50 @@ void main() {
       find.byKey(const ValueKey<String>('remote-subtitle-resume')),
       findsOneWidget,
     );
+  });
+
+  group('生成语言', () {
+    testWidgets('老 host（没列 languages）：不显示语言选择，提交不带 language', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = _Host(const <String>['video_subtitle']);
+      await pump(tester, service(host));
+      expect(
+        find.byKey(const ValueKey<String>('remote-subtitle-language')),
+        findsNothing,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-start')),
+      );
+      await tester.pumpAndSettle();
+      expect(host.runs.single.containsKey('language'), isFalse);
+    });
+
+    testWidgets('新 host：显示语言选择，选普通话后提交带 language=zh', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = _Host(
+        const <String>['video_subtitle'],
+        capability: const <String, Object?>{
+          'video_subtitle': <String, Object?>{
+            'languages': <String>['ja', 'zh'],
+          },
+        },
+      );
+      await pump(tester, service(host));
+      expect(
+        find.byKey(const ValueKey<String>('remote-subtitle-language')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-language-zh')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-start')),
+      );
+      await tester.pumpAndSettle();
+      expect(host.runs.single['language'], 'zh');
+    });
   });
 }

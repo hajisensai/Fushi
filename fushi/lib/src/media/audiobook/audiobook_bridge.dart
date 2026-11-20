@@ -402,15 +402,27 @@ window.__fushiAnnotate = function(chapterHref) {
   // ── 公开 API ───────────────────────────────────────────────────────────────
 
   /// 向 WebView 注入 CSS 样式和 JS 函数。
+  ///
+  /// 一次 `evaluateJavascript` 送完（[buildInjectScript]）：每个新文档都要注入，
+  /// 分 5 次送就是每次装章多 4 次平台通道往返，串行排在高亮之前。
   static Future<void> inject(
     InAppWebViewController controller, {
     Color primaryColor = FushiColor.defaultHighlightYellow,
   }) async {
-    final String css = _buildCss(primaryColor);
-    final String cssJsonStr = jsonEncode(css);
     await controller.evaluateJavascript(
-      source:
-          '''
+      source: buildInjectScript(primaryColor),
+    );
+  }
+
+  /// [inject] 送进 WebView 的整段脚本：按主题色生成的样式段 + 4 段常量函数定义。
+  ///
+  /// 各段都是顶层 `window.x = function` 赋值（不声明顶层变量），原样首尾相接与
+  /// 逐段执行等价。结尾的 `void 0` 让求值结果是 undefined，不把最后一个函数对象
+  /// 序列化回 Dart。
+  @visibleForTesting
+  static String buildInjectScript(Color primaryColor) {
+    final String cssJsonStr = jsonEncode(_buildCss(primaryColor));
+    return '''
 (function() {
   var existing = document.getElementById('__fushi_audio_css');
   if (existing) existing.remove();
@@ -422,13 +434,12 @@ window.__fushiAnnotate = function(chapterHref) {
     parent.appendChild(s);
   }
 })();
-''',
-    );
-
-    await controller.evaluateJavascript(source: _highlightFn);
-    await controller.evaluateJavascript(source: _sentenceAudioFn);
-    await controller.evaluateJavascript(source: _chapterNavFn);
-    await controller.evaluateJavascript(source: _annotateFn);
+$_highlightFn
+$_sentenceAudioFn
+$_chapterNavFn
+$_annotateFn
+void 0;
+''';
   }
 
   /// 高亮 [cue] 对应的句子。
@@ -484,6 +495,17 @@ window.__fushiAnnotate = function(chapterHref) {
           '__fushiHighlight(${jsonEncode(raw)}, $reveal, $pauseEnabled, '
           '$fromChapterStart);}',
     );
+  }
+
+  /// 放飞（不 await）的 [highlight] 的错误出口，用法：
+  /// `unawaited(AudiobookBridge.highlight(...).catchError(AudiobookBridge.logHighlightError))`。
+  ///
+  /// 播放器 cue 变更监听是同步回调，不能 await 高亮；而 WebView 正在销毁 / 换文档时
+  /// `evaluateJavascript` 会抛，不接住就是一条未处理的异步错误（BUG-4811）。高亮是
+  /// 尽力而为的一次性视觉更新（下一次 cue 变更会重发），所以只记进
+  /// [ErrorLogService]，不重试。
+  static void logHighlightError(Object error, StackTrace stack) {
+    ErrorLogService.instance.log('AudiobookBridge.highlight', error, stack);
   }
 
   /// 重置 cue 推进锚点（`__fushiPrevHighlight`）。
@@ -554,14 +576,42 @@ window.__fushiAnnotate = function(chapterHref) {
       if (frag.sectionIndex != sectionIndex) {
         continue;
       }
-      payload.add(<String, dynamic>{
-        'id': cue.textFragmentId,
-        'start': frag.normCharStart,
-        'length': frag.normCharEnd - frag.normCharStart,
-        'text': cue.text,
-      });
+      payload.add(_sentenceAudioPayloadEntry(cue, frag));
     }
     return payload;
+  }
+
+  /// payload 单条的唯一构造处（[buildSentenceAudioPayload] 与
+  /// [SentenceAudioCueIndex.payloadFor] 共用，字段契约不分叉）。
+  static Map<String, dynamic> _sentenceAudioPayloadEntry(
+    AudioCue cue,
+    SubtitleRematchFragment frag,
+  ) {
+    return <String, dynamic>{
+      'id': cue.textFragmentId,
+      'start': frag.normCharStart,
+      'length': frag.normCharEnd - frag.normCharStart,
+      'text': cue.text,
+    };
+  }
+
+  static final Expando<SentenceAudioCueIndex> _sentenceAudioCueIndexes =
+      Expando<SentenceAudioCueIndex>('sentenceAudioCueIndex');
+
+  /// [cues]（整书 cue 列表）的「章 → 本章句级 cue」派生索引，按**列表对象**缓存。
+  ///
+  /// reader 每装一章都要从同一份整书 cue 里取本章的 payload；逐条
+  /// [SubtitleRematchCodec.tryDecode] 再按章过滤是每章一次全书解码。索引挂在列表
+  /// 对象上（[Expando]）：列表被换掉（重新对齐 / 换音频槽 / 关书）时索引随它一起
+  /// 回收，不存在「列表换了、索引还是旧的」这种状态；同一对象长度变了则重建。
+  /// 前提与 `AudioCueOffsetIndex` 相同：缓存着的 cue 列表不原地改写
+  /// `textFragmentId`（重匹配作用在新读出的列表上）。
+  static SentenceAudioCueIndex sentenceAudioCueIndexFor(List<AudioCue> cues) {
+    final SentenceAudioCueIndex? cached = _sentenceAudioCueIndexes[cues];
+    if (cached != null && cached.sourceLength == cues.length) return cached;
+    final SentenceAudioCueIndex built = SentenceAudioCueIndex._build(cues);
+    _sentenceAudioCueIndexes[cues] = built;
+    return built;
   }
 
   /// 对齐 iOS Sasayaki 的 applySasayakiCues。
@@ -654,20 +704,22 @@ window.__fushiAnnotate = function(chapterHref) {
   ) async {
     if (query.isEmpty) return const <BookSearchResult>[];
 
-    // 每章搜索文本只算一次（后台 isolate、原生扫描），之后的查询直接复用。章节
-    // 正文可能被换掉（在线小说占位页 → 正文，`discardCachedHtml`），所以缓存按
-    // 每章 html 字符串的对象同一性校验，变了就整本重算。
-    final List<String> htmls = <String>[
-      for (final EpubChapter c in book.chapters) c.html,
-    ];
-    final _SearchTextCache? cached = _searchTextCache[book];
-    final List<String> texts;
-    if (cached != null && cached.matches(htmls)) {
-      texts = cached.texts;
-    } else {
-      texts = await compute(_buildSearchTexts, htmls);
-      _searchTextCache[book] = _SearchTextCache(htmls, texts);
+    // 每章搜索文本只算一次（后台 isolate、原生扫描），之后的查询直接复用。
+    // UI isolate 不碰章节正文：lazy 章节只把文件路径交给 isolate 自己读盘（以前
+    // 这里逐章读 `c.html`，首搜在 UI isolate 上同步读整本，读进来的正文随后一直
+    // 驻留在各章的缓存里）。章节正文可能被换掉（在线小说占位页 → 正文，
+    // `discardCachedHtml`），缓存按每章的显式内容版本号判新旧，只重算变了的章。
+    final _SearchTextCache cache = _searchTextCache[book] ??=
+        _SearchTextCache();
+    final int chapterCount = book.chapters.length;
+    final List<_SearchTextJob> jobs = cache.staleJobs(book.chapters);
+    if (jobs.isNotEmpty) {
+      final List<String> built = await compute(_buildSearchTexts, jobs);
+      // 按发任务时的版本快照入账：isolate 读盘期间章节被换掉
+      // （discardCachedHtml）的，记的仍是旧版本号，下次搜索照样重算。
+      cache.store(chapterCount, jobs, built);
     }
+    final List<String> texts = cache.texts;
     return compute(
       _searchIsolate,
       _SearchParams(chapterTexts: texts, query: query),
@@ -742,18 +794,63 @@ window.__fushiAnnotate = function(chapterHref) {
 
 // ── 搜索 isolate ─────────────────────────────────────────────────────────────
 
+/// 一章搜索文本的来源：lazy 章节给盘上路径（isolate 自己读），eager 章节给
+/// 已在内存里的正文。[version] / [filePath] 是发任务那一刻的快照，结果按它入账。
+typedef _SearchTextJob = ({
+  int index,
+  int version,
+  String? filePath,
+  String? html,
+});
+
+/// [AudiobookBridge.searchBook] 的按书缓存：每章的搜索文本及其对应的
+/// [EpubChapter.contentVersion] / [EpubChapter.filePath]。不持有章节正文。
 class _SearchTextCache {
-  _SearchTextCache(this.htmls, this.texts);
+  List<String> texts = const <String>[];
+  List<int> _versions = const <int>[];
+  List<String?> _paths = const <String?>[];
 
-  final List<String> htmls;
-  final List<String> texts;
+  /// 缺失或版本 / 路径对不上的章。章数变了整本重算。
+  List<_SearchTextJob> staleJobs(List<EpubChapter> chapters) {
+    final bool sameShape = texts.length == chapters.length;
+    return <_SearchTextJob>[
+      for (int i = 0; i < chapters.length; i++)
+        if (!sameShape ||
+            _versions[i] != chapters[i].contentVersion ||
+            _paths[i] != chapters[i].filePath)
+          (
+            index: i,
+            version: chapters[i].contentVersion,
+            filePath: chapters[i].filePath,
+            // eager 章节没有盘上文件，正文本来就在内存里。
+            html: chapters[i].filePath == null ? chapters[i].html : null,
+          ),
+    ];
+  }
 
-  bool matches(List<String> current) {
-    if (current.length != htmls.length) return false;
-    for (int i = 0; i < current.length; i++) {
-      if (!identical(current[i], htmls[i])) return false;
+  /// 把 [jobs] 的结果 [built] 记进 [chapterCount] 章的缓存。版本号 / 路径记
+  /// 任务里的快照而不是入账时章节的当前值：任务在 isolate 里跑的时候章节可能
+  /// 已被换掉，那样记当前值就会把旧正文算出的文本当成新版本永久缓存住。
+  void store(int chapterCount, List<_SearchTextJob> jobs, List<String> built) {
+    final bool sameShape = texts.length == chapterCount;
+    final List<String> nextTexts = sameShape
+        ? List<String>.of(texts)
+        : List<String>.filled(chapterCount, '');
+    final List<int> nextVersions = sameShape
+        ? List<int>.of(_versions)
+        : List<int>.filled(chapterCount, -1);
+    final List<String?> nextPaths = sameShape
+        ? List<String?>.of(_paths)
+        : List<String?>.filled(chapterCount, null);
+    for (int j = 0; j < jobs.length; j++) {
+      final _SearchTextJob job = jobs[j];
+      nextTexts[job.index] = built[j];
+      nextVersions[job.index] = job.version;
+      nextPaths[job.index] = job.filePath;
     }
-    return true;
+    texts = nextTexts;
+    _versions = nextVersions;
+    _paths = nextPaths;
   }
 }
 
@@ -763,22 +860,24 @@ class _SearchParams {
   final String query;
 }
 
-/// 后台 isolate：每章的搜索坐标系文本（[EpubBook.chapterSearchText]）。
-List<String> _buildSearchTexts(List<String> chapterHtmls) {
+/// 后台 isolate：每章的搜索坐标系文本（[EpubBook.chapterSearchText]）。lazy 章节
+/// 在这里按路径读盘（[EpubChapter.readHtmlFile]，与 UI isolate 的 `html` 同一套
+/// 解码），读完即弃，不回传正文。
+List<String> _buildSearchTexts(List<_SearchTextJob> jobs) {
   final EpubBook book = EpubBook(
     title: '',
     chapters: <EpubChapter>[
-      for (int i = 0; i < chapterHtmls.length; i++)
+      for (final _SearchTextJob job in jobs)
         EpubChapter(
-          id: '$i',
-          href: '$i',
+          id: '${job.index}',
+          href: '${job.index}',
           mediaType: 'application/xhtml+xml',
-          html: chapterHtmls[i],
+          html: job.html ?? EpubChapter.readHtmlFile(job.filePath!),
         ),
     ],
   );
   return <String>[
-    for (int i = 0; i < chapterHtmls.length; i++) book.chapterSearchText(i),
+    for (int i = 0; i < jobs.length; i++) book.chapterSearchText(i),
   ];
 }
 
@@ -970,4 +1069,46 @@ class BookSearchResult {
   final int charOffset;
   final String context;
   final int matchStart;
+}
+
+/// 整书 cue 按章分好组的句级 cue（[AudiobookBridge.sentenceAudioCueIndexFor]）。
+///
+/// 每条 cue 只解码一次；[payloadFor] 与
+/// [AudiobookBridge.buildSentenceAudioPayload] 对同一份列表、同一章逐位相同
+/// （同样只收解码成功且章号相符的 cue，保持原列表顺序）。
+class SentenceAudioCueIndex {
+  SentenceAudioCueIndex._(this.sourceLength, this._bySection);
+
+  factory SentenceAudioCueIndex._build(List<AudioCue> cues) {
+    final Map<int, List<(AudioCue, SubtitleRematchFragment)>> bySection =
+        <int, List<(AudioCue, SubtitleRematchFragment)>>{};
+    for (final AudioCue cue in cues) {
+      final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
+        cue.textFragmentId,
+      );
+      if (frag == null) continue;
+      (bySection[frag.sectionIndex] ??= <(AudioCue, SubtitleRematchFragment)>[])
+          .add((cue, frag));
+    }
+    return SentenceAudioCueIndex._(cues.length, bySection);
+  }
+
+  /// 建索引时来源列表的长度（长度变了即重建）。
+  final int sourceLength;
+
+  final Map<int, List<(AudioCue, SubtitleRematchFragment)>> _bySection;
+
+  /// 整书里有没有任何一条句级（可解码）cue。
+  bool get hasSentenceAudio => _bySection.isNotEmpty;
+
+  /// [sectionIndex] 章送给 WebView 的 payload；该章没有句级 cue 时为空表。
+  List<Map<String, dynamic>> payloadFor(int sectionIndex) {
+    final List<(AudioCue, SubtitleRematchFragment)>? entries =
+        _bySection[sectionIndex];
+    if (entries == null) return const <Map<String, dynamic>>[];
+    return <Map<String, dynamic>>[
+      for (final (AudioCue cue, SubtitleRematchFragment frag) in entries)
+        AudiobookBridge._sentenceAudioPayloadEntry(cue, frag),
+    ];
+  }
 }

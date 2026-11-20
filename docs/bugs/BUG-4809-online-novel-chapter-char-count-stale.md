@@ -1,0 +1,18 @@
+## BUG-4809 · 在线小说书取章后内存字数不刷新，统计与进度按占位页算
+- **报告**：2026-11-17（用户：小说 / 漫画 / 视频优化清单复核，novel-1）
+- **真实性**：✅ 真 bug（沿代码路径确认，未在真机复现漏计数值）。在线小说书（LNReader）与网页小说书入库时每章都是占位页，书行 `chaptersJson` 里的 `characters` 是占位文案的字数。根因（行号按修复前的 `upstream/develop` @ 8d58da51da9）：
+  - 阅读器只在开书时读一次每章字数：`fushi/lib/src/pages/implementations/reader_fushi_page.dart:3336-3346`（`charCountsFromChaptersJson`）→ `:3389` `_applyCharCounts`；之后只有口径重算（`:3615`）会再调，在线书的口径是当前口径，不走这条路。
+  - 取章回来只丢两份缓存：`fushi/lib/src/pages/implementations/reader_fushi/webview.part.dart:328-348`（`_sanitizedHtmlCache.remove` + `discardCachedHtml`），不碰 `_chapterCharCounts` / `_chapterCumulativeChars` / `setChapterCharCountHints`。
+  - 新字数只写了库：`fushi/lib/src/media/novel/online/lnreader_online_book.dart:613-626`（`_updateCharacterCount`）、`fushi/lib/src/media/novel/web/web_novel_library.dart:556-563`（整本重解析后写 `chaptersJson`）；接口 `OnlineNovelChapterLoader.ensureLoaded` 只回一个 bool，字数没有交回阅读器的通道。
+  - 后果：`absoluteCharOffsetOf`（`reader_fushi_page.dart:734-749`）把章内偏移夹在「占位页字数」以内，读到第一页之后可见区间起止相等，`_refreshProgress` 的 `unitEnd > unitStart` 不成立、不入账——整章只入账占位文案那几个字；进度条总字数与章内进度（`navigation.part.dart` 的 `progress * _chapterCharCounts[_currentChapter]`）同样按占位页算。重开书才恢复（那时书行里已是正文字数）。
+- **[ ] ① 修复进行中（代码已落，真机复测未做，见备注）** — `ensureLoaded` 改为返回 `OnlineNovelChapterLoaded?`（章号 + 正文字数），两个加载器都把刚算出的字数带回来；LNReader 后台预取的章把结果记在 `_unacknowledged` 里，等阅读器请求到那一章时才交出。阅读器在 `_ensureOnlineChapter` 确认取章后经 `_adoptOnlineChapterCharCount` 换表：`_applyCharCounts`（重建累计前缀与总字数）+ 整表重注入 `setChapterCharCountHints`（仅当整表已是当前口径）+ `_readLedger.reset()`（这一章之后所有章的全书绝对偏移都平移了；已入账的沉没、不撤回）。
+  - **换表时机**（`OnlineChapterCharCountAdoption`）：reset 只能发生在当前单元已结算之后。拦截层的请求不都是导航——连续模式章节无缝衔接在阅读中途用 `fetch(entry.url)` 挂前后邻章（`reader_seamless_chapters_script.dart` 的 `mount` / `ensureWindow`），同样走 `_interceptRequest`。所以只有「导航在飞且取回的就是在装的那一章」才立刻换；其余的先记着，等当前单元结算后一次换上：无缝换章在 `_onSeamlessChapterActivated` 的 `_readLedger.leave()` 之后，整章导航在 `_ensureOnlineChapter` 入口（导航在飞且账本当前单元已空）。后台预取落盘时不换。
+  - **后台整本重算**（`_recomputeCharCountsInBackground`，口径升级后第一次开书）：isolate 读盘可能早于取章，落定时先用本会话已知的正文字数盖住重算结果里对应的章，再换进内存 / 写回书行，不让整表覆盖把占位页字数带回来。
+  - **预取字数过期**：预取之后作品页按新章节列表就地重建了解压树时，`LnReaderOnlineChapterLoader` 交出前按书行当前描述符核一次，对不上就只报「这一章变过」（字数为 null，阅读器照样丢缓存、不换字数），其余预取记录一并作废。
+- **[x] ② 已加自动化测试** —
+  - 加载器把字数交回来：`fushi/test/media/novel/lnreader_online_book_test.dart`（亲手取的章、后台预取后翻到的章都带字数，且与写进书行的一致；解压树重建后过期字数不交出）、`fushi/test/media/novel/web/web_novel_library_test.dart`。
+  - 阅读器一侧：`fushi/test/reader/reader_online_chapter_char_count_test.dart`——换表纯函数 `charCountsWithLoadedOnlineChapter`；`OnlineChapterCharCountAdoption` 的行为测试（目标章立刻换、阅读中途取回的邻章先记后换、重算覆盖、接真 `ReadUnitLedger` 复现「阅读中途换表会让回翻再前翻重复入账」的失败路径）；接线守卫（立刻换的判据、两个结算点、换表 → 注入提示 → reset 的顺序、重算落定先覆盖）。`fushi/test/reader/reader_read_ledger_wiring_guard_static_test.dart` 的 reset 调用点清单同步加上这一处。
+  - 真 app 端到端：`fushi/integration_test/lnreader_novel_source_itest.dart` 加了「取章后阅读器内存字数 = 书行新字数、预取章内存里仍是占位页字数」的断言（经调试钩子 `ReaderFushiPage.debugChapterCharCounts`）。该集成测试走真网络，**只过了 analyze、没有执行过**（见备注）。
+- **备注**：
+  - 待真机复测（做完才能把 ① 勾上）：在线书连读两章新章节后看统计页「本次字数」与进度条（paginated / continuous / vn 各一遍，连续模式另开「章节无缝衔接」验一遍）。没有跑 Windows 离屏集成测试，也没有上真机：并发组多、磁盘紧张，且要真网络。
+  - 仍在的窗口（既有问题，窄，未处理）：字数口径升级后第一次开在线书时，后台预取已落盘但阅读器还没请求到的章，阅读器这边不知道它的正文字数；重算 isolate 若在它落盘前读盘，`_persistRecomputedCharCounts` 会把书行里那一章写回占位页字数。翻到那一章时内存会换成正文字数，但书行不会再被更正（文件已是正文、不会再取），下次开书那一章又按占位页算，直到下一次口径重算。

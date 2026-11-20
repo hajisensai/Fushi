@@ -11,13 +11,15 @@
 //                                             重试复用同一个。同一个 key 再来一次 → 原样回同一张回执（同 id、同 ticket），
 //                                             不新建反馈、不再计限流 / 预算（见 createFeedback 幂等说明）
 //   PUT  /v1/feedback/:id/attachments/:slot   [X-Fushi-Ticket] 原始字节；slot = log（gzip）/ s0..s2（截图）
-//                                             / v0（视频 mp4 / mov / webm ≤ 100 MB，流式写 R2，见 putVideoAttachment）
+//                                             / v0（视频 mp4 / mov / webm ≤ 100 MB，流式写 R2，见 putStreamedAttachment）
+//                                             / f0..f2（样本文件 ≤ 100 MB：字幕 / 书 / 音视频原件 / 词典 / md……，
+//                                             X-Fushi-File-Name 带原文件名，扩展名白名单 + 魔数，见 feedback_files.js）
 //   POST /v1/feedback/status                  {items:[{id, ticket}] ≤ 50} → 各条进度摘要（凭据不对的条目不返回）
 //   GET  /v1/feedback/mine?cursor&limit       [签名] 本账户提交过的反馈（跨设备看自己的工单），摘要 + 游标分页
 //   GET  /v1/feedback/:id                     [凭据] 详情 + 时间线
 //   POST /v1/feedback/:id/messages            [凭据] {body} 追加说明
 //   DELETE /v1/feedback/:id/messages/:mid     [凭据] 反馈人删除自己的一条追加说明（开发者已在其后回复则 409）
-//   GET  /v1/feedback/:id/attachments/:slot   [凭据] 本人取回自己的截图（s0..s2；日志 / 视频不回传）
+//   GET  /v1/feedback/:id/attachments/:slot   [凭据] 本人取回自己的截图（s0..s2；日志 / 视频 / 样本文件不回传）
 //   POST /v1/feedback/:id/close               [凭据] 反馈人标记完成：open / in_progress → closed
 //   [凭据] = X-Fushi-Ticket（本条回执），或提交时所用账户的签名（feedbackForReporter）；二者择一，
 //   带了 ticket 就只认 ticket。匿名提交的反馈只能凭 ticket。补传附件（PUT）只认 ticket——签名要覆盖
@@ -28,7 +30,8 @@
 //   GET  /v1/dev/feedback?status&cursor&limit&q   q：编号精确匹配，或标题 / 正文包含（LIKE）
 //   GET  /v1/dev/feedback/:id
 //   GET  /v1/dev/feedback/:id/attachments/:slot[?view=text|download=1]   日志可直接解压成文本；
-//                                             视频支持 Range（浏览器拖进度条），download=1 作为附件下载
+//                                             视频支持 Range（浏览器拖进度条），download=1 作为附件下载；
+//                                             样本文件一律作附件下载（文本类 ?view=text 以纯文本查看）
 //   POST /v1/dev/feedback/:id                 {status?, reply?}
 //   POST /v1/dev/feedback/:id/notes           {aiSummary?, devNote?}
 //
@@ -54,7 +57,9 @@
 // 附件由定时任务清掉（purgeFeedbackAttachments），只留文字记录。视频另有更短的保留期：创建 30 天
 // 或结案 7 天（先到者）即删（purgeFeedbackVideos，按 has_video 部分索引有界读）。视频占单独的
 // R2 配额池（budget.js 'video'，默认 1 GiB，满了 507 video_quota，不挤占头像 / 封面 / 截图那份），
-// 并按上传 IP 每天限总字节数（videoBytesPerIpDay），一个 IP 不能独占视频池。
+// 并按上传 IP 每天限总字节数（videoBytesPerIpDay），一个 IP 不能独占视频池。样本文件（f0..f2）与视频
+// 同属「大附件」（LARGE_KINDS）：同一个池、同一份 IP 日额度、同样的保留期；has_video 列（冻结名）
+// 实际含义是「有大附件」。
 //
 // 防投毒（feedback_guard.js）：伪装字符剥掉、提示注入 / 链接灌水 / 跨来源重复打标记（flags），
 // 同来源同内容 1 小时内重复提交 409；截图按文件头宽高拒收解码炸弹，日志按 gzip ISIZE 拒收
@@ -64,6 +69,15 @@
 import { HttpError, b64urlEncode, background, clampInt, hex, json, randomId, sha256, timingSafeEqual } from './util.js';
 import { adjustSpend, deleteMedia, releaseMediaBytes, reserveMediaBytes, spend } from './budget.js';
 import { sniffImage } from './media.js';
+import {
+  FILE_HEAD_BYTES,
+  FILE_SLOT_RE,
+  FILE_UNTRUSTED_HEADER,
+  TEXT_VIEW_MAX,
+  fileDisposition,
+  headMatches,
+  parseFileName,
+} from './feedback_files.js';
 import { installTrail, normalizeInstallId, verifyInstallProof } from './installs.js';
 import { DAY, HOUR, hit } from './ratelimit.js';
 import { clearFeedbackPushTokens, notifyFeedbackUpdate, registerPushToken, unregisterPushToken } from './feedback_push.js';
@@ -123,9 +137,12 @@ export const FEEDBACK_LIMITS = {
    * （packages/fushi_engine/lib/feedback/feedback_models.dart）必须同值。取十进制而不是 100 MiB：
    * 请求体在进 Worker 之前先过 Cloudflare 边缘的请求体上限（Free / Pro 套餐 100 MB，文档没写是
    * 1e8 还是 2^20 进制），1e8 在两种口径下都过得去；Business（200 MB）以上套餐同样不受影响。
-   * 视频是流式写 R2（见 putVideoAttachment），不进 Worker 内存，所以 Worker 128 MB 内存上限不相干。
+   * 视频是流式写 R2（见 putStreamedAttachment），不进 Worker 内存，所以 Worker 128 MB 内存上限不相干。
    */
   videoMaxBytes: 100 * 1000 * 1000,
+  /** 样本文件（槽位 f0..f2）个数与单个上限；客户端 FeedbackLimits.files / fileMaxBytes 同值。 */
+  files: 3,
+  fileMaxBytes: 100 * 1000 * 1000,
   /**
    * 每个上传 IP 每天（UTC 日窗口）视频总字节上限（按声明长度计，传失败不退）：2 段满额（100 MB）视频。
    * 匿名每 IP 每小时能提 10 条反馈、每条一个 100 MB 视频，没有这一道时一个 IP 一小时就能占掉 1 GB
@@ -155,8 +172,12 @@ export const RELEASE_CHANNELS = ['debug', 'beta', 'stable'];
 export const RELEASE_PLATFORMS = ['android', 'windows', 'macos', 'ios', 'linux'];
 export const RELEASE_VERSION_RE = /^[A-Za-z0-9.+-]{1,64}$/;
 
-const SLOT_RE = /^(log|s[0-2]|v0)$/;
+/** 整段读进内存的小附件槽位（日志 / 截图）；v0 与 f0..f2 走流式（putStreamedAttachment）。 */
+const SLOT_RE = /^(log|s[0-2])$/;
 const VIDEO_SLOT = 'v0';
+/** 大附件：流式上传、占视频池、按视频保留期清理（has_video = 1）。 */
+const LARGE_KINDS = ['video', 'file'];
+const isLarge = (a) => LARGE_KINDS.includes(a.kind);
 /** 视频上传时客户端声明的 Content-Type 白名单（存库的类型以魔数嗅探为准）。 */
 const VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'];
 const VIDEO_EXT = { 'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm' };
@@ -264,7 +285,9 @@ function parseAttachments(row) {
 }
 
 function publicAttachments(row) {
-  return parseAttachments(row).map((a) => ({ slot: a.slot, kind: a.kind, bytes: a.bytes, type: a.type }));
+  return parseAttachments(row).map((a) => ({
+    slot: a.slot, kind: a.kind, bytes: a.bytes, type: a.type, ...(a.kind === 'file' ? { name: a.name } : {}),
+  }));
 }
 
 /** 读反馈行并核对 ticket；不存在与 ticket 不对一律 404（不区分，免得探测 id）。 */
@@ -650,7 +673,7 @@ export async function putAttachment(env, row, slot, bytes, now) {
 async function appendAttachment(env, id, entry, now) {
   const res = await env.DB.prepare(
     `UPDATE feedback SET attachments = json_insert(attachments, '$[#]', json(?2)), updated_at = ?3,
-       has_video = CASE WHEN ?5 = 'video' THEN 1 ELSE has_video END
+       has_video = CASE WHEN ?5 IN ('video', 'file') THEN 1 ELSE has_video END
      WHERE id = ?1 AND NOT EXISTS (
        SELECT 1 FROM json_each(feedback.attachments) WHERE json_extract(value, '$.slot') = ?4)`,
   ).bind(id, JSON.stringify(entry), now, entry.slot, entry.kind).run();
@@ -703,40 +726,79 @@ function rejoin(head, reader) {
 }
 
 /**
- * PUT /v1/feedback/:id/attachments/v0：视频直接把请求体流式写进 R2，不整读进内存（100 MB 进 Worker
- * 内存就逼近 128 MB 上限）。所有能在读体之前判的都先判（窗口 / 槽位 / 长度 / 类型），超限的
- * 请求不扣预算也不占配额；魔数只读开头一块。R2 put 要求流长度已知，经 FixedLengthStream（Workers
- * 运行时全局）按声明长度封口：实际字节多了少了流都会出错，归还配额、删掉半截对象，400 bad_length。
- * 魔数通过后才计费：先记上传 IP 当天的视频字节（超了 429 rate_limited），再扣 media 预算 1 次，最后在
- * 视频池按声明长度预占（满了 507 video_quota；与头像 / 封面 / 截图的普通池互不挤占）。
+ * 流式附件该怎么验：视频按 Content-Type 白名单 + 魔数（存嗅探出的类型），样本文件按
+ * X-Fushi-File-Name 的扩展名白名单 + 该扩展名的魔数（一律存 octet-stream）。读体之前能判的
+ * （槽位、文件名 / 类型头）在这里判；返回的 check(head) 在读到开头一块后判魔数。
  */
-export async function putVideoAttachment(env, row, request, now, ip) {
+function streamedPlan(slot, request) {
+  if (slot === VIDEO_SLOT) {
+    const ctype = (request.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
+    if (!VIDEO_TYPES.includes(ctype)) throw new HttpError(415, 'unsupported_video_type');
+    return {
+      kind: 'video',
+      max: FEEDBACK_LIMITS.videoMaxBytes,
+      headBytes: 16,
+      check(head) {
+        const type = sniffVideo(head);
+        if (!type) throw new HttpError(415, 'not_a_video');
+        return { type, ext: VIDEO_EXT[type], extra: {} };
+      },
+    };
+  }
+  let parsed;
+  try {
+    parsed = parseFileName(request.headers.get('X-Fushi-File-Name'));
+  } catch (e) {
+    throw new HttpError(e && e.code === 'unsupported_file_type' ? 415 : 400, (e && e.code) || 'bad_file_name');
+  }
+  return {
+    kind: 'file',
+    max: FEEDBACK_LIMITS.fileMaxBytes,
+    headBytes: FILE_HEAD_BYTES,
+    check(head) {
+      if (!headMatches(parsed.group, head.subarray(0, FILE_HEAD_BYTES))) {
+        throw new HttpError(415, `not_a_${parsed.group}`);
+      }
+      return { type: 'application/octet-stream', ext: parsed.ext, extra: { name: parsed.name, ext: parsed.ext } };
+    },
+  };
+}
+
+/**
+ * PUT /v1/feedback/:id/attachments/v0 | f0..f2：大附件直接把请求体流式写进 R2，不整读进内存（100 MB
+ * 进 Worker 内存就逼近 128 MB 上限）。所有能在读体之前判的都先判（窗口 / 槽位 / 长度 / 类型或文件名），
+ * 超限的请求不扣预算也不占配额；魔数只读开头一块。R2 put 要求流长度已知，经 FixedLengthStream（Workers
+ * 运行时全局）按声明长度封口：实际字节多了少了流都会出错，归还配额、删掉半截对象，400 bad_length。
+ * 魔数通过后才计费：先记上传 IP 当天的大附件字节（视频与样本文件共用一份，超了 429 rate_limited），
+ * 再扣 media 预算 1 次，最后在视频池按声明长度预占（满了 507 video_quota；与头像 / 封面 / 截图的普通池
+ * 互不挤占）。
+ */
+export async function putStreamedAttachment(env, row, slot, request, now, ip) {
+  if (slot !== VIDEO_SLOT && !FILE_SLOT_RE.test(slot)) throw new HttpError(400, 'bad_slot');
   if (now - row.created_at > FEEDBACK_LIMITS.attachWindowMs) throw new HttpError(403, 'attach_window_closed');
   const existing = parseAttachments(row);
-  if (existing.some((a) => a.slot === VIDEO_SLOT)) throw new HttpError(409, 'slot_taken');
+  if (existing.some((a) => a.slot === slot)) throw new HttpError(409, 'slot_taken');
+  const plan = streamedPlan(slot, request);
   const declared = request.headers.get('Content-Length');
   if (declared === null || declared === '') throw new HttpError(411, 'length_required');
   const length = Number(declared);
-  if (!/^\d+$/.test(declared) || length <= 0 || length > FEEDBACK_LIMITS.videoMaxBytes) {
+  if (!/^\d+$/.test(declared) || length <= 0 || length > plan.max) {
     throw new HttpError(413, 'body_too_large');
   }
-  const ctype = (request.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
-  if (!VIDEO_TYPES.includes(ctype)) throw new HttpError(415, 'unsupported_video_type');
   if (!request.body) throw new HttpError(400, 'bad_length');
 
   const reader = request.body.getReader();
   let reserved = false;
   let key = null;
   try {
-    const head = await readHead(reader, 16);
-    const type = sniffVideo(head);
-    if (!type) throw new HttpError(415, 'not_a_video');
+    const head = await readHead(reader, Math.min(plan.headBytes, length));
+    const { type, ext, extra } = plan.check(head);
     // 按 IP 的日字节额度先于全局预算：超了的 IP 不消耗全站的 media 次数。
     await hit(env, `feedback:video:ip:${ip}`, DAY, FEEDBACK_LIMITS.videoBytesPerIpDay, now, length);
     await spend(env, 'media', 1, now);
     await reserveMediaBytes(env, length, 'video');
     reserved = true;
-    key = `f/${row.id}-${VIDEO_SLOT}-${randomId(8)}.${VIDEO_EXT[type]}`;
+    key = `f/${row.id}-${slot}-${randomId(8)}.${ext}`;
     // eslint-disable-next-line no-undef
     const body = rejoin(head, reader).pipeThrough(new FixedLengthStream(length));
     try {
@@ -744,13 +806,13 @@ export async function putVideoAttachment(env, row, request, now, ip) {
     } catch {
       throw new HttpError(400, 'bad_length');
     }
-    const entry = { slot: VIDEO_SLOT, kind: 'video', key, bytes: length, type };
+    const entry = { slot, kind: plan.kind, key, bytes: length, type, ...extra };
     if (!await appendAttachment(env, row.id, entry, now)) {
       reserved = false; // deleteMedia 按对象实际大小归还
       await deleteMedia(env, key, 'video');
       throw new HttpError(409, 'conflict');
     }
-    return { slot: VIDEO_SLOT, kind: 'video', bytes: length };
+    return { slot, kind: plan.kind, bytes: length };
   } catch (e) {
     await reader.cancel().catch(() => {});
     if (reserved) {
@@ -1088,6 +1150,7 @@ export async function attachmentResponse(env, row, slot, asText, { range = null,
   const a = parseAttachments(row).find((x) => x.slot === slot);
   if (!a) throw new HttpError(404, 'not_found');
   if (a.kind === 'video') return videoResponse(env, row, a, range, download);
+  if (a.kind === 'file') return fileResponse(env, row, a, asText);
   const obj = await env.MEDIA.get(a.key);
   if (!obj) throw new HttpError(404, 'not_found');
   const headers = {
@@ -1120,6 +1183,52 @@ export async function attachmentResponse(env, row, slot, asText, { range = null,
       ...headers,
       'Content-Type': a.type,
       ...(a.kind === 'log' ? { 'Content-Disposition': `attachment; filename="fushi-${row.id}.log.gz"` } : {}),
+    },
+  });
+}
+
+/**
+ * 样本文件：一律作附件下载（octet-stream + attachment + nosniff + sandbox CSP，浏览器不渲染不执行）。
+ * 文本类（扩展名属 text 组）可 asText 以 text/plain 查看：页眉注明不可信、截流 TEXT_VIEW_MAX。
+ */
+async function fileResponse(env, row, a, asText) {
+  const obj = await env.MEDIA.get(a.key);
+  if (!obj) throw new HttpError(404, 'not_found');
+  const headers = {
+    'Cache-Control': 'private, no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': "default-src 'none'; sandbox",
+  };
+  const src = obj.body instanceof ReadableStream ? obj.body : new Response(obj.body).body;
+  let textual = false;
+  try {
+    textual = parseFileName(encodeURIComponent(a.name || `x.${a.ext}`)).group === 'text';
+  } catch {
+    textual = false;
+  }
+  if (asText && textual) {
+    const header = new TextEncoder().encode(FILE_UNTRUSTED_HEADER);
+    const body = src.pipeThrough(capStream(TEXT_VIEW_MAX));
+    const out = new ReadableStream({
+      async start(controller) {
+        controller.enqueue(header);
+        const reader = body.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          controller.enqueue(value);
+        }
+        controller.close();
+      },
+    });
+    return new Response(out, { headers: { ...headers, 'Content-Type': 'text/plain; charset=utf-8' } });
+  }
+  return new Response(src, {
+    headers: {
+      ...headers,
+      'Content-Type': 'application/octet-stream',
+      'Content-Length': String(a.bytes),
+      'Content-Disposition': fileDisposition(row.id, a),
     },
   });
 }
@@ -1181,18 +1290,19 @@ export async function purgeFeedbackAttachments(env, now, limit = 20) {
      LIMIT ?2`,
   ).bind(now - FEEDBACK_LIMITS.attachmentRetentionMs, limit).all();
   for (const row of rows.results) {
-    // 视频与其它附件在不同的配额池，分开归还。
+    // 大附件（视频 / 样本文件）与其它附件在不同的配额池，分开归还。
     const list = parseAttachments(row);
-    await deleteMedia(env, list.filter((a) => a.kind !== 'video').map((a) => a.key));
-    await deleteMedia(env, list.filter((a) => a.kind === 'video').map((a) => a.key), 'video');
+    await deleteMedia(env, list.filter((a) => !isLarge(a)).map((a) => a.key));
+    await deleteMedia(env, list.filter(isLarge).map((a) => a.key), 'video');
     await env.DB.prepare('UPDATE feedback SET attachments = \'[]\', has_video = 0 WHERE id = ?1').bind(row.id).run();
   }
   return rows.results.length;
 }
 
 /**
- * 到期视频：创建满 30 天，或已结案满 7 天（以 updated_at 计，先到者）。只删视频对象（归还配额）、
- * 从附件列表去掉视频条目、has_video 归零；截图与日志按 purgeFeedbackAttachments 的 90 天口径另算。
+ * 到期大附件（视频 / 样本文件）：创建满 30 天，或已结案满 7 天（以 updated_at 计，先到者）。只删大附件
+ * 对象（归还配额）、从附件列表去掉这些条目、has_video 归零；截图与日志按 purgeFeedbackAttachments 的
+ * 90 天口径另算。
  * 只读带视频的行（idx_feedback_video 部分索引），每次最多 limit 条。
  */
 export async function purgeFeedbackVideos(env, now, limit = 20) {
@@ -1204,10 +1314,10 @@ export async function purgeFeedbackVideos(env, now, limit = 20) {
   ).bind(now - FEEDBACK_LIMITS.videoRetentionMs, now - FEEDBACK_LIMITS.videoRetentionAfterCloseMs, limit).all();
   for (const row of rows.results) {
     const list = parseAttachments(row);
-    await deleteMedia(env, list.filter((a) => a.kind === 'video').map((a) => a.key), 'video');
+    await deleteMedia(env, list.filter(isLarge).map((a) => a.key), 'video');
     // 条件更新：附件列表在这期间被改过就留给下一轮（对象已删，下一轮 head 不到不会重复归还配额）。
     await env.DB.prepare('UPDATE feedback SET attachments = ?2, has_video = 0 WHERE id = ?1 AND attachments = ?3')
-      .bind(row.id, JSON.stringify(list.filter((a) => a.kind !== 'video')), row.attachments).run();
+      .bind(row.id, JSON.stringify(list.filter((a) => !isLarge(a))), row.attachments).run();
   }
   return rows.results.length;
 }
@@ -1457,8 +1567,10 @@ export async function routeFeedback(request, env, url, now, io) {
   if (method === 'PUT' && (m = RE.attach.exec(path))) {
     // 补传只认 ticket：签名要覆盖整个请求体，视频没法边收边验。
     const row = await feedbackForTicket(env, m[1], ticket);
-    // 视频不走 readBody：100 MB 不整读进内存，直接流式写 R2。
-    if (m[2] === VIDEO_SLOT) return json(await putVideoAttachment(env, row, request, now, io.ip), 201, noStore);
+    // 视频 / 样本文件不走 readBody：100 MB 不整读进内存，直接流式写 R2。
+    if (m[2] === VIDEO_SLOT || FILE_SLOT_RE.test(m[2])) {
+      return json(await putStreamedAttachment(env, row, m[2], request, now, io.ip), 201, noStore);
+    }
     const bytes = await io.readBody(ATTACHMENT_MAX_BYTES);
     return json(await putAttachment(env, row, m[2], bytes, now), 201, noStore);
   }

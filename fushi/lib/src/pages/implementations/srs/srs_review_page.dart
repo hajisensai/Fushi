@@ -52,7 +52,8 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/anki/card_source_origin.dart'
     show cardSourceKindIcon, cardSourceLinkOfFields;
-import 'package:fushi/src/anki/card_source_router.dart' show openCardSource;
+import 'package:fushi/src/anki/card_source_router.dart'
+    show cardSourceOpenerProvider;
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/second_screen/companion/companion_page_link.dart';
 import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
@@ -80,8 +81,6 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
-import 'package:fushi/src/srs/srs_card_appearance.dart'
-    show SrsCardAppearance, SrsCardColorSource, srsCardColorScheme;
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi/src/srs/srs_fushi_card_media.dart';
 import 'package:fushi/src/srs/srs_card_face_route.dart';
@@ -120,6 +119,7 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
 import 'package:fushi/src/srs/srs_review_freshness.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 /// 评分按钮上的间隔文案：按界面语言给单位（文案照 Anki 答题按钮：英文 m / h / d /
 /// mo / y，中文 分钟 / 小时 / 天 / 个月 / 年），不再让「1m」与「11.1mo」混着读。
@@ -308,6 +308,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   int _newCount = 0;
   int _learnCount = 0;
   int _reviewCount = 0;
+
+  /// 牌组按分钟计复习上限时今天还剩的复习分钟（[SrsDeckSummary.reviewMinutesLeft]），顶栏到期一格显示它。
+  int? _reviewMinutesLeft;
 
   /// 牌组当前的全名（随计数一起现读；复习中在牌组设置里改了名立即换标题）。
   String? _deckTitle;
@@ -571,6 +574,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     _newCount = sum?.newCount ?? 0;
     _learnCount = sum?.learnCount ?? 0;
     _reviewCount = sum?.reviewCount ?? 0;
+    _reviewMinutesLeft = sum?.reviewMinutesLeft;
     _deckTitle = sum?.fullName;
   }
 
@@ -876,7 +880,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       if (mounted) bumpSrsLocalWrite(ref);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsReviewPage.$where', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1577,6 +1584,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         fieldLabel: catalog.srsFieldDisplayName(field),
         fieldName: field.name,
         current: before,
+        promptStore: ref.read(appProvider).prefsRepo,
         run: (AiSrsFieldTask task, String instruction) async {
           final AiChatClient client = AiChatClient();
           try {
@@ -1931,7 +1939,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     _lookup.closeAll();
     srsRunLogged(
       'SrsReview.openSource',
-      () => openCardSource(ref: ref, link: link),
+      () => ref.read(cardSourceOpenerProvider)(ref: ref, link: link),
     );
   }
 
@@ -1962,7 +1970,12 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       return '${t.srs_custom_study_left} ${custom.left} · '
           '${t.srs_count_learn} ${custom.learn}';
     }
-    final String review = SrsReviewCell(due: _reviewCount).label() ?? '';
+    final String review =
+        SrsReviewCell(
+          due: _reviewCount,
+          minutesLeft: _reviewMinutesLeft,
+        ).label() ??
+        '';
     return '${t.srs_count_new} $_newCount · ${t.srs_count_learn} $_learnCount · '
         '$review';
   }
@@ -2374,6 +2387,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         onKeyEvent: _onKey,
         child: FushiPageScaffold(
           title: _title,
+          masthead: false,
           header: floating
               ? const SizedBox.shrink()
               : (apple ? null : _buildTopBar(context)),
@@ -2387,6 +2401,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
                   newCount: _newCount,
                   learnCount: _learnCount,
                   reviewCount: _reviewCount,
+                  reviewMinutesLeft: _reviewMinutesLeft,
                   dense: true,
                 )
               : null,
@@ -2761,6 +2776,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     // WebView 卡面滚不到底栏下面，停在底栏上沿（与顶端让位浮动页头同一口径，见
     // [_cardScrollsUnderHeader]）。
     final bool underBar = _nativeFace(rendered);
+    // 底栏一律不画底（含卡面自定义配色时）：背后是路由层的页面背景（柔光 / 形状 / 自定义
+    // 图片）。滚到底栏背后的原生卡面内容在底栏上沿裁掉（[_SrsBottomCutClipper]），不从
+    // 按钮之间透出来；末尾内容靠卡面的底部滚动内边距（底栏高度）滚到底栏以上，不被遮住。
+    final double barCut = underBar ? _bottomBarHeight : 0;
     final Widget cardFace = _cardFace(
       context,
       detail: detail,
@@ -2807,8 +2826,14 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
                 child: Stack(
                   fit: StackFit.passthrough,
                   children: <Widget>[
-                    // 结构恒定：没在滑时位移为零，卡面平台视图不因手势重挂。
-                    SrsSwipeFollow(hint: _swipeHint, child: cardFace),
+                    // 结构恒定：没在滑时位移为零，卡面平台视图不因手势重挂；裁切层恒在、
+                    // 只换裁切高度（同样不重挂）。裁在滑动位移外面：底栏上沿固定不动。
+                    ClipRect(
+                      key: const ValueKey<String>('srs-card-under-bar-clip'),
+                      clipper: _SrsBottomCutClipper(barCut),
+                      clipBehavior: barCut > 0 ? Clip.hardEdge : Clip.none,
+                      child: SrsSwipeFollow(hint: _swipeHint, child: cardFace),
+                    ),
                     SrsSwipeHintBadge(hint: _swipeHint),
                     SrsRatedFeedbackChip(
                       // 原生卡面铺在底栏背后：提示抬到底栏上沿，不被底栏盖住。
@@ -2850,31 +2875,27 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
               behavior: HitTestBehavior.opaque,
               child: _SrsHeightReporter(
                 onHeight: _onBottomBarHeight,
-                child: _withBottomBarScrim(
-                  context,
-                  underBar: underBar,
-                  child: SafeArea(
-                    top: false,
-                    child: Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        tokens.spacing.page,
-                        tokens.spacing.gap * 1.5,
-                        tokens.spacing.page,
-                        tokens.spacing.gap * 1.5,
-                      ),
-                      child: _withBottomReplay(
-                        context,
-                        AnimatedSwitcher(
-                          duration: fushiMotionDuration(
-                            context,
-                            FushiMotion.short,
-                          ),
-                          switchInCurve: FushiMotion.enter,
-                          switchOutCurve: FushiMotion.exit,
-                          child: _showingAnswer
-                              ? _buildAnswerBar(context)
-                              : _buildShowAnswer(context),
+                child: SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      tokens.spacing.page,
+                      tokens.spacing.gap * 1.5,
+                      tokens.spacing.page,
+                      tokens.spacing.gap * 1.5,
+                    ),
+                    child: _withBottomReplay(
+                      context,
+                      AnimatedSwitcher(
+                        duration: fushiMotionDuration(
+                          context,
+                          FushiMotion.short,
                         ),
+                        switchInCurve: FushiMotion.enter,
+                        switchOutCurve: FushiMotion.exit,
+                        child: _showingAnswer
+                            ? _buildAnswerBar(context)
+                            : _buildShowAnswer(context),
                       ),
                     ),
                   ),
@@ -2884,35 +2905,6 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
           ),
         ],
       ),
-    );
-  }
-
-  /// 原生 Fushi 卡面铺在底栏背后滚动：底栏垫一层由透明渐变到卡面底色的底板，滚到底栏
-  /// 下面的释义 / 来源不再从评分按钮之间透出来、跟按钮文字叠在一起（手机上评分按钮
-  /// 占满整行，透出来的字尤其乱）。整面 WebView 卡面停在底栏上沿，不需要底板。
-  Widget _withBottomBarScrim(
-    BuildContext context, {
-    required bool underBar,
-    required Widget child,
-  }) {
-    if (!underBar) return child;
-    final SrsCardAppearance appearance = ref.watch(srsCardAppearanceProvider);
-    final ColorScheme app = Theme.of(context).colorScheme;
-    // 与卡面同一判据：自定义配色时卡面自己铺底（卡面配色的 surface），否则透出页面底色。
-    final Color surface = appearance.colorSource == SrsCardColorSource.custom
-        ? srsCardColorScheme(appearance, app).surface
-        : app.surface;
-    return DecoratedBox(
-      key: const ValueKey<String>('srs-review-bottom-bar-scrim'),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: <Color>[surface.withValues(alpha: 0), surface, surface],
-          stops: const <double>[0, 0.3, 1],
-        ),
-      ),
-      child: child,
     );
   }
 
@@ -2944,28 +2936,22 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         ),
         child: FushiPressScale(
           enabled: enabled,
-          // 快捷键提示与评分按钮同一写法（空格 / Enter / 手柄 A 都翻面，见 _onKey）。
-          child: FushiTooltip(
-            message: _withKeyHint(
-              t.srs_review_show_answer,
-              ShortcutAction.srsReviewPrimary,
-            ),
-            child: SizedBox(
-              width: double.infinity,
-              child: FushiFilledButton.icon(
-                key: const ValueKey<String>('srs-show-answer'),
-                onPressed: enabled ? _showAnswer : null,
-                size: FushiButtonSize.m,
-                style: apple
-                    ? const ButtonStyle(
-                        minimumSize: WidgetStatePropertyAll<Size>(
-                          Size(_kBarButtonHeightApple, _kBarButtonHeightApple),
-                        ),
-                      )
-                    : null,
-                icon: const FushiIcon(FushiIcons.visibility),
-                label: Text(t.srs_review_show_answer),
-              ),
+          // 按钮自带文字，悬停不再弹重复的文字 + 快捷键提示（用户 11-20）。
+          child: SizedBox(
+            width: double.infinity,
+            child: FushiFilledButton.icon(
+              key: const ValueKey<String>('srs-show-answer'),
+              onPressed: enabled ? _showAnswer : null,
+              size: FushiButtonSize.m,
+              style: apple
+                  ? const ButtonStyle(
+                      minimumSize: WidgetStatePropertyAll<Size>(
+                        Size(_kBarButtonHeightApple, _kBarButtonHeightApple),
+                      ),
+                    )
+                  : null,
+              icon: const FushiIcon(FushiIcons.visibility),
+              label: Text(t.srs_review_show_answer),
             ),
           ),
         ),
@@ -3167,12 +3153,6 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         tone: tone,
         interval: showIntervals ? _ratingInterval(rating) : '',
         label: label,
-        tooltip: _withKeyHint(label, switch (rating) {
-          1 => ShortcutAction.srsReviewAgain,
-          2 => ShortcutAction.srsReviewHard,
-          3 => ShortcutAction.srsReviewGood,
-          _ => ShortcutAction.srsReviewEasy,
-        }),
         onPressed: _busy ? null : () => _rate(rating),
       ),
     );
@@ -3202,14 +3182,12 @@ class SrsRatingButton extends StatelessWidget {
     required this.tone,
     required this.interval,
     required this.label,
-    required this.tooltip,
     required this.onPressed,
   });
 
   final SrsRatingTone tone;
   final String interval;
   final String label;
-  final String tooltip;
   final VoidCallback? onPressed;
 
   @override
@@ -3250,7 +3228,7 @@ class SrsRatingButton extends StatelessWidget {
     final Widget button = apple
         ? FushiPlainButton(
             onPressed: onPressed,
-            semanticLabel: tooltip,
+            semanticLabel: label,
             borderRadius: BorderRadius.circular(
               _SrsReviewPageState._kBarButtonHeightApple / 2,
             ),
@@ -3291,11 +3269,28 @@ class SrsRatingButton extends StatelessWidget {
             ),
             child: content(enabled ? c.foreground : disabledForeground),
           );
-    return FushiPressScale(
-      enabled: onPressed != null,
-      child: FushiTooltip(message: tooltip, child: button),
-    );
+    // 按钮自带评价词，悬停不再弹重复的文字 + 快捷键提示（用户 11-20）。
+    return FushiPressScale(enabled: onPressed != null, child: button);
   }
+}
+
+/// 卡面裁到底栏上沿：底部裁掉 [cut]（0 = 不裁），左右与顶端放宽，不裁横向滑动位移与
+/// 页头底下的内容。
+class _SrsBottomCutClipper extends CustomClipper<Rect> {
+  const _SrsBottomCutClipper(this.cut);
+
+  final double cut;
+
+  @override
+  Rect getClip(Size size) => Rect.fromLTRB(
+    -size.width,
+    -size.height,
+    size.width * 2,
+    math.max(0, size.height - cut),
+  );
+
+  @override
+  bool shouldReclip(_SrsBottomCutClipper oldClipper) => oldClipper.cut != cut;
 }
 
 /// 布局后回报子树高度（变了才报，排在本帧绘制之后）：复习页据此给浮动底栏让位。

@@ -73,7 +73,7 @@ function fixture({continuous = true, css = true, writingMode = 'horizontal-tb', 
     createElement: name => new Element(name)});
   const native = {rangeCount: 1, removeAllRanges() { this.rangeCount = 0; }};
   const highlights = new Map();
-  const stats = {clear: 0, moves: 0, menus: 0, dragNotifications: [], notifications: [], clearWhileConnected: []};
+  const stats = {clear: 0, moves: 0, menus: 0, dragNotifications: [], notifications: [], clearWhileConnected: [], einkPages: 0};
   const vertical = writingMode !== 'horizontal-tb';
   html.scrollTop = vertical ? 0 : initial;
   const window = {scrollX: vertical ? initial : 0, scrollY: 0, innerWidth: 100, innerHeight: 100,
@@ -99,6 +99,7 @@ function fixture({continuous = true, css = true, writingMode = 'horizontal-tb', 
     },
     flutter_inappwebview: {callHandler(name) {
       if (name === 'onSelectionDragStarted') { stats.dragNotifications.push(name); return; }
+      if (name === 'onEinkScrollPage') { stats.einkPages++; return; }
       assert.equal(name, 'onSelectionCleared'); stats.notifications.push(name);
       assert.equal(selection.selection, null, 'notify only after clearing JS state');
       assert.equal(native.rangeCount, 0);
@@ -113,6 +114,9 @@ function fixture({continuous = true, css = true, writingMode = 'horizontal-tb', 
   for (const name of ['clearImageLateAnchor', '_setRestoreCharAnchor', '_isContinuousShell',
     'noteUserScroll', '_clearSelectionOnViewportChange', '_readContinuousScroll',
     '_onContinuousViewportScroll',
+    // 851b737b27 起连续模式实际滚动后按累计位移回传墨水屏全刷计数（_noteEinkScroll →
+    // _noteEinkPage → onEinkScrollPage）；切生产实现，回传在 callHandler 里单独记账。
+    '_noteEinkScroll', '_noteEinkPage',
     // 上游 2026-10-05 起 paginate 会调几何重锚收口；漏掉它 harness 会在第一次翻页就
     // TypeError（this._settleGeometryReanchor is not a function）。
     '_settleGeometryReanchor', '_reanchorFrame']) reader[name] = fn('pagination', name);
@@ -332,6 +336,16 @@ test('forwarded popup scroll: note alone preserves; actual scroll clears', () =>
   const f = fixture(); f.reader.noteUserScroll(); preserved(f);
   f.window.scrollBy({top: 60}); f.dispatch('scroll'); cleared(f);
 });
+test('eink page count follows actual root-axis motion only', () => {
+  const f = fixture();
+  f.dispatch('scroll'); f.body.scrollTop = 500; f.dispatch('scroll', f.body);
+  assert.equal(f.stats.einkPages, 0);
+  f.move(60); assert.equal(f.stats.einkPages, 0); cleared(f);
+  f.move(120); assert.equal(f.stats.einkPages, 1);
+  f.move(119); assert.equal(f.stats.einkPages, 1);
+  f.move(1000); assert.equal(f.stats.einkPages, 2, 'one multi-screen jump counts at most one page');
+  f.move(1050); assert.equal(f.stats.einkPages, 2, 'jump resets the accumulator');
+});
 for (const guard of ['dragAnchor', 'activeHandle']) test(`${guard}: motion during drag is protected, not replayed after release`, () => {
   const f = fixture(); f.beginDrag(guard);
   f.move(60); preserved(f);
@@ -490,7 +504,8 @@ for (const writingMode of ['horizontal-tb', 'vertical-rl', 'vertical-lr']) {
         const f = fixture({continuous: false, writingMode}); const ctx = f.paged(100);
         for (const name of ['contentFirstPageScroll', 'contentLastPageScroll', 'alignToPage',
           'scrollToProgressPaged', 'scrollToCharOffset', 'alignToFragmentTarget',
-          '_alignRangeToPage', '_settleAndNotify', 'turnSpan', 'pagedAxisOf'])
+          '_alignRangeToPage', '_realignRevealTarget', '_settleAndNotify', '_restoreCallback',
+          'registerImageLateAnchor', 'reapplyImageLateAnchor', 'turnSpan', 'pagedAxisOf'])
           f.reader[name] = f.fn('pagination', name);
         // Geometry only: the target is on the preceding page; all navigation,
         // landing, drag validity and cleanup are the current production methods.
@@ -504,7 +519,12 @@ for (const writingMode of ['horizontal-tb', 'vertical-rl', 'vertical-lr']) {
         if (entry === 'fragment') assert.equal(f.reader.alignToFragmentTarget('target'), true);
         if (entry === 'range') assert.equal(f.reader._alignRangeToPage({}), true);
         if (entry === 'settle') {
-          f.reader._settleAndNotify(ctx, 0); preserved(f);
+          // BUG-4808：settle 不再写回捕获的像素位置，而是在位置被动过时按已登记的语义锚
+          // 重设落点。这里登记章首锚（前一页），窗口内 reflow 把 scroll 挪走（直接写滚动
+          // 容器，不经任何记账），定时器回调经 reapplyImageLateAnchor 真的换页。
+          f.reader.registerImageLateAnchor({progress: 0});
+          f.reader._settleAndNotify(); preserved(f);
+          f.body.scrollLeft = f.body.scrollTop = 200;
           assert.equal(f.timers.length, 1); f.timers.shift()();
         }
         assert.equal(f.reader.getPagePosition(ctx), 0); cleared(f);
@@ -513,7 +533,7 @@ for (const writingMode of ['horizontal-tb', 'vertical-rl', 'vertical-lr']) {
         if (entry === 'range') {
           assert.equal(f.frames.length, 1); f.frames.shift()();
         }
-        f.reader._settleAndNotify(ctx, 0); f.timers.shift()();
+        f.reader._settleAndNotify(); f.timers.shift()();
         assert(f.selection.selection); assert.equal(f.stats.clear, 1);
       });
     }

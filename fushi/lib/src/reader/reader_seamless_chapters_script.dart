@@ -244,6 +244,9 @@ final String kSeamlessChaptersInstallJs =
   }
   // 解析出来的章节文档里属于 EPUB 的样式表：<link rel=stylesheet>（拉取文本）与内联 <style>，
   // 排除净化管线注入的 cloak 与阅读器样式。url() 一律按样式表自己的地址改成绝对地址。
+  // 单张样式表拉不到（404，或请求本身失败：跨域外链没有 CORS 头、资源通道拒绝）只丢这
+  // 一张，按空表登记——签名仍在，head 里对应的 <link> 照常被认领。它不该让整次启动 /
+  // 挂载失败（挂载失败会让该方向永久退回整章重载）。
   async function epubStylesOf(doc, base) {
     var out = [];
     var head = doc.head;
@@ -255,8 +258,13 @@ final String kSeamlessChaptersInstallJs =
       if (el.localName === 'link') {
         var href = absUrl(el.getAttribute('href'), base);
         if (!href) continue;
-        var resp = await fetch(href);
-        var css = resp.ok ? await resp.text() : '';
+        var css = '';
+        try {
+          var resp = await fetch(href);
+          if (resp.ok) css = await resp.text();
+        } catch (err) {
+          if (window.console && console.error) console.error('[seamless] stylesheet fetch failed', href, err);
+        }
         out.push({sig: sigOfLink(href), href: href, raw: null, text: absolutizeCssUrls(css, href)});
       } else {
         var raw = el.textContent || '';
@@ -443,9 +451,25 @@ final String kSeamlessChaptersInstallJs =
 
   // 初次恢复落定后启动：先认出当前文档 head 里哪些样式表属于本章（与重新拉取的同一份
   // 净化 HTML 比对），再挂邻章。
+  //
+  // _starting 只在启动真的在途时为真：claimBoundaryTurn 把「正在启动」当作本模块认领了
+  // 这一侧，三条边界换章通道随之让路。启动里任何一步失败（章节请求 reject、解析 / 改写
+  // 抛异常）都必须把它复位，否则这三条通道被永久认领、用户在这一章里换不了章——与
+  // claimBoundaryTurn 注释写明的「启动失败 → 返回 false、退回整章重载」相反。失败后
+  // started 保持 false，下一次 notifyRestoreComplete（换章 / 重载之后）会再启动一次。
   S.start = async function() {
     if (S.started || S._starting) return;
     S._starting = true;
+    try {
+      await startOnce();
+    } catch (err) {
+      if (window.console && console.error) console.error('[seamless] start failed', err);
+    } finally {
+      S._starting = false;
+    }
+    if (S.started) S.ensureWindow();
+  };
+  async function startOnce() {
     // 待确认期间（JS 已换章、Dart 还没 ack）进度快照返回 null：所有调用方本来就把 null 当
     // 「未落定」，不会把新章的偏移记到旧章号上。fushiProgressDetails 在 setup 里、shell
     // 安装之后才定义，所以在启动时包。
@@ -459,9 +483,9 @@ final String kSeamlessChaptersInstallJs =
       window.fushiProgressDetails = gatedDetails;
     }
     var entry = ORDER[posOf(S.activeChapter)];
-    if (!entry) { S._starting = false; return; }
+    if (!entry) return;
     var resp = await fetch(entry.url);
-    if (!resp.ok) { S._starting = false; return; }
+    if (!resp.ok) return;
     var doc = new DOMParser().parseFromString(await resp.text(), 'text/html');
     var styles = await epubStylesOf(doc, entry.url);
     var bySig = Object.create(null);
@@ -478,9 +502,7 @@ final String kSeamlessChaptersInstallJs =
       bodyClass: doc.body ? doc.body.className : ''
     };
     S.started = true;
-    S._starting = false;
-    S.ensureWindow();
-  };
+  }
 
   function mount(chapter, dir) {
     if (S.pending[chapter] || hostFor(chapter) || S.mountFailures[chapter]) return;
@@ -566,6 +588,23 @@ final String kSeamlessChaptersInstallJs =
       if (next) mount(next.index, 1);
       if (prev) mount(prev.index, -1);
     });
+  };
+  // 网页小说书阅读中途 spine 末尾长出新章（novel-d6）：阅读序只在装页时下发一次，
+  // 这里把宿主追加的尾部章接到 ORDER 末尾（只收章号比现有末章大的），再按新的
+  // 邻章补挂——正读着原来的末章时，它后面的新章照常无缝接上。
+  S.extendOrder = function(entries) {
+    if (!Array.isArray(entries)) return;
+    var last = ORDER.length ? ORDER[ORDER.length - 1].index : -1;
+    var added = false;
+    for (var i = 0; i < entries.length; i++) {
+      var e = entries[i];
+      if (!e || typeof e.index !== 'number' || typeof e.url !== 'string') continue;
+      if (e.index <= last) continue;
+      ORDER.push({index: e.index, url: e.url});
+      last = e.index;
+      added = true;
+    }
+    if (added) S.ensureWindow();
   };
 
   function syncBodyClasses(fromData, toData) {

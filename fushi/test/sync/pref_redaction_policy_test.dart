@@ -68,6 +68,7 @@ void main() {
         'video_metadata_douban_authorized_endpoint',
         'video_anidb_username',
         'video_anidb_password',
+        'video_anidb_udp_api_key',
       ];
       for (final String key in previouslyLeaking) {
         expect(

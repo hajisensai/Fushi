@@ -3,10 +3,15 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart'
+    show isLocalMangaVolume;
+import 'package:fushi/src/media/manga/audio/manga_audio_workbench_entry.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
+import 'package:fushi_engine/privacy/media_nsfw.dart';
 import 'package:fushi/src/media/video/video_library_overview.dart'
     show formatVideoPosition;
 import 'package:fushi/src/mining/galgame_library.dart';
@@ -54,6 +59,7 @@ import 'package:fushi_core/fushi_core.dart'
         MediaKind,
         MusicAlbumRow,
         MusicTrackRow,
+        EpubBookRow,
         VideoBookRow,
         VideoMetadataImageRow,
         VideoMetadataWorkRow,
@@ -134,6 +140,7 @@ AdaptiveNavPeek homeNavPeekFor(
           ref: ref,
           appModel: appModel,
           manga: tab == HomeTab.manga,
+          contextOf: contextOf,
         )).toData(),
       );
     case HomeTab.video:
@@ -197,10 +204,42 @@ AdaptiveNavPeek homeNavPeekFor(
   }
 }
 
+/// 速览卡封面的 NSFW 判定（拍板台 w04vrhUAaX）：「模糊 NSFW 封面」关着恒 false，
+/// 否则按加载这一刻的快照判（速览每次展开都重新加载）。
+Future<bool Function(MediaNsfwTarget target)> _loadNsfwJudge(
+  AppModel appModel,
+) async {
+  if (!appModel.prefsRepo.blurNsfwCovers) return (MediaNsfwTarget _) => false;
+  final MediaNsfwSnapshot snapshot = await MediaNsfwSnapshot.load(
+    appModel.database,
+  );
+  return (MediaNsfwTarget target) => target.resolve(snapshot);
+}
+
+/// 漫画速览行的有声状态：做不了有声（在线章节 / 读不出）的不在表里。
+enum _MangaPeekAudio { none, ready }
+
+/// [bookKeys] 里每本漫画的有声状态（[_MangaPeekAudio]）。只查要显示的那几本。
+Future<Map<String, _MangaPeekAudio>> _loadMangaPeekAudio(
+  AppModel appModel,
+  Iterable<String> bookKeys,
+) async {
+  final Map<String, _MangaPeekAudio> out = <String, _MangaPeekAudio>{};
+  for (final String key in bookKeys) {
+    final EpubBookRow? row = await appModel.database.getEpubBook(key);
+    if (row == null || !isLocalMangaVolume(row)) continue;
+    out[key] = await mangaHasAudio(appModel.database, key)
+        ? _MangaPeekAudio.ready
+        : _MangaPeekAudio.none;
+  }
+  return out;
+}
+
 Future<NavPeekFeed> _loadBooks({
   required WidgetRef ref,
   required AppModel appModel,
   required bool manga,
+  required BuildContext Function() contextOf,
 }) async {
   final List<MediaItem> all = await ref.read(
     fushiBooksProvider(JapaneseLanguage.instance).future,
@@ -223,6 +262,7 @@ Future<NavPeekFeed> _loadBooks({
   }
 
   final _NavPeekCollections collections = await _loadCollections(appModel);
+  final bool Function(MediaNsfwTarget) nsfw = await _loadNsfwJudge(appModel);
   final List<MediaItem> read =
       all
           .where(
@@ -233,6 +273,9 @@ Future<NavPeekFeed> _loadBooks({
           )
           .toList()
         ..sort((MediaItem a, MediaItem b) => recentOf(b) - recentOf(a));
+  // 漫画行的有声入口（2026-11-20 反馈 #6）：已有有声版常显「有声」签，没有的
+  // 悬停 / 聚焦时给「加声音」打开有声漫画工作台。生成 / 导入受听书模块门控。
+  Map<String, _MangaPeekAudio> audio = const <String, _MangaPeekAudio>{};
   AdaptiveNavPeekEntry entryOf(MediaItem item, {String? collection}) {
     final String itemTitle = ReaderFushiSource.instance
         .getDisplayTitleFromMediaItem(item);
@@ -243,9 +286,27 @@ Future<NavPeekFeed> _loadBooks({
     final double? progress = item.duration > 0
         ? (item.position / item.duration).clamp(0.0, 1.0)
         : null;
+    final String bookKey = keyOf(item);
+    final _MangaPeekAudio? audioState = audio[bookKey];
+    final bool hasAudio = audioState == _MangaPeekAudio.ready;
     return AdaptiveNavPeekEntry(
       title: collection ?? itemTitle,
       cover: noCover ? null : image,
+      blurCover: nsfw(MediaNsfwTarget.book(bookKey)),
+      status: hasAudio ? t.manga_audio_workbench_has_audio : null,
+      statusIcon: hasAudio ? FushiIcons.audio : null,
+      statusTone: AdaptiveNavPeekStatusTone.active,
+      action:
+          audioState == _MangaPeekAudio.none &&
+              MangaAudioWorkbenchEntry.isAvailable
+          ? AdaptiveNavPeekAction(
+              icon: FushiIcons.audio,
+              label: t.manga_audio_workbench_add_sound,
+              onPressed: () => unawaited(
+                MangaAudioWorkbenchEntry.open(contextOf(), bookKey: bookKey),
+              ),
+            )
+          : null,
       progress: progress,
       subtitle: _peekSubtitle(
         collection == null ? null : itemTitle,
@@ -284,17 +345,23 @@ Future<NavPeekFeed> _loadBooks({
             ShelfReadStatus.reading,
       )
       .firstOrNull;
+  final List<NavPeekUnit<MediaItem>> recentUnits = units
+      .where((NavPeekUnit<MediaItem> unit) => !identical(unit, resume))
+      .take(_kPeekRecentCount)
+      .toList();
+  if (manga && appModel.moduleVisibility.isEnabled(ModuleId.listening)) {
+    audio = await _loadMangaPeekAudio(appModel, <String>[
+      if (resume != null) keyOf(resume.item),
+      for (final NavPeekUnit<MediaItem> unit in recentUnits) keyOf(unit.item),
+    ]);
+  }
   NavPeekTimed timed(NavPeekUnit<MediaItem> unit) => (
     at: recentOf(unit.item),
     entry: entryOf(unit.item, collection: unit.collectionName),
   );
   return NavPeekFeed(
     resume: resume == null ? null : timed(resume),
-    recent: units
-        .where((NavPeekUnit<MediaItem> unit) => !identical(unit, resume))
-        .take(_kPeekRecentCount)
-        .map(timed)
-        .toList(),
+    recent: recentUnits.map(timed).toList(),
   );
 }
 
@@ -304,6 +371,7 @@ Future<NavPeekFeed> _loadVideos({
   required BuildContext Function() contextOf,
 }) async {
   final _NavPeekCollections collections = await _loadCollections(appModel);
+  final bool Function(MediaNsfwTarget) nsfw = await _loadNsfwJudge(appModel);
   final List<VideoBookRow> rows =
       (await repo.listForShelf())
           .where((VideoBookRow v) => (v.lastPlayedAt ?? 0) > 0)
@@ -315,11 +383,18 @@ Future<NavPeekFeed> _loadVideos({
   AdaptiveNavPeekEntry entryOf(
     VideoBookRow v, {
     String? collection,
+    int? collectionId,
     ImageProvider? collectionCover,
   }) {
     final String? cover = v.coverPath;
     return AdaptiveNavPeekEntry(
       title: collection ?? v.title,
+      // 这一集自己（含所在 NSFW 合集）；用的是合集封面时再看合集。
+      blurCover:
+          nsfw(MediaNsfwTarget.video(v.bookUid)) ||
+          (collectionCover != null &&
+              collectionId != null &&
+              nsfw(MediaNsfwTarget.collection(collectionId))),
       cover:
           collectionCover ??
           (cover == null || cover.isEmpty || !File(cover).existsSync()
@@ -372,6 +447,7 @@ Future<NavPeekFeed> _loadVideos({
     entry: entryOf(
       unit.item,
       collection: unit.collectionName,
+      collectionId: unit.collectionId,
       collectionCover: unit.collectionId == null
           ? null
           : covers[unit.collectionId],
@@ -390,6 +466,7 @@ Future<NavPeekFeed> _loadGames({
   final List<GalgameEntry> games = appModel.galgameRepo.games.isNotEmpty
       ? appModel.galgameRepo.games
       : await appModel.galgameRepo.load();
+  final bool Function(MediaNsfwTarget) nsfw = await _loadNsfwJudge(appModel);
   final List<GalgameEntry> played =
       games.where((GalgameEntry g) => g.lastPlayedMs > 0).toList()..sort(
         (GalgameEntry a, GalgameEntry b) => b.lastPlayedMs - a.lastPlayedMs,
@@ -403,6 +480,7 @@ Future<NavPeekFeed> _loadGames({
         cover: cover == null || cover.isEmpty || !File(cover).existsSync()
             ? null
             : resolveMediaCoverImage(kind: MediaKind.game, localPath: cover),
+        blurCover: nsfw(MediaNsfwTarget.game(g.id, adult: g.isNsfw)),
         onOpen: open,
       ),
     );
@@ -422,10 +500,12 @@ String? srsNavPeekCountsLabel({
   required int learnCount,
   required int reviewCount,
   bool reviewPending = false,
+  int? reviewMinutesLeft,
 }) {
   final String? review = SrsReviewCell(
     due: reviewCount,
     pending: reviewPending,
+    minutesLeft: reviewMinutesLeft,
   ).label(omitZero: true);
   final List<String> parts = <String>[
     if (newCount > 0) '${t.srs_count_new} $newCount',
@@ -458,6 +538,7 @@ Future<AdaptiveNavPeekData> _loadSrsDecks({
             learnCount: deck.learnCount,
             reviewCount: deck.reviewCount,
             reviewPending: deck.rwkvPending,
+            reviewMinutesLeft: deck.reviewMinutesLeft,
           ) ??
           t.home_srs_panel_done,
       // 有待复习的卡就直接进这个牌组的复习页（同首页复习条）；今天已复习完
@@ -507,20 +588,8 @@ Future<AdaptiveNavPeekData> _loadDownloads({
         (VideoDownloadJobRow a, VideoDownloadJobRow b) =>
             b.updatedAt - a.updatedAt,
       );
-  AdaptiveNavPeekEntry entryOf(VideoDownloadJobRow job) {
-    final String? cover = job.coverUrl;
-    final double progress = job.lifecycle == VideoDownloadJobLifecycle.completed
-        ? 1
-        : job.stageProgress.clamp(0.0, 1.0).toDouble();
-    return AdaptiveNavPeekEntry(
-      title: job.title,
-      cover: cover == null || cover.isEmpty ? null : AppHttpImage(cover),
-      progress: progress,
-      subtitle: '${(progress * 100).round()}%',
-      onOpen: openDownloads,
-    );
-  }
-
+  final AdaptiveNavPeekEntry Function(VideoDownloadJobRow job) entryOf =
+      navPeekDownloadEntry(openDownloads);
   final VideoDownloadJobRow? resume = jobs
       .where(
         (VideoDownloadJobRow j) =>
@@ -529,12 +598,80 @@ Future<AdaptiveNavPeekData> _loadDownloads({
       .firstOrNull;
   return AdaptiveNavPeekData(
     resume: resume == null ? null : entryOf(resume),
+    resumeLabel: t.download_task_lifecycle_active,
+    recentLabel: t.nav_downloads,
+    summary: navPeekDownloadSummary(jobs),
     recent: jobs
         .where((VideoDownloadJobRow j) => !identical(j, resume))
         .take(_kPeekRecentCount)
         .map(entryOf)
         .toList(),
   );
+}
+
+/// 下载任务的速览条目：标题是作品名，副行是具体资源名（同一部作品的不同集 /
+/// 版本靠它区分——只有作品名时两条任务看起来是同一项），尾部状态签是进行中的
+/// 百分比或生命周期（已完成 / 需要处理 / 已失败 / 已取消）。
+AdaptiveNavPeekEntry Function(VideoDownloadJobRow job) navPeekDownloadEntry(
+  VoidCallback openDownloads,
+) => (VideoDownloadJobRow job) {
+  final String? cover = job.coverUrl;
+  final bool done = job.lifecycle == VideoDownloadJobLifecycle.completed;
+  final double progress = done
+      ? 1
+      : job.stageProgress.clamp(0.0, 1.0).toDouble();
+  final String? resource = job.resourceTitle?.trim();
+  final (
+    String status,
+    AdaptiveNavPeekStatusTone tone,
+  ) = switch (job.lifecycle) {
+    VideoDownloadJobLifecycle.completed => (
+      t.download_task_lifecycle_completed,
+      AdaptiveNavPeekStatusTone.done,
+    ),
+    VideoDownloadJobLifecycle.needsAttention => (
+      t.download_task_lifecycle_needs_attention,
+      AdaptiveNavPeekStatusTone.attention,
+    ),
+    VideoDownloadJobLifecycle.failed => (
+      t.download_task_lifecycle_failed,
+      AdaptiveNavPeekStatusTone.error,
+    ),
+    VideoDownloadJobLifecycle.cancelled => (
+      t.download_task_lifecycle_cancelled,
+      AdaptiveNavPeekStatusTone.neutral,
+    ),
+    _ => ('${(progress * 100).round()}%', AdaptiveNavPeekStatusTone.active),
+  };
+  return AdaptiveNavPeekEntry(
+    title: job.title,
+    cover: cover == null || cover.isEmpty ? null : AppHttpImage(cover),
+    progress: progress,
+    subtitle: resource == null || resource.isEmpty
+        ? (job.year == null ? null : '${job.year}')
+        : resource,
+    status: status,
+    statusTone: tone,
+    onOpen: openDownloads,
+  );
+};
+
+/// 下载速览页头的概况：「活动 2 · 完成 35」，需要处理 / 失败的有才拼上。
+String? navPeekDownloadSummary(List<VideoDownloadJobRow> jobs) {
+  int count(String lifecycle) =>
+      jobs.where((VideoDownloadJobRow j) => j.lifecycle == lifecycle).length;
+  final int active = count(VideoDownloadJobLifecycle.active);
+  final int attention =
+      count(VideoDownloadJobLifecycle.needsAttention) +
+      count(VideoDownloadJobLifecycle.failed);
+  final int completed = count(VideoDownloadJobLifecycle.completed);
+  if (jobs.isEmpty) return null;
+  return <String>[
+    t.download_summary_active(n: active),
+    if (attention > 0)
+      '${t.download_task_lifecycle_needs_attention} $attention',
+    t.download_summary_completed(n: completed),
+  ].join(' · ');
 }
 
 /// 速览里的一个展示单元：散条目，或一个合集（由它最近的那个成员 [item] 代表，
@@ -700,9 +837,19 @@ Future<AdaptiveNavPeekData> _loadHome({
 
   final List<NavPeekFeed> feeds = await Future.wait(<Future<NavPeekFeed>>[
     if (enabled(HomeTab.books))
-      _loadBooks(ref: ref, appModel: appModel, manga: false),
+      _loadBooks(
+        ref: ref,
+        appModel: appModel,
+        manga: false,
+        contextOf: contextOf,
+      ),
     if (enabled(HomeTab.manga))
-      _loadBooks(ref: ref, appModel: appModel, manga: true),
+      _loadBooks(
+        ref: ref,
+        appModel: appModel,
+        manga: true,
+        contextOf: contextOf,
+      ),
     if (enabled(HomeTab.video))
       _loadVideos(appModel: appModel, repo: videoRepo, contextOf: contextOf),
     if (enabled(HomeTab.games))

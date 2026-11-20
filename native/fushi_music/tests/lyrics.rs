@@ -9,7 +9,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use fushi_music::lyrics::model::*;
-use fushi_music::lyrics::{ffi, text, wire};
+use fushi_music::lyrics::{ffi, qrc, text, wire};
 use fushi_music::{ffm_free_bytes, status};
 
 fn fixtures() -> PathBuf {
@@ -207,10 +207,46 @@ fn unsupported_inputs_report_errors() {
     assert!(
         ffi_parse(b"\x98\x25\x00\x11garbage", "qrc", -1)
             .unwrap_err()
-            .contains("encrypted QRC")
+            .contains("encrypted QRC decryption failed")
     );
     assert!(ffi_parse(b"not midi", "kar", -1).is_err());
     assert!(ffi_parse(b"<tt><body><p>", "ttml", -1).is_err());
+}
+
+#[test]
+fn encrypted_qrc_with_kana_track_parses_to_ruby_through_ffi() {
+    // 接口返回形态：XML 包装 + `[kana:]`（逐字版读音夹逐拍时间）。
+    let plain = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<QrcInfos>\n<LyricInfo LyricCount=\"1\">\n<Lyric_1 LyricType=\"1\" LyricContent=\"[ti:夜に駆ける]\n[kana:2ふ(1000,100)た(1100,100)り1よる1か]\n[1000,2000]二(1000,200)人(1200,200)の(1400,200)夜(1600,200)に(1800,200)駆(2000,500)け(2500,500)\n\"/>\n</LyricInfo>\n</QrcInfos>";
+    let expect = vec![
+        ("二人".to_owned(), Some("ふたり".to_owned())),
+        ("の".to_owned(), None),
+        ("夜".to_owned(), Some("よる".to_owned())),
+        ("に".to_owned(), None),
+        ("駆".to_owned(), Some("か".to_owned())),
+        ("け".to_owned(), None),
+    ];
+    let ruby = |t: &Timeline| -> Vec<(String, Option<String>)> {
+        t.lines[0]
+            .syllables
+            .iter()
+            .map(|s| (s.text.clone(), s.ruby.clone()))
+            .collect()
+    };
+    let hex = qrc::encrypt_hex(plain.as_bytes());
+    let t = ffi_parse(hex.as_bytes(), "qrc", -1).unwrap();
+    assert_eq!(t.meta.title.as_deref(), Some("夜に駆ける"));
+    assert_eq!(ruby(&t), expect);
+    assert_eq!(t.lines[0].syllables[0].start_ms, 1000);
+    assert_eq!(t.lines[0].syllables[0].end_ms, 1400);
+    // 本地缓存 `.qrc`：靠文件头认，扩展名提示缺失也能解。
+    let local = qrc::encrypt_local(plain.as_bytes());
+    assert_eq!(ruby(&ffi_parse(&local, "", -1).unwrap()), expect);
+    // 坏的十六进制密文明确报错，不出乱码。
+    assert!(
+        ffi_parse(b"0011223344556677", "qrc", -1)
+            .unwrap_err()
+            .contains("encrypted QRC decryption failed")
+    );
 }
 
 fn copy_fixture(src: &str, dir: &Path, name: &str) -> PathBuf {

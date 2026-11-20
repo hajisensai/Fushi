@@ -43,7 +43,7 @@ void main() {
           db: db,
           initialEpubPath: r'C:\b\My Novel.epub',
           initialAudioPaths: const <String>[r'C:\b\My Novel.m4b'],
-          imageArchiveProbe: (String _) => false,
+          imageArchiveProbe: (String _) async => false,
         ),
       ),
     );

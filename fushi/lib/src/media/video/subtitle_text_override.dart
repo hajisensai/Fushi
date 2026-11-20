@@ -119,5 +119,7 @@ SubtitleMarkup? _markupForEditedText(SubtitleMarkup? markup, String edited) {
     rotationYDeg: markup.rotationYDeg,
     shearX: markup.shearX,
     shearY: markup.shearY,
+    // 改的是字，不是排版：特效字幕手改后仍是特效（H7r4mf_z2n 的列表开关照旧作用）。
+    isEffect: markup.isEffect,
   );
 }

@@ -397,7 +397,16 @@ class MangaCropSuggestions {
   final Rect? textAreaRect;
 }
 
-/// 漫画图片分区。
+/// 裁切分区框的是哪种图：漫画原页图，还是截屏识字 / 拍照查词点字用的那张截图。
+enum AdvancedMiningCropSource {
+  /// 漫画原页图：有分镜检测（所在分镜、Tab 切分镜、未下载模型提示）。
+  mangaPage,
+
+  /// 截屏识字 / 拍照查词的截图（反馈 mOe5HjBtuG）：没有分镜，「整页」叫「整张截图」。
+  screenshot,
+}
+
+/// 漫画图片分区（截屏识字的截图也走这一块，见 [source]）。
 class AdvancedMiningMangaImageSection {
   const AdvancedMiningMangaImageSection({
     required this.loadPage,
@@ -405,7 +414,14 @@ class AdvancedMiningMangaImageSection {
     required this.panelModelAvailable,
     this.downloadPanelModel,
     this.panelModelSizeBytes,
+    this.source = AdvancedMiningCropSource.mangaPage,
   });
+
+  /// 框的是哪种图；[AdvancedMiningCropSource.screenshot] 时不提分镜。
+  final AdvancedMiningCropSource source;
+
+  /// 有没有分镜这回事（截图没有：不显示「未下载分镜模型」、图例与提示不提分镜）。
+  bool get hasPanels => source == AdvancedMiningCropSource.mangaPage;
 
   /// 原页图字节（不是屏幕渲染）。
   final Future<Uint8List?> Function() loadPage;

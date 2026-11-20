@@ -492,6 +492,11 @@ class MihonPreference {
   }
 }
 
+/// [MihonRuntimeException.code]：页引用是已退出的运行时进程发的，在当前进程上
+/// 取不到（桌面 sidecar 重启后，旧页表的图片 URL 指向旧进程的端口与令牌）。
+/// 调用方要重新解析页表换引用，再取。
+const String kMihonStalePageReferenceCode = 'STALE_PAGE_REFERENCE';
+
 class MihonRuntimeException implements Exception {
   const MihonRuntimeException(
     this.code,

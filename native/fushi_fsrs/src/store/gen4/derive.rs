@@ -44,13 +44,16 @@
 //! 笔记 / 卡片缓存与统计行（`cache.rs`）在索引之上：[Index::settle] 收尾时只重算这一批碰到的，[Index::rebuild_all]
 //! 最后整份物化。
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::rc::Rc;
 
 use rusqlite::params;
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 use serde_json::{Map, Value, json};
 
 use super::cache::Dirt;
+use super::class::RuleCanon;
 use super::schema::{DERIVED_TABLES, sql};
 use super::truth::{Entry, Head, Truth};
 use super::weigh::{E_LOG, E_MOVE, S_HELD, T_ADD, T_INERT, T_ORDER, T_REMOVE};
@@ -262,6 +265,9 @@ pub struct Settled {
     pub aliases: u64,
     /// 别名表这一批是增量证明出来的（1），不是整表重算（`alias.rs`「重算与增量」）。
     pub aliases_proven: u64,
+    /// 别名表这一批整表重算了（1）。逐条维护时它只该随第 3 档变化（拿走证据、定义变了……）出现，不随库大小、
+    /// 也不随草稿顺序出现（C8：新卡的卡片修改单独成批收尾时，曾经每条笔记整表重算一次）。
+    pub aliases_rebuilt: u64,
     pub digests: u64,
     /// 缓存层（`cache.rs`）重算了的笔记行 / 卡行 / 统计行。
     pub cache_notes: u64,
@@ -315,6 +321,10 @@ pub struct Index<'t, 'c> {
     pub(super) writers_moved: bool,
     /// 一次缓存层的物化期间缓存的写入者表（`alias_writer_ix`；读的时候索引不变）。
     pub(super) pass_writers: Option<BTreeMap<String, String>>,
+    /// 一次缓存层的物化期间缓存的内置实体规则表（`class.rs` [Index::rule_canon]；读的时候盐集合不变）。
+    pub(super) pass_rules: Option<Rc<RuleCanon>>,
+    /// 物化之外按盐集合记住的同一张表（盐集合变了就重算）。
+    pub(super) rule_memo: RefCell<Option<(Vec<String>, Rc<RuleCanon>)>>,
     /// 缓存层按类拼行时没走捷径、按类重判了的寄存器数（`class.rs` [Index::class_lines]；只增不减，测试与量测读）。
     pub(super) class_judged: u64,
     /// 这一趟缓存刷新里行可能变了的笔记（原值 ID，含被删掉的旧 ID）：收尾时记进缓存层的变更记录（`cache.rs`
@@ -350,6 +360,8 @@ impl<'t, 'c> Index<'t, 'c> {
             alias_moves: BTreeSet::new(),
             writers_moved: false,
             pass_writers: None,
+            pass_rules: None,
+            rule_memo: RefCell::new(None),
             class_judged: 0,
             cache_touched: BTreeSet::new(),
         }
@@ -497,6 +509,8 @@ impl<'t, 'c> Index<'t, 'c> {
                     .map_err(sql)?;
                 }
                 if !bulk {
+                    // 笔记类型碰过的不经 `touched` 记脏（`cache.rs` [Dirt::touched]），清除在这里直接记。
+                    self.dirt.entity(*kind as i64, &ent);
                     self.touched.insert((*kind as i64, ent));
                     self.purge_changed = true;
                 }
@@ -764,6 +778,55 @@ impl<'t, 'c> Index<'t, 'c> {
         Ok(false)
     }
 
+    /// 修改操作 [k]：(操作号, 修改体, HLC 墙钟, HLC 计数, 作者写的时候的完整上下文——依赖 + 自己之前的全部，协议 3
+    /// `Op::ctx`)。
+    fn edit_write(&self, k: i64) -> Result<(OpId, Edit4, i64, u32, Vv), String> {
+        let e = self
+            .t
+            .entry_by_key(k)?
+            .ok_or_else(|| format!("gen4 index: register row {k} has no op"))?;
+        let (wall, logical, deps) = match &e.body {
+            SlotBody::Op(op) => (op.hlc.wall, op.hlc.logical, op.deps.clone()),
+            SlotBody::Raw3(raw) => {
+                let v = raw.to_v3();
+                (v.hlc.wall, v.hlc.logical, v.deps)
+            }
+            _ => return Err(format!("gen4 index: register row {k} is not an op")),
+        };
+        let Some(Body4::Edit(ed)) = body_of(&e) else {
+            return Err(format!("gen4 index: register row {k} is not an edit"));
+        };
+        let mut full = (*deps).clone();
+        full.set(e.id.device, e.id.seq - 1);
+        Ok((e.id, ed, wall, logical, full))
+    }
+
+    /// 修改操作 [k] 的作者写的时候见没见过 dot `(w, q)`——因果事实，从真相层答（撤销校验，`cmd/center.rs`）：带旧戳的
+    /// 写入看旧戳的上下文（写入者维护的完整 DVV；按类问时过同一个换名 [super::class::Canon::dvv]），不带的看依赖与
+    /// 旧闭包（[Index::seen]，含别名类的换名）。
+    ///
+    /// 不能拿投影行的 `ctx` 代替：[Index::edit_lines_as] 给不带旧戳的写入拼的上下文只含别的**要输出的**行（判寄存器支配
+    /// 够用），被支配、不输出的旧写入永远不在里面。[class] 的含义同 [Index::seen]（Some 时 [w] 是规范写入者）。
+    pub(super) fn write_sees(
+        &mut self,
+        k: i64,
+        w: &str,
+        q: i64,
+        class: Option<&super::class::Canon>,
+    ) -> Result<bool, String> {
+        let (_, ed, _, _, full) = self.edit_write(k)?;
+        match &ed.stamp {
+            Some(s) => {
+                let ctx = s.ctx.to_dvv();
+                Ok(match class {
+                    None => ctx.contains(w, q),
+                    Some(c) => c.dvv(&ctx).contains(w, q),
+                })
+            }
+            None => self.seen(&full, w, q, class),
+        }
+    }
+
     // ------------------------------------------------------------ 判定
 
     pub(super) fn reg_rows(&self, r: &Reg) -> Result<Vec<(i64, i64)>, String> {
@@ -789,7 +852,7 @@ impl<'t, 'c> Index<'t, 'c> {
         let conn = self.t.conn();
         for (&(k, have), &want) in rows.iter().zip(&want) {
             if have != want {
-                self.dirt.entity(r.ekind, &r.ent);
+                self.dirt.register(r)?;
                 conn.prepare_cached(
                     "UPDATE reg_ix SET state = ?6 WHERE col = ?1 AND ekind = ?2 AND ent = ?3 AND key = ?4 AND k = ?5",
                 )
@@ -899,27 +962,10 @@ impl<'t, 'c> Index<'t, 'c> {
         }
         let mut writes = Vec::with_capacity(ks.len());
         for &k in ks {
-            let e = self
-                .t
-                .entry_by_key(k)?
-                .ok_or_else(|| format!("gen4 index: register row {k} has no op"))?;
-            let (wall, logical, deps) = match &e.body {
-                SlotBody::Op(op) => (op.hlc.wall, op.hlc.logical, op.deps.clone()),
-                SlotBody::Raw3(raw) => {
-                    let v = raw.to_v3();
-                    (v.hlc.wall, v.hlc.logical, v.deps)
-                }
-                _ => return Err(format!("gen4 index: register row {k} is not an op")),
-            };
-            let Some(Body4::Edit(ed)) = body_of(&e) else {
-                return Err(format!("gen4 index: register row {k} is not an edit"));
-            };
-            // 作者的完整上下文：依赖 + 自己之前的全部（协议 3 `Op::ctx`）。
-            let mut full = (*deps).clone();
-            full.set(e.id.device, e.id.seq - 1);
+            let (id, ed, wall, logical, full) = self.edit_write(k)?;
             writes.push(Write {
                 k,
-                id: e.id,
+                id,
                 ed,
                 wall,
                 logical,
@@ -1158,12 +1204,13 @@ impl<'t, 'c> Index<'t, 'c> {
         if std::mem::take(&mut self.salts_dirty) {
             self.settle_salts()?;
         }
-        let (rows, proven) = self.settle_aliases()?;
+        let (rows, proven, rebuilt) = self.settle_aliases()?;
         out.aliases = rows;
         out.aliases_proven = u64::from(proven);
+        out.aliases_rebuilt = u64::from(rebuilt);
         self.weigh_rest(false, trust, &mut out)?;
         let mut regs = std::mem::take(&mut self.regs);
-        self.dirt.registers(&regs);
+        self.dirt.registers(&regs)?;
         self.dirt.ids.extend(self.ents.iter().cloned());
         if out.closures > 0 || std::mem::take(&mut self.shrunk) {
             self.dirt.closure = true;

@@ -308,9 +308,10 @@ final class _TracedHost implements SrsSync2Host {
   Future<Map<String, Object?>> sync2IngestBatch(
     List<Uint8List> segments, {
     String? keyHex,
+    String? location,
   }) => _timed(
     'ingestBatch',
-    () => _inner.sync2IngestBatch(segments, keyHex: keyHex),
+    () => _inner.sync2IngestBatch(segments, keyHex: keyHex, location: location),
   );
 
   @override

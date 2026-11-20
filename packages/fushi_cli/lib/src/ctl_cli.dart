@@ -192,7 +192,14 @@ Future<int> runFushiCli(
     timeout: Duration(seconds: timeoutSeconds),
     starter: starter,
     pollInterval: pollInterval,
-    stateDir: resolveCtlStateDir(environment: env, operatingSystem: os),
+    // BUG-4862：与 app 侧（desktop_ctl_host.dart）同一套解析——FUSHI_CTL_DIR >
+    // <FUSHI_TEST_ROOT>/ctl > 平台默认。漏传 testRoot 时设了测试根的调用也会
+    // 打到用户的安装版（生产数据根）。
+    stateDir: resolveCtlStateDir(
+      environment: env,
+      operatingSystem: os,
+      testRoot: env['FUSHI_TEST_ROOT'],
+    ),
     groups: groups,
     parser: parser,
     readLine: readLine ?? _readStdinLine,

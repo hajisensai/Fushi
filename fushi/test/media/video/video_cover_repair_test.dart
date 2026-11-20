@@ -140,6 +140,60 @@ void main() {
     expect(rows.single.coverPath, equals(good));
   });
 
+  // video-17：目录外的封面（刮削写进 cover_path 的媒体目录 sidecar 海报，常在
+  // 网络盘上）不逐行 stat。自愈成立要「原路径不存在且 coversDir 有同名文件」，
+  // 后一半查目录快照即可；没有同名文件的行根本不碰原路径。
+  test('目录外封面在 coversDir 没有同名文件 → 不碰原路径（零文件系统调用）', () async {
+    (await AppPaths.videoCoversDirectory()).createSync(recursive: true);
+    final String sidecar = p.join(tmp.path, 'nas', 'Show', 'poster.jpg');
+    await db.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'video/Nas',
+        title: 'Nas',
+        videoPath: p.join(tmp.path, 'nas', 'Show', 'Show.mkv'),
+        coverPath: Value(sidecar),
+      ),
+    );
+    final _FileProbeRecorder probes = _FileProbeRecorder();
+
+    final List<VideoBookRow> rows = await IOOverrides.runWithIOOverrides(
+      () => VideoBookRepository(db).listForShelf(),
+      probes,
+    );
+
+    expect(rows.single.coverPath, equals(sidecar));
+    expect(
+      probes.paths,
+      isNot(contains(sidecar)),
+      reason: '没有同名文件就不可能自愈，原路径在不在都不该问',
+    );
+  });
+
+  test('目录外封面仍在、coversDir 恰有同名文件 → 不改写（原路径优先）', () async {
+    final Directory coversDir = await AppPaths.videoCoversDirectory()
+      ..createSync(recursive: true);
+    File(p.join(coversDir.path, 'poster.jpg')).writeAsBytesSync(<int>[1]);
+    final Directory show = Directory(p.join(tmp.path, 'nas', 'Show'))
+      ..createSync(recursive: true);
+    final String sidecar = p.join(show.path, 'poster.jpg');
+    File(sidecar).writeAsBytesSync(<int>[2]);
+    await db.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'video/Nas',
+        title: 'Nas',
+        videoPath: p.join(show.path, 'Show.mkv'),
+        coverPath: Value(sidecar),
+      ),
+    );
+
+    final List<VideoBookRow> rows = await VideoBookRepository(
+      db,
+    ).listForShelf();
+
+    expect(rows.single.coverPath, equals(sidecar));
+    expect((await db.allVideoBooks()).single.coverPath, equals(sidecar));
+  });
+
   test('cover_path 为 null → 原样返回不报错', () async {
     await db.upsertVideoBook(
       VideoBooksCompanion.insert(
@@ -154,4 +208,16 @@ void main() {
     ).listForShelf();
     expect(rows.single.coverPath, isNull);
   });
+}
+
+/// 记下被构造成 [File] 的路径：产品代码要对某个路径做任何存在性 / stat 判断，
+/// 都得先 `File(path)`。
+final class _FileProbeRecorder extends IOOverrides {
+  final List<String> paths = <String>[];
+
+  @override
+  File createFile(String path) {
+    paths.add(path);
+    return super.createFile(path);
+  }
 }

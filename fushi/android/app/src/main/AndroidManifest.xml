@@ -19,6 +19,9 @@
     <!-- 全局悬浮球的截屏 OCR（ScreenOcrService）：每次截屏都经系统确认框，
          只截一帧即停止投屏。 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
+    <!-- 跨应用语音缓存（CrossAppAudioService，拍板 oqk37s3QFL）：AudioPlaybackCapture 录其他
+         app 的播放声音，Android 11 起后台录音的前台服务要带 microphone 类型。 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <!-- Hibiki→Fushi 迁移完成后首页「卸载 Hibiki」按钮（MigrationChannelHandler
          requestUninstall）发 ACTION_DELETE。Android 9 起调用方必须持有这条权限，
@@ -26,6 +29,9 @@
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES"/>
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Android 16 Live Update：下载进度通知提升为实时通知（Pixel 胶囊 / ColorOS 流体云），
+         普通权限、安装即授予；见 DownloadLiveUpdate.kt。 -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <!-- 内置浏览器网页 getUserMedia（视频通话 / 扫码等）与配对扫码。运行时权限：
          网页申请且站点设置允许后才弹系统框，用户自己决定（web_browser_permissions.dart）。
@@ -285,6 +291,25 @@
             android:launchMode="singleTop"
             android:exported="false"
             android:configChanges="orientation|keyboardHidden|keyboard|navigation|screenSize|smallestScreenSize|screenLayout|density|uiMode"/>
+        <!-- 跨应用语音缓存（拍板 oqk37s3QFL）：AudioPlaybackCapture 循环录其他 app 的声音进
+             内存环（最近 60 秒），查词窗经 CrossAppAudioProvider 取查词那一刻之前的一段。 -->
+        <service android:name=".CrossAppAudioService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection|microphone"/>
+        <activity
+            android:name=".CrossAppAudioRequestActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:taskAffinity="app.fushi.reader.audiocapture"
+            android:excludeFromRecents="true"
+            android:autoRemoveFromRecents="true"
+            android:launchMode="singleTop"
+            android:exported="false"
+            android:configChanges="orientation|keyboardHidden|keyboard|navigation|screenSize|smallestScreenSize|screenLayout|density|uiMode"/>
+        <!-- 主进程里的同 uid 跨进程 RPC（:popup 查词窗取快照）；不导出。 -->
+        <provider
+            android:name=".CrossAppAudioProvider"
+            android:authorities="${applicationId}.cross_app_audio"
+            android:exported="false"/>
         <!-- 互联下载保活：下载进行期间的 dataSync 前台服务（进度通知），
              防止切到后台后进程被杀、下载随之中断。 -->
         <!-- 第二块屏（双屏掌机下屏 / 外接显示器）上的面板：唯一的副屏宿主，两种模式

@@ -34,11 +34,14 @@ import 'package:http/http.dart' as http;
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/media/video/media_server/media_server_search_match.dart';
+import 'package:fushi/src/sync/launch_item_detail_memo.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi_engine/media/tracking/remote_anime_link.dart'
     show RemoteAnimeEpisode;
 import 'package:fushi_engine/media/video/media_server/plex/plex_api.dart';
+import 'package:fushi_engine/media/video/media_server/plex/plex_tv_auth.dart'
+    show PlexConnection, firstReachablePlexConnection;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show
         RemoteVideoEmbeddedSubtitleTrack,
@@ -173,6 +176,38 @@ class PlexServerConfig implements MediaServerConfig {
     );
   }
 
+  /// 当前连接请求失败（[error]）之后，在已存的全部连接里重新挑线路
+  /// （gap-remote-7）：连接地址只在登录时探测过一次，换了网络（出门 / 回家 /
+  /// 局域网地址变了）之后，存下的那条一直不通，直到用户手动切换。
+  ///
+  /// 只有 [isPlexTransportFailure]（请求没到达服务器）才探测——服务器答了话
+  /// （非 2xx、条目不存在）说明这条连接是通的，换线路无济于事。各条连接按登录时
+  /// 排好的优先级（局域网 → 公网 → relay）同时探测，取排名最靠前的可达那条
+  /// （[firstReachablePlexConnection]）。[probe] 必须**不带凭据**核对 `/identity`
+  /// 的 machineIdentifier 是 [machineIdentifier]（`probePlexConnection` →
+  /// `verifyPlexServerIdentity`，签名里就没有 token）：探测本身不向任何候选地址
+  /// 发 token；别的服务器占了旧局域网地址时核对不通过、不会被选成当前线路，之后
+  /// 带 token 的请求也就不会发过去。
+  ///
+  /// 返回切到新线路后的配置（只改 [activeServerUrl]，不存任何新凭据）；不是传输
+  /// 失败、全部不通、或最靠前的可达线路就是当前这条时返回 null（调用方原样
+  /// 照旧报错）。写回与清单缓存失效由调用方做（`rerouteMediaServerAfterFailure`），
+  /// 切换发生在建新客户端之前——已建的客户端不换地址。
+  Future<PlexServerConfig?> rerouteAfterFailure(
+    Object error, {
+    required Future<bool> Function(String uri) probe,
+  }) async {
+    if (!isPlexTransportFailure(error)) return null;
+    final String? reachable = await firstReachablePlexConnection(
+      <PlexConnection>[
+        for (final String url in connections) PlexConnection(uri: url),
+      ],
+      probe,
+    );
+    if (reachable == null || reachable == effectiveServerUrl) return null;
+    return withActiveRoute(reachable);
+  }
+
   PlexVideoClient buildClient({http.Client? httpClient}) => PlexVideoClient(
     api: PlexApi(
       serverUrl: effectiveServerUrl,
@@ -199,6 +234,7 @@ class PlexVideoClient
         RemoteVideoPlaybackSession,
         RemoteVideoCollectionIsWork,
         RemoteVideoTrackingEpisodeFetch,
+        RemoteVideoClientConnections,
         MediaServerBrowser {
   PlexVideoClient({
     required this.api,
@@ -261,6 +297,15 @@ class PlexVideoClient
 
   @override
   RemoteVideoClient get playbackClient => this;
+
+  /// 一次起播内的条目详情短复用（[LaunchItemDetailMemo]）：重开入口的
+  /// [itemDetail]、取流、下默认字幕要的是同一份 `/library/metadata/{id}`。
+  /// [remoteVideoPosition] 要服务器最新断点，不走这里。
+  final LaunchItemDetailMemo<PlexMetadata> _launchDetail =
+      LaunchItemDetailMemo<PlexMetadata>();
+
+  Future<PlexMetadata> _launchMetadata(String id) =>
+      _launchDetail.reuseOrFetch(id, () => api.metadata(id));
 
   // ── PlexMetadata → MediaServerItem 纯函数投影 ─────────────────────────
 
@@ -639,8 +684,17 @@ class PlexVideoClient
   }
 
   @override
-  Future<MediaServerItem> itemDetail(String itemId) async {
-    final PlexMetadata m = await api.metadata(itemId);
+  Future<MediaServerItem> itemDetail(
+    String itemId, {
+    bool forLaunch = false,
+  }) async {
+    // 结果留给紧随其后的取流 / 取字幕复用，见 [_launchDetail]。失败只有重开入口
+    // 那一次（[forLaunch]）才留：详情页取详情失败后点播放，照常重新请求。
+    final PlexMetadata m = await _launchDetail.fetchAndRemember(
+      itemId,
+      () => api.metadata(itemId),
+      keepFailure: forLaunch,
+    );
     final MediaServerItemType? type = mediaServerTypeOf(m);
     if (type == null) {
       throw ArgumentError.value(
@@ -818,13 +872,16 @@ class PlexVideoClient
     Future<void>? cancelSignal,
   }) async {
     final PlexPart part = _requirePart(await api.metadata(id), id);
-    await api.downloadToFile(
+    // 原文件（download=1），可续传：断点键是条目 id，暂停 / 断网后从 `.part`
+    // 接着拉，不再删掉半截从 0 重下（BUG-4912）。
+    await api.downloadResumable(
       api.partUrl(part.key, download: true),
       dest,
+      resumeKey: 'plex:$id',
+      cancelledError: () => const RemoteDownloadCancelled(),
       onProgress: onProgress,
       onBytes: onBytes,
       cancelSignal: cancelSignal,
-      cancelledError: () => const RemoteDownloadCancelled(),
     );
   }
 
@@ -845,7 +902,7 @@ class PlexVideoClient
     int episodeIndex = 0,
   }) async {
     // 每一集都是独立条目，episodeIndex 恒 0。
-    final PlexMetadata m = await api.metadata(id);
+    final PlexMetadata m = await _launchMetadata(id);
     final PlexPart part = _requirePart(m, id);
     final int? duration = m.durationMs ?? m.media.firstOrNull?.durationMs;
     if (duration != null && duration > 0) _durations[id] = duration;
@@ -893,7 +950,7 @@ class PlexVideoClient
     int episodeIndex = 0,
     void Function(double progress)? onProgress,
   }) async {
-    final PlexMetadata m = await api.metadata(id);
+    final PlexMetadata m = await _launchMetadata(id);
     PlexStream? pick;
     if (embeddedStreamIndex == null) {
       pick = _defaultExternalSubtitle(m);
@@ -1003,5 +1060,6 @@ class PlexVideoClient
     }
   }
 
+  @override
   void close() => api.close();
 }

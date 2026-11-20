@@ -41,7 +41,8 @@ mixin _LocalLibraryHostDictionaries
   @override
   Future<void> importDictionary(File packageFile) async {
     await _runExclusive(() async {
-      // 同名覆盖会往既有词典目录里写 blobs.bin / hash.table，而这些文件正被引擎
+      // 同名覆盖会往既有词典目录里写记录文件与索引（blobs.bin / key.index 等），
+      // 而这些文件正被引擎
       // MapViewOfFile 映射着 —— Windows 拒绝以写方式打开，覆盖导入直接失败
       // （BUG-1756）。收尾的 _refreshDictionaryCache 会把引擎重新加载回来。
       //

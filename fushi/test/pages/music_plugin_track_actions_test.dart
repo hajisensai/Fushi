@@ -644,7 +644,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('本地曲目列表整行右键：播放 / 曲目详情；不加行尾「⋯」', (WidgetTester tester) async {
+  testWidgets('本地曲目列表整行右键：播放 / 曲目详情；行尾有「⋯」（触屏入口）', (WidgetTester tester) async {
     const MusicTrackRow track = MusicTrackRow(
       trackUid: 'lt1',
       path: '/m/local.flac',
@@ -667,7 +667,7 @@ void main() {
     );
     expect(
       find.byKey(const ValueKey<String>('music-track-menu-lt1')),
-      findsNothing,
+      findsOneWidget,
     );
     await rightClick(
       tester,
@@ -675,9 +675,84 @@ void main() {
     );
     expect(menuAction('play'), findsOneWidget);
     expect(menuAction('detail'), findsOneWidget);
+    // 纯音频没有「在视频播放器中观看」。
+    expect(menuAction('watchVideo'), findsNothing);
     await tester.tap(menuAction('play'));
     await tester.pumpAndSettle();
     expect(app.musicSession.engine.current?.title, 'Local One');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('本地 MV（曲库里的 mkv）：行上标 MV，菜单给「在视频播放器中观看」', (
+    WidgetTester tester,
+  ) async {
+    // 拍板台 jeNKF9u0WJ：音乐来源里的视频容器进曲库，标 MV，看画面交给视频播放页。
+    const MusicTrackRow track = MusicTrackRow(
+      trackUid: 'mv1',
+      path: '/m/Song MV.mkv',
+      title: 'Song MV',
+      artistCredit: 'Artist',
+      codec: 'unknown',
+      isLossless: false,
+      fileMtimeAt: 1,
+      fileSize: 1,
+      hasEmbeddedCover: false,
+      addedAt: 1,
+    );
+    await pumpHome(
+      tester,
+      const Scaffold(
+        body: MusicTrackList(
+          tracks: <MusicTrackRow>[track],
+          albums: <String, MusicAlbumRow>{},
+          context: MusicQueueContext.mixed,
+        ),
+      ),
+    );
+    expect(find.textContaining('Artist · MV'), findsOneWidget);
+    await rightClick(
+      tester,
+      find.byKey(const ValueKey<String>('music-track-mv1')),
+    );
+    expect(menuAction('play'), findsOneWidget);
+    expect(menuAction('watchVideo'), findsOneWidget);
+    expect(find.text('Watch in video player'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('网络来源的 MV（WebDAV 上的 mkv）：标 MV，但菜单不给「在视频播放器中观看」', (
+    WidgetTester tester,
+  ) async {
+    // 网络曲目的 path 是 URL，视频播放页没有本地文件可开：只放音轨，不给必然打不开的入口。
+    const MusicTrackRow track = MusicTrackRow(
+      trackUid: 'mvnet1',
+      path: 'https://dav.example/music/Song MV.mkv',
+      title: 'Net MV',
+      artistCredit: 'Artist',
+      codec: 'unknown',
+      isLossless: false,
+      fileMtimeAt: 1,
+      fileSize: 1,
+      hasEmbeddedCover: false,
+      addedAt: 1,
+    );
+    await pumpHome(
+      tester,
+      const Scaffold(
+        body: MusicTrackList(
+          tracks: <MusicTrackRow>[track],
+          albums: <String, MusicAlbumRow>{},
+          context: MusicQueueContext.mixed,
+        ),
+      ),
+    );
+    expect(find.textContaining('Artist · MV'), findsOneWidget);
+    await rightClick(
+      tester,
+      find.byKey(const ValueKey<String>('music-track-mvnet1')),
+    );
+    expect(menuAction('play'), findsOneWidget);
+    expect(menuAction('watchVideo'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 

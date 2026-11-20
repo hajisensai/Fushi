@@ -361,6 +361,34 @@ class _FakeLibraryService
 
 /// 不实现 [VideoPlaybackSyncHost] 的最小库服务——只为「老 host 能力探测负向」用例存在。
 /// playback 路由在触达任何库方法前先 `is` 探测能力 → 404，故其余成员留 noSuchMethod。
+/// 认 `clipaudio?discTitle=` 的库服务（远端原盘会话）。
+class _DiscTitleAudioLibraryService extends _FakeLibraryService
+    implements VideoDiscTitleAudioHost {
+  String? lastDiscTitle;
+  String? lastDiscTitleId;
+
+  @override
+  Future<File?> clipVideoDiscTitleAudio(
+    String id, {
+    required String discTitle,
+    required int startMs,
+    required int endMs,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    int audioChannels = 1,
+    String audioBitrate = '64k',
+  }) async {
+    lastDiscTitleId = id;
+    lastDiscTitle = discTitle;
+    lastClipStartMs = startMs;
+    lastClipEndMs = endMs;
+    lastClipAudioIndex = audioStreamIndex;
+    final Directory d = Directory.systemTemp.createTempSync('hbk_clip_disc');
+    return File('${d.path}/clip.aac')
+      ..writeAsBytesSync(_FakeLibraryService.clipBytes);
+  }
+}
+
 class _NoDelayCapabilityService implements FushiLibraryHostService {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
@@ -503,6 +531,96 @@ void main() {
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 404);
     c.close();
+  });
+
+  group('clipaudio?discTitle=（远端原盘会话按盘 + title 裁音频）', () {
+    Future<(int, Map<dynamic, dynamic>)> capabilities(String at) async {
+      final HttpClient c = HttpClient();
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$at/api/capabilities'),
+      );
+      req.headers.set('authorization', authHeader());
+      final HttpClientResponse res = await req.close();
+      final Map<String, dynamic> json =
+          jsonDecode(await res.transform(utf8.decoder).join())
+              as Map<String, dynamic>;
+      c.close();
+      return (res.statusCode, json['liveLibrary'] as Map<dynamic, dynamic>);
+    }
+
+    Future<int> get(String at, String query) async {
+      final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
+      final HttpClient c = HttpClient();
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$at/api/library/videos/$encodedId/clipaudio?$query'),
+      );
+      req.headers.set('authorization', authHeader());
+      final HttpClientResponse res = await req.close();
+      await res.drain<void>();
+      c.close();
+      return res.statusCode;
+    }
+
+    test('不实现的 host：能力位 false，带 discTitle 的请求 404、不退回按行裁', () async {
+      final (int code, Map<dynamic, dynamic> live) = await capabilities(base);
+      expect(code, 200);
+      expect(live[kVideoClipAudioDiscTitleCapability], isFalse);
+      expect(live[kVideoClipAudioDiscTitleAngleCapability], isFalse);
+      expect(live[kVideoClipAudioDiscTitleDvdCapability], isFalse);
+      expect(live[kVideoClipAudioDiscTitleDvdAngleCapability], isFalse);
+      expect(
+        await get(
+          base,
+          'startMs=0&endMs=1000&discTitle=BDMV/PLAYLIST/00005.mpls',
+        ),
+        404,
+      );
+      expect(lib.lastClipStartMs, isNull, reason: '不能照 <id> 那一行裁出别的 title');
+    });
+
+    test('实现的 host：能力位 true，discTitle 透传；与 episode 同给 → 400', () async {
+      final _DiscTitleAudioLibraryService disc =
+          _DiscTitleAudioLibraryService();
+      final FushiSyncServer discServer = FushiSyncServer(
+        syncDataDir: Directory.systemTemp.createTempSync('hbk_vid_disc').path,
+        port: 0,
+        token: token,
+        allowLan: false,
+        libraryService: disc,
+      );
+      await discServer.start();
+      try {
+        final String at = 'http://127.0.0.1:${discServer.port}';
+        final (int _, Map<dynamic, dynamic> live) = await capabilities(at);
+        expect(live[kVideoClipAudioDiscTitleCapability], isTrue);
+        expect(live[kVideoClipAudioDiscTitleAngleCapability], isTrue);
+        expect(live[kVideoClipAudioDiscTitleDvdCapability], isTrue);
+        expect(live[kVideoClipAudioDiscTitleDvdAngleCapability], isTrue);
+        expect(
+          await get(
+            at,
+            'startMs=0&endMs=90000&audioStreamIndex=1'
+            '&discTitle=BDMV/PLAYLIST/00005.mpls',
+          ),
+          200,
+        );
+        expect(disc.lastDiscTitleId, _FakeLibraryService.videoId);
+        expect(disc.lastDiscTitle, 'BDMV/PLAYLIST/00005.mpls');
+        expect(disc.lastClipEndMs, 90000);
+        expect(disc.lastClipAudioIndex, 1);
+        expect(disc.lastClipEpisode, isNull, reason: '没走按行裁的 clipVideoAudio');
+        expect(
+          await get(
+            at,
+            'startMs=0&endMs=1000&episode=1'
+            '&discTitle=BDMV/PLAYLIST/00005.mpls',
+          ),
+          400,
+        );
+      } finally {
+        await discServer.stop();
+      }
+    });
   });
 
   test('GET clipaudio 未鉴权 → 401（不在 /stream 豁免名单）', () async {

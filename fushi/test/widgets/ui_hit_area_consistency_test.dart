@@ -452,7 +452,19 @@ void main() {
     final Rect more = tester.getRect(find.byTooltip('more'));
     expect(back.width, moreOrLessEquals(back.height));
     expect(more.width, moreOrLessEquals(more.height));
-    expect(back.size, more.size, reason: '返回键与动作命中区同大');
+    // #3515 起二级页 FushiPageScaffold 默认也走这条页头：返回键保持被取代的
+    // AppBar BackButton 的 48×48 命中区（不缩到动作钮的 40），与动作同一行居中。
+    expect(
+      back.height,
+      greaterThanOrEqualTo(kMinInteractiveDimension),
+      reason: '返回键命中区不小于 48',
+    );
+    expect(back.height, greaterThanOrEqualTo(more.height));
+    expect(
+      back.center.dy,
+      moreOrLessEquals(more.center.dy, epsilon: 1),
+      reason: '返回键与动作同一行居中',
+    );
     final Rect title = tester.getRect(find.text('外观与交互'));
     expect(
       more.left - title.right,

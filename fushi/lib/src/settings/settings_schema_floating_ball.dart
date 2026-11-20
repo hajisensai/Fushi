@@ -13,6 +13,7 @@ import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ocr/screen_ocr_engine.dart';
@@ -23,6 +24,7 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 SettingsDestination buildFloatingBallDestination() {
   return SettingsDestination(
@@ -185,7 +187,9 @@ SettingsDestination buildFloatingBallDestination() {
             subtitle: t.screen_ocr_engine_hint,
             icon: FushiIcons.ocr,
             dropdown: true,
-            visible: (SettingsContext c) => isDesktopSystemBallPlatform,
+            // 决定 4BBSaB12zj：Android 悬浮球截屏识字同样跟随（以前固定 ML Kit）。
+            visible: (SettingsContext c) =>
+                isDesktopSystemBallPlatform || Platform.isAndroid,
             options: _screenOcrEngineOptions(null),
             optionsBuilder: _screenOcrEngineOptions,
             selected: (SettingsContext c) => _prefs(c).screenOcrEngine,
@@ -211,6 +215,7 @@ SettingsDestination buildFloatingBallDestination() {
           ),
         ],
       ),
+      _crossAppAudioSection(),
       for (final FloatingBallScope scope in FloatingBallScope.values)
         _buttonsSection(scope),
     ],
@@ -218,6 +223,58 @@ SettingsDestination buildFloatingBallDestination() {
 }
 
 PreferencesRepository _prefs(SettingsContext c) => c.appModel.prefsRepo;
+
+/// 跨应用语音挖掘（拍板 oqk37s3QFL）：Android 上缓存其他 app 的声音，应用外查词制卡时
+/// 带上查词前最后一句语音。开关的值是原生采集服务此刻在不在录（不持久化：每次开都要
+/// 用户重新同意屏幕共享，系统不允许复用授权）；服务在别处被停（通知栏「停止」、系统
+/// 收回共享）时经 [SettingsSection.liveListenable] 刷新。只能用户自己拨：打开会弹
+/// 系统授权框，AI 不该代按。
+SettingsSection _crossAppAudioSection() {
+  final CrossAppAudioCapture capture = CrossAppAudioCapture.instance;
+  return SettingsSection(
+    id: 'floating_ball.section.app_audio',
+    title: t.mining_app_audio_section,
+    visible: (SettingsContext c) => capture.platformAvailable,
+    liveListenable: (SettingsContext c) => capture.running,
+    items: <SettingsItem>[
+      SettingsSwitchItem(
+        id: 'floating_ball.app_audio_capture',
+        title: t.mining_app_audio_capture,
+        subtitle: t.mining_app_audio_capture_hint,
+        icon: FushiIcons.voice,
+        userOnly: true,
+        value: (SettingsContext c) => capture.running.value,
+        onChanged: (SettingsContext c, bool value) async {
+          if (!value) {
+            await capture.stop();
+            c.refresh();
+            return;
+          }
+          final CrossAppAudioStartResult result = await capture.start(
+            labels: <String, String>{
+              'notification': t.mining_app_audio_notification,
+              'stop': t.mining_app_audio_stop,
+            },
+          );
+          if (!result.running) {
+            FushiToast.show(
+              msg: crossAppAudioStartErrorText(result.error),
+              severity: ToastSeverity.warning,
+            );
+          }
+          c.refresh();
+        },
+      ),
+    ],
+  );
+}
+
+/// [CrossAppAudioCapture.start] 失败原因码 → 提示文案。
+String crossAppAudioStartErrorText(String? error) => switch (error) {
+  'unsupported' => t.mining_app_audio_unsupported,
+  'denied' => t.mining_app_audio_denied,
+  _ => t.mining_app_audio_failed,
+};
 
 /// 截屏识字引擎的选项：「跟随全局（当前全局引擎）」+ 本机模型 / 设备自带（只在有系统
 /// OCR 的平台）/ Google Lens。[c] 为 null（静态值域，恢复默认的标签查找用）时跟随项
@@ -349,7 +406,7 @@ bool _scopeVisible(SettingsContext c, FloatingBallScope scope) {
 }
 
 /// 全局按钮按平台与场景能力出现（截屏识字 / 拍照查词只有 Android / iOS；桌面
-/// 应用外球另有一套、并受查词模块开关约束，见
+/// 应用外球另有一套，「打开查词页」受查词模块开关约束，见
 /// [FloatingBallGlobalAction.availableIn]）；专属按钮恒可配。
 bool _buttonAvailable(SettingsContext c, FloatingBallScope scope, String id) {
   final FloatingBallGlobalAction? global = FloatingBallGlobalAction.fromStorage(

@@ -374,6 +374,7 @@ SrsDeckView _deckView(SrsEntitySource s, Map<String, Object?> r) {
     newPerDay: v['np']! as int,
     reviewsPerDay: v['rp']! as int,
     limitUnit: SrsLimitUnit.fromWire(v['lu'] as String?),
+    limitUnitSet: v['lu'] is String,
     learnSteps: _steps(v['ls'], SrsDeckView.defaultLearnSteps),
     relearnSteps: _steps(v['rs'], SrsDeckView.defaultRelearnSteps),
     learnStepsSet: v['ls'] is List,

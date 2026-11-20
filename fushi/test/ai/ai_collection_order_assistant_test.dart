@@ -208,6 +208,41 @@ void main() {
       );
     });
 
+    test('书：按话合集「第N話 前編 [hash]」规则已能定序，不算歧义（不发请求）', () {
+      // rT5chqFYOK：BookSeriesGrouper 新建的按话合集会被 scheduleAutomatic-
+      // CollectionAiOrder 送来；只读卷号时全部成员「多本无卷号」+「前編」标记，
+      // 每建一个合集都多发一次 AI 请求。位置判据须与 BookSeriesOrder 一致。
+      final List<AiCollectionOrderMember> members = <AiCollectionOrderMember>[
+        _book('十歳の最強魔導師 第1話 前編 [c36675f0]'),
+        _book('十歳の最強魔導師 第1話 中編 [11111111]'),
+        _book('十歳の最強魔導師 第1話 後編 [22222222]'),
+        _book('十歳の最強魔導師 第2話 前編 [0af1bc64]'),
+        _book('十歳の最強魔導師 第12話 前編 [64b6baac]'),
+      ];
+      expect(
+        collectionOrderAmbiguousIndices(members, AiCollectionOrderKind.book),
+        isEmpty,
+      );
+    });
+
+    test('书：按话合集里两本同话同分段仍判不出；没解析成话号的「前編」照旧判不出', () {
+      expect(
+        collectionOrderAmbiguousIndices(<AiCollectionOrderMember>[
+          _book('物語 第1話 前編'),
+          _book('物語 第1話 前編 [c36675f0]'),
+          _book('物語 第2話'),
+        ], AiCollectionOrderKind.book),
+        <int>{0, 1},
+      );
+      expect(
+        collectionOrderAmbiguousIndices(<AiCollectionOrderMember>[
+          _book('物語 1'),
+          _book('物語 前編'),
+        ], AiCollectionOrderKind.book),
+        <int>{1},
+      );
+    });
+
     test('成员不足两个不算歧义', () {
       expect(
         collectionOrderAmbiguousIndices(<AiCollectionOrderMember>[
@@ -240,6 +275,19 @@ void main() {
       1,
       0,
     ]);
+    // 按话：话号 → 前 / 中 / 後編（只按书名 natural 会把「中編」U+4E2D 排到
+    // 「前編」U+524D 前面）。
+    final List<AiCollectionOrderMember> episodes = <AiCollectionOrderMember>[
+      _book('魔導師 第12話 前編'),
+      _book('魔導師 第1話 中編'),
+      _book('魔導師 第2話 前編'),
+      _book('魔導師 第1話 後編'),
+      _book('魔導師 第1話 前編'),
+    ];
+    expect(
+      ruleOrderCollectionMembers(episodes, AiCollectionOrderKind.book),
+      <int>[4, 1, 3, 2, 0],
+    );
   });
 
   group('parseAiCollectionOrder', () {

@@ -8,14 +8,13 @@ import 'package:fushi/src/utils/components/fushi_header_search.dart'
     show fushiVisibleHeaderSearch;
 import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
-    show fushiNotificationFromVisibleSubtree;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
     show
         FushiMastheadPalette,
@@ -250,7 +249,8 @@ class MediaLibraryShell extends StatefulWidget {
   State<MediaLibraryShell> createState() => _MediaLibraryShellState();
 }
 
-class _MediaLibraryShellState extends State<MediaLibraryShell> {
+class _MediaLibraryShellState extends State<MediaLibraryShell>
+    with SingleTickerProviderStateMixin {
   int _currentIndex = 0;
 
   /// 每个一级分组上次停留的视图：点组页签回到组内上次的位置。
@@ -270,23 +270,79 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
     debugLabel: 'media-library-sections',
   );
 
-  /// 浮动工具栏的显隐（滚动驱动）。
-  final FushiFloatingChromeController _chrome = FushiFloatingChromeController();
+  /// 每个视图**各自一份**浮动工具栏状态（显隐、页头大字的折叠进度、内容是否
+  /// 滚到工具区底下），按视图种类存（BUG-4897）。
+  ///
+  /// 视图是保活的，各自的滚动位置切走再切回原样还在；工具栏状态若全壳共用一份，
+  /// 切视图时只能「重置成顶部」——于是切回一个滚到中段的书架，第一帧是展开的
+  /// 大号页头压在按旧滚动位置画的内容上，等内容发来版面通知才缩回小号（录屏里
+  /// 那一帧）。现在作用域里挂的是**当前视图自己的** controller，切换即换成该视图
+  /// 停下时的那份状态，与它的滚动位置天然一致，没有「先错后纠」的帧。
+  ///
+  /// 种类集合是有限枚举，controller 只在壳卸载时统一释放（视图下线后留着的那一
+  /// 份可能还被本帧的作用域引用，不在中途释放）。
+  final Map<MediaLibraryViewKind, FushiFloatingChromeController> _chromes =
+      <MediaLibraryViewKind, FushiFloatingChromeController>{};
+
+  FushiFloatingChromeController _chromeFor(MediaLibraryViewKind kind) =>
+      _chromes.putIfAbsent(kind, FushiFloatingChromeController.new);
+
+  /// 已构建的视图内容，按种类缓存（BUG-4897：切换点下去约 0.5 秒才动）。
+  ///
+  /// 切视图只是壳自己 setState；以前每次都把**所有**访问过的保活视图重新调一遍
+  /// builder、生成新的页面 widget——书架（整页卡片墙）和在线视图都整页重建，
+  /// 切换那一帧被拖得很长。视图内容并不依赖「当前选中哪个视图」（可见性经
+  /// [SectionVisibilityScope] / [TickerMode] 下发），所以同一份 widget 实例原样
+  /// 复用，Flutter 对同一实例直接跳过重建。外部输入变了（父级换了一组视图声明 /
+  /// 壳依赖的继承数据变了）才作废重建。
+  final Map<MediaLibraryViewKind, Widget> _viewCache =
+      <MediaLibraryViewKind, Widget>{};
+
+  /// 切视图的交叉淡入：新视图从透明淡入、刚离开的视图同步淡出，不硬切（设计稿
+  /// #manga C2）。减弱动效下时长归零，直接切。
+  late final AnimationController _switchFade = AnimationController(
+    vsync: this,
+    value: 1,
+  )..addStatusListener(_onSwitchFadeStatus);
+  late final Animation<double> _switchOpacity = CurvedAnimation(
+    parent: _switchFade,
+    curve: FushiMotion.enter,
+  );
+  late final Animation<double> _leavingOpacity = ReverseAnimation(
+    _switchOpacity,
+  );
+
+  /// 交叉淡入期间正在淡出的上一个视图下标；淡入结束（或没有过渡）时为 null。
+  ///
+  /// 它在过渡期间仍在台上（不 [Offstage]）好画出淡出，但与其它非当前视图一样
+  /// 不收指针、不进焦点遍历、不出语义、不跑动画、不收 drop（判据都是
+  /// `i == _currentIndex`），只是一张正在褪去的画面。
+  int? _leavingIndex;
+
+  void _onSwitchFadeStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed || _leavingIndex == null) return;
+    if (!mounted) return;
+    setState(() => _leavingIndex = null);
+  }
 
   /// 视图页头登记动作的槽：由浮动动作组画出（见类注释）。
   final FushiShellActionsSlot _actionsSlot = FushiShellActionsSlot();
 
   @override
-  void dispose() {
-    _chrome.dispose();
-    _actionsSlot.dispose();
-    super.dispose();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // builder 以壳的 context 构建，读到的继承数据变了就得重建视图。
+    _viewCache.clear();
   }
 
-  bool _onScroll(ScrollNotification notification) {
-    // 隐藏的保活视图后台加载 / 横滚卡片行发来的通知不算（后者 controller 内按轴过滤）。
-    if (!fushiNotificationFromVisibleSubtree(notification)) return false;
-    return _chrome.handleScrollNotification(notification);
+  @override
+  void dispose() {
+    for (final FushiFloatingChromeController chrome in _chromes.values) {
+      chrome.dispose();
+    }
+    _switchFade.dispose();
+    _actionsSlot.dispose();
+    super.dispose();
   }
 
   void _select(MediaLibraryViewKind kind) {
@@ -302,10 +358,21 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
       Navigator.of(context).popUntil((Route<dynamic> above) => above == route);
     }
     if (index == _currentIndex) return;
-    // 换了视图，新页面从顶部开始：工具栏回来。
-    _chrome.resetToTop();
+    // 目标视图沿用它自己的折叠进度 / 遮罩状态（与它保留的滚动位置一致）；只把
+    // 工具栏亮出来——用户刚在工具栏上点了切换，不能一切过去页签就滑走。
+    _chromeFor(kind).show();
+    final Duration fade = fushiMotionDuration(context, FushiMotion.short);
+    final int previousIndex = _currentIndex;
+    if (fade == Duration.zero) {
+      _switchFade.value = 1;
+    } else {
+      _switchFade
+        ..duration = fade
+        ..forward(from: 0);
+    }
     final MediaLibraryViewKind previous = widget.views[_currentIndex].kind;
     setState(() {
+      _leavingIndex = fade == Duration.zero ? null : previousIndex;
       _currentIndex = index;
       _visited.add(index);
       final LibrarySectionGroup? group = librarySectionGroupOf(kind);
@@ -320,6 +387,8 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
   @override
   void didUpdateWidget(MediaLibraryShell oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // 父级重建 = 新的一组视图声明（builder 闭包捕获的数据可能变了）。
+    _viewCache.clear();
     final List<MediaLibraryViewKind> oldKinds = <MediaLibraryViewKind>[
       for (final MediaLibraryViewSpec spec in oldWidget.views) spec.kind,
     ];
@@ -327,6 +396,8 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
       for (final MediaLibraryViewSpec spec in widget.views) spec.kind,
     ];
     if (!listEquals(oldKinds, newKinds)) {
+      // 淡出中的视图按下标记，视图集合一变下标就不可信：直接收掉这张淡出画面。
+      _leavingIndex = null;
       // 视图集合变了（在线源下线、Audiobookshelf 登录 / 登出）：选中项和「访问过」
       // 的保活集合都是下标，下标会随中间那一项的出现 / 消失整体错位，必须按 kind
       // 重新定位到新列表里。
@@ -357,6 +428,7 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
     }
     // 视图集合变短（例如某域的在线源被下线）时把选中项拉回合法范围。
     if (_currentIndex >= widget.views.length) {
+      _leavingIndex = null;
       _currentIndex = 0;
       _visited
         ..clear()
@@ -399,7 +471,8 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
                 // 按视图种类认身份：保活视图按下标排，中间冒出新视图（如媒体
                 // 服务器）时不带 key 会让后面已保活的视图错位重建、丢 State。
                 key: ValueKey<MediaLibraryViewKind>(views[i].kind),
-                offstage: i != _currentIndex,
+                // 交叉淡入期间刚离开的视图留在台上画淡出（见 [_leavingIndex]）。
+                offstage: i != _currentIndex && i != _leavingIndex,
                 child: TickerMode(
                   enabled: i == _currentIndex,
                   // [Offstage] 只关 Flutter 自己的 hitTest；desktop_drop 是进程级
@@ -419,10 +492,26 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
                       // 每个保活视图自己的主滚动控制器：共用 tab 外壳那一个会让
                       // 多个主滚动视图附着同一控制器、Scrollbar 断言。
                       child: SectionPrimaryScrollScope(
-                        child: _insetFor(
-                          views[i],
-                          // 页签由壳的浮动工具栏画出，视图页头的主位留空。
-                          views[i].builder(context, const SizedBox.shrink()),
+                        child: FadeTransition(
+                          // 交叉淡入：当前视图淡入、刚离开的视图淡出；其余恒不
+                          // 透明（隐藏着也不画）。
+                          opacity: i == _currentIndex
+                              ? _switchOpacity
+                              : i == _leavingIndex
+                              ? _leavingOpacity
+                              : kAlwaysCompleteAnimation,
+                          // 非当前视图不收指针、不出语义：淡出中的那一张虽在台上，
+                          // 也只是褪去的画面（隐藏的保活视图本就被 Offstage 挡住）。
+                          child: IgnorePointer(
+                            ignoring: i != _currentIndex,
+                            child: ExcludeSemantics(
+                              excluding: i != _currentIndex,
+                              child: _chromeFeed(
+                                _chromeFor(views[i].kind),
+                                _viewFor(views[i]),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -445,7 +534,8 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
           // （焦点在页签、动作或内容上都认）。
           resolve: () => fushiVisibleHeaderSearch(_actionsSlot),
           child: FushiFloatingChromeScope(
-            controller: _chrome,
+            // 当前视图自己的工具栏状态（见 [_chromes]）。
+            controller: _chromeFor(views[_currentIndex].kind),
             // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（滚轮上下「回弹、
             // 滚不动」的根因是收起改了视口高度，BUG-2975，见
             // [FushiFloatingChromeOverlay]）。
@@ -467,19 +557,17 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
                 // 页头大字顶栏里二级页签由大字行画（放得下与页名同一行）。
                 secondary: _buildSubTabs(views),
               ),
-              child: NotificationListener<ScrollNotification>(
-                onNotification: _onScroll,
-                // 二级胶囊行叠在页面上、与顶栏同一份显隐（嵌套的
-                // [FushiFloatingChromeOverlay] 读同一个作用域，视图的顶部让位
-                // 自动累加两行）；当前组只有一个视图（或在导入页）时不占高度。
-                child: FushiFloatingChromeOverlay(
-                  // 二级下划线页签贴着顶栏，不再隔 8（见 nestedGap）。
-                  nestedGap: 0,
-                  opaqueChrome: true,
-                  masthead: true,
-                  chrome: _buildSubNavigation(context, views),
-                  child: sections,
-                ),
+              // 二级胶囊行叠在页面上、与顶栏同一份显隐（嵌套的
+              // [FushiFloatingChromeOverlay] 读同一个作用域，视图的顶部让位
+              // 自动累加两行）；当前组只有一个视图（或在导入页）时不占高度。
+              // 滚动通知由各视图自己那一层喂给各自的 controller（[_chromeFeed]）。
+              child: FushiFloatingChromeOverlay(
+                // 二级下划线页签贴着顶栏，不再隔 8（见 nestedGap）。
+                nestedGap: 0,
+                opaqueChrome: true,
+                masthead: true,
+                chrome: _buildSubNavigation(context, views),
+                child: sections,
               ),
             ),
           ),
@@ -487,6 +575,25 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
       ),
     );
   }
+
+  /// [spec] 的视图内容（按种类缓存，见 [_viewCache]）。页签由壳的浮动工具栏
+  /// 画出，视图页头的主位留空。
+  Widget _viewFor(MediaLibraryViewSpec spec) => _viewCache[spec.kind] ??=
+      _insetFor(spec, spec.builder(context, const SizedBox.shrink()));
+
+  /// 把视图自己的滚动通知喂给它自己的 [chrome]（见 [_chromes]）。
+  ///
+  /// 隐藏的保活视图（后台加载把列表撑长 / 夹短）也照样更新自己那一份——那本来
+  /// 就是它的状态，切回来时折叠进度与内容位置一致；它不在作用域里，影响不到
+  /// 当前视图的工具栏。横滚卡片行的通知由 controller 按轴过滤。
+  Widget _chromeFeed(FushiFloatingChromeController chrome, Widget child) =>
+      NotificationListener<ScrollNotification>(
+        onNotification: chrome.handleScrollNotification,
+        child: NotificationListener<ScrollMetricsNotification>(
+          onNotification: chrome.handleScrollMetricsNotification,
+          child: child,
+        ),
+      );
 
   /// 不自己处理工具栏让位的视图整体下移工具栏高度（见
   /// [MediaLibraryViewSpec.handlesChromeInset]）。

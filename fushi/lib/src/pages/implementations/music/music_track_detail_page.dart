@@ -10,6 +10,8 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart';
+import 'package:fushi/src/media/links/media_link_inference_host.dart'
+    show mediaLinkInferCallback;
 import 'package:fushi/src/media/links/media_link_opener.dart';
 import 'package:fushi/src/media/links/media_links_section.dart';
 import 'package:fushi/src/media/links/theme_song/theme_song_detector.dart';
@@ -434,6 +436,11 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
             openMediaLinkEntry(context: context, ref: ref, entry: e),
         searchActionFor: (MediaLinkKind k) =>
             mediaLinkSearchAction(context: context, ref: ref, kind: k),
+        // 「查找相关作品」：曲目 → 动画合集 / 游戏（本机刮削数据与声纹缓存）。
+        onInfer: mediaLinkInferCallback(
+          ref: ref,
+          self: (kind: MediaLinkKind.musicTrack, key: track.trackUid),
+        ),
       ),
     ];
     final double heroGap = musicDetailHeroGap(context, tokens.spacing.gap);

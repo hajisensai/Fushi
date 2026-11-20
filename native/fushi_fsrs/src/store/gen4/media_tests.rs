@@ -292,7 +292,7 @@ fn recording_writes_only_changes_that_would_win() {
     assert_eq!(a.dump(), before);
 }
 
-/// 发：清单验得过、文件名走真实解析器；代号压过水位与位置上已有的；签名钥匙与本机记录不符时拒。
+/// 发：清单验得过、文件名走真实解析器；代号压过本机已发出的与位置上已有的；签名钥匙与本机记录不符时拒。
 #[test]
 fn building_signs_a_manifest_readers_accept() {
     let a = Dev::new(0xa1, &[]);
@@ -393,7 +393,7 @@ fn publishing_clears_only_what_was_shipped() {
     assert_eq!(mark_published(&t1, col, LOC, &b.manifest).unwrap(), 1);
     assert_eq!(pending_count(&t1, col).unwrap(), 1);
     assert_eq!(mark_published(&t1, col, LOC, &b.manifest).unwrap(), 0);
-    assert_eq!(watermark(&t2, col, LOC, &id(0xa1)).unwrap(), 1);
+    assert_eq!(seen_gens(&t2, col, LOC, &id(0xa1)).unwrap(), vec![1]);
     let next = build(&t2, col, LOC, marker(), id(0xa1), &key_of(0xa1), &[])
         .unwrap()
         .unwrap();
@@ -431,7 +431,7 @@ fn a_crash_after_upload_heals_from_the_location() {
     );
     assert_eq!(a.pending(), 0);
     assert_eq!(a.build(&[1]), None);
-    assert_eq!(watermark(&a.t(), a.col, LOC, &id(0xa1)).unwrap(), 1);
+    assert_eq!(seen_gens(&a.t(), a.col, LOC, &id(0xa1)).unwrap(), vec![1]);
 }
 
 /// 两台设备经清单对齐；「不在」压过更早的「在」（D18，不取并集）；收到的最大 HLC 交给调用方吸收。
@@ -524,7 +524,7 @@ fn ingest_order_does_not_matter() {
     assert!(k.seeded);
 }
 
-/// 收的失败路径：每一种都不写、不推进水位；公钥 / 信任补上之后同一份照收。
+/// 收的失败路径：每一种都不写、不记代号；公钥 / 信任补上之后同一份照收。
 #[test]
 fn ingest_refuses_what_it_cannot_trust_and_writes_nothing() {
     let a = Dev::new(0xa1, &[]);
@@ -607,7 +607,10 @@ fn ingest_refuses_what_it_cannot_trust_and_writes_nothing() {
         Err(IngestError::Manifest(_))
     ));
     assert_eq!(r.dump(), vec![]);
-    assert_eq!(watermark(&r.t(), r.col, LOC, &dev).unwrap(), 0);
+    assert_eq!(
+        seen_gens(&r.t(), r.col, LOC, &dev).unwrap(),
+        Vec::<u64>::new()
+    );
     assert!(!r.known().seeded);
     assert_eq!(
         go(&markers(), &dev, gen, &tag, &ma.bytes).map(|g| g.applied),
@@ -630,9 +633,10 @@ fn ingest_refuses_what_it_cannot_trust_and_writes_nothing() {
     );
 }
 
-/// 水位：不大于水位的整份跳过；pending_gens 只给要收的、升序去重。
+/// 已收集合：按代号记、不是水位。pending_gens 给列出了但没收过的（升序去重），并把集合裁到本轮列举；收过的整份跳过；
+/// 比已收的小的代号照样收（列举滞后时它晚出现）。
 #[test]
-fn the_watermark_skips_what_was_already_taken() {
+fn seen_gens_are_a_set_not_a_watermark() {
     let a = Dev::new(0xa1, &[]);
     let r = Dev::new(0xee, &[0xa1]);
     a.record(&[(sha(1), MediaState::Present)], false, 100);
@@ -648,18 +652,78 @@ fn the_watermark_skips_what_was_already_taken() {
     r.ingest(&m2).unwrap();
     assert_eq!(
         pending_gens(&r.t(), r.col, LOC, &id(0xa1), &[1, 2, 3]).unwrap(),
-        vec![3]
+        vec![1, 3],
+        "a smaller gen not yet taken is still pending"
     );
     let got = r.ingest(&m1).unwrap();
-    assert!(got.already);
-    assert_eq!(got.applied, 0);
+    assert!(!got.already);
+    assert_eq!(got.applied, 1);
+    assert_eq!(r.known().present, vec![sha(1), sha(2)]);
+    let again = r.ingest(&m1).unwrap();
+    assert!(again.already);
+    assert_eq!(again.applied, 0);
     assert_eq!(
-        r.known().present,
-        vec![sha(2)],
-        "skipped gen 1 was not read"
+        seen_gens(&r.t(), r.col, LOC, &id(0xa1)).unwrap(),
+        vec![1, 2]
     );
-    // 水位是按位置分开的。
-    assert_eq!(watermark(&r.t(), r.col, "loc-b", &id(0xa1)).unwrap(), 0);
+    // 裁剪：gen 1 被压缩回收删掉、不在本轮列举里，出集合；之后又列出来（列举滞后裁错了）就重收一份，幂等。
+    assert_eq!(
+        pending_gens(&r.t(), r.col, LOC, &id(0xa1), &[2]).unwrap(),
+        Vec::<u64>::new()
+    );
+    assert_eq!(seen_gens(&r.t(), r.col, LOC, &id(0xa1)).unwrap(), vec![2]);
+    assert_eq!(
+        pending_gens(&r.t(), r.col, LOC, &id(0xa1), &[1, 2]).unwrap(),
+        vec![1]
+    );
+    let re = r.ingest(&m1).unwrap();
+    assert_eq!((re.already, re.applied, re.covered), (false, 0, 1));
+    assert_eq!(r.known().present, vec![sha(1), sha(2)]);
+    // 集合是按位置分开的。
+    assert_eq!(
+        seen_gens(&r.t(), r.col, "loc-b", &id(0xa1)).unwrap(),
+        Vec::<u64>::new()
+    );
+}
+
+/// 列目录滞后 + 代号空洞：作者先后发了 gen 5（X 不在）和 gen 6，读者第一轮只列到 gen 6、第二轮才列到 gen 5。
+/// gen 5 不能因为「比已收的 6 小」被永久跳过——否则读者一直以为 X 还在，再也不传（D18 不取并集要防的就是这个）。
+#[test]
+fn a_lagged_gen_below_a_taken_one_is_still_ingested() {
+    let a = Dev::new(0xa1, &[]);
+    let r = Dev::new(0xee, &[0xa1]);
+    a.record(&[(sha(1), MediaState::Present)], false, 100);
+    let m1 = a.build(&[]).unwrap();
+    mark_published(&a.t(), a.col, LOC, &m1.manifest).unwrap();
+    // gen 2..4 烧掉了（上传失败 / 崩溃），位置上没有。
+    a.record(&[(sha(1), MediaState::Absent)], false, 200);
+    let m5 = a.build(&[4]).unwrap();
+    assert_eq!(m5.manifest.gen, 5);
+    mark_published(&a.t(), a.col, LOC, &m5.manifest).unwrap();
+    a.record(&[(sha(2), MediaState::Present)], false, 300);
+    let m6 = a.build(&[]).unwrap();
+    assert_eq!(m6.manifest.gen, 6);
+    mark_published(&a.t(), a.col, LOC, &m6.manifest).unwrap();
+    assert_eq!(a.pending(), 0, "the author has nothing left to resend");
+    // 第一轮：gen 5 还没列出来。
+    assert_eq!(
+        pending_gens(&r.t(), r.col, LOC, &id(0xa1), &[1, 6]).unwrap(),
+        vec![1, 6]
+    );
+    r.ingest(&m1).unwrap();
+    r.ingest(&m6).unwrap();
+    assert_eq!(r.known().present, vec![sha(1), sha(2)]);
+    // 第二轮：gen 5 出现了。
+    assert_eq!(
+        pending_gens(&r.t(), r.col, LOC, &id(0xa1), &[1, 5, 6]).unwrap(),
+        vec![5]
+    );
+    let got = r.ingest(&m5).unwrap();
+    assert!(!got.already, "the lagged gen is read, not skipped");
+    assert_eq!(got.applied, 1);
+    let k = r.known();
+    assert_eq!(k.absent, vec![sha(1)]);
+    assert_eq!(k.present, vec![sha(2)]);
 }
 
 /// 事务边界：外层事务回滚时，记下 / 收进来 / 标记发出的都一起回滚。
@@ -690,7 +754,10 @@ fn writes_roll_back_with_the_enclosing_transaction() {
         .unwrap_err();
     assert_eq!(e, "boom");
     assert_eq!(r.dump(), vec![]);
-    assert_eq!(watermark(&r.t(), r.col, LOC, &id(0xa1)).unwrap(), 0);
+    assert_eq!(
+        seen_gens(&r.t(), r.col, LOC, &id(0xa1)).unwrap(),
+        Vec::<u64>::new()
+    );
     assert!(!r.known().seeded);
     // 回滚之后照常可写（没有毒化会话）。
     assert_eq!(r.ingest(&m).unwrap().applied, 1);
@@ -846,7 +913,7 @@ fn seeding_from_protocol_3_carries_content_facts_and_listings() {
     assert_eq!(n.known(), a.known());
 }
 
-/// 丢缓存：只丢这个位置（前缀相同、带 `/` 的位置不受影响），水位归零。
+/// 丢缓存：只丢这个位置（前缀相同、带 `/` 的位置不受影响），已收集合清空。
 #[test]
 fn forgetting_a_location_resets_only_that_location() {
     let a = Dev::new(0xa1, &[0xb2]);
@@ -880,7 +947,10 @@ fn forgetting_a_location_resets_only_that_location() {
         known(&a.t(), a.col, LOC, SEALED).unwrap(),
         MediaKnown::default()
     );
-    assert_eq!(watermark(&a.t(), a.col, LOC, &id(0xb2)).unwrap(), 0);
+    assert_eq!(
+        seen_gens(&a.t(), a.col, LOC, &id(0xb2)).unwrap(),
+        Vec::<u64>::new()
+    );
     let kept = known(&a.t(), a.col, "loc-a/x", PLAIN_FOLDER).unwrap();
     assert!(kept.seeded);
     assert_eq!(kept.present, vec![sha(4)]);
@@ -926,7 +996,7 @@ fn compaction_is_an_upper_bound_of_its_parts() {
     assert_eq!(r1.dump(), r2.dump());
     assert_eq!(r1.known(), r2.known());
     assert!(r2.known().seeded);
-    // 读者已收过增量（水位 3）也照收合并件（4 > 3），不变。
+    // 读者已收过增量（1～3）也照收合并件（4 没收过），不变。
     assert_eq!(r1.ingest(&packed).unwrap().applied, 0);
     assert!(compact(&parts, marker(), 3).is_err());
     assert!(compact(&[], marker(), 9).is_err());
@@ -1139,9 +1209,12 @@ fn a_gen_is_never_reused_even_when_the_listing_lags() {
         3,
         "an empty build reserved nothing"
     );
-    // 换根 / 从头对账：水位清了，预留不清。
+    // 换根 / 从头对账：已收集合清了，预留不清。
     forget(&a.t(), a.col, LOC).unwrap();
-    assert_eq!(watermark(&a.t(), a.col, LOC, &id(0xa1)).unwrap(), 0);
+    assert_eq!(
+        seen_gens(&a.t(), a.col, LOC, &id(0xa1)).unwrap(),
+        Vec::<u64>::new()
+    );
     a.record(&[(sha(3), MediaState::Present)], false, 300);
     assert_eq!(a.build(&[]).unwrap().manifest.gen, 4);
     // 位置上列出更大的代号（别的副本 / 旧库发的）：照样压过。

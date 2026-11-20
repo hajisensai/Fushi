@@ -4,6 +4,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi_engine/media/collections/shelf_sort.dart';
+import 'package:fushi/src/media/tags/tag_drag_handle.dart';
 import 'package:fushi/src/media/tags/tag_chips.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/pages/implementations/tag_management_page.dart';
@@ -288,17 +289,18 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
               onTap: () => widget.onToggleFilter(tag.id),
             );
           }
-          return LongPressDraggable<BookTagRow>(
+          final Widget dragFeedback = FushiReorderDragProxy(
+            transparent: true,
+            borderRadius: tokens.radii.chipRadius,
+            child: _tagFilterChip(tag: tag, isSelected: true, isDimmed: false),
+          );
+          // BUG-4899：chip 左侧的「⋮⋮」柄是即时 Draggable——鼠标精确指针 hit slop
+          // 只有 1 px，长按计时里手一抖长按拖动就输给标签条的横滚；柄比滚动区深、
+          // 越过 slop 的同一帧先认领，桌面也拖得动。LongPressDraggable 留给触屏
+          // 长按整枚 chip；落点仍是 chip 上的 DragTarget。
+          final Widget draggableChip = LongPressDraggable<BookTagRow>(
             data: tag,
-            feedback: FushiReorderDragProxy(
-              transparent: true,
-              borderRadius: tokens.radii.chipRadius,
-              child: _tagFilterChip(
-                tag: tag,
-                isSelected: true,
-                isDimmed: false,
-              ),
-            ),
+            feedback: dragFeedback,
             childWhenDragging: Opacity(
               opacity: isEinkTheme(context) ? 1 : 0.3,
               child: _tagFilterChip(
@@ -330,6 +332,17 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
                 );
               },
             ),
+          );
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              FushiTagDragHandle<BookTagRow>(
+                key: ValueKey<String>('library_tag_drag_handle_${tag.id}'),
+                data: tag,
+                feedback: dragFeedback,
+              ),
+              draggableChip,
+            ],
           );
         },
       ),
@@ -678,6 +691,8 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
       state: isSelected ? TagCheckState.all : TagCheckState.none,
       dimmed: isDimmed,
       onTap: onTap,
+      // 库页标签段压在页头吸顶面上（设计稿 V3）：未选中态半透明底，与页头同色调。
+      overlay: widget.part == FushiTagFilterBarPart.tags,
     );
   }
 }

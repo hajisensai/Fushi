@@ -84,7 +84,14 @@ class VideoMetadataResolution {
     this.reason,
     this.transient = false,
     this.searchedWithoutResult = false,
+    this.strictMatches = false,
   }) : candidates = List<VideoMetadataWork>.unmodifiable(candidates);
+
+  /// 歧义的来由：true = 候选**都**通过了标题 / 类型 / 年份 / 季号严格门，只是不止
+  /// 一条；false = 候选只是「可能」（标题对不上、只有目录摘要、离线索引同名、AI
+  /// 给的搜索词……），需要人工判断。确认框据此说「多个严格匹配」还是「无法确认」，
+  /// 不能把后者也说成严格匹配（BUG-4894）。
+  final bool strictMatches;
 
   /// 标题搜索链跑完、一条结果都没有，而且没有任何一家失败：真正搜过的源
   /// 全部查无，其余源只是没配置（没发请求）。鉴权失败 / 坏响应 / 临时故障都让
@@ -131,8 +138,8 @@ class VideoMetadataProviderRegistry {
     // 三个 provider 拿同一个资料语言：标题、简介、海报必须同一种语言，
     // 任一处漏传就是「刮削不同语言」。
     // AniDB HTTP 资料链（Shoko 的主源）：吃 **HTTP** 身份，不是 UDP 身份——
-    // 随包 `fushiplayer` 只登记了 UDP，HTTP 身份随包为空（BUG-2623），此时
-    // provider 发请求前就判不可用、只剩标题目录；用户自定义 client 时两边同一
+    // 随包 `fushiplayer` / `fushiplayerhttp` 分别登记 UDP / HTTP（BUG-2623）。
+    // HTTP 身份缺失时发请求前就判不可用；用户自定义 client 时两边同一
     // 对（禁 Shoko 的 animeplugin/ommserver）。进程级 2s+ 限流闸按 endpoint
     // 共享，anime XML 落盘 24h（Shoko AnimeDoc_{aid}.xml）。
     AniDbVideoMetadataProvider(
@@ -313,6 +320,10 @@ class VideoMetadataResolver {
       method: VideoMetadataResolutionMethod.exactSearch,
       candidates: merged.values.toList(growable: false),
       providerKind: results.first.providerKind,
+      // 合并后只要混进一家「可能」候选，整体就不再是严格匹配。
+      strictMatches: results.every(
+        (VideoMetadataResolution result) => result.strictMatches,
+      ),
       reason: results
           .map(
             (VideoMetadataResolution result) =>
@@ -400,6 +411,12 @@ class VideoMetadataResolver {
         );
         if (provider.providerKind == VideoMetadataProviderKind.anidb &&
             !summaryMatches) {
+          // 低相似度的模糊目录命中是噪声：整串原始文件名会模糊召回只共享
+          // 一个音节的作品（`kon` → Kono Oto Tomare! / Kekkon Yubiwa
+          // Monogatari），不能塞进待确认列表冒充候选。
+          if (AniDbVideoMetadataProvider.isWeakCatalogMatch(candidate)) {
+            continue;
+          }
           // AniDB's local titles dump already carries the searchable title and
           // alias set. Do not turn one fuzzy catalog query into up to fifteen
           // rate-limited HTTP detail requests merely to discover that the
@@ -465,6 +482,7 @@ class VideoMetadataResolver {
           candidates: exact.values.toList(),
           providerKind: provider.providerKind,
           reason: 'More than one candidate passed the strict match gate',
+          strictMatches: true,
         );
       }
     }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
@@ -21,6 +23,10 @@ import 'package:fushi_core/fushi_core.dart';
 ///   （`manga_chapter_list_newest_first`，作品页同一份）。
 /// - **定位**：打开即把当前章滚进视口；顶栏另有「跳到当前章节 / 顶部 / 底部」。
 /// - **快速滚动**：可拖动的滚动条，几百话的表直接拖到想去的地方。
+///
+/// 列表用懒建的 sliver 形态（[MangaChapterList.sliver]）：上千话的在线源以前一开
+/// 抽屉就把每一话都建出来、全部排版（gap-mangamisc-5）。当前章行还没建时由
+/// [scrollToMangaChapter] 按已建行的行高估位置再精确对齐。
 ///
 /// 顶栏动作默认全部平铺，抽屉放不下时按优先级（排序 > 当前章 > 顶部 > 底部）
 /// 从低往高收进「⋯」，测宽与回差复用 [FushiTopBarOverflowFit]。
@@ -62,6 +68,7 @@ class _MangaChapterDrawerState extends State<MangaChapterDrawer> {
   final GlobalKey _currentAnchor = GlobalKey(
     debugLabel: 'manga_chapter_current',
   );
+  final GlobalKey _rowsKey = GlobalKey(debugLabel: 'manga_chapter_rows');
   final FushiTopBarOverflowFit _fit = FushiTopBarOverflowFit();
   late bool _newestFirst = widget.initialNewestFirst;
 
@@ -71,7 +78,7 @@ class _MangaChapterDrawerState extends State<MangaChapterDrawer> {
     // 首帧布局完成后直接（不带动画）落到当前章：打开目录就该看到自己在哪。
     // 本帧正在构建，post-frame 回调必然在这一帧末尾执行。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) scrollToMangaChapterAnchor(_currentAnchor);
+      if (mounted) _scrollToCurrent();
     });
   }
 
@@ -89,27 +96,76 @@ class _MangaChapterDrawerState extends State<MangaChapterDrawer> {
     widget.onNewestFirstChanged?.call(_newestFirst);
     // 换序后当前章换了位置：跟过去，而不是把用户留在一段陌生的列表里。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) scrollToMangaChapterAnchor(_currentAnchor);
+      if (mounted) _scrollToCurrent();
     });
   }
 
-  void _jumpToCurrent() =>
-      scrollToMangaChapterAnchor(_currentAnchor, duration: _jumpDuration);
+  /// 当前章在列表里的下标（与列表同一份排序口径）；没有当前章返回 -1。
+  int get _currentIndex {
+    final String? key = widget.currentChapterKey;
+    if (key == null) return -1;
+    return MangaChapterList.visibleChapters(
+      chapters: widget.entry.chapters,
+      states: widget.states,
+      newestFirst: _newestFirst,
+      unreadOnly: false,
+    ).indexWhere((OnlineMangaChapter chapter) => chapter.key == key);
+  }
+
+  void _scrollToCurrent({Duration duration = Duration.zero}) {
+    final int index = _currentIndex;
+    if (index < 0) return;
+    scrollToMangaChapter(
+      anchor: _currentAnchor,
+      rowsKey: _rowsKey,
+      index: index,
+      duration: duration,
+    );
+  }
+
+  void _jumpToCurrent() => _scrollToCurrent(duration: _jumpDuration);
 
   void _jumpTo(bool top) {
     if (!_scroll.hasClients) return;
     final ScrollPosition position = _scroll.position;
-    final double target = top
-        ? position.minScrollExtent
-        : position.maxScrollExtent;
     final Duration duration = _jumpDuration;
+    if (top) {
+      if (duration == Duration.zero) {
+        position.jumpTo(position.minScrollExtent);
+      } else {
+        unawaited(
+          position.animateTo(
+            position.minScrollExtent,
+            duration: duration,
+            curve: FushiMotion.standard,
+          ),
+        );
+      }
+      return;
+    }
+    // 懒列表的总高度是按已建行估的，滚到估出来的底、末几行建出来后才知道真实的
+    // 底；对齐到新的底再看一眼，行高一致时一轮就收敛。
+    Future<void> settleAtBottom(int passes) async {
+      if (!mounted || !_scroll.hasClients || passes <= 0) return;
+      final ScrollPosition position = _scroll.position;
+      if (position.pixels >= position.maxScrollExtent) return;
+      position.jumpTo(position.maxScrollExtent);
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => unawaited(settleAtBottom(passes - 1)),
+      );
+    }
+
     if (duration == Duration.zero) {
-      position.jumpTo(target);
+      unawaited(settleAtBottom(4));
     } else {
-      position.animateTo(
-        target,
-        duration: duration,
-        curve: FushiMotion.standard,
+      unawaited(
+        position
+            .animateTo(
+              position.maxScrollExtent,
+              duration: duration,
+              curve: FushiMotion.standard,
+            )
+            .then((_) => settleAtBottom(4)),
       );
     }
   }
@@ -202,23 +258,27 @@ class _MangaChapterDrawerState extends State<MangaChapterDrawer> {
           child: MangaChapterFastScrollbar(
             controller: _scroll,
             thumbVisibility: true,
-            child: SingleChildScrollView(
-              controller: _scroll,
-              // 进场窗口：开抽屉时首屏几行错峰淡入，之后（含跳到几百话外的当前章）
-              // 直接显示，不让滚出来的每一行都再淡入一次。换序重开窗口。
-              child: FushiEntranceScope(
-                replayKey: _newestFirst,
-                child: MangaChapterList(
-                  entry: widget.entry,
-                  states: widget.states,
-                  newestFirst: _newestFirst,
-                  unreadOnly: false,
-                  currentChapterKey: widget.currentChapterKey,
-                  currentChapterAnchorKey: _currentAnchor,
-                  downloadedChapterKeys: widget.downloadedChapterKeys,
-                  showHeader: false,
-                  onChapterTap: widget.onChapterTap,
-                ),
+            // 进场窗口：开抽屉时首屏几行错峰淡入，之后（含跳到几百话外的当前章）
+            // 直接显示，不让滚出来的每一行都再淡入一次。换序重开窗口。
+            child: FushiEntranceScope(
+              replayKey: _newestFirst,
+              child: CustomScrollView(
+                controller: _scroll,
+                slivers: <Widget>[
+                  MangaChapterList(
+                    sliver: true,
+                    rowsKey: _rowsKey,
+                    entry: widget.entry,
+                    states: widget.states,
+                    newestFirst: _newestFirst,
+                    unreadOnly: false,
+                    currentChapterKey: widget.currentChapterKey,
+                    currentChapterAnchorKey: _currentAnchor,
+                    downloadedChapterKeys: widget.downloadedChapterKeys,
+                    showHeader: false,
+                    onChapterTap: widget.onChapterTap,
+                  ),
+                ],
               ),
             ),
           ),

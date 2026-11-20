@@ -1,0 +1,6 @@
+## BUG-4773 · 存量单位提醒计数按内容指纹缓存，只同步进来旧复习日志时不刷新
+- **报告**：2026-11-17（PR #3551 合入后的只读核实遗留项）
+- **真实性**：✅ 真 bug（已用两库同步测试复现）。`fushi/lib/src/srs/srs_providers.dart` 的 `srsLimitUnitLegacyCountProvider`（修前 :842-853）经 `_srsMemoByContent`（修前 :795-814）以 `SrsDbStore.contentFingerprint` 作缓存键；内容键（`native/fushi_fsrs/src/store/refresh.rs` `Counters::content`，:24-27）只随「复习日志与界面状态以外的事件」推进，同步合并在 `absorb`（:53-60）里只推进 RWKV 键。而 `limitUnitLegacyDecks` 的结果取决于改缺省之前的复习日志，所以一批只含旧复习日志的同步（另一台设备改缺省前的复习）落库后键不变，牌组页提醒继续显示合并前的计数（常见是 0，提醒不出现），要等下一个非日志事件或重开库才刷新。
+- **[x] ① 已修复** — d52abbc0eb：`_srsMemoByContent` 增加可选的 `fingerprintOf`（:804），`srsLimitUnitLegacyCountProvider` 改用 `_srsContentAndMergeFingerprint`（:824，内容键 + `rwkvScoresKey`；:864）。RWKV 键在每次合并别的设备的事件（同步收段、导入、`applyRemote`）与牌组 / 配置事件时推进、本机评分不动，所以本机评分仍不重扫，只并进旧日志时会重算。没改内容键本身的口径：它还是同步冲突 / 迁移提醒角标、笔记类型缓存、媒体对账等的判据，让它随合并的日志推进会让这些一起多做工作。
+- **[x] ② 已加自动化测试** — `fushi/test/srs/srs_limit_unit_legacy_count_test.dart`：两份内存库（同 profile、不同设备号）经 `sync2ExportOps` / `sync2ImportOps` 合并，先同步笔记、再只同步改缺省前的一条复习日志；断言这次合并内容指纹确实不变（前提）、`limitUnitLegacyDecks` 已含默认牌组、provider 计数从 0 变 1，本机再评分后仍为 1。撤掉修复时红（`Expected: <1> Actual: <0>`）。
+- **备注**：牌组页只在本机库上跑（不在远程复习的可达页面里），远程库不实现 `rwkvScoresKey` 不影响。未做真机验证。

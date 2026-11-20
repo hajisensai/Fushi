@@ -210,7 +210,10 @@ class BookSeriesGrouper {
     // 以前这里只读 `epub_books.title` 原名，改名对归组毫无作用、重启也不变。
     final Map<String, OverrideTitleEntry> overrides =
         await readOverrideTitlesByBookKey(_database);
-    for (final EpubBookRow book in await _database.getAllEpubBooks()) {
+    // novel-9：归组只要身份 / 书名 / 格式 / sourceMetadata，走瘦投影，不把每本
+    // 几十到几百 KB 的章节与目录 JSON 整表拉出来。
+    for (final EpubBookSeriesFacts book
+        in await _database.getEpubBookSeriesFacts()) {
       if (isOnlineMangaSourceMetadata(book.sourceMetadata)) continue;
       final String title = overrides[book.bookKey]?.title ?? book.title;
       // 包里声明的系列优先（n4KC1azJvw：每卷副标题不同、书名里没有系列线索的作品
@@ -493,8 +496,8 @@ class BookSeriesOrder {
   /// （可能与输入相同）；否则 null（不定序，调用方保持原序）。
   ///
   /// 能定序 = 每个成员都是本机书架上同一书架的分卷、成员键无重复，且能认出唯一的
-  /// **主系列**：卷数最多的系列键（并列 = 认不出），至少 2 卷、卷号互不重复、至多
-  /// 一卷无卷号（当第 1 卷）；其余成员都是它的**番外**——系列键以主系列键开头
+  /// **主系列**：卷数最多的系列键（并列 = 认不出），至少 2 卷、位置（卷号 + 话号）互不
+  /// 重复、至多一卷两者皆无（当第 1 卷）；其余成员都是它的**番外**——系列键以主系列键开头
   /// （「安達としまむらSS」「志乃と恋 外伝」「X 三巻」）。混了别的系列 / 本机没有的书
   /// （透传成员）的合集不碰：本机认不全，交给持有全套书的一端或 AI 排序。
   ///
@@ -542,11 +545,13 @@ class BookSeriesOrder {
     for (final String key in bySeries.keys) {
       if (key != mainKey && !key.startsWith(mainKey)) return null;
     }
-    final List<num?> numbers = <num?>[
-      for (final _Volume v in bySeries[mainKey]!) v.key.volume,
+    // 位置 = 卷号 + 话号 + 同话分段（按话发布的漫画只有话号，见
+    // [BookSeriesKey.episode]）。
+    final List<BookSeriesPosition?> positions = <BookSeriesPosition?>[
+      for (final _Volume v in bySeries[mainKey]!) bookSeriesPosition(v.key),
     ];
-    if (numbers.where((num? n) => n == null).length > 1) return null;
-    if (numbers.toSet().length != numbers.length) return null;
+    if (positions.where((Object? p) => p == null).length > 1) return null;
+    if (positions.toSet().length != positions.length) return null;
     return _orderSeriesInPlace(
       members,
       _byMember,
@@ -593,8 +598,8 @@ bool _sameMemberOrder(
   return true;
 }
 
-/// 按卷号（无卷号当第 0 卷）→ natural 书名 → 种类 → 成员键排；同卷的 EPUB 与 SRT
-/// 相邻。末位成员键让同卷同种类（同卷只有一个 EPUB，并列只出在配了多条 SRT 时）
+/// 按卷号（无卷号当第 0 卷）→ 话号 → 同话分段（[compareBookSeriesPosition]）→
+/// natural 书名 → 种类 → 成员键排；同卷的 EPUB 与 SRT 相邻。末位成员键让同卷同种类（同卷只有一个 EPUB，并列只出在配了多条 SRT 时）
 /// 也有确定先后：SRT uid 即 wire 键、跨端稳定，各端排出同一个序；不用行 id（各端不同）。
 int _compareMembers(
   CollectionMemberKey a,
@@ -603,7 +608,7 @@ int _compareMembers(
 ) {
   final _Volume va = byMember['${a.mediaType}|${a.entryKey}']!;
   final _Volume vb = byMember['${b.mediaType}|${b.entryKey}']!;
-  final int c = (va.key.volume ?? 0).compareTo(vb.key.volume ?? 0);
+  final int c = compareBookSeriesPosition(va.key, vb.key);
   if (c != 0) return c;
   final int t = naturalCompare(va.title, vb.title);
   if (t != 0) return t;

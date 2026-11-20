@@ -18,6 +18,54 @@ AudioCue _cue(int startMs, int endMs) {
 }
 
 void main() {
+  group('runSubtitleAutoAlign（BUG video-3：结果不写到换集后的视频上）', () {
+    const SubtitleAutoAlignResult aligned = SubtitleAutoAlignResult(
+      offsetMs: 1200,
+      confidence: 0.9,
+      status: SubtitleAutoAlignStatus.aligned,
+    );
+
+    test('抽音频期间原地换集：结果作废（null），不再互相关', () async {
+      bool current = true;
+      int correlations = 0;
+      final SubtitleAutoAlignResult? result = await runSubtitleAutoAlign(
+        cues: <AudioCue>[_cue(0, 500)],
+        durationMs: 1000,
+        isCurrent: () => current,
+        loadAudioEnergy: () async {
+          await Future<void>.delayed(Duration.zero);
+          // 远端合集原地换到下一集：页面的 _episodeLoadSeq 已 +1。
+          current = false;
+          return List<double>.filled(10, 1.0);
+        },
+        correlate: (List<double> a, List<double> c) {
+          correlations++;
+          return aligned;
+        },
+      );
+      expect(result, isNull);
+      expect(correlations, 0);
+    });
+
+    test('身份没变：返回互相关结果，按同一栅格给双方', () async {
+      List<double>? seenCue;
+      final SubtitleAutoAlignResult? result = await runSubtitleAutoAlign(
+        cues: <AudioCue>[_cue(200, 500)],
+        durationMs: 1000,
+        binMs: 100,
+        isCurrent: () => true,
+        loadAudioEnergy: () async => <double>[0, 0, 9, 9, 9, 0, 0, 0, 0, 0],
+        correlate: (List<double> a, List<double> c) {
+          seenCue = c;
+          expect(a, <double>[0, 0, 1, 1, 1, 0, 0, 0, 0, 0]);
+          return aligned;
+        },
+      );
+      expect(result, aligned);
+      expect(seenCue, <double>[0, 0, 1, 1, 1, 0, 0, 0, 0, 0]);
+    });
+  });
+
   group('subtitleAlignProbeLimitMs', () {
     test('stream audio only pulls the first 3 minutes', () {
       expect(kStreamSubtitleAlignProbeLimitMs, 3 * 60 * 1000);

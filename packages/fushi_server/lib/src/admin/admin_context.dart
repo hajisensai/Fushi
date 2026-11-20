@@ -51,11 +51,14 @@ class AdminContext {
   /// 改配置 = 改内存 + 写回文件 + 推给正在跑的 host。端口/TLS/绑定这类要重启才
   /// 生效，WebUI 会提示；公网地址 / P2P / 中继由 [HeadlessHost.applyConfig] 即时
   /// 生效（返回时 P2P 起停已落地）。
+  ///
+  /// 先写盘再换内存：写不进去（磁盘满 / 权限）就原样抛出，内存配置与文件都还是旧的，
+  /// 调用方据 `identical(config, next)` 判断这次改动有没有落地。
   Future<void> updateConfig(ServerConfig next) async {
+    await next.save(configFile);
     _config = next;
     // 界面语言即时生效：之后的日志 / admin API 错误文案按新语言出。
     serverLanguage = next.language;
-    await next.save(configFile);
     await host.applyConfig(next);
   }
 

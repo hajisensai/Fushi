@@ -76,7 +76,12 @@ void main() {
       reason: '按设计系统一刀切收走 FAB 就是本条回归本身',
     );
     // 右下 FAB 仍由这一位门控，且同步任务也能点亮它（不只补刮）。
-    expect(src, contains('_hasBackgroundTasks && !_shellFabHostedByBar'));
+    // 首页另有头像外圈承接（[homeBackgroundTasksOnAvatar]），条件多一项后被格式化
+    // 折行：按「同一个 && 链里先后出现」认，不按单行字面量认。
+    expect(
+      src,
+      matches(RegExp(r'_hasBackgroundTasks &&\s+!_shellFabHostedByBar')),
+    );
     expect(src, contains('_syncTasksActive ||'));
   });
 

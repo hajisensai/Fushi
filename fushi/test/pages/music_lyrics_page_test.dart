@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_lyrics_view.dart';
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_live.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
@@ -142,6 +143,8 @@ class _LyricsAppModel extends AppModel {
   }) : super(testPlatformServices()) {
     wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: dir);
     wireDatabaseForTesting(db);
+    // 同正式 initialise：偏好变了经 AppModel 转发，watch appProvider 的页面跟着重建。
+    prefs.addListener(notifyListeners);
   }
 
   final FushiDatabase db;
@@ -379,6 +382,28 @@ void main() {
             )
             as MusicLyricRow;
     expect(row.offsetMs, 100);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  // GitHub #3354：设置 › 音乐 › 「模糊非当前行」接到歌词视图，改了即时生效。
+  testWidgets('「模糊非当前行」偏好接到歌词视图并即时生效', (WidgetTester tester) async {
+    bool viewBlurs() => tester
+        .widget<KaraokeLyricsView>(find.byType(KaraokeLyricsView))
+        .appearance
+        .blurInactive;
+
+    await pumpPage(tester);
+    expect(viewBlurs(), isTrue, reason: '默认开（保持原观感）');
+
+    await tester.runAsync(() => app.setMusicLyricsBlurInactive(false));
+    await tester.pump();
+    expect(viewBlurs(), isFalse);
+    expect(app.prefsRepo.musicLyricsBlurInactive, isFalse);
+
+    await tester.runAsync(() => app.setMusicLyricsBlurInactive(true));
+    await tester.pump();
+    expect(viewBlurs(), isTrue);
 
     await tester.pumpWidget(const SizedBox.shrink());
   });

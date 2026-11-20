@@ -19,8 +19,8 @@ import 'package:http/testing.dart';
 /// - 旧端点 `/api/subtitle/jimaku/*`（滞留旧版扩展仍在打）限定 Jimaku 一家，handle
 ///   串与错误码逐字不变。
 void main() {
-  // 解码走 [decodeTextBytes]，它会试一次平台字符集检测插件（桌面无实现 →
-  // MissingPluginException → 降级）。没有 binding 时那次 invokeMethod 抛的是
+  // 解码走 [decodeTextBytes]，装了平台字符集检测插件时会先试它一次（桌面无实现 →
+  // MissingPluginException → 落到 Rust 的本地编码识别）。没有 binding 时那次 invokeMethod 抛的是
   // 「Binding has not yet been initialized」，会被桥的 catch 吞成 download-failed。
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -439,11 +439,10 @@ void main() {
       expect(cue['endMs'], 2000);
     });
 
-    test('非 UTF-8 档不整条挂掉：字节照样过解码 + 解析出时间轴', () async {
+    test('非 UTF-8 档（Shift-JIS）解回日文正文并解析出时间轴', () async {
       // 「1\n00:00:01,000 --> 00:00:02,000\nこんにちは\n」的 Shift-JIS 字节。
-      // 桌面三端没有字符集检测插件（见 fushi_audio 的 decodeTextBytes 说明），
-      // 正文会降级成 U+FFFD——但**整条链路必须照样跑完**：时间轴是 ASCII，cue 出得来。
-      // 这里钉的是桥的契约（不因非 UTF-8 就回 download-failed），不是解码器的准确率。
+      // 测试宿主与桌面三端一样没有字符集检测插件，正文靠 fushi_audio 的
+      // decodeLegacyText（Rust 计算内核）解回来（BUG-4798：从前整段变成 U+FFFD）。
       final Uint8List shiftJis = Uint8List.fromList(<int>[
         ...ascii.encode('1\n00:00:01,000 --> 00:00:02,000\n'),
         0x82,
@@ -479,7 +478,7 @@ void main() {
       final Map<String, dynamic> cue = cues.single as Map<String, dynamic>;
       expect(cue['startMs'], 1000);
       expect(cue['endMs'], 2000);
-      expect((cue['text'] as String).isNotEmpty, isTrue);
+      expect(cue['text'], 'こんにちは');
     });
 
     test('下载失败按 kind 翻成扩展文案键（配额耗尽 → rate-limited）', () async {

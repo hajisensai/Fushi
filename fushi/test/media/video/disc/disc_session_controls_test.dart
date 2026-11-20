@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:fake_async/fake_async.dart';
@@ -84,15 +85,143 @@ void main() {
     });
   });
 
-  test('back: hidden bar is summoned, visible bar exits', () {
+  test('back on the menu: hidden bar is summoned, visible bar exits', () {
+    for (final bool allowed in <bool>[true, false]) {
+      expect(
+        resolveDiscSessionBack(
+          onMenu: true,
+          barVisible: false,
+          menuCallAllowed: allowed,
+        ),
+        DiscSessionBackRoute.showBar,
+      );
+      expect(
+        resolveDiscSessionBack(
+          onMenu: true,
+          barVisible: true,
+          menuCallAllowed: allowed,
+        ),
+        DiscSessionBackRoute.exitSession,
+      );
+    }
+  });
+
+  // 拍板台 58EoAZOXVN：正片的上一级是盘菜单，不是详情页——返回不能越级退出会话。
+  test('back on a title returns to the disc menu, bar state aside', () {
+    for (final bool barVisible in <bool>[true, false]) {
+      expect(
+        resolveDiscSessionBack(
+          onMenu: false,
+          barVisible: barVisible,
+          menuCallAllowed: true,
+        ),
+        DiscSessionBackRoute.returnToMenu,
+      );
+    }
+  });
+
+  test('back on a title leaves when the disc forbids its menu call', () {
     expect(
-      resolveDiscSessionBack(barVisible: false),
-      DiscSessionBackRoute.showBar,
-    );
-    expect(
-      resolveDiscSessionBack(barVisible: true),
+      resolveDiscSessionBack(
+        onMenu: false,
+        barVisible: false,
+        menuCallAllowed: false,
+      ),
       DiscSessionBackRoute.exitSession,
     );
+  });
+
+  group('DiscMenuReturn', () {
+    late _FakeDiscMenu disc;
+    late DiscMenuReturn menuReturn;
+
+    setUp(() {
+      disc = _FakeDiscMenu();
+      menuReturn = DiscMenuReturn(
+        isRefusal: (Object error) => error is _DiscRefused,
+      );
+    });
+
+    bool back([
+      DiscSessionBackRoute? route = DiscSessionBackRoute.returnToMenu,
+    ]) => menuReturn.handleBack(
+      route,
+      send: disc.sendTopMenu,
+      onRefused: disc.exitSession,
+      onFailed: disc.fail,
+    );
+
+    test(
+      'back on a title sends the top menu and stays in the session',
+      () async {
+        expect(back(), isTrue);
+        expect(disc.sends, 1);
+        disc.pending.complete();
+        expect(await menuReturn.pending, DiscMenuReturnOutcome.returned);
+        expect(disc.exits, 0);
+        expect(disc.failures, isEmpty);
+        expect(menuReturn.inFlight, isFalse);
+      },
+    );
+
+    test(
+      'a quick second back while the call is in flight sends nothing',
+      () async {
+        expect(back(), isTrue);
+        expect(back(), isTrue, reason: '在途时连按被吞掉，不落到退出会话');
+        expect(back(DiscSessionBackRoute.exitSession), isTrue);
+        expect(disc.sends, 1);
+        disc.pending.complete();
+        await menuReturn.pending;
+        // 完成后下一次返回照常回菜单。
+        expect(back(), isTrue);
+        expect(disc.sends, 2);
+      },
+    );
+
+    test('a transient failure keeps the user on the title', () async {
+      expect(back(), isTrue);
+      disc.pending.completeError(StateError('navigation-initializing'));
+      expect(await menuReturn.pending, DiscMenuReturnOutcome.failed);
+      expect(disc.exits, 0);
+      expect(disc.failures, hasLength(1));
+      expect(menuReturn.inFlight, isFalse);
+      expect(back(), isTrue);
+      expect(disc.sends, 2, reason: '失败后在途标记清掉，下一次返回能再试');
+    });
+
+    test('only the disc refusing the menu call leaves the session', () async {
+      expect(back(), isTrue);
+      disc.pending.completeError(const _DiscRefused());
+      expect(await menuReturn.pending, DiscMenuReturnOutcome.refused);
+      expect(disc.exits, 1);
+      expect(disc.failures, isEmpty);
+    });
+
+    test('a synchronous failure still clears the in-flight mark', () async {
+      final bool consumed = menuReturn.handleBack(
+        DiscSessionBackRoute.returnToMenu,
+        send: () => throw StateError('bridge'),
+        onRefused: disc.exitSession,
+        onFailed: disc.fail,
+      );
+      expect(consumed, isTrue);
+      expect(await menuReturn.pending, isNull);
+      expect(menuReturn.inFlight, isFalse);
+      expect(disc.failures, hasLength(1));
+    });
+
+    test('other rungs and a leaving session are not consumed', () async {
+      expect(back(DiscSessionBackRoute.exitSession), isFalse);
+      expect(back(DiscSessionBackRoute.showBar), isFalse);
+      expect(back(null), isFalse);
+      expect(disc.sends, 0);
+      // 已在退出（route 为 null）时，在途的回菜单请求不拦退出。
+      expect(back(), isTrue);
+      expect(back(null), isFalse);
+      disc.pending.complete();
+      await menuReturn.pending;
+    });
   });
 
   group('DiscExitHold', () {
@@ -224,3 +353,30 @@ final List<int> _kTransparentPngBytes = <int>[
   0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
 ];
 final Uint8List _kTransparentPng = Uint8List.fromList(_kTransparentPngBytes);
+
+/// The disc's own refusal of a menu call (UO mask), as classified by the page.
+class _DiscRefused implements Exception {
+  const _DiscRefused();
+}
+
+/// Stands in for the disc session: each top-menu call waits on [pending].
+class _FakeDiscMenu {
+  int sends = 0;
+  int exits = 0;
+  final List<Object> failures = <Object>[];
+  Completer<void> pending = Completer<void>();
+
+  Future<void> sendTopMenu() {
+    sends++;
+    pending = Completer<void>();
+    return pending.future;
+  }
+
+  Future<void> exitSession() async {
+    exits++;
+  }
+
+  void fail(Object error, StackTrace stack) {
+    failures.add(error);
+  }
+}

@@ -7,6 +7,8 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_compute/fushi_compute.dart' show FfcImageFormat;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
+import 'package:fushi_engine/epub/epub_importer.dart';
+import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:fushi_engine/media/manga/import/image_size_probe.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
@@ -14,7 +16,6 @@ import 'package:fushi_engine/media/manga/mokuro_legacy_html.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
-import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 
@@ -96,8 +97,9 @@ bool _isMangaImageFile(String path) =>
 /// 从 `.mokuro`（v0.2+）+ 同级图片导入一本漫画，落进 `EpubBooks` 表（`format='manga'`，
 /// 第三种「书」），复用整套书架 / 进度 / 删除管线，而非另建平行表。
 ///
-/// 与 [PdfImporter] 同款范式：封面/元数据在解析阶段先算出，`bookKey`（= 净化标题，
-/// `EpubBooks` 主键）在拷贝落盘前解析，失败即整体回滚已插入的行与已建的书目录。
+/// 落盘与 [EpubImporter] 同一套（BUG-4840）：页图与 `manga.json` 先备进书库根下本次
+/// 导入独占的 `.tmp-*` 暂存目录，再在落位锁内「重取快照 → 挪进 `<bookKey>/` → 插行」。
+/// 书目录在落位之前不存在于别人看得见的名字下，失败回滚只删本次自己建的东西。
 ///
 /// 落库列映射（与 PDF 同语义）：
 /// - `epubPath` = `manga.json`（书目录内页/框结构文件名，阅读器 `extractDir/epubPath` 还原）。
@@ -127,10 +129,19 @@ class MangaImporter {
     MangaPageSource pageSource = MangaPageSource.borrowed,
   }) async {
     final Directory root = Directory(imageDirPath);
-    final MokuroPayload payload = await payloadFromImageFolder(root);
     final String proposedTitle = title?.trim().isNotEmpty == true
         ? title!.trim()
         : (p.basename(root.path).isEmpty ? 'manga' : p.basename(root.path));
+    // 跳过策略在逐页读尺寸之前判重（manga-10）：重导一个大半已入库的文件夹时，
+    // 已有的卷不再把每页读一遍才被跳过。目录不在时照旧报「not found」。
+    if (root.existsSync()) {
+      await precheckSkippedDuplicate(
+        db: db,
+        proposedTitle: proposedTitle,
+        policy: policy,
+      );
+    }
+    final MokuroPayload payload = await payloadFromImageFolder(root);
     return _copyAndInsert(
       db: db,
       srcDir: root,
@@ -141,6 +152,26 @@ class MangaImporter {
       sourceId: sourceId,
       sourceMetadata: sourceMetadata,
       pageSource: pageSource,
+    );
+  }
+
+  /// [DuplicatePolicy.skip] 的导入前预检（manga-10）：[proposedTitle] 已在书库里时抛
+  /// [DuplicateImportCancelledException]，否则什么都不做。只读一次瘦投影书目快照。
+  ///
+  /// 给「定书名之前要先做重活」的入口用（压缩包整包解压、页图文件夹逐页读尺寸）；
+  /// 落位时 [EpubImporter.placeUnderResolvedTitle] 的判重照旧保留。其它策略直接返回，
+  /// 不碰数据库（[DuplicatePolicy.ask] 的「先做完再问」次序不变）。
+  static Future<void> precheckSkippedDuplicate({
+    required FushiDatabase db,
+    required String proposedTitle,
+    required DuplicatePolicy policy,
+  }) async {
+    if (policy is! SkipDuplicate) return;
+    final List<EpubBookMeta> books = await db.getEpubBookMetas();
+    throwIfSkippedDuplicate(
+      existingTitles: <String>[for (final EpubBookMeta b in books) b.title],
+      proposedTitle: proposedTitle,
+      policy: policy,
     );
   }
 
@@ -161,16 +192,46 @@ class MangaImporter {
     }
     final List<MokuroImage> pages = <MokuroImage>[];
     for (final MangaOcrPageFile page in files) {
-      final Uint8List bytes = await page.file.readAsBytes();
       pages.add(
         MokuroImage(
           url: page.relativeUrl,
-          size: _pageSize(bytes, page.relativeUrl),
+          size: await pageSizeOfFile(page.file, page.relativeUrl),
           blocks: const <MokuroBlock>[],
         ),
       );
     }
     return MokuroPayload(images: pages);
+  }
+
+  /// 探尺寸时先读的前缀长度：JPEG 的 APP 段（EXIF / ICC）单段上限 64 KiB，给两段
+  /// 的余量；漫画页多在 1~5 MB，前缀只占其中几个百分点。
+  static const int kPageSizeProbePrefixBytes = 128 * 1024;
+
+  /// 页图文件 [file] 的宽高（已按显示方向）：先只读前
+  /// [kPageSizeProbePrefixBytes] 字节，能凭前缀定论的格式（[probeImageSizeFromPrefix]：
+  /// PNG、头部在前缀内的 JPEG）直接返回；其余读全量走 [_pageSize]（manga-29c，此前
+  /// 每页整张读进内存只为读头）。
+  static Future<MokuroSize> pageSizeOfFile(
+    File file,
+    String relativeUrl,
+  ) async {
+    final RandomAccessFile handle = await file.open();
+    final int length;
+    final Uint8List prefix;
+    try {
+      length = await handle.length();
+      prefix = await handle.read(kPageSizeProbePrefixBytes);
+    } finally {
+      await handle.close();
+    }
+    final ({int width, int height})? header = probeImageSizeFromPrefix(prefix);
+    if (header != null) {
+      return MokuroSize(header.width.toDouble(), header.height.toDouble());
+    }
+    final Uint8List bytes = prefix.length >= length
+        ? prefix
+        : await file.readAsBytes();
+    return _pageSize(bytes, relativeUrl);
   }
 
   /// 页图宽高（已按显示方向）：先走 Dart 头部探测（[probeOrientedImageSize]，JPEG /
@@ -317,17 +378,40 @@ class MangaImporter {
     final String jsonStr = isMokuroLegacyHtmlPath(mokuroPath)
         ? await legacyMokuroJson(mokuroPath)
         : await mokuroFile.readAsString();
-    final MokuroPayload payload = parseMokuro(jsonStr);
+    return importMokuroDocument(
+      db: db,
+      document: parseMokuroDocument(jsonStr),
+      mokuroPath: mokuroPath,
+      title: title,
+      policy: policy,
+      onProgress: onProgress,
+      sourceId: sourceId,
+      pageSource: pageSource,
+    );
+  }
+
+  /// [importFromMokuroPath] 的落库段：清单已经解析好（[document]，一次解析同时带出
+  /// 页模型与顶层标题），不再读盘、不再重复解析（manga-29b：压缩包里的清单此前要
+  /// 写回暂存目录、再读回来解析两遍）。
+  ///
+  /// [mokuroPath] 只用来定位页图根（所在目录 + 卷名 = 去扩展名的文件名）与回退标题，
+  /// 文件本身不必存在。顶层不是对象时 `root` 为空，标题退化文件名。
+  static Future<String> importMokuroDocument({
+    required FushiDatabase db,
+    required MokuroDocument document,
+    required String mokuroPath,
+    String? title,
+    DuplicatePolicy policy = const DuplicatePolicy.suffix(),
+    void Function(int done, int total)? onProgress,
+    int? sourceId,
+    MangaPageSource pageSource = MangaPageSource.borrowed,
+  }) async {
+    final MokuroPayload payload = document.payload;
     if (payload.images.isEmpty) {
       throw const MangaImportException('Mokuro file has no pages');
     }
-
-    // 顶层标题/卷元数据（parseMokuro 不带这些进模型，故从原始 JSON 顶层读）。顶层若不是对象
-    // （罕见的 top-level array/标量）降级为空 root，标题退化文件名，避免 as Map 硬崩。
-    final Object? rawRoot = jsonDecode(jsonStr);
-    final Map<String, Object?> root = rawRoot is Map
-        ? rawRoot.cast<String, Object?>()
-        : <String, Object?>{};
+    final Map<String, Object?> root = document.root;
+    final File mokuroFile = File(mokuroPath);
 
     // 页图根**解析**出来，不硬编码成 `.mokuro` 同级（BUG-1830 的根因）：mokuro 的
     // `img_path` 有两种并存惯例，卷子目录布局下裸文件名相对同级解析必然落空。判据与
@@ -430,10 +514,23 @@ class MangaImporter {
 
   /// 两遍式落库内核（[importFromMokuroPath] / [importFromMangaJson] 共用）：
   /// 第一遍纯校验（规划 destRel + 防穿越 + 校验源图存在，零副作用），第二遍拷图 +
-  /// 写 manga.json + 插 `EpubBooks` 行 + 活动事件；任一步失败整体回滚已插行与书目录。
+  /// 写 manga.json + 落位 + 插 `EpubBooks` 行 + 活动事件；任一步失败整体回滚。
   ///
   /// [srcDir] 是页图来源目录（.mokuro 或 manga.json 的同级目录），[payload] 的每页
   /// `url` 相对它解析。[proposedTitle] 已由各入口按各自规则派生。
+  ///
+  /// 书目录**不是**边拷边建在 `<fushi_books>/<bookKey>/` 上的（BUG-4840 之前是）：
+  /// `EpubStorage.bookDirectory` 存在即复用，于是两次同名导入、或一次导入撞上崩溃
+  /// 留下的同名孤儿目录，都在往同一个目录里混写；失败回滚又无条件整个删掉——删的可能
+  /// 是赢家那本书，也可能是「找回书库」本可恢复的孤儿。现在的次序：
+  ///
+  /// 1. 锁外定书名（同名弹窗在这一步，校验失败的导入根本走不到这里）；
+  /// 2. 页图 + `manga.json` 备进本次独占的 `.tmp-*`（与书库同卷，落位是一次 rename）；
+  /// 3. 落位锁内重取快照，经 [EpubStorage.moveDirIntoPlace] 落位（活行占着的目录
+  ///    绝不碰，改落 `~n`；无主的同名目录按 EPUB 的既有取舍带 `.bak` 回滚替换），
+  ///    紧接着插行。
+  ///
+  /// 回滚只删两样：自己的暂存目录、自己刚落位而行没插成的目录。
   static Future<String> _copyAndInsert({
     required FushiDatabase db,
     required Directory srcDir,
@@ -452,76 +549,105 @@ class MangaImporter {
       payload: payload,
     );
 
-    final List<EpubBookMeta> existingBooks = await db.getEpubBookMetas();
-    final String storedTitle = await resolveDuplicateTitle(
-      existingTitles: existingBooks.map((EpubBookMeta b) => b.title).toList(),
-      proposedTitle: proposedTitle,
-      policy: policy,
-    );
-    final String bookKey = sanitizeTtuFilename(storedTitle);
-    final String bookDir = await MangaStorage.bookDirectory(bookKey);
-
+    String? stagedDir;
+    ({int pageCount, String coverRel})? artifacts;
+    String? placedDir;
     String? insertedKey;
     try {
-      // 第二遍：拷图 + 写 manga.json。封面 = 第一页页图的相对路径（书架封面解析器
-      // `p.join(extractDir, coverPath)`）。
-      final ({int pageCount, String coverRel}) artifacts =
-          await copyMangaArtifacts(
-            srcDir: srcDir,
-            payload: payload,
-            destRels: destRels,
-            bookDir: bookDir,
-            onProgress: onProgress,
-            pageSource: pageSource,
+      final ({String storedTitle, String bookKey, int importedAtMs}) placed =
+          await EpubImporter.placeUnderResolvedTitle(
+            db: db,
+            proposedTitle: proposedTitle,
+            policy: policy,
+            // 第二遍：拷图 + 写 manga.json，进暂存目录。书名键在锁内被别人占了要
+            // 重新定夺时会再进来一次，已备好的不重做。
+            stage: () async {
+              if (artifacts != null) return;
+              final String dir = await EpubImporter.createStagingDir(db);
+              stagedDir = dir;
+              artifacts = await copyMangaArtifacts(
+                srcDir: srcDir,
+                payload: payload,
+                destRels: destRels,
+                bookDir: dir,
+                onProgress: onProgress,
+                pageSource: pageSource,
+              );
+            },
+            place:
+                (
+                  String storedTitle,
+                  String bookKey,
+                  List<EpubBookMeta> liveBooks,
+                ) async {
+                  final String bookDir = EpubStorage.moveDirIntoPlace(
+                    srcDir: Directory(stagedDir!),
+                    targetDir: await MangaStorage.bookPath(bookKey),
+                    liveExtractDirs: liveBooks.map(
+                      (EpubBookMeta b) => b.extractDir,
+                    ),
+                  );
+                  placedDir = bookDir;
+                  final int importedAtMs =
+                      DateTime.now().millisecondsSinceEpoch;
+                  // 封面 = 第一页页图的相对路径（书架封面解析器
+                  // `p.join(extractDir, coverPath)`）。
+                  insertedKey = await db.insertEpubBook(
+                    bookRowFor(
+                      bookKey: bookKey,
+                      title: storedTitle,
+                      coverRel: artifacts!.coverRel,
+                      bookDir: bookDir,
+                      pageCount: artifacts!.pageCount,
+                      importedAt: importedAtMs,
+                      sourceId: sourceId,
+                      sourceMetadata: sourceMetadata,
+                    ),
+                  );
+                  return (
+                    storedTitle: storedTitle,
+                    bookKey: bookKey,
+                    importedAtMs: importedAtMs,
+                  );
+                },
           );
-      final int total = artifacts.pageCount;
-      final String coverRel = artifacts.coverRel;
-
-      final int importedAtMs = DateTime.now().millisecondsSinceEpoch;
-      insertedKey = await db.insertEpubBook(
-        bookRowFor(
-          bookKey: bookKey,
-          title: storedTitle,
-          coverRel: coverRel,
-          bookDir: bookDir,
-          pageCount: total,
-          importedAt: importedAtMs,
-          sourceId: sourceId,
-          sourceMetadata: sourceMetadata,
-        ),
-      );
 
       // 与 EPUB/PDF 一致：写一条「added」活动事件喂首页时间轴。best-effort。
       try {
         await db.addActivityEvent(
           eventType: kActivityAdded,
           mediaType: kActivityMediaBook,
-          title: storedTitle,
-          mediaKey: bookKey,
+          title: placed.storedTitle,
+          mediaKey: placed.bookKey,
           dateKey: FushiTimeFormat.dayKey(
-            DateTime.fromMillisecondsSinceEpoch(importedAtMs),
+            DateTime.fromMillisecondsSinceEpoch(placed.importedAtMs),
           ),
-          timestampMs: importedAtMs,
+          timestampMs: placed.importedAtMs,
         );
       } catch (e) {
         engineLog.log('MangaImporter.addActivityEvent', e, StackTrace.current);
       }
 
-      return insertedKey;
+      return placed.bookKey;
     } catch (e) {
-      // 回滚：删掉可能已插入的行 + 已建的书目录，避免半成品残留。
-      if (insertedKey != null) {
+      // 回滚：删掉可能已插入的行，以及**本次自己建的**目录——暂存目录，和已经落位
+      // 但行没插成的书目录。别人的目录（活行的、孤儿的）从头到尾没被写过。
+      final String? inserted = insertedKey;
+      if (inserted != null) {
         try {
-          await db.deleteEpubBook(insertedKey);
+          await db.deleteEpubBook(inserted);
         } catch (rollbackError, stack) {
           engineLog.log('MangaImporter.rollbackDelete', rollbackError, stack);
         }
       }
-      try {
-        final Directory dir = Directory(bookDir);
-        if (dir.existsSync()) dir.deleteSync(recursive: true);
-      } catch (cleanupError, stack) {
-        engineLog.log('MangaImporter.rollbackDir', cleanupError, stack);
+      for (final String? own in <String?>[placedDir, stagedDir]) {
+        if (own == null) continue;
+        try {
+          final Directory dir = Directory(own);
+          if (dir.existsSync()) dir.deleteSync(recursive: true);
+        } catch (cleanupError, stack) {
+          engineLog.log('MangaImporter.rollbackDir', cleanupError, stack);
+        }
       }
       rethrow;
     }
@@ -578,14 +704,18 @@ class MangaImporter {
     if (payload.images.isEmpty) {
       throw const MangaImportException('Manga JSON has no pages');
     }
-    return db.insertEpubBook(
-      bookRowFor(
-        bookKey: bookKey,
-        title: title,
-        coverRel: payload.images.first.url,
-        bookDir: bookDir,
-        pageCount: payload.images.length,
-        importedAt: DateTime.now().millisecondsSinceEpoch,
+    // 插行持落位锁，理由同 `EpubImporter.registerExtractedBook`：不让登记插进并发
+    // 导入的「判归属 → 挪目录」中间。
+    return EpubStorage.withBookPlacementLock(
+      () => db.insertEpubBook(
+        bookRowFor(
+          bookKey: bookKey,
+          title: title,
+          coverRel: payload.images.first.url,
+          bookDir: bookDir,
+          pageCount: payload.images.length,
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
       ),
     );
   }
@@ -636,7 +766,7 @@ class MangaImporter {
       final MokuroSize size =
           width is num && height is num && width > 0 && height > 0
           ? MokuroSize(width.toDouble(), height.toDouble())
-          : _pageSize(await page.file.readAsBytes(), page.relativeUrl);
+          : await pageSizeOfFile(page.file, page.relativeUrl);
       final Object? blocks = ocr?['blocks'];
       pages.add(<String, Object?>{
         'img_path': '$volumeName/${page.relativeUrl}',

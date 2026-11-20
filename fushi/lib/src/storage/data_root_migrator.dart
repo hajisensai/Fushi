@@ -1074,6 +1074,7 @@ class DataRootMigrator {
       await _rebaseCollectionScrapeMeta(db, docs);
       await _rebaseCollectionRelations(db, docs);
       await _rebaseMediaImages(db, docs);
+      await _rebaseItemImages(db, docs);
       await _rebaseVideoMetadataExtras(db, docs);
       await _rebaseVideoDownloadJobs(db, docs);
       await _rebaseVideoDownloadJobFiles(db, docs);
@@ -1356,6 +1357,25 @@ class DataRootMigrator {
     }
   }
 
+  /// item_images：path（v161 单本书 / 字幕书 / 游戏附加图：
+  /// `<documents>/video_covers/items/`，与 media_images 同目录族）。不改写 = 换
+  /// 数据根后书架 / 游戏库系列色块的横版背景全部变死链、静默退回书封摆法。
+  /// media_type / entry_key / kind / source_url 不是本机路径，绝不改写。
+  static Future<void> _rebaseItemImages(
+    FushiDatabase db,
+    DocumentsPathRebaser docs,
+  ) async {
+    for (final ItemImageRow row in await db.getAllItemImages()) {
+      final String? newPath = docs.rebaseNullable(row.path);
+      if (newPath == null || newPath == row.path) continue;
+      await db.customStatement(
+        'UPDATE item_images SET path = ? WHERE media_type = ? '
+        'AND entry_key = ? AND kind = ? AND position = ?',
+        <Object?>[newPath, row.mediaType, row.entryKey, row.kind, row.position],
+      );
+    }
+  }
+
   /// video_metadata_extras：本地 NCOP/NCED 等附加视频的 thumbnail_path
   /// 直接复用 VideoBook.coverPath，必须与 video_books.cover_path 同步重挂。
   /// 在线项只有 remote_url / thumbnail_url，不参与本机路径改写。
@@ -1470,22 +1490,20 @@ class DataRootMigrator {
   /// `<documents>/video_covers/` 目录族，与合集封面同型；schema v66 /
   /// TODO-2484）。当前尚无写入方（封面下载归 UI 接力线程），本改写是
   /// 前置兜底 —— 列一旦开始落值，不改写 = 换数据根后相关作品卡封面死链。
-  /// source / cover_url 不是本机路径，绝不改写。
+  /// source / cover_url 不是本机路径，绝不改写。整表读：v162 起起点也可以是单视频
+  /// （散装电影），按合集逐个取会漏掉这些行。
   static Future<void> _rebaseCollectionRelations(
     FushiDatabase db,
     DocumentsPathRebaser docs,
   ) async {
-    for (final MediaCollectionRow c in await db.getAllMediaCollections()) {
-      for (final CollectionRelationRow r in await db.getCollectionRelations(
-        c.id,
-      )) {
-        final String? newCover = docs.rebaseNullable(r.coverPath);
-        if (newCover == r.coverPath) continue;
-        await db.customStatement(
-          'UPDATE collection_relations SET cover_path = ? WHERE id = ?',
-          <Object?>[newCover, r.id],
-        );
-      }
+    for (final CollectionRelationRow r
+        in await db.getAllCollectionRelations()) {
+      final String? newCover = docs.rebaseNullable(r.coverPath);
+      if (newCover == r.coverPath) continue;
+      await db.customStatement(
+        'UPDATE collection_relations SET cover_path = ? WHERE id = ?',
+        <Object?>[newCover, r.id],
+      );
     }
   }
 

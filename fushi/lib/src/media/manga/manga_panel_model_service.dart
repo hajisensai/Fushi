@@ -73,9 +73,119 @@ Future<MangaPanelModelStatus> mangaPanelModelStatus() async {
   );
 }
 
+/// 模型下载时等响应头、以及两个数据块之间允许的最长停顿（整体不设限）。
+const Duration kMangaPanelModelStallTimeout = Duration(seconds: 30);
+
+/// 下载分镜模型，逐块产出已收字节数。
+///
+/// 连接卡住（[stallTimeout] 内一个字节都没来）以 [TimeoutException] 结束并断开
+/// 连接，不让设置页永远停在「下载中」。任何失败都删掉 `.part`。
+///
+/// **进程内同时只有一次下载**：设置页、阅读页的高级制卡、制卡对话框三个入口都调
+/// 这里，写的是同一个 `<模型>.part`。下载进行中再调用不另起一次，而是接到正在跑的
+/// 那一次上（先补一条当前进度，之后同步收进度、完成与失败）。旧实现各起各的：
+/// 两路往同一个暂存文件交错写，一路失败时把另一路正在写的 `.part` 删掉，校验必挂。
+/// 全部订阅者都取消时才中止下载（只有一个入口时与旧语义相同）。
+/// [clientFactory] / [stallTimeout] 只对发起那一次生效。
+///
+/// 取消不是立刻停：下载体只在产出下一块时才看得到取消，卡在等数据时要等到下一块
+/// 或 [stallTimeout] 才走到 finally 删 `.part`。所以新发起的那一次先等上一次的下载体
+/// 真正退出（[_panelModelStopped]）再碰 `.part`，否则「取消后马上再点下载」时旧那次
+/// 的清理会删掉新那次正在写的暂存文件。
 Stream<int> downloadMangaPanelModel({
   HttpClient Function()? clientFactory,
+  Duration stallTimeout = kMangaPanelModelStallTimeout,
+}) {
+  final _PanelModelDownload download = _panelModelDownload ??=
+      _PanelModelDownload(
+        _downloadMangaPanelModelOnce(
+          after: _panelModelStopped,
+          clientFactory: clientFactory,
+          stallTimeout: stallTimeout,
+        ),
+      );
+  return download.subscribe();
+}
+
+_PanelModelDownload? _panelModelDownload;
+
+/// 最近发起的那一次下载的下载体退出（含 finally 的 `.part` 清理）时完成；只当次序
+/// 信号，从不带错误。
+Future<void> _panelModelStopped = Future<void>.value();
+
+/// 正在进行的那一次下载与它的订阅者。下载结束（成功或失败）时先摘掉
+/// [_panelModelDownload] 再通知订阅者：之后的调用会重新发起，不会接到已结束的这一次。
+class _PanelModelDownload {
+  _PanelModelDownload(Stream<int> source) {
+    _panelModelStopped = _stopped.future;
+    _source = source.listen(
+      (int received) {
+        _received = received;
+        for (final StreamController<int> sub in _subscribers.toList()) {
+          sub.add(received);
+        }
+      },
+      onError: (Object error, StackTrace stack) {
+        _detach();
+        for (final StreamController<int> sub in _subscribers.toList()) {
+          sub.addError(error, stack);
+        }
+      },
+      onDone: () {
+        _detach();
+        for (final StreamController<int> sub in _subscribers.toList()) {
+          unawaited(sub.close());
+        }
+        _subscribers.clear();
+        _markStopped();
+      },
+      cancelOnError: false,
+    );
+  }
+
+  late final StreamSubscription<int> _source;
+  final Completer<void> _stopped = Completer<void>();
+
+  void _markStopped() {
+    if (!_stopped.isCompleted) _stopped.complete();
+  }
+
+  final List<StreamController<int>> _subscribers = <StreamController<int>>[];
+  int? _received;
+
+  void _detach() {
+    if (identical(_panelModelDownload, this)) _panelModelDownload = null;
+  }
+
+  Stream<int> subscribe() {
+    late final StreamController<int> sub;
+    sub = StreamController<int>(
+      onCancel: () async {
+        _subscribers.remove(sub);
+        if (_subscribers.isEmpty && identical(_panelModelDownload, this)) {
+          // 最后一个订阅者走了：中止下载（下载体的 finally 删 `.part`、关连接）。
+          _detach();
+          try {
+            await _source.cancel();
+          } finally {
+            _markStopped();
+          }
+        }
+      },
+    );
+    final int? received = _received;
+    if (received != null) sub.add(received);
+    _subscribers.add(sub);
+    return sub.stream;
+  }
+}
+
+Stream<int> _downloadMangaPanelModelOnce({
+  required Future<void> after,
+  HttpClient Function()? clientFactory,
+  Duration stallTimeout = kMangaPanelModelStallTimeout,
 }) async* {
+  await after;
   if (!kMangaPanelModelManifest.isVerified) {
     throw StateError('panel model manifest has no verified release digest');
   }
@@ -92,15 +202,16 @@ Stream<int> downloadMangaPanelModel({
     );
     request.headers.set(HttpHeaders.acceptHeader, 'application/octet-stream');
     final HttpClientResponse response = await request.close().timeout(
-      const Duration(seconds: 30),
+      stallTimeout,
     );
     if (response.statusCode != HttpStatus.ok) {
       throw HttpException('model download HTTP ${response.statusCode}');
     }
     IOSink? sink = part.openWrite();
+    bool verified = false;
     try {
       int received = 0;
-      await for (final List<int> chunk in response) {
+      await for (final List<int> chunk in response.timeout(stallTimeout)) {
         received += chunk.length;
         if (received > kMangaPanelModelManifest.bytes!) {
           throw StateError('model exceeds manifest size');
@@ -114,8 +225,10 @@ Stream<int> downloadMangaPanelModel({
           await _sha256(part) != kMangaPanelModelManifest.sha256) {
         throw StateError('downloaded panel model failed manifest validation');
       }
+      verified = true;
     } finally {
       await sink?.close();
+      if (!verified && await part.exists()) await part.delete();
     }
     // A retry may be replacing a corrupt file. Windows rename does not replace
     // an existing target, so remove only this verified-path target immediately

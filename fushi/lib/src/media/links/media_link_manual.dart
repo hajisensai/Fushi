@@ -11,6 +11,8 @@ const List<MediaLinkRelation> kMediaLinkPickableRelations = <MediaLinkRelation>[
   MediaLinkRelation.adaptation,
   MediaLinkRelation.sameWork,
   MediaLinkRelation.themeSong,
+  MediaLinkRelation.sequel,
+  MediaLinkRelation.sideStory,
 ];
 
 /// 主题曲连接可选的角色（`media_links.role`）。
@@ -29,7 +31,11 @@ typedef ManualMediaLinkWrite = ({MediaLinkId id, MediaLinkRow? previous});
 /// - [MediaLinkRelation.themeSong]：方向固定「音乐 → 视频」，[self] / [target] 谁是音乐
 ///   都行；写完后台识别这条连接覆盖的各集；两端不是「音乐 + 视频」抛 [ArgumentError]；
 /// - [MediaLinkRelation.adaptation]：[selfIsOriginal] = true 时本条是原作（本条 → 目标）；
+/// - [MediaLinkRelation.sequel]：[selfIsOriginal] = true 时本条是前作（本条 → 续作）；
+/// - [MediaLinkRelation.sideStory]：[selfIsOriginal] = true 时本条是本篇（本条 → 外传）；
 /// - [MediaLinkRelation.sameWork]：无方向。
+///
+/// 续作 / 外传是系列关系，不并作品（关系网的「系列」栏）。
 Future<ManualMediaLinkWrite> writeManualMediaLink(
   FushiDatabase db, {
   required MediaLinkEndpoint self,
@@ -53,8 +59,7 @@ Future<ManualMediaLinkWrite> writeManualMediaLink(
     from = selfIsMusic ? self : target;
     to = selfIsMusic ? target : self;
   } else {
-    final bool selfIsFrom =
-        relation != MediaLinkRelation.adaptation || selfIsOriginal;
+    final bool selfIsFrom = !relation.directed || selfIsOriginal;
     from = selfIsFrom ? self : target;
     to = selfIsFrom ? target : self;
   }
@@ -85,3 +90,26 @@ Future<ManualMediaLinkWrite> writeManualMediaLink(
   }
   return (id: id, previous: previous);
 }
+
+/// `links.add` / CLI 的 `selfIs` → 本条是不是落库方向的 from 端（原作 / 前作 /
+/// 本篇）。与 [relation] 不配套的值返回 null；无方向关系与主题曲恒 true（方向由
+/// 关系自己定）。
+bool? mediaLinkSelfIsFrom(MediaLinkRelation relation, String? selfIs) =>
+    switch (relation) {
+      MediaLinkRelation.adaptation => switch (selfIs) {
+        'original' => true,
+        'adaptation' => false,
+        _ => null,
+      },
+      MediaLinkRelation.sequel => switch (selfIs) {
+        'prequel' => true,
+        'sequel' => false,
+        _ => null,
+      },
+      MediaLinkRelation.sideStory => switch (selfIs) {
+        'main' => true,
+        'side_story' => false,
+        _ => null,
+      },
+      _ => true,
+    };

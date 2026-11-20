@@ -830,6 +830,76 @@ void main() {
       expect(v.worthReporting, isTrue);
     });
 
+    // BUG-4757（反馈 Z9FwhY9377）：小米 Android 13 熄屏后，MIUI 耗电检查以 OTHER +
+    // 「ScreenOffCPUCheckKill over … used … threshold …」杀进程（importance=125 前台服务）。
+    // 旧 androidExitKind 只认 OPlus o-stop → null → 回落标记推断；标记停在 inactive /
+    // launching（无界面引擎收不到生命周期）时就判成「停在前台时没了，疑似闪退」。
+    const String screenOffCpuKill =
+        'ScreenOffCPUCheckKill over +25m0s475ms used +45m1s910ms '
+        '(180.07031%) threshold 6.0';
+
+    test(
+      'OTHER + MIUI ScreenOffCPUCheckKill + importance=125 + 标记停在 inactive → 厂商停止，不弹闪退报告',
+      () async {
+        final PreviousExitVerdict? v = await verdictFor(
+          lifecycle: 'inactive',
+          reasons: <Map<String, Object?>>[
+            record(pid: 19104, importance: 125, description: screenOffCpuKill),
+          ],
+        );
+        expect(v, isNotNull);
+        expect(v!.kind, PreviousExitKind.vendorStopped);
+        expect(v.worthReporting, isFalse);
+        expect(v.summary, contains('ScreenOffCPUCheckKill'));
+      },
+    );
+
+    test(
+      'OTHER + MIUI ScreenOffCPUCheckKill + 标记停在 paused → 厂商停止（不是「多半是系统回收」）',
+      () async {
+        final PreviousExitVerdict? v = await verdictFor(
+          lifecycle: 'paused',
+          reasons: <Map<String, Object?>>[
+            record(pid: 19104, importance: 125, description: screenOffCpuKill),
+          ],
+        );
+        expect(v!.kind, PreviousExitKind.vendorStopped);
+        expect(v.worthReporting, isFalse);
+      },
+    );
+
+    test('MIUI ScreenOffCPUCheckKill 记录走 log（耗电问题不藏进诊断段），o-stop 不走', () {
+      final List<ExitReportEntry> entries = formatAndroidExitReports(
+        <Object?, Object?>{
+          'reasons': <Map<String, Object?>>[
+            record(pid: 19104, importance: 125, description: screenOffCpuKill),
+            record(
+              pid: 18800,
+              importance: 100,
+              description: '[UNKNOWN] stop app.fushi.reader due to o-stop(40)',
+            ),
+          ],
+        },
+      );
+      expect(entries, hasLength(2));
+      expect(entries[0].kind, PreviousExitKind.vendorStopped);
+      expect(entries[0].severe, isTrue);
+      expect(entries[1].kind, PreviousExitKind.vendorStopped);
+      expect(entries[1].severe, isFalse);
+    });
+
+    test('ScreenOffCPUCheckKill 不压过真崩溃：同一启动另有 CRASH 记录时照样上报', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'resumed',
+        reasons: <Map<String, Object?>>[
+          record(pid: 19104, importance: 125, description: screenOffCpuKill),
+          record(pid: 18800, importance: 100, reason: 'CRASH', timestamp: 4500),
+        ],
+      );
+      expect(v!.kind, PreviousExitKind.crash);
+      expect(v.worthReporting, isTrue);
+    });
+
     // 反馈 lN8b_hBgKD（小米 HyperOS，SDK 36）：用户在最近任务里划掉 app，MIUI / HyperOS
     // 框架以 OTHER +「SwipeUpClean」结束进程；死时在跑前台服务（importance=125）。旧实现
     // OTHER 不认这段描述 → null → 回落标记推断，界面还在前台时报「停在前台时没了，疑似闪退」。
@@ -979,6 +1049,46 @@ void main() {
         PreviousExitKind.nativeCrash,
       );
     });
+
+    test(
+      'androidExitKind / androidExitSevere：MIUI ScreenOffCPUCheckKill 只认开头锚定的标记词',
+      () {
+        for (final String d in <String>[
+          'ScreenOffCPUCheckKill over +25m0s475ms used +45m1s910ms (180.07031%) threshold 6.0',
+          '[UNKNOWN] ScreenOffCPUCheckKill over +5m used +1m (20.0%) threshold 6.0',
+          'ScreenOffCPUCheckKill',
+        ]) {
+          expect(
+            androidExitKind('OTHER', description: d),
+            PreviousExitKind.vendorStopped,
+            reason: d,
+          );
+          expect(androidExitSevere('OTHER', description: d), isTrue, reason: d);
+        }
+        for (final String d in <String>[
+          'crash: ScreenOffCPUCheckKill over +5m',
+          'ScreenOffCPUCheckKillX over +5m',
+          'screenoffcpucheckkill over +5m',
+        ]) {
+          expect(androidExitKind('OTHER', description: d), isNull, reason: d);
+          expect(
+            androidExitSevere('OTHER', description: d),
+            isFalse,
+            reason: d,
+          );
+        }
+        // 只有 OTHER 看描述：真崩溃带这段文字照旧是崩溃；SIGNALED 照旧交给会话标记。
+        const String d = 'ScreenOffCPUCheckKill over +5m used +1m';
+        expect(
+          androidExitKind('CRASH', description: d),
+          PreviousExitKind.crash,
+        );
+        expect(androidExitKind('SIGNALED', description: d), isNull);
+        expect(androidExitSevere('USER_REQUESTED', description: d), isFalse);
+        expect(androidExitSevere('CRASH'), isTrue);
+        expect(androidExitSevere('OTHER'), isFalse);
+      },
+    );
 
     test(
       'androidExitKind：OTHER 只认锚定的 OPlus「stop <包名> due to o-stop(<码>)」形态',

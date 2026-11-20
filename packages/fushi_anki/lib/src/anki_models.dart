@@ -948,10 +948,10 @@ class AnkiMiningPayload {
   /// 本次制卡里，用户选中的那一段是否**真的**作为 `<mark>` 落进了导出的释义树
   /// （popup.js 的 applyGlossarySelectionHighlight 确实插入了标记）。
   ///
-  /// 只是「上报事实」，不是「已经让位」：SelectionText 该不该让位取决于笔记类型
-  /// 和字段映射，而 popup.js 那一层两个都看不见。判据见
-  /// [BaseAnkiRepository.shouldYieldSelectionText]。旧 payload 没有这个键 →
-  /// `false` → 行为逐字节不变。
+  /// 只是「上报事实」，不影响 `{popup-selection-text}` / `{popup-selection-html}`
+  /// 的渲染——选中内容总是照填（BUG-4756）。保留这个线上键是为了 payload 契约
+  /// （互联 host 白名单、草稿持久化、BUG-2089 的类型容错）。旧 payload 没有这个键 →
+  /// `false`。
   final bool glossarySelectionHighlighted;
 
   /// 用户在「卡已在 Anki」对话框里明确选了「新增为重复卡」（BUG-2605）。
@@ -1188,24 +1188,17 @@ class AnkiHandlebarRenderer {
   static String render(
     String template,
     AnkiMiningPayload payload,
-    AnkiMiningContext context, {
-    bool yieldSelectionText = false,
-  }) => template.replaceAllMapped(
+    AnkiMiningContext context,
+  ) => template.replaceAllMapped(
     _handlebarRegex,
-    (match) => _handlebarToValue(
-      match.group(0)!,
-      payload,
-      context,
-      yieldSelectionText: yieldSelectionText,
-    ),
+    (match) => _handlebarToValue(match.group(0)!, payload, context),
   );
 
   static String _handlebarToValue(
     String handlebar,
     AnkiMiningPayload payload,
-    AnkiMiningContext context, {
-    bool yieldSelectionText = false,
-  }) {
+    AnkiMiningContext context,
+  ) {
     if (handlebar.startsWith(_singleGlossaryPrefix)) {
       final dictionary = handlebar.substring(
         _singleGlossaryPrefix.length,
@@ -1276,14 +1269,11 @@ class AnkiHandlebarRenderer {
           payload.selectedDictionary,
         );
       case '{popup-selection-text}':
-        // 选中的那段已经作为 <mark> 进了释义字段时，是否还要在这里再放一份，
-        // 由知道笔记类型和字段映射的那一层决定
-        // （[BaseAnkiRepository.shouldYieldSelectionText]）。
-        return yieldSelectionText ? '' : payload.popupSelectionText;
+        // 选中内容总是如实填入，即使同一段已作为 <mark> 高亮进了释义字段
+        // （BUG-4756：此前在 Lapis 下让位成空，SelectionText 字段就丢了选中文字）。
+        return payload.popupSelectionText;
       case '{popup-selection-html}':
-        // 同一个选区的带样式版本，让位判据与纯文本版相同：让位的理由（Lapis 卡背
-        // 轮播被一段选区占住默认页）与内容是纯文本还是 HTML 无关。
-        return yieldSelectionText ? '' : payload.popupSelectionHtml;
+        return payload.popupSelectionHtml;
       case '{sentence}':
         return _sentenceValue(payload, context);
       case '{cue-sentence}':
@@ -2000,6 +1990,13 @@ class AnkiErrorCode {
   /// 或关闭「制卡到已配对设备」改为本机制卡。
   static const String pairedDeviceUnreachable =
       'ANKI_PAIRED_DEVICE_UNREACHABLE';
+
+  /// 互联远端制卡连上了已配对主机，但它此刻不收卡（制卡端点 404 / 405：主机上没有任何可写的落点，例如服务端没带
+  /// Anki helper、复习库又因为要升级而停用）。请求没被执行，卡确定没送到——与 [pairedDeviceUnreachable] 一样可以
+  /// 进待发队列，等主机能收卡了再发；文案要告诉用户「连上了、是那台主机没收这张卡」，不是「连不上」——客户端只看得到
+  /// 404 / 405，分不清是没有落点还是主机版本没有这个端点，文案不咬定原因。
+  static const String pairedDeviceMiningUnavailable =
+      'ANKI_PAIRED_DEVICE_MINING_UNAVAILABLE';
 
   /// 反馈 E52FUMdbR6：互联远端制卡**送到了**已配对设备，但那台设备上的 Anki 落卡失败
   /// （它的 AnkiConnect 没开、牌组缺失……）。[MineOutcome.errorDetail] 是主机回传的

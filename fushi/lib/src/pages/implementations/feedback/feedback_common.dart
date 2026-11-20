@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/feedback/feedback_entry_gate.dart';
+import 'package:fushi/src/feedback/feedback_files.dart';
 import 'package:fushi/src/feedback/feedback_fix_progress.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/feedback/feedback_store.dart';
@@ -130,6 +131,18 @@ String? feedbackVideoErrorText(Object error) => switch (error) {
   FeedbackVideoUnsupportedException() => t.feedback_video_unsupported,
   _ => null,
 };
+
+/// 样本文件传不上去的原因（[feedbackFileProblem]）给用户看的完整一句。
+String feedbackFileProblemText(String name, FeedbackFileProblem problem) =>
+    switch (problem) {
+      FeedbackFileProblem.unsupportedType =>
+        t.feedback_compose_file_unsupported(name: name),
+      FeedbackFileProblem.empty => t.feedback_compose_file_empty(name: name),
+      FeedbackFileProblem.tooLarge => t.feedback_compose_file_too_large(
+        name: name,
+        max: FushiByteFormat.bytes(FeedbackLimits.fileMaxBytes),
+      ),
+    };
 
 /// 显示用户文字前剥掉伪装字符（双向控制符 / 零宽字符，emoji 的 ZWJ 保留）。服务端
 /// 提交时已剥过，这里是纵深防御：旧数据或绕过服务端的内容也不会在处理台里「看到的和

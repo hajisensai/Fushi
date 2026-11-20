@@ -114,10 +114,23 @@ void main() {
     expect(end, greaterThan(start), reason: '_buildPageHeader 方法体定位失败');
     final String header = src.substring(start, end);
 
+    // 设计稿 #video V2：空闲时刷新住在页头「⋯」里（入口仍看得见、点得到），
+    // 刷新进行中页头另露一颗转圈的刷新按钮。
+    expect(
+      header.contains("ValueKey<String>('video-library-refresh-menu')") &&
+          header.contains('onSelected: _refreshFromHeader'),
+      isTrue,
+      reason: '页头「⋯」必须有刷新——桌面端没有别的手动刷新入口',
+    );
+    expect(
+      header.contains('enabled: !_headerRefreshBusy'),
+      isTrue,
+      reason: '刷新进行中「⋯」里的刷新置灰，不可重入',
+    );
     expect(
       header.contains("ValueKey<String>('video-library-refresh')"),
       isTrue,
-      reason: '页头必须有刷新按钮——桌面端没有别的手动刷新入口',
+      reason: '刷新进行中页头要露出转圈的刷新按钮',
     );
     expect(
       header.contains('onTap: _headerRefreshBusy ? null : _refreshFromHeader'),

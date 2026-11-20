@@ -17,11 +17,13 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
     show
+        MangaOcrFilePageCache,
         MangaOcrPageFile,
         enumerateMangaPages,
         kMangaOcrOutDirName,
         kMangaOcrOutputFileName;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
+import 'package:fushi_engine/ocr/ocr_types.dart' show OcrBlock, OcrPageResult;
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
@@ -165,6 +167,90 @@ class _FakeOcrService implements MangaOcrService {
       }());
     };
     return controller.stream;
+  }
+}
+
+/// 带**真**逐页断点缓存（[MangaOcrFilePageCache]，本地 OCR 与 host 共用的那个类）
+/// 的 host 服务：命中的页不再「识别」，只数次数。
+class _PageCacheOcrService implements MangaOcrService {
+  int recognized = 0;
+  int cacheHits = 0;
+
+  @override
+  bool get isSupportedPlatform => true;
+
+  @override
+  Future<MangaOcrModelStatus> modelStatus() async => const MangaOcrModelStatus(
+    detectorReady: true,
+    recognizerReady: true,
+    diskBytes: 1,
+    totalBytes: 1,
+  );
+
+  @override
+  Stream<MangaOcrDownloadEvent> downloadModels() =>
+      const Stream<MangaOcrDownloadEvent>.empty();
+
+  @override
+  Future<int> deleteModels() async => 0;
+
+  @override
+  Stream<MangaOcrVolumeEvent> ocrFolder({
+    required String imageDirPath,
+    String? volumeTitle,
+    int startPage = 0,
+  }) async* {
+    final List<MangaOcrPageFile> pages = enumerateMangaPages(
+      Directory(imageDirPath),
+    );
+    final Directory outDir = Directory(
+      p.join(imageDirPath, kMangaOcrOutDirName),
+    )..createSync(recursive: true);
+    final MangaOcrFilePageCache cache = MangaOcrFilePageCache(
+      cacheDir: Directory(p.join(outDir.path, '_pages')),
+      pageNames: <String>[
+        for (final MangaOcrPageFile page in pages) page.relativeUrl,
+      ],
+      pageFiles: <File>[for (final MangaOcrPageFile page in pages) page.file],
+    );
+    for (int i = 0; i < pages.length; i++) {
+      if (await cache.read('vol', i) != null) {
+        cacheHits += 1;
+      } else {
+        recognized += 1;
+        await cache.write(
+          'vol',
+          OcrPageResult(
+            pageIndex: i,
+            imageWidth: 10,
+            imageHeight: 20,
+            blocks: const <OcrBlock>[],
+          ),
+        );
+      }
+      yield MangaOcrVolumeEvent.page(
+        pagesDone: i + 1,
+        pagesTotal: pages.length,
+      );
+    }
+    final File out = File(p.join(outDir.path, kMangaOcrOutputFileName));
+    out.writeAsStringSync(
+      jsonEncode(<String, Object?>{
+        'pages': <Object?>[
+          for (final MangaOcrPageFile page in pages)
+            <String, Object?>{
+              'url': page.relativeUrl,
+              'width': 10,
+              'height': 20,
+              'blocks': <Object?>[],
+            },
+        ],
+      }),
+    );
+    yield MangaOcrVolumeEvent.finished(
+      pagesTotal: pages.length,
+      mangaJsonPath: out.path,
+    );
   }
 }
 
@@ -328,6 +414,48 @@ void main() {
       expect(target, isNotNull);
       expect(target!.baseUrl, 'http://127.0.0.1:${isReady.port}');
       expect(target.capability.usable, isTrue);
+    },
+  );
+
+  // BUG-4817：host 的逐页断点缓存按「页名 + 大小 + 修改时间」认页；上传不带源
+  // 文件的修改时间时，重传的页图永远是「新文件」，同卷第二次整卷重新识别。
+  test(
+    're-running the same volume hits the host per-page cache (source mtime travels)',
+    () async {
+      final _PageCacheOcrService service = _PageCacheOcrService();
+      await startHost(
+        _FakeOcrService(),
+        manager: MangaOcrHostJobManager(
+          service: service,
+          jobRoot: Directory(p.join(tmpRoot.path, 'jobs')),
+        ),
+      );
+      final Directory volume = writeVolume();
+      final InterconnectMangaOcrClient client = buildClient();
+      final MangaOcrRemoteTarget target = (await client.probe())!;
+
+      await client
+          .run(target: target, imageDirPath: volume.path, volumeTitle: '同卷')
+          .drain<void>();
+      expect(service.recognized, 3);
+      expect(service.cacheHits, 0);
+
+      await client
+          .run(target: target, imageDirPath: volume.path, volumeTitle: '同卷')
+          .drain<void>();
+      expect(service.cacheHits, 3, reason: '重传同卷：三页都该命中已识别的缓存');
+      expect(service.recognized, 3, reason: '没有一页被重新识别');
+
+      // 源文件真改过的那页照常重新识别（大小相同，只有修改时间不同）。
+      final File touched = File(p.join(volume.path, 'p2.jpg'));
+      touched.setLastModifiedSync(
+        touched.lastModifiedSync().add(const Duration(minutes: 1)),
+      );
+      await client
+          .run(target: target, imageDirPath: volume.path, volumeTitle: '同卷')
+          .drain<void>();
+      expect(service.recognized, 4);
+      expect(service.cacheHits, 5);
     },
   );
 

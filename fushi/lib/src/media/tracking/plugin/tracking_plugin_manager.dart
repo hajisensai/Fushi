@@ -3,8 +3,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi/src/media/tracking/plugin/bundled_tracking_plugins.dart'
+    show kBundledMangaBakaPlugin;
 import 'package:fushi/src/media/tracking/plugin/tracking_plugin_engine.dart';
 import 'package:fushi/src/media/tracking/plugin/tracking_plugin_models.dart';
+import 'package:fushi_engine/media/metadata/mangabaka/mangabaka_rate_gates.dart';
 import 'package:fushi_engine/media/tracking/tracking_rate_gate.dart';
 
 /// Installed tracking plugins: install, enable / disable, remove, runtimes
@@ -500,6 +503,15 @@ class TrackingPluginManager {
     await list();
   }
 
+  /// The installed package [id] packed back into a `.fushiplug` (interconnect
+  /// source share). Only the package directory: storage, credentials and the
+  /// account state live outside it and never leave the device. Null when not
+  /// installed.
+  Future<Uint8List?> exportPackage(String id) async {
+    if (!_idPattern.hasMatch(id)) return null;
+    return packTrackingPluginDirectory(_dirOf(id));
+  }
+
   /// Removes the package, its storage, its credentials and its account state.
   /// Links and queued updates in the database are kept (spec §4).
   /// A built-in bundled package cannot be removed
@@ -614,7 +626,11 @@ class TrackingPluginManager {
     }
     final int perMinute = verified.site!.requestsPerMinute;
     final ({int perMinute, TrackingRateGate gate})? known = _gates[id];
-    final TrackingRateGate gate = known != null && known.perMinute == perMinute
+    // MangaBaka 按 IP 限流：追踪插件与书 / 漫画封面刮削共用同一组计数
+    // （[MangaBakaRateGates]），插件的每个请求都记在最严的搜索档上。
+    final TrackingRateGate gate = id == kBundledMangaBakaPlugin.id
+        ? MangaBakaRateGates.shared.search
+        : known != null && known.perMinute == perMinute
         ? known.gate
         : (_gates[id] = (
             perMinute: perMinute,

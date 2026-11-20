@@ -10,7 +10,8 @@
 // 附件没传上去（网络中断等）时字节落盘到 FeedbackPendingStore，详情页可「重试上传」；
 // 服务端 24 小时内允许补传空闲槽位（与 PR #2090 的待传重试是同一机制）。视频（槽位 v0，
 // ≤ 100 MB）默认原件上传，超限 / 格式不收或用户选了 720p / 1080p 档时在本机转码成 H.264
-// （feedback_video.dart），从待传区的文件流式上传。
+// （feedback_video.dart），从待传区的文件流式上传。样本文件（槽位 f0..f2，字幕 / 书 / 音视频
+// 原件 / 词典 / md，见 feedback_files.dart）原样复制进待传区，同样流式上传、失败可重试。
 //
 // 「我的反馈」= 本机回执 ∪ 账户列表：已登录排行榜账户时另拉 GET /v1/feedback/mine
 // （别的设备带账户提交的也在里面），按 id 去重、本机回执优先；账户列表里的条目没有 ticket
@@ -50,6 +51,7 @@ class FeedbackDraft {
     this.linkAccount = true,
     this.screenshots = const <Uint8List>[],
     this.video,
+    this.files = const <File>[],
     this.reopenOf,
     this.submissionKey,
   });
@@ -74,6 +76,10 @@ class FeedbackDraft {
   /// 用户选的视频文件（原件不动；上传前在本机转码）。每条反馈最多一个。
   final File? video;
 
+  /// 样本文件（字幕 / 书 / 音视频原件 / 词典 / md……，见 feedback_files.dart），最多
+  /// [FeedbackLimits.files] 个。原样复制进待传区再上传（槽位 `f0`..`f2`），原件不动。
+  final List<File> files;
+
   /// 「问题没解决，重新提交」：原反馈 id（必须是本机清单里的、带 ticket 的那条）。
   final String? reopenOf;
 
@@ -94,8 +100,16 @@ String newFeedbackSubmissionKey([Random? random]) {
 }
 
 /// 提交进行到哪一步（提交页的进度文案）。[videoPrepare] 在发正文之前（转码失败 / 太大
-/// 要在反馈交上去之前告诉用户），[video] 是最后一步（最大的附件最后传）。
-enum FeedbackSubmitStage { videoPrepare, sending, screenshots, logs, video }
+/// 要在反馈交上去之前告诉用户），[video] 在 [files]（样本文件）之前：两者共用服务端每 IP
+/// 每天的大附件额度，录屏是主证据，先传（BUG-4784）。
+enum FeedbackSubmitStage {
+  videoPrepare,
+  sending,
+  screenshots,
+  logs,
+  files,
+  video,
+}
 
 /// 视频附件正在做什么（详情页「追加视频」/「重试上传」的进度）。
 enum FeedbackVideoStage { preparing, uploading }
@@ -309,8 +323,17 @@ class FeedbackService extends ChangeNotifier {
   Future<void> _load() async {
     _tickets = await (await _storeFor()).read();
     try {
-      final Map<String, Set<String>> pending = await (await _pendingFor())
-          .scan();
+      final FeedbackPendingStore store = await _pendingFor();
+      // 提交（唯一会 copyFile 的路径）都先 await load()，此刻没有复制在跑。清半成品是
+      // 收拾磁盘，和「有哪些待传附件」无关：它失败（文件被占用 / 没权限）只留下不算槽位的
+      // `.part` 等下次启动再清，不能连累下面的 scan，否则这一整次运行里所有待传附件都看不到、
+      // 也没法重试。
+      try {
+        await store.discardInterrupted();
+      } on Object catch (e, st) {
+        ErrorLogService.instance.log('feedback.pending_discard', e, st);
+      }
+      final Map<String, Set<String>> pending = await store.scan();
       _pending
         ..clear()
         ..addAll(pending);
@@ -568,6 +591,8 @@ class FeedbackService extends ChangeNotifier {
         'logs_attached': draft.includeLogs,
         'screenshots': draft.screenshots.length,
         if (video != null) 'video': true,
+        if (draft.files.isNotEmpty)
+          'files': min(draft.files.length, FeedbackLimits.files),
       },
       linkAccount: draft.linkAccount,
       reopenOf: parent == null ? null : (id: parent.id, ticket: parent.ticket),
@@ -653,6 +678,10 @@ class FeedbackService extends ChangeNotifier {
         if (gz != null) await _stash(receipt.id, 'log', gz);
       }
     }
+    // 视频先于样本文件传：服务端按上传 IP 每天给大附件一份共用的字节额度
+    // （services/leaderboard/src/feedback.js 的 videoBytesPerIpDay，视频与 f0..f2 共用），
+    // 3 个满额样本文件就能吃光它；录屏是复现过程的主证据，不能排在最后被 429 挤掉、
+    // 再等额度恢复时补传窗口（FeedbackLimits.attachWindow）已经过了。
     if (video != null) {
       onStage?.call(FeedbackSubmitStage.video);
       onVideoProgress?.call(0);
@@ -660,11 +689,22 @@ class FeedbackService extends ChangeNotifier {
       final bool stashed = await _stashVideo(receipt.id, video);
       final bool ok =
           stashed &&
-          await _uploadPendingVideo(
+          await _uploadPendingLarge(
                 ticket,
+                FeedbackLimits.videoSlot,
                 onProgress: (double f) => onVideoProgress?.call(f),
               ) ==
               _SlotOutcome.uploaded;
+      if (!ok) failed++;
+    }
+    final List<File> files = draft.files.take(FeedbackLimits.files).toList();
+    if (files.isNotEmpty) onStage?.call(FeedbackSubmitStage.files);
+    for (int i = 0; i < files.length; i++) {
+      final String slot = FeedbackLimits.fileSlot(i);
+      // 同视频：先复制进待传区再传，传失败留着在详情页重试。
+      final bool ok =
+          await _stashFile(receipt.id, slot, files[i]) &&
+          await _uploadPendingLarge(ticket, slot) == _SlotOutcome.uploaded;
       if (!ok) failed++;
     }
     return FeedbackSubmitResult(ticket, failedAttachments: failed);
@@ -771,6 +811,25 @@ class FeedbackService extends ChangeNotifier {
     }
   }
 
+  /// 用户选的样本文件复制进待传区（槽位 `f0`..`f2`，记下原文件名）。复制不了返回 false
+  /// （文件已被删 / 磁盘满等，原因进日志）。
+  Future<bool> _stashFile(String id, String slot, File source) async {
+    try {
+      await (await _pendingFor()).copyFile(
+        id,
+        slot,
+        source,
+        name: p.basename(source.path),
+      );
+      (_pending[id] ??= <String>{}).add(slot);
+      notifyListeners();
+      return true;
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log('feedback.stash_file', e, st);
+      return false;
+    }
+  }
+
   void _setTransfer(String id, FeedbackVideoTransfer? next) {
     final FeedbackVideoTransfer? prev = _transfers[id];
     if (next == null) {
@@ -789,13 +848,18 @@ class FeedbackService extends ChangeNotifier {
     if (!same) notifyListeners();
   }
 
-  /// 传待传区里的视频；成功 / 被拒都删掉待传文件。
-  Future<_SlotOutcome> _uploadPendingVideo(
-    FeedbackTicket t, {
+  /// 传待传区里的大附件（视频 `v0` / 样本文件 `f0`..`f2`，都是流式上传）；成功 / 被拒都删掉
+  /// 待传文件。视频的上传进度进 [videoTransfer]。
+  Future<_SlotOutcome> _uploadPendingLarge(
+    FeedbackTicket t,
+    String slot, {
     void Function(double fraction)? onProgress,
   }) async {
+    final bool isVideo = slot == FeedbackLimits.videoSlot;
+    final String logTag = isVideo
+        ? 'feedback.upload_video'
+        : 'feedback.upload_file';
     final FeedbackPendingStore store = await _pendingFor();
-    const String slot = FeedbackLimits.videoSlot;
     final ({File file, String contentType})? pending = await store.fileOf(
       t.id,
       slot,
@@ -804,50 +868,88 @@ class FeedbackService extends ChangeNotifier {
       _pending[t.id]?.remove(slot);
       return _SlotOutcome.dropped;
     }
+    // 样本文件必须带原文件名（服务端按它的扩展名收文件）。[FeedbackPendingStore.copyFile]
+    // 保证本体在旁注就在；还缺就是待传区被外部动过，编个名字传上去只会被永久拒收，
+    // 白白流量：当损坏丢掉、记日志。
+    final String? fileName = isVideo ? null : await store.nameOf(t.id, slot);
+    if (!isVideo && fileName == null) {
+      ErrorLogService.instance.log(
+        logTag,
+        StateError('pending sample file ${t.id}/$slot has no name sidecar'),
+        StackTrace.current,
+      );
+      await _forgetPendingSlot(store, t.id, slot);
+      return _SlotOutcome.dropped;
+    }
     _SlotOutcome outcome = _SlotOutcome.failed;
     try {
       final int length = await pending.file.length();
-      _setTransfer(
-        t.id,
-        const FeedbackVideoTransfer(FeedbackVideoStage.uploading, 0),
-      );
-      await _client().uploadFeedbackVideo(
-        t.id,
-        t.ticket,
-        body: pending.file.openRead(),
-        length: length,
-        contentType: pending.contentType,
-        onProgress: (int sent) {
-          final double f = length == 0 ? 1 : sent / length;
-          onProgress?.call(f);
+      void progress(int sent) {
+        final double f = length == 0 ? 1 : sent / length;
+        onProgress?.call(f);
+        if (isVideo) {
           _setTransfer(
             t.id,
             FeedbackVideoTransfer(FeedbackVideoStage.uploading, f),
           );
-        },
-      );
+        }
+      }
+
+      if (isVideo) {
+        _setTransfer(
+          t.id,
+          const FeedbackVideoTransfer(FeedbackVideoStage.uploading, 0),
+        );
+        await _client().uploadFeedbackVideo(
+          t.id,
+          t.ticket,
+          body: pending.file.openRead(),
+          length: length,
+          contentType: pending.contentType,
+          onProgress: progress,
+        );
+      } else {
+        await _client().uploadFeedbackFile(
+          t.id,
+          t.ticket,
+          slot: slot,
+          name: fileName!,
+          body: pending.file.openRead(),
+          length: length,
+          onProgress: progress,
+        );
+      }
       outcome = _SlotOutcome.uploaded;
     } on LeaderboardApiException catch (e, st) {
-      ErrorLogService.instance.log('feedback.upload_video', e, st);
+      ErrorLogService.instance.log(logTag, e, st);
       if (isPermanentAttachmentRejection(e.status)) {
         outcome = _SlotOutcome.dropped;
       }
     } on ArgumentError catch (e, st) {
       // 待传文件大小越界（被别的程序改过）：再传也一样，丢掉。
-      ErrorLogService.instance.log('feedback.upload_video', e, st);
+      ErrorLogService.instance.log(logTag, e, st);
       outcome = _SlotOutcome.dropped;
     } on Object catch (e, st) {
-      ErrorLogService.instance.log('feedback.upload_video', e, st);
+      ErrorLogService.instance.log(logTag, e, st);
     } finally {
-      _setTransfer(t.id, null);
+      if (isVideo) _setTransfer(t.id, null);
     }
     if (outcome != _SlotOutcome.failed) {
-      await store.remove(t.id, slot);
-      _pending[t.id]?.remove(slot);
-      if (_pending[t.id]?.isEmpty ?? false) _pending.remove(t.id);
-      notifyListeners();
+      await _forgetPendingSlot(store, t.id, slot);
     }
     return outcome;
+  }
+
+  /// 待传槽位了结（传上去了 / 被拒 / 损坏）：删磁盘文件与旁注，移出 [pendingSlots]。
+  Future<void> _forgetPendingSlot(
+    FeedbackPendingStore store,
+    String id,
+    String slot,
+  ) async {
+    await store.remove(id, slot);
+    _pending[id]?.remove(slot);
+    if (_pending[id]?.isEmpty ?? false) _pending.remove(id);
+    notifyListeners();
   }
 
   /// 把这条反馈所有待传附件再传一遍。服务端同一槽位只收一次（重复传拿到 409
@@ -864,10 +966,20 @@ class FeedbackService extends ChangeNotifier {
     final LeaderboardClient client = _client();
     int uploaded = 0;
     int dropped = 0;
-    final List<String> slots = (_pending[id] ?? <String>{}).toList()..sort();
+    // 视频排第一个，理由同 [_submit]：它和样本文件共用服务端每 IP 每天的大附件额度。
+    final List<String> slots = (_pending[id] ?? <String>{}).toList()
+      ..sort(
+        (String a, String b) => a == b
+            ? 0
+            : a == FeedbackLimits.videoSlot
+            ? -1
+            : b == FeedbackLimits.videoSlot
+            ? 1
+            : a.compareTo(b),
+      );
     for (final String slot in slots) {
-      if (slot == FeedbackLimits.videoSlot) {
-        switch (await _uploadPendingVideo(t)) {
+      if (slot == FeedbackLimits.videoSlot || FeedbackLimits.isFileSlot(slot)) {
+        switch (await _uploadPendingLarge(t, slot)) {
           case _SlotOutcome.uploaded:
             uploaded++;
           case _SlotOutcome.dropped:
@@ -1077,8 +1189,8 @@ class FeedbackService extends ChangeNotifier {
   }
 
   /// 把另一处数据根（[spoolRoot]，结构同 `<数据根>`）里提交的反馈并进本机清单：回执
-  /// 插到最前（同 id 以 spool 里的为准——那是刚提交的），没传上去的截图 / 日志挪进本机
-  /// 待传区，然后删掉 [spoolRoot]。返回并入的条数。
+  /// 插到最前（同 id 以 spool 里的为准——那是刚提交的），没传上去的附件连同旁注整项
+  /// 并进本机待传区（[FeedbackPendingStore.adoptSlot]），然后删掉 [spoolRoot]。返回并入的条数。
   ///
   /// 用于启动即闪退时的闪退报告（crash_report.dart）：那时数据库还没打开、数据根未解析，
   /// 提交先落在错误日志目录下，初始化完成后由这里接手，反馈中心照常看得到进度、能重试。
@@ -1105,9 +1217,9 @@ class FeedbackService extends ChangeNotifier {
     final Map<String, Set<String>> pending = await from.scan();
     for (final MapEntry<String, Set<String>> e in pending.entries) {
       for (final String slot in e.value) {
-        final Uint8List? bytes = await from.read(e.key, slot);
-        if (bytes == null) continue;
-        await to.put(e.key, slot, bytes);
+        // 整项并入（本体 + `.type` / `.name` 旁注）：只搬字节会让样本文件丢了原文件名、
+        // 上传时被当损坏丢掉，视频丢了 MIME。
+        if (!await to.adoptSlot(from, e.key, slot)) continue;
         (_pending[e.key] ??= <String>{}).add(slot);
       }
     }

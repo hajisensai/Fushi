@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show ByteData, rootBundle;
 import 'package:fushi/src/pages/base_page.dart';
@@ -11,7 +12,6 @@ import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/home_dictionary_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/pages/implementations/shortcut_settings_page.dart';
-import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/anki/anki_config_controls.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
@@ -34,6 +34,10 @@ import 'package:fushi/src/settings/settings_actions.dart'
     show buildLanguageSelector, buildBrightnessSelector;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/shell_style_preview.dart'
+    show ShellLayoutChoiceCards, shellPreviewCoversOf;
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show ShellContentLayout, shellRedesignActive;
 import 'package:fushi/src/settings/settings_schema_card_creation.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/settings/settings_schema_lookup.dart'
@@ -78,6 +82,8 @@ import 'package:fushi_anki/fushi_anki.dart'
 import 'package:fushi_audio/fushi_audio.dart'
     show AudiobookRepository, SrtBookRepository;
 import 'package:fushi_dictionary/fushi_dictionary.dart' show Dictionary;
+import 'package:fushi_engine/srs/srs_canonical_ids.dart'
+    show srsCanonicalIdIn, srsCanonicalIdMap, srsStoreCanonicalIds;
 import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDbStore;
 import 'package:url_launcher/url_launcher.dart';
 
@@ -121,8 +127,8 @@ List<OnboardingTutorialItem> srsOnboardingTutorialItems() =>
     <OnboardingTutorialItem>[
       OnboardingTutorialItem(
         icon: FushiIcons.statistics,
-        title: t.onboarding_srs_fsrs_title,
-        description: t.onboarding_srs_fsrs_desc,
+        title: t.onboarding_srs_rwkv_title,
+        description: t.onboarding_srs_rwkv_desc,
       ),
       OnboardingTutorialItem(
         icon: FushiIcons.collection,
@@ -261,11 +267,11 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   /// （BUG-2107），套那个模板会把「没拿到路径」说成「下载失败」。
   String? _packPickError;
 
-  // 扩展安装引导要「浏览器」模块在本平台存在（[ModuleId.availableOn]）且本平台能装
-  // 扩展（[browserExtensionSupportedOn]）——模块 2026-10-19 起五端都有，扩展仍只在桌面。
+  // 扩展安装引导要「浏览器」模块在本平台存在（[ModuleId.availableOn]）且本平台有
+  // 扩展安装引导（[browserExtensionInstallAvailableOn]：桌面与安卓有，iOS 没有）。
   bool get _browserExtensionAvailable =>
       _moduleAvailable(ModuleId.web) &&
-      browserExtensionSupportedOn(isDesktop: DesktopLookupService.isDesktop);
+      browserExtensionInstallAvailableOn(defaultTargetPlatform);
 
   /// 当前真正有应用外查词入口的平台。Windows / macOS 用系统级热键；Android 用
   /// 系统文本选择菜单 / 分享入口。其它平台不能因为都叫 desktop/mobile 就展示
@@ -669,8 +675,12 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     try {
       final SrsDbStore? store = await ref.read(srsStoreProvider.future);
       if (store == null) return;
-      if (appModelNoUpdate.srsMiningDestination.noteTypeId ==
-          store.lapisNoteTypeId) {
+      // 偏好里可能还是成员 ID（开库归一在后台跑），按规范 ID 比（G9-6）。
+      final String stored = appModelNoUpdate.srsMiningDestination.noteTypeId;
+      final Map<String, String> canonical = await srsCanonicalIdMap(<String>[
+        stored,
+      ], srsStoreCanonicalIds(store));
+      if (srsCanonicalIdIn(canonical, stored) == store.lapisNoteTypeId) {
         await appModelNoUpdate.setSrsMiningNoteTypeId('');
       }
     } catch (e, stack) {
@@ -1189,7 +1199,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           title: t.onboarding_anki_fsrs_title,
           hint: t.onboarding_anki_fsrs_body,
         ),
-        // 开了 Fushi 内置复习的用户：内置复习已经默认 FSRS-7，这段 Anki 教程只在
+        // 开了 Fushi 内置复习的用户：内置复习已经默认 RWKV，这段 Anki 教程只在
         // 还要用 Anki 复习时才需要（教程本身保留，不移出本步）。
         if (appModelNoUpdate.moduleVisibility.isEnabled(
           ModuleId.srs,
@@ -1541,16 +1551,9 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           icon: FushiIcons.repeat,
           title: t.onboarding_srs_title,
           body: t.onboarding_srs_body,
+          // 不放「打开牌组」：默认牌组已备好、制的卡直接进复习，这一步只做说明；
+          // 中途跳去牌组列表只会把用户带离引导（所有者 11-20 反馈）。
           items: srsOnboardingTutorialItems(),
-          actions: <OnboardingAction>[
-            OnboardingAction(
-              icon: FushiIcons.add,
-              label: t.onboarding_srs_action,
-              description: t.onboarding_srs_action_desc,
-              necessity: OnboardingActionNecessity.recommended,
-              onPressed: () => _pushPage((_) => const SrsDeckListPage()),
-            ),
-          ],
         );
       case OnboardingStepId.finish:
         return _buildFinishStep();
@@ -1723,6 +1726,26 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
             ],
           ),
         ),
+        // 库页布局（G1）：新安装出厂是拼贴，这里默认高亮拼贴；点选立即写入（跳过
+        // 向导也不丢），之后可在 设置 › 外观 › 库页布局 改。墨水屏库页恒为封面
+        // 网格，不问。
+        if (shellRedesignActive(context)) ...<Widget>[
+          SizedBox(height: tokens.spacing.section),
+          OnboardingSectionLabel(
+            title: t.onboarding_library_layout_title,
+            hint: t.onboarding_library_layout_hint,
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          ShellLayoutChoiceCards(
+            selected: appModel.shellContentLayout,
+            arrangement: appModel.shellBlockArrangement,
+            covers: shellPreviewCoversOf(ref, appModel),
+            onSelected: (ShellContentLayout layout) async {
+              await appModel.setShellContentLayout(layout);
+              if (mounted) setState(() {});
+            },
+          ),
+        ],
         // 语言之后再问用途：先让用户换成看得懂的界面语言。
         SizedBox(height: tokens.spacing.section),
         OnboardingSectionLabel(

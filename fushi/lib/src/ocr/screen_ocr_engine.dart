@@ -1,4 +1,5 @@
-/// 桌面应用外「截屏识字」用哪个 OCR 引擎（反馈 Eemf0HOZhj，BUG-4069）。
+/// 应用外「截屏识字」用哪个 OCR 引擎（反馈 Eemf0HOZhj，BUG-4069；Android 悬浮球截屏
+/// 识字自决定 4BBSaB12zj 起同样跟随）。
 ///
 /// 和 AI 的「功能 → 提供商」同一个模型：截屏识字有自己的引擎设置，**默认跟随全局**
 /// （「设置 → 模型 → OCR」的引擎偏好 `manga_ocr_engine_preference`，漫画 / 视频 /
@@ -41,9 +42,11 @@ enum ScreenOcrEngineSetting {
   }
 }
 
-/// 本平台的截屏识字有没有设备自带 OCR：macOS（Vision）/ Windows（Windows.Media.Ocr）
-/// 有，Linux 没有（只能用本机模型或 Lens）。
-bool get screenOcrHasSystemEngine => Platform.isMacOS || Platform.isWindows;
+/// 本平台的截屏识字有没有设备自带 OCR：macOS（Vision）/ Windows（Windows.Media.Ocr）/
+/// Android（ML Kit，悬浮球截屏识字由原生直接识别，决定 4BBSaB12zj）有，Linux 没有
+/// （只能用本机模型或 Lens）。
+bool get screenOcrHasSystemEngine =>
+    Platform.isMacOS || Platform.isWindows || Platform.isAndroid;
 
 /// 全局 OCR 引擎偏好在截屏识字里对应的引擎（不看本机模型是否就绪）：null = 按
 /// 「自动」解析（自动 / 外部 mokuro / 互联服务端）。设置页「跟随全局（…）」的标签

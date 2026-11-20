@@ -29,10 +29,8 @@ void main() {
         VideoMetadataProviderKind.tmdb,
       ],
     );
-    // AniDB provider 恒可用（离线标题目录兜底搜索），但 HTTP anime XML 链**默认
-    // 不可用**：此前这里断言「随包 `fushiplayer` 已登记、HTTP 链默认可用」，那条
-    // 前提就是 BUG-2623——fushiplayer 只登记了 UDP，拿去请求 httpapi 恒回 302。
-    // 随包 HTTP 身份为空，provider 发请求前就判不可用。
+    // 直接构造的空配置没有 HTTP 身份，provider 发请求前就判不可用。
+    // 生产偏好快照通过 fromPreferences 注入随包的独立 HTTP 登记（BUG-2623）。
     final AniDbVideoMetadataProvider anidb =
         registry.provider(VideoMetadataProviderKind.anidb)!
             as AniDbVideoMetadataProvider;

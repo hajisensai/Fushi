@@ -638,9 +638,12 @@ class LeaderboardClient {
     return slot;
   }
 
-  /// 开发者取附件可以取视频槽位（反馈人补传视频走 [uploadFeedbackVideo]）。
+  /// 开发者取附件可以取视频与样本文件槽位（反馈人补传走 [uploadFeedbackVideo] /
+  /// [uploadFeedbackFile]）。
   static String _devFeedbackSlotOf(String slot) =>
-      slot == FeedbackLimits.videoSlot ? slot : _feedbackSlotOf(slot);
+      slot == FeedbackLimits.videoSlot || FeedbackLimits.isFileSlot(slot)
+      ? slot
+      : _feedbackSlotOf(slot);
 
   /// 反馈人接口的凭据：有本机回执 [ticket] 就带 `X-Fushi-Ticket`、不签名；没有（别的设备
   /// 提交、凭账户列出来的那条，[ticket] 为空串）就用本机账户签名——服务端只认
@@ -776,13 +779,67 @@ class LeaderboardClient {
     if (length <= 0 || length > FeedbackLimits.videoMaxBytes) {
       throw ArgumentError.value(length, 'length', 'video size out of range');
     }
+    await _streamFeedbackAttachment(
+      id,
+      ticket,
+      FeedbackLimits.videoSlot,
+      body: body,
+      length: length,
+      headers: <String, String>{'Content-Type': contentType},
+      onProgress: onProgress,
+    );
+  }
+
+  /// 补传样本文件（槽位 `f0`..`f2`，≤ [FeedbackLimits.fileMaxBytes]，扩展名须在
+  /// [FeedbackLimits.fileExtensions] 里；服务端另按扩展名核对文件头）。[name] 是原文件名
+  /// （`X-Fushi-File-Name`，percent-encoded），服务端清洗后存下给开发者看。流式上传、
+  /// 超时、`slot_taken` 的处理同 [uploadFeedbackVideo]。
+  Future<void> uploadFeedbackFile(
+    String id,
+    String ticket, {
+    required String slot,
+    required String name,
+    required Stream<List<int>> body,
+    required int length,
+    void Function(int sent)? onProgress,
+  }) async {
+    if (!FeedbackLimits.isFileSlot(slot)) {
+      throw ArgumentError.value(slot, 'slot', 'f0..f2');
+    }
+    if (length <= 0 || length > FeedbackLimits.fileMaxBytes) {
+      throw ArgumentError.value(length, 'length', 'file size out of range');
+    }
+    await _streamFeedbackAttachment(
+      id,
+      ticket,
+      slot,
+      body: body,
+      length: length,
+      headers: <String, String>{
+        'Content-Type': 'application/octet-stream',
+        'X-Fushi-File-Name': Uri.encodeComponent(name),
+      },
+      onProgress: onProgress,
+    );
+  }
+
+  /// 大附件（视频 / 样本文件）的流式 PUT：按 Content-Length 边读边发，只认 ticket。
+  Future<void> _streamFeedbackAttachment(
+    String id,
+    String ticket,
+    String slot, {
+    required Stream<List<int>> body,
+    required int length,
+    required Map<String, String> headers,
+    void Function(int sent)? onProgress,
+  }) async {
     final Uri url = _endpoint(
-      '/v1/feedback/${_segment(id)}/attachments/${FeedbackLimits.videoSlot}',
+      '/v1/feedback/${_segment(id)}/attachments/$slot',
       null,
     );
     final http.StreamedRequest req = http.StreamedRequest('PUT', url)
       ..contentLength = length;
-    req.headers['Content-Type'] = contentType;
+    req.headers.addAll(headers);
     req.headers['Accept'] = 'application/json';
     req.headers['X-Fushi-Ticket'] = ticket;
     final Duration timeout =
@@ -1061,7 +1118,8 @@ class LeaderboardClient {
       'GET',
       '/v1/dev/feedback/${_segment(id)}/attachments/${_devFeedbackSlotOf(slot)}',
       query: asText ? <String, String>{'view': 'text'} : null,
-      timeout: slot == FeedbackLimits.videoSlot
+      timeout:
+          slot == FeedbackLimits.videoSlot || FeedbackLimits.isFileSlot(slot)
           ? _uploadTimeout * 10
           : _uploadTimeout,
     );

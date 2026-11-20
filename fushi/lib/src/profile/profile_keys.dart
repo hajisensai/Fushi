@@ -26,6 +26,9 @@ import 'package:fushi/src/models/preference_keys.dart'
         kLibraryManualOrderPrefKeyPrefix,
         kSectionTabOrderPrefKeyPrefix,
         kSrsLapisMigrationReminderPrefKey,
+        kWhatsNewCardDismissedVersionPrefKey,
+        kWhatsNewSeenSeqPrefKey,
+        kWhatsNewSeenVersionPrefKey,
         kWorkProfileSessionPrefKey;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
@@ -92,9 +95,16 @@ class ProfileKeys {
     'onboarding_completed',
     'onboarding_finished',
     'onboarding_home_card_dismissed',
+    // 「本版新内容」看到哪个版本：描述本机装过的包，与新手引导标志同族。
+    kWhatsNewSeenVersionPrefKey,
+    kWhatsNewSeenSeqPrefKey,
+    kWhatsNewCardDismissedVersionPrefKey,
     // 「下载 → 浏览」一次性搬迁提示的已处理标记：同族。进快照的话，切到一个
     // 标记落地前建的老 Profile 会把它删掉，关着浏览的用户又被提示一遍。
     'browse_moved_notice_handled',
+    // 库页默认改封面网格后的「拼贴仍可选」一次性提示已处理标记：同族。进快照的话，
+    // 切到标记落地前建的老 Profile 会把它删掉，提示又弹一遍。
+    'library_layout_default_notice_handled',
     // BT / 磁力下载的 P2P 说明「不再提示」：同族（描述本安装看过说明，不随
     // Profile 切换重新弹出）。
     'p2p_download_notice_dismissed',
@@ -125,6 +135,10 @@ class ProfileKeys {
     // family as app_ui_scale), never a per-profile reading preference —
     // snapshotting it would flip the whole app's colors on profile switch.
     'eink_mode',
+    // 墨水屏「每 N 页全刷」的间隔 / 方式：同样描述这块屏幕（厂商通道可不可用是
+    // 设备属性），与 eink_mode 同族。
+    'eink_full_refresh_interval',
+    'eink_full_refresh_method',
     'last_selected_deck',
     'last_selected_dictionary_format',
     'last_selected_model',

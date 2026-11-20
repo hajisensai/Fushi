@@ -229,10 +229,26 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '允许明文 HTTP（仅受信任局域网）': 'Allow plain HTTP (trusted LAN only)',
   '只填地址即可，添加时会自动检测站点。':
       'An address is enough; the site is detected when you add it.',
+  '解析规则（可选，JSON）': 'Parser rule (optional, JSON)',
+  '登录 Cookie（可选，仅带解析规则的站点）':
+      'Login cookie (optional, only for sites with a parser rule)',
+  '自动检测认不出的站点，可以粘贴它的解析规则（JSON）；需要登录的站再填 Cookie。':
+      "For a site that automatic detection can't recognize, paste its parser "
+      'rule (JSON); add a cookie for sites that need a login.',
+  '解析规则（JSON；清空 = 改回自动检测）':
+      'Parser rule (JSON; clear it to go back to automatic detection)',
+  '新 Cookie（留空不改）': 'New cookie (leave empty to keep the current one)',
   'Torznab（Jackett / Prowlarr）': 'Torznab (Jackett / Prowlarr)',
   '添加 indexer': 'Add indexer',
   '放弃修改': 'Discard changes',
-  '无法识别这个站点': 'Could not recognize this site',
+  '无法识别这个站点：可以粘贴它的解析规则后再添加':
+      'Could not recognize this site; paste a parser rule for it and add it again',
+  '按解析规则打不开站点的搜索页：请检查地址，或登录 Cookie 是否已过期':
+      "The parser rule couldn't load the site's search page; check the address, "
+      'or whether the login cookie has expired',
+  '按解析规则在搜索页上没解析出任何结果：请检查规则里的选择器，或站点是否需要登录 Cookie':
+      "The parser rule found no results on the site's search page; check the "
+      "rule's selectors, or whether the site needs a login cookie",
   '站点响应超时': 'The site timed out',
   '地址无效': 'Invalid address',
   '这是明文 HTTP 地址：请改用 HTTPS，或勾选「允许明文 HTTP」':
@@ -355,6 +371,18 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '本机替已配对设备保管 Fushi 复习的收藏：手机可以远程复习、制卡落到这里，Yomitan 可经下面的 AnkiConnect 往这里加卡。勾选要提供的配置文件（每门语言一份）；不勾选任何一份 = 关闭。同步位置开了端到端加密的配置文件暂不支持。':
       'This server keeps the Fushi review collection for paired devices: phones can review remotely and save cards here, and Yomitan can add cards through the AnkiConnect interface below. Tick the profiles to serve (one per language); none ticked = off. Profiles whose sync location uses end-to-end encryption are not supported yet.',
   '制卡落点': 'Where saved cards go',
+  'RWKV 模型': 'RWKV model',
+  '算法是 RWKV 的牌组用哪个模型排程（整台设备一个设置，各份配置文件共用）。换了当场生效：需要时先下载新权重，没有这一档的快照时按全部复习历史重放一次，期间这些牌组不出复习卡。':
+      'Which model schedules decks that use the RWKV algorithm (one setting for the whole device, shared by all profiles). A change applies at once: the new weights download if needed, and without a saved state for that size the whole review history is replayed once; those decks show no review cards meanwhile.',
+  '使用的模型': 'Model',
+  'Small（默认，准确度最好）': 'Small (default, most accurate)',
+  'Tiny（每张卡省约 30% 内存，准确度略差）':
+      'Tiny (about 30% less memory per card, slightly less accurate)',
+  '已切换 RWKV 模型': 'RWKV model switched',
+  'RWKV 下载权重中': 'RWKV downloading weights',
+  'RWKV 准备中': 'RWKV preparing',
+  'RWKV 就绪': 'RWKV ready',
+  'RWKV 出错': 'RWKV error',
   'AnkiConnect 兼容接口': 'AnkiConnect-compatible interface',
   '默认关闭。只监听本机时可以不设 key；监听局域网地址必须设 key。每份配置文件可以有自己的 key（Yomitan 里一门语言一个 key），共用 key 落到默认那份。':
       'Off by default. A key is optional when listening on this machine only, and required on a LAN address. Each profile can have its own key (one key per language in Yomitan); the shared key goes to the default profile.',
@@ -362,6 +390,30 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '同步位置已加密（暂不支持）': 'Sync location is encrypted (not supported yet)',
   '数据来自更新版本的 Fushi，请升级服务端':
       'The data comes from a newer Fushi; update the server',
+  '复习库升级中': 'Upgrading the review library',
+  '升级中': 'Upgrading',
+  '另一个进程在升级': 'Another process is upgrading it',
+  '需要升级': 'Needs an upgrade',
+  '升级失败': 'Upgrade failed',
+  '只剩封存的旧库': 'Only the sealed old library is left',
+  '新库旁边还有没升级的旧库':
+      'An old library that was never upgraded sits beside the new one',
+  '升级受阻': 'Upgrade blocked',
+  '磁盘空间不够': 'Not enough disk space',
+  ' · 已请求叫停': ' · stop requested',
+  '复习库换代': 'Review library upgrade',
+  '原因': 'Reason',
+  '报告': 'Report',
+  '开始升级': 'Start upgrade',
+  '叫停升级': 'Stop upgrade',
+  '开始升级复习库？升级期间远程复习与制卡暂停；旧的 srs.db 会封存保留，不删除任何文件。':
+      'Start upgrading the review library? Remote review and mining pause meanwhile; the old srs.db is sealed and kept, no file is deleted.',
+  '叫停复习库升级？提交步骤之前叫停会回到升级前的样子；刚好进入提交步骤时以最终结论为准。':
+      'Stop the review library upgrade? Before the commit step everything goes back to how it was; if it just entered the commit step, the final verdict is what counts.',
+  '已开始升级': 'Upgrade started',
+  '已请求叫停': 'Stop requested',
+  '复习库升级没完成，需在服务端处理（ctl srs migration）':
+      'The review library upgrade did not finish; handle it on the server (ctl srs migration)',
   '已开启': 'On',
   '未开启（没有勾选配置文件）': 'Off (no profile ticked)',
   '调度器': 'Scheduler',
@@ -401,6 +453,17 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '自动（没配好 Anki 时进复习）': 'Automatic (Review when Anki is not set up)',
   '换日时刻': 'Day starts at',
   '{0} 的制卡牌组（空 = 默认牌组）': 'Deck for {0} (empty = default deck)',
+  '{0} 的名字（空 = 用设备报的名字）': 'Name for {0} (empty = the name devices report)',
+  '保存名字': 'Save names',
+  '旧版本保留副本': 'Old-version retained copy',
+  '{0} 到期后自动删除': 'Deleted automatically after {0}',
+  '删除前一直保留（不会自动到期）': 'Kept until you delete it (never expires on its own)',
+  '自动删除没做成': 'Automatic deletion did not happen',
+  '删除保留副本': 'Delete retained copy',
+  '立即删除旧版本保留副本？不可撤销：删除后不能再退回旧版本，彻底清除过的内容在旧库里的原文也随之消失。删除前会先核对新库完好，核对不过不删。':
+      'Delete the old-version retained copy now? This cannot be undone: you can no longer go back to the old version, and the original text of anything you permanently purged goes with it. The current library is checked first; if the check fails nothing is deleted.',
+  '已删除保留副本，释放 {0}': 'Retained copy deleted, {0} freed',
+  '没有可删除的保留副本': 'No retained copy to delete',
   '监听地址': 'Listen address',
   '共用 key（落到默认配置文件）': 'Shared key (goes to the default profile)',
   '{0} 专用 key': 'Key for {0}',
@@ -621,4 +684,35 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '仅本机（127.0.0.1）': 'This machine only (127.0.0.1)',
   '不用 AI': 'No AI',
   '自定义': 'Custom',
+  // 外观（共享设计系统的明暗 / 风格 / 配色，存本机浏览器）
+  '外观': 'Appearance',
+  '只存在这台电脑的浏览器里，不影响服务端与其他设备。':
+      'Saved in this browser only; does not affect the server or other devices.',
+  '明暗': 'Brightness',
+  '跟随系统': 'System',
+  '浅色': 'Light',
+  '深色': 'Dark',
+  '风格': 'Style',
+  '液态玻璃': 'Liquid glass',
+  '配色': 'Color',
+  'Fushi 默认': 'Fushi default',
+  '紫': 'Purple',
+  '靛蓝': 'Indigo',
+  '蓝': 'Blue',
+  '青': 'Teal',
+  '绿': 'Green',
+  '黄': 'Yellow',
+  '橙': 'Orange',
+  '红': 'Red',
+  '粉': 'Pink',
+  '中性': 'Neutral',
+  '拖放文件到这里，或点击选择': 'Drop files here, or click to choose',
+  // 侧边栏分组与收起
+  '概览': 'Overview',
+  '媒体库': 'Media',
+  '获取': 'Acquire',
+  '学习': 'Study',
+  '系统': 'System',
+  '收起侧边栏': 'Collapse sidebar',
+  '展开侧边栏': 'Expand sidebar',
 };

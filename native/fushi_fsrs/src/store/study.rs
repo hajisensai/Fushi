@@ -166,6 +166,18 @@ impl LimitUnit {
             _ => left.max(0),
         }
     }
+
+    /// 分钟单位下上限 [limit] 减去 [t] 今天的复习用时还剩几分钟（不足一分钟按一分钟，用满为 0）；其余单位 None。
+    /// 与 [Self::review_room] 同一个「已用 / 上限」口径：剩余 > 0 ⇔ 这一层不截复习卡。
+    fn minutes_left(self, limit: i64, t: &Tally) -> Option<i64> {
+        match self {
+            LimitUnit::Minutes => {
+                let left = (self.limit_in_usage(limit) - self.used(t)).max(0);
+                Some((left + 59_999) / 60_000)
+            }
+            _ => None,
+        }
+    }
 }
 
 /// 出的一张是哪一类（「再下一张」按它虚拟扣掉一张的计数）。
@@ -344,6 +356,10 @@ struct Count {
     new_count: i64,
     review_count: i64,
     learn_count: i64,
+    /// 牌组按分钟计复习上限（[LimitUnit::Minutes]，且这一层没开「忽略每日复习上限」）时今天还剩的复习分钟
+    /// （[LimitUnit::minutes_left]）；其余单位为 None。分钟单位下 [Self::review_count] 是「没用满就不截」后的全部
+    /// 合格 / 到期卡（可能成千），牌组列表的到期一格改显示这个剩余量。
+    review_minutes_left: Option<i64>,
 }
 
 /// RWKV-Instant 一个牌组的排队设置：目标保留率与 `SrsRwkvQueueSettings`。
@@ -1039,10 +1055,15 @@ fn count_tree(
         // RWKV 牌组开了「忽略每日复习上限」（上游 Anki 的 Ignore review limit）：按 R 合格的卡全部出，这一层不截断
         // （祖先没开的照样按自己的上限截）。
         // 已用按牌组自己的单位（[LimitUnit]）对整棵子树统计，与以前「子树里已复习的卡」同一个汇总口径。
-        let review_remaining = if ctx.tree.ignores_review_limit(id) {
-            UNLIMITED_REVIEWS
+        let (review_remaining, review_minutes_left) = if ctx.tree.ignores_review_limit(id) {
+            (UNLIMITED_REVIEWS, None)
         } else {
-            LimitUnit::of_view(view).review_room(int(view, "rp", 200) + ext_review, &sub)
+            let unit = LimitUnit::of_view(view);
+            let limit = int(view, "rp", 200) + ext_review;
+            (
+                unit.review_room(limit, &sub),
+                unit.minutes_left(limit, &sub),
+            )
         };
         let r = Count {
             sub,
@@ -1052,6 +1073,7 @@ fn count_tree(
             new_count: new_remaining.min(new_sum),
             review_count: review_remaining.min(review_sum),
             learn_count: learn_sum,
+            review_minutes_left,
         };
         out.insert(id.to_owned(), r);
         r
@@ -1829,7 +1851,8 @@ fn run(src: &mut dyn Source, tree: DeckTree, req: &Value) -> Result<Value, Strin
                 k.budget.limit,
                 k.budget.allowed,
                 k.budget.review_budget,
-                k.budget.reason
+                k.budget.reason,
+                k.review_minutes_left
             ]);
             (id.clone(), row)
         })
@@ -1846,6 +1869,7 @@ fn run(src: &mut dyn Source, tree: DeckTree, req: &Value) -> Result<Value, Strin
 impl crate::store::SrsCore {
     /// 只读排队（牌组列表 / 复习页的计数与出卡）：走读连接的快照，不排在同步投递 / 缓存刷新这类长写后面
     /// （旧库搬迁的事务开着时在写连接上读，看得见未提交的行，[crate::store::SrsCore::read_visible_tx]）。
+    #[cfg(test)]
     pub fn study(&self, profile: &str, req: &Value) -> Result<Value, String> {
         self.read_visible_tx(|c, uncommitted| study(c, &self.study_hub, uncommitted, profile, req))
     }
@@ -2867,7 +2891,7 @@ mod tests {
             core.read_visible(|c| oracle::study(c, P, &req)).unwrap()
         );
         let row = |d: &str| got["counts"][d].clone();
-        // [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 原因]
+        // [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 原因, 剩余复习分钟]
         assert_eq!(row("IGN")[2], json!(7), "忽略上限：7 张到期全部计入");
         assert_eq!(
             row("OLD")[2],
@@ -2878,11 +2902,11 @@ mod tests {
         // 没有复习日志：预算 = 10 × 10 = 100；到期 0 → 多出 50%。
         assert_eq!(
             row("BOOST"),
-            json!([15, 0, 0, 30, 10, 15, 100, "increased"])
+            json!([15, 0, 0, 30, 10, 15, 100, "increased", null])
         );
-        assert_eq!(row("OFF"), json!([10, 0, 0, 30, 10, 10, 0, null]));
+        assert_eq!(row("OFF"), json!([10, 0, 0, 30, 10, 10, 0, null, null]));
         // RWKV 牌组：寄存器里的 boost 50% 照存，但不按复习量调整——恒为每日新卡上限、复习预算 0、没有原因。
-        assert_eq!(row("RBOOST"), json!([10, 0, 0, 30, 10, 10, 0, null]));
+        assert_eq!(row("RBOOST"), json!([10, 0, 0, 30, 10, 10, 0, null, null]));
         // 今天已复习过 2 张之后：旧牌组没有剩余额度、不再出复习卡；忽略上限的牌组照出。
         let mut logs = 0i64;
         for d in ["IGN", "OLD"] {
@@ -2944,7 +2968,7 @@ mod tests {
                 core.read_visible(|c| oracle::study(c, P, &req)).unwrap()
             );
             assert_eq!(got["counts"]["MIX"][2], json!(want_due), "{got}");
-            assert_eq!(got["counts"]["MIX"].as_array().unwrap().len(), 8, "{got}");
+            assert_eq!(got["counts"]["MIX"].as_array().unwrap().len(), 9, "{got}");
         }
         // RWKV 牌组不按复习量调整新卡：合格的卡（RWKV 的「今天到期」）不是负荷信号，再多也不缩减 / 暂停新卡。
         // 新卡上限 1：FSRS 下预算 = 10、负荷超过 20 就暂停；RWKV 下恒为 1、复习预算 0。
@@ -3062,17 +3086,17 @@ mod tests {
         };
         let req = json!({"now": now, "utcOff": day.utc_offset_min, "rollover": day.rollover_hour});
         let got = study(&req);
-        // [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 原因]
+        // [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 原因, 剩余复习分钟]
         // CAP：25 张到期，今天最多复习 3 张 → 负荷 3 ≤ 预算 10，新卡照常 1 张。
         assert_eq!(
             got["counts"]["CAP"],
-            json!([1, 0, 3, 30, 1, 1, 10, null]),
+            json!([1, 0, 3, 30, 1, 1, 10, null, null]),
             "{got}"
         );
         // FULL：25 张到期都在上限 30 以内 → 负荷 25 > 2 × 10，暂停。
         assert_eq!(
             got["counts"]["FULL"],
-            json!([0, 0, 25, 30, 1, 0, 10, "paused"]),
+            json!([0, 0, 25, 30, 1, 0, 10, "paused", null]),
             "{got}"
         );
         // FULL 复习了 10 张（排到以后）：剩余到期 15，但已复习 10 张照算 → 负荷仍是 25，照旧暂停
@@ -3086,7 +3110,7 @@ mod tests {
         let got = study(&req);
         assert_eq!(
             got["counts"]["FULL"],
-            json!([0, 0, 15, 30, 1, 0, 10, "paused"]),
+            json!([0, 0, 15, 30, 1, 0, 10, "paused", null]),
             "{got}"
         );
         assert_eq!(got["counts"]["CAP"][7], Value::Null, "{got}");
@@ -3249,6 +3273,12 @@ mod tests {
         assert_eq!(due(&got, "UB"), 1, "坏值按次数：{got}");
         assert_eq!(due(&got, "UC"), 3, "卡片数：5 − 2：{got}");
         assert_eq!(due(&got, "UM"), 10, "时长：4 分钟 < 5 分钟，不截：{got}");
+        // 剩余复习分钟（第 9 列）：只有分钟单位有值，其余单位为 null。
+        let minutes = |got: &Value, d: &str| got["counts"][d][8].clone();
+        assert_eq!(minutes(&got, "UM"), json!(1), "5 − 4 = 1 分钟：{got}");
+        for d in ["UR", "UB", "UC"] {
+            assert_eq!(minutes(&got, d), Value::Null, "{d}：{got}");
+        }
         // 出卡与计数一致：次数用完的牌组不再出复习卡。
         let pick = |d: &str| {
             study(&json!({"now": now, "utcOff": 0, "rollover": 4, "deck": d, "pick": true}))["next"]
@@ -3273,6 +3303,7 @@ mod tests {
         assert_eq!(due(&got, "UR"), 0, "{got}");
         assert_eq!(due(&got, "UC"), 2, "{got}");
         assert_eq!(due(&got, "UM"), 0, "时长用满：{got}");
+        assert_eq!(minutes(&got, "UM"), json!(0), "{got}");
         assert!(pick("UR").is_null());
         assert!(pick("UM").is_null());
         // 跨日：已用清零。
@@ -3281,6 +3312,7 @@ mod tests {
         assert_eq!(due(&got, "UR"), 5, "{got}");
         assert_eq!(due(&got, "UC"), 5, "{got}");
         assert_eq!(due(&got, "UM"), 9, "{got}");
+        assert_eq!(minutes(&got, "UM"), json!(5), "{got}");
 
         // 父子牌组：各按自己的单位统计整棵子树。PR（次数，上限 6）下挂 PC（卡片数，上限 100）：子树已用 次数 4 /
         // 卡片 2 → PC 剩 98 张（到期 10 全出），PR 剩 2 次 → 父行 2。PM（分钟，上限 4）下挂 QC（卡片数）：子树用了
@@ -3298,6 +3330,8 @@ mod tests {
         assert_eq!(due(&got, "PR"), 2, "{got}");
         assert_eq!(due(&got, "QC"), 10, "{got}");
         assert_eq!(due(&got, "PM"), 0, "{got}");
+        assert_eq!(minutes(&got, "PM"), json!(0), "整棵子树用了 4 分钟：{got}");
+        assert_eq!(minutes(&got, "QC"), Value::Null, "{got}");
 
         // 分钟单位下的新卡负荷全天同一口径（到期 + 已复习，不截）：25 张 > 2 × 预算 10 → 暂停；时长用满后复习
         // 不再出，但负荷仍是 24 + 1 = 25，暂停不会在当天自己解除、新卡配额仍为 0。
@@ -3365,7 +3399,7 @@ mod tests {
             );
         }
         let got = study(&req);
-        // [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 原因]：预算 10，负荷 1 → 多出 floor(2 × 0.8) = 1 张；
+        // [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 原因, 剩余复习分钟]：预算 10，负荷 1 → 多出 floor(2 × 0.8) = 1 张；
         // 负荷若算成 2 − 5 + 1 = −2 会多出 floor(2 × 1.4) = 2 张。
         assert_eq!(got["counts"]["NR"][2], json!(0), "{got}");
         assert_eq!(got["counts"]["NR"][5], json!(2), "{got}");
@@ -3613,7 +3647,7 @@ mod tests {
             got,
             core.read_visible(|c| oracle::study(c, P, &req)).unwrap()
         );
-        // [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 原因]
+        // [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 原因, 剩余复习分钟]
         assert_eq!(
             got["counts"]["RC"][2],
             json!(40),

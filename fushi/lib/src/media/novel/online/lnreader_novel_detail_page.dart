@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -92,6 +93,18 @@ class _LnReaderNovelDetailPageState
   bool _loading = true;
   Object? _error;
 
+  /// [_novel] 是从书架书的描述符拼出来的旧目录（[_showShelfCatalog]），源站的
+  /// 详情还没取回。只有章节列表可信：能读（序号就是那本书现在的 spine），不能
+  /// 下载（作者 / 简介 / 封面都还没有，打出来的 EPUB 元数据是残的）。
+  ///
+  /// 不变式：为 true 时 [_shelfBook] 一定非空——旧目录只属于那本书，书移出书架
+  /// 就一并撤掉。
+  bool _catalogFromShelf = false;
+
+  /// 章节列表进场动画的重播键：目录换了才换。旧目录 → 新目录而章节没变时保持
+  /// 不变，已经在屏上的列表不重播一次进场。
+  Object _chapterListKey = Object();
+
   /// 正在准备在线书（首次建占位书 / 同步章节列表）或移出书架，期间禁止重复点。
   bool _opening = false;
 
@@ -120,6 +133,9 @@ class _LnReaderNovelDetailPageState
       _backdrop = null;
     });
     try {
+      // 已上架的书先出旧目录：取详情要过插件（多页目录还是逐页串行取），这段
+      // 时间不该对着骨架干等。已经有内容在屏上（刷新）就不用再垫。
+      if (_novel == null) await _showShelfCatalog();
       await widget.manager.load(widget.plugin);
       final LnReaderNovel novel = await widget.manager.runtime.novel(
         widget.plugin.id,
@@ -132,7 +148,11 @@ class _LnReaderNovelDetailPageState
       final ReaderPosition? position = await _readPosition(shelfBook);
       if (!mounted) return;
       setState(() {
+        if (!_sameChapterPaths(_novel?.chapters, novel.chapters)) {
+          _chapterListKey = Object();
+        }
         _novel = novel;
+        _catalogFromShelf = false;
         _shelfBook = shelfBook;
         _position = position;
         _loading = false;
@@ -150,6 +170,47 @@ class _LnReaderNovelDetailPageState
       });
     }
   }
+
+  /// 这部作品已在书架上时，用书里存着的章节列表（上次同步到的目录）先渲染。
+  /// 不在书架 / 描述符读不出章节就什么都不做，照旧等源站。
+  Future<void> _showShelfCatalog() async {
+    final EpubBookRow? shelfBook = await _onlineLibrary().findBook(
+      widget.plugin.id,
+      widget.item.path,
+    );
+    final List<LnReaderChapter> chapters =
+        LnReaderOnlineBookDescriptor.tryParse(
+          shelfBook?.sourceMetadata,
+        )?.chapters ??
+        const <LnReaderChapter>[];
+    if (shelfBook == null || chapters.isEmpty) return;
+    final ReaderPosition? position = await _readPosition(shelfBook);
+    if (!mounted || _novel != null) return;
+    setState(() {
+      _novel = LnReaderNovel(
+        // 书名可能带同名并存的后缀；列表给的名字才是作品名。
+        name: widget.item.name.isNotEmpty ? widget.item.name : shelfBook.title,
+        path: widget.item.path,
+        cover: widget.item.cover,
+        chapters: chapters,
+        totalPages: 1,
+      );
+      _catalogFromShelf = true;
+      _chapterListKey = Object();
+      _shelfBook = shelfBook;
+      _position = position;
+    });
+  }
+
+  static bool _sameChapterPaths(
+    List<LnReaderChapter>? a,
+    List<LnReaderChapter> b,
+  ) =>
+      a != null &&
+      listEquals(
+        <String>[for (final LnReaderChapter chapter in a) chapter.path],
+        <String>[for (final LnReaderChapter chapter in b) chapter.path],
+      );
 
   /// 菜单「登录」：登完立刻从源重取，用户不用自己想到去点刷新。
   Future<void> _login() async {
@@ -307,6 +368,7 @@ class _LnReaderNovelDetailPageState
           .deleteBook(
             db: appModel.database,
             bookKey: book.bookKey,
+            appModel: appModel,
             scope: decision.scope,
           );
       if (!mounted) return;
@@ -320,7 +382,15 @@ class _LnReaderNovelDetailPageState
         );
         return;
       }
-      setState(() => _shelfBook = null);
+      setState(() {
+        _shelfBook = null;
+        // 屏上还是那本书的旧目录：书没了，目录跟着撤（回到等源站 / 错误占位），
+        // 不留一份拿去「加入书架」会建出残缺元数据的假详情。
+        if (_catalogFromShelf) {
+          _novel = null;
+          _catalogFromShelf = false;
+        }
+      });
       ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
       ref.invalidate(srtBooksProvider);
     } on Object catch (error, stack) {
@@ -377,7 +447,7 @@ class _LnReaderNovelDetailPageState
 
   Future<void> _download({int startIndex = 0}) async {
     final LnReaderNovel? novel = _novel;
-    if (novel == null || novel.chapters.isEmpty) return;
+    if (novel == null || novel.chapters.isEmpty || _catalogFromShelf) return;
     final RangeValues? range = await showAppDialog<RangeValues>(
       context: context,
       builder: (BuildContext context) => LnReaderChapterRangeDialog(
@@ -612,7 +682,10 @@ class _LnReaderNovelDetailPageState
         buttonKey: const ValueKey<String>('novel_detail_download'),
         icon: FushiIcons.download,
         label: t.novel_detail_download,
-        onPressed: chapters.isEmpty ? null : () => unawaited(_download()),
+        // 旧目录阶段不给下载：详情（作者 / 简介 / 封面）要等源站取回。
+        onPressed: chapters.isEmpty || _catalogFromShelf
+            ? null
+            : () => unawaited(_download()),
       ),
     ];
     final List<MediaDetailMenuItem> moreItems = <MediaDetailMenuItem>[
@@ -744,7 +817,7 @@ class _LnReaderNovelDetailPageState
       );
     } else {
       body = FushiEntranceScope(
-        replayKey: _novel,
+        replayKey: _chapterListKey,
         child: SliverList.builder(
           itemCount: chapters.length,
           itemBuilder: (BuildContext context, int index) =>
@@ -779,7 +852,9 @@ class _LnReaderNovelDetailPageState
       trailing: FushiIconButtonControl(
         key: ValueKey<String>('novel_chapter_download_${chapter.path}'),
         tooltip: t.novel_detail_chapter_download,
-        onPressed: () => unawaited(_download(startIndex: index)),
+        onPressed: _catalogFromShelf
+            ? null
+            : () => unawaited(_download(startIndex: index)),
         icon: const FushiIcon(FushiIcons.download),
       ),
       onTap: _opening

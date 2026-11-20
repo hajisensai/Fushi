@@ -1,6 +1,7 @@
 import 'dart:async' show Completer, Timer, unawaited;
 import 'dart:io';
 import 'package:flutter/foundation.dart' show setEquals;
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/media/video/disc/disc_session_entry.dart';
 import 'package:fushi/src/media/video/disc/disc_session_launcher.dart';
 import 'package:fushi/src/media/video/disc/remote_disc_actions.dart';
@@ -98,6 +99,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
     show currentRevealHost, revealFirstOf;
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_error_text.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
@@ -135,12 +137,13 @@ import 'package:fushi/src/pages/implementations/ai_settings_route.dart'
 import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_service.dart'
     show
         RemoteVideoSubtitleEpisode,
+        RemoteVideoSubtitleSeasonMember,
         RemoteVideoSubtitleTarget,
         appRemoteVideoSubtitleService;
 import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_sheet.dart'
     show showRemoteVideoSubtitleSheet;
 import 'package:fushi/src/media/links/media_link_entries.dart'
-    show MediaLinkEntry;
+    show MediaLinkEntry, resolveMediaLinkEntry;
 import 'package:fushi/src/media/links/media_link_inference_host.dart'
     show mediaLinkInferCallback;
 import 'package:fushi/src/media/links/media_link_opener.dart'
@@ -1383,7 +1386,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       ErrorLogService.instance.log('collectionDetail.setCover', e, stack);
       if (!mounted) return;
       FushiToast.show(
-        msg: t.collection_cover_failed,
+        msg: videoScrapeMaintenanceText(e) ?? t.collection_cover_failed,
         severity: ToastSeverity.error,
       );
       return;
@@ -1526,22 +1529,21 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   }
 
   Future<void> _generateRemoteSeasonJaSubtitles(AppModel appModel) async {
-    bool hasJapanese(RemoteVideoInfo m) =>
-        m.subtitleFileName?.toLowerCase().endsWith('.ja.srt') ?? false;
+    // 「已有字幕跳过」按面板里选的语言算（[RemoteVideoSubtitleTarget.forLanguage]）。
     await showRemoteVideoSubtitleSheet(
       context: context,
       service: appRemoteVideoSubtitleService(appModel),
-      target: RemoteVideoSubtitleTarget(
+      target: RemoteVideoSubtitleTarget.season(
         title: _canonicalWork?.title ?? _name,
-        wholeSeason: true,
-        episodes: <RemoteVideoSubtitleEpisode>[
+        members: <RemoteVideoSubtitleSeasonMember>[
           for (final RemoteVideoInfo m in _remoteMembers)
-            if (!hasJapanese(m))
-              RemoteVideoSubtitleEpisode(videoId: m.id, title: m.title),
-        ],
-        skippedExisting: <String>[
-          for (final RemoteVideoInfo m in _remoteMembers)
-            if (hasJapanese(m)) m.title,
+            RemoteVideoSubtitleSeasonMember(
+              episode: RemoteVideoSubtitleEpisode(
+                videoId: m.id,
+                title: m.title,
+              ),
+              subtitleFileName: m.subtitleFileName,
+            ),
         ],
       ),
       prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
@@ -1698,9 +1700,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     }
     final VideoBookRepository repo = VideoBookRepository(widget.database);
     int added = 0;
+    // 整表只读一次建查表，不逐个文件 findByVideoPath（每次都整表读 + 逐行归一）。
+    VideoPathIndex index = await repo.videoPathIndex();
     for (final String video in files.videos) {
       if (!mounted) return;
-      String? bookUid = (await repo.findByVideoPath(video))?.bookUid;
+      String? bookUid = index.find(video)?.bookUid;
       if (bookUid == null) {
         if (!mounted) return;
         final String? subtitle = files.videos.length == 1
@@ -1714,6 +1718,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             initialSubtitlePath: subtitle,
           ),
         );
+        // 导入对话框开着的那段时间库可能变了（刚导入的这一行、同一批里重复
+        // 拖入的同一文件）：对话框之后重建，后面的文件照新库判重。
+        index = await repo.videoPathIndex();
       }
       if (bookUid == null) continue;
       final CollectionAddOutcome outcome = await addMediaRefToCollection(
@@ -2867,7 +2874,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // ChangeNotifier，用 ListenableBuilder 订阅而不是把本页改成 Consumer（既有
     // 测试不挂 ProviderScope）。
     final InterconnectDownloadManager? downloads = widget.remote?.downloads;
-    final Widget card = downloads == null || !episode.isRemote
+    final Widget plainCard = downloads == null || !episode.isRemote
         ? buildCard(null)
         : ListenableBuilder(
             listenable: downloads,
@@ -2875,6 +2882,16 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               _episodeDownloadBadge(downloads.taskFor(episode.entryKey)),
             ),
           );
+    // NSFW 按这一集判定（拍板台 w04vrhUAaX）：整页那层只看合集，没标的合集会把
+    // 被标的那一集原样露出来。本地集按 bookUid（自己被标或所在 NSFW 合集——本合集
+    // 被标时同样模糊）；远端集在本机不可标，沿用合集判定。
+    final VideoBookRow? local = episode.local;
+    final Widget card = MediaNsfwCoverScope(
+      target: local != null
+          ? MediaNsfwTarget.video(local.bookUid)
+          : MediaNsfwTarget.collection(widget.collection.id),
+      child: plainCard,
+    );
     if (FushiFocusRoot.maybeControllerOf(context) == null) return card;
     return Actions(
       actions: <Type, Action<Intent>>{
@@ -3711,11 +3728,28 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     SliverToBoxAdapter(child: _buildExtrasSection(tokens)),
     // 相关作品横滚（TODO-2484）：无关系边整块不渲染（区块内部判空）。
     SliverToBoxAdapter(
-      child: CollectionRelationsSection(
-        database: widget.database,
-        collectionId: widget.collection.id,
-        onOpenCollection: (int id) => _openRelatedCollection(id),
-        onDownload: _downloadsAvailable ? _downloadRelation : null,
+      child: Consumer(
+        builder: (BuildContext context, WidgetRef ref, Widget? _) =>
+            CollectionRelationsSection(
+              database: widget.database,
+              collectionId: widget.collection.id,
+              onOpenCollection: (int id) => _openRelatedCollection(id),
+              onDownload: _downloadsAvailable ? _downloadRelation : null,
+              // v162：目标是本机散装电影（单视频作品）——与作品图谱打开单个视频
+              // 同一个出口。
+              onOpenVideo: (String bookUid) async {
+                final MediaLinkEntry entry = await resolveMediaLinkEntry(
+                  widget.database,
+                  (kind: MediaLinkKind.videoEpisode, key: bookUid),
+                );
+                if (!context.mounted) return;
+                await openMediaLinkEntry(
+                  context: context,
+                  ref: ref,
+                  entry: entry,
+                );
+              },
+            ),
       ),
     ),
     // 跨模块「同一作品」（作品图谱 media_links）：原作 / 改编 / 游戏…
@@ -3849,15 +3883,22 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         if (upNext) ...<Widget>[
-          MediaPosterUpNextCard(
-            key: const ValueKey<String>('collection-hero-up-next'),
-            label: t.collection_continue_progress(n: _continueIndex + 1),
-            title: _episodeDisplayTitle(episode),
-            image: _episodeCover(episode) ?? _heroBackdrop ?? _heroCover,
-            meta: _episodeMeta(episode),
-            progress: _episodeProgress(episode),
-            completed: episode.completed,
-            onPlay: () => _onPrimaryPlay(episode),
+          // 「接着看」那一集的缩略图按这一集判定 NSFW（同集卡）。
+          MediaNsfwCoverScope(
+            target: switch (episode.local) {
+              final VideoBookRow local => MediaNsfwTarget.video(local.bookUid),
+              null => MediaNsfwTarget.collection(widget.collection.id),
+            },
+            child: MediaPosterUpNextCard(
+              key: const ValueKey<String>('collection-hero-up-next'),
+              label: t.collection_continue_progress(n: _continueIndex + 1),
+              title: _episodeDisplayTitle(episode),
+              image: _episodeCover(episode) ?? _heroBackdrop ?? _heroCover,
+              meta: _episodeMeta(episode),
+              progress: _episodeProgress(episode),
+              completed: episode.completed,
+              onPlay: () => _onPrimaryPlay(episode),
+            ),
           ),
           SizedBox(height: tokens.spacing.section),
         ],
@@ -4071,10 +4112,14 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // 整页（含空合集占位）都是拖放落点：把视频文件拖进来即导入并归入本合集。
     // 本页是独立路由，被播放页 / 对话框盖住时由 FushiFileDropTarget 的
     // ModalRoute 门挡掉；移动端透传 child。
+    // NSFW 合集：页内的封面框（hero 海报、成员卡）都按「模糊 NSFW 封面」打模糊。
     return FushiFileDropTarget(
       debugLabel: 'collection-detail',
       onDrop: _handleCollectionFileDrop,
-      child: page,
+      child: MediaNsfwCoverScope(
+        target: MediaNsfwTarget.collection(widget.collection.id),
+        child: page,
+      ),
     );
   }
 }

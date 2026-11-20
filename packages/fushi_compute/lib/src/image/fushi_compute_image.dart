@@ -183,8 +183,57 @@ typedef _FitJpegC =
       Pointer<Pointer<Uint8>>,
       Pointer<Size>,
     );
+typedef _FitJpegHqC =
+    Int32 Function(
+      Pointer<Uint8>,
+      Size,
+      Uint32,
+      Uint32,
+      Uint32,
+      Uint32,
+      Uint32,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+typedef _FitJpegHqDart =
+    int Function(
+      Pointer<Uint8>,
+      int,
+      int,
+      int,
+      int,
+      int,
+      int,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
 typedef _FitJpegDart =
     int Function(
+      Pointer<Uint8>,
+      int,
+      int,
+      int,
+      int,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+
+typedef _CompositeRgbaJpegC =
+    Int32 Function(
+      Pointer<Uint8>,
+      Size,
+      Pointer<Uint8>,
+      Size,
+      Uint32,
+      Uint32,
+      Uint32,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+typedef _CompositeRgbaJpegDart =
+    int Function(
+      Pointer<Uint8>,
+      int,
       Pointer<Uint8>,
       int,
       int,
@@ -356,6 +405,9 @@ class FushiComputeImage {
       _fitJpeg = lib.library.lookupFunction<_FitJpegC, _FitJpegDart>(
         'ffc_image_fit_jpeg',
       ),
+      _fitJpegHq = lib.library.lookupFunction<_FitJpegHqC, _FitJpegHqDart>(
+        'ffc_image_fit_jpeg_hq',
+      ),
       _edge = lib.library.lookupFunction<_EdgeC, _EdgeDart>(
         'ffc_image_edge_similarity',
       ),
@@ -385,6 +437,7 @@ class FushiComputeImage {
   final _ProbeDart _probe;
   final _ToJpegDart _toJpeg;
   final _FitJpegDart _fitJpeg;
+  final _FitJpegHqDart _fitJpegHq;
   final _EdgeDart _edge;
   final _DbDart _db;
   final _DecodePngDart _decodePng;
@@ -392,6 +445,20 @@ class FushiComputeImage {
   final _CoverCmpDart _coverCmp;
   final _AiCropsDart _aiCrops;
   final FushiCompute _lib;
+
+  // 独立延迟绑定：旧库仍可用既有图像操作；真正调用新功能时缺符号照硬依赖报错。
+  _CompositeRgbaJpegDart? _compositeRgbaJpeg;
+
+  _CompositeRgbaJpegDart get _compositeRgbaJpegFunction {
+    try {
+      return _compositeRgbaJpeg ??= _lib.library
+          .lookupFunction<_CompositeRgbaJpegC, _CompositeRgbaJpegDart>(
+            'ffc_image_composite_rgba_jpeg',
+          );
+    } on ArgumentError catch (e) {
+      throw _lib.missingSymbols('image composite', e.message ?? e);
+    }
+  }
 
   static FushiComputeImage? _instance;
 
@@ -844,6 +911,100 @@ class FushiComputeImage {
     }
   }
 
+  /// 画质缩放成 JPEG：解码（转正）→ [filter] 可分离重采样（核按缩放比放宽，网点不出摩尔纹；
+  /// [linearLight] 为真时在线性光里平均，即 Gamma 校正缩放）→ JPEG（[quality] 1..100，4:4:4；
+  /// 灰度源编单通道）。**可以放大**（每边至多 4 倍、输出至多 4800 万像素）。解不开、带 alpha、
+  /// 或尺寸越界返回 null——调用方原样交出源字节。
+  Uint8List? fitJpegHq(
+    Uint8List bytes, {
+    required int width,
+    required int height,
+    required int quality,
+    FfcResampleFilter filter = FfcResampleFilter.lanczos3,
+    bool linearLight = true,
+  }) {
+    if (quality < 1 || quality > 100) {
+      throw ArgumentError.value(quality, 'quality', 'must be 1..100');
+    }
+    if (width <= 0 || height <= 0) return null;
+    final Pointer<Uint8> src = _copyIn(bytes);
+    final Pointer<Pointer<Uint8>> outPtr = malloc<Pointer<Uint8>>();
+    final Pointer<Size> outLen = malloc<Size>();
+    try {
+      final int status = _fitJpegHq(
+        src,
+        bytes.length,
+        width,
+        height,
+        quality,
+        filter.code,
+        linearLight ? 1 : 0,
+        outPtr,
+        outLen,
+      );
+      if (status == FfcStatus.badInput || status == FfcStatus.invalidArgument) {
+        return null;
+      }
+      _check('ffc_image_fit_jpeg_hq', status);
+      return _takeBytes(outPtr, outLen);
+    } finally {
+      malloc.free(outPtr);
+      malloc.free(outLen);
+    }
+  }
+
+  /// 解码、转正 [bytes]，合白底并缩到 [width] × [height]，一次合成整页 straight RGBA
+  /// [overlay] 后编码成 JPEG（4:4:4）。不放大源图，宽高各限 1..1280，质量限 1..100。
+  /// 坏图或非法尺寸 / 覆盖层长度返回 null；缺库 / 缺符号抛硬依赖异常。失败不可改发原图。
+  /// 此操作须由调用方放后台 isolate，覆盖层长度恰为 `width * height * 4`。
+  Uint8List? compositeRgbaJpeg(
+    Uint8List bytes,
+    Uint8List overlay, {
+    required int width,
+    required int height,
+    required int quality,
+  }) {
+    if (width <= 0 ||
+        height <= 0 ||
+        width > 1280 ||
+        height > 1280 ||
+        quality < 1 ||
+        quality > 100 ||
+        bytes.isEmpty ||
+        overlay.length != width * height * 4) {
+      return null;
+    }
+    final _CompositeRgbaJpegDart composite = _compositeRgbaJpegFunction;
+    final Pointer<Uint8> src = _copyIn(bytes);
+    // 两份输入不能共用 NativeScratch.input；覆盖层单独分配、调用结束立即释放。
+    final Pointer<Uint8> layer = malloc<Uint8>(overlay.length);
+    final Pointer<Pointer<Uint8>> outPtr = malloc<Pointer<Uint8>>();
+    final Pointer<Size> outLen = malloc<Size>();
+    try {
+      layer.asTypedListOutOfLine(overlay.length).setAll(0, overlay);
+      final int status = composite(
+        src,
+        bytes.length,
+        layer,
+        overlay.length,
+        width,
+        height,
+        quality,
+        outPtr,
+        outLen,
+      );
+      if (status == FfcStatus.badInput || status == FfcStatus.invalidArgument) {
+        return null;
+      }
+      _check('ffc_image_composite_rgba_jpeg', status);
+      return _takeBytes(outPtr, outLen);
+    } finally {
+      malloc.free(layer);
+      malloc.free(outPtr);
+      malloc.free(outLen);
+    }
+  }
+
   /// 两张图（编码字节）左图右缘与右图左缘的相似度（`EpubEdgeMatcher.compareEdges`）；
   /// 任一张解不开返回 null。
   double? edgeSimilarity(
@@ -1071,4 +1232,21 @@ class FushiComputeImage {
       malloc.free(outLen);
     }
   }
+}
+
+/// [FushiComputeImage.fitJpegHq] 的重采样核（与原生 `ffc_image_fit_jpeg_hq` 的 `filter` 码一一对应）。
+enum FfcResampleFilter {
+  /// 面积平均（盒式核，按缩放比放宽）。
+  box(0),
+
+  /// Lanczos 窗口 sinc（a = 3）。
+  lanczos3(1),
+
+  /// Catmull-Rom 三次。
+  catmullRom(2);
+
+  const FfcResampleFilter(this.code);
+
+  /// 原生侧的核编码。
+  final int code;
 }

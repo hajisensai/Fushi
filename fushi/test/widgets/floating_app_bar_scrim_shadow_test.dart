@@ -6,10 +6,6 @@
 // 不透明度 1）排在 `bar` 之后，绘制在胶囊之上。BUG-2977 已经让 AppBar 不再裁
 // 投影，但投影随后又被遮罩盖住。守住：两种遮罩都画在栏之下；滚动后返回圆
 // 正下方、栏下沿外仍看得见投影。
-import 'dart:typed_data';
-import 'dart:ui' as ui;
-
-import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
@@ -92,64 +88,43 @@ void main() {
         );
       });
 
-      testWidgets('BUG-3075 滚动后返回圆的投影越过栏下沿、不被遮罩截平', (
+      // 2026-11-15：顶栏改成二级页现行页头（无胶囊、无悬浮投影）。滚动后守的
+      // 是：栏下沿遮罩淡入，返回键 / 页名 / 动作常驻栏内（页头大字不随滚动收走）。
+      testWidgets('滚动后遮罩淡入，返回键 / 页名 / 动作留在栏内、不装胶囊', (
         WidgetTester tester,
       ) async {
         tester.view.physicalSize = const Size(392, 640);
         tester.view.devicePixelRatio = 1;
         addTearDown(tester.view.reset);
-        final GlobalKey boundaryKey = GlobalKey();
         await tester.pumpWidget(
-          _harness(boundaryKey: boundaryKey, bodyBehindBar: bodyBehindBar),
+          _harness(boundaryKey: GlobalKey(), bodyBehindBar: bodyBehindBar),
         );
         await tester.pump();
 
-        // 往下滚：内容进到栏底下，遮罩淡入（返回圆常驻，标题 / 动作随滚动收起）。
         await tester.drag(find.byType(ListView), const Offset(0, -300));
         await tester.pumpAndSettle();
 
+        expect(find.byType(FushiPageChromeCircle), findsNothing);
+        expect(find.byType(FushiPageChromeTitle), findsNothing);
         final Rect bar = tester.getRect(find.byType(AppBar));
-        final Rect circle = tester.getRect(find.byType(FushiPageChromeCircle));
-        expect(circle.bottom, lessThanOrEqualTo(bar.bottom + 1e-6));
-        expect(
-          circle.bottom,
-          moreOrLessEquals(bar.bottom),
-          reason: '返回圆贴着栏下沿，投影才会越过栏下沿',
-        );
-
-        final ByteData bytes = (await tester.runAsync(() async {
-          final RenderRepaintBoundary boundary =
-              boundaryKey.currentContext!.findRenderObject()!
-                  as RenderRepaintBoundary;
-          final ui.Image image = await boundary.toImage();
-          final ByteData? data = await image.toByteData(
-            format: ui.ImageByteFormat.rawRgba,
-          );
-          image.dispose();
-          return data!;
-        }))!;
-        int luminanceAt(Offset p) {
-          final int i = (p.dy.round() * 392 + p.dx.round()) * 4;
-          return bytes.getUint8(i) +
-              bytes.getUint8(i + 1) +
-              bytes.getUint8(i + 2);
+        for (final Finder f in <Finder>[
+          find.byIcon(Icons.arrow_back),
+          find.text('无职转生'),
+          find.byIcon(Icons.more_vert),
+        ]) {
+          final Rect r = tester.getRect(f);
+          expect(r.top, greaterThanOrEqualTo(bar.top - 0.5), reason: '$f');
+          expect(r.bottom, lessThanOrEqualTo(bar.bottom + 0.5), reason: '$f');
         }
-
-        // 栏下沿外 2 px：返回圆正下方（投影里）与同一行远离任何胶囊处（只有
-        // 不透明的遮罩 = 页面底色）对比。投影被遮罩盖住时两者一样白。
-        final double y = bar.bottom + 2;
-        final int underCircle = luminanceAt(Offset(circle.center.dx, y));
-        final int awayFromChrome = luminanceAt(Offset(bar.width * 0.75, y));
-        expect(
-          awayFromChrome,
-          greaterThanOrEqualTo(3 * 250),
-          reason: '对照点应是页面底色',
+        final AnimatedOpacity fade = tester.widget<AnimatedOpacity>(
+          find
+              .ancestor(
+                of: find.byType(FushiTopFadeScrim),
+                matching: find.byType(AnimatedOpacity),
+              )
+              .first,
         );
-        expect(
-          underCircle,
-          lessThan(awayFromChrome - 6),
-          reason: '返回圆正下方、栏下沿之外应仍是投影（比底色暗），而不是被遮罩切平',
-        );
+        expect(fade.opacity, 1, reason: '内容滚到栏下后遮罩应淡入');
       });
     });
   }

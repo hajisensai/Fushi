@@ -49,6 +49,7 @@ void main() {
       final MediaSourceRow source = MediaSourceRow(
         videoGroupingMode: 'series',
         isPrivate: false,
+        autoScan: false,
         id: 7,
         label: 'Private Anime',
         mediaKind: 'video',
@@ -145,6 +146,7 @@ void main() {
     final MediaSourceRow source = MediaSourceRow(
       videoGroupingMode: 'series',
       isPrivate: false,
+      autoScan: false,
       id: 1,
       label: 'Anime',
       mediaKind: 'video',

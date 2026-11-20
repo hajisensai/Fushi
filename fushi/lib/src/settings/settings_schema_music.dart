@@ -143,11 +143,12 @@ SettingsDestination buildMusicDestination() {
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.setMusicCrossfadeContinuous(value),
           ),
-          // 在线插件取流音质：与插件音源同一道合规门（iOS 商店合规门没过时不出现）。
-          // 媒体服务器的转码码率是另一回事，在设置 › 在线服务 › 媒体服务器。
+          // 在线插件取流音质：本机能用插件音源时出现（自己跑或经互联中继，中继时同样
+          // 按这一档向 host 上的插件要流）。媒体服务器的转码码率是另一回事，在设置 ›
+          // 在线服务 › 媒体服务器。
           SettingsSegmentedItem<String>(
             id: 'music.plugin_quality',
-            visible: (SettingsContext c) => isMusicPluginSourcesAvailable,
+            visible: (SettingsContext c) => isMusicPluginSourcesUsable,
             title: t.music_quality_plugin_default_title,
             subtitle: t.music_quality_plugin_default_hint,
             icon: FushiIcons.highQuality,
@@ -363,18 +364,24 @@ SettingsDestination buildMusicDestination() {
             subtitle: t.music_lyrics_providers_hint,
             icon: FushiIcons.lyrics,
             showIcon: true,
-            // 与插件音源同一道合规门（music_plugin_gate，iOS 不渲染）。
-            visible: (_) => isMusicPluginSourcesAvailable,
+            // 能「用」插件歌词就要能启停 / 排序（iOS 经互联中继用 host 的歌词插件，查歌词也
+            // 走 isMusicPluginSourcesUsable）；安装入口与拖放只在本机能跑插件时出现。
+            visible: (_) => isMusicPluginSourcesUsable,
             child: () => SettingsDestination(
               id: SettingsDestinationId.music,
               title: t.music_lyrics_providers_title,
               icon: FushiIcons.lyrics,
               sections: const <SettingsSection>[],
               // 设置里的歌词来源页同样收 .fushiplug 拖放（BUG-4712）。
-              body: (SettingsContext c) => MusicPluginDropTarget(
-                manager: c.appModel.musicPluginManager,
-                child: MusicLyricsProvidersBody(appModel: c.appModel),
-              ),
+              body: (SettingsContext c) => isMusicPluginSourcesAvailable
+                  ? MusicPluginDropTarget(
+                      manager: c.appModel.musicPluginManager,
+                      child: MusicLyricsProvidersBody(appModel: c.appModel),
+                    )
+                  : MusicLyricsProvidersBody(
+                      appModel: c.appModel,
+                      canInstall: false,
+                    ),
             ),
           ),
           SettingsSwitchItem(
@@ -388,6 +395,18 @@ SettingsDestination buildMusicDestination() {
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setMusicLyricsLookupPause(value);
             },
+          ),
+          // 非当前行轻模糊（GitHub #3354：学日语要看清上一句 / 下一句）。高对比度 /
+          // 减弱动态效果下视图本来就不模糊，这里只管用户自己的偏好。
+          SettingsSwitchItem(
+            id: 'music.lyrics_blur_inactive',
+            title: t.music_lyrics_blur_inactive_title,
+            subtitle: t.music_lyrics_blur_inactive_hint,
+            icon: FushiIcons.lyrics,
+            defaultValue: true,
+            value: (SettingsContext c) => c.appModel.musicLyricsBlurInactive,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.setMusicLyricsBlurInactive(value),
           ),
           SettingsSwitchItem(
             id: 'music.desktop_lyrics',

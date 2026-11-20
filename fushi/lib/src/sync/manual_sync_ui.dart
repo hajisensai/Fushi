@@ -61,6 +61,13 @@ String summarizeSyncReport(SyncRunReport r) {
       t.sync_now_settings_out(count: r.settingsExported),
     if (r.serviceConfigsImported > 0)
       t.sync_now_service_configs_in(count: r.serviceConfigsImported),
+    if (r.sourcesShared > 0)
+      t.sync_now_sources_shared_in(count: r.sourcesShared),
+    // 来源共享里换了签名者的插件不自动装（凭据与存储会被清空），要用户在本机自己装。
+    if (r.sourceShareSignerChanged.isNotEmpty)
+      t.sync_now_source_share_signer_changed(
+        names: r.sourceShareSignerChanged.join(', '),
+      ),
   ];
   final String head = parts.isEmpty ? t.sync_now_no_changes : parts.join(' · ');
   final String done = t.sync_now_done(detail: head);
