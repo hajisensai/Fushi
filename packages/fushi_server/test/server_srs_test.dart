@@ -142,6 +142,14 @@ void main() {
     final List<String> found =
         (await srs.discoverProfiles()).map((r) => r.uid).toList()..sort();
     expect(found, <String>[kJa, kZh]);
+    // 每轮发布说明文件只读自己绑定的那一个目录（不把整棵同步根重读一遍）。
+    expect(
+      (await srsListRemoteProfiles(
+        LocalDirectoryAssetStore(srs.syncRoot),
+        onlyDirs: <String>{ja.sync2Dir!},
+      )).map((SrsRemoteProfile r) => r.uid),
+      <String>[ja.sync2Dir!],
+    );
     config = const ServerSrsConfig(profiles: <String>[kJa, kZh]);
     await srs.applyConfig();
     await srs.syncNow();
@@ -228,14 +236,17 @@ void main() {
       engine: () => null,
       deviceName: () => 'NAS',
     );
-    // 手机只同步、不发布说明文件：位置目录里没有任何名字。
-    final SrsDbStore ja = await phone(kJa, 'phone-ja');
-    await addNote(ja, '食べる');
-    expect((await phoneSync(ja)).error, isNull);
+    // 服务端先开这份 profile（新代设备 ID 是 UUIDv7，先建的排在前面）：同一目录里服务端自己的说明文件在列举顺序上
+    // 先于手机的，「名字不先取自己上次发布的」才真被测到（反过来排时，有没有排除自己那份结果都一样）。
     config = const ServerSrsConfig(profiles: <String>[kJa]);
     await srs.start();
     await srs.syncNow();
     final SrsDbStore served = srs.storeFor(kJa)!;
+    // 手机只同步、不发布说明文件：位置目录里没有任何名字。
+    final SrsDbStore ja = await phone(kJa, 'phone-ja');
+    await addNote(ja, '食べる');
+    expect((await phoneSync(ja)).error, isNull);
+    await srs.syncNow(kJa);
     final String dir = served.sync2Dir!;
     final String serverWriter = srsV2WriterName(served.sync2Device!);
     final LocalDirectoryAssetStore assets = LocalDirectoryAssetStore(
@@ -294,6 +305,11 @@ void main() {
       hasNotes: true,
     );
     await phoneNames('Japanese');
+    expect(
+      (await listed()).nameOf.keys.first,
+      serverWriter,
+      reason: '前提：服务端自己那份（上次发布的「日本語」）先被列出来',
+    );
     config = const ServerSrsConfig(profiles: <String>[kJa]);
     await srs.applyConfig();
     await srs.syncNow(kJa);
@@ -306,6 +322,14 @@ void main() {
     await srs.syncNow(kJa);
     expect((await ownFile())['name'], 'JP');
     expect((await listed()).names, <String>{'JP'});
+
+    // 设备报的名字是外来输入：超长 / 带控制字符的不采用（与管理员起名同一个口径），服务端沿用自己上次发布的。
+    for (final String bad in <String>['JP', 'x' * 101]) {
+      await phoneNames(bad);
+      await srs.syncNow(kJa);
+      expect(srs.profile(kJa)!.name, 'JP', reason: bad);
+      expect((await ownFile())['name'], 'JP', reason: bad);
+    }
 
     // 手机离开（删了自己的说明文件）：名字靠服务端上次发布的那份留着。
     await srsRemoveOwnProfileFolder(

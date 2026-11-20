@@ -50,6 +50,12 @@ const Duration kServerSrsWriteDebounce = Duration(seconds: 3);
 /// 管理员给 profile 起的名字最长几个字符（[ServerSrsConfig.profileNames]；会发布到同步位置给别的设备看）。
 const int kServerSrsProfileNameMax = 100;
 
+/// [name] 能不能当 profile 的显示名发布出去：不超过 [kServerSrsProfileNameMax] 个字符、不含控制字符。管理员起的名字
+/// （admin API 写入时拒收）与别的设备在同步位置里报的名字（外来输入，[ServerSrs] 取名时跳过不合格的）同一个口径。
+bool serverSrsProfileNameOk(String name) =>
+    name.length <= kServerSrsProfileNameMax &&
+    !name.runes.any((int c) => c < 0x20 || c == 0x7f);
+
 /// 兜底：没有任何触发时也每隔这么久同步一轮。
 const Duration kServerSrsSafetyInterval = Duration(minutes: 30);
 
@@ -507,7 +513,7 @@ class ServerSrsProfile {
     try {
       name = _owner._resolveName(
         this,
-        (await _owner._discover())[dir],
+        (await _owner._discover(onlyDir: dir))[dir],
         own: srsV2WriterName(device),
       );
       final bool hasNotes = noteCount > 0 || await s.hasUserData();
@@ -1018,18 +1024,26 @@ class ServerSrs {
   /// 写入者不是 [own] 的）；再否则服务端自己上次发布的（[own] 那份，让设备都离开之后名字还在）。[own] = 服务端在这个
   /// 集合里的写入者名（库没开时不知道，null：所有写入者一视同仁）。不先取自己上次发布的：设备改了名，服务端要跟着改，
   /// 不能一直拿自己那份旧名字当来源。[info] 为 null（这一轮没读到）时不动现有的名字。
+  ///
+  /// 设备报的名字来自同步位置（外来输入），与管理员起的名字同一个口径过滤（[serverSrsProfileNameOk]）：不合格的跳过，
+  /// 不写进服务端自己发布的说明文件。
   String _resolveName(
     ServerSrsProfile prof,
     SrsRemoteProfile? info, {
     required String? own,
   }) {
     final String? configured = _config().profileNames[prof.uid];
-    if (configured != null && configured.isNotEmpty) return configured;
+    if (configured != null &&
+        configured.isNotEmpty &&
+        serverSrsProfileNameOk(configured)) {
+      return configured;
+    }
     if (info == null) return prof.name;
     for (final MapEntry<String, String> e in info.nameOf.entries) {
-      if (e.key != own) return e.value;
+      if (e.key != own && serverSrsProfileNameOk(e.value)) return e.value;
     }
-    return (own == null ? null : info.nameOf[own]) ?? '';
+    final String? mine = own == null ? null : info.nameOf[own];
+    return mine != null && serverSrsProfileNameOk(mine) ? mine : '';
   }
 
   /// 本机型号（= 服务端设备名）与平台交给内核，随下一次写 head 发布（与 app 的 `srsPublishDeviceInfo` 同一条命令；
@@ -1479,11 +1493,13 @@ class ServerSrs {
   Future<List<SrsRemoteProfile>> discoverProfiles() async =>
       (await _discover()).values.toList();
 
-  Future<Map<String, SrsRemoteProfile>> _discover() async {
+  /// [onlyDir] 给了只读那一个位置目录（每轮发布说明文件时只要自己绑定的目录）。
+  Future<Map<String, SrsRemoteProfile>> _discover({String? onlyDir}) async {
     if (!syncRoot.existsSync()) return const <String, SrsRemoteProfile>{};
     try {
       final List<SrsRemoteProfile> list = await srsListRemoteProfiles(
         LocalDirectoryAssetStore(syncRoot),
+        onlyDirs: onlyDir == null ? null : <String>{onlyDir},
       );
       return <String, SrsRemoteProfile>{
         for (final SrsRemoteProfile r in list) r.uid: r,

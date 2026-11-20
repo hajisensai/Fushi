@@ -308,8 +308,7 @@ class AdminSrs {
     );
     for (final String name in names?.values ?? const <String>[]) {
       // 发布到同步位置给别的设备看：限长，不收控制字符。
-      if (name.length > kServerSrsProfileNameMax ||
-          name.runes.any((int c) => c < 0x20 || c == 0x7f)) {
+      if (!serverSrsProfileNameOk(name)) {
         throw const FormatException(
           'profileNames: a name must be at most $kServerSrsProfileNameMax characters without control characters',
         );

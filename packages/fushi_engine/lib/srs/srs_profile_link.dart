@@ -338,10 +338,12 @@ SrsProfileLinkDecision srsDecideProfileLink({
   return SrsProfileLinkChoose(withData);
 }
 
-/// 列出同步目录里的全部 profile（读各写入者的说明文件）。
+/// 列出同步目录里的全部 profile（读各写入者的说明文件）。[onlyDirs] 给了就只读这些位置目录（无头服务端每轮发布自己的
+/// 说明文件前只要自己绑定的那一个目录，不必把整棵同步根的说明文件与 meta 全读一遍）；墓碑判定仍按全部目录名做。
 Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
   SyncAssetStore store, {
   Directory? tempDir,
+  Set<String>? onlyDirs,
 }) async {
   final String ns = await store.ensureNamespace(kSrsSync2Namespace);
   final List<SrsRemoteProfile> out = <SrsRemoteProfile>[];
@@ -354,6 +356,7 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
   ]);
   for (int i = 0; i < folders.length; i++) {
     final AssetEntry p = folders[i];
+    if (onlyDirs != null && !onlyDirs.contains(p.name)) continue;
     final List<String> writers = <String>[];
     final Set<String> names = <String>{};
     final Map<String, String> nameOf = <String, String>{};
