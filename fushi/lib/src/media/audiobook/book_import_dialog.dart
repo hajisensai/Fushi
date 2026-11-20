@@ -108,10 +108,11 @@ class BookImportDialog extends StatefulWidget {
   /// （BUG-2266）。
   final List<String>? initialAudioPaths;
 
-  /// 测试计数缝：生产始终走 [MangaModule.isImageArchive]；回归测试只在外层计数后
-  /// 委托同一个真判据，证明真实对话框没有重复执行昂贵的整包载体判定。
+  /// 测试计数缝：生产始终走 [MangaModule.probeImageArchive]（后台 isolate，`.epub`
+  /// 探测解进书库根的 `.tmp-*`）；回归测试只在外层计数后委托同一个真判据，证明真实
+  /// 对话框没有重复执行昂贵的整包载体判定。
   @visibleForTesting
-  final bool Function(String path)? imageArchiveProbe;
+  final Future<bool> Function(String path)? imageArchiveProbe;
 
   /// 记住「引用原文件（不复制）」上次选择的偏好仓库（[PreferencesRepository.
   /// audiobookImportReferenceOriginal]）。null = 不读不写（测试 / 无应用上下文）。
@@ -213,7 +214,12 @@ class _BookImportDialogState extends State<BookImportDialog>
         (widget.prefs?.audiobookImportReferenceOriginal ?? false);
     _carrierResolver = ImportCarrierResolver(
       isDirectory: (String pth) => Directory(pth).existsSync(),
-      isImageArchive: widget.imageArchiveProbe ?? MangaModule.isImageArchive,
+      // 开包定性只给异步判据：`.epub` 要整本解析 spine 才分得清纯图 / 有正文，在
+      // UI isolate 上同步跑，选一本几百 MB 的文字 EPUB 界面就停住；探测的解压落点
+      // 也从系统临时目录挪进书库根（崩溃残留归导入残留清扫管）。BUG-4909 遗留。
+      probeImageArchive:
+          widget.imageArchiveProbe ??
+          (String pth) => MangaModule.probeImageArchive(widget.db, pth),
       directoryHasPageImages: MangaModule.directoryHasPageImages,
       directoryCarrierFileCount: MangaModule.directoryCarrierFileCount,
       directoryMokuroFileCount: MangaModule.directoryMokuroFileCount,
@@ -300,8 +306,10 @@ class _BookImportDialogState extends State<BookImportDialog>
   /// 此前这里是**静默**转漫画导入；现在改成用户可见的一次确认——识别照旧，分派不
   /// 再背着用户发生。
   Future<bool> _handoffIfManga(String path) async {
-    final ImportCarrier carrier = _classifyCarrier(path);
+    final ImportCarrier carrier = await _classifyCarrier(path);
     if (!carrier.isManga) return false;
+    // 定性在后台跑期间对话框可能已经关了：不再弹确认，也不收下这个路径。
+    if (!mounted) return true;
     final bool canImportAsBook = canImportMangaCarrierAsBook(path, carrier);
     final _MangaDetectedChoice? choice =
         await showAppDialog<_MangaDetectedChoice>(
@@ -364,12 +372,21 @@ class _BookImportDialogState extends State<BookImportDialog>
   /// ——它不进 `_importEpubOnly`，那几次开包纯属白开。记忆按路径失效，换文件会重算。
   late final ImportCarrierResolver _carrierResolver;
 
+  /// 选文件 / 拖入的代数。载体定性是异步的（后台 isolate），定性期间用户可能又选了
+  /// 别的、或对旧选择点了导入：回来的结果只在它仍是最新一次选择、且没在导入时才收下，
+  /// 否则界面显示的与正在导入的不是同一本。
+  int _selectionGeneration = 0;
+
+  bool _isStaleSelection(int generation) =>
+      !mounted || importing || generation != _selectionGeneration;
+
   /// 用户在「这看起来是漫画」确认框里坚持按书籍导入的路径（见 [_handoffIfManga]）。
   String? _forcedBookPath;
 
-  ImportCarrier _classifyCarrier(String path) => path == _forcedBookPath
+  Future<ImportCarrier> _classifyCarrier(String path) async =>
+      path == _forcedBookPath
       ? ImportCarrier.epub
-      : _carrierResolver.resolve(path);
+      : await _carrierResolver.resolveAsync(path);
 
   /// 拖文件进本对话框 → 分类 → 按字段覆盖（仅填命中类，不清用户已选）。
   /// 纯解析交给 [resolveBookDialogDrop]；此处只 setState + sidecar/封面副作用。
@@ -380,7 +397,11 @@ class _BookImportDialogState extends State<BookImportDialog>
     if (r.isEmpty) return;
     final String? droppedEpub = r.epubPath;
     // 拖进来的「书」其实是漫画（图片型 zip / 扫描版 epub）→ 确认后转交漫画流程。
-    if (droppedEpub != null && await _handoffIfManga(droppedEpub)) return;
+    if (droppedEpub != null) {
+      final int generation = ++_selectionGeneration;
+      if (await _handoffIfManga(droppedEpub)) return;
+      if (_isStaleSelection(generation)) return;
+    }
     if (!mounted) return;
     final bool gotAudio = r.audioPaths.isNotEmpty;
     setState(() {
@@ -809,8 +830,9 @@ class _BookImportDialogState extends State<BookImportDialog>
       final String? path = file?.path;
       if (path != null && file != null && mounted) {
         // 选中的其实是漫画载体 → 明确确认后转交漫画流程，不再静默按书导入。
+        final int generation = ++_selectionGeneration;
         if (await _handoffIfManga(path)) return;
-        if (!mounted) return;
+        if (_isStaleSelection(generation)) return;
         setState(() {
           _epubPath = path;
           _epubName = file.name;
@@ -1300,7 +1322,7 @@ class _BookImportDialogState extends State<BookImportDialog>
     // 载体身份此前是在这里靠 4 个 if（含一次真读包）现场嗅出来的；现在它在**选中
     // 文件那一刻**就已由 [classifyImportCarrier] 定死，且漫画载体根本进不来（三个
     // 入口都过 [_handoffIfManga]）。这里只剩书籍侧的三种去向。
-    final ImportCarrier carrier = _classifyCarrier(_epubPath!);
+    final ImportCarrier carrier = await _classifyCarrier(_epubPath!);
 
     // PDF 阅读器 Phase 1：.pdf 走独立 PdfImporter（pdfrx 真渲染 + 落库 format='pdf'）。
     // PDF 封面在 PdfImporter 内栅格化首页得到，故不走 _applyBestCoverToEpub。

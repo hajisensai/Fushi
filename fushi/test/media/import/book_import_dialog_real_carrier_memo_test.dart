@@ -173,7 +173,7 @@ void main() {
       });
 
       final List<String> probedPaths = <String>[];
-      bool countThenRunRealProbe(String path) {
+      Future<bool> countThenRunRealProbe(String path) async {
         probedPaths.add(path);
         return MangaModule.isImageArchive(path);
       }
@@ -246,7 +246,7 @@ void main() {
     });
 
     final List<String> probedPaths = <String>[];
-    bool countThenRunRealProbe(String path) {
+    Future<bool> countThenRunRealProbe(String path) async {
       probedPaths.add(path);
       return MangaModule.isImageArchive(path);
     }

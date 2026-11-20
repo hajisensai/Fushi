@@ -14,4 +14,5 @@
 - **审查补修**（独立审查，2026-11-20）：
   - 定性改异步后多出一个竞态：选文件 / 拖入一本 `.zip` / `.epub` 后定性挂起期间，「导入」按钮仍对旧选择可点；导入起跑时已把旧路径拷成局部量，定性回来后照样收下新路径——界面显示的与正在导入的不是同一本，收下成功后的 `_discardStaging` 还会删掉正在导入的旧暂存副本（iOS 文件夹）。改为 `_isStaleAdoption`：导入进行中回来的定性结果一律作废。测试 `manga_import_dialog_async_test.dart`「定性期间用户对旧选择点了导入」（去掉 `importing` 判断即红：标题被换成 volB）。
   - 拖放分派的后台探测（`fushi/lib/src/media/drag_drop/image_archive_probe.dart`）仍是 `Isolate.run(MangaModule.isImageArchive)`：`.epub` 探测解进系统临时目录、否决理由在后台 isolate 里记日志（`engineLog` 没装配，落不进反馈日志），与本 bug 收掉的 c26 遗留同一问题。改为走 `looksLikeImageArchiveInBackground(path, db:)`，`reader_shelf_drop_router.dart` 传 `appModel.database`。
-- **备注**：书籍导入框（`book_import_dialog.dart`）、操作目录（`ctl_library_import.dart`）、服务端自动导入路由（`import_commands.dart`）仍同步调 `looksLikeImageArchive`（系统临时目录），不在本组文件范围，记为遗留。桌面「300 MB 文字 EPUB 选进漫画框界面不停住」未做真机验证。
+- **遗留补修**（#3722 遗留组 L4）：书籍导入框（`book_import_dialog.dart`，`ImportCarrierResolver` 只给异步判据 `MangaModule.probeImageArchive`，选文件 / 拖入加选择代数防旧结果覆盖新选择或导入中途换书）、操作目录（`ctl_library_import.dart`，每个路径只开一次包、后台跑）、服务端 `import auto` 路由（`routeAutoImport` 改异步、带 db）都改走 `looksLikeImageArchiveInBackground(db:)`，生产代码里不再有同步开包定性。守卫 `fushi/test/media/import/image_archive_probe_sync_callers_guard_test.dart`（三处任一改回同步调用即红）；`book_import_carrier_memo_guard_test.dart` 改钉 `resolveAsync` + 后台判据。
+- **备注**：桌面「300 MB 文字 EPUB 选进漫画框界面不停住」未做真机验证。
