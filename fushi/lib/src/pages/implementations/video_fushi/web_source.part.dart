@@ -533,7 +533,7 @@ extension _VideoWebSource on _VideoFushiPageState {
     if (!mounted) return;
     _webTracks[track.key] = track;
     if (track.cues.isNotEmpty) _webFailedTrackKeys.remove(track.key);
-    _reselectWebTrack();
+    _reselectWebTrack(updatedKey: track.key);
     // live 轨长了：待采整轨的失败判据可能成立了。
     if (track.isLive) _checkWebPendingTrackCapture();
   }
@@ -573,7 +573,9 @@ extension _VideoWebSource on _VideoFushiPageState {
 
   /// 轨集 / 当前视频变化后重选当前轨并灌进 controller（同轨更新也要灌：live 轨边看边长）。
   /// 选择规则与内置网页播放器同一份 [chooseWebVideoTrackKey]（内容语言偏好 > 整轨 > live）。
-  void _reselectWebTrack() {
+  /// [updatedKey] = 本次只是这条轨到了 / 长了：选轨没变且它不是当前轨时不重灌
+  /// （[webVideoTrackUpdateNeedsReload]）。
+  void _reselectWebTrack({String? updatedKey}) {
     final VideoPlayerController? controller = _controller;
     if (controller == null || !controller.isWebBackend) return;
     final String? pending = _webPendingTrackKey;
@@ -591,7 +593,15 @@ extension _VideoWebSource on _VideoFushiPageState {
             pinned: _webPinnedTrackKey,
           );
     final bool changed = next != _webActiveTrackKey;
+    final bool reload =
+        updatedKey == null ||
+        webVideoTrackUpdateNeedsReload(
+          updatedKey: updatedKey,
+          previousActiveKey: _webActiveTrackKey,
+          nextActiveKey: next,
+        );
     _webActiveTrackKey = next;
+    if (!reload) return;
     final WebVideoTrack? track = next == null ? null : _webTracks[next];
     controller.setCues(track?.cues ?? const <AudioCue>[]);
     final int? pos = controller.positionMs;
@@ -1599,10 +1609,33 @@ extension _VideoWebSource on _VideoFushiPageState {
     final String sentence = fieldSentence.isEmpty
         ? cue.text.trim()
         : fieldSentence;
-    // YouTube 与浏览器扩展同一条路（[FushiRemoteMiningService.mineImmersion] 的 YouTube 分支）：
-    // 按视频 id + 字幕时间窗从真实视频流裁画面与音频，点下就在后台制卡——不进队列、不回放，
-    // 也就没有「回放时没全屏 / 外放声音 / 字幕换了语言」这些问题。
-    final String? youtubeId = youtubeVideoIdOrNull(href);
+    // 入队要的身份在点下这一刻冻结：YouTube 直裁失败退回入队时已过了几秒，用户可能换了集。
+    final String bookUid = _activeBookUid;
+    final String videoKey = _webVideoKey;
+    Future<void> enqueue() async {
+      await _webMineQueue.enqueue(
+        bookUid: bookUid,
+        videoKey: videoKey,
+        href: href,
+        cueStartMs: cue.startMs,
+        cueEndMs: cue.endMs,
+        sentence: sentence,
+        cueSentence: cue.text,
+        fields: fields,
+      );
+      await _refreshStagedMineCount();
+      if (mounted) {
+        _showOsd(
+          t.web_video_mine_queued(count: _stagedMineCount.value),
+          icon: FushiIcons.checklist,
+        );
+      }
+    }
+
+    // YouTube 与浏览器扩展同一条路（[mineWebVideoCueDirectOrQueue]）：按视频 id + 字幕时间窗从
+    // 真实视频流裁画面与音频，点下就在后台制卡——不回放，也就没有「回放时没全屏 / 外放声音 /
+    // 字幕换了语言」这些问题；裁不出来才退回队列。
+    final String? youtubeId = webVideoDirectMineVideoId(href);
     if (youtubeId != null) {
       _trackBackgroundMine(
         _mineWebYoutubeCue(
@@ -1615,49 +1648,42 @@ extension _VideoWebSource on _VideoFushiPageState {
             clipStartMs: cue.startMs,
             clipEndMs: cue.endMs,
           ),
+          enqueue,
         ),
       );
       _showOsd(t.web_video_mine_background, icon: FushiIcons.checklist);
       return const MinePopupResult.queued();
     }
-    await _webMineQueue.enqueue(
-      bookUid: _activeBookUid,
-      videoKey: _webVideoKey,
-      href: href,
-      cueStartMs: cue.startMs,
-      cueEndMs: cue.endMs,
-      sentence: sentence,
-      cueSentence: cue.text,
-      fields: fields,
-    );
-    await _refreshStagedMineCount();
-    if (mounted) {
-      _showOsd(
-        t.web_video_mine_queued(count: _stagedMineCount.value),
-        icon: FushiIcons.checklist,
-      );
-    }
+    await enqueue();
     // 卡还没真落地：弹窗画「已加入」✓、不回查 Anki（TODO-448）。空回执会被弹窗当成失败
     // （「导出卡片失败」），用户再点一次就重复入队。
     return const MinePopupResult.queued();
   }
 
-  /// YouTube 后台制卡的结局只剩 OSD 能告诉用户（弹窗早已画了「已加入」）；失败抛出，由
-  /// [_trackBackgroundMine] 报错并记日志。
-  Future<void> _mineWebYoutubeCue(ImmersionMinePayload payload) async {
-    final RemoteMineResult res = await appModel
-        .createRemoteMiningService()
-        .mineImmersion(payload);
-    switch (res.result) {
-      case 'success':
-        _showMineOsd(
-          t.card_exported(deck: res.deckName ?? ''),
-          MineToastStatus.added,
-        );
-      case 'duplicate':
-        _showMineOsd(t.card_duplicate, MineToastStatus.duplicate);
-      default:
-        throw StateError(res.message ?? res.detail ?? res.result);
+  /// YouTube 后台制卡的结局只剩 OSD 能告诉用户（弹窗早已画了「已加入」）。直裁裁不出来退回
+  /// 制卡队列（[enqueue] 自己报「已入队」）；连入队也失败才抛出，由 [_trackBackgroundMine]
+  /// 报错并记日志。
+  Future<void> _mineWebYoutubeCue(
+    ImmersionMinePayload payload,
+    Future<void> Function() enqueue,
+  ) async {
+    final RemoteMineResult? res = await mineWebVideoCueDirectOrQueue(
+      mineDirect: () =>
+          appModel.createRemoteMiningService().mineImmersion(payload),
+      enqueue: enqueue,
+      onFallback: (String reason) => ErrorLogService.instance.log(
+        'VideoFushi.web',
+        'YouTube direct mine failed, queued for replay: $reason',
+      ),
+    );
+    if (res == null) return;
+    if (res.result == 'duplicate') {
+      _showMineOsd(t.card_duplicate, MineToastStatus.duplicate);
+    } else {
+      _showMineOsd(
+        t.card_exported(deck: res.deckName ?? ''),
+        MineToastStatus.added,
+      );
     }
   }
 
