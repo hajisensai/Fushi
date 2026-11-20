@@ -153,12 +153,40 @@ void main() {
         'Future<void> _onChapterLoadComplete(',
       );
       expect(
-        containsCodeLine(
-          loadBody,
-          '_prefetchAdjacentChapter(chapterSnapshot + 1)',
-        ),
+        containsCodeLine(loadBody, '_htmlPrefetchTarget(chapterSnapshot)'),
         isTrue,
-        reason: '加载完一章后预取下一章（前进翻章方向）',
+        reason: '加载完一章后预取阅读方向上翻过章界会加载的那一章',
+      );
+      expect(
+        containsCodeLine(loadBody, '_prefetchAdjacentChapter(prefetchTarget)'),
+        isTrue,
+      );
+      // novel-17f：不再写死 `+1`（倒着读时预取刚离开的那章；插图并入正文时 `+1` 可能是
+      // 从不单独加载的被吸收单图章）。
+      expect(
+        loadBody.contains('chapterSnapshot + 1'),
+        isFalse,
+        reason: 'HTML 预取目标不得写死 +1',
+      );
+      final String targetBody = methodBody(src, 'int? _htmlPrefetchTarget(');
+      expect(
+        containsCodeLine(targetBody, '_chapterAdvanceDirection'),
+        isTrue,
+        reason: '预取方向跟随阅读方向',
+      );
+      expect(
+        containsCodeLine(targetBody, 'pageTurnTargetChapter('),
+        isTrue,
+        reason: '与翻页走同一张虚拟页表（跳过被吸收的单图章）',
+      );
+      final String seamlessBody = methodBody(
+        src,
+        'Future<void> _onSeamlessChapterActivated(',
+      );
+      expect(
+        containsCodeLine(seamlessBody, '_htmlPrefetchTarget(to)'),
+        isTrue,
+        reason: '无缝换章同样经同一个目标解析',
       );
 
       final String prefBody = methodBody(src, 'void _prefetchAdjacentChapter(');

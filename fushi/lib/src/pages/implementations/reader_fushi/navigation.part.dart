@@ -534,7 +534,8 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     _restoreCompleter = Completer<bool>();
     // TODO-perf（跨章·图片）：所有导航都经过这里，故这是「阅读方向」的唯一采样点。
     // 同章重恢复（换字号/重排版/保不动点）不改方向——方向属于「读到哪儿去了」，
-    // 不属于重排版。方向只喂给插图预热（见 _prefetchAdjacentChapterImages）。
+    // 不属于重排版。方向只喂给两路预热（插图 _prefetchAdjacentChapterImages、章节 HTML
+    // _htmlPrefetchTarget，novel-17f）。
     if (chapter != _currentChapter) {
       _chapterAdvanceDirection = chapter > _currentChapter ? 1 : -1;
     }

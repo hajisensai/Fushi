@@ -163,7 +163,8 @@ extension _ReaderSeamlessChapters on _ReaderFushiPageState {
     _ensureStudyClock();
     unawaited(_refreshProgress());
     _startProgressPoll();
-    _prefetchAdjacentChapter(to + _chapterAdvanceDirection);
+    final int? prefetchTarget = _htmlPrefetchTarget(to);
+    if (prefetchTarget != null) _prefetchAdjacentChapter(prefetchTarget);
     _prefetchAdjacentChapterImages(to + _chapterAdvanceDirection);
   }
 }

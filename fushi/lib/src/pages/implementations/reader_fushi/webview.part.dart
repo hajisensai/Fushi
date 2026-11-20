@@ -591,6 +591,23 @@ extension _ReaderWebView on _ReaderFushiPageState {
   // 异步 IO：当前帧先收尾，IO 让出主 isolate，净化（单章 ms 级 sync CPU）保留；
   // 真异步后按 _styleEpoch 丢弃跨样式失效的过期结果（styleTag 烤进缓存条目），
   // 在飞守卫此时才真正有防重入意义。
+  /// novel-17f：从 [fromChapter] 沿阅读方向（[_chapterAdvanceDirection]，导航 /
+  /// 无缝换章时采样）翻过章界后真正会加载的章。原先固定取 `+1`：倒着读时预取的是刚
+  /// 离开的下一章，翻上一章照样冷读盘；「插图并入正文」时 `+1` 可能是被吸收的单图章
+  /// ——它从不单独加载（导航经 [_resolveNavChapter] 重定向到宿主），预取白做。这里与
+  /// 翻页走同一张虚拟页表（[EpubSpreadMap.pageTurnTargetChapter]）；表未就绪时退回
+  /// 裸章号 ± 1（与翻页兜底分支一致）。
+  int? _htmlPrefetchTarget(int fromChapter) {
+    final EpubBook? book = _book;
+    if (book == null) return null;
+    final int direction = _chapterAdvanceDirection;
+    final EpubSpreadMap? map = _spreadMap;
+    if (map != null) return map.pageTurnTargetChapter(fromChapter, direction);
+    final int target = fromChapter + direction;
+    if (target < 0 || target >= book.chapters.length) return null;
+    return target;
+  }
+
   void _prefetchAdjacentChapter(int index) {
     if (_settings == null) return;
     final String? filePath = _chapterFilePath(index);
@@ -3401,10 +3418,13 @@ updateLive: function(patch) {
       // MediaQuery——这样后续 resize 才与真正生效的版面宽度比对。
       _lastSyncedWidth = _paginatedWidth;
       _lastSyncedHeight = _paginatedHeight;
-      // BUG-270 (TODO-296 B): warm the next chapter so a forward boundary
-      // page-turn hits the LRU cache instead of disk read + decode + sanitize +
-      // inject. Background, single chapter, dropped if disposed/style-changed.
-      _prefetchAdjacentChapter(chapterSnapshot + 1);
+      // BUG-270 (TODO-296 B): warm the chapter the next boundary page-turn in
+      // the reading direction lands on, so it hits the LRU cache instead of disk
+      // read + decode + sanitize + inject. Background, single chapter, dropped
+      // if disposed/style-changed. novel-17f: direction + absorbed-image
+      // redirect come from [_htmlPrefetchTarget], not a fixed `+1`.
+      final int? prefetchTarget = _htmlPrefetchTarget(chapterSnapshot);
+      if (prefetchTarget != null) _prefetchAdjacentChapter(prefetchTarget);
       // BUG-785: EPUB 正文首次就绪 + 有声书已挂载 → 恢复「上次退出时在歌词模式」。
       // 此刻正文已加载，切歌词等价用户手动切（已知安全），规避 fresh open 直接整页
       // 加载歌词 HTML 跳过 EPUB 的 iOS 白屏。一次性（下面立即清零）防每章重触发；
