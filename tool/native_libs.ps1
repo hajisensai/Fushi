@@ -23,11 +23,34 @@
   build_{windows_dll.ps1,linux_so.sh,macos_dylib.sh}、产物落 prebuilt/<平台>/，且不依赖
   native/<crate> 目录以外的源码（戳记只哈希这个目录）。
 
+  -Android：改为备 Android 出包硬依赖的 .so（fushi_compute / fushi_rwkv / fushi_music / fushi_corpus，
+  `fushi/android/app/build.gradle` 的 checkFushi*Native 查的那四个），落在
+  native/<crate>/prebuilt/android/<abi>/。新 worktree 不带它们，bootstrap 也不编（多数 worktree 从不出
+  Android 包，四个 crate × 三个 ABI 的 release 交叉编译要几十分钟）；需要时由 gradle 的
+  ensureFushiAndroidNative 任务自动调用本模式，也可手动跑：
+    powershell -ExecutionPolicy Bypass -File tool/native_libs.ps1 -Android [-Abis arm64-v8a,armeabi-v7a,x86_64]
+  顺序同上，多一级本机缓存（worktree 每天被清理，兄弟里常常没有）：
+    1) 本地戳记一致 → 跳过；
+    2) 本机缓存 <LOCALAPPDATA>/fushi-native-cache（FUSHI_NATIVE_CACHE 可改）里有这棵源码树编出的产物 → 拷过来；
+    3) 兄弟 worktree 里有戳记一致的产物 → 拷过来；
+    4) 否则跑 native/<crate>/build_android_so.ps1 编（要 cargo-ndk 与 NDK），编完写戳记并存进本机缓存。
+  所以同一份 native/<crate> 源码在一台机器上只编一次。
+
 .PARAMETER GitBash
   Linux / macOS 跑 build_*.sh 用的 bash（Windows 走 .ps1，用不到）。
+
+.PARAMETER Android
+  备 Android 的 .so 而不是主机平台的库。
+
+.PARAMETER Abis
+  -Android 时要备的 ABI，默认三个（与 split-per-abi 发布包一致）。
 #>
 [CmdletBinding()]
-param([string]$GitBash = 'bash')
+param(
+    [string]$GitBash = 'bash',
+    [switch]$Android,
+    [string[]]$Abis = @('arm64-v8a', 'armeabi-v7a', 'x86_64')
+)
 
 $ErrorActionPreference = "Stop"
 try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
@@ -248,6 +271,135 @@ function Install-NativeTestCrate {
         Write-NativeStamp -Lib $lib -Tree $tree
     }
     Write-Host ("OK native/$Crate 编译完成（{0:N0} 秒）。" -f $sw.Elapsed.TotalSeconds) -ForegroundColor Green
+}
+
+# --- Android 出包硬依赖的 .so（-Android） ------------------------------------------------------
+
+# fushi/android/app/build.gradle 的 checkFushi{Compute,Rwkv,Music,Corpus}Native 查的四个 crate。
+$NativeAndroidCrates = @('fushi_compute', 'fushi_rwkv', 'fushi_music', 'fushi_corpus')
+# 本机缓存里每个产物保留最近用过的几棵源码树。
+$NativeCacheKeepTrees = 4
+
+function Get-NativeCacheRoot {
+    [OutputType([string])]
+    param()
+
+    if ($env:FUSHI_NATIVE_CACHE) { return $env:FUSHI_NATIVE_CACHE }
+    if ($env:LOCALAPPDATA) { return (Join-Path $env:LOCALAPPDATA 'fushi-native-cache') }
+    return (Join-Path $HOME '.cache/fushi-native-cache')
+}
+
+# 缓存位置：<根>/<产物相对路径的目录>/<源码树哈希>/<文件名>。路径里的树哈希就是戳记：只有干净的
+# 源码树编出的产物才存进来（Save-NativeToCache 的调用方保证），所以不另写 .source。
+function Get-NativeCachePath {
+    [OutputType([string])]
+    param([string]$RelLib, [string]$Tree)
+
+    $dir = Split-Path -Parent $RelLib
+    $name = Split-Path -Leaf $RelLib
+    return (Join-Path (Join-Path (Join-Path (Get-NativeCacheRoot) $dir) $Tree) $name)
+}
+
+function Copy-NativeFromCache {
+    [OutputType([bool])]
+    param([string]$RelLib, [string]$Lib, [string]$Tree)
+
+    $src = Get-NativeCachePath -RelLib $RelLib -Tree $Tree
+    if (-not (Test-Path -LiteralPath $src) -or (Get-Item -LiteralPath $src).Length -le 0) { return $false }
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Lib) | Out-Null
+    $tmp = "$Lib.seeding"
+    Copy-Item -LiteralPath $src -Destination $tmp -Force
+    Move-Item -LiteralPath $tmp -Destination $Lib -Force
+    # 记一次「用过」：清理按目录的最后写入时间留最近的几棵树。
+    (Get-Item -LiteralPath (Split-Path -Parent $src)).LastWriteTimeUtc = [DateTime]::UtcNow
+    return $true
+}
+
+function Save-NativeToCache {
+    [OutputType([void])]
+    param([string]$RelLib, [string]$Lib, [string]$Tree)
+
+    $dst = Get-NativeCachePath -RelLib $RelLib -Tree $Tree
+    $treeDir = Split-Path -Parent $dst
+    New-Item -ItemType Directory -Force -Path $treeDir | Out-Null
+    # 先写临时名再改名：别的 worktree 不会拷到写了一半的库。
+    $tmp = "$dst.$PID.tmp"
+    Copy-Item -LiteralPath $Lib -Destination $tmp -Force
+    Move-Item -LiteralPath $tmp -Destination $dst -Force
+    $old = @(Get-ChildItem -LiteralPath (Split-Path -Parent $treeDir) -Directory |
+            Sort-Object LastWriteTimeUtc -Descending | Select-Object -Skip $NativeCacheKeepTrees)
+    foreach ($d in $old) {
+        try { Remove-Item -LiteralPath $d.FullName -Recurse -Force -ErrorAction Stop } catch { }
+    }
+}
+
+function Install-NativeAndroidCrate {
+    [OutputType([void])]
+    param([string]$RepoRoot, [string]$Crate, [string[]]$Abis)
+
+    $relLibs = @($Abis | ForEach-Object { "native/$Crate/prebuilt/android/$_/lib$Crate.so" })
+    $tree = Get-NativeSourceTree -RepoRoot $RepoRoot -Crate $Crate
+    $missing = @($relLibs | Where-Object { -not (Test-NativeStamp -Lib (Join-Path $RepoRoot $_) -Tree $tree) })
+    if ($missing.Count -eq 0) {
+        Write-Host "OK native/$Crate (android) 已是 HEAD 源码编出的产物，跳过。" -ForegroundColor DarkGray
+        return
+    }
+    if ($tree) {
+        $from = @()
+        $stillMissing = @()
+        foreach ($rel in $missing) {
+            $lib = Join-Path $RepoRoot $rel
+            if (Copy-NativeFromCache -RelLib $rel -Lib $lib -Tree $tree) {
+                Write-NativeStamp -Lib $lib -Tree $tree
+                $from += '本机缓存'
+                continue
+            }
+            $src = Copy-NativeFromSibling -RepoRoot $RepoRoot -Crate $Crate -RelLib $rel -Lib $lib -Tree $tree
+            if ($src) {
+                Write-NativeStamp -Lib $lib -Tree $tree
+                Save-NativeToCache -RelLib $rel -Lib $lib -Tree $tree
+                $from += $src
+            }
+            else {
+                $stillMissing += $rel
+            }
+        }
+        if ($stillMissing.Count -eq 0) {
+            $where = (@($from | Select-Object -Unique)) -join '、'
+            Write-Host "OK native/$Crate (android) 复用 $where 的同源码产物（树 $($tree.Substring(0, 10))），未编译。" -ForegroundColor Green
+            return
+        }
+    }
+    else {
+        Write-Host "native/$Crate 有未提交改动，按当前工作区源码编译（不进缓存）。" -ForegroundColor Yellow
+    }
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+        throw "native/$Crate 的 Android .so 没有现成产物；非 Windows 主机请直接跑 bash native/$Crate/build_android_so.sh <ndk-root> $($Abis -join ' ')。"
+    }
+    $cargo = Get-Command cargo -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $cargo) {
+        throw "找不到 cargo：native/$Crate 的 Android .so 在本机缓存与兄弟 worktree 里都没有同源码的现成产物，必须编（Rust + cargo-ndk + NDK，见 docs/agent/build.md）。"
+    }
+    Write-Host "Building native/$Crate for Android ($($Abis -join ', '))..." -ForegroundColor Cyan
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    # 一次调用编齐全部 ABI：依赖只解析一遍，产物齐不齐由下面逐个核对。
+    & (Join-Path (Join-Path $RepoRoot "native/$Crate") 'build_android_so.ps1') -Abis $Abis
+    foreach ($rel in $relLibs) {
+        $lib = Join-Path $RepoRoot $rel
+        if (-not (Test-Path -LiteralPath $lib)) { throw "native/$Crate 构建后缺少产物 $lib" }
+        Write-NativeStamp -Lib $lib -Tree $tree
+        if ($tree) { Save-NativeToCache -RelLib $rel -Lib $lib -Tree $tree }
+    }
+    Write-Host ("OK native/$Crate (android) 编译完成（{0:N0} 秒）。" -f $sw.Elapsed.TotalSeconds) -ForegroundColor Green
+}
+
+if ($Android) {
+    # `powershell -File ... -Abis a,b` 把整串当成一个元素传进来，这里统一拆开。
+    $Abis = @($Abis | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    foreach ($crate in $NativeAndroidCrates) {
+        Install-NativeAndroidCrate -RepoRoot $root -Crate $crate -Abis $Abis
+    }
+    return
 }
 
 foreach ($crate in $NativeTestCrates) {
