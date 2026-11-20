@@ -92,7 +92,10 @@ native_crates="fushi_compute fushi_fsrs fushi_web_core fushi_rwkv fushi_music fu
 native_key() {
   features=""
   if [ "$1" = fushi_fsrs ]; then features=raw_sql; fi
-  key=$(git rev-parse "HEAD:native/$1")
+  # The crate's tree hash, folded with the sources it pulls in from outside
+  # native/<crate> (external_sources.txt): fushi_music compiles
+  # native/fushi_compute/src/legacy_text.rs in (BUG-4906).
+  key=$(bash tool/native_source_key.sh "$1")
   if [ -n "$features" ]; then key="$key+$features"; fi
 }
 # Each library set is kept under its key (worker_cache.sh): two runs that
