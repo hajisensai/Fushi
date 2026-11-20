@@ -2828,6 +2828,7 @@
   "download_backend_setup_intro": "选择由哪个引擎执行下载任务，之后可随时在下载设置里更改。",
   "download_backend_setup_start": "开始配置",
   "download_backend_setup_title": "配置下载后端",
+  "download_backend_title": "下载引擎",
   "download_backend_unsupported_note": "本平台无内置引擎，下载使用外接 qBittorrent。",
   "download_batch_already_queued": "$n 项已在下载队列中",
   "download_batch_clear": "从列表移除",

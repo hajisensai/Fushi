@@ -2828,6 +2828,7 @@
   "download_backend_setup_intro": "다운로드를 실행할 엔진을 선택하세요. 나중에 다운로드 설정에서 언제든지 바꿀 수 있어요.",
   "download_backend_setup_start": "지금 설정",
   "download_backend_setup_title": "다운로드 백엔드 설정",
+  "download_backend_title": "Download engine",
   "download_backend_unsupported_note": "이 플랫폼에서는 내장 엔진을 사용할 수 없습니다. 외부 qBittorrent를 사용하여 다운로드합니다.",
   "download_batch_already_queued": "$n already in the download queue",
   "download_batch_clear": "Remove from list",

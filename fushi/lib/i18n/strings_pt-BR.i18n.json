@@ -2828,6 +2828,7 @@
   "download_backend_setup_intro": "Escolha qual mecanismo executa seus downloads. Você pode mudar isso a qualquer momento nas configurações de download.",
   "download_backend_setup_start": "Configurar agora",
   "download_backend_setup_title": "Configurar o backend de downloads",
+  "download_backend_title": "Download engine",
   "download_backend_unsupported_note": "O motor integrado não está disponível nesta plataforma. Downloads usam qBittorrent externo.",
   "download_batch_already_queued": "$n already in the download queue",
   "download_batch_clear": "Remove from list",

@@ -2828,6 +2828,7 @@
   "download_backend_setup_intro": "Выберите, какой движок будет выполнять загрузки. Это можно изменить в любой момент в настройках загрузок.",
   "download_backend_setup_start": "Настроить",
   "download_backend_setup_title": "Настройка бэкенда загрузок",
+  "download_backend_title": "Download engine",
   "download_backend_unsupported_note": "Встроенный движок недоступен на этой платформе. Загрузки используют внешний qBittorrent.",
   "download_batch_already_queued": "$n already in the download queue",
   "download_batch_clear": "Remove from list",

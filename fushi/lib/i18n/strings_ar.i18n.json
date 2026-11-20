@@ -2828,6 +2828,7 @@
   "download_backend_setup_intro": "اختر المحرك الذي ينفّذ تحميلاتك. يمكنك تغييره في أي وقت من إعدادات التحميل.",
   "download_backend_setup_start": "إعداد الآن",
   "download_backend_setup_title": "إعداد خلفية التحميل",
+  "download_backend_title": "Download engine",
   "download_backend_unsupported_note": "المحرك المدمج غير متاح على هذه المنصة. تستخدم التحميلات qBittorrent خارجي.",
   "download_batch_already_queued": "$n already in the download queue",
   "download_batch_clear": "Remove from list",

@@ -2828,6 +2828,7 @@
   "download_backend_setup_intro": "Kies welke engine je downloads uitvoert. Je kunt dit later altijd wijzigen in de downloadinstellingen.",
   "download_backend_setup_start": "Nu instellen",
   "download_backend_setup_title": "Downloadbackend instellen",
+  "download_backend_title": "Download engine",
   "download_backend_unsupported_note": "De ingebouwde engine is niet beschikbaar op dit platform. Downloads gebruiken externe qBittorrent.",
   "download_batch_already_queued": "$n already in the download queue",
   "download_batch_clear": "Remove from list",
