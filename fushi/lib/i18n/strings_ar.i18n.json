@@ -9387,6 +9387,8 @@
   "shortcut_gamepad_brand_xbox": "Xbox",
   "shortcut_gamepad_pick_list": "اختيار من القائمة",
   "shortcut_gamepad_unavailable_hint": "لم يُكتشف مكون GameInput — دعم ذراع التحكم غير متاح. ثبّت خدمات ألعاب Windows لتفعيل دعم وحدة التحكم.",
+  "shortcut_global_external_enabled": "Enable app-outside shortcuts",
+  "shortcut_global_external_enabled_hint": "System-wide hotkeys, mouse side buttons and gamepad triggers that work while another app is in front. Turn off to leave no system hooks; bindings below are kept.",
   "shortcut_keyboard": "لوحة المفاتيح",
   "shortcut_lookup_page_escape_minimize": "مفتاح الرجوع في صفحة البحث يصغّر النافذة",
   "shortcut_lookup_page_escape_minimize_hint": "بعد مفتاح الاختصار لإحضار النافذة إلى الواجهة، اضغط مفتاح الرجوع (Esc افتراضيًا) في صفحة البحث لإبعاد النافذة والعودة إلى ما كنت تفعله. يتم الاحتفاظ بالاستعلام والنتائج.",

@@ -9387,6 +9387,8 @@
   "shortcut_gamepad_brand_xbox": "Xbox",
   "shortcut_gamepad_pick_list": "リストから選択",
   "shortcut_gamepad_unavailable_hint": "GameInputコンポーネントが検出されません — ゲームパッドのサポートは利用できません。コントローラーサポートを有効にするには、Windows Gaming Servicesをインストールしてください。",
+  "shortcut_global_external_enabled": "Enable app-outside shortcuts",
+  "shortcut_global_external_enabled_hint": "System-wide hotkeys, mouse side buttons and gamepad triggers that work while another app is in front. Turn off to leave no system hooks; bindings below are kept.",
   "shortcut_keyboard": "キーボード",
   "shortcut_lookup_page_escape_minimize": "検索ページで戻るキーを押すとウィンドウを最小化",
   "shortcut_lookup_page_escape_minimize_hint": "前面表示のホットキーで検索ページを呼び出した後、検索ページで戻るキー（デフォルトは Esc）を押すとウィンドウをしまい、直前の作業に戻れます。検索語と結果はそのまま保持されます。",

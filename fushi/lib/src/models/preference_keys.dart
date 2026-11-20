@@ -168,6 +168,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   kAiWebSearchPageFetchPref,
   // String（AnkiSettings JSON）：见 [kAnkiSettingsPrefKey]。凭据 + 设备本地。
   kAnkiSettingsPrefKey,
+  // bool：应用外快捷键总开关（OS 热键 / 鼠标侧键 / 手柄触发），默认 true。
+  'app_external_hotkeys_enabled',
   'app_locale',
   'app_ui_scale',
   'asr_transcribe_language',

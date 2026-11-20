@@ -9387,6 +9387,8 @@
   "shortcut_gamepad_brand_xbox": "Xbox",
   "shortcut_gamepad_pick_list": "Aus Liste wählen",
   "shortcut_gamepad_unavailable_hint": "GameInput-Komponente nicht erkannt — Gamepad-Unterstützung ist nicht verfügbar. Installiere die Windows Gaming Services, um Controller-Unterstützung zu aktivieren.",
+  "shortcut_global_external_enabled": "Enable app-outside shortcuts",
+  "shortcut_global_external_enabled_hint": "System-wide hotkeys, mouse side buttons and gamepad triggers that work while another app is in front. Turn off to leave no system hooks; bindings below are kept.",
   "shortcut_keyboard": "Tastatur",
   "shortcut_lookup_page_escape_minimize": "Zurück-Taste auf der Nachschlageseite minimiert das Fenster",
   "shortcut_lookup_page_escape_minimize_hint": "Drücke nach dem Hotkey zum In-den-Vordergrund-Holen auf der Nachschlageseite die Zurück-Taste (standardmäßig Esc), um das Fenster wegzuschicken und zu dem zurückzukehren, was du gerade getan hast. Anfrage und Ergebnisse bleiben erhalten.",

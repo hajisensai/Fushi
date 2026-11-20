@@ -9387,6 +9387,8 @@
   "shortcut_gamepad_brand_xbox": "Xbox",
   "shortcut_gamepad_pick_list": "Escolher da lista",
   "shortcut_gamepad_unavailable_hint": "Componente GameInput não detectado — suporte a controle indisponível. Instale o Windows Gaming Services para ativar o suporte a controle.",
+  "shortcut_global_external_enabled": "Enable app-outside shortcuts",
+  "shortcut_global_external_enabled_hint": "System-wide hotkeys, mouse side buttons and gamepad triggers that work while another app is in front. Turn off to leave no system hooks; bindings below are kept.",
   "shortcut_keyboard": "Teclado",
   "shortcut_lookup_page_escape_minimize": "A tecla voltar na página de consulta minimiza a janela",
   "shortcut_lookup_page_escape_minimize_hint": "Depois do atalho de trazer para frente, pressione a tecla voltar (Esc por padrão) na página de consulta para afastar a janela e voltar ao que você estava fazendo. A consulta e os resultados são mantidos.",

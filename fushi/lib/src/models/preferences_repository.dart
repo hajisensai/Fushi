@@ -1553,6 +1553,17 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 应用外快捷键总开关（桌面）：OS 级热键、鼠标侧键、手柄这三条在别的程序
+  /// 前台时也生效的触发源是否装上。默认开；与查词页模块（`ModuleId.lookup`）
+  /// 无关——维护者拍板 pr3605：热键单独一个开关。
+  bool get appExternalHotkeysEnabled =>
+      getPref('app_external_hotkeys_enabled', defaultValue: true) as bool;
+
+  Future<void> setAppExternalHotkeysEnabled(bool value) async {
+    await setPref('app_external_hotkeys_enabled', value);
+    notifyListeners();
+  }
+
   final int defaultSearchDebounceDelay = 100;
 
   int get searchDebounceDelay =>

@@ -13304,6 +13304,11 @@ class AppModel
   Future<void> setLookupBlockCapture(bool v) =>
       prefsRepo.setLookupBlockCapture(v);
 
+  /// 应用外快捷键总开关（见 [PreferencesRepository.appExternalHotkeysEnabled]）。
+  bool get appExternalHotkeysEnabled => prefsRepo.appExternalHotkeysEnabled;
+  Future<void> setAppExternalHotkeysEnabled(bool v) =>
+      prefsRepo.setAppExternalHotkeysEnabled(v);
+
   Map<String, String> get customDictCSS => prefsRepo.customDictCSS;
   String getCustomCSSForDict(String dictName) =>
       prefsRepo.getCustomCSSForDict(dictName);

@@ -9387,6 +9387,8 @@
   "shortcut_gamepad_brand_xbox": "Xbox",
   "shortcut_gamepad_pick_list": "Выбрать из списка",
   "shortcut_gamepad_unavailable_hint": "Компонент GameInput не обнаружен — поддержка геймпада недоступна. Установите Windows Gaming Services для включения поддержки контроллера.",
+  "shortcut_global_external_enabled": "Enable app-outside shortcuts",
+  "shortcut_global_external_enabled_hint": "System-wide hotkeys, mouse side buttons and gamepad triggers that work while another app is in front. Turn off to leave no system hooks; bindings below are kept.",
   "shortcut_keyboard": "Клавиатура",
   "shortcut_lookup_page_escape_minimize": "Клавиша «Назад» на странице поиска сворачивает окно",
   "shortcut_lookup_page_escape_minimize_hint": "После горячей клавиши вывода на передний план нажмите клавишу «Назад» (по умолчанию Esc) на странице поиска, чтобы убрать окно и вернуться к прежнему занятию. Запрос и результаты сохраняются.",

@@ -9387,6 +9387,8 @@
   "shortcut_gamepad_brand_xbox": "Xbox",
   "shortcut_gamepad_pick_list": "목록에서 선택",
   "shortcut_gamepad_unavailable_hint": "GameInput 구성 요소가 감지되지 않아 게임패드를 사용할 수 없습니다. 컨트롤러 지원을 활성화하려면 Windows 게임 서비스를 설치하세요.",
+  "shortcut_global_external_enabled": "Enable app-outside shortcuts",
+  "shortcut_global_external_enabled_hint": "System-wide hotkeys, mouse side buttons and gamepad triggers that work while another app is in front. Turn off to leave no system hooks; bindings below are kept.",
   "shortcut_keyboard": "키보드",
   "shortcut_lookup_page_escape_minimize": "검색 페이지에서 뒤로 키를 누르면 창 최소화",
   "shortcut_lookup_page_escape_minimize_hint": "앞으로 가져오기 단축키를 누른 뒤 검색 페이지에서 뒤로 키(기본값 Esc)를 누르면 창을 치우고 하던 작업으로 돌아갑니다. 검색어와 결과는 유지됩니다.",

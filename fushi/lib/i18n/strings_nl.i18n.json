@@ -9387,6 +9387,8 @@
   "shortcut_gamepad_brand_xbox": "Xbox",
   "shortcut_gamepad_pick_list": "Kies uit lijst",
   "shortcut_gamepad_unavailable_hint": "GameInput-component niet gedetecteerd — gamepadondersteuning is niet beschikbaar. Installeer de Windows Gaming Services om controllerondersteuning in te schakelen.",
+  "shortcut_global_external_enabled": "Enable app-outside shortcuts",
+  "shortcut_global_external_enabled_hint": "System-wide hotkeys, mouse side buttons and gamepad triggers that work while another app is in front. Turn off to leave no system hooks; bindings below are kept.",
   "shortcut_keyboard": "Toetsenbord",
   "shortcut_lookup_page_escape_minimize": "Terugtoets op de opzoekpagina minimaliseert het venster",
   "shortcut_lookup_page_escape_minimize_hint": "Druk na de sneltoets om naar voren te halen op de opzoekpagina op de terugtoets (standaard Esc) om het venster weg te sturen en terug te keren naar waar je mee bezig was. De zoekopdracht en resultaten blijven behouden.",

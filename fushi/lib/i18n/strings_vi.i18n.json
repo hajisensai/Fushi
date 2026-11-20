@@ -9387,6 +9387,8 @@
   "shortcut_gamepad_brand_xbox": "Xbox",
   "shortcut_gamepad_pick_list": "Chọn từ danh sách",
   "shortcut_gamepad_unavailable_hint": "Không phát hiện thành phần GameInput — hỗ trợ tay cầm không khả dụng. Cài đặt Windows Gaming Services để bật hỗ trợ tay cầm.",
+  "shortcut_global_external_enabled": "Enable app-outside shortcuts",
+  "shortcut_global_external_enabled_hint": "System-wide hotkeys, mouse side buttons and gamepad triggers that work while another app is in front. Turn off to leave no system hooks; bindings below are kept.",
   "shortcut_keyboard": "Bàn phím",
   "shortcut_lookup_page_escape_minimize": "Phím quay lại ở trang tra từ sẽ thu nhỏ cửa sổ",
   "shortcut_lookup_page_escape_minimize_hint": "Sau phím tắt đưa lên trước, nhấn phím quay lại (mặc định là Esc) ở trang tra từ để đẩy cửa sổ đi và quay lại việc đang làm. Truy vấn và kết quả được giữ lại.",

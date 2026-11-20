@@ -9387,6 +9387,8 @@
   "shortcut_gamepad_brand_xbox": "Xbox",
   "shortcut_gamepad_pick_list": "เลือกจากรายการ",
   "shortcut_gamepad_unavailable_hint": "ไม่พบส่วนประกอบ GameInput — การรองรับเกมแพดไม่พร้อมใช้งาน ติดตั้ง Windows Gaming Services เพื่อเปิดใช้งานการรองรับคอนโทรลเลอร์",
+  "shortcut_global_external_enabled": "Enable app-outside shortcuts",
+  "shortcut_global_external_enabled_hint": "System-wide hotkeys, mouse side buttons and gamepad triggers that work while another app is in front. Turn off to leave no system hooks; bindings below are kept.",
   "shortcut_keyboard": "แป้นพิมพ์",
   "shortcut_lookup_page_escape_minimize": "ปุ่มย้อนกลับในหน้าค้นหาจะย่อหน้าต่าง",
   "shortcut_lookup_page_escape_minimize_hint": "หลังใช้ฮอตคีย์นำมาไว้ด้านหน้า กดปุ่มย้อนกลับ (ค่าเริ่มต้นคือ Esc) ในหน้าค้นหาเพื่อส่งหน้าต่างออกไปและกลับไปทำสิ่งที่ทำอยู่ คำค้นและผลลัพธ์จะถูกเก็บไว้",
