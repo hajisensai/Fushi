@@ -7,7 +7,7 @@
 // 2. 光标换行移动只对与视口相交的文本节点逐字量几何：落点与不做节点预筛时逐次一致，
 //    一次移动的 getClientRects 次数远少于章内字数（旧实现每个字各量一次）。
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
-import { readPayload } from './vn_shell_harness_support.mjs';
+import { readPayload } from './reader_harness_support.js';
 
 const payload = readPayload();
 if (!resolveChrome()) {

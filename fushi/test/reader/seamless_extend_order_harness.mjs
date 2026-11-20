@@ -10,7 +10,7 @@
 // 页面里 fetch 由替身接管，DOMParser、shadow DOM 都是真浏览器的。
 import assert from 'node:assert/strict';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
-import { readPayload } from './vn_shell_harness_support.mjs';
+import { readPayload } from './reader_harness_support.js';
 
 const scripts = readPayload();
 if (!resolveChrome()) {
