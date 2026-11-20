@@ -128,7 +128,9 @@ void main() {
       () {
         final String initRemote = region(
           'Future<void> _initRemote() async {',
-          '/// per-book 播放倍速偏好 key',
+          // 终点钉代码（倍速写入 key getter）而不是它上面的注释：BUG-4910 把注释改成
+          // 「写入 key」后，钉注释的锚点就失配了。
+          'String get _speedPrefKey',
         );
         // TODO-653/885：恢复由 _loadRemoteEpisode 定（互联走三方判定 BUG-4436，其余
         // 走 _resolveRemoteInitialPositionMs 的 LWW，见下一条守卫）；首开只带卡片回看的

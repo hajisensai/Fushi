@@ -143,7 +143,29 @@ Future<void> _tapCategory(WidgetTester tester, String id, String label) async {
   await tester.ensureVisible(target);
   await tester.pumpAndSettle();
   await tester.tap(target);
+  if (id == 'shaders') await _settleShaderListLoad(tester);
   await tester.pumpAndSettle();
+}
+
+/// 画质增强页（[VideoShaderManagerView]）在 initState 里经 `listShaderFiles()` 用
+/// 异步 `dart:io` 扫着色器目录（video-20 起 `mpvShaderDirectory` 不再同步建目录），
+/// 扫完前显示不定态加载指示器。真实文件 IO 只在 `runAsync` 里推进，而 `await` 的
+/// 续体绑在测试的 fake-async zone、只在 `pump()` 时跑——两者交替（pump 带时长，
+/// 顺带推进切分类的过渡动画）把扫描链排空，直到正文出现（同
+/// book_css_editor_page_test 的 BUG-040 做法；pumpAndSettle 会在指示器的无限动画上
+/// 转到超时）。指示器类型随设计系统 / 平台变，故按「正文的五档选择器已出现」判完成。
+Future<void> _settleShaderListLoad(WidgetTester tester) async {
+  final Finder loaded = find.descendant(
+    of: find.byType(VideoShaderManagerView),
+    matching: find.byType(FushiSegmentedButton<VideoShaderTier>),
+  );
+  for (int i = 0; i < 100 && loaded.evaluate().isEmpty; i++) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 10)),
+    );
+    await tester.pump(const Duration(milliseconds: 16));
+  }
+  expect(loaded, findsOneWidget, reason: 'shader list scan never completed');
 }
 
 /// 阶段 B：schema dropdown 行经 SettingsSchemaItem 的 `_segmented<Object>` 派发，
