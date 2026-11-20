@@ -148,6 +148,8 @@
   "opt_subtitleAutoScroll_desc": "Giữ dòng hiện tại trong tầm nhìn khi phát.",
   "opt_subtitleReplaceNative_title": "Thay phụ đề của trang",
   "opt_subtitleReplaceNative_desc": "Hiện cả câu từ toàn bộ track — lý tưởng cho phụ đề tự động của YouTube.",
+  "opt_subtitleMergeAsrSentences_title": "Gộp phụ đề tự động thành câu",
+  "opt_subtitleMergeAsrSentences_desc": "Gộp các mảnh phụ đề tự động của YouTube thành câu hoàn chỉnh dựa trên dấu câu và khoảng ngắt. Khi phụ đề không có dấu câu, chỗ ngắt câu có thể chưa chuẩn.",
   "opt_subtitleOverlayAllTracks_title": "Vẽ mọi track bằng Fushi",
   "opt_subtitleOverlayAllTracks_desc": "Track của trang cũng có làm mờ chống tiết lộ và tra khi di chuột.",
   "opt_subtitleOverlayBlur_title": "Làm mờ chống tiết lộ",

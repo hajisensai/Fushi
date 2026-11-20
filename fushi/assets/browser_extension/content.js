@@ -523,6 +523,25 @@ try {
   });
 } catch (_) {}
 
+// YouTube 自动字幕分句整合（反馈 97pds8EODm，storage.subtitleMergeAsrSentences，默认关）：
+// 只读开关、转给 subtitle-providers.js 的 fushiSetAsrSentenceMerge，那里持有原始行 cue、
+// 负责重算 store 并通知面板；切换实时生效，不重新取轨。
+try {
+  const fushiApplyAsrMergePref = (s) => {
+    if (typeof window.fushiSetAsrSentenceMerge === 'function') {
+      window.fushiSetAsrSentenceMerge(!!s && s.subtitleMergeAsrSentences === true);
+    }
+  };
+  const fushiAsrMergePrefPromise = chrome.storage.local.get(['subtitleMergeAsrSentences'], fushiApplyAsrMergePref);
+  if (fushiAsrMergePrefPromise && typeof fushiAsrMergePrefPromise.then === 'function') {
+    fushiAsrMergePrefPromise.then(fushiApplyAsrMergePref, () => {});
+  }
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes || !changes.subtitleMergeAsrSentences) return;
+    fushiApplyAsrMergePref({ subtitleMergeAsrSentences: changes.subtitleMergeAsrSentences.newValue });
+  });
+} catch (_) {}
+
 // 「按住 Shift 悬停查词」总开关（storage.shiftHoverLookup，默认开）。Shift 在不少站点/输入场景
 // 另有用途（选区扩展、站点快捷键），用户可以关掉这条入口，只留点击 / 悬浮字幕自动查词等
 // 其余入口。只认显式 false；storage.onChanged 实时生效。

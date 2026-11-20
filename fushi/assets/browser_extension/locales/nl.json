@@ -148,6 +148,8 @@
   "opt_subtitleAutoScroll_desc": "Houdt de huidige regel in beeld tijdens het afspelen.",
   "opt_subtitleReplaceNative_title": "Site-ondertitels vervangen",
   "opt_subtitleReplaceNative_desc": "Toont hele zinnen uit het volledige spoor — ideaal voor automatische YouTube-ondertitels.",
+  "opt_subtitleMergeAsrSentences_title": "Automatische ondertitels samenvoegen tot zinnen",
+  "opt_subtitleMergeAsrSentences_desc": "Voegt fragmenten van automatische YouTube-ondertitels samen tot hele zinnen op basis van leestekens en pauzes. Zonder leestekens kunnen de zinsgrenzen afwijken.",
   "opt_subtitleOverlayAllTracks_title": "Alle sporen met Fushi tekenen",
   "opt_subtitleOverlayAllTracks_desc": "Ook sitesporen krijgen spoilervervaging en opzoeken bij aanwijzen.",
   "opt_subtitleOverlayBlur_title": "Spoilervervaging",

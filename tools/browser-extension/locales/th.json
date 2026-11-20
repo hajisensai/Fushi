@@ -148,6 +148,8 @@
   "opt_subtitleAutoScroll_desc": "ให้บรรทัดปัจจุบันอยู่ในสายตาขณะเล่น",
   "opt_subtitleReplaceNative_title": "แทนที่ซับไตเติลของเว็บไซต์",
   "opt_subtitleReplaceNative_desc": "แสดงทั้งประโยคจากแทร็กเต็ม — เหมาะกับคำบรรยายอัตโนมัติของ YouTube",
+  "opt_subtitleMergeAsrSentences_title": "รวมคำบรรยายอัตโนมัติเป็นประโยค",
+  "opt_subtitleMergeAsrSentences_desc": "รวมชิ้นส่วนคำบรรยายอัตโนมัติของ YouTube เป็นประโยคเต็มตามเครื่องหมายวรรคตอนและช่วงหยุด หากคำบรรยายไม่มีเครื่องหมายวรรคตอน การแบ่งประโยคอาจคลาดเคลื่อน",
   "opt_subtitleOverlayAllTracks_title": "วาดทุกแทร็กด้วย Fushi",
   "opt_subtitleOverlayAllTracks_desc": "แทร็กของเว็บไซต์ก็ได้เบลอกันสปอยล์และค้นหาเมื่อชี้ด้วย",
   "opt_subtitleOverlayBlur_title": "เบลอกันสปอยล์",

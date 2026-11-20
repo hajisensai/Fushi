@@ -148,6 +148,8 @@
   "opt_subtitleAutoScroll_desc": "播放時自動捲到目前字幕。",
   "opt_subtitleReplaceNative_title": "取代網站原生字幕",
   "opt_subtitleReplaceNative_desc": "取回整條字幕軌按整句顯示，適合 YouTube 自動字幕。",
+  "opt_subtitleMergeAsrSentences_title": "自動字幕分句整合",
+  "opt_subtitleMergeAsrSentences_desc": "按標點和停頓把 YouTube 自動字幕的碎片合成整句。字幕沒有標點時斷句可能不準。",
   "opt_subtitleOverlayAllTracks_title": "所有字幕軌都由 Fushi 繪製",
   "opt_subtitleOverlayAllTracks_desc": "網站字幕也能用防劇透模糊和懸停查詞。",
   "opt_subtitleOverlayBlur_title": "防劇透模糊",

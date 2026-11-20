@@ -148,6 +148,8 @@
   "opt_subtitleAutoScroll_desc": "재생 중 현재 줄을 계속 보이게 합니다.",
   "opt_subtitleReplaceNative_title": "사이트 자막 대체",
   "opt_subtitleReplaceNative_desc": "전체 트랙에서 문장 단위로 표시합니다. YouTube 자동 자막에 적합합니다.",
+  "opt_subtitleMergeAsrSentences_title": "자동 자막을 문장 단위로 합치기",
+  "opt_subtitleMergeAsrSentences_desc": "YouTube 자동 자막 조각을 문장 부호와 쉼을 기준으로 완전한 문장으로 합칩니다. 문장 부호가 없는 자막은 구분이 어긋날 수 있습니다.",
   "opt_subtitleOverlayAllTracks_title": "모든 트랙을 Fushi로 그리기",
   "opt_subtitleOverlayAllTracks_desc": "사이트 자막에도 스포일러 흐림과 호버 검색이 적용됩니다.",
   "opt_subtitleOverlayBlur_title": "스포일러 흐림",

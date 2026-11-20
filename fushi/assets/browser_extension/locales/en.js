@@ -154,6 +154,8 @@
   opt_subtitleAutoScroll_desc: 'Keeps the current line in view while playing.',
   opt_subtitleReplaceNative_title: 'Replace site subtitles',
   opt_subtitleReplaceNative_desc: 'Shows whole sentences from the full track — ideal for YouTube auto captions.',
+  opt_subtitleMergeAsrSentences_title: 'Merge auto captions into sentences',
+  opt_subtitleMergeAsrSentences_desc: 'Joins YouTube auto-caption fragments into whole sentences using punctuation and pauses. Breaks can be off when the captions have no punctuation.',
   opt_subtitleOverlayAllTracks_title: 'Draw all tracks with Fushi',
   opt_subtitleOverlayAllTracks_desc: 'Site tracks also get spoiler blur and hover lookup.',
   opt_subtitleOverlayBlur_title: 'Spoiler blur',

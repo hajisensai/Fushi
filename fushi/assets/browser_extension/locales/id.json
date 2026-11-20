@@ -148,6 +148,8 @@
   "opt_subtitleAutoScroll_desc": "Menjaga baris saat ini tetap terlihat saat diputar.",
   "opt_subtitleReplaceNative_title": "Ganti subtitel situs",
   "opt_subtitleReplaceNative_desc": "Menampilkan kalimat utuh dari trek lengkap — cocok untuk teks otomatis YouTube.",
+  "opt_subtitleMergeAsrSentences_title": "Gabungkan teks otomatis menjadi kalimat",
+  "opt_subtitleMergeAsrSentences_desc": "Menggabungkan potongan teks otomatis YouTube menjadi kalimat utuh berdasarkan tanda baca dan jeda. Tanpa tanda baca, pemisahan kalimat bisa meleset.",
   "opt_subtitleOverlayAllTracks_title": "Gambar semua trek dengan Fushi",
   "opt_subtitleOverlayAllTracks_desc": "Trek situs juga mendapat buram anti-spoiler dan pencarian saat diarahkan.",
   "opt_subtitleOverlayBlur_title": "Buram anti-spoiler",

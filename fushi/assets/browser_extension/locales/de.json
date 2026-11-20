@@ -148,6 +148,8 @@
   "opt_subtitleAutoScroll_desc": "Hält beim Abspielen die aktuelle Zeile im Blick.",
   "opt_subtitleReplaceNative_title": "Website-Untertitel ersetzen",
   "opt_subtitleReplaceNative_desc": "Zeigt ganze Sätze aus der vollständigen Spur – ideal für automatische YouTube-Untertitel.",
+  "opt_subtitleMergeAsrSentences_title": "Auto-Untertitel zu Sätzen zusammenfassen",
+  "opt_subtitleMergeAsrSentences_desc": "Fügt Fragmente automatischer YouTube-Untertitel anhand von Satzzeichen und Pausen zu ganzen Sätzen zusammen. Ohne Satzzeichen können die Satzgrenzen danebenliegen.",
   "opt_subtitleOverlayAllTracks_title": "Alle Spuren mit Fushi zeichnen",
   "opt_subtitleOverlayAllTracks_desc": "Auch Website-Spuren erhalten Spoiler-Unschärfe und Nachschlagen per Hover.",
   "opt_subtitleOverlayBlur_title": "Spoiler-Unschärfe",

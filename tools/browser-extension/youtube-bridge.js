@@ -243,7 +243,10 @@
     } catch (_) { return NO_SOURCE; }
   }
 
-  function parseJson3(payload) {
+  // keepWords（只给自动字幕）：每行再带上词级时间 words = [{offsetMs, text}]（json3 segs 的
+  // tOffsetMs，相对行起点），隔离世界的分句整合（subtitle-adapters.js fushiMergeAsrSentenceCues，
+  // 设置 subtitleMergeAsrSentences）靠它把句号落在行中间的句子按词切开、按词间停顿断句。
+  function parseJson3(payload, keepWords) {
     var events = payload && Array.isArray(payload.events) ? payload.events : [];
     var cues = [];
     for (var i = 0; i < events.length; i++) {
@@ -259,7 +262,13 @@
         duration = next && Number.isFinite(Number(next.tStartMs))
           ? Math.max(1, Number(next.tStartMs) - start) : 1500;
       }
-      cues.push({ startMs: start, endMs: start + duration, text: value });
+      var cue = { startMs: start, endMs: start + duration, text: value };
+      if (keepWords && event.segs.length > 1) {
+        cue.words = event.segs.map(function (segment) {
+          return { offsetMs: Number(segment && segment.tOffsetMs) || 0, text: segment && segment.utf8 || '' };
+        }).filter(function (word) { return word.text; });
+      }
+      cues.push(cue);
     }
     return cues;
   }
@@ -315,7 +324,7 @@
     try {
       var jsonResponse = await fetch(url.toString(), { credentials: 'include' });
       if (!jsonResponse.ok) return [];
-      return finishTrackCues(track, parseJson3(await jsonResponse.json()));
+      return finishTrackCues(track, parseJson3(await jsonResponse.json(), isAsrTrack(track)));
     } catch (_) { return []; }
   }
 
@@ -407,6 +416,8 @@
       format: 'cues',
       cues: cues,
     };
+    // 自动字幕标记：隔离世界据此把这条轨登记进分句整合（cue 带 words 词级时间）。
+    if (isAsrTrack(track)) message.asr = true;
     cacheMessage(message.videoKey + '|' + message.lang, message);
     try { window.postMessage(message, '/'); } catch (_) {}
   }
