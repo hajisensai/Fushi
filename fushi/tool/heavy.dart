@@ -195,6 +195,7 @@ Future<void> main(List<String> args) async {
             ? staticMb
             : null,
         peakMb: peakMb,
+        cwd: checkout,
       ),
     );
   }
