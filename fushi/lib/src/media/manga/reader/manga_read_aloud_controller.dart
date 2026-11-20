@@ -293,6 +293,38 @@ class MangaReadAloudController extends ChangeNotifier {
     _launch();
   }
 
+  /// 暂停 / 失败停住时，从第 [pageIndex] 页与 [blocks] 交集最大的那句句首续读（查词后
+  /// 从被查那句重播，BUG-4909）。那页的朗读计划还没建好、或没有对得上的句子时同
+  /// [resume]（从当前句开头重读）。
+  void resumeFromSentence(int pageIndex, List<int> blocks) {
+    if (_disposed) return;
+    if (_state != MangaReadAloudState.paused &&
+        _state != MangaReadAloudState.failed) {
+      return;
+    }
+    final _PagePlan? plan = _plans[pageIndex];
+    if (plan != null && blocks.isNotEmpty) {
+      final Set<int> wanted = blocks.toSet();
+      int best = -1;
+      int bestOverlap = 0;
+      for (int i = 0; i < plan.utterances.length; i++) {
+        final int overlap = plan.utterances[i].blocks
+            .where(wanted.contains)
+            .length;
+        if (overlap > bestOverlap) {
+          best = i;
+          bestOverlap = overlap;
+        }
+      }
+      if (best >= 0) {
+        _page = pageIndex;
+        _index = best;
+        _backward = false;
+      }
+    }
+    resume();
+  }
+
   void next() {
     if (!isActive) return;
     _interrupt();

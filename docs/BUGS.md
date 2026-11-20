@@ -33,10 +33,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4233 条。点号进各自文件。
+> 共 4237 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4909](bugs/BUG-4909-manga-lookup-restart-sentence-missing.md) | ✅ | ✅ | 小说「查词后从句首重播」在漫画阅读器不生效 |
+| [BUG-4908](bugs/BUG-4908-manga-companion-lookup-no-pause.md) | ✅ | ✅ | 第二块屏上查词不会暂停漫画朗读 / 漫画有声 |
+| [BUG-4907](bugs/BUG-4907-manga-audio-no-pause-on-lookup.md) | ✅ | ✅ | 漫画阅读器查词时朗读 / 漫画有声不自动暂停 |
+| [BUG-4906](bugs/BUG-4906-manga-audio-page-turn-pulled-back.md) | ✅ | ✅ | 漫画有声播放中翻页 / 滚动，画面先被拉回前一页再翻回来 |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
 | [BUG-4903](bugs/BUG-4903-home-desktop-continue-cut-edge-title-concat.md) | ✅ | ✅ | 首页（桌面）「继续」右侧卡被窗口切掉一半、标题拼接成「Re：ゼロ…1<Re：…」 |

@@ -77,6 +77,15 @@ class _FakeReader implements MangaCompanionReader {
 
   @override
   void countLookup() => lookupsCounted++;
+
+  int lookupsOpened = 0;
+  final List<bool> lookupsClosed = <bool>[];
+
+  @override
+  void lookupOpened() => lookupsOpened++;
+
+  @override
+  void lookupClosed({required bool resume}) => lookupsClosed.add(resume);
 }
 
 class _FakeBridge implements CompanionBridge {
@@ -124,6 +133,23 @@ void main() {
       expect(registry.countLookup(), isTrue);
       expect(registry.countLookup(), isTrue);
       expect(reader.lookupsCounted, 2);
+    });
+
+    test('companion lookups open / close reach the page (pause on lookup, '
+        'BUG-4908)', () {
+      registry.lookupOpened();
+      expect(reader.lookupsOpened, 0, reason: 'nothing claimed yet');
+      hook.claim('Series');
+      registry.lookupOpened();
+      registry.lookupOpened();
+      expect(reader.lookupsOpened, 2, reason: 'every new companion lookup');
+      expect(hook.link.lookupOpen, isTrue);
+      registry.lookupClosed(resume: true);
+      expect(reader.lookupsClosed, <bool>[true]);
+      // The companion went away with a lookup open: hold dropped, no resume.
+      registry.lookupOpened();
+      registry.lookupClosed(resume: false);
+      expect(reader.lookupsClosed, <bool>[true, false]);
     });
 
     test('inactive: claims the context but builds nothing, no timer', () {
