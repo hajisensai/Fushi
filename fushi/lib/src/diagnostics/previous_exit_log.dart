@@ -469,10 +469,18 @@ class SessionMarker {
 ///
 /// [androidUiVisibleAtDeath]：同一进程死前界面可不可见的原生证据
 /// （[androidSessionUiVisibleAtDeath]），按 [androidDiedInForeground] 的次序压过标记推断。
+///
+/// [currentVersion]：本次进程的版本（与标记里的 [PreviousSession.version] 同一来源）。
+/// 两边都已知且不同 = 上次进程之后装了新版本：iOS（TestFlight / App Store）与 macOS
+/// 装新版时由系统结束旧进程，平台不留原因（没有 Android `PACKAGE_UPDATED` 那样的记录），
+/// 标记只会停在 resumed，按「停在前台时没了」会每次更新都误报一次闪退（反馈
+/// QL5TsHwY78）。这时归 [PreviousExitKind.appUpdated]；真有崩溃证据（MetricKit、`.ips`、
+/// Android `CRASH*`）时 [classifyPreviousExit] 按优先级照常压过它。
 ExitReportEntry? describeUncleanPreviousSession(
   PreviousSession? previous, {
   int? androidImportanceAtDeath,
   bool? androidUiVisibleAtDeath,
+  String? currentVersion,
 }) {
   if (previous == null || previous.clean) return null;
   final bool diedInForeground = androidDiedInForeground(
@@ -539,6 +547,25 @@ ExitReportEntry? describeUncleanPreviousSession(
       atMs: previous.lifecycleAt,
     );
   }
+  final String? previousVersion = knownSessionVersion(previous.version);
+  final String? runningVersion = knownSessionVersion(currentVersion);
+  if (previousVersion != null &&
+      runningVersion != null &&
+      previousVersion != runningVersion) {
+    b.write(
+      '（本次已是 $runningVersion：上次进程之后装了新版本，'
+      '多半是安装更新时被系统结束，按更新处理）',
+    );
+    return ExitReportEntry(
+      kPreviousExitUncleanSource,
+      b.toString(),
+      severe: false,
+      kind: PreviousExitKind.appUpdated,
+      foreground: diedInForeground,
+      duringStartup: !previous.initialised,
+      atMs: previous.lifecycleAt,
+    );
+  }
   b.write(
     diedInForeground
         ? '（停在前台时没了，疑似闪退）'
@@ -557,6 +584,15 @@ ExitReportEntry? describeUncleanPreviousSession(
     duringStartup: !previous.initialised,
     atMs: previous.lifecycleAt,
   );
+}
+
+/// 版本拿不到（没注入 `FUSHI_BUILD_VERSION`）时会话标记里记的占位值。
+const String kUnknownSessionVersion = 'unknown';
+
+/// 会话标记里的版本能不能参与比较：空串 / [kUnknownSessionVersion] 是「不知道」，返回 null。
+String? knownSessionVersion(String? version) {
+  final String? v = version?.trim();
+  return v == null || v.isEmpty || v == kUnknownSessionVersion ? null : v;
 }
 
 /// 日志 source：上次退出链超出预算、被退出看门狗结束（有意退出，只作诊断）。
@@ -1959,14 +1995,14 @@ abstract final class PreviousExitLog {
           ? await collector(appDir)
           : await collect(
               appDir: appDir,
-              version: fushiRunningCodeVersion ?? 'unknown',
+              version: fushiRunningCodeVersion ?? kUnknownSessionVersion,
             );
       final String? previousVersion = _previous?.version;
       _verdict = classifyPreviousExit(
         entries,
         version: previousVersion != null && previousVersion.isNotEmpty
             ? previousVersion
-            : fushiRunningCodeVersion ?? 'unknown',
+            : fushiRunningCodeVersion ?? kUnknownSessionVersion,
         nowMs: DateTime.now().millisecondsSinceEpoch,
       );
       for (final ExitReportEntry e in entries) {
@@ -2060,6 +2096,7 @@ abstract final class PreviousExitLog {
 
     final ExitReportEntry? unclean = describeUncleanPreviousSession(
       previous,
+      currentVersion: version,
       androidImportanceAtDeath: previous == null || androidPayload == null
           ? null
           : androidImportanceAtDeath(
