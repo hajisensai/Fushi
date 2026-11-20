@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-4945：阅读器侧板（导航 / 设置 / 有声书 / 统计）的构建路径不得依赖正文
 /// WebView 的 `_controller`。

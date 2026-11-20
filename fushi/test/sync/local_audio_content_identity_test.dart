@@ -13,7 +13,7 @@ import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/models/local_audio_content_id.dart';

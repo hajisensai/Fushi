@@ -1,6 +1,6 @@
 // 拍板台 left3568：拖进音乐页——目录登记成音乐来源，曲目文件（纯音频 + MV 视频容器）
 // 导入曲库，其余不收；视频侧交给音乐库的口径（只收纯音频）不变。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/music/music_file_drop.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
 

@@ -3,7 +3,7 @@
 // 没有 cover-image，以前只看 EPUB，制出的卡 Lapis Picture 一律为空。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/sources/book_cover_file_resolver.dart';
 import 'package:path/path.dart' as p;
 

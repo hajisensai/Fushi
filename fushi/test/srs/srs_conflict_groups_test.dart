@@ -3,7 +3,7 @@
 // 现在数据载入时一趟算好、build 只查表。
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/srs/srs_conflict_groups.dart';
 
 void main() {

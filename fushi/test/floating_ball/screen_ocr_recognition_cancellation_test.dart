@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_recognition_cancellation.dart';
 
 /// BUG-4790：Android 截屏识字识别中的取消令牌。

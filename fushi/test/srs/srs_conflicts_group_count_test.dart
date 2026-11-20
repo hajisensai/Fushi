@@ -5,7 +5,7 @@
 import 'dart:collection';
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/srs/srs_conflict_groups.dart';
 
 /// 记录被遍历了多少个元素的 Iterable：用来断言「只扫一趟」。
