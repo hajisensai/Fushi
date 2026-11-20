@@ -875,9 +875,9 @@ final FutureProvider<int> srsLegacyLapisPendingProvider = FutureProvider<int>((
   });
 });
 
-/// 每日上限单位改缺省之前就在用、还没写过单位的牌组数（[SrsDbStore.limitUnitLegacyDecks]，牌组页的一次性提醒）。
-/// 复用上次结果（[_srsMemoByContent]）：它只取决于牌组设置与改缺省之前的复习，本机评分只落今天的日志，不会变；
-/// 改缺省之前的复习只可能随别的设备的事件并进来，所以键要随合并推进（[_srsContentAndMergeFingerprint]；新代里内容指纹
+/// 本机升级到懂每日上限单位的版本之前就在用、还没写过单位的牌组数（[SrsDbStore.limitUnitLegacyDecks]，牌组页的一次性
+/// 提醒）。复用上次结果（[_srsMemoByContent]）：它只取决于牌组设置与本机升级之前的复习，本机评分只落升级之后的日志，
+/// 不会变；升级之前的复习只可能随别的设备的事件并进来，所以键要随合并推进（[_srsContentAndMergeFingerprint]；新代里内容指纹
 /// 本身就随收段推进）。
 final FutureProvider<int> srsLimitUnitLegacyCountProvider = FutureProvider<int>(
   (Ref ref) async {

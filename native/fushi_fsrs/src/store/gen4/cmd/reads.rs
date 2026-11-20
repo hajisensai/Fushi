@@ -1137,17 +1137,19 @@ impl<'t, 'c> Reads<'t, 'c> {
     }
 
     /// `reviewed_decks {before}`：有效复习投影里在 `before` 之前评过分的卡**现在**所在的牌组（去重、升序；同协议 3
-    /// `store/reads.rs`，develop 的「每日上限单位」存量牌组提醒用，W3 合流时接到新代）。
+    /// `store/reads.rs`，「每日上限单位」存量牌组提醒用）。只算在 Fushi 里做的复习：从 Anki 导入的复习
+    /// （[crate::store::reads::native_log_sql]）从没受过 Fushi 的每日上限，不算。
     fn reviewed_decks(&mut self, req: &Value) -> Result<Vec<String>, String> {
         let before = need_int(req, "before")?;
         let mut stmt = self
             .t
             .conn()
-            .prepare_cached(
+            .prepare_cached(&format!(
                 "SELECT DISTINCT c.deck_id FROM stats s \
                  JOIN cards c ON c.col = s.col AND c.id = s.card \
-                 WHERE s.col = ?1 AND s.rating IS NOT NULL AND s.at < ?2",
-            )
+                 WHERE s.col = ?1 AND s.rating IS NOT NULL AND s.at < ?2 AND {}",
+                crate::store::reads::native_log_sql("s.log")
+            ))
             .map_err(sql)?;
         let rows = stmt
             .query_map(params![self.col, before], |r| r.get::<_, Ref>(0))

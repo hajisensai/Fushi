@@ -500,7 +500,10 @@ class SrsDbStore implements SrsSync2Host {
       await s._registerCacheConfig();
       // 新代的派生层是真相的纯函数、随写入维护：本机状态行不在（迁移不带协议 3 的那一行，交接说明 §8.2）不代表缓存
       // 过期，不再按「有事件却没有本机状态」整层重建。行没落盘时当场落下，否则每次打开都是新纪元、指纹每次都「变了」。
-      if (!local.epochStored) await s._ensureLocalState();
+      // 本机第一次跑懂每日上限单位的版本的时刻（[limitUnitLegacyDecks]）同样在这里落下，只落一次。
+      if (!local.epochStored || s._limitUnitSince == null) {
+        await s._ensureLocalState();
+      }
       await s.ensureBuiltins();
     }
     // 只读打开（查词弹窗等辅助进程）：注册类写入都是主进程的事，这里只读。
@@ -1026,6 +1029,7 @@ class SrsDbStore implements SrsSync2Host {
       'reload': true,
     });
     _absorbLocalState(j);
+    _absorbLimitUnitSince(j);
     final Object? anchor = j['anchor'];
     // `{o, b, s?, t?}`：o = 可信时间 − 墙钟，s / t = 校时时的服务器时间与开机时钟读数（只在写下它的进程 b 里接着
     // 用，见 [SrsTrustedClock.restoreAnchor]）。更旧的 `{s, m, b}`（服务器时间 + Stopwatch 读数）没有 o，不认。
@@ -1045,11 +1049,25 @@ class SrsDbStore implements SrsSync2Host {
     );
   }
 
-  /// 把本机状态行落下（内核 `local_state_ensure`：没有行就建、没有纪元就补）。只在开库时调（见 [open]）。
+  /// 把本机状态行落下（内核 `local_state_ensure`：没有行就建、没有纪元就补；行里还没有 `limitUnitSince` 时记下此刻）。
+  /// 只在开库时调（见 [open]）。
   Future<void> _ensureLocalState() async {
-    _absorbLocalState(
-      await _sync2(const <String, Object?>{'op': 'local_state_ensure'}),
-    );
+    final Map<String, Object?> j = await _sync2(<String, Object?>{
+      'op': 'local_state_ensure',
+      'limitUnitSince': now().$1,
+    });
+    _absorbLocalState(j);
+    _absorbLimitUnitSince(j);
+  }
+
+  /// 本机第一次跑懂「每日上限单位」的版本的时刻（本机状态行的 `limitUnitSince`，native/fushi_fsrs/src/store/gen4/local.rs）：
+  /// 在它之前做的复习是旧版按卡片数计上限时做的（[limitUnitLegacyDecks]）。按设备记、不同步；开库时没有就当场记下
+  /// （[open]），只读打开的辅助进程上可能还没有。
+  int? _limitUnitSince;
+
+  void _absorbLimitUnitSince(Map<String, Object?> j) {
+    final Object? since = j['limitUnitSince'];
+    _limitUnitSince = since is int ? since : null;
   }
 
   /// `local_state` / `local_state_ensure` 的回包 → 内存里的修订号、纪元。
@@ -4927,10 +4945,18 @@ class SrsDbStore implements SrsSync2Host {
     );
   }
 
-  /// 每日上限单位改缺省（卡片数 → 作答次数，[kSrsLimitUnitDefaultChangedAtMs]）之前就在用、还没写过单位
-  /// （[SrsDeckView.limitUnitSet]）的牌组：自己或子树里有卡在那之前评过分（它的上限当时按卡片数计过，与上限一样按
-  /// 整棵子树算）。牌组页据此提醒一次；没写过单位但那之前没用过的（新装时的默认牌组等）从没按卡片数计过，不算。
+  /// 每日上限单位的存量牌组：还没写过单位（[SrsDeckView.limitUnitSet]），且自己或子树里有卡在**本机第一次跑懂单位
+  /// 的版本之前**（[_limitUnitSince]）在 Fushi 里评过分——那些复习是旧版按卡片数计上限时做的（上限与这里一样按整棵
+  /// 子树算），升级后缺省改按作答次数计，牌组页据此提醒一次。
+  ///
+  /// - 判据按本机的升级时刻、不按缺省改动合入的时刻：合入之后、升级之前一直用旧版复习的牌组同样算；
+  /// - 从 Anki 导入的复习不算（内核 `reviewed_decks` 按日志 ID 排除，native/fushi_fsrs/src/store/reads.rs
+  ///   `native_log_sql`）：它们从没受过 Fushi 的上限，新导入 Anki 历史不该收到「以前按卡片数」的提醒；
+  /// - 新装时内置默认牌组没写过单位，但本机之前没有复习，不算；别的设备同步来的、早于本机升级的复习算（那台设备上
+  ///   这个牌组可能一直按卡片数计），回应一次写下的单位随同步到所有设备。
   Future<Set<String>> limitUnitLegacyDecks() async {
+    final int? since = _limitUnitSince;
+    if (since == null) return const <String>{};
     final SrsDeckTree tree = await deckTree();
     final List<SrsDeckView> unset = <SrsDeckView>[
       for (final SrsDeckView d in tree.decks)
@@ -4939,7 +4965,7 @@ class SrsDbStore implements SrsSync2Host {
     if (unset.isEmpty) return const <String>{};
     final Map<String, Object?> row = (await _read(
       'reviewed_decks',
-      <String, Object?>{'before': kSrsLimitUnitDefaultChangedAtMs},
+      <String, Object?>{'before': since},
     )).json;
     final Set<String> reviewed = <String>{
       for (final Object? d in row['decks']! as List<Object?>) d! as String,

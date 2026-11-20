@@ -532,6 +532,45 @@ fn logs_stats_and_server_times_match_protocol_3() {
     assert!(g.iter().all(|r| pr.contains(r)), "{g:?} ⊄ {pr:?}");
 }
 
+/// `reviewed_decks`（每日上限单位的存量牌组判据）：两侧相同；从 Anki 导入的复习（日志 ID 是 UUIDv5）不算，本机作答
+/// （UUIDv7）算——新导入的 Anki 历史不该让牌组收到「以前按卡片数计」的提醒（拍板台 left3551）。
+#[test]
+fn reviewed_decks_skip_anki_imports_and_match_protocol_3() {
+    let deck = default_deck_id(P);
+    let d = fresh("g4rd");
+    d.apply(
+        T0,
+        vec![
+            deck_entity(&deck),
+            json!({"t": "entity", "x": {"id": "NT", "p": P, "k": "notetype", "d": {"createdAt": 1, "ntKind": "standard"}}}),
+            edit("notetype", "NT", "fieldDef/fa", json!({"name": "Expression", "ord": 0})),
+            edit("notetype", "NT", "tmplDef/t1", json!({"name": "A", "ord": 0, "front": "{{Expression}}"})),
+            note(N1, "NT", 10),
+            edit("note", N1, "f/fa", json!("猫")),
+            note(N2, "NT", 20),
+            edit("note", N2, "f/fa", json!("犬")),
+        ],
+    );
+    let anki_log = "0193a1b2-0000-5000-8000-0000000000f1";
+    let native_log = "0193a1b2-0000-7000-8000-0000000000f2";
+    d.apply(
+        T0 + 5,
+        vec![anki_review(anki_log, &card(N2, "t1"), ANKI_AT)],
+    );
+    d.apply(
+        T0 + 10,
+        vec![review(native_log, &card(N1, "t1"), T0 + 10, 3, "learn")],
+    );
+    let p = Pair::new(&d);
+    let decks = |before: i64| {
+        let req = json!({"q": "reviewed_decks", "before": before});
+        p.same(req.clone(), &[]);
+        p.g4(req).0["decks"].clone()
+    };
+    assert_eq!(decks(T0), json!([]), "只有 Anki 导入的复习在这之前");
+    assert_eq!(decks(T0 + DAY), json!([p.canon(&deck)]), "本机作答算");
+}
+
 #[test]
 fn cache_backed_queries_match_protocol_3() {
     let lib = library();

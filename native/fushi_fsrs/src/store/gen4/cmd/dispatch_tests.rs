@@ -452,6 +452,30 @@ fn reads_through_the_dispatcher_match_protocol_3_before_migration() {
 
 // ---------------------------------------------------------------------- 对拍：写与会话失效
 
+/// 本机状态行的 `limitUnitSince`（本机第一次跑懂每日上限单位的版本的时刻，`gen4/local.rs`）：`local_state_ensure`
+/// 带了且行里还没有时才写下，之后带别的值也不改；没带不写；`local_state` 读得到，没写过是 null。
+#[test]
+fn limit_unit_since_is_written_once() {
+    let m = migrated();
+    let since = |op: &str, extra: Value| g4(m.h, op, T1, extra)["limitUnitSince"].clone();
+    assert_eq!(since("local_state", json!({})), Value::Null);
+    assert_eq!(
+        since("local_state_ensure", json!({})),
+        Value::Null,
+        "没带不写"
+    );
+    assert_eq!(
+        since("local_state_ensure", json!({"limitUnitSince": 1000})),
+        json!(1000)
+    );
+    assert_eq!(
+        since("local_state_ensure", json!({"limitUnitSince": 2000})),
+        json!(1000),
+        "只写一次"
+    );
+    assert_eq!(since("local_state", json!({})), json!(1000));
+}
+
 /// 两侧各发同一次作答与改字段：写回包带本机修订号，之后的出卡 / 统计 / 浏览 / 读两侧仍相同；统计原料缓存按写入代数
 /// 重读，浏览会话按代号看见改动，`apply` 的前置条件不成立什么都不写。
 #[test]
