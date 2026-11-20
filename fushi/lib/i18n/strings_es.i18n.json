@@ -10912,6 +10912,7 @@
   "srs_text_import_section_fields": "Asignación de campos",
   "srs_text_import_tags": "Etiquetas adicionales",
   "srs_text_import_tags_column": "Columna de etiquetas",
+  "srs_text_import_tags_column_hint": "When updating existing notes, their tags are replaced with this column (plus the extra tags). Without a tags column, tags are only added.",
   "srs_text_import_tags_hint": "Separa las etiquetas con espacios",
   "srs_text_import_title": "Importar archivo de texto",
   "srs_timeline_all_published": "All changes are synced",

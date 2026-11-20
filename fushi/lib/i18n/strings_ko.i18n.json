@@ -10912,6 +10912,7 @@
   "srs_text_import_section_fields": "필드 매핑",
   "srs_text_import_tags": "추가 태그",
   "srs_text_import_tags_column": "태그 열",
+  "srs_text_import_tags_column_hint": "When updating existing notes, their tags are replaced with this column (plus the extra tags). Without a tags column, tags are only added.",
   "srs_text_import_tags_hint": "태그는 공백으로 구분합니다",
   "srs_text_import_title": "텍스트 파일 가져오기",
   "srs_timeline_all_published": "All changes are synced",

@@ -10912,6 +10912,7 @@
   "srs_text_import_section_fields": "字段映射",
   "srs_text_import_tags": "附加标签",
   "srs_text_import_tags_column": "标签列",
+  "srs_text_import_tags_column_hint": "更新已有笔记时，笔记标签会换成这一列的值（再加上附加标签）；不选标签列则只追加",
   "srs_text_import_tags_hint": "多个标签用空格分隔",
   "srs_text_import_title": "导入文本文件",
   "srs_timeline_all_published": "所有改动都已同步",

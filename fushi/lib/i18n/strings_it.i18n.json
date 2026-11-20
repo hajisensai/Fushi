@@ -10912,6 +10912,7 @@
   "srs_text_import_section_fields": "Mappatura dei campi",
   "srs_text_import_tags": "Tag aggiuntivi",
   "srs_text_import_tags_column": "Colonna dei tag",
+  "srs_text_import_tags_column_hint": "When updating existing notes, their tags are replaced with this column (plus the extra tags). Without a tags column, tags are only added.",
   "srs_text_import_tags_hint": "Separa i tag con spazi",
   "srs_text_import_title": "Importa file di testo",
   "srs_timeline_all_published": "All changes are synced",

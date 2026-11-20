@@ -200,6 +200,45 @@ void main() {
     expect(notes, hasLength(4));
   });
 
+  test('更新已有笔记：映射了标签列时标签换成该列的值 + 附加标签（同 Anki），没映射时只追加', () async {
+    await runSrsTextImport(
+      store: store,
+      file: await parse('a.tsv', 'cat\tv1\ta b\ndog\tw1\tc\n'),
+      options: opts(tagsColumn: 3),
+    );
+
+    // 回灌改过标签的文件：cat 删掉 a、加 d；dog 的标签列清空；全局附加标签 g。
+    final SrsImportReport replaced = await runSrsTextImport(
+      store: store,
+      file: await parse('b.tsv', 'cat\tv1\tb d\ndog\tw1\t\n'),
+      options: opts(tagsColumn: 3, tags: <String>['g']),
+    );
+    expect(replaced.notesUpdated, 2);
+    List<SrsNoteView> notes = await allNotes();
+    SrsNoteView note(String f) =>
+        notes.firstWhere((SrsNoteView n) => first(n) == f);
+    expect(note('cat').tags.toSet(), <String>{'b', 'd', 'g'});
+    expect(note('dog').tags.toSet(), <String>{'g'});
+
+    // 同一份文件再导一遍：标签集合没变，不算更新。
+    final SrsImportReport noop = await runSrsTextImport(
+      store: store,
+      file: await parse('c.tsv', 'cat\tv1\td b\ndog\tw1\t\n'),
+      options: opts(tagsColumn: 3, tags: <String>['g']),
+    );
+    expect(noop.notesUpdated, 0);
+    expect(noop.notesSkipped, 2);
+
+    // 不映射标签列：只追加附加标签，不动已有标签。
+    await runSrsTextImport(
+      store: store,
+      file: await parse('d.tsv', 'cat\tv1\tx\n'),
+      options: opts(tags: <String>['h']),
+    );
+    notes = await allNotes();
+    expect(note('cat').tags.toSet(), <String>{'b', 'd', 'g', 'h'});
+  });
+
   test('同一份文件里重复的首字段：互不匹配，两行导成两条（同 Anki）', () async {
     final SrsImportReport r = await runSrsTextImport(
       store: store,

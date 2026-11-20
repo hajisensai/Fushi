@@ -10912,6 +10912,7 @@
   "srs_text_import_section_fields": "Feldzuordnung",
   "srs_text_import_tags": "Zusätzliche Schlagwörter",
   "srs_text_import_tags_column": "Schlagwort-Spalte",
+  "srs_text_import_tags_column_hint": "When updating existing notes, their tags are replaced with this column (plus the extra tags). Without a tags column, tags are only added.",
   "srs_text_import_tags_hint": "Schlagwörter mit Leerzeichen trennen",
   "srs_text_import_title": "Textdatei importieren",
   "srs_timeline_all_published": "All changes are synced",

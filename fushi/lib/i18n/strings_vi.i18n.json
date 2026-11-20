@@ -10912,6 +10912,7 @@
   "srs_text_import_section_fields": "Ánh xạ trường",
   "srs_text_import_tags": "Thẻ bổ sung",
   "srs_text_import_tags_column": "Cột thẻ",
+  "srs_text_import_tags_column_hint": "When updating existing notes, their tags are replaced with this column (plus the extra tags). Without a tags column, tags are only added.",
   "srs_text_import_tags_hint": "Phân tách các thẻ bằng dấu cách",
   "srs_text_import_title": "Nhập tệp văn bản",
   "srs_timeline_all_published": "All changes are synced",

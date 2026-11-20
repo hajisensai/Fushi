@@ -10912,6 +10912,7 @@
   "srs_text_import_section_fields": "Correspondance des champs",
   "srs_text_import_tags": "Étiquettes supplémentaires",
   "srs_text_import_tags_column": "Colonne des étiquettes",
+  "srs_text_import_tags_column_hint": "When updating existing notes, their tags are replaced with this column (plus the extra tags). Without a tags column, tags are only added.",
   "srs_text_import_tags_hint": "Séparez les étiquettes par des espaces",
   "srs_text_import_title": "Importer un fichier texte",
   "srs_timeline_all_published": "All changes are synced",
