@@ -1,5 +1,6 @@
 import 'package:fushi_cli/fushi_cli.dart';
 
+import 'package:fushi/src/ai/ai_agent_web_search_policy.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ops/ctl_web_search_routes.dart';
 import 'package:fushi/src/ops/op_describe_kit.dart';
@@ -20,7 +21,8 @@ List<OpDescription> describeWebSearchOps(OpDescribeKit kit) {
     prefs().aiWebSearchConfig,
     prefs().aiAgentWebSearchConsent,
   );
-  bool granted() => agentWebSearchConsentGranted(prefs());
+  bool granted() =>
+      agentWebSearchConsentGranted(prefs().aiAgentWebSearchConsent);
   const OpParam consent = OpParam.userGate(
     'confirm',
     description:
@@ -41,11 +43,7 @@ List<OpDescription> describeWebSearchOps(OpDescribeKit kit) {
       availability: availability,
       consentGranted: granted,
       params: const <OpParam>[
-        OpParam.string(
-          'query',
-          description: 'Search words.',
-          required: true,
-        ),
+        OpParam.string('query', description: 'Search words.', required: true),
         OpParam.integer(
           'limit',
           description:

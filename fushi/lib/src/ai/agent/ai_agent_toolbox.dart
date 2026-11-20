@@ -140,8 +140,7 @@ class AiAgentToolbox
       for (final MapEntry<String, String> e in promptNotes.entries)
         if (_available(e.key) != null) e.value,
     ];
-    return notes.isEmpty ? null : notes.join('
-');
+    return notes.isEmpty ? null : notes.join('\n');
   }
 
   @override

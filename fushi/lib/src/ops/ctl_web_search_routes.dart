@@ -3,9 +3,9 @@ import 'dart:math' as math;
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_engine/ai/web_search.dart';
 
+import 'package:fushi/src/ai/ai_agent_web_search_policy.dart';
 import 'package:fushi/src/models/preference_keys.dart'
-    show kAiAgentWebSearchAllow, kAiAgentWebSearchOff;
-import 'package:fushi/src/models/preferences_repository.dart';
+    show kAiAgentWebSearchAllow;
 import 'package:fushi/src/ops/op_context.dart';
 
 /// AI 助手的通用联网搜索（操作 `web.search` / `web.read`，所有者 2026-11-20「ai 可以
@@ -62,42 +62,6 @@ const Duration kWebSearchResultTtl = Duration(minutes: 30);
 const int kWebSearchMaxCachedResults = 200;
 const int kWebReadMaxCachedPages = 8;
 
-/// 两条操作此刻能不能用（描述的 availability 与路由共用这一个判据）。
-OpAvailability agentWebSearchAvailability(
-  WebSearchConfig? config,
-  String consent,
-) {
-  if (config == null || !config.isUsable) {
-    return const OpAvailability.unavailable(
-      'no_search_backend',
-      'No web search backend is configured. The user can set one up in '
-          'Settings › AI › Web search.',
-    );
-  }
-  if (consent == kAiAgentWebSearchOff) {
-    return const OpAvailability.unavailable(
-      'web_search_off',
-      'The user turned off web search for the assistant in Settings › AI › '
-          'Web search.',
-    );
-  }
-  return const OpAvailability.available();
-}
-
-/// 给人看的后端名（确认卡、设置说明用）：Brave 写 `Brave Search`；SearXNG 带实例
-/// 主机名（搜索词实际去的是那台机器）。
-String webSearchBackendLabel(WebSearchConfig config) => switch (config.kind) {
-  WebSearchKind.brave => 'Brave Search',
-  WebSearchKind.searxng => switch (config.searxngBase?.host) {
-    final String host when host.isNotEmpty => 'SearXNG ($host)',
-    _ => 'SearXNG',
-  },
-};
-
-/// 从偏好读出的同意状态是否已同意。
-bool agentWebSearchConsentGranted(PreferencesRepository prefs) =>
-    prefs.aiAgentWebSearchConsent == kAiAgentWebSearchAllow;
-
 /// 一条记下的搜索结果。
 class WebSearchResultEntry {
   WebSearchResultEntry({
@@ -131,11 +95,7 @@ class WebSearchResultCache {
       id =
           'r${List<String>.generate(12, (_) => _random.nextInt(16).toRadixString(16)).join()}';
     } while (_results.containsKey(id));
-    _results[id] = WebSearchResultEntry(
-      id: id,
-      hit: hit,
-      createdAt: _clock(),
-    );
+    _results[id] = WebSearchResultEntry(id: id, hit: hit, createdAt: _clock());
     while (_results.length > kWebSearchMaxCachedResults) {
       final String oldest = _results.keys.first;
       _results.remove(oldest);
@@ -301,11 +261,7 @@ class _WebSearchCtl {
         fetcher.close();
       }
       if (page == null) {
-        throw const CtlFailure(
-          502,
-          'fetch_failed',
-          '这一页抓不到（地址不是公网地址、请求失败或超时）',
-        );
+        throw const CtlFailure(502, 'fetch_failed', '这一页抓不到（地址不是公网地址、请求失败或超时）');
       }
       cache.putPage(id, page);
     }
