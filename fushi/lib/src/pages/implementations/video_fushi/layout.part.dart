@@ -513,6 +513,21 @@ extension _VideoLayout on _VideoFushiPageState {
                                       fit: videoFitModeToBoxFit(_videoFitMode),
                                       config: config,
                                       draftRect: _subtitleMaskDraft,
+                                      createSmartDetector:
+                                          _createSmartSubtitleMaskDetector,
+                                      onSmartUnavailable: () => _showOsd(
+                                        t.video_subtitle_mask_smart_unavailable,
+                                        severity: ToastSeverity.warning,
+                                      ),
+                                      onSmartError:
+                                          (
+                                            Object error,
+                                            StackTrace stack,
+                                          ) => ErrorLogService.instance.log(
+                                            'VideoFushiPage.smartSubtitleMask',
+                                            error,
+                                            stack,
+                                          ),
                                     ),
                               ),
                         ),
@@ -1356,6 +1371,19 @@ extension _VideoLayout on _VideoFushiPageState {
 
   // ── 字幕遮布编辑 ─────────────────────────────────────────────────────────
 
+  /// 智能遮布的识别器：设置里选的本机 OCR 模型（离线、不上传），与截屏识字 / 硬字幕
+  /// OCR 同一个入口；遮布层随智能模式开关建 / 拆。
+  SmartSubtitleMaskDetector _createSmartSubtitleMaskDetector() =>
+      LocalOcrSmartSubtitleMaskDetector(
+        LocalScreenOcr(
+          createMangaOcrService(
+            localModel: MangaOcrLocalModel.forPlatform(
+              appModel.prefsRepo.mangaOcrLocalModel,
+            ),
+          ),
+        ),
+      );
+
   /// 进入「调整字幕遮布」模式（设置面板入口）：关设置侧栏（面板盖着画面没法拖），
   /// 打开编辑框。开关是关的也照样显示遮布，方便先摆好再开。
   void _enterSubtitleMaskEdit() {
@@ -1435,7 +1463,10 @@ extension _VideoLayout on _VideoFushiPageState {
                       const SizedBox(width: 8),
                       Flexible(
                         child: Text(
-                          t.video_subtitle_mask_edit_hint,
+                          appModel.videoSubtitleMask.mode ==
+                                  VideoSubtitleMaskMode.smart
+                              ? t.video_subtitle_mask_smart_edit_hint
+                              : t.video_subtitle_mask_edit_hint,
                           style: labelStyle,
                         ),
                       ),

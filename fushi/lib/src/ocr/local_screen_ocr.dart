@@ -63,6 +63,20 @@ class LocalScreenOcr implements SystemOcrPlatform {
     required String language,
     List<Rect> tiles = const <Rect>[],
   }) async {
+    final _Rgba? frame = await Isolate.run(() => _decodeRgba(imageBytes));
+    if (frame == null) {
+      throw const FormatException('screenshot could not be decoded');
+    }
+    return recognizeRgba(frame.rgba, width: frame.width, height: frame.height);
+  }
+
+  /// 直接识别一块 RGBA 像素（`width * height * 4` 字节），省掉编码 / 解码——给已经
+  /// 拿到原始像素的调用方（智能遮布抽帧）用。结果坐标是这块图的像素坐标。
+  Future<SystemOcrPageResult> recognizeRgba(
+    Uint8List rgba, {
+    required int width,
+    required int height,
+  }) async {
     _idleTimer?.cancel();
     _idleTimer = null;
     _running++;
@@ -72,21 +86,13 @@ class LocalScreenOcr implements SystemOcrPlatform {
           kSystemOcrModelUnavailableReason,
         );
       }
-      final _Rgba? frame = await Isolate.run(() => _decodeRgba(imageBytes));
-      if (frame == null) {
-        throw const FormatException('screenshot could not be decoded');
-      }
       final MangaOcrTextImageSession session = await _textSession();
       final OcrRecognition result = await session.recognizeTextImage(
-        frame.rgba,
-        width: frame.width,
-        height: frame.height,
+        rgba,
+        width: width,
+        height: height,
       );
-      return systemOcrPageFromRecognition(
-        result,
-        width: frame.width,
-        height: frame.height,
-      );
+      return systemOcrPageFromRecognition(result, width: width, height: height);
     } finally {
       _running--;
       if (_running == 0 && _session != null) _armIdleTimer();

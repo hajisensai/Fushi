@@ -1178,12 +1178,17 @@ class NativePlayer extends PlatformPlayer {
       if (![
         'image/jpeg',
         'image/png',
+        // Fushi patch: raw BGRA pixels with a 12-byte little-endian header
+        // (width, height, stride as uint32) and no encode step — callers that
+        // sample frames continuously (smart subtitle mask) cannot afford the
+        // pure-Dart PNG/JPEG encode below.
+        'image/x-fushi-bgra',
         null,
       ].contains(format)) {
         throw ArgumentError.value(
           format,
           'format',
-          'Supported values are: image/jpeg, image/png, null',
+          'Supported values are: image/jpeg, image/png, image/x-fushi-bgra, null',
         );
       }
       if (disposed) {
@@ -3179,6 +3184,17 @@ Uint8List? _screenshot(_ScreenshotData data) {
               pixel.r = bytes[i + 2];
             }
             image = encodePng(pixels);
+            break;
+          }
+        case 'image/x-fushi-bgra':
+          {
+            final out = Uint8List(12 + h * stride);
+            final header = ByteData.sublistView(out, 0, 12);
+            header.setUint32(0, w, Endian.little);
+            header.setUint32(4, h, Endian.little);
+            header.setUint32(8, stride, Endian.little);
+            out.setRange(12, out.length, bytes);
+            image = out;
             break;
           }
         case null:

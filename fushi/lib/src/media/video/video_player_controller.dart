@@ -25,6 +25,7 @@ import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_playable_end.dart';
 import 'package:fushi/src/media/video/mpv_cache_snapshot.dart';
+import 'package:fushi/src/media/video/raw_video_frame.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show CachedMediaSnapshot;
 import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_track.dart'
@@ -1811,6 +1812,24 @@ class VideoPlayerController extends ChangeNotifier
       synchronized: false,
     );
     return bytes as Uint8List?;
+  }
+
+  /// 截取当前解码帧的原始 BGRA 像素（只有视频，不合成字幕；不做 PNG / JPEG 编码），
+  /// 给持续抽帧的智能遮布用。非 libmpv 后端 / 未 [load] / 截帧失败返回 null。
+  ///
+  /// 与 [captureFrameWithSubtitles] 一样不占 Player 的串行锁（BUG-3645），截帧在辅助
+  /// isolate 上跑，句柄销毁前会等它。
+  Future<RawVideoFrame?> captureRawFrame() async {
+    final Player? player = _player;
+    if (player == null || !hasNativePlayer) return null;
+    final dynamic native = player.platform;
+    if (native == null) return null;
+    final Object? bytes = await native.screenshot(
+      format: kRawVideoFrameFormat,
+      includeLibassSubtitles: false,
+      synchronized: false,
+    );
+    return parseRawVideoFrame(bytes as Uint8List?);
   }
 
   /// 把播放器轴 `[startMs, endMs]` 这段**已缓冲**的远端流原样落成本地文件

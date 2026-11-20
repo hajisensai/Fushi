@@ -12,12 +12,14 @@
 /// 出现在卡片截图里。
 library;
 
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart';
+import 'package:fushi/src/media/video/smart_subtitle_mask_sampler.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_mask_config.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -111,12 +113,18 @@ class _VideoFrameSizeListenerState extends State<_VideoFrameSizeListener> {
 }
 
 /// 遮布本体（画面之上、Fushi 字幕之下）。关闭时零开销。
-class VideoSubtitleMaskLayer extends StatelessWidget {
+///
+/// 智能模式（[VideoSubtitleMaskMode.smart]）下本层持有 [SmartSubtitleMaskSampler]：
+/// 开着才建、关掉或切回手动即拆，遮布矩形跟着采样结果走，没字时淡出。
+class VideoSubtitleMaskLayer extends StatefulWidget {
   const VideoSubtitleMaskLayer({
     required this.controller,
     required this.fit,
     required this.config,
     required this.draftRect,
+    this.createSmartDetector,
+    this.onSmartUnavailable,
+    this.onSmartError,
     super.key,
   });
 
@@ -127,58 +135,163 @@ class VideoSubtitleMaskLayer extends StatelessWidget {
   /// 编辑中的实时矩形（比例坐标）；null = 用 [config.rect]。
   final ValueListenable<Rect?> draftRect;
 
+  /// 智能模式的识别器工厂；null 时智能模式退化成手动（整块常显）。
+  final SmartSubtitleMaskDetector Function()? createSmartDetector;
+
+  /// 识别器不可用（本机 OCR 模型没下载）：每个采样器只报一次。
+  final VoidCallback? onSmartUnavailable;
+
+  final void Function(Object error, StackTrace stack)? onSmartError;
+
+  @override
+  State<VideoSubtitleMaskLayer> createState() => _VideoSubtitleMaskLayerState();
+}
+
+class _VideoSubtitleMaskLayerState extends State<VideoSubtitleMaskLayer> {
+  SmartSubtitleMaskSampler? _sampler;
+  SmartSubtitleMaskDetector? _detector;
+
+  bool get _wantsSampler =>
+      widget.config.enabled &&
+      widget.config.mode == VideoSubtitleMaskMode.smart &&
+      widget.createSmartDetector != null;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncSampler();
+  }
+
+  @override
+  void didUpdateWidget(VideoSubtitleMaskLayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller)) _disposeSampler();
+    _syncSampler();
+  }
+
+  @override
+  void dispose() {
+    _disposeSampler();
+    super.dispose();
+  }
+
+  void _syncSampler() {
+    if (!_wantsSampler) {
+      _disposeSampler();
+      return;
+    }
+    final SmartSubtitleMaskSampler? sampler = _sampler;
+    if (sampler != null) {
+      sampler.region = widget.config.rect;
+      return;
+    }
+    final SmartSubtitleMaskDetector detector = _detector =
+        widget.createSmartDetector!();
+    _sampler = SmartSubtitleMaskSampler(
+      controller: widget.controller,
+      region: widget.config.rect,
+      detect: detector.detect,
+      onUnavailable: () => widget.onSmartUnavailable?.call(),
+      onError: (Object e, StackTrace s) => widget.onSmartError?.call(e, s),
+    );
+  }
+
+  void _disposeSampler() {
+    _sampler?.dispose();
+    _sampler = null;
+    final SmartSubtitleMaskDetector? detector = _detector;
+    _detector = null;
+    if (detector != null) unawaited(detector.dispose());
+  }
+
   @override
   Widget build(BuildContext context) {
+    final SmartSubtitleMaskSampler? sampler = _sampler;
     return ValueListenableBuilder<Rect?>(
-      valueListenable: draftRect,
+      valueListenable: widget.draftRect,
       builder: (BuildContext context, Rect? draft, _) {
-        // 编辑中即使开关是关的也显示，让用户看到正在摆的位置。
-        final bool visible = config.enabled || draft != null;
-        return IgnorePointer(
-          child: AnimatedOpacity(
-            opacity: visible ? 1 : 0,
-            duration: fushiMotionDuration(context, FushiMotion.short),
-            curve: FushiMotion.standard,
-            child: !visible
-                ? const SizedBox.expand()
-                : _VideoFrameSizeListener(
-                    controller: controller,
-                    builder: (BuildContext context, Size? frame) =>
-                        LayoutBuilder(
-                          builder:
-                              (
-                                BuildContext context,
-                                BoxConstraints constraints,
-                              ) {
-                                final Rect content =
-                                    videoSubtitleMaskContentRect(
-                                      frame: frame,
-                                      view: constraints.biggest,
-                                      fit: fit,
-                                    );
-                                final Rect px = videoSubtitleMaskFractionToView(
-                                  draft ?? config.rect,
-                                  content,
-                                ).intersect(Offset.zero & constraints.biggest);
-                                if (px.isEmpty) return const SizedBox.expand();
-                                return Stack(
-                                  children: <Widget>[
-                                    Positioned.fromRect(
-                                      rect: px,
-                                      child: _MaskSurface(
-                                        style: config.style,
-                                        strength: config.strength,
-                                        heightPx: px.height,
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              },
-                        ),
-                  ),
-          ),
+        if (draft != null) {
+          return _build(context, draft, visible: true, animate: false);
+        }
+        if (sampler == null) {
+          // 手动模式；智能模式但没有识别器时同样整块常显。
+          return _build(
+            context,
+            widget.config.rect,
+            visible: widget.config.enabled,
+            animate: false,
+          );
+        }
+        return ValueListenableBuilder<Rect?>(
+          valueListenable: sampler.rect,
+          builder: (BuildContext context, Rect? smart, _) =>
+              _build(context, smart, visible: smart != null, animate: true),
         );
       },
+    );
+  }
+
+  /// 最近一次可见的矩形：智能遮布淡出时停在原处淡，不跳回默认位置。
+  Rect? _lastFraction;
+
+  /// [animate]：智能遮布换句时矩形平滑过渡；手动 / 编辑拖动时跟手、不过渡。
+  Widget _build(
+    BuildContext context,
+    Rect? fraction, {
+    required bool visible,
+    required bool animate,
+  }) {
+    if (fraction != null) _lastFraction = fraction;
+    final Rect? target = fraction ?? _lastFraction;
+    final Duration duration = fushiMotionDuration(context, FushiMotion.short);
+    final Duration rectDuration = animate ? duration : Duration.zero;
+    return IgnorePointer(
+      child: AnimatedOpacity(
+        opacity: visible ? 1 : 0,
+        duration: duration,
+        curve: FushiMotion.standard,
+        // 手动遮布关着时零开销（不建模糊层）；智能遮布淡出时留在原处淡掉（透明度 0
+        // 时不绘制）。
+        child: !visible && (!animate || target == null)
+            ? const SizedBox.expand()
+            : _VideoFrameSizeListener(
+                controller: widget.controller,
+                builder: (BuildContext context, Size? frame) => LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints constraints) {
+                    final Rect content = videoSubtitleMaskContentRect(
+                      frame: frame,
+                      view: constraints.biggest,
+                      fit: widget.fit,
+                    );
+                    return TweenAnimationBuilder<Rect?>(
+                      tween: RectTween(end: target),
+                      duration: rectDuration,
+                      curve: FushiMotion.standard,
+                      builder: (BuildContext context, Rect? animated, _) {
+                        if (animated == null) return const SizedBox.expand();
+                        final Rect px = videoSubtitleMaskFractionToView(
+                          animated,
+                          content,
+                        ).intersect(Offset.zero & constraints.biggest);
+                        if (px.isEmpty) return const SizedBox.expand();
+                        return Stack(
+                          children: <Widget>[
+                            Positioned.fromRect(
+                              rect: px,
+                              child: _MaskSurface(
+                                style: widget.config.style,
+                                strength: widget.config.strength,
+                                heightPx: px.height,
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+      ),
     );
   }
 }

@@ -436,6 +436,11 @@ import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart';
 import 'package:fushi/src/media/video/video_subtitle_mask.dart';
 import 'package:fushi/src/media/video/video_subtitle_mask_config.dart';
+import 'package:fushi/src/media/video/smart_subtitle_mask_sampler.dart';
+import 'package:fushi/src/ocr/local_screen_ocr.dart';
+import 'package:fushi/src/media/manga/manga_ocr_provider.dart'
+    show createMangaOcrService;
+import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
