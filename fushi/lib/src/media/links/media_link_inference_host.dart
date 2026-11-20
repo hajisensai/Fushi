@@ -80,6 +80,24 @@ class MediaLinkLibrarySnapshot {
       idsByWork.putIfAbsent(workId, () => <String, String>{})[r.provider] =
           r.externalId;
     }
+    // 刮削的系列关系：起点按来源记下（哪些条目的系列关系已由哪个源刮过），已绑定的
+    // 两端记成已连上的一对。
+    final List<CollectionRelationRow> relations = await db
+        .select(db.collectionRelations)
+        .get();
+    final Map<MediaLinkEndpoint, Set<String>> relationSourcesOf =
+        <MediaLinkEndpoint, Set<String>>{};
+    final Set<String> seriesLinkedPairs = <String>{};
+    for (final CollectionRelationRow r in relations) {
+      final MediaLinkEndpoint? from = _videoEndpoint(r.collectionId, r.bookUid);
+      if (from == null) continue;
+      relationSourcesOf.putIfAbsent(from, () => <String>{}).add(r.source);
+      final MediaLinkEndpoint? to = _videoEndpoint(
+        r.targetCollectionId,
+        r.targetBookUid,
+      );
+      if (to != null) seriesLinkedPairs.add(mediaLinkPairKey(from, to));
+    }
     final Map<int, MediaCollectionRow> collections = <int, MediaCollectionRow>{
       for (final MediaCollectionRow c in await db.getAllMediaCollections())
         c.id: c,
@@ -103,12 +121,15 @@ class MediaLinkLibrarySnapshot {
         continue;
       }
       if (w.originalTitle case final String original) titles.add(original);
+      final Map<String, String> ids =
+          idsByWork[w.id] ?? const <String, String>{};
       videos.add(
         MediaLinkSubject(
           endpoint: endpoint,
           titles: titles,
           year: w.year,
-          externalIds: idsByWork[w.id] ?? const <String, String>{},
+          externalIds: ids,
+          seriesSources: _seriesSources(ids, relationSourcesOf[endpoint]),
         ),
       );
     }
@@ -163,18 +184,6 @@ class MediaLinkLibrarySnapshot {
         ),
       );
     }
-    final Set<String> seriesLinkedPairs = <String>{};
-    for (final CollectionRelationRow r
-        in await db.select(db.collectionRelations).get()) {
-      final MediaLinkEndpoint? from = _videoEndpoint(r.collectionId, r.bookUid);
-      final MediaLinkEndpoint? to = _videoEndpoint(
-        r.targetCollectionId,
-        r.targetBookUid,
-      );
-      if (from != null && to != null) {
-        seriesLinkedPairs.add(mediaLinkPairKey(from, to));
-      }
-    }
     return MediaLinkLibrarySnapshot(
       books: books,
       videos: videos,
@@ -183,6 +192,23 @@ class MediaLinkLibrarySnapshot {
       seriesLinkedPairs: seriesLinkedPairs,
     );
   }
+
+  /// 资料源对这个视频条目的系列关系是否完整（[MediaLinkSubject.seriesSources]）：
+  /// - AniDB（anime XML 的 `<relatedanime>`）与 MAL（Jikan `relations`）刮削时随详情
+  ///   拿全，有身份就算——源里一条关系都没有也是答案；
+  /// - TMDB 只有电影合集成员会落关系（剧集、不在合集里的电影没有），所以只认这个
+  ///   条目真有 `tmdb` 来源的关系行的。
+  static Set<String> _seriesSources(
+    Map<String, String> ids,
+    Set<String>? scrapedSources,
+  ) => <String>{
+    for (final String provider in _completeSeriesProviders)
+      if (ids.containsKey(provider)) provider,
+    if (ids.containsKey('tmdb') && (scrapedSources?.contains('tmdb') ?? false))
+      'tmdb',
+  };
+
+  static const Set<String> _completeSeriesProviders = <String>{'anidb', 'mal'};
 
   static MediaLinkEndpoint? _videoEndpoint(int? collectionId, String? bookUid) {
     if (collectionId != null) {

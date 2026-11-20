@@ -270,7 +270,7 @@ List<MediaLinkVerdict?> parseAiMediaLinkVerdicts(String reply, int count) {
 int aiMediaLinkMaxTokens(int count) => 256 + 110 * count;
 
 /// 一条候选在缓存里的位置：无序的一对端点（[aFirst] = 候选的 from 就是字典序较小的
-/// 一端）+ AI 输入的摘要。
+/// 一端）+ AI 输入的摘要（两端条目、规则来源、规则猜的关系，见 [MediaLinkVerdictCache]）。
 typedef _CacheSlot = ({
   MediaLinkEndpoint a,
   MediaLinkEndpoint b,
@@ -311,6 +311,11 @@ class MediaLinkVerdictCache {
                 model,
                 _item(a),
                 _item(b),
+                // 提示词里的 src / guess 也是 AI 输入：同一对换了规则来源 / 猜测
+                // （R1 改编 → R3 续作）要重问。有方向的猜测连方向一起算。
+                c.source,
+                c.relation.dbValue,
+                if (c.relation.directed) aFirst,
               ]),
             ),
           )

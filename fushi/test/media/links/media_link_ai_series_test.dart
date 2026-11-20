@@ -4,6 +4,7 @@ import 'package:drift/drift.dart' show DatabaseConnection, Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/library_curate/library_curate_link_ops.dart';
+import 'package:fushi/src/media/links/media_link_inference_host.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_media_link_assistant.dart';
@@ -45,11 +46,13 @@ void main() {
     List<String> titles, {
     int? year,
     Map<String, String> ids = const <String, String>{},
+    Set<String> seriesSources = const <String>{},
   }) => MediaLinkSubject(
     endpoint: (kind: kind, key: key),
     titles: titles,
     year: year,
     externalIds: ids,
+    seriesSources: seriesSources,
   );
 
   MediaLinkVerdict series(
@@ -127,18 +130,20 @@ void main() {
       );
     });
 
-    test('两端在同一个资料源都有身份、或刮削关系已连上的不出；最多 6 条', () {
+    test('两端的系列关系都由同一个资料源刮过、或刮削关系已连上的不出；最多 6 条', () {
       final MediaLinkSubject self = subject(
         MediaLinkKind.videoCollection,
         '1',
         <String>['Fate'],
         ids: <String, String>{'anidb': '1'},
+        seriesSources: <String>{'anidb'},
       );
       final MediaLinkSubject sameSource = subject(
         MediaLinkKind.videoCollection,
         '2',
         <String>['Fate/Zero'],
         ids: <String, String>{'anidb': '2'},
+        seriesSources: <String>{'anidb'},
       );
       final MediaLinkSubject otherSource = subject(
         MediaLinkKind.videoCollection,
@@ -161,6 +166,72 @@ void main() {
         '3',
       ]);
 
+      // 同源有 id、但源不提供系列关系：VNDB 游戏之间、TMDB 剧集 ↔ TMDB 剧场版照样出。
+      expect(
+        matchSeriesByTitle(
+          subject: subject(
+            MediaLinkKind.game,
+            'g1',
+            <String>['Fate/stay night'],
+            ids: <String, String>{'vndb': 'v11'},
+          ),
+          others: <MediaLinkSubject>[
+            subject(
+              MediaLinkKind.game,
+              'g2',
+              <String>['Fate/stay night Realta Nua'],
+              ids: <String, String>{'vndb': 'v3770'},
+            ),
+          ],
+        ),
+        hasLength(1),
+        reason: 'VNDB 关系不落库，两款刮过 VNDB 的游戏仍要问 AI',
+      );
+      expect(
+        matchSeriesByTitle(
+          subject: subject(
+            MediaLinkKind.videoCollection,
+            'tv',
+            <String>['Violet Evergarden'],
+            year: 2018,
+            ids: <String, String>{'tmdb': '75214'},
+          ),
+          others: <MediaLinkSubject>[
+            subject(
+              MediaLinkKind.videoEpisode,
+              'movie',
+              <String>['Violet Evergarden the Movie'],
+              year: 2020,
+              ids: <String, String>{'tmdb': '533514'},
+            ),
+          ],
+        ),
+        hasLength(1),
+        reason: 'TMDB 剧集与剧场版之间没有关系行',
+      );
+      expect(
+        matchSeriesByTitle(
+          subject: subject(
+            MediaLinkKind.videoEpisode,
+            'm1',
+            <String>['Kizumonogatari'],
+            ids: <String, String>{'tmdb': '1'},
+            seriesSources: <String>{'tmdb'},
+          ),
+          others: <MediaLinkSubject>[
+            subject(
+              MediaLinkKind.videoEpisode,
+              'm2',
+              <String>['Kizumonogatari II'],
+              ids: <String, String>{'tmdb': '2'},
+              seriesSources: <String>{'tmdb'},
+            ),
+          ],
+        ),
+        isEmpty,
+        reason: '两端都是 TMDB 合集成员：合集关系是权威的',
+      );
+
       final List<MediaLinkCandidate> many = matchSeriesByTitle(
         subject: subject(MediaLinkKind.game, 'g0', <String>['Rance']),
         others: <MediaLinkSubject>[
@@ -170,6 +241,65 @@ void main() {
       );
       expect(many, hasLength(kMediaLinkSeriesCandidateLimit));
     });
+  });
+
+  test('库快照的 seriesSources：AniDB / MAL 有身份就算，TMDB 只认有关系行的，VNDB 不算', () async {
+    final FushiDatabase db = memDb();
+    Future<int> scraped(String name, Map<String, String> ids) async {
+      final int cid = await db.createMediaCollection(name);
+      final int workId = await db
+          .into(db.videoMetadataWorks)
+          .insert(
+            VideoMetadataWorksCompanion.insert(
+              collectionId: Value<int?>(cid),
+              mediaType: 'tv',
+              title: name,
+              updatedAt: 1,
+            ),
+          );
+      for (final MapEntry<String, String> id in ids.entries) {
+        await db
+            .into(db.videoMetadataProviderIdentities)
+            .insert(
+              VideoMetadataProviderIdentitiesCompanion.insert(
+                identityKey: 'work:$workId:${id.key}',
+                workId: Value<int?>(workId),
+                provider: id.key,
+                externalId: id.value,
+                updatedAt: 1,
+              ),
+            );
+      }
+      return cid;
+    }
+
+    final int anime = await scraped('Anime', <String, String>{
+      'anidb': '1',
+      'tmdb': '10',
+    });
+    final int movie = await scraped('Movie', <String, String>{'tmdb': '20'});
+    final int tv = await scraped('TV', <String, String>{'tmdb': '30'});
+    // 只有 Movie 有 TMDB 合集成员落下的关系行（纯刮削行，目标不在本机）。
+    await db
+        .into(db.collectionRelations)
+        .insert(
+          CollectionRelationsCompanion.insert(
+            collectionId: Value<int?>(movie),
+            relationType: 'sequel',
+            source: 'tmdb',
+            subjectId: '21',
+            title: 'Movie 2',
+          ),
+        );
+    final MediaLinkLibrarySnapshot library =
+        await MediaLinkLibrarySnapshot.load(db);
+    Set<String> sourcesOf(int cid) => library.find((
+      kind: MediaLinkKind.videoCollection,
+      key: collectionTagEntryKey(cid),
+    ))!.seriesSources;
+    expect(sourcesOf(anime), <String>{'anidb'}, reason: 'TMDB 没有关系行');
+    expect(sourcesOf(movie), <String>{'tmdb'});
+    expect(sourcesOf(tv), isEmpty, reason: 'TMDB 剧集的关系不落库');
   });
 
   group('落库', () {
@@ -276,6 +406,72 @@ void main() {
       expect(out.applied, 0);
       expect(out.suggested, 1);
       expect((await db.allMediaLinks()).single.relation, 'same_work');
+    });
+
+    test('作品图里没有的孤立端点按单成员作品记账：同一轮先后连上两部已成形作品，'
+        '自动路径上后一条降为建议', () async {
+      final FushiDatabase db = memDb();
+      MediaLinkSubject game(String key) =>
+          subject(MediaLinkKind.game, key, <String>[key]);
+      MediaLinkSubject book(String key) =>
+          subject(MediaLinkKind.book, key, <String>[key]);
+      MediaLinkCandidate idLink(MediaLinkSubject from, MediaLinkSubject to) =>
+          MediaLinkCandidate(
+            from: from,
+            to: to,
+            relation: MediaLinkRelation.sameWork,
+            source: kMediaLinkTitleMatchSource,
+            confidence: 0.9,
+            reason: 'shared id',
+            idEvidence: true,
+          );
+      // 作品图：A = {a1, a2}、B = {b1, b2, b3}；x、y 还没有任何连接（图里没有）。
+      final Map<String, ({Object id, int size})> works =
+          <String, ({Object id, int size})>{
+            'a1': (id: 'A', size: 2),
+            'a2': (id: 'A', size: 2),
+            'b1': (id: 'B', size: 3),
+            'b2': (id: 'B', size: 3),
+            'b3': (id: 'B', size: 3),
+          };
+      ({Object id, int size})? workOf(MediaLinkEndpoint e) => works[e.key];
+
+      final MediaLinkInferenceOutcome out = await applyMediaLinkCandidates(
+        db: db,
+        candidates: <MediaLinkCandidate>[
+          // x 先并进 A，再连 B：A + x 与 B 都已成形 → 降为建议。
+          idLink(game('x'), book('a1')),
+          idLink(game('x'), book('b1')),
+          // y 先并进 B，再连 A 的另一个成员：同样降为建议。
+          idLink(game('y'), book('b2')),
+          idLink(game('y'), book('a2')),
+          // 两个孤立端点互连（各 1 个成员）照常生效。
+          idLink(game('z1'), book('z2')),
+        ],
+        trigger: MediaLinkInferenceTrigger.automatic,
+        workOf: workOf,
+      );
+      expect(out.applied, 3, reason: 'x→a1、y→b2、z1→z2');
+      expect(out.suggested, 2, reason: 'x→b1、y→a2 会把 A、B 并成一部');
+      final Set<String> suggested = <String>{
+        for (final MediaLinkRow r in await db.allMediaLinks())
+          if (r.confirmedBy == null)
+            (<String>[r.fromKey, r.toKey]..sort()).join('-'),
+      };
+      expect(suggested, <String>{'b1-x', 'a2-y'}, reason: '无方向关系两端已规范化');
+
+      // 手动路径不做这条兜底。
+      final FushiDatabase db2 = memDb();
+      final MediaLinkInferenceOutcome manual = await applyMediaLinkCandidates(
+        db: db2,
+        candidates: <MediaLinkCandidate>[
+          idLink(game('x'), book('a1')),
+          idLink(game('x'), book('b1')),
+        ],
+        trigger: MediaLinkInferenceTrigger.manual,
+        workOf: workOf,
+      );
+      expect(manual.applied, 2);
     });
 
     test('同一对条目多条候选：强证据顶掉弱的，只问 AI 一次', () async {
@@ -453,6 +649,7 @@ void main() {
       String title, {
       bool swapped = false,
       String videoTitle = 'CLANNAD',
+      MediaLinkRelation relation = MediaLinkRelation.sameWork,
     }) {
       final MediaLinkSubject game = subject(MediaLinkKind.game, 'g', <String>[
         title,
@@ -465,7 +662,7 @@ void main() {
       return MediaLinkCandidate(
         from: swapped ? video : game,
         to: swapped ? game : video,
-        relation: MediaLinkRelation.sameWork,
+        relation: relation,
         source: kMediaLinkTitleMatchSource,
         confidence: 0.35,
         reason: 'r',
@@ -528,13 +725,18 @@ void main() {
       expect(cached.fromIsOriginal, isFalse, reason: '这次 from 是动画，原作仍是游戏');
 
       await judge().judge(<MediaLinkCandidate>[
+        pair('Clannad', relation: MediaLinkRelation.adaptation),
+      ]);
+      expect(calls, 2, reason: '规则的猜测变了 = 提示词里的 guess 变了');
+
+      await judge().judge(<MediaLinkCandidate>[
         pair('Clannad', videoTitle: 'CLANNAD After Story'),
       ]);
-      expect(calls, 2, reason: '标题变了 = AI 输入变了');
+      expect(calls, 3, reason: '标题变了 = AI 输入变了');
       await judge(model: 'other').judge(<MediaLinkCandidate>[
         pair('Clannad', videoTitle: 'CLANNAD After Story'),
       ]);
-      expect(calls, 3, reason: '换了模型');
+      expect(calls, 4, reason: '换了模型');
       expect(
         await db.mediaLinkAiVerdictsSince(0),
         hasLength(1),
@@ -545,7 +747,7 @@ void main() {
       await judge(model: 'other').judge(<MediaLinkCandidate>[
         pair('Clannad', videoTitle: 'CLANNAD After Story'),
       ]);
-      expect(calls, 4, reason: '过期重问');
+      expect(calls, 5, reason: '过期重问');
     });
 
     test('不相关的结论也记：第二轮推断零请求、仍然不写', () async {

@@ -37,6 +37,7 @@ class MediaLinkSubject {
     required this.titles,
     this.year,
     this.externalIds = const <String, String>{},
+    this.seriesSources = const <String>{},
   });
 
   final MediaLinkEndpoint endpoint;
@@ -47,6 +48,11 @@ class MediaLinkSubject {
 
   /// provider → id（`mal` / `anidb` / `vndb` …，Bangumi 不收）。
   final Map<String, String> externalIds;
+
+  /// 已经把这个条目的系列关系（续作 / 前传 / 外传…）刮进 `collection_relations` 的
+  /// 资料源（`anidb` / `mal` / 是合集成员的 TMDB 电影的 `tmdb`）。只有身份、源不提供
+  /// 系列关系的不算：VNDB（游戏关系不落库）、TMDB 剧集与不在合集里的电影。
+  final Set<String> seriesSources;
 
   String get displayTitle => titles.isEmpty ? endpoint.key : titles.first;
 }
@@ -233,10 +239,12 @@ String? _seriesFamily(MediaLinkKind kind) => switch (kind) {
   _ => null,
 };
 
-/// 两个条目是否在同一个资料源里都有身份。都有 = 那个源的系列关系（刮削落进
-/// `collection_relations`）对这一对是权威的：源里没写它们有关系，就不拿去问 AI。
-bool _shareIdProvider(MediaLinkSubject a, MediaLinkSubject b) =>
-    a.externalIds.keys.any(b.externalIds.containsKey);
+/// 两个条目的系列关系是否都已由同一个资料源刮进 `collection_relations`
+/// （[MediaLinkSubject.seriesSources]）。是 = 那个源对这一对是权威的：源里没写它们
+/// 有关系，就不拿去问 AI。只是两端在同一个源都有 id 不够——VNDB 的游戏关系、TMDB
+/// 剧集与剧场版之间的关系从不落库，按 id 跳过会让这两类最常见的系列一条候选都出不来。
+bool _shareSeriesSource(MediaLinkSubject a, MediaLinkSubject b) =>
+    a.seriesSources.any(b.seriesSources.contains);
 
 int _shortestTitle(MediaLinkSubject s) {
   int best = 1 << 30;
@@ -253,7 +261,7 @@ int _shortestTitle(MediaLinkSubject s) {
 /// 资料源）由 AI 判是续作 / 外传 / 同一作品 / 不相关。
 ///
 /// - [alreadyLinked] 为 true 的对（刮削的系列关系已经把它们连上）不出；
-/// - 两端在同一个资料源都有身份的不出（[_shareIdProvider]）；
+/// - 两端的系列关系都已由同一个资料源刮过的不出（[_shareSeriesSource]）；
 /// - 方向先按年份（早的是前作），没有年份按标题短的在前（本篇标题通常是续作标题的
 ///   前缀）——只是给 AI 的初始猜测，AI 说不清方向时落库前还会再判一次；
 /// - 标题相同的排在包含关系前面，最多 [kMediaLinkSeriesCandidateLimit] 条。
@@ -269,7 +277,7 @@ List<MediaLinkCandidate> matchSeriesByTitle({
   for (final MediaLinkSubject other in others) {
     if (_seriesFamily(other.endpoint.kind) != family) continue;
     if (other.endpoint == subject.endpoint) continue;
-    if (_shareIdProvider(subject, other)) continue;
+    if (_shareSeriesSource(subject, other)) continue;
     if (alreadyLinked?.call(subject.endpoint, other.endpoint) ?? false) {
       continue;
     }
@@ -399,7 +407,8 @@ const double kMediaLinkAiMediumConfidence = 0.6;
 const double kMediaLinkMalStrongTitleConfidence = 0.6;
 
 /// 一条连接的两端各自所在作品（作品图谱连通分量）的身份与规模，由调用方提供
-/// （§5.4 第二条兜底用）。返回 null = 不知道，跳过这条检查。
+/// （§5.4 第二条兜底用）。返回 null = 端点不在作品图里（还没有任何连接），按只有
+/// 自己一个成员的作品记账。
 typedef MediaLinkWorkOf =
     ({Object id, int size})? Function(MediaLinkEndpoint endpoint);
 
@@ -531,7 +540,8 @@ bool? _earlierByYear(MediaLinkSubject a, MediaLinkSubject b) {
 /// 确定性规则），这里不吞。
 ///
 /// §5.4 兜底：[mediaLinkExternalIdsConflict] 两条路径都降为建议；[workOf] 给出时，
-/// 自动路径上 [mediaLinkFusesWorks] 的降为建议（本轮已生效的连接计入分量合并）。
+/// 自动路径上 [mediaLinkFusesWorks] 的降为建议（本轮已生效的连接计入分量合并；
+/// [workOf] 返回 null 的端点按单成员作品记账）。
 Future<MediaLinkInferenceOutcome> applyMediaLinkCandidates({
   required FushiDatabase db,
   required List<MediaLinkCandidate> candidates,
@@ -599,9 +609,12 @@ Future<MediaLinkInferenceOutcome> applyMediaLinkCandidates({
     return r;
   }
 
+  // 作品图里没有的端点（还没有任何连接、也不在系列合集里）就是只有自己一个成员的
+  // 作品：照样进并查集，本轮先生效的连接把它并进别的作品后，后面的连接才看得到真实
+  // 分量（否则孤立端点先连上 A 作品、再连上 B 作品会绕过 §5.4 第二条）。
   ({Object id, int size})? work(MediaLinkEndpoint e) {
-    final ({Object id, int size})? w = workOf?.call(e);
-    if (w == null) return null;
+    if (workOf == null) return null;
+    final ({Object id, int size}) w = workOf(e) ?? (id: e, size: 1);
     sizeOf.putIfAbsent(w.id, () => w.size);
     final Object r = root(w.id);
     return (id: r, size: sizeOf[r]!);
