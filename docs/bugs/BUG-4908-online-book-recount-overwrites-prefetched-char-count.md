@@ -1,0 +1,6 @@
+## BUG-4908 · 在线书字数口径重算把后台预取章的正文字数写回成占位页字数
+- **报告**：2026-11-20（路线图 #3722 第 3 节 c01 遗留，归 c40）
+- **真实性**：✅ 真 bug（窄窗口）。根因 `fushi/lib/src/pages/implementations/reader_fushi_page.dart:3983-4001`（修前 `_persistRecomputedCharCounts`）：字数口径升级后首次开在线书，`_recomputeCharCountsInBackground` 在后台 isolate 读盘重算整本，某章读到时还是占位页；随后加载器的后台预取把这一章正文取回，`LnReaderOnlineChapterLoader._updateCharacterCount`（`fushi/lib/src/media/novel/online/lnreader_online_book.dart:600-615`，修前）把正文字数写进书行。重算落定后写回整列 `characters` 并打上当前口径标记，把那一章盖回占位页字数。BUG-4807 的 `overlay` 只覆盖「阅读器已经收到的章」，预取了但阅读器还没请求到的章不在其中。此后口径已是当前、开书不再重算，那一章也不再是占位页、加载器不会再补，书架总字数与进度永久偏小。另有一个同源的竞态：两边都是「读行 → 改 → 整列写回」且不在事务里，一方读到旧行、另一方中途写入、前者再写回就盖掉后者。
+- **[x] ① 已修复** — (1) 重算改用 `countChapterCharsWithPending`，同时标出读到时还是占位页的章；(2) 写回抽成 `persistRecomputedChapterCharCounts`：这些章（且本会话阅读器也不知道正文字数的）只打口径标记、保留书行里的 `characters`；(3) 写回与加载器的字数写入都把读改写放进 `database.transaction`，加载器先在事务外算好字数，事务里只有两条 SQL。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/reader_online_chapter_char_count_test.dart`「后台整本重算写回书行」组：占位章保留书行值、其余章写新口径并全体打标记；写回与加载器写入交错时不盖掉中途写进来的正文字数（修前读改写不在事务里，读到的是占位页字数）；章数对不上不写；重算同时标出占位章。
+- **备注**：真机未复测（本轮所有者定不做设备验证）。网页小说书（`web_novel_library.dart`）的加载器整列重写 `chaptersJson`，同样被写回的事务串行，占位章保留逻辑对它同样生效。
