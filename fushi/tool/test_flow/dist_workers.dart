@@ -748,6 +748,120 @@ abstract class DistWorker {
   Future<String> status();
 }
 
+/// How long `git push --progress` of the snapshot may print nothing before
+/// the push is killed and the worker dropped ([DistWorkerStalled]).
+///
+/// Measured 2026-11-20 over every prepare log on this machine (~420 pushes):
+/// a successful push took at most 198 s in all (wight-mac), p99 88 s on
+/// wight-win, and git prints progress at least once a second while objects
+/// move. The failed ones went through the relay (domain.ztmy.asia) and hung
+/// silent until the far end closed the connection after 312-984 s, holding
+/// up every suite only that worker could run. ssh's ServerAlive probes do
+/// not catch it: the relay keeps answering them.
+///
+/// Silence is only a dead link because nothing silent runs inside the push:
+/// receive-pack's auto gc (after the ref report, before the push returns)
+/// is off on every worker checkout (`receive.autogc false`: the trusted
+/// init, worker_shim.sh, and worker_prepare.sh, which runs `git gc --auto`
+/// itself), and the checkouts have no hooks.
+const Duration kDistPushStall = Duration(seconds: 120);
+
+/// A prepare step that went silent for its whole stall limit and was
+/// killed: the link died without either end noticing. A failure of this
+/// worker, not "busy for now".
+class DistWorkerStalled extends DistWorkerError {
+  DistWorkerStalled(super.message);
+}
+
+/// Kills a prepare step [p] with its children (git push's ssh; a shell's
+/// child on Windows), the local end only.
+Future<void> distKillStepTree(Process p) async {
+  if (Platform.isWindows) {
+    await Process.run('taskkill', <String>['/PID', '${p.pid}', '/T', '/F']);
+  } else {
+    p.kill();
+  }
+}
+
+/// How long [collectDistProcess] waits for a process's stdout / stderr to
+/// close once it exited: a grandchild that outlived it (or the kill) may
+/// hold the pipes open, which must not turn into the silent hang the stall
+/// watchdog exists for.
+const Duration kDistPipeDrain = Duration(seconds: 10);
+
+/// Collects [p]'s output and exit code. With [stallAfter], [kill] is called
+/// once [p] printed nothing on stdout or stderr for that long (looked at
+/// every quarter of it, at most every 5 s), and the result says `stalled`.
+/// After [p] exits its pipes get [kDistPipeDrain] to close; what came by
+/// then is the output.
+Future<({ProcessResult result, bool stalled})> collectDistProcess(
+  Process p, {
+  Duration? stallAfter,
+  required Future<void> Function() kill,
+}) async {
+  final Stopwatch quiet = Stopwatch()..start();
+  bool stalled = false;
+  Timer? watchdog;
+  if (stallAfter != null) {
+    final Duration tick = stallAfter ~/ 4 < const Duration(seconds: 5)
+        ? stallAfter ~/ 4
+        : const Duration(seconds: 5);
+    watchdog = Timer.periodic(tick, (Timer t) {
+      if (quiet.elapsed < stallAfter) return;
+      t.cancel();
+      stalled = true;
+      unawaited(
+        kill().catchError((Object _) {
+          // Already gone, or taskkill missing: the exit / drain below copes.
+        }),
+      );
+    });
+  }
+  final StringBuffer out = StringBuffer();
+  final StringBuffer err = StringBuffer();
+  Future<void> drain(Stream<List<int>> s, StringBuffer into) => s
+      .transform(const Utf8Decoder(allowMalformed: true))
+      .forEach((String chunk) {
+        quiet.reset();
+        into.write(chunk);
+      });
+  final Future<void> outDone = drain(p.stdout, out);
+  final Future<void> errDone = drain(p.stderr, err);
+  final int code = await p.exitCode;
+  watchdog?.cancel();
+  try {
+    await Future.wait(<Future<void>>[outDone, errDone]).timeout(kDistPipeDrain);
+  } on TimeoutException {
+    // Held open by a survivor: keep what arrived.
+  }
+  return (
+    result: ProcessResult(p.pid, code, out.toString(), err.toString()),
+    stalled: stalled,
+  );
+}
+
+/// [stderr] of a `--progress` git command with each `\r`-redrawn line
+/// reduced to its last state (the log keeps what was finally shown).
+String distCollapseProgress(String stderr) => stderr
+    .replaceAll('\r\n', '\n')
+    .split('\n')
+    .map(
+      (String l) =>
+          l.split('\r').lastWhere((String s) => s.isNotEmpty, orElse: () => ''),
+    )
+    .join('\n');
+
+/// The last non-empty progress state in [stderr] (`\r` or `\n` separated),
+/// or `no output at all`.
+String distLastProgressLine(String stderr) {
+  final List<String> parts = stderr
+      .split(RegExp(r'[\r\n]'))
+      .map((String s) => s.trim())
+      .where((String s) => s.isNotEmpty)
+      .toList();
+  return parts.isEmpty ? 'no output at all' : 'last: ${parts.last}';
+}
+
 /// The workers of one config entry: one per slot.
 List<DistWorker> createDistWorkers(
   DistWorkerConfig config, {
@@ -830,8 +944,21 @@ class LocalDistWorker extends DistWorker {
   @override
   int get maxCommandChars => kLocalMaxCommandChars;
 
+  /// The current [prepare]'s abandon token. One per call: a worker the
+  /// scheduler let go may be prepared again for the leftovers while the
+  /// abandoned call still sits in the heavy queue (it notices only at its
+  /// next poll), and that call must stay abandoned -- revived, it would take
+  /// the slot and this checkout's worktree lock, and the new call would wait
+  /// for that lock forever.
+  DistLocalLeaseWait? _wait;
+
+  @override
+  Future<void> abandon() async => _wait?.abandoned = true;
+
   @override
   Future<void> prepare(DistSnapshot snapshot, String runId, IOSink log) async {
+    final DistLocalLeaseWait wait = DistLocalLeaseWait();
+    _wait = wait;
     // pub workspace: the resolution lands in the workspace root's .dart_tool.
     if (!File('$repoRoot/.dart_tool/package_config.json').existsSync() &&
         !File('$_fushiDir/.dart_tool/package_config.json').existsSync()) {
@@ -856,13 +983,23 @@ class LocalDistWorker extends DistWorker {
       }
     }
     // One flutter test at a time in this checkout, like every other heavy
-    // run on this machine; held for the whole dist run.
+    // run on this machine; held for the whole dist run. Queued like any
+    // heavy run, and left as soon as [abandon] says the others did it all
+    // (the slot is never used once abandoned: [DistLocalLeaseWait]).
     _leaseLabel = 'dist_test local worker $runId';
-    _lease = await acquireHeavyLease(
+    final HeavyLease lease = await acquireHeavyLease(
       need: heavyNeedFor(HeavyKind.test),
       label: _leaseLabel,
       worktreeRoot: repoRoot,
+      rival: wait,
     );
+    if (wait.abandoned) {
+      // Admitted on a lane that skips slots (nested lease, CI) after the
+      // scheduler had let go of this worker: nothing may run on it.
+      lease.release();
+      throw DistWorkerError('$name: no longer needed');
+    }
+    _lease = lease;
     _leaseExit = 0;
     _leaseHeld
       ..reset()
@@ -1287,6 +1424,20 @@ class LocalDistWorker extends DistWorker {
   }
 }
 
+/// One [LocalDistWorker.prepare]'s heavy-lease wait as a [HeavyLeaseRival]:
+/// the "other side" is the rest of the dist run, which "took it" once the
+/// scheduler abandoned this call. Checked under the admission gate too, so a
+/// slot freed at that very moment is never used by a call nobody wants.
+class DistLocalLeaseWait implements HeavyLeaseRival {
+  bool abandoned = false;
+
+  @override
+  bool get tookIt => abandoned;
+
+  @override
+  bool claimHere() => !abandoned;
+}
+
 class SshDistWorker extends DistWorker {
   SshDistWorker(super.config, {required this.repoRoot, this.primary});
 
@@ -1352,13 +1503,18 @@ class SshDistWorker extends DistWorker {
   /// [abandon] was called: no further prepare step starts.
   bool _abandoned = false;
 
-  /// Runs one prepare step as a process [abandon] can stop.
+  /// Runs one prepare step as a process [abandon] can stop. With [stallAfter]
+  /// the step is killed once it printed nothing (stdout or stderr) for that
+  /// long, and fails with [DistWorkerStalled]: for a step that reports
+  /// progress while it works (`git push --progress`), silence means the link
+  /// died without either end noticing.
   Future<ProcessResult> _step(
     String executable,
     List<String> args, {
     Map<String, String>? environment,
     String? workingDirectory,
     String? input,
+    Duration? stallAfter,
   }) async {
     if (_abandoned) throw DistWorkerError('$name: no longer needed');
     final Process p = await Process.start(
@@ -1369,15 +1525,27 @@ class SshDistWorker extends DistWorker {
     );
     _stepProcess = p;
     await _feed(p, input);
-    const Utf8Decoder decoder = Utf8Decoder(allowMalformed: true);
-    final Future<String> out = p.stdout.transform(decoder).join();
-    final Future<String> err = p.stderr.transform(decoder).join();
-    final int code = await p.exitCode;
+    final ({ProcessResult result, bool stalled}) done =
+        await collectDistProcess(
+          p,
+          stallAfter: stallAfter,
+          kill: () => _killStep(p),
+        );
     _stepProcess = null;
-    final ProcessResult r = ProcessResult(p.pid, code, await out, await err);
+    final ProcessResult r = done.result;
     if (_abandoned) throw DistWorkerError('$name: no longer needed');
+    if (done.stalled) {
+      throw DistWorkerStalled(
+        '${args.isEmpty ? executable : '$executable ${args.first}'} to $name '
+        'printed nothing for ${stallAfter!.inSeconds}s and was killed '
+        '(${distLastProgressLine('${r.stderr}')})',
+      );
+    }
     return r;
   }
+
+  /// Kills [p] with its children (git push's ssh), local end only.
+  Future<void> _killStep(Process p) => distKillStepTree(p);
 
   @override
   Future<void> abandon() async {
@@ -1386,11 +1554,7 @@ class SshDistWorker extends DistWorker {
     if (p == null) return;
     // The local end only (with git push's ssh child): a remote prepare runs
     // on to warm the caches, and the next run's worker_kill.sh waits for it.
-    if (Platform.isWindows) {
-      await Process.run('taskkill', <String>['/PID', '${p.pid}', '/T', '/F']);
-    } else {
-      p.kill();
-    }
+    await _killStep(p);
   }
 
   /// Writes [input] (if any) to [p]'s stdin and closes it. A process that
@@ -1537,6 +1701,10 @@ class SshDistWorker extends DistWorker {
         ..._sshBase,
         '${_pathPrefix}mkdir -p "\$HOME"/$workdir && cd "\$HOME"/$workdir && '
             '{ [ -d .git ] || git init -q; }$seed && '
+            // No gc inside receive-pack: it runs after the ref report and
+            // before the push returns, printing nothing (kDistPushStall).
+            // worker_prepare.sh runs `git gc --auto` instead.
+            'git config receive.autogc false && '
             '${_slotCommand('take', runId, '$waitSeconds')}',
       ], input: _slotScript());
     }
@@ -1697,21 +1865,30 @@ class SshDistWorker extends DistWorker {
         shellQuote(a),
     ].join(' ');
     final Stopwatch watch = Stopwatch()..start();
-    final ProcessResult push = await _step(
-      'git',
-      <String>[
-        'push',
-        '--quiet',
-        '${config.host}:$remotePath',
-        ...distPushRefspecs(snapshot, runId),
-      ],
-      workingDirectory: repoRoot,
-      environment: <String, String>{'GIT_SSH_COMMAND': sshCommand},
-    );
+    final ProcessResult push;
+    try {
+      push = await _step(
+        'git',
+        <String>[
+          'push',
+          // Progress on stderr even though it is a pipe: the stall watchdog
+          // listens to it ([kDistPushStall]).
+          '--progress',
+          '${config.host}:$remotePath',
+          ...distPushRefspecs(snapshot, runId),
+        ],
+        workingDirectory: repoRoot,
+        environment: <String, String>{'GIT_SSH_COMMAND': sshCommand},
+        stallAfter: kDistPushStall,
+      );
+    } on DistWorkerStalled catch (e) {
+      log.writeln('== push (stalled, ${watch.elapsed.inSeconds}s)\n$e');
+      rethrow;
+    }
     log
       ..writeln('== push (exit ${push.exitCode}, ${watch.elapsed.inSeconds}s)')
       ..write(push.stdout)
-      ..write(push.stderr);
+      ..write(distCollapseProgress('${push.stderr}'));
     if (push.exitCode != 0) {
       throw DistWorkerError(
         'git push to $name failed: '

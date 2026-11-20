@@ -432,6 +432,34 @@ const Duration kDistAnalyzeTimeout = Duration(minutes: 30);
 /// Nothing ran; tool/heavy.dart runs the command on this machine instead.
 const int kDistOffloadDeclined = 75;
 
+/// `dist_test.dart --no-local`: no worker on this machine, not even as the
+/// offloaded run's peer. tool/heavy.dart passes it to the attempts it makes
+/// while the run already queues here (heavy_offload.dart
+/// heavyOffloadQueuedArgs): that queue is this machine's bid already.
+const String kDistNoLocalFlag = '--no-local';
+
+/// Whether dist_test still waits for a worker whose prepare is under way
+/// (a remote one locking / pushing, the local one queueing for a heavy slot
+/// here). Not once the caller's machine took the run ([claimLost]), nor
+/// once nothing it may run is left and no batch in flight could requeue
+/// some. And not for this machine's worker driven as the others' peer
+/// ([localPeer]) once no other machine is preparing or working
+/// ([othersAtIt]) while nothing ran anywhere yet ([anyResults]): the run
+/// then declines, and heavy.dart queues here and keeps asking them better
+/// than a dist_test that waits. Once something ran the run cannot decline,
+/// so the peer keeps its place in the heavy queue for what is left.
+bool distWantedWhilePreparing({
+  required bool claimLost,
+  required bool batchesInFlight,
+  required bool workLeftForIt,
+  required bool localPeer,
+  required bool othersAtIt,
+  required bool anyResults,
+}) =>
+    !claimLost &&
+    (batchesInFlight || workLeftForIt) &&
+    !(localPeer && !othersAtIt && !anyResults);
+
 /// Like [kDistOffloadDeclined], but only because the other machines were
 /// busy for now: every one of them was locked by another run, paused,
 /// unreachable or short of memory (shim exit 75) before it began the work,
