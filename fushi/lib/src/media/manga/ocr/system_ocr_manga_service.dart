@@ -26,7 +26,7 @@ import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart'
     show GoogleLensPageCache;
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart'
-    show MangaOcrPageScheduler;
+    show MangaOcrPageScheduler, OcrCancelledException;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/ocr/ocr_page_tiling.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
@@ -35,11 +35,17 @@ import 'package:fushi/src/ocr/system_ocr_channel.dart';
 /// 单页识别超时。系统识别器正常是几百毫秒级，30 秒只用来兜住「彻底卡住」。
 const Duration kSystemOcrPageTimeout = Duration(seconds: 30);
 
-/// 缓存目录名前缀。带语言后缀，换语言不复用旧结果。
+/// 系统 OCR 逐页缓存目录名的前缀（后接语言），签名与重开书恢复
+/// （`manga_ocr_cache_recovery.dart`）共用这一个常量。
 ///
-/// `v2`：切片识别 + 跨片合并（BUG-2767）。Apple 上旧结果只认出一成不到的字，
-/// 签名不换的话，已经跑过的卷会一直命中那份缓存、永远拿不到新结果。
-String systemOcrEngineSignature(String language) => 'system_ocr_v2_$language';
+/// 前缀**带版本**。`v2`：切片识别 + 跨片合并（BUG-2767）。Apple 上旧结果只认出
+/// 一成不到的字，签名不换的话，已经跑过的卷会一直命中那份缓存、永远拿不到新
+/// 结果；恢复按这个前缀枚举目录，同样不会把 v1 的旧目录收进来。
+const String kSystemOcrEngineSignaturePrefix = 'system_ocr_v2_';
+
+/// 缓存目录名。带语言后缀，换语言不复用旧结果。
+String systemOcrEngineSignature(String language) =>
+    '$kSystemOcrEngineSignaturePrefix$language';
 
 /// 系统 OCR 的整卷 runner。接口与 Lens 那条对齐，因此能直接接进
 /// `manga_ocr_job_stream.dart` 的引擎分发。
@@ -197,16 +203,20 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
       startPage,
     );
 
-    final Map<int, MokuroImage> results = <int, MokuroImage>{};
+    final List<MokuroImage?> results = List<MokuroImage?>.filled(
+      pages.length,
+      null,
+    );
     int done = 0;
     while (true) {
       final int? focused = focus?.take();
       if (focused != null) scheduler.focus(focused);
       final int? pageIndex = scheduler.next();
       if (pageIndex == null) break;
-      if (isCancelled()) {
-        break;
-      }
+      // 取消 = 抛出，不落整卷产物（与 Lens 同一语义）。已识别的页都在逐页缓存
+      // 里，续跑从那里接；半卷的 `manga_ocr_out/manga.json` 只会让后来的引擎
+      // 看到一份「空页占位 + 本引擎署名」的假整卷（BUG-4815）。
+      if (isCancelled()) throw const OcrCancelledException();
       final MangaOcrPageFile page = pages[pageIndex];
       MokuroImage? image;
       if (onlyMissing) {
@@ -226,7 +236,8 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
       onProgress(done, pages.length, pageIndex);
     }
 
-    return _writePayload(imageDirPath, pages, results, language);
+    if (isCancelled()) throw const OcrCancelledException();
+    return _writePayload(imageDirPath, results.cast<MokuroImage>(), language);
   }
 
   Future<MokuroImage> _recognizePage(
@@ -264,22 +275,11 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
 
   Future<String> _writePayload(
     String imageDirPath,
-    List<MangaOcrPageFile> pages,
-    Map<int, MokuroImage> results,
+    List<MokuroImage> images,
     String language,
   ) async {
     final MokuroPayload payload = MokuroPayload(
-      images: <MokuroImage>[
-        for (int index = 0; index < pages.length; index++)
-          results[index] ??
-              MokuroImage(
-                url: pages[index].relativeUrl,
-                // 还没轮到的页先占位。尺寸未知时给 0——展示层按比例定位，
-                // 空 blocks 不会用到它。
-                size: MokuroSize.zero,
-                blocks: const <MokuroBlock>[],
-              ),
-      ],
+      images: images,
       ocr: MangaOcrMetadata(
         engine: 'system_ocr',
         engineSignature: systemOcrEngineSignature(language),

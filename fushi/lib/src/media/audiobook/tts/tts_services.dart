@@ -9,6 +9,7 @@ import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/tts/local/gpt_sovits_local_engine.dart';
 import 'package:fushi_engine/tts/local/irodori_local_engine.dart';
+import 'package:fushi_engine/tts/local/irodori_voice_pack_provider.dart';
 import 'package:fushi_engine/tts/local/voicevox_local_engine.dart';
 import 'package:fushi_engine/tts/providers/edge_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/gpt_sovits_tts_provider.dart';
@@ -29,7 +30,7 @@ import 'package:fushi/src/utils/net/app_native_proxy.dart';
 class TtsServices {
   TtsServices._(this.prefs)
     : store = TtsPresetStore(prefs),
-      pronunciation = TtsPronunciationStore(prefs),
+      textRules = TtsTextRulesStore(prefs),
       localGptSovits = GptSovitsLocalEngine(
         prefs: prefs,
         httpClientFactory: createAppHttpClient,
@@ -87,8 +88,9 @@ class TtsServices {
 
   final TtsPresetStore store;
 
-  /// 发音词典（朗读与制作共用）。
-  final TtsPronunciationStore pronunciation;
+  /// 文本处理规则（发音词典 / 合成前替换 / 识别后替换）：朗读、制作与设置页共用
+  /// 这一份。
+  final TtsTextRulesStore textRules;
 
   /// 本机一键部署的 GPT-SoVITS（仅 Windows 可用；服务进程随 app 退出终止）。
   final GptSovitsLocalEngine localGptSovits;
@@ -111,6 +113,15 @@ class TtsServices {
       };
 
   late final TtsProviderRegistry registry;
+
+  /// 声音包（Irodori v4-Large + LoRA / 参考音频组）的引擎描述符。故意不进 [registry]
+  /// （那里的引擎会出现在「添加声音」里），只给制作侧经 [productionDescriptor] 查。
+  late final IrodoriVoicePackTtsDescriptor voicePacks =
+      IrodoriVoicePackTtsDescriptor(localIrodori);
+
+  /// 制作侧（有声书制作台 / 漫画有声）按引擎 id 查描述符：注册表里的引擎 + 声音包。
+  TtsProviderDescriptor? productionDescriptor(String providerId) =>
+      providerId == kIrodoriPackProviderId ? voicePacks : registry[providerId];
 
   final TtsHost host = TtsHost(
     log: (String message) =>

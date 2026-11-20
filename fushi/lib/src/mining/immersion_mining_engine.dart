@@ -305,13 +305,53 @@ const int _kRootCauseMaxChars = 300;
 
 /// A media snapshot is already owned by Anki after import; cleanup must never
 /// turn a successful note into an apparent failure (and invite duplicate notes).
-Future<void> _cleanupSynchronizedVideo(Directory directory) async {
+Future<void> _cleanupSynchronizedVideo(Directory directory) =>
+    _deleteDirectoryQuietly(directory, 'Anki.synchronizedVideo.cleanup');
+
+/// 删一个制卡临时目录；失败只留诊断，不让已落好的卡变成「失败」（见上）。
+Future<void> _deleteDirectoryQuietly(Directory directory, String tag) async {
   try {
     if (await directory.exists()) await directory.delete(recursive: true);
   } on FileSystemException catch (error) {
-    engineLog.logDiagnostic('Anki.synchronizedVideo.cleanup', error);
+    engineLog.logDiagnostic(tag, error);
   }
 }
+
+/// 同时在抽媒体的制卡任务上限（video-30）。抽取是 ffmpeg 重活（最高档 GIF / AVIF 单项
+/// 数秒），远端流还可能断流卡到超时：只放一个，一张卡断流就挡住后面所有卡；不设限，
+/// 连点十张就是十路 ffmpeg 与前台播放抢 CPU。两路让「一张卡住、下一张照常抽」成立。
+const int _kMaxConcurrentExtractions = 2;
+
+/// 一张抽好媒体、等着按入队顺序落卡的卡（[ImmersionMiningEngine._mineNow] 的产物）。
+///
+/// [aborted] 非空 = 抽取阶段就判定不建卡（缺音频、空壳卡、来源校验失败），直接把它
+/// 当结果交回；否则 [request] / [context] 是落卡要的全部输入，媒体文件都在本任务
+/// 私有的临时目录里。
+class _PreparedCard {
+  const _PreparedCard.aborted(ImmersionMiningResult this.aborted)
+    : request = null,
+      context = null,
+      degradedToStill = false;
+
+  const _PreparedCard.ready({
+    required ImmersionMiningRequest this.request,
+    required AnkiMiningContext this.context,
+    required this.degradedToStill,
+  }) : aborted = null;
+
+  final ImmersionMiningResult? aborted;
+  final ImmersionMiningRequest? request;
+  final AnkiMiningContext? context;
+  final bool degradedToStill;
+}
+
+/// 抽取阶段的结局：成功是「私有目录 + 抽好的卡」，失败是原始异常（落卡队列轮到它时
+/// 原样抛给调用方）。抽取在点击当下就开跑、可能早于轮到它落卡就失败，所以失败必须先
+/// 收成值，不能留成未处理的异步错误。
+typedef _PrepareAttempt = ({
+  ({Directory jobDir, _PreparedCard card})? prepared,
+  AsyncError? failure,
+});
 
 /// 统一沉浸制卡引擎。降级阶梯与 `_mineVideoCard`（lookup_mining.part.dart L285-441）一致：
 /// GIF 主 → 单帧降级 → 当前解码帧兜底；音频段；requireAudio 且缺音频则中止；组 context 落卡。
@@ -418,10 +458,25 @@ class ImmersionMiningEngine {
     audioHeaders: httpHeaders,
   );
 
-  /// 所有沉浸制卡共享同一条事务队列。抽媒体会写固定的临时文件名，AnkiConnect 也只有
-  /// 一个 GUI 端点；必须把「抽 GIF/音频 → 上传 → add/update note」整体串行化。队列是
-  /// 进程级而非页面级，因此本地 pushReplacement 或远端原地换集都不会丢掉已入队任务。
+  /// 所有沉浸制卡共享的**落卡**队列（BUG-1228 / video-30）。
+  ///
+  /// BUG-1228 当初把「抽 GIF/音频 → 上传 → add/update note」整笔串行，管三件事：固定
+  /// 临时文件名的争用、AnkiConnect 单一 GUI 端点、换集后旧卡被新集数据污染。代价是一张
+  /// 远端断流的卡（ffmpeg 等到超时）挡住后面所有卡的抽取。现在拆成两段：
+  /// - **抽取**：每个任务一个私有临时目录（不再争同名文件），由 [_extractionSlots] 限
+  ///   并发，点击当下即可开跑；
+  /// - **落卡**：仍是这条进程级 FIFO，在 [mine] 被调用的那一刻同步入队，所以按点击顺序
+  ///   提交、同一时刻只有一张卡在写 Anki。
+  ///
+  /// 换集污染靠的是入队时冻结请求（[ImmersionMiningRequest.frozen]）而不是串行，拆开后
+  /// 不受影响。两条都是进程级而非页面级，本地 pushReplacement 或远端原地换集都不会丢掉
+  /// 已入队任务。
   static final SerialJobQueue _sharedMiningQueue = SerialJobQueue();
+
+  /// 抽取阶段的并发闸，见 [_sharedMiningQueue] 与 [_kMaxConcurrentExtractions]。
+  static final BoundedJobLimiter _extractionSlots = BoundedJobLimiter(
+    _kMaxConcurrentExtractions,
+  );
 
   /// 默认物化器：包一层 [materializeRemoteAudioViaRangeDownload]（补齐其额外可选参数）。
   static Future<String?> _defaultAudioMaterializer({
@@ -469,53 +524,153 @@ class ImmersionMiningEngine {
     final Future<AsyncError?> fieldsMediaFailure = _settleFailure(
       frozenRequest.fieldsMediaReady,
     );
+    // 抽取段：点击当下就开跑（受 [_extractionSlots] 限流），不等前面的卡落完。
+    final Future<_PrepareAttempt> prepared =
+        () async {
+          // 落卡要从缓存读词典媒体字节：缓存写完之前不抽、不落。
+          final AsyncError? mediaFailure = await fieldsMediaFailure;
+          if (mediaFailure != null) {
+            Error.throwWithStackTrace(
+              mediaFailure.error,
+              mediaFailure.stackTrace,
+            );
+          }
+          final String baseTempDir = await tempDir;
+          return _extractionSlots.run(
+            () => _prepareInJobDirectory(
+              frozenRequest,
+              pendingSnapshot: pendingSnapshot,
+              baseTempDir: baseTempDir,
+              compression: compression,
+              repo: repo,
+              onFailure: onFailure,
+              onCoverFailure: onCoverFailure,
+              onAudioFailure: onAudioFailure,
+              onAudioSourceFallback: onAudioSourceFallback,
+            ),
+          );
+        }().then<_PrepareAttempt>(
+          (({Directory jobDir, _PreparedCard card}) value) =>
+              (prepared: value, failure: null),
+          onError: (Object error, StackTrace stack) =>
+              (prepared: null, failure: AsyncError(error, stack)),
+        );
+    // 落卡段：此刻同步入队，轮到它时等自己的抽取结果再写 Anki——按点击顺序提交。
     return _sharedMiningQueue.enqueueRethrowing<ImmersionMiningResult>(
       () async {
-        // 落卡要从缓存读词典媒体字节：缓存写完之前不抽、不落。
-        final AsyncError? mediaFailure = await fieldsMediaFailure;
-        if (mediaFailure != null) {
-          Error.throwWithStackTrace(
-            mediaFailure.error,
-            mediaFailure.stackTrace,
+        final _PrepareAttempt attempt = await prepared;
+        final AsyncError? failure = attempt.failure;
+        if (failure != null) {
+          Error.throwWithStackTrace(failure.error, failure.stackTrace);
+        }
+        final ({Directory jobDir, _PreparedCard card}) ready =
+            attempt.prepared!;
+        try {
+          return ready.card.aborted ?? await _commit(ready.card, repo: repo);
+        } finally {
+          // 仓库在 mineEntry / 暂存返回前已把媒体拷走或上传（见 VideoMineQueue.stage、
+          // PendingMiningAnkiRepository 的冻结契约），私有目录随落卡一起收掉。
+          await _deleteDirectoryQuietly(
+            ready.jobDir,
+            'Anki.miningJobDir.cleanup',
           );
         }
-        final String resolvedTempDir = await tempDir;
-        // 在线视频：播放器在点击当下把这句所在的缓冲落成了本地副本。拿到就对副本抽取
-        // （本地 seek，毫秒级），副本抽不出来（中止）再走下面的远端抽取；副本用完即删。
-        final CachedMediaSnapshot? snapshot = await pendingSnapshot;
-        if (snapshot != null) {
-          try {
-            if (await _snapshotAudioUsable(frozenRequest, snapshot)) {
-              final ImmersionMiningResult local = await _mineNow(
-                frozenRequest.withCachedSnapshot(snapshot),
-                compression: compression,
-                tempDir: resolvedTempDir,
-                repo: repo,
-                onFailure: onFailure,
-                onCoverFailure: onCoverFailure,
-                onAudioFailure: onAudioFailure,
-                onAudioSourceFallback: onAudioSourceFallback,
-              );
-              if (!local.aborted) return local;
-            }
-          } finally {
-            await _deleteQuietly(snapshot.path);
-          }
-        }
-        // 远端输入的连接方式（经中继 / 放开 HLS 扩展名）在入队时才开始登记，构造
-        // ffmpeg 参数前必须已经就位。
-        await frozenRequest.mediaSourceRouteReady;
-        return _mineNow(
-          frozenRequest,
-          compression: compression,
-          tempDir: resolvedTempDir,
-          repo: repo,
-          onFailure: onFailure,
-          onCoverFailure: onCoverFailure,
-          onAudioFailure: onAudioFailure,
-          onAudioSourceFallback: onAudioSourceFallback,
-        );
       },
+    );
+  }
+
+  /// 在 [baseTempDir] 下建本任务私有的临时目录并在其中抽好媒体。抽取抛错时目录当场
+  /// 删掉再原样抛出；成功时目录交给落卡段，落完再删。
+  Future<({Directory jobDir, _PreparedCard card})> _prepareInJobDirectory(
+    ImmersionMiningRequest frozenRequest, {
+    required Future<CachedMediaSnapshot?> pendingSnapshot,
+    required String baseTempDir,
+    required MiningMediaCompression compression,
+    required BaseAnkiRepository repo,
+    FfmpegFailureReporter? onFailure,
+    FfmpegFailureReporter? onCoverFailure,
+    FfmpegFailureReporter? onAudioFailure,
+    AudioSourceFallbackReporter? onAudioSourceFallback,
+  }) async {
+    final Directory jobDir = await Directory(
+      baseTempDir,
+    ).createTemp('immersion_job_');
+    try {
+      // 在线视频：播放器在点击当下把这句所在的缓冲落成了本地副本。拿到就对副本抽取
+      // （本地 seek，毫秒级），副本抽不出来（中止）再走下面的远端抽取；副本用完即删。
+      final CachedMediaSnapshot? snapshot = await pendingSnapshot;
+      if (snapshot != null) {
+        try {
+          if (await _snapshotAudioUsable(frozenRequest, snapshot)) {
+            final _PreparedCard local = await _mineNow(
+              frozenRequest.withCachedSnapshot(snapshot),
+              compression: compression,
+              tempDir: jobDir.path,
+              repo: repo,
+              onFailure: onFailure,
+              onCoverFailure: onCoverFailure,
+              onAudioFailure: onAudioFailure,
+              onAudioSourceFallback: onAudioSourceFallback,
+            );
+            if (local.aborted == null) return (jobDir: jobDir, card: local);
+          }
+        } finally {
+          await _deleteQuietly(snapshot.path);
+        }
+      }
+      // 远端输入的连接方式（经中继 / 放开 HLS 扩展名）在入队时才开始登记，构造
+      // ffmpeg 参数前必须已经就位。
+      await frozenRequest.mediaSourceRouteReady;
+      final _PreparedCard card = await _mineNow(
+        frozenRequest,
+        compression: compression,
+        tempDir: jobDir.path,
+        repo: repo,
+        onFailure: onFailure,
+        onCoverFailure: onCoverFailure,
+        onAudioFailure: onAudioFailure,
+        onAudioSourceFallback: onAudioSourceFallback,
+      );
+      return (jobDir: jobDir, card: card);
+    } catch (_) {
+      await _deleteDirectoryQuietly(jobDir, 'Anki.miningJobDir.cleanup');
+      rethrow;
+    }
+  }
+
+  /// 落卡：把抽好的 [card] 交给对应的写入口（源复核 / 暂存 / 新建 / 覆写）。只在
+  /// [_sharedMiningQueue] 里调用，同一时刻只有一张卡在写。
+  Future<ImmersionMiningResult> _commit(
+    _PreparedCard card, {
+    required BaseAnkiRepository repo,
+  }) async {
+    final ImmersionMiningRequest req = card.request!;
+    final AnkiMiningContext context = card.context!;
+    final MineOutcome outcome = req.sourceReviewMine != null
+        ? await req.sourceReviewMine!(
+            rawPayloadJson: jsonEncode(req.fields),
+            context: context,
+          )
+        // 看完再制卡：媒体已备好，先暂存、不落卡（见 [ImmersionMiningRequest.stageNote]）。
+        : req.stageNote != null
+        ? await req.stageNote!(
+            rawPayloadJson: jsonEncode(req.fields),
+            context: context,
+          )
+        : req.updateNoteId == null
+        ? await repo.mineEntry(
+            rawPayloadJson: jsonEncode(req.fields),
+            context: context,
+          )
+        : await repo.updateMinedNote(
+            noteId: req.updateNoteId!,
+            rawPayloadJson: jsonEncode(req.fields),
+            context: context,
+          );
+    return ImmersionMiningResult(
+      aborted: false,
+      outcome: outcome,
+      degradedToStill: card.degradedToStill,
     );
   }
 
@@ -578,7 +733,7 @@ class ImmersionMiningEngine {
     } catch (_) {}
   }
 
-  Future<ImmersionMiningResult> _mineNow(
+  Future<_PreparedCard> _mineNow(
     ImmersionMiningRequest req, {
     required MiningMediaCompression compression,
     required String tempDir,
@@ -589,7 +744,6 @@ class ImmersionMiningEngine {
     AudioSourceFallbackReporter? onAudioSourceFallback,
   }) async {
     String? coverPath;
-    Directory? exportedVideoDir;
     bool degradedToStill = false;
     CardSourceLink? sourceLink = req.sourceLink;
     try {
@@ -597,9 +751,11 @@ class ImmersionMiningEngine {
         sourceLink = await req.sourceLinkResolver!();
       }
     } on Object catch (error) {
-      return ImmersionMiningResult(
-        aborted: true,
-        abortReason: 'Video source identity could not be verified: $error',
+      return _PreparedCard.aborted(
+        ImmersionMiningResult(
+          aborted: true,
+          abortReason: 'Video source identity could not be verified: $error',
+        ),
       );
     }
     // 同步片段要「可裁的视频 + 句子时间窗」，或外部已给好的片段文件（Netflix 录制）；
@@ -881,15 +1037,20 @@ class ImmersionMiningEngine {
 
     if (synchronizedVideo && !providedVideo) {
       if (audioPath == null && !directSourceAudio) {
-        return ImmersionMiningResult(
-          aborted: true,
-          abortReason: _withRootCause(
-            'required audio missing',
-            firstAudioFailure,
+        return _PreparedCard.aborted(
+          ImmersionMiningResult(
+            aborted: true,
+            abortReason: _withRootCause(
+              'required audio missing',
+              firstAudioFailure,
+            ),
           ),
         );
       }
-      exportedVideoDir = await Directory(tempDir).createTemp('synced_video_');
+      // 导出成功时片段留在本任务私有目录里，随落卡后的整目录清理一起删。
+      final Directory exportedVideoDir = await Directory(
+        tempDir,
+      ).createTemp('synced_video_');
       final VideoClipExportResult video;
       final String exportAudio = directSourceAudio ? src : audioPath!;
       try {
@@ -926,7 +1087,6 @@ class ImmersionMiningEngine {
       }
       if (!video.isSuccess) {
         await _cleanupSynchronizedVideo(exportedVideoDir);
-        exportedVideoDir = null;
         reportCover(video.detail ?? video.failure!.name);
         // 片段模式是默认值：源没有视频轨（纯音频文件）、远端流超时等导出失败时，退回
         // 动图模式的阶梯并保留已裁好的句子音频——照常出卡，但不声称同步。改默认之前这些
@@ -981,11 +1141,13 @@ class ImmersionMiningEngine {
         !req.omitAudio &&
         audioPath == null &&
         (req.hasRange || viaProvidedBytes)) {
-      return ImmersionMiningResult(
-        aborted: true,
-        abortReason: _withRootCause(
-          'required audio missing',
-          firstAudioFailure,
+      return _PreparedCard.aborted(
+        ImmersionMiningResult(
+          aborted: true,
+          abortReason: _withRootCause(
+            'required audio missing',
+            firstAudioFailure,
+          ),
         ),
       );
     }
@@ -999,11 +1161,13 @@ class ImmersionMiningEngine {
         !(req.omitCover && req.omitAudio)) {
       // 封面与音频**都**没出来时，两条链的首个摘要通常是同一个根因（例如 ffmpeg 缺失
       // 会同时打死两条）。取封面优先只是取一个稳定顺序，null 时自动退到音频那条。
-      return ImmersionMiningResult(
-        aborted: true,
-        abortReason: _withRootCause(
-          'no cover and no audio produced',
-          firstCoverFailure ?? firstAudioFailure,
+      return _PreparedCard.aborted(
+        ImmersionMiningResult(
+          aborted: true,
+          abortReason: _withRootCause(
+            'no cover and no audio produced',
+            firstCoverFailure ?? firstAudioFailure,
+          ),
         ),
       );
     }
@@ -1030,39 +1194,9 @@ class ImmersionMiningEngine {
       clipEndMs: req.clipEndMs,
     );
 
-    final MineOutcome outcome;
-    try {
-      outcome = req.sourceReviewMine != null
-          ? await req.sourceReviewMine!(
-              rawPayloadJson: jsonEncode(req.fields),
-              context: context,
-            )
-          // 看完再制卡：媒体已备好，先暂存、不落卡（见 [ImmersionMiningRequest.stageNote]）。
-          : req.stageNote != null
-          ? await req.stageNote!(
-              rawPayloadJson: jsonEncode(req.fields),
-              context: context,
-            )
-          : req.updateNoteId == null
-          ? await repo.mineEntry(
-              rawPayloadJson: jsonEncode(req.fields),
-              context: context,
-            )
-          : await repo.updateMinedNote(
-              noteId: req.updateNoteId!,
-              rawPayloadJson: jsonEncode(req.fields),
-              context: context,
-            );
-    } finally {
-      // Upload/import has completed before removing this job's private MP4.
-      if (exportedVideoDir != null) {
-        await _cleanupSynchronizedVideo(exportedVideoDir);
-      }
-    }
-
-    return ImmersionMiningResult(
-      aborted: false,
-      outcome: outcome,
+    return _PreparedCard.ready(
+      request: req,
+      context: context,
       degradedToStill: degradedToStill,
     );
   }

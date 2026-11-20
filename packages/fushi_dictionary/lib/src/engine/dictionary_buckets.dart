@@ -88,6 +88,9 @@ typedef DictPathEntry = ({
   // 在「汉字」分区的位置（[kanjiSectionOrderIn]）。汉字桶按它排，引擎返回的汉字卡
   // 顺序就是用户在分区里排的顺序。
   int kanjiOrder,
+  // 词头语言（BCP-47）：用户手动指定的优先，其次包内 index.json 的 sourceLanguage；
+  // 都没有 = null（未标注）。与 `Dictionary.effectiveSourceLanguage` 同一口径。
+  String? language,
 });
 
 /// 把一条 `dictionary_metadata` 行的字段换成 [DictPathEntry]，判据全走上面的
@@ -100,6 +103,7 @@ DictPathEntry dictPathEntryOf({
   required bool hidden,
   required Map<String, String> metadata,
   required int order,
+  String? languageOverride,
 }) => (
   type: type,
   path: path,
@@ -108,7 +112,34 @@ DictPathEntry dictPathEntryOf({
   hasKanji: hasEmbeddedKanjiIn(type, metadata),
   kanjiHidden: isKanjiPartHiddenIn(metadata),
   kanjiOrder: kanjiSectionOrderIn(type, metadata, order),
+  language: _firstNonBlank(languageOverride, metadata['sourceLanguage']),
 );
+
+String? _firstNonBlank(String? first, String? second) {
+  for (final String? candidate in <String?>[first, second]) {
+    final String trimmed = candidate?.trim() ?? '';
+    if (trimmed.isNotEmpty) return trimmed;
+  }
+  return null;
+}
+
+/// 进 term 桶的词典里标了语言的那些：路径 → 词头语言。与 [bucketDictPaths] 的 term
+/// 桶同一判据（存在且没关），交给 `FushiDicts.scheduleTyped` / `initializeTyped` 的
+/// `termLanguages`。
+///
+/// 引擎拿它做的事：标了语言的词典只接受**本语言**变形表还原出来的词形。变形表是
+/// 所有语言一起装的，拉丁字母语言又共用后缀，不这样英语词典会被阿尔巴尼亚语 / 拉丁语
+/// 的规则查到 Our → O、One → On（反馈 WIZUEQx1fY）。这不是按语言过滤词典：精确命中
+/// 照旧查全部启用的词典，未标注语言的词典行为不变。
+Map<String, String> termDictLanguagesOf(List<DictPathEntry> entries) =>
+    <String, String>{
+      for (final DictPathEntry e in entries)
+        if (e.exists &&
+            !e.hidden &&
+            e.type == DictionaryType.term &&
+            e.language != null)
+          e.path: e.language!,
+    };
 
 /// 把词典分桶成 FFI 引擎要的四组 path（term/freq/pitch/kanji）的单一真相。
 ///

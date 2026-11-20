@@ -64,9 +64,38 @@ cd fushi
 flutter build apk --release --target-platform android-arm64 --split-per-abi
 ```
 
+### 新 worktree 第一次 flutter test（2026-11-20）
+
+`tool/setup_worktree.ps1` 在 bootstrap 之后跑 `fushi/tool/worktree_seed.dart` 的两步，都只影响速度，不影响结果；失败时打黄字、退出码原样报出，worktree 照常可用。
+
+- **以前那条「从兄弟 worktree 拷 `fushi/build/test_cache` 的 dill」预热已删除**：它从来没起作用。`test/flutter_test_config.dart` import 了 `package:fushi`，所以任何 fushi 测试编出的 dill 都带源 worktree 绝对路径下的 fushi/lib、packages/*、third_party/*。front_end（Dart 3.13.5 `incremental_compiler.dart` 的 `_initializeFromDill`）发现某个 `package:` 库的路径和本 worktree 的 package_config 对不上，就抛 `PackageChangedError`，被静默吞掉，然后**丢掉整份 dill 冷编**。旧注释里「只重编路径不同的库、复用 SDK 与 pub 部分」的说法是错的；每个 worktree 白拷约 680 MB，首编反而更慢（实测 86 s，冷编 72 s）。
+- **hook 下载产物**（`worktree_seed.dart hooks`）：pdfium_dart 0.2.5 和 sqlite3 3.5.2 的 build hook 原来在每个新 worktree 都从 GitHub 重下一遍（pdfium 约 17 s）。现在从全机缓存 `%LOCALAPPDATA%/fushi-heavy/hook-downloads/` 或兄弟 worktree 拷 `.dart_tool/hooks_runner/shared/` 下按内容寻址的文件：`sqlite3/build/download-*/` 和 `pdfium_dart/build/chromium_*/<平台>/`。只拷大于 0 字节、2 分钟内没再写过的文件，先写临时名再改名。input.json、hook.dill、依赖哈希这些写死了绝对路径的东西不拷。拷之前要校验内容：sqlite3 按目录名里的 sha256 前缀校验（它的 hook 自己还会再验一遍全量哈希）。pdfium 的 hook 只看文件存不存在，还是非原子写入，截断的库会一直到加载时才报错，所以**只拷 sha256 与钉值相符的文件**。钉值表在 `fushi/tool/worktree_seed/hook_downloads.dart`，覆盖 chromium_7811 的 13 个平台：先从上游 bblanchon/pdfium-binaries 下发布包，核对 GitHub 列出的 digest，再对包里的库算哈希；本机已有的 4 个平台（win-x64、android-arm/arm64/x64）文件与钉值一致。**pdfium_dart 升级、换了 chromium 版本号之后，钉值表要按同样的方法补**，否则 pdfium 不再复用（只是变慢，不会出错）。
+- **第三方库编译 seed**（`worktree_seed.dart kernel`）：全机缓存放在 `%LOCALAPPDATA%/fushi-heavy/test-seed/<key>/`，key 由 Flutter SDK 路径、framework / engine / Dart 版本、`pubspec.lock` 的 sha256、`fushi/pubspec.yaml` 的 version 算出，保留最近 4 个。缓存里有 seed 就**拷贝**（不能用硬链接：flutter test 会原地写回这个文件）成 `fushi/build/test_cache/build/<md5>.cache.dill.track.dill`；worktree 里已经有自己的编译缓存时不动。缓存里没有，就在当前 worktree 生成一份：
+  - 生成一个入口，只 import worktree 代码用到的第三方 `package:` 库。仓内包要排除，**依赖仓内包的第三方包也要排除**，例如 marquee 依赖仓内覆盖的 `third_party/fading_edge_scrollview`，带上它 dill 里就会混进 worktree 路径。
+  - 入口放在 `fushi/build/test_seed/`，那里没有 `flutter_test_config.dart`，flutter_tools 找配置找到包根就停。
+  - 经 `tool/heavy.dart` 用真实的 `flutter test` 编一次。编译参数就是 flutter_tools 自己的，不用手工复刻 frontend_server 参数。
+  - 校验 dill 里除入口和 `.dart_tool/` 外不含任何 worktree 路径，才存进缓存；生成期间加 `<key>.lock` 锁防并发。
+
+  正确性由 frontend_server 兜底：它会把 dill 里每个源文件和磁盘逐字节比对，变了的就重编，所以 seed 过期或不全只会慢、不会错。不想做这一步时加 `-SkipTestSeed`。
+- **实测**（2026-11-20，本机，同时有别的会话在跑测试，每格只测一两次，绝对秒数有噪声）。单条只 import flutter_test 的测试，新 worktree 第一次 `heavy flutter test -v`：
+
+  | setup 做了什么 | hooks | Compile | heavy 记的 ran |
+  |---|---|---|---|
+  | 旧版（拷兄弟 dill） | 21.7 s | 81.0 s | 112 s |
+  | 只删掉旧预热（冷编） | 23.0 s | 49.2 s | 79 s |
+  | 现在（hook 产物 + seed，缓存命中） | 2.6 s | 35.4 s | 46 s |
+
+  只比编译（同一个 worktree 清掉 test_cache 后重跑，hooks 已经是热的）：两个 worktree 各测一轮（第二轮顺序反过来）。只 import flutter_test 的测试：无 seed 43.6 s，有 seed 30.0 s / 29.5 s。import `package:fushi` 的组件测试 `test/widgets/fushi_card_focus_test.dart`：无 seed 42.6 s / 50.2 s，有 seed 30.0 s / 34.4 s。测试全部通过。缓存没命中时，setup 生成一次 seed 约 20～30 s（每个 key 全机只付一次），同时也把 hooks 和 unit_test_assets 跑掉了。
+- **没做 / 剩下的**：
+  - 剩下约 30 s 编的是 worktree 自己的代码（fushi/lib 约 2700 个库加 packages/*），front_end 按绝对路径认库，这部分跨 worktree 复用不了。要消掉得让 file URI 与 worktree 路径无关（multi-root scheme，要改 flutter_tools），没验证可行性。
+  - unit_test_assets 和 impellerc 那 5～11 s 按 mtime 判断新旧，不能跨 worktree 复用。
+  - seed 只服务 `fushi/` 的 flutter test，`packages/*` 各自的 `build/test_cache` 没有 seed。
+
 ### TODO-207 release channel invariants
 
 客户端按 stable / beta / debug 三个通道过滤 GitHub Release。stable 只看正式 Latest；beta/debug 扫描最近 releases，但只接受 tag 形如 `v<version>-beta.<seq>` / `v<version>-debug.<seq>+<short-sha>` 且 `prerelease=true` 的 release。旧的 `debug-<sha>` tag 不可比较，客户端会忽略。
+
+**数据库 schema 闸（2026-11-16）**：更新清单每个 asset 带 `dbSchemaVersion`（`tool/publish_update_manifest.sh` 从 `packages/fushi_core/lib/src/database/db_schema_version.dart` 的 `kFushiDbSchemaVersion` 抠出，`merge_update_manifest.py` 原样保留）。客户端选包时比本机 schema 低的 asset 一律跳过，不管发布序号 / 基版本怎么判——装上就是「库比程序新」、app 拒绝打开。所以调试版用户永远不会被推回 schema 更旧的正式版。schema 版本号只在那个常量里改；改写法要同步脚本里的 sed 正则（守卫 `fushi/test/utils/misc/update_checker_db_schema_guard_test.dart`）。
 
 debug 通道发布的是 release-signed debug-channel APK：文件名保留 `-debug.apk` 供客户端过滤，APK 使用 release keystore、写入 `versionName=<version>-debug.<seq>` 和单调 `versionCode`（公式见下「版本号与 build number」），用于覆盖正式签名包并让同一平台后续 debug/beta/formal release 仍可比较。debug push 仍必须是 prerelease / non-Latest，绝不能创建或更新 formal / Latest。
 
@@ -122,8 +151,20 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 
 - CI：`main.yml` 的 `build` job 在 PR 改到 Android / 原生 / 插件 / pubspec（与 R8 校验同一个路径门）时跑
   `./gradlew :app:testDebugUnitTest`，红就判红；守卫 `fushi/test/build/android_jvm_unit_tests_ci_guard_test.dart`。
-- 本地定向跑（先在 `fushi/` 下 `flutter pub get` + `flutter build apk --config-only` 生成插件注册与
-  `local.properties`），在 `fushi/android/` 下走租约：
+- **新 worktree 里直接能跑（2026-11-20）**：gradle wrapper（`fushi/android/gradlew`、`gradlew.bat`、
+  `gradle/wrapper/gradle-wrapper.jar`，取自 Flutter 3.47.6 的 `bin/cache/artifacts/gradle_wrapper`）入库，不再靠
+  `flutter build apk` 现生成；`checkFushi{Compute,Rwkv,Music,Corpus}Native` 从 `preBuild` 挪到
+  `merge<Variant>JniLibFolders`（把 .so 收进包的任务），所以 JVM 单测与纯编译任务不要求本机有 Android 预编译
+  `.so`，出 APK / AAB 的任务缺库照旧失败。守卫 `fushi/test/build/android_gradle_runs_in_fresh_checkout_guard_test.dart`
+  与四个 `fushi_*_hard_dependency_guard_test.dart`。起因与数据见 [heavy-lease.md](heavy-lease.md)。
+- **出包任务缺 Android `.so` 时自己备（2026-11-20）**：四个 check 之前先跑 `ensureFushiAndroidNative`，缺库且在
+  Windows 上就调 `tool/native_libs.ps1 -Android -Abis <本次要出的 ABI>`：本地戳记 → 本机缓存
+  `%LOCALAPPDATA%\fushi-native-cache`（`FUSHI_NATIVE_CACHE` 可改，每个产物留最近 4 棵源码树）→ 兄弟 worktree →
+  `build_android_so.ps1` 现编（要 cargo-ndk 与 NDK 28.2.13676358），编完进缓存。同一份 `native/<crate>` 源码一台机器
+  只编一次，之后每个新 worktree 是拷贝。也可以手动先跑那条命令。库已齐（CI 出包前自己编）时不做任何事；
+  `native/<crate>` 有未提交改动时按工作区源码编、不进缓存；非 Windows 主机不代劳，check 照旧报错说明怎么编。
+  只管「缺」不管「旧」：库在但源码之后改过时不会自动重编，手动跑 `tool/native_libs.ps1 -Android` 会按戳记重编。
+- 本地定向跑（先在 `fushi/` 下 `flutter pub get` 生成插件注册与 `local.properties`），在 `fushi/android/` 下走租约：
   `dart ../tool/heavy.dart --check-only -- .\gradlew.bat :app:testDebugUnitTest --tests app.fushi.reader.CrossAppAudioPolicyTest`。
 - 测试类路径上的 `android.jar` 全是抛 `Stub!` / "not mocked" 的桩，也没有 Robolectric：要单测的逻辑抽成不碰 Android
   类的纯 Java（例：`CrossAppAudioPolicy`、`AnkiChannelHandler.runsOnMainThread`），别让被测类的静态初始化里出现
@@ -217,7 +258,20 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
   系统托管、上限随用随涨），单个 rustc 只占约 1.5 GB，大头是别的进程（一个与本仓无关的 Python 推理进程 46 GB、58 个
   claude 进程合计 26 GB）。第三次同样的命令在负载回落后两份库都编过了。处置：先看任务管理器「性能 → 内存 → 已提交」，
   离上限近就等其他重负载结束或调大页面文件再编；同样不加重试。
-- 旧分支 / 还没合到这份配置的 worktree：本机 `~/.cargo/config.toml` 里放同一段 `[profile.quick]` 即可（Windows 开发机已放）；
+- **改一行重编的时间花在哪**（2026-11-17，rustc 1.95，fushi_fsrs `cargo test --profile quick --lib --no-run`，
+  `RUSTC_WORKSPACE_WRAPPER` 给本 crate 加 `-Ztime-passes`，依赖不受影响；机器上同时有别的会话占满 CPU）：rustc 本体每次
+  15～17 秒，其中宏展开（`expand_crate`，整个 crate 每次重做、不走增量）3.3～4.4 秒、codegen 约 2.8 秒、写增量缓存
+  （`serialize_dep_graph`）1.7～2.6 秒、链接（`run_linker`）link.exe 2.0～3.0 秒 / rust-lld 0.9～2.0 秒，其余是类型检查等
+  查询。cargo 自身的空跑开销 0.4～0.5 秒。**端到端计时在这台机器上不可信**：同一操作在别的会话占满 CPU 时 14～50 秒乱跳，
+  比任何配置差异都大，比较配置要看 `-Ztime-passes` 的分项。
+  - **链接器不换**：rust-lld 每次省约 1 秒（约 6%），但链接器只能按 target 配，不能只给 `quick`——会连带改掉出包的
+    cdylib / staticlib 和 CI 的 Windows 构建，收益配不上这个风险。
+  - **Defender 实时扫描在本机是关的，但卡巴斯基（Kaspersky Internet Security 21.x，服务 `AVP21.26`）开着**，它的文件过滤
+    驱动对每次开文件都生效（增量缓存、`.rlib`、链接产物都在其中）。排除目录要在卡巴斯基界面里由机主手动加
+    （worktree 根、`~/.cargo`、`~/.rustup`、各 target 目录），命令行改不了；加了以后用上面的分项方法复测
+    `serialize_dep_graph` / `run_linker` 再下结论。
+- 旧分支 / 还没合到这份配置的 worktree：本机 `~/.cargo/config.toml` 里放同一段 `[profile.quick]` 即可（Windows 开发机
+  2026-11-17 补上——此前文档写「已放」，实际文件不存在，旧分支上 `--profile quick` 会直接报找不到 profile）；
   `[env]` 那一段只能跟仓库走（要按 worktree 解析路径），旧分支没有。
 
 ## 发布通道
@@ -373,6 +427,22 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - macOS 走 **Developer ID + 公证**，不进 Mac App Store：`Release.entitlements` 已刻意
   去沙盒以支持应用内自动更新替换 `/Applications/fushi.app`，商店强制沙盒，两者不可兼得。
 
+### Android 崩溃 / ANR 的 Dart 符号（2026-11-21，BUG-4955）
+
+- Android 上 gen_snapshot 不 strip，`fushi/build/app/intermediates/flutter/release/<abi>/app.so` 是带
+  `.symtab` + `.debug_info` + `.debug_line` 的完整 ELF，AGP 打包时才 strip 成 APK 里的 `lib/<abi>/libapp.so`（build-id 不变）。
+  `release.yml` 每次 `flutter build apk --release` 之后用 `fushi/tool/android_dart_symbols.sh stash <target-platform>`
+  收这份 ELF（逐 ABI 出包要逐次收：换 target-platform 重编会清掉上一份），出包后 `verify` 核对每个 release APK
+  的 libapp.so build-id 与收到的一致，按发布序号上传 artifact `android-dart-symbols-<序号>`（正式 / 测试版 90 天、
+  debug 通道 14 天，`continue-on-error`、不进 Release 资产）。守卫 `fushi/test/build/android_dart_symbols_guard_test.dart`。
+- **不用 `--split-debug-info`**：它连带 `--dwarf-stack-traces`，会把 app 内的 Dart 栈改成 DWARF 形式，诊断日志的
+  `ui_activity_probe` 调用点归因（`who=` / `fcb=`）与反馈里的符号化栈全部退化。这里运行时零改动。
+- **还原**：ANR / tombstone 栈里 `base.apk (offset …) (???) (BuildId: <id>)` 的帧就是 libapp.so，`pc` 是相对 libapp.so
+  装载基址的偏移（Dart ELF 的 vaddr 从 0 起）。按报告的版本 / 构建号下载 artifact
+  （`gh run download <run-id> -n android-dart-symbols-<序号>`），先 `readelf -n <abi>/app.so` 核对 Build ID 与报告一致，再
+  `llvm-symbolizer --obj=arm64-v8a/app.so 0x05cbbc30 0x0249c48c …`（NDK 的 `toolchains/llvm/prebuilt/*/bin/` 里有）
+  得到 Dart 函数名与 `文件:行`。
+
 ### iOS 包体积与崩溃符号（2026-11-15）
 
 - **slang 不生成 flat map**（`fushi/slang.yaml` 的 `flat_map: false`，BUG-4640）：17 个
@@ -512,6 +582,24 @@ Linux 静态 torrent bridge。规则：
   件上；save 只排在这些校验之后。
 - 守卫 `fushi/test/build/native_store_names_single_source_guard_test.dart` 钉死以上几条（含
   「PR 门 restore 的每个件都有同 runner、同 CC/CXX 的 develop 生产方」）。
+
+## PR 主门分层：快门每推必跑，全量按需 / 合并后跑（2026-11-18）
+
+**起因（实测）**：近 3 天 `main.yml`（Build Android APK）占全仓 runner 分钟的 59%，把并发槽顶满——Linux job 排队 p75 29 分钟、p90 56 分钟；一次 PR 运行真正干活约 50 分钟，墙钟中位数 102 分钟、p90 199 分钟，被后一次 push 取消而白烧 2394 分钟。近 7 天各会话为等 CI 纯空等约 27 小时（平均每次 67 分钟）。而 PR 上这份全量，`develop` 每次 push 的 `release.yml` 本来就再跑一遍。
+
+**现在的形态**（`main.yml` 的 `plan` job 决定，判据写在它的注释里）：
+
+| 层 | 跑什么 | 什么时候 |
+|---|---|---|
+| 快门 | `build`：analyze + JS 测试（`packages/` 有改动时加包测试）；`affected-tests`：目录枚举守卫整批 + 路径字面量点名的守卫 + 直接 import 改动库的测试 + 改动的测试文件 | 进 `develop` 的 PR，每次 push |
+| 全量 | `unit-tests` 4 片 + 包测试 + R8 / JVM 校验 | 改了原生 / Android / 插件集合 / pubspec / `fushi/tool/` / workflow 自身；进 `main` 的 PR；fork PR；带 `full-ci` 标签；手动 dispatch；改动清单取不到 |
+| 合并后 | `release.yml` 的 4 片单测 + analyze + 包测试 | `develop` / `main` 每次 push（一直如此） |
+
+- **要在某条分支上跑全量**：`gh workflow run main.yml --ref <分支>`（结果挂在同一个 head commit 上，PR 页看得到）；或先给 PR 打 `full-ci` 标签再 push（标签在 push 时读，打完标签不会自动重跑）。
+- **快门不是完备的**：只经传递依赖受影响的测试它选不到。回放最近 80 个已合并 PR，按传递 import 闭包选会选中 1400～3000 个测试文件（import 图里有大环），等于全量，所以不做。这类回归在合并后的 `develop` 上由 `release.yml` 暴露，红了按根因修——这正是「批量合并不逐条等 PR CI，合完看 `develop` 尖端」那条规则本来的做法。
+- 选测与本地预检 `fushi/tool/pre_push_check.dart` 是同一份实现：从选测里删一条规则，等于从 PR 门里删。CI 上放开了 hub 上限（本地默认跳过「被 40 个以上测试 import 的库」）。
+- 回放最近 80 个已合并 PR：72 个会触发主门，其中 50 个走快门、22 个走全量。
+- 守卫：`fushi/test/build/pr_tiered_gate_guard_test.dart`（两层互斥、判不出来一律全量、全量 pattern 是 R8 门的超集、合并后的全量兜底还在）。
 
 ## PR 平台 job 的路径门（2026-09-30）
 

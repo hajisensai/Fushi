@@ -16,9 +16,14 @@ final Uint8List _png = base64Decode(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
 );
 
+/// 顶栏页名的不透明度。#3515 起二级页 [FushiPageScaffold] 默认走 masthead 页头：
+/// `revealTitleAfterScroll` 映射成「正文自带大标题、页名滚过该偏移后淡入」，页名
+/// 包在一层 [Opacity] 里（不再是旧页头的 `fushi_page_header_title_fade`）。
 double _titleOpacity(WidgetTester tester) => tester
-    .widget<AnimatedOpacity>(
-      find.byKey(const ValueKey<String>('fushi_page_header_title_fade')),
+    .widget<Opacity>(
+      find
+          .ancestor(of: find.text(_title), matching: find.byType(Opacity))
+          .first,
     )
     .opacity;
 

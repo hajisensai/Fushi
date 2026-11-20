@@ -466,6 +466,18 @@ void main() {
       expect(feature.sidePanelOpenFor(tab), isFalse);
     });
 
+    test('全屏分屏自动拉开字幕侧栏、离开时收回；用户自己开的不收', () async {
+      feature.onFullscreenSplitChanged(tab, split: true);
+      expect(feature.sidePanelOpenFor(tab), isTrue);
+      feature.onFullscreenSplitChanged(tab, split: false);
+      expect(feature.sidePanelOpenFor(tab), isFalse);
+
+      feature.openSidePanel(tab);
+      feature.onFullscreenSplitChanged(tab, split: true);
+      feature.onFullscreenSplitChanged(tab, split: false);
+      expect(feature.sidePanelOpenFor(tab), isTrue, reason: '用户开的侧栏留着');
+    });
+
     test('沉浸样本登记视频在播（无痕页不登记）', () async {
       await feature.handleCall(tab, <String, dynamic>{
         'op': 'message',

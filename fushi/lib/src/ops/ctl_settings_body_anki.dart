@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:fushi/src/anki/anki_deck_reposition.dart';
 import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
 import 'package:fushi/src/anki/anki_settings_actions.dart';
+import 'package:fushi/src/anki/anki_video_template_error_text.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankiconnect_port_repair.dart'
     show AnkiConnectPortWriteStatus;
@@ -27,6 +28,7 @@ import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_cli/fushi_cli.dart' show CtlFailure;
 import 'package:fushi_dictionary/fushi_dictionary.dart' show FrequencyAggregate;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show
@@ -1737,6 +1739,23 @@ Future<Object?> _dedupRun(SettingsContext c, Map<String, String> args) async {
 
 // 视频模板 ────────────────────────────────────────────────────────────────────
 
+/// 视频模板服务按错误码拒绝（[AnkiVideoTemplateException]）时，回给 ctl / AI 通道的
+/// 失败：409 + 当前界面语言的整句文案；只有「字段名不合法」是调用方参数的问题，回 400。
+///
+/// 服务以前抛的是带中文句子的 `StateError` / `ArgumentError`，由 `guardSettingsCliInput`
+/// 映射成 409 / 400；改成带码异常后那层认不出它，不在这里接就会落成 500 internal 和
+/// 一个码名，AI 会把「先去映射句子音频」这类可纠正的前置条件当成内部故障。
+Future<T> guardCtlAnkiVideoTemplate<T>(Future<T> Function() body) async {
+  try {
+    return await body();
+  } on AnkiVideoTemplateException catch (e) {
+    final String message = describeAnkiVideoTemplateError(e);
+    throw e.code == AnkiVideoTemplateErrorCode.invalidField
+        ? CtlFailure.badRequest(message)
+        : CtlFailure.conflict(message);
+  }
+}
+
 Future<(AnkiNoteTypeDefinition, AnkiNoteType)> _readVideoTemplateTarget(
   SettingsContext c,
 ) async {
@@ -1754,6 +1773,11 @@ Future<(AnkiNoteTypeDefinition, AnkiNoteType)> _readVideoTemplateTarget(
 }
 
 Future<Object?> _videoTemplateApply(
+  SettingsContext c,
+  Map<String, String> args,
+) => guardCtlAnkiVideoTemplate(() => _videoTemplateApplyBody(c, args));
+
+Future<Object?> _videoTemplateApplyBody(
   SettingsContext c,
   Map<String, String> args,
 ) async {
@@ -1800,7 +1824,9 @@ Future<Object?> _videoTemplateApply(
 Future<Object?> _videoTemplateRestore(
   SettingsContext c,
   Map<String, String> args,
-) async {
+) => guardCtlAnkiVideoTemplate(() => _videoTemplateRestoreBody(c));
+
+Future<Object?> _videoTemplateRestoreBody(SettingsContext c) async {
   final (AnkiNoteTypeDefinition definition, AnkiNoteType _) =
       await _readVideoTemplateTarget(c);
   final AnkiViewModel vm = _vm(c);

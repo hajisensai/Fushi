@@ -8,7 +8,7 @@
 /// ```
 /// fushi_server ctl status
 /// fushi_server ctl logs
-/// fushi_server ctl pairing [ls] | pairing revoke <peerId> | pairing owner <peerId> on|off
+/// fushi_server ctl pairing [ls] | pairing link | pairing revoke <peerId> | pairing owner <peerId> on|off
 /// fushi_server ctl libraries [ls] | libraries add <path> [--kind video|book|manga|audiobook] [--id x]
 ///                                 | libraries rm <id> [--purge]
 /// fushi_server ctl scan [--prune | --no-prune]
@@ -220,6 +220,7 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
   status                                   运行状态
   logs [-f|--follow]                       最近日志（-f 持续跟随）
   pairing [ls] | revoke <peerId>           已配对设备 / 待确认 PIN
+  pairing link                             出一次性配对链接（对端 `fushi_cli peer pair <链接> --yes`）
   pairing owner <peerId> on|off            标记 / 取消「我的设备」（可跟随本机排行榜账户自动登录）
   libraries [ls] | add <path> [--kind video|book|manga|audiobook] [--id x] | rm <id> [--purge]
   scan [--prune|--no-prune]                触发一次库扫描（后台进行）
@@ -245,9 +246,11 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
                                            复习库内容；冲突处理 / 重复合并 / 批量改笔记见 `srs help`
   srs add|remove|default <uid> | off       提供哪几份 profile（off = 全部不提供）
   srs sync [<uid>] | ankiconnect on|off    立即同步 / AnkiConnect 监听（默认关）
-  srs config '<json>'                      其余配置（rolloverHour、miningTarget、miningDecks、rwkvModel、ankiConnect…）
+  srs config '<json>'                      其余配置（rolloverHour、miningTarget、miningDecks、profileNames、rwkvModel、ankiConnect…）
   srs devices [<uid>]                      还没信任的复习同步设备（扣着的删除 / 彻底清除）
   srs trust|reject <设备 ID> [<uid>]       信任（扣着的立即生效）/ 拒绝（继续扣着）一台设备
+  srs migration [status] | start | cancel  复习库换代（协议 3 → 新代）：状态与处置说明 / 开始或重跑 / 叫停
+  srs retained [status] | delete --yes     旧版本保留副本：状态 / 立即删除（不可撤销）
   profiles [ls] | share|rm <id>
   backup [ls] | create [--no-documents] | rm <name>
                                            整机备份（落 <data>/backups/；下载走
@@ -268,6 +271,7 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
   status                                   Run status
   logs [-f|--follow]                       Recent logs (-f keeps following)
   pairing [ls] | revoke <peerId>           Paired devices / pending PINs
+  pairing link                             Issue a one-time pairing link (peer: `fushi_cli peer pair <link> --yes`)
   pairing owner <peerId> on|off            Mark / unmark "my device" (may follow the local leaderboard account for auto sign-in)
   libraries [ls] | add <path> [--kind video|book|manga|audiobook] [--id x] | rm <id> [--purge]
   scan [--prune|--no-prune]                Trigger a library scan (runs in the background)
@@ -293,9 +297,11 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
                                            Review library contents; see `srs help` for conflicts / duplicate merge / batch edits
   srs add|remove|default <uid> | off       Which profiles to provide (off = provide none)
   srs sync [<uid>] | ankiconnect on|off    Sync now / AnkiConnect listener (off by default)
-  srs config '<json>'                      Other settings (rolloverHour, miningTarget, miningDecks, rwkvModel, ankiConnect...)
+  srs config '<json>'                      Other settings (rolloverHour, miningTarget, miningDecks, profileNames, rwkvModel, ankiConnect...)
   srs devices [<uid>]                      Review sync devices not trusted yet (their held deletes / purges)
   srs trust|reject <device id> [<uid>]     Trust (held changes apply now) / reject (keep holding) a device
+  srs migration [status] | start | cancel  Review library upgrade (protocol 3 -> current): state and advice / start or rerun / stop
+  srs retained [status] | delete --yes     Old-version retained copy: state / delete now (cannot be undone)
   profiles [ls] | share|rm <id>
   backup [ls] | create [--no-documents] | rm <name>
                                            Whole-machine backup (stored in <data>/backups/; download via
@@ -805,6 +811,12 @@ _CtlRequest? _parseAction(
             '$_api/pairing',
             render: _renderPairing,
           );
+        case 'link':
+          return const _CtlRequest(
+            'POST',
+            '$_api/pairing/link',
+            render: _renderPairLink,
+          );
         case 'revoke' when arg(0) != null:
           return _CtlRequest(
             'DELETE',
@@ -818,7 +830,8 @@ _CtlRequest? _parseAction(
           );
       }
       return usage(
-        'pairing [ls] | pairing revoke <peerId> | pairing owner <peerId> on|off',
+        'pairing [ls] | pairing link | pairing revoke <peerId> | '
+        'pairing owner <peerId> on|off',
       );
 
     case 'libraries':
@@ -1136,6 +1149,18 @@ _CtlRequest? _parseAction(
             query: arg(0) == null ? null : <String, String>{'profile': arg(0)!},
             render: _renderSrsDevices,
           );
+        case 'migration' when arg(0) == null || arg(0) == 'status':
+          return const _CtlRequest(
+            'GET',
+            '$_api/srs/migration',
+            render: _renderSrsMigration,
+          );
+        case 'migration' when arg(0) == 'start' || arg(0) == 'cancel':
+          return _CtlRequest(
+            'POST',
+            '$_api/srs/migration/${arg(0)}',
+            render: _renderSrsMigration,
+          );
         case 'trust' || 'reject' when arg(0) != null:
           return _CtlRequest(
             'POST',
@@ -1151,7 +1176,8 @@ _CtlRequest? _parseAction(
       return usage(
         'srs [status] | srs profiles | srs add|remove|default <uid> | srs off | '
         "srs sync [<uid>] | srs ankiconnect on|off | srs config '<json>' | "
-        'srs devices [<uid>] | srs trust|reject <device> [<uid>]',
+        'srs devices [<uid>] | srs trust|reject <device> [<uid>] | '
+        'srs migration [status|start|cancel]',
       );
 
     case 'profiles':
@@ -1315,6 +1341,23 @@ void _renderLogs(Object? response, StringSink out) {
   }
 }
 
+/// `pairing link`：一行链接 + 有效期，链接单独成行方便复制 / 管道。
+void _renderPairLink(Object? response, StringSink out) {
+  if (response is! Map || response['uri'] == null) {
+    return _renderGeneric(response, out);
+  }
+  out.writeln(response['uri']);
+  final Object? ttl = response['expiresInSeconds'];
+  if (ttl is num) {
+    out.writeln(
+      tr(
+        '（${ttl.toInt()} 秒内有效，只能用一次）',
+        '(valid for ${ttl.toInt()} s, single use)',
+      ),
+    );
+  }
+}
+
 void _renderPairing(Object? response, StringSink out) {
   if (response is! Map) return _renderGeneric(response, out);
   final Object? pending = response['pending'];
@@ -1329,6 +1372,39 @@ void _renderPairing(Object? response, StringSink out) {
     );
   }
   _listRenderer('peers')(response, out);
+}
+
+/// `srs migration [status|start|cancel]`：代际状态、步骤进度、上次结论与处置说明，再列各份 profile 的状态。
+void _renderSrsMigration(Object? response, StringSink out) {
+  final Object? g = response is Map ? response['generation'] : null;
+  if (g is! Map) return _renderGeneric(response, out);
+  out.writeln(
+    '${tr('状态', 'State')}: ${g['state']}'
+    '${g['code'] == null ? '' : ' (${g['code']})'}',
+  );
+  if (g['step'] != null) {
+    out.writeln(
+      '${tr('步骤', 'Step')}: ${g['step']} ${g['done']}/${g['total']}'
+      '${g['cancelRequested'] == true ? tr('（已请求叫停）', ' (cancel requested)') : ''}',
+    );
+  }
+  if (g['verdict'] != null) {
+    out.writeln(
+      '${tr('上次结论', 'Last verdict')}: ${g['verdict']}'
+      '${g['finishedAt'] == null ? '' : '  ${g['finishedAt']}'}',
+    );
+  }
+  if (g['reason'] != null) out.writeln('${tr('原因', 'Reason')}: ${g['reason']}');
+  if (g['reportPath'] != null) {
+    out.writeln('${tr('报告', 'Report')}: ${g['reportPath']}');
+  }
+  if (g['advice'] != null) out.writeln('${tr('处置', 'Advice')}: ${g['advice']}');
+  final Object? profiles = response is Map ? response['profiles'] : null;
+  if (profiles is List) {
+    for (final Object? p in profiles) {
+      if (p is Map) out.writeln('  ${p['uid']}  [${p['state']}]');
+    }
+  }
 }
 
 /// `srs devices` / `srs trust|reject`：每份 profile 一段，还没信任的设备一行一台。

@@ -94,11 +94,16 @@ void main() {
       ).readAsStringSync();
       final String body = _methodBody(src, 'Future<void> addSource()');
       expect(body, isNotEmpty, reason: '来源视图必须保留公开的 addSource 入口');
-      expect(body, contains('showAppDialog<_AddSourceChoice>'));
+      expect(body, contains('showImportChoiceDialog<_AddSourceChoice>'));
       expect(body, contains('await addLocalFolder()'));
+      // 网络传输集只在 import_surface_spec.dart 定义一次（BUG-4858 / IM10）。
       expect(
-        src,
-        contains("const <String>['sftp', 'webdav', 'alist']"),
+        File(
+          'lib/src/media/import/import_surface_spec.dart',
+        ).readAsStringSync(),
+        contains(
+          "'video' || 'music' => const <String>['sftp', 'webdav', 'alist']",
+        ),
         reason: '视频网络 transport 必须收窄到可原地流播的 SFTP/WebDAV/AList',
       );
     });

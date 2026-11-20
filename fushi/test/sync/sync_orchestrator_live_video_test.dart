@@ -12,6 +12,8 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show RemoteVideoInfo;
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
@@ -25,9 +27,23 @@ import 'package:path/path.dart' as p;
 FushiDatabase _memDb() =>
     FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
+/// 数 host 视频清单被取了几次（gap-remote-8）。
+class _CountingBackend extends InterconnectSyncBackend {
+  _CountingBackend() : super.withProbe((String u, String t) async => true);
+
+  int listVideoCalls = 0;
+
+  @override
+  Future<List<RemoteVideoInfo>> listRemoteVideos() {
+    listVideoCalls++;
+    return super.listRemoteVideos();
+  }
+}
+
 Future<InterconnectSyncBackend> _buildClientBackend({
   required String base,
   required String token,
+  InterconnectSyncBackend? instance,
 }) async {
   final FushiDatabase db = _memDb();
   final SyncRepository repo = SyncRepository(db);
@@ -35,9 +51,9 @@ Future<InterconnectSyncBackend> _buildClientBackend({
     FushiClientUrl(url: base, enabled: true),
   ]);
   await repo.setFushiClientToken(token);
-  final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
-    (String u, String t) async => true,
-  );
+  final InterconnectSyncBackend backend =
+      instance ??
+      InterconnectSyncBackend.withProbe((String u, String t) async => true);
   await backend.restoreAuth(repo);
   await backend.authenticate(repo: repo);
   return backend;
@@ -210,5 +226,108 @@ void main() {
 
     expect(await hostDb.allVideoBooks(), isEmpty);
     expect(report.videosExported, 0);
+  });
+
+  test('host 已有的视频本地文件不在（盘没挂）：不报错；host 没有的才报', () async {
+    final FushiDatabase localDb = _memDb();
+    addTearDown(localDb.close);
+
+    final File uploaded = File(p.join(work.path, 'uploaded.mp4'))
+      ..writeAsBytesSync(<int>[1, 2, 3, 4]);
+    await localDb.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'video/uploaded',
+        title: 'Uploaded',
+        videoPath: uploaded.path,
+      ),
+    );
+    final InterconnectSyncBackend backend = await _buildClientBackend(
+      base: base,
+      token: token,
+    );
+    final SyncRunReport first = await _orchestrator(
+      db: localDb,
+      backend: backend,
+      tmp: work,
+    ).run();
+    expect(first.videosExported, 1);
+
+    // 盘被拔掉：早就传过的那一项文件不在了；另有一项从没传过、文件同样不在。
+    uploaded.deleteSync();
+    await localDb.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'video/never',
+        title: 'Never',
+        videoPath: p.join(work.path, 'never.mp4'),
+      ),
+    );
+    final SyncRunReport second = await _orchestrator(
+      db: localDb,
+      backend: backend,
+      tmp: work,
+    ).run();
+
+    final List<String> missing = <String>[
+      for (final String e in second.errors)
+        if (e.contains('local file missing')) e,
+    ];
+    expect(missing, hasLength(1), reason: second.errors.join('\n'));
+    expect(missing.single, contains('"Never"'));
+    expect(second.videosExported, 0);
+    expect(
+      (await hostDb.allVideoBooks()).map((VideoBookRow v) => v.bookUid),
+      <String>['video/uploaded'],
+    );
+  });
+
+  test('一轮里没向 host 推任何东西：host 视频清单只取一次；推过或清单超龄则重取', () async {
+    final FushiDatabase localDb = _memDb();
+    addTearDown(localDb.close);
+
+    final File localVid = File(p.join(work.path, 'movie.mp4'))
+      ..writeAsBytesSync(<int>[1, 2, 3, 4, 5, 6, 7, 8]);
+    await localDb.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'video/movie',
+        title: 'Movie',
+        videoPath: localVid.path,
+      ),
+    );
+    final _CountingBackend backend = _CountingBackend();
+    await _buildClientBackend(base: base, token: token, instance: backend);
+
+    // 第一轮推了视频：进度阶段要上传之后的清单（刚推上去的这一项本轮就要对上），
+    // 所以取两次。
+    final SyncRunReport first = await _orchestrator(
+      db: localDb,
+      backend: backend,
+      tmp: work,
+    ).run();
+    expect(first.videosExported, 1);
+    expect(backend.listVideoCalls, 2);
+
+    // 第二轮无事可推：文件阶段取的那份就是现状，进度阶段不再取。
+    backend.listVideoCalls = 0;
+    final SyncRunReport second = await _orchestrator(
+      db: localDb,
+      backend: backend,
+      tmp: work,
+    ).run();
+    expect(second.videosExported, 0);
+    expect(second.errors, isEmpty, reason: second.errors.join('\n'));
+    expect(backend.listVideoCalls, 1);
+
+    // 第三轮同样无事可推，但文件阶段拖得久（盘在唤醒）、那份清单已经超龄：
+    // 进度的三方判定要 host 当下的断点，重取。
+    backend.listVideoCalls = 0;
+    final SyncOrchestrator stale = _orchestrator(
+      db: localDb,
+      backend: backend,
+      tmp: work,
+    )..hostVideoListReuseMaxAge = const Duration(microseconds: -1);
+    final SyncRunReport third = await stale.run();
+    expect(third.videosExported, 0);
+    expect(third.errors, isEmpty, reason: third.errors.join('\n'));
+    expect(backend.listVideoCalls, 2);
   });
 }

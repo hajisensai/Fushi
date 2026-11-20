@@ -79,19 +79,48 @@ void main() {
   });
 
   group('TODO-773 P0：分页版 getFirstVisibleCharOffset 三失败出口必有扫描兜底', () {
-    test('三个失败分支全部回退 firstVisibleCharOffsetByScanPaged（不得裸 return -1）', () {
-      // 三处 `return this.firstVisibleCharOffsetByScanPaged()` 分别对应：
-      // caret 返 null / 探点落在元素上（BUG-2492：不再取元素子树首个文本节点）/
-      // nodeStartOffsets 未建。
-      final int fallbacks = 'return this.firstVisibleCharOffsetByScanPaged();'
-          .allMatches(pagedGetFirst)
-          .length;
+    test('失败出口统一回退 firstVisibleCharOffsetByScanPaged（不得裸 return -1）', () {
+      // 三个失败出口：caret 返 null / 探点落在元素上（BUG-2492：不再取元素子树首个文本
+      // 节点）/ nodeStartOffsets 基址缺失。旧守卫数「函数体内恰好 3 次
+      // `return this.firstVisibleCharOffsetByScanPaged();`」，等于把三份逐出口内联的重复
+      // 函数体钉死（页尾探点 _charOffsetAtPoint 里还有同一段的第二份）。三出口的**行为**
+      // 现由 paged_first_visible_scan_axis_behavior_test 用 Node 真跑分页 shell 逐个断言
+      // （第 4 步 4a～4d），这里只留结构不变式：caret 探点走 textOnly 的
+      // _charOffsetAtPoint（元素落点算失败），其 null 一律换成几何扫描兜底。
       expect(
-        fallbacks,
-        equals(3),
+        pagedGetFirstCode.contains(
+          'var caret = this._charOffsetAtPoint(x, y, true);',
+        ),
+        isTrue,
         reason:
-            '分页版三个失败出口都必须回退 firstVisibleCharOffsetByScanPaged，'
+            '分页页首探点必须以 textOnly 调 _charOffsetAtPoint：探点落在元素上时'
+            '取子树首个文本节点会算出章首附近的假偏移（BUG-2492）',
+      );
+      expect(
+        pagedGetFirstCode.contains(
+          'return caret ? caret.offset : this.firstVisibleCharOffsetByScanPaged();',
+        ),
+        isTrue,
+        reason:
+            '分页版的失败出口都必须回退 firstVisibleCharOffsetByScanPaged，'
             '否则竖排页顶 ruby/图片 caret 返 null → -1 → 跳过 commit → 切样式漂移',
+      );
+      final String helper = maskJsComments(
+        _functionSource(
+          source,
+          '  _charOffsetAtPoint: function(x, y, textOnly) {',
+          '\n  _caretCharCoversPoint: function(',
+        ),
+      );
+      expect(
+        helper.contains('if (textOnly) return null;'),
+        isTrue,
+        reason: 'textOnly 下探点落在元素上必须报失败（BUG-2492）',
+      );
+      expect(
+        helper.contains('return -1'),
+        isFalse,
+        reason: '_charOffsetAtPoint 的失败一律是 null，由调用方决定降级路径',
       );
     });
 

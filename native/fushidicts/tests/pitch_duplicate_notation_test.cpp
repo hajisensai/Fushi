@@ -126,7 +126,9 @@ bool query_single_entry(const char* title, const std::string& meta_bank,
       {"term_meta_bank_1.json", meta_bank},
   };
 
-  std::string zip_path = fushi_test::write_zip(out_suffix.c_str(), files);
+  // zip 名带 dup_ 前缀：裸 "ipa" 与 ipa_import_query_test 的 hoshi_ipa.zip 撞名，ctest -j
+  // 并行时一边写一边读，偶发「could not write fixture zip」。
+  std::string zip_path = fushi_test::write_zip(("dup_" + out_suffix).c_str(), files);
   if (zip_path.empty()) {
     fail("could not write fixture zip");
     return false;

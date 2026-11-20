@@ -32,6 +32,9 @@ import 'package:fushi_core/fushi_core.dart';
 ///   [CollectionRuleOrder]（本机书名 → 卷号，见 [loadBookSeriesRuleOrder]）给合并
 ///   结果定规则序。书的 wire 成员键不带书名，只能由持有书架的一端解；本机解不了
 ///   （有本机没有的书 / 混了外传）就保持 LWW 结果。
+/// - **成员 pinned**（v159，AI 库管家设计稿 §7）：「用户亲手放进来、AI 不再移出」
+///   随成员条目走，合并取或（单调只升不降），缺字段按 false；成员被移出后跟着成员
+///   一起消失，用户再加回来重新置位。
 /// - **合集删除墓碑**（deletedAt，清单 entry 级）防复活；与成员墓碑同一基线
 ///   规则：晚于基线 ⇒ 删除生效；早于基线且对端活着 ⇒ 对端重建了，合集复活。
 class CollectionSyncEngine {
@@ -337,7 +340,13 @@ class CollectionSyncEngine {
         name: l.name,
         collectionType: l.collectionType,
         orderUpdatedAt: mergedOrderUpdatedAt,
-        members: _reindexed(orderedAlive),
+        // v159 pinned 取或（单调，只升不降）：任一侧说了就是。
+        members: _reindexed(orderedAlive, <String>{
+          for (final String mk in orderedAlive)
+            if ((l.membersByKey[mk]?.pinned ?? false) ||
+                (r.membersByKey[mk]?.pinned ?? false))
+              mk,
+        }),
         memberTombstones: <CollectionMemberTombstone>[
           for (final MapEntry<String, _Tomb> e in mergedTombstones.entries)
             CollectionMemberTombstone(
@@ -383,7 +392,7 @@ class CollectionSyncEngine {
       members: _reindexed(<String>[
         for (final CollectionMemberKey m in ordered)
           _memberKey(m.mediaType, m.entryKey),
-      ]),
+      ], _pinnedKeys(e.members)),
       memberTombstones: e.memberTombstones,
       tagNames: e.tagNames,
       episodeOrdered: true,
@@ -433,7 +442,7 @@ class CollectionSyncEngine {
       name: e.name,
       collectionType: e.collectionType,
       orderUpdatedAt: e.orderUpdatedAt,
-      members: _reindexed(next),
+      members: _reindexed(next, _pinnedKeys(e.members)),
       memberTombstones: e.memberTombstones,
       tagNames: e.tagNames,
       episodeOrdered: e.episodeOrdered,
@@ -550,6 +559,14 @@ class CollectionSyncEngine {
     for (int i = 0; i < mergedOrder.length; i++) {
       if (l.memberOrder[i] != mergedOrder[i]) return false;
     }
+    // v159：合并结果说 pinned、本地还没有 ⇒ 要落盘（反向不会发生：取或）。
+    for (final CollectionManifestMember mm in m.members) {
+      if (mm.pinned &&
+          !(l.membersByKey[_memberKey(mm.mediaType, mm.entryKey)]?.pinned ??
+              false)) {
+        return false;
+      }
+    }
     // orderUpdatedAt 一致？（空壳无合集行可承载时间戳，忽略之，防止每轮空转）
     if (m.members.isNotEmpty && l.orderUpdatedAt != m.orderUpdatedAt) {
       return false;
@@ -581,15 +598,26 @@ class CollectionSyncEngine {
     return true;
   }
 
-  static List<CollectionManifestMember> _reindexed(List<String> orderedKeys) =>
-      <CollectionManifestMember>[
-        for (int i = 0; i < orderedKeys.length; i++)
-          CollectionManifestMember(
-            mediaType: _memberMediaType(orderedKeys[i]),
-            entryKey: _memberEntryKey(orderedKeys[i]),
-            sortIndex: i,
-          ),
-      ];
+  /// [pinned]：成员键集合，其中的成员带 `pinned`（v159）。
+  static List<CollectionManifestMember> _reindexed(
+    List<String> orderedKeys, [
+    Set<String> pinned = const <String>{},
+  ]) => <CollectionManifestMember>[
+    for (int i = 0; i < orderedKeys.length; i++)
+      CollectionManifestMember(
+        mediaType: _memberMediaType(orderedKeys[i]),
+        entryKey: _memberEntryKey(orderedKeys[i]),
+        sortIndex: i,
+        pinned: pinned.contains(orderedKeys[i]),
+      ),
+  ];
+
+  /// 一组成员里带 `pinned` 的成员键。
+  static Set<String> _pinnedKeys(Iterable<CollectionManifestMember> members) =>
+      <String>{
+        for (final CollectionManifestMember m in members)
+          if (m.pinned) _memberKey(m.mediaType, m.entryKey),
+      };
 
   /// 归一化一侧清单：按自然键成 map；死条目丢弃成员与墓碑（已无意义）；活条目
   /// 丢弃与在册成员同键的墓碑（DAO 不变量「加成员清墓碑」的防御性兜底）。
@@ -833,6 +861,7 @@ Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
                 // epub：本地 uid → wire bookKey（透传行照抄，见上）。
                 entryKey: wireEntryKey(items[i].mediaType, items[i].entryKey),
                 sortIndex: i,
+                pinned: items[i].pinnedByUser,
               ),
         ],
         memberTombstones: <CollectionMemberTombstone>[
@@ -1062,6 +1091,7 @@ Future<int> applyCollectionLocalChanges(
                   mediaType: m.mediaType,
                   entryKey: localEntryKey(m.mediaType, m.entryKey),
                   sortIndex: m.sortIndex,
+                  pinned: m.pinned,
                 ),
             ];
         final Set<String> desiredKeys = <String>{
@@ -1079,6 +1109,7 @@ Future<int> applyCollectionLocalChanges(
             localMembers[i].mediaType,
             localMembers[i].entryKey,
             i,
+            pinnedByUser: localMembers[i].pinned,
           );
         }
         await db.setCollectionOrderUpdatedAt(id, e.orderUpdatedAt);
@@ -1219,6 +1250,7 @@ class _NormalizedEntry {
           mediaType: CollectionSyncEngine._memberMediaType(memberOrder[i]),
           entryKey: CollectionSyncEngine._memberEntryKey(memberOrder[i]),
           sortIndex: i,
+          pinned: membersByKey[memberOrder[i]]?.pinned ?? false,
         ),
     ],
     memberTombstones: <CollectionMemberTombstone>[
@@ -1274,6 +1306,7 @@ class _FoldGroup {
       <String, int>{}; // 决策用 max(pub??removed)。
 
   final Set<String> _tagNames = <String>{}; // 各活文件标签并集（只增不删）。
+  final Set<String> _pinned = <String>{}; // v159 任一活文件说 pinned 的成员键（取或）。
   // v124 整理身份：来源秩取大（只认说了的文件）、分组键规范化合并、别名并集；
   // 死条目的键单独记（拒绝 / 合并去向）。都与折叠顺序无关。
   String? _origin;
@@ -1334,6 +1367,7 @@ class _FoldGroup {
     for (final String mk in e.memberOrder) {
       final int prev = _memberAliveTime[mk] ?? -1;
       if (fileTime > prev) _memberAliveTime[mk] = fileTime;
+      if (e.membersByKey[mk]?.pinned ?? false) _pinned.add(mk);
     }
     for (final MapEntry<String, _Tomb> t in e.tombstones.entries) {
       final String mk = t.key;
@@ -1416,7 +1450,10 @@ class _FoldGroup {
         name: name,
         collectionType: collectionType,
         orderUpdatedAt: _orderUpdatedAtMax,
-        members: CollectionSyncEngine._reindexed(ordered),
+        members: CollectionSyncEngine._reindexed(
+          ordered,
+          _pinned.intersection(aliveMembers),
+        ),
         memberTombstones: <CollectionMemberTombstone>[
           for (final MapEntry<String, _Tomb> e in tombs.entries)
             CollectionMemberTombstone(

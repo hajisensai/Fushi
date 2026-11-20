@@ -249,7 +249,9 @@ Fushi builds on the following projects and ecosystem:
 
 ## License
 
-Distributed under the GNU General Public License v3.0. See [LICENSE](LICENSE) for details.
+Distributed under the GNU General Public License v3.0 with additional terms under its Section 7. See [LICENSE](LICENSE) and [ADDITIONAL_TERMS.md](ADDITIONAL_TERMS.md) for details. The name "Fushi" and its logo are not licensed under the GPL; see [TRADEMARK.md](TRADEMARK.md).
+
+**Official Fushi builds are free of charge.** If you paid for Fushi, you were sold a free app, and the seller owes you its complete source code under the GPL. Official downloads: [GitHub Releases](https://github.com/hajisensai/Fushi/releases) and [fushi.moe](https://fushi.moe).
 
 ## Maintainer
 

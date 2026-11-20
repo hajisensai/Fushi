@@ -1,0 +1,6 @@
+## BUG-4853 · 侧栏收起过渡中色块与内容区之间露出一条竖带（镂空脊舞台圆角贴在竖带外）
+- **报告**：2026-11-15（用户：Windows 桌面，侧栏样式「镂空脊」，设置页；「展开收起会有这种条，并不是平滑动画」，截图里图标导航轨与二级侧栏之间一条约 30dp 的竖带，左下角露出底色）
+- **真实性**：✅ 真 bug，develop 现状就有（本分支没改过 rail）。根因 `fushi/lib/src/utils/adaptive/adaptive_navigation.dart` 旧 `_AnimatedRailWidth.build`（upstream/develop 第 2804 行 `minWidth: target`）：rail 外层 `SizedBox` 按弹簧当前宽占位（= 内容区起始边），但里面整块 SafeArea → 悬浮留白 → **面板**（`_RailNotchSurface` 色块 / 色脊 / 悬浮面板）都放在按**目标宽**排版的 `OverflowBox` 里。收起时色块第一帧就缩到收起宽，内容区起始边还停在弹簧当前值，二者之间露出页面底色竖带；`NavRailStage` 的舞台圆角楔形画在内容区起始边，于是贴在竖带外侧（左下角那块）。镂空脊缺口也只开到收起宽、与舞台断开。色脊 / 原悬浮面板同理：收起时面板一步跳到收起宽、不随弹簧走。展开方向是面板被硬裁出方边，同一根因。
+- **[x] ① 已修复** — 面板与内容两层几何分开：`_AnimatedRailWidth`（adaptive_navigation.dart:2754）外层只按当前宽给 `SizedBox`（:2834），SafeArea / 留白 / 面板都按当前宽逐帧排版；面板**里面**新增 `_RailTargetWidth`（:2843，挂在 `_railSurface` 的 child 处 :1180）把菜单钮 / 品牌位 / 目的地按目标宽排版并裁到面板当前宽（差值经 `_RailWidthLagScope` 在同帧 build→layout 传递，与 `NavRailContentSync` 同一时序）。静止时差值 0、不裁剪，几何不变；树结构不随动画增删层级。镂空脊缺口开到面板当前宽，与舞台起始边逐帧重合。提交哈希：未提交（委托方禁止 git 写操作）。
+- **[x] ② 已加自动化测试** — `fushi/test/widgets/nav_rail_collapse_surface_gap_test.dart`：MD3 镂空脊 / 色脊 + Apple，LTR / RTL，展开 / 收起各一组；逐帧 pump 断言面板外缘到内容区起始边的缝恒等于静止值（镂空脊为 0），且面板宽确实逐帧变化。展开 / 收起改 `extended` 驱动，不点击。复核：换回 HEAD 旧版 adaptive_navigation.dart 跑同一文件 12/12 红（第 0 帧缝 ±118～130），修复版 12/12 绿。
+- **备注**：需 Windows 真机肉眼复测镂空脊收起 / 展开动画（本轮未跑 app）。

@@ -324,6 +324,7 @@ class CollectionManifestMember {
     required this.mediaType,
     required this.entryKey,
     required this.sortIndex,
+    this.pinned = false,
   });
 
   /// 'epub' | 'srt' | 'video' | 'game'（同 MediaCollectionItems.mediaType 值域，
@@ -338,6 +339,11 @@ class CollectionManifestMember {
 
   /// 合集内序（整合集 LWW 覆盖的载荷）。
   final int sortIndex;
+
+  /// v159：成员是用户亲手放进来的（`media_collection_items.pinned_by_user`），AI
+  /// 整理不再移出。wire 可选字段 `pinned`，只在 true 时写出（false 与旧版缺字段
+  /// 字节相同）；跨端合并取或、单调只升不降，缺字段按 false。
+  final bool pinned;
 
   /// 类型化身份视图（委托 [MediaRef.tryParse]）；未知种类（对端未来值）→
   /// null，此时调用方继续用裸 [mediaType] / [entryKey] 透传。
@@ -360,6 +366,7 @@ class CollectionManifestMember {
       mediaType: mediaType,
       entryKey: entryKey,
       sortIndex: sortIndex is int ? sortIndex : 0,
+      pinned: json['pinned'] == true,
     );
   }
 
@@ -367,6 +374,7 @@ class CollectionManifestMember {
     'mediaType': mediaType,
     'entryKey': entryKey,
     'sortIndex': sortIndex,
+    if (pinned) 'pinned': true,
   };
 }
 

@@ -727,6 +727,12 @@ enum ShortcutAction {
   // 与书签面板同一入口 `_toggleBookmarkHere`。默认键盘 B（manga scope 内空闲），
   // 手柄留空（B 归 universal 返回）。
   mangaToggleBookmark(ShortcutScope.manga, 'manga_toggle_bookmark'),
+  // 朗读 / 漫画有声（成品音频）的播放暂停 / 上一句 / 下一句：执行体 = 播放条同名按钮。
+  // 只开键盘通道：漫画页手柄的方向键 / 肩键归翻页、B 归 universal 返回（见
+  // docs/agent/focus-ownership.md 漫画页第③条），手柄默认不绑。
+  mangaAudioPlayPause(ShortcutScope.manga, 'manga_audio_play_pause'),
+  mangaAudioPreviousLine(ShortcutScope.manga, 'manga_audio_previous_line'),
+  mangaAudioNextLine(ShortcutScope.manga, 'manga_audio_next_line'),
 
   // Web browser：app 内浏览器（[ShortcutScope.webBrowser]）。声明顺序 = 设置页展示
   // 顺序：标签页 → 导航 → 页面工具 → 缩放。执行体在 fushi_web_browser_page 的

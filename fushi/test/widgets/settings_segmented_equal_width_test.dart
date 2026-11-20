@@ -61,11 +61,11 @@ void main() {
     );
   }
 
-  // 2026-10 MD3 Expressive 刷新（Android 16 设置）后不再有「标签下方整行宽的分段
-  // 盒子」：放得下的少而短选项是行右侧紧凑分段，放不下的退回「当前值写进说明行、
-  // 点整行弹出菜单」。TODO-882 的诉求（同一 section 里控件不能一宽一窄、参差
-  // 不齐）因此落成：两行占满同一 section 宽度、分段控件右对齐到行内容边、长选项
-  // 不再留一个按固有宽度缩窄的盒子，而是整行变成菜单行，全部选项仍可达。
+  // 分段行三档摆放（settingsSegmentedPlacement，2026-11-20 重做）：放得下的少而
+  // 短选项是行右侧紧凑分段；行内放不下但整行放得下时，分段换到标题下方撑满整行；
+  // 连整行都放不下才退回菜单行。TODO-882 的诉求（同一 section 里控件不能一宽
+  // 一窄、参差不齐）因此落成：两行占满同一 section 宽度、分段控件右缘都对齐到
+  // 行内容边，长选项不留一个按固有宽度缩窄的盒子，全部选项仍可达。
   testWidgets(
     'TODO-882: short and long segmented rows in one section line up on the '
     'same full-width rows',
@@ -113,40 +113,55 @@ void main() {
         reason: 'the short strip is right-aligned to the row edge',
       );
 
-      // The long strip does not fit → the whole row is a choice-menu row, not a
-      // narrower intrinsic-width box; every option stays reachable (BUG-008).
-      expect(
-        find.descendant(
-          of: find.byKey(const ValueKey<String>('long')),
-          matching: find.byWidgetPredicate(
-            (Widget w) => w is SegmentedButton<String>,
-          ),
-        ),
-        findsNothing,
-        reason: 'no narrow / clipped strip box on the long row',
-      );
-      final Finder longMenu = find.descendant(
-        of: find.byKey(const ValueKey<String>('long')),
-        matching: find.byType(SettingsChoiceMenuRow),
-      );
-      expect(longMenu, findsOneWidget);
-      expect(
-        find.textContaining('自動判定で表示'),
-        findsOneWidget,
-        reason: 'the selected long option is shown on the row',
-      );
-      await tester.tap(longMenu);
-      await tester.pumpAndSettle();
-      for (final String label in <String>[
+      // The long strip does not fit inline → it moves below the label and
+      // spans the whole row (or, when even a full row cannot hold it, the row
+      // becomes a choice-menu row); never a narrower intrinsic-width box.
+      const List<String> longLabels = <String>[
+        '自動判定で表示',
         '常に振り仮名を表示',
         '振り仮名を一切表示しない',
         '読了済みの語だけ隠す',
-      ]) {
+      ];
+      final Finder longStrip = find.descendant(
+        of: find.byKey(const ValueKey<String>('long')),
+        matching: find.byWidgetPredicate(
+          (Widget w) => w is SegmentedButton<String>,
+        ),
+      );
+      if (longStrip.evaluate().isNotEmpty) {
+        final Rect strip = tester.getRect(longStrip);
         expect(
-          find.text(label),
-          findsOneWidget,
-          reason: 'every long option stays reachable: $label',
+          strip.width,
+          moreOrLessEquals(longRow.width - 32, epsilon: 1),
+          reason: 'a below strip spans the full row content width',
         );
+        expect(
+          longRow.right - strip.right,
+          moreOrLessEquals(shortRow.right - shortStrip.right, epsilon: 1),
+          reason: 'both strips end on the same row content edge',
+        );
+        for (final String label in longLabels) {
+          expect(
+            find.descendant(of: longStrip, matching: find.text(label)),
+            findsOneWidget,
+            reason: 'every long option stays visible: $label',
+          );
+        }
+      } else {
+        final Finder longMenu = find.descendant(
+          of: find.byKey(const ValueKey<String>('long')),
+          matching: find.byType(SettingsChoiceMenuRow),
+        );
+        expect(longMenu, findsOneWidget);
+        await tester.tap(longMenu);
+        await tester.pumpAndSettle();
+        for (final String label in longLabels.skip(1)) {
+          expect(
+            find.text(label),
+            findsOneWidget,
+            reason: 'every long option stays reachable: $label',
+          );
+        }
       }
       expect(tester.takeException(), isNull);
     },

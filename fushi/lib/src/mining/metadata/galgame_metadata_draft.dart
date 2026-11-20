@@ -29,6 +29,7 @@ class GalgameMetadataDraft {
     this.averageHours,
     this.coverUrl,
     this.externalId,
+    this.backdropUrl,
   });
 
   /// 原名（bgm 的 `name` / vndb 的 main title）。
@@ -73,6 +74,10 @@ class GalgameMetadataDraft {
   /// 该源的外部 ID（bgm subject id / vndb `v12345`）。合并结果无单一外部 ID，为 null。
   final String? externalId;
 
+  /// 横版背景图 URL（v155：游戏库系列色块的横屏海报）。VNDB 取第一张非成人、
+  /// 非暴力的横向截图；bgm / DLsite 不提供，为 null。
+  final String? backdropUrl;
+
   /// 是否一个字段都没有（adapter 拿到空壳响应时用于判定「等于没抓到」）。
   bool get isEmpty =>
       name == null &&
@@ -87,7 +92,8 @@ class GalgameMetadataDraft {
       rank == null &&
       nsfw == null &&
       averageHours == null &&
-      coverUrl == null;
+      coverUrl == null &&
+      backdropUrl == null;
 
   /// 序列化为 `galgame_sources.dataJson` 的内容。null 字段直接省略，避免存一堆 null。
   Map<String, Object?> toJson() {
@@ -112,6 +118,7 @@ class GalgameMetadataDraft {
     put('averageHours', averageHours);
     put('coverUrl', coverUrl);
     put('externalId', externalId);
+    put('backdropUrl', backdropUrl);
     return json;
   }
 
@@ -132,6 +139,7 @@ class GalgameMetadataDraft {
       averageHours: draftDouble(json['averageHours']),
       coverUrl: draftString(json['coverUrl']),
       externalId: draftString(json['externalId']),
+      backdropUrl: draftString(json['backdropUrl']),
     );
   }
 
@@ -220,6 +228,35 @@ String? summaryExcerpt(
     return text;
   }
   return '${runes.take(maxRunes).join()}…';
+}
+
+/// VNDB 简介格式码（https://vndb.org/d9#4）转成纯文本：`[spoiler]…[/spoiler]`
+/// 整段去掉（剧透不进简介）；`[url=…]文字[/url]` 只留文字；`[b] [i] [u] [s]
+/// [quote] [raw] [code]` 只去标记留内容；连续三个以上换行收成两个。别的源的
+/// 简介没有这些标记，原样通过。纯函数。
+String stripVndbMarkup(String text) {
+  String out = text.replaceAll(
+    RegExp(r'\[spoiler\][\s\S]*?\[/spoiler\]', caseSensitive: false),
+    '',
+  );
+  out = out.replaceAllMapped(
+    RegExp(r'\[url=[^\]]*\]([\s\S]*?)\[/url\]', caseSensitive: false),
+    (Match m) => m.group(1) ?? '',
+  );
+  out = out.replaceAll(
+    RegExp(r'\[/?(?:b|i|u|s|quote|raw|code|url)\]', caseSensitive: false),
+    '',
+  );
+  out = out.replaceAll(RegExp(r'\n{3,}'), '\n\n');
+  return out.trim();
+}
+
+/// VNDB 简介：[draftString] 之后去掉格式码（[stripVndbMarkup]）；去完为空 → null。
+String? vndbDescription(Object? value) {
+  final String? text = draftString(value);
+  if (text == null) return null;
+  final String plain = stripVndbMarkup(text);
+  return plain.isEmpty ? null : plain;
 }
 
 /// 容错取非空字符串：非 String / 去空白后为空 → null。

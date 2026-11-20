@@ -34,7 +34,7 @@ void main() {
     String title = '続・作品',
     String? coverUrl,
   }) => CollectionRelationsCompanion.insert(
-    collectionId: collectionId,
+    collectionId: Value<int?>(collectionId),
     relationType: relationType,
     sortIndex: Value<int>(sortIndex),
     targetCollectionId: Value<int?>(targetCollectionId),
@@ -48,7 +48,7 @@ void main() {
     test('fresh DB (v66) has collection_relations table and '
         'video_scrape_meta.episode_number column', () async {
       final FushiDatabase db = await openDb();
-      expect(db.schemaVersion, 158);
+      expect(db.schemaVersion, 164);
       final List<QueryRow> tables = await db
           .customSelect(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='collection_relations'",

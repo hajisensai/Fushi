@@ -13,6 +13,7 @@ import 'package:fushi/src/platform/desktop/desktop_device_info_service.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
 import 'package:fushi_engine/sync/fushi_screen_ocr_host.dart';
+import 'package:fushi_engine/sync/torrent_engine/host_torrent_engine.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -48,6 +49,7 @@ import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_root_migration.dart';
 import 'package:fushi/src/sync/sync_utils.dart' show kSyncRootFolderName;
+import 'package:fushi_engine/sync/interconnect_file_box_prune.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -113,6 +115,7 @@ class FushiSyncServerController extends ChangeNotifier {
     Future<HostJobManager> Function()? hostJobsFactory,
     HostDownloadHost Function()? downloadsFactory,
     HostSubscriptionHost Function()? subscriptionsFactory,
+    HostTorrentEngine Function()? torrentEngineFactory,
     HostAssistantProvider Function()? assistantFactory,
     VideoSubtitleBackfillRunner? videoSubtitleBackfill,
     GraphicSubtitleTrackExporter? graphicSubtitleTrackExporter,
@@ -142,6 +145,7 @@ class FushiSyncServerController extends ChangeNotifier {
        _hostJobsFactory = hostJobsFactory,
        _downloadsFactory = downloadsFactory,
        _subscriptionsFactory = subscriptionsFactory,
+       _torrentEngineFactory = torrentEngineFactory,
        _assistantFactory = assistantFactory,
        _videoSubtitleBackfill = videoSubtitleBackfill,
        _graphicSubtitleTrackExporter =
@@ -190,6 +194,10 @@ class FushiSyncServerController extends ChangeNotifier {
   final Future<HostJobManager> Function()? _hostJobsFactory;
   final HostDownloadHost Function()? _downloadsFactory;
   final HostSubscriptionHost Function()? _subscriptionsFactory;
+
+  /// 把本机 BT 引擎借给已配对设备（`/api/torrent-engine`，对端「下载后端 =
+  /// 互联设备」）。
+  final HostTorrentEngine Function()? _torrentEngineFactory;
 
   /// AI 助手会话（`/api/assistant`：手机把一句话交给本机的 AI 去办）。
   final HostAssistantProvider Function()? _assistantFactory;
@@ -853,6 +861,7 @@ class FushiSyncServerController extends ChangeNotifier {
             hostJobs: hostJobs,
             downloads: _downloadsFactory?.call(),
             subscriptions: _subscriptionsFactory?.call(),
+            torrentEngine: _torrentEngineFactory?.call(),
             assistant: _assistantFactory?.call(),
             securityContext: securityContext,
             hostFingerprint: hostFingerprint,
@@ -922,6 +931,10 @@ class FushiSyncServerController extends ChangeNotifier {
         st,
       ),
     );
+    // BUG-4906：清掉同步根下已无人读取的客户端文件箱书文件夹（旧版本客户端写下的
+    // epub / 有声书 / 进度 JSON，host 从不读回）。绑端口前跑，不和 WebDAV 写竞争；
+    // 自身吞错留痕，绝不挡启动。
+    await pruneDeadInterconnectFileBox(server.syncDataDir);
     await server.start();
     // BUG-1573：dispose 已经发生时，这台刚绑上的 host 已经没有拥有者了——继续往下
     // 写 `serverEnabled=true` 会打到一个可能已经关掉的 DB 上，广播也没人再拆。收干净
@@ -944,10 +957,14 @@ class FushiSyncServerController extends ChangeNotifier {
   /// 漫画 P3：按注入的 OCR 服务工厂构造远程 OCR 任务管理器；未注入返回 null
   /// （server 端点整体关闭）。上传页图落 `<syncDataDir>/manga_ocr_jobs`（TTL
   /// 自清理），每次 [start] 新建、server stop 时其内部 disposeAll。
+  ///
+  /// 新管理器的串行队列接在上一个管理器的执行体停下之后（`runAfter`）：stop 不等
+  /// 执行体停下就返回（BUG-4800），关了立刻再开时旧的整卷 isolate 可能还占着整套
+  /// 模型，新任务先起就是两套模型同时在内存。
   MangaOcrHostJobManager? _buildMangaOcrJobManager() {
     final MangaOcrService Function()? factory = _mangaOcrServiceFactory;
     if (factory == null) return null;
-    return MangaOcrHostJobManager(
+    final MangaOcrHostJobManager manager = MangaOcrHostJobManager(
       service: factory(),
       modelServices:
           _mangaOcrModelServicesFactory?.call() ??
@@ -955,8 +972,15 @@ class FushiSyncServerController extends ChangeNotifier {
       jobRoot: Directory(
         '${_syncDataDir()}${Platform.pathSeparator}manga_ocr_jobs',
       ),
+      runAfter: _lastMangaOcrJobs?.whenExecutorsStopped,
     );
+    _lastMangaOcrJobs = manager;
+    return manager;
   }
+
+  /// 最近一次 [_buildMangaOcrJobManager] 建的管理器（server 停了也留着引用）：
+  /// 下一个管理器的队列要等它取消掉的执行体停下。
+  MangaOcrHostJobManager? _lastMangaOcrJobs;
 
   /// 截屏识字 host：与远程漫画 OCR 同一个 OCR 服务工厂；未注入返回 null（端点 404）。
   ScreenOcrHost? _buildScreenOcrHost() {

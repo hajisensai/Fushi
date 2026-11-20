@@ -805,6 +805,33 @@ extension _ReaderChrome on _ReaderFushiPageState {
     ReaderSelectionData data, {
     required bool extractNativeImages,
   }) async {
+    _applyLookupStateFromSelectionData(data);
+    if (!extractNativeImages) return;
+    // TODO-1127：与选区状态同批抽取选区里夹带的 EPUB 插图（供片段导出把图渲进卡片）。
+    // 抽图要 eval + 读文件 + 降采样；这期间选区状态可能已被点词 / 关弹窗 / 另一次
+    // 选区换掉（它们都经 [_resetSelectionImages] 换令牌），那就不是这次选区的图了。
+    final Object owner = _selectionImagesOwner;
+    final List<({int normOffset, Uint8List bytes})> images =
+        await _extractSelectionClipImages();
+    if (!identical(owner, _selectionImagesOwner)) return;
+    _cachedSelectionImages = images;
+  }
+
+  /// 清空上一次选区抽出的插图，并作废还在途的抽图（见 [_selectionImagesOwner]）。
+  /// 凡是重写或清空选区状态的地方都调它：正文写点、歌词点词、关弹窗。
+  void _resetSelectionImages() {
+    _selectionImagesOwner = Object();
+    _cachedSelectionImages = const <({int normOffset, Uint8List bytes})>[];
+  }
+
+  /// [_fillLookupStateFromSelectionData] 的同步段，也是「选区 → 查词 / 导出状态」的
+  /// **唯一写点**：一次写齐 currentSentence、句偏移、音频坐标选区、[_lookupCue]、
+  /// 学习单位坐标的选区 / 句子范围与所属章号，并清空上一次选区抽出的插图。
+  ///
+  /// 同步是契约（BUG-4824）：点词查词要在 `await` 词典查询**之前**调它，这一组字段
+  /// 才不会出现「新句子 + 新 cue + 旧选区范围」的混合态，连点两个词时先点的那次
+  /// 也没有 await 之后的尾段可以盖掉后点的那次。往这里加 await 就把这个保证拆了。
+  void _applyLookupStateFromSelectionData(ReaderSelectionData data) {
     // currentSentence 非空契约（与 lookup.part.dart tap 写点一致）：句子优先、退回选中词。
     appModel.currentMediaSource?.setCurrentSentence(
       selection: FushiTextSelection(
@@ -842,10 +869,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
         : null;
     // BUG-492：选区路径同样锁定所属章号（详见 _cachedSelectionSectionIndex）。
     _cachedSelectionSectionIndex = _lookupSectionIndex;
-    // TODO-1127：与选区状态同批抽取选区里夹带的 EPUB 插图（供片段导出把图渲进卡片）。
-    _cachedSelectionImages = extractNativeImages
-        ? await _extractSelectionClipImages()
-        : const <({int normOffset, Uint8List bytes})>[];
+    // 插图只属于抽出它的那次原生选区：换了选区就清空，不泄漏给下一次查词 / 导出。
+    // 原生选区路径随后由 [_fillLookupStateFromSelectionData] 重新抽取。
+    _resetSelectionImages();
   }
 
   /// TODO-1366：移动端拖选菜单「导出片段」。拖选是 app 自绘选区（无原生选区），故从菜单
@@ -2809,7 +2835,6 @@ extension _ReaderChrome on _ReaderFushiPageState {
     String? initialSettingsTab,
   }) {
     final List<TtuTocEntry> toc = _buildTtuToc();
-    final String? extractDir = _extractDir;
     // 快照一次：[AppModel.moduleVisibility] 每读一次都重新合成一个 Set，下面三个
     // 有声书回调都要问它。
     final bool listeningEnabled = _moduleVisibility.isEnabled(
@@ -2819,12 +2844,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       controller: _audiobookController,
       toc: toc,
       nsfw: MediaNsfwTarget.book(widget.bookKey),
-      coverPath: extractDir == null
-          ? null
-          : ReaderFushiSource.resolveCoverFilePath(
-              extractDir: extractDir,
-              coverPath: _book?.coverHref,
-            ),
+      coverPath: _bookCoverFilePath,
       readerProgress: (_readingChapter, _book!.chapters.length),
       readerCharOffset: _readingTocCharOffset,
       onJumpSection: (int index, String? fragment) async {
@@ -2847,7 +2867,6 @@ extension _ReaderChrome on _ReaderFushiPageState {
       onExitReader: () {
         unawaited(_exitReaderBook());
       },
-      webViewController: _controller!,
       appModel: appModel,
       ref: ref,
       isFushiReader: true,
@@ -3554,12 +3573,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
             key: const ValueKey<String>('fushi_play_bar'),
             controller: ctrl,
             showPlayButton: true,
-            coverPath: _extractDir == null
-                ? null
-                : ReaderFushiSource.resolveCoverFilePath(
-                    extractDir: _extractDir!,
-                    coverPath: _book?.coverHref,
-                  ),
+            coverPath: _bookCoverFilePath,
             chapterLabel: _lyricsMode ? null : _currentChapterLabel(),
             skipActionSeconds: ReaderFushiSource.instance.skipActionSeconds,
             invertSkip: ReaderFushiSource.instance.invertAudiobookSkipDirection,
@@ -3740,6 +3754,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (!mounted) return;
     final String? srtPath = await _withStudyClockPaused(
       () => showAsrTranscribeSheet(
+        tone: ImportTone.coral,
         context: context,
         audioPaths: List<String>.of(audio),
         languageHint: asrLanguageHintFromBookLanguage(book?.language),
@@ -3752,10 +3767,16 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 本书今日 / 累计：只经统一事实面 `loadStatFacts`（统计域 v92 读取纪律）。
   Future<ReaderBookStatTotals> _loadReaderBookStatTotals() async {
     // includeCounters：今天的查词 / 制卡数从 per-book 计数面切（`lookup_mining_counters`）。
+    // 只读本书（m5：全量读在大库上每开一次侧栏都要几百毫秒）。
     final StatFacts facts = await loadStatFacts(
       appModel.database,
       activityLimit: 0,
       includeCounters: true,
+      scope: StatFactsScope.media(
+        mediaKind: kActivityMediaBook,
+        mediaKey: widget.bookKey,
+        title: _book?.title,
+      ),
     );
     return summarizeReaderBookStats(
       facts.dailyBooks,

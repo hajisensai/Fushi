@@ -8,7 +8,9 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/import/import_dialog_blocks.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
+import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/media/manga/manga_ocr_settings_page.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/manga/external_mokuro_runner.dart';
@@ -31,12 +33,11 @@ import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
-import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -736,12 +737,14 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final double fieldGap = tokens.spacing.gap * 1.5;
     final bool busy =
         _stage == _WizardStage.running || _stage == _WizardStage.importing;
-    // 外框走统一 ImportDialogFrame（审计 §1-K：与书/有声书/视频导入同一 chrome）；
-    // 向导内容与阶段化动作按钮不变。
+    // 外框走统一 ImportDialogFrame（2026-11 导入对话框统一）：文件夹是一行选择行，
+    // 标题是 M3E 填充式字段，「OCR 设置」作为次要动作放按钮区左侧。
     return ImportDialogFrame(
-      leadingIcon: FushiIcons.ocr,
+      tone: ImportTone.violet,
       // 已入库的书是「识别」不是「导入」：阅读器的「重新识别本卷」和作品页的
       // 识别入口都走这里，标题再叫「OCR 导入漫画」就是在说另一件事。
       title: widget.existingBook != null
@@ -771,70 +774,78 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
                 severity: FushiNoticeSeverity.info,
               ),
             if (_folderStatus == MangaOcrFolderStatus.valid) ...<Widget>[
-              const SizedBox(height: 12),
+              SizedBox(height: tokens.spacing.card),
               _engineSelector(busy),
               if (_engine == MangaOcrEngineId.localOnnx &&
                   _offersModelChoice &&
                   _builtinSupported &&
                   !_checkingEngines) ...<Widget>[
-                const SizedBox(height: 12),
+                SizedBox(height: fieldGap),
                 _localModelSelector(theme, busy),
               ],
               if (_engine == MangaOcrEngineId.googleLens &&
                   _lensAvailable) ...<Widget>[
-                const SizedBox(height: 12),
+                SizedBox(height: fieldGap),
                 _lensLanguageSelector(busy),
               ],
-              const SizedBox(height: 12),
-              FushiTextFieldControl(
+              SizedBox(height: fieldGap),
+              FushiTextField(
                 controller: _titleCtrl,
                 enabled: !busy && widget.existingBook == null,
-                decoration: InputDecoration(
-                  labelText: t.manga_ocr_wizard_title_label,
-                  isDense: true,
-                ),
+                labelText: t.manga_ocr_wizard_title_label,
               ),
             ],
             if (_error != null) _errorText(theme, _error!),
             if (busy) ...<Widget>[
-              const SizedBox(height: 16),
+              SizedBox(height: tokens.spacing.card),
               FushiLinearProgressIndicator(
                 value: _indeterminate || _pagesTotal <= 0
                     ? null
                     : (_pagesDone / _pagesTotal).clamp(0.0, 1.0),
               ),
-              const SizedBox(height: 8),
-              Text(_busyLabel(), style: theme.textTheme.bodySmall),
+              SizedBox(height: tokens.spacing.gap),
+              Text(_busyLabel(), style: tokens.type.metadata),
             ],
           ],
         ),
       ),
+      secondaryActions: _stage == _WizardStage.running
+          ? const <Widget>[]
+          : <Widget>[
+              // 引擎不可用 / 想换引擎：直达「漫画 OCR」设置，返回后重探——刚下完的
+              // 模型、刚配好的 mokuro 路径立刻能选，不必关掉向导重开。
+              FushiTextButton.icon(
+                key: const ValueKey<String>('manga_ocr_wizard_settings'),
+                onPressed: busy ? null : () => unawaited(_openOcrSettings()),
+                icon: const FushiIcon(FushiIcons.settings, size: 18),
+                label: Text(t.manga_ocr_settings_open),
+              ),
+            ],
       actions: _buildActions(busy),
     );
   }
 
   Widget _folderRow(bool busy) {
-    if (widget.existingBook != null) {
-      return FushiListItem(
-        padding: EdgeInsets.zero,
-        leading: const FushiListLeadingIcon(
-          FushiIcons.books,
-          shape: FushiLeadingShape.square,
-          tone: FushiCardTone.primary,
-        ),
-        title: Text(widget.existingBook!.title),
-        subtitle: Text(p.basename(widget.existingBook!.extractDir)),
+    final EpubBookRow? book = widget.existingBook;
+    if (book != null) {
+      // 已入库的书：只读的已选行（不能换书）。
+      return ImportPickBlock(
+        tone: ImportTone.violet,
+        icon: FushiIcons.books,
+        title: book.title,
+        subtitle: p.basename(book.extractDir),
+        selected: true,
       );
     }
-    return FushiOutlinedButton.icon(
-      onPressed: busy ? null : _pickFolder,
-      icon: const FushiIcon(FushiIcons.folderOpen),
-      label: Text(
-        _imageDir == null
-            ? t.manga_ocr_wizard_pick_folder
-            : p.basename(_imageDir!),
-        overflow: TextOverflow.ellipsis,
-      ),
+    final String? dir = _imageDir;
+    return ImportPickBlock(
+      tone: ImportTone.violet,
+      icon: FushiIcons.folderOpen,
+      title: dir == null ? t.manga_ocr_wizard_pick_folder : p.basename(dir),
+      subtitle: dir == null ? null : t.manga_ocr_wizard_pick_folder,
+      selected: dir != null,
+      enabled: !busy,
+      onTap: _pickFolder,
     );
   }
 
@@ -1068,14 +1079,6 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       ];
     }
     return <Widget>[
-      // 引擎不可用 / 想换引擎：直达「漫画 OCR」设置，返回后重探——刚下完的模型、
-      // 刚配好的 mokuro 路径立刻能选，不必关掉向导重开。
-      FushiTextButton.icon(
-        key: const ValueKey<String>('manga_ocr_wizard_settings'),
-        onPressed: busy ? null : () => unawaited(_openOcrSettings()),
-        icon: const FushiIcon(FushiIcons.settings, size: 18),
-        label: Text(t.manga_ocr_settings_open),
-      ),
       FushiTextButton(
         onPressed: busy ? null : () => Navigator.pop(context),
         child: Text(t.dialog_cancel),

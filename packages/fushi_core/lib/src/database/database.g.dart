@@ -2412,6 +2412,17 @@ class $AudioCuesTable extends AudioCues
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _tokenTimingJsonMeta = const VerificationMeta(
+    'tokenTimingJson',
+  );
+  @override
+  late final GeneratedColumn<String> tokenTimingJson = GeneratedColumn<String>(
+    'token_timing_json',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -2423,6 +2434,7 @@ class $AudioCuesTable extends AudioCues
     startMs,
     endMs,
     audioFileIndex,
+    tokenTimingJson,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2515,6 +2527,15 @@ class $AudioCuesTable extends AudioCues
     } else if (isInserting) {
       context.missing(_audioFileIndexMeta);
     }
+    if (data.containsKey('token_timing_json')) {
+      context.handle(
+        _tokenTimingJsonMeta,
+        tokenTimingJson.isAcceptableOrUnknown(
+          data['token_timing_json']!,
+          _tokenTimingJsonMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -2560,6 +2581,10 @@ class $AudioCuesTable extends AudioCues
         DriftSqlType.int,
         data['${effectivePrefix}audio_file_index'],
       )!,
+      tokenTimingJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}token_timing_json'],
+      ),
     );
   }
 
@@ -2579,6 +2604,11 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
   final int startMs;
   final int endMs;
   final int audioFileIndex;
+
+  /// v160：转录产物的逐 token 发射时间（`{"t":[token...],"o":[相对 startMs 的毫秒...]}`），
+  /// 与本行 cue **重切 / 后处理之后**的边界同步；非转录字幕 / 存量行为 NULL。
+  /// 编解码只在 `AudioCue.fromRow` / `toCompanion`（fushi_audio）。
+  final String? tokenTimingJson;
   const AudioCueRow({
     required this.id,
     required this.bookKey,
@@ -2589,6 +2619,7 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
     required this.startMs,
     required this.endMs,
     required this.audioFileIndex,
+    this.tokenTimingJson,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2602,6 +2633,9 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
     map['start_ms'] = Variable<int>(startMs);
     map['end_ms'] = Variable<int>(endMs);
     map['audio_file_index'] = Variable<int>(audioFileIndex);
+    if (!nullToAbsent || tokenTimingJson != null) {
+      map['token_timing_json'] = Variable<String>(tokenTimingJson);
+    }
     return map;
   }
 
@@ -2616,6 +2650,9 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
       startMs: Value(startMs),
       endMs: Value(endMs),
       audioFileIndex: Value(audioFileIndex),
+      tokenTimingJson: tokenTimingJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(tokenTimingJson),
     );
   }
 
@@ -2634,6 +2671,7 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
       startMs: serializer.fromJson<int>(json['startMs']),
       endMs: serializer.fromJson<int>(json['endMs']),
       audioFileIndex: serializer.fromJson<int>(json['audioFileIndex']),
+      tokenTimingJson: serializer.fromJson<String?>(json['tokenTimingJson']),
     );
   }
   @override
@@ -2649,6 +2687,7 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
       'startMs': serializer.toJson<int>(startMs),
       'endMs': serializer.toJson<int>(endMs),
       'audioFileIndex': serializer.toJson<int>(audioFileIndex),
+      'tokenTimingJson': serializer.toJson<String?>(tokenTimingJson),
     };
   }
 
@@ -2662,6 +2701,7 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
     int? startMs,
     int? endMs,
     int? audioFileIndex,
+    Value<String?> tokenTimingJson = const Value.absent(),
   }) => AudioCueRow(
     id: id ?? this.id,
     bookKey: bookKey ?? this.bookKey,
@@ -2672,6 +2712,9 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
     startMs: startMs ?? this.startMs,
     endMs: endMs ?? this.endMs,
     audioFileIndex: audioFileIndex ?? this.audioFileIndex,
+    tokenTimingJson: tokenTimingJson.present
+        ? tokenTimingJson.value
+        : this.tokenTimingJson,
   );
   AudioCueRow copyWithCompanion(AudioCuesCompanion data) {
     return AudioCueRow(
@@ -2692,6 +2735,9 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
       audioFileIndex: data.audioFileIndex.present
           ? data.audioFileIndex.value
           : this.audioFileIndex,
+      tokenTimingJson: data.tokenTimingJson.present
+          ? data.tokenTimingJson.value
+          : this.tokenTimingJson,
     );
   }
 
@@ -2706,7 +2752,8 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
           ..write('cueText: $cueText, ')
           ..write('startMs: $startMs, ')
           ..write('endMs: $endMs, ')
-          ..write('audioFileIndex: $audioFileIndex')
+          ..write('audioFileIndex: $audioFileIndex, ')
+          ..write('tokenTimingJson: $tokenTimingJson')
           ..write(')'))
         .toString();
   }
@@ -2722,6 +2769,7 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
     startMs,
     endMs,
     audioFileIndex,
+    tokenTimingJson,
   );
   @override
   bool operator ==(Object other) =>
@@ -2735,7 +2783,8 @@ class AudioCueRow extends DataClass implements Insertable<AudioCueRow> {
           other.cueText == this.cueText &&
           other.startMs == this.startMs &&
           other.endMs == this.endMs &&
-          other.audioFileIndex == this.audioFileIndex);
+          other.audioFileIndex == this.audioFileIndex &&
+          other.tokenTimingJson == this.tokenTimingJson);
 }
 
 class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
@@ -2748,6 +2797,7 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
   final Value<int> startMs;
   final Value<int> endMs;
   final Value<int> audioFileIndex;
+  final Value<String?> tokenTimingJson;
   const AudioCuesCompanion({
     this.id = const Value.absent(),
     this.bookKey = const Value.absent(),
@@ -2758,6 +2808,7 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
     this.startMs = const Value.absent(),
     this.endMs = const Value.absent(),
     this.audioFileIndex = const Value.absent(),
+    this.tokenTimingJson = const Value.absent(),
   });
   AudioCuesCompanion.insert({
     this.id = const Value.absent(),
@@ -2769,6 +2820,7 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
     required int startMs,
     required int endMs,
     required int audioFileIndex,
+    this.tokenTimingJson = const Value.absent(),
   }) : bookKey = Value(bookKey),
        chapterHref = Value(chapterHref),
        sentenceIndex = Value(sentenceIndex),
@@ -2787,6 +2839,7 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
     Expression<int>? startMs,
     Expression<int>? endMs,
     Expression<int>? audioFileIndex,
+    Expression<String>? tokenTimingJson,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -2798,6 +2851,7 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
       if (startMs != null) 'start_ms': startMs,
       if (endMs != null) 'end_ms': endMs,
       if (audioFileIndex != null) 'audio_file_index': audioFileIndex,
+      if (tokenTimingJson != null) 'token_timing_json': tokenTimingJson,
     });
   }
 
@@ -2811,6 +2865,7 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
     Value<int>? startMs,
     Value<int>? endMs,
     Value<int>? audioFileIndex,
+    Value<String?>? tokenTimingJson,
   }) {
     return AudioCuesCompanion(
       id: id ?? this.id,
@@ -2822,6 +2877,7 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
       startMs: startMs ?? this.startMs,
       endMs: endMs ?? this.endMs,
       audioFileIndex: audioFileIndex ?? this.audioFileIndex,
+      tokenTimingJson: tokenTimingJson ?? this.tokenTimingJson,
     );
   }
 
@@ -2855,6 +2911,9 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
     if (audioFileIndex.present) {
       map['audio_file_index'] = Variable<int>(audioFileIndex.value);
     }
+    if (tokenTimingJson.present) {
+      map['token_timing_json'] = Variable<String>(tokenTimingJson.value);
+    }
     return map;
   }
 
@@ -2869,7 +2928,8 @@ class AudioCuesCompanion extends UpdateCompanion<AudioCueRow> {
           ..write('cueText: $cueText, ')
           ..write('startMs: $startMs, ')
           ..write('endMs: $endMs, ')
-          ..write('audioFileIndex: $audioFileIndex')
+          ..write('audioFileIndex: $audioFileIndex, ')
+          ..write('tokenTimingJson: $tokenTimingJson')
           ..write(')'))
         .toString();
   }
@@ -18407,12 +18467,28 @@ class $MediaCollectionItemsTable extends MediaCollectionItems
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _pinnedByUserMeta = const VerificationMeta(
+    'pinnedByUser',
+  );
+  @override
+  late final GeneratedColumn<bool> pinnedByUser = GeneratedColumn<bool>(
+    'pinned_by_user',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("pinned_by_user" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     collectionId,
     mediaType,
     entryKey,
     sortIndex,
+    pinnedByUser,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -18459,6 +18535,15 @@ class $MediaCollectionItemsTable extends MediaCollectionItems
         sortIndex.isAcceptableOrUnknown(data['sort_index']!, _sortIndexMeta),
       );
     }
+    if (data.containsKey('pinned_by_user')) {
+      context.handle(
+        _pinnedByUserMeta,
+        pinnedByUser.isAcceptableOrUnknown(
+          data['pinned_by_user']!,
+          _pinnedByUserMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -18483,6 +18568,10 @@ class $MediaCollectionItemsTable extends MediaCollectionItems
       sortIndex: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}sort_index'],
+      )!,
+      pinnedByUser: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}pinned_by_user'],
       )!,
     );
   }
@@ -18510,11 +18599,18 @@ class MediaCollectionItemRow extends DataClass
 
   /// 合集内序：playlist 的播放顺序 / collection 的展示顺序。
   final int sortIndex;
+
+  /// v159：用户亲手放进这个合集（手动加入 / 撤销 AI 的移出）。为 true 时自动路径
+  /// （AI 整理）不得把它移出——「用户否决过移出」记在成员行上、随合集清单同步，
+  /// 换一台设备也成立。单调：自动入口只在新插入时写 false，不把 true 改回 false；
+  /// 跨端合并取或。见 AI 库管家设计稿 §7。
+  final bool pinnedByUser;
   const MediaCollectionItemRow({
     required this.collectionId,
     required this.mediaType,
     required this.entryKey,
     required this.sortIndex,
+    required this.pinnedByUser,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -18523,6 +18619,7 @@ class MediaCollectionItemRow extends DataClass
     map['media_type'] = Variable<String>(mediaType);
     map['entry_key'] = Variable<String>(entryKey);
     map['sort_index'] = Variable<int>(sortIndex);
+    map['pinned_by_user'] = Variable<bool>(pinnedByUser);
     return map;
   }
 
@@ -18532,6 +18629,7 @@ class MediaCollectionItemRow extends DataClass
       mediaType: Value(mediaType),
       entryKey: Value(entryKey),
       sortIndex: Value(sortIndex),
+      pinnedByUser: Value(pinnedByUser),
     );
   }
 
@@ -18545,6 +18643,7 @@ class MediaCollectionItemRow extends DataClass
       mediaType: serializer.fromJson<String>(json['mediaType']),
       entryKey: serializer.fromJson<String>(json['entryKey']),
       sortIndex: serializer.fromJson<int>(json['sortIndex']),
+      pinnedByUser: serializer.fromJson<bool>(json['pinnedByUser']),
     );
   }
   @override
@@ -18555,6 +18654,7 @@ class MediaCollectionItemRow extends DataClass
       'mediaType': serializer.toJson<String>(mediaType),
       'entryKey': serializer.toJson<String>(entryKey),
       'sortIndex': serializer.toJson<int>(sortIndex),
+      'pinnedByUser': serializer.toJson<bool>(pinnedByUser),
     };
   }
 
@@ -18563,11 +18663,13 @@ class MediaCollectionItemRow extends DataClass
     String? mediaType,
     String? entryKey,
     int? sortIndex,
+    bool? pinnedByUser,
   }) => MediaCollectionItemRow(
     collectionId: collectionId ?? this.collectionId,
     mediaType: mediaType ?? this.mediaType,
     entryKey: entryKey ?? this.entryKey,
     sortIndex: sortIndex ?? this.sortIndex,
+    pinnedByUser: pinnedByUser ?? this.pinnedByUser,
   );
   MediaCollectionItemRow copyWithCompanion(MediaCollectionItemsCompanion data) {
     return MediaCollectionItemRow(
@@ -18577,6 +18679,9 @@ class MediaCollectionItemRow extends DataClass
       mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType,
       entryKey: data.entryKey.present ? data.entryKey.value : this.entryKey,
       sortIndex: data.sortIndex.present ? data.sortIndex.value : this.sortIndex,
+      pinnedByUser: data.pinnedByUser.present
+          ? data.pinnedByUser.value
+          : this.pinnedByUser,
     );
   }
 
@@ -18586,13 +18691,15 @@ class MediaCollectionItemRow extends DataClass
           ..write('collectionId: $collectionId, ')
           ..write('mediaType: $mediaType, ')
           ..write('entryKey: $entryKey, ')
-          ..write('sortIndex: $sortIndex')
+          ..write('sortIndex: $sortIndex, ')
+          ..write('pinnedByUser: $pinnedByUser')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(collectionId, mediaType, entryKey, sortIndex);
+  int get hashCode =>
+      Object.hash(collectionId, mediaType, entryKey, sortIndex, pinnedByUser);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -18600,7 +18707,8 @@ class MediaCollectionItemRow extends DataClass
           other.collectionId == this.collectionId &&
           other.mediaType == this.mediaType &&
           other.entryKey == this.entryKey &&
-          other.sortIndex == this.sortIndex);
+          other.sortIndex == this.sortIndex &&
+          other.pinnedByUser == this.pinnedByUser);
 }
 
 class MediaCollectionItemsCompanion
@@ -18609,12 +18717,14 @@ class MediaCollectionItemsCompanion
   final Value<String> mediaType;
   final Value<String> entryKey;
   final Value<int> sortIndex;
+  final Value<bool> pinnedByUser;
   final Value<int> rowid;
   const MediaCollectionItemsCompanion({
     this.collectionId = const Value.absent(),
     this.mediaType = const Value.absent(),
     this.entryKey = const Value.absent(),
     this.sortIndex = const Value.absent(),
+    this.pinnedByUser = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   MediaCollectionItemsCompanion.insert({
@@ -18622,6 +18732,7 @@ class MediaCollectionItemsCompanion
     required String mediaType,
     required String entryKey,
     this.sortIndex = const Value.absent(),
+    this.pinnedByUser = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : collectionId = Value(collectionId),
        mediaType = Value(mediaType),
@@ -18631,6 +18742,7 @@ class MediaCollectionItemsCompanion
     Expression<String>? mediaType,
     Expression<String>? entryKey,
     Expression<int>? sortIndex,
+    Expression<bool>? pinnedByUser,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -18638,6 +18750,7 @@ class MediaCollectionItemsCompanion
       if (mediaType != null) 'media_type': mediaType,
       if (entryKey != null) 'entry_key': entryKey,
       if (sortIndex != null) 'sort_index': sortIndex,
+      if (pinnedByUser != null) 'pinned_by_user': pinnedByUser,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -18647,6 +18760,7 @@ class MediaCollectionItemsCompanion
     Value<String>? mediaType,
     Value<String>? entryKey,
     Value<int>? sortIndex,
+    Value<bool>? pinnedByUser,
     Value<int>? rowid,
   }) {
     return MediaCollectionItemsCompanion(
@@ -18654,6 +18768,7 @@ class MediaCollectionItemsCompanion
       mediaType: mediaType ?? this.mediaType,
       entryKey: entryKey ?? this.entryKey,
       sortIndex: sortIndex ?? this.sortIndex,
+      pinnedByUser: pinnedByUser ?? this.pinnedByUser,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -18673,6 +18788,9 @@ class MediaCollectionItemsCompanion
     if (sortIndex.present) {
       map['sort_index'] = Variable<int>(sortIndex.value);
     }
+    if (pinnedByUser.present) {
+      map['pinned_by_user'] = Variable<bool>(pinnedByUser.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -18686,6 +18804,7 @@ class MediaCollectionItemsCompanion
           ..write('mediaType: $mediaType, ')
           ..write('entryKey: $entryKey, ')
           ..write('sortIndex: $sortIndex, ')
+          ..write('pinnedByUser: $pinnedByUser, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -34282,11 +34401,25 @@ class $CollectionRelationsTable extends CollectionRelations
   late final GeneratedColumn<int> collectionId = GeneratedColumn<int>(
     'collection_id',
     aliasedName,
-    false,
+    true,
     type: DriftSqlType.int,
-    requiredDuringInsert: true,
+    requiredDuringInsert: false,
     defaultConstraints: GeneratedColumn.constraintIsAlways(
       'REFERENCES media_collections (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _bookUidMeta = const VerificationMeta(
+    'bookUid',
+  );
+  @override
+  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
+    'book_uid',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES video_books (book_uid) ON DELETE CASCADE',
     ),
   );
   static const VerificationMeta _relationTypeMeta = const VerificationMeta(
@@ -34323,6 +34456,20 @@ class $CollectionRelationsTable extends CollectionRelations
     requiredDuringInsert: false,
     defaultConstraints: GeneratedColumn.constraintIsAlways(
       'REFERENCES media_collections (id) ON DELETE SET NULL',
+    ),
+  );
+  static const VerificationMeta _targetBookUidMeta = const VerificationMeta(
+    'targetBookUid',
+  );
+  @override
+  late final GeneratedColumn<String> targetBookUid = GeneratedColumn<String>(
+    'target_book_uid',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES video_books (book_uid) ON DELETE SET NULL',
     ),
   );
   static const VerificationMeta _sourceMeta = const VerificationMeta('source');
@@ -34380,9 +34527,11 @@ class $CollectionRelationsTable extends CollectionRelations
   List<GeneratedColumn> get $columns => [
     id,
     collectionId,
+    bookUid,
     relationType,
     sortIndex,
     targetCollectionId,
+    targetBookUid,
     source,
     subjectId,
     title,
@@ -34412,8 +34561,12 @@ class $CollectionRelationsTable extends CollectionRelations
           _collectionIdMeta,
         ),
       );
-    } else if (isInserting) {
-      context.missing(_collectionIdMeta);
+    }
+    if (data.containsKey('book_uid')) {
+      context.handle(
+        _bookUidMeta,
+        bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta),
+      );
     }
     if (data.containsKey('relation_type')) {
       context.handle(
@@ -34438,6 +34591,15 @@ class $CollectionRelationsTable extends CollectionRelations
         targetCollectionId.isAcceptableOrUnknown(
           data['target_collection_id']!,
           _targetCollectionIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('target_book_uid')) {
+      context.handle(
+        _targetBookUidMeta,
+        targetBookUid.isAcceptableOrUnknown(
+          data['target_book_uid']!,
+          _targetBookUidMeta,
         ),
       );
     }
@@ -34485,6 +34647,7 @@ class $CollectionRelationsTable extends CollectionRelations
   @override
   List<Set<GeneratedColumn>> get uniqueKeys => [
     {collectionId, source, subjectId},
+    {bookUid, source, subjectId},
   ];
   @override
   CollectionRelationRow map(Map<String, dynamic> data, {String? tablePrefix}) {
@@ -34497,7 +34660,11 @@ class $CollectionRelationsTable extends CollectionRelations
       collectionId: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}collection_id'],
-      )!,
+      ),
+      bookUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}book_uid'],
+      ),
       relationType: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}relation_type'],
@@ -34509,6 +34676,10 @@ class $CollectionRelationsTable extends CollectionRelations
       targetCollectionId: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}target_collection_id'],
+      ),
+      targetBookUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}target_book_uid'],
       ),
       source: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
@@ -34543,8 +34714,12 @@ class CollectionRelationRow extends DataClass
     implements Insertable<CollectionRelationRow> {
   final int id;
 
-  /// 边的起点：本地合集。删合集 cascade 清边。
-  final int collectionId;
+  /// 边的起点：本地合集（与 [bookUid] 二选一）。删合集 cascade 清边。
+  final int? collectionId;
+
+  /// 边的起点：单视频（v162，与 [collectionId] 二选一；挂在单个视频上的作品，
+  /// 散装电影）。删视频 cascade 清边。
+  final String? bookUid;
 
   /// 关系类型，wire 值固定小写下划线：`prequel`（前传）/ `sequel`（续集）/
   /// `side_story`（番外/外传）/ `movie`（剧场版）/ `spin_off`（衍生）/ `other`。
@@ -34557,6 +34732,10 @@ class CollectionRelationRow extends DataClass
   /// 已绑定态：目标在本地库中的合集 id。纯刮削态为 NULL；目标合集被删自动
   /// setNull 退回纯刮削态。
   final int? targetCollectionId;
+
+  /// 已绑定态（v162）：目标在本地库中是单视频（散装电影）时的 bookUid，与
+  /// [targetCollectionId] 至多一个非空。目标视频被删自动 setNull 退回纯刮削态。
+  final String? targetBookUid;
 
   /// 目标条目来源（`ScrapeSource.name`：bangumi / tmdb）。
   final String source;
@@ -34574,10 +34753,12 @@ class CollectionRelationRow extends DataClass
   final String? coverPath;
   const CollectionRelationRow({
     required this.id,
-    required this.collectionId,
+    this.collectionId,
+    this.bookUid,
     required this.relationType,
     required this.sortIndex,
     this.targetCollectionId,
+    this.targetBookUid,
     required this.source,
     required this.subjectId,
     required this.title,
@@ -34588,11 +34769,19 @@ class CollectionRelationRow extends DataClass
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
-    map['collection_id'] = Variable<int>(collectionId);
+    if (!nullToAbsent || collectionId != null) {
+      map['collection_id'] = Variable<int>(collectionId);
+    }
+    if (!nullToAbsent || bookUid != null) {
+      map['book_uid'] = Variable<String>(bookUid);
+    }
     map['relation_type'] = Variable<String>(relationType);
     map['sort_index'] = Variable<int>(sortIndex);
     if (!nullToAbsent || targetCollectionId != null) {
       map['target_collection_id'] = Variable<int>(targetCollectionId);
+    }
+    if (!nullToAbsent || targetBookUid != null) {
+      map['target_book_uid'] = Variable<String>(targetBookUid);
     }
     map['source'] = Variable<String>(source);
     map['subject_id'] = Variable<String>(subjectId);
@@ -34609,12 +34798,20 @@ class CollectionRelationRow extends DataClass
   CollectionRelationsCompanion toCompanion(bool nullToAbsent) {
     return CollectionRelationsCompanion(
       id: Value(id),
-      collectionId: Value(collectionId),
+      collectionId: collectionId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(collectionId),
+      bookUid: bookUid == null && nullToAbsent
+          ? const Value.absent()
+          : Value(bookUid),
       relationType: Value(relationType),
       sortIndex: Value(sortIndex),
       targetCollectionId: targetCollectionId == null && nullToAbsent
           ? const Value.absent()
           : Value(targetCollectionId),
+      targetBookUid: targetBookUid == null && nullToAbsent
+          ? const Value.absent()
+          : Value(targetBookUid),
       source: Value(source),
       subjectId: Value(subjectId),
       title: Value(title),
@@ -34634,10 +34831,12 @@ class CollectionRelationRow extends DataClass
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return CollectionRelationRow(
       id: serializer.fromJson<int>(json['id']),
-      collectionId: serializer.fromJson<int>(json['collectionId']),
+      collectionId: serializer.fromJson<int?>(json['collectionId']),
+      bookUid: serializer.fromJson<String?>(json['bookUid']),
       relationType: serializer.fromJson<String>(json['relationType']),
       sortIndex: serializer.fromJson<int>(json['sortIndex']),
       targetCollectionId: serializer.fromJson<int?>(json['targetCollectionId']),
+      targetBookUid: serializer.fromJson<String?>(json['targetBookUid']),
       source: serializer.fromJson<String>(json['source']),
       subjectId: serializer.fromJson<String>(json['subjectId']),
       title: serializer.fromJson<String>(json['title']),
@@ -34650,10 +34849,12 @@ class CollectionRelationRow extends DataClass
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
-      'collectionId': serializer.toJson<int>(collectionId),
+      'collectionId': serializer.toJson<int?>(collectionId),
+      'bookUid': serializer.toJson<String?>(bookUid),
       'relationType': serializer.toJson<String>(relationType),
       'sortIndex': serializer.toJson<int>(sortIndex),
       'targetCollectionId': serializer.toJson<int?>(targetCollectionId),
+      'targetBookUid': serializer.toJson<String?>(targetBookUid),
       'source': serializer.toJson<String>(source),
       'subjectId': serializer.toJson<String>(subjectId),
       'title': serializer.toJson<String>(title),
@@ -34664,10 +34865,12 @@ class CollectionRelationRow extends DataClass
 
   CollectionRelationRow copyWith({
     int? id,
-    int? collectionId,
+    Value<int?> collectionId = const Value.absent(),
+    Value<String?> bookUid = const Value.absent(),
     String? relationType,
     int? sortIndex,
     Value<int?> targetCollectionId = const Value.absent(),
+    Value<String?> targetBookUid = const Value.absent(),
     String? source,
     String? subjectId,
     String? title,
@@ -34675,12 +34878,16 @@ class CollectionRelationRow extends DataClass
     Value<String?> coverPath = const Value.absent(),
   }) => CollectionRelationRow(
     id: id ?? this.id,
-    collectionId: collectionId ?? this.collectionId,
+    collectionId: collectionId.present ? collectionId.value : this.collectionId,
+    bookUid: bookUid.present ? bookUid.value : this.bookUid,
     relationType: relationType ?? this.relationType,
     sortIndex: sortIndex ?? this.sortIndex,
     targetCollectionId: targetCollectionId.present
         ? targetCollectionId.value
         : this.targetCollectionId,
+    targetBookUid: targetBookUid.present
+        ? targetBookUid.value
+        : this.targetBookUid,
     source: source ?? this.source,
     subjectId: subjectId ?? this.subjectId,
     title: title ?? this.title,
@@ -34693,6 +34900,7 @@ class CollectionRelationRow extends DataClass
       collectionId: data.collectionId.present
           ? data.collectionId.value
           : this.collectionId,
+      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
       relationType: data.relationType.present
           ? data.relationType.value
           : this.relationType,
@@ -34700,6 +34908,9 @@ class CollectionRelationRow extends DataClass
       targetCollectionId: data.targetCollectionId.present
           ? data.targetCollectionId.value
           : this.targetCollectionId,
+      targetBookUid: data.targetBookUid.present
+          ? data.targetBookUid.value
+          : this.targetBookUid,
       source: data.source.present ? data.source.value : this.source,
       subjectId: data.subjectId.present ? data.subjectId.value : this.subjectId,
       title: data.title.present ? data.title.value : this.title,
@@ -34713,9 +34924,11 @@ class CollectionRelationRow extends DataClass
     return (StringBuffer('CollectionRelationRow(')
           ..write('id: $id, ')
           ..write('collectionId: $collectionId, ')
+          ..write('bookUid: $bookUid, ')
           ..write('relationType: $relationType, ')
           ..write('sortIndex: $sortIndex, ')
           ..write('targetCollectionId: $targetCollectionId, ')
+          ..write('targetBookUid: $targetBookUid, ')
           ..write('source: $source, ')
           ..write('subjectId: $subjectId, ')
           ..write('title: $title, ')
@@ -34729,9 +34942,11 @@ class CollectionRelationRow extends DataClass
   int get hashCode => Object.hash(
     id,
     collectionId,
+    bookUid,
     relationType,
     sortIndex,
     targetCollectionId,
+    targetBookUid,
     source,
     subjectId,
     title,
@@ -34744,9 +34959,11 @@ class CollectionRelationRow extends DataClass
       (other is CollectionRelationRow &&
           other.id == this.id &&
           other.collectionId == this.collectionId &&
+          other.bookUid == this.bookUid &&
           other.relationType == this.relationType &&
           other.sortIndex == this.sortIndex &&
           other.targetCollectionId == this.targetCollectionId &&
+          other.targetBookUid == this.targetBookUid &&
           other.source == this.source &&
           other.subjectId == this.subjectId &&
           other.title == this.title &&
@@ -34757,10 +34974,12 @@ class CollectionRelationRow extends DataClass
 class CollectionRelationsCompanion
     extends UpdateCompanion<CollectionRelationRow> {
   final Value<int> id;
-  final Value<int> collectionId;
+  final Value<int?> collectionId;
+  final Value<String?> bookUid;
   final Value<String> relationType;
   final Value<int> sortIndex;
   final Value<int?> targetCollectionId;
+  final Value<String?> targetBookUid;
   final Value<String> source;
   final Value<String> subjectId;
   final Value<String> title;
@@ -34769,9 +34988,11 @@ class CollectionRelationsCompanion
   const CollectionRelationsCompanion({
     this.id = const Value.absent(),
     this.collectionId = const Value.absent(),
+    this.bookUid = const Value.absent(),
     this.relationType = const Value.absent(),
     this.sortIndex = const Value.absent(),
     this.targetCollectionId = const Value.absent(),
+    this.targetBookUid = const Value.absent(),
     this.source = const Value.absent(),
     this.subjectId = const Value.absent(),
     this.title = const Value.absent(),
@@ -34780,26 +35001,29 @@ class CollectionRelationsCompanion
   });
   CollectionRelationsCompanion.insert({
     this.id = const Value.absent(),
-    required int collectionId,
+    this.collectionId = const Value.absent(),
+    this.bookUid = const Value.absent(),
     required String relationType,
     this.sortIndex = const Value.absent(),
     this.targetCollectionId = const Value.absent(),
+    this.targetBookUid = const Value.absent(),
     required String source,
     required String subjectId,
     required String title,
     this.coverUrl = const Value.absent(),
     this.coverPath = const Value.absent(),
-  }) : collectionId = Value(collectionId),
-       relationType = Value(relationType),
+  }) : relationType = Value(relationType),
        source = Value(source),
        subjectId = Value(subjectId),
        title = Value(title);
   static Insertable<CollectionRelationRow> custom({
     Expression<int>? id,
     Expression<int>? collectionId,
+    Expression<String>? bookUid,
     Expression<String>? relationType,
     Expression<int>? sortIndex,
     Expression<int>? targetCollectionId,
+    Expression<String>? targetBookUid,
     Expression<String>? source,
     Expression<String>? subjectId,
     Expression<String>? title,
@@ -34809,10 +35033,12 @@ class CollectionRelationsCompanion
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (collectionId != null) 'collection_id': collectionId,
+      if (bookUid != null) 'book_uid': bookUid,
       if (relationType != null) 'relation_type': relationType,
       if (sortIndex != null) 'sort_index': sortIndex,
       if (targetCollectionId != null)
         'target_collection_id': targetCollectionId,
+      if (targetBookUid != null) 'target_book_uid': targetBookUid,
       if (source != null) 'source': source,
       if (subjectId != null) 'subject_id': subjectId,
       if (title != null) 'title': title,
@@ -34823,10 +35049,12 @@ class CollectionRelationsCompanion
 
   CollectionRelationsCompanion copyWith({
     Value<int>? id,
-    Value<int>? collectionId,
+    Value<int?>? collectionId,
+    Value<String?>? bookUid,
     Value<String>? relationType,
     Value<int>? sortIndex,
     Value<int?>? targetCollectionId,
+    Value<String?>? targetBookUid,
     Value<String>? source,
     Value<String>? subjectId,
     Value<String>? title,
@@ -34836,9 +35064,11 @@ class CollectionRelationsCompanion
     return CollectionRelationsCompanion(
       id: id ?? this.id,
       collectionId: collectionId ?? this.collectionId,
+      bookUid: bookUid ?? this.bookUid,
       relationType: relationType ?? this.relationType,
       sortIndex: sortIndex ?? this.sortIndex,
       targetCollectionId: targetCollectionId ?? this.targetCollectionId,
+      targetBookUid: targetBookUid ?? this.targetBookUid,
       source: source ?? this.source,
       subjectId: subjectId ?? this.subjectId,
       title: title ?? this.title,
@@ -34856,6 +35086,9 @@ class CollectionRelationsCompanion
     if (collectionId.present) {
       map['collection_id'] = Variable<int>(collectionId.value);
     }
+    if (bookUid.present) {
+      map['book_uid'] = Variable<String>(bookUid.value);
+    }
     if (relationType.present) {
       map['relation_type'] = Variable<String>(relationType.value);
     }
@@ -34864,6 +35097,9 @@ class CollectionRelationsCompanion
     }
     if (targetCollectionId.present) {
       map['target_collection_id'] = Variable<int>(targetCollectionId.value);
+    }
+    if (targetBookUid.present) {
+      map['target_book_uid'] = Variable<String>(targetBookUid.value);
     }
     if (source.present) {
       map['source'] = Variable<String>(source.value);
@@ -34888,9 +35124,11 @@ class CollectionRelationsCompanion
     return (StringBuffer('CollectionRelationsCompanion(')
           ..write('id: $id, ')
           ..write('collectionId: $collectionId, ')
+          ..write('bookUid: $bookUid, ')
           ..write('relationType: $relationType, ')
           ..write('sortIndex: $sortIndex, ')
           ..write('targetCollectionId: $targetCollectionId, ')
+          ..write('targetBookUid: $targetBookUid, ')
           ..write('source: $source, ')
           ..write('subjectId: $subjectId, ')
           ..write('title: $title, ')
@@ -35369,6 +35607,1226 @@ class MediaImagesCompanion extends UpdateCompanion<MediaImageRow> {
           ..write('position: $position, ')
           ..write('path: $path, ')
           ..write('sourceUrl: $sourceUrl')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $ItemScrapeMetaTable extends ItemScrapeMeta
+    with TableInfo<$ItemScrapeMetaTable, ItemScrapeMetaRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ItemScrapeMetaTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _mediaTypeMeta = const VerificationMeta(
+    'mediaType',
+  );
+  @override
+  late final GeneratedColumn<String> mediaType = GeneratedColumn<String>(
+    'media_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _entryKeyMeta = const VerificationMeta(
+    'entryKey',
+  );
+  @override
+  late final GeneratedColumn<String> entryKey = GeneratedColumn<String>(
+    'entry_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceMeta = const VerificationMeta('source');
+  @override
+  late final GeneratedColumn<String> source = GeneratedColumn<String>(
+    'source',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _subjectIdMeta = const VerificationMeta(
+    'subjectId',
+  );
+  @override
+  late final GeneratedColumn<String> subjectId = GeneratedColumn<String>(
+    'subject_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+    'title',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _originalTitleMeta = const VerificationMeta(
+    'originalTitle',
+  );
+  @override
+  late final GeneratedColumn<String> originalTitle = GeneratedColumn<String>(
+    'original_title',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _summaryMeta = const VerificationMeta(
+    'summary',
+  );
+  @override
+  late final GeneratedColumn<String> summary = GeneratedColumn<String>(
+    'summary',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _airDateMeta = const VerificationMeta(
+    'airDate',
+  );
+  @override
+  late final GeneratedColumn<String> airDate = GeneratedColumn<String>(
+    'air_date',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _ratingMeta = const VerificationMeta('rating');
+  @override
+  late final GeneratedColumn<double> rating = GeneratedColumn<double>(
+    'rating',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _ratingCountMeta = const VerificationMeta(
+    'ratingCount',
+  );
+  @override
+  late final GeneratedColumn<int> ratingCount = GeneratedColumn<int>(
+    'rating_count',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _tagsJsonMeta = const VerificationMeta(
+    'tagsJson',
+  );
+  @override
+  late final GeneratedColumn<String> tagsJson = GeneratedColumn<String>(
+    'tags_json',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _detailUrlMeta = const VerificationMeta(
+    'detailUrl',
+  );
+  @override
+  late final GeneratedColumn<String> detailUrl = GeneratedColumn<String>(
+    'detail_url',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _scrapedAtMeta = const VerificationMeta(
+    'scrapedAt',
+  );
+  @override
+  late final GeneratedColumn<int> scrapedAt = GeneratedColumn<int>(
+    'scraped_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    mediaType,
+    entryKey,
+    source,
+    subjectId,
+    title,
+    originalTitle,
+    summary,
+    airDate,
+    rating,
+    ratingCount,
+    tagsJson,
+    detailUrl,
+    scrapedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'item_scrape_meta';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ItemScrapeMetaRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('media_type')) {
+      context.handle(
+        _mediaTypeMeta,
+        mediaType.isAcceptableOrUnknown(data['media_type']!, _mediaTypeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mediaTypeMeta);
+    }
+    if (data.containsKey('entry_key')) {
+      context.handle(
+        _entryKeyMeta,
+        entryKey.isAcceptableOrUnknown(data['entry_key']!, _entryKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entryKeyMeta);
+    }
+    if (data.containsKey('source')) {
+      context.handle(
+        _sourceMeta,
+        source.isAcceptableOrUnknown(data['source']!, _sourceMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceMeta);
+    }
+    if (data.containsKey('subject_id')) {
+      context.handle(
+        _subjectIdMeta,
+        subjectId.isAcceptableOrUnknown(data['subject_id']!, _subjectIdMeta),
+      );
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+        _titleMeta,
+        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
+      );
+    }
+    if (data.containsKey('original_title')) {
+      context.handle(
+        _originalTitleMeta,
+        originalTitle.isAcceptableOrUnknown(
+          data['original_title']!,
+          _originalTitleMeta,
+        ),
+      );
+    }
+    if (data.containsKey('summary')) {
+      context.handle(
+        _summaryMeta,
+        summary.isAcceptableOrUnknown(data['summary']!, _summaryMeta),
+      );
+    }
+    if (data.containsKey('air_date')) {
+      context.handle(
+        _airDateMeta,
+        airDate.isAcceptableOrUnknown(data['air_date']!, _airDateMeta),
+      );
+    }
+    if (data.containsKey('rating')) {
+      context.handle(
+        _ratingMeta,
+        rating.isAcceptableOrUnknown(data['rating']!, _ratingMeta),
+      );
+    }
+    if (data.containsKey('rating_count')) {
+      context.handle(
+        _ratingCountMeta,
+        ratingCount.isAcceptableOrUnknown(
+          data['rating_count']!,
+          _ratingCountMeta,
+        ),
+      );
+    }
+    if (data.containsKey('tags_json')) {
+      context.handle(
+        _tagsJsonMeta,
+        tagsJson.isAcceptableOrUnknown(data['tags_json']!, _tagsJsonMeta),
+      );
+    }
+    if (data.containsKey('detail_url')) {
+      context.handle(
+        _detailUrlMeta,
+        detailUrl.isAcceptableOrUnknown(data['detail_url']!, _detailUrlMeta),
+      );
+    }
+    if (data.containsKey('scraped_at')) {
+      context.handle(
+        _scrapedAtMeta,
+        scrapedAt.isAcceptableOrUnknown(data['scraped_at']!, _scrapedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_scrapedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {mediaType, entryKey};
+  @override
+  ItemScrapeMetaRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ItemScrapeMetaRow(
+      mediaType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_type'],
+      )!,
+      entryKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entry_key'],
+      )!,
+      source: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source'],
+      )!,
+      subjectId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}subject_id'],
+      ),
+      title: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}title'],
+      ),
+      originalTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}original_title'],
+      ),
+      summary: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}summary'],
+      ),
+      airDate: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}air_date'],
+      ),
+      rating: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}rating'],
+      ),
+      ratingCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}rating_count'],
+      ),
+      tagsJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tags_json'],
+      ),
+      detailUrl: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}detail_url'],
+      ),
+      scrapedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}scraped_at'],
+      )!,
+    );
+  }
+
+  @override
+  $ItemScrapeMetaTable createAlias(String alias) {
+    return $ItemScrapeMetaTable(attachedDatabase, alias);
+  }
+}
+
+class ItemScrapeMetaRow extends DataClass
+    implements Insertable<ItemScrapeMetaRow> {
+  /// 宿主种类（`MediaKind.dbValue`：epub / srt / game）。
+  final String mediaType;
+
+  /// 宿主稳定身份（同 [MediaCollectionItems.entryKey] 口径）。
+  final String entryKey;
+
+  /// 来源：书籍刮削源名（`BookScrapeSource.name`：bangumi / dlsite / …）、游戏
+  /// 元数据源 key（bgm / vndb / dlsite），脚本 / 手动写入为 `manual`。
+  final String source;
+
+  /// 源内条目 id；手动写入为 null。
+  final String? subjectId;
+
+  /// 条目主标题（中文优先）；只记事实，不回写书名（显示名覆盖另有存储）。
+  final String? title;
+
+  /// 原名；与 [title] 相同或缺失时为 null。
+  final String? originalTitle;
+
+  /// 简介（含换行）。
+  final String? summary;
+
+  /// 出版 / 发行日期 `YYYY-MM-DD`，允许只到年或年月（与 [CollectionScrapeMeta]
+  /// 同规矩：不凭空补月日）。
+  final String? airDate;
+
+  /// 评分（0~10）与评分人数。
+  final double? rating;
+  final int? ratingCount;
+
+  /// 标签 JSON 数组：`[{"name":"日常","count":1234}]`（按热度降序；与
+  /// [CollectionScrapeMeta.tagsJson] 同形，展示层共用一个解析函数）。
+  final String? tagsJson;
+
+  /// 条目详情页 URL，供「查看条目」跳转。
+  final String? detailUrl;
+
+  /// 本行写入毫秒戳。
+  final int scrapedAt;
+  const ItemScrapeMetaRow({
+    required this.mediaType,
+    required this.entryKey,
+    required this.source,
+    this.subjectId,
+    this.title,
+    this.originalTitle,
+    this.summary,
+    this.airDate,
+    this.rating,
+    this.ratingCount,
+    this.tagsJson,
+    this.detailUrl,
+    required this.scrapedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['media_type'] = Variable<String>(mediaType);
+    map['entry_key'] = Variable<String>(entryKey);
+    map['source'] = Variable<String>(source);
+    if (!nullToAbsent || subjectId != null) {
+      map['subject_id'] = Variable<String>(subjectId);
+    }
+    if (!nullToAbsent || title != null) {
+      map['title'] = Variable<String>(title);
+    }
+    if (!nullToAbsent || originalTitle != null) {
+      map['original_title'] = Variable<String>(originalTitle);
+    }
+    if (!nullToAbsent || summary != null) {
+      map['summary'] = Variable<String>(summary);
+    }
+    if (!nullToAbsent || airDate != null) {
+      map['air_date'] = Variable<String>(airDate);
+    }
+    if (!nullToAbsent || rating != null) {
+      map['rating'] = Variable<double>(rating);
+    }
+    if (!nullToAbsent || ratingCount != null) {
+      map['rating_count'] = Variable<int>(ratingCount);
+    }
+    if (!nullToAbsent || tagsJson != null) {
+      map['tags_json'] = Variable<String>(tagsJson);
+    }
+    if (!nullToAbsent || detailUrl != null) {
+      map['detail_url'] = Variable<String>(detailUrl);
+    }
+    map['scraped_at'] = Variable<int>(scrapedAt);
+    return map;
+  }
+
+  ItemScrapeMetaCompanion toCompanion(bool nullToAbsent) {
+    return ItemScrapeMetaCompanion(
+      mediaType: Value(mediaType),
+      entryKey: Value(entryKey),
+      source: Value(source),
+      subjectId: subjectId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(subjectId),
+      title: title == null && nullToAbsent
+          ? const Value.absent()
+          : Value(title),
+      originalTitle: originalTitle == null && nullToAbsent
+          ? const Value.absent()
+          : Value(originalTitle),
+      summary: summary == null && nullToAbsent
+          ? const Value.absent()
+          : Value(summary),
+      airDate: airDate == null && nullToAbsent
+          ? const Value.absent()
+          : Value(airDate),
+      rating: rating == null && nullToAbsent
+          ? const Value.absent()
+          : Value(rating),
+      ratingCount: ratingCount == null && nullToAbsent
+          ? const Value.absent()
+          : Value(ratingCount),
+      tagsJson: tagsJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(tagsJson),
+      detailUrl: detailUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(detailUrl),
+      scrapedAt: Value(scrapedAt),
+    );
+  }
+
+  factory ItemScrapeMetaRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ItemScrapeMetaRow(
+      mediaType: serializer.fromJson<String>(json['mediaType']),
+      entryKey: serializer.fromJson<String>(json['entryKey']),
+      source: serializer.fromJson<String>(json['source']),
+      subjectId: serializer.fromJson<String?>(json['subjectId']),
+      title: serializer.fromJson<String?>(json['title']),
+      originalTitle: serializer.fromJson<String?>(json['originalTitle']),
+      summary: serializer.fromJson<String?>(json['summary']),
+      airDate: serializer.fromJson<String?>(json['airDate']),
+      rating: serializer.fromJson<double?>(json['rating']),
+      ratingCount: serializer.fromJson<int?>(json['ratingCount']),
+      tagsJson: serializer.fromJson<String?>(json['tagsJson']),
+      detailUrl: serializer.fromJson<String?>(json['detailUrl']),
+      scrapedAt: serializer.fromJson<int>(json['scrapedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'mediaType': serializer.toJson<String>(mediaType),
+      'entryKey': serializer.toJson<String>(entryKey),
+      'source': serializer.toJson<String>(source),
+      'subjectId': serializer.toJson<String?>(subjectId),
+      'title': serializer.toJson<String?>(title),
+      'originalTitle': serializer.toJson<String?>(originalTitle),
+      'summary': serializer.toJson<String?>(summary),
+      'airDate': serializer.toJson<String?>(airDate),
+      'rating': serializer.toJson<double?>(rating),
+      'ratingCount': serializer.toJson<int?>(ratingCount),
+      'tagsJson': serializer.toJson<String?>(tagsJson),
+      'detailUrl': serializer.toJson<String?>(detailUrl),
+      'scrapedAt': serializer.toJson<int>(scrapedAt),
+    };
+  }
+
+  ItemScrapeMetaRow copyWith({
+    String? mediaType,
+    String? entryKey,
+    String? source,
+    Value<String?> subjectId = const Value.absent(),
+    Value<String?> title = const Value.absent(),
+    Value<String?> originalTitle = const Value.absent(),
+    Value<String?> summary = const Value.absent(),
+    Value<String?> airDate = const Value.absent(),
+    Value<double?> rating = const Value.absent(),
+    Value<int?> ratingCount = const Value.absent(),
+    Value<String?> tagsJson = const Value.absent(),
+    Value<String?> detailUrl = const Value.absent(),
+    int? scrapedAt,
+  }) => ItemScrapeMetaRow(
+    mediaType: mediaType ?? this.mediaType,
+    entryKey: entryKey ?? this.entryKey,
+    source: source ?? this.source,
+    subjectId: subjectId.present ? subjectId.value : this.subjectId,
+    title: title.present ? title.value : this.title,
+    originalTitle: originalTitle.present
+        ? originalTitle.value
+        : this.originalTitle,
+    summary: summary.present ? summary.value : this.summary,
+    airDate: airDate.present ? airDate.value : this.airDate,
+    rating: rating.present ? rating.value : this.rating,
+    ratingCount: ratingCount.present ? ratingCount.value : this.ratingCount,
+    tagsJson: tagsJson.present ? tagsJson.value : this.tagsJson,
+    detailUrl: detailUrl.present ? detailUrl.value : this.detailUrl,
+    scrapedAt: scrapedAt ?? this.scrapedAt,
+  );
+  ItemScrapeMetaRow copyWithCompanion(ItemScrapeMetaCompanion data) {
+    return ItemScrapeMetaRow(
+      mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType,
+      entryKey: data.entryKey.present ? data.entryKey.value : this.entryKey,
+      source: data.source.present ? data.source.value : this.source,
+      subjectId: data.subjectId.present ? data.subjectId.value : this.subjectId,
+      title: data.title.present ? data.title.value : this.title,
+      originalTitle: data.originalTitle.present
+          ? data.originalTitle.value
+          : this.originalTitle,
+      summary: data.summary.present ? data.summary.value : this.summary,
+      airDate: data.airDate.present ? data.airDate.value : this.airDate,
+      rating: data.rating.present ? data.rating.value : this.rating,
+      ratingCount: data.ratingCount.present
+          ? data.ratingCount.value
+          : this.ratingCount,
+      tagsJson: data.tagsJson.present ? data.tagsJson.value : this.tagsJson,
+      detailUrl: data.detailUrl.present ? data.detailUrl.value : this.detailUrl,
+      scrapedAt: data.scrapedAt.present ? data.scrapedAt.value : this.scrapedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ItemScrapeMetaRow(')
+          ..write('mediaType: $mediaType, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('source: $source, ')
+          ..write('subjectId: $subjectId, ')
+          ..write('title: $title, ')
+          ..write('originalTitle: $originalTitle, ')
+          ..write('summary: $summary, ')
+          ..write('airDate: $airDate, ')
+          ..write('rating: $rating, ')
+          ..write('ratingCount: $ratingCount, ')
+          ..write('tagsJson: $tagsJson, ')
+          ..write('detailUrl: $detailUrl, ')
+          ..write('scrapedAt: $scrapedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    mediaType,
+    entryKey,
+    source,
+    subjectId,
+    title,
+    originalTitle,
+    summary,
+    airDate,
+    rating,
+    ratingCount,
+    tagsJson,
+    detailUrl,
+    scrapedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ItemScrapeMetaRow &&
+          other.mediaType == this.mediaType &&
+          other.entryKey == this.entryKey &&
+          other.source == this.source &&
+          other.subjectId == this.subjectId &&
+          other.title == this.title &&
+          other.originalTitle == this.originalTitle &&
+          other.summary == this.summary &&
+          other.airDate == this.airDate &&
+          other.rating == this.rating &&
+          other.ratingCount == this.ratingCount &&
+          other.tagsJson == this.tagsJson &&
+          other.detailUrl == this.detailUrl &&
+          other.scrapedAt == this.scrapedAt);
+}
+
+class ItemScrapeMetaCompanion extends UpdateCompanion<ItemScrapeMetaRow> {
+  final Value<String> mediaType;
+  final Value<String> entryKey;
+  final Value<String> source;
+  final Value<String?> subjectId;
+  final Value<String?> title;
+  final Value<String?> originalTitle;
+  final Value<String?> summary;
+  final Value<String?> airDate;
+  final Value<double?> rating;
+  final Value<int?> ratingCount;
+  final Value<String?> tagsJson;
+  final Value<String?> detailUrl;
+  final Value<int> scrapedAt;
+  final Value<int> rowid;
+  const ItemScrapeMetaCompanion({
+    this.mediaType = const Value.absent(),
+    this.entryKey = const Value.absent(),
+    this.source = const Value.absent(),
+    this.subjectId = const Value.absent(),
+    this.title = const Value.absent(),
+    this.originalTitle = const Value.absent(),
+    this.summary = const Value.absent(),
+    this.airDate = const Value.absent(),
+    this.rating = const Value.absent(),
+    this.ratingCount = const Value.absent(),
+    this.tagsJson = const Value.absent(),
+    this.detailUrl = const Value.absent(),
+    this.scrapedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ItemScrapeMetaCompanion.insert({
+    required String mediaType,
+    required String entryKey,
+    required String source,
+    this.subjectId = const Value.absent(),
+    this.title = const Value.absent(),
+    this.originalTitle = const Value.absent(),
+    this.summary = const Value.absent(),
+    this.airDate = const Value.absent(),
+    this.rating = const Value.absent(),
+    this.ratingCount = const Value.absent(),
+    this.tagsJson = const Value.absent(),
+    this.detailUrl = const Value.absent(),
+    required int scrapedAt,
+    this.rowid = const Value.absent(),
+  }) : mediaType = Value(mediaType),
+       entryKey = Value(entryKey),
+       source = Value(source),
+       scrapedAt = Value(scrapedAt);
+  static Insertable<ItemScrapeMetaRow> custom({
+    Expression<String>? mediaType,
+    Expression<String>? entryKey,
+    Expression<String>? source,
+    Expression<String>? subjectId,
+    Expression<String>? title,
+    Expression<String>? originalTitle,
+    Expression<String>? summary,
+    Expression<String>? airDate,
+    Expression<double>? rating,
+    Expression<int>? ratingCount,
+    Expression<String>? tagsJson,
+    Expression<String>? detailUrl,
+    Expression<int>? scrapedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (mediaType != null) 'media_type': mediaType,
+      if (entryKey != null) 'entry_key': entryKey,
+      if (source != null) 'source': source,
+      if (subjectId != null) 'subject_id': subjectId,
+      if (title != null) 'title': title,
+      if (originalTitle != null) 'original_title': originalTitle,
+      if (summary != null) 'summary': summary,
+      if (airDate != null) 'air_date': airDate,
+      if (rating != null) 'rating': rating,
+      if (ratingCount != null) 'rating_count': ratingCount,
+      if (tagsJson != null) 'tags_json': tagsJson,
+      if (detailUrl != null) 'detail_url': detailUrl,
+      if (scrapedAt != null) 'scraped_at': scrapedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ItemScrapeMetaCompanion copyWith({
+    Value<String>? mediaType,
+    Value<String>? entryKey,
+    Value<String>? source,
+    Value<String?>? subjectId,
+    Value<String?>? title,
+    Value<String?>? originalTitle,
+    Value<String?>? summary,
+    Value<String?>? airDate,
+    Value<double?>? rating,
+    Value<int?>? ratingCount,
+    Value<String?>? tagsJson,
+    Value<String?>? detailUrl,
+    Value<int>? scrapedAt,
+    Value<int>? rowid,
+  }) {
+    return ItemScrapeMetaCompanion(
+      mediaType: mediaType ?? this.mediaType,
+      entryKey: entryKey ?? this.entryKey,
+      source: source ?? this.source,
+      subjectId: subjectId ?? this.subjectId,
+      title: title ?? this.title,
+      originalTitle: originalTitle ?? this.originalTitle,
+      summary: summary ?? this.summary,
+      airDate: airDate ?? this.airDate,
+      rating: rating ?? this.rating,
+      ratingCount: ratingCount ?? this.ratingCount,
+      tagsJson: tagsJson ?? this.tagsJson,
+      detailUrl: detailUrl ?? this.detailUrl,
+      scrapedAt: scrapedAt ?? this.scrapedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (mediaType.present) {
+      map['media_type'] = Variable<String>(mediaType.value);
+    }
+    if (entryKey.present) {
+      map['entry_key'] = Variable<String>(entryKey.value);
+    }
+    if (source.present) {
+      map['source'] = Variable<String>(source.value);
+    }
+    if (subjectId.present) {
+      map['subject_id'] = Variable<String>(subjectId.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (originalTitle.present) {
+      map['original_title'] = Variable<String>(originalTitle.value);
+    }
+    if (summary.present) {
+      map['summary'] = Variable<String>(summary.value);
+    }
+    if (airDate.present) {
+      map['air_date'] = Variable<String>(airDate.value);
+    }
+    if (rating.present) {
+      map['rating'] = Variable<double>(rating.value);
+    }
+    if (ratingCount.present) {
+      map['rating_count'] = Variable<int>(ratingCount.value);
+    }
+    if (tagsJson.present) {
+      map['tags_json'] = Variable<String>(tagsJson.value);
+    }
+    if (detailUrl.present) {
+      map['detail_url'] = Variable<String>(detailUrl.value);
+    }
+    if (scrapedAt.present) {
+      map['scraped_at'] = Variable<int>(scrapedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ItemScrapeMetaCompanion(')
+          ..write('mediaType: $mediaType, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('source: $source, ')
+          ..write('subjectId: $subjectId, ')
+          ..write('title: $title, ')
+          ..write('originalTitle: $originalTitle, ')
+          ..write('summary: $summary, ')
+          ..write('airDate: $airDate, ')
+          ..write('rating: $rating, ')
+          ..write('ratingCount: $ratingCount, ')
+          ..write('tagsJson: $tagsJson, ')
+          ..write('detailUrl: $detailUrl, ')
+          ..write('scrapedAt: $scrapedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $ItemImagesTable extends ItemImages
+    with TableInfo<$ItemImagesTable, ItemImageRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ItemImagesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _mediaTypeMeta = const VerificationMeta(
+    'mediaType',
+  );
+  @override
+  late final GeneratedColumn<String> mediaType = GeneratedColumn<String>(
+    'media_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _entryKeyMeta = const VerificationMeta(
+    'entryKey',
+  );
+  @override
+  late final GeneratedColumn<String> entryKey = GeneratedColumn<String>(
+    'entry_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _kindMeta = const VerificationMeta('kind');
+  @override
+  late final GeneratedColumn<String> kind = GeneratedColumn<String>(
+    'kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _positionMeta = const VerificationMeta(
+    'position',
+  );
+  @override
+  late final GeneratedColumn<int> position = GeneratedColumn<int>(
+    'position',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _pathMeta = const VerificationMeta('path');
+  @override
+  late final GeneratedColumn<String> path = GeneratedColumn<String>(
+    'path',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceUrlMeta = const VerificationMeta(
+    'sourceUrl',
+  );
+  @override
+  late final GeneratedColumn<String> sourceUrl = GeneratedColumn<String>(
+    'source_url',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    mediaType,
+    entryKey,
+    kind,
+    position,
+    path,
+    sourceUrl,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'item_images';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ItemImageRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('media_type')) {
+      context.handle(
+        _mediaTypeMeta,
+        mediaType.isAcceptableOrUnknown(data['media_type']!, _mediaTypeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mediaTypeMeta);
+    }
+    if (data.containsKey('entry_key')) {
+      context.handle(
+        _entryKeyMeta,
+        entryKey.isAcceptableOrUnknown(data['entry_key']!, _entryKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entryKeyMeta);
+    }
+    if (data.containsKey('kind')) {
+      context.handle(
+        _kindMeta,
+        kind.isAcceptableOrUnknown(data['kind']!, _kindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_kindMeta);
+    }
+    if (data.containsKey('position')) {
+      context.handle(
+        _positionMeta,
+        position.isAcceptableOrUnknown(data['position']!, _positionMeta),
+      );
+    }
+    if (data.containsKey('path')) {
+      context.handle(
+        _pathMeta,
+        path.isAcceptableOrUnknown(data['path']!, _pathMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_pathMeta);
+    }
+    if (data.containsKey('source_url')) {
+      context.handle(
+        _sourceUrlMeta,
+        sourceUrl.isAcceptableOrUnknown(data['source_url']!, _sourceUrlMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {mediaType, entryKey, kind, position};
+  @override
+  ItemImageRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ItemImageRow(
+      mediaType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_type'],
+      )!,
+      entryKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entry_key'],
+      )!,
+      kind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}kind'],
+      )!,
+      position: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}position'],
+      )!,
+      path: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}path'],
+      )!,
+      sourceUrl: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_url'],
+      ),
+    );
+  }
+
+  @override
+  $ItemImagesTable createAlias(String alias) {
+    return $ItemImagesTable(attachedDatabase, alias);
+  }
+}
+
+class ItemImageRow extends DataClass implements Insertable<ItemImageRow> {
+  /// 宿主种类（`MediaKind.dbValue`），同 [ItemScrapeMeta.mediaType]。
+  final String mediaType;
+
+  /// 宿主稳定身份，同 [ItemScrapeMeta.entryKey]。
+  final String entryKey;
+
+  /// 图种类（`MediaImageKind.dbValue`：backdrop / logo / title_card）。
+  final String kind;
+
+  /// 同宿主同种类内的排序位（仅 backdrop 允许 >0）。
+  final int position;
+
+  /// 本地文件绝对路径。
+  final String path;
+
+  /// 来源远程 URL（重下 / 诊断用；本地文件写入为 null）。
+  final String? sourceUrl;
+  const ItemImageRow({
+    required this.mediaType,
+    required this.entryKey,
+    required this.kind,
+    required this.position,
+    required this.path,
+    this.sourceUrl,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['media_type'] = Variable<String>(mediaType);
+    map['entry_key'] = Variable<String>(entryKey);
+    map['kind'] = Variable<String>(kind);
+    map['position'] = Variable<int>(position);
+    map['path'] = Variable<String>(path);
+    if (!nullToAbsent || sourceUrl != null) {
+      map['source_url'] = Variable<String>(sourceUrl);
+    }
+    return map;
+  }
+
+  ItemImagesCompanion toCompanion(bool nullToAbsent) {
+    return ItemImagesCompanion(
+      mediaType: Value(mediaType),
+      entryKey: Value(entryKey),
+      kind: Value(kind),
+      position: Value(position),
+      path: Value(path),
+      sourceUrl: sourceUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceUrl),
+    );
+  }
+
+  factory ItemImageRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ItemImageRow(
+      mediaType: serializer.fromJson<String>(json['mediaType']),
+      entryKey: serializer.fromJson<String>(json['entryKey']),
+      kind: serializer.fromJson<String>(json['kind']),
+      position: serializer.fromJson<int>(json['position']),
+      path: serializer.fromJson<String>(json['path']),
+      sourceUrl: serializer.fromJson<String?>(json['sourceUrl']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'mediaType': serializer.toJson<String>(mediaType),
+      'entryKey': serializer.toJson<String>(entryKey),
+      'kind': serializer.toJson<String>(kind),
+      'position': serializer.toJson<int>(position),
+      'path': serializer.toJson<String>(path),
+      'sourceUrl': serializer.toJson<String?>(sourceUrl),
+    };
+  }
+
+  ItemImageRow copyWith({
+    String? mediaType,
+    String? entryKey,
+    String? kind,
+    int? position,
+    String? path,
+    Value<String?> sourceUrl = const Value.absent(),
+  }) => ItemImageRow(
+    mediaType: mediaType ?? this.mediaType,
+    entryKey: entryKey ?? this.entryKey,
+    kind: kind ?? this.kind,
+    position: position ?? this.position,
+    path: path ?? this.path,
+    sourceUrl: sourceUrl.present ? sourceUrl.value : this.sourceUrl,
+  );
+  ItemImageRow copyWithCompanion(ItemImagesCompanion data) {
+    return ItemImageRow(
+      mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType,
+      entryKey: data.entryKey.present ? data.entryKey.value : this.entryKey,
+      kind: data.kind.present ? data.kind.value : this.kind,
+      position: data.position.present ? data.position.value : this.position,
+      path: data.path.present ? data.path.value : this.path,
+      sourceUrl: data.sourceUrl.present ? data.sourceUrl.value : this.sourceUrl,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ItemImageRow(')
+          ..write('mediaType: $mediaType, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('kind: $kind, ')
+          ..write('position: $position, ')
+          ..write('path: $path, ')
+          ..write('sourceUrl: $sourceUrl')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(mediaType, entryKey, kind, position, path, sourceUrl);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ItemImageRow &&
+          other.mediaType == this.mediaType &&
+          other.entryKey == this.entryKey &&
+          other.kind == this.kind &&
+          other.position == this.position &&
+          other.path == this.path &&
+          other.sourceUrl == this.sourceUrl);
+}
+
+class ItemImagesCompanion extends UpdateCompanion<ItemImageRow> {
+  final Value<String> mediaType;
+  final Value<String> entryKey;
+  final Value<String> kind;
+  final Value<int> position;
+  final Value<String> path;
+  final Value<String?> sourceUrl;
+  final Value<int> rowid;
+  const ItemImagesCompanion({
+    this.mediaType = const Value.absent(),
+    this.entryKey = const Value.absent(),
+    this.kind = const Value.absent(),
+    this.position = const Value.absent(),
+    this.path = const Value.absent(),
+    this.sourceUrl = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ItemImagesCompanion.insert({
+    required String mediaType,
+    required String entryKey,
+    required String kind,
+    this.position = const Value.absent(),
+    required String path,
+    this.sourceUrl = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : mediaType = Value(mediaType),
+       entryKey = Value(entryKey),
+       kind = Value(kind),
+       path = Value(path);
+  static Insertable<ItemImageRow> custom({
+    Expression<String>? mediaType,
+    Expression<String>? entryKey,
+    Expression<String>? kind,
+    Expression<int>? position,
+    Expression<String>? path,
+    Expression<String>? sourceUrl,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (mediaType != null) 'media_type': mediaType,
+      if (entryKey != null) 'entry_key': entryKey,
+      if (kind != null) 'kind': kind,
+      if (position != null) 'position': position,
+      if (path != null) 'path': path,
+      if (sourceUrl != null) 'source_url': sourceUrl,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ItemImagesCompanion copyWith({
+    Value<String>? mediaType,
+    Value<String>? entryKey,
+    Value<String>? kind,
+    Value<int>? position,
+    Value<String>? path,
+    Value<String?>? sourceUrl,
+    Value<int>? rowid,
+  }) {
+    return ItemImagesCompanion(
+      mediaType: mediaType ?? this.mediaType,
+      entryKey: entryKey ?? this.entryKey,
+      kind: kind ?? this.kind,
+      position: position ?? this.position,
+      path: path ?? this.path,
+      sourceUrl: sourceUrl ?? this.sourceUrl,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (mediaType.present) {
+      map['media_type'] = Variable<String>(mediaType.value);
+    }
+    if (entryKey.present) {
+      map['entry_key'] = Variable<String>(entryKey.value);
+    }
+    if (kind.present) {
+      map['kind'] = Variable<String>(kind.value);
+    }
+    if (position.present) {
+      map['position'] = Variable<int>(position.value);
+    }
+    if (path.present) {
+      map['path'] = Variable<String>(path.value);
+    }
+    if (sourceUrl.present) {
+      map['source_url'] = Variable<String>(sourceUrl.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ItemImagesCompanion(')
+          ..write('mediaType: $mediaType, ')
+          ..write('entryKey: $entryKey, ')
+          ..write('kind: $kind, ')
+          ..write('position: $position, ')
+          ..write('path: $path, ')
+          ..write('sourceUrl: $sourceUrl, ')
+          ..write('rowid: $rowid')
           ..write(')'))
         .toString();
   }
@@ -65889,6 +67347,17 @@ class $MediaLinksTable extends MediaLinks
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _confirmedByMeta = const VerificationMeta(
+    'confirmedBy',
+  );
+  @override
+  late final GeneratedColumn<String> confirmedBy = GeneratedColumn<String>(
+    'confirmed_by',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _reasonMeta = const VerificationMeta('reason');
   @override
   late final GeneratedColumn<String> reason = GeneratedColumn<String>(
@@ -65943,6 +67412,7 @@ class $MediaLinksTable extends MediaLinks
     source,
     confidence,
     isUserConfirmed,
+    confirmedBy,
     reason,
     createdAt,
     updatedAt,
@@ -66036,6 +67506,15 @@ class $MediaLinksTable extends MediaLinks
         ),
       );
     }
+    if (data.containsKey('confirmed_by')) {
+      context.handle(
+        _confirmedByMeta,
+        confirmedBy.isAcceptableOrUnknown(
+          data['confirmed_by']!,
+          _confirmedByMeta,
+        ),
+      );
+    }
     if (data.containsKey('reason')) {
       context.handle(
         _reasonMeta,
@@ -66119,6 +67598,10 @@ class $MediaLinksTable extends MediaLinks
         DriftSqlType.bool,
         data['${effectivePrefix}is_user_confirmed'],
       )!,
+      confirmedBy: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}confirmed_by'],
+      ),
       reason: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}reason'],
@@ -66165,7 +67648,15 @@ class MediaLinkRow extends DataClass implements Insertable<MediaLinkRow> {
 
   /// 推断置信度 0..1；手动连接为 NULL。
   final double? confidence;
+
+  /// `confirmed_by == 'user'` 的镜像（存量持久化名冻结：备份合并、旧版同步对端还在
+  /// 读写它）。由 DB 写入口与 [confirmedBy] 一起维护，调用方不单独写。
   final bool isUserConfirmed;
+
+  /// v159：谁让这条连接生效（`MediaLinkConfirmer`）：`user` = 用户手动连接 / 确认；
+  /// `ai` = AI 按门槛直接生效（可撤销，用户确认后升为 `user`）；NULL = 建议。
+  /// 非空即「已生效」，`user` 压过 `ai`。见 AI 库管家设计稿 §5.3。
+  final String? confirmedBy;
 
   /// 推断理由（AI 的「为什么认为是同一作品」、确定性判据的证据摘要）。
   final String? reason;
@@ -66185,6 +67676,7 @@ class MediaLinkRow extends DataClass implements Insertable<MediaLinkRow> {
     required this.source,
     this.confidence,
     required this.isUserConfirmed,
+    this.confirmedBy,
     this.reason,
     required this.createdAt,
     required this.updatedAt,
@@ -66209,6 +67701,9 @@ class MediaLinkRow extends DataClass implements Insertable<MediaLinkRow> {
       map['confidence'] = Variable<double>(confidence);
     }
     map['is_user_confirmed'] = Variable<bool>(isUserConfirmed);
+    if (!nullToAbsent || confirmedBy != null) {
+      map['confirmed_by'] = Variable<String>(confirmedBy);
+    }
     if (!nullToAbsent || reason != null) {
       map['reason'] = Variable<String>(reason);
     }
@@ -66236,6 +67731,9 @@ class MediaLinkRow extends DataClass implements Insertable<MediaLinkRow> {
           ? const Value.absent()
           : Value(confidence),
       isUserConfirmed: Value(isUserConfirmed),
+      confirmedBy: confirmedBy == null && nullToAbsent
+          ? const Value.absent()
+          : Value(confirmedBy),
       reason: reason == null && nullToAbsent
           ? const Value.absent()
           : Value(reason),
@@ -66263,6 +67761,7 @@ class MediaLinkRow extends DataClass implements Insertable<MediaLinkRow> {
       source: serializer.fromJson<String>(json['source']),
       confidence: serializer.fromJson<double?>(json['confidence']),
       isUserConfirmed: serializer.fromJson<bool>(json['isUserConfirmed']),
+      confirmedBy: serializer.fromJson<String?>(json['confirmedBy']),
       reason: serializer.fromJson<String?>(json['reason']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
@@ -66283,6 +67782,7 @@ class MediaLinkRow extends DataClass implements Insertable<MediaLinkRow> {
       'source': serializer.toJson<String>(source),
       'confidence': serializer.toJson<double?>(confidence),
       'isUserConfirmed': serializer.toJson<bool>(isUserConfirmed),
+      'confirmedBy': serializer.toJson<String?>(confirmedBy),
       'reason': serializer.toJson<String?>(reason),
       'createdAt': serializer.toJson<int>(createdAt),
       'updatedAt': serializer.toJson<int>(updatedAt),
@@ -66301,6 +67801,7 @@ class MediaLinkRow extends DataClass implements Insertable<MediaLinkRow> {
     String? source,
     Value<double?> confidence = const Value.absent(),
     bool? isUserConfirmed,
+    Value<String?> confirmedBy = const Value.absent(),
     Value<String?> reason = const Value.absent(),
     int? createdAt,
     int? updatedAt,
@@ -66316,6 +67817,7 @@ class MediaLinkRow extends DataClass implements Insertable<MediaLinkRow> {
     source: source ?? this.source,
     confidence: confidence.present ? confidence.value : this.confidence,
     isUserConfirmed: isUserConfirmed ?? this.isUserConfirmed,
+    confirmedBy: confirmedBy.present ? confirmedBy.value : this.confirmedBy,
     reason: reason.present ? reason.value : this.reason,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
@@ -66339,6 +67841,9 @@ class MediaLinkRow extends DataClass implements Insertable<MediaLinkRow> {
       isUserConfirmed: data.isUserConfirmed.present
           ? data.isUserConfirmed.value
           : this.isUserConfirmed,
+      confirmedBy: data.confirmedBy.present
+          ? data.confirmedBy.value
+          : this.confirmedBy,
       reason: data.reason.present ? data.reason.value : this.reason,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
@@ -66359,6 +67864,7 @@ class MediaLinkRow extends DataClass implements Insertable<MediaLinkRow> {
           ..write('source: $source, ')
           ..write('confidence: $confidence, ')
           ..write('isUserConfirmed: $isUserConfirmed, ')
+          ..write('confirmedBy: $confirmedBy, ')
           ..write('reason: $reason, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
@@ -66379,6 +67885,7 @@ class MediaLinkRow extends DataClass implements Insertable<MediaLinkRow> {
     source,
     confidence,
     isUserConfirmed,
+    confirmedBy,
     reason,
     createdAt,
     updatedAt,
@@ -66398,6 +67905,7 @@ class MediaLinkRow extends DataClass implements Insertable<MediaLinkRow> {
           other.source == this.source &&
           other.confidence == this.confidence &&
           other.isUserConfirmed == this.isUserConfirmed &&
+          other.confirmedBy == this.confirmedBy &&
           other.reason == this.reason &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
@@ -66415,6 +67923,7 @@ class MediaLinksCompanion extends UpdateCompanion<MediaLinkRow> {
   final Value<String> source;
   final Value<double?> confidence;
   final Value<bool> isUserConfirmed;
+  final Value<String?> confirmedBy;
   final Value<String?> reason;
   final Value<int> createdAt;
   final Value<int> updatedAt;
@@ -66431,6 +67940,7 @@ class MediaLinksCompanion extends UpdateCompanion<MediaLinkRow> {
     this.source = const Value.absent(),
     this.confidence = const Value.absent(),
     this.isUserConfirmed = const Value.absent(),
+    this.confirmedBy = const Value.absent(),
     this.reason = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
@@ -66448,6 +67958,7 @@ class MediaLinksCompanion extends UpdateCompanion<MediaLinkRow> {
     this.source = const Value.absent(),
     this.confidence = const Value.absent(),
     this.isUserConfirmed = const Value.absent(),
+    this.confirmedBy = const Value.absent(),
     this.reason = const Value.absent(),
     required int createdAt,
     required int updatedAt,
@@ -66471,6 +67982,7 @@ class MediaLinksCompanion extends UpdateCompanion<MediaLinkRow> {
     Expression<String>? source,
     Expression<double>? confidence,
     Expression<bool>? isUserConfirmed,
+    Expression<String>? confirmedBy,
     Expression<String>? reason,
     Expression<int>? createdAt,
     Expression<int>? updatedAt,
@@ -66488,6 +68000,7 @@ class MediaLinksCompanion extends UpdateCompanion<MediaLinkRow> {
       if (source != null) 'source': source,
       if (confidence != null) 'confidence': confidence,
       if (isUserConfirmed != null) 'is_user_confirmed': isUserConfirmed,
+      if (confirmedBy != null) 'confirmed_by': confirmedBy,
       if (reason != null) 'reason': reason,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
@@ -66507,6 +68020,7 @@ class MediaLinksCompanion extends UpdateCompanion<MediaLinkRow> {
     Value<String>? source,
     Value<double?>? confidence,
     Value<bool>? isUserConfirmed,
+    Value<String?>? confirmedBy,
     Value<String?>? reason,
     Value<int>? createdAt,
     Value<int>? updatedAt,
@@ -66524,6 +68038,7 @@ class MediaLinksCompanion extends UpdateCompanion<MediaLinkRow> {
       source: source ?? this.source,
       confidence: confidence ?? this.confidence,
       isUserConfirmed: isUserConfirmed ?? this.isUserConfirmed,
+      confirmedBy: confirmedBy ?? this.confirmedBy,
       reason: reason ?? this.reason,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -66565,6 +68080,9 @@ class MediaLinksCompanion extends UpdateCompanion<MediaLinkRow> {
     if (isUserConfirmed.present) {
       map['is_user_confirmed'] = Variable<bool>(isUserConfirmed.value);
     }
+    if (confirmedBy.present) {
+      map['confirmed_by'] = Variable<String>(confirmedBy.value);
+    }
     if (reason.present) {
       map['reason'] = Variable<String>(reason.value);
     }
@@ -66596,6 +68114,7 @@ class MediaLinksCompanion extends UpdateCompanion<MediaLinkRow> {
           ..write('source: $source, ')
           ..write('confidence: $confidence, ')
           ..write('isUserConfirmed: $isUserConfirmed, ')
+          ..write('confirmedBy: $confirmedBy, ')
           ..write('reason: $reason, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
@@ -75763,6 +77282,689 @@ class VideoThemeSongSpansCompanion
   }
 }
 
+class $MediaLinkAiVerdictsTable extends MediaLinkAiVerdicts
+    with TableInfo<$MediaLinkAiVerdictsTable, MediaLinkAiVerdictRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MediaLinkAiVerdictsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _aKindMeta = const VerificationMeta('aKind');
+  @override
+  late final GeneratedColumn<String> aKind = GeneratedColumn<String>(
+    'a_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _aKeyMeta = const VerificationMeta('aKey');
+  @override
+  late final GeneratedColumn<String> aKey = GeneratedColumn<String>(
+    'a_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _bKindMeta = const VerificationMeta('bKind');
+  @override
+  late final GeneratedColumn<String> bKind = GeneratedColumn<String>(
+    'b_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _bKeyMeta = const VerificationMeta('bKey');
+  @override
+  late final GeneratedColumn<String> bKey = GeneratedColumn<String>(
+    'b_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fingerprintMeta = const VerificationMeta(
+    'fingerprint',
+  );
+  @override
+  late final GeneratedColumn<String> fingerprint = GeneratedColumn<String>(
+    'fingerprint',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _relatedMeta = const VerificationMeta(
+    'related',
+  );
+  @override
+  late final GeneratedColumn<bool> related = GeneratedColumn<bool>(
+    'related',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("related" IN (0, 1))',
+    ),
+  );
+  static const VerificationMeta _relationMeta = const VerificationMeta(
+    'relation',
+  );
+  @override
+  late final GeneratedColumn<String> relation = GeneratedColumn<String>(
+    'relation',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _aIsOriginalMeta = const VerificationMeta(
+    'aIsOriginal',
+  );
+  @override
+  late final GeneratedColumn<bool> aIsOriginal = GeneratedColumn<bool>(
+    'a_is_original',
+    aliasedName,
+    true,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("a_is_original" IN (0, 1))',
+    ),
+  );
+  static const VerificationMeta _confidenceMeta = const VerificationMeta(
+    'confidence',
+  );
+  @override
+  late final GeneratedColumn<double> confidence = GeneratedColumn<double>(
+    'confidence',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _reasonMeta = const VerificationMeta('reason');
+  @override
+  late final GeneratedColumn<String> reason = GeneratedColumn<String>(
+    'reason',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _judgedAtMeta = const VerificationMeta(
+    'judgedAt',
+  );
+  @override
+  late final GeneratedColumn<int> judgedAt = GeneratedColumn<int>(
+    'judged_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    aKind,
+    aKey,
+    bKind,
+    bKey,
+    fingerprint,
+    related,
+    relation,
+    aIsOriginal,
+    confidence,
+    reason,
+    judgedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'media_link_ai_verdicts';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MediaLinkAiVerdictRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('a_kind')) {
+      context.handle(
+        _aKindMeta,
+        aKind.isAcceptableOrUnknown(data['a_kind']!, _aKindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_aKindMeta);
+    }
+    if (data.containsKey('a_key')) {
+      context.handle(
+        _aKeyMeta,
+        aKey.isAcceptableOrUnknown(data['a_key']!, _aKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_aKeyMeta);
+    }
+    if (data.containsKey('b_kind')) {
+      context.handle(
+        _bKindMeta,
+        bKind.isAcceptableOrUnknown(data['b_kind']!, _bKindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_bKindMeta);
+    }
+    if (data.containsKey('b_key')) {
+      context.handle(
+        _bKeyMeta,
+        bKey.isAcceptableOrUnknown(data['b_key']!, _bKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_bKeyMeta);
+    }
+    if (data.containsKey('fingerprint')) {
+      context.handle(
+        _fingerprintMeta,
+        fingerprint.isAcceptableOrUnknown(
+          data['fingerprint']!,
+          _fingerprintMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_fingerprintMeta);
+    }
+    if (data.containsKey('related')) {
+      context.handle(
+        _relatedMeta,
+        related.isAcceptableOrUnknown(data['related']!, _relatedMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_relatedMeta);
+    }
+    if (data.containsKey('relation')) {
+      context.handle(
+        _relationMeta,
+        relation.isAcceptableOrUnknown(data['relation']!, _relationMeta),
+      );
+    }
+    if (data.containsKey('a_is_original')) {
+      context.handle(
+        _aIsOriginalMeta,
+        aIsOriginal.isAcceptableOrUnknown(
+          data['a_is_original']!,
+          _aIsOriginalMeta,
+        ),
+      );
+    }
+    if (data.containsKey('confidence')) {
+      context.handle(
+        _confidenceMeta,
+        confidence.isAcceptableOrUnknown(data['confidence']!, _confidenceMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_confidenceMeta);
+    }
+    if (data.containsKey('reason')) {
+      context.handle(
+        _reasonMeta,
+        reason.isAcceptableOrUnknown(data['reason']!, _reasonMeta),
+      );
+    }
+    if (data.containsKey('judged_at')) {
+      context.handle(
+        _judgedAtMeta,
+        judgedAt.isAcceptableOrUnknown(data['judged_at']!, _judgedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_judgedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {aKind, aKey, bKind, bKey};
+  @override
+  MediaLinkAiVerdictRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MediaLinkAiVerdictRow(
+      aKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}a_kind'],
+      )!,
+      aKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}a_key'],
+      )!,
+      bKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}b_kind'],
+      )!,
+      bKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}b_key'],
+      )!,
+      fingerprint: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}fingerprint'],
+      )!,
+      related: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}related'],
+      )!,
+      relation: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}relation'],
+      ),
+      aIsOriginal: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}a_is_original'],
+      ),
+      confidence: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}confidence'],
+      )!,
+      reason: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reason'],
+      )!,
+      judgedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}judged_at'],
+      )!,
+    );
+  }
+
+  @override
+  $MediaLinkAiVerdictsTable createAlias(String alias) {
+    return $MediaLinkAiVerdictsTable(attachedDatabase, alias);
+  }
+}
+
+class MediaLinkAiVerdictRow extends DataClass
+    implements Insertable<MediaLinkAiVerdictRow> {
+  final String aKind;
+  final String aKey;
+  final String bKind;
+  final String bKey;
+
+  /// AI 输入 + 提示词版本 + 模型名的摘要（十六进制）。
+  final String fingerprint;
+
+  /// AI 是否判两端相关。
+  final bool related;
+
+  /// 相关时的关系（`MediaLinkRelation.dbValue`）；不相关为 NULL。
+  final String? relation;
+
+  /// 有方向的关系里 a 一端是否是原作 / 前作 / 本篇；NULL = AI 说不清或无方向。
+  final bool? aIsOriginal;
+  final double confidence;
+
+  /// AI 给的一句理由（不相关时为空串）。
+  final String reason;
+
+  /// 裁决时刻（毫秒）：过期判据。
+  final int judgedAt;
+  const MediaLinkAiVerdictRow({
+    required this.aKind,
+    required this.aKey,
+    required this.bKind,
+    required this.bKey,
+    required this.fingerprint,
+    required this.related,
+    this.relation,
+    this.aIsOriginal,
+    required this.confidence,
+    required this.reason,
+    required this.judgedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['a_kind'] = Variable<String>(aKind);
+    map['a_key'] = Variable<String>(aKey);
+    map['b_kind'] = Variable<String>(bKind);
+    map['b_key'] = Variable<String>(bKey);
+    map['fingerprint'] = Variable<String>(fingerprint);
+    map['related'] = Variable<bool>(related);
+    if (!nullToAbsent || relation != null) {
+      map['relation'] = Variable<String>(relation);
+    }
+    if (!nullToAbsent || aIsOriginal != null) {
+      map['a_is_original'] = Variable<bool>(aIsOriginal);
+    }
+    map['confidence'] = Variable<double>(confidence);
+    map['reason'] = Variable<String>(reason);
+    map['judged_at'] = Variable<int>(judgedAt);
+    return map;
+  }
+
+  MediaLinkAiVerdictsCompanion toCompanion(bool nullToAbsent) {
+    return MediaLinkAiVerdictsCompanion(
+      aKind: Value(aKind),
+      aKey: Value(aKey),
+      bKind: Value(bKind),
+      bKey: Value(bKey),
+      fingerprint: Value(fingerprint),
+      related: Value(related),
+      relation: relation == null && nullToAbsent
+          ? const Value.absent()
+          : Value(relation),
+      aIsOriginal: aIsOriginal == null && nullToAbsent
+          ? const Value.absent()
+          : Value(aIsOriginal),
+      confidence: Value(confidence),
+      reason: Value(reason),
+      judgedAt: Value(judgedAt),
+    );
+  }
+
+  factory MediaLinkAiVerdictRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MediaLinkAiVerdictRow(
+      aKind: serializer.fromJson<String>(json['aKind']),
+      aKey: serializer.fromJson<String>(json['aKey']),
+      bKind: serializer.fromJson<String>(json['bKind']),
+      bKey: serializer.fromJson<String>(json['bKey']),
+      fingerprint: serializer.fromJson<String>(json['fingerprint']),
+      related: serializer.fromJson<bool>(json['related']),
+      relation: serializer.fromJson<String?>(json['relation']),
+      aIsOriginal: serializer.fromJson<bool?>(json['aIsOriginal']),
+      confidence: serializer.fromJson<double>(json['confidence']),
+      reason: serializer.fromJson<String>(json['reason']),
+      judgedAt: serializer.fromJson<int>(json['judgedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'aKind': serializer.toJson<String>(aKind),
+      'aKey': serializer.toJson<String>(aKey),
+      'bKind': serializer.toJson<String>(bKind),
+      'bKey': serializer.toJson<String>(bKey),
+      'fingerprint': serializer.toJson<String>(fingerprint),
+      'related': serializer.toJson<bool>(related),
+      'relation': serializer.toJson<String?>(relation),
+      'aIsOriginal': serializer.toJson<bool?>(aIsOriginal),
+      'confidence': serializer.toJson<double>(confidence),
+      'reason': serializer.toJson<String>(reason),
+      'judgedAt': serializer.toJson<int>(judgedAt),
+    };
+  }
+
+  MediaLinkAiVerdictRow copyWith({
+    String? aKind,
+    String? aKey,
+    String? bKind,
+    String? bKey,
+    String? fingerprint,
+    bool? related,
+    Value<String?> relation = const Value.absent(),
+    Value<bool?> aIsOriginal = const Value.absent(),
+    double? confidence,
+    String? reason,
+    int? judgedAt,
+  }) => MediaLinkAiVerdictRow(
+    aKind: aKind ?? this.aKind,
+    aKey: aKey ?? this.aKey,
+    bKind: bKind ?? this.bKind,
+    bKey: bKey ?? this.bKey,
+    fingerprint: fingerprint ?? this.fingerprint,
+    related: related ?? this.related,
+    relation: relation.present ? relation.value : this.relation,
+    aIsOriginal: aIsOriginal.present ? aIsOriginal.value : this.aIsOriginal,
+    confidence: confidence ?? this.confidence,
+    reason: reason ?? this.reason,
+    judgedAt: judgedAt ?? this.judgedAt,
+  );
+  MediaLinkAiVerdictRow copyWithCompanion(MediaLinkAiVerdictsCompanion data) {
+    return MediaLinkAiVerdictRow(
+      aKind: data.aKind.present ? data.aKind.value : this.aKind,
+      aKey: data.aKey.present ? data.aKey.value : this.aKey,
+      bKind: data.bKind.present ? data.bKind.value : this.bKind,
+      bKey: data.bKey.present ? data.bKey.value : this.bKey,
+      fingerprint: data.fingerprint.present
+          ? data.fingerprint.value
+          : this.fingerprint,
+      related: data.related.present ? data.related.value : this.related,
+      relation: data.relation.present ? data.relation.value : this.relation,
+      aIsOriginal: data.aIsOriginal.present
+          ? data.aIsOriginal.value
+          : this.aIsOriginal,
+      confidence: data.confidence.present
+          ? data.confidence.value
+          : this.confidence,
+      reason: data.reason.present ? data.reason.value : this.reason,
+      judgedAt: data.judgedAt.present ? data.judgedAt.value : this.judgedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaLinkAiVerdictRow(')
+          ..write('aKind: $aKind, ')
+          ..write('aKey: $aKey, ')
+          ..write('bKind: $bKind, ')
+          ..write('bKey: $bKey, ')
+          ..write('fingerprint: $fingerprint, ')
+          ..write('related: $related, ')
+          ..write('relation: $relation, ')
+          ..write('aIsOriginal: $aIsOriginal, ')
+          ..write('confidence: $confidence, ')
+          ..write('reason: $reason, ')
+          ..write('judgedAt: $judgedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    aKind,
+    aKey,
+    bKind,
+    bKey,
+    fingerprint,
+    related,
+    relation,
+    aIsOriginal,
+    confidence,
+    reason,
+    judgedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MediaLinkAiVerdictRow &&
+          other.aKind == this.aKind &&
+          other.aKey == this.aKey &&
+          other.bKind == this.bKind &&
+          other.bKey == this.bKey &&
+          other.fingerprint == this.fingerprint &&
+          other.related == this.related &&
+          other.relation == this.relation &&
+          other.aIsOriginal == this.aIsOriginal &&
+          other.confidence == this.confidence &&
+          other.reason == this.reason &&
+          other.judgedAt == this.judgedAt);
+}
+
+class MediaLinkAiVerdictsCompanion
+    extends UpdateCompanion<MediaLinkAiVerdictRow> {
+  final Value<String> aKind;
+  final Value<String> aKey;
+  final Value<String> bKind;
+  final Value<String> bKey;
+  final Value<String> fingerprint;
+  final Value<bool> related;
+  final Value<String?> relation;
+  final Value<bool?> aIsOriginal;
+  final Value<double> confidence;
+  final Value<String> reason;
+  final Value<int> judgedAt;
+  final Value<int> rowid;
+  const MediaLinkAiVerdictsCompanion({
+    this.aKind = const Value.absent(),
+    this.aKey = const Value.absent(),
+    this.bKind = const Value.absent(),
+    this.bKey = const Value.absent(),
+    this.fingerprint = const Value.absent(),
+    this.related = const Value.absent(),
+    this.relation = const Value.absent(),
+    this.aIsOriginal = const Value.absent(),
+    this.confidence = const Value.absent(),
+    this.reason = const Value.absent(),
+    this.judgedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MediaLinkAiVerdictsCompanion.insert({
+    required String aKind,
+    required String aKey,
+    required String bKind,
+    required String bKey,
+    required String fingerprint,
+    required bool related,
+    this.relation = const Value.absent(),
+    this.aIsOriginal = const Value.absent(),
+    required double confidence,
+    this.reason = const Value.absent(),
+    required int judgedAt,
+    this.rowid = const Value.absent(),
+  }) : aKind = Value(aKind),
+       aKey = Value(aKey),
+       bKind = Value(bKind),
+       bKey = Value(bKey),
+       fingerprint = Value(fingerprint),
+       related = Value(related),
+       confidence = Value(confidence),
+       judgedAt = Value(judgedAt);
+  static Insertable<MediaLinkAiVerdictRow> custom({
+    Expression<String>? aKind,
+    Expression<String>? aKey,
+    Expression<String>? bKind,
+    Expression<String>? bKey,
+    Expression<String>? fingerprint,
+    Expression<bool>? related,
+    Expression<String>? relation,
+    Expression<bool>? aIsOriginal,
+    Expression<double>? confidence,
+    Expression<String>? reason,
+    Expression<int>? judgedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (aKind != null) 'a_kind': aKind,
+      if (aKey != null) 'a_key': aKey,
+      if (bKind != null) 'b_kind': bKind,
+      if (bKey != null) 'b_key': bKey,
+      if (fingerprint != null) 'fingerprint': fingerprint,
+      if (related != null) 'related': related,
+      if (relation != null) 'relation': relation,
+      if (aIsOriginal != null) 'a_is_original': aIsOriginal,
+      if (confidence != null) 'confidence': confidence,
+      if (reason != null) 'reason': reason,
+      if (judgedAt != null) 'judged_at': judgedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MediaLinkAiVerdictsCompanion copyWith({
+    Value<String>? aKind,
+    Value<String>? aKey,
+    Value<String>? bKind,
+    Value<String>? bKey,
+    Value<String>? fingerprint,
+    Value<bool>? related,
+    Value<String?>? relation,
+    Value<bool?>? aIsOriginal,
+    Value<double>? confidence,
+    Value<String>? reason,
+    Value<int>? judgedAt,
+    Value<int>? rowid,
+  }) {
+    return MediaLinkAiVerdictsCompanion(
+      aKind: aKind ?? this.aKind,
+      aKey: aKey ?? this.aKey,
+      bKind: bKind ?? this.bKind,
+      bKey: bKey ?? this.bKey,
+      fingerprint: fingerprint ?? this.fingerprint,
+      related: related ?? this.related,
+      relation: relation ?? this.relation,
+      aIsOriginal: aIsOriginal ?? this.aIsOriginal,
+      confidence: confidence ?? this.confidence,
+      reason: reason ?? this.reason,
+      judgedAt: judgedAt ?? this.judgedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (aKind.present) {
+      map['a_kind'] = Variable<String>(aKind.value);
+    }
+    if (aKey.present) {
+      map['a_key'] = Variable<String>(aKey.value);
+    }
+    if (bKind.present) {
+      map['b_kind'] = Variable<String>(bKind.value);
+    }
+    if (bKey.present) {
+      map['b_key'] = Variable<String>(bKey.value);
+    }
+    if (fingerprint.present) {
+      map['fingerprint'] = Variable<String>(fingerprint.value);
+    }
+    if (related.present) {
+      map['related'] = Variable<bool>(related.value);
+    }
+    if (relation.present) {
+      map['relation'] = Variable<String>(relation.value);
+    }
+    if (aIsOriginal.present) {
+      map['a_is_original'] = Variable<bool>(aIsOriginal.value);
+    }
+    if (confidence.present) {
+      map['confidence'] = Variable<double>(confidence.value);
+    }
+    if (reason.present) {
+      map['reason'] = Variable<String>(reason.value);
+    }
+    if (judgedAt.present) {
+      map['judged_at'] = Variable<int>(judgedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaLinkAiVerdictsCompanion(')
+          ..write('aKind: $aKind, ')
+          ..write('aKey: $aKey, ')
+          ..write('bKind: $bKind, ')
+          ..write('bKey: $bKey, ')
+          ..write('fingerprint: $fingerprint, ')
+          ..write('related: $related, ')
+          ..write('relation: $relation, ')
+          ..write('aIsOriginal: $aIsOriginal, ')
+          ..write('confidence: $confidence, ')
+          ..write('reason: $reason, ')
+          ..write('judgedAt: $judgedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $MusicScrapeMetaTable extends MusicScrapeMeta
     with TableInfo<$MusicScrapeMetaTable, MusicScrapeMetaRow> {
   @override
@@ -81828,6 +84030,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   late final $CollectionRelationsTable collectionRelations =
       $CollectionRelationsTable(this);
   late final $MediaImagesTable mediaImages = $MediaImagesTable(this);
+  late final $ItemScrapeMetaTable itemScrapeMeta = $ItemScrapeMetaTable(this);
+  late final $ItemImagesTable itemImages = $ItemImagesTable(this);
   late final $VideoMetadataWorksTable videoMetadataWorks =
       $VideoMetadataWorksTable(this);
   late final $VideoMetadataSeasonsTable videoMetadataSeasons =
@@ -81932,6 +84136,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       $MusicResumePointsTable(this);
   late final $VideoThemeSongSpansTable videoThemeSongSpans =
       $VideoThemeSongSpansTable(this);
+  late final $MediaLinkAiVerdictsTable mediaLinkAiVerdicts =
+      $MediaLinkAiVerdictsTable(this);
   late final $MusicScrapeMetaTable musicScrapeMeta = $MusicScrapeMetaTable(
     this,
   );
@@ -82021,6 +84227,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     mangaTrustedSigners,
     collectionRelations,
     mediaImages,
+    itemScrapeMeta,
+    itemImages,
     videoMetadataWorks,
     videoMetadataSeasons,
     videoMetadataEpisodes,
@@ -82077,6 +84285,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     musicPlayEvents,
     musicResumePoints,
     videoThemeSongSpans,
+    mediaLinkAiVerdicts,
     musicScrapeMeta,
     musicMetadataRawSnapshots,
     musicLockedFields,
@@ -82205,7 +84414,21 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     ),
     WritePropagation(
       on: TableUpdateQuery.onTableName(
+        'video_books',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('collection_relations', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
         'media_collections',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('collection_relations', kind: UpdateKind.update)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'video_books',
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('collection_relations', kind: UpdateKind.update)],
@@ -83736,6 +85959,7 @@ typedef $$AudioCuesTableCreateCompanionBuilder =
       required int startMs,
       required int endMs,
       required int audioFileIndex,
+      Value<String?> tokenTimingJson,
     });
 typedef $$AudioCuesTableUpdateCompanionBuilder =
     AudioCuesCompanion Function({
@@ -83748,6 +85972,7 @@ typedef $$AudioCuesTableUpdateCompanionBuilder =
       Value<int> startMs,
       Value<int> endMs,
       Value<int> audioFileIndex,
+      Value<String?> tokenTimingJson,
     });
 
 class $$AudioCuesTableFilterComposer
@@ -83801,6 +86026,11 @@ class $$AudioCuesTableFilterComposer
 
   ColumnFilters<int> get audioFileIndex => $composableBuilder(
     column: $table.audioFileIndex,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get tokenTimingJson => $composableBuilder(
+    column: $table.tokenTimingJson,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -83858,6 +86088,11 @@ class $$AudioCuesTableOrderingComposer
     column: $table.audioFileIndex,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get tokenTimingJson => $composableBuilder(
+    column: $table.tokenTimingJson,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$AudioCuesTableAnnotationComposer
@@ -83903,6 +86138,11 @@ class $$AudioCuesTableAnnotationComposer
     column: $table.audioFileIndex,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get tokenTimingJson => $composableBuilder(
+    column: $table.tokenTimingJson,
+    builder: (column) => column,
+  );
 }
 
 class $$AudioCuesTableTableManager
@@ -83945,6 +86185,7 @@ class $$AudioCuesTableTableManager
                 Value<int> startMs = const Value.absent(),
                 Value<int> endMs = const Value.absent(),
                 Value<int> audioFileIndex = const Value.absent(),
+                Value<String?> tokenTimingJson = const Value.absent(),
               }) => AudioCuesCompanion(
                 id: id,
                 bookKey: bookKey,
@@ -83955,6 +86196,7 @@ class $$AudioCuesTableTableManager
                 startMs: startMs,
                 endMs: endMs,
                 audioFileIndex: audioFileIndex,
+                tokenTimingJson: tokenTimingJson,
               ),
           createCompanionCallback:
               ({
@@ -83967,6 +86209,7 @@ class $$AudioCuesTableTableManager
                 required int startMs,
                 required int endMs,
                 required int audioFileIndex,
+                Value<String?> tokenTimingJson = const Value.absent(),
               }) => AudioCuesCompanion.insert(
                 id: id,
                 bookKey: bookKey,
@@ -83977,6 +86220,7 @@ class $$AudioCuesTableTableManager
                 startMs: startMs,
                 endMs: endMs,
                 audioFileIndex: audioFileIndex,
+                tokenTimingJson: tokenTimingJson,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
@@ -95562,6 +97806,7 @@ typedef $$MediaCollectionItemsTableCreateCompanionBuilder =
       required String mediaType,
       required String entryKey,
       Value<int> sortIndex,
+      Value<bool> pinnedByUser,
       Value<int> rowid,
     });
 typedef $$MediaCollectionItemsTableUpdateCompanionBuilder =
@@ -95570,6 +97815,7 @@ typedef $$MediaCollectionItemsTableUpdateCompanionBuilder =
       Value<String> mediaType,
       Value<String> entryKey,
       Value<int> sortIndex,
+      Value<bool> pinnedByUser,
       Value<int> rowid,
     });
 
@@ -95630,6 +97876,11 @@ class $$MediaCollectionItemsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<bool> get pinnedByUser => $composableBuilder(
+    column: $table.pinnedByUser,
+    builder: (column) => ColumnFilters(column),
+  );
+
   $$MediaCollectionsTableFilterComposer get collectionId {
     final $$MediaCollectionsTableFilterComposer composer = $composerBuilder(
       composer: this,
@@ -95678,6 +97929,11 @@ class $$MediaCollectionItemsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get pinnedByUser => $composableBuilder(
+    column: $table.pinnedByUser,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$MediaCollectionsTableOrderingComposer get collectionId {
     final $$MediaCollectionsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -95719,6 +97975,11 @@ class $$MediaCollectionItemsTableAnnotationComposer
 
   GeneratedColumn<int> get sortIndex =>
       $composableBuilder(column: $table.sortIndex, builder: (column) => column);
+
+  GeneratedColumn<bool> get pinnedByUser => $composableBuilder(
+    column: $table.pinnedByUser,
+    builder: (column) => column,
+  );
 
   $$MediaCollectionsTableAnnotationComposer get collectionId {
     final $$MediaCollectionsTableAnnotationComposer composer = $composerBuilder(
@@ -95784,12 +98045,14 @@ class $$MediaCollectionItemsTableTableManager
                 Value<String> mediaType = const Value.absent(),
                 Value<String> entryKey = const Value.absent(),
                 Value<int> sortIndex = const Value.absent(),
+                Value<bool> pinnedByUser = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MediaCollectionItemsCompanion(
                 collectionId: collectionId,
                 mediaType: mediaType,
                 entryKey: entryKey,
                 sortIndex: sortIndex,
+                pinnedByUser: pinnedByUser,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -95798,12 +98061,14 @@ class $$MediaCollectionItemsTableTableManager
                 required String mediaType,
                 required String entryKey,
                 Value<int> sortIndex = const Value.absent(),
+                Value<bool> pinnedByUser = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MediaCollectionItemsCompanion.insert(
                 collectionId: collectionId,
                 mediaType: mediaType,
                 entryKey: entryKey,
                 sortIndex: sortIndex,
+                pinnedByUser: pinnedByUser,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -104538,10 +106803,12 @@ typedef $$MangaTrustedSignersTableProcessedTableManager =
 typedef $$CollectionRelationsTableCreateCompanionBuilder =
     CollectionRelationsCompanion Function({
       Value<int> id,
-      required int collectionId,
+      Value<int?> collectionId,
+      Value<String?> bookUid,
       required String relationType,
       Value<int> sortIndex,
       Value<int?> targetCollectionId,
+      Value<String?> targetBookUid,
       required String source,
       required String subjectId,
       required String title,
@@ -104551,10 +106818,12 @@ typedef $$CollectionRelationsTableCreateCompanionBuilder =
 typedef $$CollectionRelationsTableUpdateCompanionBuilder =
     CollectionRelationsCompanion Function({
       Value<int> id,
-      Value<int> collectionId,
+      Value<int?> collectionId,
+      Value<String?> bookUid,
       Value<String> relationType,
       Value<int> sortIndex,
       Value<int?> targetCollectionId,
+      Value<String?> targetBookUid,
       Value<String> source,
       Value<String> subjectId,
       Value<String> title,
@@ -104580,14 +106849,31 @@ final class $$CollectionRelationsTableReferences
         'collection_relations__collection_id__media_collections__id',
       );
 
-  $$MediaCollectionsTableProcessedTableManager get collectionId {
-    final $_column = $_itemColumn<int>('collection_id')!;
-
+  $$MediaCollectionsTableProcessedTableManager? get collectionId {
+    final $_column = $_itemColumn<int>('collection_id');
+    if ($_column == null) return null;
     final manager = $$MediaCollectionsTableTableManager(
       $_db,
       $_db.mediaCollections,
     ).filter((f) => f.id.sqlEquals($_column));
     final item = $_typedResult.readTableOrNull(_collectionIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static $VideoBooksTable _bookUidTable(_$FushiDatabase db) => db.videoBooks
+      .createAlias('collection_relations__book_uid__video_books__book_uid');
+
+  $$VideoBooksTableProcessedTableManager? get bookUid {
+    final $_column = $_itemColumn<String>('book_uid');
+    if ($_column == null) return null;
+    final manager = $$VideoBooksTableTableManager(
+      $_db,
+      $_db.videoBooks,
+    ).filter((f) => f.bookUid.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_bookUidTable($_db));
     if (item == null) return manager;
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: [item]),
@@ -104607,6 +106893,25 @@ final class $$CollectionRelationsTableReferences
       $_db.mediaCollections,
     ).filter((f) => f.id.sqlEquals($_column));
     final item = $_typedResult.readTableOrNull(_targetCollectionIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static $VideoBooksTable _targetBookUidTable(_$FushiDatabase db) =>
+      db.videoBooks.createAlias(
+        'collection_relations__target_book_uid__video_books__book_uid',
+      );
+
+  $$VideoBooksTableProcessedTableManager? get targetBookUid {
+    final $_column = $_itemColumn<String>('target_book_uid');
+    if ($_column == null) return null;
+    final manager = $$VideoBooksTableTableManager(
+      $_db,
+      $_db.videoBooks,
+    ).filter((f) => f.bookUid.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_targetBookUidTable($_db));
     if (item == null) return manager;
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: [item]),
@@ -104686,6 +106991,29 @@ class $$CollectionRelationsTableFilterComposer
     return composer;
   }
 
+  $$VideoBooksTableFilterComposer get bookUid {
+    final $$VideoBooksTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.bookUid,
+      referencedTable: $db.videoBooks,
+      getReferencedColumn: (t) => t.bookUid,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VideoBooksTableFilterComposer(
+            $db: $db,
+            $table: $db.videoBooks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
   $$MediaCollectionsTableFilterComposer get targetCollectionId {
     final $$MediaCollectionsTableFilterComposer composer = $composerBuilder(
       composer: this,
@@ -104700,6 +107028,29 @@ class $$CollectionRelationsTableFilterComposer
           }) => $$MediaCollectionsTableFilterComposer(
             $db: $db,
             $table: $db.mediaCollections,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$VideoBooksTableFilterComposer get targetBookUid {
+    final $$VideoBooksTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.targetBookUid,
+      referencedTable: $db.videoBooks,
+      getReferencedColumn: (t) => t.bookUid,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VideoBooksTableFilterComposer(
+            $db: $db,
+            $table: $db.videoBooks,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -104782,6 +107133,29 @@ class $$CollectionRelationsTableOrderingComposer
     return composer;
   }
 
+  $$VideoBooksTableOrderingComposer get bookUid {
+    final $$VideoBooksTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.bookUid,
+      referencedTable: $db.videoBooks,
+      getReferencedColumn: (t) => t.bookUid,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VideoBooksTableOrderingComposer(
+            $db: $db,
+            $table: $db.videoBooks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
   $$MediaCollectionsTableOrderingComposer get targetCollectionId {
     final $$MediaCollectionsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -104796,6 +107170,29 @@ class $$CollectionRelationsTableOrderingComposer
           }) => $$MediaCollectionsTableOrderingComposer(
             $db: $db,
             $table: $db.mediaCollections,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$VideoBooksTableOrderingComposer get targetBookUid {
+    final $$VideoBooksTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.targetBookUid,
+      referencedTable: $db.videoBooks,
+      getReferencedColumn: (t) => t.bookUid,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VideoBooksTableOrderingComposer(
+            $db: $db,
+            $table: $db.videoBooks,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -104864,6 +107261,29 @@ class $$CollectionRelationsTableAnnotationComposer
     return composer;
   }
 
+  $$VideoBooksTableAnnotationComposer get bookUid {
+    final $$VideoBooksTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.bookUid,
+      referencedTable: $db.videoBooks,
+      getReferencedColumn: (t) => t.bookUid,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VideoBooksTableAnnotationComposer(
+            $db: $db,
+            $table: $db.videoBooks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
   $$MediaCollectionsTableAnnotationComposer get targetCollectionId {
     final $$MediaCollectionsTableAnnotationComposer composer = $composerBuilder(
       composer: this,
@@ -104878,6 +107298,29 @@ class $$CollectionRelationsTableAnnotationComposer
           }) => $$MediaCollectionsTableAnnotationComposer(
             $db: $db,
             $table: $db.mediaCollections,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$VideoBooksTableAnnotationComposer get targetBookUid {
+    final $$VideoBooksTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.targetBookUid,
+      referencedTable: $db.videoBooks,
+      getReferencedColumn: (t) => t.bookUid,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VideoBooksTableAnnotationComposer(
+            $db: $db,
+            $table: $db.videoBooks,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -104901,7 +107344,12 @@ class $$CollectionRelationsTableTableManager
           $$CollectionRelationsTableUpdateCompanionBuilder,
           (CollectionRelationRow, $$CollectionRelationsTableReferences),
           CollectionRelationRow,
-          PrefetchHooks Function({bool collectionId, bool targetCollectionId})
+          PrefetchHooks Function({
+            bool collectionId,
+            bool bookUid,
+            bool targetCollectionId,
+            bool targetBookUid,
+          })
         > {
   $$CollectionRelationsTableTableManager(
     _$FushiDatabase db,
@@ -104925,10 +107373,12 @@ class $$CollectionRelationsTableTableManager
           updateCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
-                Value<int> collectionId = const Value.absent(),
+                Value<int?> collectionId = const Value.absent(),
+                Value<String?> bookUid = const Value.absent(),
                 Value<String> relationType = const Value.absent(),
                 Value<int> sortIndex = const Value.absent(),
                 Value<int?> targetCollectionId = const Value.absent(),
+                Value<String?> targetBookUid = const Value.absent(),
                 Value<String> source = const Value.absent(),
                 Value<String> subjectId = const Value.absent(),
                 Value<String> title = const Value.absent(),
@@ -104937,9 +107387,11 @@ class $$CollectionRelationsTableTableManager
               }) => CollectionRelationsCompanion(
                 id: id,
                 collectionId: collectionId,
+                bookUid: bookUid,
                 relationType: relationType,
                 sortIndex: sortIndex,
                 targetCollectionId: targetCollectionId,
+                targetBookUid: targetBookUid,
                 source: source,
                 subjectId: subjectId,
                 title: title,
@@ -104949,10 +107401,12 @@ class $$CollectionRelationsTableTableManager
           createCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
-                required int collectionId,
+                Value<int?> collectionId = const Value.absent(),
+                Value<String?> bookUid = const Value.absent(),
                 required String relationType,
                 Value<int> sortIndex = const Value.absent(),
                 Value<int?> targetCollectionId = const Value.absent(),
+                Value<String?> targetBookUid = const Value.absent(),
                 required String source,
                 required String subjectId,
                 required String title,
@@ -104961,9 +107415,11 @@ class $$CollectionRelationsTableTableManager
               }) => CollectionRelationsCompanion.insert(
                 id: id,
                 collectionId: collectionId,
+                bookUid: bookUid,
                 relationType: relationType,
                 sortIndex: sortIndex,
                 targetCollectionId: targetCollectionId,
+                targetBookUid: targetBookUid,
                 source: source,
                 subjectId: subjectId,
                 title: title,
@@ -104979,7 +107435,12 @@ class $$CollectionRelationsTableTableManager
               )
               .toList(),
           prefetchHooksCallback:
-              ({collectionId = false, targetCollectionId = false}) {
+              ({
+                collectionId = false,
+                bookUid = false,
+                targetCollectionId = false,
+                targetBookUid = false,
+              }) {
                 return PrefetchHooks(
                   db: db,
                   explicitlyWatchedTables: [],
@@ -105014,6 +107475,21 @@ class $$CollectionRelationsTableTableManager
                                   )
                                   as T;
                         }
+                        if (bookUid) {
+                          state =
+                              state.withJoin(
+                                    currentTable: table,
+                                    currentColumn: table.bookUid,
+                                    referencedTable:
+                                        $$CollectionRelationsTableReferences
+                                            ._bookUidTable(db),
+                                    referencedColumn:
+                                        $$CollectionRelationsTableReferences
+                                            ._bookUidTable(db)
+                                            .bookUid,
+                                  )
+                                  as T;
+                        }
                         if (targetCollectionId) {
                           state =
                               state.withJoin(
@@ -105026,6 +107502,21 @@ class $$CollectionRelationsTableTableManager
                                         $$CollectionRelationsTableReferences
                                             ._targetCollectionIdTable(db)
                                             .id,
+                                  )
+                                  as T;
+                        }
+                        if (targetBookUid) {
+                          state =
+                              state.withJoin(
+                                    currentTable: table,
+                                    currentColumn: table.targetBookUid,
+                                    referencedTable:
+                                        $$CollectionRelationsTableReferences
+                                            ._targetBookUidTable(db),
+                                    referencedColumn:
+                                        $$CollectionRelationsTableReferences
+                                            ._targetBookUidTable(db)
+                                            .bookUid,
                                   )
                                   as T;
                         }
@@ -105053,7 +107544,12 @@ typedef $$CollectionRelationsTableProcessedTableManager =
       $$CollectionRelationsTableUpdateCompanionBuilder,
       (CollectionRelationRow, $$CollectionRelationsTableReferences),
       CollectionRelationRow,
-      PrefetchHooks Function({bool collectionId, bool targetCollectionId})
+      PrefetchHooks Function({
+        bool collectionId,
+        bool bookUid,
+        bool targetCollectionId,
+        bool targetBookUid,
+      })
     >;
 typedef $$MediaImagesTableCreateCompanionBuilder =
     MediaImagesCompanion Function({
@@ -105490,6 +107986,591 @@ typedef $$MediaImagesTableProcessedTableManager =
       (MediaImageRow, $$MediaImagesTableReferences),
       MediaImageRow,
       PrefetchHooks Function({bool collectionId, bool bookUid})
+    >;
+typedef $$ItemScrapeMetaTableCreateCompanionBuilder =
+    ItemScrapeMetaCompanion Function({
+      required String mediaType,
+      required String entryKey,
+      required String source,
+      Value<String?> subjectId,
+      Value<String?> title,
+      Value<String?> originalTitle,
+      Value<String?> summary,
+      Value<String?> airDate,
+      Value<double?> rating,
+      Value<int?> ratingCount,
+      Value<String?> tagsJson,
+      Value<String?> detailUrl,
+      required int scrapedAt,
+      Value<int> rowid,
+    });
+typedef $$ItemScrapeMetaTableUpdateCompanionBuilder =
+    ItemScrapeMetaCompanion Function({
+      Value<String> mediaType,
+      Value<String> entryKey,
+      Value<String> source,
+      Value<String?> subjectId,
+      Value<String?> title,
+      Value<String?> originalTitle,
+      Value<String?> summary,
+      Value<String?> airDate,
+      Value<double?> rating,
+      Value<int?> ratingCount,
+      Value<String?> tagsJson,
+      Value<String?> detailUrl,
+      Value<int> scrapedAt,
+      Value<int> rowid,
+    });
+
+class $$ItemScrapeMetaTableFilterComposer
+    extends Composer<_$FushiDatabase, $ItemScrapeMetaTable> {
+  $$ItemScrapeMetaTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get mediaType => $composableBuilder(
+    column: $table.mediaType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entryKey => $composableBuilder(
+    column: $table.entryKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get subjectId => $composableBuilder(
+    column: $table.subjectId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get originalTitle => $composableBuilder(
+    column: $table.originalTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get summary => $composableBuilder(
+    column: $table.summary,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get airDate => $composableBuilder(
+    column: $table.airDate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get rating => $composableBuilder(
+    column: $table.rating,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get ratingCount => $composableBuilder(
+    column: $table.ratingCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get tagsJson => $composableBuilder(
+    column: $table.tagsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get detailUrl => $composableBuilder(
+    column: $table.detailUrl,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get scrapedAt => $composableBuilder(
+    column: $table.scrapedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$ItemScrapeMetaTableOrderingComposer
+    extends Composer<_$FushiDatabase, $ItemScrapeMetaTable> {
+  $$ItemScrapeMetaTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get mediaType => $composableBuilder(
+    column: $table.mediaType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entryKey => $composableBuilder(
+    column: $table.entryKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get subjectId => $composableBuilder(
+    column: $table.subjectId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get originalTitle => $composableBuilder(
+    column: $table.originalTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get summary => $composableBuilder(
+    column: $table.summary,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get airDate => $composableBuilder(
+    column: $table.airDate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get rating => $composableBuilder(
+    column: $table.rating,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get ratingCount => $composableBuilder(
+    column: $table.ratingCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get tagsJson => $composableBuilder(
+    column: $table.tagsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get detailUrl => $composableBuilder(
+    column: $table.detailUrl,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get scrapedAt => $composableBuilder(
+    column: $table.scrapedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$ItemScrapeMetaTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $ItemScrapeMetaTable> {
+  $$ItemScrapeMetaTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get mediaType =>
+      $composableBuilder(column: $table.mediaType, builder: (column) => column);
+
+  GeneratedColumn<String> get entryKey =>
+      $composableBuilder(column: $table.entryKey, builder: (column) => column);
+
+  GeneratedColumn<String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => column);
+
+  GeneratedColumn<String> get subjectId =>
+      $composableBuilder(column: $table.subjectId, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get originalTitle => $composableBuilder(
+    column: $table.originalTitle,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get summary =>
+      $composableBuilder(column: $table.summary, builder: (column) => column);
+
+  GeneratedColumn<String> get airDate =>
+      $composableBuilder(column: $table.airDate, builder: (column) => column);
+
+  GeneratedColumn<double> get rating =>
+      $composableBuilder(column: $table.rating, builder: (column) => column);
+
+  GeneratedColumn<int> get ratingCount => $composableBuilder(
+    column: $table.ratingCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get tagsJson =>
+      $composableBuilder(column: $table.tagsJson, builder: (column) => column);
+
+  GeneratedColumn<String> get detailUrl =>
+      $composableBuilder(column: $table.detailUrl, builder: (column) => column);
+
+  GeneratedColumn<int> get scrapedAt =>
+      $composableBuilder(column: $table.scrapedAt, builder: (column) => column);
+}
+
+class $$ItemScrapeMetaTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $ItemScrapeMetaTable,
+          ItemScrapeMetaRow,
+          $$ItemScrapeMetaTableFilterComposer,
+          $$ItemScrapeMetaTableOrderingComposer,
+          $$ItemScrapeMetaTableAnnotationComposer,
+          $$ItemScrapeMetaTableCreateCompanionBuilder,
+          $$ItemScrapeMetaTableUpdateCompanionBuilder,
+          (
+            ItemScrapeMetaRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $ItemScrapeMetaTable,
+              ItemScrapeMetaRow
+            >,
+          ),
+          ItemScrapeMetaRow,
+          PrefetchHooks Function()
+        > {
+  $$ItemScrapeMetaTableTableManager(
+    _$FushiDatabase db,
+    $ItemScrapeMetaTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ItemScrapeMetaTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ItemScrapeMetaTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ItemScrapeMetaTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> mediaType = const Value.absent(),
+                Value<String> entryKey = const Value.absent(),
+                Value<String> source = const Value.absent(),
+                Value<String?> subjectId = const Value.absent(),
+                Value<String?> title = const Value.absent(),
+                Value<String?> originalTitle = const Value.absent(),
+                Value<String?> summary = const Value.absent(),
+                Value<String?> airDate = const Value.absent(),
+                Value<double?> rating = const Value.absent(),
+                Value<int?> ratingCount = const Value.absent(),
+                Value<String?> tagsJson = const Value.absent(),
+                Value<String?> detailUrl = const Value.absent(),
+                Value<int> scrapedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ItemScrapeMetaCompanion(
+                mediaType: mediaType,
+                entryKey: entryKey,
+                source: source,
+                subjectId: subjectId,
+                title: title,
+                originalTitle: originalTitle,
+                summary: summary,
+                airDate: airDate,
+                rating: rating,
+                ratingCount: ratingCount,
+                tagsJson: tagsJson,
+                detailUrl: detailUrl,
+                scrapedAt: scrapedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String mediaType,
+                required String entryKey,
+                required String source,
+                Value<String?> subjectId = const Value.absent(),
+                Value<String?> title = const Value.absent(),
+                Value<String?> originalTitle = const Value.absent(),
+                Value<String?> summary = const Value.absent(),
+                Value<String?> airDate = const Value.absent(),
+                Value<double?> rating = const Value.absent(),
+                Value<int?> ratingCount = const Value.absent(),
+                Value<String?> tagsJson = const Value.absent(),
+                Value<String?> detailUrl = const Value.absent(),
+                required int scrapedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => ItemScrapeMetaCompanion.insert(
+                mediaType: mediaType,
+                entryKey: entryKey,
+                source: source,
+                subjectId: subjectId,
+                title: title,
+                originalTitle: originalTitle,
+                summary: summary,
+                airDate: airDate,
+                rating: rating,
+                ratingCount: ratingCount,
+                tagsJson: tagsJson,
+                detailUrl: detailUrl,
+                scrapedAt: scrapedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$ItemScrapeMetaTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $ItemScrapeMetaTable,
+      ItemScrapeMetaRow,
+      $$ItemScrapeMetaTableFilterComposer,
+      $$ItemScrapeMetaTableOrderingComposer,
+      $$ItemScrapeMetaTableAnnotationComposer,
+      $$ItemScrapeMetaTableCreateCompanionBuilder,
+      $$ItemScrapeMetaTableUpdateCompanionBuilder,
+      (
+        ItemScrapeMetaRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $ItemScrapeMetaTable,
+          ItemScrapeMetaRow
+        >,
+      ),
+      ItemScrapeMetaRow,
+      PrefetchHooks Function()
+    >;
+typedef $$ItemImagesTableCreateCompanionBuilder =
+    ItemImagesCompanion Function({
+      required String mediaType,
+      required String entryKey,
+      required String kind,
+      Value<int> position,
+      required String path,
+      Value<String?> sourceUrl,
+      Value<int> rowid,
+    });
+typedef $$ItemImagesTableUpdateCompanionBuilder =
+    ItemImagesCompanion Function({
+      Value<String> mediaType,
+      Value<String> entryKey,
+      Value<String> kind,
+      Value<int> position,
+      Value<String> path,
+      Value<String?> sourceUrl,
+      Value<int> rowid,
+    });
+
+class $$ItemImagesTableFilterComposer
+    extends Composer<_$FushiDatabase, $ItemImagesTable> {
+  $$ItemImagesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get mediaType => $composableBuilder(
+    column: $table.mediaType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entryKey => $composableBuilder(
+    column: $table.entryKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get position => $composableBuilder(
+    column: $table.position,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get path => $composableBuilder(
+    column: $table.path,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceUrl => $composableBuilder(
+    column: $table.sourceUrl,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$ItemImagesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $ItemImagesTable> {
+  $$ItemImagesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get mediaType => $composableBuilder(
+    column: $table.mediaType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entryKey => $composableBuilder(
+    column: $table.entryKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get position => $composableBuilder(
+    column: $table.position,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get path => $composableBuilder(
+    column: $table.path,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceUrl => $composableBuilder(
+    column: $table.sourceUrl,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$ItemImagesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $ItemImagesTable> {
+  $$ItemImagesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get mediaType =>
+      $composableBuilder(column: $table.mediaType, builder: (column) => column);
+
+  GeneratedColumn<String> get entryKey =>
+      $composableBuilder(column: $table.entryKey, builder: (column) => column);
+
+  GeneratedColumn<String> get kind =>
+      $composableBuilder(column: $table.kind, builder: (column) => column);
+
+  GeneratedColumn<int> get position =>
+      $composableBuilder(column: $table.position, builder: (column) => column);
+
+  GeneratedColumn<String> get path =>
+      $composableBuilder(column: $table.path, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceUrl =>
+      $composableBuilder(column: $table.sourceUrl, builder: (column) => column);
+}
+
+class $$ItemImagesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $ItemImagesTable,
+          ItemImageRow,
+          $$ItemImagesTableFilterComposer,
+          $$ItemImagesTableOrderingComposer,
+          $$ItemImagesTableAnnotationComposer,
+          $$ItemImagesTableCreateCompanionBuilder,
+          $$ItemImagesTableUpdateCompanionBuilder,
+          (
+            ItemImageRow,
+            BaseReferences<_$FushiDatabase, $ItemImagesTable, ItemImageRow>,
+          ),
+          ItemImageRow,
+          PrefetchHooks Function()
+        > {
+  $$ItemImagesTableTableManager(_$FushiDatabase db, $ItemImagesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ItemImagesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ItemImagesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ItemImagesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> mediaType = const Value.absent(),
+                Value<String> entryKey = const Value.absent(),
+                Value<String> kind = const Value.absent(),
+                Value<int> position = const Value.absent(),
+                Value<String> path = const Value.absent(),
+                Value<String?> sourceUrl = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ItemImagesCompanion(
+                mediaType: mediaType,
+                entryKey: entryKey,
+                kind: kind,
+                position: position,
+                path: path,
+                sourceUrl: sourceUrl,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String mediaType,
+                required String entryKey,
+                required String kind,
+                Value<int> position = const Value.absent(),
+                required String path,
+                Value<String?> sourceUrl = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ItemImagesCompanion.insert(
+                mediaType: mediaType,
+                entryKey: entryKey,
+                kind: kind,
+                position: position,
+                path: path,
+                sourceUrl: sourceUrl,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$ItemImagesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $ItemImagesTable,
+      ItemImageRow,
+      $$ItemImagesTableFilterComposer,
+      $$ItemImagesTableOrderingComposer,
+      $$ItemImagesTableAnnotationComposer,
+      $$ItemImagesTableCreateCompanionBuilder,
+      $$ItemImagesTableUpdateCompanionBuilder,
+      (
+        ItemImageRow,
+        BaseReferences<_$FushiDatabase, $ItemImagesTable, ItemImageRow>,
+      ),
+      ItemImageRow,
+      PrefetchHooks Function()
     >;
 typedef $$VideoMetadataWorksTableCreateCompanionBuilder =
     VideoMetadataWorksCompanion Function({
@@ -128173,6 +131254,7 @@ typedef $$MediaLinksTableCreateCompanionBuilder =
       Value<String> source,
       Value<double?> confidence,
       Value<bool> isUserConfirmed,
+      Value<String?> confirmedBy,
       Value<String?> reason,
       required int createdAt,
       required int updatedAt,
@@ -128191,6 +131273,7 @@ typedef $$MediaLinksTableUpdateCompanionBuilder =
       Value<String> source,
       Value<double?> confidence,
       Value<bool> isUserConfirmed,
+      Value<String?> confirmedBy,
       Value<String?> reason,
       Value<int> createdAt,
       Value<int> updatedAt,
@@ -128254,6 +131337,11 @@ class $$MediaLinksTableFilterComposer
 
   ColumnFilters<bool> get isUserConfirmed => $composableBuilder(
     column: $table.isUserConfirmed,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get confirmedBy => $composableBuilder(
+    column: $table.confirmedBy,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -128337,6 +131425,11 @@ class $$MediaLinksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get confirmedBy => $composableBuilder(
+    column: $table.confirmedBy,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get reason => $composableBuilder(
     column: $table.reason,
     builder: (column) => ColumnOrderings(column),
@@ -128403,6 +131496,11 @@ class $$MediaLinksTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get confirmedBy => $composableBuilder(
+    column: $table.confirmedBy,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get reason =>
       $composableBuilder(column: $table.reason, builder: (column) => column);
 
@@ -128457,6 +131555,7 @@ class $$MediaLinksTableTableManager
                 Value<String> source = const Value.absent(),
                 Value<double?> confidence = const Value.absent(),
                 Value<bool> isUserConfirmed = const Value.absent(),
+                Value<String?> confirmedBy = const Value.absent(),
                 Value<String?> reason = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
@@ -128473,6 +131572,7 @@ class $$MediaLinksTableTableManager
                 source: source,
                 confidence: confidence,
                 isUserConfirmed: isUserConfirmed,
+                confirmedBy: confirmedBy,
                 reason: reason,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
@@ -128491,6 +131591,7 @@ class $$MediaLinksTableTableManager
                 Value<String> source = const Value.absent(),
                 Value<double?> confidence = const Value.absent(),
                 Value<bool> isUserConfirmed = const Value.absent(),
+                Value<String?> confirmedBy = const Value.absent(),
                 Value<String?> reason = const Value.absent(),
                 required int createdAt,
                 required int updatedAt,
@@ -128507,6 +131608,7 @@ class $$MediaLinksTableTableManager
                 source: source,
                 confidence: confidence,
                 isUserConfirmed: isUserConfirmed,
+                confirmedBy: confirmedBy,
                 reason: reason,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
@@ -133216,6 +136318,342 @@ typedef $$VideoThemeSongSpansTableProcessedTableManager =
       VideoThemeSongSpanRow,
       PrefetchHooks Function()
     >;
+typedef $$MediaLinkAiVerdictsTableCreateCompanionBuilder =
+    MediaLinkAiVerdictsCompanion Function({
+      required String aKind,
+      required String aKey,
+      required String bKind,
+      required String bKey,
+      required String fingerprint,
+      required bool related,
+      Value<String?> relation,
+      Value<bool?> aIsOriginal,
+      required double confidence,
+      Value<String> reason,
+      required int judgedAt,
+      Value<int> rowid,
+    });
+typedef $$MediaLinkAiVerdictsTableUpdateCompanionBuilder =
+    MediaLinkAiVerdictsCompanion Function({
+      Value<String> aKind,
+      Value<String> aKey,
+      Value<String> bKind,
+      Value<String> bKey,
+      Value<String> fingerprint,
+      Value<bool> related,
+      Value<String?> relation,
+      Value<bool?> aIsOriginal,
+      Value<double> confidence,
+      Value<String> reason,
+      Value<int> judgedAt,
+      Value<int> rowid,
+    });
+
+class $$MediaLinkAiVerdictsTableFilterComposer
+    extends Composer<_$FushiDatabase, $MediaLinkAiVerdictsTable> {
+  $$MediaLinkAiVerdictsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get aKind => $composableBuilder(
+    column: $table.aKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get aKey => $composableBuilder(
+    column: $table.aKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get bKind => $composableBuilder(
+    column: $table.bKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get bKey => $composableBuilder(
+    column: $table.bKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get fingerprint => $composableBuilder(
+    column: $table.fingerprint,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get related => $composableBuilder(
+    column: $table.related,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get relation => $composableBuilder(
+    column: $table.relation,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get aIsOriginal => $composableBuilder(
+    column: $table.aIsOriginal,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reason => $composableBuilder(
+    column: $table.reason,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get judgedAt => $composableBuilder(
+    column: $table.judgedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MediaLinkAiVerdictsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MediaLinkAiVerdictsTable> {
+  $$MediaLinkAiVerdictsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get aKind => $composableBuilder(
+    column: $table.aKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get aKey => $composableBuilder(
+    column: $table.aKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get bKind => $composableBuilder(
+    column: $table.bKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get bKey => $composableBuilder(
+    column: $table.bKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get fingerprint => $composableBuilder(
+    column: $table.fingerprint,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get related => $composableBuilder(
+    column: $table.related,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get relation => $composableBuilder(
+    column: $table.relation,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get aIsOriginal => $composableBuilder(
+    column: $table.aIsOriginal,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get reason => $composableBuilder(
+    column: $table.reason,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get judgedAt => $composableBuilder(
+    column: $table.judgedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MediaLinkAiVerdictsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MediaLinkAiVerdictsTable> {
+  $$MediaLinkAiVerdictsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get aKind =>
+      $composableBuilder(column: $table.aKind, builder: (column) => column);
+
+  GeneratedColumn<String> get aKey =>
+      $composableBuilder(column: $table.aKey, builder: (column) => column);
+
+  GeneratedColumn<String> get bKind =>
+      $composableBuilder(column: $table.bKind, builder: (column) => column);
+
+  GeneratedColumn<String> get bKey =>
+      $composableBuilder(column: $table.bKey, builder: (column) => column);
+
+  GeneratedColumn<String> get fingerprint => $composableBuilder(
+    column: $table.fingerprint,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get related =>
+      $composableBuilder(column: $table.related, builder: (column) => column);
+
+  GeneratedColumn<String> get relation =>
+      $composableBuilder(column: $table.relation, builder: (column) => column);
+
+  GeneratedColumn<bool> get aIsOriginal => $composableBuilder(
+    column: $table.aIsOriginal,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get reason =>
+      $composableBuilder(column: $table.reason, builder: (column) => column);
+
+  GeneratedColumn<int> get judgedAt =>
+      $composableBuilder(column: $table.judgedAt, builder: (column) => column);
+}
+
+class $$MediaLinkAiVerdictsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MediaLinkAiVerdictsTable,
+          MediaLinkAiVerdictRow,
+          $$MediaLinkAiVerdictsTableFilterComposer,
+          $$MediaLinkAiVerdictsTableOrderingComposer,
+          $$MediaLinkAiVerdictsTableAnnotationComposer,
+          $$MediaLinkAiVerdictsTableCreateCompanionBuilder,
+          $$MediaLinkAiVerdictsTableUpdateCompanionBuilder,
+          (
+            MediaLinkAiVerdictRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MediaLinkAiVerdictsTable,
+              MediaLinkAiVerdictRow
+            >,
+          ),
+          MediaLinkAiVerdictRow,
+          PrefetchHooks Function()
+        > {
+  $$MediaLinkAiVerdictsTableTableManager(
+    _$FushiDatabase db,
+    $MediaLinkAiVerdictsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MediaLinkAiVerdictsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MediaLinkAiVerdictsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$MediaLinkAiVerdictsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> aKind = const Value.absent(),
+                Value<String> aKey = const Value.absent(),
+                Value<String> bKind = const Value.absent(),
+                Value<String> bKey = const Value.absent(),
+                Value<String> fingerprint = const Value.absent(),
+                Value<bool> related = const Value.absent(),
+                Value<String?> relation = const Value.absent(),
+                Value<bool?> aIsOriginal = const Value.absent(),
+                Value<double> confidence = const Value.absent(),
+                Value<String> reason = const Value.absent(),
+                Value<int> judgedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MediaLinkAiVerdictsCompanion(
+                aKind: aKind,
+                aKey: aKey,
+                bKind: bKind,
+                bKey: bKey,
+                fingerprint: fingerprint,
+                related: related,
+                relation: relation,
+                aIsOriginal: aIsOriginal,
+                confidence: confidence,
+                reason: reason,
+                judgedAt: judgedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String aKind,
+                required String aKey,
+                required String bKind,
+                required String bKey,
+                required String fingerprint,
+                required bool related,
+                Value<String?> relation = const Value.absent(),
+                Value<bool?> aIsOriginal = const Value.absent(),
+                required double confidence,
+                Value<String> reason = const Value.absent(),
+                required int judgedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => MediaLinkAiVerdictsCompanion.insert(
+                aKind: aKind,
+                aKey: aKey,
+                bKind: bKind,
+                bKey: bKey,
+                fingerprint: fingerprint,
+                related: related,
+                relation: relation,
+                aIsOriginal: aIsOriginal,
+                confidence: confidence,
+                reason: reason,
+                judgedAt: judgedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MediaLinkAiVerdictsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MediaLinkAiVerdictsTable,
+      MediaLinkAiVerdictRow,
+      $$MediaLinkAiVerdictsTableFilterComposer,
+      $$MediaLinkAiVerdictsTableOrderingComposer,
+      $$MediaLinkAiVerdictsTableAnnotationComposer,
+      $$MediaLinkAiVerdictsTableCreateCompanionBuilder,
+      $$MediaLinkAiVerdictsTableUpdateCompanionBuilder,
+      (
+        MediaLinkAiVerdictRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MediaLinkAiVerdictsTable,
+          MediaLinkAiVerdictRow
+        >,
+      ),
+      MediaLinkAiVerdictRow,
+      PrefetchHooks Function()
+    >;
 typedef $$MusicScrapeMetaTableCreateCompanionBuilder =
     MusicScrapeMetaCompanion Function({
       required String trackUid,
@@ -136264,6 +139702,10 @@ class $FushiDatabaseManager {
       $$CollectionRelationsTableTableManager(_db, _db.collectionRelations);
   $$MediaImagesTableTableManager get mediaImages =>
       $$MediaImagesTableTableManager(_db, _db.mediaImages);
+  $$ItemScrapeMetaTableTableManager get itemScrapeMeta =>
+      $$ItemScrapeMetaTableTableManager(_db, _db.itemScrapeMeta);
+  $$ItemImagesTableTableManager get itemImages =>
+      $$ItemImagesTableTableManager(_db, _db.itemImages);
   $$VideoMetadataWorksTableTableManager get videoMetadataWorks =>
       $$VideoMetadataWorksTableTableManager(_db, _db.videoMetadataWorks);
   $$VideoMetadataSeasonsTableTableManager get videoMetadataSeasons =>
@@ -136420,6 +139862,8 @@ class $FushiDatabaseManager {
       $$MusicResumePointsTableTableManager(_db, _db.musicResumePoints);
   $$VideoThemeSongSpansTableTableManager get videoThemeSongSpans =>
       $$VideoThemeSongSpansTableTableManager(_db, _db.videoThemeSongSpans);
+  $$MediaLinkAiVerdictsTableTableManager get mediaLinkAiVerdicts =>
+      $$MediaLinkAiVerdictsTableTableManager(_db, _db.mediaLinkAiVerdicts);
   $$MusicScrapeMetaTableTableManager get musicScrapeMeta =>
       $$MusicScrapeMetaTableTableManager(_db, _db.musicScrapeMeta);
   $$MusicMetadataRawSnapshotsTableTableManager get musicMetadataRawSnapshots =>

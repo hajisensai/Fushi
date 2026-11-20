@@ -487,6 +487,8 @@
   "pc_offset_title": "Tijdverschuiving",
   "pc_style_title": "Ondertitelstijl",
   "pc_mask_edit": "Ondertitelmasker aanpassen",
+  "pc_fullscreen_enter": "Volledig scherm",
+  "pc_fullscreen_exit": "Volledig scherm afsluiten",
   "mask_edit_hint": "Sleep om te verplaatsen, sleep randen of hoeken om de grootte te wijzigen",
   "mask_edit_reset": "Herstellen",
   "mask_edit_done": "Klaar",

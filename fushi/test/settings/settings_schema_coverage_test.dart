@@ -10,6 +10,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -57,6 +58,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 外壳样式（PR #3397）：生效点是外壳侧栏 / 库页 / 色块墙 / 主题层表面形状，
   // harness 设置页里没有外壳与库页。偏好 → 应用主题 [FushiShellTheme] 扩展由
   // 专项单测咬住，各消费方只读这一份扩展。
+  // 拼贴打磨（设计稿 G1）起「侧栏样式 / 库页布局 / 色块排法」三行改成带预览卡的
+  // 自绘行（SettingsCustomItem → AdaptiveSettingsRow，不再是分段行），焦点遍历
+  // （_focusedSettingsRow）不识别它们、不会再产出这三个 id；登记留作证据指针，
+  // 偏好写穿与生效仍由下面的专项单测咬住；行布局（紧凑选择块、无溢出、焦点选中）
+  // 由 test/settings/shell_style_preview_layout_test.dart 咬住。原先的整块组合
+  // 预览行 appearance.shell_preview 已删（所有者反馈太占位置）。
   'appearance/Sidebar style':
       'test/settings/shell_style_settings_effect_test.dart（切色脊 → 主题扩展跟着变）',
   'appearance/Library layout':
@@ -92,6 +99,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/web_browser/tab_view/web_browser_tab_view_logic_test.dart（forceDark 进 WebView 设置）',
   'webBrowser/Open desktop sites by default':
       'test/pages/fushi_web_browser_shell_test.dart（新标签页默认桌面版）',
+  'webBrowser/Fushi handles video full screen':
+      'test/web_browser/web_browser_fullscreen_test.dart（页内全屏脚本：接管 → 伪全屏；'
+      '不接管 → 不改全屏 API）+ test/pages/web_browser_settings_page_test.dart（偏好写穿）',
   'webBrowser/Restore tabs from last time':
       'test/web_browser/web_browser_tabs_controller_test.dart（关闭会话持久化时不读不写）+ '
       'test/pages/fushi_web_browser_shell_test.dart（恢复上次的标签页）',
@@ -691,6 +701,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/video/video_subtitle_mask_test.dart（关闭不画 / 开启按内容区落位）',
   'video/Mask look':
       'test/media/video/video_subtitle_mask_test.dart（模糊 / 纯色两种外观各出各的层）',
+  // 遮布定位方式（手动 / 智能）：同样写 video_subtitle_mask JSON 偏好（mode 字段），
+  // 生效点是遮布层是否建采样器 + 识别器（要真播放器抽帧），harness 无适用探针。
+  'video/Positioning':
+      'test/media/video/smart_subtitle_mask_test.dart（偏好 mode 字段往返 / 旧偏好'
+      '缺省手动；遮布层只在开启 + 智能模式时建识别器，切回手动即拆）',
   'video/Mask strength':
       'test/media/video/video_subtitle_mask_test.dart（强度 → 纯色不透明度）',
   'video/Tap picture to show subtitles':
@@ -1005,11 +1020,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 没有在线视频播放器可探；判定、队列落卡、弹窗与引擎暂存契约都在专项测试里。
   'cardCreation/Online video mining':
       'test/media/video/mpv_cache_snapshot_test.dart + test/mining/video_mine_queue_test.dart + test/mining/immersion_mining_cached_snapshot_test.dart',
-  // 挖词目标（Anki / Fushi 复习 / 两者，复习模块开着才出现）：写 prefsRepo
-  // （changed=true），生效点是 ankiRepositoryProvider 最外层的 SrsMiningAnkiRepository
+  // 「保存到」（挖词目标，Anki / Fushi 复习，制卡页「卡片去向」的分段行）：写 prefsRepo；
+  // 复习模块关着时切到 Fushi 复习先弹确认框（harness 取消它，按没有变化判）。生效点是 ankiRepositoryProvider 最外层的 SrsMiningAnkiRepository
   // ——制卡时卡片落进复习库还是 Anki。harness 里没有复习库可探；三种目标的落卡、
   // 判重、合并规则与「模块关着时链上没有这一层」由专项测试咬死。
-  'cardCreation/Mining target': 'test/srs/srs_mining_test.dart',
+  'cardCreation/Save to': 'test/srs/srs_mining_test.dart',
   'cardCreation/Audio padding before sentence':
       'test/settings/mining_audio_padding_guard_test.dart',
   'cardCreation/Audio padding after sentence':
@@ -1364,6 +1379,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // harness 里可达——全部登记（含反吸血二级开关，超集登记无害）。
   'downloads/Enable upload / seeding':
       'test/media/torrent/torrent_upload_policy_test.dart',
+  // 「下载引擎」分段行（内置引擎 / 外接 qBittorrent / 互联设备）：写
+  // QbConnectionConfig.backend（changed=true），生效点是下载后端的装配
+  // （resolveBackend → 哪个引擎接任务），widget 树里没有可探的渲染输入；平台门控与
+  // 后端规约由专项测试咬住。
+  'downloads/Download engine':
+      'test/pages/torrent_settings_android_backend_gating_test.dart + test/media/torrent/anime_download_config_backend_test.dart',
   // 「自动为新任务添加订阅 tracker」：生效点是 addTorrent 之后**多打一次**
   // `/api/v2/torrents/addTrackers`（qB 后端）／把 tracker 追加进 magnet（内置引擎），
   // 都在 widget 树之外。torrent_backend_test 咬住的是真行为而不只是编解码：开关为真时
@@ -1861,6 +1882,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 新入库的）。
   'ai/Organize with AI after import':
       'test/media/collections/library_organize_runner_test.dart',
+  // AI 库管家自动路径（默认开）：生效点是去抖后的自动路径每次现读开关与各步 AI
+  // 指派（harness 里没有导入、操作上下文与 AI 提供商）。专项测试咬住默认开、没指派
+  // 任何 AI 不调度、开着时接管旧自动整理的触发点，编排逻辑由引擎测试覆盖。
+  'ai/Curate the library automatically':
+      'test/ops/ctl_library_curate_routes_test.dart',
   // 允许已配对设备使用 AI 助手：生效点是互联 host 的 /api/assistant agent 门（harness
   // 里没有互联服务器）。专项测试咬住「关着 → disabled、不建模型」与控制通道写不进去。
   "interconnect/Use this device's AI assistant":
@@ -2035,7 +2061,7 @@ void main() {
       // 「外观 › 页面背景」的强度 / 缓慢漂移不改配色，消费点是路由层背景
       // （LibraryShapeBackdrop → PageBackdropLayer）。harness 把设置页垫在真实的
       // LibraryShapeBackdrop 上，探针读**挂载出来的那一层**画了什么：各形状的
-      // 填充色（强度改不透明度）与是否在跑漂移动画（AnimatedBuilder 只在动画
+      // 填充色 / 柔光晕染的渐变色（强度改不透明度）与是否在跑漂移动画（AnimatedBuilder 只在动画
       // 控制器存在时出现）。设置页里的预设缩略图也是 PageBackdropLayer，按
       // [settingsPageKey] 排除，只看路由层那一份。
       final GlobalKey settingsPageKey = GlobalKey(debugLabel: 'settings-page');
@@ -2061,8 +2087,16 @@ void main() {
             .descendant(of: layer, matching: find.byType(DecoratedBox))
             .evaluate()
             .map((Element e) => (e.widget as DecoratedBox).decoration)
-            .whereType<ShapeDecoration>()
-            .map((ShapeDecoration d) => '${d.color}')
+            .map(
+              (Decoration d) => switch (d) {
+                // 形状类预设：形状填充色（强度改不透明度）。
+                ShapeDecoration(:final Color? color) => '$color',
+                // 柔光晕染（默认预设）：径向渐变色斑，强度改渐变各档不透明度。
+                BoxDecoration(:final Gradient gradient) => '${gradient.colors}',
+                _ => null,
+              },
+            )
+            .whereType<String>()
             .toList();
         final bool drifting = find
             .descendant(of: layer, matching: find.byType(AnimatedBuilder))
@@ -2098,6 +2132,15 @@ void main() {
         ProviderScope(
           overrides: <Override>[
             appProvider.overrideWith((Ref ref) => appModel),
+            // 拼贴打磨（PR #3515）起外观页的外壳样式预览 `ref.watch`
+            // fushiBooksProvider 取书封（shell_style_preview.dart），它连带订阅
+            // drift `.watch()` 的 StreamProvider。测试结束卸载树时 drift
+            // `StreamQueryStore.markAsClosed` 排一个零延时 timer，紧接着的
+            // pending-timer 校验必红并挂到 10 分钟超时（同 home_dashboard_page_test
+            // 的 bookStreamOverrides）。harness 设置页不测书封，打桩成空书架。
+            fushiBooksProvider.overrideWith(
+              (ref, language) async => const <MediaItem>[],
+            ),
             platformServicesProvider.overrideWithValue(platformServices),
             // 网页广告拦截的状态在 Rust 核心里、落在数据目录下；本 harness 的 AppModel 没走
             // initialise()（没有数据目录），给它一个临时目录，下载一律离线失败（不联网）。
@@ -2463,6 +2506,16 @@ _FocusedRow? _focusedSettingsRow() {
   return found;
 }
 
+/// 当前在树里的路由（页面 + 对话框 / 菜单）个数：每个 [ModalRoute] 建一个
+/// `_ModalScope`。驱动后变多 = 弹出了模态框。
+int _modalScopeCount() => find
+    .byWidgetPredicate(
+      (Widget w) => w.runtimeType.toString().startsWith('_ModalScope<'),
+      skipOffstage: false,
+    )
+    .evaluate()
+    .length;
+
 Future<ItemVerdict> _verifyFocusedNode({
   required WidgetTester tester,
   required FocusDriver driver,
@@ -2482,6 +2535,7 @@ Future<ItemVerdict> _verifyFocusedNode({
   // 覆盖结论就会变成「几十条从没见过的新项」，而磁盘上什么都没少覆盖。所以驱动完立刻
   // 把渲染语言复位，让身份键在整轮里恒是同一种语言；语言 pref 本身由全局还原兜底。
   final AppLocale localeBefore = LocaleSettings.currentLocale;
+  final int routesBefore = _modalScopeCount();
 
   if (row.kind == _RowKind.switchRow) {
     await driver.activate();
@@ -2525,6 +2579,17 @@ Future<ItemVerdict> _verifyFocusedNode({
         before: before,
       );
     }
+  }
+  // 有的选项切过去要先确认（制卡页「保存到」切到 Fushi 复习而复习模块关着时，
+  // 弹「开启 Fushi 复习」确认框）。驱动后等收尾动画走完（下拉 / 菜单的退场），
+  // 还多出来的路由就是驱动弹出的模态框：取消它（设置不变，按没有变化判），
+  // 否则它挡住后面所有行，整轮焦点都卡在框里。
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 500));
+  if (_modalScopeCount() > routesBefore) {
+    await tester.state<NavigatorState>(find.byType(Navigator).first).maybePop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
   }
   if (LocaleSettings.currentLocale != localeBefore) {
     LocaleSettings.setLocale(localeBefore);

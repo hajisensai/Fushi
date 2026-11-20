@@ -487,6 +487,8 @@
   "pc_offset_title": "タイミング調整",
   "pc_style_title": "字幕スタイル",
   "pc_mask_edit": "字幕マスクを調整",
+  "pc_fullscreen_enter": "全画面表示",
+  "pc_fullscreen_exit": "全画面表示を終了",
   "mask_edit_hint": "ドラッグで移動、端や角をドラッグでサイズ変更",
   "mask_edit_reset": "リセット",
   "mask_edit_done": "完了",

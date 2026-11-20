@@ -898,7 +898,7 @@ void main() {
       expect(calls.last.method, 'stopSystemBall');
     });
 
-    testWidgets('查词模块关着：应用外球不下发「查词」「应用外查词」「截屏识字」，模块打开后重新同步补上', (
+    testWidgets('查词模块关着：应用外球只不下发「查词」（打开查词页），应用外查词与截屏识字照常；模块打开后重新同步补上', (
       WidgetTester tester,
     ) async {
       mockNative(tester);
@@ -915,7 +915,12 @@ void main() {
         await waitFor(() => starts().isNotEmpty);
       });
       await tester.pump();
-      expect(startedActions(starts().last), <String>['clipboard']);
+      // BUG-4846：查词模块只关查词页入口，覆盖窗上的查词能力不跟着消失。
+      expect(startedActions(starts().last), <String>[
+        'popup_lookup',
+        'clipboard',
+        'screen_ocr',
+      ]);
 
       await tester.runAsync(() async {
         await prefs.setModuleEnabled(ModuleId.lookup, true);
@@ -2110,6 +2115,9 @@ void main() {
             expect(target.askedLensScenes, <GoogleLensDisclosureScene>[
               GoogleLensDisclosureScene.mobileScreens,
             ]);
+            // 反馈 zkQylCmcKq：同意框得用带 Navigator 的 context 弹，否则真机上抛
+            // 「context that does not include a Navigator」，框弹不出来。
+            expect(target.lensConsentContextHasNavigator, <bool>[true]);
           });
 
           testWidgets('BUG-4508：ML Kit 报不可用后的本机模型重试，模型也没就绪 → unavailable、不识别', (
@@ -2201,6 +2209,7 @@ void main() {
           expect(target.askedLensScenes, <GoogleLensDisclosureScene>[
             GoogleLensDisclosureScene.desktopScreens,
           ]);
+          expect(target.lensConsentContextHasNavigator, <bool>[true]);
           expect(called('startScreenOcrCapture'), isFalse);
           expect(target.recognizeEngines, isEmpty);
         });
@@ -2521,6 +2530,9 @@ class _RecordingActionTarget extends DesktopSystemBallActionTarget {
   final List<GoogleLensDisclosureScene> askedLensScenes =
       <GoogleLensDisclosureScene>[];
 
+  /// 每次弹 Lens 同意框时传进来的 context 之上有没有根 Navigator。
+  final List<bool> lensConsentContextHasNavigator = <bool>[];
+
   @override
   Future<bool> askLensConsent(
     BuildContext context, {
@@ -2528,6 +2540,11 @@ class _RecordingActionTarget extends DesktopSystemBallActionTarget {
   }) async {
     log.add('askLensConsent');
     askedLensScenes.add(scene);
+    // 真实实现（showFushiConfirmDialog）要从这个 context 找根 Navigator；宿主自己的
+    // context 在 Navigator 平级、找不到（反馈 zkQylCmcKq）。
+    lensConsentContextHasNavigator.add(
+      Navigator.maybeOf(context, rootNavigator: true) != null,
+    );
     return false;
   }
 

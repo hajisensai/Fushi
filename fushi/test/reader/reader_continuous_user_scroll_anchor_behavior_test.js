@@ -24,19 +24,9 @@
 // (driven from reader_continuous_user_scroll_anchor_behavior_test.dart inside `flutter test`).
 
 const assert = require('assert');
-const fs = require('fs');
+const { readPayload, shellObjectLiteral, compileScript } = require('./reader_harness_support.js');
 
-const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-
-function objectLiteral(source) {
-  const marker = 'window.fushiReader = {';
-  const start = source.indexOf(marker);
-  assert.ok(start >= 0, 'fushiReader object missing');
-  const brace = source.indexOf('{', start);
-  const end = source.indexOf('\n};', brace);
-  assert.ok(end >= 0, 'fushiReader object terminator missing');
-  return source.slice(brace, end + 2);
-}
+const data = readPayload();
 
 function intentIife(source) {
   const marker = '(function() {\n  if (window.__fushiUserScrollIntentInstalled) return;';
@@ -69,7 +59,11 @@ function makeEnv() {
       (listeners[type] = listeners[type] || []).push(fn);
     },
   };
-  new Function('window', data.studyUnits)(window);
+  compileScript(
+    ['window'],
+    data.studyUnits,
+    'reader_continuous_user_scroll_anchor_behavior_test-1.js',
+  )(window);
   function dispatch(type, event) {
     for (const fn of listeners[type] || []) fn(event || {});
   }
@@ -77,10 +71,10 @@ function makeEnv() {
 }
 
 function instantiate(env, shellSource) {
-  const factory = new Function(
-    'window', 'document', 'C', 'global', 'CSS', 'Highlight', 'getComputedStyle', 'Node',
-    'requestAnimationFrame',
-    'return ' + objectLiteral(shellSource) + ';'
+  const factory = compileScript(
+    ['window', 'document', 'C', 'global', 'CSS', 'Highlight', 'getComputedStyle', 'Node', 'requestAnimationFrame'],
+    'return ' + shellObjectLiteral(shellSource) + ';',
+    'reader_continuous_user_scroll_anchor_behavior_test-2.js',
   );
   const reader = factory(env.window, env.document, { perfTraceEnabled: false }, {},
     env.window.CSS, env.window.Highlight, env.getComputedStyle, { TEXT_NODE: 3 },
@@ -92,7 +86,11 @@ function instantiate(env, shellSource) {
 }
 
 function installIntent(env) {
-  new Function('window', 'document', intentIife(data.continuous))(env.window, env.document);
+  compileScript(
+    ['window', 'document'],
+    intentIife(data.continuous),
+    'reader_continuous_user_scroll_anchor_behavior_test-3.js',
+  )(env.window, env.document);
 }
 
 // Arm both anchors the way a restore landing does.

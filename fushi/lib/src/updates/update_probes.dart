@@ -68,15 +68,17 @@ Future<int> runOnlineMangaUpdateProbe({
   for (final ({EpubBookRow book, OnlineMangaLibraryEntry entry}) row
       in onlineMangaLibraryRows(books)) {
     try {
-      final OnlineMangaLibraryEntry updated = await serviceFor(
-        row.entry.runtime,
-      ).refreshFromSource(bookKey: row.book.bookKey, entry: row.entry);
+      // 新章与自动下载位都以落库时库里的描述符为准（gap-mangamisc-1）：探针开跑时
+      // 读的快照可能已过时——用户刚关了自动下载、作品页刚把新章刷进库。
+      final OnlineMangaRefreshOutcome outcome =
+          await serviceFor(row.entry.runtime).refreshFromSourceWithOutcome(
+            bookKey: row.book.bookKey,
+            entry: row.entry,
+          );
+      final OnlineMangaLibraryEntry updated = outcome.entry;
       refreshed++;
-      if (autoDownload != null && row.entry.autoDownload) {
-        final List<OnlineMangaChapter> fresh = newlyAppearedChapters(
-          previous: row.entry.chapters,
-          current: updated.chapters,
-        );
+      if (autoDownload != null && updated.autoDownload) {
+        final List<OnlineMangaChapter> fresh = outcome.fresh;
         if (fresh.isNotEmpty) {
           // 源按新→旧返回；入队按章序（旧章先下）。
           await autoDownload(updated, fresh.reversed.toList(growable: false));

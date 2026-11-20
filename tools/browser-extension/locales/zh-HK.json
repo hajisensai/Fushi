@@ -487,6 +487,8 @@
   "pc_offset_title": "時軸偏移",
   "pc_style_title": "字幕樣式",
   "pc_mask_edit": "調整字幕遮罩",
+  "pc_fullscreen_enter": "全螢幕",
+  "pc_fullscreen_exit": "結束全螢幕",
   "mask_edit_hint": "拖動可移動，拖邊角可縮放",
   "mask_edit_reset": "重設",
   "mask_edit_done": "完成",

@@ -1,4 +1,5 @@
 import 'package:fushi/src/anki/mined_card_undo.dart';
+import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -44,6 +45,7 @@ import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/novel/online/lnreader_online_book.dart';
 import 'package:fushi/src/media/novel/online/online_novel_chapter_loader.dart';
+import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/src/media/novel/web/web_novel_library.dart';
 import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/pages/implementations/collections_page.dart';
@@ -77,6 +79,7 @@ import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
 import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_page.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/tts_series_cast.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_read_along.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_read_along_voices.dart';
@@ -132,6 +135,7 @@ import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/media/audiobook/reader_quick_settings_sheet.dart';
+import 'package:fushi/src/media/sources/book_cover_file_resolver.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_engine/media/kavita/kavita_models.dart'
     show KavitaProgress;
@@ -151,6 +155,7 @@ import 'package:fushi/src/reader/reader_session_remote.dart';
 import 'package:fushi/src/reader/reader_ruby_metrics_script.dart';
 import 'package:fushi/src/reader/reader_audio_position.dart';
 import 'package:fushi/src/reader/reader_audio_cue_offset_index.dart';
+import 'package:fushi/src/reader/reader_chapter_path_index.dart';
 import 'package:fushi/src/reader/reader_chapter_perf_trace.dart';
 import 'package:fushi/src/reader/reader_engine_config.dart';
 import 'package:fushi/src/reader/page_curl/page_curl.dart';
@@ -166,6 +171,7 @@ import 'package:fushi/src/reader/reader_exit_flush.dart';
 import 'package:fushi/src/reader/lyrics_position_jump.dart';
 import 'package:fushi/src/reader/reader_back_ladder.dart';
 import 'package:fushi/src/reader/reader_tap_zones.dart';
+import 'package:fushi/src/reader/reader_tracking_progress_reporter.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart' show srsSyncProgress;
 import 'package:fushi/src/reader/reader_located_range_script.dart';
@@ -1385,6 +1391,65 @@ List<int> countChapterChars(EpubBook book) {
   );
 }
 
+/// [countChapterChars] 加每章「读到时还是在线书占位页」的标记。后台整本重算用：
+/// 占位章的计数只是说明文字的字数，写回书行时不能盖掉书行里那一章的值——
+/// 后台预取可能在重算读盘之后、写回之前已把正文字数写进书行（见
+/// [persistRecomputedChapterCharCounts]）。供 compute() 调用。
+({List<int> counts, List<bool> pending}) countChapterCharsWithPending(
+  EpubBook book,
+) {
+  final List<int> counts = <int>[];
+  final List<bool> pending = <bool>[];
+  for (int i = 0; i < book.chapters.length; i++) {
+    counts.add(book.chapterCharacterCount(i));
+    pending.add(
+      book.chapters[i].html.contains(kLnReaderPendingChapterAttribute),
+    );
+  }
+  return (counts: counts, pending: pending);
+}
+
+/// TODO-1192: 把后台按新口径（`countStudyChars`）重算出的每章字数 [counts] 回写进
+/// [EpubBooks.chaptersJson]，并打上当前口径版本 [kChapterCharCountCaliber]，使书架
+/// 总字数（[ReaderFushiSource] 直接读 chaptersJson 的 characters）与下次开书都用
+/// 新口径，不必每次开书重算。只覆写 `characters` / `charCaliber` 两个字段、保留原有
+/// 条目结构（id/href/mediaType 等）——绝不改章节数或顺序；数量不符（竞态换书 / 脏
+/// 数据）宁可跳过不写，也不写坏结构（下次开书再算）。
+///
+/// [keepStored] 为 true 的章只打口径标记、`characters` 保留书行里的值：重算读到
+/// 的是在线书占位页，而在线书加载器（后台预取）可能已在重算读盘之后把这一章的
+/// 正文字数写进书行；拿占位页字数盖回去，书行就永远停在占位页字数（口径已是
+/// 当前，下次开书不再重算；那一章也不再是占位页，加载器不会再补）。读与写放在
+/// 同一个事务里，和加载器的读改写（同样在事务里）串行，不会读到旧行再盖掉
+/// 中途写进来的值。
+Future<void> persistRecomputedChapterCharCounts({
+  required FushiDatabase database,
+  required String bookKey,
+  required List<int> counts,
+  required List<bool> keepStored,
+}) => database.transaction(() async {
+  final EpubBookRow? row = await database.getEpubBook(bookKey);
+  if (row == null) return;
+  final Object? decoded = jsonDecode(row.chaptersJson);
+  if (decoded is! List ||
+      decoded.length != counts.length ||
+      keepStored.length != counts.length) {
+    return;
+  }
+  final List<Object?> updated = <Object?>[];
+  for (int i = 0; i < decoded.length; i++) {
+    final Object? entry = decoded[i];
+    if (entry is! Map) return;
+    final Map<String, Object?> next = Map<String, Object?>.from(entry);
+    if (!keepStored[i] || next['characters'] is! int) {
+      next['characters'] = counts[i];
+    }
+    next['charCaliber'] = kChapterCharCountCaliber;
+    updated.add(next);
+  }
+  await database.updateEpubBookChaptersJson(bookKey, jsonEncode(updated));
+});
+
 /// [computeTocAnchorCharOffsets] 结果的键：章号 + 锚点 id。
 String tocAnchorKey(int chapterIndex, String fragment) =>
     '$chapterIndex#$fragment';
@@ -1525,6 +1590,105 @@ List<int>? charCountsFromChaptersJson(
     counts.add(raw);
   }
   return counts;
+}
+
+/// 在线小说书按需取回一章正文之后的每章字数表：把 [counts] 里第 [index] 章换成
+/// 正文的 [characters]。不用换（字数未知 / 章号越界 / 数值没变）返回 null，调用方
+/// 据此不重置统计坐标系。
+///
+/// BUG-4807：开书时读到的是占位页的字数，取章后新字数只写了库；内存里不换的
+/// 话，章内偏移被夹在占位文案长度以内，整章只入账那几个字，进度也按占位页算。
+@visibleForTesting
+List<int>? charCountsWithLoadedOnlineChapter(
+  List<int> counts,
+  int index,
+  int? characters,
+) {
+  if (characters == null || characters < 0) return null;
+  if (index < 0 || index >= counts.length) return null;
+  if (counts[index] == characters) return null;
+  return List<int>.of(counts, growable: false)..[index] = characters;
+}
+
+/// 在线小说书取章后「什么时候把新字数换进内存」的账（BUG-4807）。
+///
+/// 换表会平移这一章之后所有章的全书绝对偏移，必须伴随阅读账本 reset；而 reset
+/// 只能发生在当前单元已结算（`leave()` 之后）的时刻，否则会话内的并集被清掉，
+/// 往回滚再往前读会重复入账、误滚后滚回的撤回也失效。所以按「取回的是不是这次
+/// 导航的目标章」分两路：
+///  * 是：导航发起时上一页已结算，立刻换（[chapterLoaded] 返回新表）。
+///  * 不是（连续模式章节无缝衔接在阅读中途经 `fetch` 挂前后邻章）：先记着，等
+///    下一次整章导航 / 无缝换章结算完当前单元后由 [takeDeferred] 一并换。
+///
+/// 另记下本会话已经换上的章：后台整本重算读到的可能还是占位页，落定时用
+/// [overlay] 把这些章盖回正文字数，不让整表覆盖把症状带回来。
+@visibleForTesting
+class OnlineChapterCharCountAdoption {
+  final Map<int, int> _adopted = <int, int>{};
+  final Map<int, int> _deferred = <int, int>{};
+
+  /// 有没有记着还没换的章。
+  bool get hasDeferred => _deferred.isNotEmpty;
+
+  /// 一章刚换成正文。返回要立刻换上的新表；不用换（字数未知 / 越界 / 没变）或
+  /// 已记下等 [takeDeferred] 时返回 null。
+  List<int>? chapterLoaded(
+    List<int> counts,
+    OnlineNovelChapterLoaded loaded, {
+    required bool isNavigationTarget,
+  }) {
+    final int? characters = loaded.characters;
+    if (characters == null || characters < 0) return null;
+    if (!isNavigationTarget) {
+      _deferred[loaded.index] = characters;
+      return null;
+    }
+    _deferred.remove(loaded.index);
+    _adopted[loaded.index] = characters;
+    return charCountsWithLoadedOnlineChapter(counts, loaded.index, characters);
+  }
+
+  /// 当前单元已结算：把记着的章一次换上。没有要换的返回 null。
+  List<int>? takeDeferred(List<int> counts) {
+    List<int>? next;
+    for (final MapEntry<int, int> entry in _deferred.entries) {
+      _adopted[entry.key] = entry.value;
+      next =
+          charCountsWithLoadedOnlineChapter(
+            next ?? counts,
+            entry.key,
+            entry.value,
+          ) ??
+          next;
+    }
+    _deferred.clear();
+    return next;
+  }
+
+  /// 整本重算的结果 [recomputed] 里，把已知是正文的章盖回正文字数。
+  /// [includeDeferred] = false 给内存用（记着没换的章留到 [takeDeferred]，那一刻
+  /// 才能 reset）；true 给写回书行用（书行里这些章早已是正文字数，不能被重算读到
+  /// 的占位页字数盖回去）。
+  List<int> overlay(List<int> recomputed, {required bool includeDeferred}) {
+    final List<int> result = List<int>.of(recomputed, growable: false);
+    void put(int index, int characters) {
+      if (index >= 0 && index < result.length) result[index] = characters;
+    }
+
+    _adopted.forEach(put);
+    if (includeDeferred) _deferred.forEach(put);
+    return result;
+  }
+
+  /// 本会话已经知道第 [index] 章的正文字数（已换上或记着待换）。
+  bool knows(int index) =>
+      _adopted.containsKey(index) || _deferred.containsKey(index);
+
+  /// 换书：前一本的账作废。
+  void clear() {
+    _adopted.clear();
+    _deferred.clear();
+  }
 }
 
 /// TODO-1192: [EpubBooks.chaptersJson] 里每章 `characters` 计数是否已是当前口径
@@ -1747,6 +1911,12 @@ class ReaderFushiPage extends BaseSourcePage {
   @visibleForTesting
   static String Function()? debugCaretSurface;
 
+  /// Test hook：阅读器内存里的每章字数（进度 / 统计坐标系用的那一份）。集成测试
+  /// 据此确认在线小说书取章后内存字数跟着换成了正文的（BUG-4807）——书行里的
+  /// 字数对了不代表内存里的也对。
+  @visibleForTesting
+  static List<int> Function()? debugChapterCharCounts;
+
   /// Test hook: evaluate JS on the top visible dictionary popup (resolved via
   /// `topPopupState`, the same path production uses). Null when no popup is up.
   @visibleForTesting
@@ -1879,9 +2049,43 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   ReaderSettings? _settings;
   String? _extractDir;
 
+  /// 配对 `srt_books.cover_path`（BUG-4913）：字幕 + 音频导入的书（乐曲 / 独立字幕书）
+  /// 封面只在这一列，正文 EPUB 没有 cover-image。开书后台读一次，经
+  /// [_bookCoverFilePath] 与 EPUB 封面按书架同序合成。
+  String? _pairedSrtCoverPath;
+
+  /// 阅读器里这本书的封面文件：制卡、迷你播放条、歌词页、快捷设置、TTS 通知与伴屏
+  /// 共用，与书架字幕书 / 有声书卡同序（[resolveReaderBookCoverFilePath]）。
+  String? get _bookCoverFilePath => resolveReaderBookCoverFilePath(
+    pairedSrtCoverPath: _pairedSrtCoverPath,
+    extractDir: _extractDir,
+    coverHref: _book?.coverHref,
+  );
+
+  /// 读配对 SrtBook 的封面列；书没配字幕书行时保持 null。
+  Future<void> _loadPairedSrtCover(FushiDatabase db) async {
+    try {
+      final SrtBookRow? row = await db.getSrtBookByBookKey(widget.bookKey);
+      final String? cover = row?.coverPath;
+      if (!mounted || cover == _pairedSrtCoverPath) return;
+      setState(() => _pairedSrtCoverPath = cover);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderFushi.loadPairedSrtCover', e, stack);
+    }
+  }
+
   /// 在线小说书（LNReader 在线阅读）/ 网页小说书（追更）的按需取章；普通书为
   /// null。开书定位时按书行描述符建一次，拦截层读章节文件前经它把占位页换成正文。
   OnlineNovelChapterLoader? _onlineChapterLoader;
+
+  /// [_chapterCharCounts] 整表已是当前口径（[kChapterCharCountCaliber]）、并已
+  /// 注入 [EpubBook.setChapterCharCountHints]。在线书取章后换单章字数时据此决定
+  /// 要不要重注入提示（提示只接受当前口径）。
+  bool _charCountsAreCurrentCaliber = false;
+
+  /// 在线书取章后新字数的换表时机（见 [OnlineChapterCharCountAdoption]）。
+  final OnlineChapterCharCountAdoption _onlineCharCountAdoption =
+      OnlineChapterCharCountAdoption();
 
   /// v82：本书子表键（= EpubBooks.uid，开书定位时一次解析存下，写库不再逐次
   /// resolve）。null = 书行缺失或旧行无 uid——reader_positions / revealed_images
@@ -2219,6 +2423,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   final LinkedHashMap<String, Uint8List> _sanitizedHtmlCache =
       LinkedHashMap<String, Uint8List>();
 
+  /// 章节文档路径 → 章号反查表（novel-17e），由 `_chapterIndexForFilePath` 按需建、
+  /// 书的章节表或解包目录变了自动重建。
+  ReaderChapterPathIndex? _chapterPathIndex;
+
   /// TODO-perf（跨章·图片）预热配额（PR#469 审查）：`_prefetchAdjacentChapterImages`
   /// 把整解码后的位图塞进 WebView 图片缓存，整页插图书（1600×2400 PNG × N）在移动端
   /// 是实打实的内存压力。对齐 [_kChapterHtmlCacheLimit] 那侧的上限思路，这里按张数 +
@@ -2394,6 +2602,19 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool _replayingPageTurns = false;
   int _lastSavedSection = -1;
   double _lastSavedProgress = -1;
+
+  /// BUG-4807：追踪进度上报口。只发起、不让位置落库（返回键等的那条链）等它，
+  /// 同一份「完成章数 + 是否读完」只报一次；判据与失败处理见类文档。
+  final ReaderTrackingProgressReporter _trackingProgressReporter =
+      ReaderTrackingProgressReporter(
+        onError: (Object error, StackTrace stack) {
+          ErrorLogService.instance.log(
+            'ReaderFushi.recordBookProgress',
+            error,
+            stack,
+          );
+        },
+      );
   int _lastProgressSection = -1;
   double _lastProgressValue = 0;
 
@@ -3304,6 +3525,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     if (!mounted) return;
     final String extractDir = located.extractDir;
     _extractDir = extractDir;
+    _onlineChapterLoader?.dispose();
+    _charCountsAreCurrentCaliber = false;
+    _onlineCharCountAdoption.clear();
     _onlineChapterLoader =
         lnReaderOnlineChapterLoaderFor(
           row: bookRow,
@@ -3315,6 +3539,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
           row: bookRow,
           extractDir: extractDir,
           database: db,
+          pendingText: t.novel_web_chapter_pending,
+          nextChapterTitle: t.novel_web_chapter_next,
         );
     // v82：子表（阅读位置/揭图）键 = 书稳定 uid，一次解析存字段。空 uid（不应
     // 出现，v81 回填兜底）视同缺失——相关写入跳过，不拿 bookKey 兜底。
@@ -3374,6 +3600,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _settings?.enterBookLayout(this, _book!.originalLayout);
     // 同合集卷上下文与首屏无关，后台装载；失败只记日志（卷切换入口不出现）。
     unawaited(_loadVolumeContext(db));
+    // 配对字幕书的封面（乐曲 / 独立字幕书的唯一封面来源）同样与首屏无关。
+    unawaited(_loadPairedSrtCover(db));
 
     // Source links must resolve exactly. Ordinary stale bookmarks may fall
     // back to a saved position, which would show unrelated text for this card.
@@ -3396,6 +3624,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
         // [EpubBook.setChapterCharCountHints]）；旧口径方向无保证，不注入，
         // 等后台重算落定后由 _recomputeCharCountsInBackground 补上。
         _book!.setChapterCharCountHints(charsFromDb);
+        _charCountsAreCurrentCaliber = true;
       } else {
         _recomputeCharCountsInBackground();
       }
@@ -3595,6 +3824,116 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     }
   }
 
+  /// 在线小说书 / 网页小说书：拦截层确认一章刚换成正文（[_ensureOnlineChapter]）
+  /// 之后，把这一章的字数从占位页的换成正文的（BUG-4807）。
+  ///
+  /// 换表必须伴随 `_readLedger.reset()`，而 reset 只能发生在当前单元已结算的时刻
+  /// （时机的完整说明见 [OnlineChapterCharCountAdoption]）。拦截层的请求不都是
+  /// 导航：连续模式章节无缝衔接会在阅读中途用 `fetch` 挂前后邻章，同样走拦截层。
+  /// 所以只有「取回的正是本次导航在装的那一章」才立刻换——导航发起时
+  /// [_beginNavigation] 已把上一页结算；其余的先记着，等
+  /// [_applyDeferredOnlineChapterCharCounts]。
+  void _adoptOnlineChapterCharCount(
+    EpubBook book,
+    OnlineNovelChapterLoaded loaded,
+  ) {
+    if (!identical(_book, book)) return;
+    final List<int>? counts = _onlineCharCountAdoption.chapterLoaded(
+      _chapterCharCounts,
+      loaded,
+      isNavigationTarget: _restoreInFlight && loaded.index == _currentChapter,
+    );
+    if (counts == null) return;
+    _switchOnlineChapterCharCounts(book, counts);
+  }
+
+  /// 当前单元刚结算（整章导航 / 无缝换章的 `_readLedger.leave()` 之后）：把阅读
+  /// 中途取回、记着没换的章一次换上。
+  void _applyDeferredOnlineChapterCharCounts() {
+    if (!_onlineCharCountAdoption.hasDeferred) return;
+    final EpubBook? book = _book;
+    if (book == null) return;
+    final List<int>? counts = _onlineCharCountAdoption.takeDeferred(
+      _chapterCharCounts,
+    );
+    if (counts == null) return;
+    _switchOnlineChapterCharCounts(book, counts);
+  }
+
+  /// 与延后重算落定同一套动作：[_applyCharCounts] 重建累计前缀与总字数、整表
+  /// 重注入免解析提示、`_readLedger.reset()`（换掉的那一章之后所有章的全书绝对
+  /// 偏移都平移了，旧并集不再有意义；已入账的沉没、不撤回）。
+  void _switchOnlineChapterCharCounts(EpubBook book, List<int> counts) {
+    _applyCharCounts(counts);
+    // 提示只接受当前口径：整表还在等后台按新口径重算时不注入，重算落定后由
+    // [_recomputeCharCountsInBackground] 一并补上。
+    if (_charCountsAreCurrentCaliber) book.setChapterCharCountHints(counts);
+    _readLedger.reset();
+  }
+
+  /// novel-d6：网页小说书取回末尾一章后，解压树的 spine 末尾续挂了新的「下一章」
+  /// 占位（[OnlineNovelChapterLoaded.grownSpineCharacters] = 新的全书字数）。
+  /// 重解析解压树，把多出的尾部章节并进已打开的书（[EpubBook.adoptTrailingChapters]），
+  /// 字数表接上新章，spread 表 / 目录缓存跟着重建，已装文档的无缝阅读序补上新章
+  /// ——读完这一章就能接着翻到下一章，不用重开书。
+  ///
+  /// 新章只追加在末尾：已有章的章号、章首累计字数与账本里的全书绝对偏移都不变，
+  /// 所以不 `_readLedger.reset()`（对比 [_switchOnlineChapterCharCounts]）。
+  /// 重解析的结果与 [grownCounts] / 已打开的书对不上（期间解压树被整本重建过）时
+  /// 不在不一致的状态上续拼，记日志、交给下次开书（开书补占位照旧兜底）。
+  Future<void> _adoptGrownOnlineSpine(
+    EpubBook book,
+    List<int> grownCounts,
+  ) async {
+    final String? extractDir = _extractDir;
+    if (extractDir == null) return;
+    try {
+      final EpubBook reparsed = await compute(parseBookOnly, extractDir);
+      if (!mounted || !identical(_book, book)) return;
+      final int before = book.chapters.length;
+      if (reparsed.chapters.length != grownCounts.length ||
+          _chapterCharCounts.length != before ||
+          !book.adoptTrailingChapters(reparsed)) {
+        throw StateError(
+          'grown spine does not extend the open book: open=$before '
+          'counts=${_chapterCharCounts.length} '
+          'reparsed=${reparsed.chapters.length} grown=${grownCounts.length}',
+        );
+      }
+      final List<int> counts = List<int>.unmodifiable(<int>[
+        ..._chapterCharCounts,
+        ...grownCounts.sublist(before),
+      ]);
+      _applyCharCounts(counts);
+      if (_charCountsAreCurrentCaliber) {
+        book.setChapterCharCountHints(counts);
+      } else {
+        // 整本按新口径重算还在途：那一次按旧章数算，落定时因长度不符被丢弃，
+        // 按新章数重起一次。
+        _recomputeCharCountsInBackground();
+      }
+      _rebuildSpreadMap();
+      _rebuild(() => _ttuTocCache = null);
+      _computeTocAnchorOffsetsInBackground();
+      final InAppWebViewController? controller = _controller;
+      if (controller == null) return;
+      final List<ReaderSeamlessChapterEntry> appended =
+          readerSeamlessChapterOrder(
+                chapterCount: book.chapters.length,
+                urlOf: _chapterUrl,
+                isAbsorbed: _spreadMap?.isAbsorbedImageChapter,
+              )
+              .where((ReaderSeamlessChapterEntry e) => e.index >= before)
+              .toList(growable: false);
+      if (appended.isEmpty) return;
+      await controller.evaluateJavascript(
+        source: readerSeamlessExtendOrderInvocation(appended),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderFushi.grownOnlineSpine', e, stack);
+    }
+  }
+
   /// TODO-131: DB 计数缺失（旧书 / chaptersJson 无 characters 字段）时，把整本
   /// html_parser 逐章计数放后台 isolate 补算，**不阻塞首屏**。落定后用
   /// [_applyCharCounts] 补齐总字数，并 `_readLedger.reset()`：全书绝对偏移的坐标系
@@ -3604,22 +3943,45 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     final EpubBook? book = _book;
     if (book == null || book.chapters.isEmpty) return;
     unawaited(
-      compute(countChapterChars, book)
-          .then((List<int> counts) {
+      compute(countChapterCharsWithPending, book)
+          .then((({List<int> counts, List<bool> pending}) result) {
+            final List<int> recomputed = result.counts;
             // 书可能在重算期间被换（重载 / 退出）；仅当仍是同一本、长度一致才采用。
             if (!mounted ||
                 !identical(_book, book) ||
-                counts.length != book.chapters.length) {
+                recomputed.length != book.chapters.length) {
               return;
             }
+            // 在线书：重算读到的可能还是占位页（取章晚于 isolate 读盘）。本会话
+            // 已换上正文字数的章不能被整表覆盖盖回去（BUG-4807）。
+            final List<int> counts = _onlineCharCountAdoption.overlay(
+              recomputed,
+              includeDeferred: false,
+            );
             _applyCharCounts(counts);
             // 新口径计数落定：补注 isImageOnlyChapter 的免解析短路提示（开书时旧口径
             // 未注入的书由此补齐，后续 spread 重建/预取不再逐章解析）。
             book.setChapterCharCountHints(counts);
+            _charCountsAreCurrentCaliber = true;
             _readLedger.reset();
             // TODO-1192: 把新口径计数回写 chaptersJson（含 charCaliber 标记），使书架总
             // 字数与下次开书都用新口径，避免每次开书都重算（旧书 / v1 书一次性升级）。
-            unawaited(_persistRecomputedCharCounts(counts));
+            // 写回书行的那份连「取回了、还没换进内存」的章也盖上：书行里它们
+            // 早已是正文字数。
+            unawaited(
+              _persistRecomputedCharCounts(
+                _onlineCharCountAdoption.overlay(
+                  recomputed,
+                  includeDeferred: true,
+                ),
+                // 重算读到时还是占位页、本会话也没换上正文的章：书行里那一章的
+                // 值保留（可能已是后台预取写进去的正文字数）。
+                keepStored: <bool>[
+                  for (int i = 0; i < result.pending.length; i++)
+                    result.pending[i] && !_onlineCharCountAdoption.knows(i),
+                ],
+              ),
+            );
           })
           .catchError((Object e, StackTrace s) {
             ErrorLogService.instance.log(
@@ -3786,25 +4148,16 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 新口径，不必每次开书重算。只覆写 `characters` / `charCaliber` 两个字段、保留原有
   /// 条目结构（id/href/mediaType 等）——绝不改章节数或顺序；数量不符（竞态换书 / 脏
   /// 数据）宁可跳过不写，也不写坏结构（下次开书再算）。
-  Future<void> _persistRecomputedCharCounts(List<int> counts) async {
-    final String bookKey = widget.bookKey;
+  Future<void> _persistRecomputedCharCounts(
+    List<int> counts, {
+    required List<bool> keepStored,
+  }) async {
     try {
-      final EpubBookRow? row = await appModel.database.getEpubBook(bookKey);
-      if (row == null) return;
-      final Object? decoded = jsonDecode(row.chaptersJson);
-      if (decoded is! List || decoded.length != counts.length) return;
-      final List<Object?> updated = <Object?>[];
-      for (int i = 0; i < decoded.length; i++) {
-        final Object? entry = decoded[i];
-        if (entry is! Map) return;
-        final Map<String, Object?> next = Map<String, Object?>.from(entry);
-        next['characters'] = counts[i];
-        next['charCaliber'] = kChapterCharCountCaliber;
-        updated.add(next);
-      }
-      await appModel.database.updateEpubBookChaptersJson(
-        bookKey,
-        jsonEncode(updated),
+      await persistRecomputedChapterCharCounts(
+        database: appModel.database,
+        bookKey: widget.bookKey,
+        counts: counts,
+        keepStored: keepStored,
       );
     } catch (e, stack) {
       ErrorLogService.instance.log(
@@ -3817,6 +4170,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   @override
   void dispose() {
+    // 关书：排队中还没开始的取章 / 后台预取不再发起（在取的那一章照常写盘）。
+    _onlineChapterLoader?.dispose();
     _bodyMenuDismiss.detach();
     _lyricsMenuDismiss.detach();
     // 反馈 kEFPY4cuKZ：离开这本书 = 撤掉它的作品级配置覆盖层（全局配置从未改动）。
@@ -3871,6 +4226,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       ReaderFushiPage.debugCaptureWebView = null;
       ReaderFushiPage.debugCallDevToolsProtocol = null;
       ReaderFushiPage.debugCaretSurface = null;
+      ReaderFushiPage.debugChapterCharCounts = null;
       ReaderFushiPage.debugEvaluateTopPopup = null;
       ReaderFushiPage.debugInjectAudiobookBridge = null;
       ReaderFushiPage.debugOpenQuickSettings = null;
@@ -3929,7 +4285,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // 退出的 `onSourcePagePop` 仍然探针 + await，异常拆栈时 WebView 本就在拆，
     // 探不到实时锚是 [ExitFlushRegistry] 一贯认下的降级（至多丢最后一窗滚动）。
     // 学习段不用在这里再 flush：上面的 detach 已把它攒进同一个汇合点。
-    ExitFlushRegistry.instance.defer(_flushPosition);
+    // 同一笔里接着把在途的追踪上报等完（BUG-4807，见 [_flushPositionAndTrackingReport]）。
+    ExitFlushRegistry.instance.defer(_flushPositionAndTrackingReport);
     // TODO-702：有声书退出即停（默认）/ 后台续播（可选）。
     // 两种情况都先 detachReader——卸下本 reader 的 WebView 侧回调（跨章/边界跳句
     // 退化为安全无操作），不 dispose 控制器；上面的 [_syncAndFlushPosition] 已把
@@ -5111,6 +5468,11 @@ $liveConfigJs
   List<({int normOffset, Uint8List bytes})> _cachedSelectionImages =
       const <({int normOffset, Uint8List bytes})>[];
 
+  /// [_cachedSelectionImages] 属于哪一次选区。每次选区状态被重写或清空就换一个
+  /// （[_resetSelectionImages]）；抽图是异步的，抽完只有令牌还是发起时那个才写回，
+  /// 否则抽图期间的点词 / 关弹窗刚清掉的图会被旧选区的结果盖回来。
+  Object _selectionImagesOwner = Object();
+
   /// BUG-492 (TODO-1053 Bug A)。选区发生那一刻 [_lookupSectionIndex] 的快照。收藏 /
   /// 制卡写入的 `sectionIndex` 必须绑定到「选中该句时」渲染的真实章号，而不是写入时刻
   /// 再读裸 [_currentChapter]——有声书连续推进 / 跨章滚动会在选区与写入之间异步改写
@@ -5154,7 +5516,7 @@ $liveConfigJs
     _cachedMatchableSelectionRange = null;
     _cachedMatchableSentenceRange = null;
     _cachedSentenceOffset = null;
-    _cachedSelectionImages = const <({int normOffset, Uint8List bytes})>[];
+    _resetSelectionImages();
     _cachedSelectionSectionIndex = null;
     _currentSentenceIsFavorited = false;
     appModel.currentMediaSource?.clearCurrentCueSentence();

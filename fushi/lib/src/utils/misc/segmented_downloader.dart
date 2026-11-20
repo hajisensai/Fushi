@@ -323,14 +323,11 @@ class SegmentedDownloader {
       headers[HttpHeaders.ifRangeHeader] = validator;
     }
 
-    Future<ResumableDownloadResponse> opened = open(
-      Uri.parse(source.url),
-      headers,
+    // 首字节超时同时接管那次请求：晚到的响应立刻断开，不留孤儿连接。
+    final ResumableDownloadResponse response = await awaitResumableResponse(
+      open(Uri.parse(source.url), headers),
+      firstByteTimeout,
     );
-    if (firstByteTimeout != null) {
-      opened = opened.timeout(firstByteTimeout!);
-    }
-    final ResumableDownloadResponse response = await opened;
 
     if (response.statusCode == HttpStatus.partialContent) {
       // 206 必须带可解析的 Content-Range（RFC 9110）。缺了或看不懂就**不猜**——
@@ -489,17 +486,8 @@ class SegmentedDownloader {
   }
 
   /// 断开一条不要的响应流：**不能**用 `drain`——整包来源的 body 是 9.5 GB。
-  Future<void> _abort(ResumableDownloadResponse response) async {
-    try {
-      final StreamSubscription<List<int>> sub = response.stream.listen(
-        null,
-        cancelOnError: true,
-      );
-      await sub.cancel();
-    } catch (_) {
-      // best-effort：断连失败不该盖住真正的失败原因。
-    }
-  }
+  Future<void> _abort(ResumableDownloadResponse response) =>
+      discardResumableResponse(response);
 
   void _throwIfCancelled() {
     if (isCancelled?.call() ?? false) {

@@ -15,6 +15,8 @@ import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart';
+import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart'
+    show FushiMastheadHeader;
 import '../helpers/glass_unwrap.dart';
 
 /// 一个「答了但没有匹配」的来源：successfulProviderCount=1、items 为空。
@@ -434,7 +436,8 @@ void main() {
     expect(find.byType(Scaffold), findsOneWidget);
     expect(
       find.descendant(
-        of: find.byType(AppBar),
+        // 重设计外壳下页名画在二级页页头大字里（不再是旧的标题胶囊顶栏）。
+        of: find.byType(FushiMastheadHeader),
         matching: find.text(t.video_discovery_subscribe),
       ),
       findsOneWidget,

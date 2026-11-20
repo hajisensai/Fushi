@@ -177,7 +177,7 @@ void main() {
     expect(notifier.pageBackdropAccentSeed, const Color(red));
   });
 
-  test('偏好里的图在这台设备上不存在：回落角落形状、不取色', () async {
+  test('偏好里的图在这台设备上不存在：回落默认样式、不取色', () async {
     notifier = build(<String, String>{
       kPageBackdropPresetPrefKey: PrefCodec.encode('custom'),
       kPageBackdropLandscapeImagePrefKey: PrefCodec.encode(
@@ -189,10 +189,7 @@ void main() {
     // ……异步核对出不存在后重发布。
     await notifier.refreshPageBackdropSeeds();
     expect(pageBackdropSettings.value.hasCustomImage, isFalse);
-    expect(
-      pageBackdropSettings.value.effectivePreset,
-      PageBackdropPreset.corner,
-    );
+    expect(pageBackdropSettings.value.effectivePreset, PageBackdropPreset.mesh);
     expect(notifier.pageBackdropAccentSeed, isNull);
   });
 
@@ -254,7 +251,7 @@ void main() {
     );
     expect(
       pageBackdropSettingsFor(HomeTab.books).preset,
-      PageBackdropPreset.corner,
+      PageBackdropPreset.mesh,
     );
 
     await notifier.importPageBackdropModuleImage(
@@ -311,6 +308,25 @@ void main() {
     expect(
       pageBackdropSettingsFor(HomeTab.books).preset,
       PageBackdropPreset.wave,
+    );
+  });
+
+  test('没存过背景样式（新装 / 恢复默认删键）默认柔光晕染', () {
+    notifier = build();
+    expect(notifier.pageBackdropPreset, PageBackdropPreset.mesh);
+    expect(pageBackdropSettings.value.preset, PageBackdropPreset.mesh);
+  });
+
+  test('存量「角落形状」偏好（全局与按模块）读成柔光晕染，不改写持久化值', () {
+    notifier = build(<String, String>{
+      kPageBackdropPresetPrefKey: PrefCodec.encode('corner'),
+      kPageBackdropModulePresetsPrefKey: PrefCodec.encode('{"video":"corner"}'),
+    });
+    expect(notifier.pageBackdropPreset, PageBackdropPreset.mesh);
+    expect(pageBackdropSettings.value.preset, PageBackdropPreset.mesh);
+    expect(
+      pageBackdropModuleOverrides.value[HomeTab.video]?.preset,
+      PageBackdropPreset.mesh,
     );
   });
 }

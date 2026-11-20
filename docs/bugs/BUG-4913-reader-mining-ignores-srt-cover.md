@@ -1,0 +1,8 @@
+## BUG-4913 · 字幕 + 音频导入的乐曲在阅读器制卡不带封面（Lapis Picture 空）
+- **报告**：2026-11-19（用户：应用内反馈 BfNGOfk7vx「所有的乐曲制卡时都没有添加 Lapis 的 picture 字段（即使有封面）」，3.3.0 Windows；截图里乐曲在书架以「有声书」卡显示且有封面）
+- **真实性**：✅ 真 bug。乐曲按「字幕 + 音频」导入（`importStandaloneSubtitleBook`），正文是字幕行生成的 EPUB，OPF 没有 cover-image；导入时选的图 / 音频内嵌封面只写进配对 `srt_books.cover_path`（`fushi/lib/src/media/audiobook/book_import_dialog.dart:1261` 的 `persistCover`）。书架字幕书卡按 override → `srt_books.cover_path` → EPUB 封面取图（`fushi/lib/src/pages/implementations/reader_history/books.part.dart:195-213`），所以有封面。
+  - 根因：阅读器制卡只解析正文 EPUB 的封面——`fushi/lib/src/pages/implementations/reader_fushi/mining.part.dart:42-47` 的 `ReaderFushiSource.resolveCoverFilePath(extractDir, _book.coverHref)`，从不读配对字幕书的封面列 → `AnkiMiningContext.coverPath = null` → `{book-cover}` / Picture 为空。迷你播放条（`chrome.part.dart:3583`）、快捷设置、歌词页、TTS 通知、伴屏同一写法，同样看不到这张封面。
+- **[x] ① 已修复** — `book_cover_file_resolver.dart` 新增 `resolveReaderBookCoverFilePath`（配对 `srt_books.cover_path` 优先，再退回 EPUB 封面，与书架同序）；阅读器开书后台读一次配对字幕书的封面列（`_loadPairedSrtCover`），制卡 / 迷你播放条 / 快捷设置 / 歌词页 / TTS 通知 / 伴屏统一经 `_bookCoverFilePath` 取封面。歌词插图去重仍只拿 OPF 封面（那里是判定哪张插图是封面，不是展示封面）。
+- **[x] ② 已增加自动化测试** — `fushi/test/media/sources/reader_book_cover_file_test.dart`：正文 EPUB 无封面时取字幕书封面、两处都有时字幕书优先、字幕书封面文件丢失退回 EPUB、普通 EPUB 不受影响、都没有返回 null；外加源码守卫：阅读器各消费点不得绕过共享入口直读 EPUB 封面。
+- **验证**：`dart tool/heavy.dart -- flutter test test/media/sources/reader_book_cover_file_test.dart --no-pub` exit 0，6 项通过；全量 `flutter analyze --no-pub` exit 0，No issues found。
+- **备注**：书架的第一档 override 封面（编辑信息弹窗选的图）仍未进制卡：override 文件落盘无扩展名，两个 Anki 后端按扩展名给媒体定名（会落成 `.bin`），要进卡需先按图片字节补扩展名，属另一处改动，未在本次做。只设了 override、没有字幕书封面 / EPUB 封面的书，制卡仍不带图。

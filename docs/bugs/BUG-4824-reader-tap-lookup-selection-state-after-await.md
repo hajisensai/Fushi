@@ -1,0 +1,10 @@
+## BUG-4824 · 点词查词的选区范围 / 章号写在 await 查词之后，查词在飞时是新旧混合态，连点两词会留下与弹窗不符的范围
+- **报告**：2026-11-17（用户：小说优化清单 novel-16，代码复核确认）
+- **真实性**：✅ 真 bug（沿代码路径确认，未做真机复现）。根因是同一组状态分成两半、中间隔着一个没有代际守卫的 await：
+  - 修复前 `fushi/lib/src/pages/implementations/reader_fushi/lookup.part.dart:337-340`、`:427`（基准 4c347287835）在 `await _runLookupAndHighlight` 之前写 `currentSentence` / `_cachedSentenceOffset` / `_lookupCue`，而 `:437-457` 在 await **之后**才写 `_cacheMatchableSelection`、`_cachedSelectionRange`、`_cachedSentenceRange`、`_cachedSelectionSectionIndex`。
+  - await 期间（词典查询 + 高亮 + 弹窗显示）是「新句子 + 新 cue + 旧选区范围」；收藏 / 制卡 / 片段导出都读这组缓存。
+  - `_runLookupAndHighlight`（`fushi/lib/src/pages/implementations/reader_fushi_page.dart`）没有代际守卫：连点两个词时，先点那次的尾段可能在后点那次之后才落下，留下与当前弹窗不符的范围与章号。
+  - 同一组字段在 `fushi/lib/src/pages/implementations/reader_fushi/chrome.part.dart` 的 `_fillLookupStateFromSelectionData` 里又抄了一份（拖选菜单 / 原生选区用）。
+- **[x] ① 已修复** — 整组字段收成一个**同步**写点 `_applyLookupStateFromSelectionData`（`chrome.part.dart`）；`_fillLookupStateFromSelectionData` 先调它、再按需抽图；点词（`_handleTextSelected` 正文分支）在 `await _runLookupAndHighlight` 之前调它，await 之后只剩 `_checkFavoriteStatus()`。顺序保持「写点 → `_lookupRestartCue` → `_syncCueSentence()` → 查词」。歌词分支坐标来自 cue fragment，逻辑不同，未并入。行为变化一处：点词现在会清空 `_cachedSelectionImages`（原先不碰，「原生选区抽过图 → 再点词」会把旧图带进这次的片段导出）。清图收成 `_resetSelectionImages()`（`chrome.part.dart`），正文写点、歌词点词分支、`clearDictionaryResult` 都调它；它同时换掉 `_selectionImagesOwner` 令牌，`_fillLookupStateFromSelectionData` 在 `await` 抽图之后只有令牌仍是发起时那个才写回——否则抽图期间的点词 / 关弹窗刚清掉的图会被旧选区的抽图结果盖回来。提交见本分支 `pr/reader-nav-lookup-state`。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/reader_tap_lookup_state_before_await_guard_test.dart`（源码守卫：写点同步无 await、一次写齐并清空插图、点词在 await 前调且 await 后无选区字段赋值、歌词分支不并入但在第一个 await 前清图、关弹窗清图、抽图结果按令牌写回）。时序本身要真 WebView 才跑得出来，这一层是能落地的最强层。连带改写 `transcript_book_tap_lookup_only_guard_test.dart`、`reader_audio_coordinate_contract_test.dart`、`favorite_write_section_source_guard_test.dart` 里钉旧写法的断言。
+- **备注**：待真机复测——`paginated` / `continuous` / `vn` 三种 view mode 各点词查词一次，查词后收藏 / 制卡，确认句子范围与章号对；快速连点两个词后制卡，卡片句子应属于后点的词；带有声书的书点词后「续播」仍从该句开始。未做的原因：本轮多组并发共用设备，不做真机。

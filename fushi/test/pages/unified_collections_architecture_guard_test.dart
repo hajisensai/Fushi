@@ -53,11 +53,10 @@ void main() {
       return mergeSrc.substring(start, end);
     }
 
-    // merge() = 主库事务（_mergeMainDatabase）+ srs.db（另一个文件，不能进主库事务）。
+    // merge() = 主库事务（_mergeMainDatabase）。复习数据（新代 srs4.db，另一个文件）不在这里并，由调用方在主库
+    // 事务提交之后另走 mergeSrsIntoLocal（复习换代 G11-4）。
     expect(
-      bodyOf(
-        'Future<void> merge() async {',
-      ).contains('await _mergeMainDatabase();'),
+      mergeSrc.contains('Future<void> merge() => _mergeMainDatabase();'),
       isTrue,
       reason: 'merge() 必须执行主库合并 _mergeMainDatabase()',
     );
@@ -70,10 +69,17 @@ void main() {
     );
     // 自然键幂等 remap（不能按自增 id 直搬）。
     expect(mergeSrc.contains('collection_type'), isTrue);
+    // v159：成员冲突时只把 pinned_by_user 取或（不覆盖本机其余列），仍按复合主键去重。
     expect(
-      mergeSrc.contains('INSERT OR IGNORE INTO media_collection_items'),
+      mergeSrc.contains('INSERT INTO media_collection_items') &&
+          mergeSrc.contains(
+            'ON CONFLICT (collection_id, media_type, entry_key) DO UPDATE SET',
+          ) &&
+          mergeSrc.contains(
+            'pinned_by_user = MAX(pinned_by_user, excluded.pinned_by_user)',
+          ),
       isTrue,
-      reason: '成员按复合主键 INSERT OR IGNORE 去重',
+      reason: '成员按复合主键去重，冲突只把 pinned_by_user 取或',
     );
   });
 
@@ -750,8 +756,11 @@ void main() {
     // 全为远端剧集的合集明明可见却显示「0 集」，与眼前所见割裂（用户实报）。
     // 封面卡形态下同一口径：集数角标必须喂 group.items.length（memberCount），
     // 回退到「只数本地」即转红。
-    final int cardFn = homeSrc.indexOf('Widget _buildCollectionCoverCard(');
-    expect(cardFn, isNonNegative, reason: '缺 _buildCollectionCoverCard');
+    // 卡片本体在 Inner 里（外层只包作品角标），集数口径要查本体。
+    final int cardFn = homeSrc.indexOf(
+      'Widget _buildCollectionCoverCardInner(',
+    );
+    expect(cardFn, isNonNegative, reason: '缺 _buildCollectionCoverCardInner');
     final int cardEnd = homeSrc.indexOf('\n  /// ', cardFn + 1);
     final String cardSrc = homeSrc.substring(
       cardFn,
@@ -784,9 +793,13 @@ void main() {
       isTrue,
       reason: 'BUG-790：合集进度分母必须是 memberCount（本地 + 远端占位）',
     );
-    final int progressFn = homeSrc.indexOf(
-      ' _collectionProgress(\n    CollectionGroup',
-    );
+    // 签名换行由 dart format 决定（返回类型长短会让参数单行 / 折行），只认
+    // 「_collectionProgress(」后紧跟 CollectionGroup 参数的那一处定义。
+    final int progressFn =
+        RegExp(
+          r'\s_collectionProgress\(\s*CollectionGroup',
+        ).firstMatch(homeSrc)?.start ??
+        -1;
     expect(progressFn, isNonNegative);
     expect(
       homeSrc

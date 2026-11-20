@@ -46,7 +46,7 @@ import 'package:fushi/src/media/music/music_output_backend.dart'
     show MusicPlayItem;
 import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart'
-    show resolvePlatformHwdec;
+    show resolvePlatformHwdec, setMpvPropertiesInOrder;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
@@ -591,17 +591,14 @@ class _MusicKaraokeStagePageState extends ConsumerState<MusicKaraokeStagePage> {
         : startAt;
     final NativePlayer? native = _native;
     if (native != null) {
-      for (final MapEntry<String, String> e in musicKaraokeSubtitleProperties(
-        visible: _overlay == MusicKaraokeOverlay.original,
-      ).entries) {
-        await native.setProperty(e.key, e.value);
-      }
-      if (widget.picture == MusicKaraokePicture.cdg) {
-        for (final MapEntry<String, String> e
-            in musicKaraokeCdgProperties().entries) {
-          await native.setProperty(e.key, e.value);
-        }
-      }
+      // 全仓 mpv 属性批量下发的唯一实现：逐条保序，被拒的单条留痕后跳过（BUG-4911）。
+      await setMpvPropertiesInOrder(_player, <String, String>{
+        ...musicKaraokeSubtitleProperties(
+          visible: _overlay == MusicKaraokeOverlay.original,
+        ),
+        if (widget.picture == MusicKaraokePicture.cdg)
+          ...musicKaraokeCdgProperties(),
+      });
     }
     await _player.open(Media(src.video, httpHeaders: src.headers), play: false);
     if (native != null) {

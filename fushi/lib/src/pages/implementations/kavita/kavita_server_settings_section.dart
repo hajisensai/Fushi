@@ -62,6 +62,7 @@ class _KavitaServerSettingsSectionState
 
   KavitaBookService _bookService(AppModel appModel) => KavitaBookService(
     db: appModel.database,
+    appModel: appModel,
     apiFor: (String serverConfigId) => KavitaApiRegistry.instance
         .apiForServerId(appModel.prefsRepo.kavitaServers, serverConfigId),
   );

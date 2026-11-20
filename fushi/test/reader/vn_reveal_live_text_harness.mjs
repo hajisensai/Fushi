@@ -8,15 +8,15 @@
 // 不同的行盒（与 BUG-3741 同一机制）。这里钉住根因不变量：支持 CSS Highlight 的引擎上显现全程
 // 屏上 DOM 一字不改、所有字形坐标不动，未显现部分由 CSS.highlights('fushi-vn-unrevealed') 承载
 // （注音随基字显现完才露出），未显现的字点不中。
-import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
+import { readPayload } from './reader_harness_support.js';
 
+const scripts = readPayload();
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
-const scripts = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const W = 1200;
 const H = 800;
 // 录屏里那一屏的原文：段首单字注音、段中多字注音。

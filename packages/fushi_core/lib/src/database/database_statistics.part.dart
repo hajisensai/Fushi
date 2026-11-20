@@ -243,6 +243,22 @@ mixin _FushiDbStatistics
   Future<List<VideoWatchStatisticRow>> getAllVideoWatchStatistics() =>
       select(videoWatchStatistics).get();
 
+  /// 一个视频的 legacy 逐日观看行：`book_uid` 命中，无身份行（NULL / ''）按
+  /// [orTitle] 回退——与 `statFactBelongsToBook` 同一口径（[orTitle] 为 null / 空 =
+  /// 不回退）。统计侧栏按视频读，不再把全表拉回来再丢掉。
+  Future<List<VideoWatchStatisticRow>> getVideoWatchStatisticsForMedia({
+    required String bookUid,
+    String? orTitle,
+  }) =>
+      (select(videoWatchStatistics)..where(
+            (t) => orTitle == null || orTitle.isEmpty
+                ? t.bookUid.equals(bookUid)
+                : t.bookUid.equals(bookUid) |
+                      ((t.bookUid.isNull() | t.bookUid.equals('')) &
+                          t.title.equals(orTitle)),
+          ))
+          .get();
+
   // ── activity events (v49) ───────────────────────────────────────
   /// 追加一条活动事件（每次阅读/观看 session 结束或导入完成时写一行）。纯追加，
   /// 不去重、不累加——同书同日多次 session = 多行，读取端按需分组/计数。
@@ -565,17 +581,35 @@ mixin _FushiDbStatistics
   ///
   /// v105：默认只取 [profileId]（null = 当前激活 Profile）的段；只有同步 / 备份
   /// 导出这种要搬**整库**的调用方传 `allProfiles: true`。
+  ///
+  /// [mediaKind] 只取一个域；再给 [mediaKey] 就只取一个媒体：身份行按
+  /// `media_key` 命中，无身份行（`media_key = ''`）按 [orTitle] 回退——与
+  /// `statFactBelongsToBook` 同一口径（[orTitle] 为 null / 空 = 不回退）。
   Future<List<StudySegmentRow>> getStudySegments({
     String? fromDateKey,
     String? toDateKey,
     int? profileId,
     bool allProfiles = false,
+    String? mediaKind,
+    String? mediaKey,
+    String? orTitle,
   }) async {
     final SimpleSelectStatement<$StudySegmentsTable, StudySegmentRow> q =
         select(studySegments);
     if (!allProfiles) {
       final int scope = profileId ?? await resolveActiveProfileId();
       q.where((t) => t.profileId.equals(scope));
+    }
+    if (mediaKind != null) {
+      q.where((t) => t.mediaKind.equals(mediaKind));
+    }
+    if (mediaKey != null) {
+      q.where(
+        (t) => orTitle == null || orTitle.isEmpty
+            ? t.mediaKey.equals(mediaKey)
+            : t.mediaKey.equals(mediaKey) |
+                  (t.mediaKey.equals('') & t.title.equals(orTitle)),
+      );
     }
     if (fromDateKey != null) {
       q.where((t) => t.dateKey.isBiggerOrEqualValue(fromDateKey));
@@ -831,6 +865,8 @@ mixin _FushiDbStatistics
         await deleteTagAssignmentsForHost(TagHostKind.game, id);
         // v135 配音表缓存（设备本地、无外键）同事务清掉。
         await (delete(gameVoiceCasts)..where((t) => t.gameId.equals(id))).go();
+        // v155：单个游戏的刮削资料 / 横版背景图（逻辑外键）同事务清。
+        await _purgeItemScrapeRows(this, MediaKind.game, <String>[id]);
         return (delete(galgames)..where((t) => t.id.equals(id))).go();
       });
 
@@ -1702,6 +1738,21 @@ mixin _FushiDbStatistics
   /// 写回用 [setLookupCount] / [setMineCountPerBook]（MAX 语义、幂等）。
   Future<List<LookupMiningCounterRow>> getAllLookupMiningCounters() =>
       select(lookupMiningCounters).get();
+
+  /// 一本书 / 一个视频的查词 / 制卡计数行（不分来源）：`book_key` 命中，`book_key`
+  /// 为空的旧行按 [orTitle] 回退（[orTitle] 为 null / 空 = 不回退）——与
+  /// `summarizeReaderBookStats` 切本书计数同一口径。
+  Future<List<LookupMiningCounterRow>> getLookupMiningCountersForBook({
+    required String bookKey,
+    String? orTitle,
+  }) =>
+      (select(lookupMiningCounters)..where(
+            (t) => orTitle == null || orTitle.isEmpty
+                ? t.bookKey.equals(bookKey)
+                : t.bookKey.equals(bookKey) |
+                      (t.bookKey.equals('') & t.title.equals(orTitle)),
+          ))
+          .get();
 
   // ── mined sentences ──────────────────────────────────────────────
 

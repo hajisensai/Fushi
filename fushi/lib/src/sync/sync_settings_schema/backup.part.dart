@@ -136,6 +136,38 @@ const Set<BackupCategory> importSelectableCategories = <BackupCategory>{
   BackupCategory.music,
 };
 
+/// 导出框的初始勾选：默认类别（[defaultBackupExportCategories]）去掉要先升级才能导出的（本机复习库还没迁移成新代，
+/// [BackupContentSummary.needsUpgrade]）——它们默认就不选，确认后返回的类别里也不会有。
+@visibleForTesting
+Set<BackupCategory> initialBackupExportSelection(
+  BackupContentSummary summary,
+) => defaultBackupExportCategories()..removeAll(summary.needsUpgrade);
+
+/// 导出框里一个类别的开关行。要先升级才能导出的类别（[BackupContentSummary.needsUpgrade]）：副标题是「需先升级」、
+/// 开关不可点（[onToggle] 不接）；其余类别副标题是说明加计数。
+@visibleForTesting
+Widget backupExportCategoryRow({
+  required BackupCategory category,
+  required BackupContentSummary summary,
+  required bool selected,
+  required ValueChanged<bool> onToggle,
+}) {
+  final bool needsUpgrade = summary.needsUpgrade.contains(category);
+  return AdaptiveSettingsSwitchRow(
+    title: backupCategoryLabel(category),
+    subtitle: needsUpgrade
+        ? t.backup_export_srs_needs_upgrade
+        : summary.counts.containsKey(category)
+        ? '${backupCategoryDescription(category)} '
+              '(${summary.countFor(category)})'
+        : backupCategoryDescription(category),
+    icon: backupCategoryIcon(category),
+    showIcon: true,
+    value: selected,
+    onChanged: needsUpgrade ? null : onToggle,
+  );
+}
+
 /// 导出分类勾选框里要不要列出 [category]。复习（SRS）是默认关闭的模块：本机没有
 /// SRS 数据（无用户笔记、媒体目录为空）时整行不出现，普通用户的备份界面不会多出一项。
 /// 其余分类恒列出（没有内容时只是不带计数）。
@@ -264,7 +296,7 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
   Future<Set<BackupCategory>?> _pickExportCategories(
     BackupContentSummary summary,
   ) async {
-    final Set<BackupCategory> selected = defaultBackupExportCategories();
+    final Set<BackupCategory> selected = initialBackupExportSelection(summary);
     assert(!selected.contains(BackupCategory.videos));
     assert(!selected.contains(BackupCategory.localAudio));
     // Per-book selection (TODO-1195 part A). Mutated by the nested book picker;
@@ -321,16 +353,11 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                       if (backupCategoryShownInExport(c, summary)) ...<Widget>[
                         FushiStaggeredEntrance(
                           index: c.index,
-                          child: AdaptiveSettingsSwitchRow(
-                            title: backupCategoryLabel(c),
-                            subtitle: summary.counts.containsKey(c)
-                                ? '${backupCategoryDescription(c)} '
-                                      '(${summary.countFor(c)})'
-                                : backupCategoryDescription(c),
-                            icon: backupCategoryIcon(c),
-                            showIcon: true,
-                            value: selected.contains(c),
-                            onChanged: (bool v) => setLocal(() {
+                          child: backupExportCategoryRow(
+                            category: c,
+                            summary: summary,
+                            selected: selected.contains(c),
+                            onToggle: (bool v) => setLocal(() {
                               if (v) {
                                 selected.add(c);
                               } else {
@@ -1152,6 +1179,23 @@ Future<void> runBackupImportFlowForFile({
     // 用户取消确认 → 彻底退出遮罩态，回到调用方页面（validating 遮罩已退出）。
     return;
   }
+  // 复习（G11-4）：合并会把备份的复习数据并进本机复习库——来自另一个复习库、或带着本库不认识的旧档案标识 / 设备时
+  // 改的是本库的身份与绑定，必须用户亲自确认。答否 = 只合并其余内容（那样的复习数据不落，本机复习库不动）。预设
+  // （控制通道）不替用户确认这一项。
+  bool srsConfirmed = false;
+  if (preset == null &&
+      choice.mode == BackupImportMode.merge &&
+      choice.categories.contains(BackupCategory.srs) &&
+      summary.present.contains(BackupCategory.srs) &&
+      rootCtx.mounted) {
+    srsConfirmed = await showFushiConfirmDialog(
+      context: rootCtx,
+      title: t.backup_srs_merge_confirm_title,
+      message: t.backup_srs_merge_confirm,
+      confirmLabel: t.backup_srs_merge_confirm_ok,
+      cancelLabel: t.backup_srs_merge_confirm_skip,
+    );
+  }
 
   final String booksRoot = p.join(appModel.appDirectory.path, 'fushi_books');
   final String audiobooksRoot = p.join(
@@ -1182,26 +1226,45 @@ Future<void> runBackupImportFlowForFile({
         choice.mode == BackupImportMode.merge &&
         await SyncRepository(appModel.database).isBackupMergeSettingsEnabled();
     await appModel.closeDatabase();
+    // 合并里没落的复习数据（要确认而没确认：用户在上面答了否，或预设 / 控制通道不替用户确认）：不能当作全部成功报，
+    // 完成提示里写明有几份没并入、要再导一次并确认。
+    int srsDeclined = 0;
     if (choice.mode == BackupImportMode.merge) {
       // TODO-888 merge: keep this device's library + settings, only ADD what
       // the backup carries (row-level upsert + copy-if-absent content trees).
       // Never overwrites/deletes existing data, so importSettings is moot.
-      await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: appModel.databaseDirectory.path,
-        zipPath: filePath,
-        // Per-category merge selection (merge mode now honours the dialog's
-        // toggles): an unticked category adds neither rows nor files.
-        categories: choice.categories,
-        dictionaryResourceDirectory: appModel.dictionaryResourceDirectory.path,
-        booksRootDirectory: booksRoot,
-        audiobooksRootDirectory: audiobooksRoot,
-        fontsRootDirectory: fontsRoot,
-        videosRootDirectory: videosRoot,
-        gameCoversRootDirectory: gameCoversRoot,
-        // TODO-1183: 后台解压 isolate 经 SendPort 回报字节 → 确定进度条。
-        onProgress: appModel.reportBackupImportProgress,
-        mergePortableSettings: mergeSettings,
-      );
+      final List<SrsBackupMergeResult> srsResults =
+          await BackupRestoreService.mergeRestoreBackup(
+            dbDirectory: appModel.databaseDirectory.path,
+            zipPath: filePath,
+            // Per-category merge selection (merge mode now honours the dialog's
+            // toggles): an unticked category adds neither rows nor files.
+            categories: choice.categories,
+            dictionaryResourceDirectory:
+                appModel.dictionaryResourceDirectory.path,
+            booksRootDirectory: booksRoot,
+            audiobooksRootDirectory: audiobooksRoot,
+            fontsRootDirectory: fontsRoot,
+            videosRootDirectory: videosRoot,
+            gameCoversRootDirectory: gameCoversRoot,
+            // TODO-1183: 后台解压 isolate 经 SendPort 回报字节 → 确定进度条。
+            onProgress: appModel.reportBackupImportProgress,
+            mergePortableSettings: mergeSettings,
+            srsConfirmed: srsConfirmed,
+          );
+      srsDeclined = srsResults
+          .where(
+            (SrsBackupMergeResult r) =>
+                r.action == SrsBackupMergeAction.declined,
+          )
+          .length;
+      if (srsDeclined > 0) {
+        ErrorLogService.instance.log(
+          'backupImport.srsDeclined',
+          'merge left $srsDeclined review data unit(s) unmerged: they need '
+              'the user to confirm (preset=${preset != null})',
+        );
+      }
     } else {
       await BackupRestoreService.restoreBackup(
         dbDirectory: appModel.databaseDirectory.path,
@@ -1235,7 +1298,11 @@ Future<void> runBackupImportFlowForFile({
     } catch (e, s) {
       ErrorLogService.instance.log('backupImport.successReceipt', e, s);
     }
-    appModel.completeBackupImport(t.backup_import_success);
+    appModel.completeBackupImport(
+      srsDeclined > 0
+          ? t.backup_import_success_srs_declined(count: srsDeclined)
+          : t.backup_import_success,
+    );
     await Future<void>.delayed(const Duration(seconds: 1));
     // restartApp 成功会拉新进程并退出本进程；backupImportRestart 内部已吞掉重启失败并退回
     // 纯退出兜底，故此处不会把「重启失败」冒泡成 catch 里的 failBackupImport（避免把成功的

@@ -407,6 +407,7 @@ class _VideoPlayerCtl {
     final VideoMineCommitSummary summary = await queue.commitAll(
       bookUid: bookUid,
       repo: repo,
+      retryFailed: true,
     );
     await _refreshPage(bookUid);
     return <String, Object?>{

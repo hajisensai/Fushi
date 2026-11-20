@@ -443,10 +443,15 @@ extension _FushiSyncServerVideo on FushiSyncServer {
             }
             final VideoSubtitleDefaultHost host =
                 svc as VideoSubtitleDefaultHost;
+            // `?episode=N`：播放列表第 N 集（client 先看
+            // `liveLibrary.videoSubtitleDefaultEpisode` 才带）。
             final String placed = await host.importDefaultVideoSubtitle(
               tmp,
               id: subtitleId,
-              format: p.extension(suffix),
+              // 不能用 p.extension：无语言标记的后缀就是 `.srt` 本身，按文件名规则
+              // 那是「点开头、没有扩展名」，会得到空串而被判成「不是字幕格式」。
+              format: suffix.substring(suffix.lastIndexOf('.') + 1),
+              episodeIndex: _episodeIndexFromRequest(request),
             );
             // 新旧两个名字都回：改名前的 client 只读旧名，读不到会把这次成功的
             // 上传误报成「host 不支持」（见 kLegacyInterconnectHeaderNames）。
@@ -744,16 +749,39 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           int.tryParse(request.url.queryParameters['ac'] ?? '') ?? 1;
       final String audioBitrate =
           request.url.queryParameters['bitrate'] ?? '64k';
-      final File? clip = await svc.clipVideoAudio(
-        clipAudioId,
-        startMs: startMs,
-        endMs: endMs,
-        episodeIndex: episodeIndex,
-        audioStreamIndex: audioStreamIndex,
-        audioStreamCount: audioStreamCount,
-        audioChannels: audioChannels,
-        audioBitrate: audioBitrate,
-      );
+      // `?discTitle=BDMV/PLAYLIST/<名>.mpls`：同一张蓝光盘上的另一条 title（远端原盘
+      // 会话，能力位 [kVideoClipAudioDiscTitleCapability]）。不与 `episode` 同给。
+      final String? discTitle = request.url.queryParameters['discTitle'];
+      final File? clip;
+      if (discTitle != null && discTitle.isNotEmpty) {
+        if (svc is! VideoDiscTitleAudioHost) {
+          return shelf.Response.notFound('Disc title clip unsupported');
+        }
+        if (episodeIndex > 0) {
+          return shelf.Response(400, body: 'episode and discTitle conflict');
+        }
+        clip = await (svc as VideoDiscTitleAudioHost).clipVideoDiscTitleAudio(
+          clipAudioId,
+          discTitle: discTitle,
+          startMs: startMs,
+          endMs: endMs,
+          audioStreamIndex: audioStreamIndex,
+          audioStreamCount: audioStreamCount,
+          audioChannels: audioChannels,
+          audioBitrate: audioBitrate,
+        );
+      } else {
+        clip = await svc.clipVideoAudio(
+          clipAudioId,
+          startMs: startMs,
+          endMs: endMs,
+          episodeIndex: episodeIndex,
+          audioStreamIndex: audioStreamIndex,
+          audioStreamCount: audioStreamCount,
+          audioChannels: audioChannels,
+          audioBitrate: audioBitrate,
+        );
+      }
       if (clip == null) {
         return shelf.Response.notFound('Clip unavailable');
       }
@@ -1194,7 +1222,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
   /// 签发凭据已被吊销的流 token：删掉并回 403（BUG-4393）。正在发送的单个直传
   /// 响应不被切断，下一次 Range / 下一个 HLS 分段即 403。
   shelf.Response _revokedVideoToken(String tokenValue) {
-    _videoStreamTokens.remove(tokenValue);
+    _dropVideoToken(tokenValue);
     return shelf.Response(
       403,
       body: 'Token revoked',
@@ -1218,17 +1246,28 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           e.key,
     ];
     for (final String key in keys) {
-      _videoStreamTokens.remove(key);
+      _dropVideoToken(key);
       cancelTranscodeWork(key);
     }
+  }
+
+  /// 作废一张流 token：摘出登记表，并把它名下缓存的转码分段一并清掉（video-34）——
+  /// 缓存的生命周期跟 token 走，作废后留着的段既取不到又占内存。所有删 token 的
+  /// 路径（释放流票 / 吊销 / TTL / 上限淘汰）都经这里。
+  void _dropVideoToken(String tokenValue) {
+    _videoStreamTokens.remove(tokenValue);
+    _transcodeSegments.evictStream(tokenValue);
   }
 
   void _pruneVideoTokens() {
     // 视频播放时间长，token 有效期设为 6 小时
     final DateTime cutoff = _now().subtract(const Duration(hours: 6));
-    _videoStreamTokens.removeWhere(
-      (String _, _VideoStreamToken token) => token.createdAt.isBefore(cutoff),
-    );
+    final List<String> expired = <String>[
+      for (final MapEntry<String, _VideoStreamToken> e
+          in _videoStreamTokens.entries)
+        if (e.value.createdAt.isBefore(cutoff)) e.key,
+    ];
+    expired.forEach(_dropVideoToken);
   }
 
   /// BUG-1568：守住视频流 token 上限。TTL prune 之后仍达到 [_maxVideoStreamTokens]
@@ -1246,7 +1285,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         }
       }
       if (oldestKey == null) break;
-      _videoStreamTokens.remove(oldestKey);
+      _dropVideoToken(oldestKey);
     }
   }
 
@@ -1356,17 +1395,26 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     // 分段工作挂在签发它的 token 名下（BUG-4461）：流票被释放时
     // [_releaseVideoTicket] 按 token 取消排队 / 在跑的分段；token 在本请求反查文件
     // 期间已被释放或过期的，[isAlive] 在登记时就拦下，不起 ffmpeg。
+    //
+    // 同一条流同一段只转一次（video-34）：往回拖到 client 向后缓冲之外、重连后重新
+    // 请求、或同一段的并发请求，都从 [_transcodeSegments] 取，不再起 ffmpeg。缓存
+    // 键含 token，画质档 / 音轨都绑在 token 上，不会把一档的字节回给另一档。
     final Uint8List? segment;
     try {
       segment = await _runTranscode(
-        () => transcodeSegment(
-          inputPath: file.path,
-          profile: profile,
+        () => _transcodeSegments.obtain(
+          stream: tokenValue,
           index: index,
-          durationMs: durationMs,
-          audioStreamIndex: tok.transcodeAudioStreamIndex,
-          workKey: tokenValue,
-          isAlive: () => _videoStreamTokens.containsKey(tokenValue),
+          input: file.path,
+          compute: () => transcodeSegment(
+            inputPath: file.path,
+            profile: profile,
+            index: index,
+            durationMs: durationMs,
+            audioStreamIndex: tok.transcodeAudioStreamIndex,
+            workKey: tokenValue,
+            isAlive: () => _videoStreamTokens.containsKey(tokenValue),
+          ),
         ),
       );
     } on TranscodeCancelled {
@@ -1529,8 +1577,9 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     headers: <String, String>{
       'Content-Type': 'video/mp2t',
       'Content-Length': '${bytes.length}',
-      // 转码产物不落盘也不复用：同一段再请求一次就再转一次。给 no-store 是为了
-      // 别让中间层缓存下一份「按某个画质档转出来的字节」再回给另一个档。
+      // 转码产物只在 host 内存里按流 token 缓存（[_transcodeSegments]），不落盘。
+      // 给 no-store 是为了别让中间层缓存下一份「按某个画质档转出来的字节」再回给
+      // 另一个档。
       'Cache-Control': 'no-store',
     },
   );

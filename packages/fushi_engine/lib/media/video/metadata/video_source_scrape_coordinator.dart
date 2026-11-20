@@ -537,7 +537,7 @@ class VideoSourceScrapeCoordinator
   }) async {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
-    if (lease == null) throw StateError('视频刮削资料正在清理');
+    if (lease == null) throw VideoScrapeMaintenanceActiveError();
     try {
       return await _rewriteSidecarsUnlocked(
         workId,
@@ -695,7 +695,7 @@ class VideoSourceScrapeCoordinator
     );
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
-    if (lease == null) throw StateError('视频刮削资料正在清理');
+    if (lease == null) throw VideoScrapeMaintenanceActiveError();
     try {
       return await _scrapeSourceUnlocked(
         source,
@@ -811,7 +811,9 @@ class VideoSourceScrapeCoordinator
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
     if (lease == null) {
-      return Future<SourceScrapeReport>.error(StateError('视频刮削资料正在清理'));
+      return Future<SourceScrapeReport>.error(
+        VideoScrapeMaintenanceActiveError(),
+      );
     }
     return _scrapeSourceUnlocked(
       source,
@@ -1926,6 +1928,8 @@ class VideoSourceScrapeCoordinator
             localWorkTitle: localWork.title,
             candidates: options,
             aiSuggestion: ai.suggestion,
+            strictMatches: resolution.strictMatches,
+            workStableKey: localWork.stableKey,
           ),
         );
       }
@@ -4236,6 +4240,9 @@ class VideoSourceScrapeCoordinator
     if (result.error case final AnidbUdpException error) {
       return switch (error.reason) {
         AnidbUdpFailure.authentication => 'AniDB 登录失败，请检查用户名和密码。',
+        AnidbUdpFailure.encryption =>
+          'AniDB 加密登录失败：请在 AniDB 个人资料里设置 UDP API Key，'
+              '并在 设置 → 在线服务 → AniDB 填入同一个 Key。',
         AnidbUdpFailure.unavailable ||
         AnidbUdpFailure.clientOutdated ||
         AnidbUdpFailure.clientBanned => 'AniDB 客户端不可用，请核对注册的客户端名称与版本。',

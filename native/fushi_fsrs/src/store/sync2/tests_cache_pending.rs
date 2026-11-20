@@ -105,7 +105,7 @@ fn cmd(d: &Device, deck: &str, mut req: Value, blobs: Vec<Vec<u8>>) -> Value {
     req["caches"] = json!({"defaultDeck": deck});
     let mut blobs = blobs;
     let mut files = Vec::new();
-    crate::store::ffi::sync2_dispatch(&d.core, &req, &mut blobs, &mut files).unwrap()
+    crate::store::legacy3::sync2_dispatch(&d.core, &req, &mut blobs, &mut files).unwrap()
 }
 
 /// 三张缓存表的全部行（去掉刷新时刻 `updated_at`，两条路径各自取墙钟）。
@@ -428,8 +428,9 @@ fn a_session_voided_by_an_error_releases_the_held_cache() {
     d.core.sync2_rotate(P, now).unwrap();
     let req =
         json!({"op": "ingest_commit", "profile": P, "caches": {"defaultDeck": deck}, "now": now});
-    let err = crate::store::ffi::sync2_dispatch(&d.core, &req, &mut Vec::new(), &mut Vec::new())
-        .unwrap_err();
+    let err =
+        crate::store::legacy3::sync2_dispatch(&d.core, &req, &mut Vec::new(), &mut Vec::new())
+            .unwrap_err();
     assert!(err.contains("local identity changed"), "{err}");
     assert!(
         !hold(&d),

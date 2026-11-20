@@ -174,9 +174,14 @@ class MangaOcrVolumeJobRequest {
 /// 一次在跑的整卷任务句柄。
 abstract interface class MangaOcrVolumeJob {
   /// 完成时给出 manga.json 绝对路径；取消以 [OcrCancelledException] 失败。
+  ///
+  /// **完成（成功 / 取消 / 失败）即「执行体已经完全停下」**：生产实现在收到随
+  /// `Isolate.exit` 发出的终局消息时才完成，那时推理会话已关闭、isolate 正在
+  /// 退出。[cancel] 只是请求，返回时任务还在跑当前页；要知道模型内存何时真正
+  /// 释放，等的是这个 Future（BUG-4800）。
   Future<String> get result;
 
-  /// 请求取消（页/块边界生效，幂等）。
+  /// 请求取消（页/块边界生效，幂等）。立即返回，不等任务停下。
   void cancel();
 
   /// 读者翻到了 [pageIndex]：下一页先跑它，再从它往后接着跑（页边界生效）。
@@ -1895,7 +1900,19 @@ class MangaOcrServiceImpl
     controller.onCancel = () {
       cancelled = true;
       focus?.removeListener(forwardFocus);
-      job?.cancel();
+      final MangaOcrVolumeJob? running = job;
+      if (running == null) {
+        // 任务还没起（模型检查中）：没有要等的东西。
+        return null;
+      }
+      running.cancel();
+      // 取消订阅的 Future 等到任务真正停下（isolate 已退出、推理会话已关）才
+      // 完成：调用方据此决定何时可以再起一个任务（BUG-4800）。任务以什么结局
+      // 收场与「停没停下」无关，这里一律正常完成。
+      return running.result.then<void>(
+        (String _) {},
+        onError: (Object _, StackTrace _) {},
+      );
     };
     return controller.stream;
   }

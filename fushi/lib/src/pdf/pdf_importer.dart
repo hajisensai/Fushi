@@ -1,18 +1,18 @@
 import 'dart:io';
 
 import 'package:drift/drift.dart';
+import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 import 'package:pdfrx/pdfrx.dart';
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
+import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/epub/pdf_book_layout.dart';
-import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/pdf/pdf_engine.dart';
 import 'package:fushi_engine/media/cover_file_writer.dart'
-    show CoverImageInvalidException;
-import 'package:fushi_engine/sync/ttu_filename.dart';
+    show CoverImageInvalidException, writeCoverBytesAtomically;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 
@@ -41,7 +41,7 @@ class PdfImporter {
 
   /// 从磁盘路径导入一份 PDF。成功返回 bookKey（= 净化后的标题，`EpubBooks` 主键）；
   /// 用户在同名弹窗取消时抛 [DuplicateImportCancelledException]（由调用方按取消处理）；
-  /// 其它失败抛异常并回滚已插入的行与已建的书目录。
+  /// 其它失败抛异常并回滚本次自己建的行与目录。
   ///
   /// [title] 由导入对话框传入（用户可编辑的标题输入框值）——PDF 元数据里的标题不可靠，
   /// 以用户输入为准，与文本转 EPUB 的口径一致。
@@ -53,6 +53,9 @@ class PdfImporter {
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     int? sourceId,
   }) async {
+    // 跳过策略（批量 / 后台）先判重再开 PDF：已在库的卷不再白白打开文档、栅格化封面。
+    await _precheckSkippedDuplicate(db: db, title: title, policy: policy);
+
     await PdfEngine.ensureInitialized();
 
     // 先探测页数并栅格化首页当封面（打开一次 PDF 文档）。渲染在 bookKey 解析前完成，
@@ -70,48 +73,105 @@ class PdfImporter {
       await document.dispose();
     }
 
-    // 解析标题冲突 → bookKey（与 EpubImporter 同口径：净化标题即主键，保证本地唯一）。
-    final List<EpubBookMeta> existingBooks = await db.getEpubBookMetas();
-    final String storedTitle = await resolveDuplicateTitle(
-      existingTitles: existingBooks.map((EpubBookMeta b) => b.title).toList(),
-      proposedTitle: title,
+    return persistRendered(
+      db: db,
+      filePath: filePath,
+      title: title,
       policy: policy,
+      pageCount: pageCount,
+      coverPng: coverPng,
+      sourceId: sourceId,
     );
-    final String bookKey = sanitizeTtuFilename(storedTitle);
+  }
 
-    final String bookDir = await EpubStorage.bookDirectory(bookKey);
+  /// [importFromPath] 的落盘落库段（PDF 已打开过、页数与封面字节已在手）。
+  ///
+  /// 与 EPUB / 漫画导入同一套书目录归属（BUG-4907，沿用 BUG-4840 的做法）：
+  /// `document.pdf` 与封面先备进书库根下本次独占的 `.tmp-*`，再经
+  /// [EpubImporter.placeUnderResolvedTitle] 在落位锁内「重取快照 → 挪进
+  /// `<bookKey>/` → 插行」。此前是 [EpubStorage.bookDirectory]（存在即复用）直接往
+  /// `<bookKey>/` 里写、失败无条件整个删掉：两份同名 PDF 并发导入会写进同一个目录，
+  /// 后插行的那份撞主键失败、回滚时把先成功那本的书目录删掉；撞上崩溃留下的同名孤儿
+  /// 目录时，失败回滚把「找回书库」本可恢复的孤儿一起删了。回滚现在只删本次自己建的
+  /// 东西：暂存目录，与已落位而行没插成的目录。
+  ///
+  /// 公开只为测试（PDF 栅格化要 pdfium，单测里起不来）。
+  @visibleForTesting
+  static Future<String> persistRendered({
+    required FushiDatabase db,
+    required String filePath,
+    required String title,
+    required DuplicatePolicy policy,
+    required int pageCount,
+    required Uint8List? coverPng,
+    int? sourceId,
+  }) async {
+    String? stagedDir;
+    bool staged = false;
+    String? coverRel;
+    String? placedDir;
     String? insertedKey;
     try {
-      // 把 PDF 拷进书目录（原文件在缓存/外部目录，阅读器需稳定内部副本）。
-      await File(filePath).copy(p.join(bookDir, kPdfFileName));
-
-      // BUG-2496：封面走收口（校验完整可解码 + 原子写 + 驱逐）。pdfrx 渲染出的字节
-      // 理应是完整 PNG，但栅格化失败/半截时不能让整本 PDF 导入失败——记诊断、
-      // coverPath 留空，书架回落占位图。
-      String? coverRel;
-      if (coverPng != null) {
-        try {
-          await MediaCoverService.applyCoverBytes(
-            bytes: coverPng,
-            destPath: p.join(bookDir, kCoverFileName),
-          );
-          coverRel = kCoverFileName;
-        } on CoverImageInvalidException catch (e) {
-          ErrorLogService.instance.logDiagnostic('PdfImporter.cover', e);
-        }
-      }
-
-      final int importedAtMs = DateTime.now().millisecondsSinceEpoch;
-      insertedKey = await db.insertEpubBook(
-        bookRowFor(
-          bookKey: bookKey,
-          title: storedTitle,
-          coverRel: coverRel,
-          bookDir: bookDir,
-          pageCount: pageCount,
-          importedAt: importedAtMs,
-          sourceId: sourceId,
-        ),
+      final ({String storedTitle, String bookKey, int importedAtMs})
+      placed = await EpubImporter.placeUnderResolvedTitle(
+        db: db,
+        proposedTitle: title,
+        policy: policy,
+        // 书名键在锁内被别人占了要重新定夺时会再进来一次，已备好的不重做。
+        stage: () async {
+          if (staged) return;
+          final String dir = await EpubImporter.createStagingDir(db);
+          stagedDir = dir;
+          // 把 PDF 拷进书目录（原文件在缓存/外部目录，阅读器需稳定内部副本）。
+          await File(filePath).copy(p.join(dir, kPdfFileName));
+          // BUG-2496：封面走收口（校验完整可解码 + 原子写）。pdfrx 渲染出的字节
+          // 理应是完整 PNG，但栅格化失败/半截时不能让整本 PDF 导入失败——记诊断、
+          // coverPath 留空，书架回落占位图。
+          if (coverPng != null) {
+            try {
+              await writeCoverBytesAtomically(
+                bytes: coverPng,
+                destPath: p.join(dir, kCoverFileName),
+              );
+              coverRel = kCoverFileName;
+            } on CoverImageInvalidException catch (e) {
+              ErrorLogService.instance.logDiagnostic('PdfImporter.cover', e);
+            }
+          }
+          staged = true;
+        },
+        place:
+            (
+              String storedTitle,
+              String bookKey,
+              List<EpubBookMeta> liveBooks,
+            ) async {
+              final String bookDir = EpubStorage.moveDirIntoPlace(
+                srcDir: Directory(stagedDir!),
+                targetDir: await EpubStorage.bookPath(bookKey),
+                liveExtractDirs: liveBooks.map(
+                  (EpubBookMeta b) => b.extractDir,
+                ),
+              );
+              placedDir = bookDir;
+              final int importedAtMs = DateTime.now().millisecondsSinceEpoch;
+              insertedKey = await db.insertEpubBook(
+                bookRowFor(
+                  bookKey: bookKey,
+                  title: storedTitle,
+                  coverRel: coverRel,
+                  bookDir: bookDir,
+                  pageCount: pageCount,
+                  importedAt: importedAtMs,
+                  sourceId: sourceId,
+                ),
+              );
+              return (
+                storedTitle: storedTitle,
+                bookKey: bookKey,
+                importedAtMs: importedAtMs,
+              );
+            },
       );
 
       // 与 EpubImporter 一致：写一条「added」活动事件喂首页时间轴。best-effort。
@@ -119,12 +179,12 @@ class PdfImporter {
         await db.addActivityEvent(
           eventType: kActivityAdded,
           mediaType: kActivityMediaBook,
-          title: storedTitle,
-          mediaKey: bookKey,
+          title: placed.storedTitle,
+          mediaKey: placed.bookKey,
           dateKey: FushiTimeFormat.dayKey(
-            DateTime.fromMillisecondsSinceEpoch(importedAtMs),
+            DateTime.fromMillisecondsSinceEpoch(placed.importedAtMs),
           ),
-          timestampMs: importedAtMs,
+          timestampMs: placed.importedAtMs,
         );
       } catch (e) {
         ErrorLogService.instance.log(
@@ -134,12 +194,14 @@ class PdfImporter {
         );
       }
 
-      return insertedKey;
+      return placed.bookKey;
     } catch (e) {
-      // 回滚：删掉可能已插入的行 + 已建的书目录，避免半成品残留。
-      if (insertedKey != null) {
+      // 回滚：删掉可能已插入的行，以及**本次自己建的**目录——暂存目录，和已经落位
+      // 但行没插成的书目录。别人的目录（活行的、孤儿的）从头到尾没被写过。
+      final String? inserted = insertedKey;
+      if (inserted != null) {
         try {
-          await db.deleteEpubBook(insertedKey);
+          await db.deleteEpubBook(inserted);
         } catch (rollbackError, stack) {
           ErrorLogService.instance.log(
             'PdfImporter.rollbackDelete',
@@ -148,18 +210,37 @@ class PdfImporter {
           );
         }
       }
-      try {
-        final Directory dir = Directory(bookDir);
-        if (dir.existsSync()) dir.deleteSync(recursive: true);
-      } catch (cleanupError, stack) {
-        ErrorLogService.instance.log(
-          'PdfImporter.rollbackDir',
-          cleanupError,
-          stack,
-        );
+      for (final String? own in <String?>[placedDir, stagedDir]) {
+        if (own == null) continue;
+        try {
+          final Directory dir = Directory(own);
+          if (dir.existsSync()) dir.deleteSync(recursive: true);
+        } catch (cleanupError, stack) {
+          ErrorLogService.instance.log(
+            'PdfImporter.rollbackDir',
+            cleanupError,
+            stack,
+          );
+        }
       }
       rethrow;
     }
+  }
+
+  /// [DuplicatePolicy.skip] 的导入前预检：[title] 已在书库里时直接按跳过中止，
+  /// 其它策略不碰数据库（落位时的判重照旧）。
+  static Future<void> _precheckSkippedDuplicate({
+    required FushiDatabase db,
+    required String title,
+    required DuplicatePolicy policy,
+  }) async {
+    if (policy is! SkipDuplicate) return;
+    final List<EpubBookMeta> books = await db.getEpubBookMetas();
+    throwIfSkippedDuplicate(
+      existingTitles: <String>[for (final EpubBookMeta b in books) b.title],
+      proposedTitle: title,
+      policy: policy,
+    );
   }
 
   /// PDF 书目录 → `EpubBooks` 行：导入（[importFromPath]）与「孤儿书目录重新登记」

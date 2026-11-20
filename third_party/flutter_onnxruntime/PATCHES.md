@@ -187,7 +187,7 @@ path or drift the floors apart.
 
 ## Re-vendoring on upgrade
 
-Copy the new upstream version over this folder, then re-apply deltas #1–#16.
+Copy the new upstream version over this folder, then re-apply deltas #1–#17.
 Before bumping the `onnxruntime-objc` pin, check the new version's podspec
 platforms (`pod spec cat onnxruntime-objc --version=X.Y.Z`) — if the floor moved,
 the four project deployment targets and the guard test move with it.
@@ -357,3 +357,19 @@ built against the same ORT revision (and its manifest in
 `gpu_runtime_pack.dart`), update the nupkg SHA-256, and keep both runtime DLLs
 in `flutter_onnxruntime_bundled_libraries`. `kOrtApiVersionUsed` must stay at
 or below the API version of the downloaded DirectML core.
+
+17. `linux/CMakeLists.txt`: ORT is fetched from the official NuGet package
+    `Microsoft.ML.OnnxRuntime` (`api.nuget.org/v3-flatcontainer/...nupkg`)
+    instead of the GitHub release tarball. `github.com/microsoft/onnxruntime`
+    -- the repository and every release asset -- has returned 404 since
+    2026-11-17 with no migration notice, which broke every Linux app build.
+    The nupkg is downloaded with `EXPECTED_HASH SHA256=` (pinned per version in
+    `ONNXRUNTIME_NUPKG_SHA256`; any other version must pass its own hash or
+    configure fails), then staged into the old tarball layout:
+    `build/native/include/*.h` -> `include/`,
+    `runtimes/<rid>/native/libonnxruntime.so` (rid `linux-x64` /
+    `linux-arm64`) -> `lib/`. The NuGet `.so` is a single real file with
+    SONAME `libonnxruntime.so.1` (no symlink chain), so delta #12 takes its
+    `libonnxruntime.so.1` fallback name. Max GLIBC symbol version is 2.27.
+    The Windows build already used NuGet. On a version bump update the pinned
+    hash here and in `.github/scripts/fetch_onnxruntime_nuget.py`.

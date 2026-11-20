@@ -14,6 +14,7 @@ void main() {
     bool hasKanji = false,
     bool kanjiHidden = false,
     int kanjiOrder = 0,
+    String? language,
   }) => (
     type: type,
     path: path,
@@ -22,7 +23,57 @@ void main() {
     hasKanji: hasKanji,
     kanjiHidden: kanjiHidden,
     kanjiOrder: kanjiOrder,
+    language: language,
   );
+
+  // 反馈 WIZUEQx1fY：词典语言随 term 桶一起在装载时交给引擎（标了语言的词典只接受
+  // 本语言变形表还原出来的词形）。引擎语义由 ctest dictionary_language_gate_lookup_test
+  // 钉；这里钉「哪些词典带什么语言进引擎」。
+  group('termDictLanguagesOf 词典语言随 term 桶进引擎', () {
+    test('只收进了 term 桶且标了语言的词典', () {
+      final List<DictPathEntry> entries = <DictPathEntry>[
+        e(DictionaryType.term, '/en', language: 'en'),
+        e(DictionaryType.term, '/unlabeled'),
+        e(DictionaryType.term, '/hidden', hidden: true, language: 'en'),
+        e(DictionaryType.term, '/missing', exists: false, language: 'en'),
+        e(DictionaryType.frequency, '/freq', language: 'ja'),
+        e(DictionaryType.kanji, '/kanji', language: 'ja'),
+        e(DictionaryType.term, '/ja', language: 'ja-JP'),
+      ];
+      final Map<String, String> languages = termDictLanguagesOf(entries);
+      expect(languages, <String, String>{'/en': 'en', '/ja': 'ja-JP'});
+      // 表里的路径都在 term 桶里（两边同一判据）。
+      expect(bucketDictPaths(entries).term, containsAll(languages.keys));
+    });
+
+    test(
+      'dictPathEntryOf：手动指定优先，其次 index.json 的 sourceLanguage，都没有 = null',
+      () {
+        DictPathEntry of({
+          String? languageOverride,
+          Map<String, String> metadata = const <String, String>{},
+        }) => dictPathEntryOf(
+          type: DictionaryType.term,
+          path: '/d',
+          exists: true,
+          hidden: false,
+          metadata: metadata,
+          order: 0,
+          languageOverride: languageOverride,
+        );
+        const Map<String, String> ja = <String, String>{'sourceLanguage': 'ja'};
+        expect(of().language, isNull);
+        expect(of(metadata: ja).language, 'ja');
+        expect(of(languageOverride: 'en', metadata: ja).language, 'en');
+        expect(of(languageOverride: '  ', metadata: ja).language, 'ja');
+        expect(of(languageOverride: ' en ').language, 'en');
+        expect(
+          of(metadata: const <String, String>{'sourceLanguage': ''}).language,
+          isNull,
+        );
+      },
+    );
+  });
 
   group('bucketDictPaths 词典分桶单一真相', () {
     test('按类型分四桶', () {

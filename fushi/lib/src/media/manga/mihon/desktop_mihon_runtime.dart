@@ -16,6 +16,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_cookie_jar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_proxy_policy_server.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_sidecar_temp_dir.dart';
 
 const Duration kMihonSourceImageHeaderTimeout = Duration(seconds: 90);
 const Duration kMihonSourceImageIdleTimeout = Duration(seconds: 90);
@@ -25,17 +26,18 @@ const int kMihonSourceImageMaxBytes = 32 * 1024 * 1024;
 ///
 /// [Stream.timeout] 会在每个数据块到达后重置计时器，所以慢速但仍在持续返回数据的
 /// 图片不会像旧的整请求 45 秒超时那样被中途切断；真正连续 90 秒没有任何数据时
-/// 仍会退出。大小上限避免异常扩展让预览封面无限占用内存。
+/// 仍会退出。大小上限避免异常扩展让预览封面无限占用内存；[maxBytes] 传 null
+/// 表示不设上限（漫画页图沿用原来不限大小的行为）。
 Future<Uint8List> readMihonSourceImageBytes(
   Stream<List<int>> stream, {
   Duration idleTimeout = kMihonSourceImageIdleTimeout,
-  int maxBytes = kMihonSourceImageMaxBytes,
+  int? maxBytes = kMihonSourceImageMaxBytes,
 }) async {
   final BytesBuilder builder = BytesBuilder(copy: false);
   int length = 0;
   await for (final List<int> chunk in stream.timeout(idleTimeout)) {
     length += chunk.length;
-    if (length > maxBytes) {
+    if (maxBytes != null && length > maxBytes) {
       throw const MihonRuntimeException(
         'IMAGE_TOO_LARGE',
         'Mihon source image exceeds the 32 MiB limit',
@@ -44,6 +46,48 @@ Future<Uint8List> readMihonSourceImageBytes(
     builder.add(chunk);
   }
   return builder.takeBytes();
+}
+
+/// 从 sidecar 的本地图片代理取一张漫画页。
+///
+/// 超时形状与封面相同（BUG-2450 第 4 点）：[headerTimeout] 内要等到响应头，之后按
+/// 「连续 [idleTimeout] 没有任何数据」计时。取消仍靠调用方关掉 [client]。
+///
+/// **在现在的 sidecar 上这等于整请求上限 [headerTimeout]**：sidecar 把上游图片
+/// 整张读进内存后才回响应头（`MihonImageProxy.fetch` 的 `body.bytes()` +
+/// `ImageProxyHandler` 的定长响应），所以上游的慢全落在等响应头这一段，空闲计时
+/// 只管得到回环上那段内存拷贝。实际变化只是上限从旧的 45 秒放宽到 90 秒；
+/// 「慢速但一直在出数据的大图不被砍」要等 sidecar 改成流式回传才成立。
+Future<Uint8List> fetchMihonPageImageBytes(
+  http.Client client,
+  Uri url, {
+  required Map<String, String> headers,
+  Duration headerTimeout = kMihonSourceImageHeaderTimeout,
+  Duration idleTimeout = kMihonSourceImageIdleTimeout,
+}) async {
+  final http.Request request = http.Request('GET', url)
+    ..headers.addAll(headers);
+  final http.StreamedResponse response = await client
+      .send(request)
+      .timeout(headerTimeout);
+  if (response.statusCode != HttpStatus.ok) {
+    throw MihonRuntimeException(
+      'IMAGE_HTTP_${response.statusCode}',
+      'Mihon image proxy request failed',
+    );
+  }
+  final Uint8List bytes = await readMihonSourceImageBytes(
+    response.stream,
+    idleTimeout: idleTimeout,
+    maxBytes: null,
+  );
+  if (bytes.isEmpty) {
+    throw const MihonRuntimeException(
+      'EMPTY_IMAGE',
+      'Mihon source returned an empty image',
+    );
+  }
+  return bytes;
 }
 
 class DesktopMihonRuntime extends MihonBridgeRuntime
@@ -83,6 +127,12 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   final Map<String, _CachedApk> _apkCache = <String, _CachedApk>{};
   final Map<String, http.Client> _imageClients = <String, http.Client>{};
   int _imageRequestSequence = 0;
+
+  /// 每个页引用是哪个 sidecar 进程发的。页图 URL 是那个进程的
+  /// `http://127.0.0.1:<端口>/image/...`，只在它活着时有效；装 / 更新 / 卸任何
+  /// 扩展都会 [_restart]，之后旧页表整份作废（BUG-4917）。按进程对象身份比，
+  /// 不按端口比：新进程可能恰好拿到同一个临时端口。
+  final Expando<Process> _pageIssuer = Expando<Process>('mihonPageIssuer');
 
   @visibleForTesting
   int? get processId => _process?.pid;
@@ -245,6 +295,29 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   }
 
   @override
+  Future<List<MihonPage>> getPages(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonChapter chapter, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  }) async {
+    final List<MihonPage> pages = await super.getPages(
+      extension,
+      source,
+      chapter,
+      preferences: preferences,
+    );
+    // 应答来自此刻的进程：调用途中若发生重启，旧进程已被杀，请求只会失败。
+    final Process? issuer = _process;
+    if (issuer != null) {
+      for (final MihonPage page in pages) {
+        _pageIssuer[page] = issuer;
+      }
+    }
+    return pages;
+  }
+
+  @override
   Future<Uint8List> fetchImage(
     MihonExtensionRef extension,
     MihonSource source,
@@ -267,6 +340,14 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     List<MihonPreference> preferences = const <MihonPreference>[],
   }) async {
     await _ensureStarted();
+    final Process? issuer = _pageIssuer[page];
+    if (issuer != null && !identical(issuer, _process)) {
+      throw const MihonRuntimeException(
+        kMihonStalePageReferenceCode,
+        'The page list was issued by an M-Extension-Server process that has '
+        'since restarted',
+      );
+    }
     final Uri requested = Uri.parse(page.resolvedUrl);
     final int? port = _port;
     if (requested.scheme != 'http' ||
@@ -283,22 +364,11 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     replaced?.close();
     _imageClients[requestId] = imageClient;
     try {
-      final http.Response response = await imageClient
-          .get(requested, headers: _headers)
-          .timeout(const Duration(seconds: 45));
-      if (response.statusCode != HttpStatus.ok) {
-        throw MihonRuntimeException(
-          'IMAGE_HTTP_${response.statusCode}',
-          'Mihon image proxy request failed',
-        );
-      }
-      if (response.bodyBytes.isEmpty) {
-        throw const MihonRuntimeException(
-          'EMPTY_IMAGE',
-          'Mihon source returned an empty image',
-        );
-      }
-      return response.bodyBytes;
+      return await fetchMihonPageImageBytes(
+        imageClient,
+        requested,
+        headers: _headers,
+      );
     } finally {
       if (identical(_imageClients[requestId], imageClient)) {
         _imageClients.remove(requestId);
@@ -484,29 +554,44 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     final MihonProxyPolicyServer proxyPolicy =
         await MihonProxyPolicyServer.start(token);
     _proxyPolicy = proxyPolicy;
-    final Process process = await Process.start(
-      java.path,
-      <String>[
-        '-Xmx512m',
-        '-Djava.awt.headless=true',
-        '-Djava.util.prefs.userRoot=${preferences.path}',
-        '-jar',
-        server.path,
-        // 0 = "bind an ephemeral port yourself and tell us which one".
-        // Picking the port here (bind → read → close → hand the number over)
-        // is a TOCTOU: between our close and the child's bind any other local
-        // process can take that port, and we would then hand our per-process
-        // Bearer token to a stranger. It also made a benign port collision
-        // fail the whole start with START_TIMEOUT.
-        '0',
-        dataDirectory.path,
-      ],
-      environment: <String, String>{
-        'FUSHI_MIHON_TOKEN': token,
-        'FUSHI_MIHON_PROXY_POLICY_PORT': '${proxyPolicy.port}',
-      },
-      mode: ProcessStartMode.normal,
+    // JVM 的临时目录归宿主管、随这个进程退出删掉（BUG-4914）：NanoHTTPD 每个请求体
+    // 一个删不掉的临时文件、强杀后残留的扩展 jar，以前都落在系统临时目录里永不回收。
+    final MihonSidecarTempDir tempDir = await MihonSidecarTempDir.create(
+      dataDirectory,
     );
+    final Process process;
+    try {
+      process = await Process.start(
+        java.path,
+        <String>[
+          '-Xmx512m',
+          '-Djava.awt.headless=true',
+          '-Djava.util.prefs.userRoot=${preferences.path}',
+          '-Djava.io.tmpdir=${tempDir.directory.path}',
+          '-jar',
+          server.path,
+          // 0 = "bind an ephemeral port yourself and tell us which one".
+          // Picking the port here (bind → read → close → hand the number over)
+          // is a TOCTOU: between our close and the child's bind any other local
+          // process can take that port, and we would then hand our per-process
+          // Bearer token to a stranger. It also made a benign port collision
+          // fail the whole start with START_TIMEOUT.
+          '0',
+          dataDirectory.path,
+        ],
+        environment: <String, String>{
+          'FUSHI_MIHON_TOKEN': token,
+          'FUSHI_MIHON_PROXY_POLICY_PORT': '${proxyPolicy.port}',
+        },
+        mode: ProcessStartMode.normal,
+      );
+    } catch (_) {
+      await tempDir.release();
+      rethrow;
+    }
+    // 进程真退出了（含下面各条启动失败路径里的 kill）才删：Windows 上 JVM 还开着的
+    // 文件删不掉。宿主自己被强杀时这里不会跑，留给下一次启动的清扫。
+    unawaited(process.exitCode.then((int _) => tempDir.release()));
     if (_disposed) {
       process.kill();
       try {

@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart'
+    show ApplyInterceptor, QueryExecutor, QueryInterceptor, Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ignored_works.dart';
@@ -117,6 +119,54 @@ class _BlockingRunner implements VideoSourceScrapeRunner {
     ]);
     await release.future;
     return SourceScrapeReport(sourceIds: <int>[source.id]);
+  }
+}
+
+/// 批次直接抛错的 runner（协调器之外的失败：互斥门 / 数据库 / 断言）。
+class _ThrowingRunner implements VideoSourceScrapeRunner {
+  @override
+  Future<SourceScrapeReport> scrapeSource(
+    SourceLibraryRow source, {
+    required VideoSourceScrapeCancellationToken cancellationToken,
+    required VideoSourceScrapeProgressCallback onProgress,
+    VideoSourceScrapeConfirmationCallback? onConfirmation,
+    VideoSourceScrapeBatchContext? batchContext,
+    List<VideoSourceScrapeWork>? plannedWorks,
+    String runScope = 'source',
+  }) async => throw StateError('batch exploded');
+}
+
+class _RecordingEngineLog implements EngineLogSink {
+  final List<String> sources = <String>[];
+
+  @override
+  void log(String source, Object error, [StackTrace? stack]) =>
+      sources.add(source);
+
+  @override
+  void logDiagnostic(String source, Object info) {}
+
+  @override
+  void logFatal(String source, Object error, [StackTrace? stack]) =>
+      sources.add(source);
+}
+
+/// 按表名数查询次数（video-36j：一轮计划里整表各读一次，与来源数无关）。
+class _SelectCounter extends QueryInterceptor {
+  final List<String> selects = <String>[];
+
+  int countFrom(String table) => selects
+      .where((String sql) => RegExp('FROM "?$table"?(?![a-z_])').hasMatch(sql))
+      .length;
+
+  @override
+  Future<List<Map<String, Object?>>> runSelect(
+    QueryExecutor executor,
+    String statement,
+    List<Object?> args,
+  ) {
+    selects.add(statement);
+    return super.runSelect(executor, statement, args);
   }
 }
 
@@ -1347,6 +1397,216 @@ void main() {
     // 批次期间那次触发被记下，批次结束时调度器自己兑现（BUG-3085）；等它跑完。
     await service.whenDeferredSettled();
     expect(await service.sweepAndListPending(), hasLength(2));
+  });
+
+  group('计划 / 批次失败不吞（video-14）', () {
+    late _RecordingEngineLog log;
+    late EngineLogSink previousLog;
+
+    setUp(() {
+      previousLog = engineLog;
+      engineLog = log = _RecordingEngineLog();
+    });
+
+    tearDown(() => engineLog = previousLog);
+
+    test('计划失败：留痕、沿用上一份清单、不发批次；恢复后照常', () async {
+      final int sourceId = await addSource('D:/A');
+      await addVideo(
+        'movie-a',
+        'D:/A/Unscraped Movie (2020).mkv',
+        sourceId,
+        title: 'Unscraped Movie',
+      );
+      bool broken = false;
+      final VideoLibraryScrapeSweep service = VideoLibraryScrapeSweep(
+        database: db,
+        memberExists: (String _) async =>
+            broken ? throw StateError('disk probe exploded') : true,
+        controller: controller,
+      );
+      expect(await service.sweepAndListPending(), hasLength(1));
+      expect(runner.plannedTitles, <List<String>>[
+        <String>['Unscraped Movie'],
+      ]);
+      expect(log.sources, isEmpty);
+
+      // 新入库一部没试过的作品：计划成功的话它会进清单并被认领。
+      await addVideo(
+        'movie-b',
+        'D:/A/Another Movie (2021).mkv',
+        sourceId,
+        title: 'Another Movie',
+      );
+      broken = true;
+      final List<VideoPendingScrapeWork> afterFailure = await service
+          .sweepAndListPending();
+
+      expect(
+        afterFailure.map((VideoPendingScrapeWork e) => e.work.title),
+        <String>['Unscraped Movie'],
+        reason: '失败不能把上一份待确认清单盖成空（提醒条会凭空消失）',
+      );
+      expect(log.sources, <String>['VideoLibraryScrapeSweep.plan']);
+      expect(runner.plannedTitles, hasLength(1), reason: '计划失败的这一轮不发批次');
+
+      broken = false;
+      expect(await service.sweepAndListPending(), hasLength(2));
+      expect(runner.plannedTitles.last, <String>['Another Movie']);
+      expect(log.sources, hasLength(1), reason: '恢复后不再记错');
+    });
+
+    test('批次失败：不抛给页面、清单照常返回，但原因留痕', () async {
+      final int sourceId = await addSource('D:/A');
+      await addVideo(
+        'movie-a',
+        'D:/A/Unscraped Movie (2020).mkv',
+        sourceId,
+        title: 'Unscraped Movie',
+      );
+      final VideoSourceScrapeTaskController throwing =
+          VideoSourceScrapeTaskController(_ThrowingRunner());
+      addTearDown(throwing.dispose);
+      final VideoLibraryScrapeSweep service = VideoLibraryScrapeSweep(
+        database: db,
+        memberExists: _allMembersPresent,
+        controller: throwing,
+      );
+
+      expect(await service.sweepAndListPending(), hasLength(1));
+      expect(log.sources, contains('VideoLibraryScrapeSweep.batch'));
+    });
+  });
+
+  group('一轮计划的读库次数与来源 / 作品数无关（video-36j）', () {
+    test('三个来源：三张整表各读一次、身份两条查询', () async {
+      final _SelectCounter counter = _SelectCounter();
+      final FushiDatabase counted = FushiDatabase.forTesting(
+        NativeDatabase.memory().interceptWith(counter),
+      );
+      addTearDown(counted.close);
+      for (final String root in <String>['D:/A', 'D:/B', 'D:/C']) {
+        final int sourceId = await counted.insertMediaSource(
+          MediaSourcesCompanion.insert(
+            label: root,
+            mediaKind: 'video',
+            rootPath: root,
+            createdAt: 1,
+          ),
+        );
+        for (int i = 0; i < 4; i++) {
+          await counted.upsertVideoBook(
+            VideoBooksCompanion(
+              bookUid: Value<String>('$root-$i'),
+              title: Value<String>('Movie $root $i'),
+              videoPath: Value<String>('$root/Movie $i (202$i).mkv'),
+              sourceId: Value<int?>(sourceId),
+            ),
+          );
+        }
+      }
+      final VideoLibraryScrapeSweep service = VideoLibraryScrapeSweep(
+        database: counted,
+        memberExists: _allMembersPresent,
+        controller: controller,
+      );
+      counter.selects.clear();
+
+      expect(await service.pendingWorks(), hasLength(12));
+
+      expect(counter.countFrom('video_books'), 1);
+      expect(counter.countFrom('media_collection_items'), 1);
+      expect(counter.countFrom('media_collections'), 1);
+      expect(counter.countFrom('video_metadata_works'), 1);
+      expect(counter.countFrom('video_metadata_provider_identities'), 1);
+    });
+
+    test('批量身份索引与单作品判据逐例同口径', () async {
+      final int sourceId = await addSource('D:/A');
+      // 独立电影：有身份 / 有作品行没身份 / 没作品行。
+      await addVideo('solo-id', 'D:/A/Solo One (2020).mkv', sourceId);
+      await seedIdentityForBook('solo-id');
+      await addVideo('solo-bare', 'D:/A/Solo Two (2021).mkv', sourceId);
+      await db
+          .into(db.videoMetadataWorks)
+          .insert(
+            VideoMetadataWorksCompanion.insert(
+              bookUid: const Value<String?>('solo-bare'),
+              mediaType: 'movie',
+              title: 'bare',
+              updatedAt: 1,
+            ),
+          );
+      await addVideo('solo-none', 'D:/A/Solo Three (2022).mkv', sourceId);
+      // 合集：合集行带身份 / 成员各自带身份 / 只有部分成员带身份。
+      Future<int> series(String name, List<String> uids) async {
+        final int id = await db.createMediaCollection(
+          name,
+          collectionType: 'playlist',
+        );
+        for (int i = 0; i < uids.length; i++) {
+          await addVideo(uids[i], 'D:/A/$name/$name - 0${i + 1}.mkv', sourceId);
+          await db.addToCollection(id, MediaKind.video, uids[i]);
+        }
+        return id;
+      }
+
+      final int owned = await series('Owned', <String>['o1', 'o2']);
+      final int ownedWork = await db
+          .into(db.videoMetadataWorks)
+          .insert(
+            VideoMetadataWorksCompanion.insert(
+              collectionId: Value<int?>(owned),
+              mediaType: 'tv',
+              title: 'owned',
+              updatedAt: 1,
+            ),
+          );
+      await db
+          .into(db.videoMetadataProviderIdentities)
+          .insert(
+            VideoMetadataProviderIdentitiesCompanion.insert(
+              identityKey: 'work:$ownedWork:anidb',
+              workId: Value<int?>(ownedWork),
+              provider: 'anidb',
+              externalId: '9',
+              updatedAt: 1,
+            ),
+          );
+      await series('Split', <String>['s1', 's2']);
+      await seedIdentityForBook('s1');
+      await seedIdentityForBook('s2');
+      await series('Half', <String>['h1', 'h2']);
+      await seedIdentityForBook('h1');
+
+      final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+      final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
+        db,
+      ).plan(source);
+      final List<VideoSourceScrapeWork> viaSnapshot =
+          await VideoSourceWorkPlanner(
+            db,
+          ).plan(source, snapshot: await VideoLibraryPlanSnapshot.load(db));
+      expect(
+        viaSnapshot.map((VideoSourceScrapeWork w) => w.stableKey),
+        works.map((VideoSourceScrapeWork w) => w.stableKey),
+        reason: '传入快照与自己读表产出同一份计划',
+      );
+      final VideoCanonicalIdentityIndex index =
+          await VideoCanonicalIdentityIndex.load(db);
+      final Map<String, bool> batched = <String, bool>{
+        for (final VideoSourceScrapeWork work in works)
+          work.stableKey: index.hasIdentity(work),
+      };
+      final Map<String, bool> single = <String, bool>{
+        for (final VideoSourceScrapeWork work in works)
+          work.stableKey: await hasCanonicalVideoMetadataIdentity(db, work),
+      };
+
+      expect(batched, hasLength(6));
+      expect(batched, single);
+      expect(batched.values.where((bool v) => v), hasLength(3));
+    });
   });
 
   group('资料刷新（Shoko UpdateShow + /tv/changes 增量）', () {

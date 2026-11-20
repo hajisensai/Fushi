@@ -217,14 +217,13 @@ class LnReaderOnlineLibrary {
     final String title = novel.name.trim().isEmpty
         ? novel.chapters.first.name
         : novel.name.trim();
-    final Uint8List bytes = _assemble(
-      plugin: plugin,
-      novel: novel,
-      title: title,
-      cover: cover,
-      bodyFor: (LnReaderChapter chapter) => (
-        body: lnReaderPendingChapterBody(pendingText),
-        images: const <LnReaderEpubImage>[],
+    final Uint8List bytes = await buildLnReaderOnlineEpubInBackground(
+      _request(
+        plugin: plugin,
+        novel: novel,
+        title: title,
+        pendingText: pendingText,
+        cover: cover,
       ),
     );
     final String bookKey = await _importEpub(
@@ -266,28 +265,23 @@ class LnReaderOnlineLibrary {
       return;
     }
     final String extractDir = row.extractDir;
-    final Map<String, int> oldIndexByPath = <String, int>{
-      for (int i = 0; i < descriptor.chapters.length; i++)
-        descriptor.chapters[i].path: i,
-    };
-    final LnReaderEpubImage? cover = _readCover(row);
-    final Uint8List bytes = _assemble(
-      plugin: plugin,
-      novel: novel,
-      title: row.title,
-      cover: cover,
-      bodyFor: (LnReaderChapter chapter) {
-        final int? oldIndex = oldIndexByPath[chapter.path];
-        final ({String body, List<LnReaderEpubImage> images})? loaded =
-            oldIndex == null
-            ? null
-            : readLnReaderLoadedChapter(extractDir, oldIndex);
-        return loaded ??
-            (
-              body: lnReaderPendingChapterBody(pendingText),
-              images: const <LnReaderEpubImage>[],
-            );
-      },
+    // 逐章读已取过的正文与插图、读封面、整本重新打 ZIP 都与章数 / 图量成正比
+    // （几百章带图的连载是几十 MB 的同步读盘 + 压缩），整段放后台 isolate。
+    final Uint8List bytes = await buildLnReaderOnlineEpubInBackground(
+      _request(
+        plugin: plugin,
+        novel: novel,
+        title: row.title,
+        pendingText: pendingText,
+        reuse: (
+          extractDir: extractDir,
+          previousChapterPaths: <String>[
+            for (final LnReaderChapter chapter in descriptor.chapters)
+              chapter.path,
+          ],
+          coverPath: row.coverPath,
+        ),
+      ),
     );
     final Directory temp = await Directory.systemTemp.createTemp(
       'fushi-lnreader-',
@@ -319,54 +313,133 @@ class LnReaderOnlineLibrary {
     }
   }
 
-  Uint8List _assemble({
+  LnReaderOnlineEpubRequest _request({
     required LnReaderInstalledPlugin plugin,
     required LnReaderNovel novel,
     required String title,
-    required LnReaderEpubImage? cover,
-    required ({String body, List<LnReaderEpubImage> images}) Function(
-      LnReaderChapter chapter,
-    )
-    bodyFor,
-  }) {
-    return LnReaderEpubAssembler.build(
-      title: title,
-      languageTag: lnReaderLanguageTag(plugin.lang),
-      identifier: lnReaderBookIdentifier(plugin.id, novel.path),
-      author: novel.author,
-      description: novel.summary == null
-          ? null
-          : stripLnReaderHtml(novel.summary!),
-      cover: cover,
-      chapters: <LnReaderEpubChapter>[
-        for (final LnReaderChapter chapter in novel.chapters)
-          () {
-            final ({String body, List<LnReaderEpubImage> images}) content =
-                bodyFor(chapter);
-            return (
-              title: chapter.name,
-              xhtmlBody: content.body,
-              images: content.images,
-            );
-          }(),
-      ],
-    );
-  }
+    required String pendingText,
+    LnReaderEpubImage? cover,
+    LnReaderOnlineEpubReuse? reuse,
+  }) => LnReaderOnlineEpubRequest(
+    title: title,
+    languageTag: lnReaderLanguageTag(plugin.lang),
+    identifier: lnReaderBookIdentifier(plugin.id, novel.path),
+    author: novel.author,
+    description: novel.summary == null
+        ? null
+        : stripLnReaderHtml(novel.summary!),
+    chapters: <({String name, String path})>[
+      for (final LnReaderChapter chapter in novel.chapters)
+        (name: chapter.name, path: chapter.path),
+    ],
+    pendingText: pendingText,
+    cover: cover,
+    reuse: reuse,
+  );
+}
 
-  LnReaderEpubImage? _readCover(EpubBookRow row) {
-    final String? coverPath = row.coverPath;
-    if (coverPath == null || coverPath.isEmpty) return null;
-    final File file = File(p.join(row.extractDir, coverPath));
-    if (!file.existsSync()) return null;
-    final Uint8List bytes = file.readAsBytesSync();
-    final String? mediaType = sniffLnReaderImageMediaType(bytes);
-    if (mediaType == null) return null;
-    return (
-      fileName: p.basename(coverPath),
-      bytes: bytes,
-      mediaType: mediaType,
-    );
-  }
+/// 就地重建时从旧解压树搬已取过的章：旧树位置、旧描述符的章节路径（第 i 项
+/// 就是旧树里的 `chapter-(i+1).xhtml`）、旧封面（相对 [extractDir]）。
+typedef LnReaderOnlineEpubReuse = ({
+  String extractDir,
+  List<String> previousChapterPaths,
+  String? coverPath,
+});
+
+/// 建 / 重建在线书 EPUB 的全部输入。只含可跨 isolate 的值（字符串、列表、
+/// 记录、字节），交给 [buildLnReaderOnlineEpubInBackground]。
+@immutable
+class LnReaderOnlineEpubRequest {
+  const LnReaderOnlineEpubRequest({
+    required this.title,
+    required this.languageTag,
+    required this.identifier,
+    required this.chapters,
+    required this.pendingText,
+    this.author,
+    this.description,
+    this.cover,
+    this.reuse,
+  });
+
+  final String title;
+  final String languageTag;
+  final String identifier;
+  final String? author;
+  final String? description;
+
+  /// 新章节列表（spine 顺序）。
+  final List<({String name, String path})> chapters;
+
+  /// 占位页上给读者看的说明。
+  final String pendingText;
+
+  /// 首次建书时取回的封面；就地重建时为 null，封面从 [reuse] 的旧树读。
+  final LnReaderEpubImage? cover;
+
+  /// null = 首次建书（全章占位）。
+  final LnReaderOnlineEpubReuse? reuse;
+}
+
+/// 按 [request] 组装在线书 EPUB（同步）。就地重建时已取过的章按章节路径从旧
+/// 解压树原样搬过去，其余章是占位页。
+Uint8List buildLnReaderOnlineEpub(LnReaderOnlineEpubRequest request) {
+  final LnReaderOnlineEpubReuse? reuse = request.reuse;
+  final Map<String, int> oldIndexByPath = <String, int>{
+    if (reuse != null)
+      for (int i = 0; i < reuse.previousChapterPaths.length; i++)
+        reuse.previousChapterPaths[i]: i,
+  };
+  final LnReaderEpubImage? cover =
+      request.cover ??
+      (reuse == null
+          ? null
+          : _readLnReaderCover(reuse.extractDir, reuse.coverPath));
+  return LnReaderEpubAssembler.build(
+    title: request.title,
+    languageTag: request.languageTag,
+    identifier: request.identifier,
+    author: request.author,
+    description: request.description,
+    cover: cover,
+    chapters: <LnReaderEpubChapter>[
+      for (final ({String name, String path}) chapter in request.chapters)
+        () {
+          final int? oldIndex = oldIndexByPath[chapter.path];
+          final ({String body, List<LnReaderEpubImage> images})? loaded =
+              reuse == null || oldIndex == null
+              ? null
+              : readLnReaderLoadedChapter(reuse.extractDir, oldIndex);
+          return (
+            title: chapter.name,
+            xhtmlBody:
+                loaded?.body ?? lnReaderPendingChapterBody(request.pendingText),
+            images: loaded?.images ?? const <LnReaderEpubImage>[],
+          );
+        }(),
+    ],
+  );
+}
+
+/// [buildLnReaderOnlineEpub] 放进一次性后台 isolate；产物经 `Isolate.exit` 交回。
+///
+/// 顶层函数：闭包只捕获 [request]，不把调用方（持有数据库句柄的
+/// [LnReaderOnlineLibrary]）带过 isolate 边界。
+Future<Uint8List> buildLnReaderOnlineEpubInBackground(
+  LnReaderOnlineEpubRequest request,
+) => Isolate.run<Uint8List>(
+  () => buildLnReaderOnlineEpub(request),
+  debugName: 'LnReaderOnlineEpub.build',
+);
+
+LnReaderEpubImage? _readLnReaderCover(String extractDir, String? coverPath) {
+  if (coverPath == null || coverPath.isEmpty) return null;
+  final File file = File(p.join(extractDir, coverPath));
+  if (!file.existsSync()) return null;
+  final Uint8List bytes = file.readAsBytesSync();
+  final String? mediaType = sniffLnReaderImageMediaType(bytes);
+  if (mediaType == null) return null;
+  return (fileName: p.basename(coverPath), bytes: bytes, mediaType: mediaType);
 }
 
 /// 解压树里第 [index] 章（0 基）的正文文件。
@@ -449,9 +522,10 @@ LnReaderOnlineChapterLoader? lnReaderOnlineChapterLoaderFor({
 /// 阅读器侧的按需取章：WebView 请求到一章的正文文件而它还是占位页时，经插件
 /// 取正文、插图写回解压树，再把书行里这一章的字数补上。
 ///
-/// 同一章并发请求只取一次；不同章串行取（网文站普遍限流，并发只换来 429）。
-/// 取完一章顺手预取下一章，顺序阅读翻到下一章时不用等网络。
-class LnReaderOnlineChapterLoader implements OnlineNovelChapterLoader {
+/// 同一章并发请求只取一次；不同章串行取（骨架见
+/// [SerialOnlineNovelChapterLoader]）。这一章有了正文就顺手预取下一章，顺序阅读
+/// 翻到下一章时不用等网络。
+class LnReaderOnlineChapterLoader extends SerialOnlineNovelChapterLoader {
   LnReaderOnlineChapterLoader({
     required this.manager,
     required this.database,
@@ -465,54 +539,47 @@ class LnReaderOnlineChapterLoader implements OnlineNovelChapterLoader {
   final FushiDatabase database;
   final LnReaderBookDownload download;
   final String bookKey;
+  @override
   final String extractDir;
   final LnReaderOnlineBookDescriptor descriptor;
 
-  final Map<int, Future<bool>> _inflight = <int, Future<bool>>{};
-
   /// 已把占位页换成正文、但阅读器还没经 [ensureLoaded] 确认过的章。后台预取的
   /// 章也记在这里：阅读器自己的相邻章预热可能在正文落盘前就把占位页读进了缓存，
-  /// 翻到这一章时必须据此丢缓存，不能只看「这一次调用有没有亲手取」。
-  final Set<int> _unacknowledged = <int>{};
-  Future<void> _queue = Future<void>.value();
+  /// 翻到这一章时必须据此丢缓存、换字数，不能只看「这一次调用有没有亲手取」。
+  final Map<int, OnlineNovelChapterLoaded> _unacknowledged =
+      <int, OnlineNovelChapterLoaded>{};
 
-  /// 排队中的取章（含后台预取）全部结束。
-  @visibleForTesting
-  Future<void> whenIdle() async {
-    Future<void> seen;
-    do {
-      seen = _queue;
-      await seen;
-    } while (!identical(seen, _queue));
-  }
-
-  /// [filePath] 对应的章（0 基）；不是本书的正文文件返回 null。
   @override
-  int? chapterIndexForFile(String filePath) {
-    final String relative = p
-        .relative(p.normalize(filePath), from: p.normalize(extractDir))
-        .replaceAll(r'\', '/');
-    final RegExpMatch? match = RegExp(
-      r'^OEBPS/chapter-(\d+)\.xhtml$',
-    ).firstMatch(relative);
-    if (match == null) return null;
-    final int index = int.parse(match.group(1)!) - 1;
-    if (index < 0 || index >= descriptor.chapters.length) return null;
-    return index;
-  }
+  int get chapterLimit => descriptor.chapters.length;
 
-  /// 确保 [filePath] 这一章已有正文。返回 true = 占位页换成正文之后调用方还
-  /// 没确认过（本次亲手取的，或后台预取的；调用方据此丢掉缓存）；不是本书正文
-  /// 文件 / 早已确认过返回 false。取不到抛出。
+  /// 确保 [filePath] 这一章已有正文。返回非 null = 占位页换成正文之后调用方还
+  /// 没确认过（本次亲手取的，或后台预取的；调用方据此丢掉缓存、换上新字数）；
+  /// 不是本书正文文件 / 早已确认过返回 null。取不到抛出。
   @override
-  Future<bool> ensureLoaded(String filePath) async {
+  Future<OnlineNovelChapterLoaded?> ensureLoaded(String filePath) async {
     final int? index = chapterIndexForFile(filePath);
-    if (index == null) return false;
-    final bool loaded = await _ensureIndex(index);
-    final bool unacknowledged = _unacknowledged.remove(index);
-    if (loaded && index + 1 < descriptor.chapters.length) {
+    if (index == null) return null;
+    final OnlineNovelChapterLoaded? loaded = await ensureChapter(index);
+    final OnlineNovelChapterLoaded? prefetched = _unacknowledged.remove(index);
+    OnlineNovelChapterLoaded? result = loaded;
+    if (result == null && prefetched != null) {
+      // 预取时记下的字数是那一刻这个文件的。作品页之后可能已按新章节列表就地
+      // 重建了解压树（连载更新），第 index 个文件换成了别的章 / 占位页：旧字数
+      // 不能再交给阅读器写进进度与统计的坐标系。缓存照样要丢（文件确实变过），
+      // 字数报「未知」；其余预取记录同样过期，一并作废。
+      if (await _isStillChapter(index)) {
+        result = prefetched;
+      } else {
+        _unacknowledged.clear();
+        result = OnlineNovelChapterLoaded(index: index, characters: null);
+      }
+    }
+    // 预取看的是「这一章现在有正文、阅读器正要读它」，不是「这一次亲手取了」：
+    // 翻到已被预取的章时本次什么都没取，照样要接着预取再下一章，否则预取隔一章
+    // 才生效一次。
+    if (result != null && index + 1 < descriptor.chapters.length) {
       unawaited(
-        _ensureIndex(index + 1).then<void>(
+        ensureChapter(index + 1, background: true).then<void>(
           (_) {},
           onError: (Object error, StackTrace stack) {
             // 预取失败不打断阅读（翻到那一章时前台再取、再报），但要留痕。
@@ -525,35 +592,21 @@ class LnReaderOnlineChapterLoader implements OnlineNovelChapterLoader {
         ),
       );
     }
-    return loaded || unacknowledged;
+    return result;
   }
 
-  Future<bool> _ensureIndex(int index) {
-    final Future<bool>? running = _inflight[index];
-    if (running != null) return running;
-    final Completer<bool> completer = Completer<bool>();
-    _inflight[index] = completer.future;
-    _queue = _queue.then((_) async {
-      try {
-        completer.complete(await _load(index));
-      } on Object catch (error, stack) {
-        completer.completeError(error, stack);
-      } finally {
-        _inflight.remove(index);
-      }
-    });
-    return completer.future;
-  }
-
-  Future<bool> _load(int index) async {
+  @override
+  Future<OnlineNovelChapterLoaded?> loadChapter(int index) async {
     final File file = lnReaderOnlineChapterFile(extractDir, index);
-    if (!file.existsSync()) return false;
+    if (!file.existsSync()) return null;
     if (!(await file.readAsString()).contains(
       kLnReaderPendingChapterAttribute,
     )) {
-      return false;
+      return null;
     }
-    await manager.initialise();
+    // ensureReady 而不是 initialise：state.json 读不出来时 initialise 不抛、已装
+    // 列表是空占位，下面就会误报「插件没装」，把读盘错误藏起来。
+    await manager.ensureReady();
     LnReaderInstalledPlugin? plugin;
     for (final LnReaderInstalledPlugin candidate in manager.installed) {
       if (candidate.id == descriptor.pluginId) plugin = candidate;
@@ -577,23 +630,18 @@ class LnReaderOnlineChapterLoader implements OnlineNovelChapterLoader {
     // 取正文要等网络，这期间作品页可能已按新章节列表就地重建了解压树（连载
     // 更新）：第 index 章已不是这一章，写进去就是正文错位。以书行里的当前
     // 描述符为准再核一次，对不上就放弃这次结果（重进这一章会按新序号再取）。
-    final LnReaderOnlineBookDescriptor? current =
-        LnReaderOnlineBookDescriptor.tryParse(
-          (await database.getEpubBook(bookKey))?.sourceMetadata,
-        );
-    if (current == null ||
-        index >= current.chapters.length ||
-        current.chapters[index].path != chapter.path ||
-        !file.existsSync()) {
-      return false;
+    if (!await _isStillChapter(index) || !file.existsSync()) {
+      // 之前预取时记下的字数也都是旧章节序号下的，一并作废。
+      _unacknowledged.clear();
+      return null;
     }
     for (final LnReaderEpubImage image in fetched.images) {
-      await _writeAtomically(
+      await writeAtomically(
         File(p.join(extractDir, 'OEBPS', image.fileName)),
         image.bytes,
       );
     }
-    await _writeAtomically(
+    await writeAtomically(
       file,
       utf8.encode(
         LnReaderEpubAssembler.chapterXhtml(
@@ -603,32 +651,59 @@ class LnReaderOnlineChapterLoader implements OnlineNovelChapterLoader {
         ),
       ),
     );
-    await _updateCharacterCount(index);
-    _unacknowledged.add(index);
-    return true;
+    final OnlineNovelChapterLoaded result = OnlineNovelChapterLoaded(
+      index: index,
+      characters: await _updateCharacterCount(index),
+    );
+    _unacknowledged[index] = result;
+    return result;
+  }
+
+  /// 书行里的当前描述符第 [index] 章还是不是本加载器开书时认的那一章。
+  Future<bool> _isStillChapter(int index) async {
+    final LnReaderOnlineBookDescriptor? current =
+        LnReaderOnlineBookDescriptor.tryParse(
+          (await database.getEpubBook(bookKey))?.sourceMetadata,
+        );
+    return current != null &&
+        index < current.chapters.length &&
+        current.chapters[index].path == descriptor.chapters[index].path;
   }
 
   /// 书行里这一章的字数从占位页的换成正文的（书架总字数 / 进度百分比用它），
-  /// 口径与导入时同一个函数（[EpubBook.chapterCharacterCount]）。
-  Future<void> _updateCharacterCount(int index) async {
-    final EpubBookRow? row = await database.getEpubBook(bookKey);
-    if (row == null) return;
-    final String dir = extractDir;
-    final int count = await Isolate.run(
-      () => EpubParser.parseFromExtracted(dir).chapterCharacterCount(index),
+  /// 口径与导入时同一个函数（[EpubBook.chapterCharacterCount]）。返回新字数
+  /// （阅读器据此换掉内存里那一章的字数）；书行已不在返回 null。
+  Future<int?> _updateCharacterCount(int index) async {
+    if (await database.getEpubBook(bookKey) == null) return null;
+    final int count = await _chapterCharacterCountInBackground(
+      extractDir,
+      index,
     );
-    final Object? decoded = jsonDecode(row.chaptersJson);
-    if (decoded is! List<Object?> || index >= decoded.length) return;
-    final Object? entry = decoded[index];
-    if (entry is! Map<String, Object?>) return;
-    entry['characters'] = count;
-    await database.updateEpubBookChaptersJson(bookKey, jsonEncode(decoded));
-  }
-
-  static Future<void> _writeAtomically(File target, List<int> bytes) async {
-    await target.parent.create(recursive: true);
-    final File temp = File('${target.path}.part');
-    await temp.writeAsBytes(bytes, flush: true);
-    await temp.rename(target.path);
+    // 读改写放进事务：阅读器后台整本重算的写回（`persistRecomputedChapterCharCounts`）
+    // 也是对同一行 chaptersJson 的读改写。不串行的话，一方读到旧行、另一方中途
+    // 写入、前者再整列写回，就把后者的值盖掉（正文字数被写回成占位页字数，或口径
+    // 标记被冲掉）。数字在事务外算好，事务里只有两条 SQL。
+    return database.transaction(() async {
+      final EpubBookRow? row = await database.getEpubBook(bookKey);
+      if (row == null) return null;
+      final Object? decoded = jsonDecode(row.chaptersJson);
+      if (decoded is! List<Object?> || index >= decoded.length) return count;
+      final Object? entry = decoded[index];
+      if (entry is! Map<String, Object?>) return count;
+      entry['characters'] = count;
+      await database.updateEpubBookChaptersJson(bookKey, jsonEncode(decoded));
+      return count;
+    });
   }
 }
+
+/// 后台 isolate 里数解压树第 [index] 章的字数（[EpubBook.chapterCharacterCount]）。
+///
+/// 顶层函数：方法里的 `Isolate.run` 闭包会和同一方法里引用 `this` 的闭包（事务）
+/// 共享捕获上下文，把持有数据库句柄的加载器带过 isolate 边界、发送失败。
+Future<int> _chapterCharacterCountInBackground(String extractDir, int index) =>
+    Isolate.run(
+      () => EpubParser.parseFromExtracted(
+        extractDir,
+      ).chapterCharacterCount(index),
+    );

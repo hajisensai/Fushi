@@ -41,7 +41,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
-    show MediaItemDialogFrame;
+    show DialogQuickAction, MediaItemDialogFrame;
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
@@ -55,6 +55,7 @@ import 'package:path/path.dart' as p;
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/video_header_more.dart';
 
 /// 永不被真调用的刮削 runner：菜单测试只需要一个在场的 controller 来点亮入口。
 class _IdleScrapeRunner implements VideoSourceScrapeRunner {
@@ -659,6 +660,70 @@ void main() {
     expect(find.text(t.dialog_read), findsNothing);
   });
 
+  // 设计稿 #video V2：多选不再占页头按钮，长按 / 右键卡片菜单第一项「选择」
+  // 进入多选并选中这张卡。
+  testWidgets('卡片菜单第一项「选择」：进入多选并选中这张卡', (WidgetTester tester) async {
+    await seedTaggedVideo();
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await openCardMenu(tester, videoCard('video/1'));
+
+    final Finder menu = find.byType(MediaItemDialogFrame);
+    expect(menu, findsOneWidget);
+    final List<DialogQuickAction> actions = tester
+        .widget<MediaItemDialogFrame>(menu)
+        .quickActions;
+    expect(actions.first.label, t.batch_select, reason: '「选择」排在菜单最前');
+    expect(find.text(t.batch_selected_count(n: 1)), findsNothing);
+
+    actions.first.onPressed();
+    await tester.pumpAndSettle();
+
+    expect(menu, findsNothing, reason: '点「选择」先关菜单');
+    expect(
+      find.text(t.batch_selected_count(n: 1)),
+      findsOneWidget,
+      reason: '进入多选，且这张卡已选中',
+    );
+  });
+
+  // 首页分区（最近添加 / 继续观看等横滚行）没有可勾选的格：菜单里不给「选择」，
+  // 免得进一个选中项看不见、全选无物可选的空多选态。
+  testWidgets('首页分区的卡片菜单不给「选择」', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const String uid = 'video/recent';
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>(uid),
+        title: const Value<String>('Recent One'),
+        videoPath: const Value<String>('/abs/recent.mkv'),
+        importedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+    await tester.pumpWidget(buildApp(section: VideoLibrarySection.home));
+    await tester.pumpAndSettle();
+
+    final Finder card = find.byKey(
+      const ValueKey<String>('home_video_recent_$uid'),
+    );
+    expect(card, findsOneWidget);
+    await openCardMenu(tester, card);
+
+    final Finder menu = find.byType(MediaItemDialogFrame);
+    expect(menu, findsOneWidget);
+    expect(
+      tester
+          .widget<MediaItemDialogFrame>(menu)
+          .quickActions
+          .map((DialogQuickAction a) => a.label),
+      isNot(contains(t.batch_select)),
+    );
+  });
+
   testWidgets('桌面长按本地视频卡仍弹同一动作面板，不进入多选', (WidgetTester tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     try {
@@ -691,12 +756,16 @@ void main() {
     // 在指针处弹右键菜单（设计稿 E），不再是居中对话框。
     expect(find.byType(MediaItemDialogFrame), findsOneWidget);
     expect(find.byType(FushiDialogFrame), findsNothing);
+    // 2026-11-20 #4b 统一骨架：整理组平铺标签 / 加入合集，重命名与封面收进
+    // 「编辑信息 ›」，选字幕收进工作台「字幕与刮削 ›」——副文字列出子项。
     expect(find.text(t.tag_label), findsOneWidget);
-    expect(find.text(t.video_rename), findsOneWidget);
-    expect(find.text(t.srt_import_pick_cover), findsOneWidget);
-    expect(find.text(t.video_import_pick_subtitle), findsOneWidget);
-    expect(find.text(t.video_scrape_info), findsNothing);
     expect(find.text(t.add_to_collection), findsOneWidget);
+    expect(find.text(t.media_stats_action), findsOneWidget);
+    expect(find.text(t.item_menu_video_workbench), findsOneWidget);
+    expect(find.textContaining(t.video_rename), findsOneWidget);
+    expect(find.textContaining(t.srt_import_pick_cover), findsOneWidget);
+    expect(find.textContaining(t.video_import_pick_subtitle), findsOneWidget);
+    expect(find.text(t.video_scrape_info), findsNothing);
     expect(find.text(t.dialog_delete), findsOneWidget);
   });
 
@@ -1243,11 +1312,8 @@ void main() {
   /// 点「批量选择」按钮进入选择态。单行页头（2026-10-14）起它从标签栏末尾并进
   /// 页头动作，key 沿用 `library_select_toggle`（tooltip = batch_select）。
   Future<void> enterSelectionMode(WidgetTester tester) async {
-    final Finder selectBtn = find.byKey(
-      const ValueKey<String>('library_select_toggle'),
-    );
-    expect(selectBtn, findsOneWidget, reason: '视频页头应有「批量选择」按钮（用户报的「视频少了选择」）');
-    await tester.tap(selectBtn);
+    // 设计稿 #video V2：「选择」收进页头「⋯」（卡片长按 / 右键菜单里另有一项）。
+    await tapVideoHeaderMoreEntry(tester, 'library_select_toggle');
     await tester.pumpAndSettle();
   }
 

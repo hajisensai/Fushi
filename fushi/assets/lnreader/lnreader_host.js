@@ -20,7 +20,9 @@
   var libs = globalThis.__fushiLnReaderLibs;
   if (!libs) throw new Error('lnreader_libs.js must be loaded first');
 
-  function defaultBridge() {
+  // The only way out of the page: the two handlers the Dart runtime registers.
+  // There is deliberately no global override point here.
+  function bridge() {
     var host = globalThis.flutter_inappwebview;
     return {
       fetch: function (request) {
@@ -30,10 +32,6 @@
         return host.callHandler('fushiLnStorage', { id: pluginId, data: data });
       },
     };
-  }
-
-  function bridge() {
-    return globalThis.__fushiLnReaderBridge || defaultBridge();
   }
 
   // ── base64 ────────────────────────────────────────────────────────────────

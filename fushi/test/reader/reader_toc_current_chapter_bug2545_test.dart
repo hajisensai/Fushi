@@ -1,7 +1,6 @@
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
@@ -26,11 +25,6 @@ import '../helpers/test_platform_services.dart';
 ///
 /// 判据改成 floor（最后一个不晚于当前位置的目录项），与页脚章名
 /// `ReaderFushiPage._currentChapterLabelFor` 和有声书面板「章节」tab 同一口径。
-class _FakeInAppWebViewController implements InAppWebViewController {
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
 AppModel _testAppModel(FushiDatabase db) {
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
     ..loadFromPrefsSnapshot(<String, String>{
@@ -152,7 +146,6 @@ void main() {
                     readerProgress: const (4, 15),
                     onJumpSection: (_, __) async {},
                     onExitReader: () {},
-                    webViewController: _FakeInAppWebViewController(),
                     appModel: model,
                     ref: ref,
                     isFushiReader: true,

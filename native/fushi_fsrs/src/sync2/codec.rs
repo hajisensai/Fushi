@@ -237,25 +237,55 @@ impl From<DecodeError> for StreamError {
 /// 读窗口每次至少补这么多字节。
 const WINDOW: usize = 64 * 1024;
 
+/// [ZstdWindow::limit] 超限时的解码错。
+pub const LIMIT_EXCEEDED: &str = "decompressed body exceeds its limit";
+
 /// 一个 zstd 帧的流式顺序读：边解压边按 [Reader] 解值，手里只有一个读窗口，不随明文总长增长
 /// （64 KiB 起，单个值更大时涨到装得下它）。
-pub struct ZstdWindow<'s> {
-    decoder: ruzstd::decoding::StreamingDecoder<&'s [u8], ruzstd::decoding::FrameDecoder>,
+///
+/// 压缩输入默认是内存里的切片（[ZstdWindow::new]）；[ZstdWindow::from_reader] 收任何 [std::io::Read]（导入大文件时
+/// 直接读文件，压缩字节也不整份进内存，G11-3）。两者的解码完全相同。
+///
+/// [ZstdWindow::limit] 给解压总字节一个硬上限：签名验在解压之后的格式（`FSG4` 逐项摘要）靠它让验签之前的工作量有界，
+/// 超限 = [LIMIT_EXCEEDED] 解码错，读窗口与解码器都不会为超限的部分分配内存。
+pub struct ZstdWindow<'s, R: std::io::Read = &'s [u8]> {
+    decoder: ruzstd::decoding::StreamingDecoder<R, ruzstd::decoding::FrameDecoder>,
     buf: Vec<u8>,
     pos: usize,
     eof: bool,
+    /// 已解出的明文总字节数。
+    produced: u64,
+    /// 明文总字节数的上限（默认不限）。
+    limit: u64,
+    _src: std::marker::PhantomData<&'s ()>,
 }
 
 impl<'s> ZstdWindow<'s> {
     pub fn new(compressed: &'s [u8]) -> Result<ZstdWindow<'s>, StreamError> {
-        let decoder = ruzstd::decoding::StreamingDecoder::new(compressed)
+        ZstdWindow::from_reader(compressed)
+    }
+}
+
+impl<'s, R: std::io::Read> ZstdWindow<'s, R> {
+    /// 从任意顺序读的来源解一个 zstd 帧（[ZstdWindow::new] 的一般形）。
+    pub fn from_reader(src: R) -> Result<ZstdWindow<'s, R>, StreamError> {
+        let decoder = ruzstd::decoding::StreamingDecoder::new(src)
             .map_err(|e| StreamError::Zstd(e.to_string()))?;
         Ok(ZstdWindow {
             decoder,
             buf: Vec::new(),
             pos: 0,
             eof: false,
+            produced: 0,
+            limit: u64::MAX,
+            _src: std::marker::PhantomData,
         })
+    }
+
+    /// 解压后的明文总长超过 [limit] 字节就报 [LIMIT_EXCEEDED]（多解出的最多一个字节，不为超限部分开窗口）。
+    pub fn limit(mut self, limit: u64) -> Self {
+        self.limit = limit;
+        self
     }
 
     /// 补读：先丢掉已解的前缀，再补 [WINDOW] 与未解部分中较大者。
@@ -266,7 +296,10 @@ impl<'s> ZstdWindow<'s> {
             self.pos = 0;
         }
         let have = self.buf.len();
-        let want = have + WINDOW.max(have);
+        // 最多再解到上限之后一个字节：解出它就说明超限。
+        let room = usize::try_from(self.limit.saturating_sub(self.produced).saturating_add(1))
+            .unwrap_or(usize::MAX);
+        let want = have + WINDOW.max(have).min(room);
         self.buf.resize(want, 0);
         let mut got = have;
         let mut failed = None;
@@ -285,7 +318,14 @@ impl<'s> ZstdWindow<'s> {
             }
         }
         self.buf.truncate(got);
-        failed.map_or(Ok(()), |m| Err(StreamError::Zstd(m)))
+        self.produced = self.produced.saturating_add((got - have) as u64);
+        if let Some(m) = failed {
+            return Err(StreamError::Zstd(m));
+        }
+        if self.produced > self.limit {
+            return Err(StreamError::Decode(DecodeError(LIMIT_EXCEEDED)));
+        }
+        Ok(())
     }
 
     /// 解一个值；缺字节（[Reader] 的截断错误）就补读重试，流读完了还缺才算截断。
@@ -315,9 +355,20 @@ impl<'s> ZstdWindow<'s> {
     }
 
     /// 明文读完（[Self::at_end]）且帧后面的压缩输入也没有剩余字节（没有垃圾、没有第二个帧）。
-    /// 解码器按块精确读（块头 / 块体 / 校验和都是 `read_exact`），帧解完时底层切片剩下的就是帧后的字节。
+    /// 解码器按块精确读（块头 / 块体 / 校验和都是 `read_exact`），帧解完时底层来源剩下的就是帧后的字节：再读得到
+    /// 一个字节 = 有尾巴（切片上与看它空不空等价）。
     pub fn at_end_of_input(&mut self) -> Result<bool, StreamError> {
-        Ok(self.at_end()? && self.decoder.get_ref().is_empty())
+        if !self.at_end()? {
+            return Ok(false);
+        }
+        let mut one = [0u8; 1];
+        loop {
+            match self.decoder.get_mut().read(&mut one) {
+                Ok(n) => return Ok(n == 0),
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(e) => return Err(StreamError::Zstd(e.to_string())),
+            }
+        }
     }
 
     /// 当前读窗口的容量（测试看内存上界用）。
@@ -362,5 +413,27 @@ mod tests {
             assert!(Reader::new(&buf[..n]).str().is_err());
         }
         assert!(Reader::new(&[0xff; 11]).uv().is_err());
+    }
+
+    /// [ZstdWindow::limit]：解到上限为止的明文照常可读，再多一个字节就报 [LIMIT_EXCEEDED]。
+    #[test]
+    fn zstd_window_limit_is_exact() {
+        let plain = vec![7u8; 300 * 1024];
+        let packed = zstd::bulk::compress(&plain, 3).unwrap();
+        let read_all = |limit: u64| -> Result<usize, StreamError> {
+            let mut win = ZstdWindow::new(&packed)?.limit(limit);
+            let mut n = 0usize;
+            while !win.at_end()? {
+                win.parse(|r| r.u8())?;
+                n += 1;
+            }
+            Ok(n)
+        };
+        assert_eq!(read_all(plain.len() as u64).unwrap(), plain.len());
+        match read_all(plain.len() as u64 - 1) {
+            Err(StreamError::Decode(DecodeError(m))) => assert_eq!(m, LIMIT_EXCEEDED),
+            Err(e) => panic!("expected the limit error, got {e}"),
+            Ok(n) => panic!("expected the limit error, read {n}"),
+        }
     }
 }

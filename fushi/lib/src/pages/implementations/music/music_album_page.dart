@@ -11,6 +11,14 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/disc/music_disc.dart';
 
+import 'package:fushi/src/media/links/media_link_entries.dart'
+    show MediaLinkEntry;
+import 'package:fushi/src/media/links/media_link_inference_host.dart'
+    show mediaLinkInferCallback;
+import 'package:fushi/src/media/links/media_link_opener.dart'
+    show mediaLinkSearchAction, openMediaLinkEntry;
+import 'package:fushi/src/media/links/media_links_section.dart'
+    show MediaLinksSection;
 import 'package:fushi/src/media/music/asr/music_subtitle_target.dart'
     show MusicSubtitleTargets;
 import 'package:fushi/src/media/music/music_format_badge.dart';
@@ -39,8 +47,6 @@ import 'package:fushi/src/pages/implementations/music/music_track_actions.dart'
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_row_surface.dart';
 import 'package:fushi/src/pages/implementations/music/music_collection_view.dart';
-import 'package:fushi/src/utils/adaptive/shell_style.dart'
-    show shellContentLayoutOf;
 import 'package:fushi/src/utils/components/fushi_cover_block.dart'
     show FushiCoverBlockSize;
 import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'
@@ -583,6 +589,20 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
           ),
         ),
       ],
+      // 跨模块「同一作品」（作品图谱 media_links）：专辑 → 动画合集 / 游戏，与曲目
+      // 详情页同一个区块与「查找相关作品」入口。
+      MediaLinksSection(
+        database: ref.read(appProvider).database,
+        self: (kind: MediaLinkKind.musicAlbum, key: album.albumUid),
+        onOpen: (MediaLinkEntry e) =>
+            openMediaLinkEntry(context: context, ref: ref, entry: e),
+        searchActionFor: (MediaLinkKind k) =>
+            mediaLinkSearchAction(context: context, ref: ref, kind: k),
+        onInfer: mediaLinkInferCallback(
+          ref: ref,
+          self: (kind: MediaLinkKind.musicAlbum, key: album.albumUid),
+        ),
+      ),
     ];
 
     final double heroGap = musicDetailHeroGap(context, tokens.spacing.gap);
@@ -597,7 +617,7 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
         if (musicTrackRowSurfaceActive(context))
           musicViewStyleToggle(MusicViewKind.tracks, style),
       ],
-      body: _withSelection(
+      body: (BuildContext context) => _withSelection(
         albumMap,
         FushiEntranceScope(
           // Builder：顶部让位读的是脚手架给正文的 MediaQuery（页头高度在里面），
@@ -768,12 +788,10 @@ class _AlbumDiscListState extends ConsumerState<_AlbumDiscList> {
           : Text(tracks[i].artistCredit!),
       resumes[i],
     );
-    if (widget.style == MusicViewStyle.blocks &&
-        musicTrackRowSurfaceActive(context)) {
+    if (musicCoverBlocksActive(context, widget.style)) {
       // 一碟十几首、排在外层列表里：盒子版色块（一次建完），与库页同一套几何。
       // 外层列表已整块错峰进场，格子不再各自进场。
       return FushiCoverBlocks(
-        layout: shellContentLayoutOf(context),
         staggerEntrance: false,
         itemCount: tracks.length,
         itemBuilder: (BuildContext context, int i, FushiCoverBlockSize size) =>

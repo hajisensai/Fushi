@@ -6,7 +6,8 @@
 ///   会被备份 / Profile 迁移带出机器）。`clientIdentifier` 每安装稳定，plex.tv 的
 ///   「已授权设备」按它归并；
 /// - 选连接：账号 resources 的多条 connection 按引擎 [orderPlexConnections] 排序、
-///   [firstReachablePlexConnection] 逐条用 `/identity` 探测。
+///   [firstReachablePlexConnection] 对各条并发发 `/identity` 探测（含 relay），
+///   取排名最靠前的可达者。
 ///
 /// 也可以绕过账号直连一台 PMS：`--url <pms>` + 环境变量 `FUSHI_PLEX_TOKEN`（不进 argv）。
 ///
@@ -546,19 +547,13 @@ media-server plex ls [--server <name|id> | --url <pms>] [--section <key>] [<rati
     final String token = server.accessToken ?? cred.accountToken!;
     final String? reachable = await firstReachablePlexConnection(
       orderPlexConnections(server.connections),
-      (String uri) async {
-        final PlexApi probe = PlexApi(
-          serverUrl: uri,
-          token: token,
-          clientInfo: info,
-          client: _client(),
-        );
-        try {
-          return (await probe.identity()).isNotEmpty;
-        } finally {
-          probe.close();
-        }
-      },
+      // 无凭据核对 machineIdentifier 是这台服务器，通过后才对选中的地址发 token。
+      (String uri) => verifyPlexServerIdentity(
+        uri,
+        server.clientIdentifier,
+        info,
+        client: _client(),
+      ),
     );
     if (reachable == null) {
       return (

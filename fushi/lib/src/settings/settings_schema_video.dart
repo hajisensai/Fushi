@@ -2661,13 +2661,50 @@ SettingsDestination buildVideoSubtitleDestination() {
             },
             defaultValue: false,
           ),
+          // 智能遮布（所有者 2026-11-20，设计 docs/specs/2026-11-20-video-desub-design.md
+          // §3）：框变成搜索区域，播放中本机 OCR 找字，只在有字时盖住那几行。
+          SettingsSegmentedItem<VideoSubtitleMaskMode>(
+            id: 'video.subtitle.mask_mode',
+            title: t.video_setting_subtitle_mask_mode,
+            subtitle: t.video_setting_subtitle_mask_mode_hint,
+            icon: FushiIcons.subtitleMask,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 152,
+              section: t.video_setting_subtitle_mask,
+            ),
+            options: <SettingsSegmentOption<VideoSubtitleMaskMode>>[
+              SettingsSegmentOption<VideoSubtitleMaskMode>(
+                value: VideoSubtitleMaskMode.manual,
+                label: t.video_setting_subtitle_mask_mode_manual,
+              ),
+              SettingsSegmentOption<VideoSubtitleMaskMode>(
+                value: VideoSubtitleMaskMode.smart,
+                label: t.video_setting_subtitle_mask_mode_smart,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoSubtitleMask.mode,
+            onChanged:
+                (
+                  SettingsContext settingsContext,
+                  VideoSubtitleMaskMode mode,
+                ) async {
+                  final AppModel m = settingsContext.appModel;
+                  await m.setVideoSubtitleMask(
+                    m.videoSubtitleMask.copyWith(mode: mode),
+                  );
+                  settingsContext.refresh();
+                },
+            defaultValue: VideoSubtitleMaskMode.manual,
+          ),
           SettingsSegmentedItem<VideoSubtitleMaskStyle>(
             id: 'video.subtitle.mask_style',
             title: t.video_setting_subtitle_mask_style,
             icon: FushiIcons.blur,
             video: VideoPlacement(
               group: VideoGroup.subtitle,
-              order: 152,
+              order: 153,
               section: t.video_setting_subtitle_mask,
             ),
             options: <SettingsSegmentOption<VideoSubtitleMaskStyle>>[
@@ -2701,7 +2738,7 @@ SettingsDestination buildVideoSubtitleDestination() {
             icon: FushiIcons.opacity,
             video: VideoPlacement(
               group: VideoGroup.subtitle,
-              order: 153,
+              order: 154,
               section: t.video_setting_subtitle_mask,
             ),
             min: 0.1,
@@ -2727,7 +2764,7 @@ SettingsDestination buildVideoSubtitleDestination() {
             icon: FushiIcons.move,
             video: VideoPlacement(
               group: VideoGroup.subtitle,
-              order: 154,
+              order: 155,
               section: t.video_setting_subtitle_mask,
             ),
             visible: (SettingsContext c) =>

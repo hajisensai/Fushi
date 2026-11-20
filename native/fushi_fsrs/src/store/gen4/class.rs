@@ -58,6 +58,7 @@ use rusqlite::params;
 use rusqlite::types::ValueRef;
 use serde_json::{Map, Value};
 
+use super::alias::key_ids_by;
 use super::derive::{Index, R_CONFLICT, R_DOMINATED, R_LIVE, R_WINNER, Ref, body_of};
 use super::schema::sql;
 use crate::card_cache::ids_to_names;
@@ -306,132 +307,26 @@ impl<'t, 'c> Index<'t, 'c> {
 
     /// 修改值里嵌的 ID 归一（文件头「内嵌的 ID」）。[key] 是修改键（原值或规范形都行，只看前缀与名字）。
     pub fn canonical_value(&self, key: &str, v: &Value) -> Result<Value, String> {
-        self.canonical_value_by(key, v, &|s| self.canonical_text(s))
+        value_ids_by(key, v, &|s| self.canonical_text(s))
     }
 
     /// 整份 JSON 里嵌的 ID 归一（文件头「内嵌的 ID」）。
     pub fn canonical_json(&self, v: &Value) -> Result<Value, String> {
-        self.canonical_json_by(v, &|s| self.canonical_text(s))
+        json_ids_by(v, &|s| self.canonical_text(s), &|k| self.canonical_key(k))
     }
 
     /// 缓存配置（`cache.rs` 的 `derive_cfg("caches")`，宿主给的）归一：默认牌组、内置笔记类型的代码默认定义（字段 /
-    /// 模板 ID、模板文本里的字段引用）、读音字段。配置里的 ID 不一定在操作里出现过（别名表只收出现过的），所以先查表、
-    /// 查不到再按规则认内置实体在每个盐下的存量 ID（[builtin_rule_canon]）——否则一个从没被改过的内置模板保持带盐 ID，
-    /// 由它派生的应有的卡就不是别名表认的那张规范卡，卡上的日志挂不上来。别的值原样。
+    /// 模板 ID、模板文本里的字段引用）、读音字段。配置里的 ID 不一定在操作里出现过（别名表只收出现过的），归一与键、
+    /// 值、整份 JSON 走同一个 [Index::canonical_embedded]（先查表、查不到再按规则认内置实体在每个盐下的存量 ID）——
+    /// 配置与笔记的 `f/<字段>` 键对同一个带盐字段得出同一个规范 ID。别的值原样。
     pub fn canonical_config(&self, v: &Value) -> Result<Value, String> {
-        let text = |s: &str| self.canonical_text(s);
-        let Value::Object(m) = v else {
-            return Ok(v.clone());
-        };
-        let mut out = m.clone();
-        if let Some(Value::String(d)) = m.get("defaultDeck") {
-            out.insert("defaultDeck".to_owned(), Value::String(text(d)?));
-        }
-        if let Some(Value::Object(bs)) = m.get("builtins") {
-            let mut canon = Map::new();
-            for (k, b) in bs {
-                let mut b2 = match b {
-                    Value::Object(x) => x.clone(),
-                    _ => {
-                        canon.insert(k.clone(), b.clone());
-                        continue;
-                    }
-                };
-                if let Some(def) = b2.get("b").cloned() {
-                    b2.insert("b".to_owned(), self.canonical_json_by(&def, &text)?);
-                }
-                if let Some(Value::String(r)) = b2.get("reading").cloned() {
-                    b2.insert("reading".to_owned(), Value::String(text(&r)?));
-                }
-                canon.insert(k.clone(), Value::Object(b2));
-            }
-            out.insert("builtins".to_owned(), Value::Object(canon));
-        }
-        Ok(Value::Object(out))
+        config_ids_by(v, &|s| self.canonical_text(s), &|k| self.canonical_key(k))
     }
 
     // ------------------------------------------------------------ 内部
 
-    /// [Index::canonical_value]，文本形式的 ID 由 [text] 归一。
-    fn canonical_value_by(
-        &self,
-        key: &str,
-        v: &Value,
-        text: &dyn Fn(&str) -> Result<String, String>,
-    ) -> Result<Value, String> {
-        if ID_VALUED_KEYS.contains(&key) {
-            return Ok(match v {
-                Value::String(s) => Value::String(text(s)?),
-                _ => v.clone(),
-            });
-        }
-        if key.starts_with("tmplDef/") {
-            if let Value::Object(m) = v {
-                let mut out = m.clone();
-                for side in ["front", "back"] {
-                    if let Some(Value::String(t)) = m.get(side) {
-                        out.insert(
-                            side.to_owned(),
-                            Value::String(self.canonical_template_by(t, text)?),
-                        );
-                    }
-                }
-                return Ok(Value::Object(out));
-            }
-        }
-        Ok(v.clone())
-    }
-
-    /// [Index::canonical_json]，文本形式的 ID 由 [text] 归一。
-    fn canonical_json_by(
-        &self,
-        v: &Value,
-        text: &dyn Fn(&str) -> Result<String, String>,
-    ) -> Result<Value, String> {
-        Ok(match v {
-            Value::Object(m) => {
-                let edit_key = m.get("f").and_then(Value::as_str);
-                let mut out = Map::new();
-                for (k, x) in m {
-                    let y = match (k.as_str(), x) {
-                        (k, Value::String(s)) if JSON_ID_KEYS.contains(&k) => {
-                            Value::String(text(s)?)
-                        }
-                        (k, Value::Array(xs))
-                            if JSON_ID_KEYS.contains(&k) && xs.iter().all(Value::is_string) =>
-                        {
-                            let mut ys = Vec::with_capacity(xs.len());
-                            for s in xs.iter().filter_map(Value::as_str) {
-                                ys.push(Value::String(text(s)?));
-                            }
-                            Value::Array(ys)
-                        }
-                        ("f", Value::String(s)) => Value::String(self.canonical_key(s)?),
-                        ("front" | "back", Value::String(s)) => {
-                            Value::String(self.canonical_template_by(s, text)?)
-                        }
-                        ("v", x) if edit_key.is_some() => {
-                            self.canonical_value_by(edit_key.unwrap_or_default(), x, text)?
-                        }
-                        (_, x) => self.canonical_json_by(x, text)?,
-                    };
-                    out.insert(k.clone(), y);
-                }
-                Value::Object(out)
-            }
-            Value::Array(xs) => {
-                let mut ys = Vec::with_capacity(xs.len());
-                for x in xs {
-                    ys.push(self.canonical_json_by(x, text)?);
-                }
-                Value::Array(ys)
-            }
-            _ => v.clone(),
-        })
-    }
-
     /// 文本形式的 ID 的规范形：规范形状的 UUID 过别名表，别的原样。
-    fn canonical_text(&self, s: &str) -> Result<String, String> {
+    pub(super) fn canonical_text(&self, s: &str) -> Result<String, String> {
         match strict_id(s) {
             Some(id) => Ok(self.canonical_embedded(&id)?.text()),
             None => Ok(s.to_owned()),
@@ -475,30 +370,6 @@ impl<'t, 'c> Index<'t, 'c> {
         self.pass_rules = None;
         self.pass_rules = Some(self.rule_canon()?);
         Ok(())
-    }
-
-    /// 模板文本里 `{{…fld:<UUID>}}` 的字段 ID 归一：分词与替换都走 `card_cache::ids_to_names`（模板渲染认字段引用的
-    /// 那一份），只把规范形状的 UUID 换成 [text] 给的规范形；注释、普通文本原样。
-    fn canonical_template_by(
-        &self,
-        source: &str,
-        text: &dyn Fn(&str) -> Result<String, String>,
-    ) -> Result<String, String> {
-        let failed: RefCell<Option<String>> = RefCell::new(None);
-        let out = ids_to_names(source, &|id| {
-            strict_id(id)?;
-            match text(id) {
-                Ok(c) => Some(format!("fld:{c}")),
-                Err(e) => {
-                    failed.borrow_mut().get_or_insert(e);
-                    None
-                }
-            }
-        });
-        match failed.into_inner() {
-            Some(e) => Err(e),
-            None => Ok(out),
-        }
     }
 
     /// 旧并入改名、已归回的写入者（`alias_writer_ix`）：原名 → 规范名。
@@ -696,6 +567,57 @@ impl<'t, 'c> Index<'t, 'c> {
             }
         }
         Ok(false)
+    }
+
+    /// 撤销校验（`cmd/center.rs`）的「见没见过」：别名类 [canon]（种类 [kind]）在规范键 [ckey] 上按类拼行时 dot 是
+    /// [live]（规范写入者, seq）的那次写入，作者见没见过 dot [ours]（规范写入者, seq）。按 [live] 在这个类的寄存器里找回
+    /// 操作（同一个规范 dot 有几条时取操作号最小的代表，与 [Index::edit_lines_as] 并行相同），再从真相层答
+    /// （[Index::write_sees]，闭包过同一个换名）。[writers] 是这一次读的归回写入者表（[Index::writer_aliases]）。
+    ///
+    /// 找不到这个 dot 的写入 = false：只有笔记 `tags` 的合成行（写入者 `sync2:tags:<笔记>`，`cmd/mod.rs` `tags_line`）
+    /// 这样，它不是谁写的，没有因果过去（协议 3 那一行也是空上下文）。
+    pub(super) fn class_write_sees(
+        &mut self,
+        kind: EntKind,
+        canon: &Ref,
+        ckey: &str,
+        writers: &BTreeMap<String, String>,
+        live: (&str, i64),
+        ours: (&str, i64),
+    ) -> Result<bool, String> {
+        let canonical_writer = |w: &str| writers.get(w).cloned().unwrap_or_else(|| w.to_owned());
+        let mut rep: Option<(OpId, i64)> = None;
+        for m in &self.members(canon)? {
+            for (key, k, state) in self.member_registers(kind, m)? {
+                if state < R_DOMINATED {
+                    continue;
+                }
+                let text = read_edit_key(&mut Reader::new(&key))
+                    .map_err(|e| format!("gen4 index: bad register key: {e}"))?;
+                if self.canonical_key(&text)? != ckey {
+                    continue;
+                }
+                let d = self.dot_of(k)?;
+                if d.seq != live.1 || canonical_writer(&d.writer) != live.0 {
+                    continue;
+                }
+                if rep.is_none_or(|(id, _)| d.op < id) {
+                    rep = Some((d.op, k));
+                }
+            }
+        }
+        let Some((_, k)) = rep else {
+            return Ok(false);
+        };
+        let renamed = Renamed::default();
+        let c = Canon {
+            writers,
+            renamed: &renamed,
+            entity: self.canonical(canon)?.text(),
+            key: ckey.to_owned(),
+            keys: None,
+        };
+        self.write_sees(k, ours.0, ours.1, Some(&c))
     }
 
     /// 一条修改的 dot 与旧 HLC 的物理时刻、计数（带旧戳且 HLC 解得开时才有）。
@@ -1180,6 +1102,151 @@ impl ClassDiffs {
     }
 }
 
+/// 文本形式的 ID 换成什么（[Index::canonical_text] 归一；[legacy_config_for] 换回带盐 ID）。不是 ID 的文本原样返回。
+pub(super) type IdText<'a> = &'a dyn Fn(&str) -> Result<String, String>;
+
+/// 修改值里嵌的 ID（文件头「内嵌的 ID」）逐个换成 [text] 给的。[key] 是修改键（只看前缀与名字）。
+fn value_ids_by(key: &str, v: &Value, text: IdText<'_>) -> Result<Value, String> {
+    if ID_VALUED_KEYS.contains(&key) {
+        return Ok(match v {
+            Value::String(s) => Value::String(text(s)?),
+            _ => v.clone(),
+        });
+    }
+    if key.starts_with("tmplDef/") {
+        if let Value::Object(m) = v {
+            let mut out = m.clone();
+            for side in ["front", "back"] {
+                if let Some(Value::String(t)) = m.get(side) {
+                    out.insert(side.to_owned(), Value::String(template_ids_by(t, text)?));
+                }
+            }
+            return Ok(Value::Object(out));
+        }
+    }
+    Ok(v.clone())
+}
+
+/// 整份 JSON 里嵌的 ID（文件头「内嵌的 ID」）逐个换成 [text] 给的；`f` 当修改键交给 [key]。
+fn json_ids_by(v: &Value, text: IdText<'_>, key: IdText<'_>) -> Result<Value, String> {
+    Ok(match v {
+        Value::Object(m) => {
+            let edit_key = m.get("f").and_then(Value::as_str);
+            let mut out = Map::new();
+            for (k, x) in m {
+                let y = match (k.as_str(), x) {
+                    (k, Value::String(s)) if JSON_ID_KEYS.contains(&k) => Value::String(text(s)?),
+                    (k, Value::Array(xs))
+                        if JSON_ID_KEYS.contains(&k) && xs.iter().all(Value::is_string) =>
+                    {
+                        let mut ys = Vec::with_capacity(xs.len());
+                        for s in xs.iter().filter_map(Value::as_str) {
+                            ys.push(Value::String(text(s)?));
+                        }
+                        Value::Array(ys)
+                    }
+                    ("f", Value::String(s)) => Value::String(key(s)?),
+                    ("front" | "back", Value::String(s)) => {
+                        Value::String(template_ids_by(s, text)?)
+                    }
+                    ("v", x) if edit_key.is_some() => {
+                        value_ids_by(edit_key.unwrap_or_default(), x, text)?
+                    }
+                    (_, x) => json_ids_by(x, text, key)?,
+                };
+                out.insert(k.clone(), y);
+            }
+            Value::Object(out)
+        }
+        Value::Array(xs) => {
+            let mut ys = Vec::with_capacity(xs.len());
+            for x in xs {
+                ys.push(json_ids_by(x, text, key)?);
+            }
+            Value::Array(ys)
+        }
+        _ => v.clone(),
+    })
+}
+
+/// 宿主缓存配置（`CacheConfig` 的 JSON）里嵌的 ID 逐个换成 [text] 给的：默认牌组、内置笔记类型的代码默认定义（字段 /
+/// 模板 ID、模板文本里的字段引用，按 [json_ids_by]）、读音字段。别的值原样。
+fn config_ids_by(v: &Value, text: IdText<'_>, key: IdText<'_>) -> Result<Value, String> {
+    let Value::Object(m) = v else {
+        return Ok(v.clone());
+    };
+    let mut out = m.clone();
+    if let Some(Value::String(d)) = m.get("defaultDeck") {
+        out.insert("defaultDeck".to_owned(), Value::String(text(d)?));
+    }
+    if let Some(Value::Object(bs)) = m.get("builtins") {
+        let mut mapped = Map::new();
+        for (k, b) in bs {
+            let mut b2 = match b {
+                Value::Object(x) => x.clone(),
+                _ => {
+                    mapped.insert(k.clone(), b.clone());
+                    continue;
+                }
+            };
+            if let Some(def) = b2.get("b").cloned() {
+                b2.insert("b".to_owned(), json_ids_by(&def, text, key)?);
+            }
+            if let Some(Value::String(r)) = b2.get("reading").cloned() {
+                b2.insert("reading".to_owned(), Value::String(text(&r)?));
+            }
+            mapped.insert(k.clone(), Value::Object(b2));
+        }
+        out.insert("builtins".to_owned(), Value::Object(mapped));
+    }
+    Ok(Value::Object(out))
+}
+
+/// 模板文本里 `{{…fld:<UUID>}}` 的字段 ID 换成 [text] 给的：分词与替换都走 `card_cache::ids_to_names`（模板渲染认字段
+/// 引用的那一份），只换规范形状的 UUID；注释、普通文本原样。
+fn template_ids_by(source: &str, text: IdText<'_>) -> Result<String, String> {
+    let failed: RefCell<Option<String>> = RefCell::new(None);
+    let out = ids_to_names(source, &|id| {
+        strict_id(id)?;
+        match text(id) {
+            Ok(c) => Some(format!("fld:{c}")),
+            Err(e) => {
+                failed.borrow_mut().get_or_insert(e);
+                None
+            }
+        }
+    });
+    match failed.into_inner() {
+        Some(e) => Err(e),
+        None => Ok(out),
+    }
+}
+
+/// 协议 3 一侧（冻结的旧缓存重建，`compare.rs` [cache_pairs](super::compare::cache_pairs)）要的缓存配置：宿主交给新代
+/// 的是规范 ID 的那一份（`derive_cfg`，Dart `srsCacheConfigFor`；G9-7 起不再加盐），协议 3 的库里内置笔记类型、字段、
+/// 模板、默认牌组却是按 profile [uid] 加盐的存量 ID。这里按 [builtin_rule_canon] 的反向表（只取 [uid] 这一个盐）把配置里
+/// 嵌的规范内置 ID 换回带盐的那个：默认牌组、内置笔记类型的代码默认定义（字段 / 模板 ID、模板文本里的字段引用）、
+/// 读音字段，遍历与归一同一份（[config_ids_by]）。本来就是带盐的输入、不是内置实体的 ID 原样。
+///
+/// 以前迁移把规范配置原样交给协议 3 重建：旧侧算出的内置模板 ID 与库里带盐的对不上，卡 ID 整批换掉，带内置笔记类型
+/// 笔记的真实库对拍全部判 aborted（交接 §26 C1）。
+pub(crate) fn legacy_config_for(uid: &str, cfg: &str) -> Result<String, String> {
+    let back: HashMap<[u8; 16], [u8; 16]> = builtin_rule_canon(&[uid.to_owned()])
+        .into_iter()
+        .map(|(salted, canon)| (canon, salted))
+        .collect();
+    let text = |s: &str| -> Result<String, String> {
+        Ok(match strict_id(s).and_then(|id| back.get(&id.0)) {
+            Some(salted) => Id(*salted).text(),
+            None => s.to_owned(),
+        })
+    };
+    let key = |k: &str| key_ids_by(k, &text);
+    let v: Value =
+        serde_json::from_str(cfg).map_err(|e| format!("gen4 legacy cache config: {e}"))?;
+    Ok(config_ids_by(&v, &text, &key)?.to_string())
+}
+
 /// 内置实体规则表：存量 ID → 规范 ID（[builtin_rule_canon]）。
 pub(crate) type RuleCanon = HashMap<[u8; 16], [u8; 16]>;
 
@@ -1208,6 +1275,39 @@ pub(crate) fn builtin_rule_canon(salts: &[String]) -> RuleCanon {
         }
     }
     out
+}
+
+/// 内置笔记类型的规范模板 [tpl]（所属笔记类型的规范 ID 是 [nt]）在 [nt] 的各成员 [nt_members] 下的存量模板 ID
+/// （`rules::template(成员, 模板号)`）；[nt] 不是内置笔记类型的规范 ID、[tpl] 不是它的内置模板 = 空。
+///
+/// 内置模板只嵌在宿主缓存配置的代码默认定义里、从不作为实体出现，别名表里没有它的带盐 ID（同带盐的内置字段，
+/// [Index::canonical_embedded]）。缓存层的数字 id 反查表（`cache.rs` `member_numbers`）要拿它配出协议 3 那张卡的 ID：
+/// 由笔记类型的成员（作为实体出现过、都在别名表里）按规则算，与盐集合无关，跟着笔记类型的别名类一起变。
+pub(crate) fn builtin_template_members(nt: &Ref, nt_members: &[Ref], tpl: &Ref) -> Vec<Ref> {
+    let Ref::Uuid(nt_b) = nt else {
+        return Vec::new();
+    };
+    let canon_nt = Id(*nt_b);
+    for b in BUILTIN_NOTE_TYPES {
+        if rules::note_type(rules::CANONICAL, rules::builtin_note_type_anki_num(b.key)) != canon_nt
+        {
+            continue;
+        }
+        for t in b.template_keys {
+            let n = rules::builtin_template_anki_num(b.key, t);
+            if Ref::Uuid(rules::template(&canon_nt, n).0) != *tpl {
+                continue;
+            }
+            return nt_members
+                .iter()
+                .filter_map(|m| match m {
+                    Ref::Uuid(b) => Some(Ref::Uuid(rules::template(&Id(*b), n).0)),
+                    Ref::Text(_) => None,
+                })
+                .collect();
+        }
+    }
+    Vec::new()
 }
 
 #[cfg(test)]
@@ -1482,6 +1582,45 @@ mod tests {
             })
             .unwrap();
             assert_rebuild_is_identity(t, col);
+        });
+    }
+
+    /// 撤销校验的「见没见过」按类问带旧戳的写入（[Index::class_write_sees] → [Index::write_sees] 的旧戳分支）：(w1, 2)
+    /// 的旧上下文写的是改名后的 `merged:1`，按类过同一个换名（`Canon::dvv`）后它见过规范 dot (w1, 1)；没写进去的
+    /// (w1, 5) 没见过；类里没有的 dot（找不到那次写入）= false。
+    ///
+    /// 撤销路径上被问的那次写入是不带旧戳的原生写入，旧戳上下文里只有旧写入者名，实际走到这条分支答 true 的情形罕见；
+    /// 这里钉住换名本身，不让它退回按原名查。
+    #[test]
+    fn class_write_sees_renames_a_heritage_context() {
+        with(|t, col| {
+            let merged = merged_w1();
+            let ctx = format!(r#"{{"vv":{{"{merged}":1}}}}"#);
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                let salts = Body4::salts([U1]).unwrap();
+                native(t, &mut ix, col, &op(0xa1, 1, 1, &[], &salts));
+                let x1 = stamped("x", stamp("w1", 1, r#"{"vv":{}}"#, 100));
+                let x2 = stamped("x", stamp(&merged, 1, r#"{"vv":{}}"#, 100));
+                let y = stamped("y", stamp("w1", 2, &ctx, 200));
+                heritage(t, &mut ix, col, op(0xd1, 1, 1, &[], &x1));
+                heritage(t, &mut ix, col, op(0xd2, 1, 2, &[], &x2));
+                heritage(t, &mut ix, col, op(0xd1, 2, 3, &[], &y));
+                ix.settle()?;
+                assert_eq!(ix.canonical_writer(&merged)?, "w1");
+                let e = native_edit();
+                let canon = Ref::of(&e.entity);
+                let ckey = ix.canonical_key(&e.key)?;
+                let writers = ix.writer_aliases()?;
+                let mut sees = |live: (&str, i64), ours: (&str, i64)| {
+                    ix.class_write_sees(EntKind::Note, &canon, &ckey, &writers, live, ours)
+                };
+                assert!(sees(("w1", 2), ("w1", 1))?);
+                assert!(!sees(("w1", 2), ("w1", 5))?);
+                assert!(!sees(("w1", 9), ("w1", 1))?);
+                Ok(())
+            })
+            .unwrap();
         });
     }
 
@@ -2523,5 +2662,100 @@ mod tests {
             let (ws, commit) = peak_mem_mb();
             println!("SAMPLE class peak_working_set_mb {ws:.0} peak_commit_mb {commit:.0}");
         }
+    }
+
+    /// 一份内置 Lapis 的缓存配置（宿主 `srsCacheConfigFor` 的形状），内置 ID 按 [salt] 的规则派生（`None` = 规范）。
+    fn lapis_cfg(salt: Option<&str>) -> Value {
+        let num = rules::builtin_note_type_anki_num("lapis");
+        let nt = rules::note_type(salt, num);
+        let f = rules::field(&nt, rules::builtin_field_anki_num("lapis", "Expression")).text();
+        let tpl = rules::template(&nt, rules::builtin_template_anki_num("lapis", "Card 1")).text();
+        json!({
+            "defaultDeck": rules::builtin_default_deck(salt).text(),
+            "builtins": {"lapis": {"b": {
+                "name": "Lapis", "css": "", "termFieldId": f,
+                "fields": [{"id": f, "name": "Expression", "ord": 0}],
+                "templates": [{
+                    "id": tpl, "name": "Card 1", "ord": 0,
+                    "front": format!("{{{{fld:{f}}}}}"), "back": "{{FrontSide}}",
+                }],
+            }, "reading": f}},
+        })
+    }
+
+    /// 协议 3 一侧的配置由内核从规范配置派生（[legacy_config_for]）：默认牌组、内置类型的字段 / 模板 ID、模板里的字段
+    /// 引用、词条与读音字段全部换回这个 uid 的带盐 ID，与按带盐规则直接算的那份逐值相同；本来就带盐的输入原样；
+    /// 换回来的再归一（同一个盐）回到规范配置。
+    #[test]
+    fn the_protocol_3_config_is_derived_from_the_canonical_one() {
+        let canon = lapis_cfg(CANONICAL);
+        let salted = lapis_cfg(Some(U1));
+        assert_ne!(canon, salted);
+        let legacy: Value =
+            serde_json::from_str(&legacy_config_for(U1, &canon.to_string()).unwrap()).unwrap();
+        assert_eq!(legacy, salted);
+        let again: Value =
+            serde_json::from_str(&legacy_config_for(U1, &salted.to_string()).unwrap()).unwrap();
+        assert_eq!(again, salted, "a salted config must pass through");
+        assert!(legacy_config_for(U1, "not json").is_err());
+        with(|t, col| {
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                feed(t, &mut ix, col, 0xa1, &[Body4::salts([U1]).unwrap()]);
+                ix.settle()?;
+                assert_eq!(ix.canonical_config(&legacy)?, canon);
+                Ok(())
+            })
+            .unwrap();
+        });
+    }
+
+    /// 只嵌在键里、从不作为实体出现的带盐内置字段（没改过的内置笔记类型）：笔记的 `f/<字段>` 键、修改值、整份 JSON 与
+    /// 宿主缓存配置对它得出同一个规范 ID（都经 [Index::canonical_embedded]）。实体口径的 [Index::canonical] 只查表：
+    /// 它不在别名表里，别名类就是它自己，[Index::members] 不会给出一个不含它自己的类。
+    #[test]
+    fn an_embedded_builtin_field_has_one_canonical_id_everywhere() {
+        let num = rules::builtin_note_type_anki_num("lapis");
+        let s_nt = rules::note_type(Some(U1), num);
+        let c_nt = rules::note_type(CANONICAL, num);
+        let n = rules::builtin_field_anki_num("lapis", "Expression");
+        let (s_f, c_f) = (rules::field(&s_nt, n), rules::field(&c_nt, n));
+        with(|t, col| {
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                feed(t, &mut ix, col, 0xa1, &[Body4::salts([U1]).unwrap()]);
+                ix.settle()?;
+                assert_eq!(ix.canonical_key(&fkey(s_f))?, fkey(c_f));
+                assert_eq!(
+                    ix.canonical_key(&format!("fieldDesc/{}", s_f.text()))?,
+                    format!("fieldDesc/{}", c_f.text())
+                );
+                assert_eq!(
+                    ix.canonical_value("termField", &json!(s_f.text()))?,
+                    json!(c_f.text())
+                );
+                assert_eq!(
+                    ix.canonical_json(&json!({"f": fkey(s_f), "termFieldId": s_f.text()}))?,
+                    json!({"f": fkey(c_f), "termFieldId": c_f.text()})
+                );
+                let cfg = ix.canonical_config(&lapis_cfg(Some(U1)))?;
+                assert_eq!(
+                    cfg["builtins"]["lapis"]["b"]["fields"][0]["id"],
+                    json!(c_f.text())
+                );
+                assert_eq!(cfg["builtins"]["lapis"]["reading"], json!(c_f.text()));
+                // 对外命令 `canonical_ids` 与键 / 值 / 配置同一个结论（偏好里存的带盐内置字段 ID 发进来要换成视图里的那个）。
+                let req = json!({"ids": [s_f.text(), c_f.text(), "plain"]});
+                assert_eq!(
+                    super::super::cmd::identity::canonical_ids(t, col, &req)?,
+                    json!({"ids": [c_f.text(), c_f.text(), "plain"]})
+                );
+                // 实体口径（别名类成员）只来自表：表外的 ID 自成一类，`members` 不会给出不含它自己的类。
+                assert_eq!(ix.canonical(&r(s_f))?, r(s_f));
+                assert_eq!(ix.members(&r(s_f))?, vec![r(s_f)]);
+                Ok(())
+            })
+            .unwrap();
+        });
     }
 }

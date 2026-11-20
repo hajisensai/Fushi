@@ -47,12 +47,14 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
         RemoteVideoEmbeddedSubtitleTrack,
         RemoteVideoInfo,
         RemoteVideoStreamUrls;
+import 'package:fushi/src/sync/launch_item_detail_memo.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi_engine/media/tracking/remote_anime_link.dart'
     show RemoteAnimeEpisode;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart';
+import 'package:fushi_engine/media/video/media_server/media_server_resumable_download.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 
@@ -895,6 +897,9 @@ class JellyfinApi {
   ///
   /// 只覆盖小请求：整片/字幕下载的 body 流刻意不挂整体超时（大文件会被误杀）。
   static const Duration kRequestTimeout = Duration(seconds: 15);
+
+  /// 下载正文两个数据块之间的最长空闲（与在线源整集下载 / 互联下载的 45 秒同口径）。
+  static const Duration kDownloadIdleTimeout = Duration(seconds: 45);
 
   /// [recursiveVideoItems] 的分页熔断上限。
   ///
@@ -2109,21 +2114,27 @@ class JellyfinApi {
   /// 通用下载：GET [url] 流式写入 [dest]，按 Content-Length 汇报进度。
   ///
   /// [onBytes] 报 `(已收, Content-Length)`。[cancelSignal] 完成后在下一个数据块到达
-  /// 时中止并抛 [RemoteDownloadCancelled]（本源无续传，半截文件照常删掉）。
+  /// 时中止并抛 [RemoteDownloadCancelled]（半截文件照常删掉；整片下载走可续传的
+  /// [downloadResumable]，这里只剩字幕这类小文件）。
+  ///
+  /// 正文流挂**空闲**超时 [idleTimeout]（两个数据块之间最长等多久），不挂整体超时：
+  /// 服务器 / 兼容层接了连接、回了响应头却不再送数据时，到点抛 [TimeoutException]
+  /// 而不是永远挂着（起播时默认字幕挡在开流之前，挂住就是页面永远「正在下载字幕」）。
   Future<void> downloadToFile(
     String url,
     File dest, {
     void Function(double progress)? onProgress,
     void Function(int received, int? total)? onBytes,
     Future<void>? cancelSignal,
+    Duration idleTimeout = kDownloadIdleTimeout,
   }) async {
     bool cancelled = false;
     cancelSignal?.then((_) => cancelled = true, onError: (_) {});
     try {
       final http.Request req = http.Request('GET', Uri.parse(url));
       req.headers.addAll(_headers);
-      // 只给「拿到响应头」挂超时；下面的 body 流刻意不挂整体超时——整片下载几十
-      // 分钟是正常的，套上去就是误杀。
+      // 「拿到响应头」挂请求超时；body 流只挂空闲超时、不挂整体超时——大文件
+      // 读几分钟是正常的，整体超时就是误杀。
       final http.StreamedResponse res = await _client
           .send(req)
           .timeout(kRequestTimeout);
@@ -2135,7 +2146,7 @@ class JellyfinApi {
       final IOSink sink = dest.openWrite();
       bool ok = false;
       try {
-        await for (final List<int> chunk in res.stream) {
+        await for (final List<int> chunk in res.stream.timeout(idleTimeout)) {
           if (cancelled) throw const RemoteDownloadCancelled();
           sink.add(chunk);
           received += chunk.length;
@@ -2161,6 +2172,35 @@ class JellyfinApi {
       throw Exception(redactCredentialsInText(e.toString()));
     }
   }
+
+  /// 整片下载：`.part` + Range 续传 + 空闲超时（[downloadMediaServerFileResumable]）。
+  ///
+  /// [resumeKey] 是断点身份（条目 id + 版本 id），不是 URL：取流 URL 带 `api_key`，
+  /// 侧车与错误文本都不落它。[cancelSignal] 完成即中止在途传输、抛
+  /// [RemoteDownloadCancelled]，`.part` 留着供下载中心「继续」。只给原文件端点
+  /// （[streamUrl] 的 `static=true` 直出），转码流不走这里。
+  Future<void> downloadResumable(
+    String url,
+    File dest, {
+    required String resumeKey,
+    void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
+    Duration stallTimeout = kDownloadIdleTimeout,
+  }) => downloadMediaServerFileResumable(
+    client: _client,
+    url: url,
+    headers: _headers,
+    resumeKey: resumeKey,
+    dest: dest,
+    statusError: (int code) => JellyfinApiException(code, Uri.parse(url).path),
+    cancelledError: () => const RemoteDownloadCancelled(),
+    onProgress: onProgress,
+    onBytes: onBytes,
+    cancelSignal: cancelSignal,
+    firstByteTimeout: kRequestTimeout,
+    stallTimeout: stallTimeout,
+  );
 
   void close() => _client.close();
 
@@ -2417,6 +2457,7 @@ class JellyfinVideoClient
         RemoteCoverFetcher,
         RemoteVideoDetailFetch,
         RemoteVideoPlaybackStop,
+        RemoteVideoPlaybackDetach,
         RemoteVideoPlaybackSession,
         RemoteVideoPlayedMark,
         RemoteVideoQualityLimit,
@@ -2426,7 +2467,8 @@ class JellyfinVideoClient
         MediaServerLibraryItems,
         MediaServerItemVersions,
         RemoteVideoTitleIdentityFetch,
-        RemoteVideoTrackingEpisodeFetch {
+        RemoteVideoTrackingEpisodeFetch,
+        RemoteVideoClientConnections {
   JellyfinVideoClient({
     required this.api,
     required this.userId,
@@ -2508,6 +2550,18 @@ class JellyfinVideoClient
     );
     return index <= 0 ? item : item.withMediaSource(item.mediaSources[index]);
   }
+
+  /// 一次起播内的条目详情短复用（[LaunchItemDetailMemo]）：重开入口的
+  /// [itemDetail]、取流、下默认字幕要的是同一份 `/Users/{uid}/Items/{id}`。
+  /// [playbackClient] 必须是本对象——换成别的实例这一格就接不上了。
+  /// 存的是服务器原样的条目，版本由读出的一方各自过 [_withChosenVersion]——换了
+  /// 版本再取字幕，拿到的仍是当下选中的版本。[remoteVideoPosition] 要服务器最新
+  /// 断点，不走这里。
+  final LaunchItemDetailMemo<JellyfinItem> _launchDetail =
+      LaunchItemDetailMemo<JellyfinItem>();
+
+  Future<JellyfinItem> _launchItemDetail(String id) => _launchDetail
+      .reuseOrFetch(id, () => api.itemDetail(userId: userId, itemId: id));
 
   /// 最近一次取流的条目（已换成选中版本）：播放页「画质」菜单里的版本列表以它
   /// 为准（[RemoteVideoStreamVariants] 契约：以当前已取流的那一集为准）。
@@ -3251,12 +3305,18 @@ class JellyfinVideoClient
   }
 
   @override
-  Future<MediaServerItem> itemDetail(String itemId) async {
+  Future<MediaServerItem> itemDetail(
+    String itemId, {
+    bool forLaunch = false,
+  }) async {
     // `/Users/{uid}/Items/{id}` 不看 Fields、全量返回（Overview / Genres /
-    // MediaSources 都在），与播放路径用的是同一发请求，不另加参数。
-    final JellyfinItem item = await api.itemDetail(
-      userId: userId,
-      itemId: itemId,
+    // MediaSources 都在），与播放路径用的是同一发请求，不另加参数——所以结果
+    // 留给紧随其后的取流 / 取字幕复用，见 [_launchDetail]。失败只有重开入口那
+    // 一次（[forLaunch]）才留：详情页取详情失败后点播放，照常重新请求。
+    final JellyfinItem item = await _launchDetail.fetchAndRemember(
+      itemId,
+      () => api.itemDetail(userId: userId, itemId: itemId),
+      keepFailure: forLaunch,
     );
     final MediaServerItemType? type = mediaServerTypeOf(item);
     if (type == null) {
@@ -3522,9 +3582,12 @@ class JellyfinVideoClient
     final JellyfinItem item = _withChosenVersion(
       await api.itemDetail(userId: userId, itemId: id),
     );
-    await api.downloadToFile(
+    // 原文件直出（static=true），可续传：断点键是条目 + 版本，暂停 / 断网后从
+    // `.part` 接着拉，不再删掉半截从 0 重下（BUG-4912）。
+    await api.downloadResumable(
       api.streamUrl(id, mediaSourceId: item.mediaSourceId),
       dest,
+      resumeKey: 'jellyfin:$id:${item.mediaSourceId ?? ''}',
       onProgress: onProgress,
       onBytes: onBytes,
       cancelSignal: cancelSignal,
@@ -3633,9 +3696,7 @@ class JellyfinVideoClient
     // Jellyfin 的每一集都是独立条目，episodeIndex 恒 0（多集语义不适用）。
     // 多版本条目换成用户选的版本：MediaSourceId（PlaybackInfo / 直出 URL）、字幕轨
     // 与杜比视界判定都随之走那条源（各版本的流表各不相同）。
-    final JellyfinItem item = _withChosenVersion(
-      await api.itemDetail(userId: userId, itemId: id),
-    );
+    final JellyfinItem item = _withChosenVersion(await _launchItemDetail(id));
     _streamItem = item;
     final String? mediaSourceId = item.mediaSourceId;
     final ({String streamUrl, JellyfinPlaybackSession? session}) playback =
@@ -3731,9 +3792,8 @@ class JellyfinVideoClient
     void Function(double progress)? onProgress,
   }) async {
     // 字幕轨号属于某一个版本：必须与取流时同一个版本，否则下的是别的文件的轨。
-    final JellyfinItem item = _withChosenVersion(
-      await api.itemDetail(userId: userId, itemId: id),
-    );
+    // 复用的是原样条目，版本在这里按当下的选择重新套一遍。
+    final JellyfinItem item = _withChosenVersion(await _launchItemDetail(id));
     final String? mediaSourceId = item.mediaSourceId;
     if (mediaSourceId == null) {
       throw const FileSystemException('Jellyfin item has no media source');
@@ -3858,11 +3918,7 @@ class JellyfinVideoClient
   /// 否则它跑到服务器自己的超时为止、与下一次起播抢 CPU。
   @override
   Future<void> stopRemoteVideoPlayback(String id, int positionMs) async {
-    final List<JellyfinPlaybackSession>? list = _sessions[id];
-    final JellyfinPlaybackSession? session = list == null || list.isEmpty
-        ? null
-        : list.removeAt(0);
-    if (list != null && list.isEmpty) _sessions.remove(id);
+    final JellyfinPlaybackSession? session = _takeOldestSession(id);
     try {
       await api.reportStopped(
         itemId: id,
@@ -3870,11 +3926,32 @@ class JellyfinVideoClient
         session: session,
       );
     } finally {
-      if (session != null && session.isTranscoding) {
-        await api.stopActiveEncodings(session.playSessionId);
-      }
+      await _stopTranscoding(session);
     }
   }
 
+  /// 卡片片段回看结束（BUG-4909）：与 [stopRemoteVideoPlayback] 同样按先进先出摘下
+  /// 最早那条会话、停它的转码，但**不**发 Stopped——回看不得判已看、写断点。
+  @override
+  Future<void> detachRemoteVideoPlayback(String id) =>
+      _stopTranscoding(_takeOldestSession(id));
+
+  /// 同一条目「退出→立刻重开」时旧页的收尾晚到：按先进先出取最早那条，不拿新会话。
+  JellyfinPlaybackSession? _takeOldestSession(String id) {
+    final List<JellyfinPlaybackSession>? list = _sessions[id];
+    final JellyfinPlaybackSession? session = list == null || list.isEmpty
+        ? null
+        : list.removeAt(0);
+    if (list != null && list.isEmpty) _sessions.remove(id);
+    return session;
+  }
+
+  Future<void> _stopTranscoding(JellyfinPlaybackSession? session) async {
+    if (session != null && session.isTranscoding) {
+      await api.stopActiveEncodings(session.playSessionId);
+    }
+  }
+
+  @override
   void close() => api.close();
 }

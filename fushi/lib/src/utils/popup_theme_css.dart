@@ -8,6 +8,8 @@
 // 本文件收敛「颜色→CSS 字符串」的格式化 helper 与核心变量的取值公式；变量名字面量
 // 仍保留在各调用点（多份源码扫描守卫钉死了那些字面量，见
 // browser_extension_theme_var_parity_guard_test / popup_dictionary_columns_test 等）。
+import 'dart:convert';
+
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -93,3 +95,36 @@ Map<String, String> buildPopupThemeCssVars({
     '--dict-columns': '$dictionaryColumns',
   };
 }
+
+/// 查词弹窗的「显示偏好」：popup.js 读的同名 `window.*` 全局。app 内弹窗由
+/// popup_settings_injection 直接注入；浏览器扩展只能经查词响应的 `theme` 通道拿，
+/// 由 [buildPopupDisplayPrefsThemeVars] 编成字符串键，扩展 `vendor/dict-media.js` 的
+/// `applyFushiPopupDisplayPrefs` 解回同名全局（BUG-4935）。
+typedef PopupDisplayPrefs = ({
+  bool dedupPitch,
+  bool harmonicFrequency,
+  bool showExpressionTags,
+  bool collapseDictionaries,
+  bool compactGlossaries,
+  int autoExpandRows,
+  List<String> collapsedDictionaryNames,
+  List<String> expandedDictionaryNames,
+});
+
+/// [prefs] 编成扩展 theme 通道的键值（非 CSS 变量、仅扩展 JS 消费，与 `--fushi-swipe-close`
+/// 同法）：布尔 `'1'` / `'0'`，行数十进制整数，词典名单 JSON 数组。
+///
+/// BUG-4935：此前这批偏好只有「音调去重」一项接进了 theme，`autoExpandRows` /
+/// `collapseDictionaries` / `harmonicFrequency` 等在扩展里恒 undefined——词典全部展开、
+/// 词频不聚合，与 app 内设置无关。所有显示偏好收口到这一个编码点，扩展侧一个解码点。
+Map<String, String> buildPopupDisplayPrefsThemeVars(PopupDisplayPrefs prefs) =>
+    <String, String>{
+      '--fushi-dedup-pitch': prefs.dedupPitch ? '1' : '0',
+      '--fushi-harmonic-frequency': prefs.harmonicFrequency ? '1' : '0',
+      '--fushi-expression-tags': prefs.showExpressionTags ? '1' : '0',
+      '--fushi-collapse-dicts': prefs.collapseDictionaries ? '1' : '0',
+      '--fushi-compact-glossaries': prefs.compactGlossaries ? '1' : '0',
+      '--fushi-auto-expand-rows': '${prefs.autoExpandRows}',
+      '--fushi-collapsed-dicts': jsonEncode(prefs.collapsedDictionaryNames),
+      '--fushi-expanded-dicts': jsonEncode(prefs.expandedDictionaryNames),
+    };

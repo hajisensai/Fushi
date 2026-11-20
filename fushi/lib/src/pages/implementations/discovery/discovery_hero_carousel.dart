@@ -1,15 +1,16 @@
-/// 发现页首屏 Hero 轮播：把若干 [DiscoveryHeroBanner] 排成可左右切换的一组。
+/// 发现页首屏轮播：把若干拼贴首块（[DiscoveryHeroBanner]）排成可左右切换的一组。
 ///
-/// 书 / 漫画 / 视频 / 游戏各域的发现页都只经这一件放 Hero，切页能力一处补齐：
+/// 书 / 漫画 / 视频 / 游戏各域的发现页都只经这一件放首块，切页能力一处补齐：
 ///
 /// - **指针**：桌面悬停时右下角页码指示器两侧展开圆形箭头（触屏没有悬停，不画，
 ///   靠横滑）；
-///   右下角页码指示器（胶囊里一排圆点，当前页拉长成药丸），点哪颗跳哪页。
+///   右下角页码指示器（一排 8px 圆点，当前页拉长成药丸；每颗点的命中区
+///   48×48），点哪颗跳哪页。
 /// - **拖动**：桌面默认 `dragDevices` 不含鼠标，这里显式放开鼠标 / 触控板拖动
 ///   （[HorizontalDragScrollable]）；横向滚轮 / 倾斜滚轮的横向 delta 也翻页。
-/// - **键盘 / 手柄**：焦点在 Hero 里（「详情」按钮）时 ← / → 与 D-pad 左右切页；
+/// - **键盘 / 手柄**：焦点在首块上（整块就是焦点停靠点）时 ← / → 与 D-pad 左右切页；
 ///   已到首 / 末页则不认领，按键照常交给全局方向导航（不把焦点困在 Hero 里，
-///   左边的导航栏照样走得到）。切页后焦点跟到新一页的按钮上。
+///   左边的导航栏照样走得到）。切页后焦点跟到新一页的首块上。
 /// - **自动轮播**：每页停 [DiscoveryHeroCarousel.autoAdvanceInterval] 自动前进；
 ///   悬停 / 焦点在内 / 页面不在前台（TickerMode 关）/ 减弱动态效果时暂停；
 ///   任何一次翻页（手动或自动）都重新计时。
@@ -28,6 +29,8 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/utils/components/fushi_carousel.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block.dart'
+    show FushiShadowBleedViewport, kFushiCoverBlockRegularBleed;
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiTopFadeScrim;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -41,7 +44,7 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
-/// 首屏 Hero 轮播。只有一页时不画任何切页控件，外观与单张横幅一致。
+/// 首屏首块轮播。只有一页时不画任何切页控件，外观与单张首块一致。
 class DiscoveryHeroCarousel extends StatefulWidget {
   const DiscoveryHeroCarousel({
     required this.itemCount,
@@ -54,7 +57,7 @@ class DiscoveryHeroCarousel extends StatefulWidget {
   /// 页数（> 0）。
   final int itemCount;
 
-  /// 第 i 页的横幅（通常是 [DiscoveryHeroBanner]）。
+  /// 第 i 页的首块（通常是 [DiscoveryHeroBanner]）。
   final IndexedWidgetBuilder itemBuilder;
 
   /// 当前页变化（手动 / 自动 / 拖动都报）。
@@ -67,7 +70,7 @@ class DiscoveryHeroCarousel extends StatefulWidget {
   State<DiscoveryHeroCarousel> createState() => _DiscoveryHeroCarouselState();
 }
 
-/// 默认自动轮播间隔：够读完标题 + 两行简介，又不至于让人以为它是静态横幅。
+/// 默认自动轮播间隔：够读完来源与标题，又不至于让人以为它是静态横幅。
 const Duration kDiscoveryHeroAutoAdvanceInterval = Duration(seconds: 8);
 
 /// 横向滚轮累计到多少逻辑像素翻一页（触控板一次轻扫约 50–150）。
@@ -143,7 +146,7 @@ class _DiscoveryHeroCarouselState extends State<DiscoveryHeroCarousel> {
 
   void _onPageChanged(int page) {
     // 程序化翻页途中 PageView 每越过一页都会报一次（0 → 3 回绕会报 1、2、3），
-    // 中间页不是用户停留的页：不报给调用方（视频发现页会按它预取 Hero 详情）、
+    // 中间页不是用户停留的页：不报给调用方（调用方可能按它预取该页数据）、
     // 不重置自动轮播，落点由 [_goTo] 收尾时补报。拖动 / 滚轮翻页不经此闸。
     if (_animating) return;
     if (page == _page) return;
@@ -152,8 +155,8 @@ class _DiscoveryHeroCarouselState extends State<DiscoveryHeroCarousel> {
     _restartAutoAdvance();
   }
 
-  /// 动画切到 [target]。[keepFocus]：焦点原本在 Hero 里（键盘 / 手柄翻页）时，
-  /// 旧页的按钮随旧页卸载，切完把焦点交给新页的第一个可聚焦控件。
+  /// 动画切到 [target]。[keepFocus]：焦点原本在首块上（键盘 / 手柄翻页）时，
+  /// 旧页的首块随旧页卸载，切完把焦点交给新页的第一个可聚焦控件。
   Future<void> _goTo(int target, {bool keepFocus = false}) async {
     if (!_controller.hasClients || target == _page) return;
     if (target < 0 || target >= widget.itemCount) return;
@@ -189,7 +192,7 @@ class _DiscoveryHeroCarouselState extends State<DiscoveryHeroCarousel> {
     _focusCurrentPage();
   }
 
-  /// 焦点不在当前页里时，交给当前页的第一个可聚焦控件（「详情」按钮）。
+  /// 焦点不在当前页里时，交给当前页的第一个可聚焦控件（首块本身）。
   void _focusCurrentPage() {
     final ValueKey<String> pageKey = _pageKey(_page);
     bool inCurrentPage(FocusNode node) {
@@ -306,33 +309,46 @@ class _DiscoveryHeroCarouselState extends State<DiscoveryHeroCarousel> {
         final double height = DiscoveryHeroBanner.heightFor(
           constraints.maxWidth,
         );
-        final Widget pages = HorizontalDragScrollable(
-          child: PageView.builder(
-            key: const ValueKey<String>('discovery-hero-pages'),
-            controller: _controller,
-            itemCount: widget.itemCount,
-            physics: _multiPage
-                ? const PageScrollPhysics()
-                : const NeverScrollableScrollPhysics(),
-            onPageChanged: _onPageChanged,
-            itemBuilder: (BuildContext context, int index) => KeyedSubtree(
-              key: _pageKey(index),
-              child: Listener(
-                onPointerSignal: _onPointerSignal,
-                // M3E carousel：项按离当前页的距离收缩 / 压暗，背景图视差
-                // （FushiParallax 在 DiscoveryHeroBackdrop 里读这份偏移）。
-                child: AnimatedBuilder(
-                  animation: _controller,
-                  child: widget.itemBuilder(context, index),
-                  builder: (BuildContext context, Widget? child) =>
-                      FushiCarouselItemOffset(
-                        offset: _offsetOf(index),
-                        child: FushiCarouselItemTransform(child: child!),
+        // 视口给首块投影留余量（设计稿 11-20 #14）：PageView 的视口按自身矩形硬裁，
+        // 首块下边距为 0、两侧只有页边距，投影（模糊 26、下移 10）会被切成一圈
+        // 直角框。视口向四周外扩 [kFushiCoverBlockRegularBleed]、每页再内缩同样的量，
+        // 首块位置不变、投影整段画得出来。
+        final Widget pages = FushiShadowBleedViewport(
+          bleed: kFushiCoverBlockRegularBleed,
+          builder: (BuildContext context, EdgeInsets bleed) =>
+              HorizontalDragScrollable(
+                child: PageView.builder(
+                  key: const ValueKey<String>('discovery-hero-pages'),
+                  controller: _controller,
+                  itemCount: widget.itemCount,
+                  physics: _multiPage
+                      ? const PageScrollPhysics()
+                      : const NeverScrollableScrollPhysics(),
+                  onPageChanged: _onPageChanged,
+                  itemBuilder: (BuildContext context, int index) => Padding(
+                    padding: bleed,
+                    child: KeyedSubtree(
+                      key: _pageKey(index),
+                      child: Listener(
+                        onPointerSignal: _onPointerSignal,
+                        // M3E carousel：项按离当前页的距离收缩 / 压暗，背景图视差
+                        // （首块背景剧照的 FushiParallax 读这份偏移）。
+                        child: AnimatedBuilder(
+                          animation: _controller,
+                          child: widget.itemBuilder(context, index),
+                          builder: (BuildContext context, Widget? child) =>
+                              FushiCarouselItemOffset(
+                                offset: _offsetOf(index),
+                                child: FushiCarouselItemTransform(
+                                  child: child!,
+                                ),
+                              ),
+                        ),
                       ),
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
         );
         return Actions(
           actions: <Type, Action<Intent>>{
@@ -351,7 +367,7 @@ class _DiscoveryHeroCarouselState extends State<DiscoveryHeroCarousel> {
                   children: <Widget>[
                     Positioned.fill(child: pages),
                     if (_multiPage)
-                      // 与横幅卡片同一块区域（横幅外边距：两侧 page、顶 gap）。
+                      // 与首块同一块区域（首块外边距：两侧 page、顶 gap）。
                       Positioned.fill(
                         child: Padding(
                           padding: EdgeInsets.fromLTRB(
@@ -375,10 +391,8 @@ class _DiscoveryHeroCarouselState extends State<DiscoveryHeroCarousel> {
 
   Widget _buildControls(BuildContext context) {
     final Duration fade = fushiMotionDuration(context, FushiMotion.short);
-    // 箭头不压在横幅中部：宽屏横幅的标题 / 简介块从左侧 32 起排、纵向恰好跨过
-    // 卡片中线，居中靠边的箭头会盖住「热门推荐」眉标（真实像素预览实测）。改为
-    // 与页码指示器同一簇放在右下角：悬停时两枚箭头从指示器两侧展开，平时收起
-    // 成零宽，指示器位置不变。
+    // 箭头不压在首块中部（会盖住竖封面与标题区）：与页码指示器同一簇放在
+    // 右下角，悬停时两枚箭头从指示器两侧展开，平时收起成零宽，指示器位置不变。
     Widget arrow({required bool next}) => ClipRect(
       child: AnimatedAlign(
         alignment: AlignmentDirectional.center,
@@ -414,9 +428,9 @@ class _DiscoveryHeroCarouselState extends State<DiscoveryHeroCarousel> {
     return Align(
       alignment: AlignmentDirectional.bottomEnd,
       child: Padding(
-        padding: const EdgeInsetsDirectional.only(end: 12, bottom: 6),
+        padding: const EdgeInsetsDirectional.only(end: 6),
         child: SizedBox(
-          height: _HeroNavButton.size,
+          height: _HeroPageIndicator.hitExtent,
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
@@ -464,8 +478,7 @@ class _HeroGamepadPageAction extends Action<GamepadButtonIntent> {
 }
 
 /// 页码指示器两侧的圆形切页箭头。不进焦点遍历（键盘 / 手柄用方向键切页，不再多
-/// 占两个停靠点）。MD3：深色半透明圆底 + 白色图标（与 Hero 白字同一套）；
-/// Apple：透明玻璃圆钮（与 Hero 上的 prominent 玻璃按钮同族）。
+/// 占两个停靠点）。MD3：深色半透明圆底 + 白色图标；Apple：透明玻璃圆钮。
 class _HeroNavButton extends StatelessWidget {
   const _HeroNavButton({
     required this.icon,
@@ -531,7 +544,10 @@ class _HeroNavButton extends StatelessWidget {
   }
 }
 
-/// 页码指示器：半透明胶囊里一排圆点，当前页拉长成白色药丸；点哪颗跳哪页。
+/// 页码指示器（设计稿 `.dots`）：一排 8px 圆点，当前页拉长成 20px 药丸；点哪颗
+/// 跳哪页。视觉小、命中区不小：每颗点占 48×48 的命中格（指示点热区 ≥ 48dp）。
+/// 圆点取页面前景色（与首块底色同明暗档的反色），外带一圈页面底色的柔光，压在
+/// 剧照上也看得清。
 class _HeroPageIndicator extends StatelessWidget {
   const _HeroPageIndicator({
     required this.count,
@@ -543,58 +559,58 @@ class _HeroPageIndicator extends StatelessWidget {
   final int current;
   final ValueChanged<int> onSelect;
 
+  /// 每颗点的命中格边长。
+  static const double hitExtent = kMinInteractiveDimension;
+
   @override
   Widget build(BuildContext context) {
     final Duration duration = fushiMotionDuration(context, FushiMotion.short);
-    return DecoratedBox(
-      decoration: ShapeDecoration(
-        shape: const StadiumBorder(),
-        color: Colors.black.withValues(alpha: 0.32),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            for (int i = 0; i < count; i++)
-              Semantics(
-                button: true,
-                selected: i == current,
-                label: t.discovery_hero_page_indicator(
-                  index: i + 1,
-                  count: count,
-                ),
-                excludeSemantics: true,
-                child: MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: GestureDetector(
-                    key: ValueKey<String>('discovery-hero-dot-$i'),
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => onSelect(i),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 3,
-                        vertical: 5,
-                      ),
-                      child: AnimatedContainer(
-                        duration: duration,
-                        curve: FushiMotion.standard,
-                        width: i == current ? 18 : 6,
-                        height: 6,
-                        decoration: ShapeDecoration(
-                          shape: const StadiumBorder(),
-                          color: Colors.white.withValues(
-                            alpha: i == current ? 1 : 0.5,
-                          ),
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool eink = isEinkTheme(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        for (int i = 0; i < count; i++)
+          Semantics(
+            button: true,
+            selected: i == current,
+            label: t.discovery_hero_page_indicator(index: i + 1, count: count),
+            excludeSemantics: true,
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: GestureDetector(
+                key: ValueKey<String>('discovery-hero-dot-$i'),
+                behavior: HitTestBehavior.opaque,
+                onTap: () => onSelect(i),
+                child: SizedBox.square(
+                  dimension: hitExtent,
+                  child: Center(
+                    child: AnimatedContainer(
+                      duration: duration,
+                      curve: FushiMotion.standard,
+                      width: i == current ? 20 : 8,
+                      height: 8,
+                      decoration: ShapeDecoration(
+                        shape: const StadiumBorder(),
+                        color: scheme.onSurface.withValues(
+                          alpha: i == current ? 0.95 : 0.45,
                         ),
+                        shadows: eink
+                            ? null
+                            : <BoxShadow>[
+                                BoxShadow(
+                                  color: scheme.surface.withValues(alpha: 0.6),
+                                  blurRadius: 4,
+                                ),
+                              ],
                       ),
                     ),
                   ),
                 ),
               ),
-          ],
-        ),
-      ),
+            ),
+          ),
+      ],
     );
   }
 }

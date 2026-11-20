@@ -9,13 +9,12 @@ import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart'
 import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
-import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart'
     show mangaImageContentType;
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/media/cover_file_writer.dart'
-    show CoverImageInvalidException;
+    show CoverImageInvalidException, writeCoverBytesAtomically;
 import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
@@ -35,6 +34,12 @@ OnlineMangaLibraryService mihonOnlineLibraryService(MihonManager manager) =>
       rootDirectory: manager.rootDirectory,
       adapter: MihonLibraryAdapter(manager),
     );
+
+/// 一次源刷新落库的结果：写回后的描述符 + 相对库里旧章表新出现的章。
+typedef OnlineMangaRefreshOutcome = ({
+  OnlineMangaLibraryEntry entry,
+  List<OnlineMangaChapter> fresh,
+});
 
 /// 在线漫画书目录的唯一真相：库里那一行的 `extractDir`。
 ///
@@ -150,10 +155,7 @@ class OnlineMangaLibraryService {
         }
         final String coverFile = p.join(directory.path, 'cover$extension');
         // 收口再查一次完整性（截断 JPEG/PNG）+ 原子写 + 驱逐解码缓存。
-        await MediaCoverService.applyCoverBytes(
-          bytes: bytes,
-          destPath: coverFile,
-        );
+        await writeCoverBytesAtomically(bytes: bytes, destPath: coverFile);
         coverPath = p.basename(coverFile);
       } on CoverImageInvalidException catch (e) {
         ErrorLogService.instance.logDiagnostic(
@@ -179,57 +181,102 @@ class OnlineMangaLibraryService {
     );
   }
 
-  /// 用一次刷新的结果覆盖库里的描述符。
+  /// 用一次刷新的结果覆盖库里描述符的**作品资料与章表**。
   ///
   /// 「当前章」按 [OnlineMangaChapter.key] 重新定位而不是沿用下标：源在两次
   /// 刷新之间插了新章，下标就会指到别的章上去。
+  ///
+  /// [existing] 只是调用方手上的快照：落库时在事务里重读当前描述符
+  /// （gap-mangamisc-1），订阅位、当前章取**库里的**——刷新在飞的几秒里用户点了
+  /// 订阅或换了章，不会被这次写回旧值。库里读不出描述符时才退回 [existing]。
   Future<OnlineMangaLibraryEntry?> refresh({
+    required String bookKey,
+    required OnlineMangaLibraryEntry? existing,
+    required OnlineMangaSeries series,
+    required List<OnlineMangaChapter> chapters,
+  }) async => (await _refreshWithOutcome(
+    bookKey: bookKey,
+    existing: existing,
+    series: series,
+    chapters: chapters,
+  ))?.entry;
+
+  Future<OnlineMangaRefreshOutcome?> _refreshWithOutcome({
     required String bookKey,
     required OnlineMangaLibraryEntry? existing,
     required OnlineMangaSeries series,
     required List<OnlineMangaChapter> chapters,
   }) async {
     if (existing == null) return null;
-    // 「刷出来一章都没有、而库里本来有」不是一次成功的刷新，是一次没抛异常的
-    // 失败：Mihon 的 `chapterListParse` 撞上 Cloudflare 拦截页时通常**返回空
-    // 列表而不抛**。照单全收就会把书架里那部漫画的章节整个清空、进度条归零，
-    // 而且零提示。这里不落库、抛回给调用方走正常的失败展示（横幅 + 日志），
-    // 库里的旧描述符原样保留。
-    if (chapters.isEmpty && existing.chapters.isNotEmpty) {
-      throw const OnlineMangaUnavailable(
-        OnlineMangaUnavailableReason.runtimeFailure,
-        'Source returned no chapters; keeping the existing list.',
+    final List<OnlineMangaChapter> list = List<OnlineMangaChapter>.unmodifiable(
+      chapters,
+    );
+    OnlineMangaLibraryEntry apply(OnlineMangaLibraryEntry current) {
+      // 「刷出来一章都没有、而库里本来有」不是一次成功的刷新，是一次没抛异常的
+      // 失败：Mihon 的 `chapterListParse` 撞上 Cloudflare 拦截页时通常**返回空
+      // 列表而不抛**。照单全收就会把书架里那部漫画的章节整个清空、进度条归零，
+      // 而且零提示。这里不落库、抛回给调用方走正常的失败展示（横幅 + 日志），
+      // 库里的旧描述符原样保留。
+      if (list.isEmpty && current.chapters.isNotEmpty) {
+        throw const OnlineMangaUnavailable(
+          OnlineMangaUnavailableReason.runtimeFailure,
+          'Source returned no chapters; keeping the existing list.',
+        );
+      }
+      int? nextIndex;
+      final OnlineMangaChapter? selected = current.currentChapter;
+      if (selected != null) {
+        final int found = list.indexWhere(
+          (OnlineMangaChapter item) => item.key == selected.key,
+        );
+        if (found >= 0) nextIndex = found;
+      }
+      // copyWith 而不是重新构造：订阅两位（v3）必须跟着刷新活下来。
+      return current.copyWith(
+        series: series,
+        chapters: list,
+        currentChapterIndex: nextIndex,
+        clearCurrentChapter: nextIndex == null,
       );
     }
-    int? nextIndex;
-    final OnlineMangaChapter? selected = existing.currentChapter;
-    if (selected != null) {
-      final int found = chapters.indexWhere(
-        (OnlineMangaChapter item) => item.key == selected.key,
+
+    final OnlineMangaRefreshOutcome? written = await database
+        .rewriteEpubBookMihonState<OnlineMangaRefreshOutcome>(bookKey, (
+          String? metadata,
+        ) {
+          final OnlineMangaLibraryEntry current =
+              OnlineMangaLibraryEntry.tryParse(metadata) ?? existing;
+          final OnlineMangaLibraryEntry updated = apply(current);
+          return (
+            sourceMetadata: updated.encode(),
+            chapterCount: list.length,
+            chaptersJson: _chaptersJson(list),
+            result: (
+              entry: updated,
+              fresh: newlyAppearedChapters(
+                previous: current.chapters,
+                current: list,
+              ),
+            ),
+          );
+        });
+    if (written == null) {
+      // 行已不在（刷新途中被移出书架）：不落库，按旧语义把结果交回调用方展示。
+      return (
+        entry: apply(existing),
+        fresh: newlyAppearedChapters(
+          previous: existing.chapters,
+          current: list,
+        ),
       );
-      if (found >= 0) nextIndex = found;
     }
-    // copyWith 而不是重新构造：订阅两位（v3）必须跟着刷新活下来。
-    final OnlineMangaLibraryEntry updated = existing.copyWith(
-      series: series,
-      chapters: List<OnlineMangaChapter>.unmodifiable(chapters),
-      currentChapterIndex: nextIndex,
-      clearCurrentChapter: nextIndex == null,
-    );
-    await database.updateEpubBookMihonState(
-      bookKey,
-      sourceMetadata: updated.encode(),
-      chapterCount: chapters.length,
-      chaptersJson: _chaptersJson(chapters),
-    );
     await _refreshSidecar(bookKey);
     await _publishNewChapters(
       bookKey: bookKey,
       title: series.title,
-      previous: existing.chapters,
-      current: chapters,
+      fresh: written.fresh,
     );
-    return updated;
+    return written;
   }
 
   /// 把这次刷新新出现的章投递成更新提醒。
@@ -239,16 +286,10 @@ class OnlineMangaLibraryService {
   Future<void> _publishNewChapters({
     required String bookKey,
     required String title,
-    required List<OnlineMangaChapter> previous,
-    required List<OnlineMangaChapter> current,
+    required List<OnlineMangaChapter> fresh,
   }) async {
     final UpdateFeedService? feed = updateFeed;
-    if (feed == null) return;
-    final List<OnlineMangaChapter> fresh = newlyAppearedChapters(
-      previous: previous,
-      current: current,
-    );
-    if (fresh.isEmpty) return;
+    if (feed == null || fresh.isEmpty) return;
     await feed.publishBatch(UpdateFeedKind.mangaChapter, <UpdateFeedDraft>[
       for (final OnlineMangaChapter chapter in fresh)
         UpdateFeedDraft(
@@ -271,18 +312,33 @@ class OnlineMangaLibraryService {
   Future<OnlineMangaLibraryEntry> refreshFromSource({
     required String bookKey,
     required OnlineMangaLibraryEntry entry,
+  }) async => (await refreshFromSourceWithOutcome(
+    bookKey: bookKey,
+    entry: entry,
+  )).entry;
+
+  /// [refreshFromSource]，另外交回「相对**库里**旧章表新出现的章」（后台更新探针
+  /// 据此自动下载；按调用方快照算会把作品页刚刷进来的章再当新章排一遍）。
+  Future<OnlineMangaRefreshOutcome> refreshFromSourceWithOutcome({
+    required String bookKey,
+    required OnlineMangaLibraryEntry entry,
   }) async {
     final OnlineMangaRefreshResult result = await adapter.refresh(entry);
-    final OnlineMangaLibraryEntry? updated = await refresh(
-      bookKey: bookKey,
-      existing: entry,
-      series: result.series,
-      chapters: result.chapters,
-    );
-    return updated ?? entry;
+    return await _refreshWithOutcome(
+          bookKey: bookKey,
+          existing: entry,
+          series: result.series,
+          chapters: result.chapters,
+        ) ??
+        (entry: entry, fresh: const <OnlineMangaChapter>[]);
   }
 
-  /// 记下「用户选了这一章」。
+  /// 记下「用户选了这一章」，返回写回后的描述符（以它的 `currentChapterIndex`
+  /// 为准开章）。
+  ///
+  /// 按 [chapterKey] 而不是下标（gap-mangamisc-1）：调用方的下标是按它手上那份章表
+  /// 算的，库里的章表可能已被一次刷新改过（源插了新章），同一个下标指的是另一章。
+  /// 事务内重读当前描述符，只改当前章；章已不在库里的章表上时抛 [StateError]。
   ///
   /// **与 v88 前的关键差异**：不再顺手把 `reader_positions` 清零。那一步是
   /// 「换章即丢上一章进度」的根因——位置表一本书恒一行，清零是当时唯一能让新章
@@ -291,44 +347,55 @@ class OnlineMangaLibraryService {
   Future<OnlineMangaLibraryEntry> selectChapter({
     required String bookKey,
     required OnlineMangaLibraryEntry entry,
-    required int chapterIndex,
-  }) async {
-    if (chapterIndex < 0 || chapterIndex >= entry.chapters.length) {
-      throw RangeError.index(chapterIndex, entry.chapters, 'chapterIndex');
+    required String chapterKey,
+  }) => _rewriteEntry(bookKey, entry, (OnlineMangaLibraryEntry current) {
+    final int index = current.indexOfChapterKey(chapterKey);
+    if (index < 0) {
+      throw StateError('The chapter is no longer listed: $chapterKey');
     }
-    final OnlineMangaLibraryEntry updated = entry.copyWith(
-      currentChapterIndex: chapterIndex,
-    );
-    await database.updateEpubBookMihonState(
-      bookKey,
-      sourceMetadata: updated.encode(),
-      chapterCount: updated.chapters.length,
-      chaptersJson: _chaptersJson(updated.chapters),
-    );
-    await _refreshSidecar(bookKey);
-    return updated;
-  }
+    return current.copyWith(currentChapterIndex: index);
+  });
 
   /// 写订阅位（设计稿 2026-09-12 §2.3）：只改 `sourceMetadata` 里的两个布尔，
-  /// 章节列表 / 当前章原样。返回写回后的描述符。
+  /// 章节列表 / 当前章取库里当前值（事务内重读，gap-mangamisc-1）。返回写回后的
+  /// 描述符。
   Future<OnlineMangaLibraryEntry> setSubscription({
     required String bookKey,
     required OnlineMangaLibraryEntry entry,
     required bool subscribed,
     required bool autoDownload,
-  }) async {
-    final OnlineMangaLibraryEntry updated = entry.copyWith(
-      subscribed: subscribed,
-      autoDownload: autoDownload,
-    );
-    await database.updateEpubBookMihonState(
-      bookKey,
-      sourceMetadata: updated.encode(),
-      chapterCount: updated.chapters.length,
-      chaptersJson: _chaptersJson(updated.chapters),
-    );
+  }) => _rewriteEntry(
+    bookKey,
+    entry,
+    (OnlineMangaLibraryEntry current) =>
+        current.copyWith(subscribed: subscribed, autoDownload: autoDownload),
+  );
+
+  /// 事务内重读描述符 → [change] → 写回 + 刷侧车。库里读不出描述符时以调用方的
+  /// [fallback] 为底；行已不在时不写，返回 `change(fallback)`（与改造前「写一个
+  /// 不存在的行 = 无操作」同义）。
+  Future<OnlineMangaLibraryEntry> _rewriteEntry(
+    String bookKey,
+    OnlineMangaLibraryEntry fallback,
+    OnlineMangaLibraryEntry Function(OnlineMangaLibraryEntry current) change,
+  ) async {
+    final OnlineMangaLibraryEntry? written = await database
+        .rewriteEpubBookMihonState<OnlineMangaLibraryEntry>(bookKey, (
+          String? metadata,
+        ) {
+          final OnlineMangaLibraryEntry updated = change(
+            OnlineMangaLibraryEntry.tryParse(metadata) ?? fallback,
+          );
+          return (
+            sourceMetadata: updated.encode(),
+            chapterCount: updated.chapters.length,
+            chaptersJson: _chaptersJson(updated.chapters),
+            result: updated,
+          );
+        });
+    if (written == null) return change(fallback);
     await _refreshSidecar(bookKey);
-    return updated;
+    return written;
   }
 
   /// 保证这条在线条目的书目录住在**某个下载根**的 `manga/<bookKey>` 下，返回

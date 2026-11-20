@@ -1,9 +1,10 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'package:fushi/src/reader/reader_sentence_audio_ownership_script.dart';
+
+import '../helpers/node_runtime.dart';
 
 /// BUG-2907：有声书当前句高亮不含句末「。」与句首「「」。
 ///
@@ -12,29 +13,19 @@ import 'package:fushi/src/reader/reader_sentence_audio_ownership_script.dart';
 /// 首尾。行为在 node 里真跑生产常量；接线由源码断言钉住——漏接任何一条路径，那种
 /// 模式的高亮就悄悄退回旧样子。
 void main() {
-  test('标点归属行为级（node）', () {
-    final Directory temp = Directory.systemTemp.createTempSync(
-      'fushi-bug2890-ownership-',
-    );
-    final File payload = File('${temp.path}/payload.json')
-      ..writeAsStringSync(
-        jsonEncode(<String, String>{'script': kSentenceAudioOwnershipJs}),
-      );
+  test('标点归属行为级（node）', () async {
+    final Map<String, String> payload = <String, String>{
+      'script': kSentenceAudioOwnershipJs,
+    };
     final File runner = File(
       'test/reader/sentence_audio_ownership_behavior_test.js',
     );
     expect(runner.existsSync(), isTrue);
-    late final ProcessResult result;
-    try {
-      result = Process.runSync(
-        'node',
-        <String>[runner.path, payload.path],
-        stdoutEncoding: utf8,
-        stderrEncoding: utf8,
-      );
-    } finally {
-      temp.deleteSync(recursive: true);
-    }
+    final NodeHarnessResult result = await runNodeHarness(
+      'node',
+      runner.path,
+      payload,
+    );
     expect(
       result.exitCode,
       0,

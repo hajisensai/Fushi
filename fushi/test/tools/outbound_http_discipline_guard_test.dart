@@ -22,6 +22,10 @@
 /// 自身**（[kOutboundAssemblyPoints]），要么在 [kBareOutboundRegistry] 里登记并写明**为什么
 /// 这条不该走代理**。清单只减不增。
 ///
+/// `package:http` 的**顶层便捷函数**（`http.get(` / `http.post(` …）同罪（BUG-4805）：
+/// 它们每次调用内部现建一个默认 `IOClient`，与裸 `http.Client()` 是同一条不走代理的暗路，
+/// 只是没有构造表达式可抓——播放页的 HLS 画质探测就是这样从上面四个判据底下漏过去的。
+///
 /// ## 为什么不是「一律禁止」
 ///
 /// 因为**真有一批链路必须直连**，把它们塞进代理会当场把功能打断：
@@ -119,6 +123,9 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
   // --- 局域网互联（peer 发现 / 配对 / 直连） ---
   'fushi/lib/src/sync/interconnect_post_transport.dart':
       '互联 POST 传输：目标恒为已配对的局域网 peer。',
+  'fushi/lib/src/sync/sync_settings_schema/interconnect.part.dart':
+      '互联配对请求（顶层 http.post 打 <host>/api/pair）：目标恒为用户正在配对的那台 host'
+      '（局域网 / 组网地址），走用户代理会把配对请求送到公网出口、到不了对端。',
   'fushi/lib/src/sync/interconnect_sync_backend.dart':
       '互联同步 / 远程库 / 远程视频流：pinned client 之外的回退分支，目标仍是局域网 peer。',
   'fushi/lib/src/sync/interconnect_download_client.dart':
@@ -148,7 +155,7 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
 
 /// 登记在案的文件总数（装配点 + 豁免）。**这是自校验用的哨兵**：改清单必须同步改这个数，
 /// 光靠「新增未登记即红」挡不住「悄悄多登记一条」。
-const int kRegisteredOutboundFileCount = 30;
+const int kRegisteredOutboundFileCount = 31;
 
 /// 裸出站构造的判据。
 ///
@@ -158,11 +165,19 @@ const int kRegisteredOutboundFileCount = 30;
 /// * `HttpClient.findProxyFromEnvironment(` **不**命中（`HttpClient` 后面不是 `(`）。
 ///
 /// 容忍 `dart format` 折行：`\s*` 跨行匹配 `http\n    .Client(`。
+///
+/// `http.<verb>(`：`package:http` 顶层便捷函数（按惯用前缀 `http` 认）。左边界同样排除
+/// 成员访问（`client.http.get(`）与更长的标识符（`_http.get(` / `myhttp.get(`）；名叫
+/// `http` 的**局部变量 / 参数**调 `.get(` 会被一并抓到——那种写法本身就让人分不清是不是
+/// 顶层函数，改个名字即可。
 const Map<String, String> kBareOutboundPatterns = <String, String>{
   'HttpClient(': r'(?<![A-Za-z0-9_$.])HttpClient\s*\(',
   'http.Client(': r'(?<![A-Za-z0-9_$])http\s*\.\s*Client\s*\(',
   'IOClient(': r'(?<![A-Za-z0-9_$.])IOClient\s*\(',
   'Dio(': r'(?<![A-Za-z0-9_$.])Dio\s*\(',
+  'http.<verb>(':
+      r'(?<![A-Za-z0-9_$.])http\s*\.\s*'
+      r'(?:get|post|put|patch|delete|head|read|readBytes)\s*\(',
 };
 
 /// 仓库根：测试的 cwd 是 `fushi/`，往上一级。
@@ -311,6 +326,7 @@ void main() {
 
   group('判据自校验（合成语料，逐分支存活性）', () {
     test('四种裸构造写法都能被抓到', () {
+      // （第五种判据 `http.<verb>(` 见下一条。）
       expect(
         _matchedPatternsIn('final c = HttpClient();'),
         contains('HttpClient('),
@@ -326,6 +342,49 @@ void main() {
       expect(
         _matchedPatternsIn('final d = Dio(BaseOptions());'),
         contains('Dio('),
+      );
+    });
+
+    test('package:http 顶层便捷函数也算裸出站（BUG-4805）', () {
+      for (final String verb in <String>[
+        'get',
+        'post',
+        'put',
+        'patch',
+        'delete',
+        'head',
+        'read',
+        'readBytes',
+      ]) {
+        expect(
+          _matchedPatternsIn('final r = await http.$verb(uri);'),
+          equals(<String>{'http.<verb>('}),
+          reason: verb,
+        );
+      }
+      // 原始漏网写法：dart format 把链式调用折到下一行。
+      expect(
+        _matchedPatternsIn(
+          'final http.Response resp = await http\n'
+          '    .get(uri, headers: headers)\n'
+          '    .timeout(const Duration(seconds: 8));',
+        ),
+        equals(<String>{'http.<verb>('}),
+      );
+    });
+
+    test('经注入 client 发请求、类型引用、别的标识符不算顶层便捷函数', () {
+      expect(_matchedPatternsIn('await _http.get(uri);'), isEmpty);
+      expect(_matchedPatternsIn('await client.http.get(uri);'), isEmpty);
+      expect(_matchedPatternsIn('await myhttp.post(uri);'), isEmpty);
+      expect(_matchedPatternsIn('await http.getString(uri);'), isEmpty);
+      expect(
+        _matchedPatternsIn('final http.Response r = await client.get(uri);'),
+        isEmpty,
+      );
+      expect(
+        _matchedPatternsIn('throw http.ClientException(message, uri);'),
+        isEmpty,
       );
     });
 

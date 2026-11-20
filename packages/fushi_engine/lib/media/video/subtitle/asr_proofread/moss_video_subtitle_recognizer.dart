@@ -240,6 +240,7 @@ class MossVideoSubtitleRecognizer implements VideoSubtitleRecognizer {
     required Directory workDir,
     required VideoSubtitleRecognizeProgress onProgress,
     required SubtitleCancelToken cancel,
+    int? audioStreamIndex,
   }) async {
     onProgress(0, 'extracting audio');
     final File audio = await extractVideoSubtitleAudio(
@@ -247,6 +248,7 @@ class MossVideoSubtitleRecognizer implements VideoSubtitleRecognizer {
       workDir: workDir,
       cancel: cancel,
       language: language,
+      streamIndex: audioStreamIndex,
     );
     throwIfSubtitleCancelled(cancel);
 

@@ -28,6 +28,7 @@ class AgentToolSpec {
     this.confirm = false,
     this.undoable = false,
     this.longRunning = false,
+    this.preapproved = false,
   });
 
   final String name;
@@ -42,8 +43,14 @@ class AgentToolSpec {
   final bool undoable;
   final bool longRunning;
 
-  /// 执行前要不要用户在 UI 上点确认。只由描述决定，模型改不了（spec §10）。
-  bool get needsConfirmation => risk == AgentToolRisk.irreversible || confirm;
+  /// 用户已对这条操作给过「首次确认」并记在本机（spec §5.2 补「首次确认」，例如
+  /// AI 助手联网搜索）：不再逐次出确认卡。由宿主按本机偏好填，模型改不了。
+  final bool preapproved;
+
+  /// 执行前要不要用户在 UI 上点确认。只由描述与本机的长期同意决定，模型改不了
+  /// （spec §10）。
+  bool get needsConfirmation =>
+      (risk == AgentToolRisk.irreversible || confirm) && !preapproved;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'name': name,
@@ -53,6 +60,7 @@ class AgentToolSpec {
     if (confirm) 'confirm': true,
     if (undoable) 'undoable': true,
     if (longRunning) 'longRunning': true,
+    if (preapproved) 'preapproved': true,
   };
 
   static AgentToolSpec fromJson(Map<String, Object?> json) => AgentToolSpec(
@@ -65,6 +73,7 @@ class AgentToolSpec {
     confirm: json['confirm'] == true,
     undoable: json['undoable'] == true,
     longRunning: json['longRunning'] == true,
+    preapproved: json['preapproved'] == true,
   );
 }
 

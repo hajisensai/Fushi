@@ -13,7 +13,8 @@ import '../helpers/source_guard.dart';
 /// 3. 「本地扫描根」与「常驻来源」两个叫法统一为「常驻来源」
 ///    （`media_source_section_title`），`media_source_local_roots` key 已删除。
 ///
-/// 为什么用源码扫描：`MediaSourcesPage` / `MangaSourcesPage` 都从 `appProvider`
+/// 为什么用源码扫描：各模块导入视图（`BookImportPage` / `MangaSourcesPage` /
+/// `VideoImportPage`）都从 `appProvider`
 /// 拿整个 `AppModel`，widget 测试测的是环境不是接线；这里要守的恰恰是接线与
 /// 入口位置本身。读源码并**掩掉注释**（共享 [maskComments]，等长掩码不打乱
 /// 下标），防止「实现删光、注释里留字面量」的假绿。
@@ -28,41 +29,46 @@ String _methodSlice(String source, String signature) {
 }
 
 void main() {
-  final String page = _read(
-    'lib/src/pages/implementations/media_sources_page.dart',
+  final String video = _read(
+    'lib/src/pages/implementations/video_import_page.dart',
   );
   final String view = _read(
     'lib/src/pages/implementations/media_sources_view.dart',
   );
   final String manga = _read('lib/src/media/manga/manga_sources_page.dart');
+  // 书 / 漫画导入视图（导入稿 v2）共用的页面骨架：区头「常驻来源 ＋ 添加来源」
+  // 住在这里，各模块页只给 onAddSource。
+  final String book = _read(
+    'lib/src/pages/implementations/book_import_page.dart',
+  );
+  final String collage = _read('lib/src/media/import/import_collage_page.dart');
   final String game = _read(
     'lib/src/pages/implementations/home_game_page.dart',
   );
 
   group('页头不再有「添加来源」，入口在常驻来源区头', () {
-    test('书 / 视频导入页', () {
+    test('视频导入页', () {
       expect(
-        _methodSlice(page, 'Widget _buildHeader()'),
+        _methodSlice(video, 'Widget _buildHeader(bool busy)'),
         isNot(contains('t.media_source_add')),
         reason: '页头只留视频的刮削、清理记录与后台任务',
       );
-      expect(
-        _methodSlice(page, 'Widget _buildSourcesSectionHeader()'),
-        contains('tooltip: t.media_source_add'),
-        reason: '区块内必须有等价的添加入口，能力不丢',
-      );
+      expect(video, contains('onAddSource:'), reason: '区头必须有等价的添加入口，能力不丢');
     });
 
-    test('漫画导入页', () {
+    test('书 / 漫画导入页（导入稿 v2 页面骨架）', () {
+      for (final String source in <String>[book, manga]) {
+        expect(
+          _methodSlice(source, 'Widget _buildHeader()'),
+          isNot(contains('t.media_source_add')),
+        );
+        expect(source, contains('onAddSource:'));
+      }
+      // 区头行：标题 + 添加按钮挂同一个 Row（骨架里唯一一处 media_source_add 钮）。
+      expect(collage, contains('tooltip: t.media_source_add'));
       expect(
-        _methodSlice(manga, 'Widget _buildHeader()'),
-        isNot(contains('t.media_source_add')),
-      );
-      // 区头行：标题 + 添加按钮挂同一个 Row（build 里唯一一处 media_source_add）。
-      expect(manga, contains('tooltip: t.media_source_add'));
-      expect(
-        manga.indexOf('tooltip: t.media_source_add'),
-        greaterThan(manga.indexOf('t.media_source_section_title')),
+        collage.indexOf('tooltip: t.media_source_add'),
+        greaterThan(collage.indexOf('t.media_source_section_title')),
         reason: '添加按钮必须在「常驻来源」区头，不在页头',
       );
     });
@@ -70,26 +76,20 @@ void main() {
 
   group('快速导入区统一为「导入单件 + 导入文件夹」', () {
     test('书 / 视频两域都有导入文件夹入口', () {
-      // book 与 video 两个 case 各接一次共享 _importFolder。
+      expect(book, contains('onTap: _importFolder'));
       expect(
-        RegExp('onTap: _importFolder').allMatches(page).length,
-        2,
-        reason: 'book / video 各一个「导入文件夹」按钮',
+        video,
+        contains('onTap: onImportFolder'),
+        reason: '视频不再只有「导入视频」一个入口（TODO-2930）',
       );
-      final int videoCase = page.indexOf("'video' => <QuickImportAction>[");
-      expect(videoCase, isNonNegative);
-      expect(
-        page.indexOf('onTap: _importFolder', videoCase),
-        greaterThan(videoCase),
-        reason: '视频不再只有「导入视频」一个按钮（TODO-2930）',
-      );
+      expect(video, contains('onImportFolder: _importFolder'));
     });
 
     test('第三方备份导入只在设置里，不进书的快速导入区', () {
       // 用户 2026-09-28：`.hoshi` 等第三方书库备份导入只保留设置 › 同步与
       // 备份的「第三方导入」入口，书的导入页不再并排一个按钮。
-      expect(page, isNot(contains('t.hoshi_import_entry')));
-      expect(page, isNot(contains('ExternalReaderImportPage')));
+      expect(book, isNot(contains('t.hoshi_import_entry')));
+      expect(book, isNot(contains('ExternalReaderImportPage')));
       expect(
         _read('lib/src/sync/sync_settings_schema.dart'),
         contains('ExternalReaderImportPage'),
@@ -97,13 +97,15 @@ void main() {
       );
     });
 
-    test('漫画接同一个共享 importFolder 流程', () {
+    test('书 / 漫画接同一个共享 importFolder 流程', () {
       expect(manga, contains('.importFolder()'));
+      expect(book, contains('.importFolder()'));
+      expect(video, contains('.importFolder()'));
     });
 
     test('游戏保留单件入口（无扫描根概念，无文件夹管线）', () {
-      // M3E 拖放区卡片里的主按钮（不再经共享 QuickImportSection 的 tonal 钮）。
-      expect(game, contains('label: Text(t.game_add)'));
+      // 导入稿 v2：主方式块「添加游戏」（ImportCollagePage 的方式块）。
+      expect(game, contains('label: t.game_add'));
       expect(game, contains('addGameViaFilePicker'));
     });
 
@@ -133,21 +135,28 @@ void main() {
       'lib/src/pages/implementations/browse_page.dart',
     );
 
-    test('两页本地段都是快速导入 + 常驻来源，不再挂分段选择器', () {
-      for (final String source in <String>[page, manga]) {
+    test('导入页只有导入方式 + 常驻来源，不再挂分段选择器', () {
+      for (final String source in <String>[book, manga, video]) {
         expect(source, isNot(contains('ImportPageSegmentBar(')));
-        expect(source, contains('Widget _buildLocalSegment()'));
-        final String local = _methodSlice(
-          source,
-          'Widget _buildLocalSegment()',
+        expect(source, contains('ImportCollagePage('));
+        expect(source, contains('MediaSourcesView('));
+        expect(source, contains('MediaSourcesPresentation.blocks'));
+        expect(source, isNot(contains('QuickImportSection(')));
+      }
+      for (final String path in <String>[
+        'lib/src/media/import/quick_import_section.dart',
+        'lib/src/pages/implementations/media_sources_page.dart',
+      ]) {
+        expect(
+          File(path).existsSync(),
+          isFalse,
+          reason: '旧导入页 / 快速导入区已并进 ImportCollagePage（IM1 / IM9），再长出来就是又分叉了',
         );
-        expect(local, contains('QuickImportSection('));
-        expect(local, contains('MediaSourcesView('));
       }
     });
 
     test('导入页不再挂扩展 / 在线源组件', () {
-      for (final String source in <String>[page, manga]) {
+      for (final String source in <String>[video, book, manga]) {
         expect(source, isNot(contains('MihonExtensionsPage(')));
         expect(source, isNot(contains('MihonInstalledSourcesSection(')));
         expect(source, isNot(contains('LnReaderExtensionsSection(')));
@@ -201,7 +210,28 @@ void main() {
 
     test('来源 / 扩展 / 发现 / 下载的二级选择是标签页，不再是分段按钮', () {
       expect(browse, isNot(contains('FushiSegmentedStrip')));
-      expect(browse, isNot(contains('ButtonSegment<')));
+      // 裸 SegmentedButton（前面不是标识符字符，排除 adaptiveSegmentedButton）。
+      expect(
+        RegExp(r'(?<![A-Za-z_])SegmentedButton<').hasMatch(browse),
+        isFalse,
+      );
+      // 唯一例外：页头大字形态下「来源 / 扩展」排在内容域标签行右端，用设计系统
+      // 单选分段（[adaptiveSegmentedButton]，CLAUDE.md「分段选择用设计系统组件」）；
+      // 内容域本身仍是下面三处标签条。非页头形态（墨水屏）照旧是标签胶囊。
+      expect(
+        'adaptiveSegmentedButton<'.allMatches(browse),
+        hasLength(1),
+        reason: '只有「来源 / 扩展」这一处分段，别处的二级选择仍是标签页',
+      );
+      expect(
+        'ButtonSegment<OnlineSourcesSection>('.allMatches(browse),
+        hasLength(2),
+        reason: '分段只给「来源 / 扩展」两段用',
+      );
+      expect(
+        RegExp(r'ButtonSegment<(?!OnlineSourcesSection)').hasMatch(browse),
+        isFalse,
+      );
       expect(
         RegExp(
           r'_BrowseSwipeSections<(?:OnlineSourcesDomain|_DownloadsResourceDomain|BrowseDownloadsSection)>\(',
@@ -243,9 +273,10 @@ void main() {
   });
 
   group('术语统一：「本地扫描根」并入「常驻来源」', () {
-    test('漫画区头改用 media_source_section_title，旧 key 全灭', () {
-      expect(manga, contains('t.media_source_section_title'));
+    test('导入页区头改用 media_source_section_title，旧 key 全灭', () {
+      expect(collage, contains('t.media_source_section_title'));
       expect(manga, isNot(contains('media_source_local_roots')));
+      expect(book, isNot(contains('media_source_local_roots')));
     });
 
     test('i18n 里 media_source_local_roots key 已删除', () {

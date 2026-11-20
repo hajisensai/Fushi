@@ -7,6 +7,7 @@ import 'package:fushi/src/pages/implementations/changelog_page.dart';
 import 'package:fushi/src/pages/implementations/crash_dump_page.dart';
 import 'package:fushi/src/pages/implementations/debug_log_page.dart';
 import 'package:fushi/src/pages/implementations/error_log_page.dart';
+import 'package:fushi/src/pages/implementations/free_software_statement_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
 import 'package:fushi/src/pages/implementations/shortcut_settings_page.dart';
@@ -836,6 +837,15 @@ SettingsDestination buildSystemDestination() {
               ),
             ),
           ),
+          // 免费与开源声明：GPLv3、官方版本永久免费、付费了怎么办、官方渠道与条款链接。
+          SettingsNavigationItem(
+            id: 'system.free_software_statement',
+            title: t.settings_system_free_software_statement,
+            subtitle: t.settings_system_free_software_statement_hint,
+            icon: FushiIcons.verified,
+            onTap: (SettingsContext c) =>
+                pushSettingsPage(c, (_) => const FreeSoftwareStatementPage()),
+          ),
           // TMDB 署名 —— **合约义务，不是可选的致谢**。
           //
           // 视频封面/元数据刮削使用 TMDB API（内置 key，见 tmdb_default_key.dart），
@@ -863,6 +873,22 @@ SettingsDestination buildSystemDestination() {
             subtitle: t.about_tmdb_attribution,
             icon: FushiIcons.video,
             builder: _buildTmdbAttributionRow,
+          ),
+          // MangaBaka 署名：书 / 漫画的系列资料与每卷封面来自 MangaBaka（CC BY-NC-SA
+          // 4.0），许可要求可见署名并链接来源。展示 MangaBaka 图的地方（刮削弹窗、
+          // 合集刮削结果、书的编辑页）另有就地署名；这里是常驻的总署名。
+          SettingsActionItem(
+            id: 'system.mangabaka_attribution',
+            title: 'MangaBaka',
+            subtitle: t.about_mangabaka_attribution,
+            icon: FushiIcons.books,
+            cli: const SettingsCliAction.tap(),
+            onTap: (_) async {
+              await launchUrl(
+                Uri.parse('https://mangabaka.org/'),
+                mode: LaunchMode.externalApplication,
+              );
+            },
           ),
         ],
       ),

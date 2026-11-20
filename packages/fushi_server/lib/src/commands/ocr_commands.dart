@@ -135,9 +135,9 @@ String? serverOrtProblem() {
   );
   if (found != null) return null;
   return tr(
-    'onnxruntime 动态库不可用：在配置里设 ort_library_path，或把 ${override ?? onnxRuntimeLibraryName()} '
+    'onnxruntime 动态库不可用：在配置里设 onnxruntime_library，或把 ${override ?? onnxRuntimeLibraryName()} '
         '放到可执行文件旁 / 系统库路径（ASR_ONNXRUNTIME_LIB 也认）',
-    'The onnxruntime library is unavailable: set ort_library_path in the config, or put ${override ?? onnxRuntimeLibraryName()} '
+    'The onnxruntime library is unavailable: set onnxruntime_library in the config, or put ${override ?? onnxRuntimeLibraryName()} '
         'next to the executable / on the system library path (ASR_ONNXRUNTIME_LIB is also honored)',
   );
 }

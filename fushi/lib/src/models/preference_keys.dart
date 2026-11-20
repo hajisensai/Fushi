@@ -29,6 +29,15 @@ const String kProfileFallbackIdPrefKey = 'profile_fallback_id';
 /// 合并导入；主进程启动时清空（会话只活在主进程内存里）。
 const String kWorkProfileSessionPrefKey = 'work_profile_session';
 
+/// 「本版新内容」（首页卡片 / 新内容页）：本机最近一次「看过」的 app 版本串与它的
+/// release sequence（String / int，空串 / 0 = 还没定基线），以及首页卡片被关掉时的
+/// 版本串（String）。描述的是**这台设备装过哪个包**：设备本地，不进 Profile 快照 /
+/// 备份 / 设置同步——跟到另一台设备上就会把那边的「新内容」误判成看过 / 没看过。
+const String kWhatsNewSeenVersionPrefKey = 'whats_new_seen_version';
+const String kWhatsNewSeenSeqPrefKey = 'whats_new_seen_seq';
+const String kWhatsNewCardDismissedVersionPrefKey =
+    'whats_new_card_dismissed_version';
+
 /// Anki 制卡设置（整份 `AnkiSettings` JSON，String）。原先存在 SharedPreferences
 /// `fushi_anki_settings`，迁进 Drift 是为了让 `:popup` 进程 / 悬浮词典与主 app
 /// 读到同一份（见 `anki_settings_drift_store.dart`）。含 AnkiConnect apiKey 明文 →
@@ -71,6 +80,16 @@ const String kAiWebSearchPageFetchPref = 'ai_web_search_page_fetch';
 const String kAiWebSearchPageFetchAllow = 'allow';
 const String kAiWebSearchPageFetchDeny = 'deny';
 
+/// 「AI 助手自主联网搜索」（操作 `web.search` / `web.read`）的首次确认（String，
+/// 所有者 2026-11-20「第一次要确认吧」）：`''` 还没同意（助手第一次用时出确认卡，
+/// 用户点同意后写 [kAiAgentWebSearchAllow]）/ [kAiAgentWebSearchAllow] 已同意、不再
+/// 逐次确认 / [kAiAgentWebSearchOff] 用户在设置里关掉（两条操作不可用；再打开回到
+/// `''`，下次用时重新确认）。跟着 `ai_web_search` 设备本地：同意的是把搜索词与网页
+/// 地址发给这台设备上配的那个后端。
+const String kAiAgentWebSearchPref = 'ai_agent_web_search';
+const String kAiAgentWebSearchAllow = 'allow';
+const String kAiAgentWebSearchOff = 'off';
+
 /// 已知的静态偏好键全集（守卫强制）。按字母序。
 const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
@@ -91,6 +110,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 远程使用 AI 助手（会用本机的 AI 指派、调本机操作目录）。与服务端
   // `ai.agent_for_peers` 同一判据：默认关、用户在设置里亲手打开（设备本地）。
   'ai_agent_for_peers',
+  // String：见 [kAiAgentWebSearchPref]。非凭据，设备本地。
+  kAiAgentWebSearchPref,
   // 「哪个功能用哪家 AI」的映射。不含凭据，但跟着 ai_providers 一起设备本地：
   // providers 不跨设备，映射跨过去只会指向一个不存在的 id。
   'ai_feature_providers',
@@ -416,6 +437,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'last_selected_deck',
   'last_selected_dictionary_format',
   'last_selected_model',
+  // bool（默认 true，所有者 2026-11-18 拍板）：AI 库管家自动路径（入库 / 扫描后去抖
+  // 跑一趟）。开着时取代 library_organize_auto。设备本地（按量计费只对这台设备成立）。
+  'library_curate_auto',
+  // String（JSON）：AI 库管家本机运行记录、增量水位、进度与抑制清单（设备本地）。
+  'library_curate_state',
   // String（JSON：`"<库>.<尺寸档>" → 列数`）：库页「每行数量」，缺省 = 自动
   // （library_grid_columns.dart，BUG-4219）。设备本地。
   'library_grid_columns',
@@ -687,6 +713,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'network_proxy_p2p_mode',
   'network_proxy_password',
   'network_proxy_username',
+  // 服务端通知（updates/notice_feed.dart），设备本地：上次成功响应里的通知（JSON 数组
+  // 字符串）、已弹过的对话框级通知 id（JSON 数组字符串）。
+  'notices_cache',
+  'notices_seen',
   'onboarding_completed',
   // bool：新手引导是否**走完**（点了最后一步的「开始使用」；跳过 / 返回不算）。
   // 缺省 true（老安装不受影响），全新安装首帧写 false。与 onboarding_completed
@@ -817,6 +847,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String：书架「阅读状态」筛选（ShelfReadStatus.name，'' = 全部）。
   'shelf_read_status_filter',
   'shelf_sort_mode',
+  // String：库页布局出厂判定（G1，设备本地——SyncRepository.deviceLocalPrefKeys；
+  // 值 collage / grid_choice_pending / grid，ThemeNotifier 载入偏好时判定一次），
+  // 见 ShellLayoutInstallDefault。
+  'shell_content_layout_install_default',
   'show_expression_tags',
   'show_floating_lyric',
   'show_media_notification',
@@ -895,6 +929,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（JSON 数组，SrsFolderLocation）：复习同步 v2 用户加的文件夹存储位置与用途（同步 / 媒体 / 归档）。
   // 设备本地（SyncRepository._deviceLocalFixedKeys）：路径只在这台设备上有意义。
   'srs_sync2_folder_locations',
+  // String（JSON 字符串数组，位置身份）：移除了、复习内核还没 `location_forget` 的同步位置，与上一项同一个事务写，
+  // 同步调度器起来后逐个忘掉、划掉。设备本地（SyncRepository._deviceLocalFixedKeys）。
+  'srs_sync2_forget_pending',
   // String（JSON：位置身份 → SrsLocationKey）：复习同步 v2 各存储位置的端到端加密密钥。凭据 + 设备本地
   // （同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys 与 deviceLocalPrefKeys）。
   'srs_sync2_location_keys',
@@ -933,7 +970,13 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // JSON：本机一键部署的官方 Irodori-TTS-Server（IrodoriLocalEngine）：专属目录 / 端口 /
   // 下载源 / 后端 / 模型 / 是否 app 所装。只对这台电脑成立，设备本地。
   'tts_irodori_local',
-  // JSON：TTS 发音词典（写法 → 读法，TtsPronunciationStore），只改合成文本。
+  // JSON：TTS 识别后替换（TtsTextRulesStore / TtsTextRuleKind.postRecognition）：
+  // 制作有声书语音识别校对时把识别结果改回原文写法再比对。
+  'tts_post_recognition_rules',
+  // JSON：TTS 合成前替换（TtsTextRulesStore / TtsTextRuleKind.preSynthesis）：发音
+  // 词典之后再改写合成文本。
+  'tts_pre_synthesis_rules',
+  // JSON：TTS 发音词典（写法 → 读法，TtsTextRulesStore），只改合成文本。
   'tts_pronunciation_rules',
   // double：TTS 朗读倍速（播放器本地倍速，服务端恒 1.0）。
   'tts_read_aloud_speed',
@@ -1157,6 +1200,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'web_browser_extension_storage',
   // bool（默认 false）：浏览器网页深色模式（web_browser_prefs.dart，设备本地）。
   'web_browser_force_dark',
+  // bool（默认 true）：浏览器全屏横视频时自动转横屏（web_browser_prefs.dart，设备本地）。
+  'web_browser_fullscreen_auto_rotate',
+  // bool（默认 true）：浏览器网页全屏由 Fushi 接管成页内伪全屏（web_browser_prefs.dart，设备本地）。
+  'web_browser_fullscreen_takeover',
   // bool：已删除的浏览器「整页注音」开关（2026-10-27 用户要求移除）。存量键冻结、
   // 不再读写；留在这里只为键名不被别的功能复用。
   'web_browser_furigana',
@@ -1182,6 +1229,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'web_browser_youtube_subtitles',
   // bool（默认 true）：网页漫画章末二维码广告页剔除（判定在 native/fushi_web_core 的 comic_ad）。
   'web_comic_ad_filter',
+  // String / int / String：见 [kWhatsNewSeenVersionPrefKey]。设备本地。
+  'whats_new_card_dismissed_version',
+  'whats_new_seen_seq',
+  'whats_new_seen_version',
   // bool（默认 false）：Android 桌面小组件默认隐藏书名 / 视频标题 / 释义 / Profile 名。
   // 描述这台设备的桌面，设备本地（deviceLocalPrefKeys + ProfileKeys 排除）。
   'widget_privacy_hide_definitions',

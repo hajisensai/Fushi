@@ -1,0 +1,6 @@
+## BUG-4910 · 分页进度采样从章首逐节点 walk，长章章末一次 19ms、插图页 56ms
+- **报告**：2026-11-20（路线图 2026-11-17 测量组 m1 / gap-readerjs1-3 实测发现）
+- **真实性**：✅ 真 bug。每次进度采样（`fushiProgressDetails`）的页上校验 `charOffsetOnCurrentPage` 经 `textNodeAtCharOffset`（`fushi/lib/src/reader/reader_pagination_scripts.dart:1564`，修前）从章首逐节点累加字数；页首 caret 落在插图 / 元素上时扫描兜底 `firstVisibleCharOffsetByScanPaged`（同文件 `:1727`，修前）对每个文本节点各调一次 getClientRects；`charOffsetInRange` 也逐节点 walk。连续 shell 早在 BUG-2903 有了章内文本索引，分页没用上。桌面 headless Chrome、10 万字单章（4749 个文本节点）：章末一次 `fushiProgressDetails` 中位数 19.3ms（竖排）/ 19.0ms（横排），几乎全在 `getLastVisibleCharOffset` 的页上校验；同章插图页横排 56.1ms（扫描兜底 3000 次 getClientRects）、竖排 9.9ms。
+- **[x] ① 已修复** — 连续 shell 的章内文本索引（`_textIndex`，MutationObserver 记账、取用时 `takeRecords` 同步判脏）挪进两 shell 共用段；`textNodeAtCharOffset` 改二分、`charOffsetInRange` 读索引总数、分页扫描兜底按翻页轴二分（`_textNodeTurnSide`，与连续 `_charsBeforeEdge` 同构）。数值与逐节点 walk 逐点一致。提交见 PR（`pr/measure-reader-engine`）；前后对比见 PR 正文测量表。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/paged_text_index_caret_test.dart`（真 Chrome、横排 / 竖排、正文页 / 插图页：偏移定位、越界判据、扫描兜底与逐节点 walk 逐点一致；单次扫描兜底 getClientRects < 200 次（修前 8640 次 / 9600 个文本节点）；页上校验不建 walker（修前 2 个）；DOM 变化同步失效索引）。`paged_first_visible_scan_axis_behavior_test.js` 的假 DOM 补了 MutationObserver 桩（每次都报「有变化」，等价于修前每次重 walk）。
+- **备注**：移动端未实测（本轮不做真机）。

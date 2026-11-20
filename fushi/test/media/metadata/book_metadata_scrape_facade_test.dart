@@ -128,6 +128,48 @@ void main() {
       expect(File(backup).existsSync(), isFalse);
     });
 
+    test('旧封面（修改时间早于保留期）的备份按建立时刻算保留期，下次清理不删', () async {
+      final MediaItem item = await book('facade-old-cover');
+      final BookMetadataScrapeFacade facade = BookMetadataScrapeFacade();
+      await facade.applyToBook(appModel: model, item: item, cover: image(7));
+      // 这张封面已经用了 40 天：复制出来的备份会沿用这个修改时间。
+      ReaderFushiSource.instance
+          .resolveOverrideThumbnailFile(appModel: model, item: item)!
+          .setLastModifiedSync(
+            DateTime.now().subtract(const Duration(days: 40)),
+          );
+      final BookMetadataApplyResult result = await facade.applyToBook(
+        appModel: model,
+        item: item,
+        cover: image(8),
+        keepBackup: true,
+      );
+      final File backup = File(result.before.coverBackupPath!);
+      expect(
+        backup.lastModifiedSync().isAfter(
+          DateTime.now().subtract(BookMetadataScrapeFacade.backupRetention),
+        ),
+        isTrue,
+      );
+
+      // 另一本书再留一次备份 → 触发清理；上一份备份必须还在，撤销才做得成。
+      final MediaItem other = await book('facade-old-cover-2');
+      await facade.applyToBook(appModel: model, item: other, cover: image(9));
+      await facade.applyToBook(
+        appModel: model,
+        item: other,
+        cover: image(10),
+        keepBackup: true,
+      );
+      expect(backup.existsSync(), isTrue);
+      await facade.restore(
+        appModel: model,
+        item: item,
+        snapshot: result.before,
+        fields: result.applied,
+      );
+    });
+
     test('执行前没有 override 封面：不留备份，restore 清除', () async {
       final MediaItem item = await book('facade-nocover');
       final BookMetadataScrapeFacade facade = BookMetadataScrapeFacade();

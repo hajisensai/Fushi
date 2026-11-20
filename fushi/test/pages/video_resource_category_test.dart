@@ -144,7 +144,13 @@ void main() {
       expect(requested.season, 1);
       if (!subscription) {
         await tester.tap(
-          find.byKey(const ValueKey<String>('video-resource-flat-toggle')),
+          // 「版本卡 / 全部条目」分段：点「全部条目」那一段。
+          find.descendant(
+            of: find.byKey(
+              const ValueKey<String>('video-resource-flat-toggle'),
+            ),
+            matching: find.text(t.resource_version_view_flat),
+          ),
         );
         await tester.pumpAndSettle();
         await tester.tap(find.text('[Group] Oniichan wa Oshimai - 01 [1080p]'));
