@@ -202,81 +202,56 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
       return;
     }
     final SrsDeckTree tree = await store.deckTree();
-    final List<_Conflict> conflicts = <_Conflict>[];
-    Map<String, String>? typeNames;
-    for (final (SrsEntityKind kind, String id, SrsRegister reg)
-        in await store.syncConflicts()) {
-      String label = id;
-      switch (kind) {
-        case SrsEntityKind.deck:
-          label = tree[id] == null ? id : tree.fullName(id);
-        case SrsEntityKind.card:
-          // 卡片按它所属笔记的第一个字段认（与浏览页的排序字段同口径）。
-          final SrsCardDetail? d = await store.cardDetail(id);
-          final SrsFieldDef? first = d?.noteType.fields.firstOrNull;
-          if (d != null && first != null) {
-            final String text = d.note
-                .field(first.id)
-                .replaceAll(RegExp(r'<[^>]+>'), '')
-                .trim();
-            if (text.isNotEmpty) label = text;
-          }
-        case SrsEntityKind.profile:
-          label = t.srs_conflict_profile;
-        case SrsEntityKind.noteType:
-          label = (await store.noteType(id))?.name ?? id;
-        case SrsEntityKind.note:
-          // 笔记按它的第一个字段认；「笔记类型」冲突的值显示类型名。
-          final SrsNoteView? n = await store.note(id);
-          final SrsNoteTypeView? nt = n == null
-              ? null
-              : await store.noteType(n.noteTypeId);
-          final SrsFieldDef? first = nt?.fields.firstOrNull;
-          if (n != null && first != null) {
-            final String text = n
-                .field(first.id)
-                .replaceAll(RegExp(r'<[^>]+>'), '')
-                .trim();
-            if (text.isNotEmpty) label = text;
-          }
-          if (reg.key == SrsFieldKeys.noteType) {
-            typeNames ??= <String, String>{
-              for (final SrsNoteTypeView v in await store.noteTypes())
-                v.id: v.name,
-            };
-          }
-      }
-      conflicts.add(
+    final List<(SrsEntityKind, String, SrsRegister)> raw = await store
+        .syncConflicts();
+    final List<SrsNoteCacheRow> pending = await store.notesPendingDecision();
+    final List<Map<String, Object?>> heldRaw = await store.sync2Conflicts();
+    // 人读名整页一次批量取（BUG-4948）：以前逐条 cardDetail / note，6950 条冲突的库上一次重读 2 万次读、
+    // 63 s，常驻内存翻倍到 3.3 GB，停在本页时进程意外退出。
+    final List<(SrsEntityKind?, String)> refs = <(SrsEntityKind?, String)>[
+      for (final (SrsEntityKind kind, String id, SrsRegister _) in raw)
+        (kind, id),
+      for (final Map<String, Object?> c in heldRaw)
+        (
+          SrsEntityKind.tryParse(c['entityKind'] as String?),
+          c['entity'] as String? ?? '',
+        ),
+    ];
+    final _EntityLabels labels = await _EntityLabels.load(
+      store,
+      tree,
+      refs,
+      needTypeNames: raw.any(
+        ((SrsEntityKind, String, SrsRegister) c) =>
+            c.$3.key == SrsFieldKeys.noteType,
+      ),
+    );
+    final List<_Conflict> conflicts = <_Conflict>[
+      for (final (SrsEntityKind kind, String id, SrsRegister reg) in raw)
         _Conflict(
           kind: kind,
           entityId: id,
           register: reg,
-          entityLabel: label,
+          entityLabel: labels.of(kind, id),
           valueLabels: reg.key == SrsFieldKeys.noteType
-              ? typeNames ?? const <String, String>{}
+              ? labels.typeNames
               : const <String, String>{},
         ),
-      );
-    }
-    final List<SrsNoteCacheRow> pending = await store.notesPendingDecision();
-    final List<_HeldDelete> held = <_HeldDelete>[];
-    for (final Map<String, Object?> c in await store.sync2Conflicts()) {
-      held.add(
+    ];
+    final List<_HeldDelete> held = <_HeldDelete>[
+      for (final Map<String, Object?> c in heldRaw)
         _HeldDelete(
           id: c['id'] as String? ?? '',
           kind: c['kind'] as String? ?? '',
           by: c['by'] as String? ?? '',
           others: (c['others'] as num?)?.toInt() ?? 0,
           at: (c['at'] as num?)?.toInt() ?? 0,
-          label: await _entityLabel(
-            store,
-            tree,
+          label: labels.of(
             SrsEntityKind.tryParse(c['entityKind'] as String?),
             c['entity'] as String? ?? '',
           ),
         ),
-      );
-    }
+    ];
     final List<SrsDuplicateGroup> duplicates = await store
         .duplicateNoteGroups();
     final SrsDeviceDirectory devices = await srsLoadDeviceDirectory(store);
@@ -292,42 +267,6 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
       _loadError = null;
       _loading = false;
     });
-  }
-
-  /// 冲突里实体的人读名：牌组全名 / 笔记（卡片按所属笔记）的第一个字段 / 笔记类型名。
-  Future<String> _entityLabel(
-    SrsDbStore store,
-    SrsDeckTree tree,
-    SrsEntityKind? kind,
-    String id,
-  ) async {
-    String firstField(SrsNoteView? n, SrsNoteTypeView? nt) {
-      final SrsFieldDef? first = nt?.fields.firstOrNull;
-      if (n == null || first == null) return '';
-      return n.field(first.id).replaceAll(RegExp(r'<[^>]+>'), '').trim();
-    }
-
-    switch (kind) {
-      case SrsEntityKind.deck:
-        return tree[id] == null ? id : tree.fullName(id);
-      case SrsEntityKind.card:
-        final SrsCardDetail? d = await store.cardDetail(id);
-        final String text = firstField(d?.note, d?.noteType);
-        return text.isEmpty ? id : text;
-      case SrsEntityKind.note:
-        final SrsNoteView? n = await store.note(id);
-        final String text = firstField(
-          n,
-          n == null ? null : await store.noteType(n.noteTypeId),
-        );
-        return text.isEmpty ? id : text;
-      case SrsEntityKind.noteType:
-        return (await store.noteType(id))?.name ?? id;
-      case SrsEntityKind.profile:
-        return t.srs_conflict_profile;
-      case null:
-        return id;
-    }
   }
 
   /// 写入者的显示名：本机 / 「<名称>（Fushi X.Y）」/ 认不出给前 8 位 ID。
@@ -1312,4 +1251,58 @@ class _ConflictCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 冲突里实体的人读名：牌组全名 / 笔记（卡片按所属笔记）的排序字段（第一个字段去标签）/ 笔记类型名。
+///
+/// 整页的名字由 [load] 一次批量取齐（卡 / 笔记两条批量读 + 笔记类型一次），不按条读（BUG-4948）。
+class _EntityLabels {
+  _EntityLabels._(this._tree, this._cards, this._notes, this.typeNames);
+
+  final SrsDeckTree _tree;
+  final Map<String, String> _cards;
+  final Map<String, String> _notes;
+
+  /// 笔记类型 ID → 名称（有笔记类型实体、或「笔记类型」字段冲突时才读，否则空）。
+  final Map<String, String> typeNames;
+
+  static Future<_EntityLabels> load(
+    SrsDbStore store,
+    SrsDeckTree tree,
+    List<(SrsEntityKind?, String)> refs, {
+    required bool needTypeNames,
+  }) async {
+    final ({Map<String, String> cards, Map<String, String> notes}) sorted =
+        await store.sortLabelsOf(
+          cardIds: <String>[
+            for (final (SrsEntityKind? k, String id) in refs)
+              if (k == SrsEntityKind.card) id,
+          ],
+          noteIds: <String>[
+            for (final (SrsEntityKind? k, String id) in refs)
+              if (k == SrsEntityKind.note) id,
+          ],
+        );
+    final bool wantTypes =
+        needTypeNames ||
+        refs.any(
+          ((SrsEntityKind?, String) r) => r.$1 == SrsEntityKind.noteType,
+        );
+    final Map<String, String> typeNames = wantTypes
+        ? <String, String>{
+            for (final SrsNoteTypeView v in await store.noteTypes())
+              v.id: v.name,
+          }
+        : const <String, String>{};
+    return _EntityLabels._(tree, sorted.cards, sorted.notes, typeNames);
+  }
+
+  String of(SrsEntityKind? kind, String id) => switch (kind) {
+    SrsEntityKind.deck => _tree[id] == null ? id : _tree.fullName(id),
+    SrsEntityKind.card => _cards[id] ?? id,
+    SrsEntityKind.note => _notes[id] ?? id,
+    SrsEntityKind.noteType => typeNames[id] ?? id,
+    SrsEntityKind.profile => t.srs_conflict_profile,
+    null => id,
+  };
 }
