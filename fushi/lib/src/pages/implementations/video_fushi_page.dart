@@ -6801,6 +6801,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         cues: cues,
         initialPositionMs: initialPositionMs,
         startIntent: startIntent,
+        resumeMode: appModel.videoResumeMode,
         initialSpeed: _playbackSpeed,
         initialVolume: _playbackVolume,
         externalSubtitlePath: externalSubtitlePath,

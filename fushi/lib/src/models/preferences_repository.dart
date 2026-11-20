@@ -61,6 +61,7 @@ import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_folder_memory.dart';
+import 'package:fushi/src/media/video/video_resume.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart'
     show migrateLegacyJumpPillAutoHide;
 import 'package:fushi/src/models/module_id.dart';
@@ -2413,6 +2414,18 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setVideoAutoPlayNext(bool value) async {
     await setPref('video_auto_play_next', value);
+    notifyListeners();
+  }
+
+  /// 视频断点续播（video_resume.dart）。默认每个视频都续播（加开关前的行为）；
+  /// 关掉只影响打开时的起点，进度照常记。
+  VideoResumeMode get videoResumeMode => VideoResumeMode.fromWire(
+    getPref('video_resume_mode', defaultValue: VideoResumeMode.all.wire)
+        as String?,
+  );
+
+  Future<void> setVideoResumeMode(VideoResumeMode value) async {
+    await setPref('video_resume_mode', value.wire);
     notifyListeners();
   }
 

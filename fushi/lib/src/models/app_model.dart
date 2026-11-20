@@ -40,6 +40,7 @@ import 'package:fushi_engine/media/video/media_server_video_path.dart'
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
     show mediaServerClientIdentity, resolveMediaServerClientIdentity;
 import 'package:fushi_engine/media/video/video_member_file.dart';
+import 'package:fushi/src/media/video/video_resume.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show videoBookDiscTitlePath, videoBookEpisodePath;
 import 'package:fushi_engine/media/video/video_storage.dart' show VideoStorage;
@@ -7069,6 +7070,14 @@ class AppModel
 
   Future<void> setVideoAutoPlayNext(bool value) =>
       prefsRepo.setVideoAutoPlayNext(value);
+
+  /// 视频断点续播模式（video_resume.dart）：只影响之后的打开，不打断当前播放。
+  VideoResumeMode get videoResumeMode => prefsRepo.videoResumeMode;
+
+  Future<void> setVideoResumeMode(VideoResumeMode value) async {
+    await prefsRepo.setVideoResumeMode(value);
+    notifyListeners();
+  }
 
   /// 原盘会话三项（落 Drift preferences，默认都开）：桌面自动全屏 / 启动动画 /
   /// 详情页主按钮默认进菜单。

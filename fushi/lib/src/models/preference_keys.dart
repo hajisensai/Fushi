@@ -1109,6 +1109,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 不被别的功能复用。
   'video_resource_disabled_sources',
   'video_resource_torznab_config',
+  // String（默认 'all'）：视频断点续播 off / long_videos / all
+  // （VideoResumeMode.wire，video_resume.dart）。
+  'video_resume_mode',
   'video_respect_ass_style',
   // JSON 字符串数组：待确认队列里被用户「忽略、不再提示」的作品 stableKey
   // （`collection:<id>` / `book:<uid>`，反馈 Fbchzxuq6f，引擎

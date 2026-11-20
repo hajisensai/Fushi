@@ -13,6 +13,7 @@ import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_clip_export_preferences.dart';
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
+import 'package:fushi/src/media/video/video_resume.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
 import 'package:fushi/src/media/video/video_settings_cli.dart';
 import 'package:fushi/src/media/video/video_settings_cli_ops.dart'
@@ -97,6 +98,32 @@ SettingsDestination buildVideoDestination() {
               await settingsContext.appModel.setVideoAutoPlayNext(value);
             },
             defaultValue: true,
+          ),
+          // 断点续播（拍板台 IVRHvZ3pmd，三档与音乐 `music.resume_mode` 对齐）：只影响之后
+          // 打开的视频；进度照常记，制卡回看 / 画质重载的明确起点不受影响。
+          SettingsSegmentedItem<VideoResumeMode>(
+            id: 'video.playback.resume_mode',
+            title: t.video_resume_mode_title,
+            subtitle: t.video_resume_mode_hint,
+            icon: FushiIcons.history,
+            options: <SettingsSegmentOption<VideoResumeMode>>[
+              SettingsSegmentOption<VideoResumeMode>(
+                value: VideoResumeMode.off,
+                label: t.video_resume_mode_off,
+              ),
+              SettingsSegmentOption<VideoResumeMode>(
+                value: VideoResumeMode.longVideos,
+                label: t.video_resume_mode_long_videos,
+              ),
+              SettingsSegmentOption<VideoResumeMode>(
+                value: VideoResumeMode.all,
+                label: t.video_resume_mode_all,
+              ),
+            ],
+            defaultValue: VideoResumeMode.all,
+            selected: (SettingsContext c) => c.appModel.videoResumeMode,
+            onChanged: (SettingsContext c, VideoResumeMode v) =>
+                c.appModel.setVideoResumeMode(v),
           ),
           // 作品图谱 L2：音乐库里的 OP / ED 经声纹识别出每集起止后自动跳过。纯 pref，
           // 播放页面板不单列（与原盘会话三项同理：它们决定的是进入 OP 时怎么办）。
