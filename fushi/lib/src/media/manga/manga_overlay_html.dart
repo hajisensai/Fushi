@@ -1103,7 +1103,7 @@ const int kMangaActivityReportIntervalMs = 5000;
 /// 节流 → `onMangaScroll`。viewport resize → `_reanchor` 把语义位置重投影成新视口
 /// 的 px（BUG-1758）。`dragstart` 全程 preventDefault + CSS user-select/user-drag
 /// 禁用，消除桌面拖动时的原生图片/选区残影（「秃瓢」）。手势阈值镜像 reader
-/// （absDx>absDy 判 swipe，小位移判 tap）。spread translateX 在 [_mangaApplyTranslate]
+/// （absDx>absDy 判 swipe，小位移判 tap）。spread translateX 在 `__mangaApplyTranslate`
 /// 按 data-spread 测量。
 /// 翻页动画统一缓动（CSS 过渡与 JS 逐帧滚动动画同一条曲线）。
 const String kMangaPageTurnEasing = 'cubic-bezier(.2,.7,.2,1)';
@@ -1297,6 +1297,13 @@ String _mangaGestureJs({
     }, 200);
   }
   function _layoutSource(page){
+    _layoutSourceBox(page);
+    _refitPage(page);
+  }
+  // 只排版、不换图（manga-22）：拖窗口边框时 resize 一秒几十次，逐次换 `fit=` 档会
+  // 让已加载的页每跨过一个 128 px 档就排一次整张转码，旧档请求也不会被丢弃。
+  // resize 路径只重排盒子，换图交给 200 ms 合并的 _scheduleRefit，停手后只取最终档。
+  function _layoutSourceBox(page){
     var pw = Number(page.dataset.pw), ph = Number(page.dataset.ph);
     var crop = page.__crop || {x:0,y:0,width:pw,height:ph};
     var rotated = ROTATE_WIDE && crop.width > crop.height * 1.15;
@@ -1341,7 +1348,6 @@ String _mangaGestureJs({
     page.style.width = (vw * scaleX) + 'px';
     page.style.height = (vh * scaleY) + 'px';
     page.__fitScale = Math.max(scaleX, scaleY);
-    _refitPage(page);
     // A short vertical page keeps its true hit-test frame. Empty space between
     // pages supplies the viewport-sized paging step without stretching OCR.
     if($isVerticalPaged) page.style.marginBottom=Math.max(${preferences.showPageGaps ? 12 : 0},maxH-vh*scaleY)+'px';
@@ -1414,8 +1420,9 @@ String _mangaGestureJs({
     _layoutSource(page);
   });
   window.addEventListener('resize',function(){
-    document.querySelectorAll('.manga-page').forEach(_layoutSource);
+    document.querySelectorAll('.manga-page').forEach(_layoutSourceBox);
     _applyWidePolicy();
+    _scheduleRefit();
   });
   function _recenterPan(){
     PAN_X = window.innerWidth * (1 - ZOOM) / 2;

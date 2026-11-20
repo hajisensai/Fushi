@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:ui' as ui show Image;
 
@@ -134,7 +133,10 @@ import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
         fushiTitleBarColorsOn;
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_sheet.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_page_grid.dart';
+import 'package:fushi/src/media/manga/manga_json_writeback.dart'
+    show parseMangaJsonOffUi;
 import 'package:fushi/src/media/manga/reader/manga_page_fit.dart';
+import 'package:fushi/src/media/manga/reader/manga_panel_prewarm.dart';
 import 'package:fushi/src/media/manga/reader/manga_page_thumbnail_prefetcher.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_quick_settings_sheet.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_study_stats.dart';
@@ -711,7 +713,7 @@ class MangaFushiPage extends BaseSourcePage {
 
   /// 把注册表解析出的 [ShortcutAction] 落成本页的输入动作。
   ///
-  /// 键位本身由 `ShortcutRegistry`（`ShortcutScope.manga`）解析，左右方向键的朝向
+  /// 键位本身由 [FushiShortcutRegistry]（`ShortcutScope.manga`）解析，左右方向键的朝向
   /// 再由 [resolveMangaArrowPageTurn] 按跨页方向校正——两步都在调用侧完成，本函数
   /// 只负责「拿到动作之后，当前上下文该不该执行它」这层门控。
   ///
@@ -1215,15 +1217,6 @@ class MangaFushiPage extends BaseSourcePage {
     return MangaReadingModeSemantics.fromStorageKey(s);
   }
 
-  /// 大书的 manga.json 解析下放 isolate（不卡 UI）。
-  ///
-  /// 必须是**静态**方法：闭包在实例方法里创建时，Dart VM 的作用域上下文可能把
-  /// `this`（整个 State → binding）一并塞进闭包 context，`Isolate.run` 发送消息时
-  /// 直接炸 "object is unsendable"。静态方法的 context 只含 [jsonStr]，恒可发送。
-  static Future<MokuroPayload> parseMangaJsonOffUi(String jsonStr) {
-    return Isolate.run<MokuroPayload>(() => parseMangaJson(jsonStr));
-  }
-
   /// 纯函数：`EpubBooks.mangaReadingMode` 列值 → 用户覆盖模式。null/空 = 未覆盖
   /// （调用方回落 [detectReadingMode] 自动判定）。
   static MangaReadingMode? modeOverrideFromDb(String? s) {
@@ -1379,12 +1372,30 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// AI 分镜导航是会话态：检测结果在设备本地 LRU 中复用，游标只跟随当前 spread，
   /// 不写入阅读进度。没有模型/检测器时所有输入自然回落到原有分页。
-  PanelDetector? _panelDetector;
+  /// 检测器的所有权槽：翻页预热 / 按键翻分镜 / 制卡裁切同时要它时只建一份，
+  /// 页面关掉后才落地的那份当场关掉（gap-mangamisc-7）。
+  final PanelDetectorSlot _panelDetectorSlot = PanelDetectorSlot();
   final Map<int, PanelDetectionResult> _panelResults =
       <int, PanelDetectionResult>{};
   final MangaPanelNavigationCursor _panelCursor = MangaPanelNavigationCursor();
   int _panelGeneration = 0;
   PanelDetectionStatus? _panelStatus;
+
+  /// 翻页预热分镜检测的单飞调度（manga-21）：检测器内部串行，快速翻页 / 跳页时
+  /// 只追最新的跨页，不给翻过去的页排推理，免得按键时当前页排在陈旧预热后面。
+  late final MangaPanelPrewarmer<({int generation, int spread})>
+  _panelPrewarmer = MangaPanelPrewarmer<({int generation, int spread})>(
+    target: _panelPrewarmTarget,
+    warm: (({int generation, int spread}) target) =>
+        _panelEntriesForSpread(target.spread),
+    onError: (Object error, StackTrace stack) {
+      ErrorLogService.instance.log(
+        'MangaFushiPage.prewarmPanels',
+        error,
+        stack,
+      );
+    },
+  );
 
   /// 工厂回报「模型不可用」（未下载 / 校验失败 / 未装配）时的 [mangaPanelModelRevision]。
   /// 缓存它是因为工厂每次都对 9.8 MB 模型整份算 sha256，不缓存的话每次翻页 / 每次
@@ -1913,10 +1924,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (owner != null && !owner.isCurrent) return false;
     switch (cause) {
       // 与阅读器**相反**：阅读器在词典弹窗可见时让位（弹窗自持焦点，BUG-136），
-      // 漫画不能让——[MangaFushiPage.keyInputAction] 规定弹窗可见时左右键仍要
-      // 「关弹窗并翻页」、Escape 要关弹窗，这些键必须抵达 [_handleReaderKey]。
+      // 漫画不能让——[MangaFushiPage.inputActionForShortcut] 规定弹窗可见时左右键
+      // 仍要「关弹窗并翻页」、Escape 要关弹窗，这些键必须抵达 [_handleReaderKey]。
       // 词典弹窗是纯原生 WebView、没有 Flutter 焦点节点，不主动收回就全部落空。
-      // 这也正是本页覆写 [capturesDictionaryPopupNavigationKeys] 的同一诉求。
       case FocusReclaimCause.popupRendered:
         return isDictionaryShown;
       case FocusReclaimCause.gesture:
@@ -2068,23 +2078,21 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _pageCurl?.dispose();
     _pageCurl = null;
     _panelGeneration++;
+    _panelPrewarmer.dispose();
     _panelCursor.reset();
     _panelResults.clear();
     // ONNX session 每本书新建一份（模型 9 MB 级），不关就是每开一本书泄漏一份。
-    // dispose 是同步的，这里只能 fire-and-forget，失败不该阻断关书。
-    final PanelDetector? detector = _panelDetector;
-    _panelDetector = null;
-    if (detector != null) {
-      unawaited(
-        detector.close().catchError((Object error, StackTrace stack) {
-          ErrorLogService.instance.log(
-            'MangaFushiPage.panelDetectorClose',
-            error,
-            stack,
-          );
-        }),
-      );
-    }
+    // dispose 是同步的，这里只能 fire-and-forget，失败不该阻断关书。还在建的那份
+    // 落地后由槽自己关掉。
+    unawaited(
+      _panelDetectorSlot.close().catchError((Object error, StackTrace stack) {
+        ErrorLogService.instance.log(
+          'MangaFushiPage.panelDetectorClose',
+          error,
+          stack,
+        );
+      }),
+    );
     readerSessionRemotes.unregister(_sessionRemote);
     _detachControllerLookup();
     _companion.dispose();
@@ -2439,7 +2447,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final String imagesDir = p.join(p.dirname(mangaJsonPath), 'images');
 
     final String jsonStr = await jsonFile.readAsString();
-    MokuroPayload payload = await MangaFushiPage.parseMangaJsonOffUi(jsonStr);
+    // 大书的 manga.json 解析下放 isolate（不卡 UI）；与 OCR 任务登记处共用同一个
+    // 顶层函数（闭包只捕获字符串，恒可发送，见 manga_json_writeback.dart）。
+    MokuroPayload payload = await parseMangaJsonOffUi(jsonStr);
     // 由 PDF 转来、还没提取过文字层的卷（加这一步之前导入的）：开书时补一次。
     // 判据先看内存里的版本号，只有确实要补才碰 PDFium。
     if (payload.pdfTextLayerVersion == null &&
@@ -2707,6 +2717,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _loadFailed = false;
     });
     _resetPanelNavigation();
+    _prewarmPanels();
     _pageNotifier.value = _currentPage;
     // A chapter switch can land on the same page index (no notifier event).
     _syncCompanionClaim();
@@ -3332,6 +3343,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           '$_pageSessionGeneration|$pageIndex',
           fitWidth,
           loadSource,
+          pageIndex: pageIndex,
         );
         return WebResourceResponse(
           contentType: fitted != null
@@ -3378,6 +3390,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       p.join(imagesDir, decodedRelative),
       mangaFitWidthOf(url),
       () => File(filePath).readAsBytes(),
+      pageIndex: pageIndex,
     );
     return WebResourceResponse(
       contentType: fitted != null ? 'image/jpeg' : _mangaMimeForPath(filePath),
@@ -3394,18 +3407,33 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 页图在 [fitWidth] 档的降采样 JPEG（BUG-4704）；URL 没要、不值得缩、或转码
   /// 失败都返回 null，由调用方交出原图——降采样只是省内存，任何失败都不能让页白掉。
   /// [key] 是页在本页面内的稳定身份（LRU 键），[loadSource] 只在未命中时读原图。
+  /// [pageIndex] 已知时，这一页在转码队列出队那一刻若在屏上（当前跨页），就插到
+  /// 预热邻页之前（manga-6）。
   Future<Uint8List?> _fitPageBytes(
     String key,
     int? fitWidth,
-    Future<Uint8List> Function() loadSource,
-  ) async {
+    Future<Uint8List> Function() loadSource, {
+    int? pageIndex,
+  }) async {
     if (fitWidth == null) return null;
     try {
-      return await _pageFitter.fit(key, fitWidth, loadSource);
+      return await _pageFitter.fit(
+        key,
+        fitWidth,
+        loadSource,
+        urgent: pageIndex == null ? null : () => _pageOnScreen(pageIndex),
+      );
     } on Object catch (error, stackTrace) {
       ErrorLogService.instance.log('MangaFushiPage.fitPage', error, stackTrace);
       return null;
     }
+  }
+
+  /// [pageIndex] 是否属于屏上的当前跨页（条漫里每个跨页单元就是一页）。
+  bool _pageOnScreen(int pageIndex) {
+    final int spread = _currentSpread;
+    if (spread < 0 || spread >= _spreads.length) return false;
+    return _spreads[spread].pageIndices.contains(pageIndex);
   }
 
   Future<CustomSchemeResponse?> _loadMangaCustomScheme(
@@ -3700,26 +3728,22 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 分镜检测器（模型已下载才有）。**不看**「分镜导航」开关与阅读模式：制卡裁切只看
   /// 模型是否可用，导航与条漫的门控在各自调用方（[_tryPanelTurn] / [_miningPanels]）。
   Future<PanelDetector?> _ensurePanelDetector() async {
-    final PanelDetector? existing = _panelDetector;
+    final PanelDetector? existing = _panelDetectorSlot.current;
     if (existing != null) return existing;
     if (_panelModelUnavailableRevision == mangaPanelModelRevision) return null;
+    final int revision = mangaPanelModelRevision;
     final MangaPanelDetectorFactory? factory = mangaPanelDetectorFactory;
     if (factory == null) {
       _panelStatus = PanelDetectionStatus.unavailable;
       return null;
     }
     try {
-      final PanelDetector? detector = await factory();
-      if (!mounted) {
-        // 页面在建 session 期间被关掉：不能把已创建的 detector 直接丢掉（那就是
-        // 一份永不释放的 ONNX session）。
-        await detector?.close();
-        return null;
-      }
-      _panelDetector = detector;
-      _panelModelUnavailableRevision = detector == null
-          ? mangaPanelModelRevision
-          : null;
+      // 并发调用方共用同一次创建；页面在建 session 期间被关掉时，槽在落地那一刻
+      // 把它关掉（不然就是一份永不释放的 ONNX session）。
+      final PanelDetector? detector = await _panelDetectorSlot.obtain(factory);
+      if (!mounted) return null;
+      // 用发起时的修订号：创建期间下载完模型推进了修订号的话，下一次照常重试。
+      _panelModelUnavailableRevision = detector == null ? revision : null;
       _panelStatus = detector == null
           ? PanelDetectionStatus.unavailable
           : PanelDetectionStatus.ready;
@@ -3764,7 +3788,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         },
       );
       if (mounted && generation == _panelGeneration) {
-        _panelResults[pageIndex] = result;
+        // 抛错得来的失败（读页 / 推理途中异常）不进会话缓存，下次翻分镜重试；
+        // 检测器那一层同样不缓存它（gap-mangamisc-7）。
+        if (!result.retryable) _panelResults[pageIndex] = result;
         _panelStatus = result.status;
       }
       return result;
@@ -3822,6 +3848,21 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     );
     if (mounted) setState(() {});
     return true;
+  }
+
+  /// 落到一个跨页就在后台把它的分镜检测好（manga-21）：此前检测懒到按下翻页键
+  /// 才做，第一次按键要等「建检测器 + 读页 + 预处理 + 推理」整条链。只在分镜导航
+  /// 开着、且不是条漫时做（与 [_tryPanelTurn] 同一判据）；结果照常经
+  /// [_detectPanels] 进 `_panelResults`，换章 / 换模式推进 `_panelGeneration` 后
+  /// 迟到的结果自动作废。同时只有一个预热在飞，见 [MangaPanelPrewarmer]。
+  void _prewarmPanels() => _panelPrewarmer.request();
+
+  /// 预热目标：当前代际下的当前跨页；开关关着 / 条漫 / 页面已卸载时不预热。
+  ({int generation, int spread})? _panelPrewarmTarget() {
+    if (!mounted || !appModel.mangaPanelNavigation || _mode.isWebtoon) {
+      return null;
+    }
+    return (generation: _panelGeneration, spread: _currentSpread);
   }
 
   void _resetPanelNavigation() {
@@ -3932,6 +3973,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     await _replaceSpreadOcr(target);
     _updateCurrentPageImagePath();
     _recordProgress();
+    _prewarmPanels();
   }
 
   /// 墨水屏「每 N 页全刷」的计数入口（`EinkFullRefreshController.notePageTurn`）。
@@ -4434,8 +4476,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   ///
   /// 弹窗是纯原生 WebView，指针唤出它时 OS 焦点落在弹窗上。漫画在弹窗可见时
   /// **仍要**处理左右键（关弹窗并翻页）与 Escape（关弹窗），不收回这些键就全部
-  /// 落空——[onDictionaryPopupNavigationKey] 的转发只覆盖弹窗自己收到的键，
-  /// 覆盖不了「焦点悬空」的情况。
+  /// 落空——弹窗层的宿主按键转发（`onHostInputToken` / `dictionaryPopupKeyToken`）
+  /// 只覆盖弹窗自己收到的键，覆盖不了「焦点悬空」的情况。
   @override
   void onDictionaryPopupRendered(int index) {
     super.onDictionaryPopupRendered(index);
@@ -6410,6 +6452,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     _updateCurrentPageImagePath();
     _recordProgress();
+    _prewarmPanels();
   }
 
   /// 阅读器里的章节选择器。
@@ -9024,11 +9067,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
               kMangaZoomMaxPercent,
             );
             if (_zoomPercent == normalized) return;
-            if (mounted) {
-              setState(() => _zoomPercent = normalized);
-            } else {
-              _zoomPercent = normalized;
-            }
+            // 捏合 / Ctrl+滚轮每一步都回报一次：倍率只是下次重建窗口文档的初值和
+            // 右键菜单（打开时现读）的文案，release 下没有任何 build 消费者，直接
+            // 赋值即可，不为每一步重建整个阅读页。只有 debug 命中胶囊显示倍率。
+            _zoomPercent = normalized;
+            if (kDebugMode && mounted) setState(() {});
           },
         );
         // 页内指针 / 滚轮输入（捏合缩放、拖动平移、双击缩放…，JS 侧已节流）：只喂
