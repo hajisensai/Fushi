@@ -4039,8 +4039,13 @@ ID 不加盐以后实体是**内容寻址**的：两个集合拿同一份身份�
   改名），并入后断言 B 的牌组名。
 - 变异实测（内核，各自单独改、跑 `owner::`、还原）10 项全红：牌组 / 笔记类型不判（6 条红）、不比别的集合的定义（4）、去掉重发
   例外（1）、备选不往后试（1）、不按父牌组全名（1）、笔记类型自证恒真（1）、内置牌组恒自证（1）、笔记自证恒真（1）、卡片自证
-  恒真（1）、笔记自证恒假（3，合法场景红）。Dart 层：前两项合起来（旧行为）重编 raw_sql DLL 跑并入端到端，结果见 PR 描述。
+  恒真（1）、笔记自证恒假（3，合法场景红）。Dart 层：前两项合起来（旧行为）重编 `id_audit` + `raw_sql` 库（测试宿主优先加载
+  的那份）跑 `srs_profile_ownership_merge_test.dart`：exit 1，「A 的日志里不能有指向 B 的实体的操作」Expected 4 / Actual 8；
+  换回本分支编出的库 exit 0。
 - `cargo fmt --check` 0；`cargo test --profile quick --lib -j 4` 0，1450 passed / 0 failed / 39 ignored（基线 39，未新增）。
+- 续做复核（2026-11-20，上一位实现者额度中断后接手，头 `43125faa5e`）：上面两项变异在本机重跑（牌组 / 笔记类型不判 → 6 条红，
+  不比别的集合的定义 → 4 条红，各 exit 101，还原后工作区干净）；engine `srs_profile_ownership_merge_test.dart` +
+  `srs_profile_ownership_test.dart` 用本 worktree 编出的库 exit 0，79 条全过。
 
 ### 没做
 
