@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:fushi_engine/media/torrent/bt_site_parser_rule.dart'
+    show kBtSiteParserRuleTemplate;
 import 'package:fushi_server/src/admin/web_ui.dart';
 import 'package:fushi_server/src/admin/web_ui_en.dart';
 import 'package:fushi_server/src/config/server_config.dart';
@@ -133,6 +135,14 @@ void main() {
       expect(html, contains('const LANG = "zh";'));
       expect(html, contains('const EN = {};'));
       expect(html, isNot(contains('__FUSHI_')));
+      // 「怎么写解析规则」里的模板与 app 同一份（引擎常量），转义后原样出现。
+      expect(
+        html,
+        contains(
+          '<pre id="bt-parser-template">'
+          '${const HtmlEscape().convert(kBtSiteParserRuleTemplate)}</pre>',
+        ),
+      );
     });
 
     test('登录页按语言出文案与错误提示', () {

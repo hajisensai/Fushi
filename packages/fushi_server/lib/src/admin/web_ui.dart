@@ -16,6 +16,8 @@ library;
 
 import 'dart:convert';
 
+import 'package:fushi_engine/media/torrent/bt_site_parser_rule.dart'
+    show kBtSiteParserRuleTemplate;
 import 'package:fushi_server/src/admin/web_kit.dart';
 import 'package:fushi_server/src/admin/web_ui_assets.dart';
 import 'package:fushi_server/src/admin/web_ui_en.dart';
@@ -298,7 +300,8 @@ main{grid-column:1;padding:4px 16px 48px}
 <div class="form-grid"><label class="field is-wide">解析规则（可选，JSON）<textarea id="bt-parser" rows="4"></textarea></label>
 <label class="field is-wide">登录 Cookie（可选，仅带解析规则的站点）<input type="password" id="bt-cookie" autocomplete="off"></label></div>
 <p class="kit-supporting">只填地址即可，添加时会自动检测站点。</p>
-<p class="kit-supporting">自动检测认不出的站点，可以粘贴它的解析规则（JSON）；需要登录的站再填 Cookie。</p></div>
+<p class="kit-supporting">自动检测认不出的站点，可以粘贴它的解析规则（JSON）；需要登录的站再填 Cookie。</p>
+<details class="kit-supporting" id="bt-parser-help"><summary>怎么写解析规则</summary><p>解析规则用 CSS 选择器告诉服务端站点搜索页上的结果在哪："search" 填搜索页地址里域名之后的部分，搜索词换成 {query}；"rows" 选中包住整条结果的元素（通常是表格行 tr）；"fields" 里写这一行内部的选择器，"title" 必填，"magnet" / "torrent" / "infoHash" 至少一个，末尾加 @href 表示取属性而不是文字。</p><p>下载链接只在详情页时，让 "details" 指向详情页链接，再在 "detail" 段里写 "magnet" 或 "torrent"。不是 UTF-8 的站把 "encoding" 设为 windows-1251 或 latin1。规则里不含登录信息，需要登录的站另填 Cookie。用不到的部分直接删掉。</p><pre id="bt-parser-template">__FUSHI_BT_PARSER_TEMPLATE__</pre><div class="action-row"><button class="plain-button" id="btn-bt-template">填入模板</button></div></details></div>
 <h2 class="kit-title-medium">Torznab（Jackett / Prowlarr）</h2>
 <div id="ri-torznab"></div>
 <div class="action-row"><button class="outlined-button" id="btn-ri-add"><span class="msr-slot" data-fushi-icon="add"></span>添加 indexer</button><span class="kit-spacer"></span><button class="plain-button" id="btn-ri-reset">放弃修改</button><button class="primary-button" id="btn-ri-save">保存</button></div>
@@ -800,6 +803,7 @@ function renderBtSites(r){
     renderBtSites(res); renderRiState(res); loadSubscriptions();
   }));
 }
+$('#btn-bt-template').onclick = () => { const p = $('#bt-parser'); if (!p.value.trim()) p.value = $('#bt-parser-template').textContent; };
 $('#btn-bt-add').onclick = guard(async()=>{
   const url = $('#bt-url').value.trim(); if (!url) throw new Error(T('请填写站点地址'));
   const domains = btPicked($('#bt-domains'), 'data-bt-add-domain'); if (!domains.length) throw new Error(T('至少选择一个媒体域'));
@@ -1501,6 +1505,10 @@ String renderAdminWebUi(String language) {
       .replaceFirst('__FUSHI_HTML_LANG__', _htmlLang(language))
       .replaceFirst("'__FUSHI_LANG__'", jsonEncode(language))
       .replaceFirst('__FUSHI_EN__', en ? jsonEncode(kWebUiEnglish) : '{}')
+      .replaceFirst(
+        '__FUSHI_BT_PARSER_TEMPLATE__',
+        const HtmlEscape().convert(kBtSiteParserRuleTemplate),
+      )
       .replaceFirst('__FUSHI_KIT_HEAD__', webKitHeadTags())
       .replaceFirst('__FUSHI_KIT_BODY__', webKitBodyScripts())
       .replaceAll('__FUSHI_LOGO__', kWebUiLogoDataUri);
