@@ -419,9 +419,15 @@ Future<void> _main(_Options options) async {
     busyRetries: options.busyRetries,
     concurrency: options.concurrency,
   );
-  scheduler.localIsPeer = true;
+  // A coverage batch takes a worker's whole share at once
+  // (distChunkBudgetMs): this machine, admitted in a second while the others
+  // still push, would take the entire queue and run it alone at
+  // --concurrency=1. Coverage keeps it for the leftovers.
+  final bool coverage = options.flutterArgs.contains('--coverage');
+  scheduler.localIsPeer = !coverage;
   await Future.wait(<Future<void>>[
-    for (final DistWorker w in everyWorker) scheduler.drive(w),
+    for (final DistWorker w in coverage ? workers : everyWorker)
+      scheduler.drive(w),
   ]);
   scheduler.localIsPeer = false;
   if (options.offload && scheduler.results.isEmpty) {
@@ -433,11 +439,12 @@ Future<void> _main(_Options options) async {
     stdout.writeln('DIST OFFLOAD: no other machine took any suite');
     exit(_tally.declineCode);
   }
-  // Left only when this machine had no slot while the others still worked
-  // (or none of them could run these suites): now it queues here for them.
+  // Left over for this machine: suites no other machine ran while it was not
+  // driven yet (coverage) or had let go. Never one it was dropped from for
+  // failing -- that failure would only repeat.
   final List<DistWorker> idleHere = <DistWorker>[
     for (final DistWorker w in fallback)
-      if (!scheduler.isUsable(w)) w,
+      if (!scheduler.isUsable(w) && !scheduler.wasDropped(w)) w,
   ];
   if (queue.remaining.isNotEmpty && idleHere.isNotEmpty) {
     stdout.writeln(
@@ -580,15 +587,24 @@ class _Scheduler {
   /// [worker] prepared and was never dropped ([_usable]).
   bool isUsable(DistWorker worker) => _usable.contains(worker);
 
+  /// Workers dropped for a failed prepare or in the middle of the run (not
+  /// the ones let go because nothing was left for them).
+  final Set<DistWorker> _dropped = <DistWorker>{};
+
+  /// [worker] was dropped ([_dropped]).
+  bool wasDropped(DistWorker worker) => _dropped.contains(worker);
+
   /// Workers whose prepare is under way.
   final Set<DistWorker> _preparing = <DistWorker>{};
 
   /// Set by main() while this machine's worker is driven alongside the
-  /// others: it then shares their queue, and while it still waits for a
-  /// heavy slot here it is only wanted as long as another machine is
-  /// preparing or working too. With all of them gone (busy, unreachable,
-  /// failed) it leaves the heavy queue, so that heavy.dart -- which queues
-  /// here and keeps asking the other machines meanwhile -- takes over.
+  /// others: it then shares their queue. While it still waits for a heavy
+  /// slot here and nothing has run anywhere yet, it is only wanted as long
+  /// as another machine is preparing or working too: with all of them gone
+  /// (busy, unreachable, failed) it leaves the heavy queue and the run
+  /// declines, so that heavy.dart -- which queues here and keeps asking the
+  /// other machines meanwhile -- takes over. Once something ran it keeps its
+  /// place in the queue (the run will not decline any more).
   bool localIsPeer = false;
 
   static bool _isLocal(DistWorker w) => w.config.kind == DistWorkerKind.local;
@@ -607,6 +623,7 @@ class _Scheduler {
     workLeftForIt: queue.remaining.any(worker.eligible),
     localPeer: localIsPeer && _isLocal(worker),
     othersAtIt: _othersAtIt,
+    anyResults: results.isNotEmpty,
   );
 
   /// The units of every batch that ran to the end, by batch id.
@@ -659,6 +676,7 @@ class _Scheduler {
             localIsPeer &&
             _isLocal(worker) &&
             !_othersAtIt &&
+            results.isEmpty &&
             queue.remaining.any(worker.eligible);
         stdout.writeln(
           alone
@@ -677,6 +695,7 @@ class _Scheduler {
       _breakerLearns(worker);
     } on Object catch (e) {
       _live.remove(worker);
+      _dropped.add(worker);
       // No connection is "for now" like busy: nothing of the run got there.
       if (e is! DistWorkerBusy && e is! DistWorkerUnreachable) {
         _tally.failed(worker);
@@ -850,6 +869,7 @@ class _Scheduler {
     }
     _live.remove(worker);
     if (dropped) {
+      _dropped.add(worker);
       await worker.finish(runId);
     } else {
       // Kept prepared (checkout lock / heavy lease) for [rerunFailures];

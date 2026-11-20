@@ -632,12 +632,14 @@ void main() {
       bool workLeftForIt = true,
       bool localPeer = false,
       bool othersAtIt = true,
+      bool anyResults = false,
     }) => distWantedWhilePreparing(
       claimLost: claimLost,
       batchesInFlight: batchesInFlight,
       workLeftForIt: workLeftForIt,
       localPeer: localPeer,
       othersAtIt: othersAtIt,
+      anyResults: anyResults,
     );
 
     test('any worker: wanted while something it may run is left', () {
@@ -664,6 +666,12 @@ void main() {
       expect(
         wanted(localPeer: true, othersAtIt: true, workLeftForIt: false),
         isFalse,
+      );
+      // Something already ran: the run will not decline, so leaving the
+      // queue would only lose this machine its place for what is left.
+      expect(
+        wanted(localPeer: true, othersAtIt: false, anyResults: true),
+        isTrue,
       );
     });
 

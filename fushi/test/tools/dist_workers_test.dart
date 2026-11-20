@@ -781,6 +781,33 @@ void main() {
       expect('${r.result.stdout}', contains('tick 14'));
     }, timeout: const Timeout(Duration(minutes: 2)));
 
+    test('once a push reported its refs, silence (the far end gc) is no '
+        'stall', () async {
+      final Process p = await script(
+        "  stderr.writeln('To fushitest@host:work');\n"
+        "  stderr.writeln(' * [new reference] HEAD -> refs/dist/x');\n"
+        '  await Future<void>.delayed(const Duration(seconds: 5));',
+      );
+      final ({ProcessResult result, bool stalled}) r = await collectDistProcess(
+        p,
+        stallAfter: const Duration(seconds: 2),
+        settled: distPushReportedRefs,
+        kill: () => killTree(p),
+      );
+      expect(r.stalled, isFalse);
+      expect(r.result.exitCode, 0);
+    }, timeout: const Timeout(Duration(minutes: 2)));
+
+    test('only the ref report counts as a finished push', () {
+      expect(
+        distPushReportedRefs('Writing objects: 100% (5/5)\nTo host:work\n'),
+        isTrue,
+      );
+      expect(distPushReportedRefs('To host:work'), isTrue);
+      expect(distPushReportedRefs('Writing objects:  40% (2/5)\r'), isFalse);
+      expect(distPushReportedRefs('remote: To be or not\n'), isFalse);
+    });
+
     test('without a limit nothing watches', () async {
       final Process p = await script('');
       final ({ProcessResult result, bool stalled}) r = await collectDistProcess(

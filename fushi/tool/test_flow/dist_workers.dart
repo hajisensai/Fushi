@@ -777,12 +777,23 @@ Future<void> distKillStepTree(Process p) async {
   }
 }
 
+/// How long [collectDistProcess] waits for a process's stdout / stderr to
+/// close once it exited: a grandchild that outlived it (or the kill) may
+/// hold the pipes open, which must not turn into the silent hang the stall
+/// watchdog exists for.
+const Duration kDistPipeDrain = Duration(seconds: 10);
+
 /// Collects [p]'s output and exit code. With [stallAfter], [kill] is called
 /// once [p] printed nothing on stdout or stderr for that long (looked at
-/// every quarter of it, at most every 5 s), and the result says `stalled`.
+/// every quarter of it, at most every 5 s), and the result says `stalled` --
+/// until [settled] says the stderr so far shows the work is done (a push's
+/// ref report: what follows, such as the far end's auto gc, may be silent).
+/// After [p] exits its pipes get [kDistPipeDrain] to close; what came by
+/// then is the output.
 Future<({ProcessResult result, bool stalled})> collectDistProcess(
   Process p, {
   Duration? stallAfter,
+  bool Function(String stderrSoFar)? settled,
   required Future<void> Function() kill,
 }) async {
   final Stopwatch quiet = Stopwatch()..start();
@@ -796,25 +807,48 @@ Future<({ProcessResult result, bool stalled})> collectDistProcess(
       if (quiet.elapsed < stallAfter) return;
       t.cancel();
       stalled = true;
-      unawaited(kill());
+      unawaited(
+        kill().catchError((Object _) {
+          // Already gone, or taskkill missing: the exit / drain below copes.
+        }),
+      );
     });
   }
-  const Utf8Decoder decoder = Utf8Decoder(allowMalformed: true);
-  Stream<String> heard(Stream<List<int>> s) => s
-      .map((List<int> d) {
+  final StringBuffer out = StringBuffer();
+  final StringBuffer err = StringBuffer();
+  Future<void> drain(Stream<List<int>> s, StringBuffer into, bool isErr) => s
+      .transform(const Utf8Decoder(allowMalformed: true))
+      .forEach((String chunk) {
         quiet.reset();
-        return d;
-      })
-      .transform(decoder);
-  final Future<String> out = heard(p.stdout).join();
-  final Future<String> err = heard(p.stderr).join();
+        into.write(chunk);
+        if (isErr &&
+            watchdog != null &&
+            settled != null &&
+            chunk.contains('\n') &&
+            settled(into.toString())) {
+          watchdog!.cancel();
+          watchdog = null;
+        }
+      });
+  final Future<void> outDone = drain(p.stdout, out, false);
+  final Future<void> errDone = drain(p.stderr, err, true);
   final int code = await p.exitCode;
   watchdog?.cancel();
+  try {
+    await Future.wait(<Future<void>>[outDone, errDone]).timeout(kDistPipeDrain);
+  } on TimeoutException {
+    // Held open by a survivor: keep what arrived.
+  }
   return (
-    result: ProcessResult(p.pid, code, await out, await err),
+    result: ProcessResult(p.pid, code, out.toString(), err.toString()),
     stalled: stalled,
   );
 }
+
+/// A `git push` stderr that already reported its refs (`To <remote>`): the
+/// transfer is over, the rest is the far end tidying up.
+bool distPushReportedRefs(String stderr) =>
+    RegExp(r'(^|[\r\n])To \S').hasMatch(stderr);
 
 /// [stderr] of a `--progress` git command with each `\r`-redrawn line
 /// reduced to its last state (the log keeps what was finally shown).
@@ -920,17 +954,21 @@ class LocalDistWorker extends DistWorker {
   @override
   int get maxCommandChars => kLocalMaxCommandChars;
 
-  /// [abandon] was called for the current [prepare]: its heavy-lease wait
-  /// leaves the queue, and a slot it gets after all is let go unused.
-  bool _abandoned = false;
+  /// The current [prepare]'s abandon token. One per call: a worker the
+  /// scheduler let go may be prepared again for the leftovers while the
+  /// abandoned call still sits in the heavy queue (it notices only at its
+  /// next poll), and that call must stay abandoned -- revived, it would take
+  /// the slot and this checkout's worktree lock, and the new call would wait
+  /// for that lock forever.
+  DistLocalLeaseWait? _wait;
 
   @override
-  Future<void> abandon() async => _abandoned = true;
+  Future<void> abandon() async => _wait?.abandoned = true;
 
   @override
   Future<void> prepare(DistSnapshot snapshot, String runId, IOSink log) async {
-    // A worker the scheduler let go may be prepared again for the leftovers.
-    _abandoned = false;
+    final DistLocalLeaseWait wait = DistLocalLeaseWait();
+    _wait = wait;
     // pub workspace: the resolution lands in the workspace root's .dart_tool.
     if (!File('$repoRoot/.dart_tool/package_config.json').existsSync() &&
         !File('$_fushiDir/.dart_tool/package_config.json').existsSync()) {
@@ -957,15 +995,15 @@ class LocalDistWorker extends DistWorker {
     // One flutter test at a time in this checkout, like every other heavy
     // run on this machine; held for the whole dist run. Queued like any
     // heavy run, and left as soon as [abandon] says the others did it all
-    // (the slot is never used once abandoned: [_LocalAbandonRival]).
+    // (the slot is never used once abandoned: [DistLocalLeaseWait]).
     _leaseLabel = 'dist_test local worker $runId';
     final HeavyLease lease = await acquireHeavyLease(
       need: heavyNeedFor(HeavyKind.test),
       label: _leaseLabel,
       worktreeRoot: repoRoot,
-      rival: _LocalAbandonRival(this),
+      rival: wait,
     );
-    if (_abandoned) {
+    if (wait.abandoned) {
       // Admitted on a lane that skips slots (nested lease, CI) after the
       // scheduler had let go of this worker: nothing may run on it.
       lease.release();
@@ -1396,20 +1434,18 @@ class LocalDistWorker extends DistWorker {
   }
 }
 
-/// The local worker's heavy-lease wait as a [HeavyLeaseRival]: the "other
-/// side" is the rest of the dist run, which "took it" once the scheduler
-/// abandoned this worker. Checked under the admission gate too, so a slot
-/// freed at that very moment is never used by a worker nobody wants.
-class _LocalAbandonRival implements HeavyLeaseRival {
-  _LocalAbandonRival(this._worker);
-
-  final LocalDistWorker _worker;
+/// One [LocalDistWorker.prepare]'s heavy-lease wait as a [HeavyLeaseRival]:
+/// the "other side" is the rest of the dist run, which "took it" once the
+/// scheduler abandoned this call. Checked under the admission gate too, so a
+/// slot freed at that very moment is never used by a call nobody wants.
+class DistLocalLeaseWait implements HeavyLeaseRival {
+  bool abandoned = false;
 
   @override
-  bool get tookIt => _worker._abandoned;
+  bool get tookIt => abandoned;
 
   @override
-  bool claimHere() => !_worker._abandoned;
+  bool claimHere() => !abandoned;
 }
 
 class SshDistWorker extends DistWorker {
@@ -1489,6 +1525,7 @@ class SshDistWorker extends DistWorker {
     String? workingDirectory,
     String? input,
     Duration? stallAfter,
+    bool Function(String stderrSoFar)? settled,
   }) async {
     if (_abandoned) throw DistWorkerError('$name: no longer needed');
     final Process p = await Process.start(
@@ -1503,6 +1540,7 @@ class SshDistWorker extends DistWorker {
         await collectDistProcess(
           p,
           stallAfter: stallAfter,
+          settled: settled,
           kill: () => _killStep(p),
         );
     _stepProcess = null;
@@ -1850,6 +1888,9 @@ class SshDistWorker extends DistWorker {
         workingDirectory: repoRoot,
         environment: <String, String>{'GIT_SSH_COMMAND': sshCommand},
         stallAfter: kDistPushStall,
+        // After the ref report the far end may run its auto gc in the
+        // foreground, printing nothing: no longer a stall.
+        settled: distPushReportedRefs,
       );
     } on DistWorkerStalled catch (e) {
       log.writeln('== push (stalled, ${watch.elapsed.inSeconds}s)\n$e');
