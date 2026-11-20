@@ -147,6 +147,10 @@ class OnlineMangaChapterPageRefs {
   /// 页数（开会话时定，之后不变）。
   int get length => _pages.length;
 
+  /// 重解析后发现源端页数已变：这份页表再也取不到页，持有者（缓存页表的互联
+  /// host）要丢掉它，下次按新页数重开。
+  bool get pageCountChanged => _mismatch != null;
+
   /// 当前有效的第 [index] 页引用（取消在飞请求要对得上当前引用）。
   OnlineMangaPageRef operator [](int index) => _pages[index];
 
@@ -356,6 +360,9 @@ abstract interface class OnlineMangaRuntimeAdapter {
   });
 
   /// 取一页字节。只接受本运行时自己在 [resolveChapterPages] 里造的引用。
+  ///
+  /// 引用随运行时进程失效（桌面 sidecar 重启）时抛 [OnlineMangaPageRefExpired]：
+  /// 长期持有页表的调用方经 [OnlineMangaChapterPageRefs] 取页，由它重解析换新引用。
   Future<Uint8List> fetchChapterPage(OnlineMangaPageRef page);
 
   /// 取封面字节（入库时落盘一份，之后书架离线可见）。
