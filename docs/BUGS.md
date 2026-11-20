@@ -331,6 +331,7 @@
 | [BUG-4948](bugs/BUG-4948-srs-conflicts-label-n-plus-one.md) | ✅ | ✅ | 冲突中心逐条读实体名，大冲突量的库上整页重读 63 秒、内存翻倍，停在冲突页时意外退出 |
 | [BUG-4950](bugs/BUG-4950-srs-conflicts-same-count-quadratic-build.md) | ✅ | ✅ | 冲突中心每次重建都按条全表扫「同类」计数（O(n²)），几千条扣住的删除把主线程卡住数秒，iOS 退出被看门狗杀 |
 | [BUG-4953](bugs/BUG-4953-ios-update-kill-false-crash-report.md) | ✅ | ✅ | iOS 装新版时旧进程被系统结束，下次启动误报「意外退出」闪退 |
+| [BUG-4954](bugs/BUG-4954-fushi-db-background-open-ioerr-no-recovery.md) | ✅ | ✅ | 探测开库过了、drift 后台连接撞上侧车 I/O 错误时不走恢复阶梯，启动落进通用错误屏 |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
 | [BUG-4903](bugs/BUG-4903-home-desktop-continue-cut-edge-title-concat.md) | ✅ | ✅ | 首页（桌面）「继续」右侧卡被窗口切掉一半、标题拼接成「Re：ゼロ…1<Re：…」 |
