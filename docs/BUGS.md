@@ -33,7 +33,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4373 条。点号进各自文件。
+> 共 4374 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -124,6 +124,7 @@
 | [BUG-4970](bugs/BUG-4970-web-novel-tail-chapter-snapshot-desync.md) | ✅ | ✅ | web-novel-tail-chapter-snapshot-desync |
 | [BUG-4969](bugs/BUG-4969-interconnect-book-download-progress-lost.md) | ✅ | ✅ | 从对端下书：EPUB 落地后进度看不到、卡片换位，后台任务里也看不到 |
 | [BUG-4968](bugs/BUG-4968-flatpak-baseapp-state-dir-cross-fs.md) | ✅ | ✅ | CI flatpak-baseapp 未命中缓存时 flatpak-builder 报 state dir 与 target dir 不在同一文件系统 |
+| [BUG-4962](bugs/BUG-4962-bound-session-lookup-switch.md) | ✅ | ✅ | 关掉 host 的「用这台服务器查词典」后，游戏串流 / 视频遥控查词恒无结果 |
 | [BUG-4958](bugs/BUG-4958-aggregate-sync-ui-isolate-anr.md) | ✅ | ✅ | 互联/云聚合同步在 UI isolate 上同步跑整份快照折叠与指纹，慢设备 ANR |
 | [BUG-4957](bugs/BUG-4957-audiobook-concat-shuffle-order-quadratic.md) | ✅ | ✅ | TTS 朗读 / 多文件有声书建 ConcatenatingAudioSource 时 just_audio 默认 ShuffleOrder 逐个随机 List.insert，O(n²) 占满主线程到 ANR |
 | [BUG-4956](bugs/BUG-4956-ios-popup-entries-fetch-status-zero-oom.md) | ✅ | ✅ | iOS 阅读器查词时 Out of Memory 闪退（词条拦截投递在 iOS 上恒失败 + 历史整表重写） |

@@ -70,6 +70,10 @@ class FushiRemoteLookupClient {
   /// 候选轮询 / 鉴权 / 指纹钉扎 / socket 回收统一由 [InterconnectPostTransport]
   /// 承担——本类只管端点、超时与响应体的语义解析。
   final InterconnectPostTransport _transport;
+
+  /// 绑定会话（游戏串流 / 视频遥控）的那台 host：被查的内容在它上面播放，查词必须由它
+  /// 回答。这类客户端不做「词典来源」选择，所以 [FushiClientUrl.lookupEnabled] 与
+  /// [_skipDictionaryHost] 对它不适用（BUG-4962）。
   final FushiClientUrl? _onlyCandidate;
 
   /// RPC 往返预算：量的是「对端还活着吗」。
@@ -456,6 +460,9 @@ class FushiRemoteLookupClient {
   ///
   /// 词典端点还按共享可达性追踪跳过已知不可达的 host（BUG-4692）；音频端点不跳（它有
   /// 自己的失败冷却）。每个候选的传输层结局由传输层经全局上报点记进可达性追踪。
+  ///
+  /// 两道筛都是「从已配对 host 里挑词典来源」的语义；绑定会话（[_onlyCandidate]）
+  /// 没有来源可挑，只筛它会让那台 host 关掉开关后串流 / 遥控查词一律无结果（BUG-4962）。
   Future<InterconnectPostOutcome> _postLookup({
     required String path,
     required Map<String, dynamic> body,
@@ -471,7 +478,7 @@ class FushiRemoteLookupClient {
       authErrorMessage: 'Fushi server rejected remote lookup token',
       onlyCandidate: _onlyCandidate,
       bodyFor: bodyFor,
-      candidateFilter: dictionaryLookup
+      candidateFilter: dictionaryLookup && _onlyCandidate == null
           ? (FushiClientUrl candidate) =>
                 candidate.lookupEnabled &&
                 !(skip?.call(remoteDictionaryHostIdOf(candidate)) ?? false)
