@@ -209,7 +209,8 @@ class ErrorLogService extends ChangeNotifier
     if (file.lengthSync() <= _maxFileBytes) return;
     final List<int> bytes = file.readAsBytesSync();
     if (bytes.length <= _maxFileBytes) return;
-    file.writeAsStringSync(_trimLogBytes(bytes), flush: true);
+    // 不 fsync（BUG-4943）：logFatal 在主线程调，进程死不丢页缓存。
+    file.writeAsStringSync(_trimLogBytes(bytes));
   }
 
   /// [directoryOverride] 仅供测试注入临时目录（端到端验面包屑恢复，不碰
@@ -307,7 +308,7 @@ class ErrorLogService extends ChangeNotifier
   }
 
   /// 在调用 native 词典导入 FFI 之前**同步**落盘一条面包屑。[detail] 应能唯一
-  /// 标识本次导入（如词典文件名）。必须同步，否则进程在异步 flush 前就已崩溃。
+  /// 标识本次导入（如词典文件名）。必须同步写（写进页缓存即可，不 fsync），否则进程在异步写排上队前就已崩溃。
   ///
   /// 写入内容带时间戳：用户「正常强杀」恰好命中某本 FFI 执行中时，下次启动会
   /// 把残留误报为崩溃（与真硬崩在文件层不可区分）；带上时间戳让人工读日志时
@@ -321,10 +322,8 @@ class ErrorLogService extends ChangeNotifier
 
   void markImportStart(String detail) {
     try {
-      _breadcrumbFile?.writeAsStringSync(
-        '[${DateTime.now()}] $detail',
-        flush: true,
-      );
+      // 不 fsync（BUG-4943）：进程死不丢页缓存，见 SessionMarker 文档。
+      _breadcrumbFile?.writeAsStringSync('[${DateTime.now()}] $detail');
     } catch (e) {
       debugPrint('[ErrorLogService] markImportStart failed: $e');
     }
@@ -346,8 +345,8 @@ class ErrorLogService extends ChangeNotifier
 
   /// TODO-607 P0-2：查词弹窗栈层进出时**同步**写一条查词面包屑（[_lookupBreadcrumbFile]）。
   /// [depth] 是当前**可见**查词栈深度（0=已无可见弹窗，1=顶层查词，>=2=嵌套查词第
-  /// `depth` 层）；[topTerm] 是栈顶在查的词（可空）。必须同步落盘，否则进程在异步
-  /// flush 前就已 native 崩溃。[depth]<=0 时改为清掉面包屑（栈已空，无活跃查词，
+  /// `depth` 层）；[topTerm] 是栈顶在查的词（可空）。必须同步写（不 fsync），否则进程在异步
+  /// 写排上队前就已 native 崩溃。[depth]<=0 时改为清掉面包屑（栈已空，无活跃查词，
   /// 此后再崩与查词无关——避免把「正常关弹窗后很久的崩溃」误报成查词崩）。
   ///
   /// 由 [DictionaryPopupController] 的栈进出方法经注入回调驱动（三查词表面共用一份
@@ -360,9 +359,9 @@ class ErrorLogService extends ChangeNotifier
     }
     try {
       final String term = (topTerm == null || topTerm.isEmpty) ? '?' : topTerm;
+      // 不 fsync（BUG-4943）：查词弹窗每次进出都在主线程写，fsync 会卡出 ANR。
       _lookupBreadcrumbFile?.writeAsStringSync(
         '[${DateTime.now()}] 查词栈深度=$depth（>=2 为嵌套查词），栈顶词=「$term」',
-        flush: true,
       );
     } catch (e) {
       debugPrint('[ErrorLogService] markLookupStackDepth failed: $e');
@@ -401,13 +400,11 @@ class ErrorLogService extends ChangeNotifier
   /// TODO-1260：在 `AppModel.initialise()` 每个高风险 IO 步骤**前**同步写一条启动步进
   /// 面包屑（带时间戳）。若这一步的 IO 永不返回（掉线数据根盘），进程被强杀后下次启动
   /// 会从 [_initStepFile] 残留读到 `[时间] $step`，折成 `AppInit.hangRecovered`。必须
-  /// 同步落盘（`flush: true`），否则 hang→强杀期间异步缓冲来不及写盘。
+  /// 同步写（进页缓存即可，不 fsync：BUG-4943），否则 hang→强杀期间异步写来不及排上。
   void markInitStep(String step) {
     try {
-      _initStepFile?.writeAsStringSync(
-        '[${DateTime.now()}] $step',
-        flush: true,
-      );
+      // 不 fsync（BUG-4943）：进程死不丢页缓存，见 SessionMarker 文档。
+      _initStepFile?.writeAsStringSync('[${DateTime.now()}] $step');
     } catch (e) {
       debugPrint('[ErrorLogService] markInitStep failed: $e');
     }
@@ -470,7 +467,7 @@ class ErrorLogService extends ChangeNotifier
   /// 致命错误后进程可能立刻被带崩（尤其 `PlatformDispatcher.onError` 接住的、
   /// 来自 platform/原生回调的异常），常规 [log] 的异步 `_appendToFile` 来不及把
   /// 缓冲 flush 到磁盘——错误日志页就空了。这里在内存登记之外，额外用
-  /// `writeAsStringSync(flush:true)` **同步**把这条 entry 追加进日志文件（复用
+  /// `writeAsStringSync`（不 fsync，BUG-4943）**同步**把这条 entry 追加进日志文件（复用
   /// 导入/查词面包屑同一「同步落盘存活崩溃」范式），保证即便下一刻崩溃，这条致命
   /// 错误也已在磁盘上，下次启动能读到。同步 IO 仅在罕见的致命路径触发，不影响热路径。
   @override
@@ -490,7 +487,7 @@ class ErrorLogService extends ChangeNotifier
       _logFile?.writeAsStringSync(
         _formatEntryForFile(entry),
         mode: FileMode.append,
-        flush: true,
+        // 不 fsync（BUG-4943）：进程死不丢页缓存，见 SessionMarker 文档。
       );
       _trimLogFileToMaxBytesSync();
     } catch (e) {

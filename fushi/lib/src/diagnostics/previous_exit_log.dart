@@ -298,7 +298,17 @@ const int kSessionMemorySampleCount = 6;
 /// 内存采样间隔。
 const Duration kMemorySampleInterval = Duration(seconds: 30);
 
-/// 会话标记文件：每次状态变化**同步**整份覆写（几十字节），进程下一刻被杀也已落盘。
+/// 会话标记文件：每次状态变化**同步**整份覆写（几十字节），写进内核页缓存后进程下一刻被杀
+/// 也不丢。
+///
+/// 诊断标记（会话标记、活动 / 查词 / 导入 / 启动步进面包屑、致命错误同步追加）的落盘语义
+/// （BUG-4943，反馈 OU6bZvpCd0）：**同步 `write` 进内核页缓存，不 fsync**。这些标记要防的是「进程下一刻没了」——Dart 接不到的原生崩溃、SIGKILL、系统回收、
+/// 看门狗强杀。进程死不丢页缓存：`write(2)` 返回后数据归内核，进程怎么死都会照常回写。
+/// fsync 只多防「整机掉电 / 内核崩溃」，而那种情况下「上次怎么没的」本来就判不准。
+/// 代价却落在主线程上：Flutter 3.29 起 Android 的 UI isolate 跑在平台主线程，低端机
+/// IO 拥塞时一次 fsync 能卡几秒，每 30 秒的内存采样、每次生命周期 / 内存压力都同步
+/// fsync 会话标记，被系统判 ANR（主线程 state=D 停在 `libc fsync`）。所以这些标记一律
+/// 只同步写、不带 `flush: true`；守卫见 `test/diagnostics/diagnostic_marker_no_fsync_guard_test.dart`。
 class SessionMarker {
   SessionMarker(this.file, {required this.pid, required this.version});
 
@@ -440,7 +450,7 @@ class SessionMarker {
           'launchDetail': _launchDetail,
           if (_memorySamples.isNotEmpty) 'memorySamples': _memorySamples,
         }),
-        flush: true,
+        // 不 fsync（BUG-4943）：进程死不丢页缓存，见 [SessionMarker] 文档。
       );
     } on FileSystemException catch (e) {
       debugPrint('[PreviousExitLog] session marker write failed: $e');
@@ -1569,10 +1579,8 @@ abstract final class ActivityBreadcrumb {
     final File? f = _file(activity);
     if (f == null) return;
     try {
-      f.writeAsStringSync(
-        '[${DateTime.now().toIso8601String()}] $detail',
-        flush: true,
-      );
+      // 不 fsync（BUG-4943）：进程死不丢页缓存，见 [SessionMarker] 文档。
+      f.writeAsStringSync('[${DateTime.now().toIso8601String()}] $detail');
     } on FileSystemException catch (e) {
       debugPrint('[ActivityBreadcrumb] mark $activity failed: $e');
     }
