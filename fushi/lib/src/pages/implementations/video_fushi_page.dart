@@ -304,7 +304,6 @@ import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
         youtubeCaptionTrackLabel,
         YoutubeVideoVariant,
         YoutubeVariantSet,
-        resolveYoutubeVideoVariants,
         isYoutubeUrl,
         YoutubeManifestException,
         youtubeVideoIdOrNull;
@@ -3620,7 +3619,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   int _hlsDetectSeq = 0;
 
   /// YouTube 画质档（用户报「YouTube 没法调画质」）：与 HLS 画质并行的一套状态，**懒解析**
-  /// ——用户点开画质菜单时才 [resolveYoutubeVideoVariants]（一次 getManifest）填 [_youtubeVariants]
+  /// ——用户点开画质菜单时才经 [UrlStreamVideoClient.youtubeQualityVariants] 填 [_youtubeVariants]
+  /// （起播那次 getManifest 已算好就直接用，没有才现取一次）
   /// （各档 video-only 流，高→低）。[_selectedYoutubeVariantIndex] 当前选中档（-1=自动=解析器
   /// 默认最佳）；[_youtubeVariantsAudioUrl] 分离音轨（切档保持同一音频）；[_youtubeVariantsLoading]
   /// 解析中（画质侧栏显 spinner）。切档走 [_switchYoutubeVariant]（换 video-only URL + 同音轨重载，
