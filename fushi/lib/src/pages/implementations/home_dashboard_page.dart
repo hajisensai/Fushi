@@ -2409,10 +2409,9 @@ class _HomeDashboardPageState
         key: ValueKey<String>('home-continue-block/$index'),
         shape: fushiCoverBlockShape(context, size),
         onTap: () => unawaited(_openContinueEntry(appModel, entry)),
-        child: FushiTooltip(
-          message: _continueDisplayTitle(entry),
-          child: block,
-        ),
+        // 色块上已印着标题（或刮削艺术字），悬停不再弹同名 tooltip；读屏的
+        // 标题由 [FushiCoverBlock] 自己的文字 / logo 语义给出。
+        child: block,
       ),
     );
   }
@@ -3339,10 +3338,9 @@ class _HomeDashboardPageState
         key: ValueKey<String>('home-recent-block/$index'),
         shape: fushiCoverBlockShape(context, size),
         onTap: () => unawaited(_openContinueEntry(appModel, entry)),
-        child: FushiTooltip(
-          message: _continueDisplayTitle(entry),
-          child: block,
-        ),
+        // 色块上已印着标题（或刮削艺术字），悬停不再弹同名 tooltip；读屏的
+        // 标题由 [FushiCoverBlock] 自己的文字 / logo 语义给出。
+        child: block,
       ),
     );
   }
