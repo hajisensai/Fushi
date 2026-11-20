@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/dandanplay_file_key.dart'
     show DandanplayFileKey;
+import 'package:fushi_engine/models/local_audio_content_id.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
@@ -169,21 +170,50 @@ SyncKeyDiff computeKeyUnionDiff({
 
 // ── 本地音频 ──────────────────────────────────────────────────────────────────
 
-/// host 实时本地音频来源的清单条目（键 = displayName）。
+/// host 实时本地音频来源的清单条目。
 ///
-/// [displayName] 是用户设置的显示名，用作跨设备 union-key（与 orchestrator
-/// `kSyncLocalAudioNamespace` 的资产名语义一致）。
+/// 跨设备身份是 [contentId]（库的内容指纹，拍板 pr3481）：同一份库在两端名字
+/// 不同也认作同一份，名字相同而内容不同则是两份。[displayName] 只用于展示，以及
+/// 对端是旧版本（清单里没有 `contentId`）时退回按名匹配。
+///
+/// 单项端点 `/api/library/localaudio/<key>` 的 key：新版本 host 先按 contentId
+/// 认、再按 displayName 认，旧版本 host 只认 displayName。
 class RemoteLocalAudioInfo {
-  const RemoteLocalAudioInfo({required this.displayName});
+  const RemoteLocalAudioInfo({required this.displayName, this.contentId});
 
   final String displayName;
+  final String? contentId;
+
+  /// 向这台 host 请求这份库时用的 key：清单里给了合格的 contentId 就用它（不受
+  /// 撞名影响），否则（旧 host）只能用 displayName。
+  String get key => isLocalAudioContentId(contentId) ? contentId! : displayName;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'displayName': displayName,
+    'contentId': ?contentId,
   };
 
-  static RemoteLocalAudioInfo fromJson(Map<String, Object?> json) =>
-      RemoteLocalAudioInfo(displayName: json['displayName']?.toString() ?? '');
+  static RemoteLocalAudioInfo fromJson(Map<String, Object?> json) {
+    final Object? id = json['contentId'];
+    return RemoteLocalAudioInfo(
+      displayName: json['displayName']?.toString() ?? '',
+      contentId: id is String && isLocalAudioContentId(id) ? id : null,
+    );
+  }
+}
+
+/// `/api/capabilities` 的 `liveLibrary` 里声明「本地音频清单带内容身份、单项端点
+/// 认 contentId」的能力位（拍板 pr3481）。老 host 无此位 → client 只能按显示名
+/// 匹配，并在同步报告里提示升级对端。
+const String kLiveLibraryLocalAudioContentIdCapability = 'localAudioContentId';
+
+/// [capabilities]（`GET /api/capabilities` 的解码结果，老 host 为 null）是否声明
+/// [kLiveLibraryLocalAudioContentIdCapability]。
+bool interconnectHostReportsLocalAudioContentId(Object? capabilities) {
+  if (capabilities is! Map) return false;
+  final Object? live = capabilities['liveLibrary'];
+  if (live is! Map) return false;
+  return live[kLiveLibraryLocalAudioContentIdCapability] == true;
 }
 
 /// 旧名兼容：本地音频 diff 已并入 [SyncKeyDiff]。
@@ -3452,23 +3482,24 @@ abstract class FushiLibraryHostService {
 
   // ── 本地音频 ───────────────────────────────────────────────────────────────
 
-  /// host 当前本地音频来源清单（从已注入的 localAudioEntries 取 displayName）。
+  /// host 当前本地音频来源清单（displayName + 内容身份 contentId）。
   Future<List<RemoteLocalAudioInfo>> listLocalAudio();
 
-  /// 即时把 displayName 为 [displayName] 的本地音频库打包成临时文件，返回该文件。
+  /// 即时把 [key] 指向的本地音频库打包成临时文件，返回该文件。[key] 先按内容
+  /// 身份 contentId 认、再按 displayName 认（旧版本客户端只会传 displayName）。
   /// 调用方负责删除返回的临时文件（及其父临时目录）。
-  /// [displayName] 含路径穿越字符时抛 [ArgumentError]；
+  /// [key] 含路径穿越字符时抛 [ArgumentError]；
   /// 找不到该来源或其 DB 文件不存在时抛 [StateError]。
-  Future<File> exportLocalAudio(String displayName);
+  Future<File> exportLocalAudio(String key);
 
   /// 把本地音频包文件导入 host（解包 + 注册回调）。
   /// 实现应调用 [onLocalAudioImported] 回调完成 native 注册；
   /// 回调为 null 时抛 [UnsupportedError]。
   Future<void> importLocalAudio(File packageFile);
 
-  /// 从 host 删除 displayName 为 [displayName] 的本地音频来源。
-  /// [displayName] 含路径穿越字符时抛 [ArgumentError]。
-  Future<void> deleteLocalAudio(String displayName);
+  /// 从 host 删除 [key] 指向的本地音频来源（同 [exportLocalAudio]：先按 contentId
+  /// 认、再按 displayName 认）。[key] 含路径穿越字符时抛 [ArgumentError]。
+  Future<void> deleteLocalAudio(String key);
 
   // ── 有声书包 ──────────────────────────────────────────────────────────────
 

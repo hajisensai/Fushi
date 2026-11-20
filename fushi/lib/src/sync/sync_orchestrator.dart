@@ -14,6 +14,7 @@ import 'package:fushi/src/models/dictionary_repository.dart'
     show DictionaryRepository;
 import 'package:fushi/src/models/local_audio_manager.dart';
 import 'package:fushi/src/sync/peer_book_tombstone_alias.dart';
+import 'package:fushi_engine/models/local_audio_content_id.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/video_metadata_work_target.dart';
@@ -151,6 +152,44 @@ String _stripLocalAudioAssetSuffix(String name) {
     return name.substring(0, name.length - _legacyLocalAudioAssetSuffix.length);
   }
   return name;
+}
+
+/// 本地音源库包的**身份旁注**后缀（拍板 pr3481）：`<base>~<contentId>` + 本后缀，
+/// 空文件，只用文件名承载 `<base>.fushiaudiolib` 的内容身份。
+const String _localAudioIdentityMarkerSuffix = '.fushiaudioid';
+
+/// 库包基名 [base]（资产名去掉 `.fushiaudiolib`）的身份旁注资产名。
+@visibleForTesting
+String localAudioIdentityMarkerName(String base, String contentId) =>
+    '$base~$contentId$_localAudioIdentityMarkerSuffix';
+
+/// 解析身份旁注资产名，得到 `(库包基名, contentId)`；不是旁注 / 身份格式不对
+/// 返回 null。基名里本身可以有 `~`：按最后一个 `~` 切。
+({String base, String contentId})? _parseLocalAudioIdentityMarker(String name) {
+  if (!name.endsWith(_localAudioIdentityMarkerSuffix)) return null;
+  final String stem = name.substring(
+    0,
+    name.length - _localAudioIdentityMarkerSuffix.length,
+  );
+  final int cut = stem.lastIndexOf('~');
+  if (cut <= 0) return null;
+  final String id = stem.substring(cut + 1);
+  if (!isLocalAudioContentId(id)) return null;
+  return (base: stem.substring(0, cut), contentId: id);
+}
+
+/// 云上一个本地音源库包：资产、基名（去掉库包后缀，= 推送端的显示名或撞名后
+/// 另起的名）、身份旁注给出的内容身份（旧版本传的包没有旁注 → null）。
+class _CloudLocalAudio {
+  const _CloudLocalAudio({
+    required this.asset,
+    required this.base,
+    required this.contentId,
+  });
+
+  final AssetEntry asset;
+  final String base;
+  final String? contentId;
 }
 
 /// Reserved top-level folder holding the shared collection manifest
@@ -2460,11 +2499,17 @@ class SyncOrchestrator {
   }
 
   /// Union-syncs local audio source DBs in the `__local_audio__` namespace.
-  /// 资产名 = displayName（[LocalAudioDbEntry.path] 含本机时间戳，每机不同不可用）。
-  /// push 本地独有（displayName 不在远端）/ pull 远端独有（displayName 不在本地）。
   ///
-  /// 已知限制：displayName 无唯一约束，撞名按「同一库」union 跳过（与词典按 name
-  /// 同语义）；真正的唯一性去重列为 follow-up。
+  /// 身份是库的**内容身份** contentId（拍板 pr3481，见
+  /// `local_audio_content_id.dart`），不再是 displayName：同一份库在各端名字不同
+  /// （`android.db` / 按子来源起的名 / 推荐包的 Japanese audio）也不再各传一份。
+  ///
+  /// 云盘只能列文件名，contentId 写在**身份旁注**的文件名里：每个库包
+  /// `<base>.fushiaudiolib` 旁边放一个空的 `<base>~<contentId>.fushiaudioid`
+  /// （[localAudioIdentityMarkerName]）。列一次目录就拿到全部身份，不必下载 GB
+  /// 级的包；旁注各写各的，没有共享清单的读-改-写竞态；旧版本只认库包后缀，
+  /// 看不见旁注。没有旁注的库包（旧版本传的）退回按 displayName 认；本端拉下来
+  /// 之后知道了它的身份，就替它补上旁注，云盘逐步收敛到全部可按内容认。
   Future<void> syncLocalAudioPackages(
     SyncRunReport report, {
     required SyncAssetDirection direction,
@@ -2472,39 +2517,67 @@ class SyncOrchestrator {
     final String ns = await _backend.ensureNamespace(kSyncLocalAudioNamespace);
     final List<AssetEntry> remote = await _backend.listChildren(ns);
 
-    final Set<String> remoteNames = <String>{
+    final Map<String, String> remoteIds = <String, String>{};
+    for (final AssetEntry e in remote) {
+      if (e.isFolder) continue;
+      final ({String base, String contentId})? marker =
+          _parseLocalAudioIdentityMarker(e.name);
+      if (marker != null) remoteIds[marker.base] = marker.contentId;
+    }
+    final List<_CloudLocalAudio> remoteLibs = <_CloudLocalAudio>[
       for (final AssetEntry e in remote)
         if (!e.isFolder && _isLocalAudioAsset(e.name))
-          _stripLocalAudioAssetSuffix(e.name),
-    };
+          _CloudLocalAudio(
+            asset: e,
+            base: _stripLocalAudioAssetSuffix(e.name),
+            contentId: remoteIds[_stripLocalAudioAssetSuffix(e.name)],
+          ),
+    ];
     // 「本端有」只认库文件真在本机的条目（同 _syncLocalAudioLive，BUG-3702）：
     // 文件不在本机的同名引用不能挡住远端那份被拉下来。
-    final Set<String> localNames = <String>{
-      for (final LocalAudioDbEntry d in localAudioEntries)
-        if (File(d.path).existsSync()) d.displayName,
-    };
+    final List<({LocalAudioDbEntry entry, String? contentId})> locals =
+        <({LocalAudioDbEntry entry, String? contentId})>[
+          for (final LocalAudioDbEntry d in localAudioEntries)
+            if (File(d.path).existsSync())
+              (entry: d, contentId: await resolveLocalAudioContentId(d)),
+        ];
+    bool same(
+      ({LocalAudioDbEntry entry, String? contentId}) l,
+      _CloudLocalAudio r,
+    ) => isSameLocalAudioLibrary(
+      nameA: l.entry.displayName,
+      contentIdA: l.contentId,
+      nameB: r.base,
+      contentIdB: r.contentId,
+    );
 
-    // Resolve both sides' work first so progress has a real denominator. The
-    // push side also drops libraries whose DB file is gone (nothing to send).
-    final List<LocalAudioDbEntry> toPush = <LocalAudioDbEntry>[
-      if (direction.pushes)
-        for (final LocalAudioDbEntry d in localAudioEntries)
-          if (!remoteNames.contains(d.displayName) && File(d.path).existsSync())
-            d,
-    ];
-    final List<AssetEntry> toPull = <AssetEntry>[
+    // Resolve both sides' work first so progress has a real denominator.
+    final List<({LocalAudioDbEntry entry, String? contentId})> toPush =
+        <({LocalAudioDbEntry entry, String? contentId})>[
+          if (direction.pushes)
+            for (final ({LocalAudioDbEntry entry, String? contentId}) l
+                in locals)
+              if (!remoteLibs.any((_CloudLocalAudio r) => same(l, r))) l,
+        ];
+    final List<_CloudLocalAudio> toPull = <_CloudLocalAudio>[
       if (direction.pulls)
-        for (final AssetEntry e in remote)
-          if (!e.isFolder &&
-              _isLocalAudioAsset(e.name) &&
-              !localNames.contains(_stripLocalAudioAssetSuffix(e.name)))
-            e,
+        for (final _CloudLocalAudio r in remoteLibs)
+          if (!locals.any(
+            (({LocalAudioDbEntry entry, String? contentId}) l) => same(l, r),
+          ))
+            r,
     ];
     final int total = toPush.length + toPull.length;
     int index = 0;
+    // 已占用的资产基名：内容不同的库撞了显示名，资产名必须另起，否则覆盖云上
+    // 那份别的库。
+    final Set<String> takenBases = <String>{
+      for (final _CloudLocalAudio r in remoteLibs) r.base,
+    };
 
     // Push local-only.
-    for (final LocalAudioDbEntry d in toPush) {
+    for (final ({LocalAudioDbEntry entry, String? contentId}) l in toPush) {
+      final LocalAudioDbEntry d = l.entry;
       // 安全检查点：上一项已完整落地，这一项还没开始。
       _checkpoint();
       _emit(
@@ -2516,6 +2589,11 @@ class SyncOrchestrator {
       final File dbFile = File(d.path);
       File? tmp;
       try {
+        final String base = uniqueLocalAudioDisplayName(
+          d.displayName,
+          takenBases,
+        );
+        takenBases.add(base);
         tmp = _tmpFile(_localAudioAssetSuffix);
         await _packages.exportLocalAudioPackage(
           displayName: d.displayName,
@@ -2523,10 +2601,11 @@ class SyncOrchestrator {
           sources: d.sources,
           dbFile: dbFile,
           outputFile: tmp,
+          contentId: l.contentId,
         );
         await _backend.putAsset(
           ns,
-          '${d.displayName}$_localAudioAssetSuffix',
+          '$base$_localAudioAssetSuffix',
           tmp,
           onProgress: (double f, [int? b]) => _emit(
             SyncPhase.localAudio,
@@ -2538,6 +2617,7 @@ class SyncOrchestrator {
           ),
         );
         report.localAudioExported++;
+        await _writeLocalAudioIdentityMarker(ns, base, l.contentId, report);
       } catch (e) {
         report.noteError('export local audio "${d.displayName}"', e);
       } finally {
@@ -2547,7 +2627,8 @@ class SyncOrchestrator {
     }
 
     // Pull remote-only.
-    for (final AssetEntry e in toPull) {
+    for (final _CloudLocalAudio r in toPull) {
+      final AssetEntry e = r.asset;
       // 安全检查点：上一项已完整落地，这一项还没开始。
       _checkpoint();
       _emit(
@@ -2583,6 +2664,15 @@ class SyncOrchestrator {
           await onLocalAudioImported!(contents);
           report.localAudioImported++;
         }
+        // 旧版本传的库包没有旁注：拉下来就知道了它的身份，替它补上。
+        if (r.contentId == null) {
+          await _writeLocalAudioIdentityMarker(
+            ns,
+            r.base,
+            contents.contentId,
+            report,
+          );
+        }
       } catch (err) {
         report.noteError('import local audio "${e.name}"', err);
       } finally {
@@ -2590,6 +2680,27 @@ class SyncOrchestrator {
         _safeDelete(stagingDb);
       }
       index++;
+    }
+  }
+
+  /// 写库包 [base] 的身份旁注（[localAudioIdentityMarkerName]）。[contentId] 读不出
+  /// 时不写（该库包照旧按名认）。旁注写失败只记一条错误：库包本身已经落地，下轮
+  /// 这份库按名认、不会重复上传。
+  Future<void> _writeLocalAudioIdentityMarker(
+    String ns,
+    String base,
+    String? contentId,
+    SyncRunReport report,
+  ) async {
+    if (!isLocalAudioContentId(contentId)) return;
+    try {
+      await _backend.putJsonAsset(
+        ns,
+        localAudioIdentityMarkerName(base, contentId!),
+        const <String, Object?>{},
+      );
+    } catch (e) {
+      report.noteError('write local audio identity "$base"', e);
     }
   }
 

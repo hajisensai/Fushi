@@ -959,6 +959,16 @@ class InterconnectSyncBackend extends SyncBackend
     return interconnectHostAcceptsPdfBooks(await _readHostCapabilities());
   }
 
+  /// 对端 host 的本地音频清单是否带内容身份（`liveLibrary.localAudioContentId`，
+  /// 拍板 pr3481）。老 host = false：只能按显示名匹配。能力每轮现问、不跨轮缓存
+  /// （同 [hostAcceptsPdfBooks]）。
+  Future<bool> hostReportsLocalAudioContentId() async {
+    await _ensureResolved();
+    return interconnectHostReportsLocalAudioContentId(
+      await _readHostCapabilities(),
+    );
+  }
+
   /// `GET /api/capabilities` 的解码结果；老 host（404 / 405）返回 null。网络 / 鉴权
   /// 等其它失败照常抛。
   Future<Object?> _readHostCapabilities() async {
@@ -2475,16 +2485,17 @@ class InterconnectSyncBackend extends SyncBackend
   Future<List<RemoteLocalAudioInfo>> listRemoteLocalAudio() =>
       _listRemote('/api/library/localaudio', RemoteLocalAudioInfo.fromJson);
 
-  /// 从对端 host 下载 displayName 为 [displayName] 的本地音频库到 [dest] 文件。
+  /// 从对端 host 下载 [key] 指向的本地音频库到 [dest] 文件。[key] 用清单条目的
+  /// `RemoteLocalAudioInfo.key`：新 host 给了内容身份就是 contentId，旧 host 是
+  /// displayName。
   Future<void> getRemoteLocalAudio(
-    String displayName,
+    String key,
     File dest, {
     SyncTransferProgress? onProgress,
   }) async {
     await _ensureResolved();
     await downloadContentFile(
-      fileId:
-          '$_apiBase/api/library/localaudio/${Uri.encodeComponent(displayName)}',
+      fileId: '$_apiBase/api/library/localaudio/${Uri.encodeComponent(key)}',
       destination: dest,
       onProgress: onProgress,
     );

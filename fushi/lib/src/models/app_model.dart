@@ -540,6 +540,7 @@ import 'package:fushi/src/models/audio_source_config.dart';
 import 'package:fushi/src/models/dictionary_import_manager.dart';
 import 'package:fushi/src/models/file_export_manager.dart';
 import 'package:fushi/src/models/local_audio_manager.dart';
+import 'package:fushi_engine/models/local_audio_content_id.dart';
 import 'package:fushi_engine/models/local_audio_source_pref.dart';
 import 'package:fushi/src/models/anki_integration.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_client.dart';
@@ -5623,6 +5624,9 @@ class AppModel
         '[Fushi] init: reader settings + enhancements + quick actions + media sources (parallel)',
       );
       StartupTimeline.mark('language+licenses+local-audio');
+      // 本地音频库补内容身份 + 收掉内容相同的重复登记（拍板 pr3481）：要扫库，
+      // 后台跑，不挡启动；只在主进程跑（弹窗进程不改登记）。
+      unawaited(_normalizeLocalAudioLibrariesQuietly());
       MediaSource.setDatabase(_database);
       final readerSettings = ReaderSettings(_database);
       await readerSettings.loadFromPrefsSnapshot(prefsSnapshot);
@@ -13667,7 +13671,8 @@ class AppModel
     final Map<String, LocalAudioDbEntry> current = <String, LocalAudioDbEntry>{
       for (final LocalAudioDbEntry db in localAudioDbs) db.path: db,
     };
-    // 删除传播：本地音频源按 displayName 跨设备同步（__local_audio__ / _syncLocalAudioLive）。
+    // 删除传播：本地音频源的跨设备同步身份是内容身份 contentId（拍板 pr3481），但删除
+    // 墓碑的 itemKey 是冻结的 displayName（host 删除端点先认 contentId、再认显示名）。
     // 检测本次保存移除/新增的本地音频源，按 scope 写/清删除墓碑（itemKey=displayName）。
     final Set<String> nextLocalPaths = <String>{
       for (final AudioSourceConfig s in sources)
@@ -14472,33 +14477,73 @@ class AppModel
   /// 同步拉到一个远端本地音频库：把 staging 的 .db 拷进本机库目录（重建本机 path，
   /// 绝不复用远端 manifest 的绝对 path——它在本机不存在），经 [setAudioSourceConfigs]
   /// 双写 `audio_source_configs` + `local_audio_dbs` + 推 native，再还原子来源偏好
-  /// 并刷 UI。按 displayName 去重：同名库已在本机可用则跳过。
+  /// 并刷 UI。
   ///
-  /// 同名条目在、但它指向的库文件**本机没有**（BUG-3702：从另一台设备导入的
-  /// 配置方案带来了那台设备的库引用，`.db` 本身没过来）时不跳过——把拉到的库
-  /// 落进本机库目录，并**原位**改指那一条（保留它在源列表里的顺序、开关与子来源
-  /// 偏好），而不是追加一条同名新源。否则这条悬空引用会永久挡住同步修复。
+  /// 按**内容身份**去重（拍板 pr3481，`local_audio_content_id.dart`）：本机已有
+  /// 同一份库（名字不同也算——`android.db` / 按子来源起的名 / 推荐包的 Japanese
+  /// audio）且文件可用就跳过；名字撞了但内容不同的库换个不撞的名字登记，不再被
+  /// 同名的另一份库挡住。只有一边读不出身份（悬空引用没存身份）才退回按名认。
+  ///
+  /// 匹配到的条目指向的库文件**本机没有**（BUG-3702：从另一台设备导入的配置
+  /// 方案带来了那台设备的库引用，`.db` 本身没过来）时不跳过——把拉到的库落进
+  /// 本机库目录，并**原位**改指那一条（保留它在源列表里的顺序、开关与子来源
+  /// 偏好），而不是追加一条新源。否则这条悬空引用会永久挡住同步修复。
   ///
   /// 由 [SyncOrchestrator.onLocalAudioImported] 调用，故注册逻辑集中在此（拥有
   /// LocalAudioManager 的 AppModel），保持双真相源一致。
   Future<void> importSyncedLocalAudioDb(LocalAudioPackageContents c) async {
     final List<AudioSourceConfig> configs = audioSourceConfigs;
-    final int existingIndex = configs.indexWhere(
-      (AudioSourceConfig s) =>
-          s.kind == AudioSourceKind.localAudio &&
-          s.displayLabel == c.displayName,
-    );
+    final String? incomingId = isLocalAudioContentId(c.contentId)
+        ? c.contentId
+        : await computeLocalAudioContentIdInBackground(c.dbFile.path);
+    final Map<String, LocalAudioDbEntry> entryByPath =
+        <String, LocalAudioDbEntry>{
+          for (final LocalAudioDbEntry e in _localAudioManager.entries)
+            e.path: e,
+        };
+    int existingIndex = -1;
+    for (int i = 0; i < configs.length; i++) {
+      final AudioSourceConfig s = configs[i];
+      if (s.kind != AudioSourceKind.localAudio) continue;
+      final String stored = s.path ?? '';
+      final bool available = await isLocalAudioDbAvailable(stored);
+      final String? storedId = entryByPath[stored]?.contentId;
+      final String? id = available
+          ? await resolveLocalAudioContentId(
+              LocalAudioDbEntry(
+                path: LocalAudioManager.resolveInternalPath(
+                  stored,
+                  databaseDirectory.path,
+                ),
+                displayName: s.displayLabel,
+                contentId: storedId,
+              ),
+            )
+          : storedId;
+      if (!isSameLocalAudioLibrary(
+        nameA: s.displayLabel,
+        contentIdA: id,
+        nameB: c.displayName,
+        contentIdB: incomingId,
+      )) {
+        continue;
+      }
+      if (available) return; // 本机已有这份库。
+      if (existingIndex < 0) existingIndex = i;
+    }
+    if (!await c.dbFile.exists()) return;
     final AudioSourceConfig? existing = existingIndex < 0
         ? null
         : configs[existingIndex];
-    if (existing != null &&
-        await isLocalAudioDbAvailable(existing.path ?? '')) {
-      return;
-    }
-    if (!await c.dbFile.exists()) return;
+    final String label =
+        existing?.displayLabel ??
+        uniqueLocalAudioDisplayName(c.displayName, <String>[
+          for (final AudioSourceConfig s in configs)
+            if (s.kind == AudioSourceKind.localAudio) s.displayLabel,
+        ]);
     final LocalAudioDbEntry entry = await importLocalAudioDbFile(
       c.dbFile.path,
-      displayName: c.displayName,
+      displayName: label,
     );
     if (existing != null) {
       final List<LocalAudioSourcePref> keptSources = sourcePrefsForLocalDb(
@@ -14522,7 +14567,7 @@ class AppModel
       return;
     }
     final AudioSourceConfig cfg = AudioSourceConfig.localAudio(
-      label: c.displayName,
+      label: label,
       path: entry.path,
       enabled: c.enabled,
     );
@@ -14535,6 +14580,63 @@ class AppModel
           : <String, List<LocalAudioSourcePref>>{entry.path: c.sources},
     );
     notifyListeners();
+  }
+
+  /// [normalizeLocalAudioLibraries] 的启动包装：失败只记日志（发音库整理不能
+  /// 影响启动）。
+  Future<void> _normalizeLocalAudioLibrariesQuietly() async {
+    try {
+      await normalizeLocalAudioLibraries();
+    } catch (error, stack) {
+      ErrorLogService.instance.log(
+        'AppModel.normalizeLocalAudioLibraries',
+        error,
+        stack,
+      );
+    }
+  }
+
+  /// 本地音频库整理（拍板 pr3481）：先给旧版本登记的库补写内容身份，再把内容
+  /// 相同的重复登记收成一条——保留源列表里靠前（优先级高）的那条，被收掉的那条
+  /// 若是启用的，保留下来的那条也设为启用；被收掉的内部副本由
+  /// [setAudioSourceConfigs] 的孤儿回收删掉，引用模式的用户原文件只摘登记、不删。
+  ///
+  /// 重复的来源：身份改成按内容之前，同步按显示名去重，新旧设备 / 新旧推荐包
+  /// 混用时同一份 GB 级库会以两个名字各落一份。返回收掉的条数。
+  Future<int> normalizeLocalAudioLibraries() async {
+    await _localAudioManager.backfillContentIds();
+    final Map<String, String> idByPath = <String, String>{
+      for (final LocalAudioDbEntry e in _localAudioManager.entries)
+        if (isLocalAudioContentId(e.contentId)) e.path: e.contentId!,
+    };
+    final List<AudioSourceConfig> configs = audioSourceConfigs;
+    final List<AudioSourceConfig> next = <AudioSourceConfig>[];
+    final Map<String, int> keptIndexById = <String, int>{};
+    int removed = 0;
+    for (final AudioSourceConfig s in configs) {
+      final String? id = s.kind == AudioSourceKind.localAudio
+          ? idByPath[s.path ?? '']
+          : null;
+      // 只收两边文件都在本机的重复：悬空引用的身份来自别的设备，留给同步修。
+      if (id == null || !await isLocalAudioDbAvailable(s.path ?? '')) {
+        next.add(s);
+        continue;
+      }
+      final int? kept = keptIndexById[id];
+      if (kept == null) {
+        keptIndexById[id] = next.length;
+        next.add(s);
+        continue;
+      }
+      if (s.enabled && !next[kept].enabled) {
+        next[kept] = next[kept].copyWith(enabled: true);
+      }
+      removed++;
+    }
+    if (removed == 0) return 0;
+    await setAudioSourceConfigs(next);
+    notifyListeners();
+    return removed;
   }
 
   // ── UI visibility (delegated) ────────────────────────────────────────

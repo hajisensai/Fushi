@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi_engine/models/local_audio_content_id.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/utils/misc/local_audio_db.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -23,7 +24,7 @@ FushiDatabase _testDb() {
 /// [AppModel.importSyncedLocalAudioDb] → [LocalAudioManager.importFile] 的 BUG-779
 /// 内容校验通过。旧桩写 [1,2,3,4] 假字节现在会被 isUsableAudioSource 正确拒绝，故
 /// 同步库 fixture 改用真实最小音频库（用例意图=路径重建/双真相源/去重 不变）。
-void _writeValidAudioDb(String path) {
+void _writeValidAudioDb(String path, {String word = '猫'}) {
   // 幂等：同名调用（如按 displayName 去重的用例会二次造同路径库）先删旧文件，
   // 复刻旧桩 writeAsBytesSync 的覆盖语义，避免在已建表的库上重复 CREATE TABLE。
   final File dbFile = File(path);
@@ -35,7 +36,12 @@ void _writeValidAudioDb(String path) {
       '(expression TEXT, reading TEXT, file TEXT, source TEXT)',
     );
     sdb.execute('CREATE TABLE android (file TEXT, source TEXT, data BLOB)');
-    sdb.execute("INSERT INTO entries VALUES ('猫','ねこ','neko.mp3','nhk16')");
+    sdb.execute('INSERT INTO entries VALUES (?, ?, ?, ?)', <Object?>[
+      word,
+      word,
+      'neko.mp3',
+      'nhk16',
+    ]);
     final PreparedStatement stmt = sdb.prepare(
       'INSERT INTO android (file, source, data) VALUES (?,?,?)',
     );
@@ -110,9 +116,10 @@ void main() {
     required String displayName,
     bool enabled = true,
     List<LocalAudioSourcePref> sources = const <LocalAudioSourcePref>[],
+    String word = '猫',
   }) {
     final File dbFile = File(p.join(stagingDir.path, '$displayName.db'));
-    _writeValidAudioDb(dbFile.path);
+    _writeValidAudioDb(dbFile.path, word: word);
     return LocalAudioPackageContents(
       dbFile: dbFile,
       displayName: displayName,
@@ -284,4 +291,119 @@ void main() {
       );
     },
   );
+
+  // ── 拍板 pr3481：按内容身份去重 ──────────────────────────────────────────
+
+  List<AudioSourceConfig> localConfigs() => appModel.audioSourceConfigs
+      .where((AudioSourceConfig s) => s.kind == AudioSourceKind.localAudio)
+      .toList();
+
+  test('pr3481: the same library under another name is skipped '
+      '(content identity, not displayName)', () async {
+    await appModel.importSyncedLocalAudioDb(
+      stagedContents(displayName: 'Japanese audio'),
+    );
+    await appModel.importSyncedLocalAudioDb(
+      stagedContents(displayName: 'android.db'),
+    );
+    expect(
+      localConfigs().map((AudioSourceConfig s) => s.displayLabel).toList(),
+      <String>['Japanese audio'],
+      reason: '同一份库换了名字不再落第二份',
+    );
+    expect(
+      isLocalAudioContentId(appModel.localAudioDbs.single.contentId),
+      isTrue,
+      reason: '登记里写入了内容身份',
+    );
+  });
+
+  test('pr3481: a different library with a taken name is registered under '
+      'a disambiguated name', () async {
+    await appModel.importSyncedLocalAudioDb(stagedContents(displayName: 'NHK'));
+    await appModel.importSyncedLocalAudioDb(
+      stagedContents(displayName: 'NHK', word: '犬'),
+    );
+    expect(
+      localConfigs().map((AudioSourceConfig s) => s.displayLabel).toList(),
+      <String>['NHK', 'NHK (2)'],
+      reason: '名字相同内容不同是另一份库，不能被同名挡住',
+    );
+  });
+
+  test('pr3481: normalizeLocalAudioLibraries backfills identities and '
+      'collapses same-content duplicates', () async {
+    // 身份改认内容之前的残留：同一份库以两个名字各登记一份（旧条目没有身份）。
+    final File a = File(p.join(stagingDir.path, 'a.db'));
+    final File b = File(p.join(stagingDir.path, 'b.db'));
+    final File c = File(p.join(stagingDir.path, 'c.db'));
+    _writeValidAudioDb(a.path);
+    _writeValidAudioDb(b.path);
+    _writeValidAudioDb(c.path, word: '犬');
+    final LocalAudioDbEntry ea = await appModel.importLocalAudioDbFile(
+      a.path,
+      displayName: 'android.db',
+    );
+    final LocalAudioDbEntry eb = await appModel.importLocalAudioDbFile(
+      b.path,
+      displayName: 'Japanese audio',
+    );
+    final LocalAudioDbEntry ec = await appModel.importLocalAudioDbFile(
+      c.path,
+      displayName: 'English audio',
+    );
+    await appModel.setAudioSourceConfigs(<AudioSourceConfig>[
+      AudioSourceConfig.localAudio(
+        label: 'android.db',
+        path: ea.path,
+        enabled: false,
+      ),
+      AudioSourceConfig.localAudio(
+        label: 'Japanese audio',
+        path: eb.path,
+        enabled: true,
+      ),
+      AudioSourceConfig.localAudio(
+        label: 'English audio',
+        path: ec.path,
+        enabled: true,
+      ),
+    ]);
+    // 模拟旧版本登记：抹掉身份。
+    await prefs.setPref(
+      'local_audio_dbs',
+      jsonEncode(<Map<String, dynamic>>[
+        for (final LocalAudioDbEntry e in appModel.localAudioDbs)
+          LocalAudioDbEntry(
+            path: e.path,
+            displayName: e.displayName,
+            enabled: e.enabled,
+          ).toJson(),
+      ]),
+    );
+    expect(
+      appModel.localAudioDbs.any((LocalAudioDbEntry e) => e.contentId != null),
+      isFalse,
+    );
+
+    expect(await appModel.normalizeLocalAudioLibraries(), 1);
+
+    final List<AudioSourceConfig> after = localConfigs();
+    expect(
+      after.map((AudioSourceConfig s) => s.displayLabel).toList(),
+      <String>['android.db', 'English audio'],
+      reason: '保留靠前的那条，收掉内容相同的后来者',
+    );
+    expect(after.first.enabled, isTrue, reason: '被收掉的那条是启用的，保留的那条跟着启用');
+    expect(File(eb.path).existsSync(), isFalse, reason: '重复的内部副本被孤儿回收删掉');
+    expect(File(ea.path).existsSync(), isTrue);
+    expect(
+      appModel.localAudioDbs.every(
+        (LocalAudioDbEntry e) => isLocalAudioContentId(e.contentId),
+      ),
+      isTrue,
+      reason: '旧登记补上了身份',
+    );
+    expect(await appModel.normalizeLocalAudioLibraries(), 0, reason: '幂等');
+  });
 }
