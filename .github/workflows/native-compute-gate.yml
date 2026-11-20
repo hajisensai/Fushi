@@ -120,7 +120,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: '3.47.6'
           cache: true
@@ -133,7 +133,7 @@ jobs:
           set -euo pipefail
           test "$(uname -m)" = arm64 || { echo "::error::expected an arm64 runner, got $(uname -m)"; exit 1; }
           test -f "$FUSHI_COMPUTE_LIB" || { echo "::error::FUSHI_COMPUTE_LIB not built: $FUSHI_COMPUTE_LIB"; exit 1; }
-          dart pub get
+          dart pub get --enforce-lockfile
           log="$RUNNER_TEMP/subtitle_parity_arm64.log"
           dart test test/parsers/subtitle_native_parity_test.dart --reporter expanded 2>&1 | tee "$log"
           passed="$(grep -Eo '\+[0-9]+' "$log" | tail -n 1 | tr -d '+')"
