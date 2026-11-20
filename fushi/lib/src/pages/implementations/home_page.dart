@@ -52,6 +52,8 @@ import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_auto_scan.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
+import 'package:fushi/src/media/source_library/source_folder_access.dart';
+import 'package:fushi/src/media/source_library/source_scan_temp.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/video/video_duration_pref.dart';
@@ -207,6 +209,7 @@ import 'package:fushi/src/shortcuts/text_field_key_ownership.dart'
     show keyTypesIntoFocusedTextField;
 import 'package:fushi_core/fushi_core.dart'
     show
+        FushiDatabase,
         MediaCollectionItemRow,
         MediaCollectionRow,
         MediaKind,
@@ -681,11 +684,9 @@ class _HomePageState extends BasePageState<HomePage>
       _onHomeDictionaryTabRequested,
     );
 
-    // 来源自动扫描：首帧后扫一轮到期来源（与下面的新手引导 / 更新弹窗互不阻塞）。
+    // 首帧后的启动清理 + 来源自动扫描（与下面的新手引导 / 更新弹窗互不阻塞）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        unawaited(_sourceAutoScan.trigger(SourceAutoScanTrigger.startup));
-      }
+      if (mounted) unawaited(_startupCleanupThenAutoScan());
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -886,6 +887,38 @@ class _HomePageState extends BasePageState<HomePage>
 
       _maybeSyncLeaderboard();
     });
+  }
+
+  /// 首帧后的启动清理，清完再扫一轮到期来源。
+  ///
+  /// - 以前的进程在扫描中途被杀留下的「仅此一次」临时来源行与临时目录
+  ///   （[sweepSourceScanLeftoversOnce]，gap-scanner-10）：以前要等下一次任意来源
+  ///   扫描才清。排在自动扫描**之前**并 await：清扫要删的临时行不能先被自动扫描读进
+  ///   待扫清单；扫描入口里的同一调用每库只跑一次，到时直接复用这次的结果。
+  /// - 旧版本留下的制卡队列 `done` 行（[WebMineQueueStore.sweepLegacyDone]，BUG-4813）：
+  ///   以前挂在两个读入口里当副作用。
+  ///
+  /// 两步都每库只做一遍、失败只记日志（#3722 c08 / c15 遗留）。
+  Future<void> _startupCleanupThenAutoScan() async {
+    final FushiDatabase db = appModelNoUpdate.database;
+    await sweepSourceScanLeftoversOnce(
+      db,
+      releaseAccess: SourceFolderAccess.instance.release,
+    );
+    unawaited(
+      WebMineQueueStore(db).sweepLegacyDone().catchError((
+        Object error,
+        StackTrace stack,
+      ) {
+        ErrorLogService.instance.log(
+          'HomePage.sweepLegacyMineQueueDone',
+          error,
+          stack,
+        );
+      }),
+    );
+    if (!mounted) return;
+    await _sourceAutoScan.trigger(SourceAutoScanTrigger.startup);
   }
 
   /// 排行榜书架后台同步：启动时一次，此后随 [_periodicSyncTimer] 每分钟探一次。未开启 /

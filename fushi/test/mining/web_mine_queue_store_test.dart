@@ -142,6 +142,23 @@ void main() {
     expect(await store.deleteDone(), 0);
   });
 
+  test('#3722 c15 遗留：读方法不带删除副作用，旧 done 行只由 sweepLegacyDone 清', () async {
+    final int legacy = await enqueue('video/stream/a', 1000);
+    final int pending = await enqueue('video/stream/b', 2000);
+    await markLegacyDone(<int>[legacy]);
+
+    expect(await store.pendingBookUids(), <String>['video/stream/b']);
+    expect(await store.openCount('video/stream/a'), 0);
+    expect(
+      await allIds(),
+      unorderedEquals(<int>[legacy, pending]),
+      reason: '读调度清单 / 角标不能顺手删行',
+    );
+
+    await store.sweepLegacyDone();
+    expect(await allIds(), <int>[pending]);
+  });
+
   test('BUG-4813：markDone 只删自己那一行，不顺带扫全表', () async {
     final int legacy = await enqueue('video/stream/a', 1000);
     final int current = await enqueue('video/stream/a', 2000);

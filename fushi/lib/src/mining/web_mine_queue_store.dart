@@ -60,11 +60,7 @@ class WebMineQueueStore {
   /// `href != ''` 排掉本地视频「看完再制卡」的暂存行（`VideoMineQueue.stage` 写空
   /// `href`）：它们共用这张表，但媒体早已备好、不靠重放，后台重放调度认领不了。
   /// 这条过滤只属于本查询——[pending] 是两边共用的，不能带上。
-  ///
-  /// 这是后台调度的入口（首页起来后就开始问），所以旧版本留下的完成行也在这里收一次
-  /// （[sweepLegacyDone]，每个库只做一遍）。
   Future<List<String>> pendingBookUids() async {
-    await sweepLegacyDone();
     final Expression<int> firstId = db.webMineQueue.id.min();
     final List<TypedResult> rows =
         await (db.selectOnly(db.webMineQueue)
@@ -131,10 +127,11 @@ class WebMineQueueStore {
         .go();
   }
 
-  /// [deleteDone] 的「每个库只做一遍」版本，挂在两条队列各自的入口上：网页档的后台
-  /// 调度（[pendingBookUids]）与本地视频播放页的角标（`VideoMineQueue.openCount`）。
-  /// 现在的代码不再产生 `done` 行，扫过一次之后表里就不会再有，不必每次都扫全表。
-  /// 删失败（库正在关）不记「已扫」，下次入口再来。
+  /// [deleteDone] 的「每个库只做一遍」版本，app 启动时由首页首帧调一次（`HomePage`）。
+  /// 读方法（[pendingBookUids]、`VideoMineQueue.openCount`）不带这个删除副作用（#3722
+  /// c15 遗留：以前挂在这两个读入口里，非 Windows 且不再打开本地视频播放页的用户旧
+  /// done 行永远留着）。现在的代码不再产生 `done` 行，扫过一次之后表里就不会再有，
+  /// 不必每次都扫全表。删失败（库正在关）不记「已扫」，下次启动再来。
   Future<void> sweepLegacyDone() async {
     if (_legacyDoneSwept[db] ?? false) return;
     await deleteDone();
