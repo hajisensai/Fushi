@@ -514,10 +514,15 @@ class _FushiCardState extends State<FushiCard>
                     onLongPress: widget.onLongPress,
                     onHover: _setHovered,
                     onHighlightChanged: _setPressed,
-                    // 状态层 / 水波按卡片圆角走：Material 裁剪时与之重合
+                    // 状态层 / 水波按卡片外形走：Material 裁剪时与之重合
                     // （像素不变），封面卡不裁剪时靠它保持圆角。
-                    borderRadius: fixedShape == null ? radius : null,
-                    customBorder: fixedShape,
+                    //
+                    // 必须走 customBorder、不能传 borderRadius：形变卡的圆角
+                    // 随弹簧逐帧变，InkWell 在 borderRadius 变化时会把悬停高亮
+                    // **销毁重建**（从透明重新淡入），弹簧没停之前悬停变深一直
+                    // 被拉回 0——鼠标在行间划过时变深要等形变走完才跟上（2026-11-20
+                    // 反馈 #6）。customBorder 变化只原地更新已有高亮的外形。
+                    customBorder: surfaceShape,
                     // 柔和状态层（悬停 8% / 按下 10% onSurface），水波
                     // 由外层 Material 裁在圆角里；墨水屏交回默认。
                     overlayColor: !widget.stateLayer

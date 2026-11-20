@@ -1,4 +1,3 @@
-import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart'
     show MediaLinkEntry;
@@ -9,7 +8,6 @@ import 'package:fushi/src/media/links/media_link_opener.dart'
 import 'package:fushi/src/media/links/media_links_section.dart'
     show showMediaLinksDialog;
 import 'package:fushi/src/media/links/work_kinds_badge.dart';
-import 'package:fushi/src/media/nsfw/media_nsfw_dialog.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 
 import 'dart:async' show StreamSubscription, Timer, unawaited;
@@ -4608,7 +4606,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       coverMaterial: ShelfCoverMaterial.glossyPoster,
       nsfw: MediaNsfwTarget.video(book.bookUid),
       title: title,
-      showLaunchAction: false,
+      // 不放「继续播放」主按钮：点卡本身就是播放，菜单里再放一个是重复入口
+      // （#3803 用户拍板）。主操作行 = 选择 / 标记已看 / 观看统计（单集没有
+      // 详情页与作品页，作品级入口在合集菜单上）。
       // 统一三库页卡菜单次序：重命名 → 封面/刮削 → 媒体特有 → 加入合集 →
       // 标签 → 删除（与书卡/游戏卡同一约定；「标签」原在首位，移到合集后）。
       // 最前面是「选择」：多选不再占页头按钮，长按 / 右键这张卡即从这里进入多选
@@ -4619,6 +4619,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             label: t.batch_select,
             icon: FushiIcons.checklist,
             group: DialogActionGroup.organize,
+            slot: ItemMenuSlot.primary,
             onPressed: () {
               Navigator.pop(dialogContext);
               _enterSelectionWith(SelectionSlot.loose(book.bookUid));
@@ -4643,6 +4644,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           ),
         DialogQuickAction(
           label: t.video_rename,
+          slot: ItemMenuSlot.edit,
           icon: Icons.drive_file_rename_outline,
           group: DialogActionGroup.organize,
           onPressed: () {
@@ -4652,6 +4654,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ),
         DialogQuickAction(
           label: t.srt_import_pick_cover,
+          slot: ItemMenuSlot.edit,
           icon: Icons.image_outlined,
           group: DialogActionGroup.organize,
           onPressed: () {
@@ -4665,6 +4668,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         if (isVideoFrameCoverPickableSource(book.videoPath))
           DialogQuickAction(
             label: t.video_cover_from_frame,
+            slot: ItemMenuSlot.edit,
             icon: Icons.photo_camera_back_outlined,
             group: DialogActionGroup.organize,
             onPressed: () {
@@ -4679,30 +4683,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         if (_onlineCoverController != null)
           DialogQuickAction(
             label: t.video_cover_online_search,
+            slot: ItemMenuSlot.edit,
             icon: Icons.image_search_outlined,
             group: DialogActionGroup.organize,
             onPressed: () {
               Navigator.pop(dialogContext);
               unawaited(_pickOnlineCover(book));
-            },
-          ),
-        DialogQuickAction(
-          label: t.video_import_pick_subtitle,
-          icon: Icons.subtitles_outlined,
-          onPressed: () {
-            Navigator.pop(dialogContext);
-            _pickSubtitle(book);
-          },
-        ),
-        // 从服务端（互联 host / 媒体服务器）下载来的视频：服务端换了字幕、或下载
-        // 时拿的那份不对，从这里重新拉一份（服务端有多份文本字幕时让用户挑）。
-        if (_remoteSubtitleRefetchSource(book) != null)
-          DialogQuickAction(
-            label: t.video_remote_subtitle_refetch,
-            icon: FushiIcons.subtitles,
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              unawaited(_refetchRemoteSubtitle(book));
             },
           ),
         DialogQuickAction(
@@ -4744,6 +4730,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             label: t.media_file_location_open,
             icon: Icons.folder_open_outlined,
             group: DialogActionGroup.organize,
+            slot: ItemMenuSlot.more,
             onPressed: () {
               Navigator.pop(dialogContext);
               unawaited(_openVideoFileLocation(book));
@@ -4760,6 +4747,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           icon: _localCountsAsWatched(book)
               ? FushiIcons.visibilityOff
               : FushiIcons.check,
+          slot: ItemMenuSlot.primary,
           onPressed: () {
             Navigator.pop(dialogContext);
             unawaited(
@@ -4787,11 +4775,53 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       // `sourceId` 的手动导入 / 互联下载、远端来源、目录分组模式、特典都不画，
       // 画出来就一定定位得到作品单元。
       listActions: <DialogListAction>[
+        // 工作台「字幕与刮削」（#4b）：字幕与重刮收成一个入口，副行列出子项。
+        DialogWorkbenchAction(
+          label: t.item_menu_video_workbench,
+          icon: Icons.subtitles_outlined,
+          onPressed: () {},
+          children: <DialogListAction>[
+            DialogListAction(
+              label: t.video_import_pick_subtitle,
+              icon: Icons.subtitles_outlined,
+              group: DialogActionGroup.content,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                _pickSubtitle(book);
+              },
+            ),
+            // 从服务端（互联 host / 媒体服务器）下载来的视频：服务端换了字幕、或
+            // 下载时拿的那份不对，从这里重新拉一份（服务端有多份文本字幕时让用户挑）。
+            if (_remoteSubtitleRefetchSource(book) != null)
+              DialogListAction(
+                label: t.video_remote_subtitle_refetch,
+                icon: FushiIcons.subtitles,
+                group: DialogActionGroup.content,
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  unawaited(_refetchRemoteSubtitle(book));
+                },
+              ),
+            // 特典（含蓝光盘特典）挂在父作品下、不单独成作品：重刮它是断头路。
+            if (widget.scrapeTaskController != null &&
+                !_isLocalExtra(book) &&
+                videoBookHasScrapePlan(book, _videoSourcesById[book.sourceId]))
+              DialogListAction(
+                label: t.collection_rescrape,
+                icon: Icons.image_search,
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  unawaited(_rescrapeVideo(book));
+                },
+              ),
+          ],
+        ),
         // 右键 / 长按反查这一集的观看统计（身份 = bookUid）。
         DialogListAction(
           label: t.media_stats_action,
           icon: Icons.insights_outlined,
           group: DialogActionGroup.progress,
+          slot: ItemMenuSlot.primary,
           onPressed: () {
             Navigator.pop(dialogContext);
             unawaited(
@@ -4808,57 +4838,28 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           },
         ),
         // 私密：不上传排行榜、不推 Bangumi。整部剧要藏就标在合集上。
-        DialogListAction(
-          label: t.media_privacy_action,
-          icon: FushiIcons.lock,
-          onPressed: () {
-            Navigator.pop(dialogContext);
-            unawaited(
-              showMediaPrivacyDialog(
-                context,
-                db: appModelNoUpdate.database,
-                kind: TagHostKind.video,
-                entryKey: book.bookUid,
-                title: book.title,
-              ),
-            );
-          },
+        mediaPrivacyToggleAction(
+          context,
+          db: appModelNoUpdate.database,
+          kind: TagHostKind.video,
+          entryKey: book.bookUid,
+          title: book.title,
         ),
         // NSFW：封面按「模糊 NSFW 封面」打模糊。整部剧要标就标在合集上。
-        DialogListAction(
-          label: t.media_nsfw_action,
-          icon: FushiIcons.visibilityOff,
-          onPressed: () {
-            Navigator.pop(dialogContext);
-            unawaited(
-              showMediaNsfwDialog(
-                context,
-                db: appModelNoUpdate.database,
-                kind: TagHostKind.video,
-                entryKey: book.bookUid,
-                title: book.title,
-              ),
-            );
-          },
+        mediaNsfwToggleAction(
+          context,
+          db: appModelNoUpdate.database,
+          kind: TagHostKind.video,
+          entryKey: book.bookUid,
+          title: book.title,
         ),
-        // 特典（含蓝光盘特典）挂在父作品下、不单独成作品：重刮它是断头路。
-        if (widget.scrapeTaskController != null &&
-            !_isLocalExtra(book) &&
-            videoBookHasScrapePlan(book, _videoSourcesById[book.sourceId]))
-          DialogListAction(
-            label: t.collection_rescrape,
-            icon: Icons.image_search,
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              unawaited(_rescrapeVideo(book));
-            },
-          ),
         // 「整理文件名」（ZDYNkAP3Ln）：按刮削资料改磁盘文件名。门只挡「本机根本
         // 没有文件」的条目；未刮削 / 已是规范名由计划判出、给明确提示。
         if (videoBookHasLocalFiles(book))
           DialogListAction(
             label: t.video_filename_organize_action,
             icon: Icons.drive_file_rename_outline,
+            slot: ItemMenuSlot.edit,
             onPressed: () {
               Navigator.pop(dialogContext);
               unawaited(_organizeVideoFilenames(<String>[book.bookUid]));
@@ -6728,6 +6729,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
               ),
               onLongPress: () => _showCollectionContextMenu(
                 item.collection,
+                onContinue: () => _openSlot(
+                  item.target,
+                  playlistCollectionId: item.collection.id,
+                ),
                 cover: () => _collectionPosterProvider(
                   item.collection,
                   item.members,
@@ -6984,6 +6989,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       padding: EdgeInsets.zero,
       onTap: _selectionMode ? null : spec.onTap,
       onLongPress: _selectionMode ? null : spec.onLongPress,
+      // 分区不参与勾选：多选态右键与点按 / 长按一样让位，不弹针对选中集的批量菜单。
       onSecondaryTap: _selectionMode ? null : spec.onLongPress,
       child: _videoCoverBlock(
         size: size,
@@ -7317,6 +7323,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         collection,
         cover: () => _collectionPosterProvider(collection, members, target),
         title: _workTitle(collection),
+        onContinue: () =>
+            _openSlot(target, playlistCollectionId: collection.id),
+        progressLabel: _continueCollectionSecondaryText(target, currentIndex),
       ),
       cloud: target.local == null,
     );
@@ -7972,7 +7981,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       onTap: () =>
           _dispatchCardTap(selectionKey: book.bookUid, open: () => _open(book)),
       onLongPress: _selectionMode ? null : openMenu,
-      onSecondaryTap: _selectionMode ? null : openMenu,
+      onSecondaryTap: _selectionMode ? _showBatchMenu : openMenu,
       child: SizedBox(
         height: 96,
         // 2026-10 体验优化：窄屏收小封面槽（[videoListRowCoverWidth]），行高
@@ -8503,8 +8512,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                 remote.id,
           ])
         : null;
-    final ({String label, int completed, int total, bool started}) progress =
-        _collectionProgress(group);
+    final ({String label, int completed, int total, bool started, int index})
+    progress = _collectionProgress(group);
     final bool selected =
         _selectionMode && _selectedCollectionIds.contains(collection.id);
     final bool landscape = orientation == VideoCardOrientation.landscape;
@@ -8538,11 +8547,20 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       ],
     );
     // 菜单头部与本卡同源：封面走 [_buildCollectionCover] 的同一条取图链，标题同副行。
-    void openMenu() => _showCollectionContextMenu(
-      collection,
-      cover: () => _collectionCoverSource(group)?.image,
-      title: _workTitle(collection),
-    );
+    void openMenu() {
+      final _VideoSlot target = group.items[progress.index].payload;
+      unawaited(
+        _showCollectionContextMenu(
+          collection,
+          cover: () => _collectionCoverSource(group)?.image,
+          title: _workTitle(collection),
+          onContinue: () =>
+              _openSlot(target, playlistCollectionId: collection.id),
+          progressLabel: progress.label,
+        ),
+      );
+    }
+
     final FushiCard card = shelfCoverCard(
       key: ValueKey<String>('home_video_collection_card_${collection.id}'),
       focusId: FushiFocusId('home-video-collection-${collection.id}'),
@@ -8563,7 +8581,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       // 未进入选择态时，触屏与桌面长按都保留合集上下文菜单；只有显式进入选择态
       // 后才禁用菜单，让整卡点击/扫选负责勾选。
       onLongPress: _selectionMode ? null : openMenu,
-      onSecondaryTap: _selectionMode ? null : openMenu,
+      onSecondaryTap: _selectionMode ? _showBatchMenu : openMenu,
       child: block != null
           ? _videoCoverBlock(
               size: block,
@@ -8797,7 +8815,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   }
 
   /// 合集卡进度行：有观看痕迹且未整套看完 → 「继续看 第n集」；否则 →
-  /// 「已看完 x/N」。
+  /// 「已看完 x/N」。[index] = 「继续」的目标集（合集菜单的「继续播放」与卡片副行
+  /// 同一份；没有观看痕迹时是第一集）。
   ///
   /// BUG-1740：选集与时钟必须与详情页 hero **同一实现**——同走
   /// [continueMemberIndex]，锚点时刻同走 [_slotWatchedAtMs]（= BUG-1731 的
@@ -8805,9 +8824,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// `latestPlayedSeriesIndex` + 只读本机统计时钟：互联对端回灌的进度只写行级
   /// `lastPlayedAt`，外侧锚点便钉在本机最后播的那集，出现「卡片外『继续看
   /// 第8集』、进详情页变『第9集』」的两套答案。
-  ({String label, int completed, int total, bool started}) _collectionProgress(
-    CollectionGroup<_VideoSlot> group,
-  ) {
+  ({String label, int completed, int total, bool started, int index})
+  _collectionProgress(CollectionGroup<_VideoSlot> group) {
     final int total = group.items.length;
     int completed = 0;
     final List<CollectionMemberProgress> progresses =
@@ -8835,14 +8853,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       (CollectionMemberProgress p) =>
           p.completed || (p.positionMs ?? 0) > 0 || (p.lastPlayedAt ?? 0) > 0,
     );
+    final int index = progresses.isEmpty ? 0 : continueMemberIndex(progresses);
     if (anyTrace && completed < total) {
       return (
         label:
-            '${t.collection_continue_progress(n: continueMemberIndex(progresses) + 1)}'
+            '${t.collection_continue_progress(n: index + 1)}'
             ' · ${t.video_playlist_episodes(count: total)}',
         completed: completed,
         total: total,
         started: true,
+        index: index,
       );
     }
     return (
@@ -8850,6 +8870,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       completed: completed,
       total: total,
       started: anyTrace,
+      index: anyTrace ? index : 0,
     );
   }
 
@@ -10645,10 +10666,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 取图是函数、菜单订阅 [_coverExistsRevision]：封面存在性在网络盘冷目录上要
   /// 异步探测好几秒，打开那一刻拿到的可能是 [kPendingCoverImage]；菜单是独立路由，
   /// page 的重建到不了它，探测落定后必须自己重取，否则头部永远停在加载态。
+  ///
+  /// [onContinue]：续播这部合集的下一集（与卡片单击同一目标）；给了时菜单主按钮
+  /// 是「继续播放」、「全部集」排进主操作行（#4b）。[progressLabel] 写在头部。
   Future<void> _showCollectionContextMenu(
     MediaCollectionRow collection, {
     ImageProvider? Function()? cover,
     String? title,
+    VoidCallback? onContinue,
+    String? progressLabel,
   }) async {
     // 右键锚点只在同步派发期间可读：先取下来，下面 await 取成员后仍弹在指针处。
     final Offset? anchor = activeContextMenuAnchor;
@@ -10703,6 +10729,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           DialogListAction(
             label: t.batch_select,
             icon: FushiIcons.checklist,
+            slot: ItemMenuSlot.primary,
             onPressed: () {
               if (!mounted) return;
               _enterSelectionWith(SelectionSlot.collection(collection.id));
@@ -10712,6 +10739,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           DialogListAction(
             label: t.video_disc_open_menu,
             icon: FushiIcons.toc,
+            group: DialogActionGroup.content,
             onPressed: () => unawaited(
               openDiscSessionWithPicker(
                 context: context,
@@ -10784,9 +10812,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           }
           return <DialogListAction>[
             DialogListAction(
-              label: t.collection_mark_all_watched,
+              label: t.item_menu_watched,
               group: DialogActionGroup.progress,
               icon: FushiIcons.check,
+              slot: ItemMenuSlot.primary,
               onPressed: () => unawaited(
                 _markWatched(
                   watched: true,
@@ -10812,36 +10841,63 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         DialogListAction(
           label: t.collection_cover_set,
           icon: Icons.image_outlined,
+          slot: ItemMenuSlot.edit,
           onPressed: () => _setCollectionCover(collection),
         ),
         if (_onlineCoverController != null)
           DialogListAction(
             label: t.video_cover_online_search,
             icon: Icons.image_search_outlined,
+            slot: ItemMenuSlot.edit,
             onPressed: () => _setCollectionCoverOnline(collection),
           ),
         if (collection.coverPath?.isNotEmpty ?? false)
           DialogListAction(
             label: t.collection_cover_reset,
             icon: Icons.undo_outlined,
+            slot: ItemMenuSlot.edit,
             onPressed: () => _resetCollectionCover(collection),
-          ),
-        if (widget.scrapeTaskController != null)
-          DialogListAction(
-            label: t.collection_rescrape,
-            icon: Icons.image_search,
-            onPressed: () => _rescrapeCollection(collection),
           ),
         DialogListAction(
           label: t.video_filename_organize_action,
           icon: Icons.drive_file_rename_outline,
+          slot: ItemMenuSlot.edit,
           onPressed: () => _organizeCollectionFilenames(collection),
         ),
-        DialogListAction(
-          label: t.video_jimaku_batch_title,
+        // 工作台「字幕与刮削」（#4b）：字幕与刮削相关的动作收成一个入口。
+        DialogWorkbenchAction(
+          label: t.item_menu_video_workbench,
           icon: Icons.subtitles_outlined,
-          group: DialogActionGroup.content,
-          onPressed: () => _openCollectionSubtitles(collection),
+          onPressed: () {},
+          children: <DialogListAction>[
+            DialogListAction(
+              label: t.video_jimaku_batch_title,
+              icon: Icons.subtitles_outlined,
+              group: DialogActionGroup.content,
+              onPressed: () => _openCollectionSubtitles(collection),
+            ),
+            if (widget.scrapeTaskController != null)
+              DialogListAction(
+                label: t.collection_rescrape,
+                icon: Icons.image_search,
+                onPressed: () => _rescrapeCollection(collection),
+              ),
+            // 互联刮削（7a / 7b）：只在互联源上出现。
+            if (_metadataBackend != null) ...<DialogListAction>[
+              DialogListAction(
+                label: t.remote_collection_scrape_on_host,
+                icon: Icons.cloud_sync_outlined,
+                onPressed: () => unawaited(_scrapeCollectionOnHost(collection)),
+              ),
+              if (widget.scrapeTaskController != null)
+                DialogListAction(
+                  label: t.remote_collection_scrape_push_to_host,
+                  icon: Icons.cloud_upload_outlined,
+                  onPressed: () =>
+                      unawaited(_scrapeCollectionForHost(collection)),
+                ),
+            ],
+          ],
         ),
         // 合集整体下载（#6）：只在有远端源时出现；成员全在本机时点了会明确提示
         // 「没有可下载的远端集」。
@@ -10852,20 +10908,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             group: DialogActionGroup.content,
             onPressed: () => unawaited(_downloadRemoteCollection(collection)),
           ),
-        // 互联刮削（7a / 7b）：只在互联源上出现。
-        if (_metadataBackend != null) ...<DialogListAction>[
-          DialogListAction(
-            label: t.remote_collection_scrape_on_host,
-            icon: Icons.cloud_sync_outlined,
-            onPressed: () => unawaited(_scrapeCollectionOnHost(collection)),
-          ),
-          if (widget.scrapeTaskController != null)
-            DialogListAction(
-              label: t.remote_collection_scrape_push_to_host,
-              icon: Icons.cloud_upload_outlined,
-              onPressed: () => unawaited(_scrapeCollectionForHost(collection)),
-            ),
-        ],
         if (serverWorks.isNotEmpty)
           DialogListAction(
             label: t.video_online_library_remove,
@@ -10878,6 +10920,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             ),
           ),
       ],
+      launchLabel: onContinue == null ? null : t.item_menu_continue_watching,
+      onLaunch: onContinue,
+      progressLabel: progressLabel,
     );
   }
 
@@ -11878,7 +11923,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       // 未进入选择态时，触屏与桌面长按都保留管理菜单；显式进入选择态后才摘掉
       // 卡片长按识别器，让祖先 SelectionDragArea 接管扫选。
       onLongPress: _selectionMode ? null : openMenu,
-      onSecondaryTap: _selectionMode ? null : openMenu,
+      onSecondaryTap: _selectionMode ? _showBatchMenu : openMenu,
       child: block != null
           ? _videoCoverBlock(
               size: block,
@@ -12013,15 +12058,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 最近一次构建的批量栏：退出多选时的下沉动画画它（见 build）。
   Widget? _lastBatchActionBar;
 
-  Widget _buildBatchActionBar() {
-    final ThemeData theme = Theme.of(context);
-    // 块2/3/4：计数与按钮可用态涵盖散卡选中集 + 合集选中集。
-    // BUG-2458：散卡选中集里混着远端占位键——「已选 N」计全部，但组合 / 打标签 /
-    // 删除三个本地动作只按本地键判可用态与取目标；远端键只喂「下载」。
+  /// 多选态的批量动作（底部批量操作栏与右键批量菜单同一份，#4b）。
+  ///
+  /// 块2/3/4：可用态涵盖散卡选中集 + 合集选中集。
+  /// BUG-2458：散卡选中集里混着远端占位键——组合 / 打标签 / 删除三个本地动作只按
+  /// 本地键判可用态与取目标；远端键只喂「下载」。
+  List<BatchAction> _batchActions() {
     final Set<String> localUids = _selectedLocalUids;
     final Set<String> remoteKeys = _selectedRemoteKeys;
-    final int selectedCount =
-        _selectedUids.length + _selectedCollectionIds.length;
     final bool hasLocalSelection =
         localUids.isNotEmpty || _selectedCollectionIds.isNotEmpty;
     // 复查 #5：组合按钮 noop 档（0 合集 0 散卡 / 仅 1 合集且无散卡）不再当启用态死按钮，
@@ -12032,53 +12076,68 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           looseCount: localUids.length,
         ) !=
         CombineTier.noop;
+    return <BatchAction>[
+      BatchAction(
+        key: 'home_video_batch_download',
+        enabled: remoteKeys.isNotEmpty,
+        onPressed: _batchDownloadSelectedRemote,
+        icon: Icons.download_outlined,
+        label: t.remote_video_download,
+      ),
+      BatchAction(
+        key: 'home_video_batch_combine',
+        enabled: canCombine,
+        onPressed: _batchCombineIntoSeries,
+        // 组合成系列用 playlist_add，与页头「收藏夹」入口的
+        // collections_bookmark_outlined 区分开（二者语义无关，避免同图标歧义）。
+        icon: Icons.playlist_add,
+        label: t.combine_into_series,
+      ),
+      // AI 整理所选（spec 2026-10-20 §10.1）。
+      if (isAiModuleEnabled(ref.read(appProvider).moduleVisibility))
+        BatchAction(
+          key: 'home_video_batch_ai_organize',
+          enabled: hasLocalSelection,
+          onPressed: _batchAiOrganize,
+          icon: FushiIcons.aiAssistant,
+          label: t.library_organize_selection_action,
+        ),
+      // 散卡与合集都能打标签（合集在选择器里二选一：合集本身 / 合集内全部条目）。
+      BatchAction(
+        key: 'home_video_batch_tag',
+        enabled: hasLocalSelection,
+        onPressed: _batchShowTagPicker,
+        icon: Icons.sell_outlined,
+        label: t.tag_label,
+      ),
+      BatchAction(
+        key: 'home_video_batch_delete',
+        enabled: hasLocalSelection,
+        onPressed: _batchDeleteConfirm,
+        icon: Icons.delete_outline,
+        label: t.dialog_delete,
+        destructive: true,
+      ),
+    ];
+  }
+
+  /// 多选态下右键 / 长按卡片：批量菜单（与底部批量操作栏同一份动作）。
+  void _showBatchMenu() {
+    unawaited(
+      showBatchItemActions(
+        context: context,
+        selectedCount: _selectedUids.length + _selectedCollectionIds.length,
+        actions: _batchActions(),
+      ),
+    );
+  }
+
+  Widget _buildBatchActionBar() {
     return BatchActionBar(
-      selectedCount: selectedCount,
+      selectedCount: _selectedUids.length + _selectedCollectionIds.length,
       onSelectAll: _selectAllVisible,
       onInvertSelection: _invertSelection,
-      actions: <Widget>[
-        FushiIconButton(
-          key: const ValueKey<String>('home_video_batch_download'),
-          enabled: remoteKeys.isNotEmpty,
-          onTap: _batchDownloadSelectedRemote,
-          icon: Icons.download_outlined,
-          tooltip: t.remote_video_download,
-        ),
-        FushiIconButton(
-          key: const ValueKey<String>('home_video_batch_combine'),
-          enabled: canCombine,
-          onTap: _batchCombineIntoSeries,
-          // 组合成系列用 playlist_add，与页头「收藏夹」入口的
-          // collections_bookmark_outlined 区分开（二者语义无关，避免同图标歧义）。
-          icon: Icons.playlist_add,
-          tooltip: t.combine_into_series,
-        ),
-        // AI 整理所选（spec 2026-10-20 §10.1）。
-        if (isAiModuleEnabled(ref.read(appProvider).moduleVisibility))
-          FushiIconButton(
-            key: const ValueKey<String>('home_video_batch_ai_organize'),
-            enabled: hasLocalSelection,
-            onTap: _batchAiOrganize,
-            icon: FushiIcons.aiAssistant,
-            tooltip: t.library_organize_selection_action,
-          ),
-        FushiIconButton(
-          // 散卡与合集都能打标签（合集在选择器里二选一：合集本身 / 合集内全部条目）。
-          key: const ValueKey<String>('home_video_batch_tag'),
-          enabled: localUids.isNotEmpty || _selectedCollectionIds.isNotEmpty,
-          onTap: _batchShowTagPicker,
-          icon: Icons.sell_outlined,
-          tooltip: t.tag_label,
-        ),
-        FushiIconButton(
-          key: const ValueKey<String>('home_video_batch_delete'),
-          enabled: hasLocalSelection,
-          onTap: _batchDeleteConfirm,
-          icon: Icons.delete_outline,
-          tooltip: t.dialog_delete,
-          enabledColor: theme.colorScheme.error,
-        ),
-      ],
+      actions: batchActionButtons(context, _batchActions()),
     );
   }
 

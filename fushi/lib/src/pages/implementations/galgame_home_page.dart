@@ -588,6 +588,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
         ref: ref,
         game: game,
         onDetail: () => unawaited(_openDetailFrom(game, origin)),
+        onLaunch: () => unawaited(_launchGame(game)),
       );
 
   /// 带着视图跳到游戏库：落进库页的视图偏好（库页尚未挂载时读到的就是它），

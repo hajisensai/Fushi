@@ -354,6 +354,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       DialogListAction(
         label: t.book_rename,
         icon: Icons.drive_file_rename_outline,
+        slot: ItemMenuSlot.edit,
         onPressed: () => _renameBook(dialogContext, item),
       ),
       // 元数据详情页（与视频卡「详情」同一套海报面板外观）：封面 / 刮削资料 /
@@ -361,6 +362,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       DialogListAction(
         label: t.book_detail_open_action,
         icon: FushiIcons.info,
+        slot: ItemMenuSlot.primary,
         onPressed: () => _openSrtDetail(dialogContext, book),
       ),
       // 合集详情页成员卡：补「移出合集」（网格右键 / 长按与键盘/手柄长按 A 都走这
@@ -410,16 +412,12 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         ),
       ),
       // NSFW：「模糊 NSFW 封面」开着时书架封面打模糊（身份 = SrtBooks.uid）。
-      DialogListAction(
-        label: t.media_nsfw_action,
-        icon: FushiIcons.visibilityOff,
-        onPressed: () => showMediaNsfwDialog(
-          context,
-          db: appModel.database,
-          kind: TagHostKind.srt,
-          entryKey: book.uid,
-          title: item.title,
-        ),
+      mediaNsfwToggleAction(
+        context,
+        db: appModel.database,
+        kind: TagHostKind.srt,
+        entryKey: book.uid,
+        title: item.title,
       ),
       // 「重新导入」：音频 + 字幕两半一起换。旧入口叫「导入音频」且只能换音频，
       // 字幕书的字幕在首次导入后全仓无处可换（用户报「有声书没办法重新导入 /
@@ -457,6 +455,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
               ? Icons.check_circle
               : Icons.check_circle_outline,
           group: DialogActionGroup.progress,
+          slot: ItemMenuSlot.primary,
           selected: _completedBookKeys.contains(bookKey),
           onPressed: () => _toggleBookCompleted(bookKey),
         ),
@@ -698,14 +697,13 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     );
   }
 
-  Widget _buildBatchActionBar() {
+  /// 多选态的批量动作（底部批量操作栏与右键批量菜单同一份，#4b）。
+  List<BatchAction> _batchActions() {
     // 块2/3/4：计数与按钮可用态涵盖散卡选中集 + 合集选中集。
     // BUG-2458：散卡选中集里混着远端占位键——「已选 N」计全部，但组合 / 打标签 /
     // 删除三个本地动作只按本地键判可用态与取目标；远端键只喂「下载」。
     final Set<String> localKeys = _selectedLocalKeys;
     final Set<String> remoteKeys = _selectedRemoteKeys;
-    final int selectedCount =
-        _selectedKeys.length + _selectedCollectionIds.length;
     final bool hasLocalSelection =
         localKeys.isNotEmpty || _selectedCollectionIds.isNotEmpty;
     // 复查 #5：组合按钮 noop 档（0 合集 0 散卡 / 仅 1 合集且无散卡）不再当启用态死按钮，
@@ -716,90 +714,89 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           looseCount: localKeys.length,
         ) !=
         CombineTier.noop;
-    return BatchActionBar(
-      selectedCount: selectedCount,
-      onSelectAll: _selectAll,
-      onInvertSelection: _invertSelection,
-      actions: <Widget>[
-        FushiIconButton(
-          key: const ValueKey<String>('reader_shelf_batch_download'),
-          // BUG-3337：勾中的合集里有云端成员也可下载（合集一键全部下载）。
-          enabled:
-              remoteKeys.isNotEmpty ||
-              _selectedCollectionRemoteMembers.isNotEmpty,
-          onTap: _batchDownloadSelectedRemote,
-          icon: Icons.download_outlined,
-          tooltip: t.remote_book_download,
-        ),
-        FushiIconButton(
-          key: const ValueKey<String>('reader_shelf_batch_combine'),
-          enabled: canCombine,
-          onTap: _batchCombineIntoSeries,
-          // 组合成系列用 playlist_add，与页头「收藏夹」入口的
-          // collections_bookmark_outlined 区分开（二者语义无关，避免同图标歧义）。
-          icon: Icons.playlist_add,
-          tooltip: t.combine_into_series,
-        ),
-        // AI 整理所选（spec 2026-10-20 §10.1）：只把选中的散卡与选中合集的成员交给 AI。
-        if (isAiModuleEnabled(_moduleVisibility))
-          FushiIconButton(
-            key: const ValueKey<String>('reader_shelf_batch_ai_organize'),
-            enabled: hasLocalSelection,
-            onTap: _batchAiOrganize,
-            icon: FushiIcons.aiAssistant,
-            tooltip: t.library_organize_selection_action,
-          ),
-        FushiIconButton(
-          // 散卡与合集都能打标签（合集在选择器里二选一：合集本身 / 合集内全部条目）。
-          key: const ValueKey<String>('reader_shelf_batch_tag'),
+    return <BatchAction>[
+      BatchAction(
+        key: 'reader_shelf_batch_download',
+        // BUG-3337：勾中的合集里有云端成员也可下载（合集一键全部下载）。
+        enabled:
+            remoteKeys.isNotEmpty ||
+            _selectedCollectionRemoteMembers.isNotEmpty,
+        onPressed: _batchDownloadSelectedRemote,
+        icon: Icons.download_outlined,
+        label: t.remote_book_download,
+      ),
+      BatchAction(
+        key: 'reader_shelf_batch_combine',
+        enabled: canCombine,
+        onPressed: _batchCombineIntoSeries,
+        // 组合成系列用 playlist_add，与页头「收藏夹」入口的
+        // collections_bookmark_outlined 区分开（二者语义无关，避免同图标歧义）。
+        icon: Icons.playlist_add,
+        label: t.combine_into_series,
+      ),
+      // AI 整理所选（spec 2026-10-20 §10.1）：只把选中的散卡与选中合集的成员交给 AI。
+      if (isAiModuleEnabled(_moduleVisibility))
+        BatchAction(
+          key: 'reader_shelf_batch_ai_organize',
           enabled: hasLocalSelection,
-          onTap: _batchShowTagPicker,
-          icon: Icons.sell_outlined,
-          tooltip: t.tag_label,
+          onPressed: _batchAiOrganize,
+          icon: FushiIcons.aiAssistant,
+          label: t.library_organize_selection_action,
         ),
-        // BUG-3337：漫画库多选补「识别文字」——与卡菜单同一条排队路径
-        // （[enqueuePendingMangaOcrForBooks]），选中合集时识别合集里的每一本。
-        if (_mangaOnly && _moduleVisibility.isEnabled(ModuleId.manga))
-          FushiIconButton(
-            key: const ValueKey<String>('reader_shelf_batch_ocr'),
-            enabled: hasLocalSelection,
-            onTap: _batchOcrSelectedManga,
-            icon: FushiIcons.ocr,
-            tooltip: t.manga_library_ocr_action,
-          ),
-        FushiIconButton(
-          // 只作用于散卡书（合集不是一本书，没有进度可重置），与打标签同一可用态。
-          key: const ValueKey<String>('reader_shelf_batch_reset_progress'),
-          enabled: localKeys.isNotEmpty,
-          onTap: _batchResetReadingState,
-          icon: Icons.restart_alt_outlined,
-          tooltip: t.library_progress_reset_action,
-        ),
-        FushiIconButton(
-          key: const ValueKey<String>('reader_shelf_batch_delete'),
+      BatchAction(
+        // 散卡与合集都能打标签（合集在选择器里二选一：合集本身 / 合集内全部条目）。
+        key: 'reader_shelf_batch_tag',
+        enabled: hasLocalSelection,
+        onPressed: _batchShowTagPicker,
+        icon: Icons.sell_outlined,
+        label: t.tag_label,
+      ),
+      // BUG-3337：漫画库多选补「识别文字」——与卡菜单同一条排队路径
+      // （[enqueuePendingMangaOcrForBooks]），选中合集时识别合集里的每一本。
+      if (_mangaOnly && _moduleVisibility.isEnabled(ModuleId.manga))
+        BatchAction(
+          key: 'reader_shelf_batch_ocr',
           enabled: hasLocalSelection,
-          onTap: _batchDeleteConfirm,
-          icon: Icons.delete_outline,
-          tooltip: t.dialog_delete,
-          enabledColor: theme.colorScheme.error,
+          onPressed: _batchOcrSelectedManga,
+          icon: FushiIcons.ocr,
+          label: t.manga_library_ocr_action,
         ),
-      ],
+      BatchAction(
+        // 只作用于散卡书（合集不是一本书，没有进度可重置），与打标签同一可用态。
+        key: 'reader_shelf_batch_reset_progress',
+        enabled: localKeys.isNotEmpty,
+        onPressed: _batchResetReadingState,
+        icon: Icons.restart_alt_outlined,
+        label: t.library_progress_reset_action,
+      ),
+      BatchAction(
+        key: 'reader_shelf_batch_delete',
+        enabled: hasLocalSelection,
+        onPressed: _batchDeleteConfirm,
+        icon: Icons.delete_outline,
+        label: t.dialog_delete,
+        destructive: true,
+      ),
+    ];
+  }
+
+  /// 多选态下右键 / 长按卡片：批量菜单（与底部批量操作栏同一份动作）。
+  void _showBatchMenu() {
+    unawaited(
+      showBatchItemActions(
+        context: context,
+        selectedCount: _selectedKeys.length + _selectedCollectionIds.length,
+        actions: _batchActions(),
+      ),
     );
   }
 
-  /// 卡菜单 / 多选「识别文字」（BUG-3337）：[bookKeys] 里每本漫画还没识别的部分
-  /// （在线作品 = 已下载未识别的章，本地卷 = 未识别的卷）排进 OCR 队列。
-  /// [dialog] 为真时先收起卡片长按菜单。
-  Future<void> _ocrMangaBooks(
-    Iterable<String> bookKeys, {
-    bool dialog = false,
-  }) async {
-    if (dialog) Navigator.pop(context);
-    await enqueuePendingMangaOcrForBooks(
-      context: context,
-      appModel: appModel,
-      registry: ref.read(mangaOcrJobRegistryProvider),
-      bookKeys: bookKeys,
+  Widget _buildBatchActionBar() {
+    return BatchActionBar(
+      selectedCount: _selectedKeys.length + _selectedCollectionIds.length,
+      onSelectAll: _selectAll,
+      onInvertSelection: _invertSelection,
+      actions: batchActionButtons(context, _batchActions()),
     );
   }
 
@@ -1917,16 +1914,6 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
   Future<void> _openAudiobookStudio(String bookKey) async {
     Navigator.pop(context);
     await openTtsStudioPage(context, appModel: appModel, bookKey: bookKey);
-    if (mounted) _rebuild(() {});
-  }
-
-  Future<void> _openMangaAudioStudio(String bookKey) async {
-    Navigator.pop(context);
-    await openMangaAudioStudioPage(
-      context,
-      appModel: appModel,
-      bookKey: bookKey,
-    );
     if (mounted) _rebuild(() {});
   }
 
