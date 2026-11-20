@@ -123,6 +123,7 @@ class VideoSubtitleMaskLayer extends StatefulWidget {
     required this.config,
     required this.draftRect,
     this.createSmartDetector,
+    this.smartDetectorIdentity,
     this.onSmartUnavailable,
     this.onSmartError,
     super.key,
@@ -137,6 +138,11 @@ class VideoSubtitleMaskLayer extends StatefulWidget {
 
   /// 智能模式的识别器工厂；null 时智能模式退化成手动（整块常显）。
   final SmartSubtitleMaskDetector Function()? createSmartDetector;
+
+  /// 识别器的身份（宿主用模型 key、模型下载状态等拼成）：值一变就拆掉现有识别器与
+  /// 采样器按新身份重建——换模型 / 模型刚下载好时，之前判成「不可用」的采样器不会
+  /// 一直退化下去。null = 识别器不随外部状态变化。
+  final ValueListenable<Object?>? smartDetectorIdentity;
 
   /// 识别器不可用（本机 OCR 模型没下载）：每个采样器只报一次。
   final VoidCallback? onSmartUnavailable;
@@ -159,20 +165,40 @@ class _VideoSubtitleMaskLayerState extends State<VideoSubtitleMaskLayer> {
   @override
   void initState() {
     super.initState();
+    widget.smartDetectorIdentity?.addListener(_onDetectorIdentityChanged);
     _syncSampler();
   }
 
   @override
   void didUpdateWidget(VideoSubtitleMaskLayer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.controller, widget.controller)) _disposeSampler();
+    final ValueListenable<Object?>? oldIdentity =
+        oldWidget.smartDetectorIdentity;
+    final ValueListenable<Object?>? identity = widget.smartDetectorIdentity;
+    if (!identical(oldIdentity, identity)) {
+      oldIdentity?.removeListener(_onDetectorIdentityChanged);
+      identity?.addListener(_onDetectorIdentityChanged);
+    }
+    if (!identical(oldWidget.controller, widget.controller) ||
+        oldIdentity?.value != identity?.value) {
+      _disposeSampler();
+    }
     _syncSampler();
   }
 
   @override
   void dispose() {
+    widget.smartDetectorIdentity?.removeListener(_onDetectorIdentityChanged);
     _disposeSampler();
     super.dispose();
+  }
+
+  void _onDetectorIdentityChanged() {
+    if (_sampler == null) return;
+    setState(() {
+      _disposeSampler();
+      _syncSampler();
+    });
   }
 
   void _syncSampler() {

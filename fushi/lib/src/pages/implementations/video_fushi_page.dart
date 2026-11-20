@@ -439,7 +439,9 @@ import 'package:fushi/src/media/video/video_subtitle_mask_config.dart';
 import 'package:fushi/src/media/video/smart_subtitle_mask_sampler.dart';
 import 'package:fushi/src/ocr/local_screen_ocr.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart'
-    show createMangaOcrService;
+    show createMangaOcrService, mangaOcrModelDownloadsProvider;
+import 'package:fushi/src/media/manga/ocr/manga_ocr_model_downloads.dart';
+import 'package:fushi/src/utils/derived_value_listenable.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
@@ -3713,6 +3715,25 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// [_subtitleMaskDraft] 让画面上的遮布实时跟随，松手落偏好。
   bool _subtitleMaskEditing = false;
   final ValueNotifier<Rect?> _subtitleMaskDraft = ValueNotifier<Rect?>(null);
+
+  /// 智能遮布识别器的身份：本机 OCR 模型 key + 该模型是否正在下载。变了（换模型 /
+  /// 下载开始或结束）遮布层就重建识别器与采样器，模型刚下载好不必切模式或重进页面。
+  late final ValueListenable<String> _smartSubtitleMaskDetectorIdentity =
+      DerivedValueListenable<String>(
+        Listenable.merge(<Listenable>[
+          appModel.prefsRepo,
+          _mangaOcrModelDownloads,
+        ]),
+        () =>
+            '${appModel.mangaOcrLocalModel}|'
+            '${_mangaOcrModelDownloads.isActive(_smartSubtitleMaskOcrModel)}',
+      );
+
+  MangaOcrModelDownloads get _mangaOcrModelDownloads =>
+      ref.read(mangaOcrModelDownloadsProvider);
+
+  MangaOcrLocalModel get _smartSubtitleMaskOcrModel =>
+      MangaOcrLocalModel.forPlatform(appModel.prefsRepo.mangaOcrLocalModel);
 
   /// 「浮条调轴」模式（反馈 JsICLVdq0i）：设置面板收起、画面顶部挂一条只含调轴
   /// 控件的紧凑浮条，字幕区域整片让出来看实时效果。见 layout.part 的

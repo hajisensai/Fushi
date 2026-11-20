@@ -499,37 +499,44 @@ extension _VideoLayout on _VideoFushiPageState {
                         // 字幕之下——不糊按钮，Fushi 字幕仍压在遮布上可读可查词。
                         // IgnorePointer；关闭时零尺寸。
                         Positioned.fill(
-                          child:
-                              ValueListenableBuilder<VideoSubtitleMaskConfig>(
-                                valueListenable:
-                                    appModel.videoSubtitleMaskListenable,
-                                builder:
-                                    (
-                                      BuildContext context,
-                                      VideoSubtitleMaskConfig config,
-                                      Widget? _,
-                                    ) => VideoSubtitleMaskLayer(
-                                      controller: controller,
-                                      fit: videoFitModeToBoxFit(_videoFitMode),
-                                      config: config,
-                                      draftRect: _subtitleMaskDraft,
-                                      createSmartDetector:
-                                          _createSmartSubtitleMaskDetector,
-                                      onSmartUnavailable: () => _showOsd(
-                                        t.video_subtitle_mask_smart_unavailable,
-                                        severity: ToastSeverity.warning,
-                                      ),
-                                      onSmartError:
-                                          (
-                                            Object error,
-                                            StackTrace stack,
-                                          ) => ErrorLogService.instance.log(
+                          child: ValueListenableBuilder<VideoSubtitleMaskConfig>(
+                            valueListenable:
+                                appModel.videoSubtitleMaskListenable,
+                            builder:
+                                (
+                                  BuildContext context,
+                                  VideoSubtitleMaskConfig config,
+                                  Widget? _,
+                                ) => VideoSubtitleMaskLayer(
+                                  controller: controller,
+                                  fit: videoFitModeToBoxFit(_videoFitMode),
+                                  config: config,
+                                  draftRect: _subtitleMaskDraft,
+                                  createSmartDetector:
+                                      _createSmartSubtitleMaskDetector,
+                                  smartDetectorIdentity:
+                                      _smartSubtitleMaskDetectorIdentity,
+                                  onSmartUnavailable: () {
+                                    // 正在下载：下完身份一变就会重建，不必提示。
+                                    if (_mangaOcrModelDownloads.isActive(
+                                      _smartSubtitleMaskOcrModel,
+                                    )) {
+                                      return;
+                                    }
+                                    _showOsd(
+                                      t.video_subtitle_mask_smart_unavailable,
+                                      severity: ToastSeverity.warning,
+                                    );
+                                  },
+                                  onSmartError:
+                                      (Object error, StackTrace stack) =>
+                                          ErrorLogService.instance.log(
                                             'VideoFushiPage.smartSubtitleMask',
                                             error,
                                             stack,
                                           ),
-                                    ),
-                              ),
+                                ),
+                          ),
                         ),
                         // Apple（iOS / macOS 26）：控制条背后的很淡的顶 / 底暗化 + 底栏液态
                         // 玻璃胶囊。必须排在 media_kit 控制条**之前**（画在按钮 / 进度条
@@ -1376,11 +1383,7 @@ extension _VideoLayout on _VideoFushiPageState {
   SmartSubtitleMaskDetector _createSmartSubtitleMaskDetector() =>
       LocalOcrSmartSubtitleMaskDetector(
         LocalScreenOcr(
-          createMangaOcrService(
-            localModel: MangaOcrLocalModel.forPlatform(
-              appModel.prefsRepo.mangaOcrLocalModel,
-            ),
-          ),
+          createMangaOcrService(localModel: _smartSubtitleMaskOcrModel),
         ),
       );
 

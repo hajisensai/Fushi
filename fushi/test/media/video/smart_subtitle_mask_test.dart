@@ -15,27 +15,28 @@ const Rect _region = Rect.fromLTWH(0.1, 0.75, 0.8, 0.22);
 /// 一行底部字幕（画面比例坐标）。
 const Rect _line = Rect.fromLTWH(0.3, 0.85, 0.4, 0.05);
 
-Uint8List _rawBytes({
+RawVideoFrame _rawFrame({
   required int width,
   required int height,
   required int stride,
   int Function(int x, int y, int c)? pixel,
 }) {
-  final Uint8List out = Uint8List(12 + height * stride);
-  final ByteData header = ByteData.sublistView(out, 0, 12);
-  header.setUint32(0, width, Endian.little);
-  header.setUint32(4, height, Endian.little);
-  header.setUint32(8, stride, Endian.little);
+  final Uint8List bgra = Uint8List(height * stride);
   if (pixel != null) {
     for (int y = 0; y < height; y++) {
       for (int x = 0; x < width; x++) {
         for (int c = 0; c < 4; c++) {
-          out[12 + y * stride + x * 4 + c] = pixel(x, y, c);
+          bgra[y * stride + x * 4 + c] = pixel(x, y, c);
         }
       }
     }
   }
-  return out;
+  return RawVideoFrame(
+    width: width,
+    height: height,
+    stride: stride,
+    bgra: bgra,
+  );
 }
 
 VideoPlayerController _controller({required bool playing, int position = 0}) {
@@ -47,8 +48,11 @@ VideoPlayerController _controller({required bool playing, int position = 0}) {
   return c;
 }
 
-RawVideoFrame _frame() =>
-    RawVideoFrame(width: 16, height: 9, stride: 64, bgra: Uint8List(9 * 64));
+/// 16x9 整帧里按 [region] 截出的一块（代替真播放器的截帧）。
+RawVideoFrameCrop? _capture(Rect region) => cropRawVideoFrame(
+  RawVideoFrame(width: 16, height: 9, stride: 64, bgra: Uint8List(9 * 64)),
+  region,
+);
 
 class _FakeDetector implements SmartSubtitleMaskDetector {
   _FakeDetector(this.results);
@@ -73,43 +77,77 @@ class _FakeDetector implements SmartSubtitleMaskDetector {
 
 void main() {
   group('raw video frame', () {
-    test('parses the patched header and rejects short / bad input', () {
-      final RawVideoFrame? f = parseRawVideoFrame(
-        _rawBytes(width: 4, height: 2, stride: 20),
+    test('crop bytes round-trip; bad frames and bad headers are rejected', () {
+      final RawVideoFrame f = _rawFrame(width: 4, height: 2, stride: 20);
+      final Uint8List? bytes = cropRawVideoFrameBytes(
+        f,
+        const Rect.fromLTRB(0, 0, 1, 1),
       );
-      expect(f, isNotNull);
-      expect((f!.width, f.height, f.stride), (4, 2, 20));
-      expect(f.bgra.length, 40);
-      expect(parseRawVideoFrame(null), isNull);
-      expect(parseRawVideoFrame(Uint8List(8)), isNull);
-      // stride 小于 width * 4。
+      expect(bytes, hasLength(kRawVideoFrameCropHeaderBytes + 4 * 2 * 4));
+      final RawVideoFrameCrop? crop = parseRawVideoFrameCrop(bytes);
+      expect(crop, isNotNull);
       expect(
-        parseRawVideoFrame(_rawBytes(width: 4, height: 2, stride: 8)),
+        (crop!.frameWidth, crop.frameHeight, crop.width, crop.height),
+        (4, 2, 4, 2),
+      );
+      expect(parseRawVideoFrameCrop(null), isNull);
+      expect(parseRawVideoFrameCrop(Uint8List(8)), isNull);
+      // 数据比头部声明的短。
+      expect(
+        parseRawVideoFrameCrop(Uint8List.sublistView(bytes!, 0, 30)),
         isNull,
       );
-      // 数据比头部声明的短。
-      final Uint8List truncated = _rawBytes(width: 4, height: 2, stride: 16);
+      // stride 小于 width * 4 / 缓冲比 height * stride 短：不裁。
+      const Rect all = Rect.fromLTRB(0, 0, 1, 1);
       expect(
-        parseRawVideoFrame(Uint8List.sublistView(truncated, 0, 30)),
+        cropRawVideoFrameBytes(
+          RawVideoFrame(width: 4, height: 2, stride: 8, bgra: Uint8List(16)),
+          all,
+        ),
+        isNull,
+      );
+      expect(
+        cropRawVideoFrameBytes(
+          RawVideoFrame(width: 4, height: 2, stride: 16, bgra: Uint8List(20)),
+          all,
+        ),
         isNull,
       );
     });
 
+    // 补丁在截帧 isolate 上调用这个变换：只把裁剪传回主 isolate。
+    test('the capture transform crops on the capture side', () {
+      final RawVideoFrame f = _rawFrame(
+        width: 10,
+        height: 10,
+        stride: 48,
+        pixel: (int x, int y, int c) => c == 0 ? x : 0,
+      );
+      final RawVideoFrameTransform transform = rawVideoFrameCropTransform(
+        const Rect.fromLTRB(0.5, 0.8, 1, 1),
+      );
+      final RawVideoFrameCrop crop = parseRawVideoFrameCrop(
+        transform(f.width, f.height, f.stride, f.bgra),
+      )!;
+      expect((crop.left, crop.top, crop.width, crop.height), (5, 8, 5, 2));
+      expect(crop.rgba.length, 5 * 2 * 4);
+      // 裁剪内 (0, 0) = 整帧 (5, 8)：B=5 → RGBA 的第三个字节。
+      expect(crop.rgba.sublist(0, 4), <int>[0, 0, 5, 255]);
+    });
+
     test('crops a fraction, swaps BGRA to opaque RGBA, honours stride', () {
       // B = x, G = y, R = 200；stride 带 8 字节填充。
-      final RawVideoFrame f = parseRawVideoFrame(
-        _rawBytes(
-          width: 10,
-          height: 10,
-          stride: 48,
-          pixel: (int x, int y, int c) => switch (c) {
-            0 => x,
-            1 => y,
-            2 => 200,
-            _ => 0,
-          },
-        ),
-      )!;
+      final RawVideoFrame f = _rawFrame(
+        width: 10,
+        height: 10,
+        stride: 48,
+        pixel: (int x, int y, int c) => switch (c) {
+          0 => x,
+          1 => y,
+          2 => 200,
+          _ => 0,
+        },
+      );
       final RawVideoFrameCrop crop = cropRawVideoFrame(
         f,
         const Rect.fromLTRB(0.2, 0.5, 0.6, 0.8),
@@ -191,8 +229,7 @@ void main() {
         controller: c,
         region: _region,
         detect: d.detect,
-        capture: () async => _frame(),
-        crop: (RawVideoFrame f, Rect r) async => cropRawVideoFrame(f, r),
+        capture: (Rect r) async => _capture(r),
         minInterval: Duration.zero,
       );
       await pumpEventQueue();
@@ -214,8 +251,7 @@ void main() {
         controller: c,
         region: _region,
         detect: d.detect,
-        capture: () async => _frame(),
-        crop: (RawVideoFrame f, Rect r) async => cropRawVideoFrame(f, r),
+        capture: (Rect r) async => _capture(r),
         minInterval: Duration.zero,
       );
       await pumpEventQueue();
@@ -242,8 +278,7 @@ void main() {
         controller: c,
         region: _region,
         detect: d.detect,
-        capture: () async => _frame(),
-        crop: (RawVideoFrame f, Rect r) async => cropRawVideoFrame(f, r),
+        capture: (Rect r) async => _capture(r),
         minInterval: Duration.zero,
       );
       await pumpEventQueue();
@@ -266,8 +301,7 @@ void main() {
           controller: c,
           region: _region,
           detect: d.detect,
-          capture: () async => _frame(),
-          crop: (RawVideoFrame f, Rect r) async => cropRawVideoFrame(f, r),
+          capture: (Rect r) async => _capture(r),
           minInterval: Duration.zero,
           onUnavailable: () => reports++,
         );
@@ -292,7 +326,7 @@ void main() {
         controller: c,
         region: _region,
         detect: (_) async => const <Rect>[],
-        capture: () async {
+        capture: (Rect r) async {
           captures++;
           throw StateError('boom');
         },
@@ -356,6 +390,49 @@ void main() {
       await tester.pump();
       expect(created.single.disposed, isTrue);
       await tester.pumpWidget(const SizedBox());
+      draft.dispose();
+      c.dispose();
+    });
+    // 模型刚下载好 / 换了模型：之前判成不可用的识别器要按新身份重建，不必切模式。
+    testWidgets('detector identity change rebuilds the detector', (
+      WidgetTester tester,
+    ) async {
+      final VideoPlayerController c = _controller(playing: false);
+      final List<_FakeDetector> created = <_FakeDetector>[];
+      final ValueNotifier<Rect?> draft = ValueNotifier<Rect?>(null);
+      final ValueNotifier<Object?> identity = ValueNotifier<Object?>('m|true');
+      int unavailableReports = 0;
+      await tester.pumpWidget(
+        host(
+          VideoSubtitleMaskLayer(
+            controller: c,
+            fit: BoxFit.contain,
+            config: const VideoSubtitleMaskConfig(
+              enabled: true,
+              mode: VideoSubtitleMaskMode.smart,
+            ),
+            draftRect: draft,
+            smartDetectorIdentity: identity,
+            onSmartUnavailable: () => unavailableReports++,
+            createSmartDetector: () {
+              final _FakeDetector d = _FakeDetector(<List<Rect>>[
+                const <Rect>[],
+              ])..unavailable = created.isEmpty;
+              created.add(d);
+              return d;
+            },
+          ),
+        ),
+      );
+      expect(created, hasLength(1));
+      identity.value = 'm|false';
+      await tester.pump();
+      expect(created, hasLength(2));
+      expect(created.first.disposed, isTrue);
+      expect(created.last.disposed, isFalse);
+      await tester.pumpWidget(const SizedBox());
+      expect(created.last.disposed, isTrue);
+      identity.dispose();
       draft.dispose();
       c.dispose();
     });

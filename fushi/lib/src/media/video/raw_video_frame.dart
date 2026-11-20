@@ -1,8 +1,15 @@
-/// 播放器原始帧（mpv `screenshot-raw video` 的 BGRA 像素，不经 PNG / JPEG 编码）。
+/// 播放器原始帧（mpv `screenshot-raw video` 的 BGRA 像素，不经 PNG / JPEG 编码）的
+/// 裁剪。
 ///
-/// media_kit 补丁格式 `image/x-fushi-bgra`：12 字节小端头（宽、高、stride，各 uint32）
-/// 后接 `height * stride` 字节 BGRA（见 `ci/patches/hosted/media_kit-1.2.6/PATCHES.md`）。
-/// 智能遮布持续抽帧，只要一小块裁剪，纯 Dart 编码整帧（1080p 几百毫秒）不可接受。
+/// media_kit 补丁格式 `image/x-fushi-bgra`（见 `ci/patches/hosted/media_kit-1.2.6/
+/// PATCHES.md`）：截帧 isolate 拿到 mpv 的 BGRA 缓冲后，直接调用调用方给的变换
+/// （[rawVideoFrameCropTransform]）就地裁出搜索区域、转成 RGBA，只把这一小块传回主
+/// isolate。智能遮布持续抽帧（播放中每秒约 4 次），整帧在 isolate 之间来回拷贝
+/// （1080p 约 8 MB、4K 约 33 MB）与纯 Dart 编码都不可接受。
+///
+/// 裁剪的字节布局：24 字节小端头（整帧宽、整帧高、裁剪 left、top、宽、高，各
+/// uint32）后接 `宽 * 高 * 4` 字节 RGBA（alpha 恒 255），由 [parseRawVideoFrameCrop]
+/// 解析。
 library;
 
 import 'dart:typed_data';
@@ -10,6 +17,14 @@ import 'dart:ui' show Rect;
 
 /// media_kit 补丁里的原始帧格式名。
 const String kRawVideoFrameFormat = 'image/x-fushi-bgra';
+
+/// 裁剪字节头长度。
+const int kRawVideoFrameCropHeaderBytes = 24;
+
+/// 补丁在截帧 isolate 上调用的变换：整帧尺寸、行跨度和 mpv 缓冲的视图（只在调用期间
+/// 有效），返回要传回主 isolate 的字节。会被发到截帧 isolate，只能捕获可发送的值。
+typedef RawVideoFrameTransform =
+    Uint8List? Function(int width, int height, int stride, Uint8List bgra);
 
 /// 一帧 BGRA 像素。
 class RawVideoFrame {
@@ -26,25 +41,8 @@ class RawVideoFrame {
   /// 每行字节数（≥ width * 4，可能有对齐填充）。
   final int stride;
 
-  /// `height * stride` 字节。
+  /// 至少 `height * stride` 字节。
   final Uint8List bgra;
-}
-
-/// 解析补丁格式的字节；头部缺失、尺寸非正或数据长度对不上返回 null。
-RawVideoFrame? parseRawVideoFrame(Uint8List? bytes) {
-  if (bytes == null || bytes.length < 12) return null;
-  final ByteData header = ByteData.sublistView(bytes, 0, 12);
-  final int width = header.getUint32(0, Endian.little);
-  final int height = header.getUint32(4, Endian.little);
-  final int stride = header.getUint32(8, Endian.little);
-  if (width <= 0 || height <= 0 || stride < width * 4) return null;
-  if (bytes.length - 12 < height * stride) return null;
-  return RawVideoFrame(
-    width: width,
-    height: height,
-    stride: stride,
-    bgra: Uint8List.sublistView(bytes, 12, 12 + height * stride),
-  );
 }
 
 /// 一块 RGBA 裁剪（OCR 输入），带它在整帧里的像素位置。
@@ -77,10 +75,30 @@ class RawVideoFrameCrop {
   );
 }
 
-/// 按整帧比例矩形 [fraction] 裁出一块并转成 RGBA；裁剪为空返回 null。
+/// 按整帧比例矩形 [fraction] 裁剪的截帧变换（交给补丁在截帧 isolate 上跑）。
 ///
-/// 纯内存拷贝，适合放后台 isolate。
-RawVideoFrameCrop? cropRawVideoFrame(RawVideoFrame frame, Rect fraction) {
+/// 顶层函数造闭包：闭包只捕获 [fraction]，能安全发到截帧 isolate。
+RawVideoFrameTransform rawVideoFrameCropTransform(Rect fraction) =>
+    (int width, int height, int stride, Uint8List bgra) =>
+        cropRawVideoFrameBytes(
+          RawVideoFrame(
+            width: width,
+            height: height,
+            stride: stride,
+            bgra: bgra,
+          ),
+          fraction,
+        );
+
+/// 按整帧比例矩形 [fraction] 裁出一块、转成 RGBA，打包成带头的字节（布局见库注释）；
+/// 帧数据不完整或裁剪为空返回 null。只拷贝裁剪内的像素。
+Uint8List? cropRawVideoFrameBytes(RawVideoFrame frame, Rect fraction) {
+  if (frame.width <= 0 ||
+      frame.height <= 0 ||
+      frame.stride < frame.width * 4 ||
+      frame.bgra.length < frame.height * frame.stride) {
+    return null;
+  }
   final int left = (fraction.left * frame.width).floor().clamp(0, frame.width);
   final int top = (fraction.top * frame.height).floor().clamp(0, frame.height);
   final int right = (fraction.right * frame.width).ceil().clamp(
@@ -94,9 +112,16 @@ RawVideoFrameCrop? cropRawVideoFrame(RawVideoFrame frame, Rect fraction) {
   final int w = right - left;
   final int h = bottom - top;
   if (w <= 0 || h <= 0) return null;
+  final Uint8List out = Uint8List(kRawVideoFrameCropHeaderBytes + w * h * 4);
+  ByteData.sublistView(out, 0, kRawVideoFrameCropHeaderBytes)
+    ..setUint32(0, frame.width, Endian.little)
+    ..setUint32(4, frame.height, Endian.little)
+    ..setUint32(8, left, Endian.little)
+    ..setUint32(12, top, Endian.little)
+    ..setUint32(16, w, Endian.little)
+    ..setUint32(20, h, Endian.little);
   final Uint8List src = frame.bgra;
-  final Uint8List out = Uint8List(w * h * 4);
-  int o = 0;
+  int o = kRawVideoFrameCropHeaderBytes;
   for (int y = 0; y < h; y++) {
     int i = (top + y) * frame.stride + left * 4;
     for (int x = 0; x < w; x++) {
@@ -108,13 +133,45 @@ RawVideoFrameCrop? cropRawVideoFrame(RawVideoFrame frame, Rect fraction) {
       i += 4;
     }
   }
+  return out;
+}
+
+/// 解析 [cropRawVideoFrameBytes] 的输出（RGBA 是原字节的视图，不再拷贝）；头部缺失、
+/// 尺寸非正、越出整帧或数据长度对不上返回 null。
+RawVideoFrameCrop? parseRawVideoFrameCrop(Uint8List? bytes) {
+  if (bytes == null || bytes.length < kRawVideoFrameCropHeaderBytes) {
+    return null;
+  }
+  final ByteData header = ByteData.sublistView(
+    bytes,
+    0,
+    kRawVideoFrameCropHeaderBytes,
+  );
+  final int frameWidth = header.getUint32(0, Endian.little);
+  final int frameHeight = header.getUint32(4, Endian.little);
+  final int left = header.getUint32(8, Endian.little);
+  final int top = header.getUint32(12, Endian.little);
+  final int width = header.getUint32(16, Endian.little);
+  final int height = header.getUint32(20, Endian.little);
+  if (width <= 0 ||
+      height <= 0 ||
+      left + width > frameWidth ||
+      top + height > frameHeight) {
+    return null;
+  }
+  final int end = kRawVideoFrameCropHeaderBytes + width * height * 4;
+  if (bytes.length != end) return null;
   return RawVideoFrameCrop(
-    rgba: out,
+    rgba: Uint8List.sublistView(bytes, kRawVideoFrameCropHeaderBytes, end),
     left: left,
     top: top,
-    width: w,
-    height: h,
-    frameWidth: frame.width,
-    frameHeight: frame.height,
+    width: width,
+    height: height,
+    frameWidth: frameWidth,
+    frameHeight: frameHeight,
   );
 }
+
+/// [cropRawVideoFrameBytes] + [parseRawVideoFrameCrop]：同一 isolate 内直接裁剪。
+RawVideoFrameCrop? cropRawVideoFrame(RawVideoFrame frame, Rect fraction) =>
+    parseRawVideoFrameCrop(cropRawVideoFrameBytes(frame, fraction));

@@ -33,8 +33,8 @@ Fushi 是 GPL-3.0。可用：STTN（MIT）、LaMa（Apache-2.0）、RAFT（BSD-3
 
 ### 3.2 结构
 
-- 截帧：`VideoPlayerController.captureRawFrame()`——media_kit 补丁给 `screenshot` 加 `image/x-fushi-bgra` 格式，直接返回 `screenshot-raw video` 的 BGRA 像素（头部带宽 / 高 / stride），**不做纯 Dart 的 PNG/JPEG 编码**（1080p 一次几百毫秒，持续采样不可接受）。只截视频本身，不合成字幕。
-- 裁剪 + BGRA→RGBA 在后台 isolate；识别走 `LocalScreenOcr.recognizeRgba`（PP 行检测 + 识别，会话常驻，与截屏识字 / 硬字幕 OCR 同一套本机模型）。
+- 截帧：`VideoPlayerController.captureRawFrameCrop(region)`——media_kit 补丁给 `screenshot` 加 `image/x-fushi-bgra` 格式 + `fushiRawTransform` 回调，在截帧 isolate 上拿到 `screenshot-raw video` 的 BGRA 缓冲后就地调用回调，**不做纯 Dart 的 PNG/JPEG 编码**（1080p 一次几百毫秒，持续采样不可接受）。只截视频本身，不合成字幕。
+- 裁剪 + BGRA→RGBA 就是那个回调（`rawVideoFrameCropTransform`），只拷贝搜索区域的行，整帧不出截帧 isolate、不另起 isolate；识别走 `LocalScreenOcr.recognizeRgba`（PP 行检测 + 识别，会话常驻，与截屏识字 / 硬字幕 OCR 同一套本机模型）。
 - 迟滞与框计算是纯函数 `SmartSubtitleMaskTracker`（`smart_subtitle_mask_tracker.dart`），单测覆盖；采样循环 `SmartSubtitleMaskSampler` 只负责「何时截、截完喂给 tracker」，输出一个 `ValueListenable<Rect?>` 给遮布层。
 - 这里没有新的计算型子系统：识别复用现有 OCR，tracker 是几十行的几何。重活（彻底擦除）在 PR2 的 Rust crate。
 

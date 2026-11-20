@@ -159,15 +159,18 @@ isolate killed without dispose after quiescing; exits `-1073740791` with
 `Callback invoked after it has been deleted` without the fix). Remove when
 upstream unregisters its callbacks before the engine can free them.
 
-## Raw BGRA screenshot format (`image/x-fushi-bgra`)
+## Raw BGRA screenshot transform (`image/x-fushi-bgra`)
 
 `lib/src/player/native/player/real.dart`: `screenshot` accepts
-`format: 'image/x-fushi-bgra'` and returns the `screenshot-raw` pixels as-is
-behind a 12-byte little-endian header (`width`, `height`, `stride`, each
-uint32). Upstream's `null` format returns the same pixels but drops the
-dimensions, and the JPEG / PNG formats run a pure-Dart encode (hundreds of ms
-per 1080p frame). The smart subtitle mask
+`format: 'image/x-fushi-bgra'` together with a `fushiRawTransform` callback.
+The callback runs on the capture isolate with the `screenshot-raw` frame size,
+row stride and a view of mpv's BGRA buffer (valid only during the call), and
+its returned bytes are the screenshot result. Upstream's `null` format copies
+the whole frame and drops the dimensions, and the JPEG / PNG formats run a
+pure-Dart encode (hundreds of ms per 1080p frame). The smart subtitle mask
 (`fushi/lib/src/media/video/smart_subtitle_mask_sampler.dart`) samples frames
-continuously during playback and only needs a crop of the pixels. Additive: no
-existing format changes. Remove if upstream returns dimensions with raw
-screenshots.
+continuously during playback and only needs a small RGBA crop: the transform
+(`fushi/lib/src/media/video/raw_video_frame.dart`) copies just those rows on
+the capture isolate, so no full frame is copied or sent between isolates.
+Additive: no existing format changes. Remove if upstream offers a cropped raw
+screenshot.

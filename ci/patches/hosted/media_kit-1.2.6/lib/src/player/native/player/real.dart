@@ -1173,15 +1173,19 @@ class NativePlayer extends PlatformPlayer {
   Future<Uint8List?> screenshot(
       {String? format = 'image/jpeg',
       bool synchronized = true,
-      bool includeLibassSubtitles = false}) async {
+      bool includeLibassSubtitles = false,
+      // Fushi patch: required with `image/x-fushi-bgra`, see [_ScreenshotData].
+      Uint8List? Function(int width, int height, int stride, Uint8List bgra)?
+          fushiRawTransform}) async {
     Future<Uint8List?> function() async {
       if (![
         'image/jpeg',
         'image/png',
-        // Fushi patch: raw BGRA pixels with a 12-byte little-endian header
-        // (width, height, stride as uint32) and no encode step — callers that
-        // sample frames continuously (smart subtitle mask) cannot afford the
-        // pure-Dart PNG/JPEG encode below.
+        // Fushi patch: hand the raw BGRA pixels to [fushiRawTransform] on the
+        // capture isolate and return its bytes — callers that sample frames
+        // continuously (smart subtitle mask) cannot afford the pure-Dart
+        // PNG/JPEG encode below, nor shipping whole frames between isolates
+        // when they only need a crop.
         'image/x-fushi-bgra',
         null,
       ].contains(format)) {
@@ -1190,6 +1194,9 @@ class NativePlayer extends PlatformPlayer {
           'format',
           'Supported values are: image/jpeg, image/png, image/x-fushi-bgra, null',
         );
+      }
+      if (format == 'image/x-fushi-bgra' && fushiRawTransform == null) {
+        throw ArgumentError.notNull('fushiRawTransform');
       }
       if (disposed) {
         throw AssertionError('[Player] has been disposed');
@@ -1209,6 +1216,7 @@ class NativePlayer extends PlatformPlayer {
           NativeLibrary.path,
           format,
           includeLibassSubtitles,
+          fushiRawTransform,
         ),
       );
       // Fushi patch: the capture (screenshot-raw + pure-Dart PNG/JPEG encode,
@@ -3075,11 +3083,20 @@ class _ScreenshotData {
   final String? format;
   final bool includeLibassSubtitles;
 
+  /// Fushi patch (`image/x-fushi-bgra`): runs on the capture isolate with the
+  /// frame size, row stride and a view of mpv's BGRA buffer. The view is only
+  /// valid during the call (the node is freed right after), so the transform
+  /// must copy what it keeps. Sent to the capture isolate, so it must only
+  /// close over sendable values.
+  final Uint8List? Function(int width, int height, int stride, Uint8List bgra)?
+      rawTransform;
+
   const _ScreenshotData(
     this.ctx,
     this.lib,
     this.format,
     this.includeLibassSubtitles,
+    this.rawTransform,
   );
 }
 
@@ -3188,13 +3205,7 @@ Uint8List? _screenshot(_ScreenshotData data) {
           }
         case 'image/x-fushi-bgra':
           {
-            final out = Uint8List(12 + h * stride);
-            final header = ByteData.sublistView(out, 0, 12);
-            header.setUint32(0, w, Endian.little);
-            header.setUint32(4, h, Endian.little);
-            header.setUint32(8, stride, Endian.little);
-            out.setRange(12, out.length, bytes);
-            image = out;
+            image = data.rawTransform!(w, h, stride, bytes);
             break;
           }
         case null:

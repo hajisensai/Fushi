@@ -1,5 +1,6 @@
-/// 智能遮布的抽帧循环：播放中按帧变化截原始帧 → 后台 isolate 裁出搜索区域 → 本机 OCR
-/// 找行框 → 交给 [SmartSubtitleMaskTracker] 算遮布矩形，经 [rect] 推给遮布层。
+/// 智能遮布的抽帧循环：播放中按帧变化截出搜索区域的原始像素（截帧 isolate 上就地
+/// 裁剪，整帧不出截帧 isolate）→ 本机 OCR 找行框 → 交给 [SmartSubtitleMaskTracker]
+/// 算遮布矩形，经 [rect] 推给遮布层。
 ///
 /// 只管「何时截、截完喂给谁」，几何与迟滞全在 tracker。串行：上一帧识别完才截下一帧，
 /// 两次之间至少隔 [minInterval]；暂停且帧没变就停下，等控制器通知再继续。
@@ -9,7 +10,6 @@
 library;
 
 import 'dart:async';
-import 'dart:isolate';
 import 'dart:ui' show Rect;
 
 import 'package:flutter/foundation.dart';
@@ -82,8 +82,7 @@ class SmartSubtitleMaskSampler {
     required VideoPlayerController controller,
     required Rect region,
     required SmartSubtitleMaskDetect detect,
-    Future<RawVideoFrame?> Function()? capture,
-    Future<RawVideoFrameCrop?> Function(RawVideoFrame frame, Rect region)? crop,
+    Future<RawVideoFrameCrop?> Function(Rect region)? capture,
     this.onUnavailable,
     this.onError,
     this.minInterval = kSmartSubtitleMaskMinInterval,
@@ -92,8 +91,7 @@ class SmartSubtitleMaskSampler {
   }) : _controller = controller,
        _region = region,
        _detect = detect,
-       _capture = capture ?? controller.captureRawFrame,
-       _crop = crop ?? _cropInIsolate,
+       _capture = capture ?? controller.captureRawFrameCrop,
        _tracker = SmartSubtitleMaskTracker(holdEmpty: holdEmpty),
        _clock = clock ?? _stopwatchClock() {
     _controller.addListener(_onControllerChanged);
@@ -102,8 +100,9 @@ class SmartSubtitleMaskSampler {
 
   final VideoPlayerController _controller;
   final SmartSubtitleMaskDetect _detect;
-  final Future<RawVideoFrame?> Function() _capture;
-  final Future<RawVideoFrameCrop?> Function(RawVideoFrame, Rect) _crop;
+
+  /// 截出整帧比例矩形内的一块 RGBA。
+  final Future<RawVideoFrameCrop?> Function(Rect region) _capture;
   final SmartSubtitleMaskTracker _tracker;
   final Duration Function() _clock;
   final VoidCallback? onUnavailable;
@@ -156,11 +155,6 @@ class SmartSubtitleMaskSampler {
     return () => watch.elapsed;
   }
 
-  static Future<RawVideoFrameCrop?> _cropInIsolate(
-    RawVideoFrame frame,
-    Rect region,
-  ) => Isolate.run(() => cropRawVideoFrame(frame, region));
-
   /// 现在的帧值得抽样吗：有首帧、能截帧、且（在播放，或暂停着但帧变了）。
   bool _wantsSample() {
     final VideoPlayerController c = _controller;
@@ -205,9 +199,7 @@ class SmartSubtitleMaskSampler {
     _lastSampledPositionMs = _controller.positionMs;
     final Rect region = _region;
     try {
-      final RawVideoFrame? frame = await _capture();
-      if (_disposed || frame == null) return;
-      final RawVideoFrameCrop? crop = await _crop(frame, region);
+      final RawVideoFrameCrop? crop = await _capture(region);
       if (_disposed || crop == null) return;
       final List<Rect> lines = await _detect(crop);
       // 识别期间换了搜索区域：这一帧作废。
