@@ -1,10 +1,10 @@
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
+import 'package:test/test.dart';
 
 /// v163：`media_link_ai_verdicts`——作品图谱 AI 裁决的本机缓存。纯建表、幂等；设备
 /// 本地缓存不挂外键；同一对端点只留最新一条；按裁决时刻过期清理。
