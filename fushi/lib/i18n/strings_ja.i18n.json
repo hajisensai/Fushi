@@ -1096,6 +1096,7 @@
   "audiobook_relocate": "ファイルを移動",
   "audiobook_relocate_count_mismatch": "This book has ${expected} audio files, but ${picked} were selected. Relocating must pick the same files",
   "audiobook_relocate_done": "音声を移動しました",
+  "audiobook_relocate_records_conflict": "This book's audio records disagree (${srtBookCount} vs ${audiobookCount} files). Re-import the audiobook to fix it",
   "audiobook_rematch_all_zero": "すべてのウィンドウのスコアが0%です。手動で調整してください",
   "audiobook_rematch_auto_failed": "自動マッチングに失敗しました：$error",
   "audiobook_rematch_auto_match": "自動マッチング",

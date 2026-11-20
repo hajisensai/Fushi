@@ -1096,6 +1096,7 @@
   "audiobook_relocate": "파일 재배치",
   "audiobook_relocate_count_mismatch": "This book has ${expected} audio files, but ${picked} were selected. Relocating must pick the same files",
   "audiobook_relocate_done": "오디오 재배치됨",
+  "audiobook_relocate_records_conflict": "This book's audio records disagree (${srtBookCount} vs ${audiobookCount} files). Re-import the audiobook to fix it",
   "audiobook_rematch_all_zero": "모든 윈도우 점수가 0%입니다. 수동으로 조정하세요",
   "audiobook_rematch_auto_failed": "자동 매칭 실패: $error",
   "audiobook_rematch_auto_match": "자동 매칭",

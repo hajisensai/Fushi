@@ -1096,6 +1096,7 @@
   "audiobook_relocate": "Pindahkan file",
   "audiobook_relocate_count_mismatch": "This book has ${expected} audio files, but ${picked} were selected. Relocating must pick the same files",
   "audiobook_relocate_done": "Audio dipindahkan",
+  "audiobook_relocate_records_conflict": "This book's audio records disagree (${srtBookCount} vs ${audiobookCount} files). Re-import the audiobook to fix it",
   "audiobook_rematch_all_zero": "Semua jendela skor 0%, silakan sesuaikan secara manual",
   "audiobook_rematch_auto_failed": "Pencocokan otomatis gagal: $error",
   "audiobook_rematch_auto_match": "Pencocokan Otomatis",

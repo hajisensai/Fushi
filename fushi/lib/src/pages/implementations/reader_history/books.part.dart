@@ -699,17 +699,33 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       appModel.database,
     ).relocateAudioPaths(book.uid, picked);
     if (!mounted) return;
-    if (result == SrtBookRelocateResult.countMismatch) {
-      FushiToast.show(
-        msg: t.audiobook_relocate_count_mismatch(
-          expected: book.audioPaths?.length ?? 0,
-          picked: picked.length,
-        ),
-        severity: ToastSeverity.error,
-      );
-      return;
+    switch (result) {
+      case SrtBookRelocated():
+        break;
+      case SrtBookRelocateCountMismatch(:final int expected):
+        FushiToast.show(
+          msg: t.audiobook_relocate_count_mismatch(
+            expected: expected,
+            picked: picked.length,
+          ),
+          severity: ToastSeverity.error,
+        );
+        return;
+      case SrtBookRelocateRecordsConflict(
+        :final int srtBookCount,
+        :final int audiobookCount,
+      ):
+        FushiToast.show(
+          msg: t.audiobook_relocate_records_conflict(
+            srtBookCount: srtBookCount,
+            audiobookCount: audiobookCount,
+          ),
+          severity: ToastSeverity.error,
+        );
+        return;
+      case SrtBookRelocateNotFound():
+        return;
     }
-    if (result != SrtBookRelocateResult.relocated) return;
     book.audioPaths = picked;
     book.audioRoot = null;
     if (mounted) {

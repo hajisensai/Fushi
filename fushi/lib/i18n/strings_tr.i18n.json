@@ -1096,6 +1096,7 @@
   "audiobook_relocate": "Dosyayı yeniden konumlandır",
   "audiobook_relocate_count_mismatch": "This book has ${expected} audio files, but ${picked} were selected. Relocating must pick the same files",
   "audiobook_relocate_done": "Ses yeniden konumlandırıldı",
+  "audiobook_relocate_records_conflict": "This book's audio records disagree (${srtBookCount} vs ${audiobookCount} files). Re-import the audiobook to fix it",
   "audiobook_rematch_all_zero": "Tüm pencereler %0 skorladı, lütfen manuel ayarlayın",
   "audiobook_rematch_auto_failed": "Otomatik eşleştirme başarısız: $error",
   "audiobook_rematch_auto_match": "Otomatik eşleştir",

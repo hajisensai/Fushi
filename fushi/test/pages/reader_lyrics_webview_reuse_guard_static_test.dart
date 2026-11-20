@@ -135,7 +135,10 @@ void main() {
     );
     // _loadLyricsPage 只是错误收口包装（调用点全是放飞），装载逻辑在
     // _loadLyricsPageUnguarded 里。
-    final String guarded = methodBody(lyrics, '  Future<void> _loadLyricsPage()');
+    final String guarded = methodBody(
+      lyrics,
+      '  Future<void> _loadLyricsPage()',
+    );
     expect(guarded, contains('await _loadLyricsPageUnguarded();'));
     expect(guarded, contains('} catch (e, stack) {'));
     expect(guarded, contains("'ReaderFushi.loadLyricsPage'"));

@@ -31,15 +31,38 @@ class SrtBookDeleteResult {
 }
 
 /// [SrtBookRepository.relocateAudioPaths] 的结果。
-enum SrtBookRelocateResult {
-  /// 已改写（配对的 `audiobooks` 行一并改写）。
-  relocated,
+sealed class SrtBookRelocateResult {
+  const SrtBookRelocateResult();
+}
 
-  /// 配对行的新文件数与原登记不等（或一个都没选），一行未写。
-  countMismatch,
+/// 已改写（配对的 `audiobooks` 行一并改写）。
+final class SrtBookRelocated extends SrtBookRelocateResult {
+  const SrtBookRelocated();
+}
 
-  /// uid 不存在。
-  notFound,
+/// 新文件数与原登记不等（或一个都没选），一行未写。[expected] 是拒绝所依据的
+/// 原登记文件数——提示文案只用它，不在 UI 侧另取某一行的数。
+final class SrtBookRelocateCountMismatch extends SrtBookRelocateResult {
+  const SrtBookRelocateCountMismatch({required this.expected});
+
+  final int expected;
+}
+
+/// 配对的两行原登记文件数本身就不一致（脏数据）：选多少个都满足不了「两行都相等」，
+/// 一行未写。提示用户重新导入，而不是报一个永远选不对的数。
+final class SrtBookRelocateRecordsConflict extends SrtBookRelocateResult {
+  const SrtBookRelocateRecordsConflict({
+    required this.srtBookCount,
+    required this.audiobookCount,
+  });
+
+  final int srtBookCount;
+  final int audiobookCount;
+}
+
+/// uid 不存在。
+final class SrtBookRelocateNotFound extends SrtBookRelocateResult {
+  const SrtBookRelocateNotFound();
 }
 
 class SrtBookRepository {
@@ -529,18 +552,21 @@ class SrtBookRepository {
   /// 书架 audioOnly 误落的脏行（见 [_healDirtyAudiobookRow]），不该被救活。
   ///
   /// 配对行要求新文件数与两行原登记的文件数都相等，否则拒绝
-  /// （[SrtBookRelocateResult.countMismatch]，一行不写）：cue 的文件下标与断点的
+  /// （[SrtBookRelocateCountMismatch]，一行不写；两行原登记数互相就不等时是
+  /// [SrtBookRelocateRecordsConflict]）：cue 的文件下标与断点的
   /// 毫秒数都按原来那几个文件排，数量变了就不是「同一批文件挪了位置」。独立字幕书
   /// 没有第二份登记，保持原来「选几个写几个」的行为。
   Future<SrtBookRelocateResult> relocateAudioPaths(
     String uid,
     List<String> newPaths,
   ) async {
-    if (newPaths.isEmpty) return SrtBookRelocateResult.countMismatch;
     return _db.transaction(() async {
       final SrtBookRow? row = await _db.getSrtBookByUid(uid);
-      if (row == null) return SrtBookRelocateResult.notFound;
+      if (row == null) return const SrtBookRelocateNotFound();
       final List<String> srtOld = _decodePaths(row.audioPathsJson);
+      if (newPaths.isEmpty) {
+        return SrtBookRelocateCountMismatch(expected: srtOld.length);
+      }
       AudiobookRow? abRow;
       if (row.bookKey.isNotEmpty) {
         final AudiobookRow? candidate = await _db.getAudiobookByBookKey(
@@ -554,9 +580,17 @@ class SrtBookRepository {
         final List<String> abOld = abRow == null
             ? const <String>[]
             : _decodePaths(abRow.audioPathsJson);
-        if ((srtOld.isNotEmpty && srtOld.length != newPaths.length) ||
-            (abOld.isNotEmpty && abOld.length != newPaths.length)) {
-          return SrtBookRelocateResult.countMismatch;
+        if (srtOld.isNotEmpty &&
+            abOld.isNotEmpty &&
+            srtOld.length != abOld.length) {
+          return SrtBookRelocateRecordsConflict(
+            srtBookCount: srtOld.length,
+            audiobookCount: abOld.length,
+          );
+        }
+        final List<String> registered = abOld.isNotEmpty ? abOld : srtOld;
+        if (registered.isNotEmpty && registered.length != newPaths.length) {
+          return SrtBookRelocateCountMismatch(expected: registered.length);
         }
       }
       final String json = jsonEncode(newPaths);
@@ -576,7 +610,7 @@ class SrtBookRepository {
           ),
         );
       }
-      return SrtBookRelocateResult.relocated;
+      return const SrtBookRelocated();
     });
   }
 

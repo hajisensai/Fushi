@@ -1096,6 +1096,7 @@
   "audiobook_relocate": "Di chuyển tệp",
   "audiobook_relocate_count_mismatch": "This book has ${expected} audio files, but ${picked} were selected. Relocating must pick the same files",
   "audiobook_relocate_done": "Đã di chuyển âm thanh",
+  "audiobook_relocate_records_conflict": "This book's audio records disagree (${srtBookCount} vs ${audiobookCount} files). Re-import the audiobook to fix it",
   "audiobook_rematch_all_zero": "Tất cả cửa sổ có tỷ lệ 0%, vui lòng điều chỉnh thủ công",
   "audiobook_rematch_auto_failed": "Tự động khớp thất bại: $error",
   "audiobook_rematch_auto_match": "Tự động khớp",

@@ -106,7 +106,7 @@ void main() {
     final SrtBookRelocateResult result = await SrtBookRepository(
       db,
     ).relocateAudioPaths(uid, picked);
-    expect(result, SrtBookRelocateResult.relocated);
+    expect(result, isA<SrtBookRelocated>());
 
     final AudiobookSessionStartRequest? request =
         await AudiobookSessionLauncher(db).resolve(bookKey);
@@ -127,7 +127,7 @@ void main() {
     final SrtBookRelocateResult result = await SrtBookRepository(
       db,
     ).relocateAudioPaths(uid, picked);
-    expect(result, SrtBookRelocateResult.relocated);
+    expect(result, isA<SrtBookRelocated>());
 
     final AudiobookSessionStartRequest? request =
         await AudiobookSessionLauncher(db).resolve(bookKey);
@@ -151,12 +151,60 @@ void main() {
     final SrtBookRelocateResult result = await SrtBookRepository(
       db,
     ).relocateAudioPaths(uid, picked);
-    expect(result, SrtBookRelocateResult.countMismatch);
+    expect(
+      result,
+      isA<SrtBookRelocateCountMismatch>().having(
+        (SrtBookRelocateCountMismatch r) => r.expected,
+        'expected',
+        before.length,
+      ),
+    );
 
     final SrtBook? srt = await SrtBookRepository(db).findByUid(uid);
     expect(srt!.audioPaths, before);
     final Audiobook? ab = await AudiobookRepository(db).findByBookKey(bookKey);
     expect(ab!.audioPaths, before);
+  });
+
+  test('两行原登记数互相不等：报冲突带两边的数，两行一字不改', () async {
+    final List<File> audio = await seedEpubAudiobook();
+    final List<String> srtBefore = <String>[for (final File f in audio) f.path];
+    // 脏数据：audiobooks 行登记了三个文件，srt 行只有两个。
+    final List<String> abBefore = <String>[
+      ...srtBefore,
+      p.join(docsDir.path, 'old', '03.mp3'),
+    ];
+    await AudiobookRepository(
+      db,
+    ).replaceAudio(bookKey: bookKey, audioPaths: abBefore);
+
+    for (final int count in <int>[2, 3]) {
+      final List<String> picked = <String>[
+        for (int i = 0; i < count; i++) p.join(docsDir.path, 'n$i.mp3'),
+      ];
+      final SrtBookRelocateResult result = await SrtBookRepository(
+        db,
+      ).relocateAudioPaths(uid, picked);
+      expect(
+        result,
+        isA<SrtBookRelocateRecordsConflict>()
+            .having(
+              (SrtBookRelocateRecordsConflict r) => r.srtBookCount,
+              'srtBookCount',
+              2,
+            )
+            .having(
+              (SrtBookRelocateRecordsConflict r) => r.audiobookCount,
+              'audiobookCount',
+              3,
+            ),
+        reason: '选 $count 个：两行登记不一致时不能报一个永远选不对的期望数',
+      );
+    }
+    final SrtBook? srt = await SrtBookRepository(db).findByUid(uid);
+    expect(srt!.audioPaths, srtBefore);
+    final Audiobook? ab = await AudiobookRepository(db).findByBookKey(bookKey);
+    expect(ab!.audioPaths, abBefore);
   });
 
   test('没有对齐字幕的 audiobooks 脏行不被救活', () async {
@@ -187,7 +235,7 @@ void main() {
     final SrtBookRelocateResult result = await SrtBookRepository(
       db,
     ).relocateAudioPaths('srtbook_epub_$dirtyKey', <String>[fresh.path]);
-    expect(result, SrtBookRelocateResult.relocated);
+    expect(result, isA<SrtBookRelocated>());
     final Audiobook? ab = await abRepo.findByBookKey(dirtyKey);
     expect(ab!.audioPaths, <String>[stale.path]);
   });

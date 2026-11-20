@@ -1096,6 +1096,7 @@
   "audiobook_relocate": "ย้ายไฟล์",
   "audiobook_relocate_count_mismatch": "This book has ${expected} audio files, but ${picked} were selected. Relocating must pick the same files",
   "audiobook_relocate_done": "ย้ายเสียงแล้ว",
+  "audiobook_relocate_records_conflict": "This book's audio records disagree (${srtBookCount} vs ${audiobookCount} files). Re-import the audiobook to fix it",
   "audiobook_rematch_all_zero": "ทุกหน้าต่างได้คะแนน 0% กรุณาปรับด้วยตนเอง",
   "audiobook_rematch_auto_failed": "การจับคู่อัตโนมัติล้มเหลว: $error",
   "audiobook_rematch_auto_match": "จับคู่อัตโนมัติ",
