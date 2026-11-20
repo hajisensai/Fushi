@@ -9,6 +9,8 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_work_loader.dar
     show lookupOfWork;
 import 'package:fushi_engine/media/video/organize/video_filename_organize.dart';
 import 'package:fushi_engine/media/video/organize/video_filename_organize_service.dart';
+import 'package:fushi_engine/media/video/organize/video_placement_audit.dart';
+import 'package:fushi_engine/media/video/organize/video_work_regroup.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/models/module_id.dart';
@@ -30,6 +32,11 @@ import 'package:fushi/src/ops/op_context.dart';
 /// * `POST files/:uid/move`   —— 把一个文件搬到点名的目录 / 改成点名的文件名（刮削
 ///   身份本身就错时用：先把电影从 `某剧/Season 00/` 搬出来，再重新识别）。同一个
 ///   服务的 `customTargets`，只能落在文件所属的来源库根之内。
+/// * `GET  audit`              —— 摆放审计：挂在特别篇下的电影长度文件
+///   （[auditVideoPlacement]，只读）；
+/// * `POST regroup`            —— 把文件从一部作品里拆出来 / 并进另一部 / 另组一部
+///   （[regroupVideoFiles]）。**作品单元由合集成员关系决定，不由磁盘位置决定**：
+///   电影被挂成某部剧的第 0 季，修法是把它拆出来再按电影识别，不是搬文件。
 ///
 /// 发给调用方的路径一律是**相对来源库根**的（库根之外的只给文件名）；撤销要用的
 /// 绝对路径不进应答，留在本进程的 [takeVideoOrganizeUndo] 里按回执号取。
@@ -63,6 +70,8 @@ List<CtlRoute> buildVideoOrganizeCtlRoutesFor({
     CtlRoute.get('$kVideoOrganizeCtlRoot/organize', ctl.planOrganize),
     CtlRoute.post('$kVideoOrganizeCtlRoot/organize', ctl.applyOrganize),
     CtlRoute.post('$kVideoOrganizeCtlRoot/files/:uid/move', ctl.moveFile),
+    CtlRoute.get('$kVideoOrganizeCtlRoot/audit', ctl.audit),
+    CtlRoute.post('$kVideoOrganizeCtlRoot/regroup', ctl.regroup),
   ];
 }
 
@@ -523,6 +532,67 @@ class _VideoOrganizeCtl {
       'episodeTitle': target.title,
       'applied': <String, Object?>{'season': season, 'episode': episode},
       'previous': previous,
+    };
+  }
+
+  // ── 摆放审计 / 拆并作品 ─────────────────────────────────────────────────
+
+  /// `video audit`：全库里挂在特别篇（第 0 季）下的电影长度文件。只读。
+  Future<Object?> audit(CtlCall call) async {
+    _requireVideo();
+    final List<VideoPlacementFinding> findings = await auditVideoPlacement(_db);
+    final List<String> roots = await _libraryRoots();
+    final List<Map<String, Object?>> out = <Map<String, Object?>>[];
+    for (final VideoPlacementFinding f in findings) {
+      final VideoBookRow? row = await _db.getVideoBookByBookUid(f.bookUid);
+      out.add(<String, Object?>{
+        ...f.toJson(),
+        if (row != null) 'path': _relative(row.videoPath, roots),
+      });
+    }
+    return <String, Object?>{'findings': out};
+  }
+
+  /// `video regroup <bookUid...> --to standalone | new --name <名> | collection:<id>`。
+  Future<Object?> regroup(CtlCall call) async {
+    _requireVideo();
+    final String to = call.requireString('to');
+    final VideoRegroupTarget target;
+    if (to == 'standalone') {
+      target = const VideoRegroupStandalone();
+    } else if (to == 'new') {
+      target = VideoRegroupNewWork(call.requireString('name'));
+    } else {
+      final CtlVideoWorkId id = CtlVideoWorkId.parse(to);
+      if (id is! CtlVideoCollectionWorkId) {
+        throw const CtlFailure.badRequest(
+          'to 只能是 standalone、new（配 name）或 collection:<id>',
+        );
+      }
+      target = VideoRegroupExistingWork(id.collectionId);
+    }
+    final VideoRegroupResult result;
+    try {
+      result = await regroupVideoFiles(
+        _db,
+        bookUids: call.stringList('items'),
+        target: target,
+      );
+    } on VideoRegroupRejected catch (e) {
+      throw switch (e.code) {
+        'unknown_file' ||
+        'unknown_collection' => CtlFailure.notFound(e.message),
+        'would_empty_work' => CtlFailure.conflict(e.message),
+        _ => CtlFailure.badRequest(e.message),
+      };
+    }
+    return <String, Object?>{
+      'moved': result.moved,
+      'skipped': result.skipped,
+      if (result.targetCollectionId case final int id)
+        'target': 'collection:$id',
+      if (result.createdTarget) 'created': true,
+      if (result.undo != null) 'previous': result.undo,
     };
   }
 

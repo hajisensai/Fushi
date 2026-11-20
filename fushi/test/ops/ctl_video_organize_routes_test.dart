@@ -11,6 +11,7 @@ import 'package:fushi/src/ops/ctl_video_organize_routes.dart';
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/organize/video_filename_organize_service.dart';
+import 'package:fushi_engine/media/video/organize/video_work_regroup.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
@@ -412,5 +413,228 @@ void main() {
       p.join(root.path, 'Show/Season 00/Renamed.mkv'),
     ).rename(p.join(root.path, 'elsewhere.mkv'));
     expect(await videoOrganizeUndoStillApplies(undoPlan), isFalse);
+  });
+
+  group('摆放审计与拆并作品', () {
+    late int season0;
+
+    Future<void> setDuration(String uid, int minutes) async {
+      final VideoBookRow row = (await db.getVideoBookByBookUid(uid))!;
+      await db.upsertVideoFileSpec(
+        VideoFileSpecsCompanion.insert(
+          filePath: row.videoPath,
+          fileSizeBytes: 1,
+          fileModifiedAt: 1,
+          probedAt: 1,
+          probeVersion: 1,
+          durationMs: Value<int?>(minutes * 60000),
+        ),
+      );
+    }
+
+    Future<void> pin(bool value, {String? uid}) =>
+        (db.update(db.mediaCollectionItems)..where(
+              (tbl) => uid == null
+                  ? tbl.collectionId.equals(collectionId)
+                  : tbl.entryKey.equals(uid),
+            ))
+            .write(MediaCollectionItemsCompanion(pinnedByUser: Value(value)));
+
+    Future<Set<String>> members(int id) async => <String>{
+      for (final MediaCollectionItemRow item in await db.getCollectionItems(id))
+        item.entryKey,
+    };
+
+    Future<Map<Object?, Object?>> regroup(Map<String, Object?> body) async =>
+        await call('POST', '$kVideoOrganizeCtlRoot/regroup', body: body)
+            as Map<Object?, Object?>;
+
+    setUp(() async {
+      // 一部 100 分钟的剧场版被挂成《Show》的特别篇 S00E02；ep2 是真的特别篇。
+      await addVideo('movie', 'Show/Season 00/Show - S00E02.mkv');
+      await db.addToCollection(
+        collectionId,
+        MediaKind.video,
+        'movie',
+        userIntent: false,
+      );
+      season0 = (await db.getVideoMetadataSeasons(
+        workId,
+      )).firstWhere((VideoMetadataSeasonRow s) => s.seasonNumber == 0).id;
+      await addEpisode(season0, 2, bookUid: 'movie');
+      await setDuration('ep1', 24);
+      await setDuration('ep2', 25);
+      await setDuration('movie', 100);
+      await db.setVideoEpisodeBindingOverride(
+        'movie',
+        seasonNumber: 0,
+        episodeNumber: 2,
+      );
+      // 外层 setUp 按用户意图加的成员是 pinned；这里当作扫描归组的（不 pin）。
+      await pin(false);
+    });
+
+    test('审计只报电影长度的特别篇文件，带正片时长基线', () async {
+      final Map<Object?, Object?> result =
+          await call('GET', '$kVideoOrganizeCtlRoot/audit')
+              as Map<Object?, Object?>;
+      expect(jsonDecode(jsonEncode(result['findings'])), <Object?>[
+        <String, Object?>{
+          'kind': 'feature_in_specials',
+          'work': 'collection:$collectionId',
+          'workTitle': 'Show',
+          'uid': 'movie',
+          'title': 'Show - S00E02',
+          'boundTo': 'S00E02',
+          'durationMinutes': 100,
+          'episodeMinutes': 24,
+          'path': 'Show/Season 00/Show - S00E02.mkv',
+        },
+      ]);
+      expect(jsonEncode(result), isNot(contains(root.path)));
+    });
+
+    test('合集里的本机文件全是电影长度的特别篇：报 features_only_work', () async {
+      await db.removeFromCollection(collectionId, MediaKind.video, 'ep1');
+      await (db.update(
+        db.videoMetadataEpisodes,
+      )..where((tbl) => tbl.bookUid.equals('ep1'))).write(
+        const VideoMetadataEpisodesCompanion(bookUid: Value<String?>(null)),
+      );
+      final Map<Object?, Object?> result =
+          await call('GET', '$kVideoOrganizeCtlRoot/audit')
+              as Map<Object?, Object?>;
+      final List<Object?> findings = result['findings']! as List<Object?>;
+      // 没有本机正片，也没有资料源记的正片时长 → 没有基线，只看 60 分钟下限。
+      expect(findings, hasLength(1));
+      expect((findings.single! as Map)['kind'], 'features_only_work');
+      expect((findings.single! as Map).containsKey('episodeMinutes'), isFalse);
+    });
+
+    test('拆成独立作品：移出合集、解绑分集、清手动季集；撤销原样挪回', () async {
+      final List<String> orderBefore = <String>[
+        for (final MediaCollectionItemRow item in await db.getCollectionItems(
+          collectionId,
+        ))
+          item.entryKey,
+      ];
+      final Map<Object?, Object?> result = await regroup(<String, Object?>{
+        'items': <String>['movie'],
+        'to': 'standalone',
+      });
+      expect(jsonDecode(jsonEncode(result['moved'])), <Object?>[
+        <String, Object?>{
+          'uid': 'movie',
+          'title': 'Show - S00E02',
+          'from': 'collection:$collectionId',
+          'to': 'book:movie',
+        },
+      ]);
+      expect(await members(collectionId), <String>{'ep1', 'ep2'});
+      expect(await db.getVideoMetadataEpisodesByBook('movie'), isEmpty);
+      expect(await db.getVideoEpisodeBindingOverride('movie'), isNull);
+      // 移出记了成员墓碑：重扫不按文件名把它并回去。
+      expect(
+        (await db.getAllCollectionMemberTombstones()).any(
+          (CollectionMemberTombstoneRow t) => t.entryKey == 'movie',
+        ),
+        isTrue,
+      );
+      // 修好的文件不再出现在审计里。
+      expect(
+        (await call('GET', '$kVideoOrganizeCtlRoot/audit') as Map)['findings'],
+        isEmpty,
+      );
+
+      final VideoRegroupRevert reverted = await revertVideoRegroup(
+        db,
+        jsonDecode(jsonEncode(result['previous'])),
+      );
+      expect(reverted, (reverted: 1, superseded: 0, failed: 0));
+      expect(<String>[
+        for (final MediaCollectionItemRow item in await db.getCollectionItems(
+          collectionId,
+        ))
+          item.entryKey,
+      ], orderBefore);
+      expect(await slotsOf('movie'), <String>['S0E2']);
+      final VideoEpisodeBindingOverrideRow? pin = await db
+          .getVideoEpisodeBindingOverride('movie');
+      expect((pin?.seasonNumber, pin?.episodeNumber), (0, 2));
+    });
+
+    test('另组一部 / 并进已有作品；之后又被挪过的撤销保留现状', () async {
+      final Map<Object?, Object?> created = await regroup(<String, Object?>{
+        'items': <String>['movie', 'ep2'],
+        'to': 'new',
+        'name': 'Show the Movie',
+      });
+      expect(created['created'], isTrue);
+      final int newId = int.parse(
+        '${created['target']}'.substring('collection:'.length),
+      );
+      expect(await members(newId), <String>{'movie', 'ep2'});
+      expect(await members(collectionId), <String>{'ep1'});
+
+      // 再把 ep2 并回原作品：第一次挪动的撤销对 ep2 已不适用。
+      final Map<Object?, Object?> back = await regroup(<String, Object?>{
+        'items': <String>['ep2'],
+        'to': 'collection:$collectionId',
+      });
+      expect((back['moved']! as List<Object?>), hasLength(1));
+      final VideoRegroupRevert reverted = await revertVideoRegroup(
+        db,
+        jsonDecode(jsonEncode(created['previous'])),
+      );
+      expect(reverted, (reverted: 1, superseded: 1, failed: 0));
+      expect(await members(collectionId), <String>{'ep1', 'ep2', 'movie'});
+      // 挪空的新建合集随之删除。
+      expect(await db.getMediaCollectionById(newId), isNull);
+    });
+
+    test('拒绝：把作品挪空、未知视频、目标不对；用户亲手放的成员跳过', () async {
+      Future<void> expectStatus(Map<String, Object?> body, int status) =>
+          expectLater(
+            regroup(body),
+            throwsA(
+              isA<CtlFailure>().having(
+                (CtlFailure f) => f.status,
+                'status',
+                status,
+              ),
+            ),
+          );
+
+      await expectStatus(<String, Object?>{
+        'items': <String>['ep1', 'ep2', 'movie'],
+        'to': 'standalone',
+      }, 409);
+      await expectStatus(<String, Object?>{
+        'items': <String>['nope'],
+        'to': 'standalone',
+      }, 404);
+      await expectStatus(<String, Object?>{
+        'items': <String>['movie'],
+        'to': 'book:ep1',
+      }, 400);
+      await expectStatus(<String, Object?>{
+        'items': <String>['movie'],
+        'to': 'new',
+        'name': '  ',
+      }, 400);
+      expect(await members(collectionId), <String>{'ep1', 'ep2', 'movie'});
+
+      // 用户亲手放进合集的成员（pinned）不由这条操作移出。
+      await pin(true, uid: 'ep2');
+      final Map<Object?, Object?> result = await regroup(<String, Object?>{
+        'items': <String>['ep2'],
+        'to': 'standalone',
+      });
+      expect(result['moved'], isEmpty);
+      expect(jsonDecode(jsonEncode(result['skipped'])), <Object?>[
+        <String, Object?>{'uid': 'ep2', 'reason': 'pinned_by_user'},
+      ]);
+      expect(result.containsKey('previous'), isFalse);
+    });
   });
 }

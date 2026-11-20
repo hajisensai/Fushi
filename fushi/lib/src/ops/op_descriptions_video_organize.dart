@@ -1,6 +1,7 @@
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_engine/media/video/organize/video_filename_organize_service.dart'
     show VideoFilenameOrganizePlan;
+import 'package:fushi_engine/media/video/organize/video_work_regroup.dart';
 
 import 'package:fushi/src/ops/ctl_video_organize_routes.dart';
 import 'package:fushi/src/ops/op_describe_kit.dart';
@@ -14,6 +15,8 @@ import 'package:fushi/src/ops/op_describe_kit.dart';
 ///   目录身份的目录合集换回）。原位置被别的文件占了、或文件之后又被挪走的那几条
 ///   搬不回去，报 partial；一个视频都不在搬过去的位置上报 superseded。磁盘操作
 ///   因此满足 `fushi/CLAUDE.md` §13「AI 写操作必须可回滚」，不需要先确认。
+/// - 拆 / 并作品 = 按执行时记下的原合集、原位置、原分集绑定挪回去
+///   （[revertVideoRegroup]）；之后又被挪过的文件保留现状。
 List<OpDescription> describeVideoOrganizeOps(
   OpDescribeKit kit,
   OpAvailability Function() video,
@@ -168,9 +171,9 @@ List<OpDescription> describeVideoOrganizeOps(
           'and / or file name you choose, inside its own library root. Use it '
           'when the scraped identity itself is wrong, e.g. a movie sitting in '
           '"Some Show/Season 00/Some Show - S00E01.mkv": move it to '
-          '"Movie Title (2016)" named "Movie Title (2016)", then identify it '
-          '(video.work.identify with type=movie) once the library has '
-          're-scanned. Never overwrites an existing file. Undo moves it back.',
+          '"Movie Title (2016)" named "Movie Title (2016)". Moving a file does '
+          'not change which work it belongs to: use video.work.regroup for '
+          'that. Never overwrites an existing file. Undo moves it back.',
       risk: OpRisk.write,
       availability: video,
       params: const <OpParam>[
@@ -194,6 +197,90 @@ List<OpDescription> describeVideoOrganizeOps(
         ),
       ],
       undo: moveUndo(),
+    ),
+    OpDescription(
+      id: 'video.library.audit',
+      method: 'GET',
+      pattern: '$kVideoOrganizeCtlRoot/audit',
+      summary:
+          'Audit the whole video library for files filed in the wrong place: '
+          'feature-length files (60+ min and at least twice the regular '
+          'episode length) bound to a specials season ("season 0") of a '
+          'series. One call instead of opening every work. '
+          'kind=feature_in_specials: split the file out with '
+          'video.work.regroup to=standalone, then identify it as a movie; '
+          'movie_as_series: re-identify that work with type=movie; '
+          'features_only_work: every local file of the work is such a film, '
+          'decide per file.',
+      availability: video,
+    ),
+    OpDescription(
+      id: 'video.work.regroup',
+      method: 'POST',
+      pattern: '$kVideoOrganizeCtlRoot/regroup',
+      summary:
+          'Move video files between works. Which work a file belongs to is '
+          'decided by collection membership, not by where it sits on disk, so '
+          'this (not video.file.move) is how a movie filed as "season 0" of a '
+          'series is fixed: to=standalone makes each file its own work (then '
+          'video.work.identify it with type=movie and video.files.organize to '
+          'rename), to=new groups the files into a new work, '
+          'to=collection:<id> moves them into an existing work. The old '
+          'work\'s episode bindings and manual pins for these files are '
+          'cleared, and later scans do not pull them back. Files the user '
+          'added to the collection by hand are skipped. Refuses to move every '
+          'member out of a work.',
+      risk: OpRisk.write,
+      availability: video,
+      params: const <OpParam>[
+        OpParam.stringList(
+          'items',
+          description: 'Video file uids (files[].uid from video.work.get).',
+          required: true,
+        ),
+        OpParam.string(
+          'to',
+          description:
+              'standalone, new (with name), or collection:<id> of an existing '
+              'work.',
+          required: true,
+        ),
+        OpParam.string(
+          'name',
+          description: 'Title of the new work (only with to=new).',
+        ),
+      ],
+      undo: opCustomUndo(
+        payloadOf:
+            (CtlCall call, Map<String, Object?> before, Object? result) =>
+                <String, Object?>{
+                  'previous': result is Map ? result['previous'] : null,
+                },
+        describe: (Map<String, Object?> p) {
+          final Object? previous = p['previous'];
+          final Object? items = previous is Map ? previous['items'] : null;
+          return '${items is List ? items.length : 0} file(s)';
+        },
+        revert: (Map<String, Object?> payload) async {
+          // 什么都没挪（全是 unchanged / 用户亲手放的成员）：没有可撤销的。
+          if (payload['previous'] == null) return const OpUndoOutcome.done();
+          final VideoRegroupRevert r = await revertVideoRegroup(
+            kit.context.appModel.database,
+            payload['previous'],
+          );
+          if (r.reverted == 0) {
+            return r.failed > 0
+                ? const OpUndoOutcome.failed('原来的作品合集已经不存在')
+                : const OpUndoOutcome.superseded('这些文件之后又被挪过，保留现状');
+          }
+          return r.failed + r.superseded == 0
+              ? const OpUndoOutcome.done()
+              : OpUndoOutcome.partial(
+                  '已挪回 ${r.reverted} 个；${r.superseded} 个之后又被挪过、'
+                  '${r.failed} 个的原作品已不存在，保留现状',
+                );
+        },
+      ),
     ),
   ];
 }

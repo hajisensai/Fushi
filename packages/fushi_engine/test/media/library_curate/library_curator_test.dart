@@ -397,6 +397,136 @@ void main() {
     expect(run.stages.last.note, isNotNull); // 作品层：分量数。
   });
 
+  group('视频摆放纠正阶段', () {
+    late List<Map<String, Object?>> findings;
+    late Set<String> split;
+
+    setUp(() {
+      split = <String>{};
+      findings = <Map<String, Object?>>[
+        <String, Object?>{
+          'kind': 'feature_in_specials',
+          'work': 'collection:1',
+          'uid': 'm1',
+          'title': 'Beta Movie',
+          'episodeMinutes': 24,
+        },
+        <String, Object?>{
+          'kind': 'features_only_work',
+          'work': 'collection:2',
+          'uid': 'm2',
+          'title': 'Gamma',
+        },
+      ];
+      toolbox
+        ..op(
+          LibraryCurateOps.videoLibraryAudit,
+          (_) async => <String, Object?>{
+            'findings': <Object?>[
+              for (final Map<String, Object?> f in findings)
+                if (!split.contains(f['uid'])) f,
+            ],
+          },
+          risk: AgentToolRisk.read,
+        )
+        ..op(
+          LibraryCurateOps.videoWorkRegroup,
+          (Map<String, Object?> a) async {
+            split.addAll((a['items']! as List).cast<String>());
+            return <String, Object?>{
+              'moved': <Object?>[
+                for (final Object? uid in a['items']! as List)
+                  <String, Object?>{'uid': uid, 'to': 'book:$uid'},
+              ],
+              'skipped': <Object?>[],
+            };
+          },
+          payload: (Map<String, Object?> a, Object? r) => <String, Object?>{
+            'items': a['items'],
+          },
+          undo: (Map<String, Object?> p) async =>
+              split.removeAll((p['items']! as List).cast<String>()),
+        );
+    });
+
+    LibraryCurateStageResult stageOf(LibraryCurateRun run) =>
+        run.stages.firstWhere(
+          (LibraryCurateStageResult s) =>
+              s.stage == LibraryCurateStage.videoStructure,
+        );
+
+    test('个别错放的拆出来并按电影认领；拆不了的进待确认', () async {
+      final LibraryCurateRun run = await curator().run(
+        trigger: LibraryCurateTrigger.manual,
+      );
+      final LibraryCurateStageResult stage = stageOf(run);
+      expect(stage.status, LibraryCurateStageStatus.done);
+      // 拆出 + 认领各算一处改动。候选里只有一部电影形态的（anidb:3），标题强匹配。
+      expect(stage.changes, 2);
+      expect(stage.requests, 0);
+      expect(split, <String>{'m1'});
+      expect(library.identity['book:m1'], 'anidb:3');
+      final int regroupAt = toolbox.calls.indexOf(
+        LibraryCurateOps.videoWorkRegroup,
+      );
+      expect(toolbox.args[regroupAt], <String, Object?>{
+        'items': <String>['m1'],
+        'to': 'standalone',
+      });
+      expect(
+        toolbox.args[toolbox.calls.lastIndexOf(
+          LibraryCurateOps.videoWorkIdentify,
+          toolbox.calls.indexOf(LibraryCurateOps.videoWorkList),
+        )],
+        containsPair('type', 'movie'),
+      );
+      expect(
+        <String>[
+          for (final LibraryCuratePendingItem p in run.pendingItems)
+            if (p.stage == LibraryCurateStage.videoStructure)
+              '${p.kind}/${p.title}/${p.ref}/${p.reason}',
+        ],
+        <String>['structure_pending/Gamma/collection:2/features_only_work'],
+      );
+      // 排在 ③ 认身份之前。
+      expect(
+        regroupAt,
+        lessThan(toolbox.calls.indexOf(LibraryCurateOps.videoWorkList)),
+      );
+    });
+
+    test('认身份的 AI 没指派：只拆、不搜资料源，拆出来的留待确认', () async {
+      ai = (organize: true, videoIdentify: false, mediaLinks: true);
+      final LibraryCurateRun run = await curator().run(
+        trigger: LibraryCurateTrigger.manual,
+      );
+      final LibraryCurateStageResult stage = stageOf(run);
+      expect(stage.changes, 1);
+      expect(stage.note, 'rules_only');
+      expect(split, <String>{'m1'});
+      expect(
+        toolbox.calls,
+        isNot(contains(LibraryCurateOps.videoWorkCandidates)),
+      );
+      expect(
+        run.pendingItems.map((LibraryCuratePendingItem p) => p.reason),
+        containsAll(<String>['needs_identify', 'features_only_work']),
+      );
+    });
+
+    test('整趟撤销后不再自动把同一个文件拆出来', () async {
+      final LibraryCurator c = curator();
+      final LibraryCurateRun run = await c.run(
+        trigger: LibraryCurateTrigger.manual,
+      );
+      await c.undoRun(run.id);
+      expect(split, isEmpty);
+      expect(library.identity.containsKey('book:m1'), isFalse);
+      await c.run(trigger: LibraryCurateTrigger.manual);
+      expect(split, isEmpty);
+    });
+  });
+
   test('取消：之后的阶段一律 cancelled，不再调任何操作', () async {
     int organizeCalls = 0;
     final LibraryCurateRun run = await curator().run(

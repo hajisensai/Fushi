@@ -296,12 +296,46 @@ P1–P4 已在分支 `docs/ai-library-curator-spec` 落地；P5（类型标签�
 
 - 磁盘改名因为能逐文件搬回，按 §13 属于「可撤销的写」，不先确认；说不清文件是否在做种时要用户闸门 `allowUnverifiedTorrents`。
 - 发给模型的路径只有相对来源库根的部分；撤销要用的绝对路径留在本机的撤销载荷里，不进应答。
-- 「电影被建成某部剧的第 0 季」的修法是三步：`video.file.move` 把文件搬出那部剧的目录 → 库重新扫描后它成为独立作品单元 → `video.work.identify … type=movie` 认成电影。**没有做成一条操作**：第二步依赖来源扫描把合集成员关系按新目录重排，这条链路没有在真实库上跑通过，见下。
+- ~~「电影被建成某部剧的第 0 季」的修法是三步：搬文件 → 重扫 → 按电影识别~~ **这条写错了，见 §15.1。**
 
-没做 / 没验证：
+### 15.1 作品单元由合集成员关系决定，不由磁盘位置决定
 
-- 上面三步修电影的链路只验了第一步（搬动与撤销，临时目录 + 内存库）；搬完后来源扫描如何重排合集、`identify type=movie` 对刚搬出来的文件是否直接可用，没有在真实库上验证。
-- 点名搬动的文件没有刮削身份可认，作品级 / 季级 sidecar（`tvshow.nfo`、`poster.jpg`）不跟着搬。
-- 没有「把一集挪到另一部作品」「拆 / 并视频合集」「改作品类型」的专门操作；前两件现在靠 `library.collection.add` / `remove-members` 加重新识别。
-- 库管家的自动路径没有用这些操作（它不判断第 0 季对不对）；目前只有 AI 助手在用户开口时会用。
-- `fushi_server` 没有这组路由。
+查 `VideoSourceWorkPlanner` 与 `VideoFolderGroupCoordinator` 得到的事实（上一版 §15 的「搬出来再重扫」是没查代码的推测）：
+
+- 作品单元 = 成员数 ≥2 的非目录合集（`collection:<id>`），其余文件各自是 `book:<uid>`。文件搬到哪个目录都不改变它属于哪个合集；重扫时「已经在某个播放列表里的文件不再按文件名重新归组」。所以搬文件修不了「电影被挂成某部剧的第 0 季」。
+- 正确的修法：把文件**移出那个合集** → 它成为 `book:<uid>` 单元 → `video.work.identify … type=movie`。之后要不要按新身份改名 / 归目录是另一步（`video.files.organize`）。
+- 修前还有一个会把修复撤销掉的缺陷：系列（播放列表）合集的重扫不看成员墓碑。从合集里移出的文件只要文件名里的系列名还对得上，下一次扫描就被并回去，`addToCollection` 还顺手清掉墓碑（目录合集早有这道门，系列合集没有）。`VideoFolderGroupCoordinator.groupPaths` 现在两条路径同一口径：移出过的成员不由重扫并回，显式「恢复自动分组」照旧越过。
+
+新增两条操作（同一组路由 / 描述文件，CLI `video audit` / `video regroup`）：
+
+| 操作 | 做什么 | 撤销 |
+|---|---|---|
+| `video.library.audit` | 全库摆放审计：挂在某部剧特别篇（第 0 季）下的电影长度文件。判据只用库里的事实——文件只绑在第 0 季、时长 ≥60 分钟且 ≥ 这部作品正片单集时长的 2 倍（正片时长取本机正片文件时长中位数，没有就取资料源记的正片时长中位数）。三种问题：`feature_in_specials`（个别错放）、`features_only_work`（合集的本机文件全是这种电影）、`movie_as_series`（单个文件自己被认成剧集） | 只读 |
+| `video.work.regroup` | 把文件拆成独立作品（`to=standalone`）、另组一部（`to=new` + `name`）、并进已有作品（`to=collection:<id>`）。同一事务里：移出原作品合集并记成员墓碑、原作品里绑着它的分集行解绑、清掉它的手动季集指定、加入目标合集 | 放回原合集的原位置、绑回当时解绑的分集行（已被别的文件占的不抢）、恢复手动季集指定；之后又被挪过的文件保留现状 |
+
+- `video.work.regroup` 不移出用户亲手放进合集的成员（`pinned_by_user`，§7），报 `skipped`；拒绝把一部作品的成员全部挪走（整部认错了应该重新识别，不是拆）。
+- 审计一次调用给出全库结论，助手不用逐部作品 `video.work.get`（省轮次，也省 token）。
+- 「改作品类型」不另设操作：类型跟身份走，`video.work.identify … type=movie` 就是改成电影。
+
+### 15.2 库管家的「视频摆放纠正」阶段
+
+`LibraryCurateStage.videoStructure`（`video.structure`），排在 ③ 认身份之前。编排仍是代码：
+
+1. 读 `video.library.audit`；
+2. `feature_in_specials` 且有正片时长基线 → `video.work.regroup to=standalone` 拆出（不需要 AI、不联网）；
+3. 拆出来的文件与 `movie_as_series` → 搜电影形态的候选（`video.work.candidates type=movie`）：唯一且标题强匹配直接 `video.work.identify type=movie`；多候选交 AI 在候选键里选、达到自动采用门槛才认领；
+4. 其余一律进待确认（`structure_pending`，原因是审计的问题种类或 `pinned_by_user` / `needs_identify` / `no_candidates` / `ambiguous`）。
+
+- 认身份的 AI 没指派时只做第 2 步（spec §9：没指派就不搜资料源），阶段注记 `rules_only`。
+- 不走水位：审计是全库只读、不花钱的，修好的文件自然不再出现；自动路径对留在待确认的文件不每趟重报（`seen`）。
+- 整趟撤销把拆出与认领倒序撤回，并记 `structure:<视频 uid>` 抑制，之后的任何一趟不再自动把同一个文件拆出来。
+
+### 15.3 没做 / 没验证
+
+- 没有在所有者的真实库上执行过任何写操作；审计判据也没有对真实库跑过（本机库 27 个第 0 季里它会报出哪些，没有数）。
+- 审计只认「电影长度」这一种结构证据。身份整个认错（`Bad Girl` → 日剧《悪女（わる）》）不是结构问题，自动路径不碰，靠 AI 助手 / 用户用 `video.work.identify` 改。
+- `features_only_work`（整个「剧场版合集」被认成某部剧）自动路径不动：拆完没有「留下的那部剧」，每个文件各是哪部电影要逐个判断。助手可以用 `video.work.regroup` + `video.work.identify` 逐个处理。
+- 拆出来的文件标题往往还是 `Show - S00E01` 这种集号标签，搜不到候选，会停在待确认（`no_candidates`）。
+- 点名搬动（`video.file.move`）的文件不带作品级 / 季级 sidecar（`tvshow.nfo`、`poster.jpg`）。
+- `fushi_server` 没有这组路由，服务端的库管家这一阶段报 `unavailable` 跳过。
+- 没有真机 / 像素验证。

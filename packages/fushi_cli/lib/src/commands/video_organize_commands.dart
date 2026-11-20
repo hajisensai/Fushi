@@ -37,6 +37,22 @@ const List<CtlCommandSpec> videoOrganizeCommands = <CtlCommandSpec>[
     build: _buildMove,
     render: _renderOrganize,
   ),
+  CtlCommandSpec(
+    name: 'audit',
+    summary: '找出挂在特别篇（第 0 季）下的电影长度文件',
+    build: _buildAudit,
+    render: _renderAudit,
+  ),
+  CtlCommandSpec(
+    name: 'regroup',
+    summary:
+        '把文件拆成独立作品（--to standalone）、另组一部（--to new --name）'
+        '或并进已有作品（--to collection:<id>）',
+    usage: '<bookUid...>',
+    configure: _configureRegroup,
+    build: _buildRegroup,
+    render: _renderRegroup,
+  ),
 ];
 
 String _seg(String raw) => Uri.encodeComponent(raw);
@@ -246,5 +262,74 @@ String _renderOrganize(Object? data) {
               '${(data['failed'] as num? ?? 0) > 0 ? '，失败 ${data['failed']} 条' : ''}'
         : '可整理 ${data['ready']} 条（做种核对：${data['torrentCheck']}）',
   );
+  return lines.join('\n');
+}
+
+// ── audit / regroup ──────────────────────────────────────────────────────
+
+CtlRequestSpec _buildAudit(CtlCommandContext context) =>
+    CtlRequestSpec.get('/api/admin/video/audit');
+
+String _renderAudit(Object? data) => renderCtlTable(
+  data,
+  const <(String, String)>[
+    ('问题', 'kind'),
+    ('作品', 'work'),
+    ('uid', 'uid'),
+    ('绑定', 'boundTo'),
+    ('分钟', 'durationMinutes'),
+    ('正片分钟', 'episodeMinutes'),
+    ('路径', 'path'),
+  ],
+  listKey: 'findings',
+  empty: '没有发现挂错位置的文件',
+);
+
+void _configureRegroup(ArgParser parser) {
+  parser
+    ..addOption('to', help: 'standalone | new | collection:<id>')
+    ..addOption('name', help: '新作品的名字（--to new）');
+}
+
+CtlRequestSpec _buildRegroup(CtlCommandContext context) {
+  final List<String> items = <String>[
+    for (final String raw in context.rest)
+      if (raw.trim().isNotEmpty) raw.trim(),
+  ];
+  if (items.isEmpty) throw const CtlUsageError('缺少 <bookUid...>');
+  final String? to = context.option('to');
+  if (to == null) {
+    throw const CtlUsageError('需要 --to standalone | new | collection:<id>');
+  }
+  final String? name = context.option('name');
+  if (to == 'new' && (name == null || name.trim().isEmpty)) {
+    throw const CtlUsageError('--to new 需要 --name <新作品名>');
+  }
+  return CtlRequestSpec.post(
+    '/api/admin/video/regroup',
+    body: <String, Object?>{
+      'items': items,
+      'to': to,
+      if (name != null) 'name': name,
+    },
+  );
+}
+
+String _renderRegroup(Object? data) {
+  if (data is! Map) return '完成';
+  final List<String> lines = <String>[];
+  final Object? moved = data['moved'];
+  if (moved is List) {
+    for (final Object? m in moved) {
+      if (m is Map) lines.add('${m['title']}：${m['from']} → ${m['to']}');
+    }
+  }
+  final Object? skipped = data['skipped'];
+  if (skipped is List) {
+    for (final Object? s in skipped) {
+      if (s is Map) lines.add('[${s['reason']}] ${s['uid']}');
+    }
+  }
+  lines.add('已挪动 ${moved is List ? moved.length : 0} 个文件');
   return lines.join('\n');
 }

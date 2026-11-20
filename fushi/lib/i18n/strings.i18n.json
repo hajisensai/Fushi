@@ -5211,6 +5211,7 @@
   "library_curate_stage_scrape": "Identify videos",
   "library_curate_stage_scrape_books": "Identify books and manga",
   "library_curate_stage_scrape_games": "Identify games",
+  "library_curate_stage_video_structure": "Fix misplaced videos",
   "library_curate_stage_works": "Work layer",
   "library_curate_start": "Start",
   "library_curate_status_cancelled": "Cancelled",
