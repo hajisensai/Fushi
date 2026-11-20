@@ -1675,16 +1675,30 @@ class VideoPlayerController extends ChangeNotifier
   /// 快照、不该作废「只播这一句就停」、也不该触发字幕权威重算——位置根本没变。
   /// 未 [load]（无 player）时 no-op 安全。
   ///
-  /// 一个边界要写明：`player.state.position` 是 mpv `time-pos` 属性事件**最后一次被
-  /// Dart 事件循环消费到**的值，不是实时读。而视频页真后台并不暂停播放，所以若后台期间
-  /// Dart 侧停摆（系统冻结进程 / 长时间不调度）而 mpv 仍在推进，这里读到的就是陈旧值，
-  /// 这一 seek 会把播放头真往回拉，偏差 = 停摆时长。media_kit 自己的 `widListener`
-  /// 有同一问题；本方法把这条路径的触发频率从「surface 重建时」提到了「每次真后台
-  /// 返回」，因此这个偏差的暴露面也跟着变大。
+  /// 目标位置 seek 前现读 libmpv `time-pos`（[_livePlaybackPosition]），不用
+  /// `player.state.position`：后者是 `time-pos` 事件**最后一次被 Dart 事件循环消费到**
+  /// 的值。视频页真后台并不暂停播放，若后台期间 Dart 侧停摆（系统冻结进程 / 长时间
+  /// 不调度）而 mpv 仍在推进，缓存值就是陈旧的，拿它原地 seek 会把播放头真往回拉，
+  /// 偏差 = 停摆时长（c32 video-36d）。
   Future<void> refreshDecodeAfterResume() async {
     final Player? player = _player;
     if (player == null) return;
-    await player.seek(player.state.position);
+    final int loadToken = _loadToken;
+    final Duration target = await _livePlaybackPosition(player);
+    if (!_isCurrentLoad(player, loadToken)) return; // 读取期间换片 / 销毁。
+    await player.seek(target);
+  }
+
+  /// libmpv 此刻的播放位置（`time-pos`，秒）。读不到（非 libmpv 后端 / 尚无位置 /
+  /// 非法值）时退回事件缓存的 `player.state.position`。
+  Future<Duration> _livePlaybackPosition(Player player) async {
+    final double? seconds = double.tryParse(
+      (await _getMpvProperty('time-pos')).trim(),
+    );
+    if (seconds == null || !seconds.isFinite || seconds < 0) {
+      return player.state.position;
+    }
+    return Duration(microseconds: (seconds * 1000000).round());
   }
 
   /// libmpv 当前是否处于缓冲态（`core-idle` / `paused-for-cache`）。media_kit 的

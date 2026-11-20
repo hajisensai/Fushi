@@ -5,6 +5,7 @@
 //  - 重新选同一条图形轨不撤销在途的整轨抽取；
 //  - 续播恢复音轨等到目标轨出现为止，换片 / 卸载 / 用户自己选轨即放弃；
 //  - 章节表一次读完 `chapter-list`，不再逐条往返；
+//  - 回前台重建解码链 seek 到现读的 `time-pos`，不用陈旧的事件缓存。
 import 'dart:async';
 import 'dart:ui' show Rect, Size;
 
@@ -42,6 +43,18 @@ class _FakeMpv extends PlatformPlayer {
   Future<void> setSubtitleTrack(SubtitleTrack track) async {
     selectedSubtitleIds.add(track.id);
     state = state.copyWith(track: state.track.copyWith(subtitle: track));
+  }
+
+  /// 每次 `seek` 的目标（按先后）。
+  final List<Duration> seeks = <Duration>[];
+
+  @override
+  Future<void> seek(Duration duration) async {
+    seeks.add(duration);
+  }
+
+  void setPosition(Duration position) {
+    state = state.copyWith(position: position);
   }
 
   @override
@@ -288,6 +301,33 @@ void main() {
         'ED',
       ]);
       expect(c.chapters[2].start, const Duration(milliseconds: 720250));
+    });
+  });
+
+  group('回前台重建解码链（video-36d）', () {
+    test('seek 到现读的 time-pos，而不是停摆前缓存的位置', () async {
+      final _FakeMpv mpv = _FakeMpv()
+        // Dart 侧最后消费到的位置停在 10 s（后台停摆），mpv 实际已播到 42.5 s。
+        ..setPosition(const Duration(seconds: 10));
+      mpv.props['time-pos'] = '42.500000';
+      final VideoPlayerController c = VideoPlayerController()
+        ..debugAttachPlayerForTesting(Player(platformPlayer: mpv));
+      addTearDown(c.dispose);
+
+      await c.refreshDecodeAfterResume();
+
+      expect(mpv.seeks, <Duration>[const Duration(milliseconds: 42500)]);
+    });
+
+    test('读不到 time-pos 时退回缓存位置', () async {
+      final _FakeMpv mpv = _FakeMpv()..setPosition(const Duration(seconds: 7));
+      final VideoPlayerController c = VideoPlayerController()
+        ..debugAttachPlayerForTesting(Player(platformPlayer: mpv));
+      addTearDown(c.dispose);
+
+      await c.refreshDecodeAfterResume();
+
+      expect(mpv.seeks, <Duration>[const Duration(seconds: 7)]);
     });
   });
 }
