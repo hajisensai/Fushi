@@ -39,6 +39,7 @@
 |---|:--:|:--:|---|
 | [BUG-4906](bugs/BUG-4906-anime-download-stale-bytes.md) | ✅ | ✅ | 番剧下载状态卡在「231 KB / 231 KB (100%)」 |
 | [BUG-4921](bugs/BUG-4921-continue-label-ordinal-not-episode-number.md) | ✅ | ✅ | 剧集页「继续看 第N集」用列表顺位号，与真实集号不符（只导入后半季时显示第1集而非第151集） |
+| [BUG-4926](bugs/BUG-4926-item-menu-submenu-hover-gap.md) | ✅ | ✅ | 条目右键菜单「设置」子菜单：鼠标往右划向子菜单时收起，永远点不到 |
 > 共 4238 条。点号进各自文件。
 > 共 4048 条。点号进各自文件。
 
