@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4235 条。点号进各自文件。
+> 共 4236 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4908](bugs/BUG-4908-paged-progress-landing-first-after-metrics-invalidation.md) | 🚧 | 🚧 | 竖排分页 progress 0.9 落点在度量缓存作废后第一次与之后几次不一致 |
 | [BUG-4907](bugs/BUG-4907-vn-standalone-image-computed-display.md) | ✅ | ✅ | VN 独立插图归类读脱离文档的 computed display，该分支恒不生效且随挂载状态翻转 |
 | [BUG-4906](bugs/BUG-4906-reader-init-restore-no-failure-exit.md) | ✅ | ✅ | 阅读器引擎初始化或初次恢复链抛异常时不回执，只能等8秒兜底 |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
