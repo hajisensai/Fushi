@@ -8804,9 +8804,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           p.completed || (p.positionMs ?? 0) > 0 || (p.lastPlayedAt ?? 0) > 0,
     );
     if (anyTrace && completed < total) {
+      // BUG-4921：N 是续播那集的真实集号（与详情页集卡序号同一判据），不是顺位号。
+      final int episodeNumber = collectionMemberEpisodeNumber(<String>[
+        for (final CollectionOrderingItem<_VideoSlot> item in group.items)
+          item.payload.local?.videoPath ?? item.payload.remote!.parseName,
+      ], continueMemberIndex(progresses));
       return (
         label:
-            '${t.collection_continue_progress(n: continueMemberIndex(progresses) + 1)}'
+            '${t.collection_continue_progress(n: episodeNumber)}'
             ' · ${t.video_playlist_episodes(count: total)}',
         completed: completed,
         total: total,

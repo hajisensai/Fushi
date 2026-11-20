@@ -1096,6 +1096,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   int _episodeDisplayNumber(CollectionEpisodeSlot slot, int index) =>
       _episodeNumbers[slot.entryKey] ?? index + 1;
 
+  /// 「继续看 第 N 集」的 N（BUG-4921）：与集卡序号同一个 [_episodeDisplayNumber]，
+  /// 不是续播成员在列表里的顺位号——只导入了后半季（第 151 集起）时顺位号是 1，
+  /// 续播行写「第1集」而集卡写「151」。
+  int get _continueEpisodeNumber =>
+      _episodeDisplayNumber(_slots[_continueIndex], _continueIndex);
+
   /// [_slots] 整批解析出的集号（entryKey → 集号），按 [_slots] 的**对象身份**
   /// 缓存：`_slots` 每次变更都是整体替换成新列表，所以 identical 即可当缓存键，
   /// 四个赋值点都不必记得手动失效。
@@ -2179,7 +2185,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           ? discMenuUnavailableText(discUnavailable)
           : discPrimary && _discs.length > 1 && disc != null
           ? '${t.video_disc_play}  ·  ${disc.label}'
-          : '${t.collection_continue_progress(n: _continueIndex + 1)}  ·  '
+          : '${t.collection_continue_progress(n: _continueEpisodeNumber)}  ·  '
                 '${_episodeDisplayTitle(episode)}',
       // 续播行已写明是哪一集，按钮只给动作：有进度「继续观看」、没看过「开始观看」。
       playLabel: discPrimary
@@ -3873,7 +3879,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             },
             child: MediaPosterUpNextCard(
               key: const ValueKey<String>('collection-hero-up-next'),
-              label: t.collection_continue_progress(n: _continueIndex + 1),
+              label: t.collection_continue_progress(n: _continueEpisodeNumber),
               title: _episodeDisplayTitle(episode),
               image: _episodeCover(episode) ?? _heroBackdrop ?? _heroCover,
               meta: _episodeMeta(episode),
