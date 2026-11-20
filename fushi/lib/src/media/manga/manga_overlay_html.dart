@@ -1103,7 +1103,7 @@ const int kMangaActivityReportIntervalMs = 5000;
 /// 节流 → `onMangaScroll`。viewport resize → `_reanchor` 把语义位置重投影成新视口
 /// 的 px（BUG-1758）。`dragstart` 全程 preventDefault + CSS user-select/user-drag
 /// 禁用，消除桌面拖动时的原生图片/选区残影（「秃瓢」）。手势阈值镜像 reader
-/// （absDx>absDy 判 swipe，小位移判 tap）。spread translateX 在 [_mangaApplyTranslate]
+/// （absDx>absDy 判 swipe，小位移判 tap）。spread translateX 在 `__mangaApplyTranslate`
 /// 按 data-spread 测量。
 /// 翻页动画统一缓动（CSS 过渡与 JS 逐帧滚动动画同一条曲线）。
 const String kMangaPageTurnEasing = 'cubic-bezier(.2,.7,.2,1)';

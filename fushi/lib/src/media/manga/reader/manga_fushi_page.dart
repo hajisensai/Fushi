@@ -711,7 +711,7 @@ class MangaFushiPage extends BaseSourcePage {
 
   /// 把注册表解析出的 [ShortcutAction] 落成本页的输入动作。
   ///
-  /// 键位本身由 `ShortcutRegistry`（`ShortcutScope.manga`）解析，左右方向键的朝向
+  /// 键位本身由 [FushiShortcutRegistry]（`ShortcutScope.manga`）解析，左右方向键的朝向
   /// 再由 [resolveMangaArrowPageTurn] 按跨页方向校正——两步都在调用侧完成，本函数
   /// 只负责「拿到动作之后，当前上下文该不该执行它」这层门控。
   ///
@@ -1906,10 +1906,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (owner != null && !owner.isCurrent) return false;
     switch (cause) {
       // 与阅读器**相反**：阅读器在词典弹窗可见时让位（弹窗自持焦点，BUG-136），
-      // 漫画不能让——[MangaFushiPage.keyInputAction] 规定弹窗可见时左右键仍要
-      // 「关弹窗并翻页」、Escape 要关弹窗，这些键必须抵达 [_handleReaderKey]。
+      // 漫画不能让——[MangaFushiPage.inputActionForShortcut] 规定弹窗可见时左右键
+      // 仍要「关弹窗并翻页」、Escape 要关弹窗，这些键必须抵达 [_handleReaderKey]。
       // 词典弹窗是纯原生 WebView、没有 Flutter 焦点节点，不主动收回就全部落空。
-      // 这也正是本页覆写 [capturesDictionaryPopupNavigationKeys] 的同一诉求。
       case FocusReclaimCause.popupRendered:
         return isDictionaryShown;
       case FocusReclaimCause.gesture:
@@ -4465,8 +4464,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   ///
   /// 弹窗是纯原生 WebView，指针唤出它时 OS 焦点落在弹窗上。漫画在弹窗可见时
   /// **仍要**处理左右键（关弹窗并翻页）与 Escape（关弹窗），不收回这些键就全部
-  /// 落空——[onDictionaryPopupNavigationKey] 的转发只覆盖弹窗自己收到的键，
-  /// 覆盖不了「焦点悬空」的情况。
+  /// 落空——弹窗层的宿主按键转发（`onHostInputToken` / `dictionaryPopupKeyToken`）
+  /// 只覆盖弹窗自己收到的键，覆盖不了「焦点悬空」的情况。
   @override
   void onDictionaryPopupRendered(int index) {
     super.onDictionaryPopupRendered(index);

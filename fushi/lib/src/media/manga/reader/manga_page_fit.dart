@@ -9,7 +9,8 @@
 /// 现在页面 JS 按每页**实际排版宽度 × devicePixelRatio × 缩放档**算出需要的像素宽，
 /// 作为 `fit=<宽>` 挂在页图 URL 上；拦截器据此把原图降采样成同宽高比的 JPEG 再交给
 /// WebView（本文件）。放大阅读时 JS 换更高的档（见 `manga_overlay_html.dart` 的
-/// `_refitPages`），所以放大看细节的清晰度不降；需要的宽度接近原图时直接给原图。
+/// `_refitPage` / `_scheduleRefit`），所以放大看细节的清晰度不降；需要的宽度接近
+/// 原图时直接给原图。
 ///
 /// 转码是计算型工作，放在 Rust 内核（`ffc_image_fit_jpeg`，解码 + 面积平均 + JPEG），
 /// 后台 isolate 里串行跑（同时只转一张，峰值只多一张原图的解码缓冲），结果进按字节
