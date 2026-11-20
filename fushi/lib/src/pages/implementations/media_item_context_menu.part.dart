@@ -947,7 +947,8 @@ class _ItemSubmenuRowState extends State<_ItemSubmenuRow> {
 
   static const double _width = 248;
 
-  /// 二级菜单与本行的水平间隙。
+  /// 二级菜单与本行的水平间隙。这条缝算在二级菜单的悬停区里（见
+  /// [_buildPositionedSubmenu] 里包住二级菜单的 [MouseRegion]），指针从行横移到二级菜单全程至少落在其中一块上。
   static const double _gap = 4;
 
   /// 二级菜单的内边距：首项与本行顶边对齐，所以整体上提这么多。
@@ -986,8 +987,8 @@ class _ItemSubmenuRowState extends State<_ItemSubmenuRow> {
   }
 
   void _syncHover() {
-    // 指针从行移到二级菜单要穿过两者之间的缝：等这一帧的进出事件都到齐再判，
-    // 免得一离开行就收起。
+    // 行与二级菜单的悬停区首尾相接（缝归二级菜单），但同一次指针移动里「离开行」
+    // 与「进入二级菜单」是先后两个回调：等这一帧的进出事件都到齐再判。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (_hoverRow || _hoverMenu) {
@@ -1056,50 +1057,84 @@ class _ItemSubmenuRowState extends State<_ItemSubmenuRow> {
       overlayChildBuilder: (BuildContext overlayContext) {
         final Rect? rect = _rowRect(overlayContext);
         if (rect == null) return const SizedBox.shrink();
-        return CustomSingleChildLayout(
-          delegate: _SubmenuLayout(
-            row: rect,
-            padding: MediaQuery.paddingOf(overlayContext),
-            gap: _gap,
-            inset: _padding,
-          ),
-          child: MouseRegion(
-            onEnter: (_) {
-              _hoverMenu = true;
-              _syncHover();
-            },
-            onExit: (_) {
-              _hoverMenu = false;
-              _syncHover();
-            },
-            child: Shortcuts(
-              shortcuts: const <ShortcutActivator, Intent>{
-                SingleActivator(LogicalKeyboardKey.arrowDown):
-                    NextFocusIntent(),
-                SingleActivator(LogicalKeyboardKey.arrowUp):
-                    PreviousFocusIntent(),
-                SingleActivator(LogicalKeyboardKey.arrowLeft): DismissIntent(),
-                SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
-              },
-              child: Actions(
-                actions: <Type, Action<Intent>>{
-                  DismissIntent: CallbackAction<DismissIntent>(
-                    onInvoke: (DismissIntent intent) {
-                      _close(refocusRow: true);
-                      return null;
-                    },
-                  ),
-                },
-                child: FocusScope(
-                  node: _menuScope,
-                  child: _buildSubmenu(overlayContext),
+        final EdgeInsets safe = MediaQuery.paddingOf(overlayContext);
+        return LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) =>
+              _buildPositionedSubmenu(
+                overlayContext,
+                rect,
+                safe,
+                _SubmenuLayout.opensLeft(
+                  row: rect,
+                  overlay: constraints.biggest,
+                  padding: safe,
+                  width: _width + _gap,
                 ),
               ),
-            ),
-          ),
         );
       },
       child: anchored,
+    );
+  }
+
+  /// 按 [flip] 摆好的二级菜单（含悬停区与键盘导航）。
+  Widget _buildPositionedSubmenu(
+    BuildContext overlayContext,
+    Rect rect,
+    EdgeInsets safe,
+    bool flip,
+  ) {
+    return CustomSingleChildLayout(
+      delegate: _SubmenuLayout(
+        row: rect,
+        padding: safe,
+        flip: flip,
+        inset: _padding,
+      ),
+      // 二级菜单离本行留 [_gap] 的缝，但这条缝必须仍是二级菜单的悬停区：缝若
+      // 落在悬停区外，指针横移时只要有一次事件落进缝里，行与二级菜单就都判为
+      // 未悬停，二级菜单被收起、再也移不进去（反馈 iEhadpzweB，BUG-4926）。
+      // 所以缝做成二级菜单 [MouseRegion] 里朝向本行的透明内边距，定位时二级
+      // 菜单与本行首尾相接。
+      child: MouseRegion(
+        hitTestBehavior: HitTestBehavior.opaque,
+        onEnter: (_) {
+          _hoverMenu = true;
+          _syncHover();
+        },
+        onExit: (_) {
+          _hoverMenu = false;
+          _syncHover();
+        },
+        child: Shortcuts(
+          shortcuts: const <ShortcutActivator, Intent>{
+            SingleActivator(LogicalKeyboardKey.arrowDown): NextFocusIntent(),
+            SingleActivator(LogicalKeyboardKey.arrowUp): PreviousFocusIntent(),
+            SingleActivator(LogicalKeyboardKey.arrowLeft): DismissIntent(),
+            SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
+          },
+          child: Actions(
+            actions: <Type, Action<Intent>>{
+              DismissIntent: CallbackAction<DismissIntent>(
+                onInvoke: (DismissIntent intent) {
+                  _close(refocusRow: true);
+                  return null;
+                },
+              ),
+            },
+            child: Padding(
+              padding: EdgeInsets.only(
+                left: flip ? 0 : _gap,
+                right: flip ? _gap : 0,
+              ),
+              child: FocusScope(
+                node: _menuScope,
+                child: _buildSubmenu(overlayContext),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -1137,23 +1172,34 @@ class _ItemSubmenuRowState extends State<_ItemSubmenuRow> {
   }
 }
 
-/// 二级菜单定位：默认贴在本行右侧、首项与本行顶边对齐；右侧放不下翻到左侧；
-/// 纵向夹在屏幕安全区内（放不下时整体上移，而不是伸出屏幕外），高度上限是
-/// 安全区高度（极端情况下二级菜单自己滚动）。
+/// 二级菜单定位：默认贴在本行右侧、首项与本行顶边对齐；右侧放不下翻到左侧
+/// （[opensLeft]）；纵向夹在屏幕安全区内（放不下时整体上移，而不是伸出屏幕外），
+/// 高度上限是安全区高度（极端情况下二级菜单自己滚动）。子节点与本行首尾相接，
+/// 视觉上的缝由子节点自己朝向本行的内边距给出（缝要算进二级菜单的悬停区）。
 class _SubmenuLayout extends SingleChildLayoutDelegate {
   const _SubmenuLayout({
     required this.row,
     required this.padding,
-    required this.gap,
+    required this.flip,
     required this.inset,
   });
 
   final Rect row;
   final EdgeInsets padding;
-  final double gap;
+
+  /// 翻到本行左侧（由 [opensLeft] 判定）。
+  final bool flip;
   final double inset;
 
   static const double _margin = 8;
+
+  /// 宽 [width]（含缝）的二级菜单贴本行右侧放不下、要翻到左侧时为真。
+  static bool opensLeft({
+    required Rect row,
+    required Size overlay,
+    required EdgeInsets padding,
+    required double width,
+  }) => row.right + width > overlay.width - padding.right - _margin;
 
   @override
   BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
@@ -1165,13 +1211,11 @@ class _SubmenuLayout extends SingleChildLayoutDelegate {
   @override
   Offset getPositionForChild(Size size, Size childSize) {
     final double left = padding.left + _margin;
-    final double right = size.width - padding.right - _margin;
     final double top = padding.top + _margin;
     final double bottom = size.height - padding.bottom - _margin;
-    final double toRight = row.right + gap;
-    final double x = toRight + childSize.width <= right
-        ? toRight
-        : math.max(left, row.left - gap - childSize.width);
+    final double x = flip
+        ? math.max(left, row.left - childSize.width)
+        : row.right;
     final double y = (row.top - inset).clamp(
       top,
       math.max(top, bottom - childSize.height),
@@ -1181,5 +1225,7 @@ class _SubmenuLayout extends SingleChildLayoutDelegate {
 
   @override
   bool shouldRelayout(_SubmenuLayout oldDelegate) =>
-      row != oldDelegate.row || padding != oldDelegate.padding;
+      row != oldDelegate.row ||
+      padding != oldDelegate.padding ||
+      flip != oldDelegate.flip;
 }

@@ -58,7 +58,7 @@ ensure_flathub() {
   flatpak remote-add --user --if-not-exists flathub "$FLATHUB"
 }
 
-# BUG-4659: flatpak-builder hardlinks between --state-dir and the build dir and
+# BUG-4968: flatpak-builder hardlinks between --state-dir and the build dir and
 # refuses to start when the state dir and the parent of the build dir
 # (--force-clean "$WORK/build") are on different filesystems ("The state dir
 # (...) is not on the same filesystem as the target dir (...)"). In the

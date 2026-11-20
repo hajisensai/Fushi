@@ -374,7 +374,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
 
   /// 站点 WebView 的宿主会话（与原生播放器页的网页档同一个 [WebVideoSession]，gap-webvideo-11）：
   /// 环境与登录 cookie、注入脚本、WebView 设置（广告拦截 / 网站设置权限）、JS 调用包装与消息
-  /// 分派、进程死亡后的重建（BUG-4906：在途 JS 调用随表面作废、回到死前页面）都在会话里。
+  /// 分派、进程死亡后的重建（BUG-4983：在途 JS 调用随表面作废、回到死前页面）都在会话里。
   /// 准备好（[WebVideoSession.prepare]）之后才赋值，就绪前不建 WebView。
   WebVideoSession? _session;
 
@@ -890,7 +890,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     WidgetsBinding.instance.addPostFrameCallback((_) => _seedWarmPopup());
   }
 
-  /// WebView 进程死后、表面重建前（BUG-4906，[WebVideoSession.onProcessGone]）。会话已作废死
+  /// WebView 进程死后、表面重建前（BUG-4983，[WebVideoSession.onProcessGone]）。会话已作废死
   /// 表面（在途 JS 调用以 null 结束、控制器置空、表面换代）并记下死前所在的页面，随后换环境、
   /// 重建回到那里。宿主 State 不随表面重建，页面自己绑在死表面上的东西在这里作废，否则新
   /// WebView 起来之前它们一直被当成活的：最后一拍播放态（重放循环拿它判「播到了没有」）、
@@ -1636,7 +1636,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     await session.loadUrl(row.href);
     final DateTime until = DateTime.now().add(const Duration(seconds: 30));
     while (DateTime.now().isBefore(until)) {
-      // 表面在等的途中死了（会话换了代）：死页面等不到画面，不是这个视频到不了（BUG-4906）。
+      // 表面在等的途中死了（会话换了代）：死页面等不到画面，不是这个视频到不了（BUG-4983）。
       if (!mounted ||
           _mineStopRequested ||
           session.surfaceGeneration != surfaceGen) {
@@ -1701,7 +1701,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       ErrorLogService.instance.log('web_video.mineQueue', error, stack);
     }
 
-    // 表面的代（BUG-4906）：本轮只认开跑时这一个 WebView。死了（重建出来的是另一个页面）或
+    // 表面的代（BUG-4983）：本轮只认开跑时这一个 WebView。死了（重建出来的是另一个页面）或
     // 已报废（重建预算用尽、控制器一直是 null），在途那一行留待办、本轮结束。
     final int surfaceGen = _surfaceGeneration;
     bool surfaceLost() =>

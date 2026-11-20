@@ -73,6 +73,7 @@ import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
         DialogActionGroup,
         DialogDangerAction,
         DialogListAction,
+        ItemMenuSlot,
         MediaItemDialogFrame,
         showMediaItemActions;
 import 'package:fushi/src/pages/implementations/collection_relations_section.dart';
@@ -1097,6 +1098,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 「03」点开却是 E05。集号是文件名里写着的事实，不是列表下标的函数。
   int _episodeDisplayNumber(CollectionEpisodeSlot slot, int index) =>
       _episodeNumbers[slot.entryKey] ?? index + 1;
+
+  /// 「继续看 第 N 集」的 N（BUG-4921）：与集卡序号同一个 [_episodeDisplayNumber]，
+  /// 不是续播成员在列表里的顺位号——只导入了后半季（第 151 集起）时顺位号是 1，
+  /// 续播行写「第1集」而集卡写「151」。
+  int get _continueEpisodeNumber =>
+      _episodeDisplayNumber(_slots[_continueIndex], _continueIndex);
 
   /// [_slots] 整批解析出的集号（entryKey → 集号），按 [_slots] 的**对象身份**
   /// 缓存：`_slots` 每次变更都是整体替换成新列表，所以 identical 即可当缓存键，
@@ -2180,7 +2187,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           ? discMenuUnavailableText(discUnavailable)
           : discPrimary && _discs.length > 1 && disc != null
           ? '${t.video_disc_play}  ·  ${disc.label}'
-          : '${t.collection_continue_progress(n: _continueIndex + 1)}  ·  '
+          : '${t.collection_continue_progress(n: _continueEpisodeNumber)}  ·  '
                 '${_episodeDisplayTitle(episode)}',
       // 续播行已写明是哪一集，按钮只给动作：有进度「继续观看」、没看过「开始观看」。
       playLabel: discPrimary
@@ -2978,11 +2985,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               title: _episodeDisplayTitle(episode),
               showLaunchAction: false,
               listActions: <DialogListAction>[
+                // 互联下载的发起 / 暂停 / 继续 / 取消显式进主操作行：不写 slot 时内容组
+                // 一律被推断进「更多 ›」二级菜单（#4b 骨架），BUG-3698 要的「就地能停」
+                // 就又藏起来了。同一时刻最多两项（暂停或继续 + 取消），不超主操作上限。
                 if (canDownloadToDevice)
                   DialogListAction(
                     label: t.remote_video_download,
                     icon: FushiIcons.cloudDownload,
                     group: DialogActionGroup.content,
+                    slot: ItemMenuSlot.primary,
                     onPressed: () => pick(_EpisodeMenuAction.downloadToDevice),
                   ),
                 if (taskId != null && downloads!.canPause(taskId))
@@ -2990,6 +3001,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                     label: t.download_task_pause,
                     icon: FushiIcons.pause,
                     group: DialogActionGroup.content,
+                    slot: ItemMenuSlot.primary,
                     onPressed: () => pick(_EpisodeMenuAction.pauseDownload),
                   ),
                 if (taskId != null && downloads!.canRestart(taskId))
@@ -2997,6 +3009,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                     label: t.download_task_resume,
                     icon: FushiIcons.play,
                     group: DialogActionGroup.content,
+                    slot: ItemMenuSlot.primary,
                     onPressed: () => pick(_EpisodeMenuAction.resumeDownload),
                   ),
                 if (taskId != null && downloads!.canCancel(taskId))
@@ -3004,6 +3017,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                     label: t.interconnect_download_cancel,
                     icon: FushiIcons.close,
                     group: DialogActionGroup.content,
+                    slot: ItemMenuSlot.primary,
                     onPressed: () => pick(_EpisodeMenuAction.cancelDownload),
                   ),
                 if (_downloadsAvailable && !hasLocalFiles)
@@ -3891,7 +3905,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             },
             child: MediaPosterUpNextCard(
               key: const ValueKey<String>('collection-hero-up-next'),
-              label: t.collection_continue_progress(n: _continueIndex + 1),
+              label: t.collection_continue_progress(n: _continueEpisodeNumber),
               title: _episodeDisplayTitle(episode),
               image: _episodeCover(episode) ?? _heroBackdrop ?? _heroCover,
               meta: _episodeMeta(episode),

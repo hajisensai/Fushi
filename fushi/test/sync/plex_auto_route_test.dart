@@ -1,4 +1,4 @@
-// BUG-4906（gap-remote-7）：Plex 当前连接请求没到达服务器时，在已存连接里按
+// BUG-4980（gap-remote-7）：Plex 当前连接请求没到达服务器时，在已存连接里按
 // 优先级重新探测（核对 machineIdentifier），切到可达的那条、写回配置并失效清单
 // 缓存。假服务器走 MockClient：按 host 决定「连不上 / 答话 / 答成别的服务器」。
 

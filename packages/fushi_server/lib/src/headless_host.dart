@@ -21,6 +21,7 @@ import 'package:fushi_asr_core/asr_core.dart' as asr show AsrAudioProfile;
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
+import 'package:fushi_engine/sync/interconnect_file_box_prune.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/interconnect_owner_devices.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart';
@@ -284,7 +285,7 @@ class HeadlessHost {
 
   String? get hostFingerprint => _hostFingerprint;
 
-  /// 已落盘的证书是 BUG-4906 之前的旧格式（Chrome 拒收，WebUI 打不开）；
+  /// 已落盘的证书是 BUG-4985 之前的旧格式（Chrome 拒收，WebUI 打不开）；
   /// `fushi_server admin reset-tls` 重签。
   bool get tlsCertificateChromeRejected => _tlsCertificateChromeRejected;
   bool _tlsCertificateChromeRejected = false;
@@ -646,6 +647,9 @@ class HeadlessHost {
           ..onClientWrite = ((String path) =>
               unawaited(srs.onClientWrite(path)))
           ..onClientUpload = _onClientUpload;
+    // BUG-4985：绑端口前清掉同步根下已无人读取的客户端文件箱书文件夹（与 app 当 host
+    // 同一个引擎函数；自身吞错留痕，不挡启动）。
+    await pruneDeadInterconnectFileBox(server.syncDataDir);
     try {
       await server.start();
     } catch (_) {

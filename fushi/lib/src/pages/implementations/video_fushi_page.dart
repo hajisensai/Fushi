@@ -2365,7 +2365,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 当前失败态是「媒体到点仍没打开」的判定（[_promoteVideoReadyOrDiagnose] /
   /// [_armNetworkOpenDiagnosis]）——只有这一种失败会在媒体之后真打开时自愈
   /// （[_promoteVideoReadyOnFirstFrame]）。换集取流失败等其它失败不自愈：那时控制器里
-  /// 还是上一集、早就打开着，一有通知就会把新失败抹掉（BUG-4907）。
+  /// 还是上一集、早就打开着，一有通知就会把新失败抹掉（BUG-4997）。
   bool _failureHealsOnOpen = false;
 
   /// 加载失败态的用户可读原因（[_failed] 为 true 时展示在 [_buildFailedBody]）。null
@@ -4056,7 +4056,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   int? _resolvedStreamStartIndex;
 
   /// 换上本页新建的流客户端（首开 / 重试）。重试前那一程建的旧客户端随即收尾关闭——
-  /// 此前直接覆盖，旧的那只（连同它的 SSH / http 连接）就再没人关（BUG-4908）。
+  /// 此前直接覆盖，旧的那只（连同它的 SSH / http 连接）就再没人关（BUG-5012）。
   void _adoptOwnedStreamClient(RemoteVideoClient client) {
     final RemoteVideoClient? previous = _resolvedStreamClient;
     _resolvedStreamClient = client;
@@ -4607,7 +4607,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   ///
   /// 各已知失败点在 [_initVideo] 内部自己置失败态；这里兜住**未预期**的异常（读库行抛、
   /// 合集成员查询抛、着色器 / 脚本目录枚举抛……）：此前这里 `rethrow` 进无人 await 的
-  /// future，页面既不进失败态也没有重试入口，只剩永久转圈（BUG-4906）。统一收口成失败态
+  /// future，页面既不进失败态也没有重试入口，只剩永久转圈（BUG-4980）。统一收口成失败态
   /// + 原因，并撤掉首开时登记、还没交给 [_controller] 的在途控制器（否则它一直活到退页）。
   Future<void> _init() async {
     try {
@@ -4758,7 +4758,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 ),
           );
           if (!mounted) {
-            // 页面在协商途中已关：这只现建的客户端没人会再用（BUG-4908）。
+            // 页面在协商途中已关：这只现建的客户端没人会再用（BUG-5012）。
             closeOwnedRemoteVideoClient(launch.client);
             return;
           }
@@ -4793,7 +4793,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 解析 getManifest 有网络往返、慢网仍可数秒）之前，避免解析期页面裸转圈「点了没动静」。
       _setLoadingPhase(_VideoLoadPhase.connecting);
       // 来源直链解析器（AList 登录态 / SFTP 的 SSH 连接）交给客户端后由客户端关；
-      // 交出去之前失败、或客户端没收下它，都在这里关（BUG-4908）。
+      // 交出去之前失败、或客户端没收下它，都在这里关（BUG-5012）。
       StreamUrlResolver? sourceUrlResolver;
       try {
         // `.strm` 流指针：videoPath 是 `.strm` 自身（本地或来源根内的网络条目），
@@ -5206,7 +5206,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (switching) _remoteSwitchPhase.value = _VideoLoadPhase.connecting;
     // 整程一个 try：取流之前的本机字幕档重建 / 开播位置判定也会抛（读 prefs、问 host），
     // 换集 / 换档的调用方都是 fire-and-forget，漏在 try 外就成了未处理异常、页面卡在
-    // 换集 OSD 上（BUG-4907）。失败态只归最新那一程，见 catch。
+    // 换集 OSD 上（BUG-4997）。失败态只归最新那一程，见 catch。
     try {
       // TODO-1307：新一集起播重置「用户已关字幕」标记（字幕后置自动应用的门控，见
       // [_resolveDeferredYoutubeCaptions]）。
@@ -5582,7 +5582,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         }
       }
       // 以下都是「本程这一集」的收尾写入：载入途中用户又换了集（seq 前进），新的一程
-      // 已接管字幕选择态与制卡源，作废的这一程不得再写（BUG-4907）。
+      // 已接管字幕选择态与制卡源，作废的这一程不得再写（BUG-4997）。
       if (seq != _episodeLoadSeq || !mounted) return;
       if (restoredPrimarySource != null) {
         // 内嵌轨重放：把选择态改回 `embedded:<n>` 编码（见 restoredPrimarySource doc）。
@@ -5646,7 +5646,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       );
       ErrorLogService.instance.log('VideoFushi.remoteEpisode', e, stack);
       // 已作废的一程（用户在它取流 / 载入途中又换了集）失败与页面无关：新的一程正在载入
-      // 或已经在播，把页面置成失败态会盖住它（BUG-4907）。
+      // 或已经在播，把页面置成失败态会盖住它（BUG-4997）。
       if (mounted && seq == _episodeLoadSeq) {
         setState(() {
           _failed = true;
@@ -6071,7 +6071,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 不阻塞离开视频页。
   ///
   /// 卡片片段回看中不在这里拦：Stopped 由回看闸门（[_remoteReportGate]）压住，闸门的
-  /// 回看分支改为只摘会话、停转码（BUG-4909）——此前这里先 return，Jellyfin / Emby
+  /// 回看分支改为只摘会话、停转码（BUG-5020）——此前这里先 return，Jellyfin / Emby
   /// 回看那一程的转码 ffmpeg 就在服务器上空转到超时。
   Future<void> _reportRemotePlaybackStopped({
     required RemoteVideoInfo? info,
@@ -6655,7 +6655,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (detectHls) _streamExternalAudioTracks = externalAudioTracks;
     // 本程所属的远端集序号（[_loadRemoteEpisode] 每程前进；本地载入不前进，恒等）。
     // 载入途中用户换了集，这一程就作废：失败不置页面失败态、成功也不写页面状态，
-    // 新的一程接管（BUG-4907）。
+    // 新的一程接管（BUG-4997）。
     final int loadSeq = _episodeLoadSeq;
     _unregisterVideoRemote();
     // 新一次载入作废上一次的网络流「没打开」判定（换集 / 重试共用同一 controller，
@@ -6755,7 +6755,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 实例幂等，见 video_lua_script_manager.dart）。
     final List<String> luaScriptPaths = await listLuaScriptPaths();
     // 上面两次 await 期间用户可能又换了集：作废的一程绝不能再发起 load——它会让控制器的
-    // loadToken 前进，反过来把新一集正在进行的 load 判成过期（BUG-4907）。
+    // loadToken 前进，反过来把新一集正在进行的 load 判成过期（BUG-4997）。
     if (loadSeq != _episodeLoadSeq || !mounted) {
       releaseOwnInitialController();
       return;
@@ -6860,7 +6860,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-559: 远端断点保存——远端无 DB 行，按 bookUid 落 prefs（原为 null 不存）。
     // 流式原盘会话：标题在 host 的库里，本机没有行可写。
     // 远端断点会经客户端上报：登记进 [_remoteTeardown]，dispose 里 controller 的最后
-    // 一次写入还在途时，本页自建的客户端不先关（BUG-4908）。
+    // 一次写入还在途时，本页自建的客户端不先关（BUG-5012）。
     controller.onPositionWrite = remoteDisc != null
         ? null
         : _isRemote
@@ -6959,7 +6959,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         !controller.mediaOpened) {
       // 换集 / 重试 / 换档复用同一个控制器：首开那套「没打开就判失败、之后真打开再自愈」
       // 的看护在本函数开头已被撤掉（旧定时器不得给新一程判死），这里给新的一条网络流
-      // 重新挂上——否则新一集的流打不开时只剩黑屏 00:00，既无原因也无重试（BUG-4907）。
+      // 重新挂上——否则新一集的流打不开时只剩黑屏 00:00，既无原因也无重试（BUG-4997）。
       _armNetworkOpenDiagnosis(controller);
     }
     _syncControllerChapterAvailability(controller);
@@ -7809,7 +7809,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _volumeDisplay.dispose();
     // 离开那一刻的完成判定会经远端客户端取追番身份（媒体服务器入库条目，
     // [_remoteTrackingCompletion]）：登记进 [_remoteTeardown]，本页自建的客户端等它用完
-    // 再关（BUG-4908）。
+    // 再关（BUG-5012）。
     final VideoWatchTracker? watchTracker = _watchTracker;
     if (watchTracker != null) {
       unawaited(_remoteTeardown.track(watchTracker.close));
@@ -7851,7 +7851,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
     _pendingController = null;
     _controller?.dispose();
-    // BUG-4908：本页自建的流客户端排在 controller 之后关——controller 释放时的最后一次
+    // BUG-5012：本页自建的流客户端排在 controller 之后关——controller 释放时的最后一次
     // 断点写入、退出路径发起的落库与停止上报都已登记进 [_remoteTeardown]，等它们用完。
     final RemoteVideoClient? ownedStreamClient = _resolvedStreamClient;
     if (ownedStreamClient != null) _releaseOwnedStreamClient(ownedStreamClient);
@@ -9206,7 +9206,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     );
     exitAfterPersist(
       // 收尾在 pop / dispose 之后才跑完：登记进 [_remoteTeardown]，本页自建的客户端
-      // 等它用完再关（BUG-4908）。
+      // 等它用完再关（BUG-5012）。
       persist: () => _remoteTeardown.track(
         () => _flushPositionAndReportRemotePlaybackStopped(
           controller: controller,

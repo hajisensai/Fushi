@@ -9,7 +9,7 @@
 # 与 tool/native_libs.ps1 的 Get-NativeSourceTree 同一算法（那边手算 git blob 的
 # SHA-1），dist worker（fushi/tool/dist_test/worker_prepare.sh、worker_build.sh）
 # 调这里。没有这一步时 legacy_text.rs（住在 native/fushi_compute/）改了，
-# fushi_music 的库键不变、不会重编（BUG-4906）。
+# fushi_music 的库键不变、不会重编（BUG-4988）。
 set -euo pipefail
 
 crate="${1:?usage: native_source_key.sh <crate>}"

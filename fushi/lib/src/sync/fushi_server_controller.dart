@@ -49,6 +49,7 @@ import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_root_migration.dart';
 import 'package:fushi/src/sync/sync_utils.dart' show kSyncRootFolderName;
+import 'package:fushi_engine/sync/interconnect_file_box_prune.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -930,6 +931,10 @@ class FushiSyncServerController extends ChangeNotifier {
         st,
       ),
     );
+    // BUG-4991：清掉同步根下已无人读取的客户端文件箱书文件夹（旧版本客户端写下的
+    // epub / 有声书 / 进度 JSON，host 从不读回）。绑端口前跑，不和 WebDAV 写竞争；
+    // 自身吞错留痕，绝不挡启动。
+    await pruneDeadInterconnectFileBox(server.syncDataDir);
     await server.start();
     // BUG-1573：dispose 已经发生时，这台刚绑上的 host 已经没有拥有者了——继续往下
     // 写 `serverEnabled=true` 会打到一个可能已经关掉的 DB 上，广播也没人再拆。收干净

@@ -135,7 +135,7 @@ class _VideoSubtitleGlossaryPageState extends State<VideoSubtitleGlossaryPage> {
         language: widget.language,
       );
     } on AppVideoSubtitleStartRefused catch (refused) {
-      // 同作品的生成任务还没过专名表阶段：现在存会被它盖掉（BUG-4908）。
+      // 同作品的生成任务还没过专名表阶段：现在存会被它盖掉（BUG-5008）。
       if (mounted) setState(() => _notice = _refusedText(refused));
       return;
     } on Object catch (e) {

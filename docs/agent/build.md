@@ -427,6 +427,22 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - macOS 走 **Developer ID + 公证**，不进 Mac App Store：`Release.entitlements` 已刻意
   去沙盒以支持应用内自动更新替换 `/Applications/fushi.app`，商店强制沙盒，两者不可兼得。
 
+### Android 崩溃 / ANR 的 Dart 符号（2026-11-21，BUG-4955）
+
+- Android 上 gen_snapshot 不 strip，`fushi/build/app/intermediates/flutter/release/<abi>/app.so` 是带
+  `.symtab` + `.debug_info` + `.debug_line` 的完整 ELF，AGP 打包时才 strip 成 APK 里的 `lib/<abi>/libapp.so`（build-id 不变）。
+  `release.yml` 每次 `flutter build apk --release` 之后用 `fushi/tool/android_dart_symbols.sh stash <target-platform>`
+  收这份 ELF（逐 ABI 出包要逐次收：换 target-platform 重编会清掉上一份），出包后 `verify` 核对每个 release APK
+  的 libapp.so build-id 与收到的一致，按发布序号上传 artifact `android-dart-symbols-<序号>`（正式 / 测试版 90 天、
+  debug 通道 14 天，`continue-on-error`、不进 Release 资产）。守卫 `fushi/test/build/android_dart_symbols_guard_test.dart`。
+- **不用 `--split-debug-info`**：它连带 `--dwarf-stack-traces`，会把 app 内的 Dart 栈改成 DWARF 形式，诊断日志的
+  `ui_activity_probe` 调用点归因（`who=` / `fcb=`）与反馈里的符号化栈全部退化。这里运行时零改动。
+- **还原**：ANR / tombstone 栈里 `base.apk (offset …) (???) (BuildId: <id>)` 的帧就是 libapp.so，`pc` 是相对 libapp.so
+  装载基址的偏移（Dart ELF 的 vaddr 从 0 起）。按报告的版本 / 构建号下载 artifact
+  （`gh run download <run-id> -n android-dart-symbols-<序号>`），先 `readelf -n <abi>/app.so` 核对 Build ID 与报告一致，再
+  `llvm-symbolizer --obj=arm64-v8a/app.so 0x05cbbc30 0x0249c48c …`（NDK 的 `toolchains/llvm/prebuilt/*/bin/` 里有）
+  得到 Dart 函数名与 `文件:行`。
+
 ### iOS 包体积与崩溃符号（2026-11-15）
 
 - **slang 不生成 flat map**（`fushi/slang.yaml` 的 `flat_map: false`，BUG-4640）：17 个

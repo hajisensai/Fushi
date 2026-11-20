@@ -38,7 +38,7 @@ class _PlainClient implements RemoteVideoClient {
       throw UnsupportedError('unexpected ${invocation.memberName}');
 }
 
-/// BUG-4908：播放页自建的流客户端（连同来源直链解析器的 SSH / AList 连接）此前从不
+/// BUG-5012：播放页自建的流客户端（连同来源直链解析器的 SSH / AList 连接）此前从不
 /// 关闭；关闭又不能抢在退出收尾（断点落库、停止上报）之前。
 void main() {
   test('没有在途收尾：立即关闭', () async {

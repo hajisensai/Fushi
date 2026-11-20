@@ -1,4 +1,4 @@
-// BUG-4659: flatpak-builder refuses to start when its --state-dir and the
+// BUG-4968: flatpak-builder refuses to start when its --state-dir and the
 // parent of the build dir it is given (--force-clean "$work/build") are on
 // different filesystems. CI and build_flatpak.sh put FLATPAK_STATE_DIR on a
 // bind mount / volume while the container's /tmp is the overlay root, so a

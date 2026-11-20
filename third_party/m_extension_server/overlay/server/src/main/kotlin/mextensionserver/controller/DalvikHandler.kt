@@ -14,6 +14,7 @@ import fi.iki.elonen.NanoHTTPD
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.runBlocking
 import mextensionserver.impl.ExtensionHttpServers
+import mextensionserver.impl.InvocationLane
 import mextensionserver.impl.MExtensionServerLoader
 import mextensionserver.impl.MihonInvoker
 import mextensionserver.model.DataBody
@@ -48,7 +49,10 @@ class DalvikHandler {
             // carry it back; otherwise the host retries forever with the dead
             // value it already had.
             val invocationResult =
-                MExtensionServerLoader.invokeWithExtension(dataBody.data) { loadedExtension ->
+                MExtensionServerLoader.invokeWithExtension(
+                    dataBody.data,
+                    InvocationLane.forMethod(dataBody.method),
+                ) { loadedExtension ->
                     val selectedSource = MihonInvoker.selectSource(loadedExtension.sources, dataBody)
                     MihonInvoker.preparePreferences(dataBody, selectedSource)
                     // Host-owned login session; see [SourceCookieInjection].

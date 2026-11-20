@@ -1,6 +1,0 @@
-## BUG-4907 · 断点续传下载首字节超时后底层请求不中止，晚到的响应留下孤儿连接
-- **报告**：2026-11-20（来源：路线图 #3722 c47 遗留）
-- **真实性**：✅ 真 bug。`packages/fushi_engine/lib/utils/misc/resumable_downloader.dart` 的 `_run` 用 `opened = opened.timeout(firstByteTimeout!)` 实现首字节超时（`fushi/lib/src/utils/misc/segmented_downloader.dart` 的 `_fetchPartFrom` 同形）。`Future.timeout` 只让调用方不再等，`open()` 发出的请求照旧在跑；响应晚到时没有任何人 listen 它的 body，dart:io 的连接带着没读的响应体一直挂在 client 上。每次下载独占 client 并在 finally 里 `close(force: true)` 的调用方（动画单集直链、互联视频、互联包后台 isolate）会被强关兜住；共用 client 的调用方兜不住——互联包下载的主 isolate 路径（会话里的 `WebDavOps`）、更新检查等，每超时一次就多一条孤儿连接，在调用内接续时还和新请求抢连接。
-- **[x] ① 已修复** — 新增 `awaitResumableResponse(opened, firstByteTimeout)`：超时抛 `TimeoutException`，同时接管那次请求的后续，晚到的响应立刻 `discardResumableResponse`（订阅后取消；dart:io 取消 `HttpClientResponse` 订阅会销毁连接、不回池），超时后才到的失败不再上抛（没有消费者）。`ResumableDownloader` 与 `SegmentedDownloader` 都改走它，`SegmentedDownloader._abort` 复用同一个丢弃函数。
-- **[x] ② 已加自动化测试** — `fushi/test/utils/misc/resumable_downloader_test.dart` 的 `first-byte timeout` 组：超时后晚到的响应流被取消订阅（修前从未被 listen，用例超时红）；超时后才失败不产生未捕获错误；按时到的响应原样交出；`SegmentedDownloader` 走同一函数的源码守卫。
-- **备注**：服务端一直不回响应头的情形，请求仍挂到服务端 / TCP 层面结束为止（届时晚到处理照样断开）；要在超时那一刻就打断，得让 `ResumableDownloadOpen` 接一个中止信号，涉及十余处 opener，本轮未做。

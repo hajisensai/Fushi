@@ -1858,4 +1858,71 @@ void main() {
       });
     });
   });
+
+  // BUG-4927：Windows WebView2 不认 InAppWebViewSettings 的滚动条开关（只在 Android
+  // 生效），经典滚动条占位让 100vw/100vh 布局互相撑出四边滚动条。文档必须自己
+  // 隐藏视口滚动条，并按位置所有权限定原生滚动轴。
+  group('BUG-4927 文档自管视口滚动条', () {
+    String docFor(MangaReadingMode mode) => mangaWindowDocument(
+      <MokuroImage>[_pageWithTwoBlocks()],
+      <String>['p.jpg'],
+      mode: mode,
+      spreadDirection: 'ltr',
+      inlineSelectionJs: '',
+    );
+
+    String htmlRule(String doc) {
+      final RegExpMatch? m = RegExp(
+        r'(?<![,\w-])html\{([^}]*)\}',
+      ).firstMatch(doc);
+      expect(m, isNotNull, reason: '文档必须有独立的 html{...} 规则');
+      return m!.group(1)!;
+    }
+
+    test('所有模式都隐藏视口滚动条且不占位', () {
+      for (final MangaReadingMode mode in MangaReadingMode.values) {
+        final String doc = docFor(mode);
+        expect(
+          htmlRule(doc),
+          contains('scrollbar-width:none;'),
+          reason: '$mode',
+        );
+        expect(
+          doc.contains('::-webkit-scrollbar{display:none;width:0;height:0;}'),
+          isTrue,
+          reason: '$mode',
+        );
+      }
+    });
+
+    test('溢出只写在 html 上，body 不得自成滚动容器', () {
+      for (final MangaReadingMode mode in MangaReadingMode.values) {
+        final RegExpMatch m = RegExp(
+          r'html,body\{([^}]*)\}',
+        ).firstMatch(docFor(mode))!;
+        expect(m.group(1)!, isNot(contains('overflow')), reason: '$mode');
+      }
+    });
+
+    test('spread 两轴都由 JS 拥有：html overflow:hidden', () {
+      for (final MangaReadingMode mode in MangaReadingMode.values) {
+        if (mode.isContinuous) continue;
+        expect(
+          htmlRule(docFor(mode)),
+          contains('overflow:hidden;'),
+          reason: '$mode',
+        );
+      }
+    });
+
+    test('长条 / 纵向分页保留原生竖滚，只关横向', () {
+      for (final MangaReadingMode mode in MangaReadingMode.values) {
+        if (!mode.isContinuous) continue;
+        final String rule = htmlRule(docFor(mode));
+        expect(rule, contains('overflow-x:hidden;'), reason: '$mode');
+        expect(rule, isNot(contains('overflow:hidden')), reason: '$mode');
+        expect(rule, isNot(contains('overflow-y')), reason: '$mode');
+      }
+    });
+  });
 }

@@ -1519,7 +1519,7 @@ window.__fushiInstallShell = function(C) {
       );
     }
   },
-  // BUG-4906 续：恢复入口把「落定 + 回执」排进 setTimeout 的回调里，回调里抛的异常
+  // BUG-4975 续：恢复入口把「落定 + 回执」排进 setTimeout 的回调里，回调里抛的异常
   // 既不在入口返回的 promise 里，也不在初次恢复链里，回执永远不来。凡是负责发回执的
   // 延后回调都经它包一层：抛出即改发失败回执（已发过回执的文档只记 console.error）。
   _restoreCallback: function(callback) {
@@ -2560,7 +2560,7 @@ window.__fushiInstallShell = function(C) {
   /// 否则 `initialCharOffset >= 0` → `restoreToCharOffset`；否则 `restoreProgress`。
   /// 分页 shell 只用单点句首锚（旧实现也只传一个参数）。
   ///
-  /// BUG-4906 续：恢复入口都是 async 函数，第一个 `await` 之后抛的异常只会让它返回的
+  /// BUG-4975 续：恢复入口都是 async 函数，第一个 `await` 之后抛的异常只会让它返回的
   /// promise 变成 rejected。这里把那个 promise `return` 给外层
   /// `Promise.all(imagePromises).then(...)`，异步失败才走得到链尾的失败回执
   /// （[_sharedInitialRestoreCatchJs]）；不 return 时链早已 resolve，异常成了无人处理的

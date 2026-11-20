@@ -123,7 +123,7 @@ void main() {
     );
   }
 
-  // BUG-4907：空库态是在剩余空间里居中的共享空态（图标色块 + 文案 + 拖放提示
+  // BUG-4992：空库态是在剩余空间里居中的共享空态（图标色块 + 文案 + 拖放提示
   // + 导入游戏 / 去发现），不是一张被拉满整列高度的窄卡。拼贴版与经典封面网格
   // 同一份，MD3 与 Apple 都测。
   for (final ShellContentLayout? layout in <ShellContentLayout?>[

@@ -325,7 +325,7 @@ void main() {
     });
   });
 
-  // BUG-4907：首字节超时只让调用方不再等（旧写法 `opened.timeout(...)`），底层请求
+  // BUG-5004：首字节超时只让调用方不再等（旧写法 `opened.timeout(...)`），底层请求
   // 照旧在跑；响应晚到时没人 listen，连接带着没读的响应体挂在 client 上。现在晚到的
   // 响应必须被立即取消订阅（dart:io 取消订阅即销毁连接）。
   group('first-byte timeout', () {

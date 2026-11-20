@@ -705,7 +705,7 @@ void main() {
       await disposeSheet(tester);
     });
 
-    // BUG-4915：loadBookTotals 失败曾是无人接的异步错误（`.then` 没有 onError）。
+    // BUG-5051：loadBookTotals 失败曾是无人接的异步错误（`.then` 没有 onError）。
     testWidgets('本书累计读取失败：记错误日志、停在空态、不抛未处理异常', (WidgetTester tester) async {
       tester.view.physicalSize = const Size(400, 1200);
       tester.view.devicePixelRatio = 1.0;

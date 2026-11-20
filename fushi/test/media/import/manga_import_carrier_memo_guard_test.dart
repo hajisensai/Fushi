@@ -35,7 +35,7 @@ void main() {
   });
 
   test('_classify 走 resolver 的异步判定，且判据仍是真开包判据', () {
-    // manga-3（BUG-4909）：同步 resolve 会在 UI isolate 上开包（选中几百 MB 的
+    // manga-3（BUG-5022）：同步 resolve 会在 UI isolate 上开包（选中几百 MB 的
     // 文字 EPUB 界面停住），漫画框只许走 resolveAsync + 后台判据。
     expect(src.contains('_carrierResolver.resolveAsync('), isTrue);
     expect(src.contains('_carrierResolver.resolve('), isFalse);

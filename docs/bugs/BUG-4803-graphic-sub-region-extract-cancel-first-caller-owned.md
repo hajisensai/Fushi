@@ -10,4 +10,4 @@
 - **备注**：
   - 真机未验：Windows 上放带 PGS 轨的大 REMUX，选图形轨后立刻换集 / 退出播放页，数 `ffmpeg.exe` 进程应随之消失；模糊档 + 图形轨同时在场时换轨，时间表与模糊框互不影响。
   - 失败记忆只活在内存里，重启 app 会再试一次。非零退出里出在环境上的不记（审查后补）：失败摘要含 `No space left on device` / `Disk quota exceeded` / `Permission denied` / `Input/output error` / `I/O error` / `Error opening output` 的（临时目录所在盘写满、网络盘读到一半断开）下次选轨照常重抽；判据 `graphicSubtitleExtractFailureIsEnvironmental`，测试在同一组里。摘要里认不出这些文本的环境失败仍会被记到本次运行结束（文件大小 / 修改时间一变键就失效）。
-  - 已知未修（审查发现，后由 BUG-4907 修复）：没开「模糊」档时控制器是唯一等待者，抽取跑到一半**重新选同一条图形轨**会把 ffmpeg 杀掉从头再抽——`selectEmbeddedGraphicTrack` 一进来就 `_resetGraphicTimingTables()`（撤销在途抽取），隔着几次 mpv 调用才重新发请求，旧任务等不到新等待者。修前本地文件不传取消，第二次请求直接接上在途任务。要修得让选轨路径知道「还是同一条轨」再决定撤不撤，改动点在 `video_player_controller.dart` 主文件，该文件当时被三个在途分支占用，没有动。
+  - 已知未修（审查发现，后由 BUG-4994 修复）：没开「模糊」档时控制器是唯一等待者，抽取跑到一半**重新选同一条图形轨**会把 ffmpeg 杀掉从头再抽——`selectEmbeddedGraphicTrack` 一进来就 `_resetGraphicTimingTables()`（撤销在途抽取），隔着几次 mpv 调用才重新发请求，旧任务等不到新等待者。修前本地文件不传取消，第二次请求直接接上在途任务。要修得让选轨路径知道「还是同一条轨」再决定撤不撤，改动点在 `video_player_controller.dart` 主文件，该文件当时被三个在途分支占用，没有动。

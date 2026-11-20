@@ -391,7 +391,7 @@ void main() {
   });
 
   test(
-    'GUID 列的 guid 在同库另一份 profile 里是另一个笔记类型的笔记：记冲突、不算已添加；同一个笔记类型照常导入（BUG-4907 复核）',
+    'GUID 列的 guid 在同库另一份 profile 里是另一个笔记类型的笔记：记冲突、不算已添加；同一个笔记类型照常导入（BUG-5005 复核）',
     () async {
       const String other = '01928c3e-0000-7000-8000-0000000000c6';
       final SrsStorage lib = await openTestSrsStorage();

@@ -6,7 +6,8 @@
 /// `{id, info:{file_path, upload_timestamp, file_size}}` 与下载直链推导规则
 /// 均以其 `frontend/lib/url.ts` 为准：
 ///
-/// - `合集系列/...` → `https://galgamedownload.date/`（B2 桶，首段带反引号前缀）
+/// - `合集系列/...` → `https://galgamedownload.date/<路径>?X-Amz-Signature=1`
+///   （B2 桶，首段带反引号前缀；查询参数是该站 Cloudflare 防火墙的放行条件）
 /// - 其余 → `https://zd.shinnku.top/file/shinnku/<路径>`
 ///
 /// RSC 解析天生脆弱（站点改版即断）：解析不出按 invalidResponse 失败亮在
@@ -193,14 +194,23 @@ List<dynamic>? extractShinnkuAnswer(String body) {
   }
 }
 
+/// galgamedownload.date 的 Cloudflare 防火墙放行条件（上游 `url.ts` 同款字面量）。
+const String _shinnkuB2FirewallQuery = 'X-Amz-Signature=1';
+
 /// 按上游 `frontend/lib/url.ts` 的规则推导下载直链。
 String shinnkuDownloadUrl(String filePath) {
   final List<String> segments = filePath.split('/');
   if (segments.first == '合集系列') {
     // 上游 B2 桶路径首段字面量就带反引号前缀（照抄，别「修正」它）。
     final List<String> b2Path = <String>['`【合集系列】', ...segments.skip(1)];
+    // BUG-4924：上游 df4942d1（2026-11-18）起 galgamedownload.date 的
+    // Cloudflare 防火墙拦掉不带 `X-Amz-Signature` 查询参数的请求（403），
+    // 上游自己的链接同样带 `?X-Amz-Signature=1`；参数值不被校验，B2 忽略它。
+    // 路径编码照上游 encodeURIComponent 逐段编码，不用 Uri(pathSegments:)
+    // （后者对 `+` `(` `)` 等保留字符的处理与上游不同）。
     return 'https://galgamedownload.date/'
-        '${b2Path.map(Uri.encodeComponent).join('/')}';
+        '${b2Path.map(Uri.encodeComponent).join('/')}'
+        '?$_shinnkuB2FirewallQuery';
   }
   return 'https://zd.shinnku.top/file/shinnku/'
       '${segments.map(Uri.encodeComponent).join('/')}';

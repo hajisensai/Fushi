@@ -484,48 +484,46 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
       title: t.music_sources_title,
       // 两个分页（音源 / 歌词）都收 .fushiplug 拖放（BUG-4712）；歌词分页的
       // [MusicLyricsProvidersBody] 自己不挂落点，免得同一次拖放装两遍。
-      body: MusicPluginDropTarget(
+      body: (BuildContext context) => MusicPluginDropTarget(
         manager: _app.musicPluginManager,
-        child: Builder(
-          builder: (BuildContext context) => SingleChildScrollView(
-            padding: musicBrowsePagePadding(context),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              spacing: tokens.spacing.gap,
-              children: <Widget>[
-                Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: adaptiveSegmentedButton<_SourcesTab>(
-                    context: context,
-                    segments: <ButtonSegment<_SourcesTab>>[
-                      ButtonSegment<_SourcesTab>(
-                        value: _SourcesTab.music,
-                        label: Text(t.music_sources_tab_music),
-                      ),
-                      ButtonSegment<_SourcesTab>(
-                        value: _SourcesTab.lyrics,
-                        label: Text(t.music_sources_tab_lyrics),
-                      ),
-                    ],
-                    selected: <_SourcesTab>{_tab},
-                    onSelectionChanged: (Set<_SourcesTab> v) =>
-                        setState(() => _tab = v.first),
-                  ),
+        child: SingleChildScrollView(
+          padding: musicBrowsePagePadding(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: tokens.spacing.gap,
+            children: <Widget>[
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: adaptiveSegmentedButton<_SourcesTab>(
+                  context: context,
+                  segments: <ButtonSegment<_SourcesTab>>[
+                    ButtonSegment<_SourcesTab>(
+                      value: _SourcesTab.music,
+                      label: Text(t.music_sources_tab_music),
+                    ),
+                    ButtonSegment<_SourcesTab>(
+                      value: _SourcesTab.lyrics,
+                      label: Text(t.music_sources_tab_lyrics),
+                    ),
+                  ],
+                  selected: <_SourcesTab>{_tab},
+                  onSelectionChanged: (Set<_SourcesTab> v) =>
+                      setState(() => _tab = v.first),
                 ),
-                AnimatedSwitcher(
-                  duration: fushiMotionDuration(context, FushiMotion.medium),
-                  child: KeyedSubtree(
-                    key: ValueKey<_SourcesTab>(_tab),
-                    child: switch (_tab) {
-                      _SourcesTab.music => _musicTab(context),
-                      _SourcesTab.lyrics => MusicLyricsProvidersBody(
-                        appModel: _app,
-                      ),
-                    },
-                  ),
+              ),
+              AnimatedSwitcher(
+                duration: fushiMotionDuration(context, FushiMotion.medium),
+                child: KeyedSubtree(
+                  key: ValueKey<_SourcesTab>(_tab),
+                  child: switch (_tab) {
+                    _SourcesTab.music => _musicTab(context),
+                    _SourcesTab.lyrics => MusicLyricsProvidersBody(
+                      appModel: _app,
+                    ),
+                  },
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
