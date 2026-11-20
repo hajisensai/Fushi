@@ -62,6 +62,10 @@ String webNovelImageFileName(String url, String mediaType) {
   return 'images/w$digest.$ext';
 }
 
+/// 旧书里按 URL 找已取过的那一章正文；没有（新章 / 旧书缺文件）返回 null。
+typedef _LoadedChapterLookup =
+    ({String body, List<LnReaderEpubImage> images})? Function(String url);
+
 /// 网页小说书的书架侧：建书、并章、就地重建、追更占位。
 ///
 /// 形态与 LNReader 在线书相同（[LnReaderEpubAssembler] 组装、`EpubImporter` 入库 /
@@ -169,6 +173,9 @@ class WebNovelLibrary {
     required String nextChapterTitle,
     EpubBookRow? existing,
   }) async {
+    final _LoadedChapterLookup? loadedFrom = existing == null
+        ? null
+        : _loadedChapterLookup(existing);
     final Uint8List bytes = _assemble(
       snapshot: snapshot,
       title: existing?.title ?? _bookTitle(snapshot),
@@ -177,9 +184,7 @@ class WebNovelLibrary {
         if (i == chapterIndex) {
           return (body: content.xhtml, images: content.images);
         }
-        return existing == null
-            ? null
-            : _loadedFrom(existing, snapshot.chapters[i].url);
+        return loadedFrom?.call(snapshot.chapters[i].url);
       },
       pendingText: pendingText,
     );
@@ -216,11 +221,12 @@ class WebNovelLibrary {
     );
     if (snapshot == null || snapshot.tailNext == null) return false;
     if (row.chapterCount > snapshot.chapters.length) return false;
+    final _LoadedChapterLookup loadedFrom = _loadedChapterLookup(row);
     final Uint8List bytes = _assemble(
       snapshot: snapshot,
       title: row.title,
       nextChapterTitle: nextChapterTitle,
-      bodyFor: (int i) => _loadedFrom(row, snapshot.chapters[i].url),
+      bodyFor: (int i) => loadedFrom(snapshot.chapters[i].url),
       pendingText: pendingText,
     );
     await _rebuild(row, bytes, snapshot.raw);
@@ -238,20 +244,26 @@ class WebNovelLibrary {
         'Web novel';
   }
 
-  /// 旧书里 URL 为 [url] 的那一章的正文（按旧快照的章序找文件）。
-  ({String body, List<LnReaderEpubImage> images})? _loadedFrom(
-    EpubBookRow row,
-    String url,
-  ) {
+  /// 旧书 [row] 的「URL → 那一章已取过的正文」查找（按旧快照的章序找文件）。
+  ///
+  /// 旧快照只解析一次、建好 URL → 章序表再逐章查：重建要对新快照的每一章各查
+  /// 一次，逐章重新解析快照 + 线性找 URL 是章数的平方（gap-novelmisc-5）。同一
+  /// URL 在旧快照里重复时取第一次出现的章序（与原先 `indexWhere` 一致）。
+  _LoadedChapterLookup _loadedChapterLookup(EpubBookRow row) {
     final WebNovelSnapshot? previous = WebNovelSnapshot.tryParse(
       row.sourceMetadata,
     );
-    if (previous == null) return null;
-    final int index = previous.chapters.indexWhere(
-      (WebNovelChapter c) => c.url == url,
-    );
-    if (index < 0) return null;
-    return readLnReaderLoadedChapter(row.extractDir, index);
+    if (previous == null) return (String url) => null;
+    final Map<String, int> indexByUrl = <String, int>{};
+    for (int i = 0; i < previous.chapters.length; i++) {
+      indexByUrl.putIfAbsent(previous.chapters[i].url, () => i);
+    }
+    return (String url) {
+      final int? index = indexByUrl[url];
+      return index == null
+          ? null
+          : readLnReaderLoadedChapter(row.extractDir, index);
+    };
   }
 
   Uint8List _assemble({
