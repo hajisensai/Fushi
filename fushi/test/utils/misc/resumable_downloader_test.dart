@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -321,6 +322,99 @@ void main() {
       expect(resumedFlags, <DownloadResumeOutcome>[
         DownloadResumeOutcome.resumed,
       ]);
+    });
+  });
+
+  // BUG-4907：首字节超时只让调用方不再等（旧写法 `opened.timeout(...)`），底层请求
+  // 照旧在跑；响应晚到时没人 listen，连接带着没读的响应体挂在 client 上。现在晚到的
+  // 响应必须被立即取消订阅（dart:io 取消订阅即销毁连接）。
+  group('first-byte timeout', () {
+    late Directory dir;
+
+    setUp(() async {
+      dir = await Directory.systemTemp.createTemp('fushi-resumable-fbt');
+    });
+
+    tearDown(() async {
+      if (dir.existsSync()) {
+        try {
+          dir.deleteSync(recursive: true);
+        } catch (_) {}
+      }
+    });
+
+    test('a response that arrives after the timeout is cancelled', () async {
+      final Completer<ResumableDownloadResponse> pending =
+          Completer<ResumableDownloadResponse>();
+      final Completer<void> cancelled = Completer<void>();
+      final StreamController<List<int>> body = StreamController<List<int>>(
+        onCancel: () {
+          if (!cancelled.isCompleted) cancelled.complete();
+        },
+      );
+      final Future<File> download = ResumableDownloader(
+        url: 'http://host/stream',
+        destination: File('${dir.path}/out.bin'),
+        partFile: File('${dir.path}/out.bin.part'),
+        firstByteTimeout: const Duration(milliseconds: 30),
+        open: (Uri uri, Map<String, String> headers) => pending.future,
+      ).download();
+
+      await expectLater(download, throwsA(isA<TimeoutException>()));
+      expect(body.hasListener, isFalse);
+
+      pending.complete(
+        ResumableDownloadResponse(
+          statusCode: 200,
+          headers: const <String, String>{},
+          stream: body.stream,
+        ),
+      );
+      await cancelled.future.timeout(const Duration(seconds: 5));
+      expect(cancelled.isCompleted, isTrue);
+      await body.close();
+    });
+
+    test('a request that fails after the timeout does not surface', () async {
+      final Completer<ResumableDownloadResponse> pending =
+          Completer<ResumableDownloadResponse>();
+      final List<Object> uncaught = <Object>[];
+      await runZonedGuarded(() async {
+        final Future<ResumableDownloadResponse> waiting =
+            awaitResumableResponse(
+              pending.future,
+              const Duration(milliseconds: 20),
+            );
+        await expectLater(waiting, throwsA(isA<TimeoutException>()));
+        pending.completeError(const SocketException('reset'));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }, (Object error, StackTrace _) => uncaught.add(error));
+      expect(uncaught, isEmpty);
+    });
+
+    test('a response within the timeout is handed over untouched', () async {
+      final StreamController<List<int>> body = StreamController<List<int>>();
+      final ResumableDownloadResponse response = await awaitResumableResponse(
+        Future<ResumableDownloadResponse>.value(
+          ResumableDownloadResponse(
+            statusCode: 200,
+            headers: const <String, String>{},
+            stream: body.stream,
+          ),
+        ),
+        const Duration(seconds: 5),
+      );
+      expect(response.statusCode, 200);
+      expect(body.hasListener, isFalse);
+      await body.close();
+    });
+
+    test('SegmentedDownloader goes through the same first-byte wait', () {
+      final String src = File(
+        'lib/src/utils/misc/segmented_downloader.dart',
+      ).readAsStringSync();
+      expect(src, contains('awaitResumableResponse('));
+      expect(src, isNot(contains('.timeout(firstByteTimeout')));
     });
   });
 }
