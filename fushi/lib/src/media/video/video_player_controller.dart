@@ -1937,8 +1937,9 @@ class VideoPlayerController extends ChangeNotifier
     // 无条件执行，否则未 [load] 时关字幕不复位标志（回归 BUG-301）。
     final bool leavingGraphic = track.id == 'no' && _graphicSubtitleActive;
     if (track.id == 'no') _graphicSubtitleActive = false;
-    // 离开图形渲染：在途的整轨抽取（网络流要读整条流）随之撤销。
-    if (leavingGraphic) _cancelGraphicTimingFetch();
+    // 离开图形渲染：在途的整轨抽取（网络流要读整条流）随之撤销，选轨期间持有的 host
+    // 整轨放下。
+    if (leavingGraphic) _leaveGraphicTimingSource();
     final Player? player = _player;
     if (player == null) return; // 未 load：原生下发 no-op，标志已复位即可。
     // 关字幕（`no()`）是高频路径（[_selectSubtitleOff]）：await libmpv 原生下发期间用户
@@ -2066,7 +2067,7 @@ class VideoPlayerController extends ChangeNotifier
             _graphicExtractedTimingCues.isNotEmpty)) {
       return true;
     }
-    _graphicTimingInputOverride = timingInput;
+    _setGraphicTimingInputOverride(timingInput);
     _loadGraphicSubtitleTimings(
       streamIndex: streamIndex,
       codec: _graphicSubtitleCodec,
@@ -2113,7 +2114,7 @@ class VideoPlayerController extends ChangeNotifier
     // 清掉旧 cue（同时结束上一次回流）；本模式是文本 overlay，不是图形渲染。
     setCues(const <AudioCue>[]);
     _graphicSubtitleActive = false;
-    _cancelGraphicTimingFetch();
+    _leaveGraphicTimingSource();
     await player.setSubtitleTrack(real[streamIndex]);
     if (!_isCurrentLoad(player, loadToken)) return false;
     if (_discTitleGeneration != discGeneration) return false;
@@ -2164,7 +2165,7 @@ class VideoPlayerController extends ChangeNotifier
     final int discGeneration = _discTitleGeneration;
     setCues(const <AudioCue>[]);
     _graphicSubtitleActive = false;
-    _cancelGraphicTimingFetch();
+    _leaveGraphicTimingSource();
     try {
       await player.setSubtitleTrack(SubtitleTrack.uri(url));
     } catch (e) {
@@ -2783,7 +2784,7 @@ class VideoPlayerController extends ChangeNotifier
     // true）或无字幕段，故只在确有文本 cue 时复位图形标志。
     if (cues.isNotEmpty) {
       _graphicSubtitleActive = false;
-      _cancelGraphicTimingFetch();
+      _leaveGraphicTimingSource();
     }
     _currentCue = null;
     _currentCueIndex = -1;
@@ -7137,6 +7138,8 @@ class VideoPlayerController extends ChangeNotifier
     _graphicLiveObservedPlayer = null;
     _graphicLiveGeneration++;
     _cancelGraphicTimingFetch();
+    // 放下选轨期间持有的 host 整轨（删下载件）。
+    _setGraphicTimingInputOverride(null);
     _cancelEmbeddedTextExtract();
     unawaited(_discTrackSub?.cancel());
     unawaited(_discTracksSub?.cancel());
@@ -7266,6 +7269,8 @@ class VideoPlayerController extends ChangeNotifier
     _graphicLiveObservedPlayer = null;
     _graphicLiveGeneration++;
     _cancelGraphicTimingFetch();
+    // 放下选轨期间持有的 host 整轨（删下载件）。
+    _setGraphicTimingInputOverride(null);
     _cancelEmbeddedTextExtract();
     unawaited(_discTrackSub?.cancel());
     unawaited(_discTracksSub?.cancel());

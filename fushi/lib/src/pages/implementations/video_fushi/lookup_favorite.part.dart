@@ -502,6 +502,17 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
     final FavoriteSentenceRepository repo = FavoriteSentenceRepository(
       appModel.database,
     );
+    // 镜像从这一刻起是活的：订阅收藏库变更，页外改了收藏也跟着重填。
+    _favoriteChangesSub ??= repo.watchChanges().listen(
+      (_) {
+        if (mounted) unawaited(_refreshFavoritedCueCache());
+      },
+      onError: (Object error, StackTrace stack) => ErrorLogService.instance.log(
+        'VideoFushi.favoriteChanges',
+        error,
+        stack,
+      ),
+    );
     final int revision = _favoriteMirrorRevision;
     final List<FavoriteSentence> all = await repo.getAll();
     if (!mounted ||
@@ -549,18 +560,19 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
       appModel.database,
     ).getAll();
     final int? episodeIndex = _favoriteSectionIndex;
+    // 与镜像判据同一组键（[videoFavoriteMatchesSentence]）：星标亮着就一定删得到。
     return all
         .where(
           (FavoriteSentence s) =>
               s.source == kFavoriteSentenceSourceVideo &&
               s.bookKey == _activeBookUid &&
-              s.text.trim() == text &&
-              (cue == null
-                  ? s.normCharOffset == null
-                  : (s.normCharOffset == cue.startMs &&
-                            (!_favoriteIsPlaylist ||
-                                s.sectionIndex == episodeIndex)) ||
-                        (s.normCharOffset == null && s.sectionIndex == null)),
+              videoFavoriteMatchesSentence(
+                s,
+                sentence: text,
+                cueStartMs: cue?.startMs,
+                episodeIndex: episodeIndex,
+                isPlaylist: _favoriteIsPlaylist,
+              ),
         )
         .toList();
   }

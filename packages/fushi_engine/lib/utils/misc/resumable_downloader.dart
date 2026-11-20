@@ -108,6 +108,62 @@ class ResumableDownloadIntegrityException implements Exception {
   String toString() => 'ResumableDownloadIntegrityException: $message';
 }
 
+/// 等一次 [ResumableDownloadOpen] 的响应头，[firstByteTimeout] 内没到就抛
+/// [TimeoutException]——并且接管那次请求的后续：它晚到的响应立刻经
+/// [discardResumableResponse] 取消订阅，不让它带着没读的响应体占着连接。
+///
+/// 不能用 `opened.timeout(...)`：那只是让调用方不再等，底层请求照旧在跑，晚到的
+/// 响应没人 listen，dart:io 的连接一直挂在 client 上（共用 client 的调用方——会话
+/// 里的 WebDav 句柄、更新检查——每超时一次就多一条孤儿连接）。取消
+/// `HttpClientResponse` 的订阅会销毁这条连接，不回连接池。
+///
+/// 超时之后那次请求才失败的话，失败没有消费者（调用方已经拿到超时），不再上抛。
+Future<ResumableDownloadResponse> awaitResumableResponse(
+  Future<ResumableDownloadResponse> opened,
+  Duration? firstByteTimeout,
+) {
+  if (firstByteTimeout == null) return opened;
+  final Completer<ResumableDownloadResponse> result =
+      Completer<ResumableDownloadResponse>();
+  final Timer timer = Timer(firstByteTimeout, () {
+    if (result.isCompleted) return;
+    result.completeError(
+      TimeoutException(
+        'no response within $firstByteTimeout',
+        firstByteTimeout,
+      ),
+    );
+  });
+  opened.then(
+    (ResumableDownloadResponse response) {
+      if (!result.isCompleted) {
+        timer.cancel();
+        result.complete(response);
+        return;
+      }
+      unawaited(discardResumableResponse(response));
+    },
+    onError: (Object error, StackTrace stack) {
+      if (result.isCompleted) return;
+      timer.cancel();
+      result.completeError(error, stack);
+    },
+  );
+  return result.future;
+}
+
+/// 丢弃一条不再读的响应：订阅后立刻取消。dart:io 的 `HttpClientResponse` 被取消
+/// 订阅时销毁底层连接（不回连接池），所以这也是「断开这次请求」的手段。
+Future<void> discardResumableResponse(
+  ResumableDownloadResponse response,
+) async {
+  try {
+    await response.stream.listen(null, cancelOnError: true).cancel();
+  } catch (_) {
+    // best-effort：断连失败不该盖住真正的失败原因。
+  }
+}
+
 class ResumableDownloader {
   ResumableDownloader({
     required this.url,
@@ -193,9 +249,10 @@ class ResumableDownloader {
       }
     }
 
-    Future<ResumableDownloadResponse> opened = open(uri, headers);
-    if (firstByteTimeout != null) opened = opened.timeout(firstByteTimeout!);
-    final ResumableDownloadResponse response = await opened;
+    final ResumableDownloadResponse response = await awaitResumableResponse(
+      open(uri, headers),
+      firstByteTimeout,
+    );
 
     int writeOffset = resumeOffset;
     // restarted=true 只可能来自本函数因 416 / 坏 Content-Range 的一次自我重入，

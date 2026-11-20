@@ -795,41 +795,80 @@ String videoFavoriteCacheKey({
       : 'cue|${normalizedEpisodeIndex ?? 'single'}|$startMs|$text';
 }
 
-/// 一句字幕在收藏镜像（[videoFavoriteCacheKey] 键集）里是否已收藏（video-25）。
+/// 一句字幕认哪些收藏键（[videoFavoriteCacheKey]）：有 cue 时认 `startMs (+集下标)`
+/// 键，再兼容没有 startMs 的旧 text-only 条目；没有 cue 的查词句只认旧 text-only 条目。
+/// [sentence] 先 trim（镜像键也是 trim 过的文本），trim 后为空不认任何键。
 ///
-/// 查词浮层星标与字幕条 / 跳转列表星标都读它：同一份镜像、同一个判据，两处不会各说
-/// 各话。[sentence] 先 trim（镜像键也是 trim 过的文本）。有 cue 时按
-/// `startMs (+集下标)` 键查，再兼容没有 startMs 的旧 text-only 条目；没有 cue 的查词句
-/// 只认旧 text-only 条目——与取消收藏时 DB 匹配（`_matchingVideoFavorites`）同口径。
-bool videoSentenceFavoritedInMirror(
-  Set<String> mirror, {
+/// 镜像查询（[videoSentenceFavoritedInMirror]）与取消收藏时的库内匹配
+/// （[videoFavoriteMatchesSentence]）都从这里取键：判据只写这一次，星标亮着的句子
+/// 取消收藏一定删得到（旧 text-only 条目带了集下标时两边曾经不一致，#3722 c51 遗留）。
+@visibleForTesting
+List<String> videoFavoriteLookupKeys({
   required String sentence,
   required int? cueStartMs,
   required int? episodeIndex,
   required bool isPlaylist,
 }) {
   final String text = sentence.trim();
-  if (text.isEmpty) return false;
-  if (cueStartMs != null &&
-      mirror.contains(
-        videoFavoriteCacheKey(
-          text: text,
-          startMs: cueStartMs,
-          episodeIndex: episodeIndex,
-          isPlaylist: isPlaylist,
-        ),
-      )) {
-    return true;
-  }
-  return mirror.contains(
+  if (text.isEmpty) return const <String>[];
+  return <String>[
+    if (cueStartMs != null)
+      videoFavoriteCacheKey(
+        text: text,
+        startMs: cueStartMs,
+        episodeIndex: episodeIndex,
+        isPlaylist: isPlaylist,
+      ),
     videoFavoriteCacheKey(
       text: text,
       startMs: null,
       episodeIndex: null,
       isPlaylist: isPlaylist,
     ),
-  );
+  ];
 }
+
+/// 一句字幕在收藏镜像（[videoFavoriteCacheKey] 键集）里是否已收藏（video-25）。
+///
+/// 查词浮层星标与字幕条 / 跳转列表星标都读它：同一份镜像、同一个判据，两处不会各说
+/// 各话。认哪些键见 [videoFavoriteLookupKeys]。
+bool videoSentenceFavoritedInMirror(
+  Set<String> mirror, {
+  required String sentence,
+  required int? cueStartMs,
+  required int? episodeIndex,
+  required bool isPlaylist,
+}) => videoFavoriteLookupKeys(
+  sentence: sentence,
+  cueStartMs: cueStartMs,
+  episodeIndex: episodeIndex,
+  isPlaylist: isPlaylist,
+).any(mirror.contains);
+
+/// 收藏库里的一条 [favorite] 是不是这句字幕的收藏（取消收藏 / 加收藏前去重用）：它的
+/// 镜像键（与镜像填充同一个算法）落在 [videoFavoriteLookupKeys] 里。只比内容与位置，
+/// 来源 / 所属书由调用方先过滤。
+@visibleForTesting
+bool videoFavoriteMatchesSentence(
+  FavoriteSentence favorite, {
+  required String sentence,
+  required int? cueStartMs,
+  required int? episodeIndex,
+  required bool isPlaylist,
+}) =>
+    videoFavoriteLookupKeys(
+      sentence: sentence,
+      cueStartMs: cueStartMs,
+      episodeIndex: episodeIndex,
+      isPlaylist: isPlaylist,
+    ).contains(
+      videoFavoriteCacheKey(
+        text: favorite.text.trim(),
+        startMs: favorite.normCharOffset,
+        episodeIndex: favorite.sectionIndex,
+        isPlaylist: isPlaylist,
+      ),
+    );
 
 /// TODO-897 / BUG-805：缺失资源对话框的用户选择。「重新导入」现为真动作
 /// （单视频重链选文件 / 播放列表打开导入对话框），不再有独立「重新选择文件」项。
@@ -3502,6 +3541,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 本页对收藏的增删次数（video-25）：镜像全量重填（[_refreshFavoritedCueCache]）读库
   /// 期间若本页又增删过，读到的那份快照可能早于这次写，填完要重读一次。
   int _favoriteMirrorRevision = 0;
+
+  /// 收藏库变更订阅（[FavoriteSentenceRepository.watchChanges]）：镜像第一次填充时挂上，
+  /// 之后任何来源（收藏夹页、同步合并、备份恢复、本页）改了收藏都重填一次镜像，星标不再
+  /// 停在旧状态。退页取消。
+  StreamSubscription<void>? _favoriteChangesSub;
   VideoRemotePlaybackBinding? _videoRemoteBinding;
   final VideoRemoteCueCache _videoRemoteCueCache = VideoRemoteCueCache();
 
@@ -6323,11 +6367,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         externalPath: persisted,
         label: p.basename(persisted),
       );
-      final List<AudioCue> cues = await loadCuesForSource(
+      final List<AudioCue> cues = await _loadCuesForSourceInLoad(
         external,
         videoPath,
-        _activeBookUid,
-        cancel: _embeddedSubtitleExtractCancelFor(videoPath),
       );
       if (cues.isNotEmpty) {
         return (
@@ -6360,11 +6402,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       );
     }
 
-    final List<AudioCue> cues = await loadCuesForSource(
+    final List<AudioCue> cues = await _loadCuesForSourceInLoad(
       chosen,
       videoPath,
-      _activeBookUid,
-      cancel: _embeddedSubtitleExtractCancelFor(videoPath),
     );
     if (cues.isEmpty) return null;
     return (
@@ -6372,6 +6412,31 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       cues: cues,
       graphicStreamIndex: null,
     );
+  }
+
+  /// 载入链上（[_restorePersistedSubtitle]）解析一个字幕源。外挂档经
+  /// [_readSubtitleTextForLoad] 只读一次盘，同一份字节顺手判「是不是对齐产物」留给
+  /// 本次载入的对齐检查（[_loadAlignmentHint]），[_applyLoad] 不再把刚解析过的字幕
+  /// 整份重读一遍；内嵌轨照旧走缓存 / 抽取。
+  Future<List<AudioCue>> _loadCuesForSourceInLoad(
+    SubtitleSource source,
+    String videoPath,
+  ) async {
+    final String? externalPath = source.isEmbedded ? null : source.externalPath;
+    if (externalPath == null) {
+      return loadCuesForSource(
+        source,
+        videoPath,
+        _activeBookUid,
+        cancel: _embeddedSubtitleExtractCancelFor(videoPath),
+      );
+    }
+    final SubtitleCueLoadResult result = await loadExternalSubtitleCueResult(
+      externalPath,
+      _activeBookUid,
+      contentReader: (File file) => _readSubtitleTextForLoad(file.path),
+    );
+    return result.cues;
   }
 
   /// 字幕菜单来源：保留当前视频枚举结果，再只补入「当前视频已持久化」的导入字幕。
@@ -7677,6 +7742,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     videoPlaybackRemotes.unregister(_playbackRemote);
     _detachControllerLookup();
     _companionHook.dispose();
+    unawaited(_favoriteChangesSub?.cancel());
+    _favoriteChangesSub = null;
     _sourceReviewSession?.removeListener(_onSourceReviewChanged);
     // BUG-2043：加载中就被退出（ESC / 系统返回）而还没压上全屏路由 → 接管来的原生
     // 全屏由本页亲自退，不能把窗口留在「原生全屏、栈上无全屏路由」的悬空态。

@@ -180,8 +180,10 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
   /// 传 false 只在 fork 将来有 HWND 窗口宿主模式（不经捕获）时才有意义。
   final bool softwareDrm;
 
-  /// 可捕获（内置档）WebView2 环境：与原生播放器页的网页档共用同一份单例（同一 user data
-  /// folder 只能有一套浏览器参数），实现见 [webVideoCapturableEnvironment]。
+  /// 可捕获（内置档）WebView2 环境：进程级单例（同一 user data folder 只能有一套浏览器参数），
+  /// 建 WebView 的只有本页的内置档（制卡队列重放）；登录回抄（[syncWebVideoLoginToBrowser]）也读
+  /// 它。原生播放器页的网页档与本页窗口档用的是窗口宿主档环境（[windowedEnvironment]），不是这份。
+  /// 实现见 [webVideoCapturableEnvironment]。
   static String capturableUserDataFolder() =>
       webVideoCapturableUserDataFolder();
 

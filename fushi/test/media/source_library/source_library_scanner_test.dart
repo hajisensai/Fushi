@@ -1834,7 +1834,7 @@ sub_b/ep2.mp4
   // unavailable in headless flutter test, so we override its platform interface
   // with a Dart fake that decodes the known SJIS fixture. The plugin only runs
   // when installed into fushi_audio's `platformCharsetDecoder` hook (main.dart
-  // does this in production), so the test installs it the same way.
+  // does this on android / ios), so the test writes it into the hook directly.
   group('SourceLibraryScanner.scan subtitle charset (SJIS)', () {
     late Directory tmp;
     late CharsetDetectorPlatform original;
@@ -1843,7 +1843,9 @@ sub_b/ep2.mp4
       tmp = Directory.systemTemp.createTempSync('m1c_sjis_');
       original = CharsetDetectorPlatform.instance;
       CharsetDetectorPlatform.instance = _FakeSjisCharsetDetector();
-      installPlatformCharsetDetector();
+      // 测试宿主是桌面：`installPlatformCharsetDetector()` 在这里不装插件，
+      // 直接把插件实现写进装配点，走替身。
+      platformCharsetDecoder = pluginCharsetDecode;
     });
     tearDown(() {
       platformCharsetDecoder = null;
