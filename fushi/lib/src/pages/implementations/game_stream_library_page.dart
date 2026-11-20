@@ -116,6 +116,7 @@ class GameStreamLibraryServices {
             peer: host.peer,
             session: session,
             settings: settings,
+            dictionaryConfigFor: appModel.remoteLookupDictionaryConfigFor,
             onSettingsChanged: (GameStreamVideoSettings next) =>
                 unawaited(prefs.setGameStreamVideoSettings(next)),
             lookupLayout: prefs.gameStreamLookupLayout,
