@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -374,6 +375,155 @@ void main() {
       expect(afterOff.autoDownload, isFalse);
     });
   });
+
+  // BUG-4913：作品页进页即后台刷新（联网要几秒），这期间用户开订阅 / 选章。
+  // 刷新落库曾拿进页那一刻的快照整条覆盖，把刚写的订阅位与当前章冲掉；订阅写回
+  // 也拿手里的旧快照覆盖刚刷新出来的章节表。
+  group('OnlineMangaLibraryService 并发写不丢更新（BUG-4913）', () {
+    late Directory root;
+    late FushiDatabase database;
+    late _GatedRefreshAdapter adapter;
+    late OnlineMangaLibraryService service;
+
+    const OnlineMangaChapter chapter3 = OnlineMangaChapter(
+      key: '/chapter/3',
+      name: 'Chapter 3',
+      number: 3,
+      uploadedAt: 3,
+      raw: <String, Object?>{'url': '/chapter/3'},
+    );
+    final List<OnlineMangaChapter> refreshedChapters = <OnlineMangaChapter>[
+      chapter3,
+      ...chapters,
+    ];
+
+    setUp(() async {
+      root = await Directory.systemTemp.createTemp('fushi-online-manga-race-');
+      EpubStorage.debugBaseDirectoryOverride = root.path;
+      database = FushiDatabase.forTesting(NativeDatabase.memory());
+      adapter = _GatedRefreshAdapter();
+      service = OnlineMangaLibraryService(
+        database: database,
+        rootDirectory: root,
+        adapter: adapter,
+      );
+    });
+
+    tearDown(() async {
+      EpubStorage.debugBaseDirectoryOverride = null;
+      await database.close();
+      if (await root.exists()) await root.delete(recursive: true);
+    });
+
+    Future<OnlineMangaLibraryEntry> stored(String bookKey) async =>
+        OnlineMangaLibraryEntry.tryParse(
+          (await database.getEpubBook(bookKey))!.sourceMetadata,
+        )!;
+
+    test('刷新在途时开订阅：刷新落库后订阅两位仍在，章节表是刷新的', () async {
+      final EpubBookRow row = await service.add(entryFor(chapters: chapters));
+      final OnlineMangaLibraryEntry snapshot = await stored(row.bookKey);
+
+      final Completer<OnlineMangaRefreshResult> gate =
+          Completer<OnlineMangaRefreshResult>();
+      adapter.next = gate;
+      final Future<OnlineMangaLibraryEntry> refreshing = service
+          .refreshFromSource(bookKey: row.bookKey, entry: snapshot);
+
+      await service.setSubscription(
+        bookKey: row.bookKey,
+        entry: snapshot,
+        subscribed: true,
+        autoDownload: true,
+      );
+      gate.complete(
+        OnlineMangaRefreshResult(
+          series: snapshot.series,
+          chapters: refreshedChapters,
+        ),
+      );
+      final OnlineMangaLibraryEntry returned = await refreshing;
+
+      final OnlineMangaLibraryEntry after = await stored(row.bookKey);
+      expect(after.subscribed, isTrue, reason: '刷新不能拿旧快照冲掉刚开的订阅');
+      expect(after.autoDownload, isTrue);
+      expect(after.chapters.map((OnlineMangaChapter c) => c.key), <String>[
+        '/chapter/3',
+        '/chapter/2',
+        '/chapter/1',
+      ]);
+      expect(returned.subscribed, isTrue, reason: '返回值是落库的那份');
+    });
+
+    test('刷新在途时选章：刷新落库后当前章按 key 跟到新下标', () async {
+      final EpubBookRow row = await service.add(entryFor(chapters: chapters));
+      final OnlineMangaLibraryEntry snapshot = await stored(row.bookKey);
+      expect(snapshot.currentChapterIndex, isNull);
+
+      final Completer<OnlineMangaRefreshResult> gate =
+          Completer<OnlineMangaRefreshResult>();
+      adapter.next = gate;
+      final Future<OnlineMangaLibraryEntry> refreshing = service
+          .refreshFromSource(bookKey: row.bookKey, entry: snapshot);
+
+      // 选「Chapter 1」。
+      await service.selectChapter(
+        bookKey: row.bookKey,
+        entry: snapshot,
+        chapterKey: '/chapter/1',
+      );
+      gate.complete(
+        OnlineMangaRefreshResult(
+          series: snapshot.series,
+          chapters: refreshedChapters,
+        ),
+      );
+      await refreshing;
+
+      final OnlineMangaLibraryEntry after = await stored(row.bookKey);
+      expect(after.currentChapter?.key, '/chapter/1', reason: '刷新不能把刚选的章清掉');
+      expect(after.currentChapterIndex, 2);
+    });
+
+    test('订阅写回以库里此刻的描述符为底：不拿手里的旧章节表盖掉刚刷新的', () async {
+      final EpubBookRow row = await service.add(entryFor(chapters: chapters));
+      final OnlineMangaLibraryEntry snapshot = await stored(row.bookKey);
+
+      adapter.next = Completer<OnlineMangaRefreshResult>()
+        ..complete(
+          OnlineMangaRefreshResult(
+            series: snapshot.series,
+            chapters: refreshedChapters,
+          ),
+        );
+      await service.refreshFromSource(bookKey: row.bookKey, entry: snapshot);
+
+      // 作品页手里还是刷新前那份（两章）。
+      final OnlineMangaLibraryEntry returned = await service.setSubscription(
+        bookKey: row.bookKey,
+        entry: snapshot,
+        subscribed: true,
+        autoDownload: false,
+      );
+      final OnlineMangaLibraryEntry after = await stored(row.bookKey);
+      expect(after.chapters, hasLength(3), reason: '订阅只改两位，章节表不能退回旧的');
+      expect(after.subscribed, isTrue);
+      expect(after.autoDownload, isFalse);
+      expect(returned.chapters, hasLength(3));
+    });
+  });
+}
+
+/// 刷新结果由测试手动放行，用来把「刷新在途」这段窗口钉住。
+class _GatedRefreshAdapter extends _FixtureAdapter {
+  Completer<OnlineMangaRefreshResult>? next;
+
+  @override
+  Future<OnlineMangaRefreshResult> refresh(OnlineMangaLibraryEntry entry) {
+    final Completer<OnlineMangaRefreshResult>? gate = next;
+    next = null;
+    return gate?.future ?? super.refresh(entry);
+  }
 }
 
 /// 与 online_manga_library_test.dart 同款：只做取封面 + 原样刷新。
