@@ -10977,6 +10977,7 @@
   "srs_text_import_section_fields": "Pemetaan kolom",
   "srs_text_import_tags": "Tag tambahan",
   "srs_text_import_tags_column": "Kolom tag",
+  "srs_text_import_tags_column_hint": "When updating existing notes, their tags are replaced with this column (plus the extra tags). Without a tags column, tags are only added.",
   "srs_text_import_tags_hint": "Pisahkan tag dengan spasi",
   "srs_text_import_title": "Impor file teks",
   "srs_timeline_all_published": "All changes are synced",

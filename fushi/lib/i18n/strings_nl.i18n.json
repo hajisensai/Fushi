@@ -10977,6 +10977,7 @@
   "srs_text_import_section_fields": "Veldtoewijzing",
   "srs_text_import_tags": "Extra labels",
   "srs_text_import_tags_column": "Labelkolom",
+  "srs_text_import_tags_column_hint": "When updating existing notes, their tags are replaced with this column (plus the extra tags). Without a tags column, tags are only added.",
   "srs_text_import_tags_hint": "Scheid labels met spaties",
   "srs_text_import_title": "Tekstbestand importeren",
   "srs_timeline_all_published": "All changes are synced",

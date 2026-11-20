@@ -449,7 +449,7 @@ Future<SrsImportReport> runSrsTextImport({
     }
   }
 
-  // 要更新的已有笔记的现有标签（标签只追加）。
+  // 要更新的已有笔记的现有标签（没映射标签列时在它上面追加）。
   final Set<String> toUpdate = <String>{
     if (options.dupeMode == SrsTextDupeMode.update) ...<String>{
       for (final List<String> h in dbHits) ...h,
@@ -473,6 +473,10 @@ Future<SrsImportReport> runSrsTextImport({
         fieldIds[f],
   ];
 
+  // 标签同 Anki 文本导入：映射了标签列时，已有笔记的标签换成该列的值再加上附加标签（列为空就只剩附加标签，
+  // 回灌 CSV 时删掉的标签会从笔记上去掉）；没映射标签列时只在现有标签上追加附加标签。同一条笔记被文件里多行
+  // 命中时与字段一样后行覆盖前行。
+  final bool replaceTags = options.tagsColumn != null;
   void updateExisting(String id, Set<String> currentTags, _Row r) {
     final (Map<String, String>, Set<String>) u = updates[id] ??= (
       <String, String>{},
@@ -481,6 +485,8 @@ Future<SrsImportReport> runSrsTextImport({
     for (final String f in mappedFieldIds) {
       u.$1[f] = r.fields[f] ?? '';
     }
+    // retainAll 而非 clear：留下的标签保持原顺序，标签集合没变时内核判「值没变」不落事件。
+    if (replaceTags) u.$2.retainAll(r.tags);
     u.$2.addAll(r.tags);
   }
 

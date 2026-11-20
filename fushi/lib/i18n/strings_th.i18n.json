@@ -10977,6 +10977,7 @@
   "srs_text_import_section_fields": "การจับคู่ฟิลด์",
   "srs_text_import_tags": "แท็กเพิ่มเติม",
   "srs_text_import_tags_column": "คอลัมน์แท็ก",
+  "srs_text_import_tags_column_hint": "When updating existing notes, their tags are replaced with this column (plus the extra tags). Without a tags column, tags are only added.",
   "srs_text_import_tags_hint": "คั่นแท็กด้วยช่องว่าง",
   "srs_text_import_title": "นำเข้าไฟล์ข้อความ",
   "srs_timeline_all_published": "All changes are synced",
