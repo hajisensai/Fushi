@@ -8,6 +8,7 @@
 library;
 
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
+import 'package:fushi_engine/tts/tts_provider.dart' show kTtsMaxConcurrency;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
@@ -71,10 +72,10 @@ class TtsStudioRateLimitPanel extends StatelessWidget {
           key: const ValueKey<String>('tts-studio-rate-limit-concurrency'),
           title: t.audiobook_studio_rate_limit_concurrency,
           segments: <ButtonSegment<int>>[
-            for (final int n in kTtsRenderOnlineConcurrencyChoices)
+            for (final int n in ttsStudioConcurrencySegments(concurrency))
               ButtonSegment<int>(value: n, label: Text('$n')),
           ],
-          selected: ttsStudioConcurrencyChoice(concurrency),
+          selected: concurrency.clamp(1, kTtsMaxConcurrency),
           onChanged: onConcurrencyChanged,
         ),
         AdaptiveSettingsSliderRow(

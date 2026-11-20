@@ -5,6 +5,7 @@ import 'package:fushi_engine/tts/cast/cast_line_kind.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/render/tts_pause.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
+import 'package:fushi_engine/tts/tts_provider.dart' show kTtsMaxConcurrency;
 import 'package:fushi_engine/tts/tts_types.dart';
 
 import 'package:fushi/src/ai/ai_failure_text.dart';
@@ -86,14 +87,12 @@ int ttsStudioEstimateMinutes({
   return minutes < 1 ? 1 : minutes;
 }
 
-/// 「同时请求」分段要高亮的档位：当前并发不在档位里（声音预设自定义了 3 / 8 等）
-/// 时取不超过它的最大档。
-int ttsStudioConcurrencyChoice(int concurrency) {
-  int choice = kTtsRenderOnlineConcurrencyChoices.first;
-  for (final int n in kTtsRenderOnlineConcurrencyChoices) {
-    if (n <= concurrency) choice = n;
-  }
-  return choice;
+/// 「同时请求」分段的档位：固定档（[kTtsRenderOnlineConcurrencyChoices]）再加上当前
+/// 生效的并发。声音预设自定义了 3 / 8 这类不在固定档里的值时，它作为额外一档出现并被
+/// 选中，界面高亮的就是实际执行的并发，不会显示 2 却按 3 跑。
+List<int> ttsStudioConcurrencySegments(int concurrency) {
+  final int current = concurrency.clamp(1, kTtsMaxConcurrency);
+  return <int>{...kTtsRenderOnlineConcurrencyChoices, current}.toList()..sort();
 }
 
 /// 任务状态行文案（运行中按阶段带进度）。

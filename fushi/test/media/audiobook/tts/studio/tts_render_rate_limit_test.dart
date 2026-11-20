@@ -157,10 +157,11 @@ void main() {
       );
     });
 
-    test('custom preset concurrency maps to the nearest lower segment', () {
-      expect(ttsStudioConcurrencyChoice(1), 1);
-      expect(ttsStudioConcurrencyChoice(3), 2);
-      expect(ttsStudioConcurrencyChoice(8), 4);
+    test('custom preset concurrency shows up as its own segment', () {
+      expect(ttsStudioConcurrencySegments(1), <int>[1, 2, 4]);
+      expect(ttsStudioConcurrencySegments(3), <int>[1, 2, 3, 4]);
+      expect(ttsStudioConcurrencySegments(8), <int>[1, 2, 4, 8]);
+      expect(ttsStudioConcurrencySegments(99), <int>[1, 2, 4, 8]);
     });
   });
 

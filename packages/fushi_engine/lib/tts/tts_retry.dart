@@ -66,6 +66,10 @@ class TtsRetryPolicy {
 
   /// 第 [retry] 次重试（从 1 起）前等多久；null = 不再重试。
   ///
+  /// 有 [rateLimited] 子策略时，[retry] 是**同一类别**里的序号：429 与其它临时
+  /// 失败各数各的（[ttsWithRetry] 分开计数），连着几次 429 不会吃掉默认策略对
+  /// 超时 / 5xx 的重试额度。
+  ///
   /// 抖动取「基准的一半 .. 基准」之间均匀分布（equal jitter）：并发两路同时失败时
   /// 不会同一瞬间一起重打服务端，又保证至少等基准的一半。
   Duration? delayBefore(int retry, TtsFailure failure, Random random) {
@@ -93,7 +97,8 @@ class TtsRetryPolicy {
 ///
 /// - [cancel] 已取消（等待前或等待中）→ 抛 [TtsFailureCode.cancelled]。
 /// - 非 [TtsFailure] 的异常不重试，原样抛出。
-/// - [onRetry] 在每次决定重试、开始等待前调用（日志 / 测试观察用）。
+/// - [onRetry] 在每次决定重试、开始等待前调用（日志 / 测试观察用）；传入的序号是
+///   该失败所属类别里的序号（见 [TtsRetryPolicy.delayBefore]）。
 Future<T> ttsWithRetry<T>(
   Future<T> Function() attempt, {
   required TtsCancelToken cancel,
@@ -102,7 +107,9 @@ Future<T> ttsWithRetry<T>(
   void Function(int retry, TtsFailure failure, Duration delay)? onRetry,
 }) async {
   final Random rng = random ?? Random();
+  // 429 有专门子策略时与其它临时失败分开计数，各自对应自己那套的次数上限。
   int retry = 0;
+  int rateLimitedRetry = 0;
   while (true) {
     cancel.throwIfCancelled();
     try {
@@ -112,10 +119,13 @@ Future<T> ttsWithRetry<T>(
         throw const TtsFailure(TtsFailureCode.cancelled);
       }
       if (!failure.isTransient) rethrow;
-      retry++;
-      final Duration? delay = policy.delayBefore(retry, failure, rng);
+      final bool separateRateLimit =
+          policy.rateLimited != null &&
+          failure.code == TtsFailureCode.rateLimited;
+      final int n = separateRateLimit ? ++rateLimitedRetry : ++retry;
+      final Duration? delay = policy.delayBefore(n, failure, rng);
       if (delay == null) rethrow;
-      onRetry?.call(retry, failure, delay);
+      onRetry?.call(n, failure, delay);
       await ttsCancellableDelay(delay, cancel);
     }
   }

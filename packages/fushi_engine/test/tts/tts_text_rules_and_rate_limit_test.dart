@@ -170,6 +170,51 @@ void main() {
       expect(attempts, 2);
       expect(waits, <Duration>[const Duration(milliseconds: 30)]);
     });
+
+    test(
+      '429 retries do not eat the budget for other transient failures',
+      () async {
+        // 先连着 5 次 429（子策略允许 8 次），再来一次超时：默认策略的超时重试序号应从
+        // 1 起，而不是接着 429 数到 6 后因超过 3 次立刻放弃。
+        int attempts = 0;
+        final List<(int, TtsFailureCode)> seen = <(int, TtsFailureCode)>[];
+        final String out = await ttsWithRetry<String>(
+          () async {
+            attempts++;
+            if (attempts <= 5) {
+              throw const TtsFailure.withRetry(
+                TtsFailureCode.rateLimited,
+                retryAfter: Duration(milliseconds: 1),
+              );
+            }
+            if (attempts == 6) throw const TtsFailure(TtsFailureCode.timeout);
+            return 'ok';
+          },
+          cancel: TtsCancelToken(),
+          policy: const TtsRetryPolicy(
+            baseDelay: Duration(milliseconds: 1),
+            maxDelay: Duration(milliseconds: 1),
+            rateLimited: TtsRetryPolicy(
+              maxRetries: 8,
+              baseDelay: Duration(milliseconds: 1),
+              maxDelay: Duration(milliseconds: 1),
+            ),
+          ),
+          onRetry: (int retry, TtsFailure failure, Duration _) =>
+              seen.add((retry, failure.code)),
+        );
+        expect(out, 'ok');
+        expect(attempts, 7);
+        expect(seen, <(int, TtsFailureCode)>[
+          (1, TtsFailureCode.rateLimited),
+          (2, TtsFailureCode.rateLimited),
+          (3, TtsFailureCode.rateLimited),
+          (4, TtsFailureCode.rateLimited),
+          (5, TtsFailureCode.rateLimited),
+          (1, TtsFailureCode.timeout),
+        ]);
+      },
+    );
   });
 
   group('render job rate-limit parameters', () {
