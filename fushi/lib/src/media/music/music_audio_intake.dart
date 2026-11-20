@@ -11,7 +11,7 @@
 ///   （[ownedMusicRootsToRetire]），删视频来源时连带移除（`removeSourceLibrary`），用户
 ///   单独删掉的不再登记回来（`music_auto_source_dismissals`）。
 /// - 指名的几个文件（[importAudioFiles] 只收纯音频，给视频侧入口；[importMusicFiles]
-///   另收 MV 视频容器，给音乐页自己的拖放 / 选文件）：已被音乐来源覆盖的，重扫那个来源；
+///   另收 MV 视频容器，给音乐页自己的拖放 / 选文件与视频库「加入收听」）：已被音乐来源覆盖的，重扫那个来源；
 ///   其余逐个「仅此一次」导入（Rust 扫描器接受单文件根，只收这一个文件），不登记常驻来源。
 ///
 /// - 网络视频来源（SFTP / WebDAV / AList）里的纯音频（[adoptRemoteVideoSourceAudio]）：同一套
@@ -488,7 +488,8 @@ class MusicAudioIntake implements MusicAudioIntakePort {
 
   /// 音乐页自己的入口（拖进音乐页、「添加音频文件」）收的曲目文件：纯音频 + MV 视频
   /// 容器（[isMusicLibraryMediaPath]，与音乐来源扫描同口径，拍板台 left3568）。其余规则
-  /// 与 [importAudioFiles] 相同。
+  /// 与 [importAudioFiles] 相同。视频库「加入收听」（拍板台 oo_8_5z6Aw）也走这里：用户明确
+  /// 要把视频当 MV 收进曲库，与音乐页入口同口径。
   @override
   Future<MusicAudioIntakeResult> importMusicFiles(Iterable<String> paths) =>
       _serial(

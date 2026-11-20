@@ -51,6 +51,8 @@ import 'package:fushi_engine/media/video/metadata/video_local_extra_classifier.d
 import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:fushi/src/media/drag_drop/card_drop_registry.dart';
 import 'package:fushi/src/media/music/music_audio_intake.dart';
+import 'package:fushi/src/pages/implementations/music/music_listen_from_video.dart'
+    show musicListenAvailableFor, musicListenToVideos;
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/drop_decision.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
@@ -4950,6 +4952,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             );
           },
         ),
+        // 加入收听（拍板台 oo_8_5z6Aw）：交给音乐播放器只放声音，可后台 / 随机播放。
+        // 只对本机视频文件出现（网络流 / 原盘 / 清单不行）。
+        if (musicListenAvailableFor(<String>[book.videoPath]))
+          DialogListAction(
+            label: t.video_listen_action,
+            icon: FushiIcons.audiobook,
+            group: DialogActionGroup.content,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              unawaited(_listenToVideos(<VideoBookRow>[book]));
+            },
+          ),
         // 私密：不上传排行榜、不推 Bangumi。整部剧要藏就标在合集上。
         mediaPrivacyToggleAction(
           context,
@@ -5156,6 +5170,59 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       track.codec,
     ];
     return parts.join(' · ');
+  }
+
+  /// 合集成员里能「加入收听」的本机视频，按合集集序。
+  List<VideoBookRow> _listenableMembers(
+    List<String> memberUidOrder,
+    List<VideoBookRow> library,
+  ) {
+    final Map<String, VideoBookRow> byUid = <String, VideoBookRow>{
+      for (final VideoBookRow b in library) b.bookUid: b,
+    };
+    return <VideoBookRow>[
+      for (final String uid in memberUidOrder)
+        if (byUid[uid] case final VideoBookRow b
+            when musicListenAvailableFor(<String>[b.videoPath]))
+          b,
+    ];
+  }
+
+  /// 把 [books] 交给音乐播放器只放声音（拍板台 oo_8_5z6Aw，见 [musicListenToVideos]）。
+  Future<void> _listenToVideos(List<VideoBookRow> books) async {
+    if (!mounted) return;
+    await musicListenToVideos(
+      context,
+      appModel: ref.read(appProvider),
+      videoPaths: <String>[for (final VideoBookRow b in books) b.videoPath],
+    );
+  }
+
+  /// 批量「加入收听」：选中的合集按 id 序、各自按集序展开，再接散卡（按页面上的
+  /// 可见顺序）；同一集只收一次。
+  Future<void> _batchListen() async {
+    if (!await _pruneStaleSelection() || !mounted) return;
+    final FushiDatabase db = ref.read(appProvider).database;
+    final Set<String> looseUids = _selectedLocalUids;
+    final List<int> collectionIds = _selectedCollectionIds.toList()..sort();
+    final List<VideoBookRow> library = await widget.repo.listAll();
+    final List<String> order = <String>[];
+    for (final int id in collectionIds) {
+      for (final MediaCollectionItemRow m in await db.getCollectionItems(id)) {
+        if (MediaKind.tryParse(m.mediaType) == MediaKind.video) {
+          order.add(m.entryKey);
+        }
+      }
+    }
+    for (final VideoBookRow b in _visibleVideos) {
+      if (looseUids.contains(b.bookUid)) order.add(b.bookUid);
+    }
+    final List<VideoBookRow> books = _listenableMembers(
+      <String>{...order}.toList(),
+      library,
+    );
+    if (!mounted) return;
+    await _listenToVideos(books);
   }
 
   /// 手动标记已看 / 未看（本地行 + 媒体服务器条目）。落地见 [setVideosWatched]
@@ -10963,6 +11030,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             ),
           ];
         })(),
+        // 整部加入收听（拍板台 oo_8_5z6Aw），按合集里的集序。
+        if (_listenableMembers(memberUidOrder, library)
+            case final List<VideoBookRow> members when members.isNotEmpty)
+          DialogListAction(
+            label: t.video_listen_action,
+            icon: FushiIcons.audiobook,
+            group: DialogActionGroup.content,
+            onPressed: () => unawaited(_listenToVideos(members)),
+          ),
         DialogListAction(
           label: t.collection_cover_set,
           icon: Icons.image_outlined,
@@ -12217,6 +12293,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         // collections_bookmark_outlined 区分开（二者语义无关，避免同图标歧义）。
         icon: Icons.playlist_add,
         label: t.combine_into_series,
+      ),
+      // 所选（散卡 + 合集的全部集）加入收听（拍板台 oo_8_5z6Aw）。
+      BatchAction(
+        key: 'home_video_batch_listen',
+        enabled: hasLocalSelection,
+        onPressed: () => unawaited(_batchListen()),
+        icon: FushiIcons.audiobook,
+        label: t.video_listen_action,
       ),
       // AI 整理所选（spec 2026-10-20 §10.1）。
       if (isAiModuleEnabled(ref.read(appProvider).moduleVisibility))
