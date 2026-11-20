@@ -3066,7 +3066,7 @@ class SourceLibraryScanner {
             // local copyToLocal returns the original path so behaviour is
             // unchanged.
             final String content = await readTextWithEncoding(File(localSub));
-            cues = parseSubtitleCues(
+            cues = await parseSubtitleCues(
               content: content,
               format: fmt,
               bookUid: bookUid,

@@ -5,7 +5,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/async_file_existence_cache.dart';
 import 'package:fushi/src/media/video/video_home_layout.dart';
 import 'package:fushi/src/utils/components/fushi_series_cover_block.dart';
-import 'package:fushi/src/utils/net/app_http_image.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_image_provider.dart';
 
 // =============================================================================
 // 视频作品的系列色块元数据（[FushiSeriesMeta]）——视频库（系列 / 首页主卡）与
@@ -40,7 +40,7 @@ Set<String> videoTextBackdropUrls(Iterable<VideoMetadataImageRow>? workImages) {
 /// - 作品封面：[ownPoster]（合集自有 / 原盘竖版封面）→ 作品图组 cover / poster；
 /// - chip：作品类型（TV / 电影）· 年份 · 总集数；概览：刮削标签前两个 · ★ 评分。
 ///
-/// 图一律先本地文件、再远程地址（[AppCachedHttpImage] 磁盘缓存，与作品详情页
+/// 图一律先本地文件、再远程地址（[metadataRemoteImage]：AppCachedHttpImage 磁盘缓存 + 解码上限，与作品详情页
 /// 同一条取图链）；某张本地图还在探测存在性时先不落到远程（等探测完重建，免得
 /// 本地有图还去下载一遍）。
 FushiSeriesMeta videoSeriesMeta({
@@ -85,11 +85,9 @@ FushiSeriesMeta videoSeriesMeta({
     for (final String kind in kinds) {
       for (final VideoMetadataImageRow row in rows) {
         if (row.kind != kind || row.remoteUrl.isEmpty) continue;
-        return ResizeImage.resizeIfNeeded(
-          decodeWidth,
-          null,
-          AppCachedHttpImage(row.remoteUrl),
-        );
+        // 远程回落与本地分支同一解码上限（#3722 video-18：刮削图默认是 TMDB
+        // 原图，裸解码几张就压满 ImageCache）。
+        return metadataRemoteImage(row.remoteUrl, width: decodeWidth);
       }
     }
     return null;
@@ -120,7 +118,7 @@ FushiSeriesMeta videoSeriesMeta({
       ) ??
       workImage(
         const <String>['backdrop'],
-        decodeWidth: 1280,
+        decodeWidth: kMetadataBackdropDecodePixelWidth,
         where: (VideoMetadataImageRow row) =>
             textless(row.remoteUrl) != withText,
       );
@@ -132,7 +130,9 @@ FushiSeriesMeta videoSeriesMeta({
   }
   final ImageProvider? logo =
       settled(mediaImage(MediaImageKind.logo)) ??
-      workImage(const <String>['logo'], decodeWidth: 640);
+      workImage(const <String>[
+        'logo',
+      ], decodeWidth: kMetadataLogoDecodePixelWidth);
   final ImageProvider? poster =
       settled(ownPoster) ??
       workImage(const <String>['cover', 'poster'], decodeWidth: 480);

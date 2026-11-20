@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 远端封面必须走 `AppCachedHttpImage`（`extends CachedNetworkImageProvider`，
 /// 磁盘缓存语义不变，另外把请求接进全应用代理装配 —— 裸
 /// `CachedNetworkImageProvider` 已被 network_image_proxy_guard_test 禁掉），
@@ -18,6 +20,8 @@ void main() {
     'lib/src/pages/implementations/home_video_page.dart',
     'lib/src/pages/implementations/video_work_detail_page.dart',
     'lib/src/pages/implementations/media_collection_detail_page.dart',
+    // 刮削图远程回落的共用 provider（#3722 video-18）：库页与作品详情页经它取图。
+    'lib/src/media/video/metadata/video_metadata_image_provider.dart',
   ];
 
   // `CachedNetworkImage(` 里也含有 `NetworkImage(` 子串，所以裸 NetworkImage 的
@@ -50,13 +54,51 @@ void main() {
 
   test('被守卫的页面确实还在渲染带磁盘缓存的远端封面', () {
     for (final String path in paths) {
+      // 直接写 `AppCachedHttpImage(`，或经共用的 `metadataRemoteImage(`（它本身在
+      // 清单里，内部就是 AppCachedHttpImage + 解码上限）。
       expect(
         File(path).readAsStringSync(),
-        contains('AppCachedHttpImage('),
+        anyOf(
+          contains('AppCachedHttpImage('),
+          contains('metadataRemoteImage('),
+        ),
         reason:
             '$path 不再出现磁盘缓存封面用法：'
             '要么封面被删（请同步收缩本守卫清单），要么被换成了别的远端图片写法',
       );
     }
+  });
+
+  // #3722 video-18：库页（剧照 / 作品图远程回落、hero）与作品详情页的远端图全是
+  // 刮削图（默认 TMDB 原图），必须经 `metadataRemoteImage` 带解码上限。这两页里
+  // 再出现裸 `AppCachedHttpImage(` 就是整帧解码退回来了——库页那两处远程回落
+  // 只有本守卫兜着（页面状态太重，没有行为级用例覆盖）。
+  test('库页与作品详情页的远端刮削图不裸用 AppCachedHttpImage', () {
+    final RegExp bareCachedHttpImage = RegExp(
+      r'(?<![A-Za-z0-9_$])AppCachedHttpImage\(',
+    );
+    final List<String> offenders = <String>[];
+    for (final String path in const <String>[
+      'lib/src/pages/implementations/home_video_page.dart',
+      'lib/src/pages/implementations/video_work_detail_page.dart',
+    ]) {
+      // 先整份掩掉注释（行注释、块注释、行尾注释都算），再逐行找；掩码串与原文
+      // 等长、换行位置一致，所以行号直接对得上原文。
+      final String source = File(path).readAsStringSync();
+      final List<String> lines = source.split('\n');
+      final List<String> codeLines = maskComments(source).split('\n');
+      for (int index = 0; index < codeLines.length; index++) {
+        if (bareCachedHttpImage.hasMatch(codeLines[index])) {
+          offenders.add('$path:${index + 1}: ${lines[index].trim()}');
+        }
+      }
+    }
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          '刮削图远端地址要经 metadataRemoteImage（AppCachedHttpImage + 解码上限），'
+          '以下位置退回了整帧解码：\n${offenders.join('\n')}',
+    );
   });
 }
