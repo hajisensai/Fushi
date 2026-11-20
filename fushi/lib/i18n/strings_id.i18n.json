@@ -5618,6 +5618,7 @@
   "manga_audio_source_policy_hint_first": "Lines found in the audiobook use its audio; the rest are synthesized.",
   "manga_audio_source_policy_hint_only": "Only lines found in the audiobook are read; the rest stay silent.",
   "manga_audio_source_policy_hint_synth": "Every line is synthesized; the audiobook is not used.",
+  "manga_audio_source_policy_narrator_note": "With the local Irodori engine installed, synthesized lines use the audiobook narrator's voice.",
   "manga_audio_source_policy_synth_only": "Synthesize only",
   "manga_audio_source_remove": "Remove",
   "manga_audio_source_running": "Matching…",
