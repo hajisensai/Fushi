@@ -166,6 +166,14 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   /// 回来时又选了别的（或拖进一批），晚到的旧结果不得覆盖新选择。
   int _adoptGeneration = 0;
 
+  /// 第 [generation] 次收下的定性结果回来时是否已作废：对话框已关、被更新的选择
+  /// 取代，或定性期间用户已对**旧选择**点了「导入」——导入在起跑时就把路径拷成了
+  /// 局部量，这时再收下新路径只会让界面显示的和正在导入的不是同一本；选文件 /
+  /// 拖入收下成功后的 `_discardStaging` 还会删掉正在导入的那份暂存副本（旧选择是
+  /// iOS 上拷进容器的文件夹时）。
+  bool _isStaleAdoption(int generation) =>
+      !mounted || importing || generation != _adoptGeneration;
+
   /// 多选里**可能是一卷**的路径：目录或漫画载体扩展名。只看扩展名、不开包——
   /// N 个包在 UI 线程逐个开会卡死；真定性推迟到逐卷导入（那时反正要解压），
   /// 不是漫画的卷（文字 EPUB / 词典 zip）在汇总里如实计为跳过。
@@ -447,7 +455,8 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   }
 
   /// 收下一个候选路径：先定性，非漫画直接挡回并说明，绝不静默吞掉。
-  /// 返回是否收下；定性期间被更新的选择取代（或对话框已关）也返回 false。
+  /// 返回是否收下；定性期间被更新的选择取代、对话框已关、或用户已对旧选择点了
+  /// 「导入」，都返回 false（[_isStaleAdoption]）。
   ///
   /// [reportRejection]：非漫画时是否弹「不支持的格式」（预填路径不弹，见 [initState]）。
   Future<bool> _adoptPath(
@@ -456,7 +465,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   }) async {
     final int generation = ++_adoptGeneration;
     final ImportCarrier carrier = await _classify(candidate);
-    if (!mounted || generation != _adoptGeneration) return false;
+    if (_isStaleAdoption(generation)) return false;
     if (!carrier.isMangaCapable) {
       if (!reportRejection) return false;
       final String ext = p.extension(candidate).toLowerCase();
@@ -501,7 +510,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     final int generation = ++_adoptGeneration;
     for (final String path in paths) {
       final bool manga = (await _classify(path)).isMangaCapable;
-      if (!mounted || generation != _adoptGeneration) return;
+      if (_isStaleAdoption(generation)) return;
       if (manga) {
         // 同一路径的判定已在记忆里，这里不再开包。
         if (await _adoptPath(path)) unawaited(_discardStaging());

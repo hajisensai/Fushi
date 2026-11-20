@@ -18,6 +18,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/import_carrier.dart';
 import 'package:fushi/src/media/manga/import/manga_folder_batch.dart';
 import 'package:fushi/src/media/manga/manga_import_dialog.dart';
@@ -236,11 +237,10 @@ void main() {
       await tester.pump();
     }
 
-    String titleText(WidgetTester tester) =>
-        tester
-            .widget<EditableText>(find.byType(EditableText).first)
-            .controller
-            .text;
+    String titleText(WidgetTester tester) => tester
+        .widget<EditableText>(find.byType(EditableText).first)
+        .controller
+        .text;
 
     testWidgets('判定没回来时界面照常出帧，回来后才收下路径', (WidgetTester tester) async {
       final Completer<bool> gate = Completer<bool>();
@@ -274,6 +274,46 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('定性期间用户对旧选择点了导入：晚到的新选择不得收下', (WidgetTester tester) async {
+      // 旧选择是 `.cbz`（扩展名不二义，不开包、马上收下）；随后拖进一本 `.epub`，
+      // 定性挂起时用户点「导入」——导入已把旧路径拷成局部量。修复前定性回来后照样
+      // 收下新路径：界面显示的与正在导入的不是同一本，选文件夹路径还会删掉正在导入
+      // 的暂存副本。
+      final Completer<bool> gate = Completer<bool>();
+      final String cbz = _writeCbz(root, 'volA.cbz');
+      await pumpDialog(tester, cbz, (String _) => gate.future);
+      expect(titleText(tester), 'volA');
+
+      final FushiFileDropTarget target = tester.widget<FushiFileDropTarget>(
+        find.byType(FushiFileDropTarget),
+      );
+      target.onDrop(<String>[p.join(root.path, 'volB.epub')], Offset.zero);
+      await tester.pump();
+
+      await tester.tap(find.text(t.dialog_import));
+      await tester.pump();
+      expect(
+        find.text(t.dialog_importing),
+        findsOneWidget,
+        reason: '前提：导入正在进行（真实文件 IO 在 fake async 里不会完成）',
+      );
+
+      gate.complete(true);
+      await tester.pump();
+      expect(titleText(tester), 'volA', reason: '正在导入的是 volA，不能换成 volB');
+      expect(find.textContaining('volB'), findsNothing);
+
+      // 收尾：先拆掉对话框，再交替推进真实 IO 与 fake 时钟，让挂起的导入走完并
+      // 关掉 volA.cbz 的句柄（否则 Windows 上 tearDown 删不掉临时目录）。
+      await tester.pumpWidget(const SizedBox.shrink());
+      for (int i = 0; i < 10; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        );
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+    });
+
     testWidgets('预填的不是漫画：留空、不弹不支持格式', (WidgetTester tester) async {
       await pumpDialog(
         tester,
@@ -284,6 +324,18 @@ void main() {
       expect(titleText(tester), isEmpty);
     });
   });
+}
+
+/// 两页页图的 `.cbz`。
+String _writeCbz(Directory dir, String name) {
+  final Archive archive = Archive();
+  for (final String page in <String>['001.png', '002.png']) {
+    final Uint8List bytes = _png();
+    archive.addFile(ArchiveFile(page, bytes.length, bytes));
+  }
+  final String path = p.join(dir.path, name);
+  File(path).writeAsBytesSync(ZipEncoder().encode(archive)!);
+  return path;
 }
 
 Uint8List _png() =>
