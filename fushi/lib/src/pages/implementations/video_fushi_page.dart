@@ -4973,8 +4973,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 当前集照单视频加载（每集是独立 VideoBooks 行；_loadSingle 已尊重
     // widget.initialCueStartMs 与该行 lastPositionMs 续播）。
     if (widget.openBlurayMenu) {
-      if (!await _ensureDiscMenuRuntime(row.videoPath)) return;
-      if (!mounted) return;
+      final _DiscMenuRuntimeCheck? runtime = await _ensureDiscMenuRuntime(
+        row.videoPath,
+      );
+      if (runtime == null || !mounted) return;
       _currentSubtitleSource = null;
       _currentSecondarySubtitleSource = null;
       _currentAudioTrackId = null;
@@ -4986,6 +4988,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         title: row.title,
         initialPositionMs: 0,
         startIntent: EpisodeStartIntent.initialOpen,
+        verifiedBlurayJavaHome: runtime.javaHome,
       );
       return;
     }
@@ -5004,6 +5007,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       currentEpisode: 0,
       delayMs: 0,
     );
+    String? verifiedJavaHome;
     if (!source.isDvd) {
       final BlurayMenuInfo? info;
       try {
@@ -5018,7 +5022,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         }
         return;
       }
-      if (!await _ensureDiscMenuRuntimeFor(info)) return;
+      final _DiscMenuRuntimeCheck? runtime = await _ensureDiscMenuRuntimeFor(
+        info,
+      );
+      if (runtime == null) return;
+      verifiedJavaHome = runtime.javaHome;
     }
     if (!mounted) return;
     _currentSubtitleSource = null;
@@ -5034,6 +5042,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       initialPositionMs: 0,
       startIntent: EpisodeStartIntent.initialOpen,
       remoteDisc: source,
+      verifiedBlurayJavaHome: verifiedJavaHome,
     );
   }
 
@@ -6659,6 +6668,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     BlurayRemoteTitle? remoteDiscTitle,
     // 流式原盘会话的盘源（见 [VideoPlayerController.load] 的同名参数）。
     RemoteDiscMenuSource? remoteDisc,
+    // 开盘前检查刚验证过的 BD-J Java 目录（见 [VideoPlayerController.load] 的同名参数）。
+    String? verifiedBlurayJavaHome,
   }) async {
     // 常规载入换了一条流：记下它的外挂音轨，供同一条流的切档重载沿用（见
     // [_streamExternalAudioTracks]）。切档重载（detectHls=false）自己就是从这里取的。
@@ -6816,6 +6827,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         externalAudioTracks: externalAudioTracks,
         remoteDiscTitle: remoteDiscTitle,
         remoteDisc: remoteDisc,
+        verifiedBlurayJavaHome: verifiedBlurayJavaHome,
         onEmbeddedSubtitleAutoLoad: _handleEmbeddedSubtitleAutoLoad,
         preferredSubtitleLanguages: parseSubtitleLanguagePreferences(
           appModel.videoSubtitlePreferredLanguages,
