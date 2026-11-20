@@ -13,6 +13,14 @@ import 'dart:convert';
 /// and Android compile checks.
 enum DistPlatform { windows, macos, linux }
 
+/// Platforms a manual pin (dist_affinity.json) or an integration test
+/// (dist_itests.json) may name: a Linux pin would strand its suite in every
+/// config without a Linux worker, and integration tests have no Linux path.
+const Set<DistPlatform> kDistPinnablePlatforms = <DistPlatform>{
+  DistPlatform.windows,
+  DistPlatform.macos,
+};
+
 /// Tags whose suites need a worker that declared the matching capability
 /// (see fushi/dart_test.yaml: they need real local fixtures or tools).
 const Set<String> kDistCapabilityTags = <String>{
@@ -108,7 +116,7 @@ Set<DistPlatform> _pinPlatforms(String path, Object? pin) {
   }
   final Set<DistPlatform> platforms = <DistPlatform>{
     for (final Object? p in pin['platforms']! as List<Object?>)
-      DistPlatform.values.firstWhere(
+      kDistPinnablePlatforms.firstWhere(
         (DistPlatform d) => d.name == p,
         orElse: () => throw FormatException('$path: unknown platform "$p"'),
       ),
@@ -655,7 +663,7 @@ Map<String, Set<DistPlatform>> readDistItests(String text) {
     }
     final Set<DistPlatform> platforms = <DistPlatform>{
       for (final Object? p in entry['platforms']! as List<Object?>)
-        DistPlatform.values.firstWhere(
+        kDistPinnablePlatforms.firstWhere(
           (DistPlatform d) => d.name == p,
           orElse: () =>
               throw FormatException('${e.key}: unknown platform "$p"'),
