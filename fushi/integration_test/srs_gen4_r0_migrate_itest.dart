@@ -10,14 +10,15 @@
 //   # 迁移页没出来时改走 controller.start（按钮背后的同一个入口，结论里注明）：再加 'FUSHI_R0_FALLBACK_START=true'
 //
 // 已知：在本 itest 的 binding 下，未迁移的库让复习页一直转圈（srsStorageProvider / srsStoreProvider 已是 AsyncError，
-// 它们的 `.future` 却不完成，错误日志里有 UncaughtZone 的 SrsStoreNotMigrated——疑似错误跨不过 zone 边界）；同一份
-// 数据根用 release 包打开时错误日志里没有 UncaughtZone。见 docs/specs/2026-11-15-srs-gen4-r0-windows.md §4 (a)。
+// 它们的 `.future` 却不完成，错误日志里有 UncaughtZone 的 SrsStoreNotMigrated）。判别步骤见下面「假设」一段：在帧回调
+// 里走一次「重试」同一条作废，看迁移页出不出来。见 docs/specs/2026-11-15-srs-gen4-r0-windows.md §4.1。
 //
 // 种子目录：旧版本数据根的 app-support/（fushi.db、srs.db 连 -wal / -shm、srs_media/ 等），原样拷进隔离根，
 // 不改种子。
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -32,7 +33,6 @@ import 'package:integration_test/integration_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
-import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart';
 import 'helpers/observe_capture.dart';
 import 'support/test_app_launcher.dart';
@@ -77,6 +77,25 @@ String _visibleText() {
     if (s != null && s.trim().isNotEmpty) out.add(s.trim());
   }
   return out.join(' | ');
+}
+
+/// 键盘焦点落在 [target] 上或它的子树里（同 FocusDriver 的判据：scope 与 skipTraversal 的整页键事件 sink 不算）。
+bool _focusInside(Finder target) {
+  final FocusNode? f = FocusManager.instance.primaryFocus;
+  if (f == null || f is FocusScopeNode || f.skipTraversal) return false;
+  final BuildContext? ctx = f.context;
+  final List<Element> els = target.evaluate().toList();
+  if (ctx == null || els.isEmpty) return false;
+  if (ctx == els.first) return true;
+  bool inside = false;
+  ctx.visitAncestorElements((Element el) {
+    if (el == els.first) {
+      inside = true;
+      return false;
+    }
+    return true;
+  });
+  return inside;
 }
 
 void main() {
@@ -142,13 +161,27 @@ void main() {
       _log(
         '[r0] decks.future: ${await settle(c.read(srsDeckListProvider.future))}',
       );
-      c.invalidate(srsDeckListProvider);
-      for (int i = 0; i < 120 && start.evaluate().isEmpty; i++) {
+      // 假设（第一轮复核要求证实）：存储 / store 两层是 app 启动时在 main.dart 的 runZonedGuarded 里（错误 zone A，
+      // 常驻装配 srsAppRuntimeProvider 的 readStore）先建的，它们缓存的 `.future` 落在 A；本 itest 的 binding 在测试
+      // 文件 main 里初始化，帧回调（复习页 / 牌组列表的 build）跑在另一个错误 zone。Dart 的错误不跨错误 zone 投递：
+      // 帧 zone 里 await 那个已失败的 future 永远等不到，错误按 A 的未捕获错误记进 error_log（UncaughtZone）。正式
+      // 版只有一个错误 zone（binding 在 A 里初始化），不存在这个错位。
+      // 判别：走复习页错误态「重试」同一条作废（retrySrsStoreOpen：只作废失败了的那一层），并且放在帧回调里做，
+      // 重建出的 future 就落在帧 zone。假设成立 → 迁移页随即出现、`.future` 不再超时；不成立 → 照旧转圈。
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        _log('[r0] retry in frame zone (invalidate failed storage/store)');
+        if (c.read(srsStorageProvider).hasError) {
+          c.invalidate(srsStorageProvider);
+        }
+        if (c.read(srsStoreProvider).hasError) c.invalidate(srsStoreProvider);
+      });
+      for (int i = 0; i < 240 && start.evaluate().isEmpty; i++) {
         await tester.pump(const Duration(milliseconds: 250));
       }
       viaButton = start.evaluate().isNotEmpty;
       _log(
-        '[r0] after invalidate(decks): found=$viaButton '
+        '[r0] after frame-zone retry: found=$viaButton '
+        'storage=${c.read(srsStorageProvider)} '
         'decks=${c.read(srsDeckListProvider)}',
       );
     }
@@ -162,15 +195,33 @@ void main() {
     );
     final Stopwatch clock;
     if (viaButton) {
-      final FocusDriver driver = FocusDriver(tester);
-      expect(
-        await driver.focusWidget(start),
-        isTrue,
-        reason: '「开始升级」应能用 Tab 走到',
-      );
+      // 进场动画走完再遍历（有界 pump，屏上可能有不停的动画）。
+      for (int i = 0; i < 8; i++) {
+        await tester.pump(const Duration(milliseconds: 250));
+      }
+
+      // 焦点驱动（Tab 遍历 + Enter，同 FocusDriver，不用坐标）。每一步都记日志、按键带超时：上一轮在这一步停了 18 分钟没有任何输出，要知道停在哪。
+      Future<bool> key(LogicalKeyboardKey k) => tester
+          .sendKeyEvent(k)
+          .then((_) => true)
+          .timeout(const Duration(seconds: 10), onTimeout: () => false);
+      bool reached = _focusInside(start);
+      for (int i = 0; i < 60 && !reached; i++) {
+        final bool sent = await key(LogicalKeyboardKey.tab);
+        for (int j = 0; j < 2; j++) {
+          await tester.pump(const Duration(milliseconds: 60));
+        }
+        reached = _focusInside(start);
+        _log(
+          '[r0] tab #$i sent=$sent focus=${FocusManager.instance.primaryFocus} '
+          'onStart=$reached',
+        );
+        if (!sent) break;
+      }
+      expect(reached, isTrue, reason: '「开始升级」应能用 Tab 走到');
       _log('[r0] start button focused; pressing Enter');
       clock = Stopwatch()..start();
-      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      _log('[r0] enter sent=${await key(LogicalKeyboardKey.enter)}');
     } else if (_fallbackStart) {
       // 迁移页没出来（上面记了原因）：按钮背后就是 controller.start，直接调它把迁移本身测完，结论里注明。
       _log(
