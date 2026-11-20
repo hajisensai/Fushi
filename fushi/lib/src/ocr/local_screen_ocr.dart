@@ -11,7 +11,8 @@
 /// 在冻结层提示条上让用户去设置里下载。
 ///
 /// 会话常驻复用（建会话约 0.7 s），空闲 [idleTimeout] 后关掉释放 ORT 内存。空闲
-/// 计时只在没有识别在跑时走：关会话会让在跑的识别失败。
+/// 计时只在没有识别在跑时走：关会话会让在跑的识别失败。[dispose] 同理，先等在跑的
+/// 识别全部结束再关会话，之后的识别直接报 [StateError]。
 library;
 
 import 'dart:async';
@@ -45,6 +46,10 @@ class LocalScreenOcr implements SystemOcrPlatform {
   Future<MangaOcrPageSession>? _session;
   Timer? _idleTimer;
   int _running = 0;
+  bool _disposed = false;
+
+  /// [dispose] 在等在跑的识别收尾：`_running` 归零时完成。
+  Completer<void>? _drained;
 
   @override
   Future<bool> isAvailable() async {
@@ -77,6 +82,7 @@ class LocalScreenOcr implements SystemOcrPlatform {
     required int width,
     required int height,
   }) async {
+    if (_disposed) throw StateError('LocalScreenOcr has been disposed');
     _idleTimer?.cancel();
     _idleTimer = null;
     _running++;
@@ -95,14 +101,21 @@ class LocalScreenOcr implements SystemOcrPlatform {
       return systemOcrPageFromRecognition(result, width: width, height: height);
     } finally {
       _running--;
-      if (_running == 0 && _session != null) _armIdleTimer();
+      if (_running == 0) {
+        final Completer<void>? drained = _drained;
+        _drained = null;
+        drained?.complete();
+        if (!_disposed && _session != null) _armIdleTimer();
+      }
     }
   }
 
-  /// 释放会话（宿主销毁时）。
+  /// 释放会话（宿主销毁时）。在跑的识别先跑完再关：会话关在 native 调用途中不安全。
   Future<void> dispose() async {
+    _disposed = true;
     _idleTimer?.cancel();
     _idleTimer = null;
+    if (_running > 0) await (_drained ??= Completer<void>()).future;
     await _closeSession();
   }
 
