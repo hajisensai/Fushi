@@ -1721,6 +1721,161 @@ void main() {
     });
   });
 
+  group('AniDB 标题目录摘要存量作品自动补全（拍板台 left3563）', () {
+    final DateTime now = DateTime(2026, 9, 20, 12);
+    final int recent = now
+        .subtract(const Duration(days: 1))
+        .millisecondsSinceEpoch;
+
+    /// 种一部主身份是 AniDB 的已识别作品，details 快照按 [catalogOnly] 决定是标题
+    /// 目录摘要还是完整 anime XML。
+    Future<void> seedAniDbWork(
+      String bookUid, {
+      required bool catalogOnly,
+      bool primary = true,
+      int? updatedAt,
+    }) async {
+      final int workId = await db
+          .into(db.videoMetadataWorks)
+          .insert(
+            VideoMetadataWorksCompanion.insert(
+              bookUid: Value<String?>(bookUid),
+              mediaType: 'tv',
+              title: 'seeded',
+              updatedAt: updatedAt ?? recent,
+            ),
+          );
+      final String identityKey = 'anidb:$workId';
+      await db
+          .into(db.videoMetadataProviderIdentities)
+          .insert(
+            VideoMetadataProviderIdentitiesCompanion.insert(
+              identityKey: identityKey,
+              workId: Value<int?>(workId),
+              provider: 'anidb',
+              externalId: '${1000 + workId}',
+              isPrimary: Value<bool>(primary),
+              updatedAt: 1,
+            ),
+          );
+      await db.replaceVideoMetadataRawSnapshots(
+        identityKey,
+        <VideoMetadataRawSnapshotsCompanion>[
+          VideoMetadataRawSnapshotsCompanion.insert(
+            identityKey: identityKey,
+            snapshotKind: 'details',
+            rawJson: jsonEncode(
+              catalogOnly
+                  ? <String, Object?>{'anidbCatalogOnly': true}
+                  : <String, Object?>{
+                      'aid': 1000 + workId,
+                      'type': 'TV Series',
+                    },
+            ),
+            fetchedAt: 1,
+          ),
+        ],
+      );
+    }
+
+    test('只挑主身份 AniDB 且快照仍是摘要的作品', () async {
+      final int sourceId = await addSource('D:/A');
+      await addVideo('cat', 'D:/A/Catalog Show (2020).mkv', sourceId);
+      await addVideo('full', 'D:/A/Full Show (2020).mkv', sourceId);
+      await addVideo('xref', 'D:/A/Xref Show (2020).mkv', sourceId);
+      await seedAniDbWork('cat', catalogOnly: true);
+      await seedAniDbWork('full', catalogOnly: false);
+      await seedAniDbWork('xref', catalogOnly: true, primary: false);
+      final Set<int> ids = await anidbCatalogOnlyVideoWorkIds(db);
+      expect(ids, hasLength(1));
+      final VideoMetadataWorkRow? cat = await db.getVideoMetadataWorkByBook(
+        'cat',
+      );
+      expect(ids.single, cat!.id);
+    });
+
+    test('XML 拿得到：最近刚刮过的摘要作品也立即补刮，完整的不动；间隔内不重复', () async {
+      final int sourceId = await addSource('D:/A');
+      await addVideo(
+        'cat',
+        'D:/A/Catalog Show (2020).mkv',
+        sourceId,
+        title: 'Catalog Show',
+      );
+      await addVideo(
+        'full',
+        'D:/A/Full Show (2020).mkv',
+        sourceId,
+        title: 'Full Show',
+      );
+      await seedAniDbWork('cat', catalogOnly: true);
+      await seedAniDbWork('full', catalogOnly: false);
+      final VideoLibraryScrapeSweep service = VideoLibraryScrapeSweep(
+        database: db,
+        memberExists: _allMembersPresent,
+        controller: controller,
+        now: () => now,
+        isAniDbDetailReady: () => true,
+      );
+      await service.sweepOnce();
+      expect(runner.plannedTitles.single, <String>['Catalog Show']);
+      expect(runner.runScopes.single, 'sweep');
+
+      await service.sweepOnce();
+      expect(runner.sourceIds, hasLength(1), reason: '刷新间隔内不再重刮同一部');
+    });
+
+    test('XML 拿不到（没登记 / 被拒 / 封禁）时不排队', () async {
+      final int sourceId = await addSource('D:/A');
+      await addVideo('cat', 'D:/A/Catalog Show (2020).mkv', sourceId);
+      await seedAniDbWork('cat', catalogOnly: true);
+      await VideoLibraryScrapeSweep(
+        database: db,
+        memberExists: _allMembersPresent,
+        controller: controller,
+        now: () => now,
+        isAniDbDetailReady: () => false,
+      ).sweepOnce();
+      expect(runner.sourceIds, isEmpty);
+    });
+
+    test('摘要补全排在过期重刷前面，且与之合算每轮上限', () async {
+      final int sourceId = await addSource('D:/A');
+      final int old = now
+          .subtract(const Duration(days: 40))
+          .millisecondsSinceEpoch;
+      for (int i = 0; i < 2; i++) {
+        await addVideo(
+          'old-$i',
+          'D:/A/Old Show $i (2019).mkv',
+          sourceId,
+          title: 'Old Show $i',
+        );
+        await seedAniDbWork('old-$i', catalogOnly: false, updatedAt: old);
+      }
+      for (int i = 0; i < 2; i++) {
+        await addVideo(
+          'cat-$i',
+          'D:/A/Catalog Show $i (2020).mkv',
+          sourceId,
+          title: 'Catalog Show $i',
+        );
+        await seedAniDbWork('cat-$i', catalogOnly: true);
+      }
+      await VideoLibraryScrapeSweep(
+        database: db,
+        memberExists: _allMembersPresent,
+        controller: controller,
+        now: () => now,
+        maxRefreshPerSweep: 3,
+        isAniDbDetailReady: () => true,
+      ).sweepOnce();
+      final List<String> titles = runner.plannedTitles.single;
+      expect(titles, hasLength(3));
+      expect(titles, containsAll(<String>['Catalog Show 0', 'Catalog Show 1']));
+    });
+  });
+
   test('sweepAndListPending 回传待确认清单，总闸关时也照常回传', () async {
     final int sourceId = await addSource('D:/A');
     await addVideo(
