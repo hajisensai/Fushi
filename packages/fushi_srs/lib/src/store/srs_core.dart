@@ -34,13 +34,15 @@ final class SrsCoreException implements Exception {
   final String message;
 
   /// 按状态码与错误文本给出类型化的异常：打开时的代际状态（[SrsStoreOpenBlocked]）、新代还没接线 / 已删的命令
-  /// （[SrsCoreUnwiredException] / [SrsCoreRemovedException]），其余是一般的 [SrsCoreException]。
+  /// （[SrsCoreUnwiredException] / [SrsCoreRemovedException]）、一条改动超过载荷上限（[SrsOpTooLargeException]）等，
+  /// 其余是一般的 [SrsCoreException]。
   static SrsCoreException of(int code, String message) =>
       SrsStoreOpenBlocked.tryParse(code, message) ??
       SrsCoreUnwiredException.tryParse(code, message) ??
       SrsCoreRemovedException.tryParse(code, message) ??
       SrsProfileUnboundException.tryParse(code, message) ??
       SrsCoreReadOnlyException.tryParse(code, message) ??
+      SrsOpTooLargeException.tryParse(code, message) ??
       SrsCoreException(code, message);
 
   @override
@@ -151,6 +153,24 @@ final class SrsCoreReadOnlyException extends SrsCoreException {
 
   @override
   String toString() => 'SrsCoreReadOnlyException: $message';
+}
+
+/// 内核拒收一条载荷超过上限（16 MiB，native/fushi_fsrs/src/gen4/op.rs `MAX_OP_PAYLOAD`）的改动，整笔回滚：本机写入
+/// （`gen4 store: op too large: …; nothing was saved`）、`.fushisrs` 导入（`gen4 import: op too large: …; nothing was
+/// imported`）、.apkg / 文本导入落库的那一批都报这一句。多半是字段里内嵌了图片 / 文件。界面按**类型**认它给专门的
+/// 本地化提示（`fushi/lib/src/srs/srs_action_error_text.dart`），不在界面里匹配内核的英文原话。
+final class SrsOpTooLargeException extends SrsCoreException {
+  const SrsOpTooLargeException(super.code, super.message);
+
+  /// 内核报错里的标记（op.rs `ERR_OP_TOO_LARGE` 加冒号；前面可能有 `gen4 store: ` / `gen4 import: ` 等前缀）。改内核那句
+  /// 要同步改这里。
+  static const String marker = 'op too large: ';
+
+  static SrsOpTooLargeException? tryParse(int code, String message) =>
+      message.contains(marker) ? SrsOpTooLargeException(code, message) : null;
+
+  @override
+  String toString() => 'SrsOpTooLargeException: $message';
 }
 
 /// 库目录的代际状态（native/fushi_fsrs/src/store/gen4/migrate.rs `GenState` 的线上名）。

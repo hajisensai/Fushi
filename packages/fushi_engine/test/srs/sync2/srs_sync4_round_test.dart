@@ -27,6 +27,9 @@ class _FakeHost implements SrsSync2Host {
   final Map<String, List<SrsSync2Result>> replies;
   final List<Map<String, Object?>> requests = <Map<String, Object?>>[];
   final List<List<Uint8List>> ingested = <List<Uint8List>>[];
+
+  /// 每批收段带的位置（重切件的停放按位置记，内核 `cmd/sync_park.rs`）。
+  final List<String?> ingestLocations = <String?>[];
   int finishes = 0;
   int begins = 0;
   int ends = 0;
@@ -69,8 +72,10 @@ class _FakeHost implements SrsSync2Host {
   Future<Map<String, Object?>> sync2IngestBatch(
     List<Uint8List> segments, {
     String? keyHex,
+    String? location,
   }) async {
     ingested.add(segments);
+    ingestLocations.add(location);
     return <String, Object?>{'applied': segments.length, 'fork': true};
   }
 
@@ -275,6 +280,8 @@ void main() {
     );
     // 收：预算 1 字节 = 每段一批；这一批报了分叉 → 收尾一次。
     expect(host.ingested.length, 2);
+    // 收段带的位置与 plan 的同值。
+    expect(host.ingestLocations, <String?>['L', 'L']);
     expect(host.finishes, 1);
     expect(host.begins, host.ends);
     expect(r.applied, 2);

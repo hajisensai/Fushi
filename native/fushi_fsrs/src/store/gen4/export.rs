@@ -14,6 +14,10 @@
 //! - 每条承袭日志：日志里的槽、每个 seq 后面紧跟分叉的另一支（`op_forks`，链指纹升序），以及记着的完整原链值
 //!   （`log_marks`，之后切承袭段要用）。
 //! - **不写**待投递的槽（`op_pending`）：它们前面还缺，导入方接不上，原样留在本机等同步轮。
+//! - 每条原生日志链尾之后的**转发材料**（流的第 3 版起，第六波）：本机收下的这位作者的作者签名版本（`relay_auth`）与
+//!   本机记下的、落在这条日志空洞上的剔除记录（`relay_stubs`）。它们是收来的数据（作者签过的段头 / 签名、作者签名覆盖
+//!   的信封），不是本机的判断；从日志重切作者段要它们（`sync_state.rs` `recut_from_log`），不带就从备份还原之后重切
+//!   不出来。剔除记录只写落在空洞上的（落在等待缓冲里、还没进日志的那些随等待缓冲一起不写，D34）。
 //! - 不写本机状态：信任、暂扣、检查点、各位置进度、本机身份的私钥都不出这台机器。槽是不是本机自己推进出来的
 //!   （`local` 标记）也不写：导入方收到的空洞 / 副本记录就是来路数据。
 //!
@@ -49,6 +53,9 @@ pub struct Exported {
     pub marks: u64,
     /// 没写进去的待投递槽（D34）。
     pub pending_skipped: u64,
+    /// 带出去的转发材料：作者签名版本与剔除记录（流的第 3 版）。
+    pub relay_versions: u64,
+    pub relay_stubs: u64,
 }
 
 /// 把集合 [col] 的真相层写成一条 `FSRS4EXP` 流，写进 [out]（边读边压缩，内存是压缩窗口加一项）。返回 [out] 与计数。
@@ -106,14 +113,17 @@ fn export_in_tx<W: Write>(t: &Truth<'_>, col: i64, out: W) -> Result<(W, Exporte
         })?;
         // 这条日志上记着的链值（seq 升序）：空洞区间内部的随空洞带出去。
         let dmarks = t.marks(col, &d.id)?;
-        // 正在攒的空洞区间：(第一个 seq, 条数)。
+        // 正在攒的空洞区间：(第一个 seq, 条数)；写出去的空洞区间 [首, 末]（剔除记录只带落在它们上面的）。
         let mut run: Option<(u64, u64)> = None;
+        let mut void_runs: Vec<(u64, u64)> = Vec::new();
         let flush = |w: &mut Export4Writer<W>,
                      run: &mut Option<(u64, u64)>,
-                     n: &mut Exported|
+                     n: &mut Exported,
+                     void_runs: &mut Vec<(u64, u64)>|
          -> Result<(), String> {
             if let Some((start, len)) = run.take() {
                 let end = start + len - 1;
+                void_runs.push((start, end));
                 let chain_after: Chain = t.chain_known(col, &d.id, end)?.ok_or_else(|| {
                     format!(
                         "gen4 export: {}:{end} ends a void run without a chain value",
@@ -145,7 +155,7 @@ fn export_in_tx<W: Write>(t: &Truth<'_>, col: i64, out: W) -> Result<(W, Exporte
                 Ok(())
             }
             SlotBody::Op(op) => {
-                flush(&mut w, &mut run, &mut n)?;
+                flush(&mut w, &mut run, &mut n, &mut void_runs)?;
                 w.item(&ExportItem::NativeOp(op))?;
                 n.ops += 1;
                 Ok(())
@@ -155,8 +165,39 @@ fn export_in_tx<W: Write>(t: &Truth<'_>, col: i64, out: W) -> Result<(W, Exporte
                 d.id, e.id.seq
             )),
         })?;
-        flush(&mut w, &mut run, &mut n)?;
+        flush(&mut w, &mut run, &mut n, &mut void_runs)?;
         w.item(&ExportItem::NativeTail(t.chain_at(col, &d.id, d.last)?))?;
+        // 转发材料（流的第 3 版）：作者签名版本全带；剔除记录只带落在这条日志空洞上的。空洞与剔除记录都按 seq 升序，
+        // 双指针前进。
+        let versions = t.author_versions_of(col, &d.id)?;
+        let mut run_at = 0usize;
+        let stubs: Vec<_> = t
+            .stubs_of(col, &d.id)?
+            .into_iter()
+            .filter(|s| {
+                let seq = s.id().seq;
+                while void_runs.get(run_at).is_some_and(|(_, b)| *b < seq) {
+                    run_at += 1;
+                }
+                void_runs.get(run_at).is_some_and(|(a, _)| *a <= seq)
+            })
+            .collect();
+        w.item(&ExportItem::NativeRelay {
+            versions: versions.len() as u64,
+            stubs: stubs.len() as u64,
+        })?;
+        for v in versions {
+            w.item(&ExportItem::AuthorVersion {
+                header: v.header,
+                sig: v.sig,
+                voids: v.voids,
+            })?;
+            n.relay_versions += 1;
+        }
+        for s in stubs {
+            w.item(&ExportItem::Stub(s))?;
+            n.relay_stubs += 1;
+        }
         n.native_logs += 1;
     }
 

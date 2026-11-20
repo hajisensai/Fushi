@@ -67,9 +67,12 @@ use rusqlite::Connection;
 /// [SYNC]，`cmd/sync_relay.rs`；没有显式索引，[PLANNER_STATS] 不变；40020 预分配给同批别的 PR）；第五波 G9 身份收尾起
 /// `40023`（实体归属闸 `cmd/writes_owner.rs` 按 ID 跨集合查：`ent_ix` 的 `ent_id`、`alias_ix` 的 `alias_canon_any`、
 /// 缓存层 `cards` 的 `cards_id` 三个索引；40022 预分配给同批别的 PR）；第五波 K2 根治起 `40024`（重切的材料
-/// `relay_auth` / `relay_stubs`，[SYNC]，`sync_state.rs`；主键点查与主键前缀，没有显式索引，[PLANNER_STATS] 不变）。
+/// `relay_auth` / `relay_stubs`，[SYNC]，`sync_state.rs`；主键点查与主键前缀，没有显式索引，[PLANNER_STATS] 不变）；
+/// 第六波转发收尾起 `40026`（重切件的停放 `relay_park`，[SYNC]，`cmd/sync_park.rs`：读者记下一个位置上的重切件在等
+/// 哪条 Purge / 哪台设备的信任变化，只在那件事发生时再拉；主键点查与主键前缀，没有显式索引，[PLANNER_STATS] 不变；
+/// 40025 分给同批别的 PR）。
 /// 整批推送前每个改表的 PR 各自用分到的号。
-pub const SCHEMA: i64 = 40_024;
+pub const SCHEMA: i64 = 40_026;
 
 /// 新代的号段从这里起：`schema` 小于它的都不是新代库（协议 3 的 1～29 与封存值 39999）。
 pub const GEN_FLOOR: i64 = 40_000;
@@ -323,6 +326,9 @@ CREATE TABLE IF NOT EXISTS loc_state (
 /// - `relay_stubs`（同上）：被挖掉的别的设备的操作的剔除记录（`gen4/recut.rs` `Stub` 的独立编码：信封、载荷哈希、
 ///   清除目标、清掉它的 Purge），按操作主键 `k`。本机清除别人的操作时（`truth.rs` `advance_purge`）与收重切件落下别人
 ///   挖掉的那些时写；重切要它把被挖掉的那一项照样算进作者签名的摘要与链里。
+/// - `relay_park`（第六波起）：一个位置上收不了的重切件（`FRX4`）在等什么——等一条本机还没有的 Purge（`wait` /
+///   `wait_seq` > 0）或一台设备的信任状态变化（`wait_seq` = 0，`trust` = 停放时的状态，0 = 可信）；按 (集合, 位置,
+///   作者, 文件名) 一行，`last` = 件的区间末尾。`plan` 对被转发来的 head 只在等的事发生之后才再拉这一件（`cmd/sync_park.rs`）。
 pub(crate) const SYNC: &str = "
 CREATE TABLE IF NOT EXISTS loc_heads (
   col INTEGER NOT NULL,
@@ -374,6 +380,17 @@ CREATE TABLE IF NOT EXISTS relay_stubs (
   k INTEGER PRIMARY KEY,
   stub BLOB NOT NULL
 );
+CREATE TABLE IF NOT EXISTS relay_park (
+  col INTEGER NOT NULL,
+  loc_key TEXT NOT NULL,
+  device BLOB NOT NULL,
+  name TEXT NOT NULL,
+  last INTEGER NOT NULL,
+  wait BLOB NOT NULL,
+  wait_seq INTEGER NOT NULL,
+  trust INTEGER NOT NULL,
+  PRIMARY KEY (col, loc_key, device, name)
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS oldroot_fp (
   col INTEGER NOT NULL,
   loc_key TEXT NOT NULL,
@@ -1111,7 +1128,7 @@ mod tests {
                 .collect::<Result<_, _>>()
                 .unwrap()
         };
-        let want: [(&str, &[&str]); 18] = [
+        let want: [(&str, &[&str]); 19] = [
             (
                 "collections",
                 &[
@@ -1289,6 +1306,19 @@ mod tests {
             ),
             ("relay_stubs", &["k INTEGER PK1", "stub BLOB NN"]),
             (
+                "relay_park",
+                &[
+                    "col INTEGER NN PK1",
+                    "loc_key TEXT NN PK2",
+                    "device BLOB NN PK3",
+                    "name TEXT NN PK4",
+                    "last INTEGER NN",
+                    "wait BLOB NN",
+                    "wait_seq INTEGER NN",
+                    "trust INTEGER NN",
+                ],
+            ),
+            (
                 "oldroot_fp",
                 &[
                     "col INTEGER NN PK1",
@@ -1316,6 +1346,7 @@ mod tests {
             "op_wait",
             "relay_out",
             "relay_auth",
+            "relay_park",
             "oldroot_fp",
         ] {
             let sql: String = conn

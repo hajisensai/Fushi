@@ -42,10 +42,12 @@ use super::ingest::{Settle, ingest_settle};
 use super::legacy::{self, Placement};
 use super::legacy_export::{for_each_v1, v1_collection};
 use super::schema::sql;
+use super::sync_state::AuthorVersion;
 use super::truth::{DEV_HERITAGE, DEV_NATIVE, Peer, PeerPut, Put, Truth};
 use crate::gen4::export::{Export4Reader, ExportHeader, ExportItem, ExportKind, sniff};
 use crate::gen4::heritage::{Fp, HeritageSlot, SlotBody, fingerprint};
 use crate::gen4::op::chain_next4;
+use crate::gen4::recut::Stub;
 use crate::gen4::segment::{NativeHeader, NativeItem};
 use crate::gen4::translate::{T_VERSION, translate};
 use crate::store::sync2::collection_of;
@@ -400,6 +402,13 @@ pub struct ImportedOps {
     pub void_marks: u64,
     /// 第一次记下的设备公钥。
     pub peers: u64,
+    /// 记下的转发材料（流的第 3 版）：作者签名版本（含换成空洞更多的那份）与剔除记录。本机状态，不算「改了什么」
+    /// （[ImportedOps::unchanged]）。
+    pub relay_versions: u64,
+    pub relay_stubs: u64,
+    /// 没记的转发材料（第六波安全复核）：作者公钥本机不知道 / 作者签名验不过 / 不属于所在那条日志的作者签名版本，
+    /// 与没有任何验过的版本担保的剔除记录。文件不可信，这些只计数、不落库。
+    pub relay_skipped: u64,
     /// 收尾时派生层的收法统计。
     pub settled: Settled,
 }
@@ -502,6 +511,11 @@ pub fn import_ops_from<R: Read>(
         let forks = known_forks(t, col)?;
         let mut out = ImportedOps::default();
         let mut native: Option<NativeRun> = None;
+        // 链尾之后的转发材料属于哪台设备（流的第 3 版；刚写完的那条原生日志）。
+        let mut relay_of: Option<Id> = None;
+        // 这条日志的转发材料先攒着，整条读完（下一条日志开始 / 流读完）再验签落库（[land_relay]）：剔除记录排在作者
+        // 签名版本后面，验版本要用到它们。
+        let mut relay = RelayBuf::default();
         // 当前承袭日志：(设备, 来源集合, 这条日志的记号)。
         let mut heritage: Option<(Id, Id, Vec<(u64, Chain)>)> = None;
         let finish_heritage = |h: &mut Option<(Id, Id, Vec<(u64, Chain)>)>,
@@ -516,10 +530,7 @@ pub fn import_ops_from<R: Read>(
             }
             Ok(())
         };
-        while let Some(item) = reader
-            .next_item()
-            .map_err(|e| format!("gen4 import: corrupt export ({e})"))?
-        {
+        while let Some(item) = reader.next_item().map_err(|e| stream_refused(&e))? {
             match item {
                 ExportItem::NativeLog {
                     device,
@@ -527,6 +538,7 @@ pub fn import_ops_from<R: Read>(
                     count: _,
                 } => {
                     finish_heritage(&mut heritage, &mut out)?;
+                    land_relay(t, col, me, relay_of.take(), &mut relay, &mut out)?;
                     if let Some((Some(kind), _)) = kinds.get(&device) {
                         if *kind != DEV_NATIVE {
                             return Err(format!(
@@ -606,11 +618,26 @@ pub fn import_ops_from<R: Read>(
                     run.next = end + 1;
                     run.chain = chain_after;
                 }
-                ExportItem::NativeTail(_) => native = None,
+                ExportItem::NativeTail(_) => {
+                    land_relay(t, col, me, relay_of.take(), &mut relay, &mut out)?;
+                    relay_of = native.take().map(|r| r.device);
+                }
+                ExportItem::NativeRelay { .. } => {}
+                ExportItem::AuthorVersion { header, sig, voids } => {
+                    relay_of.ok_or("gen4 import: author version outside a native log")?;
+                    relay
+                        .versions
+                        .push(AuthorVersion { header, sig, voids });
+                }
+                ExportItem::Stub(stub) => {
+                    relay_of.ok_or("gen4 import: stub outside a native log")?;
+                    relay.stubs.push(stub);
+                }
                 ExportItem::HeritageLog {
                     source, device, ..
                 } => {
                     finish_heritage(&mut heritage, &mut out)?;
+                    land_relay(t, col, me, relay_of.take(), &mut relay, &mut out)?;
                     match kinds.get(&device) {
                         Some((Some(kind), _)) if *kind != DEV_HERITAGE => {
                             return Err(format!(
@@ -642,9 +669,95 @@ pub fn import_ops_from<R: Read>(
             }
         }
         finish_heritage(&mut heritage, &mut out)?;
+        land_relay(t, col, me, relay_of.take(), &mut relay, &mut out)?;
         out.settled = settle_imported(t, col)?;
         Ok(out)
     })
+}
+
+/// 一条原生日志链尾之后的转发材料（流的第 3 版），整条读完再交 [land_relay]。
+#[derive(Default)]
+struct RelayBuf {
+    versions: Vec<AuthorVersion>,
+    stubs: Vec<Stub>,
+}
+
+/// 落一条原生日志（作者 [device]）的转发材料。文件不可信（第六波安全复核），所以：
+///
+/// - 作者签名版本：段头的作者必须是这条日志的作者；拿本机记着的这位作者的公钥（`peers`，导入流里同一设备撞上另一把
+///   公钥时整笔已经拒了）、本机日志（这条日志此时已灌完）与剔除记录拼出全部项，**作者签名验得过才记**
+///   （[Truth::vouch_author_version]）；记的时候照旧只换成空洞更多的那份（[Truth::note_author_version]）——验过的
+///   才有资格替换本机已有的行，没验过的一律不碰本机。
+/// - 剔除记录：属于这位作者、本机这一格是空洞、**被某个验过的版本的作者签名担保**（拼项时用到了它，即它的信封、载荷
+///   哈希与清除目标正是作者签过的那条）才记，而且**本机已有的不换**（[Truth::put_stub_if_absent]；拼项时本机已有的
+///   优先，文件里那条与本机不同就担保不了）。
+/// - 本机自己的日志不记（收段同口径，`receive.rs`）。
+///
+/// 没记的计入 [ImportedOps::relay_skipped]，不报错（材料只是本机以后替作者重切用的缓存，缺了重切退回「缺」）。
+fn land_relay(
+    t: &Truth<'_>,
+    col: i64,
+    me: Option<(Id, [u8; 32])>,
+    device: Option<Id>,
+    buf: &mut RelayBuf,
+    out: &mut ImportedOps,
+) -> Result<(), String> {
+    let RelayBuf { versions, stubs } = std::mem::take(buf);
+    let Some(device) = device else {
+        return Ok(());
+    };
+    if me.is_some_and(|(m, _)| m == device) {
+        return Ok(());
+    }
+    // 候选剔除记录：这位作者的、本机这一格是空洞的；同一 seq 只认文件里的第一条。本机已经有这一格的剔除记录：
+    // 不动（不算跳过，再导一遍同一份文件不报跳过）。
+    let mut extra: BTreeMap<u64, Stub> = BTreeMap::new();
+    for s in stubs {
+        let id = s.id();
+        if id.device == device && t.stub_at(col, &device, id.seq)?.is_some() {
+            continue;
+        }
+        if id.device != device
+            || !t.entry(col, &id)?.is_some_and(|e| e.op().is_none())
+            || extra.contains_key(&id.seq)
+        {
+            out.relay_skipped += 1;
+            continue;
+        }
+        extra.insert(id.seq, s);
+    }
+    let mut vouched: BTreeSet<u64> = BTreeSet::new();
+    for v in versions {
+        if v.header.device != device {
+            out.relay_skipped += 1;
+            continue;
+        }
+        match t.vouch_author_version(col, &v, &extra)? {
+            Some(used) => {
+                vouched.extend(used);
+                t.note_author_version(col, &v)?;
+                out.relay_versions += 1;
+            }
+            None => out.relay_skipped += 1,
+        }
+    }
+    for (seq, s) in extra {
+        if !vouched.contains(&seq) {
+            out.relay_skipped += 1;
+        } else if t.put_stub_if_absent(col, &s)? {
+            out.relay_stubs += 1;
+        }
+    }
+    Ok(())
+}
+
+/// 读流时的拒收理由：一条操作超过载荷上限（[crate::gen4::op::ERR_OP_TOO_LARGE]）单独说清楚（文件本身没坏，是这一条
+/// 太大，Dart 导入页按它给专门的提示），其余按坏流报。两种都是整笔回滚、什么都没导入。
+fn stream_refused(e: &str) -> String {
+    match e.find(crate::gen4::op::ERR_OP_TOO_LARGE) {
+        Some(at) => format!("gen4 import: {}; nothing was imported", &e[at..]),
+        None => format!("gen4 import: corrupt export ({e})"),
+    }
 }
 
 /// 灌入的收尾：从真相整个重建派生层（[Settle::Rebuild]），再把派生层判成「已清除」的操作在真相层落成空洞（同
@@ -680,7 +793,7 @@ pub fn check_ops_stream(bytes: &[u8]) -> Result<ExportHeader, String> {
     let (mut reader, header) = open_ops_stream(bytes)?;
     while reader
         .next_item()
-        .map_err(|e| format!("gen4 import: corrupt export ({e})"))?
+        .map_err(|e| stream_refused(&e))?
         .is_some()
     {}
     Ok(header)
@@ -759,10 +872,7 @@ pub fn own_fork_point<R: Read>(
     let (mut reader, header) = opened;
     let mut scan = ForkScan::new(t, col)?;
     let mut mine: Option<ForkChunk> = None;
-    while let Some(item) = reader
-        .next_item()
-        .map_err(|e| format!("gen4 import: corrupt export ({e})"))?
-    {
+    while let Some(item) = reader.next_item().map_err(|e| stream_refused(&e))? {
         match item {
             ExportItem::NativeLog { device, .. } if device == me.device => {
                 mine = Some(ForkChunk::new());

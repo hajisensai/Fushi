@@ -1910,10 +1910,15 @@ class SrsDbStore implements SrsSync2Host {
   /// 回包 `rest` = 交完了的段数），每个事务各进一次写锁——两个事务之间排着的作答先写，复习不被一大批收段卡住。中途
   /// 停下的那一段下一个事务原样再交，已落的部分内核按本机已有跳过；收尾从等待缓冲投递同样按片（回包 `drainMore` 时
   /// 不带段再收）。各片的计数合成一份回包。
+  ///
+  /// 交回（第六波，回包 `requeue`）：一片被预算截断时，交完的部分里还在等同一批里 Purge 的重切件由内核点名交回
+  /// （下标相对这一片）——接在剩下的段后面一起交下一片（等的 Purge 可能就在剩下的段里），不算没收。[location] 原样
+  /// 带给内核（重切件的停放按位置记）。
   @override
   Future<Map<String, Object?>> sync2IngestBatch(
     List<Uint8List> segments, {
     String? keyHex,
+    String? location,
   }) async {
     final Map<String, Object?> merged = <String, Object?>{};
     await bulkWrites(() async {
@@ -1923,10 +1928,16 @@ class SrsDbStore implements SrsSync2Host {
           'op': 'ingest',
           'key': keyHex,
           'maxItems': kSrsSync2IngestSliceItems,
+          'location': ?location,
         }, rest);
         _mergeIngestSlice(merged, r);
         final int done = (r['rest'] as int?) ?? rest.length;
         final int spent = (r['spent'] as int?) ?? 0;
+        final List<Uint8List> back = srsIngestRequeued(rest, r['requeue']);
+        if (done >= rest.length && back.isNotEmpty) {
+          // 内核只在截断时交回；整片交完还交回 = 契约坏了，不原地打转。
+          throw StateError('sync2 ingest requeued without truncating: $r');
+        }
         if (done >= rest.length) {
           // 段都交完了，但收尾投等待缓冲时这一片的预算用完、还有接得上的（`drainMore`）：不带段再收一片接着投。
           // 投递片必有进展（内核只在确有一项接得上却没投时才报 drainMore）；没有就是契约坏了。
@@ -1942,10 +1953,26 @@ class SrsDbStore implements SrsSync2Host {
           // `landed` 为 0，那也是进展。交完的段与新工作都是 0 = 契约坏了，不原地打转。
           throw StateError('sync2 ingest slice made no progress: $r');
         }
-        rest = rest.sublist(done);
+        rest = <Uint8List>[...rest.sublist(done), ...back];
       }
     });
     return merged;
+  }
+
+  /// 一片收段回包里交回的段（`requeue` = 相对 [slice] 的下标，第六波）：下标越界 / 不是整数 = 契约坏了，报错。
+  @visibleForTesting
+  static List<Uint8List> srsIngestRequeued(
+    List<Uint8List> slice,
+    Object? requeue,
+  ) {
+    if (requeue == null) return const <Uint8List>[];
+    return <Uint8List>[
+      for (final Object? i in requeue as List<Object?>)
+        if (i is int && i >= 0 && i < slice.length)
+          slice[i]
+        else
+          throw StateError('sync2 ingest requeue index out of range: $i'),
+    ];
   }
 
   /// 收段每个事务最多做的新工作（落进日志 / 新进等待缓冲的项）。取值：内核测试
@@ -1983,6 +2010,8 @@ class SrsDbStore implements SrsSync2Host {
         ];
       } else if (e.key == 'fork') {
         merged['fork'] = merged['fork'] == true || e.value == true;
+      } else if (e.key == 'requeue') {
+        // 片内的下标，片与片之间没有意义（[sync2IngestBatch] 已接回下一片）。
       } else {
         merged[e.key] = e.value;
       }

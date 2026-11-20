@@ -364,7 +364,14 @@ pub(super) fn round(d: &Dev, loc: &mut Loc, location: &str, now: i64, o: Opts<'_
     }
     let mut fork = plan["finishPending"] == json!(true);
     if !fetched.is_empty() {
-        let (v, _) = cmd(d.h, "ingest", now, json!({"key": o.key}), &fetched);
+        // 同 Dart：带上读的是哪个位置（重切件的停放按位置记，`cmd/sync_park.rs`）。
+        let (v, _) = cmd(
+            d.h,
+            "ingest",
+            now,
+            json!({"key": o.key, "location": location}),
+            &fetched,
+        );
         fork |= v["fork"] == json!(true);
         out.ingest.push(v);
     }
@@ -849,6 +856,71 @@ fn small_segments_and_batches_resume_and_converge() {
     assert_eq!(b.field(N1), a.field(N1));
     round(&a, &mut loc, "loc", T1 + 102, o);
     assert_eq!(a.derived(), b.derived());
+}
+
+/// 发件的切段目标（`segBytes`）夹在上限（[SEGMENT_TARGET_BYTES]）以内：调用方给得再大，切出的段也按上限切（读侧
+/// 按 `MAX_BODY_RAW` 拒解压后过大的段，写者不能往上放）。测试钩子把上限调到 300 字节，不造 4 MB 的日志；同样的
+/// 日志不设上限时一段就装下（对照），所以段数多于一说明是夹紧在起作用。
+#[test]
+fn outbox_clamps_the_segment_target_to_the_cap() {
+    let a = Dev::new("g6seg");
+    for i in 0..40 {
+        a.write(T1 + i, [N1, N2, N3][i as usize % 3], &format!("v{i}"));
+    }
+    let seg_files = |loc: &Loc| {
+        names_of(loc, &a.device())
+            .iter()
+            .filter(|n| n.starts_with("seg-"))
+            .count()
+    };
+    let huge = Opts {
+        seg_bytes: Some(u64::MAX / 2),
+        ..Opts::default()
+    };
+    // 对照：上限是默认值时，这点日志一段就装下。
+    let mut plain = Loc::new();
+    round(&a, &mut plain, "loc-a", T1 + 100, huge);
+    assert_eq!(seg_files(&plain), 1);
+    // 上限 300 字节：调用方给的 `segBytes` 再大也按 300 切。
+    super::sync::SEG_CAP_FOR_TEST.with(|c| c.set(Some(300)));
+    let mut capped = Loc::new();
+    round(&a, &mut capped, "loc-b", T1 + 101, huge);
+    super::sync::SEG_CAP_FOR_TEST.with(|c| c.set(None));
+    let small = Opts {
+        seg_bytes: Some(300),
+        ..Opts::default()
+    };
+    let mut explicit = Loc::new();
+    round(&a, &mut explicit, "loc-c", T1 + 102, small);
+    assert!(seg_files(&capped) >= 3, "{}", seg_files(&capped));
+    assert_eq!(seg_files(&capped), seg_files(&explicit));
+}
+
+/// 本机写入一条载荷超过 `MAX_OP_PAYLOAD` 的改动（字段里塞了 16 MiB 以上的内嵌内容）：写命令报一句看得懂的错
+/// （「一条改动太大」、大小、上限、什么都没存），不崩、不静默丢；什么都没落，之后的正常写入照常。
+#[test]
+fn a_write_over_the_payload_cap_is_refused_readably_and_nothing_lands() {
+    use crate::gen4::op::{ERR_OP_TOO_LARGE, MAX_OP_PAYLOAD};
+    let a = Dev::new("g6big");
+    a.write(T1 + 1, N1, "before");
+    let huge = "x".repeat(MAX_OP_PAYLOAD + 1);
+    let items = vec![json!({"e": edit("note", N1, "f/fa", json!(huge)), "note": N1})];
+    let blob = Value::Array(items).to_string().into_bytes();
+    drop(huge);
+    let e = raw(a.h, &g4req("apply", T1 + 2, json!({})), &[blob]).unwrap_err();
+    assert!(e.contains(ERR_OP_TOO_LARGE), "{}", &e[..e.len().min(300)]);
+    assert!(e.contains("16 MiB limit"), "{}", &e[..e.len().min(300)]);
+    assert!(
+        e.contains("nothing was saved"),
+        "{}",
+        &e[..e.len().min(300)]
+    );
+    assert_eq!(a.field(N1), Some(json!("before")));
+    // 历史里只有之前那一条（没多出半截写入）；之后的写入照常。
+    let hist = g4(a.h, "history", T1, json!({"kind": "note", "entity": N1}));
+    assert_eq!(hist.as_array().unwrap().len(), 1, "{hist}");
+    a.write(T1 + 3, N2, "after");
+    assert_eq!(a.field(N2), Some(json!("after")));
 }
 
 /// 位置上丢了一个已传的段（同步盘丢文件）：下一轮退水位重传，对端照样收齐。

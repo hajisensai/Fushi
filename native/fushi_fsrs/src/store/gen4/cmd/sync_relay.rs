@@ -34,6 +34,28 @@
 //!   另外只收本机信任的重切者签的件。本机没记下这一段的作者签名版本、或缺某条的剔除记录（例如从备份还原的库）时重切
 //!   不出来，这一段退回「不转发」（`incomplete`），等作者自己重切。
 //!
+//! # 重切材料的回收（第六波）
+//!
+//! 重切材料（`relay_auth` 作者签名版本、`relay_stubs` 剔除记录，`sync_state.rs`）只在本机替作者**重切**一段时用，
+//! 而重切只发生在两处：[relay_outbox] 按记下的作者**最新** head 的段清单（`h.segs`）补位置缺的段，与
+//! `Truth::relay_purged` 把转发缓存（`relay_segs`）里的件原地换成重切件。哪个位置缺什么都只从最新 head 的清单算
+//! （`present_at` 只用来跳过已有的），所以「哪些位置还需要」的判据落在区间上——作者 [device] 的一个区间
+//! `[first, last]` 还需要材料，当且仅当：
+//!
+//! 1. 本机还没记下它的 head（不知道它会列哪些区间，全留；不受信 / 待确认的作者 [note_head] 不记，所以也全留，确认
+//!    之后照样能转发）；或
+//! 2. 记下的最新 head 列着这个区间（链尾标签不论：作者清除之后同区间重切只换标签）；或
+//! 3. 转发缓存里还存着这个区间的件（原地重切要它）。
+//!
+//! 不满足的（作者重切 / 合并之后旧区间、缓存里的件也已删掉）就是哪个位置都不会再要的：作者 head 只进不退，旧
+//! 区间不会再出现在它的清单里。剔除记录跟着**还需要的区间**走（不是跟着本机已存的版本走）：seq 落在某个还需要的
+//! 区间里就留，只有那个区间本机存着作者签名版本、且这个 seq 在它作者签的空洞里时才不算（重切时作者空洞原样照搬，
+//! 用不着剔除记录）。还需要、但本机还没收到作者签名版本的区间（作者刚合并 / 重切，[note_head] 在收段之前就记下了
+//! 新 head）整段留：版本随后到时要靠这些剔除记录拼本机清除过的格；本机自己清除时写下的剔除记录删了就再也生不
+//! 出来。记下的 head 换成更新的一份（[note_head]）、或 [prune]
+//! 删掉了缓存里的件时回收（[reclaim_material]）；只按这位作者的主键前缀 / 区间删，不扫别的作者。
+//! 判据不看位置数：只同步一个位置时 [relay_outbox] 不转发，但之后加了第二个位置要转发的仍是最新清单里的区间。
+//!
 //! 本机在同步着 ≥ 2 个位置之前就收过的段当时没留原文：`plan` 读到作者 head 时把「本机早有、没留原文、别的位置缺」的
 //! 段再要一次（[wanted_for_relay]），收段时按本机已有跳过、只留原文，下一轮就能转发。转发时缺的段本机还凑不齐原文的
 //! 作者这一轮整台跳过（回包 `incomplete`），不发半截。
@@ -207,7 +229,74 @@ pub(crate) fn note_head(t: &Truth<'_>, col: i64, h: &Head4, bytes: &[u8]) -> Res
     let Ok(text) = std::str::from_utf8(bytes) else {
         return Ok(());
     };
-    meta_set(t, &rhead_key(col, &h.device), text)
+    meta_set(t, &rhead_key(col, &h.device), text)?;
+    // 清单变了：旧区间的重切材料可能已经哪个位置都用不着了（文件头「重切材料的回收」）。
+    reclaim_material(t, col, &h.device, Some(h))?;
+    Ok(())
+}
+
+/// 回收作者 [device] 哪个位置都不会再要的重切材料（文件头「重切材料的回收」的判据）。[head] = 记下的最新 head（None =
+/// 还没记过，全留）。返回删掉的 (作者签名版本数, 剔除记录数)。
+pub(crate) fn reclaim_material(
+    t: &Truth<'_>,
+    col: i64,
+    device: &Id,
+    head: Option<&Head4>,
+) -> Result<(u64, u64), String> {
+    let Some(h) = head else {
+        return Ok((0, 0));
+    };
+    let mut needed: BTreeSet<(u64, u64)> = h.segs.iter().map(|(a, b, _)| (*a, *b)).collect();
+    for (_, first, last, _) in relay_rows(t, col, device)? {
+        needed.insert((first as u64, last as u64));
+    }
+    let mut dropped_versions = 0u64;
+    // 还需要的区间各自的作者签名版本（本机已存的）；其余版本删掉。
+    let mut voids_of: BTreeMap<(u64, u64), Vec<(u64, u64)>> = BTreeMap::new();
+    for v in t.author_versions_of(col, device)? {
+        let range = (v.header.first, v.header.last);
+        if !needed.contains(&range) {
+            t.drop_author_version(col, device, range.0, range.1)?;
+            dropped_versions += 1;
+            continue;
+        }
+        voids_of.insert(range, v.voids.iter().map(|(s, c, _)| (*s, *c)).collect());
+    }
+    // 剔除记录要留的 seq 区间：每个还需要的区间，本机有它的版本就去掉作者签的空洞，没有就整段。
+    let mut covered: Vec<(u64, u64)> = Vec::new();
+    for &(first, last) in &needed {
+        let Some(voids) = voids_of.get(&(first, last)) else {
+            covered.push((first, last));
+            continue;
+        };
+        let mut at = first;
+        for &(start, count) in voids {
+            if start > at {
+                covered.push((at, start - 1));
+            }
+            at = at.max(start.saturating_add(count));
+        }
+        if at <= last {
+            covered.push((at, last));
+        }
+    }
+    let dropped_stubs = t.keep_stubs_within(col, device, &covered)?;
+    Ok((dropped_versions, dropped_stubs))
+}
+
+/// 作者 [device] 存着的可转发段（行号、first、last、tag；唯一约束的自动索引，前缀区间）。
+fn relay_rows(
+    t: &Truth<'_>,
+    col: i64,
+    device: &Id,
+) -> Result<Vec<(i64, i64, i64, String)>, String> {
+    let mut stmt = t.conn().prepare_cached(RELAY_LIST_SQL).map_err(sql)?;
+    let rows = stmt
+        .query_map(params![col, &device.0[..]], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })
+        .map_err(sql)?;
+    rows.collect::<rusqlite::Result<_>>().map_err(sql)
 }
 
 /// 收段时调：本机同步着 ≥ 2 个位置、作者可转发时，把这个已收下的原生段 / 中继件重新包成不封装的中继件（重切件照原样
@@ -640,15 +729,7 @@ pub(crate) fn wanted_for_relay(
 /// 删掉作者 [device] 的、每个位置都已有的可转发段：那个位置上作者的 head 覆盖到了段尾或引用了它，或本机已转发过去。
 /// 本机只剩 < 2 个位置时全部删（没有转发目标）。返回删了几份。
 pub(crate) fn prune(t: &Truth<'_>, col: i64, device: &Id) -> Result<u64, String> {
-    let rows: Vec<(i64, i64, i64, String)> = {
-        let mut stmt = t.conn().prepare_cached(RELAY_LIST_SQL).map_err(sql)?;
-        let rows = stmt
-            .query_map(params![col, &device.0[..]], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
-            })
-            .map_err(sql)?;
-        rows.collect::<rusqlite::Result<_>>().map_err(sql)?
-    };
+    let rows = relay_rows(t, col, device)?;
     if rows.is_empty() {
         return Ok(0);
     }
@@ -675,6 +756,10 @@ pub(crate) fn prune(t: &Truth<'_>, col: i64, device: &Id) -> Result<u64, String>
             })?;
             dropped += 1;
         }
+    }
+    if dropped > 0 {
+        // 缓存里的件删了：只为原地重切它而留的材料也可以回收了（文件头「重切材料的回收」第 3 条）。
+        reclaim_material(t, col, device, stored_head(t, col, device)?.as_ref())?;
     }
     Ok(dropped)
 }

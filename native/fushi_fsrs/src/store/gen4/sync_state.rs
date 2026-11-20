@@ -22,6 +22,8 @@
 //! 写入全经 [Truth] 的写入守卫（必须在事务里、会话没被毒化、缓存与库同一个版本），报错时调用方回滚并 reset，与真相层
 //! 同一个口径（`truth.rs`「会话与事务」）。集合号必须是绑着的集合，位置键不能是空文本。
 
+use std::collections::BTreeMap;
+
 use rusqlite::{OptionalExtension, params};
 
 use super::schema::sql;
@@ -76,6 +78,13 @@ fn voids_of(bytes: &[u8]) -> Result<Vec<(u64, u64, Chain)>, String> {
         return Err("gen4 store: trailing bytes in author version voids".to_owned());
     }
     Ok(out)
+}
+
+/// [Truth::author_items] 拼出的项：全部项、其中剔除项几条、用到的外来剔除记录（seq）。
+struct AuthorItems {
+    items: Vec<RecutItem>,
+    stubs: usize,
+    extra_used: Vec<u64>,
 }
 
 /// 从本机日志重切出来、还没签的一段（[Truth::recut_from_log]）：作者签的段头、作者签名与全部项（已核对作者签名）。
@@ -203,6 +212,17 @@ pub(crate) const WAIT_RANGE_SQL: &str =
 /// 一个等待项的操作正文（[Truth::waiting_op]）：主键点查。
 pub(crate) const WAIT_OP_SQL: &str =
     "SELECT op FROM op_wait WHERE k = ?1 AND prev = ?2 AND chain = ?3";
+
+/// 一台作者的全部作者签名版本（[Truth::author_versions_of]）：主键前缀，按 (first, last)。
+pub(crate) const AUTH_OF_SQL: &str =
+    "SELECT head, sig, voids FROM relay_auth WHERE col = ?1 AND device = ?2 ORDER BY first, last";
+
+/// 一台设备的全部剔除记录（[Truth::stubs_of]）：主键区间，按 seq。
+pub(crate) const STUBS_OF_SQL: &str =
+    "SELECT stub FROM relay_stubs WHERE k BETWEEN ?1 AND ?2 ORDER BY k";
+
+/// 按主键区间删剔除记录（[Truth::keep_stubs_within]）。
+pub(crate) const STUBS_DROP_SQL: &str = "DELETE FROM relay_stubs WHERE k BETWEEN ?1 AND ?2";
 
 /// 一台设备的等待项数（[Truth::waiting_count]）。
 pub(crate) const WAIT_COUNT_SQL: &str = "SELECT COUNT(*) FROM op_wait WHERE k BETWEEN ?1 AND ?2";
@@ -359,6 +379,134 @@ impl<'c> Truth<'c> {
         Ok((stub.id() == id).then_some(stub))
     }
 
+    /// 记下的作者 [device] 的全部作者签名版本，按 (first, last) 升序（主键前缀；导出与回收用）。
+    pub(crate) fn author_versions_of(
+        &self,
+        col: i64,
+        device: &Id,
+    ) -> Result<Vec<AuthorVersion>, String> {
+        let rows: Vec<(Vec<u8>, Vec<u8>, Vec<u8>)> = {
+            let mut stmt = self.conn().prepare_cached(AUTH_OF_SQL).map_err(sql)?;
+            let rows = stmt
+                .query_map(params![col, &device.0[..]], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                })
+                .map_err(sql)?;
+            rows.collect::<rusqlite::Result<_>>().map_err(sql)?
+        };
+        rows.into_iter()
+            .map(|(head, sig, voids)| {
+                let mut r = Reader::new(&head);
+                let header = NativeHeader::read(&mut r)
+                    .map_err(|e| format!("gen4 store: bad author version head: {}", e.0))?;
+                Ok(AuthorVersion {
+                    header,
+                    sig: sig
+                        .try_into()
+                        .map_err(|_| "gen4 store: bad author version sig".to_owned())?,
+                    voids: voids_of(&voids)?,
+                })
+            })
+            .collect()
+    }
+
+    /// 记下的设备 [device] 的全部剔除记录，按 seq 升序（`relay_stubs` 主键区间；导出与回收用）。设备在本集合里没有
+    /// 设备行 = 空。
+    pub(crate) fn stubs_of(&self, col: i64, device: &Id) -> Result<Vec<Stub>, String> {
+        let Some(k) = self.key_of(
+            col,
+            &OpId {
+                device: *device,
+                seq: 1,
+            },
+        )?
+        else {
+            return Ok(Vec::new());
+        };
+        let (lo, hi) = super::schema::k_range(super::schema::k_dev(k));
+        let rows: Vec<Vec<u8>> = {
+            let mut stmt = self.conn().prepare_cached(STUBS_OF_SQL).map_err(sql)?;
+            let rows = stmt.query_map(params![lo, hi], |r| r.get(0)).map_err(sql)?;
+            rows.collect::<rusqlite::Result<_>>().map_err(sql)?
+        };
+        rows.iter()
+            .map(|b| Stub::decode(b).map_err(|e| format!("gen4 store: bad stub: {}", e.0)))
+            .collect()
+    }
+
+    /// 删掉作者 [device] 区间 `[first, last]` 的作者签名版本（`cmd/sync_relay.rs` `reclaim_material`：哪个位置都不会再
+    /// 要这一段的重切）。
+    pub(crate) fn drop_author_version(
+        &self,
+        col: i64,
+        device: &Id,
+        first: u64,
+        last: u64,
+    ) -> Result<(), String> {
+        self.write(|| {
+            self.conn()
+                .prepare_cached(
+                    "DELETE FROM relay_auth WHERE col = ?1 AND device = ?2 AND first = ?3 AND last = ?4",
+                )
+                .map_err(sql)?
+                .execute(params![
+                    col,
+                    &device.0[..],
+                    i64_of(first, "seq")?,
+                    i64_of(last, "seq")?
+                ])
+                .map_err(sql)?;
+            Ok(())
+        })
+    }
+
+    /// 设备 [device] 的剔除记录只留 seq 落在 [keep]（闭区间，可乱序、可重叠）里的，其余删掉；返回删了几条。按空白的
+    /// 主键区间整段删（语句数随区间数，不随记录数）。
+    pub(crate) fn keep_stubs_within(
+        &self,
+        col: i64,
+        device: &Id,
+        keep: &[(u64, u64)],
+    ) -> Result<u64, String> {
+        let Some(k) = self.key_of(
+            col,
+            &OpId {
+                device: *device,
+                seq: 1,
+            },
+        )?
+        else {
+            return Ok(0);
+        };
+        let (lo, hi) = super::schema::k_range(super::schema::k_dev(k));
+        let mut spans: Vec<(u64, u64)> = keep.iter().copied().filter(|(a, b)| a <= b).collect();
+        spans.sort_unstable();
+        // 要删的主键区间 = 设备区间减去要留的（合并重叠之后取空白）。
+        let mut gaps: Vec<(i64, i64)> = Vec::new();
+        let mut next = lo;
+        for (a, b) in spans {
+            let (ka, kb) = (
+                lo | i64_of(a, "seq")?.min(hi - lo),
+                lo | i64_of(b, "seq")?.min(hi - lo),
+            );
+            if ka > next {
+                gaps.push((next, ka - 1));
+            }
+            next = next.max(kb.saturating_add(1));
+        }
+        if next <= hi {
+            gaps.push((next, hi));
+        }
+        self.write(|| {
+            let mut n = 0u64;
+            let mut stmt = self.conn().prepare_cached(STUBS_DROP_SQL).map_err(sql)?;
+            for (a, b) in gaps {
+                n += stmt.execute(params![a, b]).map_err(sql)? as u64;
+            }
+            Ok(n)
+        })
+    }
+
     // ------------------------------------------------------------ loc_heads
 
     /// 位置 [loc] 上设备 [device] 最新的 head（没记过 = None）。
@@ -451,7 +599,7 @@ impl<'c> Truth<'c> {
         self.write(|| {
             self.sync_target(col, loc)?;
             let mut n = 0u64;
-            for table in ["loc_heads", "relay_out", "oldroot_fp"] {
+            for table in ["loc_heads", "relay_out", "relay_park", "oldroot_fp"] {
                 n += self
                     .conn()
                     .prepare_cached(&format!(
@@ -762,6 +910,34 @@ impl<'c> Truth<'c> {
         let Some(author) = self.device_key(col, device)? else {
             return Ok(None);
         };
+        let Some(built) = self.author_items(col, &v, &BTreeMap::new())? else {
+            return Ok(None);
+        };
+        if built.stubs == 0 || !author_signed(&v.header, &v.sig, &built.items, &author) {
+            return Ok(None);
+        }
+        Ok(Some(RecutParts {
+            header: v.header,
+            author_sig: v.sig,
+            items: built.items,
+            author,
+        }))
+    }
+
+    /// 作者签名版本 [v] 在本机日志上拼出的全部项：作者签的空洞原样照搬，其余每个 seq 本机要么有完整的操作（原样
+    /// 留下），要么有它的剔除记录——本机记着的（[Truth::put_stub]）优先，没有才用 [extra] 里的（导入流带来、还没落库
+    /// 的，`import.rs`；本机已有的剔除记录不被换掉）。日志盖不到这一段、某一格既没有操作也没有剔除记录、空洞越界
+    /// 都是 None。不验作者签名（调用方拿作者公钥 [author_signed] 核）。
+    fn author_items(
+        &self,
+        col: i64,
+        v: &AuthorVersion,
+        extra: &BTreeMap<u64, Stub>,
+    ) -> Result<Option<AuthorItems>, String> {
+        let (device, first, last) = (&v.header.device, v.header.first, v.header.last);
+        if first == 0 || last < first || self.last_of(col, device)? < last {
+            return Ok(None);
+        }
         let mut slots: Vec<Option<Op4>> = Vec::new();
         self.for_range(col, device, first, last, |e| {
             slots.push(e.op().cloned());
@@ -772,15 +948,18 @@ impl<'c> Truth<'c> {
                 "gen4 store: {device} log {first}..={last} is not contiguous"
             ));
         }
-        let mut items: Vec<RecutItem> = Vec::new();
-        let mut stubs = 0usize;
+        let mut out = AuthorItems {
+            items: Vec::new(),
+            stubs: 0,
+            extra_used: Vec::new(),
+        };
         let mut seq = first;
         while seq <= last {
             if let Some((_, count, chain)) = v.voids.iter().find(|(at, _, _)| *at == seq) {
                 if *count == 0 || seq + count - 1 > last {
                     return Ok(None);
                 }
-                items.push(RecutItem::Void {
+                out.items.push(RecutItem::Void {
                     count: *count,
                     chain_after: *chain,
                 });
@@ -788,26 +967,63 @@ impl<'c> Truth<'c> {
                 continue;
             }
             match &slots[(seq - first) as usize] {
-                Some(op) => items.push(RecutItem::Op(op.clone())),
-                None => match self.stub_at(col, device, seq)? {
-                    Some(s) => {
-                        items.push(RecutItem::Stub(s));
-                        stubs += 1;
-                    }
-                    None => return Ok(None),
-                },
+                Some(op) => out.items.push(RecutItem::Op(op.clone())),
+                None => {
+                    let stub = match self.stub_at(col, device, seq)? {
+                        Some(s) => s,
+                        None => match extra.get(&seq) {
+                            Some(s)
+                                if s.id()
+                                    == (OpId {
+                                        device: *device,
+                                        seq,
+                                    }) =>
+                            {
+                                out.extra_used.push(seq);
+                                s.clone()
+                            }
+                            _ => return Ok(None),
+                        },
+                    };
+                    out.items.push(RecutItem::Stub(stub));
+                    out.stubs += 1;
+                }
             }
             seq += 1;
         }
-        if stubs == 0 || !author_signed(&v.header, &v.sig, &items, &author) {
+        Ok(Some(out))
+    }
+
+    /// 导入流带来的作者签名版本 [v] 能不能记（`import.rs`，第六波安全复核）：本机知道这位作者的公钥（`peers`；导入
+    /// 撞上另一把公钥时整笔已经拒了），版本拼得出（[Truth::author_items]，剔除记录可用 [extra]），作者签名验得过。
+    /// 过了返回用到的 [extra] 里的那些 seq（这些剔除记录由此被作者签名担保），没过 None。
+    pub(crate) fn vouch_author_version(
+        &self,
+        col: i64,
+        v: &AuthorVersion,
+        extra: &BTreeMap<u64, Stub>,
+    ) -> Result<Option<Vec<u64>>, String> {
+        let Some(author) = self.device_key(col, &v.header.device)? else {
             return Ok(None);
-        }
-        Ok(Some(RecutParts {
-            header: v.header,
-            author_sig: v.sig,
-            items,
-            author,
-        }))
+        };
+        let Some(built) = self.author_items(col, v, extra)? else {
+            return Ok(None);
+        };
+        Ok(author_signed(&v.header, &v.sig, &built.items, &author).then_some(built.extra_used))
+    }
+
+    /// 只在本机还没有这条操作的剔除记录时记下 [stub]（导入用：文件里的不换掉本机已有的）；返回是否记了。
+    pub(crate) fn put_stub_if_absent(&self, col: i64, stub: &Stub) -> Result<bool, String> {
+        self.write(|| {
+            let k = self.key_for(col, &stub.id())?;
+            let n = self
+                .conn()
+                .prepare_cached("INSERT OR IGNORE INTO relay_stubs (k, stub) VALUES (?1, ?2)")
+                .map_err(sql)?
+                .execute(params![k, stub.encode()])
+                .map_err(sql)?;
+            Ok(n > 0)
+        })
     }
 
     /// 位置 [loc] 上待删的转发件。

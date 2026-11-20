@@ -120,6 +120,7 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
 import 'package:fushi/src/srs/srs_review_freshness.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 /// 评分按钮上的间隔文案：按界面语言给单位（文案照 Anki 答题按钮：英文 m / h / d /
 /// mo / y，中文 分钟 / 小时 / 天 / 个月 / 年），不再让「1m」与「11.1mo」混着读。
@@ -880,7 +881,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       if (mounted) bumpSrsLocalWrite(ref);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsReviewPage.$where', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }

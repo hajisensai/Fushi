@@ -13,7 +13,9 @@
 //!   （`transport.rs` `sync2_status` + `devices.rs` `status_extras`）同形：恒有 `device`、`self`、`applied`、`behind`、
 //!   `seenAt`、`name`、`frozen`、`warning`、`digestMismatch`、`gap`、`blocking`、`state`（**同步状态** ok / behind /
 //!   missing / upgrade / retired，不是信任）；还没信任的设备另带 `trust`（pending / rejected）、`trustSince`、
-//!   `heldDeletes`、`heldPurges`；按有没有数据带 `model` / `app` / `platform` / `protocol` / `hint`。`locations` 每行
+//!   `heldDeletes`、`heldPurges`；按有没有数据带 `model` / `app` / `platform` / `protocol` / `hint`；有重切件在等它的
+//!   带 `relayBlocked`（第六波，`cmd/sync_park.rs`：`[{location, author, reason, pieces}]`，`reason` = `purge` /
+//!   `pending` / `rejected`；这样的设备本机还没有日志也补一行，好让用户确认它）。`locations` 每行
 //!   `location`、`uploaded`、`headGen`、`lastOk`。测试 `status_keeps_the_protocol_3_shape` 钉顶层键，
 //!   `status_device_rows_match_protocol_3_key_for_key` 逐行钉设备行的键（含 Dart `SrsDeviceView.fromStatus` 读的）。
 //! - `trust` 的拒绝只对还没信任的设备（协议 3 `reject`）：已可信 / 从没见过的设备报 `trust: device is already trusted`，
@@ -323,6 +325,14 @@ pub fn status(t: &Truth<'_>, col: i64) -> Result<Value, String> {
         if !rows.iter().any(|(id, _)| *id == me.device) {
             rows.push((me.device, 0));
         }
+        // 停着的重切件（`cmd/sync_park.rs`）挂在等的那台设备一行上：它本机还没有日志（只读过 head 的重切者）也补一行，
+        // 不然用户在同步页上找不到要确认的设备。
+        let blocked = super::sync_park::blocked(t, col)?;
+        for b in &blocked {
+            if !rows.iter().any(|(id, _)| *id == b.wait) {
+                rows.push((b.wait, 0));
+            }
+        }
         // 扣着的删除 / 清除，按作者分开计数（冲突中心「待确认的设备」卡片的条数）。
         let (held_dels, held_purges) = {
             let ix = super::super::derive::Index::new(t, col);
@@ -436,6 +446,21 @@ pub fn status(t: &Truth<'_>, col: i64) -> Result<Value, String> {
                 m.insert("trustSince".into(), json!(since));
                 m.insert("heldDeletes".into(), json!(count_of(&held_dels, &d.id)));
                 m.insert("heldPurges".into(), json!(count_of(&held_purges, &d.id)));
+            }
+            let waits: Vec<Value> = blocked
+                .iter()
+                .filter(|b| b.wait == d.id)
+                .map(|b| {
+                    json!({
+                        "location": b.loc,
+                        "author": b.author.text(),
+                        "reason": b.reason,
+                        "pieces": b.pieces,
+                    })
+                })
+                .collect();
+            if !waits.is_empty() {
+                m.insert("relayBlocked".into(), Value::Array(waits));
             }
             devices.push(row);
         }

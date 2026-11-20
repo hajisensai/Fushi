@@ -107,6 +107,29 @@ pub const SALTS_MAX: usize = 1 << 16;
 /// 就拒，不为超限的载荷开窗口）。实测本机存量 51.7 万条协议 3 操作最大载荷 311 KiB，留五十倍余量。
 pub const MAX_OP_PAYLOAD: usize = 16 * 1024 * 1024;
 
+/// 一条操作的载荷超过 [MAX_OP_PAYLOAD] 时给用户看的报错的开头（[payload_within_cap]）。本机写入（`Truth::append_native`）
+/// 与 `.fushisrs` 导入（`export.rs` 的语法核对）报这一句，Dart 在 FFI 边界按它把错误类型化成 `SrsOpTooLargeException`
+/// （`packages/fushi_srs/lib/src/store/srs_core.dart` 的 `marker`，界面按类型给专门的本地化提示）；改它要同步改 Dart
+/// （`srs_core_test.dart` 核对两边一致）。
+pub const ERR_OP_TOO_LARGE: &str = "op too large";
+
+/// 载荷不超过 [MAX_OP_PAYLOAD]；超了给一句看得懂的报错（多大、上限多少、通常是什么造成的），以 [ERR_OP_TOO_LARGE]
+/// 开头。[native_allowed] 里同一条线只给静态短句（收段的坏件理由），面向用户的入口先过这里。
+pub fn payload_within_cap(op: &Op4) -> Result<(), String> {
+    let n = op.payload.len();
+    if n <= MAX_OP_PAYLOAD {
+        return Ok(());
+    }
+    Err(format!(
+        "{ERR_OP_TOO_LARGE}: change {}:{} is {n} bytes ({:.1} MiB), over the {} MiB limit for a single change \
+         (usually a field holding an embedded image or file; store it as a media file instead)",
+        op.id.device,
+        op.id.seq,
+        n as f64 / (1024.0 * 1024.0),
+        MAX_OP_PAYLOAD / (1024 * 1024)
+    ))
+}
+
 /// 一条协议 4 的操作。克隆是廉价的（载荷与上下文共享）。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Op4 {

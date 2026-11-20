@@ -42,6 +42,7 @@ import 'package:archive/archive_io.dart' hide ZLibDecoder;
 import 'package:crypto/crypto.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsOpTooLargeException;
 import 'package:path/path.dart' as p;
 
 const String kSrsFushiSrsExtension = 'fushisrs';
@@ -389,15 +390,25 @@ Future<Map<String, Object?>> _kernelImport(
       confirmed: confirmed,
     );
   } on Object catch (e) {
-    final String m = e.toString();
-    if (m.contains('belongs to another collection')) {
-      throw const FormatException('this .fushisrs belongs to another profile');
-    }
-    if (m.contains('gen4 import:')) {
-      throw FormatException('corrupt .fushisrs: $m');
-    }
-    rethrow;
+    final Object mapped = srsFushiSrsKernelError(e);
+    if (identical(mapped, e)) rethrow;
+    throw mapped;
   }
+}
+
+/// 内核导入（第 2 版流）拒收的错误 [e] 换成界面认得的 [FormatException]：另一个集合 → `another profile`；别的坏流 →
+/// `corrupt .fushisrs`。一条改动超过载荷上限的已在 FFI 边界类型化成 [SrsOpTooLargeException]（文件没坏，是那一条太大），
+/// 与认不出的一样原样交回（调用方 rethrow），导入页按类型给专门的提示。
+Object srsFushiSrsKernelError(Object e) {
+  if (e is SrsOpTooLargeException) return e;
+  final String m = e.toString();
+  if (m.contains('belongs to another collection')) {
+    return const FormatException('this .fushisrs belongs to another profile');
+  }
+  if (m.contains('gen4 import:')) {
+    return FormatException('corrupt .fushisrs: $m');
+  }
+  return e;
 }
 
 /// 发内核旧事件备份读入（[SrsDbStore.sync2LegacyEventsImport]）；坏事件 / 副本备不好的错误换成 [FormatException]。

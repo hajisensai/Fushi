@@ -47,6 +47,29 @@ Future<List<SrsFetchedBatch>> _collect(Stream<SrsFetchedBatch> s) => s.toList();
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
+  // 第六波：一片被预算截断时内核交回（`requeue`）的重切件按下标取回、接到下一片；坏下标是契约坏了，报错不猜。
+  test('收段交回的段按下标取回，坏下标报错', () {
+    final List<Uint8List> slice = <Uint8List>[
+      Uint8List.fromList(<int>[1]),
+      Uint8List.fromList(<int>[2]),
+      Uint8List.fromList(<int>[3]),
+    ];
+    expect(SrsDbStore.srsIngestRequeued(slice, null), isEmpty);
+    expect(SrsDbStore.srsIngestRequeued(slice, <Object?>[]), isEmpty);
+    expect(SrsDbStore.srsIngestRequeued(slice, <Object?>[0, 2]), <Uint8List>[
+      slice[0],
+      slice[2],
+    ]);
+    expect(
+      () => SrsDbStore.srsIngestRequeued(slice, <Object?>[3]),
+      throwsStateError,
+    );
+    expect(
+      () => SrsDbStore.srsIngestRequeued(slice, <Object?>['0']),
+      throwsStateError,
+    );
+  });
+
   group('srsFetchInBatches', () {
     test('大段提前切批：累计字节到预算就交出这一批', () async {
       final _Sized st = _Sized(<String, int?>{
@@ -718,9 +741,10 @@ class _CountingHost implements SrsSync2Host {
   Future<Map<String, Object?>> sync2IngestBatch(
     List<Uint8List> segments, {
     String? keyHex,
+    String? location,
   }) {
     ingestSizes.add(segments.length);
-    return inner.sync2IngestBatch(segments, keyHex: keyHex);
+    return inner.sync2IngestBatch(segments, keyHex: keyHex, location: location);
   }
 
   @override
@@ -796,6 +820,7 @@ class _ScriptedHost implements SrsSync2Host {
   Future<Map<String, Object?>> sync2IngestBatch(
     List<Uint8List> segments, {
     String? keyHex,
+    String? location,
   }) async {
     steps.add('batch');
     if (failBatch) throw StateError('ingest failed');

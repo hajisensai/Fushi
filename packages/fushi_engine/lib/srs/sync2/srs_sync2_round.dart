@@ -40,10 +40,13 @@ abstract interface class SrsSync2Host {
   Future<void> sync2IngestBegin();
 
   /// 收一批（内核 `ingest`，一个写事务：核对、按因果投递、派生层收尾），本机状态行的修订号随之推进。返回内核这一批
-  /// 的结果（`fork` = 这一批里本机身份的段与本机日志分叉了，记下了分叉点）。
+  /// 的结果（`fork` = 这一批里本机身份的段与本机日志分叉了，记下了分叉点）。[location] = 这一批是从哪个位置读的
+  /// （与 `plan` 的 `location` 同值）：内核据此把等 Purge / 等信任变化的重切件停在这个位置上，之后只在等的事发生时
+  /// 才再拉（内核 `cmd/sync_park.rs`）。
   Future<Map<String, Object?>> sync2IngestBatch(
     List<Uint8List> segments, {
     String? keyHex,
+    String? location,
   });
 
   /// 收尾（内核 `ingest_finish`）：记下过分叉点就换身份、分叉点之后的本机操作以新身份重签发；返回 `fork` 等。
@@ -751,12 +754,13 @@ Future<bool> srsSync2Pull({
   // `location`：内核记下这个位置上有谁的哪些段（别的位置缺、本机可以转发的，见步骤 3 之后的转发）。
   // `location`：内核记下这个位置上每台设备的 head（状态页的「已传到」）；`listing`：各设备目录的文件名（承袭段按
   // 文件名定区间）；`loc`：本位置的 loc 标记（本位置自写的 head 带 `seal` = 位置是加密的）。
+  final String planLocation = progressId == null
+      ? kSrs4NoLocation
+      : srsLocationOfProgressId(progressId);
   final Map<String, Object?> plan = (await host.sync2Command(
     <String, Object?>{
       'op': 'plan',
-      'location': progressId == null
-          ? kSrs4NoLocation
-          : srsLocationOfProgressId(progressId),
+      'location': planLocation,
       'now': nowMs(),
       'loc': ?loc,
       'listing': <String, List<String>>{
@@ -842,7 +846,13 @@ Future<bool> srsSync2Pull({
           )).sealed;
         }
         if (batch.segments.isNotEmpty) {
-          absorb(await host.sync2IngestBatch(batch.segments, keyHex: keyHex));
+          absorb(
+            await host.sync2IngestBatch(
+              batch.segments,
+              keyHex: keyHex,
+              location: planLocation,
+            ),
+          );
         }
         done += batch.covered;
         onFetchProgress?.call(done, wanted.length);
