@@ -949,6 +949,8 @@ class VideoPlayerController extends ChangeNotifier
   String? _discMenuError;
   String? _discLoadStage;
   BlurayJavaRuntimeManager? _discJavaRuntimeProbe;
+  // 本次 load 调用方已验证过的 BD-J 私有 Java 目录（见 load 的 verifiedBlurayJavaHome）。
+  String? _discVerifiedJavaHome;
 
   void _notifyDiscMenuChanged() => notifyListeners();
 
@@ -3460,6 +3462,9 @@ class VideoPlayerController extends ChangeNotifier
     BlurayRemoteTitle? remoteDiscTitle,
     // 流式原盘会话的盘源（与 [openBlurayMenu] 同时给；[mediaUri] 给它的设备串）。
     RemoteDiscMenuSource? remoteDisc,
+    // 原盘会话（[openBlurayMenu]）调用方在开盘前刚探测 / 安装并验证过的 BD-J 私有 Java
+    // 目录；给了就不再探测第二遍（见 [resolveBlurayJavaHomeForOpen]），null = 自己探测。
+    String? verifiedBlurayJavaHome,
     // EXlaIL2eKQ：可选外挂音轨（在线源扩展的 `Video.audioTracks`）。与
     // [externalAudioTrackUrl] 同一时机（play / 恢复 seek 之前）以 `audio-add ... auto`
     // 外挂，不强制选中：流自带原声时仍放原声，DASH 纯视频流由 mpv 自动选中外挂音频。
@@ -3502,6 +3507,7 @@ class VideoPlayerController extends ChangeNotifier
       if (loadToken != _loadToken) return;
     }
     _resetDiscMenu();
+    if (openBlurayMenu) _discVerifiedJavaHome = verifiedBlurayJavaHome;
     if (openBlurayMenu && remoteDisc != null) {
       // Remote disc: libbluray / libdvdnav read the host's share over HTTP; the
       // virtual root only tells titles apart, nothing reads from it.

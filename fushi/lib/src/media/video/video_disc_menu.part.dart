@@ -154,6 +154,7 @@ extension VideoDiscMenuController on VideoPlayerController {
   void _resetDiscMenu() {
     _discJavaRuntimeProbe?.cancel();
     _discJavaRuntimeProbe = null;
+    _discVerifiedJavaHome = null;
     _discRootPath = null;
     _discIsDvd = false;
     _discRemote = null;
@@ -260,15 +261,20 @@ extension VideoDiscMenuController on VideoPlayerController {
     String? javaHome;
     if (info.requiresJava) {
       _setDiscLoadStage('disc-java');
-      final BlurayJavaRuntimeManager manager = BlurayJavaRuntimeManager();
-      _discJavaRuntimeProbe = manager;
-      try {
-        javaHome = await manager.probeJavaHome();
-      } finally {
-        if (identical(_discJavaRuntimeProbe, manager)) {
-          _discJavaRuntimeProbe = null;
-        }
-      }
+      javaHome = await resolveBlurayJavaHomeForOpen(
+        verified: _discVerifiedJavaHome,
+        probe: () async {
+          final BlurayJavaRuntimeManager manager = BlurayJavaRuntimeManager();
+          _discJavaRuntimeProbe = manager;
+          try {
+            return await manager.probeJavaHome();
+          } finally {
+            if (identical(_discJavaRuntimeProbe, manager)) {
+              _discJavaRuntimeProbe = null;
+            }
+          }
+        },
+      );
     }
     if (!_isCurrentLoad(player, loadToken)) return;
     // libbluray decrypts menus, IG and titles itself through libaacs. Register
