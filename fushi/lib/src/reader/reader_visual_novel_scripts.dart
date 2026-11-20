@@ -878,6 +878,8 @@ window.fushiReader = {
   activeCueId: null,
   sentenceAudioCues: [],
   sentenceAudioCueMap: new Map(),
+  // cue id → 在源章节里按原文重定位后的 {start, len}（见 resolveSentenceAudioCueSpans）。
+  sentenceAudioCueSpans: new Map(),
   sentenceAudioCuesSignature: null,
   cueWrappers: new Map(),
   // BUG-3518 / BUG-3741：支持 CSS Highlight 的引擎上当前屏的句子不包裹，登记成 live Range
@@ -3171,12 +3173,15 @@ $sharedInitViewport
     this.notifyRestoreComplete();
     return true;
   },
+  // 变更判据只看下发的原始数据（id / 提示坐标 / 原文），不看重定位结果：重定位结果由这三者
+  // 加源章节唯一决定，而这里比较的是「新数据」与「旧数据」，新数据还没重定位。
   sentenceAudioCueSignature: function(cues) {
     var items = Array.isArray(cues) ? cues : [];
     return JSON.stringify(items.map((cue) => ({
       id: cue && cue.id ? String(cue.id) : '',
-      start: this.sentenceAudioCueStart(cue),
-      length: Math.max(0, Number(cue && cue.length) || 0)
+      start: Math.max(0, Number(cue && cue.start) || 0),
+      length: Math.max(0, Number(cue && cue.length) || 0),
+      text: cue && cue.text ? String(cue.text) : ''
     })));
   },
   sentenceAudioCueDataChanged: function(cues) {
@@ -3189,7 +3194,58 @@ $sharedInitViewport
       var cue = this.sentenceAudioCues[i];
       if (cue && cue.id) this.sentenceAudioCueMap.set(cue.id, cue);
     }
+    this.sentenceAudioCueSpans = this.resolveSentenceAudioCueSpans(this.sentenceAudioCues);
     this.sentenceAudioCuesSignature = this.sentenceAudioCueSignature(this.sentenceAudioCues);
+  },
+  // 与 Dart AudioTextNormalizer / 分页 shell 同口径：剥成可匹配字后值折叠（片假名→平假名等）。
+  foldNormalize: function(text) {
+    return window.fushiSentenceAudioRelocation.foldText(this.normalizeText(text));
+  },
+  // 源章节的归一化（已折叠）全文，与 contentStream 的 startMatchable 同一坐标：同一批文本
+  // 条目、同一个 isMatchableChar、UTF-16 码元计数（折叠 1:1 码元，长度不变）。
+  buildSentenceAudioNormText: function() {
+    var entries = this.contentStream ? this.contentStream.textEntries : [];
+    var relocation = window.fushiSentenceAudioRelocation;
+    var parts = [];
+    for (var e = 0; e < entries.length; e++) {
+      var text = entries[e].text || '';
+      var chunk = '';
+      var i = 0;
+      while (i < text.length) {
+        var cp = text.codePointAt(i);
+        var ch = String.fromCodePoint(cp);
+        if (this.isMatchableChar(ch)) chunk += String.fromCodePoint(relocation.foldCodePoint(cp));
+        i += ch.length;
+      }
+      parts.push(chunk);
+    }
+    return parts.join('');
+  },
+  // 下发的 start / length 只是 Dart 匹配器坐标系里的提示（BUG-060）。与分页 / 连续模式同一套
+  // 重定位（window.fushiSentenceAudioRelocation.resolveSpans）：用 cue 原文在**整章**源文本里
+  // 就近、单调地找真实位置。VN 的切屏归属、跨屏合并、当前句高亮、中键反查都经
+  // sentenceAudioCueStart / sentenceAudioCueEnd 读这里的结果——此前 VN 直接认提示坐标，提示
+  // 偏 3 个字整章每句高亮就全错，另两种模式仍对（测量组 m1 gap-readerjs2-8）。
+  // 内容流就是整章，文本不随切屏 / 迟到图片重切而变，所以每份 cue 数据只解析一次。
+  resolveSentenceAudioCueSpans: function(cues) {
+    var spans = new Map();
+    if (!Array.isArray(cues) || !cues.length || !this.contentStream) return spans;
+    var hints = [];
+    for (var i = 0; i < cues.length; i++) {
+      var cue = cues[i];
+      if (!cue || !cue.id) continue;
+      hints.push({
+        id: cue.id,
+        needle: this.foldNormalize(cue.text || ''),
+        hint: Number.isFinite(Number(cue.start)) ? Math.max(0, Number(cue.start)) : null,
+        length: Math.max(0, Number(cue.length) || 0)
+      });
+    }
+    var resolved = window.fushiSentenceAudioRelocation.resolveSpans(this.buildSentenceAudioNormText(), hints);
+    for (var r = 0; r < resolved.length; r++) {
+      spans.set(resolved[r].id, { start: resolved[r].start, len: Math.max(0, resolved[r].len) });
+    }
+    return spans;
   },
   sentenceAudioCueForInput: function(cue) {
     if (!cue) return null;
@@ -3199,12 +3255,21 @@ $sharedInitViewport
     }
     return cue;
   },
+  // 章内归一化坐标：优先取重定位结果，数据里没有这条 cue 时才退回下发的提示坐标。
+  sentenceAudioCueSpan: function(cue) {
+    var span = cue && cue.id ? this.sentenceAudioCueSpans.get(cue.id) : null;
+    if (span) return span;
+    return {
+      start: Math.max(0, Number(cue && cue.start) || 0),
+      len: Math.max(0, Number(cue && cue.length) || 0)
+    };
+  },
   sentenceAudioCueStart: function(cue) {
-    return Math.max(0, Number(cue && cue.start) || 0);
+    return this.sentenceAudioCueSpan(cue).start;
   },
   sentenceAudioCueEnd: function(cue) {
-    var start = this.sentenceAudioCueStart(cue);
-    return start + Math.max(0, Number(cue && cue.length) || 0);
+    var span = this.sentenceAudioCueSpan(cue);
+    return span.start + span.len;
   },
   screenMatchableOffset: function(screen, end) {
     if (!this.contentStream) return null;
@@ -3736,7 +3801,7 @@ $sharedInitViewport
   // 中键「跳到点击句」反查（Dart `_seekToClickedSentence` 调 cueIdAtPoint，查词载荷的
   // audioCuePayload 调 cueIdAtDomPoint）。分页 / 连续 shell 按 cue↔DOM 映射表反查，VN 屏上
   // 是克隆、映射表只在播放到某句时才对那一句建——此前 VN 整个缺这对方法，中键恒拿到 null、
-  // 静默无反应。VN 的 cue 本来就是章内音频坐标区间（start/length，与跟随同一口径），这里把
+  // 静默无反应。VN 的 cue 是章内音频坐标区间（重定位后的 start/len，与跟随同一口径），这里把
   // 点击处换算到同一坐标（getMatchableOffset，克隆 / 源节点都认）再按区间找所属句，
   // 回 `{type:'frag', id}`（id 即 textFragmentId，见 AudiobookBridge）。点在注音上按所属
   // ruby 的基字起点算。

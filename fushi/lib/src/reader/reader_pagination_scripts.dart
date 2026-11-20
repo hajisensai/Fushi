@@ -8,6 +8,7 @@ import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_page_turn_script.dart';
 import 'package:fushi/src/reader/reader_seamless_chapters_script.dart';
 import 'package:fushi/src/reader/reader_sentence_audio_ownership_script.dart';
+import 'package:fushi/src/reader/reader_sentence_audio_relocation_script.dart';
 import 'package:fushi/src/reader/reader_sentence_audio_ruby_gap_script.dart';
 import 'package:fushi/src/reader/reader_study_unit_script.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
@@ -154,9 +155,10 @@ class ReaderPaginationScripts {
   static const int kSentenceAudioAdjacent = 2;
 
   /// 把 cue 的归一化偏移（提示）+ 原文，映射成在 [fullNorm]（实时 DOM 的
-  /// 归一化文本）里的解析起点。这是 JS `collectSasayakiCueRanges` 搜索逻辑的
+  /// 归一化文本）里的解析起点。这是 JS `fushiSentenceAudioRelocation.resolveSpans`
+  /// （`kSentenceAudioRelocationJs`，分页 / 连续 / VN 三种 view mode 共用）的
   /// 纯 Dart 影子，供单测验证「漂移自愈 / 不跳远处重复 / 未命中回落提示 / 尾巴
-  /// 回吃」不变量；JS 侧实现同一算法（见同文件脚本字符串 + 源码守卫测试）。
+  /// 回吃」不变量；两侧逐用例对拍见 `sentence_audio_relocation_behavior_test.dart`。
   ///
   /// 规则：游标 `cursor` 单调（BUG-2204 起允许回到前一条命中的尾巴 [kSentenceAudioTailOverlap]
   /// 字以内、不越过其起点）；每条 cue 先看紧接前一条命中处
@@ -196,6 +198,11 @@ class ReaderPaginationScripts {
             final int i = fullNorm.indexOf(needle, from);
             if (i < 0 || i > hi) {
               break;
+            }
+            // 整条落在前一条命中区间内的只是前句里的重复片段，不是下一句。
+            if (i < cursor && i + needle.length <= cursor) {
+              from = i + 1;
+              continue;
             }
             if (lastHit >= 0 &&
                 i >= cursor - kSentenceAudioTailOverlap &&
@@ -1078,6 +1085,7 @@ class ReaderPaginationScripts {
     return '''<script>
 $kStudyUnitJs
 $kSentenceAudioOwnershipJs
+$kSentenceAudioRelocationJs
 window.__fushiShells = {};
 ${_stripShellScriptTags(shell)}
 window.__fushiInstallShell = function(C) {
@@ -1281,29 +1289,12 @@ window.__fushiInstallShell = function(C) {
   // → 回落 hint → 高亮看似「不显示/错位」。下面 foldCodePoint 与 AudioTextNormalizer
   // 的值转换严格同口径。所有折叠都是单 BMP 码元→单 BMP 码元（1:1 码元），因此
   // buildSasayakiNormIndex 的逐码元 map 粒度（代理对 push 两条）保持不变。
-  hwKataToFwBase: 0xFF66,
-  hwKataToFw: [0x30F2,0x30A1,0x30A3,0x30A5,0x30A7,0x30A9,0x30E3,0x30E5,0x30E7,0x30C3,0x30FC,0x30A2,0x30A4,0x30A6,0x30A8,0x30AA,0x30AB,0x30AD,0x30AF,0x30B1,0x30B3,0x30B5,0x30B7,0x30B9,0x30BB,0x30BD,0x30BF,0x30C1,0x30C4,0x30C6,0x30C8,0x30CA,0x30CB,0x30CC,0x30CD,0x30CE,0x30CF,0x30D2,0x30D5,0x30D8,0x30DB,0x30DE,0x30DF,0x30E0,0x30E1,0x30E2,0x30E4,0x30E6,0x30E8,0x30E9,0x30EA,0x30EB,0x30EC,0x30ED,0x30EF,0x30F3],
+  // 码点折叠表与实现只在 kSentenceAudioRelocationJs 写一次（VN 的 cue 重定位同用）。
   foldCodePoint: function(cp) {
-    var out = cp;
-    if (cp >= 0x41 && cp <= 0x5A) out = cp + 0x20;            // ASCII A-Z -> a-z
-    else if (cp >= 0xFF21 && cp <= 0xFF3A) out = cp - 0xFEC0; // fullwidth A-Z -> a-z
-    else if (cp >= 0xFF41 && cp <= 0xFF5A) out = cp - 0xFEE0; // fullwidth a-z -> a-z
-    else if (cp >= 0xFF10 && cp <= 0xFF19) out = cp - 0xFEE0; // fullwidth 0-9 -> 0-9
-    else if (cp >= 0xFF66 && cp <= 0xFF9D) out = this.hwKataToFw[cp - this.hwKataToFwBase]; // halfwidth kana -> fullwidth kana
-    if (out >= 0x30A1 && out <= 0x30F6) out -= 0x60;          // katakana -> hiragana
-    return out;
+    return window.fushiSentenceAudioRelocation.foldCodePoint(cp);
   },
   foldNormalize: function(text) {
-    var stripped = this.normalizeText(text);
-    var folded = '';
-    var i = 0;
-    while (i < stripped.length) {
-      var cp = stripped.codePointAt(i);
-      var ch = String.fromCodePoint(cp);
-      folded += String.fromCodePoint(this.foldCodePoint(cp));
-      i += ch.length;
-    }
-    return folded;
+    return window.fushiSentenceAudioRelocation.foldText(this.normalizeText(text));
   },
   scrollToProgressContinuous: function(progress) {
     var targetNode = this.findNodeAtProgress(progress);
@@ -2024,68 +2015,21 @@ window.__fushiInstallShell = function(C) {
     var idx = this.buildSentenceAudioNormIndex();
     var full = idx.full;
     var map = idx.map;
-    var WINDOW = 256;
-    var OVERLAP = 4;
-    var ADJACENT = 2;
-    var cursor = 0;
-    var lastHit = -1;
-    var lastHitStart = -1;
-    var spans = [];
+    // 搜索算法（就近 + 单调 + 有界窗口 + 延续优先 + 回落不推进游标）三种 view mode 共用
+    // window.fushiSentenceAudioRelocation.resolveSpans（kSentenceAudioRelocationJs）。
+    // TODO-630/BUG-366：needle 用 foldNormalize（剥+折叠），与 full(已折叠)、与 Dart
+    // matcher 的折叠坐标系对齐，折叠类书才能 indexOf 命中。
+    var hints = [];
     for (var ci = 0; ci < cues.length; ci++) {
       var cue = cues[ci];
-      // TODO-630/BUG-366：needle 用 foldNormalize（剥+折叠），与 full(已折叠)、
-      // 与 Dart matcher 的折叠坐标系对齐，折叠类书才能 indexOf 命中。
-      var needle = this.foldNormalize(cue.text || '');
-      var hint = (typeof cue.start === 'number') ? cue.start : cursor;
-      var len = (typeof cue.length === 'number') ? cue.length : 0;
-      var normLen = needle.length;
-      var resolved = -1;
-      if (normLen > 0) {
-        var floor = lastHit >= 0 ? Math.max(lastHitStart + 1, cursor - OVERLAP) : cursor;
-        var lo = floor > (hint - WINDOW) ? floor : (hint - WINDOW);
-        var startAt = lo < 0 ? 0 : lo;
-        var hi = Math.max(hint + WINDOW, cursor + ADJACENT);
-        var best = -1, bestDist = 1 << 30;
-        var adjacent = -1, adjacentDist = 1 << 30;
-        if (startAt <= full.length) {
-          var from = startAt;
-          while (true) {
-            var p = full.indexOf(needle, from);
-            if (p < 0 || p > hi) break;
-            if (lastHit >= 0 && p >= cursor - OVERLAP && p <= cursor + ADJACENT) {
-              var da = Math.abs(p - cursor);
-              if (da < adjacentDist) { adjacentDist = da; adjacent = p; }
-            }
-            if (p <= hint + WINDOW) {
-              var d = Math.abs(p - hint);
-              if (d < bestDist) { bestDist = d; best = p; }
-            }
-            from = p + 1;
-          }
-        }
-        if (adjacent >= 0) best = adjacent;
-        if (best >= 0) {
-          resolved = best;
-          // 回吃了前一条的尾巴：把它的 span 裁到本条起点，range 不重叠。
-          if (best < cursor && lastHit >= 0) spans[lastHit].len = best - spans[lastHit].start;
-          cursor = best + normLen;
-          lastHit = spans.length;
-          lastHitStart = best;
-        }
-      }
-      var spanStart, spanLen;
-      if (resolved >= 0) {
-        spanStart = resolved; spanLen = normLen;
-      } else {
-        // BUG-282：未命中只给这一条 cue 一个尽力而为的回落区间，**不推进单调
-        // 游标 cursor**。游标只在 DOM 真命中时前进；让回落按未核实的 hint 猜测
-        // 推进游标会越过后面真正能命中 cue 的真实位置，把其搜索窗口下界顶过去
-        // → 整本逐句累积漂移（与 Dart 影子 resolveCueNormSpansForTesting 同改）。
-        spanStart = hint < cursor ? cursor : (hint > map.length ? map.length : hint);
-        spanLen = len;
-      }
-      spans.push({ id: cue.id, start: spanStart, len: spanLen });
+      hints.push({
+        id: cue.id,
+        needle: this.foldNormalize(cue.text || ''),
+        hint: cue.start,
+        length: cue.length
+      });
     }
+    var spans = window.fushiSentenceAudioRelocation.resolveSpans(full, hints);
     // BUG-2907：句末「。」与句首「「」按 Hoshi 的标点归属并进当前句（只放宽首尾）。
     var isMatchable = this.isMatchableChar.bind(this);
     for (var si = 0; si < spans.length; si++) {

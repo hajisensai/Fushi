@@ -6,6 +6,7 @@ import 'package:fushi/src/media/audiobook/highlight_bridge.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_sentence_audio_ownership_script.dart';
+import 'package:fushi/src/reader/reader_sentence_audio_relocation_script.dart';
 import 'package:fushi/src/reader/reader_study_unit_script.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 
@@ -36,7 +37,8 @@ void main() {
           'vn': ReaderVisualNovelScripts.vnShellScript(),
           'selection': ReaderSelectionScripts.source(),
           // 与生产 engineShell 同序：study units 之后注入句子音频标点归属模块。
-          'units': '$kStudyUnitJs\n$kSentenceAudioOwnershipJs',
+          'units':
+              '$kStudyUnitJs\n$kSentenceAudioOwnershipJs\n$kSentenceAudioRelocationJs',
           'bridge': HighlightBridge.debugScriptSource,
         },
         timeout: const Duration(seconds: 75),
