@@ -2688,13 +2688,25 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   String? _localCoverPath() {
     final EpubBookRow? row = _row;
     if (row == null) return null;
-    // 复用书架/制卡那份解析（TODO-1388 / BUG-703），别自己拼路径：coverPath 可能
-    // 是相对页图路径、可能大小写与磁盘不符（跨平台备份还原），那些坑都已经在
-    // resolveCoverFilePath 里踩过了。
-    return ReaderFushiSource.resolveCoverFilePath(
-      extractDir: row.extractDir,
-      coverPath: row.coverPath,
-    );
+    final AppModel? appModel = _appModelOrNull;
+    // BUG-4912：与书架卡同一入口（用户 override > 刮削卷封面 > 书自带封面），
+    // 只读 row.coverPath 会让书架上刮削过的封面点进来又变回源原图。自带封面那一档
+    // 仍是书架/制卡共用的 resolveCoverFilePath（TODO-1388 / BUG-703）；没有
+    // AppModel（无 ProviderScope 的源浏览树）就只有这一档。
+    if (appModel == null) {
+      return ReaderFushiSource.resolveCoverFilePath(
+        extractDir: row.extractDir,
+        coverPath: row.coverPath,
+      );
+    }
+    return ReaderFushiSource.instance
+        .displayCoverFileForBook(
+          appModel: appModel,
+          bookKey: row.bookKey,
+          extractDir: row.extractDir,
+          coverPath: row.coverPath,
+        )
+        ?.path;
   }
 
   /// hero 大背景：本地封面模糊铺底。未入库的源条目只有来源自己的取图控件、拿不到

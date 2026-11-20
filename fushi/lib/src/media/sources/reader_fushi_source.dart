@@ -987,6 +987,38 @@ class ReaderFushiSource extends ReaderMediaSource {
     String? coverPath,
   }) => resolveBookCoverFilePath(extractDir: extractDir, coverPath: coverPath);
 
+  /// BUG-4912：手上只有书行（bookKey + 自带封面）的上屏面要显示的封面文件，与书架卡
+  /// （[getDisplayThumbnailFromMediaItem]）同一优先级——用户 override 封面 > 刮削
+  /// 卷封面（[scrapedThumbnailFile]）> 书自带封面（[resolveCoverFilePath]）。都没有
+  /// 返回 null。作品页等处只读 `row.coverPath` 会让刮削 / 用户改过的封面在书架上
+  /// 显示、点进去却还是原封面。override 与刮削层都只按 `hoshi://book/<bookKey>`
+  /// 身份存（与 format 无关），所以三种书都可由本源解析。
+  File? displayCoverFileForBook({
+    required AppModel appModel,
+    required String bookKey,
+    required String extractDir,
+    String? coverPath,
+  }) {
+    if (bookKey.isNotEmpty) {
+      final MediaItem item = overrideTitleMediaItemForBookKey(bookKey);
+      final File? override = resolveOverrideThumbnailFile(
+        appModel: appModel,
+        item: item,
+      );
+      if (override != null) return override;
+      final File? scraped = scrapedThumbnailFile(
+        appModel: appModel,
+        item: item,
+      );
+      if (scraped != null) return scraped;
+    }
+    final String? own = resolveCoverFilePath(
+      extractDir: extractDir,
+      coverPath: coverPath,
+    );
+    return own == null ? null : File(own);
+  }
+
   /// 删一本书（EPUB / PDF / 漫画 / 字幕书）攒下的统计：「同时删除统计数据」勾选的
   /// 落地，书架单删 / 批删 / 合集连删 / 漫画作品页移出书架共用。
   ///
