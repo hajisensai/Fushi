@@ -1,0 +1,6 @@
+## BUG-4906 · 服务端 WebUI 在 Chrome 报 ERR_CERT_INVALID 无法进入（自签证书签名算法带 NULL 参数、IP 写成 dNSName）
+- **报告**：2026-11-20（用户：本机起 fushi_server，Chrome 开 `https://127.0.0.1:38880/` 报 `NET::ERR_CERT_INVALID`，没有「继续前往」）
+- **真实性**：✅ 真 bug。`packages/fushi_engine/lib/sync/tls/fushi_tls_identity.dart` 的 `FushiSelfSignedCertGenerator` 为与旧 basic_utils 逐字节一致，沿用了它两处违规：① `_sigAlg` 的 ecdsa-with-SHA256 AlgorithmIdentifier 带 `NULL` 参数（RFC 5758 §3.2 要求无参数）——Chrome 证书解析器据此拒收整张证书，报不可绕过的 `ERR_CERT_INVALID`；② SAN 里 IP 字面量编码成 dNSName（`DNS:127.0.0.1`），浏览器按 IP 访问时只会报名字不匹配。互联 client 走指纹钉扎、不受影响，所以只在浏览器开 WebUI 时暴露。
+- **[x] ① 已修复** — `_sigAlg` 去掉 NULL；新增 `_generalName`：IP 字面量写 `[7] iPAddress`，其余仍 dNSName。已持久化的旧证书不自动重签（会让已配对设备的指纹钉扎失效），旧部署需在 WebUI 重置证书。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/leaderboard/p256_native_vectors_test.dart`（签名算法无参数、IP SAN 为 iPAddress；固定向量 `packages/fushi_compute/test/crypto/crypto_vectors_v2.json` 同步更新）。
+- **备注**：修复后本机重生成证书，openssl 显示 `IP Address:127.0.0.1`、签名算法 `300a…040302`，Chrome 变为可绕过的普通自签警告。
