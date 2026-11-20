@@ -1300,6 +1300,10 @@ class AnotherPopupPart {
       // FushiTypeRoles 没有对应字阶。
       'lib/src/media/detail/media_poster_detail.dart':
           kSharedComponentImplementation,
+      // 带色卡片的局部配色（色块子树 / 从色块弹出的弹层）：按块配色派生整套
+      // surfaceContainer 色阶，海报详情外壳也走这一份。
+      'lib/src/utils/components/fushi_block_color_scope.dart':
+          kSharedComponentImplementation,
       'lib/src/pages/implementations/music/music_detail_chrome.dart':
           kSharedComponentImplementation,
       'lib/src/utils/components/fushi_continue_blocks.dart':
@@ -1704,11 +1708,13 @@ class AnotherPopupPart {
       'lib/src/utils/components/fushi_tag.dart': <String>{'fontSize:'},
       'lib/src/media/detail/media_poster_detail.dart': <String>{
         'BorderRadius.circular(',
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_block_color_scope.dart': <String>{
         'surfaceContainerLow',
         'surfaceContainerLowest',
         'surfaceContainerHigh',
         'surfaceContainerHighest',
-        'fontSize:',
       },
       'lib/src/pages/implementations/music/music_detail_chrome.dart': <String>{
         'fontSize:',

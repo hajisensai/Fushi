@@ -6,6 +6,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_popup_origin.dart';
 
 /// 全应用唯一的对话框入口。玻璃设计系统下对话框本体由主题染成半透明，
 /// 背后整屏模糊由 [FushiGlassDialogBackdrop] 在这里统一套上——新代码不要再
@@ -30,12 +31,27 @@ Future<T?> showAppDialog<T>({
   final RouteSettings? routeSettings = studyClockRouteSettings(
     transparent: studyClockTransparent,
   );
-  Widget glassBuilder(BuildContext dialogContext) =>
-      FushiGlassDialogBackdrop(child: builder(dialogContext));
+  // 弹层承接来源组件的配色（色块卡等，见 fushi_popup_origin.dart）：context
+  // 在色块里时由主题捕获带进路由；经页面 State 转弹时按点按来源补包一层。
+  final FushiPopupOrigin? origin = fushiPopupOriginFor(context);
+  Widget glassBuilder(BuildContext dialogContext) {
+    final Widget dialog = FushiGlassDialogBackdrop(
+      child: builder(dialogContext),
+    );
+    return origin == null ? dialog : origin.wrap(dialog);
+  }
+
   if (isCupertinoPlatform(context)) {
+    // showCupertinoDialog 不捕获 InheritedTheme：补上，色块里弹出的对话框才
+    // 拿得到色块的局部主题。
+    final CapturedThemes themes = InheritedTheme.capture(
+      from: context,
+      to: Navigator.of(context, rootNavigator: useRootNavigator).context,
+    );
     return showCupertinoDialog<T>(
       context: context,
-      builder: glassBuilder,
+      builder: (BuildContext dialogContext) =>
+          themes.wrap(glassBuilder(dialogContext)),
       barrierDismissible: barrierDismissible,
       useRootNavigator: useRootNavigator,
       routeSettings: routeSettings,
