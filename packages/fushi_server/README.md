@@ -231,6 +231,7 @@ fushi_server scan [--[no-]prune] [--[no-]scrape]   扫描 libraries[] 入库，�
 fushi_server status                    打印库/配对概况
 fushi_server pair ls | revoke <peerId> 已配对设备（ls 里标 `[我的设备]`；revoke 同时清掉标记）
 fushi_server admin reset-token         重生成 admin_token
+fushi_server admin reset-tls           重签 TLS 证书（须先停服；旧版证书 Chrome 报 ERR_CERT_INVALID 时用，已配对设备需重新配对）
 fushi_server models status | pull <lang|ocr>   模型状态 / 拉取
 fushi_server transcribe <media> --lang ja [--cpu]   本地跑一次 ASR（调试）
 fushi_server backup create -o <file> [--no-documents]   整机备份（服务停着时；在跑时用 ctl backup create）

@@ -292,7 +292,30 @@ class FushiTlsIdentityStore {
   }
 
   /// 强制重新生成（用户重置证书时调用，会使旧指纹钉扎失效）。
+  ///
+  /// 调用方：`fushi_server admin reset-tls`（BUG-4906：旧版生成的证书 Chrome 拒收，
+  /// 已落盘的不自动重签——那会让所有已配对设备的指纹钉扎静默失效）。
   Future<FushiTlsIdentity> regenerate() => _generateAndPersist();
+
+  /// BUG-4906 之前生成的证书：签名算法 ecdsa-with-SHA256 带 `NULL` 参数
+  /// （`30 0c 06 08 2a86 48ce 3d04 0302 05 00`），Chrome 直接拒收（不可绕过的
+  /// `ERR_CERT_INVALID`），同批证书的 IP SAN 也写成了 dNSName。互联 client 走指纹
+  /// 钉扎不受影响，只有浏览器开 WebUI 时需要重签。
+  static bool isChromeRejectedLegacyCertificate(String certificatePem) {
+    final List<int> der = _pemToDer(certificatePem);
+    const List<int> legacy = <int>[
+      0x30, 0x0c, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, //
+      0x3d, 0x04, 0x03, 0x02, 0x05, 0x00,
+    ];
+    outer:
+    for (int i = 0; i + legacy.length <= der.length; i++) {
+      for (int j = 0; j < legacy.length; j++) {
+        if (der[i + j] != legacy[j]) continue outer;
+      }
+      return true;
+    }
+    return false;
+  }
 
   Future<FushiTlsIdentity> _generateAndPersist() async {
     await Directory(_tlsDir).create(recursive: true);

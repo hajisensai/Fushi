@@ -214,6 +214,25 @@ void main() {
       expect(built.privateKeyPem, t['private_key_pkcs8_pem']);
     });
 
+    test(
+      'legacy certificates (NULL sig params) are recognised for reissue',
+      () {
+        // BUG-4906：旧版落盘证书不自动重签，serve 启动据此提示 `admin reset-tls`。
+        expect(
+          FushiTlsIdentityStore.isChromeRejectedLegacyCertificate(
+            t['certificate_pem_example']! as String,
+          ),
+          isTrue,
+        );
+        expect(
+          FushiTlsIdentityStore.isChromeRejectedLegacyCertificate(
+            built.certificatePem,
+          ),
+          isFalse,
+        );
+      },
+    );
+
     test('certificate PEM framing matches and the signature verifies', () {
       final String oldPem = t['certificate_pem_example']! as String;
       // 头尾与行分隔（\r\n）与旧实现一致；签名值不同（旧实现 k 随机，现为 RFC 6979）。
