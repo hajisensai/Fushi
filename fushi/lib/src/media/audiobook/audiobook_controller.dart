@@ -1010,19 +1010,37 @@ class AudiobookPlayerController extends ChangeNotifier {
     final Duration? playerDur = _player.duration;
     if (_fileDurationsMs.isNotEmpty) {
       int sum = 0;
-      for (final int ms in _fileDurationsMs) {
-        sum += ms;
+      for (int i = 0; i < _fileDurationsMs.length - 1; i++) {
+        sum += _fileDurationsMs[i];
       }
-      if (sum > 0) {
-        // cue 估算到「末句结束」会比真实文件短（片尾静音/音乐不在 cue 里）。
-        // 单文件时 `_player.duration` 是真实整段时长，取较大者，避免播放到
-        // 末句之后出现 pos>dur 的显示瑕疵；多文件时 `_player.duration` 只是
-        // 当前文件，远小于全书 sum，max 自然取 sum。
-        final int playerMs = playerDur?.inMilliseconds ?? 0;
-        return Duration(milliseconds: sum > playerMs ? sum : playerMs);
-      }
+      sum += _lastFileSpanMs(_fileDurationsMs, _knownLastFileDurationMs);
+      if (sum > 0) return Duration(milliseconds: sum);
     }
     return playerDur ?? Duration.zero;
+  }
+
+  /// 末文件的真实时长（毫秒）：只有当前正播末文件且 just_audio 已给出时长时才知道，
+  /// 否则 null。cue 估算到「末句结束」会比真实文件短（片尾静音 / 音乐不在 cue 里），
+  /// 全书时间轴的末端要按它延长——[totalDuration] 与 [seekGlobalMs] 共用这一个口径，
+  /// 否则进度条显示得出片尾却拖不进去（sGoT-tNpkx）。前序文件仍用 cue 估算（与持久化
+  /// 的全书毫秒编码一致，不能改）。
+  int? get _knownLastFileDurationMs {
+    if (_fileDurationsMs.isEmpty) return null;
+    if ((_player.currentIndex ?? 0) != _fileDurationsMs.length - 1) return null;
+    final int? ms = _player.duration?.inMilliseconds;
+    return ms == null || ms <= 0 ? null : ms;
+  }
+
+  /// 末文件在全书时间轴上的跨度：cue 估算与已知真实时长取较大者。
+  static int _lastFileSpanMs(
+    List<int> fileDurationsMs,
+    int? lastFileDurationMs,
+  ) {
+    final int estimate = fileDurationsMs.isEmpty ? 0 : fileDurationsMs.last;
+    if (lastFileDurationMs == null || lastFileDurationMs <= estimate) {
+      return estimate;
+    }
+    return lastFileDurationMs;
   }
 
   /// 全书累计播放位置 = 当前文件之前所有文件时长之和 + 当前文件内位置。
@@ -1080,6 +1098,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     final ({int fileIndex, int offsetMs}) target = splitGlobalMs(
       globalMs,
       _fileDurationsMs,
+      lastFileDurationMs: _knownLastFileDurationMs,
     );
     final int currentIndex = _player.currentIndex ?? 0;
     if (target.fileIndex == currentIndex) {
@@ -1094,10 +1113,14 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   /// 把全书毫秒拆成（文件下标, 文件内偏移）：越界夹到末文件末尾。纯函数，供
   /// [seekGlobalMs] 与测试共用。
+  ///
+  /// [lastFileDurationMs]：末文件的真实时长（已知时）。末文件的上界取它与 cue 估算的
+  /// 较大者，与 [totalDuration] 同口径——否则拖到片尾会被夹回末句结束（sGoT-tNpkx）。
   static ({int fileIndex, int offsetMs}) splitGlobalMs(
     int globalMs,
-    List<int> fileDurationsMs,
-  ) {
+    List<int> fileDurationsMs, {
+    int? lastFileDurationMs,
+  }) {
     int remaining = globalMs < 0 ? 0 : globalMs;
     int fileIndex = 0;
     for (; fileIndex < fileDurationsMs.length - 1; fileIndex++) {
@@ -1105,7 +1128,11 @@ class AudiobookPlayerController extends ChangeNotifier {
       if (remaining < d) break;
       remaining -= d;
     }
-    final int last = fileDurationsMs.isEmpty ? 0 : fileDurationsMs[fileIndex];
+    final int last = fileDurationsMs.isEmpty
+        ? 0
+        : fileIndex == fileDurationsMs.length - 1
+        ? _lastFileSpanMs(fileDurationsMs, lastFileDurationMs)
+        : fileDurationsMs[fileIndex];
     if (remaining > last) remaining = last;
     return (fileIndex: fileIndex, offsetMs: remaining);
   }
@@ -1305,6 +1332,7 @@ class AudiobookPlayerController extends ChangeNotifier {
             final ({int fileIndex, int offsetMs}) target = splitGlobalMs(
               savedMs,
               _fileDurationsMs,
+              lastFileDurationMs: _knownLastFileDurationMs,
             );
             await _player.seek(
               Duration(milliseconds: target.offsetMs),
