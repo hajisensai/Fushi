@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' show Size;
 
@@ -107,35 +108,37 @@ bool isWindowsUncPath(String path, {required bool windows}) {
 int effectiveSubtitlePositionMs(int posMs, int delayMs) =>
     (posMs - delayMs).clamp(0, 1 << 30);
 
-/// 把 libmpv `chapter-list` 的扁平字符串属性解析成 [VideoChapter] 列表。纯函数。
+/// 把 libmpv `chapter-list` 整份读出的字符串解析成 [VideoChapter] 列表。纯函数。
 ///
-/// media_kit 的 `NativePlayer.getProperty` 走 `mpv_get_property_string`，只能逐条读
-/// **字符串**化的子属性（无 MPV_FORMAT_NODE 数组的高层封装）。libmpv 把章节暴露成：
-/// - `chapter-list/count`：章节数（整数字符串，空/非法当 0，即「无章节」）；
-/// - `chapter-list/N/title`：第 N 章标题（可能空字符串）；
-/// - `chapter-list/N/time`：第 N 章起点**秒**（浮点字符串，如 `12.500`）。
+/// media_kit 按字符串读属性（`mpv_get_property_async` + `MPV_FORMAT_STRING`）；
+/// `chapter-list` 是 node 数组，libmpv 把它序列化成 JSON（与 `track-list`、
+/// `demuxer-cache-state` 同一条转换，见 [playableEndMicrosFromTrackList] /
+/// [parseMpvSeekableRanges]）：`[{"title":"Chapter 01","time":0.000000},…]`，
+/// `title` 可能缺省，`time` 是起点**秒**（浮点）。一次读完，不再逐条读
+/// `chapter-list/count` + 每章 `title` / `time`（2N+1 次串行往返，c32 video-36a）。
 ///
-/// [count] 为 `chapter-list/count` 原始字符串；[titleAt]/[timeAt] 是按下标取
-/// `title`/`time` 子属性原始字符串的回调（[VideoPlayerController.refreshChapters]
-/// 注入真实 `getProperty`，单测注入假数据）。无章节 / count 非法时返回空列表。
-///
-/// 时间解析：秒（浮点）→ 毫秒 [Duration]，下界 clamp 到 0（防御负值 / 非法）。抽成纯
-/// 函数便于不依赖 libmpv 的单测（[VideoChapter] 解析与跳转决策都可纯测）。
-List<VideoChapter> parseChapterList({
-  required String count,
-  required String Function(int index) titleAt,
-  required String Function(int index) timeAt,
-}) {
-  final int total = int.tryParse(count.trim()) ?? 0;
-  if (total <= 0) return const <VideoChapter>[];
+/// 读不到（空串）/ 不是 JSON 数组 / 无章节都返回空列表。时间秒 → 毫秒，负值 / 非法
+/// clamp 到 0；`index` 按数组下标（libmpv `chapter` 属性同一口径）。
+List<VideoChapter> parseChapterListJson(String raw) {
+  final String text = raw.trim();
+  if (text.isEmpty) return const <VideoChapter>[];
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(text);
+  } on FormatException {
+    return const <VideoChapter>[];
+  }
+  if (decoded is! List) return const <VideoChapter>[];
   final List<VideoChapter> chapters = <VideoChapter>[];
-  for (int i = 0; i < total; i++) {
-    final double seconds = double.tryParse(timeAt(i).trim()) ?? 0.0;
-    final int ms = (seconds * 1000).round();
+  for (int i = 0; i < decoded.length; i++) {
+    final Object? item = decoded[i];
+    final Object? title = item is Map ? item['title'] : null;
+    final Object? time = item is Map ? item['time'] : null;
+    final int ms = time is num && time.isFinite ? (time * 1000).round() : 0;
     chapters.add(
       VideoChapter(
         index: i,
-        title: titleAt(i),
+        title: title is String ? title : '',
         start: Duration(milliseconds: ms < 0 ? 0 : ms),
       ),
     );
@@ -168,7 +171,7 @@ int? adjacentChapterIndex({
 
 /// 纯函数：按播放位置 [posMs] 求所在章节下标（起点 <= 位置的最后一章）。
 /// 空列表 / 早于首章起点返回 -1。要求 [chapters] 按 [VideoChapter.start] 升序
-/// （[parseChapterList] / libmpv `chapter-list` 天然升序）。章节面板高亮当前章用。
+/// （[parseChapterListJson] / libmpv `chapter-list` 天然升序）。章节面板高亮当前章用。
 int chapterIndexForPositionIn(List<VideoChapter> chapters, int posMs) {
   int result = -1;
   for (int i = 0; i < chapters.length; i++) {
@@ -6022,7 +6025,7 @@ class VideoPlayerController extends ChangeNotifier
 
   /// 读一条 libmpv 字符串属性（[property]），best-effort：非 libmpv 后端（无
   /// `getProperty`）/ 属性不存在 / 抛异常时返回 `''`。与 [_mpvCommand]（写命令）/
-  /// [applyMpvConfigToPlayer]（写属性）同范式，只是方向相反——读 `chapter-list/*`、
+  /// [applyMpvConfigToPlayer]（写属性）同范式，只是方向相反——读 `chapter-list`、
   /// `chapter` 等章节属性（TODO-424）。
   /// 播放器实际识别出的容器是不是 HLS（mpv `file-format`，lavf 的 demuxer 名；老版本
   /// 报 `hls,applehttp`）。制卡据此决定要不要给 ffmpeg 放开 HLS 分片扩展名检查——
@@ -6125,11 +6128,9 @@ class VideoPlayerController extends ChangeNotifier
 
   /// 从 libmpv 重新读取 `chapter-list` 填充 [_chapters]，读完 [notifyListeners]。
   ///
-  /// 经 [_getMpvProperty]（`mpv_get_property_string`）逐条读 `chapter-list/count` +
-  /// 每章 `title`/`time`，交给纯函数 [parseChapterList] 组装。仅 libmpv 后端（桌面
-  /// 必生效；移动端走同一 libmpv 后端**预期一致**，但 media_kit 移动端是否暴露
-  /// `chapter-list` 子属性字符串读取**待真机验**——失败时优雅降级成空列表，不影响
-  /// 播放）。无 [_player] 时清空并返回。[load] 末尾、换集后调用。
+  /// 经 [_getMpvProperty] 整份读一次 `chapter-list`（JSON），交给纯函数
+  /// [parseChapterListJson] 组装。仅 libmpv 后端；读不到时优雅降级成空列表，不影响
+  /// 播放。无 [_player] 时清空并返回。[load] 末尾、换集后调用。
   Future<void> refreshChapters() async {
     final Player? player = _player;
     if (player == null) {
@@ -6208,32 +6209,15 @@ class VideoPlayerController extends ChangeNotifier
       notifyListeners();
       return;
     }
-    final String countRaw = await _getMpvProperty('chapter-list/count');
+    final String raw = await _getMpvProperty('chapter-list');
     if (!_isCurrentLoad(player, loadToken)) return; // 读取期间换片 / 销毁：丢弃。
-    final int total = int.tryParse(countRaw.trim()) ?? 0;
-    if (total <= 0) {
+    final List<VideoChapter> chapters = parseChapterListJson(raw);
+    if (chapters.isEmpty) {
       if (_chapters.isNotEmpty) {
         _chapters = const <VideoChapter>[];
         notifyListeners();
       }
       return;
-    }
-    // 逐条异步读 title/time 子属性（libmpv 属性读是异步的，纯函数 parseChapterList
-    // 只覆盖「count + 同步解析」的单测路径，运行时按真实 getProperty 逐条组装）。
-    final List<VideoChapter> chapters = <VideoChapter>[];
-    for (int i = 0; i < total; i++) {
-      final String title = await _getMpvProperty('chapter-list/$i/title');
-      final String time = await _getMpvProperty('chapter-list/$i/time');
-      if (!_isCurrentLoad(player, loadToken)) return; // 逐条读取期间换片：丢弃。
-      final double seconds = double.tryParse(time.trim()) ?? 0.0;
-      final int ms = (seconds * 1000).round();
-      chapters.add(
-        VideoChapter(
-          index: i,
-          title: title,
-          start: Duration(milliseconds: ms < 0 ? 0 : ms),
-        ),
-      );
     }
     _chapters = chapters;
     notifyListeners();

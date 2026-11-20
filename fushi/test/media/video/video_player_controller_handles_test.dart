@@ -4,6 +4,7 @@
 //  - 句柄释放（数据根迁移 / 删视频 / 文件名整理）后新 Player 的 `video-params` 仍能收到；
 //  - 重新选同一条图形轨不撤销在途的整轨抽取；
 //  - 续播恢复音轨等到目标轨出现为止，换片 / 卸载 / 用户自己选轨即放弃；
+//  - 章节表一次读完 `chapter-list`，不再逐条往返；
 import 'dart:async';
 import 'dart:ui' show Rect, Size;
 
@@ -262,6 +263,31 @@ void main() {
       final Future<AudioTrack?> waiting = c.waitForAudioTrack('2');
       await player.dispose();
       expect(await waiting, isNull);
+    });
+  });
+
+  group('章节一次读（video-36a）', () {
+    test('refreshChapters 只读一次 chapter-list，解析出整张章节表', () async {
+      final _FakeMpv mpv = _FakeMpv();
+      mpv.props['chapter-list'] =
+          '[{"title":"OP","time":0.0},{"title":"A","time":90.5},'
+          '{"title":"B","time":720.25},{"title":"ED","time":1300.0}]';
+      final VideoPlayerController c = VideoPlayerController()
+        ..debugAttachPlayerForTesting(Player(platformPlayer: mpv));
+      addTearDown(c.dispose);
+
+      await c.refreshChapters();
+
+      expect(mpv.reads, <String>[
+        'chapter-list',
+      ], reason: '4 章也只往返一次（修前 2N+1 = 9 次）');
+      expect(c.chapters.map((VideoChapter ch) => ch.title), <String>[
+        'OP',
+        'A',
+        'B',
+        'ED',
+      ]);
+      expect(c.chapters[2].start, const Duration(milliseconds: 720250));
     });
   });
 }
