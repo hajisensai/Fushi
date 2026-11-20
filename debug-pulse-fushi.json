@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-20T15:02:04Z",
+ "generatedAt": "2026-11-20T21:03:03Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "76811fc25da95f3be200a8769d48aafa00522396",
-  "seq": 29224
+  "sha": "71d1a8d36001fdebc5780a92f35889518e4f7628",
+  "seq": 30178
  },
  "builds": [
   {
@@ -96,8 +96,218 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "71d1a8d36001fdebc5780a92f35889518e4f7628",
+  "headSeq": 30178,
+  "prs": [
+   3874,
+   3903,
+   3902,
+   3901,
+   3900,
+   3899,
+   3898,
+   3897,
+   3896,
+   3895,
+   3893,
+   3892,
+   3891,
+   3890,
+   3889,
+   3888,
+   3887,
+   3886,
+   3885,
+   3884,
+   3883,
+   3882,
+   3880,
+   3879,
+   3878,
+   3877,
+   3876,
+   3875,
+   3873,
+   3872,
+   3871,
+   3870,
+   3869,
+   3868,
+   3867,
+   3866,
+   3865,
+   3863,
+   3862,
+   3861,
+   3860,
+   3859,
+   3858,
+   3857,
+   3856,
+   3855,
+   3854,
+   3853,
+   3852,
+   3851,
+   3850,
+   3849,
+   3848,
+   3847,
+   3846,
+   3845,
+   3894,
+   3881,
+   3838,
+   3831,
+   3829,
+   3826,
+   3825,
+   3824,
+   3821,
+   3837,
+   3835,
+   3834,
+   3833,
+   3832,
+   3819,
+   3818,
+   3817,
+   3816,
+   3814,
+   3813,
+   3812,
+   3811,
+   3810,
+   3808,
+   3804,
+   3803,
+   3797,
+   3794,
+   3791,
+   3785,
+   3784,
+   3783,
+   3780,
+   3762,
+   3448,
+   3836,
+   3830,
+   3828,
+   3827,
+   3820,
+   3815,
+   3807,
+   3806,
+   3805,
+   3801,
+   3800,
+   3799,
+   3798,
+   3796,
+   3795,
+   3793,
+   3792,
+   3790,
+   3789,
+   3788,
+   3787,
+   3786,
+   3782,
+   3781,
+   3779,
+   3778,
+   3777,
+   3776,
+   3774,
+   3773,
+   3769,
+   3767,
+   3761,
+   3757,
+   3752,
+   3751
+  ],
+  "direct": [
+   {
+    "sha": "71d1a8d36001fdebc5780a92f35889518e4f7628",
+    "subject": "docs(bugs): 重建 BUGS.md 索引（合流后残留多份「共 N 条」与重复行）"
+   },
+   {
+    "sha": "3e39b7c9466fe782b80a8452fccd0f0da1b188eb",
+    "subject": "fix(item-menu): 互联下载的发起/暂停/继续/取消回到右键菜单主操作行"
+   },
+   {
+    "sha": "d9b15870debc2097b5a8345fbd50194cd2cee639",
+    "subject": "fix(popup): 撤掉 #3851 的抬手选区探针，BUG-4911 并入 BUG-4925 的选区变化作废机制（同一检测器只留一套判据，旧选区不挡滑关）"
+   },
+   {
+    "sha": "3e83c6ed3fbe6402f9224a522de62c011d81af47",
+    "subject": "test(import): 开包定性调用方守卫改用 maskComments，不再手写 indexOf('//') 剥注释（合并后必跑 source_guard_adoption 红）"
+   },
+   {
+    "sha": "c203a13e121f81d2792424fbae1a5a14b8a1f34b",
+    "subject": "test(database): v163 迁移测试改用 package:test"
+   },
+   {
+    "sha": "3e0efc6bec24d78889ffbcf5e26349c2d53aad11",
+    "subject": "fix(cover-block): 专辑海报卡副行字号改取 fushiType.titleSmall，不写裸数字 14"
+   },
+   {
+    "sha": "5134e1ccb1410528eadeea3693a0c4f63b5fc2b7",
+    "subject": "fix(server-webui): 重生成 web_kit.g.dart，补上 #3798 给 icons.js 加的 fullscreen 字形"
+   },
+   {
+    "sha": "9133a9465b0a31f5431c3df9b522c85662243008",
+    "subject": "Merge branch 'integ/3843' into claude/review-merge-fix-fc0e29"
+   },
+   {
+    "sha": "9c5f3c353ab02350bbb16506bc995350567b953f",
+    "subject": "test(settings): 覆盖账登记网页全屏接管开关（#3798 新设置，专项测试已咬住）"
+   },
+   {
+    "sha": "0d9312566c3789f84f1c3f98f9b1fbe4b57c5f17",
+    "subject": "Merge branch 'integ/3842' into claude/review-merge-fix-fc0e29"
+   },
+   {
+    "sha": "81aac13dfdb1e5b0459e1d663e4ff78eaca570b2",
+    "subject": "test(home): settleCoverProbes 也等艺术字（FushiLogoTitle）的文件读取收尾，Windows tearDown 不再撞文件被占用"
+   },
+   {
+    "sha": "3d768a10ffed380885894df4d1ac9c730d688028",
+    "subject": "test(reader): #3805 / #3830 的 Chrome 跑手改从 reader_harness_support.js 取 readPayload（#3826 删掉了 vn_shell_harness_support.mjs）"
+   }
+  ],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44799669556"
+   },
+   "windows": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44799669054"
+   },
+   "macos": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44799669054"
+   },
+   "ios": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44799669054"
+   }
+  }
+ },
  "prs": {
+  "3448": {
+   "number": 3448,
+   "title": "fix(flatpak): 工作目录建在 FLATPAK_STATE_DIR 旁，修 flatpak-baseapp state dir 跨文件系统（BUG-4659）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 85,
+   "deletions": 3,
+   "labels": []
+  },
   "3681": {
    "number": 3681,
    "title": "漫画 / 小说有声整合：合并 #3665–#3670 并接通批量合成、OCR 签名、用词替换表、系列档案串行写入与漫画按系列跑",
@@ -105,6 +315,33 @@
    "mergedAt": "2026-11-19T12:41:48Z",
    "additions": 37409,
    "deletions": 737,
+   "labels": []
+  },
+  "3751": {
+   "number": 3751,
+   "title": "fix(manga-audio): 翻页不再被音频拉回、查词自动暂停、播放条重做成播放卡",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 1187,
+   "deletions": 275,
+   "labels": []
+  },
+  "3752": {
+   "number": 3752,
+   "title": "fix(sync): 对端下书分阶段进度、落地后同卡接着显示、接进后台任务（BUG-4906）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 1051,
+   "deletions": 230,
+   "labels": []
+  },
+  "3757": {
+   "number": 3757,
+   "title": "docs(agent): CLAUDE.md 加「方案取最优、一次做到位」规则",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 1,
+   "deletions": 0,
    "labels": []
   },
   "3759": {
@@ -116,6 +353,42 @@
    "deletions": 11,
    "labels": []
   },
+  "3761": {
+   "number": 3761,
+   "title": "fix(manga-audio): 有声书片段与合成句混排不脱节——统一响度、裁静音淡入淡出、克隆旁白音色",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 739,
+   "deletions": 15,
+   "labels": []
+  },
+  "3762": {
+   "number": 3762,
+   "title": "feat(ops): AI 操作目录补视频库整理（作品明细 / 手动季集 / 整理文件名 / 点名搬动）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 5189,
+   "deletions": 13,
+   "labels": []
+  },
+  "3767": {
+   "number": 3767,
+   "title": "feat(work-network): 关系网接入刮削的系列关系（续作 / 前传 / 外传 / 剧场版），未入库作品也画出来，任何时候都能手动加",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 4965,
+   "deletions": 334,
+   "labels": []
+  },
+  "3769": {
+   "number": 3769,
+   "title": "feat(srs): 复习卡面手势默认开启 + 手势设置页可视化示意图",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 936,
+   "deletions": 104,
+   "labels": []
+  },
   "3770": {
    "number": 3770,
    "title": "docs(agent): 修等待切片军规病句，写明 subagent_wait_slice 需 --install",
@@ -125,6 +398,258 @@
    "deletions": 2,
    "labels": []
   },
+  "3773": {
+   "number": 3773,
+   "title": "perf(ai): AI 层省 token——常驻工具 id 修正、describe 去重、助手提示紧凑 JSON + 度量",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 823,
+   "deletions": 18,
+   "labels": []
+  },
+  "3774": {
+   "number": 3774,
+   "title": "feat(ai-agent): 助手自主联网搜索 web.search / web.read + 首次确认",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 1286,
+   "deletions": 10,
+   "labels": []
+  },
+  "3776": {
+   "number": 3776,
+   "title": "feat(music): 音乐卡按 W 原型接 CD 盘与大字（#5）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 845,
+   "deletions": 182,
+   "labels": []
+  },
+  "3777": {
+   "number": 3777,
+   "title": "fix(web-novel): 取章以快照判已取、旧快照只解析一次（#3722 c25）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 160,
+   "deletions": 20,
+   "labels": []
+  },
+  "3778": {
+   "number": 3778,
+   "title": "fix: 矮窗口侧栏缺口撞舞台圆角（BUG-4906）+ 游戏首页空库卡拉伸（BUG-4907）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 516,
+   "deletions": 169,
+   "labels": []
+  },
+  "3779": {
+   "number": 3779,
+   "title": "fix(interconnect): 互联实时转码分段加小 LRU（#3722 c34，BUG-4906）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 501,
+   "deletions": 16,
+   "labels": []
+  },
+  "3780": {
+   "number": 3780,
+   "title": "fix(srs): 复习卡常驻「回到出处」入口；已配对设备牌组行与本机同一套色块行（设计稿 #15 #17）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 1505,
+   "deletions": 285,
+   "labels": []
+  },
+  "3781": {
+   "number": 3781,
+   "title": "fix(video-subtitle): 字幕生成五条修复与远端语言选择（#3722 c35）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 1144,
+   "deletions": 95,
+   "labels": []
+  },
+  "3782": {
+   "number": 3782,
+   "title": "fix(video): 控制器句柄 / 订阅生命周期与 libmpv 读取（路线图 #3722 c32）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 713,
+   "deletions": 176,
+   "labels": []
+  },
+  "3783": {
+   "number": 3783,
+   "title": "perf(manga): 阅读器热路径（#3722 c38：降采样读头分流 + 插队、缩放不重建、分镜预热与缓存、resize 合并）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 929,
+   "deletions": 88,
+   "labels": []
+  },
+  "3784": {
+   "number": 3784,
+   "title": "网页视频内置档：进程死亡后恢复与重放循环知情、YouTube 制卡统一直裁退回队列、live 轨不再整份重灌（#3722 c29）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 945,
+   "deletions": 143,
+   "labels": []
+  },
+  "3785": {
+   "number": 3785,
+   "title": "fix(manga-import): #3722 c26 漫画导入快路径（skip 先判重、EPUB 实际字节封顶、进度含解压、PDF 书目录归属）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 1585,
+   "deletions": 120,
+   "labels": []
+  },
+  "3786": {
+   "number": 3786,
+   "title": "fix(ui): 手机端模块页大标题统一为书架规格（设计稿 #18）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 1327,
+   "deletions": 472,
+   "labels": []
+  },
+  "3787": {
+   "number": 3787,
+   "title": "perf/fix(reader): 章节缓存先查后读、预取跟随阅读方向、初次恢复失败立即回执（#3722 c24）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 688,
+   "deletions": 67,
+   "labels": []
+  },
+  "3788": {
+   "number": 3788,
+   "title": "fix(ui): 带色卡片给子树和弹层下发局部配色（BUG-4906）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 1159,
+   "deletions": 521,
+   "labels": []
+  },
+  "3789": {
+   "number": 3789,
+   "title": "perf(novel): TXT 转 EPUB / LNReader 连载更新 / 书内搜索移出 UI isolate + BUG-4906/4907/4908（#3722 c40）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 1028,
+   "deletions": 141,
+   "labels": []
+  },
+  "3790": {
+   "number": 3790,
+   "title": "fix(games): 非 Windows 游戏页宽屏接入库页壳，不再是悬浮标题胶囊（BUG-4906）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 420,
+   "deletions": 85,
+   "labels": []
+  },
+  "3791": {
+   "number": 3791,
+   "title": "fix(tls): 服务端 WebUI 在 Chrome 报 ERR_CERT_INVALID（BUG-4906）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 252,
+   "deletions": 20,
+   "labels": []
+  },
+  "3792": {
+   "number": 3792,
+   "title": "fix(books): 删书必清 override 封面、批删只回收一次库空间、墓碑写失败留痕（#3722 c37）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 649,
+   "deletions": 147,
+   "labels": []
+  },
+  "3793": {
+   "number": 3793,
+   "title": "fix(plex): 起播时当前连接不通自动在已存连接里换线路（#3722 c42，gap-remote-7）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 737,
+   "deletions": 73,
+   "labels": []
+  },
+  "3794": {
+   "number": 3794,
+   "title": "feat(tts): 对话框滚动条内缩、TTS 文本处理规则共用一份、在线限流面板（11-20 反馈 #7 #8 #9）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 2394,
+   "deletions": 308,
+   "labels": []
+  },
+  "3795": {
+   "number": 3795,
+   "title": "fix(manga): 下载暂停 / 取消立即生效与失败分型、Android 取图池宽、取页落盘收口（#3722 c28）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 890,
+   "deletions": 141,
+   "labels": []
+  },
+  "3796": {
+   "number": 3796,
+   "title": "fix(video): 图形字幕转文字单条失败不作废、PGS 增量读取、共用抽轨、自动对轴防换集写错（#3722 c36）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 1158,
+   "deletions": 137,
+   "labels": []
+  },
+  "3797": {
+   "number": 3797,
+   "title": "feat(series-art): 视频首页横滑条不再盖住主卡 + logo 按视觉面积定尺寸 + 带字背景不叠 logo + 首页色块接艺术字（11-20 反馈 #1 #2 #3 #11）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 1430,
+   "deletions": 251,
+   "labels": []
+  },
+  "3798": {
+   "number": 3798,
+   "title": "feat(web-browser): 网页全屏由 Fushi 接管 + 竖屏视频优化",
+   "author": "W1ght",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 1325,
+   "deletions": 44,
+   "labels": []
+  },
+  "3799": {
+   "number": 3799,
+   "title": "perf(source-scan): 来源重扫认出已入库的书、远端漫画不逐卷重列、漫画索引逐条落盘 (#3722 c27)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 774,
+   "deletions": 89,
+   "labels": []
+  },
+  "3800": {
+   "number": 3800,
+   "title": "fix(ui): 首页今日/复习卡文字完整、浏览空状态横幅、封面块投影不裁切、手机页头合并⋯",
+   "author": "W1ght",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 999,
+   "deletions": 288,
+   "labels": []
+  },
+  "3801": {
+   "number": 3801,
+   "title": "fix(video): #3722 c31 播放页加载失败收口、远端换集按代际、自建流客户端收尾关闭、回看释放转码",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 844,
+   "deletions": 132,
+   "labels": []
+  },
   "3802": {
    "number": 3802,
    "title": "tool(heavy): 起不来的命令排队前就拒；gradle wrapper 入库，原生库检查不再拦 JVM 单测",
@@ -132,6 +657,168 @@
    "mergedAt": "2026-11-20T12:18:24Z",
    "additions": 3999,
    "deletions": 208,
+   "labels": []
+  },
+  "3803": {
+   "number": 3803,
+   "title": "feat(item-menu): 四种媒体右键菜单统一骨架 + 有声漫画工作台 + 侧栏悬停/右键滚动修复",
+   "author": "W1ght",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 5632,
+   "deletions": 1064,
+   "labels": []
+  },
+  "3804": {
+   "number": 3804,
+   "title": "fix(onboarding): 引导与复习模块文案改为默认 RWKV",
+   "author": "W1ght",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 1083,
+   "deletions": 393,
+   "labels": []
+  },
+  "3805": {
+   "number": 3805,
+   "title": "feat(web-novel): 阅读器开着时在 spine 末尾续挂下一章占位，会话内接着读（#3722 c30 / novel-d6）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 1082,
+   "deletions": 71,
+   "labels": []
+  },
+  "3806": {
+   "number": 3806,
+   "title": "perf(shelf): 书架 / 归组器读瘦投影 + 新装库补统计索引（#3722 c49）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 1123,
+   "deletions": 192,
+   "labels": []
+  },
+  "3807": {
+   "number": 3807,
+   "title": "fix(mining): 制卡抽取每任务私有目录、有界并发，落卡仍按点击顺序（c44 / video-30 / BUG-4910）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 1800,
+   "deletions": 327,
+   "labels": []
+  },
+  "3808": {
+   "number": 3808,
+   "title": "fix(manga-import): EPUB 定性移出 UI isolate，批量不预定性 (#3722 c39)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 2345,
+   "deletions": 224,
+   "labels": []
+  },
+  "3810": {
+   "number": 3810,
+   "title": "feat(media-links): AI 关系裁决补同类系列候选与方向兜底，提示词去重、批量合并裁决省额度",
+   "author": "hajisensai",
+   "mergedAt": null,
+   "additions": 3078,
+   "deletions": 336,
+   "labels": []
+  },
+  "3811": {
+   "number": 3811,
+   "title": "feat(server-webui): WebUI 重做成 M3E，与浏览器扩展共用一套设计库",
+   "author": "W1ght",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 3938,
+   "deletions": 629,
+   "labels": []
+  },
+  "3812": {
+   "number": 3812,
+   "title": "perf(video): 刮削图解码封顶 + 大字幕解析移出 UI isolate (#3722 c33)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 1496,
+   "deletions": 165,
+   "labels": []
+  },
+  "3813": {
+   "number": 3813,
+   "title": "fix(shelf/audiobook): 重新定位音频两行同改、断链状态异步缓存、句间静音悬浮字幕提前切句等（#3722 c48）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 1827,
+   "deletions": 310,
+   "labels": []
+  },
+  "3814": {
+   "number": 3814,
+   "title": "perf/fix(manga): 阅读器改设置不再无谓重载文档、sidecar 重启后在线章续读、章节抽屉懒建 (#3722 c43)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 3319,
+   "deletions": 467,
+   "labels": []
+  },
+  "3815": {
+   "number": 3815,
+   "title": "fix(video): 制卡截帧锁外编码、mpv 属性批量下发五合一留痕、配置前移到 open 前（#3722 c46）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 1342,
+   "deletions": 368,
+   "labels": []
+  },
+  "3816": {
+   "number": 3816,
+   "title": "perf/fix(video): 合集首开去 N+1、本地开播 IO 去重、倍速按系列记、uid 流合并重查（#3722 c45）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 3071,
+   "deletions": 369,
+   "labels": []
+  },
+  "3817": {
+   "number": 3817,
+   "title": "fix(video): 远端字幕读超时、媒体服务器整片续传、并发下载字幕不丢、YouTube 画质档复用（#3722 c47）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:22Z",
+   "additions": 4421,
+   "deletions": 414,
+   "labels": []
+  },
+  "3818": {
+   "number": 3818,
+   "title": "refactor(subtitle): SRT 序列化收成一份（#3722 c52 video-36o）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 3250,
+   "deletions": 477,
+   "labels": []
+  },
+  "3819": {
+   "number": 3819,
+   "title": "perf/fix(manga): 作品页已下载判据缓存、描述符事务内读改写、Kavita 批量进度同一时间戳（#3722 c50）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 5947,
+   "deletions": 793,
+   "labels": []
+  },
+  "3820": {
+   "number": 3820,
+   "title": "feat(settings): 分段选择行改成标准设置行（说明进卡片、窄屏换行撑满）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 877,
+   "deletions": 312,
+   "labels": []
+  },
+  "3821": {
+   "number": 3821,
+   "title": "perf(video): 视频页去掉换集全屏逐帧轮询、字幕样式预览整页重建、查词星标全量读库（#3722 c51）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 4134,
+   "deletions": 616,
    "labels": []
   },
   "3822": {
@@ -152,6 +839,141 @@
    "deletions": 6,
    "labels": []
   },
+  "3824": {
+   "number": 3824,
+   "title": "fix: 路线图 #3722 遗留 L4——启动挂点、host 删书清理、导入定性移出 UI isolate、网页小说重建后台化",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 5152,
+   "deletions": 621,
+   "labels": []
+  },
+  "3825": {
+   "number": 3825,
+   "title": "fix: 路线图 #3722 遗留 L1——要新文案的失败提示（LNReader 读盘 / 字幕面板 / 刮削清理 / 网页制卡）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 1736,
+   "deletions": 235,
+   "labels": []
+  },
+  "3826": {
+   "number": 3826,
+   "title": "fix(reader): 恢复失败回执覆盖异步抛出、VN 插图归类不读脱离文档的样式；reader Node 跑手统一 stdin + compileFunction（路线图 #3722 遗留 L5）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 1903,
+   "deletions": 1820,
+   "labels": []
+  },
+  "3827": {
+   "number": 3827,
+   "title": "fix(manga): 作品页刷新/订阅/选章不再丢更新，下载状态只认最后一轮读 (BUG-4913)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 462,
+   "deletions": 79,
+   "labels": []
+  },
+  "3828": {
+   "number": 3828,
+   "title": "perf(m4): 视频 / 媒体测量组；HLS 下载 3 片在途（video-33）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 150,
+   "deletions": 40,
+   "labels": []
+  },
+  "3829": {
+   "number": 3829,
+   "title": "perf(video): 路线图 m3 测量组——字幕列表行高备忘、远端起播并行取流（附测量表）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 9008,
+   "deletions": 1175,
+   "labels": []
+  },
+  "3830": {
+   "number": 3830,
+   "title": "perf(reader): m1 阅读引擎测量——分页共用文本索引、光标视口预筛、章节路径表",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 3401,
+   "deletions": 352,
+   "labels": []
+  },
+  "3831": {
+   "number": 3831,
+   "title": "fix(video,misc): nmv 视频 / 杂项遗留项收尾（c16/c18/c29/c33/c36/c45/c46/c47/c51）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 7612,
+   "deletions": 1284,
+   "labels": []
+  },
+  "3832": {
+   "number": 3832,
+   "title": "perf/fix(manga): m2 测量——卷归组平方级改查表、扫描归类搬出 UI isolate；sidecar 临时目录归宿主持有 (#3722 m2, BUG-4914)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 10906,
+   "deletions": 1294,
+   "labels": []
+  },
+  "3833": {
+   "number": 3833,
+   "title": "fix(manga): 路线图 #3722 遗留 L2 漫画杂项（垃圾条目判据、上传取消竞态、Kavita 推送记账、分镜单飞、请求号撞号、下载重解析、OCR 队列接续）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 4556,
+   "deletions": 718,
+   "labels": []
+  },
+  "3834": {
+   "number": 3834,
+   "title": "fix(updates): 调试版流水线面板对跑调试包的 iOS/安卓用户也显示（BUG-4906）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 184,
+   "deletions": 11,
+   "labels": []
+  },
+  "3835": {
+   "number": 3835,
+   "title": "perf(stats): m5 统计事实按域 / 按媒体读——统计侧栏只读本书、观看页只读观看域（附测量表，#3722 m5, BUG-4915）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 11470,
+   "deletions": 1325,
+   "labels": []
+  },
+  "3836": {
+   "number": 3836,
+   "title": "docs(plans): 路线图 #3722 回填实施结果（剩余 33 组全部开 PR）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 155,
+   "deletions": 0,
+   "labels": []
+  },
+  "3837": {
+   "number": 3837,
+   "title": "feat(home): 升级后首页「本版新内容」卡片 + 新内容页",
+   "author": "W1ght",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 1359,
+   "deletions": 20,
+   "labels": []
+  },
+  "3838": {
+   "number": 3838,
+   "title": "SRS 协议 4 换代第二段整批（第三至第六波）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 78507,
+   "deletions": 28169,
+   "labels": []
+  },
   "3841": {
    "number": 3841,
    "title": "fix(dist_test): 本机作为同级 worker 参与外包测试；snapshot push 卡死 120 秒即剔除",
@@ -159,6 +981,528 @@
    "mergedAt": "2026-11-20T13:32:10Z",
    "additions": 676,
    "deletions": 55,
+   "labels": []
+  },
+  "3845": {
+   "number": 3845,
+   "title": "docs(bugs): BUG-4050 补反馈 XD48lGxwUi 的录像证据（未修复）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:31Z",
+   "additions": 7,
+   "deletions": 0,
+   "labels": []
+  },
+  "3846": {
+   "number": 3846,
+   "title": "fix(audiobook): 进度条拖到片尾被夹回末句结束（BUG-4907）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:31Z",
+   "additions": 150,
+   "deletions": 14,
+   "labels": []
+  },
+  "3847": {
+   "number": 3847,
+   "title": "fix(reader): 乐曲制卡带上封面——阅读器封面读配对字幕书封面（BUG-4913）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:31Z",
+   "additions": 199,
+   "deletions": 44,
+   "labels": []
+  },
+  "3848": {
+   "number": 3848,
+   "title": "fix(video): SP / SPs 发布组特典目录判成本地特典，不再按标题「SP」误绑无关剧（BUG-4910）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:31Z",
+   "additions": 122,
+   "deletions": 1,
+   "labels": []
+  },
+  "3849": {
+   "number": 3849,
+   "title": "fix(reader): 小说卡片来源回看高亮错位——锚点改用学习单位坐标（BUG-4914）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:31Z",
+   "additions": 157,
+   "deletions": 18,
+   "labels": []
+  },
+  "3850": {
+   "number": 3850,
+   "title": "fix(download): 番剧下载换口径后字节状态不再停在 100%（BUG-4906）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:31Z",
+   "additions": 157,
+   "deletions": 5,
+   "labels": []
+  },
+  "3851": {
+   "number": 3851,
+   "title": "fix(popup): 触屏在查词弹窗正文拖选文字不再被本体横滑关掉（BUG-4911）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:31Z",
+   "additions": 250,
+   "deletions": 5,
+   "labels": []
+  },
+  "3852": {
+   "number": 3852,
+   "title": "fix(srs): RWKV 同日间隔守卫按设置组数作答，列表到期数与复习页出卡一致（BUG-4915）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 99,
+   "deletions": 20,
+   "labels": []
+  },
+  "3853": {
+   "number": 3853,
+   "title": "fix(manga): 作品页封面认刮削封面，与书架卡同一入口（BUG-4912）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:31Z",
+   "additions": 340,
+   "deletions": 8,
+   "labels": []
+  },
+  "3854": {
+   "number": 3854,
+   "title": "fix(video): 本地中继交出前真连探活，iOS 回收监听 socket 后不再复用死端口（BUG-4920）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:31Z",
+   "additions": 289,
+   "deletions": 77,
+   "labels": []
+  },
+  "3855": {
+   "number": 3855,
+   "title": "fix(mihon-desktop): sidecar 按调用通道串行，慢取流不再堵住同扩展搜索 (BUG-4909)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:31Z",
+   "additions": 574,
+   "deletions": 4,
+   "labels": []
+  },
+  "3856": {
+   "number": 3856,
+   "title": "fix(popup): H/L 模式串音调画高低线并换算成下降位参与合并/去重 (BUG-4917)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:31Z",
+   "additions": 455,
+   "deletions": 25,
+   "labels": []
+  },
+  "3857": {
+   "number": 3857,
+   "title": "fix(collections): 用户显式加入 / 下载在线源作品时撤销合集删除墓碑（BUG-4908）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 169,
+   "deletions": 28,
+   "labels": []
+  },
+  "3858": {
+   "number": 3858,
+   "title": "fix(discovery): 真红小站合集直链补 X-Amz-Signature 参数，修 galgamedownload.date 403（BUG-4924）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:31Z",
+   "additions": 39,
+   "deletions": 3,
+   "labels": []
+  },
+  "3859": {
+   "number": 3859,
+   "title": "fix(android): 截屏识字借用 App 外内录的投屏授权，不再把内录停掉（BUG-4922）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 302,
+   "deletions": 9,
+   "labels": []
+  },
+  "3860": {
+   "number": 3860,
+   "title": "fix(collections): 「继续看 第N集」写真实集号而非列表顺位号（BUG-4921）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:31Z",
+   "additions": 251,
+   "deletions": 4,
+   "labels": []
+  },
+  "3861": {
+   "number": 3861,
+   "title": "fix(srs): 冲突页处理单飞 + 失败也重读，连点「保留」不再反复报 no such conflict（BUG-4918）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 251,
+   "deletions": 81,
+   "labels": []
+  },
+  "3862": {
+   "number": 3862,
+   "title": "fix(music): 二级页正文改由脚手架之下构建，已移除的曲目等页不再被页头盖住（BUG-4919）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:31Z",
+   "additions": 447,
+   "deletions": 319,
+   "labels": []
+  },
+  "3863": {
+   "number": 3863,
+   "title": "fix(floating-ball): Lens 同意框用导航器 context 弹（BUG-4923）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 29,
+   "deletions": 5,
+   "labels": []
+  },
+  "3865": {
+   "number": 3865,
+   "title": "fix(item-menu): 「设置」子菜单鼠标横移不再收起（BUG-4926）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 192,
+   "deletions": 53,
+   "labels": []
+  },
+  "3866": {
+   "number": 3866,
+   "title": "fix(manga): Windows 漫画阅读器全屏出现上下左右滚动条 (BUG-4927)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 91,
+   "deletions": 1,
+   "labels": []
+  },
+  "3867": {
+   "number": 3867,
+   "title": "fix(popup): 拖选区柄 / 长按选字时横滑与下拉不再关闭查词弹窗（BUG-4925）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 368,
+   "deletions": 4,
+   "labels": []
+  },
+  "3868": {
+   "number": 3868,
+   "title": "fix(audiobook): 开书未播放时重播本句落在句间静音不再退回全书第一句",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:31Z",
+   "additions": 158,
+   "deletions": 19,
+   "labels": []
+  },
+  "3869": {
+   "number": 3869,
+   "title": "fix(srs): 牌组列表右键菜单在鼠标处弹出（BUG-4928）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:31Z",
+   "additions": 58,
+   "deletions": 18,
+   "labels": []
+  },
+  "3870": {
+   "number": 3870,
+   "title": "fix(reader): 纯黑深色（OLED）下阅读器纸色与漫画底取真黑（BUG-4931）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 103,
+   "deletions": 4,
+   "labels": []
+  },
+  "3871": {
+   "number": 3871,
+   "title": "fix(apple-widgets): 主屏小组件底色改用系统背景，深色模式不再灰亮 (BUG-4932)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 67,
+   "deletions": 2,
+   "labels": []
+  },
+  "3872": {
+   "number": 3872,
+   "title": "fix(toolbar): 顶栏前置圆钮测宽先扣标题保底宽，书名不再被挤没（BUG-4938）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 127,
+   "deletions": 7,
+   "labels": []
+  },
+  "3873": {
+   "number": 3873,
+   "title": "fix(lookup): 键盘弹着时系统返回只收键盘，不清空查询（BUG-4930）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 61,
+   "deletions": 1,
+   "labels": []
+  },
+  "3874": {
+   "number": 3874,
+   "title": "fix(interconnect): 清理 host 同步根死数据（文件箱 / v3.0.x 写入者目录）+ 保留名单一真相源 + 存储页归类（BUG-4906/4907/4908）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 1539,
+   "deletions": 19,
+   "labels": []
+  },
+  "3875": {
+   "number": 3875,
+   "title": "fix(web-browser): 查词点「高级制卡」不再关栈续播视频，字段预填带例句 (BUG-4942)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 142,
+   "deletions": 4,
+   "labels": []
+  },
+  "3876": {
+   "number": 3876,
+   "title": "fix(popup): 副 engine 入口自己装引擎宿主装配，app 外查词的在线 TTS 兜底恢复（BUG-4940）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 195,
+   "deletions": 14,
+   "labels": []
+  },
+  "3877": {
+   "number": 3877,
+   "title": "fix(browser-extension): 页面层查词发音改交 offscreen 播放，修 X 等 CSP 严格站点第一层无发音 (BUG-4934)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 410,
+   "deletions": 21,
+   "labels": []
+  },
+  "3878": {
+   "number": 3878,
+   "title": "fix(anki): BUG-4933 漫画/PDF/音乐歌词页覆写卡片静默无效",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 224,
+   "deletions": 23,
+   "labels": []
+  },
+  "3879": {
+   "number": 3879,
+   "title": "fix(android): ANR 摘要带上 Flutter 引擎线程栈（raster / ui）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 334,
+   "deletions": 9,
+   "labels": []
+  },
+  "3880": {
+   "number": 3880,
+   "title": "fix(diagnostics): 诊断标记只同步写不 fsync，免主线程卡成后台 ANR（BUG-4943）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 126,
+   "deletions": 33,
+   "labels": []
+  },
+  "3881": {
+   "number": 3881,
+   "title": "test(leaderboard): 修首页 push 用例副标题偶发红（等待条件改为缓存落盘后的通知）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 24,
+   "deletions": 1,
+   "labels": []
+  },
+  "3882": {
+   "number": 3882,
+   "title": "fix(media_kit): mpv_terminate_destroy 移到辅助 isolate，修 Android 关闭播放页 ANR（BUG-4941）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 101,
+   "deletions": 1,
+   "labels": []
+  },
+  "3883": {
+   "number": 3883,
+   "title": "fix(reader): iOS 18 振假名压进基字（BUG-4936，反馈 HXZ2hLIoCi）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 99,
+   "deletions": 5,
+   "labels": []
+  },
+  "3884": {
+   "number": 3884,
+   "title": "fix(global-lookup): macOS/Linux 应用外查词卡不再发原生接不住的词条取回地址（BUG-4939）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 167,
+   "deletions": 9,
+   "labels": []
+  },
+  "3885": {
+   "number": 3885,
+   "title": "fix(extension): 查词弹窗跟随 App 的自动展开行数、词频聚合等显示偏好 (BUG-4935)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 554,
+   "deletions": 57,
+   "labels": []
+  },
+  "3886": {
+   "number": 3886,
+   "title": "fix(audio-sources): 连点删除音频源越界崩溃 / 误删别行（BUG-4947）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 108,
+   "deletions": 11,
+   "labels": []
+  },
+  "3887": {
+   "number": 3887,
+   "title": "fix(music): 封面网格布局下曲目/艺人/本地歌单不再排大字色块",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 275,
+   "deletions": 21,
+   "labels": []
+  },
+  "3888": {
+   "number": 3888,
+   "title": "fix(diagnostics): 小米一键清理（OneKeyClean）判厂商停止，不再误报闪退",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 88,
+   "deletions": 6,
+   "labels": []
+  },
+  "3889": {
+   "number": 3889,
+   "title": "fix(srs): 同步冲突页同类条数加载时一次数完，修 iOS 看门狗 0x8BADF00D（BUG-4949）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 122,
+   "deletions": 4,
+   "labels": []
+  },
+  "3890": {
+   "number": 3890,
+   "title": "fix(reader): 侧板不再依赖正文 WebView controller，renderer 死后重建不再空断言崩溃（BUG-4945）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 81,
+   "deletions": 88,
+   "labels": []
+  },
+  "3891": {
+   "number": 3891,
+   "title": "fix(srs): 冲突页实体名整页批量取，大冲突量不再逐条读到 63 秒、内存翻倍（BUG-4948）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 360,
+   "deletions": 95,
+   "labels": []
+  },
+  "3892": {
+   "number": 3892,
+   "title": "fix(srs): 冲突中心同类计数 O(n²) 卡主线程，iOS 退出被看门狗杀（BUG-4950）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 87,
+   "deletions": 4,
+   "labels": []
+  },
+  "3893": {
+   "number": 3893,
+   "title": "fix(diagnostics): 装新版后不再把旧进程被结束误报成闪退（BUG-4953）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 150,
+   "deletions": 3,
+   "labels": []
+  },
+  "3894": {
+   "number": 3894,
+   "title": "test(video): 远端下载登记测试交替推进两个 zone，修 coverPath 间歇红",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T17:23:21Z",
+   "additions": 110,
+   "deletions": 22,
+   "labels": []
+  },
+  "3895": {
+   "number": 3895,
+   "title": "fix(db): drift 后台连接开库撞上侧车错误时也走恢复阶梯（BUG-4954）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 333,
+   "deletions": 51,
+   "labels": []
+  },
+  "3896": {
+   "number": 3896,
+   "title": "fix(mihon): 扩展拦截器抛非 IOException 不再经 OkHttp 异步线程重抛带崩进程（BUG-4951）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 108,
+   "deletions": 5,
+   "labels": []
+  },
+  "3897": {
+   "number": 3897,
+   "title": "docs(bugs): BUG-4076 续报反馈 E4SzqUXFMN（证据不足，未改代码）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 4,
+   "deletions": 0,
+   "labels": []
+  },
+  "3898": {
+   "number": 3898,
+   "title": "fix(manga): Android 网站验证跨进程只传框架 ResultReceiver，修点验证主进程闪退（BUG-4952）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 100,
+   "deletions": 5,
+   "labels": []
+  },
+  "3899": {
+   "number": 3899,
+   "title": "fix(release): Android 发布保留 Dart 符号（libapp.so 未 strip 版），ANR 裸 pc 可还原（BUG-4955）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 412,
+   "deletions": 1,
+   "labels": []
+  },
+  "3900": {
+   "number": 3900,
+   "title": "fix(popup,dict): iOS 查词弹窗词条取回按正文判成败；查词历史增量落库（BUG-4956）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 364,
+   "deletions": 60,
+   "labels": []
+  },
+  "3901": {
+   "number": 3901,
+   "title": "feat(manga): 文字感知的 Gamma 校正（OCR 框外线性光 / 框内 sRGB）[依赖 #3843]",
+   "author": "W1ght",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 641,
+   "deletions": 105,
+   "labels": []
+  },
+  "3902": {
+   "number": 3902,
+   "title": "fix(sync): 聚合同步整份快照折叠/指纹挪到后台 isolate，修慢设备 ANR（BUG-4958）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 372,
+   "deletions": 33,
+   "labels": []
+  },
+  "3903": {
+   "number": 3903,
+   "title": "fix(audiobook): 多源播放列表改用线性 ShuffleOrder，修 TTS 长篇建列表 O(n²) 卡到 ANR（BUG-4957）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-20T19:10:30Z",
+   "additions": 213,
+   "deletions": 4,
    "labels": []
   }
  }
