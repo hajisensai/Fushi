@@ -169,19 +169,19 @@ void main() {
     expect(await allIds(), <int>[legacy]);
   });
 
-  test('BUG-4813：存量 done 行在调度入口收掉，每个库只扫一遍，不必等下一张卡写成功', () async {
+  test('BUG-4813：存量 done 行由启动清扫收掉，每个库只扫一遍，不必等下一张卡写成功', () async {
     final int legacy = await enqueue('book-a', 1000);
     final int pending = await enqueue('book-b', 2000);
     await markLegacyDone(<int>[legacy]);
 
-    // 没有任何一张卡写成功，只是调度来问了一次。
-    expect(await store.pendingBookUids(), <String>['book-b']);
+    // 没有任何一张卡写成功，只是启动时（首页首帧）清了一次。
+    await store.sweepLegacyDone();
     expect(await allIds(), <int>[pending]);
 
     // 同一个库不再扫第二遍（另一个 store 实例也一样：调用方到处都是现建的）。
     final int late = await enqueue('book-c', 3000);
     await markLegacyDone(<int>[late]);
-    await WebMineQueueStore(db).pendingBookUids();
+    await WebMineQueueStore(db).sweepLegacyDone();
     expect(await allIds(), unorderedEquals(<int>[pending, late]));
   });
 
