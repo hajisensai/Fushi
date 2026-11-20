@@ -81,8 +81,6 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
-import 'package:fushi/src/srs/srs_card_appearance.dart'
-    show SrsCardAppearance, srsCardColorScheme;
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi/src/srs/srs_fushi_card_media.dart';
 import 'package:fushi/src/srs/srs_card_face_route.dart';
@@ -2774,16 +2772,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     // WebView 卡面滚不到底栏下面，停在底栏上沿（与顶端让位浮动页头同一口径，见
     // [_cardScrollsUnderHeader]）。
     final bool underBar = _nativeFace(rendered);
-    // 卡面自己铺底（Fushi 卡片自定义配色）时整面都是卡面底色，底栏垫同色底板接得上；
-    // 否则卡面透明、背后是路由层的页面背景（柔光 / 形状 / 自定义图片）——底栏一律不画
-    // 底，卡面内容在底栏上沿裁掉，页面背景完整铺到屏幕底边（见 [_withBottomBarScrim]）。
-    final bool ownSurface =
-        underBar &&
-        srsCardPaintsOwnSurfaceFor(
-          fushiCard: detail?.noteType.builtinKey == kSrsBuiltinFushiCardKey,
-          appearance: ref.watch(srsCardAppearanceProvider),
-        );
-    final double barCut = underBar && !ownSurface ? _bottomBarHeight : 0;
+    // 底栏一律不画底（含卡面自定义配色时）：背后是路由层的页面背景（柔光 / 形状 / 自定义
+    // 图片）。滚到底栏背后的原生卡面内容在底栏上沿裁掉（[_SrsBottomCutClipper]），不从
+    // 按钮之间透出来；末尾内容靠卡面的底部滚动内边距（底栏高度）滚到底栏以上，不被遮住。
+    final double barCut = underBar ? _bottomBarHeight : 0;
     final Widget cardFace = _cardFace(
       context,
       detail: detail,
@@ -2879,31 +2871,27 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
               behavior: HitTestBehavior.opaque,
               child: _SrsHeightReporter(
                 onHeight: _onBottomBarHeight,
-                child: _withBottomBarScrim(
-                  context,
-                  ownSurface: ownSurface,
-                  child: SafeArea(
-                    top: false,
-                    child: Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        tokens.spacing.page,
-                        tokens.spacing.gap * 1.5,
-                        tokens.spacing.page,
-                        tokens.spacing.gap * 1.5,
-                      ),
-                      child: _withBottomReplay(
-                        context,
-                        AnimatedSwitcher(
-                          duration: fushiMotionDuration(
-                            context,
-                            FushiMotion.short,
-                          ),
-                          switchInCurve: FushiMotion.enter,
-                          switchOutCurve: FushiMotion.exit,
-                          child: _showingAnswer
-                              ? _buildAnswerBar(context)
-                              : _buildShowAnswer(context),
+                child: SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      tokens.spacing.page,
+                      tokens.spacing.gap * 1.5,
+                      tokens.spacing.page,
+                      tokens.spacing.gap * 1.5,
+                    ),
+                    child: _withBottomReplay(
+                      context,
+                      AnimatedSwitcher(
+                        duration: fushiMotionDuration(
+                          context,
+                          FushiMotion.short,
                         ),
+                        switchInCurve: FushiMotion.enter,
+                        switchOutCurve: FushiMotion.exit,
+                        child: _showingAnswer
+                            ? _buildAnswerBar(context)
+                            : _buildShowAnswer(context),
                       ),
                     ),
                   ),
@@ -2913,39 +2901,6 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
           ),
         ],
       ),
-    );
-  }
-
-  /// 底栏的底板：只在卡面自己铺底（Fushi 卡片自定义配色，[srsCardPaintsOwnSurface]）时垫，
-  /// 由透明渐变到卡面底色——那时整面都是卡面底色、页面背景本就被盖住，底板与背后同色。
-  ///
-  /// 其余情况（卡面透明、透出路由层页面背景）底栏不画任何底：以前一律垫「透明→
-  /// `colorScheme.surface`」的不透明底板，柔光 / 形状 / 自定义图片背景在底栏上沿被一刀
-  /// 截成白条（BUG：所有者截图「底部怎么没进去」）。滚到底栏背后的内容改由卡面在底栏
-  /// 上沿裁掉（[_SrsBottomCutClipper]），不从评分按钮之间透出来；裁切对释义 WebView 平台
-  /// 视图同样生效（遮罩 / 模糊在 Android HC 与 Apple 上采不到平台视图）。
-  Widget _withBottomBarScrim(
-    BuildContext context, {
-    required bool ownSurface,
-    required Widget child,
-  }) {
-    if (!ownSurface) return child;
-    final SrsCardAppearance appearance = ref.watch(srsCardAppearanceProvider);
-    final Color surface = srsCardColorScheme(
-      appearance,
-      Theme.of(context).colorScheme,
-    ).surface;
-    return DecoratedBox(
-      key: const ValueKey<String>('srs-review-bottom-bar-scrim'),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: <Color>[surface.withValues(alpha: 0), surface, surface],
-          stops: const <double>[0, 0.3, 1],
-        ),
-      ),
-      child: child,
     );
   }
 
