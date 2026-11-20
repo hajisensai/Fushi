@@ -21,6 +21,7 @@ import 'package:fushi_asr_core/asr_core.dart' as asr show AsrAudioProfile;
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
+import 'package:fushi_engine/sync/interconnect_file_box_prune.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/interconnect_owner_devices.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart';
@@ -627,6 +628,9 @@ class HeadlessHost {
           ..srsRemoteStoreProvider = (() => srs.remoteStore)
           ..onClientWrite = srs.onClientWrite
           ..onClientUpload = _onClientUpload;
+    // BUG-4906：绑端口前清掉同步根下已无人读取的客户端文件箱书文件夹（与 app 当 host
+    // 同一个引擎函数；自身吞错留痕，不挡启动）。
+    await pruneDeadInterconnectFileBox(server.syncDataDir);
     try {
       await server.start();
     } catch (_) {
