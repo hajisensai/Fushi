@@ -274,6 +274,11 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   Set<String> _ocrDone = const <String>{};
   int _ocrDoneGeneration = 0;
 
+  /// [_refreshDownloadState] 的代次（BUG-4913）：任务表一变 `watchJobs` 就发一次、
+  /// 整批动作后还要补一次，几轮读同时在途；读完顺序由磁盘 IO 决定，先开始的那轮
+  /// 可能最后落地，拿它读到的旧任务表盖掉新的。只认最后开始的那轮。
+  int _downloadStateGeneration = 0;
+
   /// 章节多选（反馈 wCgL364tgM）：长按 / 右键 / Ctrl·Shift 点击进入，底栏批量
   /// 识别、标已读、标未读。
   final MediaSelectionController _selection = MediaSelectionController();
@@ -538,6 +543,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         );
       },
     );
+    final int generation = ++_downloadStateGeneration;
     final Map<String, MangaDownloadJobRow> jobs = await downloads.jobsForBook(
       row.bookKey,
     );
@@ -546,7 +552,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       bookDir,
       entry.chapters.map((OnlineMangaChapter chapter) => chapter.key),
     );
-    if (!mounted) return;
+    if (!mounted || generation != _downloadStateGeneration) return;
     final bool downloadedChanged = !setEquals(downloaded, _downloaded);
     setState(() {
       _jobs = jobs;
@@ -1335,25 +1341,37 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         bookKey: bookKey,
         entry: entry,
       );
-      final EpubBookRow? row = await service.database.getEpubBook(bookKey);
       // Kavita：服务器的逐章已读状态并进本地章进度（别的设备读过的章在这里才看得到）。
       Map<String, MangaChapterStateRow>? reconciled;
-      if (row != null &&
-          updated.runtime == OnlineMangaRuntimeKind.kavita &&
-          await reconcileKavitaChapterStates(
-                db: service.database,
-                bookUid: row.uid,
-                chapters: updated.chapters,
-                stamps: _kavitaStamps(),
-              ) >
-              0) {
-        reconciled = await _readChapterStates(row);
-        // A bulk import of server read marks: one report, highest chapter.
-        _appModel.reportPagedBookTrackingProgress(bookKey);
+      if (updated.runtime == OnlineMangaRuntimeKind.kavita) {
+        final EpubBookRow? stateRow = await service.database.getEpubBook(
+          bookKey,
+        );
+        if (stateRow != null &&
+            await reconcileKavitaChapterStates(
+                  db: service.database,
+                  bookUid: stateRow.uid,
+                  chapters: updated.chapters,
+                  stamps: _kavitaStamps(),
+                ) >
+                0) {
+          reconciled = await _readChapterStates(stateRow);
+          // A bulk import of server read marks: one report, highest chapter.
+          _appModel.reportPagedBookTrackingProgress(bookKey);
+        }
       }
+      // 最后一步重读行、读完直接 setState，中间不再 await（BUG-4913）：刷新途中
+      // 用户点的订阅可能已经落库并 setState 过，用刷新那一刻算出的 [updated] 盖回去
+      // 界面就退回旧订阅态。库里此刻的描述符才是两边合起来的结果。
+      final EpubBookRow? row = await service.database.getEpubBook(bookKey);
       if (!mounted) return;
+      final OnlineMangaLibraryEntry latest =
+          (row == null
+              ? null
+              : OnlineMangaLibraryEntry.tryParse(row.sourceMetadata)) ??
+          updated;
       setState(() {
-        _entry = updated;
+        _entry = latest;
         if (row != null) _row = row;
         if (reconciled != null) _states = reconciled;
         _refreshSucceeded = true;
