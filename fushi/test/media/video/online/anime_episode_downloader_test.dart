@@ -724,13 +724,22 @@ void main() {
         dest: dest,
       );
       expect(await dest.readAsBytes(), expected);
-      expect(server.requests.map((_Req r) => r.path), <String>[
+      final List<String> paths = <String>[
+        for (final _Req r in server.requests) r.path,
+      ];
+      expect(paths.take(2), <String>[
         '/hls/stream', // 直链尝试：拿到的是播放列表文本
         '/hls/stream', // 改走分片下载
-        '/hls/seg1.ts',
-        '/hls/key.bin',
-        '/hls/seg2.png',
       ]);
+      // 分片同时在途（video-33），到达服务器的先后不定。
+      expect(
+        paths.skip(2),
+        unorderedEquals(<String>[
+          '/hls/seg1.ts',
+          '/hls/key.bin',
+          '/hls/seg2.png',
+        ]),
+      );
     });
 
     test(
