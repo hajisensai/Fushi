@@ -76,6 +76,14 @@ void main() {
     final String body = source.substring(start, source.indexOf('\n  }', start));
     expect(body, contains('ReaderChapterPathIndex.build('));
     expect(body, contains('index.indexOf(filePath)'));
+    // 缓存的表必须先按当前章节列表 / 章数 / 解包目录校验再复用：网文追加章节后
+    // （adoptTrailingChapters 换新列表）不重建，新章反查一律 -1。
+    expect(
+      body,
+      contains(
+        'index.describes(source: chapters, count: chapters.length, dir: dir)',
+      ),
+    );
     expect(body, isNot(contains('_chapterFilePath(i) ==')));
   });
 
