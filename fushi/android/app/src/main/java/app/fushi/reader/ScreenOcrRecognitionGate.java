@@ -14,6 +14,12 @@ package app.fushi.reader;
  * PendingIntent）时，不会取消掉此刻正在跑的这一次。
  */
 final class ScreenOcrRecognitionGate {
+    /**
+     * 进程内最后发出的编号。跨服务实例递增：上一个服务实例的编号（留在 Dart 侧或残留
+     * 通知里）不会和新实例的编号撞上。
+     */
+    private static long lastIssued = 0;
+
     /** 当前流程的编号；0 = 这个服务实例还没跑过任何流程。 */
     private long flow = 0;
     /** 当前流程正在识别（定格帧已交出、选取层还没画出来）。 */
@@ -21,7 +27,7 @@ final class ScreenOcrRecognitionGate {
 
     /** 新的一次流程开始（每次申请截屏 / 保持会话直接取帧）：返回它的编号，旧编号全部作废。 */
     long begin() {
-        flow++;
+        flow = ++lastIssued;
         recognizing = false;
         return flow;
     }

@@ -67,6 +67,20 @@ class ScreenOcrRecognitionGateTest {
     }
 
     @Test
+    fun flowIdsDoNotRepeatAcrossServiceInstances() {
+        val old = ScreenOcrRecognitionGate()
+        val oldFlow = old.begin()
+        old.onRecognitionStarted(oldFlow)
+        // 服务停掉后重新拉起的新实例：旧实例的编号（残留通知 / Dart 侧）不是它的。
+        val fresh = ScreenOcrRecognitionGate()
+        val freshFlow = fresh.begin()
+        fresh.onRecognitionStarted(freshFlow)
+        assertFalse(oldFlow == freshFlow)
+        assertFalse(fresh.takeCancel(oldFlow))
+        assertTrue(fresh.takeCancel(freshFlow))
+    }
+
+    @Test
     fun freshInstanceHasNoCurrentFlow() {
         val gate = ScreenOcrRecognitionGate()
         assertEquals(0L, gate.current())
