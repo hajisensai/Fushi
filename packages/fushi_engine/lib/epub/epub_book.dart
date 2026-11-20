@@ -20,10 +20,10 @@ import 'package:fushi_engine/epub/reader_resource_host.dart';
 class EpubBook {
   EpubBook({
     required this.title,
-    required this.chapters,
-    this.toc = const [],
+    required List<EpubChapter> chapters,
+    List<EpubTocItem> toc = const [],
     this.coverHref,
-    this.resources = const {},
+    Map<String, EpubResource> resources = const {},
     this.rootDirectory,
     this.author,
     this.language,
@@ -32,7 +32,9 @@ class EpubBook {
     this.pageProgressionDirection,
     this.primaryWritingMode,
     this.series,
-  });
+  }) : _chapters = chapters,
+       _toc = toc,
+       _resources = resources;
 
   final String title;
   final String? author;
@@ -64,11 +66,41 @@ class EpubBook {
   /// OPF 声明的系列（`belongs-to-collection` / `calibre:series`），没有为 null。
   final EpubSeries? series;
 
-  final List<EpubChapter> chapters;
-  final List<EpubTocItem> toc;
+  /// spine 章节、目录与资源表。打开后只有一种变化：[adoptTrailingChapters]
+  /// （网页小说书阅读中途 spine 末尾长出新章）整体换成更长的新表，已有章节的
+  /// 章号与内容不变。
+  List<EpubChapter> get chapters => _chapters;
+  List<EpubChapter> _chapters;
+  List<EpubTocItem> get toc => _toc;
+  List<EpubTocItem> _toc;
+  Map<String, EpubResource> get resources => _resources;
+  Map<String, EpubResource> _resources;
   final String? coverHref;
-  final Map<String, EpubResource> resources;
   final String? rootDirectory;
+
+  /// 网页小说书阅读中途，解压树的 spine 末尾追加了新章（取回末尾「下一章」占位
+  /// 后续挂下一个占位，novel-d6）：把同一解压树重解析的 [grown] 比本书多出的尾部
+  /// 章节并进来，目录与资源表换成 [grown] 的（刚取回那一章的目录标题也随之更新）。
+  ///
+  /// 只接受「本书是 [grown] 的前缀」：章数更多、且已有每一章的 href 一致；否则
+  /// 不动并返回 false（解压树被别处整本重建过，交给下次开书）。已有章节的章号、
+  /// 内容与按章号的派生缓存都不变；插图表作废（新章可能带图），下次读取时重建。
+  /// 每章字数提示由调用方随新字数表重注（[setChapterCharCountHints]）。
+  bool adoptTrailingChapters(EpubBook grown) {
+    final List<EpubChapter> next = grown.chapters;
+    if (next.length <= _chapters.length) return false;
+    for (int i = 0; i < _chapters.length; i++) {
+      if (next[i].href != _chapters[i].href) return false;
+    }
+    _chapters = List<EpubChapter>.of(<EpubChapter>[
+      ..._chapters,
+      ...next.sublist(_chapters.length),
+    ]);
+    _toc = grown.toc;
+    _resources = <String, EpubResource>{..._resources, ...grown.resources};
+    _images = null;
+    return true;
+  }
 
   /// TODO-723: lazily-built, cached index of every `<img>` in the book, ordered
   /// by spine (reading order) then by DOM order within each chapter. Built once

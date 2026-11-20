@@ -369,7 +369,15 @@ extension _ReaderWebView on _ReaderFushiPageState {
       final EpubBook? book = _book;
       if (book == null || loaded.index >= book.chapters.length) return;
       book.chapters[loaded.index].discardCachedHtml();
-      if (mounted) _adoptOnlineChapterCharCount(book, loaded);
+      if (!mounted) return;
+      _adoptOnlineChapterCharCount(book, loaded);
+      final List<int>? grown = loaded.grownSpineCharacters;
+      // novel-d6：取回的是网页小说书末尾那一章、解压树的 spine 末尾又续挂了新
+      // 占位。在这次请求放行之前并进已打开的书：随后为这一章装页时下发的无缝
+      // 阅读序、「有没有下一章」的判断就已包含新章。
+      if (grown != null && grown.length > book.chapters.length) {
+        await _adoptGrownOnlineSpine(book, grown);
+      }
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderFushi.onlineChapter', e, stack);
       if (!mounted) return;

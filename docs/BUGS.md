@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4906](bugs/BUG-4906-reader-init-restore-no-failure-exit.md) | ✅ | ✅ | 阅读器引擎初始化或初次恢复链抛异常时不回执，只能等8秒兜底 |
+| [BUG-4906](bugs/BUG-4906-web-novel-tail-chapter-snapshot-desync.md) | ✅ | ✅ | web-novel-tail-chapter-snapshot-desync |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
 | [BUG-4903](bugs/BUG-4903-home-desktop-continue-cut-edge-title-concat.md) | ✅ | ✅ | 首页（桌面）「继续」右侧卡被窗口切掉一半、标题拼接成「Re：ゼロ…1<Re：…」 |
