@@ -13059,11 +13059,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     List<settings_dest.VideoGroup> groups =
         VideoQuickSettingsSheet.settingsGroups,
   }) {
-    // 网页档：着色器 / mpv / 弹幕都作用在 libmpv 或本地文件上，站点视频用不上。
+    // 网页档：mpv / 弹幕都作用在 libmpv 或本地文件上，站点视频用不上；「画质增强」页签
+    // 留着、画成说明态（着色器不生效 + 切内置网页播放器档的入口）。
     if (_webMode) groups = videoWebBackendSettingsGroups(groups);
     return VideoQuickSettingsSheet(
       appModel: appModel,
       ref: ref,
+      webBackend: _webMode,
+      onSwitchToBuiltinWebPlayer: _webMode && widget.webSite == null
+          ? () => unawaited(_switchWebToBuiltinHosting())
+          : null,
       // 单分组面板（字幕 / 音频）恒开在自己的分组；字幕面板挂载即触发字幕源加载。
       initialCategory: groups.length == 1
           ? groups.single.name

@@ -59,14 +59,16 @@ bool webVideoShowsPlayer({
 bool webVideoLeavesPlayer(String url) =>
     url.isNotEmpty && !webVideoIsWatchPage(url);
 
-/// 网页档设置面板的分组：着色器 / mpv / 弹幕都作用在 libmpv 或本地文件上，去掉。
+/// 网页档设置面板的分组：mpv / 弹幕都作用在 libmpv 或本地文件上，去掉。「画质增强」页签
+/// 保留——着色器同样不生效，但整页消失会被当成「画质增强按钮没了」（拍板 kp-No6loQi），
+/// 改由面板在网页档把这一页画成说明态（为什么不生效 + 切到内置网页播放器档的入口，
+/// [VideoQuickSettingsSheet.webBackend]）。
 @visibleForTesting
 List<settings_dest.VideoGroup> videoWebBackendSettingsGroups(
   List<settings_dest.VideoGroup> groups,
 ) => <settings_dest.VideoGroup>[
   for (final settings_dest.VideoGroup g in groups)
-    if (g != settings_dest.VideoGroup.shaders &&
-        g != settings_dest.VideoGroup.mpv &&
+    if (g != settings_dest.VideoGroup.mpv &&
         g != settings_dest.VideoGroup.danmaku)
       g,
 ];
@@ -1665,6 +1667,32 @@ extension _VideoWebSource on _VideoFushiPageState {
       default:
         throw StateError(res.message ?? res.detail ?? res.result);
     }
+  }
+
+  /// 「画质增强」说明态里的「切换到内置网页播放器」：记住宿主档偏好（与内置网页播放器页的
+  /// 宿主档菜单同一个键），同一本书原地换成内置网页播放器页（它有自己的超分，见
+  /// `web_video_shaders.dart`），集 / 轨 / 位置一并带过去。站点入口（[VideoFushiPage.webSite]）
+  /// 没有库里的书、内置档读不到，不给这个入口。
+  Future<void> _switchWebToBuiltinHosting() async {
+    final WebVideoPlaybackState? state = _webSession?.lastState;
+    await appModel.prefsRepo.setPref(
+      kWebVideoHostingPrefKey,
+      WebVideoHosting.builtin.name,
+    );
+    await _controller?.flushPosition();
+    if (!context.mounted) return;
+    await Navigator.of(context).pushReplacement(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => WebVideoFushiPage.neutralized(
+          bookUid: _activeBookUid,
+          repo: widget.repo,
+          hosting: WebVideoHosting.builtin,
+          mineReturnState: state == null ? null : WebMineReturnState.of(state),
+          returnToBrowser: widget.webBackToBrowser,
+        ),
+      ),
+    );
   }
 
   /// 跑制卡队列：同一本书原地换成内置网页播放器（可捕获的 1080p 档），画面一就绪就自动

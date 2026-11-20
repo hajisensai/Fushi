@@ -265,6 +265,8 @@ Widget buildVideoSheetUnderTest({
   required VideoQuickSettingsHost host,
   String? initialCategory,
   List<VideoGroup> groups = VideoGroup.values,
+  bool webBackend = false,
+  VoidCallback? onSwitchToBuiltinWebPlayer,
 }) {
   return ProviderScope(
     child: Consumer(
@@ -275,6 +277,8 @@ Widget buildVideoSheetUnderTest({
           host: host,
           initialCategory: initialCategory,
           groups: groups,
+          webBackend: webBackend,
+          onSwitchToBuiltinWebPlayer: onSwitchToBuiltinWebPlayer,
         );
       },
     ),
