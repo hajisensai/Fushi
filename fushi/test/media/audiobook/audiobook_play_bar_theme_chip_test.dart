@@ -5,7 +5,6 @@ import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -25,11 +24,6 @@ import 'package:fushi_core/fushi_core.dart';
 
 import '../../helpers/test_platform_services.dart';
 import '../../helpers/glass_unwrap.dart';
-
-class _FakeInAppWebViewController implements InAppWebViewController {
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
 
 AppModel _testAppModel({FushiDatabase? database}) {
   final FushiDatabase db =
@@ -100,7 +94,6 @@ void main() {
                       readerProgress: const (1, 3),
                       onJumpSection: (_, __) async {},
                       onExitReader: () {},
-                      webViewController: _FakeInAppWebViewController(),
                       appModel: model,
                       ref: ref,
                       isFushiReader: true,
@@ -203,7 +196,6 @@ void main() {
                     readerProgress: const (1, 3),
                     onJumpSection: (_, __) async {},
                     onExitReader: () {},
-                    webViewController: _FakeInAppWebViewController(),
                     appModel: model,
                     ref: ref,
                     isFushiReader: true,
@@ -289,7 +281,6 @@ void main() {
                 readerProgress: const (1, 3),
                 onJumpSection: (_, __) async {},
                 onExitReader: () {},
-                webViewController: _FakeInAppWebViewController(),
                 appModel: _testAppModel(),
                 ref: ref,
                 isFushiReader: true,
@@ -368,7 +359,6 @@ void main() {
                 readerProgress: const (1, 3),
                 onJumpSection: (_, __) async {},
                 onExitReader: () {},
-                webViewController: _FakeInAppWebViewController(),
                 appModel: _testAppModel(),
                 ref: ref,
                 isFushiReader: true,
@@ -424,7 +414,6 @@ void main() {
                 readerProgress: const (1, 3),
                 onJumpSection: (_, __) async {},
                 onExitReader: () {},
-                webViewController: _FakeInAppWebViewController(),
                 appModel: _testAppModel(),
                 ref: ref,
                 isFushiReader: true,
@@ -493,7 +482,6 @@ void main() {
                 onExitReader: () {
                   exitCount += 1;
                 },
-                webViewController: _FakeInAppWebViewController(),
                 appModel: _testAppModel(),
                 ref: ref,
                 isFushiReader: true,
@@ -544,7 +532,6 @@ void main() {
                 readerProgress: const (1, 3),
                 onJumpSection: (_, __) async {},
                 onExitReader: () {},
-                webViewController: _FakeInAppWebViewController(),
                 appModel: _testAppModel(),
                 ref: ref,
                 isFushiReader: true,
@@ -591,7 +578,6 @@ void main() {
                 readerProgress: const (1, 2),
                 onJumpSection: (_, __) async {},
                 onExitReader: () {},
-                webViewController: _FakeInAppWebViewController(),
                 appModel: _testAppModel(),
                 ref: ref,
                 favoriteSentences: [

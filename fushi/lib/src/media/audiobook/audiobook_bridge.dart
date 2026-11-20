@@ -692,12 +692,6 @@ void 0;
     return TtuReaderSettings.fromMap(const <String, dynamic>{});
   }
 
-  static Future<void> setReaderSetting(
-    InAppWebViewController controller, {
-    required String key,
-    required Object value,
-  }) async {}
-
   static Future<List<BookSearchResult>> searchBook(
     EpubBook book,
     String query,
