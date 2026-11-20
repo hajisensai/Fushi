@@ -13368,6 +13368,7 @@
   "video_subtitle_glossary_user_edited": "編集済み（再生成しても保持されます）",
   "video_subtitle_graphic_hint": "画像字幕 ・ 画面に表示 ・ 一時停止で辞書引き（OCR）",
   "video_subtitle_graphic_learning_hint": "画像字幕は一時停止中に OCR で認識され、文字をタップすると辞書を引けます。下の「テキスト字幕に変換」を使うと再生中でも辞書引きできます。",
+  "video_subtitle_graphic_ocr_cues_skipped": "Text subtitles saved; skipped $count lines that could not be recognized",
   "video_subtitle_graphic_ocr_empty": "この字幕トラックから文字を認識できませんでした",
   "video_subtitle_graphic_ocr_enable_action": "Turn on",
   "video_subtitle_graphic_ocr_enable_hint": "Image subtitles need OCR for tap-to-look-up",
