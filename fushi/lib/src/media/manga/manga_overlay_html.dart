@@ -12,7 +12,10 @@ import 'package:fushi/src/media/manga/reader/manga_page_fit.dart'
         MangaFitQuality,
         kMangaEnhancedFitStep,
         kMangaFitEnhancedQueryParam,
-        kMangaFitQueryParam;
+        kMangaFitQueryParam,
+        kMangaFitTextBoxQueryParam,
+        mangaTextBoxSignature,
+        mangaTextBoxesOf;
 import 'package:fushi/src/ocr/ocr_text_regions.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
@@ -719,6 +722,9 @@ String mangaPageDivHtml(
       'data-crop-borders="${cropBorders ? '1' : '0'}" '
       'data-split-wide="${splitWidePages ? '1' : '0'}" '
       'data-rotate-wide="${rotateWidePages ? '1' : '0'}" '
+      // 文字感知 Gamma 校正的文字框签名：_refitPage 挂到 URL 的 `tb=` 上，后台 OCR 补框后由
+      // __mangaReplaceOcr 换新签名并重取页图（manga_page_fit.dart 的 mangaTextBoxSignature）。
+      '${fitToDisplay ? 'data-tb="${mangaTextBoxSignature(mangaTextBoxesOf(page))}" ' : ''}'
       'style="position:relative;container-type:inline-size;'
       '$sizingCss'
       'aspect-ratio:${_num(w)}/${_num(h)};">'
@@ -1263,6 +1269,8 @@ String _mangaGestureJs({
   // WebView 的 max-age 缓存不会把另一种缩放的图端回来。
   var FIT_STEP = ${preferences.enhancedScaling ? kMangaEnhancedFitStep : 128};
   var FIT_HQ = '${_fitQualityQuery(preferences)}';
+  // 文字感知 Gamma 校正：转码要用本页 OCR 文字框，URL 带上框签名（data-tb）。
+  var FIT_TEXT_GAMMA = ${MangaFitQuality.fromPreferences(enhanced: preferences.enhancedScaling, gammaCorrect: preferences.gammaCorrectScaling) == MangaFitQuality.enhancedTextGamma};
   function _zoomTier(){
     if (!(ZOOM > 1.01)) return 1;
     return Math.min(8, Math.pow(2, Math.ceil(Math.log(ZOOM) / Math.LN2 - 1e-6)));
@@ -1290,7 +1298,8 @@ String _mangaGestureJs({
     if (!base) return;
     var width = _fitWidthFor(page);
     var next = width > 0
-        ? base + (base.indexOf('?') < 0 ? '?' : '&') + '$kMangaFitQueryParam=' + width + FIT_HQ
+        ? base + (base.indexOf('?') < 0 ? '?' : '&') + '$kMangaFitQueryParam=' + width + FIT_HQ +
+            (FIT_TEXT_GAMMA ? '&$kMangaFitTextBoxQueryParam=' + (page.getAttribute('data-tb') || '0') : '')
         : base;
     if (img.getAttribute('src') !== next) img.setAttribute('src', next);
   }
@@ -2199,13 +2208,20 @@ String _mangaGestureJs({
     return true;
   };
   // 后台 OCR 每完成一页就只替换该页透明文字层，不重建 WebView 文档、不打断阅读。
-  window.__mangaReplaceOcr = function(pageIndex, html){
+  // [textBoxSig]：新文字框的签名（mangaTextBoxSignature）。变了就按新框重取页图（文字感知
+  // Gamma 校正下框内外的缩放方式不同，旧图是按旧框 / 无框转的）。
+  window.__mangaReplaceOcr = function(pageIndex, html, textBoxSig){
     var page = document.querySelector('.manga-page[data-page="'+pageIndex+'"]');
     if (!page) return;
     var boxes = page.querySelectorAll('.ocr-box');
     for (var i = 0; i < boxes.length; i++) boxes[i].remove();
     var source = page.querySelector('.manga-source') || page;
     if (html) source.insertAdjacentHTML('beforeend', html);
+    if (textBoxSig != null && page.hasAttribute('data-tb') &&
+        page.getAttribute('data-tb') !== String(textBoxSig)) {
+      page.setAttribute('data-tb', String(textBoxSig));
+      if (FIT_TEXT_GAMMA) _refitPage(page);
+    }
     // 换掉的文字层里可能正好有朗读中的那句：按记下的状态重新挂高亮。
     window.__mangaApplySpeaking(false);
   };

@@ -24,9 +24,12 @@
 ///   比面积平均高 20%～65%，网点混叠也最重；
 /// - 低清源显示得比原图大时也由内核预放大（[kMangaEnhancedUpFilter]，至多
 ///   [kMangaEnhancedMaxUpscale] 倍、[kMangaEnhancedMaxPixels] 像素），比 WebView 的双线性锐；
-/// - 「Gamma 校正」子开关（[MangaFitQuality.enhancedLinear]，默认关）在线性光里平均：网点明度
-///   更准（误差降约三成），但 1 像素细笔画缩小后明显变淡（文字笔画对比度降 10%～20%），
-///   与「小字可读」这个第一指标冲突，所以不默认开；
+/// - 「Gamma 校正」子开关（[MangaFitQuality.enhancedTextGamma]，默认开）做**文字感知**的 Gamma
+///   校正：OCR 文字框之外在线性光里平均（网点明度误差降约三成），文字框之内仍在 sRGB 编码值上
+///   平均（整页线性光会让 1 像素细笔画变淡、文字笔画对比度降 10%～20%，与「小字可读」冲突），
+///   羽化遮罩混合。没有 OCR 数据的页整页 sRGB——不知道字在哪就不冒险。框由 [mangaTextBoxesOf]
+///   从本页 OCR 块取，签名 [mangaTextBoxSignature] 挂在 URL（`tb=`）与缓存键上，后台 OCR 补上
+///   文字框后页图会按新框重转；
 /// - 文档侧取整档从 128 px 收到 [kMangaEnhancedFitStep]，WebView 自己再缩的余量不到 3%。
 library;
 
@@ -37,6 +40,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:fushi_compute/fushi_compute.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
 /// 降采样输出的 JPEG 质量（4:4:4）。显示分辨率下与原图肉眼无差，放大时另取高档。
 const int kMangaFitJpegQuality = 90;
@@ -71,14 +75,14 @@ enum MangaFitQuality {
   /// 画质缩放：内核按显示尺寸重采样（sRGB 编码域）。
   enhanced,
 
-  /// 画质缩放 + Gamma 校正（线性光里平均）。
-  enhancedLinear;
+  /// 画质缩放 + 文字感知的 Gamma 校正（OCR 框外线性光、框内 sRGB；没有框整页 sRGB）。
+  enhancedTextGamma;
 
   /// URL 上 [kMangaFitEnhancedQueryParam] 的值；标准档不带。
   String? get urlValue => switch (this) {
     MangaFitQuality.standard => null,
     MangaFitQuality.enhanced => '1',
-    MangaFitQuality.enhancedLinear => 'g',
+    MangaFitQuality.enhancedTextGamma => 'g',
   };
 
   /// 由阅读器偏好推出画质档（Gamma 校正只是画质缩放的子开关）。
@@ -88,8 +92,46 @@ enum MangaFitQuality {
   }) => !enhanced
       ? MangaFitQuality.standard
       : gammaCorrect
-      ? MangaFitQuality.enhancedLinear
+      ? MangaFitQuality.enhancedTextGamma
       : MangaFitQuality.enhanced;
+}
+
+/// URL 上的文字框签名参数名（只在 [MangaFitQuality.enhancedTextGamma] 时出现）。
+const String kMangaFitTextBoxQueryParam = 'tb';
+
+/// 纯函数：本页 OCR 块框归一化成文字感知 Gamma 校正用的 `[x0, y0, x1, y1]…`（0..1，相对整页）。
+/// 页尺寸无效时返回空列表（整页 sRGB）。块框而不是行框：气泡里整块都是字，块框把行间距里的
+/// 振假名、标点一起罩住；框外扩与羽化由原生内核按目标分辨率做。
+Float32List mangaTextBoxesOf(MokuroImage page) {
+  final double w = page.size.width;
+  final double h = page.size.height;
+  if (!(w > 0) || !(h > 0)) return Float32List(0);
+  final List<double> out = <double>[];
+  for (final MokuroBlock block in page.blocks) {
+    final MokuroRect r = block.rectangle;
+    if (!(r.right > r.left) || !(r.bottom > r.top)) continue;
+    out
+      ..add((r.left / w).clamp(0.0, 1.0))
+      ..add((r.top / h).clamp(0.0, 1.0))
+      ..add((r.right / w).clamp(0.0, 1.0))
+      ..add((r.bottom / h).clamp(0.0, 1.0));
+    if (out.length ~/ 4 >= kFitHqMaxTextBoxes) break;
+  }
+  return Float32List.fromList(out);
+}
+
+/// 纯函数：文字框的短签名（框数 + FNV-1a 32 位，十六进制）。页图 URL 的 `tb=` 与转码缓存键都用它：
+/// 后台 OCR 给一页补上文字框后签名变了，WebView 与 LRU 都不会把旧的整页 sRGB 版本端回来。
+String mangaTextBoxSignature(Float32List boxes) {
+  if (boxes.isEmpty) return '0';
+  int hash = 0x811c9dc5;
+  for (final int byte in boxes.buffer.asUint8List(
+    boxes.offsetInBytes,
+    boxes.lengthInBytes,
+  )) {
+    hash = ((hash ^ byte) * 0x01000193) & 0xffffffff;
+  }
+  return '${boxes.length ~/ 4}-${hash.toRadixString(16)}';
 }
 
 /// 目标像素数不到源图这个比例才转码；省得不多时转码成本不值，直接给原图。
@@ -108,7 +150,7 @@ const String kMangaFitEnhancedQueryParam = 'fq';
 MangaFitQuality mangaFitQualityOf(Uri url) =>
     switch (url.queryParameters[kMangaFitEnhancedQueryParam]) {
       '1' => MangaFitQuality.enhanced,
-      'g' => MangaFitQuality.enhancedLinear,
+      'g' => MangaFitQuality.enhancedTextGamma,
       _ => MangaFitQuality.standard,
     };
 
@@ -159,10 +201,13 @@ int? mangaFitWidthOf(Uri url) {
 /// 后台 isolate 里跑的整段：读头 → 定尺寸 → 缩放编 JPEG。画质档走 [mangaEnhancedFitTarget] +
 /// `fitJpegHq`，标准档是 BUG-4704 的省内存降采样。不值得 / 解不开 / GIF（可能是动图）/ 带 alpha
 /// 都返回 null，调用方给原图。顶层函数：给 [Isolate.run] 用。
+///
+/// [textBoxes] 是 [mangaTextBoxesOf] 的结果，只在 [MangaFitQuality.enhancedTextGamma] 下使用。
 Uint8List? mangaFitPageBytes(
   Uint8List bytes,
   int fitWidth, {
   MangaFitQuality quality = MangaFitQuality.standard,
+  Float32List? textBoxes,
 }) {
   final FushiComputeImage kernel = FushiComputeImage.instance;
   final ({int width, int height, FfcImageFormat format})? head = kernel.probe(
@@ -184,7 +229,9 @@ Uint8List? mangaFitPageBytes(
       filter: target.width < head.width
           ? kMangaEnhancedDownFilter
           : kMangaEnhancedUpFilter,
-      linearLight: quality == MangaFitQuality.enhancedLinear,
+      textAwareGammaBoxes: quality == MangaFitQuality.enhancedTextGamma
+          ? (textBoxes ?? Float32List(0))
+          : null,
     );
   }
   final ({int width, int height})? target = mangaFitTarget(
@@ -207,13 +254,22 @@ typedef MangaFitTranscoder =
       Uint8List bytes,
       int fitWidth, {
       required MangaFitQuality quality,
+      Float32List? textBoxes,
     });
 
 Future<Uint8List?> _transcodeInIsolate(
   Uint8List bytes,
   int fitWidth, {
   required MangaFitQuality quality,
-}) => Isolate.run(() => mangaFitPageBytes(bytes, fitWidth, quality: quality));
+  Float32List? textBoxes,
+}) => Isolate.run(
+  () => mangaFitPageBytes(
+    bytes,
+    fitWidth,
+    quality: quality,
+    textBoxes: textBoxes,
+  ),
+);
 
 /// 一个阅读器页面持有一份：串行转码 + 同 key 去重 + 按字节限额的 LRU。
 class MangaPageFitter {
@@ -238,15 +294,22 @@ class MangaPageFitter {
   int get cachedBytes => _cacheBytes;
 
   /// [key]（页的稳定身份）在 [fitWidth] 档的缩放字节；该给原图时返回 null。
-  /// [quality] 选画质档（各档结果分开缓存，切开关不串）。
+  /// [quality] 选画质档（各档结果分开缓存，切开关不串）。[textBoxes] 是本页文字框
+  /// （[mangaTextBoxesOf]），只在 [MangaFitQuality.enhancedTextGamma] 下参与转码与缓存键。
   /// [loadSource] 只在缓存未命中时才调用（命中时连原图都不读）。
   Future<Uint8List?> fit(
     String key,
     int fitWidth,
     Future<Uint8List> Function() loadSource, {
     MangaFitQuality quality = MangaFitQuality.standard,
+    Float32List? textBoxes,
   }) {
-    final String entry = '$key|$fitWidth|${quality.name}';
+    final Float32List? boxes = quality == MangaFitQuality.enhancedTextGamma
+        ? (textBoxes ?? Float32List(0))
+        : null;
+    final String entry =
+        '$key|$fitWidth|${quality.name}'
+        '${boxes == null ? '' : '|${mangaTextBoxSignature(boxes)}'}';
     final Uint8List? cached = _cache.remove(entry);
     if (cached != null) {
       _cache[entry] = cached; // 刷新到最近使用。
@@ -260,6 +323,7 @@ class MangaPageFitter {
         source,
         fitWidth,
         quality: quality,
+        textBoxes: boxes,
       );
       _remember(entry, fitted ?? Uint8List(0));
       return fitted;

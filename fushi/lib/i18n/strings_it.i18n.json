@@ -5942,7 +5942,7 @@
   "manga_reader_filters": "Filtro personalizzato",
   "manga_reader_flash_on_page_change": "Lampeggia al cambio pagina",
   "manga_reader_fullscreen": "Schermo intero",
-  "manga_reader_gamma_correct_scaling": "Gamma-correct scaling (accurate screentone, fainter thin strokes)",
+  "manga_reader_gamma_correct_scaling": "Gamma-correct screentone (text stays crisp on OCR'd pages)",
   "manga_reader_general": "Generale",
   "manga_reader_global": "Usa il valore predefinito globale",
   "manga_reader_grayscale": "Scala di grigi",

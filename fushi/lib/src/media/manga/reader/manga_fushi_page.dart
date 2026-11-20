@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui show Image;
 
 import 'package:drift/drift.dart' show Value;
@@ -3332,6 +3333,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           fitWidth,
           loadSource,
           quality: mangaFitQualityOf(url),
+          pageIndex: pageIndex,
         );
         return WebResourceResponse(
           contentType: fitted != null
@@ -3379,6 +3381,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       mangaFitWidthOf(url),
       () => File(filePath).readAsBytes(),
       quality: mangaFitQualityOf(url),
+      pageIndex: pageIndex,
     );
     return WebResourceResponse(
       contentType: fitted != null ? 'image/jpeg' : _mangaMimeForPath(filePath),
@@ -3395,15 +3398,33 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 页图在 [fitWidth] 档的降采样 JPEG（BUG-4704）；URL 没要、不值得缩、或转码
   /// 失败都返回 null，由调用方交出原图——降采样只是省内存，任何失败都不能让页白掉。
   /// [key] 是页在本页面内的稳定身份（LRU 键），[loadSource] 只在未命中时读原图。
+  /// [pageIndex] 给文字感知 Gamma 校正取本页 OCR 文字框（取当下的 [_payload]，后台 OCR
+  /// 补框后页面 JS 会换 `tb=` 重取）；页号不明时按无框处理（整页 sRGB）。
   Future<Uint8List?> _fitPageBytes(
     String key,
     int? fitWidth,
     Future<Uint8List> Function() loadSource, {
     required MangaFitQuality quality,
+    int? pageIndex,
   }) async {
     if (fitWidth == null) return null;
+    final List<MokuroImage>? images = _payload?.images;
+    final Float32List? textBoxes =
+        quality == MangaFitQuality.enhancedTextGamma &&
+            images != null &&
+            pageIndex != null &&
+            pageIndex >= 0 &&
+            pageIndex < images.length
+        ? mangaTextBoxesOf(images[pageIndex])
+        : null;
     try {
-      return await _pageFitter.fit(key, fitWidth, loadSource, quality: quality);
+      return await _pageFitter.fit(
+        key,
+        fitWidth,
+        loadSource,
+        quality: quality,
+        textBoxes: textBoxes,
+      );
     } on Object catch (error, stackTrace) {
       ErrorLogService.instance.log('MangaFushiPage.fitPage', error, stackTrace);
       return null;
@@ -5267,10 +5288,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   Future<void> _replacePageOcrOverlay(int pageIndex, MokuroImage page) async {
     final String boxes = mangaOcrBoxesHtml(page);
+    final String textBoxSig = mangaTextBoxSignature(mangaTextBoxesOf(page));
     await _controller?.evaluateJavascript(
       source:
           'window.__mangaReplaceOcr && '
-          'window.__mangaReplaceOcr($pageIndex, ${jsonEncode(boxes)});',
+          'window.__mangaReplaceOcr($pageIndex, ${jsonEncode(boxes)}, '
+          '${jsonEncode(textBoxSig)});',
     );
   }
 

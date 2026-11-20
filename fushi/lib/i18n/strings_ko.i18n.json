@@ -5942,7 +5942,7 @@
   "manga_reader_filters": "사용자 지정 필터",
   "manga_reader_flash_on_page_change": "페이지 넘김 시 깜박임",
   "manga_reader_fullscreen": "전체 화면",
-  "manga_reader_gamma_correct_scaling": "Gamma-correct scaling (accurate screentone, fainter thin strokes)",
+  "manga_reader_gamma_correct_scaling": "Gamma-correct screentone (text stays crisp on OCR'd pages)",
   "manga_reader_general": "일반",
   "manga_reader_global": "전역 기본값 사용",
   "manga_reader_grayscale": "흑백",
