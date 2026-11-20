@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 远端封面必须走 `AppCachedHttpImage`（`extends CachedNetworkImageProvider`，
 /// 磁盘缓存语义不变，另外把请求接进全应用代理装配 —— 裸
 /// `CachedNetworkImageProvider` 已被 network_image_proxy_guard_test 禁掉），
@@ -80,12 +82,14 @@ void main() {
       'lib/src/pages/implementations/home_video_page.dart',
       'lib/src/pages/implementations/video_work_detail_page.dart',
     ]) {
-      final List<String> lines = File(path).readAsLinesSync();
-      for (int index = 0; index < lines.length; index++) {
-        final String line = lines[index];
-        if (line.trimLeft().startsWith('//')) continue;
-        if (bareCachedHttpImage.hasMatch(line)) {
-          offenders.add('$path:${index + 1}: ${line.trim()}');
+      // 先整份掩掉注释（行注释、块注释、行尾注释都算），再逐行找；掩码串与原文
+      // 等长、换行位置一致，所以行号直接对得上原文。
+      final String source = File(path).readAsStringSync();
+      final List<String> lines = source.split('\n');
+      final List<String> codeLines = maskComments(source).split('\n');
+      for (int index = 0; index < codeLines.length; index++) {
+        if (bareCachedHttpImage.hasMatch(codeLines[index])) {
+          offenders.add('$path:${index + 1}: ${lines[index].trim()}');
         }
       }
     }
