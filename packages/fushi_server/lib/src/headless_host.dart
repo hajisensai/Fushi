@@ -376,8 +376,9 @@ class HeadlessHost {
 
     final MangaOcrServiceImpl ocrService = MangaOcrServiceImpl();
     _ocrService = ocrService;
+    // 用户导入的自定义槽是 app 独有（导入入口只在 app 设置页），服务端不列。
     _ocrModelServices = <String, MangaOcrServiceImpl>{
-      for (final MangaOcrLocalModel model in MangaOcrLocalModel.values)
+      for (final MangaOcrLocalModel model in MangaOcrLocalModel.builtInValues)
         if (MangaOcrLocalModel.forPlatform(model.key) == model)
           // 默认模型复用 [ocrService] 这一个实例（它就是按默认模型建的）。
           model.key: model == kDefaultMangaOcrLocalModel

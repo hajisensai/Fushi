@@ -218,8 +218,12 @@ Fushi builds on the following projects and ecosystem:
 | [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) | Manga text and speech bubble detection model |
 | [manga-panel-detector-yolo26n](https://huggingface.co/leoxs22/manga-panel-detector-yolo26n) | Manga panel detection model, trained on [Manga109-s](http://www.manga109.org/en/download_s.html) |
 | [PP-OCRv6](https://github.com/PaddlePaddle/PaddleOCR) small det / rec · [PP-OCRv6_manga](https://huggingface.co/Kellenok/PP-OCRv6_manga) | Text line detection and recognition; the manga-tuned rec (trained with [Manga109-s](http://www.manga109.org/en/download_s.html) and [AnimeText](https://huggingface.co/datasets/deepghs/AnimeText)) powers the per-column CTC local OCR model |
+| [manga-ocr-charspot](https://huggingface.co/muscgab/manga-ocr-charspot-small) small / nano by muscgab | Optional Japanese local OCR models that read a whole text box with per-character boxes; trained with [AnimeText-OCR](https://huggingface.co/datasets/JustANormalTinkerer/animetext-ocr). Weights CC BY-NC-SA 4.0 (non-commercial), code Apache-2.0; downloaded by the user from Hugging Face, not redistributed |
+| [manga-ocr-nar-small](https://huggingface.co/muscgab/manga-ocr-nar-small) by muscgab | Optional Japanese local OCR model that reads a whole text box in one non-autoregressive pass (no per-character boxes); trained with [AnimeText-OCR](https://huggingface.co/datasets/JustANormalTinkerer/animetext-ocr). Weights CC BY-NC-SA 4.0 (non-commercial), code Apache-2.0; downloaded by the user from Hugging Face, not redistributed |
 
 > The manga panel detection model and PP-OCRv6_manga are trained with the Manga109-s dataset (Matsui et al. 2017; Aizawa et al. 2020), whose terms require this use of the dataset to be clearly indicated. PP-OCRv6_manga (Apache-2.0) is additionally trained with the AnimeText dataset, which is licensed CC BY-NC-SA 4.0; the app downloads that model from its Hugging Face repository and does not redistribute it.
+>
+> The manga-ocr-charspot and manga-ocr-nar-small weights (muscgab) are licensed CC BY-NC-SA 4.0: non-commercial use only, with attribution, and derivatives under the same licence. The app only offers them as an optional download from the author's Hugging Face repositories and never bundles them. If you use Fushi commercially, do not download these models.
 
 ### Content sources and integrations
 

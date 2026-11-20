@@ -216,8 +216,12 @@ Fushi 基于以下项目与生态：
 | [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) | 漫画文本与对话气泡检测模型 |
 | [manga-panel-detector-yolo26n](https://huggingface.co/leoxs22/manga-panel-detector-yolo26n) | 漫画分格检测模型，基于 [Manga109-s](http://www.manga109.org/en/download_s.html) 训练 |
 | [PP-OCRv6](https://github.com/PaddlePaddle/PaddleOCR) small det / rec · [PP-OCRv6_manga](https://huggingface.co/Kellenok/PP-OCRv6_manga) | 文本行检测与识别；漫画调优的 rec（以 [Manga109-s](http://www.manga109.org/en/download_s.html) 与 [AnimeText](https://huggingface.co/datasets/deepghs/AnimeText) 训练）驱动逐列 CTC 本地 OCR 模型 |
+| [manga-ocr-charspot](https://huggingface.co/muscgab/manga-ocr-charspot-small) small / nano（muscgab） | 可选的日文本机 OCR 模型，整块读出文字与逐字框；以 [AnimeText-OCR](https://huggingface.co/datasets/JustANormalTinkerer/animetext-ocr) 训练。权重 CC BY-NC-SA 4.0（非商用），代码 Apache-2.0；由用户从 Hugging Face 下载，本项目不转发 |
+| [manga-ocr-nar-small](https://huggingface.co/muscgab/manga-ocr-nar-small)（muscgab） | 可选的日文本机 OCR 模型，非自回归、整块一次读出文字（不给逐字框）；以 [AnimeText-OCR](https://huggingface.co/datasets/JustANormalTinkerer/animetext-ocr) 训练。权重 CC BY-NC-SA 4.0（非商用），代码 Apache-2.0；由用户从 Hugging Face 下载，本项目不转发 |
 
 > 漫画分格检测模型与 PP-OCRv6_manga 使用 Manga109-s 数据集（Matsui et al. 2017; Aizawa et al. 2020）训练，其条款要求明确标注对该数据集的使用。PP-OCRv6_manga（Apache-2.0）另以 AnimeText 数据集训练，该数据集采用 CC BY-NC-SA 4.0 许可；App 从模型的 Hugging Face 仓库下载，本项目不转发该模型。
+>
+> manga-ocr-charspot 与 manga-ocr-nar-small（muscgab）的权重采用 CC BY-NC-SA 4.0 许可：仅限非商业使用、须署名、衍生作品须以相同许可发布。App 只把它们作为可选下载项、从作者的 Hugging Face 仓库获取，从不随包分发。商业用途请不要下载这几个模型。
 
 ### 内容源与集成
 
