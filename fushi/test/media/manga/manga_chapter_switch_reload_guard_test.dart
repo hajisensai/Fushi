@@ -93,7 +93,7 @@ void main() {
 
   test('page image URLs carry the page session generation', () {
     final String build = body(
-      'String _buildWindowDocument(',
+      '}) _buildWindowDocument(',
       'Color get _backgroundColor',
     );
     expect(build, contains('version: _pageSessionGeneration,'));

@@ -127,6 +127,12 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   final Map<String, http.Client> _imageClients = <String, http.Client>{};
   int _imageRequestSequence = 0;
 
+  /// 每个页引用是哪个 sidecar 进程发的。页图 URL 是那个进程的
+  /// `http://127.0.0.1:<端口>/image/...`，只在它活着时有效；装 / 更新 / 卸任何
+  /// 扩展都会 [_restart]，之后旧页表整份作废（BUG-4908）。按进程对象身份比，
+  /// 不按端口比：新进程可能恰好拿到同一个临时端口。
+  final Expando<Process> _pageIssuer = Expando<Process>('mihonPageIssuer');
+
   @visibleForTesting
   int? get processId => _process?.pid;
 
@@ -288,6 +294,29 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   }
 
   @override
+  Future<List<MihonPage>> getPages(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonChapter chapter, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  }) async {
+    final List<MihonPage> pages = await super.getPages(
+      extension,
+      source,
+      chapter,
+      preferences: preferences,
+    );
+    // 应答来自此刻的进程：调用途中若发生重启，旧进程已被杀，请求只会失败。
+    final Process? issuer = _process;
+    if (issuer != null) {
+      for (final MihonPage page in pages) {
+        _pageIssuer[page] = issuer;
+      }
+    }
+    return pages;
+  }
+
+  @override
   Future<Uint8List> fetchImage(
     MihonExtensionRef extension,
     MihonSource source,
@@ -310,6 +339,14 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     List<MihonPreference> preferences = const <MihonPreference>[],
   }) async {
     await _ensureStarted();
+    final Process? issuer = _pageIssuer[page];
+    if (issuer != null && !identical(issuer, _process)) {
+      throw const MihonRuntimeException(
+        kMihonStalePageReferenceCode,
+        'The page list was issued by an M-Extension-Server process that has '
+        'since restarted',
+      );
+    }
     final Uri requested = Uri.parse(page.resolvedUrl);
     final int? port = _port;
     if (requested.scheme != 'http' ||
