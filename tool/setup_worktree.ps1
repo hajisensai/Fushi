@@ -182,4 +182,41 @@ finally {
     Pop-Location
 }
 
+# --- 复用 build hook 的下载产物 -------------------------------------------------
+# 新 worktree 第一次 flutter test 会让 pdfium_dart / sqlite3 的 build hook 各自从 GitHub
+# 重下一遍（2026-11-20 实测 pdfium 约 17 秒）。下载产物在
+# .dart_tool/hooks_runner/shared/<包>/build/ 下按内容寻址，与 worktree 路径无关，可以先拷进来；
+# input.json、hook.dill、依赖哈希等写死了源 worktree 绝对路径的东西不拷。pdfium 的 hook 只看
+# 文件在不在，所以工具只拷 sha256 与钉值相符的文件。细节见 fushi/tool/worktree_seed/hook_downloads.dart
+# 与 docs/agent/build.md「新 worktree 第一次 flutter test」。
+function Resolve-SetupDart {
+    [OutputType([string])]
+    param([string]$Root)
+    # 用 pub get 写进 package_config 的那份 SDK（即 bootstrap 选中的 3.47.6），不用 PATH 上的 dart。
+    $cfg = Join-Path $Root '.dart_tool/package_config.json'
+    if (-not (Test-Path -LiteralPath $cfg)) { throw "找不到 $cfg（bootstrap 的 pub get 没成功）。" }
+    $m = [regex]::Match([IO.File]::ReadAllText($cfg), '"flutterRoot"\s*:\s*"([^"]*)"')
+    if (-not $m.Success) { throw "$cfg 里没有 flutterRoot。" }
+    $sdk = ([Uri]$m.Groups[1].Value).LocalPath
+    $exe = if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) { 'dart.bat' } else { 'dart' }
+    $dart = Join-Path $sdk "bin/$exe"
+    if (-not (Test-Path -LiteralPath $dart)) { throw "找不到 $dart。" }
+    return $dart
+}
+$setupDart = Resolve-SetupDart -Root $here
+
+Write-Host "`n复用 build hook 的下载产物..." -ForegroundColor Cyan
+Push-Location $here
+try {
+    & $setupDart fushi/tool/worktree_seed.dart hooks --repo $here
+    $hookSeedExit = $LASTEXITCODE
+}
+finally {
+    Pop-Location
+}
+if ($hookSeedExit -ne 0) {
+    # 只是少了加速：hook 会自己下载，worktree 照样可用；退出码原样报出来，不当成功。
+    Write-Host "build hook 下载产物复用失败(exit $hookSeedExit)，首次 flutter test 会自己下载。" -ForegroundColor Yellow
+}
+
 Write-Host "`nworktree 就绪。" -ForegroundColor Green
