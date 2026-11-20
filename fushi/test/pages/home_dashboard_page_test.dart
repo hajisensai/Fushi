@@ -2622,7 +2622,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('色块「今日」宽格设了目标：目标进度与今日时长同一行都显示（时长不被目标挤掉）', (
+  testWidgets('色块「今日」宽格设了目标：目标与今日时长同一行都显示（时长不被目标挤掉）', (
     WidgetTester tester,
   ) async {
     dashboardLayout = ShellContentLayout.collage;
@@ -2636,7 +2636,15 @@ void main() {
     expect(tester.takeException(), isNull);
     final Finder goal = find.descendant(
       of: find.byKey(studyCardKey),
-      matching: find.text(t.stat_goal_progress(read: 800, goal: 1000)),
+      // 副行只写目标（设计稿 11-20 #12：不再重复大字已写的今日字数）。
+      matching: find.text(t.home_today_goal_target(goal: '1000')),
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(studyCardKey),
+        matching: find.text(t.stat_goal_progress(read: 800, goal: 1000)),
+      ),
+      findsNothing,
     );
     final Finder time = find.descendant(
       of: find.byKey(const ValueKey<String>('home-today-time')),

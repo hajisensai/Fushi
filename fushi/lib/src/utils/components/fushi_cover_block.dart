@@ -183,6 +183,67 @@ const EdgeInsets kFushiCoverBlockHalfShadowExtent = EdgeInsets.fromLTRB(
   kFushiCoverBlockHalfShadowBlur + kFushiCoverBlockHalfShadowOffset,
 );
 
+/// 承载色块的**会裁切的视口**（横滑 ListView / GridView / PageView）要向四周
+/// 外扩的量：投影越出块边的距离连同悬停放大（1.05 倍）都留在视口里，不被视口
+/// 矩形裁成一圈带硬边的直角框（设计稿 11-20 #14「大卡外面有一圈框」）。左右取
+/// 页边距 20：再宽就画进侧栏，投影尾巴那 1～2px 的淡影被页边裁掉看不出来。
+///
+/// 半高卡（[FushiCoverBlockSize.half]）：[kFushiCoverBlockHalfShadowExtent] + 放大。
+final EdgeInsets kFushiCoverBlockHalfBleed = EdgeInsets.fromLTRB(
+  20,
+  kFushiCoverBlockHalfShadowExtent.top + 3,
+  20,
+  kFushiCoverBlockHalfShadowExtent.bottom + 5,
+);
+
+/// 整块 / 拼贴首块（模糊 26、下移 10）：上 16、下 36、左右 26 再加放大余量。
+const EdgeInsets kFushiCoverBlockRegularBleed = EdgeInsets.fromLTRB(
+  20,
+  22,
+  20,
+  42,
+);
+
+/// [size] 色块所需的视口外扩量。
+EdgeInsets fushiCoverBlockBleed(FushiCoverBlockSize size) =>
+    size == FushiCoverBlockSize.half
+    ? kFushiCoverBlockHalfBleed
+    : kFushiCoverBlockRegularBleed;
+
+/// 让会裁切的滚动视口给投影留出空间：视口（[builder] 建的滚动件）向四周外扩
+/// [bleed]、再把同样的量作为内边距交回给滚动件，内容起点与布局占位都不变，
+/// 投影整段画在视口里。外扩区不参与命中测试（在本件尺寸之外）。
+///
+/// 带投影的色块放进横滑行 / 轮播时一律经它包，不要直接把 [ListView] /
+/// [PageView] 卡在色块外框上（视口按自身矩形硬裁，柔和投影会被切成直角框）。
+class FushiShadowBleedViewport extends StatelessWidget {
+  const FushiShadowBleedViewport({
+    required this.bleed,
+    required this.builder,
+    super.key,
+  });
+
+  final EdgeInsets bleed;
+
+  /// 拿到内边距（= [bleed]）建滚动件：ListView 等直接给 `padding`，PageView 给
+  /// 每页包一层 [Padding]。
+  final Widget Function(BuildContext context, EdgeInsets padding) builder;
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    clipBehavior: Clip.none,
+    children: <Widget>[
+      Positioned(
+        left: -bleed.left,
+        top: -bleed.top,
+        right: -bleed.right,
+        bottom: -bleed.bottom,
+        child: builder(context, bleed),
+      ),
+    ],
+  );
+}
+
 /// 水印横滑弹簧（设计稿 k120 / c18：ζ ≈ 0.82，偏软）。
 const FushiSpringSpec kFushiCoverBlockWatermarkSpring = FushiSpringSpec(
   dampingRatio: 0.82,

@@ -38,6 +38,8 @@ import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show FushiDialogHeroIcon, fushiM3eMenuAnimationStyle;
 import 'package:fushi/src/utils/components/fushi_header_search.dart';
+import 'package:fushi/src/utils/components/fushi_header_more_button.dart'
+    show FushiHeaderMoreButton, FushiHeaderMoreEntry;
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
@@ -4530,10 +4532,16 @@ FushiResolvedHeaderActions fushiResolveHeaderActions(
     ];
   }
 
+  // 页面自己已挂了一颗「⋯」（[FushiHeaderMoreButton]）时，收纳的动作并进它的
+  // 菜单（分隔线隔开），不再另生一颗——否则窄位上就是并排两颗「⋯」（设计稿
+  // 11-20 #16）。它恒外露、不在收纳顺序里，宽度已计入，不再加探针宽。
+  final int pageMore = actions.indexWhere(
+    (Widget item) => item is FushiHeaderMoreButton,
+  );
   double widthWith(int collapsed) =>
       _estimateHeaderActionsWidth(tokens, <Widget>[
         ...visibleWith(collapsed),
-        if (collapsed > 0) _kHeaderOverflowProbe,
+        if (collapsed > 0 && pageMore < 0) _kHeaderOverflowProbe,
       ], textScaler: textScaler);
 
   final int collapsed = fit == null
@@ -4559,6 +4567,25 @@ FushiResolvedHeaderActions fushiResolveHeaderActions(
         );
   if (collapsed == 0) return (items: actions, expandLabels: false);
   final Set<int> hidden = order.take(collapsed).toSet();
+  if (pageMore >= 0) {
+    final FushiHeaderMoreButton more =
+        actions[pageMore] as FushiHeaderMoreButton;
+    final List<FushiHeaderMoreEntry> merged = <FushiHeaderMoreEntry>[
+      for (int i = 0; i < actions.length; i++)
+        if (hidden.contains(i))
+          fushiHeaderMoreEntryOf(actions[i] as FushiIconButton, i),
+    ];
+    return (
+      items: <Widget>[
+        for (int i = 0; i < actions.length; i++)
+          if (i == pageMore)
+            more.withLeadingEntries(merged)
+          else if (!hidden.contains(i))
+            actions[i],
+      ],
+      expandLabels: false,
+    );
+  }
   return (
     items: <Widget>[
       ...visibleWith(collapsed),
@@ -4876,6 +4903,20 @@ class FushiFloatingTextAction extends StatelessWidget {
 
 /// ⋯ 溢出按钮：菜单项由被收纳的 [FushiIconButton] 的图标 + 文案（label 优先、
 /// 回退 tooltip）就地派生，动作行为共享同一个 onTap，不复制第二份实现。
+/// 被收纳的图标动作 → 「⋯」菜单项（图标 + 文案（label 优先、回退 tooltip）、同一个
+/// onTap、禁用态同步）。[index] 是它在动作行里的位置，用来给没有 key 的动作派生
+/// 一个稳定的菜单项 key。
+FushiHeaderMoreEntry fushiHeaderMoreEntryOf(FushiIconButton action, int index) {
+  final FutureOr<void> Function()? onTap = action.onTap;
+  return FushiHeaderMoreEntry(
+    key: ValueKey<String>('fushi-header-collapsed-$index'),
+    icon: action.icon,
+    label: action.label ?? action.tooltip,
+    enabled: action.enabled && onTap != null,
+    onSelected: onTap ?? () {},
+  );
+}
+
 Widget _headerOverflowMenuButton(List<FushiIconButton> collapsed) {
   return Builder(
     key: kFushiHeaderOverflowMenuKey,

@@ -4589,6 +4589,8 @@
   "home_stat_reading": "Reading",
   "home_stat_reading_today": "Read today",
   "home_today": "Heute",
+  "home_today_goal_target": "Ziel $goal",
+  "home_today_goal_target_weekly": "Wochenziel $goal",
   "home_tracking_mark_failed": "Last send to $site failed",
   "home_tracking_mark_linked": "Tracked on $site",
   "home_tracking_panel_attention": "$n zu erledigen",
