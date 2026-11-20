@@ -2370,6 +2370,11 @@ class VideoPlayerController extends ChangeNotifier
 
   /// 主字幕换源的世代：每次 [setCues]（换字幕文件 / 关字幕 / 选别的轨 / 换片）+1。
   /// 后台自动加载据此判「期间用户是否自己换过字幕」（[_loadEmbeddedSubtitleIfNeeded]）。
+  ///
+  /// 只认「换了字幕源」：同一个源补全 / 追加 cue（内封轨抽完经
+  /// [completeEmbeddedTextBridge] 换上完整列表、图形字幕 OCR 边识别边经
+  /// [updateCuesInSameSource] 发布、播放器解码回流逐句累积）时间轴不变，**不** +1，
+  /// 否则跨 await 的自动对轴会把同一源的结果误判为过期、无声丢弃。
   int _cueSourceEpoch = 0;
 
   /// [_cueSourceEpoch] 的只读视图：页面上跨 await 的字幕操作（自动对轴）据此判
@@ -2409,7 +2414,8 @@ class VideoPlayerController extends ChangeNotifier
   bool completeEmbeddedTextBridge(Object token, List<AudioCue> cues) {
     if (!identical(_embeddedTextBridge, token)) return false;
     final Player? player = _player;
-    _replaceCues(cues);
+    // 同一条轨的完整列表补上边播边累积的那份：字幕源没换，不推进换源世代。
+    _replaceCues(cues, newSource: false);
     if (player != null) {
       // 当前句找回时它自己会通知；下面再无条件通知一次，让列表等监听者拿到新列表。
       _syncCueForPosition(
@@ -2776,15 +2782,25 @@ class VideoPlayerController extends ChangeNotifier
   /// 设置 cue 列表：拷贝并按 startMs 升序排序（[JsonAlignmentParser.findCueIndex]
   /// 要求升序），重置当前 cue 状态。
   void setCues(List<AudioCue> cues) {
-    _replaceCues(cues);
+    _replaceCues(cues, newSource: true);
+    notifyListeners();
+  }
+
+  /// 同一个字幕源的 cue 补全 / 追加（图形字幕 OCR 边识别边发布），与 [setCues] 同样
+  /// 整份换装，但不推进 [cueSourceEpoch]：时间轴没变，期间跑着的自动对轴结果照样
+  /// 属于当前字幕。真的换了源（另选文件 / 轨、关字幕、换片）必须走 [setCues]。
+  void updateCuesInSameSource(List<AudioCue> cues) {
+    _replaceCues(cues, newSource: false);
     notifyListeners();
   }
 
   /// [setCues] 的本体，不通知监听者：[completeEmbeddedTextBridge] 换装后要先按位置找回
   /// 当前句再通知，监听者（字幕 overlay / 字幕列表 / 第二屏快照）不会看到中间那个
   /// 「当前句为空」的状态。
-  void _replaceCues(List<AudioCue> cues) {
-    _cueSourceEpoch++;
+  ///
+  /// [newSource]：这次是换了字幕源（推进 [_cueSourceEpoch]），还是同一源补全 cue。
+  void _replaceCues(List<AudioCue> cues, {required bool newSource}) {
+    if (newSource) _cueSourceEpoch++;
     // 外部换字幕源（加载文件 / 关字幕 / 换片 / 选图形轨）一律结束 mpv 解码回流，
     // 否则迟到的 sub-text 会把旧轨的句子插进新 cue 列表。
     _stopPlayerDecodedText();
