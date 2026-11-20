@@ -14929,6 +14929,842 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
   }
 }
 
+class $FavoriteSentencesTable extends FavoriteSentences
+    with TableInfo<$FavoriteSentencesTable, FavoriteSentenceRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $FavoriteSentencesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sentenceMeta = const VerificationMeta(
+    'sentence',
+  );
+  @override
+  late final GeneratedColumn<String> sentence = GeneratedColumn<String>(
+    'sentence',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _bookTitleMeta = const VerificationMeta(
+    'bookTitle',
+  );
+  @override
+  late final GeneratedColumn<String> bookTitle = GeneratedColumn<String>(
+    'book_title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _chapterLabelMeta = const VerificationMeta(
+    'chapterLabel',
+  );
+  @override
+  late final GeneratedColumn<String> chapterLabel = GeneratedColumn<String>(
+    'chapter_label',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _createdAtUsMeta = const VerificationMeta(
+    'createdAtUs',
+  );
+  @override
+  late final GeneratedColumn<int> createdAtUs = GeneratedColumn<int>(
+    'created_at_us',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _bookKeyMeta = const VerificationMeta(
+    'bookKey',
+  );
+  @override
+  late final GeneratedColumn<String> bookKey = GeneratedColumn<String>(
+    'book_key',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sectionIndexMeta = const VerificationMeta(
+    'sectionIndex',
+  );
+  @override
+  late final GeneratedColumn<int> sectionIndex = GeneratedColumn<int>(
+    'section_index',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _normCharOffsetMeta = const VerificationMeta(
+    'normCharOffset',
+  );
+  @override
+  late final GeneratedColumn<int> normCharOffset = GeneratedColumn<int>(
+    'norm_char_offset',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _normCharLengthMeta = const VerificationMeta(
+    'normCharLength',
+  );
+  @override
+  late final GeneratedColumn<int> normCharLength = GeneratedColumn<int>(
+    'norm_char_length',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _colorMeta = const VerificationMeta('color');
+  @override
+  late final GeneratedColumn<String> color = GeneratedColumn<String>(
+    'color',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sourceMeta = const VerificationMeta('source');
+  @override
+  late final GeneratedColumn<String> source = GeneratedColumn<String>(
+    'source',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('book'),
+  );
+  static const VerificationMeta _dateKeyMeta = const VerificationMeta(
+    'dateKey',
+  );
+  @override
+  late final GeneratedColumn<String> dateKey = GeneratedColumn<String>(
+    'date_key',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _expressionMeta = const VerificationMeta(
+    'expression',
+  );
+  @override
+  late final GeneratedColumn<String> expression = GeneratedColumn<String>(
+    'expression',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _readingMeta = const VerificationMeta(
+    'reading',
+  );
+  @override
+  late final GeneratedColumn<String> reading = GeneratedColumn<String>(
+    'reading',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    sentence,
+    bookTitle,
+    chapterLabel,
+    createdAtUs,
+    bookKey,
+    sectionIndex,
+    normCharOffset,
+    normCharLength,
+    color,
+    source,
+    dateKey,
+    expression,
+    reading,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'favorite_sentences';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<FavoriteSentenceRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('sentence')) {
+      context.handle(
+        _sentenceMeta,
+        sentence.isAcceptableOrUnknown(data['sentence']!, _sentenceMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sentenceMeta);
+    }
+    if (data.containsKey('book_title')) {
+      context.handle(
+        _bookTitleMeta,
+        bookTitle.isAcceptableOrUnknown(data['book_title']!, _bookTitleMeta),
+      );
+    }
+    if (data.containsKey('chapter_label')) {
+      context.handle(
+        _chapterLabelMeta,
+        chapterLabel.isAcceptableOrUnknown(
+          data['chapter_label']!,
+          _chapterLabelMeta,
+        ),
+      );
+    }
+    if (data.containsKey('created_at_us')) {
+      context.handle(
+        _createdAtUsMeta,
+        createdAtUs.isAcceptableOrUnknown(
+          data['created_at_us']!,
+          _createdAtUsMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtUsMeta);
+    }
+    if (data.containsKey('book_key')) {
+      context.handle(
+        _bookKeyMeta,
+        bookKey.isAcceptableOrUnknown(data['book_key']!, _bookKeyMeta),
+      );
+    }
+    if (data.containsKey('section_index')) {
+      context.handle(
+        _sectionIndexMeta,
+        sectionIndex.isAcceptableOrUnknown(
+          data['section_index']!,
+          _sectionIndexMeta,
+        ),
+      );
+    }
+    if (data.containsKey('norm_char_offset')) {
+      context.handle(
+        _normCharOffsetMeta,
+        normCharOffset.isAcceptableOrUnknown(
+          data['norm_char_offset']!,
+          _normCharOffsetMeta,
+        ),
+      );
+    }
+    if (data.containsKey('norm_char_length')) {
+      context.handle(
+        _normCharLengthMeta,
+        normCharLength.isAcceptableOrUnknown(
+          data['norm_char_length']!,
+          _normCharLengthMeta,
+        ),
+      );
+    }
+    if (data.containsKey('color')) {
+      context.handle(
+        _colorMeta,
+        color.isAcceptableOrUnknown(data['color']!, _colorMeta),
+      );
+    }
+    if (data.containsKey('source')) {
+      context.handle(
+        _sourceMeta,
+        source.isAcceptableOrUnknown(data['source']!, _sourceMeta),
+      );
+    }
+    if (data.containsKey('date_key')) {
+      context.handle(
+        _dateKeyMeta,
+        dateKey.isAcceptableOrUnknown(data['date_key']!, _dateKeyMeta),
+      );
+    }
+    if (data.containsKey('expression')) {
+      context.handle(
+        _expressionMeta,
+        expression.isAcceptableOrUnknown(data['expression']!, _expressionMeta),
+      );
+    }
+    if (data.containsKey('reading')) {
+      context.handle(
+        _readingMeta,
+        reading.isAcceptableOrUnknown(data['reading']!, _readingMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  FavoriteSentenceRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return FavoriteSentenceRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      sentence: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sentence'],
+      )!,
+      bookTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}book_title'],
+      )!,
+      chapterLabel: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}chapter_label'],
+      ),
+      createdAtUs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at_us'],
+      )!,
+      bookKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}book_key'],
+      ),
+      sectionIndex: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}section_index'],
+      ),
+      normCharOffset: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}norm_char_offset'],
+      ),
+      normCharLength: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}norm_char_length'],
+      ),
+      color: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}color'],
+      ),
+      source: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source'],
+      )!,
+      dateKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}date_key'],
+      ),
+      expression: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}expression'],
+      ),
+      reading: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reading'],
+      ),
+    );
+  }
+
+  @override
+  $FavoriteSentencesTable createAlias(String alias) {
+    return $FavoriteSentencesTable(attachedDatabase, alias);
+  }
+}
+
+class FavoriteSentenceRow extends DataClass
+    implements Insertable<FavoriteSentenceRow> {
+  final String id;
+  final String sentence;
+  final String bookTitle;
+  final String? chapterLabel;
+
+  /// 收藏时刻（`DateTime.microsecondsSinceEpoch`）：wire 上的 ISO 串精确到微秒，
+  /// 存微秒才能原样写回。
+  final int createdAtUs;
+  final String? bookKey;
+  final int? sectionIndex;
+  final int? normCharOffset;
+  final int? normCharLength;
+  final String? color;
+  final String source;
+  final String? dateKey;
+  final String? expression;
+  final String? reading;
+  const FavoriteSentenceRow({
+    required this.id,
+    required this.sentence,
+    required this.bookTitle,
+    this.chapterLabel,
+    required this.createdAtUs,
+    this.bookKey,
+    this.sectionIndex,
+    this.normCharOffset,
+    this.normCharLength,
+    this.color,
+    required this.source,
+    this.dateKey,
+    this.expression,
+    this.reading,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['sentence'] = Variable<String>(sentence);
+    map['book_title'] = Variable<String>(bookTitle);
+    if (!nullToAbsent || chapterLabel != null) {
+      map['chapter_label'] = Variable<String>(chapterLabel);
+    }
+    map['created_at_us'] = Variable<int>(createdAtUs);
+    if (!nullToAbsent || bookKey != null) {
+      map['book_key'] = Variable<String>(bookKey);
+    }
+    if (!nullToAbsent || sectionIndex != null) {
+      map['section_index'] = Variable<int>(sectionIndex);
+    }
+    if (!nullToAbsent || normCharOffset != null) {
+      map['norm_char_offset'] = Variable<int>(normCharOffset);
+    }
+    if (!nullToAbsent || normCharLength != null) {
+      map['norm_char_length'] = Variable<int>(normCharLength);
+    }
+    if (!nullToAbsent || color != null) {
+      map['color'] = Variable<String>(color);
+    }
+    map['source'] = Variable<String>(source);
+    if (!nullToAbsent || dateKey != null) {
+      map['date_key'] = Variable<String>(dateKey);
+    }
+    if (!nullToAbsent || expression != null) {
+      map['expression'] = Variable<String>(expression);
+    }
+    if (!nullToAbsent || reading != null) {
+      map['reading'] = Variable<String>(reading);
+    }
+    return map;
+  }
+
+  FavoriteSentencesCompanion toCompanion(bool nullToAbsent) {
+    return FavoriteSentencesCompanion(
+      id: Value(id),
+      sentence: Value(sentence),
+      bookTitle: Value(bookTitle),
+      chapterLabel: chapterLabel == null && nullToAbsent
+          ? const Value.absent()
+          : Value(chapterLabel),
+      createdAtUs: Value(createdAtUs),
+      bookKey: bookKey == null && nullToAbsent
+          ? const Value.absent()
+          : Value(bookKey),
+      sectionIndex: sectionIndex == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sectionIndex),
+      normCharOffset: normCharOffset == null && nullToAbsent
+          ? const Value.absent()
+          : Value(normCharOffset),
+      normCharLength: normCharLength == null && nullToAbsent
+          ? const Value.absent()
+          : Value(normCharLength),
+      color: color == null && nullToAbsent
+          ? const Value.absent()
+          : Value(color),
+      source: Value(source),
+      dateKey: dateKey == null && nullToAbsent
+          ? const Value.absent()
+          : Value(dateKey),
+      expression: expression == null && nullToAbsent
+          ? const Value.absent()
+          : Value(expression),
+      reading: reading == null && nullToAbsent
+          ? const Value.absent()
+          : Value(reading),
+    );
+  }
+
+  factory FavoriteSentenceRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return FavoriteSentenceRow(
+      id: serializer.fromJson<String>(json['id']),
+      sentence: serializer.fromJson<String>(json['sentence']),
+      bookTitle: serializer.fromJson<String>(json['bookTitle']),
+      chapterLabel: serializer.fromJson<String?>(json['chapterLabel']),
+      createdAtUs: serializer.fromJson<int>(json['createdAtUs']),
+      bookKey: serializer.fromJson<String?>(json['bookKey']),
+      sectionIndex: serializer.fromJson<int?>(json['sectionIndex']),
+      normCharOffset: serializer.fromJson<int?>(json['normCharOffset']),
+      normCharLength: serializer.fromJson<int?>(json['normCharLength']),
+      color: serializer.fromJson<String?>(json['color']),
+      source: serializer.fromJson<String>(json['source']),
+      dateKey: serializer.fromJson<String?>(json['dateKey']),
+      expression: serializer.fromJson<String?>(json['expression']),
+      reading: serializer.fromJson<String?>(json['reading']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'sentence': serializer.toJson<String>(sentence),
+      'bookTitle': serializer.toJson<String>(bookTitle),
+      'chapterLabel': serializer.toJson<String?>(chapterLabel),
+      'createdAtUs': serializer.toJson<int>(createdAtUs),
+      'bookKey': serializer.toJson<String?>(bookKey),
+      'sectionIndex': serializer.toJson<int?>(sectionIndex),
+      'normCharOffset': serializer.toJson<int?>(normCharOffset),
+      'normCharLength': serializer.toJson<int?>(normCharLength),
+      'color': serializer.toJson<String?>(color),
+      'source': serializer.toJson<String>(source),
+      'dateKey': serializer.toJson<String?>(dateKey),
+      'expression': serializer.toJson<String?>(expression),
+      'reading': serializer.toJson<String?>(reading),
+    };
+  }
+
+  FavoriteSentenceRow copyWith({
+    String? id,
+    String? sentence,
+    String? bookTitle,
+    Value<String?> chapterLabel = const Value.absent(),
+    int? createdAtUs,
+    Value<String?> bookKey = const Value.absent(),
+    Value<int?> sectionIndex = const Value.absent(),
+    Value<int?> normCharOffset = const Value.absent(),
+    Value<int?> normCharLength = const Value.absent(),
+    Value<String?> color = const Value.absent(),
+    String? source,
+    Value<String?> dateKey = const Value.absent(),
+    Value<String?> expression = const Value.absent(),
+    Value<String?> reading = const Value.absent(),
+  }) => FavoriteSentenceRow(
+    id: id ?? this.id,
+    sentence: sentence ?? this.sentence,
+    bookTitle: bookTitle ?? this.bookTitle,
+    chapterLabel: chapterLabel.present ? chapterLabel.value : this.chapterLabel,
+    createdAtUs: createdAtUs ?? this.createdAtUs,
+    bookKey: bookKey.present ? bookKey.value : this.bookKey,
+    sectionIndex: sectionIndex.present ? sectionIndex.value : this.sectionIndex,
+    normCharOffset: normCharOffset.present
+        ? normCharOffset.value
+        : this.normCharOffset,
+    normCharLength: normCharLength.present
+        ? normCharLength.value
+        : this.normCharLength,
+    color: color.present ? color.value : this.color,
+    source: source ?? this.source,
+    dateKey: dateKey.present ? dateKey.value : this.dateKey,
+    expression: expression.present ? expression.value : this.expression,
+    reading: reading.present ? reading.value : this.reading,
+  );
+  FavoriteSentenceRow copyWithCompanion(FavoriteSentencesCompanion data) {
+    return FavoriteSentenceRow(
+      id: data.id.present ? data.id.value : this.id,
+      sentence: data.sentence.present ? data.sentence.value : this.sentence,
+      bookTitle: data.bookTitle.present ? data.bookTitle.value : this.bookTitle,
+      chapterLabel: data.chapterLabel.present
+          ? data.chapterLabel.value
+          : this.chapterLabel,
+      createdAtUs: data.createdAtUs.present
+          ? data.createdAtUs.value
+          : this.createdAtUs,
+      bookKey: data.bookKey.present ? data.bookKey.value : this.bookKey,
+      sectionIndex: data.sectionIndex.present
+          ? data.sectionIndex.value
+          : this.sectionIndex,
+      normCharOffset: data.normCharOffset.present
+          ? data.normCharOffset.value
+          : this.normCharOffset,
+      normCharLength: data.normCharLength.present
+          ? data.normCharLength.value
+          : this.normCharLength,
+      color: data.color.present ? data.color.value : this.color,
+      source: data.source.present ? data.source.value : this.source,
+      dateKey: data.dateKey.present ? data.dateKey.value : this.dateKey,
+      expression: data.expression.present
+          ? data.expression.value
+          : this.expression,
+      reading: data.reading.present ? data.reading.value : this.reading,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FavoriteSentenceRow(')
+          ..write('id: $id, ')
+          ..write('sentence: $sentence, ')
+          ..write('bookTitle: $bookTitle, ')
+          ..write('chapterLabel: $chapterLabel, ')
+          ..write('createdAtUs: $createdAtUs, ')
+          ..write('bookKey: $bookKey, ')
+          ..write('sectionIndex: $sectionIndex, ')
+          ..write('normCharOffset: $normCharOffset, ')
+          ..write('normCharLength: $normCharLength, ')
+          ..write('color: $color, ')
+          ..write('source: $source, ')
+          ..write('dateKey: $dateKey, ')
+          ..write('expression: $expression, ')
+          ..write('reading: $reading')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    sentence,
+    bookTitle,
+    chapterLabel,
+    createdAtUs,
+    bookKey,
+    sectionIndex,
+    normCharOffset,
+    normCharLength,
+    color,
+    source,
+    dateKey,
+    expression,
+    reading,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is FavoriteSentenceRow &&
+          other.id == this.id &&
+          other.sentence == this.sentence &&
+          other.bookTitle == this.bookTitle &&
+          other.chapterLabel == this.chapterLabel &&
+          other.createdAtUs == this.createdAtUs &&
+          other.bookKey == this.bookKey &&
+          other.sectionIndex == this.sectionIndex &&
+          other.normCharOffset == this.normCharOffset &&
+          other.normCharLength == this.normCharLength &&
+          other.color == this.color &&
+          other.source == this.source &&
+          other.dateKey == this.dateKey &&
+          other.expression == this.expression &&
+          other.reading == this.reading);
+}
+
+class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
+  final Value<String> id;
+  final Value<String> sentence;
+  final Value<String> bookTitle;
+  final Value<String?> chapterLabel;
+  final Value<int> createdAtUs;
+  final Value<String?> bookKey;
+  final Value<int?> sectionIndex;
+  final Value<int?> normCharOffset;
+  final Value<int?> normCharLength;
+  final Value<String?> color;
+  final Value<String> source;
+  final Value<String?> dateKey;
+  final Value<String?> expression;
+  final Value<String?> reading;
+  final Value<int> rowid;
+  const FavoriteSentencesCompanion({
+    this.id = const Value.absent(),
+    this.sentence = const Value.absent(),
+    this.bookTitle = const Value.absent(),
+    this.chapterLabel = const Value.absent(),
+    this.createdAtUs = const Value.absent(),
+    this.bookKey = const Value.absent(),
+    this.sectionIndex = const Value.absent(),
+    this.normCharOffset = const Value.absent(),
+    this.normCharLength = const Value.absent(),
+    this.color = const Value.absent(),
+    this.source = const Value.absent(),
+    this.dateKey = const Value.absent(),
+    this.expression = const Value.absent(),
+    this.reading = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  FavoriteSentencesCompanion.insert({
+    required String id,
+    required String sentence,
+    this.bookTitle = const Value.absent(),
+    this.chapterLabel = const Value.absent(),
+    required int createdAtUs,
+    this.bookKey = const Value.absent(),
+    this.sectionIndex = const Value.absent(),
+    this.normCharOffset = const Value.absent(),
+    this.normCharLength = const Value.absent(),
+    this.color = const Value.absent(),
+    this.source = const Value.absent(),
+    this.dateKey = const Value.absent(),
+    this.expression = const Value.absent(),
+    this.reading = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       sentence = Value(sentence),
+       createdAtUs = Value(createdAtUs);
+  static Insertable<FavoriteSentenceRow> custom({
+    Expression<String>? id,
+    Expression<String>? sentence,
+    Expression<String>? bookTitle,
+    Expression<String>? chapterLabel,
+    Expression<int>? createdAtUs,
+    Expression<String>? bookKey,
+    Expression<int>? sectionIndex,
+    Expression<int>? normCharOffset,
+    Expression<int>? normCharLength,
+    Expression<String>? color,
+    Expression<String>? source,
+    Expression<String>? dateKey,
+    Expression<String>? expression,
+    Expression<String>? reading,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (sentence != null) 'sentence': sentence,
+      if (bookTitle != null) 'book_title': bookTitle,
+      if (chapterLabel != null) 'chapter_label': chapterLabel,
+      if (createdAtUs != null) 'created_at_us': createdAtUs,
+      if (bookKey != null) 'book_key': bookKey,
+      if (sectionIndex != null) 'section_index': sectionIndex,
+      if (normCharOffset != null) 'norm_char_offset': normCharOffset,
+      if (normCharLength != null) 'norm_char_length': normCharLength,
+      if (color != null) 'color': color,
+      if (source != null) 'source': source,
+      if (dateKey != null) 'date_key': dateKey,
+      if (expression != null) 'expression': expression,
+      if (reading != null) 'reading': reading,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  FavoriteSentencesCompanion copyWith({
+    Value<String>? id,
+    Value<String>? sentence,
+    Value<String>? bookTitle,
+    Value<String?>? chapterLabel,
+    Value<int>? createdAtUs,
+    Value<String?>? bookKey,
+    Value<int?>? sectionIndex,
+    Value<int?>? normCharOffset,
+    Value<int?>? normCharLength,
+    Value<String?>? color,
+    Value<String>? source,
+    Value<String?>? dateKey,
+    Value<String?>? expression,
+    Value<String?>? reading,
+    Value<int>? rowid,
+  }) {
+    return FavoriteSentencesCompanion(
+      id: id ?? this.id,
+      sentence: sentence ?? this.sentence,
+      bookTitle: bookTitle ?? this.bookTitle,
+      chapterLabel: chapterLabel ?? this.chapterLabel,
+      createdAtUs: createdAtUs ?? this.createdAtUs,
+      bookKey: bookKey ?? this.bookKey,
+      sectionIndex: sectionIndex ?? this.sectionIndex,
+      normCharOffset: normCharOffset ?? this.normCharOffset,
+      normCharLength: normCharLength ?? this.normCharLength,
+      color: color ?? this.color,
+      source: source ?? this.source,
+      dateKey: dateKey ?? this.dateKey,
+      expression: expression ?? this.expression,
+      reading: reading ?? this.reading,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (sentence.present) {
+      map['sentence'] = Variable<String>(sentence.value);
+    }
+    if (bookTitle.present) {
+      map['book_title'] = Variable<String>(bookTitle.value);
+    }
+    if (chapterLabel.present) {
+      map['chapter_label'] = Variable<String>(chapterLabel.value);
+    }
+    if (createdAtUs.present) {
+      map['created_at_us'] = Variable<int>(createdAtUs.value);
+    }
+    if (bookKey.present) {
+      map['book_key'] = Variable<String>(bookKey.value);
+    }
+    if (sectionIndex.present) {
+      map['section_index'] = Variable<int>(sectionIndex.value);
+    }
+    if (normCharOffset.present) {
+      map['norm_char_offset'] = Variable<int>(normCharOffset.value);
+    }
+    if (normCharLength.present) {
+      map['norm_char_length'] = Variable<int>(normCharLength.value);
+    }
+    if (color.present) {
+      map['color'] = Variable<String>(color.value);
+    }
+    if (source.present) {
+      map['source'] = Variable<String>(source.value);
+    }
+    if (dateKey.present) {
+      map['date_key'] = Variable<String>(dateKey.value);
+    }
+    if (expression.present) {
+      map['expression'] = Variable<String>(expression.value);
+    }
+    if (reading.present) {
+      map['reading'] = Variable<String>(reading.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FavoriteSentencesCompanion(')
+          ..write('id: $id, ')
+          ..write('sentence: $sentence, ')
+          ..write('bookTitle: $bookTitle, ')
+          ..write('chapterLabel: $chapterLabel, ')
+          ..write('createdAtUs: $createdAtUs, ')
+          ..write('bookKey: $bookKey, ')
+          ..write('sectionIndex: $sectionIndex, ')
+          ..write('normCharOffset: $normCharOffset, ')
+          ..write('normCharLength: $normCharLength, ')
+          ..write('color: $color, ')
+          ..write('source: $source, ')
+          ..write('dateKey: $dateKey, ')
+          ..write('expression: $expression, ')
+          ..write('reading: $reading, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $MiningStatisticsTable extends MiningStatistics
     with TableInfo<$MiningStatisticsTable, MiningStatisticRow> {
   @override
@@ -84368,6 +85204,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     this,
   );
   late final $FavoriteWordsTable favoriteWords = $FavoriteWordsTable(this);
+  late final $FavoriteSentencesTable favoriteSentences =
+      $FavoriteSentencesTable(this);
   late final $MiningStatisticsTable miningStatistics = $MiningStatisticsTable(
     this,
   );
@@ -84602,6 +85440,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     videoWatchStatistics,
     videoHourlyLogs,
     favoriteWords,
+    favoriteSentences,
     miningStatistics,
     minedSentences,
     musicAutoSourceDismissals,
@@ -95566,6 +96405,402 @@ typedef $$FavoriteWordsTableProcessedTableManager =
         BaseReferences<_$FushiDatabase, $FavoriteWordsTable, FavoriteWordRow>,
       ),
       FavoriteWordRow,
+      PrefetchHooks Function()
+    >;
+typedef $$FavoriteSentencesTableCreateCompanionBuilder =
+    FavoriteSentencesCompanion Function({
+      required String id,
+      required String sentence,
+      Value<String> bookTitle,
+      Value<String?> chapterLabel,
+      required int createdAtUs,
+      Value<String?> bookKey,
+      Value<int?> sectionIndex,
+      Value<int?> normCharOffset,
+      Value<int?> normCharLength,
+      Value<String?> color,
+      Value<String> source,
+      Value<String?> dateKey,
+      Value<String?> expression,
+      Value<String?> reading,
+      Value<int> rowid,
+    });
+typedef $$FavoriteSentencesTableUpdateCompanionBuilder =
+    FavoriteSentencesCompanion Function({
+      Value<String> id,
+      Value<String> sentence,
+      Value<String> bookTitle,
+      Value<String?> chapterLabel,
+      Value<int> createdAtUs,
+      Value<String?> bookKey,
+      Value<int?> sectionIndex,
+      Value<int?> normCharOffset,
+      Value<int?> normCharLength,
+      Value<String?> color,
+      Value<String> source,
+      Value<String?> dateKey,
+      Value<String?> expression,
+      Value<String?> reading,
+      Value<int> rowid,
+    });
+
+class $$FavoriteSentencesTableFilterComposer
+    extends Composer<_$FushiDatabase, $FavoriteSentencesTable> {
+  $$FavoriteSentencesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sentence => $composableBuilder(
+    column: $table.sentence,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get bookTitle => $composableBuilder(
+    column: $table.bookTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get chapterLabel => $composableBuilder(
+    column: $table.chapterLabel,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAtUs => $composableBuilder(
+    column: $table.createdAtUs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get bookKey => $composableBuilder(
+    column: $table.bookKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sectionIndex => $composableBuilder(
+    column: $table.sectionIndex,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get normCharOffset => $composableBuilder(
+    column: $table.normCharOffset,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get normCharLength => $composableBuilder(
+    column: $table.normCharLength,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get color => $composableBuilder(
+    column: $table.color,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get dateKey => $composableBuilder(
+    column: $table.dateKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get expression => $composableBuilder(
+    column: $table.expression,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reading => $composableBuilder(
+    column: $table.reading,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$FavoriteSentencesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $FavoriteSentencesTable> {
+  $$FavoriteSentencesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sentence => $composableBuilder(
+    column: $table.sentence,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get bookTitle => $composableBuilder(
+    column: $table.bookTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get chapterLabel => $composableBuilder(
+    column: $table.chapterLabel,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAtUs => $composableBuilder(
+    column: $table.createdAtUs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get bookKey => $composableBuilder(
+    column: $table.bookKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sectionIndex => $composableBuilder(
+    column: $table.sectionIndex,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get normCharOffset => $composableBuilder(
+    column: $table.normCharOffset,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get normCharLength => $composableBuilder(
+    column: $table.normCharLength,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get color => $composableBuilder(
+    column: $table.color,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get dateKey => $composableBuilder(
+    column: $table.dateKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get expression => $composableBuilder(
+    column: $table.expression,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get reading => $composableBuilder(
+    column: $table.reading,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$FavoriteSentencesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $FavoriteSentencesTable> {
+  $$FavoriteSentencesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get sentence =>
+      $composableBuilder(column: $table.sentence, builder: (column) => column);
+
+  GeneratedColumn<String> get bookTitle =>
+      $composableBuilder(column: $table.bookTitle, builder: (column) => column);
+
+  GeneratedColumn<String> get chapterLabel => $composableBuilder(
+    column: $table.chapterLabel,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get createdAtUs => $composableBuilder(
+    column: $table.createdAtUs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get bookKey =>
+      $composableBuilder(column: $table.bookKey, builder: (column) => column);
+
+  GeneratedColumn<int> get sectionIndex => $composableBuilder(
+    column: $table.sectionIndex,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get normCharOffset => $composableBuilder(
+    column: $table.normCharOffset,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get normCharLength => $composableBuilder(
+    column: $table.normCharLength,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get color =>
+      $composableBuilder(column: $table.color, builder: (column) => column);
+
+  GeneratedColumn<String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => column);
+
+  GeneratedColumn<String> get dateKey =>
+      $composableBuilder(column: $table.dateKey, builder: (column) => column);
+
+  GeneratedColumn<String> get expression => $composableBuilder(
+    column: $table.expression,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get reading =>
+      $composableBuilder(column: $table.reading, builder: (column) => column);
+}
+
+class $$FavoriteSentencesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $FavoriteSentencesTable,
+          FavoriteSentenceRow,
+          $$FavoriteSentencesTableFilterComposer,
+          $$FavoriteSentencesTableOrderingComposer,
+          $$FavoriteSentencesTableAnnotationComposer,
+          $$FavoriteSentencesTableCreateCompanionBuilder,
+          $$FavoriteSentencesTableUpdateCompanionBuilder,
+          (
+            FavoriteSentenceRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $FavoriteSentencesTable,
+              FavoriteSentenceRow
+            >,
+          ),
+          FavoriteSentenceRow,
+          PrefetchHooks Function()
+        > {
+  $$FavoriteSentencesTableTableManager(
+    _$FushiDatabase db,
+    $FavoriteSentencesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$FavoriteSentencesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$FavoriteSentencesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$FavoriteSentencesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> sentence = const Value.absent(),
+                Value<String> bookTitle = const Value.absent(),
+                Value<String?> chapterLabel = const Value.absent(),
+                Value<int> createdAtUs = const Value.absent(),
+                Value<String?> bookKey = const Value.absent(),
+                Value<int?> sectionIndex = const Value.absent(),
+                Value<int?> normCharOffset = const Value.absent(),
+                Value<int?> normCharLength = const Value.absent(),
+                Value<String?> color = const Value.absent(),
+                Value<String> source = const Value.absent(),
+                Value<String?> dateKey = const Value.absent(),
+                Value<String?> expression = const Value.absent(),
+                Value<String?> reading = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => FavoriteSentencesCompanion(
+                id: id,
+                sentence: sentence,
+                bookTitle: bookTitle,
+                chapterLabel: chapterLabel,
+                createdAtUs: createdAtUs,
+                bookKey: bookKey,
+                sectionIndex: sectionIndex,
+                normCharOffset: normCharOffset,
+                normCharLength: normCharLength,
+                color: color,
+                source: source,
+                dateKey: dateKey,
+                expression: expression,
+                reading: reading,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String sentence,
+                Value<String> bookTitle = const Value.absent(),
+                Value<String?> chapterLabel = const Value.absent(),
+                required int createdAtUs,
+                Value<String?> bookKey = const Value.absent(),
+                Value<int?> sectionIndex = const Value.absent(),
+                Value<int?> normCharOffset = const Value.absent(),
+                Value<int?> normCharLength = const Value.absent(),
+                Value<String?> color = const Value.absent(),
+                Value<String> source = const Value.absent(),
+                Value<String?> dateKey = const Value.absent(),
+                Value<String?> expression = const Value.absent(),
+                Value<String?> reading = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => FavoriteSentencesCompanion.insert(
+                id: id,
+                sentence: sentence,
+                bookTitle: bookTitle,
+                chapterLabel: chapterLabel,
+                createdAtUs: createdAtUs,
+                bookKey: bookKey,
+                sectionIndex: sectionIndex,
+                normCharOffset: normCharOffset,
+                normCharLength: normCharLength,
+                color: color,
+                source: source,
+                dateKey: dateKey,
+                expression: expression,
+                reading: reading,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$FavoriteSentencesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $FavoriteSentencesTable,
+      FavoriteSentenceRow,
+      $$FavoriteSentencesTableFilterComposer,
+      $$FavoriteSentencesTableOrderingComposer,
+      $$FavoriteSentencesTableAnnotationComposer,
+      $$FavoriteSentencesTableCreateCompanionBuilder,
+      $$FavoriteSentencesTableUpdateCompanionBuilder,
+      (
+        FavoriteSentenceRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $FavoriteSentencesTable,
+          FavoriteSentenceRow
+        >,
+      ),
+      FavoriteSentenceRow,
       PrefetchHooks Function()
     >;
 typedef $$MiningStatisticsTableCreateCompanionBuilder =
@@ -140243,6 +141478,8 @@ class $FushiDatabaseManager {
       $$VideoHourlyLogsTableTableManager(_db, _db.videoHourlyLogs);
   $$FavoriteWordsTableTableManager get favoriteWords =>
       $$FavoriteWordsTableTableManager(_db, _db.favoriteWords);
+  $$FavoriteSentencesTableTableManager get favoriteSentences =>
+      $$FavoriteSentencesTableTableManager(_db, _db.favoriteSentences);
   $$MiningStatisticsTableTableManager get miningStatistics =>
       $$MiningStatisticsTableTableManager(_db, _db.miningStatistics);
   $$MinedSentencesTableTableManager get minedSentences =>

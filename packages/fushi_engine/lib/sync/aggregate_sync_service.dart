@@ -49,11 +49,6 @@ const String kSyncWebHistoryPrefKey = 'sync_web_history_enabled';
 Future<bool> readWebHistorySyncEnabled(FushiDatabase db) =>
     db.getPrefTyped<bool>(kSyncWebHistoryPrefKey, false);
 
-/// Preference key holding the favorite-sentence JSON list. Mirrors
-/// `FavoriteSentenceRepository._key` and BackupMergeEngine's constant; kept in
-/// sync behaviourally by favorite_sentence_merge_import_test.dart.
-const String _favoriteSentencesPrefKey = 'favorite_sentences';
-
 /// 把一段**纯计算**挪出调用方 isolate 执行（默认 [Isolate.run]）。
 ///
 /// 快照折叠 / 写回增量 / 指纹 / 上行编码都是对**整份**统计 + 收藏数据的 O(N log N)
@@ -109,7 +104,7 @@ class AggregateFoldPlan {
 /// resurrected from a peer snapshot); statistics only ever move up (per-bucket
 /// MAX, never SUM, so a re-sync never double-counts). No schema change: the
 /// snapshot is a transient JSON asset, the local state lives in the existing
-/// statistic tables + favorite_sentences pref.
+/// statistic tables + favorite_sentences table (v166; a pref JSON list before).
 class AggregateSyncService {
   AggregateSyncService(
     this._db, {
@@ -321,7 +316,7 @@ class AggregateSyncService {
   /// A device with an empty merged state pushes nothing (nothing to share).
   ///
   /// No schema change; the snapshot is a transient JSON payload, local state
-  /// lives in the existing statistic tables + favorite_sentences pref.
+  /// lives in the existing statistic tables + favorite_sentences table.
   ///
   /// [shareStats] / [shareFavorites] 是用户在互联设置里的「共享统计 / 共享收藏夹」
   /// 许可（两者默认 true = 既有行为）。裁剪在**本方法内**做，而不是交给调用方：
@@ -1536,7 +1531,7 @@ class AggregateSyncService {
   /// 把快照里的收藏删除墓碑落进本地墓碑表（只写严格较新者，旧戳不降级），并删掉
   /// 被墓碑压制的本地收藏词行（merge 侧已仲裁：快照里仍在的墓碑必然压过全部已知
   /// 同键收藏；本地行仍按 createdAt 双保险判一次）。收藏句的移除走
-  /// [_writeFavoriteSentences] 的墓碑过滤（pref 整表重写天然是移除）。
+  /// [_writeFavoriteSentences] 的墓碑过滤（整表重写天然是移除）。
   Future<void> _applySnapshotTombstones(AggregateSnapshot snapshot) async {
     if (snapshot.favoriteWordTombstones.isEmpty &&
         snapshot.favoriteSentenceTombstones.isEmpty) {
@@ -1791,27 +1786,14 @@ class AggregateSyncService {
     await applySnapshotToLocal(delta);
   }
 
-  /// Reads the favorite-sentence pref blob into models, tolerating a
-  /// null/empty/malformed value (empty list) so a corrupt pref never aborts.
-  Future<List<FavoriteSentence>> _readFavoriteSentences() async {
-    final String? raw = await _db.getPref(_favoriteSentencesPrefKey);
-    if (raw == null || raw.isEmpty) return const <FavoriteSentence>[];
-    try {
-      final dynamic decoded = jsonDecode(raw);
-      if (decoded is! List) return const <FavoriteSentence>[];
-      return decoded
-          .whereType<Map<String, dynamic>>()
-          .map(FavoriteSentence.fromJson)
-          .toList();
-    } catch (_) {
-      return const <FavoriteSentence>[];
-    }
-  }
+  /// Reads the favorite sentences (v166: the `favorite_sentences` table).
+  Future<List<FavoriteSentence>> _readFavoriteSentences() =>
+      FavoriteSentenceRepository(_db).getAll();
 
-  /// Merges [merged] favorite sentences with whatever the pref currently holds
+  /// Merges [merged] favorite sentences with whatever the table currently holds
   /// (a concurrent local add during the sync must not be lost) and writes the
   /// union back. The extra fold is idempotent, so writing an already-merged set
-  /// is a no-op.
+  /// is a no-op ([FavoriteSentenceRepository.replaceAll] skips identical sets).
   Future<void> _writeFavoriteSentences(List<FavoriteSentence> merged) async {
     final List<FavoriteSentence> current = await _readFavoriteSentences();
     // 互联完整支持批次：merged 为空也不能早退——对端的取消收藏（墓碑）要靠下面
@@ -1839,9 +1821,6 @@ class AggregateSyncService {
                     s.createdAt.millisecondsSinceEpoch,
               )
               .toList();
-    final String json = jsonEncode(
-      out.map((FavoriteSentence s) => s.toJson()).toList(),
-    );
-    await _db.setPref(_favoriteSentencesPrefKey, json);
+    await FavoriteSentenceRepository(_db).replaceAll(out);
   }
 }

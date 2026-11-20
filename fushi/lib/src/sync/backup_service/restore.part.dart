@@ -714,7 +714,8 @@ class BackupRestoreService {
   /// the backup EXCLUDED their owning category, so an overwrite import of a
   /// books / fonts / localAudio-excluded backup never wipes this device's
   /// favorites / font registry / local-audio registry to empty. Mirror of
-  /// [_stripExcludedContentRegistry]. `audio_source_configs` is restored whole
+  /// the export strip ([_stripExcludedContentRegistry] + the `books` table rule
+  /// of `favorite_sentences`, v166). `audio_source_configs` is restored whole
   /// from bak (the device keeps its own audio setup when localAudio was
   /// excluded), which subsumes the export-side B-filter. No-op (logged) if bak
   /// is gone.
@@ -765,6 +766,22 @@ class BackupRestoreService {
           table: 'preferences',
           where: 'key IN ($inList)',
         );
+        // v166 起收藏句是表（偏好键只剩旧库）：整表换回本机的。
+        if (reapplyFavorites &&
+            await db!
+                .customSelect(
+                  'SELECT 1 FROM crbak.sqlite_master '
+                  "WHERE type = 'table' AND name = 'favorite_sentences'",
+                )
+                .get()
+                .then((List<QueryRow> r) => r.isNotEmpty)) {
+          await db!.customStatement('DELETE FROM favorite_sentences');
+          await _copyTableByColumnNames(
+            db!,
+            schema: 'crbak',
+            table: 'favorite_sentences',
+          );
+        }
       });
       await db.customStatement('DETACH DATABASE crbak');
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');

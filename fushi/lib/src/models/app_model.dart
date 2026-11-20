@@ -1099,12 +1099,7 @@ class AppModel
   /// 经 [syncServerController] 把它注入为 `videoRemoteControlV1` 能力。
   late final VideoRemoteHost videoRemoteHost = VideoRemoteHost(
     favorites: () => FavoriteSentenceRepository(database),
-    favoriteChanges: () =>
-        (database.select(database.preferences)
-              ..where((row) => row.key.equals('favorite_sentences')))
-            .watchSingleOrNull()
-            .map((PreferenceRow? row) => row?.value)
-            .distinct(),
+    favoriteChanges: () => FavoriteSentenceRepository(database).watchChanges(),
     // 点播：手机遥控从电脑视频库里选片、让电脑播放（不必先在电脑上开视频）。
     library: createVideoRemoteLibrary(
       database: () => database,

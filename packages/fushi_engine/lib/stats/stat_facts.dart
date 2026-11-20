@@ -91,7 +91,7 @@ class StatCounterFacts {
     this.mining = const <MiningStatisticRow>[],
     this.lookupCounters = const <LookupMiningCounterRow>[],
     this.favoriteWords = const <FavoriteWordRow>[],
-    this.favoriteSentences = const <FavoriteSentence>[],
+    this.favoriteSentences = const <FavoriteSentenceStatRow>[],
   });
 
   static const StatCounterFacts empty = StatCounterFacts();
@@ -106,8 +106,9 @@ class StatCounterFacts {
   /// 收藏词（`favorite_words`，每行一条 = 计 1）。
   final List<FavoriteWordRow> favoriteWords;
 
-  /// 收藏句（`FavoriteSentenceRepository`，偏好里的 JSON 列表）。
-  final List<FavoriteSentence> favoriteSentences;
+  /// 收藏句（`favorite_sentences` 表，每条一行 = 计 1；只取来源 / 收藏日 / 收藏时刻
+  /// 三列，不读正文）。
+  final List<FavoriteSentenceStatRow> favoriteSentences;
 
   /// 按统计来源过滤 per-book 计数行（[source] 为 null = 跨域全取）。
   List<LookupMiningCounterRow> lookupCountersFor(StatSourceKind? source) =>
@@ -160,7 +161,7 @@ class StatCounterFacts {
   Iterable<(String, int)> favoriteSentenceEvents({StatSourceKind? source}) =>
       favoriteSentences
           .where(
-            (FavoriteSentence s) => switch (source) {
+            (FavoriteSentenceStatRow s) => switch (source) {
               null => true,
               // 浏览器扩展网页视频的收藏句（KGC1ifR1a3）计入视频域。
               StatSourceKind.video =>
@@ -177,7 +178,7 @@ class StatCounterFacts {
             },
           )
           .map(
-            (FavoriteSentence s) =>
+            (FavoriteSentenceStatRow s) =>
                 (s.dateKey ?? FushiDatabase.statDateKeyOf(s.createdAt), 1),
           );
 }
@@ -337,10 +338,21 @@ const Set<String> kLegacyStudyActivityTypes = <String>{
 /// [statFactBelongsToBook] 切片，结果与全量读再切逐条相同（m5 实测：合成一年大库上
 /// 统计侧栏从全量读的约 235 ms / 主 isolate 55 ms 降到个位数毫秒）。
 class StatFactsScope {
-  const StatFactsScope._(this.mediaKind, this.mediaKey, this.title);
+  const StatFactsScope._(
+    this.mediaKind,
+    this.mediaKey,
+    this.title, {
+    this.fromDateKey,
+  });
 
   /// 全域全量（首页、统计中心总览、导出 / 诊断等）。
   static const StatFactsScope all = StatFactsScope._(null, null, null);
+
+  /// 全域、只读统计日 ≥ [fromDateKey] 的事实（阅读页签的学习目标环：本周的跨域
+  /// 日面）。日面 / 小时面 / 段 / legacy 行都按 dateKey 下推进 SQL；最近游玩会话
+  /// 骨架不受影响。计数面照常（调用方一般不要计数面）。
+  const StatFactsScope.since(String fromDateKey)
+    : this._(null, null, null, fromDateKey: fromDateKey);
 
   /// 只读一个域（[kActivityMediaBook] / [kActivityMediaVideo] / [kActivityMediaGame]）：
   /// 段按 `media_kind` 过滤，其余域的 legacy 表与游玩会话不读。计数面不收窄——域
@@ -357,7 +369,8 @@ class StatFactsScope {
     required String this.mediaKind,
     required String this.mediaKey,
     this.title,
-  }) : assert(
+  }) : fromDateKey = null,
+       assert(
          mediaKind == kActivityMediaBook || mediaKind == kActivityMediaVideo,
          'StatFactsScope.media 只支持书 / 视频',
        );
@@ -370,6 +383,9 @@ class StatFactsScope {
 
   /// 单媒体范围下 legacy 无身份行的标题回退。
   final String? title;
+
+  /// 非 null = 只读统计日 ≥ 它的事实（[StatFactsScope.since]）。
+  final String? fromDateKey;
 
   bool get isMedia => mediaKey != null;
 
@@ -407,6 +423,7 @@ Future<StatFacts> loadStatFacts(
   final bool games = scope.covers(kActivityMediaGame);
   final String? mediaKey = scope.mediaKey;
   final String? fallbackTitle = scope._fallbackTitle;
+  final String? fromDateKey = scope.fromDateKey;
   // 十个全表读互不依赖（[includeCounters] 时再挂计数面的四个）：一次全部发出去让
   // Drift 后台执行器流水线化，而不是每个都等上一个往返回来（首页与三个统计页每次
   // 打开都走这里）。先 Future.wait 挂上监听，某个失败时其余错误不会成为无人接的
@@ -417,12 +434,12 @@ Future<StatFacts> loadStatFacts(
   final Future<List<ReadingStatisticRow>> readingF = !(legacyVisible && books)
       ? Future<List<ReadingStatisticRow>>.value(<ReadingStatisticRow>[])
       : mediaKey == null
-      ? db.getAllReadingStatistics()
+      ? db.getAllReadingStatistics(fromDateKey: fromDateKey)
       : _readingStatisticsForBook(db, epubRowsF, mediaKey, fallbackTitle);
   final Future<List<VideoWatchStatisticRow>> watchF = !(legacyVisible && videos)
       ? Future<List<VideoWatchStatisticRow>>.value(<VideoWatchStatisticRow>[])
       : mediaKey == null
-      ? db.getAllVideoWatchStatistics()
+      ? db.getAllVideoWatchStatistics(fromDateKey: fromDateKey)
       : db.getVideoWatchStatisticsForMedia(
           bookUid: mediaKey,
           orTitle: fallbackTitle,
@@ -430,14 +447,17 @@ Future<StatFacts> loadStatFacts(
   // legacy 小时行没有身份，单媒体范围下不读（它们不属于任何一本）。
   final Future<List<ReadingHourlyLogRow>> readingHourlyF =
       legacyVisible && books && mediaKey == null
-      ? db.getAllReadingHourlyLogs()
+      ? db.getAllReadingHourlyLogs(fromDateKey: fromDateKey)
       : Future<List<ReadingHourlyLogRow>>.value(<ReadingHourlyLogRow>[]);
   final Future<List<VideoHourlyLogRow>> videoHourlyF =
       legacyVisible && videos && mediaKey == null
-      ? db.getAllVideoHourlyLogs()
+      ? db.getAllVideoHourlyLogs(fromDateKey: fromDateKey)
       : Future<List<VideoHourlyLogRow>>.value(<VideoHourlyLogRow>[]);
   final Future<List<(String, String, int)>> gameDailyF = games
-      ? db.getGalgameDailySecondsByGame(profileId: profile)
+      ? db.getGalgameDailySecondsByGame(
+          profileId: profile,
+          fromDateKey: fromDateKey,
+        )
       : Future<List<(String, String, int)>>.value(<(String, String, int)>[]);
   // v113：已从库移除的游戏，其会话留着、名字在会话行的快照上。
   final Future<Map<String, String>> gameSessionTitlesF = games
@@ -450,9 +470,11 @@ Future<StatFacts> loadStatFacts(
       ? db.getRecentActivityEvents(
           limit: 1 << 31,
           eventTypes: const <String>[kActivityGame],
+          fromDateKey: fromDateKey,
         )
       : Future<List<ActivityEventRow>>.value(<ActivityEventRow>[]);
   final Future<List<StudySegmentRow>> segmentsF = db.getStudySegments(
+    fromDateKey: fromDateKey,
     profileId: profile,
     mediaKind: scope.mediaKind,
     mediaKey: mediaKey,
@@ -467,8 +489,7 @@ Future<StatFacts> loadStatFacts(
         )
       : Future<List<GalgameSessionRow>>.value(<GalgameSessionRow>[]);
   // 计数面：四个来源一起挂进同一批并发读（统计页要，首页时间轴不要）。单媒体
-  // 范围只要本媒体的查词 / 制卡计数（收藏句是偏好里的整段 JSON，整库解码一次在
-  // 实测大库上就占掉 ~27 ms 主 isolate）。
+  // 范围只要本媒体的查词 / 制卡计数（制卡日计数 / 收藏不分书）。
   final Future<StatCounterFacts> countersF = !includeCounters
       ? Future<StatCounterFacts>.value(StatCounterFacts.empty)
       : mediaKey == null
@@ -776,15 +797,15 @@ Future<List<StatFact>> loadStatReviewFacts(
   ];
 }
 
-/// 计数面的四个全表读（与主事实面同一批并发）。收藏句在偏好里（一条 JSON），
-/// 其余三张是按日聚合的小表。
+/// 计数面的四个全表读（与主事实面同一批并发）。收藏句只取三列（v166 起是表；
+/// 之前是偏好里的整段 JSON，每次在主 isolate 解码，大库 27.6 ms）。
 Future<StatCounterFacts> _loadCounterFacts(FushiDatabase db) async {
   final Future<List<MiningStatisticRow>> miningF = db.getAllMiningStatistics();
   final Future<List<LookupMiningCounterRow>> countersF = db
       .getAllLookupMiningCounters();
   final Future<List<FavoriteWordRow>> favoriteWordsF = db.getAllFavoriteWords();
-  final Future<List<FavoriteSentence>> favoriteSentencesF =
-      FavoriteSentenceRepository(db).getAll();
+  final Future<List<FavoriteSentenceStatRow>> favoriteSentencesF = db
+      .getFavoriteSentenceStatRows();
   await Future.wait<Object?>(<Future<Object?>>[
     miningF,
     countersF,

@@ -49,7 +49,7 @@ void main() {
         path,
         isMainProcess: false,
       );
-      expect(migrated.schemaVersion, 165);
+      expect(migrated.schemaVersion, 166);
       await migrated
           .into(migrated.remoteAudioBindings)
           .insert(
@@ -72,7 +72,7 @@ void main() {
 
       final sqlite.Database probe = sqlite.sqlite3.open(path);
       addTearDown(probe.dispose);
-      expect(probe.select('PRAGMA user_version').first.values.first, 165);
+      expect(probe.select('PRAGMA user_version').first.values.first, 166);
       final Map<String, sqlite.Row> columns = columnsOf(probe);
       expect(columns.keys.toSet(), <String>{
         'srt_book_uid',
@@ -131,7 +131,7 @@ void main() {
 
       final sqlite.Database probe = sqlite.sqlite3.open(path);
       addTearDown(probe.dispose);
-      expect(probe.select('PRAGMA user_version').first.values.first, 165);
+      expect(probe.select('PRAGMA user_version').first.values.first, 166);
     },
   );
 }
