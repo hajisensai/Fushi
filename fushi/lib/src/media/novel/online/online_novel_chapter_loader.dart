@@ -11,6 +11,7 @@ class OnlineNovelChapterLoaded {
   const OnlineNovelChapterLoaded({
     required this.index,
     required this.characters,
+    this.grownSpineCharacters,
   });
 
   /// 章号（0 基）。
@@ -23,6 +24,14 @@ class OnlineNovelChapterLoaded {
   /// 阅读器开书时只读一次书行里的每章字数，取章之后必须靠它把内存里那一章的
   /// 字数从「占位文案长度」换成正文的，否则进度与统计都按占位页算（BUG-4809）。
   final int? characters;
+
+  /// 取这一章让解压树的 spine 末尾长出了新章（网页小说书取回末尾「下一章」
+  /// 占位后，在它后面再挂一个新的占位，novel-d6）时，书行重解析后的**全书**每章
+  /// 字数（长度 = 新的 spine 章数，口径同 [characters]）；spine 没变为 null。
+  ///
+  /// 阅读器据此在会话内把多出来的尾部章节并进已打开的书（重解析解压树拿章节与
+  /// 目录，字数取这里的），读完这一章就能接着翻到下一章，不必重开书。
+  final List<int>? grownSpineCharacters;
 }
 
 /// 阅读器侧「按需取章」的统一接口：WebView 请求到一章正文文件、而它还是占位页

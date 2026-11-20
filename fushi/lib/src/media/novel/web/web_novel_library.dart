@@ -72,7 +72,8 @@ typedef _LoadedChapterLookup =
 /// 就地重建、`sourceMetadata` 存描述符），不另写一套 EPUB 生成。区别只在描述符：
 /// 这里存的是 Rust 连载会话的**快照原文**（[WebNovelSnapshot.raw]），章节顺序、去重、
 /// 下一章都以它为准。spine 第 i 项 = 快照第 i 章；快照有 `tailNext` 时末尾再挂一个
-/// 「下一章」占位页，阅读器读到它时由 [WebNovelChapterLoader] 现取。
+/// 「下一章」占位页，阅读器读到它时由 [WebNovelChapterLoader] 现取，取回后它在
+/// spine 末尾接着挂下一个占位（阅读器会话内续拉，novel-d6）。
 class WebNovelLibrary {
   WebNovelLibrary({
     required this.database,
@@ -416,10 +417,14 @@ class WebNovelChapterRejected implements Exception {
 
 /// 阅读器开书时调用：[row] 是网页小说书就给出它的按需取章加载器，否则 null。
 /// 合规门关（iOS）时一律 null：快照会随备份恢复过去，开书不得因此联网取页。
+/// [pendingText] / [nextChapterTitle] 与开书补占位（[prepareWebNovelBookForReading]）
+/// 用同一套文案：取回末尾一章后在 spine 末尾续挂的新占位页用它们。
 WebNovelChapterLoader? webNovelChapterLoaderFor({
   required EpubBookRow? row,
   required String extractDir,
   required FushiDatabase database,
+  required String pendingText,
+  required String nextChapterTitle,
   WebNovelPageFetcher fetcher = const HeadlessWebNovelPageFetcher(),
 }) {
   if (row == null || !webNovelReaderActionAvailable()) return null;
@@ -430,13 +435,21 @@ WebNovelChapterLoader? webNovelChapterLoaderFor({
     fetcher: fetcher,
     bookKey: row.bookKey,
     extractDir: extractDir,
+    pendingText: pendingText,
+    nextChapterTitle: nextChapterTitle,
   );
 }
 
 /// 网页小说书的按需取章：阅读器请求到一章的正文文件而它还是占位页（多半是末尾的
 /// 「下一章」）时，用无界面 WebView 取那一页的 HTML，喂给 Rust 连载会话，把正文与
-/// 插图写回解压树、把新快照写回书行。spine 不在这里改（阅读器正开着这本书）：新的
-/// 「下一章」占位在下次开书时由 [WebNovelLibrary.ensureTrailingPlaceholder] 补上。
+/// 插图写回解压树、把新快照写回书行。
+///
+/// 取的是末尾的「下一章」占位、站点又给出了再下一章时，在 spine 末尾**追加**一个
+/// 新的占位（novel-d6）：只新增一个章节文件、给目录三件套各加一项（顺带把刚取回
+/// 那一章的目录标题从占位标题换成章名），已有章的文件一个不动——阅读器正开着
+/// 这本书、正从这棵解压树取文件，不能像 [WebNovelLibrary.save] 那样整本就地重建。
+/// 结果里带上新的全书字数（[OnlineNovelChapterLoaded.grownSpineCharacters]），
+/// 阅读器据此把新章并进已打开的书，读完这一章就能接着翻，不用重开书。
 ///
 /// 同一章并发请求只取一次；不同章串行取（骨架见
 /// [SerialOnlineNovelChapterLoader]）。不预取：每取一页要起一个无界面 WebView，
@@ -448,6 +461,8 @@ class WebNovelChapterLoader extends SerialOnlineNovelChapterLoader {
     required this.fetcher,
     required this.bookKey,
     required this.extractDir,
+    required this.pendingText,
+    required this.nextChapterTitle,
     FushiWebCoreLibrary? core,
   }) : _core = core;
 
@@ -457,6 +472,10 @@ class WebNovelChapterLoader extends SerialOnlineNovelChapterLoader {
   final String bookKey;
   @override
   final String extractDir;
+
+  /// spine 末尾续挂的新占位页的正文文案与目录标题（见类注释）。
+  final String pendingText;
+  final String nextChapterTitle;
   final FushiWebCoreLibrary? _core;
 
   @override
@@ -518,6 +537,19 @@ class WebNovelChapterLoader extends SerialOnlineNovelChapterLoader {
     if (current == null || current.sourceMetadata != snapshot.raw) {
       return null;
     }
+    // 取的是末尾那一章（spine 里它是「下一章」占位）：目录标题换成章名；站点又
+    // 给了再下一章就在 spine 末尾续挂新占位。补丁先算好再落盘：目录不是本装配器
+    // 的格式时只放弃续挂（下次开书照旧由 ensureTrailingPlaceholder 整本补），
+    // 正文照常写。
+    final bool tail = index == snapshot.chapters.length;
+    final bool grows = tail && updated.tailNext != null;
+    final _PackagePatch? package = tail
+        ? await _patchPackage(
+            index: index,
+            title: updated.chapters[index].title,
+            grows: grows,
+          )
+        : null;
     for (final LnReaderEpubImage image in content.images) {
       await writeAtomically(
         File(p.join(extractDir, 'OEBPS', image.fileName)),
@@ -536,6 +568,7 @@ class WebNovelChapterLoader extends SerialOnlineNovelChapterLoader {
         ),
       ),
     );
+    if (package != null) await _writePackage(package, updated.lang ?? '');
     final ({int chapterCount, String chaptersJson, String? coverPath})
     reparsed = await EpubImporter.reparseExtractedBook(extractDir);
     await database.updateEpubBookMihonState(
@@ -544,23 +577,119 @@ class WebNovelChapterLoader extends SerialOnlineNovelChapterLoader {
       chapterCount: reparsed.chapterCount,
       chaptersJson: reparsed.chaptersJson,
     );
+    final List<int?> counts = _chapterCharacters(reparsed.chaptersJson);
+    final bool grew = package?.placeholderNumber != null;
     return OnlineNovelChapterLoaded(
       index: index,
-      characters: _chapterCharacters(reparsed.chaptersJson, index),
+      characters: index < counts.length ? counts[index] : null,
+      grownSpineCharacters: grew && !counts.contains(null)
+          ? List<int>.unmodifiable(counts.cast<int>())
+          : null,
     );
   }
 
-  /// 重解析出的 `chaptersJson` 里第 [index] 章的字数（阅读器据此换掉内存里那
-  /// 一章的字数）；条目缺失 / 形状不对返回 null。
-  static int? _chapterCharacters(String chaptersJson, int index) {
+  File _packageFile(String name) => File(p.join(extractDir, 'OEBPS', name));
+
+  /// 算好刚取回的末尾第 [index] 章（0 基）对应的目录补丁：标题换成 [title]，
+  /// [grows] 时再追加下一个占位。读不到目录 / 不是本装配器的格式返回 null（记日志）。
+  Future<_PackagePatch?> _patchPackage({
+    required int index,
+    required String title,
+    required bool grows,
+  }) async {
+    try {
+      LnReaderPackageDocuments docs = (
+        opf: await _packageFile('content.opf').readAsString(),
+        ncx: await _packageFile('toc.ncx').readAsString(),
+        nav: await _packageFile('nav.xhtml').readAsString(),
+      );
+      docs = LnReaderEpubAssembler.retitleChapter(
+        docs,
+        number: index + 1,
+        title: title,
+      );
+      if (grows) {
+        docs = LnReaderEpubAssembler.appendChapter(
+          docs,
+          number: index + 2,
+          title: nextChapterTitle,
+        );
+      }
+      return (docs: docs, placeholderNumber: grows ? index + 2 : null);
+    } on FileSystemException catch (error, stack) {
+      ErrorLogService.instance.log(
+        'WebNovelChapterLoader.package',
+        error,
+        stack,
+      );
+      return null;
+    } on FormatException catch (error, stack) {
+      ErrorLogService.instance.log(
+        'WebNovelChapterLoader.package',
+        error,
+        stack,
+      );
+      return null;
+    }
+  }
+
+  /// 落盘顺序：新占位章文件 → nav → NCX → OPF。spine 以 OPF 为准，它最后写：
+  /// 中途被杀只会留下一个没进 spine 的占位文件或多出一项的目录，书照样能开；
+  /// 下次取这一章时（快照还没写上，BUG-4906 的那条路）补丁会重放，追加可重放。
+  Future<void> _writePackage(_PackagePatch package, String languageTag) async {
+    final int? placeholder = package.placeholderNumber;
+    if (placeholder != null) {
+      final File file = lnReaderOnlineChapterFile(extractDir, placeholder - 1);
+      if (!await file.exists()) {
+        await writeAtomically(
+          file,
+          utf8.encode(
+            LnReaderEpubAssembler.chapterXhtml(
+              title: nextChapterTitle,
+              body: lnReaderPendingChapterBody(pendingText),
+              languageTag: languageTag,
+            ),
+          ),
+        );
+      }
+    }
+    await writeAtomically(
+      _packageFile('nav.xhtml'),
+      utf8.encode(package.docs.nav),
+    );
+    await writeAtomically(
+      _packageFile('toc.ncx'),
+      utf8.encode(package.docs.ncx),
+    );
+    await writeAtomically(
+      _packageFile('content.opf'),
+      utf8.encode(package.docs.opf),
+    );
+  }
+
+  /// 重解析出的 `chaptersJson` 里每章的字数（阅读器据此换掉内存里那一章的
+  /// 字数）；条目形状不对的章为 null，整体形状不对返回空表。
+  static List<int?> _chapterCharacters(String chaptersJson) {
     final Object? decoded = jsonDecode(chaptersJson);
-    if (decoded is! List<Object?> || index >= decoded.length) return null;
-    final Object? entry = decoded[index];
-    if (entry is! Map<String, Object?>) return null;
-    final Object? characters = entry['characters'];
-    return characters is int && characters >= 0 ? characters : null;
+    if (decoded is! List<Object?>) return const <int?>[];
+    return <int?>[
+      for (final Object? entry in decoded)
+        if (entry is Map<String, Object?> &&
+            entry['characters'] is int &&
+            (entry['characters']! as int) >= 0)
+          entry['characters']! as int
+        else
+          null,
+    ];
   }
 }
+
+/// [WebNovelChapterLoader] 末尾取章时要落盘的目录补丁；[placeholderNumber] 是
+/// 续挂的新占位章（1 基），不续挂为 null。
+typedef _PackagePatch = ({
+  LnReaderPackageDocuments docs,
+  int? placeholderNumber,
+});
 
 /// 开书前的准备（阅读器调用）：网页小说书补末尾「下一章」占位。失败只记日志、
 /// 不挡开书。返回更新后的书行（没改返回原行）。
