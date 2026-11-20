@@ -1081,7 +1081,9 @@ Future<String?> gitCommonDir() async {
 /// 时退回 `floor + 1`；计数文件读写失败同样退回，并给出警告。
 ///
 /// 预留了没用掉的号（任务中途放弃）就空着，号不要求连续。
-Future<int> allocateBugNumber(int floor) async {
+///
+/// [reserve] 为 false（`settle --dry-run`）时只在锁内读出会取到的号，不写回，演练不推进计数。
+Future<int> allocateBugNumber(int floor, {bool reserve = true}) async {
   final common = await gitCommonDir();
   if (common == null) return floor + 1;
   RandomAccessFile? raf;
@@ -1093,6 +1095,7 @@ Future<int> allocateBugNumber(int floor) async {
     raf.setPositionSync(0);
     final text = latin1.decode(raf.readSync(raf.lengthSync())).trim();
     final next = math.max(floor, int.tryParse(text) ?? 0) + 1;
+    if (!reserve) return next;
     raf.truncateSync(0);
     raf.setPositionSync(0);
     raf.writeStringSync('$next\n');
@@ -2617,7 +2620,8 @@ Future<int> cmdSettle(List<String> args, {BranchScanner? scanner}) async {
       final scope = await scopeForArrival(mover, baseRef);
       requireUsableScope(group.number, paths, scope);
       // 改号的目标也走本机预留：否则会改到邻居工作区刚 `new` 出来、还没提交的号上。
-      final target = await allocateBugNumber(next - 1);
+      // 演练不写回计数：dry-run 打印的目标号与紧接着正式跑取到的号一致。
+      final target = await allocateBugNumber(next - 1, reserve: !dryRun);
       next = target + 1;
       logOut(
         '  BUG-${padNum(group.number)}：${mover.path}（${mover.note}）→ BUG-${padNum(target)}',
