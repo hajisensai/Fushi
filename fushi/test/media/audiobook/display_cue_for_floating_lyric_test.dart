@@ -164,4 +164,35 @@ void main() {
       expect(controller.currentCue?.text, 's1');
     });
   });
+
+  group('句间静音里显示句提前切换要发信号（novel-15，关联 BUG-509）', () {
+    test('gap 里显示句变了只发 displayCueChanged，不 notify 正文监听者', () {
+      final controller = AudiobookPlayerController();
+      addTearDown(controller.dispose);
+      controller.setChapterCues(cues);
+      int displaySignals = 0;
+      int readerNotifies = 0;
+      controller.displayCueChanged.addListener(() => displaySignals++);
+      controller.addListener(() => readerNotifies++);
+
+      controller.debugUpdateCueForPosition(1500); // s0 句内
+      final int notifiesInS0 = readerNotifies;
+      expect(displaySignals, 0, reason: '句内显示句 = 当前句，随 notify 走');
+
+      controller.debugUpdateCueForPosition(2500); // gap → 显示句 s1
+      expect(displaySignals, 1, reason: '修复前 gap 里没有任何信号，悬浮字幕停在 s0');
+      expect(readerNotifies, notifiesInS0, reason: '正文高亮 hold，不得被 notify');
+      expect(controller.currentCue?.text, 's0');
+
+      controller.debugUpdateCueForPosition(2700); // 同一 gap：显示句没变
+      expect(displaySignals, 1);
+
+      controller.debugUpdateCueForPosition(3500); // 进 s1：走正常 notify
+      expect(displaySignals, 1);
+      expect(readerNotifies, greaterThan(notifiesInS0));
+
+      controller.debugUpdateCueForPosition(4500); // 下一个 gap → s2
+      expect(displaySignals, 2);
+    });
+  });
 }

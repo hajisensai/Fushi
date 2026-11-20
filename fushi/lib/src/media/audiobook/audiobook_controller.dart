@@ -255,6 +255,18 @@ class AudiobookPlayerController extends ChangeNotifier {
   AudioCue? _currentCue;
   int _currentCueIndex = -1;
 
+  /// 「显示句」（[displayCueForFloatingLyric]）换了的信号，只给显示面（悬浮字幕、
+  /// 媒体通知副标题、书架迷你条）用。
+  ///
+  /// novel-15：句间静音里 reader 高亮按 hold 契约停在上一句，[_updateCurrentCue]
+  /// 裸 return、不 notify，于是只在 notify 时重读显示句的悬浮字幕也跟着停住，
+  /// 要等下一句真正开口才切——BUG-509 的「gap 提前显示下一句」在播放中从没生效。
+  /// 这里每个 tick 记下显示句身份，变了才发；不走 [notifyListeners]，正文高亮 /
+  /// 歌词跟随这些按 [currentCue] 工作的监听者不被打扰。
+  Listenable get displayCueChanged => _displayCueSignal;
+  final _DisplayCueSignal _displayCueSignal = _DisplayCueSignal();
+  AudioCue? _lastDisplayCue;
+
   AudioCue? cueAtCurrentPositionInBook() {
     if (_allBookCues.isEmpty) return _currentCue;
     final ({int fileIndex, int positionMs}) at = _effectiveFilePosition;
@@ -2413,9 +2425,23 @@ class AudiobookPlayerController extends ChangeNotifier {
       cues: fileCues,
       positionMs: effectiveMs,
     );
+    // 显示句（悬浮字幕等）与 reader 高亮分开记：gap 里高亮 hold 上一句，显示句
+    // 已经是下一句（novel-15）。命中句区间时显示句就是当前句，随下面的
+    // notifyListeners 一起被显示面读到，不另发信号。
+    final AudioCue? display = idx >= 0
+        ? fileCues[idx]
+        : _displayCueFor(cues: fileCues, effectiveMs: effectiveMs);
+    final AudioCue? previousDisplay = _lastDisplayCue;
+    final bool displayChanged =
+        display != null &&
+        (previousDisplay == null || !_isSameCue(previousDisplay, display));
+    _lastDisplayCue = display;
     // Gap（两条 cue 之间的静音）：保持上一条 cue 不清高亮，避免闪烁。
     // 用 index 而非 textFragmentId 比较，防止重复短句 id 相同时短路。
-    if (idx < 0) return;
+    if (idx < 0) {
+      if (displayChanged) _displayCueSignal.fire();
+      return;
+    }
     final AudioCue cue = fileCues[idx];
     final int chapterIdx = _chapterCues.indexOf(cue);
     if (chapterIdx == _currentCueIndex) {
@@ -3488,6 +3514,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     _clipPlayer?.dispose();
     _clipPlayer = null;
     _player.dispose();
+    _displayCueSignal.dispose();
     super.dispose();
   }
 
@@ -3658,3 +3685,9 @@ class AudiobookPlayerController extends ChangeNotifier {
 
 /// [AudiobookPlayerController.classifyActivationTickForTesting] 的结论。
 enum ActivationRestoreTick { transient, unreachable, landed }
+
+/// [AudiobookPlayerController.displayCueChanged] 的发信器（[ChangeNotifier] 的
+/// notify 是 protected，包一层只露一个 [fire]）。
+class _DisplayCueSignal extends ChangeNotifier {
+  void fire() => notifyListeners();
+}

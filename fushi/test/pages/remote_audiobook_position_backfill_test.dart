@@ -14,7 +14,7 @@ class _Host extends InterconnectSyncBackend with LegacyInterconnectHostScope {
 
   final Map<String, ({int positionMs, int updatedAtMs})> audio =
       <String, ({int positionMs, int updatedAtMs})>{};
-  Object? error;
+  StateError? error;
   final List<String> asked = <String>[];
 
   @override
@@ -22,7 +22,7 @@ class _Host extends InterconnectSyncBackend with LegacyInterconnectHostScope {
     String bookKey,
   ) async {
     asked.add(bookKey);
-    final Object? e = error;
+    final StateError? e = error;
     if (e != null) throw e;
     return audio[bookKey] ?? (positionMs: 0, updatedAtMs: 0);
   }
