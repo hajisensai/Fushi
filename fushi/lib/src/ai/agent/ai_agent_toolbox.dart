@@ -9,18 +9,25 @@ import 'package:fushi_engine/ai/agent/agent_tool.dart';
 import 'package:fushi/src/ai/agent/ai_agent_skills.dart';
 
 /// 常驻工具（spec §6.1：约 15 个，每轮都带上）；其余经 `ops.search` → `ops.describe`
-/// 现取。只列目录里真实存在的 id，不存在的（当前平台没这条路由）静默跳过。
+/// 现取。只列目录里真实存在的 id（守卫 `ai_agent_token_budget_test.dart`）；当前
+/// 不可用的（模块关了、平台没有）由 [AiAgentToolbox.residentTools] 跳过。
+///
+/// 初版写的 `nav.open` / `library.search` / `video.library.list` / `downloads.list` /
+/// `tasks.list` / `tasks.get` 在目录里从来不存在，静默跳过后常驻只剩 4 条：模型每场都
+/// 要先 `ops__search` 再 `ops__describe` 才能列库，多一轮请求，describe 又改了工具表、
+/// 让提供商的前缀缓存从工具表起整段失效（本机存档 6 场里 4 场 describe 过
+/// `library.item.list` / `video.work.list` / `downloads.job.list`，见
+/// docs/agent/ai-token-budget.md）。换成目录里对应的真实 id；`tasks.*` 没有通用
+/// 等价物（`task.list` 只管设置页后台任务），不放。
 const List<String> kAiAgentResidentOps = <String>[
   'settings.search',
   'settings.get',
   'settings.set',
   'modules.list',
-  'nav.open',
-  'library.search',
-  'video.library.list',
-  'downloads.list',
-  'tasks.list',
-  'tasks.get',
+  'nav.go',
+  'library.item.list',
+  'video.work.list',
+  'downloads.job.list',
 ];
 
 /// 长任务结束的回调（会话 id、操作 id、任务 id、最终状态）。
