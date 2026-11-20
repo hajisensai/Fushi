@@ -44,7 +44,7 @@ void main() {
     expect(r.texts, <String>['表紙/ポスター01.jpg', 'cover.png', '表紙/ソード02.jpg']);
   });
 
-  group('decodeDocument（ffc_text_legacy_decode_document）', () {
+  group('decodeDocument（ffc_text_decode_document）', () {
     /// 重复 [repeat] 遍「<ASCII 时间轴>\n<一行 Shift_JIS 文件名>\n」：一份整文档。
     Uint8List sjisDocument(int repeat) {
       final BytesBuilder b = BytesBuilder();
@@ -62,10 +62,10 @@ void main() {
     ].join();
 
     test('整份 Shift_JIS 文档解回日文', () {
-      final ({LegacyTextEncoding encoding, String text})? r =
+      final ({String encoding, String text})? r =
           LegacyTextDecoder.decodeDocument(sjisDocument(3));
       expect(r, isNotNull);
-      expect(r!.encoding, LegacyTextEncoding.shiftJis);
+      expect(r!.encoding, 'Shift_JIS');
       expect(r.text, expectedDocument(3));
     });
 
@@ -77,11 +77,35 @@ void main() {
         0x0A,
       ]);
       expect(LegacyTextDecoder.decodeBatch(<Uint8List>[damaged]), isNull);
-      final ({LegacyTextEncoding encoding, String text})? r =
+      final ({String encoding, String text})? r =
           LegacyTextDecoder.decodeDocument(damaged);
       expect(r, isNotNull);
-      expect(r!.encoding, LegacyTextEncoding.shiftJis);
+      expect(r!.encoding, 'Shift_JIS');
       expect(r.text, '${expectedDocument(40).trimRight()}\u{FFFD}\n');
+    });
+
+    test('EUC-KR 韩文文档带回编码名，不被解成汉字', () {
+      // 「안녕하세요」的 EUC-KR 字节：每个字节都落在 GB2312 区，从前被 GBK 解成汉字。
+      const List<int> hello = <int>[
+        0xBE, 0xC8, 0xB3, 0xE7, 0xC7, 0xCF, 0xBC, 0xBC, 0xBF, 0xE4, //
+      ];
+      final BytesBuilder b = BytesBuilder();
+      for (int i = 0; i < 10; i++) {
+        b.add(ascii.encode('${i + 1}\n00:00:01,000 --> 00:00:02,000\n'));
+        b.add(hello);
+        b.add(ascii.encode(', world.\n'));
+      }
+      final ({String encoding, String text})? r =
+          LegacyTextDecoder.decodeDocument(b.toBytes());
+      expect(r, isNotNull);
+      expect(r!.encoding, 'EUC-KR');
+      expect(
+        r.text,
+        <String>[
+          for (int i = 0; i < 10; i++)
+            '${i + 1}\n00:00:01,000 --> 00:00:02,000\n안녕하세요, world.\n',
+        ].join(),
+      );
     });
 
     test('空 / 全 ASCII / UTF-8 / 解不开的字节返回 null', () {

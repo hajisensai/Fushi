@@ -24,6 +24,9 @@ crc32fast = "1"
 # legacy_text.rs：Shift_JIS / GBK / EUC-JP / Big5 解码（ZIP 条目名、曲库 ID3 乱码修复共用）。
 # (Apache-2.0 OR MIT) AND BSD-3-Clause，fushi_music 已在用。
 encoding_rs = "0.8"
+# document_charset.rs：整份文本文件判编码（EUC-KR、Windows-125x 等 legacy_text 判不对的编码）。
+# Firefox 的旧网页编码探测器，作者同 encoding_rs。Apache-2.0 OR MIT。
+chardetng = "1"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp", "tiff", "tga", "ico", "pnm"] }
 jpeg-encoder = "0.6"
 # image/avif.rs：AV1 解码（dav1d 的纯 Rust 移植，BSD-2-Clause）。关掉默认的 `asm` 特性：asm 要
