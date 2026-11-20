@@ -318,6 +318,7 @@
 | [BUG-4934](bugs/BUG-4934-extension-page-audio-csp.md) | ✅ | ✅ | 浏览器扩展在 X 等 CSP 严格的网站第一层查词没有单词发音 |
 | [BUG-4933](bugs/BUG-4933-manga-overwrite-card-noop.md) | ✅ | ✅ | 漫画/PDF/音乐歌词页查词弹窗覆写 Anki 卡片静默无效 |
 | [BUG-4944](bugs/BUG-4944-android-anr-surface-destroyed-raster-stack.md) | 🚧 | 🚧 | Android ANR：surfaceDestroyed 主线程等 raster 线程，ANR 摘要丢了被等线程的栈 |
+| [BUG-4943](bugs/BUG-4943-main-thread-diagnostic-fsync-anr.md) | ✅ | ✅ | Android 后台 ANR：诊断标记在主线程同步 fsync |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
 | [BUG-4903](bugs/BUG-4903-home-desktop-continue-cut-edge-title-concat.md) | ✅ | ✅ | 首页（桌面）「继续」右侧卡被窗口切掉一半、标题拼接成「Re：ゼロ…1<Re：…」 |
