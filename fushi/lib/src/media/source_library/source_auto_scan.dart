@@ -114,6 +114,17 @@ class SourceScanActivity extends ChangeNotifier {
     }
   }
 
+  /// [run] 的不等待版：[sourceId] 此刻没人持锁时持锁执行 [operation]；已被持有（含
+  /// 当前 zone 自己持有——调用方正在扫这个来源）时**不执行**、返回 null。
+  ///
+  /// 给「动这个来源但不能等扫描」的维护动作用（启动残留清扫删临时来源行）：拿到锁就
+  /// 做，期间到来的扫描排在后面；拿不到说明有人正在扫它，留到下次。判定与占锁之间没有
+  /// await，不会和 [run] 同时进入。
+  Future<T>? tryRun<T>(int sourceId, Future<T> Function() operation) {
+    if (_active.containsKey(sourceId)) return null;
+    return run(sourceId, operation);
+  }
+
   /// 所有扫描都结束时完成；此刻已空闲则立即完成。
   Future<void> whenIdle() {
     if (isIdle) return Future<void>.value();

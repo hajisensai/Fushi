@@ -82,7 +82,8 @@ function vnShellPage(scripts, body, boot) {
     'window.flutter_inappwebview={callHandler:function(name){' +
     'window.__handlerCalls.push(name);return Promise.resolve(null);}};';
   return '<!doctype html><html><head><meta charset="utf-8">' +
-    '<style>' + scripts.css + '</style>' +
+    // 与生产（reader_fushi_page.dart）一样带 id：VN 量书本块级小图时按这个 id 排除阅读器样式。
+    '<style id="fushi-reader-style">' + scripts.css + '</style>' +
     '<script>' + bridge + scripts.units + '</script>' + scripts.shell +
     '<script>' + scripts.selection + (boot ? ';' + boot : '') + '</script>' +
     '</head><body>' + body + '</body></html>';

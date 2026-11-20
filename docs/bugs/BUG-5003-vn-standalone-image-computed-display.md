@@ -16,3 +16,4 @@
   `inlineStyleBlock` 挂着为 true、摘下为 false，用例红。
 - **备注**：「是否应该按书本 CSS 的 `display:block` 把文字中间的小图拆成独立一屏」是功能取舍，不在本修复里做（要做得在
   `detachChapterSource` 之前按挂载状态记一次归类），已列入待拍板。设备复测未做：本修复不改变生产行为。
+- **后续（2026-11-21，拍板台 design-nmv-fyi-tail ①「做」）**：VN 改为按书本 CSS 的块级 display 把文字中间的小图拆成独立一屏。`detachChapterSource` 摘下源树前调 `markBookBlockImages`：临时关掉阅读器自有样式表（`fushi-reader-style` / `fushi-cloak` / `__fushi*`，与无缝章节脚本同一判据）量一次 computed display，块级的记成 `data-fushi-vn-book-block` 属性；归类只读属性，挂着 / 摘下仍一致，阅读器的 `:only-child` 规则不算。跑手 `vn_standalone_image_classification_harness.mjs` 已改为钉住新语义（含整页启动路径）。

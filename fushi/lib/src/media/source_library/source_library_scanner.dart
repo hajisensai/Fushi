@@ -679,7 +679,10 @@ class ScanPlan {
 enum SourceScanBlock {
   /// 视频刮削资料正在清理（[VideoScrapeOperationGate] 的 maintenance 租约被占着），
   /// 清理结束前视频来源不能扫。
-  videoScrapeMaintenance('video_scrape_maintenance');
+  videoScrapeMaintenance('video_scrape_maintenance'),
+
+  /// 拿到来源锁时这一行已经不在（等锁期间被残留清扫或用户删掉）。
+  sourceRemoved('source_removed');
 
   const SourceScanBlock(this.wireValue);
 
@@ -1456,12 +1459,23 @@ class SourceLibraryScanner {
     // 所有入口都经这里，同一来源不会被并发扫；先拿来源锁再拿视频刮削门，不持门等锁。
     return sourceScanActivity.run(source.id, () async {
       // 以前的进程在扫描中途被杀留下的东西（「仅此一次」的临时来源行、临时目录）：
-      // 每个库实例清一次，放在来源锁里面——本进程正在跑的那几条不会被当成残留。
+      // 每个库实例清一次。本次扫描已持有 [source] 的锁，清扫按锁跳过它。
       await sweepSourceScanLeftoversOnce(
         _db,
         releaseAccess: _folderAccess.release,
-        keep: <int>{source.id},
       );
+      // 等锁期间这一行可能已被删掉（残留清扫持锁删了这条临时行，或用户删了来源）：
+      // 不在已删的行上扫，否则导入的媒体挂到不存在的来源上（拍板台 design-nmv-fyi-tail ③）。
+      if (await _db.getMediaSourceById(source.id) == null) {
+        return SourceScanSummary(
+          sourceId: source.id,
+          mediaKind: source.mediaKind,
+          discoveredPaths: const <String>[],
+          importedMediaCount: 0,
+          error: t.media_source_scan_blocked_source_removed,
+          blocked: SourceScanBlock.sourceRemoved,
+        );
+      }
       return _scanGated(
         source,
         fs: fs,

@@ -76,9 +76,12 @@ void main() {
   );
 
   // BUG-5003：归类对象是脱离文档的源树，判据不能读 computed style（挂着与摘下结果不同）。
+  // 拍板台 design-nmv-fyi-tail ①：书本 CSS 排成块级的小图在摘下前记标记、算独立插图；
+  // 阅读器自己的 `:only-child` 规则不算。
   test(
     'VN standalone image classification does not depend on whether the '
-    'source tree is attached',
+    'source tree is attached; book CSS display:block makes a small image '
+    'standalone, the reader stylesheet does not',
     () => runHarness(
       'test/reader/vn_standalone_image_classification_harness.mjs',
       'PASS VN standalone image classification',

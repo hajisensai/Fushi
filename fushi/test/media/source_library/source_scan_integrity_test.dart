@@ -16,6 +16,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
+import 'package:fushi/src/media/source_library/source_auto_scan.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/media/source_library/source_scan_temp.dart';
@@ -698,6 +699,67 @@ void main() {
         (await db.getAllMediaSources()).map((MediaSourceRow r) => r.id).toSet(),
         <int>{normal.id, live},
       );
+    });
+
+    // 拍板台 design-nmv-fyi-tail ③：首页首帧的清扫不在任何来源锁里，以前只靠扫描入口
+    // 传 keep 排除「自己正在扫的那条」，首帧后对残留行发起的重扫会被清扫删掉脚下的行。
+    test('正被扫描（持有来源锁）的残留临时行不删，锁放开后的下一次清扫才删', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final int stale = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'temp',
+          mediaKind: 'video',
+          rootPath: p.join(tmp.path, 'stale'),
+          configJson: Value<String?>(oneShotSourceConfig(null)),
+          createdAt: 1000,
+        ),
+      );
+      final SourceScanActivity activity = SourceScanActivity();
+      final Completer<void> scanning = Completer<void>();
+      final Completer<void> release = Completer<void>();
+      final Future<void> scan = activity.run<void>(stale, () async {
+        scanning.complete();
+        await release.future;
+      });
+      await scanning.future;
+
+      expect(await sweepStaleOneShotSources(db, activity: activity), 0);
+      expect(await db.getMediaSourceById(stale), isNotNull);
+
+      release.complete();
+      await scan;
+      expect(await sweepStaleOneShotSources(db, activity: activity), 1);
+      expect(await db.getMediaSourceById(stale), isNull);
+    });
+
+    test('扫描等锁期间来源行被删：拿到锁后不扫，返回 sourceRemoved', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      _video(p.join(tmp.path, 'gone', '01.mkv'));
+      final SourceLibraryRow source = await _source(
+        db,
+        p.join(tmp.path, 'gone'),
+      );
+      final Completer<void> held = Completer<void>();
+      final Completer<void> release = Completer<void>();
+      final Future<void> holder = sourceScanActivity.run<void>(
+        source.id,
+        () async {
+          held.complete();
+          await release.future;
+        },
+      );
+      await held.future;
+      final Future<SourceScanSummary> waiting = _scan(db, source);
+      await db.deleteMediaSource(source.id);
+      release.complete();
+      await holder;
+
+      final SourceScanSummary summary = await waiting;
+      expect(summary.blocked, SourceScanBlock.sourceRemoved);
+      expect(summary.importedMediaCount, 0);
+      expect(await _rowsByUid(db), isEmpty);
     });
 
     test('标记与 iOS 书签并存，书签刷新重写 configJson 后标记仍在', () {

@@ -16,6 +16,14 @@ String? videoScrapeMaintenanceText(Object? error) =>
     ? t.video_scrape_maintenance_active
     : null;
 
+/// 手动刮削批次没开始的原因（[VideoSourceScrapeTaskController.startBlocker]）给用户看
+/// 的话：资料正在清理、来源正在扫描各有本地化文案，其余原样。
+String videoScrapeStartBlockedText(Object blocker) =>
+    videoScrapeMaintenanceText(blocker) ??
+    (blocker is VideoSourceScanInProgressError
+        ? t.video_source_scrape_scan_in_progress
+        : blocker.toString());
+
 /// 把刮削相关操作的失败转成一句给用户看的话：「正在清理」走本地化文案，其余原样。
 String videoScrapeErrorText(Object error) =>
     videoScrapeMaintenanceText(error) ?? error.toString();
