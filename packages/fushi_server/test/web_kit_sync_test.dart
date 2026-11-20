@@ -23,6 +23,23 @@ void main() {
     }
   });
 
+  test('server-gate 的 PR / push 路径都覆盖内嵌真源，只改扩展的 PR 也跑本守卫', () {
+    final String gate = File(
+      '../../.github/workflows/server-gate.yml',
+    ).readAsStringSync();
+    for (final String name in <String>[
+      ...kWebKitFiles.keys,
+      'scripts/sync-mirrors.mjs',
+    ]) {
+      final String line = "      - 'tools/browser-extension/$name'";
+      expect(
+        line.allMatches(gate).length,
+        2,
+        reason: 'server-gate.yml 的 pull_request 与 push 路径都要列 $line',
+      );
+    }
+  });
+
   test('/kit/ 地址带内容哈希版本号，未知文件 404', () async {
     expect(
       webKitUrl('theme.css'),
