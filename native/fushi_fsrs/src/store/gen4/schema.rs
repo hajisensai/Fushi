@@ -1128,7 +1128,7 @@ mod tests {
                 .collect::<Result<_, _>>()
                 .unwrap()
         };
-        let want: [(&str, &[&str]); 18] = [
+        let want: [(&str, &[&str]); 19] = [
             (
                 "collections",
                 &[

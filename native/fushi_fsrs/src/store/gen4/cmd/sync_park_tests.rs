@@ -66,6 +66,12 @@ fn recut_on_l2(
     a.write(now + 1, N2, "keep-park");
     round(a, l1, "L1", now + 2, plain);
     round(b, l1, "L1", now + 3, plain);
+    // b 的库在第一次见到 a 之前已有数据（c 先写过 L2）时 a 在 b 那里待确认：不受信的作者的段不转发。b 确认 a，
+    // 再读一次 L1（把早收下、没留原文的段再要一次，留作转发）。
+    if status_row(b, &a.device())["trust"] == json!("pending") {
+        trust(b, now + 3, &a.device(), true);
+        round(b, l1, "L1", now + 3, plain);
+    }
     round(b, l2, "L2", now + 3, plain);
     purge(b, now + 4, N1);
     b.write(now + 5, N3, "b-after-purge");
@@ -190,15 +196,21 @@ fn a_recut_waiting_for_its_purge_is_fetched_again_only_once_the_purge_is_here() 
         let r = round(&c, &mut l2, "L2", T1 + 11 + i, plain);
         assert!(!fetches_from(&r.plan, &da), "parked: {}", r.plan);
     }
-    // b 的段出现：这一轮收下 Purge（a 的件还停着，plan 在收段之前），下一轮拉 a 的件、收下。
+    // b 的段出现：这一轮收下 b 的段（a 的件还停着，plan 在收段之前）——b 的 Purge 依赖 a 的操作，进等待缓冲（等待
+    // 缓冲里的 Purge 也算「到了」）；下一轮拉 a 的件、收下，b 的段随之投出。
     for (k, v) in hidden {
         l2.insert(k, v);
     }
     round(&c, &mut l2, "L2", T1 + 20, plain);
-    assert_eq!(c.field(N3), Some(json!("b-after-purge")));
+    assert_eq!(
+        c.field(N2),
+        None,
+        "a's piece was still parked during that plan"
+    );
     let r = round(&c, &mut l2, "L2", T1 + 21, plain);
     assert!(fetches_from(&r.plan, &da), "purge here now: {}", r.plan);
     assert_eq!(c.field(N2), Some(json!("keep-park")));
+    assert_eq!(c.field(N3), Some(json!("b-after-purge")));
     assert_eq!(c.field(N1), b.field(N1), "purged as on b");
     assert!(status_row(&c, &db).get("relayBlocked").is_none());
 }
