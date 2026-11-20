@@ -11,6 +11,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import app.fushi.reader.NotificationChannelNames
 import app.fushi.reader.R
 import java.io.File
 import java.io.IOException
@@ -167,7 +168,8 @@ class FeedbackReplyWorker(appContext: Context, params: WorkerParameters) :
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
         if (nm.getNotificationChannel(CHANNEL_ID) != null) return
-        val ch = NotificationChannel(CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_DEFAULT)
+        val name = NotificationChannelNames.nameFor(ctx, CHANNEL_ID, CHANNEL_NAME)
+        val ch = NotificationChannel(CHANNEL_ID, name, NotificationManager.IMPORTANCE_DEFAULT)
         ch.setSound(null, null)
         ch.enableVibration(false)
         nm.createNotificationChannel(ch)

@@ -1431,7 +1431,8 @@ public class ScreenOcrService extends Service {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                     NotificationIds.CHANNEL_SCREEN_OCR,
-                    "Screen OCR",
+                    NotificationChannelNames.nameFor(
+                            this, NotificationIds.CHANNEL_SCREEN_OCR, "Screen OCR"),
                     NotificationManager.IMPORTANCE_LOW);
             channel.setShowBadge(false);
             NotificationManager nm = getSystemService(NotificationManager.class);
