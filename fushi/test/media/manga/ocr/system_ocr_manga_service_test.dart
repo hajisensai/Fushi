@@ -20,7 +20,7 @@ import 'package:path/path.dart' as p;
 ///    否则那种失败在真机上看起来和「这页真没字」一模一样，没人查得出来。
 /// 2. **整卷编排**——当前页优先、逐页落盘、缓存复用。这层与识别质量无关，
 ///    四个平台共用，因此值得用 fake platform 钉死。
-class _FakePlatform implements SystemOcrPlatform {
+class _FakePlatform implements SystemOcrPixelPlatform {
   _FakePlatform({
     this.available = true,
     Map<String, List<SystemOcrTextLine>>? byPage,
@@ -50,6 +50,15 @@ class _FakePlatform implements SystemOcrPlatform {
       imageHeight: 1600,
     );
   }
+
+  @override
+  Future<SystemOcrPageResult> recognizePixels(
+    Uint8List rgba, {
+    required int width,
+    required int height,
+    required String language,
+    List<Rect> tiles = const <Rect>[],
+  }) => throw UnimplementedError();
 }
 
 /// 同时实现模型配置面的平台（Android ML Kit），modelStatus 回固定状态。
@@ -78,7 +87,7 @@ class _ModelStatusPlatform extends _FakePlatform
 
 /// 模拟支持切片的平台（iOS 26 / macOS 26 的 Vision）：记下收到的切片，回放
 /// 预置的逐片行。
-class _TiledFakePlatform implements SystemOcrPlatform {
+class _TiledFakePlatform implements SystemOcrPixelPlatform {
   _TiledFakePlatform(this.lines);
 
   final List<SystemOcrTextLine> lines;
@@ -98,6 +107,26 @@ class _TiledFakePlatform implements SystemOcrPlatform {
       lines: lines,
       imageWidth: 1000,
       imageHeight: 1600,
+    );
+  }
+
+  /// 收到的像素请求（尺寸 + 字节数）。
+  final List<(int, int, int)> pixelRequests = <(int, int, int)>[];
+
+  @override
+  Future<SystemOcrPageResult> recognizePixels(
+    Uint8List rgba, {
+    required int width,
+    required int height,
+    required String language,
+    List<Rect> tiles = const <Rect>[],
+  }) async {
+    pixelRequests.add((width, height, rgba.length));
+    requestTiles.add(tiles);
+    return SystemOcrPageResult(
+      lines: lines,
+      imageWidth: width,
+      imageHeight: height,
     );
   }
 }
@@ -499,6 +528,28 @@ void main() {
       expect(block.isVertical, isTrue);
       expect(block.rectangle.top, closeTo(273.5, 0.01));
       expect(block.rectangle.bottom, closeTo(646.0, 0.01));
+    });
+
+    test('内存像素（视频暂停帧）直接交平台：按像素尺寸切片，跨切线两截照样拼回', () async {
+      final _TiledFakePlatform platform = _TiledFakePlatform(_kSplitColumn);
+      final MokuroImage page = await SystemOcrMangaService(platform: platform)
+          .recognizePagePixels(
+            OcrRgbaImage(
+              rgba: Uint8List(1000 * 1600 * 4),
+              width: 1000,
+              height: 1600,
+            ),
+            relativeUrl: 'frame_0',
+            language: 'ja',
+          );
+
+      expect(platform.pixelRequests, <(int, int, int)>[
+        (1000, 1600, 1000 * 1600 * 4),
+      ]);
+      expect(platform.requestTiles.single, hasLength(3));
+      expect(page.url, 'frame_0');
+      expect((page.size.width, page.size.height), (1000.0, 1600.0));
+      expect(page.blocks.single.lines, <String>['繰り返しているというの！？']);
     });
 
     test('签名换代：切片前的旧缓存（Apple 上只认出一成不到的字）不再命中', () {

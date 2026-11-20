@@ -2365,6 +2365,7 @@ fn ai_crop_one(
     padding: i64,
     max_side: i64,
     min_side: i64,
+    opaque: bool,
 ) -> Result<Option<Vec<u8>>, i32> {
     let edges = [b[0] * sx, b[1] * sy, b[2] * sx, b[3] * sy];
     if edges.iter().any(|v| !v.is_finite()) {
@@ -2409,7 +2410,66 @@ fn ai_crop_one(
     } else {
         (copy_view(&crop), cw, chh)
     };
+    if opaque && crop.ch == 4 {
+        // 不透明 RGBA（播放器截帧 / 字幕位图）：alpha 恒 255，编成 RGB PNG，与解码 RGB 页图
+        // 裁出的块同形。
+        return encode_png(&rgba_to_rgb(&pixels), ow as u32, oh as u32, 3).map(Some);
+    }
     encode_png(&pixels, ow as u32, oh as u32, crop.ch).map(Some)
+}
+
+/// 紧排 RGBA → 紧排 RGB（丢 alpha）。
+fn rgba_to_rgb(rgba: &[u8]) -> Vec<u8> {
+    let mut rgb = Vec::with_capacity(rgba.len() / 4 * 3);
+    for px in rgba.chunks_exact(4) {
+        rgb.extend_from_slice(&px[..3]);
+    }
+    rgb
+}
+
+/// 在整页视图 [page] 上裁出每个框并编码（[ffc_image_ai_crops] / [ffc_image_ai_crops_rgba]
+/// 共用），结果按每块 `[u32 len][len 字节]` 序列化（`len == u32::MAX` 表示裁不出）。
+#[allow(clippy::too_many_arguments)]
+fn ai_crops_of_page(
+    page: &View,
+    page_w: f64,
+    page_h: f64,
+    boxes: &[f64],
+    padding: i32,
+    max_side: i32,
+    min_side: i32,
+    opaque: bool,
+) -> Result<Vec<u8>, i32> {
+    let sx = if page_w > 0.0 {
+        page.w as f64 / page_w
+    } else {
+        1.0
+    };
+    let sy = if page_h > 0.0 {
+        page.h as f64 / page_h
+    } else {
+        1.0
+    };
+    let mut out = Vec::new();
+    for b in boxes.chunks_exact(4) {
+        match ai_crop_one(
+            page,
+            b,
+            sx,
+            sy,
+            padding as i64,
+            max_side as i64,
+            min_side as i64,
+            opaque,
+        )? {
+            Some(png) => {
+                out.extend_from_slice(&(png.len() as u32).to_ne_bytes());
+                out.extend_from_slice(&png);
+            }
+            None => out.extend_from_slice(&u32::MAX.to_ne_bytes()),
+        }
+    }
+    Ok(out)
 }
 
 /// 解码整页（按 EXIF 转正）并裁出每个框（[boxes] 每条 4 个 f64：ltrb，坐标系为
@@ -2454,39 +2514,133 @@ pub unsafe extern "C" fn ffc_image_ai_crops(
             Ok(v) => v,
             Err(code) => return code,
         };
-        let sx = if page_w > 0.0 {
-            d.width as f64 / page_w
-        } else {
-            1.0
-        };
-        let sy = if page_h > 0.0 {
-            d.height as f64 / page_h
-        } else {
-            1.0
+        let boxes = slice(boxes, box_count * 4);
+        match ai_crops_of_page(
+            &page, page_w, page_h, boxes, padding, max_side, min_side, false,
+        ) {
+            Ok(out) => {
+                crate::hand_over_bytes(out, out_ptr, out_len);
+                status::OK
+            }
+            Err(code) => code,
+        }
+    })
+}
+
+/// [ffc_image_ai_crops] 的原始像素版：输入是 `width × height` 的**不透明** RGBA（行跨度
+/// `stride` 字节，≥ `width * 4`），不经解码；裁出的块编成 RGB PNG（alpha 丢弃）。给已经拿到
+/// 像素的调用方（视频暂停 OCR 的播放器截帧、字幕位图）用，省掉整页 PNG 编码 + 解码。
+/// 尺寸 / 跨度不合法返回 [status::INVALID_ARGUMENT]，缓冲不够长返回
+/// [status::BUFFER_TOO_SMALL]，其余语义同 [ffc_image_ai_crops]。
+///
+/// # Safety
+/// 指针按给定长度可读 / 可写。
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn ffc_image_ai_crops_rgba(
+    rgba: *const u8,
+    len: usize,
+    width: u32,
+    height: u32,
+    stride: usize,
+    page_w: f64,
+    page_h: f64,
+    boxes: *const f64,
+    box_count: usize,
+    padding: i32,
+    max_side: i32,
+    min_side: i32,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        if rgba.is_null() || out_ptr.is_null() || out_len.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        if box_count > 0 && boxes.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        if max_side <= 0 || min_side <= 0 {
+            return status::INVALID_ARGUMENT;
+        }
+        let page = match View::new(slice(rgba, len), stride, 4, 0, 0, width, height) {
+            Ok(v) => v,
+            Err(code) => return code,
         };
         let boxes = slice(boxes, box_count * 4);
-        let mut out = Vec::new();
-        for b in boxes.chunks_exact(4) {
-            match ai_crop_one(
-                &page,
-                b,
-                sx,
-                sy,
-                padding as i64,
-                max_side as i64,
-                min_side as i64,
-            ) {
-                Ok(Some(png)) => {
-                    out.extend_from_slice(&(png.len() as u32).to_ne_bytes());
-                    out.extend_from_slice(&png);
-                }
-                Ok(None) => out.extend_from_slice(&u32::MAX.to_ne_bytes()),
-                Err(code) => return code,
+        match ai_crops_of_page(
+            &page, page_w, page_h, boxes, padding, max_side, min_side, true,
+        ) {
+            Ok(out) => {
+                crate::hand_over_bytes(out, out_ptr, out_len);
+                status::OK
             }
+            Err(code) => code,
         }
-        crate::hand_over_bytes(out, out_ptr, out_len);
-        status::OK
     })
+}
+
+/// 不透明 RGBA（`width × height`，行跨度 `stride`）→ 面积平均（[INTERP_AVERAGE]）缩到
+/// `dst_w × dst_h`（与源同尺寸则不缩）→ RGB JPEG（`quality` 1..=100，4:4:4，alpha 丢弃）。
+/// 给 Lens 送检的播放器截帧用：不经整帧 PNG 编码 / 解码。只做缩小：目标超过源尺寸返回
+/// [status::INVALID_ARGUMENT]。
+///
+/// # Safety
+/// 指针按给定长度可读 / 可写。
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn ffc_image_rgba_fit_jpeg(
+    rgba: *const u8,
+    len: usize,
+    width: u32,
+    height: u32,
+    stride: usize,
+    dst_w: u32,
+    dst_h: u32,
+    quality: u32,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        if rgba.is_null() || out_ptr.is_null() || out_len.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        if !(1..=100).contains(&quality)
+            || dst_w == 0
+            || dst_h == 0
+            || dst_w > width
+            || dst_h > height
+            || dst_w > u16::MAX as u32
+            || dst_h > u16::MAX as u32
+        {
+            return status::INVALID_ARGUMENT;
+        }
+        let src = match View::new(slice(rgba, len), stride, 4, 0, 0, width, height) {
+            Ok(v) => v,
+            Err(code) => return code,
+        };
+        match rgba_fit_jpeg(&src, dst_w as usize, dst_h as usize, quality as u8) {
+            Ok(jpeg) => {
+                crate::hand_over_bytes(jpeg, out_ptr, out_len);
+                status::OK
+            }
+            Err(code) => code,
+        }
+    })
+}
+
+/// [ffc_image_rgba_fit_jpeg] 的本体。
+fn rgba_fit_jpeg(src: &View, dw: usize, dh: usize, quality: u8) -> Result<Vec<u8>, i32> {
+    let rgba = if dw == src.w && dh == src.h {
+        copy_view(src)
+    } else {
+        let mut dst = vec![0u8; dw * dh * 4];
+        resize_into(src, &mut dst, dw, dh, INTERP_AVERAGE);
+        dst
+    };
+    let rgb = rgba_to_rgb(&rgba);
+    drop(rgba);
+    encode_fit_jpeg(&rgb, dw as u32, dh as u32, 3, quality, None)
 }
 
 // ---------------------------------------------------------------------------
@@ -2549,6 +2703,195 @@ pub unsafe extern "C" fn ffc_image_decode_png(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 不透明 RGBA 测试图（带行尾填充，模拟 mpv 的行跨度）。
+    fn opaque_rgba(w: usize, h: usize, pad: usize) -> (Vec<u8>, usize) {
+        let stride = w * 4 + pad;
+        let mut px = vec![0xEEu8; stride * h];
+        for y in 0..h {
+            for x in 0..w {
+                let o = y * stride + x * 4;
+                px[o] = (x * 7 + y * 3) as u8;
+                px[o + 1] = (x * 2 + y * 11) as u8;
+                px[o + 2] = (x * 5 + y) as u8;
+                px[o + 3] = 255;
+            }
+        }
+        (px, stride)
+    }
+
+    fn take_crops(out: &[u8]) -> Vec<Option<Vec<u8>>> {
+        let mut crops = Vec::new();
+        let mut o = 0;
+        while o < out.len() {
+            let n = u32::from_ne_bytes(out[o..o + 4].try_into().unwrap());
+            o += 4;
+            if n == u32::MAX {
+                crops.push(None);
+            } else {
+                crops.push(Some(out[o..o + n as usize].to_vec()));
+                o += n as usize;
+            }
+        }
+        crops
+    }
+
+    #[test]
+    fn ai_crops_rgba_matches_crops_of_the_decoded_rgb_page() {
+        let (w, h) = (90usize, 40usize);
+        let (px, stride) = opaque_rgba(w, h, 12);
+        let mut rgb = Vec::with_capacity(w * h * 3);
+        for y in 0..h {
+            for x in 0..w {
+                let o = y * stride + x * 4;
+                rgb.extend_from_slice(&px[o..o + 3]);
+            }
+        }
+        let png = encode(
+            image::DynamicImage::ImageRgb8(
+                image::RgbImage::from_raw(w as u32, h as u32, rgb).unwrap(),
+            ),
+            image::ImageFormat::Png,
+        );
+        let boxes = [
+            5.0, 4.0, 60.0, 30.0, 0.0, 0.0, 90.0, 40.0, 200.0, 200.0, 210.0, 210.0,
+        ];
+        let mut out_ptr: *mut u8 = std::ptr::null_mut();
+        let mut out_len = 0usize;
+        let decoded = unsafe {
+            assert_eq!(
+                ffc_image_ai_crops(
+                    png.as_ptr(),
+                    png.len(),
+                    0.0,
+                    0.0,
+                    boxes.as_ptr(),
+                    3,
+                    4,
+                    64,
+                    32,
+                    &mut out_ptr,
+                    &mut out_len,
+                ),
+                status::OK
+            );
+            let v = std::slice::from_raw_parts(out_ptr, out_len).to_vec();
+            crate::ffc_free_bytes(out_ptr, out_len);
+            v
+        };
+        let raw = unsafe {
+            assert_eq!(
+                ffc_image_ai_crops_rgba(
+                    px.as_ptr(),
+                    px.len(),
+                    w as u32,
+                    h as u32,
+                    stride,
+                    0.0,
+                    0.0,
+                    boxes.as_ptr(),
+                    3,
+                    4,
+                    64,
+                    32,
+                    &mut out_ptr,
+                    &mut out_len,
+                ),
+                status::OK
+            );
+            let v = std::slice::from_raw_parts(out_ptr, out_len).to_vec();
+            crate::ffc_free_bytes(out_ptr, out_len);
+            v
+        };
+        let a = take_crops(&decoded);
+        let b = take_crops(&raw);
+        assert_eq!(a.len(), 3);
+        assert_eq!(b.len(), 3);
+        assert!(a[2].is_none() && b[2].is_none());
+        for k in 0..2 {
+            let da = image::load_from_memory(a[k].as_ref().unwrap()).unwrap();
+            let db = image::load_from_memory(b[k].as_ref().unwrap()).unwrap();
+            assert_eq!(db.color(), image::ColorType::Rgb8);
+            assert_eq!(da.to_rgb8().as_raw(), db.to_rgb8().as_raw());
+        }
+    }
+
+    #[test]
+    fn ai_crops_rgba_rejects_short_buffers() {
+        let (px, stride) = opaque_rgba(8, 8, 0);
+        let boxes = [0.0, 0.0, 8.0, 8.0];
+        let mut out_ptr: *mut u8 = std::ptr::null_mut();
+        let mut out_len = 0usize;
+        let code = unsafe {
+            ffc_image_ai_crops_rgba(
+                px.as_ptr(),
+                px.len() - 1,
+                8,
+                8,
+                stride,
+                0.0,
+                0.0,
+                boxes.as_ptr(),
+                1,
+                4,
+                64,
+                32,
+                &mut out_ptr,
+                &mut out_len,
+            )
+        };
+        assert_eq!(code, status::BUFFER_TOO_SMALL);
+    }
+
+    #[test]
+    fn rgba_fit_jpeg_downscales_and_keeps_same_size() {
+        let (w, h) = (64usize, 36usize);
+        let (px, stride) = opaque_rgba(w, h, 8);
+        for (dw, dh) in [(32u32, 18u32), (64, 36)] {
+            let mut out_ptr: *mut u8 = std::ptr::null_mut();
+            let mut out_len = 0usize;
+            let jpeg = unsafe {
+                assert_eq!(
+                    ffc_image_rgba_fit_jpeg(
+                        px.as_ptr(),
+                        px.len(),
+                        w as u32,
+                        h as u32,
+                        stride,
+                        dw,
+                        dh,
+                        92,
+                        &mut out_ptr,
+                        &mut out_len,
+                    ),
+                    status::OK
+                );
+                let v = std::slice::from_raw_parts(out_ptr, out_len).to_vec();
+                crate::ffc_free_bytes(out_ptr, out_len);
+                v
+            };
+            let d = image::load_from_memory(&jpeg).unwrap();
+            assert_eq!((d.width(), d.height()), (dw, dh));
+            assert_eq!(d.color(), image::ColorType::Rgb8);
+        }
+        let mut out_ptr: *mut u8 = std::ptr::null_mut();
+        let mut out_len = 0usize;
+        let code = unsafe {
+            ffc_image_rgba_fit_jpeg(
+                px.as_ptr(),
+                px.len(),
+                w as u32,
+                h as u32,
+                stride,
+                65,
+                36,
+                92,
+                &mut out_ptr,
+                &mut out_len,
+            )
+        };
+        assert_eq!(code, status::INVALID_ARGUMENT);
+    }
 
     fn view(data: &[u8], w: u32, h: u32, ch: u32) -> View<'_> {
         View::new(data, (w * ch) as usize, ch, 0, 0, w, h).unwrap()

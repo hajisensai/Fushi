@@ -399,7 +399,45 @@ class MangaAiOcrRefiner {
     MokuroImage page,
     Uint8List imageBytes, {
     MangaAiOcrCache? cache,
-  }) async {
+  }) => _refinePage(
+    page,
+    // 解码整页是几百毫秒级的 CPU 活，放后台 isolate，别卡阅读器 UI。
+    (List<MokuroRect> boxes) => Isolate.run(
+      () => cropMangaAiOcrBlocks(
+        imageBytes,
+        pageWidth: page.size.width,
+        pageHeight: page.size.height,
+        boxes: boxes,
+      ),
+    ),
+    cache,
+  );
+
+  /// [refinePage] 的原始像素版：[image] 是该页的不透明 RGBA（与本地 OCR 用的同一帧），
+  /// 不经整页编码 / 解码，直接裁块（视频暂停 OCR 的播放器截帧用）。
+  Future<({MokuroImage page, MangaAiOcrPageStats stats})> refinePagePixels(
+    MokuroImage page,
+    OcrRgbaImage image, {
+    MangaAiOcrCache? cache,
+  }) => _refinePage(
+    page,
+    // 裁块 + 编 PNG 在原生内核里，仍放后台 isolate（像素随消息拷一次，比编码便宜得多）。
+    (List<MokuroRect> boxes) => Isolate.run(
+      () => cropMangaAiOcrBlocksRgba(
+        image,
+        pageWidth: page.size.width,
+        pageHeight: page.size.height,
+        boxes: boxes,
+      ),
+    ),
+    cache,
+  );
+
+  Future<({MokuroImage page, MangaAiOcrPageStats stats})> _refinePage(
+    MokuroImage page,
+    Future<List<Uint8List?>> Function(List<MokuroRect> boxes) cropBlocks,
+    MangaAiOcrCache? cache,
+  ) async {
     final List<int> wanted = <int>[
       for (int i = 0; i < page.blocks.length; i++)
         if (wants(page.blocks[i])) i,
@@ -416,17 +454,9 @@ class MangaAiOcrRefiner {
         ),
       );
     }
-    // 解码整页是几百毫秒级的 CPU 活，放后台 isolate，别卡阅读器 UI。
-    final List<Uint8List?> crops = await Isolate.run(
-      () => cropMangaAiOcrBlocks(
-        imageBytes,
-        pageWidth: page.size.width,
-        pageHeight: page.size.height,
-        boxes: <MokuroRect>[
-          for (final int index in wanted) page.blocks[index].rectangle,
-        ],
-      ),
-    );
+    final List<Uint8List?> crops = await cropBlocks(<MokuroRect>[
+      for (final int index in wanted) page.blocks[index].rectangle,
+    ]);
 
     // 与 wanted 同序；裁不出图的块为 null（保留本地文字）。
     final List<_CropRead?> reads = <_CropRead?>[
@@ -1216,3 +1246,26 @@ List<Uint8List?> cropMangaAiOcrBlocks(
       minSide: kMangaAiOcrMinCropSide,
     ) ??
     List<Uint8List?>.filled(boxes.length, null);
+
+/// [cropMangaAiOcrBlocks] 的原始像素版：从不透明 RGBA [image] 直接裁（不解码），裁块规则
+/// 相同，各编码成 RGB PNG（原生内核 `ffc_image_ai_crops_rgba`）。框落在图外的位置为 null。
+/// 顶层函数：给 `Isolate.run` 用。
+List<Uint8List?> cropMangaAiOcrBlocksRgba(
+  OcrRgbaImage image, {
+  required double pageWidth,
+  required double pageHeight,
+  required List<MokuroRect> boxes,
+}) => FushiComputeImage.instance.aiCropsRgba(
+  image.rgba,
+  width: image.width,
+  height: image.height,
+  pageWidth: pageWidth,
+  pageHeight: pageHeight,
+  boxes: <({double left, double top, double right, double bottom})>[
+    for (final MokuroRect b in boxes)
+      (left: b.left, top: b.top, right: b.right, bottom: b.bottom),
+  ],
+  padding: kMangaAiOcrCropPadding,
+  maxSide: kMangaAiOcrMaxCropSide,
+  minSide: kMangaAiOcrMinCropSide,
+);

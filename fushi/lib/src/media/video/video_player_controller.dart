@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:ui' show Rect, Size;
 
 import 'package:flutter/foundation.dart';
@@ -27,6 +28,9 @@ import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_playable_end.dart';
 import 'package:fushi/src/media/video/mpv_cache_snapshot.dart';
 import 'package:fushi/src/media/video/raw_video_frame.dart';
+import 'package:fushi_engine/media/image_kernels.dart'
+    show decodeOcrRgbaImageNative;
+import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRgbaImage;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show CachedMediaSnapshot;
 import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_track.dart'
@@ -1785,19 +1789,25 @@ class VideoPlayerController extends ChangeNotifier
     return _player?.screenshot(format: 'image/jpeg');
   }
 
-  /// 截取当前帧并合成 libmpv 自绘的字幕（mpv `screenshot-raw subtitles`），PNG 字节。
+  /// 截取当前帧并合成 libmpv 自绘的字幕（mpv `screenshot-raw subtitles`），不透明 RGBA
+  /// 像素。
   ///
   /// 图形字幕（PGS / VobSub / DVB）只存在于 libmpv 的渲染里，Dart 侧没有 cue；图形
-  /// 字幕查词（`graphic_subtitle_ocr.dart`）靠这张合成帧做 OCR。PNG 无损——JPEG 的块
-  /// 效应正落在字幕描边上，会拉低识别率。未 [load] 返回 null。
-  Future<Uint8List?> captureFrameWithSubtitles() async {
+  /// 字幕查词（`graphic_subtitle_ocr.dart`）靠这张合成帧做 OCR。像素无损，且**不编码**：
+  /// 补丁格式 `image/x-fushi-bgra` 在截帧 isolate 上把 mpv 的 BGRA 直接换成 RGBA 交回，
+  /// OCR 引擎直接吃像素（#3828 测量：以前编 PNG 约 0.9 s，编码 + 解码占整条链约 95%）。
+  /// 网页播放后端只能拿到编码截图，原生解码成像素（几十毫秒）。未 [load] / 截帧失败
+  /// 返回 null。
+  Future<OcrRgbaImage?> captureFrameWithSubtitles() async {
     final Player? player = _player;
     if (player == null) return null;
     if (!hasNativePlayer) {
-      return player.screenshot(
+      final Uint8List? png = await player.screenshot(
         format: 'image/png',
         includeLibassSubtitles: true,
       );
+      if (png == null) return null;
+      return Isolate.run(() => decodeOcrRgbaImageNative(png));
     }
     // 不占 Player 的串行锁（BUG-3645）：持锁期间 play() / pause() 都得排队。补丁里
     // 持锁截帧本来也只锁取原始帧、编码在锁外（BUG-5027），这里连取帧也不排队，暂停
@@ -1808,11 +1818,12 @@ class VideoPlayerController extends ChangeNotifier
     final dynamic native = player.platform;
     if (native == null) return null;
     final Object? bytes = await native.screenshot(
-      format: 'image/png',
+      format: kRawVideoFrameFormat,
       includeLibassSubtitles: true,
       synchronized: false,
+      fushiRawTransform: rawVideoFrameRgbaTransform,
     );
-    return bytes as Uint8List?;
+    return parseRawVideoFrameRgba(bytes as Uint8List?);
   }
 
   /// 截取当前解码帧在整帧比例矩形 [fraction] 内的一块 RGBA 像素（只有视频，不合成

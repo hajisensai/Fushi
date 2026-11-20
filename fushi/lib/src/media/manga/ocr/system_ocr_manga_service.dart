@@ -67,6 +67,14 @@ abstract interface class SystemOcrMangaRunner {
     required String language,
   });
 
+  /// 识别一整页内存像素（视频暂停 OCR 的播放器截帧）：不经编码 / 平台解码，切片与跨片
+  /// 合并同 [recognizePageBytes]。
+  Future<MokuroImage> recognizePagePixels(
+    OcrRgbaImage image, {
+    required String relativeUrl,
+    required String language,
+  });
+
   /// 本机能不能用（决定引擎选项出不出现）。
   Future<bool> isAvailable();
 
@@ -91,10 +99,10 @@ bool isSystemOcrModelUnavailableFailure(
     error.reason == kSystemOcrModelUnavailableReason;
 
 class SystemOcrMangaService implements SystemOcrMangaRunner {
-  SystemOcrMangaService({SystemOcrPlatform? platform})
+  SystemOcrMangaService({SystemOcrPixelPlatform? platform})
     : _platform = platform ?? const MethodChannelSystemOcr();
 
-  final SystemOcrPlatform _platform;
+  final SystemOcrPixelPlatform _platform;
 
   @override
   Future<bool> isAvailable() => _platform.isAvailable();
@@ -263,6 +271,29 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
     final SystemOcrPageResult result = await _platform
         .recognize(
           page,
+          language: language,
+          tiles: <Rect>[
+            for (final OcrRect tile in tiles)
+              Rect.fromLTRB(tile.left, tile.top, tile.right, tile.bottom),
+          ],
+        )
+        .timeout(kSystemOcrPageTimeout);
+    return buildSystemOcrPage(relativeUrl, mergeSystemOcrTiles(result, tiles));
+  }
+
+  @override
+  Future<MokuroImage> recognizePagePixels(
+    OcrRgbaImage image, {
+    required String relativeUrl,
+    required String language,
+  }) async {
+    // 像素就在显示方向上，没有 EXIF 要转：切片直接按像素尺寸规划。
+    final List<OcrRect> tiles = planOcrPageTiles(image.width, image.height);
+    final SystemOcrPageResult result = await _platform
+        .recognizePixels(
+          image.rgba,
+          width: image.width,
+          height: image.height,
           language: language,
           tiles: <Rect>[
             for (final OcrRect tile in tiles)

@@ -213,7 +213,7 @@ during the call, so the transform copies what it keeps. Its returned bytes are
 the screenshot result as is: no `TransferableTypedData` copy of the whole
 frame, no `_encodeScreenshot`. Because it must run before the node is freed it
 is part of the capture call, so with `synchronized: true` it runs under `lock`
-(Fushi's only caller passes `synchronized: false`), and `dispose` waits for it
+(both Fushi callers pass `synchronized: false`), and `dispose` waits for it
 through `_offThreadNativeCalls` like any capture. Upstream's `null` format
 copies the whole frame and drops the dimensions, and the JPEG / PNG formats run
 a pure-Dart encode (hundreds of ms per 1080p frame). The smart subtitle mask
@@ -221,8 +221,13 @@ a pure-Dart encode (hundreds of ms per 1080p frame). The smart subtitle mask
 continuously during playback and only needs a small RGBA crop: the transform
 (`fushi/lib/src/media/video/raw_video_frame.dart`) copies just those rows on
 the capture isolate, so no full frame is copied or sent between isolates.
-Additive: no existing format changes. Remove if upstream offers a cropped raw
-screenshot.
+Pause OCR (`VideoPlayerController.captureFrameWithSubtitles`, with
+`includeLibassSubtitles: true`) uses the same transform for the whole frame:
+`rawVideoFrameRgbaTransform` swaps BGRA to opaque RGBA on the capture isolate
+and the pixels go straight to the OCR engines, replacing the `image/png`
+encode that took ~0.9 s per 1080p frame (#3828 measurement, ~95% of the
+recognition chain). Additive: no existing format changes. Remove if upstream
+offers a raw screenshot with dimensions (and a cropped one).
 
 ## BUG-4941: the mpv handle is destroyed on a helper isolate
 

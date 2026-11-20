@@ -15,7 +15,8 @@ import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart';
-import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRecognition, OcrRect;
+import 'package:fushi_engine/ocr/ocr_types.dart'
+    show OcrRecognition, OcrRect, OcrRgbaImage;
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 import 'package:image/image.dart' as img;
@@ -269,6 +270,16 @@ MokuroImage _page(List<List<String>> blocks) => MokuroImage(
 );
 
 class _FakeRecognizer implements MangaStreamPageRecognizer {
+  /// Lens / 系统 OCR 的位图走页级像素入口（不编 PNG、不落盘）。
+  @override
+  Future<MokuroImage> recognizePixels(
+    OcrRgbaImage image, {
+    required String url,
+  }) async {
+    expect(image.rgba.length, image.width * image.height * 4);
+    return pages[calls++];
+  }
+
   _FakeRecognizer(this.pages);
 
   final List<MokuroImage> pages;
@@ -276,10 +287,8 @@ class _FakeRecognizer implements MangaStreamPageRecognizer {
   bool closed = false;
 
   @override
-  Future<MokuroImage> recognize(File pageFile) async {
-    expect(pageFile.existsSync(), isTrue);
-    return pages[calls++];
-  }
+  Future<MokuroImage> recognize(File pageFile) =>
+      throw StateError('bitmaps must not be written to files');
 
   @override
   Future<void> close() async => closed = true;
@@ -969,6 +978,15 @@ final AiProviderConfig _aiProvider = AiProviderConfig(
 /// 文字图引擎替身：文字 = `w{图宽}`，记调用数与最大并发。
 class _TextImageRecognizer
     implements MangaStreamPageRecognizer, MangaStreamTextImageRecognizer {
+  @override
+  Future<MokuroImage> recognizePixels(
+    OcrRgbaImage image, {
+    required String url,
+  }) async {
+    pageCalls++;
+    throw StateError('page path must not be used');
+  }
+
   _TextImageRecognizer({
     required this.parallelism,
     this.confidence = 0.99,
