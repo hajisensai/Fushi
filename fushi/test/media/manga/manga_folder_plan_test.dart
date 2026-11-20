@@ -565,10 +565,10 @@ void main() {
       expect(plan.imageFolders, <String>[r'C:\Lib\C']);
     });
 
-    test('2000 个页图卷 + 2000 个单文件卷的归组是线性的', () {
+    test('3000 个页图卷 + 3000 个单文件卷的归组是线性的', () {
       final String root = p.join('library');
       final List<String> files = <String>[
-        for (int i = 0; i < 2000; i++) ...<String>[
+        for (int i = 0; i < 3000; i++) ...<String>[
           p.join(root, 'Folder Series $i', '001.jpg'),
           p.join(root, 'Archive Series $i', 'Archive Series $i Vol 1.cbz'),
         ],
@@ -579,9 +579,9 @@ void main() {
         filePaths: files,
       );
       sw.stop();
-      expect(plan.imageFolders, hasLength(2000));
-      expect(plan.carrierPaths, hasLength(2000));
-      // 修前本机约 8 秒（平方级），修后几十毫秒；上限留出慢 CI 的余量。
+      expect(plan.imageFolders, hasLength(3000));
+      expect(plan.carrierPaths, hasLength(3000));
+      // 修前本机约 7 秒（平方级），修后几十毫秒；上限留出慢 CI 的余量。
       expect(sw.elapsed, lessThan(const Duration(seconds: 2)));
     });
   });
