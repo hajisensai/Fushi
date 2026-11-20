@@ -517,7 +517,7 @@ void main() {
         '```json\n${jsonEncode(<String, Object?>{
           'verdicts': <Object?>[
             <String, Object?>{'index': 1, 'related': true, 'relation': 'adaptation', 'original': 'b', 'confidence': 0.7, 'reason': 'r', 'id': 'v999'},
-            <String, Object?>{'index': 0, 'related': true, 'relation': 'sequel', 'confidence': 0.7},
+            <String, Object?>{'index': 0, 'related': true, 'relation': 'remake_of', 'confidence': 0.7},
             <String, Object?>{'index': 2, 'related': true, 'relation': 'same_work', 'confidence': 7},
             <String, Object?>{'index': 5, 'related': false, 'confidence': 0.5},
           ],
@@ -528,6 +528,33 @@ void main() {
       expect(v[1]!.relation, MediaLinkRelation.adaptation);
       expect(v[1]!.fromIsOriginal, isFalse);
       expect(v[2], isNull, reason: '置信度越界');
+      // 系列关系（续作 / 外传）是认得的关系：方向不明时不退成 same_work（见
+      // applyMediaLinkCandidates），这里只管解析。
+      final List<MediaLinkVerdict?> series = parseAiMediaLinkVerdicts(
+        jsonEncode(<String, Object?>{
+          'verdicts': <Object?>[
+            <String, Object?>{
+              'index': 0,
+              'related': true,
+              'relation': 'sequel',
+              'original': 'a',
+              'confidence': 0.8,
+            },
+            <String, Object?>{
+              'index': 1,
+              'related': true,
+              'relation': 'side_story',
+              'original': 'b',
+              'confidence': 0.8,
+            },
+          ],
+        }),
+        2,
+      );
+      expect(series[0]!.relation, MediaLinkRelation.sequel);
+      expect(series[0]!.fromIsOriginal, isTrue);
+      expect(series[1]!.relation, MediaLinkRelation.sideStory);
+      expect(series[1]!.fromIsOriginal, isFalse);
     });
 
     test('AiMediaLinkJudge 只发候选证据、按下标取结论', () async {

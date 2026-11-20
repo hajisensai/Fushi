@@ -141,7 +141,7 @@ import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_service.dar
 import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_sheet.dart'
     show showRemoteVideoSubtitleSheet;
 import 'package:fushi/src/media/links/media_link_entries.dart'
-    show MediaLinkEntry;
+    show MediaLinkEntry, resolveMediaLinkEntry;
 import 'package:fushi/src/media/links/media_link_inference_host.dart'
     show mediaLinkInferCallback;
 import 'package:fushi/src/media/links/media_link_opener.dart'
@@ -3727,11 +3727,28 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     SliverToBoxAdapter(child: _buildExtrasSection(tokens)),
     // 相关作品横滚（TODO-2484）：无关系边整块不渲染（区块内部判空）。
     SliverToBoxAdapter(
-      child: CollectionRelationsSection(
-        database: widget.database,
-        collectionId: widget.collection.id,
-        onOpenCollection: (int id) => _openRelatedCollection(id),
-        onDownload: _downloadsAvailable ? _downloadRelation : null,
+      child: Consumer(
+        builder: (BuildContext context, WidgetRef ref, Widget? _) =>
+            CollectionRelationsSection(
+              database: widget.database,
+              collectionId: widget.collection.id,
+              onOpenCollection: (int id) => _openRelatedCollection(id),
+              onDownload: _downloadsAvailable ? _downloadRelation : null,
+              // v162：目标是本机散装电影（单视频作品）——与作品图谱打开单个视频
+              // 同一个出口。
+              onOpenVideo: (String bookUid) async {
+                final MediaLinkEntry entry = await resolveMediaLinkEntry(
+                  widget.database,
+                  (kind: MediaLinkKind.videoEpisode, key: bookUid),
+                );
+                if (!context.mounted) return;
+                await openMediaLinkEntry(
+                  context: context,
+                  ref: ref,
+                  entry: entry,
+                );
+              },
+            ),
       ),
     ),
     // 跨模块「同一作品」（作品图谱 media_links）：原作 / 改编 / 游戏…

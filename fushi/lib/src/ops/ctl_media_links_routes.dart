@@ -210,12 +210,15 @@ List<CtlRoute> buildMediaLinksCtlRoutes(OpContext context) {
         );
       }
       final String? selfIs = call.optString('selfIs');
-      if (relation == MediaLinkRelation.adaptation &&
-          selfIs != 'original' &&
-          selfIs != 'adaptation') {
-        throw const CtlFailure.badRequest(
-          'adaptation 要用 selfIs 说明方向：original（本条是原作）/ adaptation（本条是改编）',
-        );
+      final bool? selfIsFrom = mediaLinkSelfIsFrom(relation, selfIs);
+      if (selfIsFrom == null) {
+        throw CtlFailure.badRequest(switch (relation) {
+          MediaLinkRelation.sequel =>
+            'sequel 要用 selfIs 说明方向：prequel（本条是前作）/ sequel（本条是续作）',
+          MediaLinkRelation.sideStory =>
+            'side_story 要用 selfIs 说明方向：main（本条是本篇）/ side_story（本条是外传）',
+          _ => 'adaptation 要用 selfIs 说明方向：original（本条是原作）/ adaptation（本条是改编）',
+        });
       }
       final String? roleRaw = call.optString('role');
       final ThemeSongRole? role = roleRaw == null
@@ -230,7 +233,7 @@ List<CtlRoute> buildMediaLinksCtlRoutes(OpContext context) {
         self: self,
         target: other,
         relation: relation,
-        selfIsOriginal: selfIs != 'adaptation',
+        selfIsOriginal: selfIsFrom,
         themeSongRole: role,
         episodeRange: call.optString('episodes') ?? '',
         at: at,

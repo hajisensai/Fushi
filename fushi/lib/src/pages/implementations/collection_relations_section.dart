@@ -32,6 +32,7 @@ class CollectionRelationsSection extends StatefulWidget {
     required this.collectionId,
     required this.onOpenCollection,
     required this.onDownload,
+    this.onOpenVideo,
     super.key,
   });
 
@@ -40,6 +41,10 @@ class CollectionRelationsSection extends StatefulWidget {
 
   /// 打开已绑定的本地合集详情（调用方持导航上下文）。
   final void Function(int targetCollectionId) onOpenCollection;
+
+  /// 打开已绑定的本地单视频（v162：目标是挂在单个视频上的作品，散装电影）。
+  /// null = 调用方没接，这类边按纯刮削边处理（小菜单可改绑到合集）。
+  final void Function(String targetBookUid)? onOpenVideo;
 
   /// 「去下载」：以关系边标题预填打开下载对话框。
   ///
@@ -228,7 +233,11 @@ class _CollectionRelationsSectionState
     } else {
       coverWidget = _coverPlaceholder(context);
     }
-    final bool bound = relation.targetCollectionId != null;
+    final void Function(String)? openVideo = widget.onOpenVideo;
+    final String? targetBookUid = relation.targetBookUid;
+    final bool bound =
+        relation.targetCollectionId != null ||
+        (targetBookUid != null && openVideo != null);
     // 封面即卡片（与视频库同一个光面海报材质）：关系类型与「已绑定」🔗 不再压在
     // 封面上，进封面下的副行（[ShelfCardMeta]）。
     return SizedBox(
@@ -240,6 +249,10 @@ class _CollectionRelationsSectionState
             final int? target = relation.targetCollectionId;
             if (target != null) {
               widget.onOpenCollection(target);
+              return;
+            }
+            if (targetBookUid != null && openVideo != null) {
+              openVideo(targetBookUid);
               return;
             }
             _showUnboundMenu(relation, details.globalPosition);

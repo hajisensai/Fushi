@@ -19,6 +19,8 @@
 library;
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/links/work_graph.dart'
+    show workSeriesRelations;
 
 import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart'
     show MalSourceMaterial;
@@ -488,7 +490,12 @@ Future<MediaLinkInferenceOutcome> applyMediaLinkCandidates({
       c = c.copyWith(
         from: swap ? c.to : c.from,
         to: swap ? c.from : c.to,
-        relation: v.relation.directed && v.fromIsOriginal == null
+        // 方向不明的改编退成 same_work；系列关系（续作 / 外传）两端是不同作品，
+        // 退成 same_work 会把它们并成一部，方向不明就沿用候选原方向。
+        relation:
+            v.relation.directed &&
+                v.fromIsOriginal == null &&
+                !workSeriesRelations.contains(v.relation)
             ? MediaLinkRelation.sameWork
             : v.relation,
         source: MediaLinkSource.ai,

@@ -40,6 +40,9 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_work_loader.dar
     show lookupOfWork;
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart'
     show kSelectableVideoMetadataProviders;
+import 'package:fushi_engine/media/video/metadata/video_collection_relation_sync.dart'
+    show TmdbCollectionPartsRefreshResult, productionAniDbXmlDirectory;
+import 'package:fushi_engine/media/video/metadata/video_series_relation_refresh.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 
@@ -76,6 +79,7 @@ List<CtlRoute> buildVideoCtlRoutes(OpContext context) {
     CtlRoute.get('/api/admin/video/scrape', ctl.scrapeStatus),
     CtlRoute.post('/api/admin/video/scrape', ctl.scrape),
     CtlRoute.post('/api/admin/video/scrape/cancel', ctl.cancelScrape),
+    CtlRoute.post('/api/admin/video/relations/refresh', ctl.refreshRelations),
     CtlRoute.get(
       '/api/admin/video/scrape/confirmation',
       ctl.pendingConfirmation,
@@ -148,6 +152,23 @@ List<VideoResourceLearningFit> rankVideoResourcesForLearning(
     ...fits.where(unfit),
   ];
 }
+
+/// `POST /api/admin/video/relations/refresh` 的响应体（没配 TMDB 时不带 `tmdb`）。
+Map<String, Object?> videoSeriesRelationRefreshJson(
+  VideoSeriesRelationRefreshResult r,
+) => <String, Object?>{
+  if (r.tmdb case final TmdbCollectionPartsRefreshResult t)
+    'tmdb': <String, Object?>{
+      'missing': t.missing,
+      'refreshed': t.refreshed,
+      'requests': t.requests,
+      'failed': t.failed,
+    },
+  'works': r.backfill.works,
+  'worksWithRelations': r.backfill.worksWithRelations,
+  'rows': r.backfill.rows,
+  'bound': r.backfill.bound,
+};
 
 typedef _ResourceEntry = ({
   VideoMediaReference media,
@@ -588,6 +609,24 @@ class _VideoCtl {
     }
     controller.cancel();
     return <String, Object?>{'cancelled': true};
+  }
+
+  /// `video relations`：补齐系列关系（库管家 ⑤ 作品层同一个
+  /// [refreshVideoSeriesRelations]）。旧 TMDB 电影快照缺合集成员表的按合集去重
+  /// 各请求一次写回快照，再跑不联网的存量补填；只补系列关系，不改作品资料。
+  /// 关系网 / 作品图缓存随 `collection_relations` 表变更失效，这里不另行通知。
+  Future<Object?> refreshRelations(CtlCall call) async {
+    _requireVideoModule();
+    final VideoSeriesRelationRefreshResult r =
+        await refreshVideoSeriesRelations(
+          _db,
+          config: videoDiscoveryScrapeConfig(
+            appModel.prefsRepo,
+            uiLocaleTag: appModel.appLocale.toLanguageTag(),
+          ),
+          aniDbXmlDirectory: productionAniDbXmlDirectory,
+        );
+    return videoSeriesRelationRefreshJson(r);
   }
 
   // ── 待确认（交互式批次里的歧义作品） ────────────────────────────────────
