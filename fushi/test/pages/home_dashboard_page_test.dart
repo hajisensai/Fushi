@@ -39,6 +39,8 @@ import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
 import 'package:fushi/src/utils/components/shelf_cover_material.dart'
     show ShelfCardMeta, ShelfMaterialSurface;
 import 'package:fushi/src/utils/components/cover_badge.dart' show CoverBadge;
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/stat_contribution_heatmap.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
@@ -820,6 +822,87 @@ void main() {
       expect(node, same(tile), reason: '色块应在「最近添加」格子里');
       expect(clips, isEmpty, reason: '${block.widget.key} 外面有裁切层');
     }
+  });
+
+  // 用户 11-20：色块上已经印着作品名，悬停再弹一个同名 tooltip「太丑了」。
+  // 带可见标题的首页色块（「继续」「最近添加」），从格子到块、块里面都不许有
+  // tooltip；读屏标题仍在块的语义里。
+  testWidgets('色块「继续」/「最近添加」：卡面已印标题，祖先与后代都没有 tooltip，语义仍带标题', (
+    WidgetTester tester,
+  ) async {
+    dashboardLayout = ShellContentLayout.collage;
+    useSize(tester, const Size(1280, 900));
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final List<MediaItem> books = <MediaItem>[];
+    for (int i = 1; i <= 6; i++) {
+      final String key = '新书${_seriesFreeSuffix(i)}';
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: key,
+          title: key,
+          epubPath: '/abs/$i.epub',
+          extractDir: '/abs/$i',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: now - (10 - i) * 1000,
+          localAddedAt: Value<int?>(now - (10 - i) * 1000),
+        ),
+      );
+      books.add(readingBook(key, key, position: 0));
+    }
+    await tester.pumpWidget(buildAppWithBooks(books, const <String, int>{}));
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    final SemanticsHandle semantics = tester.ensureSemantics();
+    final Finder blocks = find.byWidgetPredicate(
+      (Widget w) =>
+          w.key is ValueKey<String> &&
+          ((w.key! as ValueKey<String>).value.startsWith(
+                'home-recent-block/',
+              ) ||
+              (w.key! as ValueKey<String>).value.startsWith(
+                'home-continue-block/',
+              )),
+    );
+    expect(blocks, findsAtLeastNWidgets(2));
+    bool isTooltip(Widget w) => w is Tooltip || w is FushiTooltip;
+    for (final Element block in blocks.evaluate()) {
+      final Finder self = find.byElementPredicate((Element e) => e == block);
+      final List<String> titles = find
+          .descendant(of: self, matching: find.byType(Text))
+          .evaluate()
+          .map((Element e) => (e.widget as Text).data ?? '')
+          .where((String s) => s.startsWith('新书'))
+          .toList();
+      expect(titles, isNotEmpty, reason: '${block.widget.key} 卡面上没有标题');
+      expect(
+        find.descendant(of: self, matching: find.byWidgetPredicate(isTooltip)),
+        findsNothing,
+        reason: '${block.widget.key} 里面还有 tooltip',
+      );
+      final List<String> above = <String>[];
+      block.visitAncestorElements((Element e) {
+        if (e.widget.key is ValueKey<String> &&
+            (e.widget.key! as ValueKey<String>).value.startsWith(
+              'home-widget',
+            )) {
+          return false;
+        }
+        if (isTooltip(e.widget)) above.add(e.widget.runtimeType.toString());
+        return true;
+      });
+      expect(above, isEmpty, reason: '${block.widget.key} 外面包了 tooltip');
+      expect(
+        find.descendant(
+          of: self,
+          matching: find.bySemanticsLabel(RegExp(RegExp.escape(titles.first))),
+        ),
+        findsWidgets,
+        reason: '${block.widget.key} 的语义里没有标题',
+      );
+    }
+    semantics.dispose();
   });
 
   // 设计稿 H8：「最近添加」里同一合集新加的几卷合成一张卡，点开进合集详情页
@@ -2622,7 +2705,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('色块「今日」宽格设了目标：目标进度与今日时长同一行都显示（时长不被目标挤掉）', (
+  testWidgets('色块「今日」宽格设了目标：目标与今日时长同一行都显示（时长不被目标挤掉）', (
     WidgetTester tester,
   ) async {
     dashboardLayout = ShellContentLayout.collage;
@@ -2636,7 +2719,15 @@ void main() {
     expect(tester.takeException(), isNull);
     final Finder goal = find.descendant(
       of: find.byKey(studyCardKey),
-      matching: find.text(t.stat_goal_progress(read: 800, goal: 1000)),
+      // 副行只写目标（设计稿 11-20 #12：不再重复大字已写的今日字数）。
+      matching: find.text(t.home_today_goal_target(goal: '1000')),
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(studyCardKey),
+        matching: find.text(t.stat_goal_progress(read: 800, goal: 1000)),
+      ),
+      findsNothing,
     );
     final Finder time = find.descendant(
       of: find.byKey(const ValueKey<String>('home-today-time')),

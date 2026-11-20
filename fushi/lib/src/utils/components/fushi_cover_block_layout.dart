@@ -893,23 +893,6 @@ class FushiCoverBlockStrip extends StatelessWidget {
   /// 横滑条的 key（测试按它找那一行）。
   final Key? stripKey;
 
-  /// 悬停放大 / 投影在滚动区里要的余量：滚动区按这个量向四周外扩（内容起点
-  /// 不变），半高卡的投影（[kFushiCoverBlockHalfShadowExtent]）连同悬停放大
-  /// （1.05 倍，半高卡上下各约 3、左右各约 7.5）整段留在视口里，
-  /// 不被视口矩形裁出一条带硬边的阴影带（2026-11-12 用户：「继续阅读底部阴影有点
-  /// 大，感觉总体不协调」）。左右取页边距 20：再宽就画进侧栏，投影尾巴那 1～2px
-  /// 的淡影被页边裁掉看不出来。
-  static final EdgeInsets _kBleed = EdgeInsets.fromLTRB(
-    20,
-    kFushiCoverBlockHalfShadowExtent.top + 3,
-    20,
-    kFushiCoverBlockHalfShadowExtent.bottom + 5,
-  );
-
-  /// 整块（[FushiCoverBlockSize.regular]）的投影（模糊 26、下移 10）连同悬停放大
-  /// 要的余量。
-  static const EdgeInsets _kRegularBleed = EdgeInsets.fromLTRB(20, 22, 20, 42);
-
   Widget _cell(BuildContext context, int i, FushiCoverBlockSize size) =>
       _maybeStaggered(
         staggerEntrance: staggerEntrance,
@@ -918,7 +901,7 @@ class FushiCoverBlockStrip extends StatelessWidget {
       );
 
   /// 横滑条：[rows] 行半高卡，从第 [first] 项排到末项。视口向四周外扩
-  /// [_kBleed]（内容起点不变）。
+  /// [fushiCoverBlockBleed]（内容起点不变）。
   Widget _strip(
     BuildContext context, {
     required int rows,
@@ -930,9 +913,9 @@ class FushiCoverBlockStrip extends StatelessWidget {
     final double half = tileHeight ?? rowHeight(spacing: spacing);
     final double height = rows * half + (rows - 1) * spacing;
     final int count = itemCount - first;
-    final EdgeInsets bleed = size == FushiCoverBlockSize.regular
-        ? _kRegularBleed
-        : _kBleed;
+    // 投影 / 悬停放大的余量（[fushiCoverBlockBleed]）：视口向四周外扩，内容起点
+    // 不变（2026-11-12 用户：「继续阅读底部阴影有点大，感觉总体不协调」）。
+    final EdgeInsets bleed = fushiCoverBlockBleed(size);
     final EdgeInsets padding = bleed;
     Widget item(BuildContext context, int i) => _cell(context, i + first, size);
     // 单行 / 多行两种滚动件各自包 [HorizontalDragScrollable]（桌面鼠标可横拖）。
@@ -967,17 +950,10 @@ class FushiCoverBlockStrip extends StatelessWidget {
     return SizedBox(
       key: stripKey,
       height: height,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: <Widget>[
-          Positioned(
-            left: -bleed.left,
-            top: -bleed.top,
-            right: -bleed.right,
-            bottom: -bleed.bottom,
-            child: SectionSwipeCascade(child: list),
-          ),
-        ],
+      child: FushiShadowBleedViewport(
+        bleed: bleed,
+        builder: (BuildContext _, EdgeInsets _) =>
+            SectionSwipeCascade(child: list),
       ),
     );
   }

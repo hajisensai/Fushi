@@ -4594,6 +4594,8 @@
   "home_stat_reading": "阅读",
   "home_stat_reading_today": "今天阅读",
   "home_today": "今天",
+  "home_today_goal_target": "目标 $goal",
+  "home_today_goal_target_weekly": "本周目标 $goal",
   "home_tracking_mark_failed": "发送到 $site 失败",
   "home_tracking_mark_linked": "已关联 $site",
   "home_tracking_panel_attention": "$n 项待处理",

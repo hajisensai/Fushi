@@ -4594,6 +4594,8 @@
   "home_stat_reading": "Reading",
   "home_stat_reading_today": "Read today",
   "home_today": "오늘",
+  "home_today_goal_target": "목표 $goal",
+  "home_today_goal_target_weekly": "주간 목표 $goal",
   "home_tracking_mark_failed": "Last send to $site failed",
   "home_tracking_mark_linked": "Tracked on $site",
   "home_tracking_panel_attention": "처리할 항목 $n개",
