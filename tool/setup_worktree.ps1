@@ -37,13 +37,17 @@
   app 与 flutter test 的硬依赖；兄弟 worktree 有同源码产物时直接拷，否则需要 cargo 编）。跳过后
   flutter build / test 之前必须手动跑 tool/native_libs.ps1。
 
+.PARAMETER SkipTestSeed
+  不准备 flutter test 的第三方库编译 seed(见下方「flutter test 第三方库编译 seed」一节)。
+  默认在 bootstrap 之后做：全机缓存里有就拷，没有就生成一次(要跑一次 flutter test)。
+
 .EXAMPLE
   # 在新建好的 worktree 目录里(cwd 在该 worktree 内)：
   pwsh -File tool/setup_worktree.ps1                # 搬密钥 + bootstrap
   pwsh -File tool/setup_worktree.ps1 -SkipBootstrap # 只搬密钥(秒级)
 #>
 [CmdletBinding()]
-param([switch]$SkipBootstrap, [switch]$SkipNativeCompute)
+param([switch]$SkipBootstrap, [switch]$SkipNativeCompute, [switch]$SkipTestSeed)
 
 $ErrorActionPreference = "Stop"
 
@@ -217,6 +221,31 @@ finally {
 if ($hookSeedExit -ne 0) {
     # 只是少了加速：hook 会自己下载，worktree 照样可用；退出码原样报出来，不当成功。
     Write-Host "build hook 下载产物复用失败(exit $hookSeedExit)，首次 flutter test 会自己下载。" -ForegroundColor Yellow
+}
+
+# --- flutter test 第三方库编译 seed ---------------------------------------------
+# 不能拷兄弟 worktree 的 build/test_cache：fushi 测试的 dill 都带源 worktree 路径下的
+# fushi/lib，frontend_server 发现 package: 库路径对不上就整份丢弃(PackageChangedError)
+# 再冷编。这里用全机共用、只含 Flutter SDK 与 pub 库的 seed(按 SDK revision、pubspec.lock、
+# app 版本号分 key，存 %LOCALAPPDATA%/fushi-heavy/test-seed/)，拷贝(不硬链接，flutter test
+# 会原地写回)进 fushi/build/test_cache/build/。没有就在本 worktree 用真实 flutter test 编一个
+# 只 import 第三方库的入口生成(经 heavy 租约，约 20~50 秒，每个 key 全机一次)。
+if ($SkipTestSeed) {
+    Write-Host "`n已跳过 flutter test 编译 seed(-SkipTestSeed)。" -ForegroundColor DarkGray
+}
+else {
+    Write-Host "`n准备 flutter test 第三方库编译 seed..." -ForegroundColor Cyan
+    Push-Location $here
+    try {
+        & $setupDart fushi/tool/worktree_seed.dart kernel --repo $here
+        $kernelSeedExit = $LASTEXITCODE
+    }
+    finally {
+        Pop-Location
+    }
+    if ($kernelSeedExit -ne 0) {
+        Write-Host "flutter test 编译 seed 没备好(exit $kernelSeedExit，原因见上)，首次 flutter test 冷编。" -ForegroundColor Yellow
+    }
 }
 
 Write-Host "`nworktree 就绪。" -ForegroundColor Green
