@@ -31,7 +31,7 @@ void main() {
       if (dir.existsSync()) dir.deleteSync(recursive: true);
     });
 
-    test('只收顶层 .lua（扩展名不分大小写），按路径排序', () {
+    test('只收顶层 .lua（扩展名不分大小写），按路径排序', () async {
       File(p.join(dir.path, 'b_second.lua')).writeAsStringSync('-- b');
       File(p.join(dir.path, 'a_first.LUA')).writeAsStringSync('-- a');
       File(p.join(dir.path, 'readme.txt')).writeAsStringSync('not a script');
@@ -41,7 +41,7 @@ void main() {
         ..createSync();
       File(p.join(sub.path, 'dep.lua')).writeAsStringSync('-- dep');
 
-      final List<String> out = listLuaScriptFilesIn(dir);
+      final List<String> out = await listLuaScriptFilesIn(dir);
 
       expect(out, <String>[
         p.join(dir.path, 'a_first.LUA'),
@@ -49,13 +49,13 @@ void main() {
       ]);
     });
 
-    test('目录不存在返回空列表', () {
+    test('目录不存在返回空列表', () async {
       final Directory missing = Directory(p.join(dir.path, 'nope'));
-      expect(listLuaScriptFilesIn(missing), isEmpty);
+      expect(await listLuaScriptFilesIn(missing), isEmpty);
     });
 
-    test('空目录返回空列表', () {
-      expect(listLuaScriptFilesIn(dir), isEmpty);
+    test('空目录返回空列表', () async {
+      expect(await listLuaScriptFilesIn(dir), isEmpty);
     });
   });
 

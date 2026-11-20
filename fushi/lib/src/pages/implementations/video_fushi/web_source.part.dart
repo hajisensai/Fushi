@@ -245,6 +245,7 @@ extension _VideoWebSource on _VideoFushiPageState {
       _pendingController = null;
       _title = row.title;
       _failed = false;
+      _failureHealsOnOpen = false;
       _failReason = null;
       _failTorrentVideo = null;
       _currentVideoPath = null;
@@ -1444,7 +1445,7 @@ extension _VideoWebSource on _VideoFushiPageState {
   /// 的全屏就是窗口全屏——把认领来的原生全屏原样收作 [_webWindowFullscreen]，不再压路由，按钮、
   /// Esc 与退页都按网页档的全屏收口。
   void _adoptHandedOverFullscreenForWeb() {
-    _didInitialFullscreen = true;
+    _initialFullscreen.settle();
     if (!_ownsHandedOverNativeFullscreen) return;
     _ownsHandedOverNativeFullscreen = false;
     _rebuild(() => _webWindowFullscreen = true);

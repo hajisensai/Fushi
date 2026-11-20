@@ -13368,6 +13368,7 @@
   "video_subtitle_glossary_user_edited": "你編輯過，重新生成時會保留",
   "video_subtitle_graphic_hint": "圖形字幕 · 畫面顯示 · 暫停後可點字查詞（OCR）",
   "video_subtitle_graphic_learning_hint": "圖片字幕在暫停時由 OCR 辨識，點字即可查詞。用下方「轉成文字字幕」可在播放中直接查詞。",
+  "video_subtitle_graphic_ocr_cues_skipped": "Text subtitles saved; skipped $count lines that could not be recognized",
   "video_subtitle_graphic_ocr_empty": "這條字幕軌沒有辨識出文字",
   "video_subtitle_graphic_ocr_enable_action": "Turn on",
   "video_subtitle_graphic_ocr_enable_hint": "Image subtitles need OCR for tap-to-look-up",

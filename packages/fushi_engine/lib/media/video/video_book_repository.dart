@@ -115,6 +115,16 @@ enum VideoReclaimPhase {
 typedef VideoReclaimProgressCallback =
     void Function(VideoReclaimPhase phase, int done, int total);
 
+/// [VideoBookRepository.collectionPlaybackSnapshot] 的结果：播放器剧集面板一次
+/// 取齐的合集行、有序视频集行、集级刮削（bookUid → 行）、合集刮削与合集图组。
+typedef CollectionPlaybackSnapshot = ({
+  MediaCollectionRow? collection,
+  List<VideoBookRow> episodes,
+  Map<String, VideoScrapeMetaRow> episodeMeta,
+  CollectionScrapeMetaRow? collectionMeta,
+  List<MediaImageRow> images,
+});
+
 typedef _DeletedVideoSnapshot = ({
   String bookUid,
   String? coverPath,
@@ -466,6 +476,63 @@ class VideoBookRepository {
   /// [getByBookUid]（BUG-4748：上万条 = 上万次查询）。
   Future<List<VideoBookRow>> getByBookUids(Iterable<String> bookUids) =>
       _db.getVideoBooksByBookUids(bookUids);
+
+  /// 播放器剧集面板（合集里的一集打开时）一次取齐的合集快照（video-5）。
+  ///
+  /// 旧路径在首帧前逐成员各查一次 `getByBookUid` + `episodeScrapeMeta`（24 集约 50
+  /// 次往返，全挡在 `_loadSingle` 之前）。这里语句数与集数无关：合集行 / 成员 /
+  /// 合集刮削 / 合集图组四条并发，成员视频行与集级刮削两条批量 `IN` 并发。
+  ///
+  /// [CollectionPlaybackSnapshot.episodes] 按成员 sortIndex 有序，已滤掉非视频成员
+  /// 与孤儿成员（集行已删）——与旧逐条路径的读取期过滤同口径。
+  Future<CollectionPlaybackSnapshot> collectionPlaybackSnapshot(
+    int collectionId,
+  ) async {
+    final (
+      MediaCollectionRow? collection,
+      List<MediaCollectionItemRow> members,
+      CollectionScrapeMetaRow? collectionMeta,
+      List<MediaImageRow> images,
+    ) = await (
+      _db.getMediaCollectionById(collectionId),
+      _db.getCollectionItems(collectionId),
+      _db.getCollectionScrapeMeta(collectionId),
+      _db.getMediaImagesForCollection(collectionId),
+    ).wait;
+    final List<String> videoKeys = <String>[
+      for (final MediaCollectionItemRow m in members)
+        if (m.mediaType == MediaKind.video.dbValue) m.entryKey,
+    ];
+    if (videoKeys.isEmpty) {
+      return (
+        collection: collection,
+        episodes: const <VideoBookRow>[],
+        episodeMeta: const <String, VideoScrapeMetaRow>{},
+        collectionMeta: collectionMeta,
+        images: images,
+      );
+    }
+    final (
+      List<VideoBookRow> rows,
+      Map<String, VideoScrapeMetaRow> metas,
+    ) = await (
+      _db.getVideoBooksByBookUids(videoKeys),
+      _db.getVideoScrapeMetaForBooks(videoKeys),
+    ).wait;
+    final Map<String, VideoBookRow> byUid = <String, VideoBookRow>{
+      for (final VideoBookRow r in rows) r.bookUid: r,
+    };
+    return (
+      collection: collection,
+      episodes: <VideoBookRow>[
+        for (final String key in videoKeys)
+          if (byUid[key] case final VideoBookRow r) r,
+      ],
+      episodeMeta: metas,
+      collectionMeta: collectionMeta,
+      images: images,
+    );
+  }
 
   /// 统一合集：某合集的成员引用行（按 sortIndex 有序）。播放器据此建播放列表兄弟集。
   Future<List<MediaCollectionItemRow>> getCollectionItems(int collectionId) =>

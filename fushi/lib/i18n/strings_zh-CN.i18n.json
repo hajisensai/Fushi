@@ -13368,6 +13368,7 @@
   "video_subtitle_glossary_user_edited": "你编辑过，重新生成时保留",
   "video_subtitle_graphic_hint": "图形字幕 · 画面显示 · 暂停后可点字查词（OCR）",
   "video_subtitle_graphic_learning_hint": "图片字幕在暂停时由 OCR 识别，点字即可查词。用下方「转成文字字幕」可在播放中直接查词。",
+  "video_subtitle_graphic_ocr_cues_skipped": "文字字幕已生成；有 $count 条识别失败，已跳过",
   "video_subtitle_graphic_ocr_empty": "这条字幕轨没有识别出文字",
   "video_subtitle_graphic_ocr_enable_action": "开启",
   "video_subtitle_graphic_ocr_enable_hint": "图片字幕需开启 OCR 识别才能点字查词",
