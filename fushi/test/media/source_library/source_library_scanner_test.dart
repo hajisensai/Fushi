@@ -30,7 +30,10 @@ import 'package:fushi_engine/media/audiobook/book_audiobook_pairing.dart'
 import 'package:fushi/src/media/source_library/source_folder_access.dart'
     show sourceConfigValueForBookmark;
 import 'package:fushi_engine/media/source_library/book_library_prune.dart'
-    show BookSourceIndex, bookSourceScanIndexPrefKey;
+    show
+        BookSourceIndex,
+        bookSourceScanIndexPrefKey,
+        bookSourceScanJournalPrefKeyPrefix;
 import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi/src/media/music/music_audio_intake.dart';
@@ -3017,13 +3020,14 @@ Attributes = A
       final SourceLibraryRow source = await mangaSource(db);
       final String indexKey = bookSourceScanIndexPrefKey(source.id);
       bool killed = false;
-      String? indexAtKill;
+      // 「被杀那一刻」库里已落盘的索引：快照键 + 逐条日志（同一前缀）。
+      Map<String, String>? indexAtKill;
       final MangaSevenZipExtractor extractor = MangaSevenZipExtractor(
         sevenZipOverride: 'fake-7z',
         runProcess: (String executable, List<String> arguments) async {
           if (!killed) {
             killed = true;
-            indexAtKill = await db.getPref(indexKey);
+            indexAtKill = await db.getPrefsByPrefix(indexKey);
           }
           return ProcessResult(1, 2, '', 'killed');
         },
@@ -3038,8 +3042,23 @@ Attributes = A
       expect(killed, isTrue);
       expect(
         indexAtKill,
-        isNotNull,
+        isNotEmpty,
         reason: '前两卷导完时索引必须已经在库里，不能等整轮扫描的 finally',
+      );
+      // 逐卷落盘是逐条日志，不是整份重写快照：首扫 N 卷此前要写 N 次逐渐变大的
+      // 整份 JSON（2000 卷实测 ≈ 111 MiB），随卷数平方增长。
+      expect(
+        indexAtKill!.containsKey(indexKey),
+        isFalse,
+        reason: '扫描途中不该整份重写索引快照',
+      );
+      expect(
+        indexAtKill!.keys.where(
+          (String k) =>
+              k.startsWith(bookSourceScanJournalPrefKeyPrefix(source.id)),
+        ),
+        hasLength(2),
+        reason: '两卷各一行日志',
       );
       expect(
         (await db.getAllEpubBooks()).map((EpubBookRow b) => b.title).toSet(),
@@ -3047,7 +3066,8 @@ Attributes = A
       );
 
       // 还原成「被杀那一刻」的落盘状态，再扫一遍。
-      await db.setPref(indexKey, indexAtKill!);
+      await BookSourceIndex.clear(db, source.id);
+      await db.setPrefs(indexAtKill!);
       File(p.join(tmp.path, 'SeriesC', 'Vol 9.rar')).deleteSync();
       final SourceScanSummary again = await SourceLibraryScanner(
         db,

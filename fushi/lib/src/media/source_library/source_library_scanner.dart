@@ -483,25 +483,27 @@ class _MangaSourceIdentity {
       index.isRejected(relOf(path), fingerprintOf(path));
 
   void reject(String path) {
-    index.reject(relOf(path), fingerprintOf(path));
-    _checkpointDue = true;
+    final String rel = relOf(path);
+    index.reject(rel, fingerprintOf(path));
+    _unsavedRels.add(rel);
   }
 
-  /// 内存里的索引有没有**丢了就找不回来**的未落盘改动：新导入的卷（[record]）与
-  /// 「不是漫画」的结论（[reject]）。
+  /// 内存里的索引里**丢了就找不回来**的未落盘改动涉及的源：新导入的卷（[record]）
+  /// 与「不是漫画」的结论（[reject]）。
   ///
   /// 认领（[policyFor] 把已在库的同名卷记回索引）不算：索引丢了，下一轮按同一条
-  /// 查询原样再认领一遍。索引是整份重写的一条 preferences，把认领也逐卷落盘的话，
-  /// 索引丢失后重扫一个几千卷、全部已在库的来源就是几千次整份重写；认领的改动随
-  /// 下一次落盘或整轮收尾的那次保存一起写。
-  bool _checkpointDue = false;
+  /// 查询原样再认领一遍；认领的改动随整轮收尾的那次整份保存一起写。
+  final Set<String> _unsavedRels = <String>{};
 
-  /// 有丢不起的改动就落盘（一条 preferences 写入）；没有是空操作——重扫一个全部
-  /// 已入库的来源一次都不写。
+  /// 把丢不起的改动逐条落盘（[BookSourceIndex.journal]，每个源一行、与索引大小无关）；
+  /// 没有是空操作——重扫一个全部已入库的来源一次都不写。此前这里整份重写索引，
+  /// 首扫 N 卷就是 N 次逐渐变大的整份写入，随卷数平方增长。
   Future<void> checkpoint() async {
-    if (!_checkpointDue) return;
-    await index.save(db);
-    _checkpointDue = false;
+    if (_unsavedRels.isEmpty) return;
+    for (final String rel in _unsavedRels) {
+      await index.journal(db, rel);
+    }
+    _unsavedRels.clear();
   }
 
   /// 卷 [path]（拟用标题 [title]）该用的重复处理策略；null = 不导入。
@@ -549,8 +551,9 @@ class _MangaSourceIdentity {
   Future<void> record(String path, String bookKey) async {
     final String? uid = await bookUidForKey(db, bookKey);
     if (uid == null) return;
-    index.put(relOf(path), uid);
-    _checkpointDue = true;
+    final String rel = relOf(path);
+    index.put(rel, uid);
+    _unsavedRels.add(rel);
   }
 }
 
