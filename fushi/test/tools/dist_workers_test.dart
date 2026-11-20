@@ -118,6 +118,49 @@ void main() {
         '{"workers": [{"name": "a", "kind": "local", "os": "windows"}, '
         '{"name": "b", "kind": "local", "os": "windows"}]}',
       );
+      rejects(
+        '{"workers": [{"name": "a", "kind": "ssh-trusted", '
+        '"os": "freebsd", "host": "u@h"}]}',
+      );
+    });
+
+    test('a Linux worker takes unpinned suites, never itest', () {
+      final DistWorker linux = createDistWorkers(
+        readDistWorkers(
+          '{"workers": [{"name": "pve", "kind": "ssh-trusted", '
+          '"os": "linux", "host": "u@h", "capabilities": ["ffmpeg"]}]}',
+        ).single,
+        repoRoot: '.',
+      ).single;
+      expect(linux.config.platform, DistPlatform.linux);
+      expect(
+        linux.eligible(const DistUnit(path: 'test/a_test.dart', weightMs: 1)),
+        isTrue,
+      );
+      expect(
+        linux.eligible(
+          const DistUnit(
+            path: 'test/a_test.dart',
+            weightMs: 1,
+            capabilities: <String>{'ffmpeg'},
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        linux.eligible(
+          const DistUnit(
+            path: 'test/a_test.dart',
+            weightMs: 1,
+            platform: DistPlatform.macos,
+          ),
+        ),
+        isFalse,
+      );
+      rejects(
+        '{"workers": [{"name": "pve", "kind": "ssh-trusted", '
+        '"os": "linux", "host": "u@h", "capabilities": ["itest"]}]}',
+      );
     });
   });
 

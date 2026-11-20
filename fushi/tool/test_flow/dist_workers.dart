@@ -305,8 +305,9 @@ class DistWorkerConfig {
     final DistPlatform platform = switch (str('os', required: true)) {
       'windows' => DistPlatform.windows,
       'macos' => DistPlatform.macos,
+      'linux' => DistPlatform.linux,
       final String other => throw DistConfigError(
-        'worker $name: unknown os "$other"',
+        'worker $name: unknown os "$other" (windows / macos / linux)',
       ),
     };
     if (kind == DistWorkerKind.sshShim) {
@@ -333,6 +334,17 @@ class DistWorkerConfig {
       throw DistConfigError(
         'worker $name: "$kDistItestCapability" is for your own machines '
         '(kind "local" or "ssh-trusted"), not an ssh-shim worker',
+      );
+    }
+    if (platform == DistPlatform.linux &&
+        ((json['capabilities'] as List<Object?>?) ?? const <Object?>[])
+            .contains(kDistItestCapability)) {
+      // Integration tests build and drive the desktop app: Windows through
+      // tool/run_windows_itest.ps1, macOS in worker_run.sh's itest mode.
+      // Neither exists for a (headless) Linux worker.
+      throw DistConfigError(
+        'worker $name: "$kDistItestCapability" runs on Windows and macOS '
+        'workers only',
       );
     }
     if (kind == DistWorkerKind.sshTrusted && platform == DistPlatform.windows) {
