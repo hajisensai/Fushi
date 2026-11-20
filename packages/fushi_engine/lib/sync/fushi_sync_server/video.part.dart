@@ -15,6 +15,8 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     if (reqPath == '/api/library/videos') {
       if (method != 'GET') return shelf.Response(405);
       final List<RemoteVideoInfo> list = await svc.listVideos();
+      // 有 client 在看视频清单（可能接着回跳 / 制卡）：顺手请预热跟上库的变化。
+      _videoFingerprintWarmer?.request();
       return shelf.Response.ok(
         jsonEncode(<Map<String, Object?>>[
           for (final RemoteVideoInfo v in list)
@@ -708,10 +710,35 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       if (file == null) {
         return _videoFingerprintUnavailable(kVideoFingerprintReasonNotFound);
       }
+      // 拍板台 left3657：`wait=0`（卡片回跳）只答已算过的，没算过回 202 并在后台开算
+      // ——同一文件随后的预热 / 制卡请求经在途去重复用这一次。
+      final bool wait =
+          request.url.queryParameters[kVideoFingerprintWaitQueryParam] != '0';
       try {
-        final String digest = await VideoSourceFingerprint.instance.fingerprint(
-          file.path,
-        );
+        final VideoSourceFingerprint fingerprints =
+            VideoSourceFingerprint.instance;
+        final String? digest = wait
+            ? await fingerprints.fingerprint(file.path)
+            : await fingerprints.known(file.path);
+        if (digest == null) {
+          unawaited(
+            fingerprints
+                .fingerprint(file.path)
+                .then<void>(
+                  (String _) {},
+                  onError: (Object error, StackTrace stack) => engineLog.log(
+                    'video.fingerprint.background',
+                    error,
+                    stack,
+                  ),
+                ),
+          );
+          return shelf.Response(
+            kVideoFingerprintPendingStatus,
+            body: jsonEncode(<String, bool>{'pending': true}),
+            headers: <String, String>{'Content-Type': 'application/json'},
+          );
+        }
         return jsonResponse(<String, Object?>{'fingerprint': digest});
       } on FileSystemException catch (error, stack) {
         // 文件不在 / 算指纹期间被改写：没有可担保的身份。
@@ -1622,6 +1649,61 @@ int _episodeIndexFromRequest(shelf.Request request) {
   final int? n = int.tryParse(raw);
   if (n == null || n < 0) return 0;
   return n;
+}
+
+/// 起服务后挂上视频指纹落盘缓存，并在 [FushiSyncServer._videoFingerprintWarmDelay]
+/// 后开始后台低优先级预热（拍板台 left3657）。host 不提供媒体库时只挂缓存。
+extension _FushiSyncServerVideoFingerprintWarmup on FushiSyncServer {
+  void _startVideoFingerprintWarmup() {
+    VideoSourceFingerprint.instance.store = _videoFingerprintStore;
+    final FushiLibraryHostService? svc = _libraryService;
+    if (svc == null) return;
+    final VideoFingerprintWarmer warmer = VideoFingerprintWarmer(
+      listPaths: () => _videoFingerprintWarmPaths(svc),
+    );
+    _videoFingerprintWarmer = warmer;
+    _videoFingerprintWarmStart = Timer(
+      _videoFingerprintWarmDelay,
+      warmer.request,
+    );
+  }
+
+  void _stopVideoFingerprintWarmup() {
+    _videoFingerprintWarmStart?.cancel();
+    _videoFingerprintWarmStart = null;
+    _videoFingerprintWarmer?.dispose();
+    _videoFingerprintWarmer = null;
+    if (identical(
+      VideoSourceFingerprint.instance.store,
+      _videoFingerprintStore,
+    )) {
+      VideoSourceFingerprint.instance.store = null;
+    }
+  }
+}
+
+/// 预热要算的文件：对端能经 host 播放的每条视频的每一集，取与 `/streamurl`、
+/// `/fingerprint` 同一个 [FushiLibraryHostService.resolveVideoFile] 解析出的本地文件。
+Future<List<String>> _videoFingerprintWarmPaths(
+  FushiLibraryHostService svc,
+) async {
+  final List<String> paths = <String>[];
+  for (final RemoteVideoInfo video in await svc.listVideos()) {
+    if (!video.peerPlayable) continue;
+    final List<int> episodes = video.episodes.isEmpty
+        ? const <int>[0]
+        : <int>[for (final RemoteVideoEpisode e in video.episodes) e.index];
+    for (final int episode in episodes) {
+      final File? file = await svc.resolveVideoFile(
+        video.id,
+        episodeIndex: episode,
+      );
+      if (file != null && VideoSourceFingerprint.isLocalPath(file.path)) {
+        paths.add(file.path);
+      }
+    }
+  }
+  return paths;
 }
 
 /// `/fingerprint` 担保不了字节时的应答（BUG-4782）：不是 404，免得 client 当成老 host。

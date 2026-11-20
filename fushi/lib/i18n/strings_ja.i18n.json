@@ -2101,6 +2101,7 @@
   "card_source_review_draft_saved": "変更はローカルの下書きとして残っています。下書きを再開して確認し、もう一度送信してください。",
   "card_source_review_failed": "変更は保存されませんでした。ノートが変更されたか、デバイスに接続できません。",
   "card_source_review_fingerprint_mismatch": "このファイルはカードのソースと一致しません。対応するファイルを開いて続けてください。",
+  "card_source_review_host_unreadable": "連携ホストにこの動画はありますが、ファイルを読み込めません（移動または削除された可能性があります）。",
   "card_source_review_invalid": "このソースリンクは無効か、未対応のバージョンです。",
   "card_source_review_local_required": "サーバーの進捗を変えずに確認するには、先にこの動画をダウンロードしてください。",
   "card_source_review_media_missing": "このデバイスにはソースのメディアがありません。先にインポートまたはダウンロードしてください。",

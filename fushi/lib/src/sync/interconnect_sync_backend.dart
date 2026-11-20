@@ -3444,16 +3444,23 @@ class InterconnectSyncBackend extends SyncBackend
   static const Duration _videoFingerprintTimeout = Duration(minutes: 5);
 
   /// GET `/api/library/videos/<id>/fingerprint`（拍板台 IFCPPprIpT）。404（老 host
-  /// 无此端点）→ null；新 host 担保不了字节（[kVideoFingerprintUnavailableStatus]）或
+  /// 无此端点）→ null；`wait: false` 时 host 回 [kVideoFingerprintPendingStatus]
+  /// （还没算好、已在后台开算，拍板台 left3657）→ null；老 host 不认 `wait=0`，照旧
+  /// 算完再答。新 host 担保不了字节（[kVideoFingerprintUnavailableStatus]）或
   /// 回的不是 64 位小写 hex → 抛 [RemoteVideoFingerprintUnavailable]，不把不可担保的
   /// 值写进卡片、也不让回跳当老 host 放行（BUG-4782）。
   @override
   Future<String?> fetchRemoteVideoFingerprint(
     String id, {
     int episodeIndex = 0,
+    bool wait = true,
   }) async {
     await _ensureResolved();
-    final String query = episodeIndex > 0 ? '?episode=$episodeIndex' : '';
+    final List<String> params = <String>[
+      if (episodeIndex > 0) 'episode=$episodeIndex',
+      if (!wait) '$kVideoFingerprintWaitQueryParam=0',
+    ];
+    final String query = params.isEmpty ? '' : '?${params.join('&')}';
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
       '$_apiBase/api/library/videos/${_encodeVideoId(id)}/fingerprint$query',
@@ -3462,7 +3469,8 @@ class InterconnectSyncBackend extends SyncBackend
       req,
       timeout: _videoFingerprintTimeout,
     );
-    if (res.statusCode == 404) {
+    if (res.statusCode == 404 ||
+        (!wait && res.statusCode == kVideoFingerprintPendingStatus)) {
       await res.drain<void>();
       return null;
     }

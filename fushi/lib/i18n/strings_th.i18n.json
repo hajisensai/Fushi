@@ -2101,6 +2101,7 @@
   "card_source_review_draft_saved": "การเปลี่ยนแปลงยังอยู่ในฉบับร่างในเครื่อง ทำต่อเพื่อตรวจสอบและส่งอีกครั้ง",
   "card_source_review_failed": "ไม่ได้บันทึกการเปลี่ยนแปลง โน้ตอาจมีการเปลี่ยนแปลงหรืออุปกรณ์ไม่พร้อมใช้งาน",
   "card_source_review_fingerprint_mismatch": "ไฟล์นี้ไม่ตรงกับแหล่งที่มาของการ์ด เปิดไฟล์ที่ตรงกันเพื่อดำเนินการต่อ",
+  "card_source_review_host_unreadable": "The paired host lists this video but can't read its file (it may have been moved or deleted).",
   "card_source_review_invalid": "ลิงก์ต้นทางนี้ไม่ถูกต้องหรือใช้เวอร์ชันที่ไม่รองรับ",
   "card_source_review_local_required": "ดาวน์โหลดวิดีโอนี้ก่อนตรวจสอบโดยไม่เปลี่ยนความคืบหน้าบนเซิร์ฟเวอร์",
   "card_source_review_media_missing": "สื่อต้นทางไม่พร้อมใช้งานบนอุปกรณ์นี้ นำเข้าหรือดาวน์โหลดก่อน",

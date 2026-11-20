@@ -2101,6 +2101,7 @@
   "card_source_review_draft_saved": "Le modifiche restano in una bozza locale. Riprendila per rivederle e inviarle di nuovo.",
   "card_source_review_failed": "Le modifiche non sono state salvate. La nota potrebbe essere cambiata o il dispositivo non è disponibile.",
   "card_source_review_fingerprint_mismatch": "Questo file non corrisponde alla fonte della carta. Apri il file corrispondente per continuare.",
+  "card_source_review_host_unreadable": "The paired host lists this video but can't read its file (it may have been moved or deleted).",
   "card_source_review_invalid": "Questo link alla fonte non è valido o usa una versione non supportata.",
   "card_source_review_local_required": "Scarica questo video prima di rivederlo senza modificare l'avanzamento sul server.",
   "card_source_review_media_missing": "Il media di origine non è disponibile su questo dispositivo. Importalo o scaricalo prima.",

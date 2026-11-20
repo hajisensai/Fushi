@@ -2101,6 +2101,7 @@
   "card_source_review_draft_saved": "修改已保留为本地草稿，请恢复草稿后重新核对并手动提交。",
   "card_source_review_failed": "修改尚未保存，原卡可能已被修改或设备不可达。",
   "card_source_review_fingerprint_mismatch": "当前文件与卡片来源不一致，请使用对应的原文件。",
+  "card_source_review_host_unreadable": "互联主机上有这条视频，但读不到它的文件（可能已被移走或删除）。",
   "card_source_review_invalid": "来源链接无效或版本暂不支持。",
   "card_source_review_local_required": "请先下载视频，再进行不影响服务器进度的回看。",
   "card_source_review_media_missing": "此设备没有对应来源，请先导入或下载作品。",

@@ -2101,6 +2101,7 @@
   "card_source_review_draft_saved": "Изменения остались в локальном черновике. Продолжите его, чтобы просмотреть и отправить снова.",
   "card_source_review_failed": "Изменения не сохранены. Возможно, заметка изменилась или устройство недоступно.",
   "card_source_review_fingerprint_mismatch": "Этот файл не соответствует источнику карточки. Откройте подходящий файл, чтобы продолжить.",
+  "card_source_review_host_unreadable": "The paired host lists this video but can't read its file (it may have been moved or deleted).",
   "card_source_review_invalid": "Эта ссылка на источник недействительна или использует неподдерживаемую версию.",
   "card_source_review_local_required": "Скачайте это видео, чтобы просмотреть его, не меняя прогресс на сервере.",
   "card_source_review_media_missing": "Исходный медиафайл недоступен на этом устройстве. Сначала импортируйте или скачайте его.",

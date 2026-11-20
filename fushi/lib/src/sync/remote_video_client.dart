@@ -429,12 +429,17 @@ abstract interface class RemoteVideoQualityLimit {
 /// Emby / Plex / 在线源没有这一能力。
 abstract interface class RemoteVideoFingerprintSource {
   /// 视频 [id] 第 [episodeIndex] 集（与 `remoteVideoStreamUrls` 同一下标）的 64 位小写
-  /// hex 指纹。只有 host 不支持这一能力（老 host 没有端点）才返回 null——调用方据此
-  /// 按 bookUid 身份放行。host 有端点却担保不了这份字节（条目 / 文件不在、读不了、
+  /// hex 指纹。host 不支持这一能力（老 host 没有端点）返回 null——调用方据此按
+  /// bookUid 身份放行。host 有端点却担保不了这份字节（条目 / 文件不在、读不了、
   /// 回的值不合法）抛 [RemoteVideoFingerprintUnavailable]（BUG-4782）；网络失败抛错。
+  ///
+  /// [wait] 为 false（卡片回跳，拍板台 left3657）时不让 host 当场整文件哈希：host
+  /// 还没算过（后台预热没轮到）也返回 null、按 bookUid 放行，host 同时在后台开算，
+  /// 下次回跳就能核验。制卡要把真指纹写进卡片，用默认的 `wait: true`。
   Future<String?> fetchRemoteVideoFingerprint(
     String id, {
     int episodeIndex = 0,
+    bool wait = true,
   });
 }
 
