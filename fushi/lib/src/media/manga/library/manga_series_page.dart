@@ -1387,7 +1387,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       }
       if (!mounted) return;
       setState(() {
-        _entry = updated;
+        // 取库里的最新描述符：刷新在飞时别的写方（订阅开关）可能后于本次落库。
+        _entry = row == null
+            ? updated
+            : OnlineMangaLibraryEntry.tryParse(row.sourceMetadata) ?? updated;
         if (row != null) _row = row;
         if (reconciled != null) _states = reconciled;
         _refreshSucceeded = true;
@@ -1589,14 +1592,19 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         }
         return;
       }
+      // 按 key 选章、按写回后的章表重算下标（gap-mangamisc-1）：页面手上的章表
+      // 可能比库里旧（刷新刚落库），旧下标交给阅读器会开错章。
       final OnlineMangaLibraryEntry selected = await service.selectChapter(
         bookKey: bookKey,
         entry: entry,
-        chapterIndex: index,
+        chapterKey: chapter.key,
       );
       if (!mounted) return;
       setState(() => _entry = selected);
-      await _openReader(bookKey, chapterIndex: index);
+      await _openReader(
+        bookKey,
+        chapterIndex: selected.currentChapterIndex ?? index,
+      );
       // 从阅读器回来必须重读：读了哪些页、哪章读完了全在阅读器里写的库。
       await _reloadAfterReading();
     } on OnlineMangaUnavailable catch (error, stack) {

@@ -1395,6 +1395,39 @@ mixin _FushiDbContentMisc
     ),
   );
 
+  /// 描述符的读-改-写，在**一个事务里**重读当前 `sourceMetadata` 再写回
+  /// （gap-mangamisc-1）。
+  ///
+  /// 在线漫画描述符有几个写方（源刷新、选章、订阅开关、后台更新探针），各自拿着
+  /// 自己手上的快照整份写回，就会互相回滚：进作品页几秒内点订阅，随后落库的那次
+  /// 源刷新用的是进页时的快照，把订阅位写回旧值。[rewrite] 收到的是事务内读到的
+  /// 当前值，只改它负责的字段；返回 null = 不写。行不存在时不调用 [rewrite]、
+  /// 返回 null。[rewrite] 抛错整个事务回滚、原样抛给调用方。
+  Future<R?> rewriteEpubBookMihonState<R>(
+    String bookKey,
+    ({String sourceMetadata, int chapterCount, String chaptersJson, R result})?
+    Function(String? currentSourceMetadata)
+    rewrite,
+  ) => transaction<R?>(() async {
+    final EpubBookRow? row = await getEpubBook(bookKey);
+    if (row == null) return null;
+    final ({
+      String sourceMetadata,
+      int chapterCount,
+      String chaptersJson,
+      R result,
+    })?
+    next = rewrite(row.sourceMetadata);
+    if (next == null) return null;
+    await updateEpubBookMihonState(
+      bookKey,
+      sourceMetadata: next.sourceMetadata,
+      chapterCount: next.chapterCount,
+      chaptersJson: next.chaptersJson,
+    );
+    return next.result;
+  });
+
   // ── manga_chapter_states（v89）─────────────────────────────────────
   //
   // 「章」的读取状态。为什么不并进 reader_positions：那张表 bookUid 是

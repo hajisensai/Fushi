@@ -2065,11 +2065,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Future<void> _continueSourceReading() async {
     final OnlineMangaLibraryService? service = _shelfLibraryService;
     final OnlineMangaLibraryEntry? entry = _shelfEntry;
-    if (service != null && entry != null && _shelfChapterIndex >= 0) {
+    if (service != null &&
+        entry != null &&
+        _shelfChapterIndex >= 0 &&
+        _shelfChapterIndex < entry.chapters.length) {
       await service.selectChapter(
         bookKey: widget.bookKey,
         entry: entry,
-        chapterIndex: _shelfChapterIndex,
+        chapterKey: entry.chapters[_shelfChapterIndex].key,
       );
     }
     await _flushPosition();
@@ -2776,7 +2779,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         entry = await service.selectChapter(
           bookKey: row.bookKey,
           entry: entry,
-          chapterIndex: chapterIndex,
+          chapterKey: entry.chapters[chapterIndex].key,
         );
         chapterIndex = entry.currentChapterIndex!;
       }
@@ -4157,13 +4160,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           : await service.selectChapter(
               bookKey: row.bookKey,
               entry: entry,
-              chapterIndex: index,
+              chapterKey: entry.chapters[index].key,
             );
+      // 选章按 key 写回、交回库里最新的章表（gap-mangamisc-1）：下标以它为准。
       await _openShelfChapter(
         row: row.copyWith(extractDir: bookDir),
         service: service,
         entry: selected,
-        chapterIndex: index,
+        chapterIndex: selected.currentChapterIndex ?? index,
         landOnLastPage: initialPage == null && landOnLastPage,
         explicitInitialPage: initialPage,
       );

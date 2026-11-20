@@ -236,13 +236,104 @@ void main() {
       final OnlineMangaLibraryEntry selected = await service.selectChapter(
         bookKey: row.bookKey,
         entry: afterRefresh,
-        chapterIndex: 0,
+        chapterKey: afterRefresh.chapters[0].key,
       );
       expect(selected.currentChapterIndex, 0);
       final OnlineMangaLibraryEntry afterSelect = await stored(row.bookKey);
       expect(afterSelect.subscribed, isTrue, reason: '选章不能把订阅冲掉');
       expect(afterSelect.autoDownload, isTrue);
       expect(afterSelect.currentChapterIndex, 0);
+    });
+
+    // BUG-4909（gap-mangamisc-1）：写方各拿各的快照整份写回会互相回滚。
+    test('拿着进页时快照的刷新晚落库：不回滚期间点的订阅', () async {
+      final EpubBookRow row = await service.add(entryFor(chapters: chapters));
+      // 进页时读到的描述符（未订阅）；刷新在飞的这几秒里用户点了订阅。
+      final OnlineMangaLibraryEntry pageSnapshot = await stored(row.bookKey);
+      await service.setSubscription(
+        bookKey: row.bookKey,
+        entry: pageSnapshot,
+        subscribed: true,
+        autoDownload: true,
+      );
+      // 刷新带着旧快照落库。
+      final OnlineMangaLibraryEntry refreshed = await service.refreshFromSource(
+        bookKey: row.bookKey,
+        entry: pageSnapshot,
+      );
+      final OnlineMangaLibraryEntry after = await stored(row.bookKey);
+      expect(after.subscribed, isTrue, reason: '旧快照的刷新把订阅写回了 false');
+      expect(after.autoDownload, isTrue);
+      expect(refreshed.subscribed, isTrue, reason: '返回值也要是库里的最新值');
+    });
+
+    test('拿着旧快照写订阅：不回滚期间选的章与刷进来的章表', () async {
+      final EpubBookRow row = await service.add(entryFor(chapters: chapters));
+      final OnlineMangaLibraryEntry pageSnapshot = await stored(row.bookKey);
+      await service.selectChapter(
+        bookKey: row.bookKey,
+        entry: pageSnapshot,
+        chapterKey: chapters[1].key,
+      );
+      const OnlineMangaChapter fresh = OnlineMangaChapter(
+        key: '/chapter/3',
+        name: 'Chapter 3',
+        number: 3,
+        raw: <String, Object?>{'url': '/chapter/3'},
+      );
+      await service.refresh(
+        bookKey: row.bookKey,
+        existing: pageSnapshot,
+        series: pageSnapshot.series,
+        chapters: <OnlineMangaChapter>[fresh, ...chapters],
+      );
+      await service.setSubscription(
+        bookKey: row.bookKey,
+        entry: pageSnapshot,
+        subscribed: true,
+        autoDownload: false,
+      );
+      final OnlineMangaLibraryEntry after = await stored(row.bookKey);
+      expect(after.subscribed, isTrue);
+      expect(after.chapters, hasLength(3), reason: '旧快照的订阅写把新章表冲掉了');
+      expect(after.currentChapter?.key, chapters[1].key);
+    });
+
+    test('selectChapter 按 key：库里章表已被刷新改过时仍选中同一章', () async {
+      final EpubBookRow row = await service.add(entryFor(chapters: chapters));
+      final OnlineMangaLibraryEntry pageSnapshot = await stored(row.bookKey);
+      const OnlineMangaChapter fresh = OnlineMangaChapter(
+        key: '/chapter/3',
+        name: 'Chapter 3',
+        number: 3,
+        raw: <String, Object?>{'url': '/chapter/3'},
+      );
+      // 源在最前插了一话：页面手上那份章表里下标 0 的章，在库里变成下标 1。
+      await service.refresh(
+        bookKey: row.bookKey,
+        existing: pageSnapshot,
+        series: pageSnapshot.series,
+        chapters: <OnlineMangaChapter>[fresh, ...chapters],
+      );
+      final OnlineMangaLibraryEntry selected = await service.selectChapter(
+        bookKey: row.bookKey,
+        entry: pageSnapshot,
+        chapterKey: pageSnapshot.chapters[0].key,
+      );
+      expect(selected.currentChapterIndex, 1, reason: '下标要按库里的章表重算');
+      expect(selected.currentChapter?.key, pageSnapshot.chapters[0].key);
+      final OnlineMangaLibraryEntry after = await stored(row.bookKey);
+      expect(after.chapters, hasLength(3), reason: '选章不能把章表回滚成页面快照');
+      expect(after.currentChapter?.key, pageSnapshot.chapters[0].key);
+
+      await expectLater(
+        service.selectChapter(
+          bookKey: row.bookKey,
+          entry: pageSnapshot,
+          chapterKey: '/gone',
+        ),
+        throwsA(isA<StateError>()),
+      );
     });
 
     test('重复 add 走 refresh 分支，同样保住订阅位', () async {
