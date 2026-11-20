@@ -3,21 +3,9 @@ import 'dart:io';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart'
     show kSrsSync2Namespace;
+import 'package:fushi_engine/sync/sync_reserved_namespaces.dart';
 import 'package:fushi_engine/sync/sync_root_folder.dart';
 import 'package:path/path.dart' as p;
-
-/// 互联 host 同步根（`<sync-data>/fushi-data/`）下的这个一级目录是不是**保留命名空间**——
-/// 还有人读的共享数据，host 启动清理绝不能碰（BUG-4906）。
-///
-/// 全部保留命名空间（2026-11-21 穷举，ensureNamespace / LocalDirectoryAssetStore 的全部调用点）：
-/// `__dictionaries__` `__local_audio__` `__aggregate__` `__collections__` `__videos__`
-/// `__tombstones__` `__fonts__` `__settings__` `__pending_mines__`（host 的
-/// `AnkiBoxLanding` 读）与复习同步的 `fushi-srs`（host 的 SRS 运行时读）。前九个一律
-/// `__x__` 形状，按前缀判，新命名空间照这个形状起名就自动受保护；`fushi-srs` 是唯一例外，
-/// 单独列出。守卫 `fushi/test/sync/interconnect_file_box_prune_reserved_guard_test.dart`
-/// 扫源码里的全部命名空间常量，确认每一个都落在这里。
-bool isInterconnectFileBoxReservedName(String name) =>
-    name.startsWith('__') || name == kSrsSync2Namespace;
 
 /// 清掉互联 host 上**已无人读取**的客户端「文件箱」书文件夹（BUG-4906）。
 ///
@@ -31,7 +19,7 @@ bool isInterconnectFileBoxReservedName(String name) =>
 /// 用户机器上攒到 6.7 GB。
 ///
 /// 删除判据（两条都满足才删）：
-/// 1. 名字不是保留命名空间（[isInterconnectFileBoxReservedName]）；
+/// 1. 名字不是保留命名空间（[isReservedSyncNamespaceName]）；
 /// 2. 目录是平的：只有文件、没有子目录 / 链接。书文件夹从来是平的；带子目录的东西不是
 ///    文件箱写出来的，不认识就不碰。
 ///
@@ -54,9 +42,8 @@ Future<List<String>> pruneDeadInterconnectFileBox(String syncDataDir) async {
     for (final FileSystemEntity child in children) {
       if (child is! Directory) continue;
       final String name = p.basename(child.path);
-      if (isInterconnectFileBoxReservedName(name)) continue;
       try {
-        if (!await _isFlatDirectory(child)) continue;
+        if (!await _isDeadFileBoxFolder(child)) continue;
         await child.delete(recursive: true);
         removed.add(name);
       } catch (e, stack) {
@@ -76,9 +63,114 @@ Future<List<String>> pruneDeadInterconnectFileBox(String syncDataDir) async {
   return removed;
 }
 
-Future<bool> _isFlatDirectory(Directory dir) async {
+/// [dir]（同步根的一级子目录）是不是 [pruneDeadInterconnectFileBox] 会删的死文件箱书文件夹：
+/// 名字不是保留命名空间、且只有文件。清理与存储页归类共用这一个判据。
+Future<bool> _isDeadFileBoxFolder(Directory dir) async {
+  if (isReservedSyncNamespaceName(p.basename(dir.path))) return false;
   await for (final FileSystemEntity e in dir.list(followLinks: false)) {
     if (e is! File) return false;
   }
   return true;
+}
+
+/// 互联 host 同步数据（`<sync-data>`）按用途归类后的占用字节数（存储页用，BUG-4906）。
+///
+/// 三类之和 + [otherBytes] = `<sync-data>` 整棵树的大小。
+class InterconnectSyncDataUsage {
+  const InterconnectSyncDataUsage({
+    required this.sharedBytes,
+    required this.srsBytes,
+    required this.deadFileBoxBytes,
+    required this.deadFileBoxFolders,
+    required this.otherBytes,
+  });
+
+  /// 互联客户端共享数据：同步根下的 `__x__` 保留命名空间（字典 / 本地音源 / 聚合 / 合集 /
+  /// 视频 / 墓碑 / 字体 / 设置 / 待发制卡）。只读展示，不提供清理。
+  final int sharedBytes;
+
+  /// 复习同步：同步根下的 `fushi-srs/`。只读展示，不提供清理。
+  final int srsBytes;
+
+  /// 旧版残留：[pruneDeadInterconnectFileBox] 会删的死文件箱书文件夹合计。
+  final int deadFileBoxBytes;
+
+  /// 旧版残留的文件夹个数。
+  final int deadFileBoxFolders;
+
+  /// 其余（同步根下认不出的带子目录目录、根下散落文件、`<sync-data>` 下同步根以外的东西）。
+  final int otherBytes;
+
+  int get totalBytes => sharedBytes + srsBytes + deadFileBoxBytes + otherBytes;
+
+  static const InterconnectSyncDataUsage empty = InterconnectSyncDataUsage(
+    sharedBytes: 0,
+    srsBytes: 0,
+    deadFileBoxBytes: 0,
+    deadFileBoxFolders: 0,
+    otherBytes: 0,
+  );
+}
+
+/// 量出 [syncDataDir]（`<数据根>/sync-data`）各类占用；目录不存在时全 0。只读，不跟随链接。
+/// 读不了的子项按 0 计（存储页是估算，不因一个被占用的文件整页失败）。
+Future<InterconnectSyncDataUsage> measureInterconnectSyncData(
+  String syncDataDir,
+) async {
+  final Directory base = Directory(syncDataDir);
+  if (!await base.exists()) return InterconnectSyncDataUsage.empty;
+  final String rootPath = p.join(syncDataDir, kSyncRootFolderName);
+  int shared = 0, srs = 0, dead = 0, deadFolders = 0, other = 0;
+  await for (final FileSystemEntity top in base.list(followLinks: false)) {
+    if (top.path != rootPath || top is! Directory) {
+      other += await _treeBytes(top);
+      continue;
+    }
+    await for (final FileSystemEntity child in top.list(followLinks: false)) {
+      final int bytes = await _treeBytes(child);
+      final String name = p.basename(child.path);
+      if (child is! Directory) {
+        other += bytes;
+      } else if (name == kSrsSync2Namespace) {
+        srs += bytes;
+      } else if (isReservedSyncNamespaceName(name)) {
+        shared += bytes;
+      } else if (await _isDeadFileBoxFolder(child)) {
+        dead += bytes;
+        deadFolders++;
+      } else {
+        other += bytes;
+      }
+    }
+  }
+  return InterconnectSyncDataUsage(
+    sharedBytes: shared,
+    srsBytes: srs,
+    deadFileBoxBytes: dead,
+    deadFileBoxFolders: deadFolders,
+    otherBytes: other,
+  );
+}
+
+Future<int> _treeBytes(FileSystemEntity entity) async {
+  try {
+    if (entity is File) return await entity.length();
+    if (entity is! Directory) return 0;
+    int total = 0;
+    await for (final FileSystemEntity e in entity.list(
+      recursive: true,
+      followLinks: false,
+    )) {
+      if (e is File) {
+        try {
+          total += await e.length();
+        } catch (_) {
+          // 估算：读不了长度的单个文件按 0 计。
+        }
+      }
+    }
+    return total;
+  } catch (_) {
+    return 0;
+  }
 }

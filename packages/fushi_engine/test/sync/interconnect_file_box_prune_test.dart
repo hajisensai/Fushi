@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/interconnect_file_box_prune.dart';
+import 'package:fushi_engine/sync/sync_reserved_namespaces.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -143,10 +144,64 @@ void main() {
       '__anything_new__',
       'fushi-srs',
     ]) {
-      expect(isInterconnectFileBoxReservedName(name), isTrue, reason: name);
+      expect(isReservedSyncNamespaceName(name), isTrue, reason: name);
     }
-    for (final String name in <String>['Book A', 'fushi-srs-copy', '_x']) {
-      expect(isInterconnectFileBoxReservedName(name), isFalse, reason: name);
+    for (final String name in <String>[
+      'Book A',
+      'fushi-srs-copy',
+      '_x',
+      '__',
+      '____',
+      '__init',
+    ]) {
+      expect(isReservedSyncNamespaceName(name), isFalse, reason: name);
     }
+  });
+
+  test('存储页归类：共享 / 复习同步 / 旧版残留 / 其余，旧版残留与清理同一判据', () async {
+    final String syncData = p.join(tmp.path, 'sync-data');
+    void write(String rel, int bytes) {
+      File(p.join(syncData, rel))
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(List<int>.filled(bytes, 1));
+    }
+
+    write('fushi-data/__settings__/s.json', 10);
+    write('fushi-data/__pending_mines__/m.json', 20);
+    write('fushi-data/fushi-srs/p/v3/seg', 300);
+    write('fushi-data/Book A/progress_1.json', 4000);
+    write('fushi-data/Book B/b.epub', 50000);
+    write('fushi-data/odd/nested/x', 600000);
+    write('fushi-data/spill.json', 7000000);
+    write('other-dir/x', 80000000);
+
+    final InterconnectSyncDataUsage u = await measureInterconnectSyncData(
+      syncData,
+    );
+    expect(u.sharedBytes, 30);
+    expect(u.srsBytes, 300);
+    expect(u.deadFileBoxBytes, 54000);
+    expect(u.deadFileBoxFolders, 2);
+    expect(u.otherBytes, 600000 + 7000000 + 80000000);
+    expect(u.totalBytes, 30 + 300 + 54000 + 600000 + 7000000 + 80000000);
+
+    expect((await pruneDeadInterconnectFileBox(syncData)).toSet(), <String>{
+      'Book A',
+      'Book B',
+    });
+    final InterconnectSyncDataUsage after = await measureInterconnectSyncData(
+      syncData,
+    );
+    expect(after.deadFileBoxBytes, 0);
+    expect(after.deadFileBoxFolders, 0);
+    expect(after.sharedBytes, 30);
+    expect(after.srsBytes, 300);
+  });
+
+  test('sync-data 不存在时归类全 0', () async {
+    final InterconnectSyncDataUsage u = await measureInterconnectSyncData(
+      p.join(tmp.path, 'nope'),
+    );
+    expect(u.totalBytes, 0);
   });
 }

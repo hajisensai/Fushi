@@ -18,10 +18,10 @@ import 'package:fushi_engine/sync/aggregate_sync_service.dart'
     show kSyncAggregateNamespace;
 import 'package:fushi_engine/sync/deletion_propagation.dart'
     show kSyncTombstonesNamespace;
-import 'package:fushi_engine/sync/interconnect_file_box_prune.dart';
+import 'package:fushi_engine/sync/sync_reserved_namespaces.dart';
 import 'package:path/path.dart' as p;
 
-// BUG-4906 守卫：互联 host 启动时收走已死的文件箱书文件夹，但同步根下的**保留命名空间**
+// BUG-4906 / BUG-4907 守卫：互联 host 启动时收走已死的文件箱书文件夹，但同步根下的**保留命名空间**
 // 是别的设备 / host 自己还在读的共享数据，一个都不能被当成书文件夹删掉。
 
 /// 源码里声明的全部同步命名空间名（`const String k…Namespace = '…'` 与
@@ -66,7 +66,7 @@ void main() {
       kSrsSync2Namespace,
     ];
     for (final String name in known) {
-      expect(isInterconnectFileBoxReservedName(name), isTrue, reason: name);
+      expect(isReservedSyncNamespaceName(name), isTrue, reason: name);
     }
   });
 
@@ -76,20 +76,18 @@ void main() {
     expect(declared, containsAll(<String>['__pending_mines__', 'fushi-srs']));
     for (final String name in declared) {
       expect(
-        isInterconnectFileBoxReservedName(name),
+        isReservedSyncNamespaceName(name),
         isTrue,
         reason:
-            '同步命名空间 `$name` 不在 isInterconnectFileBoxReservedName 里：'
+            '同步命名空间 `$name` 不在 isReservedSyncNamespaceName 里：'
             '互联 host 启动清理会把它当死书文件夹删掉。新命名空间请用 `__x__` 形状。',
       );
     }
   });
 
-  test('客户端列书时排除的保留目录，host 清理也一律保留', () {
+  test('客户端列书与 host 清理共用同一份保留判据（BUG-4907）', () {
     for (final String name in _declaredNamespaces()) {
-      if (isReservedSyncFolderName(name)) {
-        expect(isInterconnectFileBoxReservedName(name), isTrue, reason: name);
-      }
+      expect(isReservedSyncFolderName(name), isTrue, reason: name);
     }
   });
 
