@@ -1927,6 +1927,7 @@
   "browser_extension_android_keep_running": "扩展连的是这台手机上的 Fushi：在浏览器里查词时，请让 Fushi 留在后台运行。",
   "browser_extension_android_step_browser": "安装 Vivaldi 浏览器",
   "browser_extension_android_step_manager": "在 Vivaldi 里点地址栏的扩展按钮，选「管理扩展」，再打开右上角的「开发者模式」开关。",
+  "browser_extension_android_storage_denied": "Fushi 需要「所有文件访问权限」才能把扩展放进 Download › Fushi。授权后再点一次「准备扩展文件」。",
   "browser_extension_browser_default": "默认浏览器",
   "browser_extension_check_browser_unknown": "未识别",
   "browser_extension_check_extension": "扩展",

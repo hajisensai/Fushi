@@ -172,21 +172,27 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
     if (_preparing) return;
     final AppModel appModel = ref.read(appProvider);
     setState(() => _preparing = true);
-    // 开 server + 解压扩展与控制通道共用（browser_extension_setup.dart）。
-    final BrowserExtensionPrepareResult result =
-        await prepareBrowserExtensionForInstall(appModel);
-    await Clipboard.setData(ClipboardData(text: result.directory));
-    if (!mounted) return;
-    setState(() {
-      _preparing = false;
-      _extensionDir = result.directory;
-      _serverEnabled = result.serverEnabled;
-      _hasToken = result.hasToken;
-      _serverPort = result.port;
-      _portConflict = result.portConflict;
-      _verifyConnected = null;
-    });
-    _snack(t.copied);
+    // 准备失败（安卓未授权 / 写盘异常）也必须复位 _preparing，否则按钮永远转圈。
+    try {
+      // 开 server + 解压扩展与控制通道共用（browser_extension_setup.dart）。
+      final BrowserExtensionPrepareResult result =
+          await prepareBrowserExtensionForInstall(appModel);
+      await Clipboard.setData(ClipboardData(text: result.directory));
+      if (!mounted) return;
+      setState(() {
+        _extensionDir = result.directory;
+        _serverEnabled = result.serverEnabled;
+        _hasToken = result.hasToken;
+        _serverPort = result.port;
+        _portConflict = result.portConflict;
+        _verifyConnected = null;
+      });
+      _snack(t.copied);
+    } on BrowserExtensionStoragePermissionDenied {
+      _snack(t.browser_extension_android_storage_denied);
+    } finally {
+      if (mounted) setState(() => _preparing = false);
+    }
   }
 
   /// 状态清单的「开启查词服务」：与「准备扩展」同一个幂等入口（token 为空才播种、

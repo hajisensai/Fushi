@@ -1927,6 +1927,7 @@
   "browser_extension_android_keep_running": "Tiện ích kết nối với Fushi trên điện thoại này, vì vậy hãy để Fushi chạy nền khi bạn tra từ trong trình duyệt.",
   "browser_extension_android_step_browser": "Cài Vivaldi",
   "browser_extension_android_step_manager": "Trong Vivaldi, chạm nút Tiện ích trên thanh địa chỉ, chọn Quản lý tiện ích rồi bật Chế độ nhà phát triển ở góc trên bên phải.",
+  "browser_extension_android_storage_denied": "Fushi needs All files access to put the extension in Download › Fushi. Allow it, then tap Prepare extension files again.",
   "browser_extension_browser_default": "Default browser",
   "browser_extension_check_browser_unknown": "Not detected",
   "browser_extension_check_extension": "Extension",

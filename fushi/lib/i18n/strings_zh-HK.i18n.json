@@ -1927,6 +1927,7 @@
   "browser_extension_android_keep_running": "擴充功能連的是這部手機上的 Fushi：在瀏覽器裏查詞時，請讓 Fushi 留在背景執行。",
   "browser_extension_android_step_browser": "安裝 Vivaldi 瀏覽器",
   "browser_extension_android_step_manager": "在 Vivaldi 裏點網址列的擴充功能按鈕，選「管理擴充功能」，再開啟右上角的「開發人員模式」開關。",
+  "browser_extension_android_storage_denied": "Fushi needs All files access to put the extension in Download › Fushi. Allow it, then tap Prepare extension files again.",
   "browser_extension_browser_default": "Default browser",
   "browser_extension_check_browser_unknown": "Not detected",
   "browser_extension_check_extension": "Extension",

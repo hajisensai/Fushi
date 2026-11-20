@@ -1927,6 +1927,7 @@
   "browser_extension_android_keep_running": "تتصل الإضافة بـ Fushi على هذا الهاتف، لذا أبقِ Fushi يعمل في الخلفية أثناء البحث عن الكلمات في المتصفح.",
   "browser_extension_android_step_browser": "ثبّت Vivaldi",
   "browser_extension_android_step_manager": "في Vivaldi، اضغط زر الإضافات في شريط العنوان، واختر إدارة الإضافات، ثم فعّل وضع المطوّر في الزاوية العلوية.",
+  "browser_extension_android_storage_denied": "Fushi needs All files access to put the extension in Download › Fushi. Allow it, then tap Prepare extension files again.",
   "browser_extension_browser_default": "Default browser",
   "browser_extension_check_browser_unknown": "Not detected",
   "browser_extension_check_extension": "Extension",

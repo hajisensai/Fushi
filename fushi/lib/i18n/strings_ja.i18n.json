@@ -1927,6 +1927,7 @@
   "browser_extension_android_keep_running": "拡張機能はこのスマホの Fushi に接続します。ブラウザで単語を調べるときは、Fushi をバックグラウンドで動かしたままにしてください。",
   "browser_extension_android_step_browser": "Vivaldi をインストール",
   "browser_extension_android_step_manager": "Vivaldi でアドレスバーの拡張機能ボタンをタップし、「拡張機能を管理」を選んで、右上の「デベロッパー モード」をオンにします。",
+  "browser_extension_android_storage_denied": "Fushi needs All files access to put the extension in Download › Fushi. Allow it, then tap Prepare extension files again.",
   "browser_extension_browser_default": "Default browser",
   "browser_extension_check_browser_unknown": "Not detected",
   "browser_extension_check_extension": "Extension",

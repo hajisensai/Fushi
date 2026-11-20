@@ -1927,6 +1927,7 @@
   "browser_extension_android_keep_running": "Расширение подключается к Fushi на этом телефоне, поэтому не закрывайте Fushi, пока ищете слова в браузере.",
   "browser_extension_android_step_browser": "Установите Vivaldi",
   "browser_extension_android_step_manager": "В Vivaldi нажмите кнопку расширений в адресной строке, выберите «Управление расширениями» и включите «Режим разработчика» в правом верхнем углу.",
+  "browser_extension_android_storage_denied": "Fushi needs All files access to put the extension in Download › Fushi. Allow it, then tap Prepare extension files again.",
   "browser_extension_browser_default": "Default browser",
   "browser_extension_check_browser_unknown": "Not detected",
   "browser_extension_check_extension": "Extension",
