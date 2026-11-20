@@ -17,8 +17,10 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
+import 'package:fushi/src/pages/implementations/browser_extension_page.dart';
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
 import 'package:fushi/src/settings/shell_style_preview.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
@@ -237,6 +239,64 @@ void _srsOnboardingScenes(Directory out) {
       ]),
     ),
   };
+  // 安卓的浏览器扩展：新手引导那一步 + 安装引导（Vivaldi 流程），手机尺寸 MD3。
+  const Size phone = Size(412, 915);
+  testWidgets('android_ext onboarding step', (WidgetTester tester) async {
+    LocaleSettings.setLocale(AppLocale.zhCn);
+    try {
+      await _capture(
+        tester,
+        File('${out.path}/android_ext_onboarding_md3_$_suffix.png'),
+        size: phone,
+        child: _wizardFrame(
+          current: 5,
+          step: OnboardingStepView(
+            icon: FushiIcons.browserExtension,
+            title: t.onboarding_step_extension_title,
+            body: t.onboarding_step_extension_body,
+            actions: <OnboardingAction>[
+              OnboardingAction(
+                icon: FushiIcons.openInNew,
+                label: t.onboarding_step_extension_action,
+                description: t.onboarding_step_extension_action_desc,
+                necessity: OnboardingActionNecessity.recommended,
+                onPressed: () {},
+              ),
+            ],
+          ),
+        ),
+      );
+    } finally {
+      LocaleSettings.setLocale(AppLocale.en);
+    }
+  });
+  testWidgets('android_ext install guide', (WidgetTester tester) async {
+    LocaleSettings.setLocale(AppLocale.zhCn);
+    try {
+      await _capture(
+        tester,
+        File('${out.path}/android_ext_guide_md3_$_suffix.png'),
+        size: phone,
+        child: Builder(
+          builder: (BuildContext context) => ColoredBox(
+            color: Theme.of(context).colorScheme.surface,
+            child: _stepList(<Widget>[
+              buildBrowserExtensionInstallStepsForTest(
+                path:
+                    '/storage/emulated/0/Download/Fushi/fushi-browser-extension',
+                serverEnabled: true,
+                hasToken: true,
+                flow: BrowserExtensionInstallFlow.android,
+              ),
+            ]),
+          ),
+        ),
+      );
+    } finally {
+      LocaleSettings.setLocale(AppLocale.en);
+    }
+  });
+
   // 欢迎页的「库页布局」两张选择卡（11-20 反馈：拼贴缩略图改用真实色块缩小）。
   for (final bool apple in <bool>[false, true]) {
     final String name = 'library_layout_${apple ? 'apple' : 'md3'}';

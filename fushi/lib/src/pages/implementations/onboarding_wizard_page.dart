@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show ByteData, rootBundle;
 import 'package:fushi/src/pages/base_page.dart';
@@ -264,11 +265,11 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   /// （BUG-2107），套那个模板会把「没拿到路径」说成「下载失败」。
   String? _packPickError;
 
-  // 扩展安装引导要「浏览器」模块在本平台存在（[ModuleId.availableOn]）且本平台能装
-  // 扩展（[browserExtensionSupportedOn]）——模块 2026-10-19 起五端都有，扩展安装引导仍只在桌面。
+  // 扩展安装引导要「浏览器」模块在本平台存在（[ModuleId.availableOn]）且本平台有
+  // 扩展安装引导（[browserExtensionInstallAvailableOn]：桌面与安卓有，iOS 没有）。
   bool get _browserExtensionAvailable =>
       _moduleAvailable(ModuleId.web) &&
-      browserExtensionSupportedOn(isDesktop: DesktopLookupService.isDesktop);
+      browserExtensionInstallAvailableOn(defaultTargetPlatform);
 
   /// 当前真正有应用外查词入口的平台。Windows / macOS 用系统级热键；Android 用
   /// 系统文本选择菜单 / 分享入口。其它平台不能因为都叫 desktop/mobile 就展示

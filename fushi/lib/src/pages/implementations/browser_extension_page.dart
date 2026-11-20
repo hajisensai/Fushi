@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +11,8 @@ import 'package:fushi/src/lookup/browser_default_detector.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/lookup/browser_extension_setup.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart'
+    show BrowserExtensionInstallFlow, browserExtensionInstallFlowOn;
 import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart' show kFushiApiDefaultPort;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
@@ -69,7 +72,7 @@ const double _kHueLost = 4;
 /// 「试一试」块：青（视频 / 网页那一侧的色）。
 const double _kHueTry = 196.2;
 
-/// 桌面专属「浏览器扩展」页（顶层导航目的地，仅桌面显示）。
+/// 「浏览器扩展」页（「浏览器」模块的子页；桌面与安卓有，判据 [browserExtensionInstallFlowOn]）。
 ///
 /// 把原来埋在「设置 → 查词」里的安装入口独立成页，并在原「半自动安装引导」之上补：
 /// ① 服务 + 连接状态卡；② 加载扩展后「验证插件已正常启用」的连接检测（扩展 SW 启动时
@@ -708,15 +711,18 @@ class _StatusBlock extends StatelessWidget {
                     : Text(t.browser_extension_check_server_enable),
               ),
       ),
-      _CheckTile(
-        colors: colors,
-        mark: detectedBrowser != null ? _CheckMark.ok : _CheckMark.pending,
-        icon: FushiIcons.globe,
-        label: t.browser_extension_browser_default,
-        value: detectedBrowser != null
-            ? browserDisplayName(detectedBrowser!)
-            : t.browser_extension_check_browser_unknown,
-      ),
+      // 「默认浏览器」只在桌面有意义（探测只认桌面系统的默认浏览器；安卓的安装引导
+      // 固定推荐 Vivaldi，见 [BrowserExtensionInstallFlow.android]）。
+      if (_currentInstallFlow() == BrowserExtensionInstallFlow.desktop)
+        _CheckTile(
+          colors: colors,
+          mark: detectedBrowser != null ? _CheckMark.ok : _CheckMark.pending,
+          icon: FushiIcons.globe,
+          label: t.browser_extension_browser_default,
+          value: detectedBrowser != null
+              ? browserDisplayName(detectedBrowser!)
+              : t.browser_extension_check_browser_unknown,
+        ),
       _CheckTile(
         colors: colors,
         mark: extensionMark,
@@ -1394,7 +1400,11 @@ class BrowserExtensionInstallSteps extends StatefulWidget {
     this.verifying = false,
     this.onVerify,
     this.onCollapse,
+    this.flow,
   });
+
+  /// 用哪套安装步骤；null = 按本平台（[browserExtensionInstallFlowOn]）。
+  final BrowserExtensionInstallFlow? flow;
 
   /// 解压出的扩展目录绝对路径（供「加载已解压」时选择）；null = 还没准备。
   final String? path;
@@ -1496,13 +1506,31 @@ class _BrowserExtensionInstallStepsState
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final bool autoReady = widget.serverEnabled && widget.hasToken;
+    // 两套步骤数相同（[_stepCount]），只换前两步：桌面是「选浏览器、开扩展管理页」
+    // 与「开发者模式」；安卓是「装 Vivaldi」与「扩展按钮 › 管理扩展 › 开发者模式」。
     final List<(String, Widget Function(BuildContext))> steps =
         <(String, Widget Function(BuildContext))>[
-          (
-            _stripTrailingColon(t.browser_extension_step_open_page),
-            _browserStep,
-          ),
-          (t.browser_extension_step_dev_mode, (BuildContext _) => _nextOnly(1)),
+          ...switch (_flow) {
+            BrowserExtensionInstallFlow.desktop =>
+              <(String, Widget Function(BuildContext))>[
+                (
+                  _stripTrailingColon(t.browser_extension_step_open_page),
+                  _browserStep,
+                ),
+                (
+                  t.browser_extension_step_dev_mode,
+                  (BuildContext _) => _nextOnly(1),
+                ),
+              ],
+            BrowserExtensionInstallFlow.android =>
+              <(String, Widget Function(BuildContext))>[
+                (t.browser_extension_android_step_browser, _androidBrowserStep),
+                (
+                  t.browser_extension_android_step_manager,
+                  (BuildContext _) => _nextOnly(1),
+                ),
+              ],
+          },
           (
             t.browser_extension_step_load_unpacked,
             (BuildContext _) => _nextOnly(2),
@@ -1710,6 +1738,51 @@ class _BrowserExtensionInstallStepsState
     );
   }
 
+  BrowserExtensionInstallFlow get _flow => widget.flow ?? _currentInstallFlow();
+
+  /// 安卓第 1 步：为什么是 Vivaldi，以及去应用商店装它。
+  Widget _androidBrowserStep(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          t.browser_extension_android_browser_hint,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 14),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: <Widget>[
+            _nextButton(0),
+            FushiFilledButton.tonalIcon(
+              onPressed: _openVivaldiListing,
+              icon: const FushiIcon(FushiIcons.openInNew, size: 18),
+              label: Text(t.browser_extension_android_get_browser),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// 应用商店里的 Vivaldi：先试 market://（交给设备上的商店），没有商店再开网页版。
+  Future<void> _openVivaldiListing() async {
+    for (final Uri uri in kVivaldiAndroidListingUris) {
+      try {
+        if (await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+          return;
+        }
+      } on PlatformException {
+        // 没有能接 market:// 的商店，换下一个地址。
+      }
+    }
+    _snack(t.browser_extension_open_page_failed);
+  }
+
   Widget _nextOnly(int index) {
     return Align(
       alignment: AlignmentDirectional.centerStart,
@@ -1845,14 +1918,24 @@ class _BrowserExtensionInstallStepsState
               tooltip: t.copy,
               onTap: () => _copy(path),
             ),
-            FushiIconButton(
-              icon: FushiIcons.folderOpen,
-              size: 18,
-              tooltip: t.media_file_location_open,
-              onTap: () => _reveal(path),
-            ),
+            if (_flow == BrowserExtensionInstallFlow.desktop)
+              FushiIconButton(
+                icon: FushiIcons.folderOpen,
+                size: 18,
+                tooltip: t.media_file_location_open,
+                onTap: () => _reveal(path),
+              ),
           ],
         ),
+        if (_flow == BrowserExtensionInstallFlow.android) ...<Widget>[
+          const SizedBox(height: 8),
+          Text(
+            t.browser_extension_android_folder_hint,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
         const SizedBox(height: 14),
         Wrap(
           spacing: 8,
@@ -1884,6 +1967,15 @@ class _BrowserExtensionInstallStepsState
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
+        if (_flow == BrowserExtensionInstallFlow.android) ...<Widget>[
+          const SizedBox(height: 8),
+          Text(
+            t.browser_extension_android_keep_running,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
         const SizedBox(height: 12),
         FushiFilledButton.icon(
           onPressed: widget.onVerify == null
@@ -2081,8 +2173,10 @@ Widget buildBrowserExtensionInstallStepsForTest({
   int serverPort = kFushiApiDefaultPort,
   bool portConflict = false,
   BrowserKind? detectedBrowser,
+  BrowserExtensionInstallFlow? flow,
 }) {
   return BrowserExtensionInstallSteps(
+    flow: flow,
     path: path,
     serverEnabled: serverEnabled,
     hasToken: hasToken,
@@ -2103,3 +2197,17 @@ FushiCardColors _cardToneColors(BuildContext context, FushiCardTone tone) {
     onContainer: colors?.onContainer ?? cs.onSurface,
   );
 }
+
+/// 本平台的安装流程；没有安装引导的平台（iOS）根本进不到本页，按桌面兜底只为
+/// 让类型非空。判据只在 [browserExtensionInstallFlowOn]。
+BrowserExtensionInstallFlow _currentInstallFlow() =>
+    browserExtensionInstallFlowOn(defaultTargetPlatform) ??
+    BrowserExtensionInstallFlow.desktop;
+
+/// Vivaldi 安卓版的商店地址：先 market://（设备上的应用商店），再 Google Play 网页。
+final List<Uri> kVivaldiAndroidListingUris = <Uri>[
+  Uri.parse('market://details?id=com.vivaldi.browser'),
+  Uri.parse(
+    'https://play.google.com/store/apps/details?id=com.vivaldi.browser',
+  ),
+];

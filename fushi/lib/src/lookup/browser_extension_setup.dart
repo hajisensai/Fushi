@@ -1,7 +1,9 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
 
 /// 浏览器扩展安装助手的业务步骤（准备扩展目录 / 连接检测），从
 /// `BrowserExtensionPage` 搬出来，页面与控制通道
@@ -75,6 +77,13 @@ Future<BrowserExtensionPrepareResult> prepareBrowserExtensionForInstall(
   // TODO-1266：装扩展即默认开启 yomitan-api server（省得装完 401 连不上）。
   final bool serverReady = await appModel
       .ensureFushiApiServerForBrowserExtension();
+  // 安卓把扩展解压到公共 Download（浏览器的文件夹选择器只看得到共享存储），
+  // 写之前确保全文件访问权限（与真实路径目录选择器同一权限）。
+  if (browserExtensionInstallFlowOn(defaultTargetPlatform) ==
+          BrowserExtensionInstallFlow.android &&
+      !await appModel.hasExternalStoragePermission()) {
+    await appModel.requestExternalStoragePermissions();
+  }
   // TODO-1087：解压时注入当前 server 真值，扩展默认即连本机 app，无需手填。
   final String dir = await extract(
     serverConfig: BrowserExtensionServerConfig(
