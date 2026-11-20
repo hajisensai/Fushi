@@ -470,16 +470,22 @@ class WebNovelChapterLoader extends SerialOnlineNovelChapterLoader {
   Future<OnlineNovelChapterLoaded?> loadChapter(int index) async {
     final File file = lnReaderOnlineChapterFile(extractDir, index);
     if (!file.existsSync()) return null;
-    if (!(await file.readAsString()).contains(
+    final bool pending = (await file.readAsString()).contains(
       kLnReaderPendingChapterAttribute,
-    )) {
-      return null;
-    }
+    );
     final EpubBookRow? row = await database.getEpubBook(bookKey);
     final WebNovelSnapshot? snapshot = WebNovelSnapshot.tryParse(
       row?.sourceMetadata,
     );
     if (row == null || snapshot == null) return null;
+    // 「这一章已取过」以快照为准，不以文件为准：取章是先写正文文件、后写书行
+    // （快照），两步之间失败 / 被杀时，末尾「下一章」的文件已是正文而快照里还没有
+    // 这一章。只看文件就会永远短路——快照停在旧章数、`tailNext` 永远指着这一章，
+    // 开书补占位也因 spine 比快照多一项而不补，这本书再也追不了更（BUG-4906）。
+    // 这种不一致按占位处理：重新取页并章，把快照补齐。
+    final bool snapshotBehindFile =
+        index == snapshot.chapters.length && snapshot.tailNext != null;
+    if (!pending && !snapshotBehindFile) return null;
     final String? target = index < snapshot.chapters.length
         ? snapshot.chapters[index].url
         : (index == snapshot.chapters.length ? snapshot.tailNext : null);
