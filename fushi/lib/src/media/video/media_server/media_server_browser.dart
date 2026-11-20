@@ -382,8 +382,9 @@ class MediaServerItem {
 
   /// 集所属剧的竖版海报所在条目 id（Jellyfin / Emby `SeriesId` +
   /// `SeriesPrimaryImageTag`，Plex `grandparentThumb`）；只在服务器确实报了剧海报时
-  /// 非 null。集自己的 Primary 是 16:9 截图，列表 / 继续观看 / 首页要「剧封面」时用
-  /// [coverItem]，不要直接拿集去取图。
+  /// 非 null。集自己的 Primary 是 16:9 截图：竖槽（条目卡 / 首页海报位）要「剧封面」
+  /// 时用 [coverItem]，不要直接拿集去取图；横槽（服务器首页「继续观看」16:9 卡）反过来
+  /// 集截图优先、剧海报垫底，见 `mediaServerContinueImages`。
   final String? seriesCoverItemId;
   final String? overview;
   final double? communityRating;
