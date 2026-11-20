@@ -60,6 +60,7 @@ import 'package:fushi/src/mining/web_mine_queue_run.dart';
 import 'package:fushi/src/mining/web_mine_queue_store.dart';
 import 'package:fushi/src/mining/web_mine_replay.dart';
 import 'package:fushi/src/media/video/web_mine_auto_status.dart';
+import 'package:fushi/src/media/video/web_mine_queue_dialog.dart';
 import 'package:fushi/src/media/video/web_mine_return_state.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
@@ -536,6 +537,10 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     _appModel.database,
   );
   int _minePending = 0;
+
+  /// 重放失败留在队列里的行数（视频到不了、录音 / 落卡失败、重复卡）：角标数的是
+  /// 待办 + 失败，失败行要在「制卡队列」列表里看得见、能重试，不能只在结果胶囊里一闪。
+  int _mineFailed = 0;
   bool _mineRunning = false;
   bool _mineStopRequested = false;
   ({int done, int total})? _mineProgress;
@@ -1432,10 +1437,22 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     }
   }
 
-  Future<void> _refreshMinePending() async {
+  /// 重读待办 / 失败张数刷新角标，返回待办张数（null = 页已卸载）。不带自动开跑的副作用：
+  /// 「制卡队列」列表改了队列时只刷角标。
+  Future<int?> _refreshMineCounts() async {
     final int n = await _mineQueue.pendingCount(widget.bookUid);
-    if (!mounted) return;
-    setState(() => _minePending = n);
+    final int open = await _mineQueue.openCount(widget.bookUid);
+    if (!mounted) return null;
+    setState(() {
+      _minePending = n;
+      _mineFailed = open - n;
+    });
+    return n;
+  }
+
+  Future<void> _refreshMinePending() async {
+    final int? n = await _refreshMineCounts();
+    if (n == null) return;
     if (n == 0 &&
         widget.idleAutoMining &&
         !_autoRunTriggered &&
@@ -1997,6 +2014,12 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     if (outcome is! MineOutcome) {
       await _mineQueue.markFailed(row.id, 'no_outcome');
       return 'no_outcome';
+    }
+    // 重复卡记固定标记：列表据此显示「Anki 里已有」，「全部重试」据此跳过它，
+    // 否则批量重试会一遍遍重跑同一张、再撞一次重复。
+    if (outcome.result == MineResult.duplicate) {
+      await _mineQueue.markFailed(row.id, WebMineQueueStore.duplicateError);
+      return WebMineQueueStore.duplicateError;
     }
     final described = describeMineOutcome(outcome);
     if (!described.success) {
@@ -3249,12 +3272,34 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     ];
   }
 
-  /// 制卡队列钮的字形：待制卡数徽标压在卡片图标上。
+  /// 制卡队列钮的字形：队列张数（待办 + 失败）徽标压在卡片图标上。
   Widget _minePendingGlyph() => FushiBadgeControl.count(
-    count: _minePending,
-    isLabelVisible: _minePending > 0,
+    count: _minePending + _mineFailed,
+    isLabelVisible: _minePending + _mineFailed > 0,
     child: const FushiIcon(FushiIcons.ankiCard),
   );
+
+  /// 点队列钮：打开「制卡队列」列表（失败行带原因、可重试 / 移除），用户点「开始制卡」才开跑。
+  /// 窗口宿主档不能录 / 截，开跑 = 交给内置档重放（[_openBuiltinForMining]）。
+  Future<void> _openMineQueueList() async {
+    final bool windowed = _windowed;
+    final bool start = await showWebMineQueueDialog(
+      context: context,
+      store: _mineQueue,
+      bookUid: widget.bookUid,
+      startLabel: (int pending) => windowed
+          ? t.web_video_mine_switch_builtin(count: pending)
+          : t.web_video_mine_queue_start,
+      onChanged: () => unawaited(_refreshMineCounts()),
+    );
+    final int? pending = await _refreshMineCounts();
+    if (!start || pending == null || pending == 0 || _mineRunning) return;
+    if (_windowed) {
+      _openBuiltinForMining();
+    } else {
+      unawaited(_runMineQueue());
+    }
+  }
 
   void _toggleNativeSubtitlesHidden() {
     setState(() => _hideNativeSubtitles = !_hideNativeSubtitles);
@@ -3525,12 +3570,18 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         // 窗口宿主档不能录/截（画面归硬件 DRM）：队列交给内置档重放。
         FushiAdaptiveAction(
           icon: FushiIcons.ankiCard,
-          label: t.web_video_mine_switch_builtin(count: _minePending),
-          onPressed: _minePending == 0 ? null : _openBuiltinForMining,
+          label: t.web_video_mine_queue_open(count: _minePending + _mineFailed),
+          onPressed: _minePending + _mineFailed == 0
+              ? null
+              : () => unawaited(_openMineQueueList()),
           inlineBuilder: (BuildContext _) => iconButton(
-            tooltip: t.web_video_mine_switch_builtin(count: _minePending),
+            tooltip: t.web_video_mine_queue_open(
+              count: _minePending + _mineFailed,
+            ),
             icon: _minePendingGlyph(),
-            onPressed: _minePending == 0 ? null : _openBuiltinForMining,
+            onPressed: _minePending + _mineFailed == 0
+                ? null
+                : () => unawaited(_openMineQueueList()),
           ),
         )
       else if (_mineRunning)
@@ -3548,16 +3599,18 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       else
         FushiAdaptiveAction(
           icon: FushiIcons.ankiCard,
-          label: t.web_video_mine_queue_run,
-          onPressed: _minePending == 0
+          label: t.web_video_mine_queue_open(count: _minePending + _mineFailed),
+          onPressed: _minePending + _mineFailed == 0
               ? null
-              : () => unawaited(_runMineQueue()),
+              : () => unawaited(_openMineQueueList()),
           inlineBuilder: (BuildContext _) => iconButton(
-            tooltip: t.web_video_mine_queue_run,
+            tooltip: t.web_video_mine_queue_open(
+              count: _minePending + _mineFailed,
+            ),
             icon: _minePendingGlyph(),
-            onPressed: _minePending == 0
+            onPressed: _minePending + _mineFailed == 0
                 ? null
-                : () => unawaited(_runMineQueue()),
+                : () => unawaited(_openMineQueueList()),
           ),
         ),
       FushiAdaptiveAction(

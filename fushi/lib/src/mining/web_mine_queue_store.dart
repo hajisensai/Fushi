@@ -11,6 +11,11 @@ class WebMineQueueStore {
 
   final FushiDatabase db;
 
+  /// 失败行 `error` 列里「Anki 里已有这张卡」的固定标记（网页档重放与本地暂存写入都写它）。
+  /// [requeueFailed]（「全部重试」）据此跳过这类行：重排只会再撞一次重复、再失败一次，
+  /// 自动 / 批量重试会无限重跑同一张。用户删了 Anki 里那张卡之后可以单行 [requeueRow]。
+  static const String duplicateError = 'duplicate';
+
   Future<int> enqueue({
     required String bookUid,
     required String videoKey,
@@ -75,6 +80,20 @@ class WebMineQueueStore {
     return <String>[
       for (final TypedResult row in rows) row.read(db.webMineQueue.bookUid)!,
     ];
+  }
+
+  /// [bookUid] 写入 / 重放失败的行，按入队顺序（列表展示与重试）。
+  Future<List<WebMineQueueRow>> failed(String bookUid) {
+    return (db.select(db.webMineQueue)
+          ..where(
+            ($WebMineQueueTable t) =>
+                t.bookUid.equals(bookUid) &
+                t.status.equals(WebMineQueueStatus.failed),
+          )
+          ..orderBy(<OrderingTerm Function($WebMineQueueTable)>[
+            ($WebMineQueueTable t) => OrderingTerm.asc(t.id),
+          ]))
+        .get();
   }
 
   /// [bookUid] 的待办条数。`COUNT(*)`，不读行（每次入队、每轮结束都要问一次）。
@@ -154,12 +173,15 @@ class WebMineQueueStore {
     );
   }
 
-  /// 失败行重新排队（用户点「重试失败项」）。
+  /// [bookUid] 的失败行重新排队（用户点「全部重试」/「全部写入」），返回排回几行。
+  ///
+  /// 重复卡（`error` = [duplicateError]）不排：Anki 里已经有了，重排只会再失败一次。
   Future<int> requeueFailed(String bookUid) {
     return (db.update(db.webMineQueue)..where(
           ($WebMineQueueTable t) =>
               t.bookUid.equals(bookUid) &
-              t.status.equals(WebMineQueueStatus.failed),
+              t.status.equals(WebMineQueueStatus.failed) &
+              (t.error.isNull() | t.error.equals(duplicateError).not()),
         ))
         .write(
           const WebMineQueueCompanion(
@@ -167,6 +189,23 @@ class WebMineQueueStore {
             error: Value<String?>(null),
           ),
         );
+  }
+
+  /// 单行重试：失败行 [id] 排回待办（重复卡也可以——用户点的是这一行，多半已在 Anki 里删了
+  /// 那张）。行不是失败态（已被别处写完 / 删掉 / 本来就在待办）时什么都不做，返回 false。
+  Future<bool> requeueRow(int id) async {
+    final int n =
+        await (db.update(db.webMineQueue)..where(
+              ($WebMineQueueTable t) =>
+                  t.id.equals(id) & t.status.equals(WebMineQueueStatus.failed),
+            ))
+            .write(
+              const WebMineQueueCompanion(
+                status: Value<String>(WebMineQueueStatus.pending),
+                error: Value<String?>(null),
+              ),
+            );
+    return n > 0;
   }
 
   Future<int> remove(int id) => (db.delete(

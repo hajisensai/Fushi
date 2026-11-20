@@ -194,7 +194,7 @@ void main() {
     await queue.commitAll(
       bookUid: 'remote/emby/1',
       retryFailed: true,
-      repo: _Repo(<MineOutcome>[const MineOutcome(MineResult.duplicate)]),
+      repo: _Repo(<MineOutcome>[const MineOutcome(MineResult.notConfigured)]),
     );
     final VideoMineCommitSummary retry = await queue.commitAll(
       bookUid: 'remote/emby/1',
@@ -203,6 +203,36 @@ void main() {
     );
     expect(retry.succeeded, 1);
     expect(await queue.failed('remote/emby/1'), isEmpty);
+  });
+
+  test('「全部写入」的批量重排跳过重复卡；列表里单行「重试」才把它排回去', () async {
+    final int dup = await stageOne('走る');
+    await queue.commitAll(
+      bookUid: 'remote/emby/1',
+      retryFailed: true,
+      repo: _Repo(<MineOutcome>[const MineOutcome(MineResult.duplicate)]),
+    );
+    // 再点「全部写入」：重复卡不重排，不调 Anki，也不再报一次失败。
+    final _Repo untouched = _Repo(<MineOutcome>[]);
+    final VideoMineCommitSummary again = await queue.commitAll(
+      bookUid: 'remote/emby/1',
+      retryFailed: true,
+      repo: untouched,
+    );
+    expect(again.succeeded + again.failed, 0);
+    expect(untouched.contexts, isEmpty);
+    expect((await queue.failed('remote/emby/1')).single.error, 'duplicate');
+
+    // 用户在 Anki 删了那张、点这一行的「重试」：排回待写入，下一次写入落卡。
+    expect(await queue.retry(dup), isTrue);
+    expect(await queue.retry(dup), isFalse, reason: '已不是失败态，不重复排');
+    final VideoMineCommitSummary landed = await queue.commitAll(
+      bookUid: 'remote/emby/1',
+      retryFailed: true,
+      repo: _Repo(<MineOutcome>[const MineOutcome.success()]),
+    );
+    expect(landed.succeeded, 1);
+    expect(await queue.openCount('remote/emby/1'), 0);
   });
 
   test('BUG-4813：退出播放页的自动写入只写待写入的，不重跑写入失败的', () async {
