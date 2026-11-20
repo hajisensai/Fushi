@@ -681,7 +681,9 @@ class ReaderFushiSource extends ReaderMediaSource {
 
   Future<List<MediaItem>> getBooksFromDb({required AppModel appModel}) async {
     final FushiDatabase db = appModel.database;
-    final List<EpubBookRow> books = await db.getAllEpubBooks();
+    // novel-9：瘦投影，每章字数在 SQLite 侧（后台 isolate）用 json_each 抽好，
+    // 不再整表读 chaptersJson / tocJson 再在 UI isolate 上逐本 jsonDecode。
+    final List<EpubBookShelfRow> books = await db.getEpubBookShelfRows();
     // 阅读位置一次整表取完（书 uid → 位置）。之前每本各查一次
     // `findByBookUid`：Drift 在单连接上串行执行，`Future.wait` 只能重叠 await、
     // 重叠不了 SQL，书架延迟仍随库大小线性增长（N 次往返 + N 次语句准备）。
@@ -699,7 +701,7 @@ class ReaderFushiSource extends ReaderMediaSource {
     // Future.wait preserves input order so the shelf ordering is unchanged.
     return Future.wait<MediaItem>(
       books.map(
-        (EpubBookRow book) => _bookToMediaItem(
+        (EpubBookShelfRow book) => _bookToMediaItem(
           book,
           book.uid.isEmpty ? null : positions[book.uid],
           chapterStates: book.uid.isEmpty
@@ -716,8 +718,11 @@ class ReaderFushiSource extends ReaderMediaSource {
   Future<MediaItem?> mediaItemForBookKey(String bookKey) async {
     final FushiDatabase? db = sharedDatabase;
     if (db == null) return null;
-    final EpubBookRow? book = await db.getEpubBook(bookKey);
-    if (book == null) return null;
+    final List<EpubBookShelfRow> rows = await db.getEpubBookShelfRows(
+      bookKey: bookKey,
+    );
+    if (rows.isEmpty) return null;
+    final EpubBookShelfRow book = rows.first;
     // v82：位置键 = 行 uid（空 uid 视同无阅读记录）。
     final ReaderPosition? pos = book.uid.isEmpty
         ? null
@@ -729,13 +734,13 @@ class ReaderFushiSource extends ReaderMediaSource {
     );
   }
 
-  /// Resolve a single [EpubBookRow] into a [MediaItem], probing its cover
+  /// Resolve a single [EpubBookShelfRow] into a [MediaItem], probing its cover
   /// concurrently with sibling books (HBK-AUDIT-128). [pos] is the book's
   /// reader position (already keyed by uid by the caller; null = never read).
   /// [chapterStates] is the book's `manga_chapter_states` (chapterKey → row);
   /// only online manga read it (BUG-4356).
   Future<MediaItem> _bookToMediaItem(
-    EpubBookRow book,
+    EpubBookShelfRow book,
     ReaderPosition? pos, {
     Map<String, MangaChapterStateRow> chapterStates =
         const <String, MangaChapterStateRow>{},
@@ -743,27 +748,7 @@ class ReaderFushiSource extends ReaderMediaSource {
     int position = 0;
     int duration = 1;
 
-    List<int> sectionChars = const <int>[];
-    if (book.chaptersJson.isNotEmpty) {
-      try {
-        final List<dynamic> chapters =
-            jsonDecode(book.chaptersJson) as List<dynamic>;
-        sectionChars = chapters
-            .map(
-              (dynamic c) =>
-                  ((c as Map<String, dynamic>)['characters'] as num?)
-                      ?.toInt() ??
-                  0,
-            )
-            .toList();
-      } catch (e, stack) {
-        ErrorLogService.instance.log(
-          'ReaderFushiSource.sectionChars',
-          e,
-          stack,
-        );
-      }
-    }
+    final List<int> sectionChars = book.sectionChars;
     final int totalChars = sectionChars.fold<int>(0, (a, b) => a + b);
 
     // 书架列书 format-agnostic（本方法列全部 EpubBooks 行），但打开路由按 `format`
@@ -930,7 +915,7 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// conventional fallback names concurrently (HBK-AUDIT-128), with a
   /// last-good fallback so transient probe misses don't blank the cover
   /// (BUG-513).
-  Future<String?> _resolveCoverUrl(EpubBookRow book) async {
+  Future<String?> _resolveCoverUrl(EpubBookShelfRow book) async {
     final List<String> candidates = coverCandidatePaths(
       extractDir: book.extractDir,
       coverPath: book.coverPath,
@@ -1031,9 +1016,14 @@ class ReaderFushiSource extends ReaderMediaSource {
 
   /// Delete a book and all of its associated data.
   ///
-  /// Pass [appModel] to also clear the override thumbnail file (it is needed to
-  /// resolve the thumbnails directory); the override title preference is always
-  /// cleared regardless (HBK-AUDIT-040).
+  /// [appModel] 必填：override 封面文件住在 `appModel.thumbnailsDirectory` 下，
+  /// 文件名只由 `mediaIdentifier`（= bookKey = 净化后的书名）派生。以前它是可选参数，
+  /// 书架单删 / 批删等多数调用点没传，override 书名清了、封面文件却留在盘上，同名书
+  /// 重新导入后拿到同一个 bookKey，旧封面就「复活」。
+  /// [compactDatabase]（默认 true，单删行为不变）：删完跑一次
+  /// [compactAfterBookDeleteBestEffort]（整库 `VACUUM` + `wal_checkpoint(TRUNCATE)`）。
+  /// 一次删多本的调用方传 false，循环结束后在 `finally` 里自己调一次——否则 N 本
+  /// 就是 N 次整库重写。
   /// [scope] 控制删除传播：[DeleteScope.syncEverywhere] 记一条 sync 删除墓碑，供同步
   /// 时发布到远端标记、其他设备逐条确认后也删；[DeleteScope.keepLocalOnly]（默认）只删
   /// 本机不传播（消费远端删除标记时也走此值——删本地、绝不再回写墓碑造成循环）。备份防
@@ -1054,11 +1044,12 @@ class ReaderFushiSource extends ReaderMediaSource {
   Future<DeleteBookResult> deleteBook({
     required FushiDatabase db,
     required String bookKey,
-    AppModel? appModel,
+    required AppModel appModel,
     DeleteScope scope = DeleteScope.keepLocalOnly,
     bool deleteLocalFiles = false,
     bool deleteStatistics = false,
     bool keepDownloadedFiles = false,
+    bool compactDatabase = true,
   }) async {
     try {
       // 原件位置在 audiobooks / srt_books 行上，deleteEpubBook 的事务会把它们
@@ -1153,7 +1144,8 @@ class ReaderFushiSource extends ReaderMediaSource {
       // 删除传播（显式确认式）：仅当用户在删除弹窗选「同步删除」(syncEverywhere) 才记
       // 一条 sync 删除墓碑，供同步时发布到远端标记、其他设备逐条确认后也删。keepLocalOnly
       // （含消费远端删除标记的路径）不记，避免「删本地→回写墓碑→再传播」循环。host 服务
-      // 客户端删除走 _cleanupBookOnDisk 不经本方法。best-effort：记账失败不翻转删除结果。
+      // 客户端删除走 _cleanupBookOnDisk 不经本方法。best-effort：记账失败不翻转删除结果，
+      // 但必须留痕——墓碑没写上意味着别的设备不会跟着删，用户以为「同步删除」生效了。
       if (deletedRows > 0 && scope == DeleteScope.syncEverywhere) {
         try {
           await db.writeSyncDeletionTombstone(
@@ -1162,8 +1154,12 @@ class ReaderFushiSource extends ReaderMediaSource {
             DateTime.now().millisecondsSinceEpoch,
             cloudFolderName: syncTombstoneCloudFolderName,
           );
-        } catch (_) {
-          // best-effort：删除墓碑记账失败不影响书已删。
+        } catch (e, stack) {
+          ErrorLogService.instance.log(
+            'ReaderFushiSource.deleteBook.syncTombstone',
+            e,
+            stack,
+          );
         }
       }
 
@@ -1210,27 +1206,6 @@ class ReaderFushiSource extends ReaderMediaSource {
             );
           }
         }
-
-        // HBK-AUDIT-040: these books are created with canDelete:false, so the
-        // generic AppModel.deleteMediaItem cleanup (clearOverrideValues) never
-        // runs for them. Clear the override title preference here, and the
-        // override thumbnail file when an AppModel is available, so renamed/
-        // recovered books do not leave orphaned override rows/files behind.
-        final MediaItem item = MediaItem(
-          mediaIdentifier: mediaIdentifierFor(bookKey),
-          title: '',
-          mediaTypeIdentifier: mediaType.uniqueKey,
-          mediaSourceIdentifier: uniqueKey,
-          position: 0,
-          duration: 1,
-          canDelete: false,
-          canEdit: true,
-        );
-        if (appModel != null) {
-          await clearOverrideValues(appModel: appModel, item: item);
-        } else {
-          await clearOverrideTitle(item);
-        }
       } catch (e, stack) {
         ErrorLogService.instance.log(
           'ReaderFushiSource.deleteBook.cleanup',
@@ -1243,21 +1218,37 @@ class ReaderFushiSource extends ReaderMediaSource {
         );
       }
 
-      // BUG-276: 上面已删 DB 行 + 解压目录/有声书副本，但 SQLite 删除只把页放回
-      // freelist、不归还磁盘；WAL 也会继续增长。删一本书后 VACUUM 回收空间
-      // （否则用户「书都删了占用没降」）。VACUUM 必须在事务外，这里已在事务外；
-      // 失败不应让删除整体失败（行已删），只记日志。
+      // HBK-AUDIT-040: these books are created with canDelete:false, so the
+      // generic AppModel.deleteMediaItem cleanup (clearOverrideValues) never
+      // runs for them. Clear the override title preference AND the override
+      // thumbnail file here, so renamed/recovered books do not leave orphaned
+      // override rows/files behind (a same-title reimport reuses the bookKey).
+      // BUG-4906：独立于上面的磁盘尾活——解压目录被占用（Windows errno 32，见
+      // TODO-1359）等失败不能连带跳过这一步，否则同名重导照样带出旧封面。
       try {
-        await db.customStatement('VACUUM');
-        await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+        final MediaItem item = MediaItem(
+          mediaIdentifier: mediaIdentifierFor(bookKey),
+          title: '',
+          mediaTypeIdentifier: mediaType.uniqueKey,
+          mediaSourceIdentifier: uniqueKey,
+          position: 0,
+          duration: 1,
+          canDelete: false,
+          canEdit: true,
+        );
+        await clearOverrideValues(appModel: appModel, item: item);
       } catch (e, stack) {
         ErrorLogService.instance.log(
-          'ReaderFushiSource.deleteBook.vacuum',
+          'ReaderFushiSource.deleteBook.overrides',
           e,
           stack,
         );
-        debugPrint('[ReaderFushiSource] VACUUM after delete failed: $e');
       }
+
+      // BUG-276: 上面已删 DB 行 + 解压目录/有声书副本，但 SQLite 删除只把页放回
+      // freelist、不归还磁盘；WAL 也会继续增长。删一本书后回收空间（否则用户「书都
+      // 删了占用没降」）。批量调用方传 compactDatabase:false、循环后自己回收一次。
+      if (compactDatabase) await compactAfterBookDeleteBestEffort(db);
       // 真删了 EPUB 行，或清理了按 bookKey 关联的 SRT 行/磁盘副本，才算删除成功。
       // 过了上面的早退守卫后两者至少有一个为真，这里如实回报删除结果。
       if (deletedRows > 0 || srt != null) {
@@ -1279,6 +1270,25 @@ class ReaderFushiSource extends ReaderMediaSource {
     }
   }
 
+  /// 删书后回收数据库空间：整库 `VACUUM` + `PRAGMA wal_checkpoint(TRUNCATE)`。
+  ///
+  /// [deleteBook] 默认每次删完调一次；一次删多本的调用方给每本传
+  /// `compactDatabase: false`，循环结束后在 `finally` 里调本函数一次。VACUUM 必须在
+  /// 事务外。失败不翻转任何删除结果（行已删），只记日志。
+  static Future<void> compactAfterBookDeleteBestEffort(FushiDatabase db) async {
+    try {
+      await db.customStatement('VACUUM');
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'ReaderFushiSource.deleteBook.vacuum',
+        e,
+        stack,
+      );
+      debugPrint('[ReaderFushiSource] VACUUM after delete failed: $e');
+    }
+  }
+
   /// 删除书架上的一张**字幕书卡**（srt_books 行；书架卡 key `srt_<uid>`）。
   ///
   /// BUG-3101：配对了 EPUB 的字幕书（`bookKey` 非空）由 [deleteBook] 整本删——
@@ -1295,17 +1305,21 @@ class ReaderFushiSource extends ReaderMediaSource {
   Future<DeleteBookResult> deleteSrtShelfBook({
     required FushiDatabase db,
     required SrtBook book,
+    required AppModel appModel,
     DeleteScope scope = DeleteScope.keepLocalOnly,
     bool deleteLocalFiles = false,
     bool deleteStatistics = false,
+    bool compactDatabase = true,
   }) async {
     if (book.bookKey.isNotEmpty) {
       return deleteBook(
         db: db,
         bookKey: book.bookKey,
+        appModel: appModel,
         scope: scope,
         deleteLocalFiles: deleteLocalFiles,
         deleteStatistics: deleteStatistics,
+        compactDatabase: compactDatabase,
       );
     }
     try {

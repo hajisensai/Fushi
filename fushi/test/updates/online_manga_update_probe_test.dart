@@ -153,6 +153,46 @@ void main() {
     expect((await stored(keyA)).autoDownload, isTrue, reason: '探针刷新不冲掉订阅');
   });
 
+  // BUG-4909（gap-mangamisc-1）：探针开跑时读的快照在刷新的几秒里会过时。
+  test('刷新途中用户关了自动下载 / 作品页已把新章刷进库：探针按库里的描述符办', () async {
+    final String key = await addBook(
+      entryFor('/series/a', chapters: const <OnlineMangaChapter>[c2, c1]),
+      autoDownload: true,
+    );
+    adapter.script = (OnlineMangaLibraryEntry entry) async {
+      // 探针的快照是 [c2, c1] + autoDownload；源答话之前作品页先刷进了 c3、
+      // 用户又关掉了自动下载。
+      await service.refresh(
+        bookKey: key,
+        existing: entry,
+        series: entry.series,
+        chapters: const <OnlineMangaChapter>[c3, c2, c1],
+      );
+      await service.setSubscription(
+        bookKey: key,
+        entry: await stored(key),
+        subscribed: true,
+        autoDownload: false,
+      );
+      return OnlineMangaRefreshResult(
+        series: entry.series,
+        chapters: const <OnlineMangaChapter>[c3, c2, c1],
+      );
+    };
+    await runOnlineMangaUpdateProbe(
+      database: database,
+      serviceFor: (OnlineMangaRuntimeKind _) => service,
+      autoDownload: autoDownload,
+      onError: onError,
+    );
+    expect(errors, isEmpty);
+    expect(enqueued, isEmpty, reason: '自动下载已关、c3 也不是相对库里的新章');
+    final OnlineMangaLibraryEntry after = await stored(key);
+    expect(after.autoDownload, isFalse, reason: '探针的旧快照把自动下载写回了 true');
+    expect(after.subscribed, isTrue);
+    expect(after.chapters, hasLength(3));
+  });
+
   test('新出现多章时按旧→新章序入队', () async {
     await addBook(
       entryFor('/series/a', chapters: const <OnlineMangaChapter>[c1]),

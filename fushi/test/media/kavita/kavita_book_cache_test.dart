@@ -89,11 +89,13 @@ void main() {
   late FushiDatabase db;
   late Directory tmp;
   late List<String> deleted;
+  late int compactions;
 
   setUp(() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     tmp = Directory.systemTemp.createTempSync('kavita_book_cache_');
     deleted = <String>[];
+    compactions = 0;
   });
   tearDown(() async {
     await db.close();
@@ -114,6 +116,7 @@ void main() {
     db: db,
     tempRoot: tmp,
     deleteBook: deleteBook,
+    compactDatabase: () async => compactions++,
     apiFor: server == null ? null : (String _) => server.api(),
     cacheLimit: cacheLimit,
     pushTimeout: pushTimeout,
@@ -324,6 +327,11 @@ void main() {
         expect(result.removed, 3);
         expect(deleted.toSet(), <String>{'C1', 'C2', 'C3'});
         expect(
+          compactions,
+          1,
+          reason: 'BUG-4907：淘汰 3 本只回收一次数据库空间（以前每本一次整库 VACUUM）',
+        );
+        expect(
           await service().cachedBookKeys(),
           unorderedEquals(<String>['C4', 'C5']),
         );
@@ -356,6 +364,7 @@ void main() {
       final KavitaCacheCleanup result = await service().trimCache();
       expect(result.removed, 0);
       expect(deleted, isEmpty);
+      expect(compactions, 0, reason: '没删书不回收');
     });
 
     test('opening an existing copy stamps lastOpenedAt', () async {
@@ -390,6 +399,7 @@ void main() {
       final KavitaCacheCleanup result = await service().clearCache();
       expect(result.removed, 2);
       expect(deleted.toSet(), <String>{'C1', 'C2'});
+      expect(compactions, 1, reason: 'BUG-4907：一键清理整轮只回收一次');
       expect(await db.getEpubBook('D'), isNotNull);
     });
 
@@ -448,6 +458,7 @@ void main() {
       final KavitaLocalRemoval outcome = await service().removeDownload('D');
       expect(outcome, KavitaLocalRemoval.removed);
       expect(deleted, <String>['D']);
+      expect(compactions, 1);
       expect(await db.getEpubBook('D'), isNull);
     });
 
