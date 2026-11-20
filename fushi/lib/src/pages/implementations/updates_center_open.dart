@@ -23,7 +23,8 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/debug_pulse_panel.dart';
 import 'package:fushi/src/pages/implementations/updates_center_page.dart';
 import 'package:fushi/src/updates/debug_pulse_service.dart';
-import 'package:fushi/src/utils/misc/platform_updater.dart' show UpdateChannel;
+import 'package:fushi/src/utils/misc/platform_updater.dart'
+    show UpdateChannel, updaterForCurrentPlatform;
 import 'package:fushi/src/utils/misc/update_checker.dart'
     show channelForUpdateVersion, currentReleaseSequence;
 import 'package:fushi/src/utils/misc/build_version.dart'
@@ -65,6 +66,20 @@ bool showsDebugPulsePanel({
     configuredChannel == UpdateChannel.debug ||
     channelForUpdateVersion(runningVersion) == UpdateChannel.debug;
 
+/// 调试版流水线面板「更新」按钮按哪条通道检查；null = 不给按钮。
+///
+/// 面板讲的永远是 debug 时间线，按钮就只按 debug 查（BUG-4906 审查：通道设 stable /
+/// beta、跑调试包的人，按设置通道查会拿正式版 manifest 和调试包比，回「已是最新」，
+/// 和面板说的「有新调试版」打架）。唯一例外是安装方式把通道钉死在别的轨上（Flatpak
+/// 的 branch）：检查层会无条件改用那条轨（`update_checker_release.dart` 的
+/// `updater.installedChannel ?? channel`），从这里点下去查到的必然不是面板说的那个
+/// 调试版，不如不给按钮。
+UpdateChannel? debugPulseUpdateChannel({
+  required UpdateChannel? installationChannel,
+}) => installationChannel == null || installationChannel == UpdateChannel.debug
+    ? UpdateChannel.debug
+    : null;
+
 Widget? _debugPulsePanelFor(BuildContext context) {
   final AppModel appModel = ProviderScope.containerOf(
     context,
@@ -85,12 +100,19 @@ Widget? _debugPulsePanelFor(BuildContext context) {
           buildNumber: appModel.packageInfo.buildNumber,
         )
       : null;
+  final UpdateChannel? updateChannel = debugPulseUpdateChannel(
+    installationChannel: updaterForCurrentPlatform().installedChannel,
+  );
   return DebugPulsePanel(
     service: DebugPulseService.instance,
     installedSeq: seq,
     platform: DebugPulsePlatform.fromOperatingSystem(Platform.operatingSystem),
     customProxy: appModel.updateCustomProxy,
-    onUpdate: () => unawaited(checkAppUpdateNow(context, appModel)),
+    onUpdate: updateChannel == null
+        ? null
+        : () => unawaited(
+            checkAppUpdateNow(context, appModel, channel: updateChannel),
+          ),
   );
 }
 
