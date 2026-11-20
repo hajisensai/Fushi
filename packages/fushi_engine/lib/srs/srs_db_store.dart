@@ -1381,7 +1381,8 @@ class SrsDbStore implements SrsSync2Host {
   /// [existed]：给了就按导入的一批草稿落（内核 `import_drafts`，见 [importDrafts]）——「初值」草稿里键已有记录的不落，
   /// 这批身份记录里落库前就已存在的实体 ID 加进这个集合。
   ///
-  /// [logNotes]：日志卡片 → 笔记（调用方已知时给，省一次读卡片行）；[study]：落库、刷新缓存后在同一次命令里排队
+  /// [cardNotes]：卡片 → 笔记（调用方已知时给）：日志按它带上笔记（省一次读卡片行），卡片修改也带上（跟着笔记过实体归属闸，
+  /// 见 [importDrafts]）；[study]：落库、刷新缓存后在同一次命令里排队
   /// （store/study.rs），结果交给 [onStudy]。
   ///
   /// [onEntities]：这批身份记录落下的规范实体 ID，按草稿下标（[srsEntityWritesByInput]，内核回包 `entityWrites`）。
@@ -1392,7 +1393,7 @@ class SrsDbStore implements SrsSync2Host {
     bool stamps = false,
     Set<String>? existed,
     Set<String>? foreignNotes,
-    Map<String, String> logNotes = const <String, String>{},
+    Map<String, String> cardNotes = const <String, String>{},
     Map<String, Object?>? study,
     void Function(Map<String, Object?> study)? onStudy,
     void Function(List<String?> entities)? onEntities,
@@ -1434,7 +1435,7 @@ class SrsDbStore implements SrsSync2Host {
       receive: receive,
       initials: existed != null,
       source: source,
-      logNotes: logNotes,
+      cardNotes: cardNotes,
     );
     late _Applied applied;
     await _commandOrReload(() async {
@@ -1557,12 +1558,12 @@ class SrsDbStore implements SrsSync2Host {
     required bool receive,
     bool initials = false,
     required SrsTimeSource source,
-    Map<String, String> logNotes = const <String, String>{},
+    Map<String, String> cardNotes = const <String, String>{},
   }) async {
     final Map<String, String> noteOf = await _logNotesOf(<SrsEvent>[
       for (final SrsEventDraft d in drafts)
         if (d case SrsReadyDraft(:final SrsEvent event)) event,
-    ], logNotes);
+    ], cardNotes);
     final List<Map<String, Object?>> input = <Map<String, Object?>>[];
     for (final SrsEventDraft d in drafts) {
       switch (d) {
@@ -1570,7 +1571,13 @@ class SrsDbStore implements SrsSync2Host {
           final SrsEvent stored = await _compactEvent(event);
           input.add(<String, Object?>{
             'e': stored.toJson(),
-            'note': stored is SrsLogEvent ? noteOf[stored.log.cardId] : null,
+            'note': switch (stored) {
+              SrsLogEvent(:final SrsReviewLog log) => noteOf[log.cardId],
+              SrsEditEvent(:final SrsFieldEdit edit)
+                  when edit.entityKind == SrsEntityKind.card =>
+                cardNotes[edit.entityId],
+              _ => null,
+            },
             if (receive) 'clk': 'r',
           });
         case SrsEditDraft():
@@ -1590,7 +1597,7 @@ class SrsDbStore implements SrsSync2Host {
                 if (d.machine) 'm': true,
               },
             },
-            'note': null,
+            'note': d.kind == SrsEntityKind.card ? cardNotes[d.entityId] : null,
             'clk': 't',
             if (initials && d.initial) 'init': true,
             if (d.ifChanged) 'chg': true,
@@ -2513,11 +2520,12 @@ class SrsDbStore implements SrsSync2Host {
   /// 笔记、落库时已被同步 / 别处建好的，不算「新增」），与被实体归属闸拒掉的笔记
   /// （[SrsImportDraftsResult.foreignNotes]：没落，导入记冲突）。
   ///
-  /// [logNotes]：日志的卡 → 笔记（这批里新建的笔记的卡还没有卡片缓存行，查不到笔记）。带上笔记的日志跟着笔记过实体
-  /// 归属闸：笔记被拒时它的日志一并不落，不留下指向不存在的卡、却照样进统计的悬空复习（BUG-4843 复核）。
+  /// [cardNotes]：卡 → 笔记（这批里新建的笔记的卡还没有卡片缓存行，查不到笔记）。带上笔记的日志与卡片修改跟着笔记过
+  /// 实体归属闸：笔记被拒时它的日志、它的卡片修改（新卡位置、牌组、暂停）一并不落，不留下指向不存在的卡、却照样进统计
+  /// 的悬空复习，也不留下没有缓存行的悬空卡片修改（BUG-4843 复核；内核 `writes_owner.rs` 文件头「卡片修改带笔记」）。
   Future<SrsImportDraftsResult> importDrafts(
     List<SrsEventDraft> drafts, {
-    Map<String, String> logNotes = const <String, String>{},
+    Map<String, String> cardNotes = const <String, String>{},
   }) async {
     if (drafts.isEmpty) {
       return const SrsImportDraftsResult(<String>{}, <String>{});
@@ -2530,7 +2538,7 @@ class SrsDbStore implements SrsSync2Host {
         receive: true,
         existed: existed,
         foreignNotes: foreign,
-        logNotes: logNotes,
+        cardNotes: cardNotes,
       );
       return SrsImportDraftsResult(existed, foreign);
     });

@@ -1792,7 +1792,7 @@ class _Importer {
     _pendingNewNotes.clear();
     final SrsImportDraftsResult landed = await store.importDrafts(
       batch,
-      logNotes: <String, String>{
+      cardNotes: <String, String>{
         for (final _PendingNewNote p in newNotes)
           for (final String card in p.cardIds) card: p.noteId,
       },
@@ -1800,7 +1800,8 @@ class _Importer {
     for (final _PendingNewNote p in newNotes) {
       if (landed.foreignNotes.contains(p.noteId)) {
         // 同库另一份 profile 已有同 guid、另一个笔记类型的笔记（本包不合并笔记模板时落到了副本类型上）：内核的
-        // 实体归属闸没让这条笔记落，它的日志也没落。记冲突，不算新增（BUG-4843 复核：以前照记「已添加」）。
+        // 实体归属闸没让这条笔记落，它的日志、卡片修改也没落。记冲突，不算新增（BUG-4843 复核：以前照记「已添加」），
+        // 它的卡片计数（[_CardTally]）整份不并进报告。
         report.conflictNotes.add(
           SrsImportNoteIssue(
             guid: p.guid,
@@ -1808,9 +1809,10 @@ class _Importer {
             reason: SrsImportIssueReason.otherProfileNoteType,
           ),
         );
-        report.reviewLogsImported -= p.logs;
-        report.cardsResetToNew -= p.resetToNew;
-      } else if (landed.existed.contains(p.noteId)) {
+        continue;
+      }
+      p.tally.addTo(report);
+      if (landed.existed.contains(p.noteId)) {
         // 攒批期间同一条笔记已被同步 / 别处建好：初值里键已有记录的没落（见
         // SrsEditDraft.initial），不算新增。
         report.notesSkipped++;
@@ -1987,8 +1989,8 @@ class _Importer {
       report.notesSkipped++;
     }
 
-    final int logsBefore = report.reviewLogsImported;
-    final int resetBefore = report.cardsResetToNew;
+    // 这条笔记的卡片计数：已有笔记当场并进报告；新笔记随 [_PendingNewNote] 等落库回包，被实体归属闸拒掉的整份不计。
+    final _CardTally tally = pendingNew?.tally ?? _CardTally();
     for (final (_SrcCard c, String cardId) in cardIds) {
       await _importCardFlags(
         cardId,
@@ -2007,14 +2009,13 @@ class _Importer {
           noteId: noteId,
           ankiLogsAt: pre.ankiLogsAt,
           oldCardHeirs: pre.oldCardHeirs,
+          tally: tally,
         );
       } else if (isNew && (c.type != 0 || c.queue < 0)) {
-        report.cardsResetToNew++;
+        tally.cardsResetToNew++;
       }
     }
-    pendingNew
-      ?..logs = report.reviewLogsImported - logsBefore
-      ..resetToNew = report.cardsResetToNew - resetBefore;
+    if (pendingNew == null) tally.addTo(report);
   }
 
   /// 来源卡在本机的卡 ID（模板按 ord 对应；填空题共用一个模板、按填空序号区分）。
@@ -2128,6 +2129,7 @@ class _Importer {
     required String noteId,
     required Map<int, List<SrsAnkiLogAt>> ankiLogsAt,
     required Map<String, String> oldCardHeirs,
+    required _CardTally tally,
   }) async {
     final List<_SrcRevlog> revlogs = c.revlogs;
     // 这条 revlog 已经在本 profile 里、只是落在另一张卡上（BUG-4254）：日志 ID 由本机卡 ID 派生，来源笔记换过
@@ -2180,7 +2182,7 @@ class _Importer {
       if (l.occurredAt > latest) latest = l.occurredAt;
     }
     if (latest > nowMs + srsClockToleranceMs) {
-      report.futureCards.add(c.id);
+      tally.futureCards.add(c.id);
       return;
     }
 
@@ -2191,7 +2193,7 @@ class _Importer {
         final int? rid = _extRevlogIds[l.id];
         if (rid != null) extRevlogs.add(rid);
         _pending.add(SrsReadyDraft(SrsLogEvent(_remapExtLog(l, cardId))));
-        report.fushiLogsRestored++;
+        tally.fushiLogsRestored++;
       }
     }
 
@@ -2214,14 +2216,14 @@ class _Importer {
         lapses = 0;
       }
       if (extRevlogs.contains(r.id)) {
-        report.revlogsVerifiedByExt++;
+        tally.revlogsVerifiedByExt++;
         continue;
       }
       if (presentElsewhere(r)) {
-        report.revlogsAlreadyPresent++;
+        tally.revlogsAlreadyPresent++;
         continue;
       }
-      if (pkg.fushiExt != null) report.revlogsNotInExt++;
+      if (pkg.fushiExt != null) tally.revlogsNotInExt++;
       _pending.add(
         SrsReadyDraft(
           SrsLogEvent(
@@ -2236,7 +2238,7 @@ class _Importer {
           ),
         ),
       );
-      report.reviewLogsImported++;
+      tally.reviewLogsImported++;
     }
 
     for (final String old in linkedOld) {
@@ -2303,7 +2305,7 @@ class _Importer {
         ),
       ),
     );
-    report.anchorsWritten++;
+    tally.anchorsWritten++;
   }
 
   /// fushi-ext 里的一条日志 → 落到本机卡 [cardId] 上的那条。一律带 [srsForeignLogKey]：它的排序键由发生时刻派生
@@ -2454,8 +2456,8 @@ class _Importer {
   }
 }
 
-/// 本批里当作新笔记攒下的一条（[_Importer._flush] 落库后按回包计入报告）。[logs] / [resetToNew]：为它的卡记进
-/// 报告的日志数 / 「重置为新卡」数——这条笔记被实体归属闸拒掉时从报告里退回（它的日志同样没落）。
+/// 本批里当作新笔记攒下的一条（[_Importer._flush] 落库后按回包计入报告）。[tally]：它的卡片计数，落了才并进报告——
+/// 被实体归属闸拒掉时整份不计（它的日志、卡片修改同样没落）。
 final class _PendingNewNote {
   _PendingNewNote(
     this.noteId,
@@ -2472,8 +2474,35 @@ final class _PendingNewNote {
   final String noteType;
   final int cards;
 
-  /// 它的卡在本机的 ID：落库时日志按它带上笔记（[SrsDbStore.importDrafts] 的 `logNotes`），笔记被拒时日志一并不落。
+  /// 它的卡在本机的 ID：落库时日志与卡片修改按它带上笔记（[SrsDbStore.importDrafts] 的 `cardNotes`），笔记被拒时一并
+  /// 不落。
   final List<String> cardIds;
-  int logs = 0;
-  int resetToNew = 0;
+  final _CardTally tally = _CardTally();
+}
+
+/// 一条笔记的卡片对导入报告的计数（[_Importer._importNote] 的卡片循环、[_Importer._importCardSchedule] 记在这里，不直接
+/// 改报告）：已有笔记当场 [addTo] 报告；新笔记等落库回包，落了才并进，被实体归属闸拒掉的整份不计（BUG-4843 第二轮复核：
+/// 以前直接记进报告、被拒时只退回日志数与重置数，fushi-ext 恢复数 / 校验数、锚点、未来卡等仍按已导入计）。笔记的卡
+/// 计进报告的项都在这里，只此一处并进报告（来源包里卡已删除的 revlog 不属任何笔记，仍直接记报告）。
+final class _CardTally {
+  int reviewLogsImported = 0;
+  int cardsResetToNew = 0;
+  int fushiLogsRestored = 0;
+  int revlogsVerifiedByExt = 0;
+  int revlogsAlreadyPresent = 0;
+  int revlogsNotInExt = 0;
+  int anchorsWritten = 0;
+  final List<int> futureCards = <int>[];
+
+  void addTo(SrsImportReport r) {
+    r
+      ..reviewLogsImported += reviewLogsImported
+      ..cardsResetToNew += cardsResetToNew
+      ..fushiLogsRestored += fushiLogsRestored
+      ..revlogsVerifiedByExt += revlogsVerifiedByExt
+      ..revlogsAlreadyPresent += revlogsAlreadyPresent
+      ..revlogsNotInExt += revlogsNotInExt
+      ..anchorsWritten += anchorsWritten
+      ..futureCards.addAll(futureCards);
+  }
 }
