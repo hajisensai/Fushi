@@ -106,13 +106,27 @@ function Get-NativeSourceTree {
     }
 }
 
+# 戳记文件的位置：主机平台的库是 <产物>.source；Android 的 .so 所在目录（prebuilt/android/）整个是 gradle 的
+# jniLibs 源目录，放在里面的任何文件都会被 merge<Variant>JniLibFolders 收进去（2026-11-20 实测 .source 出现在
+# merged_jni_libs 里），所以戳记放到旁边的 prebuilt/android-stamps/<abi>/。
+function Get-NativeStampPath {
+    [OutputType([string])]
+    param([string]$Lib)
+
+    $norm = $Lib -replace '\\', '/'
+    if ($norm -match '/prebuilt/android/') {
+        return (($norm -replace '/prebuilt/android/', '/prebuilt/android-stamps/') + '.source')
+    }
+    return "$Lib.source"
+}
+
 # 戳记 = <产物>.source（JSON：tree / length / mtimeUtcTicks）。大小与 mtime 也要对上：有人手动
 # 重编（或别的 worktree 正在覆盖）后旧戳记自动失效，不会把别的源码编出的库当成这棵树的。
 function Test-NativeStamp {
     [OutputType([bool])]
     param([string]$Lib, [string]$Tree)
 
-    $stamp = "$Lib.source"
+    $stamp = Get-NativeStampPath -Lib $Lib
     if (-not $Tree -or -not (Test-Path -LiteralPath $Lib) -or -not (Test-Path -LiteralPath $stamp)) {
         return $false
     }
@@ -131,7 +145,8 @@ function Write-NativeStamp {
     [OutputType([void])]
     param([string]$Lib, [string]$Tree)
 
-    $stamp = "$Lib.source"
+    $stamp = Get-NativeStampPath -Lib $Lib
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $stamp) | Out-Null
     if (-not $Tree) {
         if (Test-Path -LiteralPath $stamp) { Remove-Item -LiteralPath $stamp -Force }
         return
@@ -193,9 +208,25 @@ function Invoke-NativeCrateBuild {
     $previousWrapper = $env:RUSTC_WRAPPER
     if (-not $previousWrapper) {
         $sccache = Get-Command sccache -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        # 缓存是可选的加速，不能变成硬依赖。2026-11-20 本机实测：cargo 拉起的 sccache 客户端间歇性报
+        # 「Server startup failed: A Windows port exclusion is blocking use of the configured port …
+        # os error 10013」并退 2，cargo 连 `rustc -vV` 都跑不了，整个备库失败；同一条命令隔一会儿又
+        # 正常（6 次里 6 次过）。当时服务其实在监听（netstat 可见）：客户端没连上就自己再起一个，绑
+        # 已被独占的端口得到 10013，那句「port exclusion」是 sccache 对这个错误码的猜测，端口并不在
+        # 系统排除范围里。客户端为什么会连不上没查清（多个会话同时编译时出现）。所以这里：先把服务
+        # 起好并确认它应答，起不来就不挂；挂了之后构建失败，再不挂缓存编一次（见下面的 try）。
+        $sccacheUp = $false
         if ($sccache) {
+            $null = & cmd /c "`"$($sccache.Source)`" --start-server >nul 2>&1"
+            $null = & cmd /c "`"$($sccache.Source)`" --show-stats >nul 2>&1"
+            $sccacheUp = ($LASTEXITCODE -eq 0)
+        }
+        if ($sccacheUp) {
             $env:RUSTC_WRAPPER = $sccache.Source
             Write-Host "  rustc 编译缓存：sccache ($($sccache.Source))" -ForegroundColor DarkGray
+        }
+        elseif ($sccache) {
+            Write-Host "  sccache 的服务起不来（sccache --show-stats 失败），这次不用缓存、照常编。" -ForegroundColor DarkYellow
         }
         else {
             Write-Host "  未装 sccache：依赖每个 worktree 都要从零编。装上（winget install Mozilla.sccache）后自动跨 worktree 共用缓存。" -ForegroundColor DarkYellow
@@ -207,7 +238,7 @@ function Invoke-NativeCrateBuild {
     if ($features) { $env:FUSHI_FSRS_FEATURES = $features }
     Write-Host "Building native/$Crate (cargo: $($cargo.Source))$(if ($features) { " features $features" })..." -ForegroundColor Cyan
     $previousVariant = $env:FUSHI_FSRS_ID_AUDIT_VARIANT
-    try {
+    $runBuild = {
         if ($Layout.Script.EndsWith('.ps1')) {
             if ($IdAudit) { & $script -IdAudit } else { & $script }
             return
@@ -215,6 +246,20 @@ function Invoke-NativeCrateBuild {
         if ($IdAudit) { $env:FUSHI_FSRS_ID_AUDIT_VARIANT = '1' }
         & $GitBash $script
         if ($LASTEXITCODE -ne 0) { throw "native/$Crate/$($Layout.Script) failed (exit $LASTEXITCODE)." }
+    }
+    try {
+        # 本函数自己挂上的 sccache 才有「不挂再编一次」：调用方设的 RUSTC_WRAPPER 是调用方的选择，
+        # 没挂缓存时失败就是失败。真正的编译错误第二次照样失败，只多花一次增量构建的时间。
+        $ownWrapper = (-not $previousWrapper) -and $env:RUSTC_WRAPPER
+        try {
+            & $runBuild
+        }
+        catch {
+            if (-not $ownWrapper) { throw }
+            Write-Host "  挂着 sccache 的构建失败（$($_.Exception.Message)）；不挂缓存再编一次，以分清是缓存还是代码的问题。" -ForegroundColor DarkYellow
+            $env:RUSTC_WRAPPER = $null
+            & $runBuild
+        }
     }
     finally {
         $env:RUSTC_WRAPPER = $previousWrapper

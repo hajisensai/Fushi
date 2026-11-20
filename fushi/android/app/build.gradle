@@ -544,6 +544,46 @@ def checkFushiCorpusNative = tasks.register("checkFushiCorpusNative") {
     }
 }
 
+// 缺库时先自己备，再由上面四个 check 判定：Windows 开发机上调 tool/native_libs.ps1 -Android
+// （本机缓存 → 兄弟 worktree → cargo-ndk 现编，同一份 native/<crate> 源码一台机器只编一次）。
+// 新 worktree 从不带这些 .so，以前本机出包必然死在 check 上，只能手动逐个 crate 去编。
+// 库齐了（CI 在出包前自己编好）就什么都不做；非 Windows 主机不代劳，仍由 check 报错说明怎么编。
+def fushiAndroidNativeCrates = ['fushi_compute', 'fushi_rwkv', 'fushi_music', 'fushi_corpus']
+def ensureFushiAndroidNative = tasks.register("ensureFushiAndroidNative") {
+    doLast {
+        String platforms = (project.findProperty('target-platform') ?: 'android-arm,android-arm64,android-x64').toString()
+        List<String> abis = platforms.split(',').collect { it.trim() }.findAll { !it.isEmpty() }
+            .collect { fushiComputeAbiOfPlatform[it] ?: it }
+        boolean missing = fushiAndroidNativeCrates.any { String crate ->
+            abis.any { String abi ->
+                !file("../../../native/${crate}/prebuilt/android/${abi}/lib${crate}.so").isFile()
+            }
+        }
+        if (!missing) {
+            return
+        }
+        if (!System.getProperty('os.name').toLowerCase().contains('windows')) {
+            return
+        }
+        File script = file('../../../tool/native_libs.ps1')
+        logger.lifecycle("Android native libraries missing; running ${script} -Android -Abis ${abis.join(',')}")
+        ProcessBuilder pb = new ProcessBuilder(
+            'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script.absolutePath,
+            '-Android', '-Abis', abis.join(','))
+        pb.redirectErrorStream(true)
+        Process p = pb.start()
+        p.inputStream.eachLine('UTF-8') { String line -> logger.lifecycle(line) }
+        if (p.waitFor() != 0) {
+            throw new GradleException(
+                "tool/native_libs.ps1 -Android failed (exit ${p.exitValue()}); the Android native libraries " +
+                "could not be prepared (needs Rust + cargo-ndk + the NDK; see docs/agent/build.md).")
+        }
+    }
+}
+[checkFushiComputeNative, checkFushiRwkvNative, checkFushiMusicNative, checkFushiCorpusNative].each { check ->
+    check.configure { dependsOn(ensureFushiAndroidNative) }
+}
+
 // AGP 对 minSdk ≥ 24 的包不签 v1（见 signingConfigs.release 注释），而 HarmonyOS 4.x 安装器
 // 要 JAR 签名。packageRelease 产出已签 v2+v3 的 APK 后，用 build-tools 的 apksigner 显式
 // `--v1-signing-enabled true` 原地重签（apksigner 显式开关不按 minSdk 推断），Flutter 随后才把

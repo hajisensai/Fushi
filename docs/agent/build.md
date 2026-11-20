@@ -130,6 +130,13 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
   `merge<Variant>JniLibFolders`（把 .so 收进包的任务），所以 JVM 单测与纯编译任务不要求本机有 Android 预编译
   `.so`，出 APK / AAB 的任务缺库照旧失败。守卫 `fushi/test/build/android_gradle_runs_in_fresh_checkout_guard_test.dart`
   与四个 `fushi_*_hard_dependency_guard_test.dart`。起因与数据见 [heavy-lease.md](heavy-lease.md)。
+- **出包任务缺 Android `.so` 时自己备（2026-11-20）**：四个 check 之前先跑 `ensureFushiAndroidNative`，缺库且在
+  Windows 上就调 `tool/native_libs.ps1 -Android -Abis <本次要出的 ABI>`：本地戳记 → 本机缓存
+  `%LOCALAPPDATA%\fushi-native-cache`（`FUSHI_NATIVE_CACHE` 可改，每个产物留最近 4 棵源码树）→ 兄弟 worktree →
+  `build_android_so.ps1` 现编（要 cargo-ndk 与 NDK 28.2.13676358），编完进缓存。同一份 `native/<crate>` 源码一台机器
+  只编一次，之后每个新 worktree 是拷贝。也可以手动先跑那条命令。库已齐（CI 出包前自己编）时不做任何事；
+  `native/<crate>` 有未提交改动时按工作区源码编、不进缓存；非 Windows 主机不代劳，check 照旧报错说明怎么编。
+  只管「缺」不管「旧」：库在但源码之后改过时不会自动重编，手动跑 `tool/native_libs.ps1 -Android` 会按戳记重编。
 - 本地定向跑（先在 `fushi/` 下 `flutter pub get` 生成插件注册与 `local.properties`），在 `fushi/android/` 下走租约：
   `dart ../tool/heavy.dart --check-only -- .\gradlew.bat :app:testDebugUnitTest --tests app.fushi.reader.CrossAppAudioPolicyTest`。
 - 测试类路径上的 `android.jar` 全是抛 `Stub!` / "not mocked" 的桩，也没有 Robolectric：要单测的逻辑抽成不碰 Android

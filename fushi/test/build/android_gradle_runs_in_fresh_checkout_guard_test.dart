@@ -69,4 +69,26 @@ void main() {
       expect(body, contains('task.dependsOn($check)'));
     }
   });
+
+  test('缺库时 gradle 自己备库：四个 check 都先跑 ensureFushiAndroidNative', () {
+    final String gradle = read('android/app/build.gradle');
+    expect(gradle, contains('tasks.register("ensureFushiAndroidNative")'));
+    expect(gradle, contains("file('../../../tool/native_libs.ps1')"));
+    expect(gradle, contains("'-Android', '-Abis', abis.join(',')"));
+    expect(
+      gradle,
+      contains(
+        '[checkFushiComputeNative, checkFushiRwkvNative, '
+        'checkFushiMusicNative, checkFushiCorpusNative].each { check ->\n'
+        '    check.configure { dependsOn(ensureFushiAndroidNative) }',
+      ),
+    );
+    // gradle 与脚本备的是同一组 crate。
+    const String crates =
+        "'fushi_compute', 'fushi_rwkv', 'fushi_music', 'fushi_corpus'";
+    expect(gradle, contains('def fushiAndroidNativeCrates = [$crates]'));
+    final String script = read('../tool/native_libs.ps1');
+    expect(script, contains('\$NativeAndroidCrates = @($crates)'));
+    expect(script, contains('[switch]\$Android'));
+  });
 }
