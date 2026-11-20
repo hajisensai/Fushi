@@ -233,6 +233,7 @@ import 'package:fushi/src/second_screen/input/controller_lookup_target.dart';
 import 'package:fushi/src/media/video/video_remote_binding_support.dart';
 import 'package:fushi/src/media/video/video_ocr_cli_consent.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
+import 'package:fushi/src/media/video/video_initial_fullscreen_gate.dart';
 import 'package:fushi/src/media/video/video_control_bar.dart';
 import 'package:fushi/src/media/video/video_top_bar_slots.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart';
@@ -2884,18 +2885,22 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 对话框/遮罩压住（`isCurrent`），避免切窗返回时抢走全屏内对话框的焦点。
   PageRoute<void>? _videoFullscreenRoute;
 
-  /// BUG-839：`initialFullscreen` 新页「首帧就绪后重进全屏」的一次性闸门 + 有界重试计数。
-  /// controls 首建帧（设 [_videoControlsContext]）可能晚于就绪帧，故就绪后逐帧重试到
-  /// context 可用再进全屏；失败/缺失态或超过上限则放弃，避免死循环（见
-  /// [_scheduleInitialFullscreenIfNeeded]）。
-  bool _didInitialFullscreen = false;
+  /// BUG-839：`initialFullscreen` 新页「首帧就绪后重进全屏」的一次性闸门。
+  /// controls 首建帧（设 [_videoControlsContext]）可能晚于就绪帧，所以就绪只是「开闸」，
+  /// 真正的尝试由 context 赋值点（[_captureVideoControlsContext]）与失败 / 缺失态渲染
+  /// 事件驱动，不再逐帧轮询（video-36e，见 [_scheduleInitialFullscreenIfNeeded]）。
+  late final VideoInitialFullscreenGate _initialFullscreen =
+      VideoInitialFullscreenGate(
+        schedulePostFrame: (void Function() callback) => WidgetsBinding.instance
+            .addPostFrameCallback((Duration _) => callback()),
+        attempt: _attemptInitialFullscreen,
+      );
 
   /// BUG-2043：本页是否持有从上一集页**接管**来的原生全屏（窗口已是原生全屏、栈上
   /// 尚无本页的全屏路由）。initState 经 [_claimHandedOverNativeFullscreen] 置真；就绪
   /// 后压上全屏路由（退出改由路由 pop 收口）、再换下一集（所有权继续传递）或
   /// [_releaseHandedOverNativeFullscreen] 亲自退出，三者都把它翻假。
   bool _ownsHandedOverNativeFullscreen = false;
-  int _initialFullscreenRetries = 0;
 
   /// 观看统计采集器（字幕字数 + 完成标记 + 喂空闲门；时长由它的墙钟时钟计）；首次
   /// load 建，dispose 释放。
@@ -13098,6 +13103,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 它的失败提示只认最后一次 attach 的 context。横幅是唯一 attach 点时，继续观看
     // 那一帧起 context 就是已卸载的，提示会被静默吞掉——由页面自己接管。
     _sourceReviewSession?.attachContext(context);
+    // video-36e：失败 / 缺失态的 controls 永远不建，等着进全屏的闸门在这里收到放弃事件
+    // （帧后回调里退掉接管来的原生全屏）。
+    if (_failed || _missingResource) _initialFullscreen.notify();
     final Widget body = _failed
         ? _buildFailedBody(cs)
         // TODO-897：本地资源缺失态——必须在转圈判据之前短路（缺失时不调 load，

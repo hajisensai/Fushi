@@ -427,7 +427,7 @@ extension _VideoLayout on _VideoFushiPageState {
           return _VideoControlsContextCapture(
             onRelease: _releaseVideoControlsContext,
             builder: (BuildContext captured) {
-              _videoControlsContext = captured;
+              _captureVideoControlsContext(captured);
               return BlurayDiscMenuFocusHost(
                 focusNode: _videoFocusNode,
                 onAttached: _reclaimDiscMenuFocusAfterAttachment,
@@ -555,7 +555,7 @@ extension _VideoLayout on _VideoFushiPageState {
                           child: _VideoControlsContextCapture(
                             onRelease: _releaseVideoControlsContext,
                             builder: (BuildContext controlsContext) {
-                              _videoControlsContext = controlsContext;
+                              _captureVideoControlsContext(controlsContext);
                               // 锁定 / 沉浸模式（TODO-101）：用 IgnorePointer 拦掉送往 media_kit
                               // controls 的所有指针事件——其 MouseRegion.onHover/onEnter 收不到
                               // 鼠标移动 → 控制条不再被唤起（顶/底栏按钮不弹）。IgnorePointer 只
