@@ -25,8 +25,11 @@
 // command leaves behind when it ends. A bare flutter / dart is resolved like
 // the other repo tools (FUSHI_FLUTTER, FLUTTER_ROOT, the SDK running this
 // script, PATH) and refused before queueing when that SDK is not the
-// fushi/.fvmrc version (test_flow/heavy_sdk_check.dart). Exit code: the
-// command's; 2 for a mismatched SDK; 75 when an
+// fushi/.fvmrc version (test_flow/heavy_sdk_check.dart); a command whose
+// executable does not exist is refused before queueing as well
+// (test_flow/heavy_command_check.dart). Exit code: the
+// command's; 2 for a mismatched SDK; 127 for a command that cannot start;
+// 75 when an
 // explicit --wait-max-min ran out before admission; 79 when the same command
 // was submitted again from this directory and took this run's place in the
 // queue; 124 when --max-minutes cut it off. CI / FUSHI_HEAVY=off
@@ -68,6 +71,7 @@ import 'dart:io';
 
 import 'test_flow/dist_plan.dart' show kDistOffloadDeclined;
 import 'test_flow/heavy_budget.dart';
+import 'test_flow/heavy_command_check.dart';
 import 'test_flow/heavy_history.dart';
 import 'test_flow/heavy_i18n.dart';
 import 'test_flow/heavy_lease.dart';
@@ -116,6 +120,19 @@ Future<void> main(List<String> args) async {
   // `dart test` (one VM, no flutter_tools; heavy_budget.dart
   // dartTestCommandFor). The other machines still get the command as typed.
   final List<String> command = testPlan?.local ?? asTyped;
+  // A command whose executable is not there fails now, not after the queue
+  // (test_flow/heavy_command_check.dart).
+  final HeavyCommandCheck starts = checkHeavyCommandStarts(
+    command,
+    cwd: Directory.current.absolute.path,
+    environment: Platform.environment,
+    isWindows: Platform.isWindows,
+    fileExists: (String p) => File(p).existsSync(),
+  );
+  if (starts.error != null) {
+    stderr.writeln(starts.error);
+    exit(127);
+  }
   final int? capOverride = _intArg(own, '--cap-mb=');
   // What the kind (a test: what it compiles, heavy_budget.dart testBookMb)
   // books by itself, and what runs of that class peaked at on this machine
@@ -316,7 +333,7 @@ Future<void> main(List<String> args) async {
   final Process p;
   try {
     p = await Process.start(
-      command.first,
+      starts.executable,
       command.skip(1).toList(),
       runInShell: Platform.isWindows,
       mode: ProcessStartMode.inheritStdio,

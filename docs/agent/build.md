@@ -124,8 +124,13 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 
 - CI：`main.yml` 的 `build` job 在 PR 改到 Android / 原生 / 插件 / pubspec（与 R8 校验同一个路径门）时跑
   `./gradlew :app:testDebugUnitTest`，红就判红；守卫 `fushi/test/build/android_jvm_unit_tests_ci_guard_test.dart`。
-- 本地定向跑（先在 `fushi/` 下 `flutter pub get` + `flutter build apk --config-only` 生成插件注册与
-  `local.properties`），在 `fushi/android/` 下走租约：
+- **新 worktree 里直接能跑（2026-11-20）**：gradle wrapper（`fushi/android/gradlew`、`gradlew.bat`、
+  `gradle/wrapper/gradle-wrapper.jar`，取自 Flutter 3.47.6 的 `bin/cache/artifacts/gradle_wrapper`）入库，不再靠
+  `flutter build apk` 现生成；`checkFushi{Compute,Rwkv,Music,Corpus}Native` 从 `preBuild` 挪到
+  `merge<Variant>JniLibFolders`（把 .so 收进包的任务），所以 JVM 单测与纯编译任务不要求本机有 Android 预编译
+  `.so`，出 APK / AAB 的任务缺库照旧失败。守卫 `fushi/test/build/android_gradle_runs_in_fresh_checkout_guard_test.dart`
+  与四个 `fushi_*_hard_dependency_guard_test.dart`。起因与数据见 [heavy-lease.md](heavy-lease.md)。
+- 本地定向跑（先在 `fushi/` 下 `flutter pub get` 生成插件注册与 `local.properties`），在 `fushi/android/` 下走租约：
   `dart ../tool/heavy.dart --check-only -- .\gradlew.bat :app:testDebugUnitTest --tests app.fushi.reader.CrossAppAudioPolicyTest`。
 - 测试类路径上的 `android.jar` 全是抛 `Stub!` / "not mocked" 的桩，也没有 Robolectric：要单测的逻辑抽成不碰 Android
   类的纯 Java（例：`CrossAppAudioPolicy`、`AnkiChannelHandler.runsOnMainThread`），别让被测类的静态初始化里出现

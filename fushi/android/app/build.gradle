@@ -592,7 +592,13 @@ tasks.configureEach { task ->
         task.dependsOn(prepareMihonSourceApi)
         task.dependsOn(prepareAniyomiSourceApi)
     }
-    if (task.name == "preBuild") {
+    // 硬依赖检查挂在「把 .so 收进包」的任务上（merge<Variant>JniLibFolders：每个出
+    // APK / AAB 的变体都必经），不挂 preBuild：preBuild 连 JVM 单测
+    // （:app:testDebugUnitTest）和纯编译任务也拦，而这些任务根本不打包 .so。
+    // 2026-11-15～11-20 本机 24 次 testDebugUnitTest 有 22 次失败，找回输出的里面
+    // 8 次死在这四个检查上（开发机 worktree 没有 Android 预编译库）。缺库仍然出
+    // 不了任何包：实测 :app:mergeDebugJniLibFolders 缺库即失败。
+    if (task.name.startsWith("merge") && task.name.endsWith("JniLibFolders")) {
         task.dependsOn(checkFushiComputeNative)
         task.dependsOn(checkFushiRwkvNative)
         task.dependsOn(checkFushiMusicNative)
