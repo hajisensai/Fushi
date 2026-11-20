@@ -3,7 +3,11 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:drift/native.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/downloads/download_task_entry.dart';
+import 'package:fushi/src/media/downloads/manga_download_tasks_section.dart';
 import 'package:fushi/src/media/manga/download/manga_download_auto_ocr.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
@@ -14,6 +18,7 @@ import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_job_stream.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_files.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
@@ -23,6 +28,7 @@ import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:image/image.dart' as img;
+import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
 /// 假运行时：页表固定三页，取图返回真实 PNG 字节（尺寸随页序变，好核 manga.json）。
@@ -132,6 +138,43 @@ class _CancellableAdapter extends _FakeAdapter
     cancelled.addAll(pages.map((OnlineMangaPageRef page) => page.index));
   }
 }
+
+/// 能解 Cloudflare 挑战的假运行时：记下每次解题的 URL / UA；[gate] 非空时卡住
+/// （单飞断言用），[failure] 非空时抛它（用户关页 / 解题失败）。
+class _FakeChallengeRuntime implements ChallengeMihonRuntime {
+  final List<(Uri, String?)> solved = <(Uri, String?)>[];
+  Completer<void>? gate;
+  Exception? failure;
+
+  @override
+  Future<void> solveCloudflare(Uri uri, {String? userAgent}) async {
+    solved.add((uri, userAgent));
+    final Completer<void>? pending = gate;
+    if (pending != null) await pending.future;
+    final Exception? error = failure;
+    if (error != null) throw error;
+  }
+}
+
+/// 带解题运行时能力的假适配器（= Mihon 适配器的 [OnlineMangaChallengeSolver]）。
+class _SolverAdapter extends _CancellableAdapter
+    implements OnlineMangaChallengeSolver {
+  _SolverAdapter(this.challengeRuntime);
+
+  @override
+  final Object challengeRuntime;
+}
+
+/// 运行时失败的 cause 里包着 [host] 的 Cloudflare 挑战（真实形状）。
+Exception _cloudflareFailure(String host) => OnlineMangaUnavailable(
+  OnlineMangaUnavailableReason.runtimeFailure,
+  'Mihon fetchImage failed',
+  cause: MihonCloudflareChallengeException(
+    Uri.parse('https://$host/'),
+    userAgent: 'UA/1',
+  ),
+  stage: 'pages',
+);
 
 /// 记录 update / stop 顺序的假保活（BUG-2714）。
 class _RecordingKeepAlive implements DownloadKeepAlive {
@@ -1327,5 +1370,206 @@ void main() {
       reason: '超限的页不能落盘（暂存也不能留）',
     );
     downloads.dispose();
+  });
+
+  // design-nmv-dl-cloudflare-verify：Cloudflare 失败的任务行直接给「验证」。
+  group('下载中心的 Cloudflare 验证', () {
+    late _FakeChallengeRuntime solver;
+
+    /// 等重新排队的任务全部跑完（whenIdle 只盖当前这一轮 drain，跨轮重 kick
+    /// 时会提前返回）。
+    Future<void> settle(MangaDownloadService downloads) async {
+      while (true) {
+        await downloads.whenIdle;
+        final List<MangaDownloadJobRow> pending = await downloads.listJobs(
+          statuses: const <String>{
+            MangaDownloadJobStatus.queued,
+            MangaDownloadJobStatus.running,
+          },
+        );
+        if (pending.isEmpty) return;
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+    }
+
+    /// 适配器换成带解题能力的；两章按领取序（/chapter/2 先）撞上 [hosts] 里的站。
+    Future<MangaDownloadService> failBoth(List<String> hosts) async {
+      solver = _FakeChallengeRuntime();
+      final _SolverAdapter solving = _SolverAdapter(solver);
+      adapter = solving;
+      library = OnlineMangaLibraryService(
+        database: db,
+        rootDirectory: Directory(p.join(root.path, 'legacy')),
+        adapter: solving,
+      );
+      solving.pageError = (int index) =>
+          _cloudflareFailure(hosts[solving.resolveCount - 1]);
+      final MangaDownloadService downloads = build(pageConcurrency: 1);
+      for (final OnlineMangaChapter chapter in _chapters) {
+        await downloads.enqueueChapter(
+          entry: _entry(),
+          chapter: chapter,
+          autoOcr: false,
+        );
+      }
+      await downloads.start();
+      await downloads.whenIdle;
+      return downloads;
+    }
+
+    test('验证通过 → 这一行与同站其它 Cloudflare 失败行一起重新排队并下完', () async {
+      final MangaDownloadService downloads = await failBoth(<String>[
+        'a.example',
+        'a.example',
+      ]);
+      final MangaDownloadJobRow first = await jobOf('/chapter/2');
+      final MangaDownloadJobRow second = await jobOf('/chapter/1');
+      expect(first.status, MangaDownloadJobStatus.failed);
+      expect(second.status, MangaDownloadJobStatus.failed);
+      expect(downloads.cloudflareChallengeOf(first), isNotNull);
+      expect(downloads.cloudflareChallengeOf(second), isNotNull);
+      expect(waits, isEmpty);
+
+      adapter.pageError = null;
+      expect(await downloads.verifyCloudflare(first.jobId), isTrue);
+      await settle(downloads);
+
+      expect(solver.solved, <(Uri, String?)>[
+        (Uri.parse('https://a.example/'), 'UA/1'),
+      ]);
+      final MangaDownloadJobRow firstAfter = await jobOf('/chapter/2');
+      final MangaDownloadJobRow secondAfter = await jobOf('/chapter/1');
+      expect(firstAfter.status, MangaDownloadJobStatus.done);
+      expect(secondAfter.status, MangaDownloadJobStatus.done);
+      expect(downloads.cloudflareChallengeOf(firstAfter), isNull);
+      downloads.dispose();
+    });
+
+    test('别的站的 Cloudflare 失败行不跟着重试', () async {
+      final MangaDownloadService downloads = await failBoth(<String>[
+        'a.example',
+        'b.example',
+      ]);
+      final MangaDownloadJobRow first = await jobOf('/chapter/2');
+      adapter.pageError = null;
+      expect(await downloads.verifyCloudflare(first.jobId), isTrue);
+      await settle(downloads);
+
+      expect((await jobOf('/chapter/2')).status, MangaDownloadJobStatus.done);
+      final MangaDownloadJobRow other = await jobOf('/chapter/1');
+      expect(other.status, MangaDownloadJobStatus.failed);
+      expect(
+        downloads.cloudflareChallengeOf(other)?.challenge.url.host,
+        'b.example',
+        reason: '另一站的挑战仍留着，行上仍有「验证」',
+      );
+      downloads.dispose();
+    });
+
+    test('用户关掉验证页 → 不重试、挑战保留；其余解题失败照抛', () async {
+      final MangaDownloadService downloads = await failBoth(<String>[
+        'a.example',
+        'a.example',
+      ]);
+      final MangaDownloadJobRow first = await jobOf('/chapter/2');
+      solver.failure = const MihonRuntimeException(
+        'CHALLENGE_CANCELLED',
+        'closed',
+      );
+      expect(await downloads.verifyCloudflare(first.jobId), isFalse);
+      final MangaDownloadJobRow still = await jobOf('/chapter/2');
+      expect(still.status, MangaDownloadJobStatus.failed);
+      expect(downloads.cloudflareChallengeOf(still), isNotNull);
+
+      solver.failure = const MihonRuntimeException(
+        'CHALLENGE_UNAVAILABLE',
+        'no navigator',
+      );
+      await expectLater(
+        downloads.verifyCloudflare(first.jobId),
+        throwsA(isA<MihonRuntimeException>()),
+      );
+      expect((await jobOf('/chapter/2')).status, MangaDownloadJobStatus.failed);
+      expect(downloads.isVerifyingCloudflare(still), isFalse);
+      downloads.dispose();
+    });
+
+    test('同站并发验证只弹一次页，验证中可查询', () async {
+      final MangaDownloadService downloads = await failBoth(<String>[
+        'a.example',
+        'a.example',
+      ]);
+      final MangaDownloadJobRow first = await jobOf('/chapter/2');
+      final MangaDownloadJobRow second = await jobOf('/chapter/1');
+      solver.gate = Completer<void>();
+      adapter.pageError = null;
+      final Future<bool> a = downloads.verifyCloudflare(first.jobId);
+      final Future<bool> b = downloads.verifyCloudflare(second.jobId);
+      expect(downloads.isVerifyingCloudflare(second), isTrue);
+      solver.gate!.complete();
+      expect(await a, isTrue);
+      expect(await b, isTrue);
+      expect(solver.solved, hasLength(1));
+      await settle(downloads);
+      expect((await jobOf('/chapter/2')).status, MangaDownloadJobStatus.done);
+      expect((await jobOf('/chapter/1')).status, MangaDownloadJobStatus.done);
+      downloads.dispose();
+    });
+
+    test('适配器给不出解题运行时 → 不给验证', () async {
+      adapter.pageError = (int index) => _cloudflareFailure('a.example');
+      final MangaDownloadService downloads = build(pageConcurrency: 1);
+      await downloads.enqueueChapter(
+        entry: _entry(),
+        chapter: _chapters.last,
+        autoOcr: false,
+      );
+      await downloads.start();
+      await downloads.whenIdle;
+      final MangaDownloadJobRow failed = await jobOf('/chapter/1');
+      expect(failed.status, MangaDownloadJobStatus.failed);
+      expect(downloads.cloudflareChallengeOf(failed), isNull);
+      expect(await downloads.verifyCloudflare(failed.jobId), isFalse);
+      downloads.dispose();
+    });
+
+    testWidgets('任务卡：Cloudflare 失败行的主操作是「验证」，点了弹验证', (
+      WidgetTester tester,
+    ) async {
+      final MangaDownloadService downloads = (await tester.runAsync(
+        () => failBoth(<String>['a.example', 'a.example']),
+      ))!;
+      final MangaDownloadJobRow row = (await tester.runAsync(
+        () => jobOf('/chapter/2'),
+      ))!;
+      final DownloadTaskEntry entry = mangaDownloadTaskEntry(row, downloads);
+      await tester.pumpWidget(
+        ProviderScope(
+          child: TranslationProvider(
+            child: MaterialApp(
+              home: Scaffold(body: Builder(builder: entry.builder)),
+            ),
+          ),
+        ),
+      );
+      final Finder verify = find.byKey(
+        ValueKey<String>('manga-download-quick-verify-${row.jobId}'),
+      );
+      expect(verify, findsOneWidget);
+      expect(
+        find.byKey(ValueKey<String>('manga-download-quick-retry-${row.jobId}')),
+        findsNothing,
+      );
+
+      // 解题卡住不放：只核按钮接到了服务的验证（重新排队的路径由上面的服务
+      // 测试覆盖，不在 fake async 里跑真实下载）。
+      solver.gate = Completer<void>();
+      await tester.tap(verify);
+      expect(solver.solved, <(Uri, String?)>[
+        (Uri.parse('https://a.example/'), 'UA/1'),
+      ]);
+      expect(downloads.isVerifyingCloudflare(row), isTrue);
+      downloads.dispose();
+    });
   });
 }

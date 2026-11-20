@@ -302,6 +302,48 @@ abstract interface class OnlineMangaPageCancellable {
   Future<void> cancelChapterPages(Iterable<OnlineMangaPageRef> pages);
 }
 
+/// 能替不在作品页上的调用方（下载中心的失败任务行）解 Cloudflare 挑战的适配器。
+///
+/// 任务行只留下了失败的异常，没有作品页手上那个 manager；下载服务经这个能力从
+/// 适配器取解题用的运行时，按 [canSolveMihonCloudflare] 判要不要给「验证」。
+abstract interface class OnlineMangaChallengeSolver {
+  /// 解题用的运行时（Mihon 是 manager 的 runtime；不是 [ChallengeMihonRuntime]
+  /// 的就不给验证按钮）。
+  Object get challengeRuntime;
+}
+
+/// [error] 里有没有 [runtime] 能解的 Cloudflare 挑战。「验证」按钮显不显示的
+/// **唯一**判据：作品页、全源搜索、源浏览、封面失败与下载中心共用。
+bool canSolveMihonCloudflare({
+  required Object? runtime,
+  required Object? error,
+}) =>
+    runtime is ChallengeMihonRuntime && mihonCloudflareChallenge(error) != null;
+
+/// 用 [runtime] 解 [error] 里的挑战（弹验证页，总是由用户点按钮触发）。
+///
+/// true = 解完；false = 没有可解的挑战，或用户关掉了验证页
+/// （`CHALLENGE_CANCELLED`，不算失败）；其余失败照抛给调用方展示。
+Future<bool> solveMihonCloudflare({
+  required Object? runtime,
+  required Object? error,
+}) async {
+  final MihonCloudflareChallengeException? challenge = mihonCloudflareChallenge(
+    error,
+  );
+  if (runtime is! ChallengeMihonRuntime || challenge == null) return false;
+  try {
+    await runtime.solveCloudflare(
+      challenge.url,
+      userAgent: challenge.userAgent,
+    );
+  } on MihonRuntimeException catch (failure) {
+    if (failure.code == 'CHALLENGE_CANCELLED') return false;
+    rethrow;
+  }
+  return true;
+}
+
 /// 在 app 内登录源站所需的一切（[runtime] 交给 `mihonLoginTarget` 判能力）。
 typedef OnlineMangaLoginTarget = ({
   Object runtime,
@@ -390,7 +432,8 @@ class MihonLibraryAdapter
         OnlineMangaLoginCapable,
         OnlineMangaWebUrlCapable,
         OnlineMangaLanguageScoped,
-        OnlineMangaPageCancellable {
+        OnlineMangaPageCancellable,
+        OnlineMangaChallengeSolver {
   const MihonLibraryAdapter(
     this.manager, {
     this.presetContext,
@@ -398,6 +441,9 @@ class MihonLibraryAdapter
   });
 
   final MihonManager manager;
+
+  @override
+  Object get challengeRuntime => manager.runtime;
 
   @override
   Future<String?> fetchChapterOcrSidecar({

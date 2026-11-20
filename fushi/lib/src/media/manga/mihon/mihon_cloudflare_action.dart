@@ -2,15 +2,16 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
-import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
-import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 // 判型 helper 住在适配器契约文件里（下载服务的失败分型也要用，不该为此 import
 // 一个 widget 文件），这里转出口，既有调用方的 import 不变。
 export 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
-    show mihonCloudflareChallenge;
+    show
+        mihonCloudflareChallenge,
+        canSolveMihonCloudflare,
+        solveMihonCloudflare;
 
 /// A challenge is opened only by this explicit user action, never by a fetch.
 class MihonCloudflareAction extends StatefulWidget {
@@ -29,9 +30,9 @@ class MihonCloudflareAction extends StatefulWidget {
 
   /// [error] 里有没有可解的 Cloudflare 挑战（= 这个按钮显不显示）。与别的按钮
   /// 并排进 `Wrap` 时按它决定要不要放进去：零尺寸的子项照样占 `spacing`。
+  /// 判据本体是 [canSolveMihonCloudflare]（下载中心的任务行也用它）。
   static bool shows({required Object? runtime, required Object? error}) =>
-      runtime is ChallengeMihonRuntime &&
-      mihonCloudflareChallenge(error) != null;
+      canSolveMihonCloudflare(runtime: runtime, error: error);
 
   @override
   State<MihonCloudflareAction> createState() => _MihonCloudflareActionState();
@@ -42,26 +43,25 @@ class _MihonCloudflareActionState extends State<MihonCloudflareAction> {
   Object? _failure;
 
   Future<void> _verify() async {
-    final Object? runtime = widget.runtime;
-    final MihonCloudflareChallengeException? challenge =
-        mihonCloudflareChallenge(widget.error);
-    if (_busy || runtime is! ChallengeMihonRuntime || challenge == null) return;
+    if (_busy ||
+        !MihonCloudflareAction.shows(
+          runtime: widget.runtime,
+          error: widget.error,
+        )) {
+      return;
+    }
     setState(() {
       _busy = true;
       _failure = null;
     });
     try {
-      await runtime.solveCloudflare(
-        challenge.url,
-        userAgent: challenge.userAgent,
+      final bool solved = await solveMihonCloudflare(
+        runtime: widget.runtime,
+        error: widget.error,
       );
-      if (mounted) await widget.onVerified();
+      if (solved && mounted) await widget.onVerified();
     } on Object catch (error) {
-      if (mounted &&
-          !(error is MihonRuntimeException &&
-              error.code == 'CHALLENGE_CANCELLED')) {
-        setState(() => _failure = error);
-      }
+      if (mounted) setState(() => _failure = error);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
