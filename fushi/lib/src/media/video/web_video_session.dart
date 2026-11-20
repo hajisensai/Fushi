@@ -84,6 +84,19 @@ Future<WebViewEnvironment> webVideoCapturableEnvironment() {
   );
 }
 
+/// 可捕获档的环境重建入口：内置网页播放器页的 WebView 进程死了（WebView2 ProcessFailed，fork
+/// 转成 onRenderProcessGone；Dart 侧分不出死的是渲染进程还是整个浏览器进程）就丢掉缓存的单例，
+/// 下次 [webVideoCapturableEnvironment] 在同一目录 / 同一参数上重建。浏览器进程没了旧环境就是
+/// 废的，新 WebView 建在它上面只会再死一次；只是渲染进程没了时，同目录同参数的新环境会直接
+/// 接回还活着的浏览器进程（WebView2 的环境共享规则），照样可用。
+///
+/// 旧环境**不释放**：它是进程级单例，登录回抄（[syncWebVideoLoginToBrowser]）或另一页可能还
+/// 拿着同一个引用；浏览器进程还活着时释放会把别人用着的环境拆掉。独立 cookie 罐在磁盘上，
+/// 浏览器进程重启不丢登录态，重建后不用再抄。
+void discardWebVideoCapturableEnvironment() {
+  _capturableEnv = null;
+}
+
 /// 窗口宿主档（4K）环境：**不带** `--disable-direct-composition`（硬件 PlayReady 的受保护输出
 /// 要走 DComp overlay），带 fork 的窗口宿主哨兵。与 app 内浏览器**同一 user data folder、同一
 /// 套 Chromium 参数**（fork 把哨兵剥掉再交给 WebView2），所以是同一个 cookie 罐：浏览器里登录

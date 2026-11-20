@@ -372,12 +372,26 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     canOwn: (FocusReclaimCause _) => mounted && !_popup.hasVisiblePopup,
   );
 
+  /// WebView 渲染 / 浏览器进程死亡的处置（BUG-4906）：先 [_recoverFromProcessGone] 作废死表面的
+  /// 一切引用、换环境、记下要回到哪里，再按预算重建。[WebViewDeathGuard.deathCount] 同时是表面的
+  /// 「代」：重放循环据此判断录到的东西是不是同一个表面上的。
   late final WebViewDeathGuard _deathGuard = WebViewDeathGuard(
     surface: 'web_video',
+    flushBeforeRebuild: _recoverFromProcessGone,
     afterRebuild: () {
       if (mounted) setState(() {});
     },
+    reporter: (String surface, String message) =>
+        ErrorLogService.instance.log('web_video', '$surface: $message'),
   );
+
+  /// 当前表面死亡时完成：死进程上的 `evaluateJavascript` 可能永不返回，[_js] 拿它竞速，
+  /// 在途调用随表面一起作废，不把重放循环挂死。每死一次换一个新的。
+  Completer<void> _surfaceGone = Completer<void>();
+
+  /// 重建出来的 WebView 打开的地址：首建是书的起始页；进程死后是死前所在的页面（站内换过
+  /// 集也不被甩回第一集）。
+  String? _surfaceUrl;
 
   InAppWebViewController? _web;
 
@@ -884,6 +898,52 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     WidgetsBinding.instance.addPostFrameCallback((_) => _seedWarmPopup());
   }
 
+  /// WebView 进程死后、表面重建前（[WebViewDeathGuard] 的 flushBeforeRebuild，BUG-4906）。
+  ///
+  /// 宿主 State 不随表面重建，死表面留下的东西都得在这里作废，否则新 WebView 起来之前它们
+  /// 一直被当成活的：控制器（死进程上的调用会抛或永久挂起）、最后一拍播放态（重放循环拿它
+  /// 判「播到了没有」）、超分确认、绑在死前浏览器进程上的静音预起。然后记下死前所在的页面与
+  /// 播放位置，重建后回到那里（不是书的起始页）；正在重放时不恢复——本轮会因表面换代结束，
+  /// 收尾时按开跑前的状态恢复（[_beginRestore]）。
+  ///
+  /// 最后换环境：Dart 侧分不出死的是渲染进程还是浏览器进程，一律丢掉缓存的环境重建（只是渲染
+  /// 进程死了新环境会接回同一个浏览器进程）。环境建不出来抛出由 death guard 记录，重建照样进行。
+  Future<void> _recoverFromProcessGone() async {
+    final Completer<void> gone = _surfaceGone;
+    _surfaceGone = Completer<void>();
+    gone.complete();
+    final WebVideoPlaybackState? last = _state;
+    final String href = last != null && last.href.isNotEmpty
+        ? last.href
+        : (_webViewUrl ?? '');
+    if (href.isNotEmpty) _surfaceUrl = href;
+    _web = null;
+    _viewId = null;
+    _shaderActive = false;
+    _state = null;
+    _dropSeekTarget();
+    final ({LoopbackGalAudioSource source, PcmFormat format})? pre =
+        _preStartedAudio;
+    _preStartedAudio = null;
+    _preStartFuture = null;
+    if (pre != null) unawaited(pre.source.stop());
+    if (last != null &&
+        !_mineRunning &&
+        !_isMiningHost &&
+        _pendingRestore == null) {
+      _beginRestore(WebMineReturnState.of(last));
+    }
+    if (!mounted) return;
+    if (_windowed) {
+      // 旧环境不释放：窗口宿主档环境与原生播放器页的播放器层共用一份缓存，别人可能还拿着。
+      discardWebVideoWindowedEnvironment()?.ignore();
+      _env = await WebVideoFushiPage.windowedEnvironment();
+    } else {
+      discardWebVideoCapturableEnvironment();
+      _env = await WebVideoFushiPage.capturableEnvironment();
+    }
+  }
+
   void _seedWarmPopup() {
     if (!mounted) return;
     _popup.lowMemory = _appModel.lowMemoryMode;
@@ -1020,12 +1080,16 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   Future<Object?> _js(String expression) async {
     final InAppWebViewController? web = _web;
     if (web == null) return null;
+    final Future<Object?> gone = _surfaceGone.future.then((_) => null);
     try {
-      return await web.evaluateJavascript(
-        source:
-            '(function(){try{return window.__fushiWebVideo&&'
-            '($expression);}catch(e){return String(e);}})()',
-      );
+      return await Future.any<Object?>(<Future<Object?>>[
+        web.evaluateJavascript(
+          source:
+              '(function(){try{return window.__fushiWebVideo&&'
+              '($expression);}catch(e){return String(e);}})()',
+        ),
+        gone,
+      ]);
     } catch (e) {
       ErrorLogService.instance.log(
         'web_video',
@@ -1475,8 +1539,11 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       userDataFolder: WebVideoFushiPage.capturableUserDataFolder(),
       silent: true,
     );
+    final int surfaceGen = _deathGuard.deathCount;
     final PcmFormat? format = await silent.start();
-    if (!mounted) {
+    // 起的途中表面死了：这份采集绑的是死前的浏览器进程，[_recoverFromProcessGone] 已作废本次
+    // 预起，新 WebView 建好时会重起一份。
+    if (!mounted || surfaceGen != _deathGuard.deathCount) {
       await silent.stop();
       return;
     }
@@ -1546,7 +1613,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     await web.loadUrl(urlRequest: URLRequest(url: WebUri(row.href)));
     final DateTime until = DateTime.now().add(const Duration(seconds: 30));
     while (DateTime.now().isBefore(until)) {
-      if (!mounted || _mineStopRequested) {
+      // 表面在等的途中死了（[_web] 被作废或已换成重建出来的那个）：死页面等不到画面，不是
+      // 这个视频到不了（BUG-4906）。
+      if (!mounted || _mineStopRequested || !identical(web, _web)) {
         return WebMineNavigateOutcome.interrupted;
       }
       if (_videoKey == row.videoKey && (_state?.hasVideo ?? false)) {
@@ -1608,6 +1677,10 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       ErrorLogService.instance.log('web_video.mineQueue', error, stack);
     }
 
+    // 表面的代（BUG-4906）：本轮只认开跑时这一个 WebView。死了（重建出来的是另一个页面）或
+    // 已报废（重建预算用尽、[_web] 一直是 null），在途那一行留待办、本轮结束。
+    final int surfaceGen = _deathGuard.deathCount;
+    bool surfaceLost() => _web == null || _deathGuard.deathCount != surfaceGen;
     _replayOrigin = widget.mineReturnState ?? _currentReturnState();
     _pendingRestore = null;
     // 采集起好之后的每一步都在 [runWebMineQueueRound] 里：哪一步抛出，后面的还原步骤
@@ -1673,6 +1746,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
               cueStartMs: row.cueStartMs,
               cueEndMs: row.cueEndMs,
             );
+            // 录的途中表面死了：抓到的是死页面（停住的画面、空音频）或重建后别处的东西，
+            // 不能落成卡。抛出 → 这一行留待办（[runWebMineQueueRows] 的 surfaceLost）。
+            if (surfaceLost()) throw StateError('web_video_surface_lost');
             _debugCaptures?.add(cap);
             final String? error = await _mineQueuedRow(
               row,
@@ -1686,6 +1762,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           markFailed: (WebMineQueueRow row, String error) =>
               _mineQueue.markFailed(row.id, error),
           onError: onMineError,
+          surfaceLost: surfaceLost,
           onUnreachable: (String videoKey) =>
               giveUps.giveUpVideo(widget.bookUid, videoKey),
           onProgress: () {
@@ -1724,12 +1801,15 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           }
           unawaited(_refreshMinePending());
         },
-        // 自动跑：出了错（准备步骤抛出 / 某一行抛出），或剩下的待办全在到不了的视频上——
-        // 这本书本次空闲不再开跑。用户还没回来，空闲调度几秒后就会原样再撞一次；窗口宿主档
-        // 每撞一次还是一趟整页交接，所以记在进程级的 [WebMineIdleGiveUps] 而不是本页。
+        // 自动跑：出了错（准备步骤抛出 / 某一行抛出 / 重放表面进程死亡），或剩下的待办全在
+        // 到不了的视频上——这本书本次空闲不再开跑。用户还没回来，空闲调度几秒后就会原样再撞
+        // 一次（进程死亡多半是内存压力，立刻再跑只会再死）；窗口宿主档每撞一次还是一趟整页
+        // 交接，所以记在进程级的 [WebMineIdleGiveUps] 而不是本页。
         () async {
           if (!auto) return;
-          if (rowsEnd == null || rowsEnd == WebMineQueueRowsEnd.rowThrew) {
+          if (rowsEnd == null ||
+              rowsEnd == WebMineQueueRowsEnd.rowThrew ||
+              rowsEnd == WebMineQueueRowsEnd.surfaceLost) {
             giveUps.giveUpBook(widget.bookUid);
           } else if (giveUps.unreachableVideos(widget.bookUid).isNotEmpty) {
             giveUps.settleAfterRound(
@@ -3547,7 +3627,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   ) {
     return InAppWebView(
       webViewEnvironment: _env,
-      initialUrlRequest: URLRequest(url: WebUri(row.videoPath)),
+      initialUrlRequest: URLRequest(url: WebUri(_surfaceUrl ?? row.videoPath)),
       initialUserScripts: scripts,
       initialSettings: InAppWebViewSettings(
         // Windows 生效（fork put_UserAgent）。软件 DRM 档必须去掉 Edg/ 标记，否则
