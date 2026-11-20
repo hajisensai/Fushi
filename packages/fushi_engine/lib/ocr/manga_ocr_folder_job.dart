@@ -198,7 +198,10 @@ const int kMangaPageScanMaxDepth = 6;
 /// NAS / 跨平台拷贝留下的系统目录：不是漫画内容，里面却全是 `.jpg`。
 /// 群晖 `@eaDir/<页名>/SYNOPHOTO_THUMB_*.jpg` 是每页的缩略图，macOS 压缩包解开的
 /// `__MACOSX/` 是资源叉残渣；按页图递归枚举会把它们当成真页插进卷里。
-const Set<String> kMangaPageScanSkippedDirNames = <String>{'@eadir', '__macosx'};
+const Set<String> kMangaPageScanSkippedDirNames = <String>{
+  '@eadir',
+  '__macosx',
+};
 
 /// 页图目录树里要跳过的系统目录（不分大小写，见 [kMangaPageScanSkippedDirNames]）。
 bool isMangaPageScanSkippedDir(String name) =>

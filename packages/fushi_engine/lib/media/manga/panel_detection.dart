@@ -204,11 +204,9 @@ class PanelDetectorSlot {
     if (pending != null) return pending;
     final Future<PanelDetector?> created = _create(create);
     _pending = created;
-    created
-        .whenComplete(() {
-          if (identical(_pending, created)) _pending = null;
-        })
-        .ignore();
+    created.whenComplete(() {
+      if (identical(_pending, created)) _pending = null;
+    }).ignore();
     return created;
   }
 

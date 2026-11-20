@@ -358,10 +358,7 @@ void main() {
       expect(from, greaterThan(0));
       expect(to, greaterThan(from));
       final String section = document.substring(from, to);
-      final String script = _resizeHarness.replaceFirst(
-        '/*SECTION*/',
-        section,
-      );
+      final String script = _resizeHarness.replaceFirst('/*SECTION*/', section);
       final Directory dir = Directory.systemTemp.createTempSync('manga-fit-');
       try {
         final File file = File('${dir.path}/verify.js')
