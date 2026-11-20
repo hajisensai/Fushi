@@ -408,6 +408,7 @@ fn imported_json(o: &ImportedOps) -> Value {
         "nativeLanded": o.native_landed, "nativeKnown": o.native_known, "voidsLanded": o.voids_landed,
         "slotsInserted": o.slots_inserted, "slotsSame": o.slots_same, "slotsKept": o.slots_kept,
         "slotsReplaced": o.slots_replaced, "slotsForked": o.slots_forked, "marks": o.marks,
+        "relayVersions": o.relay_versions, "relayStubs": o.relay_stubs, "relaySkipped": o.relay_skipped,
     })
 }
 

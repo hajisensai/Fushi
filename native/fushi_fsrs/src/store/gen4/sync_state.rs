@@ -22,6 +22,8 @@
 //! 写入全经 [Truth] 的写入守卫（必须在事务里、会话没被毒化、缓存与库同一个版本），报错时调用方回滚并 reset，与真相层
 //! 同一个口径（`truth.rs`「会话与事务」）。集合号必须是绑着的集合，位置键不能是空文本。
 
+use std::collections::BTreeMap;
+
 use rusqlite::{OptionalExtension, params};
 
 use super::schema::sql;
@@ -76,6 +78,13 @@ fn voids_of(bytes: &[u8]) -> Result<Vec<(u64, u64, Chain)>, String> {
         return Err("gen4 store: trailing bytes in author version voids".to_owned());
     }
     Ok(out)
+}
+
+/// [Truth::author_items] 拼出的项：全部项、其中剔除项几条、用到的外来剔除记录（seq）。
+struct AuthorItems {
+    items: Vec<RecutItem>,
+    stubs: usize,
+    extra_used: Vec<u64>,
 }
 
 /// 从本机日志重切出来、还没签的一段（[Truth::recut_from_log]）：作者签的段头、作者签名与全部项（已核对作者签名）。
@@ -901,6 +910,34 @@ impl<'c> Truth<'c> {
         let Some(author) = self.device_key(col, device)? else {
             return Ok(None);
         };
+        let Some(built) = self.author_items(col, &v, &BTreeMap::new())? else {
+            return Ok(None);
+        };
+        if built.stubs == 0 || !author_signed(&v.header, &v.sig, &built.items, &author) {
+            return Ok(None);
+        }
+        Ok(Some(RecutParts {
+            header: v.header,
+            author_sig: v.sig,
+            items: built.items,
+            author,
+        }))
+    }
+
+    /// 作者签名版本 [v] 在本机日志上拼出的全部项：作者签的空洞原样照搬，其余每个 seq 本机要么有完整的操作（原样
+    /// 留下），要么有它的剔除记录——本机记着的（[Truth::put_stub]）优先，没有才用 [extra] 里的（导入流带来、还没落库
+    /// 的，`import.rs`；本机已有的剔除记录不被换掉）。日志盖不到这一段、某一格既没有操作也没有剔除记录、空洞越界
+    /// 都是 None。不验作者签名（调用方拿作者公钥 [author_signed] 核）。
+    fn author_items(
+        &self,
+        col: i64,
+        v: &AuthorVersion,
+        extra: &BTreeMap<u64, Stub>,
+    ) -> Result<Option<AuthorItems>, String> {
+        let (device, first, last) = (&v.header.device, v.header.first, v.header.last);
+        if first == 0 || last < first || self.last_of(col, device)? < last {
+            return Ok(None);
+        }
         let mut slots: Vec<Option<Op4>> = Vec::new();
         self.for_range(col, device, first, last, |e| {
             slots.push(e.op().cloned());
@@ -911,15 +948,18 @@ impl<'c> Truth<'c> {
                 "gen4 store: {device} log {first}..={last} is not contiguous"
             ));
         }
-        let mut items: Vec<RecutItem> = Vec::new();
-        let mut stubs = 0usize;
+        let mut out = AuthorItems {
+            items: Vec::new(),
+            stubs: 0,
+            extra_used: Vec::new(),
+        };
         let mut seq = first;
         while seq <= last {
             if let Some((_, count, chain)) = v.voids.iter().find(|(at, _, _)| *at == seq) {
                 if *count == 0 || seq + count - 1 > last {
                     return Ok(None);
                 }
-                items.push(RecutItem::Void {
+                out.items.push(RecutItem::Void {
                     count: *count,
                     chain_after: *chain,
                 });
@@ -927,26 +967,63 @@ impl<'c> Truth<'c> {
                 continue;
             }
             match &slots[(seq - first) as usize] {
-                Some(op) => items.push(RecutItem::Op(op.clone())),
-                None => match self.stub_at(col, device, seq)? {
-                    Some(s) => {
-                        items.push(RecutItem::Stub(s));
-                        stubs += 1;
-                    }
-                    None => return Ok(None),
-                },
+                Some(op) => out.items.push(RecutItem::Op(op.clone())),
+                None => {
+                    let stub = match self.stub_at(col, device, seq)? {
+                        Some(s) => s,
+                        None => match extra.get(&seq) {
+                            Some(s)
+                                if s.id()
+                                    == (OpId {
+                                        device: *device,
+                                        seq,
+                                    }) =>
+                            {
+                                out.extra_used.push(seq);
+                                s.clone()
+                            }
+                            _ => return Ok(None),
+                        },
+                    };
+                    out.items.push(RecutItem::Stub(stub));
+                    out.stubs += 1;
+                }
             }
             seq += 1;
         }
-        if stubs == 0 || !author_signed(&v.header, &v.sig, &items, &author) {
+        Ok(Some(out))
+    }
+
+    /// 导入流带来的作者签名版本 [v] 能不能记（`import.rs`，第六波安全复核）：本机知道这位作者的公钥（`peers`；导入
+    /// 撞上另一把公钥时整笔已经拒了），版本拼得出（[Truth::author_items]，剔除记录可用 [extra]），作者签名验得过。
+    /// 过了返回用到的 [extra] 里的那些 seq（这些剔除记录由此被作者签名担保），没过 None。
+    pub(crate) fn vouch_author_version(
+        &self,
+        col: i64,
+        v: &AuthorVersion,
+        extra: &BTreeMap<u64, Stub>,
+    ) -> Result<Option<Vec<u64>>, String> {
+        let Some(author) = self.device_key(col, &v.header.device)? else {
             return Ok(None);
-        }
-        Ok(Some(RecutParts {
-            header: v.header,
-            author_sig: v.sig,
-            items,
-            author,
-        }))
+        };
+        let Some(built) = self.author_items(col, v, extra)? else {
+            return Ok(None);
+        };
+        Ok(author_signed(&v.header, &v.sig, &built.items, &author).then_some(built.extra_used))
+    }
+
+    /// 只在本机还没有这条操作的剔除记录时记下 [stub]（导入用：文件里的不换掉本机已有的）；返回是否记了。
+    pub(crate) fn put_stub_if_absent(&self, col: i64, stub: &Stub) -> Result<bool, String> {
+        self.write(|| {
+            let k = self.key_for(col, &stub.id())?;
+            let n = self
+                .conn()
+                .prepare_cached("INSERT OR IGNORE INTO relay_stubs (k, stub) VALUES (?1, ?2)")
+                .map_err(sql)?
+                .execute(params![k, stub.encode()])
+                .map_err(sql)?;
+            Ok(n > 0)
+        })
     }
 
     /// 位置 [loc] 上待删的转发件。

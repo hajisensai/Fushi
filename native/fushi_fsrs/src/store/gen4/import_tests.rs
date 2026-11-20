@@ -412,6 +412,200 @@ fn relay_material_survives_export_and_import_so_a_restored_library_can_still_rec
     assert_eq!(export(&tb, col_b), bytes);
 }
 
+/// 一条带转发材料的真实流：导出方收下作者（`DEV`）的一段 seq 1..=5、清除了 seq 2（剔除记录 + 空洞）。回流的字节、
+/// 作者、作者签名版本与那条剔除记录（[forged_relay_material_is_verified_before_it_lands] 用）。
+fn relay_stream() -> (
+    Vec<u8>,
+    Id,
+    crate::store::gen4::sync_state::AuthorVersion,
+    crate::gen4::recut::Stub,
+) {
+    use crate::gen4::recut::Stub;
+    use crate::gen4::segment::tests::{DEV, coll, items_of as seg_items, ops as seg_ops};
+    use crate::gen4::segment::{open_native_verified, pack_native};
+    use crate::store::gen4::sync_state::AuthorVersion;
+    use crate::sync2::keys::DeviceKey;
+    let signer = DeviceKey::from_seed(&[7; 32]);
+    let a = id(DEV);
+    let ops = seg_ops();
+    let (header, seg) =
+        pack_native(coll(), a, 1, &seg_items(&ops), CHAIN_ZERO, &signer, None).unwrap();
+    let sig = open_native_verified(&seg, &signer.public(), None)
+        .unwrap()
+        .author_sig();
+    let version = AuthorVersion {
+        header,
+        sig,
+        voids: Vec::new(),
+    };
+    let stub = Stub::of(
+        &ops[1],
+        OpId {
+            device: id(0x22),
+            seq: 7,
+        },
+    );
+    let ca = open_in_memory().unwrap();
+    let ta = Truth::new(&ca);
+    let col = fresh(&ta, ME_B);
+    ta.tx(|t| {
+        t.set_peer(
+            col,
+            &Peer {
+                device: a,
+                public: signer.public(),
+                name: None,
+                ext: None,
+                head_gen: None,
+                first_seen: None,
+            },
+        )?;
+        for op in &ops {
+            t.append_native(col, op)?;
+        }
+        t.note_author_version(col, &version)?;
+        t.put_stub(col, &stub)?;
+        t.advance_purge(col, &ops[1].id)?;
+        Ok(())
+    })
+    .unwrap();
+    (export(&ta, col), a, version, stub)
+}
+
+/// [bytes] 的每一项过一遍 [f] 再写回一条流（语法照旧核对）。
+fn rewrite(bytes: &[u8], mut f: impl FnMut(&mut crate::gen4::export::ExportItem)) -> Vec<u8> {
+    let (h, mut items) = items_of(bytes);
+    for it in &mut items {
+        f(it);
+    }
+    let mut w = crate::gen4::export::Export4Writer::new(Vec::new(), &h).unwrap();
+    for it in &items {
+        w.item(it).unwrap();
+    }
+    w.finish().unwrap()
+}
+
+/// 第六波安全复核：导入流里的转发材料不可信。作者签名版本先拿本机记着的作者公钥、本机日志与剔除记录验过作者签名
+/// 才记，验不过（签名被改、作者公钥本机不知道；段头作者不是所在日志的作者由流语法整笔拒）的跳过并计数，**不替换本机已有的有效行**
+/// （伪造的版本空洞更多，以前会按「空洞多的换掉」顶掉本机那份）；剔除记录要被验过的版本担保（信封 / 载荷哈希 /
+/// 清除目标正是作者签过的那条）才记，本机已有的不换。
+#[test]
+fn forged_relay_material_is_verified_before_it_lands() {
+    use crate::gen4::export::ExportItem;
+    let (bytes, a, version, stub) = relay_stream();
+    let seq2 = stub.id().seq;
+
+    // 1. 本机已有有效的一份（先导入真实流）；再导入伪造的：版本空洞更多、签名乱填；同一格的剔除记录换了 Purge。
+    let cb = open_in_memory().unwrap();
+    let tb = Truth::new(&cb);
+    let col = fresh(&tb, 0xc3);
+    let got = import_ops(&tb, col, &bytes).unwrap();
+    assert_eq!(
+        (got.relay_versions, got.relay_stubs, got.relay_skipped),
+        (1, 1, 0)
+    );
+    let chain2 = tb.chain_at(col, &a, seq2).unwrap();
+    let other_purge = OpId {
+        device: id(0x23),
+        seq: 9,
+    };
+    let forged = rewrite(&bytes, |it| match it {
+        ExportItem::AuthorVersion { sig, voids, .. } => {
+            sig[0] ^= 0xff;
+            voids.push((seq2, 1, chain2));
+        }
+        ExportItem::Stub(s) => s.purge = other_purge,
+        _ => {}
+    });
+    let got = import_ops(&tb, col, &forged).unwrap();
+    assert_eq!(got.relay_versions, 0, "{got:?}");
+    assert_eq!(got.relay_stubs, 0, "{got:?}");
+    assert_eq!(
+        got.relay_skipped, 1,
+        "the forged version (the stub is already here: left alone)"
+    );
+    assert_eq!(
+        tb.author_version(col, &a, 1, 5).unwrap(),
+        Some(version.clone()),
+        "the valid row stays"
+    );
+    assert_eq!(tb.stub_at(col, &a, seq2).unwrap(), Some(stub.clone()));
+    // 有效版本 + 换了 Purge 的剔除记录：版本验得过（拼项时本机那条优先），剔除记录照样不换。
+    let other = rewrite(&bytes, |it| {
+        if let ExportItem::Stub(s) = it {
+            s.purge = other_purge;
+        }
+    });
+    let got = import_ops(&tb, col, &other).unwrap();
+    assert_eq!((got.relay_versions, got.relay_skipped), (1, 0), "{got:?}");
+    assert_eq!(tb.stub_at(col, &a, seq2).unwrap(), Some(stub.clone()));
+
+    // 2. 空库：剔除记录的载荷哈希与作者签过的不一致 → 版本验不过、剔除记录没担保，都不记；重切不出来。
+    let fresh_lib = |b: &[u8]| -> (Connection, ImportedOps) {
+        let c = open_in_memory().unwrap();
+        let got = {
+            let t = Truth::new(&c);
+            let col = fresh(&t, 0xc4);
+            import_ops(&t, col, b).unwrap()
+        };
+        (c, got)
+    };
+    let tag = crate::sync2::segment::chain_tag(&version.header.last_chain);
+    let bad_stub = rewrite(&bytes, |it| {
+        if let ExportItem::Stub(s) = it {
+            s.payload_hash[0] ^= 1;
+        }
+    });
+    let (c, got) = fresh_lib(&bad_stub);
+    assert_eq!(
+        (got.relay_versions, got.relay_stubs, got.relay_skipped),
+        (0, 0, 2),
+        "{got:?}"
+    );
+    {
+        let t = Truth::new(&c);
+        let col = t.binding_of(P).unwrap().unwrap().col;
+        assert_eq!(t.author_version(col, &a, 1, 5).unwrap(), None);
+        assert_eq!(t.stub_at(col, &a, seq2).unwrap(), None);
+        assert!(t.recut_from_log(col, &a, (1, 5, &tag)).unwrap().is_none());
+    }
+
+    // 3. 空库：签名被改 → 不记。
+    let bad_sig = rewrite(&bytes, |it| {
+        if let ExportItem::AuthorVersion { sig, .. } = it {
+            sig[63] ^= 1;
+        }
+    });
+    let (_, got) = fresh_lib(&bad_sig);
+    assert_eq!(
+        (got.relay_versions, got.relay_stubs, got.relay_skipped),
+        (0, 0, 2),
+        "{got:?}"
+    );
+
+    // 4. 空库：文件不带作者公钥（本机也不知道）→ 验不了，不记。
+    let no_key = rewrite(&bytes, |it| {
+        if let ExportItem::NativeLog { device, public, .. } = it {
+            if *device == a {
+                *public = None;
+            }
+        }
+    });
+    let (_, got) = fresh_lib(&no_key);
+    assert_eq!(
+        (got.relay_versions, got.relay_stubs, got.relay_skipped),
+        (0, 0, 2),
+        "{got:?}"
+    );
+
+    // 对照：真实流导进空库全记下。
+    let (_, got) = fresh_lib(&bytes);
+    assert_eq!(
+        (got.relay_versions, got.relay_stubs, got.relay_skipped),
+        (1, 1, 0)
+    );
+}
+
 /// 读出一条流的头与全部项。
 fn items_of(
     bytes: &[u8],
