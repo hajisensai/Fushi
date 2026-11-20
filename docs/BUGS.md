@@ -308,6 +308,7 @@
 | [BUG-4927](bugs/BUG-4927-manga-windows-scrollbars.md) | ✅ | ✅ | manga-windows-scrollbars |
 | [BUG-4925](bugs/BUG-4925-popup-swipe-closes-while-selecting.md) | ✅ | ✅ | 查词弹窗拖选区柄时横滑被当成滑动关闭 |
 | [BUG-4929](bugs/BUG-4929-audiobook-replay-before-play-gap-jumps-book-start.md) | ✅ | ✅ | 有声书开书未播放时「重播本句」/「下一句」落在句间静音就退回全书第一句 |
+| [BUG-4928](bugs/BUG-4928-srs-deck-context-menu-at-row-end.md) | ✅ | ✅ | 复习牌组列表右键菜单弹在行的右端，不在鼠标处 |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
 | [BUG-4903](bugs/BUG-4903-home-desktop-continue-cut-edge-title-concat.md) | ✅ | ✅ | 首页（桌面）「继续」右侧卡被窗口切掉一半、标题拼接成「Re：ゼロ…1<Re：…」 |
