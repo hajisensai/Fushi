@@ -290,8 +290,8 @@ void main() {
 
   // BUG-4798：桌面三端读 CP932 / GBK / Big5 / EUC-JP 字幕整份变成 U+FFFD。
   //
-  // 与 app 在桌面端的装配同构：`installPlatformCharsetDetector()` 装了插件，但测试
-  // 宿主（同桌面三端）没有它的平台实现 → 恒返回 null → 落到 Rust 计算内核的
+  // 与 app 在桌面端的装配同构：`installPlatformCharsetDetector()` 在测试宿主（同
+  // 桌面三端）上不装插件（它没有桌面实现）→ 落到 Rust 计算内核的
   // `decodeLegacyText`。夹具与纯 Dart（无头服务端同构）一侧的用例在
   // packages/fushi_audio/test/（`text_file_io_legacy_decode_test.dart`）。
   group('readTextWithEncoding（本地多字节编码，桌面端装配）', () {
@@ -302,6 +302,11 @@ void main() {
 
     tearDown(() {
       platformCharsetDecoder = null;
+    });
+
+    test('桌面端不装配插件（插件只有 android / ios 实现）', () {
+      expect(Platform.isAndroid || Platform.isIOS, isFalse);
+      expect(platformCharsetDecoder, isNull);
     });
 
     for (final String name in <String>[
