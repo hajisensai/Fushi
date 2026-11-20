@@ -6341,11 +6341,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         externalPath: persisted,
         label: p.basename(persisted),
       );
-      final List<AudioCue> cues = await loadCuesForSource(
+      final List<AudioCue> cues = await _loadCuesForSourceInLoad(
         external,
         videoPath,
-        _activeBookUid,
-        cancel: _embeddedSubtitleExtractCancelFor(videoPath),
       );
       if (cues.isNotEmpty) {
         return (
@@ -6378,11 +6376,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       );
     }
 
-    final List<AudioCue> cues = await loadCuesForSource(
+    final List<AudioCue> cues = await _loadCuesForSourceInLoad(
       chosen,
       videoPath,
-      _activeBookUid,
-      cancel: _embeddedSubtitleExtractCancelFor(videoPath),
     );
     if (cues.isEmpty) return null;
     return (
@@ -6390,6 +6386,31 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       cues: cues,
       graphicStreamIndex: null,
     );
+  }
+
+  /// 载入链上（[_restorePersistedSubtitle]）解析一个字幕源。外挂档经
+  /// [_readSubtitleTextForLoad] 只读一次盘，同一份字节顺手判「是不是对齐产物」留给
+  /// 本次载入的对齐检查（[_loadAlignmentHint]），[_applyLoad] 不再把刚解析过的字幕
+  /// 整份重读一遍；内嵌轨照旧走缓存 / 抽取。
+  Future<List<AudioCue>> _loadCuesForSourceInLoad(
+    SubtitleSource source,
+    String videoPath,
+  ) async {
+    final String? externalPath = source.isEmbedded ? null : source.externalPath;
+    if (externalPath == null) {
+      return loadCuesForSource(
+        source,
+        videoPath,
+        _activeBookUid,
+        cancel: _embeddedSubtitleExtractCancelFor(videoPath),
+      );
+    }
+    final SubtitleCueLoadResult result = await loadExternalSubtitleCueResult(
+      externalPath,
+      _activeBookUid,
+      contentReader: (File file) => _readSubtitleTextForLoad(file.path),
+    );
+    return result.cues;
   }
 
   /// 字幕菜单来源：保留当前视频枚举结果，再只补入「当前视频已持久化」的导入字幕。
