@@ -42,9 +42,13 @@ Judge each candidate on its own:
   adaptation of the other (novel -> anime, game -> anime, manga -> game ...).
   Same title alone is not enough when years, kinds or creators contradict it.
 - "relation": "adaptation" when one side adapts the other, "same_work" when
-  they are versions of the same work and no side is clearly the original.
+  they are versions of the same work and no side is clearly the original,
+  "sequel" when they are different installments of one series (season 2,
+  sequel novel, sequel game), "side_story" when one is a side story, spin-off,
+  movie or fan disc of the other's main story.
 - "original": "a" or "b" for the side that is the original work of an
-  adaptation; "unknown" when you cannot tell.
+  adaptation, the earlier installment of a sequel, or the main story of a
+  side story; "unknown" when you cannot tell.
 - "confidence": a number from 0 to 1.
 - "reason": one short sentence the user will read.
 
@@ -105,6 +109,8 @@ List<MediaLinkVerdict?> parseAiMediaLinkVerdicts(String reply, int count) {
       'same_work' => MediaLinkRelation.sameWork,
       'theme_song' => MediaLinkRelation.themeSong,
       'soundtrack' => MediaLinkRelation.soundtrack,
+      'sequel' => MediaLinkRelation.sequel,
+      'side_story' => MediaLinkRelation.sideStory,
       _ => null,
     };
     if (related && relation == null) continue;

@@ -20,7 +20,8 @@ library;
 
 import 'dart:async';
 
-import 'package:drift/drift.dart' show QueryRow, TableUpdate, TableUpdateQuery;
+import 'package:drift/drift.dart'
+    show QueryRow, ResultSetImplementation, TableUpdate, TableUpdateQuery;
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/links/work_graph.dart';
@@ -63,13 +64,17 @@ final class WorkSeriesInfo {
   bool covers(MediaLinkEndpoint e) => endpoint == e || members.contains(e);
 }
 
-/// 一次建图的结果：作品图 + 界面要的展示索引（书的格式、系列合集的成员与名字）。
+/// 一次建图的结果：作品图 + 界面要的展示索引（书的格式、系列合集的成员与名字、
+/// 视频合集的刮削相关作品）。
 final class WorkGraphSnapshot {
   WorkGraphSnapshot({
     required this.graph,
     required Map<String, String> bookFormatByKey,
     required List<WorkSeriesInfo> series,
+    List<CollectionRelationRow> collectionRelations =
+        const <CollectionRelationRow>[],
   }) : _bookFormatByKey = bookFormatByKey,
+       _relationsByCollection = _groupRelations(collectionRelations),
        _seriesById = <int, WorkSeriesInfo>{
          for (final WorkSeriesInfo s in series) s.id: s,
        } {
@@ -92,6 +97,29 @@ final class WorkGraphSnapshot {
 
   final WorkGraph graph;
   final Map<String, String> _bookFormatByKey;
+  final Map<int, List<CollectionRelationRow>> _relationsByCollection;
+
+  static Map<int, List<CollectionRelationRow>> _groupRelations(
+    List<CollectionRelationRow> rows,
+  ) {
+    final Map<int, List<CollectionRelationRow>> out =
+        <int, List<CollectionRelationRow>>{};
+    for (final CollectionRelationRow r in rows) {
+      (out[r.collectionId] ??= <CollectionRelationRow>[]).add(r);
+    }
+    for (final List<CollectionRelationRow> list in out.values) {
+      list.sort((CollectionRelationRow a, CollectionRelationRow b) {
+        final int bySort = a.sortIndex.compareTo(b.sortIndex);
+        return bySort != 0 ? bySort : a.id.compareTo(b.id);
+      });
+    }
+    return out;
+  }
+
+  /// 视频合集 [collectionId] 的相关作品（`collection_relations`：刮削源的续作 /
+  /// 前传 / 外传…与按季拆分建的前后作），按展示顺序。关系网的系列栏从这里取。
+  List<CollectionRelationRow> collectionRelationsOf(int collectionId) =>
+      _relationsByCollection[collectionId] ?? const <CollectionRelationRow>[];
   final Map<int, WorkSeriesInfo> _seriesById;
   final Map<MediaLinkEndpoint, WorkSeriesInfo> _seriesOfEndpoint =
       <MediaLinkEndpoint, WorkSeriesInfo>{};
@@ -162,6 +190,8 @@ final class WorkGraphSnapshot {
 /// 这里只补界面要的展示索引，同样整表一次读、内存里 join。
 Future<WorkGraphSnapshot> loadWorkGraphSnapshot(FushiDatabase db) async {
   final WorkGraph graph = await loadWorkGraph(db);
+  final List<CollectionRelationRow> relations = await db
+      .getAllCollectionRelations();
   final List<EpubBookMeta> books = await db.getEpubBookMetas();
   final Map<String, String> formatByKey = <String, String>{
     for (final EpubBookMeta b in books) b.bookKey: b.format,
@@ -176,6 +206,7 @@ Future<WorkGraphSnapshot> loadWorkGraphSnapshot(FushiDatabase db) async {
       graph: graph,
       bookFormatByKey: formatByKey,
       series: const <WorkSeriesInfo>[],
+      collectionRelations: relations,
     );
   }
   final Map<String, String> bookKeyByUid = <String, String>{
@@ -236,6 +267,7 @@ Future<WorkGraphSnapshot> loadWorkGraphSnapshot(FushiDatabase db) async {
     graph: graph,
     bookFormatByKey: formatByKey,
     series: series,
+    collectionRelations: relations,
   );
 }
 
@@ -297,7 +329,15 @@ final class WorkGraphStore extends ChangeNotifier
     super.addListener(listener);
     _listenerCount++;
     _tableSub ??= _db
-        .tableUpdates(TableUpdateQuery.onAllTables(workGraphSourceTables(_db)))
+        .tableUpdates(
+          TableUpdateQuery.onAllTables(
+            <ResultSetImplementation<dynamic, dynamic>>[
+              ...workGraphSourceTables(_db),
+              // 快照另读的相关作品表（关系网系列栏）：刮削落库 / 升级绑定后刷新。
+              _db.collectionRelations,
+            ],
+          ),
+        )
         .listen((Set<TableUpdate> _) => _invalidate());
     if (_dirty) unawaited(_rebuild());
   }

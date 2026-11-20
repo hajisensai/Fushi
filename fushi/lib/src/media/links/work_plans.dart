@@ -8,6 +8,8 @@ import 'package:fushi/src/media/links/media_link_entries.dart';
 import 'package:fushi/src/media/links/work_graph_store.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/links/work_graph.dart';
+import 'package:fushi_engine/media/links/work_graph_loader.dart'
+    show videoCollectionEndpoint;
 
 /// 媒体分组的显示名。
 String workMediaGroupLabel(WorkMediaGroup group) => switch (group) {
@@ -191,6 +193,28 @@ WorkSectionPlan planWorkSection({
     }
   }
 
+  // 系列栏的相关作品（刮削的续作 / 前传…）也算关系网节点：只有一部动画、没有
+  // 跨媒体连接的合集，有系列关系就该出「关系网」入口。
+  if (snapshot != null) {
+    final Iterable<MediaLinkEndpoint> owners =
+        snapshot.graph.workOf(networkEndpoint)?.members ??
+        <MediaLinkEndpoint>[networkEndpoint];
+    for (final MediaLinkEndpoint m in owners) {
+      if (m.kind != MediaLinkKind.videoCollection) continue;
+      final int? id = int.tryParse(m.key);
+      if (id != null) {
+        networkNodeCount += snapshot.collectionRelationsOf(id).length;
+      }
+    }
+    if (networkNodeCount > 0 &&
+        snapshot.graph.workOf(networkEndpoint) == null) {
+      networkNodeCount += 1; // 本条目自己
+    }
+    for (final MediaLinkEndpoint m in owners) {
+      networkNodeCount += snapshot.graph.seriesLinksOf(m).length;
+    }
+  }
+
   // 本条目自己是音乐（附属物）时，它的卫星连接对端就是作品本身，进成员组。
   final bool selfIsSatelliteKind = mediaLinkIsMusicKind(self.kind);
   for (final MediaLinkView v in confirmed) {
@@ -250,6 +274,81 @@ WorkMediaGroup _fallbackGroupOf(MediaLinkEndpoint e) => switch (e.kind) {
 // 关系网
 // ---------------------------------------------------------------------------
 
+/// 系列边的种类（`collection_relations.relation_type` 与 `media_links` 的
+/// [MediaLinkRelation.sequel] / [MediaLinkRelation.sideStory] 合到一套）。前传一律
+/// 反向记成续作（「A 是 B 的前传」=「B 是 A 的续作」），同一对只画一条。
+enum WorkSeriesKind {
+  /// 前作 → 续作。
+  sequel,
+
+  /// 本篇 → 外传 / 番外。
+  sideStory,
+
+  /// 本篇 → 剧场版。
+  movie,
+
+  /// 本篇 → 衍生作。
+  spinOff,
+
+  /// 其余相关（总集篇、另一版本、同一世界观…），无方向。
+  other;
+
+  bool get directed => this != WorkSeriesKind.other;
+
+  /// `collection_relations.relation_type` 落库值（未知值归 [other]）；
+  /// `prequel` 也映射成 [sequel]，调用方负责把方向反过来。
+  static WorkSeriesKind fromCollectionRelationWire(String wire) =>
+      switch (wire) {
+        'sequel' || 'prequel' => WorkSeriesKind.sequel,
+        'side_story' => WorkSeriesKind.sideStory,
+        'movie' => WorkSeriesKind.movie,
+        'spin_off' => WorkSeriesKind.spinOff,
+        _ => WorkSeriesKind.other,
+      };
+
+  /// `media_links` 的系列关系 → 种类；不是系列关系返回 null。
+  static WorkSeriesKind? ofRelation(MediaLinkRelation relation) =>
+      switch (relation) {
+        MediaLinkRelation.sequel => WorkSeriesKind.sequel,
+        MediaLinkRelation.sideStory => WorkSeriesKind.sideStory,
+        _ => null,
+      };
+}
+
+/// 系列边的显示名（续作 / 外传 / 剧场版 / 衍生 / 相关）。
+String workSeriesKindLabel(WorkSeriesKind kind) => switch (kind) {
+  WorkSeriesKind.sequel => t.media_link_relation_sequel,
+  WorkSeriesKind.sideStory => t.media_link_relation_side_story,
+  WorkSeriesKind.movie => t.media_link_series_movie,
+  WorkSeriesKind.spinOff => t.media_link_series_spin_off,
+  WorkSeriesKind.other => t.media_link_series_related,
+};
+
+/// 关系网系列栏最多画几个节点（超大系列——哆啦A梦几十部剧场版——不把画布撑爆）；
+/// 超出的折成一个「另有 N 部」节点。
+const int kWorkNetworkSeriesNodeLimit = 24;
+
+/// 系列栏「另有 N 部」节点的 id。
+const String kWorkNetworkSeriesMoreId = 'series-more';
+
+/// 未入库的相关作品（纯刮削的 `collection_relations` 行）。
+final class WorkNetworkWebItem {
+  const WorkNetworkWebItem({
+    required this.source,
+    required this.subjectId,
+    required this.title,
+    this.coverPath,
+  });
+
+  /// 刮削源（`anidb` / `mal` / `tmdb` / 历史 `bangumi`）。
+  final String source;
+  final String subjectId;
+  final String title;
+
+  /// 本机已下载的封面（有才显示；不为画节点去拉远程封面）。
+  final String? coverPath;
+}
+
 /// 关系网的一个（折叠后的）节点。
 final class WorkNetworkNodeSpec {
   WorkNetworkNodeSpec({
@@ -258,14 +357,25 @@ final class WorkNetworkNodeSpec {
     required this.group,
     required this.role,
     this.series,
+    this.web,
+    this.moreCount = 0,
   });
 
-  /// 稳定 id：`series-<合集 id>` 或 `<种类>-<键>`。
+  /// 稳定 id：`series-<合集 id>`、`<种类>-<键>`、未入库的 `web-<源>-<id>`、
+  /// 或 [kWorkNetworkSeriesMoreId]。
   final String id;
-  final MediaLinkEndpoint target;
+
+  /// 本机条目（未入库节点与「另有 N 部」为 null）。
+  final MediaLinkEndpoint? target;
   final WorkMediaGroup group;
   WorkNetworkRole role;
   final WorkSeriesInfo? series;
+
+  /// 未入库的相关作品（[target] 为 null 时之一）。
+  final WorkNetworkWebItem? web;
+
+  /// 「另有 N 部」节点的 N（其余节点为 0）。
+  final int moreCount;
   bool original = false;
 
   /// 是不是打开关系网的那个条目（或它所在的合集）。
@@ -279,23 +389,34 @@ final class WorkNetworkEdgeSpec {
     required this.to,
     required this.relation,
     required this.suggested,
+    this.seriesKind,
   });
 
-  /// 节点 id；有方向关系是落库方向（原作 → 改编、音乐 → 视频）。
+  /// 节点 id；有方向关系是落库方向（原作 → 改编、音乐 → 视频、前作 → 续作、
+  /// 本篇 → 外传）。
   final String from;
   final String to;
-  final MediaLinkRelation relation;
+
+  /// `media_links` 关系；只来自 `collection_relations` 的系列边为 null。
+  final MediaLinkRelation? relation;
+
+  /// 系列边的种类（非系列边为 null）。
+  final WorkSeriesKind? seriesKind;
 
   /// 建议态（虚线、可确认 / 否决）。
   final bool suggested;
 
-  /// 折进这条边的落库连接（确认 / 否决作用于它们全部）。
+  /// 折进这条边的落库连接（确认 / 否决作用于它们全部；纯刮削系列边为空）。
   final List<MediaLinkId> ids = <MediaLinkId>[];
 
   /// 其中任一条的来源（AI 生效标识等由页面按行再判）。
   final List<String> sources = <String>[];
 
-  bool get directed => relation.directed;
+  bool get directed => seriesKind?.directed ?? relation!.directed;
+
+  /// 标签 / widget key 用的关系名（系列边 `series_<种类>`）。
+  String get relationKey =>
+      seriesKind != null ? 'series_${seriesKind!.name}' : relation!.dbValue;
 }
 
 /// 关系网页要画的内容。
@@ -310,7 +431,13 @@ final class WorkNetworkPlan {
 }
 
 /// 算 [endpoint] 所在作品的关系网（含建议态）。[endpoint] 不在图里时只有它自己
-/// 一个节点（空态）。
+/// 一个节点（空态），除非它有系列关系。
+///
+/// 系列栏（[WorkNetworkRole.series]）：从作品成员出发，沿 `media_links` 的续作 /
+/// 外传连接与各视频合集的 `collection_relations` 展开——已绑定 / 本机条目继续往外
+/// 展开（1 期 → 2 期 → 3 期 → 剧场版整条画全），未入库的相关作品画成节点但不再
+/// 展开；新节点超过 [kWorkNetworkSeriesNodeLimit] 折成「另有 N 部」。系列边不改变
+/// 作品划分（1 期与 2 期仍是两部作品），已在成员 / 卫星里的节点不重复画。
 WorkNetworkPlan planWorkNetwork(
   WorkGraphSnapshot snapshot,
   MediaLinkEndpoint endpoint,
@@ -322,21 +449,25 @@ WorkNetworkPlan planWorkNetwork(
   final WorkSeriesInfo? ownSeries = snapshot.seriesOf(endpoint);
   final Map<String, WorkNetworkNodeSpec> nodes =
       <String, WorkNetworkNodeSpec>{};
-  final Map<MediaLinkEndpoint, String> idOf = <MediaLinkEndpoint, String>{};
 
   int roleRank(WorkNetworkRole r) => switch (r) {
-    WorkNetworkRole.member => 2,
-    WorkNetworkRole.satellite => 1,
+    WorkNetworkRole.member => 3,
+    WorkNetworkRole.satellite => 2,
+    WorkNetworkRole.series => 1,
     WorkNetworkRole.suggested => 0,
   };
 
-  void addNode(MediaLinkEndpoint e, WorkNetworkRole role) {
+  String nodeIdOf(MediaLinkEndpoint e) {
     final WorkSeriesInfo? series = snapshot.seriesOf(e);
-    final MediaLinkEndpoint target = series?.openTarget ?? e;
-    final String id = series != null
+    return series != null
         ? 'series-${series.id}'
         : '${e.kind.dbValue}-${e.key}';
-    idOf[e] = id;
+  }
+
+  String addNode(MediaLinkEndpoint e, WorkNetworkRole role) {
+    final WorkSeriesInfo? series = snapshot.seriesOf(e);
+    final MediaLinkEndpoint target = series?.openTarget ?? e;
+    final String id = nodeIdOf(e);
     final WorkNetworkNodeSpec node = nodes.putIfAbsent(
       id,
       () => WorkNetworkNodeSpec(
@@ -352,44 +483,56 @@ WorkNetworkPlan planWorkNetwork(
       node.isSelf = true;
     }
     if (network?.work.original == e) node.original = true;
-  }
-
-  if (network == null) {
-    addNode(endpoint, WorkNetworkRole.member);
-    return WorkNetworkPlan(
-      nodes: nodes.values.toList(),
-      edges: const <WorkNetworkEdgeSpec>[],
-    );
-  }
-  for (final WorkNetworkNode n in network.nodes) {
-    addNode(n.endpoint, n.role);
+    return id;
   }
 
   final Map<String, WorkNetworkEdgeSpec> edges =
       <String, WorkNetworkEdgeSpec>{};
-  for (final WorkNetworkEdge e in network.edges) {
-    String from = idOf[e.from]!;
-    String to = idOf[e.to]!;
-    if (from == to) continue; // 同一合集的两卷之间
-    if (!e.directed && from.compareTo(to) > 0) {
-      final String swap = from;
-      from = to;
-      to = swap;
+
+  if (network == null) {
+    addNode(endpoint, WorkNetworkRole.member);
+  } else {
+    for (final WorkNetworkNode n in network.nodes) {
+      addNode(n.endpoint, n.role);
     }
-    final bool suggested = !e.effective;
-    final String key = '$from|${e.relation.dbValue}|$to|$suggested';
-    final WorkNetworkEdgeSpec spec = edges.putIfAbsent(
-      key,
-      () => WorkNetworkEdgeSpec(
-        from: from,
-        to: to,
-        relation: e.relation,
-        suggested: suggested,
-      ),
-    );
-    spec.ids.add(mediaLinkIdFor(e.relation, e.from, e.to));
-    spec.sources.add(e.source);
+    for (final WorkNetworkEdge e in network.edges) {
+      String from = nodeIdOf(e.from);
+      String to = nodeIdOf(e.to);
+      if (from == to) continue; // 同一合集的两卷之间
+      if (!e.directed && from.compareTo(to) > 0) {
+        final String swap = from;
+        from = to;
+        to = swap;
+      }
+      final bool suggested = !e.effective;
+      final WorkSeriesKind? kind = WorkSeriesKind.ofRelation(e.relation);
+      final String key = kind != null
+          ? '$from|series_${kind.name}|$to|$suggested'
+          : '$from|${e.relation.dbValue}|$to|$suggested';
+      final WorkNetworkEdgeSpec spec = edges.putIfAbsent(
+        key,
+        () => WorkNetworkEdgeSpec(
+          from: from,
+          to: to,
+          relation: e.relation,
+          seriesKind: kind,
+          suggested: suggested,
+        ),
+      );
+      spec.ids.add(mediaLinkIdFor(e.relation, e.from, e.to));
+      spec.sources.add(e.source);
+    }
   }
+
+  _addSeriesSection(
+    snapshot: snapshot,
+    seeds: network?.work.members ?? <MediaLinkEndpoint>[endpoint],
+    nodes: nodes,
+    edges: edges,
+    nodeIdOf: nodeIdOf,
+    addLocalNode: (MediaLinkEndpoint e) => addNode(e, WorkNetworkRole.series),
+  );
+
   final List<String> edgeKeys = edges.keys.toList()..sort();
   final List<WorkNetworkNodeSpec> nodeList = nodes.values.toList()
     ..sort(
@@ -400,3 +543,173 @@ WorkNetworkPlan planWorkNetwork(
     edges: <WorkNetworkEdgeSpec>[for (final String k in edgeKeys) edges[k]!],
   );
 }
+
+/// 一条待画的系列边（节点 id 已定）。
+typedef _SeriesEdge = ({
+  String from,
+  String to,
+  WorkSeriesKind kind,
+  bool suggested,
+  MediaLinkId? id,
+  String source,
+});
+
+/// 系列栏：BFS 沿系列关系展开（见 [planWorkNetwork] 文档）。
+void _addSeriesSection({
+  required WorkGraphSnapshot snapshot,
+  required List<MediaLinkEndpoint> seeds,
+  required Map<String, WorkNetworkNodeSpec> nodes,
+  required Map<String, WorkNetworkEdgeSpec> edges,
+  required String Function(MediaLinkEndpoint e) nodeIdOf,
+  required String Function(MediaLinkEndpoint e) addLocalNode,
+}) {
+  final Set<MediaLinkEndpoint> expanded = <MediaLinkEndpoint>{};
+  final List<MediaLinkEndpoint> queue = <MediaLinkEndpoint>[
+    ...(seeds.toList()..sort(compareMediaLinkEndpoints)),
+  ];
+  final Set<String> overflow = <String>{};
+  final List<_SeriesEdge> found = <_SeriesEdge>[];
+  int added = 0;
+
+  /// 节点已在 / 还放得下就返回 true（放得下的顺手建出来）。
+  bool admit(String id, void Function() create) {
+    if (nodes.containsKey(id)) return true;
+    if (added >= kWorkNetworkSeriesNodeLimit) {
+      overflow.add(id);
+      return false;
+    }
+    create();
+    added++;
+    return true;
+  }
+
+  void visitLocal(MediaLinkEndpoint e, {required bool expand}) {
+    if (!expand || !expanded.add(e)) return;
+    queue.add(e);
+  }
+
+  while (queue.isNotEmpty) {
+    final MediaLinkEndpoint e = queue.removeAt(0);
+    expanded.add(e);
+    // 同一节点折进来的端点（系列合集的各卷 / 合集端点）一起展开。
+    final WorkSeriesInfo? info = snapshot.seriesOf(e);
+    final List<MediaLinkEndpoint> covers = <MediaLinkEndpoint>[
+      e,
+      if (info != null) ...<MediaLinkEndpoint>[?info.endpoint, ...info.members],
+    ];
+    final String self = nodeIdOf(e);
+    for (final MediaLinkEndpoint c in covers) {
+      if (c != e && !expanded.add(c)) continue;
+      for (final WorkSeriesLink l in snapshot.graph.seriesLinksOf(c)) {
+        final MediaLinkEndpoint other = l.from == c ? l.to : l.from;
+        final String otherId = nodeIdOf(other);
+        if (otherId == self) continue;
+        if (!admit(otherId, () => addLocalNode(other))) continue;
+        final bool effective = l.status == WorkLinkStatus.effective;
+        found.add((
+          from: nodeIdOf(l.from),
+          to: nodeIdOf(l.to),
+          kind: WorkSeriesKind.ofRelation(l.relation)!,
+          suggested: !effective,
+          id: mediaLinkIdFor(l.relation, l.from, l.to),
+          source: l.source,
+        ));
+        visitLocal(other, expand: effective);
+      }
+      if (c.kind != MediaLinkKind.videoCollection) continue;
+      final int? collectionId = int.tryParse(c.key);
+      if (collectionId == null) continue;
+      for (final CollectionRelationRow r in snapshot.collectionRelationsOf(
+        collectionId,
+      )) {
+        final int? targetId = r.targetCollectionId;
+        final String otherId;
+        if (targetId != null) {
+          final MediaLinkEndpoint other = videoCollectionEndpoint(targetId);
+          otherId = nodeIdOf(other);
+          if (otherId == self) continue;
+          if (!admit(otherId, () => addLocalNode(other))) continue;
+          visitLocal(other, expand: true);
+        } else {
+          otherId = 'web-${r.source}-${r.subjectId}';
+          if (!admit(
+            otherId,
+            () => nodes[otherId] = WorkNetworkNodeSpec(
+              id: otherId,
+              target: null,
+              group: WorkMediaGroup.anime,
+              role: WorkNetworkRole.series,
+              web: WorkNetworkWebItem(
+                source: r.source,
+                subjectId: r.subjectId,
+                title: r.title,
+                coverPath: r.coverPath,
+              ),
+            ),
+          )) {
+            continue;
+          }
+        }
+        final bool prequel = r.relationType == 'prequel';
+        found.add((
+          from: prequel ? otherId : self,
+          to: prequel ? self : otherId,
+          kind: WorkSeriesKind.fromCollectionRelationWire(r.relationType),
+          suggested: false,
+          id: null,
+          source: r.source,
+        ));
+      }
+    }
+  }
+
+  if (overflow.isNotEmpty) {
+    nodes[kWorkNetworkSeriesMoreId] = WorkNetworkNodeSpec(
+      id: kWorkNetworkSeriesMoreId,
+      target: null,
+      group: WorkMediaGroup.anime,
+      role: WorkNetworkRole.series,
+      moreCount: overflow.length,
+    );
+  }
+
+  // 同一对节点有具体关系（续作 / 外传 / 剧场版 / 衍生）时，「相关」那条不画
+  // （AniDB 一边写 Side Story、另一边写 Parent Story → other）。
+  final Set<String> specificPairs = <String>{
+    for (final _SeriesEdge s in found)
+      if (s.kind != WorkSeriesKind.other) _pairKey(s.from, s.to),
+  };
+  for (final _SeriesEdge s in found) {
+    if (s.from == s.to) continue;
+    if (s.kind == WorkSeriesKind.other &&
+        specificPairs.contains(_pairKey(s.from, s.to))) {
+      continue;
+    }
+    String from = s.from;
+    String to = s.to;
+    if (!s.kind.directed && from.compareTo(to) > 0) {
+      final String swap = from;
+      from = to;
+      to = swap;
+    }
+    final String key = '$from|series_${s.kind.name}|$to|${s.suggested}';
+    final WorkNetworkEdgeSpec spec = edges.putIfAbsent(
+      key,
+      () => WorkNetworkEdgeSpec(
+        from: from,
+        to: to,
+        relation: s.id == null
+            ? null
+            : MediaLinkRelation.tryParse(s.id!.relation),
+        seriesKind: s.kind,
+        suggested: s.suggested,
+      ),
+    );
+    if (s.id case final MediaLinkId id when !spec.ids.contains(id)) {
+      spec.ids.add(id);
+      spec.sources.add(s.source);
+    }
+  }
+}
+
+String _pairKey(String a, String b) => a.compareTo(b) <= 0 ? '$a|$b' : '$b|$a';
