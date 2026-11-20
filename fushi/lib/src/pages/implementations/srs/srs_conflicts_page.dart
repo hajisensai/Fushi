@@ -165,12 +165,20 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
   /// 读失败（复习库打开失败原样抛出、或读的途中出错）：页面显示错误态 + 重试，不停在转圈、不变成未处理异常。
   Object? _loadError;
 
+  /// 有一次处理（写库）在跑：所有处理按钮禁用，不会对同一条冲突再排一次写（d6njR3G6zE：处理慢时连点
+  /// 「保留」，后排的那几次写到已解决的冲突上，内核报 no such conflict）。
+  bool _acting = false;
+
+  /// 读的代次：只有最新一次 [_reload] 的结果落到页面上，先发后到的旧读不会把已处理掉的条目画回来。
+  int _loadGen = 0;
+
   Future<void> _reload() async {
+    final int gen = ++_loadGen;
     try {
-      await _load();
+      await _load(gen);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsConflictsPage.reload', e, stack);
-      if (mounted) {
+      if (mounted && gen == _loadGen) {
         setState(() {
           _loadError = e;
           _loading = false;
@@ -189,11 +197,11 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
     unawaited(_reload());
   }
 
-  Future<void> _load() async {
+  Future<void> _load(int gen) async {
     final SrsDbStore? store = await readSrsStore(ref);
     if (store == null) {
       // 这里没有复习库（模块关着 / 存储此刻不可用）：说明原因，不停在转圈。
-      if (mounted) {
+      if (mounted && gen == _loadGen) {
         setState(() {
           _loadError = t.module_disabled_hint;
           _loading = false;
@@ -281,7 +289,7 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
         .duplicateNoteGroups();
     final SrsDeviceDirectory devices = await srsLoadDeviceDirectory(store);
     final List<SrsDeviceView> untrusted = srsUntrustedDevices(devices.all);
-    if (!mounted) return;
+    if (!mounted || gen != _loadGen) return;
     setState(() {
       _devices = devices;
       _untrusted = untrusted;
@@ -356,10 +364,35 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
     }
   }
 
+  /// 跑一次处理（写库）：同一时刻只跑一次，跑的期间所有处理按钮禁用；跑完（成功或失败）都重读整页。
+  ///
+  /// [body] 返回是否动过库（确认框里取消返回 false，不必重读）。失败也要重读（d6njR3G6zE）：以前写失败
+  /// 就停在原处、不重读，列表里那条已经不存在的冲突（别处已处理、同步过来，或前一次点击已处理）一直留着，
+  /// 每点一次「保留」都再报一次 no such conflict，用户只能看到点了没反应。批量处理可能写了一半才失败，
+  /// 所以抛错时按「动过库」处理。错误本身照常交给 [srsRunLogged] 记录，不吞。
+  void _act(String where, Future<bool> Function() body) {
+    if (_acting) return;
+    setState(() => _acting = true);
+    srsRunLogged(where, () async {
+      bool changed = true;
+      try {
+        changed = await body();
+      } finally {
+        if (mounted) {
+          setState(() => _acting = false);
+          if (changed) {
+            bumpSrsRevision(ref);
+            unawaited(_reload());
+          }
+        }
+      }
+    });
+  }
+
   /// 信任（确认框说明扣着的会立即生效）/ 拒绝一台待确认的设备。
-  Future<void> _trustDevice(SrsDeviceView d, {required bool trust}) async {
+  Future<bool> _trustDevice(SrsDeviceView d, {required bool trust}) async {
     final SrsDbStore? store = await readSrsStore(ref);
-    if (store == null || !mounted) return;
+    if (store == null || !mounted) return false;
     final String name = _who(d.id);
     if (trust) {
       final bool ok = await showFushiConfirmDialog(
@@ -370,7 +403,7 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
         icon: FushiIcons.verified,
         destructive: d.heldPurges > 0,
       );
-      if (!ok) return;
+      if (!ok) return false;
     }
     await srsSetDeviceTrust(store, d.id, trust: trust);
     FushiToast.show(
@@ -379,14 +412,36 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
           : t.srs_trust_rejected_toast(device: name),
       severity: ToastSeverity.success,
     );
-    if (!mounted) return;
-    bumpSrsRevision(ref);
-    await _reload();
+    return true;
   }
 
-  Future<void> _resolveHeld(_HeldDelete c, {required bool delete}) async {
+  /// 处理完的条目先从页面上拿掉（不等整页重读：重读要把每条冲突的笔记 / 卡片都读一遍，条目多时很慢），
+  /// 重读回来再以库里为准。
+  void _dropResolved({
+    Set<String> held = const <String>{},
+    Set<_Conflict> conflicts = const <_Conflict>{},
+    Set<SrsDuplicateGroup> duplicates = const <SrsDuplicateGroup>{},
+  }) {
+    if (!mounted) return;
+    setState(() {
+      _held = <_HeldDelete>[
+        for (final _HeldDelete h in _held)
+          if (!held.contains(h.id)) h,
+      ];
+      _conflicts = <_Conflict>[
+        for (final _Conflict c in _conflicts)
+          if (!conflicts.contains(c)) c,
+      ];
+      _duplicates = <SrsDuplicateGroup>[
+        for (final SrsDuplicateGroup g in _duplicates)
+          if (!duplicates.contains(g)) g,
+      ];
+    });
+  }
+
+  Future<bool> _resolveHeld(_HeldDelete c, {required bool delete}) async {
     final SrsDbStore? store = await readSrsStore(ref);
-    if (store == null) return;
+    if (store == null) return false;
     final String group = _heldGroup(c);
     final List<_HeldDelete> targets = _applySame.contains(group)
         ? _held.where((_HeldDelete h) => _heldGroup(h) == group).toList()
@@ -396,14 +451,13 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
     }
     _applySame.remove(group);
     _toastMany(targets.length);
-    if (!mounted) return;
-    bumpSrsRevision(ref);
-    await _reload();
+    _dropResolved(held: <String>{for (final _HeldDelete h in targets) h.id});
+    return true;
   }
 
-  Future<void> _mergeDuplicates(SrsDuplicateGroup g, String keepId) async {
+  Future<bool> _mergeDuplicates(SrsDuplicateGroup g, String keepId) async {
     final SrsDbStore? store = await readSrsStore(ref);
-    if (store == null) return;
+    if (store == null) return false;
     final SrsMergeReport r = await store.mergeNotes(
       keepId: keepId,
       absorbIds: <String>[
@@ -415,23 +469,21 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
       msg: t.srs_duplicates_merged(n: r.linkedCards),
       severity: ToastSeverity.success,
     );
-    if (!mounted) return;
-    bumpSrsRevision(ref);
-    await _reload();
+    _dropResolved(duplicates: <SrsDuplicateGroup>{g});
+    return true;
   }
 
-  Future<void> _dismissDuplicates(SrsDuplicateGroup g) async {
+  Future<bool> _dismissDuplicates(SrsDuplicateGroup g) async {
     final SrsDbStore? store = await readSrsStore(ref);
-    if (store == null) return;
+    if (store == null) return false;
     await store.dismissDuplicates(g.noteIds);
-    if (!mounted) return;
-    bumpSrsRevision(ref);
-    await _reload();
+    _dropResolved(duplicates: <SrsDuplicateGroup>{g});
+    return true;
   }
 
-  Future<void> _resolve(_Conflict c, {required bool revert}) async {
+  Future<bool> _resolve(_Conflict c, {required bool revert}) async {
     final SrsDbStore? store = await readSrsStore(ref);
-    if (store == null) return;
+    if (store == null) return false;
     final List<_Conflict> targets = _applySame.contains(c.group)
         ? _conflicts.where((_Conflict x) => x.group == c.group).toList()
         : <_Conflict>[c];
@@ -445,17 +497,16 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
     }
     _applySame.remove(c.group);
     _toastMany(targets.length);
-    if (!mounted) return;
-    bumpSrsRevision(ref);
-    await _reload();
+    _dropResolved(conflicts: targets.toSet());
+    return true;
   }
 
   /// 批量处理：每一节一次按同一个选择处理全部条目（#IBjxAjty39）。只覆盖有明确选项、
   /// 不需要看内容的三节——被替换的设置、扣住的删除、可能重复的笔记；待确认的设备
   /// （信任是安全决定）和等你决定的笔记（要在编辑页看字段内容）仍逐条处理。
-  Future<void> _bulkResolve(_BulkAction action) async {
+  Future<bool> _bulkResolve(_BulkAction action) async {
     final SrsDbStore? store = await readSrsStore(ref);
-    if (store == null) return;
+    if (store == null) return false;
     final List<_Conflict> conflicts = _conflicts;
     final List<_HeldDelete> held = _held;
     final List<SrsDuplicateGroup> duplicates = _duplicates;
@@ -475,6 +526,7 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
           done++;
         }
         _applySame.removeWhere((String g) => !g.startsWith('held/'));
+        _dropResolved(conflicts: conflicts.toSet());
       case _BulkAction.heldKeep:
       case _BulkAction.heldDelete:
         for (final _HeldDelete h in held) {
@@ -485,6 +537,7 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
           done++;
         }
         _applySame.removeWhere((String g) => g.startsWith('held/'));
+        _dropResolved(held: <String>{for (final _HeldDelete h in held) h.id});
       case _BulkAction.duplicatesMerge:
         // 每组保留排在最前的那条（复习最多的，平手取先创建的；srs_duplicate_notes.dart）。
         for (final SrsDuplicateGroup g in duplicates) {
@@ -494,23 +547,23 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
           );
           done++;
         }
+        _dropResolved(duplicates: duplicates.toSet());
       case _BulkAction.duplicatesDismiss:
         for (final SrsDuplicateGroup g in duplicates) {
           await store.dismissDuplicates(g.noteIds);
           done++;
         }
+        _dropResolved(duplicates: duplicates.toSet());
     }
     FushiToast.show(
       msg: t.srs_conflict_resolved_many(n: done),
       severity: ToastSeverity.success,
     );
-    if (!mounted) return;
-    bumpSrsRevision(ref);
-    await _reload();
+    return true;
   }
 
   /// 「批量处理」：列出当前有条目的几节各自的批量选项；删除 / 合并这两种不好撤回的再确认一次。
-  Future<void> _openBulk() async {
+  Future<bool> _openBulk() async {
     final List<FushiChoiceOption<_BulkAction>>
     options = <FushiChoiceOption<_BulkAction>>[
       if (_conflicts.isNotEmpty) ...<FushiChoiceOption<_BulkAction>>[
@@ -552,7 +605,7 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
         ),
       ],
     ];
-    if (options.isEmpty) return;
+    if (options.isEmpty) return false;
     final _BulkAction? action = await showFushiChoiceDialog<_BulkAction>(
       context: context,
       title: t.srs_conflicts_bulk,
@@ -560,7 +613,7 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
       icon: FushiIcons.checklist,
       options: options,
     );
-    if (action == null || !mounted) return;
+    if (action == null || !mounted) return false;
     if (action.irreversible) {
       final String label = options
           .firstWhere((FushiChoiceOption<_BulkAction> o) => o.value == action)
@@ -574,9 +627,9 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
             : FushiIcons.checklist,
         destructive: action == _BulkAction.heldDelete,
       );
-      if (!ok || !mounted) return;
+      if (!ok || !mounted) return false;
     }
-    await _bulkResolve(action);
+    return _bulkResolve(action);
   }
 
   int _bulkCount(_BulkAction action) => switch (action) {
@@ -602,7 +655,9 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
           key: const ValueKey<String>('srs_conflicts_bulk'),
           icon: FushiIcons.checklist,
           label: t.srs_conflicts_bulk,
-          onPressed: () => srsRunLogged('SrsConflicts.bulk', _openBulk),
+          onPressed: _acting
+              ? null
+              : () => _act('SrsConflicts.bulk', _openBulk),
         );
 
   @override
@@ -692,12 +747,14 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
             key: ValueKey<String>('srs-trust-${d.id}'),
             device: d,
             who: _who,
-            onTrust: () => srsRunLogged(
-              'SrsConflicts.trustDevice',
-              () => _trustDevice(d, trust: true),
-            ),
-            onReject: d.needsTrust
-                ? () => srsRunLogged(
+            onTrust: _acting
+                ? null
+                : () => _act(
+                    'SrsConflicts.trustDevice',
+                    () => _trustDevice(d, trust: true),
+                  ),
+            onReject: d.needsTrust && !_acting
+                ? () => _act(
                     'SrsConflicts.rejectDevice',
                     () => _trustDevice(d, trust: false),
                   )
@@ -714,14 +771,18 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
             sameCount: _sameCount(_heldGroup(c)),
             applySame: _applySame.contains(_heldGroup(c)),
             onApplySameChanged: (bool on) => _toggleSame(_heldGroup(c), on),
-            onDelete: () => srsRunLogged(
-              'SrsConflicts.applyDelete',
-              () => _resolveHeld(c, delete: true),
-            ),
-            onKeep: () => srsRunLogged(
-              'SrsConflicts.keep',
-              () => _resolveHeld(c, delete: false),
-            ),
+            onDelete: _acting
+                ? null
+                : () => _act(
+                    'SrsConflicts.applyDelete',
+                    () => _resolveHeld(c, delete: true),
+                  ),
+            onKeep: _acting
+                ? null
+                : () => _act(
+                    'SrsConflicts.keep',
+                    () => _resolveHeld(c, delete: false),
+                  ),
           ),
       ],
       if (_duplicates.isNotEmpty) ...<Widget>[
@@ -730,14 +791,18 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
           _DuplicateCard(
             key: ValueKey<String>('srs-dup-${g.noteIds.join('-')}'),
             group: g,
-            onMerge: (String keepId) => srsRunLogged(
-              'SrsConflicts.merge',
-              () => _mergeDuplicates(g, keepId),
-            ),
-            onDismiss: () => srsRunLogged(
-              'SrsConflicts.notDuplicate',
-              () => _dismissDuplicates(g),
-            ),
+            onMerge: _acting
+                ? null
+                : (String keepId) => _act(
+                    'SrsConflicts.merge',
+                    () => _mergeDuplicates(g, keepId),
+                  ),
+            onDismiss: _acting
+                ? null
+                : () => _act(
+                    'SrsConflicts.notDuplicate',
+                    () => _dismissDuplicates(g),
+                  ),
           ),
       ],
       if (_pending.isNotEmpty) ...<Widget>[
@@ -780,14 +845,18 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
             sameCount: _sameCount(c.group),
             applySame: _applySame.contains(c.group),
             onApplySameChanged: (bool on) => _toggleSame(c.group, on),
-            onRevert: () => srsRunLogged(
-              'SrsConflicts.revert',
-              () => _resolve(c, revert: true),
-            ),
-            onConfirm: () => srsRunLogged(
-              'SrsConflicts.confirm',
-              () => _resolve(c, revert: false),
-            ),
+            onRevert: _acting
+                ? null
+                : () => _act(
+                    'SrsConflicts.revert',
+                    () => _resolve(c, revert: true),
+                  ),
+            onConfirm: _acting
+                ? null
+                : () => _act(
+                    'SrsConflicts.confirm',
+                    () => _resolve(c, revert: false),
+                  ),
           ),
       ],
     ];
@@ -826,8 +895,10 @@ class _DuplicateCard extends StatefulWidget {
   });
 
   final SrsDuplicateGroup group;
-  final void Function(String keepId) onMerge;
-  final VoidCallback onDismiss;
+
+  /// 页面正在处理别的条目时为 null（按钮禁用）。
+  final void Function(String keepId)? onMerge;
+  final VoidCallback? onDismiss;
 
   @override
   State<_DuplicateCard> createState() => _DuplicateCardState();
@@ -889,7 +960,9 @@ class _DuplicateCardState extends State<_DuplicateCard> {
               ),
               FushiFilledButton.tonalIcon(
                 key: const ValueKey<String>('srs-dup-merge'),
-                onPressed: () => widget.onMerge(_keep),
+                onPressed: widget.onMerge == null
+                    ? null
+                    : () => widget.onMerge!(_keep),
                 icon: const FushiIcon(FushiIcons.check),
                 label: Text(t.srs_duplicates_merge),
               ),
@@ -1030,7 +1103,9 @@ class _TrustCard extends StatelessWidget {
 
   final SrsDeviceView device;
   final String Function(String writerId) who;
-  final VoidCallback onTrust;
+
+  /// 页面正在处理别的条目时为 null（按钮禁用）。
+  final VoidCallback? onTrust;
 
   /// 已拒绝的设备为 null（只能改为信任）。
   final VoidCallback? onReject;
@@ -1131,8 +1206,10 @@ class _HeldDeleteCard extends StatelessWidget {
   final int sameCount;
   final bool applySame;
   final ValueChanged<bool> onApplySameChanged;
-  final VoidCallback onDelete;
-  final VoidCallback onKeep;
+
+  /// 页面正在处理别的条目时为 null（按钮禁用）。
+  final VoidCallback? onDelete;
+  final VoidCallback? onKeep;
 
   @override
   Widget build(BuildContext context) {
@@ -1217,8 +1294,10 @@ class _ConflictCard extends StatelessWidget {
   final int sameCount;
   final bool applySame;
   final ValueChanged<bool> onApplySameChanged;
-  final VoidCallback onRevert;
-  final VoidCallback onConfirm;
+
+  /// 页面正在处理别的条目时为 null（按钮禁用）。
+  final VoidCallback? onRevert;
+  final VoidCallback? onConfirm;
 
   @override
   Widget build(BuildContext context) {
@@ -1239,7 +1318,7 @@ class _ConflictCard extends StatelessWidget {
       required bool primary,
       required IconData icon,
       required String label,
-      required VoidCallback onPressed,
+      required VoidCallback? onPressed,
     }) => FushiPressScale(
       child: primary
           ? FushiFilledButton.tonalIcon(
