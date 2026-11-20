@@ -157,6 +157,139 @@ void main() {
       await expectLater(fitter.fit('x', 640, load), throwsStateError);
       expect((await fitter.fit('x', 640, load))!.length, 3);
     });
+
+    test(
+      'pages that need no shrink skip the queue and never start a transcode',
+      () async {
+        // manga-6：原图已经够小的页（头里读得出来）不该排在别的页整张转码后面，
+        // 更不该为了得出「给原图」再起一次 isolate。
+        final List<Completer<void>> gates = <Completer<void>>[];
+        final List<int> transcoded = <int>[];
+        final MangaPageFitter fitter = MangaPageFitter(
+          planner: (Uint8List bytes, int width) => bytes.first == 1,
+          transcoder: (Uint8List bytes, int width) async {
+            transcoded.add(bytes.first);
+            final Completer<void> gate = Completer<void>();
+            gates.add(gate);
+            await gate.future;
+            return Uint8List(7);
+          },
+        );
+        int smallLoads = 0;
+        final Future<Uint8List?> big = fitter.fit(
+          'big',
+          1280,
+          () async => Uint8List.fromList(<int>[1]),
+        );
+        for (int i = 0; i < 20 && gates.isEmpty; i++) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        expect(gates, hasLength(1), reason: '大页正在转码，队列被占着');
+        final Uint8List? small = await fitter
+            .fit('small', 1280, () async {
+              smallLoads++;
+              return Uint8List.fromList(<int>[0]);
+            })
+            .timeout(const Duration(seconds: 2));
+        expect(small, isNull, reason: '不需要缩的页当场给原图，不等大页转完');
+        expect(transcoded, <int>[1], reason: '不需要缩的页不进转码段');
+        expect(
+          await fitter.fit('small', 1280, () async {
+            smallLoads++;
+            return Uint8List.fromList(<int>[0]);
+          }),
+          isNull,
+        );
+        expect(smallLoads, 1, reason: '「给原图」的结论照样缓存');
+        gates.single.complete();
+        expect((await big)!.length, 7);
+      },
+    );
+
+    test(
+      'the on-screen page jumps the transcode queue; nothing is dropped',
+      () async {
+        // manga-6：WebView 先请求的是 ±2 的预热邻页时，当前跨页不能排在它们后面
+        // 等几张 4K 整张转码；但排着的邻页也不能丢（WebView 在等响应）。
+        final List<String> order = <String>[];
+        final List<Completer<void>> gates = <Completer<void>>[];
+        final MangaPageFitter fitter = MangaPageFitter(
+          planner: (Uint8List bytes, int width) => true,
+          transcoder: (Uint8List bytes, int width) async {
+            order.add(String.fromCharCode(bytes.first));
+            final Completer<void> gate = Completer<void>();
+            gates.add(gate);
+            await gate.future;
+            return Uint8List(5);
+          },
+        );
+        Future<Uint8List> load(String name) async =>
+            Uint8List.fromList(<int>[name.codeUnitAt(0)]);
+        int onScreen = -1;
+        Future<Uint8List?> request(String name, int pageIndex) => fitter.fit(
+          name,
+          1280,
+          () => load(name),
+          urgent: () => onScreen == pageIndex,
+        );
+
+        Future<void> settle(int gateCount) async {
+          for (int i = 0; i < 50 && gates.length < gateCount; i++) {
+            await Future<void>.delayed(Duration.zero);
+          }
+        }
+
+        final Future<Uint8List?> a = request('a', 0);
+        final Future<Uint8List?> b = request('b', 1);
+        final Future<Uint8List?> c = request('c', 2);
+        final Future<Uint8List?> d = request('d', 3);
+        await settle(1);
+        for (int i = 0; i < 10; i++) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        // 排队期间读者翻到了 d：出队那一刻才判优先级。
+        onScreen = 3;
+        gates[0].complete();
+        await settle(2);
+        expect(order, <String>['a', 'd']);
+        gates[1].complete();
+        await settle(3);
+        gates[2].complete();
+        await settle(4);
+        gates[3].complete();
+        await Future.wait(<Future<Uint8List?>>[a, b, c, d]);
+        expect(order, <String>['a', 'd', 'b', 'c']);
+      },
+    );
+
+    test('dispose settles queued pages without transcoding them', () async {
+      final List<Completer<void>> gates = <Completer<void>>[];
+      int transcodes = 0;
+      final MangaPageFitter fitter = MangaPageFitter(
+        planner: (Uint8List bytes, int width) => true,
+        transcoder: (Uint8List bytes, int width) async {
+          transcodes++;
+          final Completer<void> gate = Completer<void>();
+          gates.add(gate);
+          await gate.future;
+          return Uint8List(5);
+        },
+      );
+      Future<Uint8List> load() async => Uint8List(1);
+      final Future<Uint8List?> running = fitter.fit('a', 1280, load);
+      final Future<Uint8List?> queued = fitter.fit('b', 1280, load);
+      for (int i = 0; i < 20 && gates.isEmpty; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      for (int i = 0; i < 10; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      fitter.dispose();
+      gates.single.complete();
+      expect((await running)!.length, 5);
+      expect(await queued, isNull);
+      expect(transcodes, 1);
+    });
   });
 
   group('document', () {
@@ -215,8 +348,75 @@ void main() {
         dir.deleteSync(recursive: true);
       }
     });
+
+    test('dragging the window edge re-requests only the final tier', () async {
+      // manga-22：resize 一秒几十次，每次都直接换 `fit=` 档的话，已加载的页每跨过
+      // 一个 128 px 档就排一次整张转码；resize 路径只排版，换图走 200 ms 合并。
+      final String document = doc(fit: true);
+      final int from = document.indexOf('  var FIT_IMAGES = ');
+      final int to = document.indexOf('  function _recenterPan(){');
+      expect(from, greaterThan(0));
+      expect(to, greaterThan(from));
+      final String section = document.substring(from, to);
+      final String script = _resizeHarness.replaceFirst('/*SECTION*/', section);
+      final Directory dir = Directory.systemTemp.createTempSync('manga-fit-');
+      try {
+        final File file = File('${dir.path}/verify.js')
+          ..writeAsStringSync(script);
+        final ProcessResult result = await Process.run('node', <String>[
+          file.path,
+        ], runInShell: Platform.isWindows);
+        expect(
+          result.exitCode,
+          0,
+          reason: '${result.stdout}\n${result.stderr}',
+        );
+      } finally {
+        dir.deleteSync(recursive: true);
+      }
+    });
   });
 }
+
+const String _resizeHarness = r'''
+const assert=require('node:assert/strict');
+var ZOOM=1, CURRENT=0, IS_WEBTOON=false, IS_VERTICAL_PAGED=false;
+var ROTATE_WIDE=false, SPREAD_GUTTER=false;
+const listeners={};
+const window={innerWidth:800,innerHeight:1200,devicePixelRatio:2,
+  addEventListener(type,fn){ (listeners[type]=listeners[type]||[]).push(fn); }};
+const timers=[];
+function setTimeout(fn){ timers.push(fn); return timers.length; }
+function clearTimeout(id){ if (id) timers[id-1]=null; }
+function flushTimers(){ timers.splice(0).forEach(function(fn){ if (fn) fn(); }); }
+function getComputedStyle(){ return {marginBottom:'0px'}; }
+function _applyWidePolicy(){}
+function _bridge(){ return null; }
+const img={a:{'data-src':'https://manga.local/img/p0.jpg?s=ab&v=1'},sets:0,
+  complete:false,naturalWidth:0,
+  getAttribute(k){ return k in this.a ? this.a[k] : null; },
+  setAttribute(k,v){ this.a[k]=String(v); this.sets++; }};
+const source={style:{}};
+const page={dataset:{pw:'3840',ph:'5400',spreadPages:'1'},style:{},
+  previousElementSibling:null,
+  getAttribute(k){ return k==='data-spread' ? '0' : null; },
+  querySelector(sel){ return sel==='img' ? img : source; },
+  getBoundingClientRect(){ return {top:0,bottom:10}; }};
+const document={body:{style:{}},documentElement:{style:{}},
+  querySelectorAll(){ return [page]; }, querySelector(){ return page; }};
+/*SECTION*/
+assert.equal(img.sets,1,'开卷首排版立即取图，不等合并');
+const opened=img.a.src;
+for (let w=800; w<=1400; w+=40) {
+  window.innerWidth=w;
+  listeners.resize.forEach(function(fn){ fn(); });
+}
+assert.equal(img.sets,1,'拖动过程中不换档取图');
+flushTimers();
+assert.equal(img.sets,2,'停手后只按最终尺寸取一次');
+assert.notEqual(img.a.src,opened);
+assert.match(img.a.src,/&fit=\d+$/);
+''';
 
 const String _harness = r'''
 const assert=require('node:assert/strict');
