@@ -314,6 +314,7 @@
 | [BUG-4938](bugs/BUG-4938-reader-top-bar-leading-squeezes-title.md) | ✅ | ✅ | 小说阅读器顶部悬浮栏书名胶囊被左上角前置圆钮挤没 |
 | [BUG-4930](bugs/BUG-4930-lookup-page-back-with-keyboard-clears-query.md) | ✅ | ✅ | 查词页：键盘弹着时点导航栏「收起键盘」把输入和结果清空 |
 | [BUG-4942](bugs/BUG-4942-browser-lookup-advanced-mining-resumes-video.md) | ✅ | ✅ | 内置浏览器查词点「高级制卡」后视频自动续播、字段预填缺例句 |
+| [BUG-4940](bugs/BUG-4940-popup-engine-bindings-tts-fallback.md) | ✅ | ✅ | 安卓 app 外查词 / 悬浮字幕查词的在线 TTS 兜底发音（Edge / Google 翻译）永远失败：弹窗进程没装引擎宿主装配 |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
 | [BUG-4903](bugs/BUG-4903-home-desktop-continue-cut-edge-title-concat.md) | ✅ | ✅ | 首页（桌面）「继续」右侧卡被窗口切掉一半、标题拼接成「Re：ゼロ…1<Re：…」 |
