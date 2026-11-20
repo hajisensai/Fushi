@@ -117,6 +117,50 @@ void main() {
     expect(primary(), baseline);
   });
 
+  // ── 主题选择与取色覆盖：点色卡要真的换主题 ──────────────────────────────
+
+  test('取色生效时报告覆盖来源；在主题选择里点色卡：关掉取色、显示所选主题、背景图保留', () async {
+    notifier = build();
+    final Color blue = ThemeNotifier.buildPresetColorScheme(
+      ThemeNotifier.themePresets['m3-blue']!,
+      Brightness.light,
+    ).primary;
+    await notifier.importPageBackdropImage(source('a.png'), portrait: false);
+    expect(
+      notifier.activeAccentOverrideSource,
+      ThemeAccentOverrideSource.pageBackdrop,
+    );
+
+    await notifier.pickAppThemeKey('m3-blue');
+
+    expect(notifier.appThemeKey, 'm3-blue');
+    expect(notifier.followPageBackdropAccent, isFalse);
+    expect(notifier.pageBackdropAccentSeed, isNull);
+    expect(notifier.activeAccentOverrideSource, isNull);
+    expect(primary(), blue);
+    expect(
+      pageBackdropSettings.value.hasCustomImage,
+      isTrue,
+      reason: '只关取色，不动背景图',
+    );
+  });
+
+  test('没有取色覆盖时点色卡：不碰「从图片取色」开关', () async {
+    notifier = build();
+    await notifier.pickAppThemeKey('m3-blue');
+    expect(notifier.appThemeKey, 'm3-blue');
+    expect(notifier.activeAccentOverrideSource, isNull);
+    expect(notifier.followPageBackdropAccent, isTrue);
+  });
+
+  test('非主题选择入口写主题键（同步 / 恢复 / 操作目录）不关取色', () async {
+    notifier = build();
+    await notifier.importPageBackdropImage(source('a.png'), portrait: false);
+    await notifier.setAppThemeKey('m3-blue');
+    expect(notifier.followPageBackdropAccent, isTrue);
+    expect(notifier.pageBackdropAccentSeed, const Color(green));
+  });
+
   test('切回形状预设：取色不再生效，换回自定义又恢复', () async {
     notifier = build();
     final Color baseline = primary();

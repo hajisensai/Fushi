@@ -5,7 +5,12 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/custom_theme_page.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
-    show CustomThemeEntry, ThemePreset, kCustomThemeDefaultSeed;
+    show
+        CustomThemeEntry,
+        ThemeAccentOverrideSource,
+        ThemeNotifier,
+        ThemePreset,
+        kCustomThemeDefaultSeed;
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/theme_preset_card.dart';
@@ -326,11 +331,26 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
       ? Brightness.dark
       : Brightness.light;
   final bool pureBlack = appModel.pureBlackDark;
+  // 背景图取色 / 图标取色正在覆盖所选主题时，点色卡原本毫无可见反应。副标题说明
+  // 配色来自哪里；点任一色卡走 [ThemeNotifier.pickAppThemeKey]，先关掉覆盖再切主题。
+  final ThemeNotifier themeNotifier = appModel.themeNotifier;
+  final ThemeAccentOverrideSource? overrideSource =
+      themeNotifier.activeAccentOverrideSource;
+  Future<void> pickTheme(String key) async {
+    await themeNotifier.pickAppThemeKey(key);
+    notifyReaderSettingsChanged(settingsContext);
+    settingsContext.refresh();
+  }
 
   return AdaptiveSettingsRow(
     title: t.reader_theme,
     // TODO-928: 提示自定义主题「点击切换 · 长按编辑」的发现性文案。
-    subtitle: t.custom_theme_long_press_hint,
+    subtitle: switch (overrideSource) {
+      ThemeAccentOverrideSource.pageBackdrop =>
+        t.theme_accent_override_page_backdrop,
+      ThemeAccentOverrideSource.appIcon => t.theme_accent_override_app_icon,
+      null => t.custom_theme_long_press_hint,
+    },
     icon: Icons.color_lens_outlined,
     controlBelow: true,
     trailing: LayoutBuilder(
@@ -357,10 +377,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
               label: AppModel.themeLabel('system-theme'),
               overlay: FushiIcons.ai,
               selected: appModel.appThemeKey == 'system-theme',
-              onTap: () async {
-                await appModel.setAppThemeKey('system-theme');
-                notifyReaderSettingsChanged(settingsContext);
-              },
+              onTap: () => pickTheme('system-theme'),
             ),
             // M3 经典种子预设（基线紫 + Google 经典色板 + 中性灰）。
             ...AppModel.themePresets.entries.map((
@@ -377,10 +394,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
                 ),
                 label: AppModel.themeLabel(entry.key),
                 selected: appModel.appThemeKey == entry.key,
-                onTap: () async {
-                  await appModel.setAppThemeKey(entry.key);
-                  notifyReaderSettingsChanged(settingsContext);
-                },
+                onTap: () => pickTheme(entry.key),
               );
             }),
             // TODO-930 M1: 每个自定义主题一张卡。单击=切换到该主题
@@ -410,10 +424,7 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
                     appModel.appThemeKey == key ||
                     (appModel.appThemeKey == 'custom-theme' &&
                         appModel.activeCustomThemeEntry?.id == e.id),
-                onTap: () async {
-                  await appModel.setAppThemeKey(key);
-                  notifyReaderSettingsChanged(settingsContext);
-                },
+                onTap: () => pickTheme(key),
                 onLongPress: () async {
                   await pushSettingsPage(
                     settingsContext,

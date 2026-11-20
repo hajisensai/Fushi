@@ -11734,6 +11734,8 @@
   "theme_accent_follow_system_unavailable": "当前设备没有提供系统取色",
   "theme_accent_low_contrast_dark": "在深色模式背景上不易辨认，建议换个更亮的颜色",
   "theme_accent_low_contrast_light": "在浅色模式背景上不易辨认，建议换个更深的颜色",
+  "theme_accent_override_app_icon": "正在使用图标的配色 · 点选主题会关闭「主题色跟随图标」",
+  "theme_accent_override_page_backdrop": "正在使用背景图的配色 · 点选主题会关闭「从图片取色」",
   "theme_ai_applied": "AI 建议已填进编辑器，看过预览后再应用。",
   "theme_ai_card_desc": "描述想要的观感，AI 会把配色填进当前草稿",
   "theme_ai_hint": "描述想要的主题，例如：暖色纸张阅读风格，主题色深绿",

@@ -1202,7 +1202,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     final CustomThemeEntry entry = _buildEntry();
     await appModel.upsertCustomTheme(entry);
     await appModel.selectCustomTheme(entry.id);
-    await appModel.setAppThemeKey('custom-theme:${entry.id}');
+    // 「应用」= 用户明确要这个主题：与主题选择色卡同一入口，先关掉背景图 / 图标取色覆盖。
+    await appModel.themeNotifier.pickAppThemeKey('custom-theme:${entry.id}');
     if (!mounted) return;
     navigator.pop();
   }

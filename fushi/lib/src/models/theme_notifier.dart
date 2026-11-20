@@ -596,6 +596,15 @@ class EinkCupertinoPageTransitionsBuilder extends PageTransitionsBuilder {
 /// 「纯黑」语义改为明暗旁的独立开关（[ThemeNotifier.pureBlackDark]）。
 typedef ThemePreset = ({Color seed, DynamicSchemeVariant variant});
 
+/// 覆盖所选主题配色的取色来源（见 [ThemeNotifier.activeAccentOverrideSource]）。
+enum ThemeAccentOverrideSource {
+  /// 「从图片取色」：自定义背景图的颜色。
+  pageBackdrop,
+
+  /// 「主题色跟随图标」：自定义 app 图标的颜色。
+  appIcon,
+}
+
 /// 2026-10 精简前的内置预设（已删）：只为存量 `app_theme_key` 的只读映射保留
 /// 种子与语义——[neutral] = 中性灰变体、[dark] = 当年选中时写入的明暗（仅在
 /// `brightness_mode` 从未写过时作只读兜底）、[pureBlack] = 纯黑底。
@@ -1160,6 +1169,33 @@ class ThemeNotifier extends ChangeNotifier {
   /// 覆盖生效主题的种子：背景图取色优先，其次「主题色跟随图标」。两者都只是覆盖，
   /// 不改写主题偏好。
   Color? get _overrideAccentSeed => pageBackdropAccentSeed ?? appIconAccentSeed;
+
+  /// 当前是谁在覆盖主题配色（没有覆盖时为 null）。主题选择行据此提示「配色来自背景图 /
+  /// 图标」——否则点色卡毫无反应、用户不知道为什么。与 [_overrideAccentSeed] 同优先级。
+  ThemeAccentOverrideSource? get activeAccentOverrideSource {
+    if (pageBackdropAccentSeed != null) {
+      return ThemeAccentOverrideSource.pageBackdrop;
+    }
+    if (appIconAccentSeed != null) return ThemeAccentOverrideSource.appIcon;
+    return null;
+  }
+
+  /// 用户在主题选择里明确挑了一个主题：关掉所有正在生效的取色覆盖，让所选主题真正显示。
+  /// 只关**正在生效**的那几个开关（背景图仍在、图标仍在，只是不再取色），没生效的不动；
+  /// 两个都生效时都关，否则关掉背景图取色后又落到图标取色上。
+  Future<void> releaseAccentOverrides() async {
+    if (pageBackdropAccentSeed != null) {
+      await setFollowPageBackdropAccent(false);
+    }
+    if (appIconAccentSeed != null) await setFollowAppIconAccent(false);
+  }
+
+  /// 主题选择里的「选这个主题」：先释放取色覆盖，再切主题键。只给用户在色卡上点选用，
+  /// 其他写主题键的入口（同步 / 恢复 / 操作目录）不该顺带关掉用户的取色开关。
+  Future<void> pickAppThemeKey(String key) async {
+    await releaseAccentOverrides();
+    await setAppThemeKey(key);
+  }
 
   /// 背景图文件是否存在的核对结果（路径 → 存在）。快照发布在 UI isolate 上、每次
   /// 改任何一项背景设置都会重读，所以这里**不碰文件系统**：没核对过的路径先按存在
