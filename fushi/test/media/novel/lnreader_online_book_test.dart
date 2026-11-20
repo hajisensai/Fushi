@@ -10,9 +10,11 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/novel/online/lnreader_book_download.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
+import 'package:fushi/src/media/novel/online/lnreader_missing_images.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_online_book.dart';
 import 'package:fushi/src/media/novel/online/online_novel_chapter_loader.dart';
+import 'package:fushi/src/media/novel/online/online_novel_missing_images.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:path/path.dart' as p;
@@ -192,12 +194,18 @@ void main() {
     late _GatedLnReaderRuntime runtime;
     late int imports;
     late int rebuilds;
+
+    /// `/flaky.png` 能不能取到（缺图补取测试用）。
+    late bool flakyOk;
+    late int flakyHits;
     final List<LnReaderOnlineChapterLoader> loaders =
         <LnReaderOnlineChapterLoader>[];
 
     setUp(() async {
       imports = 0;
       rebuilds = 0;
+      flakyOk = false;
+      flakyHits = 0;
       root = await Directory.systemTemp.createTemp('lnreader_online_');
       books = Directory(p.join(root.path, 'books'))..createSync();
       images = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -205,6 +213,13 @@ void main() {
       images.listen((HttpRequest request) async {
         if (request.uri.path == '/ok.png') {
           request.response.add(_png);
+        } else if (request.uri.path == '/flaky.png') {
+          flakyHits++;
+          if (flakyOk) {
+            request.response.add(_png);
+          } else {
+            request.response.statusCode = HttpStatus.forbidden;
+          }
         } else {
           request.response.statusCode = HttpStatus.notFound;
         }
@@ -539,6 +554,74 @@ void main() {
       expect(third.readAsStringSync(), contains('第三章の本文'));
       // 第一章没人要，就不取。
       expect(runtime.calls, isNot(contains('chapter:/1')));
+    });
+
+    test('插图没取到：留占位不摘图；自动补取至多 3 轮（次数随文件持久化），手动补到后换回 <img>', () async {
+      runtime.chapterHtml = <String, String>{
+        ...runtime.chapterHtml,
+        '/1': '<p>一の本文<img src="$imageBase/flaky.png"/>続き</p>',
+      };
+      final String key = await library().ensureBook(
+        plugin: plugin,
+        novel: novel,
+        pendingText: 'PENDING',
+      );
+      final LnReaderOnlineChapterLoader loader = await loaderFor(key);
+      final String dir = loader.extractDir;
+      final File first = lnReaderOnlineChapterFile(dir, 0);
+      final OnlineNovelChapterLoaded? loaded = await loader.ensureLoaded(
+        first.path,
+      );
+      expect(loaded, isNotNull);
+      final String imageName = '${lnReaderOnlineImagePrefix('/1')}0.png';
+      String xhtml = first.readAsStringSync();
+      expect(xhtml, isNot(contains('<img')));
+      expect(xhtml, contains(kLnReaderMissingImageAttribute));
+      expect(xhtml, contains('一の本文'));
+      final int characters = loaded!.characters!;
+
+      OnlineNovelMissingImages missing = await loader.missingImages(0);
+      expect(missing.count, 1);
+      expect(missing.autoRetryAvailable, isTrue);
+      // 占位页 / 不缺图的章：0。
+      expect((await loader.missingImages(2)).count, 0);
+
+      // 三轮自动补取都失败：每轮记一次，用尽后自动补取不再发请求。
+      for (int i = 0; i < kLnReaderMissingImageAutoRetries; i++) {
+        final OnlineNovelMissingImagesRetry retry = await loader
+            .retryMissingImages(0, automatic: true);
+        expect(retry.recovered, 0);
+        expect(retry.remaining, 1);
+      }
+      expect(flakyHits, 1 + kLnReaderMissingImageAutoRetries);
+      missing = await loader.missingImages(0);
+      expect(missing.autoRetryAvailable, isFalse);
+      expect(
+        parseLnReaderMissingImages(first.readAsStringSync()).single.tries,
+        1 + kLnReaderMissingImageAutoRetries,
+      );
+      final OnlineNovelMissingImagesRetry exhausted = await loader
+          .retryMissingImages(0, automatic: true);
+      expect(exhausted.remaining, 1);
+      expect(flakyHits, 1 + kLnReaderMissingImageAutoRetries);
+
+      // 图床恢复：手动补取不受自动次数限制，补到后换回 <img>、图落盘、字数不变。
+      flakyOk = true;
+      final OnlineNovelMissingImagesRetry manual = await loader
+          .retryMissingImages(0, automatic: false);
+      expect(manual.recovered, 1);
+      expect(manual.remaining, 0);
+      xhtml = first.readAsStringSync();
+      expect(xhtml, isNot(contains(kLnReaderMissingImageAttribute)));
+      expect(xhtml, contains('src="$imageName"'));
+      expect(File(p.join(dir, 'OEBPS', imageName)).readAsBytesSync(), _png);
+      expect((await loader.missingImages(0)).count, 0);
+      await loader.whenIdle();
+      final EpubBookRow row = (await db.getEpubBook(key))!;
+      expect(
+        (jsonDecode(row.chaptersJson) as List<Object?>)[0],
+        containsPair('characters', characters),
+      );
     });
 
     test('后台预取的章：翻到时仍报「刚换成正文」，阅读器据此丢掉预热进缓存的占位页', () async {

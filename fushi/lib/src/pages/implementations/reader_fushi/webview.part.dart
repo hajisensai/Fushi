@@ -360,10 +360,12 @@ extension _ReaderWebView on _ReaderFushiPageState {
     if (_restoreInFlight && _readLedger.current == null) {
       _applyDeferredOnlineChapterCharCounts();
     }
+    final int? chapterIndex = loader.chapterIndexForFile(filePath);
     try {
       final OnlineNovelChapterLoaded? loaded = await loader.ensureLoaded(
         filePath,
       );
+      _noteOnlineChapterServed(chapterIndex);
       if (loaded == null) return;
       _sanitizedHtmlCache.remove(filePath);
       final EpubBook? book = _book;
@@ -387,6 +389,63 @@ extension _ReaderWebView on _ReaderFushiPageState {
         msg: t.novel_online_chapter_failed(error: describeOnlineSourceError(e)),
         severity: ToastSeverity.error,
       );
+    }
+  }
+
+  /// 一章正文即将下发（正文已在盘上）：交给缺图状态机查缺图、按需自动补取；
+  /// 是本次导航的目标章就让提示跟到这一章。
+  void _noteOnlineChapterServed(int? index) {
+    final OnlineNovelMissingImagesController? missing = _onlineMissingImages;
+    if (missing == null || index == null) return;
+    unawaited(missing.chapterRequested(index));
+    if (_restoreInFlight && index == _currentChapter) missing.show(index);
+  }
+
+  OnlineNovelMissingImagesController _createOnlineMissingImagesController(
+    OnlineNovelMissingImagesRetrier retrier,
+  ) => OnlineNovelMissingImagesController(
+    retrier: retrier,
+    onRecovered: _onOnlineChapterImagesRecovered,
+    onManualRetryFinished: (OnlineNovelMissingImagesRetry result) {
+      if (!mounted) return;
+      if (result.remaining == 0) {
+        FushiToast.show(
+          msg: t.novel_online_images_recovered,
+          severity: ToastSeverity.success,
+        );
+      } else {
+        FushiToast.show(
+          msg: t.novel_online_images_still_missing(n: result.remaining),
+          severity: ToastSeverity.warning,
+        );
+      }
+    },
+    onError: (Object error) {
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.novel_online_chapter_failed(
+          error: describeOnlineSourceError(error),
+        ),
+        severity: ToastSeverity.error,
+      );
+    },
+  );
+
+  /// 补取到了第 [index] 章的插图（文件已写回）：丢掉这一章的下发缓存与正文缓存；
+  /// 正在读这一章就按当前位置原地重载，让图显示出来。
+  void _onOnlineChapterImagesRecovered(int index) {
+    if (!mounted) return;
+    final OnlineNovelChapterLoader? loader = _onlineChapterLoader;
+    final EpubBook? book = _book;
+    if (loader == null || book == null || index >= book.chapters.length) {
+      return;
+    }
+    _sanitizedHtmlCache.removeWhere(
+      (String path, Uint8List _) => loader.chapterIndexForFile(path) == index,
+    );
+    book.chapters[index].discardCachedHtml();
+    if (index == _currentChapter && !_restoreInFlight) {
+      unawaited(_reloadWithCurrentSettings());
     }
   }
 
