@@ -11,8 +11,7 @@ void main() {
   /// 64×64 灰度棋盘（黑白逐像素相间 = 最细的网点），PGM（P5）编码。
   Uint8List checkerPgm() {
     final List<int> header = 'P5\n64 64\n255\n'.codeUnits;
-    final Uint8List out = Uint8List(header.length + 64 * 64)
-      ..setAll(0, header);
+    final Uint8List out = Uint8List(header.length + 64 * 64)..setAll(0, header);
     for (int y = 0; y < 64; y++) {
       for (int x = 0; x < 64; x++) {
         out[header.length + y * 64 + x] = (x + y).isEven ? 0 : 255;
@@ -62,10 +61,7 @@ void main() {
       filter: FfcResampleFilter.catmullRom,
     );
     expect(kernel.probe(up!)?.width, 256);
-    expect(
-      kernel.fitJpegHq(png, width: 257, height: 256, quality: 90),
-      isNull,
-    );
+    expect(kernel.fitJpegHq(png, width: 257, height: 256, quality: 90), isNull);
     expect(
       kernel.fitJpegHq(
         Uint8List.fromList(<int>[1, 2, 3]),
