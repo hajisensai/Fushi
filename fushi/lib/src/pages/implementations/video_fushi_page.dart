@@ -1304,6 +1304,12 @@ abstract class VideoFushiTestHooks {
   String? get debugResolvedDiscSubtitleTrackId;
   String? get debugResolvedDiscAudioTrackId;
   void debugOpenSubtitleSettings();
+
+  /// 播放页交给设置面板的能力槽（与面板拿到的是同一份构造），测试经它走真实回调。
+  VideoQuickSettingsHost debugQuickSettingsHost();
+
+  /// 页面当前的字幕外观快照。
+  VideoSubtitleStyle get debugSubtitleStyle;
   Future<void> debugSelectSubtitleOff();
 
   /// 当前播放位置（毫秒）；未就绪为 null。
@@ -2005,6 +2011,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   String? get debugActiveAudioTrackId =>
       (_controller ?? _pendingController)?.activeAudioTrackId;
+  @override
+  VideoQuickSettingsHost debugQuickSettingsHost() =>
+      _buildVideoQuickSettingsHost();
+
+  @override
+  VideoSubtitleStyle get debugSubtitleStyle => _subtitleStyle;
+
   @override
   void debugOpenSubtitleSettings() =>
       _showPlayerSettings(initialCategory: 'subtitle');
@@ -3745,7 +3758,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       ValueNotifier<({Offset position, double speed})?>(null);
 
   /// 当前字幕外观（全局偏好快照；设置面板改动后刷新）。
-  VideoSubtitleStyle _subtitleStyle = VideoSubtitleStyle.defaults;
+  ///
+  /// video-36f：做成 [ValueNotifier]，只有字幕 overlay 经 [ValueListenableBuilder] 订阅。
+  /// 设置面板的字幕样式滑条每个采样都走 [VideoQuickSettingsHost.onSubtitleStylePreview]，
+  /// 原先那里 `setState` 重建整个播放页（控制条、侧栏、浮层全部重算）；现在只重建字幕层。
+  /// 其余读点（剪辑导出、拖拽松手）都是事件时读值，不需要订阅。
+  final ValueNotifier<VideoSubtitleStyle> _subtitleStyleNotifier =
+      ValueNotifier<VideoSubtitleStyle>(VideoSubtitleStyle.defaults);
+  VideoSubtitleStyle get _subtitleStyle => _subtitleStyleNotifier.value;
+  set _subtitleStyle(VideoSubtitleStyle style) {
+    // 异步载入路径可能在页面释放后才写回样式：notifier 已 dispose，写了会断言。
+    if (!mounted) return;
+    _subtitleStyleNotifier.value = style;
+  }
 
   /// 「拖拽调整字幕位置」模式开关（TODO-2838）：设置面板入口进入、画面顶部横幅
   /// 「完成」退出。开启时字幕 overlay 让出查词指针面、改挂竖直拖拽（见
@@ -7689,6 +7714,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _minesInFlight.dispose();
     _stagedMineCount.dispose();
     _longPressSpeedBadge.dispose();
+    _subtitleStyleNotifier.dispose();
     _autoAdvanceCountdownTimer?.cancel();
     _autoAdvanceCountdownNotifier.dispose();
     _remoteSwitchPhase.dispose();
@@ -12312,9 +12338,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   Future<void> _persistSubtitleStyle(VideoSubtitleStyle style) async {
+    // 写 notifier 即刷新字幕 overlay（video-36f），不再整页 setState。
     _subtitleStyle = style;
     await appModel.setVideoSubtitleStyle(VideoSubtitleStyle.encode(style));
-    if (mounted) setState(() {});
   }
 
   /// 切换字幕模糊（'B' 热键 + 设置面板共用）。TODO-840 Part B：在「模糊」与「不遮蔽」
@@ -12819,8 +12845,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       onSetSubtitleObscureMode: _setSubtitleObscureMode,
       onSetSecondarySubtitleObscureMode: _setSecondarySubtitleObscureMode,
       onAsbConfigChanged: _setAsbConfig,
+      // video-36f：只改 notifier，字幕 overlay 自己订阅重建，不 setState 整页。
       onSubtitleStylePreview: (VideoSubtitleStyle s) {
-        if (mounted) setState(() => _subtitleStyle = s);
+        if (mounted) _subtitleStyle = s;
       },
       onSubtitleStyleCommit: _persistSubtitleStyle,
       // TODO-2838：进入「拖拽调整字幕位置」模式（关设置侧栏 + 开拖拽，见 layout.part）。

@@ -633,139 +633,154 @@ extension _VideoLayout on _VideoFushiPageState {
                         Positioned.fill(
                           child: _hdrGraphicsWhiteLevel(
                             controller,
-                            VideoSubtitleOverlay(
-                              controller: controller,
-                              // 字幕字体链的语言：用户对本视频手动指定 > 当前字幕轨
-                              // 声明的 language > 全局默认内容语言。三档全空时字幕层
-                              // 退回历史兜底链，渲染逐像素不变。
-                              contentLanguage: _resolveSubtitleLanguage(
-                                controller,
-                              ),
-                              onCharTap: _handleSubtitleLookupTap,
-                              // TODO-756a 桌面 Shift-鼠标悬停查词：走去重入口 [_handleSubtitleHoverLookup]
-                              // →（[_handleSubtitleLookupTap] → [_lookupAt]，内部已 _immersiveAllowsLookup
-                              // 门控），故按住 Shift 悬停字幕字符与点击该字符行为一致。移动端无 hover、
-                              // 自然不触发；节流由 VideoSubtitleOverlay 内部承载。BUG-861：与浮层 barrier
-                              // hover（[_onDismissBarrierHover]）共用同一「同句同 grapheme」去重键，避免
-                              // 字符未被浮层遮住时两条 hover 路径同时命中导致同词双查闪烁。
-                              onCharHover: _handleSubtitleHoverLookup,
-                              // TODO-756b：开了“悬停即查词”则纯悬停（无需 Shift）即查词；
-                              // 关闭退回 756a 的 Shift+悬停。视频与阅读器共享 instance。
-                              hoverAutoLookupEnabled:
-                                  ReaderFushiSource.instance.hoverAutoLookup,
-                              hoverLookupModifier: ReaderFushiSource
-                                  .instance
-                                  .hoverLookupModifier,
-                              onHoverChanged: _handleSubtitleHover,
-                              hitTester: _subtitleHitTester,
-                              // 沉浸锁定态点画面显示 / 遮回当前句
-                              // （[_maybeToggleImmersiveSubtitleReveal]）。
-                              revealHandle: _subtitleRevealHandle,
-                              // 字级选词光标环（videoEnterCaret，手柄/键盘查词）。
-                              caretEntryIndex: _subtitleCaretEntry,
-                              // BUG-2091：被查词在字幕上垫底色高亮（与阅读器正文查词
-                              // 高亮同语义），弹窗栈全关即 null（派生值，不靠关栈路径复位）。
-                              lookupHighlight: _activeSubtitleLookupHighlight,
-                              // 当前句已收藏时在字幕盒角标实心星（TODO-301）。读同一收藏缓存
-                              // [_favoritedVideoSentences]（[_isCueFavorited]）；收藏 / 取消收藏
-                              // 后 setState 触发本 builder 重建，标记即时更新。
-                              isCueFavorited: _isCueFavorited,
-                              // TODO-840 Part B：字幕遮蔽模式三态映射成 overlay 的两个
-                              // 正交标志——模糊态走 blurEnabled、隐藏态走 subtitleHidden
-                              // （互斥，至多一个为 true）。不遮蔽时两者皆 false（历史外观）。
-                              blurEnabled:
-                                  appModel.videoSubtitleObscureMode ==
-                                  VideoSubtitleObscureMode.blur,
-                              subtitleHidden:
-                                  appModel.videoSubtitleObscureMode ==
-                                  VideoSubtitleObscureMode.hide,
-                              // TODO-1382：副字幕遮蔽三态同样映射成两正交标志（独立于主字幕）。
-                              secondaryBlurEnabled:
-                                  appModel.videoSecondarySubtitleObscureMode ==
-                                  VideoSubtitleObscureMode.blur,
-                              secondaryHidden:
-                                  appModel.videoSecondarySubtitleObscureMode ==
-                                  VideoSubtitleObscureMode.hide,
-                              // 遮蔽态「悬停 / 点击显形」总闸（默认开）：关掉后模糊 /
-                              // 隐藏不再被悬停或点击临时揭开。主 / 副字幕分开配置。
-                              obscureRevealOnInteraction:
-                                  appModel.videoSubtitleObscureReveal,
-                              secondaryObscureRevealOnInteraction:
-                                  appModel.videoSecondarySubtitleObscureReveal,
-                              // BUG-2235：查词浮层还开着就算「用户在看」，遮蔽让位到
-                              // 关栈为止——否则浮层顶栏「重播本句」一起播，刚让位的
-                              // 字幕在重播那几秒又被遮回去（用户正对着浮层核对原句）。
-                              lookupPopupVisible: _hasVisiblePopup,
-                              // aJqIVUPxnd：移动端点开控制条（进度条）= 想看一眼这句，
-                              // 遮蔽让位；桌面鼠标一动控制条就出来，不计入（另有悬停显形）。
-                              revealWhileControlsVisible:
-                                  !_isDesktopVideoControls,
-                              // TODO-1199：字幕字号=用户基准 × 屏幕自适应因子。用户设置的
-                              // fontSize 仍是基准（手动可调、不被改写），渲染时乘按视口短边
-                              // 算出的 [subtitleScreenScaleFactor]，使字幕占屏比例在小屏手机 /
-                              // 大屏平板 / 桌面上物理观感一致（自动缩放恒开、叠加在基准之上）。
-                              // MediaQuery.sizeOf 建立尺寸依赖：横竖屏切换 / 窗口缩放会重建本
-                              // builder 重算因子。
-                              // CcT_7VQIQr：实际字号再夹到随视口变化的上限
-                              // （videoSubtitleEffectiveFontSize），与设置滑条上限同源。
-                              fontSize: videoSubtitleEffectiveFontSize(
-                                _subtitleStyle.fontSize,
-                                MediaQuery.sizeOf(context),
-                              ),
-                              textColor: _subtitleStyle.resolveTextColor(),
-                              fontWeight: _subtitleStyle.resolveFontWeight(
-                                _videoUiScale,
-                              ),
-                              shadowColor: _subtitleStyle.resolveShadowColor(
-                                _subtitleShadowColor(
-                                  _videoChromeColorScheme(context),
-                                ),
-                              ),
-                              shadowThickness: _subtitleStyle
-                                  .resolveShadowThickness(_videoUiScale),
-                              outlineColor: _subtitleStyle
-                                  .resolveOutlineColor(),
-                              outlineThickness: _subtitleStyle.outlineThickness,
-                              backgroundColor: _subtitleStyle
-                                  .resolveBackgroundColor(
-                                    _subtitleBackgroundColor(
-                                      _videoChromeColorScheme(context),
+                            // video-36f：字幕样式是 notifier，滑条拖动只重建这一层。
+                            ValueListenableBuilder<VideoSubtitleStyle>(
+                              valueListenable: _subtitleStyleNotifier,
+                              builder:
+                                  (
+                                    BuildContext context,
+                                    VideoSubtitleStyle style,
+                                    Widget? _,
+                                  ) => VideoSubtitleOverlay(
+                                    controller: controller,
+                                    // 字幕字体链的语言：用户对本视频手动指定 > 当前字幕轨
+                                    // 声明的 language > 全局默认内容语言。三档全空时字幕层
+                                    // 退回历史兜底链，渲染逐像素不变。
+                                    contentLanguage: _resolveSubtitleLanguage(
+                                      controller,
                                     ),
+                                    onCharTap: _handleSubtitleLookupTap,
+                                    // TODO-756a 桌面 Shift-鼠标悬停查词：走去重入口 [_handleSubtitleHoverLookup]
+                                    // →（[_handleSubtitleLookupTap] → [_lookupAt]，内部已 _immersiveAllowsLookup
+                                    // 门控），故按住 Shift 悬停字幕字符与点击该字符行为一致。移动端无 hover、
+                                    // 自然不触发；节流由 VideoSubtitleOverlay 内部承载。BUG-861：与浮层 barrier
+                                    // hover（[_onDismissBarrierHover]）共用同一「同句同 grapheme」去重键，避免
+                                    // 字符未被浮层遮住时两条 hover 路径同时命中导致同词双查闪烁。
+                                    onCharHover: _handleSubtitleHoverLookup,
+                                    // TODO-756b：开了“悬停即查词”则纯悬停（无需 Shift）即查词；
+                                    // 关闭退回 756a 的 Shift+悬停。视频与阅读器共享 instance。
+                                    hoverAutoLookupEnabled: ReaderFushiSource
+                                        .instance
+                                        .hoverAutoLookup,
+                                    hoverLookupModifier: ReaderFushiSource
+                                        .instance
+                                        .hoverLookupModifier,
+                                    onHoverChanged: _handleSubtitleHover,
+                                    hitTester: _subtitleHitTester,
+                                    // 沉浸锁定态点画面显示 / 遮回当前句
+                                    // （[_maybeToggleImmersiveSubtitleReveal]）。
+                                    revealHandle: _subtitleRevealHandle,
+                                    // 字级选词光标环（videoEnterCaret，手柄/键盘查词）。
+                                    caretEntryIndex: _subtitleCaretEntry,
+                                    // BUG-2091：被查词在字幕上垫底色高亮（与阅读器正文查词
+                                    // 高亮同语义），弹窗栈全关即 null（派生值，不靠关栈路径复位）。
+                                    lookupHighlight:
+                                        _activeSubtitleLookupHighlight,
+                                    // 当前句已收藏时在字幕盒角标实心星（TODO-301）。读同一收藏缓存
+                                    // [_favoritedVideoSentences]（[_isCueFavorited]）；收藏 / 取消收藏
+                                    // 后 setState 触发本 builder 重建，标记即时更新。
+                                    isCueFavorited: _isCueFavorited,
+                                    // TODO-840 Part B：字幕遮蔽模式三态映射成 overlay 的两个
+                                    // 正交标志——模糊态走 blurEnabled、隐藏态走 subtitleHidden
+                                    // （互斥，至多一个为 true）。不遮蔽时两者皆 false（历史外观）。
+                                    blurEnabled:
+                                        appModel.videoSubtitleObscureMode ==
+                                        VideoSubtitleObscureMode.blur,
+                                    subtitleHidden:
+                                        appModel.videoSubtitleObscureMode ==
+                                        VideoSubtitleObscureMode.hide,
+                                    // TODO-1382：副字幕遮蔽三态同样映射成两正交标志（独立于主字幕）。
+                                    secondaryBlurEnabled:
+                                        appModel
+                                            .videoSecondarySubtitleObscureMode ==
+                                        VideoSubtitleObscureMode.blur,
+                                    secondaryHidden:
+                                        appModel
+                                            .videoSecondarySubtitleObscureMode ==
+                                        VideoSubtitleObscureMode.hide,
+                                    // 遮蔽态「悬停 / 点击显形」总闸（默认开）：关掉后模糊 /
+                                    // 隐藏不再被悬停或点击临时揭开。主 / 副字幕分开配置。
+                                    obscureRevealOnInteraction:
+                                        appModel.videoSubtitleObscureReveal,
+                                    secondaryObscureRevealOnInteraction: appModel
+                                        .videoSecondarySubtitleObscureReveal,
+                                    // BUG-2235：查词浮层还开着就算「用户在看」，遮蔽让位到
+                                    // 关栈为止——否则浮层顶栏「重播本句」一起播，刚让位的
+                                    // 字幕在重播那几秒又被遮回去（用户正对着浮层核对原句）。
+                                    lookupPopupVisible: _hasVisiblePopup,
+                                    // aJqIVUPxnd：移动端点开控制条（进度条）= 想看一眼这句，
+                                    // 遮蔽让位；桌面鼠标一动控制条就出来，不计入（另有悬停显形）。
+                                    revealWhileControlsVisible:
+                                        !_isDesktopVideoControls,
+                                    // TODO-1199：字幕字号=用户基准 × 屏幕自适应因子。用户设置的
+                                    // fontSize 仍是基准（手动可调、不被改写），渲染时乘按视口短边
+                                    // 算出的 [subtitleScreenScaleFactor]，使字幕占屏比例在小屏手机 /
+                                    // 大屏平板 / 桌面上物理观感一致（自动缩放恒开、叠加在基准之上）。
+                                    // MediaQuery.sizeOf 建立尺寸依赖：横竖屏切换 / 窗口缩放会重建本
+                                    // builder 重算因子。
+                                    // CcT_7VQIQr：实际字号再夹到随视口变化的上限
+                                    // （videoSubtitleEffectiveFontSize），与设置滑条上限同源。
+                                    fontSize: videoSubtitleEffectiveFontSize(
+                                      style.fontSize,
+                                      MediaQuery.sizeOf(context),
+                                    ),
+                                    textColor: style.resolveTextColor(),
+                                    fontWeight: style.resolveFontWeight(
+                                      _videoUiScale,
+                                    ),
+                                    shadowColor: style.resolveShadowColor(
+                                      _subtitleShadowColor(
+                                        _videoChromeColorScheme(context),
+                                      ),
+                                    ),
+                                    shadowThickness: style
+                                        .resolveShadowThickness(_videoUiScale),
+                                    outlineColor: style.resolveOutlineColor(),
+                                    outlineThickness: style.outlineThickness,
+                                    backgroundColor: style
+                                        .resolveBackgroundColor(
+                                          _subtitleBackgroundColor(
+                                            _videoChromeColorScheme(context),
+                                          ),
+                                        ),
+                                    backgroundOpacity: style.backgroundOpacity,
+                                    bottomPadding: style.bottomPadding,
+                                    // 副字幕独立位置：null = 用户没单独调过，overlay 内回落到
+                                    // bottomPadding（历史行为）。非 null 时副字幕层用自己的基线，
+                                    // 主字幕位置滑杆不再把副字幕一起挪走。
+                                    secondaryBottomPadding:
+                                        style.secondaryBottomPadding,
+                                    // TODO-2838：主/副字幕用户垂直锚定（底/顶）+ 拖拽调整模式。
+                                    // 拖拽松手把落点锚定 + 距边距离写回 style 偏好并持久化。
+                                    mainAnchor: style.mainAnchor,
+                                    secondaryAnchor: style.secondaryAnchor,
+                                    dragAdjustEnabled:
+                                        _subtitleDragAdjustActive,
+                                    onDragAdjustEnd:
+                                        _handleSubtitleDragAdjustEnd,
+                                    // 控制条可见性驱动动态避让（TODO-129）：进度条出现时字幕底缘对
+                                    // 进度条上缘取下限（max，非加法——BUG-226 防顶飞）、隐藏落回。全屏
+                                    // 复用同一 builder + ValueNotifier，故窗口与全屏都跟随（BUG-120 同源）。
+                                    controlsVisible: _videoControlsVisible,
+                                    // 进度条上缘距视频底边的真实高度（按平台控制条几何加总 + 随界面
+                                    // 缩放，BUG-238）。旧默认常量 56 既不随缩放、又低于默认基线 75 →
+                                    // 移动端 `max(75, 56)=75` 把字幕留在被抬高的进度条下面被遮（用户报
+                                    // 「只动一点点」）。显式传入真实几何让移动端真正抬升盖过进度条；
+                                    // 桌面仍只让一个按钮行高（保 BUG-228 观感）。TODO-568：移动端改抬到
+                                    // **可见轨道上缘 + 呼吸间距**（≈101×缩放，而非旧的整段热区高 140），
+                                    // 字幕骑进度条上方一点点、不顶飞 ~47×缩放 的透明命中区空白。
+                                    controlsBottomReserve:
+                                        _subtitleControlsBottomReserve(),
+                                    // BUG-1069：顶部锚字幕在控制条可见时同样避让顶栏（标题栏 +
+                                    // 右上角菜单），整体下移到顶栏下方 → UI 赢重叠、不被字幕盖住。
+                                    controlsTopReserve:
+                                        _subtitleControlsTopReserve(),
+                                    fontFamily: appModel.subtitleFontFamily,
+                                    // TODO-1105：尊重 .ass 自带样式（字体/主色/描边/阴影）。开关默认开；
+                                    // 关时 overlay 全走上面的统一样式，外观与历史像素级一致。
+                                    respectAssStyle:
+                                        appModel.videoRespectAssStyle,
                                   ),
-                              backgroundOpacity:
-                                  _subtitleStyle.backgroundOpacity,
-                              bottomPadding: _subtitleStyle.bottomPadding,
-                              // 副字幕独立位置：null = 用户没单独调过，overlay 内回落到
-                              // bottomPadding（历史行为）。非 null 时副字幕层用自己的基线，
-                              // 主字幕位置滑杆不再把副字幕一起挪走。
-                              secondaryBottomPadding:
-                                  _subtitleStyle.secondaryBottomPadding,
-                              // TODO-2838：主/副字幕用户垂直锚定（底/顶）+ 拖拽调整模式。
-                              // 拖拽松手把落点锚定 + 距边距离写回 style 偏好并持久化。
-                              mainAnchor: _subtitleStyle.mainAnchor,
-                              secondaryAnchor: _subtitleStyle.secondaryAnchor,
-                              dragAdjustEnabled: _subtitleDragAdjustActive,
-                              onDragAdjustEnd: _handleSubtitleDragAdjustEnd,
-                              // 控制条可见性驱动动态避让（TODO-129）：进度条出现时字幕底缘对
-                              // 进度条上缘取下限（max，非加法——BUG-226 防顶飞）、隐藏落回。全屏
-                              // 复用同一 builder + ValueNotifier，故窗口与全屏都跟随（BUG-120 同源）。
-                              controlsVisible: _videoControlsVisible,
-                              // 进度条上缘距视频底边的真实高度（按平台控制条几何加总 + 随界面
-                              // 缩放，BUG-238）。旧默认常量 56 既不随缩放、又低于默认基线 75 →
-                              // 移动端 `max(75, 56)=75` 把字幕留在被抬高的进度条下面被遮（用户报
-                              // 「只动一点点」）。显式传入真实几何让移动端真正抬升盖过进度条；
-                              // 桌面仍只让一个按钮行高（保 BUG-228 观感）。TODO-568：移动端改抬到
-                              // **可见轨道上缘 + 呼吸间距**（≈101×缩放，而非旧的整段热区高 140），
-                              // 字幕骑进度条上方一点点、不顶飞 ~47×缩放 的透明命中区空白。
-                              controlsBottomReserve:
-                                  _subtitleControlsBottomReserve(),
-                              // BUG-1069：顶部锚字幕在控制条可见时同样避让顶栏（标题栏 +
-                              // 右上角菜单），整体下移到顶栏下方 → UI 赢重叠、不被字幕盖住。
-                              controlsTopReserve: _subtitleControlsTopReserve(),
-                              fontFamily: appModel.subtitleFontFamily,
-                              // TODO-1105：尊重 .ass 自带样式（字体/主色/描边/阴影）。开关默认开；
-                              // 关时 overlay 全走上面的统一样式，外观与历史像素级一致。
-                              respectAssStyle: appModel.videoRespectAssStyle,
                             ),
                           ),
                         ),
