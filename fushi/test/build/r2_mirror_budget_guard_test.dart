@@ -9,10 +9,9 @@ void main() {
     ).readAsStringSync();
 
     expect(workflow, contains("MAX_BUCKET_BYTES: '8000000000'"));
-    expect(
-      workflow,
-      contains('actions/checkout@11d5960a326750d5838078e36cf38b85af677262'),
-    );
+    // 第三方 action 一律钉 40 位 SHA（全仓守卫 workflow_action_sha_pin_guard_test），
+    // 具体 SHA 由 Dependabot 升级，这里只确认镜像 job 仍走钉死的 checkout。
+    expect(workflow, matches(RegExp(r'actions/checkout@[0-9a-f]{40} # v')));
     expect(workflow, contains('node --test tool/r2_mirror_plan.test.mjs'));
     expect(workflow, contains("if: steps.capacity.outputs.allowed == 'true'"));
     expect(workflow, contains('Roll back partial upload on failure'));
