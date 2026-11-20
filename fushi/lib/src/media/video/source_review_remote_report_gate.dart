@@ -75,7 +75,7 @@ class SourceReviewRemoteReportGate {
   /// 停止上报（Jellyfin / Emby 过阈值即标已看、Plex 过 90% 另发 scrobble）。
   ///
   /// 回看中照样不上报，但来源若能「只摘会话、停转码」（[RemoteVideoPlaybackDetach]）
-  /// 就让它释放回看那一程在服务器上占着的转码（BUG-4909）——这一步不改任何进度。
+  /// 就让它释放回看那一程在服务器上占着的转码（BUG-5020）——这一步不改任何进度。
   /// 返回值只表示「停止上报是否发出」，回看分支恒 false。
   Future<bool> stop(Object? client, String id, int positionMs) async {
     if (_isReview()) {

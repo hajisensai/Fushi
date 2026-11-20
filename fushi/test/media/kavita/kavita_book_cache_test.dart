@@ -329,7 +329,7 @@ void main() {
         expect(
           compactions,
           1,
-          reason: 'BUG-4907：淘汰 3 本只回收一次数据库空间（以前每本一次整库 VACUUM）',
+          reason: 'BUG-4996：淘汰 3 本只回收一次数据库空间（以前每本一次整库 VACUUM）',
         );
         expect(
           await service().cachedBookKeys(),
@@ -399,7 +399,7 @@ void main() {
       final KavitaCacheCleanup result = await service().clearCache();
       expect(result.removed, 2);
       expect(deleted.toSet(), <String>{'C1', 'C2'});
-      expect(compactions, 1, reason: 'BUG-4907：一键清理整轮只回收一次');
+      expect(compactions, 1, reason: 'BUG-4996：一键清理整轮只回收一次');
       expect(await db.getEpubBook('D'), isNotNull);
     });
 

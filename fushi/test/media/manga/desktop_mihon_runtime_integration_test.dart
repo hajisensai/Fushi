@@ -223,7 +223,7 @@ void main() {
   );
   test(
     'an APK crosses to the sidecar once per process; calls carry only its '
-    'digest (manga-28) and leave no request-body temp files (BUG-4914)',
+    'digest (manga-28) and leave no request-body temp files (BUG-5046)',
     () async {
       final Directory data = await Directory.systemTemp.createTemp(
         'mihon-apk-digest-',

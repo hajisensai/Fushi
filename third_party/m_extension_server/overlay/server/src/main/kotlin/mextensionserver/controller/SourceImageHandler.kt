@@ -15,7 +15,7 @@ class SourceImageHandler {
     fun serve(session: NanoHTTPD.IHTTPSession): NanoHTTPD.Response {
         var pendingJarCookies: String? = null
         return try {
-            // Not `parseBody`: it spools the body into a temp file (BUG-4914).
+            // Not `parseBody`: it spools the body into a temp file (BUG-5046).
             val request = mapper.readValue(BridgeRequests.readJson(session), SourceImageRequest::class.java)
             val data =
                 DataBody(

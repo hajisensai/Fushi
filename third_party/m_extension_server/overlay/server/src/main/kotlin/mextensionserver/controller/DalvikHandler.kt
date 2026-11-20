@@ -37,7 +37,7 @@ class DalvikHandler {
         // session.
         var pendingJarCookies: String? = null
         return try {
-            // Not `parseBody`: it spools the body into a temp file (BUG-4914).
+            // Not `parseBody`: it spools the body into a temp file (BUG-5046).
             val json = BridgeRequests.readJson(session)
             val dataBody = objectMapper.readValue(json, DataBody::class.java)
 

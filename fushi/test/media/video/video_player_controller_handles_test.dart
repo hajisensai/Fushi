@@ -159,7 +159,7 @@ void main() {
     });
   });
 
-  group('重新选同一条图形轨（c19 遗留，BUG-4907）', () {
+  group('重新选同一条图形轨（c19 遗留，BUG-4994）', () {
     late _FakeMpv mpv;
     late _FakeRegionLoader loader;
     late VideoPlayerController c;

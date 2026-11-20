@@ -51,7 +51,7 @@ const List<String> _overlayOverridesUpstream = <String>[
   'server/src/main/kotlin/eu/kanade/tachiyomi/network/Requests.kt',
   'server/src/main/kotlin/eu/kanade/tachiyomi/network/interceptor/RateLimitInterceptor.kt',
   'server/src/main/kotlin/eu/kanade/tachiyomi/network/interceptor/SpecificHostRateLimitInterceptor.kt',
-  // BUG-4909：扩展实例按调用通道（目录 / 取流）分别串行，慢 getVideoList 不再
+  // BUG-5026：扩展实例按调用通道（目录 / 取流）分别串行，慢 getVideoList 不再
   // 把同扩展的搜索排在身后；上游改名会让三份一起打空。
   'server/src/main/kotlin/mextensionserver/impl/ExtensionInstanceCache.kt',
   'server/src/main/kotlin/mextensionserver/impl/MExtensionServerLoader.kt',
@@ -70,7 +70,7 @@ const List<String> _overlayNewFiles = <String>[
   'server/src/main/kotlin/eu/kanade/tachiyomi/animesource/host/AnimeVideoLoader.kt',
   // BUG-3520：宿主偏好快照规则（Drift 改了就写、扩展自己写的值在 Drift 再变之前保留）。
   'server/src/main/kotlin/mextensionserver/impl/HostPreferenceSnapshot.kt',
-  // manga-28：APK 按摘要每进程传一次；BUG-4914：请求体不经 parseBody 落盘。
+  // manga-28：APK 按摘要每进程传一次；BUG-5046：请求体不经 parseBody 落盘。
   'server/src/main/kotlin/mextensionserver/impl/ExtensionApkStore.kt',
   'server/src/main/kotlin/mextensionserver/controller/BridgeRequests.kt',
   // manga-18b：页图 / 封面的流式转发。
@@ -746,7 +746,7 @@ void main() {
     );
   });
 
-  // BUG-4914：NanoHTTPD 2.3.1 的 parseBody 把超过 1 KB 的请求体落成临时文件并
+  // BUG-5046：NanoHTTPD 2.3.1 的 parseBody 把超过 1 KB 的请求体落成临时文件并
   // mmap，Windows 上删不掉，每次桥调用留一个直到 JVM 退出。
   test('overlay 的路由不经 parseBody 读请求体', () {
     final Directory controller = Directory(

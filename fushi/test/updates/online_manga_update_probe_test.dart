@@ -153,7 +153,7 @@ void main() {
     expect((await stored(keyA)).autoDownload, isTrue, reason: '探针刷新不冲掉订阅');
   });
 
-  // BUG-4909（gap-mangamisc-1）：探针开跑时读的快照在刷新的几秒里会过时。
+  // BUG-5024（gap-mangamisc-1）：探针开跑时读的快照在刷新的几秒里会过时。
   test('刷新途中用户关了自动下载 / 作品页已把新章刷进库：探针按库里的描述符办', () async {
     final String key = await addBook(
       entryFor('/series/a', chapters: const <OnlineMangaChapter>[c2, c1]),

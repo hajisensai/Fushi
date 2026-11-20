@@ -502,7 +502,7 @@ Future<SrsImportReport> runSrsTextImport({
             ),
         ]);
     // 落库之后才计数：GUID 列给的 guid 在同库另一份 profile 里已是另一个笔记类型的笔记时，内核的实体归属闸不让它
-    // 落（[SrsImportDraftsResult.foreignNotes]），记冲突、不算新增（BUG-4907 复核：以前逐行先记「已添加」）。
+    // 落（[SrsImportDraftsResult.foreignNotes]），记冲突、不算新增（BUG-5005 复核：以前逐行先记「已添加」）。
     for (final _NewNote n in batch) {
       if (landed.foreignNotes.contains(n.noteId)) {
         report.conflictNotes.add(

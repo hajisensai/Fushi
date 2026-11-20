@@ -252,7 +252,7 @@ overlay/.../impl/ExtensionApkStore.kt, .../controller/BridgeRequests.kt
   Request bodies are read straight off the socket by Content-Length instead of
   NanoHTTPD's parseBody, which spooled every body over 1 KB into a
   `NanoHTTPD-*` temp file that Windows could not delete while mapped: one
-  leaked file per bridge call until the JVM exited (BUG-4914, second half).
+  leaked file per bridge call until the JVM exited (BUG-5046, second half).
   Responses whose body was not fully read (401, refused uploads) close their
   connection so leftover bytes are never parsed as the next request.
 
@@ -366,7 +366,7 @@ overlay/ (full-file replacements):
   .../controller/StreamingImageResponse.kt      new: the chunked relay both
                                                 image routes use
   .../controller/BridgeRequests.kt              new: Content-Length body reads
-                                                (no parseBody, BUG-4914),
+                                                (no parseBody, BUG-5046),
                                                 409 apkUnknown, PUT /apk/<sha>
   .../impl/ExtensionApkStore.kt                 new: content-addressed APK
                                                 store (manga-28)
@@ -388,7 +388,7 @@ overlay/ (full-file replacements):
                                                 stream resolution had queued
                                                 every search on the same
                                                 extension behind it until the
-                                                host's BRIDGE_TIMEOUT (BUG-4909).
+                                                host's BRIDGE_TIMEOUT (BUG-5026).
                                                 SourceDataHandler clears state
                                                 through invokeExclusively, which
                                                 waits out both lanes. The

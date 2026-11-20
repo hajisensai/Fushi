@@ -37,7 +37,7 @@ abstract final class SrsImportIssueReason {
   static const String missingNoteType = 'missingNoteType';
 
   /// 同一个库里另一份 profile 已有同 guid 的笔记、属于另一个笔记类型：内核的实体归属闸不让本 profile 用这个 ID
-  /// 建结构不同的笔记（native/fushi_fsrs/src/store/gen4/cmd/writes_owner.rs，BUG-4907）。
+  /// 建结构不同的笔记（native/fushi_fsrs/src/store/gen4/cmd/writes_owner.rs，BUG-5005）。
   static const String otherProfileNoteType = 'otherProfileNoteType';
 }
 

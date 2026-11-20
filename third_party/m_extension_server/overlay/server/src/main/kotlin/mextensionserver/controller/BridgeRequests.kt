@@ -20,7 +20,7 @@ internal class RequestBodyException(
  * over 1 KB into a `NanoHTTPD-*` temp file that it then memory-maps; on
  * Windows the mapping outlives the request and the delete fails, so a sidecar
  * that lived for a reading session kept one file per bridge call until the JVM
- * exited (BUG-4914). Bridge bodies are small JSON now that APKs travel once by
+ * exited (BUG-5046). Bridge bodies are small JSON now that APKs travel once by
  * digest, and the one large body -- the APK upload -- is streamed to its file
  * by [ExtensionApkStore.put].
  */

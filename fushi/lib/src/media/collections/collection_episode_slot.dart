@@ -194,6 +194,16 @@ CollectionMemberVisibility videoCollectionMemberVisibility({
   };
 }
 
+/// 合集成员的**展示集号**（BUG-1544 / BUG-2369 / BUG-4921）：[filenames] 按成员顺序
+/// 给出（本地是视频路径，远端是 [RemoteVideoInfo.parseName]，即
+/// [CollectionEpisodeSlot.filename]），**整批**解析出第 [index] 个成员的真实集号；
+/// 解析不出才回落顺位号 `index + 1`。
+///
+/// 与合集详情页集卡序号同一判据：库页合集卡「继续看 第 N 集」走这里，不再用续播
+/// 下标 +1——只导入后半季时顺位号与真实集号错位（第 151 集写成第 1 集）。
+int collectionMemberEpisodeNumber(List<String> filenames, int index) =>
+    parsedEpisodeNumbersOf(filenames)[index] ?? index + 1;
+
 /// 跨来源的分集身份：季号（解析不出视作第 1 季，与分季分组同口径）+ 集号。
 typedef CollectionEpisodeIdentity = ({int season, int episode});
 

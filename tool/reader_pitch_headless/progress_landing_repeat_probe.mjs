@@ -1,4 +1,4 @@
-// BUG-4908 复现尝试：分页 progress 落点（scrollToProgressPaged / restoreProgress /
+// BUG-5015 复现尝试：分页 progress 落点（scrollToProgressPaged / restoreProgress /
 // reapplyImageLateAnchor）在度量缓存作废后第一次与之后几次是否一致。
 //
 // 先跑 fushi/test/reader/reader_headless_shell_dump_test.dart 生成完整生产引擎

@@ -130,7 +130,7 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   bool _disposed = false;
   MihonProxyPolicyServer? _proxyPolicy;
 
-  /// 当前进程退出后删它的 JVM 临时目录（BUG-4914）。[dispose] 要等它：否则
+  /// 当前进程退出后删它的 JVM 临时目录（BUG-5046）。[dispose] 要等它：否则
   /// 「dispose 返回」时目录还在删，调用方紧接着删数据目录会和它撞上。
   Future<void>? _tempDirRelease;
 
@@ -615,7 +615,7 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     final MihonProxyPolicyServer proxyPolicy =
         await MihonProxyPolicyServer.start(token);
     _proxyPolicy = proxyPolicy;
-    // JVM 的临时目录归宿主管、随这个进程退出删掉（BUG-4914）：上传的扩展 APK、解出的
+    // JVM 的临时目录归宿主管、随这个进程退出删掉（BUG-5046）：上传的扩展 APK、解出的
     // 扩展 jar（强杀后会残留）都在这里，以前落在系统临时目录里永不回收。
     final MihonSidecarTempDir tempDir = await MihonSidecarTempDir.create(
       dataDirectory,

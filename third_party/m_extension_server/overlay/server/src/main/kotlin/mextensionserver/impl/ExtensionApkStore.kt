@@ -29,7 +29,7 @@ class ApkUploadException(
  * holds, so the host keeps no mirror of "what this process has seen".
  *
  * Files live under the JVM's `java.io.tmpdir`, which the desktop host creates
- * per JVM and deletes when the process exits (BUG-4914); [clear] covers a
+ * per JVM and deletes when the process exits (BUG-5046); [clear] covers a
  * clean `/stop`.
  */
 internal class ExtensionApkStore(

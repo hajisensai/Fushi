@@ -506,7 +506,7 @@ void main() {
       expect(cleanup.url.queryParameters['PlaySessionId'], 'ps-1');
     });
 
-    // BUG-4909：卡片片段回看结束只摘会话、停转码——不发 Stopped（那会判已看、写断点）。
+    // BUG-5020：卡片片段回看结束只摘会话、停转码——不发 Stopped（那会判已看、写断点）。
     test('回看结束 detach：转码会话 DELETE ActiveEncodings，不发 Stopped', () async {
       final JellyfinVideoClient c = await negotiated(transcode: true);
       await c.detachRemoteVideoPlayback('ep1');

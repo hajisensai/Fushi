@@ -5,7 +5,7 @@ import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
 /// 桌面 Mihon sidecar 一个 JVM 进程的 `java.io.tmpdir`：每次起 JVM 一个独占目录，
-/// 进程退出就删；宿主被强杀时留下的目录由下一次起 JVM 时清扫（BUG-4914）。
+/// 进程退出就删；宿主被强杀时留下的目录由下一次起 JVM 时清扫（BUG-5046）。
 ///
 /// 为什么由宿主持有：JVM 往临时目录写两类东西，而且自己收不掉——
 /// - 随包 NanoHTTPD 2.3.1 的 `parseBody` 把每个超过 1 KB 的请求体落成 `NanoHTTPD-*`

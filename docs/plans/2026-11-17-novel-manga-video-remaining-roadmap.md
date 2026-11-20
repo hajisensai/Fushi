@@ -289,7 +289,7 @@
 - manga-3：`.epub` 定性在 UI isolate 上同步整本解压，批量导入每本解两遍以上，选中一本几百 MB 的 EPUB 界面直接停住。位置 `MG/manga_import_dialog.dart`、`F/media/import/import_carrier.dart`。修法：批量路径 `.epub` 不预定性、交导入阶段判；单选定性改异步并过 memo 守卫。
 - 文件：`MG/manga_import_dialog.dart`、`F/media/import/import_carrier.dart`、`MG/import/manga_folder_batch.dart`、`EN/media/manga/manga_archive_importer.dart`。
 - 测试：守卫 + 批量单测。验证：桌面把 300 MB 以上的文字 EPUB 选进漫画导入框，界面不停住。
-- 顺带收 c26 遗留：`_looksLikeImageEpub` 定性探测仍把 container / OPF / spine 文档解进系统临时目录（c26 后页图已不落盘，只剩几 KB，finally 删除）；定性改异步时一并改成书库根下的 `.tmp-*`（要给探测接口带 db），见 BUG-4908 备注。
+- 顺带收 c26 遗留：`_looksLikeImageEpub` 定性探测仍把 container / OPF / spine 文档解进系统临时目录（c26 后页图已不落盘，只剩几 KB，finally 删除）；定性改异步时一并改成书库根下的 `.tmp-*`（要给探测接口带 db），见 BUG-5013 备注。
 
 #### c40 `pr/novel-heavy-work-off-ui`（M）
 - 依赖：c01 #3699、c04 #3698。闸：#3515。
@@ -677,7 +677,7 @@ Android 真机上不卸载、不覆盖用户的 app；改 `wm size` / `density` 
 - 剩余 33 组全部开了 PR，另有 5 个遗留小组和 1 个返修中发现的独立修复，共 39 个 PR，**全部 OPEN、未合并**。每组实现后都由一个独立审查者做过反驳式审查，真问题已就地修掉。
 - **叠放**：后面波次的分支里并入了前置组的分支，PR 的 base 都是 develop。合并顺序照下表「先合」一栏；前置组合入后，后面 PR 的 diff 会自动缩到只剩自己的提交。
 - **真机 / 真 app / 模拟器 / Windows 离屏集成测试一项都没做**（所有者定本轮不做），各 PR 正文有「未做的设备验证」清单。第 4 节的口径与顺序仍适用，范围扩大到这 39 个 PR。
-- **bug 号相撞**：并行分支各自 `bug.dart new`，BUG-4906～BUG-4914 多处重号，合入后由 develop 上的 settle CI 收口；PR 标题与提交信息里的号不会跟着变。
+- **bug 号相撞**：并行分支各自 `bug.dart new`，BUG-4984～BUG-4914 多处重号，合入后由 develop 上的 settle CI 收口；PR 标题与提交信息里的号不会跟着变。
 - 协调目录的 claim 一个都没登记（实施代理被 worktree 隔离拦住，写不到共享目录）。
 - c28 的 `gradlew :app:assembleRelease` 本机缺发布签名没跑成，由 PR 的 Android CI 把关。
 

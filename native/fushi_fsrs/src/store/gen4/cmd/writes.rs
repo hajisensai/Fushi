@@ -32,7 +32,7 @@
 //! - **按规范 ID 写**（D5，规划 §1.5）：输入里的 ID（实体、修改键与值里嵌的 ID、日志的卡 / 笔记 / `revokes`、标签的
 //!   笔记）先按这个集合的别名表归一（`alias.rs` [Index::canonical]，命令开始时已收好的那张表），再写。不做「映射到已
 //!   有别名成员」的过渡层。
-//! - **实体归属闸**（BUG-4907，`writes_owner.rs`）：ID 不再加盐，同库别的集合的实体 ID 在这里虽然读不到，写下去却会成为
+//! - **实体归属闸**（BUG-5005，`writes_owner.rs`）：ID 不再加盐，同库别的集合的实体 ID 在这里虽然读不到，写下去却会成为
 //!   悬空操作、等本集合之后并进那个集合时对它生效。调用方给实体 ID 的写命令（`apply_in` / `purge` / `sched`）在写之前
 //!   问 [Session::foreign]：别的集合有、本集合一点痕迹都没有的实体不写（身份记录与 profile 设置实体的判法见
 //!   `writes_owner.rs` 文件头）；`apply` 一族回包的 `foreign` 交回这些项的调用方输入下标（`import_drafts` 按筛掉初值
@@ -820,7 +820,7 @@ fn parse_item(it: &Value) -> Result<Item, String> {
 /// `apply` 的本体（协议 3 `apply_local_on` 的新代版），在 [s] 里做；意图命令拼好输入也走这里。回包
 /// `{"landed": [每项落没落], "foreign": [下标]}`，`landed` 与 [items] 等长：`chg` 筛掉的、标签写入展开为空的、指向别的
 /// 集合的实体的（实体归属闸，`writes_owner.rs`）是 false，它们的**调用方输入下标**进 `foreign`（与 `edits` 第 7 列同一
-/// 口径，[Origin]：`import_drafts` 按筛掉初值之前的原输入计——导入路径按它认出被拒的笔记、记进导入报告，BUG-4907；意图
+/// 口径，[Origin]：`import_drafts` 按筛掉初值之前的原输入计——导入路径按它认出被拒的笔记、记进导入报告，BUG-5005；意图
 /// 命令自己拼的项没有输入下标，按 [items] 里的位置计）。
 ///
 /// - `chg`（store/sync2/changing.rs 的判据，[registers::write_is_noop]）：值没变的修改不写；同一批里同一个

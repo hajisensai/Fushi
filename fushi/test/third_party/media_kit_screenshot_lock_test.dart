@@ -8,7 +8,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
-/// BUG-4910（路线图 #3722 video-4）：制卡截帧不能把「制卡后立刻续播」挡在 JPEG 编码
+/// BUG-5027（路线图 #3722 video-4）：制卡截帧不能把「制卡后立刻续播」挡在 JPEG 编码
 /// 后面。
 ///
 /// media_kit 的 `screenshot` 整段持 Player 串行锁：`screenshot-raw` 取帧之后还在锁里
@@ -104,7 +104,7 @@ void main() {
     timeout: const Timeout(Duration(seconds: 60)),
   );
 
-  // `image/x-fushi-bgra`（智能遮布）落在 BUG-4910 拆开后的取帧 isolate 上：变换对
+  // `image/x-fushi-bgra`（智能遮布）落在 BUG-5027 拆开后的取帧 isolate 上：变换对
   // mpv node 的视图就地裁剪，产出原样返回（不是整帧、不是 JPEG），持锁 / 不持锁两条
   // 路径都一样；缺变换是参数错误。
   test(

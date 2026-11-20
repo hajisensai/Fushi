@@ -73,7 +73,7 @@ object MExtensionServerLoader {
 
     // Fushi: calls are serialized per [InvocationLane], not per instance, so a
     // minutes-long getVideoList no longer queues searches on the same
-    // extension behind it (BUG-4909).
+    // extension behind it (BUG-5026).
     // Throws [ApkNotRegisteredException] when [apkSha256] was never uploaded to
     // this process; the controller answers `409 apkUnknown`.
     internal fun <T> invokeWithExtension(

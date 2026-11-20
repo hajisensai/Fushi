@@ -19,7 +19,7 @@ import kotlin.concurrent.withLock
  *   timeouts each; feedback igLsy_gcWz measured a 5 min `getVideoList`) and
  *   take only the episode / chapter they were given. Upstream's single
  *   per-instance lock queued every search behind them until the host gave up
- *   with BRIDGE_TIMEOUT (BUG-4909).
+ *   with BRIDGE_TIMEOUT (BUG-5026).
  *
  * The Android host runs every call on a shared two-thread pool with no
  * per-source lock at all, so a source overlapping a playback call with a

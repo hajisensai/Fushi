@@ -70,7 +70,7 @@ class BridgeRequestsTest {
             assertEquals(200, code)
             assertEquals(json, echoed)
         }
-        // parseBody would have left one NanoHTTPD-* file per body over 1 KB (BUG-4914).
+        // parseBody would have left one NanoHTTPD-* file per body over 1 KB (BUG-5046).
         assertEquals(emptySet(), nanoTempFiles() - before)
     }
 
