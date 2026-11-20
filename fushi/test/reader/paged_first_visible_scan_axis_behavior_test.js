@@ -112,11 +112,22 @@ function instantiate(vertical) {
   const Node = { TEXT_NODE: 3 };
   new Function('window', data.studyUnits)(window);
   const C = { perfTraceEnabled: false };
+  // The chapter text index (shared with the continuous shell) asks its
+  // MutationObserver whether the DOM changed since it was built. This fake DOM
+  // swaps whole node lists by replacing createWalker, which a real DOM would
+  // report as mutations -- so the stub reports "changed" on every read and the
+  // index is rebuilt from the current walker each time.
+  function MutationObserver() {}
+  MutationObserver.prototype.observe = function() {};
+  MutationObserver.prototype.disconnect = function() {};
+  MutationObserver.prototype.takeRecords = function() { return [{}]; };
   const factory = new Function(
     'window', 'document', 'C', 'global', 'CSS', 'Highlight', 'getComputedStyle', 'Node',
+    'MutationObserver',
     'window.fushiReader = ' + objectLiteral(data.paged) + '; return window.fushiReader;'
   );
-  const reader = factory(window, document, C, {}, window.CSS, window.Highlight, getComputedStyle, Node);
+  const reader = factory(window, document, C, {}, window.CSS, window.Highlight, getComputedStyle, Node,
+    MutationObserver);
 
   // A: 10 chars on page 0 · B: 5 on page 0 + 5 on page 1 · C: 12 on page 1 · D: 8 on page 2.
   // Offsets: A 0–9 · B 10–19 (15 = first char of the current page) · C 20–31 · D 32–39.

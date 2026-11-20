@@ -33,18 +33,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4234 条。点号进各自文件。
+> 共 4240 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4906](bugs/BUG-4906-reader-init-restore-no-failure-exit.md) | ✅ | ✅ | 阅读器引擎初始化或初次恢复链抛异常时不回执，只能等8秒兜底 |
-| [BUG-4906](bugs/BUG-4906-web-novel-tail-chapter-snapshot-desync.md) | ✅ | ✅ | web-novel-tail-chapter-snapshot-desync |
-> 共 4236 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4910](bugs/BUG-4910-paged-progress-sample-walks-chapter.md) | ✅ | ✅ | 分页进度采样从章首逐节点 walk，长章章末一次 19ms、插图页 56ms |
+| [BUG-4909](bugs/BUG-4909-caret-line-move-measures-whole-chapter.md) | ✅ | ✅ | 手柄/键盘光标换行移动每按一次键对整章逐字量几何，长章一次约 0.6 秒 |
 | [BUG-4908](bugs/BUG-4908-online-book-recount-overwrites-prefetched-char-count.md) | ✅ | ✅ | 在线书字数口径重算把后台预取章的正文字数写回成占位页字数 |
 | [BUG-4907](bugs/BUG-4907-online-novel-atomic-write-cleanup-masks-error.md) | ✅ | ✅ | 在线书原子写失败后清理临时文件出错会顶掉原始异常 |
+| [BUG-4906](bugs/BUG-4906-web-novel-tail-chapter-snapshot-desync.md) | ✅ | ✅ | web-novel-tail-chapter-snapshot-desync |
+| [BUG-4906](bugs/BUG-4906-reader-init-restore-no-failure-exit.md) | ✅ | ✅ | 阅读器引擎初始化或初次恢复链抛异常时不回执，只能等8秒兜底 |
 | [BUG-4906](bugs/BUG-4906-lnreader-state-read-error-reported-as-plugin-missing.md) | ✅ | ✅ | 在线小说取章时 LNReader 状态读盘失败被误报成「插件没装」 |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
