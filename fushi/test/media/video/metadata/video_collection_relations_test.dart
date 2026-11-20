@@ -14,7 +14,8 @@ import 'package:sqlite3/common.dart' show CommonDatabase;
 import 'package:test/test.dart';
 
 /// 刮削源系列关系 → `collection_relations`：AniDB XML / MAL relations 的映射（纯
-/// 函数）、写库幂等与升级绑定、作品资料写库出口（store.apply）、存量补填。
+/// 函数）、写库幂等与升级绑定、作品资料写库出口（store.apply）、存量补填；v162 起
+/// 起点 / 已绑定目标可以是单视频（散装电影），TMDB 电影读合集成员。
 const String _xml = '''
 <anime id="100" restricted="false">
   <type>TV Series</type>
@@ -134,6 +135,74 @@ void main() {
       )!;
       expect(fromPayload, aniDbRelatedWorksFromXml(_xml));
       expect(relatedWorksFromRawPayload('mal', _malItem()), hasLength(3));
+    });
+
+    test('TMDB 合集成员：按上映日期排、未定档殿后，只记相邻的前传 / 续作', () {
+      final List<Object?> parts = <Object?>[
+        <String, Object?>{'id': 4, 'title': 'Next', 'release_date': ''},
+        <String, Object?>{'id': 3, 'title': 'C', 'release_date': '2010-05-01'},
+        <String, Object?>{'id': 1, 'title': 'A', 'release_date': '2001-05-01'},
+        <String, Object?>{'id': 2, 'title': 'B', 'release_date': '2005-05-01'},
+        <String, Object?>{'id': 2, 'title': 'dup', 'release_date': '2005'},
+      ];
+      String text(List<VideoRelatedWork> l) => <String>[
+        for (final VideoRelatedWork r in l)
+          '${r.provider}:${r.externalId}:${r.relationType}:${r.title}',
+      ].join(',');
+      expect(
+        text(tmdbRelatedWorksFromCollectionParts('2', parts)),
+        'tmdb:1:prequel:A,tmdb:3:sequel:C',
+      );
+      expect(
+        text(tmdbRelatedWorksFromCollectionParts('1', parts)),
+        'tmdb:2:sequel:B',
+      );
+      expect(
+        text(tmdbRelatedWorksFromCollectionParts('3', parts)),
+        'tmdb:2:prequel:B,tmdb:4:sequel:Next',
+      );
+      expect(tmdbRelatedWorksFromCollectionParts('99', parts), isEmpty);
+
+      // rawPayload：剧集（没有 belongs_to_collection 键）/ 成员缺失 → null；
+      // 不属于任何合集 → 空表（权威）。
+      expect(
+        relatedWorksFromRawPayload('tmdb', <String, Object?>{'id': 2}),
+        isNull,
+      );
+      expect(
+        relatedWorksFromRawPayload('tmdb', <String, Object?>{
+          'id': 2,
+          'belongs_to_collection': <String, Object?>{'id': 5},
+        }),
+        isNull,
+      );
+      expect(
+        relatedWorksFromRawPayload('tmdb', <String, Object?>{
+          'id': 2,
+          'belongs_to_collection': null,
+        }),
+        isEmpty,
+      );
+      expect(
+        relatedWorksFromRawPayload('tmdb', <String, Object?>{
+          'id': 2,
+          'belongs_to_collection': <String, Object?>{'id': 5},
+          kTmdbCollectionPartsPayloadKey: parts,
+        }),
+        hasLength(2),
+      );
+      expect(
+        tmdbCollectionPartsFromResponse(<String, Object?>{
+          'parts': <Object?>[
+            <String, Object?>{'id': 1, 'title': 'A', 'release_date': '2001'},
+            <String, Object?>{'id': 2, 'name': 'TV', 'media_type': 'tv'},
+            <String, Object?>{'title': 'no id'},
+          ],
+        }),
+        <Map<String, Object?>>[
+          <String, Object?>{'id': 1, 'title': 'A', 'release_date': '2001'},
+        ],
+      );
     });
   });
 
@@ -460,22 +529,292 @@ void main() {
       expect(await rows(a), hasLength(7));
     });
 
-    test('单个视频上的作品（散装电影）没有起点可存：补填跳过', () async {
-      await db.upsertVideoBook(
-        const VideoBooksCompanion(
-          bookUid: Value<String>('movie'),
-          title: Value<String>('movie'),
-          videoPath: Value<String>('D:/m.mkv'),
+    Future<void> movieVideo(String uid) => db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: Value<String>(uid),
+        title: Value<String>(uid),
+        videoPath: Value<String>('D:/$uid.mkv'),
+      ),
+    );
+
+    String rowText(CollectionRelationRow r) =>
+        '${r.source}:${r.subjectId}:${r.relationType}:'
+        '${r.targetCollectionId ?? r.targetBookUid}';
+
+    test('散装电影（单视频作品）当起点和已绑定目标；删视频清边、目标视频被删退回纯刮削态', () async {
+      final Directory dir = await Directory.systemTemp.createTemp('anidb_xml');
+      addTearDown(() => dir.delete(recursive: true));
+      await File(p.join(dir.path, 'AnimeDoc_100.xml')).writeAsString(_xml);
+      await File(p.join(dir.path, 'AnimeDoc_300.xml')).writeAsString('''
+<anime id="300" restricted="false">
+  <type>Movie</type>
+  <relatedanime>
+    <anime id="100" type="Parent Story">Show</anime>
+  </relatedanime>
+</anime>
+''');
+      final int a = await db.createMediaCollection(
+        'A',
+        collectionType: 'playlist',
+      );
+      await work(a, 'anidb', '100');
+      await movieVideo('m300');
+      await work(null, 'anidb', '300', mediaType: 'movie', bookUid: 'm300');
+
+      final CollectionRelationBackfillResult r =
+          await backfillScrapedCollectionRelations(
+            db,
+            aniDbXmlDirectory: () async => dir,
+          );
+      expect(r.works, 2, reason: '散装电影也是补填对象');
+      expect(r.worksWithRelations, 2);
+      // A → 300：外传 + 目标在本机是电影 → movie，已绑定到单视频 m300。
+      expect(
+        (await db.getCollectionRelations(a)).map(rowText),
+        contains('anidb:300:movie:m300'),
+      );
+      // 电影 → A：起点是单视频，目标是合集 A（Parent Story → other）。
+      final List<CollectionRelationRow> fromMovie = await db
+          .getVideoBookRelations('m300');
+      expect(fromMovie.map(rowText), <String>['anidb:100:other:$a']);
+      expect(fromMovie.single.collectionId, isNull);
+      expect(fromMovie.single.bookUid, 'm300');
+
+      // 幂等。
+      await backfillScrapedCollectionRelations(
+        db,
+        aniDbXmlDirectory: () async => dir,
+      );
+      expect(await db.getVideoBookRelations('m300'), hasLength(1));
+      expect(await rows(a), hasLength(7));
+
+      // 删电影：它起点的边 cascade 清掉，A 指向它的边退回纯刮削态（行还在）。
+      await db.deleteVideoBook('m300');
+      expect(await db.getVideoBookRelations('m300'), isEmpty);
+      final CollectionRelationRow toMovie = (await db.getCollectionRelations(
+        a,
+      )).singleWhere((CollectionRelationRow r) => r.subjectId == '300');
+      expect(toMovie.targetBookUid, isNull);
+      expect(toMovie.targetCollectionId, isNull);
+    });
+
+    test('升级绑定到单视频：电影后来入库，别的合集指向它的纯刮削行补上 targetBookUid', () async {
+      final int a = await db.createMediaCollection(
+        'A',
+        collectionType: 'playlist',
+      );
+      await work(a, 'anidb', '100');
+      await syncScrapedCollectionRelations(
+        db,
+        owner: VideoRelationOwner.collection(a),
+        source: 'anidb',
+        related: const <VideoRelatedWork>[
+          VideoRelatedWork(
+            provider: 'anidb',
+            externalId: '900',
+            relationType: 'other',
+            title: 'Movie',
+          ),
+        ],
+      );
+      await movieVideo('m900');
+      await work(null, 'anidb', '900', mediaType: 'movie', bookUid: 'm900');
+      expect(
+        await bindCollectionRelationsToWork(
+          db,
+          owner: const VideoRelationOwner.video('m900'),
+          identities: <(String, String)>[('anidb', '900')],
+        ),
+        1,
+      );
+      expect((await db.getCollectionRelations(a)).map(rowText), <String>[
+        'anidb:900:other:m900',
+      ]);
+      // 已绑定的不会被再绑一次；手动改绑合集时单视频目标随之清掉（CHECK 至多一个）。
+      expect(
+        await bindCollectionRelationsToWork(
+          db,
+          owner: const VideoRelationOwner.video('m900'),
+          identities: <(String, String)>[('anidb', '900')],
+        ),
+        0,
+      );
+      final int b = await db.createMediaCollection(
+        'B',
+        collectionType: 'playlist',
+      );
+      final CollectionRelationRow row = (await db.getCollectionRelations(
+        a,
+      )).single;
+      await db.bindCollectionRelationTarget(row.id, b);
+      final CollectionRelationRow rebound = (await db.getCollectionRelations(
+        a,
+      )).single;
+      expect(rebound.targetCollectionId, b);
+      expect(rebound.targetBookUid, isNull);
+    });
+
+    test('store.apply：单视频作品刮完落起点为单视频的关系，并把别处指向它的行绑上', () async {
+      final VideoMetadataDatabaseStore store = VideoMetadataDatabaseStore(db);
+      final int a = await db.createMediaCollection(
+        'A',
+        collectionType: 'playlist',
+      );
+      await work(a, 'anidb', '100');
+      await syncScrapedCollectionRelations(
+        db,
+        owner: VideoRelationOwner.collection(a),
+        source: 'anidb',
+        related: const <VideoRelatedWork>[
+          VideoRelatedWork(
+            provider: 'anidb',
+            externalId: '300',
+            relationType: 'side_story',
+            title: 'Movie',
+          ),
+        ],
+      );
+      await movieVideo('m300');
+      await store.apply(
+        VideoSourceScrapeWork(
+          source: null,
+          collection: null,
+          title: 'Movie',
+          members: <VideoBookRow>[(await db.getVideoBookByBookUid('m300'))!],
+        ),
+        VideoMetadataWork(
+          provider: VideoMetadataProviderKind.anidb,
+          kind: VideoMetadataMediaKind.movie,
+          title: 'Movie',
+          ids: <VideoMetadataId>[VideoMetadataId(type: 'anidb', value: '300')],
+          rawPayload: <String, Object?>{
+            'aid': 300,
+            kAniDbRelatedPayloadKey: <Object?>[
+              const VideoRelatedWork(
+                provider: 'anidb',
+                externalId: '100',
+                relationType: 'other',
+                title: 'Show',
+              ).toPayload(),
+            ],
+          },
         ),
       );
-      await work(null, 'anidb', '100', mediaType: 'movie', bookUid: 'movie');
+      expect((await db.getVideoBookRelations('m300')).map(rowText), <String>[
+        'anidb:100:other:$a',
+      ]);
+      expect((await db.getCollectionRelations(a)).map(rowText), <String>[
+        'anidb:300:side_story:m300',
+      ]);
+    });
+
+    test('TMDB：电影合集成员落成前传 / 续作，tmdb 关系只绑电影作品（剧集 id 另一命名空间）', () async {
+      final VideoMetadataDatabaseStore store = VideoMetadataDatabaseStore(db);
+      // 剧集作品恰好也叫 tmdb:11——不能被当成电影 11 绑上。
+      final int tv = await db.createMediaCollection(
+        'TV',
+        collectionType: 'playlist',
+      );
+      await work(tv, 'tmdb', '11');
+      await movieVideo('m13');
+      await work(null, 'tmdb', '13', mediaType: 'movie', bookUid: 'm13');
+      await movieVideo('m12');
+      final List<Object?> parts = <Object?>[
+        <String, Object?>{
+          'id': 13,
+          'title': 'Part 3',
+          'release_date': '2005-01-01',
+        },
+        <String, Object?>{
+          'id': 11,
+          'title': 'Part 1',
+          'release_date': '2001-01-01',
+        },
+        <String, Object?>{
+          'id': 12,
+          'title': 'Part 2',
+          'release_date': '2003-01-01',
+        },
+      ];
+      Map<String, Object?> details({List<Object?>? parts}) => <String, Object?>{
+        'id': 12,
+        'belongs_to_collection': <String, Object?>{'id': 5, 'name': 'Saga'},
+        if (parts != null) kTmdbCollectionPartsPayloadKey: parts,
+      };
+      VideoMetadataWork movie(Map<String, Object?> payload) =>
+          VideoMetadataWork(
+            provider: VideoMetadataProviderKind.tmdb,
+            kind: VideoMetadataMediaKind.movie,
+            title: 'Part 2',
+            ids: <VideoMetadataId>[VideoMetadataId(type: 'tmdb', value: '12')],
+            rawPayload: payload,
+          );
+      final VideoSourceScrapeWork local = VideoSourceScrapeWork(
+        source: null,
+        collection: null,
+        title: 'Part 2',
+        members: <VideoBookRow>[(await db.getVideoBookByBookUid('m12'))!],
+      );
+      await store.apply(local, movie(details(parts: parts)));
+      expect((await db.getVideoBookRelations('m12')).map(rowText), <String>[
+        'tmdb:11:prequel:null',
+        'tmdb:13:sequel:m13',
+      ]);
+      // 合集请求失败（载荷不带成员）：不清旧行，作品照常写库。
+      await store.apply(local, movie(details()));
+      expect(await db.getVideoBookRelations('m12'), hasLength(2));
+      // 不属于任何合集：源明确说没有 → 清掉。
+      await store.apply(
+        local,
+        movie(<String, Object?>{'id': 12, 'belongs_to_collection': null}),
+      );
+      expect(await db.getVideoBookRelations('m12'), isEmpty);
+    });
+
+    test('TMDB 存量补填只读 details 快照里的合集成员，不联网', () async {
+      await movieVideo('m12');
+      final int w = await work(
+        null,
+        'tmdb',
+        '12',
+        mediaType: 'movie',
+        bookUid: 'm12',
+      );
+      await db.replaceVideoMetadataRawSnapshots(
+        'work:$w:tmdb',
+        <VideoMetadataRawSnapshotsCompanion>[
+          VideoMetadataRawSnapshotsCompanion.insert(
+            identityKey: 'work:$w:tmdb',
+            snapshotKind: 'details',
+            rawJson: jsonEncode(<String, Object?>{
+              'id': 12,
+              'belongs_to_collection': <String, Object?>{'id': 5},
+              kTmdbCollectionPartsPayloadKey: <Object?>[
+                <String, Object?>{
+                  'id': 11,
+                  'title': 'P1',
+                  'release_date': '2001',
+                },
+                <String, Object?>{
+                  'id': 12,
+                  'title': 'P2',
+                  'release_date': '2003',
+                },
+              ],
+            }),
+            fetchedAt: 1,
+          ),
+        ],
+      );
       final CollectionRelationBackfillResult r =
           await backfillScrapedCollectionRelations(
             db,
             aniDbXmlDirectory: () async => null,
           );
-      expect(r.works, 0);
-      expect(await db.getAllCollectionRelations(), isEmpty);
+      expect(r.rows, 1);
+      expect((await db.getVideoBookRelations('m12')).map(rowText), <String>[
+        'tmdb:11:prequel:null',
+      ]);
     });
   });
 }

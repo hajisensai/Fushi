@@ -175,6 +175,76 @@ void main() {
     );
   });
 
+  test('散装电影（单视频作品）：当起点能出网，当已绑定目标是可点击的本机节点并继续展开', () {
+    MediaLinkEndpoint ep(String uid) =>
+        (kind: MediaLinkKind.videoEpisode, key: uid);
+    CollectionRelationRow movieRel(
+      String bookUid,
+      String type, {
+      int? target,
+      String? targetBookUid,
+      required String subjectId,
+    }) => CollectionRelationRow(
+      id: nextId++,
+      bookUid: bookUid,
+      relationType: type,
+      sortIndex: 0,
+      targetCollectionId: target,
+      targetBookUid: targetBookUid,
+      source: 'anidb',
+      subjectId: subjectId,
+      title: 'm$subjectId',
+    );
+    final WorkGraphSnapshot s = snapshotOf(
+      const <WorkGraphLink>[],
+      <CollectionRelationRow>[
+        // 合集 1 → 剧场版（已绑定到单视频 m1）。
+        CollectionRelationRow(
+          id: nextId++,
+          collectionId: 1,
+          relationType: 'movie',
+          sortIndex: 0,
+          targetBookUid: 'm1',
+          source: 'anidb',
+          subjectId: '301',
+          title: '剧场版',
+        ),
+        // 剧场版 m1 → 续作电影 m2（单视频 → 单视频），m2 → 未入库的第三部。
+        movieRel('m1', 'sequel', targetBookUid: 'm2', subjectId: '302'),
+        movieRel('m2', 'sequel', subjectId: '303'),
+      ],
+    );
+
+    final WorkNetworkPlan plan = planWorkNetwork(s, vc(1));
+    final Map<String, WorkNetworkNodeSpec> nodes = nodesOf(plan);
+    expect(nodes.keys.toSet(), <String>{
+      'video_collection-1',
+      'video_episode-m1',
+      'video_episode-m2',
+      'web-anidb-303',
+    });
+    expect(nodes['video_episode-m1']!.target, ep('m1'));
+    expect(nodes['video_episode-m1']!.role, WorkNetworkRole.series);
+    expect(nodes['video_episode-m2']!.target, ep('m2'));
+    expect(nodes['web-anidb-303']!.target, isNull);
+    expect(
+      edgesOf(plan),
+      unorderedEquals(<String>[
+        'video_collection-1>series_movie>video_episode-m1',
+        'video_episode-m1>series_sequel>video_episode-m2',
+        'video_episode-m2>series_sequel>web-anidb-303',
+      ]),
+    );
+
+    // 从电影自己打开（它不在任何作品图里）：起点是单视频也出网，不是空态。
+    final WorkNetworkPlan fromMovie = planWorkNetwork(s, ep('m2'));
+    expect(
+      nodesOf(fromMovie).keys,
+      containsAll(<String>['video_episode-m2', 'web-anidb-303']),
+    );
+    expect(nodesOf(fromMovie)['video_episode-m2']!.isSelf, isTrue);
+  });
+
   test('手动续作 / 外传连接：进系列栏、沿已生效的展开、建议态不展开，且不并作品', () {
     final WorkGraphSnapshot s = snapshotOf(<WorkGraphLink>[
       link(book('a'), MediaLinkRelation.sequel, book('b')),
