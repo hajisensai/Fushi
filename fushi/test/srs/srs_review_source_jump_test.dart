@@ -191,6 +191,15 @@ void main() {
         ),
         findsOneWidget,
       );
+      // 读屏朗读与可见文字一致（不只读「回到出处」）。
+      expect(
+        tester.getSemantics(pill),
+        containsSemantics(
+          label: '${t.card_source_open} · 12:34',
+          isButton: true,
+          hasTapAction: true,
+        ),
+      );
       // 例句卡右侧的 ↩ 在例句卡里。
       expect(
         find.descendant(

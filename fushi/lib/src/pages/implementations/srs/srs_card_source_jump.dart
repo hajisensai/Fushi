@@ -50,52 +50,61 @@ class SrsCardSourceJumpPill extends StatelessWidget {
       fontWeight: FontWeight.w600,
       height: 1.1,
     );
-    return Semantics(
-      button: true,
-      label: t.card_source_open,
-      excludeSemantics: true,
-      child: FushiHoverLift(
-        builder: (BuildContext context, bool hovering) => MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: GestureDetector(
-            key: const ValueKey<String>('srs-card-source-jump-pill'),
-            behavior: HitTestBehavior.opaque,
-            onTap: onPressed,
-            child: Padding(
-              padding: const EdgeInsets.all(_kPillHitSlop),
-              child: DecoratedBox(
-                decoration: ShapeDecoration(
-                  color: Colors.black.withValues(alpha: hovering ? 0.66 : 0.55),
-                  shape: const StadiumBorder(),
-                ),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: _kPillHeight),
-                  child: Padding(
-                    padding: const EdgeInsetsDirectional.fromSTEB(10, 6, 14, 6),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      spacing: 6,
-                      children: <Widget>[
-                        const FushiIcon(
-                          FushiIcons.undo,
-                          size: 18,
-                          color: Colors.white,
-                        ),
-                        Flexible(
-                          child: CardSourceLocatorText(
-                            database: database,
-                            link: link,
-                            style: style,
-                            textKey: const ValueKey<String>(
-                              'srs-card-source-jump-label',
-                            ),
-                            format: (String? locator) => cardSourceJumpLabel(
-                              locator: locator,
-                              title: title,
+    // 读屏朗读与可见文字一致（「回到出处 · 第 N 集 · mm:ss」/ 来源名）：不另写
+    // label，把内部文字并进这一个按钮节点。
+    return MergeSemantics(
+      child: Semantics(
+        button: true,
+        child: FushiHoverLift(
+          builder: (BuildContext context, bool hovering) => MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              key: const ValueKey<String>('srs-card-source-jump-pill'),
+              behavior: HitTestBehavior.opaque,
+              onTap: onPressed,
+              child: Padding(
+                padding: const EdgeInsets.all(_kPillHitSlop),
+                child: DecoratedBox(
+                  decoration: ShapeDecoration(
+                    color: Colors.black.withValues(
+                      alpha: hovering ? 0.66 : 0.55,
+                    ),
+                    shape: const StadiumBorder(),
+                  ),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: _kPillHeight),
+                    child: Padding(
+                      padding: const EdgeInsetsDirectional.fromSTEB(
+                        10,
+                        6,
+                        14,
+                        6,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        spacing: 6,
+                        children: <Widget>[
+                          const FushiIcon(
+                            FushiIcons.undo,
+                            size: 18,
+                            color: Colors.white,
+                          ),
+                          Flexible(
+                            child: CardSourceLocatorText(
+                              database: database,
+                              link: link,
+                              style: style,
+                              textKey: const ValueKey<String>(
+                                'srs-card-source-jump-label',
+                              ),
+                              format: (String? locator) => cardSourceJumpLabel(
+                                locator: locator,
+                                title: title,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
