@@ -36,10 +36,19 @@ OnlineMangaLibraryService mihonOnlineLibraryService(MihonManager manager) =>
     );
 
 /// 一次源刷新落库的结果：写回后的描述符 + 相对库里旧章表新出现的章。
-typedef OnlineMangaRefreshOutcome = ({
+typedef _RefreshOutcome = ({
   OnlineMangaLibraryEntry entry,
   List<OnlineMangaChapter> fresh,
 });
+
+/// 订阅自动下载的入队口：`entry.autoDownload` 为真的条目刷新出新章时调用，
+/// [chapters] 按章序（旧 → 新）。生产是 `MangaDownloadService.enqueueChapters`；
+/// 测试注入记录器。
+typedef OnlineMangaAutoDownload =
+    Future<void> Function(
+      OnlineMangaLibraryEntry entry,
+      List<OnlineMangaChapter> chapters,
+    );
 
 /// 在线漫画书目录的唯一真相：库里那一行的 `extractDir`。
 ///
@@ -69,6 +78,7 @@ class OnlineMangaLibraryService {
     required this.rootDirectory,
     required this.adapter,
     this.updateFeed,
+    this.autoDownload,
     Future<DownloadLayout> Function()? downloadLayout,
   }) : _downloadLayout = downloadLayout;
 
@@ -87,6 +97,14 @@ class OnlineMangaLibraryService {
   /// 单测里的实例都不需要提醒，而「刷新出新章」这件事的判据不该因为少一个可选
   /// 依赖就走两条路径。null = 只落库不提醒。
   final UpdateFeedService? updateFeed;
+
+  /// 订阅自动下载的入队口（设计稿 2026-09-12 §5；拍板 design-nmv-series-refresh-autodl
+  /// 2026-11-20 选 a）。与 [updateFeed] 同挂在 [refresh] 的落库之后、同一份「相对
+  /// 库里旧章表新出现的章」判据上：**不管新章是谁刷出来的**——后台 6 小时探针、
+  /// 作品页 / 历史页的刷新、互联收编——描述符 `autoDownload` 为真就入队。只在探针里
+  /// 入队时，作品页先刷进库的新章探针再看就不算「新」，永远不会自动下载。
+  /// null = 不自动下载（源浏览页临时实例、单测）。
+  final OnlineMangaAutoDownload? autoDownload;
 
   /// 下载根布局的取值口；null = 进程内的 [DownloadRoot.current]（AppModel 装的
   /// 解析器，没装时是默认根）。单测注入假根。
@@ -201,7 +219,7 @@ class OnlineMangaLibraryService {
     chapters: chapters,
   ))?.entry;
 
-  Future<OnlineMangaRefreshOutcome?> _refreshWithOutcome({
+  Future<_RefreshOutcome?> _refreshWithOutcome({
     required String bookKey,
     required OnlineMangaLibraryEntry? existing,
     required OnlineMangaSeries series,
@@ -240,8 +258,8 @@ class OnlineMangaLibraryService {
       );
     }
 
-    final OnlineMangaRefreshOutcome? written = await database
-        .rewriteEpubBookMihonState<OnlineMangaRefreshOutcome>(bookKey, (
+    final _RefreshOutcome? written = await database
+        .rewriteEpubBookMihonState<_RefreshOutcome>(bookKey, (
           String? metadata,
         ) {
           final OnlineMangaLibraryEntry current =
@@ -276,7 +294,35 @@ class OnlineMangaLibraryService {
       title: series.title,
       fresh: written.fresh,
     );
+    await _autoDownloadNewChapters(bookKey, written);
     return written;
+  }
+
+  /// 订阅了自动下载的条目：把这次落库新出现的章按章序（旧章先下）入队。
+  ///
+  /// 订阅位取**写回后**的描述符（事务内重读的库值）：刷新在飞时用户关了自动下载，
+  /// 这里看到的就是关。入队失败记进错误日志、不抛：章表已经落库成功，把入队失败
+  /// 报成「刷新失败」会让作品页显示一条假的失败横幅，探针也会把这一条错计成没刷到。
+  Future<void> _autoDownloadNewChapters(
+    String bookKey,
+    _RefreshOutcome outcome,
+  ) async {
+    final OnlineMangaAutoDownload? enqueue = autoDownload;
+    if (enqueue == null || !outcome.entry.autoDownload) return;
+    if (outcome.fresh.isEmpty) return;
+    try {
+      // 源按新→旧返回；入队按章序。
+      await enqueue(
+        outcome.entry,
+        outcome.fresh.reversed.toList(growable: false),
+      );
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'OnlineMangaLibraryService.autoDownload($bookKey)',
+        error,
+        stack,
+      );
+    }
   }
 
   /// 把这次刷新新出现的章投递成更新提醒。
@@ -308,29 +354,20 @@ class OnlineMangaLibraryService {
     ]);
   }
 
-  /// 联网刷新一条书架条目，成功则落库。
+  /// 联网刷新一条书架条目，成功则落库（新章提醒与订阅自动下载随落库一起做，
+  /// 见 [refresh]）。
   Future<OnlineMangaLibraryEntry> refreshFromSource({
-    required String bookKey,
-    required OnlineMangaLibraryEntry entry,
-  }) async => (await refreshFromSourceWithOutcome(
-    bookKey: bookKey,
-    entry: entry,
-  )).entry;
-
-  /// [refreshFromSource]，另外交回「相对**库里**旧章表新出现的章」（后台更新探针
-  /// 据此自动下载；按调用方快照算会把作品页刚刷进来的章再当新章排一遍）。
-  Future<OnlineMangaRefreshOutcome> refreshFromSourceWithOutcome({
     required String bookKey,
     required OnlineMangaLibraryEntry entry,
   }) async {
     final OnlineMangaRefreshResult result = await adapter.refresh(entry);
-    return await _refreshWithOutcome(
+    return (await refresh(
           bookKey: bookKey,
           existing: entry,
           series: result.series,
           chapters: result.chapters,
-        ) ??
-        (entry: entry, fresh: const <OnlineMangaChapter>[]);
+        )) ??
+        entry;
   }
 
   /// 记下「用户选了这一章」，返回写回后的描述符（以它的 `currentChapterIndex`
