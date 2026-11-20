@@ -1155,6 +1155,12 @@ fn stats_match_protocol_3() {
         with(
             json!({"recallDecks": [deck.clone()], "recall": {"ids": [c1.clone(), c1.clone()], "r": [0.42, 0.17]}}),
         ),
+        // 将来时刻的 R 跟着同位置的 ID 走（同一个 ID 两次照样后者盖前者）。
+        with(json!({"recallDecks": [deck.clone()], "recall": {
+            "ids": [c1.clone(), c1.clone()],
+            "r": [0.95, 0.93],
+            "ahead": [[0.9, 0.85], [0.8, 0.7], [0.6, 0.5]],
+        }})),
         json!({"now": T0 + DAY, "utcOff": 540, "rollover": 0}),
     ];
     let sorted = |v: &Value, k: &str| -> Value {

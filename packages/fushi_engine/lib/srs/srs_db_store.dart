@@ -5510,6 +5510,34 @@ class SrsDbStore implements SrsSync2Host {
     };
   }
 
+  /// [cards]（RWKV 牌组的复习卡）在 [atMs] 各个时刻的 RWKV 回忆率，与 [atMs] 同序（复习首页「停在这里的话」）。
+  /// 等于 [dayEndMs]（今天结束）的那个时刻走排队的常驻分数表（[SrsRwkvScheduling.instantRetrievability]，与复习页
+  /// 数「今天到期」同一时刻、同一张表，通常已算好），其余时刻直接查询（[SrsRwkvScheduling.currentRetrievability]）。
+  /// RWKV 用不了、或任一时刻打不了分时 null。
+  Future<List<Map<String, double>>?> rwkvRetrievabilityAt(
+    List<SrsRwkvCandidate> cards, {
+    required List<int> atMs,
+    required int dayEndMs,
+  }) async {
+    final SrsRwkvScheduling? source = rwkv;
+    if (source == null || !source.ready) return null;
+    final List<Map<String, double>> out = <Map<String, double>>[];
+    for (final int at in atMs) {
+      if (cards.isEmpty) {
+        out.add(const <String, double>{});
+        continue;
+      }
+      final List<double>? scores = at == dayEndMs
+          ? await source.instantRetrievability(cards, atMs: at)
+          : await source.currentRetrievability(cards, nowMs: at);
+      if (scores == null || scores.length != cards.length) return null;
+      out.add(<String, double>{
+        for (int i = 0; i < cards.length; i++) cards[i].id: scores[i],
+      });
+    }
+    return out;
+  }
+
   /// 下一张要复习的卡：到期的学习卡 → 到期复习卡（可提取度从低到高；RWKV 牌组按 R）→ 新卡（所点牌组的
   /// 「新卡顺序」：按词频 = 有名次的在前按名次升序，其余按 [compareNewCardOrder]；按位置 = [compareNewCardOrder]
   /// 的同序）→ 20 分钟内到期的学习卡。与计数同一次排队命令（[studyState]）。

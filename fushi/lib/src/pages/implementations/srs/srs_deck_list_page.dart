@@ -26,6 +26,8 @@ import 'package:fushi_engine/srs/apkg/srs_import_report.dart';
 import 'package:fushi_engine/srs/srs_browse.dart' show srsDeckQuery;
 import 'package:fushi_engine/srs/srs_collection_binding.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_stats.dart'
+    show SrsRwkvHorizon, SrsRwkvNow;
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart'
     show
@@ -123,6 +125,7 @@ import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'
 
 part 'srs_deck_home.dart';
 part 'srs_deck_home_paired.dart';
+part 'srs_deck_home_rwkv.dart';
 part 'srs_deck_tree_band.dart';
 
 /// 行内菜单动作。

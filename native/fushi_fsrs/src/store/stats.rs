@@ -34,6 +34,12 @@ pub const MATURE_DAYS: i64 = 21;
 /// RWKV「接近目标线」的余量（`SrsRwkvNow.nearMargin`）。
 const NEAR_MARGIN: f64 = 0.05;
 
+/// RWKV「停在这里的话」最多看几个将来时刻（Dart `SrsRwkvHorizon`：1 小时后、3 小时后、下一个翻日时刻）。
+pub(crate) const RWKV_AHEAD: usize = 3;
+
+/// RWKV 此刻回忆率直方图的格数（每格 5%，`SrsRwkvNow.recallBins`）。
+const RWKV_RECALL_BINS: usize = 20;
+
 /// 复习分类（`srs_stat_reviews.kind`，Dart `SrsStatReviewKind` 的下标）。
 pub const KINDS: usize = 6;
 const K_NEW: u8 = 0;
@@ -487,8 +493,15 @@ struct Ctx {
     fallback_desired: f64,
     recall_decks: HashSet<String>,
     recall_fallback: bool,
-    /// RWKV 此刻回忆率（卡 → R，非有限值 = None）；None = RWKV 不可用：没有按回忆率排队的卡。
-    recall: Option<HashMap<String, Option<f64>>>,
+    /// RWKV 回忆率（卡 → 此刻与将来几个时刻的 R）；None = RWKV 不可用：没有按回忆率排队的卡。
+    recall: Option<HashMap<String, Recall>>,
+}
+
+/// 一张 RWKV 排队卡的回忆率：此刻 + `recall.ahead` 给的将来时刻（非有限值 / 没给 = None）。
+#[derive(Clone, Copy, Default)]
+struct Recall {
+    now: Option<f64>,
+    ahead: [Option<f64>; RWKV_AHEAD],
 }
 
 impl Ctx {
@@ -541,14 +554,31 @@ impl Ctx {
                 .map(str::to_owned)
                 .collect()
         };
+        // `recall.ahead`（可选）：将来时刻的 R，每个时刻一个与 `ids` 按位置对齐的数组。
         let recall = req.get("recall").and_then(Value::as_object).map(|m| {
             let ids = m.get("ids").and_then(Value::as_array);
             let rs = m.get("r").and_then(Value::as_array);
+            let ahead: Vec<&Vec<Value>> = m
+                .get("ahead")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_array)
+                .take(RWKV_AHEAD)
+                .collect();
+            let finite = |v: Option<&Value>| v.and_then(Value::as_f64).filter(|x| x.is_finite());
             let mut out = HashMap::new();
             if let (Some(ids), Some(rs)) = (ids, rs) {
-                for (id, r) in ids.iter().zip(rs) {
+                for (i, (id, r)) in ids.iter().zip(rs).enumerate() {
                     if let Some(id) = id.as_str() {
-                        out.insert(id.to_owned(), r.as_f64().filter(|x| x.is_finite()));
+                        let mut rec = Recall {
+                            now: finite(Some(r)),
+                            ..Recall::default()
+                        };
+                        for (k, at) in ahead.iter().enumerate() {
+                            rec.ahead[k] = finite(at.get(i));
+                        }
+                        out.insert(id.to_owned(), rec);
                     }
                 }
             }
@@ -624,6 +654,8 @@ struct Derived {
     buried: bool,
     by_recall: bool,
     r: Option<f64>,
+    /// RWKV 排队卡在将来几个时刻的 R（[Recall::ahead]）；别的卡全是 None。
+    r_ahead: [Option<f64>; RWKV_AHEAD],
     added_day: i64,
     desired: f64,
 }
@@ -671,10 +703,16 @@ impl View {
                     && state != State::New
                     && c.queue == "review"
                     && ctx.recall_deck(&c.deck);
-                let r = if by_recall {
+                let recall = if by_recall {
                     ctx.recall
                         .as_ref()
-                        .and_then(|m| m.get(&c.id).copied().flatten())
+                        .and_then(|m| m.get(&c.id).copied())
+                        .unwrap_or_default()
+                } else {
+                    Recall::default()
+                };
+                let r = if by_recall {
+                    recall.now
                 } else {
                     ctx.retrievability(c, state)
                 };
@@ -683,6 +721,7 @@ impl View {
                     buried: c.buried_until.is_some_and(|b| b > ctx.today),
                     by_recall,
                     r,
+                    r_ahead: recall.ahead,
                     added_day: ctx.day.index(c.added_at),
                     desired: ctx.desired_of(&c.deck),
                 }
@@ -1101,6 +1140,9 @@ fn aggregate(
     // RWKV 此刻 / 有没有按到期日排队的卡。
     let mut recall_ids: HashSet<usize> = HashSet::new();
     let (mut r_due, mut r_near, mut due_date) = (0i64, 0i64, false);
+    // 停在这里的话：此刻还在目标线上、到第 k 个将来时刻已掉到线下的张数；有没有哪张卡带了将来时刻的 R。
+    let (mut r_ahead, mut any_ahead) = ([0i64; RWKV_AHEAD], false);
+    let mut r_bins = [0i64; RWKV_RECALL_BINS];
     for &i in &v.cards {
         let (c, dv) = v.card(s, i);
         if !c.fushi || c.suspended {
@@ -1110,10 +1152,22 @@ fn aggregate(
             by_recall += 1;
             recall_ids.insert(i);
             if let Some(r) = dv.r.filter(|r| r.is_finite()) {
+                r_bins[((r.clamp(0.0, 1.0) * RWKV_RECALL_BINS as f64) as usize)
+                    .min(RWKV_RECALL_BINS - 1)] += 1;
                 if r <= dv.desired {
                     r_due += 1;
-                } else if r <= dv.desired + NEAR_MARGIN {
-                    r_near += 1;
+                } else {
+                    if r <= dv.desired + NEAR_MARGIN {
+                        r_near += 1;
+                    }
+                    for (k, later) in dv.r_ahead.iter().enumerate() {
+                        if let Some(later) = later.filter(|x| x.is_finite()) {
+                            any_ahead = true;
+                            if later <= dv.desired {
+                                r_ahead[k] += 1;
+                            }
+                        }
+                    }
                 }
             }
             continue;
@@ -1154,7 +1208,18 @@ fn aggregate(
             .iter()
             .filter(|r| r.day > today - 30 && r.day <= today && recall_ids.contains(&r.card))
             .count();
-        json!([recall_ids.len(), r_due, r_near, reviewed as f64 / 30.0])
+        json!([
+            recall_ids.len(),
+            r_due,
+            r_near,
+            reviewed as f64 / 30.0,
+            if any_ahead {
+                json!(r_ahead)
+            } else {
+                Value::Null
+            },
+            r_bins
+        ])
     };
     let (future_unit, future_spans) = buckets(today, today + n as i64 - 1);
     let future_buckets: Vec<Value> = future_spans
