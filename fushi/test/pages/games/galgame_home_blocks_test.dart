@@ -113,6 +113,18 @@ void main() {
     });
   });
 
+  test('「通关」开关：标记写玩过，取消写回在玩（不清成未设置）', () {
+    for (final GalgamePlayStatus status in GalgamePlayStatus.values) {
+      expect(
+        galgameClearedToggleTarget(status),
+        status == GalgamePlayStatus.played
+            ? GalgamePlayStatus.playing
+            : GalgamePlayStatus.played,
+        reason: '$status',
+      );
+    }
+  });
+
   test('上下文菜单：与游戏库卡片同序同项（详情在前、移除进危险区）', () {
     final List<GalgameItemMenuItem> items = galgameItemMenuItems(
       entry('g', GalgamePlayStatus.unset),

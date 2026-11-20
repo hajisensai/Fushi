@@ -4432,9 +4432,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           final String bookKey => MediaNsfwTarget.book(bookKey),
           null => null,
         },
-        // 主按钮「继续阅读」（#4b）：直接开这一卷 / 这本书（漫画也不绕作品页，
-        // 作品页在主操作行里另有入口）。
-        launchLabel: t.item_menu_continue_reading,
+        // 不放「继续阅读」主按钮：点卡本身负责阅读，菜单里再放一个是重复入口
+        // （与视频卡同一口径，#3803 用户拍板）。
+        showLaunchAction: false,
         progressLabel: _itemMenuProgressLabel(item),
         extraActions: removeFromCollection == null
             ? (MediaItem it) =>

@@ -188,6 +188,16 @@ Future<void> showGalgameItemActionsMenu({
   );
 }
 
+/// 「通关」开关拨动后要写的游玩状态：没通关 → 玩过；已通关 → 在玩。
+///
+/// 取消通关落「在玩」而不是「未设置」：拨掉通关的语义是「还没玩完」，写回
+/// unset 会把游戏从「在玩」等分组里整个抹掉，拨错再拨回也回不到原状态。要设成
+/// 其它状态走「游玩状态」选择器。
+GalgamePlayStatus galgameClearedToggleTarget(GalgamePlayStatus current) =>
+    current == GalgamePlayStatus.played
+    ? GalgamePlayStatus.playing
+    : GalgamePlayStatus.played;
+
 /// 菜单动作键。
 enum GalgameItemAction {
   detail,
@@ -508,9 +518,7 @@ class GalgameItemActions {
       case GalgameItemAction.cleared:
         await _repo.setPlayStatus(
           game.id,
-          game.playStatus == GalgamePlayStatus.played
-              ? GalgamePlayStatus.unset
-              : GalgamePlayStatus.played,
+          galgameClearedToggleTarget(game.playStatus),
         );
       case GalgameItemAction.hookWorkbench:
         final VoidCallback? open = onOpenWorkbench;

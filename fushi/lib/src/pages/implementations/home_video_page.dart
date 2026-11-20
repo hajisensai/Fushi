@@ -6982,7 +6982,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       padding: EdgeInsets.zero,
       onTap: _selectionMode ? null : spec.onTap,
       onLongPress: _selectionMode ? null : spec.onLongPress,
-      onSecondaryTap: _selectionMode ? _showBatchMenu : spec.onLongPress,
+      // 分区不参与勾选：多选态右键与点按 / 长按一样让位，不弹针对选中集的批量菜单。
+      onSecondaryTap: _selectionMode ? null : spec.onLongPress,
       child: _videoCoverBlock(
         size: size,
         orientation: VideoCardOrientation.portrait,
@@ -7112,7 +7113,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         // 让位祖先 SelectionDragArea 扫选，与墙卡同一纪律。
         onTap: _selectionMode ? null : onTap,
         onLongPress: _selectionMode ? null : onLongPress,
-        onSecondaryTap: _selectionMode ? _showBatchMenu : onLongPress,
+        onSecondaryTap: _selectionMode ? null : onLongPress,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
