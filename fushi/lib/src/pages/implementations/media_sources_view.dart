@@ -1844,8 +1844,11 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
           final SourceScanSummary? done = summary;
           if (done != null && done.succeeded) _showBookAudiobookSummary(done);
           if (blockedByScrapeCleanup || done?.blocked != null) {
+            // 扫描器给的 error 就是按 blocked 种类写的本地化文案（清理中 / 来源已移除）。
             FushiToast.show(
-              msg: t.media_source_scan_blocked_scrape_cleanup,
+              msg: done?.blocked != null && done?.error != null
+                  ? done!.error!
+                  : t.media_source_scan_blocked_scrape_cleanup,
               severity: ToastSeverity.warning,
             );
           }

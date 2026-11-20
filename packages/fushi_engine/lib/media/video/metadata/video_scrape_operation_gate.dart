@@ -14,6 +14,11 @@ abstract final class VideoScrapeOperationGate {
   static int _activeOperations = 0;
   static bool _maintenanceActive = false;
 
+  /// 刮削资料清理（maintenance）正持有门：此刻 [tryEnterOperation] 必然返回 null。
+  /// 供调用方在发起前同步判定、给出唯一一条提示（与随后的 [tryEnterOperation] 之间
+  /// 没有 await 时结论一致——门只在本 isolate 内同步变化）。
+  static bool get isMaintenanceActive => _maintenanceActive;
+
   static VideoScrapeOperationLease? tryEnterOperation() {
     if (_maintenanceActive) return null;
     _activeOperations++;
@@ -43,6 +48,13 @@ abstract final class VideoScrapeOperationGate {
 /// 兜底文案，不是界面文案的来源。
 class VideoScrapeMaintenanceActiveError extends StateError {
   VideoScrapeMaintenanceActiveError() : super('视频刮削资料正在清理');
+}
+
+/// 刮削批次被挡回：视频来源扫描正在进行（扫描与刮削共用一把应用级互斥门）。
+///
+/// 与 [VideoScrapeMaintenanceActiveError] 同理类型化，界面按类型出本地化文案。
+class VideoSourceScanInProgressError extends StateError {
+  VideoSourceScanInProgressError() : super('视频来源扫描尚未完成');
 }
 
 class VideoScrapeOperationLease {

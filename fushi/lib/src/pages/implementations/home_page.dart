@@ -3997,29 +3997,31 @@ class _HomePageState extends BasePageState<HomePage>
     Future<SourceScrapeReport> task,
   ) => _videoScrapeRuntime.observe(task);
 
-  /// 用户手动发起的刮削被刮削门挡回（资料正在清理）时补一条提示：任务根本没开始，
-  /// 任务面板里不会出现它，只发「已在后台开始」等于什么都没说。其余失败照旧只进
-  /// 错误日志（[_observeVideoSourceScrape]）、在任务面板里看。
-  void _reportVideoScrapeRejected(Future<SourceScrapeReport> task) {
-    unawaited(
-      task.then<void>(
-        (SourceScrapeReport _) {},
-        onError: (Object error) {
-          final String? text = videoScrapeMaintenanceText(error);
-          if (text == null) return;
-          FushiToast.show(msg: text, severity: ToastSeverity.warning);
-        },
-      ),
+  /// 手动刮削发起前同步判定刮削门（拍板台 design-nmv-fyi-tail ②）：挡回时只出一条
+  /// 「为什么没开始」的提示并返回 true，不再先报「已在后台开始」、过后又报「正在清理
+  /// 再试」两条前后矛盾的 Toast。判定与随后的发起之间不能有 await（见
+  /// [VideoSourceScrapeTaskController.startBlocker]）。
+  bool _videoScrapeStartBlocked() {
+    final Object? blocker = _videoSourceScrapeController.startBlocker();
+    if (blocker == null) return false;
+    FushiToast.show(
+      msg: videoScrapeStartBlockedText(blocker),
+      severity: ToastSeverity.warning,
     );
+    return true;
   }
 
   Future<void> _scrapeVideoSource(SourceLibraryRow source) async {
+    // 先判一次：挡回时不必让用户先过一遍覆盖确认框。
+    if (_videoScrapeStartBlocked()) return;
     final ({bool proceed, bool grant}) overwrite =
         await _confirmProtectedSidecarOverwrite(<SourceLibraryRow>[source]);
     if (!mounted || !overwrite.proceed) return;
+    // 确认框期间门可能变了：紧贴发起再判一次，两者之间没有 await。
+    if (_videoScrapeStartBlocked()) return;
     final VideoSourceScrapeTaskController controller =
         _videoSourceScrapeController;
-    _reportVideoScrapeRejected(
+    unawaited(
       _observeVideoSourceScrape(
         controller.scrapeSource(
           source,
@@ -4046,12 +4048,14 @@ class _HomePageState extends BasePageState<HomePage>
       ).showSnackBar(FushiSnackBar(content: Text(t.media_source_no_sources)));
       return;
     }
+    if (_videoScrapeStartBlocked()) return;
     final ({bool proceed, bool grant}) overwrite =
         await _confirmProtectedSidecarOverwrite(localSources);
     if (!mounted || !overwrite.proceed) return;
+    if (_videoScrapeStartBlocked()) return;
     final VideoSourceScrapeTaskController controller =
         _videoSourceScrapeController;
-    _reportVideoScrapeRejected(
+    unawaited(
       _observeVideoSourceScrape(
         controller.scrapeAllSources(
           localSources,

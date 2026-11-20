@@ -296,17 +296,63 @@ $imageRevealSemantics
     return hasClass(node, 'gaiji') || hasClass(node, 'gaiji-line');
   }
 
-  // 只看节点自身携带的信号（文字上下文、真实 / 声明尺寸、block-img 类），不读样式。
-  // BUG-4907：VN 归类的对象是 detachChapterSource 搬出来、不挂在文档上的源树，Blink /
-  // WebKit 对它 getComputedStyle 一律给空值，旧的「computed display 是块级」一条在生产里
-  // 恒不生效；同一节点挂上文档时却会被书本样式或阅读器的 `p > img:only-child
-  // { display:block }` 翻成独立插图。归类不能随挂载状态变。
+  // 书本样式把它排成块级的图（[markBookBlockImages] 在源树还挂在文档上时记下）。
+  var BOOK_BLOCK_IMAGE_ATTR = 'data-fushi-vn-book-block';
+
+  // 阅读器自己注入的样式表（与无缝章节脚本 isReaderOwnedStyle 同一判据）：阅读器样式、
+  // 首帧遮罩、有声书高亮样式。量「书本样式说它是不是块级」时要先把它们关掉——阅读器的
+  // `p > img:only-child { display:block }` 是为纯图段居中写的，不代表书本的意图。
+  function isReaderOwnedStyleElement(el) {
+    var id = (el && el.id) || '';
+    return id === 'fushi-cloak' || id === 'fushi-reader-style' || id.indexOf('__fushi') === 0;
+  }
+
+  function isBlockLevelDisplay(display) {
+    return display === 'block' || display === 'flex' || display === 'grid' ||
+      display === 'table' || display === 'list-item' || display === 'flow-root';
+  }
+
+  // 拍板台 design-nmv-fyi-tail ①：书本 CSS 把文字中间的小图排成 `display:block`（行内
+  // style 或书本样式表），VN 就把它当独立插图、单独一屏。只能在 detachChapterSource 之前
+  // 量：源树一摘下文档，Blink / WebKit 对它 getComputedStyle 一律给空值（BUG-4907）。量的
+  // 结果写成节点属性，随节点搬进源树、随 cloneNode 带进屏，之后的归类（切屏、内容流、
+  // 迟到图片复核）只读属性、不读样式，挂着与摘下归类一致。
+  function markBookBlockImages(doc) {
+    var body = doc && doc.body;
+    if (!body || typeof getComputedStyle !== 'function') return;
+    var images = body.querySelectorAll('img');
+    if (!images.length) return;
+    var disabled = [];
+    var styles = doc.querySelectorAll('style, link[rel~="stylesheet"]');
+    for (var i = 0; i < styles.length; i++) {
+      var sheet = styles[i].sheet;
+      if (!sheet || sheet.disabled || !isReaderOwnedStyleElement(styles[i])) continue;
+      sheet.disabled = true;
+      disabled.push(sheet);
+    }
+    try {
+      for (var j = 0; j < images.length; j++) {
+        var image = images[j];
+        if (isInlineGlyphImage(image)) continue;
+        if (isBlockLevelDisplay(getComputedStyle(image).display)) {
+          image.setAttribute(BOOK_BLOCK_IMAGE_ATTR, '');
+        }
+      }
+    } finally {
+      for (var k = 0; k < disabled.length; k++) disabled[k].disabled = false;
+    }
+  }
+
+  // 只看节点自身携带的信号（文字上下文、真实 / 声明尺寸、block-img 类、挂载时记下的书本
+  // 块级标记），不读样式。BUG-4907：VN 归类的对象是 detachChapterSource 搬出来、不挂在
+  // 文档上的源树，对它 getComputedStyle 恒为空；归类不能随挂载状态变。
   function isStandaloneImageNode(node, contextRoot) {
     if (isInlineGlyphImage(node)) return false;
     var textContext = mediaTextContextRoot(node, contextRoot);
     if (!hasMeaningfulText(textContext)) return true;
     if (isLargeImage(node)) return true;
-    return hasClass(node, 'block-img');
+    if (hasClass(node, 'block-img')) return true;
+    return !!(node && node.hasAttribute && node.hasAttribute(BOOK_BLOCK_IMAGE_ATTR));
   }
 
   function isStandaloneMediaNode(node, contextRoot) {
@@ -729,7 +775,8 @@ $imageRevealSemantics
       return new ReaderVnContentStream(root, options);
     },
     isLargeImage: isLargeImage,
-    isStandaloneImage: isStandaloneImageNode
+    isStandaloneImage: isStandaloneImageNode,
+    markBookBlockImages: markBookBlockImages
   };
 })(window);
 (function(global) {
@@ -1159,6 +1206,11 @@ $kSentenceAudioRubyGapJs
   },
   detachChapterSource: function() {
     if (this.sourceRoot) return;
+    // 摘下之前记下书本样式排成块级的图：摘下后再也量不到（拍板台 design-nmv-fyi-tail ①）。
+    var contentStreamApi = window.fushiReaderVnContentStream;
+    if (contentStreamApi && typeof contentStreamApi.markBookBlockImages === 'function') {
+      contentStreamApi.markBookBlockImages(document);
+    }
     this.sourceRoot = document.createElement('div');
     var children = Array.from(document.body.childNodes);
     for (var i = 0; i < children.length; i++) {

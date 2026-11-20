@@ -88,22 +88,27 @@ const Duration kMangaPanelModelStallTimeout = Duration(seconds: 30);
 /// 全部订阅者都取消时才中止下载（只有一个入口时与旧语义相同）。
 /// [clientFactory] / [stallTimeout] 只对发起那一次生效。
 ///
-/// 取消不是立刻停：下载体只在产出下一块时才看得到取消，卡在等数据时要等到下一块
-/// 或 [stallTimeout] 才走到 finally 删 `.part`。所以新发起的那一次先等上一次的下载体
-/// 真正退出（[_panelModelStopped]）再碰 `.part`，否则「取消后马上再点下载」时旧那次
-/// 的清理会删掉新那次正在写的暂存文件。
+/// 取消立刻停（拍板台 design-nmv-fyi-tail ⑤）：最后一个订阅者取消时先强关这次下载
+/// 的连接，卡在等响应头 / 等数据的下载体当场以连接错误醒来、走 finally 删 `.part`，
+/// 不必再等下一块或一个 [stallTimeout]（以前取消后马上重下，新那次最多要等 30 秒）。
+/// 新发起的那一次仍先等上一次的下载体真正退出（[_panelModelStopped]）再碰 `.part`，
+/// 否则旧那次的清理会删掉新那次正在写的暂存文件。
 Stream<int> downloadMangaPanelModel({
   HttpClient Function()? clientFactory,
   Duration stallTimeout = kMangaPanelModelStallTimeout,
 }) {
-  final _PanelModelDownload download = _panelModelDownload ??=
-      _PanelModelDownload(
-        _downloadMangaPanelModelOnce(
-          after: _panelModelStopped,
-          clientFactory: clientFactory,
-          stallTimeout: stallTimeout,
-        ),
-      );
+  _PanelModelDownload? download = _panelModelDownload;
+  if (download == null) {
+    final HttpClient client = (clientFactory ?? createAppHttpClient)();
+    download = _panelModelDownload = _PanelModelDownload(
+      _downloadMangaPanelModelOnce(
+        after: _panelModelStopped,
+        client: client,
+        stallTimeout: stallTimeout,
+      ),
+      abort: () => client.close(force: true),
+    );
+  }
   return download.subscribe();
 }
 
@@ -116,7 +121,8 @@ Future<void> _panelModelStopped = Future<void>.value();
 /// 正在进行的那一次下载与它的订阅者。下载结束（成功或失败）时先摘掉
 /// [_panelModelDownload] 再通知订阅者：之后的调用会重新发起，不会接到已结束的这一次。
 class _PanelModelDownload {
-  _PanelModelDownload(Stream<int> source) {
+  _PanelModelDownload(Stream<int> source, {required void Function() abort})
+    : _abort = abort {
     _panelModelStopped = _stopped.future;
     _source = source.listen(
       (int received) {
@@ -144,6 +150,7 @@ class _PanelModelDownload {
   }
 
   late final StreamSubscription<int> _source;
+  final void Function() _abort;
   final Completer<void> _stopped = Completer<void>();
 
   void _markStopped() {
@@ -163,8 +170,11 @@ class _PanelModelDownload {
       onCancel: () async {
         _subscribers.remove(sub);
         if (_subscribers.isEmpty && identical(_panelModelDownload, this)) {
-          // 最后一个订阅者走了：中止下载（下载体的 finally 删 `.part`、关连接）。
+          // 最后一个订阅者走了：先强关连接让卡在 await 上的下载体当场醒来，再等它
+          // 跑完 finally（删 `.part`）。async* 的取消只在下一次 yield 时生效，单靠
+          // cancel 要等到下一块数据或停顿超时。
           _detach();
+          _abort();
           try {
             await _source.cancel();
           } finally {
@@ -182,21 +192,21 @@ class _PanelModelDownload {
 
 Stream<int> _downloadMangaPanelModelOnce({
   required Future<void> after,
-  HttpClient Function()? clientFactory,
+  required HttpClient client,
   Duration stallTimeout = kMangaPanelModelStallTimeout,
 }) async* {
-  await after;
-  if (!kMangaPanelModelManifest.isVerified) {
-    throw StateError('panel model manifest has no verified release digest');
-  }
-  final Directory dir = await mangaPanelModelDirectory();
-  await dir.create(recursive: true);
-  final File target = File(
-    '${dir.path}${Platform.pathSeparator}${kMangaPanelModelManifest.fileName}',
-  );
-  final File part = File('${target.path}.part');
-  final HttpClient client = (clientFactory ?? createAppHttpClient)();
+  // 连接从头到尾归这一次下载体所有：任何一步抛出都在最外层 finally 里关掉。
   try {
+    await after;
+    if (!kMangaPanelModelManifest.isVerified) {
+      throw StateError('panel model manifest has no verified release digest');
+    }
+    final Directory dir = await mangaPanelModelDirectory();
+    await dir.create(recursive: true);
+    final File target = File(
+      '${dir.path}${Platform.pathSeparator}${kMangaPanelModelManifest.fileName}',
+    );
+    final File part = File('${target.path}.part');
     final HttpClientRequest request = await client.getUrl(
       Uri.parse(kMangaPanelModelManifest.assetUrl),
     );

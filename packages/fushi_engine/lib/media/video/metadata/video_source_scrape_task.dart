@@ -834,6 +834,22 @@ class VideoSourceScrapeTaskController extends EngineChangeNotifier {
     }
   }
 
+  /// 现在发起 [scrapeSource] / [scrapeAllSources] 会不会被同步挡回：会则返回 [_start]
+  /// 将以之失败的那个错误，不会（能开始，或会接到正在跑的批次上）返回 null。
+  ///
+  /// 手动发起的入口在发起前同步调一次，挡回时只出一条「为什么没开始」的提示，而不是
+  /// 先报「已在后台开始」再报失败（拍板台 design-nmv-fyi-tail ②）。与随后的发起之间
+  /// 没有 await 时结论与 [_start] 一致：控制器状态与刮削门都只在本 isolate 内同步变化。
+  Object? startBlocker() {
+    if (_disposed) return StateError('视频来源任务控制器已释放');
+    if (_active != null) return null;
+    if (_scanningSourceId != null) return VideoSourceScanInProgressError();
+    if (VideoScrapeOperationGate.isMaintenanceActive) {
+      return VideoScrapeMaintenanceActiveError();
+    }
+    return null;
+  }
+
   Future<SourceScrapeReport> _start(
     Iterable<SourceLibraryRow> sourceIterable, {
     required bool interactive,
@@ -841,14 +857,10 @@ class VideoSourceScrapeTaskController extends EngineChangeNotifier {
     Map<int, List<VideoSourceScrapeWork>>? plannedWorksBySource,
     String runScope = 'source',
   }) {
-    if (_disposed) {
-      return Future<SourceScrapeReport>.error(StateError('视频来源任务控制器已释放'));
-    }
     final Future<SourceScrapeReport>? running = _active;
-    if (running != null) return running;
-    if (_scanningSourceId != null) {
-      return Future<SourceScrapeReport>.error(StateError('视频来源扫描尚未完成'));
-    }
+    if (running != null && !_disposed) return running;
+    final Object? blocker = startBlocker();
+    if (blocker != null) return Future<SourceScrapeReport>.error(blocker);
     final List<SourceLibraryRow> sources = sourceIterable.toList(
       growable: false,
     );

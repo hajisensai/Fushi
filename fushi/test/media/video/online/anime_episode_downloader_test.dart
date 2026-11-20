@@ -1252,6 +1252,106 @@ void main() {
       expect(progress, <double>[for (int i = 1; i <= count; i++) i / count]);
     });
 
+    // 拍板台 design-nmv-fyi-tail ⑥：3 片在途撞上源站限流时，以前整集失败；现在降到 1 片、
+    // 照 Retry-After 等过再重试同一片，整集照常下完、按序写盘。
+    test('a rate-limited segment (429) drops to one in flight, honours '
+        'Retry-After and retries the same segment', () async {
+      const int count = 6;
+      final List<Uint8List> parts = <Uint8List>[
+        for (int i = 0; i < count; i++) _tsPackets(2 + i, seed: 3 + 2 * i),
+      ];
+      server.routes['/hls/media.m3u8'] = _text(
+        '#EXTM3U\n#EXT-X-TARGETDURATION:4\n'
+        '${<String>[for (int i = 0; i < count; i++) '#EXTINF:4,\ns$i.ts\n'].join()}'
+        '#EXT-X-ENDLIST\n',
+      );
+      int limited = 0;
+      int inFlight = 0;
+      int peakAfterLimit = 0;
+      final List<int> served = <int>[];
+      for (int i = 0; i < count; i++) {
+        server.routes['/hls/s$i.ts'] = (HttpRequest request) async {
+          if (i == 1 && limited < 2) {
+            limited++;
+            request.response
+              ..statusCode = HttpStatus.tooManyRequests
+              ..headers.set(HttpHeaders.retryAfterHeader, '0');
+            await request.response.close();
+            return;
+          }
+          inFlight++;
+          if (limited >= 2 && i >= 2 && inFlight > peakAfterLimit) {
+            peakAfterLimit = inFlight;
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          inFlight--;
+          served.add(i);
+          request.response.add(parts[i]);
+          await request.response.close();
+        };
+      }
+      final File dest = File(p.join(tmp.path, 'ep1.mp4'));
+      await downloader(_FakeFfmpeg.failing()).download(
+        url: server.url('/hls/media.m3u8'),
+        headers: const <String, String>{},
+        dest: dest,
+      );
+      expect(limited, 2);
+      expect(await dest.readAsBytes(), <int>[
+        for (final Uint8List part in parts) ...part,
+      ]);
+      expect(
+        served.where((int i) => i == 1),
+        hasLength(1),
+        reason: 'the limited segment is fetched again until it succeeds',
+      );
+      expect(
+        peakAfterLimit,
+        lessThanOrEqualTo(kAnimeHlsSegmentsInFlight - 1),
+        reason: 'after a 429 the window shrinks instead of firing 3 again',
+      );
+    });
+
+    test('a segment that stays rate-limited fails as AnimeHlsRateLimited '
+        'after the retry budget and keeps the progress record', () async {
+      installHls();
+      int hits = 0;
+      server.routes['/hls/seg2.png'] = (HttpRequest request) async {
+        hits++;
+        request.response
+          ..statusCode = HttpStatus.tooManyRequests
+          ..headers.set(HttpHeaders.retryAfterHeader, '0');
+        await request.response.close();
+      };
+      final File dest = File(p.join(tmp.path, 'ep1.mp4'));
+      await expectLater(
+        downloader(_FakeFfmpeg.failing()).download(
+          url: server.url('/hls/master.m3u8'),
+          headers: const <String, String>{},
+          dest: dest,
+        ),
+        throwsA(isA<AnimeHlsRateLimited>()),
+      );
+      expect(hits, kAnimeHlsRateLimitRetries + 1);
+      expect(await dest.exists(), isFalse);
+      expect(await File('${dest.path}.hls.progress').exists(), isTrue);
+    });
+
+    test('parseRetryAfter reads seconds and HTTP dates', () {
+      final DateTime now = DateTime.utc(2026, 11, 21, 12);
+      expect(parseRetryAfter('7', now: now), const Duration(seconds: 7));
+      expect(
+        parseRetryAfter('Sat, 21 Nov 2026 12:00:30 GMT', now: now),
+        const Duration(seconds: 30),
+      );
+      expect(
+        parseRetryAfter('Sat, 21 Nov 2026 11:00:00 GMT', now: now),
+        Duration.zero,
+      );
+      expect(parseRetryAfter(null), isNull);
+      expect(parseRetryAfter('soon'), isNull);
+    });
+
     test('HTTP errors on a segment surface as failures, not cancels', () async {
       installHls();
       server.routes['/hls/seg2.png'] = (HttpRequest request) async {

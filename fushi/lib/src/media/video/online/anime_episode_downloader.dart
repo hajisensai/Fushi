@@ -13,7 +13,8 @@
 ///   外部取消，移动端 kit 只能靠 timeout）——master 选最高码率变体、`#EXT-X-MAP`
 ///   初始化段先写、`#EXT-X-KEY` AES-128 解密、图片伪装分片剥前缀（BUG-2609，与播放
 ///   中继同一套判据 `hls_relay_normalizer.dart`），最多 [kAnimeHlsSegmentsInFlight]
-///   片同时在途、按片序追加进 `.hls.part`，已完成的
+///   片同时在途（被源站限流 429 / 503 时降到 1 片、按 `Retry-After` 等过重试同一个请求，
+///   稳定后逐片加回）、按片序追加进 `.hls.part`，已完成的
 ///   分片数与字节数连同**流指纹**（[hlsStreamFingerprint]）记在 `.hls.progress` 里
 ///   断点续传——指纹对不上（换了线路 / 画质 / 源站重切了片）就从 0 下，不把两条流
 ///   拼进同一个文件；全部下完后本地跑一次 `ffmpeg -c copy` 转封装成 mp4（本地文件
@@ -59,6 +60,51 @@ const Duration kAnimeEpisodeIdleConnectionTimeout = Duration(seconds: 15);
 /// 两批各 3 轮）串行中位约 41 s、3 条在途中位约 16.5 s。写盘仍严格按序、断点只记
 /// 连续写完的前缀，内存里最多压这么多片。
 const int kAnimeHlsSegmentsInFlight = 3;
+
+/// 同一个请求被限流（HTTP 429 / 503）后最多再试几次（拍板台 design-nmv-fyi-tail ⑥）。
+/// 超过仍被限流就如实失败，断点照旧保留。
+const int kAnimeHlsRateLimitRetries = 6;
+
+/// 被限流时服务器没给 `Retry-After`：第 n 次重试前等 2^(n-1) 秒，封顶这么久。
+const Duration kAnimeHlsRateLimitMaxBackoff = Duration(seconds: 30);
+
+/// 服务器给的 `Retry-After` 最多照办这么久：再长就当它不想让我们下了，交给重试次数兜底。
+const Duration kAnimeHlsRetryAfterCap = Duration(seconds: 60);
+
+/// 被限流降到 1 片在途后，连续写完这么多片再加回一片，直到 [kAnimeHlsSegmentsInFlight]。
+const int kAnimeHlsWindowRecoverAfter = 8;
+
+/// 分片下载里一次请求被源站限流（HTTP 429，或 503）。仍是 [HttpException]（既有调用方
+/// 按它接的不受影响）；[retryAfter] 是响应 `Retry-After` 解析出的等待时长（没给 / 读不懂为
+/// null）。
+class AnimeHlsRateLimited extends HttpException {
+  const AnimeHlsRateLimited(
+    super.message, {
+    super.uri,
+    required this.statusCode,
+    this.retryAfter,
+  });
+
+  final int statusCode;
+  final Duration? retryAfter;
+}
+
+/// 解析 `Retry-After`：秒数或 HTTP 日期；读不懂返回 null。日期早于 [now] 时为零。
+@visibleForTesting
+Duration? parseRetryAfter(String? value, {DateTime? now}) {
+  final String text = (value ?? '').trim();
+  if (text.isEmpty) return null;
+  final int? seconds = int.tryParse(text);
+  if (seconds != null) return seconds < 0 ? null : Duration(seconds: seconds);
+  try {
+    final Duration wait = HttpDate.parse(
+      text,
+    ).difference((now ?? DateTime.now()).toUtc());
+    return wait.isNegative ? Duration.zero : wait;
+  } on FormatException {
+    return null;
+  }
+}
 
 /// 直链续传的验证器侧车后缀（`<dest>.part.validator`）。
 const String kAnimeDirectValidatorSuffix = '.part.validator';
@@ -564,6 +610,7 @@ class AnimeEpisodeDownloader {
             dest,
             onProgress: onProgress,
             isCancelled: () => cancelled,
+            cancelSignal: cancelSignal,
           ),
         );
       } else {
@@ -590,6 +637,7 @@ class AnimeEpisodeDownloader {
               dest,
               onProgress: onProgress,
               isCancelled: () => cancelled,
+              cancelSignal: cancelSignal,
             ),
           );
         }
@@ -1073,8 +1121,20 @@ class AnimeEpisodeDownloader {
     await for (final List<int> chunk in response.timeout(stallTimeout)) {
       builder.add(chunk);
     }
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw HttpException('HTTP ${response.statusCode}', uri: uri);
+    final int status = response.statusCode;
+    if (status == HttpStatus.tooManyRequests ||
+        status == HttpStatus.serviceUnavailable) {
+      throw AnimeHlsRateLimited(
+        'HTTP $status',
+        uri: uri,
+        statusCode: status,
+        retryAfter: parseRetryAfter(
+          response.headers.value(HttpHeaders.retryAfterHeader),
+        ),
+      );
+    }
+    if (status < 200 || status >= 300) {
+      throw HttpException('HTTP $status', uri: uri);
     }
     final Uri finalUri = response.redirects.isEmpty
         ? uri
@@ -1120,10 +1180,51 @@ class AnimeEpisodeDownloader {
     Map<String, String> headers,
     File dest, {
     required bool Function() isCancelled,
+    Future<void>? cancelSignal,
     void Function(double progress)? onProgress,
   }) async {
-    final ({HlsMediaPlaylist playlist, Uri uri}) media =
-        await _loadMediaPlaylist(client, uri, headers);
+    // 自适应在途窗（拍板台 design-nmv-fyi-tail ⑥）：平时 [kAnimeHlsSegmentsInFlight] 片
+    // 同时在途；任何请求被限流（429 / 503）就降到 1 片，照 `Retry-After`（没给就指数
+    // 退避）等过再重试同一个请求，连续写完 [kAnimeHlsWindowRecoverAfter] 片再加回一片。
+    // 以前一片 429 整集失败，重试时又是 3 片同时上，照样再撞。
+    int window = kAnimeHlsSegmentsInFlight;
+    int cleanSinceLimit = 0;
+    Future<T> retryRateLimited<T>(
+      Future<T> first,
+      Future<T> Function() again,
+    ) async {
+      Future<T> attempt = first;
+      for (int tries = 1; ; tries++) {
+        try {
+          return await attempt;
+        } on AnimeHlsRateLimited catch (error) {
+          if (tries > kAnimeHlsRateLimitRetries || isCancelled()) rethrow;
+          window = 1;
+          cleanSinceLimit = 0;
+          final Duration backoff = Duration(
+            seconds: 1 << (tries - 1).clamp(0, 30),
+          );
+          final Duration wait =
+              error.retryAfter ??
+              (backoff > kAnimeHlsRateLimitMaxBackoff
+                  ? kAnimeHlsRateLimitMaxBackoff
+                  : backoff);
+          await Future.any(<Future<void>>[
+            Future<void>.delayed(
+              wait > kAnimeHlsRetryAfterCap ? kAnimeHlsRetryAfterCap : wait,
+            ),
+            ?cancelSignal,
+          ]);
+          if (isCancelled()) throw const RemoteDownloadCancelled();
+          attempt = again();
+        }
+      }
+    }
+
+    final ({HlsMediaPlaylist playlist, Uri uri}) media = await retryRateLimited(
+      _loadMediaPlaylist(client, uri, headers),
+      () => _loadMediaPlaylist(client, uri, headers),
+    );
     final HlsMediaPlaylist playlist = media.playlist;
     final List<HlsSegment> segments = playlist.segments;
     if (segments.isEmpty) {
@@ -1161,11 +1262,19 @@ class AnimeEpisodeDownloader {
       Uint8List bytes = (await _get(client, segment.uri, headers)).body;
       final HlsKey? key = segment.key;
       if (key != null) {
-        final Uint8List keyBytes = await (keys[key.uri] ??= _get(
+        final Future<Uint8List> pending = keys[key.uri] ??= _get(
           client,
           key.uri,
           headers,
-        ).then((({Uint8List body, Uri finalUri}) r) => r.body));
+        ).then((({Uint8List body, Uri finalUri}) r) => r.body);
+        final Uint8List keyBytes;
+        try {
+          keyBytes = await pending;
+        } on Object {
+          // 失败的取钥不留在缓存里：被限流后重试这一片时要能重新取。
+          if (identical(keys[key.uri], pending)) keys.remove(key.uri);
+          rethrow;
+        }
         bytes = decryptHlsSegment(
           bytes,
           keyBytes,
@@ -1180,8 +1289,7 @@ class AnimeEpisodeDownloader {
     final List<Future<Uint8List>> ahead = <Future<Uint8List>>[];
     int nextToFetch = done;
     void topUp() {
-      while (ahead.length < kAnimeHlsSegmentsInFlight &&
-          nextToFetch < segments.length) {
+      while (ahead.length < window && nextToFetch < segments.length) {
         final Future<Uint8List> fetch = fetchSegment(segments[nextToFetch++]);
         // 排在后面的片可能在队头之前就失败：先挂一个处理器，免得在轮到它之前被报成
         // 未处理的异步错误；轮到它时 await 照样拿到这个错误。
@@ -1200,11 +1308,22 @@ class AnimeEpisodeDownloader {
         final HlsSegment segment = segments[index];
         final Uri? init = segment.initSection;
         if (init != null && init != writtenInit) {
-          final Uint8List initBytes = (await _get(client, init, headers)).body;
+          final Uint8List initBytes = (await retryRateLimited(
+            _get(client, init, headers),
+            () => _get(client, init, headers),
+          )).body;
           await sink.writeFrom(unwrapHlsSegmentPayload(initBytes));
           writtenInit = init;
         }
-        final Uint8List payload = await ahead.removeAt(0);
+        final Uint8List payload = await retryRateLimited(
+          ahead.removeAt(0),
+          () => fetchSegment(segment),
+        );
+        if (window < kAnimeHlsSegmentsInFlight &&
+            ++cleanSinceLimit >= kAnimeHlsWindowRecoverAfter) {
+          window++;
+          cleanSinceLimit = 0;
+        }
         topUp();
         await sink.writeFrom(payload);
         await sink.flush();

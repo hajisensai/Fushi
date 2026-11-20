@@ -165,6 +165,48 @@ void main() {
       expect(part.existsSync(), isFalse);
     }, timeout: const Timeout(Duration(seconds: 30)));
 
+    // 拍板台 design-nmv-fyi-tail ⑤：取消时强关旧连接。以前卡在等数据的下载体要等到下一块
+    // 或一个停顿超时（生产 30 秒）才退出，取消后马上重下的那次一直排在它后面。
+    test('cancelling a stalled download force-closes its connection and '
+        'finishes cleanup right away, not after the stall timeout', () async {
+      final File part = await partFile();
+      server.listen((HttpRequest request) async {
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..bufferOutput = false
+          ..add(List<int>.filled(4096, 7));
+        await request.response.flush();
+        held.add(request.response);
+      });
+      late _LoopbackClient client;
+      final Completer<void> firstChunk = Completer<void>();
+      final StreamSubscription<int> download =
+          downloadMangaPanelModel(
+            clientFactory: () => client = _LoopbackClient(server.port),
+            stallTimeout: const Duration(seconds: 20),
+          ).listen((int _) {
+            if (!firstChunk.isCompleted) firstChunk.complete();
+          }, onError: (Object _) {});
+      await firstChunk.future;
+      expect(part.existsSync(), isTrue);
+
+      final Stopwatch watch = Stopwatch()..start();
+      await download.cancel().catchError((Object _) {});
+      watch.stop();
+
+      expect(client.closed, isTrue);
+      expect(
+        part.existsSync(),
+        isFalse,
+        reason: 'cleanup ran before cancel returned',
+      );
+      expect(
+        watch.elapsed,
+        lessThan(const Duration(seconds: 5)),
+        reason: 'cancel must not wait for the 20 s stall timeout',
+      );
+    }, timeout: const Timeout(Duration(seconds: 30)));
+
     test('a body that fails validation leaves no .part', () async {
       server.listen((HttpRequest request) async {
         request.response
