@@ -4694,9 +4694,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // VideoBooks 行，当前集照单视频路径加载（_activeBookUid 恒为当前集）。
     final int? collectionId = widget.playlistCollectionId;
     if (collectionId != null) {
-      final MediaCollectionRow? col = await widget.repo.getMediaCollectionById(
-        collectionId,
-      );
+      // video-5：合集行、成员、集行、集级刮削一次批量取齐（语句数与集数无关），
+      // 不再在首帧前逐集各查两次。
+      final CollectionPlaybackSnapshot snapshot = await widget.repo
+          .collectionPlaybackSnapshot(collectionId);
+      final MediaCollectionRow? col = snapshot.collection;
       // 同系列音轨/调轴记忆（schema v52）：系列（合集）级偏好优先，回退本集 per-book
       // 值（兼容统一合集迁移前已存的各集值，Never break userspace）。合集内任一集
       // 选音轨/调轴即写系列级，其余集加载时（含从书架直接进某集）共享同一值 —— 恢复
@@ -4711,26 +4713,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         col?.secondarySubtitleDelayMs,
         row.secondaryDelayMs,
       );
-      final List<MediaCollectionItemRow> members = await widget.repo
-          .getCollectionItems(collectionId);
       // v68 Jellyfin 对齐：剧集面板要 ①集级刮削集名 ②合集横图回退链 ③看完/在看
       // 角标。作品名作集名判据（集名缺失时集级刮削会把作品名回填进 title，那不是
       // 集名——与合集详情页 `_scrapedEpisodeTitle` 同判据）。
-      final CollectionScrapeMetaRow? colMeta = await widget.repo
-          .collectionScrapeMeta(collectionId);
-      _playlistCollectionImages = await widget.repo.collectionMediaImages(
-        collectionId,
-      );
-      final String? workTitle = colMeta?.title.trim();
+      _playlistCollectionImages = snapshot.images;
+      final String? workTitle = snapshot.collectionMeta?.title.trim();
       final List<_PlaylistEpisodeRef> refs = <_PlaylistEpisodeRef>[];
-      for (final MediaCollectionItemRow m in members) {
-        if (m.mediaType != MediaKind.video.dbValue) continue;
-        final VideoBookRow? er = await widget.repo.getByBookUid(m.entryKey);
-        if (er == null) continue; // 孤儿成员（集行已删）→ 读取期过滤。
+      // 非视频成员与孤儿成员（集行已删）已在快照里按读取期过滤掉。
+      for (final VideoBookRow er in snapshot.episodes) {
         String? scrapedName;
-        final VideoScrapeMetaRow? em = await widget.repo.episodeScrapeMeta(
-          er.bookUid,
-        );
+        final VideoScrapeMetaRow? em = snapshot.episodeMeta[er.bookUid];
         if (em != null && em.episodeNumber != null) {
           final String t = em.title.trim();
           if (t.isNotEmpty && t != workTitle) scrapedName = t;
