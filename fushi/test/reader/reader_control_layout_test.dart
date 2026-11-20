@@ -191,10 +191,21 @@ void main() {
           stored,
           fallback: fallback,
         );
-        expect(l.itemsIn(ReaderControlSlot.overflow), <ReaderControlItem>[
-          ReaderControlItem.gallery,
-          ReaderControlItem.bookmarks,
-          ReaderControlItem.jumpHistory,
+        expect(
+          l.core.slotOf(ReaderControlItem.jumpHistory),
+          ReaderControlSlot.overflow,
+        );
+        expect(
+          l.itemsIn(ReaderControlSlot.overflow).take(2),
+          <ReaderControlItem>[
+            ReaderControlItem.gallery,
+            ReaderControlItem.bookmarks,
+          ],
+        );
+        expect(l.itemsIn(ReaderControlSlot.topRight), <ReaderControlItem>[
+          ReaderControlItem.navigation,
+          ReaderControlItem.audiobook,
+          ReaderControlItem.settings,
         ]);
       }
       // 用户把它拖到顶栏右侧：持久化往返保留位置。
