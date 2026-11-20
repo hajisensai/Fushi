@@ -681,7 +681,9 @@ class ReaderFushiSource extends ReaderMediaSource {
 
   Future<List<MediaItem>> getBooksFromDb({required AppModel appModel}) async {
     final FushiDatabase db = appModel.database;
-    final List<EpubBookRow> books = await db.getAllEpubBooks();
+    // novel-9：瘦投影，每章字数在 SQLite 侧（后台 isolate）用 json_each 抽好，
+    // 不再整表读 chaptersJson / tocJson 再在 UI isolate 上逐本 jsonDecode。
+    final List<EpubBookShelfRow> books = await db.getEpubBookShelfRows();
     // 阅读位置一次整表取完（书 uid → 位置）。之前每本各查一次
     // `findByBookUid`：Drift 在单连接上串行执行，`Future.wait` 只能重叠 await、
     // 重叠不了 SQL，书架延迟仍随库大小线性增长（N 次往返 + N 次语句准备）。
@@ -699,7 +701,7 @@ class ReaderFushiSource extends ReaderMediaSource {
     // Future.wait preserves input order so the shelf ordering is unchanged.
     return Future.wait<MediaItem>(
       books.map(
-        (EpubBookRow book) => _bookToMediaItem(
+        (EpubBookShelfRow book) => _bookToMediaItem(
           book,
           book.uid.isEmpty ? null : positions[book.uid],
           chapterStates: book.uid.isEmpty
@@ -716,8 +718,11 @@ class ReaderFushiSource extends ReaderMediaSource {
   Future<MediaItem?> mediaItemForBookKey(String bookKey) async {
     final FushiDatabase? db = sharedDatabase;
     if (db == null) return null;
-    final EpubBookRow? book = await db.getEpubBook(bookKey);
-    if (book == null) return null;
+    final List<EpubBookShelfRow> rows = await db.getEpubBookShelfRows(
+      bookKey: bookKey,
+    );
+    if (rows.isEmpty) return null;
+    final EpubBookShelfRow book = rows.first;
     // v82：位置键 = 行 uid（空 uid 视同无阅读记录）。
     final ReaderPosition? pos = book.uid.isEmpty
         ? null
@@ -729,13 +734,13 @@ class ReaderFushiSource extends ReaderMediaSource {
     );
   }
 
-  /// Resolve a single [EpubBookRow] into a [MediaItem], probing its cover
+  /// Resolve a single [EpubBookShelfRow] into a [MediaItem], probing its cover
   /// concurrently with sibling books (HBK-AUDIT-128). [pos] is the book's
   /// reader position (already keyed by uid by the caller; null = never read).
   /// [chapterStates] is the book's `manga_chapter_states` (chapterKey → row);
   /// only online manga read it (BUG-4356).
   Future<MediaItem> _bookToMediaItem(
-    EpubBookRow book,
+    EpubBookShelfRow book,
     ReaderPosition? pos, {
     Map<String, MangaChapterStateRow> chapterStates =
         const <String, MangaChapterStateRow>{},
@@ -743,27 +748,7 @@ class ReaderFushiSource extends ReaderMediaSource {
     int position = 0;
     int duration = 1;
 
-    List<int> sectionChars = const <int>[];
-    if (book.chaptersJson.isNotEmpty) {
-      try {
-        final List<dynamic> chapters =
-            jsonDecode(book.chaptersJson) as List<dynamic>;
-        sectionChars = chapters
-            .map(
-              (dynamic c) =>
-                  ((c as Map<String, dynamic>)['characters'] as num?)
-                      ?.toInt() ??
-                  0,
-            )
-            .toList();
-      } catch (e, stack) {
-        ErrorLogService.instance.log(
-          'ReaderFushiSource.sectionChars',
-          e,
-          stack,
-        );
-      }
-    }
+    final List<int> sectionChars = book.sectionChars;
     final int totalChars = sectionChars.fold<int>(0, (a, b) => a + b);
 
     // 书架列书 format-agnostic（本方法列全部 EpubBooks 行），但打开路由按 `format`
@@ -930,7 +915,7 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// conventional fallback names concurrently (HBK-AUDIT-128), with a
   /// last-good fallback so transient probe misses don't blank the cover
   /// (BUG-513).
-  Future<String?> _resolveCoverUrl(EpubBookRow book) async {
+  Future<String?> _resolveCoverUrl(EpubBookShelfRow book) async {
     final List<String> candidates = coverCandidatePaths(
       extractDir: book.extractDir,
       coverPath: book.coverPath,
