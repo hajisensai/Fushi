@@ -762,9 +762,8 @@ fn run(
         "location_seal" => {
             c.write_local(|t| cmd::sync::location_seal(t, col_of(t, profile)?, req, blobs))?
         }
-        "location_forget" => {
-            c.write_local(|t| cmd::sync::location_forget(t, col_of(t, profile)?, req))?
-        }
+        // 位置配置是设备级的：每个集合都忘（不只发命令的 profile 的，见 `location_forget_everywhere`）。
+        "location_forget" => c.write_local(|t| cmd::sync::location_forget_everywhere(t, req))?,
         // ------------------------------------------------------------ 转发（cmd/sync_relay.rs）
         "relay_outbox" => {
             let key = cmd::sync::key_of(req)?;

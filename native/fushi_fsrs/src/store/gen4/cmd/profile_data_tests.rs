@@ -678,3 +678,42 @@ fn rebinding_an_empty_collection_carries_the_salts_it_declared() {
     );
     ffsrs_store_close(h);
 }
+
+/// 移除位置（`location_forget`）忘的是文件里每一个集合在这个位置上的状态：位置配置是设备级的、所有 profile 共用，只忘
+/// 发命令的 profile 的集合，别的 profile 的状态行就再也没人清（第六波复核）。别的位置的行不动；发命令的 profile 没有
+/// 集合也照常忘别的集合，不报 `has no collection`；再忘一次回 0。
+#[test]
+fn forgetting_a_location_forgets_it_in_every_collection() {
+    const S: &str = "0193a1b2-0000-7000-8000-00000000e11e";
+    let (dir, h) = fresh("g4forgetall", Q);
+    as_profile(h, R, "identity", json!({}));
+    {
+        let c = side(&dir.0);
+        let (q, r) = (col_of(&c, Q), col_of(&c, R));
+        assert_ne!(q, r);
+        for (col, loc) in [(q, "folder:usb"), (r, "folder:usb"), (q, "folder:nas")] {
+            c.execute(
+                "INSERT INTO loc_state(col, loc_key, last_ok) VALUES (?1, ?2, 1)",
+                rusqlite::params![col, loc],
+            )
+            .unwrap();
+        }
+    }
+    let count = |loc: &str| -> i64 {
+        ro(&dir.0)
+            .query_row(
+                "SELECT COUNT(*) FROM loc_state WHERE loc_key = ?1",
+                [loc],
+                |r| r.get(0),
+            )
+            .unwrap()
+    };
+    // 从没绑定过集合的 profile 发：照常忘掉 Q、R 两个集合里的这个位置。
+    let v = as_profile(h, S, "location_forget", json!({"location": "folder:usb"}));
+    assert_eq!(v["forgotten"], json!(2), "{v}");
+    assert_eq!(count("folder:usb"), 0);
+    assert_eq!(count("folder:nas"), 1, "别的位置不动");
+    let v = as_profile(h, Q, "location_forget", json!({"location": "folder:usb"}));
+    assert_eq!(v, json!({"forgotten": 0, "relayDropped": 0}));
+    ffsrs_store_close(h);
+}

@@ -1643,6 +1643,30 @@ pub fn location_forget(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, St
     Ok(json!({"forgotten": forgotten, "relayDropped": dropped}))
 }
 
+/// `location_forget` 的分发入口：在这个文件的**每一个**集合里各忘一次 [location_forget]，回包两项各自相加。
+///
+/// 同步位置的配置是设备级的（文件夹位置、通道都存在设备本地偏好里，所有 profile 共用），每个 profile 的集合各自记着
+/// 它在这个位置上的状态。只忘发命令的 profile 的集合，别的 profile 以前同步过这个位置的状态行与为它留着的转发原文就
+/// 再也没人清（第六波复核）。所以不按发命令的 profile 取集合：发命令的 profile 没有集合（删掉了 / 新代里从没打开过）
+/// 也照常忘别的集合，不报 `has no collection`。
+pub fn location_forget_everywhere(t: &Truth<'_>, req: &Value) -> Result<Value, String> {
+    let cols: Vec<i64> = {
+        let mut stmt = t
+            .conn()
+            .prepare_cached(crate::store::gen4::dispatch::COLLECTIONS_SQL)
+            .map_err(sql)?;
+        let rows = stmt.query_map([], |r| r.get(0)).map_err(sql)?;
+        rows.collect::<rusqlite::Result<_>>().map_err(sql)?
+    };
+    let (mut forgotten, mut dropped) = (0u64, 0u64);
+    for col in cols {
+        let v = location_forget(t, col, req)?;
+        forgotten += v["forgotten"].as_u64().unwrap_or(0);
+        dropped += v["relayDropped"].as_u64().unwrap_or(0);
+    }
+    Ok(json!({"forgotten": forgotten, "relayDropped": dropped}))
+}
+
 // ---------------------------------------------------------------------- 设备：停用、换身份
 
 /// `retire {profile, device, retire, now}`：停用 / 取消停用一台别的设备（协议 3 `devices.rs` `retire` 同语义）：停用后
