@@ -142,12 +142,14 @@ extension _VideoEpisode on _VideoFushiPageState {
         // 执行、`_currentEpisode` 不推进，互联 / Jellyfin / 流媒体书的换集按钮、剧集
         // 列表、连播全部失灵，与本地分支此前那条同形。
         persistInBackground(
-          persist: () => _persistRemotePositionAndReportPlaybackStopped(
-            uid: _activeBookUid,
-            positionMs: curPos,
-            info: currentInfo,
-            client: currentClient,
-            generation: currentGeneration,
+          persist: () => _remoteTeardown.track(
+            () => _persistRemotePositionAndReportPlaybackStopped(
+              uid: _activeBookUid,
+              positionMs: curPos,
+              info: currentInfo,
+              client: currentClient,
+              generation: currentGeneration,
+            ),
           ),
           onPersistError: (Object error, StackTrace stack) => ErrorLogService
               .instance
