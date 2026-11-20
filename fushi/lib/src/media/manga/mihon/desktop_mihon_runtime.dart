@@ -16,6 +16,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_cookie_jar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_proxy_policy_server.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_sidecar_temp_dir.dart';
 
 const Duration kMihonSourceImageHeaderTimeout = Duration(seconds: 90);
 const Duration kMihonSourceImageIdleTimeout = Duration(seconds: 90);
@@ -553,29 +554,44 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     final MihonProxyPolicyServer proxyPolicy =
         await MihonProxyPolicyServer.start(token);
     _proxyPolicy = proxyPolicy;
-    final Process process = await Process.start(
-      java.path,
-      <String>[
-        '-Xmx512m',
-        '-Djava.awt.headless=true',
-        '-Djava.util.prefs.userRoot=${preferences.path}',
-        '-jar',
-        server.path,
-        // 0 = "bind an ephemeral port yourself and tell us which one".
-        // Picking the port here (bind → read → close → hand the number over)
-        // is a TOCTOU: between our close and the child's bind any other local
-        // process can take that port, and we would then hand our per-process
-        // Bearer token to a stranger. It also made a benign port collision
-        // fail the whole start with START_TIMEOUT.
-        '0',
-        dataDirectory.path,
-      ],
-      environment: <String, String>{
-        'FUSHI_MIHON_TOKEN': token,
-        'FUSHI_MIHON_PROXY_POLICY_PORT': '${proxyPolicy.port}',
-      },
-      mode: ProcessStartMode.normal,
+    // JVM 的临时目录归宿主管、随这个进程退出删掉（BUG-4914）：NanoHTTPD 每个请求体
+    // 一个删不掉的临时文件、强杀后残留的扩展 jar，以前都落在系统临时目录里永不回收。
+    final MihonSidecarTempDir tempDir = await MihonSidecarTempDir.create(
+      dataDirectory,
     );
+    final Process process;
+    try {
+      process = await Process.start(
+        java.path,
+        <String>[
+          '-Xmx512m',
+          '-Djava.awt.headless=true',
+          '-Djava.util.prefs.userRoot=${preferences.path}',
+          '-Djava.io.tmpdir=${tempDir.directory.path}',
+          '-jar',
+          server.path,
+          // 0 = "bind an ephemeral port yourself and tell us which one".
+          // Picking the port here (bind → read → close → hand the number over)
+          // is a TOCTOU: between our close and the child's bind any other local
+          // process can take that port, and we would then hand our per-process
+          // Bearer token to a stranger. It also made a benign port collision
+          // fail the whole start with START_TIMEOUT.
+          '0',
+          dataDirectory.path,
+        ],
+        environment: <String, String>{
+          'FUSHI_MIHON_TOKEN': token,
+          'FUSHI_MIHON_PROXY_POLICY_PORT': '${proxyPolicy.port}',
+        },
+        mode: ProcessStartMode.normal,
+      );
+    } catch (_) {
+      await tempDir.release();
+      rethrow;
+    }
+    // 进程真退出了（含下面各条启动失败路径里的 kill）才删：Windows 上 JVM 还开着的
+    // 文件删不掉。宿主自己被强杀时这里不会跑，留给下一次启动的清扫。
+    unawaited(process.exitCode.then((int _) => tempDir.release()));
     if (_disposed) {
       process.kill();
       try {

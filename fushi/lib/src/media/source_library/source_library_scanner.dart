@@ -1045,6 +1045,51 @@ ScanPlan planScanFromFileList(
   );
 }
 
+/// 一次扫描的列目录结果过滤 + 归类（[excludeSourceIncomingEntries] →
+/// [excludeSourceJunkEntries] → [planScanFromFileList]），整段放到后台 isolate 跑。
+///
+/// 三步都是纯函数，规模随来源文件数线性以上增长：合成 3.2 万文件 / 3000 卷的漫画
+/// 来源上同步跑约 220 ms（JIT），会让 UI isolate 连掉十几帧（#3722 m2
+/// gap-scanner-5）。列目录本身仍在调用方 isolate（iOS 安全作用域书签只在授予它的
+/// isolate 里有效，未实测前不搬）。
+///
+/// 写成独立顶层函数：传给 [Isolate.run] 的闭包只捕获这里的参数，不会把扫描器实例
+/// （数据库、通道）带进消息拷贝。返回过滤后的条目（导入阶段还要按扩展名挑字幕等）与
+/// 归类结果。
+Future<({List<SourceFileEntry> entries, ScanPlan plan})>
+classifySourceListingInBackground(
+  List<SourceFileEntry> listed, {
+  required String sourceRoot,
+  required String scanRoot,
+  required bool isLocal,
+  String? mangaRootPath,
+  p.Context? pathContext,
+  bool detectBlurayDiscs = false,
+  bool detectDvdDiscs = false,
+  bool collectPureAudio = false,
+}) => Isolate.run(() {
+  final List<SourceFileEntry> entries = excludeSourceJunkEntries(
+    excludeSourceIncomingEntries(
+      listed,
+      sourceRoot: sourceRoot,
+      isLocal: isLocal,
+    ),
+    scanRoot: scanRoot,
+  );
+  return (
+    entries: entries,
+    plan: planScanFromFileList(
+      entries,
+      mangaRootPath: mangaRootPath,
+      mangaPathContext: pathContext,
+      bookPathContext: pathContext,
+      detectBlurayDiscs: detectBlurayDiscs,
+      detectDvdDiscs: detectDvdDiscs,
+      collectPureAudio: collectPureAudio,
+    ),
+  );
+}, debugName: 'source-scan-classify');
+
 /// 书籍来源一次扫描的导入结局（[SourceLibraryScanner._importBooks]）。
 class _BookImportTally {
   _BookImportTally({required this.ambiguous});
@@ -1717,15 +1762,9 @@ class SourceLibraryScanner {
           : (files: transportFs, scanRoot: source.rootPath);
       final SourceFileSystem files = ns.files;
       final String scanRoot = ns.scanRoot;
-      // 系统 / 垃圾条目（回收站、`._` 资源叉、NAS 索引目录）与下载暂存目录在这里一起
-      // 滤掉，后面的归类只看扩展名。
-      final List<SourceFileEntry> entries = excludeSourceJunkEntries(
-        excludeSourceIncomingEntries(
-          await files.listFiles(source.rootPath, recursive: source.recursive),
-          sourceRoot: source.rootPath,
-          isLocal: files.isLocal,
-        ),
-        scanRoot: scanRoot,
+      final List<SourceFileEntry> listed = await files.listFiles(
+        source.rootPath,
+        recursive: source.recursive,
       );
       // 读不了的子目录里，系统目录（`System Volume Information` 等）本来就不扫，不算
       // 失败；其余的如实报出来——里面的媒体这一轮没进得来。
@@ -1739,15 +1778,25 @@ class SourceLibraryScanner {
             '${skippedDirs.length} folder(s) could not be read and were '
             'skipped. First: ${skippedDirs.first}';
       }
-      final ScanPlan plan = planScanFromFileList(
-        entries,
-        mangaRootPath: kind == SourceLibraryKind.manga ? source.rootPath : null,
-        mangaPathContext: files.isLocal ? null : p.url,
-        bookPathContext: files.isLocal ? null : p.url,
-        detectBlurayDiscs: files.isLocal && kind == SourceLibraryKind.video,
-        detectDvdDiscs: files.isLocal && kind == SourceLibraryKind.video,
-        collectPureAudio: kind == SourceLibraryKind.video,
-      );
+      // 系统 / 垃圾条目（回收站、`._` 资源叉、NAS 索引目录）与下载暂存目录在这里一起
+      // 滤掉，后面的归类只看扩展名。过滤 + 归类在后台 isolate 跑（大来源上同步跑会
+      // 卡 UI 几百毫秒，#3722 m2 gap-scanner-5）。
+      final ({List<SourceFileEntry> entries, ScanPlan plan}) classified =
+          await classifySourceListingInBackground(
+            listed,
+            sourceRoot: source.rootPath,
+            scanRoot: scanRoot,
+            isLocal: files.isLocal,
+            mangaRootPath: kind == SourceLibraryKind.manga
+                ? source.rootPath
+                : null,
+            pathContext: files.isLocal ? null : p.url,
+            detectBlurayDiscs: files.isLocal && kind == SourceLibraryKind.video,
+            detectDvdDiscs: files.isLocal && kind == SourceLibraryKind.video,
+            collectPureAudio: kind == SourceLibraryKind.video,
+          );
+      final List<SourceFileEntry> entries = classified.entries;
+      final ScanPlan plan = classified.plan;
       discoveredPaths = <String>[
         for (final ScanBookItem item in plan.books) item.bookPath,
         for (final ScanVideoItem item in plan.videos) item.videoPath,
