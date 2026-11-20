@@ -291,6 +291,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4914](bugs/BUG-4914-card-source-review-highlight-offset.md) | ✅ | ✅ | 小说卡片「来源」回看高亮整体错位（落到后面的词上） |
+| [BUG-4911](bugs/BUG-4911-popup-touch-select-swipe-dismiss.md) | ✅ | ✅ | 触屏在查词弹窗正文里拖选文字时弹窗被本体横滑关掉 |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
 | [BUG-4903](bugs/BUG-4903-home-desktop-continue-cut-edge-title-concat.md) | ✅ | ✅ | 首页（桌面）「继续」右侧卡被窗口切掉一半、标题拼接成「Re：ゼロ…1<Re：…」 |
