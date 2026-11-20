@@ -316,31 +316,72 @@ class MangaOcrHostJobManager {
   /// 设修改时间只为续传，页图本身已经写好：文件系统不收这个时间（FAT / exFAT 的
   /// 可表示范围比 NTFS / POSIX 窄）或页图在两步之间被取消删掉时，这一页只是不能
   /// 续传，上传照常算成功——不能让一个省重复识别的步骤把整卷代跑变成 500。
+  ///
+  /// 写盘先落本任务专属的暂存名（`<页名>.<jobId>.part`，扩展名不是页图，枚举不收），
+  /// 写完再**同步**复核任务仍收上传、改名到位并记账，复核与改名之间没有 await。
+  /// 写盘那段 await 期间任务可能已被取消（[cancelAndCleanup] 删光页图、出表）或停机
+  /// 清表：旧实现回来照样把页图留在卷目录、把状态写回 `uploading`——那张页图会被同卷
+  /// 下一个任务（落回同一个 `vol_<slug>`）当成自己的页一起识别。现在只删自己的
+  /// 暂存文件并回 `bad_state`，不碰别的任务可能已经写进同一目录的同名页。
   Future<String?> uploadPage(
     MangaOcrHostJob job, {
     required String name,
     required List<int> bytes,
     DateTime? sourceModified,
   }) async {
-    if (job.state.isTerminal || job.state == MangaOcrHostJobState.running) {
-      return 'bad_state';
-    }
+    if (!_acceptsUpload(job)) return 'bad_state';
     final List<String>? segments = _sanitizePageName(name);
     if (segments == null) return 'bad_name';
     final File dest = File(p.joinAll(<String>[job.dir.path, ...segments]));
-    dest.parent.createSync(recursive: true);
-    await dest.writeAsBytes(bytes, flush: true);
+    final File staging = File('${dest.path}.${job.id}.part');
+    try {
+      dest.parent.createSync(recursive: true);
+      await staging.writeAsBytes(bytes, flush: true);
+    } on FileSystemException {
+      // 取消清理在写盘途中删掉了子目录 / 暂存文件：任务已经不收这页。
+      if (!_acceptsUpload(job)) {
+        _deleteQuietly(staging);
+        return 'bad_state';
+      }
+      rethrow;
+    }
     if (sourceModified != null) {
       try {
-        await dest.setLastModified(sourceModified);
+        // 改名不动修改时间，在暂存文件上设即可。
+        await staging.setLastModified(sourceModified);
       } on FileSystemException {
         // 见方法注释：这页保持落盘时间（不续传），不算上传失败。
       }
+    }
+    if (!_acceptsUpload(job)) {
+      _deleteQuietly(staging);
+      return 'bad_state';
+    }
+    try {
+      staging.renameSync(dest.path);
+    } on FileSystemException {
+      if (!_acceptsUpload(job)) return 'bad_state';
+      _deleteQuietly(staging);
+      rethrow;
     }
     job.pagesUploaded += 1;
     job.state = MangaOcrHostJobState.uploading;
     job.touchedAt = _now();
     return null;
+  }
+
+  /// [job] 此刻还收逐页上传：未终态、没在跑、仍是表里那一个（没被取消出表或停机清表）。
+  bool _acceptsUpload(MangaOcrHostJob job) =>
+      !job.state.isTerminal &&
+      job.state != MangaOcrHostJobState.running &&
+      identical(_jobs[job.id], job);
+
+  static void _deleteQuietly(File file) {
+    try {
+      if (file.existsSync()) file.deleteSync();
+    } on FileSystemException {
+      // 尽力删：留下的暂存文件扩展名不是页图，不会被枚举，交给 TTL / 孤儿清扫。
+    }
   }
 
   /// 开始跑（串行队列）。返回 null = 已受理；非 null = `(statusCode, errorCode)`。

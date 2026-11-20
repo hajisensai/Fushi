@@ -62,6 +62,9 @@ class _MtimeRejectingFile implements File {
   }
 
   @override
+  File renameSync(String newPath) => _real.renameSync(newPath);
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
@@ -818,6 +821,59 @@ void main() {
         2,
         3,
       ]);
+    },
+  );
+
+  // 写盘途中任务被取消：取消清理删光页图并出表之后，晚到的这页不能落进卷目录
+  // （同卷下一个任务落回同一个 vol_<slug>，会把它当自己的页识别），也不能把已取消
+  // 的任务写回 uploading。
+  test(
+    'page upload racing a cancel leaves no page and no uploading state',
+    () async {
+      final MangaOcrHostJobManager manager = MangaOcrHostJobManager(
+        service: _FakeOcrService(),
+        jobRoot: Directory(p.join(tmpRoot.path, 'jobs')),
+      );
+      final MangaOcrHostJob job = manager.createJob(volumeTitle: '同卷');
+      expect(
+        await manager.uploadPage(job, name: 'p001.jpg', bytes: <int>[1]),
+        isNull,
+      );
+
+      final Future<String?> inFlight = manager.uploadPage(
+        job,
+        name: 'ch2/p002.jpg',
+        bytes: List<int>.filled(1 << 20, 7),
+      );
+      await manager.cancelAndCleanup(job);
+      final String? refusal = await inFlight;
+
+      expect(refusal, 'bad_state');
+      expect(job.state, MangaOcrHostJobState.cancelled);
+      expect(job.pagesUploaded, 1);
+      final List<String> left = job.dir.existsSync()
+          ? job.dir
+                .listSync(recursive: true)
+                .whereType<File>()
+                .map((File f) => p.relative(f.path, from: job.dir.path))
+                .toList()
+          : <String>[];
+      expect(left, isEmpty, reason: '取消之后卷目录里不能留页图或暂存文件');
+
+      // 同卷新任务落回同一目录：只看得到自己上传的页。
+      final MangaOcrHostJob next = manager.createJob(volumeTitle: '同卷');
+      expect(next.dir.path, job.dir.path);
+      expect(
+        await manager.uploadPage(next, name: 'p001.jpg', bytes: <int>[9]),
+        isNull,
+      );
+      expect(
+        next.dir
+            .listSync(recursive: true)
+            .whereType<File>()
+            .map((File f) => p.relative(f.path, from: next.dir.path)),
+        <String>['p001.jpg'],
+      );
     },
   );
 
