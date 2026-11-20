@@ -76,6 +76,8 @@ pub mod sync;
 pub mod sync_oldroot;
 // 转发（G8-7b）：见 [sync_relay] 文件头。
 pub mod sync_relay;
+// 重切件的停放（第六波）：见 [sync_park] 文件头。
+pub mod sync_park;
 pub mod training;
 pub mod views;
 // 写命令的新代实现（规划 §2.1 G7-3b），同样还没接分发器：见 [writes] 文件头。
@@ -108,6 +110,8 @@ mod study_tests;
 mod sync_complete_tests;
 #[cfg(test)]
 mod sync_heritage_trust_tests;
+#[cfg(test)]
+mod sync_park_tests;
 #[cfg(test)]
 mod sync_relay_tests;
 #[cfg(test)]

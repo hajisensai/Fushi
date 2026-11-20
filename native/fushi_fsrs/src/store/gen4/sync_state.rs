@@ -590,7 +590,7 @@ impl<'c> Truth<'c> {
         self.write(|| {
             self.sync_target(col, loc)?;
             let mut n = 0u64;
-            for table in ["loc_heads", "relay_out", "oldroot_fp"] {
+            for table in ["loc_heads", "relay_out", "relay_park", "oldroot_fp"] {
                 n += self
                     .conn()
                     .prepare_cached(&format!(

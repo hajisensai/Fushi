@@ -339,6 +339,11 @@ impl<'t, 'c> Receiver<'t, 'c> {
         taken
     }
 
+    /// 先前计过的一次延后不算了（`cmd/sync.rs` `ingest` 把那一件交回 Dart、下一个事务重收，计重收那次的结论）。
+    pub fn uncount_deferred(&mut self) {
+        self.tally.deferred = self.tally.deferred.saturating_sub(1);
+    }
+
     /// 这一批里先前因 [Defer::PurgePending] 延后的重切件再收一次（`cmd/sync.rs` `ingest` 在一批交完之后调：它点名的
     /// Purge 可能在同一批后面的段里，那时已落或进了等待缓冲）。先前那次延后不再计数，计这一次的结论。
     pub fn native_again(

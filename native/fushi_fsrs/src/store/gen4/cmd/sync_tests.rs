@@ -364,7 +364,14 @@ pub(super) fn round(d: &Dev, loc: &mut Loc, location: &str, now: i64, o: Opts<'_
     }
     let mut fork = plan["finishPending"] == json!(true);
     if !fetched.is_empty() {
-        let (v, _) = cmd(d.h, "ingest", now, json!({"key": o.key}), &fetched);
+        // 同 Dart：带上读的是哪个位置（重切件的停放按位置记，`cmd/sync_park.rs`）。
+        let (v, _) = cmd(
+            d.h,
+            "ingest",
+            now,
+            json!({"key": o.key, "location": location}),
+            &fetched,
+        );
         fork |= v["fork"] == json!(true);
         out.ingest.push(v);
     }

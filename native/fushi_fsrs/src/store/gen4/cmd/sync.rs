@@ -893,8 +893,25 @@ pub fn plan(t: &Truth<'_>, col: i64, req: &Value, heads: &[Vec<u8>]) -> Result<V
             super::sync_relay::prune(t, col, &h.device)?;
         }
         let last = t.last_of(col, &h.device)?;
+        // 重切件的停放（`cmd/sync_park.rs`）：已收到的、head 不再列的清掉；被转发来的 head 列的段只在等的事发生之后
+        // 才再拉（作者自己的 head 列的是原件，不受停放影响）。
+        let listed: BTreeSet<String> = h
+            .segs
+            .iter()
+            .map(|(a, b, tag)| segment_file_name(*a, *b, tag))
+            .collect();
+        super::sync_park::tidy(t, col, location, &h.device, last, &listed)?;
         for (a, b, tag) in &h.segs {
-            if *b > last {
+            if *b > last
+                && !(is_relayed
+                    && super::sync_park::still_parked(
+                        t,
+                        col,
+                        location,
+                        &h.device,
+                        &segment_file_name(*a, *b, tag),
+                    )?)
+            {
                 fetch
                     .entry(h.device)
                     .or_insert((false, BTreeSet::new()))
@@ -958,8 +975,11 @@ pub fn plan(t: &Truth<'_>, col: i64, req: &Value, heads: &[Vec<u8>]) -> Result<V
 
 // ---------------------------------------------------------------------- 3. 收段
 
-/// `ingest {profile, key?, maxItems?}`，字节块 = 这一批从位置上读到的段（原生段 `FSG4`、中继件 `FRL4`、重切中继件 `FRX4`、
-/// 承袭段 `FSH4`）。
+/// `ingest {profile, key?, maxItems?, location?}`，字节块 = 这一批从位置上读到的段（原生段 `FSG4`、中继件 `FRL4`、重切中继件
+/// `FRX4`、承袭段 `FSH4`）。`location` = 这一批是从哪个位置读的（与 `plan` 的同值）：给了，等 Purge / 等信任的重切件
+/// 就在这个位置上停放（`cmd/sync_park.rs`），之后只在等的事发生时 `plan` 才再拉它；没给就不停放（每轮照旧再拉）。
+/// `requeue`：预算截断了这一批时，交完的部分里还在等同一批里 Purge 的重切件的下标（相对这一批）——Dart 把它们接在
+/// 剩下的段后面一起交下一个事务（等的 Purge 可能就在剩下的段里），不算没收、不报错。
 /// `maxItems`（收段让路）：这一个事务最多做多少项新工作（[Receiver::with_budget]）；用完就停，回包 `rest` = 交完了的段数、
 /// `spent` = 这一片做的新工作数（落库 + 新进等待缓冲 + 收尾投出的等待项；调用方判「这一片有没有进展」只认它，不拿
 /// `landed` 当代理——依赖方的段排在前面时，一片可能全停进等待缓冲、一项都不落）；`drainMore` = 收尾投递等待缓冲时预算
@@ -979,6 +999,14 @@ pub fn ingest(
     let me = me_of(t, col)?;
     let public = me.public();
     let max_items = req.get("maxItems").and_then(Value::as_u64);
+    let location = req.get("location").and_then(Value::as_str);
+    // 等一件本机还没有的事的重切件：给了位置就停放（`cmd/sync_park.rs`），之后只在那件事发生时再拉。
+    let park = |b: &[u8], why: &Taken| -> Result<(), String> {
+        if let (Some(loc), Taken::Deferred(d)) = (location, why) {
+            super::sync_park::park(t, col, loc, b, d)?;
+        }
+        Ok(())
+    };
     let mut rx = Receiver::open(t, col, Settle::Incremental)?.with_budget(max_items);
     let mut scan: Option<ForkScan> = None;
     let mut errors: Vec<String> = Vec::new();
@@ -1020,7 +1048,12 @@ pub fn ingest(
             Taken::Deferred(Defer::PurgePending(_)) if recut => {
                 purge_wait.push((i, author, taken.clone()));
             }
-            other => errors.push(format!("{}: {other:?}", who(author))),
+            other => {
+                if recut {
+                    park(b, other)?;
+                }
+                errors.push(format!("{}: {other:?}", who(author)));
+            }
         }
         if cut {
             // 预算在这一段中途用完：这一段下一批原样再交（已落的部分按本机已有跳过）；比链等它整段收完再做。
@@ -1048,8 +1081,10 @@ pub fn ingest(
         }
     }
     // 重切件点名的 Purge 可能在同一批后面的段里：整批交完（没被预算截断）之后，这些件再收一次，收段的结论与一批之内
-    // 的先后无关。还缺（Purge 不在这一批）就照常延后，下一轮再拉。这一步里预算用完 / 截断：从这一件起 Dart 下一个
-    // 事务重交（下标递增，剩下的都在它后面），不报错。
+    // 的先后无关。还缺（Purge 不在这一批）就停放（给了位置时），等它到了再拉。这一步里预算用完 / 截断：从这一件起
+    // Dart 下一个事务重交（下标递增，剩下的都在它后面），不报错。批被预算截断了：这些件交回 Dart（`requeue`），
+    // 接在剩下的段后面下一个事务再交——等的 Purge 可能就在剩下的段里，现在就判「还缺」会让它们白白等一轮。
+    let mut requeue: Vec<usize> = Vec::new();
     if rest == blobs.len() {
         for (i, author, _) in purge_wait {
             if rx.exhausted() {
@@ -1064,7 +1099,10 @@ pub fn ingest(
                         kept += 1;
                     }
                 }
-                other => errors.push(format!("{}: {other:?}", who(author))),
+                other => {
+                    park(b, other)?;
+                    errors.push(format!("{}: {other:?}", who(author)));
+                }
             }
             if rx.cut() {
                 rest = i;
@@ -1072,8 +1110,10 @@ pub fn ingest(
             }
         }
     } else {
-        for (_, author, taken) in purge_wait {
-            errors.push(format!("{}: {taken:?}", who(author)));
+        // 先前那次延后不计（交回去重收，计重收那次的结论）。
+        for (i, _, _) in purge_wait {
+            rx.uncount_deferred();
+            requeue.push(i);
         }
     }
     let r: Received = rx.finish()?;
@@ -1103,6 +1143,7 @@ pub fn ingest(
         "spent": r.spent,
         "drainMore": r.drain_more,
         "kept": kept,
+        "requeue": requeue,
     });
     bump_revision(t, profile, applied + r.voided, &mut out)?;
     Ok(out)

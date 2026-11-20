@@ -525,6 +525,7 @@ fn ingest_like_dart(d: &Dev, mut pending: Vec<Vec<u8>>, budget: u64, now: i64) -
             drains += 1;
         }
         if done >= pending.len() {
+            assert_eq!(v["requeue"], json!([]), "{v}");
             if v["drainMore"] == json!(true) {
                 assert!(spent > 0, "a drain slice must deliver something: {v}");
                 pending.clear();
@@ -537,7 +538,15 @@ fn ingest_like_dart(d: &Dev, mut pending: Vec<Vec<u8>>, budget: u64, now: i64) -
         if done == 0 && v["landed"] == json!(0) {
             parked_only += 1;
         }
+        // 交回的（等同一批里 Purge 的重切件）接在剩下的后面。
+        let back: Vec<Vec<u8>> = v["requeue"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| pending[i.as_u64().unwrap() as usize].clone())
+            .collect();
         pending.drain(..done);
+        pending.extend(back);
     }
 }
 
