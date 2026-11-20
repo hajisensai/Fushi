@@ -25,24 +25,17 @@ extension _VideoAudioTrack on _VideoFushiPageState {
   /// 若有持久化音轨偏好 [_currentAudioTrackId]，在 [controller] 的 audioTracks 里
   /// 按 id 匹配并切换，恢复用户上次选的音轨（退出重进 / 换集复用）。
   ///
-  /// audioTracks 在 libmpv `open` 后才**逐步**填充，时机随设备/首帧不定。旧实现固定
-  /// 等 300ms 后**单次**匹配，列表此刻常仍为空 → 匹配不到、且不重试 → 用户报「音频
-  /// 切换退出重进又得重新弄」。改为**有界轮询**：每 200ms 重试，最多 ~4s，直到列表里
-  /// 出现目标轨再切；期间换片/卸载（`_controller != controller`）即放弃。
+  /// audioTracks 在 libmpv `open` 后才**逐步**填充，时机随设备 / 片源不定。最早固定等
+  /// 300ms 单次匹配（常落空）；后来改成 200ms × 20 次有界轮询，超过 4 秒（大 REMUX、
+  /// 慢盘）就静默放弃。现在交给控制器的事件驱动等待 [VideoPlayerController.waitForAudioTrack]：
+  /// 目标轨一出现就切，换片 / 卸载 / 期间用户自己选了轨即放弃（返回 null）。
   Future<void> _restoreAudioTrack(VideoPlayerController controller) async {
     if (controller.isBlurayNavigationSession) return;
     final String? wantId = _currentAudioTrackId;
     if (wantId == null || wantId.isEmpty) return;
-    for (int attempt = 0; attempt < 20; attempt++) {
-      if (!mounted || _controller != controller) return;
-      for (final AudioTrack track in controller.audioTracks) {
-        if (track.id == wantId) {
-          await controller.selectAudioTrack(track);
-          return;
-        }
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-    }
+    final AudioTrack? track = await controller.waitForAudioTrack(wantId);
+    if (track == null || !mounted || _controller != controller) return;
+    await controller.selectAudioTrack(track);
   }
 
   /// 选中某音轨：切轨 + 持久化 id（换集复用）+ SnackBar。

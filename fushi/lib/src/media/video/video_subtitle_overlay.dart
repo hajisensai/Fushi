@@ -1067,10 +1067,21 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   double _dragStartPointerY = 0;
 
   /// `\fad`/`\fade` 淡入淡出逐帧刷新驱动（TODO-1373）：活动集里有带 fade 的 cue（且开
-  /// respectAssStyle）时启动，每帧 setState 重读 [VideoPlayerController.effectivePositionMsForCue]（字幕时钟）
-  /// 重算各 cue 不透明度；否则停掉，避免无谓逐帧重建。读真实播放位置，故暂停 / 变速 / seek
-  /// 天然同步、无需额外门控。
+  /// respectAssStyle）时启动，每帧比一次字幕时钟（[_animationClockKey]），**变了**才
+  /// setState 重读 [VideoPlayerController.effectivePositionMsForCue] 重算各 cue；否则停掉。
+  /// 读真实播放位置，故暂停 / 变速 / seek 天然同步。时钟不变（暂停、两次 `time-pos`
+  /// 之间的刷新帧）不重建——高刷屏上按屏幕刷新率整层重建是纯浪费（c32 gap-vidmisc-2）。
   Ticker? _fadeTicker;
+
+  /// 上一次重建时的字幕动画时钟签名（见 [_animationClockKey]）；ticker 只在它变了时重建。
+  (int?, int, int)? _lastAnimationClockKey;
+
+  /// ASS 动画（`\fad` / `\move` / `\t` / 卡拉 OK）的全部时间输入：字幕时钟与主 / 副两条
+  /// 流的生效调轴（[VideoPlayerController.effectivePositionMsForCue] 只读这三样）。
+  (int?, int, int) _animationClockKey() {
+    final VideoPlayerController c = widget.controller;
+    return (c.subtitleClockMs, c.delayMs, c.effectiveSecondaryDelayMs);
+  }
 
   /// TODO-1312：当前帧渲染的所有字幕字符登记表（每帧 build 重建）。主字幕活动集（重叠
   /// cue 多个字幕盒）+ 副字幕活动集的**每个字符**各登记一条，携带所属整条 cue 文本、在该
@@ -1283,9 +1294,10 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // 还存着索引就绪前的 TextPainter 近似值——清缓存重算并重绘，使字号自动校正到真表值。
     AssFontCellIndex.instance.revision.addListener(_onFontMetricsRevision);
     _fadeTicker = createTicker((_) {
-      // 每帧强制重建：build 里按最新播放位置重算各 cue 的 fade 不透明度（值来自
-      // controller，不在此保存，故空 setState 足矣）。
-      if (mounted) setState(() {});
+      // 时钟变了才重建：build 里按最新播放位置重算各 cue 的动画值（值来自 controller，
+      // 不在此保存，故空 setState 足矣）。签名在 build 里记下，任何来源的重建都算数。
+      if (!mounted || _animationClockKey() == _lastAnimationClockKey) return;
+      setState(() {});
     });
   }
 
@@ -1502,6 +1514,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         // 逐帧 ticker：活动集里有随播放位置变化的 ASS 动画（\fad 淡变 TODO-1373 / \move 运动
         // / \t 缩放动画 TODO-1374）且开 respectAssStyle 时启动，让各 cue 每帧按最新位置重算；
         // 否则停掉（省重建）。静态 \frz 旋转 / 静态 \fscx\fscy 缩放不需 ticker（不随时间变）。
+        _lastAnimationClockKey = _animationClockKey();
         _syncFadeTicker(
           widget.respectAssStyle &&
               allActive.any((AudioCue c) {

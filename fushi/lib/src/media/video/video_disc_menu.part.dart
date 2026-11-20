@@ -48,12 +48,6 @@ class VideoDiscTrackRefreshGate {
   void beginRefresh() => _dirty = false;
 }
 
-/// Per-controller [VideoDiscTrackRefreshGate]. Extensions cannot declare
-/// fields and the controller's main file is claimed by in-flight branches;
-/// fold this into a plain field of [VideoPlayerController] once they land.
-final Expando<VideoDiscTrackRefreshGate> _videoDiscTrackRefreshGates =
-    Expando<VideoDiscTrackRefreshGate>('videoDiscTrackRefreshGate');
-
 /// Blu-ray navigation uses the existing Player/texture. The disc VM selects
 /// titles; the library only binds identity after an atomic native snapshot.
 extension VideoDiscMenuController on VideoPlayerController {
@@ -72,9 +66,6 @@ extension VideoDiscMenuController on VideoPlayerController {
     _discLoadStage = stage;
     debugPrint('[video-load] disc-stage=$stage');
   }
-
-  VideoDiscTrackRefreshGate get _discTrackRefreshGate =>
-      _videoDiscTrackRefreshGates[this] ??= VideoDiscTrackRefreshGate();
 
   bool get discNavigationSupported => _discNavigationSupported;
   bool get discMenuEntryPending => _discInitialMenuPending;
