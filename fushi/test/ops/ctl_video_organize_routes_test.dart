@@ -274,7 +274,9 @@ void main() {
     expect(result['renamed'], 1);
     final String moved = p.join(
       root.path,
-      'Show (2020)/Season 01/Show (2020) - S01E02.mkv',
+      'Show (2020)',
+      'Season 01',
+      'Show (2020) - S01E02.mkv',
     );
     expect(File(moved).existsSync(), isTrue);
     expect(
@@ -303,7 +305,9 @@ void main() {
     expect(outcome.reverted, 1);
     final String original = p.join(
       root.path,
-      'Show/Season 00/Show - S00E01.mkv',
+      'Show',
+      'Season 00',
+      'Show - S00E01.mkv',
     );
     expect(File(original).existsSync(), isTrue);
     expect(
@@ -332,7 +336,8 @@ void main() {
     expect(result['renamed'], 1);
     final String moved = p.join(
       root.path,
-      'The Movie (2016)/The Movie (2016).mkv',
+      'The Movie (2016)',
+      'The Movie (2016).mkv',
     );
     expect(File(moved).existsSync(), isTrue);
     expect(
@@ -492,6 +497,146 @@ void main() {
         },
       ]);
       expect(jsonEncode(result), isNot(contains(root.path)));
+      expect(result.containsKey('unknownDuration'), isFalse);
+    });
+
+    test('detail：给出每部作品挂在第 0 季的全部文件与作品事实（给模型判断用）', () async {
+      // 时长判据不报的短特别篇也要在清单里。
+      await setDuration('movie', 24);
+      final Map<Object?, Object?> result =
+          await call(
+                'GET',
+                '$kVideoOrganizeCtlRoot/audit',
+                query: const <String, String>{'detail': 'true'},
+              )
+              as Map<Object?, Object?>;
+      expect(result['findings'], isEmpty);
+      final List<Object?> works =
+          jsonDecode(jsonEncode(result['works'])) as List<Object?>;
+      final Map<String, Object?> work = works.single! as Map<String, Object?>;
+      expect(work['work'], 'collection:$collectionId');
+      expect(work['title'], 'Show');
+      expect(work['episodeMinutes'], 24);
+      expect(work['localRegularFiles'], 1);
+      expect((work['seasons']! as Map<String, Object?>).keys, contains('1'));
+      // 时长判据一个都不报，清单里两个第 0 季文件都在（按 uid 排）。
+      final List<Object?> files = work['files']! as List<Object?>;
+      expect(
+        <Object?>[
+          for (final Object? f in files) (f! as Map<String, Object?>)['uid'],
+        ],
+        <String>['ep2', 'movie'],
+      );
+      final Map<String, Object?> file = files[1]! as Map<String, Object?>;
+      expect(file['path'], 'Show/Season 00/Show - S00E02.mkv');
+      expect(file['minutes'], 24);
+      expect(file['boundTo'], 'S00E02');
+      expect(jsonEncode(result), isNot(contains(root.path)));
+      // 不带 detail 时不输出。
+      expect(
+        (await call('GET', '$kVideoOrganizeCtlRoot/audit')
+                as Map<Object?, Object?>)
+            .containsKey('works'),
+        isFalse,
+      );
+    });
+
+    test('全库联表：一次看全文件 → 作品 → 季集 → 时长 → 目录，可筛选分页', () async {
+      Future<Map<Object?, Object?>> files([
+        Map<String, String> query = const <String, String>{},
+      ]) async =>
+          await call('GET', '$kVideoOrganizeCtlRoot/files', query: query)
+              as Map<Object?, Object?>;
+      final Map<Object?, Object?> all = await files();
+      expect(all['columns'], <String>[
+        'uid',
+        'work',
+        'boundTo',
+        'minutes',
+        'path',
+      ]);
+      expect(all['total'], 3);
+      expect(jsonDecode(jsonEncode(all['works'])), <String, Object?>{
+        'collection:$collectionId': <String, Object?>{
+          'title': 'Show',
+          'type': 'tv',
+        },
+      });
+      expect(jsonEncode(all), isNot(contains(root.path)));
+      List<Object?> uids(Map<Object?, Object?> r) => <Object?>[
+        for (final Object? row in r['rows']! as List<Object?>)
+          (row! as List<Object?>)[0],
+      ];
+      expect(uids(all).toSet(), <String>{'ep1', 'ep2', 'movie'});
+
+      final Map<Object?, Object?> specials = await files(<String, String>{
+        'season': '0',
+        'minMinutes': '60',
+      });
+      expect(jsonDecode(jsonEncode(specials['rows'])), <Object?>[
+        <Object?>[
+          'movie',
+          'collection:$collectionId',
+          'S00E02',
+          100,
+          'Show/Season 00/Show - S00E02.mkv',
+        ],
+      ]);
+      expect(uids(await files(<String, String>{'q': 's00e02'})), <String>[
+        'movie',
+      ]);
+      expect((await files(<String, String>{'type': 'movie'}))['total'], 0);
+      expect((await files(<String, String>{'unbound': 'true'}))['total'], 0);
+
+      final Map<Object?, Object?> page = await files(<String, String>{
+        'limit': '2',
+      });
+      expect(page['rows'], hasLength(2));
+      expect(page['nextOffset'], 2);
+      final Map<Object?, Object?> rest = await files(<String, String>{
+        'limit': '2',
+        'offset': '2',
+      });
+      expect(rest['rows'], hasLength(1));
+      expect(rest.containsKey('nextOffset'), isFalse);
+    });
+
+    test('缺时长的第 0 季文件现探；探不出的计入 unknownDuration，不当成没问题', () async {
+      // 规格缓存是懒探的：电影还没被探过。
+      final String moviePath = (await db.getVideoBookByBookUid(
+        'movie',
+      ))!.videoPath;
+      await db.deleteVideoFileSpec(moviePath);
+      final Map<Object?, Object?> cold =
+          await call('GET', '$kVideoOrganizeCtlRoot/audit')
+              as Map<Object?, Object?>;
+      expect(cold['findings'], isEmpty);
+      expect(cold['unknownDuration'], 1);
+
+      final List<List<String>> probed = <List<String>>[];
+      routes = buildVideoOrganizeCtlRoutesFor(
+        database: () => db,
+        organizer: () => service,
+        probeDurations: (List<String> paths) async {
+          probed.add(paths);
+          await setDuration('movie', 100);
+        },
+      );
+      final Map<Object?, Object?> warm =
+          await call('GET', '$kVideoOrganizeCtlRoot/audit')
+              as Map<Object?, Object?>;
+      // 只探缺时长的第 0 季文件，不把整库排进去。
+      expect(probed, <List<String>>[
+        <String>[moviePath],
+      ]);
+      expect(
+        <Object?>[
+          for (final Object? f in warm['findings']! as List<Object?>)
+            (f! as Map)['uid'],
+        ],
+        <String>['movie'],
+      );
+      expect(warm.containsKey('unknownDuration'), isFalse);
     });
 
     test('合集里的本机文件全是电影长度的特别篇：报 features_only_work', () async {

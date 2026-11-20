@@ -317,25 +317,37 @@ P1–P4 已在分支 `docs/ai-library-curator-spec` 落地；P5（类型标签�
 - 审计一次调用给出全库结论，助手不用逐部作品 `video.work.get`（省轮次，也省 token）。
 - 「改作品类型」不另设操作：类型跟身份走，`video.work.identify … type=movie` 就是改成电影。
 
-### 15.2 库管家的「视频摆放纠正」阶段
+### 15.2 库管家的「视频摆放纠正」阶段：判断交给模型
 
-`LibraryCurateStage.videoStructure`（`video.structure`），排在 ③ 认身份之前。编排仍是代码：
+`LibraryCurateStage.videoStructure`（`video.structure`），排在 ③ 认身份之前。
 
-1. 读 `video.library.audit`；
-2. `feature_in_specials` 且有正片时长基线 → `video.work.regroup to=standalone` 拆出（不需要 AI、不联网）；
-3. 拆出来的文件与 `movie_as_series` → 搜电影形态的候选（`video.work.candidates type=movie`）：唯一且标题强匹配直接 `video.work.identify type=movie`；多候选交 AI 在候选键里选、达到自动采用门槛才认领；
-4. 其余一律进待确认（`structure_pending`，原因是审计的问题种类或 `pinned_by_user` / `needs_identify` / `no_candidates` / `ambiguous`）。
+所有者 2026-11-20：「为什么不直接让 ai 看？模型不能全干吗？应该省，不应该省的不要省」。第一版用时长死判据替模型下结论（60 分钟以上且不短于正片两倍才算电影），在真实库上 82 个第 0 季文件只报得出 3 个。改成：**代码只负责把事实摆出来、执行和撤销，「这是不是真的特别篇」由模型看着事实判断**。
 
-- 认身份的 AI 没指派时只做第 2 步（spec §9：没指派就不搜资料源），阶段注记 `rules_only`。
-- 不走水位：审计是全库只读、不花钱的，修好的文件自然不再出现；自动路径对留在待确认的文件不每趟重报（`seen`）。
-- 整趟撤销把拆出与认领倒序撤回，并记 `structure:<视频 uid>` 抑制，之后的任何一趟不再自动把同一个文件拆出来。
+1. 读 `video.library.audit detail=true`：每部剧集作品里「挂在第 0 季 / 在作品合集里但没绑到任何一集」的本机文件，连同作品事实（标题、原名、年份、正片各季集数、正片单集时长、本机正片文件数）和文件事实（相对路径、时长、绑到的那一集的标题与时长）。缺时长的文件先现探。
+2. 认身份的 AI 指派了 → **每部作品问一次**（`AiVideoPlacementJudge`，提示词与校验在 `ai/ai_video_placement_assistant.dart`，用 `AiFeature.videoIdentify` 的指派），模型对每个文件给四种判定之一 + 置信度：
+   - `movie`：`video.work.regroup to=standalone` 拆成独立作品（文件自己就是一个作品单元时不用拆），再搜电影形态的候选认领——搜索词用模型给的片名，不再用 `Show - S00E01` 这种集号标签；
+   - `episode`：`video.episode.pin` 改绑到正片的那一集（季集必须落在作品的正片范围内，否则本地校验降为 `unsure`）；
+   - `special`：放得对，记 `structure.ok:<uid>`，非全量跑不重问；
+   - `unsure`、置信度不到 0.85、模型没回这个文件：进待确认（`structure_pending`）。
+3. 模型只产生判定，不产生资料源 id、不指定磁盘路径；认领仍走候选集合（唯一强匹配直接认，多候选再问一次认身份的 AI 在候选键里选）。
 
-### 15.3 没做 / 没验证
+- 认身份的 AI 没指派（或宿主没装配判定器）时退回审计自带的时长判据：只拆「电影长度、且有正片时长基线」的文件，不搜资料源（spec §9），阶段注记 `rules_only`。
+- 费用：每部有待看文件的作品 1 次请求（预估按此计）；判过 `special` 的不重问，所以稳定后的库每趟是 0 次。请求体只有该作品的事实，没有全库上下文。
+- 不走水位：审计是全库只读的，修好的文件自然不再出现；自动路径对留在待确认的文件不每趟重报（`seen`）。
+- 整趟撤销把拆出、改绑与认领倒序撤回，并记 `structure:<视频 uid>` 抑制，之后的任何一趟不再自动动同一个文件。
 
-- 没有在所有者的真实库上执行过任何写操作；审计判据也没有对真实库跑过（本机库 27 个第 0 季里它会报出哪些，没有数）。
-- 审计只认「电影长度」这一种结构证据。身份整个认错（`Bad Girl` → 日剧《悪女（わる）》）不是结构问题，自动路径不碰，靠 AI 助手 / 用户用 `video.work.identify` 改。
-- `features_only_work`（整个「剧场版合集」被认成某部剧）自动路径不动：拆完没有「留下的那部剧」，每个文件各是哪部电影要逐个判断。助手可以用 `video.work.regroup` + `video.work.identify` 逐个处理。
-- 拆出来的文件标题往往还是 `Show - S00E01` 这种集号标签，搜不到候选，会停在待确认（`no_candidates`）。
+### 15.3 给 AI 助手同样的数据入口
+
+`video.library.files`（`GET /api/admin/video/files`，CLI `video files`）：全库「文件 → 作品 → 认成什么 → 绑定的季集 → 时长 → 相对路径」联表，一次调用看全，不用逐部作品打开。筛选 `season` / `unbound` / `minMinutes` / `type` / `work` / `q`，分页 `limit`（默认 300）/ `offset`。
+
+省 token 的地方只动格式、不动内容：列式输出（`columns` + `rows`，不在每行重复键名），作品标题在 `works{}` 里按作品给一次。该给模型看的事实一条不删。
+
+### 15.4 没做 / 没验证
+
+- 没有在所有者的真实库上执行过任何写操作；模型判断这条路径没有对真实库 / 真实模型跑过，判得准不准没有数（测试里的判定器是假的，只验编排、校验与撤销）。
+- 身份整个认错（`Bad Girl` → 日剧《悪女（わる）》）不是摆放问题，这一阶段不碰，靠 AI 助手 / 用户用 `video.work.identify` 改。
+- 整个「剧场版合集」被认成某部剧时，模型把每个文件判成 `movie` 后逐个拆出；拆到会把合集挪空的最后一个时 `video.work.regroup` 拒绝（409），那个文件留待确认。
+- `video.library.files` 的时长只读缓存、不现探（全库现探是分钟级）；没探过的文件 `minutes` 为空，`minMinutes` 筛选会漏掉它们。
 - 点名搬动（`video.file.move`）的文件不带作品级 / 季级 sidecar（`tvshow.nfo`、`poster.jpg`）。
 - `fushi_server` 没有这组路由，服务端的库管家这一阶段报 `unavailable` 跳过。
 - 没有真机 / 像素验证。

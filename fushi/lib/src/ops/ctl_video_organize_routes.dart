@@ -9,6 +9,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_work_loader.dar
     show lookupOfWork;
 import 'package:fushi_engine/media/video/organize/video_filename_organize.dart';
 import 'package:fushi_engine/media/video/organize/video_filename_organize_service.dart';
+import 'package:fushi_engine/media/video/organize/video_library_listing.dart';
 import 'package:fushi_engine/media/video/organize/video_placement_audit.dart';
 import 'package:fushi_engine/media/video/organize/video_work_regroup.dart';
 import 'package:path/path.dart' as p;
@@ -44,6 +45,11 @@ List<CtlRoute> buildVideoOrganizeCtlRoutes(OpContext context) =>
     buildVideoOrganizeCtlRoutesFor(
       database: () => context.appModel.database,
       organizer: () => context.appModel.videoFilenameOrganizeService,
+      // 审计要看时长；规格缓存是懒探的，缺的那几十个文件现探（服务自带并发闸门）。
+      probeDurations: (List<String> paths) => Future.wait(<Future<void>>[
+        for (final String path in paths)
+          context.appModel.videoSpecsService.resolve(path),
+      ]),
       requireVideo: () {
         if (!context.appModel.moduleVisibility.isEnabled(ModuleId.video)) {
           throw const CtlFailure.rejected('「视频」模块已关闭（设置 › 功能模块）');
@@ -58,11 +64,13 @@ List<CtlRoute> buildVideoOrganizeCtlRoutesFor({
   required FushiDatabase Function() database,
   required VideoFilenameOrganizeService Function() organizer,
   void Function()? requireVideo,
+  VideoDurationProber? probeDurations,
 }) {
   final _VideoOrganizeCtl ctl = _VideoOrganizeCtl(
     database,
     organizer,
     requireVideo ?? () {},
+    probeDurations,
   );
   return <CtlRoute>[
     CtlRoute.get('$kVideoOrganizeCtlRoot/works/:id/detail', ctl.workDetail),
@@ -71,6 +79,7 @@ List<CtlRoute> buildVideoOrganizeCtlRoutesFor({
     CtlRoute.post('$kVideoOrganizeCtlRoot/organize', ctl.applyOrganize),
     CtlRoute.post('$kVideoOrganizeCtlRoot/files/:uid/move', ctl.moveFile),
     CtlRoute.get('$kVideoOrganizeCtlRoot/audit', ctl.audit),
+    CtlRoute.get('$kVideoOrganizeCtlRoot/files', ctl.libraryFiles),
     CtlRoute.post('$kVideoOrganizeCtlRoot/regroup', ctl.regroup),
   ];
 }
@@ -269,12 +278,22 @@ Future<bool> restoreVideoEpisodePin(
     ? ((raw['season'] as num).toInt(), (raw['episode'] as num).toInt())
     : null;
 
+/// `video.library.files` 一页的行数：默认 / 上限。
+const int kVideoLibraryFilesDefaultLimit = 300;
+const int kVideoLibraryFilesMaxLimit = 1000;
+
 class _VideoOrganizeCtl {
-  _VideoOrganizeCtl(this._database, this._organizer, this._requireVideo);
+  _VideoOrganizeCtl(
+    this._database,
+    this._organizer,
+    this._requireVideo,
+    this._probeDurations,
+  );
 
   final FushiDatabase Function() _database;
   final VideoFilenameOrganizeService Function() _organizer;
   final void Function() _requireVideo;
+  final VideoDurationProber? _probeDurations;
 
   FushiDatabase get _db => _database();
 
@@ -540,18 +559,130 @@ class _VideoOrganizeCtl {
   /// `video audit`：全库里挂在特别篇（第 0 季）下的电影长度文件。只读。
   Future<Object?> audit(CtlCall call) async {
     _requireVideo();
-    final List<VideoPlacementFinding> findings = await auditVideoPlacement(_db);
+    final VideoPlacementAudit audit = await auditVideoPlacement(
+      _db,
+      probe: _probeDurations,
+    );
     final List<String> roots = await _libraryRoots();
     final List<Map<String, Object?>> out = <Map<String, Object?>>[];
-    for (final VideoPlacementFinding f in findings) {
+    for (final VideoPlacementFinding f in audit.findings) {
       final VideoBookRow? row = await _db.getVideoBookByBookUid(f.bookUid);
       out.add(<String, Object?>{
         ...f.toJson(),
         if (row != null) 'path': _relative(row.videoPath, roots),
       });
     }
-    return <String, Object?>{'findings': out};
+    return <String, Object?>{
+      'findings': out,
+      if (call.optBool('detail') == true)
+        'works': <Map<String, Object?>>[
+          for (final VideoPlacementReview r in audit.reviews)
+            <String, Object?>{
+              'work': r.workId,
+              'title': r.title,
+              if (r.originalTitle != null) 'originalTitle': r.originalTitle,
+              if (r.year != null) 'year': r.year,
+              if (r.baselineMinutes != null)
+                'episodeMinutes': r.baselineMinutes,
+              'seasons': <String, int>{
+                for (final MapEntry<int, int> e in r.regularSeasons.entries)
+                  '${e.key}': e.value,
+              },
+              'localRegularFiles': r.regularLocalFiles,
+              'files': <Map<String, Object?>>[
+                for (final VideoPlacementReviewFile f in r.files)
+                  <String, Object?>{
+                    'uid': f.bookUid,
+                    'title': f.title,
+                    'path': _relative(f.videoPath, roots),
+                    if (f.minutes != null) 'minutes': f.minutes,
+                    if (f.slot != null) 'boundTo': f.slot,
+                    if (f.episodeTitle != null) 'episodeTitle': f.episodeTitle,
+                    if (f.episodeMinutes != null)
+                      'episodeMinutes': f.episodeMinutes,
+                  },
+              ],
+            },
+        ],
+      // 只绑在第 0 季但探不出时长的文件：没法判断，不等于没问题。
+      if (audit.unknownDuration > 0) 'unknownDuration': audit.unknownDuration,
+    };
   }
+
+  /// `video files`：全库「文件 → 作品 → 季集 → 时长 → 目录」联表，一次看全。列式
+  /// 输出（一行一个文件，省掉每行重复的键名）；筛选都是「与」。
+  Future<Object?> libraryFiles(CtlCall call) async {
+    _requireVideo();
+    final int limit = (call.optInt('limit') ?? kVideoLibraryFilesDefaultLimit)
+        .clamp(1, kVideoLibraryFilesMaxLimit);
+    final int offset = call.optInt('offset') ?? 0;
+    if (offset < 0) throw CtlFailure.badRequest('offset 不能是负数');
+    final int? season = call.optInt('season');
+    final int? minMinutes = call.optInt('minMinutes');
+    final bool unbound = call.optBool('unbound') == true;
+    final String? work = call.optString('work');
+    final String? type = call.optString('type');
+    final String? q = call.optString('q')?.toLowerCase();
+    final List<String> roots = await _libraryRoots();
+    final List<(VideoLibraryFile, String)> matched =
+        <(VideoLibraryFile, String)>[];
+    for (final VideoLibraryFile f in await listVideoLibraryFiles(_db)) {
+      if (work != null && f.workId != work) continue;
+      if (unbound && !f.isUnbound) continue;
+      if (season != null && !f.slots.any(((int, int) s) => s.$1 == season)) {
+        continue;
+      }
+      if (minMinutes != null && (f.minutes ?? -1) < minMinutes) continue;
+      if (type != null && (f.mediaType ?? 'unidentified') != type) continue;
+      final String path = _relative(f.videoPath, roots);
+      if (q != null &&
+          !path.toLowerCase().contains(q) &&
+          !(f.workTitle ?? '').toLowerCase().contains(q)) {
+        continue;
+      }
+      matched.add((f, path));
+    }
+    final List<(VideoLibraryFile, String)> page = matched
+        .skip(offset)
+        .take(limit)
+        .toList();
+    // 作品信息按作品给一次，行里只带作品 id。
+    final Map<String, Map<String, Object?>> works =
+        <String, Map<String, Object?>>{};
+    for (final (VideoLibraryFile f, String _) in page) {
+      works.putIfAbsent(
+        f.workId,
+        () => <String, Object?>{
+          if (f.workTitle != null) 'title': f.workTitle,
+          'type': f.mediaType ?? 'unidentified',
+        },
+      );
+    }
+    return <String, Object?>{
+      'total': matched.length,
+      'offset': offset,
+      if (offset + page.length < matched.length)
+        'nextOffset': offset + page.length,
+      'works': works,
+      'columns': const <String>['uid', 'work', 'boundTo', 'minutes', 'path'],
+      'rows': <List<Object?>>[
+        for (final (VideoLibraryFile f, String path) in page)
+          <Object?>[
+            f.bookUid,
+            f.workId,
+            <String>[
+              for (final (int s, int e) in f.slots) _slotLabel(s, e),
+            ].join(','),
+            f.minutes,
+            path,
+          ],
+      ],
+    };
+  }
+
+  static String _slotLabel(int season, int episode) =>
+      'S${season.toString().padLeft(2, '0')}'
+      'E${episode.toString().padLeft(2, '0')}';
 
   /// `video regroup <bookUid...> --to standalone | new --name <名> | collection:<id>`。
   Future<Object?> regroup(CtlCall call) async {

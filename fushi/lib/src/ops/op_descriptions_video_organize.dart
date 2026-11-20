@@ -199,6 +199,53 @@ List<OpDescription> describeVideoOrganizeOps(
       undo: moveUndo(),
     ),
     OpDescription(
+      id: 'video.library.files',
+      method: 'GET',
+      pattern: '$kVideoOrganizeCtlRoot/files',
+      summary:
+          'The whole video library as one joined table: every local video '
+          'file with the work it belongs to, how that work is identified '
+          '(tv / movie / unidentified), the season+episode it is bound to, '
+          'its length in minutes (when already probed) and its path relative '
+          'to the library root. Use it to look across the library yourself '
+          'instead of opening works one by one: season=0 lists everything '
+          'filed as a special, unbound=true the files that matched no '
+          'episode, minMinutes=60 the feature-length files, q a substring of '
+          'the path or work title. Columnar: rows[] follow columns[]; work '
+          'titles are given once in works{}. Page with nextOffset.',
+      availability: video,
+      params: const <OpParam>[
+        OpParam.string(
+          'work',
+          description: 'Only this work (collection:<id> or book:<uid>).',
+        ),
+        OpParam.integer(
+          'season',
+          description: 'Only files bound to this season (0 = specials).',
+        ),
+        OpParam.boolean(
+          'unbound',
+          description: 'Only files bound to no episode.',
+        ),
+        OpParam.integer(
+          'minMinutes',
+          description:
+              'Only files at least this long (files with unknown length are '
+              'left out).',
+        ),
+        OpParam.string(
+          'type',
+          description: 'Only works identified as tv / movie / unidentified.',
+        ),
+        OpParam.string(
+          'q',
+          description: 'Substring of the relative path or the work title.',
+        ),
+        OpParam.integer('limit', description: 'Rows per page (default 300).'),
+        OpParam.integer('offset', description: 'Rows to skip.'),
+      ],
+    ),
+    OpDescription(
       id: 'video.library.audit',
       method: 'GET',
       pattern: '$kVideoOrganizeCtlRoot/audit',
@@ -211,8 +258,22 @@ List<OpDescription> describeVideoOrganizeOps(
           'video.work.regroup to=standalone, then identify it as a movie; '
           'movie_as_series: re-identify that work with type=movie; '
           'features_only_work: every local file of the work is such a film, '
-          'decide per file.',
+          'decide per file. Durations of not-yet-probed season-0 files are '
+          'probed on the spot (first call can take a while); unknownDuration '
+          'counts files that still could not be judged. The length rule is '
+          'only a first pass: detail=true also lists, per series, every local '
+          'file bound to season 0 or bound to no episode at all (path, '
+          'minutes, the special it is bound to and that special\'s title / '
+          'length) so you can judge each one yourself.',
       availability: video,
+      params: const <OpParam>[
+        OpParam.boolean(
+          'detail',
+          description:
+              'Also return works[]: the facts to judge every season-0 / '
+              'unbound file, not only the ones the length rule flags.',
+        ),
+      ],
     ),
     OpDescription(
       id: 'video.work.regroup',

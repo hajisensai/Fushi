@@ -38,8 +38,16 @@ const List<CtlCommandSpec> videoOrganizeCommands = <CtlCommandSpec>[
     render: _renderOrganize,
   ),
   CtlCommandSpec(
+    name: 'files',
+    summary: '全库视频文件联表：所属作品、绑定的季集、时长、相对路径',
+    configure: _configureFiles,
+    build: _buildFiles,
+    render: _renderFiles,
+  ),
+  CtlCommandSpec(
     name: 'audit',
     summary: '找出挂在特别篇（第 0 季）下的电影长度文件',
+    configure: _configureAudit,
     build: _buildAudit,
     render: _renderAudit,
   ),
@@ -265,10 +273,67 @@ String _renderOrganize(Object? data) {
   return lines.join('\n');
 }
 
+// ── files ────────────────────────────────────────────────────────────────
+
+const List<String> _filesOptions = <String>[
+  'work',
+  'season',
+  'min-minutes',
+  'type',
+  'q',
+  'limit',
+  'offset',
+];
+
+void _configureFiles(ArgParser parser) {
+  parser
+    ..addOption('work', help: '只看这部作品（collection:<id> / book:<uid>）')
+    ..addOption('season', help: '只看绑在这一季的文件（0 = 特别篇）')
+    ..addFlag('unbound', negatable: false, help: '只看没绑到任何一集的文件')
+    ..addOption('min-minutes', help: '只看不短于这么多分钟的文件')
+    ..addOption('type', help: '只看认成 tv / movie / unidentified 的作品')
+    ..addOption('q', help: '相对路径或作品标题里包含的字样')
+    ..addOption('limit', help: '一页的行数（默认 300）')
+    ..addOption('offset', help: '跳过的行数');
+}
+
+CtlRequestSpec _buildFiles(CtlCommandContext context) => CtlRequestSpec.get(
+  '/api/admin/video/files',
+  query: <String, String>{
+    for (final String name in _filesOptions)
+      if (context.option(name) case final String value)
+        (name == 'min-minutes' ? 'minMinutes' : name): value,
+    if (context.flag('unbound')) 'unbound': 'true',
+  },
+);
+
+String _renderFiles(Object? data) {
+  if (data is! Map) return '$data';
+  final List<String> lines = <String>[
+    for (final Object? row in (data['rows'] as List?) ?? const <Object?>[])
+      if (row is List) row.map((Object? c) => c ?? '-').join('\t'),
+  ];
+  lines.add('共 ${data['total']} 个文件');
+  if (data['nextOffset'] != null) {
+    lines.add('还有更多：--offset ${data['nextOffset']}');
+  }
+  return lines.join('\n');
+}
+
 // ── audit / regroup ──────────────────────────────────────────────────────
 
-CtlRequestSpec _buildAudit(CtlCommandContext context) =>
-    CtlRequestSpec.get('/api/admin/video/audit');
+void _configureAudit(ArgParser parser) {
+  parser.addFlag(
+    'detail',
+    negatable: false,
+    help: '同时列出每部剧里挂在第 0 季 / 没绑到任何一集的全部文件（--json 看）',
+  );
+}
+
+CtlRequestSpec _buildAudit(CtlCommandContext context) => CtlRequestSpec.get(
+  '/api/admin/video/audit',
+  query: <String, String>{if (context.flag('detail')) 'detail': 'true'},
+);
 
 String _renderAudit(Object? data) => renderCtlTable(
   data,

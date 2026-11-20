@@ -91,7 +91,7 @@ String _collectionKey(int id) => 'collection:$id';
 
 /// 全库的「视频 uid → 所属作品合集 id」（与 [VideoSourceWorkPlanner] 同一口径：
 /// 目录合集不算，成员数 ≥2 才算）。
-Future<Map<String, int>> _primaryWorkCollections(FushiDatabase db) async {
+Future<Map<String, int>> primaryVideoWorkCollections(FushiDatabase db) async {
   final Set<int> folderCollections = <int>{
     for (final MediaCollectionRow c in await db.getAllMediaCollections())
       if (c.sourceFolderPath != null) c.id,
@@ -170,7 +170,7 @@ Future<VideoRegroupResult> regroupVideoFiles(
       }
   }
 
-  final Map<String, int> primary = await _primaryWorkCollections(db);
+  final Map<String, int> primary = await primaryVideoWorkCollections(db);
   final List<Map<String, Object?>> skipped = <Map<String, Object?>>[];
   final List<(String uid, int? from, MediaCollectionItemRow? row)> plan =
       <(String, int?, MediaCollectionItemRow?)>[];
@@ -284,7 +284,7 @@ Future<VideoRegroupResult> regroupVideoFiles(
     }
   }
 
-  final Map<String, int> after = await _primaryWorkCollections(db);
+  final Map<String, int> after = await primaryVideoWorkCollections(db);
   db.notifyVideoLibraryChanged();
   return VideoRegroupResult(
     moved: <Map<String, Object?>>[

@@ -34,6 +34,7 @@ import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart'
     show DlsiteWorkId;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
+import 'package:fushi_engine/media/video/organize/video_placement_ai.dart';
 
 export 'package:fushi_engine/media/library_curate/library_curate_run.dart';
 
@@ -45,6 +46,7 @@ abstract final class LibraryCurateOps {
   static const String videoWorkIdentify = 'video.work.identify';
   static const String videoLibraryAudit = 'video.library.audit';
   static const String videoWorkRegroup = 'video.work.regroup';
+  static const String videoEpisodePin = 'video.episode.pin';
   static const String linksInfer = 'library.curate.links.infer';
   static const String linksMusic = 'library.curate.links.music';
   static const String bookScrapeSearch = 'book.scrape.search';
@@ -224,6 +226,7 @@ class LibraryCurator {
     required this.ai,
     this.videoDecider,
     this.mediaDecider,
+    this.placementJudge,
     this.limits = const LibraryCurateLimits(),
     this.onWorksChanged,
     DateTime Function()? clock,
@@ -242,6 +245,10 @@ class LibraryCurator {
   /// 书 / 游戏多候选时的 AI 消歧（同一判定契约：只在候选键里选）。null 或返回
   /// null = 不问，只做规则认领。
   final AiMediaIdentityDecider? Function()? mediaDecider;
+
+  /// 「挂在第 0 季的文件是不是真的特别篇」的判定器（`video_placement_ai.dart`）。
+  /// null 或返回 null = 不问，退回时长判据。
+  final AiVideoPlacementJudge? Function()? placementJudge;
   final LibraryCurateLimits limits;
 
   /// 作品层重算后通知宿主（宿主的作品图缓存本就随表变更失效，这里只是让界面立即
@@ -563,18 +570,23 @@ class LibraryCurator {
 
   // ── 视频摆放纠正（电影被挂成某部剧的第 0 季） ──────────────────────
 
-  /// spec §15.2。`video.library.audit` 给出挂在特别篇下的电影长度文件，按问题种类：
+  /// spec §15.2。`video.library.audit` 给出每部剧集作品里「挂在第 0 季 / 没绑到
+  /// 任何一集」的本机文件与作品事实。
   ///
-  /// - `feature_in_specials` 且有正片时长基线 → `video.work.regroup to=standalone`
-  ///   拆成独立作品（不需要 AI、不联网），再试着按电影认领；
-  /// - `movie_as_series`（单个文件自己被认成剧集）→ 只试着按电影认领；
-  /// - 其余（整部作品的本机文件全是这种电影、没有时长基线）→ 不自动动，留待确认。
+  /// **判断交给模型**（所有者 2026-11-20：「为什么不直接让 ai 看？」）：认身份的 AI
+  /// 指派了就逐部作品问一次 [placementJudge]——每个文件是真特别篇、独立的电影、
+  /// 还是正片的某一集；编排只负责执行与撤销：
   ///
-  /// 「按电影认领」与 ③ 同一口径：只搜电影形态的候选，唯一且标题强匹配 → 直接认领；
-  /// 多候选 → AI 在候选键里选、达到自动采用门槛才认领；其余留待确认。认身份的 AI
-  /// 没指派时不搜资料源（spec §9），拆出来的文件留待确认。
+  /// - `movie` → `video.work.regroup to=standalone` 拆成独立作品（文件自己就是一个
+  ///   作品单元时不用拆），再按电影认领（搜索词用模型给的片名）；
+  /// - `episode` → `video.episode.pin` 改绑到那一集；
+  /// - `special` → 放得对，记下不再重问；
+  /// - `unsure` / 置信度不到门槛 → 留待确认。
   ///
-  /// 审计是全库只读、不花钱的，这一步不走水位；修好的文件自然不再出现在审计里。
+  /// 没指派 AI 时退回审计自带的时长判据（[_structureByRules]）：只拆「电影长度、且
+  /// 有正片时长基线」的文件，不搜资料源（spec §9）。
+  ///
+  /// 审计是全库只读的，这一步不走水位；修好的文件自然不再出现在审计里。
   Future<LibraryCurateStageResult> _videoStructure(_RunContext ctx) async {
     const LibraryCurateStage stage = LibraryCurateStage.videoStructure;
     if (toolbox.describeTool(LibraryCurateOps.videoWorkRegroup) == null) {
@@ -586,7 +598,7 @@ class LibraryCurator {
     }
     final AgentToolResult? listed = await _read(
       LibraryCurateOps.videoLibraryAudit,
-      const <String, Object?>{},
+      const <String, Object?>{'detail': true},
     );
     if (listed == null) {
       return const LibraryCurateStageResult(
@@ -602,159 +614,288 @@ class LibraryCurator {
         error: listed.errorCode,
       );
     }
-    final bool auto = ctx.run.trigger == LibraryCurateTrigger.auto;
-    final bool canIdentify =
-        ctx.ai.videoIdentify &&
-        toolbox.describeTool(LibraryCurateOps.videoWorkIdentify) != null &&
-        toolbox.describeTool(LibraryCurateOps.videoWorkCandidates) != null;
-    final AiVideoIdentityDecider? decide = videoDecider?.call();
-    int changes = 0;
-    int requests = 0;
-    int pending = 0;
-    bool incomplete = false;
-
-    void park(Map<String, Object?> finding, String reason, {String? ref}) {
-      pending++;
-      ctx.state.seen.add('structure:${finding['uid']}');
-      ctx.run.pendingItems.add(
-        LibraryCuratePendingItem(
-          stage: stage,
-          kind: 'structure_pending',
-          title: '${finding['title'] ?? finding['uid']}',
-          ref: ref ?? '${finding['work']}',
-          reason: reason,
-        ),
-      );
+    final _StructurePass pass = _StructurePass(
+      ctx,
+      canIdentify:
+          ctx.ai.videoIdentify &&
+          toolbox.describeTool(LibraryCurateOps.videoWorkIdentify) != null &&
+          toolbox.describeTool(LibraryCurateOps.videoWorkCandidates) != null,
+      decide: videoDecider?.call(),
+    );
+    final AiVideoPlacementJudge? judge = ctx.ai.videoIdentify
+        ? placementJudge?.call()
+        : null;
+    if (judge == null) {
+      await _structureByRules(pass, _list(listed.data, 'findings'));
+    } else {
+      await _structureByModel(pass, judge, _list(listed.data, 'works'));
     }
+    return LibraryCurateStageResult(
+      stage: stage,
+      status: pass.incomplete
+          ? LibraryCurateStageStatus.partial
+          : LibraryCurateStageStatus.done,
+      changes: pass.changes,
+      pending: pass.pending,
+      requests: pass.requests,
+      error: pass.incomplete && ctx.capped ? 'request_cap' : null,
+      note: judge == null ? 'rules_only' : null,
+    );
+  }
 
-    for (final Map<String, Object?> f in _list(listed.data, 'findings')) {
+  /// 这个文件这一趟要不要看：撤销过的不再自动动；自动路径查过、留在待确认的不
+  /// 每趟重报；模型判过「放得对」的不重问（全量跑照样重看）。
+  bool _structureOpen(_RunContext ctx, String uid) {
+    if (ctx.state.suppressed.contains('structure:$uid')) return false;
+    if (ctx.run.trigger == LibraryCurateTrigger.auto &&
+        ctx.state.seen.contains('structure:$uid')) {
+      return false;
+    }
+    return ctx.run.full || !ctx.state.seen.contains('structure.ok:$uid');
+  }
+
+  Future<void> _structureByModel(
+    _StructurePass pass,
+    AiVideoPlacementJudge judge,
+    List<Map<String, Object?>> works,
+  ) async {
+    final _RunContext ctx = pass.ctx;
+    for (final Map<String, Object?> work in works) {
       if (ctx.isCancelled()) {
-        incomplete = true;
-        break;
+        pass.incomplete = true;
+        return;
+      }
+      final String workId = '${work['work']}';
+      final List<Map<String, Object?>> files = <Map<String, Object?>>[
+        for (final Map<String, Object?> f in _list(work, 'files'))
+          if (_structureOpen(ctx, '${f['uid']}')) f,
+      ];
+      if (files.isEmpty) continue;
+      if (!ctx.spend(1)) {
+        pass.incomplete = true;
+        return;
+      }
+      pass.requests++;
+      final Map<String, Map<String, Object?>> byKey =
+          <String, Map<String, Object?>>{
+            for (int i = 0; i < files.length; i++) 'f${i + 1}': files[i],
+          };
+      final Map<String, Object?> seasons = _map(work['seasons']);
+      final List<AiVideoPlacementAnswer> answers;
+      try {
+        answers = await judge(
+          AiVideoPlacementQuery(
+            workTitle: '${work['title'] ?? ''}',
+            originalTitle: work['originalTitle'] as String?,
+            year: (work['year'] as num?)?.toInt(),
+            regularEpisodeMinutes: (work['episodeMinutes'] as num?)?.toInt(),
+            regularLocalFiles: _int(work['localRegularFiles']),
+            regularSeasons: <int, int>{
+              for (final MapEntry<String, Object?> e in seasons.entries)
+                if (int.tryParse(e.key) case final int n) n: _int(e.value),
+            },
+            files: <AiVideoPlacementFile>[
+              for (final MapEntry<String, Map<String, Object?>> e
+                  in byKey.entries)
+                AiVideoPlacementFile(
+                  key: e.key,
+                  path: '${e.value['path'] ?? e.value['title']}',
+                  minutes: (e.value['minutes'] as num?)?.toInt(),
+                  boundTo: e.value['boundTo'] as String?,
+                  episodeTitle: e.value['episodeTitle'] as String?,
+                  episodeMinutes: (e.value['episodeMinutes'] as num?)?.toInt(),
+                ),
+            ],
+          ),
+        );
+      } on Object catch (error, stack) {
+        engineLog.log('libraryCurate.videoStructure.ai', error, stack);
+        pass.incomplete = true;
+        continue;
+      }
+      final Map<String, AiVideoPlacementAnswer> answerOf =
+          <String, AiVideoPlacementAnswer>{
+            for (final AiVideoPlacementAnswer a in answers) a.key: a,
+          };
+      for (final MapEntry<String, Map<String, Object?>> e in byKey.entries) {
+        final Map<String, Object?> f = <String, Object?>{
+          ...e.value,
+          'work': workId,
+        };
+        final String uid = '${f['uid']}';
+        final AiVideoPlacementAnswer? answer = answerOf[e.key];
+        if (answer == null || !answer.isAutoAcceptable) {
+          pass.park(f, answer == null ? 'no_answer' : 'unsure');
+          continue;
+        }
+        switch (answer.verdict) {
+          case AiVideoPlacementVerdict.unsure:
+            pass.park(f, 'unsure');
+          case AiVideoPlacementVerdict.special:
+            ctx.state.seen.add('structure.ok:$uid');
+          case AiVideoPlacementVerdict.episode:
+            final _Write w = await _write(
+              ctx,
+              LibraryCurateOps.videoEpisodePin,
+              <String, Object?>{
+                'uid': uid,
+                'season': answer.season,
+                'episode': answer.episode,
+              },
+            );
+            if (w.needsConfirmation) {
+              pass.park(f, 'needs_confirmation');
+            } else if (w.unavailable || w.result!.isError) {
+              pass.incomplete = true;
+              pass.park(f, 'pin_failed');
+            } else {
+              pass.changes++;
+            }
+          case AiVideoPlacementVerdict.movie:
+            if (workId.startsWith('collection:') && !await _splitOut(pass, f)) {
+              continue;
+            }
+            await _claimAsMovie(pass, f, searchTitle: answer.title);
+        }
+      }
+    }
+  }
+
+  Future<void> _structureByRules(
+    _StructurePass pass,
+    List<Map<String, Object?>> findings,
+  ) async {
+    final _RunContext ctx = pass.ctx;
+    for (final Map<String, Object?> f in findings) {
+      if (ctx.isCancelled()) {
+        pass.incomplete = true;
+        return;
       }
       final String uid = '${f['uid']}';
-      final String key = 'structure:$uid';
-      if (ctx.state.suppressed.contains(key)) continue;
-      // 自动路径查过、留在待确认的不每趟重报；手动触发照样重看。
-      if (auto && ctx.state.seen.contains(key)) continue;
+      if (!_structureOpen(ctx, uid)) continue;
       final String kind = '${f['kind']}';
-      final String bookId = 'book:$uid';
       if (kind == 'feature_in_specials' && f['episodeMinutes'] != null) {
-        final _Write w = await _write(
-          ctx,
-          LibraryCurateOps.videoWorkRegroup,
-          <String, Object?>{
-            'items': <String>[uid],
-            'to': 'standalone',
-          },
-        );
-        if (w.needsConfirmation) {
-          park(f, 'needs_confirmation');
-          continue;
-        }
-        if (w.unavailable || w.result!.isError) {
-          incomplete = true;
-          continue;
-        }
-        if (_list(w.result!.data, 'moved').isEmpty) {
-          final List<Map<String, Object?>> skipped = _list(
-            w.result!.data,
-            'skipped',
-          );
-          park(f, '${skipped.firstOrNull?['reason'] ?? 'unchanged'}');
-          continue;
-        }
-        changes++;
+        if (!await _splitOut(pass, f)) continue;
       } else if (kind != 'movie_as_series') {
-        park(f, kind);
+        pass.park(f, kind);
         continue;
       }
-      // 到这里：文件自己是一个作品单元，但还没有（正确的）电影身份。
-      if (!canIdentify || ctx.state.suppressed.contains('scrape:$bookId')) {
-        park(f, 'needs_identify', ref: bookId);
-        continue;
-      }
-      final AgentToolResult? found = await _read(
-        LibraryCurateOps.videoWorkCandidates,
-        <String, Object?>{'id': bookId, 'type': 'movie'},
+      await _claimAsMovie(pass, f);
+    }
+  }
+
+  /// 把文件从它所在的作品合集里拆成独立作品。false = 没拆成（已记待确认 / 未完成）。
+  Future<bool> _splitOut(_StructurePass pass, Map<String, Object?> f) async {
+    final _Write w = await _write(
+      pass.ctx,
+      LibraryCurateOps.videoWorkRegroup,
+      <String, Object?>{
+        'items': <String>['${f['uid']}'],
+        'to': 'standalone',
+      },
+    );
+    if (w.needsConfirmation) {
+      pass.park(f, 'needs_confirmation');
+      return false;
+    }
+    if (w.unavailable) {
+      pass.incomplete = true;
+      return false;
+    }
+    if (w.result!.isError) {
+      // 409 = 会把这部作品的成员全部挪走（整个合集都是电影）：留给人 / 助手逐个判断。
+      pass.park(f, w.result!.errorCode ?? 'regroup_failed');
+      return false;
+    }
+    if (_list(w.result!.data, 'moved').isEmpty) {
+      pass.park(
+        f,
+        '${_list(w.result!.data, 'skipped').firstOrNull?['reason'] ?? 'unchanged'}',
       );
-      if (found == null || found.isError) {
-        incomplete = true;
-        park(f, 'needs_identify', ref: bookId);
-        continue;
+      return false;
+    }
+    pass.changes++;
+    return true;
+  }
+
+  /// 文件自己是一个作品单元（`book:<uid>`）但还没有电影身份：与 ③ 同一口径认领——
+  /// 只搜电影形态的候选，唯一且标题强匹配 → 直接认领；多候选 → AI 在候选键里选、
+  /// 达到自动采用门槛才认领；其余留待确认。
+  Future<void> _claimAsMovie(
+    _StructurePass pass,
+    Map<String, Object?> f, {
+    String? searchTitle,
+  }) async {
+    final _RunContext ctx = pass.ctx;
+    final String bookId = 'book:${f['uid']}';
+    if (!pass.canIdentify || ctx.state.suppressed.contains('scrape:$bookId')) {
+      pass.park(f, 'needs_identify', ref: bookId);
+      return;
+    }
+    final String title = searchTitle ?? '${f['title'] ?? ''}';
+    final AgentToolResult? found = await _read(
+      LibraryCurateOps.videoWorkCandidates,
+      <String, Object?>{'id': bookId, 'type': 'movie', 'q': ?searchTitle},
+    );
+    if (found == null || found.isError) {
+      pass.incomplete = true;
+      pass.park(f, 'needs_identify', ref: bookId);
+      return;
+    }
+    final List<Map<String, Object?>> candidates = <Map<String, Object?>>[
+      for (final Map<String, Object?> c in _list(found.data, 'candidates'))
+        if (c['mediaKind'] == 'movie') c,
+    ];
+    Map<String, Object?>? pick;
+    if (candidates.length == 1 && _strongTitleMatch(title, candidates[0])) {
+      pick = candidates[0];
+    } else if (candidates.length > 1 && pass.decide != null) {
+      if (!ctx.spend(1)) {
+        pass.incomplete = true;
+        pass.park(f, 'needs_identify', ref: bookId);
+        return;
       }
-      final List<Map<String, Object?>> candidates = <Map<String, Object?>>[
-        for (final Map<String, Object?> c in _list(found.data, 'candidates'))
-          if (c['mediaKind'] == 'movie') c,
-      ];
-      final String title = '${f['title'] ?? ''}';
-      Map<String, Object?>? pick;
-      if (candidates.length == 1 && _strongTitleMatch(title, candidates[0])) {
-        pick = candidates[0];
-      } else if (candidates.length > 1 && decide != null) {
-        if (!ctx.spend(1)) {
-          incomplete = true;
-          park(f, 'needs_identify', ref: bookId);
-          continue;
-        }
-        requests++;
-        try {
-          final AiVideoIdentityDecision? decision = await decide(
-            _identityQuery(<String, Object?>{
-              'title': title,
-              'members': 1,
-            }, candidates),
-          );
-          if (decision != null && decision.isAutoAcceptable) {
-            for (final Map<String, Object?> c in candidates) {
-              if ('${c['identity']}' == decision.key) pick = c;
-            }
-          }
-        } on Object catch (error, stack) {
-          engineLog.log('libraryCurate.videoStructure.ai', error, stack);
-          incomplete = true;
-        }
-      }
-      if (pick == null) {
-        park(
-          f,
-          candidates.isEmpty ? 'no_candidates' : 'ambiguous',
-          ref: bookId,
+      pass.requests++;
+      try {
+        final AiVideoIdentityDecision? decision = await pass.decide!(
+          _identityQuery(<String, Object?>{
+            'title': title,
+            'members': 1,
+          }, candidates),
         );
-        continue;
+        if (decision != null && decision.isAutoAcceptable) {
+          for (final Map<String, Object?> c in candidates) {
+            if ('${c['identity']}' == decision.key) pick = c;
+          }
+        }
+      } on Object catch (error, stack) {
+        engineLog.log('libraryCurate.videoStructure.identify', error, stack);
+        pass.incomplete = true;
       }
-      final _Write w = await _write(
-        ctx,
-        LibraryCurateOps.videoWorkIdentify,
-        <String, Object?>{
+    }
+    if (pick == null) {
+      pass.park(
+        f,
+        candidates.isEmpty ? 'no_candidates' : 'ambiguous',
+        ref: bookId,
+      );
+      return;
+    }
+    final _Write w =
+        await _write(ctx, LibraryCurateOps.videoWorkIdentify, <String, Object?>{
           'id': bookId,
           'provider': pick['provider'],
           'externalId': '${pick['externalId']}',
           'type': 'movie',
-        },
-      );
-      if (w.needsConfirmation) {
-        park(f, 'needs_confirmation', ref: bookId);
-        continue;
-      }
-      if (w.unavailable || w.result!.isError) {
-        incomplete = true;
-        park(f, 'needs_identify', ref: bookId);
-        continue;
-      }
-      changes++;
+        });
+    if (w.needsConfirmation) {
+      pass.park(f, 'needs_confirmation', ref: bookId);
+    } else if (w.unavailable || w.result!.isError) {
+      pass.incomplete = true;
+      pass.park(f, 'needs_identify', ref: bookId);
+    } else {
+      pass.changes++;
     }
-    return LibraryCurateStageResult(
-      stage: stage,
-      status: incomplete
-          ? LibraryCurateStageStatus.partial
-          : LibraryCurateStageStatus.done,
-      changes: changes,
-      pending: pending,
-      requests: requests,
-      error: incomplete && ctx.capped ? 'request_cap' : null,
-      note: canIdentify ? null : 'rules_only',
-    );
   }
 
   // ── ③ 认身份 + 刮削（视频待确认作品） ──────────────────────────────
@@ -1616,19 +1757,30 @@ class LibraryCurator {
     if (toolbox.describeTool(LibraryCurateOps.videoWorkRegroup) != null) {
       final AgentToolResult? audit = await _read(
         LibraryCurateOps.videoLibraryAudit,
-        const <String, Object?>{},
+        const <String, Object?>{'detail': true},
       );
       if (audit != null && !audit.isError) {
-        final int n = <Map<String, Object?>>[
-          for (final Map<String, Object?> f in _list(audit.data, 'findings'))
-            if (!state.suppressed.contains('structure:${f['uid']}')) f,
+        bool open(Object? uid) =>
+            !state.suppressed.contains('structure:$uid') &&
+            (full || !state.seen.contains('structure.ok:$uid'));
+        final bool model = a.videoIdentify && placementJudge?.call() != null;
+        // 模型判断：每部有待看文件的作品一次请求；时长判据不花请求。
+        final int worksToAsk = <Map<String, Object?>>[
+          for (final Map<String, Object?> w in _list(audit.data, 'works'))
+            if (_list(
+              w,
+              'files',
+            ).any((Map<String, Object?> f) => open(f['uid'])))
+              w,
         ].length;
+        final int flagged = <Map<String, Object?>>[
+          for (final Map<String, Object?> f in _list(audit.data, 'findings'))
+            if (open(f['uid'])) f,
+        ].length;
+        final int n = model ? worksToAsk : flagged;
         if (n > 0) {
           items[LibraryCurateStage.videoStructure] = n;
-          // 上界：每个文件至多一次 AI 消歧（候选唯一强匹配时不问）。
-          if (a.videoIdentify && videoDecider?.call() != null) {
-            requests[LibraryCurateStage.videoStructure] = n;
-          }
+          if (model) requests[LibraryCurateStage.videoStructure] = n;
         }
       }
     }
@@ -1754,6 +1906,8 @@ class LibraryCurator {
         for (final Object? e in (args['items'] as List?) ?? const <Object?>[]) {
           yield 'structure:$e';
         }
+      case LibraryCurateOps.videoEpisodePin:
+        if (args['uid'] != null) yield 'structure:${args['uid']}';
       case LibraryCurateOps.linksInfer:
         for (final Object? e in (args['items'] as List?) ?? const <Object?>[]) {
           yield 'links:$e';
@@ -1944,6 +2098,36 @@ class _RunContext {
 
   Set<String> progressOf(LibraryCurateStage stage) =>
       state.progress.putIfAbsent(stage.wire, () => <String>{});
+}
+
+/// 视频摆放纠正这一阶段的累计（两种判断路径共用）。
+class _StructurePass {
+  _StructurePass(this.ctx, {required this.canIdentify, required this.decide});
+
+  final _RunContext ctx;
+
+  /// 能不能按电影认领（认身份的 AI 指派了，且两条操作可用）。
+  final bool canIdentify;
+  final AiVideoIdentityDecider? decide;
+  int changes = 0;
+  int requests = 0;
+  int pending = 0;
+  bool incomplete = false;
+
+  /// 留给用户：[finding] 是审计里的一个文件（`uid` / `title` / `work`）。
+  void park(Map<String, Object?> finding, String reason, {String? ref}) {
+    pending++;
+    ctx.state.seen.add('structure:${finding['uid']}');
+    ctx.run.pendingItems.add(
+      LibraryCuratePendingItem(
+        stage: LibraryCurateStage.videoStructure,
+        kind: 'structure_pending',
+        title: '${finding['title'] ?? finding['uid']}',
+        ref: ref ?? '${finding['work']}',
+        reason: reason,
+      ),
+    );
+  }
 }
 
 class _Write {

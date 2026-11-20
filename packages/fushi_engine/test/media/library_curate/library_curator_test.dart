@@ -14,6 +14,7 @@ import 'package:fushi_engine/ai/agent/agent_tool.dart';
 import 'package:fushi_engine/ai/ai_media_identity_assistant.dart';
 import 'package:fushi_engine/media/library_curate/library_curator.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
+import 'package:fushi_engine/media/video/organize/video_placement_ai.dart';
 import 'package:test/test.dart';
 
 typedef _Handler = Future<Object?> Function(Map<String, Object?> args);
@@ -192,6 +193,7 @@ void main() {
   late List<AiMediaIdentityQuery> mediaAsked;
   late AiVideoIdentityDecision? Function(AiMediaIdentityQuery q) mediaAnswer;
   late bool mediaAssigned;
+  AiVideoPlacementJudge? placementJudge;
 
   LibraryCurator curator({
     LibraryCurateLimits limits = const LibraryCurateLimits(),
@@ -207,6 +209,7 @@ void main() {
       asked.add(q);
       return AiVideoIdentityDecision(key: 'anidb:2', confidence: 0.99);
     },
+    placementJudge: () => placementJudge,
     mediaDecider: () => mediaAssigned
         ? (AiMediaIdentityQuery q) async {
             mediaAsked.add(q);
@@ -512,6 +515,204 @@ void main() {
         run.pendingItems.map((LibraryCuratePendingItem p) => p.reason),
         containsAll(<String>['needs_identify', 'features_only_work']),
       );
+    });
+
+    group('模型判断', () {
+      late List<AiVideoPlacementQuery> queries;
+      late Map<String, AiVideoPlacementAnswer> verdicts;
+      late Map<String, String> pinned;
+
+      setUp(() {
+        queries = <AiVideoPlacementQuery>[];
+        pinned = <String, String>{};
+        verdicts = <String, AiVideoPlacementAnswer>{};
+        placementJudge = (AiVideoPlacementQuery q) async {
+          queries.add(q);
+          return <AiVideoPlacementAnswer>[
+            for (final AiVideoPlacementFile f in q.files)
+              if (verdicts[f.path] case final AiVideoPlacementAnswer a)
+                AiVideoPlacementAnswer(
+                  key: f.key,
+                  verdict: a.verdict,
+                  confidence: a.confidence,
+                  title: a.title,
+                  season: a.season,
+                  episode: a.episode,
+                ),
+          ];
+        };
+        Map<String, Object?> file(String uid, String path, int minutes) =>
+            <String, Object?>{
+              'uid': uid,
+              'title': uid,
+              'path': path,
+              'minutes': minutes,
+              'boundTo': 'S00E01',
+            };
+        toolbox
+          ..op(
+            LibraryCurateOps.videoLibraryAudit,
+            (Map<String, Object?> a) async => <String, Object?>{
+              'findings': <Object?>[],
+              if (a['detail'] == true)
+                'works': <Object?>[
+                  <String, Object?>{
+                    'work': 'collection:1',
+                    'title': 'Beta',
+                    'year': 2020,
+                    'episodeMinutes': 24,
+                    'seasons': <String, int>{'1': 12},
+                    'localRegularFiles': 12,
+                    'files': <Object?>[
+                      for (final Map<String, Object?> f
+                          in <Map<String, Object?>>[
+                            file('m1', 'Beta/Season 00/movie.mkv', 95),
+                            file('e5', 'Beta/Season 00/ep05.mkv', 24),
+                            file('sp', 'Beta/Season 00/ova.mkv', 24),
+                            file('hm', 'Beta/Season 00/what.mkv', 40),
+                          ])
+                        if (!split.contains(f['uid']) &&
+                            !pinned.containsKey(f['uid']))
+                          f,
+                    ],
+                  },
+                ],
+            },
+            risk: AgentToolRisk.read,
+          )
+          ..op(
+            LibraryCurateOps.videoEpisodePin,
+            (Map<String, Object?> a) async {
+              pinned['${a['uid']}'] = 'S${a['season']}E${a['episode']}';
+              return <String, Object?>{'ok': true};
+            },
+            payload: (Map<String, Object?> a, Object? r) => <String, Object?>{
+              'uid': a['uid'],
+            },
+            undo: (Map<String, Object?> p) async => pinned.remove(p['uid']),
+          );
+        verdicts = <String, AiVideoPlacementAnswer>{
+          'Beta/Season 00/movie.mkv': const AiVideoPlacementAnswer(
+            key: '',
+            verdict: AiVideoPlacementVerdict.movie,
+            confidence: 0.95,
+            title: 'Beta Movie',
+          ),
+          'Beta/Season 00/ep05.mkv': const AiVideoPlacementAnswer(
+            key: '',
+            verdict: AiVideoPlacementVerdict.episode,
+            confidence: 0.9,
+            season: 1,
+            episode: 5,
+          ),
+          'Beta/Season 00/ova.mkv': const AiVideoPlacementAnswer(
+            key: '',
+            verdict: AiVideoPlacementVerdict.special,
+            confidence: 0.9,
+          ),
+          'Beta/Season 00/what.mkv': const AiVideoPlacementAnswer(
+            key: '',
+            verdict: AiVideoPlacementVerdict.movie,
+            confidence: 0.5,
+          ),
+        };
+      });
+
+      tearDown(() => placementJudge = null);
+
+      test('一部作品问一次：电影拆出认领、正片改绑、特别篇不动、没把握的留待确认', () async {
+        final LibraryCurator c = curator();
+        final LibraryCurateRun run = await c.run(
+          trigger: LibraryCurateTrigger.manual,
+        );
+        final LibraryCurateStageResult stage = stageOf(run);
+        expect(stage.status, LibraryCurateStageStatus.done);
+        expect(stage.note, isNull);
+        expect(stage.requests, 1);
+        // 拆出 + 认领 + 改绑。
+        expect(stage.changes, 3);
+        expect(queries, hasLength(1));
+        expect(queries.single.workTitle, 'Beta');
+        expect(queries.single.regularEpisodeMinutes, 24);
+        expect(queries.single.regularSeasons, <int, int>{1: 12});
+        expect(
+          queries.single.files.map((AiVideoPlacementFile f) => f.key),
+          <String>['f1', 'f2', 'f3', 'f4'],
+        );
+        expect(split, <String>{'m1'});
+        expect(library.identity['book:m1'], 'anidb:3');
+        expect(pinned, <String, String>{'e5': 'S1E5'});
+        // 搜索词用模型给的片名。
+        expect(
+          toolbox.args[toolbox.calls.indexOf(
+            LibraryCurateOps.videoWorkCandidates,
+          )],
+          <String, Object?>{
+            'id': 'book:m1',
+            'type': 'movie',
+            'q': 'Beta Movie',
+          },
+        );
+        expect(
+          <String>[
+            for (final LibraryCuratePendingItem p in run.pendingItems)
+              if (p.stage == LibraryCurateStage.videoStructure)
+                '${p.title}/${p.ref}/${p.reason}',
+          ],
+          <String>['hm/collection:1/unsure'],
+        );
+
+        // 再跑一趟：特别篇判过不重问；待确认的那个手动跑照样再看。
+        queries.clear();
+        await c.run(trigger: LibraryCurateTrigger.manual);
+        expect(
+          queries.single.files.map((AiVideoPlacementFile f) => f.path),
+          <String>['Beta/Season 00/what.mkv'],
+        );
+        // 全量跑把特别篇也重看。
+        queries.clear();
+        await c.run(trigger: LibraryCurateTrigger.manual, full: true);
+        expect(queries.single.files, hasLength(2));
+      });
+
+      test('整趟撤销回到原状，之后不再自动动这些文件', () async {
+        final LibraryCurator c = curator();
+        final LibraryCurateRun run = await c.run(
+          trigger: LibraryCurateTrigger.manual,
+        );
+        await c.undoRun(run.id);
+        expect(split, isEmpty);
+        expect(pinned, isEmpty);
+        expect(library.identity.containsKey('book:m1'), isFalse);
+        queries.clear();
+        await c.run(trigger: LibraryCurateTrigger.manual);
+        expect(split, isEmpty);
+        expect(pinned, isEmpty);
+        expect(
+          <String>[
+            for (final AiVideoPlacementQuery q in queries)
+              for (final AiVideoPlacementFile f in q.files) f.path,
+          ],
+          isNot(
+            anyOf(
+              contains('Beta/Season 00/movie.mkv'),
+              contains('Beta/Season 00/ep05.mkv'),
+            ),
+          ),
+        );
+      });
+
+      test('模型请求失败：阶段记未完成，不动任何文件', () async {
+        placementJudge = (AiVideoPlacementQuery q) async =>
+            throw const _Fail('network');
+        final LibraryCurateRun run = await curator().run(
+          trigger: LibraryCurateTrigger.manual,
+        );
+        expect(stageOf(run).status, LibraryCurateStageStatus.partial);
+        expect(stageOf(run).changes, 0);
+        expect(split, isEmpty);
+        expect(pinned, isEmpty);
+      });
     });
 
     test('整趟撤销后不再自动把同一个文件拆出来', () async {
