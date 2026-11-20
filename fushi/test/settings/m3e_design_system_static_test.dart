@@ -1340,7 +1340,7 @@ class AnotherPopupPart {
           'Shell style preview draws a scaled mock of the library page (rail, '
           'masthead, cover blocks / grid tiles) with the current theme so the '
           'user can compare sidebar styles and library layouts; radii, surface '
-          'tones and the masthead letter size scale with the preview box and '
+          'tones scale with the preview box and '
           'are preview content, not page chrome — same reviewed exception '
           'class as lookup_popup_size_preview.',
       'lib/src/pages/implementations/music/music_cd_detail.dart':
@@ -1732,7 +1732,6 @@ class AnotherPopupPart {
         'surfaceContainerLowest',
         'surfaceContainerHigh',
         'surfaceContainerHighest',
-        'fontSize:',
       },
       'lib/src/pages/implementations/music/music_cd_detail.dart': <String>{
         'fontSize:',
