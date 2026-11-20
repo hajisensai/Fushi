@@ -5619,6 +5619,7 @@
   "manga_audio_source_policy_hint_first": "有声书里找到的句子用有声书的音频，其余合成。",
   "manga_audio_source_policy_hint_only": "只读有声书里找到的句子，其余不读。",
   "manga_audio_source_policy_hint_synth": "全部合成，不用有声书。",
+  "manga_audio_source_policy_narrator_note": "装了本机 Irodori 引擎时，合成的句子用有声书旁白的音色。",
   "manga_audio_source_policy_synth_only": "只合成",
   "manga_audio_source_remove": "移除",
   "manga_audio_source_running": "正在匹配…",
