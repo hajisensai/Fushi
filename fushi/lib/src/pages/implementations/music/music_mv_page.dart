@@ -42,6 +42,8 @@ import 'package:fushi/src/media/music/music_local_video.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart'
     show musicEdlUri;
 import 'package:fushi/src/media/music/plugin/music_online_mv_video_client.dart';
+import 'package:fushi/src/media/music/plugin/music_plugins.dart'
+    show MusicPluginStreamUnavailable;
 import 'package:fushi/src/media/music/music_output_backend.dart'
     show MusicPlayItem;
 import 'package:fushi/src/media/playback_route_marks.dart';
@@ -227,11 +229,14 @@ Future<void> openMusicOnlineMvPage({
   );
 }
 
-/// 本地 MV 曲目（[isMusicLocalVideoTrack]，曲库里的视频容器）在视频播放页里看：ASS 特效
+/// MV 曲目（[isMusicWatchableVideoTrack]，曲库里的视频容器）在视频播放页里看：ASS 特效
 /// 字幕、同名外挂字幕、暂停识别画面文字、查词制卡与视频库视频一致（拍板台 jeNKF9u0WJ）。
-/// 首次观看按 app 外打开视频同一入口登记进视频库并标「MV」
-/// （[ensureMusicVideoInVideoLibrary]）。进入时暂停音乐播放引擎（同一首歌不该两路同时
-/// 出声）。视频模块关掉时不登记、只提示——否则 MV 会进一个用户看不见的库。
+/// - 本地 MV：首次观看按 app 外打开视频同一入口登记进视频库并标「MV」
+///   （[ensureMusicVideoInVideoLibrary]）；
+/// - 网络音乐来源的 MV（拍板台 left3568）：起播期按来源取流（[resolveMusicStreamVideo]），
+///   走在线 MV 同一条远端起播路径串流，不登记进视频库。
+/// 进入时暂停音乐播放引擎（同一首歌不该两路同时出声）。视频模块关掉时不登记、只提示
+/// ——否则 MV 会进一个用户看不见的库。
 Future<void> openMusicTrackVideo({
   required BuildContext context,
   required MusicTrackRow track,
@@ -242,6 +247,21 @@ Future<void> openMusicTrackVideo({
   ).read(appProvider);
   if (!app.moduleVisibility.isEnabled(ModuleId.video)) {
     FushiToast.show(msg: t.module_disabled_hint, severity: ToastSeverity.info);
+    return;
+  }
+  if (isMusicStreamVideoTrack(track)) {
+    await openMusicOnlineMvPage(
+      context: context,
+      key: '$kMusicStreamVideoKeyPrefix${track.trackUid}',
+      title: track.title,
+      artist: track.artistCredit,
+      source: MusicOnlineMv(
+        resolve: () => resolveMusicStreamVideo(track),
+        describeError: (Object e) => e is MusicPluginStreamUnavailable
+            ? e.message
+            : t.music_mv_open_failed,
+      ),
+    );
     return;
   }
   if (!await File(track.path).exists()) {
@@ -268,6 +288,10 @@ Future<void> openMusicTrackVideo({
     ),
   );
 }
+
+/// 网络音乐来源 MV 在视频页里的播放身份前缀（接在 [kMusicOnlineMvVideoIdPrefix] 之后，
+/// 断点 / 观看统计按曲目 uid 记，与插件在线 MV 分开）。
+const String kMusicStreamVideoKeyPrefix = 'source:';
 
 /// 打开无视频的卡拉 OK 字幕页：有同名 `.cdg` 时画面走 CD+G，否则封面 / 纯色画布。
 Future<void> openMusicKaraokePage({

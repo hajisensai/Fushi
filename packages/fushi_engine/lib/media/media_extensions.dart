@@ -127,6 +127,13 @@ bool isVideoMediaPath(String path) {
   return ext != null && kVideoExtensions.contains(ext);
 }
 
+/// 纯函数：[path] 是不是音乐库收的曲目文件——纯音频（[isAudioOnlyMediaPath]）或 MV
+/// 视频容器（[isVideoMediaPath]），与音乐来源扫描器（`native/fushi_music` 的
+/// `is_track_extension`）同一口径。只给音乐页自己的入口（拖放、「添加音频文件」）用；
+/// 视频侧交给音乐库的入口（视频页拖放、存量迁移）仍只收纯音频，免得视频被分流进曲库。
+bool isMusicLibraryMediaPath(String path) =>
+    isAudioOnlyMediaPath(path) || isVideoMediaPath(path);
+
 /// 小写、带点的扩展名；没有扩展名（或只有前导点的隐藏文件名）为 null。
 String? _mediaExtensionOf(String path) {
   final String trimmed = path.trim();

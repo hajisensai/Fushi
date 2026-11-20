@@ -388,4 +388,54 @@ void main() {
       ]);
     });
   });
+
+  // 拍板台 left3568：音乐页自己的入口（拖放 / 添加音频文件）与音乐来源扫描同口径，MV
+  // 视频容器也收；视频侧入口的 importAudioFiles 仍只收纯音频（上一组断言 mkv 被跳过）。
+  group('importMusicFiles', () {
+    test('music videos are imported like audio; covered ones rescan the '
+        'source; non-media / missing are skipped', () async {
+      final int sid = await addMusicSource(at(<String>['Music']));
+      final List<int> rescanned = <int>[];
+      final List<String> imported = <String>[];
+      final Set<String> existing = <String>{
+        at(<String>['Music', 'A', 'Live.mkv']),
+        at(<String>['Downloads', 'Song MV.mkv']),
+        at(<String>['Downloads', 'Clip.MP4']),
+        at(<String>['Downloads', 'drama.mp3']),
+        at(<String>['Downloads', 'notes.txt']),
+      };
+      final MusicAudioIntake intake = MusicAudioIntake(
+        db,
+        fileExists: existing.contains,
+        rescanSource: (SourceLibraryRow s) async {
+          rescanned.add(s.id);
+          return null;
+        },
+        importFile: (String path, {bool recursive = false}) async {
+          imported.add(path);
+          return null;
+        },
+      );
+
+      final MusicAudioIntakeResult r = await intake.importMusicFiles(<String>[
+        at(<String>['Music', 'A', 'Live.mkv']),
+        at(<String>['Downloads', 'Song MV.mkv']),
+        at(<String>['Downloads', 'Clip.MP4']),
+        at(<String>['Downloads', 'drama.mp3']),
+        at(<String>['Downloads', 'notes.txt']),
+        at(<String>['Gone', 'x.webm']),
+      ]);
+
+      expect(rescanned, <int>[sid]);
+      expect(imported, <String>[
+        at(<String>['Downloads', 'Song MV.mkv']),
+        at(<String>['Downloads', 'Clip.MP4']),
+        at(<String>['Downloads', 'drama.mp3']),
+      ]);
+      expect(r.skippedPaths, <String>[
+        at(<String>['Downloads', 'notes.txt']),
+        at(<String>['Gone', 'x.webm']),
+      ]);
+    });
+  });
 }
