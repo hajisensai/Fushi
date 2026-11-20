@@ -388,4 +388,54 @@ void main() {
       ]);
     });
   });
+
+  // 拍板台 oo_8_5z6Aw：视频库「加入收听」把本地视频当 MV 收进曲库（只放音轨）。
+  group('importListenFiles', () {
+    test('accepts video containers as well as audio; covered files rescan '
+        'their source; missing / non-media are skipped', () async {
+      final int sid = await addMusicSource(at(<String>['Music']));
+      final List<int> rescanned = <int>[];
+      final List<String> imported = <String>[];
+      final Set<String> existing = <String>{
+        at(<String>['Anime', 'ep01.mkv']),
+        at(<String>['Anime', 'ep02.mp4']),
+        at(<String>['Music', 'live.webm']),
+        at(<String>['Downloads', 'drama.mp3']),
+        at(<String>['Downloads', 'notes.txt']),
+      };
+      final MusicAudioIntake intake = MusicAudioIntake(
+        db,
+        fileExists: existing.contains,
+        rescanSource: (SourceLibraryRow s) async {
+          rescanned.add(s.id);
+          return null;
+        },
+        importFile: (String path, {bool recursive = false}) async {
+          imported.add(path);
+          return null;
+        },
+      );
+
+      final MusicAudioIntakeResult r = await intake.importListenFiles(<String>[
+        at(<String>['Anime', 'ep01.mkv']),
+        at(<String>['Anime', 'ep02.mp4']),
+        at(<String>['Music', 'live.webm']),
+        at(<String>['Downloads', 'drama.mp3']),
+        at(<String>['Downloads', 'notes.txt']),
+        at(<String>['Gone', 'ep03.mkv']),
+      ]);
+
+      expect(rescanned, <int>[sid]);
+      expect(imported, <String>[
+        at(<String>['Anime', 'ep01.mkv']),
+        at(<String>['Anime', 'ep02.mp4']),
+        at(<String>['Downloads', 'drama.mp3']),
+      ]);
+      expect(r.skippedPaths, <String>[
+        at(<String>['Downloads', 'notes.txt']),
+        at(<String>['Gone', 'ep03.mkv']),
+      ]);
+      expect(r.handedOver, isTrue);
+    });
+  });
 }

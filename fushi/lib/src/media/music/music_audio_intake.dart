@@ -24,7 +24,7 @@ import 'dart:io';
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/media_extensions.dart'
-    show isAudioOnlyMediaPath;
+    show isAudioOnlyMediaPath, isVideoMediaPath;
 import 'package:fushi_engine/media/music/music_audio_roots.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:path/path.dart' as p;
@@ -481,17 +481,26 @@ class MusicAudioIntake implements MusicAudioIntakePort {
   /// 导入。不是本地纯音频 / 文件不存在的，原样放进 [MusicAudioIntakeResult.skippedPaths]。
   @override
   Future<MusicAudioIntakeResult> importAudioFiles(Iterable<String> paths) =>
-      _serial(() => _importFiles(paths.toList()));
+      _serial(() => _importFiles(paths.toList(), acceptVideo: false));
 
-  Future<MusicAudioIntakeResult> _importFiles(List<String> paths) async {
+  /// 视频库里点「加入收听」的本地视频（拍板台 oo_8_5z6Aw，方案 A）：与 [importAudioFiles]
+  /// 同一条入库路径，只是也收视频容器——曲库本来就收音乐来源里的视频容器当 MV
+  /// （`music_local_video.dart`），音乐引擎只放音轨。纯音频照收。
+  Future<MusicAudioIntakeResult> importListenFiles(Iterable<String> paths) =>
+      _serial(() => _importFiles(paths.toList(), acceptVideo: true));
+
+  Future<MusicAudioIntakeResult> _importFiles(
+    List<String> paths, {
+    required bool acceptVideo,
+  }) async {
     final List<SourceLibraryRow> sources = await _localMusicSources();
     final Map<int, SourceLibraryRow> toRescan = <int, SourceLibraryRow>{};
     final List<String> toImport = <String>[];
     final List<String> skipped = <String>[];
     for (final String path in paths) {
-      if (!isAudioOnlyMediaPath(path) ||
-          !p.isAbsolute(path) ||
-          !_fileExists(path)) {
+      final bool accepted =
+          isAudioOnlyMediaPath(path) || (acceptVideo && isVideoMediaPath(path));
+      if (!accepted || !p.isAbsolute(path) || !_fileExists(path)) {
         skipped.add(path);
         continue;
       }
