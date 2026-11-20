@@ -239,6 +239,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 内容字体链优先级的第三档，兜在「资源手动指定 > 内容自带元数据」之后。
   'default_content_language',
   'design_system',
+  // bool（默认 false）：启动期「词典格式可以升级」提示点过「以后再说」。设备本地（描述
+  // 本机词典目录的状态），不进 Profile 快照；词典页的升级入口不受它影响。
+  'dict_format_upgrade_prompt_dismissed',
   'dictionary_entry_font_size',
   'dictionary_update_interval',
   // 用户自配的 AList / OpenList 站点清单（JSON 数组：id/name/url/kinds/
