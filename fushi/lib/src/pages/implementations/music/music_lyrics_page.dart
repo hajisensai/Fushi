@@ -916,7 +916,23 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   /// [_miningWindow]；覆盖项（[MiningRequestOverrides]，随 fields 走）里的起止微调加在
   /// 音频片段上，不要音频 / 不要图片各自跳过。卡组与手改字段由后端从同一份 fields 读。
   @override
-  Future<MinePopupResult> onMineFromPopup(Map<String, String> fields) async {
+  Future<MinePopupResult> onMineFromPopup(Map<String, String> fields) =>
+      _mineFromPopup(fields);
+
+  /// 点 ✓ 选「覆盖这张」：与新制同一条路（同一份句子 / 音频片段 / 封面 / 出处），只把
+  /// 最后一步换成 `updateMinedNote`。BUG-4933：此前落到基类空实现，覆写静默无效。
+  @override
+  Future<MinePopupResult> onUpdateFromPopup(
+    int noteId,
+    Map<String, String> fields,
+  ) => _mineFromPopup(fields, overwriteNoteId: noteId);
+
+  /// [overwriteNoteId] 非空 = 覆写那张卡：不计入制卡统计 / 历史，也不给「撤销」（撤销 =
+  /// 删卡，会把被覆写的旧卡一并删掉）。
+  Future<MinePopupResult> _mineFromPopup(
+    Map<String, String> fields, {
+    int? overwriteNoteId,
+  }) async {
     // 第一个 await 之前把这次制卡用到的状态读齐：排队期间用户可能已经点了别的行。
     final MusicPlayItem? item = _engine.current;
     final MiningRequestOverrides? overrides = MiningRequestOverrides.readFrom(
@@ -1050,11 +1066,20 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         msg: t.card_mining_pending,
         status: MineToastStatus.pending,
       );
-      final MineOutcome outcome = await repo.mineEntry(
-        rawPayloadJson: rawPayloadJson,
-        context: miningContext,
+      final MineOutcome outcome = overwriteNoteId != null
+          ? await repo.updateMinedNote(
+              noteId: overwriteNoteId,
+              rawPayloadJson: rawPayloadJson,
+              context: miningContext,
+            )
+          : await repo.mineEntry(
+              rawPayloadJson: rawPayloadJson,
+              context: miningContext,
+            );
+      final described = describeMineOutcome(
+        outcome,
+        overwrite: overwriteNoteId != null,
       );
-      final described = describeMineOutcome(outcome);
       if (described.record && item != null) {
         unawaited(
           _recordMined(
@@ -1078,7 +1103,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
               : described.message,
           status: described.status,
           // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
-          action: minedCardUndoToastAction(repo, outcome),
+          action: overwriteNoteId != null
+              ? null
+              : minedCardUndoToastAction(repo, outcome),
         );
         return MinePopupResult.mined(outcome);
       }

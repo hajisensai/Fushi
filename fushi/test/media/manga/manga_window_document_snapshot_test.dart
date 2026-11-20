@@ -118,7 +118,8 @@ void main() {
     // 改这两个开关不重载文档的话，屏上页图仍按旧画质档请求，开关形同虚设。
     final MangaReaderPreferences base = state.preferences;
     expect(base.enhancedScaling, isTrue, reason: '前提：画质缩放默认开');
-    expect(state.build(_nav()), contains("var FIT_HQ = '&fq=1';"));
+    expect(base.gammaCorrectScaling, isTrue, reason: '前提：文字感知 Gamma 校正默认开');
+    expect(state.build(_nav()), contains("var FIT_HQ = '&fq=g';"));
 
     state.preferences = base.copyWithJson(<String, Object?>{
       'enhancedScaling': false,
@@ -128,10 +129,10 @@ void main() {
     expect(state.build(_nav()), contains('var FIT_STEP = 128;'));
 
     state.preferences = base.copyWithJson(<String, Object?>{
-      'gammaCorrectScaling': true,
+      'gammaCorrectScaling': false,
     });
     expect(snapshot.matches(state.build), isFalse);
-    expect(state.build(_nav()), contains("var FIT_HQ = '&fq=g';"));
+    expect(state.build(_nav()), contains("var FIT_HQ = '&fq=1';"));
 
     // 画质缩放关着时 Gamma 校正不起作用：文档逐字不变，不白重载。
     final MangaWindowNavigation loaded = _nav();
@@ -140,7 +141,7 @@ void main() {
     });
     snapshot.record(state.build(loaded), loaded);
     state.preferences = state.preferences.copyWithJson(<String, Object?>{
-      'gammaCorrectScaling': true,
+      'gammaCorrectScaling': false,
     });
     expect(snapshot.matches(state.build), isTrue);
   });

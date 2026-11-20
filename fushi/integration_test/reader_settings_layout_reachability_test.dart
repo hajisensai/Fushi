@@ -2,7 +2,6 @@ import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -37,9 +36,8 @@ import 'test_helpers.dart';
 /// needs an InAppWebViewController + gamepad-A activation, both of which a
 /// hidden Windows integration runner cannot synthesize (see the KNOWN GAP in
 /// desktop_settings_smoke_test). So this mounts the same sheet widget the
-/// reader builds with a fake webview controller -- render path, sub-page
-/// routing and focus behaviour match the real app; only the WebView and the
-/// gamepad-A boundary are bypassed.
+/// reader builds -- render path, sub-page routing and focus behaviour match
+/// the real app; only the WebView and the gamepad-A boundary are bypassed.
 ///
 /// BUG-1106 守卫（test/tools/itest_focus_navigation_prerequisite_guard_test.dart）
 /// 不覆盖本文件：它不走 `app.main()`，而是自己 pumpWidget 一个裸 [MaterialApp]，
@@ -49,11 +47,6 @@ import 'test_helpers.dart';
 /// Run (PowerShell, from fushi/):
 ///   $env:FUSHI_TEST_HIDDEN = "1"
 ///   flutter test integration_test/reader_settings_layout_reachability_test.dart -d windows
-
-class _FakeInAppWebViewController implements InAppWebViewController {
-  @override
-  dynamic noSuchMethod(Invocation invocation) => null;
-}
 
 AppModel _testAppModel() {
   final FushiDatabase db = FushiDatabase.forTesting(
@@ -93,7 +86,6 @@ Future<void> _pumpSheet(
                   readerProgress: const (1, 3),
                   onJumpSection: (_, __) async {},
                   onExitReader: () {},
-                  webViewController: _FakeInAppWebViewController(),
                   appModel: _testAppModel(),
                   ref: ref,
                   isFushiReader: true,

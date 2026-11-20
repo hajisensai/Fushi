@@ -6459,9 +6459,38 @@ class AppModel
         wheelSpeed: popupWheelSpeed,
         instantScroll: popupInstantScroll,
         instantScrollWheelStep: popupInstantScrollWheelStep,
-        dedupPitch: deduplicatePitchAccents,
+        displayPrefs: _activePopupDisplayPrefs,
         einkMode: einkMode,
       ));
+
+  /// App 当前生效的查词弹窗显示偏好（与 popup_settings_injection 注入 in-app 弹窗的同一批
+  /// 值同源），随 theme 下发给浏览器扩展（BUG-4935）。
+  PopupDisplayPrefs get _activePopupDisplayPrefs => (
+    dedupPitch: deduplicatePitchAccents,
+    harmonicFrequency: harmonicFrequency,
+    showExpressionTags: showExpressionTags,
+    collapseDictionaries: collapseDictionaries,
+    compactGlossaries: compactGlossaries,
+    autoExpandRows: popupAutoExpandDictionaries,
+    collapsedDictionaryNames: _popupCollapsedNamesOf(lookupViewDictionaries),
+    expandedDictionaryNames: _popupExpandedNamesOf(lookupViewDictionaries),
+  );
+
+  /// 词典管理里逐本「折叠」/「展开」的词典名（BUG-2158 三态），与 in-app 弹窗注入的
+  /// `collapsedDictionaryNames` / `expandedDictionaryNames` 同一判据（BUG-4935 扩展下发）。
+  static List<String> _popupCollapsedNamesOf(List<Dictionary> dictionaries) =>
+      dictionaries
+          .where((Dictionary d) => d.isCollapsed(JapaneseLanguage.instance))
+          .map((Dictionary d) => d.name)
+          .toList(growable: false);
+
+  static List<String> _popupExpandedNamesOf(List<Dictionary> dictionaries) =>
+      dictionaries
+          .where(
+            (Dictionary d) => d.isExplicitlyExpanded(JapaneseLanguage.instance),
+          )
+          .map((Dictionary d) => d.name)
+          .toList(growable: false);
 
   /// 反馈 biLEesNqWb：[browserExtensionThemeColors] 按浏览器扩展所选的**非激活**配置算
   /// ——主题、弹窗列数 / 字号 / 尺寸 / 滚动 / 滑动关闭 / 音调去重都取 [view]；墨水屏是设备
@@ -6486,7 +6515,16 @@ class AppModel
       wheelSpeed: p.popupWheelSpeed,
       instantScroll: p.popupInstantScroll,
       instantScrollWheelStep: p.popupInstantScrollWheelStep,
-      dedupPitch: p.deduplicatePitchAccents,
+      displayPrefs: (
+        dedupPitch: p.deduplicatePitchAccents,
+        harmonicFrequency: p.harmonicFrequency,
+        showExpressionTags: p.showExpressionTags,
+        collapseDictionaries: p.collapseDictionaries,
+        compactGlossaries: p.compactGlossaries,
+        autoExpandRows: p.popupAutoExpandDictionaries,
+        collapsedDictionaryNames: _popupCollapsedNamesOf(view.dictionaries),
+        expandedDictionaryNames: _popupExpandedNamesOf(view.dictionaries),
+      ),
       einkMode: theme.einkMode,
     ));
   }
@@ -6617,11 +6655,12 @@ class AppModel
       // window.__fushiPopupInstantScrollWheelStep。触摸半边扩展侧不挂监听，不下发。
       '--fushi-instant-scroll-wheel-step': inputs.instantScrollWheelStep
           .toStringAsFixed(3),
-      // BUG-2397：「音调去重」下发给扩展 content.js（非 CSS 变量、仅 JS 消费）。扩展弹窗
-      // 与 in-app 弹窗跑同一份 popup.js，而它的去重分支读 `window.deduplicatePitchAccents`：
-      // in-app 由 popup_settings_injection 注入，扩展侧此前没有任何赋值路径，恒 undefined
-      // → 浏览器里的音调去重永远是关的。走 theme 通道与 --fushi-instant-scroll 同法。
-      '--fushi-dedup-pitch': inputs.dedupPitch ? '1' : '0',
+      // BUG-2397 / BUG-4935：弹窗显示偏好（音调去重、词频聚合、自动展开行数、折叠开关与
+      // 逐本折叠 / 展开名单……）下发给扩展（非 CSS 变量、仅 JS 消费）。扩展弹窗与 in-app 弹窗
+      // 跑同一份 popup.js，它读的这批 `window.*` 在 in-app 由 popup_settings_injection 注入，
+      // 扩展侧只有这条通道；编码 / 解码各收口一处（buildPopupDisplayPrefsThemeVars ↔
+      // dict-media.js applyFushiPopupDisplayPrefs）。
+      ...buildPopupDisplayPrefsThemeVars(inputs.displayPrefs),
       // 浏览器扩展的唯一材质是液态玻璃（不再跟随 app 设计系统，用户 2026-10-04 拍板）；
       // 这条只剩墨水屏开关：墨水屏下发 '0'，content.js 让浮动弹窗保持不透明（非 CSS 变量、
       // 仅 content.js 消费）。
@@ -16172,6 +16211,6 @@ typedef _PopupAppearanceInputs = ({
   double wheelSpeed,
   bool instantScroll,
   double instantScrollWheelStep,
-  bool dedupPitch,
+  PopupDisplayPrefs displayPrefs,
   bool einkMode,
 });

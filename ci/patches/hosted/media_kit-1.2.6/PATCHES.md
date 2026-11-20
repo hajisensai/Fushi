@@ -223,3 +223,24 @@ continuously during playback and only needs a small RGBA crop: the transform
 the capture isolate, so no full frame is copied or sent between isolates.
 Additive: no existing format changes. Remove if upstream offers a cropped raw
 screenshot.
+
+## BUG-4941: the mpv handle is destroyed on a helper isolate
+
+`lib/src/player/native/player/real.dart` runs the delayed
+`mpv_terminate_destroy` of `dispose` through `compute` (top-level
+`_terminateDestroy`), after the in-flight helper-isolate calls finish, exactly
+like `_hookContinue` / `_screenshotRaw`.
+
+`mpv_terminate_destroy` blocks until the mpv core thread has exited
+(`mp_destroy_client` in `player/client.c`: `mp_dispatch_lock`, then
+`mp_thread_join`). Upstream calls it on the isolate that disposed the player,
+i.e. the Flutter UI isolate, which on Android is the platform main thread. With
+the core stuck on a stream that never opens (`Failed to recognize file
+format`), feedback wcOJwX-sHh got two ANRs whose main-thread stacks sat in
+`pthread_join` and `pthread_cond_wait` inside that one libmpv function, under
+the same Dart frame.
+
+Regression test: the source guard
+`fushi/test/media/video/video_mpv_ui_thread_native_calls_guard_test.dart`
+(`destroys the mpv handle off the UI thread`). Remove when upstream stops
+destroying the handle on the caller's thread.

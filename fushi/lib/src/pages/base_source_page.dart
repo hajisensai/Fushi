@@ -1884,7 +1884,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     return const MinePopupResult();
   }
 
-  /// TODO-270 D：覆盖「最新制的那张卡」（reader 覆写做真实更新；基类无操作）。
+  /// TODO-270 D：覆盖「最新制的那张卡」（基类无操作，只给不制卡的宿主兜底）。
+  ///
+  /// BUG-4933：覆写了 [onMineFromPopup] 的宿主**必须**同时覆写本方法、落到
+  /// `updateMinedNote`（与新制共用同一份制卡上下文），否则点 ✓「覆盖这张」静默不写卡；
+  /// `test/pages/source_page_overwrite_wiring_guard_test.dart` 按目录枚举守着。
   Future<MinePopupResult> onUpdateFromPopup(
     int noteId,
     Map<String, String> fields,

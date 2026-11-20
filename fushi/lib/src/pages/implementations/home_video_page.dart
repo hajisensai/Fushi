@@ -8862,9 +8862,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     );
     final int index = progresses.isEmpty ? 0 : continueMemberIndex(progresses);
     if (anyTrace && completed < total) {
+      // BUG-4921：N 是续播那集的真实集号（与详情页集卡序号同一判据），不是顺位号。
+      final int episodeNumber = collectionMemberEpisodeNumber(<String>[
+        for (final CollectionOrderingItem<_VideoSlot> item in group.items)
+          item.payload.local?.videoPath ?? item.payload.remote!.parseName,
+      ], index);
       return (
         label:
-            '${t.collection_continue_progress(n: index + 1)}'
+            '${t.collection_continue_progress(n: episodeNumber)}'
             ' · ${t.video_playlist_episodes(count: total)}',
         completed: completed,
         total: total,
@@ -9831,10 +9836,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                             );
                           },
                         ),
+                      // 流播与互联下载的发起 / 暂停 / 继续 / 取消显式进右键菜单主操作行（不写
+                      // slot 时内容组被推断进「更多 ›」，就地停下载又藏起来了）；最多三项。
                       if (cloudStream != null)
                         DialogQuickAction(
                           label: t.remote_video_stream_play,
                           icon: Icons.play_circle_outline,
+                          slot: ItemMenuSlot.primary,
                           onPressed: () {
                             Navigator.pop(dialogContext);
                             unawaited(
@@ -9846,6 +9854,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                         DialogQuickAction(
                           label: t.remote_video_download,
                           icon: Icons.download_outlined,
+                          slot: ItemMenuSlot.primary,
                           onPressed: () {
                             Navigator.pop(dialogContext);
                             _downloadRemote(video);
@@ -9855,6 +9864,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                         DialogQuickAction(
                           label: t.download_task_pause,
                           icon: Icons.pause_outlined,
+                          slot: ItemMenuSlot.primary,
                           onPressed: () {
                             Navigator.pop(dialogContext);
                             downloads.pause(task.id);
@@ -9864,6 +9874,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                         DialogQuickAction(
                           label: t.download_task_resume,
                           icon: Icons.play_arrow_outlined,
+                          slot: ItemMenuSlot.primary,
                           onPressed: () {
                             Navigator.pop(dialogContext);
                             unawaited(downloads.resume(task.id));
@@ -9873,6 +9884,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                         DialogQuickAction(
                           label: t.interconnect_download_cancel,
                           icon: Icons.close,
+                          slot: ItemMenuSlot.primary,
                           onPressed: () {
                             Navigator.pop(dialogContext);
                             unawaited(downloads.cancel(task.id));

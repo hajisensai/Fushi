@@ -2857,11 +2857,14 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
     // 把 spoke 都标成 /spəʊk/ 时，弹窗里合成一行、卡片上却是 [/spəʊk/][/spəʊk/]。
     // 同一份归一化喂给两边，两处显示就不会再分叉。（词典内部的重复由原生
     // enrich_pitch 去掉，那一层这里看不见。）
-    const normalizedPitches = mergeIdenticalPitchGroups(pitches || []);
+    // BUG-4917：H/L 模式串先换算成数字位（与弹窗同一份归一化），字段写 [0] 而不是
+    // [LHHHH]，与数字位词典的同型条目也能合并。
+    const patternNormalizedPitches = normalizePitchPatterns(pitches || [], reading);
+    const normalizedPitches = mergeIdenticalPitchGroups(patternNormalizedPitches);
     const pitchPositions = constructPitchPositionHtml(normalizedPitches);
     // categories 自己按值去重（`!categories.includes(category)`），且要的是原始分组，
-    // 不受合并影响，保持喂原始 pitches。
-    const pitchCategories = constructPitchCategories(pitches, reading, rules);
+    // 不受合并影响，喂未合并的分组；但要换算后的数字位，H/L 串词典才有分类。
+    const pitchCategories = constructPitchCategories(patternNormalizedPitches, reading, rules);
     const phoneticTranscriptions =
         constructPhoneticTranscriptionsHtml(normalizedPitches);
 
@@ -4348,6 +4351,11 @@ function createHarmonicFrequencyTag(frequencies) {
 
 // https://github.com/yomidevs/yomitan/blob/c24d4c9b39ceec1b5fd133df774c41972e9ebbdc/ext/js/language/ja/japanese.js#L350
 function isMoraPitchHigh(moraIndex, pitchAccentValue) {
+    // BUG-4917：Yomitan 的 pitch position 也可以是 H/L 模式串（大辞泉+ / NHK-meta 的
+    // "LHHLLL"）。与上游 japanese.js 同法：第 i 拍高低直接读第 i 个字符，越界即低。
+    if (typeof pitchAccentValue === 'string') {
+        return pitchAccentValue[moraIndex] === 'H';
+    }
     switch (pitchAccentValue) {
         case 0: return (moraIndex > 0);
         case 1: return (moraIndex < 1);
@@ -4444,6 +4452,67 @@ function createTranscriptionsHtml(transcriptions) {
 // 时（app 默认）各存活组的位置互斥，payload 不可能全等，合并对位置组恒为 no-op，
 // 默认外观一字不变；去重关闭时才塌行。（两本纯 IPA 词典给出完全相同的
 // transcriptions 是唯一例外，那也本就该合。）
+// BUG-4917：H/L 模式串（"LHHHH"）是「逐拍高低」的写法，和数字下降位描述的是同一件事。
+// 这里把它换算回数字位：能唯一换算的串就是那个数字位，弹窗画高低线、制卡字段写 [0]，
+// 并且和数字位词典（アクセント辞典 的 [0]）走同一套合并 / 去重——此前 [LHHHH] 与
+// [0] 是同一个平板型却分成两行。
+//
+// 串长必须是「拍数」或「拍数 + 1（后接助词那一拍）」；只给到拍数且末拍为高时平板
+// （0）与尾高（拍数）无法区分，不硬猜，返回 null 留作模式串。返回 null 的串仍由
+// createPitchGroup 按逐拍高低画图（只要长度对得上），只是不参与数字位合并。
+const PITCH_HL_PATTERN_RE = /^[HL]+$/;
+
+function pitchPatternFitsReading(reading, pattern) {
+    if (typeof pattern !== 'string' || !PITCH_HL_PATTERN_RE.test(pattern)) {
+        return false;
+    }
+    const moraCount = getKanaMorae(reading || '').length;
+    return moraCount > 0 && (pattern.length === moraCount || pattern.length === moraCount + 1);
+}
+
+function pitchPatternToDownstep(reading, pattern) {
+    if (!pitchPatternFitsReading(reading, pattern)) {
+        return null;
+    }
+    const moraCount = getKanaMorae(reading).length;
+    let found = null;
+    for (let position = 0; position <= moraCount; position++) {
+        let expected = '';
+        for (let i = 0; i < pattern.length; i++) {
+            expected += isMoraPitchHigh(i, position) ? 'H' : 'L';
+        }
+        if (expected === pattern) {
+            if (found !== null) {
+                return null;
+            }
+            found = position;
+        }
+    }
+    return found;
+}
+
+// 每组里能换算的 H/L 串并进 pitchPositions（不重复追加），换算不了的留在 patterns。
+// 纯变换，不改入参；要跑在 mergeIdenticalPitchGroups 之前，合并 / 去重才看得见数字位。
+function normalizePitchPatterns(groups, reading) {
+    return (groups || []).map((group) => {
+        const patterns = group.patterns || [];
+        if (!patterns.length) {
+            return group;
+        }
+        const positions = [...(group.pitchPositions || [])];
+        const keptPatterns = [];
+        patterns.forEach((pattern) => {
+            const position = pitchPatternToDownstep(reading, pattern);
+            if (position === null) {
+                keptPatterns.push(pattern);
+            } else if (!positions.includes(position)) {
+                positions.push(position);
+            }
+        });
+        return Object.assign({}, group, { pitchPositions: positions, patterns: keptPatterns });
+    });
+}
+
 function mergeIdenticalPitchGroups(groups) {
     const merged = [];
     const byPayload = new Map();
@@ -4509,11 +4578,17 @@ function createPitchGroup(pitchData, reading) {
         li.appendChild(document.createTextNode(` [${pitch}]`));
         list.appendChild(li);
     });
-    // 79c55c2 二期：pattern 式 accent（"heiban" 等字符串位）以文本形式渲染，
-    // 无法画数字位式的高低标记。
+    // 79c55c2 二期：pattern 式 accent（字符串位）。BUG-4917：长度对得上读音的 H/L 串
+    // 按逐拍高低画高低线（能换算成数字位的已在 normalizePitchPatterns 里并走），
+    // 其它字符串（"heiban" 这类名字、长度对不上的串）仍以文本渲染。
     (pitchData.patterns || []).forEach((pattern) => {
         const li = el('li');
-        li.appendChild(document.createTextNode(`[${pattern}]`));
+        if (pitchPatternFitsReading(reading, pattern)) {
+            li.appendChild(createPitchHtml(reading, pattern));
+            li.appendChild(document.createTextNode(` [${pattern}]`));
+        } else {
+            li.appendChild(document.createTextNode(`[${pattern}]`));
+        }
         list.appendChild(li);
     });
     container.appendChild(list);
@@ -4587,7 +4662,8 @@ function createPitchSection(pitches, reading) {
     // `unique=[1]` 存活，5 个来源全留住。
     //
     // 关去重那一档逐字节不变：合并对它本来就是幂等的（原实现也是合并后渲染）。
-    const merged = mergeIdenticalPitchGroups(pitches);
+    // BUG-4917：先把 H/L 模式串换算成数字位，[LHHHH] 才会和 [0] 合并 / 去重。
+    const merged = mergeIdenticalPitchGroups(normalizePitchPatterns(pitches, reading));
     const groups = [];
     if (window.deduplicatePitchAccents) {
         // BUG-2397：去重必须覆盖**三类可见条目**，各自一套 seen。此前只有数字

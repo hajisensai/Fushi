@@ -889,14 +889,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     );
     if (existing != null) return existing.id;
     final int nextOrder = await _nextMediaCollectionSortOrder();
-    await (delete(collectionMemberTombstones)..where(
-          (t) =>
-              t.collectionName.equals(name) &
-              t.collectionType.equals(collectionType) &
-              t.mediaType.equals(FushiDatabase.collectionTombstoneSentinel) &
-              t.entryKey.equals(FushiDatabase.collectionTombstoneSentinel),
-        ))
-        .go();
+    await _clearCollectionDeletionTombstone(name, collectionType);
     return into(mediaCollections).insert(
       MediaCollectionsCompanion.insert(
         name: name,
@@ -1330,6 +1323,13 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   /// 收养 DTO 携带的主合集成员；远端刷新没有撤销删除或覆盖手动排序的权限。
   /// 返回自然键对应的最小合集 ID；任一身份被墓碑阻止时返回 null。
   /// 占位提升和去重在同一事务完成，不产生用户删除墓碑。
+  ///
+  /// [userIntent]：用户**亲手**把这部作品加进库 / 下载它（作品页「加入媒体库」、
+  /// 下载完成入库）时传 true——同事务先清该自然键的合集级删除墓碑，与
+  /// [createMediaCollection]「重建 = 撤销删除」同一语义；否则删过一次合集后，
+  /// 用户再怎么显式加入，集都只会散落在库里、永不归组（BUG-4908）。成员级墓碑
+  /// （用户把某一集单独移出合集）仍照常拦，只有 [addToCollection] 逐键撤销。
+  /// 同步 / 目录刷新 / 后台库更新探针等被动路径保持默认 false，墓碑让路。
   Future<int?> adoptRemoteCollectionMember({
     required String name,
     required String collectionType,
@@ -1337,8 +1337,11 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     required String remoteEntryKey,
     required int sortIndex,
     String? localEntryKey,
+    bool userIntent = false,
   }) => transaction(() async {
-    if (await hasCollectionDeletionTombstone(name, collectionType)) {
+    if (userIntent) {
+      await _clearCollectionDeletionTombstone(name, collectionType);
+    } else if (await hasCollectionDeletionTombstone(name, collectionType)) {
       return null;
     }
     final Set<String> keys = <String>{remoteEntryKey};
@@ -1886,6 +1889,22 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
             ..limit(1))
           .getSingleOrNull() !=
       null;
+
+  /// 删掉该自然键的**合集级**删除墓碑（空哨兵行）＝撤销「用户删了这个合集」。
+  /// 只供用户显式重建 / 显式加入的入口用（[createMediaCollection]、
+  /// [adoptRemoteCollectionMember] 的 `userIntent`）；成员墓碑不动。
+  Future<void> _clearCollectionDeletionTombstone(
+    String name,
+    String collectionType,
+  ) =>
+      (delete(collectionMemberTombstones)..where(
+            (t) =>
+                t.collectionName.equals(name) &
+                t.collectionType.equals(collectionType) &
+                t.mediaType.equals(FushiDatabase.collectionTombstoneSentinel) &
+                t.entryKey.equals(FushiDatabase.collectionTombstoneSentinel),
+          ))
+          .go();
 
   /// upsert 一条墓碑（重复移出刷新 deletedAt，单行 LWW）。
   Future<void> upsertCollectionMemberTombstone({

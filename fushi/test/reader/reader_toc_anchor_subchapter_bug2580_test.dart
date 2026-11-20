@@ -1,7 +1,6 @@
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
@@ -30,11 +29,6 @@ import '../helpers/test_platform_services.dart';
 /// 与阅读器回报的 `charOffset` 同为 `countStudyChars` 口径）进
 /// [TtuTocEntry.anchorCharOffset]，[resolveCurrentTocEntry] 按 (章号, 章内偏移)
 /// floor 只落在一条上。
-class _FakeInAppWebViewController implements InAppWebViewController {
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
 AppModel _testAppModel(FushiDatabase db) {
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
     ..loadFromPrefsSnapshot(<String, String>{
@@ -296,7 +290,6 @@ void main() {
                     readerCharOffset: 7923,
                     onJumpSection: (_, __) async {},
                     onExitReader: () {},
-                    webViewController: _FakeInAppWebViewController(),
                     appModel: model,
                     ref: ref,
                     isFushiReader: true,
