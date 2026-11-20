@@ -781,31 +781,29 @@ void main() {
       expect('${r.result.stdout}', contains('tick 14'));
     }, timeout: const Timeout(Duration(minutes: 2)));
 
-    test('once a push reported its refs, silence (the far end gc) is no '
-        'stall', () async {
-      final Process p = await script(
-        "  stderr.writeln('To fushitest@host:work');\n"
-        "  stderr.writeln(' * [new reference] HEAD -> refs/dist/x');\n"
-        '  await Future<void>.delayed(const Duration(seconds: 5));',
-      );
-      final ({ProcessResult result, bool stalled}) r = await collectDistProcess(
-        p,
-        stallAfter: const Duration(seconds: 2),
-        settled: distPushReportedRefs,
-        kill: () => killTree(p),
-      );
-      expect(r.stalled, isFalse);
-      expect(r.result.exitCode, 0);
-    }, timeout: const Timeout(Duration(minutes: 2)));
-
-    test('only the ref report counts as a finished push', () {
+    test('nothing silent runs inside a push: every worker checkout has '
+        'receive-pack\'s auto gc off and gc runs in prepare', () {
+      // Measured: receive-pack's post-ref-report work (auto gc, hooks) runs
+      // before git push prints `To <remote>`, all of it silent -- a gc there
+      // would read as a dead link and get the worker killed and benched.
+      String read(String p) => File(p).readAsStringSync();
       expect(
-        distPushReportedRefs('Writing objects: 100% (5/5)\nTo host:work\n'),
-        isTrue,
+        read('tool/dist_test/worker_prepare.sh'),
+        allOf(
+          contains('git config receive.autogc false'),
+          contains('git gc --auto'),
+        ),
+        reason: 'comes with the snapshot: reaches workers with an old shim',
       );
-      expect(distPushReportedRefs('To host:work'), isTrue);
-      expect(distPushReportedRefs('Writing objects:  40% (2/5)\r'), isFalse);
-      expect(distPushReportedRefs('remote: To be or not\n'), isFalse);
+      final String shim = read('tool/dist_test/worker_shim.sh');
+      expect(shim, contains('git config receive.autogc false'));
+      expect(shim, contains('git -c receive.autogc=false receive-pack'));
+      expect(shim, isNot(contains('exec git receive-pack')));
+      expect(
+        read('tool/test_flow/dist_workers.dart'),
+        contains("'git config receive.autogc false && '"),
+        reason: 'the trusted worker init, before its first push',
+      );
     });
 
     test('without a limit nothing watches', () async {

@@ -4,6 +4,13 @@
 // leftovers: revived, the old wait would take the slot and this checkout's
 // worktree lock, and the new wait would queue for that lock forever (review
 // of the 2026-11-20 change that made the local worker the others' peer).
+//
+// Covered here: the lease-level contract (two tokens, the abandoned one
+// leaves the queue, the next one gets slot and worktree lock). Not covered:
+// LocalDistWorker.prepare's own wiring (a fresh token per call, abandon on
+// the current one), which needs a pub-got checkout and native_libs.ps1;
+// since the peer only withdraws while nothing ran (distWantedWhilePreparing
+// anyResults), a re-prepare right after withdrawing is also unreachable.
 
 import 'dart:async';
 import 'dart:io';

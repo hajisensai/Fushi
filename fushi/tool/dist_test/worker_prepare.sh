@@ -27,6 +27,15 @@ heartbeat=$!
 echo "$$" > "$state/prepare.pid"
 trap 'kill "$heartbeat" 2>/dev/null; rm -f "$state/prepare.pid"' EXIT
 
+# Housekeeping of this checkout's objects here, not inside the next push:
+# receive-pack's auto gc runs after the ref report and before the push
+# returns, printing nothing, and the coordinator kills a push that is silent
+# for two minutes (dist_workers.dart kDistPushStall). This script comes with
+# the snapshot, so it also reaches workers whose shim predates that setting.
+git config receive.autogc false
+echo "==> git gc --auto"
+git gc --auto --quiet || echo "warning: git gc --auto failed (exit $?)" >&2
+
 # Dependencies: pub get + pub-cache patches + one tiny test run, which builds
 # the native-asset hooks (sqlite3, pdfium download) while prepareEnv (proxy)
 # is still set; the batches then run against the warm hook cache.

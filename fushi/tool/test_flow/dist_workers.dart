@@ -758,6 +758,12 @@ abstract class DistWorker {
 /// silent until the far end closed the connection after 312-984 s, holding
 /// up every suite only that worker could run. ssh's ServerAlive probes do
 /// not catch it: the relay keeps answering them.
+///
+/// Silence is only a dead link because nothing silent runs inside the push:
+/// receive-pack's auto gc (after the ref report, before the push returns)
+/// is off on every worker checkout (`receive.autogc false`: the trusted
+/// init, worker_shim.sh, and worker_prepare.sh, which runs `git gc --auto`
+/// itself), and the checkouts have no hooks.
 const Duration kDistPushStall = Duration(seconds: 120);
 
 /// A prepare step that went silent for its whole stall limit and was
@@ -785,15 +791,12 @@ const Duration kDistPipeDrain = Duration(seconds: 10);
 
 /// Collects [p]'s output and exit code. With [stallAfter], [kill] is called
 /// once [p] printed nothing on stdout or stderr for that long (looked at
-/// every quarter of it, at most every 5 s), and the result says `stalled` --
-/// until [settled] says the stderr so far shows the work is done (a push's
-/// ref report: what follows, such as the far end's auto gc, may be silent).
+/// every quarter of it, at most every 5 s), and the result says `stalled`.
 /// After [p] exits its pipes get [kDistPipeDrain] to close; what came by
 /// then is the output.
 Future<({ProcessResult result, bool stalled})> collectDistProcess(
   Process p, {
   Duration? stallAfter,
-  bool Function(String stderrSoFar)? settled,
   required Future<void> Function() kill,
 }) async {
   final Stopwatch quiet = Stopwatch()..start();
@@ -816,22 +819,14 @@ Future<({ProcessResult result, bool stalled})> collectDistProcess(
   }
   final StringBuffer out = StringBuffer();
   final StringBuffer err = StringBuffer();
-  Future<void> drain(Stream<List<int>> s, StringBuffer into, bool isErr) => s
+  Future<void> drain(Stream<List<int>> s, StringBuffer into) => s
       .transform(const Utf8Decoder(allowMalformed: true))
       .forEach((String chunk) {
         quiet.reset();
         into.write(chunk);
-        if (isErr &&
-            watchdog != null &&
-            settled != null &&
-            chunk.contains('\n') &&
-            settled(into.toString())) {
-          watchdog!.cancel();
-          watchdog = null;
-        }
       });
-  final Future<void> outDone = drain(p.stdout, out, false);
-  final Future<void> errDone = drain(p.stderr, err, true);
+  final Future<void> outDone = drain(p.stdout, out);
+  final Future<void> errDone = drain(p.stderr, err);
   final int code = await p.exitCode;
   watchdog?.cancel();
   try {
@@ -844,11 +839,6 @@ Future<({ProcessResult result, bool stalled})> collectDistProcess(
     stalled: stalled,
   );
 }
-
-/// A `git push` stderr that already reported its refs (`To <remote>`): the
-/// transfer is over, the rest is the far end tidying up.
-bool distPushReportedRefs(String stderr) =>
-    RegExp(r'(^|[\r\n])To \S').hasMatch(stderr);
 
 /// [stderr] of a `--progress` git command with each `\r`-redrawn line
 /// reduced to its last state (the log keeps what was finally shown).
@@ -1525,7 +1515,6 @@ class SshDistWorker extends DistWorker {
     String? workingDirectory,
     String? input,
     Duration? stallAfter,
-    bool Function(String stderrSoFar)? settled,
   }) async {
     if (_abandoned) throw DistWorkerError('$name: no longer needed');
     final Process p = await Process.start(
@@ -1540,7 +1529,6 @@ class SshDistWorker extends DistWorker {
         await collectDistProcess(
           p,
           stallAfter: stallAfter,
-          settled: settled,
           kill: () => _killStep(p),
         );
     _stepProcess = null;
@@ -1713,6 +1701,10 @@ class SshDistWorker extends DistWorker {
         ..._sshBase,
         '${_pathPrefix}mkdir -p "\$HOME"/$workdir && cd "\$HOME"/$workdir && '
             '{ [ -d .git ] || git init -q; }$seed && '
+            // No gc inside receive-pack: it runs after the ref report and
+            // before the push returns, printing nothing (kDistPushStall).
+            // worker_prepare.sh runs `git gc --auto` instead.
+            'git config receive.autogc false && '
             '${_slotCommand('take', runId, '$waitSeconds')}',
       ], input: _slotScript());
     }
@@ -1888,9 +1880,6 @@ class SshDistWorker extends DistWorker {
         workingDirectory: repoRoot,
         environment: <String, String>{'GIT_SSH_COMMAND': sshCommand},
         stallAfter: kDistPushStall,
-        // After the ref report the far end may run its auto gc in the
-        // foreground, printing nothing: no longer a stall.
-        settled: distPushReportedRefs,
       );
     } on DistWorkerStalled catch (e) {
       log.writeln('== push (stalled, ${watch.elapsed.inSeconds}s)\n$e');
