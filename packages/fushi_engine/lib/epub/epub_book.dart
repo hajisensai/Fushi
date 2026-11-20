@@ -802,6 +802,12 @@ class EpubChapter {
   final String? _eagerHtml;
   final String? _filePath;
   String? _lazyHtml;
+  int _contentVersion = 0;
+
+  /// 章节内容版本：[discardCachedHtml]（盘上文件被换掉）一次加一。按章缓存派生
+  /// 数据（书内搜索文本）的消费方拿它判新旧，不必为了比对把 [html] 读进内存
+  /// （lazy 章节一读就常驻在 [_lazyHtml]）。eager 章节恒为 0。
+  int get contentVersion => _contentVersion;
 
   /// The on-disk XHTML backing a lazy chapter; null for an eager one. Derived
   /// caches (the illustration index) fingerprint these files.
@@ -820,7 +826,12 @@ class EpubChapter {
   /// 正文，下次访问 [html] 重新读盘。eager 章节没有盘上文件，不受影响。
   void discardCachedHtml() {
     _lazyHtml = null;
+    _contentVersion++;
   }
+
+  /// 按 [filePath] 读章节 XHTML，与 lazy 章节首次访问 [html] 同一套解码；文件不在
+  /// 返回 `''`。后台 isolate 按路径自读时用它，保证与 UI isolate 读到的逐字相同。
+  static String readHtmlFile(String filePath) => _readChapterFile(filePath);
 
   static String _readChapterFile(String? filePath) {
     if (filePath == null) return '';
