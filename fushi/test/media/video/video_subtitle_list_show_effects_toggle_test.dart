@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 const ValueKey<String> _toggleKey = ValueKey<String>(
@@ -261,6 +262,58 @@ void main() {
       await tester.tap(toggle);
       await tester.pump();
       expect(persisted, <bool>[true]);
+    });
+  }
+
+  // 拍板台 left3646 第 1 条（选 A：筛选区优先、计数让位）：经典版式收藏档的筛选区曾与「收藏 N」
+  // 计数各以剩余宽度的一半为上限，计数用不满的那半也不回补，筛选区在放得下的宽度下仍只露半截、
+  // 要横拖。现在筛选区先按自身宽度排满（上限 = 整行减固定宽的开关 / 导出钮），计数只拿剩下的，
+  // 放不下时省略号截断。放得下的宽度上筛选区不可滚（maxScrollExtent == 0），计数仍在行内。
+  for (final double width in <double>[520, 420]) {
+    testWidgets('classic favorites @${width.toInt()}: filter segments get the '
+        'row first and are never half-clipped', (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final VideoPlayerController controller = VideoPlayerController();
+      addTearDown(controller.dispose);
+      controller.setCues(
+        AssParser.parseString(content: _ass, bookKey: 'video/1'),
+      );
+      await tester.pumpWidget(
+        _panel(
+          layout: VideoSubtitleListLayout.classic,
+          controller: controller,
+          initialShowEffects: false,
+          persisted: <bool>[],
+          initialFilter: VideoSubtitleListFilter.favorites,
+          isCueFavorited: (AudioCue c) => c.text == '普通台词一',
+          width: width,
+        ),
+      );
+      await tester.pump();
+
+      final Finder segmented = find.byType(
+        FushiSegmentedButton<VideoSubtitleListFilter>,
+      );
+      expect(segmented, findsOneWidget);
+      final ScrollableState scrollable = tester.state<ScrollableState>(
+        find.ancestor(of: segmented, matching: find.byType(Scrollable)).first,
+      );
+      expect(
+        scrollable.position.maxScrollExtent,
+        0,
+        reason: 'filter segments must be fully visible without dragging',
+      );
+      final Rect panelRect = tester.getRect(
+        find.byType(VideoSubtitleJumpPanel),
+      );
+      final Rect segRect = tester.getRect(segmented);
+      expect(segRect.right <= panelRect.right, isTrue);
+      final Finder count = find.text(t.video_favorite_count(count: 1));
+      expect(count, findsOneWidget);
+      expect(tester.getRect(count).right <= panelRect.right, isTrue);
+      expect(tester.getRect(count).left >= segRect.right, isTrue);
+      expect(tester.takeException(), isNull);
     });
   }
 }
