@@ -3,6 +3,7 @@ import 'dart:io' show Directory;
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:test/test.dart';
+import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_folder_group_coordinator.dart';
 import 'package:fushi_engine/media/video/video_path_migration.dart';
@@ -941,5 +942,57 @@ void main() {
         expect(fold['video|wl-$i'], playlistId);
       }
     });
+  });
+
+  test('从系列合集里移出的成员，重扫不按文件名并回去；恢复自动分组才并回', () async {
+    final int sourceId = await addSource('/anime');
+    final List<String> paths = <String>[
+      '/anime/Show/Show - S01E01.mkv',
+      '/anime/Show/Show - S01E02.mkv',
+      '/anime/Show/Show - S00E01.mkv',
+    ];
+    for (int i = 0; i < paths.length; i++) {
+      await addVideo(uid: 'v$i', path: paths[i], sourceId: sourceId);
+    }
+    final VideoFolderGroupSummary first = await coordinator.groupPaths(
+      videoPaths: paths,
+      sourceId: sourceId,
+    );
+    final int collectionId = first.createdCollectionIds.single;
+    Future<Set<String>> members() async => <String>{
+      for (final MediaCollectionItemRow item in await db.getCollectionItems(
+        collectionId,
+      ))
+        item.entryKey,
+    };
+    expect(await members(), <String>{'v0', 'v1', 'v2'});
+
+    // 「S00E01」其实是一部电影：从这部剧里拆出去（自动路径，不接手合集）。
+    await db.removeFromCollectionRaw(
+      collectionId,
+      MediaKind.video.dbValue,
+      'v2',
+      userIntent: false,
+    );
+    final VideoFolderGroupSummary rescan = await coordinator.groupPaths(
+      videoPaths: paths,
+      sourceId: sourceId,
+    );
+    expect(rescan.updatedCollectionIds, isEmpty);
+    expect(await members(), <String>{'v0', 'v1'});
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    expect(
+      (await VideoSourceWorkPlanner(
+        db,
+      ).plan(source)).map((VideoSourceScrapeWork w) => w.stableKey).toSet(),
+      <String>{'collection:$collectionId', 'book:v2'},
+    );
+
+    await coordinator.groupPaths(
+      videoPaths: paths,
+      sourceId: sourceId,
+      restoreDissolvedGroups: true,
+    );
+    expect(await members(), <String>{'v0', 'v1', 'v2'});
   });
 }

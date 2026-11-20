@@ -2,6 +2,7 @@ import 'package:args/args.dart';
 
 import '../ctl_commands.dart';
 import 'settings_ops_commands.dart' show videoSettingsOpsCommands;
+import 'video_organize_commands.dart';
 import 'video_player_commands.dart';
 import 'video_subtitle_commands.dart';
 import 'video_subtitle_fetch_commands.dart';
@@ -96,6 +97,7 @@ const List<CtlCommandGroup> videoCommandGroups = <CtlCommandGroup>[
         build: _buildGet,
         render: _renderGet,
       ),
+      ...videoOrganizeCommands,
       ...videoPlayerCommands,
       ...videoSubtitleCommands,
       ...videoSubtitleFetchCommands,

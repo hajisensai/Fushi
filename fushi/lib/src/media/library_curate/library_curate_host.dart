@@ -13,6 +13,7 @@ import 'package:fushi_cli/fushi_cli.dart' show OpInvoker;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_media_identity_assistant.dart';
 import 'package:fushi_engine/ai/ai_video_identity_assistant.dart';
+import 'package:fushi_engine/ai/ai_video_placement_assistant.dart';
 import 'package:fushi_engine/media/library_curate/library_curator.dart';
 import 'package:fushi_engine/media/video/metadata/video_collection_relation_sync.dart'
     show productionAniDbXmlDirectory;
@@ -48,6 +49,8 @@ LibraryCurator buildAppLibraryCurator({
       PreferencesAiVideoIdentityAdvisor(prefs);
   final PreferencesAiMediaIdentityAdvisor mediaAdvisor =
       PreferencesAiMediaIdentityAdvisor(prefs);
+  final PreferencesAiVideoPlacementAdvisor placementAdvisor =
+      PreferencesAiVideoPlacementAdvisor(prefs);
   return LibraryCurator(
     db: db,
     toolbox: AiAgentToolbox(invoker: invoker, database: db),
@@ -66,6 +69,8 @@ LibraryCurator buildAppLibraryCurator({
       config: videoDiscoveryScrapeConfig(prefs, uiLocaleTag: uiLocaleTag()),
       aniDbXmlDirectory: productionAniDbXmlDirectory,
     )).backfill,
+    placementJudge: () =>
+        placementAdvisor.isAssigned ? placementAdvisor.judge : null,
   );
 }
 

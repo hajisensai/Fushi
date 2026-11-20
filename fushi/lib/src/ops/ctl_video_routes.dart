@@ -52,6 +52,7 @@ import 'package:fushi/src/media/video/metadata/video_scrape_runtime.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/ops/ctl_video_organize_routes.dart';
 import 'package:fushi/src/ops/ctl_video_player_routes.dart';
 import 'package:fushi/src/ops/ctl_video_support.dart';
 import 'package:fushi/src/ops/ctl_video_subtitle_fetch_routes.dart';
@@ -88,6 +89,8 @@ List<CtlRoute> buildVideoCtlRoutes(OpContext context) {
       '/api/admin/video/scrape/confirmation',
       ctl.answerConfirmation,
     ),
+    // ── 整理（作品明细 / 手动季集 / 整理文件名 / 点名搬动） ───────────────────
+    ...buildVideoOrganizeCtlRoutes(context),
     // ── 发现 ──────────────────────────────────────────────────────────────
     CtlRoute.get('/api/admin/video/discovery/search', ctl.discover),
     CtlRoute.get(

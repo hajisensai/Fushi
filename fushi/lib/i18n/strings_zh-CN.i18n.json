@@ -5221,6 +5221,7 @@
   "library_curate_stage_scrape": "认出视频作品",
   "library_curate_stage_scrape_books": "识别书籍与漫画",
   "library_curate_stage_scrape_games": "识别游戏",
+  "library_curate_stage_video_structure": "纠正放错位置的视频",
   "library_curate_stage_works": "作品层",
   "library_curate_start": "开始",
   "library_curate_status_cancelled": "已取消",
