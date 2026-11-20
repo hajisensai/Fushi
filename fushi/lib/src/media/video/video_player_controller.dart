@@ -5436,6 +5436,23 @@ class VideoPlayerController extends ChangeNotifier
     _player = player;
   }
 
+  /// 测试用：装上 [player] 并挂上 [load] / [loadWeb] 共用的播放态订阅
+  /// （[_attachPlaybackStreams]），不走 libmpv 打开流程。
+  @visibleForTesting
+  void debugAttachPlaybackStreamsForTesting(Player player) {
+    final int loadToken = ++_loadToken;
+    _player = player;
+    _attachPlaybackStreams(player, loadToken);
+  }
+
+  /// 测试用：走数据根迁移 / 删视频前的同一条句柄释放（[_releaseMediaHandles]）。
+  @visibleForTesting
+  Future<void> debugReleaseMediaHandlesForTesting() => _releaseMediaHandles();
+
+  /// 测试可见：最近一次 `video-params` 判出的片源是否 HDR（[_onVideoParams]）。
+  @visibleForTesting
+  bool get debugHdrSourceIsHdr => _hdrSourceIsHdr;
+
   @visibleForTesting
   void debugSetSubtitleCuesLoadingForTesting(bool loading) {
     _setSubtitleCuesLoading(loading);
@@ -7215,6 +7232,13 @@ class VideoPlayerController extends ChangeNotifier
     _errorSub = null;
     unawaited(_audioDevicesSub?.cancel()); // BUG-3767：同为 Player 作用域。
     _audioDevicesSub = null;
+    // 画面参数订阅按 `??=` 挂（换集复用同一 Player 不重挂），必须随 Player 一起置空，
+    // 否则下一个新 Player 的 `video-params` 永远收不到（HDR 输出 / 杜比视界提示只剩
+    // 开片那一次快照补判）。音频设备订阅同为 Player 作用域，一并取消。
+    unawaited(_videoParamsSub?.cancel());
+    _videoParamsSub = null;
+    unawaited(_audioDeviceSub?.cancel());
+    _audioDeviceSub = null;
     _audioOutputRecovery.reset();
     _resetLuaScriptState(); // 新 Player 必须重新 load-script（见字段注释）。
     // 旧 Player 的镜像轨随它消失，镜像 SRT 也一起作废。先摘下所有权（释放期间可能已
