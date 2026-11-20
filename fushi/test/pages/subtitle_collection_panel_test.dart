@@ -62,6 +62,21 @@ class _PackCand extends VideoSubtitleCandidate {
       );
 }
 
+/// 整季 RAR 包候选（本仓解不开）。
+class _RarCand extends VideoSubtitleCandidate {
+  _RarCand(String name, {required String source})
+    : super(
+        providerId: 'fake',
+        remoteId: '$source:$name',
+        fileName: name,
+        language: 'ja',
+        providerPriority: 1,
+        collectionId: source,
+        collectionLabel: source,
+        archiveFormat: SubtitleArchiveFormat.rar,
+      );
+}
+
 typedef _Search =
     Future<ProviderBatchResult<VideoSubtitleCandidate>> Function(
       VideoSubtitleSearchRequest request,
@@ -743,19 +758,9 @@ void main() {
     });
 
     test('canRunSubtitleCollectionBatch：只有解不开的整季包（RAR）仍禁用', () {
-      final SubtitleCollectionSource rarOnly =
-          groupSubtitleCollectionSources(<VideoSubtitleCandidate>[
-            VideoSubtitleCandidate(
-              providerId: 'fake',
-              remoteId: 'R:season.rar',
-              fileName: 'season.rar',
-              language: 'ja',
-              providerPriority: 1,
-              collectionId: 'R',
-              collectionLabel: 'R',
-              archiveFormat: SubtitleArchiveFormat.rar,
-            ),
-          ]).single;
+      final SubtitleCollectionSource rarOnly = groupSubtitleCollectionSources(
+        <VideoSubtitleCandidate>[_RarCand('season.rar', source: 'R')],
+      ).single;
       expect(rarOnly.unsupportedPackFormat, SubtitleArchiveFormat.rar);
       expect(
         canRunSubtitleCollectionBatch(
