@@ -239,6 +239,7 @@ import 'package:fushi/src/second_screen/input/controller_lookup_target.dart';
 import 'package:fushi/src/media/video/video_remote_binding_support.dart';
 import 'package:fushi/src/media/video/video_ocr_cli_consent.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
+import 'package:fushi/src/media/video/video_initial_fullscreen_gate.dart';
 import 'package:fushi/src/media/video/video_control_bar.dart';
 import 'package:fushi/src/media/video/video_top_bar_slots.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart';
@@ -352,6 +353,11 @@ import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_lua_script_manager.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
+import 'package:fushi/src/media/video/video_graphic_subtitle_regions.dart'
+    show
+        GraphicSubtitleTrackExtractionHub,
+        GraphicSubtitleTrackLease,
+        GraphicSubtitleTrackExtractOutcome;
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_screenshot_compose.dart';
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
@@ -454,6 +460,7 @@ import 'package:fushi_asr_subtitles/asr_subtitles.dart'
 import 'package:fushi_engine/media/video/video_duration_probe.dart'
     show probeVideoDurationMs;
 import 'package:fushi/src/media/video/video_volume_overlays.dart';
+import 'package:fushi/src/media/video/video_speed_pref.dart';
 import 'package:fushi/src/media/video/video_volume_pref.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/diagnostics/video_frame_timing_probe.dart';
@@ -589,6 +596,10 @@ part 'video_fushi/subtitle_text_edit.part.dart';
 part 'video_fushi/companion.part.dart';
 part 'video_fushi/controller_lookup.part.dart';
 part 'video_fushi/study_stats.part.dart';
+
+/// 一次「当前主字幕是不是对齐产物」检查：起跑时的代次 + 结果（见
+/// `_startPrimarySubtitleAlignmentCheck`）。
+typedef _SubtitleAlignmentCheck = ({int generation, Future<bool> aligned});
 
 /// 视频页：media_kit 播放器 + 可点击字幕 overlay（点词查词 + 制卡）。
 ///
@@ -782,6 +793,42 @@ String videoFavoriteCacheKey({
   return startMs == null
       ? 'legacy|$text'
       : 'cue|${normalizedEpisodeIndex ?? 'single'}|$startMs|$text';
+}
+
+/// 一句字幕在收藏镜像（[videoFavoriteCacheKey] 键集）里是否已收藏（video-25）。
+///
+/// 查词浮层星标与字幕条 / 跳转列表星标都读它：同一份镜像、同一个判据，两处不会各说
+/// 各话。[sentence] 先 trim（镜像键也是 trim 过的文本）。有 cue 时按
+/// `startMs (+集下标)` 键查，再兼容没有 startMs 的旧 text-only 条目；没有 cue 的查词句
+/// 只认旧 text-only 条目——与取消收藏时 DB 匹配（`_matchingVideoFavorites`）同口径。
+bool videoSentenceFavoritedInMirror(
+  Set<String> mirror, {
+  required String sentence,
+  required int? cueStartMs,
+  required int? episodeIndex,
+  required bool isPlaylist,
+}) {
+  final String text = sentence.trim();
+  if (text.isEmpty) return false;
+  if (cueStartMs != null &&
+      mirror.contains(
+        videoFavoriteCacheKey(
+          text: text,
+          startMs: cueStartMs,
+          episodeIndex: episodeIndex,
+          isPlaylist: isPlaylist,
+        ),
+      )) {
+    return true;
+  }
+  return mirror.contains(
+    videoFavoriteCacheKey(
+      text: text,
+      startMs: null,
+      episodeIndex: null,
+      isPlaylist: isPlaylist,
+    ),
+  );
 }
 
 /// TODO-897 / BUG-805：缺失资源对话框的用户选择。「重新导入」现为真动作
@@ -1271,6 +1318,12 @@ abstract class VideoFushiTestHooks {
   bool get debugLoadFailed;
   String? get debugLoadFailureReason;
 
+  /// 页面当前的播放倍速（开片时按持久化键读出的值）。
+  double get debugPlaybackSpeed;
+
+  /// 走与倍速菜单 / 快捷键同一条 [_setSpeed] 路径改倍速，并立即落盘（不等防抖）。
+  Future<void> debugSetPlaybackSpeed(double speed);
+
   /// 走与剧集面板 / 上下集同一条远端换集路径（[_loadRemoteEpisode]）载入第 [index] 集。
   Future<void> debugLoadRemoteEpisode(int index);
   bool get debugVideoFocusAttached;
@@ -1291,6 +1344,27 @@ abstract class VideoFushiTestHooks {
   String? get debugResolvedDiscSubtitleTrackId;
   String? get debugResolvedDiscAudioTrackId;
   void debugOpenSubtitleSettings();
+
+  /// 播放页交给设置面板的能力槽（与面板拿到的是同一份构造），测试经它走真实回调。
+  VideoQuickSettingsHost debugQuickSettingsHost();
+
+  /// 页面当前的字幕外观快照。
+  VideoSubtitleStyle get debugSubtitleStyle;
+
+  /// 走与打开视频同一条路径从库里重填收藏镜像（video-25）。
+  Future<void> debugRefreshFavoritedCueCache();
+
+  /// 模拟一次查词落到 [sentence]（[cue] 可空）后刷新浮层收藏星标（与 [_lookupAt] 同一调用）。
+  void debugSetLookupSentence(String sentence, AudioCue? cue);
+
+  /// 查词浮层顶部收藏星标当前是否实心。
+  bool get debugCurrentSentenceFavorited;
+
+  /// 字幕条 / 跳转列表星标对 [cue] 的判定。
+  bool debugIsCueFavorited(AudioCue cue);
+
+  /// 走浮层星标同一条路径收藏 / 取消收藏当前查词句。
+  Future<void> debugToggleLookupSentenceFavorite();
   Future<void> debugSelectSubtitleOff();
 
   /// 当前播放位置（毫秒）；未就绪为 null。
@@ -1944,6 +2018,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   bool get debugVideoSurfaceHoldsFocus => _videoFocusNode.hasPrimaryFocus;
   @override
   bool get debugLoadFailed => _failed;
+
+  @override
+  double get debugPlaybackSpeed => _playbackSpeed;
+
+  @override
+  Future<void> debugSetPlaybackSpeed(double speed) async {
+    await _setSpeed(speed);
+    await _flushPersistedVideoSpeed();
+  }
+
   @override
   // Reuse the localized UI reason, never expose the raw caught exception/path.
   String? get debugLoadFailureReason => _failed ? _failReason : null;
@@ -1982,6 +2066,33 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   String? get debugActiveAudioTrackId =>
       (_controller ?? _pendingController)?.activeAudioTrackId;
+  @override
+  VideoQuickSettingsHost debugQuickSettingsHost() =>
+      _buildVideoQuickSettingsHost();
+
+  @override
+  VideoSubtitleStyle get debugSubtitleStyle => _subtitleStyle;
+
+  @override
+  Future<void> debugRefreshFavoritedCueCache() => _refreshFavoritedCueCache();
+
+  @override
+  void debugSetLookupSentence(String sentence, AudioCue? cue) {
+    _lastLookupSentence = sentence;
+    _lastLookupCue = cue;
+    _refreshVideoSentenceFavorite();
+  }
+
+  @override
+  bool get debugCurrentSentenceFavorited => _currentVideoSentenceIsFavorited;
+
+  @override
+  bool debugIsCueFavorited(AudioCue cue) => _isCueFavorited(cue);
+
+  @override
+  Future<void> debugToggleLookupSentenceFavorite() =>
+      _toggleFavoriteSentenceForVideo();
+
   @override
   void debugOpenSubtitleSettings() =>
       _showPlayerSettings(initialCategory: 'subtitle');
@@ -2862,18 +2973,22 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 对话框/遮罩压住（`isCurrent`），避免切窗返回时抢走全屏内对话框的焦点。
   PageRoute<void>? _videoFullscreenRoute;
 
-  /// BUG-839：`initialFullscreen` 新页「首帧就绪后重进全屏」的一次性闸门 + 有界重试计数。
-  /// controls 首建帧（设 [_videoControlsContext]）可能晚于就绪帧，故就绪后逐帧重试到
-  /// context 可用再进全屏；失败/缺失态或超过上限则放弃，避免死循环（见
-  /// [_scheduleInitialFullscreenIfNeeded]）。
-  bool _didInitialFullscreen = false;
+  /// BUG-839：`initialFullscreen` 新页「首帧就绪后重进全屏」的一次性闸门。
+  /// controls 首建帧（设 [_videoControlsContext]）可能晚于就绪帧，所以就绪只是「开闸」，
+  /// 真正的尝试由 context 赋值点（[_captureVideoControlsContext]）与失败 / 缺失态渲染
+  /// 事件驱动，不再逐帧轮询（video-36e，见 [_scheduleInitialFullscreenIfNeeded]）。
+  late final VideoInitialFullscreenGate _initialFullscreen =
+      VideoInitialFullscreenGate(
+        schedulePostFrame: (void Function() callback) => WidgetsBinding.instance
+            .addPostFrameCallback((Duration _) => callback()),
+        attempt: _attemptInitialFullscreen,
+      );
 
   /// BUG-2043：本页是否持有从上一集页**接管**来的原生全屏（窗口已是原生全屏、栈上
   /// 尚无本页的全屏路由）。initState 经 [_claimHandedOverNativeFullscreen] 置真；就绪
   /// 后压上全屏路由（退出改由路由 pop 收口）、再换下一集（所有权继续传递）或
   /// [_releaseHandedOverNativeFullscreen] 亲自退出，三者都把它翻假。
   bool _ownsHandedOverNativeFullscreen = false;
-  int _initialFullscreenRetries = 0;
 
   /// 观看统计采集器（字幕字数 + 完成标记 + 喂空闲门；时长由它的墙钟时钟计）；首次
   /// load 建，dispose 释放。
@@ -3371,8 +3486,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   /// 当前查词所在字幕句是否已被收藏（驱动查词浮层顶部收藏星标的实心/空心）。每次
-  /// [_lookupAt] 成功后据 [_lastLookupSentence] 异步刷新。视频句子收藏走与书内同一
-  /// [FavoriteSentenceRepository]（preferences JSON），来源标 [kFavoriteSentenceSourceVideo]。
+  /// [_lookupAt] 成功后据 [_lastLookupSentence] 从镜像 [_favoritedVideoSentences] 同步
+  /// 算出（video-25：不再每查一个词就把全部收藏句 JSON 读出解析），镜像重填后补刷。
+  /// 视频句子收藏走与书内同一 [FavoriteSentenceRepository]（preferences JSON），来源标
+  /// [kFavoriteSentenceSourceVideo]。
   bool _currentVideoSentenceIsFavorited = false;
 
   /// 本视频已收藏句锚点的缓存集合（驱动字幕跳转列表行内收藏星标的实心/空心，TODO-152
@@ -3381,6 +3498,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 行内收藏 toggle 后增量更新。新条目按 `bookUid + cue.startMs` 匹配；旧条目没有
   /// startMs 时保留 text-only 兼容键。
   final Set<String> _favoritedVideoSentences = <String>{};
+
+  /// 本页对收藏的增删次数（video-25）：镜像全量重填（[_refreshFavoritedCueCache]）读库
+  /// 期间若本页又增删过，读到的那份快照可能早于这次写，填完要重读一次。
+  int _favoriteMirrorRevision = 0;
   VideoRemotePlaybackBinding? _videoRemoteBinding;
   final VideoRemoteCueCache _videoRemoteCueCache = VideoRemoteCueCache();
 
@@ -3678,6 +3799,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 「是不是对齐产物」异步检查的代次：只认最后一次，旧的回来直接丢。
   int _subtitleAlignmentCheckGeneration = 0;
 
+  /// 本次载入读字幕解析 cue 时顺手算好的「是不是对齐产物」（video-20）：载入链上的
+  /// 对齐检查遇到同一路径就直接用它，不再把刚读过的字幕整份重读一遍算哈希。只在
+  /// 一次载入内有效——[_applyLoad] 收尾时清掉，之后的检查（对齐写盘、换源）照常读盘。
+  ({String path, Future<bool> aligned})? _loadAlignmentHint;
+
   /// 副字幕独立调轴（毫秒，TODO-2837 主副字幕分开调轴）：null = 未单独设置 =
   /// 跟随 [_delayMs]（v86 前「主副共用一个 offset」行为）；非 null = 副轨独立偏移
   /// （主副字幕轴不同源时各调各的）。两层持久化镜像 [_delayMs]（per-book
@@ -3714,7 +3840,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       ValueNotifier<({Offset position, double speed})?>(null);
 
   /// 当前字幕外观（全局偏好快照；设置面板改动后刷新）。
-  VideoSubtitleStyle _subtitleStyle = VideoSubtitleStyle.defaults;
+  ///
+  /// video-36f：做成 [ValueNotifier]，只有字幕 overlay 经 [ValueListenableBuilder] 订阅。
+  /// 设置面板的字幕样式滑条每个采样都走 [VideoQuickSettingsHost.onSubtitleStylePreview]，
+  /// 原先那里 `setState` 重建整个播放页（控制条、侧栏、浮层全部重算）；现在只重建字幕层。
+  /// 其余读点（剪辑导出、拖拽松手）都是事件时读值，不需要订阅。
+  final ValueNotifier<VideoSubtitleStyle> _subtitleStyleNotifier =
+      ValueNotifier<VideoSubtitleStyle>(VideoSubtitleStyle.defaults);
+  VideoSubtitleStyle get _subtitleStyle => _subtitleStyleNotifier.value;
+  set _subtitleStyle(VideoSubtitleStyle style) {
+    // 异步载入路径可能在页面释放后才写回样式：notifier 已 dispose，写了会断言。
+    if (!mounted) return;
+    _subtitleStyleNotifier.value = style;
+  }
 
   /// 「拖拽调整字幕位置」模式开关（TODO-2838）：设置面板入口进入、画面顶部横幅
   /// 「完成」退出。开启时字幕 overlay 让出查词指针面、改挂竖直拖拽（见
@@ -4706,9 +4844,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // VideoBooks 行，当前集照单视频路径加载（_activeBookUid 恒为当前集）。
     final int? collectionId = widget.playlistCollectionId;
     if (collectionId != null) {
-      final MediaCollectionRow? col = await widget.repo.getMediaCollectionById(
-        collectionId,
-      );
+      // video-5：合集行、成员、集行、集级刮削一次批量取齐（语句数与集数无关），
+      // 不再在首帧前逐集各查两次。
+      final CollectionPlaybackSnapshot snapshot = await widget.repo
+          .collectionPlaybackSnapshot(collectionId);
+      final MediaCollectionRow? col = snapshot.collection;
       // 同系列音轨/调轴记忆（schema v52）：系列（合集）级偏好优先，回退本集 per-book
       // 值（兼容统一合集迁移前已存的各集值，Never break userspace）。合集内任一集
       // 选音轨/调轴即写系列级，其余集加载时（含从书架直接进某集）共享同一值 —— 恢复
@@ -4723,26 +4863,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         col?.secondarySubtitleDelayMs,
         row.secondaryDelayMs,
       );
-      final List<MediaCollectionItemRow> members = await widget.repo
-          .getCollectionItems(collectionId);
       // v68 Jellyfin 对齐：剧集面板要 ①集级刮削集名 ②合集横图回退链 ③看完/在看
       // 角标。作品名作集名判据（集名缺失时集级刮削会把作品名回填进 title，那不是
       // 集名——与合集详情页 `_scrapedEpisodeTitle` 同判据）。
-      final CollectionScrapeMetaRow? colMeta = await widget.repo
-          .collectionScrapeMeta(collectionId);
-      _playlistCollectionImages = await widget.repo.collectionMediaImages(
-        collectionId,
-      );
-      final String? workTitle = colMeta?.title.trim();
+      _playlistCollectionImages = snapshot.images;
+      final String? workTitle = snapshot.collectionMeta?.title.trim();
       final List<_PlaylistEpisodeRef> refs = <_PlaylistEpisodeRef>[];
-      for (final MediaCollectionItemRow m in members) {
-        if (m.mediaType != MediaKind.video.dbValue) continue;
-        final VideoBookRow? er = await widget.repo.getByBookUid(m.entryKey);
-        if (er == null) continue; // 孤儿成员（集行已删）→ 读取期过滤。
+      // 非视频成员与孤儿成员（集行已删）已在快照里按读取期过滤掉。
+      for (final VideoBookRow er in snapshot.episodes) {
         String? scrapedName;
-        final VideoScrapeMetaRow? em = await widget.repo.episodeScrapeMeta(
-          er.bookUid,
-        );
+        final VideoScrapeMetaRow? em = snapshot.episodeMeta[er.bookUid];
         if (em != null && em.episodeNumber != null) {
           final String t = em.title.trim();
           if (t.isNotEmpty && t != workTitle) scrapedName = t;
@@ -5517,8 +5647,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     await _applyYoutubeCaptionTrack(controller, best, loadSeq: seq);
   }
 
-  /// per-book 播放倍速偏好 key（速度记忆，跨重启保留）。
-  String get _speedPrefKey => 'video_speed_$_activeBookUid';
+  /// 播放倍速偏好的写入 key（速度记忆，跨重启保留）：作为播放列表合集某一集打开时
+  /// 写**系列级**键、全系列共享，单视频写本条目键（[videoSpeedWriteKey]，video-s2-2）。
+  String get _speedPrefKey => videoSpeedWriteKey(
+    bookUid: _activeBookUid,
+    collectionId: widget.playlistCollectionId,
+  );
 
   /// 播放音量偏好的写入 key（音量记忆）：作为播放列表合集某一集打开时写**系列级**
   /// 键、全系列共享，单视频写本条目键（[videoVolumeWriteKey]，cehHSgF04K）。
@@ -5527,12 +5661,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     collectionId: widget.playlistCollectionId,
   );
 
-  /// 读 per-book 持久化倍速（无则 1.0）。
+  /// 读持久化倍速（无则 1.0）：系列键优先、回退本条目键（[videoSpeedReadKeys]）。
   double _readPersistedSpeed() {
-    final double v =
-        (appModel.prefsRepo.getPref(_speedPrefKey, defaultValue: 1.0) as num)
-            .toDouble();
-    return v.clamp(0.25, 4.0);
+    Object? raw;
+    for (final String key in videoSpeedReadKeys(
+      bookUid: _activeBookUid,
+      collectionId: widget.playlistCollectionId,
+    )) {
+      raw = appModel.prefsRepo.getPref(key);
+      if (raw != null) break;
+    }
+    final double v = raw is num
+        ? raw.toDouble()
+        : double.tryParse(raw?.toString() ?? '') ?? 1.0;
+    return v.clamp(0.25, 4.0).toDouble();
   }
 
   /// 读持久化音量（无则 100）：系列键优先、回退本条目键（[videoVolumeReadKeys]）。
@@ -5958,10 +6100,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // iOS：下面先要读同目录字幕 / 封面等原文件，访问窗口得在第一次读盘前就位
     // （BUG-3697；控制器 load 里还有一道，覆盖不经这里的打开路径）。
     await SourceFolderAccess.instance.ensureForPath(row.videoPath);
+    _loadAlignmentHint = null;
     final bool subtitleExplicitlyOff = SubtitleSource.isOff(row.subtitleSource);
     final ({String videoPath, String? subtitleSource}) paths =
         await _relocateSingleMediaPaths(row);
-    List<AudioCue> cues = await widget.repo.loadCues(_activeBookUid);
+    // video-20：DB 缓存 cue（整表读）改惰性——字幕显式关闭时读了就丢、外挂档重解析
+    // 成功时被覆盖，只在真要用它（回退 / 内嵌轨判定 / 兜底链入口）时才读。
+    List<AudioCue> cues = const <AudioCue>[];
     String? externalSub = paths.subtitleSource;
     int? graphicStreamIndex;
 
@@ -5988,6 +6133,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // [_restorePersistedSubtitle]（与播放列表换集同一重解析路径）重解析已抽取的缓存档案，
     // 恢复 cueStyle。缓存命中不触发 ffmpeg 重抽取；图形轨（无文本 cue → cues 为空）不进本
     // 分支，仍由下方 `cues.isEmpty` 分支经 libmpv 画面渲染恢复（不倒退 BUG-122）。
+    if (!subtitleExplicitlyOff && rehydratePath == null) {
+      cues = await widget.repo.loadCues(_activeBookUid);
+    }
     final bool rehydrateEmbedded =
         !subtitleExplicitlyOff &&
         rehydratePath == null &&
@@ -5995,19 +6143,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         SubtitleSource.isEmbeddedPersisted(externalSub);
 
     // TODO-818：用户显式关闭字幕。哨幕短路两个自动重选向量（sidecar 探测 + 内嵌轨
-    // 抽取），externalSub 保持哨兵原样传给 _applyLoad，恢复后仍是关闭态。
-    if (subtitleExplicitlyOff) {
-      cues = const <AudioCue>[];
-    } else if (rehydratePath != null) {
+    // 抽取），externalSub 保持哨兵原样传给 _applyLoad，恢复后仍是关闭态；cues 保持
+    // 空（关闭时 rehydratePath 恒 null、rehydrateEmbedded 恒 false，也不读 DB 缓存）。
+    if (rehydratePath != null) {
       // 外挂文本字幕：重解析磁盘档案作为真相源，恢复 cue 级 / 行内样式 markup（TODO-1246）。
       final List<AudioCue> reparsed = await _loadExternalSubtitleCues(
         rehydratePath,
         _activeBookUid,
+        primeAlignment: true,
       );
-      if (reparsed.isNotEmpty) {
-        cues = reparsed;
-      }
-      // reparsed 为空（档案被删/损坏）：保留上面的 DB 缓存 cues，仅缺样式不缺内容。
+      cues = reparsed.isNotEmpty
+          ? reparsed
+          : await widget.repo.loadCues(_activeBookUid);
+      // reparsed 为空（档案被删/损坏）：回退 DB 缓存 cues，仅缺样式不缺内容。
       // **但缓存本身可能就是空的**——合集里的每一集只落字幕源指针、不落 cue
       // （见 _selectSubtitleSource 的 `_episodes.isEmpty` 分支），所以这条支路解析
       // 失败时 cues 恒为空。下面那组兜底因此**不能**继续挂在同一条 else-if 链上，
@@ -6306,7 +6454,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     try {
       final SubtitleFormat? format = subtitleFormatForPath(sidecarPath);
       if (format == null) return null;
-      final String text = await readTextWithEncoding(File(sidecarPath));
+      final String text = await _readSubtitleTextForLoad(sidecarPath);
       final List<AudioCue> cues = await parseSubtitleContentAsync(
         format,
         content: text,
@@ -6343,14 +6491,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     return (path: path, cues: cues);
   }
 
+  ///
+  /// [primeAlignment]：本次载入链上的读（[_loadSingle]），顺手把对齐判定留给
+  /// [_loadAlignmentHint]。
   Future<List<AudioCue>> _loadExternalSubtitleCues(
     String path,
-    String bookUid,
-  ) async {
+    String bookUid, {
+    bool primeAlignment = false,
+  }) async {
     try {
       final SubtitleFormat? format = subtitleFormatForPath(path);
       if (format == null) return const <AudioCue>[];
-      final String text = await readTextWithEncoding(File(path));
+      final String text = primeAlignment
+          ? await _readSubtitleTextForLoad(path)
+          : await readTextWithEncoding(File(path));
       return await parseSubtitleContentAsync(
         format,
         content: text,
@@ -6360,6 +6514,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       debugPrint('[VideoFushiPage] external subtitle parse failed: $e');
       return const <AudioCue>[];
     }
+  }
+
+  /// 载入链上读一份字幕文本：只读一次盘，同一份字节一边解码、一边（并行）判
+  /// 「是不是对齐产物」，结果留给本次载入的对齐检查（[_loadAlignmentHint]）。
+  Future<String> _readSubtitleTextForLoad(String path) async {
+    final Uint8List bytes = await File(path).readAsBytes();
+    _loadAlignmentHint = (
+      path: path,
+      aligned: isSubtitleAlignmentProductBytes(bytes),
+    );
+    return decodeTextBytes(bytes);
   }
 
   /// 共享 load 装配：复用或新建 controller，载入视频 + cue，挂位置持久化回调。
@@ -6481,6 +6646,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       controller.dispose();
     }
 
+    // 「当前主字幕是不是对齐产物」的检查先起跑，与下面的着色器 / 脚本目录 IO 和
+    // controller.load 并行，load 之后再按结果调轴（video-20：原先在 load 之后串行读）。
+    final _SubtitleAlignmentCheck alignmentCheck =
+        _startPrimarySubtitleAlignmentCheck(
+          externalSubtitlePath ?? _currentSubtitleSource,
+        );
     final VideoMpvConfig mpvConfig = VideoMpvConfig.decode(
       appModel.videoMpvConfig,
     );
@@ -6592,9 +6763,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       unawaited(_detectHlsVariantsForLoad(mediaUri));
     }
     // 当前主字幕是对齐产物时调轴归零（换集 / 首开都按本次实际选中的档算）。
-    await _refreshPrimarySubtitleAlignment(
-      externalSubtitlePath ?? _currentSubtitleSource,
-    );
+    await _applyPrimarySubtitleAlignment(alignmentCheck);
     // 应用持久化的音画延迟（换集复用同一值；load 不重置 delay）。
     controller.setDelayMs(_delayMs);
     // TODO-2837：副字幕独立调轴同步应用（null = 跟随主字幕，controller 侧回退）。
@@ -6671,6 +6840,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // （externalSubtitlePath==null）时当前选中由 _currentSubtitleSource 保留（菜单
       // 切换时再写）。
       _currentSubtitleSource = externalSubtitlePath ?? _currentSubtitleSource;
+      // 载入链上的对齐检查都已起跑：交还给读盘口径，之后的检查（对齐写盘、换源）
+      // 不再沿用本次载入读到的字节。
+      _loadAlignmentHint = null;
       // TODO-1276/1297：首开时页级加载态保持到「首帧解码出画且缓冲结束」
       // （[isReadyForFirstPaint]）再让位给 media_kit——快路径（本地文件 load 返回时
       // 常已出画且不缓冲）此处即 true、立即挂载 [Video]；慢路径（仍在缓冲 / 首帧未就绪）
@@ -7636,6 +7808,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _minesInFlight.dispose();
     _stagedMineCount.dispose();
     _longPressSpeedBadge.dispose();
+    _subtitleStyleNotifier.dispose();
     _autoAdvanceCountdownTimer?.cancel();
     _autoAdvanceCountdownNotifier.dispose();
     _remoteSwitchPhase.dispose();
@@ -12259,9 +12432,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   Future<void> _persistSubtitleStyle(VideoSubtitleStyle style) async {
+    // 写 notifier 即刷新字幕 overlay（video-36f），不再整页 setState。
     _subtitleStyle = style;
     await appModel.setVideoSubtitleStyle(VideoSubtitleStyle.encode(style));
-    if (mounted) setState(() {});
   }
 
   /// 切换字幕模糊（'B' 热键 + 设置面板共用）。TODO-840 Part B：在「模糊」与「不遮蔽」
@@ -12766,8 +12939,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       onSetSubtitleObscureMode: _setSubtitleObscureMode,
       onSetSecondarySubtitleObscureMode: _setSecondarySubtitleObscureMode,
       onAsbConfigChanged: _setAsbConfig,
+      // video-36f：只改 notifier，字幕 overlay 自己订阅重建，不 setState 整页。
       onSubtitleStylePreview: (VideoSubtitleStyle s) {
-        if (mounted) setState(() => _subtitleStyle = s);
+        if (mounted) _subtitleStyle = s;
       },
       onSubtitleStyleCommit: _persistSubtitleStyle,
       // TODO-2838：进入「拖拽调整字幕位置」模式（关设置侧栏 + 开拖拽，见 layout.part）。
@@ -13050,6 +13224,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 它的失败提示只认最后一次 attach 的 context。横幅是唯一 attach 点时，继续观看
     // 那一帧起 context 就是已卸载的，提示会被静默吞掉——由页面自己接管。
     _sourceReviewSession?.attachContext(context);
+    // video-36e：失败 / 缺失态的 controls 永远不建，等着进全屏的闸门在这里收到放弃事件
+    // （帧后回调里退掉接管来的原生全屏）。
+    if (_failed || _missingResource) _initialFullscreen.notify();
     final Widget body = _failed
         ? _buildFailedBody(cs)
         // TODO-897：本地资源缺失态——必须在转圈判据之前短路（缺失时不调 load，

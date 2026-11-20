@@ -3151,26 +3151,54 @@ mixin _FushiDbVideoDomain
   /// CI 全量单测卡 60min）。[tableUpdates] 流不是 QueryStream、取消时不走 markAsClosed、
   /// 不安排该 Timer，故切走视频页不再遗留孤儿 async。消费方（`_onVideoUidsChanged`）按
   /// 集合去重，表内非集合变更（进度/封面回写）触发的额外重查无害。
+  ///
+  /// gap-scanner-4：首次扫描逐条提交，每条都发一次表级通知。重查只选 `book_uid`
+  /// 一列（不再整行读 `video_books`），且同一时刻最多一条在途：在途期间来的通知只记
+  /// 一笔，在途那条回来后再补查一次，N 条连发的通知收敛成至多两次查询，结果也按
+  /// 查询顺序发出、不会乱序。
   Stream<List<String>> watchVideoBookUids() {
-    Future<List<String>> currentUids() async => (await select(
-      videoBooks,
-    ).get()).map((VideoBookRow row) => row.bookUid).toList();
+    Future<List<String>> currentUids() async {
+      final JoinedSelectStatement<$VideoBooksTable, VideoBookRow> query =
+          selectOnly(videoBooks)
+            ..addColumns(<Expression<Object>>[videoBooks.bookUid]);
+      return <String>[
+        for (final TypedResult row in await query.get())
+          row.read(videoBooks.bookUid)!,
+      ];
+    }
+
     late final StreamController<List<String>> controller;
     StreamSubscription<void>? updatesSub;
+    bool inFlight = false;
+    bool dirty = false;
+    Future<void> refresh() async {
+      if (inFlight) {
+        dirty = true;
+        return;
+      }
+      inFlight = true;
+      try {
+        do {
+          dirty = false;
+          final List<String> uids = await currentUids();
+          if (controller.isClosed) return;
+          controller.add(uids);
+        } while (dirty);
+      } catch (error, stack) {
+        if (!controller.isClosed) controller.addError(error, stack);
+      } finally {
+        inFlight = false;
+      }
+    }
+
     controller = StreamController<List<String>>(
       onListen: () {
         // 初始 emit：等同旧 drift keyed `.watch()` 首发，库页首次加载不回归。
-        currentUids().then((List<String> v) {
-          if (!controller.isClosed) controller.add(v);
-        });
+        unawaited(refresh());
         // 表级变更重查：BUG-793 自动刷新保留。
-        updatesSub = tableUpdates(TableUpdateQuery.onTable(videoBooks)).listen((
-          _,
-        ) {
-          currentUids().then((List<String> v) {
-            if (!controller.isClosed) controller.add(v);
-          });
-        });
+        updatesSub = tableUpdates(
+          TableUpdateQuery.onTable(videoBooks),
+        ).listen((_) => unawaited(refresh()));
       },
       // BUG-834 follow-up：async* + `await for` 广播流的订阅 cancel() 永不完成，
       // 让 flutter_test 的 awaited tearDown 挂死超时。改为手动 StreamController，

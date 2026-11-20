@@ -691,7 +691,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       return;
     }
     _ownsHandedOverNativeFullscreen = false;
-    _didInitialFullscreen = true;
+    _initialFullscreen.settle();
     unawaited(navigator.push<void>(route));
     if (oldFullscreenRoute != null && oldFullscreenRoute.isActive) {
       rootNavigator.removeRoute<void>(oldFullscreenRoute);

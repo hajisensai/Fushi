@@ -13368,6 +13368,7 @@
   "video_subtitle_glossary_user_edited": "Edited by you; kept when regenerating",
   "video_subtitle_graphic_hint": "Graphic subtitle · shown on video · pause to look up words (OCR)",
   "video_subtitle_graphic_learning_hint": "Image subtitles are read by OCR when paused; tap a word to look it up. Use \"Convert to text subtitles\" below to look up words while playing.",
+  "video_subtitle_graphic_ocr_cues_skipped": "Text subtitles saved; skipped $count lines that could not be recognized",
   "video_subtitle_graphic_ocr_empty": "No text recognized in this subtitle track",
   "video_subtitle_graphic_ocr_enable_action": "Turn on",
   "video_subtitle_graphic_ocr_enable_hint": "Image subtitles need OCR for tap-to-look-up",

@@ -13368,6 +13368,7 @@
   "video_subtitle_glossary_user_edited": "Edited by you; kept when regenerating",
   "video_subtitle_graphic_hint": "Sottotitolo grafico · mostrato sul video · ricerca in pausa (OCR)",
   "video_subtitle_graphic_learning_hint": "I sottotitoli immagine vengono riconosciuti con OCR in pausa; tocca una parola per cercarla. Usa «Converti in sottotitoli di testo» qui sotto per cercare durante la riproduzione.",
+  "video_subtitle_graphic_ocr_cues_skipped": "Text subtitles saved; skipped $count lines that could not be recognized",
   "video_subtitle_graphic_ocr_empty": "Nessun testo riconosciuto in questa traccia di sottotitoli",
   "video_subtitle_graphic_ocr_enable_action": "Turn on",
   "video_subtitle_graphic_ocr_enable_hint": "Image subtitles need OCR for tap-to-look-up",
