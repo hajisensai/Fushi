@@ -135,7 +135,7 @@ void main() {
         closeTo(390 * 9 / 16, 0.001),
       );
       expect(
-        webBrowserFullscreenSplitVideoHeight(width: 800, height: 900),
+        webBrowserFullscreenSplitVideoHeight(width: 1000, height: 900),
         900 * 0.6,
       );
       expect(
