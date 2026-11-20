@@ -101,7 +101,8 @@ Duration? parseRetryAfter(String? value, {DateTime? now}) {
       text,
     ).difference((now ?? DateTime.now()).toUtc());
     return wait.isNegative ? Duration.zero : wait;
-  } on FormatException {
+  } on HttpException {
+    // HttpDate.parse 对读不懂的串抛 HttpException（不是 FormatException）。
     return null;
   }
 }

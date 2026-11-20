@@ -25,10 +25,8 @@ if (!resolveChrome()) {
 const W = 800;
 const H = 600;
 const config = vnShellConfig({ dartPageWidth: W, dartPageHeight: H });
-// 生产里阅读器样式表带 id="fushi-reader-style"（reader_fushi_page.dart），跑手页同样标上。
-const withReaderStyleId = (html) => html.replace('<style>', '<style id="fushi-reader-style">');
-const page = withReaderStyleId(
-  vnShellPage(scripts, '<p>本文です。</p>', 'window.__fushiShells.vn(' + JSON.stringify(config) + ')'));
+// vnShellPage 的阅读器样式表与生产一样带 id="fushi-reader-style"。
+const page = vnShellPage(scripts, '<p>本文です。</p>', 'window.__fushiShells.vn(' + JSON.stringify(config) + ')');
 
 const driver = await launchChromeDriver();
 try {
@@ -79,8 +77,7 @@ try {
   // ② 生产启动路径：书本样式在 head，正文两段各夹一张小图。
   const body = '<p>一段目の文。<img id="bookBlock" class="book-illust" width="20" height="20">続きの文。</p>' +
     '<p>二段目の文。<img id="readerRule" width="20" height="20">続きの文。</p>';
-  const fullPage = withReaderStyleId(
-    vnShellPage(scripts, body, 'window.__fushiShells.vn(' + JSON.stringify(config) + ')'))
+  const fullPage = vnShellPage(scripts, body, 'window.__fushiShells.vn(' + JSON.stringify(config) + ')')
     .replace('</head>', '<style>.book-illust { display: block; }</style></head>');
   const e2e = await driver.evalOnPage(fullPage, `(async () => {
     for (let i = 0; i < 100 && !(window.fushiReader && window.fushiReader.screens && window.fushiReader.screens.length); i++) {
