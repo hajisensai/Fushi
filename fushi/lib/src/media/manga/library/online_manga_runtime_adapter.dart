@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
@@ -746,7 +748,7 @@ class MihonLibraryAdapter
           page.context.extension,
           page.context.source,
           page.page,
-          requestId: _pageRequestId(page),
+          requestId: mihonPageRequestId(page),
           preferences: page.context.preferences,
         );
       }
@@ -768,15 +770,26 @@ class MihonLibraryAdapter
     if (runtime is! CancellableMihonRuntime) return;
     final List<String> requestIds = <String>[
       for (final OnlineMangaPageRef page in pages)
-        if (page is MihonMangaPageRef) _pageRequestId(page),
+        if (page is MihonMangaPageRef) mihonPageRequestId(page),
     ];
     if (requestIds.isEmpty) return;
     await (runtime as CancellableMihonRuntime).cancelImageRequests(requestIds);
   }
 
-  /// 同一个页引用对象 → 同一个运行时请求号（取消要对得上）。
-  static String _pageRequestId(MihonMangaPageRef page) =>
-      'download-${identityHashCode(page)}-${page.index}';
+  /// 同一个页引用对象 → 同一个运行时请求号（取消要对得上）；不同的页引用对象 →
+  /// 一定不同的请求号。
+  ///
+  /// 旧实现拿 `identityHashCode` 拼号：它不唯一，两个同页号的活引用撞上同一个号时，
+  /// 桌面运行时按请求号登记的取图客户端被后一个顶掉（前一个请求被直接关掉），
+  /// 取消也会取消错页。现在按引用对象发单调递增序号（[Expando] 随引用回收）。
+  @visibleForTesting
+  static String mihonPageRequestId(MihonMangaPageRef page) =>
+      _pageRequestIds[page] ??= 'page-${_nextPageRequestId++}-${page.index}';
+
+  static final Expando<String> _pageRequestIds = Expando<String>(
+    'mihonPageRequestId',
+  );
+  static int _nextPageRequestId = 0;
 
   @override
   Future<List<int>> fetchCover(

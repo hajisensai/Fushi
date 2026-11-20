@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4240 条。点号进各自文件。
+> 共 4241 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4916](bugs/BUG-4916-mihon-page-request-id-collision.md) | ✅ | ✅ | Mihon 取图请求号拿 identityHashCode 拼，两个活页引用撞号时互相顶掉 / 取消错页 |
 | [BUG-4915](bugs/BUG-4915-interconnect-ocr-upload-after-cancel.md) | ✅ | ✅ | 互联 host 代跑 OCR：写盘途中任务被取消，晚到的页图仍落进卷目录、状态写回 uploading |
 | [BUG-4914](bugs/BUG-4914-manga-folder-plan-nas-junk-volume.md) | ✅ | ✅ | 漫画卷归组的 dart:io 入口把群晖 @eaDir 缩略图目录归成一卷（服务端库扫描 / 导入命令） |
 | [BUG-4913](bugs/BUG-4913-manga-series-refresh-lost-update.md) | ✅ | ✅ | 漫画作品页后台刷新覆盖刚开的订阅；下载状态旧读盖新读 |
