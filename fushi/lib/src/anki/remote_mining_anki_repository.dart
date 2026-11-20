@@ -52,6 +52,13 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
   static const String tokenRejectedMessage =
       'The Fushi Interconnect server rejected the interconnect token. Re-pair the device.';
 
+  /// 主机连上了、但制卡端点回 404 / 405（[RemoteMineRefused]）时给用户看的话：说清是那台主机现在不收卡（可能要
+  /// 升级），卡没送出去——不能报成「连不上」，也不能报成「可能已收到」。
+  static const String pairedDeviceMiningUnavailableMessage =
+      'The Fushi Interconnect server is reachable but is not accepting cards right now: '
+      'it has no Anki set up and its Fushi review collection is unavailable '
+      '(it may need a Fushi update). The card was not sent.';
+
   /// 没有互联主机可接收制卡请求时，同时说明失败结果和两条恢复路径。
   /// 避免把内部术语 "server-side mining" 暴露给只想完成制卡的用户。
   static const String pairedDeviceUnreachableMessage =
@@ -84,6 +91,11 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     try {
       final Map<String, dynamic>? json = await _client.mineForward(payload);
       return await _withLocalDeckNameFallback(_outcomeFromResponse(json));
+    } on RemoteMineRefused {
+      return MineOutcome.failure(
+        pairedDeviceMiningUnavailableMessage,
+        errorCode: AnkiErrorCode.pairedDeviceMiningUnavailable,
+      );
     } on SyncAuthError {
       return MineOutcome.failure(
         tokenRejectedMessage,

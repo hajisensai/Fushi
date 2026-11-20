@@ -116,8 +116,16 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
     (`userNoteCount`). The name is, in order: the admin's name for that profile (yaml
     `srs.profile_names`, `PUT /api/admin/srs {profileNames}`, WebUI Review page, `ctl srs config`),
     else the first name another device reports in that directory, else the name the server itself
-    published last (so the name survives after the naming device leaves). The server does not
-    publish `mergingInto` (it never merges profiles) and does not write join hints.
+    published last (so the name survives after the naming device leaves). Names reported by other
+    devices come from the sync location (untrusted) and go through the same check as admin names
+    (`serverSrsProfileNameOk`: at most 100 characters, no control characters); a name that fails it
+    is skipped. Each round reads only the directory the profile is bound to
+    (`srsListRemoteProfiles(onlyDirs:)`), not the whole sync root. The server does not
+    publish `mergingInto` (it never merges profiles) and does not write join hints. It also never
+    rebinds a profile at run time (it issues no `collection_adopt` / `collection_join` /
+    `collection_salts_add` and has no `.fushisrs` / SRS backup import), so it has no old directory
+    whose `profile.json` would need removing the way the app's `srsRemoveOwnProfileFolder` does; if a
+    rebinding path is ever added to the server, that cleanup has to come with it.
   - AnkiConnect `getProfiles` reports one profile per key.
   - Device trust (srs.db v29, BUG-4306, `native/fushi_fsrs/src/store/sync2/trust.rs`) is
     confirmed on the server itself: a device that first syncs after the server's copy of a
@@ -149,7 +157,15 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
     `fushi/test/srs/srs_generation_old_server_e2e_test.dart`): the location fence stops the old
     side (and is written back when an old server removes it), remote review is refused with an
     explicit "upgrade" error in both directions, cards made on an old paired client still land in
-    the server's new library, and no local card is lost. A whole-server backup (`server_backup`) is refused while a
+    the server's new library, and no local card is lost. Mining from a new client to an old server
+    is covered for the server without an Anki helper (its only landing, the review profile, is in
+    "needs upgrade", so the old server answers `/api/mine/forward` with 404 `Mining off`): the client
+    reports "reachable but not accepting cards (it may need a Fushi update)"
+    (`AnkiErrorCode.pairedDeviceMiningUnavailable`) and, with "queue undelivered cards" on, the card
+    goes to the pending queue. An old server that has the Anki helper still lands such cards in its
+    own Anki (its target resolver falls back from review to Anki); that path does not depend on the
+    library generation and is not tested here. "Old server" means the protocol-3 baseline (develop
+    `6dd38cb92d`); v3.3.0's server had no review library at all. A whole-server backup (`server_backup`) is refused while a
     generation migration runs (`admin_backups_srs_migration_test.dart`). "One profile of several
     fails its comparison → nothing is committed" is the kernel's (`migrate_tests.rs`,
     `one_failing_profile_of_two_keeps_the_whole_file_uncommitted`); the server runs the same

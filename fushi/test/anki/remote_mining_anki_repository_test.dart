@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
+import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart'
+    show isUndeliveredMineFailure;
 import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 import 'package:fushi/src/sync/fushi_remote_mining_client.dart';
@@ -11,10 +13,13 @@ import 'package:fushi/src/sync/sync_backend.dart';
 
 /// 假发送器：捕获转发出去的 payload，返回预设响应，或抛鉴权错。
 class _FakeSender implements RemoteMineSender {
-  _FakeSender(this._response, {this.throwAuth = false});
+  _FakeSender(this._response, {this.throwAuth = false, this.refuse = false});
 
   final Map<String, dynamic>? _response;
   final bool throwAuth;
+
+  /// 主机连上了、制卡端点回 404 / 405（[RemoteMineRefused]）。
+  final bool refuse;
   ForwardedMinePayload? captured;
   final List<List<String>> dupCalls = <List<String>>[];
   RemoteDuplicateCheck dupResult = RemoteDuplicateCheck.notDuplicate;
@@ -25,6 +30,7 @@ class _FakeSender implements RemoteMineSender {
   ) async {
     captured = payload;
     if (throwAuth) throw SyncAuthError('nope');
+    if (refuse) throw const RemoteMineRefused();
     return _response;
   }
 
@@ -375,6 +381,29 @@ void main() {
         contains('Mine to Fushi Interconnect server'),
       );
       expect(outcome.errorDetail, isNot(contains('server-side mining')));
+    });
+
+    test('主机不收卡（RemoteMineRefused）：分类成「已配对设备不收卡」，可进待发队列，文案不说连不上', () async {
+      final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+        local: _FakeLocal(),
+        client: _FakeSender(null, refuse: true),
+        fileByteLoader: (String p) async => null,
+        dictMediaLoader: (String d, String p) => null,
+      );
+
+      final MineOutcome outcome = await repo.mineEntry(
+        rawPayloadJson: '{}',
+        context: const AnkiMiningContext(sentence: ''),
+      );
+
+      expect(outcome.result, MineResult.error);
+      expect(outcome.errorCode, AnkiErrorCode.pairedDeviceMiningUnavailable);
+      expect(
+        outcome.errorDetail,
+        RemoteMiningAnkiRepository.pairedDeviceMiningUnavailableMessage,
+      );
+      expect(outcome.errorDetail, isNot(contains('could not be reached')));
+      expect(isUndeliveredMineFailure(outcome), isTrue);
     });
 
     test('BUG-1549 主机回传 deckName → 成功 outcome 带主机牌组名', () async {
