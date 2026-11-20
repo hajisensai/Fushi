@@ -110,7 +110,7 @@ void main() {
       expect(at, greaterThan(0), reason: overlay);
       // 字幕层外面还套着订阅字幕样式的 ValueListenableBuilder（video-36f），窗口放宽。
       expect(
-        layout.substring(at - 400, at),
+        layout.substring(at - 800, at),
         contains('_hdrGraphicsWhiteLevel('),
         reason: overlay,
       );
