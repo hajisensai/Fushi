@@ -203,6 +203,8 @@ enum Phase {
         /// 上一个作者签名版本的 (first, last)、上一条剔除记录的 seq。
         prev_version: Option<(u64, u64)>,
         prev_stub: u64,
+        /// 剔除记录核对到的空洞下标：空洞与剔除记录都按 seq 升序，双指针前进（不逐条扫全部空洞）。
+        void_at: usize,
     },
     Marks {
         device: Id,
@@ -424,6 +426,7 @@ impl Grammar {
                     stubs: *stubs,
                     prev_version: None,
                     prev_stub: 0,
+                    void_at: 0,
                 };
                 self.settle_relay();
             }
@@ -465,6 +468,7 @@ impl Grammar {
                     versions,
                     stubs,
                     prev_stub,
+                    void_at,
                     ..
                 } = &mut self.phase
                 else {
@@ -477,7 +481,11 @@ impl Grammar {
                 if id.device != *device {
                     return err("stub of another device");
                 }
-                if id.seq <= *prev_stub || !voids.iter().any(|(a, b)| (*a..=*b).contains(&id.seq)) {
+                while voids.get(*void_at).is_some_and(|(_, b)| *b < id.seq) {
+                    *void_at += 1;
+                }
+                let on_void = voids.get(*void_at).is_some_and(|(a, _)| *a <= id.seq);
+                if id.seq <= *prev_stub || !on_void {
                     return err("stubs out of order or not on a void");
                 }
                 *prev_stub = id.seq;

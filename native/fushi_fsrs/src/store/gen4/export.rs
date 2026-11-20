@@ -167,14 +167,19 @@ fn export_in_tx<W: Write>(t: &Truth<'_>, col: i64, out: W) -> Result<(W, Exporte
         })?;
         flush(&mut w, &mut run, &mut n, &mut void_runs)?;
         w.item(&ExportItem::NativeTail(t.chain_at(col, &d.id, d.last)?))?;
-        // 转发材料（流的第 3 版）：作者签名版本全带；剔除记录只带落在这条日志空洞上的。
+        // 转发材料（流的第 3 版）：作者签名版本全带；剔除记录只带落在这条日志空洞上的。空洞与剔除记录都按 seq 升序，
+        // 双指针前进。
         let versions = t.author_versions_of(col, &d.id)?;
+        let mut run_at = 0usize;
         let stubs: Vec<_> = t
             .stubs_of(col, &d.id)?
             .into_iter()
             .filter(|s| {
                 let seq = s.id().seq;
-                void_runs.iter().any(|(a, b)| (*a..=*b).contains(&seq))
+                while void_runs.get(run_at).is_some_and(|(_, b)| *b < seq) {
+                    run_at += 1;
+                }
+                void_runs.get(run_at).is_some_and(|(a, _)| *a <= seq)
             })
             .collect();
         w.item(&ExportItem::NativeRelay {

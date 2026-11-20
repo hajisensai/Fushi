@@ -1218,6 +1218,41 @@ mod reclaim {
         assert_eq!(cut.items.len(), 5);
     }
 
+    /// 导入用的「已存在则不动」落在 SQL 这一层也成立（`land_relay` 先按 `stub_at` 跳过只是第一道）：本机已有的剔除记录
+    /// 不被另一条（别的 Purge 的）换掉；没有的照记。
+    #[test]
+    fn put_stub_if_absent_never_replaces_a_stored_stub() {
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = ready(&t);
+        let mine = stub(3);
+        let other = {
+            let base = crate::gen4::segment::tests::ops()[0].clone();
+            Stub::of(
+                &Op4 {
+                    id: OpId {
+                        device: author(),
+                        seq: 3,
+                    },
+                    ..base
+                },
+                OpId {
+                    device: id(0x23),
+                    seq: 9,
+                },
+            )
+        };
+        assert_ne!(mine.encode(), other.encode());
+        t.tx(|t| t.put_stub(col, &mine)).unwrap();
+        assert_eq!(t.tx(|t| t.put_stub_if_absent(col, &other)), Ok(false));
+        assert_eq!(
+            t.stub_at(col, &author(), 3).unwrap().unwrap().encode(),
+            mine.encode()
+        );
+        assert_eq!(t.tx(|t| t.put_stub_if_absent(col, &stub(4))), Ok(true));
+        assert_eq!(stub_seqs(&t, col), vec![3, 4]);
+    }
+
     /// 规模：两万个作者签名版本、四万条剔除记录，作者合并掉一半之后回收一遍：删得对，语句数随区间数（不逐条扫），
     /// 时间有界；别的作者的剔除记录不碰。
     #[test]
