@@ -110,6 +110,32 @@ void main() {
       );
     });
 
+    test('追加可重放：nav / NCX 已写上、OPF 没写上就被杀，重放不在目录里重复加项', () {
+      final LnReaderPackageDocuments docs = _docs(
+        _build(<LnReaderEpubChapter>[first, pendingNext]),
+      );
+      final LnReaderPackageDocuments once = LnReaderEpubAssembler.appendChapter(
+        docs,
+        number: 3,
+        title: 'NEXT',
+      );
+      // 落盘顺序是 nav → NCX → OPF：复现「OPF 还是旧的」的中断现场。
+      final LnReaderPackageDocuments interrupted = (
+        opf: docs.opf,
+        ncx: once.ncx,
+        nav: once.nav,
+      );
+      final LnReaderPackageDocuments replayed =
+          LnReaderEpubAssembler.appendChapter(
+            interrupted,
+            number: 3,
+            title: 'NEXT',
+          );
+      expect(replayed, once);
+      expect('chapter-3.xhtml">NEXT<'.allMatches(replayed.nav), hasLength(1));
+      expect('id="nav-3"'.allMatches(replayed.ncx), hasLength(1));
+    });
+
     test('不是本装配器的格式：抛 FormatException，不出半成品', () {
       const LnReaderPackageDocuments foreign = (
         opf: '<package><manifest/><spine/></package>',

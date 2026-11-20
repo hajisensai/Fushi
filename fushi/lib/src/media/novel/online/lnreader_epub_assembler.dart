@@ -229,16 +229,22 @@ class LnReaderEpubAssembler {
 
   /// 本装配器产出、已解压的书：在 manifest / spine / nav / NCX 末尾追加第
   /// [number] 章（1 基，文件 `chapter-<number>.xhtml`），目录标题 [title]。
-  /// spine 里已有这一章时原样返回（补丁可重放：上一次写到一半被杀，重取时
-  /// 再走一遍）。找不到插入点（不是本装配器的格式）抛 [FormatException]。
+  /// 每一处已有这一章时那一处原样不动（补丁可重放：三个文件是分开落盘的，上一次
+  /// 写完 nav / NCX、还没写 OPF 就被杀时，重取再走一遍不得在目录里重复加项）。
+  /// 找不到插入点（不是本装配器的格式）抛 [FormatException]。
   static LnReaderPackageDocuments appendChapter(
     LnReaderPackageDocuments docs, {
     required int number,
     required String title,
   }) {
-    if (docs.opf.contains(_spineItem(number))) return docs;
     final String chapterTitle = _chapterTitle(number, title);
-    String insertBefore(String text, String anchor, String line) {
+    String appendOnce(
+      String text, {
+      required String present,
+      required String anchor,
+      required String line,
+    }) {
+      if (text.contains(present)) return text;
       final int at = text.lastIndexOf(anchor);
       if (at < 0) {
         throw FormatException('no "${anchor.trim()}" to append chapter to');
@@ -247,13 +253,29 @@ class LnReaderEpubAssembler {
     }
 
     return (
-      opf: insertBefore(
-        insertBefore(docs.opf, _spineEnd, _spineItem(number)),
-        _navManifestItem,
-        _manifestItem(number),
+      opf: appendOnce(
+        appendOnce(
+          docs.opf,
+          present: _spineItem(number),
+          anchor: _spineEnd,
+          line: _spineItem(number),
+        ),
+        present: _manifestItem(number),
+        anchor: _navManifestItem,
+        line: _manifestItem(number),
       ),
-      ncx: insertBefore(docs.ncx, _navMapEnd, _ncxPoint(number, chapterTitle)),
-      nav: insertBefore(docs.nav, _navListEnd, _navItem(number, chapterTitle)),
+      ncx: appendOnce(
+        docs.ncx,
+        present: '<navPoint id="nav-$number" ',
+        anchor: _navMapEnd,
+        line: _ncxPoint(number, chapterTitle),
+      ),
+      nav: appendOnce(
+        docs.nav,
+        present: '<li><a href="chapter-$number.xhtml">',
+        anchor: _navListEnd,
+        line: _navItem(number, chapterTitle),
+      ),
     );
   }
 
