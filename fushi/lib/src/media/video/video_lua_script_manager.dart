@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:fushi/src/media/video/video_lua_capability.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_engine/media/video/subtitle/srt_writer.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:path/path.dart' as p;
 
@@ -289,32 +290,20 @@ String buildLuaSubtitleMirrorSrt(List<AudioCue> cues, {int delayMs = 0}) {
     for (final AudioCue cue in cues)
       if (cue.endMs > cue.startMs && cue.text.trim().isNotEmpty) cue,
   ]..sort((AudioCue a, AudioCue b) => a.startMs.compareTo(b.startMs));
-  final StringBuffer out = StringBuffer();
-  int index = 0;
-  for (final AudioCue cue in usable) {
-    final int startMs = cue.startMs + delayMs;
-    final int endMs = cue.endMs + delayMs;
-    if (endMs <= 0) continue; // 整句被负偏移推到片头之前：不可能再显示。
-    index++;
-    final String text = cue.text
-        .replaceAll('\r\n', '\n')
-        .replaceAll('\r', '\n')
-        .split('\n')
-        .map((String line) => line.trimRight())
-        .where((String line) => line.isNotEmpty)
-        .join('\n');
-    out
-      ..write('$index\n')
-      ..write('${_srtTimestamp(startMs)} --> ${_srtTimestamp(endMs)}\n')
-      ..write('$text\n\n');
-  }
-  return out.toString();
-}
-
-/// 毫秒 → SRT 时间戳 `HH:MM:SS,mmm`（负值按 0）。
-String _srtTimestamp(int ms) {
-  final int t = ms < 0 ? 0 : ms;
-  String pad(int value, int width) => value.toString().padLeft(width, '0');
-  return '${pad(t ~/ 3600000, 2)}:${pad(t ~/ 60000 % 60, 2)}:'
-      '${pad(t ~/ 1000 % 60, 2)},${pad(t % 1000, 3)}';
+  return writeSrtBlocks(<SrtBlock>[
+    for (final AudioCue cue in usable)
+      // 整句被负偏移推到片头之前（endMs <= 0）：不可能再显示，不写。
+      if (cue.endMs + delayMs > 0)
+        (
+          startMs: cue.startMs + delayMs,
+          endMs: cue.endMs + delayMs,
+          text: cue.text
+              .replaceAll('\r\n', '\n')
+              .replaceAll('\r', '\n')
+              .split('\n')
+              .map((String line) => line.trimRight())
+              .where((String line) => line.isNotEmpty)
+              .join('\n'),
+        ),
+  ]);
 }
