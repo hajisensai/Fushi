@@ -92,11 +92,17 @@ void main() {
     final AppModel appModel = await readyAppModel(tester);
     HomePage.debugSelectTab?.call(HomeTab.srs);
     final Finder start = find.byKey(SrsGenerationView.startKey);
-    for (int i = 0; i < 120 && start.evaluate().isEmpty; i++) {
+    // 复习页先转圈开库、开库报「要迁移」后才换成迁移页；本机负载高时 debug 构建要几十秒。每 15 秒记一次屏上文字。
+    final Stopwatch wait = Stopwatch()..start();
+    while (start.evaluate().isEmpty &&
+        wait.elapsed < const Duration(minutes: 3)) {
       await tester.pump(const Duration(milliseconds: 250));
+      if (wait.elapsedMilliseconds % 15000 < 260) {
+        _log('[r0] waiting ${wait.elapsed.inSeconds}s: ${_visibleText()}');
+      }
     }
     _log('[r0] prompt text: ${_visibleText()}');
-    await captureFlutterFrame(tester, 'r0-01-prompt');
+    await captureFlutterFrame(tester, 'r0-01-prompt', settle: false);
     expect(start, findsOneWidget, reason: '旧库应当让复习页给出迁移提示');
 
     final ProviderContainer container = ProviderScope.containerOf(
@@ -137,7 +143,7 @@ void main() {
       }
       if (!shotProgress && controller.phase == SrsGen4MigrationPhase.running) {
         shotProgress = true;
-        await captureFlutterFrame(tester, 'r0-02-progress');
+        await captureFlutterFrame(tester, 'r0-02-progress', settle: false);
       }
       if (controller.phase != SrsGen4MigrationPhase.running &&
           clock.elapsedMilliseconds > 200) {
@@ -152,7 +158,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 250));
     }
     _log('[r0] after text: ${_visibleText()}');
-    await captureFlutterFrame(tester, 'r0-03-after');
+    await captureFlutterFrame(tester, 'r0-03-after', settle: false);
     final SrsGen4MigrationStatus status = SrsGen4Migration.status(
       appModel.srsStorage.directory,
     );
