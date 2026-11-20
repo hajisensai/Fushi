@@ -144,6 +144,16 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
     `ctl srs retained delete --yes`. Both use the engine routes `GET /api/admin/srs/retained` and
     `POST …/retained/delete {confirm: true}` (`server.srs.retained.*` in the op catalog). There is no
     op for naming a profile (`profileNames` is admin config only).
+  - Mixed versions (plan §6.3): server upgraded first, client upgraded first and server never
+    upgraded are covered end to end with the real kernel (`server_srs_generation_e2e_test.dart`,
+    `fushi/test/srs/srs_generation_old_server_e2e_test.dart`): the location fence stops the old
+    side (and is written back when an old server removes it), remote review is refused with an
+    explicit "upgrade" error in both directions, cards made on an old paired client still land in
+    the server's new library, and no local card is lost. A whole-server backup (`server_backup`) is refused while a
+    generation migration runs (`admin_backups_srs_migration_test.dart`). "One profile of several
+    fails its comparison → nothing is committed" is the kernel's (`migrate_tests.rs`,
+    `one_failing_profile_of_two_keeps_the_whole_file_uncommitted`); the server runs the same
+    migration command.
   - The server op catalog (`admin_ops.dart`) describes `server.srs.status`, `.profiles`,
     `.devices` (read only), `.sync` (irreversible, user confirms), `.mining-target.set`, `.mining-deck.set`,
     `.rollover-hour.set` and `.rwkv-model.set` (undoable). Left out on purpose: the AnkiConnect settings (keys are

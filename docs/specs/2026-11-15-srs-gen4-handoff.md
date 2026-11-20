@@ -3982,3 +3982,34 @@ exit 1；成功 949、失败 9、错误 6、跳过 21，实际执行 964。上�
   分支（暂缓时提前发布 `mergingInto`）、`deferredProfileMerge()` 与 `onAdopted` 文档里讲暂缓的几句；`srs_profile_link.dart` 删了
   `SrsDeferredProfileMerge`、`SrsProfileAdoptDeferred` 两个类型与 linker 接口 / 实现的 `deferredMerge` 方法。任务书一边把这两个
   文件划给同步 / 身份模块，一边要求删 `SrsDeferredProfileMerge` 整条链，而整条链就在这两个文件里，只能这样做。
+
+## 第六波 服务端收尾（2026-11-20，分支 `pr/srs-gen4-w6-server-tail`，基于 `pr/srs-gen4-switch` `0bf8472f40`）
+
+前一位实现者做到一半被额度中断，本节由续做者补写；提交逐个核过、测试重跑过。
+
+做了：
+
+- ① 服务端发布自己的 profile 说明文件（`3a99042047`）：每轮成功后 `ServerSrsProfile._publishInfo` 用 app 同一个
+  `srsPublishProfileInfo` 写 `v4/devices/<服务端新代设备>/profile.json`；笔记数每轮向内核要（`userNoteCount`），名字按
+  「管理员起名（`srs.profile_names` / `PUT srs {profileNames}` / WebUI / `ctl srs config`）→ 同目录别的设备报的 → 自己上次发布的」
+  取。服务端不发 `mergingInto`、不写加入提示（它从不并 profile）。测试 `server_srs_test.dart`「服务端发布自己的 profile 说明文件」；
+  变异：去掉 `_publishInfo` 调用 → 该测试红（`Actual: []`），还原后干净。
+- ② WebUI 复习页「删除保留副本」（危险确认、不可撤销）与 profile 起名输入；`fushi_server ctl srs retained [status]` /
+  `ctl srs retained delete --yes`（不带 `--yes` 拒绝）（`9efc958a14`）。走引擎已有的 `srs.retained.*` 路由，服务端不另写逻辑。
+- ③ §6.3 三行真内核端到端：服务端先升级（`server_srs_generation_e2e_test.dart`，`4017017e28`）；客户端先升级 / 服务端一直
+  不升级（`fushi/test/srs/srs_generation_old_server_e2e_test.dart`，`007cae6f80`）。取舍：旧客户端经互联转发的制卡在新服务端
+  照常落进新代库（制卡负载与库代无关，拒了反而丢卡）；远程复习两个方向都明确拒绝并提示升级。
+- ④ 迁移进行中整机备份回 409 `srs_migration_running`、不出包，迁完照常备份且包里是新代库；被杀进程留下的换代过程文件不进包
+  （`admin_backups_srs_migration_test.dart`，`95f1cd76c2`，`HeadlessHost` 加迁移执行端接缝）。「多 profile 一个对拍不过整个文件
+  不提交」现状已有内核测试 `migrate_tests.rs::one_failing_profile_of_two_keeps_the_whole_file_uncommitted`，服务端跑同一条迁移
+  命令，没再在 Dart 侧重复。
+- ⑤ `packages/fushi_server` 全量 `dart test`：721 过、13 跳过（全是环境：ffmpeg / libass / libfushidicts / 仅 POSIX，无 SRS），0 红。
+  全量跑时撞到的偶发红 `anki_landing_test` 拆目录 errno 32：根因是 `AnkiSyncSession.close` 返回时串行队列里的操作还在写日志，
+  改成 `close` 等队列收尾再返回（`acac194cd5`）；变异：去掉 `await _tail` → `anki_sync_session_test.dart` 红，还原后干净。
+- `docs/agent/server-parity-gaps.md` 与 `packages/fushi_server/README.md` 已同步。
+
+没做 / 归属别处：
+
+- `fushi/test/srs/srs_generation_old_server_e2e_test.dart` 经 heavy 外包到 dist 机（self-mac）跑，用的是那台机器的原生库，不是本
+  worktree 编的 Windows dll。
+- 服务端 FSRS 优化器（§4.6）、端到端加密位置仍不支持，见 server-parity-gaps，不属本块。
