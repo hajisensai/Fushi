@@ -77282,6 +77282,417 @@ class VideoThemeSongSpansCompanion
   }
 }
 
+class $VideoContentFingerprintsTable extends VideoContentFingerprints
+    with TableInfo<$VideoContentFingerprintsTable, VideoContentFingerprintRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $VideoContentFingerprintsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _bookUidMeta = const VerificationMeta(
+    'bookUid',
+  );
+  @override
+  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
+    'book_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fileSizeBytesMeta = const VerificationMeta(
+    'fileSizeBytes',
+  );
+  @override
+  late final GeneratedColumn<int> fileSizeBytes = GeneratedColumn<int>(
+    'file_size_bytes',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fileModifiedAtMeta = const VerificationMeta(
+    'fileModifiedAt',
+  );
+  @override
+  late final GeneratedColumn<int> fileModifiedAt = GeneratedColumn<int>(
+    'file_modified_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fingerprintMeta = const VerificationMeta(
+    'fingerprint',
+  );
+  @override
+  late final GeneratedColumn<String> fingerprint = GeneratedColumn<String>(
+    'fingerprint',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _computedAtMeta = const VerificationMeta(
+    'computedAt',
+  );
+  @override
+  late final GeneratedColumn<int> computedAt = GeneratedColumn<int>(
+    'computed_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    bookUid,
+    fileSizeBytes,
+    fileModifiedAt,
+    fingerprint,
+    computedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'video_content_fingerprints';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<VideoContentFingerprintRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('book_uid')) {
+      context.handle(
+        _bookUidMeta,
+        bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_bookUidMeta);
+    }
+    if (data.containsKey('file_size_bytes')) {
+      context.handle(
+        _fileSizeBytesMeta,
+        fileSizeBytes.isAcceptableOrUnknown(
+          data['file_size_bytes']!,
+          _fileSizeBytesMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_fileSizeBytesMeta);
+    }
+    if (data.containsKey('file_modified_at')) {
+      context.handle(
+        _fileModifiedAtMeta,
+        fileModifiedAt.isAcceptableOrUnknown(
+          data['file_modified_at']!,
+          _fileModifiedAtMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_fileModifiedAtMeta);
+    }
+    if (data.containsKey('fingerprint')) {
+      context.handle(
+        _fingerprintMeta,
+        fingerprint.isAcceptableOrUnknown(
+          data['fingerprint']!,
+          _fingerprintMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_fingerprintMeta);
+    }
+    if (data.containsKey('computed_at')) {
+      context.handle(
+        _computedAtMeta,
+        computedAt.isAcceptableOrUnknown(data['computed_at']!, _computedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_computedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {bookUid};
+  @override
+  VideoContentFingerprintRow map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return VideoContentFingerprintRow(
+      bookUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}book_uid'],
+      )!,
+      fileSizeBytes: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}file_size_bytes'],
+      )!,
+      fileModifiedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}file_modified_at'],
+      )!,
+      fingerprint: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}fingerprint'],
+      )!,
+      computedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}computed_at'],
+      )!,
+    );
+  }
+
+  @override
+  $VideoContentFingerprintsTable createAlias(String alias) {
+    return $VideoContentFingerprintsTable(attachedDatabase, alias);
+  }
+}
+
+class VideoContentFingerprintRow extends DataClass
+    implements Insertable<VideoContentFingerprintRow> {
+  /// `video_books.book_uid`。**没有外键**：设备本地表在覆盖恢复后按
+  /// `INSERT … SELECT * FROM devbak` 原样回灌，挂外键会让「备份里已没有这部视频」的
+  /// 一行把整批设备本地表的回灌打断（同 `video_theme_song_spans`）。
+  final String bookUid;
+
+  /// 算指纹当时的文件大小（字节）：失效判据，也是同一性判据的一部分（大小不等必不是
+  /// 同一个文件）。
+  final int fileSizeBytes;
+
+  /// 算指纹当时的文件修改时刻（毫秒）：失效判据。
+  final int fileModifiedAt;
+
+  /// 内容指纹（带算法前缀，见引擎 `video_content_fingerprint.dart`）：
+  /// `osh:<16 位十六进制>`（OpenSubtitles 文件哈希：大小 + 首尾各 64 KiB）或
+  /// `sha256:<64 位十六进制>`（不足 128 KiB 的小文件整份哈希）。
+  final String fingerprint;
+
+  /// 本行写入时刻（毫秒）。
+  final int computedAt;
+  const VideoContentFingerprintRow({
+    required this.bookUid,
+    required this.fileSizeBytes,
+    required this.fileModifiedAt,
+    required this.fingerprint,
+    required this.computedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['book_uid'] = Variable<String>(bookUid);
+    map['file_size_bytes'] = Variable<int>(fileSizeBytes);
+    map['file_modified_at'] = Variable<int>(fileModifiedAt);
+    map['fingerprint'] = Variable<String>(fingerprint);
+    map['computed_at'] = Variable<int>(computedAt);
+    return map;
+  }
+
+  VideoContentFingerprintsCompanion toCompanion(bool nullToAbsent) {
+    return VideoContentFingerprintsCompanion(
+      bookUid: Value(bookUid),
+      fileSizeBytes: Value(fileSizeBytes),
+      fileModifiedAt: Value(fileModifiedAt),
+      fingerprint: Value(fingerprint),
+      computedAt: Value(computedAt),
+    );
+  }
+
+  factory VideoContentFingerprintRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return VideoContentFingerprintRow(
+      bookUid: serializer.fromJson<String>(json['bookUid']),
+      fileSizeBytes: serializer.fromJson<int>(json['fileSizeBytes']),
+      fileModifiedAt: serializer.fromJson<int>(json['fileModifiedAt']),
+      fingerprint: serializer.fromJson<String>(json['fingerprint']),
+      computedAt: serializer.fromJson<int>(json['computedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'bookUid': serializer.toJson<String>(bookUid),
+      'fileSizeBytes': serializer.toJson<int>(fileSizeBytes),
+      'fileModifiedAt': serializer.toJson<int>(fileModifiedAt),
+      'fingerprint': serializer.toJson<String>(fingerprint),
+      'computedAt': serializer.toJson<int>(computedAt),
+    };
+  }
+
+  VideoContentFingerprintRow copyWith({
+    String? bookUid,
+    int? fileSizeBytes,
+    int? fileModifiedAt,
+    String? fingerprint,
+    int? computedAt,
+  }) => VideoContentFingerprintRow(
+    bookUid: bookUid ?? this.bookUid,
+    fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
+    fileModifiedAt: fileModifiedAt ?? this.fileModifiedAt,
+    fingerprint: fingerprint ?? this.fingerprint,
+    computedAt: computedAt ?? this.computedAt,
+  );
+  VideoContentFingerprintRow copyWithCompanion(
+    VideoContentFingerprintsCompanion data,
+  ) {
+    return VideoContentFingerprintRow(
+      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
+      fileSizeBytes: data.fileSizeBytes.present
+          ? data.fileSizeBytes.value
+          : this.fileSizeBytes,
+      fileModifiedAt: data.fileModifiedAt.present
+          ? data.fileModifiedAt.value
+          : this.fileModifiedAt,
+      fingerprint: data.fingerprint.present
+          ? data.fingerprint.value
+          : this.fingerprint,
+      computedAt: data.computedAt.present
+          ? data.computedAt.value
+          : this.computedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoContentFingerprintRow(')
+          ..write('bookUid: $bookUid, ')
+          ..write('fileSizeBytes: $fileSizeBytes, ')
+          ..write('fileModifiedAt: $fileModifiedAt, ')
+          ..write('fingerprint: $fingerprint, ')
+          ..write('computedAt: $computedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    bookUid,
+    fileSizeBytes,
+    fileModifiedAt,
+    fingerprint,
+    computedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is VideoContentFingerprintRow &&
+          other.bookUid == this.bookUid &&
+          other.fileSizeBytes == this.fileSizeBytes &&
+          other.fileModifiedAt == this.fileModifiedAt &&
+          other.fingerprint == this.fingerprint &&
+          other.computedAt == this.computedAt);
+}
+
+class VideoContentFingerprintsCompanion
+    extends UpdateCompanion<VideoContentFingerprintRow> {
+  final Value<String> bookUid;
+  final Value<int> fileSizeBytes;
+  final Value<int> fileModifiedAt;
+  final Value<String> fingerprint;
+  final Value<int> computedAt;
+  final Value<int> rowid;
+  const VideoContentFingerprintsCompanion({
+    this.bookUid = const Value.absent(),
+    this.fileSizeBytes = const Value.absent(),
+    this.fileModifiedAt = const Value.absent(),
+    this.fingerprint = const Value.absent(),
+    this.computedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  VideoContentFingerprintsCompanion.insert({
+    required String bookUid,
+    required int fileSizeBytes,
+    required int fileModifiedAt,
+    required String fingerprint,
+    required int computedAt,
+    this.rowid = const Value.absent(),
+  }) : bookUid = Value(bookUid),
+       fileSizeBytes = Value(fileSizeBytes),
+       fileModifiedAt = Value(fileModifiedAt),
+       fingerprint = Value(fingerprint),
+       computedAt = Value(computedAt);
+  static Insertable<VideoContentFingerprintRow> custom({
+    Expression<String>? bookUid,
+    Expression<int>? fileSizeBytes,
+    Expression<int>? fileModifiedAt,
+    Expression<String>? fingerprint,
+    Expression<int>? computedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (bookUid != null) 'book_uid': bookUid,
+      if (fileSizeBytes != null) 'file_size_bytes': fileSizeBytes,
+      if (fileModifiedAt != null) 'file_modified_at': fileModifiedAt,
+      if (fingerprint != null) 'fingerprint': fingerprint,
+      if (computedAt != null) 'computed_at': computedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  VideoContentFingerprintsCompanion copyWith({
+    Value<String>? bookUid,
+    Value<int>? fileSizeBytes,
+    Value<int>? fileModifiedAt,
+    Value<String>? fingerprint,
+    Value<int>? computedAt,
+    Value<int>? rowid,
+  }) {
+    return VideoContentFingerprintsCompanion(
+      bookUid: bookUid ?? this.bookUid,
+      fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
+      fileModifiedAt: fileModifiedAt ?? this.fileModifiedAt,
+      fingerprint: fingerprint ?? this.fingerprint,
+      computedAt: computedAt ?? this.computedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (bookUid.present) {
+      map['book_uid'] = Variable<String>(bookUid.value);
+    }
+    if (fileSizeBytes.present) {
+      map['file_size_bytes'] = Variable<int>(fileSizeBytes.value);
+    }
+    if (fileModifiedAt.present) {
+      map['file_modified_at'] = Variable<int>(fileModifiedAt.value);
+    }
+    if (fingerprint.present) {
+      map['fingerprint'] = Variable<String>(fingerprint.value);
+    }
+    if (computedAt.present) {
+      map['computed_at'] = Variable<int>(computedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoContentFingerprintsCompanion(')
+          ..write('bookUid: $bookUid, ')
+          ..write('fileSizeBytes: $fileSizeBytes, ')
+          ..write('fileModifiedAt: $fileModifiedAt, ')
+          ..write('fingerprint: $fingerprint, ')
+          ..write('computedAt: $computedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $MediaLinkAiVerdictsTable extends MediaLinkAiVerdicts
     with TableInfo<$MediaLinkAiVerdictsTable, MediaLinkAiVerdictRow> {
   @override
@@ -84136,6 +84547,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       $MusicResumePointsTable(this);
   late final $VideoThemeSongSpansTable videoThemeSongSpans =
       $VideoThemeSongSpansTable(this);
+  late final $VideoContentFingerprintsTable videoContentFingerprints =
+      $VideoContentFingerprintsTable(this);
   late final $MediaLinkAiVerdictsTable mediaLinkAiVerdicts =
       $MediaLinkAiVerdictsTable(this);
   late final $MusicScrapeMetaTable musicScrapeMeta = $MusicScrapeMetaTable(
@@ -84285,6 +84698,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     musicPlayEvents,
     musicResumePoints,
     videoThemeSongSpans,
+    videoContentFingerprints,
     mediaLinkAiVerdicts,
     musicScrapeMeta,
     musicMetadataRawSnapshots,
@@ -136318,6 +136732,233 @@ typedef $$VideoThemeSongSpansTableProcessedTableManager =
       VideoThemeSongSpanRow,
       PrefetchHooks Function()
     >;
+typedef $$VideoContentFingerprintsTableCreateCompanionBuilder =
+    VideoContentFingerprintsCompanion Function({
+      required String bookUid,
+      required int fileSizeBytes,
+      required int fileModifiedAt,
+      required String fingerprint,
+      required int computedAt,
+      Value<int> rowid,
+    });
+typedef $$VideoContentFingerprintsTableUpdateCompanionBuilder =
+    VideoContentFingerprintsCompanion Function({
+      Value<String> bookUid,
+      Value<int> fileSizeBytes,
+      Value<int> fileModifiedAt,
+      Value<String> fingerprint,
+      Value<int> computedAt,
+      Value<int> rowid,
+    });
+
+class $$VideoContentFingerprintsTableFilterComposer
+    extends Composer<_$FushiDatabase, $VideoContentFingerprintsTable> {
+  $$VideoContentFingerprintsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get bookUid => $composableBuilder(
+    column: $table.bookUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fileSizeBytes => $composableBuilder(
+    column: $table.fileSizeBytes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fileModifiedAt => $composableBuilder(
+    column: $table.fileModifiedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get fingerprint => $composableBuilder(
+    column: $table.fingerprint,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get computedAt => $composableBuilder(
+    column: $table.computedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$VideoContentFingerprintsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $VideoContentFingerprintsTable> {
+  $$VideoContentFingerprintsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get bookUid => $composableBuilder(
+    column: $table.bookUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fileSizeBytes => $composableBuilder(
+    column: $table.fileSizeBytes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fileModifiedAt => $composableBuilder(
+    column: $table.fileModifiedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get fingerprint => $composableBuilder(
+    column: $table.fingerprint,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get computedAt => $composableBuilder(
+    column: $table.computedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$VideoContentFingerprintsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $VideoContentFingerprintsTable> {
+  $$VideoContentFingerprintsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get bookUid =>
+      $composableBuilder(column: $table.bookUid, builder: (column) => column);
+
+  GeneratedColumn<int> get fileSizeBytes => $composableBuilder(
+    column: $table.fileSizeBytes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get fileModifiedAt => $composableBuilder(
+    column: $table.fileModifiedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get fingerprint => $composableBuilder(
+    column: $table.fingerprint,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get computedAt => $composableBuilder(
+    column: $table.computedAt,
+    builder: (column) => column,
+  );
+}
+
+class $$VideoContentFingerprintsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $VideoContentFingerprintsTable,
+          VideoContentFingerprintRow,
+          $$VideoContentFingerprintsTableFilterComposer,
+          $$VideoContentFingerprintsTableOrderingComposer,
+          $$VideoContentFingerprintsTableAnnotationComposer,
+          $$VideoContentFingerprintsTableCreateCompanionBuilder,
+          $$VideoContentFingerprintsTableUpdateCompanionBuilder,
+          (
+            VideoContentFingerprintRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $VideoContentFingerprintsTable,
+              VideoContentFingerprintRow
+            >,
+          ),
+          VideoContentFingerprintRow,
+          PrefetchHooks Function()
+        > {
+  $$VideoContentFingerprintsTableTableManager(
+    _$FushiDatabase db,
+    $VideoContentFingerprintsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$VideoContentFingerprintsTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$VideoContentFingerprintsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$VideoContentFingerprintsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> bookUid = const Value.absent(),
+                Value<int> fileSizeBytes = const Value.absent(),
+                Value<int> fileModifiedAt = const Value.absent(),
+                Value<String> fingerprint = const Value.absent(),
+                Value<int> computedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => VideoContentFingerprintsCompanion(
+                bookUid: bookUid,
+                fileSizeBytes: fileSizeBytes,
+                fileModifiedAt: fileModifiedAt,
+                fingerprint: fingerprint,
+                computedAt: computedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String bookUid,
+                required int fileSizeBytes,
+                required int fileModifiedAt,
+                required String fingerprint,
+                required int computedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => VideoContentFingerprintsCompanion.insert(
+                bookUid: bookUid,
+                fileSizeBytes: fileSizeBytes,
+                fileModifiedAt: fileModifiedAt,
+                fingerprint: fingerprint,
+                computedAt: computedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$VideoContentFingerprintsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $VideoContentFingerprintsTable,
+      VideoContentFingerprintRow,
+      $$VideoContentFingerprintsTableFilterComposer,
+      $$VideoContentFingerprintsTableOrderingComposer,
+      $$VideoContentFingerprintsTableAnnotationComposer,
+      $$VideoContentFingerprintsTableCreateCompanionBuilder,
+      $$VideoContentFingerprintsTableUpdateCompanionBuilder,
+      (
+        VideoContentFingerprintRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $VideoContentFingerprintsTable,
+          VideoContentFingerprintRow
+        >,
+      ),
+      VideoContentFingerprintRow,
+      PrefetchHooks Function()
+    >;
 typedef $$MediaLinkAiVerdictsTableCreateCompanionBuilder =
     MediaLinkAiVerdictsCompanion Function({
       required String aKind,
@@ -139862,6 +140503,11 @@ class $FushiDatabaseManager {
       $$MusicResumePointsTableTableManager(_db, _db.musicResumePoints);
   $$VideoThemeSongSpansTableTableManager get videoThemeSongSpans =>
       $$VideoThemeSongSpansTableTableManager(_db, _db.videoThemeSongSpans);
+  $$VideoContentFingerprintsTableTableManager get videoContentFingerprints =>
+      $$VideoContentFingerprintsTableTableManager(
+        _db,
+        _db.videoContentFingerprints,
+      );
   $$MediaLinkAiVerdictsTableTableManager get mediaLinkAiVerdicts =>
       $$MediaLinkAiVerdictsTableTableManager(_db, _db.mediaLinkAiVerdicts);
   $$MusicScrapeMetaTableTableManager get musicScrapeMeta =>

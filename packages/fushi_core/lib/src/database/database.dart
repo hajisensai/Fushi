@@ -37,6 +37,7 @@ import 'tag_host_kind.dart';
 import 'media_link_ai_verdict_tables.dart';
 import 'people_tables.dart';
 import 'theme_song_span_tables.dart';
+import 'video_content_fingerprint_tables.dart';
 
 part 'database.g.dart';
 part 'database_infra.part.dart';
@@ -56,6 +57,7 @@ part 'database_music.part.dart';
 part 'database_music_identity.part.dart';
 part 'database_music_scrape.part.dart';
 part 'database_theme_song_spans.part.dart';
+part 'database_video_content_fingerprints.part.dart';
 part 'database_media_link_ai_verdicts.part.dart';
 part 'database_people.part.dart';
 part 'database_ai_agent.part.dart';
@@ -955,6 +957,7 @@ void _requireOneVideoMetadataOwner({
     MusicPlayEvents,
     MusicResumePoints,
     VideoThemeSongSpans,
+    VideoContentFingerprints,
     MediaLinkAiVerdicts,
     MusicScrapeMeta,
     MusicMetadataRawSnapshots,
@@ -985,6 +988,7 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbMusicIdentity,
         _FushiDbMusicScrape,
         _FushiDbThemeSongSpans,
+        _FushiDbVideoContentFingerprints,
         _FushiDbMediaLinkAiVerdicts,
         _FushiDbPeople,
         _FushiDbAiAgent,
@@ -3272,6 +3276,16 @@ class FushiDatabase extends _$FushiDatabase
       // 复习换代第二段（协议 4，G11-4 / D33）把整包备份的复习部分换成按集合导出的
       // 操作流、服务端备份换成新代复习库：主库 schema 升一档是旧版本拒收新备份的唯一闸门（旧版本见到更新的主库，
       // 在动任何文件之前拒绝整份备份），本身不改任何表。
+      if (from < 165) {
+        // v165：video_content_fingerprints——视频内容指纹（book_uid → 文件大小 / 修改
+        // 时刻 / 指纹），来源扫描据此认「同名文件挪了位置」是不是同一个文件（拍板台
+        // design-nmv-video-move-fingerprint）。设备本地、纯缓存、无外键（见
+        // video_content_fingerprint_tables.dart）。纯建表，存量行由扫描 / 视频书架的
+        // 后台回填算出；幂等守卫同 v131。
+        if (!await _tableExists('video_content_fingerprints')) {
+          await m.createTable(videoContentFingerprints);
+        }
+      }
       // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建
       // （video-36i），每次升 schema 都幂等补一次。
       await _ensureStatIndexes();
