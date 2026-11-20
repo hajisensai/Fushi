@@ -15,9 +15,13 @@ import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
         resolveYoutubeAudioStream,
         youtubeVideoIdOrNull,
         YoutubeAudioStream,
-        YoutubeCaptionTrack;
+        YoutubeCaptionTrack,
+        YoutubeVariantSet,
+        YoutubeVideoVariant,
+        resolveYoutubeVideoVariants;
 import 'package:http/http.dart' as http;
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/deadline_get.dart';
 
 /// 纯函数：判断 [url] 是否是可直接交给播放器的网络流 URL（TODO-850 阶段①）。
 ///
@@ -264,6 +268,13 @@ String? separatedAudioFallbackStreamUrl(RemoteVideoStreamUrls urls) {
 typedef YoutubeAudioStreamResolver =
     Future<YoutubeAudioStream> Function(String videoId);
 
+/// 现取一份 YouTube 画质档（生产 [resolveYoutubeVideoVariants]；测试注入假件）。
+typedef YoutubeVariantsResolver =
+    Future<YoutubeVariantSet> Function(
+      String watchUrl,
+      int? playbackTargetHeight,
+    );
+
 class UrlStreamVideoClient
     implements
         RemoteVideoClient,
@@ -284,7 +295,19 @@ class UrlStreamVideoClient
     http.Client? httpClient,
     YoutubeStreamRelay? youtubeStreamRelay,
     YoutubeAudioStreamResolver? youtubeAudioResolver,
-  }) : _httpClient = httpClient ?? createAppHttpIoClient(),
+    this.subtitleFetchTimeout = kRemoteSubtitleFetchTimeout,
+    YoutubeVariantSet? youtubeVariants,
+    int? youtubeVariantsTargetHeight,
+    YoutubeVariantsResolver? youtubeVariantsResolver,
+  }) : _youtubeVariants = youtubeVariants,
+       _youtubeVariantsTargetHeight = youtubeVariantsTargetHeight,
+       _youtubeVariantsResolver =
+           youtubeVariantsResolver ??
+           ((String watchUrl, int? target) => resolveYoutubeVideoVariants(
+             watchUrl,
+             playbackTargetHeight: target,
+           )),
+       _httpClient = httpClient ?? createAppHttpIoClient(),
        _youtubeStreamRelay = youtubeStreamRelay ?? relayYoutubeStreamUrl,
        _youtubeAudioResolver =
            youtubeAudioResolver ??
@@ -377,6 +400,47 @@ class UrlStreamVideoClient
   final Map<String, String> httpHeaderFields;
 
   final http.Client _httpClient;
+
+  /// 外挂字幕下载（[getRemoteVideoSubtitle]）的总预算，测试可调短。
+  final Duration subtitleFetchTimeout;
+
+  /// 本次起播的 YouTube 画质档（gap-remote-10，内存版）：起播解析那次 getManifest
+  /// 顺手算出的各档（[YoutubeResolvedSource.variants]），或画质菜单第一次现取的结果。
+  /// 跟着本客户端走（换集 / 重开就是新客户端），不落盘——googlevideo 直链有时效。
+  YoutubeVariantSet? _youtubeVariants;
+
+  /// [_youtubeVariants] 是按哪个画质目标算的（「自动」档下标随它变）。
+  int? _youtubeVariantsTargetHeight;
+
+  final YoutubeVariantsResolver _youtubeVariantsResolver;
+
+  /// 画质菜单的各档：起播时已从同一份 manifest 算好（且画质目标没变）就直接用，不再
+  /// 重取 manifest；否则现取一次并记在本客户端上，同一次播放再点开菜单也不重取。
+  /// 不是 YouTube 流时返回空集。现取失败照常抛出，不记结果（下次点开再试）。
+  Future<YoutubeVariantSet> youtubeQualityVariants({
+    int? playbackTargetHeight,
+  }) async {
+    final String? watch = youtubeCaptionsUrl;
+    if (watch == null || !isYoutubeUrl(watch)) {
+      return const YoutubeVariantSet(
+        variants: <YoutubeVideoVariant>[],
+        audioStreamUrl: null,
+        defaultIndex: -1,
+      );
+    }
+    final YoutubeVariantSet? cached = _youtubeVariants;
+    if (cached != null &&
+        _youtubeVariantsTargetHeight == playbackTargetHeight) {
+      return cached;
+    }
+    final YoutubeVariantSet fetched = await _youtubeVariantsResolver(
+      watch,
+      playbackTargetHeight,
+    );
+    _youtubeVariants = fetched;
+    _youtubeVariantsTargetHeight = playbackTargetHeight;
+    return fetched;
+  }
 
   /// BUG-2507：googlevideo 直链交给播放内核前换成本地有界分块中继地址（默认
   /// [relayYoutubeStreamUrl]；非 googlevideo 原样）。测试注入假件以离线覆盖。
@@ -475,8 +539,11 @@ class UrlStreamVideoClient
     final Map<String, String>? headers = (httpHeaderFields.isEmpty || !sameSite)
         ? null
         : httpHeaderFields;
-    final http.Response res = await _httpClient.get(
+    // 直链流的默认字幕同样挡在开流之前：字幕站不回数据时到点放弃（播放页照常起播）。
+    final http.Response res = await getWithDeadline(
+      _httpClient,
       Uri.parse(url),
+      timeout: subtitleFetchTimeout,
       headers: headers,
     );
     if (res.statusCode < 200 || res.statusCode >= 300) {

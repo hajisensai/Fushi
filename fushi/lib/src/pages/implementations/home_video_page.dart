@@ -3786,9 +3786,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // 根因修复（TODO-819）：下载任务委托给 app 级 InterconnectDownloadManager 而非
     // 本页 State —— 故切 tab / 退页 / 本页 dispose 时下载仍在管理器里推进到底，重进
     // 页面只 ref.watch 订阅渲染进度。manager 自身去重（同 id 在跑则忽略）。
-    // #6 续传口径按分支写实：互联走 host live 下载引擎（Range + `.part`，中断留 part
-    // 下次可续）；云后端分支（CloudRemoteVideoClient.getRemoteVideo）是整文件重下，失败
-    // 清残片、无断点续传。
+    // #6 续传口径按分支写实：互联走 host live 下载引擎、Jellyfin / Emby / Plex 走
+    // 媒体服务器续传下载（都是 Range + `.part`，中断留 part 下次可续，BUG-4912）；云后端
+    // 分支（CloudRemoteVideoClient.getRemoteVideo）是整文件重下，失败清残片、无断点续传。
     final InterconnectDownloadManager manager = ref.read(
       interconnectDownloadManagerProvider,
     );
@@ -3853,7 +3853,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// （[_downloadRemoteMembers]）串行排队时，轮到后面的成员起跑时本页可能早已 dispose。
   ///
   /// TODO-2119：下载本身是所有源的共同能力，不再分派——[RemoteVideoSource] 各自
-  /// 实现续传口径（互联 host live 引擎 Range + `.part` 可续；云盘整文件重下）。
+  /// 实现续传口径（互联 host live 引擎、媒体服务器续传下载 Range + `.part` 可续；云盘
+  /// 整文件重下）。
   /// bookUid 用稳定的远端 video.id（与 dedupeRemoteVideos 去重键一致：upsert 同行不
   /// 撞键），故下载好的视频立即出现在列表、并从混排占位区去重隐藏。
   Future<Future<void> Function()> _prepareRemoteDownload(
@@ -12790,7 +12791,7 @@ String remoteVideoDownloadFileName(RemoteVideoInfo video) {
   if (stem.toLowerCase().endsWith('.mp4')) {
     stem = stem.substring(0, stem.length - 4);
   }
-  // 给哈希、扩展名和 `.part.etag` / `.resume.json` 后缀留出路径余量。
+  // 给哈希、扩展名和 `.part.etag` / `.part.resume` / `.resume.json` 后缀留出路径余量。
   if (stem.length > 80) stem = stem.substring(0, 80);
   final String idHash = sha1
       .convert(utf8.encode(video.id))

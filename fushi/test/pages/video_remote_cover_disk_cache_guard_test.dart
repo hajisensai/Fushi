@@ -74,8 +74,9 @@ void main() {
   // 再出现裸 `AppCachedHttpImage(` 就是整帧解码退回来了——库页那两处远程回落
   // 只有本守卫兜着（页面状态太重，没有行为级用例覆盖）。
   test('库页与作品详情页的远端刮削图不裸用 AppCachedHttpImage', () {
-    final RegExp bareCachedHttpImage = RegExp(
-      r'(?<![A-Za-z0-9_$])AppCachedHttpImage\(',
+    final RegExp bareCachedHttpImage = identifierCall(
+      'AppCachedHttpImage',
+      allowNamedConstructor: false,
     );
     final List<String> offenders = <String>[];
     for (final String path in const <String>[
