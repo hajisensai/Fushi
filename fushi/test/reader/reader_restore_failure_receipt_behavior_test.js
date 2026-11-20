@@ -26,7 +26,9 @@
 // after the first `await` or inside that callback never reached the chain's
 // catch and Dart again waited for the 8 s fallback:
 //   F. a restore entry that rejects after an await sends onRestoreFailed
-//      (paginated / continuous chain, VN boot);
+//      (paginated / continuous chain); in VN the rejection is caught and logged,
+//      and only sends a failure receipt when initialize() has not already sent
+//      the success receipt (in production it always has — see vnAsyncCase);
 //   G. a throw inside the receipt-carrying deferred callback (paginated
 //      `_settleAndNotify`, continuous chapter-start restore) sends onRestoreFailed,
 //      and the same callback without a throw still sends only the success receipt.
@@ -279,25 +281,53 @@ function vnCases(vnSource) {
 }
 
 // F (VN). The boot's try/catch only sees synchronous throws; an entry that
-// rejects after awaiting readyPromise must still end in a failure receipt.
+// rejects after awaiting readyPromise must be caught and logged, never left as an
+// unhandled rejection.
+//   F1 is the production order: initialize()'s readyPromise sends
+//      onRestoreComplete (success and fail-open branches alike) before the entry
+//      resumes past `await ensureReady()`, so the later rejection is logged and
+//      the one-outcome-per-document contract keeps it from adding a failure receipt.
+//   F2 pins the receipt contract when no receipt went out yet.
 async function vnAsyncCase(vnSource) {
-  const env = makeEnv();
-  const reader = instantiate(vnSource, env);
-  reader.initialize = () => {};
-  reader.restoreProgress = async () => {
-    await null;
-    throw new Error('vn async boom');
-  };
-  const boot = cut(vnSource, "if (document.readyState === 'complete') {", '\n}\n', 'VN boot block', true);
-  compileScript(
-    ['window', 'document', 'C', 'console'],
-    boot,
-    'vn-boot.js',
-  )(env.window, env.document, env.C, env.console);
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepStrictEqual(handlerNames(env), ['onRestoreFailed'], 'VN F: async rejection must send a failure receipt');
-  assert.strictEqual(env.calls[0][1], 'vn async boom', 'VN F: reason forwarded');
-  assert.strictEqual(env.calls[0][2], GENERATION, 'VN F: generation forwarded');
+  for (const receiptFirst of [true, false]) {
+    const label = receiptFirst ? 'VN F1' : 'VN F2';
+    const env = makeEnv();
+    const reader = instantiate(vnSource, env);
+    reader.initialize = () => {
+      if (receiptFirst) reader.notifyRestoreComplete();
+    };
+    reader.restoreProgress = async () => {
+      await null;
+      throw new Error('vn async boom');
+    };
+    const unhandled = [];
+    const onUnhandled = (reason) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const boot = cut(vnSource, "if (document.readyState === 'complete') {", '\n}\n', 'VN boot block', true);
+      compileScript(
+        ['window', 'document', 'C', 'console'],
+        boot,
+        'vn-boot.js',
+      )(env.window, env.document, env.C, env.console);
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+    assert.deepStrictEqual(unhandled, [], label + ': the async rejection must not be left unhandled');
+    assert.ok(
+      env.errors.some((e) => e.includes('initial restore failed') && e.includes('vn async boom')),
+      label + ': the async rejection must be logged, got ' + JSON.stringify(env.errors),
+    );
+    if (receiptFirst) {
+      assert.deepStrictEqual(handlerNames(env), ['onRestoreComplete'], label + ': no failure receipt after the success receipt');
+    } else {
+      assert.deepStrictEqual(handlerNames(env), ['onRestoreFailed'], label + ': async rejection must send a failure receipt');
+      assert.strictEqual(env.calls[0][1], 'vn async boom', label + ': reason forwarded');
+      assert.strictEqual(env.calls[0][2], GENERATION, label + ': generation forwarded');
+    }
+  }
 }
 
 async function main() {

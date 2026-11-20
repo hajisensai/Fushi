@@ -61,8 +61,12 @@ class ReaderVisualNovelScripts {
   ///
   /// BUG-4906 续：VN 的恢复入口是 async 函数（先等 readyPromise 再切屏），渲染时抛的
   /// 异常只让它返回的 promise 变成 rejected；boot 的 try/catch 只接得住同步异常。
-  /// 这里给那个 promise 接上失败回执，不再让它成为无人处理的 rejection、Dart 干等
-  /// 8 秒兜底。
+  /// 这里给那个 promise 接上 catch：记 console.error（不再是无人处理的 rejection），
+  /// 再走 notifyRestoreFailed。注意生产时序：`initialize()` 的 readyPromise 成功分支
+  /// （失败分支 fail-open 同样）先发了 onRestoreComplete，入口的 `await ensureReady()`
+  /// 之后才继续，所以入口在那之后抛出时回执早已发过，notifyRestoreFailed 按「一个文档
+  /// 一个结局」不补发——VN 这里从来没有「干等 8 秒兜底」，遮罩已按初始屏摘掉；
+  /// 这条 catch 的作用是不丢异常诊断，失败回执只在回执尚未发出时才生效。
   static const String _initialRestoreJs = '''
     var initialRestore;
     if (C.initialFragment !== null && C.initialFragment !== undefined) {
@@ -73,6 +77,7 @@ class ReaderVisualNovelScripts {
       initialRestore = window.fushiReader.restoreProgress(C.initialProgress);
     }
     Promise.resolve(initialRestore).catch(function(restoreError) {
+      try { if (window.console && console.error) console.error('[FushiVN] initial restore failed', restoreError); } catch (_ignored) {}
       window.fushiReader.notifyRestoreFailed(restoreError);
     });''';
 
