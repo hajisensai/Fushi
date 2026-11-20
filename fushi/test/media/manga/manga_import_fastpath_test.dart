@@ -322,6 +322,37 @@ void main() {
         }
       },
     );
+
+    test('a page reference escaping the extraction root is neither moved '
+        'nor read', () async {
+      // 解压树在 `<app>/fushi_books/.tmp-*/`；第二页从 `OEBPS/text/` 往上四级，
+      // 落到解压根之外的 `<app>/victim.png`。挪页是 rename——越界引用若被接受，
+      // 解压树外的文件（别的书的页图、用户图片）会被挪走。
+      final Uint8List victimBytes = png(25);
+      final File victim = File(p.join(app.path, 'victim.png'))
+        ..writeAsBytesSync(victimBytes);
+      final String path = _writeImageEpub(
+        root,
+        first: png(30),
+        second: png(20),
+        page2Body: '<img src="../../../../victim.png"/>',
+      );
+      final Set<String> before = stagingDirs();
+      await expectLater(
+        MangaArchiveImporter.importArchive(db: db, archivePath: path),
+        throwsA(
+          isA<MangaImportException>().having(
+            (MangaImportException e) => e.message,
+            'message',
+            contains('page not found'),
+          ),
+        ),
+      );
+      expect(victim.existsSync(), isTrue);
+      expect(victim.readAsBytesSync(), victimBytes);
+      expect(stagingDirs().difference(before), isEmpty);
+      expect(await db.getEpubBookMetas(), isEmpty);
+    });
   });
 
   group('manga-29a: archive progress covers extraction and ingest', () {

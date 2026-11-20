@@ -106,10 +106,23 @@ class EpubBook {
     final String normalized = normalizeHref(path);
     final EpubResource? resource = resources[normalized];
     if (resource != null) return resource.readBytes();
-    if (rootDirectory == null) return null;
-    final File file = File(p.join(rootDirectory!, normalized));
+    final String? diskPath = rootFilePath(normalized);
+    if (diskPath == null) return null;
+    final File file = File(diskPath);
     if (file.existsSync()) return file.readAsBytesSync();
     return null;
+  }
+
+  /// [path]（相对 EPUB 根的 href）在解压根 [rootDirectory] 下对应的盘上路径。没有
+  /// 解压根、或 href 经 `..` / 绝对路径落到根目录之外时为 null——书里的引用是不可信
+  /// 数据，读（[readResource]）和挪（漫画导入把页图 rename 进 staging）都只认根内
+  /// 文件，与解析器资源表的 `p.isWithin` 校验同一口径。
+  String? rootFilePath(String path) {
+    final String? root = rootDirectory;
+    if (root == null) return null;
+    final String joined = p.normalize(p.join(root, normalizeHref(path)));
+    if (!p.isWithin(p.canonicalize(root), p.canonicalize(joined))) return null;
+    return joined;
   }
 
   String mediaType(String path) {

@@ -1200,10 +1200,10 @@ abstract final class MangaArchiveImporter {
     }
     for (final String candidate in candidates) {
       final String normalized = normalizeHref(candidate);
-      final String? root = book.rootDirectory;
+      // 资源表的路径由解析器做过根内校验；表外的回退走 [EpubBook.rootFilePath]，
+      // `../别的书/page.jpg` 这类越出解压根的引用得 null，不挪（挪是破坏性的）。
       final String? path =
-          book.resources[normalized]?.filePath ??
-          (root == null ? null : p.join(root, normalized));
+          book.resources[normalized]?.filePath ?? book.rootFilePath(normalized);
       if (path == null) continue;
       final String key = p.canonicalize(path);
       final File? earlier = moved[key];
