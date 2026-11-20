@@ -33,6 +33,7 @@ import 'package:fushi/src/focus/page_scroll_registry.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_popup_origin.dart';
 import 'package:fushi/src/utils/components/fushi_gamepad_keyboard.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
@@ -283,6 +284,10 @@ class _FushiCardState extends State<FushiCard>
   bool _hovered = false;
   bool _pressed = false;
 
+  /// 点按回调：卡片在带色组件里时放进该组件的弹层来源里跑——这次点按经页面
+  /// State 转弹的对话框 / 弹层也承接组件配色（见 `fushi_popup_origin.dart`）。
+  VoidCallback? get _onTap => fushiPopupOriginTap(context, widget.onTap);
+
   bool get _interactive =>
       widget.onTap != null ||
       widget.onLongPress != null ||
@@ -441,7 +446,7 @@ class _FushiCardState extends State<FushiCard>
       actions: <Type, Action<Intent>>{
         ActivateIntent: CallbackAction<ActivateIntent>(
           onInvoke: (_) {
-            widget.onTap?.call();
+            _onTap?.call();
             return null;
           },
         ),
@@ -503,7 +508,7 @@ class _FushiCardState extends State<FushiCard>
             child: !_interactive
                 ? content
                 : InkWell(
-                    onTap: widget.onTap,
+                    onTap: _onTap,
                     onLongPress: widget.onLongPress,
                     onHover: _setHovered,
                     onHighlightChanged: _setPressed,
@@ -549,7 +554,7 @@ class _FushiCardState extends State<FushiCard>
     Widget body = content;
     if (interactive) {
       body = FushiAppleRow(
-        onTap: widget.onTap,
+        onTap: _onTap,
         onLongPress: widget.onLongPress,
         selected: widget.selected,
         // 卡片选中靠下面的强调色描边，不铺选中底。

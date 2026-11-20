@@ -93,6 +93,7 @@ class FushiCoverBlockColors {
     required this.onContainer,
     required this.accent,
     required this.watermarkOpacity,
+    this.hue,
   });
 
   /// 由封面配色派生（设计稿 `fixed(h)` 同一套 HSL）：只取封面主色的色相，
@@ -122,24 +123,36 @@ class FushiCoverBlockColors {
 
   /// 按色相 [hue] 派生（[resolve] 的封面分支；没封面的块按标题哈希给色相，与
   /// [FushiGeneratedCover] 同色，见 [fushiGeneratedCoverHue]）。
-  factory FushiCoverBlockColors.fromHue(ThemeData theme, double hue) {
+  ///
+  /// [depth] = 同色相的第几档底色（0 = 标准档）：同一个色块里要并排区分几块
+  /// 子块（例如从色块弹出的二选一对话框里的两张选项卡）时用，只动底色明度，
+  /// 前景 / 强调色不变。档位往远离前景的方向走（深色每档压暗 6%、浅色每档提亮
+  /// 6%），与块里弹出的对话框面板（块底叠前景色、朝前景方向）拉开，前景对比度只升
+  /// 不降。
+  factory FushiCoverBlockColors.fromHue(
+    ThemeData theme,
+    double hue, {
+    int depth = 0,
+  }) {
     final bool dark = theme.brightness == Brightness.dark;
     final double watermark = dark ? 0.3 : 0.13;
     Color hsl(double s, double l) => HSLColor.fromAHSL(1, hue, s, l).toColor();
     if (dark) {
       return FushiCoverBlockColors(
-        container: hsl(0.32, 0.19),
+        container: hsl(0.32, 0.19 - 0.06 * depth),
         onContainer: hsl(0.45, 0.92),
         accent: hsl(0.60, 0.76),
         watermarkOpacity: watermark,
+        hue: hue,
       );
     }
     final Color on = hsl(0.50, 0.20);
     return FushiCoverBlockColors(
-      container: hsl(0.45, 0.89),
+      container: hsl(0.45, 0.89 + 0.06 * depth),
       onContainer: on,
       accent: on,
       watermarkOpacity: watermark,
+      hue: hue,
     );
   }
 
@@ -147,6 +160,10 @@ class FushiCoverBlockColors {
   final Color onContainer;
   final Color accent;
   final double watermarkOpacity;
+
+  /// 派生这套配色的色相；null = 主题中性色（没封面 / 墨水屏，见 [resolve]）。
+  /// 色块给子树下发局部配色（`FushiBlockColorScope`）时据此判断是不是有彩块。
+  final double? hue;
 }
 
 /// 色块投影：规整块 / 拼贴首块是偏下的大投影；半高卡（拼贴叠放、「继续」横滑
