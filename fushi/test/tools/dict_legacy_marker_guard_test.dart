@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// fushidicts 查询侧必须继续认存量的 `.hoshidicts_1` 完成标记。
 ///
 /// 真实事故（2026-08-09，用户 Windows 实测）：改名把词典目录的完成标记从
@@ -115,10 +117,7 @@ void main() {
       'upgrade.cpp',
       'util/redirect_glossary.cpp',
     ]) {
-      final String src = readSource(relative)
-          .split('\n')
-          .where((String line) => !line.trimLeft().startsWith('//'))
-          .join('\n');
+      final String src = maskComments(readSource(relative));
       expect(
         RegExp(r'"/?\.(fushidicts|hoshidicts)_\d"').hasMatch(src),
         isFalse,

@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 设置层读平台只经 `hostPlatform`（`lib/src/platform/host_platform.dart`），
 /// 不直读 `dart:io` 的 `Platform.isXxx`。
 ///
@@ -33,10 +35,12 @@ void main() {
     );
     final List<String> offenders = <String>[];
     for (final File file in files) {
-      final List<String> lines = file.readAsLinesSync();
+      // 注释掩成等长空白（行号不变），再逐行判：块注释 / 行尾注释里的字样不算。
+      final List<String> lines = maskComments(
+        file.readAsStringSync(),
+      ).split('\n');
       for (int i = 0; i < lines.length; i++) {
         final String line = lines[i];
-        if (line.trimLeft().startsWith('//')) continue;
         if (direct.hasMatch(line)) {
           offenders.add('${file.path}:${i + 1}: ${line.trim()}');
         }
