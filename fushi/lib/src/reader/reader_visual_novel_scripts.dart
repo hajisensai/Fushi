@@ -58,14 +58,23 @@ class ReaderVisualNovelScripts {
   static String vnShellScript() => _shell();
 
   /// 恢复锚三选一的运行时分派（旧实现在 Dart 侧三元式挑一条语句）。
+  ///
+  /// BUG-4906 续：VN 的恢复入口是 async 函数（先等 readyPromise 再切屏），渲染时抛的
+  /// 异常只让它返回的 promise 变成 rejected；boot 的 try/catch 只接得住同步异常。
+  /// 这里给那个 promise 接上失败回执，不再让它成为无人处理的 rejection、Dart 干等
+  /// 8 秒兜底。
   static const String _initialRestoreJs = '''
+    var initialRestore;
     if (C.initialFragment !== null && C.initialFragment !== undefined) {
-      window.fushiReader.jumpToFragment(C.initialFragment);
+      initialRestore = window.fushiReader.jumpToFragment(C.initialFragment);
     } else if (C.initialCharOffset >= 0) {
-      window.fushiReader.restoreToCharOffset(C.initialCharOffset);
+      initialRestore = window.fushiReader.restoreToCharOffset(C.initialCharOffset);
     } else {
-      window.fushiReader.restoreProgress(C.initialProgress);
-    }''';
+      initialRestore = window.fushiReader.restoreProgress(C.initialProgress);
+    }
+    Promise.resolve(initialRestore).catch(function(restoreError) {
+      window.fushiReader.notifyRestoreFailed(restoreError);
+    });''';
 
   static String _shell() {
     const String initialRestoreScript = _initialRestoreJs;

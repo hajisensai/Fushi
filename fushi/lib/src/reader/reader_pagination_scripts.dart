@@ -1519,6 +1519,19 @@ window.__fushiInstallShell = function(C) {
       );
     }
   },
+  // BUG-4906 续：恢复入口把「落定 + 回执」排进 setTimeout 的回调里，回调里抛的异常
+  // 既不在入口返回的 promise 里，也不在初次恢复链里，回执永远不来。凡是负责发回执的
+  // 延后回调都经它包一层：抛出即改发失败回执（已发过回执的文档只记 console.error）。
+  _restoreCallback: function(callback) {
+    var self = this;
+    return function() {
+      try {
+        callback();
+      } catch (callbackError) {
+        self.notifyRestoreFailed(callbackError);
+      }
+    };
+  },
   createWalker: function(rootNode) {
     var root = rootNode || document.body;
     return document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
@@ -2469,28 +2482,34 @@ window.__fushiInstallShell = function(C) {
   /// 优先级与旧的 Dart 三元式逐条相同：`initialFragment` 非空 → `jumpToFragment`；
   /// 否则 `initialCharOffset >= 0` → `restoreToCharOffset`；否则 `restoreProgress`。
   /// 分页 shell 只用单点句首锚（旧实现也只传一个参数）。
+  ///
+  /// BUG-4906 续：恢复入口都是 async 函数，第一个 `await` 之后抛的异常只会让它返回的
+  /// promise 变成 rejected。这里把那个 promise `return` 给外层
+  /// `Promise.all(imagePromises).then(...)`，异步失败才走得到链尾的失败回执
+  /// （[_sharedInitialRestoreCatchJs]）；不 return 时链早已 resolve，异常成了无人处理的
+  /// rejection，Dart 只能等 8 秒兜底。
   static const String _paginatedInitialRestoreJs = '''
     if (C.initialFragment !== null && C.initialFragment !== undefined) {
-      window.fushiReader.jumpToFragment(C.initialFragment);
+      return window.fushiReader.jumpToFragment(C.initialFragment);
     } else if (C.initialCharOffset >= 0) {
-      window.fushiReader.restoreToCharOffset(C.initialCharOffset);
+      return window.fushiReader.restoreToCharOffset(C.initialCharOffset);
     } else {
-      window.fushiReader.restoreProgress(C.initialProgress);
+      return window.fushiReader.restoreProgress(C.initialProgress);
     }''';
 
   /// 连续 shell 版：多一条 BUG-461 的句尾区间对齐分支（`initialCharOffsetEnd >
   /// initialCharOffset` 时透传句尾偏移），其余与 [_paginatedInitialRestoreJs] 相同。
   static const String _continuousInitialRestoreJs = '''
     if (C.initialFragment !== null && C.initialFragment !== undefined) {
-      window.fushiReader.jumpToFragment(C.initialFragment);
+      return window.fushiReader.jumpToFragment(C.initialFragment);
     } else if (C.initialCharOffset >= 0) {
       if (C.initialCharOffsetEnd > C.initialCharOffset) {
-        window.fushiReader.restoreToCharOffset(C.initialCharOffset, C.initialCharOffsetEnd);
+        return window.fushiReader.restoreToCharOffset(C.initialCharOffset, C.initialCharOffsetEnd);
       } else {
-        window.fushiReader.restoreToCharOffset(C.initialCharOffset);
+        return window.fushiReader.restoreToCharOffset(C.initialCharOffset);
       }
     } else {
-      window.fushiReader.restoreProgress(C.initialProgress);
+      return window.fushiReader.restoreProgress(C.initialProgress);
     }''';
 
   /// 有声书 cue 下发：旧实现「有 cue 才注入这一行」，现在「有 cue 才调用」。
@@ -3472,13 +3491,13 @@ $kReaderPageTurnJs
   _settleAndNotify: function() {
     var self = this;
     var landed = this.getPagePosition(this.getScrollContext());
-    setTimeout(function() {
+    setTimeout(this._restoreCallback(function() {
       if (self.getPagePosition(self.getScrollContext()) !== landed) {
         self.reapplyImageLateAnchor();
       }
       self.registerSnapScroll(self.getPagePosition(self.getScrollContext()));
       self.notifyRestoreComplete();
-    }, 16);
+    }), 16);
   },
   restoreProgress: async function(progress) {
     this._invalidateGeometryReanchor();
@@ -4330,7 +4349,7 @@ $kSentenceAudioRubyGapJs
   // shell 的章首/章末分支（`单层 16ms + 重发滚动后立即通知`）时序一致。
   _settleAndNotify: function() {
     var self = this;
-    setTimeout(function() { self.notifyRestoreComplete(); }, 16);
+    setTimeout(this._restoreCallback(function() { self.notifyRestoreComplete(); }), 16);
   },
   restoreProgress: async function(progress) {
     await document.fonts.ready;
@@ -4343,10 +4362,10 @@ $kSentenceAudioRubyGapJs
       // 后正文整体下移，不重锚就会停在图与正文之间的错位。
       this.registerImageLateAnchor({progress: 0});
       this.scrollToChapterStart();
-      setTimeout(function() {
+      setTimeout(this._restoreCallback(function() {
         self.scrollToChapterStart();
         self.notifyRestoreComplete();
-      }, 16);
+      }), 16);
       return;
     }
     // TODO-1349：progress>=0.99 = 章末（往前翻到上一章的落点），与分页版
@@ -4359,10 +4378,10 @@ $kSentenceAudioRubyGapJs
       // scrollToChapterEnd（连续分支）落到含尾图的真实章末。
       this.registerImageLateAnchor({progress: progress});
       this.scrollToChapterEnd();
-      setTimeout(function() {
+      setTimeout(this._restoreCallback(function() {
         self.scrollToChapterEnd();
         self.notifyRestoreComplete();
-      }, 16);
+      }), 16);
       return;
     }
     // BUG-1140 第二轮：中段 progress 同样登记（理由见分页版 restoreProgress 长注释）。
