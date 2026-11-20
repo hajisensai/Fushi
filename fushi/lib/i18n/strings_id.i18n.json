@@ -3867,6 +3867,7 @@
   "game_home_average_hours": "Usually finished in about ${hours} h",
   "game_home_count_unit": "games",
   "game_home_go_discover": "Discover games",
+  "game_home_import_games": "Import games",
   "game_home_live_chip": "In game",
   "game_home_more_title": "Continue · Recent",
   "game_home_random_eyebrow": "Play this today?",
