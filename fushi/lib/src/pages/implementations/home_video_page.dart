@@ -26,6 +26,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/media/audio_cd/audio_cd_import.dart';
 import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
+import 'package:fushi/src/media/video/cover_ui/video_series_meta.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi/src/pages/base_module_tab_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart' show HomeTab;
@@ -6200,19 +6201,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     List<_HomeHeroData> heroData,
   ) {
     final int rest = heroData.length - 1;
-    Widget strip({int rows = 1, double? tileHeight, double? tileWidth}) =>
-        FushiCoverBlockStrip(
-          key: const ValueKey<String>('home_video_continue_blocks'),
-          leadingHero: false,
-          rowSize: FushiCoverBlockSize.regular,
-          rows: rows,
-          tileHeight: tileHeight,
-          tileWidth: tileWidth,
-          itemCount: rest,
-          itemBuilder:
-              (BuildContext context, int i, FushiCoverBlockSize size) =>
-                  _rowBlockCard(_heroRowSpec(heroData[i + 1]), size),
-        );
+    Widget strip({
+      int rows = 1,
+      double? tileHeight,
+      double? tileWidth,
+      bool besideLeading = false,
+    }) => FushiCoverBlockStrip(
+      key: const ValueKey<String>('home_video_continue_blocks'),
+      leadingHero: false,
+      besideLeading: besideLeading,
+      rowSize: FushiCoverBlockSize.regular,
+      rows: rows,
+      tileHeight: tileHeight,
+      tileWidth: tileWidth,
+      itemCount: rest,
+      itemBuilder: (BuildContext context, int i, FushiCoverBlockSize size) =>
+          _rowBlockCard(_heroRowSpec(heroData[i + 1]), size),
+    );
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints c) {
         final double width = c.maxWidth;
@@ -6260,6 +6265,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
               Expanded(
                 child: strip(
                   rows: 2,
+                  besideLeading: true,
                   tileHeight: tileHeight,
                   tileWidth:
                       tileHeight *
@@ -6374,6 +6380,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       colorSource: still,
       material: ShelfCoverMaterial.glossyPoster,
       title: hero.title,
+      logo: hero.logo,
       eyebrow: subtitle,
       metaIcon: hero.cloud ? FushiIcons.cloud : null,
       subtitle: hero.subtitle,
@@ -7200,6 +7207,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         : null;
     final String title = _metadataWorkByBook[book.bookUid]?.title ?? book.title;
     final ImageProvider? poster = _bookPosterProvider(book);
+    final _HeroCleanArt clean = _heroCleanArt(
+      _episodeStillProvider(book),
+      _videoBlockMeta(bookUid: book.bookUid),
+    );
     return _HomeHeroData(
       cardKey: ValueKey<String>('home_video_continue_${book.bookUid}'),
       bookUid: book.bookUid,
@@ -7207,7 +7218,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       title: title,
       subtitle: _continueSecondaryText(book, episodeNumber: episodeNumber),
       poster: poster,
+      logo: clean.logo,
       image: ({required bool overlay}) =>
+          (overlay ? clean.image : null) ??
           _episodeStillProvider(book) ??
           _mediaImageProvider(
             _mediaImagesByBookUid[book.bookUid],
@@ -7264,7 +7277,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     int currentIndex,
   ) {
     final _VideoSlot target = members[currentIndex];
+    final _HeroCleanArt clean = _heroCleanArt(
+      target.local == null ? null : _episodeStillProvider(target.local!),
+      _videoBlockMeta(collectionId: collection.id),
+    );
     return _HomeHeroData(
+      logo: clean.logo,
       cardKey: ValueKey<String>(
         'home_video_continue_collection_${collection.id}',
       ),
@@ -7277,6 +7295,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           : null,
       poster: _collectionPosterProvider(collection, members, target),
       image: ({required bool overlay}) =>
+          (overlay ? clean.image : null) ??
           (target.local == null
               ? null
               : _episodeStillProvider(target.local!)) ??
@@ -7301,6 +7320,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       ),
       cloud: target.local == null,
     );
+  }
+
+  /// 主卡剧照里**不带片名**的那张（续播那一集的剧照 → 无字背景图），以及能叠在
+  /// 它上面的 logo。两者都没有时 image 为 null，主卡回落原选图链且不叠 logo——
+  /// 回落链里的 titleCard / 盘面图 / 带字背景图本身印着片名，再叠 logo 就是两份
+  /// （设计稿 #1 / #3）。
+  _HeroCleanArt _heroCleanArt(
+    ImageProvider? episodeStill,
+    FushiSeriesMeta meta,
+  ) {
+    final ImageProvider? image =
+        episodeStill ?? (meta.backdropHasText ? null : meta.backdrop);
+    return (image: image, logo: image == null ? null : meta.logo);
   }
 
   static bool _isUnstarted(VideoBookRow book) =>
@@ -12177,6 +12209,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       covers: covers,
       meta: poster,
       backdrop: backdrop,
+      // 横版槽画的是这一条自己的 16:9 封面，不是 meta 的背景图：带不带字与
+      // meta.backdropHasText 无关，logo 照叠。
+      backdropHasText: landscape ? false : null,
       eyebrow: statusAsEyebrow ? subtitle : null,
       action: playsOnTap && started
           ? FushiCoverBlockAction(
@@ -12327,97 +12362,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         images = images ?? _mediaImagesByCollection[cid];
       }
     }
-    final CollectionScrapeMetaRow? scrape = cid == null
-        ? null
-        : _collectionScrapeMetaById[cid];
-    ImageProvider? settled(ImageProvider? image) =>
-        image == kPendingCoverImage ? null : image;
-    // 与作品详情页（`media_collection_detail_page.dart` 的 `_resolveCanonicalImage`）
-    // 同一条取图链：先本地文件，没有再走远程地址（[AppCachedHttpImage] 磁盘缓存，
-    // 详情页看过的图直接命中）。刮削常常只存了远程地址，只认本地的话艺术字和
-    // 横版背景在库页一张都出不来。某张本地图还在探测存在性时先不落到远程，
-    // 等探测完重建，免得本地有图还去下载一遍。
-    ImageProvider? workImage(List<String> kinds, {required int decodeWidth}) {
-      final List<VideoMetadataImageRow>? rows = work == null
+    return videoSeriesMeta(
+      work: work,
+      mediaImages: images,
+      workImages: work == null ? null : _metadataImagesByWork[work.id],
+      scrape: cid == null ? null : _collectionScrapeMetaById[cid],
+      localImage: _localFileCover,
+      ownPoster: cid == null
           ? null
-          : _metadataImagesByWork[work.id];
-      if (rows == null) return null;
-      final List<VideoMetadataImageRow> ordered = rows.toList()
-        ..sort(
-          (VideoMetadataImageRow a, VideoMetadataImageRow b) =>
-              a.position.compareTo(b.position),
-        );
-      bool probing = false;
-      for (final String kind in kinds) {
-        for (final VideoMetadataImageRow row in ordered) {
-          if (row.kind != kind) continue;
-          final ImageProvider? local = _localFileCover(row.localPath);
-          if (local == kPendingCoverImage) {
-            probing = true;
-          } else if (local != null) {
-            return local;
-          }
-        }
-      }
-      if (probing) return null;
-      for (final String kind in kinds) {
-        for (final VideoMetadataImageRow row in ordered) {
-          if (row.kind != kind || row.remoteUrl.isEmpty) continue;
-          return ResizeImage.resizeIfNeeded(
-            decodeWidth,
-            null,
-            AppCachedHttpImage(row.remoteUrl),
-          );
-        }
-      }
-      return null;
-    }
-
-    final ImageProvider? backdrop =
-        settled(
-          _mediaImageProvider(images, const <MediaImageKind>[
-            MediaImageKind.backdrop,
-          ]),
-        ) ??
-        workImage(const <String>['backdrop'], decodeWidth: 1280);
-    final ImageProvider? logo =
-        settled(
-          _mediaImageProvider(images, const <MediaImageKind>[
-            MediaImageKind.logo,
-          ]),
-        ) ??
-        workImage(const <String>['logo'], decodeWidth: 640);
-    final ImageProvider? poster =
-        (cid == null
-            ? null
-            : settled(_collectionOwnCover(_collectionsById[cid]))) ??
-        workImage(const <String>['cover', 'poster'], decodeWidth: 480);
-    final String? kind = switch (work?.mediaType) {
-      'tv' => t.shelf_block_video_kind_tv,
-      'movie' => t.shelf_block_video_kind_movie,
-      _ => null,
-    };
-    final int? year =
-        work?.year ??
-        videoAirYear(work?.premiereDate) ??
-        videoAirYear(scrape?.airDate) ??
-        (bookUid == null ? null : _airYearByUid[bookUid]);
-    final int? episodes = work?.mediaType == 'movie'
-        ? null
-        : scrape?.episodeCount;
-    final List<String> chipParts = <String>[
-      ?kind,
-      if (year != null) '$year',
-      if (episodes != null && episodes > 0)
-        t.video_playlist_episodes(count: episodes),
-    ];
-    return FushiSeriesMeta.fromParts(
-      backdrop: backdrop,
-      logo: logo,
-      poster: poster,
-      genres: fushiScrapeTagNames(scrape?.tagsJson, limit: 2),
-      rating: work?.rating ?? scrape?.rating,
-      chipParts: chipParts,
+          : _collectionOwnCover(_collectionsById[cid]),
+      fallbackYear: bookUid == null ? null : _airYearByUid[bookUid],
     );
   }
 
@@ -12578,6 +12532,9 @@ class _HomeContinueItem {
 }
 
 /// 首屏继续观看卡的数据（主卡 / 封面行共用，见 [FushiContinueSpotlight]）。
+/// 主卡的无字剧照 + 可叠的 logo（[_HomeVideoPageState._heroCleanArt]）。
+typedef _HeroCleanArt = ({ImageProvider? image, ImageProvider? logo});
+
 class _HomeHeroData {
   const _HomeHeroData({
     required this.cardKey,
@@ -12593,7 +12550,11 @@ class _HomeHeroData {
     this.cloud = false,
     this.collectionId,
     this.bookUid,
+    this.logo,
   });
+
+  /// 主卡剧照上叠的作品 logo（只在剧照不带片名时非 null，见 [_heroCleanArt]）。
+  final ImageProvider? logo;
 
   final Key cardKey;
   final FushiFocusId focusId;
