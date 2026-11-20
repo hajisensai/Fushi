@@ -4,8 +4,6 @@
 // 修前五份同形循环各自 `try { await native.setProperty(...) } catch (_) {}`：
 // media_kit 的 setProperty 把 libmpv 的结果码丢掉，属性名拼错 / 值非法 / rawConf 里
 // 写了运行时不可设的选项，全都无声无息。
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
