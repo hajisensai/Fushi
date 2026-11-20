@@ -30,6 +30,7 @@ class FushiSeriesMeta {
     this.genres = const <String>[],
     this.rating,
     this.year,
+    this.backdropHasText = false,
   });
 
   /// 由零散字段拼出概览 / chip：概览 =「类型前若干个（` / ` 连接）· ★ 评分」，
@@ -43,8 +44,10 @@ class FushiSeriesMeta {
     double? rating,
     int? year,
     List<String> chipParts = const <String>[],
+    bool backdropHasText = false,
   }) => FushiSeriesMeta(
     backdrop: backdrop,
+    backdropHasText: backdropHasText,
     logo: logo,
     poster: poster,
     overview: fushiSeriesOverview(
@@ -62,6 +65,14 @@ class FushiSeriesMeta {
 
   /// 标题艺术字。
   final ImageProvider? logo;
+
+  /// [backdrop] 本身印着片名（只有带字的背景图可用：TMDB 语言标签非空的
+  /// backdrop、title card 一类）。为 true 时原图里的字就是标题，色块不再叠一份
+  /// [logo]（2026-11-20 用户拍板设计稿 #3：宁可少一份也不出现两份）。
+  final bool backdropHasText;
+
+  /// 色块上实际要画的 logo：背景图自带片名时为 null。
+  ImageProvider? get displayLogo => backdropHasText ? null : logo;
 
   /// 2:3 作品海报（横版槽左侧斜放那张，调用方按需使用）。
   final ImageProvider? poster;
@@ -200,6 +211,10 @@ Widget? fushiSeriesBackdrop(ImageProvider? image) => image == null
 /// 系列色块：[meta] 的 logo / 概览 / chip 落到 [FushiCoverBlock]，其余参数原样
 /// 透传。[backdrop] 由调用方显式给（通常是 `fushiSeriesBackdrop(meta.backdrop)`；
 /// 视频横版槽等摆法会换成别的图或 null）。[art] 默认竖版海报摆法。
+///
+/// [backdropHasText]：画出来的 [backdrop] 是否自带片名（自带时不叠 logo）；null =
+/// 按 [FushiSeriesMeta.backdropHasText]（[backdrop] 就是 `meta.backdrop` 的常见
+/// 情形）。[backdrop] 换成了别的图时调用方显式给。
 Widget fushiSeriesCoverBlock({
   required FushiCoverBlockSize size,
   required String title,
@@ -223,13 +238,14 @@ Widget fushiSeriesCoverBlock({
   bool? selectionMode,
   bool? selected,
   bool hoverEnabled = true,
+  bool? backdropHasText,
 }) => FushiCoverBlock(
   size: size,
   art: art,
   title: title,
   covers: covers,
   backdrop: backdrop,
-  logo: meta?.logo,
+  logo: (backdropHasText ?? meta?.backdropHasText ?? false) ? null : meta?.logo,
   eyebrow: eyebrow,
   byline: byline,
   overview: meta?.overview,

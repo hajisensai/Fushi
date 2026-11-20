@@ -883,8 +883,8 @@ extension _VideoLookupMining on _VideoFushiPageState {
               ),
             );
           };
-    // 不 await：先把本任务按点击顺序送进共享队列，轮到它时再解析临时目录。否则两个
-    // 连续点击可能因 path_provider 返回先后不同而逆序入队。
+    // 不 await：先把本任务按点击顺序送进共享落卡队列，临时目录由引擎的抽取段自己等。
+    // 否则两个连续点击可能因 path_provider 返回先后不同而逆序入队。
     final Future<String> tempDir = getTemporaryDirectory().then(
       (Directory value) => value.path,
     );

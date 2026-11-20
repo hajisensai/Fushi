@@ -20,7 +20,8 @@ library;
 
 import 'dart:async';
 
-import 'package:drift/drift.dart' show QueryRow, TableUpdate, TableUpdateQuery;
+import 'package:drift/drift.dart'
+    show QueryRow, ResultSetImplementation, TableUpdate, TableUpdateQuery;
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/links/work_graph.dart';
@@ -63,13 +64,17 @@ final class WorkSeriesInfo {
   bool covers(MediaLinkEndpoint e) => endpoint == e || members.contains(e);
 }
 
-/// 一次建图的结果：作品图 + 界面要的展示索引（书的格式、系列合集的成员与名字）。
+/// 一次建图的结果：作品图 + 界面要的展示索引（书的格式、系列合集的成员与名字、
+/// 视频合集的刮削相关作品）。
 final class WorkGraphSnapshot {
   WorkGraphSnapshot({
     required this.graph,
     required Map<String, String> bookFormatByKey,
     required List<WorkSeriesInfo> series,
+    List<CollectionRelationRow> collectionRelations =
+        const <CollectionRelationRow>[],
   }) : _bookFormatByKey = bookFormatByKey,
+       _relationsByOrigin = _groupRelations(collectionRelations),
        _seriesById = <int, WorkSeriesInfo>{
          for (final WorkSeriesInfo s in series) s.id: s,
        } {
@@ -92,6 +97,32 @@ final class WorkGraphSnapshot {
 
   final WorkGraph graph;
   final Map<String, String> _bookFormatByKey;
+  final Map<MediaLinkEndpoint, List<CollectionRelationRow>> _relationsByOrigin;
+
+  static Map<MediaLinkEndpoint, List<CollectionRelationRow>> _groupRelations(
+    List<CollectionRelationRow> rows,
+  ) {
+    final Map<MediaLinkEndpoint, List<CollectionRelationRow>> out =
+        <MediaLinkEndpoint, List<CollectionRelationRow>>{};
+    for (final CollectionRelationRow r in rows) {
+      final MediaLinkEndpoint? origin = seriesRelationOriginOf(r);
+      if (origin == null) continue;
+      (out[origin] ??= <CollectionRelationRow>[]).add(r);
+    }
+    for (final List<CollectionRelationRow> list in out.values) {
+      list.sort((CollectionRelationRow a, CollectionRelationRow b) {
+        final int bySort = a.sortIndex.compareTo(b.sortIndex);
+        return bySort != 0 ? bySort : a.id.compareTo(b.id);
+      });
+    }
+    return out;
+  }
+
+  /// 端点 [origin]（视频合集，或挂在单个视频上的作品 = 散装电影，v162）的相关作品
+  /// （`collection_relations`：刮削源的续作 / 前传 / 外传…与按季拆分建的前后作），
+  /// 按展示顺序。关系网的系列栏从这里取；别的端点种类恒为空。
+  List<CollectionRelationRow> seriesRelationsFrom(MediaLinkEndpoint origin) =>
+      _relationsByOrigin[origin] ?? const <CollectionRelationRow>[];
   final Map<int, WorkSeriesInfo> _seriesById;
   final Map<MediaLinkEndpoint, WorkSeriesInfo> _seriesOfEndpoint =
       <MediaLinkEndpoint, WorkSeriesInfo>{};
@@ -162,6 +193,8 @@ final class WorkGraphSnapshot {
 /// 这里只补界面要的展示索引，同样整表一次读、内存里 join。
 Future<WorkGraphSnapshot> loadWorkGraphSnapshot(FushiDatabase db) async {
   final WorkGraph graph = await loadWorkGraph(db);
+  final List<CollectionRelationRow> relations = await db
+      .getAllCollectionRelations();
   final List<EpubBookMeta> books = await db.getEpubBookMetas();
   final Map<String, String> formatByKey = <String, String>{
     for (final EpubBookMeta b in books) b.bookKey: b.format,
@@ -176,6 +209,7 @@ Future<WorkGraphSnapshot> loadWorkGraphSnapshot(FushiDatabase db) async {
       graph: graph,
       bookFormatByKey: formatByKey,
       series: const <WorkSeriesInfo>[],
+      collectionRelations: relations,
     );
   }
   final Map<String, String> bookKeyByUid = <String, String>{
@@ -236,7 +270,29 @@ Future<WorkGraphSnapshot> loadWorkGraphSnapshot(FushiDatabase db) async {
     graph: graph,
     bookFormatByKey: formatByKey,
     series: series,
+    collectionRelations: relations,
   );
+}
+
+/// 系列关系行的起点端点：合集 → 视频合集端点；单视频（v162 散装电影）→ 单集端点
+/// （键是 bookUid，与 `media_links` 的 `video_episode` 同口径）。
+MediaLinkEndpoint? seriesRelationOriginOf(CollectionRelationRow r) {
+  if (r.collectionId case final int id) return videoCollectionEndpoint(id);
+  if (r.bookUid case final String uid) {
+    return (kind: MediaLinkKind.videoEpisode, key: uid);
+  }
+  return null;
+}
+
+/// 系列关系行的已绑定目标端点；纯刮削行返回 null。
+MediaLinkEndpoint? seriesRelationTargetOf(CollectionRelationRow r) {
+  if (r.targetCollectionId case final int id) {
+    return videoCollectionEndpoint(id);
+  }
+  if (r.targetBookUid case final String uid) {
+    return (kind: MediaLinkKind.videoEpisode, key: uid);
+  }
+  return null;
 }
 
 /// 合集成员行 → 图谱端点（与 `work_graph_loader.dart` 的成员换算同口径：epub 键是
@@ -297,7 +353,15 @@ final class WorkGraphStore extends ChangeNotifier
     super.addListener(listener);
     _listenerCount++;
     _tableSub ??= _db
-        .tableUpdates(TableUpdateQuery.onAllTables(workGraphSourceTables(_db)))
+        .tableUpdates(
+          TableUpdateQuery.onAllTables(
+            <ResultSetImplementation<dynamic, dynamic>>[
+              ...workGraphSourceTables(_db),
+              // 快照另读的相关作品表（关系网系列栏）：刮削落库 / 升级绑定后刷新。
+              _db.collectionRelations,
+            ],
+          ),
+        )
         .listen((Set<TableUpdate> _) => _invalidate());
     if (_dirty) unawaited(_rebuild());
   }

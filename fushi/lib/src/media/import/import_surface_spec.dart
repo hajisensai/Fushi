@@ -14,6 +14,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart'
     show FileDropCallback;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_block_color_scope.dart'
+    show FushiBlockColorScope;
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 
 /// 把各域的扩展名真相源集合（带不带点均可）派生成「支持格式」文案：去点、转大写、
@@ -75,8 +77,18 @@ FushiCoverBlockColors importToneColors(
   bool inverse = false,
 }) {
   final ThemeData theme = Theme.of(context);
+  // 在带色组件的子树里（例如从「导入文件夹」绿块弹出的二选一对话框）：钉色
+  // 统一收成所在组件的色相，按 [importToneDepth] 取同色相的两档深浅区分，
+  // 不再混进别的色相（11-20 用户：自定义颜色组件的子组件统一颜色）。
+  final double? scopeHue = FushiBlockColorScope.maybeColorsOf(context)?.hue;
   final FushiCoverBlockColors base = isEinkTheme(context)
       ? FushiCoverBlockColors.resolve(theme, null)
+      : scopeHue != null
+      ? FushiCoverBlockColors.fromHue(
+          theme,
+          scopeHue,
+          depth: importToneDepth(tone),
+        )
       : FushiCoverBlockColors.fromHue(theme, tone.hue);
   if (!inverse) return base;
   return FushiCoverBlockColors(
@@ -84,8 +96,19 @@ FushiCoverBlockColors importToneColors(
     onContainer: base.container,
     accent: base.container,
     watermarkOpacity: base.watermarkOpacity,
+    hue: base.hue,
   );
 }
+
+/// 带色组件子树里钉色收成同一色相后的深浅档（0 / 1）：按选项块默认钉色的
+/// 排位（绿 → 蓝 → 橙 → 紫 → 琥珀 → 青 → 玫红）交替，相邻两块总是不同档。
+int importToneDepth(ImportTone tone) => switch (tone) {
+  ImportTone.green ||
+  ImportTone.coral ||
+  ImportTone.amber ||
+  ImportTone.rose => 0,
+  ImportTone.indigo || ImportTone.violet || ImportTone.cyan => 1,
+};
 
 /// 向导入面子树广播本模块的模块色：来源区（[MediaSourcesView] 的色块呈现）、
 /// 「添加来源」块的悬停描边等不必一层层传参。没有这一层时取 [fallback]。

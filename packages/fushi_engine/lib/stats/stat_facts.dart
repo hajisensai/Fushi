@@ -330,6 +330,58 @@ const Set<String> kLegacyStudyActivityTypes = <String>{
   kActivityGame,
 };
 
+/// [loadStatFacts] 的读取范围：全域（默认）/ 一个域 / 一个媒体。
+///
+/// 读口仍只有 [loadStatFacts] 一个，范围只把**读哪些行**下推进 SQL，事实的构造与
+/// 判据不变；读方照旧按 [StatFacts.dailyBooks] / [StatFacts.dailyVideos] 与
+/// [statFactBelongsToBook] 切片，结果与全量读再切逐条相同（m5 实测：合成一年大库上
+/// 统计侧栏从全量读的约 235 ms / 主 isolate 55 ms 降到个位数毫秒）。
+class StatFactsScope {
+  const StatFactsScope._(this.mediaKind, this.mediaKey, this.title);
+
+  /// 全域全量（首页、统计中心总览、导出 / 诊断等）。
+  static const StatFactsScope all = StatFactsScope._(null, null, null);
+
+  /// 只读一个域（[kActivityMediaBook] / [kActivityMediaVideo] / [kActivityMediaGame]）：
+  /// 段按 `media_kind` 过滤，其余域的 legacy 表与游玩会话不读。计数面不收窄——域
+  /// 页签按来源切计数，且要保证「总览 = 各域之和」。
+  const StatFactsScope.domain(String mediaKind) : this._(mediaKind, null, null);
+
+  /// 只读一本书 / 一个视频（阅读器 / 漫画 / 视频的统计侧栏）：身份行按 [mediaKey]
+  /// 命中，legacy 无身份行按 [title] 回退（与 [statFactBelongsToBook] 同口径）。
+  ///
+  /// 此范围下：[StatFacts.hourly] 只含本媒体的段（legacy 小时行没有身份，不属于
+  /// 任何一本）；[StatFacts.epubRows] 只含同名判定要用的那几本；计数面只有本媒体的
+  /// [StatCounterFacts.lookupCounters]（制卡日计数 / 收藏不分书，不装载）。
+  const StatFactsScope.media({
+    required String this.mediaKind,
+    required String this.mediaKey,
+    this.title,
+  }) : assert(
+         mediaKind == kActivityMediaBook || mediaKind == kActivityMediaVideo,
+         'StatFactsScope.media 只支持书 / 视频',
+       );
+
+  /// null = 全域。
+  final String? mediaKind;
+
+  /// 非 null = 单媒体范围。
+  final String? mediaKey;
+
+  /// 单媒体范围下 legacy 无身份行的标题回退。
+  final String? title;
+
+  bool get isMedia => mediaKey != null;
+
+  /// 这个范围要不要读 [kind] 域。
+  bool covers(String kind) => mediaKind == null || mediaKind == kind;
+
+  String? get _fallbackTitle {
+    final String? t = title;
+    return t == null || t.isEmpty ? null : t;
+  }
+}
+
 /// v105（统计按 Profile 隔离）：只装载 [profileId]（null = 当前激活 Profile）的
 /// 事实。v92 段与游玩会话按 `profile_id` 列过滤；legacy 四表 + legacy 活动行没有
 /// Profile 维度，只在 [profileId] 是 legacy 归属 Profile
@@ -338,63 +390,101 @@ const Set<String> kLegacyStudyActivityTypes = <String>{
 /// [reviewsFrom]（srs.db）：把该 Profile 的 SRS 复习时长按 (统计日, 小时) 并进 [StatFacts.daily] /
 /// [StatFacts.hourly]（[kStatMediaReview]，见 [loadStatReviewFacts]）。只给统计中心总览用，
 /// 且调用方只在复习模块开着时传；三个域 tab / 首页 / 活动流都不要它。
+///
+/// [scope]：只读一个域 / 一个媒体（见 [StatFactsScope]）。默认全域。
 Future<StatFacts> loadStatFacts(
   FushiDatabase db, {
   int activityLimit = 200,
   bool includeCounters = false,
   int? profileId,
   SrsCore? reviewsFrom,
+  StatFactsScope scope = StatFactsScope.all,
 }) async {
-  final int scope = profileId ?? await db.resolveActiveProfileId();
-  final bool legacyVisible = await db.legacyStatsVisibleTo(scope);
+  final int profile = profileId ?? await db.resolveActiveProfileId();
+  final bool legacyVisible = await db.legacyStatsVisibleTo(profile);
+  final bool books = scope.covers(kActivityMediaBook);
+  final bool videos = scope.covers(kActivityMediaVideo);
+  final bool games = scope.covers(kActivityMediaGame);
+  final String? mediaKey = scope.mediaKey;
+  final String? fallbackTitle = scope._fallbackTitle;
   // 十个全表读互不依赖（[includeCounters] 时再挂计数面的四个）：一次全部发出去让
   // Drift 后台执行器流水线化，而不是每个都等上一个往返回来（首页与三个统计页每次
   // 打开都走这里）。先 Future.wait 挂上监听，某个失败时其余错误不会成为无人接的
-  // 未处理异常。
-  final Future<List<EpubBookMeta>> epubRowsF = db.getEpubBookMetas();
-  final Future<List<ReadingStatisticRow>> readingF = legacyVisible
+  // 未处理异常。[scope] 不覆盖的域直接不读。
+  final Future<List<EpubBookMeta>> epubRowsF = !books
+      ? Future<List<EpubBookMeta>>.value(<EpubBookMeta>[])
+      : db.getEpubBookMetas(matchingBookKey: mediaKey, orTitle: fallbackTitle);
+  final Future<List<ReadingStatisticRow>> readingF = !(legacyVisible && books)
+      ? Future<List<ReadingStatisticRow>>.value(<ReadingStatisticRow>[])
+      : mediaKey == null
       ? db.getAllReadingStatistics()
-      : Future<List<ReadingStatisticRow>>.value(<ReadingStatisticRow>[]);
-  final Future<List<VideoWatchStatisticRow>> watchF = legacyVisible
+      : _readingStatisticsForBook(db, epubRowsF, mediaKey, fallbackTitle);
+  final Future<List<VideoWatchStatisticRow>> watchF = !(legacyVisible && videos)
+      ? Future<List<VideoWatchStatisticRow>>.value(<VideoWatchStatisticRow>[])
+      : mediaKey == null
       ? db.getAllVideoWatchStatistics()
-      : Future<List<VideoWatchStatisticRow>>.value(<VideoWatchStatisticRow>[]);
-  final Future<List<ReadingHourlyLogRow>> readingHourlyF = legacyVisible
+      : db.getVideoWatchStatisticsForMedia(
+          bookUid: mediaKey,
+          orTitle: fallbackTitle,
+        );
+  // legacy 小时行没有身份，单媒体范围下不读（它们不属于任何一本）。
+  final Future<List<ReadingHourlyLogRow>> readingHourlyF =
+      legacyVisible && books && mediaKey == null
       ? db.getAllReadingHourlyLogs()
       : Future<List<ReadingHourlyLogRow>>.value(<ReadingHourlyLogRow>[]);
-  final Future<List<VideoHourlyLogRow>> videoHourlyF = legacyVisible
+  final Future<List<VideoHourlyLogRow>> videoHourlyF =
+      legacyVisible && videos && mediaKey == null
       ? db.getAllVideoHourlyLogs()
       : Future<List<VideoHourlyLogRow>>.value(<VideoHourlyLogRow>[]);
-  final Future<List<(String, String, int)>> gameDailyF = db
-      .getGalgameDailySecondsByGame(profileId: scope);
+  final Future<List<(String, String, int)>> gameDailyF = games
+      ? db.getGalgameDailySecondsByGame(profileId: profile)
+      : Future<List<(String, String, int)>>.value(<(String, String, int)>[]);
   // v113：已从库移除的游戏，其会话留着、名字在会话行的快照上。
-  final Future<Map<String, String>> gameSessionTitlesF = db
-      .getGalgameSessionTitles();
+  final Future<Map<String, String>> gameSessionTitlesF = games
+      ? db.getGalgameSessionTitles()
+      : Future<Map<String, String>>.value(<String, String>{});
   final Future<List<ActivityEventRow>> activityF = db.getRecentActivityEvents(
     limit: activityLimit,
   );
-  final Future<List<ActivityEventRow>> gameActivityF = legacyVisible
+  final Future<List<ActivityEventRow>> gameActivityF = legacyVisible && games
       ? db.getRecentActivityEvents(
           limit: 1 << 31,
           eventTypes: const <String>[kActivityGame],
         )
       : Future<List<ActivityEventRow>>.value(<ActivityEventRow>[]);
   final Future<List<StudySegmentRow>> segmentsF = db.getStudySegments(
-    profileId: scope,
+    profileId: profile,
+    mediaKind: scope.mediaKind,
+    mediaKey: mediaKey,
+    orTitle: fallbackTitle,
   );
   // 最近游玩会话不随 [activityLimit] 门控：会话流（[StatFacts.sessions]）在统计页
   // 也要它——统计页传 0 只是不要 legacy 活动行。
-  final Future<List<GalgameSessionRow>> recentGameSessionsF = db
-      .getRecentGalgameSessions(
-        limit: activityLimit <= 0 ? kRecentGameSessionsLimit : activityLimit,
-        profileId: scope,
-      );
-  // 计数面：四个来源一起挂进同一批并发读（统计页要，首页时间轴不要）。
-  final Future<StatCounterFacts> countersF = includeCounters
+  final Future<List<GalgameSessionRow>> recentGameSessionsF = games
+      ? db.getRecentGalgameSessions(
+          limit: activityLimit <= 0 ? kRecentGameSessionsLimit : activityLimit,
+          profileId: profile,
+        )
+      : Future<List<GalgameSessionRow>>.value(<GalgameSessionRow>[]);
+  // 计数面：四个来源一起挂进同一批并发读（统计页要，首页时间轴不要）。单媒体
+  // 范围只要本媒体的查词 / 制卡计数（收藏句是偏好里的整段 JSON，整库解码一次在
+  // 实测大库上就占掉 ~27 ms 主 isolate）。
+  final Future<StatCounterFacts> countersF = !includeCounters
+      ? Future<StatCounterFacts>.value(StatCounterFacts.empty)
+      : mediaKey == null
       ? _loadCounterFacts(db)
-      : Future<StatCounterFacts>.value(StatCounterFacts.empty);
+      : db
+            .getLookupMiningCountersForBook(
+              bookKey: mediaKey,
+              orTitle: fallbackTitle,
+            )
+            .then(
+              (List<LookupMiningCounterRow> rows) =>
+                  StatCounterFacts(lookupCounters: rows),
+            );
   final SrsCore? srs = reviewsFrom;
   final Future<List<StatFact>> reviewsF = srs != null
-      ? loadStatReviewFacts(db, srs, profileId: scope)
+      ? loadStatReviewFacts(db, srs, profileId: profile)
       : Future<List<StatFact>>.value(const <StatFact>[]);
   await Future.wait<Object?>(<Future<Object?>>[
     reviewsF,
@@ -594,6 +684,32 @@ Future<StatFacts> loadStatFacts(
     counters: await countersF,
     activityLimit: activityLimit,
   );
+}
+
+/// 单书范围下的 legacy 逐日阅读行。legacy 行只有 title，身份靠「库内唯一同名书」
+/// 反查，所以能归到 [bookKey] 名下的行只可能是：title = 这本书的库内标题（唯一时
+/// 反查到它），或 title = [fallbackTitle]（同名歧义 / 查不到时按标题回退）。两种
+/// 标题各走一次 (title, dateKey) 唯一键前缀；最终归属仍由 [statFactBelongsToBook] 判。
+Future<List<ReadingStatisticRow>> _readingStatisticsForBook(
+  FushiDatabase db,
+  Future<List<EpubBookMeta>> epubRowsF,
+  String bookKey,
+  String? fallbackTitle,
+) async {
+  final Set<String> titles = <String>{
+    if (fallbackTitle != null) fallbackTitle,
+    for (final EpubBookMeta m in await epubRowsF)
+      if (m.bookKey == bookKey && m.title.isNotEmpty) m.title,
+  };
+  final List<List<ReadingStatisticRow>> perTitle =
+      await Future.wait<List<ReadingStatisticRow>>(
+        <Future<List<ReadingStatisticRow>>>[
+          for (final String t in titles) db.getReadingStatisticsForTitle(t),
+        ],
+      );
+  return <ReadingStatisticRow>[
+    for (final List<ReadingStatisticRow> rows in perTitle) ...rows,
+  ];
 }
 
 /// [profileId] 这个 Profile 的 SRS 复习时长，按 (统计日, 本地小时) 聚合成 [StatFact]

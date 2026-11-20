@@ -32,8 +32,13 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/text/srs_text_import.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart'
+    show kSrsSync2Folder, kSrsSync2Namespace;
+import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart'
+    show kSrsLocationNewRootMissing, kSrsLocationProtocol1Root;
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -59,6 +64,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 // ---------------------------------------------------------------- 导入（逻辑）
 
@@ -160,6 +166,8 @@ List<String> srsImportReportLines(SrsImportReport r) => <String>[
         t.srs_import_report_conflicts_type_changed(n: e.value, name: e.key.$2),
       SrsImportIssueReason.noteTypeKindMismatch =>
         t.srs_import_report_conflicts_kind_mismatch(n: e.value, name: e.key.$2),
+      SrsImportIssueReason.otherProfileNoteType =>
+        t.srs_import_report_conflicts_other_profile(n: e.value, name: e.key.$2),
       _ => t.srs_import_report_conflicts_missing_type(n: e.value),
     },
   if (r.removedInSource.isNotEmpty)
@@ -353,15 +361,6 @@ Future<SrsImportReport> runSrsTextImportFile({
   );
 }
 
-/// 导入失败原因 → 给人看的一句话。
-String srsImportFailureMessage(Object failure) =>
-    failure is SrsImportException &&
-        failure.code == SrsImportException.needsKernel
-    ? t.srs_import_needs_kernel
-    : t.srs_import_failed(
-        error: failure is SrsImportException ? failure.message : '$failure',
-      );
-
 /// 用户不要 RWKV：把导入时由 FSRS 预设改用 RWKV 的牌组（[SrsImportReport.fsrsDecks]）切回各自
 /// 原来的 FSRS 算法，返回切了几个。导入时参数已经按原算法存下，切回即用。
 ///
@@ -440,7 +439,15 @@ Future<void> srsKeepImportedDecksOnFsrsFromReport(
     FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
     return;
   }
-  final int n = await srsKeepImportedDecksOnFsrs(store, report.fsrsDecks);
+  final int n;
+  try {
+    n = await srsKeepImportedDecksOnFsrs(store, report.fsrsDecks);
+  } catch (e, stack) {
+    // 切算法是写复习库：失败照写入失败提示（以前没接，异常直接冒出报告对话框的按钮回调）。
+    ErrorLogService.instance.log('srsKeepImportedDecksOnFsrs', e, stack);
+    FushiToast.show(msg: srsActionFailedText(e), severity: ToastSeverity.error);
+    return;
+  }
   bumpSrsRevision(ref);
   FushiToast.show(msg: t.srs_import_kept_fsrs(n: n));
 }
@@ -603,7 +610,7 @@ Future<void> openSrsMinedHistoryImport(
     );
   } catch (e, stack) {
     ErrorLogService.instance.log('openSrsMinedHistoryImport', e, stack);
-    FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+    FushiToast.show(msg: srsActionFailedText(e), severity: ToastSeverity.error);
   }
 }
 
@@ -648,8 +655,37 @@ String srsSyncErrorReason(Object error) => switch (error) {
     t.srs_timeline_location_bad_kdf,
   SrsSyncReportError(message: kSrsSync2MetaUnavailable) =>
     t.srs_sync_location_meta_unavailable,
+  SrsSyncReportError(message: kSrsLocationProtocol1Root) =>
+    t.srs_sync_location_protocol1_root,
+  SrsSyncReportError(
+    message: kSrsLocationNewRootMissing,
+    :final String? locationDir,
+  ) =>
+    srsNewRootMissingText(locationDir),
   _ => friendlySyncErrorDetail(error),
 };
+
+/// 「新根不见了」（[kSrsLocationNewRootMissing]）的恢复提示，写出这个位置上要删的那个围栏文件的真实路径：
+/// [folderPath] 给了（文件夹位置）= 磁盘上的完整路径，用文件夹位置自己的文案（路径已经是绝对的，不再说「这个位置
+/// 上的」）；否则（云盘 / 互联）= 位置里的相对路径 `fushi-srs/<集合目录名>/v3/meta.json`。[locationDir] 是出错那一轮的集合目录名（[SrsSyncReportError.locationDir]，
+/// 一轮一开头就从内核取到，这个错误总带着它）；万一没有，目录那一段写成 `…`，不编一个名字出来。
+String srsNewRootMissingText(String? locationDir, {String? folderPath}) {
+  final String dir = locationDir ?? '…';
+  if (folderPath == null) {
+    return t.srs_sync_location_new_root_missing(
+      path: '$kSrsSync2Namespace/$dir/$kSrsSync2Folder/meta.json',
+    );
+  }
+  return t.srs_sync_folder_new_root_missing(
+    path: p.join(
+      folderPath,
+      kSrsSync2Namespace,
+      dir,
+      kSrsSync2Folder,
+      'meta.json',
+    ),
+  );
+}
 
 /// 牌组列表 ⋯「立即同步」。
 ///
@@ -687,7 +723,7 @@ Future<void> openSrsSyncNow(
     FushiToast.show(msg: toast.msg, severity: toast.severity);
   } catch (e, stack) {
     ErrorLogService.instance.log('openSrsSyncNow', e, stack);
-    FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+    FushiToast.show(msg: srsActionFailedText(e), severity: ToastSeverity.error);
   } finally {
     _srsSyncNowInFlight = false;
   }

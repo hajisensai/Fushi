@@ -933,36 +933,19 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
             t.import_step_copying_file(name: copyingName),
           );
         },
+        // 写库是同步的 commit：新文件落位之后、旧音频删除之前跑，抛错则磁盘原样
+        // 撤回（BUG-4810 的契约；#3722 c13 遗留——这里以前不带 commit，旧音频在
+        // 写库前就删了，写库失败时库里还指着已删的文件）。
+        commit: (List<String> landed) async {
+          reportProgress(0.8, t.import_step_saving);
+          await commitAudiobookImportRow(
+            repo: widget.repo,
+            bookKey: widget.bookKey,
+            alignmentPath: persistedAlignment,
+            audioPaths: landed,
+          );
+        },
       );
-
-      reportProgress(0.8, t.import_step_saving);
-      // 一次只说一件事。repository 里没有「写一整行 Audiobook」的入口，所以
-      // 「只换字幕」根本无从清空 audioPaths/audioRoot（BUG-1678 的机制 B）。
-      await widget.repo.ensureAudiobook(widget.bookKey);
-
-      String? alignmentFormat;
-      if (persistedAlignment != null) {
-        final String ext = persistedAlignment.split('.').last.toLowerCase();
-        // 手抄成 smil/srt/lrc/vtt/ass 时漏了 ssa：换成 .ssa 字幕会被记成 json 格式。
-        const Set<String> cueFormats = <String>{
-          'smil',
-          ...kAudiobookSubtitleExtensions,
-        };
-        alignmentFormat = cueFormats.contains(ext) ? ext : 'json';
-        await widget.repo.replaceAlignment(
-          bookKey: widget.bookKey,
-          format: alignmentFormat,
-          path: persistedAlignment,
-        );
-      }
-
-      // 为空 = 本次没换音频（换字幕路径）：不调 replaceAudio 就是「保持不变」。
-      if (persistedPaths.isNotEmpty) {
-        await widget.repo.replaceAudio(
-          bookKey: widget.bookKey,
-          audioPaths: persistedPaths,
-        );
-      }
 
       if (parsed != null) {
         await widget.repo.writeHealth(
@@ -1403,3 +1386,36 @@ class AudiobookRemoveConfirmationDialog extends StatelessWidget {
     );
   }
 }
+
+/// 附加 / 换有声书时的写库段：行 + 对齐字幕两列 + 音频两列，一个事务。作为
+/// [AudiobookStorage.syncAudioFiles] 的 `commit` 跑——抛错时整段回滚，磁盘上的
+/// 新文件撤回、旧音频挪回原名，库与目录都停在换之前。
+///
+/// 一次只说一件事。repository 里没有「写一整行 Audiobook」的入口，所以「只换字幕」
+/// 根本无从清空 audioPaths/audioRoot（BUG-1678 的机制 B）。[audioPaths] 为空 = 本次
+/// 没换音频（换字幕路径）：不调 replaceAudio 就是「保持不变」。[alignmentPath] 为
+/// null = 没换字幕（audioOnly）。
+Future<void> commitAudiobookImportRow({
+  required AudiobookRepository repo,
+  required String bookKey,
+  required String? alignmentPath,
+  required List<String> audioPaths,
+}) => repo.database.transaction(() async {
+  await repo.ensureAudiobook(bookKey);
+  if (alignmentPath != null) {
+    final String ext = alignmentPath.split('.').last.toLowerCase();
+    // 手抄成 smil/srt/lrc/vtt/ass 时漏了 ssa：换成 .ssa 字幕会被记成 json 格式。
+    const Set<String> cueFormats = <String>{
+      'smil',
+      ...kAudiobookSubtitleExtensions,
+    };
+    await repo.replaceAlignment(
+      bookKey: bookKey,
+      format: cueFormats.contains(ext) ? ext : 'json',
+      path: alignmentPath,
+    );
+  }
+  if (audioPaths.isNotEmpty) {
+    await repo.replaceAudio(bookKey: bookKey, audioPaths: audioPaths);
+  }
+});

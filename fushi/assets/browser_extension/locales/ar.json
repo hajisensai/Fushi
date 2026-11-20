@@ -487,6 +487,8 @@
   "pc_offset_title": "إزاحة التوقيت",
   "pc_style_title": "نمط الترجمة",
   "pc_mask_edit": "ضبط قناع الترجمة",
+  "pc_fullscreen_enter": "ملء الشاشة",
+  "pc_fullscreen_exit": "إنهاء ملء الشاشة",
   "mask_edit_hint": "اسحب للتحريك، واسحب الحواف أو الزوايا لتغيير الحجم",
   "mask_edit_reset": "إعادة تعيين",
   "mask_edit_done": "تم",

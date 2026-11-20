@@ -3,7 +3,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io' show File;
 
 import 'package:drift/drift.dart'
     show ResultSetImplementation, TableUpdate, TableUpdateQuery;
@@ -299,9 +298,13 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   bool _scanning = false;
   StreamSubscription<Set<TableUpdate>>? _dbSub;
 
-  /// 有盘面扫描图的专辑（专辑 uid → 图路径，[MusicDiscArtIndex]）：画成「封面 +
-  /// 唱片」色块、点开走 CD 详情（设计稿 M3）。快照读出后在后台识别，先空着。
-  Map<String, String> _discArt = const <String, String>{};
+  /// 有盘面扫描图的专辑（专辑 uid → 图路径，[MusicDiscArtIndex.albums]）：画成
+  /// 「封面 + 唱片」色块、点开走 CD 详情（设计稿 M3）。快照读出后在后台识别。
+  Map<String, String> get _discArt => MusicDiscArtIndex.instance.albums.value;
+
+  void _onDiscArtChanged() {
+    if (mounted) setState(() {});
+  }
 
   /// 顶栏动作槽：本页把动作登记进来，由 [FushiFloatingChromeBar] 的动作组画出。
   final FushiShellActionsSlot _actionsSlot = FushiShellActionsSlot();
@@ -441,6 +444,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   void initState() {
     super.initState();
     MusicViewStyleStore.instance.addListener(_onViewStyleChanged);
+    MusicDiscArtIndex.instance.albums.addListener(_onDiscArtChanged);
     unawaited(_reload());
     unawaited(_reloadServerAlbums());
     unawaited(_reloadOnlineSources());
@@ -468,6 +472,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   @override
   void dispose() {
     MusicViewStyleStore.instance.removeListener(_onViewStyleChanged);
+    MusicDiscArtIndex.instance.albums.removeListener(_onDiscArtChanged);
     _companion.dispose();
     unawaited(_dbSub?.cancel());
     _searchInputs.dispose();
@@ -512,13 +517,8 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
         ? const <String, String>{}
         : await MusicDiscArtIndex.instance.resolve(tracksByAlbum);
     if (!mounted || !identical(snap, _snapshot)) return;
-    if (_sameDiscArt(found, _discArt)) return;
-    setState(() => _discArt = found);
+    MusicDiscArtIndex.instance.publish(found);
   }
-
-  static bool _sameDiscArt(Map<String, String> a, Map<String, String> b) =>
-      a.length == b.length &&
-      a.entries.every((MapEntry<String, String> e) => b[e.key] == e.value);
 
   /// 「继续收听」：从上次那首所在专辑、那一首起播（引擎不持久化播放位置，曲内
   /// 从头开始）；散曲只播它自己。
@@ -584,6 +584,12 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     ImageProvider? tintOf(MusicTrackRow track) =>
         musicCoverImageProvider(albumOf(track)?.coverPath, size: 128);
 
+    // 有盘面扫描图的专辑在色块版式下画成「封面 + 唱片」（W 原型）；没有就不画。
+    Widget? discOf(MusicTrackRow track) {
+      final String? path = _discArt[track.albumUid];
+      return path == null ? null : musicDiscArtImage(path);
+    }
+
     final MusicTrackRow track = _recentTracks.first;
     final MusicAlbumRow? album = albumOf(track);
     return FushiContinueSpotlight(
@@ -594,6 +600,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
         focusId: const FushiFocusId('music-continue-hero'),
         cover: coverOf(track),
         blockCover: blockCoverOf(track),
+        blockDisc: discOf(track),
         colorSource: tintOf(track),
         coverAspectRatio: 1,
         eyebrow: t.music_continue_listening,
@@ -615,6 +622,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
               material: ShelfCoverMaterial.glossyAlbum,
               cover: coverOf(t),
               blockCover: blockCoverOf(t),
+              blockDisc: discOf(t),
               colorSource: tintOf(t),
               coverAspectRatio: 1,
               title: a?.title ?? t.title,
@@ -1669,17 +1677,8 @@ class _AlbumCard extends ConsumerWidget {
             ),
         ],
         tintImage: tint,
-        disc: discArt == null
-            ? null
-            : Image(
-                image: ResizeImage.resizeIfNeeded(
-                  512,
-                  null,
-                  FileImage(File(discArt)),
-                ),
-                fit: BoxFit.cover,
-                excludeFromSemantics: true,
-              ),
+        disc: discArt == null ? null : musicDiscArtImage(discArt),
+        albumPoster: true,
         // 色块卡（设计稿 `.ab`）：副行「歌手 · 年份」，音频规格进 chip，光盘
         // 规格徽标照旧排在文字区底部。唱片摆法只画右下角 chip「CD」。
         subtitle: discArt != null

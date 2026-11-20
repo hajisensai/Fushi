@@ -66,6 +66,13 @@
 //! 算得全（b、c、d 保证它用到的父类与上下文在 P 里与整表相同）。哈希碰撞（两个不同的规则输入得到同一个 ID）不在论证里，
 //! 与整表重算本身对它的处理（记冲突、按验不上算）一样不追求。逐条维护 == 整表重算由 `parity.rs` 的到达方式重排
 //! 与本文件的性质测试对所有场景钉住。
+//!
+//! 新卡的提示笔记从哪来：日志带的 `note`；日志没带（只有卡片修改——导入时卡片修改与它的笔记常分在两次收尾里，
+//! 日常改一张从没出现过的卡的牌组 / 暂停 / 新卡位置也是这样）就取缓存层 `cards` 行的 `note_id`（[Index::card_parent_hint]）。
+//! 提示笔记连同它在表里的整个别名类并进 P。提示只往 P 里添证据，a–d 不变：提示错了、旧了、缺了（没配置缓存、卡 ID
+//! 不是规范形）都只是证不出、退回整表重算，所以别名表不依赖缓存层的内容，只有「走不走增量」依赖它。不另建一张
+//! 「卡 → 笔记」的反查表：一条笔记有哪些卡要看填空序号，序号来自字段内容（`card_cache::cloze_ordinals`），
+//! 别名层不读字段，在这里再算一遍就是第二份「笔记有哪些卡」的判定；缓存层已经是那唯一一份（C8）。
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
@@ -138,6 +145,27 @@ fn evidence_key(ekind: i64, key: &[u8]) -> bool {
 /// 紧凑键里嵌的那个 ID（tag 不是 0 的键）。
 fn key_id(key: &[u8]) -> Option<Id> {
     <[u8; 16]>::try_from(key.get(1..17)?).ok().map(Id)
+}
+
+/// 修改键里嵌的 ID（`f/<字段>`、`fieldDef/<…>`、`tmplDef/<…>`、`historyFrom/<…>`、`fieldDesc/<…>`）换成 [text] 给的，
+/// 别的键原样。[Index::canonical_key] 用它归一，`class.rs` 的 `legacy_config_for` 用它换回带盐 ID——「哪些键嵌着 ID」
+/// 只写在这里。`fieldDesc/` 不在紧凑键的前缀表里（`gen4::name`，那张表是存储编码、冻结），按文本认：后面是规范形状的
+/// UUID 才换。
+pub(super) fn key_ids_by(
+    key: &str,
+    text: &dyn Fn(&str) -> Result<String, String>,
+) -> Result<String, String> {
+    if let Some(rest) = key.strip_prefix(FIELD_DESC) {
+        if strict_id(rest).is_none() {
+            return Ok(key.to_owned());
+        }
+        return Ok(format!("{FIELD_DESC}{}", text(rest)?));
+    }
+    let bytes = key_bytes(key);
+    let (Some(id), true) = (key_id(&bytes), bytes.first() != Some(&0)) else {
+        return Ok(key.to_owned());
+    };
+    Ok(format!("{}{}", &key[..key.len() - 36], text(&id.text())?))
 }
 
 /// 同一个日志（规范卡 + 规范日志 ID）的一份：操作里写的原值，与它在哪条操作里。
@@ -891,15 +919,15 @@ impl Index<'_, '_> {
     }
 
     /// 收尾时的别名表：证据「只添了 [AliasDelta] 里那些」就先试着证明不必整表重算（[Index::alias_probe]），证不出、
-    /// 或有别的变化就整表重算。返回 (写了几行, 是不是证出来的)。
-    pub(super) fn settle_aliases(&mut self) -> Result<(u64, bool), String> {
+    /// 或有别的变化就整表重算。返回 (写了几行, 是不是证出来的, 是不是整表重算了)。
+    pub(super) fn settle_aliases(&mut self) -> Result<(u64, bool, bool), String> {
         if self.alias_held {
-            return Ok((0, false));
+            return Ok((0, false, false));
         }
         if !self.alias_dirty && !self.alias_delta.is_empty() {
             let delta = std::mem::take(&mut self.alias_delta);
             if let Some(n) = self.alias_probe(&delta)? {
-                return Ok((n, true));
+                return Ok((n, true, false));
             }
             self.alias_dirty = true;
         }
@@ -909,9 +937,48 @@ impl Index<'_, '_> {
             self.alias_snapshot()?;
             let n = self.rebuild_aliases()?;
             self.alias_diff()?;
-            return Ok((n, false));
+            return Ok((n, false, true));
         }
-        Ok((0, false))
+        Ok((0, false, false))
+    }
+
+    /// 一张新卡（这一批里没带提示笔记的）的父笔记提示：缓存层 `cards` 行的 `note_id`（`cache.rs`：「存在的笔记应有
+    /// 的卡」按规范 ID 物化，从没出现在操作里的卡也有行）。只是提示：缓存是上一次收尾的结果、可能旧，没配置缓存时
+    /// 没有行，卡 ID 不是规范形时查不到——这些情况证明照样证不出、退回整表重算，只慢不错（文件头「重算与增量」）。
+    fn card_parent_hint(&self, card: &Id) -> Result<Option<Id>, String> {
+        let note: Option<Ref> = self
+            .t
+            .conn()
+            .prepare_cached("SELECT note_id FROM cards WHERE col = ?1 AND id = ?2")
+            .map_err(sql)?
+            .query_row(params![self.col, Ref::Uuid(card.0)], |r| r.get(0))
+            .optional()
+            .map_err(sql)?;
+        Ok(match note {
+            Some(Ref::Uuid(b)) => Some(Id(b)),
+            _ => None,
+        })
+    }
+
+    /// 提示笔记 [n] 所在别名类的全部成员（表里的规范 ID 与归到它的每个 ID）：证明条件 c 要 P 里每条笔记的类是全的，
+    /// 只并进一个成员的话类不全、照样证不出。
+    fn hint_class(&self, n: &Id) -> Result<Vec<Id>, String> {
+        let canon = self.stored_canon(n)?.unwrap_or(*n);
+        let mut out = vec![*n, canon];
+        let mut stmt = self
+            .t
+            .conn()
+            .prepare_cached(
+                "SELECT id FROM alias_ix WHERE col = ?1 AND canon = ?2 AND canon != id ORDER BY id",
+            )
+            .map_err(sql)?;
+        let mut rows = stmt
+            .query(params![self.col, canon.0.as_slice()])
+            .map_err(sql)?;
+        while let Some(r) = rows.next().map_err(sql)? {
+            out.push(Id(r.get::<_, [u8; 16]>(0).map_err(sql)?));
+        }
+        Ok(out)
     }
 
     /// 整表重算之前把这个集合的别名表抄进连接的临时表（[Index::alias_diff] 用；同一个事务里，回滚一起回滚）。
@@ -1045,10 +1112,22 @@ impl Index<'_, '_> {
                 b.register(self, kind, ent, key, k)?;
             }
         }
-        // 3. 这一批的笔记，加上新卡的提示里的笔记（全部证据）。
+        // 3. 这一批的笔记，加上新卡的提示里的笔记与它们的别名类（全部证据）。日志没带提示的新卡（只有卡片修改：
+        //    导入时卡片修改与它的笔记分在两次收尾里、日常改新卡的牌组 / 暂停 / 新卡位置）向缓存层要父笔记——不要
+        //    的话这张卡在 P 里验不上，每次都整表重算（C8）。
+        let mut hinted: BTreeSet<Id> = BTreeSet::new();
+        for (c, hints) in &d.cards {
+            if hints.is_empty() {
+                hinted.extend(self.card_parent_hint(c)?);
+            } else {
+                hinted.extend(hints.iter().copied());
+            }
+        }
         let mut notes: BTreeSet<Id> = d.notes.clone();
-        for hints in d.cards.values() {
-            notes.extend(hints.iter().copied());
+        for h in &hinted {
+            if !d.notes.contains(h) {
+                notes.extend(self.hint_class(h)?);
+            }
         }
         for n in &notes {
             {
@@ -1245,6 +1324,12 @@ impl Index<'_, '_> {
     // ------------------------------------------------------------ 读
 
     /// 规范 ID。不是 UUID 的引用、表里没有的 ID 就是它自己。
+    ///
+    /// 只查表、不按内置规则回退：这里问的是**实体**（作为实体在操作里出现过的 ID 都在表里），别名类的成员
+    /// （[Index::members]、缓存层 `anki_members`）也只从表里来——要是这里按规则把表外的 ID 归到别处，[Index::members]
+    /// 就会给出一个不含它自己的类。只**嵌在**键 / 值 / 配置里、从不作为实体出现的内置 ID（带盐的内置字段、模板）由
+    /// [Index::canonical_embedded] 在查表之后再按规则认；键、值、整份 JSON、宿主缓存配置的归一全部经它（`class.rs`），
+    /// 对同一个 ID 只有这一个结论。
     pub fn canonical(&self, r: &Ref) -> Result<Ref, String> {
         let Ref::Uuid(b) = r else {
             return Ok(r.clone());
@@ -1292,19 +1377,7 @@ impl Index<'_, '_> {
     /// `fieldDesc/<…>`）把那个 ID 换成规范 ID。`fieldDesc/` 不在紧凑键的前缀表里（`gen4::name`，那张表是存储编码、
     /// 冻结），按文本认：后面是规范形状的 UUID 才换。
     pub fn canonical_key(&self, key: &str) -> Result<String, String> {
-        if let Some(rest) = key.strip_prefix(FIELD_DESC) {
-            let Some(id) = strict_id(rest) else {
-                return Ok(key.to_owned());
-            };
-            let canon = self.canonical_embedded(&id)?;
-            return Ok(format!("{FIELD_DESC}{}", canon.text()));
-        }
-        let bytes = key_bytes(key);
-        let (Some(id), true) = (key_id(&bytes), bytes.first() != Some(&0)) else {
-            return Ok(key.to_owned());
-        };
-        let canon = self.canonical_embedded(&id)?;
-        Ok(format!("{}{}", &key[..key.len() - 36], canon.text()))
+        key_ids_by(key, &|s| self.canonical_text(s))
     }
 
     /// 写入者的规范名字（归回最初的写入者的 `merged-…`；其余是它自己）。用它的人要把一条旧修改里的三处一起换：
@@ -2047,6 +2120,86 @@ pub(crate) mod tests {
                 // 不改证据的照旧什么都不做。
                 let s = put(&mut ix, &[first_review(3, xc, Some(x))]);
                 assert_eq!((s.aliases_proven, s.aliases), (0, 0));
+                Ok(())
+            })
+            .unwrap();
+            assert_rebuild_is_identity(t, col);
+        });
+    }
+
+    /// C8：新卡只有卡片修改（没有日志带提示笔记）、又与它的笔记分在两次收尾里时，父笔记取自缓存层的卡行，照样证得出；
+    /// 缓存里也没有的（父笔记从没出现过）照旧证不出、整表重算，卡成了候选行——提示只添证据。
+    #[test]
+    fn a_new_cards_own_edits_are_proven_from_the_cached_parent_note() {
+        with(|t, col| {
+            let cfg = json!({"defaultDeck": rules::deck(CANONICAL, "Default").text()}).to_string();
+            t.tx(|t| t.set_derive_cfg(col, super::super::cache::CFG_KEY, Some(&cfg)))
+                .unwrap();
+            let w = world();
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                feed(t, &mut ix, col, 0xa1, &ops_of(&w));
+                ix.settle()?;
+                let c_nt = rules::note_type(CANONICAL, ANKI_NT);
+                let c_tmpl = rules::template(&c_nt, 0);
+                let mut seq = 0;
+                let mut put = |ix: &mut Index<'_, '_>, bodies: &[Body4]| -> Settled {
+                    for b in bodies {
+                        seq += 1;
+                        native(t, ix, col, &op(0xa3, seq, 5000 + seq as i64, &[], b));
+                    }
+                    ix.settle().unwrap()
+                };
+                for i in 0..6 {
+                    let guid = format!("guid-c8-{i}");
+                    let x = rules::note(CANONICAL, &guid);
+                    let xc = rules::card(&x, &c_tmpl, 0);
+                    let s = put(
+                        &mut ix,
+                        &[entity(
+                            EntKind::Note,
+                            x,
+                            json!({"guid": guid, "noteTypeId": c_nt.text()}),
+                        )],
+                    );
+                    assert_eq!((s.aliases_proven, s.aliases_rebuilt), (1, 0));
+                    // 下一次收尾只有这张卡自己的修改。
+                    let s = put(
+                        &mut ix,
+                        &[
+                            edit(EntKind::Card, xc, "due", json!(i)),
+                            edit(EntKind::Card, xc, "suspended", json!(true)),
+                        ],
+                    );
+                    assert_eq!(
+                        (s.aliases_proven, s.aliases_rebuilt, s.aliases),
+                        (1, 0, 0),
+                        "card {i}"
+                    );
+                    assert_eq!(ix.alias_how(&xc)?, None);
+                }
+                // 笔记类型添了一个模板：定义变了，整表重算；缓存层随之物化新模板的卡，提示跟着定义走——已有笔记在新
+                // 模板下的卡，只有卡片修改也证得出。
+                let s = put(
+                    &mut ix,
+                    &[edit(
+                        EntKind::NoteType,
+                        w.nt,
+                        &format!("tmplDef/{}", rules::template(&w.nt, 1).text()),
+                        json!({"ankiNum": 1, "name": "Card 2"}),
+                    )],
+                );
+                assert_eq!(s.aliases_rebuilt, 1);
+                let x0 = rules::note(CANONICAL, "guid-c8-0");
+                let x0c2 = rules::card(&x0, &rules::template(&c_nt, 1), 0);
+                let s = put(&mut ix, &[edit(EntKind::Card, x0c2, "due", json!(9))]);
+                assert_eq!((s.aliases_proven, s.aliases_rebuilt, s.aliases), (1, 0, 0));
+                // 父笔记哪里都没有：证不出，整表重算，卡是「出现过、验不上」的候选行。
+                let y = rules::note(CANONICAL, "guid-c8-nowhere");
+                let yc = rules::card(&y, &c_tmpl, 0);
+                let s = put(&mut ix, &[edit(EntKind::Card, yc, "due", json!(1))]);
+                assert_eq!((s.aliases_proven, s.aliases_rebuilt), (0, 1));
+                assert_eq!(ix.alias_how(&yc)?, Some(A_UNVERIFIED));
                 Ok(())
             })
             .unwrap();

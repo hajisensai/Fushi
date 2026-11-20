@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/browser_extension_page.dart';
@@ -9,7 +10,6 @@ import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
-import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/fushi_api_access_policy.dart';
 import 'package:fushi/src/sync/fushi_api_port_conflict_notice.dart'
     show fushiApiPortInUseMessage;
@@ -162,7 +162,8 @@ SettingsDestination buildLocalServicesDestination() {
         presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.settings_local_services_tools_title,
         items: <SettingsItem>[
-          // 浏览器扩展「安装助手」是桌面专属顶层页（BrowserExtensionPage）；扩展就是
+          // 浏览器扩展「安装助手」（BrowserExtensionPage，桌面与安卓有，见
+          // browserExtensionInstallFlowOn）；扩展就是
           // 本服务最主要的客户端，与 AnkiConnect 一起归在「接入的工具」，服务本身的开关与访问控制留在上一区。
           SettingsNavigationItem(
             id: 'local_services.browser_extension',
@@ -171,7 +172,7 @@ SettingsDestination buildLocalServicesDestination() {
             icon: FushiIcons.browserExtension,
             showIcon: true,
             visible: (SettingsContext settingsContext) =>
-                DesktopLookupService.isDesktop,
+                browserExtensionInstallAvailableOn(defaultTargetPlatform),
             onTap: (SettingsContext settingsContext) async {
               await pushSettingsPage(
                 settingsContext,

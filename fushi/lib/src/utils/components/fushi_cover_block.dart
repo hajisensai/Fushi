@@ -10,6 +10,7 @@ import 'package:fushi/src/utils/components/fushi_continue_card_row.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/fushi_fit_title.dart';
 import 'package:fushi/src/utils/components/fushi_generated_cover.dart';
+import 'package:fushi/src/utils/components/fushi_logo_title.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/nsfw_cover_blur.dart';
@@ -93,6 +94,7 @@ class FushiCoverBlockColors {
     required this.onContainer,
     required this.accent,
     required this.watermarkOpacity,
+    this.hue,
   });
 
   /// 由封面配色派生（设计稿 `fixed(h)` 同一套 HSL）：只取封面主色的色相，
@@ -122,24 +124,36 @@ class FushiCoverBlockColors {
 
   /// 按色相 [hue] 派生（[resolve] 的封面分支；没封面的块按标题哈希给色相，与
   /// [FushiGeneratedCover] 同色，见 [fushiGeneratedCoverHue]）。
-  factory FushiCoverBlockColors.fromHue(ThemeData theme, double hue) {
+  ///
+  /// [depth] = 同色相的第几档底色（0 = 标准档）：同一个色块里要并排区分几块
+  /// 子块（例如从色块弹出的二选一对话框里的两张选项卡）时用，只动底色明度，
+  /// 前景 / 强调色不变。档位往远离前景的方向走（深色每档压暗 6%、浅色每档提亮
+  /// 6%），与块里弹出的对话框面板（块底叠前景色、朝前景方向）拉开，前景对比度只升
+  /// 不降。
+  factory FushiCoverBlockColors.fromHue(
+    ThemeData theme,
+    double hue, {
+    int depth = 0,
+  }) {
     final bool dark = theme.brightness == Brightness.dark;
     final double watermark = dark ? 0.3 : 0.13;
     Color hsl(double s, double l) => HSLColor.fromAHSL(1, hue, s, l).toColor();
     if (dark) {
       return FushiCoverBlockColors(
-        container: hsl(0.32, 0.19),
+        container: hsl(0.32, 0.19 - 0.06 * depth),
         onContainer: hsl(0.45, 0.92),
         accent: hsl(0.60, 0.76),
         watermarkOpacity: watermark,
+        hue: hue,
       );
     }
     final Color on = hsl(0.50, 0.20);
     return FushiCoverBlockColors(
-      container: hsl(0.45, 0.89),
+      container: hsl(0.45, 0.89 + 0.06 * depth),
       onContainer: on,
       accent: on,
       watermarkOpacity: watermark,
+      hue: hue,
     );
   }
 
@@ -147,6 +161,10 @@ class FushiCoverBlockColors {
   final Color onContainer;
   final Color accent;
   final double watermarkOpacity;
+
+  /// 派生这套配色的色相；null = 主题中性色（没封面 / 墨水屏，见 [resolve]）。
+  /// 色块给子树下发局部配色（`FushiBlockColorScope`）时据此判断是不是有彩块。
+  final double? hue;
 }
 
 /// 色块投影：规整块 / 拼贴首块是偏下的大投影；半高卡（拼贴叠放、「继续」横滑
@@ -183,6 +201,67 @@ const EdgeInsets kFushiCoverBlockHalfShadowExtent = EdgeInsets.fromLTRB(
   kFushiCoverBlockHalfShadowBlur + kFushiCoverBlockHalfShadowOffset,
 );
 
+/// 承载色块的**会裁切的视口**（横滑 ListView / GridView / PageView）要向四周
+/// 外扩的量：投影越出块边的距离连同悬停放大（1.05 倍）都留在视口里，不被视口
+/// 矩形裁成一圈带硬边的直角框（设计稿 11-20 #14「大卡外面有一圈框」）。左右取
+/// 页边距 20：再宽就画进侧栏，投影尾巴那 1～2px 的淡影被页边裁掉看不出来。
+///
+/// 半高卡（[FushiCoverBlockSize.half]）：[kFushiCoverBlockHalfShadowExtent] + 放大。
+final EdgeInsets kFushiCoverBlockHalfBleed = EdgeInsets.fromLTRB(
+  20,
+  kFushiCoverBlockHalfShadowExtent.top + 3,
+  20,
+  kFushiCoverBlockHalfShadowExtent.bottom + 5,
+);
+
+/// 整块 / 拼贴首块（模糊 26、下移 10）：上 16、下 36、左右 26 再加放大余量。
+const EdgeInsets kFushiCoverBlockRegularBleed = EdgeInsets.fromLTRB(
+  20,
+  22,
+  20,
+  42,
+);
+
+/// [size] 色块所需的视口外扩量。
+EdgeInsets fushiCoverBlockBleed(FushiCoverBlockSize size) =>
+    size == FushiCoverBlockSize.half
+    ? kFushiCoverBlockHalfBleed
+    : kFushiCoverBlockRegularBleed;
+
+/// 让会裁切的滚动视口给投影留出空间：视口（[builder] 建的滚动件）向四周外扩
+/// [bleed]、再把同样的量作为内边距交回给滚动件，内容起点与布局占位都不变，
+/// 投影整段画在视口里。外扩区不参与命中测试（在本件尺寸之外）。
+///
+/// 带投影的色块放进横滑行 / 轮播时一律经它包，不要直接把 [ListView] /
+/// [PageView] 卡在色块外框上（视口按自身矩形硬裁，柔和投影会被切成直角框）。
+class FushiShadowBleedViewport extends StatelessWidget {
+  const FushiShadowBleedViewport({
+    required this.bleed,
+    required this.builder,
+    super.key,
+  });
+
+  final EdgeInsets bleed;
+
+  /// 拿到内边距（= [bleed]）建滚动件：ListView 等直接给 `padding`，PageView 给
+  /// 每页包一层 [Padding]。
+  final Widget Function(BuildContext context, EdgeInsets padding) builder;
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    clipBehavior: Clip.none,
+    children: <Widget>[
+      Positioned(
+        left: -bleed.left,
+        top: -bleed.top,
+        right: -bleed.right,
+        bottom: -bleed.bottom,
+        child: builder(context, bleed),
+      ),
+    ],
+  );
+}
+
 /// 水印横滑弹簧（设计稿 k120 / c18：ζ ≈ 0.82，偏软）。
 const FushiSpringSpec kFushiCoverBlockWatermarkSpring = FushiSpringSpec(
   dampingRatio: 0.82,
@@ -190,6 +269,13 @@ const FushiSpringSpec kFushiCoverBlockWatermarkSpring = FushiSpringSpec(
 );
 
 /// 封面进入悬停姿态（设计稿 k220 / c14）。
+/// 唱片色块 / 专辑海报标题大字的悬停横移弹簧（W 原型 `.big`：`k 200, c 14`，
+/// 质量 1 → 阻尼比 14 / (2√200) ≈ 0.495）。
+const FushiSpringSpec kFushiCoverBlockPosterTitleSpring = FushiSpringSpec(
+  dampingRatio: 0.495,
+  stiffness: 200,
+);
+
 const FushiSpringSpec kFushiCoverBlockHoverSpring = FushiSpringSpec(
   dampingRatio: 0.47,
   stiffness: 220,
@@ -341,6 +427,7 @@ class FushiCoverBlock extends StatefulWidget {
     this.action,
     this.watermark = true,
     this.disc,
+    this.albumPoster = false,
     this.backdropAspectRatio,
     super.key,
   });
@@ -386,11 +473,17 @@ class FushiCoverBlock extends StatefulWidget {
 
   /// 唱片盘面图（专辑目录里真实的盘面扫描图；W 原型 `.dc`）。给了就换成「封面 +
   /// 唱片」摆法：宽块（宽 ≥ 1.2 × 高）封面在左、唱片在右；竖块封面在左上、唱片
-  /// 叠在右后。静止姿态封面 −14°、唱片 +16°；悬停时唱片弹簧转出到 +110°、封面
+  /// 叠在右侧之上（W 原型「扇形」：唱片压在封面上）。静止姿态封面 −14°、唱片 +16°；悬停时唱片弹簧转出到 +110°、封面
   /// 再斜 3°。文字区换成装满下方盒子的强调色标题大字（[FushiFitTitle]，读屏读
   /// 一遍），右下角是 [chip]（如「CD」）；副行 / 进度 / logo 等不画（放进详情页）。
   /// 只画圆形裁切，不做假唱片——没有盘面图就别传。null = 原摆法。
   final Widget? disc;
+
+  /// W 原型的专辑海报版式（音乐专辑色块）：没有 [disc]、色块够宽（宽 ≥
+  /// [kFushiCoverBlockAlbumPosterMinAspect] × 高，原型的双格卡）时，方形封面占满整个高度立在起始侧（不斜放），标题大字铺满
+  /// 封面另一侧（[FushiFitTitle]，上限 0.3 × 高），底下一行副行（+ [trailing] /
+  /// [chip]）。窄块仍是原摆法。有 [disc] 时恒为唱片摆法，与本开关无关。
+  final bool albumPoster;
 
   /// 背景图的宽高比；null = 从 [backdrop]（横版摆法是 [covers] 首个）取图源
   /// 解码后的真实比例，取不到时按 16:9。
@@ -451,6 +544,12 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
     vsync: this,
   );
 
+  /// 唱片摆法里封面的姿态（W 原型封面进出都是 `k 300, c 20`，与唱片悬停那条
+  /// 更软的弹簧分开走）。
+  late final AnimationController _coverPose = AnimationController.unbounded(
+    vsync: this,
+  );
+
   bool _hovered = false;
 
   @override
@@ -458,6 +557,7 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
     _backdropProbe.stop();
     _coverProbe.stop();
     _pose.dispose();
+    _coverPose.dispose();
     _watermark.dispose();
     super.dispose();
   }
@@ -499,11 +599,19 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
       hovered ? 1 : 0,
       _spec(hovered ? kFushiCoverBlockHoverSpring : kFushiCoverBlockRestSpring),
     );
+    _coverPose.fushiSpringTo(
+      hovered ? 1 : 0,
+      _spec(kFushiCoverBlockRestSpring),
+    );
     // W 原型 `.big` 悬停 `x: 6`：大字装在盒子里，只轻移一点，不滑出盒子被
-    // 色块裁成半个字。
+    // 色块裁成半个字。唱片 / 专辑海报的标题大字用原型那条弹簧，水印照旧。
     _watermark.fushiSpringTo(
       hovered ? 6 : 0,
-      _spec(kFushiCoverBlockWatermarkSpring),
+      _spec(
+        _hasDisc || widget.albumPoster
+            ? kFushiCoverBlockPosterTitleSpring
+            : kFushiCoverBlockWatermarkSpring,
+      ),
     );
   }
 
@@ -558,8 +666,12 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
   // ---- 图片的真实宽高比：横版背景图（V1：槽宽按原比例，不从两侧裁）与前景
   // 封面（封面槽按封面原比例定宽，fitHeight 铺满不裁、不露衬底） ----
 
-  late final _ImageAspectProbe _backdropProbe = _ImageAspectProbe(_onAspect);
-  late final _ImageAspectProbe _coverProbe = _ImageAspectProbe(_onAspect);
+  late final FushiImageAspectProbe _backdropProbe = FushiImageAspectProbe(
+    _onAspect,
+  );
+  late final FushiImageAspectProbe _coverProbe = FushiImageAspectProbe(
+    _onAspect,
+  );
 
   void _onAspect() {
     if (mounted) setState(() {});
@@ -657,6 +769,10 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
           children: <Widget>[
             if (_hasDisc)
               ..._buildDiscBlock(colors, size, direction)
+            else if (widget.albumPoster &&
+                size.width >=
+                    size.height * kFushiCoverBlockAlbumPosterMinAspect)
+              ..._buildAlbumPosterBlock(colors, size, direction)
             else
               ..._buildCoverBlock(context, colors, size, direction),
             if (selected)
@@ -756,7 +872,7 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
     ];
   }
 
-  /// 唱片摆法（W 原型 CD 色块）：唱片（在后）→ 封面 → 标题大字 → 右下 chip。
+  /// 唱片摆法（W 原型 CD 色块）：封面 → 唱片（压在封面上）→ 标题大字 → 右下 chip。
   List<Widget> _buildDiscBlock(
     FushiCoverBlockColors colors,
     Size size,
@@ -770,12 +886,15 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
         ? FushiGeneratedCover(title: widget.title)
         : widget.covers.first;
     final String? chip = widget.chip;
+    // W 原型「扇形」预设没有 `behind`：`innerPose` 给封面 z 1、唱片 z 2，唱片压在
+    // 封面之上（用户 11-20 指定按 w_proto 做）。
     return <Widget>[
-      _posed(geo.disc, _DiscFace(child: widget.disc!)),
       _posed(
         geo.cover,
         _CoverCard(radius: 14, overlay: widget.coverOverlay, child: cover),
+        animation: _coverPose,
       ),
+      _posed(geo.disc, _DiscFace(child: widget.disc!)),
       Positioned.fromRect(
         rect: geo.title,
         child: KeyedSubtree(
@@ -800,6 +919,98 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
             child: _BlockChip(label: chip, colors: colors, ghost: false),
           ),
         ),
+    ];
+  }
+
+  /// W 原型无盘双格卡（专辑海报版式，[FushiCoverBlock.albumPoster]）：方形封面
+  /// 占满高度立在起始侧 → 标题大字铺满另一侧 → 底下一行副行。原型里这块封面
+  /// 没有姿态（`innerPose` 只摆有盘的卡），悬停只有大字横移。
+  List<Widget> _buildAlbumPosterBlock(
+    FushiCoverBlockColors colors,
+    Size size,
+    TextDirection direction,
+  ) {
+    final _AlbumPosterGeometry ltrGeo = _AlbumPosterGeometry.of(size);
+    final _AlbumPosterGeometry geo = direction == TextDirection.rtl
+        ? ltrGeo.mirrored(size.width)
+        : ltrGeo;
+    final Widget cover = widget.covers.isEmpty
+        ? FushiGeneratedCover(title: widget.title)
+        : widget.covers.first;
+    final String? subtitle = widget.subtitle;
+    final String? chip = widget.chip;
+    final IconData? icon = widget.leadingIcon;
+    final Widget? trailing = widget.trailing;
+    final TextStyle metaStyle = TextStyle(
+      fontSize: context.fushiType.titleSmall.fontSize,
+      fontWeight: FontWeight.w800,
+      height: 1.1,
+      color: colors.onContainer,
+    );
+    return <Widget>[
+      Positioned.fromRect(
+        rect: geo.cover,
+        child: IgnorePointer(
+          child: _CoverCard(
+            radius: 14,
+            overlay: widget.coverOverlay,
+            child: cover,
+          ),
+        ),
+      ),
+      Positioned.fromRect(
+        rect: geo.title,
+        child: FushiFitTitle(
+          text: widget.title,
+          color: colors.accent,
+          maxSize: geo.titleMaxSize,
+          minSize: 10,
+          shift: _watermark,
+          direction: direction,
+          semantic: true,
+        ),
+      ),
+      Positioned.fromRect(
+        rect: geo.meta,
+        child: KeyedSubtree(
+          key: widget.metaKey,
+          child: Align(
+            alignment: AlignmentDirectional.bottomStart,
+            child: Row(
+              children: <Widget>[
+                if (icon != null) ...<Widget>[
+                  Icon(icon, size: 14, color: colors.onContainer),
+                  const SizedBox(width: 4),
+                ],
+                Expanded(
+                  child: subtitle == null || subtitle.isEmpty
+                      ? const SizedBox.shrink()
+                      : Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: metaStyle,
+                        ),
+                ),
+                if (trailing != null) ...<Widget>[
+                  const SizedBox(width: 6),
+                  Flexible(child: ClipRect(child: trailing)),
+                ],
+                if (chip != null && chip.isNotEmpty) ...<Widget>[
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: _BlockChip(
+                      label: chip,
+                      colors: colors,
+                      ghost: false,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
     ];
   }
 
@@ -954,14 +1165,16 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
   );
 
   /// 按 [_pose] 在静止 / 悬停两个姿态间插值（弹簧过冲照样外推）。
-  Widget _posed(_CoverSlot slot, Widget child) {
+  /// [animation] 缺省走 [_pose]。
+  Widget _posed(_CoverSlot slot, Widget child, {Animation<double>? animation}) {
+    final Animation<double> driver = animation ?? _pose;
     return Positioned.fromRect(
       rect: slot.rect,
       child: IgnorePointer(
         child: AnimatedBuilder(
-          animation: _pose,
+          animation: driver,
           builder: (BuildContext context, Widget? child) {
-            final double t = _pose.value;
+            final double t = driver.value;
             double lerp(double a, double b) => a + (b - a) * t;
             final double rotation = lerp(
               slot.rest.rotation,
@@ -986,62 +1199,6 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
         ),
       ),
     );
-  }
-}
-
-/// 一张图的固有宽高比探针（解出前 / 取不到图源 / 解码失败 = null）。
-///
-/// 缓存命中时监听器在 `addListener` 里同步回调：此刻正处在
-/// `didChangeDependencies` / `didUpdateWidget`（随后必 build），直接赋值；异步解出
-/// 才经 [onChanged] 让宿主重建。解码失败只是拿不到比例（图本身由封面 widget
-/// 自己的 errorBuilder 处理），几何回落默认比例。
-class _ImageAspectProbe {
-  _ImageAspectProbe(this.onChanged);
-
-  final VoidCallback onChanged;
-
-  ImageProvider? _image;
-  ImageStream? _stream;
-  ImageStreamListener? _listener;
-
-  /// 宽 / 高。
-  double? aspect;
-
-  /// 换成追踪 [image]（同一图源不重解）。
-  void track(ImageProvider? image, ImageConfiguration config) {
-    if (image == _image) return;
-    stop();
-    _image = image;
-    aspect = null;
-    if (image == null) return;
-    bool synchronous = true;
-    final ImageStream stream = image.resolve(config);
-    final ImageStreamListener listener = ImageStreamListener((
-      ImageInfo info,
-      bool _,
-    ) {
-      final int w = info.image.width;
-      final int h = info.image.height;
-      info.dispose();
-      if (_image != image) return;
-      final double? resolved = w > 0 && h > 0 ? w / h : null;
-      stop();
-      if (resolved == aspect) return;
-      aspect = resolved;
-      if (!synchronous) onChanged();
-    }, onError: (Object _, StackTrace? __) => stop());
-    _stream = stream;
-    _listener = listener;
-    stream.addListener(listener);
-    synchronous = false;
-  }
-
-  /// 停止监听（保留已解出的 [aspect]）。
-  void stop() {
-    final ImageStreamListener? listener = _listener;
-    if (listener != null) _stream?.removeListener(listener);
-    _stream = null;
-    _listener = null;
   }
 }
 
@@ -1394,13 +1551,21 @@ class _BlockGeometry {
   final double backdropFadeStart;
 }
 
+/// 专辑海报版式（[FushiCoverBlock.albumPoster]）要求的最小宽高比：封面边长
+/// 约等于块高，宽高比低于原型双格卡（486 / 281 ≈ 1.73）太多时封面右侧只剩一条
+/// 窄缝、大字与元信息放不下，退回原摆法。
+const double kFushiCoverBlockAlbumPosterMinAspect = 1.6;
+
+/// 低于这个高度（且宽 ≥ 2 × 高）的唱片色块走横排（[_DiscGeometry._row]）。
+const double kFushiCoverBlockDiscRowMaxHeight = 150;
+
 /// 唱片摆法的几何（W 原型 CD 色块，「扇形」角度预设）。封面 / 唱片的边长 S；
 /// 位移按 S 的倍数（原型以盘径为单位）：
 /// - 封面：静止 `x .04S, y .02S, r −14°`，悬停再斜 3°（−17°）；
-/// - 唱片：静止 `x −.14S, y .02S, r +16°`（在封面后、半藏），悬停转出到
+/// - 唱片：静止 `x −.14S, y .02S, r +16°`（压在封面右缘上），悬停转出到
 ///   `x .02S, y −.04S, r +110°`。
 /// 宽块（宽 ≥ 1.2 × 高，原型 2 列）封面在左、唱片在右，标题大字装在两者下方；
-/// 竖块（原型 1 列）封面在左上、唱片叠在右后，标题在下。
+/// 竖块（原型 1 列）封面在左上、唱片叠在它右侧之上，标题在下。
 @immutable
 class _DiscGeometry {
   const _DiscGeometry({
@@ -1415,6 +1580,9 @@ class _DiscGeometry {
   factory _DiscGeometry.of(Size box) {
     final double w = box.width;
     final double h = box.height;
+    if (h < kFushiCoverBlockDiscRowMaxHeight && w >= h * 2) {
+      return _DiscGeometry._row(w, h);
+    }
     final bool wide = w >= h * 1.2;
     final double p = wide ? 16 : 10;
     final double s = wide
@@ -1452,6 +1620,38 @@ class _DiscGeometry {
     );
   }
 
+  /// 矮块（拼贴首块旁的半高卡，高 125）：原型的「标题在封面下方」在这个高度里
+  /// 只剩不到 10 px 的标题盒，大字画不出来。改成横排：封面占满高度立在起始侧、
+  /// 唱片同尺寸压在它右半边上（同一套扇形角度与悬停转出），标题大字铺在唱片
+  /// 之后（上限 0.3 × 高，同原型无盘双格卡），右下角 chip。原型没有这一档，
+  /// 是按原型双格卡的比例外推的。
+  factory _DiscGeometry._row(double w, double h) {
+    const double p = 12;
+    final double s = h - p * 2;
+    final double titleLeft = p + s * 1.5 + 12;
+    return _DiscGeometry(
+      cover: _CoverSlot(
+        rect: Rect.fromLTWH(p, p, s, s),
+        rest: _Pose(dx: s * 0.04, dy: s * 0.02, rotation: -14),
+        hover: _Pose(dx: s * 0.04, dy: s * 0.02, rotation: -17),
+      ),
+      disc: _CoverSlot(
+        rect: Rect.fromLTWH(p + s * 0.5, p, s, s),
+        rest: _Pose(dx: -s * 0.14, dy: s * 0.02, rotation: 16),
+        hover: _Pose(dx: s * 0.02, dy: -s * 0.04, rotation: 110),
+      ),
+      title: Rect.fromLTRB(
+        titleLeft,
+        p,
+        math.max(titleLeft, w - p),
+        math.max(p, h - p - 22),
+      ),
+      titleMaxSize: h * 0.3,
+      chipEnd: p,
+      chipBottom: p - 4,
+    );
+  }
+
   final _CoverSlot cover;
   final _CoverSlot disc;
 
@@ -1471,6 +1671,55 @@ class _DiscGeometry {
     titleMaxSize: titleMaxSize,
     chipEnd: chipEnd,
     chipBottom: chipBottom,
+  );
+}
+
+/// 专辑海报版式的几何（W 原型无盘双格卡：`p = 16`，封面边长 `S = H − 2p` 在
+/// `(p + 4, p + 2)`；大字盒 `left S + 2p + 6, right p, top p, bottom p + 26`、
+/// 上限 0.3H；元信息行 `bottom p − 2`）。
+@immutable
+class _AlbumPosterGeometry {
+  const _AlbumPosterGeometry({
+    required this.cover,
+    required this.title,
+    required this.meta,
+    required this.titleMaxSize,
+  });
+
+  factory _AlbumPosterGeometry.of(Size box) {
+    final double w = box.width;
+    final double h = box.height;
+    const double p = 16;
+    final double s = math.max(0, h - p * 2);
+    final double textLeft = math.min(w - p, s + p * 2 + 6);
+    return _AlbumPosterGeometry(
+      cover: Rect.fromLTWH(p + 4, p + 2, s, s),
+      title: Rect.fromLTRB(
+        textLeft,
+        p,
+        math.max(textLeft, w - p),
+        math.max(p, h - (p + 26)),
+      ),
+      meta: Rect.fromLTRB(
+        textLeft,
+        math.max(p, h - (p + 26)),
+        math.max(textLeft, w - p),
+        h - (p - 2),
+      ),
+      titleMaxSize: h * 0.3,
+    );
+  }
+
+  final Rect cover;
+  final Rect title;
+  final Rect meta;
+  final double titleMaxSize;
+
+  _AlbumPosterGeometry mirrored(double width) => _AlbumPosterGeometry(
+    cover: _mirrorRect(cover, width),
+    title: _mirrorRect(title, width),
+    meta: _mirrorRect(meta, width),
+    titleMaxSize: titleMaxSize,
   );
 }
 
@@ -1607,11 +1856,10 @@ class _BlockText extends StatelessWidget {
       FushiCoverBlockSize.regular => compact ? 17 : 20,
       FushiCoverBlockSize.half => 16,
     };
-    final double logoMaxHeight = switch (size) {
-      FushiCoverBlockSize.hero => compact ? 70 : 92,
-      FushiCoverBlockSize.regular => compact ? 54 : 78,
-      FushiCoverBlockSize.half => 40,
-    };
+    final double logoMaxHeight = fushiCoverBlockLogoMaxHeight(
+      size,
+      compact: compact,
+    );
     final double figureSize = switch (size) {
       FushiCoverBlockSize.hero => compact ? 48 : 64,
       FushiCoverBlockSize.regular => compact ? 38 : 54,
@@ -1818,7 +2066,18 @@ class _BlockText extends StatelessWidget {
   }
 }
 
-/// 标题位：有 logo 画 logo（左下对齐、限高，解码失败回落文字），否则是按剩余
+/// 色块标题位 logo 的档位高度上限（[fushiLogoBoxSize] 的 maxHeight）：拼贴首块
+/// 92（窄窗 70）、规整块 78（窄窗 54）、半高卡 40。
+double fushiCoverBlockLogoMaxHeight(
+  FushiCoverBlockSize size, {
+  required bool compact,
+}) => switch (size) {
+  FushiCoverBlockSize.hero => compact ? 70 : 92,
+  FushiCoverBlockSize.regular => compact ? 54 : 78,
+  FushiCoverBlockSize.half => 40,
+};
+
+/// 标题位：有 logo 画 logo（[FushiLogoTitle]：按视觉面积定宽、限高，解码失败回落文字），否则是按剩余
 /// 高度定行数的标题文字（最多 [maxLines] 行）。
 class _BlockTitle extends StatelessWidget {
   const _BlockTitle({
@@ -1853,23 +2112,11 @@ class _BlockTitle extends StatelessWidget {
         );
         final ImageProvider? image = logo;
         if (image == null) return text;
-        return Semantics(
-          label: title,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: constraints.maxHeight.isFinite
-                  ? math.min(logoMaxHeight, constraints.maxHeight)
-                  : logoMaxHeight,
-            ),
-            child: Image(
-              image: image,
-              fit: BoxFit.contain,
-              alignment: AlignmentDirectional.bottomStart,
-              excludeFromSemantics: true,
-              errorBuilder: (BuildContext _, Object __, StackTrace? ___) =>
-                  ExcludeSemantics(child: text),
-            ),
-          ),
+        return FushiLogoTitle(
+          logo: image,
+          title: title,
+          maxHeight: logoMaxHeight,
+          fallback: text,
         );
       },
     );

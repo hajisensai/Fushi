@@ -487,6 +487,8 @@
   "pc_offset_title": "การชดเชยเวลา",
   "pc_style_title": "สไตล์ซับไตเติล",
   "pc_mask_edit": "ปรับแผ่นบังซับไตเติล",
+  "pc_fullscreen_enter": "เต็มหน้าจอ",
+  "pc_fullscreen_exit": "ออกจากโหมดเต็มหน้าจอ",
   "mask_edit_hint": "ลากเพื่อย้าย ลากขอบหรือมุมเพื่อปรับขนาด",
   "mask_edit_reset": "รีเซ็ต",
   "mask_edit_done": "เสร็จสิ้น",

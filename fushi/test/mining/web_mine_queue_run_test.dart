@@ -45,6 +45,13 @@ class _FakePage {
 
   bool markFailedThrows = false;
 
+  /// 重放用的 WebView 表面换代（渲染 / 浏览器进程死亡）：导航到这个视频的途中死、重放这一行
+  /// 的途中死（死后页面的调用抛出）、重放这一行时死但调用照常返回。
+  bool surfaceGone = false;
+  String? surfaceDiesDuringNavTo;
+  int? surfaceDiesDuringRow;
+  int? surfaceDiesAfterRow;
+
   /// 报给调用方的「到不了的视频」。
   final List<String> reportedUnreachable = <String>[];
 
@@ -56,6 +63,11 @@ class _FakePage {
         shouldStop: () => stop,
         navigate: (WebMineQueueRow row) async {
           log.add('nav:${row.videoKey}');
+          if (surfaceDiesDuringNavTo == row.videoKey) {
+            // 死页面永远等不到画面：页面侧照常等满期限报超时。
+            surfaceGone = true;
+            return WebMineNavigateOutcome.timedOut;
+          }
           if (interruptAt == row.videoKey) {
             stop = true;
             return WebMineNavigateOutcome.interrupted;
@@ -68,6 +80,11 @@ class _FakePage {
         },
         mineRow: (WebMineQueueRow row) async {
           log.add('mine:${row.id}');
+          if (surfaceDiesDuringRow == row.id) {
+            surfaceGone = true;
+            throw StateError('web_video_surface_lost');
+          }
+          if (surfaceDiesAfterRow == row.id) surfaceGone = true;
           if (stopDuringRow == row.id) {
             stop = true;
             throw StateError('unmounted');
@@ -80,6 +97,7 @@ class _FakePage {
           failedRows[row.id] = error;
         },
         onError: (Object error, StackTrace stack) => errors.add(error),
+        surfaceLost: () => surfaceGone,
         onUnreachable: reportedUnreachable.add,
         onProgress: () => progressCalls++,
       );
@@ -309,6 +327,57 @@ void main() {
     });
   });
 
+  group('runWebMineQueueRows：重放表面进程死亡（BUG-4906）', () {
+    test('重放途中渲染进程死了：在途这一行不标失败、留在待办，其余行不碰，结束本轮', () async {
+      final _FakePage page = _FakePage(current: 'A')..surfaceDiesDuringRow = 2;
+      final WebMineQueueRowsEnd end = await page.run(<WebMineQueueRow>[
+        _row(1, 'A'),
+        _row(2, 'A'),
+        _row(3, 'A'),
+      ]);
+      expect(end, WebMineQueueRowsEnd.surfaceLost);
+      expect(page.log, <String>['mine:1', 'mine:2']);
+      expect(page.failedRows, isEmpty);
+      expect(page.tally.ok, 1);
+      expect(page.tally.failed, 0);
+    });
+
+    test('导航途中进程死了：不标 navigate_timeout、不把视频记成到不了', () async {
+      final _FakePage page = _FakePage(current: 'A')
+        ..surfaceDiesDuringNavTo = 'B';
+      final WebMineQueueRowsEnd end = await page.run(<WebMineQueueRow>[
+        _row(1, 'B'),
+        _row(2, 'A'),
+      ]);
+      expect(end, WebMineQueueRowsEnd.surfaceLost);
+      expect(page.failedRows, isEmpty);
+      expect(page.reportedUnreachable, isEmpty);
+      expect(page.log, <String>['nav:B']);
+      expect(page.tally.done, 0);
+    });
+
+    test('一行落定之后表面换了：这一行照常计数，下一行不再碰', () async {
+      final _FakePage page = _FakePage(current: 'A')..surfaceDiesAfterRow = 1;
+      final WebMineQueueRowsEnd end = await page.run(<WebMineQueueRow>[
+        _row(1, 'A'),
+        _row(2, 'A'),
+      ]);
+      expect(end, WebMineQueueRowsEnd.surfaceLost);
+      expect(page.log, <String>['mine:1']);
+      expect(page.tally.ok, 1);
+    });
+
+    test('开跑时表面已经报废（重建预算用尽）：一行都不碰', () async {
+      final _FakePage page = _FakePage(current: 'A')..surfaceGone = true;
+      expect(
+        await page.run(<WebMineQueueRow>[_row(1, 'A')]),
+        WebMineQueueRowsEnd.surfaceLost,
+      );
+      expect(page.log, isEmpty);
+      expect(page.failedRows, isEmpty);
+    });
+  });
+
   group('WebMineIdleGiveUps（本次空闲已放弃的视频 / 书）', () {
     test('记下之后没有输入就一直有效，来过一次输入就作废', () {
       final _FakeIdle idle = _FakeIdle();
@@ -499,5 +568,14 @@ void main() {
       expect(completed, isFalse);
       expect(log, <String>['error', 'error', 'last']);
     });
+  });
+
+  test('webMineRoundEndedOnError：准备步骤抛出 / 一行抛出 / 表面死亡算出错，跑完与让位不算', () {
+    // null = runWebMineQueueRows 没跑完（准备步骤抛出），计数是 0 / 0。
+    expect(webMineRoundEndedOnError(null), isTrue);
+    expect(webMineRoundEndedOnError(WebMineQueueRowsEnd.rowThrew), isTrue);
+    expect(webMineRoundEndedOnError(WebMineQueueRowsEnd.surfaceLost), isTrue);
+    expect(webMineRoundEndedOnError(WebMineQueueRowsEnd.drained), isFalse);
+    expect(webMineRoundEndedOnError(WebMineQueueRowsEnd.stopped), isFalse);
   });
 }

@@ -200,6 +200,11 @@ class FavoriteSentenceRepository {
         DateTime.now().millisecondsSinceEpoch,
       );
 
+  /// 收藏句整表变了就发一次（任何来源：本仓库的增删、收藏夹页、同步合并、备份
+  /// 恢复——它们都写同一个偏好键）。持有页内镜像的页面（视频播放页的收藏星标）据此
+  /// 重读，不必等下次打开面板。
+  Stream<void> watchChanges() => _db.watchPrefChanged(_key);
+
   Future<List<FavoriteSentence>> getAll() async {
     final raw = await _db.getPref(_key);
     if (raw == null || raw.isEmpty) return [];

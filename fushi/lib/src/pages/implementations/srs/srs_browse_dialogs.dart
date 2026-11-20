@@ -21,6 +21,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 /// 批量菜单项。
 enum SrsBrowseBatchAction {
@@ -477,7 +478,10 @@ class _SrsFindReplaceDialogState<T extends Object>
       });
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsBrowse.findReplace.plan', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
       if (mounted) setState(() => _busy = false);
     }
   }

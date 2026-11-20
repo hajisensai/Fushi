@@ -42,7 +42,11 @@ void main() {
       'resolveShadowThickness',
     ]) {
       expect(
-        RegExp('_subtitleStyle\\s*\\.\\s*$method\\s*\\(').hasMatch(source),
+        // 字幕 overlay 经 ValueListenableBuilder 订阅样式（video-36f），receiver 是 builder
+        // 的 `style`。
+        RegExp(
+          '(?:_subtitleStyle|\\bstyle)\\s*\\.\\s*$method\\s*\\(',
+        ).hasMatch(source),
         isTrue,
         reason: '字幕样式必须经 _subtitleStyle.$method 解析，不能绕过主题/缩放',
       );
@@ -51,6 +55,8 @@ void main() {
     expect(source, contains('uiScale: _videoUiScale'));
     expect(source, isNot(contains('FushiAppUiScale.of(context)')));
     expect(source, isNot(contains('fontWeight: _subtitleStyle.fontWeight')));
+    expect(source, isNot(contains('fontWeight: style.fontWeight')));
+    expect(source, isNot(contains('shadowThickness: style.shadowThickness')));
     expect(
       source,
       isNot(contains('shadowThickness: _subtitleStyle.shadowThickness')),

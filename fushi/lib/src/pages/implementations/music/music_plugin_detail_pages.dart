@@ -1159,7 +1159,6 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
       case _ArtistTab.popular when blocks:
         return <Widget>[
           SliverFushiCoverBlocks(
-            layout: shellContentLayoutOf(context),
             itemCount: d.tracks.length,
             itemBuilder:
                 (BuildContext context, int i, FushiCoverBlockSize size) =>
@@ -1231,7 +1230,6 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
         if (musicRecommendPosterMode(context)) {
           return <Widget>[
             SliverFushiCoverBlocks(
-              layout: shellContentLayoutOf(context),
               itemCount: albums.length,
               itemBuilder:
                   (BuildContext context, int i, FushiCoverBlockSize size) =>
@@ -1300,7 +1298,6 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
         if (blocks) {
           return <Widget>[
             SliverFushiCoverBlocks(
-              layout: shellContentLayoutOf(context),
               itemCount: similar.length,
               itemBuilder:
                   (BuildContext context, int i, FushiCoverBlockSize size) =>

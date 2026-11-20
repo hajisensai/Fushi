@@ -15,7 +15,9 @@
 
 use std::collections::HashMap;
 
-use serde_json::{Value, json};
+use serde_json::Value;
+#[cfg(test)]
+use serde_json::json;
 
 use super::sync2::Touched;
 
@@ -67,10 +69,12 @@ impl Counters {
         self.bump_rwkv(1);
     }
 
+    #[cfg(test)]
     fn hold(&mut self) {
         self.rwkv_held.get_or_insert(0);
     }
 
+    #[cfg(test)]
     fn release(&mut self) {
         if self.rwkv_held.take().is_some_and(|held| held > 0) {
             self.rwkv += 1;
@@ -155,20 +159,29 @@ impl Landed {
 }
 
 /// 一个库（一次打开）的刷新状态。
+///
+/// 换代后（G7-6）读键的 `refresh_keys` 与库级作废 `refresh_all` 只在测试构建里编（协议 3 的读命令是对拍语料），
+/// 只被它们读的开库标识与库级计数也只在测试构建里有。
 pub(crate) struct Refresh {
     /// 这次打开库的随机标识。
+    #[cfg(test)]
     open: String,
     /// 不知道影响哪些 profile 的库级变化（旧库搬迁提交）：读的时候加进每个 profile 的计数。
+    #[cfg(test)]
     all: u64,
     by_profile: HashMap<String, Counters>,
 }
 
 impl Refresh {
     pub(crate) fn new() -> Self {
+        #[cfg(test)]
         let mut b = [0u8; 8];
+        #[cfg(test)]
         getrandom::fill(&mut b).expect("system random source");
         Refresh {
+            #[cfg(test)]
             open: b.iter().map(|x| format!("{x:02x}")).collect(),
+            #[cfg(test)]
             all: 0,
             by_profile: HashMap::new(),
         }
@@ -178,6 +191,7 @@ impl Refresh {
         self.by_profile.entry(profile.to_owned()).or_default()
     }
 
+    #[cfg(test)]
     fn keys(&self, profile: &str) -> Value {
         let zero = Counters::default();
         let c = self.by_profile.get(profile).unwrap_or(&zero);
@@ -200,12 +214,13 @@ impl super::SrsCore {
 
     /// `refresh_keys`：[profile] 此刻的刷新键（`{content, structure, rwkv, stats, landed}`，都是不透明串）。只读内存：
     /// 不碰通道、不拿写锁、不读库，调用方在自己的线程上同步调。
+    #[cfg(test)]
     pub(crate) fn refresh_keys(&self, profile: &str) -> Value {
         self.refresh().keys(profile)
     }
 
     /// 一条命令返回之后（它自己的写入已提交或已回滚）按请求与结果记刷新计数。分发器的统一出口（ffi.rs
-    /// `sync2_dispatch`）调；[projecting]：这条命令会改投影（ffi.rs `PROJECTING_OPS`）。
+    /// `sync2_dispatch`）调；[projecting]：这条命令会改投影（store/legacy3 `PROJECTING_OPS`）。
     ///
     /// - 成功、回包带 `localRevision`（内核在这条命令里写了本机状态行）：按 `marks` / `changed` 记（[Landed::of_reply]）；
     /// - `local_state` 带 `reload: true`：调用方要丢掉它按这些键记的一切（新开的副本对象、命令失败后的重读）；
@@ -239,12 +254,14 @@ impl super::SrsCore {
 
     /// 收段会话开始（内核 `sync2_ingest_begin` 一进来，早于它自己做完上一次没收完的通道片）：之后这个 profile 的 RWKV
     /// 推进攒着。会话开不成时调用方紧接着 [Self::refresh_release]。
+    #[cfg(test)]
     pub(crate) fn refresh_hold(&self, profile: &str) {
         self.refresh().of(profile).hold();
     }
 
     /// 收段会话结束（内核 `sync2_ingest_end`：Dart 一轮结束 / 中途收手、作废副本、删 profile / 并入时内核自己放掉）：
     /// 攒下的 RWKV 推进并成一次（攒了 0 次不推进）。
+    #[cfg(test)]
     pub(crate) fn refresh_release(&self, profile: &str) {
         self.refresh().of(profile).release();
     }
@@ -255,6 +272,7 @@ impl super::SrsCore {
     }
 
     /// [profile] 的数据整份变了（`profile_purge`、并入提交的两头）：按键记的缓存全部作废，开着的收段会话的延后也放掉。
+    #[cfg(test)]
     pub(crate) fn refresh_replaced(&self, profile: &str) {
         let mut r = self.refresh();
         let c = r.of(profile);
@@ -263,6 +281,7 @@ impl super::SrsCore {
     }
 
     /// 库级的整体变化（旧库搬迁提交）：每个 profile 的键都变。
+    #[cfg(test)]
     pub(crate) fn refresh_all(&self) {
         self.refresh().all += 1;
     }

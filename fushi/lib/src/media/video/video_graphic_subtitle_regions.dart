@@ -344,6 +344,227 @@ bool graphicSubtitleExtractFailureIsEnvironmental(String summary) {
   return _kEnvironmentalExtractFailureMarkers.any(lower.contains);
 }
 
+/// 一次抽轨的结局（[GraphicSubtitleTrackLease.outcome]）。
+@immutable
+class GraphicSubtitleTrackExtractOutcome {
+  const GraphicSubtitleTrackExtractOutcome({
+    required this.ok,
+    this.exitCode,
+    this.failure,
+  });
+
+  /// 载荷完整落盘。
+  final bool ok;
+
+  /// 抽取那一次 ffmpeg 的退出码；还没跑到 ffmpeg（探测就失败了）或被强杀时为 null。
+  final int? exitCode;
+
+  /// 失败摘要（[extractGraphicSubtitleTrack] 的 `onFailure`）；成功 / 被取消时为 null。
+  final String? failure;
+}
+
+/// 同一条图形轨同一时刻只抽一份（[GraphicSubtitleTrackExtractionHub]）的一份使用权。
+///
+/// 模糊遮蔽 / 制卡时间表（[FfmpegGraphicSubtitleRegionLoader]）与整轨转文字各持一份，
+/// 读同一个载荷文件 [payloadPath]（整轨转文字边抽边读）。载荷不保留：最后一份租约
+/// [release] 时还没抽完就杀掉抽轨进程，随后删掉载荷；在那之前加入的使用方直接共用。
+class GraphicSubtitleTrackLease {
+  GraphicSubtitleTrackLease._(this._job);
+
+  final _SharedTrackExtraction _job;
+  bool _released = false;
+
+  /// 载荷路径（旁边带轨头，[bitmapSubtitleTrackHeaderPath]）；抽取还在写时它在长。
+  String get payloadPath => _job.payloadPath;
+
+  /// 抽取结局（所有租约共用同一个）。
+  Future<GraphicSubtitleTrackExtractOutcome> get outcome => _job.outcome;
+
+  /// 抽取已经结束（成功或失败）。
+  bool get isDone => _job.done;
+
+  /// 订阅「已读到的媒体时间」；加入时先补发最近一次。返回取消订阅的函数。
+  void Function() listenProgress(void Function(Duration processed) onProgress) {
+    final Duration? last = _job.lastProgress;
+    if (last != null) onProgress(last);
+    _job.progressListeners.add(onProgress);
+    return () => _job.progressListeners.remove(onProgress);
+  }
+
+  /// 交回使用权。幂等。最后一份交回时：还在抽就杀进程，等它退出后删载荷。
+  Future<void> release() async {
+    if (_released) return;
+    _released = true;
+    await _job.hub._release(_job);
+  }
+}
+
+/// 一份共享抽取。
+class _SharedTrackExtraction {
+  _SharedTrackExtraction(this.hub, this.key, this.workPath)
+    : payloadPath = p.join(workPath, 'track.bin');
+
+  final GraphicSubtitleTrackExtractionHub hub;
+  final String key;
+  final String workPath;
+  final String payloadPath;
+
+  /// 完成 = 最后一份租约交回时抽取还没结束：抽轨进程被杀。
+  final Completer<void> abort = Completer<void>();
+  late final Future<GraphicSubtitleTrackExtractOutcome> outcome;
+  bool done = false;
+  int leases = 0;
+  Duration? lastProgress;
+  final List<void Function(Duration processed)> progressListeners =
+      <void Function(Duration processed)>[];
+}
+
+/// 同一条图形轨（输入地址 + 轨序号）同一时刻只抽一份：模糊遮蔽 / 制卡时间表与整轨转文字
+/// 原先各自起一个 ffmpeg 把整个视频读一遍，现在后来的一方加入在途的那份（[acquire]）。
+/// 不缓存载荷：全部租约交回即删，之后再要就重抽（位图时间表另有几 KB 的 JSON 缓存）。
+class GraphicSubtitleTrackExtractionHub {
+  GraphicSubtitleTrackExtractionHub({FfmpegBackend? backend})
+    : _backend = backend;
+
+  /// 播放页共用的一份（[FfmpegGraphicSubtitleRegionLoader.shared] 与整轨转文字都用它）。
+  static final GraphicSubtitleTrackExtractionHub shared =
+      GraphicSubtitleTrackExtractionHub();
+
+  /// 抽轨后端；null = [resolveFfmpegBackend]（测试可注入）。
+  final FfmpegBackend? _backend;
+
+  final Map<String, _SharedTrackExtraction> _jobs =
+      <String, _SharedTrackExtraction>{};
+
+  static int _seq = 0;
+
+  /// 测试可见：还在共享表里的抽取数。
+  @visibleForTesting
+  int get debugActiveExtractions => _jobs.length;
+
+  /// 取 [input] 第 [streamIndex] 条轨的一份抽取租约：同一条轨已有在途 / 抽完但还有人
+  /// 持有的抽取就加入它，否则开一份新的。用完必须 [GraphicSubtitleTrackLease.release]。
+  GraphicSubtitleTrackLease acquire({
+    required GraphicSubtitleInput input,
+    required int streamIndex,
+    String? codec,
+  }) {
+    final String key = '${input.uri}|$streamIndex';
+    final _SharedTrackExtraction job = _jobs[key] ??= _start(
+      key,
+      input: input,
+      streamIndex: streamIndex,
+      codec: codec,
+    );
+    job.leases++;
+    return GraphicSubtitleTrackLease._(job);
+  }
+
+  _SharedTrackExtraction _start(
+    String key, {
+    required GraphicSubtitleInput input,
+    required int streamIndex,
+    required String? codec,
+  }) {
+    final _SharedTrackExtraction job = _SharedTrackExtraction(
+      this,
+      key,
+      p.join(
+        Directory.systemTemp.path,
+        'fushi_graphic_sub_track_${pid}_'
+        '${DateTime.now().microsecondsSinceEpoch}_${_seq++}',
+      ),
+    );
+    job.outcome = _run(
+      job,
+      input: input,
+      streamIndex: streamIndex,
+      codec: codec,
+    );
+    return job;
+  }
+
+  Future<GraphicSubtitleTrackExtractOutcome> _run(
+    _SharedTrackExtraction job, {
+    required GraphicSubtitleInput input,
+    required int streamIndex,
+    required String? codec,
+  }) async {
+    // 走到 finally 时仍是初值 = 意外异常中途抛出（不会被返回，只给登记表收尾判断用）。
+    GraphicSubtitleTrackExtractOutcome outcome =
+        const GraphicSubtitleTrackExtractOutcome(ok: false);
+    try {
+      await Directory(job.workPath).create(recursive: true);
+      final _ExitRecordingBackend backend = _ExitRecordingBackend.wrap(
+        _backend ?? resolveFfmpegBackend(),
+      );
+      String? failure;
+      final bool ok = await extractGraphicSubtitleTrack(
+        input: input,
+        streamIndex: streamIndex,
+        outputPath: job.payloadPath,
+        codec: codec,
+        cancel: job.abort.future,
+        backend: backend,
+        onProgress: (Duration processed) {
+          job.lastProgress = processed;
+          for (final void Function(Duration) listener
+              in List<void Function(Duration)>.of(job.progressListeners)) {
+            listener(processed);
+          }
+        },
+        // 取消不报失败（抽取函数的契约），这里拿到的都是真失败。
+        onFailure: (String summary) => failure = summary,
+      );
+      outcome = GraphicSubtitleTrackExtractOutcome(
+        ok: ok,
+        exitCode: backend.extractExitCode,
+        failure: failure,
+      );
+    } on FileSystemException catch (error) {
+      outcome = GraphicSubtitleTrackExtractOutcome(
+        ok: false,
+        failure: 'work dir: ${error.message}',
+      );
+    } on ProcessException catch (error) {
+      // ffmpeg 起不来（捆绑件损坏 / 不在 PATH）：`Process.start` 的异常向上传播
+      // （[runFfmpegProcess] 契约），这里落成失败结局交给每份租约，与非零退出同一条路。
+      outcome = GraphicSubtitleTrackExtractOutcome(
+        ok: false,
+        failure: describeFfmpegProcessException(error),
+      );
+    } finally {
+      // 其它意外异常照样经 [outcome] 抛给持有者；登记表无论如何都要收尾，否则这份坏掉
+      // 的抽取会一直留在表里，后来者全加入它。
+      job.done = true;
+      // 失败的不留给后来者加入：下一位重新抽。
+      if (!outcome.ok && identical(_jobs[job.key], job)) {
+        _jobs.remove(job.key);
+      }
+    }
+    return outcome;
+  }
+
+  Future<void> _release(_SharedTrackExtraction job) async {
+    if (--job.leases > 0) return;
+    // 先摘条目再杀进程（同步、中间没有 await）：之后来的使用方开新抽取，不会加入这份
+    // 正在被杀 / 正在删载荷的。
+    if (identical(_jobs[job.key], job)) _jobs.remove(job.key);
+    if (!job.done && !job.abort.isCompleted) job.abort.complete();
+    // 只等抽轨进程退出再删载荷；结局（含意外异常）已经经 [GraphicSubtitleTrackLease.outcome]
+    // 交给每份租约的持有者，交回不再重抛（整轨转文字在 finally 里交回，重抛会跳过收尾）。
+    await job.outcome.then<void>(
+      (GraphicSubtitleTrackExtractOutcome _) {},
+      onError: (Object _) {},
+    );
+    try {
+      await Directory(job.workPath).delete(recursive: true);
+    } on FileSystemException {
+      // 临时目录留给系统清理。
+    }
+  }
+}
+
 /// 一条轨的在途抽取，各等待者共用。
 class _InflightRegionLoad {
   /// 完成 = 全部等待者都放弃了：抽轨进程被杀。
@@ -357,12 +578,19 @@ class _InflightRegionLoad {
 
 /// 生产实现：抽轨 → isolate 里解码 → 内存 + 临时目录 JSON 缓存。
 class FfmpegGraphicSubtitleRegionLoader implements GraphicSubtitleRegionLoader {
+  /// [extractions] 缺省：给了 [backend]（测试）就用一份独立的、按它抽轨的共享表，
+  /// 否则用与整轨转文字共用的 [GraphicSubtitleTrackExtractionHub.shared]。
   FfmpegGraphicSubtitleRegionLoader({
     Directory? cacheDir,
     FfmpegBackend? backend,
+    GraphicSubtitleTrackExtractionHub? extractions,
     GraphicSubtitleRegionFailureLog? onExtractFailure,
   }) : _cacheDirOverride = cacheDir,
-       _backend = backend,
+       _extractions =
+           extractions ??
+           (backend == null
+               ? GraphicSubtitleTrackExtractionHub.shared
+               : GraphicSubtitleTrackExtractionHub(backend: backend)),
        _onExtractFailure = onExtractFailure ?? _logGraphicSubtitleRegionFailure;
 
   /// 播放页共用的一份（缓存跨页面保留）。
@@ -371,8 +599,8 @@ class FfmpegGraphicSubtitleRegionLoader implements GraphicSubtitleRegionLoader {
 
   final Directory? _cacheDirOverride;
 
-  /// 抽轨后端；null = [resolveFfmpegBackend]（测试可注入真二进制）。
-  final FfmpegBackend? _backend;
+  /// 抽轨走的共享表：与整轨转文字同一条轨同一时刻只抽一份。
+  final GraphicSubtitleTrackExtractionHub _extractions;
 
   /// 抽取失败摘要的去向；缺省进错误日志（测试替换成收集器）。
   final GraphicSubtitleRegionFailureLog _onExtractFailure;
@@ -484,34 +712,28 @@ class FfmpegGraphicSubtitleRegionLoader implements GraphicSubtitleRegionLoader {
         // 同上。
       }
     }
-    final Directory work = await Directory.systemTemp.createTemp(
-      'fushi_graphic_sub_regions_',
+    // 与整轨转文字共用一次抽轨：这里放弃（全部等待者都取消）只交回自己的租约，
+    // 整轨转文字还在用时抽轨照跑。
+    final GraphicSubtitleTrackLease lease = _extractions.acquire(
+      input: request.input,
+      streamIndex: request.streamIndex,
+      codec: request.codec,
     );
     try {
-      final String payloadPath = p.join(work.path, 'track.bin');
-      final _ExitRecordingBackend backend = _ExitRecordingBackend.wrap(
-        _backend ?? resolveFfmpegBackend(),
+      final GraphicSubtitleTrackExtractOutcome? outcome = await Future.any(
+        <Future<GraphicSubtitleTrackExtractOutcome?>>[
+          lease.outcome,
+          cancel.then((_) => null),
+        ],
       );
-      String? failure;
-      final bool ok = await extractGraphicSubtitleTrack(
-        input: request.input,
-        streamIndex: request.streamIndex,
-        outputPath: payloadPath,
-        codec: request.codec,
-        cancel: cancel,
-        backend: backend,
-        // 取消不报失败（抽取函数的契约），这里拿到的都是真失败。
-        onFailure: (String summary) {
-          failure = summary;
-          _onExtractFailure(request, summary);
-        },
-      );
-      if (!ok) {
+      if (outcome == null) return null;
+      if (!outcome.ok) {
+        final String? summary = outcome.failure;
+        if (summary != null) _onExtractFailure(request, summary);
         // 只记「本地文件 + ffmpeg 非零退出」：同一份文件再抽还是同样的结果。网络流、
         // 无进度判活 / 超时（退出码为 null，慢盘 / NAS）、探测失败都可能是瞬时的，不记；
         // 非零退出里出在环境上的（临时目录所在盘写满、网络盘断开）也不记。
-        final int? exitCode = backend.extractExitCode;
-        final String? summary = failure;
+        final int? exitCode = outcome.exitCode;
         if (!request.input.isRemote &&
             exitCode != null &&
             exitCode != 0 &&
@@ -521,6 +743,7 @@ class FfmpegGraphicSubtitleRegionLoader implements GraphicSubtitleRegionLoader {
         }
         return null;
       }
+      final String payloadPath = lease.payloadPath;
       final Uint8List payload = await File(payloadPath).readAsBytes();
       final BitmapSubtitleTrackHeader? header = readGraphicSubtitleTrackHeader(
         payloadPath,
@@ -545,11 +768,7 @@ class FfmpegGraphicSubtitleRegionLoader implements GraphicSubtitleRegionLoader {
       }
       return track;
     } finally {
-      try {
-        await work.delete(recursive: true);
-      } on FileSystemException {
-        // 临时目录留给系统清理。
-      }
+      await lease.release();
     }
   }
 

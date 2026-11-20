@@ -134,6 +134,10 @@ class _VideoSubtitleGlossaryPageState extends State<VideoSubtitleGlossaryPage> {
         previous: _candidateMode ? null : _saved,
         language: widget.language,
       );
+    } on AppVideoSubtitleStartRefused catch (refused) {
+      // 同作品的生成任务还没过专名表阶段：现在存会被它盖掉（BUG-4908）。
+      if (mounted) setState(() => _notice = _refusedText(refused));
+      return;
     } on Object catch (e) {
       if (mounted) {
         setState(
@@ -246,8 +250,8 @@ class _VideoSubtitleGlossaryPageState extends State<VideoSubtitleGlossaryPage> {
           ),
         );
       }
-    } on AppVideoSubtitleStartRefused {
-      if (mounted) setState(() => _notice = t.video_subtitle_ai_no_provider);
+    } on AppVideoSubtitleStartRefused catch (refused) {
+      if (mounted) setState(() => _notice = _refusedText(refused));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -267,21 +271,22 @@ class _VideoSubtitleGlossaryPageState extends State<VideoSubtitleGlossaryPage> {
       });
     } on AppVideoSubtitleStartRefused catch (refused) {
       if (!mounted) return;
-      setState(
-        () => _notice = switch (refused.problem) {
-          AppVideoSubtitleStartProblem.noProvider =>
-            t.video_subtitle_ai_no_provider,
-          AppVideoSubtitleStartProblem.busy => t.video_subtitle_ai_busy(
-            title: refused.activeJob?.target.title ?? '',
-          ),
-          AppVideoSubtitleStartProblem.noLocalEpisodes =>
-            t.video_subtitle_ai_no_local_episodes,
-          AppVideoSubtitleStartProblem.nothingToRerun =>
-            t.video_subtitle_ai_nothing_to_rerun,
-        },
-      );
+      setState(() => _notice = _refusedText(refused));
     }
   }
+
+  String _refusedText(AppVideoSubtitleStartRefused refused) =>
+      switch (refused.problem) {
+        AppVideoSubtitleStartProblem.noProvider =>
+          t.video_subtitle_ai_no_provider,
+        AppVideoSubtitleStartProblem.busy => t.video_subtitle_ai_busy(
+          title: refused.activeJob?.target.title ?? '',
+        ),
+        AppVideoSubtitleStartProblem.noLocalEpisodes =>
+          t.video_subtitle_ai_no_local_episodes,
+        AppVideoSubtitleStartProblem.nothingToRerun =>
+          t.video_subtitle_ai_nothing_to_rerun,
+      };
 
   void _onRerun() {
     if (mounted) setState(() {});

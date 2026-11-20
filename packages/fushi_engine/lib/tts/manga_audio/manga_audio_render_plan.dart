@@ -11,10 +11,13 @@
 ///   引擎声明支持给定时长时生效（`tts_direction.dart`）；
 /// - 音源策略：有声书优先（命中的句子剪有声书）/ 只用有声书（没命中的不读）/ 只合成。
 ///   「不读」不是未配音：不进成品、不进未配音账本、没有自动重试。
+/// - 克隆旁白（`manga_audio_narrator.dart`）：本卷有会剪的有声书片段、后端又能克隆
+///   时，没单句指定声音的合成句改用旁白音色（[mangaSynthVoiceFor]）。
 library;
 
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_narrator.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_validate.dart';
@@ -165,6 +168,17 @@ String mangaResolvedVoice(
   String defaultVoice,
 ) => script.voiceFor(line) ?? defaultVoice;
 
+/// 一句合成时实际用的声音：本卷在克隆旁白（[narrator] 非空）且这句没单句指定声音 →
+/// 旁白；否则同 [mangaResolvedVoice]。整卷生成、补回、换种子重生成都只认这一个函数。
+String mangaSynthVoiceFor(
+  MangaAudioScript script,
+  MangaScriptLine line,
+  String defaultVoice,
+  MangaNarratorVoice? narrator,
+) => narrator != null && line.voice == null
+    ? narrator.id
+    : mangaResolvedVoice(script, line, defaultVoice);
+
 /// 这句怎么出声；null = 不读。出声方式只认 [MangaAudioScript.audioPlanFor]（用户亲手
 /// 定的音源 → 作品音源策略）；有声书片段在这里落成具体的书（旧行没有 `k` 时取第一本
 /// 关联书，见 [MangaAudioScript.clipBookKey]），生成端按 `bookKey` + `fileIndex` 取
@@ -174,6 +188,7 @@ MangaRenderSource? mangaRenderSourceFor({
   required MangaScriptLine line,
   required String text,
   required String defaultVoice,
+  MangaNarratorVoice? narrator,
 }) {
   switch (script.audioPlanFor(line)) {
     case MangaLineAudioPlan.silent:
@@ -191,7 +206,7 @@ MangaRenderSource? mangaRenderSourceFor({
       );
     case MangaLineAudioPlan.synthesize:
       return MangaRenderSynth(
-        voice: mangaResolvedVoice(script, line, defaultVoice),
+        voice: mangaSynthVoiceFor(script, line, defaultVoice, narrator),
         seed: line.effectiveSeed(script.defaultSeed),
         segments: splitMangaLineSegments(text),
       );
@@ -200,11 +215,13 @@ MangaRenderSource? mangaRenderSourceFor({
 
 /// 整卷计划：「不读」类型的行不进计划；其余按音源策略分成合成 / 有声书片段 / 不读。
 /// [pageBlocks] 是 OCR 的逐页块（`MokuroPayload.images[i].blocks`），其长度就是页数。
-/// 没有可念文字的行照样进计划（生成端记成未配音，可以手动填写补回）。
+/// 没有可念文字的行照样进计划（生成端记成未配音，可以手动填写补回）。[narrator] 是
+/// 后端已准备好的旁白声音（null = 不克隆）。
 MangaRenderPlan planMangaRender({
   required MangaAudioScript script,
   required List<List<MokuroBlock>> pageBlocks,
   required String defaultVoice,
+  MangaNarratorVoice? narrator,
 }) {
   final List<MangaRenderItem> items = <MangaRenderItem>[];
   final List<String> notRead = <String>[];
@@ -225,6 +242,7 @@ MangaRenderPlan planMangaRender({
       line: line,
       text: text,
       defaultVoice: defaultVoice,
+      narrator: narrator,
     );
     if (source == null) {
       notRead.add(line.lineId);

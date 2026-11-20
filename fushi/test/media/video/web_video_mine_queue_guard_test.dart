@@ -72,6 +72,12 @@ void main() {
       final int finish = run.lastIndexOf('_finishMining(');
       expect(finish, greaterThan(round));
       expect(run.substring(finish), contains('WebMineAutoFinished('));
+      // BUG-4911：出错中止（准备步骤抛出 / 一行抛出 / 表面死亡）要带进结果，否则提示
+      // 仍是「已制卡 0，失败 0」。
+      expect(
+        compactCode(run.substring(finish)),
+        contains('errored:webMineRoundEndedOnError(rowsEnd),'),
+      );
       // 「无条件」= 这次调用是方法体顶层的语句，没有被 if (...) { } 之类的块包住
       // （包进一个只在正常跑完时才进的分支，BUG-4829 就原样回来了）。
       final String finishLine = run.substring(
@@ -116,7 +122,7 @@ void main() {
         compactCode(nav),
         contains(
           compactCode(
-            'if (!mounted || _mineStopRequested) {'
+            'if (!mounted || _mineStopRequested || !identical(web, _web)) {'
             ' return WebMineNavigateOutcome.interrupted; }',
           ),
         ),
@@ -172,6 +178,54 @@ void main() {
       expect(gate, greaterThanOrEqualTo(0));
       // 判据与调用之间没有收口的花括号 = 调用在这个 if 块里。
       expect(code.substring(gate, at), isNot(contains('}')));
+    });
+  });
+
+  // 行为规则（表面换代后在途行留待办、不标 navigate_timeout）在
+  // test/mining/web_mine_queue_run_test.dart；这里钉页面把表面的代接进了那套规则。
+  group('BUG-4906：内置档页 WebView 进程死亡后恢复，重放循环知情', () {
+    test('死亡守卫先跑恢复钩子；重建回到死前的页面而不是起始页', () {
+      final String code = compactCode(maskComments(page));
+      expect(code, contains('flushBeforeRebuild:_recoverFromProcessGone,'));
+      expect(code, contains('WebUri(_surfaceUrl??row.videoPath)'));
+      final String recover = compactCode(
+        maskComments(methodBody(page, 'Future<void> _recoverFromProcessGone(')),
+      );
+      for (final String stale in <String>[
+        '_web=null;',
+        '_state=null;',
+        '_preStartFuture=null;',
+        'discardWebVideoCapturableEnvironment();',
+      ]) {
+        expect(recover, contains(stale), reason: stale);
+      }
+    });
+
+    test('一轮重放把表面的代交给 runWebMineQueueRows，录完先验表面再落卡', () {
+      final String run = compactCode(
+        maskComments(methodBody(page, 'Future<void> _runMineQueue(')),
+      );
+      expect(run, contains('surfaceLost:surfaceLost,'));
+      final int check = run.indexOf('if(surfaceLost())throw');
+      final int mine = run.indexOf('await_mineQueuedRow(');
+      expect(check, greaterThanOrEqualTo(0));
+      expect(mine, greaterThan(check));
+    });
+
+    test('页面调用随死表面作废，不挂在死进程上', () {
+      final String js = compactCode(
+        maskComments(methodBody(page, 'Future<Object?> _js(')),
+      );
+      // 每次调用一个局部 Completer 登记进 _inflightJs、结束即移出；不在长寿 future 上挂监听
+      // （表面不死时那些监听只增不减）。
+      expect(js, contains('_inflightJs.add(call);'));
+      expect(js, contains('_inflightJs.remove(call);'));
+      expect(js, isNot(contains('Future.any')));
+      final String recover = compactCode(
+        maskComments(methodBody(page, 'Future<void> _recoverFromProcessGone(')),
+      );
+      expect(recover, contains('_inflightJs.clear();'));
+      expect(recover, contains('call.complete(null);'));
     });
   });
 }

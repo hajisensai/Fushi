@@ -25,6 +25,8 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_anki_migration_setup_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart'
+    show srsImportFailureMessage;
 import 'package:fushi/src/srs/srs_anki_migration.dart';
 import 'package:fushi/src/srs/srs_import_entry.dart' show srsImportReportLines;
 import 'package:fushi/src/srs/srs_import_task.dart';
@@ -388,15 +390,8 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage>
       await showFushiConfirmDialog(
         context: context,
         title: t.srs_anki_migrate,
-        message:
-            failure is SrsImportException &&
-                failure.code == SrsImportException.needsKernel
-            ? t.srs_import_needs_kernel
-            : t.srs_import_failed(
-                error: failure is SrsImportException
-                    ? failure.message
-                    : '$failure',
-              ),
+        // 与导入任务条的失败对话框同一张错误 → 提示表（一条超过 16 MiB 时说清楚，而不是内核英文原话）。
+        message: srsImportFailureMessage(failure),
         icon: FushiIcons.error,
         confirmLabel: t.dialog_ok,
         cancelLabel: t.cancel,

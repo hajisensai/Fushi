@@ -487,6 +487,8 @@
   "pc_offset_title": "Décalage temporel",
   "pc_style_title": "Style des sous-titres",
   "pc_mask_edit": "Ajuster le cache de sous-titres",
+  "pc_fullscreen_enter": "Plein écran",
+  "pc_fullscreen_exit": "Quitter le plein écran",
   "mask_edit_hint": "Faites glisser pour déplacer, tirez les bords ou les coins pour redimensionner",
   "mask_edit_reset": "Réinitialiser",
   "mask_edit_done": "Terminé",

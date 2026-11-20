@@ -3,9 +3,9 @@ import 'package:fushi/src/media/video/video_import_dialog.dart'
     show parseSubtitleCues;
 
 void main() {
-  test('routes srt content to SrtParser cues', () {
+  test('routes srt content to SrtParser cues', () async {
     const srt = '1\n00:00:00,000 --> 00:00:01,000\nhello\n';
-    final cues = parseSubtitleCues(
+    final cues = await parseSubtitleCues(
       content: srt,
       format: 'srt',
       bookUid: 'video/1',
@@ -16,9 +16,9 @@ void main() {
     expect(cues.first.endMs, 1000);
   });
 
-  test('throws on unsupported format', () {
-    expect(
-      () => parseSubtitleCues(content: 'x', format: 'mp3', bookUid: 'video/1'),
+  test('throws on unsupported format', () async {
+    await expectLater(
+      parseSubtitleCues(content: 'x', format: 'mp3', bookUid: 'video/1'),
       throwsArgumentError,
     );
   });

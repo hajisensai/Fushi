@@ -47,8 +47,9 @@ const List<CtlCommandGroup> mediaLinksCommandGroups = <CtlCommandGroup>[
       CtlCommandSpec(
         name: 'add',
         summary:
-            '手动关联两个条目（恒为已确认）：--relation adaptation | same_work | theme_song；'
-            'adaptation 要 --self-is original | adaptation',
+            '手动关联两个条目（恒为已确认）：--relation adaptation | same_work | '
+            'theme_song | sequel | side_story；adaptation / sequel / side_story 要 '
+            '--self-is 说明方向',
         usage: '<endpoint> <other>',
         configure: _configureAdd,
         build: _buildAdd,
@@ -130,6 +131,8 @@ const List<String> kMediaLinkRelations = <String>[
   'soundtrack',
   'same_work',
   'cast',
+  'sequel',
+  'side_story',
 ];
 
 String _endpoint(CtlCommandContext context, int index, String name) {
@@ -174,6 +177,8 @@ const List<String> kMediaLinkManualRelations = <String>[
   'adaptation',
   'same_work',
   'theme_song',
+  'sequel',
+  'side_story',
 ];
 
 void _configureAdd(ArgParser parser) {
@@ -183,12 +188,23 @@ void _configureAdd(ArgParser parser) {
       allowed: kMediaLinkManualRelations,
       mandatory: true,
       help:
-          'adaptation = 原作 / 改编；theme_song = 音乐是视频的 OP / ED / 插入曲；其余用 same_work',
+          'adaptation = 原作 / 改编；theme_song = 音乐是视频的 OP / ED / 插入曲；'
+          'sequel = 续作；side_story = 外传 / 番外 / 剧场版；其余用 same_work',
     )
     ..addOption(
       'self-is',
-      allowed: const <String>['original', 'adaptation'],
-      help: 'adaptation 必填：<endpoint> 是原作（original）还是改编（adaptation）',
+      allowed: const <String>[
+        'original',
+        'adaptation',
+        'prequel',
+        'sequel',
+        'main',
+        'side_story',
+      ],
+      help:
+          'adaptation / sequel / side_story 必填：adaptation 用 original | adaptation，'
+          'sequel 用 prequel（<endpoint> 是前作）| sequel，'
+          'side_story 用 main（<endpoint> 是本篇）| side_story',
     )
     ..addOption(
       'role',
@@ -254,8 +270,16 @@ CtlRequestSpec _buildAdd(CtlCommandContext context) {
   final String other = _endpoint(context, 1, 'other');
   final String relation = context.option('relation')!;
   final String? selfIs = context.option('self-is');
-  if (relation == 'adaptation' && selfIs == null) {
-    throw CtlUsageError('adaptation 要用 --self-is 说明 <endpoint> 是原作还是改编');
+  const Map<String, List<String>> directions = <String, List<String>>{
+    'adaptation': <String>['original', 'adaptation'],
+    'sequel': <String>['prequel', 'sequel'],
+    'side_story': <String>['main', 'side_story'],
+  };
+  final List<String>? allowed = directions[relation];
+  if (allowed != null && !allowed.contains(selfIs)) {
+    throw CtlUsageError(
+      '$relation 要用 --self-is ${allowed.join(' | ')} 说明 <endpoint> 的方向',
+    );
   }
   return CtlRequestSpec.post(
     '$_links/${Uri.encodeComponent(endpoint)}/add',
