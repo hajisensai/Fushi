@@ -301,6 +301,7 @@
 | [BUG-4908](bugs/BUG-4908-deleted-remote-collection-not-recreated-on-explicit-add.md) | ✅ | ✅ | 删掉的在线源作品合集再显式加入或下载也永不重建 |
 | [BUG-4924](bugs/BUG-4924-shinnku-b2-firewall-403.md) | ✅ | ✅ | 真红小站合集系列下载 galgamedownload.date 403 |
 | [BUG-4922](bugs/BUG-4922-android-audio-capture-killed-by-screen-ocr.md) | ✅ | ✅ | Android：开着 App 外内录时截屏识字会把内录停掉 |
+| [BUG-4918](bugs/BUG-4918-srs-conflicts-stale-held-keep.md) | ✅ | ✅ | 冲突页处理失败后列表不重读、处理中按钮仍可点：扣住的删除反复报 no such conflict |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
 | [BUG-4903](bugs/BUG-4903-home-desktop-continue-cut-edge-title-concat.md) | ✅ | ✅ | 首页（桌面）「继续」右侧卡被窗口切掉一半、标题拼接成「Re：ゼロ…1<Re：…」 |
