@@ -13,6 +13,7 @@ import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_cue.dart';
 import 'package:fushi_engine/media/video/bitmap_subtitle/graphic_subtitle_track_extract.dart';
+import 'package:fushi_engine/media/video/subtitle/srt_writer.dart';
 
 import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart';
 
@@ -302,22 +303,10 @@ String buildGraphicSubtitleSrt(
     cues,
     joinGapMs: joinGapMs,
   );
-  final StringBuffer sb = StringBuffer();
-  for (int i = 0; i < merged.length; i++) {
-    final GraphicSubtitleTextCue c = merged[i];
-    sb
-      ..writeln(i + 1)
-      ..writeln('${_srtTime(c.startMs)} --> ${_srtTime(c.endMs)}')
-      ..writeln(c.text)
-      ..writeln();
-  }
-  return sb.toString();
-}
-
-String _srtTime(int ms) {
-  String two(int v) => v.toString().padLeft(2, '0');
-  final int h = ms ~/ 3600000;
-  final int m = (ms ~/ 60000) % 60;
-  final int s = (ms ~/ 1000) % 60;
-  return '${two(h)}:${two(m)}:${two(s)},${(ms % 1000).toString().padLeft(3, '0')}';
+  return writeSrtBlocks(
+    merged.map(
+      (GraphicSubtitleTextCue c) =>
+          (startMs: c.startMs, endMs: c.endMs, text: c.text),
+    ),
+  );
 }

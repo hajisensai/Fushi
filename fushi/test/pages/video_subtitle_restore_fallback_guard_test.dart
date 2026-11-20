@@ -124,7 +124,7 @@ void main() {
       isTrue,
       reason: '关闭时不得走内嵌轨重解析',
     );
-    // 兜底判据自身也带 !subtitleExplicitlyOff，双保险。
+    // 兜底链入口：用户显式关过字幕就不该被任何一层兜底重新打开。
     expect(
       // 已确定渲染图形轨（graphicStreamIndex != null）时不再试，BUG-3103。
       containsCodeLine(

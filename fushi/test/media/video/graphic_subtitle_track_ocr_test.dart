@@ -530,6 +530,15 @@ void main() {
       );
     });
 
+    test('负起点按 0 写出（与其余 SRT 写出同一份时间戳格式化）', () {
+      expect(
+        buildGraphicSubtitleSrt(const <GraphicSubtitleTextCue>[
+          GraphicSubtitleTextCue(startMs: -50, endMs: 900, text: 'あ'),
+        ]),
+        '1\n00:00:00,000 --> 00:00:00,900\nあ\n\n',
+      );
+    });
+
     test('全空返回空串', () {
       expect(
         buildGraphicSubtitleSrt(const <GraphicSubtitleTextCue>[
