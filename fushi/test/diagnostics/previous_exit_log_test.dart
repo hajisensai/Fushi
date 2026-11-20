@@ -232,6 +232,109 @@ void main() {
       expect(probed, 1);
     });
 
+    test('BUG-4953：上次进程之后装了新版本（iOS 更新时被系统结束）按更新处理、不报闪退', () {
+      // 反馈 QL5TsHwY78：27417 启动、进 resumed 后被 TestFlight 装新版结束，下次启动是
+      // 27714；平台不留原因、没有 MetricKit 负载，旧判定按「停在前台时没了」弹了闪退报告。
+      SessionMarker(markerFile(), pid: 69768, version: '3.3.0-debug.27417')
+        ..start(nowMs: 1000)
+        ..recordLifecycle('resumed', nowMs: 1094);
+      final PreviousSession prev = SessionMarker(
+        markerFile(),
+        pid: 70000,
+        version: '3.3.0-debug.27714',
+      ).start(nowMs: 100000)!;
+
+      final ExitReportEntry updated = describeUncleanPreviousSession(
+        prev,
+        currentVersion: '3.3.0-debug.27714',
+      )!;
+      expect(updated.kind, PreviousExitKind.appUpdated);
+      expect(updated.severe, isFalse);
+      expect(updated.text, contains('3.3.0-debug.27714'));
+      final PreviousExitVerdict verdict = classifyPreviousExit(
+        <ExitReportEntry>[updated],
+        version: prev.version,
+        nowMs: 100000,
+      )!;
+      expect(verdict.kind, PreviousExitKind.appUpdated);
+      expect(verdict.worthReporting, isFalse);
+
+      // 真有崩溃证据（MetricKit / .ips）时照常按崩溃上报。
+      expect(
+        classifyPreviousExit(
+          <ExitReportEntry>[
+            updated,
+            const ExitReportEntry(
+              kIosCrashDiagnosticSource,
+              'signal=11',
+              severe: true,
+              kind: PreviousExitKind.crash,
+            ),
+          ],
+          version: prev.version,
+          nowMs: 100000,
+        )!.worthReporting,
+        isTrue,
+      );
+
+      // 同版本、或任一侧版本未知（没注入 FUSHI_BUILD_VERSION）：仍是疑似闪退。
+      for (final String? current in <String?>[
+        '3.3.0-debug.27417',
+        null,
+        '',
+        kUnknownSessionVersion,
+      ]) {
+        const PreviousSession same = PreviousSession(
+          pid: 1,
+          startedAt: 1,
+          version: '3.3.0-debug.27417',
+          lifecycle: 'resumed',
+          lifecycleAt: 2,
+          clean: false,
+        );
+        expect(
+          describeUncleanPreviousSession(same, currentVersion: current)!.kind,
+          PreviousExitKind.unexpected,
+          reason: 'current=$current',
+        );
+      }
+      expect(
+        describeUncleanPreviousSession(
+          const PreviousSession(
+            pid: 1,
+            startedAt: 1,
+            version: kUnknownSessionVersion,
+            lifecycle: 'resumed',
+            lifecycleAt: 2,
+            clean: false,
+          ),
+          currentVersion: '3.3.0-debug.27714',
+        )!.kind,
+        PreviousExitKind.unexpected,
+      );
+    });
+
+    test('BUG-4953：iOS 收集链路把版本变了的未正常退出判成更新', () async {
+      SessionMarker(markerFile(), pid: 69768, version: '3.3.0-debug.27417')
+        ..start(nowMs: 1000)
+        ..recordLifecycle('resumed', nowMs: 1094);
+      final List<ExitReportEntry> entries = await PreviousExitLog.collect(
+        appDir: tmp,
+        version: '3.3.0-debug.27714',
+        isAndroid: false,
+        isWindows: false,
+        isMacOS: false,
+        isIOS: true,
+      );
+      final PreviousExitVerdict verdict = classifyPreviousExit(
+        entries,
+        version: '3.3.0-debug.27417',
+        nowMs: 100000,
+      )!;
+      expect(verdict.kind, PreviousExitKind.appUpdated);
+      expect(verdict.worthReporting, isFalse);
+    });
+
     test('停在后台没了只算诊断；正常退出 / detached 不报', () {
       final SessionMarker a = SessionMarker(markerFile(), pid: 1, version: 'v')
         ..start(nowMs: 1);
