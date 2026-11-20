@@ -37,7 +37,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4907](bugs/BUG-4907-video-auto-align-writes-after-episode-switch.md) | 🚧 | 🚧 | video-auto-align-writes-after-episode-switch |
+| [BUG-4907](bugs/BUG-4907-video-auto-align-writes-after-episode-switch.md) | ✅ | ✅ | 字幕自动对轴的结果可能写到换集后的视频上 |
 | [BUG-4906](bugs/BUG-4906-graphic-sub-ocr-one-cue-fails-whole-track.md) | ✅ | ✅ | 图形字幕整轨转文字一条 cue 出错整个任务作废 |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
