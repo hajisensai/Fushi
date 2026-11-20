@@ -133,15 +133,12 @@ class _MusicPluginManagementPage extends StatelessWidget {
   Widget build(BuildContext context) => musicBrowseScaffold(
     context,
     title: t.music_plugins_title,
-    // 留白要在脚手架之下量：页头让位（MediaQuery 顶部 padding）只在那里才有。
     // 整个页面体是 .fushiplug 的拖放落点（BUG-4712），与「安装」按钮同一条流程。
-    body: MusicPluginDropTarget(
+    body: (BuildContext context) => MusicPluginDropTarget(
       manager: appModel.musicPluginManager,
-      child: Builder(
-        builder: (BuildContext context) => SingleChildScrollView(
-          padding: musicBrowsePagePadding(context),
-          child: MusicPluginSettingsBody(appModel: appModel),
-        ),
+      child: SingleChildScrollView(
+        padding: musicBrowsePagePadding(context),
+        child: MusicPluginSettingsBody(appModel: appModel),
       ),
     ),
   );
@@ -704,34 +701,32 @@ class _MusicPluginBrowsePageState extends ConsumerState<MusicPluginBrowsePage> {
           musicViewStyleToggle(viewKind, style),
       ],
       mastheadBottom: masthead ? header : null,
-      body: Builder(
-        builder: (BuildContext context) => Padding(
-          padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
-          child: MediaQuery.removePadding(
-            context: context,
-            removeTop: true,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                if (!masthead)
-                  Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: tokens.spacing.page,
-                      vertical: tokens.spacing.gap,
-                    ),
-                    child: header,
+      body: (BuildContext context) => Padding(
+        padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
+        child: MediaQuery.removePadding(
+          context: context,
+          removeTop: true,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              if (!masthead)
+                Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: tokens.spacing.page,
+                    vertical: tokens.spacing.gap,
                   ),
-                Expanded(
-                  child: AnimatedSwitcher(
-                    duration: fushiMotionDuration(context, FushiMotion.medium),
-                    child: KeyedSubtree(
-                      key: ValueKey<String>('${_type.wire}|$_query'),
-                      child: results,
-                    ),
+                  child: header,
+                ),
+              Expanded(
+                child: AnimatedSwitcher(
+                  duration: fushiMotionDuration(context, FushiMotion.medium),
+                  child: KeyedSubtree(
+                    key: ValueKey<String>('${_type.wire}|$_query'),
+                    child: results,
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -1494,57 +1489,54 @@ class MusicPluginHomeSectionPage extends StatelessWidget {
               if (musicViewStyleSwitchable(context))
                 musicViewStyleToggle(kind, style),
             ],
-            // 留白要在脚手架之下量：页头让位（MediaQuery 顶部 padding）只在那里才有。
-            body: Builder(
-              builder: (BuildContext context) {
-                final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-                if (items.isEmpty) {
-                  return Center(
-                    child: FushiPlaceholderMessage(
-                      icon: FushiIcons.music,
-                      message: t.music_plugin_home_empty,
-                    ),
-                  );
-                }
-                // 色块：封面网格布局下是原有的唱片网格卡，色块布局下（拼贴 / 规整）
-                // 与曲库专辑网格同一套色块；列表：单列行（与搜索结果同一种行）。
-                return MusicStyledCollection(
-                  scrollKey: ValueKey<String>(
-                    'music-plugin-section-grid-${manifest.id}-${section.id}',
-                  ),
-                  style: style,
-                  itemCount: items.length,
-                  padding: withBottomSafeInset(
-                    context,
-                    EdgeInsets.fromLTRB(
-                      tokens.spacing.page,
-                      MediaQuery.paddingOf(context).top + tokens.spacing.gap,
-                      tokens.spacing.page,
-                      tokens.spacing.section,
-                    ),
-                  ),
-                  gridMaterial: ShelfCoverMaterial.glossyAlbum,
-                  gridDelegate: musicAlbumGridDelegate,
-                  gridCardBuilder: (BuildContext context, int i) =>
-                      _PluginGridCard(manifest: manifest, item: items[i]),
-                  blockBuilder:
-                      (BuildContext context, int i, FushiCoverBlockSize size) =>
-                          _PluginCoverBlockCard(
-                            key: ValueKey<String>(
-                              'music-plugin-grid-card-'
-                              '${_pluginCoverTarget(manifest, items[i])!.id}',
-                            ),
-                            manifest: manifest,
-                            item: items[i],
-                            size: size,
-                          ),
-                  rowBuilder: (BuildContext context, int i) => Consumer(
-                    builder: (BuildContext context, WidgetRef ref, Widget? _) =>
-                        musicPluginItemTile(context, ref, manifest, items, i),
+            body: (BuildContext context) {
+              final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+              if (items.isEmpty) {
+                return Center(
+                  child: FushiPlaceholderMessage(
+                    icon: FushiIcons.music,
+                    message: t.music_plugin_home_empty,
                   ),
                 );
-              },
-            ),
+              }
+              // 色块：封面网格布局下是原有的唱片网格卡，色块布局下（拼贴 / 规整）
+              // 与曲库专辑网格同一套色块；列表：单列行（与搜索结果同一种行）。
+              return MusicStyledCollection(
+                scrollKey: ValueKey<String>(
+                  'music-plugin-section-grid-${manifest.id}-${section.id}',
+                ),
+                style: style,
+                itemCount: items.length,
+                padding: withBottomSafeInset(
+                  context,
+                  EdgeInsets.fromLTRB(
+                    tokens.spacing.page,
+                    MediaQuery.paddingOf(context).top + tokens.spacing.gap,
+                    tokens.spacing.page,
+                    tokens.spacing.section,
+                  ),
+                ),
+                gridMaterial: ShelfCoverMaterial.glossyAlbum,
+                gridDelegate: musicAlbumGridDelegate,
+                gridCardBuilder: (BuildContext context, int i) =>
+                    _PluginGridCard(manifest: manifest, item: items[i]),
+                blockBuilder:
+                    (BuildContext context, int i, FushiCoverBlockSize size) =>
+                        _PluginCoverBlockCard(
+                          key: ValueKey<String>(
+                            'music-plugin-grid-card-'
+                            '${_pluginCoverTarget(manifest, items[i])!.id}',
+                          ),
+                          manifest: manifest,
+                          item: items[i],
+                          size: size,
+                        ),
+                rowBuilder: (BuildContext context, int i) => Consumer(
+                  builder: (BuildContext context, WidgetRef ref, Widget? _) =>
+                      musicPluginItemTile(context, ref, manifest, items, i),
+                ),
+              );
+            },
           ),
     );
   }
@@ -3200,35 +3192,33 @@ class _RecentPlaysPage extends StatelessWidget {
   Widget build(BuildContext context) => musicBrowseScaffold(
     context,
     title: t.music_recent_plays_title,
-    body: Builder(
-      builder: (BuildContext context) => musicRecommendPosterMode(context)
-          // 色块版式：与推荐页同一套封面色块，按库页布局排全部。
-          ? FushiEntranceScope(
-              child: CustomScrollView(
-                slivers: <Widget>[
-                  SliverPadding(
-                    padding: musicBrowsePagePadding(context),
-                    sliver: _RecentPlays(
-                      generation: generation,
-                      sources: sources,
-                      full: true,
-                      sliver: true,
-                    ),
+    body: (BuildContext context) => musicRecommendPosterMode(context)
+        // 色块版式：与推荐页同一套封面色块，按库页布局排全部。
+        ? FushiEntranceScope(
+            child: CustomScrollView(
+              slivers: <Widget>[
+                SliverPadding(
+                  padding: musicBrowsePagePadding(context),
+                  sliver: _RecentPlays(
+                    generation: generation,
+                    sources: sources,
+                    full: true,
+                    sliver: true,
                   ),
-                ],
-              ),
-            )
-          : SingleChildScrollView(
-              padding: musicBrowsePagePadding(context),
-              child: FushiEntranceScope(
-                child: _RecentPlays(
-                  generation: generation,
-                  sources: sources,
-                  full: true,
                 ),
+              ],
+            ),
+          )
+        : SingleChildScrollView(
+            padding: musicBrowsePagePadding(context),
+            child: FushiEntranceScope(
+              child: _RecentPlays(
+                generation: generation,
+                sources: sources,
+                full: true,
               ),
             ),
-    ),
+          ),
   );
 }
 

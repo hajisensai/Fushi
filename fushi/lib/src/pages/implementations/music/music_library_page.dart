@@ -2184,7 +2184,7 @@ class _MusicLibrarySearchPageState extends State<_MusicLibrarySearchPage> {
                           MusicPluginSearchType.playlist =>
                             MusicLibrarySection.playlists,
                         }),
-                        body: MusicSearchResultsView(
+                        body: (BuildContext context) => MusicSearchResultsView(
                           key: ValueKey<String>(
                             'music-search-page-${type.wire}',
                           ),

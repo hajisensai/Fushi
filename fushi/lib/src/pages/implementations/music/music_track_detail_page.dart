@@ -224,7 +224,7 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
               context,
               title: title,
               titleInBody: true,
-              body: track == null
+              body: (BuildContext context) => track == null
                   ? const SizedBox.shrink()
                   : _body(context, tokens, track, album, snap.data?.cover),
             );
