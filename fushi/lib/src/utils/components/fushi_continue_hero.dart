@@ -11,6 +11,7 @@ import 'package:fushi/src/utils/components/fushi_continue_blocks.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/fushi_logo_title.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -370,7 +371,14 @@ class FushiContinueEntry {
     this.byline,
     this.blockEyebrow,
     this.mark,
+    this.logo,
   });
+
+  /// 作品艺术字（刮削 logo）：剧照主卡（[FushiContinueStillCard]）里代替片名
+  /// 文字，尺寸走全站同一套 [FushiLogoTitle] 规则。只在剧照本身**不带片名**时
+  /// 给（调用方判定：无字背景 / 分集剧照）；剧照印着片名时为 null，原图的字
+  /// 就是标题，不叠第二份（设计稿 #3）。
+  final ImageProvider? logo;
 
   /// 封面色块版式（[FushiContinueBlocks]）里的封面摆法；null = 按封面推断
   /// （[blockArtResolved]）。横图剧照恒为 [FushiCoverBlockArt.landscape]。
@@ -516,6 +524,7 @@ class FushiContinueEntry {
           byline: byline,
           blockEyebrow: blockEyebrow,
           mark: mark,
+          logo: logo,
         );
 }
 
@@ -953,6 +962,16 @@ class FushiContinueStillCard extends StatelessWidget {
     final BorderRadius? radius = eink || apple
         ? null
         : FushiM3eShape.containerLargeRadius;
+    final Widget titleText = Text(
+      entry.title,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: (text.titleLarge ?? const TextStyle()).copyWith(
+        color: Colors.white,
+        fontWeight: FontWeight.w700,
+        height: 1.2,
+      ),
+    );
     return FushiHoverLift(
       enabled: entry.onOpen != null,
       scale: kFushiWideCardHoverLiftScale,
@@ -1017,16 +1036,18 @@ class FushiContinueStillCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                     ],
-                    Text(
-                      entry.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: (text.titleLarge ?? const TextStyle()).copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        height: 1.2,
-                      ),
-                    ),
+                    if (entry.logo case final ImageProvider logo when !eink)
+                      FushiLogoTitle(
+                        logo: logo,
+                        title: entry.title,
+                        maxHeight: fushiCoverBlockLogoMaxHeight(
+                          FushiCoverBlockSize.hero,
+                          compact: false,
+                        ),
+                        fallback: titleText,
+                      )
+                    else
+                      titleText,
                     if (v != null) ...<Widget>[
                       SizedBox(height: tokens.spacing.gap),
                       FushiLinearProgressIndicator(

@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/components/fushi_logo_title.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/utils/misc/dashboard_server_continue.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
@@ -903,6 +904,57 @@ void main() {
       );
     }
     semantics.dispose();
+  });
+
+  // 11-20 反馈 #11：首页「继续」色块对刮削过的作品画艺术字（与视频库系列卡同一个
+  // fushiSeriesCoverBlock，元数据只为画出来的条目单查）。
+  testWidgets('色块「继续」：合集刮削到 logo 时色块画 logo（反馈 #11）', (
+    WidgetTester tester,
+  ) async {
+    dashboardLayout = ShellContentLayout.collage;
+    useSize(tester, const Size(1280, 900));
+    final File logo = File('${storeDir.path}/logo.png')
+      ..writeAsBytesSync(_kLandscapePng);
+    final int cid = await seedCollectionTwoEpisodes(
+      e1: const VideoBooksCompanion(
+        bookUid: Value('e1'),
+        title: Value('S01E01'),
+        videoPath: Value('/abs/e1.mp4'),
+        lastPositionMs: Value(60000),
+      ),
+      e2: const VideoBooksCompanion(
+        bookUid: Value('e2'),
+        title: Value('S01E02'),
+        videoPath: Value('/abs/e2.mp4'),
+      ),
+    );
+    await db.replaceMediaImagesForCollection(cid, <MediaImagesCompanion>[
+      MediaImagesCompanion.insert(
+        collectionId: Value<int?>(cid),
+        kind: MediaImageKind.logo.dbValue,
+        path: logo.path,
+      ),
+    ]);
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    final Finder block = find.byKey(
+      const ValueKey<String>('home-continue-block/0'),
+    );
+    expect(block, findsOneWidget);
+    final Finder logoTitle = find.descendant(
+      of: block,
+      matching: find.byType(FushiLogoTitle),
+    );
+    // 元数据是画到时后台单查（DB + 文件存在性），给真实事件循环几跳。
+    for (int i = 0; i < 20 && logoTitle.evaluate().isEmpty; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pump();
+    }
+    await settleCoverProbes(tester);
+    expect(tester.takeException(), isNull);
+    expect(logoTitle, findsOneWidget);
   });
 
   // 设计稿 H8：「最近添加」里同一合集新加的几卷合成一张卡，点开进合集详情页

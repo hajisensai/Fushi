@@ -10,6 +10,7 @@ import 'package:fushi/src/utils/components/fushi_continue_card_row.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/fushi_fit_title.dart';
 import 'package:fushi/src/utils/components/fushi_generated_cover.dart';
+import 'package:fushi/src/utils/components/fushi_logo_title.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/nsfw_cover_blur.dart';
@@ -665,8 +666,12 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
   // ---- 图片的真实宽高比：横版背景图（V1：槽宽按原比例，不从两侧裁）与前景
   // 封面（封面槽按封面原比例定宽，fitHeight 铺满不裁、不露衬底） ----
 
-  late final _ImageAspectProbe _backdropProbe = _ImageAspectProbe(_onAspect);
-  late final _ImageAspectProbe _coverProbe = _ImageAspectProbe(_onAspect);
+  late final FushiImageAspectProbe _backdropProbe = FushiImageAspectProbe(
+    _onAspect,
+  );
+  late final FushiImageAspectProbe _coverProbe = FushiImageAspectProbe(
+    _onAspect,
+  );
 
   void _onAspect() {
     if (mounted) setState(() {});
@@ -1194,62 +1199,6 @@ class _FushiCoverBlockState extends State<FushiCoverBlock>
         ),
       ),
     );
-  }
-}
-
-/// 一张图的固有宽高比探针（解出前 / 取不到图源 / 解码失败 = null）。
-///
-/// 缓存命中时监听器在 `addListener` 里同步回调：此刻正处在
-/// `didChangeDependencies` / `didUpdateWidget`（随后必 build），直接赋值；异步解出
-/// 才经 [onChanged] 让宿主重建。解码失败只是拿不到比例（图本身由封面 widget
-/// 自己的 errorBuilder 处理），几何回落默认比例。
-class _ImageAspectProbe {
-  _ImageAspectProbe(this.onChanged);
-
-  final VoidCallback onChanged;
-
-  ImageProvider? _image;
-  ImageStream? _stream;
-  ImageStreamListener? _listener;
-
-  /// 宽 / 高。
-  double? aspect;
-
-  /// 换成追踪 [image]（同一图源不重解）。
-  void track(ImageProvider? image, ImageConfiguration config) {
-    if (image == _image) return;
-    stop();
-    _image = image;
-    aspect = null;
-    if (image == null) return;
-    bool synchronous = true;
-    final ImageStream stream = image.resolve(config);
-    final ImageStreamListener listener = ImageStreamListener((
-      ImageInfo info,
-      bool _,
-    ) {
-      final int w = info.image.width;
-      final int h = info.image.height;
-      info.dispose();
-      if (_image != image) return;
-      final double? resolved = w > 0 && h > 0 ? w / h : null;
-      stop();
-      if (resolved == aspect) return;
-      aspect = resolved;
-      if (!synchronous) onChanged();
-    }, onError: (Object _, StackTrace? __) => stop());
-    _stream = stream;
-    _listener = listener;
-    stream.addListener(listener);
-    synchronous = false;
-  }
-
-  /// 停止监听（保留已解出的 [aspect]）。
-  void stop() {
-    final ImageStreamListener? listener = _listener;
-    if (listener != null) _stream?.removeListener(listener);
-    _stream = null;
-    _listener = null;
   }
 }
 
@@ -1907,11 +1856,10 @@ class _BlockText extends StatelessWidget {
       FushiCoverBlockSize.regular => compact ? 17 : 20,
       FushiCoverBlockSize.half => 16,
     };
-    final double logoMaxHeight = switch (size) {
-      FushiCoverBlockSize.hero => compact ? 70 : 92,
-      FushiCoverBlockSize.regular => compact ? 54 : 78,
-      FushiCoverBlockSize.half => 40,
-    };
+    final double logoMaxHeight = fushiCoverBlockLogoMaxHeight(
+      size,
+      compact: compact,
+    );
     final double figureSize = switch (size) {
       FushiCoverBlockSize.hero => compact ? 48 : 64,
       FushiCoverBlockSize.regular => compact ? 38 : 54,
@@ -2118,7 +2066,18 @@ class _BlockText extends StatelessWidget {
   }
 }
 
-/// 标题位：有 logo 画 logo（左下对齐、限高，解码失败回落文字），否则是按剩余
+/// 色块标题位 logo 的档位高度上限（[fushiLogoBoxSize] 的 maxHeight）：拼贴首块
+/// 92（窄窗 70）、规整块 78（窄窗 54）、半高卡 40。
+double fushiCoverBlockLogoMaxHeight(
+  FushiCoverBlockSize size, {
+  required bool compact,
+}) => switch (size) {
+  FushiCoverBlockSize.hero => compact ? 70 : 92,
+  FushiCoverBlockSize.regular => compact ? 54 : 78,
+  FushiCoverBlockSize.half => 40,
+};
+
+/// 标题位：有 logo 画 logo（[FushiLogoTitle]：按视觉面积定宽、限高，解码失败回落文字），否则是按剩余
 /// 高度定行数的标题文字（最多 [maxLines] 行）。
 class _BlockTitle extends StatelessWidget {
   const _BlockTitle({
@@ -2153,23 +2112,11 @@ class _BlockTitle extends StatelessWidget {
         );
         final ImageProvider? image = logo;
         if (image == null) return text;
-        return Semantics(
-          label: title,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: constraints.maxHeight.isFinite
-                  ? math.min(logoMaxHeight, constraints.maxHeight)
-                  : logoMaxHeight,
-            ),
-            child: Image(
-              image: image,
-              fit: BoxFit.contain,
-              alignment: AlignmentDirectional.bottomStart,
-              excludeFromSemantics: true,
-              errorBuilder: (BuildContext _, Object __, StackTrace? ___) =>
-                  ExcludeSemantics(child: text),
-            ),
-          ),
+        return FushiLogoTitle(
+          logo: image,
+          title: title,
+          maxHeight: logoMaxHeight,
+          fallback: text,
         );
       },
     );
