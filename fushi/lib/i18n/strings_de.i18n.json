@@ -4725,6 +4725,7 @@
   "import_extract": "Dateien werden extrahiert...",
   "import_failed": "Wörterbuchimport fehlgeschlagen.",
   "import_folder_copy_failed": "Der Ordner konnte nicht in die App kopiert werden: $error",
+  "import_format_detecting": "Detecting format…",
   "import_format_group_audio": "Audio",
   "import_format_group_books": "Books",
   "import_format_group_droppable": "Can be dragged into the window",

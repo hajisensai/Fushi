@@ -274,44 +274,74 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('定性期间用户对旧选择点了导入：晚到的新选择不得收下', (WidgetTester tester) async {
+    testWidgets('定性期间选择块显示「正在识别格式」、导入置灰，回来后换成选中态', (WidgetTester tester) async {
+      // 拍板台 design-nmv-manga-import-loading：定性挪到后台后，大 EPUB 那一两秒里
+      // 选择块仍显示「选择文件」、导入按钮无故点不动。
+      final Completer<bool> gate = Completer<bool>();
+      final String vol = p.join(root.path, 'vol01.epub');
+      await pumpDialog(tester, vol, (String _) => gate.future);
+
+      expect(find.text(t.import_format_detecting), findsOneWidget);
+      expect(find.text('vol01.epub'), findsOneWidget, reason: '先显示收到的文件名');
+      await tester.tap(find.text(t.dialog_import));
+      await tester.pump();
+      expect(find.text(t.dialog_importing), findsNothing, reason: '定性中导入不可点');
+      expect(find.text(t.manga_import_missing_input), findsNothing);
+
+      gate.complete(true);
+      await tester.pump();
+      expect(find.text(t.import_format_detecting), findsNothing);
+      expect(find.text('vol01.epub'), findsOneWidget);
+      expect(titleText(tester), 'vol01');
+    });
+
+    testWidgets('已选一卷时又拖进一本待定性的：导入置灰，定性回来后换成新的', (WidgetTester tester) async {
       // 旧选择是 `.cbz`（扩展名不二义，不开包、马上收下）；随后拖进一本 `.epub`，
-      // 定性挂起时用户点「导入」——导入已把旧路径拷成局部量。修复前定性回来后照样
-      // 收下新路径：界面显示的与正在导入的不是同一本，选文件夹路径还会删掉正在导入
-      // 的暂存副本。
+      // 定性挂起期间导入按钮置灰——不会出现「对旧选择起跑导入、界面却换成新选择」
+      // （`_isStaleAdoption` 里的 `importing` 仍兜底这条竞态）。
       final Completer<bool> gate = Completer<bool>();
       final String cbz = _writeCbz(root, 'volA.cbz');
       await pumpDialog(tester, cbz, (String _) => gate.future);
       expect(titleText(tester), 'volA');
+      expect(find.text(t.import_format_detecting), findsNothing);
 
       final FushiFileDropTarget target = tester.widget<FushiFileDropTarget>(
         find.byType(FushiFileDropTarget),
       );
       target.onDrop(<String>[p.join(root.path, 'volB.epub')], Offset.zero);
       await tester.pump();
+      expect(find.text(t.import_format_detecting), findsOneWidget);
+      expect(find.text('volB.epub'), findsOneWidget);
 
       await tester.tap(find.text(t.dialog_import));
       await tester.pump();
-      expect(
-        find.text(t.dialog_importing),
-        findsOneWidget,
-        reason: '前提：导入正在进行（真实文件 IO 在 fake async 里不会完成）',
-      );
+      expect(find.text(t.dialog_importing), findsNothing, reason: '定性中导入不可点');
 
       gate.complete(true);
       await tester.pump();
-      expect(titleText(tester), 'volA', reason: '正在导入的是 volA，不能换成 volB');
-      expect(find.textContaining('volB'), findsNothing);
+      expect(find.text(t.import_format_detecting), findsNothing);
+      expect(titleText(tester), 'volB');
+    });
 
-      // 收尾：先拆掉对话框，再交替推进真实 IO 与 fake 时钟，让挂起的导入走完并
-      // 关掉 volA.cbz 的句柄（否则 Windows 上 tearDown 删不掉临时目录）。
-      await tester.pumpWidget(const SizedBox.shrink());
-      for (int i = 0; i < 10; i++) {
-        await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 50)),
-        );
-        await tester.pump(const Duration(milliseconds: 50));
-      }
+    testWidgets('拖进的不是漫画：加载态撤掉、旧选择保留', (WidgetTester tester) async {
+      final Completer<bool> gate = Completer<bool>();
+      final String cbz = _writeCbz(root, 'volA.cbz');
+      await pumpDialog(tester, cbz, (String _) => gate.future);
+
+      final FushiFileDropTarget target = tester.widget<FushiFileDropTarget>(
+        find.byType(FushiFileDropTarget),
+      );
+      target.onDrop(<String>[p.join(root.path, 'novel.epub')], Offset.zero);
+      await tester.pump();
+      expect(find.text(t.import_format_detecting), findsOneWidget);
+
+      gate.complete(false);
+      await tester.pump();
+      expect(find.text(t.import_format_detecting), findsNothing);
+      expect(find.text('volA.cbz'), findsOneWidget);
+      expect(titleText(tester), 'volA');
+      // 让「不支持的格式」toast 的计时器走完。
+      await tester.pump(const Duration(seconds: 10));
     });
 
     testWidgets('预填的不是漫画：留空、不弹不支持格式', (WidgetTester tester) async {
@@ -322,6 +352,7 @@ void main() {
       );
       await tester.pump();
       expect(titleText(tester), isEmpty);
+      expect(find.text(t.import_format_detecting), findsNothing);
     });
   });
 }

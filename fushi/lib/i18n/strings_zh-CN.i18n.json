@@ -4725,6 +4725,7 @@
   "import_extract": "正在解压文件…",
   "import_failed": "词典导入失败。",
   "import_folder_copy_failed": "无法把文件夹复制进应用：$error",
+  "import_format_detecting": "正在识别格式…",
   "import_format_group_audio": "音频",
   "import_format_group_books": "书",
   "import_format_group_droppable": "可以拖进窗口",

@@ -24,6 +24,7 @@ import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/import_glyph.dart';
 import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_block_color_scope.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
@@ -231,6 +232,7 @@ class ImportPickBlock extends StatelessWidget {
     this.subtitle,
     this.dropHint,
     this.selected = false,
+    this.busy = false,
     this.enabled = true,
     this.onTap,
     this.onClear,
@@ -253,6 +255,10 @@ class ImportPickBlock extends StatelessWidget {
   /// 拖放说明；null = 本块不是落点（不画虚线）。只在桌面显示。
   final String? dropHint;
   final bool selected;
+
+  /// 选中的东西还在后台定性（如漫画框读包判断是不是图片型 EPUB）：副标题前加一个
+  /// 小转圈，表示「收到了、正在处理」，不是没选上。
+  final bool busy;
   final bool enabled;
   final VoidCallback? onTap;
 
@@ -325,15 +331,32 @@ class ImportPickBlock extends StatelessWidget {
               ),
               if (sub != null && sub.isNotEmpty) ...<Widget>[
                 const SizedBox(height: 6),
-                Text(
-                  sub,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: context.fushiType.bodySmall.copyWith(
-                    height: 1.45,
-                    fontWeight: FontWeight.w600,
-                    color: colors.onContainer,
-                  ),
+                Row(
+                  children: <Widget>[
+                    if (busy) ...<Widget>[
+                      SizedBox.square(
+                        dimension: 14,
+                        child: adaptiveIndicator(
+                          context: context,
+                          strokeWidth: 2,
+                          color: colors.onContainer,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    Flexible(
+                      child: Text(
+                        sub,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.fushiType.bodySmall.copyWith(
+                          height: 1.45,
+                          fontWeight: FontWeight.w600,
+                          color: colors.onContainer,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
               if (droppable && !selected) ...<Widget>[

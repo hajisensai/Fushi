@@ -4725,6 +4725,7 @@
   "import_extract": "ファイルを展開中...",
   "import_failed": "辞書のインポートに失敗しました。",
   "import_folder_copy_failed": "フォルダをアプリにコピーできませんでした: $error",
+  "import_format_detecting": "Detecting format…",
   "import_format_group_audio": "Audio",
   "import_format_group_books": "Books",
   "import_format_group_droppable": "Can be dragged into the window",

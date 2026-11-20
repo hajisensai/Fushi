@@ -4725,6 +4725,7 @@
   "import_extract": "Extrayendo archivos...",
   "import_failed": "Error al importar el diccionario.",
   "import_folder_copy_failed": "No se pudo copiar la carpeta a la app: $error",
+  "import_format_detecting": "Detecting format…",
   "import_format_group_audio": "Audio",
   "import_format_group_books": "Books",
   "import_format_group_droppable": "Can be dragged into the window",

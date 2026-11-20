@@ -4725,6 +4725,7 @@
   "import_extract": "Dosyalar çıkarılıyor...",
   "import_failed": "Sözlük içe aktarma başarısız.",
   "import_folder_copy_failed": "Klasör uygulamaya kopyalanamadı: $error",
+  "import_format_detecting": "Detecting format…",
   "import_format_group_audio": "Audio",
   "import_format_group_books": "Books",
   "import_format_group_droppable": "Can be dragged into the window",
