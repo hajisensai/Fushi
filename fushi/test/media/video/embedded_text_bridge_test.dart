@@ -192,6 +192,49 @@ void main() {
     expect(controller.currentCue?.text, 'English');
   });
 
+  // 拍板台 design-nmv-autosync-epoch：自动对轴按 cueSourceEpoch 判「期间换没换字幕源」，
+  // 同一源补全 cue 不能推进世代，否则点了自动对轴结果被无声丢掉。
+  test('同一源补全 cue 不推进换源世代；真换源才推进', () async {
+    mpv.setPosition(1500);
+    mpv.showLine('一句目', 1.0, 3.0);
+    final Object? token = await controller.beginEmbeddedTextBridge(0);
+    expect(token, isNotNull);
+    await _settle();
+    final int bridged = controller.cueSourceEpoch;
+
+    mpv.setPosition(3500);
+    mpv.showLine('二句目', 3.0, 5.0);
+    await _settle();
+    expect(controller.cueSourceEpoch, bridged, reason: '播放器解码回流逐句累积不是换源');
+
+    expect(
+      controller.completeEmbeddedTextBridge(token!, <AudioCue>[
+        _cue('一句目', 1000, 3000),
+        _cue('二句目', 3000, 5000),
+      ]),
+      isTrue,
+    );
+    expect(controller.cueSourceEpoch, bridged, reason: '内封轨抽完换上完整列表不是换源');
+
+    // 图形字幕 OCR 边识别边发布：同一份结果多识别了几句。
+    controller.updateCuesInSameSource(<AudioCue>[
+      _cue('一句目', 1000, 3000),
+      _cue('二句目', 3000, 5000),
+      _cue('三句目', 5000, 7000),
+    ]);
+    expect(controller.cueSourceEpoch, bridged);
+    expect(controller.cues.map((AudioCue c) => c.text), <String>[
+      '一句目',
+      '二句目',
+      '三句目',
+    ]);
+
+    controller.setCues(<AudioCue>[_cue('外挂', 1000, 3000)]);
+    expect(controller.cueSourceEpoch, bridged + 1, reason: '另选字幕是换源');
+    controller.setCues(const <AudioCue>[]);
+    expect(controller.cueSourceEpoch, bridged + 2, reason: '关字幕是换源');
+  });
+
   test('序号越界 / 没有播放器：不装桥（调用方照旧等完整列表）', () async {
     expect(await controller.beginEmbeddedTextBridge(5), isNull);
     expect(controller.isPlayerDecodedTextSubtitleActive, isFalse);

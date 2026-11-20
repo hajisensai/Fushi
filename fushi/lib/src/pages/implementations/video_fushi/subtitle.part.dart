@@ -3096,8 +3096,13 @@ extension _VideoSubtitle on _VideoFushiPageState {
           if (!isCurrent()) return;
           await _setDelayMs(0);
           if (!isCurrent()) return;
+          // 首次发布：图形轨 → OCR 文本，算换源。
+          controller.setCues(live);
+          return;
         }
-        controller.setCues(live);
+        // 之后每次只是同一份 OCR 结果多识别了几句：时间轴不变，不能让期间跑着的
+        // 自动对轴把结果当成「字幕源已换」丢掉。
+        controller.updateCuesInSameSource(live);
       }
 
       final List<GraphicSubtitleTextCue>? texts =
