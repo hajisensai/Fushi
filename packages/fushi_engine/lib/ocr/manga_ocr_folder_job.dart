@@ -195,8 +195,24 @@ bool _isDigit(int codeUnit) => codeUnit >= 0x30 && codeUnit <= 0x39;
 /// 整个磁盘根时把目录树走穿。
 const int kMangaPageScanMaxDepth = 6;
 
+/// NAS / 跨平台拷贝留下的系统目录：不是漫画内容，里面却全是 `.jpg`。
+/// 群晖 `@eaDir/<页名>/SYNOPHOTO_THUMB_*.jpg` 是每页的缩略图，macOS 压缩包解开的
+/// `__MACOSX/` 是资源叉残渣；按页图递归枚举会把它们当成真页插进卷里。
+const Set<String> kMangaPageScanSkippedDirNames = <String>{
+  '@eadir',
+  '__macosx',
+};
+
+/// 页图目录树里要跳过的系统目录（不分大小写，见 [kMangaPageScanSkippedDirNames]）。
+bool isMangaPageScanSkippedDir(String name) =>
+    kMangaPageScanSkippedDirNames.contains(name.toLowerCase());
+
+/// macOS AppleDouble 资源叉文件（`._001.jpg`）：扩展名是图片，内容不是。
+bool isMangaAppleDoubleFile(String name) => name.startsWith('._');
+
 /// 枚举 [root] 下的页图：递归下钻到 [kMangaPageScanMaxDepth] 层，排除
-/// [kMangaOcrOutDirName] 产物目录，按相对路径自然序排序。
+/// [kMangaOcrOutDirName] 产物目录、NAS / macOS 系统目录（`@eaDir`、`__MACOSX`）与
+/// `._` AppleDouble 文件，按相对路径自然序排序。
 ///
 /// 旧实现只认「顶层文件 + 一层子目录内的文件」。已入库漫画的书目录是
 /// `manga.json` + `images/<destRel>`，而 destRel **保留源子目录结构**：
@@ -211,6 +227,7 @@ List<MangaOcrPageFile> enumerateMangaPages(Directory root) {
     if (!kMangaOcrImageExtensions.contains(ext)) {
       return;
     }
+    if (isMangaAppleDoubleFile(p.basename(file.path))) return;
     final String relative = p.relative(file.path, from: root.path);
     pages.add(
       MangaOcrPageFile(file: file, relativeUrl: normalizeMangaUrl(relative)),
@@ -229,7 +246,8 @@ List<MangaOcrPageFile> enumerateMangaPages(Directory root) {
       if (entity is File) {
         addFile(entity);
       } else if (entity is Directory && depth < kMangaPageScanMaxDepth) {
-        if (p.basename(entity.path) == kMangaOcrOutDirName) {
+        final String name = p.basename(entity.path);
+        if (name == kMangaOcrOutDirName || isMangaPageScanSkippedDir(name)) {
           continue;
         }
         walk(entity, depth + 1);
