@@ -145,6 +145,13 @@ class MangaDownloadedChapter {
 typedef MangaDownloadOcrHook =
     Future<void> Function(MangaDownloadedChapter chapter);
 
+/// 章节任务内同时在飞的取页数（[MangaDownloadService.pageConcurrency] 的默认值）。
+///
+/// Android 运行时的取图线程池按「在线直读并发 + 本值」开宽度
+/// （`MihonChannelHandler.kt` 的 `DOWNLOAD_PAGE_CONCURRENCY`），改这里要同步改那边，
+/// `mihon_image_pool_width_guard_test.dart` 钉着两边。
+const int kMangaDownloadPageConcurrency = 4;
+
 /// 三次自动重试之间的退避（与 mokuro 队列既有语义一致）。
 const List<Duration> kMangaDownloadRetryBackoff = <Duration>[
   Duration(seconds: 2),
@@ -286,7 +293,7 @@ class MangaDownloadService {
     DateTime Function()? clock,
     Future<void> Function(Duration duration)? wait,
     DownloadKeepAlive? keepAlive,
-    this.pageConcurrency = 4,
+    this.pageConcurrency = kMangaDownloadPageConcurrency,
   }) : _database = database,
        _serviceFor = serviceFor,
        _onChapterDownloaded = onChapterDownloaded,

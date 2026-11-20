@@ -19,6 +19,10 @@ import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 const String kMangaStreamCacheDirName = 'manga_stream_cache';
 
 /// 同时在飞的取页请求上限（前台 + 预取共用）。
+///
+/// Android 运行时的取图线程池按「本值 + 下载页并发」开宽度
+/// （`MihonChannelHandler.kt` 的 `STREAM_PAGE_CONCURRENCY`），改这里要同步改那边，
+/// `mihon_image_pool_width_guard_test.dart` 钉着两边。
 const int kOnlineMangaPageConcurrency = 3;
 
 /// 每次取页时顺带往阅读方向（页号增大）预取几页。
