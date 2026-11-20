@@ -4029,14 +4029,24 @@ exit 1；成功 949、失败 9、错误 6、跳过 21，实际执行 964。上�
   `pr/srs-gen4-w5-import-write` 上过，按 2 物化过的开发库里带未来时刻的外来日志排在派生位置上。按 `cache.rs` 自己的规则（缓存行
   变了就 +1）升到 3，开库时整层重建一次，不改真相、不丢卡。`a_cache_built_under_older_rules_is_rebuilt_once_on_open` 的旧值
   列表加上「上一版口径」（`CACHE_RULES - 1`）。
+- **「这次必须升」的用例**（复核 minor，续做补上）：重建用例按 `CACHE_RULES - 1` 取上一版，常量退回 2 照样绿。新加
+  `cache_rules_matches_the_pinned_derivation_table`（`cache.rs` 测试模块）：派生排序键 `derived_log_hlc` 的 8 行输入 / 期望 /
+  「让这一行成为现在这样的修订号」对表（原生 0、Anki 1、外来早于或同毫秒 2、外来晚于操作 3），要求表里最新修订号等于
+  `CACHE_RULES`。以后改派生口径而不升、或把常量退回去，都会红；改口径的人要改期望、记新修订号并升常量。变异：常量退回 2 →
+  红（left 2 / right 3）；`derived_log_hlc` 去掉 `at <= op_wall` → 红（「伪造的未来时刻」那行得到 `3000:0:fushi`）。
 
 ### 没做 / 交给别人
 
 - 没在真机 / 双设备上验回导与备份还原；证据是上面的 Rust / Dart 用例。
-- `CACHE_RULES` 2 → 3 本身没有能变红的用例：`a_cache_built_under_older_rules_is_rebuilt_once_on_open` 按 `CACHE_RULES - 1`
-  取「上一版口径」，常量回退到 2 时它照样绿；它钉的是「旧口径的库开库重建一次」，不是「这次必须升」。
+- 对表只覆盖 `derived_log_hlc` 这一处派生；`log_body` 里别的缓存列口径（若以后改）不在表里，靠改的人按 `CACHE_RULES` 的规则自觉升。
+- 集成分支后来合入的 T2（#3736）没合进本分支（不 rebase / 不合并），冲突留给合流处理。2026-11-20 对集成分支头 `14799047ca` 做
+  `git merge-tree`：只有本交接文档文末追加节冲突（两边各追加一节，两节都保留即可），代码文件无冲突。
+- 复核 nit「成功出口正则不看分支可达性」（`false ? t.backup_import_success : …` 能骗绿）未加严：查找范围与基线相同，没有变宽。
 
 ### 验证（2026-11-20，头 `2bce09da6f` 续做核验，本 worktree 编出的原生库）
+
+- 续做（`b414ebdbea` 对表用例）：`cargo fmt --check` 退出 0；`cargo test --profile quick --lib -j 4` 退出 0，1441 passed /
+  0 failed / 39 ignored（比上次多的 1 条就是对表用例）。只动 Rust 测试与本文档，Dart 侧未重跑。
 
 - `native/fushi_fsrs`：`cargo fmt --check` 退出 0；`cargo test --profile quick --lib -j 4` 退出 0，1440 passed / 0 failed / 39 ignored
   （ignored 为存量，本分支没加）。
