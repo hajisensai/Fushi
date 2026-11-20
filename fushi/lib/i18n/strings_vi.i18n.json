@@ -1094,6 +1094,7 @@
   "audiobook_reference_original": "Tham chiếu tệp gốc",
   "audiobook_reference_original_desc": "Giữ âm thanh tại chỗ và phát từ đường dẫn gốc; sách sẽ hỏng nếu tệp bị di chuyển hoặc xóa.",
   "audiobook_relocate": "Di chuyển tệp",
+  "audiobook_relocate_count_mismatch": "This book has ${expected} audio files, but ${picked} were selected. Relocating must pick the same files",
   "audiobook_relocate_done": "Đã di chuyển âm thanh",
   "audiobook_rematch_all_zero": "Tất cả cửa sổ có tỷ lệ 0%, vui lòng điều chỉnh thủ công",
   "audiobook_rematch_auto_failed": "Tự động khớp thất bại: $error",

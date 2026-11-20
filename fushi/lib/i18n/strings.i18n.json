@@ -1094,6 +1094,7 @@
   "audiobook_reference_original": "Reference original files",
   "audiobook_reference_original_desc": "Keep audio where it is and play from its original path; the book breaks if the file is moved or deleted.",
   "audiobook_relocate": "Relocate file",
+  "audiobook_relocate_count_mismatch": "This book has ${expected} audio files, but ${picked} were selected. Relocating must pick the same files",
   "audiobook_relocate_done": "Audio relocated",
   "audiobook_rematch_all_zero": "All windows scored 0%, please adjust manually",
   "audiobook_rematch_auto_failed": "Auto-match failed: $error",

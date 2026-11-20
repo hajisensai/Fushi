@@ -1094,6 +1094,7 @@
   "audiobook_reference_original": "元のファイルを参照",
   "audiobook_reference_original_desc": "音声をそのままの場所に保持し、元のパスから再生します。ファイルが移動または削除されると本が壊れます。",
   "audiobook_relocate": "ファイルを移動",
+  "audiobook_relocate_count_mismatch": "This book has ${expected} audio files, but ${picked} were selected. Relocating must pick the same files",
   "audiobook_relocate_done": "音声を移動しました",
   "audiobook_rematch_all_zero": "すべてのウィンドウのスコアが0%です。手動で調整してください",
   "audiobook_rematch_auto_failed": "自動マッチングに失敗しました：$error",

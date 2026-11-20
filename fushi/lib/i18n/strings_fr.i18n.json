@@ -1094,6 +1094,7 @@
   "audiobook_reference_original": "Référencer les fichiers originaux",
   "audiobook_reference_original_desc": "Garder l'audio à son emplacement actuel et lire depuis son chemin d'origine ; le livre sera inutilisable si le fichier est déplacé ou supprimé.",
   "audiobook_relocate": "Déplacer le fichier",
+  "audiobook_relocate_count_mismatch": "This book has ${expected} audio files, but ${picked} were selected. Relocating must pick the same files",
   "audiobook_relocate_done": "Audio déplacé",
   "audiobook_rematch_all_zero": "Toutes les fenêtres ont obtenu 0 %, veuillez ajuster manuellement",
   "audiobook_rematch_auto_failed": "échec de la correspondance automatique : $error",

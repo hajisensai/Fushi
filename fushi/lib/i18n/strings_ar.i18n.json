@@ -1094,6 +1094,7 @@
   "audiobook_reference_original": "الإشارة إلى الملفات الأصلية",
   "audiobook_reference_original_desc": "أبقِ الصوت في مكانه وشغّله من مساره الأصلي؛ سيتعطل الكتاب إذا تم نقل الملف أو حذفه.",
   "audiobook_relocate": "نقل الملف",
+  "audiobook_relocate_count_mismatch": "This book has ${expected} audio files, but ${picked} were selected. Relocating must pick the same files",
   "audiobook_relocate_done": "تم نقل الصوت",
   "audiobook_rematch_all_zero": "جميع النوافذ سجّلت 0%، يرجى الضبط يدوياً",
   "audiobook_rematch_auto_failed": "فشلت المطابقة التلقائية: $error",

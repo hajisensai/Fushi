@@ -1094,6 +1094,7 @@
   "audiobook_reference_original": "Riferisci ai file originali",
   "audiobook_reference_original_desc": "Mantieni l'audio dove si trova e riproduci dal percorso originale; il libro si rompe se il file viene spostato o eliminato.",
   "audiobook_relocate": "Riposiziona file",
+  "audiobook_relocate_count_mismatch": "This book has ${expected} audio files, but ${picked} were selected. Relocating must pick the same files",
   "audiobook_relocate_done": "Audio riposizionato",
   "audiobook_rematch_all_zero": "Tutte le finestre hanno ottenuto 0%, regolare manualmente",
   "audiobook_rematch_auto_failed": "Corrispondenza automatica fallita: $error",

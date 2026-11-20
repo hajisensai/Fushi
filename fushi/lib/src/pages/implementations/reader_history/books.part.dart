@@ -651,13 +651,29 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     }
   }
 
-  /// 重新定位断链音频：让用户重选文件 → 重写 [SrtBook.audioPaths] → 落库。
+  /// 重新定位断链音频：让用户重选文件 → 经 [SrtBookRepository.relocateAudioPaths]
+  /// 落库（EPUB 有声书配对行连同 `audiobooks` 行同一事务改写，进度不动）。
   /// 复用与导入一致的「引用原路径」语义（重选的桌面真实路径直接存）。
   Future<void> _relocateSrtBookAudio(SrtBook book) async {
     final List<String> picked = await _pickSrtAudioFiles();
     if (picked.isEmpty || !mounted) return;
+    final SrtBookRelocateResult result = await SrtBookRepository(
+      appModel.database,
+    ).relocateAudioPaths(book.uid, picked);
+    if (!mounted) return;
+    if (result == SrtBookRelocateResult.countMismatch) {
+      FushiToast.show(
+        msg: t.audiobook_relocate_count_mismatch(
+          expected: book.audioPaths?.length ?? 0,
+          picked: picked.length,
+        ),
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (result != SrtBookRelocateResult.relocated) return;
     book.audioPaths = picked;
-    await SrtBookRepository(appModel.database).save(book);
+    book.audioRoot = null;
     if (mounted) {
       _refreshSrtBooks();
       _rebuild(() {});
