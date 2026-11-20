@@ -621,13 +621,21 @@ void main() {
           (messages.last! as Map<String, Object?>)['content']! as String;
       final Map<String, Object?> payload =
           jsonDecode(user) as Map<String, Object?>;
-      final Map<String, Object?> first =
-          (payload['candidates']! as List<Object?>).single!
-              as Map<String, Object?>;
-      expect((first['a']! as Map<String, Object?>)['ids'], <String, Object?>{
+      final List<Object?> items = payload['items']! as List<Object?>;
+      expect(items, hasLength(2));
+      expect((items.first! as Map<String, Object?>)['ids'], <String, Object?>{
         'vndb': 'v4',
       });
-      expect(first['evidence'], 'Titles match');
+      expect(payload['pairs'], <Object?>[
+        <String, Object?>{
+          'i': 0,
+          'a': 0,
+          'b': 1,
+          'src': kMediaLinkTitleMatchSource,
+          'guess': 'same_work',
+        },
+      ]);
+      expect(user, isNot(contains('Titles match')), reason: '证据句不再发');
     });
   });
 

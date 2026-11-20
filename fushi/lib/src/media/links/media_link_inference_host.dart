@@ -39,12 +39,20 @@ class MediaLinkLibrarySnapshot {
     required this.videos,
     required this.games,
     this.music = MusicLinkLibrary.empty,
+    this.seriesLinkedPairs = const <String>{},
   });
 
   final List<MediaLinkSubject> books;
   final List<MediaLinkSubject> videos;
   final List<MediaLinkSubject> games;
   final MusicLinkLibrary music;
+
+  /// 刮削的系列关系（`collection_relations` 已绑定的行）已经连上的条目对
+  /// （[mediaLinkPairKey]）：资料源给过答案的不再拿去问 AI。
+  final Set<String> seriesLinkedPairs;
+
+  bool seriesLinked(MediaLinkEndpoint a, MediaLinkEndpoint b) =>
+      seriesLinkedPairs.contains(mediaLinkPairKey(a, b));
 
   /// 音乐候选可落的作品（视频合集 / 游戏；单集只作声纹命中的兜底端点）。
   List<MediaLinkSubject> get musicTargets => <MediaLinkSubject>[
@@ -155,12 +163,38 @@ class MediaLinkLibrarySnapshot {
         ),
       );
     }
+    final Set<String> seriesLinkedPairs = <String>{};
+    for (final CollectionRelationRow r
+        in await db.select(db.collectionRelations).get()) {
+      final MediaLinkEndpoint? from = _videoEndpoint(r.collectionId, r.bookUid);
+      final MediaLinkEndpoint? to = _videoEndpoint(
+        r.targetCollectionId,
+        r.targetBookUid,
+      );
+      if (from != null && to != null) {
+        seriesLinkedPairs.add(mediaLinkPairKey(from, to));
+      }
+    }
     return MediaLinkLibrarySnapshot(
       books: books,
       videos: videos,
       games: games,
       music: await loadMusicLinkLibrary(db),
+      seriesLinkedPairs: seriesLinkedPairs,
     );
+  }
+
+  static MediaLinkEndpoint? _videoEndpoint(int? collectionId, String? bookUid) {
+    if (collectionId != null) {
+      return (
+        kind: MediaLinkKind.videoCollection,
+        key: collectionTagEntryKey(collectionId),
+      );
+    }
+    if (bookUid != null) {
+      return (kind: MediaLinkKind.videoEpisode, key: bookUid);
+    }
+    return null;
   }
 
   MediaLinkSubject? find(MediaLinkEndpoint e) {
@@ -175,12 +209,15 @@ class MediaLinkLibrarySnapshot {
   }
 }
 
-/// 以 [self] 为中心收集候选（确定性规则；MAL 原作在前，同一对条目先到先得）。
+/// 以 [self] 为中心收集候选（确定性规则；同一对条目强证据顶掉弱的，同样强的先到
+/// 先得）。[withAiOnly]：是否出只有 AI 能定的同类系列候选（[matchSeriesByTitle]）——
+/// 没有裁决器时不必算。
 Future<List<MediaLinkCandidate>> collectMediaLinkCandidates({
   required MediaLinkLibrarySnapshot library,
   required MediaLinkEndpoint self,
   required MalSourceMaterialFetcher fetchMalSourceMaterial,
   required WikidataAnimeLookup lookupWikidataAnime,
+  bool withAiOnly = false,
 }) async {
   if (self.kind == MediaLinkKind.musicAlbum ||
       self.kind == MediaLinkKind.musicTrack) {
@@ -247,6 +284,15 @@ Future<List<MediaLinkCandidate>> collectMediaLinkCandidates({
           others: <MediaLinkSubject>[...library.games, ...library.books],
         ),
       );
+      if (withAiOnly) {
+        out.addAll(
+          matchSeriesByTitle(
+            subject: subject,
+            others: library.videos,
+            alreadyLinked: library.seriesLinked,
+          ),
+        );
+      }
     case MediaLinkKind.book:
     case MediaLinkKind.audiobook:
       final List<MediaLinkSubject> nearVideos = <MediaLinkSubject>[
@@ -289,6 +335,9 @@ Future<List<MediaLinkCandidate>> collectMediaLinkCandidates({
           others: <MediaLinkSubject>[...library.videos, ...library.books],
         ),
       );
+      if (withAiOnly) {
+        out.addAll(matchSeriesByTitle(subject: subject, others: library.games));
+      }
     case MediaLinkKind.musicAlbum:
     case MediaLinkKind.musicTrack:
       break; // 上面已处理。
@@ -314,15 +363,24 @@ Future<int> runMediaLinkInference({
     self: self,
     fetchMalSourceMaterial: fetchMalSourceMaterial,
     lookupWikidataAnime: lookupWikidataAnime,
+    withAiOnly: judge != null,
   );
   if (judge != null) {
     try {
-      return (await applyMediaLinkCandidates(
+      final int written = (await applyMediaLinkCandidates(
         db: db,
         candidates: candidates,
         trigger: MediaLinkInferenceTrigger.manual,
         judge: judge,
       )).written;
+      // 后面的批次失败：已拿到的结论照常落库，剩下的按「没经 AI」处理，告诉用户。
+      if (judge is AiMediaLinkJudge && judge.partialFailure != null) {
+        FushiToast.show(
+          msg: t.media_link_infer_ai_failed,
+          severity: ToastSeverity.warning,
+        );
+      }
+      return written;
     } on AiChatFailure {
       FushiToast.show(
         msg: t.media_link_infer_ai_failed,

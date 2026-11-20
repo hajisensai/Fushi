@@ -8,8 +8,10 @@
 /// - 撤销回执完整：生效连接带写入前的行（建议被 AI 升成生效的也能退回建议），建议
 ///   只删本轮新写的。
 ///
-/// 一批端点共用一份库快照；作品图每个端点前重读一次（前一个端点刚生效的连接要
-/// 计入下一个端点的分量判断）。
+/// 一批端点共用一份库快照、一份作品图、**一次**裁决：先收齐所有端点的候选，同一对
+/// 条目只留一条（从两端各出一次的不重复问 AI），再按 20 条一批发 AI 请求——请求数
+/// 从「每个端点一次」降到「候选数 / 20」。本批先生效的连接造成的分量合并由
+/// `applyMediaLinkCandidates` 在同一轮里记账（§5.4 第二条照常成立）。
 library;
 
 import 'package:fushi_core/fushi_core.dart';
@@ -39,6 +41,13 @@ class _CountingJudge implements MediaLinkJudge {
 
   final MediaLinkJudge inner;
   int calls = 0;
+
+  /// 真正发出的请求数：[AiMediaLinkJudge] 一次裁决会按批拆成多次请求，取它自己的
+  /// 计数；别的实现（测试桩）按调用次数算。
+  int get requests => switch (inner) {
+    final AiMediaLinkJudge ai => ai.requestCount,
+    _ => calls,
+  };
 
   @override
   Future<List<MediaLinkVerdict?>> judge(List<MediaLinkCandidate> candidates) {
@@ -165,55 +174,57 @@ Future<LibraryCurateLinkResult> runLibraryCurateLinkInference({
   final _CountingJudge? judge = deps.judge == null
       ? null
       : _CountingJudge(deps.judge!);
+  final List<MediaLinkCandidate> candidates = <MediaLinkCandidate>[];
   for (final MediaLinkEndpoint self in endpoints) {
-    final List<MediaLinkCandidate> candidates;
     try {
-      candidates = await collectMediaLinkCandidates(
-        library: library,
-        self: self,
-        fetchMalSourceMaterial: deps.fetchMalSourceMaterial,
-        lookupWikidataAnime: deps.lookupWikidataAnime,
+      candidates.addAll(
+        await collectMediaLinkCandidates(
+          library: library,
+          self: self,
+          fetchMalSourceMaterial: deps.fetchMalSourceMaterial,
+          lookupWikidataAnime: deps.lookupWikidataAnime,
+          withAiOnly: judge != null,
+        ),
       );
     } on WikidataBridgeException {
       out.failed.add('${self.kind.dbValue}:${self.key}');
-      continue;
     } on VideoMetadataNetworkException {
       out.failed.add('${self.kind.dbValue}:${self.key}');
-      continue;
-    }
-    if (candidates.isEmpty) continue;
-    final WorkGraph graph = await loadWorkGraph(db);
-    ({Object id, int size})? workOf(MediaLinkEndpoint e) {
-      final Work? w = graph.workOf(e);
-      return w == null ? null : (id: w.identity, size: w.members.length);
-    }
-
-    MediaLinkInferenceOutcome outcome;
-    try {
-      outcome = await applyMediaLinkCandidates(
-        db: db,
-        candidates: candidates,
-        trigger: trigger,
-        judge: judge,
-        workOf: workOf,
-      );
-    } on AiChatFailure {
-      // AI 失败：这一个端点只落确定性证据（与详情页按钮同一退路），不算失败。
-      outcome = await applyMediaLinkCandidates(
-        db: db,
-        candidates: candidates,
-        trigger: trigger,
-        workOf: workOf,
-      );
-    }
-    for (final MediaLinkAiWrite w in outcome.appliedWrites) {
-      out.writes.add((id: w.id, applied: true, previous: w.previous));
-    }
-    for (final MediaLinkId id in outcome.suggestedIds) {
-      out.writes.add((id: id, applied: false, previous: null));
     }
   }
-  out.requests = judge?.calls ?? 0;
+  if (candidates.isEmpty) return out;
+  final WorkGraph graph = await loadWorkGraph(db);
+  ({Object id, int size})? workOf(MediaLinkEndpoint e) {
+    final Work? w = graph.workOf(e);
+    return w == null ? null : (id: w.identity, size: w.members.length);
+  }
+
+  MediaLinkInferenceOutcome outcome;
+  try {
+    outcome = await applyMediaLinkCandidates(
+      db: db,
+      candidates: candidates,
+      trigger: trigger,
+      judge: judge,
+      workOf: workOf,
+    );
+  } on AiChatFailure {
+    // AI 第一批就失败（提供商不可用）：这一批只落确定性证据（与详情页按钮同一
+    // 退路），不算失败。中途失败不走这里——已拿到的结论照常落库。
+    outcome = await applyMediaLinkCandidates(
+      db: db,
+      candidates: candidates,
+      trigger: trigger,
+      workOf: workOf,
+    );
+  }
+  for (final MediaLinkAiWrite w in outcome.appliedWrites) {
+    out.writes.add((id: w.id, applied: true, previous: w.previous));
+  }
+  for (final MediaLinkId id in outcome.suggestedIds) {
+    out.writes.add((id: id, applied: false, previous: null));
+  }
+  out.requests = judge?.requests ?? 0;
   return out;
 }
 
@@ -235,7 +246,7 @@ Future<LibraryCurateLinkResult> runLibraryCurateMusicInference({
     batch = await runMusicMediaLinkBatchInference(db: db, trigger: trigger);
   }
   final LibraryCurateLinkResult out = LibraryCurateLinkResult()
-    ..requests = counting?.calls ?? 0;
+    ..requests = counting?.requests ?? 0;
   for (final MusicLinkBatchWrite w in batch.writes) {
     switch (w.disposition) {
       case MediaLinkDisposition.apply:
