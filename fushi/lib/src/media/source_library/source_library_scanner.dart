@@ -2513,7 +2513,7 @@ class SourceLibraryScanner {
   }) async {
     final bool isImageArchive =
         mangaArchiveNeedsContentProbe(localPath) &&
-        await looksLikeImageArchiveInBackground(localPath);
+        await looksLikeImageArchiveInBackground(localPath, db: _db);
     final ImportCarrier carrier = classifyImportCarrier(
       localPath,
       // 扫描规划阶段已经只收文件，目录分支不可达。

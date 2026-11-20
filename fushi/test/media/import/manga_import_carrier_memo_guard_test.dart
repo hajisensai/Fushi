@@ -34,12 +34,20 @@ void main() {
     );
   });
 
-  test('_classify 委托给 resolver，且判据仍是真开包判据', () {
-    expect(src.contains('_carrierResolver.resolve('), isTrue);
+  test('_classify 走 resolver 的异步判定，且判据仍是真开包判据', () {
+    // manga-3（BUG-4909）：同步 resolve 会在 UI isolate 上开包（选中几百 MB 的
+    // 文字 EPUB 界面停住），漫画框只许走 resolveAsync + 后台判据。
+    expect(src.contains('_carrierResolver.resolveAsync('), isTrue);
+    expect(src.contains('_carrierResolver.resolve('), isFalse);
     expect(
-      src.contains('isImageArchive: MangaModule.isImageArchive'),
+      src.contains('MangaModule.probeImageArchive(widget.db, pth)'),
       isTrue,
       reason: '换成按扩展名的桩会让 Yomitan 词典 zip 被当漫画导入',
+    );
+    expect(
+      src.contains('isImageArchive:'),
+      isFalse,
+      reason: '给了同步判据就可能被同步 resolve 用上，回到 UI isolate 开包',
     );
   });
 }

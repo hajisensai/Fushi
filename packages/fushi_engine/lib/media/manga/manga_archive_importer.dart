@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:archive/archive_io.dart' hide ZLibDecoder;
 import 'package:fushi_compute/fushi_compute.dart';
+import 'package:meta/meta.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
@@ -403,6 +404,16 @@ class MangaSevenZipExtractor {
   }
 }
 
+/// 扩展名是漫画载体、内容却不是漫画（文字 `.epub`）——由导入阶段自己的判据给出。
+///
+/// 与其它 [MangaImportException]（坏包、超限、缺页）分开，是因为批量导入不再对
+/// `.epub` 预定性（manga-3），「不是漫画」只能从导入这一步得知；汇总里它要计为
+/// 跳过（不是漫画），而不是导入失败。
+class MangaArchiveNotMangaException extends MangaImportException {
+  /// 用可读 [message] 构造。
+  const MangaArchiveNotMangaException(super.message);
+}
+
 abstract final class MangaArchiveImporter {
   /// [book]（已解压的 EPUB）是不是「纯图漫画」：每个 `linear && !isNav` 章节都只有
   /// 图片、且图片扩展名都在 [kMangaImageExtensions] 内。
@@ -420,13 +431,17 @@ abstract final class MangaArchiveImporter {
   static Future<void> copyEpubPages(EpubBook book, Directory staging) =>
       _copyEpubPages(book, staging);
 
-  static bool looksLikeImageArchive(String archivePath) {
+  /// [epubProbeDir]：`.epub` 定性探测的解压落点，见 [imageEpubRejection]。
+  static bool looksLikeImageArchive(
+    String archivePath, {
+    String? epubProbeDir,
+  }) {
     final String extension = p.extension(archivePath).toLowerCase();
     if (_kSevenZipMangaArchiveExtensions.contains(extension)) {
       return true;
     }
     if (extension == '.epub') {
-      return _looksLikeImageEpub(archivePath);
+      return _looksLikeImageEpub(archivePath, probeDir: epubProbeDir);
     }
     _OpenedArchive? opened;
     try {
@@ -620,27 +635,47 @@ abstract final class MangaArchiveImporter {
         }
 
         if (extension == '.epub') {
+          final int imageEntries = _imageEntryCount(archive);
+          if (imageEntries == 0) {
+            _rejectEpub(archivePath, 'no image entries in the archive');
+          }
           epubExtraction = Directory(await EpubImporter.createStagingDir(db));
           progress.beginExtraction(
             archive.where((ArchiveFile e) => e.isFile).length,
-            expectedPages: _imageEntryCount(archive),
+            expectedPages: imageEntries,
           );
           final EpubBook book;
           try {
             // BUG-3845：SVG 内容文档作 spine 的固定版式漫画也要收成页（与
-            // [_looksLikeImageEpub] 同一解析口径，判得成就导得进）。
+            // [imageEpubRejection] 同一解析口径，判得成就导得进）。
             //
             // [cap]：与 ZIP 分支同一套「按实际解出字节」的上限（manga-23）。此前
             // 这里只有上面那遍中央目录声明大小的预检，谎报大小的条目要先整条写进
-            // 磁盘，解完才被大小核对拦下；诚实的超大条目也不受单条上限约束。
+            // 磁盘，解完才被大小核对拦下；诚实的超大条目也不受单条上限约束。两遍
+            // 共用同一个 cap（它按累计字节计），总量仍是一份预算。
+            final ZipExtractionCap cap = ZipExtractionCap(
+              maxTotalBytes: budget,
+              maxEntryBytes: limits.maxEntryBytes,
+            );
+            // 先只解 container / OPF / spine 文档、判纯图，再解页图（manga-3）：
+            // 「是不是漫画」由导入这一步自己判（批量导入不再对 `.epub` 预定性），
+            // 文字 EPUB 在页图落盘之前就被否决，不为一本小说把几百 MB 插图写进暂存。
+            final EpubBook skeleton = EpubParser.parseSyncFromPath(
+              archivePath,
+              epubExtraction.path,
+              includeSvgSpineDocuments: true,
+              cap: cap,
+              extractEntry: _isNotPageImageEntry,
+              onEntryExtracted: progress.entryExtracted,
+            );
+            final String? rejection = _pureImageEpubRejection(skeleton);
+            if (rejection != null) _rejectEpub(archivePath, rejection);
             book = EpubParser.parseSyncFromPath(
               archivePath,
               epubExtraction.path,
               includeSvgSpineDocuments: true,
-              cap: ZipExtractionCap(
-                maxTotalBytes: budget,
-                maxEntryBytes: limits.maxEntryBytes,
-              ),
+              cap: cap,
+              extractEntry: (String name) => !_isNotPageImageEntry(name),
               onEntryExtracted: progress.entryExtracted,
             );
           } on ZipExtractionLimitException catch (e) {
@@ -649,12 +684,6 @@ abstract final class MangaArchiveImporter {
             );
           }
           progress.finishExtraction();
-          final String? rejection = _pureImageEpubRejection(book);
-          if (rejection != null) {
-            throw MangaImportException(
-              'EPUB is not a pure image manga: $rejection',
-            );
-          }
           // 解压树本次独占、导入完即删：页图直接挪进 staging（同卷一次 rename），
           // 不再「读进内存再写一遍」（manga-23：每页两次写盘 → 一次）。
           await _copyEpubPages(book, staging, moveFromExtraction: true);
@@ -1026,8 +1055,33 @@ abstract final class MangaArchiveImporter {
     return dirname == '.' ? '' : dirname;
   }
 
-  static bool _looksLikeImageEpub(String archivePath) {
-    Directory? extraction;
+  static bool _looksLikeImageEpub(String archivePath, {String? probeDir}) {
+    final String? rejection = imageEpubRejection(
+      archivePath,
+      probeDir: probeDir,
+    );
+    if (rejection != null) logEpubRejection(archivePath, rejection);
+    return rejection == null;
+  }
+
+  /// 测试计数：[imageEpubRejection]（纯图 EPUB 定性探测）被调用的次数。用来钉
+  /// 「批量导入不对 `.epub` 预定性」（manga-3）——判据交给导入阶段的那一遍解析，
+  /// 探测次数应为 0。只在本 isolate 内计数。
+  @visibleForTesting
+  static int debugEpubProbeCount = 0;
+
+  /// `.epub` 是不是纯图漫画的**定性探测**：返回否决理由，null = 是纯图漫画。
+  ///
+  /// 不写日志，由调用方决定在哪个 isolate 记（后台 isolate 里 [engineLog] 没装配，
+  /// 记了也落不到反馈日志里，见 `manga_archive_probe.dart`）。
+  ///
+  /// [probeDir]：container / OPF / spine 文档的解压落点（页图条目不落盘）。给了就
+  /// 用它、**不删**（调用方建的目录归调用方收，app 内传书库根下的 `.tmp-*`，崩溃
+  /// 残留归导入残留清扫管）；不给才退回系统临时目录、用完即删（只剩没有库句柄的
+  /// 同步调用方）。
+  static String? imageEpubRejection(String archivePath, {String? probeDir}) {
+    debugEpubProbeCount += 1;
+    Directory? ownedExtraction;
     _OpenedArchive? opened;
     try {
       opened = _open(archivePath);
@@ -1039,7 +1093,7 @@ abstract final class MangaArchiveImporter {
         _validateEntry(entry);
         expandedBytes += opened.declaredSize(entry);
         if (expandedBytes > budget) {
-          return false;
+          return 'declared expanded size exceeds $budget bytes';
         }
         if (entry.isFile &&
             kMangaImageExtensions.contains(
@@ -1049,15 +1103,16 @@ abstract final class MangaArchiveImporter {
         }
       }
       if (imageCount == 0) {
-        _logEpubRejection(archivePath, 'no image entries in the archive');
-        return false;
+        return 'no image entries in the archive';
       }
       // 中央目录看完就关：下面的整包解析自己再开一次文件。
       opened.close();
       opened = null;
-      extraction = Directory.systemTemp.createTempSync(
-        'fushi_manga_epub_probe_',
-      );
+      final String extractionPath =
+          probeDir ??
+          (ownedExtraction = Directory.systemTemp.createTempSync(
+            'fushi_manga_epub_probe_',
+          )).path;
       // BUG-3845：spine 直接是 SVG 内容文档（每页 `<svg><image>`）的漫画，默认
       // 书籍口径会把每项都跳过、整本 0 章；漫画只取页图，SVG 项照收。
       //
@@ -1067,27 +1122,28 @@ abstract final class MangaArchiveImporter {
       // 只看条目名、不为页图解压同一取舍。
       final EpubBook book = EpubParser.parseSyncFromPath(
         archivePath,
-        extraction.path,
+        extractionPath,
         includeSvgSpineDocuments: true,
-        extractEntry: (String name) =>
-            !kMangaImageExtensions.contains(p.extension(name).toLowerCase()),
+        extractEntry: _isNotPageImageEntry,
       );
-      final String? rejection = _pureImageEpubRejection(book);
-      if (rejection != null) _logEpubRejection(archivePath, rejection);
-      return rejection == null;
+      return _pureImageEpubRejection(book);
     } catch (e) {
       // OjZ-K53WBY：此前这里静默 false，用户只看到「不是漫画」，反馈里没有任何
       // 可定位的线索（解析失败？哪一页有文字？哪张图扩展名不认？）。
-      _logEpubRejection(archivePath, 'probe failed: $e');
-      return false;
+      return 'probe failed: $e';
     } finally {
       opened?.close();
-      final Directory? dir = extraction;
+      final Directory? dir = ownedExtraction;
       if (dir != null && dir.existsSync()) {
         dir.deleteSync(recursive: true);
       }
     }
   }
+
+  /// 条目名不是页图（[kMangaImageExtensions]）：纯图判据只看 container / OPF /
+  /// spine 文档，页图字节不必落盘。
+  static bool _isNotPageImageEntry(String name) =>
+      !kMangaImageExtensions.contains(p.extension(name).toLowerCase());
 
   static bool _isPureImageEpub(EpubBook book) =>
       _pureImageEpubRejection(book) == null;
@@ -1122,7 +1178,18 @@ abstract final class MangaArchiveImporter {
     return null;
   }
 
-  static void _logEpubRejection(String archivePath, String reason) {
+  /// 导入阶段判定 [archivePath] 不是纯图 EPUB：记诊断日志并抛
+  /// [MangaArchiveNotMangaException]（批量导入据此计「不是漫画」而不是「失败」）。
+  static Never _rejectEpub(String archivePath, String reason) {
+    logEpubRejection(archivePath, reason);
+    throw MangaArchiveNotMangaException(
+      'EPUB is not a pure image manga: $reason',
+    );
+  }
+
+  /// 把 EPUB「不是纯图漫画」的理由记进诊断日志（OjZ-K53WBY）。公开给后台探测入口
+  /// 在主 isolate 上记。
+  static void logEpubRejection(String archivePath, String reason) {
     engineLog.logDiagnostic(
       'MangaArchiveImporter',
       'EPUB not recognised as image manga: ${p.basename(archivePath)}: $reason',
