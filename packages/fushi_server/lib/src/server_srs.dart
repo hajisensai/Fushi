@@ -56,6 +56,32 @@ bool serverSrsProfileNameOk(String name) =>
     name.length <= kServerSrsProfileNameMax &&
     !name.runes.any((int c) => c < 0x20 || c == 0x7f);
 
+/// 同一集合里别的设备在说明文件里报的名字（[nameOf]：写入者 → 名字）里挑哪一个当服务端那份 profile 的名字；没有可用的
+/// 返回 null。跳过 [own]（服务端自己上次发布的那份）与不合格的（[serverSrsProfileNameOk]，外来输入）；剩下的取说明文件
+/// 最新的（[nameAtOf]，没有时刻的排最后：设备改了名，它的说明文件就是最新的），一样新时取写入者名按码点最小的。
+///
+/// 规则只看内容，不看 [nameOf] 的键顺序——那是后端的目录列举顺序，本地目录在 Linux / macOS 上是哈希序，按顺序取
+/// 第一个时同一份数据在不同机器上会取出不同的名字。
+String? serverSrsPickReportedName(
+  Map<String, String> nameOf,
+  Map<String, int> nameAtOf, {
+  required String? own,
+}) {
+  String? bestWriter;
+  int bestAt = -1;
+  for (final MapEntry<String, String> e in nameOf.entries) {
+    if (e.key == own || !serverSrsProfileNameOk(e.value)) continue;
+    final int at = nameAtOf[e.key] ?? -1;
+    if (bestWriter == null ||
+        at > bestAt ||
+        (at == bestAt && e.key.compareTo(bestWriter) < 0)) {
+      bestWriter = e.key;
+      bestAt = at;
+    }
+  }
+  return bestWriter == null ? null : nameOf[bestWriter];
+}
+
 /// 兜底：没有任何触发时也每隔这么久同步一轮。
 const Duration kServerSrsSafetyInterval = Duration(minutes: 30);
 
@@ -1021,7 +1047,7 @@ class ServerSrs {
   }
 
   /// [prof] 的显示名：管理员起的（[ServerSrsConfig.profileNames]）优先；否则别的设备在说明文件里报的（[info] 里
-  /// 写入者不是 [own] 的）；再否则服务端自己上次发布的（[own] 那份，让设备都离开之后名字还在）。[own] = 服务端在这个
+  /// 写入者不是 [own] 的，几份时按 [serverSrsPickReportedName] 的确定规则挑）；再否则服务端自己上次发布的（[own] 那份，让设备都离开之后名字还在）。[own] = 服务端在这个
   /// 集合里的写入者名（库没开时不知道，null：所有写入者一视同仁）。不先取自己上次发布的：设备改了名，服务端要跟着改，
   /// 不能一直拿自己那份旧名字当来源。[info] 为 null（这一轮没读到）时不动现有的名字。
   ///
@@ -1039,9 +1065,12 @@ class ServerSrs {
       return configured;
     }
     if (info == null) return prof.name;
-    for (final MapEntry<String, String> e in info.nameOf.entries) {
-      if (e.key != own && serverSrsProfileNameOk(e.value)) return e.value;
-    }
+    final String? reported = serverSrsPickReportedName(
+      info.nameOf,
+      info.nameAtOf,
+      own: own,
+    );
+    if (reported != null) return reported;
     final String? mine = own == null ? null : info.nameOf[own];
     return mine != null && serverSrsProfileNameOk(mine) ? mine : '';
   }

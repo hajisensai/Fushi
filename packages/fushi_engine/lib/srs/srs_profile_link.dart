@@ -129,6 +129,7 @@ class SrsRemoteProfile {
     required this.writers,
     this.names = const <String>{},
     this.nameOf = const <String, String>{},
+    this.nameAtOf = const <String, int>{},
     this.hasNotes,
     this.updatedAt,
     this.devices = const <String>[],
@@ -165,6 +166,10 @@ class SrsRemoteProfile {
   /// 上次发布的」时用这个（无头服务端发布自己的说明文件时，名字取别的设备报的、没有才沿用自己上次发布的，
   /// 否则设备改名后服务端会一直把自己那份旧名字当来源）。
   final Map<String, String> nameOf;
+
+  /// 写入者 → 报 [nameOf] 那份说明文件的修改时刻（毫秒；后端不给时没有这一项）。[nameOf] 的键顺序跟着后端的列举顺序
+  /// 走（本地目录在 Linux / macOS 上是哈希序），要在几个写入者报的名字里挑一个时按这个时刻 + 写入者名排，不按顺序。
+  final Map<String, int> nameAtOf;
 
   /// 有没有写入者报告过「有用户笔记」；没有任何说明文件时为 null（未知）。
   final bool? hasNotes;
@@ -360,6 +365,7 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
     final List<String> writers = <String>[];
     final Set<String> names = <String>{};
     final Map<String, String> nameOf = <String, String>{};
+    final Map<String, int> nameAtOf = <String, int>{};
     bool? hasNotes;
     int? updatedAt;
     final List<String> devices = <String>[];
@@ -384,6 +390,11 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
       if (name is String && name.isNotEmpty) {
         names.add(name);
         nameOf[writer] = name;
+        if (at != null) {
+          nameAtOf[writer] = at;
+        } else {
+          nameAtOf.remove(writer);
+        }
       }
       final Object? notes = info['hasNotes'];
       if (notes is bool) hasNotes = (hasNotes ?? false) || notes;
@@ -452,6 +463,7 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
         writers: writers,
         names: names,
         nameOf: nameOf,
+        nameAtOf: nameAtOf,
         hasNotes: hasNotes,
         updatedAt: updatedAt,
         devices: devices,

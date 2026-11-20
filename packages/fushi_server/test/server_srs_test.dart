@@ -109,6 +109,93 @@ void main() {
     expect(File(SrsStorage.gen4PathIn(support.path)).existsSync(), isFalse);
   });
 
+  group('serverSrsPickReportedName：几份说明文件里挑名字不看列举顺序', () {
+    /// [entries] 按给的顺序和反过来的顺序各建一份 Map（模拟目录列举的两种顺序），两份挑出来的必须一样。
+    String? pickBothOrders(
+      List<(String, String, int?)> entries, {
+      required String? own,
+    }) {
+      String? pick(Iterable<(String, String, int?)> order) =>
+          serverSrsPickReportedName(
+            <String, String>{
+              for (final (String w, String n, int? _) in order) w: n,
+            },
+            <String, int>{
+              for (final (String w, String _, int? at) in order)
+                if (at != null) w: at,
+            },
+            own: own,
+          );
+      final String? forward = pick(entries);
+      final String? backward = pick(entries.reversed);
+      expect(backward, forward, reason: '两种列举顺序挑出的名字不同');
+      return forward;
+    }
+
+    test('跳过服务端自己那份，不管它排在前面还是后面', () {
+      expect(
+        pickBothOrders(<(String, String, int?)>[
+          ('server#0', '日本語', 300),
+          ('phone#0', 'Japanese', 100),
+        ], own: 'server#0'),
+        'Japanese',
+      );
+    });
+
+    test('几台设备报的名字不同时取说明文件最新的', () {
+      expect(
+        pickBothOrders(<(String, String, int?)>[
+          ('a#0', '旧名', 100),
+          ('b#0', '新名', 200),
+          ('server#0', '服务端', 300),
+        ], own: 'server#0'),
+        '新名',
+      );
+    });
+
+    test('一样新、或都没有时刻时按写入者名取最小的；没有时刻的排在有时刻的后面', () {
+      expect(
+        pickBothOrders(<(String, String, int?)>[
+          ('b#0', 'B', 100),
+          ('a#0', 'A', 100),
+        ], own: null),
+        'A',
+      );
+      expect(
+        pickBothOrders(<(String, String, int?)>[
+          ('b#0', 'B', null),
+          ('a#0', 'A', null),
+        ], own: null),
+        'A',
+      );
+      expect(
+        pickBothOrders(<(String, String, int?)>[
+          ('a#0', 'A', null),
+          ('b#0', 'B', 1),
+        ], own: null),
+        'B',
+      );
+    });
+
+    test('不合格的外来名字跳过；只剩自己那份时返回 null（由调用方沿用自己上次发布的）', () {
+      expect(
+        pickBothOrders(<(String, String, int?)>[
+          ('a#0', 'J\u0007P', 500),
+          ('b#0', 'x' * 101, 400),
+          ('c#0', 'ok', 100),
+        ], own: null),
+        'ok',
+      );
+      expect(
+        pickBothOrders(<(String, String, int?)>[
+          ('server#0', '日本語', 100),
+          ('a#0', 'J\u0007P', 200),
+        ], own: 'server#0'),
+        isNull,
+      );
+    });
+  });
+
   test('srs.db 打不开（原生库缺 / 路径坏）：start 不抛，那份标成出错，服务照常起', () async {
     final Directory bad = Directory(p.join(tmp.path, 'not-a-dir'));
     File(bad.path).writeAsStringSync('this is a file, not a directory');
@@ -236,8 +323,8 @@ void main() {
       engine: () => null,
       deviceName: () => 'NAS',
     );
-    // 服务端先开这份 profile（新代设备 ID 是 UUIDv7，先建的排在前面）：同一目录里服务端自己的说明文件在列举顺序上
-    // 先于手机的，「名字不先取自己上次发布的」才真被测到（反过来排时，有没有排除自己那份结果都一样）。
+    // 几份说明文件之间怎么挑名字不看目录列举顺序（[serverSrsPickReportedName]，两种顺序在下面的单测里各跑一遍）；
+    // 这里只测装配：管理员起名、设备报名、设备改名、外来名字过滤、设备离开后沿用。
     config = const ServerSrsConfig(profiles: <String>[kJa]);
     await srs.start();
     await srs.syncNow();
@@ -305,11 +392,13 @@ void main() {
       hasNotes: true,
     );
     await phoneNames('Japanese');
-    expect(
-      (await listed()).nameOf.keys.first,
-      serverWriter,
-      reason: '前提：服务端自己那份（上次发布的「日本語」）先被列出来',
-    );
+    final SrsRemoteProfile both = await listed();
+    expect(both.nameOf, <String, String>{
+      serverWriter: '日本語',
+      srsV2WriterName(ja.sync2Device!): 'Japanese',
+    });
+    // 挑名字按说明文件的修改时刻：每个报了名字的写入者都要带上时刻（本地目录给得出）。
+    expect(both.nameAtOf.keys.toSet(), both.nameOf.keys.toSet());
     config = const ServerSrsConfig(profiles: <String>[kJa]);
     await srs.applyConfig();
     await srs.syncNow(kJa);
@@ -324,7 +413,7 @@ void main() {
     expect((await listed()).names, <String>{'JP'});
 
     // 设备报的名字是外来输入：超长 / 带控制字符的不采用（与管理员起名同一个口径），服务端沿用自己上次发布的。
-    for (final String bad in <String>['JP', 'x' * 101]) {
+    for (final String bad in <String>['J\u0007P', 'x' * 101]) {
       await phoneNames(bad);
       await srs.syncNow(kJa);
       expect(srs.profile(kJa)!.name, 'JP', reason: bad);
