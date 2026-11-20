@@ -4582,3 +4582,92 @@ WIP 原样编不过（schema 守卫表数没改）、三条停放测试装置有
 - **「码点最小」不准确（nit）**：注释改成「按 UTF-16 码元序（`String.compareTo`）」，行为不变。
 - **变异实测（本轮）**：`readInfo` 改回无条件覆盖（`chosen = true`）→ 新测试红（逆序时 `nameOf` 为 `OldName`）；`names` 的排序
   比较器改成恒 0 → 新测试红（逆序时 `names` 为 `[B, NewName]`）。每次 `git checkout --` 还原后工作区干净。
+
+## 48. 第六波 R0 Windows 实测（2026-11-20，分支 `pr/srs-gen4-w6-r0-windows`，基于 `pr/srs-gen4-switch` `0bf8472f40`）
+
+规划 §6 R0 的 Windows 部分，证据与逐格结论全在 [2026-11-15-srs-gen4-r0-windows.md](2026-11-15-srs-gen4-r0-windows.md)。
+被测：v3.3.0、v3.0.1 官方安装包解出的 `fushi.exe`（sha256 与 `versions.json` 钉死的一致）+ 本分支 release 构建；全部隔离数据根，没碰本机用户库。
+第一轮只加实测工具与测试、没改产品代码；之后改了产品代码：复核轮 `native/fushi_fsrs/src/store/gen4/cmd/backup.rs` / `identity.rs`
+（BUG-4906），第二轮复核 `fushi/lib/src/ops/ctl_srs_routes.dart`（控制通道代际状态回 409 + 机读码），见下两节。第一轮加的工具与测试：
+
+- `tool/srs_old_binary/r0_win.py`（新）：跨进程保留数据根、按步骤表调控制通道，记前后 `app-support/` 顶层文件 sha256、抹掉 D3 例外字节后的
+  sha256、主库 schema、两代 SRS 库的 `srs_meta` 与行数。`r0_compare.py`（新）：迁移前后逐卡比对，经 `alias_ix` 换算规范 ID。
+- `srs_old_binary.py run --exe`：新版本对旧输入跑同一套动作。
+- `fushi/integration_test/srs_gen4_r0_migrate_itest.dart`（新，手动跑）：旧数据根经界面迁移，可选途中硬结束；`captureFlutterFrame` 加
+  `settle:false`（屏上有转圈时 `pumpAndSettle` 永远等不到静止，整条测试挂住）。
+- `fushi/test/srs/srs_deck_list_not_migrated_test.dart`（新）：库报要迁移时牌组列表必须以 `SrsStoreNotMigrated` 落定（复习页据此换迁移页），4 例。
+
+结论摘要：
+- (a) ✔ v3.3.0 的 6 卡 / 12 条日志迁移后逐卡一致（队列、到期、间隔、reps、lapses、S/D、最后复习、牌组、笔记、日志条数）。
+- (b) ✔ 迁移后 v3.3.0 对 SRS 显式拒绝（控制通道 422）、`srs4.db` 字节不变、`srs.db` 只差 D3 例外字节；v3.0.1 整个 app 拒绝启动、SRS 文件字节不变。
+- (c) ✔ 提交前硬结束：`srs.db` 字节不变，v3.3.0 照常读出 6 卡（SRS 层），新版本重开后重新迁移、逐卡一致；提交后、封存前被杀那条没实测。
+- (d) ✔ 同步位置三态：旧位置被新版本接管（写 v4 + v3 围栏），旧版本对两代 / 只有新的位置都不写目标。
+- (e) ✔ 新备份给旧版本恢复被拒；旧备份给新版本合并要用户确认（按设计）；✘ 旧备份「覆盖」恢复见下。
+
+**交给别的模块的缺陷 / 待拍板（第一轮时本模块没改；1、3 后来在复核轮 / 第二轮复核修了，2 定为升级说明，见下）：**
+
+1. **旧备份覆盖恢复后卡片与日志脱钩（✘ → 复核轮已修，BUG-4906，见下「复核轮」）**：v3.3.0 整包备份在新版本上「覆盖」恢复，`srs4.db` 有 6 卡 / 12 条
+   `log_ix`，但卡片是用不带盐的模板 ID 重新派生的（与迁移路径得到的规范 ID 也不同），对不上日志和 `alias_ix`；6 张全 `hidden=1`、`queue new`、
+   `reps 0`；`salt_ix` 只有本机 uid，没有备份里的 uid；恢复后主库 profile uid 是本机的、`collections` 行 dir 是备份的。界面上卡片总数 0。
+   指向 `dispatch.rs` `legacy_backup_import` → `cmd/backup.rs` `land` → `identity.rs` `collection_adopt_with` / `adopt_foreign` 的 Bound 分支只写本机
+   carry 盐、备份的盐（`legacy::salts`）没进 `salt_ix`。复现数据：`D:/fushi-r0/A/old-backup.zip`（本机，不入库），复现步骤：
+   `srs_old_binary.py run --exe <新 release> --action restore-backup --target D:/fushi-r0/A/old-backup.zip`（替换模式），再
+   `r0_compare.py --old <旧根>/app-support --new <恢复后>/app-support`。
+2. **新版本只要打开过旧数据根（哪怕没迁移 SRS），旧版本就整个起不来**：主库 schema 146 → 159 不可降级（既有行为，非 gen4 引入），所以规划 (c)
+   「提交前旧版本仍可用」只在 SRS 层成立。（第二轮复核：不改行为，定为升级说明条目「不可回退」，见下。）
+3. **控制通道对未迁移库回 500**（`SrsStoreNotMigrated` 当内部错误），不是可机读的「先迁移」4xx；ctl / AI 调用方得认错误文本。（第二轮复核已改成
+   409 + 稳定错误码，见下。）
+4. **itest 下迁移页不出来**：Windows 离屏 runner 的 debug itest 里，未迁移库让复习页一直转圈（provider 状态已是错误、`.future` 不完成、错误日志有
+   UncaughtZone），第一轮判为 itest 的 zone 混用问题（当时未证实，复核轮用判别实验证实，见下）；release 包同样数据根错误日志里没有 UncaughtZone，provider 链单测只说明单 zone 下能落定。但 release 的迁移页像素
+   没看到——要在可见窗口 / 真机上补看一眼。本次迁移改走按钮背后的 `SrsGen4MigrationController.start()`。
+
+缺口：Android / macOS / iOS 真机、Linux 服务端、fushi_server beta 全没做；`.fushisrs` 四向没有自动化入口；所有「旧版本给用户的提示文字」
+只有控制通道证据、没有真像素。
+
+### 第六波 R0 复核轮（2026-11-20，同分支续提交）
+
+按复核意见改了五处，细节与证据在 R0 文档 §4.1 / §4.6 / §5：
+
+- **BUG-4906 已按根因修**（复核 major 2）：旧整包备份认领结论为 `bound`（本机 profile 打开过、空集合换绑 / 没绑过）时，`cmd/backup.rs` `land`
+  由本机写一条 `Salts` 声明备份 profile 的盐（协议 3 备份里没有 `Salts` 操作，`Bound` 本身只带本机盐）。`cmd/identity.rs` 的 `carry_salts`
+  改名 `declare_salts` 供两处共用。没有改 `collection_adopt_with` 的 `Bound` 分支一律写调用方给的盐：那样位置认领 / `.fushisrs` 第 2 版也多写
+  一条本机 `Salts`，打破 4 条既有测试（含两台设备 `canonical_ids` 不收敛）。新测试 `backup_tests.rs`
+  `a_protocol_3_backup_replacing_a_fresh_profile_keeps_its_salts_and_cards`，变异实测红 / 还原绿；修后 release（同一 `fushi.exe` + 新
+  `fushi_fsrs.dll`）重跑 e1-replace：6/6 卡、12/12 条日志逐条一致。这条原归 G11-4 / G9，**不再是 gen4 合并的阻断项**。
+- **迁移页转圈的原因已证实**（复核 major 1）：在帧回调里走「重试」同一条作废后迁移页随即出现，证实是 itest 的错误 zone 错位（启动时在
+  `runZonedGuarded` 里建的失败 future 跨不到 itest 的帧 zone）。迁移页 / 进度页 / 迁移后复习页有 debug 真像素（`r0-a-zone4`）。
+  **仍没做到**：release 的迁移页像素（离屏 PrintWindow 全黑，UI Automation 也读不到语义树）；「开始升级」用 Tab 和焦点请求都走不到——
+  焦点被首页外壳里一个无标签 `Focus`（祖先 `HomeSyncExitScope`）占着，按钮本身 `enabled=true`、`canStart=true`。itest 改调按钮 `onPressed`。
+  这是 `HomePage.debugSelectTab` 换页后焦点不进内容的 itest 现象，还是桌面键盘用户也走不到，**没查清**，交焦点所有权 / G10 迁移界面 owner。
+  （第二轮复核已查清：itest 没开焦点导航开关，见下。）
+- `r0_compare.py`（复核 minor 1）：换算前记 `old_cards_raw`，两张旧卡换到同一规范 ID 报 `collision`；按卡逐条比 `(日志 ID, 时间, 评分, 用时)`
+  （新库取 `stats`）；新增 `r0_compare_test.py` 4 例。
+- `controller.outcome` 提交后为 null（复核 minor 2）：按契约就是这样（`outcome` 只放提交以外的结论），不是缺陷。
+- 单测 `srs_deck_list_not_migrated_test.dart` 的措辞（复核 nit）：R0 文档改成「单 zone 下 provider 链落定」，不再拿它当「环境问题」的依据。
+
+### 第六波 R0 第二轮复核（2026-11-20，同分支续提交）
+
+- **「开始升级」的键盘可达性已查清：是 itest 的问题，不是产品缺陷。** 复核轮焦点停住的那个无标签 `Focus` 是 `HomePage` 的整页键事件
+  sink（`_keyboardFocusNode`，`autofocus` + `skipTraversal`）；「键盘/手柄焦点导航」开关默认关着时 `wrapWithGlobalNavigation` 把裸 Tab
+  中和成 `DoNothingIntent`（用户裁定 TODO-112），itest 的隔离根偏好恒为默认，而本 itest 手写 `sendKeyEvent(tab)`、没先调
+  `enableFocusNavigation`（BUG-1106 同根因，手写 Tab 也绕过了 `itest_focus_navigation_prerequisite_guard_test.dart`）。处理：
+  - 新增 `fushi/test/srs/srs_generation_view_keyboard_test.dart`（与 `main.dart` 同构的全局导航 + `FushiFocusRoot` + 首页式整页 sink），
+    MD3 / Apple 各两例：开焦点导航时 Tab 走到「开始升级」、Enter 开始迁移；默认关着时 Tab 一步不动。变异实测：给按钮包 `ExcludeFocus`，
+    两例「开着」变红、两例「关着」照绿；还原后绿。
+  - itest 改成真的焦点驱动：`enableFocusNavigation` → `FocusDriver.focusWidget(开始升级)` → `activate()`（Enter），删掉 `onPressed` 与
+    `requestFocusInside` 两个兜底，走不到就失败。重跑 `r0-a-focus`：runner exit 0、`+1: All tests passed!`，探针 `onStart=true`（焦点在按钮
+    InkWell 上）→ Enter → `committed` → `state=ready`，迁移后 6 张待复习 / 保持率 83% / 12 次复习；真像素 `r0-01-prompt.png`、`r0-03-after.png`。
+  - 没改：守卫只扫 `FocusDriver` 的遍历 API，扫不到手写的 `sendKeyEvent(LogicalKeyboardKey.tab)`。`video_bar_overflow_shortcuts_itest.dart`
+    也是起真 app、手写 Tab、全文没开焦点导航开关，疑似同病，没跑没改（不在本模块范围），交焦点 / itest 守卫 owner 判断是否把守卫扩到手写 Tab。
+- **证据文档措辞**（verify2 minor）：「`requestFocusInside` 也拿不到焦点」改成说明它是辅助函数的假象（它只认显式传了 `focusNode` 的
+  `Focus`，Material 按钮的节点是内部自建的，于是退去请求祖先的首页 sink），不拿来推断可达性。本节开头「本模块没改产品代码」改成写实
+  （复核轮改了 `backup.rs` / `identity.rs`，本轮改了 `ctl_srs_routes.dart`）。
+- **控制通道代际状态回 409 + 稳定错误码**（原第 3 条）：`fushi/lib/src/ops/ctl_srs_routes.dart` 的 `requireSrsCtlStore` 把取库时报的
+  代际 / 身份状态映射成 `CtlFailure(409, code)`：`srs_needs_migration` / `srs_migration_failed` / `srs_upgrading`（别的进程在升级，与无头服务端
+  同名码同义）/ `srs_sealed_old_only` / `srs_legacy_unmigrated` / `srs_legacy_main_db` / `srs_profile_identity_pending`，「就绪却打不开」兜
+  `srs_open_blocked`；真错误照旧原样抛（ctl 回 500 `internal`）。取舍：无头服务端同类情况回 503 `srs_upgrading` / `srs_upgrade_blocked`（服务端
+  自己在后台迁移，「等一会」语义）；app 里库要用户在复习页按「开始升级」才会变，是状态冲突而不是服务暂不可用，所以用 409、按状态细分码，
+  只有「别的进程在升级」复用服务端的 `srs_upgrading`。新单测 `fushi/test/ops/ctl_srs_open_blocked_test.dart`（每种状态一例 + 牌组 / 统计路由 +
+  真错误不归类 + 422 不变）；变异实测：映射短路成 null，10 例变红、真错误 / 422 两例照绿；还原后绿。没拿 release 重跑 (a2) 这一格。
+- **升级说明（原第 2 条，不改行为）**：写进 R0 文档 §6「升级说明」第 1 条——**不可回退**：新版本只要打开过一次数据（哪怕复习库还没升级），
+  主库就被升到新 schema，旧版本整个起不来；要回旧版本只能用升级前的整包备份或数据目录副本。发版说明应提示升级前先在旧版本做整包备份。

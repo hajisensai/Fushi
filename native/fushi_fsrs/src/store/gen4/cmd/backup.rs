@@ -28,7 +28,8 @@
 //! 与 `.fushisrs` 第 2 版的导入同一套认领与确认（`cmd/fushisrs.rs` 文件头第 1 步）：协议 3 时代集合 = `collection_of(uid)`、
 //! 目录名 = uid（交接说明 G9-4 定案 2），备份里那个 profile 的盐（`legacy::salts`：uid 本身 + 退役的旧 uid）、设备公钥
 //! （`sync2_devices`，与 [import_backup] 带的同一份）拼成清单 → 没确认时新盐 / 新设备回 `needsConfirm`（`reason: identity`）、
-//! 另一个集合回 `needsConfirm`（`reason: join`），什么都不写；确认了就 `collection_adopt`（没绑过 = `bound`）→
+//! 另一个集合回 `needsConfirm`（`reason: join`），什么都不写；确认了就 `collection_adopt`（没绑过 = `bound`，这时本机
+//! 另写一条 `Salts` 声明备份的盐：协议 3 备份里没有 `Salts` 操作，R0 Windows 实测 e1-replace）→
 //! [import_backup]（落真相、`Settle::Rebuild` 收派生层、带信任与公钥）→ 本机状态行（有改动修订号推进 1）。
 //! `preflight: true` 在一个回滚掉的保存点里跑认领，只回 `ready` / `needsConfirm`（同 `import` 的预检）。
 //!
@@ -46,7 +47,7 @@ use rusqlite::{Connection, OptionalExtension};
 use serde_json::{Value, json};
 
 use super::fushisrs::{Manifest, unconfirmed_identity};
-use super::identity::{Emitting, PendingSelf, collection_adopt_with};
+use super::identity::{Emitting, PendingSelf, collection_adopt_with, declare_salts};
 use crate::store::SrsCore;
 use crate::store::gen4::carry::{legacy_peers, legacy_self};
 use crate::store::gen4::import::{Imported, import_backup};
@@ -650,8 +651,16 @@ pub fn land(
     if actual.as_ref() != secret {
         return Err(LOCAL_IDENTITY_MOVED.to_owned());
     }
+    let col = col_of(t)?;
+    if adopted["outcome"] == json!("bound") {
+        // 刚绑到备份的集合（没绑过 / 空集合换绑）：认领只带了本机的盐（`AdoptOutcome::Bound` 的盐随对方的操作到，位置
+        // 与 `.fushisrs` 第 2 版都是如此），而协议 3 备份里没有任何 `Salts` 操作——备份 profile 的盐（`legacy::salts`，
+        // 已过上面的身份确认）由本机在这里声明，与迁移第 6 步由本机身份写初始盐同一口径。缺了它，带 profile 盐的内置
+        // 实体 ID 归不到规范 ID：卡片按不带盐的模板重新派生、与日志和别名表对不上（R0 Windows 实测 e1-replace）。
+        declare_salts(t, col, &m.salts, now)?;
+    }
     let wrote = !matches!(adopted["outcome"].as_str(), Some("same" | "alreadyJoined"));
-    let got = import_backup(src, &p.profile, t, col_of(t)?)?;
+    let got = import_backup(src, &p.profile, t, col)?;
     let applied = got.inserted + got.replaced + got.forks;
     let unchanged = applied == 0 && got.peers == 0 && got.untrusted == 0 && !wrote;
     let mut probe = if unchanged {

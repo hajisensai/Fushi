@@ -312,6 +312,48 @@ fn another_collection_needs_confirmation_and_bad_files_change_nothing() {
     ffsrs_store_close(q);
 }
 
+/// 覆盖还原到一个**已经打开过**的全新 profile（R0 Windows 实测 e1-replace：v3.3.0 整包备份在新版本上覆盖恢复，本机
+/// profile uid 与备份里的不同、本机集合是空集合）：确认后换绑（`bound`），备份那个 profile 的盐（`legacy::salts` 的
+/// uid）必须进新集合的盐集合，卡片 / 笔记 / 复习日志与直接迁移同一份库逐行相同。缺这个盐时带 profile 盐的内置实体 ID
+/// 归不到规范 ID：卡片按不带盐的模板重新派生，与日志、别名表对不上，全部隐藏、界面 0 张（`identity::AdoptOutcome::Bound`
+/// 以前只带换绑丢掉的本机盐，备份的盐被丢掉）。
+#[test]
+fn a_protocol_3_backup_replacing_a_fresh_profile_keeps_its_salts_and_cards() {
+    let m = migrated();
+    let work = tempdir::new("g114rp");
+    let snap = protocol_3_backup(&m, &work.0);
+    let sc = tempdir::new("g114rpsc");
+    let (qdir, q) = fresh("g114rpq", Q);
+    let got = try_g4(
+        q,
+        Q,
+        "legacy_backup_import",
+        legacy_req(&snap, "db", &sc.0, json!({"confirmed": true})),
+    )
+    .unwrap();
+    assert_eq!(got["outcome"], json!("bound"), "{got}");
+    let info = try_g4(q, Q, "collection_info", json!({})).unwrap();
+    let salts = info["salts"].as_array().unwrap();
+    assert!(salts.contains(&json!(P)), "{info}");
+    assert!(salts.contains(&json!(Q)), "{info}");
+    let pick = |dir: &Path, profile: &str, skip: &[Id]| -> Vec<String> {
+        derived(dir, profile, skip)
+            .into_iter()
+            .filter(|l| {
+                ["cards ", "notes ", "log_ix "]
+                    .iter()
+                    .any(|t| l.starts_with(t))
+            })
+            .collect()
+    };
+    let me = self_device(q, Q);
+    let mig_dev = self_device(m.h, P);
+    let want = pick(&m.dir.0, P, &[mig_dev]);
+    assert!(want.iter().any(|l| l.starts_with("log_ix ")), "{want:?}");
+    assert_eq!(pick(&qdir.0, Q, &[me]), want);
+    ffsrs_store_close(q);
+}
+
 // ---------------------------------------------------------------------- 只有 v1 事件的旧输入
 
 /// 协议 3 库里的投影行 → 「外来、已盖戳」的 v1 事件（Dart `SrsEvent.toJson()` 同形：`{t, x}`；日志带笔记 ID），一行一个。
