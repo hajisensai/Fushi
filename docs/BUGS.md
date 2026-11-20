@@ -33,20 +33,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4239 条。点号进各自文件。
+> 共 4240 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4912](bugs/BUG-4912-lnreader-state-read-failure-shown-as-empty.md) | ✅ | ✅ | LNReader 状态读不出来时扩展页与已装源显示成空态 |
 | [BUG-4911](bugs/BUG-4911-web-mine-round-error-shows-zero-tally.md) | 🚧 | 🚧 | 网页视频制卡整轮出错时提示仍是成功 0 失败 0 |
 | [BUG-4910](bugs/BUG-4910-video-scrape-maintenance-raw-error-text.md) | ✅ | ✅ | 视频刮削资料清理中的错误以写死中文异常串露给界面 |
 | [BUG-4909](bugs/BUG-4909-subtitle-batch-save-failure-says-download-failed.md) | ✅ | ✅ | 合集字幕批量写盘或登记失败的行文案仍是「下载失败」 |
 | [BUG-4908](bugs/BUG-4908-subtitle-episode-download-scope-switch-silent-abort.md) | ✅ | ✅ | 本集字幕下载途中重搜或切作用域静默丢下载 |
 | [BUG-4907](bugs/BUG-4907-subtitle-collection-pack-only-download-disabled.md) | ✅ | ✅ | 只有整季包的字幕来源「下载全部」是灰的 |
-| [BUG-4906](bugs/BUG-4906-lnreader-state-read-failure-shown-as-empty.md) | ✅ | ✅ | LNReader 状态读不出来时扩展页与已装源显示成空态 |
-> 共 4234 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-4906](bugs/BUG-4906-webvideo-builtin-process-gone.md) | ✅ | ✅ | 内置网页播放器渲染进程死亡后回到起始页且重放循环不知情 |
 | [BUG-4905](bugs/BUG-4905-ai-cast-text-substitutions.md) | ✅ | ✅ | 小说和漫画 AI 标注未应用系列用词替换表 |
 | [BUG-4904](bugs/BUG-4904-book-series-key-store-annotation.md) | ✅ | ✅ | 书店写法「卷号<系列名> (文库名)」的分卷导入后不归合集 |
