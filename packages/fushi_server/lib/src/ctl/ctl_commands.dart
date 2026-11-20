@@ -245,10 +245,11 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
                                            复习库内容；冲突处理 / 重复合并 / 批量改笔记见 `srs help`
   srs add|remove|default <uid> | off       提供哪几份 profile（off = 全部不提供）
   srs sync [<uid>] | ankiconnect on|off    立即同步 / AnkiConnect 监听（默认关）
-  srs config '<json>'                      其余配置（rolloverHour、miningTarget、miningDecks、rwkvModel、ankiConnect…）
+  srs config '<json>'                      其余配置（rolloverHour、miningTarget、miningDecks、profileNames、rwkvModel、ankiConnect…）
   srs devices [<uid>]                      还没信任的复习同步设备（扣着的删除 / 彻底清除）
   srs trust|reject <设备 ID> [<uid>]       信任（扣着的立即生效）/ 拒绝（继续扣着）一台设备
   srs migration [status] | start | cancel  复习库换代（协议 3 → 新代）：状态与处置说明 / 开始或重跑 / 叫停
+  srs retained [status] | delete --yes     旧版本保留副本：状态 / 立即删除（不可撤销）
   profiles [ls] | share|rm <id>
   backup [ls] | create [--no-documents] | rm <name>
                                            整机备份（落 <data>/backups/；下载走
@@ -294,10 +295,11 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
                                            Review library contents; see `srs help` for conflicts / duplicate merge / batch edits
   srs add|remove|default <uid> | off       Which profiles to provide (off = provide none)
   srs sync [<uid>] | ankiconnect on|off    Sync now / AnkiConnect listener (off by default)
-  srs config '<json>'                      Other settings (rolloverHour, miningTarget, miningDecks, rwkvModel, ankiConnect...)
+  srs config '<json>'                      Other settings (rolloverHour, miningTarget, miningDecks, profileNames, rwkvModel, ankiConnect...)
   srs devices [<uid>]                      Review sync devices not trusted yet (their held deletes / purges)
   srs trust|reject <device id> [<uid>]     Trust (held changes apply now) / reject (keep holding) a device
   srs migration [status] | start | cancel  Review library upgrade (protocol 3 -> current): state and advice / start or rerun / stop
+  srs retained [status] | delete --yes     Old-version retained copy: state / delete now (cannot be undone)
   profiles [ls] | share|rm <id>
   backup [ls] | create [--no-documents] | rm <name>
                                            Whole-machine backup (stored in <data>/backups/; download via

@@ -4484,3 +4484,101 @@ WIP 原样编不过（schema 守卫表数没改）、三条停放测试装置有
 - 真机复测没做（纯内核 + 同步页文案，按规则记一句）。
 - 复核 nit「同一位置同一作者既有自写旧 head 又有转发 head 时 tidy 可能删停放行」没改：复核者与续做者都没构造出触发路径
   （`relay_outbox` 的 `present_at` / `have` 挡住了作者已有自写 head 的位置），不为构造不出的情形改 `plan`。
+
+## 47. 第六波 服务端收尾（2026-11-20，分支 `pr/srs-gen4-w6-server-tail`，基于 `pr/srs-gen4-switch` `0bf8472f40`）
+
+前一位实现者做到一半被额度中断，本节由续做者补写；提交逐个核过、测试重跑过。
+
+做了：
+
+- ① 服务端发布自己的 profile 说明文件（`3a99042047`）：每轮成功后 `ServerSrsProfile._publishInfo` 用 app 同一个
+  `srsPublishProfileInfo` 写 `v4/devices/<服务端新代设备>/profile.json`；笔记数每轮向内核要（`userNoteCount`），名字按
+  「管理员起名（`srs.profile_names` / `PUT srs {profileNames}` / WebUI / `ctl srs config`）→ 同目录别的设备报的 → 自己上次发布的」
+  取。服务端不发 `mergingInto`、不写加入提示（它从不并 profile）。测试 `server_srs_test.dart`「服务端发布自己的 profile 说明文件」；
+  变异：去掉 `_publishInfo` 调用 → 该测试红（`Actual: []`），还原后干净。
+- ② WebUI 复习页「删除保留副本」（危险确认、不可撤销）与 profile 起名输入；`fushi_server ctl srs retained [status]` /
+  `ctl srs retained delete --yes`（不带 `--yes` 拒绝）（`9efc958a14`）。走引擎已有的 `srs.retained.*` 路由，服务端不另写逻辑。
+- ③ §6.3 三行真内核端到端：服务端先升级（`server_srs_generation_e2e_test.dart`，`4017017e28`）；客户端先升级 / 服务端一直
+  不升级（`fushi/test/srs/srs_generation_old_server_e2e_test.dart`，`007cae6f80`）。取舍：旧客户端经互联转发的制卡在新服务端
+  照常落进新代库（制卡负载与库代无关，拒了反而丢卡）；远程复习两个方向都明确拒绝并提示升级。
+- ④ 迁移进行中整机备份回 409 `srs_migration_running`、不出包，迁完照常备份且包里是新代库；被杀进程留下的换代过程文件不进包
+  （`admin_backups_srs_migration_test.dart`，`95f1cd76c2`，`HeadlessHost` 加迁移执行端接缝）。「多 profile 一个对拍不过整个文件
+  不提交」现状已有内核测试 `migrate_tests.rs::one_failing_profile_of_two_keeps_the_whole_file_uncommitted`，服务端跑同一条迁移
+  命令，没再在 Dart 侧重复。
+- ⑤ `packages/fushi_server` 全量 `dart test`：721 过、13 跳过（全是环境：ffmpeg / libass / libfushidicts / 仅 POSIX，无 SRS），0 红。
+  全量跑时撞到的偶发红 `anki_landing_test` 拆目录 errno 32：根因是 `AnkiSyncSession.close` 返回时串行队列里的操作还在写日志，
+  改成 `close` 等队列收尾再返回（`acac194cd5`）；变异：去掉 `await _tail` → `anki_sync_session_test.dart` 红，还原后干净。
+- `docs/agent/server-parity-gaps.md` 与 `packages/fushi_server/README.md` 已同步。
+
+没做 / 归属别处：
+
+- `fushi/test/srs/srs_generation_old_server_e2e_test.dart` 经 heavy 外包到 dist 机（self-mac）跑，用的是那台机器的原生库，不是本
+  worktree 编的 Windows dll。
+- 服务端 FSRS 优化器（§4.6）、端到端加密位置仍不支持，见 server-parity-gaps，不属本块。
+
+### 第六波 服务端收尾：复核修复（2026-11-20，同分支续做）
+
+- **新客户端往旧服务端制卡（复核 major）**：「旧服务端」实际是换代分支的基线 develop `6dd38cb92d`（协议 3）——v3.3.0 的服务端
+  还没有复习库（`server_srs.dart` 是之后加的），测试注释原先写 v3.3.0 是错的，已改。按基线源码：围栏让那份 profile 进
+  needsUpgrade，`ServerSrsProfile.store` 只在 ready 时非空，复习落点没了；没带 Anki helper 时 `miningAvailable` 为假，
+  `/api/mine/forward` 读请求体之前回 404 `Mining off`。新客户端原先把这个 404 当「主机可能收到了卡但没确认」
+  （`InterconnectPostTransport` 把任何响应都算 `mayHaveDelivered` → `RemoteMineOutcomeUnknown` → `connectionUnknown`），
+  用户看到的原因是错的、卡也进不了待发队列。根因修在传输层：404 / 405（没有这个端点 / 没接线，对端什么都没做）不再算
+  可能已送达；制卡客户端据此抛 `RemoteMineRefused`，仓库映射成新错误码 `AnkiErrorCode.pairedDeviceMiningUnavailable`
+  （文案 `anki_error_paired_device_mining_unavailable`：连上了、主机现在不收卡、可能要升级、卡没送出），并算「确定没送到」
+  （`isUndeliveredMineFailure`），开着「连不上时暂存」时进待发队列。端到端：`srs_generation_old_server_e2e_test.dart` 两条都补了
+  经生产链路（`FushiRemoteMiningClient` → `RemoteMiningAnkiRepository` → `PendingMiningAnkiRepository`）往旧主机真 HTTP 制卡。
+  带 Anki helper 的旧服务端照旧把卡落进它自己的 Anki（解析器从复习退到 Anki），与库代无关，没测。
+- **名字不先取自己上次发布的（复核 minor）**：测试里改成服务端先建身份（新代设备 ID 是 UUIDv7，先建的先列出），并断言
+  前提「服务端自己那份先被列出」；变异「去掉 `e.key != own`」→ 红（`Expected: 'Japanese'`）。
+- **设备报的名字过滤（复核 nit）**：抽出 `serverSrsProfileNameOk`（≤100 字、无控制字符），admin 写入与 `_resolveName` 同一口径，
+  设备报的不合格名字跳过；变异「去掉过滤」→ 红（`Actual: 'J\x07P'`）。
+- **每轮全量扫同步根（复核 minor）**：`srsListRemoteProfiles` 加 `onlyDirs`，`_publishInfo` 只读自己绑定的目录。
+- **换绑后旧目录残留 `profile.json`（复核 minor，推测）**：核实服务端运行期不换绑——它不发 `collection_adopt` /
+  `collection_join` / `collection_salts_add`，也没有 `.fushisrs` / SRS 备份导入；绑定只在第一次 `identity` 建（目录 = uid）。没有
+  需要清的旧目录，没加代码；server-parity-gaps 里写明「以后给服务端加换绑路径时要一并带上清理」。
+
+### 第六波 服务端收尾：第三轮（2026-11-20，同分支续做）
+
+- **取名规则依赖目录列举顺序（第二轮复核 major）**：不只是测试的问题——`_resolveName` 原先「按 `nameOf` 的顺序取第一个别的
+  设备报的名字」，`nameOf` 的顺序就是 `LocalDirectoryAssetStore.listChildren`（`listSync`，不排序）的顺序，Linux ext4 / macOS
+  APFS 上是哈希序：两台设备报了不同名字时，同一份数据在不同机器上取出的名字不同，测试的「服务端那份先列出」前提也随之一半
+  概率不成立。改成确定规则 `serverSrsPickReportedName`（`server_srs.dart`）：跳过服务端自己那份与不合格的外来名字，取说明文件
+  修改时刻最新的（设备改了名，它的说明文件就最新），一样新 / 没有时刻时取写入者名按码点最小的。`SrsRemoteProfile` 加
+  `nameAtOf`（写入者 → 它说明文件的修改时刻）供挑选用。本地目录后端 `LocalDirectoryAssetStore.findAsset` 原先不带修改时刻（`listChildren` 带），说明文件的时刻在本地目录上永远是 null（`updatedAt` 也一样），一并补上。测试：单测把每组输入按正反两种列举顺序各跑一遍、断言结果相同；
+  装配测试去掉了列举顺序前提，改为断言 `nameAtOf` 覆盖每个报了名字的写入者。取舍：时刻来自同步后端（本地目录是 mtime），
+  被同步工具改写 mtime 时退化为「按写入者名」，仍确定。app 侧 `SrsRemoteProfile.displayName`（`names.first`）同样跟列举顺序走，
+  只影响关联候选的显示名，不归本模块，没改。
+- **拒收文案说得过于确定（minor）**：客户端只看得到 404 / 405，分不清「主机上没有能写的落点（没配 Anki、复习库没提供 / 要
+  升级）」与「主机版本没有这个端点」，所以文案改成说原话加几种可能：「连上了，但它没有接收这张卡（回了 404 / 405），这边分不清
+  具体原因……这张卡没有送出」（`anki_error_paired_device_mining_unavailable` 用 `i18n_sync --set` 改 17 份，代码常量同步）。
+  测试钉住英文 / 中文 / 常量三份都含「404 / 405」、不含「没配 Anki / 复习库不可用」的断言。没有按响应体 `Mining off` 细分：
+  那是自由文本、多候选时也只剩一个状态码，拿它当协议不可靠。
+- **变异实测（本轮）**：去掉「跳过自己那份」→ 3 条单测红；挑选改回「第一个合格的」→ 2 条红（正反顺序挑出「旧名」/「新名」）；`findAsset` 去掉时刻 → 装配测试红（`nameAtOf` 为空）；只把中文文案退回旧句 → 文案测试红。每次还原后工作区干净。
+- **测试源码里的 BEL（nit）**：改成 `'J\u0007P'`。
+- **每轮全量扫描 / 外来名字限制（第一轮 verify 的 minor / nit）**：第二轮已修（`onlyDirs` 只读自己绑定的目录；
+  `serverSrsProfileNameOk` 过滤设备报的名字），本轮核过仍成立，名字挑选同样先过这道过滤。
+
+### 第六波 服务端收尾：第四轮（2026-11-20，同分支续做）
+
+- **同一写入者有两份说明文件时采信哪份仍跟列举顺序走（第三轮复核 major）**：设备升级前把说明文件写在旧根
+  `v3/devices/<设备>/`，升级后 `srsPublishProfileInfo` 写 `v4/devices/<设备>/`，旧那份没有代码删；两份用同一个写入者名
+  `srsV2WriterName(dev)`。`srsListRemoteProfiles` 的 `readInfo` 原先每读一份就无条件覆盖 `nameOf` / `nameAtOf`，先读 `v3`
+  还是 `v4` 由 `listChildren`（`listSync`，不排序）决定，改名后旧根留着旧名，一半机器上取到旧名。根因在列表本身，修在
+  `fushi_engine/lib/srs/srs_profile_link.dart`：同一写入者的名字与 `mergingInto` 只采信**位置优先级最高**的那份——
+  `v4/devices/`（当前发布位置）> `v3/devices/` > `v2/devices/` > 旧格式写入者目录；同级取修改时刻新的（没有时刻排最后）。
+  取舍：位置优先于时刻（旧根那份即使 mtime 更新也不采信，它不会再被当前版本写）；旧那份的 `mergingInto` 同样不采信
+  （v4 那份没有并入标记就是没在并入）。有无笔记、笔记数（取最大）、设备名、`updatedAt` 仍各份都算，不涉及挑选。
+  `names` 改为从最终 `nameOf` 派生、按「说明文件时刻新的在前、同刻按写入者名（UTF-16 码元序）」排，`displayName`
+  （`names.first`）因此也不再跟列举顺序走，旧根留下的旧名也不再出现在 `names` 里（第三轮记的「app 侧没改」一并解决）。
+  测试 `srs_profile_link_test.dart`「同一设备 v3 旧说明文件 + v4 新说明文件：两种列举顺序都只采信 v4 那份」：用把
+  `listChildren` 按名字正序 / 逆序返回的本地目录后端，旧文件比新文件旧、比新文件新各一遍，断言 `nameOf`、`nameAtOf`、
+  `names` 顺序、`displayName`、`mergingInto` 四种组合都一样。
+- **「说明文件最新 = 刚改名的设备」说重了（minor）**：app 端 `SrsProfileLinker.publish` 的签名含笔记数、设备名、并入标记，
+  任何一项变了都重写说明文件，所以时刻是「最近一次改动说明文件」，不是改名时刻。选择照实写进注释（`serverSrsPickReportedName`、
+  `SrsRemoteProfile.nameAtOf`）：几台设备报的名字不同时取最近有活动的那台的名字，名字会随设备活动切换；改名那台在改名时
+  必然重写，所以改名后到别的设备再有活动之前取到新名。没有加「改名时刻」字段：要改说明文件格式且各端都得升级才有用，
+  而几台设备名字不一致本身是用户侧状态，确定性已满足。
+- **「码点最小」不准确（nit）**：注释改成「按 UTF-16 码元序（`String.compareTo`）」，行为不变。
+- **变异实测（本轮）**：`readInfo` 改回无条件覆盖（`chosen = true`）→ 新测试红（逆序时 `nameOf` 为 `OldName`）；`names` 的排序
+  比较器改成恒 0 → 新测试红（逆序时 `names` 为 `[B, NewName]`）。每次 `git checkout --` 还原后工作区干净。

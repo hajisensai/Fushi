@@ -47,6 +47,45 @@ import 'package:path/path.dart' as p;
 /// 已配对设备写进来之后，等这么久没有新写入再跑一轮（一轮客户端同步连写好几个文件，并成一次）。
 const Duration kServerSrsWriteDebounce = Duration(seconds: 3);
 
+/// 管理员给 profile 起的名字最长几个字符（[ServerSrsConfig.profileNames]；会发布到同步位置给别的设备看）。
+const int kServerSrsProfileNameMax = 100;
+
+/// [name] 能不能当 profile 的显示名发布出去：不超过 [kServerSrsProfileNameMax] 个字符、不含控制字符。管理员起的名字
+/// （admin API 写入时拒收）与别的设备在同步位置里报的名字（外来输入，[ServerSrs] 取名时跳过不合格的）同一个口径。
+bool serverSrsProfileNameOk(String name) =>
+    name.length <= kServerSrsProfileNameMax &&
+    !name.runes.any((int c) => c < 0x20 || c == 0x7f);
+
+/// 同一集合里别的设备在说明文件里报的名字（[nameOf]：写入者 → 名字）里挑哪一个当服务端那份 profile 的名字；没有可用的
+/// 返回 null。跳过 [own]（服务端自己上次发布的那份）与不合格的（[serverSrsProfileNameOk]，外来输入）；剩下的取说明文件
+/// 最近一次改动过的（[nameAtOf]，没有时刻的排最后），一样新时取写入者名按 UTF-16 码元序（[String.compareTo]）最小的。
+///
+/// 说明文件不只在改名时重写：设备的笔记数、设备名、并入标记一变也重写（app 端 `SrsProfileLinker.publish` 按签名比较）。
+/// 所以几台设备报的名字不一样时，取的是最近有活动的那台设备的名字，名字会随设备活动来回切；改名的那台设备在改名时
+/// 必然重写说明文件，所以改名后（别的设备再有活动之前）取到的是新名字。规则对给定数据是确定的。
+///
+/// 规则只看内容，不看 [nameOf] 的键顺序——那是后端的目录列举顺序，本地目录在 Linux / macOS 上是哈希序，按顺序取
+/// 第一个时同一份数据在不同机器上会取出不同的名字。
+String? serverSrsPickReportedName(
+  Map<String, String> nameOf,
+  Map<String, int> nameAtOf, {
+  required String? own,
+}) {
+  String? bestWriter;
+  int bestAt = -1;
+  for (final MapEntry<String, String> e in nameOf.entries) {
+    if (e.key == own || !serverSrsProfileNameOk(e.value)) continue;
+    final int at = nameAtOf[e.key] ?? -1;
+    if (bestWriter == null ||
+        at > bestAt ||
+        (at == bestAt && e.key.compareTo(bestWriter) < 0)) {
+      bestWriter = e.key;
+      bestAt = at;
+    }
+  }
+  return bestWriter == null ? null : nameOf[bestWriter];
+}
+
 /// 兜底：没有任何触发时也每隔这么久同步一轮。
 const Duration kServerSrsSafetyInterval = Duration(minutes: 30);
 
@@ -339,8 +378,12 @@ class ServerSrsProfile {
   DateTime? _mediaReconciledAt;
   String? _mediaReconciledContent;
 
-  /// 同步位置里各设备报的名字（WebUI 与远程复习的选择列表显示）；没有时空。
+  /// 这份 profile 的显示名（WebUI、远程复习的选择列表、服务端发布的说明文件）：管理员起的名字，没有时取别的
+  /// 设备在同步位置里报的，再没有取服务端自己上次发布的（[ServerSrs._resolveName]）；都没有时空。
   String name = '';
+
+  /// 上次发布的说明文件内容签名（进程内）：没变不重写。
+  String? _publishedInfo;
 
   /// 用户笔记数。库打开前是同步位置里各设备报的最大值（只是个估计，设备报的是它上次发布时的数）；
   /// 库打开后每轮同步成功都按这份库重数（服务端自己写库、设备写入都会触发一轮），WebUI / 远程复习的
@@ -426,15 +469,17 @@ class ServerSrsProfile {
   Future<void> _round() async {
     final SrsDbStore? s = _store;
     if (s == null || _closed) return;
-    final SrsLocationBackend backend = SrsLocationBackend(
-      LocalDirectoryAssetStore(_owner.syncRoot),
+    final LocalDirectoryAssetStore assets = LocalDirectoryAssetStore(
+      _owner.syncRoot,
     );
+    final SrsLocationBackend backend = SrsLocationBackend(assets);
     final String key = _owner.directoryKey;
     try {
       final SrsSync2Report r = await srsRunLocationRound(
         backend,
         s,
         key,
+        publishDeviceInfo: _owner._publishDeviceInfo,
         beforeUpload: (String? keyHex) => _media == null
             ? Future<void>.value()
             : srsRunLocationMedia(
@@ -467,6 +512,7 @@ class ServerSrsProfile {
       if (error == null) {
         lastError = null;
         noteCount = await s.userNoteCount();
+        await _publishInfo(assets, s);
         await _startRwkvIfUsed(s);
         if (state != ServerSrsProfileState.ready) {
           _setState(ServerSrsProfileState.ready, null);
@@ -478,6 +524,49 @@ class ServerSrsProfile {
     } catch (e, stack) {
       lastError = '$e';
       engineLog.log('ServerSrs.sync', e, stack);
+    }
+  }
+
+  /// 在这份集合的位置目录里发布服务端自己的 profile 说明文件（`v4/devices/<服务端的新代设备>/profile.json`，
+  /// [srsPublishProfileInfo]，与 app 的 `SrsProfileLinker.publish` 同一份写法）：别的设备的关联列表、WebUI 勾选列表
+  /// 据此显示名字与笔记数。只有服务端写过的新代集合以前在那些列表里只有目录名（交接「第六波 服务端收尾」）。
+  ///
+  /// 笔记数是这一轮之后向内核要的（[noteCount]，`entity_count`），Dart 不存镜像；名字见 [ServerSrs._resolveName]。
+  /// 失败只记日志，不算这一轮失败（说明文件只是给别的设备看的）。
+  Future<void> _publishInfo(
+    LocalDirectoryAssetStore assets,
+    SrsDbStore s,
+  ) async {
+    final String? device = s.sync2Device;
+    final String? dir = s.sync2Dir;
+    if (device == null || dir == null || _closed) return;
+    try {
+      name = _owner._resolveName(
+        this,
+        (await _owner._discover(onlyDir: dir))[dir],
+        own: srsV2WriterName(device),
+      );
+      final bool hasNotes = noteCount > 0 || await s.hasUserData();
+      final Object? label = (await s.sync2DeviceInfo())['name'];
+      final String? deviceLabel = label is String && label.isNotEmpty
+          ? label
+          : null;
+      final String sig =
+          '$dir|$device|$name|$noteCount|$hasNotes|${deviceLabel ?? ''}';
+      if (_publishedInfo == sig) return;
+      await srsPublishProfileInfo(
+        assets,
+        profileUid: uid,
+        dir: dir,
+        writerId: device,
+        name: name,
+        hasNotes: hasNotes,
+        device: deviceLabel,
+        noteCount: noteCount,
+      );
+      _publishedInfo = sig;
+    } catch (e, stack) {
+      engineLog.log('ServerSrs.publishInfo', e, stack);
     }
   }
 
@@ -610,6 +699,7 @@ class ServerSrs {
     required ServerSrsConfig Function() config,
     FsrsEngine? Function()? engine,
     void Function()? onPublished,
+    String Function()? deviceName,
     HttpClient Function()? rwkvHttpClient,
     Future<SrsRwkvBackend> Function(File weights)? rwkvBackend,
     SrsGen4MigrationBackend migration = const SrsNativeGen4MigrationBackend(),
@@ -622,6 +712,7 @@ class ServerSrs {
        _config = config,
        _engineFactory = engine ?? FfiFsrsEngine.tryCreate,
        _onPublishedCb = onPublished,
+       _deviceName = deviceName,
        _rwkvHttpClient = rwkvHttpClient ?? createAppHttpClient,
        _rwkvBackend = rwkvBackend,
        _migrationBackend = migration;
@@ -638,6 +729,10 @@ class ServerSrs {
   final ServerSrsConfig Function() _config;
   final FsrsEngine? Function() _engineFactory;
   final void Function()? _onPublishedCb;
+
+  /// 服务端的设备名（`fushi_server.yaml` 的 `device_name`）：交给内核当型号，随 head 发布，别的设备的设备列表与
+  /// 说明文件里的设备名就是它。null = 不交。
+  final String Function()? _deviceName;
 
   /// 下载 RWKV 权重用的 HTTP 客户端（缺省走全局代理设置；测试注入一个不碰网络的）。
   final HttpClient Function() _rwkvHttpClient;
@@ -914,10 +1009,15 @@ class ServerSrs {
         this,
       );
       final SrsRemoteProfile? info = await _infoOf(prof, found);
-      if (info != null) {
-        prof.name = info.names.isEmpty ? '' : info.names.first;
-        // 库开着时数以库为准（每轮同步后重数），设备报的旧数不覆盖它。
-        if (prof._store == null) prof.noteCount = info.noteCount ?? 0;
+      final String? device = prof._store?.sync2Device;
+      prof.name = _resolveName(
+        prof,
+        info,
+        own: device == null ? null : srsV2WriterName(device),
+      );
+      // 库开着时数以库为准（每轮同步后重数），设备报的旧数不覆盖它。
+      if (info != null && prof._store == null) {
+        prof.noteCount = info.noteCount ?? 0;
       }
       if (prof._store != null) {
         await prof._switchRwkv(rwkvSize);
@@ -947,6 +1047,49 @@ class ServerSrs {
       }
       // 第一轮跑完才知道位置是不是加密的；跑完之前不对外提供（不拿一份没收过数据的空库应答）。
       unawaited(prof.syncNow());
+    }
+  }
+
+  /// [prof] 的显示名：管理员起的（[ServerSrsConfig.profileNames]）优先；否则别的设备在说明文件里报的（[info] 里
+  /// 写入者不是 [own] 的，几份时按 [serverSrsPickReportedName] 的确定规则挑）；再否则服务端自己上次发布的（[own] 那份，让设备都离开之后名字还在）。[own] = 服务端在这个
+  /// 集合里的写入者名（库没开时不知道，null：所有写入者一视同仁）。不先取自己上次发布的：设备改了名，服务端要跟着改，
+  /// 不能一直拿自己那份旧名字当来源。[info] 为 null（这一轮没读到）时不动现有的名字。
+  ///
+  /// 设备报的名字来自同步位置（外来输入），与管理员起的名字同一个口径过滤（[serverSrsProfileNameOk]）：不合格的跳过，
+  /// 不写进服务端自己发布的说明文件。
+  String _resolveName(
+    ServerSrsProfile prof,
+    SrsRemoteProfile? info, {
+    required String? own,
+  }) {
+    final String? configured = _config().profileNames[prof.uid];
+    if (configured != null &&
+        configured.isNotEmpty &&
+        serverSrsProfileNameOk(configured)) {
+      return configured;
+    }
+    if (info == null) return prof.name;
+    final String? reported = serverSrsPickReportedName(
+      info.nameOf,
+      info.nameAtOf,
+      own: own,
+    );
+    if (reported != null) return reported;
+    final String? mine = own == null ? null : info.nameOf[own];
+    return mine != null && serverSrsProfileNameOk(mine) ? mine : '';
+  }
+
+  /// 本机型号（= 服务端设备名）与平台交给内核，随下一次写 head 发布（与 app 的 `srsPublishDeviceInfo` 同一条命令；
+  /// 没变时内核不进写锁）。失败只记日志，不挡同步。
+  Future<void> _publishDeviceInfo(SrsDbStore s) async {
+    final String? model = _deviceName?.call().trim();
+    try {
+      await s.sync2DeviceInfo(
+        model: model == null || model.isEmpty ? null : model,
+        platform: Platform.operatingSystem,
+      );
+    } catch (e, stack) {
+      engineLog.log('ServerSrs.deviceInfo', e, stack);
     }
   }
 
@@ -1383,11 +1526,13 @@ class ServerSrs {
   Future<List<SrsRemoteProfile>> discoverProfiles() async =>
       (await _discover()).values.toList();
 
-  Future<Map<String, SrsRemoteProfile>> _discover() async {
+  /// [onlyDir] 给了只读那一个位置目录（每轮发布说明文件时只要自己绑定的目录）。
+  Future<Map<String, SrsRemoteProfile>> _discover({String? onlyDir}) async {
     if (!syncRoot.existsSync()) return const <String, SrsRemoteProfile>{};
     try {
       final List<SrsRemoteProfile> list = await srsListRemoteProfiles(
         LocalDirectoryAssetStore(syncRoot),
+        onlyDirs: onlyDir == null ? null : <String>{onlyDir},
       );
       return <String, SrsRemoteProfile>{
         for (final SrsRemoteProfile r in list) r.uid: r,

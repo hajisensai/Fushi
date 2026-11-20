@@ -78,6 +78,8 @@ import 'package:fushi_server/src/server_ankiconnect.dart';
 import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
 import 'package:fushi_server/src/server_srs.dart';
+import 'package:fushi_srs/fushi_srs.dart'
+    show SrsGen4MigrationBackend, SrsNativeGen4MigrationBackend;
 import 'package:fushi_server/src/server_subtitle_backfill.dart';
 import 'package:fushi_server/src/server_subtitle_providers.dart';
 import 'package:fushi_server/src/video_scrape_host.dart';
@@ -157,8 +159,10 @@ class HeadlessHost {
     selfUpdaterFactory,
     VideoSubtitleRegistry Function()? subtitleRegistryFactory,
     HttpClient Function()? srsRwkvHttpClient,
+    SrsGen4MigrationBackend? srsMigration,
   }) : _config = config,
        _srsRwkvHttpClient = srsRwkvHttpClient,
+       _srsMigration = srsMigration,
        _injectedDictionaryHost = dictionaryHost,
        _selfUpdaterFactory =
            selfUpdaterFactory ?? ServerSelfUpdater.forRunningBundle,
@@ -196,6 +200,9 @@ class HeadlessHost {
 
   /// 复习库下载 RWKV 权重用的 HTTP 客户端（测试注入不碰网络的；null = 全局代理设置下的缺省客户端）。
   final HttpClient Function()? _srsRwkvHttpClient;
+
+  /// 复习库换代迁移的执行端（测试接缝：让整机备份等 admin 端点在「迁移进行中」下走真 [HeadlessHost]；null = 原生库）。
+  final SrsGen4MigrationBackend? _srsMigration;
   final ServerPaths paths;
   final FushiDatabase db;
   final ServerPrefs prefs;
@@ -485,7 +492,9 @@ class HeadlessHost {
       config: () => config.srs,
       // 发出了新段：叫醒客户端 `/api/srs/changes` 长轮询（与 app 当 host 同）。
       onPublished: () => _server?.notifySrsChanged(),
+      deviceName: () => config.deviceName,
       rwkvHttpClient: _srsRwkvHttpClient,
+      migration: _srsMigration ?? const SrsNativeGen4MigrationBackend(),
     );
     _srs = srs;
     final ServerAnkiConnect ankiConnect = ServerAnkiConnect(

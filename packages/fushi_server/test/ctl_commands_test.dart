@@ -416,6 +416,36 @@ void main() {
       expect(await ctl(<String>['srs', 'migration', 'nope']), 64);
     });
 
+    test('srs retained：状态 / 删除要 --yes 才发、带 confirm（第六波服务端收尾）', () async {
+      admin.nextBody = const <String, Object?>{
+        'copy': 'sealed',
+        'bytes': 4096,
+        'dueAtMs': null,
+        'error': null,
+      };
+      expect(await ctl(<String>['srs', 'retained']), 0);
+      expect(await ctl(<String>['srs', 'retained', 'status']), 0);
+      expect('$out', contains('4096'));
+      // 没有 --yes：用法错误，不发请求。
+      expect(await ctl(<String>['srs', 'retained', 'delete']), 64);
+      expect(await ctl(<String>['srs', 'retained', 'nope']), 64);
+      admin.nextBody = const <String, Object?>{
+        'deleted': true,
+        'freedBytes': 4096,
+        'reason': null,
+      };
+      expect(await ctl(<String>['srs', 'retained', 'delete', '--yes']), 0);
+      expect(
+        admin.seen.map((_Seen s) => '${s.method} ${s.path}').toList(),
+        <String>[
+          'GET /api/admin/srs/retained',
+          'GET /api/admin/srs/retained',
+          'POST /api/admin/srs/retained/delete',
+        ],
+      );
+      expect(admin.seen.last.body, <String, Object?>{'confirm': true});
+    });
+
     test('未知动作 / 空动作 = 用法错误，不发请求', () async {
       expect(await ctl(<String>[]), 64);
       expect(await ctl(<String>['nope']), 64);

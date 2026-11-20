@@ -5,7 +5,8 @@
 ///                                   `defaultProfile`、`rolloverHour`、`rwkvModel`（`small` / `tiny`：RWKV 模型
 ///                                   档位，写的是整台设备的 `<support>/srs_rwkv/model_size`，当场生效）、
 ///                                   `miningTarget`、`miningDecks`（整份替换）/ `miningDecksPatch`（只改给了的
-///                                   那几份，空串 = 删掉那一项）、`ankiConnect: {enabled, bind, port, apiKey,
+///                                   那几份，空串 = 删掉那一项）、`profileNames`（整份替换，空串 = 不起名、用设备报的；
+///                                   服务端发布的 profile 说明文件与选择列表用它）、`ankiConnect: {enabled, bind, port, apiKey,
 ///                                   profileKeys, corsOrigins}`；
 /// - `GET  /api/admin/srs/profiles`  同步目录里能选的 profile（名字、设备、笔记数、是否已提供）；
 /// - `POST /api/admin/srs/sync`      立即同步（正文 `{"profile": uid}` 只同步那份）；
@@ -196,6 +197,7 @@ class AdminSrs {
         'rolloverHour': cfg.rolloverHour,
         'miningTarget': cfg.miningTarget.wire,
         'miningDecks': cfg.miningDecks,
+        'profileNames': cfg.profileNames,
         // RWKV 模型档位：不在 config.yaml 里，是整台设备的设置文件（`<support>/srs_rwkv/model_size`，与 app
         // 同一个），这里读写的就是它。
         'rwkvModel': ctx.host.srs?.rwkvModelSize.persistedName,
@@ -300,6 +302,18 @@ class AdminSrs {
     final Map<String, String>? nextDecks = decks == null && deckPatch == null
         ? null
         : <String, String>{...(decks ?? cur.miningDecks), ...?deckPatch};
+    final Map<String, String>? names = _uidMap(
+      body['profileNames'],
+      'profileNames',
+    );
+    for (final String name in names?.values ?? const <String>[]) {
+      // 发布到同步位置给别的设备看：限长，不收控制字符。
+      if (!serverSrsProfileNameOk(name)) {
+        throw const FormatException(
+          'profileNames: a name must be at most $kServerSrsProfileNameMax characters without control characters',
+        );
+      }
+    }
     final ServerSrsConfig nextSrs = cur.copyWith(
       profiles: nextProfiles,
       // 默认那份被取消了：清空（= 列表第一份），别留一个不再提供的 uid。
@@ -315,6 +329,12 @@ class AdminSrs {
           ? null
           : <String, String>{
               for (final MapEntry<String, String> e in nextDecks.entries)
+                if (e.value.isNotEmpty) e.key: e.value,
+            },
+      profileNames: names == null
+          ? null
+          : <String, String>{
+              for (final MapEntry<String, String> e in names.entries)
                 if (e.value.isNotEmpty) e.key: e.value,
             },
     );

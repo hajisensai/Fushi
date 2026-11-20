@@ -187,6 +187,7 @@ srs:                          # Fushi 复习（见下文「Fushi 复习」）；
   rollover_hour: 4            # 换日时刻（配置文件自带设置时以它为准）
   mining_target: "auto"       # 已配对设备转发的卡落到哪：auto（没配好 Anki 时进复习）| review | anki
   mining_decks: {}            # uid → 制卡牌组全名；缺省 = 那份的默认牌组
+  profile_names: {}           # uid → 服务端发布的配置文件名；缺省 = 用设备报的名字
 ankiconnect:                  # AnkiConnect 兼容接口（Yomitan 等往复习库加卡），默认关
   enabled: false
   bind: "127.0.0.1"           # 非本机地址必须设 api_key 或 profile_keys，否则拒绝启动
@@ -383,7 +384,8 @@ client 首次连接的 TOFU，其它主机名 / 端口的坏证书照样拒绝�
 | `GET profiles` / `POST profiles/<id>/share` / `DELETE profiles/<id>` | 寄存的配置文件 + 开关状态 / 指定对端拉取时交出哪一份 / 删除（下节） |
 | `GET p2p` | P2P 隧道状态（同 `settings.p2pStatus`，WebUI 轮询用） |
 | `GET anki` / `POST anki/login|logout|sync|refresh|landing|run|retry` / `PUT anki/settings` | Anki 落地（下节） |
-| `GET|PUT srs` / `GET srs/profiles` / `GET srs/decks?profile=<uid>` / `POST srs/sync {profile?}` | Fushi 复习：状态与配置 / 同步目录里能选的配置文件 / 那份已提供配置文件的牌组全名（`{decks}`，没提供 404 `profile_not_served`）/ 立即同步。PUT 只改带了的字段：`profiles`（整份）或 `addProfiles` / `removeProfiles`、`defaultProfile`、`rolloverHour`、`miningTarget`、`miningDecks`（整份替换）或 `miningDecksPatch`（只改给了的那几份，`""` 删掉那一项）、`ankiConnect {enabled, bind, port, apiKey, profileKeys, corsOrigins}`。key 不回显（只报 `apiKeySet` / `profileKeysSet`），`apiKey: ""` 清掉；AnkiConnect 配置起不来（非本机地址没 key、key 重复）回 409 `ankiconnect_invalid`，不落地 |
+| `GET|PUT srs` / `GET srs/profiles` / `GET srs/decks?profile=<uid>` / `POST srs/sync {profile?}` | Fushi 复习：状态与配置 / 同步目录里能选的配置文件 / 那份已提供配置文件的牌组全名（`{decks}`，没提供 404 `profile_not_served`）/ 立即同步。PUT 只改带了的字段：`profiles`（整份）或 `addProfiles` / `removeProfiles`、`defaultProfile`、`rolloverHour`、`miningTarget`、`miningDecks`（整份替换）或 `miningDecksPatch`（只改给了的那几份，`""` 删掉那一项）、`profileNames`（整份替换，`""` = 不起名；最长 100 字符、不收控制字符）、`ankiConnect {enabled, bind, port, apiKey, profileKeys, corsOrigins}`。key 不回显（只报 `apiKeySet` / `profileKeysSet`），`apiKey: ""` 清掉；AnkiConnect 配置起不来（非本机地址没 key、key 重复）回 409 `ankiconnect_invalid`，不落地 |
+| `GET srs/retained` / `POST srs/retained/delete {confirm: true}` | 旧版本保留副本（换代迁移时原位封存的协议 3 `srs.db`）：`{copy: sealed|tombstone|absent|other, bytes, dueAtMs, due, error}` / 立即删除（不可撤销；先核对新代库，核对不过 409 `retained_copy_kept`、什么都不动；不带 `confirm: true` 400）。WebUI 复习页「删除保留副本」与 `ctl srs retained [status] | delete --yes` 走的就是它 |
 | `GET|PUT upload?library=<id>&path=<相对路径>` / `GET upload/folders?library=<id>` | 分块上传 / 库根下已有子目录（下节） |
 | `GET|PUT dictionaries` / `PUT dictionaries/order {names}` / `PATCH dictionaries/<名> {hidden}` / `DELETE dictionaries/<名>` / `GET dictionaries/lookup?q=` | 词典（WebUI「词典」页）：引擎状态（`engine.available` / `reason` / `transformsLoaded`）+ 清单 / 正文为 Yomitan zip 的导入（同名视为更新；引擎没加载回 409，导入失败 422）/ 整份新顺序（必须恰好列全）/ 日语隐藏标记 / 删除 / 试查。改动与互联推送共用库锁，即时进引擎 |
 

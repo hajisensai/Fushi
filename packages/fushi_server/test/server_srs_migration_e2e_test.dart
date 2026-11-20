@@ -3,15 +3,18 @@
 //
 // 夹具 fixtures/srs_protocol3_two_profiles.db.gz：协议 3（schema 29）的库，生成器源码在同目录的
 // srs_protocol3_two_profiles_generator.rs.txt（贴进 native/fushi_fsrs/src/store/gen4/prepare_tests.rs 末尾跑）。
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
+import 'package:fushi_server/src/admin/admin_srs_ctl.dart';
 import 'package:fushi_server/src/config/server_srs_config.dart';
 import 'package:fushi_server/src/server_srs.dart';
 import 'package:fushi_srs/fushi_srs.dart' show SrsReviewLog;
 import 'package:path/path.dart' as p;
+import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
 
 import 'support/fake_rwkv.dart';
@@ -156,5 +159,89 @@ void main() {
     expect(srs.generation.state, ServerSrsGenState.ready);
     expect(srs.generation.verdict, isNull, reason: '这个进程没跑过迁移');
     expect(srs.profile(kMain)!.state, isNot(ServerSrsProfileState.failed));
+  });
+
+  // 第六波服务端收尾：WebUI「删除保留副本」与 `ctl srs retained` 背后是同一组 admin 路由（engine srs_ctl_routes.dart 的
+  // retained，服务端经 AdminSrsCtl 挂在 /api/admin/srs/retained[/delete]）。真迁移出来的封存副本走一遍。
+  test('迁移后的保留副本：admin 路由看得到；不确认 400 不动文件；确认后换成墓碑，新代库照常可用', () async {
+    await srs.start();
+    for (int i = 0; i < 1500 && srs.migrationRunning; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(srs.migrationRunning, isFalse);
+    await srs.applyConfig();
+    expect(srs.generation.state, ServerSrsGenState.ready);
+    final AdminSrsCtl ctl = AdminSrsCtl(() => srs);
+    Future<(int, Map<String, Object?>)> call(
+      String method,
+      String path, [
+      Object? body,
+    ]) async {
+      final shelf.Response r = (await ctl.route(
+        method,
+        path,
+        shelf.Request(
+          method,
+          Uri.parse('http://localhost$path'),
+          body: body == null ? null : jsonEncode(body),
+        ),
+      ))!;
+      return (
+        r.statusCode,
+        (jsonDecode(await r.readAsString()) as Map).cast<String, Object?>(),
+      );
+    }
+
+    final File legacy = File(SrsStorage.legacyPathIn(support.path));
+    var (int code, Map<String, Object?> st) = await call(
+      'GET',
+      '/api/admin/srs/retained',
+    );
+    expect(code, 200, reason: '$st');
+    expect(st['copy'], 'sealed');
+    expect(st['bytes'], greaterThan(0));
+    // 还没同步成功过：按迁移提交 + 30 天到期（retained.rs），不是今天。
+    expect(st['dueAtMs'], isA<int>());
+    expect(st['due'], isFalse);
+    final List<int> sealed = legacy.readAsBytesSync();
+
+    (code, st) = await call('POST', '/api/admin/srs/retained/delete');
+    expect(code, 400, reason: '不确认不删：$st');
+    expect(legacy.readAsBytesSync(), sealed);
+
+    (code, st) = await call(
+      'POST',
+      '/api/admin/srs/retained/delete',
+      <String, Object?>{'confirm': true},
+    );
+    expect(code, 200, reason: '$st');
+    expect(st['deleted'], isTrue);
+    expect(st['freedBytes'], greaterThan(0));
+    (code, st) = await call('GET', '/api/admin/srs/retained');
+    expect(st['copy'], 'tombstone');
+    (code, st) = await call(
+      'POST',
+      '/api/admin/srs/retained/delete',
+      <String, Object?>{'confirm': true},
+    );
+    expect(code, 200);
+    expect(st['deleted'], isFalse, reason: '已经删过：$st');
+
+    // 卡片一张不少：服务端开着的库照常读，重启后照常开。
+    await srs.stop();
+    srs = make();
+    await srs.start();
+    expect(srs.migrationRunning, isFalse);
+    expect(srs.generation.state, ServerSrsGenState.ready);
+    await srs.stop();
+    final SrsStorage storage = await SrsStorage.open(directory: support.path);
+    addTearDown(storage.close);
+    final SrsDbStore main = await SrsDbStore.open(
+      core: storage.core,
+      profileUid: kMain,
+      deviceId: 'check',
+    );
+    expect(await main.userNoteCount(), 3);
+    await storage.close();
   });
 }
