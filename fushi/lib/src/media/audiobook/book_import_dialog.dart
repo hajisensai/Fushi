@@ -312,7 +312,7 @@ class _BookImportDialogState extends State<BookImportDialog>
   /// 把旧路径转交漫画流程、关掉正在导入的书籍框。
   Future<bool> _handoffIfManga(String path, int generation) async {
     final ImportCarrier carrier = await _classifyCarrier(path);
-    if (_isStaleSelection(generation)) return true;
+    if (!mounted || _isStaleSelection(generation)) return true;
     if (!carrier.isManga) return false;
     final bool canImportAsBook = canImportMangaCarrierAsBook(path, carrier);
     final _MangaDetectedChoice? choice =
