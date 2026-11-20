@@ -116,6 +116,14 @@ enum PreviousExitKind {
   /// 用户每改一次权限，下次启动都弹「意外退出」（反馈 DyamYE6bPL / g8AEGUyQBU）。
   permissionChanged,
 
+  /// 被系统安全组件当成恶意软件按 uid 结束（Android `OTHER` + 描述整串是
+  /// `[KILL UID] malware`：Play Protect 或厂商「设备保护」类组件扫描后杀进程；这串不是
+  /// AOSP 框架写的，具体是哪家拿不到）。不是应用内崩溃（没有 Java / Dart / 原生栈），
+  /// 上报只会进闪退队列当噪音（反馈 5wMNgObn0U，三星 SM-S9180，启动约 2.7 s 被杀）。
+  /// 不弹闪退报告，改在首页出来后提示用户去安全设置里放行
+  /// （[offerSecurityKillNoticeAfterStartup]）。
+  securityKilled,
+
   /// 安装新版本时被系统停掉（Android `PACKAGE_UPDATED`：`installPackageLI`，自动更新 /
   /// 覆盖安装）。平台给了明确原因，压过会话标记的「停在前台时没了」——否则每次应用内
   /// 更新装完都弹一次「意外退出」（反馈 8z1tk0jEna / U_gWy3lDbx / jmgMk1gHG2）。
@@ -147,6 +155,7 @@ enum PreviousExitKind {
     userStopped ||
     vendorStopped ||
     permissionChanged ||
+    securityKilled ||
     appUpdated ||
     systemSessionEnd ||
     exitInterrupted ||
@@ -644,6 +653,12 @@ final RegExp _aospKillUidOpChanged = RegExp(
   r'^(?:\[KILL UID\] )?[A-Z][A-Z0-9_]* changed\.?$',
 );
 
+/// 安全组件按 uid 结束「恶意软件」时写下的 `ApplicationExitInfo` 描述：原因码
+/// `REASON_OTHER`，描述 `[KILL UID] malware`（`[KILL UID]` 是 `AppExitInfoTracker` 的
+/// `SUBREASON_KILL_UID` 前缀，后面是调用方传给 `killUid` 的原因串；反馈 5wMNgObn0U）。
+/// 整串锚定、区分大小写；前缀可缺（同 BUG-4491：有的 ROM 的 `AppExitInfoTracker` 不加前缀）。
+final RegExp _securityKillMalware = RegExp(r'^(?:\[KILL UID\] )?malware$');
+
 /// AOSP `ProcessErrorStateRecord.scheduleCrashLocked` 想让进程自己崩（例如广播投递失败时
 /// 的 `can't deliver broadcast`）、但连 `IApplicationThread.scheduleCrash` 这次 binder 调用
 /// 都失败了——进程已死或被冻结（缓存进程冻结器，importance=400）——于是系统直接
@@ -697,12 +712,14 @@ bool _isVendorStopDescription(String description) =>
 /// 这条 Android 退出记录要不要走 `log`（落盘、用户可见）：[kSevereAndroidExitReasons]，
 /// 外加厂商按 CPU 耗电杀进程（MIUI `ScreenOffCPUCheckKill`）——它按
 /// [PreviousExitKind.vendorStopped] 不弹闪退报告，但说明熄屏时真的在吃 CPU，是要查的
-/// 耗电问题，不能只留在诊断段里。
+/// 耗电问题，不能只留在诊断段里；以及安全组件按「恶意软件」杀进程（
+/// [PreviousExitKind.securityKilled]）——不弹闪退报告，但用户要能在错误日志里看到原因。
 bool androidExitSevere(String reason, {String? description}) =>
     kSevereAndroidExitReasons.contains(reason) ||
     (reason == 'OTHER' &&
         description != null &&
-        _miuiScreenOffCpuKill.hasMatch(description.trim()));
+        (_miuiScreenOffCpuKill.hasMatch(description.trim()) ||
+            _securityKillMalware.hasMatch(description.trim())));
 
 /// Android 退出原因 → [PreviousExitKind]；包更新 / 权限变更映射成
 /// [PreviousExitKind.appUpdated] / [PreviousExitKind.permissionChanged]（明确的良性原因，
@@ -712,7 +729,8 @@ bool androidExitSevere(String reason, {String? description}) =>
 /// 交给会话标记。`OTHER` 只在
 /// [description] 是 AOSP 自己写的 appop 变更杀进程描述时才算权限变更、是 OPlus 的
 /// `o-stop` 停应用描述、MIUI / HyperOS 的 `SwipeUpClean` / `OneKeyClean` / 熄屏耗电检查描述时算厂商停止
-/// （[PreviousExitKind.vendorStopped]，见 [_vendorStopDescriptions]），其它照旧 null。
+/// （[PreviousExitKind.vendorStopped]，见 [_vendorStopDescriptions]），是安全组件的
+/// `[KILL UID] malware` 时算 [PreviousExitKind.securityKilled]，其它照旧 null。
 PreviousExitKind? androidExitKind(String reason, {String? description}) =>
     switch (reason) {
       'CRASH_NATIVE' => PreviousExitKind.nativeCrash,
@@ -734,6 +752,10 @@ PreviousExitKind? androidExitKind(String reason, {String? description}) =>
           when description != null &&
               _isVendorStopDescription(description.trim()) =>
         PreviousExitKind.vendorStopped,
+      'OTHER'
+          when description != null &&
+              _securityKillMalware.hasMatch(description.trim()) =>
+        PreviousExitKind.securityKilled,
       _ => null,
     };
 
