@@ -1183,10 +1183,13 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           scene: GoogleLensDisclosureScene.mobileScreens,
         )) {
       // 手机上没有「显示器」：同意框用手机文案，同意记录与桌面共用。
-      if (mounted) {
+      // 宿主挂在 MaterialApp.builder 里、与 Navigator 平级，自己的 context 之上
+      // 没有 Navigator，同意框必须用导航器的 context 弹（反馈 zkQylCmcKq）。
+      final BuildContext? navigatorContext = _navigatorContext;
+      if (navigatorContext != null && navigatorContext.mounted) {
         unawaited(
           target.askLensConsent(
-            context,
+            navigatorContext,
             scene: GoogleLensDisclosureScene.mobileScreens,
           ),
         );
@@ -1270,9 +1273,11 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     DesktopSystemBallActionTarget target,
   ) async {
     await target.bringMainWindowToFront();
-    if (!mounted) return;
+    // 宿主与 Navigator 平级（MaterialApp.builder 的 Stack），用导航器的 context 弹。
+    final BuildContext? navigatorContext = _navigatorContext;
+    if (navigatorContext == null || !navigatorContext.mounted) return;
     await target.askLensConsent(
-      context,
+      navigatorContext,
       scene: GoogleLensDisclosureScene.desktopScreens,
     );
   }
