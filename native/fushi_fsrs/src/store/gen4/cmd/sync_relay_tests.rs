@@ -1072,7 +1072,8 @@ mod reclaim {
     }
 
     /// 判据：没记过 head 全留；记下的最新 head 列着的区间、转发缓存里还有件的区间留；其余（作者重切 / 合并掉的旧区间）
-    /// 删。剔除记录只留落在留下的版本里、又不在那个版本作者签的空洞里的。换上更新的 head（`note_head`）就回收。
+    /// 删。剔除记录跟着还需要的区间走：落在某个还需要的区间里就留，只有那个区间本机有作者签名版本、而 seq 在它作者
+    /// 签的空洞里才不算；还需要却还没有版本的区间（作者刚合并）整段留。换上更新的 head（`note_head`）就回收。
     #[test]
     fn material_is_kept_exactly_where_some_location_can_still_need_it() {
         let conn = open_in_memory().unwrap();
@@ -1102,19 +1103,119 @@ mod reclaim {
         t.tx(|t| note_head(t, col, &h, &bytes)).unwrap();
         // [1,4] 不在新清单、缓存也没有 → 删；[5,8] 缓存有 → 留；[9,10] 新清单列着 → 留。
         assert_eq!(ranges(&t, col), vec![(5, 8), (9, 10)]);
-        // seq 2 落在删掉的版本里、seq 6 落在作者空洞里 → 删；7 / 9 留。
-        assert_eq!(stub_seqs(&t, col), vec![7, 9]);
-        // 缓存里的件删了（只同步一个位置时 prune 全删）：只为它留的 [5,8] 跟着回收，seq 7 的剔除记录也走。
+        // 新清单列着 [1,8]、本机还没有它的版本：落在里面的剔除记录（含 seq 2、以及 [5,8] 作者空洞里的 6）全留，
+        // [1,8] 的版本到了还要靠它们拼本机清除过的格。
+        assert_eq!(stub_seqs(&t, col), vec![2, 6, 7, 9]);
+        // 缓存里的件删了（只同步一个位置时 prune 全删）：只为它留的 [5,8] 跟着回收；[1,8] 还需要，剔除记录不动。
         assert_eq!(t.tx(|t| prune(t, col, &author())).unwrap(), 1);
         assert_eq!(ranges(&t, col), vec![(9, 10)]);
-        assert_eq!(stub_seqs(&t, col), vec![9]);
-        // 再回收一遍什么都不删。
+        assert_eq!(stub_seqs(&t, col), vec![2, 6, 7, 9]);
+        // [1,8] 的作者签名版本晚到（作者签了空洞 seq 6）：回收一遍，只有作者空洞里的 seq 6 走。
+        t.tx(|t| t.note_author_version(col, &version(1, 8, &[(6, 1)])))
+            .unwrap();
         let stored = head(2, &[(1, 8), (9, 10)]);
+        assert_eq!(
+            t.tx(|t| reclaim_material(t, col, &author(), Some(&stored)))
+                .unwrap(),
+            (0, 1)
+        );
+        assert_eq!(ranges(&t, col), vec![(1, 8), (9, 10)]);
+        assert_eq!(stub_seqs(&t, col), vec![2, 7, 9]);
+        // 再回收一遍什么都不删。
         assert_eq!(
             t.tx(|t| reclaim_material(t, col, &author(), Some(&stored)))
                 .unwrap(),
             (0, 0)
         );
+    }
+
+    /// 端到端：重切者收下作者 a 的 [1,2]、[3,5] 两段并清除了 seq 2（剔除记录 + 空洞）。作者在还没见到这条 Purge 时
+    /// 把两段合并成 [1,5]；重切者先读到新 head（`plan` 里的 `note_head` 早于收段），旧版本回收，再收到 [1,5] 的作者
+    /// 签名版本。这时从日志重切 [1,5] 必须还拼得出来——seq 2 的剔除记录是本机清除时写的，删了就再也生不出来，这位
+    /// 作者就会被 `relay_outbox` 整台跳过、不再转发。
+    #[test]
+    fn a_merge_seen_before_its_version_still_recuts_from_the_log() {
+        use crate::gen4::segment::tests::{DEV, coll, items_of, ops, signer};
+        use crate::gen4::segment::{open_native_verified, pack_native};
+        use crate::store::gen4::truth::Peer;
+        use crate::store::gen4::truth::tests::bound;
+        use crate::sync2::segment::{CHAIN_ZERO, chain_tag};
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = bound(&t);
+        // 本机身份不能是作者（`DEV`）。
+        assert_eq!(
+            t.tx(|t| t.create_self(col, &id(0xb2), &[0xb2; 32], None, 1_800_000_000_000)),
+            Ok(true)
+        );
+        let a = id(DEV);
+        let key = signer();
+        t.tx(|t| {
+            t.set_peer(
+                col,
+                &Peer {
+                    device: a,
+                    public: key.public(),
+                    name: None,
+                    ext: None,
+                    head_gen: None,
+                    first_seen: None,
+                },
+            )
+            .map(|_| ())
+        })
+        .unwrap();
+        let ops = ops();
+        let signed = |first: u64, prev, part: &[Op4]| {
+            let (header, seg) =
+                pack_native(coll(), a, first, &items_of(part), prev, &key, None).unwrap();
+            let sig = open_native_verified(&seg, &key.public(), None)
+                .unwrap()
+                .author_sig();
+            AuthorVersion {
+                header,
+                sig,
+                voids: Vec::new(),
+            }
+        };
+        let left = signed(1, CHAIN_ZERO, &ops[..2]);
+        let right = signed(3, left.header.last_chain, &ops[2..]);
+        let merged = signed(1, CHAIN_ZERO, &ops);
+        let tag = chain_tag(&merged.header.last_chain);
+        t.tx(|t| {
+            for op in &ops {
+                t.append_native(col, op)?;
+            }
+            t.note_author_version(col, &left)?;
+            t.note_author_version(col, &right)?;
+            t.put_stub(
+                col,
+                &Stub::of(
+                    &ops[1],
+                    OpId {
+                        device: id(0x22),
+                        seq: 7,
+                    },
+                ),
+            )?;
+            t.advance_purge(col, &ops[1].id)?;
+            Ok(())
+        })
+        .unwrap();
+        // 合并后的 head 先到：[1,2] / [3,5] 不再需要，回收。
+        let mut h = head(3, &[(1, 5)]);
+        h.device = a;
+        let got = t.tx(|t| reclaim_material(t, col, &a, Some(&h))).unwrap();
+        assert_eq!(got, (2, 0), "versions go, the stub [1,5] still needs stays");
+        assert!(t.stub_at(col, &a, 2).unwrap().is_some());
+        // [1,5] 的作者签名版本晚到：照样从日志重切得出来，作者签名照样验得过。
+        t.tx(|t| t.note_author_version(col, &merged)).unwrap();
+        let cut = t
+            .recut_from_log(col, &a, (1, 5, &tag))
+            .unwrap()
+            .expect("the merged range still recuts from the log");
+        assert_eq!(cut.author_sig, merged.sig);
+        assert_eq!(cut.items.len(), 5);
     }
 
     /// 规模：两万个作者签名版本、四万条剔除记录，作者合并掉一半之后回收一遍：删得对，语句数随区间数（不逐条扫），

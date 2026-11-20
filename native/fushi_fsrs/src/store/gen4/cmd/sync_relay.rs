@@ -48,8 +48,11 @@
 //! 3. 转发缓存里还存着这个区间的件（原地重切要它）。
 //!
 //! 不满足的（作者重切 / 合并之后旧区间、缓存里的件也已删掉）就是哪个位置都不会再要的：作者 head 只进不退，旧
-//! 区间不会再出现在它的清单里。剔除记录跟着作者签名版本走：落在某个还需要的版本区间里、且不在那个版本作者签的
-//! 空洞里的才留（重切时作者空洞原样照搬，用不着剔除记录）。记下的 head 换成更新的一份（[note_head]）、或 [prune]
+//! 区间不会再出现在它的清单里。剔除记录跟着**还需要的区间**走（不是跟着本机已存的版本走）：seq 落在某个还需要的
+//! 区间里就留，只有那个区间本机存着作者签名版本、且这个 seq 在它作者签的空洞里时才不算（重切时作者空洞原样照搬，
+//! 用不着剔除记录）。还需要、但本机还没收到作者签名版本的区间（作者刚合并 / 重切，[note_head] 在收段之前就记下了
+//! 新 head）整段留：版本随后到时要靠这些剔除记录拼本机清除过的格；本机自己清除时写下的剔除记录删了就再也生不
+//! 出来。记下的 head 换成更新的一份（[note_head]）、或 [prune]
 //! 删掉了缓存里的件时回收（[reclaim_material]）；只按这位作者的主键前缀 / 区间删，不扫别的作者。
 //! 判据不看位置数：只同步一个位置时 [relay_outbox] 不转发，但之后加了第二个位置要转发的仍是最新清单里的区间。
 //!
@@ -247,26 +250,34 @@ pub(crate) fn reclaim_material(
     for (_, first, last, _) in relay_rows(t, col, device)? {
         needed.insert((first as u64, last as u64));
     }
-    let versions = t.author_versions_of(col, device)?;
     let mut dropped_versions = 0u64;
-    // 还需要的版本覆盖的 seq 区间（去掉作者签的空洞）：剔除记录只留落在这里面的。
-    let mut covered: Vec<(u64, u64)> = Vec::new();
-    for v in &versions {
+    // 还需要的区间各自的作者签名版本（本机已存的）；其余版本删掉。
+    let mut voids_of: BTreeMap<(u64, u64), Vec<(u64, u64)>> = BTreeMap::new();
+    for v in t.author_versions_of(col, device)? {
         let range = (v.header.first, v.header.last);
         if !needed.contains(&range) {
             t.drop_author_version(col, device, range.0, range.1)?;
             dropped_versions += 1;
             continue;
         }
-        let mut at = range.0;
-        for (start, count, _) in &v.voids {
-            if *start > at {
+        voids_of.insert(range, v.voids.iter().map(|(s, c, _)| (*s, *c)).collect());
+    }
+    // 剔除记录要留的 seq 区间：每个还需要的区间，本机有它的版本就去掉作者签的空洞，没有就整段。
+    let mut covered: Vec<(u64, u64)> = Vec::new();
+    for &(first, last) in &needed {
+        let Some(voids) = voids_of.get(&(first, last)) else {
+            covered.push((first, last));
+            continue;
+        };
+        let mut at = first;
+        for &(start, count) in voids {
+            if start > at {
                 covered.push((at, start - 1));
             }
-            at = at.max(start + count);
+            at = at.max(start.saturating_add(count));
         }
-        if at <= range.1 {
-            covered.push((at, range.1));
+        if at <= last {
+            covered.push((at, last));
         }
     }
     let dropped_stubs = t.keep_stubs_within(col, device, &covered)?;
