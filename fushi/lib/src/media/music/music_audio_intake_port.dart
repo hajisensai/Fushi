@@ -74,8 +74,12 @@ abstract interface class MusicAudioIntakePort {
     bool rescanCoveringSources,
   });
 
-  /// 不属于任何来源的零散音频文件：逐个导入（或重扫已覆盖它的音乐来源）。
+  /// 不属于任何来源的零散音频文件：逐个导入（或重扫已覆盖它的音乐来源）。只收纯音频——
+  /// 视频侧入口（视频页拖放、存量迁移）用它，视频不会被分流进曲库。
   Future<MusicAudioIntakeResult> importAudioFiles(Iterable<String> paths);
+
+  /// 音乐页自己的入口（拖放、「添加音频文件」）：同 [importAudioFiles]，另收 MV 视频容器。
+  Future<MusicAudioIntakeResult> importMusicFiles(Iterable<String> paths);
 }
 
 /// 网络来源 [source] 的根在库内命名空间里的写法（与它扫出的条目 / 视频行路径同一口径）：

@@ -109,9 +109,9 @@ MusicItemMenu musicLocalTrackMenu(
           ).read(appProvider).musicSession.engine,
           () => musicPlayItemOf(track),
         ),
-        // 本地 MV（拍板台 jeNKF9u0WJ）：在视频播放页看画面（ASS 特效字幕 / 暂停识别
-        // 画面文字）。视频模块关掉时不给入口。
-        if (isMusicLocalVideoTrack(track) &&
+        // MV（拍板台 jeNKF9u0WJ；网络来源的串流看，left3568）：在视频播放页看画面
+        // （ASS 特效字幕 / 暂停识别画面文字）。视频模块关掉时不给入口。
+        if (isMusicWatchableVideoTrack(track) &&
             _appOf(context).moduleVisibility.isEnabled(ModuleId.video))
           MusicMenuAction(
             id: 'watchVideo',
