@@ -202,7 +202,7 @@ void main() {
       await work(s2, 'anidb', '200');
       await db.replaceCollectionRelations(s1, <CollectionRelationsCompanion>[
         CollectionRelationsCompanion.insert(
-          collectionId: s1,
+          collectionId: Value<int?>(s1),
           relationType: 'sequel',
           targetCollectionId: Value<int?>(s2),
           source: 'local',
@@ -233,7 +233,7 @@ void main() {
       expect(
         await syncScrapedCollectionRelations(
           db,
-          collectionId: s1,
+          owner: VideoRelationOwner.collection(s1),
           source: 'anidb',
           related: first,
         ),
@@ -247,14 +247,14 @@ void main() {
       // 重刮：同一份 → 不重复；源撤掉 300 → 删掉。
       await syncScrapedCollectionRelations(
         db,
-        collectionId: s1,
+        owner: VideoRelationOwner.collection(s1),
         source: 'anidb',
         related: first,
       );
       expect(await rows(s1), hasLength(3));
       await syncScrapedCollectionRelations(
         db,
-        collectionId: s1,
+        owner: VideoRelationOwner.collection(s1),
         source: 'anidb',
         related: first.sublist(0, 1),
       );
@@ -272,7 +272,7 @@ void main() {
       await work(s1, 'anidb', '100');
       await syncScrapedCollectionRelations(
         db,
-        collectionId: s1,
+        owner: VideoRelationOwner.collection(s1),
         source: 'anidb',
         related: const <VideoRelatedWork>[
           VideoRelatedWork(
@@ -302,7 +302,7 @@ void main() {
       expect(
         await bindCollectionRelationsToWork(
           db,
-          collectionId: s2,
+          owner: VideoRelationOwner.collection(s2),
           identities: <(String, String)>[('anidb', '200')],
         ),
         1,
@@ -315,7 +315,7 @@ void main() {
       // 重刮时反查到电影目标：other → movie，已绑定的保持。
       await syncScrapedCollectionRelations(
         db,
-        collectionId: s1,
+        owner: VideoRelationOwner.collection(s1),
         source: 'anidb',
         related: const <VideoRelatedWork>[
           VideoRelatedWork(

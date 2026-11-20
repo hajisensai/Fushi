@@ -34401,11 +34401,25 @@ class $CollectionRelationsTable extends CollectionRelations
   late final GeneratedColumn<int> collectionId = GeneratedColumn<int>(
     'collection_id',
     aliasedName,
-    false,
+    true,
     type: DriftSqlType.int,
-    requiredDuringInsert: true,
+    requiredDuringInsert: false,
     defaultConstraints: GeneratedColumn.constraintIsAlways(
       'REFERENCES media_collections (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _bookUidMeta = const VerificationMeta(
+    'bookUid',
+  );
+  @override
+  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
+    'book_uid',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES video_books (book_uid) ON DELETE CASCADE',
     ),
   );
   static const VerificationMeta _relationTypeMeta = const VerificationMeta(
@@ -34442,6 +34456,20 @@ class $CollectionRelationsTable extends CollectionRelations
     requiredDuringInsert: false,
     defaultConstraints: GeneratedColumn.constraintIsAlways(
       'REFERENCES media_collections (id) ON DELETE SET NULL',
+    ),
+  );
+  static const VerificationMeta _targetBookUidMeta = const VerificationMeta(
+    'targetBookUid',
+  );
+  @override
+  late final GeneratedColumn<String> targetBookUid = GeneratedColumn<String>(
+    'target_book_uid',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES video_books (book_uid) ON DELETE SET NULL',
     ),
   );
   static const VerificationMeta _sourceMeta = const VerificationMeta('source');
@@ -34499,9 +34527,11 @@ class $CollectionRelationsTable extends CollectionRelations
   List<GeneratedColumn> get $columns => [
     id,
     collectionId,
+    bookUid,
     relationType,
     sortIndex,
     targetCollectionId,
+    targetBookUid,
     source,
     subjectId,
     title,
@@ -34531,8 +34561,12 @@ class $CollectionRelationsTable extends CollectionRelations
           _collectionIdMeta,
         ),
       );
-    } else if (isInserting) {
-      context.missing(_collectionIdMeta);
+    }
+    if (data.containsKey('book_uid')) {
+      context.handle(
+        _bookUidMeta,
+        bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta),
+      );
     }
     if (data.containsKey('relation_type')) {
       context.handle(
@@ -34557,6 +34591,15 @@ class $CollectionRelationsTable extends CollectionRelations
         targetCollectionId.isAcceptableOrUnknown(
           data['target_collection_id']!,
           _targetCollectionIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('target_book_uid')) {
+      context.handle(
+        _targetBookUidMeta,
+        targetBookUid.isAcceptableOrUnknown(
+          data['target_book_uid']!,
+          _targetBookUidMeta,
         ),
       );
     }
@@ -34604,6 +34647,7 @@ class $CollectionRelationsTable extends CollectionRelations
   @override
   List<Set<GeneratedColumn>> get uniqueKeys => [
     {collectionId, source, subjectId},
+    {bookUid, source, subjectId},
   ];
   @override
   CollectionRelationRow map(Map<String, dynamic> data, {String? tablePrefix}) {
@@ -34616,7 +34660,11 @@ class $CollectionRelationsTable extends CollectionRelations
       collectionId: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}collection_id'],
-      )!,
+      ),
+      bookUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}book_uid'],
+      ),
       relationType: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}relation_type'],
@@ -34628,6 +34676,10 @@ class $CollectionRelationsTable extends CollectionRelations
       targetCollectionId: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}target_collection_id'],
+      ),
+      targetBookUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}target_book_uid'],
       ),
       source: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
@@ -34662,8 +34714,12 @@ class CollectionRelationRow extends DataClass
     implements Insertable<CollectionRelationRow> {
   final int id;
 
-  /// 边的起点：本地合集。删合集 cascade 清边。
-  final int collectionId;
+  /// 边的起点：本地合集（与 [bookUid] 二选一）。删合集 cascade 清边。
+  final int? collectionId;
+
+  /// 边的起点：单视频（v162，与 [collectionId] 二选一；挂在单个视频上的作品，
+  /// 散装电影）。删视频 cascade 清边。
+  final String? bookUid;
 
   /// 关系类型，wire 值固定小写下划线：`prequel`（前传）/ `sequel`（续集）/
   /// `side_story`（番外/外传）/ `movie`（剧场版）/ `spin_off`（衍生）/ `other`。
@@ -34676,6 +34732,10 @@ class CollectionRelationRow extends DataClass
   /// 已绑定态：目标在本地库中的合集 id。纯刮削态为 NULL；目标合集被删自动
   /// setNull 退回纯刮削态。
   final int? targetCollectionId;
+
+  /// 已绑定态（v162）：目标在本地库中是单视频（散装电影）时的 bookUid，与
+  /// [targetCollectionId] 至多一个非空。目标视频被删自动 setNull 退回纯刮削态。
+  final String? targetBookUid;
 
   /// 目标条目来源（`ScrapeSource.name`：bangumi / tmdb）。
   final String source;
@@ -34693,10 +34753,12 @@ class CollectionRelationRow extends DataClass
   final String? coverPath;
   const CollectionRelationRow({
     required this.id,
-    required this.collectionId,
+    this.collectionId,
+    this.bookUid,
     required this.relationType,
     required this.sortIndex,
     this.targetCollectionId,
+    this.targetBookUid,
     required this.source,
     required this.subjectId,
     required this.title,
@@ -34707,11 +34769,19 @@ class CollectionRelationRow extends DataClass
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
-    map['collection_id'] = Variable<int>(collectionId);
+    if (!nullToAbsent || collectionId != null) {
+      map['collection_id'] = Variable<int>(collectionId);
+    }
+    if (!nullToAbsent || bookUid != null) {
+      map['book_uid'] = Variable<String>(bookUid);
+    }
     map['relation_type'] = Variable<String>(relationType);
     map['sort_index'] = Variable<int>(sortIndex);
     if (!nullToAbsent || targetCollectionId != null) {
       map['target_collection_id'] = Variable<int>(targetCollectionId);
+    }
+    if (!nullToAbsent || targetBookUid != null) {
+      map['target_book_uid'] = Variable<String>(targetBookUid);
     }
     map['source'] = Variable<String>(source);
     map['subject_id'] = Variable<String>(subjectId);
@@ -34728,12 +34798,20 @@ class CollectionRelationRow extends DataClass
   CollectionRelationsCompanion toCompanion(bool nullToAbsent) {
     return CollectionRelationsCompanion(
       id: Value(id),
-      collectionId: Value(collectionId),
+      collectionId: collectionId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(collectionId),
+      bookUid: bookUid == null && nullToAbsent
+          ? const Value.absent()
+          : Value(bookUid),
       relationType: Value(relationType),
       sortIndex: Value(sortIndex),
       targetCollectionId: targetCollectionId == null && nullToAbsent
           ? const Value.absent()
           : Value(targetCollectionId),
+      targetBookUid: targetBookUid == null && nullToAbsent
+          ? const Value.absent()
+          : Value(targetBookUid),
       source: Value(source),
       subjectId: Value(subjectId),
       title: Value(title),
@@ -34753,10 +34831,12 @@ class CollectionRelationRow extends DataClass
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return CollectionRelationRow(
       id: serializer.fromJson<int>(json['id']),
-      collectionId: serializer.fromJson<int>(json['collectionId']),
+      collectionId: serializer.fromJson<int?>(json['collectionId']),
+      bookUid: serializer.fromJson<String?>(json['bookUid']),
       relationType: serializer.fromJson<String>(json['relationType']),
       sortIndex: serializer.fromJson<int>(json['sortIndex']),
       targetCollectionId: serializer.fromJson<int?>(json['targetCollectionId']),
+      targetBookUid: serializer.fromJson<String?>(json['targetBookUid']),
       source: serializer.fromJson<String>(json['source']),
       subjectId: serializer.fromJson<String>(json['subjectId']),
       title: serializer.fromJson<String>(json['title']),
@@ -34769,10 +34849,12 @@ class CollectionRelationRow extends DataClass
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
-      'collectionId': serializer.toJson<int>(collectionId),
+      'collectionId': serializer.toJson<int?>(collectionId),
+      'bookUid': serializer.toJson<String?>(bookUid),
       'relationType': serializer.toJson<String>(relationType),
       'sortIndex': serializer.toJson<int>(sortIndex),
       'targetCollectionId': serializer.toJson<int?>(targetCollectionId),
+      'targetBookUid': serializer.toJson<String?>(targetBookUid),
       'source': serializer.toJson<String>(source),
       'subjectId': serializer.toJson<String>(subjectId),
       'title': serializer.toJson<String>(title),
@@ -34783,10 +34865,12 @@ class CollectionRelationRow extends DataClass
 
   CollectionRelationRow copyWith({
     int? id,
-    int? collectionId,
+    Value<int?> collectionId = const Value.absent(),
+    Value<String?> bookUid = const Value.absent(),
     String? relationType,
     int? sortIndex,
     Value<int?> targetCollectionId = const Value.absent(),
+    Value<String?> targetBookUid = const Value.absent(),
     String? source,
     String? subjectId,
     String? title,
@@ -34794,12 +34878,16 @@ class CollectionRelationRow extends DataClass
     Value<String?> coverPath = const Value.absent(),
   }) => CollectionRelationRow(
     id: id ?? this.id,
-    collectionId: collectionId ?? this.collectionId,
+    collectionId: collectionId.present ? collectionId.value : this.collectionId,
+    bookUid: bookUid.present ? bookUid.value : this.bookUid,
     relationType: relationType ?? this.relationType,
     sortIndex: sortIndex ?? this.sortIndex,
     targetCollectionId: targetCollectionId.present
         ? targetCollectionId.value
         : this.targetCollectionId,
+    targetBookUid: targetBookUid.present
+        ? targetBookUid.value
+        : this.targetBookUid,
     source: source ?? this.source,
     subjectId: subjectId ?? this.subjectId,
     title: title ?? this.title,
@@ -34812,6 +34900,7 @@ class CollectionRelationRow extends DataClass
       collectionId: data.collectionId.present
           ? data.collectionId.value
           : this.collectionId,
+      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
       relationType: data.relationType.present
           ? data.relationType.value
           : this.relationType,
@@ -34819,6 +34908,9 @@ class CollectionRelationRow extends DataClass
       targetCollectionId: data.targetCollectionId.present
           ? data.targetCollectionId.value
           : this.targetCollectionId,
+      targetBookUid: data.targetBookUid.present
+          ? data.targetBookUid.value
+          : this.targetBookUid,
       source: data.source.present ? data.source.value : this.source,
       subjectId: data.subjectId.present ? data.subjectId.value : this.subjectId,
       title: data.title.present ? data.title.value : this.title,
@@ -34832,9 +34924,11 @@ class CollectionRelationRow extends DataClass
     return (StringBuffer('CollectionRelationRow(')
           ..write('id: $id, ')
           ..write('collectionId: $collectionId, ')
+          ..write('bookUid: $bookUid, ')
           ..write('relationType: $relationType, ')
           ..write('sortIndex: $sortIndex, ')
           ..write('targetCollectionId: $targetCollectionId, ')
+          ..write('targetBookUid: $targetBookUid, ')
           ..write('source: $source, ')
           ..write('subjectId: $subjectId, ')
           ..write('title: $title, ')
@@ -34848,9 +34942,11 @@ class CollectionRelationRow extends DataClass
   int get hashCode => Object.hash(
     id,
     collectionId,
+    bookUid,
     relationType,
     sortIndex,
     targetCollectionId,
+    targetBookUid,
     source,
     subjectId,
     title,
@@ -34863,9 +34959,11 @@ class CollectionRelationRow extends DataClass
       (other is CollectionRelationRow &&
           other.id == this.id &&
           other.collectionId == this.collectionId &&
+          other.bookUid == this.bookUid &&
           other.relationType == this.relationType &&
           other.sortIndex == this.sortIndex &&
           other.targetCollectionId == this.targetCollectionId &&
+          other.targetBookUid == this.targetBookUid &&
           other.source == this.source &&
           other.subjectId == this.subjectId &&
           other.title == this.title &&
@@ -34876,10 +34974,12 @@ class CollectionRelationRow extends DataClass
 class CollectionRelationsCompanion
     extends UpdateCompanion<CollectionRelationRow> {
   final Value<int> id;
-  final Value<int> collectionId;
+  final Value<int?> collectionId;
+  final Value<String?> bookUid;
   final Value<String> relationType;
   final Value<int> sortIndex;
   final Value<int?> targetCollectionId;
+  final Value<String?> targetBookUid;
   final Value<String> source;
   final Value<String> subjectId;
   final Value<String> title;
@@ -34888,9 +34988,11 @@ class CollectionRelationsCompanion
   const CollectionRelationsCompanion({
     this.id = const Value.absent(),
     this.collectionId = const Value.absent(),
+    this.bookUid = const Value.absent(),
     this.relationType = const Value.absent(),
     this.sortIndex = const Value.absent(),
     this.targetCollectionId = const Value.absent(),
+    this.targetBookUid = const Value.absent(),
     this.source = const Value.absent(),
     this.subjectId = const Value.absent(),
     this.title = const Value.absent(),
@@ -34899,26 +35001,29 @@ class CollectionRelationsCompanion
   });
   CollectionRelationsCompanion.insert({
     this.id = const Value.absent(),
-    required int collectionId,
+    this.collectionId = const Value.absent(),
+    this.bookUid = const Value.absent(),
     required String relationType,
     this.sortIndex = const Value.absent(),
     this.targetCollectionId = const Value.absent(),
+    this.targetBookUid = const Value.absent(),
     required String source,
     required String subjectId,
     required String title,
     this.coverUrl = const Value.absent(),
     this.coverPath = const Value.absent(),
-  }) : collectionId = Value(collectionId),
-       relationType = Value(relationType),
+  }) : relationType = Value(relationType),
        source = Value(source),
        subjectId = Value(subjectId),
        title = Value(title);
   static Insertable<CollectionRelationRow> custom({
     Expression<int>? id,
     Expression<int>? collectionId,
+    Expression<String>? bookUid,
     Expression<String>? relationType,
     Expression<int>? sortIndex,
     Expression<int>? targetCollectionId,
+    Expression<String>? targetBookUid,
     Expression<String>? source,
     Expression<String>? subjectId,
     Expression<String>? title,
@@ -34928,10 +35033,12 @@ class CollectionRelationsCompanion
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (collectionId != null) 'collection_id': collectionId,
+      if (bookUid != null) 'book_uid': bookUid,
       if (relationType != null) 'relation_type': relationType,
       if (sortIndex != null) 'sort_index': sortIndex,
       if (targetCollectionId != null)
         'target_collection_id': targetCollectionId,
+      if (targetBookUid != null) 'target_book_uid': targetBookUid,
       if (source != null) 'source': source,
       if (subjectId != null) 'subject_id': subjectId,
       if (title != null) 'title': title,
@@ -34942,10 +35049,12 @@ class CollectionRelationsCompanion
 
   CollectionRelationsCompanion copyWith({
     Value<int>? id,
-    Value<int>? collectionId,
+    Value<int?>? collectionId,
+    Value<String?>? bookUid,
     Value<String>? relationType,
     Value<int>? sortIndex,
     Value<int?>? targetCollectionId,
+    Value<String?>? targetBookUid,
     Value<String>? source,
     Value<String>? subjectId,
     Value<String>? title,
@@ -34955,9 +35064,11 @@ class CollectionRelationsCompanion
     return CollectionRelationsCompanion(
       id: id ?? this.id,
       collectionId: collectionId ?? this.collectionId,
+      bookUid: bookUid ?? this.bookUid,
       relationType: relationType ?? this.relationType,
       sortIndex: sortIndex ?? this.sortIndex,
       targetCollectionId: targetCollectionId ?? this.targetCollectionId,
+      targetBookUid: targetBookUid ?? this.targetBookUid,
       source: source ?? this.source,
       subjectId: subjectId ?? this.subjectId,
       title: title ?? this.title,
@@ -34975,6 +35086,9 @@ class CollectionRelationsCompanion
     if (collectionId.present) {
       map['collection_id'] = Variable<int>(collectionId.value);
     }
+    if (bookUid.present) {
+      map['book_uid'] = Variable<String>(bookUid.value);
+    }
     if (relationType.present) {
       map['relation_type'] = Variable<String>(relationType.value);
     }
@@ -34983,6 +35097,9 @@ class CollectionRelationsCompanion
     }
     if (targetCollectionId.present) {
       map['target_collection_id'] = Variable<int>(targetCollectionId.value);
+    }
+    if (targetBookUid.present) {
+      map['target_book_uid'] = Variable<String>(targetBookUid.value);
     }
     if (source.present) {
       map['source'] = Variable<String>(source.value);
@@ -35007,9 +35124,11 @@ class CollectionRelationsCompanion
     return (StringBuffer('CollectionRelationsCompanion(')
           ..write('id: $id, ')
           ..write('collectionId: $collectionId, ')
+          ..write('bookUid: $bookUid, ')
           ..write('relationType: $relationType, ')
           ..write('sortIndex: $sortIndex, ')
           ..write('targetCollectionId: $targetCollectionId, ')
+          ..write('targetBookUid: $targetBookUid, ')
           ..write('source: $source, ')
           ..write('subjectId: $subjectId, ')
           ..write('title: $title, ')
@@ -83609,7 +83728,21 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     ),
     WritePropagation(
       on: TableUpdateQuery.onTableName(
+        'video_books',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('collection_relations', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
         'media_collections',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('collection_relations', kind: UpdateKind.update)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'video_books',
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('collection_relations', kind: UpdateKind.update)],
@@ -105984,10 +106117,12 @@ typedef $$MangaTrustedSignersTableProcessedTableManager =
 typedef $$CollectionRelationsTableCreateCompanionBuilder =
     CollectionRelationsCompanion Function({
       Value<int> id,
-      required int collectionId,
+      Value<int?> collectionId,
+      Value<String?> bookUid,
       required String relationType,
       Value<int> sortIndex,
       Value<int?> targetCollectionId,
+      Value<String?> targetBookUid,
       required String source,
       required String subjectId,
       required String title,
@@ -105997,10 +106132,12 @@ typedef $$CollectionRelationsTableCreateCompanionBuilder =
 typedef $$CollectionRelationsTableUpdateCompanionBuilder =
     CollectionRelationsCompanion Function({
       Value<int> id,
-      Value<int> collectionId,
+      Value<int?> collectionId,
+      Value<String?> bookUid,
       Value<String> relationType,
       Value<int> sortIndex,
       Value<int?> targetCollectionId,
+      Value<String?> targetBookUid,
       Value<String> source,
       Value<String> subjectId,
       Value<String> title,
@@ -106026,14 +106163,31 @@ final class $$CollectionRelationsTableReferences
         'collection_relations__collection_id__media_collections__id',
       );
 
-  $$MediaCollectionsTableProcessedTableManager get collectionId {
-    final $_column = $_itemColumn<int>('collection_id')!;
-
+  $$MediaCollectionsTableProcessedTableManager? get collectionId {
+    final $_column = $_itemColumn<int>('collection_id');
+    if ($_column == null) return null;
     final manager = $$MediaCollectionsTableTableManager(
       $_db,
       $_db.mediaCollections,
     ).filter((f) => f.id.sqlEquals($_column));
     final item = $_typedResult.readTableOrNull(_collectionIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static $VideoBooksTable _bookUidTable(_$FushiDatabase db) => db.videoBooks
+      .createAlias('collection_relations__book_uid__video_books__book_uid');
+
+  $$VideoBooksTableProcessedTableManager? get bookUid {
+    final $_column = $_itemColumn<String>('book_uid');
+    if ($_column == null) return null;
+    final manager = $$VideoBooksTableTableManager(
+      $_db,
+      $_db.videoBooks,
+    ).filter((f) => f.bookUid.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_bookUidTable($_db));
     if (item == null) return manager;
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: [item]),
@@ -106053,6 +106207,25 @@ final class $$CollectionRelationsTableReferences
       $_db.mediaCollections,
     ).filter((f) => f.id.sqlEquals($_column));
     final item = $_typedResult.readTableOrNull(_targetCollectionIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static $VideoBooksTable _targetBookUidTable(_$FushiDatabase db) =>
+      db.videoBooks.createAlias(
+        'collection_relations__target_book_uid__video_books__book_uid',
+      );
+
+  $$VideoBooksTableProcessedTableManager? get targetBookUid {
+    final $_column = $_itemColumn<String>('target_book_uid');
+    if ($_column == null) return null;
+    final manager = $$VideoBooksTableTableManager(
+      $_db,
+      $_db.videoBooks,
+    ).filter((f) => f.bookUid.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_targetBookUidTable($_db));
     if (item == null) return manager;
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: [item]),
@@ -106132,6 +106305,29 @@ class $$CollectionRelationsTableFilterComposer
     return composer;
   }
 
+  $$VideoBooksTableFilterComposer get bookUid {
+    final $$VideoBooksTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.bookUid,
+      referencedTable: $db.videoBooks,
+      getReferencedColumn: (t) => t.bookUid,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VideoBooksTableFilterComposer(
+            $db: $db,
+            $table: $db.videoBooks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
   $$MediaCollectionsTableFilterComposer get targetCollectionId {
     final $$MediaCollectionsTableFilterComposer composer = $composerBuilder(
       composer: this,
@@ -106146,6 +106342,29 @@ class $$CollectionRelationsTableFilterComposer
           }) => $$MediaCollectionsTableFilterComposer(
             $db: $db,
             $table: $db.mediaCollections,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$VideoBooksTableFilterComposer get targetBookUid {
+    final $$VideoBooksTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.targetBookUid,
+      referencedTable: $db.videoBooks,
+      getReferencedColumn: (t) => t.bookUid,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VideoBooksTableFilterComposer(
+            $db: $db,
+            $table: $db.videoBooks,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -106228,6 +106447,29 @@ class $$CollectionRelationsTableOrderingComposer
     return composer;
   }
 
+  $$VideoBooksTableOrderingComposer get bookUid {
+    final $$VideoBooksTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.bookUid,
+      referencedTable: $db.videoBooks,
+      getReferencedColumn: (t) => t.bookUid,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VideoBooksTableOrderingComposer(
+            $db: $db,
+            $table: $db.videoBooks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
   $$MediaCollectionsTableOrderingComposer get targetCollectionId {
     final $$MediaCollectionsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -106242,6 +106484,29 @@ class $$CollectionRelationsTableOrderingComposer
           }) => $$MediaCollectionsTableOrderingComposer(
             $db: $db,
             $table: $db.mediaCollections,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$VideoBooksTableOrderingComposer get targetBookUid {
+    final $$VideoBooksTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.targetBookUid,
+      referencedTable: $db.videoBooks,
+      getReferencedColumn: (t) => t.bookUid,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VideoBooksTableOrderingComposer(
+            $db: $db,
+            $table: $db.videoBooks,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -106310,6 +106575,29 @@ class $$CollectionRelationsTableAnnotationComposer
     return composer;
   }
 
+  $$VideoBooksTableAnnotationComposer get bookUid {
+    final $$VideoBooksTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.bookUid,
+      referencedTable: $db.videoBooks,
+      getReferencedColumn: (t) => t.bookUid,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VideoBooksTableAnnotationComposer(
+            $db: $db,
+            $table: $db.videoBooks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
   $$MediaCollectionsTableAnnotationComposer get targetCollectionId {
     final $$MediaCollectionsTableAnnotationComposer composer = $composerBuilder(
       composer: this,
@@ -106324,6 +106612,29 @@ class $$CollectionRelationsTableAnnotationComposer
           }) => $$MediaCollectionsTableAnnotationComposer(
             $db: $db,
             $table: $db.mediaCollections,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$VideoBooksTableAnnotationComposer get targetBookUid {
+    final $$VideoBooksTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.targetBookUid,
+      referencedTable: $db.videoBooks,
+      getReferencedColumn: (t) => t.bookUid,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VideoBooksTableAnnotationComposer(
+            $db: $db,
+            $table: $db.videoBooks,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -106347,7 +106658,12 @@ class $$CollectionRelationsTableTableManager
           $$CollectionRelationsTableUpdateCompanionBuilder,
           (CollectionRelationRow, $$CollectionRelationsTableReferences),
           CollectionRelationRow,
-          PrefetchHooks Function({bool collectionId, bool targetCollectionId})
+          PrefetchHooks Function({
+            bool collectionId,
+            bool bookUid,
+            bool targetCollectionId,
+            bool targetBookUid,
+          })
         > {
   $$CollectionRelationsTableTableManager(
     _$FushiDatabase db,
@@ -106371,10 +106687,12 @@ class $$CollectionRelationsTableTableManager
           updateCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
-                Value<int> collectionId = const Value.absent(),
+                Value<int?> collectionId = const Value.absent(),
+                Value<String?> bookUid = const Value.absent(),
                 Value<String> relationType = const Value.absent(),
                 Value<int> sortIndex = const Value.absent(),
                 Value<int?> targetCollectionId = const Value.absent(),
+                Value<String?> targetBookUid = const Value.absent(),
                 Value<String> source = const Value.absent(),
                 Value<String> subjectId = const Value.absent(),
                 Value<String> title = const Value.absent(),
@@ -106383,9 +106701,11 @@ class $$CollectionRelationsTableTableManager
               }) => CollectionRelationsCompanion(
                 id: id,
                 collectionId: collectionId,
+                bookUid: bookUid,
                 relationType: relationType,
                 sortIndex: sortIndex,
                 targetCollectionId: targetCollectionId,
+                targetBookUid: targetBookUid,
                 source: source,
                 subjectId: subjectId,
                 title: title,
@@ -106395,10 +106715,12 @@ class $$CollectionRelationsTableTableManager
           createCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
-                required int collectionId,
+                Value<int?> collectionId = const Value.absent(),
+                Value<String?> bookUid = const Value.absent(),
                 required String relationType,
                 Value<int> sortIndex = const Value.absent(),
                 Value<int?> targetCollectionId = const Value.absent(),
+                Value<String?> targetBookUid = const Value.absent(),
                 required String source,
                 required String subjectId,
                 required String title,
@@ -106407,9 +106729,11 @@ class $$CollectionRelationsTableTableManager
               }) => CollectionRelationsCompanion.insert(
                 id: id,
                 collectionId: collectionId,
+                bookUid: bookUid,
                 relationType: relationType,
                 sortIndex: sortIndex,
                 targetCollectionId: targetCollectionId,
+                targetBookUid: targetBookUid,
                 source: source,
                 subjectId: subjectId,
                 title: title,
@@ -106425,7 +106749,12 @@ class $$CollectionRelationsTableTableManager
               )
               .toList(),
           prefetchHooksCallback:
-              ({collectionId = false, targetCollectionId = false}) {
+              ({
+                collectionId = false,
+                bookUid = false,
+                targetCollectionId = false,
+                targetBookUid = false,
+              }) {
                 return PrefetchHooks(
                   db: db,
                   explicitlyWatchedTables: [],
@@ -106460,6 +106789,21 @@ class $$CollectionRelationsTableTableManager
                                   )
                                   as T;
                         }
+                        if (bookUid) {
+                          state =
+                              state.withJoin(
+                                    currentTable: table,
+                                    currentColumn: table.bookUid,
+                                    referencedTable:
+                                        $$CollectionRelationsTableReferences
+                                            ._bookUidTable(db),
+                                    referencedColumn:
+                                        $$CollectionRelationsTableReferences
+                                            ._bookUidTable(db)
+                                            .bookUid,
+                                  )
+                                  as T;
+                        }
                         if (targetCollectionId) {
                           state =
                               state.withJoin(
@@ -106472,6 +106816,21 @@ class $$CollectionRelationsTableTableManager
                                         $$CollectionRelationsTableReferences
                                             ._targetCollectionIdTable(db)
                                             .id,
+                                  )
+                                  as T;
+                        }
+                        if (targetBookUid) {
+                          state =
+                              state.withJoin(
+                                    currentTable: table,
+                                    currentColumn: table.targetBookUid,
+                                    referencedTable:
+                                        $$CollectionRelationsTableReferences
+                                            ._targetBookUidTable(db),
+                                    referencedColumn:
+                                        $$CollectionRelationsTableReferences
+                                            ._targetBookUidTable(db)
+                                            .bookUid,
                                   )
                                   as T;
                         }
@@ -106499,7 +106858,12 @@ typedef $$CollectionRelationsTableProcessedTableManager =
       $$CollectionRelationsTableUpdateCompanionBuilder,
       (CollectionRelationRow, $$CollectionRelationsTableReferences),
       CollectionRelationRow,
-      PrefetchHooks Function({bool collectionId, bool targetCollectionId})
+      PrefetchHooks Function({
+        bool collectionId,
+        bool bookUid,
+        bool targetCollectionId,
+        bool targetBookUid,
+      })
     >;
 typedef $$MediaImagesTableCreateCompanionBuilder =
     MediaImagesCompanion Function({

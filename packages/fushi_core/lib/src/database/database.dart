@@ -3223,6 +3223,38 @@ class FushiDatabase extends _$FushiDatabase
           await m.createTable(itemImages);
         }
       }
+      if (from < 162) {
+        // v162：collection_relations 的起点与已绑定目标可以是单视频（挂在单个视频
+        // 上的作品，散装电影）——加 book_uid（起点，FK video_books cascade）与
+        // target_book_uid（已绑定目标，FK video_books setNull），collection_id 放宽
+        // 为可空，CHECK 起点二选一 / 目标至多一个，唯一键补 (book_uid, source,
+        // subject_id)。NOT NULL 与内联约束 SQLite 不能单独改，走 alterTable 按当前
+        // Dart 定义重建 + 按列名拷贝（v113 先例）：存量行（起点全是合集）的 `id`
+        // 与各列原值保留，新两列 NULL，原有外键语义（删合集 cascade、目标合集被删
+        // setNull）不变。没有表引用 collection_relations，FK OFF/ON 夹住只是沿用
+        // 重建惯例。幂等守卫：只在还缺 book_uid 时重建，mid-ladder 由 v66
+        // createTable 按当前定义建出的表已是新 shape 直接短路。
+        if (await _tableExists('collection_relations') &&
+            !await _columnExists('collection_relations', 'book_uid')) {
+          final bool foreignKeysWereOn = await _foreignKeysEnabled();
+          await customStatement('PRAGMA foreign_keys = OFF');
+          try {
+            await m.alterTable(
+              TableMigration(
+                collectionRelations,
+                newColumns: [
+                  collectionRelations.bookUid,
+                  collectionRelations.targetBookUid,
+                ],
+              ),
+            );
+          } finally {
+            if (foreignKeysWereOn) {
+              await customStatement('PRAGMA foreign_keys = ON');
+            }
+          }
+        }
+      }
     },
     onCreate: (m) async {
       await m.createAll();

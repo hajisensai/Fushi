@@ -282,31 +282,39 @@ class VideoMetadataDatabaseStore {
         now: now,
       );
       await _replaceRawSnapshot(workId, metadata, now);
-      if (localWork.collection case final MediaCollectionRow collection) {
-        // 系列关系（续作 / 前传 / 外传…）：只用本次响应里本来就有的关系，不联网
-        // 补抓；载荷没带关系信息（AniDB 只有目录、TMDB）时不动已有行。
-        final List<VideoRelatedWork>? related = relatedWorksFromRawPayload(
-          metadata.provider.name,
-          metadata.rawPayload,
-        );
-        if (related != null) {
-          await syncScrapedCollectionRelations(
-            database,
-            collectionId: collection.id,
-            source: metadata.provider.name,
-            related: related,
-          );
-        }
-        // 别的合集里指向本作品外部 id 的纯刮削行升级成已绑定。
-        await bindCollectionRelationsToWork(
+      // 系列关系（续作 / 前传 / 外传…）：起点是作品的归属——合集，或挂在单个
+      // 视频上的作品（散装电影，v162）。只用本次响应里本来就有的关系（TMDB 电影
+      // 的合集成员由 provider 在刮削时随详情附上）；载荷没带关系信息（AniDB 只有
+      // 目录、TMDB 剧集、合集请求失败）时不动已有行。
+      final MediaCollectionRow? ownerCollection = localWork.collection;
+      final VideoRelationOwner relationOwner = ownerCollection != null
+          ? VideoRelationOwner.collection(ownerCollection.id)
+          : VideoRelationOwner.video(localWork.members.single.bookUid);
+      final List<VideoRelatedWork>? related = relatedWorksFromRawPayload(
+        metadata.provider.name,
+        metadata.rawPayload,
+      );
+      if (related != null) {
+        await syncScrapedCollectionRelations(
           database,
-          collectionId: collection.id,
-          identities: <(String, String)>[
-            for (final VideoMetadataId id in _uniqueIds(metadata.ids))
-              (id.type.trim().toLowerCase(), id.value),
-          ],
+          owner: relationOwner,
+          source: metadata.provider.name,
+          related: related,
         );
       }
+      // 别处指向本作品外部 id 的纯刮削行升级成已绑定。
+      await bindCollectionRelationsToWork(
+        database,
+        owner: relationOwner,
+        identities: <(String, String)>[
+          for (final VideoMetadataId id in _uniqueIds(metadata.ids))
+            if (canBindRelationIdentity(
+              provider: id.type.trim().toLowerCase(),
+              mediaType: metadata.kind.name,
+            ))
+              (id.type.trim().toLowerCase(), id.value),
+        ],
+      );
       // 锁住的整组词（genres / studios）保留旧集合；其余种类照常整体替换。
       final Map<String, List<String>> lockedTerms =
           isLocked(VideoMetadataLockableField.genres) ||

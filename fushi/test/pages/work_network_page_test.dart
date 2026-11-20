@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -264,7 +265,7 @@ void main() {
         'anidb',
         <CollectionRelationsCompanion>[
           CollectionRelationsCompanion.insert(
-            collectionId: seed.animeId,
+            collectionId: Value<int?>(seed.animeId),
             relationType: 'sequel',
             source: 'anidb',
             subjectId: '9001',

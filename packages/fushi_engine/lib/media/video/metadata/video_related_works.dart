@@ -4,9 +4,9 @@
 ///
 /// 纯函数，不联网：AniDB 读 anime XML 的 `<relatedanime>`（刮削时的响应或已落盘的
 /// `AnimeDoc_{aid}.xml`），MAL 读 Jikan `anime/{id}/full` 的 `relations`（刮削时的
-/// 响应或 `video_metadata_raw_snapshots` 里的 details 快照）。TMDB 详情只有
-/// `belongs_to_collection` 的合集 id、没有其余成员（要另打 `/collection/{id}`），
-/// 按「不新增网络请求面」不抽。
+/// 响应或 `video_metadata_raw_snapshots` 里的 details 快照），TMDB 电影读刮削时随
+/// 详情附上的合集成员（[kTmdbCollectionPartsPayloadKey]，`/collection/{id}` 的精简
+/// 结果，随 details 快照落盘）。TMDB 剧集的各季不算系列关系。
 library;
 
 import 'package:fushi_compute/fushi_compute.dart'
@@ -27,6 +27,89 @@ abstract final class CollectionRelationWire {
 /// AniDB anime XML 里 `rawPayload` 携带相关作品的键（随 details 快照落库，存量
 /// 补填也能从快照读）。
 const String kAniDbRelatedPayloadKey = 'related';
+
+/// TMDB 电影详情 `rawPayload` 里附带的合集成员键（刮削时对 `belongs_to_collection`
+/// 多打一次 `/collection/{id}`，只留 `id` / `title` / `release_date`；随 details
+/// 快照落盘，存量补填只读快照）。前缀 `fushi_` 免得与 TMDB 自己的字段撞名。
+const String kTmdbCollectionPartsPayloadKey = 'fushi_collection_parts';
+
+/// `/collection/{id}` 响应 → [kTmdbCollectionPartsPayloadKey] 的精简成员表（只收
+/// 电影条目；个别条目 `media_type` 缺省照电影算，与「整套下载」同口径）。
+List<Map<String, Object?>> tmdbCollectionPartsFromResponse(
+  Map<String, Object?> collection,
+) => <Map<String, Object?>>[
+  for (final Object? node in metadataList(collection['parts']))
+    if (metadataObject(node) case final Map<String, Object?> raw)
+      if (metadataString(raw['media_type']) == null ||
+          metadataString(raw['media_type']) == 'movie')
+        if (metadataInt(raw['id']) case final int id)
+          <String, Object?>{
+            'id': id,
+            'title':
+                metadataString(raw['title']) ??
+                metadataString(raw['original_title']) ??
+                '',
+            'release_date': metadataString(raw['release_date']) ?? '',
+          },
+];
+
+/// TMDB 合集成员 → 电影 [selfId] 的系列关系：按上映日期排（未定档殿后，与「整套
+/// 下载」同序），紧挨着的上一部记前传、下一部记续作。只记相邻两部，与 AniDB 只给
+/// 直接关系同口径：整条系列靠本机已绑定的节点逐部展开（关系网 BFS），不把 N 部
+/// 两两连成 N² 条边。合集里找不到自己（数据不一致）时返回空表。
+List<VideoRelatedWork> tmdbRelatedWorksFromCollectionParts(
+  String selfId,
+  List<Object?> parts,
+) {
+  final List<({String id, String title, String date})> movies =
+      <({String id, String title, String date})>[];
+  final Set<String> seen = <String>{};
+  for (final Object? node in parts) {
+    final Map<String, Object?>? m = metadataObject(node);
+    if (m == null) continue;
+    final String? id =
+        metadataString(m['id']) ?? metadataInt(m['id'])?.toString();
+    if (id == null || id.isEmpty || !seen.add(id)) continue;
+    movies.add((
+      id: id,
+      title: metadataString(m['title']) ?? '',
+      date: metadataString(m['release_date']) ?? '',
+    ));
+  }
+  // 稳定排序：同日期保持 TMDB 原序。
+  final List<int> order = List<int>.generate(movies.length, (int i) => i)
+    ..sort((int a, int b) {
+      final String da = movies[a].date;
+      final String db = movies[b].date;
+      if (da.isEmpty != db.isEmpty) return da.isEmpty ? 1 : -1;
+      final int byDate = da.compareTo(db);
+      return byDate != 0 ? byDate : a.compareTo(b);
+    });
+  final List<({String id, String title, String date})> sorted =
+      <({String id, String title, String date})>[
+        for (final int i in order) movies[i],
+      ];
+  final int self = sorted.indexWhere(
+    (({String id, String title, String date}) m) => m.id == selfId,
+  );
+  if (self < 0) return const <VideoRelatedWork>[];
+  return <VideoRelatedWork>[
+    if (self > 0)
+      VideoRelatedWork(
+        provider: 'tmdb',
+        externalId: sorted[self - 1].id,
+        relationType: CollectionRelationWire.prequel,
+        title: sorted[self - 1].title,
+      ),
+    if (self + 1 < sorted.length)
+      VideoRelatedWork(
+        provider: 'tmdb',
+        externalId: sorted[self + 1].id,
+        relationType: CollectionRelationWire.sequel,
+        title: sorted[self + 1].title,
+      ),
+  ];
+}
 
 /// 一条相关作品：目标在 [provider] 里的 id、关系落库值、源给的标题。
 final class VideoRelatedWork {
@@ -160,8 +243,9 @@ List<VideoRelatedWork> malRelatedWorksFromItem(Map<String, Object?> item) {
 
 /// 刮削结果的 `rawPayload`（或 details 快照）→ 相关作品。
 ///
-/// 返回 null = 这份载荷**没带**关系信息（AniDB 只有目录、TMDB、未知源），调用方
-/// 不应据此清掉已有的关系行；返回空表 = 源明确说没有相关作品。
+/// 返回 null = 这份载荷**没带**关系信息（AniDB 只有目录、TMDB 剧集 / 合集请求失败
+/// 或旧快照、未知源），调用方不应据此清掉已有的关系行；返回空表 = 源明确说没有
+/// 相关作品（TMDB 电影 `belongs_to_collection` 为 null = 不属于任何系列）。
 List<VideoRelatedWork>? relatedWorksFromRawPayload(
   String provider,
   Map<String, Object?>? payload,
@@ -187,6 +271,18 @@ List<VideoRelatedWork>? relatedWorksFromRawPayload(
     case 'mal':
       if (payload['relations'] is! List) return null;
       return malRelatedWorksFromItem(payload);
+    case 'tmdb':
+      // 只有电影详情带这个键（剧集没有），剧集 → null。
+      if (!payload.containsKey('belongs_to_collection')) return null;
+      if (metadataObject(payload['belongs_to_collection']) == null) {
+        return const <VideoRelatedWork>[];
+      }
+      final Object? parts = payload[kTmdbCollectionPartsPayloadKey];
+      final String? selfId =
+          metadataString(payload['id']) ??
+          metadataInt(payload['id'])?.toString();
+      if (parts is! List || selfId == null) return null;
+      return tmdbRelatedWorksFromCollectionParts(selfId, parts);
     default:
       return null;
   }

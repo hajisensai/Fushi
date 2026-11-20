@@ -1,14 +1,15 @@
 /// 把刮削源给出的系列关系（[VideoRelatedWork]）落进 `collection_relations`，并在
 /// 目标作品入库 / 刮削完成时把纯刮削行升级成已绑定。
 ///
-/// 写入时机只有两处，都不联网：
+/// 写入时机只有两处：
 /// - 作品资料写库的统一出口 `VideoMetadataDatabaseStore.apply`（刮削成功落库时，
-///   用本次响应里本来就有的关系）；
+///   用本次响应里本来就有的关系；TMDB 电影的合集成员是刮削时随详情多打的一次
+///   `/collection/{id}`，见 `TmdbVideoMetadataProvider.fetchWork`）；
 /// - 存量补填 [backfillScrapedCollectionRelations]（AniDB 读已落盘的
-///   `AnimeDoc_{aid}.xml`，其余读 details 快照），挂在库管家 ⑤ 作品层之前。
+///   `AnimeDoc_{aid}.xml`，其余读 details 快照），挂在库管家 ⑤ 作品层之前，不联网。
 ///
-/// 只有挂在**合集**上的作品能当起点（`collection_relations.collection_id` 非空）；
-/// 挂在单个视频上的作品（散装电影）没有起点可存，跳过。
+/// 起点与已绑定目标都可以是合集或单视频（v162：挂在单个视频上的作品，散装电影），
+/// 见 [VideoRelationOwner]。
 library;
 
 import 'dart:convert';
@@ -20,40 +21,107 @@ import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/video/metadata/video_related_works.dart';
 import 'package:path/path.dart' as p;
 
-/// 用 [related]（[source] 这个源给出的完整关系列表）整体替换合集 [collectionId]
-/// 来自该源的关系行。返回写入的行数。
+/// 系列关系在本机的一端：合集（[collectionId]）或单视频（[bookUid]），恰好一个。
+///
+/// 与 `video_metadata_works` 的归属同构：作品挂在合集上就是合集，挂在单个视频上
+/// （散装电影）就是那个视频。
+final class VideoRelationOwner {
+  const VideoRelationOwner.collection(int this.collectionId) : bookUid = null;
+
+  const VideoRelationOwner.video(String this.bookUid) : collectionId = null;
+
+  /// 作品行的归属；两列都空（不该出现）返回 null。
+  static VideoRelationOwner? ofWork(VideoMetadataWorkRow work) {
+    if (work.collectionId case final int id) {
+      return VideoRelationOwner.collection(id);
+    }
+    if (work.bookUid case final String uid when uid.isNotEmpty) {
+      return VideoRelationOwner.video(uid);
+    }
+    return null;
+  }
+
+  /// 关系行的起点。
+  static VideoRelationOwner? originOf(CollectionRelationRow row) {
+    if (row.collectionId case final int id) {
+      return VideoRelationOwner.collection(id);
+    }
+    if (row.bookUid case final String uid) return VideoRelationOwner.video(uid);
+    return null;
+  }
+
+  /// 关系行的已绑定目标；纯刮削行返回 null。
+  static VideoRelationOwner? targetOf(CollectionRelationRow row) {
+    if (row.targetCollectionId case final int id) {
+      return VideoRelationOwner.collection(id);
+    }
+    if (row.targetBookUid case final String uid) {
+      return VideoRelationOwner.video(uid);
+    }
+    return null;
+  }
+
+  final int? collectionId;
+  final String? bookUid;
+
+  @override
+  bool operator ==(Object other) =>
+      other is VideoRelationOwner &&
+      other.collectionId == collectionId &&
+      other.bookUid == bookUid;
+
+  @override
+  int get hashCode => Object.hash(collectionId, bookUid);
+
+  @override
+  String toString() => collectionId != null
+      ? 'VideoRelationOwner.collection($collectionId)'
+      : 'VideoRelationOwner.video($bookUid)';
+}
+
+/// 用 [related]（[source] 这个源给出的完整关系列表）整体替换起点 [owner] 来自该源
+/// 的关系行。返回写入的行数。
 ///
 /// - 目标按外部 id 反查本机作品（[FushiDatabase.getVideoMetadataWorkByProviderIdentity]），
-///   命中挂合集的作品就填 `targetCollectionId`（已绑定）；指回自己的跳过；
+///   命中就按它的归属填 `targetCollectionId` / `targetBookUid`（已绑定）；指回
+///   自己的跳过；TMDB 的电影与剧集 id 不同命名空间，`tmdb` 关系只认电影作品；
 /// - 本轮反查不到、但旧行已绑定（用户手动绑过 / 之前反查到过）的保留旧绑定；
 /// - 续作 / 前传之外的关系，目标在本机是电影（`media_type = movie`）就记成 `movie`；
-/// - 同一合集同一 `(source, subjectId)` 只一行（表唯一键），重刮整体替换不残留。
+/// - 同一起点同一 `(source, subjectId)` 只一行（表唯一键），重刮整体替换不残留。
 Future<int> syncScrapedCollectionRelations(
   FushiDatabase db, {
-  required int collectionId,
+  required VideoRelationOwner owner,
   required String source,
   required List<VideoRelatedWork> related,
 }) async {
-  final Map<String, int?> previousTargets = <String, int?>{
-    for (final CollectionRelationRow r in await db.getCollectionRelations(
-      collectionId,
-    ))
-      if (r.source == source) r.subjectId: r.targetCollectionId,
-  };
+  final List<CollectionRelationRow> existing = owner.collectionId != null
+      ? await db.getCollectionRelations(owner.collectionId!)
+      : await db.getVideoBookRelations(owner.bookUid!);
+  final Map<String, VideoRelationOwner?> previousTargets =
+      <String, VideoRelationOwner?>{
+        for (final CollectionRelationRow r in existing)
+          if (r.source == source) r.subjectId: VideoRelationOwner.targetOf(r),
+      };
   final List<CollectionRelationsCompanion> rows =
       <CollectionRelationsCompanion>[];
   final Set<String> seen = <String>{};
   for (final VideoRelatedWork r in related) {
     if (r.provider != source || !seen.add(r.externalId)) continue;
-    final VideoMetadataWorkRow? target = await db
+    VideoMetadataWorkRow? target = await db
         .getVideoMetadataWorkByProviderIdentity(
           provider: source,
           externalId: r.externalId,
         );
-    if (target != null && target.collectionId == collectionId) continue;
-    final int? targetCollectionId =
-        target?.collectionId ?? previousTargets[r.externalId];
-    if (targetCollectionId == collectionId) continue;
+    if (source == 'tmdb' && target != null && target.mediaType != 'movie') {
+      target = null;
+    }
+    final VideoRelationOwner? targetOwner = target == null
+        ? null
+        : VideoRelationOwner.ofWork(target);
+    if (targetOwner == owner) continue;
+    final VideoRelationOwner? bound =
+        targetOwner ?? previousTargets[r.externalId];
+    if (bound == owner) continue;
     final bool ordered =
         r.relationType == CollectionRelationWire.sequel ||
         r.relationType == CollectionRelationWire.prequel;
@@ -65,37 +133,60 @@ Future<int> syncScrapedCollectionRelations(
         : (target?.title ?? '$source:${r.externalId}');
     rows.add(
       CollectionRelationsCompanion.insert(
-        collectionId: collectionId,
+        collectionId: Value<int?>(owner.collectionId),
+        bookUid: Value<String?>(owner.bookUid),
         relationType: relationType,
         sortIndex: Value<int>(rows.length),
-        targetCollectionId: Value<int?>(targetCollectionId),
+        targetCollectionId: Value<int?>(bound?.collectionId),
+        targetBookUid: Value<String?>(bound?.bookUid),
         source: source,
         subjectId: r.externalId,
         title: title,
       ),
     );
   }
-  await db.replaceSourceCollectionRelations(collectionId, source, rows);
+  if (owner.collectionId case final int collectionId) {
+    await db.replaceSourceCollectionRelations(collectionId, source, rows);
+  } else {
+    await db.replaceSourceVideoBookRelations(owner.bookUid!, source, rows);
+  }
   return rows.length;
 }
 
-/// 合集 [collectionId] 上的作品带着 [identities]（`(provider, externalId)`）入库 /
-/// 刮完了：把别的合集里指向这些外部 id 的纯刮削行升级成已绑定。返回绑定的行数。
+/// [owner] 上的作品带着 [identities]（`(provider, externalId)`）入库 / 刮完了：把
+/// 别处指向这些外部 id 的纯刮削行升级成已绑定。返回绑定的行数。
+///
+/// 调用方负责只传能当目标的身份（TMDB 剧集的 `tmdb` id 与电影不同命名空间，不传）。
 Future<int> bindCollectionRelationsToWork(
   FushiDatabase db, {
-  required int collectionId,
+  required VideoRelationOwner owner,
   required Iterable<(String, String)> identities,
 }) async {
   int bound = 0;
   for (final (String provider, String externalId) in identities.toSet()) {
-    bound += await db.bindCollectionRelationsBySubject(
-      provider,
-      externalId,
-      collectionId,
-    );
+    if (owner.collectionId case final int collectionId) {
+      bound += await db.bindCollectionRelationsBySubject(
+        provider,
+        externalId,
+        collectionId,
+      );
+    } else {
+      bound += await db.bindCollectionRelationsBySubjectToVideo(
+        provider,
+        externalId,
+        owner.bookUid!,
+      );
+    }
   }
   return bound;
 }
+
+/// 作品的外部身份里哪些能当系列关系的目标：`tmdb` 只认电影（剧集 id 是另一个
+/// 命名空间，TMDB 合集也只收电影），其余照收。
+bool canBindRelationIdentity({
+  required String provider,
+  required String mediaType,
+}) => provider != 'tmdb' || mediaType == 'movie';
 
 /// 存量补填的结果（数字写进库管家 ⑤ 的结果备注 / 日志）。
 typedef CollectionRelationBackfillResult = ({
@@ -117,47 +208,55 @@ Future<Directory?> productionAniDbXmlDirectory() async {
   );
 }
 
-/// 存量补填：已经刮过的合集作品不重新联网也补出系列关系。
+/// 存量补填：已经刮过的作品（挂合集的与挂单视频的都算）不重新联网也补出系列关系。
 ///
 /// - 主源 AniDB：读 [aniDbXmlDirectory] 下的 `AnimeDoc_{aid}.xml`（刮削时落盘的
 ///   缓存）；没有文件再看 details 快照（新版刮的快照里带关系）；
 /// - 主源 MAL：details 快照（Jikan `full` 原样，带 `relations`）；
-/// - 主源 TMDB：快照只有 `belongs_to_collection` 的合集 id、没有成员，补不出。
-/// 读不到关系信息的作品不动它已有的行。最后对全部合集作品的外部身份跑一遍升级绑定。
+/// - 主源 TMDB（电影）：details 快照里刮削时随附的合集成员；没有（旧快照 / 合集
+///   请求失败）就不动。
+/// 读不到关系信息的作品不动它已有的行。最后对全部作品的外部身份跑一遍升级绑定。
 Future<CollectionRelationBackfillResult> backfillScrapedCollectionRelations(
   FushiDatabase db, {
   required AniDbXmlDirectoryResolver aniDbXmlDirectory,
 }) async {
   final List<
-    ({int collectionId, String provider, String externalId, String identityKey})
+    ({
+      VideoRelationOwner owner,
+      String provider,
+      String externalId,
+      String identityKey,
+    })
   >
   primaries =
       <
         ({
-          int collectionId,
+          VideoRelationOwner owner,
           String provider,
           String externalId,
           String identityKey,
         })
       >[
-        for (final row
+        for (final QueryRow row
             in await db
                 .customSelect(
-                  'SELECT w.collection_id AS cid, i.provider AS provider, '
+                  'SELECT w.collection_id AS cid, w.book_uid AS uid, '
+                  'i.provider AS provider, '
                   'i.external_id AS eid, i.identity_key AS ikey '
                   'FROM video_metadata_works w '
                   'JOIN video_metadata_provider_identities i '
                   'ON i.work_id = w.id AND i.is_primary = 1 '
-                  'WHERE w.collection_id IS NOT NULL '
-                  'ORDER BY w.collection_id',
+                  'WHERE w.collection_id IS NOT NULL OR w.book_uid IS NOT NULL '
+                  'ORDER BY w.collection_id, w.book_uid',
                 )
                 .get())
-          (
-            collectionId: row.read<int>('cid'),
-            provider: row.read<String>('provider'),
-            externalId: row.read<String>('eid'),
-            identityKey: row.read<String>('ikey'),
-          ),
+          if (_ownerOfRow(row) case final VideoRelationOwner owner)
+            (
+              owner: owner,
+              provider: row.read<String>('provider'),
+              externalId: row.read<String>('eid'),
+              identityKey: row.read<String>('ikey'),
+            ),
       ];
   Directory? xmlDir;
   bool xmlDirResolved = false;
@@ -193,34 +292,45 @@ Future<CollectionRelationBackfillResult> backfillScrapedCollectionRelations(
     if (related.isNotEmpty) worksWithRelations++;
     rows += await syncScrapedCollectionRelations(
       db,
-      collectionId: w.collectionId,
+      owner: w.owner,
       source: w.provider,
       related: related,
     );
   }
 
-  final Map<int, Set<(String, String)>> identitiesByCollection =
-      <int, Set<(String, String)>>{};
-  for (final row
+  final Map<VideoRelationOwner, Set<(String, String)>> identitiesByOwner =
+      <VideoRelationOwner, Set<(String, String)>>{};
+  for (final QueryRow row
       in await db
           .customSelect(
-            'SELECT w.collection_id AS cid, i.provider AS provider, '
+            'SELECT w.collection_id AS cid, w.book_uid AS uid, '
+            'w.media_type AS media_type, i.provider AS provider, '
             'i.external_id AS eid '
             'FROM video_metadata_works w '
             'JOIN video_metadata_provider_identities i ON i.work_id = w.id '
-            'WHERE w.collection_id IS NOT NULL',
+            'WHERE w.collection_id IS NOT NULL OR w.book_uid IS NOT NULL',
           )
           .get()) {
-    (identitiesByCollection[row.read<int>('cid')] ??= <(String, String)>{}).add(
-      (row.read<String>('provider'), row.read<String>('eid')),
-    );
+    final VideoRelationOwner? owner = _ownerOfRow(row);
+    if (owner == null) continue;
+    final String provider = row.read<String>('provider');
+    if (!canBindRelationIdentity(
+      provider: provider,
+      mediaType: row.read<String>('media_type'),
+    )) {
+      continue;
+    }
+    (identitiesByOwner[owner] ??= <(String, String)>{}).add((
+      provider,
+      row.read<String>('eid'),
+    ));
   }
   int bound = 0;
-  for (final MapEntry<int, Set<(String, String)>> e
-      in identitiesByCollection.entries) {
+  for (final MapEntry<VideoRelationOwner, Set<(String, String)>> e
+      in identitiesByOwner.entries) {
     bound += await bindCollectionRelationsToWork(
       db,
-      collectionId: e.key,
+      owner: e.key,
       identities: e.value,
     );
   }
@@ -230,6 +340,17 @@ Future<CollectionRelationBackfillResult> backfillScrapedCollectionRelations(
     rows: rows,
     bound: bound,
   );
+}
+
+VideoRelationOwner? _ownerOfRow(QueryRow row) {
+  if (row.readNullable<int>('cid') case final int id) {
+    return VideoRelationOwner.collection(id);
+  }
+  if (row.readNullable<String>('uid') case final String uid
+      when uid.isNotEmpty) {
+    return VideoRelationOwner.video(uid);
+  }
+  return null;
 }
 
 Future<List<VideoRelatedWork>?> _relatedFromSnapshot(

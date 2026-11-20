@@ -165,7 +165,7 @@ mixin _FushiDbVideoDomain
           .go();
 
   /// 升级绑定：把一条纯刮削目标边绑定为本地合集（[targetCollectionId] 传 null
-  /// 即解绑退回纯刮削态）。
+  /// 即解绑退回纯刮削态）。目标只能有一个（v162 CHECK），同时清掉单视频目标。
   Future<void> bindCollectionRelationTarget(
     int relationId,
     int? targetCollectionId,
@@ -175,8 +175,61 @@ mixin _FushiDbVideoDomain
       )..where(($CollectionRelationsTable t) => t.id.equals(relationId))).write(
         CollectionRelationsCompanion(
           targetCollectionId: Value<int?>(targetCollectionId),
+          targetBookUid: const Value<String?>(null),
         ),
       );
+
+  /// 按展示顺序（sortIndex → id）列出**单视频起点**（v162：挂在单个视频上的
+  /// 作品，散装电影）[bookUid] 的相关作品。
+  Future<List<CollectionRelationRow>> getVideoBookRelations(String bookUid) =>
+      (select(collectionRelations)
+            ..where(($CollectionRelationsTable t) => t.bookUid.equals(bookUid))
+            ..orderBy([
+              ($CollectionRelationsTable t) =>
+                  OrderingTerm(expression: t.sortIndex),
+              ($CollectionRelationsTable t) => OrderingTerm(expression: t.id),
+            ]))
+          .get();
+
+  /// [replaceSourceCollectionRelations] 的单视频起点版（v162）：整体替换单视频
+  /// [bookUid] 来自 [source] 的相关作品边，别的源的行不动。
+  Future<void> replaceSourceVideoBookRelations(
+    String bookUid,
+    String source,
+    List<CollectionRelationsCompanion> relations,
+  ) => transaction(() async {
+    await (delete(collectionRelations)..where(
+          ($CollectionRelationsTable t) =>
+              t.bookUid.equals(bookUid) & t.source.equals(source),
+        ))
+        .go();
+    for (final CollectionRelationsCompanion c in relations) {
+      await into(collectionRelations).insert(c);
+    }
+  });
+
+  /// [bindCollectionRelationsBySubject] 的单视频目标版（v162）：把指向
+  /// `(source, subjectId)`、尚未绑定的纯刮削边绑定到本地单视频 [targetBookUid]
+  /// （散装电影入库 / 刮削完成时调）。起点就是该视频自己的边不绑（自环）。
+  /// 返回绑定的行数。
+  Future<int> bindCollectionRelationsBySubjectToVideo(
+    String source,
+    String subjectId,
+    String targetBookUid,
+  ) =>
+      (update(collectionRelations)..where(
+            ($CollectionRelationsTable t) =>
+                t.source.equals(source) &
+                t.subjectId.equals(subjectId) &
+                t.targetCollectionId.isNull() &
+                t.targetBookUid.isNull() &
+                (t.bookUid.isNull() | t.bookUid.equals(targetBookUid).not()),
+          ))
+          .write(
+            CollectionRelationsCompanion(
+              targetBookUid: Value<String?>(targetBookUid),
+            ),
+          );
 
   /// 反查：已把 (source, subjectId) 刮成资料的本地合集 id 列表（抓取层用它把
   /// 「纯刮削目标」自动升级绑定为本地合集）。
@@ -224,7 +277,9 @@ mixin _FushiDbVideoDomain
                 t.source.equals(source) &
                 t.subjectId.equals(subjectId) &
                 t.targetCollectionId.isNull() &
-                t.collectionId.equals(targetCollectionId).not(),
+                t.targetBookUid.isNull() &
+                (t.collectionId.isNull() |
+                    t.collectionId.equals(targetCollectionId).not()),
           ))
           .write(
             CollectionRelationsCompanion(

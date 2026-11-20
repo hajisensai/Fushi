@@ -229,8 +229,9 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'collection_scrape_meta': BackupTableRule.rowLevel(
     '随 media_collections FK cascade',
   ),
+  // v162：起点也可以是单视频（散装电影），随 video_books 一起裁剪。
   'collection_relations': BackupTableRule.rowLevel(
-    '随 media_collections FK cascade',
+    '随 media_collections / video_books FK cascade',
   ),
   'media_images': BackupTableRule.rowLevel(
     '随 media_collections / video_books FK cascade',

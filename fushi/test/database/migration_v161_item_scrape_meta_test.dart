@@ -60,7 +60,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 161);
+    expect(migrated.schemaVersion, 162);
     await migrated.upsertItemScrapeMeta(meta(MediaKind.srt, 's1'));
     expect((await migrated.getAllItemScrapeMeta()).single.entryKey, 's1');
     expect(await migrated.getSrtBookByUid('s1'), isNotNull);
@@ -68,7 +68,7 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 161);
+    expect(probe.select('PRAGMA user_version').first.values.first, 162);
     expect(hasTable(probe, 'item_scrape_meta'), isTrue);
     expect(hasTable(probe, 'item_images'), isTrue);
   });

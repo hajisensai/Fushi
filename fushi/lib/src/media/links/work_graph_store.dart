@@ -74,7 +74,7 @@ final class WorkGraphSnapshot {
     List<CollectionRelationRow> collectionRelations =
         const <CollectionRelationRow>[],
   }) : _bookFormatByKey = bookFormatByKey,
-       _relationsByCollection = _groupRelations(collectionRelations),
+       _relationsByOrigin = _groupRelations(collectionRelations),
        _seriesById = <int, WorkSeriesInfo>{
          for (final WorkSeriesInfo s in series) s.id: s,
        } {
@@ -97,15 +97,17 @@ final class WorkGraphSnapshot {
 
   final WorkGraph graph;
   final Map<String, String> _bookFormatByKey;
-  final Map<int, List<CollectionRelationRow>> _relationsByCollection;
+  final Map<MediaLinkEndpoint, List<CollectionRelationRow>> _relationsByOrigin;
 
-  static Map<int, List<CollectionRelationRow>> _groupRelations(
+  static Map<MediaLinkEndpoint, List<CollectionRelationRow>> _groupRelations(
     List<CollectionRelationRow> rows,
   ) {
-    final Map<int, List<CollectionRelationRow>> out =
-        <int, List<CollectionRelationRow>>{};
+    final Map<MediaLinkEndpoint, List<CollectionRelationRow>> out =
+        <MediaLinkEndpoint, List<CollectionRelationRow>>{};
     for (final CollectionRelationRow r in rows) {
-      (out[r.collectionId] ??= <CollectionRelationRow>[]).add(r);
+      final MediaLinkEndpoint? origin = seriesRelationOriginOf(r);
+      if (origin == null) continue;
+      (out[origin] ??= <CollectionRelationRow>[]).add(r);
     }
     for (final List<CollectionRelationRow> list in out.values) {
       list.sort((CollectionRelationRow a, CollectionRelationRow b) {
@@ -116,10 +118,11 @@ final class WorkGraphSnapshot {
     return out;
   }
 
-  /// 视频合集 [collectionId] 的相关作品（`collection_relations`：刮削源的续作 /
-  /// 前传 / 外传…与按季拆分建的前后作），按展示顺序。关系网的系列栏从这里取。
-  List<CollectionRelationRow> collectionRelationsOf(int collectionId) =>
-      _relationsByCollection[collectionId] ?? const <CollectionRelationRow>[];
+  /// 端点 [origin]（视频合集，或挂在单个视频上的作品 = 散装电影，v162）的相关作品
+  /// （`collection_relations`：刮削源的续作 / 前传 / 外传…与按季拆分建的前后作），
+  /// 按展示顺序。关系网的系列栏从这里取；别的端点种类恒为空。
+  List<CollectionRelationRow> seriesRelationsFrom(MediaLinkEndpoint origin) =>
+      _relationsByOrigin[origin] ?? const <CollectionRelationRow>[];
   final Map<int, WorkSeriesInfo> _seriesById;
   final Map<MediaLinkEndpoint, WorkSeriesInfo> _seriesOfEndpoint =
       <MediaLinkEndpoint, WorkSeriesInfo>{};
@@ -269,6 +272,27 @@ Future<WorkGraphSnapshot> loadWorkGraphSnapshot(FushiDatabase db) async {
     series: series,
     collectionRelations: relations,
   );
+}
+
+/// 系列关系行的起点端点：合集 → 视频合集端点；单视频（v162 散装电影）→ 单集端点
+/// （键是 bookUid，与 `media_links` 的 `video_episode` 同口径）。
+MediaLinkEndpoint? seriesRelationOriginOf(CollectionRelationRow r) {
+  if (r.collectionId case final int id) return videoCollectionEndpoint(id);
+  if (r.bookUid case final String uid) {
+    return (kind: MediaLinkKind.videoEpisode, key: uid);
+  }
+  return null;
+}
+
+/// 系列关系行的已绑定目标端点；纯刮削行返回 null。
+MediaLinkEndpoint? seriesRelationTargetOf(CollectionRelationRow r) {
+  if (r.targetCollectionId case final int id) {
+    return videoCollectionEndpoint(id);
+  }
+  if (r.targetBookUid case final String uid) {
+    return (kind: MediaLinkKind.videoEpisode, key: uid);
+  }
+  return null;
 }
 
 /// 合集成员行 → 图谱端点（与 `work_graph_loader.dart` 的成员换算同口径：epub 键是

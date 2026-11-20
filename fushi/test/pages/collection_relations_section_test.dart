@@ -41,7 +41,7 @@ void main() {
   Future<void> seedRelations({int? boundTarget}) => db
       .replaceCollectionRelations(collectionId, <CollectionRelationsCompanion>[
         CollectionRelationsCompanion.insert(
-          collectionId: collectionId,
+          collectionId: Value<int?>(collectionId),
           relationType: 'sequel',
           sortIndex: const Value<int>(0),
           targetCollectionId: Value<int?>(boundTarget),
@@ -50,7 +50,7 @@ void main() {
           title: '某作品 第二季',
         ),
         CollectionRelationsCompanion.insert(
-          collectionId: collectionId,
+          collectionId: Value<int?>(collectionId),
           relationType: 'movie',
           sortIndex: const Value<int>(1),
           targetCollectionId: const Value<int?>(null),
@@ -177,7 +177,7 @@ void main() {
         List<CollectionRelationsCompanion>.generate(
           count,
           (int i) => CollectionRelationsCompanion.insert(
-            collectionId: collectionId,
+            collectionId: Value<int?>(collectionId),
             relationType: 'sequel',
             sortIndex: Value<int>(i),
             targetCollectionId: const Value<int?>(null),

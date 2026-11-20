@@ -8,8 +8,6 @@ import 'package:fushi/src/media/links/media_link_entries.dart';
 import 'package:fushi/src/media/links/work_graph_store.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/links/work_graph.dart';
-import 'package:fushi_engine/media/links/work_graph_loader.dart'
-    show videoCollectionEndpoint;
 
 /// 媒体分组的显示名。
 String workMediaGroupLabel(WorkMediaGroup group) => switch (group) {
@@ -200,11 +198,7 @@ WorkSectionPlan planWorkSection({
         snapshot.graph.workOf(networkEndpoint)?.members ??
         <MediaLinkEndpoint>[networkEndpoint];
     for (final MediaLinkEndpoint m in owners) {
-      if (m.kind != MediaLinkKind.videoCollection) continue;
-      final int? id = int.tryParse(m.key);
-      if (id != null) {
-        networkNodeCount += snapshot.collectionRelationsOf(id).length;
-      }
+      networkNodeCount += snapshot.seriesRelationsFrom(m).length;
     }
     if (networkNodeCount > 0 &&
         snapshot.graph.workOf(networkEndpoint) == null) {
@@ -616,16 +610,13 @@ void _addSeriesSection({
         ));
         visitLocal(other, expand: effective);
       }
-      if (c.kind != MediaLinkKind.videoCollection) continue;
-      final int? collectionId = int.tryParse(c.key);
-      if (collectionId == null) continue;
-      for (final CollectionRelationRow r in snapshot.collectionRelationsOf(
-        collectionId,
-      )) {
-        final int? targetId = r.targetCollectionId;
+      // 起点是视频合集或挂在单个视频上的作品（散装电影，v162）；已绑定目标同样
+      // 两种，都是可点击的本机节点。
+      for (final CollectionRelationRow r in snapshot.seriesRelationsFrom(c)) {
+        final MediaLinkEndpoint? target = seriesRelationTargetOf(r);
         final String otherId;
-        if (targetId != null) {
-          final MediaLinkEndpoint other = videoCollectionEndpoint(targetId);
+        if (target != null) {
+          final MediaLinkEndpoint other = target;
           otherId = nodeIdOf(other);
           if (otherId == self) continue;
           if (!admit(otherId, () => addLocalNode(other))) continue;
