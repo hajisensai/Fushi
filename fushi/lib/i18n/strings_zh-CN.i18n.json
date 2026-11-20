@@ -3289,6 +3289,7 @@
   "feedback_crash_prompt_title_many": "Fushi 已经意外退出 ${n} 次（${kind}）",
   "feedback_crash_report_header": "Fushi 在异常退出后自动生成，已附日志与设备信息。",
   "feedback_crash_report_title": "闪退报告：${kind}（${version}）",
+  "feedback_crash_security_killed_notice": "上次 Fushi 被系统安全组件当成恶意软件结束了，不是闪退。如果反复出现，可以在 Google Play 保护机制或设备的安全设置里允许 Fushi 运行。",
   "feedback_crash_send_failed": "闪退日志没发出去，下次启动时会再问你。",
   "feedback_crash_sent_notice": "闪退日志已发给开发者",
   "feedback_detail_add_shot": "追加截图",

@@ -3206,6 +3206,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
             service: ref.read(feedbackServiceProvider),
           ),
         );
+        offerSecurityKillNoticeAfterStartup(
+          context: () =>
+              ref.read(appProvider).navigatorKey.currentContext ?? context,
+          verdict: PreviousExitLog.verdict,
+        );
       });
     }
 

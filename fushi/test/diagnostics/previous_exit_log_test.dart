@@ -917,6 +917,46 @@ void main() {
       expect(v.worthReporting, isFalse);
     });
 
+    // BUG-4964（反馈 5wMNgObn0U）：三星 SM-S9180 启动约 2.7 s 后，系统 / 安全组件按 uid 把
+    // Fushi 当恶意软件杀掉：同一 pid 的 ApplicationExitInfo 是 OTHER importance=100
+    // +「[KILL UID] malware」。旧实现 OTHER 只认 appop 变更 / 厂商停应用 → null → 回落标记
+    // 推断「停在前台时没了，疑似闪退」→ 弹闪退报告。
+    test(
+      'OTHER +「[KILL UID] malware」+ importance=100 + 标记停在 resumed → 安全组件结束，不弹闪退报告',
+      () async {
+        final PreviousExitVerdict? v = await verdictFor(
+          lifecycle: 'resumed',
+          reasons: <Map<String, Object?>>[
+            record(
+              pid: 19104,
+              importance: 100,
+              description: '[KILL UID] malware',
+            ),
+          ],
+        );
+        expect(v, isNotNull);
+        expect(v!.kind, PreviousExitKind.securityKilled);
+        expect(v.worthReporting, isFalse);
+        expect(v.summary, contains('[KILL UID] malware'));
+      },
+    );
+
+    test('「[KILL UID] malware」不压过真崩溃：同一启动另有 CRASH 记录时照样上报', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'resumed',
+        reasons: <Map<String, Object?>>[
+          record(
+            pid: 19104,
+            importance: 100,
+            description: '[KILL UID] malware',
+          ),
+          record(pid: 19104, importance: 100, reason: 'CRASH'),
+        ],
+      );
+      expect(v!.kind, PreviousExitKind.crash);
+      expect(v.worthReporting, isTrue);
+    });
+
     test('o-stop 不压过真崩溃：同一启动另有 CRASH 记录时照样上报', () async {
       final PreviousExitVerdict? v = await verdictFor(
         lifecycle: 'resumed',
@@ -1188,6 +1228,35 @@ void main() {
           description: "scheduleCrash for 'can't deliver broadcast' failed",
         ),
         PreviousExitKind.nativeCrash,
+      );
+    });
+
+    test('androidExitKind / androidExitSevere：安全组件「malware」整串锚定、只看 OTHER', () {
+      for (final String d in <String>[
+        '[KILL UID] malware',
+        'malware',
+        '  [KILL UID] malware  ',
+      ]) {
+        expect(
+          androidExitKind('OTHER', description: d),
+          PreviousExitKind.securityKilled,
+          reason: d,
+        );
+        expect(androidExitSevere('OTHER', description: d), isTrue, reason: d);
+      }
+      for (final String d in <String>[
+        '[KILL UID] Malware',
+        '[KILL UID] malware detected in plugin',
+        'not malware',
+        '[KILL UID] malwareX',
+      ]) {
+        expect(androidExitKind('OTHER', description: d), isNull, reason: d);
+        expect(androidExitSevere('OTHER', description: d), isFalse, reason: d);
+      }
+      // 只有 OTHER 看这段描述：崩溃原因码不改判。
+      expect(
+        androidExitKind('CRASH', description: '[KILL UID] malware'),
+        PreviousExitKind.crash,
       );
     });
 
