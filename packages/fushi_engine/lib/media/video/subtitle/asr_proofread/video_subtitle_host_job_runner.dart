@@ -21,6 +21,10 @@
 ///   host 这份文件）；只能和 `videoId` 一起给，可与 `episode` / `discTitle` 组合。不给按
 ///   识别语言挑。capability 的 `acceptsAudioTrack` 声明认它——老 host 不认，会静默按
 ///   语言挑（降级，不是错结果）；
+///   `skipExisting`（bool，默认 false）：`videoId` 那一集旁已有 `<视频名>.<后缀>.srt`
+///   时不识别、记 `skippedExistingSubtitle`（与 `collectionId` 整季同一判据）。提交方
+///   逐集提交远端合集时带它：列表里的 `subtitleFileName` 只报 host 学习语言那一条，
+///   别的语言有没有字幕只有 host 自己看得到。老 host 不认，照常生成（不是错结果）；
 /// - `collectionId`：整季——合集的全部视频成员按成员顺序排队，已有
 ///   `<视频名>.<后缀>.srt` 的集跳过；
 /// - 都不给：用上传的输入（`input` 指名一个，否则全部上传的视频文件；可带 `title`
@@ -135,6 +139,7 @@ class VideoSubtitleJobParams {
     this.regenerateGlossary = false,
     this.language = VideoSubtitleLanguage.japanese,
     this.frames = false,
+    this.skipExisting = false,
     String? suffix,
   }) : _suffix = suffix;
 
@@ -264,6 +269,7 @@ class VideoSubtitleJobParams {
       regenerateGlossary: flag('regenerateGlossary', false),
       language: language,
       frames: flag('frames', false),
+      skipExisting: flag('skipExisting', false),
       suffix: suffix,
     );
   }
@@ -291,6 +297,9 @@ class VideoSubtitleJobParams {
 
   /// 画面参考（见文件头的 `frames`）。
   final bool frames;
+
+  /// `videoId` 那一集已有目标字幕时跳过（见文件头的 `skipExisting`）。
+  final bool skipExisting;
   final String? _suffix;
 
   /// 输出后缀；没给时取 [language] 的标签。
@@ -767,7 +776,12 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
       final SubtitleWorkContext work =
           await loader?.forBook(videoId) ??
           _fallbackWork(path, params.title, useFolder: true);
-      return _Target(videos: <String>[path], work: work);
+      // 管线的 wholeSeason 只决定「已有目标字幕的集跳过」（skipExisting 同义）。
+      return _Target(
+        videos: <String>[path],
+        work: work,
+        wholeSeason: params.skipExisting,
+      );
     }
     final int? collectionId = params.collectionId;
     if (collectionId != null) {

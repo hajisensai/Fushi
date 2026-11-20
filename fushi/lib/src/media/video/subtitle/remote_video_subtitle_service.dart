@@ -33,7 +33,8 @@
 ///   选择、任务带 `language`；没列的 host 只发日语任务（老 host 不认 `language`，会静默
 ///   按日语跑），选了别的语言就是 [RemoteVideoSubtitleJobStatus.languageUnsupported]，
 ///   不发任务。任务键与整季的「已有字幕跳过」都按语言分
-///   （[RemoteVideoSubtitleTarget.forLanguage]）。
+///   （[RemoteVideoSubtitleTarget.forLanguage]）；整季各集另带 `skipExisting`，host 上
+///   已有所选语言字幕、但列表没报出来的集由 host 跳过（`skippedExistingSubtitle`）。
 /// - 产物：host 库视频会在 host 那边视频旁导出（`<视频名>.ja.srt`，视频有别的 ASS 时
 ///   另有套了它样式的 `.ja.ass`）；本机把取回的字幕（有 ASS 取 ASS）复制进
 ///   `video_subtitles/`，由视频页按「远端视频加外挂字幕」同一条路加载。
@@ -174,7 +175,8 @@ class RemoteVideoSubtitleSeasonMember {
   final RemoteVideoSubtitleEpisode episode;
   final String? subtitleFileName;
 
-  /// 已有 [language] 的字幕（`<视频名>.<tag>.srt`），整季时跳过。
+  /// 已有 [language] 的字幕（`<视频名>.<tag>.srt`），整季时跳过。host 只报它学习语言
+  /// 那一条，所以这里只能认出一部分；漏掉的由 host 按 `skipExisting` 再跳过。
   bool hasSubtitle(VideoSubtitleLanguage language) =>
       subtitleFileName?.toLowerCase().endsWith('.${language.tag}.srt') ?? false;
 }
@@ -699,6 +701,10 @@ class RemoteVideoSubtitleService {
         'segmenter': job.options.segmenter.name,
         'mossBackend': job.options.mossBackend.name,
         if (job.options.proofread && job.options.frames) 'frames': true,
+        // 整季：本机只能按列表的 `subtitleFileName` 预先跳过，而它只报 host 学习语言
+        // 那一条（`pickSidecar`），别的语言已有的字幕看不到——交给 host 再按所选语言的
+        // `<视频名>.<后缀>.srt` 判一次（老 host 不认，照常生成）。
+        if (job.target.wholeSeason) 'skipExisting': true,
         // 只发给声明了 `languages` 的 host（上面已拦掉不认所选语言的）；老 host 不带，
         // 按默认日语跑。
         if (hostVideoSubtitleLanguages(target).isNotEmpty)

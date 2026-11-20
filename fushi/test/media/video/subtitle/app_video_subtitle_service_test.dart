@@ -1246,6 +1246,56 @@ void main() {
         contains('梓'),
       );
     });
+
+    test('S0 进行中仍拒绝；S0 一完成、任务还在跑就放开编辑', () async {
+      settings.provider = testProvider();
+      await addBook('a', video('ep01.mkv'));
+      final AppVideoSubtitleService service = buildService();
+      final AppVideoSubtitleTarget target = await service.resolveBook('a');
+      final AppVideoSubtitleJob job = service.start(
+        target,
+        const AppVideoSubtitleOptions(proofread: true),
+      );
+      // 每次进度回报时（同步）看一眼：S0 的 0 与 1 两次回报、以及之后的阶段。
+      final List<(VideoSubtitleStage, double, bool)> seen =
+          <(VideoSubtitleStage, double, bool)>[];
+      job.addListener(() {
+        final VideoSubtitleProgress? p = job.progress;
+        if (p == null || !job.isRunning) return;
+        seen.add((
+          p.stage,
+          p.fraction,
+          service.glossaryWriterFor(target.work) != null,
+        ));
+      });
+      await job.done;
+      expect(job.status, AppVideoSubtitleJobStatus.succeeded);
+      final Iterable<(VideoSubtitleStage, double, bool)> s0 = seen.where(
+        ((VideoSubtitleStage, double, bool) e) =>
+            e.$1 == VideoSubtitleStage.glossary,
+      );
+      expect(
+        s0.where(((VideoSubtitleStage, double, bool) e) => e.$2 < 1),
+        <(VideoSubtitleStage, double, bool)>[
+          (VideoSubtitleStage.glossary, 0.0, true),
+        ],
+      );
+      expect(
+        s0.where(((VideoSubtitleStage, double, bool) e) => e.$2 >= 1),
+        <(VideoSubtitleStage, double, bool)>[
+          (VideoSubtitleStage.glossary, 1.0, false),
+        ],
+      );
+      final Iterable<(VideoSubtitleStage, double, bool)> after = seen.where(
+        ((VideoSubtitleStage, double, bool) e) =>
+            e.$1.index > VideoSubtitleStage.glossary.index,
+      );
+      expect(after, isNotEmpty);
+      expect(
+        after.every(((VideoSubtitleStage, double, bool) e) => !e.$3),
+        isTrue,
+      );
+    });
   });
 }
 

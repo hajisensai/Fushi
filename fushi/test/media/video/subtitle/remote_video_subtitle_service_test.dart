@@ -757,6 +757,11 @@ void main() {
       host.submitted.map((Map<String, Object?> m) => m['videoId']),
       <String>['v1', 'op'],
     );
+    // 列表只报 host 学习语言那条字幕：整季各集都请 host 再按所选语言判一次已有字幕。
+    expect(
+      host.submitted.map((Map<String, Object?> m) => m['skipExisting']),
+      <Object?>[true, true],
+    );
     expect(job.episodes[0].subtitle, isNotNull);
     expect(job.episodes[1].subtitle, isNull);
     expect(job.episodes[1].status, 'skippedSong');
