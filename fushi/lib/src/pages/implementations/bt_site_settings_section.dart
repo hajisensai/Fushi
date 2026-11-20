@@ -31,6 +31,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -955,8 +956,8 @@ class _BtSiteParserHelpDialogState extends State<BtSiteParserHelpDialog> {
       const SizedBox(height: 4),
       DecoratedBox(
         decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
+          color: FushiDesignTokens.of(context).surfaces.search,
+          borderRadius: FushiM3eShape.smallRadius,
         ),
         child: Padding(
           padding: const EdgeInsets.all(12),
