@@ -412,4 +412,73 @@ void main() {
       );
     },
   );
+  testWidgets(
+    'a late manga verdict for an older pick is discarded, not offered',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1000, 1000);
+      addTearDown(tester.view.reset);
+      final Directory root = Directory.systemTemp.createTempSync(
+        'book_import_stale_verdict_',
+      );
+      final File older = File(p.join(root.path, 'older_pages.epub'))
+        ..writeAsBytesSync(_realEpubBytes('Older', pureImage: true));
+      final File newer = File(p.join(root.path, 'newer_novel.epub'))
+        ..writeAsBytesSync(_realEpubBytes('Newer'));
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      EpubStorage.debugBaseDirectoryOverride = root.path;
+      addTearDown(() async {
+        EpubStorage.debugBaseDirectoryOverride = null;
+        await db.close();
+        if (root.existsSync()) root.deleteSync(recursive: true);
+      });
+
+      // 旧选择的后台定性迟迟不回；新选择立刻判成书。
+      final Completer<bool> olderVerdict = Completer<bool>();
+      Future<bool> probe(String path) =>
+          path == older.path ? olderVerdict.future : Future<bool>.value(false);
+
+      await tester.pumpWidget(
+        _host(
+          BookImportDialog(
+            repo: SrtBookRepository(db),
+            audiobookRepo: AudiobookRepository(db),
+            db: db,
+            imageArchiveProbe: probe,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final FushiFileDropTarget dropTarget = tester.widget<FushiFileDropTarget>(
+        find.byType(FushiFileDropTarget),
+      );
+      unawaited(
+        Future<void>.sync(
+          () => dropTarget.onDrop(<String>[older.path], Offset.zero),
+        ),
+      );
+      await tester.pump();
+      unawaited(
+        Future<void>.sync(
+          () => dropTarget.onDrop(<String>[newer.path], Offset.zero),
+        ),
+      );
+      await tester.pump();
+      expect(find.text(p.basename(newer.path)), findsOneWidget);
+
+      // 旧选择的「这是漫画」这时才回来：已被新选择取代，不能再弹确认框。
+      olderVerdict.complete(true);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(
+        find.text(t.manga_import_detected_title),
+        findsNothing,
+        reason: '过期的漫画判定不能弹确认、更不能把旧路径转交漫画流程',
+      );
+      expect(find.text(p.basename(newer.path)), findsOneWidget);
+    },
+  );
 }

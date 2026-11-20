@@ -305,11 +305,15 @@ class _BookImportDialogState extends State<BookImportDialog>
   /// 同形，拖到书架时分类层按扩展名归 books（它刻意不为每次拖 EPUB 白开一次包）。
   /// 此前这里是**静默**转漫画导入；现在改成用户可见的一次确认——识别照旧，分派不
   /// 再背着用户发生。
-  Future<bool> _handoffIfManga(String path) async {
+  ///
+  /// [generation] 是发起这次判定时的 [_selectionGeneration]。定性在后台 isolate 里
+  /// 跑，回来时对话框可能已经关了、用户又选了别的、或已经点了导入：这时结果作废并
+  /// 返回 `true`（调用方不收下这个路径）——过期的「这是漫画」不能再弹确认框，更不能
+  /// 把旧路径转交漫画流程、关掉正在导入的书籍框。
+  Future<bool> _handoffIfManga(String path, int generation) async {
     final ImportCarrier carrier = await _classifyCarrier(path);
+    if (_isStaleSelection(generation)) return true;
     if (!carrier.isManga) return false;
-    // 定性在后台跑期间对话框可能已经关了：不再弹确认，也不收下这个路径。
-    if (!mounted) return true;
     final bool canImportAsBook = canImportMangaCarrierAsBook(path, carrier);
     final _MangaDetectedChoice? choice =
         await showAppDialog<_MangaDetectedChoice>(
@@ -399,8 +403,7 @@ class _BookImportDialogState extends State<BookImportDialog>
     // 拖进来的「书」其实是漫画（图片型 zip / 扫描版 epub）→ 确认后转交漫画流程。
     if (droppedEpub != null) {
       final int generation = ++_selectionGeneration;
-      if (await _handoffIfManga(droppedEpub)) return;
-      if (_isStaleSelection(generation)) return;
+      if (await _handoffIfManga(droppedEpub, generation)) return;
     }
     if (!mounted) return;
     final bool gotAudio = r.audioPaths.isNotEmpty;
@@ -831,8 +834,7 @@ class _BookImportDialogState extends State<BookImportDialog>
       if (path != null && file != null && mounted) {
         // 选中的其实是漫画载体 → 明确确认后转交漫画流程，不再静默按书导入。
         final int generation = ++_selectionGeneration;
-        if (await _handoffIfManga(path)) return;
-        if (_isStaleSelection(generation)) return;
+        if (await _handoffIfManga(path, generation)) return;
         setState(() {
           _epubPath = path;
           _epubName = file.name;
@@ -1190,7 +1192,10 @@ class _BookImportDialogState extends State<BookImportDialog>
     // 是构造参数直接塞进来的（书架拖入决策层刻意不为每个 EPUB 开包，图片型 .epub 会
     // 以 books 身份到达这里）。同一个闸门在此再守一次，漫画绝不会走进书籍导入分支。
     final String? epubPath = _epubPath;
-    if (epubPath != null && await _handoffIfManga(epubPath)) return;
+    if (epubPath != null &&
+        await _handoffIfManga(epubPath, _selectionGeneration)) {
+      return;
+    }
     if (!mounted) return;
     if (_epubPath != null && !_hasSubtitles && _audioPaths.isNotEmpty) {
       // 有音频没字幕：本机能转录就直接问字幕来源（选文件 / 转录），拿到字幕后接着
