@@ -121,6 +121,51 @@ void main() {
     );
   });
 
+  test('search：源标 NSFW 的候选默认不回、只报条数；nsfw=true 才带上（拍板台 pr3497）', () async {
+    bookMetadataFacadeFactory = ({RakutenBooksCredentials? rakuten}) =>
+        BookMetadataScrapeFacade(
+          scraper: offlineScraper(
+            searchHits: <Map<String, Object?>>[
+              bangumiSubject('11', 'Yotsuba to!', cn: '四叶妹妹'),
+              <String, Object?>{
+                ...bangumiSubject('12', 'Adult work'),
+                'nsfw': true,
+              },
+            ],
+          ),
+          downloadImage: fakeDownloader(thumbs),
+        );
+    routes = buildBookMetadataCtlRoutes(OpContext(ref: ref));
+
+    final Map<String, Object?> plain =
+        (await call(
+              'GET',
+              kBookMetadataCtlSearch,
+              query: <String, String>{'query': '四叶'},
+            ))!
+            as Map<String, Object?>;
+    final List<Object?> plainHits = plain['candidates']! as List<Object?>;
+    expect(
+      <Object?>[
+        for (final Object? c in plainHits) (c! as Map<String, Object?>)['id'],
+      ],
+      <Object?>['11'],
+    );
+    expect(plain['hiddenNsfw'], 1);
+
+    final Map<String, Object?> withNsfw =
+        (await call(
+              'GET',
+              kBookMetadataCtlSearch,
+              query: <String, String>{'query': '四叶', 'nsfw': 'true'},
+            ))!
+            as Map<String, Object?>;
+    final List<Object?> all = withNsfw['candidates']! as List<Object?>;
+    expect(all, hasLength(2));
+    expect((all[1]! as Map<String, Object?>)['adult'], isTrue);
+    expect(withNsfw.containsKey('hiddenNsfw'), isFalse);
+  });
+
   test('get：命中回候选，查无 404', () async {
     final Object? hit = await call(
       'GET',

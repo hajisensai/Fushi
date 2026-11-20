@@ -1926,6 +1926,7 @@
   "book_scrape_hint": "書名 / 著者",
   "book_scrape_isbn_required": "openBD only looks up books by ISBN. Enter a 10- or 13-digit ISBN.",
   "book_scrape_mangabaka_attribution": "Data from MangaBaka (CC BY-NC-SA 4.0)",
+  "book_scrape_nsfw_hidden": "NSFW results hidden: ${count}. Mark this book as NSFW to show them.",
   "book_scrape_rakuten_access_key": "Access key",
   "book_scrape_rakuten_application_id": "Application ID",
   "book_scrape_rakuten_settings_hint": "Register an app at Rakuten Web Service to get both values. Stored on this device only; never backed up or synced.",

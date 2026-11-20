@@ -5018,17 +5018,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 「在线刮削封面」流程本体（书卡菜单与详情页的「刮削资料 / 重新刮削」共用）：
   /// 选条目 → 门面写封面 + 资料 + 背景 → 刷新书架映射。不碰导航栈。
   Future<void> _scrapeBookItem(MediaItem item) async {
-    final String? isbn = await BookMetadataScrapeFacade.isbnForItem(
-      appModel.database,
-      item,
-    );
-    if (!mounted) return;
-    final BookCoverScrapeSelection? scraped = await showBookCoverScrapeDialog(
-      context: context,
-      initialQuery: displayTitleForBook(item: item, rawTitle: item.title),
-      isbn: isbn,
-      rakuten: appModel.bookScrapeRakutenCredentials,
-    );
+    final BookCoverScrapeSelection? scraped =
+        await showBookCoverScrapeDialogForItem(
+          context: context,
+          db: appModel.database,
+          item: item,
+          initialQuery: displayTitleForBook(item: item, rawTitle: item.title),
+          rakuten: appModel.bookScrapeRakutenCredentials,
+        );
     if (scraped == null || !mounted) return;
     // 写回经门面（与 `fushi_cli book scrape-apply` 同一个方法）：封面 + 条目资料
     // （简介 / 评分 / 标签 / 源给的横版背景，单本书的系列色块读它）。
