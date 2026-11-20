@@ -1157,7 +1157,6 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
             target: _previewTarget,
             families: families,
             script: _script,
-            onScriptChanged: _setScript,
             subtitleStyle: VideoSubtitleStyle.decode(
               appModel.videoSubtitleStyle,
             ),
@@ -1241,6 +1240,9 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
   FontLibraryFilter _filter = FontLibraryFilter.all;
   FontSampleScript _script = FontSampleScript.japanese;
 
+  /// 中文档上次选的简 / 繁（默认简体）。
+  FontSampleScript _chineseVariant = FontSampleScript.simplifiedChinese;
+
   /// 用户手动选的布局；null = 跟随宽度（宽屏网格、窄屏列表）。
   FontLibraryLayout? _layoutOverride;
 
@@ -1323,9 +1325,12 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     FontLibraryFilter.monospace => t.font_library_filter_mono,
   };
 
-  /// 样张文种（工具栏三档 + 样张里的简繁小 chip 共用）。setState 同时刷新窄屏
-  /// 详情 sheet（见 [setState] 覆写）。
-  void _setScript(FontSampleScript script) => setState(() => _script = script);
+  /// 样张文种（工具栏三档 + 简繁开关共用）。选中文时记下简 / 繁，切走再切回来
+  /// 恢复它。setState 同时刷新窄屏详情 sheet（见 [setState] 覆写）。
+  void _setScript(FontSampleScript script) => setState(() {
+    _script = script;
+    if (script.isChinese) _chineseVariant = script;
+  });
 
   String get _sampleText =>
       fontLibrarySampleText(_script, _sampleController.text);
@@ -1343,7 +1348,6 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
       key: ValueKey<String>('font-detail-${row.identity}'),
       entry: _viewOf(row),
       script: _script,
-      onScriptChanged: _setScript,
       customSample: _sampleController.text,
       chainPosition: index + 1,
       onToggleTarget: (FontTarget target) {
@@ -1786,6 +1790,7 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
             FontSampleToolbar(
               script: _script,
               onScriptChanged: _setScript,
+              chineseVariant: _chineseVariant,
               controller: _sampleController,
               onCustomChanged: () => setState(() {}),
             ),

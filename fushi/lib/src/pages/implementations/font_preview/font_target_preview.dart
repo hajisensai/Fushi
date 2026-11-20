@@ -86,7 +86,6 @@ class FontTargetPreview extends StatelessWidget {
     this.subtitleStyle = VideoSubtitleStyle.defaults,
     this.sampleText,
     this.script = FontSampleScript.japanese,
-    this.onScriptChanged,
     super.key,
   });
 
@@ -94,9 +93,6 @@ class FontTargetPreview extends StatelessWidget {
 
   /// 样文文种：决定写死的内容文字，以及缺字回退到哪套系统字体。
   final FontSampleScript script;
-
-  /// 中文样张上的简繁小 chip 切换文种；null = 不显示切换。
-  final ValueChanged<FontSampleScript>? onScriptChanged;
 
   /// [effectiveFontTargetFamilies] 的结果；空 = 该用途没配字体，走系统默认。
   final List<String> families;
@@ -124,18 +120,6 @@ class FontTargetPreview extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        if (onScriptChanged != null &&
-            script.isChinese &&
-            sampleText == null) ...<Widget>[
-          Align(
-            alignment: AlignmentDirectional.centerEnd,
-            child: FontChineseVariantChips(
-              script: script,
-              onChanged: onScriptChanged!,
-            ),
-          ),
-          SizedBox(height: tokens.spacing.gap),
-        ],
         ClipRRect(
           borderRadius: tokens.radii.cardRadius,
           child: KeyedSubtree(

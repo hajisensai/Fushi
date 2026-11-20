@@ -1,8 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/app_font_loader.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show ReaderCustomFontCss;
-import 'package:fushi/src/utils/components/fushi_material_components.dart'
-    show FushiSelectableChip;
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 字体行右侧的对照样字：一个拉丁字母对 + 日文最能看出字形差异的几个字
@@ -19,20 +17,21 @@ const String kJaFontSampleSentence = '吾輩は猫である。名前はまだ無
 /// 回退到别的字体，反之亦然——只给一种中文样张就看不出字体本来的样子。
 enum FontSampleScript { japanese, simplifiedChinese, traditionalChinese, latin }
 
-/// 样张工具栏只分「日文 / 中文 / 西文」三档；简繁是中文档下的二级选择，由样张里
-/// 的 [FontChineseVariantChips] 切换。
+/// 样张工具栏只分「日文 / 中文 / 西文」三档；简繁是中文档下的二级选择，由工具栏里
+/// 的 [FontChineseVariantSwitch] 切换。
 extension FontSampleScriptGroup on FontSampleScript {
   bool get isChinese =>
       this == FontSampleScript.simplifiedChinese ||
       this == FontSampleScript.traditionalChinese;
 }
 
-/// 中文样张里的简繁小切换：两枚小 chip，标签固定用中文书写（「简体」「繁體」各用
-/// 本字体写自己），不随界面语言翻译——这是给看中文的人分辨字形用的。
+/// 样张工具栏里紧贴「中文」一档右侧的简繁开关：紧凑的胶囊二段「简 | 繁」，与
+/// 文种三档同一套分段组件（配色、圆角、字体随主题），只是更矮更窄。标签固定用
+/// 中文书写，不随界面语言翻译——这是给看中文的人分辨字形用的；悬停提示给全称。
 ///
 /// [script] 不是中文时不渲染（返回空盒）。
-class FontChineseVariantChips extends StatelessWidget {
-  const FontChineseVariantChips({
+class FontChineseVariantSwitch extends StatelessWidget {
+  const FontChineseVariantSwitch({
     required this.script,
     required this.onChanged,
     super.key,
@@ -44,23 +43,29 @@ class FontChineseVariantChips extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!script.isChinese) return const SizedBox.shrink();
-    return Wrap(
-      spacing: 6,
-      children: <Widget>[
-        for (final (FontSampleScript value, String label)
-            in const <(FontSampleScript, String)>[
-              (FontSampleScript.simplifiedChinese, '简体'),
-              (FontSampleScript.traditionalChinese, '繁體'),
-            ])
-          FushiSelectableChip(
-            key: ValueKey<String>('font-chinese-variant-${value.name}'),
-            label: label,
-            selected: script == value,
-            onSelected: (_) {
-              if (script != value) onChanged(value);
-            },
-          ),
+    return FushiSegmentedButton<FontSampleScript>(
+      key: const ValueKey<String>('font-chinese-variant'),
+      showSelectedIcon: false,
+      style: FushiSegmentedButton.styleFrom(
+        visualDensity: const VisualDensity(horizontal: -4, vertical: -2),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+      ),
+      segments: const <ButtonSegment<FontSampleScript>>[
+        ButtonSegment<FontSampleScript>(
+          value: FontSampleScript.simplifiedChinese,
+          label: Text('简'),
+          tooltip: '简体',
+        ),
+        ButtonSegment<FontSampleScript>(
+          value: FontSampleScript.traditionalChinese,
+          label: Text('繁'),
+          tooltip: '繁體',
+        ),
       ],
+      selected: <FontSampleScript>{script},
+      onSelectionChanged: (Set<FontSampleScript> value) {
+        if (value.isNotEmpty && value.first != script) onChanged(value.first);
+      },
     );
   }
 }

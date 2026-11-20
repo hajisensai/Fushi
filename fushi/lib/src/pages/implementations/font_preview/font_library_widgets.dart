@@ -683,22 +683,24 @@ class FontSampleToolbar extends StatelessWidget {
     required this.onScriptChanged,
     required this.controller,
     required this.onCustomChanged,
+    this.chineseVariant = FontSampleScript.simplifiedChinese,
     super.key,
   });
 
   final FontSampleScript script;
   final ValueChanged<FontSampleScript> onScriptChanged;
+
+  /// 上次选的简 / 繁：从日文 / 西文切回「中文」时恢复它。
+  final FontSampleScript chineseVariant;
   final TextEditingController controller;
   final VoidCallback onCustomChanged;
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // 「中文」一档代表当前的简 / 繁之一；简繁由样张里的小 chip 切换。
-    final FontSampleScript chinese = script.isChinese
-        ? script
-        : FontSampleScript.simplifiedChinese;
-    final Widget segments = FushiSegmentedButton<FontSampleScript>(
+    // 「中文」一档代表当前（或上次）的简 / 繁之一；简繁由紧贴其右的小开关切换。
+    final FontSampleScript chinese = script.isChinese ? script : chineseVariant;
+    final Widget scripts = FushiSegmentedButton<FontSampleScript>(
       key: const ValueKey<String>('font-sample-script'),
       showSelectedIcon: false,
       segments: <ButtonSegment<FontSampleScript>>[
@@ -720,6 +722,21 @@ class FontSampleToolbar extends StatelessWidget {
         if (value.isNotEmpty) onScriptChanged(value.first);
       },
     );
+    // 文种三档 + （仅中文时）简繁开关同一行；窄到放不下时开关换到下一行，不溢出。
+    final Widget segments = script.isChinese
+        ? Wrap(
+            spacing: tokens.spacing.gap,
+            runSpacing: tokens.spacing.gap,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              scripts,
+              FontChineseVariantSwitch(
+                script: script,
+                onChanged: onScriptChanged,
+              ),
+            ],
+          )
+        : scripts;
     final Widget field = FushiTextField(
       key: const ValueKey<String>('font-sample-custom'),
       controller: controller,
@@ -762,7 +779,6 @@ class FontLibraryDetailPanel extends StatefulWidget {
     required this.customSample,
     required this.onToggleTarget,
     required this.onDelete,
-    this.onScriptChanged,
     this.onMoveUp,
     this.onMoveDown,
     this.chainPosition,
@@ -774,9 +790,6 @@ class FontLibraryDetailPanel extends StatefulWidget {
   final FontLibraryEntryView entry;
   final FontSampleScript script;
   final String customSample;
-
-  /// 样张里的简繁小 chip 切换文种；null = 不显示切换。
-  final ValueChanged<FontSampleScript>? onScriptChanged;
   final ValueChanged<FontTarget> onToggleTarget;
   final VoidCallback onDelete;
 
@@ -911,11 +924,6 @@ class _FontLibraryDetailPanelState extends State<FontLibraryDetailPanel> {
                   }
                 },
               ),
-              if (widget.onScriptChanged != null && custom.isEmpty)
-                FontChineseVariantChips(
-                  script: widget.script,
-                  onChanged: widget.onScriptChanged!,
-                ),
             ],
           ),
           const SizedBox(height: 8),
