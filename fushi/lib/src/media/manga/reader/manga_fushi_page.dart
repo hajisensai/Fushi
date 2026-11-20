@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:ui' as ui show Image;
 
@@ -133,6 +132,8 @@ import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
         fushiTitleBarColorsOn;
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_sheet.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_page_grid.dart';
+import 'package:fushi/src/media/manga/manga_json_writeback.dart'
+    show parseMangaJsonOffUi;
 import 'package:fushi/src/media/manga/reader/manga_page_fit.dart';
 import 'package:fushi/src/media/manga/reader/manga_page_thumbnail_prefetcher.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_quick_settings_sheet.dart';
@@ -1212,15 +1213,6 @@ class MangaFushiPage extends BaseSourcePage {
   /// 纯函数：持久化字符串 → [MangaReadingMode]（未知取 spread）。
   static MangaReadingMode modeFromDbString(String s) {
     return MangaReadingModeSemantics.fromStorageKey(s);
-  }
-
-  /// 大书的 manga.json 解析下放 isolate（不卡 UI）。
-  ///
-  /// 必须是**静态**方法：闭包在实例方法里创建时，Dart VM 的作用域上下文可能把
-  /// `this`（整个 State → binding）一并塞进闭包 context，`Isolate.run` 发送消息时
-  /// 直接炸 "object is unsendable"。静态方法的 context 只含 [jsonStr]，恒可发送。
-  static Future<MokuroPayload> parseMangaJsonOffUi(String jsonStr) {
-    return Isolate.run<MokuroPayload>(() => parseMangaJson(jsonStr));
   }
 
   /// 纯函数：`EpubBooks.mangaReadingMode` 列值 → 用户覆盖模式。null/空 = 未覆盖
@@ -2438,7 +2430,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final String imagesDir = p.join(p.dirname(mangaJsonPath), 'images');
 
     final String jsonStr = await jsonFile.readAsString();
-    MokuroPayload payload = await MangaFushiPage.parseMangaJsonOffUi(jsonStr);
+    // 大书的 manga.json 解析下放 isolate（不卡 UI）；与 OCR 任务登记处共用同一个
+    // 顶层函数（闭包只捕获字符串，恒可发送，见 manga_json_writeback.dart）。
+    MokuroPayload payload = await parseMangaJsonOffUi(jsonStr);
     // 由 PDF 转来、还没提取过文字层的卷（加这一步之前导入的）：开书时补一次。
     // 判据先看内存里的版本号，只有确实要补才碰 PDFium。
     if (payload.pdfTextLayerVersion == null &&
