@@ -224,6 +224,10 @@
 | [BUG-4964](bugs/BUG-4964-android-security-malware-kill-misreport.md) | ✅ | ✅ | Android 安全组件按「恶意软件」杀进程被误报为闪退 |
 | [BUG-4965](bugs/BUG-4965-heavy-offload-followed-foreign-worktree-run.md) | 🚧 | 🚧 | heavy.dart 排队时「另一台机器接走」后跟随了别的工作区的 dist 运行，报出不属于本工作区的 PASSED |
 | [BUG-4961](bugs/BUG-4961-ambient-animation-full-refresh-rate-gpu-cost.md) | ✅ | ✅ | 常驻装饰动画按屏幕刷新率逐帧重画：吉祥物光晕 / 主页背景开着时 4K 144 Hz 整窗持续合成，GPU 占用高 |
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4966](bugs/BUG-4966-audiobook-first-seek-dropped-before-play.md) | 🚧 | 🚧 | 有声书刚打开时拖进度条拖不动，要先播一下才能拖 |
 | [BUG-4958](bugs/BUG-4958-aggregate-sync-ui-isolate-anr.md) | ✅ | ✅ | 互联/云聚合同步在 UI isolate 上同步跑整份快照折叠与指纹，慢设备 ANR |
 | [BUG-4957](bugs/BUG-4957-audiobook-concat-shuffle-order-quadratic.md) | ✅ | ✅ | TTS 朗读 / 多文件有声书建 ConcatenatingAudioSource 时 just_audio 默认 ShuffleOrder 逐个随机 List.insert，O(n²) 占满主线程到 ANR |
 | [BUG-4956](bugs/BUG-4956-ios-popup-entries-fetch-status-zero-oom.md) | ✅ | ✅ | iOS 阅读器查词时 Out of Memory 闪退（词条拦截投递在 iOS 上恒失败 + 历史整表重写） |

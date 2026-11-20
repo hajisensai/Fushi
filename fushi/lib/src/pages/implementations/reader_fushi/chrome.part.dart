@@ -1882,6 +1882,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   int _readerControlGroup(ReaderControlItem item) => switch (item) {
     ReaderControlItem.navigation ||
     ReaderControlItem.bookmarks ||
+    ReaderControlItem.jumpHistory ||
     ReaderControlItem.gallery ||
     ReaderControlItem.statistics => 0,
     ReaderControlItem.audiobook => 2,
@@ -1963,6 +1964,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // 面板只显示收藏句，按钮照样有用，故恒渲染（歌词模式书签按当前句定位）。
       case ReaderControlItem.bookmarks:
         return true;
+      // 跳转记录：没跳转过也照常渲染（动作置灰，见 [_readerControlAction]），入口
+      // 不随历史有无忽隐忽现（拍板台 ymMpf0raAu）。
+      case ReaderControlItem.jumpHistory:
+        return true;
       case ReaderControlItem.gallery:
         return !_lyricsMode;
       // 「听书」模块关掉时整颗不渲染（不是画一个点了没反应的按钮）。
@@ -2041,6 +2046,18 @@ extension _ReaderChrome on _ReaderFushiPageState {
           onPressed: () => unawaited(
             _showAppearanceSheet(initialSubPage: _kReaderNavSubPageBookmarks),
           ),
+        );
+      case ReaderControlItem.jumpHistory:
+        // 还没有跳转记录：按钮 / 菜单项照常列出、置灰（onPressed = null），与歌词
+        // 模式的 [LyricsControlItem.jumpHistory] 一致。
+        return ReaderHeaderAction(
+          key: const ValueKey<String>('fushi_reader_jump_history_button'),
+          icon: FushiIcons.history,
+          label: t.media_jump_history_title,
+          semanticsId: 'fushi.reader.header.jump_history',
+          onPressed: _jumpHistory.isEmpty
+              ? null
+              : () => unawaited(_openJumpHistoryPanel()),
         );
       case ReaderControlItem.gallery:
         return ReaderHeaderAction(
@@ -3460,12 +3477,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
             ..._jumpHistoryHeaderActions(),
             ..._readerControlActionsIn(ReaderControlSlot.topRight),
           ],
-          // 布局的「更多」槽（2026-10 精简：中频按钮）恒在 ⋮ 菜单；「问 AI」排最后，
-          // 其后是「跳转记录」（有历史时）。
-          overflowActions: <ReaderHeaderAction>[
-            ..._overflowControlActions(),
-            ..._jumpHistoryMenuActions(),
-          ],
+          // 布局的「更多」槽（2026-10 精简：中频按钮）恒在 ⋮ 菜单；「跳转记录」是
+          // 布局里的一颗按钮（[ReaderControlItem.jumpHistory]），不再另外追加。
+          overflowActions: _overflowControlActions(),
         ),
       ),
     );
@@ -3528,8 +3542,6 @@ extension _ReaderChrome on _ReaderFushiPageState {
               for (final ReaderHeaderAction a in _overflowControlActions())
                 _toolbarItem(a),
             ],
-            // 「跳转记录」入口恒在 ⋯ 里（有历史时）。
-            menu: _jumpHistoryMenuItems(),
             colors: _floatingToolbarColors(),
           ),
         ),
