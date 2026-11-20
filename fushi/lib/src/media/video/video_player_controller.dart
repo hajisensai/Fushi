@@ -936,6 +936,11 @@ class VideoPlayerController extends ChangeNotifier
   /// Serializes disc navigation snapshot reads without dropping a request that
   /// arrives mid-read (see `_sampleDiscMenu` in video_disc_menu.part.dart).
   final CoalescedRereader _discSampler = CoalescedRereader();
+
+  /// Whether the next disc sample must re-read the track list (see
+  /// [VideoDiscTrackRefreshGate]); one per controller.
+  final VideoDiscTrackRefreshGate _discTrackRefreshGate =
+      VideoDiscTrackRefreshGate();
   bool _discMiningAvailable = false;
   String? _discExtractionError;
   int _discTitleGeneration = 0;
