@@ -476,17 +476,21 @@ void main() {
     });
 
     test('写回与加载器的字数写入交错：读改写在事务里，不把中途写进来的正文字数盖掉', () async {
+      final List<Map<String, Object?>> loaderView = await entries();
+      loaderView[1]['characters'] = 5000;
       final Future<void> persisting = persistRecomputedChapterCharCounts(
         database: db,
         bookKey: 'b',
         counts: <int>[700, 9, 9],
         keepStored: <bool>[false, true, true],
       );
-      // 加载器在写回读行之后、写行之前把第 1 章的正文字数写进来。
-      final List<Map<String, Object?>> loaderView = await entries();
-      loaderView[1]['characters'] = 5000;
-      await db.updateEpubBookChaptersJson('b', jsonEncode(loaderView));
-      await persisting;
+      // 加载器的写入紧跟在写回读行之后排队、早于写回写行：不在事务里时写回读到的
+      // 是旧行（占位页字数），随后整列写回把 5000 盖掉。
+      final Future<void> loaderWrite = db.updateEpubBookChaptersJson(
+        'b',
+        jsonEncode(loaderView),
+      );
+      await Future.wait(<Future<void>>[persisting, loaderWrite]);
 
       final List<Map<String, Object?>> after = await entries();
       expect(after[1]['characters'], 5000);
