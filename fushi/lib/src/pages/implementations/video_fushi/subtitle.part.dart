@@ -1631,7 +1631,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
         if (row != null) members.add(row);
       }
       if (members.isEmpty) return null;
-      return SubtitleCollectionSpec(collection: collection, members: members);
+      return SubtitleCollectionSpec(
+        collection: collection,
+        members: members,
+        initialSeason: _jimakuSeasonNumber(),
+      );
     } on Object catch (error) {
       ErrorLogService.instance.logDiagnostic(
         'VideoFushiPage._subtitleCollectionSpec',
