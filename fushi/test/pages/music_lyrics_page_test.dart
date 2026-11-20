@@ -386,30 +386,33 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  // 拍板台 left3645（方案 B）：QRC 自带注音轨和正文对不上时整首不挂，歌词页说一句「已隐藏」。
-  testWidgets('QRC 注音轨对不上：歌词照常显示，并提示注音已隐藏；对得上不提示', (WidgetTester tester) async {
-    const String body =
-        '[1000,2000]夜(1000,500)に(1500,500)駆(2000,500)け(2500,500)';
+  // 拍板台 left3645（方案 B）：QRC 自带注音轨和正文对不上时整首不挂，歌词页说一句「已隐藏」；
+  // 对得上的不提示。
+  const String qrcBody =
+      '[1000,2000]夜(1000,500)に(1500,500)駆(2000,500)け(2500,500)';
+  const ValueKey<String> rubyDroppedNotice = ValueKey<String>(
+    'music_lyrics_ruby_dropped_notice',
+  );
+  void useQrcSidecar(String kana) {
     final String sep = Platform.pathSeparator;
     File('${dir.path}${sep}song.lrc').deleteSync();
-    final File qrc = File('${dir.path}${sep}song.qrc')
-      ..writeAsStringSync('[kana:1よる]\n$body\n');
-    const ValueKey<String> notice = ValueKey<String>(
-      'music_lyrics_ruby_dropped_notice',
-    );
+    File('${dir.path}${sep}song.qrc').writeAsStringSync('$kana\n$qrcBody\n');
+  }
 
+  testWidgets('QRC 注音轨对不上：歌词照常显示，并提示注音已隐藏', (WidgetTester tester) async {
+    useQrcSidecar('[kana:1よる]');
     await pumpPage(tester);
     expect(find.bySemanticsLabel(RegExp('夜に駆け')), findsWidgets);
-    expect(find.byKey(notice), findsOneWidget);
+    expect(find.byKey(rubyDroppedNotice), findsOneWidget);
     expect(find.text(t.music_lyrics_ruby_dropped_notice), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
+  });
 
-    // 对得上的注音轨不提示（换文件后清掉库里这首的缓存行，让页面重新读 sidecar）。
-    qrc.writeAsStringSync('[kana:1よる1か]\n$body\n');
-    await tester.runAsync(() => db.delete(db.musicLyrics).go());
+  testWidgets('QRC 注音轨对得上：不提示注音已隐藏', (WidgetTester tester) async {
+    useQrcSidecar('[kana:1よる1か]');
     await pumpPage(tester);
     expect(find.bySemanticsLabel(RegExp('夜に駆け')), findsWidgets);
-    expect(find.byKey(notice), findsNothing);
+    expect(find.byKey(rubyDroppedNotice), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
