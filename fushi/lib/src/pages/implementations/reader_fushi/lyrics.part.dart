@@ -754,15 +754,10 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   }
 
   LyricsPlayerData _lyricsPlayerData(AudiobookPlayerController ctrl) {
-    ImageProvider? cover;
-    final String? extractDir = _extractDir;
-    if (extractDir != null) {
-      final String? path = ReaderFushiSource.resolveCoverFilePath(
-        extractDir: extractDir,
-        coverPath: _book?.coverHref,
-      );
-      if (path != null) cover = FileImage(File(path));
-    }
+    final String? coverPath = _bookCoverFilePath;
+    final ImageProvider? cover = coverPath == null
+        ? null
+        : FileImage(File(coverPath));
     return LyricsPlayerData(
       title: _book?.title ?? '',
       cover: cover,

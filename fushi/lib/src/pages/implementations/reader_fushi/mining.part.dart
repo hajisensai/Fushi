@@ -39,13 +39,12 @@ extension _ReaderMining on _ReaderFushiPageState {
     // 无封面（书架却因 case-insensitive 兜底正常显示）。复用书架同一个兜底
     // (ReaderFushiSource.resolveCoverFilePath) 命中真实文件，让制卡与显示一致。
     // 「高级制卡」选了不要图片：书封就是阅读器卡片唯一的图，整个跳过。
-    String? coverPath;
-    if (_extractDir != null && !(overrides?.omitImage ?? false)) {
-      coverPath = ReaderFushiSource.resolveCoverFilePath(
-        extractDir: _extractDir!,
-        coverPath: _book?.coverHref,
-      );
-    }
+    // BUG-4913：封面与书架字幕书 / 有声书卡同源（[_bookCoverFilePath]）——字幕 + 音频
+    // 导入的乐曲正文 EPUB 没有 cover-image，封面只在配对 srt_books.cover_path，
+    // 以前只看 EPUB，Lapis 的 Picture 一律空。
+    String? coverPath = (overrides?.omitImage ?? false)
+        ? null
+        : _bookCoverFilePath;
 
     // TODO-644 / BUG-357：在第一个 await（句子音频裁剪，可让出事件循环数百 ms）之前，
     // 把所有「制卡上下文要用」的共享可变成员快照成局部 final。否则在 await 悬挂期间，
