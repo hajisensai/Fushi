@@ -5624,10 +5624,21 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
   }
 
-  /// 制卡用的分镜（归一化 [Rect]，阅读顺序）。条漫没有分镜格；模型不可用 / 检测失败
-  /// 时为空——调用方据此退回文本外扩（对话框）或整页（一键制卡）。
+  /// 制卡页 [pageIndex] 是否条漫长条（按 mokuro 给的原始像素尺寸，见
+  /// [isMangaStripPage]）。看的是页面形状而不是阅读模式：普通漫画用 webtoon 模式
+  /// 读时每页仍有分镜格，照样可以裁到分镜。没有 payload / 页越界 → false。
+  bool _isStripPage(int pageIndex) {
+    final MokuroPayload? payload = _payload;
+    if (payload == null || pageIndex < 0) return false;
+    if (pageIndex >= payload.images.length) return false;
+    final MokuroSize size = payload.images[pageIndex].size;
+    return isMangaStripPage(width: size.width, height: size.height);
+  }
+
+  /// 制卡用的分镜（归一化 [Rect]，阅读顺序）。条漫长条页没有分镜格；模型不可用 /
+  /// 检测失败时为空——调用方据此退回文本外扩（对话框）或整页（一键制卡）。
   Future<List<Rect>> _miningPanels(int pageIndex) async {
-    if (_mode.isWebtoon) return const <Rect>[];
+    if (_isStripPage(pageIndex)) return const <Rect>[];
     if (await _ensurePanelDetector() == null) return const <Rect>[];
     final PanelDetectionResult result = await _detectPanels(pageIndex);
     if (!result.usable) return const <Rect>[];
@@ -5723,7 +5734,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       overrides: overrides,
       miningPageIndex: miningPageIndex,
       cropToPanelByDefault: appModel.mangaMiningCropToPanel,
-      webtoon: _mode.isWebtoon,
+      stripPage: miningPageIndex != null && _isStripPage(miningPageIndex),
     );
     final String? planDiagnostic = imagePlan.diagnostic;
     if (planDiagnostic != null) {
