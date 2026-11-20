@@ -118,11 +118,22 @@ void main() {
     // 4 个是同一条有声流程，收成一个「有声漫画工作台」入口。
     expect(
       RegExp(
-        r'if \(isManga && modules\.isEnabled\(ModuleId\.manga\)\)\s*'
+        r'if \(isManga &&\s*modules\.isEnabled\(ModuleId\.manga\) &&\s*'
+        r'MangaAudioWorkbenchEntry\.isAvailable\)\s*'
         r'DialogWorkbenchAction\(\s*label: t\.manga_audio_workbench_title,',
       ).hasMatch(shelf),
       isTrue,
       reason: '漫画卡要有有声漫画工作台入口',
+    );
+    // 工作台页在 import 大环里，菜单只经环外入口打开；入口由 main() 注册。
+    expect(
+      shelf.contains('manga_audio_workbench_page.dart'),
+      isFalse,
+      reason: '菜单直接 import 工作台页会把它拉进 import 大环',
+    );
+    expect(
+      File('lib/main.dart').readAsStringSync(),
+      contains('registerMangaAudioWorkbenchEntry();'),
     );
     expect(
       RegExp(

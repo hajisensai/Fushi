@@ -1822,7 +1822,8 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
   late final TextEditingController _launchArgs = TextEditingController(
     text: widget.game.launchArgs,
   );
-  late bool _nsfw = widget.game.customData.nsfw ?? false;
+  // 显示有效值（覆盖层 ?? 刮削分级）：与卡菜单 NSFW 开关同一口径。
+  late bool _nsfw = widget.game.isNsfw;
 
   @override
   void dispose() {
@@ -1862,7 +1863,9 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
       summary: _trimmedOrNull(_summary.text),
       tags: parseGalgameTagInput(_tags.text),
       developer: _trimmedOrNull(_developer.text),
-      nsfw: _nsfw ? true : null,
+      // 没动过就原样保留覆盖层（含 null = 跟随刮削）；动过写显式值，关掉能压过
+      // 刮削源的成人向分级（与卡菜单 [GalgameRepository.setNsfw] 同一语义）。
+      nsfw: _nsfw == game.isNsfw ? game.customData.nsfw : _nsfw,
       userRating: parseGalgameRating(_rating.text),
       userReview: _trimmedOrNull(_review.text),
     );

@@ -61,7 +61,7 @@ import 'package:fushi/src/media/collections/collection_member_view.dart'
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
-import 'package:fushi/src/media/manga/audio/manga_audio_workbench_page.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_workbench_entry.dart';
 import 'package:fushi/src/media/manga/book_format_convert.dart';
 import 'package:fushi/src/media/manga/book_format_rebuild.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
@@ -4598,21 +4598,18 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       // 演出稿、导入成品、生成音频 4 个是同一条有声流程，现在都收进工作台的步骤
       // （识别台词 → 角色与配音 → 演出稿 → 试听与导出），菜单只留这一个入口，
       // 副行显示进度。受漫画模块门控（步骤内各自再判听书模块）。
-      if (isManga && modules.isEnabled(ModuleId.manga))
+      if (isManga &&
+          modules.isEnabled(ModuleId.manga) &&
+          MangaAudioWorkbenchEntry.isAvailable)
         DialogWorkbenchAction(
           label: t.manga_audio_workbench_title,
           icon: Icons.headphones_outlined,
           subtitle: t.manga_audio_workbench_not_started,
-          loadStatus: () => mangaAudioWorkbenchStatusLine(appModel, bookKey),
+          loadStatus: () =>
+              MangaAudioWorkbenchEntry.statusLine(context, bookKey),
           onPressed: () {
             Navigator.pop(context);
-            unawaited(
-              openMangaAudioWorkbench(
-                context,
-                appModel: appModel,
-                bookKey: bookKey,
-              ),
-            );
+            unawaited(MangaAudioWorkbenchEntry.open(context, bookKey: bookKey));
           },
         ),
       if (canAttachAudiobook)

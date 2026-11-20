@@ -4605,12 +4605,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       coverMaterial: ShelfCoverMaterial.glossyPoster,
       nsfw: MediaNsfwTarget.video(book.bookUid),
       title: title,
-      // 主按钮「继续播放」（#4b）：与点卡同一入口。
-      launchLabel: t.item_menu_continue_watching,
-      onLaunch: () {
-        Navigator.pop(dialogContext);
-        unawaited(_open(book));
-      },
+      // 不放「继续播放」主按钮：点卡本身就是播放，菜单里再放一个是重复入口
+      // （#3803 用户拍板）。主操作行 = 选择 / 标记已看 / 观看统计（单集没有
+      // 详情页与作品页，作品级入口在合集菜单上）。
       // 统一三库页卡菜单次序：重命名 → 封面/刮削 → 媒体特有 → 加入合集 →
       // 标签 → 删除（与书卡/游戏卡同一约定；「标签」原在首位，移到合集后）。
       // 最前面是「选择」：多选不再占页头按钮，长按 / 右键这张卡即从这里进入多选
@@ -4823,6 +4820,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           label: t.media_stats_action,
           icon: Icons.insights_outlined,
           group: DialogActionGroup.progress,
+          slot: ItemMenuSlot.primary,
           onPressed: () {
             Navigator.pop(dialogContext);
             unawaited(

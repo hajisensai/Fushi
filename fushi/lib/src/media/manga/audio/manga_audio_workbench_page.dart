@@ -28,6 +28,7 @@ import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_layout.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_text.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_import_flow.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_workbench_entry.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_script_page.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
@@ -66,14 +67,24 @@ Future<void> openMangaAudioWorkbench(
   ),
 );
 
-/// 这一卷有没有登记好的漫画有声成品（生成 / 导入 / 广播剧匹配登记的都算）。与
-/// [loadMangaAudio] 同一判据（`Audiobooks.alignmentFormat` = [kMangaAlignmentFormat]），
-/// 只查一行库，不读清单。
-Future<bool> mangaHasAudio(AppModel appModel, String bookKey) async {
-  final AudiobookRow? row = await appModel.database.getAudiobookByBookKey(
-    bookKey,
+/// 把工作台挂到环外入口 [MangaAudioWorkbenchEntry]（`main()` 启动时调一次）。
+///
+/// 书卡菜单与侧栏速览只依赖入口文件，不直接 import 本页——否则本页会被拉进 lib/ 的
+/// 大 import 环（`test/build/import_cycle_guard_test.dart`）。AppModel 从调用处的
+/// [ProviderScope] 取。
+void registerMangaAudioWorkbenchEntry() {
+  AppModel appOf(BuildContext context) =>
+      ProviderScope.containerOf(context, listen: false).read(appProvider);
+  MangaAudioWorkbenchEntry.register(
+    open: (BuildContext context, {required String bookKey}) =>
+        openMangaAudioWorkbench(
+          context,
+          appModel: appOf(context),
+          bookKey: bookKey,
+        ),
+    statusLine: (BuildContext context, String bookKey) =>
+        mangaAudioWorkbenchStatusLine(appOf(context), bookKey),
   );
-  return row != null && row.alignmentFormat == kMangaAlignmentFormat;
 }
 
 /// 书卡菜单「有声漫画工作台」的副行：本地化的一行进度；还没开始（没标注、没生成、
@@ -188,7 +199,7 @@ Future<MangaAudioWorkbenchSnapshot> loadMangaAudioWorkbenchSnapshot(
   final MangaRenderManifest? manifest = await MangaRenderManifest.load(
     mangaRenderManifestFile(appModel, bookKey),
   );
-  final bool hasAudio = await mangaHasAudio(appModel, bookKey);
+  final bool hasAudio = await mangaHasAudio(appModel.database, bookKey);
   return mangaAudioWorkbenchSnapshotOf(
     volume.payload,
     volume.script,

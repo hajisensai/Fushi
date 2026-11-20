@@ -33,6 +33,8 @@ import 'package:window_manager/window_manager.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_workbench_page.dart'
+    show registerMangaAudioWorkbenchEntry;
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
@@ -349,6 +351,8 @@ Future<void> _restoreWindowsWindowIcon(AppIconSelection selection) async {
 /// to act on once the app has finished initialising.
 void main([List<String> args = const <String>[]]) {
   StartupTimeline.begin();
+  // 有声漫画工作台挂到环外入口（书卡菜单 / 侧栏速览经入口打开，见入口文件注释）。
+  registerMangaAudioWorkbenchEntry();
   // 桌面端：从 args 里挑出外部打开的视频路径（Windows / Linux runner 传 argv）。
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     final String? videoArg = firstExternalVideoArg(args);

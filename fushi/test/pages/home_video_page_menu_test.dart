@@ -760,7 +760,7 @@ void main() {
     // 「编辑信息 ›」，选字幕收进工作台「字幕与刮削 ›」——副文字列出子项。
     expect(find.text(t.tag_label), findsOneWidget);
     expect(find.text(t.add_to_collection), findsOneWidget);
-    expect(find.text(t.item_menu_continue_watching), findsOneWidget);
+    expect(find.text(t.media_stats_action), findsOneWidget);
     expect(find.text(t.item_menu_video_workbench), findsOneWidget);
     expect(find.textContaining(t.video_rename), findsOneWidget);
     expect(find.textContaining(t.srt_import_pick_cover), findsOneWidget);

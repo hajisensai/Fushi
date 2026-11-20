@@ -90,14 +90,9 @@ import 'package:test/test.dart';
 /// `ExternalStorageAccess`；`AiSavedPromptButton` 的存取由调用方注入、不再读
 /// `appProvider`。最大环降到 622（剩下进环的是本就读 AppModel 的制作台页面），上限随之下调。
 ///
-/// 2026-11-20 有声漫画工作台（反馈 #4 / #6）实测 623：新进环的只有新页面
-/// `manga_audio_workbench_page` 本身——它是书卡菜单与侧栏速览「加声音」打开的页面，
-/// 签名按调用方约定收 AppModel，并直接打开本就在环里的演出稿 / 制作台页面；没有把任何
-/// 既有底层模块接进环（与 2026-11-15 新增设置分类同理），上限随之 +1。
-///
 /// 红了：新加的 import 把底层模块接到了 UI / AppModel 上。把用到的东西挪到
 /// 更底层的文件，或改用参数 / 回调注入，不要调大上限、不要把文件从目录里豁免。
-const int kMaxCycleFiles = 623;
+const int kMaxCycleFiles = 622;
 
 const String kAppModel = 'lib/src/models/app_model.dart';
 

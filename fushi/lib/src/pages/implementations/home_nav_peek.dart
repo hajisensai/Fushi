@@ -5,8 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart'
     show isLocalMangaVolume;
-import 'package:fushi/src/media/manga/audio/manga_audio_workbench_page.dart'
-    show mangaHasAudio, openMangaAudioWorkbench;
+import 'package:fushi/src/media/manga/audio/manga_audio_workbench_entry.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -229,7 +228,7 @@ Future<Map<String, _MangaPeekAudio>> _loadMangaPeekAudio(
   for (final String key in bookKeys) {
     final EpubBookRow? row = await appModel.database.getEpubBook(key);
     if (row == null || !isLocalMangaVolume(row)) continue;
-    out[key] = await mangaHasAudio(appModel, key)
+    out[key] = await mangaHasAudio(appModel.database, key)
         ? _MangaPeekAudio.ready
         : _MangaPeekAudio.none;
   }
@@ -297,16 +296,14 @@ Future<NavPeekFeed> _loadBooks({
       status: hasAudio ? t.manga_audio_workbench_has_audio : null,
       statusIcon: hasAudio ? FushiIcons.audio : null,
       statusTone: AdaptiveNavPeekStatusTone.active,
-      action: audioState == _MangaPeekAudio.none
+      action:
+          audioState == _MangaPeekAudio.none &&
+              MangaAudioWorkbenchEntry.isAvailable
           ? AdaptiveNavPeekAction(
               icon: FushiIcons.audio,
               label: t.manga_audio_workbench_add_sound,
               onPressed: () => unawaited(
-                openMangaAudioWorkbench(
-                  contextOf(),
-                  appModel: appModel,
-                  bookKey: bookKey,
-                ),
+                MangaAudioWorkbenchEntry.open(contextOf(), bookKey: bookKey),
               ),
             )
           : null,

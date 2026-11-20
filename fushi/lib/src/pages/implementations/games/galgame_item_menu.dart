@@ -9,6 +9,8 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_dialog.dart'
+    show loadMediaNsfwToggleState;
 import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:fushi/src/mining/galgame_cover_resolver.dart';
@@ -30,6 +32,7 @@ import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
         DialogActionGroup,
         DialogDangerAction,
         DialogQuickAction,
+        DialogToggleAction,
         DialogWorkbenchAction,
         ItemMenuSlot,
         MediaItemDialogFrame,
@@ -146,6 +149,17 @@ Future<void> showGalgameItemActionsMenu({
             entryKey: game.id,
             title: game.displayName,
           ),
+        // NSFW：与书 / 视频 / 合集同一行开关，写游戏自己的「成人向」覆盖。
+        galgameNsfwToggleAction(
+          repo: actions._repo,
+          db: actions._appModel.database,
+          gameId: game.id,
+          onPressed: () {
+            Navigator.pop(dialogContext);
+            unawaited(openGalgameEditTab(actions.context, game.id));
+          },
+          onChanged: actions.onChanged,
+        ),
         for (final GalgameItemMenuItem item in items)
           if (item.action == GalgameItemAction.hookWorkbench)
             DialogWorkbenchAction(
@@ -199,6 +213,65 @@ enum GalgameItemAction {
   fileLocation,
   remove,
 }
+
+/// 打开游戏详情页的编辑 tab（文本处理 / 制卡覆盖 / 「成人向」都在那里）。
+Future<void> openGalgameEditTab(BuildContext context, String gameId) =>
+    Navigator.of(context).push(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (BuildContext ctx) => GalgameDetailPage(
+          gameId: gameId,
+          initialTab: kGalgameDetailEditTab,
+        ),
+      ),
+    );
+
+/// 游戏卡菜单的 NSFW 开关行（#4b，与书 / 视频 / 合集同一行）。
+///
+/// 游戏的 NSFW 有两处来源：自己的「成人向」覆盖（`GalgameCustomData.nsfw`，压过
+/// 刮削源分级，编辑页同一字段）与通用 `media_nsfw_flags` 表（合集继承 / 互联同步
+/// 过来的标记）。开关显示二者之一为真；拨动写「成人向」覆盖（[GalgameRepository.setNsfw]），
+/// 关掉时顺带清掉表里自己那行，免得关了封面还模糊。合集继承来的拨不掉（locked，
+/// 点行走 [onPressed] 去编辑页）。
+DialogToggleAction galgameNsfwToggleAction({
+  required GalgameRepository repo,
+  required FushiDatabase db,
+  required String gameId,
+  required VoidCallback onPressed,
+  VoidCallback? onChanged,
+}) => DialogToggleAction(
+  label: t.media_nsfw_action,
+  icon: FushiIcons.visibilityOff,
+  onPressed: onPressed,
+  loadState: () async {
+    final ({bool value, bool locked}) table = await loadMediaNsfwToggleState(
+      db,
+      TagHostKind.game,
+      gameId,
+    );
+    final bool adult = repo.byId(gameId)?.isNsfw ?? false;
+    return (value: adult || table.value, locked: table.locked);
+  },
+  onChanged: (bool value) async {
+    try {
+      await repo.setNsfw(gameId, value);
+      if (!value && await db.isMediaNsfw(TagHostKind.game, gameId)) {
+        await db.setMediaNsfw(TagHostKind.game, gameId, false);
+      }
+    } on Object catch (error) {
+      FushiToast.show(
+        msg: t.media_nsfw_save_failed(reason: error.toString()),
+        severity: ToastSeverity.error,
+      );
+      rethrow;
+    }
+    FushiToast.show(
+      msg: value ? t.media_nsfw_marked_toast : t.media_nsfw_cleared_toast,
+      severity: ToastSeverity.success,
+    );
+    onChanged?.call();
+  },
+);
 
 /// 一项菜单：动作、文案、图标、分组、是否进危险区。
 @immutable
@@ -444,15 +517,7 @@ class GalgameItemActions {
         if (open != null) {
           open();
         } else {
-          await Navigator.of(context).push(
-            adaptivePageRoute<void>(
-              context: context,
-              builder: (BuildContext ctx) => GalgameDetailPage(
-                gameId: game.id,
-                initialTab: kGalgameDetailEditTab,
-              ),
-            ),
-          );
+          await openGalgameEditTab(context, game.id);
         }
       case GalgameItemAction.stats:
         await showMediaItemStatsDialog(
