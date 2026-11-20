@@ -615,15 +615,30 @@ fn today_reviews(c: &Connection, profile: &str, req: &Value) -> Result<Value, St
     .map_err(sql)
 }
 
+/// 「这条日志是在 Fushi 里做的复习」的 SQL 条件（`col` 是日志 ID 列）：从 Anki 导入的复习日志 ID 是
+/// `UUIDv5(卡, anki-revlog/<revlog id>)`（`gen4_ids/rules.rs` `imported_revlog`，Dart `SrsIds` 同规则），fushi-ext
+/// 跨 profile 导入的重映射同样是 v5（`remapped_log`）；本机作答写 UUIDv7（Dart `uuidV7`）。规范 UUID 在库里存 16 字节
+/// （`store/ids.rs` `pack`），版本号是第 7 个字节的高 4 位。
+pub(crate) fn native_log_sql(col: &str) -> String {
+    format!(
+        "NOT (typeof({col}) = 'blob' AND length({col}) = 16 AND hex(substr({col}, 7, 1)) LIKE '5%')"
+    )
+}
+
 /// `reviewed_decks {before}`：有效复习投影里在 `before` 之前评过分的卡**现在**所在的牌组（去重、升序）。Dart 拿它判
-/// 「每日上限单位」改缺省之前就在用的存量牌组（`srsLimitUnitLegacyDecks`）：那之前的复习按旧口径（卡片数）计过上限。
+/// 「每日上限单位」的存量牌组（`SrsDbStore.limitUnitLegacyDecks`，`before` = 本机第一次跑懂单位的版本的时刻）：那之前
+/// 的复习是旧版按卡片数计上限时做的。从 Anki 导入的复习（[native_log_sql]）没受过 Fushi 的上限，不算。
 #[cfg(test)]
 fn reviewed_decks(c: &Connection, profile: &str, req: &Value) -> Result<Vec<String>, String> {
     let before = need_int(req, "before")?;
     let mut stmt = c
-        .prepare_cached(
-            "SELECT DISTINCT srs_idt(k.deck_id) AS d FROM srs_stat_reviews s              JOIN srs_cards_cache k ON k.id = s.card_id AND k.profile_uid = s.profile_uid              WHERE s.profile_uid = srs_id(?1) AND s.rating IS NOT NULL AND s.occurred_at < ?2 ORDER BY d",
-        )
+        .prepare_cached(&format!(
+            "SELECT DISTINCT srs_idt(k.deck_id) AS d FROM srs_stat_reviews s \
+             JOIN srs_cards_cache k ON k.id = s.card_id AND k.profile_uid = s.profile_uid \
+             WHERE s.profile_uid = srs_id(?1) AND s.rating IS NOT NULL AND s.occurred_at < ?2 AND {} \
+             ORDER BY d",
+            native_log_sql("s.log_id")
+        ))
         .map_err(sql)?;
     let rows = stmt
         .query_map(rusqlite::params![profile, before], |r| {

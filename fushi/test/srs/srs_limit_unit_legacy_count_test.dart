@@ -1,5 +1,6 @@
 // 牌组页「每日上限单位改缺省」提醒的计数（srsLimitUnitLegacyCountProvider）按库的指纹复用上次结果：评分只落今天的日志，
-// 不必重扫；但它取决于改缺省之前的复习，一批只含旧复习日志的同步并进来时必须重算（内容指纹在这种合并下不变）。
+// 不必重扫；但它取决于本机升级（`limitUnitSince`）之前的复习，一批只含旧复习日志的同步并进来时必须重算（内容指纹在这种
+// 合并下不变）。
 //
 // 两份内存库模拟两台设备（同一 profile、不同设备号，所以是同一个集合），经同一个同步位置跑真的同步一轮合并
 // （新代生产路径：收段落进来的操作）。W3 合流时改成了 `.fushisrs` 导入（不是生产上「只同步进来旧日志」的那条路），
@@ -43,7 +44,7 @@ Future<int> _count(ProviderContainer container) async {
 
 void main() {
   test('只同步进来改缺省之前的复习日志：提醒计数重算，不沿用合并前的结果；本机评分不重扫', () async {
-    // 测试时钟（2026-10-01）在改缺省（kSrsLimitUnitDefaultChangedAtMs）之前。
+    // 两台设备都在此刻第一次开库：这就是各自的本机升级时刻（limitUnitSince）。
     final SrsTestClock clock = SrsTestClock();
     final (FushiDatabase dbA, SrsDbStore a) = await openSrsTestStore(
       deviceId: 'dev-a',
@@ -75,9 +76,11 @@ void main() {
     addTearDown(container.dispose);
     expect(await _count(container), 0);
 
-    // A 在改缺省之前评了分；这一批只多出这条复习日志。
-    clock.advance(const Duration(minutes: 1));
+    // A 的这次评分早于 B 升级（另一台设备上旧版做的复习，同步进来时在 B 的 limitUnitSince 之前）；这一批只多出这条
+    // 复习日志。之后时钟回到 B 升级之后。
+    clock.advance(const Duration(days: -30));
     await a.answer(card, 3);
+    clock.advance(const Duration(days: 30, minutes: 1));
     final String beforeMerge = b.contentFingerprint;
     await _ship(location, a, b);
     expect(

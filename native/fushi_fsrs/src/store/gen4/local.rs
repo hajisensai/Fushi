@@ -13,6 +13,10 @@
 //!   （排序的字符串数组，空集合时没有这个键），整行读改写时原样留着。**迁移同样不带**：换代时还没回收的名字留在旧库
 //!   里，那些文件这一轮不删（宁可多留；以后引用它们的笔记删除满保留期时会重新成为候选）。
 //! - 协议 3 的 `styleCursor`（存量样式去重）、`cacheRev`（缓存推导口径）在新代没有：是协议 3 存储表示的事。
+//! - 本机第一次跑懂「每日上限单位」的版本的时刻 `limitUnitSince`（[LIMIT_UNIT_SINCE_KEY]，毫秒）：`local_state_ensure`
+//!   带了且行里还没有时写下，之后不再改。Dart 拿它判存量牌组（`SrsDbStore.limitUnitLegacyDecks`）：在它之前做的复习是
+//!   旧版按卡片数计上限时做的。按设备记、不同步：每台设备各自从旧版升上来的时刻不同。迁移同样不带（迁移本身就是在新版
+//!   里发生的，迁移后第一次开库时写下，早于迁移的复习都算在它之前）。
 //!
 //! 不需要 profile 已经绑定集合（与协议 3 相同：这一行只按 profile uid 记）。
 //!
@@ -79,16 +83,42 @@ fn edit(
     Ok(row)
 }
 
-/// `local_state`：`{exists, revision, styleCursor, epoch, epochStored, anchor}`（同协议 3）。只读，不建行。
-pub fn read(t: &Truth<'_>, profile: &str) -> Result<Value, String> {
-    Ok(view(stored(t, profile)?.as_ref()))
+/// 本机状态行里「本机第一次跑懂每日上限单位的版本的时刻」的键（文件头）。
+pub const LIMIT_UNIT_SINCE_KEY: &str = "limitUnitSince";
+
+/// 协议 3 同形态的回包（`local_state::view`）再带上新代才有的 `limitUnitSince`（没写过时为 null）。
+fn view_of(row: Option<&Map<String, Value>>) -> Value {
+    let mut out = view(row);
+    out[LIMIT_UNIT_SINCE_KEY] = row
+        .and_then(|r| r.get(LIMIT_UNIT_SINCE_KEY))
+        .filter(|v| v.is_i64())
+        .cloned()
+        .unwrap_or(Value::Null);
+    out
 }
 
-/// `local_state_ensure`：没有行就建、没有纪元就补，回同 [read] 的形态（`exists` = 调用前有没有行）。
-pub fn ensure(t: &Truth<'_>, profile: &str) -> Result<Value, String> {
+/// `local_state`：`{exists, revision, styleCursor, epoch, epochStored, anchor, limitUnitSince}`（前六项同协议 3）。
+/// 只读，不建行。
+pub fn read(t: &Truth<'_>, profile: &str) -> Result<Value, String> {
+    Ok(view_of(stored(t, profile)?.as_ref()))
+}
+
+/// `local_state_ensure {limitUnitSince?}`：没有行就建、没有纪元就补；给了 `limitUnitSince` 且行里还没有（或不是整数）
+/// 就写下，已有的不改。回同 [read] 的形态（`exists` = 调用前有没有行）。
+pub fn ensure(
+    t: &Truth<'_>,
+    profile: &str,
+    limit_unit_since: Option<i64>,
+) -> Result<Value, String> {
     let existed = stored(t, profile)?.is_some();
-    let row = edit(t, profile, |_| {})?;
-    let mut out = view(Some(&row));
+    let row = edit(t, profile, |row| {
+        if let Some(at) = limit_unit_since {
+            if !row.get(LIMIT_UNIT_SINCE_KEY).is_some_and(Value::is_i64) {
+                row.insert(LIMIT_UNIT_SINCE_KEY.to_owned(), Value::from(at));
+            }
+        }
+    })?;
+    let mut out = view_of(Some(&row));
     out["exists"] = Value::from(existed);
     Ok(out)
 }

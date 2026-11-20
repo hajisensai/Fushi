@@ -874,7 +874,10 @@ fn run(
         })?,
         // 不针对集合（补充名按设备记），不要绑定。
         "device_hint" => c.write(|t| cmd::writes_local::device_hint(t, req))?,
-        "local_state_ensure" => c.write(|t| local::ensure(t, profile))?,
+        "local_state_ensure" => {
+            let since = req.get("limitUnitSince").and_then(Value::as_i64);
+            c.write(|t| local::ensure(t, profile, since))?
+        }
         "local_anchor" => {
             let anchor =
                 crate::store::local_state::anchor_of(req)?.ok_or("local_anchor: missing anchor")?;

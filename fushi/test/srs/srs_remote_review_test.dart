@@ -728,11 +728,11 @@ void main() {
     test(
       '存量单位牌组（limitUnitLegacyDecks）经远程库往返与主机一致；回应提醒（settleSrsLegacyLimitUnit）写在主机库上',
       () async {
-        // 测试时钟（2026-10-01）在每日上限单位改缺省之前：这时评的分算「存量牌组」。
-        final _Host legacy = await _openHost(<String>[
-          '犬',
-        ], clock: SrsTestClock());
+        final SrsTestClock clock = SrsTestClock();
+        final _Host legacy = await _openHost(<String>['犬'], clock: clock);
         addTearDown(legacy.db.close);
+        // 开库时刻 = 本机升级时刻（limitUnitSince）；时钟拨回 30 天，之后评的分模拟升级之前的复习，算「存量牌组」。
+        clock.advance(const Duration(days: -30));
         final SrsDbStore hostStore = legacy.store;
         // 模拟加单位设置之前就有的牌组（单位寄存器为空），里面有卡评过分；另一个同样没写单位但没评过分。
         final String old = await hostStore.createDeck('Old');
