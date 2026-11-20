@@ -8333,6 +8333,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       appModel.database,
       activityLimit: 0,
       includeCounters: true,
+      scope: StatFactsScope.media(
+        mediaKind: kActivityMediaBook,
+        mediaKey: widget.bookKey,
+        title: _bookRow?.title,
+      ),
     );
     return summarizeReaderBookStats(
       facts.dailyBooks,

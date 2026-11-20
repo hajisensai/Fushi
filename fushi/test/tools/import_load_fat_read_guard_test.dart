@@ -62,7 +62,8 @@ void main() {
             reason: '$rel 的书库快照应经 $delegate 取（瘦投影在那一侧）',
           );
         } else if (!noLibraryEnumeration.contains(rel)) {
-          expect(src.contains('getEpubBookMetas()'), isTrue);
+          // 带过滤参数的瘦投影同样合格（统计事实面按书读时只取同名判定那几行，m5）。
+          expect(src.contains('getEpubBookMetas('), isTrue);
         }
       });
     }

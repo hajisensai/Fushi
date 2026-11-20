@@ -180,11 +180,13 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       final db = appModelNoUpdate.database;
       // v92：观看事实只走统一事实面（legacy `video_watch_statistics` 日行 +
       // `study_segments` 段，由 loadStatFacts 归一），本页不再直接读表。
-      // activityLimit 0：统计页不需要活动流行。
+      // activityLimit 0：统计页不需要活动流行。只读观看域（m5：书 / 游戏的段与
+      // legacy 表本页一行不用）；计数面不收窄，「总览 = 各域之和」照旧成立。
       final StatFacts facts = await loadStatFacts(
         db,
         activityLimit: 0,
         includeCounters: true,
+        scope: const StatFactsScope.domain(kActivityMediaVideo),
       );
       final List<StatFact> stats = facts.dailyVideos.toList();
       _videoFacts = stats;
