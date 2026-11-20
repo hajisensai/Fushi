@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
@@ -8,6 +9,8 @@ import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi_engine/media/collections/collection_season_groups.dart'
+    show CollectionSeasonSection;
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
@@ -33,6 +36,7 @@ class _Cand extends VideoSubtitleCandidate {
   _Cand(
     String name, {
     required String source,
+    int? season,
     int? episode,
     String language = 'ja',
   }) : super(
@@ -41,6 +45,7 @@ class _Cand extends VideoSubtitleCandidate {
          fileName: name,
          language: language,
          providerPriority: 1,
+         season: season,
          episode: episode,
          collectionId: source,
          collectionLabel: source,
@@ -138,6 +143,7 @@ void main() {
     required _Search onSearch,
     _Download? onDownload,
     List<VideoBookRow>? members,
+    int? initialSeason,
     Future<http.Client> Function()? httpClientFactory,
     bool withProvider = true,
     ThemeData? theme,
@@ -163,6 +169,7 @@ void main() {
             saveDirectory: tempDir.path,
             onRemoteSubtitlePersist: (_, __) async {},
             httpClientFactory: httpClientFactory,
+            initialSeason: initialSeason,
           ),
         ),
       ),
@@ -1392,4 +1399,374 @@ void main() {
       }
     });
   }
+
+  group('多季合集按季隔离获取字幕', () {
+    Future<VideoBookRow> upsertBook({
+      required String bookUid,
+      required String title,
+      required String videoPath,
+    }) async {
+      await db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: Value<String>(bookUid),
+          title: Value<String>(title),
+          videoPath: Value<String>(videoPath),
+        ),
+      );
+      return (await repo.getByBookUid(bookUid))!;
+    }
+
+    test('纯函数分季与初始季挑选：含季目录、单季返回 null、preferredSeason 优先', () async {
+      final VideoBookRow folderS2 = await upsertBook(
+        bookUid: 'video/dir-s2e01',
+        title: 'Show - 01',
+        videoPath: 'C:/video/Show/Season 2/01.mkv',
+      );
+      final VideoBookRow s1 = await upsertBook(
+        bookUid: 'video/s01e01',
+        title: 'Show S01E01',
+        videoPath: 'C:/video/Show S01E01.mkv',
+      );
+      final VideoBookRow pv = await upsertBook(
+        bookUid: 'video/pv',
+        title: 'Show PV',
+        videoPath: 'C:/video/Show PV.mkv',
+      );
+
+      final List<CollectionSeasonSection<VideoBookRow>> sections =
+          subtitleCollectionSeasonSections(<VideoBookRow>[folderS2, s1, pv]);
+      expect(
+        sections.map((CollectionSeasonSection<VideoBookRow> s) => s.groupKey),
+        <String>['s1', 's2', 'extras'],
+      );
+      expect(initialSubtitleCollectionSeasonKey(sections), 's1');
+      expect(
+        initialSubtitleCollectionSeasonKey(sections, preferredSeason: 2),
+        's2',
+      );
+      expect(
+        initialSubtitleCollectionSeasonKey(
+          subtitleCollectionSeasonSections(<VideoBookRow>[s1]),
+        ),
+        isNull,
+      );
+    });
+
+    testWidgets('多季合集逐季搜索与下载：预绑 S1 的 anilistId 也不把第 1 季字幕套到第 2 季', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(600, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final VideoBookRow s1e1 = await upsertBook(
+        bookUid: 'video/s01e01',
+        title: 'Show S01E01',
+        videoPath: 'C:/video/Show S01E01.mkv',
+      );
+      final VideoBookRow s1e2 = await upsertBook(
+        bookUid: 'video/s01e02',
+        title: 'Show S01E02',
+        videoPath: 'C:/video/Show S01E02.mkv',
+      );
+      final VideoBookRow s2e1 = await upsertBook(
+        bookUid: 'video/s02e01',
+        title: 'Show S02E01',
+        videoPath: 'C:/video/Show S02E01.mkv',
+      );
+      final VideoBookRow s2e2 = await upsertBook(
+        bookUid: 'video/s02e02',
+        title: 'Show S02E02',
+        videoPath: 'C:/video/Show S02E02.mkv',
+      );
+      final MediaCollectionRow seeded = await seedCollection(anilistId: 21355);
+      await db.updateMediaCollectionSubtitleReleaseGroup(seeded.id, 'pinned');
+      final MediaCollectionRow collection = (await db.getMediaCollectionById(
+        seeded.id,
+      ))!;
+
+      int anilistHits = 0;
+      Future<http.Client> anilistFactory() async => MockClient((
+        http.Request request,
+      ) async {
+        if (request.url.host == 'graphql.anilist.co') {
+          anilistHits++;
+          return http.Response(
+            jsonEncode(<String, Object?>{
+              'data': <String, Object?>{
+                'Page': <String, Object?>{
+                  'media': <Object?>[
+                    <String, Object?>{
+                      'id': 21355,
+                      'title': <String, Object?>{'romaji': 'Show'},
+                    },
+                    <String, Object?>{
+                      'id': 108632,
+                      'title': <String, Object?>{'romaji': 'Show 2nd Season'},
+                    },
+                  ],
+                },
+              },
+            }),
+            200,
+          );
+        }
+        return http.Response('not found', 404);
+      });
+
+      final List<VideoSubtitleSearchRequest> searchRequests =
+          <VideoSubtitleSearchRequest>[];
+      final List<String> downloadedFiles = <String>[];
+      await tester.pumpWidget(
+        wrap(
+          collection: collection,
+          member: s1e1,
+          members: <VideoBookRow>[s1e1, s1e2, s2e1, s2e2],
+          httpClientFactory: anilistFactory,
+          onSearch: (VideoSubtitleSearchRequest request) async {
+            searchRequests.add(request);
+            if (request.media?.anilistId == 108632) {
+              return ProviderBatchResult<VideoSubtitleCandidate>.success(
+                <VideoSubtitleCandidate>[
+                  _Cand('Show S02E01.ja.srt', source: 's2', episode: 1),
+                  _Cand('Show S02E02.ja.srt', source: 's2', episode: 2),
+                ],
+              );
+            }
+            return ProviderBatchResult<VideoSubtitleCandidate>.success(
+              <VideoSubtitleCandidate>[
+                _Cand('Show - 01.ja.srt', source: 's1', episode: 1),
+                _Cand('Show - 02.ja.srt', source: 's1', episode: 2),
+              ],
+            );
+          },
+          onDownload: (VideoSubtitleCandidate candidate) async {
+            downloadedFiles.add(candidate.fileName);
+            return VideoSubtitleDownload(
+              bytes: Uint8List.fromList(
+                utf8.encode(
+                  '1\n00:00:01,000 --> 00:00:02,000\n${candidate.fileName}\n',
+                ),
+              ),
+              fileName: candidate.fileName,
+              language: candidate.language,
+            );
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey<String>('subtitle-collection-season-s1')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('subtitle-collection-season-s2')),
+        findsOneWidget,
+      );
+      expect(find.text('Show S01E01'), findsOneWidget);
+      expect(find.text('Show S01E02'), findsOneWidget);
+      expect(find.text('Show S02E01'), findsNothing);
+      expect(find.text('Show S02E02'), findsNothing);
+      expect(anilistHits, 1);
+      expect(searchRequests.last.media?.anilistId, 21355);
+      expect(searchRequests.last.effectiveSeason, 1);
+
+      Future<void> runBatchDownload(int expectedDone) async {
+        await tester.tap(downloadButton());
+        final String doneBanner = t.video_jimaku_batch_done(
+          done: expectedDone,
+          total: expectedDone,
+        );
+        // 落盘与解析 cue 是真文件 IO，在 runAsync 里让它们跑完（FakeAsync 下
+        // 单独 pumpAndSettle 等不到盘 IO 回话且旋转指示器会一直调度帧）。
+        for (
+          int i = 0;
+          i < 50 && find.text(doneBanner).evaluate().isEmpty;
+          i++
+        ) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 20)),
+          );
+          await tester.pump();
+        }
+        await tester.pumpAndSettle();
+        expect(find.text(doneBanner), findsOneWidget);
+      }
+
+      await runBatchDownload(2);
+
+      expect(downloadedFiles, <String>['Show - 01.ja.srt', 'Show - 02.ja.srt']);
+      expect(
+        (await repo.getByBookUid(s1e1.bookUid))!.subtitleSource,
+        isNotNull,
+      );
+      expect(
+        (await repo.getByBookUid(s1e2.bookUid))!.subtitleSource,
+        isNotNull,
+      );
+      expect((await repo.getByBookUid(s2e1.bookUid))!.subtitleSource, isNull);
+      expect((await repo.getByBookUid(s2e2.bookUid))!.subtitleSource, isNull);
+
+      downloadedFiles.clear();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('subtitle-collection-season-s2')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(anilistHits, 1, reason: '同一查询词切换季应复用已有 AniList 候选，不重复打网络');
+      expect(searchRequests.last.media?.anilistId, 108632);
+      expect(searchRequests.last.effectiveSeason, 2);
+      expect(find.text('Show S02E01'), findsOneWidget);
+      expect(find.text('Show S02E02'), findsOneWidget);
+      expect(find.text('Show S01E01'), findsNothing);
+
+      await runBatchDownload(2);
+
+      expect(downloadedFiles, <String>[
+        'Show S02E01.ja.srt',
+        'Show S02E02.ja.srt',
+      ]);
+      final String s2e1Sub = (await repo.getByBookUid(
+        s2e1.bookUid,
+      ))!.subtitleSource!;
+      expect(s2e1Sub, contains('Show S02E01.ja.srt'));
+      expect(File(s2e1Sub).readAsStringSync(), contains('Show S02E01.ja.srt'));
+
+      final MediaCollectionRow after = (await db.getMediaCollectionById(
+        collection.id,
+      ))!;
+      expect(after.anilistId, 21355);
+      expect(after.subtitleReleaseGroup, 'pinned');
+    });
+
+    testWidgets('initialSeason 传入当前季：打开即定位到第 2 季并按第 2 季检索', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(600, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final VideoBookRow s1e1 = await upsertBook(
+        bookUid: 'video/s01e01',
+        title: 'Show S01E01',
+        videoPath: 'C:/video/Show S01E01.mkv',
+      );
+      final VideoBookRow s2e1 = await upsertBook(
+        bookUid: 'video/s02e01',
+        title: 'Show S02E01',
+        videoPath: 'C:/video/Show S02E01.mkv',
+      );
+      final MediaCollectionRow collection = await seedCollection();
+      final List<VideoSubtitleSearchRequest> requests =
+          <VideoSubtitleSearchRequest>[];
+      await tester.pumpWidget(
+        wrap(
+          collection: collection,
+          member: s1e1,
+          members: <VideoBookRow>[s1e1, s2e1],
+          initialSeason: 2,
+          httpClientFactory: () async =>
+              MockClient((http.Request request) async {
+                if (request.url.host == 'graphql.anilist.co') {
+                  return http.Response(
+                    jsonEncode(<String, Object?>{
+                      'data': <String, Object?>{
+                        'Page': <String, Object?>{
+                          'media': <Object?>[
+                            <String, Object?>{
+                              'id': 21355,
+                              'title': <String, Object?>{'romaji': 'Show'},
+                            },
+                            <String, Object?>{
+                              'id': 108632,
+                              'title': <String, Object?>{
+                                'romaji': 'Show 2nd Season',
+                              },
+                            },
+                          ],
+                        },
+                      },
+                    }),
+                    200,
+                  );
+                }
+                return http.Response('not found', 404);
+              }),
+          onSearch: (VideoSubtitleSearchRequest request) async {
+            requests.add(request);
+            return ProviderBatchResult<VideoSubtitleCandidate>.success(
+              <VideoSubtitleCandidate>[
+                _Cand('Show S02E01.ja.srt', source: 's2', episode: 1),
+              ],
+            );
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(requests.single.media?.anilistId, 108632);
+      expect(requests.single.effectiveSeason, 2);
+      expect(find.text('Show S02E01'), findsOneWidget);
+      expect(find.text('Show S01E01'), findsNothing);
+    });
+
+    testWidgets('单季含 PV·特典合集：第 1 季仍直走合集 anilistId，特典独立成节', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(600, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final VideoBookRow s1e1 = await upsertBook(
+        bookUid: 'video/s01e01',
+        title: 'Show S01E01',
+        videoPath: 'C:/video/Show S01E01.mkv',
+      );
+      final VideoBookRow pv = await upsertBook(
+        bookUid: 'video/pv',
+        title: 'Show PV',
+        videoPath: 'C:/video/Show PV.mkv',
+      );
+      final MediaCollectionRow collection = await seedCollection(
+        anilistId: 21355,
+      );
+      int anilistHits = 0;
+      final List<VideoSubtitleSearchRequest> requests =
+          <VideoSubtitleSearchRequest>[];
+      await tester.pumpWidget(
+        wrap(
+          collection: collection,
+          member: s1e1,
+          members: <VideoBookRow>[s1e1, pv],
+          httpClientFactory: () async => MockClient((_) async {
+            anilistHits++;
+            return http.Response('unexpected anilist call', 500);
+          }),
+          onSearch: (VideoSubtitleSearchRequest request) async {
+            requests.add(request);
+            return ProviderBatchResult<VideoSubtitleCandidate>.success(
+              <VideoSubtitleCandidate>[
+                _Cand('Show S01E01.ja.srt', source: 's1', episode: 1),
+              ],
+            );
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(anilistHits, 0);
+      expect(requests.single.media?.anilistId, 21355);
+      expect(
+        find.byKey(const ValueKey<String>('subtitle-collection-season-s1')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('subtitle-collection-season-extras')),
+        findsOneWidget,
+      );
+      expect(find.text('Show S01E01'), findsOneWidget);
+      expect(find.text('Show PV'), findsNothing);
+    });
+  });
 }
