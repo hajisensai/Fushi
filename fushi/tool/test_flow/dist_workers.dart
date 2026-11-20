@@ -18,6 +18,7 @@ import 'dist_results.dart';
 import 'dist_snapshot.dart';
 import 'flutter_sdk_executables.dart';
 import 'heavy_budget.dart';
+import 'heavy_history.dart';
 import 'heavy_lease.dart';
 
 /// Options on every ssh connection (also used as `GIT_SSH_COMMAND` for the
@@ -799,6 +800,14 @@ class LocalDistWorker extends DistWorker {
 
   final String repoRoot;
   HeavyLease? _lease;
+
+  /// The run [_lease] is held for, its label and how long it has held the
+  /// slot: [finish] writes them as one history line (heavy_history.dart).
+  String _leaseLabel = '';
+  final Stopwatch _leaseHeld = Stopwatch();
+
+  /// The first non-zero exit of a batch while [_lease] was held (0: none).
+  int _leaseExit = 0;
   Process? _process;
 
   /// The integration test app is built (once per run, [_runItests]).
@@ -836,15 +845,40 @@ class LocalDistWorker extends DistWorker {
     }
     // One flutter test at a time in this checkout, like every other heavy
     // run on this machine; held for the whole dist run.
+    _leaseLabel = 'dist_test local worker $runId';
     _lease = await acquireHeavyLease(
       need: heavyNeedFor(HeavyKind.test),
-      label: 'dist_test local worker $runId',
+      label: _leaseLabel,
       worktreeRoot: repoRoot,
     );
+    _leaseExit = 0;
+    _leaseHeld
+      ..reset()
+      ..start();
   }
 
   @override
   Future<DistBatchRun> run(
+    DistBatch batch, {
+    required String package,
+    required List<String> flutterArgs,
+    required IOSink stderrLog,
+    required Duration timeout,
+    int? concurrencyCap,
+  }) async {
+    final DistBatchRun result = await _runBatch(
+      batch,
+      package: package,
+      flutterArgs: flutterArgs,
+      stderrLog: stderrLog,
+      timeout: timeout,
+      concurrencyCap: concurrencyCap,
+    );
+    if (_leaseExit == 0) _leaseExit = result.exitCode;
+    return result;
+  }
+
+  Future<DistBatchRun> _runBatch(
     DistBatch batch, {
     required String package,
     required List<String> flutterArgs,
@@ -1206,8 +1240,28 @@ class LocalDistWorker extends DistWorker {
 
   @override
   Future<void> finish(String runId) async {
-    _lease?.release();
+    final HeavyLease? lease = _lease;
+    if (lease == null) return;
     _lease = null;
+    lease.release();
+    _leaseHeld.stop();
+    // Held a slot (and booked the budget) for the whole dist run: one
+    // history line like a heavy.dart run, so `heavy.dart --stats / --replay`
+    // see it. None when no slot was taken (nested under a lease, CI).
+    if (lease.slot != null) {
+      appendHeavyHistory(
+        heavyStateDir(),
+        heavyHolderEntry(
+          via: kHeavyViaDistLocal,
+          need: heavyNeedFor(HeavyKind.test),
+          label: _leaseLabel,
+          cwd: repoRoot,
+          queued: lease.waited,
+          ran: _leaseHeld.elapsed,
+          exitCode: _leaseExit,
+        ),
+      );
+    }
   }
 
   @override
