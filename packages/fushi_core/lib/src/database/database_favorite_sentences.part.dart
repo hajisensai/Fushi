@@ -99,6 +99,8 @@ mixin _FushiDbFavoriteSentences on _$FushiDatabase, _FushiDbInfra {
   /// 的（同 id 同正文同时刻）跳过。JSON 坏了不动偏好（原样留着可人工救回），也不建
   /// 半截数据。用冻结的 v165 列清单写原生 SQL：以后给表加列时这一步照样能跑。
   Future<void> _migrateFavoriteSentencesPrefToTable() async {
+    // 迁移测试常用只建了几张表的残库，没有偏好表就没有可搬的。
+    if (!await _tableExists('preferences')) return;
     final List<QueryRow> prefRows = await customSelect(
       'SELECT value FROM preferences WHERE key = ?',
       variables: <Variable<Object>>[
