@@ -405,6 +405,10 @@ class VideoPlayerController extends ChangeNotifier
   int? _graphicSubtitleStreamIndex;
   String? _graphicSubtitleCodec;
 
+  /// 最近一次图形轨选中时的原盘标题代次（[_discTitleGeneration]）。重新选同一条轨
+  /// 要靠它确认「还是同一个标题上的同一条轨」，见 [selectEmbeddedGraphicTrack]。
+  int? _graphicSubtitleDiscGeneration;
+
   /// 图形字幕此刻在 libmpv 上是否可见（`sub-visibility`）。只有「隐藏」遮蔽态会把它
   /// 关掉（[setGraphicSubtitleVisible]）；选图形轨时恒打开。
   bool _graphicSubtitleVisible = true;
@@ -2008,10 +2012,21 @@ class VideoPlayerController extends ChangeNotifier
         .where(_isRealSubtitleTrack)
         .toList(growable: false);
     if (streamIndex < 0 || streamIndex >= real.length) return false;
-    // 图形字幕走 libmpv 画面渲染，清掉可点 overlay（无文本可查词）。上一条图形轨的
-    // 逐句时间表作废（两张表清空、世代 +1，在途抽取撤销、迟到结果丢弃）。
-    setCues(const <AudioCue>[]);
-    _resetGraphicTimingTables();
+    // 重新选**同一条**图形轨（同一次 load、同一个原盘标题、同一份取数来源）：逐句
+    // 时间表与在途的整轨抽取都还属于它，不作废——否则没开模糊档时控制器是抽取的唯一
+    // 等待者，撤销会把 ffmpeg 杀掉从头再抽（BUG-4907）。原生下发照常重做（幂等）。
+    final bool reselectingActiveTrack =
+        _graphicSubtitleActive &&
+        _graphicSubtitleStreamIndex == streamIndex &&
+        _graphicSubtitleCodec == real[streamIndex].codec &&
+        _graphicSubtitleDiscGeneration == discGeneration &&
+        timingInput == _graphicTimingInputOverride;
+    if (!reselectingActiveTrack) {
+      // 图形字幕走 libmpv 画面渲染，清掉可点 overlay（无文本可查词）。上一条图形轨的
+      // 逐句时间表作废（两张表清空、世代 +1，在途抽取撤销、迟到结果丢弃）。
+      setCues(const <AudioCue>[]);
+      _resetGraphicTimingTables();
+    }
     await player.setSubtitleTrack(real[streamIndex]);
     if (!_isCurrentLoad(player, loadToken)) return false; // 选轨后换片/销毁。
     if (_discTitleGeneration != discGeneration) return false;
@@ -2042,6 +2057,7 @@ class VideoPlayerController extends ChangeNotifier
     _graphicSubtitleVisible = true;
     _graphicSubtitleStreamIndex = streamIndex;
     _graphicSubtitleCodec = real[streamIndex].codec;
+    _graphicSubtitleDiscGeneration = discGeneration;
     await applySubtitleMpvPropertiesToPlayer(
       player,
       buildSubtitleDelayProperty(_delayMs),
@@ -2054,6 +2070,12 @@ class VideoPlayerController extends ChangeNotifier
     if (!_isCurrentLoad(player, loadToken)) return false;
     if (_discTitleGeneration != discGeneration) return false;
     _requestGraphicLiveSample(player);
+    // 同一条轨：抽取还在途，或已经抽到了，就沿用；只有两者都没有（上次没取到）才再要。
+    if (reselectingActiveTrack &&
+        (_graphicTimingCancel != null ||
+            _graphicExtractedTimingCues.isNotEmpty)) {
+      return true;
+    }
     _graphicTimingInputOverride = timingInput;
     _loadGraphicSubtitleTimings(
       streamIndex: streamIndex,

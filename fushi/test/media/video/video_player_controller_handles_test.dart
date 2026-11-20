@@ -2,9 +2,12 @@
 //
 // 宿主无 libmpv：用假 [PlatformPlayer] 撑起真 [Player]，钉住控制器侧契约——
 //  - 句柄释放（数据根迁移 / 删视频 / 文件名整理）后新 Player 的 `video-params` 仍能收到；
+//  - 重新选同一条图形轨不撤销在途的整轨抽取；
 import 'dart:async';
+import 'dart:ui' show Rect, Size;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/video/video_graphic_subtitle_regions.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:media_kit/media_kit.dart';
 
@@ -30,12 +33,69 @@ class _FakeMpv extends PlatformPlayer {
     return props[property] ?? '';
   }
 
+  /// 每次 `setSubtitleTrack` 选的轨 id（按先后）。
+  final List<String> selectedSubtitleIds = <String>[];
+
+  @override
+  Future<void> setSubtitleTrack(SubtitleTrack track) async {
+    selectedSubtitleIds.add(track.id);
+    state = state.copyWith(track: state.track.copyWith(subtitle: track));
+  }
+
+  void setTracks(Tracks tracks) {
+    state = state.copyWith(tracks: tracks);
+    // ignore: invalid_use_of_protected_member
+    tracksController.add(tracks);
+  }
+
   void emitVideoParams(VideoParams params) {
     state = state.copyWith(videoParams: params);
     // ignore: invalid_use_of_protected_member
     videoParamsController.add(params);
   }
 }
+
+/// 时间表来源替身：每次 load 排队，[complete] 按先后交结果。
+class _FakeRegionLoader implements GraphicSubtitleRegionLoader {
+  final List<Completer<GraphicSubtitleRegionTrack?>> _pending =
+      <Completer<GraphicSubtitleRegionTrack?>>[];
+
+  /// 每次 load 收到的取消信号（按先后）。
+  final List<Future<void>?> cancels = <Future<void>?>[];
+
+  @override
+  Future<GraphicSubtitleRegionTrack?> load(
+    GraphicSubtitleRegionRequest request, {
+    required Size fallbackCanvas,
+    Future<void>? cancel,
+  }) {
+    final Completer<GraphicSubtitleRegionTrack?> c =
+        Completer<GraphicSubtitleRegionTrack?>();
+    _pending.add(c);
+    cancels.add(cancel);
+    return c.future;
+  }
+
+  void complete(List<GraphicSubtitleRegion> regions) {
+    _pending
+        .removeAt(0)
+        .complete(
+          GraphicSubtitleRegionTrack(
+            canvas: const Size(1920, 1080),
+            regions: regions,
+          ),
+        );
+  }
+}
+
+const Tracks _pgsTracks = Tracks(
+  subtitle: <SubtitleTrack>[
+    SubtitleTrack('auto', null, null),
+    SubtitleTrack('no', null, null),
+    SubtitleTrack('1', 'jpn', 'jpn', codec: 'hdmv_pgs_subtitle'),
+    SubtitleTrack('2', 'eng', 'eng', codec: 'hdmv_pgs_subtitle'),
+  ],
+);
 
 const VideoParams _hdrParams = VideoParams(primaries: 'bt.2020', gamma: 'pq');
 
@@ -62,6 +122,74 @@ void main() {
       second.emitVideoParams(_hdrParams);
       await pumpEventQueue();
       expect(c.debugHdrSourceIsHdr, isTrue);
+    });
+  });
+
+  group('重新选同一条图形轨（c19 遗留，BUG-4907）', () {
+    late _FakeMpv mpv;
+    late _FakeRegionLoader loader;
+    late VideoPlayerController c;
+
+    setUp(() {
+      mpv = _FakeMpv()..setTracks(_pgsTracks);
+      loader = _FakeRegionLoader();
+      c = VideoPlayerController()
+        ..graphicSubtitleRegionLoader = loader
+        ..debugAttachPlayerForTesting(Player(platformPlayer: mpv))
+        ..debugSetVideoPathForTesting(r'C:\ep01.mkv');
+      addTearDown(c.dispose);
+    });
+
+    test('抽取在途时再选同一条：不撤销、不重抽，结果照常落地', () async {
+      expect(await c.selectEmbeddedGraphicTrack(0), isTrue);
+      expect(loader.cancels, hasLength(1));
+      bool cancelled = false;
+      unawaited(loader.cancels.single!.then((_) => cancelled = true));
+
+      expect(await c.selectEmbeddedGraphicTrack(0), isTrue);
+      await pumpEventQueue();
+      expect(cancelled, isFalse, reason: '同一条轨的在途抽取不能被杀掉重来');
+      expect(loader.cancels, hasLength(1), reason: '不再发第二次抽取');
+      expect(mpv.selectedSubtitleIds, <String>['1', '1']);
+
+      loader.complete(<GraphicSubtitleRegion>[
+        const GraphicSubtitleRegion(
+          startMs: 1000,
+          endMs: 2000,
+          rect: Rect.fromLTRB(0, 0, 1, 1),
+        ),
+      ]);
+      await pumpEventQueue();
+      expect(c.graphicSubtitleTimingCues.single.startMs, 1000);
+    });
+
+    test('换成另一条图形轨：旧抽取撤销并按新轨重抽', () async {
+      expect(await c.selectEmbeddedGraphicTrack(0), isTrue);
+      bool cancelled = false;
+      unawaited(loader.cancels.single!.then((_) => cancelled = true));
+
+      expect(await c.selectEmbeddedGraphicTrack(1), isTrue);
+      await pumpEventQueue();
+      expect(cancelled, isTrue);
+      expect(loader.cancels, hasLength(2));
+    });
+
+    test('已抽到时间表后再选同一条：表保留，不重抽', () async {
+      expect(await c.selectEmbeddedGraphicTrack(0), isTrue);
+      loader.complete(<GraphicSubtitleRegion>[
+        const GraphicSubtitleRegion(
+          startMs: 3000,
+          endMs: 4000,
+          rect: Rect.fromLTRB(0, 0, 1, 1),
+        ),
+      ]);
+      await pumpEventQueue();
+      expect(c.graphicSubtitleTimingCues.single.startMs, 3000);
+
+      expect(await c.selectEmbeddedGraphicTrack(0), isTrue);
+      await pumpEventQueue();
+      expect(loader.cancels, hasLength(1));
+      expect(c.graphicSubtitleTimingCues.single.startMs, 3000);
     });
   });
 }
