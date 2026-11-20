@@ -4055,3 +4055,48 @@ ID 不加盐以后实体是**内容寻址**的：两个集合拿同一份身份�
   不是顺手的事。代价只在「覆盖还原进空库」这一条路径上多备一次副本，结果正确。归 G9 身份 / 备份模块。
 - 别的集合只有修改、没有身份记录 / 别名 / 卡片行的实体（例如别的集合没配缓存时的卡）`THEIRS_SQL` 看不到（§37 原样）；按
   现有调用方（Dart 开库即配缓存）不会出现，未处理。
+
+### 复核跟改（2026-11-20，同分支第二轮）
+
+复核（major）指出「取舍」节第二条「Dart 侧不读 `foreign`，导入继续，这一条不落」是**静默丢导入**：同一个包 / 同一份 CSV 被同库
+两份 profile 导入、两边落到不同笔记类型（`.apkg` 不合并笔记模板时 `_mapNoteType` 改挂到 `_duplicateAnkiNum` 副本类型；文本导入
+的 guid 列来自文件、笔记类型由用户选）时，后导入一方的这些笔记被闸拒掉，导入报告却照记「已添加」。写入口分不清它与伪造的
+残余二（内容相同），所以闸不动，改成让拒绝**对用户可见、且不留副作用**：
+
+- 内核 `writes.rs` `apply_in`：回包 `foreign` 改报调用方输入下标（`Origin`，同 `edits` 第 7 列）。以前报筛掉初值项之后的位置，
+  `import_drafts` 筛掉过初值项时对不上草稿——Dart 要按它认笔记，这是前提。
+- Dart `SrsDbStore.importDrafts` 返回 `SrsImportDraftsResult`（`existed` + `foreignNotes`，`_foreignNoteRecords` 从回包 `foreign`
+  取笔记身份记录草稿的 ID，下标越界抛 `StateError`）；`.apkg` `_flush` 与文本导入 `flush` 落库后才计数：被拒的记
+  `conflictNotes`（新原因代码 `SrsImportIssueReason.otherProfileNoteType`，冻结；报告文案 `srs_import_report_conflicts_other_profile`，
+  `i18n_sync --add`，16 种语言先落英文），不加 `notesAdded` / `cardsAdded`，`.apkg` 为它记进报告的复习数 / 重置为新卡数退回
+  （`_PendingNewNote`）。
+- `.apkg` 落库时按新笔记的卡给日志带上笔记（`importDrafts(logNotes:)`）。新笔记的卡还没有缓存行，以前日志只带卡、目标是「哪里
+  都没有的卡」照常写——笔记被拒时它的复习悬空落进本集合，进统计与日历（有效复习投影对没有缓存行的卡也投影）。带上笔记后
+  跟着笔记一并被拒。合法新笔记的日志多带一个本来就对的笔记 ID，内核行为不变。
+- 选「报冲突」不选「改走新 guid」：`.apkg` 改 guid 后同一个包再导入时认不出这条（`_existingNotes` 按 guid 派生的 ID 查），每导入
+  一次多一份；报冲突是确定性的，与本机的「同 guid 异笔记类型」（`noteTypeChanged`）同一种处理，文案给出解法（用同一个笔记类型 /
+  打开「合并笔记模板」）。
+
+复核（minor）：同 guid + 同笔记类型、只改 `createdAt` 的记录能过闸，并入时可能顶掉 B 的 `createdAt`——接受，只影响 B 这条笔记的
+新卡次序，已写进 BUG-4843 文件。复核（nit）：`PendingSelf` 两遍副本维持上面「没做」的判断。
+
+测试：内核 `import_drafts_reports_foreign_at_the_callers_input_index`；engine `srs_apkg_import_test.dart`「同库另一份 profile 已有
+同 guid、另一个笔记类型的笔记」（不合并：`otherProfileNoteType` 一条、`notesAdded` / `cardsAdded` / `reviewLogsImported` 为 0、P2
+没有这条笔记也没有它的复习、P1 不变；合并笔记模板再导入：照常加上、复习落下），原「合并笔记模板」用例的包构造提成顶层
+`withExtraFieldApkg`、`openTestStore` 加可选 `storage`（同库多份 profile）；`srs_text_import_test.dart`「GUID 列的 guid 在同库另一份
+profile 里是另一个笔记类型的笔记」（同批别的行照常、同一个笔记类型照常导入）。
+
+验证（2026-11-20）：`cargo fmt --check` 0；`cargo test --profile quick --lib -j 4` 0，1451 passed / 0 failed / 39 ignored（基线 39）；
+engine `srs_apkg_import_test.dart` + `srs_text_import_test.dart` + `srs_profile_ownership_merge_test.dart` +
+`srs_import_drafts_initial_test.dart`（`heavy.dart --here`，本 worktree 编出的库）exit 0，74 passed / 1 skipped（既有）。变异实测各自
+单独改、跑完还原、工作区干净：内核 `foreign` 按筛掉后的位置报 → 新内核用例红（`[0]` ≠ `[1]`）；Dart 不取 `foreignNotes` → apkg 与
+文本两条新用例红（冲突列表为空、`notesAdded` 2 ≠ 1）；`.apkg` 不给日志带笔记 → apkg 用例红（P2 查到那条复习）；不退回复习数 →
+apkg 用例红（3 ≠ 2）。
+
+没做（本轮新增）：
+
+- 被拒笔记的**卡片级**修改（旗标、新卡位置、导入锚点以外的卡片修改）仍按「哪里都没有的 ID 照常写」落成悬空修改：目标是副本
+  类型派生的卡 ID，没有缓存行，不进任何视图 / 统计 / 排期，并入后也对不上任何卡。要根除得在导入前问内核「这条笔记会不会被拒」
+  （新增一条跨集合只读命令），或在内核按被拒笔记 × 模板推出卡 ID 一并拒——都是闸契约的扩大，留给 G9。
+- 同 guid 异笔记类型**分在两台设备**各自导入时闸看不到对方，日后并入仍按「规范 JSON 最小者胜」二选一笔记类型：ID 只由 guid
+  派生的固有代价（设计 2026-11-11 §2），并入只在用户确认时发生。归设计 / G9。

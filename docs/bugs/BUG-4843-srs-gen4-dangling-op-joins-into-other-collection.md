@@ -54,6 +54,27 @@
       里的并集语义。
     - 取舍：库里另一个集合已有同 guid、不同笔记类型的笔记时，本集合导入这条笔记不写（`foreign`，同 Anki「同 guid 异笔记类型」
       跳过）；`createdAt` 不同的照写。
+    - `createdAt` 不算结构的代价：拿到 B 的 guid 的一方写一条同 guid、同笔记类型、`createdAt` 更小的记录能过闸，并入时「规范
+      JSON 最小者胜」可能拿它顶掉 B 的 `createdAt`——只影响 B 这条笔记的新卡次序，不碰内容、复习与排程；ID 是 v5 哈希、反推不出
+      guid，要先知道 B 的 guid 才做得到。接受，不修。
+  - **第六波复核跟改**（2026-11-20，同分支）：上面「导入这条笔记不写」在 Dart 侧是**静默**的——Dart 不读回包 `foreign`，
+    `.apkg` 导入（`srs_apkg_import.dart` `_flush`）与文本导入（`srs_text_import.dart` `flush`）照记「已添加」，卡片实际不存在：
+    同一个包 / 同一份 CSV 被同库两份 profile 导入、两边落到不同笔记类型（`.apkg` 不合并笔记模板时 `_mapNoteType` 的副本类型、
+    文本导入用户选的类型）时，后导入的一方悄悄少了这些笔记。Anki 跳过时会报告，这里不报，违背「不能让用户出问题」。修法（根因
+    是回包契约没被消费，且下标本身对不上）：
+    - 内核 `writes.rs` `apply_in`：`foreign` 改报**调用方输入下标**（`Origin`，同 `edits` 第 7 列）——以前报筛掉初值项之后的
+      位置，`import_drafts` 筛掉过初值项时对不上草稿；
+    - Dart `SrsDbStore.importDrafts` 返回 `SrsImportDraftsResult`（`existed` + `foreignNotes`：回包 `foreign` 指向的笔记身份记录
+      草稿的笔记 ID）；两个导入路径落库后才计数，被拒的记 `conflictNotes`（新原因 `otherProfileNoteType`，导入报告文案
+      `srs_import_report_conflicts_other_profile`：另一份配置已有同一批笔记、属于另一个笔记类型，用同一个笔记类型 / 打开「合并笔记
+      模板」再导入），不加 `notesAdded` / `cardsAdded`，为它记进报告的复习数 / 重置为新卡数退回；
+    - `.apkg` 导入落库时按新笔记的卡带上日志的笔记（`importDrafts(logNotes:)`）：新笔记的卡还没有缓存行，以前日志只带卡、目标
+      是「哪里都没有的卡」，笔记被拒时它的复习照样悬空落进本集合、进统计与日历；带上笔记后跟着笔记一并不落。
+    - 没改：被拒笔记的卡片级修改（旗标、新卡位置等，目标是副本类型派生的卡 ID，哪里都没有）仍按「哪里都没有的 ID 照常写」落成
+      悬空修改——没有卡片缓存行，不进任何视图、统计与排期，并入后也对不上任何卡（副本类型的模板 ID 与别的集合的不同）。
+    - 这层保护只在两个集合同处一个库时有：分在两台设备各自导入时都能写进去，日后并入仍按「规范 JSON 最小者胜」二选一笔记类型
+      （同 guid 异笔记类型是 ID 只由 guid 派生的固有代价，设计 2026-11-11 §2）。两份 profile 只在用户确认并入时才合到一起，
+      这一条记在交接第六波节「没做」。
 - **[x] ② 已加自动化测试** — 内核 `native/fushi_fsrs/src/store/gen4/cmd/writes_owner_tests.rs`（经 C ABI：A 写 B 的字段 / 整列表
   标签 / 清除一条都不落、`foreign` 交回下标；两边都有的 ID 同批先改后建、单独再改、哪里都没有的 ID、B 写自己的都照常；单集合库
   照旧；`THEIRS_SQL` / `OURS_SQL` 执行计划走索引）；engine 端到端 `packages/fushi_engine/test/srs/srs_profile_ownership_merge_test.dart`
@@ -76,6 +97,11 @@
     合成一份且两边的写都在、牌组备选 ID、子牌组按父牌组全名、迁移库双盐别名类（`tests_class.rs`）、经 `.fushisrs` 带进来的存量
     同号实体重发自己的定义。变异实测 10 项（牌组 / 笔记类型不判、不比别的集合的定义、去掉重发例外、备选不往后试、不按父牌组
     全名、笔记类型 / 笔记 / 卡片自证恒真、内置牌组恒自证、笔记自证恒假）各自单独改都有用例转红，还原后工作区干净。
+  - 第六波复核跟改补测：内核 `import_drafts_reports_foreign_at_the_callers_input_index`（初值项筛掉后被拒项按原输入下标报；变异
+    「按筛掉后的位置报」→ `left: [0]` / `right: [1]` 转红）；engine `srs_apkg_import_test.dart`「同库另一份 profile 已有同 guid、
+    另一个笔记类型的笔记」（不合并导入：记 `otherProfileNoteType`、`notesAdded` / `cardsAdded` / `reviewLogsImported` 为 0、P2 没有
+    这条笔记也没有它的复习；合法场景：合并笔记模板再导入照常加上、复习落下）与 `srs_text_import_test.dart`「GUID 列的 guid 在同库
+    另一份 profile 里是另一个笔记类型的笔记」（记冲突、同批别的行照常；同一个笔记类型照常导入）。
 - **备注**：
   - 同库两集合互不并入时没有后果（A 的悬空操作只在 A 的集合里，B 看不到）；只有 A 的集合之后并进 B（本机或别的设备确认并入、
     `.fushisrs` 导入）才生效。
