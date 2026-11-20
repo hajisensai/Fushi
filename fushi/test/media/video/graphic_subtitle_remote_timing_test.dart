@@ -16,6 +16,7 @@ import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_track.d
 import 'package:fushi_engine/media/video/bitmap_subtitle/graphic_subtitle_track_extract.dart'
     show readGraphicSubtitleTrackInBackground;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:media_kit/media_kit.dart' show SubtitleTrack;
 
 /// 远端播放（互联 host / 媒体服务器 / 通用 http / 在线源）的图形字幕逐句时间表。
 ///
@@ -459,6 +460,50 @@ void main() {
       expect(payload.existsSync(), isTrue);
       c.dispose();
       expect(host.debugHolds, 0);
+      expect(payload.existsSync(), isFalse);
+    });
+
+    test('host 整轨：关字幕 / 切到文本字幕即放下持有，不留到换集 / 退页', () async {
+      final Directory tmp = Directory.systemTemp.createTempSync('gfx_share_');
+      addTearDown(() => tmp.deleteSync(recursive: true));
+      final File payload = File('${tmp.path}/dl.bin');
+      GraphicSubtitleTimingHostTrack hostTrack() =>
+          GraphicSubtitleTimingHostTrack(
+            streamIndex: 2,
+            codec: 'hdmv_pgs_subtitle',
+            download: () async {
+              payload.writeAsBytesSync(<int>[1, 2, 3]);
+              return (payload: payload, header: null);
+            },
+          );
+      Future<GraphicSubtitleRegionTrack?> noRegions(
+        GraphicSubtitleHostTrackFiles files, {
+        required Size fallbackCanvas,
+      }) async => null;
+
+      // 关字幕（`no()`，[selectSubtitleTrack]）。
+      final VideoPlayerController off = _graphicController()
+        ..graphicSubtitleTrackFileRegionLoad = noRegions;
+      addTearDown(off.dispose);
+      final GraphicSubtitleTimingHostTrack a = hostTrack();
+      off.debugLoadGraphicSubtitleTimingsWithInputForTesting(a);
+      await pumpEventQueue();
+      expect(a.debugHolds, 1);
+      expect(payload.existsSync(), isTrue);
+      await off.selectSubtitleTrack(SubtitleTrack.no());
+      expect(a.debugHolds, 0, reason: '离开图形渲染即放下控制器那份');
+      expect(payload.existsSync(), isFalse);
+
+      // 换成文本 cue（[setCues] 非空：切到可点 overlay 文本字幕）。
+      final VideoPlayerController text = _graphicController()
+        ..graphicSubtitleTrackFileRegionLoad = noRegions;
+      addTearDown(text.dispose);
+      final GraphicSubtitleTimingHostTrack b = hostTrack();
+      text.debugLoadGraphicSubtitleTimingsWithInputForTesting(b);
+      await pumpEventQueue();
+      expect(b.debugHolds, 1);
+      text.setCues(<AudioCue>[_timing(0, 1000)..text = 'こんにちは']);
+      expect(b.debugHolds, 0);
       expect(payload.existsSync(), isFalse);
     });
 

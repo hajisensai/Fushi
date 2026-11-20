@@ -296,6 +296,14 @@ extension VideoGraphicSubtitleTimingController on VideoPlayerController {
     if (cancel != null && !cancel.isCompleted) cancel.complete();
   }
 
+  /// 离开图形渲染（关字幕 / 切到文本轨 / 换成文本 cue）：在途整轨抽取撤销，选轨期间
+  /// 持有的 host 整轨一并放下（最后一个持有者放下即删下载件）——不留到换集 / 退页。
+  /// 正在跑的整轨 OCR 自己另持一份，不受影响。
+  void _leaveGraphicTimingSource() {
+    _cancelGraphicTimingFetch();
+    _setGraphicTimingInputOverride(null);
+  }
+
   void _recomputeGraphicTimingCues() {
     _graphicTimingCues = mergeGraphicSubtitleTimingTables(
       extracted: _graphicExtractedTimingCues,
