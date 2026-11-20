@@ -30,7 +30,9 @@
 ///   退回不校对。
 /// - `segmenter`：`auto` / `moss` / `window`（默认 auto）；`mossBackend`：`auto` /
 ///   `cuda` / `vulkan` / `cpu`（默认 auto）；`regenerateGlossary`（bool）；
-///   `language`：`ja` / `zh`（默认 `ja`，[VideoSubtitleLanguage.tag]）；
+///   `language`：`ja` / `zh`（默认 `ja`，[VideoSubtitleLanguage.tag]；capability 的
+///   `languages` 列出认的取值——老 host 不校验未知参数，收到 `language` 会静默按日语跑，
+///   提交方必须先看这个位）；
 ///   `suffix`（默认取 `language`）。
 /// - `frames`（bool，默认 false）：画面参考——AI 校对每批附上 host 上这个视频对应
 ///   时刻的画面（spec `2026-11-11-video-subtitle-ai-reference`）。只在 host 的校对
@@ -449,6 +451,13 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
       // 认 `audioTrack`（识别提交方播放器当前的音轨）。老 host 没有这个位，收到会静默按
       // 识别语言挑：提交方据此不带它、并告诉用户将按语言选轨。
       'acceptsAudioTrack': resolveVideoPath != null,
+      // 认 `language` 的取值（[VideoSubtitleLanguage.tag]）。没有这个位的 host 要么根本
+      // 不认 `language`（会静默按日语跑），要么认但没声明：提交方一律只给它日语任务、
+      // 不显示语言选择。
+      'languages': <String>[
+        for (final VideoSubtitleLanguage l in VideoSubtitleLanguage.values)
+          l.tag,
+      ],
       'acceptsCollectionId': database != null,
       'proofreadAvailable': proofreadProvider() != null,
       // 校对提供商开了图片输入：`frames=true` 才真的会带画面。

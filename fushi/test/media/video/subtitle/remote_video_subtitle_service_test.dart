@@ -8,6 +8,7 @@ import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_service.dar
 import 'package:fushi/src/sync/interconnect_job_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
     show VideoSubtitleStage;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
@@ -781,6 +782,202 @@ void main() {
     await job.done;
     expect(job.status, RemoteVideoSubtitleJobStatus.cancelled);
     expect(host.cancelled, 1);
+  });
+
+  group('生成语言（capability 的 languages）', () {
+    HostJobTarget languageHost() => hostTarget(
+      <String>['video_subtitle'],
+      capability: const <String, Object?>{
+        'video_subtitle': <String, Object?>{
+          'languages': <String>['ja', 'zh'],
+        },
+      },
+    );
+
+    test('老 host（没列 languages）选普通话：languageUnsupported，不提交任务', () async {
+      final FakeHostPort host = FakeHostPort(
+        target: hostTarget(<String>['video_subtitle']),
+        script: exportEpisode,
+      );
+      final RemoteVideoSubtitleJob job = service(host).start(
+        single,
+        const RemoteVideoSubtitleOptions(
+          language: VideoSubtitleLanguage.mandarin,
+        ),
+      );
+      await job.done;
+      expect(job.status, RemoteVideoSubtitleJobStatus.languageUnsupported);
+      expect(host.submitted, isEmpty);
+    });
+
+    test('老 host 上的日语任务照常提交，不带 language', () async {
+      final FakeHostPort host = FakeHostPort(
+        target: hostTarget(<String>['video_subtitle']),
+        script: exportEpisode,
+      );
+      final RemoteVideoSubtitleJob job = service(
+        host,
+      ).start(single, const RemoteVideoSubtitleOptions());
+      await job.done;
+      expect(job.status, RemoteVideoSubtitleJobStatus.succeeded);
+      expect(host.submitted.single.containsKey('language'), isFalse);
+    });
+
+    test('新 host：参数带 language；任务键按语言分', () async {
+      final FakeHostPort host = FakeHostPort(
+        target: languageHost(),
+        script: exportEpisode,
+      );
+      final RemoteVideoSubtitleService svc = service(host);
+      final RemoteVideoSubtitleJob ja = svc.start(
+        single,
+        const RemoteVideoSubtitleOptions(),
+      );
+      await ja.done;
+      final RemoteVideoSubtitleJob zh = svc.start(
+        single,
+        const RemoteVideoSubtitleOptions(
+          language: VideoSubtitleLanguage.mandarin,
+        ),
+      );
+      await zh.done;
+      expect(zh.status, RemoteVideoSubtitleJobStatus.succeeded);
+      expect(
+        host.submitted.map((Map<String, Object?> m) => m['language']),
+        <String>['ja', 'zh'],
+      );
+      expect(
+        svc.latestJobFor(single, language: VideoSubtitleLanguage.japanese),
+        same(ja),
+      );
+      expect(
+        svc.latestJobFor(single, language: VideoSubtitleLanguage.mandarin),
+        same(zh),
+      );
+      // 不指定语言：最近起的那个（面板据此恢复语言）。
+      expect(svc.latestJobFor(single), same(zh));
+    });
+
+    test('整季：已有字幕跳过按语言算', () {
+      final RemoteVideoSubtitleTarget season = RemoteVideoSubtitleTarget.season(
+        title: 'K-ON',
+        members: const <RemoteVideoSubtitleSeasonMember>[
+          RemoteVideoSubtitleSeasonMember(
+            episode: RemoteVideoSubtitleEpisode(videoId: 'v1', title: '01'),
+            subtitleFileName: 'K-ON 01.ja.srt',
+          ),
+          RemoteVideoSubtitleSeasonMember(
+            episode: RemoteVideoSubtitleEpisode(videoId: 'v2', title: '02'),
+            subtitleFileName: 'K-ON 02.ZH.srt',
+          ),
+          RemoteVideoSubtitleSeasonMember(
+            episode: RemoteVideoSubtitleEpisode(videoId: 'v3', title: '03'),
+          ),
+        ],
+      );
+      expect(season.wholeSeason, isTrue);
+      expect(
+        season.episodes.map((RemoteVideoSubtitleEpisode e) => e.videoId),
+        <String>['v2', 'v3'],
+      );
+      expect(season.skippedExisting, <String>['01']);
+      final RemoteVideoSubtitleTarget zh = season.forLanguage(
+        VideoSubtitleLanguage.mandarin,
+      );
+      expect(
+        zh.episodes.map((RemoteVideoSubtitleEpisode e) => e.videoId),
+        <String>['v1', 'v3'],
+      );
+      expect(zh.skippedExisting, <String>['02']);
+      expect(zh.key, isNot(season.key));
+      // 换回日语与原目标同一组成员。
+      expect(zh.forLanguage(VideoSubtitleLanguage.japanese).key, season.key);
+      // 单集目标不受语言影响。
+      expect(
+        identical(single.forLanguage(VideoSubtitleLanguage.mandarin), single),
+        isTrue,
+      );
+    });
+  });
+
+  group('BUG-4909 产物临时目录', () {
+    List<FileSystemEntity> workLeft() {
+      final Directory work = Directory(p.join(tmp.path, 'work'));
+      return work.existsSync() ? work.listSync() : const <FileSystemEntity>[];
+    }
+
+    /// host 先往产物目录写了半截文件，再按 [end] 结束。
+    Future<void> Function(String, Directory, StreamController<HostJobEvent>)
+    partialThen(void Function(StreamController<HostJobEvent> c) end) =>
+        (String id, Directory out, StreamController<HostJobEvent> c) async {
+          await out.create(recursive: true);
+          File(p.join(out.path, '$id.ja.srt.part')).writeAsStringSync('1');
+          c.add(const HostJobRunning(0.5, 'recognize: transcribing'));
+          end(c);
+        };
+
+    test('成功：取回后删掉', () async {
+      final FakeHostPort host = FakeHostPort(
+        target: hostTarget(<String>['video_subtitle']),
+        script: exportEpisode,
+      );
+      final RemoteVideoSubtitleJob job = service(
+        host,
+      ).start(single, const RemoteVideoSubtitleOptions());
+      await job.done;
+      expect(job.status, RemoteVideoSubtitleJobStatus.succeeded);
+      expect(workLeft(), isEmpty);
+    });
+
+    test('host 报错：任务收尾时目录已删', () async {
+      final FakeHostPort host = FakeHostPort(
+        target: hostTarget(<String>['video_subtitle']),
+        script: partialThen(
+          (StreamController<HostJobEvent> c) =>
+              c.addError(const HostJobRemoteException('remote_error', 'boom')),
+        ),
+      );
+      final RemoteVideoSubtitleJob job = service(
+        host,
+      ).start(single, const RemoteVideoSubtitleOptions());
+      await job.done;
+      expect(job.status, RemoteVideoSubtitleJobStatus.failed);
+      expect(workLeft(), isEmpty);
+    });
+
+    test('流没给结果就结束：任务收尾时目录已删', () async {
+      final FakeHostPort host = FakeHostPort(
+        target: hostTarget(<String>['video_subtitle']),
+        script: partialThen(
+          (StreamController<HostJobEvent> c) => unawaited(c.close()),
+        ),
+      );
+      final RemoteVideoSubtitleJob job = service(
+        host,
+      ).start(single, const RemoteVideoSubtitleOptions());
+      await job.done;
+      expect(job.status, RemoteVideoSubtitleJobStatus.failed);
+      expect(workLeft(), isEmpty);
+    });
+
+    test('取消：任务收尾时目录已删', () async {
+      final Completer<void> started = Completer<void>();
+      final FakeHostPort host = FakeHostPort(
+        target: hostTarget(<String>['video_subtitle']),
+        script: partialThen(
+          (StreamController<HostJobEvent> _) => started.complete(),
+        ),
+      );
+      final RemoteVideoSubtitleJob job = service(
+        host,
+      ).start(single, const RemoteVideoSubtitleOptions());
+      await started.future;
+      await Future<void>.delayed(Duration.zero);
+      job.cancel();
+      await job.done;
+      expect(job.status, RemoteVideoSubtitleJobStatus.cancelled);
+      expect(workLeft(), isEmpty);
+    });
   });
 
   test('进度文本解析与报错原文', () {

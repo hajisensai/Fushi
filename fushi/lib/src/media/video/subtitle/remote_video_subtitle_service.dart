@@ -29,6 +29,11 @@
 ///   成员逐集提交 `videoId` 任务。host 侧 `SubtitleWorkContextLoader.forBook` 会把合集
 ///   成员解析到同一个作品键（`collection:<host 合集 id>`），各集共用 host 上的同一张
 ///   专名表（第一集生成，后面的复用）。已有 `.ja.srt` 的成员跳过。
+/// - 语言：host 的 capability 在 `languages` 里列出认的 `language` 取值时，面板给语言
+///   选择、任务带 `language`；没列的 host 只发日语任务（老 host 不认 `language`，会静默
+///   按日语跑），选了别的语言就是 [RemoteVideoSubtitleJobStatus.languageUnsupported]，
+///   不发任务。任务键与整季的「已有字幕跳过」都按语言分
+///   （[RemoteVideoSubtitleTarget.forLanguage]）。
 /// - 产物：host 库视频会在 host 那边视频旁导出（`<视频名>.ja.srt`，视频有别的 ASS 时
 ///   另有套了它样式的 `.ja.ass`）；本机把取回的字幕（有 ASS 取 ASS）复制进
 ///   `video_subtitles/`，由视频页按「远端视频加外挂字幕」同一条路加载。
@@ -46,6 +51,7 @@ import 'package:fushi_engine/media/video/dvd/dvd_angle.dart'
     show parseDvdTitleAnglePath;
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
     show isDvdTitlePath;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_host_job_runner.dart'
     show kVideoSubtitleJobKind, kVideoSubtitleSummaryOutput;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
@@ -59,6 +65,7 @@ import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/interconnect_job_client.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 和 host 打交道的接缝（生产实现 [InterconnectVideoSubtitleHostPort]，测试注入 fake）。
 abstract interface class RemoteVideoSubtitleHostPort {
@@ -156,6 +163,22 @@ class RemoteVideoSubtitleEpisode {
       this.discTitle == discTitle;
 }
 
+/// 整季的一个远端成员与 host 报的它当前的字幕文件名（`RemoteVideoInfo.subtitleFileName`）。
+@immutable
+class RemoteVideoSubtitleSeasonMember {
+  const RemoteVideoSubtitleSeasonMember({
+    required this.episode,
+    this.subtitleFileName,
+  });
+
+  final RemoteVideoSubtitleEpisode episode;
+  final String? subtitleFileName;
+
+  /// 已有 [language] 的字幕（`<视频名>.<tag>.srt`），整季时跳过。
+  bool hasSubtitle(VideoSubtitleLanguage language) =>
+      subtitleFileName?.toLowerCase().endsWith('.${language.tag}.srt') ?? false;
+}
+
 /// 一次远端生成的目标。
 @immutable
 class RemoteVideoSubtitleTarget {
@@ -164,7 +187,42 @@ class RemoteVideoSubtitleTarget {
     required this.episodes,
     this.wholeSeason = false,
     this.skippedExisting = const <String>[],
-  });
+  }) : _seasonMembers = null,
+       language = VideoSubtitleLanguage.japanese;
+
+  /// 整季（远端合集）：[members] 里已有 [language] 字幕的成员跳过、只列标题，其余逐集
+  /// 提交。换语言用 [forLanguage]。
+  RemoteVideoSubtitleTarget.season({
+    required this.title,
+    required List<RemoteVideoSubtitleSeasonMember> members,
+    this.language = VideoSubtitleLanguage.japanese,
+  }) : wholeSeason = true,
+       _seasonMembers = members,
+       episodes = <RemoteVideoSubtitleEpisode>[
+         for (final RemoteVideoSubtitleSeasonMember m in members)
+           if (!m.hasSubtitle(language)) m.episode,
+       ],
+       skippedExisting = <String>[
+         for (final RemoteVideoSubtitleSeasonMember m in members)
+           if (m.hasSubtitle(language)) m.episode.title,
+       ];
+
+  /// 整季目标的全部成员；null = 不是按成员建的（单集 / 调用方自己算好了跳过）。
+  final List<RemoteVideoSubtitleSeasonMember>? _seasonMembers;
+
+  /// 「已有字幕跳过」按的语言（只对 [RemoteVideoSubtitleTarget.season] 有意义）。
+  final VideoSubtitleLanguage language;
+
+  /// 生成 [next] 语言时的目标：整季按 [next] 重算跳过哪些成员；其它目标原样。
+  RemoteVideoSubtitleTarget forLanguage(VideoSubtitleLanguage next) {
+    final List<RemoteVideoSubtitleSeasonMember>? members = _seasonMembers;
+    if (members == null || next == language) return this;
+    return RemoteVideoSubtitleTarget.season(
+      title: title,
+      members: members,
+      language: next,
+    );
+  }
 
   final String title;
   final List<RemoteVideoSubtitleEpisode> episodes;
@@ -231,9 +289,14 @@ class RemoteVideoSubtitleOptions {
     this.segmenter = VideoSubtitleSegmenterMode.auto,
     this.mossBackend = MossBackendPreference.auto,
     this.frames = false,
+    this.language = VideoSubtitleLanguage.japanese,
   });
 
   final bool proofread;
+
+  /// 识别 / 校对的语言。日语以外要 host 在 capability 的 `languages` 里列出
+  /// （[hostAcceptsVideoSubtitleLanguage]）。
+  final VideoSubtitleLanguage language;
 
   /// 画面参考：host 的 AI 校对每批附上它那边这个视频的画面（host 的提供商能收图时
   /// 才生效；老 host 不认这个参数，照常纯文字校对）。
@@ -258,6 +321,10 @@ enum RemoteVideoSubtitleJobStatus {
   /// host 支持 `video_subtitle`，但版本太老、不认按（盘, title）定位（capability 没有
   /// `acceptsDiscTitle`）：发过去会静默跑锚点那一行，所以不发。
   discTitleUnsupported,
+
+  /// 选了日语以外的语言，而 host 没在 capability 的 `languages` 里列出它（老 host
+  /// 不认 `language`，发过去会静默按日语跑），所以不发。
+  languageUnsupported,
 
   /// 连不上放视频的 host。
   unreachable,
@@ -290,7 +357,7 @@ class RemoteVideoSubtitleEpisodeProgress {
 
 /// 一次远端生成任务。
 class RemoteVideoSubtitleJob extends ChangeNotifier {
-  RemoteVideoSubtitleJob._(this.target, this.options)
+  RemoteVideoSubtitleJob._(this.target, this.options, this._order)
     : episodes = <RemoteVideoSubtitleEpisodeProgress>[
         for (final RemoteVideoSubtitleEpisode e in target.episodes)
           RemoteVideoSubtitleEpisodeProgress(e),
@@ -300,6 +367,9 @@ class RemoteVideoSubtitleJob extends ChangeNotifier {
   final RemoteVideoSubtitleOptions options;
   final List<RemoteVideoSubtitleEpisodeProgress> episodes;
   final Completer<void> _done = Completer<void>();
+
+  /// 本进程里第几个起的任务（比较「最近一次」）。
+  final int _order;
 
   RemoteVideoSubtitleJobStatus status = RemoteVideoSubtitleJobStatus.probing;
 
@@ -399,6 +469,26 @@ bool hostAcceptsVideoSubtitleAudioTrack(HostJobTarget target) {
   return entry is Map && entry['acceptsAudioTrack'] == true;
 }
 
+/// host 在 `video_subtitle` 能力的 `languages` 里列出的语言；没列（老 host）为空。
+List<VideoSubtitleLanguage> hostVideoSubtitleLanguages(HostJobTarget target) {
+  final Object? entry = target.capability[kVideoSubtitleJobKind];
+  final Object? raw = entry is Map ? entry['languages'] : null;
+  if (raw is! List) return const <VideoSubtitleLanguage>[];
+  return <VideoSubtitleLanguage>[
+    for (final VideoSubtitleLanguage l in VideoSubtitleLanguage.values)
+      if (raw.contains(l.tag)) l,
+  ];
+}
+
+/// host 能不能跑 [language] 的任务：日语一向能（不带 `language` 即日语）；其它语言要
+/// host 在 `languages` 里列出——老 host 不校验未知参数，收到 `language` 会静默按日语跑。
+bool hostAcceptsVideoSubtitleLanguage(
+  HostJobTarget target,
+  VideoSubtitleLanguage language,
+) =>
+    language == VideoSubtitleLanguage.japanese ||
+    hostVideoSubtitleLanguages(target).contains(language);
+
 /// host 报错的原话：HTTP 错误体是 `{"error": "..."}` 时取 `error`，否则原样。
 String remoteVideoSubtitleErrorText(Object error) {
   if (error is HostJobRemoteException) {
@@ -435,15 +525,36 @@ class RemoteVideoSubtitleService {
     p.join(Directory.systemTemp.path, 'fushi_remote_subtitle_jobs'),
   );
 
+  /// 按（目标, 语言）记的最近一次任务：同一集的日语与普通话是两件事，互不接回。
   final Map<String, RemoteVideoSubtitleJob> _latest =
       <String, RemoteVideoSubtitleJob>{};
   RemoteVideoSubtitleJob? _active;
   int _seq = 0;
+  int _jobOrder = 0;
 
   RemoteVideoSubtitleJob? get activeJob => _active;
 
-  RemoteVideoSubtitleJob? latestJobFor(RemoteVideoSubtitleTarget target) =>
-      _latest[target.key];
+  static String _jobKey(
+    RemoteVideoSubtitleTarget target,
+    VideoSubtitleLanguage language,
+  ) => '${target.forLanguage(language).key}|${language.tag}';
+
+  /// [target] 在 [language] 上最近一次任务；[language] 为 null 时取各语言里最近起的
+  /// 那一个（面板打开时据此接回并恢复语言）。
+  RemoteVideoSubtitleJob? latestJobFor(
+    RemoteVideoSubtitleTarget target, {
+    VideoSubtitleLanguage? language,
+  }) {
+    if (language != null) return _latest[_jobKey(target, language)];
+    RemoteVideoSubtitleJob? latest;
+    for (final VideoSubtitleLanguage l in VideoSubtitleLanguage.values) {
+      final RemoteVideoSubtitleJob? job = _latest[_jobKey(target, l)];
+      if (job != null && (latest == null || job._order > latest._order)) {
+        latest = job;
+      }
+    }
+    return latest;
+  }
 
   /// 只问 host 支不支持（面板打开时显示用）。
   Future<HostJobTarget?> probe() => host.probe();
@@ -460,9 +571,10 @@ class RemoteVideoSubtitleService {
     final RemoteVideoSubtitleJob job = RemoteVideoSubtitleJob._(
       target,
       options,
+      _jobOrder++,
     );
     _active = job;
-    _latest[target.key] = job;
+    _latest[_jobKey(target, options.language)] = job;
     unawaited(_run(job));
     return job;
   }
@@ -492,6 +604,10 @@ class RemoteVideoSubtitleService {
         job._finish(RemoteVideoSubtitleJobStatus.discTitleUnsupported);
         return;
       }
+      if (!hostAcceptsVideoSubtitleLanguage(target, job.options.language)) {
+        job._finish(RemoteVideoSubtitleJobStatus.languageUnsupported);
+        return;
+      }
       job.status = RemoteVideoSubtitleJobStatus.running;
       job._changed();
       final Directory root = await _workRoot();
@@ -505,17 +621,27 @@ class RemoteVideoSubtitleService {
             '${DateTime.now().microsecondsSinceEpoch}_${_seq++}',
           ),
         );
-        final Map<String, File>? outputs = await _runEpisode(
-          job,
-          target,
-          e,
-          out,
-        );
-        if (outputs == null) return; // 失败 / 取消已收尾
-        await _collect(target, e, outputs);
-        e.done = true;
-        job._changed();
-        if (out.existsSync()) await out.delete(recursive: true);
+        // 这一集的产物临时目录不论成功、失败、取消还是取回时抛错都要删，且删完才收尾
+        // 任务（BUG-4909）：字幕已复制进 `video_subtitles/`，留着只会在系统临时目录里
+        // 越积越多。
+        final _RemoteEpisodeOutcome outcome;
+        try {
+          outcome = await _runEpisode(job, target, e, out);
+          if (outcome is _RemoteEpisodeExported) {
+            await _collect(target, e, outcome.outputs);
+            e.done = true;
+            job._changed();
+          }
+        } finally {
+          await _deleteWorkDir(out);
+        }
+        switch (outcome) {
+          case _RemoteEpisodeExported():
+            break;
+          case _RemoteEpisodeEnded(:final RemoteVideoSubtitleJobStatus status):
+            job._finish(status);
+            return;
+        }
       }
       job._finish(
         job.cancelRequested
@@ -530,19 +656,35 @@ class RemoteVideoSubtitleService {
     }
   }
 
-  /// 跑一集；成功返回产物，失败 / 取消收尾任务并返回 null。
-  Future<Map<String, File>?> _runEpisode(
+  /// 删一集的产物临时目录。删不掉（文件被占用等）只进错误日志：任务的成败由 host
+  /// 与取回决定，不因清理失败改判；残留随系统临时目录清理。
+  Future<void> _deleteWorkDir(Directory out) async {
+    try {
+      if (await out.exists()) await out.delete(recursive: true);
+    } on FileSystemException catch (error, stack) {
+      ErrorLogService.instance.log(
+        'video.subtitleRemote.cleanup',
+        error,
+        stack,
+      );
+    }
+  }
+
+  /// 跑一集：成功给产物；失败（[RemoteVideoSubtitleJob.error] 已填）/ 取消给终态，
+  /// 由 [_run] 清掉临时目录后收尾。
+  Future<_RemoteEpisodeOutcome> _runEpisode(
     RemoteVideoSubtitleJob job,
     HostJobTarget target,
     RemoteVideoSubtitleEpisodeProgress e,
     Directory out,
   ) {
-    final Completer<Map<String, File>?> result =
-        Completer<Map<String, File>?>();
+    final Completer<_RemoteEpisodeOutcome> result =
+        Completer<_RemoteEpisodeOutcome>();
     job._onCancel = () {
       if (result.isCompleted) return;
-      job._finish(RemoteVideoSubtitleJobStatus.cancelled);
-      result.complete(null);
+      result.complete(
+        const _RemoteEpisodeEnded(RemoteVideoSubtitleJobStatus.cancelled),
+      );
     };
     final Stream<HostJobEvent> events = host.run(
       target: target,
@@ -557,6 +699,10 @@ class RemoteVideoSubtitleService {
         'segmenter': job.options.segmenter.name,
         'mossBackend': job.options.mossBackend.name,
         if (job.options.proofread && job.options.frames) 'frames': true,
+        // 只发给声明了 `languages` 的 host（上面已拦掉不认所选语言的）；老 host 不带，
+        // 按默认日语跑。
+        if (hostVideoSubtitleLanguages(target).isNotEmpty)
+          'language': job.options.language.tag,
       },
       outputDir: out,
     );
@@ -572,7 +718,9 @@ class RemoteVideoSubtitleService {
               ..stage = parseRemoteVideoSubtitleStage(message) ?? e.stage;
             job._changed();
           case HostJobDone(:final Map<String, File> outputs):
-            if (!result.isCompleted) result.complete(outputs);
+            if (!result.isCompleted) {
+              result.complete(_RemoteEpisodeExported(outputs));
+            }
         }
       },
       onError: (Object error) {
@@ -580,20 +728,22 @@ class RemoteVideoSubtitleService {
         final bool cancelled =
             job.cancelRequested ||
             (error is HostJobRemoteException && error.code == 'cancelled');
-        if (cancelled) {
-          job._finish(RemoteVideoSubtitleJobStatus.cancelled);
-        } else {
-          job.error = remoteVideoSubtitleErrorText(error);
-          job._finish(RemoteVideoSubtitleJobStatus.failed);
-        }
-        result.complete(null);
+        if (!cancelled) job.error = remoteVideoSubtitleErrorText(error);
+        result.complete(
+          _RemoteEpisodeEnded(
+            cancelled
+                ? RemoteVideoSubtitleJobStatus.cancelled
+                : RemoteVideoSubtitleJobStatus.failed,
+          ),
+        );
       },
       onDone: () {
         if (result.isCompleted) return;
         // 流没给结果就结束了（不该发生）：按失败收尾，不让任务挂住。
         job.error = t.video_subtitle_ai_remote_result_missing;
-        job._finish(RemoteVideoSubtitleJobStatus.failed);
-        result.complete(null);
+        result.complete(
+          const _RemoteEpisodeEnded(RemoteVideoSubtitleJobStatus.failed),
+        );
       },
       cancelOnError: true,
     );
@@ -648,6 +798,25 @@ class RemoteVideoSubtitleService {
       ..subtitle = dest
       ..status ??= 'exported';
   }
+}
+
+/// 一集远端任务的去向（[RemoteVideoSubtitleService._runEpisode]）。
+sealed class _RemoteEpisodeOutcome {
+  const _RemoteEpisodeOutcome();
+}
+
+/// host 跑完、给了产物。
+final class _RemoteEpisodeExported extends _RemoteEpisodeOutcome {
+  const _RemoteEpisodeExported(this.outputs);
+
+  final Map<String, File> outputs;
+}
+
+/// 这一集以 [status]（失败 / 取消）结束，整个任务随之结束。
+final class _RemoteEpisodeEnded extends _RemoteEpisodeOutcome {
+  const _RemoteEpisodeEnded(this.status);
+
+  final RemoteVideoSubtitleJobStatus status;
 }
 
 /// 进程内共用的实例：面板 / 合集页 / 视频页共用任务表（重开面板接回同一个任务）。

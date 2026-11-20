@@ -1,12 +1,14 @@
 /// 互联远端视频的「生成日语字幕」面板：管线在放视频的 host 上跑
 /// （[RemoteVideoSubtitleService]），本面板只选分段方式 / AI 校对、显示 host 的阶段
 /// 进度与报错、取消与继续。识别模型、MOSS、AI 提供商都是 host 自己的，所以没有本机
-/// 面板里的模型下载与费用预估。
+/// 面板里的模型下载与费用预估。host 在 capability 里列出多种语言（`languages`）时多一项
+/// 语言选择；老 host 只出日语，不显示。
 library;
 
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
     show VideoSubtitleEpisodeResult, VideoSubtitleEpisodeStatus;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
@@ -21,6 +23,7 @@ import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dar
         confirmVideoSubtitleAiFrames,
         resolveVideoSubtitleAiFrames,
         videoSubtitleEpisodeStatusLabel,
+        videoSubtitleLanguageLabel,
         videoSubtitleStageLabel;
 import 'package:fushi/src/sync/interconnect_job_client.dart' show HostJobTarget;
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
@@ -45,8 +48,9 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 远端一集的最终去向文案（host summary 的状态名；认不出就原样显示）。null = 还没结束。
 String? remoteVideoSubtitleEpisodeResultLabel(
-  RemoteVideoSubtitleEpisodeProgress e,
-) {
+  RemoteVideoSubtitleEpisodeProgress e, {
+  VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+}) {
   final String? status = e.status;
   if (!e.done || status == null) return null;
   final VideoSubtitleEpisodeStatus? known = VideoSubtitleEpisodeStatus.values
@@ -61,6 +65,7 @@ String? remoteVideoSubtitleEpisodeResultLabel(
       status: known,
       outputPath: e.subtitle?.path,
     ),
+    language: language,
   );
 }
 
@@ -144,6 +149,12 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
   RemoteVideoSubtitleJob? _job;
   String? _startError;
 
+  /// 要生成的语言。接回已有任务时取它的语言，否则日语（老 host 只认日语）。
+  VideoSubtitleLanguage _language = VideoSubtitleLanguage.japanese;
+
+  /// 按当前语言的目标：整季的「已有字幕跳过」随语言重算。
+  RemoteVideoSubtitleTarget get _target => widget.target.forLanguage(_language);
+
   @override
   void initState() {
     super.initState();
@@ -151,6 +162,7 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
       widget.target,
     );
     if (latest != null) {
+      _language = latest.options.language;
       _attach(latest);
       _saveBeside = true;
     }
@@ -163,9 +175,35 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
     super.dispose();
   }
 
-  void _attach(RemoteVideoSubtitleJob job) {
+  void _attach(RemoteVideoSubtitleJob? job) {
     _job?.removeListener(_onJob);
-    _job = job..addListener(_onJob);
+    _job = job?..addListener(_onJob);
+  }
+
+  /// host 声明认的语言（capability 的 `languages`）；空 = 老 host，只出日语。
+  List<VideoSubtitleLanguage> get _hostLanguages {
+    final HostJobTarget? host = _host;
+    return host == null
+        ? const <VideoSubtitleLanguage>[]
+        : hostVideoSubtitleLanguages(host);
+  }
+
+  /// 换语言：跟着换成这个语言上最近一次任务（没有就清掉任务卡）。
+  void _setLanguage(VideoSubtitleLanguage language) {
+    if (_running || language == _language) return;
+    setState(() {
+      _language = language;
+      _startError = null;
+      _attach(widget.service.latestJobFor(widget.target, language: language));
+    });
+  }
+
+  /// 选的语言 host 跑不了（接回的任务是别的语言、host 后来换成老版本）。
+  bool get _languageBlocked {
+    final HostJobTarget? host = _host;
+    return host != null &&
+        _hostSupportsKind &&
+        !hostAcceptsVideoSubtitleLanguage(host, _language);
   }
 
   void _onJob() {
@@ -195,7 +233,7 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
   bool get _episodeBlocked {
     final HostJobTarget? host = _host;
     return host != null &&
-        widget.target.needsEpisodeSupport &&
+        _target.needsEpisodeSupport &&
         !hostAcceptsVideoSubtitleEpisode(host);
   }
 
@@ -204,7 +242,7 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
   /// [RemoteVideoSubtitleTarget.discTitlesSupportedBy]）：与服务发任务前同一判据。
   bool get _discTitleBlocked {
     final HostJobTarget? host = _host;
-    return host != null && !widget.target.discTitlesSupportedBy(host);
+    return host != null && !_target.discTitlesSupportedBy(host);
   }
 
   /// 目标要 host 识别播放器当前音轨，而 host 没声明 `acceptsAudioTrack`：任务照发（不带
@@ -213,12 +251,15 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
     final HostJobTarget? host = _host;
     return host != null &&
         _hostSupportsKind &&
-        widget.target.wantsAudioTrack &&
+        _target.wantsAudioTrack &&
         !hostAcceptsVideoSubtitleAudioTrack(host);
   }
 
   bool get _supported =>
-      _hostSupportsKind && !_episodeBlocked && !_discTitleBlocked;
+      _hostSupportsKind &&
+      !_episodeBlocked &&
+      !_discTitleBlocked &&
+      !_languageBlocked;
 
   /// host 的校对提供商能不能收图（capability 的 `framesAvailable`）；null = 老 host
   /// 不认画面参考，面板不显示这个开关、也不带参数。
@@ -294,12 +335,13 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
     if (_frames && !widget.prefs.frames) setState(() => _frames = false);
     try {
       final RemoteVideoSubtitleJob job = widget.service.start(
-        widget.target,
+        _target,
         RemoteVideoSubtitleOptions(
           proofread: _proofread,
           segmenter: _segmenter,
           mossBackend: widget.prefs.mossBackend,
           frames: frames,
+          language: _language,
         ),
       );
       setState(() => _attach(job));
@@ -373,6 +415,13 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
         error: true,
       );
     }
+    if (_languageBlocked) {
+      return _hint(
+        t.video_subtitle_ai_remote_language_host_outdated,
+        key: const ValueKey<String>('remote-subtitle-language-unsupported'),
+        error: true,
+      );
+    }
     return _hint(
       t.video_subtitle_ai_remote_host(host: host.label),
       key: const ValueKey<String>('remote-subtitle-host'),
@@ -382,7 +431,9 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final RemoteVideoSubtitleTarget target = widget.target;
+    final RemoteVideoSubtitleTarget target = _target;
+    // 能选语言（host 列了不止一种）时标题不写死「日语」。
+    final bool languageChoice = _hostLanguages.length > 1;
     // 本机转录时 host 状态、分段方式都不相干（转录弹层自己选语言 / 引擎）。
     final List<(String, Widget)> parts = <(String, Widget)>[
       (
@@ -393,12 +444,18 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
           children: <Widget>[
             Text(target.title, maxLines: 2, overflow: TextOverflow.ellipsis),
             if (target.wholeSeason)
-              _hint(
-                t.video_subtitle_ai_season_summary(
-                  n: target.episodes.length + target.skippedExisting.length,
-                  skipped: target.skippedExisting.length,
-                ),
-              ),
+              _hint(switch (_language) {
+                VideoSubtitleLanguage.japanese =>
+                  t.video_subtitle_ai_season_summary(
+                    n: target.episodes.length + target.skippedExisting.length,
+                    skipped: target.skippedExisting.length,
+                  ),
+                VideoSubtitleLanguage.mandarin =>
+                  t.video_subtitle_ai_season_summary_zh(
+                    n: target.episodes.length + target.skippedExisting.length,
+                    skipped: target.skippedExisting.length,
+                  ),
+              }, key: const ValueKey<String>('remote-subtitle-season-summary')),
             if (_saveBeside) _hostLine(),
             if (_saveBeside && _audioTrackDowngraded)
               _hint(
@@ -412,6 +469,8 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
       ),
       if (widget.onTranscribeInApp != null)
         (t.video_subtitle_save_label, _saveControl()),
+      if (_saveBeside && languageChoice)
+        (t.video_subtitle_ai_language_label, _languageControl()),
       if (_saveBeside)
         (
           t.video_subtitle_ai_segmenter_label,
@@ -562,8 +621,10 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
     return FushiModalSheetFrame(
       // 合并入口（带本机转录）的单集面板与本机面板同名「生成字幕」。
       title: target.wholeSeason
-          ? t.video_subtitle_ai_season_title
-          : widget.onTranscribeInApp != null
+          ? languageChoice
+                ? t.video_subtitle_ai_generate_season_title
+                : t.video_subtitle_ai_season_title
+          : widget.onTranscribeInApp != null || languageChoice
           ? t.video_subtitle_ai_generate_title
           : t.video_subtitle_ai_title,
       leadingIcon: FushiIcons.subtitles,
@@ -573,6 +634,26 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
       footer: footer,
     );
   }
+
+  Widget _languageControl() => KeyedSubtree(
+    key: const ValueKey<String>('remote-subtitle-language'),
+    child: adaptiveSegmentedButton<VideoSubtitleLanguage>(
+      context: context,
+      segments: <ButtonSegment<VideoSubtitleLanguage>>[
+        for (final VideoSubtitleLanguage l in _hostLanguages)
+          ButtonSegment<VideoSubtitleLanguage>(
+            value: l,
+            label: Text(
+              videoSubtitleLanguageLabel(l),
+              key: ValueKey<String>('remote-subtitle-language-${l.tag}'),
+            ),
+          ),
+      ],
+      selected: <VideoSubtitleLanguage>{_language},
+      onSelectionChanged: (Set<VideoSubtitleLanguage> s) =>
+          _setLanguage(s.first),
+    ),
+  );
 
   Widget _saveControl() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -624,6 +705,8 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
       t.video_subtitle_ai_remote_episode_host_outdated,
     RemoteVideoSubtitleJobStatus.discTitleUnsupported =>
       t.video_subtitle_ai_remote_disc_title_host_outdated,
+    RemoteVideoSubtitleJobStatus.languageUnsupported =>
+      t.video_subtitle_ai_remote_language_host_outdated,
     RemoteVideoSubtitleJobStatus.unreachable =>
       t.video_subtitle_ai_remote_unreachable,
     RemoteVideoSubtitleJobStatus.failed =>
@@ -637,7 +720,10 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
     int index,
     int current,
   ) {
-    final String? result = remoteVideoSubtitleEpisodeResultLabel(e);
+    final String? result = remoteVideoSubtitleEpisodeResultLabel(
+      e,
+      language: _job?.options.language ?? _language,
+    );
     if (result != null) return result;
     if (e.stage != null) return videoSubtitleStageLabel(e.stage!);
     return index < current ? '' : t.video_subtitle_ai_episode_pending;
@@ -649,6 +735,7 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
         job.status == RemoteVideoSubtitleJobStatus.unsupported ||
         job.status == RemoteVideoSubtitleJobStatus.episodeUnsupported ||
         job.status == RemoteVideoSubtitleJobStatus.discTitleUnsupported ||
+        job.status == RemoteVideoSubtitleJobStatus.languageUnsupported ||
         job.status == RemoteVideoSubtitleJobStatus.unreachable;
     return FushiCard(
       key: const ValueKey<String>('remote-subtitle-job-card'),
@@ -677,7 +764,7 @@ class _RemoteVideoSubtitleSheetState extends State<RemoteVideoSubtitleSheet> {
                   : null,
             ),
           ],
-          if (widget.target.wholeSeason || !job.isRunning)
+          if (_target.wholeSeason || !job.isRunning)
             for (int i = 0; i < job.episodes.length; i++)
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,

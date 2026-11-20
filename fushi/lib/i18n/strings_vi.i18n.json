@@ -13234,6 +13234,7 @@
   "video_subtitle_ai_remote_episode_host_outdated": "The host's Fushi version is too old to generate subtitles for episode 2 onward of a host playlist. Update Fushi on the host first.",
   "video_subtitle_ai_remote_host": "Runs on ${host}",
   "video_subtitle_ai_remote_host_error": "Host error: ${reason}",
+  "video_subtitle_ai_remote_language_host_outdated": "The host's Fushi version can only generate Japanese subtitles. Update Fushi on the host to generate other languages.",
   "video_subtitle_ai_remote_probing": "Connecting to the host…",
   "video_subtitle_ai_remote_proofread_hint": "Uses the AI provider assigned to \"Subtitle proofreading\" on the host",
   "video_subtitle_ai_remote_result_missing": "The host finished without returning subtitles",

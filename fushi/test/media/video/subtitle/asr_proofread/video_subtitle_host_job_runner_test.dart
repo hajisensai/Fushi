@@ -894,6 +894,12 @@ void main() {
     expect(cap['acceptsDiscTitleDvdAngle'], isFalse);
     // 没接 resolveVideoPath：不认 videoId，也就不认 audioTrack。
     expect(cap['acceptsAudioTrack'], isFalse);
+    // `language` 认的取值：提交方据此决定显不显示语言选择、能不能发非日语任务。
+    expect(cap['languages'], containsAll(<String>['ja', 'zh']));
+    // 声明的每个取值都必须真被 `language` 参数接受（否则提交方会发出被拒的任务）。
+    for (final Object? tag in cap['languages']! as List<Object?>) {
+      expect(VideoSubtitleLanguage.fromTag(tag as String?), isNotNull);
+    }
     expect(
       (await runner(
         resolveVideo: (String _, {int episodeIndex = 0}) async => null,
