@@ -199,6 +199,7 @@ class FushiMastheadGeometry {
   const FushiMastheadGeometry({
     required this.compact,
     required this.width,
+    this.stacked = false,
     required this.leading,
     required this.title,
     required this.titleBaseline,
@@ -212,6 +213,13 @@ class FushiMastheadGeometry {
 
   final bool compact;
   final double width;
+
+  /// 主标题（页名 / 标题形态的一级切换）缩到下限仍放不进动作行，换到动作行
+  /// 下面单独一行（[FushiPageTitleMetrics.minTitleScale]）。
+  final bool stacked;
+
+  /// 主标题单独一行时，与上面动作行之间的空。
+  static const double stackGap = 4;
 
   /// 各段在 p = 0 时的版面尺寸（没有的段为 [Size.zero]）。
   final Size leading;
@@ -266,7 +274,7 @@ class FushiMastheadGeometry {
   /// 页名的下边距：展开态贴底（大字压住整行）；收起态逐步抬到与动作组垂直
   /// 居中，小字页名不再坠在一排图标的下沿。
   double titleLiftAt(double p) {
-    if (title.height <= 0) return 0;
+    if (title.height <= 0 || stacked) return 0;
     final double centered =
         actionLiftAt(p) +
         actionRowExtentAt(p) / 2 -
@@ -299,9 +307,20 @@ class FushiMastheadGeometry {
   double get actionsPrimaryGap => _metrics.actionsPrimaryGap;
   static const double leadingGap = 8;
 
-  double firstRowHeightAt(double p) {
+  /// 动作行（前导 / 动作组 / 主按钮）的高度。
+  double _actionRowHeightAt(double p) {
     double h = _metrics.minFirstRowExtentAt(p);
     if (leading.height > 0) h = math.max(h, leading.height + actionLiftAt(p));
+    if (actions.height > 0) h = math.max(h, actions.height + actionLiftAt(p));
+    if (primary.height > 0) {
+      h = math.max(h, primary.height * primaryScaleAt(p) + actionLiftAt(p));
+    }
+    return h;
+  }
+
+  /// 标题段（页名 / 徽标 / 一级切换）的高度。
+  double _titleRowHeightAt(double p) {
+    double h = 0;
     if (title.height > 0) {
       h = math.max(h, title.height * titleScaleAt(p) + titleLiftAt(p));
     }
@@ -314,12 +333,18 @@ class FushiMastheadGeometry {
         switcher.height * switchScaleAt(p) + switchBottomLiftAt(p),
       );
     }
-    if (actions.height > 0) h = math.max(h, actions.height + actionLiftAt(p));
-    if (primary.height > 0) {
-      h = math.max(h, primary.height * primaryScaleAt(p) + actionLiftAt(p));
-    }
     return h;
   }
+
+  /// 第一行（主标题单独一行时含动作行 + 标题行）的高度。
+  double firstRowHeightAt(double p) => stacked
+      ? _actionRowHeightAt(p) + stackGap + _titleRowHeightAt(p)
+      : math.max(_actionRowHeightAt(p), _titleRowHeightAt(p));
+
+  /// 前导 / 动作组 / 主按钮的底边（相对面板顶）。
+  double actionBottomAt(double p) => stacked
+      ? topPadAt(p) + _actionRowHeightAt(p) - actionLiftAt(p)
+      : topPadAt(p) + firstRowHeightAt(p) - actionLiftAt(p);
 
   /// 第一、二行之间：设计稿 14 → 8，减去二级页签自带的上命中带。
   double rowGapAt(double p) =>
@@ -351,6 +376,7 @@ class FushiMastheadGeometry {
   bool operator ==(Object other) =>
       other is FushiMastheadGeometry &&
       other.compact == compact &&
+      other.stacked == stacked &&
       other.width == width &&
       other.leading == leading &&
       other.title == title &&
@@ -365,6 +391,7 @@ class FushiMastheadGeometry {
   @override
   int get hashCode => Object.hash(
     compact,
+    stacked,
     width,
     leading,
     title,
@@ -557,26 +584,36 @@ class FushiMastheadTitle extends StatelessWidget {
     // container：页名自己成一个语义节点。不成节点的话「书架」这个 label 会一路
     // 向上并进外壳的手势 / 焦点节点（与侧栏、页签争成兄弟合并组），换页或
     // 重排时框架复用这些共享节点就会断言 `!child.attached`。
+    final TextStyle base = fushiMastheadTitleStyle(context, compact: compact);
     return Semantics(
       container: true,
       header: true,
-      child: AnimatedSwitcher(
-        duration: motion.spatialSlow.duration,
-        reverseDuration: motion.effectsFast.duration,
-        layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
-          alignment: AlignmentDirectional.bottomStart,
-          children: <Widget>[...previous, if (current != null) current],
-        ),
-        transitionBuilder: (Widget child, Animation<double> animation) =>
-            _mastheadEnter(context, animation, child),
-        child: Text(
-          title,
-          key: ValueKey<String>('fushi-masthead-title-$title'),
-          maxLines: 1,
-          softWrap: false,
-          overflow: TextOverflow.ellipsis,
-          style: fushiMastheadTitleStyle(context, compact: compact),
-        ),
+      // 放不下时先缩字号（≤ 15%）再按词换行，不截断、不出省略号
+      // （[FushiPageTitleMetrics.fitTitle]）。
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final FushiTitleFit fit = FushiPageTitleMetrics.fitTitle(
+            natural: fushiMastheadTextWidth(context, title, base),
+            room: constraints.maxWidth,
+          );
+          return AnimatedSwitcher(
+            duration: motion.spatialSlow.duration,
+            reverseDuration: motion.effectsFast.duration,
+            layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+              alignment: AlignmentDirectional.bottomStart,
+              children: <Widget>[...previous, if (current != null) current],
+            ),
+            transitionBuilder: (Widget child, Animation<double> animation) =>
+                _mastheadEnter(context, animation, child),
+            child: Text(
+              title,
+              key: ValueKey<String>('fushi-masthead-title-$title'),
+              maxLines: fit.wrap ? null : 1,
+              softWrap: fit.wrap,
+              style: fit.apply(base),
+            ),
+          );
+        },
       ),
     );
   }
@@ -641,42 +678,90 @@ class FushiMastheadSwitch<T extends Object> extends StatelessWidget {
       }
     }
     FushiHeaderCrampScope.maybeOf(context)?.reportTitleNaturalWidth(natural);
-    // 窄窗下本段会被压到比自然宽窄（见 `_RenderMastheadLayout.performLayout`）：
-    // 整段等比缩小到放得下，不横滑——两三个字的切换还要拖着看另一半很反直觉，
-    // 也不能任它画到右边的动作按钮底下。放得下时原样大小。
+    Widget item(int i, double scale, {bool wrap = false}) {
+      final bool isSelected = tabs[i].value == selected;
+      final TextStyle itemStyle = isSelected ? selectedStyle : idleStyle;
+      return _MastheadSwitchItem(
+        label: tabs[i].label,
+        labelKey: tabs[i].labelKey,
+        selected: isSelected,
+        wrap: wrap,
+        fitScale: scale,
+        style: itemStyle,
+        onTap: () {
+          if (!selectedIsCurrent || tabs[i].value != selected) {
+            onChanged(tabs[i].value);
+          }
+        },
+      );
+    }
+
+    Widget separator(double scale) => ExcludeSemantics(
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: separatorPad * scale),
+        child: Text(
+          '/',
+          style: separatorStyle.copyWith(
+            fontSize: (separatorStyle.fontSize ?? 14) * scale,
+          ),
+        ),
+      ),
+    );
+
+    Widget row(double scale) => Row(
+      mainAxisSize: MainAxisSize.min,
+      // 标题形态各项字号不同：按字面基线对齐（同字号时与底对齐等价）。
+      crossAxisAlignment: headline
+          ? CrossAxisAlignment.baseline
+          : CrossAxisAlignment.end,
+      textBaseline: TextBaseline.alphabetic,
+      children: <Widget>[
+        for (int i = 0; i < tabs.length; i++) ...<Widget>[
+          if (i > 0) separator(scale),
+          item(i, scale),
+        ],
+      ],
+    );
+
+    if (headline) {
+      // 标题形态：选中项就是页名，与 [FushiMastheadTitle] 同一套让位
+      // （[FushiPageTitleMetrics.fitTitle]）：先整段缩字号（≤ 15%），还放不下
+      // 就把其余项折到下一行，不截断、不出省略号、不横滑。
+      return LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final FushiTitleFit fit = FushiPageTitleMetrics.fitTitle(
+            natural: natural,
+            room: constraints.maxWidth,
+          );
+          if (!fit.wrap) return row(fit.scale);
+          return Wrap(
+            crossAxisAlignment: WrapCrossAlignment.end,
+            children: <Widget>[
+              for (int i = 0; i < tabs.length; i++)
+                if (i == 0)
+                  item(i, fit.scale, wrap: true)
+                else
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: <Widget>[
+                      separator(fit.scale),
+                      // 单项比整行还宽时按词换行，不越出。
+                      Flexible(child: item(i, fit.scale, wrap: true)),
+                    ],
+                  ),
+            ],
+          );
+        },
+      );
+    }
+    // 其余形态（宽窗副段）：整段等比缩小到放得下，不横滑——两三个字的切换
+    // 还要拖着看另一半很反直觉，也不能任它画到右边的动作按钮底下。
     return FittedBox(
       fit: BoxFit.scaleDown,
       alignment: AlignmentDirectional.bottomStart,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        // 标题形态各项字号不同：按字面基线对齐（同字号时与底对齐等价）。
-        crossAxisAlignment: headline
-            ? CrossAxisAlignment.baseline
-            : CrossAxisAlignment.end,
-        textBaseline: TextBaseline.alphabetic,
-        children: <Widget>[
-          for (int i = 0; i < tabs.length; i++) ...<Widget>[
-            if (i > 0)
-              ExcludeSemantics(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: separatorPad),
-                  child: Text('/', style: separatorStyle),
-                ),
-              ),
-            _MastheadSwitchItem(
-              label: tabs[i].label,
-              labelKey: tabs[i].labelKey,
-              selected: tabs[i].value == selected,
-              style: tabs[i].value == selected ? selectedStyle : idleStyle,
-              onTap: () {
-                if (!selectedIsCurrent || tabs[i].value != selected) {
-                  onChanged(tabs[i].value);
-                }
-              },
-            ),
-          ],
-        ],
-      ),
+      child: row(1),
     );
   }
 }
@@ -688,6 +773,8 @@ class _MastheadSwitchItem extends StatefulWidget {
     required this.selected,
     required this.style,
     required this.onTap,
+    this.wrap = false,
+    this.fitScale = 1,
   });
 
   final String label;
@@ -695,6 +782,14 @@ class _MastheadSwitchItem extends StatefulWidget {
   final bool selected;
   final TextStyle style;
   final VoidCallback onTap;
+
+  /// 单项比整行还宽（标题形态折行后的选中项）时按词换行，不截断。
+  final bool wrap;
+
+  /// 放不下时的字号缩放（[FushiTitleFit.scale]）。走 textScaler、不改
+  /// [style]：样式的补间只用于选中 / 未选切换，缩放要当帧生效，否则补间中途
+  /// 的字号比算好的宽更大，会越出。
+  final double fitScale;
 
   @override
   State<_MastheadSwitchItem> createState() => _MastheadSwitchItemState();
@@ -738,8 +833,14 @@ class _MastheadSwitchItemState extends State<_MastheadSwitchItem> {
               child: Text(
                 widget.label,
                 key: widget.labelKey,
-                maxLines: 1,
-                softWrap: false,
+                maxLines: widget.wrap ? null : 1,
+                softWrap: widget.wrap,
+                textScaler: widget.fitScale == 1
+                    ? null
+                    : _FitTextScaler(
+                        MediaQuery.textScalerOf(context),
+                        widget.fitScale,
+                      ),
               ),
             ),
           ),
@@ -1137,4 +1238,27 @@ class FushiMastheadPanel extends StatelessWidget {
       },
     );
   }
+}
+
+/// 在系统字号缩放之上再乘一个放不下时的缩放（[FushiTitleFit.scale]）。
+@immutable
+class _FitTextScaler extends TextScaler {
+  const _FitTextScaler(this.base, this.factor);
+
+  final TextScaler base;
+  final double factor;
+
+  @override
+  double scale(double fontSize) => base.scale(fontSize) * factor;
+
+  @override
+  // ignore: deprecated_member_use
+  double get textScaleFactor => base.textScaleFactor * factor;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _FitTextScaler && other.base == base && other.factor == factor;
+
+  @override
+  int get hashCode => Object.hash(base, factor);
 }

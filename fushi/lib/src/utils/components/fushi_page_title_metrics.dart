@@ -123,6 +123,33 @@ class FushiPageTitleMetrics {
   /// （[headlineIdleFontSize]）、变淡。主标题不跟着副段缩。
   static const double headlineIdleFontSize = 22;
 
+  /// 页名（或标题形态的一级切换）放不下时最多缩到规格字号的这个比例。
+  ///
+  /// 放不下时的让位顺序（所有模块页同一份，见 `_RenderMastheadLayout`）：
+  /// 1. 右侧动作按优先级逐个收进「⋯」（`adaptiveOverflow`），右端主按钮不动；
+  /// 2. 页名在原行等比缩字号，最多缩到 [minTitleScale]；
+  /// 3. 还放不下：页名换到动作行下面单独一行（整行宽），仍放不下再按词换行。
+  /// 任何一步都不截断、不出省略号。
+  static const double minTitleScale = 0.85;
+
+  /// [natural] 宽的标题放进 [room] 宽时的字号缩放与是否换行。
+  static FushiTitleFit fitTitle({
+    required double natural,
+    required double room,
+  }) {
+    if (!room.isFinite || natural <= room + _kFitEpsilon) {
+      return FushiTitleFit.natural;
+    }
+    if (natural * minTitleScale <= room + _kFitEpsilon) {
+      return FushiTitleFit._(scale: room / natural, wrap: false);
+    }
+    return const FushiTitleFit._(scale: minTitleScale, wrap: true);
+  }
+
+  /// 缩到下限后能否留在 [room] 宽的原行里（否则换到单独一行）。
+  static bool fitsInline({required double natural, required double room}) =>
+      natural * minTitleScale <= room + _kFitEpsilon;
+
   /// 一级切换字重 / 字距（em）。
   static const FontWeight switchWeight = FontWeight.w900;
   static const double switchLetterSpacingEm = -0.03;
@@ -213,4 +240,28 @@ class FushiPageTitleMetrics {
       color: color,
     );
   }
+}
+
+const double _kFitEpsilon = 0.5;
+
+/// 标题在给定宽里的排法：字号缩放（≥ [FushiPageTitleMetrics.minTitleScale]）与
+/// 是否允许按词换行。
+@immutable
+class FushiTitleFit {
+  const FushiTitleFit._({required this.scale, required this.wrap});
+
+  static const FushiTitleFit natural = FushiTitleFit._(scale: 1, wrap: false);
+
+  final double scale;
+  final bool wrap;
+
+  /// 把字号与字距按 [scale] 缩放。
+  TextStyle apply(TextStyle style) => scale == 1
+      ? style
+      : style.copyWith(
+          fontSize: style.fontSize == null ? null : style.fontSize! * scale,
+          letterSpacing: style.letterSpacing == null
+              ? null
+              : style.letterSpacing! * scale,
+        );
 }

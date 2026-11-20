@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:drift/native.dart';
 import 'package:flutter/rendering.dart';
@@ -19,6 +20,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../helpers/fushi_icon_fonts.dart';
 import '../helpers/test_platform_services.dart';
 
 /// 设计稿 11-20 #18：手机端各模块页顶部大标题统一成书架的规格
@@ -33,8 +35,9 @@ import '../helpers/test_platform_services.dart';
 /// - 右端主按钮（有的页面）尺寸 = 规格主按钮，竖向中线相等。
 ///
 /// 窄窗下有一级切换的库页（「书架 / 在线」）由切换的选中项当主标题，同样按页名
-/// 字号量。查词页手机上按用户 2026-10-18 / 11-12 的拍板**不画**页头（底栏已标明
-/// 「查词」），这里断言它没有大标题行，而不是放过不量。
+/// 字号量。查词页**不在统一范围内**：手机上按用户 2026-10-18 / 11-12 的拍板不画
+/// 页头（底栏已标明「查词」），11-20 #18 复核时用户再次确认「查词页不加手机大
+/// 标题，保持现状」；这里断言它没有大标题行，而不是放过不量。
 ///
 /// 中文界面：测试默认字体 Ahem 的 CJK 度量接近真实字体、西文宽度失真，「放得下、
 /// 不缩字号」只有中文可信。
@@ -193,7 +196,9 @@ _TitleRow _measure(WidgetTester tester, Finder row, HomeTab tab) {
     final RenderParagraph p = e.renderObject! as RenderParagraph;
     final String plain = p.text.toPlainText().trim();
     if (plain.isEmpty || plain == '/') continue;
-    final double font = p.text.style?.fontSize ?? 0;
+    final double styleFont = p.text.style?.fontSize ?? 0;
+    // 放不下时的缩放可能走 textScaler（一级切换项），算进画出来的字号。
+    final double font = styleFont == 0 ? 0 : p.textScaler.scale(styleFont);
     if (font > bestFont) {
       bestFont = font;
       best = p;
@@ -225,6 +230,71 @@ _TitleRow _measure(WidgetTester tester, Finder row, HomeTab tab) {
     baselineY: title.localToGlobal(Offset(0, baseline)).dy,
     primary: primary.evaluate().isEmpty ? null : tester.getRect(primary),
   );
+}
+
+/// 长标题语言下的一页：主标题字号、主按钮、是否有文字被截断 / 越出 / 压到动作。
+Future<void> _expectLongLocaleRow(
+  WidgetTester tester,
+  HomeTab tab,
+  String tag,
+) async {
+  const FushiPageTitleMetrics m = FushiPageTitleMetrics.phone;
+  final Finder row = _visibleMastheadRow(tester)!;
+  final _TitleRow measured = _measure(tester, row, tab);
+  expect(
+    measured.drawnFontSize,
+    greaterThanOrEqualTo(
+      m.titleFontSize * FushiPageTitleMetrics.minTitleScale - 0.01,
+    ),
+    reason: '$tag：主标题缩过了规格的 85%：$measured',
+  );
+  final Rect? primary = measured.primary;
+  if (primary != null) {
+    expect(
+      primary.width,
+      greaterThanOrEqualTo(
+        m.primaryExtent * FushiPageTitleMetrics.minTitleScale,
+      ),
+      reason: '$tag：主按钮被压小：$primary',
+    );
+  }
+  final Rect rowRect = tester.getRect(row);
+  final Finder actions = find.descendant(
+    of: row,
+    matching: find.byKey(const ValueKey<String>('floating-chrome-actions')),
+  );
+  final List<Rect> blockers = <Rect>[
+    ?primary,
+    if (actions.evaluate().isNotEmpty) tester.getRect(actions),
+  ];
+  for (final Element e
+      in find.descendant(of: row, matching: find.byType(RichText)).evaluate()) {
+    final RenderParagraph p = e.renderObject! as RenderParagraph;
+    final double font = p.text.style?.fontSize ?? 0;
+    // 只看页名 / 一级切换的大字（动作图标字形 24、二级页签小字不在此列）。
+    if (font < FushiPageTitleMetrics.headlineIdleFontSize * 0.8) continue;
+    if (font == FushiPageTitleMetrics.actionIconSize) continue;
+    final String text = p.text.toPlainText();
+    expect(p.didExceedMaxLines, isFalse, reason: '$tag：「$text」被截断');
+    final Rect r = MatrixUtils.transformRect(
+      p.getTransformTo(null),
+      Offset.zero & p.size,
+    );
+    expect(
+      r.left >= rowRect.left - 0.5 && r.right <= rowRect.right + 0.5,
+      isTrue,
+      reason: '$tag：「$text」$r 越出页头 $rowRect',
+    );
+    for (final Rect b in blockers) {
+      expect(
+        r.intersect(b).isEmpty ||
+            r.intersect(b).width <= 0.5 ||
+            r.intersect(b).height <= 0.5,
+        isTrue,
+        reason: '$tag：「$text」$r 压到右侧按钮 $b',
+      );
+    }
+  }
 }
 
 void main() {
@@ -334,4 +404,93 @@ void main() {
     await tester.pump(Duration.zero);
     await tester.pump(const Duration(milliseconds: 10));
   });
+
+  // 长标题语言（德语 / 俄语）放不下时：动作先收进「⋯」，主标题最多缩到规格
+  // 85%，再不够就换到单独一行 / 按词换行；主按钮不缩，不截断、不出省略号。
+  // 测试字体每个字形 1em 宽，西文比真实字体宽得多，是比真机更严的情形。
+  for (final AppLocale locale in <AppLocale>[AppLocale.de, AppLocale.ru]) {
+    for (final Size view in const <Size>[Size(402, 874), Size(360, 800)]) {
+      final String size = '${view.width.toInt()}×${view.height.toInt()}';
+      testWidgets('${locale.name} $size：主标题 ≥ 规格 85%、主按钮不缩、文字不截断', (
+        WidgetTester tester,
+      ) async {
+        tester.view.devicePixelRatio = 3;
+        tester.view.physicalSize = view * 3;
+        addTearDown(tester.view.reset);
+        // 真实像素预览（FUSHI_PREVIEW_DIR）：图标字体 + 系统西文黑体，否则是
+        // 测试字体的方块。断言不依赖它。
+        final String? shotDir = Platform.environment['FUSHI_PREVIEW_DIR'];
+        if (shotDir != null) {
+          await tester.runAsync(() async {
+            await loadFushiIconFonts();
+            final Uint8List bytes = await File(
+              r'C:\Windows\Fonts\seguibl.ttf',
+            ).readAsBytes();
+            for (final String family in <String>[
+              'Roboto',
+              '.SF UI Text',
+              '.SF Pro Text',
+              '.SF UI Display',
+              '.SF Pro Display',
+            ]) {
+              await (FontLoader(family)..addFont(
+                    Future<ByteData>.value(ByteData.sublistView(bytes)),
+                  ))
+                  .load();
+            }
+          });
+        }
+        LocaleSettings.setLocale(locale);
+        await _pumpHome(tester);
+        final Map<String, ui.Image> shots = <String, ui.Image>{};
+        for (final HomeTab tab in <HomeTab>[
+          HomeTab.home,
+          HomeTab.books,
+          HomeTab.manga,
+          HomeTab.video,
+          HomeTab.music,
+          HomeTab.games,
+          HomeTab.browse,
+          HomeTab.srs,
+          HomeTab.settings,
+        ]) {
+          HomePage.debugSelectTab!(tab);
+          await _settle(tester);
+          await _expectLongLocaleRow(
+            tester,
+            tab,
+            '${locale.name} $size ${tab.name}',
+          );
+          if (shotDir != null &&
+              (tab == HomeTab.video || tab == HomeTab.browse)) {
+            final RenderRepaintBoundary boundary = tester
+                .renderObjectList<RenderRepaintBoundary>(
+                  find.byType(RepaintBoundary),
+                )
+                .first;
+            // 同步取图，编码留到页面卸载之后：页面还挂着时让出真实异步，
+            // 首页 initState 里排队的弹窗流程会接着跑（测试里没接主题）。
+            shots['title_${locale.name}_${view.width.toInt()}_${tab.name}'] =
+                boundary.toImageSync(pixelRatio: 1);
+          }
+        }
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(Duration.zero);
+        await tester.pump(const Duration(milliseconds: 10));
+        if (shotDir != null) {
+          await tester.runAsync(() async {
+            for (final MapEntry<String, ui.Image> e in shots.entries) {
+              final ByteData? png = await e.value.toByteData(
+                format: ui.ImageByteFormat.png,
+              );
+              e.value.dispose();
+              File(
+                '$shotDir/${e.key}.png',
+              ).writeAsBytesSync(png!.buffer.asUint8List());
+            }
+          });
+        }
+      });
+    }
+  }
 }
