@@ -33,21 +33,21 @@ void main() {
     source: kFavoriteSentenceSourceVideo,
   );
 
-  /// 订阅并等基线读完（`getPref` 一次往返）。
-  Future<(List<void>, StreamSubscription<void>)> listen() async {
+  /// 订阅（测试结束时取消）并等基线读完（`getPref` 一次往返）。
+  Future<List<void>> listen() async {
     final List<void> events = <void>[];
     final StreamSubscription<void> sub = repo.watchChanges().listen(events.add);
+    addTearDown(sub.cancel);
     await db.getPref('favorite_sentences');
     await Future<void>.delayed(const Duration(milliseconds: 20));
-    return (events, sub);
+    return events;
   }
 
   Future<void> settle() =>
       Future<void>.delayed(const Duration(milliseconds: 50));
 
   test('本仓库的增删各发一次', () async {
-    final (List<void> events, StreamSubscription<void> sub) = await listen();
-    addTearDown(sub.cancel);
+    final List<void> events = await listen();
     final FavoriteSentence a = make('そうか');
     await repo.add(a);
     await settle();
@@ -58,8 +58,7 @@ void main() {
   });
 
   test('绕过仓库直接写同一偏好键（同步合并 / 备份恢复）也发', () async {
-    final (List<void> events, StreamSubscription<void> sub) = await listen();
-    addTearDown(sub.cancel);
+    final List<void> events = await listen();
     await db.setPref('favorite_sentences', '[]');
     await settle();
     expect(events, hasLength(1));
@@ -67,8 +66,7 @@ void main() {
 
   test('别的偏好写入、值没变的重写都不发', () async {
     await repo.add(make('いいね'));
-    final (List<void> events, StreamSubscription<void> sub) = await listen();
-    addTearDown(sub.cancel);
+    final List<void> events = await listen();
     await db.setPref('some_other_pref', 'x');
     final String? same = await db.getPref('favorite_sentences');
     await db.setPref('favorite_sentences', same!);
