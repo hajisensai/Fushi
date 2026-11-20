@@ -125,7 +125,9 @@ bool dictionaryPopupWebViewUsesHybridComposition = true;
 ///   - Windows：fork 的 `WebResourceRequested` 以 `CONTEXT_ALL` 注册，`fetch` 同样
 ///     进拦截器，响应头照灌；
 ///   - iOS / macOS：文档本身由 `fushi-popup://` 供，词条 URL 同 scheme 同 host，同源
-///     请求不需要 CORS（`CustomSchemeResponse` 也带不了头）；
+///     请求不需要 CORS（`CustomSchemeResponse` 也带不了头）。响应是非 HTTP 的
+///     `URLResponse`，`fetch` 看到的 status 恒为 0——页面侧按正文判成败
+///     （[buildPopupFetchedEntriesJs]，BUG-4956）；
 ///   - Linux（WPE）：两者都不具备，继续字面量投递。
 /// 运行时若某个 WebView 取回失败（`popupEntriesFetchFailed`），该 WebView 退回字面量
 /// 并记错误日志，见 [DictionaryPopupWebViewState]。

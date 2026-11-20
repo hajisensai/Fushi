@@ -46,6 +46,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4956](bugs/BUG-4956-ios-popup-entries-fetch-status-zero-oom.md) | ✅ | ✅ | iOS 阅读器查词时 Out of Memory 闪退（词条拦截投递在 iOS 上恒失败 + 历史整表重写） |
 | [BUG-4909](bugs/BUG-4909-manga-lookup-restart-sentence-missing.md) | ✅ | ✅ | 小说「查词后从句首重播」在漫画阅读器不生效 |
 | [BUG-4908](bugs/BUG-4908-manga-companion-lookup-no-pause.md) | ✅ | ✅ | 第二块屏上查词不会暂停漫画朗读 / 漫画有声 |
 | [BUG-4907](bugs/BUG-4907-manga-audio-no-pause-on-lookup.md) | ✅ | ✅ | 漫画阅读器查词时朗读 / 漫画有声不自动暂停 |
