@@ -8,6 +8,8 @@ import 'package:fushi/src/media/import/import_inbox_text.dart';
 import 'package:fushi/src/platform/ios/ios_device_family.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('iosDeviceFamilyFromMachine', () {
     test('真机按 machine 前缀判', () {
       expect(iosDeviceFamilyFromMachine('iPad13,4'), IosDeviceFamily.ipad);
