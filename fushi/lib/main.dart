@@ -57,6 +57,8 @@ import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDbStore;
 import 'package:fushi_engine/srs/srs_miner.dart' show SrsMiner;
 import 'package:fushi/src/srs/srs_providers.dart'
     show srsProfileStoresProvider, srsRevisionProvider;
+import 'package:fushi/src/sync/interconnect_lan_relocation.dart'
+    show InterconnectLanRelocator, installInterconnectLanRelocation;
 import 'package:fushi/src/sync/interconnect_p2p_app.dart'
     show installInterconnectP2pClient;
 import 'package:fushi/src/sync/sync_repository.dart' show SyncRepository;
@@ -896,6 +898,17 @@ void main([List<String> args = const <String>[]]) {
       // 互联 P2P 隧道（原生库可用才装）：client 选路在直连全失败后经隧道兜底
       // （docs/specs/2026-09-28-interconnect-remote-reach.md §5）。
       installInterconnectP2pClient(SyncRepository(appModel.database));
+      // BUG-5068：已配对 host 换了网段（电脑改连手机热点）、存量直连地址全不通时，
+      // 选路先在局域网上按 hostId 做一次限时 mDNS 浏览找它的新地址，再建隧道。
+      final SyncRepository relocationRepo = SyncRepository(appModel.database);
+      installInterconnectLanRelocation(
+        relocationRepo,
+        InterconnectLanRelocator(
+          ownDeviceId: relocationRepo.getOrCreateDeviceId,
+          onBrowseStart: appModel.syncServerController.registerDiscovery,
+          onBrowseEnd: appModel.syncServerController.unregisterDiscovery,
+        ).urlsFor,
+      );
       // BUG-4242：上一个进程上传途中被杀（iOS 挂起 / 内存压力）时，混淆临时目录
       // （与原文件同尺寸，有声书数百 MB）不会经 finally 删掉。启动时认领本进程的
       // 临时槽位，顺带删掉已死进程的槽位（活进程的锁拿不到、不删），并清旧版本留在
