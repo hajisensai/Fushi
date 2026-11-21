@@ -773,8 +773,9 @@ pub fn install(conn: &Connection) -> Result<(), String> {
     Ok(())
 }
 
-/// 打开（不存在就建）新代库文件。不做内存映射（设计 §6.5：迁移用的连接不映射）；页缓存取保守值，接线时由调用方按
-/// 现有预算（`store/mem_budget.rs`）再调。
+/// 打开（不存在就建）新代库文件。不做内存映射（设计 §6.5：迁移用的连接不映射）、页缓存取保守值：迁移 / 干跑 / 建库
+/// 直接用这份；生产开库（`kernel.rs` `G4Core::open`）在这之上按协议 3 的内存预算重配（`store/mod.rs`
+/// `tune_for_daily_use` / `retune_writer_cache`，`store/mem_budget.rs`）。
 ///
 /// 并发：同一个文件可能有别的连接正拿着写锁（另一个线程的 `BEGIN IMMEDIATE`、迁移、收段）。打开要读文件头、切 WAL、
 /// 再跑一遍 [install]（它会写：装触发器、`srs_meta`）。[install] 先读（`check_kind`、`application_id`、

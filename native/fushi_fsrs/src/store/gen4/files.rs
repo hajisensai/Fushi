@@ -1000,4 +1000,64 @@ mod tests {
             crate::store::schema::SEALED_SCHEMA.to_string()
         );
     }
+
+    /// 生产开库（`G4Core::open`）按协议 3 的内存预算配连接（`store/mod.rs` `tune_for_daily_use`）：写连接映射 256 MB、页缓存
+    /// 64 MB 起（取写连接时按可用内存下调，夹在 16..=64 MB）；读连接池与 Secondary 打开的连接按平台映射（32 位不映射）、
+    /// 页缓存 64 MB、只读。迁移用的 [schema::open] 保持保守值（不映射、16 MB，设计 §6.5）。
+    #[test]
+    fn production_connections_get_the_daily_mmap_and_page_cache() {
+        use crate::store::gen4::kernel::G4Core;
+        use crate::store::mem_budget::{MAX_KIB, MIN_KIB};
+        use crate::store::{MMAP_BYTES, MmapRole, mmap_size_for};
+        let pragma = |c: &Connection, p: &str| -> i64 {
+            c.query_row(&format!("PRAGMA {p}"), [], |r| r.get(0))
+                .unwrap()
+        };
+        let dir = tempdir::new("g4tune");
+        let core = G4Core::open(&dir.0, OpenMode::Primary).unwrap();
+        {
+            let w = core.writer().unwrap();
+            assert_eq!(pragma(&w, "mmap_size"), MMAP_BYTES);
+            let cache = -pragma(&w, "cache_size");
+            assert!(
+                (MIN_KIB..=MAX_KIB).contains(&cache),
+                "writer cache {cache} KiB"
+            );
+            assert_eq!(
+                pragma(&w, "secure_delete"),
+                1,
+                "schema::open's settings stay"
+            );
+        }
+        let secondary = mmap_size_for(MmapRole::Secondary);
+        assert_eq!(
+            secondary,
+            if cfg!(target_pointer_width = "32") {
+                0
+            } else {
+                MMAP_BYTES
+            }
+        );
+        {
+            let r = core.reader().unwrap();
+            assert_eq!(pragma(&r, "mmap_size"), secondary);
+            assert_eq!(pragma(&r, "cache_size"), -MAX_KIB);
+            assert_eq!(pragma(&r, "query_only"), 1);
+        }
+        let ro = G4Core::open(&dir.0, OpenMode::Secondary).unwrap();
+        {
+            let r = ro.reader().unwrap();
+            assert_eq!(pragma(&r, "mmap_size"), secondary);
+            assert_eq!(pragma(&r, "cache_size"), -MAX_KIB);
+        }
+        ro.close();
+        core.close();
+        let mig = schema::open(&dir.0.join(GEN4_FILE)).unwrap();
+        assert_eq!(
+            pragma(&mig, "mmap_size"),
+            0,
+            "migration connections do not map"
+        );
+        assert_eq!(pragma(&mig, "cache_size"), -16384);
+    }
 }
