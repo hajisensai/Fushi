@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5055](bugs/BUG-5055-import-section-block-inherits-outer-scheme.md) | ✅ | ✅ | import-section-block-inherits-outer-scheme |
+| [BUG-5056](bugs/BUG-5056-srs4-migration-nested-merge-verdict.md) | ✅ | ✅ | 复习库升级（gen4 迁移）在嵌套并入过的库上核对失败、整体撤回 |
 | [BUG-5054](bugs/BUG-5054-pitch-hl-pattern-not-drawn.md) | ✅ | ✅ | 音调词典 H/L 模式串只显示成文本、不画高低线，且与同型数字位分成两行 |
 | [BUG-5053](bugs/BUG-5053-mihon-page-request-id-collision.md) | ✅ | ✅ | Mihon 取图请求号拿 identityHashCode 拼，两个活页引用撞号时互相顶掉 / 取消错页 |
 | [BUG-5052](bugs/BUG-5052-rwkv-repeat-guard-scope-mismatch.md) | ✅ | ✅ | rwkv-repeat-guard-scope-mismatch |

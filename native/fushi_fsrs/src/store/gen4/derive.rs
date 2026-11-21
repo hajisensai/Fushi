@@ -320,7 +320,7 @@ pub struct Index<'t, 'c> {
     /// 收尾时归回的改名写入者变了：按类判定的寄存器都可能变，缓存层整层重建。
     pub(super) writers_moved: bool,
     /// 一次缓存层的物化期间缓存的写入者表（`alias_writer_ix`；读的时候索引不变）。
-    pub(super) pass_writers: Option<BTreeMap<String, String>>,
+    pub(super) pass_writers: Option<std::rc::Rc<super::class::WriterAliases>>,
     /// 一次缓存层的物化期间缓存的内置实体规则表（`class.rs` [Index::rule_canon]；读的时候盐集合不变）。
     pub(super) pass_rules: Option<Rc<RuleCanon>>,
     /// 物化之外按盐集合记住的同一张表（盐集合变了就重算）。
@@ -820,7 +820,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 let ctx = s.ctx.to_dvv();
                 Ok(match class {
                     None => ctx.contains(w, q),
-                    Some(c) => c.dvv(&ctx).contains(w, q),
+                    Some(c) => c.dvv_contains(&ctx, w, q),
                 })
             }
             None => self.seen(&full, w, q, class),

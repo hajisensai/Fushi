@@ -121,7 +121,7 @@ mod sync_trust_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
-mod tests_class;
+pub(in crate::store::gen4) mod tests_class;
 #[cfg(test)]
 mod training_tests;
 #[cfg(test)]
