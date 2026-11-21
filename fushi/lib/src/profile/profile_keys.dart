@@ -26,6 +26,9 @@ import 'package:fushi/src/models/preference_keys.dart'
         kLibraryManualOrderPrefKeyPrefix,
         kSectionTabOrderPrefKeyPrefix,
         kSrsLapisMigrationReminderPrefKey,
+        kWhatsNewCardDismissedVersionPrefKey,
+        kWhatsNewSeenSeqPrefKey,
+        kWhatsNewSeenVersionPrefKey,
         kWorkProfileSessionPrefKey;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
@@ -92,15 +95,21 @@ class ProfileKeys {
     'onboarding_completed',
     'onboarding_finished',
     'onboarding_home_card_dismissed',
+    // 「本版新内容」看到哪个版本：描述本机装过的包，与新手引导标志同族。
+    kWhatsNewSeenVersionPrefKey,
+    kWhatsNewSeenSeqPrefKey,
+    kWhatsNewCardDismissedVersionPrefKey,
     // 「下载 → 浏览」一次性搬迁提示的已处理标记：同族。进快照的话，切到一个
     // 标记落地前建的老 Profile 会把它删掉，关着浏览的用户又被提示一遍。
     'browse_moved_notice_handled',
-    // 库页默认改封面网格后的「拼贴仍可选」一次性提示已处理标记：同族。进快照的话，
-    // 切到标记落地前建的老 Profile 会把它删掉，提示又弹一遍。
+    // 已删除的「库页现在默认封面网格」一次性提示的已处理标记（BUG-5060，不再读写）：
+    // 存量库里还留着这一行，仍按同族排除，免得把描述本安装的死键带进 Profile 快照。
     'library_layout_default_notice_handled',
     // BT / 磁力下载的 P2P 说明「不再提示」：同族（描述本安装看过说明，不随
     // Profile 切换重新弹出）。
     'p2p_download_notice_dismissed',
+    // 「词典格式可以升级」提示的「以后再说」：描述本机词典目录的状态，同族。
+    'dict_format_upgrade_prompt_dismissed',
     'game_resource_notice_dismissed',
     // 复习页旧 Lapis 迁移横幅的「不再提醒」：同族。进快照的话，切到这个键落地前建的
     // 老 Profile（含媒体绑定的临时切换）会把它删掉，横幅下次启动又弹出来。
@@ -154,6 +163,9 @@ class ProfileKeys {
     // 设备本地的，模式却跟着 Profile 走 = 切一次 Profile 就把全局网络出口翻掉，
     // 事后极难归因。
     'network_proxy_mode',
+    // GitHub 加速镜像开关同族：描述的是这台设备所处的网络 / 安全软件环境，跟着
+    // Profile 走会让切 Profile 悄悄改掉下载出口。
+    'network_github_mirrors_enabled',
     // 更新下载源与 update_beta_channel / update_debug_channel / update_auto_install
     // 同族（HBK-AUDIT-045：所有更新通道/策略键保持 app-global）。
     'update_download_source',

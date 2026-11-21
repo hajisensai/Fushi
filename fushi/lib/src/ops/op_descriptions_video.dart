@@ -11,6 +11,7 @@ import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/ops/ctl_video_support.dart'
     show CtlVideoWorkId, ctlVideoConfirmationId;
 import 'package:fushi/src/ops/op_describe_kit.dart';
+import 'package:fushi/src/ops/op_descriptions_video_organize.dart';
 import 'package:fushi/src/ops/op_task_status.dart';
 import 'package:fushi/src/ops/op_descriptions_library.dart'
     show OpUndoScope, opScopedSnapshotUndo, opUndoDisplay;
@@ -43,6 +44,7 @@ List<OpDescription> describeVideoOps(OpDescribeKit kit) {
       ]);
   return <OpDescription>[
     ..._describeScrapeOps(kit, video),
+    ...describeVideoOrganizeOps(kit, video),
     ..._describeDiscoveryOps(kit, discovery, downloads),
     ..._describePlayerOps(kit, video),
     ..._describeSubtitleOps(kit, video),
@@ -88,7 +90,8 @@ List<OpDescription> _describeScrapeOps(
     method: 'GET',
     pattern: '$_video/works',
     summary:
-        'List video works of local video sources with their scraped identity '
+        'List video works of local video sources (plus local videos without a '
+        'source, reported with sourceId null) with their scraped identity '
         '(provider:id), or with pending=true the works waiting for confirmation '
         'and why.',
     availability: video,
@@ -223,6 +226,21 @@ List<OpDescription> _describeScrapeOps(
     method: 'POST',
     pattern: '$_video/scrape/cancel',
     summary: 'Cancel the running scrape batch (stops at the next boundary).',
+    risk: OpRisk.irreversible,
+    availability: video,
+  ),
+  OpDescription(
+    id: 'video.relation.refresh',
+    method: 'POST',
+    pattern: '$_video/relations/refresh',
+    summary:
+        'Fill in missing series relations (prequel / sequel) for already '
+        'scraped works. Only touches series relations, never other work '
+        'metadata; the only network use is one TMDB collection request per '
+        'collection whose scraped movie snapshots lack the member list (none '
+        'once filled). Returns counts: tmdb {missing, refreshed, requests, '
+        'failed} (absent without a TMDB key), works, worksWithRelations, rows, '
+        'bound.',
     risk: OpRisk.irreversible,
     availability: video,
   ),
@@ -888,7 +906,10 @@ List<OpDescription> _describePlayerOps(
     id: 'video.mine-queue.commit',
     method: 'POST',
     pattern: '$_video/mine-queue/commit',
-    summary: 'Write all queued cards of a video to Anki.',
+    summary:
+        'Write all queued cards of a video to Anki. Cards that could not be '
+        'delivered (Anki unreachable) stay pending and are counted in '
+        '"undelivered".',
     risk: OpRisk.irreversible,
     availability: video,
     params: const <OpParam>[

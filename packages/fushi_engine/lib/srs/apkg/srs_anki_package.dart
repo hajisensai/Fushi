@@ -437,12 +437,17 @@ class SrsAnkiNoteType {
     required this.templates,
     this.originalId,
     this.mtimeSecs = 0,
+    this.sortFieldOrd = 0,
   });
 
   final int id;
   final String name;
   final bool isCloze;
   final String css;
+
+  /// 排序字段在 [fields] 里的序号（旧 schema 的 `sortf` / 新 schema 的 NotetypeConfig.sort_field_idx）；
+  /// 0 = 第一个字段（Anki 的默认）。
+  final int sortFieldOrd;
 
   /// 按 ord 排好。
   final List<SrsAnkiField> fields;
@@ -737,6 +742,7 @@ class SrsAnkiCollection {
         templates: tmpls,
         originalId: _int(m['originalId']),
         mtimeSecs: _int(m['mod']) ?? 0,
+        sortFieldOrd: _int(m['sortf']) ?? 0,
       );
     }
   }
@@ -830,7 +836,7 @@ class SrsAnkiCollection {
     for (final Row row in db.select(
       'SELECT id, name, mtime_secs, config FROM notetypes',
     )) {
-      // NotetypeConfig: kind = 1（1 = cloze）、css = 3、original_id = 10（optional int64）。
+      // NotetypeConfig: kind = 1（1 = cloze）、sort_field_idx = 2、css = 3、original_id = 10（optional int64）。
       final SrsProtoMessage cfg = SrsProtoMessage.parse(_blob(row['config']));
       final int id = row['id'] as int;
       noteTypes[id] = SrsAnkiNoteType(
@@ -846,6 +852,7 @@ class SrsAnkiCollection {
           ),
         originalId: cfg.optInt(10),
         mtimeSecs: (row['mtime_secs'] as int?) ?? 0,
+        sortFieldOrd: cfg.intOf(2),
       );
     }
   }

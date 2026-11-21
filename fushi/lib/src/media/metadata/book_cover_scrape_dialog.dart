@@ -1,7 +1,9 @@
 import 'dart:io';
 
+import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/metadata/book_metadata_scrape_facade.dart';
 import 'package:fushi/src/media/metadata/book_metadata_scraper.dart';
 import 'package:fushi_engine/media/metadata/books/book_catalog.dart'
@@ -11,6 +13,8 @@ import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart';
 import 'package:fushi_engine/media/metadata/image_download.dart';
 import 'package:fushi/src/media/metadata/scrape_cover_preview.dart';
 import 'package:fushi/src/media/metadata/scrape_failure_view.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_dialog.dart'
+    show writeMediaNsfw;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -31,14 +35,19 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 书籍 / 漫画 / 有声书「在线匹配封面」弹窗（统一刮削 P1b）。
 ///
-/// 源用下拉切换（[BookScrapeSource]，七个源分段放不下）：Bangumi 书籍条目
+/// 源用下拉切换（[BookScrapeSource]，八个源分段放不下）：Bangumi 书籍条目
 /// （`filter.type=[1]`）、DLsite 音声 / 漫画 / 小说作品、MangaBaka 漫画 / 轻小说系列（选中
 /// 系列后进卷封面网格，预选本地卷号 [BookCoverScrapeDialog.volume] 那一卷；结果区底部显示
 /// MangaBaka 署名）、AniList 轻小说、openBD（只按 ISBN）、NDL Search、楽天ブックス（要设备
-/// 本地凭据，没填就不出现在下拉里、下方给提示）。
-/// 默认 Bangumi——DLsite 的搜索含成人向作品，不混进普通书搜索；预填词里认得出 DLsite
-/// 编号时默认切到 DLsite 并只填编号（直取），预填词本身就是 ISBN 时默认 openBD。切到
-/// openBD 而搜索框里没有 ISBN 时，用书本身的 ISBN（[isbn]，EPUB 导入时从 OPF 读出）。
+/// 本地凭据；没填时下拉里照样列出，**只有选中它时**结果区才提示去哪填，不发请求）、iTunes
+/// 歌曲（专辑封面）。默认 Bangumi（填了楽天凭据也不会变成默认源）；预填词里认得出 DLsite
+/// 编号时默认切到 DLsite 并只填编号（直取），预填词本身就是 ISBN 时默认 openBD；这本「书」
+/// 其实是导入的歌曲（[isSong]，同步文件是 LRC 歌词）时默认 iTunes。切到 openBD 而搜索框里
+/// 没有 ISBN 时，用书本身的 ISBN（[isbn]，EPUB 导入时从 OPF 读出）。
+///
+/// NSFW 候选（各源标的成人向条目）对所有源一视同仁：书自己标了 NSFW（或在 NSFW 合集里，
+/// [includeNsfw]）才显示，并标「NSFW」；没标时藏起来，结果区写明藏了几条，给「标为
+/// NSFW」按钮（[onMarkNsfw]，写的是书架菜单同一个开关），点了就显示（拍板台 pr3497）。
 /// 选中候选后下载其封面到临时文件并经 `Navigator.pop(`[BookCoverScrapeSelection]`)` 连同候选本身返回给调用方（候选解析与下载都经
 /// [BookMetadataScrapeFacade]，书架页的写回也经它）（书籍编辑对话框把它当作新的封面
 /// override，走既有 `setOverrideThumbnailFromMediaItem` 落地——不新增任何存储路径）。
@@ -50,6 +59,9 @@ Future<BookCoverScrapeSelection?> showBookCoverScrapeDialog({
   num? volume,
   String? isbn,
   RakutenBooksCredentials? rakuten,
+  bool includeNsfw = false,
+  bool isSong = false,
+  Future<void> Function()? onMarkNsfw,
 }) {
   return showAppDialog<BookCoverScrapeSelection>(
     context: context,
@@ -58,7 +70,40 @@ Future<BookCoverScrapeSelection?> showBookCoverScrapeDialog({
       volume: volume,
       isbn: isbn,
       rakuten: rakuten,
+      includeNsfw: includeNsfw,
+      isSong: isSong,
+      onMarkNsfw: onMarkNsfw,
     ),
+  );
+}
+
+/// 给书架上的 [item] 开刮削弹窗：先读它的 ISBN（openBD 预填）、有效 NSFW 标记
+/// （决定显不显示 NSFW 候选）与是不是导入的歌曲（默认 iTunes），「标为 NSFW」写回同一个
+/// 宿主。书架卡菜单与编辑弹窗共用。
+Future<BookCoverScrapeSelection?> showBookCoverScrapeDialogForItem({
+  required BuildContext context,
+  required FushiDatabase db,
+  required MediaItem item,
+  required String initialQuery,
+  num? volume,
+  RakutenBooksCredentials? rakuten,
+}) async {
+  final String? isbn = await BookMetadataScrapeFacade.isbnForItem(db, item);
+  final BookNsfwHost? host = BookMetadataScrapeFacade.nsfwHostForItem(item);
+  final bool nsfw = await BookMetadataScrapeFacade.isNsfwHost(db, host);
+  final bool song = await BookMetadataScrapeFacade.isSongForItem(db, item);
+  if (!context.mounted) return null;
+  return showBookCoverScrapeDialog(
+    context: context,
+    initialQuery: initialQuery,
+    volume: volume,
+    isbn: isbn,
+    rakuten: rakuten,
+    includeNsfw: nsfw,
+    isSong: song,
+    onMarkNsfw: host == null
+        ? null
+        : () => writeMediaNsfw(db, host.kind, host.entryKey, true),
   );
 }
 
@@ -78,9 +123,22 @@ class BookCoverScrapeDialog extends StatefulWidget {
     this.volume,
     this.isbn,
     this.rakuten,
+    this.includeNsfw = false,
+    this.isSong = false,
+    this.onMarkNsfw,
   });
 
   final String initialQuery;
+
+  /// 这本「书」其实是导入的歌曲（LRC 歌词 + 音频）：默认源切到 iTunes。
+  final bool isSong;
+
+  /// 显示 NSFW 候选（书自己是 NSFW 时为 true）。
+  final bool includeNsfw;
+
+  /// 「标为 NSFW」：把这本书标成 NSFW（抛异常 = 没写成，候选仍藏着）；null = 认不出
+  /// 宿主，只提示不给按钮。
+  final Future<void> Function()? onMarkNsfw;
 
   /// 本地书的卷号（MangaBaka 卷封面网格预选这一卷）；null = 不预选。
   final num? volume;
@@ -99,22 +157,19 @@ class BookCoverScrapeDialog extends StatefulWidget {
 }
 
 /// 纯函数：弹窗的初始源与搜索词。预填词里带 DLsite 编号 → (DLsite, 编号)；预填词
-/// 本身是一个 ISBN → (openBD, ISBN-13)；否则 (Bangumi, 原词)。
-(BookScrapeSource, String) bookScrapeInitialState(String initialQuery) {
+/// 本身是一个 ISBN → (openBD, ISBN-13)；[isSong]（导入的歌曲）→ (iTunes, 原词)；否则
+/// (Bangumi, 原词)。
+(BookScrapeSource, String) bookScrapeInitialState(
+  String initialQuery, {
+  bool isSong = false,
+}) {
   final DlsiteWorkId? id = DlsiteWorkId.findIn(initialQuery);
   if (id != null) return (BookScrapeSource.dlsite, id.value);
   final String? isbn = normalizeIsbn13(initialQuery);
   if (isbn != null) return (BookScrapeSource.openbd, isbn);
+  if (isSong) return (BookScrapeSource.itunes, initialQuery);
   return (BookScrapeSource.bangumi, initialQuery);
 }
-
-/// 纯函数：下拉里列出的源。楽天凭据不齐时不列（下方另给提示）。
-List<BookScrapeSource> bookScrapeSelectableSources({
-  required bool rakutenAvailable,
-}) => <BookScrapeSource>[
-  for (final BookScrapeSource s in BookScrapeSource.values)
-    if (!s.needsCredentials || rakutenAvailable) s,
-];
 
 class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
   late final TextEditingController _queryCtrl;
@@ -138,6 +193,18 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
   /// 当前源只按 ISBN 查、而搜索框里没有 ISBN（结果区给提示，不发请求）。
   bool _needsIsbn = false;
 
+  /// 当前源要凭据而没填（楽天；结果区提示去哪填，不发请求）。
+  bool _needsCredentials = false;
+
+  /// 是否显示 NSFW 候选（初值跟随书的 NSFW 标记，「标为 NSFW」后变 true）。
+  late bool _includeNsfw;
+
+  /// 上次搜索因书没标 NSFW 藏起来的候选条数。
+  int _hiddenNsfw = 0;
+
+  /// 「标为 NSFW」正在写库。
+  bool _markingNsfw = false;
+
   /// MangaBaka 卷封面网格：选中的系列（null = 在候选列表页）。
   BookScrapeCandidate? _volumeSeries;
   List<BookVolumeCover> _volumes = const <BookVolumeCover>[];
@@ -152,8 +219,10 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     super.initState();
     final (BookScrapeSource source, String query) = bookScrapeInitialState(
       widget.initialQuery,
+      isSong: widget.isSong,
     );
     _source = source;
+    _includeNsfw = widget.includeNsfw;
     _queryCtrl = TextEditingController(text: query);
     _scraper =
         widget.scraperOverride ?? BookMetadataScraper(rakuten: widget.rakuten);
@@ -172,11 +241,16 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
   Future<void> _search() async {
     final String keyword = _queryCtrl.text.trim();
     if (keyword.isEmpty) return;
-    if (_source.isbnOnly && findIsbnIn(keyword) == null) {
+    final bool needsCredentials =
+        _source.needsCredentials && !_scraper.rakutenAvailable;
+    final bool needsIsbn = _source.isbnOnly && findIsbnIn(keyword) == null;
+    if (needsCredentials || needsIsbn) {
       setState(() {
-        _needsIsbn = true;
+        _needsCredentials = needsCredentials;
+        _needsIsbn = !needsCredentials && needsIsbn;
         _searched = false;
         _results = const <BookScrapeCandidate>[];
+        _hiddenNsfw = 0;
         _searchFailure = null;
       });
       return;
@@ -185,12 +259,20 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
       _searching = true;
       _searched = true;
       _needsIsbn = false;
+      _needsCredentials = false;
       _searchFailure = null;
     });
     List<BookScrapeCandidate> results = const <BookScrapeCandidate>[];
+    int hidden = 0;
     Object? failure;
     try {
-      results = await _facade.search(source: _source, query: keyword);
+      final BookScrapeSearchResult found = await _facade.searchDetailed(
+        source: _source,
+        query: keyword,
+        includeNsfw: _includeNsfw,
+      );
+      results = found.candidates;
+      hidden = found.hiddenNsfw;
     } catch (e, stack) {
       // BUG-1176：失败要有出口。界面出可见失败行，原始原因落错误日志（用户可在
       // 「错误日志」页查看/上传），不静默塌缩成空列表。
@@ -200,9 +282,31 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     if (!mounted) return;
     setState(() {
       _results = results;
+      _hiddenNsfw = hidden;
       _searching = false;
       _searchFailure = failure;
     });
+  }
+
+  /// 「标为 NSFW」：写书的 NSFW 标记（成功 / 失败的提示由调用方给，书架接线是
+  /// `writeMediaNsfw`），成功后连同 NSFW 候选重搜一次。
+  Future<void> _markNsfw() async {
+    final Future<void> Function()? mark = widget.onMarkNsfw;
+    if (mark == null || _markingNsfw) return;
+    setState(() => _markingNsfw = true);
+    bool ok = false;
+    try {
+      await mark();
+      ok = true;
+    } catch (e, stack) {
+      ErrorLogService.instance.log('BookCoverScrapeDialog.markNsfw', e, stack);
+    }
+    if (!mounted) return;
+    setState(() {
+      _markingNsfw = false;
+      if (ok) _includeNsfw = true;
+    });
+    if (ok) await _search();
   }
 
   /// 把失败折成一句用户可行动的话。底层已把传输失败 / 非 2xx / 非图片响应统一折成带
@@ -229,8 +333,10 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
       _source = source;
       _volumeSeries = null;
       _results = const <BookScrapeCandidate>[];
+      _hiddenNsfw = 0;
       _searched = false;
       _needsIsbn = false;
+      _needsCredentials = false;
       _searchFailure = null;
     });
     _search();
@@ -337,9 +443,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
                 Expanded(
                   child: FushiDropdown<BookScrapeSource>(
                     key: const ValueKey<String>('book_scrape_source_picker'),
-                    options: bookScrapeSelectableSources(
-                      rakutenAvailable: _scraper.rakutenAvailable,
-                    ),
+                    options: BookScrapeSource.values,
                     initialOption: _source,
                     enabled: !_searching,
                     generateLabel: (BookScrapeSource s) => s.label,
@@ -350,14 +454,6 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
                 ),
               ],
             ),
-            if (!_scraper.rakutenAvailable)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  t.book_scrape_rakuten_unavailable,
-                  style: theme.textTheme.bodySmall,
-                ),
-              ),
             const SizedBox(height: 8),
             Row(
               children: <Widget>[
@@ -575,19 +671,62 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
         detail: failure.toString(),
       );
     }
+    if (_needsCredentials) {
+      return Center(
+        key: const ValueKey<String>('book_scrape_rakuten_unavailable'),
+        child: Text(
+          t.book_scrape_rakuten_unavailable,
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
     if (_needsIsbn) {
       return Center(
         child: Text(t.book_scrape_isbn_required, textAlign: TextAlign.center),
       );
     }
-    if (_searched && _results.isEmpty) {
-      return Center(child: Text(t.book_scrape_empty));
-    }
-    return ListView.separated(
-      itemCount: _results.length,
-      separatorBuilder: (_, __) => const FushiDividerControl(height: 1),
-      itemBuilder: (BuildContext context, int index) =>
-          _buildTile(theme, tokens, _results[index]),
+    final Widget list = _searched && _results.isEmpty
+        ? Center(child: Text(t.book_scrape_empty))
+        : ListView.separated(
+            itemCount: _results.length,
+            separatorBuilder: (_, __) => const FushiDividerControl(height: 1),
+            itemBuilder: (BuildContext context, int index) =>
+                _buildTile(theme, tokens, _results[index]),
+          );
+    if (_hiddenNsfw == 0) return list;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        _buildNsfwNotice(theme),
+        Flexible(child: list),
+      ],
+    );
+  }
+
+  /// 「藏了 N 条 NSFW 结果」提示行 + 「标为 NSFW」按钮（认不出宿主时只有提示）。
+  Widget _buildNsfwNotice(ThemeData theme) {
+    return Padding(
+      key: const ValueKey<String>('book_scrape_nsfw_hidden'),
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              t.book_scrape_nsfw_hidden(count: _hiddenNsfw),
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+          if (widget.onMarkNsfw != null) ...<Widget>[
+            const SizedBox(width: 8),
+            FushiTextButton(
+              key: const ValueKey<String>('book_scrape_nsfw_mark'),
+              onPressed: _markingNsfw || _searching ? null : _markNsfw,
+              child: Text(t.media_nsfw_switch),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -597,7 +736,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     BookScrapeCandidate candidate,
   ) {
     final List<String> metaParts = <String>[
-      if (candidate.isAdult) 'R18',
+      if (candidate.isAdult) 'NSFW',
       if (candidate.year != null) '${candidate.year}',
       if (candidate.author != null) candidate.author!,
       if (candidate.publisher != null) candidate.publisher!,

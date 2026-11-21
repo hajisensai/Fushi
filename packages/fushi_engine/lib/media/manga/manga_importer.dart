@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:drift/drift.dart';
 import 'package:path/path.dart' as p;
@@ -129,10 +130,19 @@ class MangaImporter {
     MangaPageSource pageSource = MangaPageSource.borrowed,
   }) async {
     final Directory root = Directory(imageDirPath);
-    final MokuroPayload payload = await payloadFromImageFolder(root);
     final String proposedTitle = title?.trim().isNotEmpty == true
         ? title!.trim()
         : (p.basename(root.path).isEmpty ? 'manga' : p.basename(root.path));
+    // 跳过策略在逐页读尺寸之前判重（manga-10）：重导一个大半已入库的文件夹时，
+    // 已有的卷不再把每页读一遍才被跳过。目录不在时照旧报「not found」。
+    if (root.existsSync()) {
+      await precheckSkippedDuplicate(
+        db: db,
+        proposedTitle: proposedTitle,
+        policy: policy,
+      );
+    }
+    final MokuroPayload payload = await payloadFromImageFolder(root);
     return _copyAndInsert(
       db: db,
       srcDir: root,
@@ -143,6 +153,26 @@ class MangaImporter {
       sourceId: sourceId,
       sourceMetadata: sourceMetadata,
       pageSource: pageSource,
+    );
+  }
+
+  /// [DuplicatePolicy.skip] 的导入前预检（manga-10）：[proposedTitle] 已在书库里时抛
+  /// [DuplicateImportCancelledException]，否则什么都不做。只读一次瘦投影书目快照。
+  ///
+  /// 给「定书名之前要先做重活」的入口用（压缩包整包解压、页图文件夹逐页读尺寸）；
+  /// 落位时 [EpubImporter.placeUnderResolvedTitle] 的判重照旧保留。其它策略直接返回，
+  /// 不碰数据库（[DuplicatePolicy.ask] 的「先做完再问」次序不变）。
+  static Future<void> precheckSkippedDuplicate({
+    required FushiDatabase db,
+    required String proposedTitle,
+    required DuplicatePolicy policy,
+  }) async {
+    if (policy is! SkipDuplicate) return;
+    final List<EpubBookMeta> books = await db.getEpubBookMetas();
+    throwIfSkippedDuplicate(
+      existingTitles: <String>[for (final EpubBookMeta b in books) b.title],
+      proposedTitle: proposedTitle,
+      policy: policy,
     );
   }
 
@@ -163,16 +193,81 @@ class MangaImporter {
     }
     final List<MokuroImage> pages = <MokuroImage>[];
     for (final MangaOcrPageFile page in files) {
-      final Uint8List bytes = await page.file.readAsBytes();
       pages.add(
         MokuroImage(
           url: page.relativeUrl,
-          size: _pageSize(bytes, page.relativeUrl),
+          size: await pageSizeOfFile(page.file, page.relativeUrl),
           blocks: const <MokuroBlock>[],
         ),
       );
     }
     return MokuroPayload(images: pages);
+  }
+
+  /// 探尺寸时先读的前缀长度：JPEG 的 APP 段（EXIF / ICC）单段上限 64 KiB，给两段
+  /// 的余量；漫画页多在 1~5 MB，前缀只占其中几个百分点。
+  static const int kPageSizeProbePrefixBytes = 128 * 1024;
+
+  /// 页图文件 [file] 的宽高（已按显示方向）：先只读前
+  /// [kPageSizeProbePrefixBytes] 字节，能凭前缀定论的格式（[probeImageSizeFromPrefix]：
+  /// PNG、头部在前缀内的 JPEG）直接返回；其余读全量走 [_pageSize]（manga-29c，此前
+  /// 每页整张读进内存只为读头）。
+  static Future<MokuroSize> pageSizeOfFile(
+    File file,
+    String relativeUrl,
+  ) async {
+    final RandomAccessFile handle = await file.open();
+    final int length;
+    final Uint8List prefix;
+    try {
+      length = await handle.length();
+      prefix = await handle.read(kPageSizeProbePrefixBytes);
+    } finally {
+      await handle.close();
+    }
+    final ({int width, int height})? header = probeImageSizeFromPrefix(prefix);
+    if (header != null) {
+      return MokuroSize(header.width.toDouble(), header.height.toDouble());
+    }
+    final Uint8List bytes = prefix.length >= length
+        ? prefix
+        : await file.readAsBytes();
+    if (isMangaTranscodedPage(file.path)) {
+      // 导入时要转成 PNG 的页（TIFF）：尺寸必须与转码产物一致，而转码按原生解码器
+      // 读到的方向标签转正——尺寸也只问原生内核（Dart 头探测不看 TIFF 方向）。
+      return _nativePageSize(bytes, relativeUrl);
+    }
+    return _pageSize(bytes, relativeUrl);
+  }
+
+  /// [path] 是不是导入时转码成 PNG 落盘的页图（[kMangaImportTranscodedPageExtensions]）。
+  static bool isMangaTranscodedPage(String path) =>
+      kMangaImportTranscodedPageExtensions.contains(
+        p.extension(path).toLowerCase(),
+      );
+
+  /// 把 [src]（[isMangaTranscodedPage] 的页图）在后台 isolate 里转成 PNG 写到 [dest]。
+  /// 解不开抛 [MangaImportException]（与探尺寸失败同一种「坏页」错误）。
+  static Future<void> transcodePageFile(
+    File src,
+    File dest,
+    String relativeUrl,
+  ) async {
+    final Uint8List bytes = await src.readAsBytes();
+    final Uint8List? png = await Isolate.run(() => encodeImageAsPng(bytes));
+    if (png == null) {
+      throw MangaImportException('Could not decode manga page: $relativeUrl');
+    }
+    await dest.writeAsBytes(png, flush: true);
+  }
+
+  static MokuroSize _nativePageSize(Uint8List bytes, String relativeUrl) {
+    final ({int width, int height, FfcImageFormat format})? native =
+        probeImageNative(bytes);
+    if (native == null) {
+      throw MangaImportException('Could not decode manga page: $relativeUrl');
+    }
+    return MokuroSize(native.width.toDouble(), native.height.toDouble());
   }
 
   /// 页图宽高（已按显示方向）：先走 Dart 头部探测（[probeOrientedImageSize]，JPEG /
@@ -210,6 +305,14 @@ class MangaImporter {
     for (final MokuroImage page in payload.images) {
       // sanitizeRelSegments 对含 `..` 的 img_path 抛 MangaImportException（防穿越红线）。
       final List<String> segments = MangaStorage.sanitizeRelSegments(page.url);
+      // TIFF 页落盘成 PNG（[copyMangaArtifacts] 转码），destRel 先换好扩展名：
+      // manga.json 的 url 与书目录里的文件名一致，且与同名 `.png` 页一起去重。
+      if (segments.isNotEmpty && isMangaTranscodedPage(segments.last)) {
+        final String last = segments.last;
+        segments[segments.length - 1] =
+            p.withoutExtension(last) +
+            mangaStoredPageExtension(p.extension(last));
+      }
       destRels.add(MangaStorage.uniqueDestRel(segments, usedDestRels));
       final File src = mokuroPageFile(srcDir.path, page.url);
       if (!src.existsSync()) {
@@ -245,6 +348,24 @@ class MangaImporter {
       final File src = mokuroPageFile(srcDir.path, page.url);
       final File dest = MangaStorage.destFile(bookDir, destRel);
       dest.parent.createSync(recursive: true);
+      if (isMangaTranscodedPage(src.path)) {
+        // TIFF：转成 PNG 写进书目录（destRel 已在 [planMangaDestRels] 换成 .png）。
+        // disposable 的源留在暂存目录里随它一起删；同一张源被多页引用时照样从书目录
+        // 里那份拷，不重复转码。
+        final String key = p.canonicalize(src.path);
+        final File? earlier = moved[key];
+        if (earlier != null) {
+          await earlier.copy(dest.path);
+        } else {
+          await transcodePageFile(src, dest, page.url);
+          moved[key] = dest;
+        }
+        rewritten.add(
+          MokuroImage(url: destRel, size: page.size, blocks: page.blocks),
+        );
+        onProgress?.call(i + 1, total);
+        continue;
+      }
       switch (pageSource) {
         case MangaPageSource.borrowed:
           await src.copy(dest.path);
@@ -319,17 +440,40 @@ class MangaImporter {
     final String jsonStr = isMokuroLegacyHtmlPath(mokuroPath)
         ? await legacyMokuroJson(mokuroPath)
         : await mokuroFile.readAsString();
-    final MokuroPayload payload = parseMokuro(jsonStr);
+    return importMokuroDocument(
+      db: db,
+      document: parseMokuroDocument(jsonStr),
+      mokuroPath: mokuroPath,
+      title: title,
+      policy: policy,
+      onProgress: onProgress,
+      sourceId: sourceId,
+      pageSource: pageSource,
+    );
+  }
+
+  /// [importFromMokuroPath] 的落库段：清单已经解析好（[document]，一次解析同时带出
+  /// 页模型与顶层标题），不再读盘、不再重复解析（manga-29b：压缩包里的清单此前要
+  /// 写回暂存目录、再读回来解析两遍）。
+  ///
+  /// [mokuroPath] 只用来定位页图根（所在目录 + 卷名 = 去扩展名的文件名）与回退标题，
+  /// 文件本身不必存在。顶层不是对象时 `root` 为空，标题退化文件名。
+  static Future<String> importMokuroDocument({
+    required FushiDatabase db,
+    required MokuroDocument document,
+    required String mokuroPath,
+    String? title,
+    DuplicatePolicy policy = const DuplicatePolicy.suffix(),
+    void Function(int done, int total)? onProgress,
+    int? sourceId,
+    MangaPageSource pageSource = MangaPageSource.borrowed,
+  }) async {
+    final MokuroPayload payload = document.payload;
     if (payload.images.isEmpty) {
       throw const MangaImportException('Mokuro file has no pages');
     }
-
-    // 顶层标题/卷元数据（parseMokuro 不带这些进模型，故从原始 JSON 顶层读）。顶层若不是对象
-    // （罕见的 top-level array/标量）降级为空 root，标题退化文件名，避免 as Map 硬崩。
-    final Object? rawRoot = jsonDecode(jsonStr);
-    final Map<String, Object?> root = rawRoot is Map
-        ? rawRoot.cast<String, Object?>()
-        : <String, Object?>{};
+    final Map<String, Object?> root = document.root;
+    final File mokuroFile = File(mokuroPath);
 
     // 页图根**解析**出来，不硬编码成 `.mokuro` 同级（BUG-1830 的根因）：mokuro 的
     // `img_path` 有两种并存惯例，卷子目录布局下裸文件名相对同级解析必然落空。判据与
@@ -684,7 +828,7 @@ class MangaImporter {
       final MokuroSize size =
           width is num && height is num && width > 0 && height > 0
           ? MokuroSize(width.toDouble(), height.toDouble())
-          : _pageSize(await page.file.readAsBytes(), page.relativeUrl);
+          : await pageSizeOfFile(page.file, page.relativeUrl);
       final Object? blocks = ocr?['blocks'];
       pages.add(<String, Object?>{
         'img_path': '$volumeName/${page.relativeUrl}',

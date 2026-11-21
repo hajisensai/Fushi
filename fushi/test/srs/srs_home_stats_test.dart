@@ -5,6 +5,10 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_stats.dart';
 import 'package:fushi_engine/srs/srs_stats_loader.dart';
 
+import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart'
+    show srsHomeRecallBars;
+import 'package:fushi/src/pages/implementations/srs_stat_charts.dart'
+    show SrsBarDatum;
 import 'package:fushi/src/srs/srs_home_stats.dart';
 
 import 'srs_test_support.dart';
@@ -24,6 +28,8 @@ void main() {
     int overdue = 0,
     List<int> perDay = const <int>[0, 0, 0, 0, 0, 0, 0],
     Map<String, int> todayByDeck = const <String, int>{},
+    List<Object?>? rwkvNow,
+    bool hasDueDateCards = true,
   }) {
     final Map<String, Object?> hist = <String, Object?>{
       'bins': <Object?>[],
@@ -64,8 +70,8 @@ void main() {
           'buckets': <Object?>[],
         },
         'furthestDue': 30,
-        'rwkvNow': null,
-        'hasDueDateCards': true,
+        'rwkvNow': rwkvNow,
+        'hasDueDateCards': hasDueDateCards,
         'reviews': <String, Object?>{'unit': 'day', 'buckets': <Object?>[]},
         'matureAt': <int>[],
         'added': <int>[],
@@ -142,6 +148,73 @@ void main() {
         report(overdue: 1, perDay: const <int>[1, 2, 0, 0, 0, 0, 1]),
       );
       expect(s.forecast, <int>[2, 2, 0, 0, 0, 0, 1]);
+    });
+  });
+
+  group('RWKV 此刻 / 到期日预测显示与否', () {
+    test('纯 RWKV：不画到期日预测；计数、停下后新增、回忆率分布照内核结果', () {
+      final List<int> bins = List<int>.filled(20, 0)..[18] = 4;
+      final SrsHomeStats s = srsHomeStatsOf(
+        report(
+          hasDueDateCards: false,
+          rwkvNow: <Object?>[
+            10,
+            2,
+            3,
+            0.5,
+            <int>[1, 4, 6],
+            bins,
+          ],
+        ),
+      );
+      expect(s.showsForecast, isFalse);
+      final SrsRwkvNow now = s.rwkvNow!;
+      expect((now.total, now.due, now.near, now.safe), (10, 2, 3, 5));
+      expect(now.ahead, <int>[1, 4, 6]);
+      expect(now.recallBins, bins);
+    });
+
+    test('混合（有按到期日排队的卡）：两样都画；没要将来时刻时 ahead 为 null', () {
+      final SrsHomeStats s = srsHomeStatsOf(
+        report(rwkvNow: <Object?>[1, 0, 0, 0.0, null, List<int>.filled(20, 0)]),
+      );
+      expect(s.showsForecast, isTrue);
+      expect(s.rwkvNow!.ahead, isNull);
+    });
+
+    test('没有 RWKV 卡：照旧画预测', () {
+      final SrsHomeStats s = srsHomeStatsOf(report(hasDueDateCards: false));
+      expect(s.rwkvNow, isNull);
+      expect(s.showsForecast, isTrue);
+    });
+  });
+
+  group('srsHomeRecallBars', () {
+    test('从最低有卡的格（最多补到目标格前一格）画到 100%，按目标线分三段', () {
+      final List<int> bins = List<int>.filled(20, 0)
+        ..[18] = 3
+        ..[19] = 5;
+      final List<SrsBarDatum> bars = srsHomeRecallBars(bins, 0.9);
+      expect(
+        <String>[for (final SrsBarDatum b in bars) b.label],
+        <String>['85%', '90%', '95%'],
+      );
+      expect(
+        <List<int>>[for (final SrsBarDatum b in bars) b.values],
+        <List<int>>[
+          <int>[0, 0, 0],
+          <int>[0, 3, 0],
+          <int>[0, 0, 5],
+        ],
+      );
+      expect(bars.first.title, '85%–90%');
+    });
+
+    test('低于目标的格算「低于」；没有目标时一律算「很稳」；没有卡时为空', () {
+      final List<int> bins = List<int>.filled(20, 0)..[12] = 2;
+      expect(srsHomeRecallBars(bins, 0.9).first.values, <int>[2, 0, 0]);
+      expect(srsHomeRecallBars(bins, null).first.values, <int>[0, 0, 2]);
+      expect(srsHomeRecallBars(List<int>.filled(20, 0), 0.9), isEmpty);
     });
   });
 

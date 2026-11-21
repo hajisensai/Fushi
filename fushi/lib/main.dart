@@ -33,6 +33,8 @@ import 'package:window_manager/window_manager.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_workbench_page.dart'
+    show registerMangaAudioWorkbenchEntry;
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
@@ -55,6 +57,8 @@ import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDbStore;
 import 'package:fushi_engine/srs/srs_miner.dart' show SrsMiner;
 import 'package:fushi/src/srs/srs_providers.dart'
     show srsProfileStoresProvider, srsRevisionProvider;
+import 'package:fushi/src/sync/interconnect_lan_relocation.dart'
+    show InterconnectLanRelocator, installInterconnectLanRelocation;
 import 'package:fushi/src/sync/interconnect_p2p_app.dart'
     show installInterconnectP2pClient;
 import 'package:fushi/src/sync/sync_repository.dart' show SyncRepository;
@@ -164,6 +168,7 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankimobile_mined_ledger.dart';
 import 'package:fushi/src/anki/ankimobile_repository.dart';
 import 'package:fushi/src/anki/card_source_router.dart';
+import 'package:fushi/src/anki/source_review_navigation.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
 import 'package:fushi/src/platform/app_exit_coordinator.dart';
@@ -349,6 +354,8 @@ Future<void> _restoreWindowsWindowIcon(AppIconSelection selection) async {
 /// to act on once the app has finished initialising.
 void main([List<String> args = const <String>[]]) {
   StartupTimeline.begin();
+  // 有声漫画工作台挂到环外入口（书卡菜单 / 侧栏速览经入口打开，见入口文件注释）。
+  registerMangaAudioWorkbenchEntry();
   // 桌面端：从 args 里挑出外部打开的视频路径（Windows / Linux runner 传 argv）。
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     final String? videoArg = firstExternalVideoArg(args);
@@ -422,13 +429,12 @@ void main([List<String> args = const <String>[]]) {
       // app-support 根里。bundle id 从 com.example.hibiki 改成 app.fushi.reader
       // 后旧域整份不可见，其中就有用户自选的数据根路径——只捞回那几个锚点键。
       await recoverLegacyMacosPrefsFromSharedPreferences();
-      // ASR 算法层住在独立包（fushi_asr_core），它的数据根 / 出站 HTTP / 日志三个装配点
-      // 由宿主装上。放在这里而不是 `AppModel.initialise()`：装的全是同步工厂，没有
-      // 时序前置条件，而 `initialise()` 有两个 entry point 绕开它（弹窗词典与悬浮
-      // 词典），写在 main 里哪个入口都不会漏。
+      // 引擎包与 ASR 包（fushi_asr_core）的数据根 / 出站 HTTP / 日志等装配点由宿主
+      // 装上。放在入口而不是 `AppModel.initialise()`：装的全是同步工厂，没有时序前置
+      // 条件，而 `initialise()` 有别的 entry point 绕开它。副 engine 的入口不跑
+      // main()，各自调同一个函数（BUG-4940）。
       StartupTimeline.mark('support-dir-migration');
-      installEngineHostBindings();
-      installAsrHostBindings();
+      installEntryPointHostBindings();
       // 丢了抬起事件的指针补发取消，免得拖动识别器一直卡在「按着」（见该函数注释）。
       installStalePointerGuard();
       // Windows：偏好落在 DirectML 且环境已下载时换用它的 onnxruntime core。必须
@@ -870,6 +876,22 @@ void main([List<String> args = const <String>[]]) {
       // 写入后同样刷新牌组列表 / 首页复习条的计数。
       appModel.srsCardsAddedNotifier = () =>
           container.read(srsRevisionProvider.notifier).state++;
+      // BUG-5085：复习库要升级时制卡失败提示上的「打开复习」：与小组件「复习」入口同一条路（切到复习 tab、
+      // 退回首页层级，编辑页的 PopScope 照常拦未保存改动）。复习 tab 本身就是升级 / 说明页。
+      mineFailureOpenReview = () {
+        if (!appModel.moduleVisibility.isEnabled(ModuleId.srs)) return;
+        final ExternalMediaNavigation media = ExternalMediaNavigation.instance;
+        unawaited(
+          media.navigate(() async {
+            homeShellTabNotifier.value = HomeTab.srs;
+            final NavigatorState? navigator =
+                appModel.navigatorKey.currentState;
+            if (navigator != null) {
+              await unwindToHomeRoute(navigator, media: media);
+            }
+          }),
+        );
+      };
       appModel.ankiRepositoryReader = () =>
           container.read(ankiRepositoryProvider);
       appModel.hostMiningRepositoryReader = () =>
@@ -893,6 +915,17 @@ void main([List<String> args = const <String>[]]) {
       // 互联 P2P 隧道（原生库可用才装）：client 选路在直连全失败后经隧道兜底
       // （docs/specs/2026-09-28-interconnect-remote-reach.md §5）。
       installInterconnectP2pClient(SyncRepository(appModel.database));
+      // BUG-5068：已配对 host 换了网段（电脑改连手机热点）、存量直连地址全不通时，
+      // 选路先在局域网上按 hostId 做一次限时 mDNS 浏览找它的新地址，再建隧道。
+      final SyncRepository relocationRepo = SyncRepository(appModel.database);
+      installInterconnectLanRelocation(
+        relocationRepo,
+        InterconnectLanRelocator(
+          ownDeviceId: relocationRepo.getOrCreateDeviceId,
+          onBrowseStart: appModel.syncServerController.registerDiscovery,
+          onBrowseEnd: appModel.syncServerController.unregisterDiscovery,
+        ).urlsFor,
+      );
       // BUG-4242：上一个进程上传途中被杀（iOS 挂起 / 内存压力）时，混淆临时目录
       // （与原文件同尺寸，有声书数百 MB）不会经 finally 删掉。启动时认领本进程的
       // 临时槽位，顺带删掉已死进程的槽位（活进程的锁拿不到、不删），并清旧版本留在
@@ -3202,6 +3235,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
             reporter: CrashReporter.instance,
             service: ref.read(feedbackServiceProvider),
           ),
+        );
+        offerSecurityKillNoticeAfterStartup(
+          context: () =>
+              ref.read(appProvider).navigatorKey.currentContext ?? context,
+          verdict: PreviousExitLog.verdict,
         );
       });
     }

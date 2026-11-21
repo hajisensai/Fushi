@@ -66,6 +66,15 @@ ZH_HANT = [
     "明天也許會下雨。",
 ]
 
+KO = [
+    "안녕하세요, 오늘은 날씨가 정말 좋네요.",
+    "♪ 밤하늘에 별이 반짝이고 있어 ♪",
+    "어… 정말이야? 믿을 수가 없어!",
+    "「약속이야」 그녀는 그렇게 말하며 웃었다.",
+    "제12화 표시 능력 테스트",
+    "내일은 비가 올지도 몰라.",
+]
+
 
 def stamp(i, sep):
     return "%02d:%02d:%02d%s" % (i // 3600, i // 60 % 60, i % 60, sep)
@@ -98,6 +107,8 @@ FIXTURES = [
     ("ja_eucjp.srt", srt(JA_EUC, 24), "euc_jp"),
     ("zh_gbk.srt", srt(ZH_HANS, 24), "gbk"),
     ("zh_big5.srt", srt(ZH_HANT, 24), "cp950"),
+    # EUC-KR 的字节全落在 GB2312 区：从前被 GBK 零错误解成一串汉字。
+    ("ko_euckr.srt", srt(KO, 24), "euc_kr"),
 ]
 
 for name, text, codec in FIXTURES:

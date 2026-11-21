@@ -18,12 +18,15 @@
 ///   `home_page.dart` 的 `_runAutoSourceScan`。
 library;
 
+export 'package:fushi/src/media/source_library/source_scan_activity.dart';
+
 import 'dart:async';
 import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart'
     show SourceLibraryScanner, SourceScanSummary;
+import 'package:fushi/src/media/source_library/source_scan_activity.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
@@ -53,76 +56,6 @@ enum SourceAutoScanOutcome {
 /// 扫描一个来源；由持有页面级依赖（有声书转录端口、视频刮削任务控制器）的调用方实现。
 typedef SourceAutoScanRunner =
     Future<SourceAutoScanOutcome> Function(SourceLibraryRow source);
-
-/// 来源扫描占用表 + 每来源互斥锁：哪些来源此刻正在被扫（手动或自动）。
-///
-/// [SourceLibraryScanner.scan] 自己经 [run] 登记，所以**所有**扫描入口（来源页「重新
-/// 扫描」、曲库页重扫、音乐来源重扫、ctl 路由、添加文件夹、自动扫描）都过这一把锁：
-/// 同一来源不会被两个入口并发扫（后到的等前一个扫完再扫）；来源页行级 loading 能看到
-/// 别处发起的扫描；自动扫描在任何扫描期间排队（[whenIdle]）。
-///
-/// [run] 可重入：在某个来源的 [run] 里（同一 zone 链上）再对同一来源 [run]，直接执行，
-/// 不等自己——调度器 / 来源页先登记、内层扫描器再登记是常态。
-class SourceScanActivity extends ChangeNotifier {
-  final Map<int, Completer<void>> _active = <int, Completer<void>>{};
-  Completer<void>? _idle;
-
-  /// zone 值：当前 zone 链上已持有锁的来源 id（只在本实例内有意义）。
-  late final Object _heldKey = Object();
-
-  /// 没有任何来源在扫。
-  bool get isIdle => _active.isEmpty;
-
-  /// [sourceId] 正在被扫。
-  bool isScanning(int sourceId) => _active.containsKey(sourceId);
-
-  /// 此刻正在扫的来源 id 快照。
-  Set<int> get activeSourceIds => Set<int>.unmodifiable(_active.keys.toSet());
-
-  /// 持有 [sourceId] 的锁执行 [operation]。同一来源正被别的入口扫时先等它扫完；当前
-  /// zone 已持有这把锁（嵌套调用）时直接执行。
-  Future<T> run<T>(int sourceId, Future<T> Function() operation) async {
-    final Set<int> held =
-        (Zone.current[_heldKey] as Set<int>?) ?? const <int>{};
-    if (held.contains(sourceId)) return operation();
-    for (
-      Completer<void>? other = _active[sourceId];
-      other != null;
-      other = _active[sourceId]
-    ) {
-      await other.future;
-    }
-    final Completer<void> done = Completer<void>();
-    _active[sourceId] = done;
-    notifyListeners();
-    try {
-      return await runZoned(
-        operation,
-        zoneValues: <Object?, Object?>{
-          _heldKey: <int>{...held, sourceId},
-        },
-      );
-    } finally {
-      _active.remove(sourceId);
-      done.complete();
-      if (_active.isEmpty) {
-        final Completer<void>? idle = _idle;
-        _idle = null;
-        idle?.complete();
-      }
-      notifyListeners();
-    }
-  }
-
-  /// 所有扫描都结束时完成；此刻已空闲则立即完成。
-  Future<void> whenIdle() {
-    if (isIdle) return Future<void>.value();
-    return (_idle ??= Completer<void>()).future;
-  }
-}
-
-/// 进程内唯一的来源扫描占用表（来源页与首页的自动扫描调度共用）。
-final SourceScanActivity sourceScanActivity = SourceScanActivity();
 
 /// 来源种类所属的功能模块；模块关掉时它的来源不自动扫描。未知种类返回 null。
 ModuleId? sourceLibraryKindModule(String mediaKind) =>

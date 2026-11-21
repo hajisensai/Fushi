@@ -7,7 +7,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:cupertino_ui/cupertino_ui.dart'
-    show CupertinoPageTransitionsBuilder, CupertinoRouteTransitionMixin;
+    show CupertinoRouteTransitionMixin;
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/home_tab.dart';
@@ -19,6 +19,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
 import 'package:fushi/src/utils/adaptive/predictive_back_page_transitions.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
+import 'package:fushi/src/utils/adaptive/vetoed_back_swipe.dart';
 import 'package:fushi/src/utils/components/accent_logo_image.dart'
     show appLogoFollowsAccent;
 import 'package:fushi/src/utils/components/mascot_glow.dart'
@@ -583,7 +584,8 @@ class EinkCupertinoPageTransitionsBuilder extends PageTransitionsBuilder {
       context,
       dragging ? animation : kAlwaysCompleteAnimation,
       dragging ? secondaryAnimation : kAlwaysDismissedAnimation,
-      child,
+      // 页面 `PopScope` 否决返回时侧滑转成 maybePop（墨水屏下不做阻尼位移）。
+      VetoedBackSwipe(route: route, child: child),
     );
   }
 }
@@ -595,6 +597,15 @@ class EinkCupertinoPageTransitionsBuilder extends PageTransitionsBuilder {
 /// app 与阅读器始终按当前明暗设置（亮 / 暗 / 跟随系统）从种子派生。旧预设带的
 /// 「纯黑」语义改为明暗旁的独立开关（[ThemeNotifier.pureBlackDark]）。
 typedef ThemePreset = ({Color seed, DynamicSchemeVariant variant});
+
+/// 覆盖所选主题配色的取色来源（见 [ThemeNotifier.activeAccentOverrideSource]）。
+enum ThemeAccentOverrideSource {
+  /// 「从图片取色」：自定义背景图的颜色。
+  pageBackdrop,
+
+  /// 「主题色跟随图标」：自定义 app 图标的颜色。
+  appIcon,
+}
 
 /// 2026-10 精简前的内置预设（已删）：只为存量 `app_theme_key` 的只读映射保留
 /// 种子与语义——[neutral] = 中性灰变体、[dark] = 当年选中时写入的明暗（仅在
@@ -1160,6 +1171,46 @@ class ThemeNotifier extends ChangeNotifier {
   /// 覆盖生效主题的种子：背景图取色优先，其次「主题色跟随图标」。两者都只是覆盖，
   /// 不改写主题偏好。
   Color? get _overrideAccentSeed => pageBackdropAccentSeed ?? appIconAccentSeed;
+
+  /// 当前是谁在覆盖主题配色（没有覆盖时为 null）。主题选择行 / 自定义主题编辑页据此
+  /// 提示「配色来自背景图 / 图标」——否则点色卡毫无反应、用户不知道为什么。与
+  /// [_overrideAccentSeed] 同优先级。
+  ThemeAccentOverrideSource? get activeAccentOverrideSource {
+    if (pageBackdropAccentSeed != null) {
+      return ThemeAccentOverrideSource.pageBackdrop;
+    }
+    if (appIconAccentSeed != null) return ThemeAccentOverrideSource.appIcon;
+    return null;
+  }
+
+  /// 用户选主题的唯一入口（设置页色卡、自定义主题编辑页「应用」、`config set
+  /// appearance.theme`、控制通道 `select=true`，都经 [AppModel.pickAppThemeKey]）：
+  /// 用户明确要这个主题，就关掉所有**正在生效**的取色覆盖，让所选主题真正显示。
+  /// 背景图 / 自定义图标本身保留，只是不再取色；没生效的开关不动；两个都生效时都关，
+  /// 否则关掉背景图取色后又落到图标取色上。
+  ///
+  /// 开关与主题键同一批落库、只通知一次：分步写会先按「关了取色、还没换主题」的
+  /// 中间态重建一帧（闪一下旧主题色）。
+  ///
+  /// [setAppThemeKey] 是另一种写法：只换键、不碰取色开关，只给「不是用户在选主题」
+  /// 的写入用（删掉当前自定义主题后指回剩余主题）。同步 / 恢复整份写偏好，取色开关
+  /// 随同一份快照一起到位，不经这两个入口。
+  Future<void> pickAppThemeKey(String key) async {
+    final bool releaseBackdrop = pageBackdropAccentSeed != null;
+    final bool releaseIcon = appIconAccentSeed != null;
+    await _setAppThemeKeyKeepingEffective(
+      key,
+      extraWrites: <String, String>{
+        if (releaseBackdrop)
+          kPageBackdropFollowImageAccentPrefKey: PrefCodec.encode(false),
+        if (releaseIcon) followAppIconPrefKey: PrefCodec.encode(false),
+      },
+    );
+    // 作废还在跑的图标取色（开关已关，晚到的结果不该再套上）。
+    if (releaseIcon) ++_appIconSeedGeneration;
+    notifyListeners();
+    _persistSplashColor();
+  }
 
   /// 背景图文件是否存在的核对结果（路径 → 存在）。快照发布在 UI isolate 上、每次
   /// 改任何一项背景设置都会重读，所以这里**不碰文件系统**：没核对过的路径先按存在
@@ -2168,11 +2219,6 @@ class ThemeNotifier extends ChangeNotifier {
     fallback: shellContentLayoutDefault,
   );
 
-  /// 显式选过库页布局（落库值非空，含已删的 `blocks`）；false = 跟着
-  /// [ShellContentLayout.defaultLayout] 走。
-  bool get shellContentLayoutChosen =>
-      (_get('shell_content_layout', defaultValue: '') as String).isNotEmpty;
-
   /// 显式选库页布局（设置页 / 新手引导 / 选择框）。选过就等于回答了「选一种库页
   /// 布局」，待弹的选择框一并记成已处理——否则墨水屏期间留着的待处理状态会在
   /// 用户已经在设置里选过之后再弹一次。
@@ -2924,6 +2970,8 @@ class ThemeNotifier extends ChangeNotifier {
   /// 切主题只换配色：**不改写 `brightness_mode`、不强制亮 / 暗**（2026-10-06 用户
   /// 「切换主题的时候如果我是深色就要继续保持深色」）。此前选 `system-theme` 会把
   /// 明暗写成 system、选预设会写成该预设自带的 light / dark。
+  ///
+  /// 只换键、不碰取色覆盖：用户选主题走 [pickAppThemeKey]，这里只给非用户选择的写入。
   Future<void> setAppThemeKey(String key) async {
     await _setAppThemeKeyKeepingEffective(key);
     notifyListeners();
@@ -2935,8 +2983,12 @@ class ThemeNotifier extends ChangeNotifier {
   /// 对旧「纯黑」预设的回退）按换键前的有效值补写成独立偏好，与新主题键同一批落库。
   /// 换掉主题键后那些兜底就读不到了：旧 black-theme 用户改个种子色纯黑消失、旧自定义深色
   /// 用户换预设变成跟随系统。已显式存过的键不动。
-  Future<void> _setAppThemeKeyKeepingEffective(String key) async {
-    final Map<String, String> writes = <String, String>{};
+  /// [extraWrites]（已编码）与主题键同一批落库（[pickAppThemeKey] 关取色开关用）。
+  Future<void> _setAppThemeKeyKeepingEffective(
+    String key, {
+    Map<String, String> extraWrites = const <String, String>{},
+  }) async {
+    final Map<String, String> writes = <String, String>{...extraWrites};
     if (_get('brightness_mode', defaultValue: '').isEmpty) {
       writes['brightness_mode'] = PrefCodec.encode(brightnessMode);
     }
@@ -3281,15 +3333,33 @@ ThemeData buildFushiThemeData({
         // 系统返回键 / 手势照常 pop，也就不存在那套手势计数失配的口子。
         // 系统「减弱动态效果」下 FushiCupertinoPageTransitionsBuilder 退化成原地
         // 线性淡入（无推入视差），边缘侧滑返回仍装着（见该类注释）。
+        //
+        // 同样套 [FushiBackdropPageTransitionsBuilder]：用户自选的背景图片在 Apple
+        // 下也要画（设置页提示「自定义图片所有设计都显示」）。此前这一支没套，
+        // Apple 下整个 app 一页都不垫背景层，选了图也是白底。形状类预设在 Apple
+        // 下由 [LibraryShapeBackdrop.enabledFor] 判为不画，那时背景层不改底色、
+        // 不画装饰，与不套等价。
         : appleDesign
         ? const PageTransitionsTheme(
             builders: <TargetPlatform, PageTransitionsBuilder>{
-              TargetPlatform.android: FushiCupertinoPageTransitionsBuilder(),
-              TargetPlatform.iOS: FushiCupertinoPageTransitionsBuilder(),
-              TargetPlatform.macOS: FushiCupertinoPageTransitionsBuilder(),
-              TargetPlatform.windows: FushiCupertinoPageTransitionsBuilder(),
-              TargetPlatform.linux: FushiCupertinoPageTransitionsBuilder(),
-              TargetPlatform.fuchsia: FushiCupertinoPageTransitionsBuilder(),
+              TargetPlatform.android: FushiBackdropPageTransitionsBuilder(
+                FushiCupertinoPageTransitionsBuilder(),
+              ),
+              TargetPlatform.iOS: FushiBackdropPageTransitionsBuilder(
+                FushiCupertinoPageTransitionsBuilder(),
+              ),
+              TargetPlatform.macOS: FushiBackdropPageTransitionsBuilder(
+                FushiCupertinoPageTransitionsBuilder(),
+              ),
+              TargetPlatform.windows: FushiBackdropPageTransitionsBuilder(
+                FushiCupertinoPageTransitionsBuilder(),
+              ),
+              TargetPlatform.linux: FushiBackdropPageTransitionsBuilder(
+                FushiCupertinoPageTransitionsBuilder(),
+              ),
+              TargetPlatform.fuchsia: FushiBackdropPageTransitionsBuilder(
+                FushiCupertinoPageTransitionsBuilder(),
+              ),
             },
           )
         // Android 侧滑返回改走自带手势记账的转场：Flutter 自带实现把平台事件直接
@@ -3308,10 +3378,10 @@ ThemeData buildFushiThemeData({
                 FushiPredictiveBackPageTransitionsBuilder(),
               ),
               TargetPlatform.iOS: FushiBackdropPageTransitionsBuilder(
-                CupertinoPageTransitionsBuilder(),
+                FushiNativeCupertinoPageTransitionsBuilder(),
               ),
               TargetPlatform.macOS: FushiBackdropPageTransitionsBuilder(
-                CupertinoPageTransitionsBuilder(),
+                FushiNativeCupertinoPageTransitionsBuilder(),
               ),
               // 桌面：原地淡入、不位移（2026-10 动效重做）。Zoom 的整窗缩放位移
               // 随窗口尺寸线性增长，大屏上很重，见该 builder 类注释。

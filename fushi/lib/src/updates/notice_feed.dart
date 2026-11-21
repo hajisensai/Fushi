@@ -2,12 +2,15 @@
 // services/leaderboard），展示层见 notice_layer.dart。
 //
 // 请求体（字段名与服务端约定一致）：v 运行中的构建版本、p 平台键、c 更新通道、l App 界面语言、
-// id Android applicationId、h / k 签名证书摘要（见 build_info.dart）。不带安装 id、设备 id
-// 或账户，所以这条请求**不受**「使用统计」开关（`usage_stats_enabled`）约束；服务端也不存 IP。
-// 通知的文字、级别和链接全部由服务端决定，客户端只负责展示。
+// id Android applicationId、h / k 签名证书摘要（见 build_info.dart）、s「发送使用统计」开关
+// （`usage_stats_enabled`）的当前值。不带安装 id、设备 id 或账户；服务端也不存 IP。
+// 通知照常拉取（公告要能送到关了统计的构建上），但服务端只在 s 为 true 时计数，开关关掉就
+// 不留任何统计。通知的文字、级别和链接全部由服务端决定，客户端只负责展示。
 //
 // 节奏：启动后（首帧之后，不挡启动）拉一次，之后按服务端给的 ttl 再拉；失败等下一个 [NoticeFeed.retry]
-// 间隔。上一次成功的结果缓存在设备本地偏好里，离线重启后照常展示；服务端返回空列表即清掉缓存。
+// 间隔。上一次成功的结果连同拉取时间缓存在设备本地偏好里，离线重启后照常展示，但缓存会过期：
+// 横幅 / 对话框最多 [kNoticeCacheMaxAge]，全屏层最多 [kNoticeBlockCacheMaxAge]——规则写错或
+// 已撤销时，连不上服务端的设备也不会被一直锁住。服务端返回空列表即清掉缓存。
 // 发心跳的平台才拉（[usageHeartbeatPlatformFor]，iOS 不拉）。
 
 import 'dart:async';
@@ -24,7 +27,8 @@ import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:http/http.dart' as http;
 
-/// 上一次成功响应里的通知（JSON 数组字符串），设备本地。
+/// 上一次成功响应里的通知与拉取时间（JSON 对象字符串 `{"at": 毫秒, "notices": [...]}`），
+/// 设备本地。早期版本存的是裸数组（没有拉取时间），读到时当作已过期。
 const String kNoticesCachePrefKey = 'notices_cache';
 
 /// 已经弹过的对话框级通知 id（JSON 数组字符串），设备本地。
@@ -46,6 +50,12 @@ const int kNoticeSeenCap = 200;
 const Duration kNoticeMinTtl = Duration(minutes: 5);
 const Duration kNoticeMaxTtl = Duration(days: 7);
 const Duration kNoticeDefaultTtl = Duration(hours: 6);
+
+/// 缓存的横幅 / 对话框级通知自拉取起多久内还展示。
+const Duration kNoticeCacheMaxAge = Duration(days: 7);
+
+/// 缓存的全屏级通知自拉取起多久内还展示（不可关闭，所以比其它级别短得多）。
+const Duration kNoticeBlockCacheMaxAge = Duration(days: 1);
 
 /// 通知的展示方式。
 enum RemoteNoticeLevel {
@@ -200,6 +210,7 @@ Map<String, Object?> buildNoticeRequest({
   required String channel,
   required String locale,
   required BuildInfo info,
+  required bool usageStats,
 }) => <String, Object?>{
   'v': version,
   'p': platform,
@@ -208,21 +219,46 @@ Map<String, Object?> buildNoticeRequest({
   'id': info.id,
   'h': List<String>.of(info.h),
   'k': List<String>.of(info.k),
+  's': usageStats,
 };
 
-/// **纯函数**：缓存里的通知（偏好值是 [kNoticesCachePrefKey] 的 JSON 字符串）。
-List<RemoteNotice> decodeCachedNotices(Object? raw) {
+/// **纯函数**：缓存里还没过期的通知（偏好值是 [kNoticesCachePrefKey] 的 JSON 字符串）。
+/// 没有拉取时间（早期格式）、拉取时间在未来或格式不对时整份当作过期；横幅 / 对话框超过
+/// [kNoticeCacheMaxAge]、全屏层超过 [kNoticeBlockCacheMaxAge] 的条目丢掉。
+List<RemoteNotice> decodeCachedNotices(Object? raw, {required DateTime now}) {
   if (raw is! String || raw.isEmpty) return const <RemoteNotice>[];
+  final Object? decoded;
   try {
-    return parseRemoteNotices(jsonDecode(raw));
+    decoded = jsonDecode(raw);
   } on FormatException {
     return const <RemoteNotice>[];
   }
+  if (decoded is! Map) return const <RemoteNotice>[];
+  final Object? at = decoded['at'];
+  if (at is! int) return const <RemoteNotice>[];
+  final Duration age = now.difference(
+    DateTime.fromMillisecondsSinceEpoch(at, isUtc: true),
+  );
+  if (age.isNegative) return const <RemoteNotice>[];
+  return List<RemoteNotice>.unmodifiable(
+    parseRemoteNotices(decoded['notices']).where(
+      (RemoteNotice notice) =>
+          age <=
+          (notice.level == RemoteNoticeLevel.block
+              ? kNoticeBlockCacheMaxAge
+              : kNoticeCacheMaxAge),
+    ),
+  );
 }
 
-/// **纯函数**：通知写进缓存的 JSON 字符串。
-String encodeCachedNotices(List<RemoteNotice> notices) =>
-    jsonEncode(notices.map((RemoteNotice notice) => notice.toJson()).toList());
+/// **纯函数**：通知连同拉取时间 [at] 写进缓存的 JSON 字符串。
+String encodeCachedNotices(
+  List<RemoteNotice> notices, {
+  required DateTime at,
+}) => jsonEncode(<String, Object?>{
+  'at': at.millisecondsSinceEpoch,
+  'notices': notices.map((RemoteNotice notice) => notice.toJson()).toList(),
+});
 
 /// **纯函数**：已弹过的对话框 id（偏好值是 [kNoticesSeenPrefKey] 的 JSON 字符串）。
 List<String> decodeSeenNoticeIds(Object? raw) {
@@ -303,20 +339,25 @@ class NoticeFeed {
     required String Function() version,
     required String Function() channel,
     required String Function() locale,
+    required bool Function() usageStats,
     NoticeBuildInfoResolver buildInfo = readBuildInfo,
     String? operatingSystem,
+    DateTime Function() clock = DateTime.now,
     this.retry = const Duration(hours: 1),
   }) : _prefs = prefs,
        _post = post,
        _version = version,
        _channel = channel,
        _locale = locale,
+       _usageStats = usageStats,
        _buildInfo = buildInfo,
+       _clock = clock,
        _platform = usageHeartbeatPlatformFor(
          operatingSystem ?? Platform.operatingSystem,
        );
 
-  /// 生产装配：发往 Fushi 自己的服务，版本取运行中代码的构建版本（同安装统计心跳）。
+  /// 生产装配：发往 Fushi 自己的服务，版本取运行中代码的构建版本（同安装统计心跳），
+  /// 统计开关每次请求时现读 [PreferencesRepository.usageStatsEnabled]。
   factory NoticeFeed.forFushi({
     required PreferencesRepository prefs,
     required String executableVersion,
@@ -327,6 +368,7 @@ class NoticeFeed {
     version: () => resolveCurrentAppVersion(executableVersion),
     channel: channel,
     locale: () => LocaleSettings.currentLocale.languageTag,
+    usageStats: () => prefs.usageStatsEnabled,
   );
 
   final PreferencesRepository _prefs;
@@ -334,7 +376,9 @@ class NoticeFeed {
   final String Function() _version;
   final String Function() _channel;
   final String Function() _locale;
+  final bool Function() _usageStats;
   final NoticeBuildInfoResolver _buildInfo;
+  final DateTime Function() _clock;
   final String? _platform;
 
   /// 拉取失败后多久再试。
@@ -355,11 +399,14 @@ class NoticeFeed {
 
   bool get isRunning => _started;
 
-  /// 先展示缓存，再立刻拉一次。不支持的平台什么都不做。
+  /// 先展示还没过期的缓存，再立刻拉一次。不支持的平台什么都不做。
   void start() {
     if (_started || _platform == null) return;
     _started = true;
-    _notices.value = decodeCachedNotices(_prefs.getPref(kNoticesCachePrefKey));
+    _notices.value = decodeCachedNotices(
+      _prefs.getPref(kNoticesCachePrefKey),
+      now: _clock(),
+    );
     unawaited(refresh());
   }
 
@@ -397,6 +444,7 @@ class NoticeFeed {
         channel: _channel(),
         locale: _locale(),
         info: await _buildInfo(),
+        usageStats: _usageStats(),
       );
       response = parseNoticeResponse(await _post(body));
     } catch (error) {
@@ -413,7 +461,7 @@ class NoticeFeed {
     } else {
       await _prefs.setPref(
         kNoticesCachePrefKey,
-        encodeCachedNotices(response.notices),
+        encodeCachedNotices(response.notices, at: _clock()),
       );
     }
     if (!listEquals(_notices.value, response.notices)) {

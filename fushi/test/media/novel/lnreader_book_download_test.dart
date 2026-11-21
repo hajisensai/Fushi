@@ -11,6 +11,7 @@ import 'package:fushi/src/media/novel/online/lnreader_cloudflare.dart';
 import 'package:fushi/src/media/novel/online/lnreader_epub_assembler.dart';
 import 'package:fushi/src/media/novel/online/lnreader_fetch_bridge.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
+import 'package:fushi/src/media/novel/online/lnreader_missing_images.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -181,10 +182,19 @@ void main() {
       expect(second, contains('src="images/c2-0.png"'));
       expect(
         second,
-        isNot(contains('images/c2-1.png')),
-        reason: '404 的插图要从正文摘掉，不能留断链。',
+        isNot(contains('src="images/c2-1.png"')),
+        reason: '404 的插图不能留断链。',
       );
+      // 留缺图占位（带原图地址、引用页、插件 id），阅读器打开时据此提示并补取。
+      final LnReaderMissingImage missing = parseLnReaderMissingImages(
+        second,
+      ).single;
+      expect(missing.fileName, 'images/c2-1.png');
+      expect(missing.url, '$imageBase/missing.png');
+      expect(missing.pluginId, plugin.id);
+      expect(missing.referer, isNotNull);
       expect(archive.findFile('OEBPS/images/c2-0.png'), isNotNull);
+      expect(archive.findFile('OEBPS/images/c2-1.png'), isNull);
     });
 
     // 审查 B1：插图地址来自插件 / 站点。HttpClient 自动跟随重定向时只有首跳过
@@ -228,9 +238,11 @@ void main() {
         reason: '重定向目标是被拦主机，一次都不能被请求到。',
       );
       final Archive archive = _unzip(imported!);
+      final String second = _entry(archive, 'OEBPS/chapter-2.xhtml');
+      expect(second, isNot(contains('src="images/c2-0')));
       expect(
-        _entry(archive, 'OEBPS/chapter-2.xhtml'),
-        isNot(contains('images/c2-0')),
+        parseLnReaderMissingImages(second).single.url,
+        contains('/redirect.png'),
       );
     });
 
@@ -251,7 +263,10 @@ void main() {
         return cloudflare;
       }
 
-      Future<LnReaderEpubChapter> fetchSecond(LnReaderManager manager) async {
+      Future<LnReaderEpubChapter> fetchSecond(
+        LnReaderManager manager, {
+        LnReaderInstalledPlugin source = plugin,
+      }) async {
         final FushiDatabase db = FushiDatabase.forTesting(
           NativeDatabase.memory(),
         );
@@ -267,7 +282,7 @@ void main() {
           final LnReaderPluginInfo info = await manager.load(plugin);
           return await download.fetchChapter(
             client: client,
-            plugin: plugin,
+            plugin: source,
             info: info,
             chapter: chapters[1],
             imagePrefix: 'images/c2-',
@@ -277,6 +292,19 @@ void main() {
           await db.close();
         }
       }
+
+      // 拍板台 zCkIxtnwcV：源级开关「合并段内换行」只在开了的源上生效。
+      test('源开了「合并段内换行」才把句中折行接回去', () async {
+        final (LnReaderManager manager, FakeLnReaderRuntime _) =
+            await setUpManager(chapter2: '<p>空を見上げると、</p><p>星が瞬いていた。</p>');
+        final LnReaderEpubChapter off = await fetchSecond(manager);
+        expect(off.xhtmlBody, '<p>空を見上げると、</p><p>星が瞬いていた。</p>');
+        final LnReaderEpubChapter on = await fetchSecond(
+          manager,
+          source: plugin.copyWith(mergeLineBreaks: true),
+        );
+        expect(on.xhtmlBody, '<p>空を見上げると、星が瞬いていた。</p>');
+      });
 
       test('与封面同一套头：放行 cookie、Accept、浏览器 UA；Referer 是章节页', () async {
         final (
@@ -389,7 +417,11 @@ void main() {
             await setUpManager();
         final LnReaderEpubChapter chapter = await fetchSecond(manager);
         expect(chapter.images, hasLength(1));
-        expect(chapter.xhtmlBody, isNot(contains('images/c2-1.png')));
+        expect(chapter.xhtmlBody, isNot(contains('src="images/c2-1.png"')));
+        expect(
+          parseLnReaderMissingImages(chapter.xhtmlBody).single.fileName,
+          'images/c2-1.png',
+        );
         final ErrorLogEntry entry = ErrorLogService.instance.entries.lastWhere(
           (ErrorLogEntry e) => e.source == 'LnReaderBookDownload.imagesDropped',
         );

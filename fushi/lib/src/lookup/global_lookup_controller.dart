@@ -444,9 +444,8 @@ class GlobalLookupController {
     // channels 注释）：手柄经 shortcuts 层的进程级登记处拿到入口，鼠标侧键在
     // native 侧按绑定注册 RawInput 监听（随覆盖窗的 native 通道，没有覆盖窗就没有）。
     // 两者都随注册表变更重推（_onRegistryChanged）。
-    GlobalExternalLookupRoute.set(
-      () => triggerSelectionLookup(source: 'gamepad'),
-    );
+    // 三条触发源都受「应用外快捷键」总开关管（[_appExternalTriggersEnabled]）。
+    _syncGamepadRoute();
     if (!isSupported) return;
     await _registerMouseTriggerFromRegistry();
 
@@ -627,7 +626,16 @@ class GlobalLookupController {
             ),
         // galgame 台词朗读（反馈 N8qzDdzIvD）：台词浮窗「朗读」按钮的同一个方法。
         ShortcutAction.globalExternalGalgameSpeakLine: speakGalgameLine,
+        // galgame 台词浮窗显隐（反馈 fMicnouU6V）。
+        ShortcutAction.globalExternalGalgameOverlayToggle: toggleGalgameOverlay,
       };
+
+  /// [ShortcutAction.globalExternalGalgameOverlayToggle] 的执行体：显示 / 隐藏
+  /// galgame 台词浮窗。落到 [GalHookTextOverlayController.toggleVisibility]——浮窗
+  /// 「关闭」按钮与文本钩子页「显示 Hook 浮窗」各自调的同一对方法，热键与按钮行为
+  /// 一致。没在 Hook 游戏（浮窗没启动）时首行直接返回，按热键静默无动作。
+  Future<void> toggleGalgameOverlay() =>
+      GalHookTextOverlayController.instance.toggleVisibility();
 
   /// [ShortcutAction.globalExternalGalgameSpeakLine] 的执行体：朗读 / 停止当前显示
   /// 的 galgame 台词。直接调台词浮窗「朗读」按钮（`onSpeakLine`）接的
@@ -709,9 +717,51 @@ class GlobalLookupController {
   /// Non-fatal on failure (the backends log every failure visibly).
   Future<void> _registerHotKeysFromRegistry() async {
     if (_hotKeysReleased) return;
+    if (!_appExternalTriggersEnabled) {
+      // 总开关关：一个系统钩子都不留——不是 apply 空集，而是连后端一起拆掉
+      // （portal 上那是一条常驻的 GlobalShortcuts 会话），重新打开时再新建。
+      await _disposeHotKeyBackend();
+      return;
+    }
     final GlobalHotKeyBackend backend = _hotKeyBackend ??=
         _createHotKeyBackend();
     return backend.apply(_hotKeyRequests());
+  }
+
+  /// 「应用外快捷键」总开关（pref `app_external_hotkeys_enabled`，默认开；
+  /// 维护者拍板 pr3605：热键要有自己的开关，不挂在查词页模块上）。关掉时
+  /// OS 热键、鼠标侧键 RawInput 监听、手柄触发三条 app 外触发源全部撤掉；
+  /// 查词卡覆盖窗本身（galgame 点词、系统悬浮球要用）不受影响。
+  bool get _appExternalTriggersEnabled =>
+      _appModel?.appExternalHotkeysEnabled ?? true;
+
+  /// 设置页切换总开关后调用：按当前 pref 装上 / 撤掉全部 app 外触发源。
+  /// 未 start（移动端 / 平台不支持）时什么都不做。
+  Future<void> applyAppExternalTriggersEnabled() async {
+    if (!_started) return;
+    glog('externalTriggers: enabled=$_appExternalTriggersEnabled');
+    _syncGamepadRoute();
+    await _registerHotKeysFromRegistry();
+    if (isSupported) await _registerMouseTriggerFromRegistry();
+  }
+
+  /// 手柄触发入口随总开关登记 / 注销；注销后 [GlobalExternalLookupRoute.current]
+  /// 为 null，按钮沿原派发路径继续，不被吞掉。
+  void _syncGamepadRoute() {
+    GlobalExternalLookupRoute.set(
+      _appExternalTriggersEnabled
+          ? () => triggerSelectionLookup(source: 'gamepad')
+          : null,
+    );
+  }
+
+  Future<void> _disposeHotKeyBackend() async {
+    final GlobalHotKeyBackend? backend = _hotKeyBackend;
+    _hotKeyBackend = null;
+    await _hotKeyStatusSub?.cancel();
+    _hotKeyStatusSub = null;
+    hotKeyStatus.value = null;
+    await backend?.dispose();
   }
 
   GlobalHotKeyBackend _createHotKeyBackend() {
@@ -801,7 +851,8 @@ class GlobalLookupController {
         ShortcutAction.globalExternalFloatingLyricToggle =>
           FloatingLyricChannel.supported,
         // 台词浮窗（与它的 TTS）只在 Windows 有：别的平台注册了也没有执行对象。
-        ShortcutAction.globalExternalGalgameSpeakLine =>
+        ShortcutAction.globalExternalGalgameSpeakLine ||
+        ShortcutAction.globalExternalGalgameOverlayToggle =>
           GalHookTextOverlayController.isSupported,
         _ => true,
       };
@@ -818,11 +869,7 @@ class GlobalLookupController {
   /// Exit chain: unregister the hotkeys / close the portal session.
   Future<void> releaseHotKeys() async {
     _hotKeysReleased = true;
-    final GlobalHotKeyBackend? backend = _hotKeyBackend;
-    _hotKeyBackend = null;
-    await _hotKeyStatusSub?.cancel();
-    _hotKeyStatusSub = null;
-    await backend?.dispose();
+    await _disposeHotKeyBackend();
   }
 
   /// 用户请求：一个键把 Fushi 主窗**唤到前台**并直接落在**查词页**上
@@ -874,7 +921,8 @@ class GlobalLookupController {
   Future<void> _registerMouseTriggerFromRegistry() async {
     final FushiShortcutRegistry? registry = _registry;
     int button = 0;
-    if (registry != null) {
+    // 总开关关：不留 RawInput 监听（button 0 = native 侧注销）。
+    if (registry != null && _appExternalTriggersEnabled) {
       final ShortcutBindingSet set = registry.bindingsFor(
         ShortcutAction.globalExternalLookup,
       );

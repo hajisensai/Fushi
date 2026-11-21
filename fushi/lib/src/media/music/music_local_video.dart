@@ -9,10 +9,20 @@
 /// 所以第一次观看时按 app 外打开视频同一入口（[upsertExternalVideoBook]，不复制文件、
 /// 按路径去重）登记进视频库，并给新登记的行打上「MV」标签——视频库里按这个标签就能
 /// 把 MV 筛出来。已在视频库里的同一个文件直接复用那一行，不动用户自己的标签。
+///
+/// 网络音乐来源（SFTP / WebDAV / AList）里的 MV 也能看画面（拍板台 left3568）：起播期按
+/// 来源取流——与音乐引擎放这首歌同一个解析器（`music_remote_media.dart`：WebDAV 认证头、
+/// AList 临期直链、SFTP 回环中继，都支持按偏移读 / seek）——交给视频播放页的远端起播路径
+/// 串流（与在线 MV 同一个客户端），不登记进视频库。
 library;
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/music_format_badge.dart';
+import 'package:fushi/src/media/music/music_library_data.dart'
+    show musicPlayItemOf;
+import 'package:fushi/src/media/music/music_remote_media.dart';
+import 'package:fushi/src/media/music/plugin/music_plugins.dart'
+    show MusicPluginStreamUnavailable;
 import 'package:fushi/src/media/video/external_video_ingest.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/media_extensions.dart' show isVideoMediaPath;
@@ -26,13 +36,40 @@ const String kMusicVideoTagName = 'MV';
 /// path 是 `https://…` / `sftp://…`）的 MV 都算，曲目行都标「MV」。纯函数，不碰文件系统。
 bool isMusicVideoTrack(MusicTrackRow track) => isVideoMediaPath(track.path);
 
-/// 这首曲目是不是**能在视频播放页里看的本地 MV**：视频容器且 path 是本机绝对路径。
-///
-/// 网络来源的 MV（path 带 URL scheme）在视频播放页里没有可打开的本地文件——视频库按
-/// 本机路径登记、[openMusicTrackVideo] 先查 `File.exists`——所以只放音轨、不给观看入口，
-/// 免得给出一个必然「视频文件不存在」的按钮。纯函数，不碰文件系统。
+/// 这首曲目是不是**本地 MV**：视频容器且 path 是本机绝对路径——看画面时登记进视频库、
+/// 按视频库行播放。纯函数，不碰文件系统。
 bool isMusicLocalVideoTrack(MusicTrackRow track) =>
     isMusicVideoTrack(track) && isMusicLocalFilePath(track.path);
+
+/// 这首曲目是不是**网络音乐来源里的 MV**（有 sourceId、path 是 `sftp://` / http(s) 条目
+/// 地址）：看画面时起播期按来源取流、交给视频播放页串流，不登记进视频库。服务器曲库
+/// （Jellyfin / Subsonic，没有 sourceId）的曲目不算。纯函数。
+bool isMusicStreamVideoTrack(MusicTrackRow track) =>
+    isMusicVideoTrack(track) &&
+    isMusicRemoteSourceTrack(sourceId: track.sourceId, path: track.path);
+
+/// 这首 MV 能不能在视频播放页里看画面（本地或网络音乐来源）。曲目菜单 / 曲目详情的
+/// 「在视频播放器中观看」看它。
+bool isMusicWatchableVideoTrack(MusicTrackRow track) =>
+    isMusicLocalVideoTrack(track) || isMusicStreamVideoTrack(track);
+
+/// 网络音乐来源 MV 此刻的播放地址与请求头：与音乐引擎放这首同一个解析器
+/// （[musicRemoteMediaResolver]，测试注入 [resolver]）。地址有时效（AList 签名直链），
+/// 所以视频页每次起播 / 重试时现取。拿不到（解析器没装、来源已删）抛
+/// [MusicPluginStreamUnavailable]。
+Future<MusicRemoteStream> resolveMusicStreamVideo(
+  MusicTrackRow track, {
+  MusicRemoteMediaResolver? resolver,
+}) async {
+  final MusicRemoteMediaResolver? r = resolver ?? musicRemoteMediaResolver;
+  final MusicRemoteStream? s = r == null
+      ? null
+      : await r.resolve(musicPlayItemOf(track));
+  if (s == null) {
+    throw MusicPluginStreamUnavailable(t.music_mv_open_failed);
+  }
+  return s;
+}
 
 final RegExp _urlSchemePrefix = RegExp(r'^[a-zA-Z][a-zA-Z0-9+.\-]*://');
 

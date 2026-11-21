@@ -573,7 +573,7 @@ class _MusicPluginCollectionPageState
       actions: <FushiToolbarItem>[
         if (switchable) musicViewStyleToggle(MusicViewKind.tracks, layout),
       ],
-      body: FutureBuilder<_Collection>(
+      body: (BuildContext context) => FutureBuilder<_Collection>(
         future: _data,
         builder: (BuildContext context, AsyncSnapshot<_Collection> snap) {
           if (snap.hasError) {
@@ -619,7 +619,7 @@ class _MusicPluginCollectionPageState
             tokens.spacing.gap,
           );
           // 重设计外壳、色块样式：曲目排成多列封面色块，按行惰性构建。
-          if (switchable && layout == MusicViewStyle.blocks) {
+          if (musicCoverBlocksActive(context, layout)) {
             return FushiEntranceScope(
               child: CustomScrollView(
                 slivers: <Widget>[
@@ -1154,7 +1154,7 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
     double width,
   ) {
     final MusicViewStyle style = _tabStyle(context, tab);
-    final bool blocks = style == MusicViewStyle.blocks;
+    final bool blocks = musicCoverBlocksActive(context, style);
     switch (tab) {
       case _ArtistTab.popular when blocks:
         return <Widget>[
@@ -1367,7 +1367,7 @@ class _MusicPluginArtistPageState extends ConsumerState<MusicPluginArtistPage> {
         if (view != null)
           musicViewStyleToggle(view.$1, _tabStyle(context, shownTab)),
       ],
-      body: FutureBuilder<_ArtistData>(
+      body: (BuildContext context) => FutureBuilder<_ArtistData>(
         future: _data,
         builder: (BuildContext context, AsyncSnapshot<_ArtistData> snap) {
           if (snap.hasError) {

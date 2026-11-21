@@ -18,11 +18,10 @@ class SrsSyncProgress {
 
   final SrsSyncStage stage;
 
-  /// [SrsSyncStage.downloading]：已下载（并已收进本机）的段数；[SrsSyncStage.migrating]：已处理的旧文件数；其它
-  /// 阶段为 0。
+  /// [SrsSyncStage.downloading]：已下载（并已收进本机）的段数；[SrsSyncStage.media]：已做完的媒体项数；其它阶段为 0。
   final int done;
 
-  /// [SrsSyncStage.downloading]：这一轮要下载的段总数；[SrsSyncStage.migrating]：旧根上要搬的文件数；未知为 0。
+  /// [SrsSyncStage.downloading]：这一轮要下载的段总数；[SrsSyncStage.media]：这一遍要做的媒体项数；未知为 0。
   final int total;
 
   @override
@@ -47,18 +46,15 @@ enum SrsSyncStage {
   /// 上传本机的改动。
   uploading,
 
-  /// 补齐卡片引用的媒体文件。
+  /// 补齐卡片引用的媒体文件（知道总数时 [SrsSyncProgress.done] / [SrsSyncProgress.total] 按项计）。
   media,
-
-  /// 把旧版本（同步协议 1）留在位置上的媒体搬进新格式（[srsMigrationProgress]，后台跑、不挡同步一轮）。
-  migrating,
 }
 
 /// 当前在跑的那一轮复习同步；没在跑为 null。
 final ValueNotifier<SrsSyncProgress?> srsSyncProgress =
     ValueNotifier<SrsSyncProgress?>(null);
 
-/// 旧根媒体的后台迁移（阶段恒为 [SrsSyncStage.migrating]）；没在迁移为 null。与 [srsSyncProgress] 分开：迁移不在
-/// 同步一轮里跑，两者可能同时在走。
-final ValueNotifier<SrsSyncProgress?> srsMigrationProgress =
-    ValueNotifier<SrsSyncProgress?>(null);
+/// 成功跑完的复习同步轮数（任何位置的一轮没报错跑完 +1；[SrsSyncScheduler] 记）。只给少数「等第一次同步成功」的
+/// 消费方当事件用（保留副本的到期日期：第一次同步成功之后改按它再留 14 天，见 `srs_retained_copy.dart`），
+/// 不是统计值。
+final ValueNotifier<int> srsSyncRoundsSucceeded = ValueNotifier<int>(0);

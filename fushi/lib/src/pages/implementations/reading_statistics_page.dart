@@ -253,19 +253,31 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       final db = appModelNoUpdate.database;
       // v92：统一事实面是**唯一**读取入口——legacy 日行的身份 / format（漫画从
       // 「阅读」里拆出来单列，页数是漫画独有的第三个量纲）已在里面按 title 反查
-      // 库表补好，段自带身份。本页只取阅读域（书 + 漫画）的日面；统计页不需要
-      // 活动行，activityLimit 传 0。
-      final StatFacts facts = await loadStatFacts(
+      // 库表补好，段自带身份。本页只读阅读域（书 + 漫画；视频 / 游戏的段与 legacy
+      // 表一行不用，与观看页同形）；计数面不收窄，「总览 = 各域之和」照旧成立。
+      // 统计页不需要活动行，activityLimit 传 0。
+      //
+      // 学习目标环是跨域口径（与首页「今日目标」同源，BUG-1993）：另读一份**本周
+      // 一起**的全域日面，只为 [_dailyFacts]；两份读互不依赖、一起发出去。
+      final Future<StatFacts> factsF = loadStatFacts(
         db,
         activityLimit: 0,
         includeCounters: true,
+        scope: const StatFactsScope.domain(kActivityMediaBook),
       );
+      final Future<StatFacts> goalFactsF = loadStatFacts(
+        db,
+        activityLimit: 0,
+        scope: StatFactsScope.since(_window.weekFromKey),
+      );
+      await Future.wait<StatFacts>(<Future<StatFacts>>[factsF, goalFactsF]);
+      final StatFacts facts = await factsF;
       _goalMediaLanguages = await loadStudyGoalMediaLanguagesFor(
         db,
         appModelNoUpdate.studyGoals,
       );
       _bookFacts = facts.dailyBooks.toList();
-      _dailyFacts = facts.daily;
+      _dailyFacts = (await goalFactsF).daily;
       _sessions = facts.sessions.where((StudySession s) => s.isBook).toList();
       _sourceDaily = aggregateStatSourceDaily(_bookFacts);
       // 加载事实时顺带取的书表：下面的 title→bookKey（合集归属 / legacy 行回退）

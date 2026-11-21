@@ -29,6 +29,14 @@ flutter_macos_podfile_setup
 target 'Runner' do
   use_frameworks!
 
+  # download.onnxruntime.ai（onnxruntime-objc / onnxruntime-c 1.23.0 在 trunk 上的
+  # 唯一源）2026-11-21 起证书错配 + 404，微软 GitHub 仓库自 11-17 起 404。改用本仓
+  # release 镜像的同一份 pod 包（钉 sha256），出处与清理条件见
+  # third_party/onnxruntime_pods/README.md。
+  ort_pods = File.join(File.dirname(File.realpath(__FILE__)), '..', '..', 'third_party', 'onnxruntime_pods')
+  pod 'onnxruntime-c', :podspec => File.join(ort_pods, 'onnxruntime-c.podspec.json')
+  pod 'onnxruntime-objc', :podspec => File.join(ort_pods, 'onnxruntime-objc.podspec.json')
+
   flutter_install_all_macos_pods File.dirname(File.realpath(__FILE__))
   target 'RunnerTests' do
     inherit! :search_paths

@@ -71,9 +71,15 @@ void main() {
 
     test('制卡侧复用展示侧的 pitch 归一化（BUG-2152 跨词典那一路）', () {
       final String body = functionBody('buildMinePayload');
+      // BUG-5054：合并前先把 H/L 模式串换算成数字位，与弹窗同一份归一化。
       expect(
         body,
-        contains('mergeIdenticalPitchGroups(pitches || [])'),
+        contains('normalizePitchPatterns(pitches || [], reading)'),
+        reason: '制卡侧没把 H/L 模式串换算成数字位，卡片上会写 [LHHHH]',
+      );
+      expect(
+        body,
+        contains('mergeIdenticalPitchGroups(patternNormalizedPitches)'),
         reason:
             '制卡侧又直接吃原始 pitches 了 —— 两本词典给出同一份发音时，'
             '弹窗里合成一行、卡片上却会重复两遍',

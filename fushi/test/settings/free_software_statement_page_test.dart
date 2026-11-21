@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/free_software_statement_page.dart';
 import 'package:fushi/src/updates/build_listing.dart';
+import 'package:fushi/src/utils/misc/official_links.dart';
 import 'package:material_ui/material_ui.dart';
 
 Future<void> _pump(WidgetTester tester, {required bool local}) async {
@@ -25,7 +26,6 @@ void main() {
       'releases',
       'website',
       'additional-terms',
-      'trademark',
     ]) {
       expect(
         find.byKey(ValueKey<String>('free-software-$id'), skipOffstage: false),
@@ -33,6 +33,14 @@ void main() {
         reason: id,
       );
     }
+    // 没有注册商标，不再链接商标政策（拍板台 pr3594）。
+    expect(
+      find.byKey(
+        const ValueKey<String>('free-software-trademark'),
+        skipOffstage: false,
+      ),
+      findsNothing,
+    );
     expect(
       find.byKey(const ValueKey<String>('free-software-local-notice')),
       findsNothing,
@@ -51,8 +59,10 @@ void main() {
   });
 
   test('link targets', () {
-    expect(kFushiReleasesUrl, 'https://github.com/hajisensai/Fushi/releases');
+    expect(
+      kOfficialReleasesUrl,
+      'https://github.com/hajisensai/Fushi/releases',
+    );
     expect(kFushiAdditionalTermsUrl, endsWith('/ADDITIONAL_TERMS.md'));
-    expect(kFushiTrademarkUrl, endsWith('/TRADEMARK.md'));
   });
 }

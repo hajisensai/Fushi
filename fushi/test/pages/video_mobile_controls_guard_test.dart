@@ -134,21 +134,36 @@ void main() {
   });
 
   test(
-    'mobile fullscreen is excluded at the render gate, not drawn zero-width',
+    'mobile fullscreen slot is a real rotate button, never a zero-width entry',
     () {
-      // BUG-221：移动端不提供全屏。BUG-2832 审查：只在按钮里画成 SizedBox.shrink 不够——
-      // 零宽条目照样进 VideoControlBar、被收进「⋯」，菜单里冒出一行点了无效的「全屏」。
+      // BUG-221：移动端不进全屏路由。BUG-2832 审查：零宽条目照样进 VideoControlBar、
+      // 被收进「⋯」，菜单里冒出一行点了无效的条目——所以移动端要么在渲染门上排除，要么
+      // 画成真按钮。拍板台 P9AS-fvjJh 起移动端这个槽位是「转竖屏 / 转横屏」：两端都渲染，
+      // 移动端画普通图标按钮、点击只改方向锁（不进全屏路由）。
       final String gate = region(
         'bool _shouldRenderControlItem(',
         'Widget _topBarSlotGroup(',
       );
       expect(
         RegExp(
-          r'case VideoControlItem\.fullscreen:\s*return !isMobilePlatform;',
+          r'case VideoControlItem\.fullscreen:\s*return true;',
         ).hasMatch(gate),
         isTrue,
-        reason:
-            'fullscreen must be filtered out on mobile before it becomes a bar entry',
+        reason: 'fullscreen slot renders on both platforms',
+      );
+      expect(
+        RegExp(
+          r'case VideoControlItem\.fullscreen:\s*//[^\n]*\n\s*if \(isMobilePlatform\) \{\s*return _plainSlotButton\(',
+        ).hasMatch(src),
+        isTrue,
+        reason: 'mobile draws the rotate button as a plain slot button',
+      );
+      expect(
+        RegExp(
+          r'case VideoControlItem\.fullscreen:\s*//[^\n]*\n\s*if \(isMobilePlatform\) \{\s*_toggleVideoScreenOrientation\(\);',
+        ).hasMatch(src),
+        isTrue,
+        reason: 'mobile tap toggles the orientation instead of fullscreen',
       );
     },
   );

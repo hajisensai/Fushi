@@ -635,6 +635,9 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         'dictionaries': lib,
         'books': lib,
         'audio': lib,
+        // 本地音频清单带内容身份 contentId、单项端点认 contentId（拍板 pr3481）。
+        // 老 host 无此字段 → client 退回按显示名匹配并在报告里提示升级对端。
+        kLiveLibraryLocalAudioContentIdCapability: lib,
         'videos': lib,
         // 互联漫画源（按页在线阅读，`/api/library/manga/**`）。老 host 无此字段 →
         // client 的漫画「来源」页把这一行标成「对端版本过低」，而不是让用户点进去
@@ -656,6 +659,17 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // 互联作品图谱同步（`/api/library/media-links`）。老 host 无此字段 / false
         // → client 跳过作品图谱维度。
         'mediaLinks': _libraryService is MediaLinkSyncHost,
+        // 流媒体书注册（`PUT /api/library/videos/<id>/streamentry`，拍板台
+        // Z2OhxAjKVv）。老 host 无此字段 → client 不推（见该端点注释）。
+        kLiveLibraryStreamVideosCapability:
+            _libraryService is StreamVideoSyncHost,
+        // 删除墓碑列举（`GET /api/tombstones`）与视频删除（`DELETE
+        // /api/library/videos/<id>`）。老 host 无这两位 → client 遇到 404 时在同步报告
+        // 里提示升级对端；有位但 false（host 实现不带这项能力）→ 不叫用户去升级。
+        kLiveLibraryDeletionTombstonesCapability:
+            _libraryService is DeletionTombstoneHost,
+        kLiveLibraryVideoDeletionCapability:
+            _libraryService is VideoDeletionHost,
         // 弱网实时转码（`/streamurl?maxHeight=&maxBitrate=`）。老 host 无此字段 →
         // client 不显示画质档，行为与从前一致。字段随用户开关与本机 ffmpeg 可用性
         // 实时变化，不是启动时的快照；最终真相仍是 `/streamurl` 回的 `transcoded`。

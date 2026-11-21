@@ -63,7 +63,7 @@ impl CacheConfig {
     }
 
     /// 笔记类型身份记录里的 `builtin` 对应的代码默认值（不是内置类型 / 配置里没有 = null）。
-    fn builtin_of(&self, payload: &Value) -> Value {
+    pub(crate) fn builtin_of(&self, payload: &Value) -> Value {
         payload["builtin"]
             .as_str()
             .and_then(|k| self.builtins.get(k))
@@ -143,8 +143,9 @@ pub(crate) struct Written {
 }
 
 impl Written {
-    /// 并入同一笔里后一次刷新写过的（`change` 的移牌组段，store/ffi.rs `local_write`）：各自去重；后一次写了整行的卡
+    /// 并入同一笔里后一次刷新写过的（`change` 的移牌组段，store/legacy3 `local_write`）：各自去重；后一次写了整行的卡
     /// 不再算删掉的，后一次删掉的不再算写过的。
+    #[cfg(test)]
     pub(crate) fn absorb(&mut self, later: Written) {
         use std::collections::HashSet;
         {
@@ -289,6 +290,9 @@ pub(crate) struct TypeInfo {
     reading_field: Option<String>,
     /// 词频序字段（卡片缓存行的 `freq_rank` 从它解析），即视图的 `qe`（registers.rs `effective_frequency_field`）。
     freq_field: Option<String>,
+    /// 排序字段（笔记缓存行的 `sort_field` 从它取），即视图的 `se`（registers.rs `note_type_view`：显式设的
+    /// `sortField` 还在就用它，否则第一个字段）。
+    sort_field: Option<String>,
     deleted: bool,
 }
 
@@ -304,6 +308,7 @@ impl TypeInfo {
         TypeInfo {
             cloze: view["nk"].as_str() == Some("cloze"),
             freq_field: view["qe"].as_str().map(str::to_owned),
+            sort_field: view["se"].as_str().map(str::to_owned),
             fields,
             templates: view["ts"]
                 .as_array()
@@ -570,6 +575,7 @@ fn load_types<'a>(
 /// 本 profile 全部笔记类型（含已删除的）物化视图里的文本：每个现行模板的正面、背面，再加 CSS（媒体回收的存活引用
 /// 扫这些，store/media_gc.rs）。与 Dart `SrsDbStore.noteTypesById` 物化出的 `templates` / `css` 同一份视图（内置类型的
 /// 代码默认值取缓存配置）。
+#[cfg(test)]
 pub(crate) fn note_type_texts(
     c: &Connection,
     profile: &str,
@@ -600,18 +606,24 @@ pub(crate) fn note_type_texts(
             .and_then(|k| cfg.builtins.get(k))
             .map_or(Value::Null, |b| b.0.clone());
         let view = registers::note_type_view_of(payload, &es, &builtin)?;
-        for t in view["ts"].as_array().into_iter().flatten() {
-            for side in ["front", "back"] {
-                if let Some(s) = t[side].as_str() {
-                    out.push(s.to_owned());
-                }
-            }
-        }
-        if let Some(css) = view["css"].as_str() {
-            out.push(css.to_owned());
-        }
+        note_type_view_texts(&view, &mut out);
     }
     Ok(out)
+}
+
+/// 一份笔记类型物化视图里媒体回收要扫的文本（[note_type_texts]）：每个现行模板的正面、背面，再加 CSS。新代的
+/// 存活引用（`gen4/cmd/media_gc.rs`）用同一份。
+pub(crate) fn note_type_view_texts(view: &Value, out: &mut Vec<String>) {
+    for t in view["ts"].as_array().into_iter().flatten() {
+        for side in ["front", "back"] {
+            if let Some(s) = t[side].as_str() {
+                out.push(s.to_owned());
+            }
+        }
+    }
+    if let Some(css) = view["css"].as_str() {
+        out.push(css.to_owned());
+    }
 }
 
 /// 笔记缓存行的 `dupe_norm`（srs.db v15）：首字段（笔记类型字段顺序第一个）的 AnkiConnect 查重规范形
@@ -746,8 +758,8 @@ pub(crate) fn note_row(n: &NoteInfo, t: Option<&TypeInfo>) -> Result<NoteRow, St
         Some(f) => card_cache::normalize_term(n.field(f)),
         None => String::new(),
     };
-    let sort = match t.and_then(|t| t.fields.first()) {
-        Some((f, _)) => card_cache::sort_field(n.field(f)),
+    let sort = match t.and_then(|t| t.sort_field.as_deref()) {
+        Some(f) => card_cache::sort_field(n.field(f)),
         None => String::new(),
     };
     let freq = t
@@ -942,6 +954,7 @@ fn card_materials(
 /// 同一条规则（`registers::card_lineage_flags`），但只读前身链接那几条修改记录（血统只看 `historyFrom/<前身>`
 /// 寄存器，每个键的值与别的键无关）：优化器 / RWKV 取数、卡片历史按卡 id 调，血统在内核里解析
 /// （以前 Dart 先把整条血统的全部修改记录预读回 UI isolate 再交给内核，十万张卡上百次往返）。
+#[cfg(test)]
 pub(crate) fn lineage_ids(c: &Connection, cards: &[String]) -> Result<Vec<Vec<String>>, String> {
     if cards.is_empty() {
         return Ok(Vec::new());
@@ -2636,5 +2649,71 @@ mod tests {
         );
         run(&d, &cfg, Dirty::of_projection(&r));
         assert_eq!(ranks(&d), pairs(&[(N1, "1"), (N2, "null"), (N3, "5")]));
+    }
+
+    fn sorts(d: &Device) -> Vec<(String, String)> {
+        d.rows("SELECT srs_idt(id), sort_field FROM srs_notes_cache ORDER BY id")
+            .into_iter()
+            .skip(1)
+            .map(|r| (r[0].clone(), r[1].clone()))
+            .collect()
+    }
+
+    /// 笔记缓存的 `sort_field` 取笔记类型的排序字段（Anki `sortf`）：没设时第一个字段；设 `sortField` 后类型标脏、
+    /// 成员笔记改取那个字段；指向的字段删了退回第一个字段。
+    #[test]
+    fn sort_field_follows_the_note_types_sort_field() {
+        let d = Device::new("sort-field");
+        let deck = crate::store::sync2::config::default_deck_id(P);
+        let fdef = |name: &str, ord: i64| json!({"name": name, "ord": ord});
+        d.apply(
+            T0,
+            vec![
+                deck_entity(&deck),
+                note_type("NT", json!({"createdAt": 1, "ntKind": "standard"})),
+                edit("notetype", "NT", "fieldDef/fa", fdef("Id", 0)),
+                edit("notetype", "NT", "fieldDef/fb", fdef("Word", 1)),
+                edit(
+                    "notetype",
+                    "NT",
+                    "tmplDef/t1",
+                    json!({"name": "C", "ord": 0, "front": "{{Word}}"}),
+                ),
+                note(N1, "NT"),
+                edit("note", N1, "f/fa", json!("0001")),
+                edit("note", N1, "f/fb", json!("<b>猫</b>")),
+            ],
+        );
+        let cfg = CacheConfig::parse(&json!({"defaultDeck": deck, "builtins": {}})).unwrap();
+        run(
+            &d,
+            &cfg,
+            Dirty {
+                all_notes: true,
+                ..Dirty::default()
+            },
+        );
+        assert_eq!(sorts(&d), pairs(&[(N1, "0001")]));
+
+        let r = d.apply(
+            T0 + 1,
+            vec![edit("notetype", "NT", "sortField", json!("fb"))],
+        );
+        let dirty = Dirty::of_projection(&r);
+        assert!(dirty.note_types.contains("NT"), "{r}");
+        run(&d, &cfg, dirty);
+        assert_eq!(sorts(&d), pairs(&[(N1, "猫")]));
+
+        let r = d.apply(
+            T0 + 2,
+            vec![edit(
+                "notetype",
+                "NT",
+                "fieldDef/fb",
+                json!({"name": "Word", "ord": 1, "deleted": true}),
+            )],
+        );
+        run(&d, &cfg, Dirty::of_projection(&r));
+        assert_eq!(sorts(&d), pairs(&[(N1, "0001")]));
     }
 }

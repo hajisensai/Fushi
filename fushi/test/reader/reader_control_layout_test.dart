@@ -27,6 +27,7 @@ void main() {
         ReaderControlItem.gallery,
         ReaderControlItem.fullscreen,
         ReaderControlItem.bookmarks,
+        ReaderControlItem.jumpHistory,
       ]);
       // 常驻按钮数（不含书名）= 4：返回 + 三颗主操作。
       final int pinned = <ReaderControlSlot>[
@@ -69,6 +70,7 @@ void main() {
         ReaderControlItem.gallery,
         ReaderControlItem.fullscreen,
         ReaderControlItem.bookmarks,
+        ReaderControlItem.jumpHistory,
       ]);
       expect(c.hasBottomItems, isTrue);
     });
@@ -97,10 +99,11 @@ void main() {
         ReaderControlItem.fullscreen,
         ReaderControlItem.settings,
       ]);
-      // 旧 JSON 里没有「书签」键（2026-10 新增）：按出厂表回填到「更多」，
-      // 其余按钮一颗不动。
+      // 旧 JSON 里没有「书签」（2026-10）与「跳转记录」（2026-11）键：按出厂表
+      // 回填到「更多」，其余按钮一颗不动。
       expect(d.itemsIn(ReaderControlSlot.overflow), <ReaderControlItem>[
         ReaderControlItem.bookmarks,
+        ReaderControlItem.jumpHistory,
       ]);
       // 往返不漂。
       expect(ReaderControlLayout.decode(d.encode()), d);
@@ -159,6 +162,92 @@ void main() {
       );
       expect(
         ReaderControlItem.bookmarks.canMoveToSlot(ReaderControlSlot.topCenter),
+        isFalse,
+      );
+    });
+
+    test('跳转记录键（拍板台 ymMpf0raAu）：出厂在「更多」，存量布局缺它时回填，可拖去顶栏 / 底栏', () {
+      for (final ReaderControlLayout base in <ReaderControlLayout>[
+        ReaderControlLayout.defaults,
+        ReaderControlLayout.compactDefaults,
+      ]) {
+        expect(
+          base.core.slotOf(ReaderControlItem.jumpHistory),
+          ReaderControlSlot.overflow,
+        );
+      }
+      // 存过的自定义布局（改造前的 JSON 不认识这颗）：宽 / 窄窗都回填进「更多」，
+      // 用户放好的按钮原位不动。
+      const String stored =
+          '{"version":1,"slots":{'
+          '"topLeft":["back"],"topCenter":["title"],'
+          '"topRight":["navigation","audiobook","settings"],'
+          '"overflow":["gallery","bookmarks"]}}';
+      for (final ReaderControlLayout? fallback in <ReaderControlLayout?>[
+        null,
+        ReaderControlLayout.compactDefaults,
+      ]) {
+        final ReaderControlLayout l = ReaderControlLayout.decode(
+          stored,
+          fallback: fallback,
+        );
+        expect(
+          l.core.slotOf(ReaderControlItem.jumpHistory),
+          ReaderControlSlot.overflow,
+        );
+        expect(
+          l.itemsIn(ReaderControlSlot.overflow).take(2),
+          <ReaderControlItem>[
+            ReaderControlItem.gallery,
+            ReaderControlItem.bookmarks,
+          ],
+        );
+        expect(l.itemsIn(ReaderControlSlot.topRight), <ReaderControlItem>[
+          ReaderControlItem.navigation,
+          ReaderControlItem.audiobook,
+          ReaderControlItem.settings,
+        ]);
+      }
+      // 用户把它拖到顶栏右侧：持久化往返保留位置。
+      final ReaderControlLayout moved = ReaderControlLayout.decode(
+        '{"version":1,"slots":{'
+        '"topLeft":["back"],"topCenter":["title"],'
+        '"topRight":["jumpHistory","settings"]}}',
+      );
+      // JSON 里缺席的其它按钮按出厂表回填（导航 / 有声书接在后面），
+      // 用户放的两颗在前、顺序不变。
+      expect(
+        moved.itemsIn(ReaderControlSlot.topRight).take(2),
+        <ReaderControlItem>[
+          ReaderControlItem.jumpHistory,
+          ReaderControlItem.settings,
+        ],
+      );
+      expect(ReaderControlLayout.decode(moved.encode()), moved);
+      // 移出（removed）后不再回填。
+      final ReaderControlLayout removed = ReaderControlLayout.decode(
+        '{"version":1,"slots":{"topLeft":["back"],"topRight":["settings"]},'
+        '"removed":["jumpHistory"]}',
+      );
+      expect(
+        removed.core.removedItems,
+        contains(ReaderControlItem.jumpHistory),
+      );
+      for (final ReaderControlSlot slot in <ReaderControlSlot>[
+        ReaderControlSlot.topLeft,
+        ReaderControlSlot.topRight,
+        ReaderControlSlot.bottomLeft,
+        ReaderControlSlot.bottomCenter,
+        ReaderControlSlot.bottomRight,
+        ReaderControlSlot.overflow,
+        ReaderControlSlot.hidden,
+      ]) {
+        expect(ReaderControlItem.jumpHistory.canMoveToSlot(slot), isTrue);
+      }
+      expect(
+        ReaderControlItem.jumpHistory.canMoveToSlot(
+          ReaderControlSlot.topCenter,
+        ),
         isFalse,
       );
     });

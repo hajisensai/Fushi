@@ -25,6 +25,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 pub mod crypto;
 pub mod dart;
+pub mod document_charset;
 pub mod font;
 pub mod galcal;
 pub mod hash;
@@ -36,6 +37,7 @@ pub mod parse;
 pub mod signal;
 pub mod text;
 pub mod ts;
+pub mod upscale;
 
 // 上游 crate 的 `fcp_*` C 导出随本库一起导出（cdylib / staticlib / iOS 伞形库都靠这一行把它
 // 链进来；不引用就会被当成没用的依赖丢掉）。见 Cargo.toml 的说明。
@@ -55,6 +57,8 @@ pub mod status {
     pub const BAD_INPUT: i32 = -3;
     /// 调用方给的输出缓冲区不够大。
     pub const BUFFER_TOO_SMALL: i32 = -4;
+    /// 文件打不开 / 读失败（读盘的接口，如 `ffc_hash_sha256_file`）。
+    pub const IO_ERROR: i32 = -5;
     /// Rust 侧 panic（已接住）。
     pub const PANIC: i32 = -100;
 }

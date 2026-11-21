@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:drift/drift.dart' show Value;
@@ -6,7 +7,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/kavita/kavita_book_binding.dart';
 import 'package:fushi/src/media/kavita/kavita_epub_sync.dart';
 import 'package:fushi/src/media/kavita/kavita_progress_resolver.dart';
+import 'package:fushi/src/media/kavita/kavita_reachability.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/kavita/kavita_api.dart';
 import 'package:fushi_engine/media/kavita/kavita_models.dart';
@@ -42,17 +45,26 @@ class _Server {
     this.modifiedAt,
     this.offline = false,
     this.infoPages,
+    this.hang,
   });
 
   int pageNum;
   int? modifiedAt;
   bool offline;
 
+  /// 非空时 get-progress 一直挂到它完成（连上了但迟迟不答的服务器）。
+  Completer<void>? hang;
+  int progressCalls = 0;
+
   /// `Reader/chapter-info` 报的页数；null = 该接口不可用（旧行为：放行）。
   int? infoPages;
   final List<http.Request> writes = <http.Request>[];
 
-  KavitaApi api() => KavitaApi(
+  /// 同一台服务器始终是同一个协议层实例（生产里由 `KavitaApiRegistry` 保证）。
+  KavitaApi api() => _api ??= _newApi();
+  KavitaApi? _api;
+
+  KavitaApi _newApi() => KavitaApi(
     serverUrl: 'https://kavita.example.com',
     apiKey: 'K',
     client: MockClient((http.Request r) async {
@@ -61,6 +73,9 @@ class _Server {
       }
       if (offline) throw http.ClientException('offline');
       if (r.url.path == '/api/Reader/get-progress') {
+        progressCalls++;
+        final Completer<void>? gate = hang;
+        if (gate != null) await gate.future;
         return http.Response(
           jsonEncode(<String, Object?>{
             'chapterId': 43011,
@@ -94,7 +109,12 @@ class _Server {
 
 void main() {
   late FushiDatabase db;
-  setUp(() => db = FushiDatabase.forTesting(NativeDatabase.memory()));
+  late KavitaReachability reachability;
+  setUp(() {
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
+    // 每个用例一份：进程级的那份会把上一个离线用例的「不可达」带到下一个用例。
+    reachability = KavitaReachability();
+  });
   tearDown(() => db.close());
 
   Future<EpubBookRow> insertBook({
@@ -134,14 +154,16 @@ void main() {
     _Server server, {
     KavitaConflictPrompt? prompt,
     List<KavitaServerConfig>? servers,
+    Duration pullTimeout = const Duration(seconds: 2),
   }) => KavitaEpubSyncSession.attach(
     db: db,
     row: row,
     servers: servers ?? <KavitaServerConfig>[_server()],
     apiFor: (KavitaServerConfig _) => server.api(),
     promptConflict: prompt,
+    reachability: reachability,
     debounce: const Duration(milliseconds: 20),
-    pullTimeout: const Duration(seconds: 2),
+    pullTimeout: pullTimeout,
     nowMs: () => _base + 500 * _min,
   );
 
@@ -366,4 +388,72 @@ void main() {
       expect(b.lastPushedAt, isNotNull);
     },
   );
+
+  // 路线图 #3722 c12 遗留：漫画开章已记住不可达服务器（manga-d11），EPUB 开书原来
+  // 每次仍把拉取超时等满（开书恢复位置前 await，离线时每本书都卡 4 秒）。
+  group('unreachable server is remembered for EPUB too', () {
+    setUp(() => ErrorLogService.instance.clear());
+
+    test('second open does not wait for the pull again', () async {
+      final EpubBookRow row = await insertBook(
+        meta: _binding().encode(),
+        localSection: 5,
+      );
+      final Completer<void> hang = Completer<void>();
+      final _Server server = _Server(pageNum: 7, modifiedAt: _base, hang: hang);
+      final KavitaEpubSyncSession? first = await attach(
+        row,
+        server,
+        pullTimeout: const Duration(milliseconds: 100),
+      );
+      expect(first, isNotNull);
+      await first!.close();
+      expect(
+        reachability.isUnreachable(
+          'srv',
+          server.api(),
+          within: const Duration(seconds: 2),
+        ),
+        isTrue,
+      );
+
+      // 预算给到 1 分钟，服务器照样挂着——等的话这条用例必超时。
+      final KavitaEpubSyncSession? second = await attach(
+        row,
+        server,
+        pullTimeout: const Duration(minutes: 1),
+      );
+      expect(hang.isCompleted, isFalse, reason: 'returned without the server');
+      expect(second, isNotNull);
+      await pumpEventQueue();
+      expect(server.progressCalls, 2, reason: 'the pull still goes out');
+      expect((await db.getReaderPosition(row.uid))!.sectionIndex, 5);
+      await second!.close();
+      hang.complete();
+    }, timeout: const Timeout(Duration(seconds: 20)));
+
+    test('a failed push leaves one diagnostic instead of vanishing', () async {
+      final EpubBookRow row = await insertBook(meta: _binding().encode());
+      final _Server server = _Server();
+      final KavitaEpubSyncSession? session = await attach(row, server);
+      server.offline = true;
+      session!.onPositionSaved(3);
+      await session.close();
+      expect(server.pushedPages, isEmpty);
+      final List<ErrorLogEntry> push = ErrorLogService
+          .instance
+          .diagnosticEntries
+          .where((ErrorLogEntry e) => e.source == 'KavitaEpubSync.push')
+          .toList();
+      expect(push, hasLength(1));
+      expect(
+        reachability.isUnreachable(
+          'srv',
+          server.api(),
+          within: const Duration(seconds: 2),
+        ),
+        isTrue,
+      );
+    });
+  });
 }

@@ -317,10 +317,13 @@ void main() {
         null;
 
     /// 先走页面自己的「加入书架」建好在线书，再换成源站卡住的运行时重进页面。
+    /// [shelved] 是加入书架那一刻源站给的详情（缺省没有作者 / 简介）。
     Future<_GatedRuntime> reenterWithGatedSource(
       WidgetTester tester, {
       bool newChapter = true,
+      LnReaderNovel? shelved,
     }) async {
+      if (shelved != null) runtime.novelResult = shelved;
       await pumpDetail(tester);
       // 「加入书架」在详情取回之前就在屏上（禁用）：等章节出来再点，否则点的是
       // 禁用态。
@@ -334,6 +337,7 @@ void main() {
           name: 'Novel A',
           path: '/a',
           author: 'Author A',
+          summary: 'Summary A',
           chapters: <LnReaderChapter>[
             ...chapters,
             if (newChapter)
@@ -384,6 +388,77 @@ void main() {
       expect(find.text('Author A'), findsOneWidget);
       expect(secondaryEnabled(tester, downloadKey), isTrue);
       expect(enabled(tester, rowDownloadKey), isTrue);
+    });
+
+    testWidgets('描述符里存着头部信息：旧目录阶段就画出作者 / 简介，详情回来章节列表不下移', (
+      WidgetTester tester,
+    ) async {
+      late _GatedRuntime gated;
+      late double before;
+      await tester.runAsync(() async {
+        gated = await reenterWithGatedSource(
+          tester,
+          shelved: const LnReaderNovel(
+            name: 'Novel A',
+            path: '/a',
+            author: 'Author A',
+            summary: 'Summary A',
+            chapters: chapters,
+            totalPages: 1,
+          ),
+        );
+        await pumpUntil(tester, find.text('Chapter one'));
+      });
+      expect(gated.calls, isNot(contains('novel:/a')), reason: '源站的详情确实还没取回。');
+      expect(find.text('Author A'), findsOneWidget);
+      expect(find.textContaining('Summary A'), findsOneWidget);
+      // 等章节列表的错峰进场动画走完再量位置（进场带位移）。
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump(const Duration(seconds: 2));
+      before = tester.getTopLeft(find.text('Chapter one')).dy;
+
+      await tester.runAsync(() async {
+        gated.gate.complete();
+        await pumpUntil(tester, find.text('Chapter four'));
+      });
+      // 等章节列表的错峰进场动画走完再量位置（进场带位移）。
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump(const Duration(seconds: 2));
+      expect(tester.getTopLeft(find.text('Chapter one')).dy, before);
+    });
+
+    testWidgets('头部信息出现之前上架的书：源站详情回来后补写进描述符，下次进页就有', (
+      WidgetTester tester,
+    ) async {
+      Future<LnReaderNovelDetails> storedDetails() async =>
+          LnReaderOnlineBookDescriptor.tryParse(
+            (await db.select(db.epubBooks).getSingle()).sourceMetadata,
+          )!.details;
+
+      late _GatedRuntime gated;
+      await tester.runAsync(() async {
+        gated = await reenterWithGatedSource(tester);
+        await pumpUntil(tester, find.text('Chapter one'));
+        expect(await storedDetails(), LnReaderNovelDetails.empty);
+        gated.gate.complete();
+        await pumpUntil(tester, find.text('Author A'));
+        for (int i = 0; i < 200; i++) {
+          if ((await storedDetails()).author != null) break;
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        }
+        final LnReaderNovelDetails details = await storedDetails();
+        expect(details.author, 'Author A');
+        expect(details.summary, 'Summary A');
+        final LnReaderOnlineBookDescriptor descriptor =
+            LnReaderOnlineBookDescriptor.tryParse(
+              (await db.select(db.epubBooks).getSingle()).sourceMetadata,
+            )!;
+        expect(descriptor.chapters.map((LnReaderChapter c) => c.path), <String>[
+          '/a/1',
+          '/a/2',
+          '/a/3',
+        ], reason: '只补头部信息，章节列表等真正重建占位树时才换。');
+      });
     });
 
     Object? replayKey(WidgetTester tester) => tester

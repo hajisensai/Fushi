@@ -11,6 +11,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:http/http.dart' as http;
 
+import 'package:fushi_engine/media/collections/collection_season_groups.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
@@ -135,6 +136,7 @@ class SubtitleCollectionSpec {
   const SubtitleCollectionSpec({
     required this.collection,
     required this.members,
+    this.initialSeason,
   });
 
   final MediaCollectionRow collection;
@@ -142,9 +144,18 @@ class SubtitleCollectionSpec {
   /// 合集里**有序**的视频成员。
   final List<VideoBookRow> members;
 
+  /// 多季合集打开时优先选中的季号；null = 第一季。入口按
+  /// [subtitleCollectionSeasonOfMember]（与面板分季同口径）算，不各自另解文件名。
+  final int? initialSeason;
+
   /// 语言记忆键（合集名小写 trim，与批量对话框约定一致）。
   String get seriesKey => collection.name.trim().toLowerCase();
 }
+
+/// 合集成员所在季的季号，与面板分季（[subtitleCollectionSeasonKeyOf]）同口径：没写
+/// 季号的集算第 1 季，PV·特典为 null。入口据此算 [SubtitleCollectionSpec.initialSeason]。
+int? subtitleCollectionSeasonOfMember(VideoBookRow member) =>
+    seasonNumberOfGroupKey(subtitleCollectionSeasonKeyOf(member));
 
 /// 工作台依赖的宿主能力（全部可注入，便于 widget 测试不碰 AppModel）。
 abstract interface class SubtitleWorkbenchHost {
@@ -308,6 +319,11 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
   bool get _canSwitchScope =>
       widget.episode != null && widget.collection != null;
 
+  /// 「本集」面板有下载在途（[SubtitleSearchPanel.onDownloadingChanged]）。期间锁住作用域
+  /// 开关：换到「整个合集」会把本集面板移出树，在途的下载按「页面已关」静默放弃（不
+  /// 落盘），勾着的其余几条也不再下，用户看不到任何提示。
+  bool _episodeDownloading = false;
+
   Widget _buildEpisodePanel() {
     final SubtitleEpisodeSearchSpec spec = widget.episode!;
     final SubtitleWorkbenchHost host = widget.host;
@@ -330,6 +346,9 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
           host.setPreferredLanguage(spec.seriesKey, lang),
       onDownloaded: (List<String> paths) => Navigator.of(context).pop(paths),
       onSubtitleSaved: widget.onEpisodeSubtitleSaved,
+      onDownloadingChanged: (bool downloading) {
+        if (mounted) setState(() => _episodeDownloading = downloading);
+      },
     );
   }
 
@@ -354,6 +373,7 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
       onRemoteSubtitlePersist: host.persistRemoteSubtitle,
       onSubtitlePersisted: widget.onCollectionSubtitlePersisted,
       subtitleAligner: host.subtitleAligner,
+      initialSeason: spec.initialSeason,
     );
   }
 
@@ -406,9 +426,16 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
                     ),
                   ])
                 FushiIconButton(
+                  key: ValueKey<String>(
+                    'subtitle-workbench-scope-${scope.name}',
+                  ),
                   icon: icon,
-                  tooltip: tip,
+                  // 锁住时 tooltip 说明原因：只置灰的话用户不知道为什么切不过去。
+                  tooltip: _episodeDownloading && _scope != scope
+                      ? t.video_subtitle_scope_locked_downloading
+                      : tip,
                   selected: _scope == scope,
+                  enabled: !_episodeDownloading || _scope == scope,
                   onTap: () => setState(() => _scope = scope),
                 ),
             ],

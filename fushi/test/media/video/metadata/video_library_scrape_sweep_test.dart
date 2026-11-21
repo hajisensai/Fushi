@@ -11,6 +11,7 @@ import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ignored_works.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_sweep_ledger.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
@@ -206,6 +207,34 @@ void main() {
       title: Value<String>(title ?? uid),
       videoPath: Value<String>(path),
       sourceId: Value<int?>(sourceId),
+    ),
+  );
+
+  /// 「导入文件夹（仅此一次）」的临时来源行（configJson 带 oneShot 标记）。
+  Future<int> addOneShotSource(String root) => db.insertMediaSource(
+    MediaSourcesCompanion.insert(
+      label: root,
+      mediaKind: 'video',
+      rootPath: root,
+      createdAt: 1,
+      configJson: Value<String?>(
+        encodeSourceConfig(<String, Object?>{kSourceConfigOneShotKey: true}),
+      ),
+    ),
+  );
+
+  /// 没有来源的视频（手动导入 / 临时行删掉后）。
+  Future<void> addLooseVideo(
+    String uid,
+    String path, {
+    String? title,
+    String? groupingMode,
+  }) => db.upsertVideoBook(
+    VideoBooksCompanion(
+      bookUid: Value<String>(uid),
+      title: Value<String>(title ?? uid),
+      videoPath: Value<String>(path),
+      videoGroupingMode: Value<String?>(groupingMode),
     ),
   );
 
@@ -1721,6 +1750,161 @@ void main() {
     });
   });
 
+  group('AniDB 标题目录摘要存量作品自动补全（拍板台 left3563）', () {
+    final DateTime now = DateTime(2026, 9, 20, 12);
+    final int recent = now
+        .subtract(const Duration(days: 1))
+        .millisecondsSinceEpoch;
+
+    /// 种一部主身份是 AniDB 的已识别作品，details 快照按 [catalogOnly] 决定是标题
+    /// 目录摘要还是完整 anime XML。
+    Future<void> seedAniDbWork(
+      String bookUid, {
+      required bool catalogOnly,
+      bool primary = true,
+      int? updatedAt,
+    }) async {
+      final int workId = await db
+          .into(db.videoMetadataWorks)
+          .insert(
+            VideoMetadataWorksCompanion.insert(
+              bookUid: Value<String?>(bookUid),
+              mediaType: 'tv',
+              title: 'seeded',
+              updatedAt: updatedAt ?? recent,
+            ),
+          );
+      final String identityKey = 'anidb:$workId';
+      await db
+          .into(db.videoMetadataProviderIdentities)
+          .insert(
+            VideoMetadataProviderIdentitiesCompanion.insert(
+              identityKey: identityKey,
+              workId: Value<int?>(workId),
+              provider: 'anidb',
+              externalId: '${1000 + workId}',
+              isPrimary: Value<bool>(primary),
+              updatedAt: 1,
+            ),
+          );
+      await db.replaceVideoMetadataRawSnapshots(
+        identityKey,
+        <VideoMetadataRawSnapshotsCompanion>[
+          VideoMetadataRawSnapshotsCompanion.insert(
+            identityKey: identityKey,
+            snapshotKind: 'details',
+            rawJson: jsonEncode(
+              catalogOnly
+                  ? <String, Object?>{'anidbCatalogOnly': true}
+                  : <String, Object?>{
+                      'aid': 1000 + workId,
+                      'type': 'TV Series',
+                    },
+            ),
+            fetchedAt: 1,
+          ),
+        ],
+      );
+    }
+
+    test('只挑主身份 AniDB 且快照仍是摘要的作品', () async {
+      final int sourceId = await addSource('D:/A');
+      await addVideo('cat', 'D:/A/Catalog Show (2020).mkv', sourceId);
+      await addVideo('full', 'D:/A/Full Show (2020).mkv', sourceId);
+      await addVideo('xref', 'D:/A/Xref Show (2020).mkv', sourceId);
+      await seedAniDbWork('cat', catalogOnly: true);
+      await seedAniDbWork('full', catalogOnly: false);
+      await seedAniDbWork('xref', catalogOnly: true, primary: false);
+      final Set<int> ids = await anidbCatalogOnlyVideoWorkIds(db);
+      expect(ids, hasLength(1));
+      final VideoMetadataWorkRow? cat = await db.getVideoMetadataWorkByBook(
+        'cat',
+      );
+      expect(ids.single, cat!.id);
+    });
+
+    test('XML 拿得到：最近刚刮过的摘要作品也立即补刮，完整的不动；间隔内不重复', () async {
+      final int sourceId = await addSource('D:/A');
+      await addVideo(
+        'cat',
+        'D:/A/Catalog Show (2020).mkv',
+        sourceId,
+        title: 'Catalog Show',
+      );
+      await addVideo(
+        'full',
+        'D:/A/Full Show (2020).mkv',
+        sourceId,
+        title: 'Full Show',
+      );
+      await seedAniDbWork('cat', catalogOnly: true);
+      await seedAniDbWork('full', catalogOnly: false);
+      final VideoLibraryScrapeSweep service = VideoLibraryScrapeSweep(
+        database: db,
+        memberExists: _allMembersPresent,
+        controller: controller,
+        now: () => now,
+        isAniDbDetailReady: () => true,
+      );
+      await service.sweepOnce();
+      expect(runner.plannedTitles.single, <String>['Catalog Show']);
+      expect(runner.runScopes.single, 'sweep');
+
+      await service.sweepOnce();
+      expect(runner.sourceIds, hasLength(1), reason: '刷新间隔内不再重刮同一部');
+    });
+
+    test('XML 拿不到（没登记 / 被拒 / 封禁）时不排队', () async {
+      final int sourceId = await addSource('D:/A');
+      await addVideo('cat', 'D:/A/Catalog Show (2020).mkv', sourceId);
+      await seedAniDbWork('cat', catalogOnly: true);
+      await VideoLibraryScrapeSweep(
+        database: db,
+        memberExists: _allMembersPresent,
+        controller: controller,
+        now: () => now,
+        isAniDbDetailReady: () => false,
+      ).sweepOnce();
+      expect(runner.sourceIds, isEmpty);
+    });
+
+    test('摘要补全排在过期重刷前面，且与之合算每轮上限', () async {
+      final int sourceId = await addSource('D:/A');
+      final int old = now
+          .subtract(const Duration(days: 40))
+          .millisecondsSinceEpoch;
+      for (int i = 0; i < 2; i++) {
+        await addVideo(
+          'old-$i',
+          'D:/A/Old Show $i (2019).mkv',
+          sourceId,
+          title: 'Old Show $i',
+        );
+        await seedAniDbWork('old-$i', catalogOnly: false, updatedAt: old);
+      }
+      for (int i = 0; i < 2; i++) {
+        await addVideo(
+          'cat-$i',
+          'D:/A/Catalog Show $i (2020).mkv',
+          sourceId,
+          title: 'Catalog Show $i',
+        );
+        await seedAniDbWork('cat-$i', catalogOnly: true);
+      }
+      await VideoLibraryScrapeSweep(
+        database: db,
+        memberExists: _allMembersPresent,
+        controller: controller,
+        now: () => now,
+        maxRefreshPerSweep: 3,
+        isAniDbDetailReady: () => true,
+      ).sweepOnce();
+      final List<String> titles = runner.plannedTitles.single;
+      expect(titles, hasLength(3));
+      expect(titles, containsAll(<String>['Catalog Show 0', 'Catalog Show 1']));
+    });
+  });
+
   test('sweepAndListPending 回传待确认清单，总闸关时也照常回传', () async {
     final int sourceId = await addSource('D:/A');
     await addVideo(
@@ -2032,12 +2216,19 @@ void main() {
       await addVideo('ost', 'D:/series/OST/01 - One more tea.flac', series);
       await addVideo('in-folder', 'D:/folder/Movie.mkv', folder);
       await addVideo('remote', 'remote://lib/Movie.mkv', remote);
-      await db.upsertVideoBook(
-        const VideoBooksCompanion(
-          bookUid: Value<String>('manual'),
-          title: Value<String>('manual'),
-          videoPath: Value<String>('C:/Users/me/Videos/Movie.mkv'),
-        ),
+      final int oneShot = await addOneShotSource('D:/once');
+      await addVideo('one-shot', 'D:/once/Movie.mkv', oneShot);
+      // 无来源本机视频（拍板台 gtpgyff3l7-oneshot-scrape 方案 b）：路径用临时目录，
+      // 各平台都是绝对路径。
+      await addLooseVideo(
+        'manual',
+        '${Directory.systemTemp.path}/Liz (2018).mkv',
+      );
+      await addLooseVideo('loose-url', 'https://example.com/live/ep1.m3u8');
+      await addLooseVideo(
+        'loose-folder',
+        '${Directory.systemTemp.path}/Folder/Movie.mkv',
+        groupingMode: 'folder',
       );
 
       final Map<String, bool> expected = <String, bool>{
@@ -2046,7 +2237,10 @@ void main() {
         'ost': false,
         'in-folder': false,
         'remote': false,
-        'manual': false,
+        'one-shot': false,
+        'manual': true,
+        'loose-url': false,
+        'loose-folder': false,
       };
       for (final MapEntry<String, bool> entry in expected.entries) {
         final VideoBookRow book = (await db.getVideoBookByBookUid(entry.key))!;
@@ -2064,6 +2258,106 @@ void main() {
           reason: '${entry.key}：计划器定位与入口判据必须一致',
         );
       }
+    });
+  });
+  // 拍板台 gtpgyff3l7-oneshot-scrape（方案 b）：「仅此一次」导入扫完删掉临时来源行，
+  // 视频的 sourceId 归 NULL。修前它们永远进不了自动补刮 / 右键重刮 / ctl 刮削；
+  // 扫描期间补刮又会对临时行立项，行删掉后写 sidecar 记账报 FK 787。
+  group('「仅此一次」导入的视频与无来源本机视频', () {
+    String loosePath(String name) => '${Directory.systemTemp.path}/$name';
+
+    test('临时行存活期间不立项；行删掉后归无来源范围照常补刮', () async {
+      // 生产库开着外键（删来源时 video_books.source_id 靠 FK setNull 归 NULL）。
+      await db.customStatement('PRAGMA foreign_keys = ON');
+      final int temp = await addOneShotSource(loosePath('once'));
+      await addVideo(
+        'once-movie',
+        loosePath('once/Liz and the Blue Bird (2018).mkv'),
+        temp,
+        title: 'Liz and the Blue Bird',
+      );
+
+      expect(await sweep().pendingWorks(), isEmpty, reason: '临时行随时会被删，不立项');
+      await sweep().sweepOnce();
+      expect(runner.sourceIds, isEmpty);
+
+      await db.deleteMediaSource(temp);
+      expect((await db.getVideoBookByBookUid('once-movie'))!.sourceId, isNull);
+
+      final List<VideoPendingScrapeWork> pending = await sweep().pendingWorks();
+      expect(
+        pending.map((VideoPendingScrapeWork e) => e.work.stableKey),
+        <String>['book:once-movie'],
+      );
+      expect(isSourcelessVideoScrapeScope(pending.single.source), isTrue);
+
+      await sweep().sweepOnce();
+      expect(runner.sourceIds, <int>[kSourcelessLocalVideoScrapeScopeId]);
+      expect(runner.plannedTitles.single, <String>['Liz and the Blue Bird']);
+      expect(runner.runScopes.single, 'sweep');
+    });
+
+    test('右键重刮 / 合集重刮能定位到无来源视频的作品单元', () async {
+      await addLooseVideo('loose-movie', loosePath('Movie (2024).mkv'));
+      for (final String uid in <String>['loose-e1', 'loose-e2']) {
+        await addLooseVideo(uid, loosePath('Show/Show S01E0${uid[7]}.mkv'));
+      }
+      final int collectionId = await db.createMediaCollection('Show');
+      await db.addToCollection(collectionId, MediaKind.video, 'loose-e1');
+      await db.addToCollection(collectionId, MediaKind.video, 'loose-e2');
+
+      final VideoPendingScrapeWork? movie = await planScrapeWorkForVideoBook(
+        db,
+        'loose-movie',
+      );
+      expect(movie?.work.stableKey, 'book:loose-movie');
+      expect(isSourcelessVideoScrapeScope(movie!.source), isTrue);
+
+      final List<VideoPendingScrapeWork> show =
+          await planScrapeWorksForCollection(db, collectionId);
+      expect(show.map((VideoPendingScrapeWork e) => e.work.stableKey), <String>[
+        'collection:$collectionId',
+      ]);
+      expect(show.single.work.members, hasLength(2));
+    });
+
+    test('无来源范围只收本机文件：URL 视频、目录分组导入、有来源的视频都不在内', () async {
+      final int sourceId = await addSource('D:/A');
+      await addVideo('sourced', 'D:/A/Sourced Movie (2020).mkv', sourceId);
+      await addLooseVideo('loose', loosePath('Loose Movie (2021).mkv'));
+      await addLooseVideo('url', 'https://example.com/Movie.mkv');
+      await addLooseVideo(
+        'folder',
+        loosePath('Folder/Movie (2022).mkv'),
+        groupingMode: 'folder',
+      );
+
+      final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
+        db,
+      ).plan(sourcelessLocalVideoScrapeScope);
+
+      expect(works.map((VideoSourceScrapeWork w) => w.stableKey), <String>[
+        'book:loose',
+      ]);
+    });
+
+    test('挂起原因按无来源范围读 source_id 为 NULL 的运行', () async {
+      await addLooseVideo('loose', loosePath('Loose Movie (2021).mkv'));
+      await db.insertVideoSourceScrapeRun(
+        VideoSourceScrapeRunsCompanion.insert(
+          scope: 'sweep',
+          status: 'completed',
+          startedAt: 1,
+          updatedAt: 1,
+          pendingConfirmations: const Value<int>(1),
+        ),
+      );
+
+      expect(
+        await db.getUnresolvedVideoSourceScrapeRuns(sourceId: null),
+        hasLength(1),
+      );
+      expect(await db.getUnresolvedVideoSourceScrapeRuns(sourceId: 1), isEmpty);
     });
   });
 }

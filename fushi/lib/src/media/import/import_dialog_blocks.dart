@@ -24,6 +24,8 @@ import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/import_glyph.dart';
 import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_block_color_scope.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
@@ -230,6 +232,7 @@ class ImportPickBlock extends StatelessWidget {
     this.subtitle,
     this.dropHint,
     this.selected = false,
+    this.busy = false,
     this.enabled = true,
     this.onTap,
     this.onClear,
@@ -252,6 +255,10 @@ class ImportPickBlock extends StatelessWidget {
   /// 拖放说明；null = 本块不是落点（不画虚线）。只在桌面显示。
   final String? dropHint;
   final bool selected;
+
+  /// 选中的东西还在后台定性（如漫画框读包判断是不是图片型 EPUB）：副标题前加一个
+  /// 小转圈，表示「收到了、正在处理」，不是没选上。
+  final bool busy;
   final bool enabled;
   final VoidCallback? onTap;
 
@@ -287,124 +294,147 @@ class ImportPickBlock extends StatelessWidget {
     final VoidCallback? clear = onClear;
     final String? sub = subtitle;
     final Widget? extra = below;
-    return FushiHoverLift(
-      enabled: enabled && onTap != null,
-      forceLifted: dragging && motion,
-      builder: (BuildContext context, bool hovering) {
-        final List<Widget> trailing = <Widget>[
-          ...actions,
-          if (selected && clear != null)
-            ImportBlockIconButton(
-              icon: FushiIcons.close,
-              tooltip: t.dialog_clear,
-              colors: colors,
-              enabled: enabled,
-              onTap: clear,
-            )
-          else if (!selected && actions.isEmpty && below == null)
-            ExcludeSemantics(
-              child: ImportGoArrow(colors: colors, nudge: hovering),
-            ),
-        ];
-        final Widget text = Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(
-              dragging ? t.import_drop_release_title : title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: context.fushiType.titleLarge.copyWith(
-                height: 1.2,
-                fontWeight: FontWeight.w800,
-                color: colors.onContainer,
+    return FushiBlockColorScope(
+      colors: colors,
+      child: FushiHoverLift(
+        enabled: enabled && onTap != null,
+        forceLifted: dragging && motion,
+        builder: (BuildContext context, bool hovering) {
+          final List<Widget> trailing = <Widget>[
+            ...actions,
+            if (selected && clear != null)
+              ImportBlockIconButton(
+                icon: FushiIcons.close,
+                tooltip: t.dialog_clear,
+                colors: colors,
+                enabled: enabled,
+                onTap: clear,
+              )
+            else if (!selected && actions.isEmpty && below == null)
+              ExcludeSemantics(
+                child: ImportGoArrow(colors: colors, nudge: hovering),
               ),
-            ),
-            if (sub != null && sub.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 6),
+          ];
+          final Widget text = Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
               Text(
-                sub,
+                dragging ? t.import_drop_release_title : title,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: context.fushiType.bodySmall.copyWith(
-                  height: 1.45,
-                  fontWeight: FontWeight.w600,
+                style: context.fushiType.titleLarge.copyWith(
+                  height: 1.2,
+                  fontWeight: FontWeight.w800,
                   color: colors.onContainer,
                 ),
               ),
-            ],
-            if (droppable && !selected) ...<Widget>[
-              const SizedBox(height: 4),
-              Text(
-                hint,
-                style: context.fushiType.bodySmall.copyWith(
-                  height: 1.45,
-                  color: colors.onContainer.withValues(alpha: 0.8),
-                ),
-              ),
-            ],
-            if (extra != null) ...<Widget>[const SizedBox(height: 12), extra],
-          ],
-        );
-        return AnimatedOpacity(
-          opacity: enabled ? 1 : 0.6,
-          duration: fushiMotionDuration(context, FushiMotion.short),
-          curve: FushiMotion.standard,
-          child: Semantics(
-            selected: selected,
-            child: FushiCard(
-              focusId: focusId,
-              onTap: enabled ? onTap : null,
-              color: colors.container,
-              shape: fushiCoverBlockShape(context, FushiCoverBlockSize.regular),
-              borderRadius: BorderRadius.circular(radius),
-              padding: EdgeInsets.zero,
-              child: CustomPaint(
-                foregroundPainter: droppable
-                    ? ImportDashedBorderPainter(
-                        color: dragging
-                            ? colors.onContainer
-                            : colors.onContainer.withValues(alpha: 0.3),
-                        radius: radius,
-                        dashed: !dragging && !eink,
-                        strokeWidth: dragging ? 3 : 2,
-                        inset: dragging ? 4 : 8,
-                      )
-                    : null,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 112),
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Row(
-                      children: <Widget>[
-                        _PickGlyph(
-                          icon: icon,
-                          colors: colors,
-                          seed: 'import-pick-$icon',
-                          size: 60,
-                          selected: selected,
-                          turns: (hovering || dragging) && motion
-                              ? 14 / 360
-                              : 0,
+              if (sub != null && sub.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 6),
+                Row(
+                  children: <Widget>[
+                    if (busy) ...<Widget>[
+                      SizedBox.square(
+                        dimension: 14,
+                        child: adaptiveIndicator(
+                          context: context,
+                          strokeWidth: 2,
+                          color: colors.onContainer,
                         ),
-                        const SizedBox(width: 18),
-                        Expanded(child: text),
-                        if (trailing.isNotEmpty) ...<Widget>[
-                          const SizedBox(width: 12),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: trailing,
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    Flexible(
+                      child: Text(
+                        sub,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.fushiType.bodySmall.copyWith(
+                          height: 1.45,
+                          fontWeight: FontWeight.w600,
+                          color: colors.onContainer,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              if (droppable && !selected) ...<Widget>[
+                const SizedBox(height: 4),
+                Text(
+                  hint,
+                  style: context.fushiType.bodySmall.copyWith(
+                    height: 1.45,
+                    color: colors.onContainer.withValues(alpha: 0.8),
+                  ),
+                ),
+              ],
+              if (extra != null) ...<Widget>[const SizedBox(height: 12), extra],
+            ],
+          );
+          return AnimatedOpacity(
+            opacity: enabled ? 1 : 0.6,
+            duration: fushiMotionDuration(context, FushiMotion.short),
+            curve: FushiMotion.standard,
+            child: Semantics(
+              selected: selected,
+              child: FushiCard(
+                focusId: focusId,
+                onTap: enabled ? onTap : null,
+                color: colors.container,
+                shape: fushiCoverBlockShape(
+                  context,
+                  FushiCoverBlockSize.regular,
+                ),
+                borderRadius: BorderRadius.circular(radius),
+                padding: EdgeInsets.zero,
+                child: CustomPaint(
+                  foregroundPainter: droppable
+                      ? ImportDashedBorderPainter(
+                          color: dragging
+                              ? colors.onContainer
+                              : colors.onContainer.withValues(alpha: 0.3),
+                          radius: radius,
+                          dashed: !dragging && !eink,
+                          strokeWidth: dragging ? 3 : 2,
+                          inset: dragging ? 4 : 8,
+                        )
+                      : null,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 112),
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Row(
+                        children: <Widget>[
+                          _PickGlyph(
+                            icon: icon,
+                            colors: colors,
+                            seed: 'import-pick-$icon',
+                            size: 60,
+                            selected: selected,
+                            turns: (hovering || dragging) && motion
+                                ? 14 / 360
+                                : 0,
                           ),
+                          const SizedBox(width: 18),
+                          Expanded(child: text),
+                          if (trailing.isNotEmpty) ...<Widget>[
+                            const SizedBox(width: 12),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: trailing,
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
@@ -511,125 +541,128 @@ class ImportPickTile extends StatelessWidget {
     final String? sub = subtitle;
     final Widget? thumb = thumbnail;
     final Widget? extra = below;
-    return FushiHoverLift(
-      enabled: enabled && onTap != null,
-      builder: (BuildContext context, bool hovering) {
-        final List<Widget> trailing = <Widget>[
-          ...actions,
-          if (selected && clear != null)
-            ImportBlockIconButton(
-              icon: FushiIcons.close,
-              tooltip: t.dialog_clear,
-              colors: colors,
-              enabled: enabled,
-              onTap: clear,
-            ),
-        ];
-        final Widget lead =
-            thumb ??
-            _PickGlyph(
-              icon: icon,
-              colors: colors,
-              seed: 'import-tile-$icon',
-              size: 38,
+    return FushiBlockColorScope(
+      colors: colors,
+      child: FushiHoverLift(
+        enabled: enabled && onTap != null,
+        builder: (BuildContext context, bool hovering) {
+          final List<Widget> trailing = <Widget>[
+            ...actions,
+            if (selected && clear != null)
+              ImportBlockIconButton(
+                icon: FushiIcons.close,
+                tooltip: t.dialog_clear,
+                colors: colors,
+                enabled: enabled,
+                onTap: clear,
+              ),
+          ];
+          final Widget lead =
+              thumb ??
+              _PickGlyph(
+                icon: icon,
+                colors: colors,
+                seed: 'import-tile-$icon',
+                size: 38,
+                selected: selected,
+                turns: hovering && motion ? -10 / 360 : 0,
+              );
+          return AnimatedOpacity(
+            opacity: enabled ? 1 : 0.6,
+            duration: fushiMotionDuration(context, FushiMotion.short),
+            curve: FushiMotion.standard,
+            child: Semantics(
               selected: selected,
-              turns: hovering && motion ? -10 / 360 : 0,
-            );
-        return AnimatedOpacity(
-          opacity: enabled ? 1 : 0.6,
-          duration: fushiMotionDuration(context, FushiMotion.short),
-          curve: FushiMotion.standard,
-          child: Semantics(
-            selected: selected,
-            child: FushiCard(
-              focusId: focusId,
-              onTap: enabled ? onTap : null,
-              color: colors.container,
-              shape: fushiCoverBlockShape(context, FushiCoverBlockSize.half),
-              borderRadius: BorderRadius.circular(radius),
-              padding: EdgeInsets.zero,
-              child: CustomPaint(
-                foregroundPainter: dragging
-                    ? ImportDashedBorderPainter(
-                        color: colors.onContainer,
-                        radius: radius,
-                        dashed: false,
-                        strokeWidth: 3,
-                        inset: 4,
-                      )
-                    : null,
-                // 高度由紧凑内容决定（头部 48 + 标题 + 副行 + 可选动作行），
-                // 同一行各格由 [ImportPickTileGrid] 拉成等高。
-                child: SizedBox(
-                  width: double.infinity,
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        // 头部定高（= 封面缩略图高）：图标 / 缩略图贴左、动作钮
-                        // 贴右，都在这一格里居中——有没有动作钮、是不是缩略图，
-                        // 同一行各格的标题与副行都对齐。
-                        SizedBox(
-                          height: _headerHeight,
-                          child: Row(
-                            children: <Widget>[
-                              lead,
-                              const Spacer(),
-                              ...trailing,
-                            ],
+              child: FushiCard(
+                focusId: focusId,
+                onTap: enabled ? onTap : null,
+                color: colors.container,
+                shape: fushiCoverBlockShape(context, FushiCoverBlockSize.half),
+                borderRadius: BorderRadius.circular(radius),
+                padding: EdgeInsets.zero,
+                child: CustomPaint(
+                  foregroundPainter: dragging
+                      ? ImportDashedBorderPainter(
+                          color: colors.onContainer,
+                          radius: radius,
+                          dashed: false,
+                          strokeWidth: 3,
+                          inset: 4,
+                        )
+                      : null,
+                  // 高度由紧凑内容决定（头部 48 + 标题 + 副行 + 可选动作行），
+                  // 同一行各格由 [ImportPickTileGrid] 拉成等高。
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          // 头部定高（= 封面缩略图高）：图标 / 缩略图贴左、动作钮
+                          // 贴右，都在这一格里居中——有没有动作钮、是不是缩略图，
+                          // 同一行各格的标题与副行都对齐。
+                          SizedBox(
+                            height: _headerHeight,
+                            child: Row(
+                              children: <Widget>[
+                                lead,
+                                const Spacer(),
+                                ...trailing,
+                              ],
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: context.fushiType.titleSmall.copyWith(
-                            height: 1.2,
-                            fontWeight: FontWeight.w800,
-                            color: colors.onContainer,
-                          ),
-                        ),
-                        if (sub != null && sub.isNotEmpty) ...<Widget>[
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 8),
                           Text(
-                            sub,
+                            title,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
-                            style: context.fushiType.bodySmall.copyWith(
-                              height: 1.4,
-                              fontWeight: FontWeight.w600,
+                            style: context.fushiType.titleSmall.copyWith(
+                              height: 1.2,
+                              fontWeight: FontWeight.w800,
                               color: colors.onContainer,
                             ),
                           ),
-                        ],
-                        if (extra != null) ...<Widget>[
-                          const SizedBox(height: 10),
-                          extra,
-                        ],
-                        if (showGo) ...<Widget>[
-                          const SizedBox(height: 12),
-                          Align(
-                            alignment: AlignmentDirectional.centerEnd,
-                            child: ExcludeSemantics(
-                              child: ImportGoArrow(
-                                colors: colors,
-                                nudge: hovering,
+                          if (sub != null && sub.isNotEmpty) ...<Widget>[
+                            const SizedBox(height: 4),
+                            Text(
+                              sub,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: context.fushiType.bodySmall.copyWith(
+                                height: 1.4,
+                                fontWeight: FontWeight.w600,
+                                color: colors.onContainer,
                               ),
                             ),
-                          ),
+                          ],
+                          if (extra != null) ...<Widget>[
+                            const SizedBox(height: 10),
+                            extra,
+                          ],
+                          if (showGo) ...<Widget>[
+                            const SizedBox(height: 12),
+                            Align(
+                              alignment: AlignmentDirectional.centerEnd,
+                              child: ExcludeSemantics(
+                                child: ImportGoArrow(
+                                  colors: colors,
+                                  nudge: hovering,
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
@@ -728,7 +761,10 @@ class ImportSectionBlock extends StatelessWidget {
         child: fields,
       );
     }
-    return DecoratedBox(
+    // 块里的字段 / 下拉 / 分段钮读主题色：不下发块配色就拿外层配色（从深色主
+    // 方式块弹出的对话框里，浅色表单块上的输入字、下拉值、未选分段成了浅色字，
+    // 看不见）。与 [ImportPickBlock] / [ImportPickTile] 同样包局部配色。
+    final Widget block = DecoratedBox(
       decoration: ShapeDecoration(
         color: colors.container,
         shape: fushiCoverBlockShape(
@@ -779,5 +815,6 @@ class ImportSectionBlock extends StatelessWidget {
         ),
       ),
     );
+    return FushiBlockColorScope(colors: colors, child: block);
   }
 }

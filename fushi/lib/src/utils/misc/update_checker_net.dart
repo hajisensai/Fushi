@@ -29,7 +29,10 @@ part of 'update_checker.dart';
 /// 名单本身已搬到 `src/utils/net/github_mirrors.dart` 的 [kGitHubMirrorPrefixes]
 /// 作全仓唯一真相源（BUG-1875：Mihon 扩展仓库拉取也要同一份镜像）；part 契约禁止
 /// part 内 import，所以由 barrel 引入、这里只保留别名与既有的测试可见名。
-const List<String> updateCheckProxyPrefixes = kGitHubMirrorPrefixes;
+///
+/// 读的是 [activeGitHubMirrorPrefixes]：用户在设置里关掉 GitHub 加速镜像时为空，检查 /
+/// 下载候选只剩直连与官网 Cloudflare，设置页的下载来源下拉也不再列镜像。
+List<String> get updateCheckProxyPrefixes => activeGitHubMirrorPrefixes;
 
 /// 官网 Cloudflare Worker 暴露的版本化 R2 下载入口。
 ///

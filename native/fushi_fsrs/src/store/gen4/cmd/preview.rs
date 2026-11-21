@@ -1,5 +1,5 @@
-//! 评分预览 `preview` 的新代实现（规划 §2.1 G7-4f；协议 3 `store/sync2/mod.rs` `SrsCore::sync2_preview`）。**还没接
-//! 分发器**：协议 3 的 `preview` 原地不动。
+//! 评分预览 `preview` 的新代实现（规划 §2.1 G7-4f；协议 3 `store/sync2/mod.rs` `SrsCore::sync2_preview`）。S1b 接进
+//! 分发器（`gen4/dispatch.rs`，请求形状同协议 3：`card` / `note?` / `now` / `utcOff` / `rollover`）。
 //!
 //! 一份规则：重放（`replay::preview`）、有效配置与回包（`store/sync2/mod.rs` `preview_of`）、卡的有效牌组
 //! （`config::card_deck_with`，经 [super::card_deck]）都与协议 3 同一个函数。这里只换「从哪读」：
@@ -57,10 +57,11 @@ pub fn preview(
         };
         let input: Vec<Row<'_>> = rows
             .iter()
-            .map(|(j, s, i)| Row {
+            .map(|(j, s, i, c)| Row {
                 json: j,
                 server_time: *s,
                 intent: i.clone(),
+                seed_card: Some(c),
             })
             .collect();
         let day = Day {

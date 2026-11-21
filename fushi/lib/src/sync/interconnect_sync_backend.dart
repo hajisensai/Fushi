@@ -11,6 +11,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
     show VideoMetadataLookup;
 import 'package:fushi_engine/media/video/metadata/video_metadata_wire.dart';
+import 'package:fushi_engine/media/video/stream_video_sync.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
@@ -24,8 +25,6 @@ import 'package:fushi_engine/media/video/dvd/dvd_angle.dart'
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
     show isDvdTitlePath;
 import 'package:fushi_engine/sync/interconnect_dav_tree_listing.dart';
-import 'package:fushi_engine/sync/pdf_sync_package.dart'
-    show interconnectHostAcceptsPdfBooks;
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/interconnect_source_share.dart';
 import 'package:fushi/src/sync/interconnect_source_share_sync.dart'
@@ -616,6 +615,7 @@ class InterconnectSyncBackend extends SyncBackend
     if (signature != _configSignature) {
       _configSignature = signature;
       _sessionResolved = false;
+      _resolveFlight = null;
       // BUG-1180：身份变了 = 远端清单缓存里的东西属于**上一个**对端，必须作废。
       // 监听者同步收到通知，所以本次 restoreAuth 返回时缓存已经是空的，紧随其后的
       // 那次 read() 必然重新向新对端取数。
@@ -710,10 +710,34 @@ class InterconnectSyncBackend extends SyncBackend
     requestTimeout: requestTimeout,
   );
 
+  /// 在途的那一轮选路（[_ensureResolved] 单飞）。配置身份变了（[_loadConfig]）、
+  /// 登出、关闭一次性会话时丢掉它，之后的调用方按新配置另起一轮。
+  Future<void>? _resolveFlight;
+
+  /// 会话没选路时，并发调用方共享同一轮选路（单飞）。
+  ///
+  /// 起播并行取流与开播位置（路线图 #3722 m3 gap-remote-4）后，两条请求会同时撞上
+  /// 「还没选路」：各跑一轮 [_resolveSession] 不只是探测做两遍——两轮选中的候选
+  /// 若不同（组内排序随谁先答而变），后完成的那轮会 `_ops?.close()` 掉前一轮刚交给
+  /// 调用方的连接句柄，在途请求被拒连、`onConnectivityError` 再把会话置脏。
+  /// 一轮结束（成功或失败）就清掉，下一次调用按 [_sessionResolved] 重新判断。
+  Future<void> _ensureResolved() {
+    if (_sessionResolved) return Future<void>.value();
+    final Future<void>? inFlight = _resolveFlight;
+    if (inFlight != null) return inFlight;
+    late final Future<void> flight;
+    flight = _resolveSession().whenComplete(() {
+      if (identical(_resolveFlight, flight)) _resolveFlight = null;
+    });
+    _resolveFlight = flight;
+    return flight;
+  }
+
   /// Probes the candidate addresses (in order) and settles the session on the
   /// first reachable one. Switching addresses rebuilds [_ops] and clears the
-  /// folder cache, whose paths embed the previous base URL.
-  Future<void> _ensureResolved() async {
+  /// folder cache, whose paths embed the previous base URL. 只经 [_ensureResolved]
+  /// 调用（单飞）。
+  Future<void> _resolveSession() async {
     if (_sessionResolved) return;
     if (!_hasAnyCredential) {
       throw SyncAuthError(
@@ -820,6 +844,7 @@ class InterconnectSyncBackend extends SyncBackend
     _candidates = const <FushiClientUrl>[];
     _token = null;
     _sessionResolved = false;
+    _resolveFlight = null;
     _activeCandidate = null;
     // 登出后配置身份归零，下次 restoreAuth 必然重探测（BUG-1183）。
     _configSignature = null;
@@ -840,6 +865,7 @@ class InterconnectSyncBackend extends SyncBackend
       _ops?.close();
       _ops = null;
       _sessionResolved = false;
+      _resolveFlight = null;
       return false;
     }
     // BUG-1559：已经探明可达的会话不得被重建成「候选[0]」。
@@ -869,6 +895,7 @@ class InterconnectSyncBackend extends SyncBackend
     _ops?.close();
     _ops = null;
     _sessionResolved = false;
+    _resolveFlight = null;
     _activeCandidate = null;
   }
 
@@ -921,14 +948,27 @@ class InterconnectSyncBackend extends SyncBackend
     }
   }
 
-  /// 对端 host 能否收下推来的 PDF 书（`liveLibrary.pdfBooks`，反馈 Jq1_ujHa4t）。
+  /// 对端 host 对 `liveLibrary.<key>` 能力位的声明状态（[liveLibraryCapabilityState]）。
   ///
-  /// 必须显式协商：老 host 会把 PDF 当 EPUB 导入、必然失败；无头服务端没有 PDF 引擎。
-  /// 能力每轮现问、不跨轮缓存（同一地址上的 host 可能被换成老版本 / 服务端）。
-  /// 老 host（无 capabilities 端点）= false；网络 / 鉴权失败照常抛给调用方记错误。
-  Future<bool> hostAcceptsPdfBooks() async {
+  /// 用途两类：PDF 书（`liveLibrary.pdfBooks`，反馈 Jq1_ujHa4t）必须显式协商——老 host
+  /// 会把 PDF 当 EPUB 导入、必然失败，无头服务端没有 PDF 引擎；以及同步维度在 host
+  /// 上走不通时区分「对端版本过旧」与「对端不支持」（拍板
+  /// other-sync-peer-version-errors）。能力每轮现问、不跨轮缓存（同一地址上的 host
+  /// 可能被换成老版本 / 服务端）。老 host（无 capabilities 端点）= undeclared；网络 /
+  /// 鉴权失败照常抛给调用方记错误。
+  Future<LiveLibraryCapabilityState> liveLibraryCapability(String key) async {
     await _ensureResolved();
-    return interconnectHostAcceptsPdfBooks(await _readHostCapabilities());
+    return liveLibraryCapabilityState(await _readHostCapabilities(), key);
+  }
+
+  /// 对端 host 的本地音频清单是否带内容身份（`liveLibrary.localAudioContentId`，
+  /// 拍板 pr3481）。老 host = false：只能按显示名匹配。能力每轮现问、不跨轮缓存
+  /// （同 [liveLibraryCapability]）。
+  Future<bool> hostReportsLocalAudioContentId() async {
+    await _ensureResolved();
+    return interconnectHostReportsLocalAudioContentId(
+      await _readHostCapabilities(),
+    );
   }
 
   /// `GET /api/capabilities` 的解码结果；老 host（404 / 405）返回 null。网络 / 鉴权
@@ -2447,16 +2487,17 @@ class InterconnectSyncBackend extends SyncBackend
   Future<List<RemoteLocalAudioInfo>> listRemoteLocalAudio() =>
       _listRemote('/api/library/localaudio', RemoteLocalAudioInfo.fromJson);
 
-  /// 从对端 host 下载 displayName 为 [displayName] 的本地音频库到 [dest] 文件。
+  /// 从对端 host 下载 [key] 指向的本地音频库到 [dest] 文件。[key] 用清单条目的
+  /// `RemoteLocalAudioInfo.key`：新 host 给了内容身份就是 contentId，旧 host 是
+  /// displayName。
   Future<void> getRemoteLocalAudio(
-    String displayName,
+    String key,
     File dest, {
     SyncTransferProgress? onProgress,
   }) async {
     await _ensureResolved();
     await downloadContentFile(
-      fileId:
-          '$_apiBase/api/library/localaudio/${Uri.encodeComponent(displayName)}',
+      fileId: '$_apiBase/api/library/localaudio/${Uri.encodeComponent(key)}',
       destination: dest,
       onProgress: onProgress,
     );
@@ -2807,6 +2848,48 @@ class InterconnectSyncBackend extends SyncBackend
     final HttpClientResponse res = await req.close();
     await res.drain<void>();
     _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id');
+  }
+
+  /// host 是否声明能收流媒体书注册（`liveLibrary.streamVideos`，拍板台 Z2OhxAjKVv）。
+  ///
+  /// 推之前必须先问：老 host 没有 `.../streamentry` 路由，带后缀的 PUT 会落进它的
+  /// 「裸 id 上传视频」分支，把 JSON 请求体当视频文件入库。同一 host 基址只探一次。
+  Future<bool> hostAcceptsStreamVideos() async =>
+      (await _liveLibraryCapabilities())[kLiveLibraryStreamVideosCapability] ==
+      true;
+
+  /// 在对端 host 视频库注册一本流媒体书（只有标题 + URL + 重开规格，不传字节）。
+  ///
+  /// [presentSinceAt] 是本机开始拥有这一行的时刻，host 的删除墓碑闸门据此判断这份
+  /// 是删除之前就有的（409 → [StreamVideoPushResult.vetoed]），还是删后重新加入的。
+  /// 其余非 2xx 照常抛。调用方须先确认 [hostAcceptsStreamVideos]。
+  Future<StreamVideoPushResult> putRemoteStreamVideo(
+    String id,
+    StreamVideoRegistration entry, {
+    int? presentSinceAt,
+  }) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'PUT',
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/'
+          '$kStreamVideoEntryPathSuffix',
+    );
+    req.headers.set('Content-Type', 'application/json; charset=utf-8');
+    _setPresentSinceHeader(req.headers, presentSinceAt);
+    req.add(utf8.encode(jsonEncode(entry.toJson())));
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == 409) {
+      await res.drain<void>();
+      return StreamVideoPushResult.vetoed;
+    }
+    _ops!.checkStatus(
+      res.statusCode,
+      'PUT /api/library/videos/$id/$kStreamVideoEntryPathSuffix',
+    );
+    final Object? decoded = jsonDecode(await _readBodyBounded(res));
+    return decoded is Map && decoded['created'] == true
+        ? StreamVideoPushResult.created
+        : StreamVideoPushResult.existed;
   }
 
   /// 通知对端 host 删除 bookUid 为 [id] 的视频（远端视频卡长按删除 / 「从所有设备
@@ -3416,16 +3499,23 @@ class InterconnectSyncBackend extends SyncBackend
   static const Duration _videoFingerprintTimeout = Duration(minutes: 5);
 
   /// GET `/api/library/videos/<id>/fingerprint`（拍板台 IFCPPprIpT）。404（老 host
-  /// 无此端点）→ null；新 host 担保不了字节（[kVideoFingerprintUnavailableStatus]）或
+  /// 无此端点）→ null；`wait: false` 时 host 回 [kVideoFingerprintPendingStatus]
+  /// （还没算好、已在后台开算，拍板台 left3657）→ null；老 host 不认 `wait=0`，照旧
+  /// 算完再答。新 host 担保不了字节（[kVideoFingerprintUnavailableStatus]）或
   /// 回的不是 64 位小写 hex → 抛 [RemoteVideoFingerprintUnavailable]，不把不可担保的
   /// 值写进卡片、也不让回跳当老 host 放行（BUG-4782）。
   @override
   Future<String?> fetchRemoteVideoFingerprint(
     String id, {
     int episodeIndex = 0,
+    bool wait = true,
   }) async {
     await _ensureResolved();
-    final String query = episodeIndex > 0 ? '?episode=$episodeIndex' : '';
+    final List<String> params = <String>[
+      if (episodeIndex > 0) 'episode=$episodeIndex',
+      if (!wait) '$kVideoFingerprintWaitQueryParam=0',
+    ];
+    final String query = params.isEmpty ? '' : '?${params.join('&')}';
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
       '$_apiBase/api/library/videos/${_encodeVideoId(id)}/fingerprint$query',
@@ -3434,7 +3524,8 @@ class InterconnectSyncBackend extends SyncBackend
       req,
       timeout: _videoFingerprintTimeout,
     );
-    if (res.statusCode == 404) {
+    if (res.statusCode == 404 ||
+        (!wait && res.statusCode == kVideoFingerprintPendingStatus)) {
       await res.drain<void>();
       return null;
     }

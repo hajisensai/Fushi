@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
-import { findBareHeavyCommand } from './require_heavy_lease.mjs';
+import { findBareHeavyCommand, splitSegments } from './require_heavy_lease.mjs';
 
 test('bare heavy flutter / gradle runs are caught', () => {
   for (const cmd of [
@@ -32,9 +32,32 @@ test('wrapped, self-leasing, light or unrelated commands pass', () => {
     'git commit -m "flutter test fix"',
     'FUSHI_HEAVY=off flutter test test/a_test.dart',
     '',
+    // Quoted search patterns are arguments, not segments (2026-11-21 audit).
+    'grep -n "flutter build apk\\|flutter build appbundle\\|doNotStrip" .github/workflows/*.yml | head',
+    'grep -oE "FLUTTER TEST VERDICT: FAILED[^(]*" $S/o1.log; echo done',
+    "grep -n 'gradlew assembleRelease|flutter test' docs/agent/build.md",
+    'git log -1 --format="%H; flutter test" origin/develop',
+    // Heredoc bodies are data written to a file, not commands.
+    "cat > x.py <<'EOF'\nimport subprocess\n# flutter test test/a_test.dart\nEOF\npython -I x.py",
   ]) {
     assert.equal(findBareHeavyCommand(cmd), null, cmd);
   }
+});
+
+test('real runs after quotes or heredocs are still caught', () => {
+  for (const cmd of [
+    'grep -c "x|y" a.txt; flutter test test/a_test.dart',
+    "cat > x.txt <<'EOF'\nhello\nEOF\nflutter analyze --no-pub",
+    '"C:/Program Files/flutter/bin/flutter" test test/a_test.dart',
+    'echo "a;b" && ./gradlew assembleDebug',
+  ]) {
+    assert.notEqual(findBareHeavyCommand(cmd), null, cmd);
+  }
+});
+
+test('splitSegments keeps quoted separators inside their segment', () => {
+  assert.deepEqual(splitSegments('a "b|c" && d \'e;f\' ; g'), ['a "b|c"', "d 'e;f'", 'g']);
+  assert.deepEqual(splitSegments("cat <<EOF\nx | y\nEOF\nz"), ['cat <<EOF', 'z']);
 });
 
 test('the hook answers deny JSON on stdin input, nothing otherwise', () => {

@@ -16,6 +16,8 @@ import 'dart:typed_data';
 import 'package:fushi_compute/fushi_compute.dart';
 import 'package:image/image.dart' as img;
 
+import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRgbaImage;
+
 /// 内核能直接吃的 uint8 帧（已转正、无调色板）；[interpolation] 已按调色板规则修正。
 ({img.Image image, img.Interpolation interpolation}) _kernelReady(
   img.Image src,
@@ -183,6 +185,12 @@ uint8Pixels(img.Image image) {
 Uint8List? encodeImageAsJpeg(Uint8List bytes, {required int quality}) =>
     FushiComputeImage.instance.toJpeg(bytes, quality: quality);
 
+/// 编码图片字节 → PNG 字节（无损，按 EXIF / TIFF 方向转正；灰度源出 8 位灰度 PNG，16 位
+/// 截成 8 位，多页 TIFF 只取首页），解码与编码都在原生内核。坏字节返回 null。同步、整页
+/// 几十到几百毫秒，调用方放后台 isolate。
+Uint8List? encodeImageAsPng(Uint8List bytes) =>
+    FushiComputeImage.instance.toPng(bytes);
+
 /// 原生 PNG 解码，像素布局同 `img.decodePng`（灰度 1 通道 / 灰度 + alpha 2 通道 / RGB / RGBA，
 /// 调色板展开，不转方向）；不是 PNG 或解不开返回 null。16 位与 1/2/4 位灰度一律给 8 位。
 img.Image? decodePngNative(Uint8List bytes) {
@@ -233,6 +241,23 @@ img.Image? decodePngNative(Uint8List bytes) {
 ///   总是应用——与 WebView 里显示的页面同一坐标系。
 img.Image? decodeImageNative(Uint8List bytes, {bool orient = true}) =>
     decodeImageWithFormat(bytes, orient: orient)?.image;
+
+/// 编码图（PNG / JPEG…）→ 交给 OCR 引擎的 RGBA 像素（[decodeImageNative]，按 EXIF 转正；
+/// 没有 alpha 的源补满 alpha，有 alpha 的保留）。给只拿得到编码截图的调用方（网页播放后端
+/// 的暂停帧、浏览器扩展抓图）用：解一次，之后与播放器截帧走同一条像素路径。认不出返回
+/// null。同步、几十毫秒，调用方放后台 isolate。
+OcrRgbaImage? decodeOcrRgbaImageNative(Uint8List bytes) {
+  final img.Image? decoded = decodeImageNative(bytes);
+  if (decoded == null) return null;
+  final img.Image rgba = decoded.numChannels == 4
+      ? decoded
+      : decoded.convert(numChannels: 4, alpha: 255);
+  return OcrRgbaImage(
+    rgba: rgba.getBytes(order: img.ChannelOrder.rgba),
+    width: rgba.width,
+    height: rgba.height,
+  );
+}
 
 /// 只读文件头的宽高（[orient] 时按 EXIF 方向换算）与格式；认不出返回 null。
 ({int width, int height, FfcImageFormat format})? probeImageNative(

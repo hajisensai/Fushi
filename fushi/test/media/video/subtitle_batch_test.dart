@@ -15,26 +15,28 @@ import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 /// 来源无关的合集批量编排：判据委托 `chooseSubtitleForEpisode`、下载走 registry、
 /// 落盘名带 bookUid 前缀、单集失败不中断整批。
 class _Cand extends VideoSubtitleCandidate {
-  _Cand(String name, {int? episode, String language = 'ja'})
+  _Cand(String name, {int? season, int? episode, String language = 'ja'})
     : super(
         providerId: 'fake',
         remoteId: name,
         fileName: name,
         language: language,
         providerPriority: 1,
+        season: season,
         episode: episode,
       );
 }
 
 /// 整季 ZIP 包候选。
 class _Pack extends VideoSubtitleCandidate {
-  _Pack(String name)
+  _Pack(String name, {int? season})
     : super(
         providerId: 'fake',
         remoteId: name,
         fileName: name,
         language: 'ja',
         providerPriority: 1,
+        season: season,
         archiveFormat: SubtitleArchiveFormat.zip,
       );
 }
@@ -605,6 +607,52 @@ void main() {
     expect(many.first.message, 'jimaku subtitles carry no episode numbers');
   });
 
+  test('中途停止：手上那一集做完落盘，其余集记 skipped、不下载，并逐集回调 onItemDone', () async {
+    final _FakeProvider provider = _FakeProvider();
+    bool stop = false;
+    final List<SubtitleBatchItem> started = <SubtitleBatchItem>[];
+    final List<SubtitleBatchStatus> finished = <SubtitleBatchStatus>[];
+    final List<SubtitleBatchItem> results = await runSubtitleBatch(
+      registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]),
+      candidates: <VideoSubtitleCandidate>[
+        _Cand('Show - 01.ja.srt', episode: 1),
+        _Cand('Show - 02.ja.srt', episode: 2),
+        _Cand('Show - 03.ja.srt', episode: 3),
+      ],
+      targets: <SubtitleBatchTarget>[
+        _target(0, 'Show - 01'),
+        _target(1, 'Show - 02'),
+        _target(2, 'Show - 03'),
+      ],
+      saveDirectory: tmp.path,
+      isCancelled: () => stop,
+      // 第 1 集开始下载时用户点了「停止」。
+      onItemStart: (SubtitleBatchItem item) async {
+        started.add(item);
+        stop = true;
+      },
+      onItemDone: (SubtitleBatchItem item) async => finished.add(item.status),
+    );
+    expect(started, hasLength(1), reason: '停止后不再开始新的一集');
+    expect(
+      results.map((SubtitleBatchItem i) => i.status),
+      <SubtitleBatchStatus>[
+        SubtitleBatchStatus.done,
+        SubtitleBatchStatus.skipped,
+        SubtitleBatchStatus.skipped,
+      ],
+    );
+    expect(File(results[0].subtitlePath!).existsSync(), isTrue);
+    expect(results[1].subtitlePath, isNull);
+    expect(provider.downloaded, <String>['Show - 01.ja.srt']);
+    expect(finished, <SubtitleBatchStatus>[
+      SubtitleBatchStatus.done,
+      SubtitleBatchStatus.skipped,
+      SubtitleBatchStatus.skipped,
+    ]);
+    expect(tmp.listSync().whereType<File>(), hasLength(1));
+  });
+
   test('单集下载失败记 failed，不中断后面的集', () async {
     final _FakeProvider provider = _FakeProvider(
       failNames: <String>{'Show - 01.ja.srt'},
@@ -633,6 +681,25 @@ void main() {
       ),
     );
     expect(results[1].error, isNull);
+    expect(results[0].failureStage, SubtitleBatchFailureStage.download);
+    expect(results[1].failureStage, isNull);
+  });
+
+  test('下载到了但写不进本地：failed 记在「写盘」这一步，行文案不说成「下载失败」', () async {
+    // 保存目录的位置上是个文件：createSync / 写盘必抛。
+    final File blocker = File('${tmp.path}/not_a_dir');
+    await blocker.writeAsString('x');
+    final List<SubtitleBatchItem> results = await runSubtitleBatch(
+      registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[_FakeProvider()]),
+      candidates: <VideoSubtitleCandidate>[
+        _Cand('Show - 01.ja.srt', episode: 1),
+      ],
+      targets: <SubtitleBatchTarget>[_target(0, 'Show - 01')],
+      saveDirectory: blocker.path,
+    );
+    expect(results.single.status, SubtitleBatchStatus.failed);
+    expect(results.single.failureStage, SubtitleBatchFailureStage.write);
+    expect(results.single.error, isA<FileSystemException>());
   });
 
   test('onItemDone 抛错（调用方持久化失败）只算这一集失败：保留已落盘路径，后面的集照常处理', () async {
@@ -663,6 +730,9 @@ void main() {
       ],
     );
     expect(results[1].error, isStateError);
+    // 已经落盘：失败在「设为这一集的字幕」这一步，行上不能再说「下载失败」。
+    expect(results[1].failureStage, SubtitleBatchFailureStage.persist);
+    expect(results[0].failureStage, isNull);
     expect(
       File(results[1].subtitlePath!).existsSync(),
       isTrue,
@@ -751,5 +821,174 @@ void main() {
       ),
       5,
     );
+  });
+
+  group('多季防串季（season 隔离）', () {
+    test('resolveSubtitleBatchSeason：显式 season → 完整路径（含季目录）→ 标题 → null', () {
+      expect(
+        resolveSubtitleBatchSeason(
+          const SubtitleBatchTarget(
+            bookUid: 's2',
+            title: 'Show - 01',
+            videoPath: 'C:/v/Show - 01.mkv',
+            sortIndex: 0,
+            isStream: false,
+            season: 2,
+          ),
+        ),
+        2,
+      );
+      expect(resolveSubtitleBatchSeason(_target(0, 'Show S02E01')), 2);
+      expect(
+        resolveSubtitleBatchSeason(
+          const SubtitleBatchTarget(
+            bookUid: 'dir-s2',
+            title: '01',
+            videoPath: 'C:/v/Show/Season 2/01.mkv',
+            sortIndex: 0,
+            isStream: false,
+          ),
+        ),
+        2,
+      );
+      expect(
+        resolveSubtitleBatchSeason(
+          const SubtitleBatchTarget(
+            bookUid: 'title-s3',
+            title: 'Show S03E01',
+            videoPath: 'C:/v/01.mkv',
+            sortIndex: 0,
+            isStream: false,
+          ),
+        ),
+        3,
+      );
+      expect(resolveSubtitleBatchSeason(_target(0, 'Show - 01')), isNull);
+    });
+
+    test('多季目标只拿到各自季的字幕：仅有第 1 季候选时，第 2 季记 noMatch', () async {
+      final _FakeProvider provider = _FakeProvider();
+      final List<SubtitleBatchItem> results = await runSubtitleBatch(
+        registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]),
+        candidates: <VideoSubtitleCandidate>[
+          _Cand('Show S01E01.ja.srt', season: 1, episode: 1),
+        ],
+        targets: <SubtitleBatchTarget>[
+          _target(0, 'Show S01E01'),
+          _target(1, 'Show S02E01'),
+        ],
+        saveDirectory: tmp.path,
+      );
+      expect(results[0].status, SubtitleBatchStatus.done);
+      expect(results[1].status, SubtitleBatchStatus.noMatch);
+      expect(
+        results[1].message,
+        'subtitle season does not match target season',
+      );
+      expect(provider.downloaded, <String>['Show S01E01.ja.srt']);
+    });
+
+    test('多季目标遇到不标季号的候选：拒绝静默跨季套用到每一季', () async {
+      final _FakeProvider provider = _FakeProvider();
+      final List<SubtitleBatchItem> results = await runSubtitleBatch(
+        registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]),
+        candidates: <VideoSubtitleCandidate>[
+          _Cand('Show - 01.ja.srt', episode: 1),
+        ],
+        targets: <SubtitleBatchTarget>[
+          _target(0, 'Show S01E01'),
+          _target(1, 'Show S02E01'),
+        ],
+        saveDirectory: tmp.path,
+      );
+      expect(results[0].status, SubtitleBatchStatus.noMatch);
+      expect(results[1].status, SubtitleBatchStatus.noMatch);
+      expect(provider.downloaded, isEmpty);
+
+      final List<SubtitleBatchItem> mixed = await runSubtitleBatch(
+        registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]),
+        candidates: <VideoSubtitleCandidate>[
+          _Cand('Show - 01.ja.srt', episode: 1),
+        ],
+        targets: <SubtitleBatchTarget>[
+          _target(0, 'Show - 01'),
+          _target(1, 'Show S02E01'),
+        ],
+        saveDirectory: tmp.path,
+      );
+      expect(mixed[0].status, SubtitleBatchStatus.noMatch);
+      expect(mixed[1].status, SubtitleBatchStatus.noMatch);
+      expect(provider.downloaded, isEmpty);
+    });
+
+    test('多季目标 + 多季候选：各自匹配对应季的字幕', () async {
+      final _FakeProvider provider = _FakeProvider(
+        bodies: const <String, String>{
+          'Show S01E01.ja.srt': '1\n00:00:01,000 --> 00:00:02,000\ns1\n',
+          'Show S02E01.ja.srt': '1\n00:00:01,000 --> 00:00:02,000\ns2\n',
+        },
+      );
+      final List<SubtitleBatchItem> results = await runSubtitleBatch(
+        registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]),
+        candidates: <VideoSubtitleCandidate>[
+          _Cand('Show S01E01.ja.srt', episode: 1),
+          _Cand('Show S02E01.ja.srt', episode: 1),
+        ],
+        targets: <SubtitleBatchTarget>[
+          _target(0, 'Show S01E01'),
+          _target(1, 'Show S02E01'),
+        ],
+        saveDirectory: tmp.path,
+      );
+      expect(results[0].status, SubtitleBatchStatus.done);
+      expect(results[1].status, SubtitleBatchStatus.done);
+      expect(File(results[0].subtitlePath!).readAsStringSync(), contains('s1'));
+      expect(File(results[1].subtitlePath!).readAsStringSync(), contains('s2'));
+    });
+
+    test('整季压缩包按季隔离：合包拆出各自季，第 1 季包不套给第 2 季', () async {
+      final _PackProvider completePack = _PackProvider(
+        entries: const <String, List<String>>{
+          'Show Complete.zip': <String>[
+            'Show S01E01.ja.srt',
+            'Show S02E01.ja.srt',
+          ],
+        },
+      );
+      final List<SubtitleBatchItem> completeResults = await runSubtitleBatch(
+        registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[completePack]),
+        candidates: <VideoSubtitleCandidate>[_Pack('Show Complete.zip')],
+        targets: <SubtitleBatchTarget>[
+          _target(0, 'Show S01E01'),
+          _target(1, 'Show S02E01'),
+        ],
+        saveDirectory: tmp.path,
+      );
+      expect(completeResults[0].status, SubtitleBatchStatus.done);
+      expect(completeResults[0].subtitlePath, contains('Show S01E01'));
+      expect(completeResults[1].status, SubtitleBatchStatus.done);
+      expect(completeResults[1].subtitlePath, contains('Show S02E01'));
+
+      final _PackProvider s1OnlyPack = _PackProvider(
+        entries: const <String, List<String>>{
+          'Show S1.zip': <String>['Show - 01.ja.srt'],
+        },
+      );
+      final List<SubtitleBatchItem> s1OnlyResults = await runSubtitleBatch(
+        registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[s1OnlyPack]),
+        candidates: <VideoSubtitleCandidate>[_Pack('Show S1.zip', season: 1)],
+        targets: <SubtitleBatchTarget>[
+          _target(0, 'Show S01E01'),
+          _target(1, 'Show S02E01'),
+        ],
+        saveDirectory: tmp.path,
+      );
+      expect(s1OnlyResults[0].status, SubtitleBatchStatus.done);
+      expect(s1OnlyResults[1].status, SubtitleBatchStatus.noMatch);
+      expect(
+        s1OnlyResults[1].message,
+        'subtitle season does not match target season',
+      );
+    });
   });
 }

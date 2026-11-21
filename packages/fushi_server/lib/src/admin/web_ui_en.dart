@@ -235,6 +235,21 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '自动检测认不出的站点，可以粘贴它的解析规则（JSON）；需要登录的站再填 Cookie。':
       "For a site that automatic detection can't recognize, paste its parser "
       'rule (JSON); add a cookie for sites that need a login.',
+  '怎么写解析规则': 'How to write a parser rule',
+  '解析规则用 CSS 选择器告诉服务端站点搜索页上的结果在哪："search" 填搜索页地址里域名之后的部分，搜索词换成 {query}；"rows" 选中包住整条结果的元素（通常是表格行 tr）；"fields" 里写这一行内部的选择器，"title" 必填，"magnet" / "torrent" / "infoHash" 至少一个，末尾加 @href 表示取属性而不是文字。':
+      'A parser rule uses CSS selectors to tell the server where the results are on the '
+      'site\'s search page: "search" is the part of the search page address after the '
+      'domain, with your search word replaced by {query}; "rows" selects the element that '
+      'wraps one whole result (usually a table row, tr); "fields" holds selectors inside '
+      'that row: "title" is required, plus at least one of "magnet" / "torrent" / '
+      '"infoHash". Add @href to read an attribute instead of the text.',
+  '下载链接只在详情页时，让 "details" 指向详情页链接，再在 "detail" 段里写 "magnet" 或 "torrent"。不是 UTF-8 的站把 "encoding" 设为 windows-1251 或 latin1。规则里不含登录信息，需要登录的站另填 Cookie。用不到的部分直接删掉。':
+      'If the download link is only on each result\'s own page, point "details" at that '
+      'page\'s link and put "magnet" or "torrent" in the "detail" section. Sites that '
+      'aren\'t UTF-8 can set "encoding" to windows-1251 or latin1. The rule never holds '
+      'your login; add a cookie separately for sites that need signing in. Delete any '
+      'part you don\'t need.',
+  '填入模板': 'Use template',
   '解析规则（JSON；清空 = 改回自动检测）':
       'Parser rule (JSON; clear it to go back to automatic detection)',
   '新 Cookie（留空不改）': 'New cookie (leave empty to keep the current one)',
@@ -390,6 +405,30 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '同步位置已加密（暂不支持）': 'Sync location is encrypted (not supported yet)',
   '数据来自更新版本的 Fushi，请升级服务端':
       'The data comes from a newer Fushi; update the server',
+  '复习库升级中': 'Upgrading the review library',
+  '升级中': 'Upgrading',
+  '另一个进程在升级': 'Another process is upgrading it',
+  '需要升级': 'Needs an upgrade',
+  '升级失败': 'Upgrade failed',
+  '只剩封存的旧库': 'Only the sealed old library is left',
+  '新库旁边还有没升级的旧库':
+      'An old library that was never upgraded sits beside the new one',
+  '升级受阻': 'Upgrade blocked',
+  '磁盘空间不够': 'Not enough disk space',
+  ' · 已请求叫停': ' · stop requested',
+  '复习库换代': 'Review library upgrade',
+  '原因': 'Reason',
+  '报告': 'Report',
+  '开始升级': 'Start upgrade',
+  '叫停升级': 'Stop upgrade',
+  '开始升级复习库？升级期间远程复习与制卡暂停；旧的 srs.db 会封存保留，不删除任何文件。':
+      'Start upgrading the review library? Remote review and mining pause meanwhile; the old srs.db is sealed and kept, no file is deleted.',
+  '叫停复习库升级？提交步骤之前叫停会回到升级前的样子；刚好进入提交步骤时以最终结论为准。':
+      'Stop the review library upgrade? Before the commit step everything goes back to how it was; if it just entered the commit step, the final verdict is what counts.',
+  '已开始升级': 'Upgrade started',
+  '已请求叫停': 'Stop requested',
+  '复习库升级没完成，需在服务端处理（ctl srs migration）':
+      'The review library upgrade did not finish; handle it on the server (ctl srs migration)',
   '已开启': 'On',
   '未开启（没有勾选配置文件）': 'Off (no profile ticked)',
   '调度器': 'Scheduler',
@@ -429,6 +468,19 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '自动（没配好 Anki 时进复习）': 'Automatic (Review when Anki is not set up)',
   '换日时刻': 'Day starts at',
   '{0} 的制卡牌组（空 = 默认牌组）': 'Deck for {0} (empty = default deck)',
+  '{0} 的名字（空 = 用设备报的名字）': 'Name for {0} (empty = the name devices report)',
+  '保存名字': 'Save names',
+  '旧版本保留副本': 'Old-version retained copy',
+  '{0} 到期后自动删除': 'Deleted automatically after {0}',
+  '删除前一直保留（不会自动到期）': 'Kept until you delete it (never expires on its own)',
+  '自动删除没做成': 'Automatic deletion did not happen',
+  '删除保留副本': 'Delete retained copy',
+  '已损坏（不是可读的 SQLite 文件），不能再用它退回旧版本；当前复习库不受影响':
+      'Damaged (not a readable SQLite file): it can no longer be used to go back to the old version. The current review library is not affected.',
+  '立即删除旧版本保留副本？不可撤销：删除后不能再退回旧版本，彻底清除过的内容在旧库里的原文也随之消失。删除前会先核对新库完好，核对不过不删。':
+      'Delete the old-version retained copy now? This cannot be undone: you can no longer go back to the old version, and the original text of anything you permanently purged goes with it. The current library is checked first; if the check fails nothing is deleted.',
+  '已删除保留副本，释放 {0}': 'Retained copy deleted, {0} freed',
+  '没有可删除的保留副本': 'No retained copy to delete',
   '监听地址': 'Listen address',
   '共用 key（落到默认配置文件）': 'Shared key (goes to the default profile)',
   '{0} 专用 key': 'Key for {0}',
@@ -649,4 +701,35 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '仅本机（127.0.0.1）': 'This machine only (127.0.0.1)',
   '不用 AI': 'No AI',
   '自定义': 'Custom',
+  // 外观（共享设计系统的明暗 / 风格 / 配色，存本机浏览器）
+  '外观': 'Appearance',
+  '只存在这台电脑的浏览器里，不影响服务端与其他设备。':
+      'Saved in this browser only; does not affect the server or other devices.',
+  '明暗': 'Brightness',
+  '跟随系统': 'System',
+  '浅色': 'Light',
+  '深色': 'Dark',
+  '风格': 'Style',
+  '液态玻璃': 'Liquid glass',
+  '配色': 'Color',
+  'Fushi 默认': 'Fushi default',
+  '紫': 'Purple',
+  '靛蓝': 'Indigo',
+  '蓝': 'Blue',
+  '青': 'Teal',
+  '绿': 'Green',
+  '黄': 'Yellow',
+  '橙': 'Orange',
+  '红': 'Red',
+  '粉': 'Pink',
+  '中性': 'Neutral',
+  '拖放文件到这里，或点击选择': 'Drop files here, or click to choose',
+  // 侧边栏分组与收起
+  '概览': 'Overview',
+  '媒体库': 'Media',
+  '获取': 'Acquire',
+  '学习': 'Study',
+  '系统': 'System',
+  '收起侧边栏': 'Collapse sidebar',
+  '展开侧边栏': 'Expand sidebar',
 };

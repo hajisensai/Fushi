@@ -34,7 +34,7 @@ pub(super) const N1: &str = "0193a1b2-0000-7000-8000-0000000000a1";
 pub(super) const N2: &str = "0193a1b2-0000-7000-8000-0000000000a2";
 pub(super) const N3: &str = "0193a1b2-0000-7000-8000-0000000000a3";
 pub(super) const N4: &str = "0193a1b2-0000-7000-8000-0000000000a4";
-const ANKI_AT: i64 = T0 - 1000;
+pub(super) const ANKI_AT: i64 = T0 - 1000;
 
 // ---------------------------------------------------------------------- 列式表
 
@@ -530,6 +530,45 @@ fn logs_stats_and_server_times_match_protocol_3() {
     let g = p.rows(&gf, "t", &[Id, Plain]);
     let pr = p.rows(&pf, "t", &[Id, Plain]);
     assert!(g.iter().all(|r| pr.contains(r)), "{g:?} ⊄ {pr:?}");
+}
+
+/// `reviewed_decks`（每日上限单位的存量牌组判据）：两侧相同；从 Anki 导入的复习（日志 ID 是 UUIDv5）不算，本机作答
+/// （UUIDv7）算——新导入的 Anki 历史不该让牌组收到「以前按卡片数计」的提醒（拍板台 left3551）。
+#[test]
+fn reviewed_decks_skip_anki_imports_and_match_protocol_3() {
+    let deck = default_deck_id(P);
+    let d = fresh("g4rd");
+    d.apply(
+        T0,
+        vec![
+            deck_entity(&deck),
+            json!({"t": "entity", "x": {"id": "NT", "p": P, "k": "notetype", "d": {"createdAt": 1, "ntKind": "standard"}}}),
+            edit("notetype", "NT", "fieldDef/fa", json!({"name": "Expression", "ord": 0})),
+            edit("notetype", "NT", "tmplDef/t1", json!({"name": "A", "ord": 0, "front": "{{Expression}}"})),
+            note(N1, "NT", 10),
+            edit("note", N1, "f/fa", json!("猫")),
+            note(N2, "NT", 20),
+            edit("note", N2, "f/fa", json!("犬")),
+        ],
+    );
+    let anki_log = "0193a1b2-0000-5000-8000-0000000000f1";
+    let native_log = "0193a1b2-0000-7000-8000-0000000000f2";
+    d.apply(
+        T0 + 5,
+        vec![anki_review(anki_log, &card(N2, "t1"), ANKI_AT)],
+    );
+    d.apply(
+        T0 + 10,
+        vec![review(native_log, &card(N1, "t1"), T0 + 10, 3, "learn")],
+    );
+    let p = Pair::new(&d);
+    let decks = |before: i64| {
+        let req = json!({"q": "reviewed_decks", "before": before});
+        p.same(req.clone(), &[]);
+        p.g4(req).0["decks"].clone()
+    };
+    assert_eq!(decks(T0), json!([]), "只有 Anki 导入的复习在这之前");
+    assert_eq!(decks(T0 + DAY), json!([p.canon(&deck)]), "本机作答算");
 }
 
 #[test]
@@ -1072,7 +1111,7 @@ fn purged_writes_show_as_purged_until_they_become_holes() {
 
 /// 两份 JSON 相同：字符串按 ID 归一后相等，数按 1e-9 的相对误差（卡片上的浮点和按行序累加，新代按卡 ID 排，协议 3
 /// 的行序随查询计划：同一组数换个顺序相加只差末位，模块 `stats` 文件头）。
-fn close(p: &Pair<'_>, a: &Value, b: &Value, at: &str) {
+pub(super) fn close(p: &Pair<'_>, a: &Value, b: &Value, at: &str) {
     match (a, b) {
         (Value::String(x), Value::String(y)) => {
             assert_eq!(p.canon(x), p.canon(y), "{at}");
@@ -1155,6 +1194,12 @@ fn stats_match_protocol_3() {
         with(
             json!({"recallDecks": [deck.clone()], "recall": {"ids": [c1.clone(), c1.clone()], "r": [0.42, 0.17]}}),
         ),
+        // 将来时刻的 R 跟着同位置的 ID 走（同一个 ID 两次照样后者盖前者）。
+        with(json!({"recallDecks": [deck.clone()], "recall": {
+            "ids": [c1.clone(), c1.clone()],
+            "r": [0.95, 0.93],
+            "ahead": [[0.9, 0.85], [0.8, 0.7], [0.6, 0.5]],
+        }})),
         json!({"now": T0 + DAY, "utcOff": 540, "rollover": 0}),
     ];
     let sorted = |v: &Value, k: &str| -> Value {

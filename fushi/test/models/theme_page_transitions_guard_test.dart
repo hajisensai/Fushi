@@ -12,8 +12,6 @@
 //    Cupertino 的边缘滑动返回——没有任何报错，只有用户发现「滑不回去了」。
 import 'package:drift/drift.dart' hide isNotNull;
 import 'package:drift/native.dart';
-import 'package:cupertino_ui/cupertino_ui.dart'
-    show CupertinoPageTransitionsBuilder;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
@@ -65,13 +63,15 @@ void main() {
         reason: '$platform 缺 builder 会静默回落到 ZoomPageTransitionsBuilder',
       );
     }
+    // 原生 Cupertino 转场 + 被 PopScope 否决时侧滑转 maybePop（left3533），
+    // 行为测试见 test/utils/adaptive/vetoed_back_swipe_test.dart。
     expect(
       _transition(builders[TargetPlatform.iOS]),
-      isA<CupertinoPageTransitionsBuilder>(),
+      isA<FushiNativeCupertinoPageTransitionsBuilder>(),
     );
     expect(
       _transition(builders[TargetPlatform.macOS]),
-      isA<CupertinoPageTransitionsBuilder>(),
+      isA<FushiNativeCupertinoPageTransitionsBuilder>(),
     );
   });
 
@@ -106,7 +106,7 @@ void main() {
       // 用户也要看 500ms 推入视差；行为测试见
       // test/models/apple_page_transitions_reduce_motion_test.dart。
       expect(
-        apple[platform],
+        _transition(apple[platform]),
         isA<FushiCupertinoPageTransitionsBuilder>(),
         reason: '$platform',
       );
@@ -121,20 +121,31 @@ void main() {
     );
   });
 
-  test('Material 主题每页垫形状背景；Apple / 墨水屏不套', () {
-    for (final PageTransitionsBuilder b
-        in notifier.theme.pageTransitionsTheme.builders.values) {
-      expect(b, isA<FushiBackdropPageTransitionsBuilder>());
-    }
-    for (final bool eink in <bool>[false, true]) {
-      final ThemeData theme = buildFushiThemeData(
-        scheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1F4959)),
-        textTheme: const TextTheme(),
-        glassDesign: !eink,
-        eink: eink,
-      );
+  // Apple 也必须套：用户自选的背景图片在 Apple 设计下照画（形状预设在 Apple 下由
+  // LibraryShapeBackdrop.enabledFor 判为不画）。此前 Apple 不套，选了图整个 app
+  // 一页都是白底。墨水屏不画任何背景，仍不套。
+  test('Material 与 Apple 主题每页垫背景层；墨水屏不套', () {
+    ThemeData build({required bool glassDesign, required bool eink}) =>
+        buildFushiThemeData(
+          scheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1F4959)),
+          textTheme: const TextTheme(),
+          glassDesign: glassDesign,
+          eink: eink,
+        );
+    for (final ThemeData theme in <ThemeData>[
+      notifier.theme,
+      build(glassDesign: true, eink: false),
+    ]) {
       for (final PageTransitionsBuilder b
           in theme.pageTransitionsTheme.builders.values) {
+        expect(b, isA<FushiBackdropPageTransitionsBuilder>());
+      }
+    }
+    for (final bool glassDesign in <bool>[false, true]) {
+      for (final PageTransitionsBuilder b in build(
+        glassDesign: glassDesign,
+        eink: true,
+      ).pageTransitionsTheme.builders.values) {
         expect(b, isNot(isA<FushiBackdropPageTransitionsBuilder>()));
       }
     }

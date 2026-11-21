@@ -836,7 +836,7 @@ void main() {
     try {
       await expectLater(
         repo.updateCover('video/cover-gate', '/must-not-be-written.jpg'),
-        throwsA(isA<StateError>()),
+        throwsA(isA<VideoScrapeMaintenanceActiveError>()),
       );
     } finally {
       lease.release();

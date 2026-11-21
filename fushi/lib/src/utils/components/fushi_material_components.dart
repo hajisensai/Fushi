@@ -33,11 +33,14 @@ import 'package:fushi/src/focus/page_scroll_registry.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_popup_origin.dart';
 import 'package:fushi/src/utils/components/fushi_gamepad_keyboard.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show FushiDialogHeroIcon, fushiM3eMenuAnimationStyle;
 import 'package:fushi/src/utils/components/fushi_header_search.dart';
+import 'package:fushi/src/utils/components/fushi_header_more_button.dart'
+    show FushiHeaderMoreButton, FushiHeaderMoreEntry;
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
@@ -47,6 +50,9 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
         kFushiTopFadeExtent,
         kFushiTopScrimOverlayOpacity;
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
+import 'package:fushi/src/utils/components/fushi_page_title_metrics.dart';
+import 'package:fushi/src/utils/components/fushi_static_masthead.dart'
+    show FushiStaticMasthead;
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
     show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart'
@@ -280,6 +286,10 @@ class _FushiCardState extends State<FushiCard>
   bool _hovered = false;
   bool _pressed = false;
 
+  /// 点按回调：卡片在带色组件里时放进该组件的弹层来源里跑——这次点按经页面
+  /// State 转弹的对话框 / 弹层也承接组件配色（见 `fushi_popup_origin.dart`）。
+  VoidCallback? get _onTap => fushiPopupOriginTap(context, widget.onTap);
+
   bool get _interactive =>
       widget.onTap != null ||
       widget.onLongPress != null ||
@@ -438,7 +448,7 @@ class _FushiCardState extends State<FushiCard>
       actions: <Type, Action<Intent>>{
         ActivateIntent: CallbackAction<ActivateIntent>(
           onInvoke: (_) {
-            widget.onTap?.call();
+            _onTap?.call();
             return null;
           },
         ),
@@ -500,14 +510,19 @@ class _FushiCardState extends State<FushiCard>
             child: !_interactive
                 ? content
                 : InkWell(
-                    onTap: widget.onTap,
+                    onTap: _onTap,
                     onLongPress: widget.onLongPress,
                     onHover: _setHovered,
                     onHighlightChanged: _setPressed,
-                    // 状态层 / 水波按卡片圆角走：Material 裁剪时与之重合
+                    // 状态层 / 水波按卡片外形走：Material 裁剪时与之重合
                     // （像素不变），封面卡不裁剪时靠它保持圆角。
-                    borderRadius: fixedShape == null ? radius : null,
-                    customBorder: fixedShape,
+                    //
+                    // 必须走 customBorder、不能传 borderRadius：形变卡的圆角
+                    // 随弹簧逐帧变，InkWell 在 borderRadius 变化时会把悬停高亮
+                    // **销毁重建**（从透明重新淡入），弹簧没停之前悬停变深一直
+                    // 被拉回 0——鼠标在行间划过时变深要等形变走完才跟上（2026-11-20
+                    // 反馈 #6）。customBorder 变化只原地更新已有高亮的外形。
+                    customBorder: surfaceShape,
                     // 柔和状态层（悬停 8% / 按下 10% onSurface），水波
                     // 由外层 Material 裁在圆角里；墨水屏交回默认。
                     overlayColor: !widget.stateLayer
@@ -546,7 +561,7 @@ class _FushiCardState extends State<FushiCard>
     Widget body = content;
     if (interactive) {
       body = FushiAppleRow(
-        onTap: widget.onTap,
+        onTap: _onTap,
         onLongPress: widget.onLongPress,
         selected: widget.selected,
         // 卡片选中靠下面的强调色描边，不铺选中底。
@@ -4530,10 +4545,16 @@ FushiResolvedHeaderActions fushiResolveHeaderActions(
     ];
   }
 
+  // 页面自己已挂了一颗「⋯」（[FushiHeaderMoreButton]）时，收纳的动作并进它的
+  // 菜单（分隔线隔开），不再另生一颗——否则窄位上就是并排两颗「⋯」（设计稿
+  // 11-20 #16）。它恒外露、不在收纳顺序里，宽度已计入，不再加探针宽。
+  final int pageMore = actions.indexWhere(
+    (Widget item) => item is FushiHeaderMoreButton,
+  );
   double widthWith(int collapsed) =>
       _estimateHeaderActionsWidth(tokens, <Widget>[
         ...visibleWith(collapsed),
-        if (collapsed > 0) _kHeaderOverflowProbe,
+        if (collapsed > 0 && pageMore < 0) _kHeaderOverflowProbe,
       ], textScaler: textScaler);
 
   final int collapsed = fit == null
@@ -4559,6 +4580,25 @@ FushiResolvedHeaderActions fushiResolveHeaderActions(
         );
   if (collapsed == 0) return (items: actions, expandLabels: false);
   final Set<int> hidden = order.take(collapsed).toSet();
+  if (pageMore >= 0) {
+    final FushiHeaderMoreButton more =
+        actions[pageMore] as FushiHeaderMoreButton;
+    final List<FushiHeaderMoreEntry> merged = <FushiHeaderMoreEntry>[
+      for (int i = 0; i < actions.length; i++)
+        if (hidden.contains(i))
+          fushiHeaderMoreEntryOf(actions[i] as FushiIconButton, i),
+    ];
+    return (
+      items: <Widget>[
+        for (int i = 0; i < actions.length; i++)
+          if (i == pageMore)
+            more.withLeadingEntries(merged)
+          else if (!hidden.contains(i))
+            actions[i],
+      ],
+      expandLabels: false,
+    );
+  }
   return (
     items: <Widget>[
       ...visibleWith(collapsed),
@@ -4876,6 +4916,20 @@ class FushiFloatingTextAction extends StatelessWidget {
 
 /// ⋯ 溢出按钮：菜单项由被收纳的 [FushiIconButton] 的图标 + 文案（label 优先、
 /// 回退 tooltip）就地派生，动作行为共享同一个 onTap，不复制第二份实现。
+/// 被收纳的图标动作 → 「⋯」菜单项（图标 + 文案（label 优先、回退 tooltip）、同一个
+/// onTap、禁用态同步）。[index] 是它在动作行里的位置，用来给没有 key 的动作派生
+/// 一个稳定的菜单项 key。
+FushiHeaderMoreEntry fushiHeaderMoreEntryOf(FushiIconButton action, int index) {
+  final FutureOr<void> Function()? onTap = action.onTap;
+  return FushiHeaderMoreEntry(
+    key: ValueKey<String>('fushi-header-collapsed-$index'),
+    icon: action.icon,
+    label: action.label ?? action.tooltip,
+    enabled: action.enabled && onTap != null,
+    onSelected: onTap ?? () {},
+  );
+}
+
 Widget _headerOverflowMenuButton(List<FushiIconButton> collapsed) {
   return Builder(
     key: kFushiHeaderOverflowMenuKey,
@@ -5296,6 +5350,12 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
     Widget buildHeader(bool? titleRevealed) => FushiScrollAwayChrome(
       controller: _chrome,
       enabled: floatingChrome,
+      // 页头大字不是胶囊行：手机上不整行缩，模块页大标题才与库页同一尺寸
+      // （设计稿 11-20 #18，规格 [FushiPageTitleMetrics]）。平板 / 桌面这次不在
+      // 范围内（用户 11-20：只核对、不改），仍按原样缩。
+      capsuleScale:
+          !(widget.header is FushiStaticMasthead &&
+              FushiPageTitleMetrics.isCompact(context)),
       child: widget.header != null
           ? Semantics(
               label: widget.title,

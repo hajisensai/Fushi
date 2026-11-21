@@ -305,6 +305,10 @@ DownloadTaskEntry mangaDownloadTaskEntry(
   final String status = _statusLabel(job, live);
   final ({DownloadTransferMethod method, bool external}) source =
       mangaDownloadSourceOf(job.runtime);
+  // 源要过 Cloudflare 验证而失败的行：行上直接给「验证」（判据同作品页的验证
+  // 按钮），通过后这一行与同站其它 Cloudflare 失败行一起重新排队。
+  final bool verifiable = downloads.cloudflareChallengeOf(job) != null;
+  final bool verifying = verifiable && downloads.isVerifyingCloudflare(job);
   return DownloadTaskEntry(
     id: id,
     title: job.kind == MangaDownloadJobKind.mokuroVolume
@@ -348,8 +352,27 @@ DownloadTaskEntry mangaDownloadTaskEntry(
       progress: progress,
       tone: _toneOf(job),
       leading: const FushiIcon(FushiIcons.manga),
-      quickAction: _mangaQuickAction(job, downloads),
+      quickAction: verifiable
+          ? DownloadTaskQuickAction(
+              key: ValueKey<String>('manga-download-quick-verify-${job.jobId}'),
+              icon: FushiIcons.verifiedUser,
+              tooltip: t.manga_source_cloudflare_verify_title,
+              onPressed: verifying
+                  ? null
+                  : () => unawaited(
+                      verifyMangaDownloadCloudflare(downloads, job.jobId),
+                    ),
+            )
+          : _mangaQuickAction(job, downloads),
       menuActions: <DownloadTaskMenuAction>[
+        // 折叠态的主操作位让给了「验证」，「重试」挪进菜单，仍是一步可达。
+        if (verifiable)
+          DownloadTaskMenuAction(
+            id: 'retry',
+            icon: FushiIcons.refresh,
+            label: t.retry,
+            onSelected: () => unawaited(downloads.retry(job.jobId)),
+          ),
         if (pausable)
           DownloadTaskMenuAction(
             id: 'pause',
@@ -384,9 +407,29 @@ DownloadTaskEntry mangaDownloadTaskEntry(
         status: status,
         progress: live.fraction,
         downloads: downloads,
+        verifiable: verifiable,
+        verifying: verifying,
       ),
     ),
   );
+}
+
+/// 下载中心任务行的「验证」：弹验证页，通过后这一行与同站其它 Cloudflare 失败
+/// 行重新排队；验证失败给 toast（关掉验证页不算失败），行保持 failed。
+Future<void> verifyMangaDownloadCloudflare(
+  MangaDownloadService downloads,
+  String jobId,
+) async {
+  try {
+    await downloads.verifyCloudflare(jobId);
+  } on Object catch (error, stack) {
+    ErrorLogService.instance.log(
+      'MangaDownloadTasks.verifyCloudflare $jobId',
+      error,
+      stack,
+    );
+    FushiToast.show(msg: error.toString(), severity: ToastSeverity.error);
+  }
 }
 
 /// 卡片行尾主操作（issue #2720）：排队 / 下载中 → 取消，暂停 → 恢复，失败 /
@@ -472,10 +515,18 @@ class _MangaDownloadTaskRow extends StatelessWidget {
     required this.status,
     required this.progress,
     required this.downloads,
+    this.verifiable = false,
+    this.verifying = false,
   });
 
   final MangaDownloadJobRow job;
   final String status;
+
+  /// 失败原因是 Cloudflare 挑战且能解：「重试」旁多一个「验证」。
+  final bool verifiable;
+
+  /// 同站的验证正在进行（按钮置灰，不重复弹页）。
+  final bool verifying;
 
   /// 0..1，null = 不定进度（单位无关，见 [MangaDownloadProgress.fraction]）。
   final double? progress;
@@ -558,12 +609,35 @@ class _MangaDownloadTaskRow extends StatelessWidget {
         ),
       ),
       trailing: retryable
-          ? FushiIconButton(
-              tooltip: t.retry,
-              icon: Icons.refresh,
-              size: 20,
-              constraints: _actionTarget,
-              onTap: () => unawaited(downloads.retry(job.jobId)),
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                if (verifiable)
+                  FushiIconButton(
+                    key: ValueKey<String>(
+                      'manga-download-row-verify-${job.jobId}',
+                    ),
+                    tooltip: t.manga_source_cloudflare_verify_title,
+                    icon: FushiIcons.verifiedUser,
+                    size: 20,
+                    constraints: _actionTarget,
+                    onTap: verifying
+                        ? null
+                        : () => unawaited(
+                            verifyMangaDownloadCloudflare(downloads, job.jobId),
+                          ),
+                  ),
+                FushiIconButton(
+                  key: ValueKey<String>(
+                    'manga-download-row-retry-${job.jobId}',
+                  ),
+                  tooltip: t.retry,
+                  icon: Icons.refresh,
+                  size: 20,
+                  constraints: _actionTarget,
+                  onTap: () => unawaited(downloads.retry(job.jobId)),
+                ),
+              ],
             )
           : job.status == MangaDownloadJobStatus.done
           ? null

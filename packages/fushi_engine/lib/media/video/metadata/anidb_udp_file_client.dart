@@ -1108,26 +1108,35 @@ class AnidbDatagramTransport implements AnidbUdpTransport {
       final Completer<String>? pending = _pending;
       if (pending == null || pending.isCompleted) continue;
       final AnidbUdpCipher? active = cipher;
-      // 加密会话里服务端在解密前就出错时（6xx、会话被踢）仍回明文，所以解
-      // 不开再按明文认一次。
-      String? text = active?.decrypt(received.data);
-      if (text == null || !_answers(text)) {
-        try {
-          text = utf8.decode(received.data);
-        } on FormatException {
-          text = null;
-        }
-      }
-      if (text == null || !_answers(text)) {
-        // 来自 AniDB 的包两种方式都认不出：Key 不一致，等下去只会超时。
-        if (active != null && text == null) {
+      final String? text = _readDatagram(active, received.data);
+      if (text == null) {
+        // 来自 AniDB 的包既解不开也不是明文：Key 不一致，等下去只会超时。
+        if (active != null) {
           pending.completeError(
             const AnidbUdpException(AnidbUdpFailure.encryption),
           );
         }
         continue;
       }
+      // 认得出但 tag 不是当前请求的：前一个请求超时后才到的旧回包，丢掉接着等。
+      if (!_answers(text)) continue;
       pending.complete(text);
+    }
+  }
+
+  /// 把一个 AniDB 数据报还原成文本；两种方式都认不出时返回 null。
+  ///
+  /// 能用会话密钥解开的就是这把 Key 加密的回包，**不再**按明文重读——否则
+  /// 迟到的旧 tag 回包（密文不是合法 UTF-8）会被误判成 Key 不一致而让客户端
+  /// 永久停用。解不开才按明文认：加密会话里服务端在解密前就出错时（6xx、会话
+  /// 被踢）仍回明文。
+  static String? _readDatagram(AnidbUdpCipher? active, Uint8List data) {
+    final String? decrypted = active?.decrypt(data);
+    if (decrypted != null) return decrypted;
+    try {
+      return utf8.decode(data);
+    } on FormatException {
+      return null;
     }
   }
 

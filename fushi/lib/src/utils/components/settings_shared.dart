@@ -1,4 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fading_edge_scrollview/fading_edge_scrollview.dart';
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
@@ -18,6 +21,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_pill_segmented_button.dart';
 import 'package:fushi/src/utils/components/settings_section_anchor.dart';
@@ -802,21 +806,7 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
           // 不可折叠分组的标题一律在组上方（内嵌位置在分段形态下没有「卡内
           // 顶部」可放）。
           if (hasTitle && !collapsible)
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                tokens.spacing.rowHorizontal,
-                0,
-                tokens.spacing.rowHorizontal,
-                tokens.spacing.gap,
-              ),
-              child: Text(
-                title,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  color: theme.colorScheme.primary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
+            _Md3SegmentedTitle(title: title, tokens: tokens, theme: theme),
           group,
         ],
       ),
@@ -973,7 +963,13 @@ class AdaptiveSettingsRow extends StatelessWidget {
     this.horizontalPadding,
     this.leading,
     this.subtitleLeading,
+    this.animateSubtitle = false,
   });
+
+  /// 说明文字随状态变化（例如分段行的说明跟着选中项换）时，旧说明淡出、新说明
+  /// 淡入，行高随之弹簧过渡（时长取 [FushiMotion.medium]，减弱动态效果 / 墨水屏
+  /// 下瞬间到位）。默认关：静态说明不需要多一层 AnimatedSwitcher。
+  final bool animateSubtitle;
 
   /// 行首的自定义件（例如目标行的进度环）；非空时取代 [icon] 图标位，三套外观
   /// （MD3 / Cupertino / 玻璃）同一位置。宽度由调用方的件决定，堆叠判据按图标位估。
@@ -1246,6 +1242,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
               subtitleLeading: subtitleLeading,
               titleMaxLines: titleMaxLines,
               subtitleMaxLines: subtitleMaxLines,
+              animateSubtitle: animateSubtitle,
             ),
           ),
           if (trailing != null) ...[
@@ -1303,6 +1300,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
                   subtitleLeading: subtitleLeading,
                   titleMaxLines: titleMaxLines,
                   subtitleMaxLines: subtitleMaxLines,
+                  animateSubtitle: animateSubtitle,
                 ),
               ),
             ],
@@ -2089,10 +2087,9 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (isGlassDesign(context) && !isCupertinoPlatform(context)) {
-      return _buildGlass(context);
+    if (!isCupertinoPlatform(context)) {
+      return _buildDesignSystemRow(context, apple: isGlassDesign(context));
     }
-    if (!isCupertinoPlatform(context)) return _buildMd3(context);
     // A segmented row is a discrete-valued control: register it as a SINGLE
     // gamepad/keyboard focus stop (like the stepper/slider rows) so geometric
     // focus navigation can land on it, and D-pad Left/Right steps the segment
@@ -2136,6 +2133,7 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
       icon: icon,
       showIcon: showIcon,
       controlBelow: controlBelow,
+      animateSubtitle: true,
       // The segmented strip is intrinsically wide and wrapped in a horizontal
       // scroll view; host it as a flexible (bounded-width) trailing so it
       // shrink-and-scrolls on narrow panes instead of overflowing the row.
@@ -2154,66 +2152,21 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
     );
   }
 
-  /// 「玻璃」（Apple）设计系统：多选一按 [settingsChoiceUsesSegments] 二选一——
-  /// 选项少且短（设计系统、深色模式、玻璃材质、悬浮球自动恢复这类）是行右侧
-  /// 紧凑的 iOS 分段控件（选中段 = 强调色实底），否则是 macOS / iOS 的弹出菜单
-  /// 按钮（当前值 + `chevron.up.chevron.down` → 玻璃菜单，当前项打勾）。两种
-  /// 都是一个焦点停靠点：左右键逐项切换；弹出按钮另有 Enter / 手柄 A 打开菜单。
-  Widget _buildGlass(BuildContext context) {
-    final int currentIndex = segments.indexWhere(
-      (ButtonSegment<T> s) => s.value == selected,
-    );
-    final List<String> labels = <String>[
-      for (final ButtonSegment<T> s in segments) _segmentMenuLabel(s),
-    ];
-    final List<IconData?> icons = <IconData?>[
-      for (final ButtonSegment<T> s in segments) _segmentIcon(s),
-    ];
-    void pick(int index) {
-      final T value = segments[index].value;
-      if (value != selected) onChanged(value);
-    }
-
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final List<String> fitLabels = <String>[
-          for (final ButtonSegment<T> s in segments) _segmentFitLabel(s),
-        ];
-        final bool useSegments = settingsChoiceUsesSegments(
-          labels: fitLabels,
-          controlWidth: appleSegmentedControlWidth(fitLabels),
-          rowWidth: constraints.maxWidth,
-        );
-        return AdaptiveSettingsRow(
-          title: title,
-          subtitle: subtitle,
-          icon: icon,
-          showIcon: showIcon,
-          trailing: useSegments
-              ? AppleSettingsSegmentedControl(
-                  semanticLabel: title,
-                  labels: fitLabels,
-                  tooltips: labels,
-                  icons: icons,
-                  selectedIndex: currentIndex < 0 ? null : currentIndex,
-                  onChanged: pick,
-                )
-              : GlassSettingsPopUpButton(
-                  semanticLabel: title,
-                  labels: labels,
-                  icons: icons,
-                  selectedIndex: currentIndex < 0 ? null : currentIndex,
-                  onChanged: pick,
-                ),
-        );
-      },
-    );
-  }
-
-  /// MD3（Android 16 设置）：同一条 [settingsChoiceUsesSegments] 判据——少而短
-  /// 的选项是行右侧紧凑的 MD3 分段按钮（不再撑满整行）；否则当前值写进说明行，
-  /// 点整行弹出 MD3 菜单（当前项打勾）。
-  Widget _buildMd3(BuildContext context) {
+  /// MD3（Android 16 设置）与「玻璃」（Apple 系统设置）共用的分段行：标题 +
+  /// 说明恒在卡片内左侧，分段控件按 [settingsSegmentedPlacement] 三档摆放——
+  ///
+  /// - [SettingsSegmentedPlacement.inline]：行右侧的紧凑分段（macOS 系统设置的
+  ///   外观选择 / Android 16 的分段偏好）；
+  /// - [SettingsSegmentedPlacement.below]：标题、说明下方独占一整行、各段撑满
+  ///   行宽（iOS 设置里分段控件独占一格的形态）——窄屏、选项多或文字长时用，
+  ///   不再出现「分段只占左边一小块、右边空着」；
+  /// - [SettingsSegmentedPlacement.menu]：连整行都放不下每段文字时，MD3 退成
+  ///   点整行弹菜单的 ListPreference 行，Apple 退成行尾弹出按钮。
+  ///
+  /// 三档都是一个焦点停靠点：左右键 / 手柄十字键逐项切换；菜单形态另有
+  /// Enter / 手柄 A 打开菜单。说明随选中项变化时带切换动效
+  /// （[AdaptiveSettingsRow.animateSubtitle]）。
+  Widget _buildDesignSystemRow(BuildContext context, {required bool apple}) {
     final int currentIndex = segments.indexWhere(
       (ButtonSegment<T> s) => s.value == selected,
     );
@@ -2224,72 +2177,149 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
       if (value != selected) onChanged(value);
     }
 
-    final List<String?> stripLabels = segments
-        .map<String?>((ButtonSegment<T> s) {
-          final Widget? label = s.label;
-          return label is Text ? label.data : null;
-        })
-        .toList(growable: false);
+    final List<String> menuLabels = <String>[
+      for (final ButtonSegment<T> s in segments) _segmentMenuLabel(s),
+    ];
+    final List<String> fitLabels = <String>[
+      for (final ButtonSegment<T> s in segments) _segmentFitLabel(s),
+    ];
+    final List<IconData?> icons = <IconData?>[
+      for (final ButtonSegment<T> s in segments) _segmentIcon(s),
+    ];
+    final List<bool> hasIcon = segmentedStripIconFlags<T>(segments);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // MD3 下 adaptiveSegmentedButton 渲染的是胶囊分段（FushiPillSegmentedButton）：
-    // 估宽取它自己的几何常量（SegmentedStripMetrics.of），与绘制同源。早先这里
-    // 按「连接式按钮组」手补每段 +26 与段间缝，控件换成胶囊后成了另一套数字。
-    final double stripWidth = estimateSegmentedStripWidth(
-      segmentLabels: stripLabels,
-      segmentHasIcon: segmentedStripIconFlags<T>(segments),
-      fontSize: tokens.type.controlLabel.fontSize ?? 14.0,
-      textScaleFactor: MediaQuery.textScalerOf(context).scale(1),
-      metrics: SegmentedStripMetrics.of(context),
+    final double fontSize = tokens.type.controlLabel.fontSize ?? 14.0;
+    final double textScale = MediaQuery.textScalerOf(context).scale(1);
+    // 行内形态的估宽与绘制同源：Apple 行内是 [AppleSettingsSegmentedControl]
+    // （等宽段），MD3 行内是胶囊分段（SegmentedStripMetrics.of，等宽段）。
+    final double inlineWidth = apple
+        ? appleSegmentedControlWidth(fitLabels)
+        : estimateSegmentedStripWidth(
+            segmentLabels: <String?>[
+              for (final String l in fitLabels) l.isEmpty ? null : l,
+            ],
+            segmentHasIcon: hasIcon,
+            fontSize: fontSize,
+            textScaleFactor: textScale,
+            metrics: SegmentedStripMetrics.of(context),
+          );
+    // 独占一行时控件撑满、各段按内容分宽（[fushiSegmentWidths] 的退让），只要
+    // 每段文字在最小内边距下单行放得下就不需要菜单。
+    final double minContentWidth = segmentedStripMinContentWidth(
+      segmentLabels: fitLabels,
+      segmentHasIcon: hasIcon,
+      fontSize: fontSize,
+      textScaleFactor: textScale,
     );
+    final double rowInset = isCupertinoPlatform(context)
+        ? 16
+        : tokens.spacing.rowHorizontal;
+    final double iconExtra = (showIcon && icon != null) ? 42.0 : 0.0;
+    final bool enabled = segments.any((ButtonSegment<T> s) => s.enabled);
+
+    Widget gamepad(Widget child, String prefix) => _GamepadAdjustableValue(
+      focusIdPrefix: prefix,
+      onIncrement: () => selectAt(currentIndex + 1),
+      onDecrement: () => selectAt(currentIndex - 1),
+      child: child,
+    );
+
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final bool useSegments = settingsChoiceUsesSegments(
-          labels: <String>[
-            for (final ButtonSegment<T> s in segments) _segmentFitLabel(s),
-          ],
-          controlWidth: stripWidth,
+        final SettingsSegmentedPlacement placement = settingsSegmentedPlacement(
+          labelCount: segments.length,
+          inlineWidth: inlineWidth,
+          minContentWidth: minContentWidth,
           rowWidth: constraints.maxWidth,
+          rowInset: rowInset,
+          leadingWidth: iconExtra,
         );
-        if (!useSegments) {
-          return SettingsChoiceMenuRow(
-            title: title,
-            subtitle: subtitle,
-            icon: icon,
-            showIcon: showIcon,
-            labels: <String>[
-              for (final ButtonSegment<T> s in segments) _segmentMenuLabel(s),
-            ],
-            selectedIndex: currentIndex < 0 ? null : currentIndex,
-            onChanged: selectAt,
-            // 分段条整条禁用（每段 enabled=false）时，换成菜单行也要同样置灰。
-            enabled: segments.any((ButtonSegment<T> s) => s.enabled),
-          );
+        switch (placement) {
+          case SettingsSegmentedPlacement.inline:
+            return AdaptiveSettingsRow(
+              title: title,
+              subtitle: subtitle,
+              icon: icon,
+              showIcon: showIcon,
+              animateSubtitle: true,
+              trailingWidth: inlineWidth,
+              trailing: apple
+                  ? AppleSettingsSegmentedControl(
+                      semanticLabel: title,
+                      labels: fitLabels,
+                      tooltips: menuLabels,
+                      icons: icons,
+                      selectedIndex: currentIndex < 0 ? null : currentIndex,
+                      onChanged: selectAt,
+                    )
+                  : gamepad(_segmentedButton(context), 'settings-segmented'),
+            );
+          case SettingsSegmentedPlacement.below:
+            return AdaptiveSettingsRow(
+              title: title,
+              subtitle: subtitle,
+              icon: icon,
+              showIcon: showIcon,
+              animateSubtitle: true,
+              controlBelow: true,
+              // 有界宽下两套分段都撑满（胶囊 / iOS 分段的 fill），各段等宽或按
+              // 内容分宽，永远铺满整行。
+              trailing: SizedBox(
+                key: const ValueKey<String>('settings-segmented-below'),
+                width: double.infinity,
+                child: Semantics(
+                  container: true,
+                  label: title,
+                  child: gamepad(
+                    _segmentedButton(context),
+                    apple ? 'settings-apple-segmented' : 'settings-segmented',
+                  ),
+                ),
+              ),
+            );
+          case SettingsSegmentedPlacement.menu:
+            if (apple) {
+              return AdaptiveSettingsRow(
+                title: title,
+                subtitle: subtitle,
+                icon: icon,
+                showIcon: showIcon,
+                animateSubtitle: true,
+                trailing: GlassSettingsPopUpButton(
+                  semanticLabel: title,
+                  labels: menuLabels,
+                  icons: icons,
+                  selectedIndex: currentIndex < 0 ? null : currentIndex,
+                  onChanged: selectAt,
+                ),
+              );
+            }
+            return SettingsChoiceMenuRow(
+              title: title,
+              subtitle: subtitle,
+              icon: icon,
+              showIcon: showIcon,
+              labels: menuLabels,
+              selectedIndex: currentIndex < 0 ? null : currentIndex,
+              onChanged: selectAt,
+              // 分段条整条禁用（每段 enabled=false）时，换成菜单行也要同样置灰。
+              enabled: enabled,
+            );
         }
-        return AdaptiveSettingsRow(
-          title: title,
-          subtitle: subtitle,
-          icon: icon,
-          showIcon: showIcon,
-          trailingWidth: stripWidth,
-          trailing: _GamepadAdjustableValue(
-            focusIdPrefix: 'settings-segmented',
-            onIncrement: () => selectAt(currentIndex + 1),
-            onDecrement: () => selectAt(currentIndex - 1),
-            child: adaptiveSegmentedButton<T>(
-              context: context,
-              segments: segments,
-              selected: <T>{selected},
-              onSelectionChanged: (Set<T> values) {
-                if (values.isEmpty) return;
-                onChanged(values.first);
-              },
-              style: kSettingsSegmentedStyle,
-            ),
-          ),
-        );
       },
     );
   }
+
+  Widget _segmentedButton(BuildContext context) => adaptiveSegmentedButton<T>(
+    context: context,
+    segments: segments,
+    selected: <T>{selected},
+    onSelectionChanged: (Set<T> values) {
+      if (values.isEmpty) return;
+      onChanged(values.first);
+    },
+    style: kSettingsSegmentedStyle,
+  );
 
   /// 菜单 / 弹出按钮里显示的文字：文字段取文字，纯图标段取 tooltip。
   static String _segmentMenuLabel(ButtonSegment<Object> segment) {
@@ -2312,6 +2342,106 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
     if (icon is Icon) return icon.icon;
     return null;
   }
+}
+
+/// [AdaptiveSettingsSegmentedRow] 的分段控件摆放（MD3 与 Apple 共用一条判据）。
+enum SettingsSegmentedPlacement {
+  /// 行右侧的紧凑分段，标题 + 说明在左。
+  inline,
+
+  /// 标题 + 说明下方独占一整行，分段撑满行宽。
+  below,
+
+  /// 连整行都放不下每段文字：MD3 菜单行 / Apple 弹出按钮。
+  menu,
+}
+
+/// 分段行摆放的**唯一判据**（纯函数，布局前可算）：
+///
+/// - 2–4 个选项、行内估宽 [inlineWidth] 不超过行宽 [rowWidth] 的 55%（给标题与
+///   说明至少留 45%）→ [SettingsSegmentedPlacement.inline]；
+/// - 否则只要每段文字在最小内边距下单行排得下整行内容宽
+///   （[minContentWidth] ≤ 行宽 − 两侧 [rowInset]）→
+///   [SettingsSegmentedPlacement.below]：控件独占一行并撑满，杜绝「分段只占
+///   左边一小块、右边空着」；
+/// - 再放不下 → [SettingsSegmentedPlacement.menu]。
+///
+/// [leadingWidth] 是行首图标占的宽（无图标为 0），只扣在行内形态上：下方形态
+/// 的控件从行的左内边距起排，不缩进到图标后。
+SettingsSegmentedPlacement settingsSegmentedPlacement({
+  required int labelCount,
+  required double inlineWidth,
+  required double minContentWidth,
+  required double rowWidth,
+  required double rowInset,
+  double leadingWidth = 0,
+}) {
+  if (labelCount < 2) return SettingsSegmentedPlacement.menu;
+  if (!rowWidth.isFinite) {
+    return labelCount <= 4
+        ? SettingsSegmentedPlacement.inline
+        : SettingsSegmentedPlacement.below;
+  }
+  if (labelCount <= 4 && inlineWidth <= (rowWidth - leadingWidth) * 0.55) {
+    return SettingsSegmentedPlacement.inline;
+  }
+  if (minContentWidth <= rowWidth - 2 * rowInset) {
+    return SettingsSegmentedPlacement.below;
+  }
+  return SettingsSegmentedPlacement.menu;
+}
+
+/// 分段控件撑满一行时、每段文字都还读得全所需的最小总宽。分段的退让顺序是
+/// 「等宽 → 按内容分宽 → 收内边距 → 折成两行」（[fushiSegmentWidths]、
+/// [FushiPillSegmentedButton] 的 `maxLines: 2`），所以每段只需要：
+/// 文字折两行后的宽度（整段宽的一半），且不小于其中最长的不可断片段（拉丁词按
+/// 整词计，CJK 每个字都可断），再加最小内边距
+/// [FushiPillSegmentedButton.minSegmentPadding]、图标、段间缝与轨道内边距。MD3
+/// 胶囊分段与 Apple 分段的横排都走 [FushiSegmentRow]，几何同一量级，共用本估算。
+///
+/// [segmentLabels] 每段一项：空串 = 纯图标段。[segmentHasIcon] 与之同序。
+double segmentedStripMinContentWidth({
+  required List<String> segmentLabels,
+  required List<bool> segmentHasIcon,
+  required double fontSize,
+  required double textScaleFactor,
+}) {
+  if (segmentLabels.isEmpty) return 0;
+  const double minPad = FushiPillSegmentedButton.minSegmentPadding;
+  double width(String text) => estimateLabelAdvanceWidth(
+    label: text,
+    fontSize: fontSize,
+    textScaleFactor: textScaleFactor,
+  );
+  double total = 0;
+  for (int i = 0; i < segmentLabels.length; i++) {
+    final String label = segmentLabels[i];
+    final bool hasIcon = i < segmentHasIcon.length && segmentHasIcon[i];
+    if (label.isEmpty) {
+      total += FushiPillSegmentedButton.iconSize + 2 * minPad;
+      continue;
+    }
+    double longestUnbreakable = 0;
+    for (final String word in label.split(RegExp(r'\s+'))) {
+      // 含 CJK 的片段在字间可断：最长不可断片段按单字计。
+      final bool breakable = word.runes.any((int r) => r >= 0x1100);
+      final double w = breakable
+          ? width(String.fromCharCode(word.runes.first))
+          : width(word);
+      if (w > longestUnbreakable) longestUnbreakable = w;
+    }
+    final double text = math.max(width(label) / 2, longestUnbreakable);
+    total +=
+        text +
+        2 * minPad +
+        (hasIcon
+            ? FushiPillSegmentedButton.iconSize +
+                  FushiPillSegmentedButton.iconLabelGap
+            : 0);
+  }
+  return total +
+      2.0 * (segmentLabels.length - 1) +
+      2 * FushiPillSegmentedButton.trackPadding;
 }
 
 /// 单选项文字的「视觉宽度」权重：CJK 等全角字记 2、其余记 1（≈ 4 个汉字 =
@@ -4510,6 +4640,7 @@ class _SettingsLabel extends StatelessWidget {
     this.subtitleLeading,
     this.titleMaxLines,
     this.subtitleMaxLines,
+    this.animateSubtitle = false,
   });
 
   final String title;
@@ -4519,6 +4650,9 @@ class _SettingsLabel extends StatelessWidget {
   final Widget? subtitleLeading;
   final int? titleMaxLines;
   final int? subtitleMaxLines;
+
+  /// 见 [AdaptiveSettingsRow.animateSubtitle]。
+  final bool animateSubtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -4558,6 +4692,26 @@ class _SettingsLabel extends StatelessWidget {
         subtitleStyle: subtitleStyle,
       );
     }
+    final Widget? subtitleText = description == null || description.isEmpty
+        ? null
+        : Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              description,
+              style: subtitleStyle,
+              // BUG-1184：null = 不钳行数，说明文字整段显示（见
+              // [AdaptiveSettingsRow.subtitleMaxLines]）。
+              //
+              // overflow 必须跟着 maxLines 走，不能恒为 ellipsis：Flutter 的
+              // ellipsis 在 maxLines 缺省时并不是「不生效」，而是把整段压成
+              // **单行** + 省略号（RenderParagraph 实测：同一段文字 clip 排 8 行、
+              // ellipsis 只排 1 行且 didExceedMaxLines=true）。BUG-1184 把默认从
+              // 3 行改成 null 却留着 ellipsis，等于把说明文字从 3 行钳到 1 行——
+              // 比修复前更糟。null 时交回 DefaultTextStyle（clip），换行显示整段。
+              overflow: subtitleMaxLines == null ? null : TextOverflow.ellipsis,
+              maxLines: subtitleMaxLines,
+            ),
+          );
     return Column(
       // BUG-3501：必须收高。mainAxisSize 缺省 max，在有界高度（对话框正文的
       // Flexible）里标题列撑满、整行被撑高；设置页行高无界看不出来。竖直居中由
@@ -4595,26 +4749,57 @@ class _SettingsLabel extends StatelessWidget {
               ],
             ),
           )
-        else if (subtitle != null && subtitle!.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: Text(
-              subtitle!,
-              style: subtitleStyle,
-              // BUG-1184：null = 不钳行数，说明文字整段显示（见
-              // [AdaptiveSettingsRow.subtitleMaxLines]）。
-              //
-              // overflow 必须跟着 maxLines 走，不能恒为 ellipsis：Flutter 的
-              // ellipsis 在 maxLines 缺省时并不是「不生效」，而是把整段压成
-              // **单行** + 省略号（RenderParagraph 实测：同一段文字 clip 排 8 行、
-              // ellipsis 只排 1 行且 didExceedMaxLines=true）。BUG-1184 把默认从
-              // 3 行改成 null 却留着 ellipsis，等于把说明文字从 3 行钳到 1 行——
-              // 比修复前更糟。null 时交回 DefaultTextStyle（clip），换行显示整段。
-              overflow: subtitleMaxLines == null ? null : TextOverflow.ellipsis,
-              maxLines: subtitleMaxLines,
-            ),
-          ),
+        else if (animateSubtitle)
+          _AnimatedSettingsSubtitle(
+            text: description ?? '',
+            child: subtitleText ?? const SizedBox(width: double.infinity),
+          )
+        else if (subtitleText != null)
+          subtitleText,
       ],
+    );
+  }
+}
+
+/// 说明文字切换动效（[AdaptiveSettingsRow.animateSubtitle]）：按文字内容换 key，
+/// 旧说明淡出、新说明淡入并从上方轻移入位，外层 [FushiAnimatedSize] 让行高
+/// 跟着过渡。时长取 [FushiMotion.medium]，经 [fushiMotionDuration] 在减弱
+/// 动态效果 / 墨水屏下归零。
+class _AnimatedSettingsSubtitle extends StatelessWidget {
+  const _AnimatedSettingsSubtitle({required this.text, required this.child});
+
+  final String text;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
+    return FushiAnimatedSize(
+      duration: duration,
+      curve: FushiMotion.standard,
+      alignment: AlignmentDirectional.topStart,
+      child: AnimatedSwitcher(
+        duration: duration,
+        switchInCurve: FushiMotion.enter,
+        switchOutCurve: FushiMotion.exit,
+        // 左上对齐叠放：长短不一的两段说明交叉淡化时都贴着标题左缘，不居中漂移。
+        layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+          alignment: AlignmentDirectional.topStart,
+          children: <Widget>[...previous, ?current],
+        ),
+        transitionBuilder: (Widget child, Animation<double> animation) =>
+            FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, -0.15),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
+              ),
+            ),
+        child: KeyedSubtree(key: ValueKey<String>(text), child: child),
+      ),
     );
   }
 }
@@ -4812,6 +4997,68 @@ class _SettingsStepButton extends StatelessWidget {
         tooltip: tooltip,
         visualDensity: VisualDensity.compact,
         onPressed: onPressed,
+      ),
+    );
+  }
+}
+
+/// MD3 分段分组上方的分组标题（titleSmall、primary、w600）。
+///
+/// 页底是用户的自定义图片时，标题直接压在图上、对比度随图片明暗忽高忽低
+/// （2026-11-20 用户截图：樱花壁纸上的橙色小标题发糊），这时给它垫一枚与分段卡
+/// 同色的半透明胶囊；胶囊的左内边距从行内边距里扣出来，文字左缘位置不变。
+class _Md3SegmentedTitle extends StatelessWidget {
+  const _Md3SegmentedTitle({
+    required this.title,
+    required this.tokens,
+    required this.theme,
+  });
+
+  final String title;
+  final FushiDesignTokens tokens;
+  final ThemeData theme;
+
+  /// 胶囊的横向内边距（文字到胶囊边）。
+  static const double _pillHorizontal = 10;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget text = Text(
+      title,
+      style: theme.textTheme.titleSmall?.copyWith(
+        color: theme.colorScheme.primary,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+    final double inset = tokens.spacing.rowHorizontal;
+    if (!FushiPageBackdrop.imageOf(context)) {
+      return Padding(
+        padding: EdgeInsets.fromLTRB(inset, 0, inset, tokens.spacing.gap),
+        child: text,
+      );
+    }
+    return Padding(
+      padding: EdgeInsetsDirectional.fromSTEB(
+        inset - _pillHorizontal,
+        0,
+        inset,
+        tokens.spacing.gap,
+      ),
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: DecoratedBox(
+          decoration: ShapeDecoration(
+            color: tokens.surfaces.card.withValues(alpha: 0.9),
+            shape: const StadiumBorder(),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: _pillHorizontal,
+              vertical: 3,
+            ),
+            child: text,
+          ),
+        ),
       ),
     );
   }

@@ -15,6 +15,8 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     if (reqPath == '/api/library/videos') {
       if (method != 'GET') return shelf.Response(405);
       final List<RemoteVideoInfo> list = await svc.listVideos();
+      // 有 client 在看视频清单（可能接着回跳 / 制卡）：顺手请预热跟上库的变化。
+      _videoFingerprintWarmer?.request();
       return shelf.Response.ok(
         jsonEncode(<Map<String, Object?>>[
           for (final RemoteVideoInfo v in list)
@@ -708,10 +710,35 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       if (file == null) {
         return _videoFingerprintUnavailable(kVideoFingerprintReasonNotFound);
       }
+      // 拍板台 left3657：`wait=0`（卡片回跳）只答已算过的，没算过回 202 并在后台开算
+      // ——同一文件随后的预热 / 制卡请求经在途去重复用这一次。
+      final bool wait =
+          request.url.queryParameters[kVideoFingerprintWaitQueryParam] != '0';
       try {
-        final String digest = await VideoSourceFingerprint.instance.fingerprint(
-          file.path,
-        );
+        final VideoSourceFingerprint fingerprints =
+            VideoSourceFingerprint.instance;
+        final String? digest = wait
+            ? await fingerprints.fingerprint(file.path)
+            : await fingerprints.known(file.path);
+        if (digest == null) {
+          unawaited(
+            fingerprints
+                .fingerprint(file.path)
+                .then<void>(
+                  (String _) {},
+                  onError: (Object error, StackTrace stack) => engineLog.log(
+                    'video.fingerprint.background',
+                    error,
+                    stack,
+                  ),
+                ),
+          );
+          return shelf.Response(
+            kVideoFingerprintPendingStatus,
+            body: jsonEncode(<String, bool>{'pending': true}),
+            headers: <String, String>{'Content-Type': 'application/json'},
+          );
+        }
         return jsonResponse(<String, Object?>{'fingerprint': digest});
       } on FileSystemException catch (error, stack) {
         // 文件不在 / 算指纹期间被改写：没有可担保的身份。
@@ -846,6 +873,43 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           'Content-Length': '$length',
         },
       );
+    }
+
+    // PUT /api/library/videos/<id>/streamentry — client→host 注册一本流媒体书（拍板台
+    // Z2OhxAjKVv）：只有标题 + URL + 重开规格，不传字节。必须排在下面「裸 id 上传」
+    // 之前；client 先看能力位 `liveLibrary.streamVideos` 再推（老 host 没有这一段，
+    // 请求会落进裸 id 分支被当视频文件导入）。删除墓碑闸门与视频上传同一把。
+    final String? streamEntryId = _extractVideoId(
+      reqPath,
+      kStreamVideoEntryPathSuffix,
+    );
+    if (streamEntryId != null) {
+      if (svc is! StreamVideoSyncHost) {
+        return shelf.Response.notFound('Stream video sync not supported');
+      }
+      if (method != 'PUT') return shelf.Response(405);
+      if (await _peerPushVetoed(
+        request,
+        kinds: const <SyncTombstoneKind>[SyncTombstoneKind.video],
+        itemKey: streamEntryId,
+      )) {
+        return _peerPushVetoedResponse(request);
+      }
+      final StreamVideoRegistration entry;
+      try {
+        entry = StreamVideoRegistration.fromJson(
+          jsonDecode(await readBoundedBodyString(request)),
+        );
+      } on FormatException catch (e) {
+        return shelf.Response(400, body: e.message);
+      }
+      try {
+        final bool created = await (svc as StreamVideoSyncHost)
+            .registerStreamVideo(streamEntryId, entry);
+        return jsonResponse(<String, Object?>{'created': created});
+      } on ArgumentError catch (e) {
+        return shelf.Response(400, body: '${e.message}');
+      }
     }
 
     // PUT /api/library/videos/<id> — client→host 上传本地视频文件并注册进 host 视频库
@@ -1222,7 +1286,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
   /// 签发凭据已被吊销的流 token：删掉并回 403（BUG-4393）。正在发送的单个直传
   /// 响应不被切断，下一次 Range / 下一个 HLS 分段即 403。
   shelf.Response _revokedVideoToken(String tokenValue) {
-    _videoStreamTokens.remove(tokenValue);
+    _dropVideoToken(tokenValue);
     return shelf.Response(
       403,
       body: 'Token revoked',
@@ -1246,17 +1310,152 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           e.key,
     ];
     for (final String key in keys) {
-      _videoStreamTokens.remove(key);
+      _dropVideoToken(key);
       cancelTranscodeWork(key);
+      // 已被前台请求合流的预取也是这条流的工作，一并取消（等它的请求回 410）。
+      _cancelTranscodePrefetches(key, (_TranscodePrefetch _) => true);
     }
+  }
+
+  /// 作废一张流 token：摘出登记表，并把它名下缓存的转码分段一并清掉（video-34）——
+  /// 缓存的生命周期跟 token 走，作废后留着的段既取不到又占内存。所有删 token 的
+  /// 路径（释放流票 / 吊销 / TTL / 上限淘汰）都经这里。
+  void _dropVideoToken(String tokenValue) {
+    _videoStreamTokens.remove(tokenValue);
+    _transcodeSegments.evictStream(tokenValue);
+    // 没人等的预取直接取消：token 没了，转出来也取不到。已被前台请求合流的与在跑
+    // 的前台分段同口径（TTL / 上限淘汰不 kill 在跑的分段），只有释放流票时才取消。
+    _cancelTranscodePrefetches(tokenValue, (_TranscodePrefetch p) => !p.joined);
+  }
+
+  /// 取消 [stream] 名下满足 [where] 的在途预取：先摘掉缓存里的合流登记（之后同段的
+  /// 请求另起一次转码，不会合流到这次注定以取消结束的工作上），再按预取自己的 work
+  /// key 取消（预取从不排队；在跑的 ffmpeg 被 SIGKILL）。全程同步。
+  void _cancelTranscodePrefetches(
+    String stream,
+    bool Function(_TranscodePrefetch p) where,
+  ) {
+    final List<_TranscodePrefetch>? list = _transcodePrefetches[stream];
+    if (list == null) return;
+    for (final _TranscodePrefetch p in list.where(where).toList()) {
+      list.remove(p);
+      _transcodeSegments.abandonInflight(
+        stream: stream,
+        index: p.index,
+        input: p.input,
+      );
+      cancelTranscodeWork(p.workKey);
+    }
+    if (list.isEmpty) _transcodePrefetches.remove(stream);
+  }
+
+  /// 前台请求了 [stream] 的第 [index] 段：
+  /// - 正在预取的就是这一段 → 标成已合流（之后 seek 不再作废它）；
+  /// - 别的段上没人等的预取 → 播放位置已经不在那儿了（seek），作废，把 CPU 还给前台。
+  ///   下一段（[index] + 1）上的预取保留：那正是接下来要用的。
+  void _noteForegroundTranscodeRequest(String stream, int index) {
+    final List<_TranscodePrefetch>? list = _transcodePrefetches[stream];
+    if (list == null) return;
+    for (final _TranscodePrefetch p in list) {
+      if (p.index == index) p.joined = true;
+    }
+    _cancelTranscodePrefetches(
+      stream,
+      (_TranscodePrefetch p) =>
+          !p.joined && p.index != index && p.index != index + 1,
+    );
+  }
+
+  /// host 预取下一段（拍板 design-nmv-transcode-prefetch）：前台在转第 n 段时，用
+  /// **空闲**名额同时转第 n+1 段，转完进 [_transcodeSegments]，client 来取时直接命中
+  /// （或合流到这次在途的转码）。
+  ///
+  /// 收益在弱 host：单段转码耗时接近或超过段长时，client 顺序取段会被逐段转码卡住；
+  /// 两段并行转的吞吐实测是顺序转的 1.2～1.7 倍（PR #3779 的测量）。强 host 上它只是
+  /// 提前一段，client 停止取段（缓冲满 / 暂停）时最多多转这一段。
+  ///
+  /// 名额：只用 [tryLeaseIdleTranscodeSlot] 给的空闲名额——没人排队、且拿走后仍给
+  /// 前台留 [kTranscodeSlotsReservedForForeground] 个，否则不预取；预取从不排队。
+  /// 已缓存 / 正在转的段不重复起。
+  void _prefetchTranscodeSegment({
+    required String stream,
+    required _VideoStreamToken tok,
+    required VideoTranscodeProfile profile,
+    required int durationMs,
+    required String input,
+    required int index,
+  }) {
+    if (index >= transcodeSegmentCount(durationMs)) return;
+    if (_transcodeSegments.contains(
+      stream: stream,
+      index: index,
+      input: input,
+    )) {
+      return;
+    }
+    final TranscodeSlotLease? slot = tryLeaseIdleTranscodeSlot();
+    if (slot == null) return;
+    final _TranscodePrefetch record = _TranscodePrefetch(
+      index: index,
+      input: input,
+      workKey: '$stream\u0000prefetch\u0000$index',
+    );
+    (_transcodePrefetches[stream] ??= <_TranscodePrefetch>[]).add(record);
+    final Future<Uint8List> run = _transcodeSegments.obtain(
+      stream: stream,
+      index: index,
+      input: input,
+      compute: () => transcodeSegment(
+        inputPath: input,
+        profile: profile,
+        index: index,
+        durationMs: durationMs,
+        audioStreamIndex: tok.transcodeAudioStreamIndex,
+        workKey: record.workKey,
+        isAlive: () => _videoStreamTokens.containsKey(stream),
+        slot: slot,
+      ),
+    );
+    // 上面判过「未缓存、未在途」，obtain 必然同步调了 compute、把名额交给了
+    // transcodeSegment；这里兜住「没交出去」的情况，名额不泄漏（release 幂等）。
+    if (!_transcodeSegments.contains(
+      stream: stream,
+      index: index,
+      input: input,
+    )) {
+      slot.release();
+    }
+    late final Future<void> settled;
+    settled = run
+        .then<void>(
+          (Uint8List _) {},
+          onError: (Object e) {
+            // 失败不入缓存，client 真来取这一段时前台会重新转、按原路径回 503 / 410；
+            // 这里只留一行日志，不重试。
+            if (e is! TranscodeCancelled) {
+              fushiDebugPrint('transcode prefetch n=$index failed: $e');
+            }
+          },
+        )
+        .whenComplete(() {
+          final List<_TranscodePrefetch>? list = _transcodePrefetches[stream];
+          if (list != null && list.remove(record) && list.isEmpty) {
+            _transcodePrefetches.remove(stream);
+          }
+          _transcodePrefetchRuns.remove(settled);
+        });
+    _transcodePrefetchRuns.add(settled);
   }
 
   void _pruneVideoTokens() {
     // 视频播放时间长，token 有效期设为 6 小时
     final DateTime cutoff = _now().subtract(const Duration(hours: 6));
-    _videoStreamTokens.removeWhere(
-      (String _, _VideoStreamToken token) => token.createdAt.isBefore(cutoff),
-    );
+    final List<String> expired = <String>[
+      for (final MapEntry<String, _VideoStreamToken> e
+          in _videoStreamTokens.entries)
+        if (e.value.createdAt.isBefore(cutoff)) e.key,
+    ];
+    expired.forEach(_dropVideoToken);
   }
 
   /// BUG-1568：守住视频流 token 上限。TTL prune 之后仍达到 [_maxVideoStreamTokens]
@@ -1274,7 +1473,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         }
       }
       if (oldestKey == null) break;
-      _videoStreamTokens.remove(oldestKey);
+      _dropVideoToken(oldestKey);
     }
   }
 
@@ -1384,19 +1583,39 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     // 分段工作挂在签发它的 token 名下（BUG-4461）：流票被释放时
     // [_releaseVideoTicket] 按 token 取消排队 / 在跑的分段；token 在本请求反查文件
     // 期间已被释放或过期的，[isAlive] 在登记时就拦下，不起 ffmpeg。
+    //
+    // 同一条流同一段只转一次（video-34）：往回拖到 client 向后缓冲之外、重连后重新
+    // 请求、或同一段的并发请求，都从 [_transcodeSegments] 取，不再起 ffmpeg。缓存
+    // 键含 token，画质档 / 音轨都绑在 token 上，不会把一档的字节回给另一档。
+    //
+    // 先登记前台这一段（它先拿名额）再起下一段的预取：预取只吃剩下的空闲名额。整段
+    // 同步，中间没有 await。
+    _noteForegroundTranscodeRequest(tokenValue, index);
+    final Future<Uint8List> pending = _transcodeSegments.obtain(
+      stream: tokenValue,
+      index: index,
+      input: file.path,
+      compute: () => transcodeSegment(
+        inputPath: file.path,
+        profile: profile,
+        index: index,
+        durationMs: durationMs,
+        audioStreamIndex: tok.transcodeAudioStreamIndex,
+        workKey: tokenValue,
+        isAlive: () => _videoStreamTokens.containsKey(tokenValue),
+      ),
+    );
+    _prefetchTranscodeSegment(
+      stream: tokenValue,
+      tok: tok,
+      profile: profile,
+      durationMs: durationMs,
+      input: file.path,
+      index: index + 1,
+    );
     final Uint8List? segment;
     try {
-      segment = await _runTranscode(
-        () => transcodeSegment(
-          inputPath: file.path,
-          profile: profile,
-          index: index,
-          durationMs: durationMs,
-          audioStreamIndex: tok.transcodeAudioStreamIndex,
-          workKey: tokenValue,
-          isAlive: () => _videoStreamTokens.containsKey(tokenValue),
-        ),
-      );
+      segment = await _runTranscode(() => pending);
     } on TranscodeCancelled {
       return shelf.Response(
         410,
@@ -1557,11 +1776,34 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     headers: <String, String>{
       'Content-Type': 'video/mp2t',
       'Content-Length': '${bytes.length}',
-      // 转码产物不落盘也不复用：同一段再请求一次就再转一次。给 no-store 是为了
-      // 别让中间层缓存下一份「按某个画质档转出来的字节」再回给另一个档。
+      // 转码产物只在 host 内存里按流 token 缓存（[_transcodeSegments]），不落盘。
+      // 给 no-store 是为了别让中间层缓存下一份「按某个画质档转出来的字节」再回给
+      // 另一个档。
       'Cache-Control': 'no-store',
     },
   );
+}
+
+/// 一次在途的 host 预取（见 `_prefetchTranscodeSegment`）。
+class _TranscodePrefetch {
+  _TranscodePrefetch({
+    required this.index,
+    required this.input,
+    required this.workKey,
+  });
+
+  /// 预取的段号。
+  final int index;
+
+  /// 反查到的输入路径（缓存键的一部分）。
+  final String input;
+
+  /// 这次预取自己的转码 work key：与前台分段（work key = 流 token）分开，seek 时
+  /// 能单独取消它而不误伤前台。
+  final String workKey;
+
+  /// 已有前台请求合流到这次预取上（client 真的来取这一段了）：seek 不再作废它。
+  bool joined = false;
 }
 
 // ── 本域私有的顶层 helper（原 FushiSyncServer 的 private static；extension 体内看不到
@@ -1601,6 +1843,61 @@ int _episodeIndexFromRequest(shelf.Request request) {
   final int? n = int.tryParse(raw);
   if (n == null || n < 0) return 0;
   return n;
+}
+
+/// 起服务后挂上视频指纹落盘缓存，并在 [FushiSyncServer._videoFingerprintWarmDelay]
+/// 后开始后台低优先级预热（拍板台 left3657）。host 不提供媒体库时只挂缓存。
+extension _FushiSyncServerVideoFingerprintWarmup on FushiSyncServer {
+  void _startVideoFingerprintWarmup() {
+    VideoSourceFingerprint.instance.store = _videoFingerprintStore;
+    final FushiLibraryHostService? svc = _libraryService;
+    if (svc == null) return;
+    final VideoFingerprintWarmer warmer = VideoFingerprintWarmer(
+      listPaths: () => _videoFingerprintWarmPaths(svc),
+    );
+    _videoFingerprintWarmer = warmer;
+    _videoFingerprintWarmStart = Timer(
+      _videoFingerprintWarmDelay,
+      warmer.request,
+    );
+  }
+
+  void _stopVideoFingerprintWarmup() {
+    _videoFingerprintWarmStart?.cancel();
+    _videoFingerprintWarmStart = null;
+    _videoFingerprintWarmer?.dispose();
+    _videoFingerprintWarmer = null;
+    if (identical(
+      VideoSourceFingerprint.instance.store,
+      _videoFingerprintStore,
+    )) {
+      VideoSourceFingerprint.instance.store = null;
+    }
+  }
+}
+
+/// 预热要算的文件：对端能经 host 播放的每条视频的每一集，取与 `/streamurl`、
+/// `/fingerprint` 同一个 [FushiLibraryHostService.resolveVideoFile] 解析出的本地文件。
+Future<List<String>> _videoFingerprintWarmPaths(
+  FushiLibraryHostService svc,
+) async {
+  final List<String> paths = <String>[];
+  for (final RemoteVideoInfo video in await svc.listVideos()) {
+    if (!video.peerPlayable) continue;
+    final List<int> episodes = video.episodes.isEmpty
+        ? const <int>[0]
+        : <int>[for (final RemoteVideoEpisode e in video.episodes) e.index];
+    for (final int episode in episodes) {
+      final File? file = await svc.resolveVideoFile(
+        video.id,
+        episodeIndex: episode,
+      );
+      if (file != null && VideoSourceFingerprint.isLocalPath(file.path)) {
+        paths.add(file.path);
+      }
+    }
+  }
+  return paths;
 }
 
 /// `/fingerprint` 担保不了字节时的应答（BUG-4782）：不是 404，免得 client 当成老 host。

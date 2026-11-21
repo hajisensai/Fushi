@@ -89,9 +89,10 @@ enum FushiSystemOcr {
     _ call: FlutterMethodCall,
     result: @escaping FlutterResult
   ) {
+    // `pixels` + `width` / `height`：不透明 RGBA（Dart `recognizePixels`，视频暂停 OCR 的
+    // 播放器截帧），直接包成 CGImage，不经编码 / 解码；否则 `bytes`：编码图。
     guard let args = call.arguments as? [String: Any],
-          let typed = args["bytes"] as? FlutterStandardTypedData,
-          !typed.data.isEmpty
+          let input = recognizeInput(args)
     else {
       result(
         FlutterError(
@@ -100,7 +101,6 @@ enum FushiSystemOcr {
           details: nil))
       return
     }
-    let data = typed.data
     let language = (args["language"] as? String) ?? ""
     // 截屏识字（桌面冻结层）：见类文档「两条识别路径」后的「截屏识字」一条。
     let screenText = (args["purpose"] as? String) == "screen"
@@ -123,8 +123,7 @@ enum FushiSystemOcr {
       func reply(_ value: Any?) {
         DispatchQueue.main.async { result(value) }
       }
-      guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-            let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+      guard let image = input.makeImage()
       else {
         reply(
           FlutterError(
@@ -200,6 +199,53 @@ enum FushiSystemOcr {
           height: height,
           withGlyphs: screenText))
     }
+  }
+
+  /// 送检图：编码字节，或不透明 RGBA 像素。
+  enum RecognizeInput {
+    case encoded(Data)
+    case rgba(Data, width: Int, height: Int)
+
+    /// 解码 / 包装成 CGImage（未应用 EXIF 方向的像素缓冲，见类文档第 3 条）。
+    func makeImage() -> CGImage? {
+      switch self {
+      case .encoded(let data):
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+          return nil
+        }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
+      case .rgba(let data, let width, let height):
+        guard let provider = CGDataProvider(data: data as CFData) else { return nil }
+        return CGImage(
+          width: width,
+          height: height,
+          bitsPerComponent: 8,
+          bitsPerPixel: 32,
+          bytesPerRow: width * 4,
+          space: CGColorSpaceCreateDeviceRGB(),
+          bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+          provider: provider,
+          decode: nil,
+          shouldInterpolate: false,
+          intent: .defaultIntent)
+      }
+    }
+  }
+
+  /// 从通道参数取送检图；缺失或尺寸对不上返回 nil。
+  static func recognizeInput(_ args: [String: Any]) -> RecognizeInput? {
+    if let pixels = args["pixels"] as? FlutterStandardTypedData {
+      guard let width = (args["width"] as? NSNumber)?.intValue,
+            let height = (args["height"] as? NSNumber)?.intValue,
+            width > 0, height > 0,
+            pixels.data.count == width * height * 4
+      else { return nil }
+      return .rgba(pixels.data, width: width, height: height)
+    }
+    guard let typed = args["bytes"] as? FlutterStandardTypedData,
+          !typed.data.isEmpty
+    else { return nil }
+    return .encoded(typed.data)
   }
 
   /// 把 Vision 的观测结果拼成 Dart 侧 `parseSystemOcrPayload` 认得的那份 map。

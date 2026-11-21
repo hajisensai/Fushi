@@ -212,6 +212,7 @@ class LyricTimeline {
     this.language,
     this.isUserEdited = false,
     this.hasEffects = false,
+    this.rubyDropped = false,
     this.title,
     this.artist,
     this.agents = const <LyricAgent>[],
@@ -231,6 +232,9 @@ class LyricTimeline {
 
   /// ASS 特效 / templater 产物：推荐原样渲染（§6.3，P3）。
   final bool hasEffects;
+
+  /// 来源自带注音轨（QRC `[kana:]`）但和正文对不上、整首没挂：歌词页提示「注音对不上，已隐藏」。
+  final bool rubyDropped;
   final String? title;
   final String? artist;
   final List<LyricAgent> agents;
@@ -252,6 +256,7 @@ class LyricTimeline {
     language: language,
     isUserEdited: isUserEdited ?? this.isUserEdited,
     hasEffects: hasEffects,
+    rubyDropped: rubyDropped,
     title: title,
     artist: artist,
     agents: agents,
@@ -281,6 +286,7 @@ class LyricTimeline {
       other.language == language &&
       other.isUserEdited == isUserEdited &&
       other.hasEffects == hasEffects &&
+      other.rubyDropped == rubyDropped &&
       other.title == title &&
       other.artist == artist &&
       _listEq(other.agents, agents) &&
@@ -295,6 +301,7 @@ class LyricTimeline {
     language,
     isUserEdited,
     hasEffects,
+    rubyDropped,
     title,
     artist,
     Object.hashAll(agents),
@@ -431,6 +438,7 @@ LyricTimeline decodeLyricTimeline(Uint8List bytes) {
       timingQuality: quality,
       isUserEdited: flags & 1 != 0,
       hasEffects: flags & 2 != 0,
+      rubyDropped: flags & 4 != 0,
       title: title,
       artist: artist,
       agents: agents,
@@ -476,7 +484,9 @@ Uint8List encodeLyricTimeline(LyricTimeline t) {
   i64(t.offsetMs);
   optStr(t.language);
   u8(t.timingQuality.index);
-  u8((t.isUserEdited ? 1 : 0) | (t.hasEffects ? 2 : 0));
+  u8(
+    (t.isUserEdited ? 1 : 0) | (t.hasEffects ? 2 : 0) | (t.rubyDropped ? 4 : 0),
+  );
   optStr(t.title);
   optStr(t.artist);
   u32(t.agents.length);

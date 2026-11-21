@@ -458,35 +458,38 @@ class _TorrentSettingsSectionState
   ///
   /// 内置引擎排在第一段：它才是本平台的默认（`backendAuto` 解析结果），也是
   /// 开箱即用的那一个。qb 需要用户另装并配好 WebUI 才能用，排第二。
+  /// 下载引擎：与其它设置行同一种分段行（标题 + 随选中项变化的说明在卡片内，
+  /// 分段在右侧或下方撑满），不再是卡片里一条靠左的裸分段条 + 卡外脚注。
   Widget _backendRow(String backend) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return SettingsSearchTarget(
       key: const ValueKey<String>('downloads.backend'),
       id: 'downloads.backend',
-      child: Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: tokens.spacing.rowHorizontal,
-          vertical: 10,
-        ),
-        child: FushiSegmentedStrip<String>(
-          segments: <ButtonSegment<String>>[
-            ButtonSegment<String>(
-              value: QbConnectionConfig.backendEmbedded,
-              label: Text(t.video_setting_torrent_backend_embedded),
-            ),
-            ButtonSegment<String>(
-              value: QbConnectionConfig.backendQbittorrent,
-              label: Text(t.video_setting_torrent_backend_qb),
-            ),
-            ButtonSegment<String>(
-              value: QbConnectionConfig.backendFushiHost,
-              label: Text(t.video_setting_torrent_backend_fushi_host),
-            ),
-          ],
-          selected: backend,
-          onChanged: (String value) =>
-              _commit((QbConnectionConfig c) => c.copyWith(backend: value)),
-        ),
+      child: AdaptiveSettingsSegmentedRow<String>(
+        title: t.download_backend_title,
+        subtitle: switch (backend) {
+          QbConnectionConfig.backendEmbedded =>
+            t.download_backend_embedded_hint,
+          QbConnectionConfig.backendFushiHost =>
+            t.download_backend_fushi_host_hint,
+          _ => t.download_backend_qb_hint,
+        },
+        segments: <ButtonSegment<String>>[
+          ButtonSegment<String>(
+            value: QbConnectionConfig.backendEmbedded,
+            label: Text(t.video_setting_torrent_backend_embedded),
+          ),
+          ButtonSegment<String>(
+            value: QbConnectionConfig.backendQbittorrent,
+            label: Text(t.video_setting_torrent_backend_qb),
+          ),
+          ButtonSegment<String>(
+            value: QbConnectionConfig.backendFushiHost,
+            label: Text(t.video_setting_torrent_backend_fushi_host),
+          ),
+        ],
+        selected: backend,
+        onChanged: (String value) =>
+            _commit((QbConnectionConfig c) => c.copyWith(backend: value)),
       ),
     );
   }
@@ -693,11 +696,6 @@ class _TorrentSettingsSectionState
         if (_supportsEmbedded)
           _group(
             key: 'downloads.group.backend',
-            footer: isEmbedded
-                ? t.download_backend_embedded_hint
-                : isFushiHost
-                ? t.download_backend_fushi_host_hint
-                : t.download_backend_qb_hint,
             rows: <Widget>[_backendRow(backend)],
           )
         else

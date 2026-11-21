@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
@@ -29,6 +28,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/playback_speed.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 
 /// 「游戏」一级设置分类（审计 K / Phase 3.12：游戏域此前没有任何 destination，
 /// 游戏库 / 捕获工作台 / 兼容性诊断从设置主页既不可达也不可搜）。
@@ -136,7 +136,7 @@ SettingsDestination buildGameDestination() {
             subtitleBuilder: (_) => _ingameLookupBlockedReason(),
             icon: FushiIcons.lookup,
             defaultValue: PreferencesRepository.galIngameLookupEnabledDefault,
-            visible: (_) => Platform.isWindows,
+            visible: (_) => hostPlatform.isWindows,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.galIngameLookupEnabled,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -161,7 +161,7 @@ SettingsDestination buildGameDestination() {
             icon: FushiIcons.fingerprint,
             // 只在真被挡住时出现——平时多一行"复制哈希"是纯噪音。所在分组订阅准入
             // notifier（liveListenable），所以开着页面启动游戏也会把这一行刷出来。
-            visible: (_) => Platform.isWindows && _isIngameLookupBlocked(),
+            visible: (_) => hostPlatform.isWindows && _isIngameLookupBlocked(),
             // CLI 直接回报哈希（不经剪贴板）。
             cli: SettingsCliAction(
               run: (SettingsContext c, Map<String, String> args) async {
@@ -202,7 +202,7 @@ SettingsDestination buildGameDestination() {
             icon: FushiIcons.dashboardCustomize,
             // 与 PreferencesRepository.galCardLookupIndependentSize 的读取默认一致。
             defaultValue: false,
-            visible: (_) => Platform.isWindows,
+            visible: (_) => hostPlatform.isWindows,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.galCardLookupIndependentSize,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -223,7 +223,7 @@ SettingsDestination buildGameDestination() {
             max: 2000,
             divisions: 175,
             visible: (SettingsContext settingsContext) =>
-                Platform.isWindows &&
+                hostPlatform.isWindows &&
                 settingsContext.appModel.galCardLookupIndependentSize,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.galCardLookupMaxWidth,
@@ -244,7 +244,7 @@ SettingsDestination buildGameDestination() {
             max: 1600,
             divisions: 140,
             visible: (SettingsContext settingsContext) =>
-                Platform.isWindows &&
+                hostPlatform.isWindows &&
                 settingsContext.appModel.galCardLookupIndependentSize,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.galCardLookupMaxHeight,
@@ -269,7 +269,7 @@ SettingsDestination buildGameDestination() {
             subtitle: t.gal_hook_click_lookup_hint,
             icon: FushiIcons.touch,
             defaultValue: PreferencesRepository.galHookClickLookupDefault,
-            visible: (_) => Platform.isWindows,
+            visible: (_) => hostPlatform.isWindows,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.galHookClickLookup,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -285,7 +285,7 @@ SettingsDestination buildGameDestination() {
             icon: FushiIcons.mouse,
             defaultValue: PreferencesRepository.galHookLookupTriggerDefault,
             dropdown: true,
-            visible: (_) => Platform.isWindows,
+            visible: (_) => hostPlatform.isWindows,
             options: <SettingsSegmentOption<int>>[
               SettingsSegmentOption<int>(
                 value: 0,
@@ -315,7 +315,7 @@ SettingsDestination buildGameDestination() {
             icon: Icons.ads_click_outlined,
             defaultValue:
                 PreferencesRepository.galHookPassThroughBlocksMouseDefault,
-            visible: (_) => Platform.isWindows,
+            visible: (_) => hostPlatform.isWindows,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.galHookPassThroughBlocksMouse,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -332,7 +332,7 @@ SettingsDestination buildGameDestination() {
             subtitle: t.gal_hook_toolbar_auto_hide_hint,
             icon: FushiIcons.visibilityOff,
             defaultValue: PreferencesRepository.galHookToolbarAutoHideDefault,
-            visible: (_) => Platform.isWindows,
+            visible: (_) => hostPlatform.isWindows,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.galHookToolbarAutoHide,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -347,7 +347,7 @@ SettingsDestination buildGameDestination() {
             subtitle: t.gal_hook_toolbar_labels_hint,
             icon: FushiIcons.title,
             defaultValue: PreferencesRepository.galHookToolbarLabelsDefault,
-            visible: (_) => Platform.isWindows,
+            visible: (_) => hostPlatform.isWindows,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.galHookToolbarLabels,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -369,7 +369,7 @@ SettingsDestination buildGameDestination() {
             // 与兄弟项 game.ingame_lookup 同门：折叠只对引擎 hook 行生效，而
             // engineHook 行只由 Windows-only 的 GalHookSessionController 产出。
             // 在其他平台露出来只会让用户对着一个永远不生效的开关。
-            visible: (_) => Platform.isWindows,
+            visible: (_) => hostPlatform.isWindows,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.galHookFoldProgressiveLines,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -384,7 +384,7 @@ SettingsDestination buildGameDestination() {
       SettingsSection(
         id: 'game.section.overlay_text',
         title: t.settings_section_gal_hook_overlay,
-        visible: (_) => Platform.isWindows,
+        visible: (_) => hostPlatform.isWindows,
         items: <SettingsItem>[
           SettingsNavigationItem(
             id: 'game.gal_hook_text_font',
@@ -532,7 +532,7 @@ SettingsDestination buildGameDestination() {
       SettingsSection(
         id: 'game.section.overlay_window',
         title: t.gal_hook_overlay_legibility_section,
-        visible: (_) => Platform.isWindows,
+        visible: (_) => hostPlatform.isWindows,
         collapsedByDefault: true,
         items: <SettingsItem>[
           _galHookColorItem(
@@ -666,7 +666,7 @@ SettingsDestination buildGameDestination() {
             subtitle: t.gal_line_tts_auto_hint,
             icon: FushiIcons.volumeUp,
             defaultValue: false,
-            visible: (_) => Platform.isWindows,
+            visible: (_) => hostPlatform.isWindows,
             value: (SettingsContext settingsContext) => _lineTtsController(
               settingsContext,
             ).lineTtsSettings.autoPlayEnabled,
@@ -685,7 +685,7 @@ SettingsDestination buildGameDestination() {
             title: t.gal_line_tts_scope,
             subtitle: t.gal_line_tts_scope_hint,
             icon: FushiIcons.filterList,
-            visible: (_) => Platform.isWindows,
+            visible: (_) => hostPlatform.isWindows,
             defaultValue: GalLineTtsAutoPlay.unvoicedOnly,
             options: <SettingsSegmentOption<GalLineTtsAutoPlay>>[
               SettingsSegmentOption<GalLineTtsAutoPlay>(
@@ -721,7 +721,7 @@ SettingsDestination buildGameDestination() {
             title: t.gal_line_tts_voice,
             icon: FushiIcons.voice,
             showIcon: true,
-            visible: (_) => Platform.isWindows,
+            visible: (_) => hostPlatform.isWindows,
             subtitleBuilder: (SettingsContext settingsContext) =>
                 galLineTtsVoiceLabel(
                   TtsServices.of(settingsContext.appModel.prefsRepo),
@@ -752,7 +752,7 @@ SettingsDestination buildGameDestination() {
             title: t.gal_line_tts_voice_overrides,
             icon: FushiIcons.language,
             showIcon: true,
-            visible: (_) => Platform.isWindows,
+            visible: (_) => hostPlatform.isWindows,
             subtitleBuilder: (SettingsContext settingsContext) =>
                 galLineTtsVoiceOverridesSummary(
                   _lineTtsController(settingsContext).lineTtsSettings,
@@ -771,7 +771,7 @@ SettingsDestination buildGameDestination() {
             id: 'game.gal_line_tts_volume',
             title: t.gal_line_tts_volume,
             icon: FushiIcons.volumeUp,
-            visible: (_) => Platform.isWindows,
+            visible: (_) => hostPlatform.isWindows,
             divisions: 20,
             defaultValue: 1.0,
             titleReadout: true,
@@ -791,7 +791,7 @@ SettingsDestination buildGameDestination() {
             id: 'game.gal_line_tts_speed',
             title: t.gal_line_tts_speed,
             icon: FushiIcons.speed,
-            visible: (_) => Platform.isWindows,
+            visible: (_) => hostPlatform.isWindows,
             min: kGalLineTtsSpeedMin,
             max: kGalLineTtsSpeedMax,
             divisions: kPlaybackSpeedDivisions,
@@ -818,7 +818,7 @@ SettingsDestination buildGameDestination() {
             subtitle: t.gal_line_tts_rules_hint,
             icon: FushiIcons.filterList,
             showIcon: true,
-            visible: (_) => Platform.isWindows,
+            visible: (_) => hostPlatform.isWindows,
             onTap: (SettingsContext settingsContext) async {
               _lineTtsController(settingsContext);
               await openGalLineTtsRulesPage(

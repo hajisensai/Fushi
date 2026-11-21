@@ -62,12 +62,13 @@
 //! 在不在事务里，见 `Truth::ensure_snapshot`），每次写入前比一次。别的连接在这之后提交过（值变了）= 调用方自己开了事务却没 reset，写入报错、不落库（不
 //! 毒化会话：reset 之后照常）。同一个连接自己的提交不改这个值；拿着写事务时别人提交不了，所以事务内不会误报。
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
+use super::derive::Ref;
 use super::pack::{self, F_RAW3, F_STAMP, Names, tv_bits, tv_of};
 use super::schema::{in_tx, in_write_tx, k_dev, k_range, k_seq, opk, sql};
 use crate::gen4::head::PrevIdentity;
@@ -75,7 +76,9 @@ use crate::gen4::heritage::{Alias, Fp, HeritageSlot, Raw3, SlotBody, fingerprint
 use crate::gen4::name::{read_name, write_name};
 use crate::gen4::op::{
     Body4, Edit4, KIND_EDIT, KIND_JOIN, KIND_SALTS, Op4, chain_next4, native_allowed,
+    payload_within_cap, purge_targets_v1, purge_unseen_by,
 };
+use crate::gen4::recut::Stub;
 use crate::gen4::stamp::HeritageStamp;
 use crate::gen4::translate::{Joined, applied_body, dedup_slot, join_slots};
 use crate::sync2::codec::{Reader, Writer};
@@ -89,12 +92,19 @@ use crate::sync2::vv::{OpId, Vv};
 /// 本机身份（`self_`）与换身份（G8-6）。
 mod own;
 pub use own::Rotated;
+/// 首见设备的信任判定（BUG-4306）。
+mod trust;
 pub(crate) use own::{NativeStep, fork_key};
+pub use trust::FirstSeen;
 
 /// `devs.kind`：原生日志。
 pub const DEV_NATIVE: i64 = 0;
 /// `devs.kind`：承袭日志。
 pub const DEV_HERITAGE: i64 = 1;
+
+/// 一台设备的待投递槽数（[Truth::pending_count]）：`op_pending` 主键区间上的计数。
+pub(crate) const PENDING_COUNT_SQL: &str =
+    "SELECT COUNT(*) FROM op_pending WHERE k BETWEEN ?1 AND ?2";
 
 /// `op_alias.flags` / `op_voids.flags`：这个槽现在的样子是本机自己应用 Purge / Dedup 推进出来的（不是收来的）。
 const A_LOCAL: i64 = 1;
@@ -461,6 +471,10 @@ pub struct Truth<'c> {
     conn: &'c Connection,
     st: RefCell<State>,
     no_deps: Arc<Vv>,
+    /// 这个会话里有操作落成了空洞（[Truth::advance_purge]）：提交之后要做字节层收尾（`scrub.rs`）。
+    voided: Cell<bool>,
+    /// 库句柄的缓存配置记忆（`cache.rs` [super::cache::CfgMemo]，`kernel.rs` `G4Core::truth` 给）。没有 = 每次现算。
+    cfg_memo: Option<Arc<super::cache::CfgMemo>>,
 }
 
 struct N<'a, 'c>(&'a Truth<'c>);
@@ -631,11 +645,30 @@ impl<'c> Truth<'c> {
             conn,
             st: RefCell::new(State::default()),
             no_deps: Arc::new(Vv::new()),
+            voided: Cell::new(false),
+            cfg_memo: None,
         }
+    }
+
+    /// [Truth::new]，缓存配置的解析结果跨命令记在 [memo] 里（`cache.rs` [super::cache::CfgMemo]）。
+    pub fn with_cfg_memo(conn: &'c Connection, memo: Arc<super::cache::CfgMemo>) -> Truth<'c> {
+        Truth {
+            cfg_memo: Some(memo),
+            ..Truth::new(conn)
+        }
+    }
+
+    pub(super) fn cfg_memo(&self) -> Option<&super::cache::CfgMemo> {
+        self.cfg_memo.as_deref()
     }
 
     pub fn conn(&self) -> &'c Connection {
         self.conn
+    }
+
+    /// 取走「这个会话里有操作落成了空洞」（[Truth::advance_purge]）：写命令提交之后据此做字节层收尾（`scrub.rs`）。
+    pub(crate) fn take_voided(&self) -> bool {
+        self.voided.replace(false)
     }
 
     fn data_version(&self) -> Result<i64, String> {
@@ -781,6 +814,21 @@ impl<'c> Truth<'c> {
     /// 绑着集合标识 [collection] 的本机集合（没有 = None）。
     pub fn binding_of_collection(&self, collection: &Id) -> Result<Option<Binding>, String> {
         self.binding_where("collection", &collection.0.as_slice())
+    }
+
+    /// 位置目录名是 [dir] 的本机 profile（按 uid 排）。一个集合只绑一个 profile，但目录名不唯一（并入后两个本机
+    /// 集合可能指向同一个目录），所以回列表。`collections` 一台设备只有几行，全表扫（不加索引、不升 SCHEMA）。
+    pub fn profiles_of_dir(&self, dir: &str) -> Result<Vec<String>, String> {
+        let mut st = self
+            .conn
+            .prepare_cached(
+                "SELECT profile_uid FROM collections WHERE dir = ?1 ORDER BY profile_uid",
+            )
+            .map_err(sql)?;
+        let rows = st
+            .query_map([dir], |r| r.get::<_, String>(0))
+            .map_err(sql)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(sql)
     }
 
     /// 把 profile 绑到一个集合上，返回本机集合号。同一个 profile 再绑同一个集合是幂等的；一个 profile 只能绑一个集合，
@@ -1449,6 +1497,46 @@ impl<'c> Truth<'c> {
         })
     }
 
+    /// 设备 [device] 的日志在 `first..=last` 里已经落成空洞（已清除）的 seq 区间，按 seq 升序、各自截到这个范围里。
+    /// 本机没有这台设备 = 空。转发缓存据此拒收带着已清除内容的作者段（`cmd/sync_relay.rs` `keep`）。
+    pub fn voids_within(
+        &self,
+        col: i64,
+        device: &Id,
+        first: u64,
+        last: u64,
+    ) -> Result<Vec<(u64, u64)>, String> {
+        if first == 0 || last < first {
+            return Ok(Vec::new());
+        }
+        let Some(dev) = self.dev_find(col, device)? else {
+            return Ok(Vec::new());
+        };
+        let mut out = Vec::new();
+        if let Some(run) = self.run_at_or_before(dev, first)? {
+            if run.end() >= first {
+                out.push((first, run.end().min(last)));
+            }
+        }
+        if first < last {
+            let mut stmt = self
+                .conn
+                .prepare_cached("SELECT k, n FROM op_voids WHERE k BETWEEN ?1 AND ?2 ORDER BY k")
+                .map_err(sql)?;
+            let rows = stmt
+                .query_map(params![opk(dev, first + 1)?, opk(dev, last)?], |r| {
+                    Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)? as u64))
+                })
+                .map_err(sql)?;
+            for row in rows {
+                let (k, n) = row.map_err(sql)?;
+                let s = k_seq(k);
+                out.push((s, (s + n - 1).min(last)));
+            }
+        }
+        Ok(out)
+    }
+
     /// 起点不晚于 [seq] 的最后一个空洞区间（不一定盖得到 [seq]）。
     fn run_at_or_before(&self, dev: i64, seq: u64) -> Result<Option<VoidRun>, String> {
         let (lo, _) = k_range(dev);
@@ -2001,15 +2089,33 @@ impl<'c> Truth<'c> {
         col: i64,
         device: &Id,
         upto: u64,
+        f: impl FnMut(u64, &HeritageStamp) -> Result<(), String>,
+    ) -> Result<(), String> {
+        self.for_each_stamp_in(col, device, 1, upto, f)
+    }
+
+    /// [Truth::for_each_stamp] 只走 seq 在 `[from, upto]` 里的那一段（按主键区间，不碰段外的行）：派生层从旧闭包的
+    /// 检查点接着并（`derive.rs` [CLOSURE_STEP](super::derive::CLOSURE_STEP)）。
+    pub(crate) fn for_each_stamp_in(
+        &self,
+        col: i64,
+        device: &Id,
+        from: u64,
+        upto: u64,
         mut f: impl FnMut(u64, &HeritageStamp) -> Result<(), String>,
     ) -> Result<(), String> {
         let Some(dev) = self.dev_find(col, device)? else {
             return Ok(());
         };
-        if upto == 0 {
+        let from = from.max(1);
+        if upto < from {
             return Ok(());
         }
-        let (lo, top) = k_range(dev);
+        let (_, top) = k_range(dev);
+        if from > k_seq(top) {
+            return Ok(());
+        }
+        let lo = opk(dev, from)?;
         let hi = if upto >= k_seq(top) {
             top
         } else {
@@ -2261,6 +2367,11 @@ impl<'c> Truth<'c> {
     }
 
     /// 写一个空洞区间，并与两侧同样标志的相邻区间合并。
+    ///
+    /// 原生日志的区间只记区间末的链值；别的设备的原生日志合并时，被合进区间内部的那几处区间末链值（左邻的末尾、本区间的末尾）记成链值
+    /// 记号（`log_marks`），不随合并丢掉：清除只拿走内容，链值是公开的、算得出的事实，转发要按作者的切点重切段
+    /// （`sync_state.rs` [Truth::recut_from_log]，交接 §33），切点可能正落在一次跨段的清除里面。[Truth::chain_known]
+    /// 在空洞内部先查这些记号。承袭日志（`fps`）不记：那里的记号是切承袭段的切点。
     fn insert_void_run(
         &self,
         dev: i64,
@@ -2277,9 +2388,17 @@ impl<'c> Truth<'c> {
         let mergeable = |run: &VoidRun, fps: &Option<Vec<u8>>| {
             run.flags == flags && run.fps.is_some() == fps.is_some()
         };
+        // 只给别的设备的原生日志记：本机自己的段由本机按新的切点重签（`cmd/sync.rs`），用不着旧切点的链值；这样只
+        // 动本机自己日志的清除（导出 / 导入往返）不多出导出流带不走的记号。
+        let foreign = fps.is_none() && !self.is_self_dev(dev)?;
         if first > 1 {
             if let Some(left) = self.run_at_or_before(dev, first - 1)? {
                 if left.end() + 1 == first && mergeable(&left, &fps) {
+                    if foreign {
+                        if let Some(c) = &left.chain {
+                            self.put_mark(dev, left.end(), &chain_of(c)?)?;
+                        }
+                    }
                     self.delete_run(left.k)?;
                     k = left.k;
                     len += left.n;
@@ -2303,6 +2422,11 @@ impl<'c> Truth<'c> {
                 .map_err(sql)?;
             if let Some(right) = right {
                 if mergeable(&right, &fps) {
+                    if foreign {
+                        if let Some(c) = &chain {
+                            self.put_mark(dev, first + n - 1, &chain_of(c)?)?;
+                        }
+                    }
                     self.delete_run(right.k)?;
                     len += right.n;
                     fps = match (fps, right.fps) {
@@ -2324,6 +2448,14 @@ impl<'c> Truth<'c> {
             .execute(params![k, len as i64, flags, fps, chain])
             .map_err(sql)?;
         Ok(())
+    }
+
+    /// 设备下标 [dev] 是不是它所在集合的本机当前身份。
+    fn is_self_dev(&self, dev: i64) -> Result<bool, String> {
+        let row = self.dev_row(dev)?;
+        Ok(self
+            .self_identity(row.col)?
+            .is_some_and(|me| me.device == row.id))
     }
 
     fn delete_run(&self, k: i64) -> Result<(), String> {
@@ -2803,6 +2935,23 @@ impl<'c> Truth<'c> {
         self.parked(col, "op_pending", "p.prev_fp")
     }
 
+    /// 待投递的槽数：按设备主键区间数（[PENDING_COUNT_SQL]），不读、不解槽。收段每片收尾都报它，不能每片把整张
+    /// `op_pending` 解一遍。
+    pub fn pending_count(&self, col: i64) -> Result<u64, String> {
+        let mut n = 0u64;
+        for d in self.devices(col)? {
+            let (lo, hi) = k_range(d.dev);
+            let c: i64 = self
+                .conn
+                .prepare_cached(PENDING_COUNT_SQL)
+                .map_err(sql)?
+                .query_row(params![lo, hi], |r| r.get(0))
+                .map_err(sql)?;
+            n += c as u64;
+        }
+        Ok(n)
+    }
+
     /// 分叉的另一支（链指纹与本机日志里同号的槽不同的槽）。
     pub fn forks(&self, col: i64) -> Result<Vec<Parked>, String> {
         self.parked(col, "op_forks", "NULL")
@@ -2910,13 +3059,57 @@ impl<'c> Truth<'c> {
                     )?;
                 }
                 None => {
+                    // 别的设备的操作：挖空之前记下剔除记录（作者签名覆盖的那部分 + 清掉它的 Purge），本机以后转发这一段
+                    // 时重切要它（`sync_state.rs` `recut_from_log`，`gen4/recut.rs`）。找不到管得到它的生效 Purge（直接
+                    // 调本函数的测试与工具）就不记：这一段本机重切不出来，转发退回「缺」。
+                    if let Some(op) = e.op() {
+                        if !self.is_self_dev(dev)? {
+                            if let Some(p) = self.purge_covering(col, op)? {
+                                self.put_stub(col, &Stub::of(op, p))?;
+                            }
+                        }
+                    }
                     let chain = self.chain_at_dev(dev, target.seq)?;
                     self.delete_at(dev, target.seq)?;
                     self.insert_void_run(dev, target.seq, 1, None, Some(chain), A_LOCAL)?;
                 }
             }
+            // 转发（`cmd/sync_relay.rs`，G8-7b）手里这条内容的副本：本机缓存的作者段换成本机签的重切件、已转发到各位置
+            // 的件改成待删（由重切件同名重写或删掉；`sync_state.rs` [Truth::relay_purged]），同一个事务。
+            self.relay_purged(col, &target.device, target.seq)?;
+            // 字节层：原文还在空闲空间与 WAL 旧帧里，提交之后要收尾（`scrub.rs`）。同一个事务里记下欠着的收尾。
+            super::scrub::mark_due(self.conn)?;
+            self.voided.set(true);
             Ok(true)
         })
+    }
+
+    /// 本机生效的、管得到 [op] 的 Purge（操作号最小的那条）：目标在 [op] 的清除目标里（`gen4/op.rs`
+    /// `purge_targets_v1`）、[op] 的作者写它时没见过、本机执行它（`purge_ix.state = 1`：落库了、作者受信）。派生层
+    /// 判「已清除」用的是同一组条件（`weigh.rs`「彻底清除」），所以本机执行清除时（`Index::execute_purges` 之后）总找得到。
+    fn purge_covering(&self, col: i64, op: &Op4) -> Result<Option<OpId>, String> {
+        let mut best: Option<OpId> = None;
+        for (kind, key) in purge_targets_v1(op) {
+            let ks: Vec<i64> = {
+                let mut stmt = self
+                    .conn
+                    .prepare_cached(
+                        "SELECT k FROM purge_ix WHERE col = ?1 AND ekind = ?2 AND ent = ?3 AND state = 1",
+                    )
+                    .map_err(sql)?;
+                let rows = stmt
+                    .query_map(params![col, kind as i64, Ref::of(&key)], |r| r.get(0))
+                    .map_err(sql)?;
+                rows.collect::<rusqlite::Result<_>>().map_err(sql)?
+            };
+            for k in ks {
+                let p = self.id_of_key(k)?;
+                if purge_unseen_by(op, &p) && best.is_none_or(|b| p < b) {
+                    best = Some(p);
+                }
+            }
+        }
+        Ok(best)
     }
 
     /// 本机执行了一条 Dedup、其中一对说 [target] 是 [of] 的副本：完整内容 → 副本记录（`gen4::translate::dedup_slot`
@@ -2968,6 +3161,8 @@ impl<'c> Truth<'c> {
     /// 段里声明的链值比。
     pub fn append_native(&self, col: i64, op: &Op4) -> Result<Chain, String> {
         self.write(|| {
+            // 太大的一条先给看得懂的报错（本机写入与导入都经这里；整笔回滚，什么都不落）。
+            payload_within_cap(op).map_err(|m| format!("gen4 store: {m}; nothing was saved"))?;
             native_allowed(op)
                 .map_err(|m| format!("gen4 store: {}:{} {m}", op.id.device, op.id.seq))?;
             if op.hlc.device != op.id.device || op.deps.get(&op.id.device) != 0 {
@@ -3016,6 +3211,41 @@ impl<'c> Truth<'c> {
         })
     }
 
+    /// 原生日志空洞区间内部的一个链值记号（`.fushisrs` 流第 2 版导入，第五波；导出流见 `store/gen4/export.rs`）：[seq]
+    /// 必须落在 [device] 原生日志里一个空洞区间的内部（不是区间末，那里的链值就是区间自己的），已有记号的不重记，返回
+    /// 记没记。本机自己的日志不记（同 [Truth::insert_void_run]：本机的段按新切点重签，用不着旧切点的链值）。
+    ///
+    /// 记号与区间末的链值一样只能信来源（清除之后没有内容可以重算它），信任面与空洞的 `chain_after` 相同。
+    pub fn land_void_mark(
+        &self,
+        col: i64,
+        device: &Id,
+        seq: u64,
+        chain: &Chain,
+    ) -> Result<bool, String> {
+        self.write(|| {
+            let dev = self
+                .dev_find(col, device)?
+                .ok_or_else(|| format!("gen4 store: no device {device}"))?;
+            if self.dev_row(dev)?.kind != Some(DEV_NATIVE) {
+                return Err(format!("gen4 store: {device} has no native log"));
+            }
+            let inside = self
+                .run_at_or_before(dev, seq)?
+                .is_some_and(|r| r.fps.is_none() && k_seq(r.k) <= seq && r.end() > seq);
+            if !inside {
+                return Err(format!(
+                    "gen4 store: {device}:{seq} is not inside a void run of the native log"
+                ));
+            }
+            if self.is_self_dev(dev)? || self.mark_at(dev, seq)?.is_some() {
+                return Ok(false);
+            }
+            self.put_mark(dev, seq, chain)?;
+            Ok(true)
+        })
+    }
+
     /// 原生日志在 [seq] 处的链值（0 = 链的起点）。空洞区间里只有区间末有链值。
     pub fn chain_at(&self, col: i64, device: &Id, seq: u64) -> Result<Chain, String> {
         if seq == 0 {
@@ -3027,7 +3257,20 @@ impl<'c> Truth<'c> {
         self.chain_at_dev(dev, seq)
     }
 
-    /// 原生日志在 [seq] 处可比的链值：[seq] 落在本机空洞区间内部（不是区间末）= None，那里没有链值；其余同
+    /// 链值记号正好记在 [seq] 上的那个。
+    fn mark_at(&self, dev: i64, seq: u64) -> Result<Option<Chain>, String> {
+        self.conn
+            .prepare_cached("SELECT chain FROM log_marks WHERE dev = ?1 AND seq = ?2")
+            .map_err(sql)?
+            .query_row(params![dev, seq as i64], |r| r.get::<_, Vec<u8>>(0))
+            .optional()
+            .map_err(sql)?
+            .map(|c| chain_of(&c))
+            .transpose()
+    }
+
+    /// 原生日志在 [seq] 处可比的链值：[seq] 落在本机空洞区间内部（不是区间末）、又没有合并时留下的记号 = None，那里
+    /// 没有链值；其余同
     /// [Truth::chain_at]（不在日志里、不是原生日志等照样报错，不当成「比不了」）。
     pub fn chain_known(&self, col: i64, device: &Id, seq: u64) -> Result<Option<Chain>, String> {
         if seq == 0 {
@@ -3039,7 +3282,8 @@ impl<'c> Truth<'c> {
         if self.dev_row(dev)?.kind == Some(DEV_NATIVE) && seq <= self.last(dev)? {
             if let Some(run) = self.run_at_or_before(dev, seq)? {
                 if run.end() > seq {
-                    return Ok(None);
+                    // 空洞内部：合并区间时记下的区间末链值（[Truth::insert_void_run]）还在就有。
+                    return self.mark_at(dev, seq);
                 }
             }
         }
@@ -3555,6 +3799,38 @@ pub(crate) mod tests {
         let t = Truth::new(&conn);
         assert_eq!(t.last_of(col, &id(OLD)).unwrap(), 7);
         assert_eq!(count(&conn, "op_voids"), 1);
+    }
+
+    /// [Truth::voids_within]（转发缓存拒收、不为转发拉原文、从日志重切都靠它，交接 §33）：区间各自截到查询范围；
+    /// 查询范围的起点落在一个更早开始的空洞区间里（前导分支）、或正是被清除的段首，都要报出来。
+    #[test]
+    fn voids_within_reports_runs_cut_to_the_range_including_a_leading_one() {
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = bound(&t);
+        for seq in 1..=7u64 {
+            let slot = HeritageSlot::op(
+                [seq as u8; 8],
+                op_of(id(OLD), seq, &Body4::Edit(native_edit())),
+            );
+            put(&t, col, &slot, 1).unwrap();
+        }
+        for seq in [1, 3, 4] {
+            assert_eq!(t.tx(|t| t.advance_purge(col, &oid(seq))), Ok(true));
+        }
+        let w = |a: u64, b: u64| t.voids_within(col, &id(OLD), a, b).unwrap();
+        assert_eq!(w(1, 7), vec![(1, 1), (3, 4)]);
+        assert_eq!(w(1, 1), vec![(1, 1)], "the segment's first op purged");
+        assert_eq!(w(2, 7), vec![(3, 4)]);
+        assert_eq!(w(4, 7), vec![(4, 4)], "a run that began before the range");
+        assert_eq!(w(4, 4), vec![(4, 4)]);
+        assert_eq!(w(5, 7), Vec::<(u64, u64)>::new());
+        assert_eq!(w(2, 2), Vec::<(u64, u64)>::new());
+        assert_eq!(
+            t.voids_within(col, &id(0x77), 1, 7).unwrap(),
+            Vec::<(u64, u64)>::new(),
+            "an unknown device"
+        );
     }
 
     #[test]

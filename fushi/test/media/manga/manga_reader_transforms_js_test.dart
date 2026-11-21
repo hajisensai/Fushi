@@ -79,7 +79,7 @@ const page={dataset:{pw:'1000',ph:'600',spreadPages:'1'},style:{},
   getBoundingClientRect:()=>({left:20,top:30,width:500,height:800})};
 const window={innerWidth:1000,innerHeight:800};
 const document={querySelector:()=>page};
-const ROTATE_WIDE=true,IS_WEBTOON=false;
+const ROTATE_WIDE=true,IS_WEBTOON=false,RESERVE_R=0,RESERVE_B=0;
 ${fitSection(document)}
 $layout
 $inverse
@@ -120,7 +120,7 @@ const page={dataset:{pw:'1000',ph:'600',spreadPages:'1'},style:{},
 const window={innerWidth:1000,innerHeight:800};
 const document={body:{style:{}},documentElement:{style:{}},querySelector:()=>page,
   createElement:()=>({getContext:()=>({drawImage:()=>{},getImageData:()=>({data:pixels})})})};
-const ROTATE_WIDE=true,IS_WEBTOON=false,CURRENT=0;
+const ROTATE_WIDE=true,IS_WEBTOON=false,CURRENT=0,RESERVE_R=0,RESERVE_B=0;
 function _refitPage(){}
 function _bridge(){return null;}
 ${fitSection(document)}
@@ -168,7 +168,7 @@ function mk(prev, gap){
 }
 const window={innerWidth:393,innerHeight:852,devicePixelRatio:2.75};
 function getComputedStyle(el){return {marginBottom:el.__gap?'12px':'0px'};}
-const ROTATE_WIDE=false,IS_WEBTOON=true,IS_VERTICAL_PAGED=false;
+const ROTATE_WIDE=false,IS_WEBTOON=true,IS_VERTICAL_PAGED=false,RESERVE_R=0,RESERVE_B=0;
 ${fitSection(webtoon)}
 $layout
 const first=mk(null,false), second=mk(first,false), afterGap=mk(mk(null,true),false);
@@ -253,7 +253,7 @@ function mk(prev, slots){
 // 反馈截图的窗口：2221 CSS px 宽，125% 缩放。
 const window={innerWidth:2221,innerHeight:1157,devicePixelRatio:1.25};
 function _refitPage(){}
-const ROTATE_WIDE=false,IS_WEBTOON=false,IS_VERTICAL_PAGED=false;
+const ROTATE_WIDE=false,IS_WEBTOON=false,IS_VERTICAL_PAGED=false,RESERVE_R=0,RESERVE_B=0;
 const SPREAD_GUTTER=$gutter;
 $layout
 const inner=mk(null,'2'), outer=mk(inner,'2'), single=mk(null,'1');

@@ -69,9 +69,7 @@ void main() {
   Future<SrsDbStore> phone(String deviceId, List<int> clock) async {
     final Directory dir = Directory(p.join(tmp.path, 'phone_$deviceId'))
       ..createSync();
-    final SrsStorage storage = await SrsStorage.open(
-      path: SrsStorage.pathIn(dir.path),
-    );
+    final SrsStorage storage = await SrsStorage.open(directory: dir.path);
     addTearDown(storage.close);
     return SrsDbStore.open(
       core: storage.core,

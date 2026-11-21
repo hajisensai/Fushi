@@ -10,7 +10,8 @@
 /// 轻小说系列，原图分辨率高、带每卷封面；数据 CC BY-NC-SA 4.0，展示处必须署名），以及书目类四源
 /// （协议层在 `fushi_engine/media/metadata/books/`）：AniList 轻小说（免 key，带横幅图）、
 /// openBD（只按 ISBN）、NDL Search（国立国会図書館，按书名 / ISBN）、楽天ブックス（要用户
-/// 自己的 applicationId + accessKey，设备本地）。接口按候选中间表示
+/// 自己的 applicationId + accessKey，设备本地），以及给「以有声书导入的歌曲」用的 iTunes
+/// 歌曲源（专辑封面，免 key，见 `itunes_music.dart`）。接口按候选中间表示
 /// [BookScrapeCandidate] 设计，再接新源只需加一个映射器，传输/落地/UI 不变。
 library;
 
@@ -24,6 +25,7 @@ import 'package:fushi_engine/media/metadata/book_art/book_art_plan.dart'
     show pickMangaBakaVolumeImages;
 import 'package:fushi_engine/media/metadata/books/anilist_novels.dart';
 import 'package:fushi_engine/media/metadata/books/book_catalog.dart';
+import 'package:fushi_engine/media/metadata/books/itunes_music.dart';
 import 'package:fushi_engine/media/metadata/books/ndl_search.dart';
 import 'package:fushi_engine/media/metadata/books/openbd.dart';
 import 'package:fushi_engine/media/metadata/books/rakuten_books.dart';
@@ -44,7 +46,10 @@ enum BookScrapeSource {
   anilist('AniList'),
   openbd('openBD'),
   ndl('NDL'),
-  rakuten('楽天ブックス');
+  rakuten('楽天ブックス'),
+
+  /// 歌曲 / 专辑封面（iTunes Search API）。带 LRC 歌词的有声书（即导入的歌曲）默认选它。
+  itunes('iTunes');
 
   const BookScrapeSource(this.label);
 
@@ -57,7 +62,8 @@ enum BookScrapeSource {
   /// 要用户自己的凭据（没填就不可用）。
   bool get needsCredentials => this == BookScrapeSource.rakuten;
 
-  /// 按 wire 名（`bangumi` / `dlsite` / `anilist` / `openbd` / `ndl` / `rakuten`）解析。
+  /// 按 wire 名（`bangumi` / `dlsite` / `mangabaka` / `anilist` / `openbd` / `ndl` /
+  /// `rakuten` / `itunes`）解析。
   static BookScrapeSource? tryParse(String raw) {
     final String name = raw.trim().toLowerCase();
     for (final BookScrapeSource s in values) {
@@ -128,6 +134,8 @@ class BookScrapeCandidate {
       originalTitle: r.originalTitle,
       author: r.author,
       year: r.year,
+      date: r.date,
+      tags: r.tags,
       summary: r.summary,
       isAdult: r.isAdult,
       publisher: r.publisher,
@@ -141,7 +149,8 @@ class BookScrapeCandidate {
     );
   }
 
-  /// 源内条目 id：Bangumi subject id（字符串化）/ DLsite 作品编号。
+  /// 源内条目 id：Bangumi subject id（字符串化）/ DLsite 作品编号 / 书目源 id（AniList
+  /// media id、ISBN、iTunes trackId）。
   final String subjectId;
 
   /// 候选来自哪个源。
@@ -165,7 +174,9 @@ class BookScrapeCandidate {
   /// 简介摘要（搜索端点提供时）。
   final String? summary;
 
-  /// 源侧明确标成人向（DLsite 年龄分级 / MangaBaka erotica、pornographic / AniList isAdult）。
+  /// 源侧明确标成 NSFW（DLsite 年龄分级 / MangaBaka erotica、pornographic / AniList
+  /// isAdult / Bangumi nsfw）。界面上标「NSFW」；搜索结果是否显示它们跟随作品自己的
+  /// NSFW 标记（见 `BookMetadataScrapeFacade.searchDetailed`）。
   final bool isAdult;
 
   /// 出版 / 发售日期原文（`YYYY-MM-DD`，可只到年或年月）；源没给为 null，此时
@@ -186,7 +197,7 @@ class BookScrapeCandidate {
   /// 出版社（openBD / NDL / 楽天）。
   final String? publisher;
 
-  /// 丛书 / 系列名（文库レーベル、楽天 seriesName）。
+  /// 丛书 / 系列名（文库レーベル、楽天 seriesName；iTunes 歌曲是所在专辑名）。
   final String? series;
 
   /// 卷号原文。
@@ -220,6 +231,7 @@ class BookScrapeCandidate {
           'https://ndlsearch.ndl.go.jp/search?cs=bib&isbn=$subjectId',
         BookScrapeSource.rakuten =>
           'https://books.rakuten.co.jp/search?sitem=$subjectId',
+        BookScrapeSource.itunes => 'https://music.apple.com/jp/song/$subjectId',
       };
 }
 
@@ -378,13 +390,17 @@ class BookMetadataScraper {
     return work == null ? null : mapDlsiteWork(work);
   }
 
-  /// AniList 按名搜轻小说（format NOVEL）。
+  /// AniList 按名搜轻小说（format NOVEL）。[includeNsfw] 为 false 时服务端就排除
+  /// isAdult 条目，一页名额不被它们占掉。
   Future<List<BookScrapeCandidate>> searchAniList(
     String keyword, {
     int limit = 10,
+    bool includeNsfw = false,
   }) => _catalogList(
     BookScrapeSource.anilist,
-    () => AniListNovelClient(_catalog).search(keyword, limit: limit),
+    () => AniListNovelClient(
+      _catalog,
+    ).search(keyword, limit: limit, includeAdult: includeNsfw),
   );
 
   /// openBD 按 ISBN 查（输入里找不到 ISBN → 空表）。
@@ -407,6 +423,15 @@ class BookMetadataScraper {
     () => NdlSearchClient(_catalog).search(keyword, limit: limit),
   );
 
+  /// iTunes 按歌名 / 歌手搜歌曲（日区），候选封面是所在专辑的封面。
+  Future<List<BookScrapeCandidate>> searchItunes(
+    String keyword, {
+    int limit = 15,
+  }) => _catalogList(
+    BookScrapeSource.itunes,
+    () => ItunesMusicClient(_catalog).search(keyword, limit: limit),
+  );
+
   /// 楽天ブックス按书名 / ISBN 搜（凭据不齐抛 [BookScrapeException]）。
   Future<List<BookScrapeCandidate>> searchRakuten(
     String keyword, {
@@ -419,7 +444,8 @@ class BookMetadataScraper {
     );
   }
 
-  /// 书目四源按源内 id 直取（AniList media id / 其余 ISBN）。查无此书 / 无封面 → null。
+  /// 书目源按源内 id 直取（AniList media id / iTunes trackId 或 collectionId / 其余
+  /// ISBN）。查无此书 / 无封面 → null。
   Future<BookScrapeCandidate?> fetchCatalogById(
     BookScrapeSource source,
     String id,
@@ -433,6 +459,9 @@ class BookMetadataScraper {
         BookScrapeSource.openbd => await OpenBdClient(_catalog).fetchByIsbn(id),
         BookScrapeSource.ndl => await NdlSearchClient(_catalog).fetchByIsbn(id),
         BookScrapeSource.rakuten => await _rakutenClient().fetchByIsbn(id),
+        BookScrapeSource.itunes => await ItunesMusicClient(
+          _catalog,
+        ).fetchById(id),
         BookScrapeSource.bangumi ||
         BookScrapeSource.dlsite ||
         BookScrapeSource.mangabaka => throw ArgumentError.value(
@@ -728,6 +757,7 @@ BookScrapeCandidate? mapBookSubject(Map<String, Object?> subject) {
     rating: _bangumiScore(subject['rating']),
     ratingCount: _bangumiRatingTotal(subject['rating']),
     tags: _bangumiTagNames(subject['tags']),
+    isAdult: subject['nsfw'] == true,
   );
 }
 

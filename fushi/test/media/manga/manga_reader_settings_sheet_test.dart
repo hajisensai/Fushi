@@ -260,7 +260,11 @@ void main() {
         MangaReaderSettingsSheet(
           globalDefaults: const MangaReaderPreferences(),
           // 纵向分页：只对它生效的「显示页间距」也要出现（见下一条测试）。
-          overrides: const <String, Object?>{'mode': 'paged_vertical'},
+          // 台词文字条开着：只在它开着时才有意义的「文字条字号」也要出现。
+          overrides: const <String, Object?>{
+            'mode': 'paged_vertical',
+            'bubbleTextStrip': true,
+          },
           onChanged: (Map<String, Object?> next) async {},
         ),
         width: null,
@@ -333,6 +337,56 @@ void main() {
         reason: 'mode $mode',
       );
     }
+  });
+
+  testWidgets('gamma switch is disabled until quality scaling is on', (
+    WidgetTester tester,
+  ) async {
+    // Gamma 校正只在画质缩放开着时参与转码（MangaFitQuality.fromPreferences）：
+    // 主开关关着时子开关还能拨，拨了也没有任何效果。
+    tester.view.physicalSize = const Size(400, 6000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final List<MangaReaderPreferenceDescriptor> descriptors =
+        mangaReaderPreferenceDescriptors(const <String>{});
+    String titleOf(String key) => descriptors
+        .firstWhere((MangaReaderPreferenceDescriptor d) => d.key == key)
+        .title;
+    AdaptiveSettingsSwitchRow rowOf(String key) =>
+        tester.widget<AdaptiveSettingsSwitchRow>(
+          find.ancestor(
+            of: find.text(titleOf(key)),
+            matching: find.byType(AdaptiveSettingsSwitchRow),
+          ),
+        );
+    // 画质缩放默认开：本作品先关掉它。
+    Map<String, Object?> saved = <String, Object?>{'enhancedScaling': false};
+    await tester.pumpWidget(
+      host(
+        MangaReaderSettingsSheet(
+          globalDefaults: const MangaReaderPreferences(),
+          overrides: saved,
+          onChanged: (Map<String, Object?> next) async => saved = next,
+        ),
+        width: null,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(tabLabel(2));
+    await tester.pumpAndSettle();
+    expect(rowOf('enhancedScaling').onChanged, isNotNull);
+    expect(rowOf('gammaCorrectScaling').onChanged, isNull);
+    await tester.tap(find.text(titleOf('enhancedScaling')));
+    await tester.pumpAndSettle();
+    expect(saved['enhancedScaling'], true);
+    expect(rowOf('gammaCorrectScaling').onChanged, isNotNull);
+    await tester.tap(find.text(titleOf('gammaCorrectScaling')));
+    await tester.pumpAndSettle();
+    // 拨一下就是把默认值取反（文字感知 Gamma 校正默认开）。
+    expect(
+      saved['gammaCorrectScaling'],
+      !const MangaReaderPreferences().gammaCorrectScaling,
+    );
   });
 
   testWidgets('list leaves room for the floating scope bar', (

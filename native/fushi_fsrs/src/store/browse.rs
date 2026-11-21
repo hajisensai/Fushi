@@ -24,8 +24,10 @@
 
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
+#[cfg(test)]
 use std::sync::MutexGuard;
 
+#[cfg(test)]
 use rusqlite::{Connection, params_from_iter, types::Value as Sql};
 use serde_json::{Value, json};
 
@@ -34,6 +36,7 @@ use crate::registers::{self, StoredEdit};
 use crate::search::{self, Corpus, DUE_NONE, Needs};
 use crate::store::SrsCore;
 use crate::store::queue::{Dirty, LEARN_AHEAD_MS};
+#[cfg(test)]
 use crate::store::sync2::sql;
 
 const DAY_MS: i64 = 86_400_000;
@@ -184,6 +187,7 @@ impl Card {
     }
 }
 
+#[cfg(test)]
 const CARD_COLUMNS: &str = "srs_idt(id), srs_idt(note_id), srs_idt(template_id), cloze_ord, srs_idt(deck_id), suspended, buried_until_day, flag, queue, \
      due_day, due_at, scheduled_days, reps, lapses, stability, difficulty, last_reviewed_at, anki_id";
 
@@ -262,6 +266,7 @@ impl Note {
     }
 }
 
+#[cfg(test)]
 const NOTE_COLUMNS: &str = "srs_idt(id), srs_idt(note_type_id), created_at, sort_field, tags_json, pending_decision, anki_id, dupe_norm";
 
 pub(crate) fn note_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<Note> {
@@ -569,6 +574,10 @@ struct Type {
     slot_alias: Vec<Option<String>>,
     /// 模板 id → (名字, 序号)。
     tpls: HashMap<String, (String, i64)>,
+    /// 生效的排序字段 id（Dart `SrsNoteTypeView.effectiveSortFieldId`）：自动挑副字段时跳过它；没给 = 第一个字段。
+    sort: Option<String>,
+    /// 显式选的浏览副字段 id（Dart `SrsNoteTypeView.browseFieldIds`，已按字段顺序、去掉排序字段）；None = 自动。
+    preview: Option<Vec<String>>,
 }
 
 impl Type {
@@ -636,6 +645,17 @@ impl Type {
                 name: s("name")?,
                 cloze: v.get("cloze").and_then(Value::as_bool).unwrap_or(false),
                 deleted: v.get("deleted").and_then(Value::as_bool).unwrap_or(false),
+                sort: v
+                    .get("sort")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+                    .or_else(|| fields.first().map(|f| f.0.clone())),
+                preview: v.get("preview").and_then(Value::as_array).map(|xs| {
+                    xs.iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect()
+                }),
                 fields,
                 slot_names,
                 slot_ids,
@@ -643,6 +663,17 @@ impl Type {
                 tpls,
             },
         ))
+    }
+
+    /// 浏览行要露出的副字段 (id, 名字)：显式选了就是选的那几个（按字段顺序），否则排序字段之外按字段顺序的全部字段
+    /// （调用方取前两个非空的）。
+    fn preview_fields(&self) -> impl Iterator<Item = &(String, String)> {
+        self.fields
+            .iter()
+            .filter(move |(id, _)| match &self.preview {
+                Some(picked) => picked.iter().any(|p| p == id),
+                None => Some(id) != self.sort.as_ref(),
+            })
     }
 
     /// Dart `SrsCardSearchSubject.cardOrdinal`。
@@ -1431,6 +1462,7 @@ pub(crate) struct Session {
 
 /// 按笔记读修改记录（[notes] = None：本 profile 全部笔记；[keys] 非空 = 只读这几个原样的字段键），每条笔记的记录
 /// 交给 [sink] 一次（按笔记 id 排；没有记录的笔记不调用）。
+#[cfg(test)]
 fn read_edits(
     c: &Connection,
     profile: &str,
@@ -1552,13 +1584,16 @@ pub(crate) trait Source {
 }
 
 /// 协议 3 的读法：profile 的缓存表（`srs_notes_cache` / `srs_cards_cache` / `srs_stat_reviews`）与修改记录。
+#[cfg(test)]
 pub(crate) struct P3<'a> {
     pub(crate) c: &'a Connection,
     pub(crate) profile: &'a str,
 }
 
+#[cfg(test)]
 impl P3<'_> {
     /// `id IN (srs_id(?2), …)`：[chunk] 一块的占位符。
+    #[cfg(test)]
     fn in_list(chunk: usize) -> String {
         (2..chunk + 2)
             .map(|i| format!("srs_id(?{i})"))
@@ -1567,6 +1602,7 @@ impl P3<'_> {
     }
 }
 
+#[cfg(test)]
 impl Source for P3<'_> {
     fn notes(
         &self,
@@ -2515,10 +2551,10 @@ impl Session {
             let detail = self.detail.get(&n.id);
             let digest = |id: &str| detail.and_then(|d| d.fields.get(id));
             let fields: &[(String, String)] = ty.map_or(&[], |t| t.fields.as_slice());
-            // 摘要与它来自的字段名（表格原地改这两列时按名字写回）。
-            let (preview, preview_fields): (Vec<&str>, Vec<&str>) = fields
-                .iter()
-                .skip(1)
+            // 摘要与它来自的字段名（表格原地改这两列时按名字写回）：笔记类型选的副字段，没选时排序字段之外的字段。
+            let (preview, preview_fields): (Vec<&str>, Vec<&str>) = ty
+                .into_iter()
+                .flat_map(Type::preview_fields)
                 .filter_map(|(id, name)| digest(id).map(|f| (f.preview.as_str(), name.as_str())))
                 .filter(|(t, _)| !t.is_empty())
                 .take(2)
@@ -3116,6 +3152,7 @@ fn search_error(e: search::SearchError) -> Value {
 
 impl Sessions {
     /// 丢掉全部会话（持有者登记留着），下次查询整份重建。
+    #[cfg(test)]
     pub(crate) fn drop_live(&mut self) {
         self.live.clear();
     }
@@ -3255,6 +3292,7 @@ pub(crate) fn dupes(src: &dyn Source, req: &Value) -> Result<Value, String> {
 impl SrsCore {
     /// 浏览会话表的锁。建 / 增量更新到一半 panic（锁被毒化）时会话停在半截：丢掉全部会话（持有者登记留着），下次查询
     /// 整份重建——同建 / 更新出错时丢会话（BUG-4297）。
+    #[cfg(test)]
     fn browse_sessions(&self) -> MutexGuard<'_, Sessions> {
         self.browse.lock().unwrap_or_else(|poisoned| {
             let mut b = poisoned.into_inner();
@@ -3266,6 +3304,7 @@ impl SrsCore {
 
     /// 浏览命令（ffi.rs 的 v2 分发器转来）：`browse_query` / `browse_rows` / `browse_ids` / `browse_targets` /
     /// `browse_close`，以及 AnkiConnect 兼容层的 `anki_find` / `anki_dupes` / `anki_tags`（同一个会话）。读快照（写连接上事务里则在 SAVEPOINT 里，看得见未提交的行）。
+    #[cfg(test)]
     pub(crate) fn browse(
         &self,
         op: &str,
@@ -3980,6 +4019,34 @@ mod tests {
             "new card: no difficulty / retention"
         );
         assert_eq!(rows.s[rows.by_note(N3)][11], json!("manga:m1"));
+
+        // 笔记类型的排序字段换成第二个字段：自动副字段改取第一个字段；显式选的副字段只露出选的那几个。
+        {
+            let typed = |a: Value| {
+                json!({"sort": {"col": "created", "asc": true}, "types": [
+                    a,
+                    {"id": "B", "name": "Word", "fields": [["x", "Word"]], "tpls": [["t2", "C", 0]]},
+                    {"id": "C", "name": "Reverse", "fields": [["c1", "Front"], ["c2", "Back"]], "tpls": [["t3", "C", 0]]},
+                ]})
+            };
+            let (_, rows) = query_rows(
+                &d,
+                &deck,
+                typed(json!({"id": "A", "name": "Basic", "sort": "fb",
+                "fields": [["fa", "Front"], ["fb", "Back"]], "tpls": [["t1", "C", 0]]})),
+            );
+            let r = &rows.s[rows.by_note(N1)];
+            assert_eq!((&r[8], &r[14]), (&json!(["cat"]), &json!(["Front"])));
+            let (_, rows) = query_rows(
+                &d,
+                &deck,
+                typed(json!({"id": "A", "name": "Basic", "preview": [],
+                "fields": [["fa", "Front"], ["fb", "Back"]], "tpls": [["t1", "C", 0]]})),
+            );
+            let r = &rows.s[rows.by_note(N1)];
+            assert_eq!((&r[8], &r[14]), (&json!([]), &json!([])));
+            assert_eq!(r[9], json!("cat.png"), "media still comes from every field");
+        }
         let n4 = rows.by_note(N4);
         assert_eq!(
             (&rows.s[n4][11], &rows.s[n4][12], &rows.s[n4][13]),

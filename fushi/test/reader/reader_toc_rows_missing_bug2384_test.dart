@@ -5,7 +5,6 @@ import 'package:archive/archive.dart';
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
@@ -29,11 +28,6 @@ import '../helpers/test_platform_services.dart';
 ///  2. 解析期：`<a>` 里只有 `<img>` 的图片目录项 innerText 为空，旧代码把这条
 ///     `<li>` **连同已解析好的整棵子树**一起丢掉，一个无名分组节点就能让它名下
 ///     所有章节从目录里消失。
-class _FakeInAppWebViewController implements InAppWebViewController {
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
 AppModel _testAppModel(FushiDatabase db) {
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
     ..loadFromPrefsSnapshot(<String, String>{
@@ -90,7 +84,6 @@ void main() {
                     readerProgress: const (0, 2),
                     onJumpSection: (_, __) async {},
                     onExitReader: () {},
-                    webViewController: _FakeInAppWebViewController(),
                     appModel: model,
                     ref: ref,
                     isFushiReader: true,

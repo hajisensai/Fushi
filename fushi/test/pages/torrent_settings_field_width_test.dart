@@ -9,6 +9,7 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -109,19 +110,14 @@ void main() {
     // 行文字 / 控件的左基线：分组行的 16px 内边距（与普通设置行同一条）。
     final double rowBaseline = contentLeft + _kRowInset;
 
-    // FushiSegmentedStrip 是泛型控件，实例的 runtimeType 是
-    // FushiSegmentedStrip<DownloadNetworkProxyMode> / <String> / <int>；
-    // find.byType 走 runtimeType 精确相等，对泛型永远 0 命中。按 Dart 的协变
-    // 子类型关系用 `is FushiSegmentedStrip<Object>` 判定才能覆盖全部实参。
-    final Finder strips = find.byWidgetPredicate(
-      (Widget widget) => widget is FushiSegmentedStrip<Object>,
-      description: 'FushiSegmentedStrip<*>',
-    );
-    expect(strips, findsWidgets);
+    // 下载引擎是标准分段行（AdaptiveSettingsSegmentedRow）：标题与普通设置行
+    // 同一条 16px 基线，分段控件在同一张卡片里（行内靠右或下方撑满）。
+    final Finder backendTitle = find.text(t.download_backend_title);
+    expect(backendTitle, findsOneWidget);
     expect(
-      tester.getTopLeft(strips.first).dx,
+      tester.getTopLeft(backendTitle).dx,
       moreOrLessEquals(rowBaseline, epsilon: 1.0),
-      reason: 'BUG-1278: 分段控件与普通设置行同一条 16px 基线',
+      reason: 'BUG-1278: 分段行与普通设置行同一条 16px 基线',
     );
 
     final Finder switches = find.byType(AdaptiveSettingsSwitchRow);

@@ -21,6 +21,8 @@ on:
       - '.github/**'
       - 'tool/**'
       - '.claude/agents/**'
+      # 代理定义内嵌根 CLAUDE.md（tool/claude_hooks/sync_agent_claude_md.mjs），改它要跑同步守卫。
+      - 'CLAUDE.md'
   # 本仓日常大量直推 develop（不走 PR），而发布 workflow 的 push 已不再因 workflow / tool
   # 改动触发——直推也要有门。
   push:
@@ -29,6 +31,8 @@ on:
       - '.github/**'
       - 'tool/**'
       - '.claude/agents/**'
+      # 代理定义内嵌根 CLAUDE.md（tool/claude_hooks/sync_agent_claude_md.mjs），改它要跑同步守卫。
+      - 'CLAUDE.md'
 
 permissions:
   contents: read
@@ -42,7 +46,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
       # 必须紧跟 checkout（vendored_binaries_manifest_guard_test 钉住）。
       - name: Fetch vendored binaries
@@ -65,7 +69,7 @@ jobs:
       # app 代码对 fushi_web_core 是硬依赖（设置 schema 的「广告拦截」分区在顶层取
       # AdblockCore.catalog()），与 main.yml unit-tests 一样先编好库、经 FUSHI_WEB_CORE_LIB 指过去。
       - uses: ./.github/actions/fushi-web-core-linux
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: '3.47.6'
           cache: true

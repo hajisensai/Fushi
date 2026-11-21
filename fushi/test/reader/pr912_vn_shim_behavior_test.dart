@@ -1,10 +1,11 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 
 import '../helpers/source_guard.dart';
+
+import '../helpers/node_runtime.dart';
 
 /// PR#912 / BUG-1742·1743 收口：VN host-compat shim 的**行为级**覆盖。
 ///
@@ -23,13 +24,9 @@ import '../helpers/source_guard.dart';
 /// ③ `highlightSelectorCue` 会 await `ensureReady()`——章节加载期到达的 cue 不再丢；
 /// ④ `restoreToCharOffset` 走共享 helper，且**保留**了 restore 独有的进度兜底。
 void main() {
-  test('VN shim 行为级：搜索坐标换算 / 搜索高亮 / cue await ready / restore 兜底', () {
+  test('VN shim 行为级：搜索坐标换算 / 搜索高亮 / cue await ready / restore 兜底', () async {
     final String shell = ReaderVisualNovelScripts.vnShellScript();
-    final Directory temp = Directory.systemTemp.createTempSync(
-      'fushi-pr912-vn-js-',
-    );
-    final File payload = File('${temp.path}/payload.json')
-      ..writeAsStringSync(jsonEncode(<String, String>{'shell': shell}));
+    final Map<String, String> payload = <String, String>{'shell': shell};
     // 跑手与本文件同名同目录（范式同 test/anki/exported_glossary_anchor_deeplink_test）。
     final File runner = File('test/reader/pr912_vn_shim_behavior_test.js');
     expect(
@@ -37,17 +34,11 @@ void main() {
       isTrue,
       reason: 'behavior harness ${runner.path} must exist',
     );
-    late final ProcessResult result;
-    try {
-      result = Process.runSync(
-        'node',
-        <String>[runner.path, payload.path],
-        stdoutEncoding: utf8,
-        stderrEncoding: utf8,
-      );
-    } finally {
-      temp.deleteSync(recursive: true);
-    }
+    final NodeHarnessResult result = await runNodeHarness(
+      'node',
+      runner.path,
+      payload,
+    );
     expect(
       result.exitCode,
       0,

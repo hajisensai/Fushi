@@ -106,12 +106,20 @@ Future<bool> _pngLooksNonBlank(Uint8List png) async {
 /// 可见性 / 遮挡影响。覆盖设置 / 弹窗 / 主页 / 词典结果 / 对话框等所有 Flutter 渲染面。
 ///
 /// [pixelRatio] 输出像素 / 逻辑像素之比；默认 1.0（取证只需可读，不必放大）。
+///
+/// [settle] 为 false 时只推一帧再抓：屏上有不停的动画（进度条、转圈）时 `pumpAndSettle` 永远等不到静止，
+/// 在集成测试 binding 下表现为整条测试挂住（R0 迁移进度页实测）。
 Future<ObserveShot> captureFlutterFrame(
   WidgetTester tester,
   String name, {
   double pixelRatio = 1.0,
+  bool settle = true,
 }) async {
-  await tester.pumpAndSettle();
+  if (settle) {
+    await tester.pumpAndSettle();
+  } else {
+    await tester.pump();
+  }
   try {
     final RenderView view = tester.binding.renderViews.first;
     // [RenderView.debugLayer] 只在 debug 构建有值；profile 探针读 [RenderObject.layer]
@@ -167,6 +175,15 @@ bool readerWebViewReady() => ReaderFushiPage.debugCaptureWebView != null;
 Future<ObserveShot> captureReaderWebView(String name) async {
   final Future<Uint8List?> Function()? hook =
       ReaderFushiPage.debugCaptureWebView;
+  return captureWebViewWith(name, hook);
+}
+
+/// 用调用方给的抓图钩子抓一张 WebView 截图（漫画阅读器等不走小说阅读器静态钩子的
+/// 页面，传自己的 `debugCaptureWebView`）。钩子为 null / 抛错时 `saved == false`。
+Future<ObserveShot> captureWebViewWith(
+  String name,
+  Future<Uint8List?> Function()? hook,
+) async {
   if (hook == null) {
     return ObserveShot(
       name: name,

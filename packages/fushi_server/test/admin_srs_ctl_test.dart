@@ -535,6 +535,8 @@ void main() {
 
   group('AI 操作目录', () {
     const List<String> kDataOps = <String>[
+      'server.srs.retained.status',
+      'server.srs.retained.delete',
       'server.srs.decks.list',
       'server.srs.notes.search',
       'server.srs.note.get',
@@ -579,7 +581,10 @@ void main() {
           case OpRisk.write:
             expect(op.undo, isNotNull, reason: op.id);
           case OpRisk.irreversible:
-            expect(op.id, 'server.srs.conflict.held.keep');
+            expect(<String>{
+              'server.srs.conflict.held.keep',
+              'server.srs.retained.delete',
+            }, contains(op.id));
             expect(op.spec.needsConfirmation, isTrue);
             expect(op.spec.gateParams.map((OpParam p) => p.name), <String>[
               kServerOpConfirmGate,

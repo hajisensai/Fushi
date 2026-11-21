@@ -5,6 +5,7 @@ import 'package:fushi/src/ops/op_describe_kit.dart';
 import 'package:fushi/src/ops/op_descriptions_data.dart';
 import 'package:fushi/src/ops/op_descriptions_feedback.dart';
 import 'package:fushi/src/ops/op_descriptions_web.dart';
+import 'package:fushi/src/ops/op_descriptions_web_search.dart';
 import 'package:fushi/src/ops/op_descriptions_url_import.dart';
 import 'package:fushi/src/ops/op_descriptions_disc.dart';
 import 'package:fushi/src/ops/op_descriptions_media_links.dart';
@@ -46,6 +47,7 @@ List<OpDescription> buildAppOpDescriptions(OpDescribeKit kit) =>
       ...describeDiscOps(kit),
       ...describeUrlImportOps(kit),
       ...describeWebOps(kit),
+      ...describeWebSearchOps(kit),
       ...describeFeedbackOps(kit),
     ];
 

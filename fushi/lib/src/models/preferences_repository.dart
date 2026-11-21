@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io' show Platform;
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
@@ -35,10 +34,17 @@ import 'package:fushi_engine/ai/web_knowledge.dart'
         parseWebKnowledgeEnabledIds;
 import 'package:fushi/src/models/preference_keys.dart'
     show
+        kAiAgentWebSearchAllow,
+        kAiAgentWebSearchOff,
+        kAiAgentWebSearchPref,
         kAiWebSearchPageFetchAllow,
         kAiWebSearchPageFetchDeny,
         kAiWebSearchPageFetchPref,
-        kLibraryManualOrderPrefKeyPrefix;
+        kLibraryManualOrderPrefKeyPrefix,
+        kVideoOrientationPrefKeyPrefix,
+        kWhatsNewCardDismissedVersionPrefKey,
+        kWhatsNewSeenSeqPrefKey,
+        kWhatsNewSeenVersionPrefKey;
 import 'package:fushi/src/models/library_grid_columns.dart';
 import 'package:fushi/src/stats/study_goal_record.dart';
 import 'package:fushi_engine/stats/study_goal_language.dart'
@@ -57,6 +63,7 @@ import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_folder_memory.dart';
+import 'package:fushi/src/media/video/video_resume.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart'
     show migrateLegacyJumpPillAutoHide;
 import 'package:fushi/src/models/module_id.dart';
@@ -115,6 +122,7 @@ import 'package:fushi/src/media/video/video_remote_control_layout.dart';
 import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
+import 'package:fushi/src/media/video/video_playlist_order.dart';
 import 'package:fushi/src/media/video/video_lua_capability.dart';
 import 'package:fushi/src/media/video/video_clip_export_preferences.dart';
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
@@ -132,6 +140,8 @@ import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
 import 'package:fushi/src/mining/galgame_library.dart';
 // 迁移判据要用「这个存量代理地址归一得出来吗」，与 applyAppProxy 同一份实现，
 // 不在这里重写一遍（重写就会漂移，而漂移的后果是存量用户升级即断网）。
+import 'package:fushi/src/utils/net/github_mirrors.dart'
+    show gitHubMirrorsEnabledReader;
 import 'package:fushi_engine/utils/net/app_proxy.dart'
     show
         appUserProxyModeReader,
@@ -160,6 +170,7 @@ import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi/src/ocr/screen_ocr_engine.dart';
 import 'package:fushi/src/ocr/screen_ocr_language.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 
 /// 视频画面缩放/比例模式（作用于 Flutter 层 [Video] widget 的 [BoxFit]，TODO-152 子B）。
 ///
@@ -418,6 +429,9 @@ class PreferencesRepository extends ChangeNotifier
     appUserProxyModeReader = () => networkProxyMode;
     appUserProxyUsernameReader = () => networkProxyUsername;
     appUserProxyPasswordReader = () => networkProxyPassword;
+    // GitHub 加速镜像开关同属进程级网络出口策略，同一时机绑定：词典下载、Mihon 扩展
+    // 仓库、字体、着色器、更新检查都在拿不到 AppModel 的地方生成候选。
+    gitHubMirrorsEnabledReader = () => gitHubMirrorsEnabled;
     // 同一时机、同一理由：引擎里真正跑 ffmpeg 的动图抽取函数读它决定 `-loop`。
     miningAnimatedPlayOnceReader = () => miningAnimatedPlayOnce;
   }
@@ -1549,6 +1563,17 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 应用外快捷键总开关（桌面）：OS 级热键、鼠标侧键、手柄这三条在别的程序
+  /// 前台时也生效的触发源是否装上。默认开；与查词页模块（`ModuleId.lookup`）
+  /// 无关——维护者拍板 pr3605：热键单独一个开关。
+  bool get appExternalHotkeysEnabled =>
+      getPref('app_external_hotkeys_enabled', defaultValue: true) as bool;
+
+  Future<void> setAppExternalHotkeysEnabled(bool value) async {
+    await setPref('app_external_hotkeys_enabled', value);
+    notifyListeners();
+  }
+
   final int defaultSearchDebounceDelay = 100;
 
   int get searchDebounceDelay =>
@@ -2344,9 +2369,10 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 视频字幕列表是否列出**特效字幕**（歌词特效 / 屏幕字，拍板台 H7r4mf_z2n），默认
-  /// false（拍板选项 B 原文「默认隐藏特效事件」）。与 [VideoSubtitleJumpPanel] 的
-  /// 「显示特效字幕」切换钮一一对应，跨开关 / 跨重启记住；只影响列表，不影响播放画面上的字幕。
+  /// 视频字幕列表里**特效字幕**（歌词特效 / 屏幕字，拍板台 H7r4mf_z2n）是否按字幕自带
+  /// 样式着色（left3545：显示样式，不筛选——两态列出的行相同），默认 false。与
+  /// [VideoSubtitleJumpPanel] 的「显示特效字幕」切换钮一一对应，跨开关 / 跨重启记住；
+  /// 只影响列表，不影响播放画面上的字幕。键名沿用（存量偏好键冻结）。
   bool get videoSubtitleListShowEffects =>
       getPref('video_subtitle_list_show_effects', defaultValue: false) as bool;
 
@@ -2397,6 +2423,33 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setVideoAutoPlayNext(bool value) async {
     await setPref('video_auto_play_next', value);
+    notifyListeners();
+  }
+
+  /// 视频断点续播（video_resume.dart）。默认每个视频都续播（加开关前的行为）；
+  /// 关掉只影响打开时的起点，进度照常记。
+  VideoResumeMode get videoResumeMode => VideoResumeMode.fromWire(
+    getPref('video_resume_mode', defaultValue: VideoResumeMode.all.wire)
+        as String?,
+  );
+
+  Future<void> setVideoResumeMode(VideoResumeMode value) async {
+    await setPref('video_resume_mode', value.wire);
+    notifyListeners();
+  }
+
+  /// 合集自动连播的选集顺序（拍板台 QHbRRctQdW）：顺序 / 随机。旧库没有该 key
+  /// 时按顺序（历史行为），不需要迁移。
+  VideoPlaylistOrder get videoPlaylistOrder => VideoPlaylistOrder.fromStorage(
+    getPref(
+          'video_playlist_order',
+          defaultValue: VideoPlaylistOrder.fallback.storageValue,
+        )
+        as String,
+  );
+
+  Future<void> setVideoPlaylistOrder(VideoPlaylistOrder order) async {
+    await setPref('video_playlist_order', order.storageValue);
     notifyListeners();
   }
 
@@ -3039,6 +3092,16 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('p2p_download_notice_dismissed', true);
   }
 
+  /// 启动期「词典格式可以升级」提示是否点过「以后再说」（默认 false = 有待升级的
+  /// 词典就在启动时问一次；点过之后只在词典页留升级入口，拍板台 pr3554）。
+  bool get dictFormatUpgradePromptDismissed =>
+      getPref('dict_format_upgrade_prompt_dismissed', defaultValue: false)
+          as bool;
+
+  Future<void> setDictFormatUpgradePromptDismissed() async {
+    await setPref('dict_format_upgrade_prompt_dismissed', true);
+  }
+
   /// 从第三方游戏资源站下载前的风险说明是否已勾「不再提示」（默认 false）。
   bool get gameResourceNoticeDismissed =>
       getPref('game_resource_notice_dismissed', defaultValue: false) as bool;
@@ -3054,16 +3117,6 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setBrowseMovedNoticeHandled() async {
     await setPref('browse_moved_notice_handled', true);
-  }
-
-  /// 库页默认布局改成封面网格（2026-11-15）后的一次性「拼贴仍可选」提示是否已处理：
-  /// 弹过，或首次启动新版时判定本安装不需要弹（全新安装 / 显式选过布局）。默认 false。
-  bool get libraryLayoutDefaultNoticeHandled =>
-      getPref('library_layout_default_notice_handled', defaultValue: false)
-          as bool;
-
-  Future<void> setLibraryLayoutDefaultNoticeHandled() async {
-    await setPref('library_layout_default_notice_handled', true);
   }
 
   /// 弹幕样式（字号/不透明度/速度/显示区域，JSON；见 [VideoDanmakuStyle]，TODO-1376）。
@@ -3111,6 +3164,52 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('video_lock_window_aspect_ratio', value);
     notifyListeners();
   }
+
+  /// 手机 / 平板进入视频时的方向（拍板台 P9AS-fvjJh）：`VideoEntryOrientation`
+  /// 的落库值，默认 `landscape`（老用户习惯不变）。
+  String get videoEntryOrientation =>
+      getPref('video_entry_orientation', defaultValue: 'landscape') as String;
+
+  Future<void> setVideoEntryOrientation(String value) async {
+    await setPref('video_entry_orientation', value);
+    notifyListeners();
+  }
+
+  /// 手机竖屏看横版视频时用「视频在上、当前句 + 字幕列表在下」的学习版式（默认开）。
+  bool get videoPortraitSubtitleList =>
+      getPref('video_portrait_subtitle_list', defaultValue: true) as bool;
+
+  Future<void> setVideoPortraitSubtitleList(bool value) async {
+    await setPref('video_portrait_subtitle_list', value);
+    notifyListeners();
+  }
+
+  /// 拍板台 42UUu_kcwD：手机 / 平板切出 app 或锁屏后视频声音继续播（默认关）。
+  /// 关着时进后台暂停、回前台续播（BUG-2544）。
+  bool get videoBackgroundPlay =>
+      getPref('video_background_play', defaultValue: false) as bool;
+
+  Future<void> setVideoBackgroundPlay(bool value) async {
+    await setPref('video_background_play', value);
+    notifyListeners();
+  }
+
+  /// 记住每部作品上次手动转到的方向（默认关）。
+  bool get videoRememberOrientation =>
+      getPref('video_remember_orientation', defaultValue: false) as bool;
+
+  Future<void> setVideoRememberOrientation(bool value) async {
+    await setPref('video_remember_orientation', value);
+    notifyListeners();
+  }
+
+  /// 某部作品记住的方向（`landscape` / `portrait`）；没记过返回空串。
+  String videoOrientationForWork(String bookUid) =>
+      getPref('$kVideoOrientationPrefKeyPrefix$bookUid', defaultValue: '')
+          as String;
+
+  Future<void> setVideoOrientationForWork(String bookUid, String value) =>
+      setPref('$kVideoOrientationPrefKeyPrefix$bookUid', value);
 
   /// YouTube 显式画质目标高度（如 720/1080/2160）；0 = 自动（默认策略：编码优先、
   /// ≤1080p，见 pickPlaybackVideoStream）。消费方把 0 换算成 null 传解析器。
@@ -3578,6 +3677,24 @@ class PreferencesRepository extends ChangeNotifier
       kAiWebSearchPageFetchPref,
       allowed ? kAiWebSearchPageFetchAllow : kAiWebSearchPageFetchDeny,
     );
+    notifyListeners();
+  }
+
+  /// 「AI 助手自主联网搜索」的首次确认状态：`''` 还没同意 / [kAiAgentWebSearchAllow] /
+  /// [kAiAgentWebSearchOff]（见 [kAiAgentWebSearchPref]）。
+  String get aiAgentWebSearchConsent =>
+      getPref(kAiAgentWebSearchPref, defaultValue: '') as String;
+
+  /// 用户在助手的确认卡上点了同意（由 `web.search` / `web.read` 路由经表态参数写）。
+  Future<void> grantAiAgentWebSearch() async {
+    await setPref(kAiAgentWebSearchPref, kAiAgentWebSearchAllow);
+    notifyListeners();
+  }
+
+  /// 设置页开关：关 = [kAiAgentWebSearchOff]（两条操作不可用）；开 = 回到 `''`
+  /// （还没同意，助手下次用时重新确认），不直接写成已同意。
+  Future<void> setAiAgentWebSearchEnabled(bool enabled) async {
+    await setPref(kAiAgentWebSearchPref, enabled ? '' : kAiAgentWebSearchOff);
     notifyListeners();
   }
 
@@ -4297,6 +4414,58 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 移除了、复习内核还没忘掉的同步位置（JSON 字符串数组，元素是位置身份 `SrsFolderLocation.locationId`）。设备本地。
+  ///
+  /// 移除文件夹位置时与 [srsFolderLocationsKey] 在**同一个事务**里写（[removeSrsFolderLocation]）：配置里去掉、
+  /// 同时记下「内核要忘掉它」；同步调度器起来后（以及每一轮开头）逐个 `location_forget`，忘掉一个划掉一个
+  /// （[markSrsLocationForgotten]）。复习模块没起（没有运行时）、卡片库没打开、内核一时忘不掉都不挡移除，
+  /// 也不会让内核里留下没人能清的状态：这份清单和位置配置一样是设备级的（所有 profile 共用），内核的
+  /// `location_forget` 也在库文件里**每一个** profile 的集合里各忘一次，所以随便哪个 profile 忘掉一次就可以划掉。
+  static const String srsForgetPendingKey = 'srs_sync2_forget_pending';
+
+  Set<String> get srsPendingLocationForgets {
+    final Object? raw = getPref(srsForgetPendingKey, defaultValue: '');
+    if (raw is! String || raw.isEmpty) return const <String>{};
+    try {
+      final Object? j = jsonDecode(raw);
+      if (j is! List) return const <String>{};
+      return <String>{
+        for (final Object? e in j)
+          if (e is String && e.isNotEmpty) e,
+      };
+    } on FormatException {
+      return const <String>{};
+    }
+  }
+
+  /// 从文件夹位置里去掉 [id]，同一个事务里把它的位置身份记进待忘清单（[srsForgetPendingKey]）。没有这个位置 =
+  /// 什么都不写。
+  Future<void> removeSrsFolderLocation(String id) async {
+    final List<SrsFolderLocation> folders = srsFolderLocations;
+    final SrsFolderLocation? gone = folders
+        .where((SrsFolderLocation l) => l.id == id)
+        .firstOrNull;
+    if (gone == null) return;
+    await setPrefs(<String, dynamic>{
+      srsFolderLocationsKey: jsonEncode(<Object?>[
+        for (final SrsFolderLocation l in folders)
+          if (l.id != id) l.toJson(),
+      ]),
+      srsForgetPendingKey: jsonEncode(
+        (<String>{...srsPendingLocationForgets, gone.locationId}.toList()
+          ..sort()),
+      ),
+    });
+    notifyListeners();
+  }
+
+  /// 内核已经忘掉 [locationId]：从待忘清单里划掉。
+  Future<void> markSrsLocationForgotten(String locationId) async {
+    final Set<String> pending = <String>{...srsPendingLocationForgets};
+    if (!pending.remove(locationId)) return;
+    await setPref(srsForgetPendingKey, jsonEncode(pending.toList()..sort()));
+  }
+
   /// 复习同步 v2 里这台设备关掉的同步通道位置（JSON 字符串数组，元素是位置身份 = `srs_directory_key.dart`）。
   /// 只管复习同步：通道本身（书 / 视频等常规同步）照常跑。设备本地：是这台设备「在不在那里同步」的选择。
   static const String srsDisabledLocationsKey = 'srs_sync2_disabled_locations';
@@ -4902,7 +5071,7 @@ class PreferencesRepository extends ChangeNotifier
       getPref(formatKey, defaultValue: null) as String?,
       fallback: legacyMode == VideoMiningImageMode.videoClip.wireName
           ? MiningClipFormat.mp4H264
-          : MiningClipFormat.defaultFor(isIOS: Platform.isIOS),
+          : MiningClipFormat.defaultFor(isIOS: hostPlatform.isIOS),
     );
   }
 
@@ -6519,6 +6688,17 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 是否允许 GitHub 下载（更新、词典、字体、着色器、Mihon 扩展仓库）在直连失败后
+  /// 走第三方加速镜像（ghproxy 等，`kGitHubMirrorPrefixes`）。默认开；关掉后只剩
+  /// GitHub 直连与 jsDelivr——给安全软件拦截代理域名、或不愿请求经第三方代理的用户。
+  bool get gitHubMirrorsEnabled =>
+      getPref('network_github_mirrors_enabled', defaultValue: true) as bool;
+
+  Future<void> setGitHubMirrorsEnabled(bool value) async {
+    await setPref('network_github_mirrors_enabled', value);
+    notifyListeners();
+  }
+
   String get networkProxyUsername =>
       getPref('network_proxy_username', defaultValue: '') as String;
 
@@ -6566,6 +6746,29 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('update_debug_channel', value);
     notifyListeners();
   }
+
+  /// 「本版新内容」基线：本机最近一次看过的版本串（空串 = 还没定基线）。
+  String get whatsNewSeenVersion =>
+      getPref(kWhatsNewSeenVersionPrefKey, defaultValue: '') as String;
+
+  /// 与 [whatsNewSeenVersion] 配对的 release sequence（0 = 未知）。
+  int get whatsNewSeenSeq =>
+      getPref(kWhatsNewSeenSeqPrefKey, defaultValue: 0) as int;
+
+  Future<void> setWhatsNewSeen({
+    required String version,
+    required int seq,
+  }) async {
+    await setPref(kWhatsNewSeenVersionPrefKey, version);
+    await setPref(kWhatsNewSeenSeqPrefKey, seq);
+  }
+
+  /// 首页「本版新内容」卡片在哪个版本上被关掉（空串 = 没关过）。
+  String get whatsNewCardDismissedVersion =>
+      getPref(kWhatsNewCardDismissedVersionPrefKey, defaultValue: '') as String;
+
+  Future<void> setWhatsNewCardDismissedVersion(String version) =>
+      setPref(kWhatsNewCardDismissedVersionPrefKey, version);
 
   /// 用户手填的「自定义更新代理」（`host:port`，空串=未设）。fake-ip/TUN 模式下系统
   /// 代理只写注册表、Dart HttpClient 读不到时的兜底入口（TODO-871/862）：非空时检查/下载

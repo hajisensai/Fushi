@@ -1,11 +1,11 @@
 import 'dart:async';
 
-import 'package:fake_async/fake_async.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/diagnostics/fushi_binding.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
 import 'package:fushi/src/utils/components/page_backdrop_layer.dart';
 import 'package:fushi/src/utils/scheduling/ambient_ticker.dart';
@@ -95,7 +95,11 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(AmbientTickers.scheduledFrameCallbackCount, 1);
+    expect(AmbientTickers.liveCount, 1);
+    expect(
+      binding.transientCallbackCount,
+      AmbientTickers.scheduledFrameCallbackCount,
+    );
     expect(idleAllowed(ambientAwareSchedulingStrategy), isTrue);
     expect(await idleRunsNow(tester), isTrue);
     await tester.pumpWidget(const SizedBox());
@@ -107,111 +111,75 @@ void main() {
     expect(binding.schedulingStrategy, same(ambientAwareSchedulingStrategy));
   });
 
-  // BUG-4893：「等空闲」本身不能空转。用假调度器数定时器——真 binding 下空转表现为
-  // pump 死循环，只能靠超时发现，数不出「一个都没有」。
-  group('waitForUiIdle', () {
-    test('忙时只挂一个帧后回调，事件循环里一个定时器都没有', () {
-      fakeAsync((FakeAsync async) {
-        final _FakeScheduler scheduler = _FakeScheduler()..transient = 1;
-        bool done = false;
-        unawaited(waitForUiIdle(scheduler: scheduler).then((_) => done = true));
-        for (int frame = 0; frame < 200; frame++) {
-          async.flushMicrotasks();
-          expect(async.pendingTimers, isEmpty, reason: '第 $frame 帧前');
-          expect(scheduler.postFrame, hasLength(1), reason: '第 $frame 帧前');
-          scheduler.drawFrame();
-        }
-        expect(done, isFalse);
-
-        // 动画停了：这一帧画完才发现空闲，再过一轮事件循环完成。
-        scheduler.transient = 0;
-        scheduler.drawFrame();
-        expect(done, isFalse);
-        expect(async.pendingTimers, hasLength(1));
-        async.flushTimers();
-        expect(done, isTrue);
-        expect(scheduler.postFrame, isEmpty);
-        expect(async.pendingTimers, isEmpty);
-      });
-    });
-
-    test('本来就空闲：下一轮事件循环完成，不同步完成、不等帧', () {
-      fakeAsync((FakeAsync async) {
-        final _FakeScheduler scheduler = _FakeScheduler();
-        bool done = false;
-        unawaited(waitForUiIdle(scheduler: scheduler).then((_) => done = true));
-        async.flushMicrotasks();
-        expect(done, isFalse);
-        expect(scheduler.postFrame, isEmpty);
-        async.flushTimers();
-        expect(done, isTrue);
-      });
-    });
-
-    test('完成前那一轮又起了动画：接着等帧，不完成', () {
-      fakeAsync((FakeAsync async) {
-        final _FakeScheduler scheduler = _FakeScheduler();
-        bool done = false;
-        unawaited(waitForUiIdle(scheduler: scheduler).then((_) => done = true));
-        scheduler.transient = 1;
-        async.flushTimers();
-        expect(done, isFalse);
-        expect(async.pendingTimers, isEmpty);
-        expect(scheduler.postFrame, hasLength(1));
-
-        scheduler.transient = 0;
-        scheduler.drawFrame();
-        async.flushTimers();
-        expect(done, isTrue);
-      });
-    });
-
-    testWidgets('真实动画在跑时一直等，撤掉后的那一帧之后完成', (WidgetTester tester) async {
-      await tester.pumpWidget(const _Spinner(ambient: false));
-      bool done = false;
-      unawaited(waitForUiIdle().then((_) => done = true));
-      for (int i = 0; i < 5; i++) {
-        await tester.pump(const Duration(milliseconds: 16));
-        expect(done, isFalse);
-      }
-      await tester.pumpWidget(const SizedBox());
-      await tester.pump(const Duration(milliseconds: 1));
-      expect(done, isTrue);
-    });
-
-    testWidgets('只有常驻装饰动画在跑：照常完成', (WidgetTester tester) async {
-      await tester.pumpWidget(const _Spinner(ambient: true));
-      expect(binding.transientCallbackCount, greaterThan(0));
-      bool done = false;
-      unawaited(waitForUiIdle().then((_) => done = true));
-      await tester.pump(const Duration(milliseconds: 1));
-      expect(done, isTrue);
-      await tester.pumpWidget(const SizedBox());
-    });
+  // BUG-4893：「等空闲」只是往调度器里排一个 idle 任务，忙时怎么等由 binding 的
+  // FramePacedTaskScheduler 管（frame_paced_task_scheduler_test.dart）。测试 binding 没混入
+  // 它，这里只测不忙的情形。
+  testWidgets('waitForUiIdle：只有常驻装饰动画在跑时照常完成', (WidgetTester tester) async {
+    await tester.pumpWidget(const _Spinner(ambient: true));
+    expect(binding.transientCallbackCount, greaterThan(0));
+    bool done = false;
+    unawaited(waitForUiIdle().then((_) => done = true));
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(done, isTrue);
+    await tester.pumpWidget(const SizedBox());
   });
-}
 
-/// 只实现 [waitForUiIdle] 用到的两个成员；`drawFrame` 模拟一帧收尾时跑帧后回调。
-class _FakeScheduler extends Fake implements SchedulerBinding {
-  int transient = 0;
-  final List<FrameCallback> postFrame = <FrameCallback>[];
-
-  @override
-  int get transientCallbackCount => transient;
-
-  @override
-  void addPostFrameCallback(
-    FrameCallback callback, {
-    String debugLabel = 'callback',
-  }) => postFrame.add(callback);
-
-  void drawFrame() {
-    final List<FrameCallback> callbacks = List<FrameCallback>.of(postFrame);
-    postFrame.clear();
-    for (final FrameCallback callback in callbacks) {
-      callback(Duration.zero);
+  // BUG-4961：常驻装饰动画不按屏幕刷新率逐帧要帧，两次 tick 之间至少隔
+  // FushiMotion.ambientFrameInterval；改前每一帧都续排帧回调（1 ms 一步就是 1000 帧 / 秒）。
+  testWidgets('装饰 ticker 节流：一秒内约 1000 / ambientFrameInterval 次 tick', (
+    WidgetTester tester,
+  ) async {
+    final GlobalKey<_AmbientSpinnerState> key =
+        GlobalKey<_AmbientSpinnerState>();
+    await tester.pumpWidget(_AmbientSpinner(key: key));
+    int ticks = 0;
+    key.currentState!.addTickListener(() => ticks++);
+    for (int ms = 0; ms < 1000; ms++) {
+      await tester.pump(const Duration(milliseconds: 1));
     }
-  }
+    final int cap = 1000 ~/ FushiMotion.ambientFrameInterval.inMilliseconds + 2;
+    // 改前每一帧都 tick：1 ms 一步就是 1000 次。
+    expect(ticks, lessThanOrEqualTo(cap));
+    expect(ticks, greaterThanOrEqualTo(cap ~/ 2), reason: '动画仍在走，不是停了');
+    // 节流等待期间不挂帧回调，扣「忙」时不会多扣。
+    expect(
+      binding.transientCallbackCount,
+      AmbientTickers.scheduledFrameCallbackCount,
+    );
+    await tester.pumpWidget(const SizedBox());
+    expect(AmbientTickers.liveCount, 0);
+  });
+
+  testWidgets('装饰 ticker 节流不改动画值：按真实经过时间推进', (WidgetTester tester) async {
+    final GlobalKey<_AmbientSpinnerState> key =
+        GlobalKey<_AmbientSpinnerState>();
+    await tester.pumpWidget(_AmbientSpinner(key: key));
+    for (int ms = 0; ms < 500; ms++) {
+      await tester.pump(const Duration(milliseconds: 1));
+    }
+    // 1 s 一圈的 repeat：最后一次 tick 落在最近一个节流间隔内。
+    expect(
+      key.currentState!.value,
+      closeTo(0.5, 2 * FushiMotion.ambientFrameInterval.inMilliseconds / 1000),
+    );
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('节流等待中被静音：不再要帧；取消静音立刻恢复', (WidgetTester tester) async {
+    Widget tree({required bool enabled}) =>
+        TickerMode(enabled: enabled, child: const _Spinner(ambient: true));
+    await tester.pumpWidget(tree(enabled: true));
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(AmbientTickers.scheduledFrameCallbackCount, 0, reason: '已进节流等待');
+    await tester.pumpWidget(tree(enabled: false));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(binding.transientCallbackCount, 0);
+    expect(tester.binding.hasScheduledFrame, isFalse);
+    await tester.pumpWidget(tree(enabled: true));
+    expect(AmbientTickers.scheduledFrameCallbackCount, 1, reason: '取消静音即排帧');
+    await tester.pumpWidget(const SizedBox());
+    expect(AmbientTickers.liveCount, 0);
+  });
 }
 
 /// 测试用的常驻 repeat 动画；[ambient] 决定走 ambient ticker 还是普通 ticker。
@@ -225,7 +193,7 @@ class _Spinner extends StatelessWidget {
 }
 
 class _AmbientSpinner extends StatefulWidget {
-  const _AmbientSpinner();
+  const _AmbientSpinner({super.key});
 
   @override
   State<_AmbientSpinner> createState() => _AmbientSpinnerState();
@@ -244,6 +212,10 @@ class _AmbientSpinnerState extends State<_AmbientSpinner>
     vsync: this,
     duration: const Duration(seconds: 1),
   );
+
+  double get value => _c.value;
+
+  void addTickListener(VoidCallback listener) => _c.addListener(listener);
 
   @override
   void initState() {

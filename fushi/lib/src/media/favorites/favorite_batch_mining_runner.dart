@@ -420,8 +420,11 @@ class FavoriteBatchMiningRunner {
             message: described.message,
           ),
           // 字段映射整体为空 / 首字段为空是配置问题，后面每一条都会同样失败：
-          // 与 notConfigured 同待遇整批中止，只报一次（反馈 AGLC0BuaKB）。
-          abortBatch: isFieldMappingConfigError(outcome.errorCode),
+          // 与 notConfigured 同待遇整批中止，只报一次（反馈 AGLC0BuaKB）。复习库在换代途中
+          // （BUG-5085）同理：升级完成前每一条都写不进去。
+          abortBatch:
+              isFieldMappingConfigError(outcome.errorCode) ||
+              isSrsGenerationErrorCode(outcome.errorCode),
         );
     }
   }

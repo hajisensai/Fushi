@@ -903,8 +903,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     target_hash_before = snapshot(target)
     runs_root = cache_root() / "runs" / f"{now_tag()}-{args.action}"
     reports = []
-    for v in select_versions(args.versions):
-        fetch_one(v)
+    # --exe：本地构建（换代分支的 Release 产物）当一个「版本」跑同一套动作，例如 R0 的「旧备份 → 新版本还原」。
+    versions = [local_build(args.exe)] if args.exe else select_versions(args.versions)
+    for v in versions:
+        if not args.exe:
+            fetch_one(v)
         log(f"{v['id']}: {args.action} {target}")
         rep = run_version(v, args.action, target, args, runs_root)
         log(f"{v['id']}: {rep['verdict']}" + (f"（{rep.get('error')}）" if rep.get("error") else ""))
@@ -1012,6 +1015,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     r.add_argument("--action", required=True, choices=ACTIONS)
     r.add_argument("--target", required=True)
     r.add_argument("--versions")
+    r.add_argument("--exe", help="本地构建的 fushi.exe 代替 --versions（新版本对旧输入的同一套动作）")
     r.add_argument("--state", help="旧版本已有的数据根（seed 产物：<state>/<版本 id>/data）")
     r.add_argument("--profile-uid", help="sync-location：把旧版本当前 profile 的 uid 改成它（缺省：位置里只有一个 uid 且没给 --state 时自动采用）")
     r.add_argument("--restore-mode", default="merge", choices=("merge", "replace"))

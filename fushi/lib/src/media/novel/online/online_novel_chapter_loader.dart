@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
@@ -10,6 +11,7 @@ class OnlineNovelChapterLoaded {
   const OnlineNovelChapterLoaded({
     required this.index,
     required this.characters,
+    this.grownSpineCharacters,
   });
 
   /// 章号（0 基）。
@@ -22,6 +24,14 @@ class OnlineNovelChapterLoaded {
   /// 阅读器开书时只读一次书行里的每章字数，取章之后必须靠它把内存里那一章的
   /// 字数从「占位文案长度」换成正文的，否则进度与统计都按占位页算（BUG-4809）。
   final int? characters;
+
+  /// 取这一章让解压树的 spine 末尾长出了新章（网页小说书取回末尾「下一章」
+  /// 占位后，在它后面再挂一个新的占位，novel-d6）时，书行重解析后的**全书**每章
+  /// 字数（长度 = 新的 spine 章数，口径同 [characters]）；spine 没变为 null。
+  ///
+  /// 阅读器据此在会话内把多出来的尾部章节并进已打开的书（重解析解压树拿章节与
+  /// 目录，字数取这里的），读完这一章就能接着翻到下一章，不必重开书。
+  final List<int>? grownSpineCharacters;
 }
 
 /// 阅读器侧「按需取章」的统一接口：WebView 请求到一章正文文件、而它还是占位页
@@ -42,6 +52,26 @@ abstract interface class OnlineNovelChapterLoader {
   /// 关书：还没开始的取章（含排队的后台预取）不再发起，等它的调用方拿到 null。
   /// 已经在取的那一章照常取完写盘（下次开书直接可读）。之后的请求一律 null。
   void dispose();
+}
+
+final RegExp _chapterFilePattern = RegExp(r'^OEBPS/chapter-(\d+)\.xhtml$');
+
+/// 网文装配器（`LnReaderEpubAssembler`）出的书里，[filePath] 是不是解压树
+/// [extractDir] 下第 n 章的正文文件（`OEBPS/chapter-<n>.xhtml`），是就返回章号
+/// （0 基）。[limit] = 本书正文章数，章号不小于它的不算；null 不设上限。
+int? onlineNovelChapterIndexForFile(
+  String extractDir,
+  String filePath, {
+  int? limit,
+}) {
+  final String relative = p
+      .relative(p.normalize(filePath), from: p.normalize(extractDir))
+      .replaceAll(r'\', '/');
+  final RegExpMatch? match = _chapterFilePattern.firstMatch(relative);
+  if (match == null) return null;
+  final int index = int.parse(match.group(1)!) - 1;
+  if (index < 0 || (limit != null && index >= limit)) return null;
+  return index;
 }
 
 class _ChapterJob {
@@ -77,14 +107,6 @@ abstract class SerialOnlineNovelChapterLoader
   @protected
   Future<OnlineNovelChapterLoaded?> loadChapter(int index);
 
-  static final RegExp _chapterFilePattern = RegExp(
-    r'^OEBPS/chapter-(\d+)\.xhtml$',
-  );
-
-  /// 进程内唯一的临时文件序号：同一本书可能同时有两个加载器实例（阅读器开着 +
-  /// 作品页就地重建），固定的 `.part` 名会互踩。
-  static int _tempSeq = 0;
-
   final Map<int, _ChapterJob> _jobs = <int, _ChapterJob>{};
   final List<_ChapterJob> _pending = <_ChapterJob>[];
   Future<void>? _draining;
@@ -100,17 +122,8 @@ abstract class SerialOnlineNovelChapterLoader
   }
 
   @override
-  int? chapterIndexForFile(String filePath) {
-    final String relative = p
-        .relative(p.normalize(filePath), from: p.normalize(extractDir))
-        .replaceAll(r'\', '/');
-    final RegExpMatch? match = _chapterFilePattern.firstMatch(relative);
-    if (match == null) return null;
-    final int index = int.parse(match.group(1)!) - 1;
-    final int? limit = chapterLimit;
-    if (index < 0 || (limit != null && index >= limit)) return null;
-    return index;
-  }
+  int? chapterIndexForFile(String filePath) =>
+      onlineNovelChapterIndexForFile(extractDir, filePath, limit: chapterLimit);
 
   /// 排队取第 [index] 章。同一章已在排队 / 在取时共用那一次的结果。
   /// [background] = 后台预取（见 [_ChapterJob.background]）。
@@ -166,17 +179,39 @@ abstract class SerialOnlineNovelChapterLoader
     _pending.clear();
   }
 
-  /// 先写临时文件再改名：阅读器读到的要么是旧文件，要么是完整的新文件。
+  /// 先写临时文件再改名（[writeOnlineNovelFileAtomically]）。
   @protected
-  Future<void> writeAtomically(File target, List<int> bytes) async {
-    await target.parent.create(recursive: true);
-    final File temp = File('${target.path}.${++_tempSeq}.part');
+  Future<void> writeAtomically(File target, List<int> bytes) =>
+      writeOnlineNovelFileAtomically(target, bytes);
+}
+
+/// 进程内唯一的临时文件序号：同一本书可能同时有两个写入方（阅读器开着 + 作品页
+/// 就地重建 / 缺图补取），固定的 `.part` 名会互踩。
+int _tempSeq = 0;
+
+/// 往网文书的解压树里写文件：先写临时文件再改名，阅读器读到的要么是旧文件，
+/// 要么是完整的新文件。
+Future<void> writeOnlineNovelFileAtomically(
+  File target,
+  List<int> bytes,
+) async {
+  await target.parent.create(recursive: true);
+  final File temp = File('${target.path}.${++_tempSeq}.part');
+  try {
+    await temp.writeAsBytes(bytes, flush: true);
+    await temp.rename(target.path);
+  } on Object {
+    // 清理临时文件本身失败（被占用 / 只读）不能顶掉写入 / 改名的原始异常：
+    // 调用方要报、要据以判断的是后者。残留的 `.part` 只在日志里留痕。
     try {
-      await temp.writeAsBytes(bytes, flush: true);
-      await temp.rename(target.path);
-    } on Object {
       if (await temp.exists()) await temp.delete();
-      rethrow;
+    } on FileSystemException catch (cleanupError, cleanupStack) {
+      engineLog.log(
+        'SerialOnlineNovelChapterLoader.writeAtomically.cleanup',
+        cleanupError,
+        cleanupStack,
+      );
     }
+    rethrow;
   }
 }

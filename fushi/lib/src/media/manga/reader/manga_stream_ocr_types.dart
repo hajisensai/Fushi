@@ -19,9 +19,16 @@ import 'package:fushi_engine/ocr/ocr_types.dart';
 /// 读者当前页之后还要预先识别几页（双页展开时第二页也在眼前）。
 const int kMangaStreamOcrLookahead = 2;
 
-/// 识别一张已落盘的直读页图。
+/// 识别一张已落盘的直读页图，或一整页已在内存里的像素。
 abstract interface class MangaStreamPageRecognizer {
   Future<MokuroImage> recognize(File pageFile);
+
+  /// 识别一整页内存像素（视频暂停 OCR 的播放器截帧）：与 [recognize] 同一引擎、同一页级
+  /// 结果，但不经 PNG 编码、落盘与再解码。[url] 只写进结果的 [MokuroImage.url]。
+  Future<MokuroImage> recognizePixels(
+    OcrRgbaImage image, {
+    required String url,
+  });
 
   /// 释放常驻资源（本地 ONNX 的页会话 isolate）；幂等。
   Future<void> close();
@@ -96,6 +103,17 @@ class MangaStreamAiRefinement {
     final Uint8List bytes = await pageFile.readAsBytes();
     final ({MokuroImage page, MangaAiOcrPageStats stats}) result =
         await _refiner.refinePage(local, bytes, cache: _cache);
+    return result.stats.replaced == 0 ? null : result.page;
+  }
+
+  /// [refine] 的内存像素版：[image] 是与本地 OCR 同一帧的不透明 RGBA，直接裁块，
+  /// 不经整页编码 / 解码。
+  Future<MokuroImage?> refinePixels(
+    MokuroImage local,
+    OcrRgbaImage image,
+  ) async {
+    final ({MokuroImage page, MangaAiOcrPageStats stats}) result =
+        await _refiner.refinePagePixels(local, image, cache: _cache);
     return result.stats.replaced == 0 ? null : result.page;
   }
 

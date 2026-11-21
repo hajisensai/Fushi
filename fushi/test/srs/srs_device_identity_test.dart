@@ -192,4 +192,90 @@ void main() {
     expect(details[0], isNot(contains(hint)));
     expect(details[2].where((String x) => x.contains('v4')), isEmpty);
   });
+
+  // 第六波（内核 cmd/sync_park.rs）：在等这台设备的重切件——等它的一条彻底清除 / 等确认它 / 它已被拒绝——在它那一行
+  // 按原因各说一行（件数按原因合计）；认不出的原因、缺字段的项跳过；没有就不说。
+  testWidgets('在等这台设备的重切件：设备行说明原因与出路', (WidgetTester tester) async {
+    final List<SrsDeviceView> views = srsDeviceViewsOf(<String, Object?>{
+      'devices': <Object?>[
+        <String, Object?>{'device': 'me', 'self': true},
+        <String, Object?>{
+          'device': 'relay',
+          'name': 'iPad',
+          'trust': 'pending',
+          'relayBlocked': <Object?>[
+            <String, Object?>{
+              'location': 'L1',
+              'author': 'a',
+              'reason': 'pending',
+              'pieces': 2,
+            },
+            <String, Object?>{
+              'location': 'L2',
+              'author': 'a',
+              'reason': 'pending',
+              'pieces': 1,
+            },
+            <String, Object?>{
+              'location': 'L2',
+              'author': 'c',
+              'reason': 'purge',
+              'pieces': 4,
+            },
+            <String, Object?>{
+              'location': 'L2',
+              'author': 'c',
+              'reason': 'mystery',
+              'pieces': 9,
+            },
+            <String, Object?>{'location': 'L2', 'reason': 'purge'},
+          ],
+        },
+        <String, Object?>{
+          'device': 'gone',
+          'name': 'Pixel 8',
+          'trust': 'rejected',
+          'relayBlocked': <Object?>[
+            <String, Object?>{
+              'location': 'L1',
+              'author': 'a',
+              'reason': 'rejected',
+              'pieces': 1,
+            },
+          ],
+        },
+        <String, Object?>{'device': 'plain', 'name': 'Mac'},
+      ],
+    });
+    expect(views[1].relayBlocked, hasLength(3));
+    expect(views[1].relayBlockedPieces(SrsRelayBlockedReason.pending), 3);
+    expect(views[1].relayBlockedPieces(SrsRelayBlockedReason.purge), 4);
+    expect(views[3].relayBlocked, isEmpty);
+    late List<List<String>> details;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (BuildContext context) {
+            details = <List<String>>[
+              for (final SrsDeviceView d in views)
+                srsDeviceRowDetails(context, d, syncing: false),
+            ];
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+    expect(details[1], contains(t.srs_device_relay_blocked_trust(n: 3)));
+    expect(details[1], contains(t.srs_device_relay_blocked_purge(n: 4)));
+    expect(details[2], contains(t.srs_device_relay_blocked_rejected(n: 1)));
+    final Set<String> relayLines = <String>{
+      for (final int n in <int>[1, 3, 4]) ...<String>[
+        t.srs_device_relay_blocked_trust(n: n),
+        t.srs_device_relay_blocked_purge(n: n),
+        t.srs_device_relay_blocked_rejected(n: n),
+      ],
+    };
+    expect(details[0].where(relayLines.contains), isEmpty);
+    expect(details[3].where(relayLines.contains), isEmpty);
+  });
 }

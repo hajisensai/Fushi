@@ -448,6 +448,7 @@ pub(crate) fn pack_expr(table: &str, json: &str, cols: &[&str]) -> String {
 
 /// 按列清单逐列插入（旧库搬运，`legacy_page`）时 `json` 那一列的写法：`(插入的列名, 值表达式)`。[place] 是第 i 列
 /// （0 起）的占位写法。不是这两张表的 `json` 就 None。键对应的列不在清单里就原样存原文（同样合法）。
+#[cfg(test)]
 pub(crate) fn insert_column(
     table: &str,
     columns: &[&str],

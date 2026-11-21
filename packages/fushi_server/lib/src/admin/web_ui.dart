@@ -3,10 +3,11 @@
 /// 页面只吃 `/api/admin/*` JSON；所有状态都轮询（2~5 秒），不做 WebSocket——
 /// 单管理员局域网面板，轮询足够且没有连接状态机要维护。
 ///
-/// 视觉跟 Fushi app 走同一套 MD3 / M3 Expressive 语言：色板是 app 默认主题
-/// （seed `#1F4959`、vibrant 方案，`kFushiDefaultSeed`）用 material_color_utilities
-/// 算出的亮 / 暗两套角色色；圆角取 `FushiRadii`（分组 20、卡片 / 控件 12、chip 6、
-/// 对话框 28）；导航选中项是 M3E 多边形而不是药丸（同 `kNavRailFallbackShapes`）。
+/// 视觉与浏览器扩展共用同一套设计系统（`/kit/`，见 `web_kit.dart`；真源
+/// `tools/browser-extension/`）：token、HCT 动态配色、明暗 / 预设配色 / M3E 与液态玻璃
+/// 两套风格、控件形态（按钮 / 分段 / chip / 开关 / 下拉 / 对话框 / 列表行 / 导航 rail）
+/// 与 Material Symbols 图标都从那里来，本页只写布局与少量页面专属样式。页面在
+/// `<html data-fushi-theme-host="page">` 上声明自己是独立网页，主题选择存在本机浏览器。
 ///
 /// 界面语言来自配置 `language`（`en` / `zh`），在出页时定：[renderAdminWebUi] /
 /// [renderAdminLogin]。源文案是中文，英文在 `web_ui_en.dart` 的 [kWebUiEnglish]
@@ -15,598 +16,393 @@ library;
 
 import 'dart:convert';
 
+import 'package:fushi_engine/media/torrent/bt_site_parser_rule.dart'
+    show kBtSiteParserRuleTemplate;
+import 'package:fushi_server/src/admin/web_kit.dart';
 import 'package:fushi_server/src/admin/web_ui_assets.dart';
 import 'package:fushi_server/src/admin/web_ui_en.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 
-/// 两页共用：主题色 token（亮色在 `:root`，暗色在系统偏好 / `data-theme` 下重定义）
-/// 与基础排版。主题选择存在 localStorage，`<script id="boot">` 在首帧前套上。
-const String _kThemeHead =
+/// 两页共用的 `<head>` 公共部分；`__FUSHI_KIT_HEAD__` 在出页时换成共享库标签。
+const String _kHead =
     r'''<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <link rel="icon" type="image/png" href="__FUSHI_LOGO__">
-<script id="boot">try{var t=localStorage.getItem('fushi-admin-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+__FUSHI_KIT_HEAD__
 <style>
-:root{
---primary:#006782;--on-primary:#ffffff;--primary-container:#bbe9ff;--on-primary-container:#004d63;
---secondary-container:#cce5ff;--on-secondary-container:#2d4960;
---tertiary-container:#d6e3ff;--on-tertiary-container:#2c4770;
---error:#ba1a1a;--on-error:#ffffff;--error-container:#ffdad6;--on-error-container:#93000a;
---ok-container:#c9ecd2;--on-ok-container:#0f5129;--warn-container:#ffe08f;--on-warn-container:#574400;
---surface:#f3faff;--on-surface:#121d22;--on-surface-variant:#3b494f;
---sc-lowest:#ffffff;--sc-low:#eaf5fc;--sc:#e4f0f6;--sc-high:#dfeaf0;--sc-highest:#d9e4eb;
---outline:#6b7980;--outline-variant:#bac9d1;--inverse-surface:#273237;--inverse-on-surface:#e7f2f9;--inverse-primary:#60d4ff;
---scrim:rgba(0,0,0,.32);
---font:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans","Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
---mono:ui-monospace,"Cascadia Mono","SF Mono","Roboto Mono",Menlo,monospace;
---r-group:20px;--r-card:12px;--r-control:12px;--r-chip:6px;--r-menu:16px;--r-dialog:28px;
---ease:cubic-bezier(.2,0,0,1);--ease-decel:cubic-bezier(.05,.7,.1,1);--spring:cubic-bezier(.34,1.56,.64,1);
---err:var(--error);--line:var(--outline-variant);
-color-scheme:light}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
---primary:#60d4ff;--on-primary:#003545;--primary-container:#004d63;--on-primary-container:#bbe9ff;
---secondary-container:#2d4960;--on-secondary-container:#cce5ff;
---tertiary-container:#2c4770;--on-tertiary-container:#d6e3ff;
---error:#ffb4ab;--on-error:#690005;--error-container:#93000a;--on-error-container:#ffdad6;
---ok-container:#1d4d31;--on-ok-container:#a6f0bd;--warn-container:#4d3a00;--on-warn-container:#ffe08f;
---surface:#0a1519;--on-surface:#d9e4eb;--on-surface-variant:#bac9d1;
---sc-lowest:#051014;--sc-low:#121d22;--sc:#172126;--sc-high:#212b30;--sc-highest:#2c363b;
---outline:#84939a;--outline-variant:#3b494f;--inverse-surface:#d9e4eb;--inverse-on-surface:#273237;--inverse-primary:#006782;
---scrim:rgba(0,0,0,.5);color-scheme:dark}}
-:root[data-theme="dark"]{
---primary:#60d4ff;--on-primary:#003545;--primary-container:#004d63;--on-primary-container:#bbe9ff;
---secondary-container:#2d4960;--on-secondary-container:#cce5ff;
---tertiary-container:#2c4770;--on-tertiary-container:#d6e3ff;
---error:#ffb4ab;--on-error:#690005;--error-container:#93000a;--on-error-container:#ffdad6;
---ok-container:#1d4d31;--on-ok-container:#a6f0bd;--warn-container:#4d3a00;--on-warn-container:#ffe08f;
---surface:#0a1519;--on-surface:#d9e4eb;--on-surface-variant:#bac9d1;
---sc-lowest:#051014;--sc-low:#121d22;--sc:#172126;--sc-high:#212b30;--sc-highest:#2c363b;
---outline:#84939a;--outline-variant:#3b494f;--inverse-surface:#d9e4eb;--inverse-on-surface:#273237;--inverse-primary:#006782;
---scrim:rgba(0,0,0,.5);color-scheme:dark}
 *{box-sizing:border-box}
 html,body{height:100%}
-body{margin:0;font-family:var(--font);font-size:14px;line-height:1.45;background:var(--surface);color:var(--on-surface);transition:background-color .3s var(--ease),color .3s var(--ease);-webkit-font-smoothing:antialiased}
+body{margin:0;font-family:var(--md-sys-typescale-font);font-size:var(--md-sys-typescale-body-medium-size);line-height:1.45;background:var(--md-sys-color-surface);color:var(--md-sys-color-on-surface);-webkit-font-smoothing:antialiased}
 button,input,select,textarea{font:inherit;color:inherit}
-:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
-code{font-family:var(--mono);font-size:.92em;background:var(--sc-highest);padding:1px 6px;border-radius:4px;overflow-wrap:anywhere}
-input[type=text],input[type=number],input[type=password],input:not([type]),select,textarea{height:48px;border-radius:var(--r-control);border:1px solid var(--outline);background:var(--sc-lowest);color:var(--on-surface);padding:0 14px;font-size:15px;min-width:0;width:100%;transition:border-color .15s,box-shadow .15s}
-textarea{height:auto;padding:12px 14px;font-family:var(--mono);font-size:13px;resize:vertical}
-input:focus,select:focus,textarea:focus{outline:0;border-color:var(--primary);box-shadow:inset 0 0 0 1px var(--primary)}
-input:disabled,select:disabled{opacity:.5}
-input[type=checkbox],input[type=radio]{accent-color:var(--primary);width:18px;height:18px;margin:0;cursor:pointer}
-.b{height:40px;padding:0 20px;border-radius:999px;border:0;display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;font-weight:500;font-size:14px;white-space:nowrap;background:var(--primary);color:var(--on-primary);transition:transform .15s var(--ease),box-shadow .15s,background-color .15s,opacity .15s}
-.b svg.i{width:18px;height:18px;margin-left:-4px}
-.b:hover{box-shadow:0 1px 3px rgba(0,0,0,.22)}
-.b:active{transform:scale(.96)}
-.b.sec{background:var(--secondary-container);color:var(--on-secondary-container)}
-.b.danger{background:var(--error-container);color:var(--on-error-container)}
-.b.out{background:none;border:1px solid var(--outline);color:var(--primary)}
-.b.text{background:none;color:var(--primary);padding:0 12px}
-.b.text.danger{color:var(--error)}
-.b.sec:hover,.b.out:hover,.b.text:hover,.b.danger:hover{box-shadow:none;background-image:linear-gradient(color-mix(in srgb,currentColor 8%,transparent),color-mix(in srgb,currentColor 8%,transparent))}
-.b:disabled{opacity:.38;cursor:default;transform:none;box-shadow:none}
-@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+code,.mono{font-family:ui-monospace,"Cascadia Mono","SF Mono","Roboto Mono",Menlo,monospace}
+code{font-size:.92em;background:var(--md-sys-color-surface-container-highest);padding:1px 6px;border-radius:var(--md-sys-shape-corner-extra-small);overflow-wrap:anywhere}
+.mono{font-size:12px}
 </style>''';
 
 const String adminLoginHtml =
     r'''<!doctype html>
-<html lang="__FUSHI_HTML_LANG__"><head>
+<html lang="__FUSHI_HTML_LANG__" data-fushi-theme-host="page"><head>
 <title>fushi_server</title>
 ''' +
-    _kThemeHead +
+    _kHead +
     r'''
 <style>
 body{display:flex;align-items:center;justify-content:center;padding:24px 16px}
-form{width:100%;max-width:400px;background:var(--sc-low);border-radius:var(--r-dialog);padding:32px 28px;display:flex;flex-direction:column;gap:16px;animation:pop .35s var(--ease-decel) both}
-.logo{width:56px;height:56px;border-radius:16px;display:block}
-h1{margin:0;font-size:28px;font-weight:400;line-height:36px}
-.err{margin:0;background:var(--error-container);color:var(--on-error-container);border-radius:var(--r-card);padding:10px 14px;font-size:13px}
-.b{height:48px;width:100%}
-.hint{margin:0;color:var(--on-surface-variant);font-size:12px;line-height:1.6}
+form{width:100%;max-width:400px;display:flex;flex-direction:column;gap:16px;padding:32px 28px;animation:pop var(--fushi-dur-medium) var(--fushi-ease-decel) both}
+.logo{width:56px;height:56px;border-radius:var(--md-sys-shape-corner-large);display:block}
+h1{margin:0}
+.err{margin:0;padding:10px 14px;border-radius:var(--md-sys-shape-corner-medium);background:var(--md-sys-color-error-container);color:var(--md-sys-color-on-error-container);font-size:13px}
+input{height:48px}
+.primary-button{width:100%;height:48px}
 @keyframes pop{from{opacity:0;transform:scale(.94)}}
 </style></head><body>
-<form method="post" action="/login">
+<form class="card" method="post" action="/login">
 <img class="logo" src="__FUSHI_LOGO__" alt="">
-<h1>fushi_server</h1>
+<h1 class="kit-title-large">fushi_server</h1>
 <!--error-->
 <input type="password" name="token" placeholder="admin_token" autofocus autocomplete="current-password" aria-label="admin_token">
-<button class="b" type="submit">__T_登录__</button>
-<p class="hint">__T_token 在 fushi_server.yaml 的 admin_token；忘了用 <code>fushi_server admin reset-token</code> 重生成。__</p>
+<button class="primary-button" type="submit">__T_登录__</button>
+<p class="kit-supporting">__T_token 在 fushi_server.yaml 的 admin_token；忘了用 <code>fushi_server admin reset-token</code> 重生成。__</p>
 </form></body></html>''';
 
 const String adminWebUiHtml =
     r'''<!doctype html>
-<html lang="__FUSHI_HTML_LANG__"><head>
+<html lang="__FUSHI_HTML_LANG__" data-fushi-theme-host="page"><head>
 <title>fushi_server</title>
 ''' +
-    _kThemeHead +
+    _kHead +
     r'''
 <style>
-svg.i{width:24px;height:24px;fill:currentColor;flex:none}
-.app{height:100%;display:grid;grid-template-columns:88px minmax(0,1fr);grid-template-rows:64px minmax(0,1fr)}
-/* ── 导航栏（宽屏侧栏，窄屏抽屉）── */
-.rail{grid-row:1/3;display:flex;flex-direction:column;align-items:center;gap:2px;padding:12px 0 16px;overflow-y:auto;scrollbar-width:none;background:var(--surface);z-index:5}
-.rail::-webkit-scrollbar{display:none}
-.brand{display:flex;align-items:center;gap:12px;margin-bottom:8px;flex:none}
-.brand img{width:40px;height:40px;border-radius:14px;display:block}
-.brand span{display:none;font-size:18px;font-weight:500}
-.rail hr{width:40px;border:0;border-top:1px solid var(--outline-variant);margin:4px 0;flex:none}
-.rail button{width:80px;flex:none;border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:2px;padding:2px 0 4px;cursor:pointer;color:var(--on-surface-variant);font-size:12px;font-weight:500;line-height:16px;text-align:center}
-.ind{position:relative;width:56px;height:32px;display:grid;place-items:center;flex:none}
-.ind::before{content:"";position:absolute;inset:0;border-radius:16px;background:var(--on-surface);opacity:0;transition:opacity .15s}
-.rail button:hover .ind::before{opacity:.08}
-.ind svg.shape{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;fill:var(--secondary-container);transform:scale(.2) rotate(-60deg);opacity:0;transition:transform .5s var(--spring),opacity .15s}
-.ind svg.i{position:relative;z-index:1}
-.rail button.on{color:var(--on-surface)}
-.rail button.on .ind{color:var(--on-secondary-container)}
-.rail button.on .ind svg.shape{transform:none;opacity:1}
-.badge{position:absolute;z-index:2;top:2px;right:12px;width:8px;height:8px;border-radius:50%;background:var(--error)}
-.scrim-nav{display:none}
+/* hidden 一律压过共享库组件自带的 display（图标按钮 / 进度条 / 徽标 / 就地编辑框）。 */
+[hidden]{display:none!important}
+section > .kit-section-title{margin:8px 4px -4px}
+.app{--rail-w:88px;height:100%;display:grid;grid-template-columns:var(--rail-w) minmax(0,1fr);grid-template-rows:64px minmax(0,1fr);transition:grid-template-columns var(--md-sys-motion-spring-default-spatial-duration) var(--md-sys-motion-spring-default-spatial)}
+.app:has(.nav-rail.is-expanded){--rail-w:264px}
+/* ── 导航：宽屏 rail，窄屏抽屉（.is-drawer 由脚本按宽度切） ── */
+.nav-rail{grid-row:1/3;z-index:5}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}
+.brand img{width:40px;height:40px;border-radius:var(--md-sys-shape-corner-medium);display:block;flex:none}
+.brand span{display:none;font-size:var(--md-sys-typescale-title-medium-size);line-height:var(--md-sys-typescale-title-medium-line-height);font-weight:var(--md-sys-typescale-weight-emphasized,600);white-space:nowrap}
+.nav-rail:is(.is-expanded,.is-drawer) .brand span{display:block}
+.nav-rail.is-drawer #btn-rail{display:none}
 /* ── 顶栏 ── */
 .topbar{grid-column:2;display:flex;align-items:center;gap:4px;padding:0 12px 0 24px;min-width:0}
-.topbar .menu{display:none}
-.ttl{flex:1;min-width:0;display:flex;flex-direction:column}
-.ttl h1{margin:0;font-size:22px;font-weight:400;line-height:28px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ttl span{font-size:12px;color:var(--on-surface-variant);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
-.icon-btn{width:40px;height:40px;flex:none;border-radius:50%;border:0;background:none;display:grid;place-items:center;cursor:pointer;color:var(--on-surface-variant);transition:background-color .15s}
-.icon-btn:disabled{opacity:.38;cursor:default;pointer-events:none}
-.icon-btn:hover{background:color-mix(in srgb,var(--on-surface) 8%,transparent)}
+.topbar #btn-menu{display:none}
 .topbar form{margin:0}
-/* ── 内容 ── */
+.ttl{flex:1;min-width:0;display:flex;flex-direction:column}
+.ttl h1{margin:0;font-size:var(--md-sys-typescale-title-large-size,22px);font-weight:400;line-height:28px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ttl span{font-size:12px;color:var(--md-sys-color-on-surface-variant);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+/* ── 内容：每页一栏，进页时子块错峰浮入 ── */
 main{grid-column:2;overflow-y:auto;padding:4px 24px 48px}
 section{display:none;max-width:1040px;flex-direction:column;gap:16px}
 section.on{display:flex}
-section.on > *{animation:enter .42s var(--ease-decel) both}
+section.on > *{animation:enter var(--fushi-dur-long,420ms) var(--fushi-ease-decel) both}
 section.on > :nth-child(2){animation-delay:30ms}section.on > :nth-child(3){animation-delay:60ms}section.on > :nth-child(4){animation-delay:90ms}section.on > :nth-child(5){animation-delay:120ms}section.on > :nth-child(n+6){animation-delay:150ms}
 @keyframes enter{from{opacity:0;transform:translateY(12px)}}
-.sh{display:flex;align-items:center;gap:8px;margin:8px 4px -6px;color:var(--primary);font-size:14px;font-weight:500;min-height:40px}
-.sp{flex:1}
-.card{background:var(--sc-low);border-radius:var(--r-group);padding:20px;min-width:0}
-.card h2{margin:0 0 4px;font-size:16px;font-weight:500}
-.card h2.sub-h{margin-top:20px;font-size:14px;color:var(--primary)}
-.card-head{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-.card-head > div{flex:1 1 240px;min-width:0}
-.sup,.note{color:var(--on-surface-variant);font-size:13px;margin:4px 0 0;line-height:1.55}
-.note{margin:0 4px;font-size:12px}
-.muted{color:var(--on-surface-variant)}.small{font-size:12px}
-.mono{font-family:var(--mono);font-size:12px}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px 16px;margin-top:12px}
-label.f{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:500;color:var(--on-surface-variant);min-width:0}
-label.f .muted{font-weight:400}
-label.f .ctl{display:flex;flex-direction:column;gap:8px}
-.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}
-.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:16px}
-.actions .hint{color:var(--on-surface-variant);font-size:12px;flex:1 1 220px}
-.check{display:inline-flex;align-items:center;gap:10px;font-size:14px;cursor:pointer;min-height:40px}
-/* 状态网格 */
-.kv{display:flex;flex-direction:column;gap:2px;min-width:0}.kv b{font-size:12px;color:var(--on-surface-variant);font-weight:500}.kv span{overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.card,.card-inset{display:flex;flex-direction:column;gap:16px}
+.card > *,.card-inset > *{margin:0}
+.card > :is(.kit-title-medium,h2) + .kit-supporting,.card-inset > .kit-supporting + .kit-supporting{margin-top:-12px}
+.card > .card-head + .progress{margin-top:-4px}
+.card-head-copy > .kit-supporting{margin-top:4px}
+.kit-title-medium{margin:0}
+/* 色阶：页面 surface 上的内容块（卡片 / 分段列表 / 空状态）统一高一级 surface-container-low；卡片里的列表行再高一级，卡片里的空状态不另起底。 */
+:root:not([data-style="glass"]) main :is(.setting-list > .setting-row,.empty-state){background-color:var(--md-sys-color-surface-container-low)}
+:root:not([data-style="glass"]) main .card :is(.setting-list > .setting-row){background-color:var(--md-sys-color-surface-container)}
+main .card .empty-state{background:none;padding:16px 8px}
+.nav-rail:is(.is-expanded,.is-drawer) .nav-group-label{padding:0 18px}
+.note{margin:0 4px;color:var(--md-sys-color-on-surface-variant);font-size:12px;line-height:1.55}
+.muted{color:var(--md-sys-color-on-surface-variant)}.small{font-size:12px}
 .tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-.tile{background:var(--sc-low);border-radius:var(--r-group);padding:16px 18px;display:flex;flex-direction:column;gap:4px;min-width:0}
-.tile .k{font-size:12px;color:var(--on-surface-variant);font-weight:500;display:flex;align-items:center;gap:6px}
-.tile .k svg.i{width:18px;height:18px}
-.tile .v{font-size:28px;line-height:36px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
-.tile .s{font-size:12px;color:var(--on-surface-variant)}
-.tile.hero{background:var(--primary-container);color:var(--on-primary-container)}
-.tile.hero .k,.tile.hero .s{color:var(--on-primary-container)}
-/* 列表（app 设置页式分组） */
-.list{background:var(--sc-low);border-radius:var(--r-group);overflow:hidden}
-.list:empty{display:none}
-.lrow{display:flex;align-items:center;gap:16px;padding:14px 20px;min-height:64px}
-.lrow + .lrow{border-top:1px solid color-mix(in srgb,var(--outline-variant) 60%,transparent)}
-.lead{width:40px;height:40px;border-radius:12px;background:var(--sc-highest);color:var(--on-surface-variant);display:grid;place-items:center;flex:none}
-.txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-.txt .t{font-weight:500;font-size:15px;overflow-wrap:anywhere;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center}
-.txt .s{color:var(--on-surface-variant);font-size:13px;overflow-wrap:anywhere}
-.txt .e{color:var(--error);font-size:13px;overflow-wrap:anywhere}
-.trail{display:flex;gap:4px 8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
-.lrow.click{cursor:pointer;transition:background-color .15s}
-.lrow.click:hover,.lrow.click.sel{background:color-mix(in srgb,var(--on-surface) 6%,transparent)}
-label.lrow{cursor:pointer}
-.empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;padding:28px 20px;color:var(--on-surface-variant);font-size:13px}
-.empty svg.i{width:36px;height:36px;color:var(--outline)}
-.skel{height:64px;margin:0;background:linear-gradient(90deg,var(--sc-low) 25%,var(--sc-high) 50%,var(--sc-low) 75%);background-size:200% 100%;animation:shimmer 1.4s infinite linear}
-.skel + .skel{border-top:1px solid var(--surface)}
-.tile.skel{height:104px;border-radius:var(--r-group)}
-@keyframes shimmer{to{background-position:-200% 0}}
-.inset{border:1px solid var(--outline-variant);border-radius:var(--r-card);padding:14px 16px;margin:10px 0;background:var(--surface)}
-/* chip / 进度 / 开关 */
-.tag{display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:var(--r-chip);font-size:12px;font-weight:500;background:var(--sc-highest);color:var(--on-surface-variant);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
-.tag.ok{background:var(--ok-container);color:var(--on-ok-container)}
-.tag.err{background:var(--error-container);color:var(--on-error-container)}
-.tag.warn{background:var(--warn-container);color:var(--on-warn-container)}
-.tag.info{background:var(--tertiary-container);color:var(--on-tertiary-container)}
-.bar{height:4px;border-radius:2px;background:var(--sc-highest);overflow:hidden;margin-top:6px}
-.bar i{display:block;height:100%;border-radius:2px;background:var(--primary);transition:width .4s var(--ease)}
-.bar.indet i{width:35%;animation:indet 1.3s infinite var(--ease)}
-@keyframes indet{from{transform:translateX(-100%)}to{transform:translateX(300%)}}
-input.sw{appearance:none;-webkit-appearance:none;position:relative;flex:none;width:52px;height:32px;margin:0;border-radius:16px;border:2px solid var(--outline);background:var(--sc-highest);cursor:pointer;transition:background-color .2s var(--ease),border-color .2s}
-input.sw::after{content:"";position:absolute;left:6px;top:6px;width:16px;height:16px;border-radius:50%;background:var(--outline);transition:all .25s var(--spring)}
-input.sw:checked{background:var(--primary);border-color:var(--primary)}
-input.sw:checked::after{left:22px;top:2px;width:24px;height:24px;background:var(--on-primary)}
-input.sw:active::after{width:26px;height:26px;top:1px;left:1px}
-input.sw:checked:active::after{left:19px}
-input.sw:disabled{opacity:.38;cursor:default}
-.fchips{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
-.fchip{position:relative;display:inline-flex}
-.fchip input{position:absolute;opacity:0;inset:0;width:100%;height:100%;cursor:pointer}
-.fchip span{display:inline-flex;align-items:center;height:32px;padding:0 14px;border-radius:8px;border:1px solid var(--outline);font-size:13px;font-weight:500;color:var(--on-surface-variant);transition:background-color .15s,border-color .15s}
-.fchip input:checked + span{background:var(--secondary-container);border-color:transparent;color:var(--on-secondary-container)}
-.fchip input:checked + span::before{content:"✓";margin-right:6px}
-.fchip input:focus-visible + span{outline:2px solid var(--primary);outline-offset:2px}
-/* 设置行 */
-.srow{display:flex;align-items:center;gap:16px;padding:14px 20px;min-height:64px}
-.srow + .srow{border-top:1px solid color-mix(in srgb,var(--outline-variant) 60%,transparent)}
-.srow .txt{cursor:default}
-.srow .ctl{width:min(320px,45%);flex:none;display:flex;justify-content:flex-end;gap:8px}
-.srow.swr .ctl{width:auto}
-.srow .ctl.stack{flex-direction:column;align-items:stretch}
-.srow .ctl .unit{width:96px;flex:none}
-/* 有未保存的更改才浮出的保存条 */
-.savebar{position:sticky;bottom:0;z-index:5;margin:0;padding:10px 12px 10px 20px;border-radius:var(--r-group);background:var(--inverse-surface);color:var(--inverse-on-surface);box-shadow:0 4px 12px rgba(0,0,0,.25);animation:enter .3s var(--ease-decel)}
-.savebar[hidden]{display:none}
-.savebar .hint{color:inherit;opacity:.8}
-.savebar .count{font-weight:500;font-size:14px}
-.savebar .b.text{color:var(--inverse-primary)}
-/* 分段按钮（单选） */
-.seg{display:inline-flex;border:1px solid var(--outline);border-radius:20px;overflow:hidden;height:40px}
-.seg label{position:relative;display:inline-flex}
-.seg label + label{border-left:1px solid var(--outline)}
-.seg input{position:absolute;opacity:0;inset:0;width:100%;height:100%;margin:0;cursor:pointer}
-.seg span{display:inline-flex;align-items:center;gap:6px;padding:0 16px;font-size:14px;font-weight:500;color:var(--on-surface);transition:background-color .15s}
-.seg input:checked + span{background:var(--secondary-container);color:var(--on-secondary-container)}
-.seg input:checked + span::before{content:"✓"}
-.seg input:focus-visible + span{outline:2px solid var(--primary);outline-offset:-2px}
-.seg svg.i{width:18px;height:18px}
-.kind-seg{flex-wrap:wrap;height:auto;align-self:flex-start;max-width:100%}
+.tiles .skeleton{height:104px}
+.setting-list > .skeleton{height:64px}
+.choice-ctl{display:flex;flex-direction:column;gap:8px;min-width:0}
+.bytes-ctl{display:flex;gap:8px;min-width:0}
+.bytes-ctl > input{flex:1 1 auto;min-width:0}
+.bytes-ctl > .fgs,.bytes-ctl > select{flex:0 0 104px}
+.kind-hint{color:var(--md-sys-color-on-surface-variant);font-weight:400}
 /* 「需要处理」 */
-.attn .lrow{color:var(--on-warn-container)}
-.attn .lead{background:var(--warn-container);color:var(--on-warn-container)}
-.chev{color:var(--on-surface-variant);flex:none}
-/* 溢出菜单 */
+.attn .setting-row{cursor:pointer}
+.chev{color:var(--md-sys-color-on-surface-variant);flex:none}
 .more{position:relative}
-.more-menu{position:absolute;right:0;top:calc(100% + 4px);z-index:20;min-width:200px;padding:8px 0;border-radius:16px;background:var(--sc-high);box-shadow:0 4px 16px rgba(0,0,0,.2);animation:pop .2s var(--ease-decel)}
-.more-menu[hidden]{display:none}
-.more-menu button{display:flex;align-items:center;width:100%;height:48px;padding:0 16px;border:0;background:none;text-align:left;font-size:14px;cursor:pointer;color:var(--on-surface)}
-.more-menu button:hover,.more-menu button:focus-visible{background:color-mix(in srgb,var(--on-surface) 8%,transparent);outline:0}
-.more-menu button.danger{color:var(--error)}
-/* 词典行：语言下拉 / 自定义标签输入 */
-.dict-lang{width:auto;min-width:168px;max-width:240px;height:40px;font-size:14px}
-input.dict-lang-other{width:168px;height:40px;font-size:14px}
-/* 词典行：显示名就地编辑（铅笔 → 文本框） */
-.icon-btn.sm{width:32px;height:32px}
-.icon-btn.sm .i{width:18px;height:18px}
-input.dict-name-edit{width:min(320px,100%);height:36px;font-size:14px}
-.icon-btn[hidden],input.dict-name-edit[hidden]{display:none}
-/* 日志分级 */
-.lv-error{color:var(--error)}
-.log-filter{margin:12px 0 0}
+.more > .kit-menu{position:absolute;right:0;top:calc(100% + 4px);z-index:20}
+/* 词典行：语言下拉 / 自定义标签 / 显示名就地编辑 */
+.dict-lang{min-width:168px;max-width:240px}
+input.dict-lang-other{width:168px;height:40px}
+input.dict-name-edit{width:min(320px,100%);height:36px}
+/* 日志 */
+pre{margin:12px 0 0;background:var(--md-sys-color-surface-container-lowest);border-radius:var(--md-sys-shape-corner-medium);padding:14px;overflow:auto;max-height:65vh;font-family:ui-monospace,"Cascadia Mono","SF Mono",Menlo,monospace;font-size:12px;line-height:1.6;white-space:pre-wrap;color:var(--md-sys-color-on-surface-variant)}
+.lv-error{color:var(--md-sys-color-error)}
 /* 配对 PIN */
-.pin-card{background:var(--tertiary-container);color:var(--on-tertiary-container);border-radius:var(--r-group);padding:20px 24px;display:flex;gap:12px 24px;align-items:center;flex-wrap:wrap}
+.pin-card{display:flex;gap:12px 24px;align-items:center;flex-wrap:wrap}
 .pin-card > div{flex:1 1 240px;min-width:0}
-.pin-card b{font-size:16px;font-weight:500}
-.pin-card .sup{color:inherit;opacity:.8}
-.pin{font-family:var(--mono);font-size:44px;font-weight:600;letter-spacing:.18em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.pin{font-family:ui-monospace,"Cascadia Mono","SF Mono",Menlo,monospace;font-size:44px;font-weight:600;letter-spacing:.18em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .pulse{display:inline-block;width:10px;height:10px;border-radius:50%;background:currentColor;margin-right:8px;animation:pulse 1.6s infinite}
 @keyframes pulse{50%{opacity:.25}}
-/* 表格（复习页配置文件），窄屏叠成卡片 */
-.tbl{overflow-x:auto;margin-top:12px}
-table{width:100%;border-collapse:collapse}
-th,td{text-align:left;padding:10px 8px;border-bottom:1px solid color-mix(in srgb,var(--outline-variant) 60%,transparent);vertical-align:middle}
-th{color:var(--on-surface-variant);font-weight:500;font-size:12px}
-pre{margin:12px 0 0;background:var(--sc-lowest);border-radius:var(--r-card);padding:14px;overflow:auto;max-height:65vh;font-family:var(--mono);font-size:12px;line-height:1.6;white-space:pre-wrap;color:var(--on-surface-variant)}
 /* AI 会话 */
+.setting-row.is-selected{background:color-mix(in oklch,var(--md-sys-color-on-surface) 8%,transparent)}
 .entry{display:flex;gap:12px;align-items:flex-start;padding:10px 0}
-.entry + .entry{border-top:1px solid color-mix(in srgb,var(--outline-variant) 60%,transparent)}
+.entry + .entry{border-top:1px solid var(--md-sys-color-outline-variant)}
 .entry > div{flex:1;min-width:0;white-space:pre-wrap;overflow-wrap:anywhere}
-/* 对话框 / snackbar */
-dialog{border:0;padding:24px;border-radius:var(--r-dialog);background:var(--sc-high);color:var(--on-surface);width:min(400px,calc(100% - 32px));max-height:calc(100% - 48px);overflow:auto}
-dialog::backdrop{background:var(--scrim)}
-dialog[open]{animation:pop .3s var(--ease-decel)}
-dialog .di{display:flex;justify-content:center;color:var(--primary);margin-bottom:16px}
-dialog.danger .di{color:var(--error)}
-dialog p{margin:0;font-size:15px;line-height:1.6;white-space:pre-line;color:var(--on-surface-variant)}
-dialog .actions{justify-content:flex-end;margin-top:24px}
-@keyframes pop{from{opacity:0;transform:scale(.92)}}
-#toast{position:fixed;left:50%;bottom:24px;z-index:50;transform:translate(-50%,24px);opacity:0;pointer-events:none;background:var(--inverse-surface);color:var(--inverse-on-surface);border-radius:8px;padding:14px 18px;min-width:220px;max-width:calc(100% - 32px);box-shadow:0 4px 12px rgba(0,0,0,.25);transition:transform .3s var(--ease-decel),opacity .2s;font-size:14px}
-#toast.on{transform:translate(-50%,0);opacity:1}
-#toast.err{background:var(--error-container);color:var(--on-error-container)}
+.err-text{color:var(--md-sys-color-error)}
+#toast.is-error{background-color:var(--md-sys-color-error-container);color:var(--md-sys-color-on-error-container)}
+/* 外观 */
+.appearance{display:flex;flex-direction:column;gap:20px}
+.appearance .field{max-width:100%}
 /* ── 响应式 ── */
 @media (max-width: 1000px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width: 640px){
 .app{grid-template-columns:minmax(0,1fr)}
 .topbar{grid-column:1;padding:0 8px}
-.topbar .menu{display:grid}
+.topbar #btn-menu{display:grid}
 .ttl h1{font-size:18px;line-height:24px}
 main{grid-column:1;padding:4px 16px 48px}
-.rail{position:fixed;top:0;bottom:0;left:0;width:min(300px,85vw);align-items:stretch;padding:16px 12px;background:var(--sc-low);border-radius:0 16px 16px 0;transform:translateX(-105%);transition:transform .35s var(--ease-decel);z-index:30;visibility:hidden}
-.rail.open{transform:none;visibility:visible}
-.brand{margin:0 0 12px 12px}.brand span{display:block}
-.rail hr{width:auto;margin:6px 16px}
-.rail button{width:auto;flex-direction:row;gap:12px;height:56px;padding:0 16px 0 4px;border-radius:28px;font-size:14px;text-align:left}
-.ind{width:44px}
-.rail button.on{background:color-mix(in srgb,var(--secondary-container) 45%,transparent)}
-.badge{right:4px}
-.scrim-nav{display:block;position:fixed;inset:0;background:var(--scrim);z-index:29;opacity:0;pointer-events:none;transition:opacity .3s}
-.scrim-nav.on{opacity:1;pointer-events:auto}
-.tiles{gap:8px}.tile{padding:14px}.tile .v{font-size:24px;line-height:32px}
-.card{padding:16px}
-.lrow,.srow{padding:12px 16px;gap:12px;flex-wrap:wrap}
-.lrow .trail{width:100%;justify-content:flex-start}
-.lrow .lead + .txt + .trail{padding-left:52px}
-.lrow .lead + .txt + .trail.more{width:auto;padding-left:0}
-.lrow .chev{margin-left:auto}
-.srow .ctl{width:100%}
-.srow.swr .ctl{width:auto}
+.tiles{gap:8px}
 .pin{font-size:36px}
-.b{height:44px}
-table.rt,.rt tbody,.rt tr,.rt td{display:block;width:100%}
-.rt tr.h{display:none}
-.rt tr{padding:8px 0;border-bottom:1px solid var(--outline-variant)}
-.rt td{border:0;padding:4px 0;display:flex;gap:12px;align-items:center}
-.rt td[data-label]::before{content:attr(data-label);min-width:88px;color:var(--on-surface-variant);font-size:12px}
 }
 </style></head><body>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
-<symbol id="i-status" viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></symbol>
-<symbol id="i-pairing" viewBox="0 0 24 24"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></symbol>
-<symbol id="i-libraries" viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></symbol>
-<symbol id="i-upload" viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></symbol>
-<symbol id="i-jobs" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-9 14l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></symbol>
-<symbol id="i-downloads" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></symbol>
-<symbol id="i-subscriptions" viewBox="0 0 24 24"><path d="M6.18 15.64a2.18 2.18 0 0 1 2.18 2.18C8.36 19 7.38 20 6.18 20 5 20 4 19 4 17.82a2.18 2.18 0 0 1 2.18-2.18M4 4.44A15.56 15.56 0 0 1 19.56 20h-2.83A12.73 12.73 0 0 0 4 7.27V4.44m0 5.66a9.9 9.9 0 0 1 9.9 9.9h-2.83A7.07 7.07 0 0 0 4 12.93V10.1z"/></symbol>
-<symbol id="i-models" viewBox="0 0 24 24"><path d="M15 9H9v6h6V9zm-2 4h-2v-2h2v2zm8-2V9h-2V7c0-1.1-.9-2-2-2h-2V3h-2v2h-2V3H9v2H7c-1.1 0-2 .9-2 2v2H3v2h2v2H3v2h2v2c0 1.1.9 2 2 2h2v2h2v-2h2v2h2v-2h2c1.1 0 2-.9 2-2v-2h2v-2h-2v-2h2zm-4 6H7V7h10v10z"/></symbol>
-<symbol id="i-ai" viewBox="0 0 24 24"><path d="M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z"/></symbol>
-<symbol id="i-anki" viewBox="0 0 24 24"><path d="M11.99 18.54l-7.37-5.73L3 14.07l9 7 9-7-1.63-1.27-7.38 5.74zM12 16l7.36-5.73L21 9l-9-7-9 7 1.63 1.27L12 16z"/></symbol>
-<symbol id="i-srs" viewBox="0 0 24 24"><path d="M5 13.18v4L12 21l7-3.82v-4L12 17l-7-3.82zM12 3L1 9l11 6 9-4.91V17h2V9L12 3z"/></symbol>
-<symbol id="i-settings" viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></symbol>
-<symbol id="i-logs" viewBox="0 0 24 24"><path d="M3 18h12v-2H3v2zM3 6v2h18V6H3zm0 7h18v-2H3v2z"/></symbol>
-<symbol id="i-menu" viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></symbol>
-<symbol id="i-logout" viewBox="0 0 24 24"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></symbol>
-<symbol id="i-dark" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 0 1-4.4 2.26 5.403 5.403 0 0 1-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/></symbol>
-<symbol id="i-light" viewBox="0 0 24 24"><path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58a.996.996 0 0 0-1.41 0 .996.996 0 0 0 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37a.996.996 0 0 0-1.41 0 .996.996 0 0 0 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0a.996.996 0 0 0 0-1.41l-1.06-1.06zm1.06-10.96a.996.996 0 0 0 0-1.41.996.996 0 0 0-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36a.996.996 0 0 0 0-1.41.996.996 0 0 0-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06z"/></symbol>
-<symbol id="i-system" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93V4.07c3.94.49 7 3.85 7 7.93s-3.06 7.44-7 7.93z"/></symbol>
-<symbol id="i-add" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></symbol>
-<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></symbol>
-<symbol id="i-warn" viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></symbol>
-<symbol id="i-help" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></symbol>
-<symbol id="i-device" viewBox="0 0 24 24"><path d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"/></symbol>
-<symbol id="i-video" viewBox="0 0 24 24"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/></symbol>
-<symbol id="i-book" viewBox="0 0 24 24"><path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"/></symbol>
-<symbol id="i-manga" viewBox="0 0 24 24"><path d="M21 5c-1.11-.35-2.33-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1zm0 13.5c-1.1-.35-2.3-.5-3.5-.5-1.7 0-4.15.65-5.5 1.5V8c1.35-.85 3.8-1.5 5.5-1.5 1.2 0 2.4.15 3.5.5v11.5z"/></symbol>
-<symbol id="i-audio" viewBox="0 0 24 24"><path d="M12 1a9 9 0 0 0-9 9v7c0 1.66 1.34 3 3 3h3v-8H5v-2c0-3.87 3.13-7 7-7s7 3.13 7 7v2h-4v8h3c1.66 0 3-1.34 3-3v-7a9 9 0 0 0-9-9z"/></symbol>
-<symbol id="i-empty" viewBox="0 0 24 24"><path d="M19 3H4.99c-1.11 0-1.98.89-1.98 2L3 19c0 1.1.88 2 1.99 2H19c1.1 0 2-.9 2-2V5a2 2 0 0 0-2-2zm0 12h-4c0 1.66-1.35 3-3 3s-3-1.34-3-3H4.99V5H19v10z"/></symbol>
-<symbol id="i-chevron" viewBox="0 0 24 24"><path d="M9.29 6.71a1 1 0 0 0 0 1.41L13.17 12l-3.88 3.88a1 1 0 1 0 1.41 1.41l4.59-4.59a1 1 0 0 0 0-1.41L10.7 6.7a1 1 0 0 0-1.41.01z"/></symbol>
-<symbol id="i-dictionaries" viewBox="0 0 24 24"><path d="M12.87 15.07l-2.54-2.51.03-.03c1.74-1.94 2.98-4.17 3.71-6.53H17V4h-7V2H8v2H1v1.99h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/></symbol>
-<symbol id="i-edit" viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></symbol>
-<symbol id="i-up" viewBox="0 0 24 24"><path d="M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z"/></symbol>
-<symbol id="i-down" viewBox="0 0 24 24"><path d="M20 12l-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z"/></symbol>
-<symbol id="i-search" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></symbol>
-<symbol id="i-more" viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></symbol>
-</defs></svg>
 <div class="app">
-<nav class="rail" id="rail">
-<div class="brand"><img src="__FUSHI_LOGO__" alt=""><span>fushi_server</span></div>
-<button data-s="status" class="on"><span class="ind"><svg class="i"><use href="#i-status"/></svg></span><span class="lbl">状态</span></button>
-<button data-s="pairing"><span class="ind"><svg class="i"><use href="#i-pairing"/></svg><span class="badge" id="pair-badge" hidden></span></span><span class="lbl">配对</span></button>
-<button data-s="libraries"><span class="ind"><svg class="i"><use href="#i-libraries"/></svg></span><span class="lbl">库</span></button>
-<button data-s="upload"><span class="ind"><svg class="i"><use href="#i-upload"/></svg></span><span class="lbl">上传</span></button>
-<button data-s="dictionaries"><span class="ind"><svg class="i"><use href="#i-dictionaries"/></svg></span><span class="lbl">词典</span></button>
-<hr>
-<button data-s="jobs"><span class="ind"><svg class="i"><use href="#i-jobs"/></svg></span><span class="lbl">任务</span></button>
-<button data-s="downloads"><span class="ind"><svg class="i"><use href="#i-downloads"/></svg></span><span class="lbl">下载</span></button>
-<button data-s="subscriptions"><span class="ind"><svg class="i"><use href="#i-subscriptions"/></svg></span><span class="lbl">订阅</span></button>
-<button data-s="models"><span class="ind"><svg class="i"><use href="#i-models"/></svg></span><span class="lbl">模型</span></button>
-<hr>
-<button data-s="ai"><span class="ind"><svg class="i"><use href="#i-ai"/></svg></span><span class="lbl">AI 助手</span></button>
-<button data-s="anki"><span class="ind"><svg class="i"><use href="#i-anki"/></svg></span><span class="lbl">Anki</span></button>
-<button data-s="srs"><span class="ind"><svg class="i"><use href="#i-srs"/></svg></span><span class="lbl">复习</span></button>
-<hr>
-<button data-s="settings"><span class="ind"><svg class="i"><use href="#i-settings"/></svg></span><span class="lbl">设置</span></button>
-<button data-s="logs"><span class="ind"><svg class="i"><use href="#i-logs"/></svg></span><span class="lbl">日志</span></button>
+<nav class="nav-rail" id="rail">
+<div class="nav-rail-head"><div class="brand"><img src="__FUSHI_LOGO__" alt=""><span>fushi_server</span></div><button class="icon-button" id="btn-rail" type="button" title="收起侧边栏" aria-expanded="true"><span class="msr-slot" data-fushi-icon="menu"></span></button></div>
+<div class="nav-group-label">概览</div>
+<button class="nav-item" data-s="status" aria-current="page"><span class="nav-indicator"><span class="msr-slot" data-fushi-icon="dashboard"></span></span><span class="nav-label">状态</span></button>
+<button class="nav-item" data-s="pairing"><span class="nav-indicator"><span class="msr-slot" data-fushi-icon="link"></span><span class="badge" id="pair-badge" hidden></span></span><span class="nav-label">配对</span></button>
+<div class="nav-group-label">媒体库</div>
+<button class="nav-item" data-s="libraries"><span class="nav-indicator"><span class="msr-slot" data-fushi-icon="folder"></span></span><span class="nav-label">库</span></button>
+<button class="nav-item" data-s="upload"><span class="nav-indicator"><span class="msr-slot" data-fushi-icon="cloud_upload"></span></span><span class="nav-label">上传</span></button>
+<button class="nav-item" data-s="dictionaries"><span class="nav-indicator"><span class="msr-slot" data-fushi-icon="dictionary"></span></span><span class="nav-label">词典</span></button>
+<div class="nav-group-label">获取</div>
+<button class="nav-item" data-s="jobs"><span class="nav-indicator"><span class="msr-slot" data-fushi-icon="task_alt"></span></span><span class="nav-label">任务</span></button>
+<button class="nav-item" data-s="downloads"><span class="nav-indicator"><span class="msr-slot" data-fushi-icon="download"></span></span><span class="nav-label">下载</span></button>
+<button class="nav-item" data-s="subscriptions"><span class="nav-indicator"><span class="msr-slot" data-fushi-icon="rss_feed"></span></span><span class="nav-label">订阅</span></button>
+<button class="nav-item" data-s="models"><span class="nav-indicator"><span class="msr-slot" data-fushi-icon="memory"></span></span><span class="nav-label">模型</span></button>
+<div class="nav-group-label">学习</div>
+<button class="nav-item" data-s="ai"><span class="nav-indicator"><span class="msr-slot" data-fushi-icon="auto_awesome"></span></span><span class="nav-label">AI 助手</span></button>
+<button class="nav-item" data-s="anki"><span class="nav-indicator"><span class="msr-slot" data-fushi-icon="layers"></span></span><span class="nav-label">Anki</span></button>
+<button class="nav-item" data-s="srs"><span class="nav-indicator"><span class="msr-slot" data-fushi-icon="school"></span></span><span class="nav-label">复习</span></button>
+<div class="nav-group-label">系统</div>
+<button class="nav-item" data-s="settings"><span class="nav-indicator"><span class="msr-slot" data-fushi-icon="settings"></span></span><span class="nav-label">设置</span></button>
+<button class="nav-item" data-s="logs"><span class="nav-indicator"><span class="msr-slot" data-fushi-icon="receipt_long"></span></span><span class="nav-label">日志</span></button>
 </nav>
-<div class="scrim-nav" id="scrim-nav"></div>
+<div class="nav-scrim" id="scrim-nav"></div>
 <header class="topbar">
-<button class="icon-btn menu" id="btn-menu" type="button" title="菜单"><svg class="i"><use href="#i-menu"/></svg></button>
+<button class="icon-button" id="btn-menu" type="button" title="菜单"><span class="msr-slot" data-fushi-icon="menu"></span></button>
 <div class="ttl"><h1 id="page-title">状态</h1><span id="devname"></span></div>
-<button class="icon-btn" id="btn-theme" type="button"><svg class="i"><use href="#i-system"/></svg></button>
-<form method="post" action="/logout"><button class="icon-btn" type="submit" title="退出"><svg class="i"><use href="#i-logout"/></svg></button></form>
+<button class="icon-button" id="btn-theme" type="button"><span class="msr-slot" data-fushi-icon="contrast"></span></button>
+<form method="post" action="/logout"><button class="icon-button" type="submit" title="退出"><span class="msr-slot" data-fushi-icon="logout"></span></button></form>
 </header>
 <main id="main">
 
 <section id="s-status" class="on">
-<div class="tiles" id="status-tiles"><div class="tile skel"></div><div class="tile skel"></div><div class="tile skel"></div><div class="tile skel"></div></div>
-<h3 class="sh" id="attn-h" hidden>需要处理</h3>
-<div class="list attn" id="status-attn"></div>
-<div class="card"><div class="card-head"><div><h2>扫描</h2><p class="sup" id="scan-state"></p></div><button class="b" id="btn-scan"><svg class="i"><use href="#i-refresh"/></svg>立即扫描库</button></div>
-<div class="bar indet" id="scan-bar" hidden><i></i></div></div>
-<h3 class="sh">运行状态</h3>
-<div class="card"><div class="grid" id="status-grid" style="margin:0"></div></div>
+<div class="tiles" id="status-tiles"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
+<h3 class="kit-section-title" id="attn-h" hidden>需要处理</h3>
+<div class="setting-list is-surface attn" id="status-attn"></div>
+<div class="card"><div class="card-head"><div class="card-head-copy"><h2 class="kit-title-medium">扫描</h2><p class="kit-supporting" id="scan-state"></p></div><button class="primary-button" id="btn-scan"><span class="msr-slot" data-fushi-icon="refresh"></span>立即扫描库</button></div>
+<div class="progress is-indeterminate" id="scan-bar" hidden><i></i></div></div>
+<h3 class="kit-section-title">运行状态</h3>
+<div class="card"><div class="kv-grid" id="status-grid"></div></div>
 </section>
 
 <section id="s-pairing">
 <div id="pairing-lockout"></div>
-<div class="card"><div class="card-head"><div><h2>配对链接</h2><p class="sup" style="margin:0">一次性链接自带票据，配对不用 PIN；来自公网的 PIN 配对被暂停时也能用。</p></div><button class="b sec" id="btn-pair-link">生成配对链接</button></div><div id="pair-link-out" hidden></div></div>
-<div id="pairing-pending"><div class="list"><div class="skel"></div></div></div>
-<h3 class="sh">已配对设备</h3>
-<div class="list" id="peers"><div class="skel"></div><div class="skel"></div></div>
+<div class="card"><div class="card-head"><div class="card-head-copy"><h2 class="kit-title-medium">配对链接</h2><p class="kit-supporting">一次性链接自带票据，配对不用 PIN；来自公网的 PIN 配对被暂停时也能用。</p></div><button class="text-button" id="btn-pair-link">生成配对链接</button></div><div id="pair-link-out" hidden></div></div>
+<div id="pairing-pending"><div class="setting-list is-surface"><div class="skeleton"></div></div></div>
+<h3 class="kit-section-title">已配对设备</h3>
+<div class="setting-list is-surface" id="peers"><div class="skeleton"></div><div class="skeleton"></div></div>
 <p class="note"><span id="lb-link-state"></span> 标为「我的设备」的已配对设备在本机没有 Fushi 账户时，会跟随本机（当前 Profile）的排行榜账户自动登录：设备只交来它自己的公钥，由本机账户代绑；私钥 / 恢复码不外传。配对不会自动标记；只有配对时证明过设备钥匙的设备能标（旧版客户端需升级后重新配对）。仅 TLS 下可用，总开关在「设置」。</p>
-<h3 class="sh">配置文件寄存<span class="sp"></span><span id="prof-state"></span></h3>
-<div class="card"><div class="card-head"><div><p class="sup" style="margin:0">已配对设备在「互联 → 上传配置 / 下载配置」里把配置方案（Profile）推到本机寄存，另一台设备再拉走。本机只寄存、不应用；设备拉取时交出标「分发中」的那一份（缺省为最近收到的）。凭据已由发送端剔除。仅 TLS 下可用。</p></div><button class="b sec" id="btn-prof-toggle"></button></div></div>
-<div class="list" id="profiles"></div>
+<h3 class="kit-section-title">配置文件寄存<span class="kit-spacer"></span><span id="prof-state"></span></h3>
+<div class="card"><div class="card-head"><div class="card-head-copy"><p class="kit-supporting">已配对设备在「互联 → 上传配置 / 下载配置」里把配置方案（Profile）推到本机寄存，另一台设备再拉走。本机只寄存、不应用；设备拉取时交出标「分发中」的那一份（缺省为最近收到的）。凭据已由发送端剔除。仅 TLS 下可用。</p></div><button class="text-button" id="btn-prof-toggle"></button></div></div>
+<div class="setting-list is-surface" id="profiles"></div>
 </section>
 
 <section id="s-libraries">
-<h3 class="sh">扫描根</h3>
-<div class="list" id="libs"><div class="skel"></div><div class="skel"></div></div>
-<div class="card"><h2>添加</h2>
-<div class="grid">
-<label class="f" style="grid-column:1/-1">路径<input type="text" id="lib-path" placeholder="/srv/media/anime"></label>
-<div class="f" style="grid-column:1/-1;display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:500;color:var(--on-surface-variant)">类型<div class="seg kind-seg" id="lib-kind" role="radiogroup">
-<label><input type="radio" name="lib-kind" value="video" checked><span><svg class="i"><use href="#i-video"/></svg>视频</span></label>
-<label><input type="radio" name="lib-kind" value="book"><span><svg class="i"><use href="#i-book"/></svg>书</span></label>
-<label><input type="radio" name="lib-kind" value="manga"><span><svg class="i"><use href="#i-manga"/></svg>漫画</span></label>
-<label><input type="radio" name="lib-kind" value="audiobook"><span><svg class="i"><use href="#i-audio"/></svg>有声书</span></label></div><span class="muted" style="font-weight:400" id="lib-kind-hint"></span></div>
-<label class="f">id（可空）<input type="text" id="lib-id"></label></div>
-<div class="actions"><button class="b" id="btn-lib-add"><svg class="i"><use href="#i-add"/></svg>添加</button><span class="hint">加完记得在「状态」页点扫描；服务端进程要能读到该目录。</span></div>
+<h3 class="kit-section-title">扫描根</h3>
+<div class="setting-list is-surface" id="libs"><div class="skeleton"></div><div class="skeleton"></div></div>
+<div class="card"><h2 class="kit-title-medium">添加</h2>
+<div class="form-grid">
+<label class="field is-wide">路径<input type="text" id="lib-path" placeholder="/srv/media/anime"></label>
+<div class="field is-wide">类型<div class="segmented" id="lib-kind" role="radiogroup">
+<label><input type="radio" name="lib-kind" value="video" checked><span><span class="msr-slot" data-fushi-icon="movie"></span>视频</span></label>
+<label><input type="radio" name="lib-kind" value="book"><span><span class="msr-slot" data-fushi-icon="book"></span>书</span></label>
+<label><input type="radio" name="lib-kind" value="manga"><span><span class="msr-slot" data-fushi-icon="auto_stories"></span>漫画</span></label>
+<label><input type="radio" name="lib-kind" value="audiobook"><span><span class="msr-slot" data-fushi-icon="headphones"></span>有声书</span></label></div><span class="field-hint" id="lib-kind-hint"></span></div>
+<label class="field">id（可空）<input type="text" id="lib-id"></label></div>
+<div class="action-row"><button class="primary-button" id="btn-lib-add"><span class="msr-slot" data-fushi-icon="add"></span>添加</button><span class="field-hint">加完记得在「状态」页点扫描；服务端进程要能读到该目录。</span></div>
 </div>
 </section>
 
 <section id="s-upload">
-<div class="card"><h2>上传到库</h2>
-<div class="grid">
-<label class="f">库<select id="up-lib"></select></label>
-<label class="f">子目录（可空，如 Season1）<input type="text" id="up-sub" list="up-sub-list" autocomplete="off"><datalist id="up-sub-list"></datalist></label>
-<label class="f" style="grid-column:1/-1">文件<input type="file" id="up-files" multiple style="height:auto;padding:12px 14px"></label></div>
-<div class="actions"><button class="b" id="btn-up"><svg class="i"><use href="#i-upload"/></svg>开始上传</button><span class="hint">分块 8 MB，可断点续传（同名文件继续）；上传完成后需扫描库。</span></div>
+<div class="card"><h2 class="kit-title-medium">上传到库</h2>
+<div class="form-grid">
+<label class="field">库<select id="up-lib"></select></label>
+<label class="field">子目录（可空，如 Season1）<input type="text" id="up-sub" list="up-sub-list" autocomplete="off"><datalist id="up-sub-list"></datalist></label>
+<div class="field is-wide">文件<label class="dropzone"><input type="file" id="up-files" multiple><span class="msr-slot" data-fushi-icon="upload_file"></span><span class="dropzone-label">拖放文件到这里，或点击选择</span><span class="dropzone-files" id="up-files-names"></span></label></div></div>
+<div class="action-row"><button class="primary-button" id="btn-up"><span class="msr-slot" data-fushi-icon="upload"></span>开始上传</button><span class="field-hint">分块 8 MB，可断点续传（同名文件继续）；上传完成后需扫描库。</span></div>
 </div>
-<div class="list" id="up-list"></div>
+<div class="setting-list is-surface" id="up-list"></div>
 <p class="note" id="up-quota"></p>
 </section>
 
 <section id="s-dictionaries">
-<h3 class="sh">查词引擎<span class="sp"></span><button class="b text" id="btn-dict-reload"><svg class="i"><use href="#i-refresh"/></svg>重新装载引擎</button></h3>
-<div class="card"><div class="grid" id="dict-engine" style="margin:0"></div></div>
+<h3 class="kit-section-title">查词引擎<span class="kit-spacer"></span><button class="plain-button" id="btn-dict-reload"><span class="msr-slot" data-fushi-icon="refresh"></span>重新装载引擎</button></h3>
+<div class="card"><div class="kv-grid" id="dict-engine"></div></div>
 <p class="note">已配对设备查词时只把要查的文字发过来，去屈折（「食べた」→「食べる」）在本机用本机的变形表做，所以变形表装在服务端即可，各设备无需自带。</p>
-<div class="card"><h2>导入词典</h2>
-<div class="grid"><label class="f" style="grid-column:1/-1">词典包<input type="file" id="dict-file" accept=".zip,.fushidict,.mdx,.dsl" style="height:auto;padding:12px 14px"></label></div>
-<div class="actions"><button class="b" id="btn-dict-up"><svg class="i"><use href="#i-upload"/></svg>导入</button><span class="hint">支持 Fushi app 导出的 .fushidict 词典包，以及 Yomitan（.zip）、MDX、DSL 词典。同名词典视为更新，保留排序与设置。导入完立即生效，计入上传配额；也可以在 Fushi 的「词典 · 传输」推送过来。</span></div>
-<p class="sup" id="dict-up-state"></p>
+<div class="card"><h2 class="kit-title-medium">导入词典</h2>
+<div class="form-grid"><div class="field is-wide">词典包<label class="dropzone"><input type="file" id="dict-file" accept=".zip,.fushidict,.mdx,.dsl"><span class="msr-slot" data-fushi-icon="upload_file"></span><span class="dropzone-label">拖放文件到这里，或点击选择</span><span class="dropzone-files" id="dict-file-name"></span></label></div></div>
+<div class="action-row"><button class="primary-button" id="btn-dict-up"><span class="msr-slot" data-fushi-icon="upload"></span>导入</button><span class="field-hint">支持 Fushi app 导出的 .fushidict 词典包，以及 Yomitan（.zip）、MDX、DSL 词典。同名词典视为更新，保留排序与设置。导入完立即生效，计入上传配额；也可以在 Fushi 的「词典 · 传输」推送过来。</span></div>
+<p class="kit-supporting" id="dict-up-state"></p>
 </div>
-<h3 class="sh">词典</h3>
-<div class="list" id="dicts"><div class="skel"></div><div class="skel"></div></div>
+<h3 class="kit-section-title">词典</h3>
+<div class="setting-list is-surface" id="dicts"><div class="skeleton"></div><div class="skeleton"></div></div>
 <p class="note">顺序决定查词结果里各词典的排列。「默认启用」只对不携带配置词典选择的请求生效（浏览器扩展、旧版 app）；Fushi app 每次查词都带自己配置（Profile）的选择，会覆盖这里的默认值。</p>
 <p class="note">词典语言同 app 里每本词典的语言设置：「自动」用词典包自己声明的词头语言。改动在设备下次刷新服务端词典目录时生效。</p>
-<h3 class="sh">试查</h3>
-<div class="card"><div class="row" style="margin:0"><input type="text" id="dict-q" placeholder="食べた" style="flex:1 1 200px;width:auto"><button class="b" id="btn-dict-q"><svg class="i"><use href="#i-search"/></svg>查词</button></div></div>
+<h3 class="kit-section-title">试查</h3>
+<div class="card"><div class="action-row"><input type="text" id="dict-q" placeholder="食べた" style="flex:1 1 200px;height:40px"><button class="primary-button" id="btn-dict-q"><span class="msr-slot" data-fushi-icon="search"></span>查词</button></div></div>
 <div id="dict-results"></div>
 </section>
 
 <section id="s-jobs">
-<h3 class="sh">互联任务（ASR 等）</h3>
-<div class="list" id="jobs"><div class="skel"></div></div>
+<h3 class="kit-section-title">互联任务（ASR 等）</h3>
+<div class="setting-list is-surface" id="jobs"><div class="skeleton"></div></div>
 </section>
 
 <section id="s-downloads">
-<div class="card"><h2>添加磁力下载</h2><p class="sup" id="dl-cap"></p>
-<div class="grid">
-<label class="f" style="grid-column:1/-1">磁力链接<input type="text" id="dl-magnet" placeholder="magnet:?xt=urn:btih:…"></label>
-<label class="f">标题<input type="text" id="dl-title"></label>
-<label class="f">类型<select id="dl-kind"><option value="movie">movie</option><option value="tv">tv</option></select></label></div>
-<div class="actions"><button class="b" id="btn-dl-add"><svg class="i"><use href="#i-add"/></svg>添加</button></div></div>
-<h3 class="sh">下载任务</h3>
-<div class="list" id="dls"><div class="skel"></div></div>
+<div class="card"><h2 class="kit-title-medium">添加磁力下载</h2><p class="kit-supporting" id="dl-cap"></p>
+<div class="form-grid">
+<label class="field is-wide">磁力链接<input type="text" id="dl-magnet" placeholder="magnet:?xt=urn:btih:…"></label>
+<label class="field">标题<input type="text" id="dl-title"></label>
+<label class="field">类型<select id="dl-kind"><option value="movie">movie</option><option value="tv">tv</option></select></label></div>
+<div class="action-row"><button class="primary-button" id="btn-dl-add"><span class="msr-slot" data-fushi-icon="add"></span>添加</button></div></div>
+<h3 class="kit-section-title">下载任务</h3>
+<div class="setting-list is-surface" id="dls"><div class="skeleton"></div></div>
 </section>
 
 <section id="s-subscriptions">
-<div class="card"><h2>新建订阅（按搜索词追新）</h2><p class="sup" id="sub-cap">从 Fushi 客户端的发现页订阅会带完整作品身份（原名/别名/交叉 ID）；这里只按搜索词匹配。</p>
-<div class="grid">
-<label class="f">标题（显示用）<input type="text" id="sub-title"></label>
-<label class="f">搜索词<input type="text" id="sub-query" placeholder="搜索词，如 Frieren 1080p"></label>
-<label class="f">源<select id="sub-provider"></select></label>
-<label class="f">类型<select id="sub-kind"><option value="tv">tv（持续追新）</option><option value="movie">movie（一次）</option></select></label>
-<label class="f">从第几集之后开始（可空）<input type="number" id="sub-after"></label></div>
-<div class="actions"><button class="b" id="btn-sub-add"><svg class="i"><use href="#i-add"/></svg>创建</button></div></div>
-<h3 class="sh">订阅<span class="sp"></span><button class="b text" id="btn-sub-check-all"><svg class="i"><use href="#i-refresh"/></svg>全部立即检查</button></h3>
-<div class="list" id="subs"><div class="skel"></div></div>
-<h3 class="sh">资源索引器</h3>
+<div class="card"><h2 class="kit-title-medium">新建订阅（按搜索词追新）</h2><p class="kit-supporting" id="sub-cap">从 Fushi 客户端的发现页订阅会带完整作品身份（原名/别名/交叉 ID）；这里只按搜索词匹配。</p>
+<div class="form-grid">
+<label class="field">标题（显示用）<input type="text" id="sub-title"></label>
+<label class="field">搜索词<input type="text" id="sub-query" placeholder="搜索词，如 Frieren 1080p"></label>
+<label class="field">源<select id="sub-provider"></select></label>
+<label class="field">类型<select id="sub-kind"><option value="tv">tv（持续追新）</option><option value="movie">movie（一次）</option></select></label>
+<label class="field">从第几集之后开始（可空）<input type="number" id="sub-after"></label></div>
+<div class="action-row"><button class="primary-button" id="btn-sub-add"><span class="msr-slot" data-fushi-icon="add"></span>创建</button></div></div>
+<h3 class="kit-section-title">订阅<span class="kit-spacer"></span><button class="plain-button" id="btn-sub-check-all"><span class="msr-slot" data-fushi-icon="refresh"></span>全部立即检查</button></h3>
+<div class="setting-list is-surface" id="subs"><div class="skeleton"></div></div>
+<h3 class="kit-section-title">资源索引器</h3>
 <div class="card">
-<p class="sup" style="margin:0">订阅与代下载在这些来源里搜资源。与 Fushi app 的资源来源设置是同一份配置；改动对正在运行的服务立即生效（正在下载的种子不受影响）。</p>
-<p class="sup" id="ri-none" style="display:none">还没有 BT 来源。添加一个 BT 站地址，或接入 Torznab 索引器</p>
-<h2 class="sub-h">BT 站</h2>
+<p class="kit-supporting">订阅与代下载在这些来源里搜资源。与 Fushi app 的资源来源设置是同一份配置；改动对正在运行的服务立即生效（正在下载的种子不受影响）。</p>
+<p class="kit-supporting" id="ri-none" style="display:none">还没有 BT 来源。添加一个 BT 站地址，或接入 Torznab 索引器</p>
+<h2 class="kit-title-medium">BT 站</h2>
 <div id="ri-bt"></div>
-<div class="inset">
-<div class="grid" style="margin:0"><label class="f">站点地址<input type="text" id="bt-url" placeholder="https://example.com"></label><label class="f">名称（可选）<input type="text" id="bt-name"></label></div>
-<div class="fchips" id="bt-domains"></div>
-<div class="row"><label class="check"><input type="checkbox" class="sw" id="bt-enabled" checked><span>启用</span></label><label class="check"><input type="checkbox" class="sw" id="bt-insecure"><span>允许明文 HTTP（仅受信任局域网）</span></label><span class="sp"></span><button class="b" id="btn-bt-add"><svg class="i"><use href="#i-add"/></svg>添加</button></div>
-<label class="f">解析规则（可选，JSON）<textarea id="bt-parser" rows="4"></textarea></label>
-<label class="f">登录 Cookie（可选，仅带解析规则的站点）<input type="password" id="bt-cookie" autocomplete="off"></label>
-<p class="sup">只填地址即可，添加时会自动检测站点。</p>
-<p class="sup">自动检测认不出的站点，可以粘贴它的解析规则（JSON）；需要登录的站再填 Cookie。</p></div>
-<h2 class="sub-h">Torznab（Jackett / Prowlarr）</h2>
+<div class="card-inset">
+<div class="form-grid"><label class="field">站点地址<input type="text" id="bt-url" placeholder="https://example.com"></label><label class="field">名称（可选）<input type="text" id="bt-name"></label></div>
+<div class="chip-set" id="bt-domains"></div>
+<div class="action-row"><label class="switch-row"><span class="switch"><input type="checkbox" id="bt-enabled" checked><span></span></span><span>启用</span></label><label class="switch-row"><span class="switch"><input type="checkbox" id="bt-insecure"><span></span></span><span>允许明文 HTTP（仅受信任局域网）</span></label><span class="kit-spacer"></span><button class="primary-button" id="btn-bt-add"><span class="msr-slot" data-fushi-icon="add"></span>添加</button></div>
+<div class="form-grid"><label class="field is-wide">解析规则（可选，JSON）<textarea id="bt-parser" rows="4"></textarea></label>
+<label class="field is-wide">登录 Cookie（可选，仅带解析规则的站点）<input type="password" id="bt-cookie" autocomplete="off"></label></div>
+<p class="kit-supporting">只填地址即可，添加时会自动检测站点。</p>
+<p class="kit-supporting">自动检测认不出的站点，可以粘贴它的解析规则（JSON）；需要登录的站再填 Cookie。</p>
+<details class="kit-supporting" id="bt-parser-help"><summary>怎么写解析规则</summary><p>解析规则用 CSS 选择器告诉服务端站点搜索页上的结果在哪："search" 填搜索页地址里域名之后的部分，搜索词换成 {query}；"rows" 选中包住整条结果的元素（通常是表格行 tr）；"fields" 里写这一行内部的选择器，"title" 必填，"magnet" / "torrent" / "infoHash" 至少一个，末尾加 @href 表示取属性而不是文字。</p><p>下载链接只在详情页时，让 "details" 指向详情页链接，再在 "detail" 段里写 "magnet" 或 "torrent"。不是 UTF-8 的站把 "encoding" 设为 windows-1251 或 latin1。规则里不含登录信息，需要登录的站另填 Cookie。用不到的部分直接删掉。</p><pre id="bt-parser-template">__FUSHI_BT_PARSER_TEMPLATE__</pre><div class="action-row"><button class="plain-button" id="btn-bt-template">填入模板</button></div></details></div>
+<h2 class="kit-title-medium">Torznab（Jackett / Prowlarr）</h2>
 <div id="ri-torznab"></div>
-<div class="actions"><button class="b out" id="btn-ri-add"><svg class="i"><use href="#i-add"/></svg>添加 indexer</button><span class="sp"></span><button class="b text" id="btn-ri-reset">放弃修改</button><button class="b" id="btn-ri-save">保存</button></div>
-<p class="sup" id="ri-state"></p></div>
+<div class="action-row"><button class="outlined-button" id="btn-ri-add"><span class="msr-slot" data-fushi-icon="add"></span>添加 indexer</button><span class="kit-spacer"></span><button class="plain-button" id="btn-ri-reset">放弃修改</button><button class="primary-button" id="btn-ri-save">保存</button></div>
+<p class="kit-supporting" id="ri-state"></p></div>
 </section>
 
 <section id="s-models">
-<h3 class="sh">ASR 模型</h3>
-<div class="list" id="asr-models"><div class="skel"></div></div>
-<h3 class="sh">漫画 OCR 模型</h3>
-<div class="list" id="ocr-model"><div class="skel"></div></div>
+<h3 class="kit-section-title">ASR 模型</h3>
+<div class="setting-list is-surface" id="asr-models"><div class="skeleton"></div></div>
+<h3 class="kit-section-title">漫画 OCR 模型</h3>
+<div class="setting-list is-surface" id="ocr-model"><div class="skeleton"></div></div>
 </section>
 
 <section id="s-anki">
-<div class="card"><h2>Anki 落地</h2>
-<p class="sup">打开后，其它设备（没装 Anki 的手机等）经互联同步过来的待发卡片由本机写进 Anki，再同步到 AnkiWeb 或你的自建 Anki 同步服务器。本机需要随包的 fushi-anki-sync。</p>
-<div class="grid" id="anki-status"></div>
-<div class="actions"><label class="check"><input type="checkbox" class="sw" id="anki-landing"><span>接收其他设备的卡片</span></label><span class="sp"></span>
-<button class="b sec" id="btn-anki-run">立即落地</button><button class="b sec" id="btn-anki-retry">重试失败的卡</button></div>
+<div class="card"><h2 class="kit-title-medium">Anki 落地</h2>
+<p class="kit-supporting">打开后，其它设备（没装 Anki 的手机等）经互联同步过来的待发卡片由本机写进 Anki，再同步到 AnkiWeb 或你的自建 Anki 同步服务器。本机需要随包的 fushi-anki-sync。</p>
+<div class="kv-grid" id="anki-status"></div>
+<div class="action-row"><label class="switch-row"><span class="switch"><input type="checkbox" id="anki-landing"><span></span></span><span>接收其他设备的卡片</span></label><span class="kit-spacer"></span>
+<button class="text-button" id="btn-anki-run">立即落地</button><button class="text-button" id="btn-anki-retry">重试失败的卡</button></div>
 </div>
-<h3 class="sh">Anki 同步账号</h3>
+<h3 class="kit-section-title">Anki 同步账号</h3>
 <div class="card" id="anki-account"></div>
-<h3 class="sh">牌组 / 笔记类型 / 字段</h3>
+<h3 class="kit-section-title">牌组 / 笔记类型 / 字段</h3>
 <div class="card" id="anki-config"></div>
 </section>
 
 <section id="s-srs">
-<div class="card"><h2>Fushi 复习</h2>
-<p class="sup">本机替已配对设备保管 Fushi 复习的收藏：手机可以远程复习、制卡落到这里，Yomitan 可经下面的 AnkiConnect 往这里加卡。勾选要提供的配置文件（每门语言一份）；不勾选任何一份 = 关闭。同步位置开了端到端加密的配置文件暂不支持。</p>
-<div class="grid" id="srs-status"></div>
+<div class="card"><h2 class="kit-title-medium">Fushi 复习</h2>
+<p class="kit-supporting">本机替已配对设备保管 Fushi 复习的收藏：手机可以远程复习、制卡落到这里，Yomitan 可经下面的 AnkiConnect 往这里加卡。勾选要提供的配置文件（每门语言一份）；不勾选任何一份 = 关闭。同步位置开了端到端加密的配置文件暂不支持。</p>
+<div class="kv-grid" id="srs-status"></div>
+<div id="srs-migration"></div>
+<div id="srs-retained"></div>
 <div id="srs-profiles" style="margin-top:12px"></div>
 </div>
-<h3 class="sh">待确认的设备</h3>
+<h3 class="kit-section-title">待确认的设备</h3>
 <div class="card">
-<p class="sup" style="margin:0">本机开始提供某份配置文件之后才第一次同步过来的设备，它的普通修改照常生效，删除与彻底清除先扣在本机，确认是你自己的设备后再生效。拒绝 = 继续扣着，之后仍可改为信任。</p>
-<div id="srs-devices"></div></div>
-<h3 class="sh">制卡落点</h3>
+<p class="kit-supporting">本机开始提供某份配置文件之后才第一次同步过来的设备，它的普通修改照常生效，删除与彻底清除先扣在本机，确认是你自己的设备后再生效。拒绝 = 继续扣着，之后仍可改为信任。</p>
+<div class="setting-list" id="srs-devices"></div></div>
+<h3 class="kit-section-title">制卡落点</h3>
 <div class="card" id="srs-mining"></div>
-<h3 class="sh">RWKV 模型</h3>
+<h3 class="kit-section-title">RWKV 模型</h3>
 <div class="card">
-<p class="sup" style="margin:0">算法是 RWKV 的牌组用哪个模型排程（整台设备一个设置，各份配置文件共用）。换了当场生效：需要时先下载新权重，没有这一档的快照时按全部复习历史重放一次，期间这些牌组不出复习卡。</p>
+<p class="kit-supporting">算法是 RWKV 的牌组用哪个模型排程（整台设备一个设置，各份配置文件共用）。换了当场生效：需要时先下载新权重，没有这一档的快照时按全部复习历史重放一次，期间这些牌组不出复习卡。</p>
 <div id="srs-rwkv"></div></div>
-<h3 class="sh">AnkiConnect 兼容接口</h3>
+<h3 class="kit-section-title">AnkiConnect 兼容接口</h3>
 <div class="card">
-<p class="sup" style="margin:0">默认关闭。只监听本机时可以不设 key；监听局域网地址必须设 key。每份配置文件可以有自己的 key（Yomitan 里一门语言一个 key），共用 key 落到默认那份。</p>
+<p class="kit-supporting">默认关闭。只监听本机时可以不设 key；监听局域网地址必须设 key。每份配置文件可以有自己的 key（Yomitan 里一门语言一个 key），共用 key 落到默认那份。</p>
 <div id="srs-ankiconnect"></div></div>
 </section>
 
 <section id="s-settings">
-<div id="settings-form"><div class="list"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div></div>
-<div class="actions savebar" id="savebar" hidden><span class="count" id="dirty-count"></span><span class="hint">端口 / TLS / 绑定 / qBittorrent / torrent / ffmpeg / onnxruntime 路径改后需重启 serve。</span><button class="b text" id="btn-settings-discard">放弃</button><button class="b" id="btn-settings-save">保存</button></div>
-<h3 class="sh">远程访问</h3>
-<div class="card">
-<label class="f">公网地址（每行一个，http:// 或 https://；反代 / DDNS / 端口映射后的地址，已配对设备会自动学到）<textarea id="rr-public" rows="3" placeholder="https://nas.example.com:38765"></textarea></label>
-<div class="row" style="margin:16px 0"><label class="check"><input type="checkbox" class="sw" id="rr-p2p"><span>允许 P2P 隧道连接</span></label><span class="small muted">没有公网 IP 时用（iroh）；开启后会连接中继与发现服务，对端 / 中继能看到本机 IP。</span></div>
-<label class="f">自建中继（每行一个，空 = iroh 公共中继）<textarea id="rr-relays" rows="2" placeholder="https://relay.example.com"></textarea></label>
-<p class="sup" id="rr-state"></p>
-<div class="actions"><button class="b" id="btn-rr-save">保存</button><span class="hint">这三项保存即生效，无需重启。</span></div>
+<h3 class="kit-section-title">外观</h3>
+<div class="card appearance">
+<p class="kit-supporting">只存在这台电脑的浏览器里，不影响服务端与其他设备。</p>
+<div class="field">明暗<div class="segmented" role="radiogroup" id="ap-theme">
+<label><input type="radio" name="ap-theme" value="auto"><span><span class="msr-slot" data-fushi-icon="contrast"></span>跟随系统</span></label>
+<label><input type="radio" name="ap-theme" value="light"><span><span class="msr-slot" data-fushi-icon="light_mode"></span>浅色</span></label>
+<label><input type="radio" name="ap-theme" value="dark"><span><span class="msr-slot" data-fushi-icon="dark_mode"></span>深色</span></label></div></div>
+<div class="field">风格<div class="segmented" role="radiogroup" id="ap-style">
+<label><input type="radio" name="ap-style" value="m3e"><span>Material 3 Expressive</span></label>
+<label><input type="radio" name="ap-style" value="glass"><span>液态玻璃</span></label></div></div>
+<div class="field">配色<div class="swatch-set" id="ap-palette" role="radiogroup"></div></div>
 </div>
-<h3 class="sh">在线字幕来源</h3>
+<div id="settings-form"><div class="setting-list is-surface"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div></div>
+<div class="save-bar" id="savebar" hidden><span class="count" id="dirty-count"></span><span class="field-hint">端口 / TLS / 绑定 / qBittorrent / torrent / ffmpeg / onnxruntime 路径改后需重启 serve。</span><button class="plain-button" id="btn-settings-discard">放弃</button><button class="primary-button" id="btn-settings-save">保存</button></div>
+<h3 class="kit-section-title">远程访问</h3>
 <div class="card">
-<p class="sup" style="margin:0">代下载配字幕与补字幕用。与 app 同一份设置；key 不回显，留空不改。设了 FUSHI_* 环境变量时，环境变量里的 key 优先。</p>
+<div class="form-grid">
+<label class="field is-wide">公网地址（每行一个，http:// 或 https://；反代 / DDNS / 端口映射后的地址，已配对设备会自动学到）<textarea id="rr-public" rows="3" placeholder="https://nas.example.com:38765"></textarea></label>
+<div class="field is-wide"><label class="switch-row"><span class="switch"><input type="checkbox" id="rr-p2p"><span></span></span><span>允许 P2P 隧道连接</span></label><span class="field-hint">没有公网 IP 时用（iroh）；开启后会连接中继与发现服务，对端 / 中继能看到本机 IP。</span></div>
+<label class="field is-wide">自建中继（每行一个，空 = iroh 公共中继）<textarea id="rr-relays" rows="2" placeholder="https://relay.example.com"></textarea></label></div>
+<p class="kit-supporting" id="rr-state"></p>
+<div class="action-row"><button class="primary-button" id="btn-rr-save">保存</button><span class="field-hint">这三项保存即生效，无需重启。</span></div>
+</div>
+<h3 class="kit-section-title">在线字幕来源</h3>
+<div class="card">
+<p class="kit-supporting">代下载配字幕与补字幕用。与 app 同一份设置；key 不回显，留空不改。设了 FUSHI_* 环境变量时，环境变量里的 key 优先。</p>
 <div id="subs-form"></div>
-<div class="actions"><button class="b" id="btn-subs-save">保存</button><span class="hint">保存即生效：下一个下载任务的字幕阶段就用新设置。</span></div>
+<div class="action-row"><button class="primary-button" id="btn-subs-save">保存</button><span class="field-hint">保存即生效：下一个下载任务的字幕阶段就用新设置。</span></div>
 </div>
 </section>
 
 <section id="s-ai">
-<div class="card"><h2>AI 助手会话</h2>
-<p class="sup">已配对设备经互联让本服务端跑的 AI 助手会话（保留 30 天）。这里只读；撤销与续接在发起的那台设备上做。</p></div>
-<div class="list" id="ai-sessions"><div class="skel"></div></div>
-<div class="card" id="ai-detail" style="display:none"><h2 id="ai-detail-title"></h2><p class="sup" id="ai-detail-meta"></p><div id="ai-entries" style="margin-top:8px"></div></div>
+<div class="card"><h2 class="kit-title-medium">AI 助手会话</h2>
+<p class="kit-supporting">已配对设备经互联让本服务端跑的 AI 助手会话（保留 30 天）。这里只读；撤销与续接在发起的那台设备上做。</p></div>
+<div class="setting-list is-surface" id="ai-sessions"><div class="skeleton"></div></div>
+<div class="card" id="ai-detail" style="display:none"><h2 class="kit-title-medium" id="ai-detail-title"></h2><p class="kit-supporting" id="ai-detail-meta"></p><div id="ai-entries"></div></div>
 </section>
 
 <section id="s-logs">
-<div class="card"><div class="card-head"><div><h2 style="margin:0">最近日志</h2></div><label class="check"><span>自动刷新</span><input type="checkbox" class="sw" id="log-auto" checked></label><button class="b sec" id="btn-log-refresh"><svg class="i"><use href="#i-refresh"/></svg>刷新</button></div>
-<div class="seg log-filter" role="radiogroup"><label><input type="radio" name="log-lv" value="all" checked><span>全部</span></label><label><input type="radio" name="log-lv" value="problems"><span id="log-lv-problems">仅错误</span></label></div>
+<div class="card"><div class="card-head"><div class="card-head-copy"><h2 class="kit-title-medium">最近日志</h2></div><label class="switch-row"><span>自动刷新</span><span class="switch"><input type="checkbox" id="log-auto" checked><span></span></span></label><button class="text-button" id="btn-log-refresh"><span class="msr-slot" data-fushi-icon="refresh"></span>刷新</button></div>
+<div class="segmented" role="radiogroup"><label><input type="radio" name="log-lv" value="all" checked><span>全部</span></label><label><input type="radio" name="log-lv" value="problems"><span id="log-lv-problems">仅错误</span></label></div>
 <pre id="logs"></pre></div>
 </section>
 
 </main>
 </div>
-<dialog id="dlg"><div class="di"><svg class="i"><use href="#i-help"/></svg></div><p id="dlg-msg"></p>
-<div class="actions"><button class="b text" id="dlg-no" type="button">取消</button><button class="b" id="dlg-ok" type="button">确定</button></div></dialog>
-<div id="toast" role="status" aria-live="polite"></div>
+<dialog class="kit-dialog" id="dlg"><div class="kit-dialog-icon"><span class="msr-slot" data-fushi-icon="help" data-fushi-icon-size="24"></span></div><p class="kit-dialog-body" id="dlg-msg"></p>
+<div class="kit-dialog-actions"><button class="plain-button" id="dlg-no" type="button">取消</button><button class="primary-button" id="dlg-ok" type="button">确定</button></div></dialog>
+<div class="toast is-floating" id="toast" role="status" aria-live="polite"></div>
+__FUSHI_KIT_BODY__
 <script>
 'use strict';
 // ── 界面语言 ── LANG / EN 由服务端在出页时填（配置 `language`，见 renderAdminWebUi）。
@@ -625,14 +421,20 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtBytes = (n) => { n = Number(n||0); const u=['B','KB','MB','GB','TB']; let i=0; while(n>=1024&&i<u.length-1){n/=1024;i++;} return n.toFixed(i?1:0)+' '+u[i]; };
 const fmtTime = (v) => { if(!v) return ''; const d = typeof v==='number'? new Date(v): new Date(v); return isNaN(d)? String(v): d.toLocaleString(LANG==='en'?'en':'zh-CN'); };
-const icon = (name) => `<svg class="i"><use href="#i-${name}"/></svg>`;
+// 页面里的语义名 → Material Symbols（共享库 icons.js）。动态插入的节点由下面的 MutationObserver 统一填图标、换下拉。
+const ICON = {status:'dashboard', pairing:'link', libraries:'folder', upload:'upload', jobs:'task_alt', downloads:'download', subscriptions:'rss_feed', models:'memory', ai:'auto_awesome', anki:'layers', srs:'school', settings:'settings', logs:'receipt_long', refresh:'refresh', warn:'warning', help:'help', device:'devices', video:'movie', book:'book', manga:'auto_stories', audio:'headphones', empty:'inbox', chevron:'chevron_right', dictionaries:'dictionary', edit:'edit', up:'arrow_upward', down:'arrow_downward', search:'search', more:'more_vert', add:'add'};
+const icon = (name, cls) => `<span class="msr-slot${cls?' '+cls:''}" data-fushi-icon="${ICON[name]||name}"></span>`;
+function enhance(root){ try{ window.fushiIcons && fushiIcons.hydrate(root); }catch(e){ console.warn('icons', e); } try{ window.fushiGlassSelect && fushiGlassSelect.enhanceAll(root); }catch(e){ console.warn('select', e); } }
+// 以变动的父节点为根：hydrate 只查后代，直接插进来的图标位本身也要算上。
+new MutationObserver((records)=>{ const roots=new Set(); for(const r of records) if(r.addedNodes.length && r.target.nodeType===1) roots.add(r.target); roots.forEach(enhance); }).observe(document.body, {childList:true, subtree:true});
+enhance(document);
 // snackbar：err=true 用错误色。
-let toastTimer; function toast(msg, err){ const t=$('#toast'); t.textContent=msg; t.classList.toggle('err', !!err); t.classList.add('on'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('on'), err?4200:2600); }
+let toastTimer; function toast(msg, err){ const t=$('#toast'); t.textContent=msg; t.classList.toggle('is-error', !!err); t.classList.add('is-on'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('is-on'), err?4200:2600); }
 // 确认对话框（替代 window.confirm）：返回 Promise<bool>；danger=true 时确认键用错误色。
 function ask(msg, danger){
-  const d=$('#dlg'); $('#dlg-msg').textContent=msg; d.classList.toggle('danger', !!danger);
-  d.querySelector('.di use').setAttribute('href', danger?'#i-warn':'#i-help');
-  $('#dlg-ok').className = danger ? 'b danger' : 'b';
+  const d=$('#dlg'); $('#dlg-msg').textContent=msg; d.classList.toggle('is-danger', !!danger);
+  d.querySelector('.kit-dialog-icon').innerHTML = icon(danger?'warn':'help');
+  $('#dlg-ok').className = danger ? 'primary-button danger-button' : 'primary-button';
   return new Promise((resolve)=>{
     const done=(v)=>{ d.onclose=null; $('#dlg-ok').onclick=null; $('#dlg-no').onclick=null; if(d.open) d.close(); resolve(v); };
     $('#dlg-ok').onclick=()=>done(true); $('#dlg-no').onclick=()=>done(false); d.onclose=()=>done(false);
@@ -651,46 +453,87 @@ const post = (p,b)=>api(p,{method:'POST',body:JSON.stringify(b||{})});
 const del = (p)=>api(p,{method:'DELETE'});
 const put = (p,b)=>api(p,{method:'PUT',body:JSON.stringify(b||{})});
 function guard(fn){ return async (...a)=>{ try{ await fn(...a);}catch(e){ toast(T('失败: {0}', e.message), true);} }; }
-const tag = (cls, text) => `<span class="tag${cls?' '+cls:''}">${esc(text)}</span>`;
-const empty = (text, ic) => `<div class="empty">${icon(ic||'empty')}<span>${esc(text)}</span></div>`;
+const TONE = {ok:'success', err:'error', warn:'warn', info:'info'};
+const tag = (cls, text) => `<span class="status-chip${String(text).length>24?' is-wrap':''}"${TONE[cls]?` data-tone="${TONE[cls]}"`:''}>${esc(text)}</span>`;
+const empty = (text, ic) => `<div class="empty-state">${icon(ic||'empty')}<span>${esc(text)}</span></div>`;
 const kvHtml = (kv) => kv.map(([k,v,html])=>`<div class="kv"><b>${esc(k)}</b><span>${html?v:esc(v)}</span></div>`).join('');
-const progress = (frac) => `<div class="bar"><i style="width:${Math.max(0,Math.min(100,frac*100)).toFixed(1)}%"></i></div>`;
+const iconBtn = (ic, label, attrs, danger) => `<button class="icon-button${danger?' danger-button':''}" ${attrs} title="${esc(label)}" aria-label="${esc(label)}">${icon(ic)}</button>`;
+const progress = (frac) => `<div class="progress"><i style="width:${Math.max(0,Math.min(100,frac*100)).toFixed(1)}%"></i></div>`;
 
-// ── 主题（跟随系统 / 浅色 / 深色，存本机浏览器）──
-const THEMES = ['system','light','dark'];
-const THEME_TITLE = {system:T('主题：跟随系统'), light:T('主题：浅色'), dark:T('主题：深色')};
-function readTheme(){ try{ const t=localStorage.getItem('fushi-admin-theme'); return THEMES.includes(t)?t:'system'; }catch(e){ return 'system'; } }
-function applyTheme(t){
-  if (t==='system') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t);
-  try{ localStorage.setItem('fushi-admin-theme', t); }catch(e){}
-  $('#btn-theme use').setAttribute('href', '#i-'+t); $('#btn-theme').title = THEME_TITLE[t]; $('#btn-theme').setAttribute('aria-label', THEME_TITLE[t]);
+// ── 外观（明暗 / 配色 / 风格）：共享库 theme.js 决议与套用，选择存本机浏览器（独立网页模式）──
+const TH = window.fushiTheme;
+const THEME_ORDER = ['auto','light','dark'];
+const THEME_TITLE = {auto:T('主题：跟随系统'), light:T('主题：浅色'), dark:T('主题：深色')};
+const THEME_ICON = {auto:'contrast', light:'light_mode', dark:'dark_mode'};
+// 预设名（与 app themePresets 同序）；'app' = Fushi 默认配色（不改写 token）。
+const PRESET_NAME = {'app':T('Fushi 默认'), 'm3-baseline':T('紫'), 'm3-indigo':T('靛蓝'), 'm3-blue':T('蓝'), 'm3-teal':T('青'), 'm3-green':T('绿'), 'm3-yellow':T('黄'), 'm3-orange':T('橙'), 'm3-red':T('红'), 'm3-pink':T('粉'), 'm3-neutral':T('中性')};
+const savePref = (changes) => { if (TH) TH.save(changes); };
+// 旧版 WebUI 的主题键（fushi-admin-theme）迁到共享库的键上，只迁一次。
+try{ const old=localStorage.getItem('fushi-admin-theme'); if(old){ localStorage.removeItem('fushi-admin-theme'); if(old==='light'||old==='dark') savePref({extensionTheme:old}); } }catch(e){}
+function syncAppearance(){
+  const pref = (TH && TH.preference) || 'auto';
+  const btn = $('#btn-theme');
+  btn.innerHTML = icon(THEME_ICON[pref]||'contrast'); btn.title = THEME_TITLE[pref]||''; btn.setAttribute('aria-label', btn.title);
+  const pick = (name, v) => { const el = document.querySelector(`input[name="${name}"][value="${v}"]`); if (el) el.checked = true; };
+  pick('ap-theme', pref); pick('ap-style', (TH && TH.style) || 'm3e'); pick('ap-palette', (TH && TH.palette) || 'app');
 }
-applyTheme(readTheme());
-$('#btn-theme').onclick = ()=>{ const t=readTheme(); applyTheme(THEMES[(THEMES.indexOf(t)+1)%THEMES.length]); };
+const presets = (window.fushiThemePalette && fushiThemePalette.PRESETS) || [];
+$('#ap-palette').innerHTML = [{key:'app', seed:'#1f4959'}, ...presets].map(p=>`<label class="color-swatch" style="--swatch:${esc(p.seed)}"><input type="radio" name="ap-palette" value="${esc(p.key)}"><span></span><span>${esc(PRESET_NAME[p.key]||p.key)}</span></label>`).join('');
+document.querySelectorAll('input[name="ap-theme"]').forEach(x=>x.onchange=()=>savePref({extensionTheme:x.value}));
+document.querySelectorAll('input[name="ap-style"]').forEach(x=>x.onchange=()=>savePref({extensionStyle:x.value}));
+document.querySelectorAll('input[name="ap-palette"]').forEach(x=>x.onchange=()=>savePref({extensionPalette:x.value}));
+$('#btn-theme').onclick = ()=>{ const t=(TH && TH.preference) || 'auto'; savePref({extensionTheme:THEME_ORDER[(THEME_ORDER.indexOf(t)+1)%THEME_ORDER.length]}); };
+if (TH && TH.onChange) TH.onChange(syncAppearance);
+syncAppearance();
+// 窄屏把 rail 换成模态抽屉。
+// 侧边栏三种形态：窄屏模态抽屉；宽屏按用户选择展开 / 紧凑（没选过时 ≥1100 px 展开），选择存本机浏览器。
+const narrow = window.matchMedia('(max-width: 640px)');
+const wide = window.matchMedia('(min-width: 1100px)');
+const RAIL_KEY = 'fushi-admin-rail';
+const railPref = () => { try{ const v=localStorage.getItem(RAIL_KEY); return v==='expanded'||v==='compact' ? v : null; }catch(e){ return null; } };
+function syncRail(){
+  const rail=$('#rail'), drawer=narrow.matches;
+  const expanded = !drawer && (railPref() ? railPref()==='expanded' : wide.matches);
+  rail.classList.toggle('is-drawer', drawer);
+  rail.classList.toggle('is-expanded', expanded);
+  if (!drawer) { rail.classList.remove('is-open'); $('#scrim-nav').classList.remove('is-open'); }
+  const btn=$('#btn-rail'); btn.title = expanded ? T('收起侧边栏') : T('展开侧边栏'); btn.setAttribute('aria-label', btn.title); btn.setAttribute('aria-expanded', String(expanded));
+  // 紧凑形态下文字只进 tooltip。
+  navButtons.forEach(b=>{ const l=b.querySelector('.nav-label').textContent; if (expanded||drawer) b.removeAttribute('title'); else b.title=l; });
+}
+$('#btn-rail').onclick = ()=>{ const expanded=$('#rail').classList.contains('is-expanded'); try{ localStorage.setItem(RAIL_KEY, expanded?'compact':'expanded'); }catch(e){} syncRail(); };
+narrow.addEventListener('change', syncRail); wide.addEventListener('change', syncRail);
+// 拖放区：显示选中的文件名。
+for (const [inp, out] of [['#up-files','#up-files-names'],['#dict-file','#dict-file-name']]){
+  const el=$(inp), zone=el.closest('.dropzone');
+  el.addEventListener('change', ()=>{ $(out).textContent = Array.from(el.files).map(f=>f.name).join(T('、')); });
+  zone.addEventListener('dragover', ()=>zone.classList.add('is-over')); zone.addEventListener('dragleave', ()=>zone.classList.remove('is-over')); zone.addEventListener('drop', ()=>zone.classList.remove('is-over'));
+}
 
 // ── 导航 ──
 // 选中项背后的 M3E 多边形：每项轮流取一种（同 app 的 kNavRailFallbackShapes），用极坐标波形画。
 function navShape(n, a, rot){ let d=''; for(let k=0;k<=120;k++){ const t=k/120*2*Math.PI; const r=20*(1+a*Math.cos(n*(t+rot))); d+=(k?'L':'M')+(23+r*Math.cos(t)).toFixed(2)+' '+(23+r*Math.sin(t)).toFixed(2); } return d+'Z'; }
 const NAV_SHAPES = [[9,.07,0],[4,.16,0],[10,.05,0],[8,.1,0],[4,.08,Math.PI/4],[8,.05,0],[6,.09,0],[5,.08,0],[6,.06,0],[8,.14,0]];
-const navButtons = Array.from(document.querySelectorAll('.rail button[data-s]'));
-navButtons.forEach((b,i)=>{ const [n,a,r]=NAV_SHAPES[i%NAV_SHAPES.length]; b.querySelector('.ind').insertAdjacentHTML('afterbegin', `<svg class="shape" viewBox="0 0 46 46" aria-hidden="true"><path d="${navShape(n,a,r)}"/></svg>`); });
+const navButtons = Array.from(document.querySelectorAll('.nav-item[data-s]'));
+navButtons.forEach((b,i)=>{ const [n,a,r]=NAV_SHAPES[i%NAV_SHAPES.length]; b.querySelector('.nav-indicator').insertAdjacentHTML('afterbegin', `<svg class="nav-shape" viewBox="0 0 46 46" aria-hidden="true"><path d="${navShape(n,a,r)}"/></svg>`); });
 let current='status';
-function closeNav(){ $('#rail').classList.remove('open'); $('#scrim-nav').classList.remove('on'); }
+function closeNav(){ $('#rail').classList.remove('is-open'); $('#scrim-nav').classList.remove('is-open'); }
 function go(s, push){
   const b = navButtons.find(x=>x.dataset.s===s); if(!b) return;
   current=s;
   if (s==='dictionaries') dictsLoaded=false;
-  navButtons.forEach(x=>{ x.classList.toggle('on', x===b); if(x===b) x.setAttribute('aria-current','page'); else x.removeAttribute('aria-current'); });
+  navButtons.forEach(x=>{ if(x===b) x.setAttribute('aria-current','page'); else x.removeAttribute('aria-current'); });
   document.querySelectorAll('main section').forEach(sec=>sec.classList.toggle('on', sec.id==='s-'+s));
-  $('#page-title').textContent = b.querySelector('.lbl').textContent;
+  $('#page-title').textContent = b.querySelector('.nav-label').textContent;
   $('#main').scrollTop = 0;
   if (push) { try{ history.replaceState(null, '', '#'+s); }catch(e){} }
   closeNav(); refresh();
 }
 navButtons.forEach(b=>b.onclick=()=>go(b.dataset.s, true));
-$('#btn-menu').onclick = ()=>{ $('#rail').classList.add('open'); $('#scrim-nav').classList.add('on'); $('#rail').scrollTop=0; const on=$('.rail button.on'); if(on) on.focus({preventScroll:true}); };
+syncRail();
+$('#btn-menu').onclick = ()=>{ $('#rail').classList.add('is-open'); $('#scrim-nav').classList.add('is-open'); $('#rail').scrollTop=0; const on=$('.nav-item[aria-current="page"]'); if(on) on.focus({preventScroll:true}); };
 $('#scrim-nav').onclick = closeNav;
-document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && $('#rail').classList.contains('open')) closeNav(); });
+document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && $('#rail').classList.contains('is-open')) closeNav(); });
 
 // ── 状态 ──
 function scrapeSummary(sc){
@@ -712,16 +555,16 @@ function renderAttention(s){
   if (r && r.pendingConfirmations) items.push(['', T('{0} 部作品待指定刮削结果', r.pendingConfirmations), T('自动刮削拿不准，需要手动指定。')]);
   if (sc && sc.enabled && !sc.tmdbAvailable) items.push(['settings', T('未配置 TMDB key'), T('自动补刮拿不到 TMDB 资料；在「设置 → 媒体与刮削」填写。')]);
   $('#attn-h').hidden = !items.length;
-  $('#status-attn').innerHTML = items.map(([to, t, sub])=>`<div class="lrow${to?' click':''}"${to?` data-go="${to}" tabindex="0" role="button"`:''}><div class="lead">${icon('warn')}</div><div class="txt"><div class="t">${esc(t)}</div><div class="s">${esc(sub)}</div></div>${to?`<svg class="i chev"><use href="#i-chevron"/></svg>`:''}</div>`).join('');
+  $('#status-attn').innerHTML = items.map(([to, t, sub])=>`<div class="setting-row${to?' is-clickable':''}"${to?` data-go="${to}" tabindex="0" role="button"`:''}><div class="list-lead" data-tone="warn">${icon('warn')}</div><div class="setting-copy"><strong>${esc(t)}</strong><small>${esc(sub)}</small></div>${to?`${icon('chevron','chev')}`:''}</div>`).join('');
   $('#status-attn').querySelectorAll('[data-go]').forEach(el=>{ el.onclick=()=>go(el.dataset.go, true); el.onkeydown=(e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); go(el.dataset.go, true); } }; });
 }
 async function loadStatus(){
   const s = await api('status');
   $('#devname').textContent = s.deviceName + ' · ' + s.listen + (s.tls?' · https':' · http');
   const quota = s.uploadQuotaBytes ? s.uploadUsedBytes / s.uploadQuotaBytes : 0;
-  const tile = (cls, ic, k, v, sub, extra) => `<div class="tile${cls}"><span class="k">${icon(ic)}${esc(k)}</span><span class="v">${esc(v)}</span><span class="s">${esc(sub)}</span>${extra||''}</div>`;
+  const tile = (cls, ic, k, v, sub, extra) => `<div class="stat-tile${cls}"><span class="stat-label">${icon(ic)}${esc(k)}</span><span class="stat-value">${esc(v)}</span><span class="stat-sub">${esc(sub)}</span>${extra||''}</div>`;
   $('#status-tiles').innerHTML =
-    tile(' hero', 'video', T('视频'), s.videos, '') +
+    tile(' is-primary', 'video', T('视频'), s.videos, '') +
     tile('', 'book', T('书籍'), s.books, T('含漫画与有声书')) +
     tile('', 'pairing', T('已配对'), s.peers, '') +
     tile('', 'upload', T('上传配额'), Math.round(quota*100)+'%', fmtBytes(s.uploadUsedBytes)+' / '+fmtBytes(s.uploadQuotaBytes), progress(quota));
@@ -749,7 +592,7 @@ function setPairBadge(pending){ $('#pair-badge').hidden = !pending; }
 $('#btn-pair-link').onclick = guard(async()=>{
   const r = await post('pairing/link');
   const out = $('#pair-link-out');
-  out.innerHTML = `<div class="row"><input id="pair-link-uri" class="mono" readonly value="${esc(r.uri)}"><button class="b sec" id="btn-pair-link-copy">${esc(T('复制'))}</button></div><p class="sup">${esc(T('{0} 分钟内有效，只能用一次。在 Fushi 的互联设置里点「粘贴配对链接」使用。', Math.max(1, Math.round(r.expiresInSeconds/60))))}</p>`;
+  out.innerHTML = `<div class="action-row"><input id="pair-link-uri" class="mono" readonly value="${esc(r.uri)}"><button class="text-button" id="btn-pair-link-copy">${esc(T('复制'))}</button></div><p class="kit-supporting">${esc(T('{0} 分钟内有效，只能用一次。在 Fushi 的互联设置里点「粘贴配对链接」使用。', Math.max(1, Math.round(r.expiresInSeconds/60))))}</p>`;
   out.hidden = false;
   $('#btn-pair-link-copy').onclick = guard(async()=>{
     const input = $('#pair-link-uri');
@@ -765,15 +608,15 @@ async function loadPairing(){
   const lockClass = {lan:T('局域网'), p2p:T('P2P 隧道'), public:T('公网或反向代理')};
   const locks = Object.entries(p.lockout||{}).filter(([,v])=>v);
   $('#pairing-lockout').innerHTML = locks.length
-    ? `<div class="card"><div class="card-head"><div>${locks.map(([k,v])=>`<p class="sup" style="margin:0">${tag('warn', T('来自{0}的配对因多次 PIN 错误暂停至 {1}', lockClass[k]||k, fmtTime(v)))}</p>`).join('')}</div><button class="b" id="btn-pair-unlock">${esc(T('解除'))}</button></div></div>`
+    ? `<div class="card"><div class="card-head"><div class="card-head-copy">${locks.map(([k,v])=>`<p class="kit-supporting">${tag('warn', T('来自{0}的配对因多次 PIN 错误暂停至 {1}', lockClass[k]||k, fmtTime(v)))}</p>`).join('')}</div><button class="primary-button" id="btn-pair-unlock">${esc(T('解除'))}</button></div></div>`
     : '';
   if (locks.length) $('#btn-pair-unlock').onclick = guard(async()=>{ await post('pairing/unlock'); toast(T('已解除')); loadPairing(); });
   // 待输入 PIN 按会话各一条（并发配对互不覆盖）；旧后端只有 pending 时退回单条。
   const pendings = p.pendingList || (p.pending ? [p.pending] : []);
   $('#pairing-pending').innerHTML = pendings.length
-    ? pendings.slice().reverse().map(x=>`<div class="pin-card"><div><b><span class="pulse"></span>${esc(T('{0} ({1}) 请求配对，请在该设备输入：', x.deviceName||T('未知设备'), x.remoteAddress||'?'))}</b><p class="sup">${fmtTime(x.createdAt)}</p></div><div class="pin">${esc(x.pin)}</div></div>`).join('')
-    : `<div class="list">${empty(T('没有待处理的配对。在 Fushi 里添加互联设备并输入本机地址，PIN 会显示在这里。'), 'pairing')}</div>`;
-  $('#peers').innerHTML = p.peers.map(x=>`<div class="lrow"><div class="lead">${icon('device')}</div><div class="txt"><div class="t">${esc(x.deviceName||'—')}${x.ownerDevice?tag('info', T('我的设备')):''}</div><div class="s">${esc([x.lastSeenIp, fmtTime(x.pairedAtMs)].filter(Boolean).join(' · '))}</div><div class="s mono">${esc(x.peerId)}</div></div><div class="trail">${x.deviceKeyVerified ? `<button class="b ${x.ownerDevice?'out':'sec'}" data-owner="${esc(x.peerId)}" data-on="${x.ownerDevice?'1':'0'}">${esc(x.ownerDevice?T('取消我的设备'):T('标为我的设备'))}</button>` : tag('', T('未证明设备钥匙'))}<button class="b text danger" data-revoke="${esc(x.peerId)}">${esc(T('吊销'))}</button></div></div>`).join('') || empty(T('还没有已配对设备'), 'device');
+    ? pendings.slice().reverse().map(x=>`<div class="card is-tertiary pin-card"><div><b><span class="pulse"></span>${esc(T('{0} ({1}) 请求配对，请在该设备输入：', x.deviceName||T('未知设备'), x.remoteAddress||'?'))}</b><p class="kit-supporting">${fmtTime(x.createdAt)}</p></div><div class="pin">${esc(x.pin)}</div></div>`).join('')
+    : `<div class="setting-list is-surface">${empty(T('没有待处理的配对。在 Fushi 里添加互联设备并输入本机地址，PIN 会显示在这里。'), 'pairing')}</div>`;
+  $('#peers').innerHTML = p.peers.map(x=>`<div class="setting-row"><div class="list-lead">${icon('device')}</div><div class="setting-copy"><strong>${esc(x.deviceName||'—')}${x.ownerDevice?tag('info', T('我的设备')):''}</strong><small>${esc([x.lastSeenIp, fmtTime(x.pairedAtMs)].filter(Boolean).join(' · '))}</small><small class="mono">${esc(x.peerId)}</small></div><div class="setting-trail">${x.deviceKeyVerified ? `<button class="${x.ownerDevice?'outlined-button':'text-button'}" data-owner="${esc(x.peerId)}" data-on="${x.ownerDevice?'1':'0'}">${esc(x.ownerDevice?T('取消我的设备'):T('标为我的设备'))}</button>` : tag('', T('未证明设备钥匙'))}<button class="plain-button danger-button" data-revoke="${esc(x.peerId)}">${esc(T('吊销'))}</button></div></div>`).join('') || empty(T('还没有已配对设备'), 'device');
   const lb = p.leaderboardLink || {};
   $('#lb-link-state').innerHTML = lb.enabled ? (lb.tls ? tag('ok', T('自动登录已开')) : tag('warn', T('自动登录已开，但 TLS 关着——端点在明文下拒绝访问'))) : tag('', T('自动登录已关'));
   $('#peers').querySelectorAll('[data-revoke]').forEach(b=>b.onclick=guard(async()=>{ if(!await ask(T('吊销该设备？'), true)) return; await del('pairing/peers/'+encodeURIComponent(b.dataset.revoke)); toast(T('已吊销')); loadPairing(); }));
@@ -785,7 +628,7 @@ async function loadProfiles(){
   $('#prof-state').innerHTML = r.enabled ? (r.tls ? tag('ok', T('已允许')) : tag('warn', T('已允许，但 TLS 关着——端点在明文下拒绝访问'))) : tag('', T('未允许（默认）'));
   $('#btn-prof-toggle').textContent = r.enabled ? T('禁止设备推送 / 拉取') : T('允许设备推送 / 拉取');
   $('#btn-prof-toggle').dataset.enabled = r.enabled ? '1' : '0';
-  $('#profiles').innerHTML = (r.profiles||[]).map(x=>`<div class="lrow"><div class="txt"><div class="t">${esc(x.name)}${x.shared?tag('ok', T('分发中')):''}</div><div class="s">${esc(T('{0} 项设置', x.settingCount))} · ${esc(fmtTime(x.receivedAt))}</div></div><div class="trail">${x.shared?'':`<button class="b sec" data-prof="share" data-id="${x.id}">${esc(T('设为分发'))}</button>`}<button class="b text danger" data-prof="delete" data-id="${x.id}">${esc(T('删除'))}</button></div></div>`).join('') || empty(T('还没有设备推送过配置'));
+  $('#profiles').innerHTML = (r.profiles||[]).map(x=>`<div class="setting-row"><div class="setting-copy"><strong>${esc(x.name)}${x.shared?tag('ok', T('分发中')):''}</strong><small>${esc(T('{0} 项设置', x.settingCount))} · ${esc(fmtTime(x.receivedAt))}</small></div><div class="setting-trail">${x.shared?'':`<button class="text-button" data-prof="share" data-id="${x.id}">${esc(T('设为分发'))}</button>`}${iconBtn('delete', T('删除'), `data-prof="delete" data-id="${x.id}"`, true)}</div></div>`).join('') || empty(T('还没有设备推送过配置'));
   $('#profiles').querySelectorAll('[data-prof]').forEach(b=>b.onclick=guard(async()=>{ const id=b.dataset.id;
     if(b.dataset.prof==='delete'){ if(!await ask(T('删除这份寄存的配置？'), true)) return; await del('profiles/'+id); toast(T('已删除')); }
     else { await post('profiles/'+id+'/share'); }
@@ -802,15 +645,15 @@ const libKind = () => (document.querySelector('input[name="lib-kind"]:checked')|
 const showKindHint = () => { $('#lib-kind-hint').textContent = KIND_HINT[libKind()]; };
 document.querySelectorAll('input[name="lib-kind"]').forEach(x=>x.onchange=showKindHint);
 showKindHint();
-function closeMenus(){ document.querySelectorAll('.more-menu').forEach(m=>{ if(!m.hidden){ m.hidden=true; const b=m.previousElementSibling; if(b) b.setAttribute('aria-expanded','false'); } }); }
+function closeMenus(){ document.querySelectorAll('.kit-menu').forEach(m=>{ if(!m.hidden){ m.hidden=true; const b=m.previousElementSibling; if(b) b.setAttribute('aria-expanded','false'); } }); }
 document.addEventListener('click', closeMenus);
 function bindMoreMenus(root){ root.querySelectorAll('[data-more]').forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); const m=b.nextElementSibling; const open=m.hidden; closeMenus(); if(open){ m.hidden=false; b.setAttribute('aria-expanded','true'); m.querySelector('button').focus(); } }); }
-document.addEventListener('keydown', (e)=>{ if(e.key==='Escape'){ const m=$('.more-menu:not([hidden])'); if(m){ closeMenus(); m.previousElementSibling.focus(); } } });
+document.addEventListener('keydown', (e)=>{ if(e.key==='Escape'){ const m=$('.kit-menu:not([hidden])'); if(m){ closeMenus(); m.previousElementSibling.focus(); } } });
 async function loadLibraries(){
   const r = await api('libraries');
   // 轮询重绘会关掉开着的菜单：菜单开着时跳过这一轮。
-  if ($('#libs .more-menu:not([hidden])')) return;
-  $('#libs').innerHTML = r.libraries.map(l=>`<div class="lrow"><div class="lead">${icon(KIND_ICON[l.kind]||'libraries')}</div><div class="txt"><div class="t">${esc(folderName(l.path))}${l.exists?tag('ok', T('存在')):tag('err', T('目录不存在'))}${l.enabled?'':tag('', T('禁用'))}</div><div class="s">${esc([KIND_LABEL[l.kind]||l.kind, l.id===folderName(l.path)?'':l.id].filter(Boolean).join(' · '))}</div><div class="s">${esc(l.path)}</div></div><div class="trail more"><button class="icon-btn" data-more title="${esc(T('更多'))}" aria-label="${esc(T('更多'))}" aria-haspopup="menu" aria-expanded="false"><svg class="i"><use href="#i-more"/></svg></button><div class="more-menu" role="menu" hidden><button role="menuitem" data-rm="${esc(l.id)}">${esc(T('移除'))}</button><button role="menuitem" class="danger" data-purge="${esc(l.id)}">${esc(T('移除并清理'))}</button></div></div></div>`).join('') || empty(T('还没有扫描根'), 'libraries');
+  if ($('#libs .kit-menu:not([hidden])')) return;
+  $('#libs').innerHTML = r.libraries.map(l=>`<div class="setting-row"><div class="list-lead">${icon(KIND_ICON[l.kind]||'libraries')}</div><div class="setting-copy"><strong>${esc(folderName(l.path))}${l.exists?tag('ok', T('存在')):tag('err', T('目录不存在'))}${l.enabled?'':tag('', T('禁用'))}</strong><small>${esc([KIND_LABEL[l.kind]||l.kind, l.id===folderName(l.path)?'':l.id].filter(Boolean).join(' · '))}</small><small>${esc(l.path)}</small></div><div class="setting-trail more"><button class="icon-button" data-more title="${esc(T('更多'))}" aria-label="${esc(T('更多'))}" aria-haspopup="menu" aria-expanded="false">${icon('more')}</button><div class="kit-menu" role="menu" hidden><button role="menuitem" class="kit-menu-item" data-rm="${esc(l.id)}">${esc(T('移除'))}</button><button role="menuitem" class="kit-menu-item danger-button" data-purge="${esc(l.id)}">${esc(T('移除并清理'))}</button></div></div></div>`).join('') || empty(T('还没有扫描根'), 'libraries');
   bindMoreMenus($('#libs'));
   $('#libs').querySelectorAll('[data-rm]').forEach(b=>b.onclick=guard(async()=>{ if(!await ask(T('从配置移除该库根？（不删文件、不删已入库条目）'), true)) return; await del('libraries/'+encodeURIComponent(b.dataset.rm)); toast(T('已移除')); loadLibraries(); }));
   $('#libs').querySelectorAll('[data-purge]').forEach(b=>b.onclick=guard(async()=>{ if(!await ask(T('移除该库根，并清理「文件已消失」的条目？\n只回收条目与其刮削资料 / 正文副本，不删任何源文件。\n注意：目录若只是没挂载，其下条目也会被当成已删除。'), true)) return; const r=await del('libraries/'+encodeURIComponent(b.dataset.purge)+'?purge=true'); const p=r&&r.purge; toast(p?(p.skipped?T('未清理：{0}', p.reason||T('被护栏拦下')):T('已清理 {0} 条', p.deleted)):T('已移除')); loadLibraries(); loadStatus(); }));
@@ -839,26 +682,26 @@ async function uploadOne(file, lib, sub, row){
   const q = `upload?library=${encodeURIComponent(lib)}&path=${encodeURIComponent(rel)}`;
   const st = await api(q);
   let off = st.received || 0;
-  if (off >= file.size && file.size>0){ row.querySelector('.st').textContent=T('已存在'); row.querySelector('.bar i').style.width='100%'; return; }
+  if (off >= file.size && file.size>0){ row.querySelector('.st').textContent=T('已存在'); row.querySelector('.progress > i').style.width='100%'; return; }
   while (off < file.size){
     const end = Math.min(off+CHUNK, file.size);
     const r = await fetch('/api/admin/'+q, {method:'PUT', headers:{'Content-Range':`bytes ${off}-${end-1}/${file.size}`,'Content-Type':'application/octet-stream'}, body:file.slice(off,end)});
     const j = await r.json().catch(()=>({}));
     if (!r.ok) throw new Error(j.error||('HTTP '+r.status));
     off = j.received;
-    row.querySelector('.bar i').style.width = (off/file.size*100).toFixed(1)+'%';
+    row.querySelector('.progress > i').style.width = (off/file.size*100).toFixed(1)+'%';
     row.querySelector('.st').textContent = fmtBytes(off)+' / '+fmtBytes(file.size);
     if (j.complete) break;
   }
   if (file.size===0){ await fetch('/api/admin/'+q,{method:'PUT',headers:{'Content-Range':'bytes 0-0/0'},body:new Blob([])}); }
   row.querySelector('.st').textContent=T('完成');
-  row.querySelector('.bar i').style.width='100%';
+  row.querySelector('.progress > i').style.width='100%';
 }
 $('#btn-up').onclick = guard(async()=>{
   const files = Array.from($('#up-files').files); const lib=$('#up-lib').value; const sub=$('#up-sub').value.trim();
   if(!lib) throw new Error(T('先添加一个库根')); if(!files.length) throw new Error(T('没选文件'));
   $('#btn-up').disabled=true;
-  try{ for(const f of files){ const row=document.createElement('div'); row.className='lrow'; row.innerHTML=`<div class="lead">${icon('upload')}</div><div class="txt"><div class="t">${esc(f.name)}</div><div class="s st">${esc(T('等待'))}</div>${progress(0)}</div>`; $('#up-list').prepend(row); try{ await uploadOne(f,lib,sub,row);}catch(e){ const st=row.querySelector('.st'); st.className='e st'; st.textContent=T('失败: {0}', e.message); } } toast(T('上传结束，记得扫描库')); }
+  try{ for(const f of files){ const row=document.createElement('div'); row.className='setting-row'; row.innerHTML=`<div class="list-lead">${icon('upload')}</div><div class="setting-copy"><strong>${esc(f.name)}</strong><small class="st">${esc(T('等待'))}</small>${progress(0)}</div>`; $('#up-list').prepend(row); try{ await uploadOne(f,lib,sub,row);}catch(e){ const st=row.querySelector('.st'); st.className='is-error st'; st.textContent=T('失败: {0}', e.message); } } toast(T('上传结束，记得扫描库')); }
   finally{ $('#btn-up').disabled=false; loadStatus(); loadUploadFolders(); }
 });
 
@@ -867,7 +710,7 @@ const stCls = (s) => (s==='done'||s==='completed')?'ok':((s==='error'||s==='fail
 const stTag = (s) => tag(stCls(s), s);
 async function loadJobs(){
   const r = await api('jobs');
-  $('#jobs').innerHTML = r.jobs.map(j=>`<div class="lrow"><div class="txt"><div class="t">${esc(j.kind)}${stTag(j.state)}</div><div class="s"><span class="mono">${esc(j.id)}</span> · ${esc(fmtTime(j.createdAt))}${j.progress!=null?' · '+(j.progress*100).toFixed(0)+'%':''}${j.message?' · '+esc(j.message):''}</div>${j.progress!=null&&stCls(j.state)==='warn'?progress(j.progress):''}${j.error?`<div class="e">${esc(j.error)}</div>`:''}</div><div class="trail"><button class="b text danger" data-jdel="${esc(j.id)}">${esc(T('删除'))}</button></div></div>`).join('') || empty(T('没有互联任务'), 'jobs');
+  $('#jobs').innerHTML = r.jobs.map(j=>`<div class="setting-row"><div class="setting-copy"><strong>${esc(j.kind)}${stTag(j.state)}</strong><small><span class="mono">${esc(j.id)}</span> · ${esc(fmtTime(j.createdAt))}${j.progress!=null?' · '+(j.progress*100).toFixed(0)+'%':''}${j.message?' · '+esc(j.message):''}</small>${j.progress!=null&&stCls(j.state)==='warn'?progress(j.progress):''}${j.error?`<small class="is-error">${esc(j.error)}</small>`:''}</div><div class="setting-trail">${iconBtn('delete', T('删除'), `data-jdel="${esc(j.id)}"`, true)}</div></div>`).join('') || empty(T('没有互联任务'), 'jobs');
   $('#jobs').querySelectorAll('[data-jdel]').forEach(b=>b.onclick=guard(async()=>{ await del('jobs/'+encodeURIComponent(b.dataset.jdel)); loadJobs(); }));
 }
 
@@ -877,7 +720,7 @@ async function loadDownloads(){
   $('#dl-cap').textContent = r.supported ? T('后端: {0}', r.backend||'ok') : T('下载后端未配置：在「设置」填 qBittorrent WebUI 地址并重启。');
   $('#btn-dl-add').disabled = !r.supported;
   $('#dls').innerHTML = r.jobs.map(j=>{ const p = j.stageProgress!=null ? Number(j.stageProgress) : null;
-    return `<div class="lrow"><div class="lead">${icon(j.mediaKind==='tv'||j.mediaKind==='movie'?'video':'downloads')}</div><div class="txt"><div class="t">${esc(j.title)}${stTag(j.lifecycle)}</div><div class="s">${esc([j.mediaKind, j.stage, p!=null?(p*100).toFixed(0)+'%':''].filter(Boolean).join(' · '))}</div><div class="s mono">${esc(j.jobId)}</div>${p!=null&&stCls(j.lifecycle)!=='ok'?progress(p):''}${j.lastError?`<div class="e">${esc(j.lastError)}</div>`:''}</div><div class="trail"><button class="b text" data-dl="cancel" data-id="${esc(j.jobId)}">${esc(T('取消'))}</button><button class="b text" data-dl="retry" data-id="${esc(j.jobId)}">${esc(T('重试'))}</button><button class="b text danger" data-dl="delete" data-id="${esc(j.jobId)}">${esc(T('清理'))}</button></div></div>`; }).join('') || empty(T('没有下载任务'), 'downloads');
+    return `<div class="setting-row"><div class="list-lead">${icon(j.mediaKind==='tv'||j.mediaKind==='movie'?'video':'downloads')}</div><div class="setting-copy"><strong>${esc(j.title)}${stTag(j.lifecycle)}</strong><small>${esc([j.mediaKind, j.stage, p!=null?(p*100).toFixed(0)+'%':''].filter(Boolean).join(' · '))}</small><small class="mono">${esc(j.jobId)}</small>${p!=null&&stCls(j.lifecycle)!=='ok'?progress(p):''}${j.lastError?`<small class="is-error">${esc(j.lastError)}</small>`:''}</div><div class="setting-trail">${iconBtn('close', T('取消'), `data-dl="cancel" data-id="${esc(j.jobId)}"`)}${iconBtn('replay', T('重试'), `data-dl="retry" data-id="${esc(j.jobId)}"`)}${iconBtn('delete', T('清理'), `data-dl="delete" data-id="${esc(j.jobId)}"`, true)}</div></div>`; }).join('') || empty(T('没有下载任务'), 'downloads');
   $('#dls').querySelectorAll('[data-dl]').forEach(b=>b.onclick=guard(async()=>{ const id=encodeURIComponent(b.dataset.id); if(b.dataset.dl==='delete') await del('downloads/'+id); else await post('downloads/'+id+'/'+b.dataset.dl); loadDownloads(); }));
 }
 $('#btn-dl-add').onclick = guard(async()=>{ await post('downloads',{magnet:$('#dl-magnet').value, title:$('#dl-title').value, mediaKind:$('#dl-kind').value}); $('#dl-magnet').value=''; $('#dl-title').value=''; toast(T('已添加')); loadDownloads(); });
@@ -892,7 +735,7 @@ async function loadSubscriptions(){
   sel.innerHTML = opts.map(o=>`<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
   if (cur) sel.value = cur;
   const fmtCounts = (c)=> c ? Object.entries(c).map(([k,v])=>`${k} ${v}`).join(' · ') : '';
-  $('#subs').innerHTML = (r.subscriptions||[]).map(s=>`<div class="lrow"><div class="lead">${icon('subscriptions')}</div><div class="txt"><div class="t">${esc(s.title)}${s.enabled?tag('ok', T('启用')):tag('', T('停用'))}</div><div class="s">${esc(s.searchQuery)} · ${esc(s.mediaKind)} · ${esc(s.mode)}</div><div class="s">${s.resourceProviderLabel?esc(s.resourceProviderLabel):esc(T('没有可用来源'))}${s.itemCounts?' · '+esc(fmtCounts(s.itemCounts)):''} · ${esc(T('最近检查 {0}', s.lastCheckedAt?fmtTime(s.lastCheckedAt):'—'))}</div>${s.lastError?`<div class="e">${esc(s.lastError)}</div>`:''}</div><div class="trail"><button class="b text" data-sub="enable" data-id="${esc(s.subscriptionId)}" data-enabled="${s.enabled?'0':'1'}">${esc(s.enabled?T('停用'):T('启用'))}</button><button class="b text" data-sub="check" data-id="${esc(s.subscriptionId)}"${s.enabled?'':` disabled title="${esc(T('已停用的订阅不检查，请先启用'))}"`}>${esc(T('检查'))}</button><button class="b text danger" data-sub="delete" data-id="${esc(s.subscriptionId)}">${esc(T('删除'))}</button></div></div>`).join('') || empty(T('还没有订阅'), 'subscriptions');
+  $('#subs').innerHTML = (r.subscriptions||[]).map(s=>`<div class="setting-row"><div class="list-lead">${icon('subscriptions')}</div><div class="setting-copy"><strong>${esc(s.title)}${s.enabled?tag('ok', T('启用')):tag('', T('停用'))}</strong><small>${esc(s.searchQuery)} · ${esc(s.mediaKind)} · ${esc(s.mode)}</small><small>${s.resourceProviderLabel?esc(s.resourceProviderLabel):esc(T('没有可用来源'))}${s.itemCounts?' · '+esc(fmtCounts(s.itemCounts)):''} · ${esc(T('最近检查 {0}', s.lastCheckedAt?fmtTime(s.lastCheckedAt):'—'))}</small>${s.lastError?`<small class="is-error">${esc(s.lastError)}</small>`:''}</div><div class="setting-trail">${iconBtn(s.enabled?'pause':'play_arrow', s.enabled?T('停用'):T('启用'), `data-sub="enable" data-id="${esc(s.subscriptionId)}" data-enabled="${s.enabled?'0':'1'}"`)}${iconBtn('refresh', s.enabled?T('检查'):T('已停用的订阅不检查，请先启用'), `data-sub="check" data-id="${esc(s.subscriptionId)}"${s.enabled?'':' disabled'}`)}${iconBtn('delete', T('删除'), `data-sub="delete" data-id="${esc(s.subscriptionId)}"`, true)}</div></div>`).join('') || empty(T('还没有订阅'), 'subscriptions');
   $('#subs').querySelectorAll('[data-sub]').forEach(b=>b.onclick=guard(async()=>{ const id=encodeURIComponent(b.dataset.id);
     if(b.dataset.sub==='delete'){ if(!await ask(T('删除该订阅？（已下载的任务不受影响）'), true)) return; await del('subscriptions/'+id); toast(T('已删除')); }
     else if(b.dataset.sub==='enable'){ await post('subscriptions/'+id+'/enable',{enabled:b.dataset.enabled==='1'}); }
@@ -905,27 +748,27 @@ $('#btn-sub-check-all').onclick = guard(async()=>{ await post('subscriptions/che
 // ── 资源索引器（用户 BT 站 + Torznab；Torznab 表单只在首次 / 保存 / 放弃时重画，轮询不冲掉编辑）──
 let riLoaded=false;
 const BT_DOMAINS = [['anime',T('动画')],['movie',T('电影')],['tv',T('剧集')],['novel',T('小说')],['audiobook',T('有声书')],['manga',T('漫画')],['game',T('游戏')]];
-const btDomainBoxes = (attr, on) => BT_DOMAINS.map(([k,l])=>`<label class="fchip"><input type="checkbox" ${attr}="${k}" ${on.includes(k)?'checked':''}><span>${esc(l)}</span></label>`).join('');
+const btDomainBoxes = (attr, on) => BT_DOMAINS.map(([k,l])=>`<label class="chip"><input type="checkbox" ${attr}="${k}" ${on.includes(k)?'checked':''}><span>${esc(l)}</span></label>`).join('');
 const btPicked = (root, attr) => Array.from(root.querySelectorAll(`[${attr}]`)).filter(e=>e.checked).map(e=>e.getAttribute(attr));
 $('#bt-domains').innerHTML = btDomainBoxes('data-bt-add-domain', BT_DOMAINS.map(d=>d[0]));
-const swLabel = (attrs, on, text) => `<label class="check"><input type="checkbox" class="sw" ${attrs} ${on?'checked':''}><span>${esc(text)}</span></label>`;
+const swLabel = (attrs, on, text) => `<label class="switch-row"><span class="switch"><input type="checkbox" ${attrs} ${on?'checked':''}><span></span></span><span>${esc(text)}</span></label>`;
 function btRow(x){
   const label = Object.fromEntries(BT_DOMAINS);
   const eff = x.effectiveDomains||[];
   const off = (x.domains||[]).filter(d=>!eff.includes(d));
   const state = !x.enabled ? tag('', T('已停用')) : (x.active===true ? tag('ok', T('生效中')) : (x.active===false ? tag('warn', T('未参与资源搜索')) : ''));
   const sep = T('、');
-  return `<div class="bt-row inset" data-id="${esc(x.id)}">
-    <div class="txt"><div class="t">${esc(x.displayName)}${state}</div><div class="s">${esc(x.host)}</div>
-    <div class="s">${esc(T('适用：{0}', eff.map(d=>label[d]||d).join(sep)||T('无')))}${off.length?esc(T('；对 {0} 不生效', off.map(d=>label[d]||d).join(sep))):''}</div></div>
+  return `<div class="bt-row card-inset" data-id="${esc(x.id)}">
+    <div class="setting-copy"><strong>${esc(x.displayName)}${state}</strong><small>${esc(x.host)}</small>
+    <small>${esc(T('适用：{0}', eff.map(d=>label[d]||d).join(sep)||T('无')))}${off.length?esc(T('；对 {0} 不生效', off.map(d=>label[d]||d).join(sep))):''}</small></div>
     <div class="bt-edit" style="display:none">
-      <div class="grid"><label class="f">${esc(T('名称（可选）'))}<input type="text" data-k="name" value="${esc(x.name||'')}"></label><label class="f">${esc(T('新地址（留空不改）'))}<input type="text" data-k="url"></label></div>
-      <div class="fchips">${btDomainBoxes('data-bt-domain', x.domains||[])}</div>
-      <label class="f">${esc(T('解析规则（JSON；清空 = 改回自动检测）'))}<textarea rows="4" data-k="parser">${esc(x.parser ? JSON.stringify(x.parser, null, 2) : '')}</textarea></label>
-      <label class="f">${esc(T('新 Cookie（留空不改）'))}<input type="password" autocomplete="off" data-k="cookie"></label>
-      <div class="row">${swLabel('data-k="enabled"', x.enabled, T('启用'))}${swLabel('data-k="allowInsecureHttp"', x.allowInsecureHttp, T('允许明文 HTTP（仅受信任局域网）'))}<span class="sp"></span><button class="b" data-bt="save">${esc(T('保存'))}</button></div>
+      <div class="form-grid"><label class="field">${esc(T('名称（可选）'))}<input type="text" data-k="name" value="${esc(x.name||'')}"></label><label class="field">${esc(T('新地址（留空不改）'))}<input type="text" data-k="url"></label></div>
+      <div class="chip-set">${btDomainBoxes('data-bt-domain', x.domains||[])}</div>
+      <label class="field">${esc(T('解析规则（JSON；清空 = 改回自动检测）'))}<textarea rows="4" data-k="parser">${esc(x.parser ? JSON.stringify(x.parser, null, 2) : '')}</textarea></label>
+      <label class="field">${esc(T('新 Cookie（留空不改）'))}<input type="password" autocomplete="off" data-k="cookie"></label>
+      <div class="action-row">${swLabel('data-k="enabled"', x.enabled, T('启用'))}${swLabel('data-k="allowInsecureHttp"', x.allowInsecureHttp, T('允许明文 HTTP（仅受信任局域网）'))}<span class="kit-spacer"></span><button class="primary-button" data-bt="save">${esc(T('保存'))}</button></div>
     </div>
-    <div class="row" style="margin-bottom:0"><button class="b sec" data-bt="edit">${esc(T('编辑'))}</button><button class="b text" data-bt="reprobe">${esc(T('重新检测'))}</button><span class="sp"></span><button class="b text danger" data-bt="delete">${esc(T('删除'))}</button></div></div>`;
+    <div class="action-row"><button class="text-button" data-bt="edit">${esc(T('编辑'))}</button><button class="plain-button" data-bt="reprobe">${esc(T('重新检测'))}</button><span class="kit-spacer"></span><button class="plain-button danger-button" data-bt="delete">${esc(T('删除'))}</button></div></div>`;
 }
 function renderRiState(r){
   const bt = r.btSites||[]; const tz = r.torznab||[];
@@ -960,6 +803,7 @@ function renderBtSites(r){
     renderBtSites(res); renderRiState(res); loadSubscriptions();
   }));
 }
+$('#btn-bt-template').onclick = () => { const p = $('#bt-parser'); if (!p.value.trim()) p.value = $('#bt-parser-template').textContent; };
 $('#btn-bt-add').onclick = guard(async()=>{
   const url = $('#bt-url').value.trim(); if (!url) throw new Error(T('请填写站点地址'));
   const domains = btPicked($('#bt-domains'), 'data-bt-add-domain'); if (!domains.length) throw new Error(T('至少选择一个媒体域'));
@@ -977,23 +821,23 @@ const TORZNAB_CATS = [[2000,T('电影')],[5000,T('剧集')],[5070,T('动画')],[
 function riCatsCtl(cats){
   const known = new Set(TORZNAB_CATS.map(([id])=>id));
   const rest = cats.filter(c=>!known.has(Number(c)));
-  return `<div style="grid-column:1/-1"><span class="sup">${esc(T('分类（不选 = 全部）'))}</span><div class="fchips">${TORZNAB_CATS.map(([id,l])=>`<label class="fchip"><input type="checkbox" data-ri-cat="${id}" ${cats.map(Number).includes(id)?'checked':''}><span>${esc(l)} · ${id}</span></label>`).join('')}</div>
-    <label class="f">${esc(T('其他分类 ID（逗号分隔，可空）'))}<input type="text" data-k="categories" value="${esc(rest.join(','))}"></label></div>`;
+  return `<div class="field is-wide"><span class="kit-supporting">${esc(T('分类（不选 = 全部）'))}</span><div class="chip-set">${TORZNAB_CATS.map(([id,l])=>`<label class="chip"><input type="checkbox" data-ri-cat="${id}" ${cats.map(Number).includes(id)?'checked':''}><span>${esc(l)} · ${id}</span></label>`).join('')}</div>
+    <label class="field">${esc(T('其他分类 ID（逗号分隔，可空）'))}<input type="text" data-k="categories" value="${esc(rest.join(','))}"></label></div>`;
 }
 function riRow(x){
   const keySet = x.apiKeySet ? ` <span class="muted">${esc(T('(已设置，留空不改)'))}</span>` : '';
-  return `<div class="ri-row inset" data-id="${esc(x.id||'')}"><div class="grid" style="margin:0">
-    <label class="f">${esc(T('名称'))}<input type="text" data-k="name" value="${esc(x.name||'')}"></label>
-    <label class="f">${esc(T('地址（https://…/api；带 ?apikey= 会自动拆进 key 栏）'))}<input type="text" data-k="endpoint" value="${esc(x.endpoint||'')}"></label>
-    <label class="f">API key${keySet}<input type="password" data-k="apiKey" value="" autocomplete="off"></label>
-    <label class="f">${esc(T('优先级（小的先搜）'))}<input type="number" data-k="priority" value="${esc(x.priority??100)}"></label>
+  return `<div class="ri-row card-inset" data-id="${esc(x.id||'')}"><div class="form-grid">
+    <label class="field">${esc(T('名称'))}<input type="text" data-k="name" value="${esc(x.name||'')}"></label>
+    <label class="field">${esc(T('地址（https://…/api；带 ?apikey= 会自动拆进 key 栏）'))}<input type="text" data-k="endpoint" value="${esc(x.endpoint||'')}"></label>
+    <label class="field">API key${keySet}<input type="password" data-k="apiKey" value="" autocomplete="off"></label>
+    <label class="field">${esc(T('优先级（小的先搜）'))}<input type="number" data-k="priority" value="${esc(x.priority??100)}"></label>
     ${riCatsCtl(x.categories||[])}</div>
-    <div class="row" style="margin-bottom:0">${swLabel('data-k="enabled"', x.enabled!==false, T('启用'))}${swLabel('data-k="allowInsecureHttp"', x.allowInsecureHttp, T('允许明文 HTTP（仅受信任局域网）'))}${x.apiKeySet?swLabel('data-k="clearApiKey"', false, T('清除已存的 key')):''}<span class="sp"></span><button class="b text danger" data-ri-rm>${esc(T('移除'))}</button></div></div>`;
+    <div class="action-row">${swLabel('data-k="enabled"', x.enabled!==false, T('启用'))}${swLabel('data-k="allowInsecureHttp"', x.allowInsecureHttp, T('允许明文 HTTP（仅受信任局域网）'))}${x.apiKeySet?swLabel('data-k="clearApiKey"', false, T('清除已存的 key')):''}<span class="kit-spacer"></span><button class="plain-button danger-button" data-ri-rm>${esc(T('移除'))}</button></div></div>`;
 }
 function bindRiRemove(){ $('#ri-torznab').querySelectorAll('[data-ri-rm]').forEach(b=>b.onclick=()=>b.closest('.ri-row').remove()); }
 function renderIndexers(r){
   renderBtSites(r);
-  $('#ri-torznab').innerHTML = (r.torznab||[]).map(riRow).join('') || `<p class="sup" id="ri-empty">${esc(T('还没有 Torznab indexer。'))}</p>`;
+  $('#ri-torznab').innerHTML = (r.torznab||[]).map(riRow).join('') || `<p class="kit-supporting" id="ri-empty">${esc(T('还没有 Torznab indexer。'))}</p>`;
   bindRiRemove();
   renderRiState(r);
 }
@@ -1016,14 +860,14 @@ $('#btn-ri-save').onclick = guard(async()=>{
 
 // ── 模型 ──
 const readyTag = (m) => m.error ? tag('err', m.error) : (m.ready ? tag('ok', T('就绪')) : tag('', T('缺失')));
-const pullButton = (key, pulling) => `<button class="b sec" data-pull="${esc(key)}" ${pulling?'disabled':''}>${icon('downloads')}${esc(pulling?T('下载中…'):T('下载'))}</button>`;
+const pullButton = (key, pulling) => `<button class="text-button" data-pull="${esc(key)}" ${pulling?'disabled':''}>${icon('downloads')}${esc(pulling?T('下载中…'):T('下载'))}</button>`;
 const modelBytes = (m) => m.totalBytes ? fmtBytes(m.obtainedBytes)+' / '+fmtBytes(m.totalBytes) : '';
-const modelRow = (name, sub, m, key) => `<div class="lrow"><div class="lead">${icon('models')}</div><div class="txt"><div class="t">${name}${readyTag(m)}</div>${sub?`<div class="s">${sub}</div>`:''}${m.pulling&&m.totalBytes?progress(m.obtainedBytes/m.totalBytes):''}</div>${m.ready||m.error?'':`<div class="trail">${pullButton(key, m.pulling)}</div>`}</div>`;
+const modelRow = (name, sub, m, key, ic) => `<div class="setting-row"><div class="list-lead"${m.ready?' data-tone="success"':''}>${icon(ic||'models')}</div><div class="setting-copy"><strong>${name}${readyTag(m)}</strong>${sub?`<small>${sub}</small>`:''}${m.pulling&&m.totalBytes?progress(m.obtainedBytes/m.totalBytes):''}</div>${m.ready||m.error?'':`<div class="setting-trail">${pullButton(key, m.pulling)}</div>`}</div>`;
 async function loadModels(){
   const r = await api('models');
-  $('#asr-models').innerHTML = r.asr.map(m=>modelRow(`${esc(m.name||m.tag)} <span class="mono muted">${esc(m.tag)}</span>`, esc([[m.variant,m.provider].filter(Boolean).join(' / '), modelBytes(m)].filter(Boolean).join(' · ')), m, m.tag)).join('') || empty(T('无'), 'models');
-  $('#ocr-model').innerHTML = (r.ocrModels && r.ocrModels.length) ? r.ocrModels.map(m=>modelRow(esc(m.name||m.key), esc(modelBytes(m)), m, 'ocr:'+m.key)).join('')
-    : r.ocr ? modelRow('OCR', esc(fmtBytes(r.ocr.obtainedBytes)+' / '+fmtBytes(r.ocr.totalBytes)), r.ocr, 'ocr') : empty(T('OCR 服务不可用'), 'models');
+  $('#asr-models').innerHTML = r.asr.map(m=>modelRow(`${esc(m.name||m.tag)} <span class="muted">${esc(m.tag)}</span>`, esc([[m.variant,m.provider].filter(Boolean).join(' / '), modelBytes(m)].filter(Boolean).join(' · ')), m, m.tag, 'graphic_eq')).join('') || empty(T('无'), 'models');
+  $('#ocr-model').innerHTML = (r.ocrModels && r.ocrModels.length) ? r.ocrModels.map(m=>modelRow(esc(m.name||m.key), esc(modelBytes(m)), m, 'ocr:'+m.key, 'text_fields')).join('')
+    : r.ocr ? modelRow('OCR', esc(fmtBytes(r.ocr.obtainedBytes)+' / '+fmtBytes(r.ocr.totalBytes)), r.ocr, 'ocr', 'text_fields') : empty(T('OCR 服务不可用'), 'models');
   document.querySelectorAll('[data-pull]').forEach(b=>b.onclick=guard(async()=>{ await post('models/pull',{model:b.dataset.pull}); toast(T('开始下载')); loadModels(); }));
 }
 
@@ -1056,14 +900,14 @@ async function loadAnki(){
   if (!a.available) { $('#anki-account').innerHTML = empty(T('此服务端包没有 fushi-anki-sync。'), 'anki'); $('#anki-config').innerHTML = empty(T('登录后显示。'), 'anki'); return; }
   const showLogin = !a.account || ankiRelogin;
   $('#anki-account').innerHTML = !showLogin
-    ? `<div class="card-head"><div><h2 style="margin:0">${esc(T('已登录：{0}', a.account.username))}</h2><p class="sup">${esc(a.account.server || 'AnkiWeb')}</p></div></div>
-       <div class="actions"><button class="b" id="btn-anki-sync">${icon('refresh')}${esc(T('立即同步'))}</button><button class="b sec" id="btn-anki-refresh">${esc(T('刷新牌组 / 笔记类型'))}</button><button class="b text" id="btn-anki-relogin">${esc(T('重新登录'))}</button><span class="sp"></span><button class="b text danger" id="btn-anki-logout">${esc(T('退出登录'))}</button></div>`
-    : `<div class="grid" style="margin:0">
-       <label class="f" style="grid-column:1/-1">${esc(T('同步服务器（自建服务器地址，如 http://nas:8080/；留空为 AnkiWeb）'))}<input id="anki-endpoint" value="${esc(a.account ? (a.account.server || '') : '')}"></label>
-       <label class="f">${esc(T('用户名'))}<input id="anki-user" value="${esc(a.account ? a.account.username : '')}"></label>
-       <label class="f">${esc(T('密码'))}<input type="password" id="anki-pass"></label></div>
-       <div class="actions"><button class="b" id="btn-anki-login">${esc(T('登录并下载牌组集合'))}</button>${a.account ? `<button class="b text" id="btn-anki-relogin-cancel">${esc(T('取消'))}</button>` : ''}</div>
-       <p class="sup">${esc(T('密码只用来换取同步凭据，不保存。同一服务器与用户名重新登录只换凭据，本机的牌组集合与未同步的卡都保留。'))}</p>`;
+    ? `<div class="card-head"><div class="card-head-copy"><h2 class="kit-title-medium">${esc(T('已登录：{0}', a.account.username))}</h2><p class="kit-supporting">${esc(a.account.server || 'AnkiWeb')}</p></div></div>
+       <div class="action-row"><button class="primary-button" id="btn-anki-sync">${icon('refresh')}${esc(T('立即同步'))}</button><button class="text-button" id="btn-anki-refresh">${esc(T('刷新牌组 / 笔记类型'))}</button><button class="plain-button" id="btn-anki-relogin">${esc(T('重新登录'))}</button><span class="kit-spacer"></span><button class="plain-button danger-button" id="btn-anki-logout">${esc(T('退出登录'))}</button></div>`
+    : `<div class="form-grid">
+       <label class="field is-wide">${esc(T('同步服务器（自建服务器地址，如 http://nas:8080/；留空为 AnkiWeb）'))}<input id="anki-endpoint" value="${esc(a.account ? (a.account.server || '') : '')}"></label>
+       <label class="field">${esc(T('用户名'))}<input id="anki-user" value="${esc(a.account ? a.account.username : '')}"></label>
+       <label class="field">${esc(T('密码'))}<input type="password" id="anki-pass"></label></div>
+       <div class="action-row"><button class="primary-button" id="btn-anki-login">${esc(T('登录并下载牌组集合'))}</button>${a.account ? `<button class="plain-button" id="btn-anki-relogin-cancel">${esc(T('取消'))}</button>` : ''}</div>
+       <p class="kit-supporting">${esc(T('密码只用来换取同步凭据，不保存。同一服务器与用户名重新登录只换凭据，本机的牌组集合与未同步的卡都保留。'))}</p>`;
   if (!showLogin) {
     $('#btn-anki-sync').onclick = guard(async()=>{ await post('anki/sync'); toast(T('已同步')); ankiFormKey=null; loadAnki(); });
     $('#btn-anki-refresh').onclick = guard(async()=>{ await post('anki/refresh'); toast(T('已刷新')); ankiFormKey=null; loadAnki(); });
@@ -1098,13 +942,13 @@ async function loadAnki(){
   if (!a.account || !st.decks.length) { $('#anki-config').innerHTML = empty(T('登录后显示。'), 'anki'); return; }
   const opt = (list, sel) => list.map(x=>`<option ${x===sel?'selected':''}>${esc(x)}</option>`).join('');
   const ph = `<datalist id="anki-ph">${a.placeholders.map(x=>`<option value="${esc(x)}">`).join('')}</datalist>`;
-  $('#anki-config').innerHTML = `${ph}<div class="grid" style="margin:0">
-    <label class="f">${esc(T('牌组'))}<select id="anki-deck">${opt(st.decks, st.deck)}</select></label>
-    <label class="f">${esc(T('笔记类型'))}<select id="anki-nt">${opt(st.noteTypes, st.noteType)}</select></label>
-    <label class="f">${esc(T('标签（空格分隔）'))}<input id="anki-tags" value="${esc(st.tags)}"></label></div>
-    <h2 class="sub-h">${esc(T('字段映射'))}</h2><p class="sup">${esc(T('每个字段填占位符，如 {expression}、{reading}、{glossary}、{sentence}；可组合。没填映射时卡片会留着等，不会丢。'))}</p>
-    <div class="grid">${st.fields.map(f=>`<label class="f">${esc(f)}<input list="anki-ph" data-field="${esc(f)}" value="${esc(st.fieldMappings[f]||'')}"></label>`).join('')}</div>
-    <div class="actions"><button class="b" id="btn-anki-save">${esc(T('保存'))}</button></div>`;
+  $('#anki-config').innerHTML = `${ph}<div class="form-grid">
+    <label class="field">${esc(T('牌组'))}<select id="anki-deck">${opt(st.decks, st.deck)}</select></label>
+    <label class="field">${esc(T('笔记类型'))}<select id="anki-nt">${opt(st.noteTypes, st.noteType)}</select></label>
+    <label class="field">${esc(T('标签（空格分隔）'))}<input id="anki-tags" value="${esc(st.tags)}"></label></div>
+    <h2 class="kit-title-medium">${esc(T('字段映射'))}</h2><p class="kit-supporting">${esc(T('每个字段填占位符，如 {expression}、{reading}、{glossary}、{sentence}；可组合。没填映射时卡片会留着等，不会丢。'))}</p>
+    <div class="form-grid">${st.fields.map(f=>`<label class="field">${esc(f)}<input list="anki-ph" data-field="${esc(f)}" value="${esc(st.fieldMappings[f]||'')}"></label>`).join('')}</div>
+    <div class="action-row"><button class="primary-button" id="btn-anki-save">${esc(T('保存'))}</button></div>`;
   $('#anki-nt').onchange = guard(async()=>{ await put('anki/settings', {noteType: $('#anki-nt').value}); ankiFormKey=null; loadAnki(); });
   $('#btn-anki-save').onclick = guard(async()=>{
     const fieldMappings = {};
@@ -1118,9 +962,46 @@ $('#btn-anki-run').onclick = guard(async()=>{ await post('anki/run'); toast(T('�
 $('#btn-anki-retry').onclick = guard(async()=>{ const r = await post('anki/retry'); toast(T('已重试 {0} 张', r.retried)); loadAnki(); });
 
 // ── 复习 ──
-const SRS_STATE = {opening:T('打开中'), ready:T('可用'), encrypted:T('同步位置已加密（暂不支持）'), needs_upgrade:T('数据来自更新版本的 Fushi，请升级服务端'), failed:T('出错')};
+const SRS_STATE = {opening:T('打开中'), ready:T('可用'), encrypted:T('同步位置已加密（暂不支持）'), needs_upgrade:T('数据来自更新版本的 Fushi，请升级服务端'), failed:T('出错'), upgrading:T('复习库升级中'), upgrade_blocked:T('复习库升级没完成，需在服务端处理（ctl srs migration）')};
 // 各份配置文件的 RWKV 准备状态（ServerSrsProfile.toJson 的 rwkv / rwkvError）：idle = 库里没有 RWKV 牌组 / 还没开始，不显示。
 const SRS_RWKV = {downloading:T('RWKV 下载权重中'), preparing:T('RWKV 准备中'), ready:T('RWKV 就绪'), failed:T('RWKV 出错')};
+// 复习库换代（协议 3 srs.db → 新代，server_srs.dart ServerSrsGeneration）：ready 不显示；其余显示状态、进度、处置说明。
+// 失败类状态不自动重跑，「开始升级」由管理员表态后才发（server.srs.migration.start）；提交点之前可叫停。
+const SRS_GEN_STATE = {migrating:T('升级中'), migrating_elsewhere:T('另一个进程在升级'), needs_migration:T('需要升级'), migration_failed:T('升级失败'), sealed_old_only:T('只剩封存的旧库'), legacy_beside_new:T('新库旁边还有没升级的旧库'), blocked:T('升级受阻'), no_space:T('磁盘空间不够'), error:T('出错')};
+const SRS_GEN_IDLE = ['ready','migrating','migrating_elsewhere'];
+function renderSrsMigration(g){
+  const box = $('#srs-migration');
+  if (!g || g.state==='ready') { box.innerHTML=''; return; }
+  const progress = g.step ? ` · ${g.step}${g.total ? ' '+g.done+'/'+g.total : ''}` : '';
+  const kv = [[T('复习库换代'), (SRS_GEN_STATE[g.state]||g.state) + progress + (g.cancelRequested ? T(' · 已请求叫停') : '')]];
+  if (g.code) kv.push([T('原因'), g.code + (g.reason ? T('：') + g.reason : '')]);
+  if (g.reportPath) kv.push([T('报告'), g.reportPath]);
+  const start = !SRS_GEN_IDLE.includes(g.state) ? `<button class="primary-button" id="btn-srs-mig-start">${esc(T('开始升级'))}</button>` : '';
+  const cancel = g.cancellable ? `<button class="outlined-button danger-button" id="btn-srs-mig-cancel">${esc(T('叫停升级'))}</button>` : '';
+  box.innerHTML = `<div class="kv-grid" style="margin-top:12px">${kvHtml(kv)}</div><p class="kit-supporting" data-srs-advice>${esc(g.advice||'')}</p>${start||cancel ? `<div class="action-row">${start}${cancel}</div>` : ''}`;
+  const s = $('#btn-srs-mig-start');
+  if (s) s.onclick = guard(async()=>{ if(!await ask(T('开始升级复习库？升级期间远程复习与制卡暂停；旧的 srs.db 会封存保留，不删除任何文件。'))) return; await post('srs/migration/start'); toast(T('已开始升级')); loadSrs(); });
+  const c = $('#btn-srs-mig-cancel');
+  if (c) c.onclick = guard(async()=>{ if(!await ask(T('叫停复习库升级？提交步骤之前叫停会回到升级前的样子；刚好进入提交步骤时以最终结论为准。'), true)) return; await post('srs/migration/cancel'); toast(T('已请求叫停')); loadSrs(); });
+}
+// 旧版本保留副本（D32，engine srs_ctl_routes.dart 的 retained 路由）：迁移时封存在原位的协议 3 srs.db。只在还是封存的
+// 副本时显示；删除不可撤销（之后不能退回旧版本，清除过的原文随之消失），一定先确认、带 confirm: true 才发。副本坏了
+// （copy = unreadable，BUG-5079）只提示、不给删除。
+function renderSrsRetained(r){
+  const box = $('#srs-retained');
+  if (r && r.copy === 'unreadable') { box.innerHTML = `<div class="kv-grid" style="margin-top:12px">${kvHtml([[T('旧版本保留副本'), T('已损坏（不是可读的 SQLite 文件），不能再用它退回旧版本；当前复习库不受影响')]])}</div>`; return; }
+  if (!r || r.copy !== 'sealed') { box.innerHTML=''; return; }
+  const due = r.dueAtMs ? T('{0} 到期后自动删除', fmtTime(r.dueAtMs)) : T('删除前一直保留（不会自动到期）');
+  const kv = [[T('旧版本保留副本'), fmtBytes(r.bytes) + ' · ' + due]];
+  if (r.error) kv.push([T('自动删除没做成'), r.error]);
+  box.innerHTML = `<div class="kv-grid" style="margin-top:12px">${kvHtml(kv)}</div><div class="action-row"><button class="outlined-button danger-button" id="btn-srs-retained-delete">${esc(T('删除保留副本'))}</button></div>`;
+  $('#btn-srs-retained-delete').onclick = guard(async()=>{
+    if (!await ask(T('立即删除旧版本保留副本？不可撤销：删除后不能再退回旧版本，彻底清除过的内容在旧库里的原文也随之消失。删除前会先核对新库完好，核对不过不删。'), true)) return;
+    const res = await post('srs/retained/delete', {confirm: true});
+    toast(res.deleted ? T('已删除保留副本，释放 {0}', fmtBytes(res.freedBytes)) : T('没有可删除的保留副本'));
+    loadSrs();
+  });
+}
 let srsFormKey = null;
 // 待确认 / 已拒绝的设备（服务端开库后第一次同步过来的；删除与彻底清除在本机扣着，engine srs_devices.dart）。
 function renderSrsDevices(devs){
@@ -1131,7 +1012,7 @@ function renderSrsDevices(devs){
     const name = d.name ? (d.app ? T('{0}（Fushi {1}）', d.name, d.app) : d.name) : T('未命名设备');
     const held = T('扣着 {0} 条删除、{1} 条彻底清除', d.heldDeletes, d.heldPurges);
     const seen = d.trustSince ? T('首次出现 {0}', fmtTime(d.trustSince)) : '';
-    return `<div class="lrow"><div class="lead">${icon('device')}</div><div class="txt"><div class="t">${esc(name)}${d.trust==='pending'?tag('warn', T('待确认')):tag('', T('已拒绝'))}</div><div class="s">${esc([held, seen, many?(p.name||p.uid):''].filter(Boolean).join(' · '))}</div><div class="s mono">${esc(d.device)}</div></div><div class="trail"><button class="b sec" data-srs-trust="${esc(d.device)}" data-uid="${esc(p.uid)}" data-name="${esc(name)}" data-held="${d.heldDeletes+d.heldPurges}" data-purges="${d.heldPurges}">${esc(T('信任'))}</button>${d.trust==='pending'?`<button class="b text danger" data-srs-reject="${esc(d.device)}" data-uid="${esc(p.uid)}">${esc(T('拒绝'))}</button>`:''}</div></div>`;
+    return `<div class="setting-row"><div class="list-lead">${icon('device')}</div><div class="setting-copy"><strong>${esc(name)}${d.trust==='pending'?tag('warn', T('待确认')):tag('', T('已拒绝'))}</strong><small>${esc([held, seen, many?(p.name||p.uid):''].filter(Boolean).join(' · '))}</small><small class="mono">${esc(d.device)}</small></div><div class="setting-trail"><button class="text-button" data-srs-trust="${esc(d.device)}" data-uid="${esc(p.uid)}" data-name="${esc(name)}" data-held="${d.heldDeletes+d.heldPurges}" data-purges="${d.heldPurges}">${esc(T('信任'))}</button>${d.trust==='pending'?`<button class="plain-button danger-button" data-srs-reject="${esc(d.device)}" data-uid="${esc(p.uid)}">${esc(T('拒绝'))}</button>`:''}</div></div>`;
   }).join('') || empty(T('没有待确认的设备'), 'device');
   document.querySelectorAll('[data-srs-trust]').forEach(el=>el.onclick = guard(async()=>{
     if (!await ask(T('信任「{0}」？它扣着的 {1} 条删除与彻底清除会立即生效。', el.dataset.name, el.dataset.held), Number(el.dataset.purges) > 0)) return;
@@ -1142,7 +1023,7 @@ function renderSrsDevices(devs){
   }));
 }
 async function loadSrs(){
-  const [st, found, devs] = await Promise.all([api('srs'), api('srs/profiles'), api('srs/devices').catch(()=>({profiles:[]}))]);
+  const [st, found, devs, retained] = await Promise.all([api('srs'), api('srs/profiles'), api('srs/devices').catch(()=>({profiles:[]})), api('srs/retained').catch(()=>null)]);
   const ac = st.ankiConnect || {};
   const kv = [
     [T('状态'), st.enabled ? T('已开启') : T('未开启（没有勾选配置文件）')],
@@ -1150,7 +1031,9 @@ async function loadSrs(){
     ['AnkiConnect', ac.listening ? T('监听 {0}:{1}', ac.bind, ac.listeningPort) : (ac.enabled ? T('未监听') + (ac.lastError ? T('：') + ac.lastError : '') : T('关闭'))],
   ];
   $('#srs-status').innerHTML = kvHtml(kv);
+  renderSrsMigration(st.generation);
   renderSrsDevices(devs);
+  renderSrsRetained(retained);
   const served = {}; (st.profiles||[]).forEach(p=>served[p.uid]=p);
   const list = found.profiles || [];
   const key = JSON.stringify([list.map(p=>[p.uid,p.name,p.served,p.missing]), st.config, ac.enabled, ac.bind, ac.port, ac.apiKeySet, ac.profileKeysSet]);
@@ -1161,14 +1044,23 @@ async function loadSrs(){
   const cfg = st.config;
   const def = st.defaultProfile || cfg.defaultProfile;
   const H = {serve:T('提供'), def:T('默认'), prof:T('配置文件'), dev:T('设备'), state:T('状态')};
-  $('#srs-profiles').innerHTML = list.length ? `<div class="tbl"><table class="rt"><tr class="h"><th>${esc(H.serve)}</th><th>${esc(H.def)}</th><th>${esc(H.prof)}</th><th>${esc(H.dev)}</th><th>${esc(H.state)}</th><th></th></tr>${list.map(p=>`<tr>
-      <td data-label="${esc(H.serve)}"><input type="checkbox" class="sw" data-srs-serve="${esc(p.uid)}" ${p.served?'checked':''}></td>
+  $('#srs-profiles').innerHTML = list.length ? `<table class="data-table is-responsive"><tr class="is-head"><th>${esc(H.serve)}</th><th>${esc(H.def)}</th><th>${esc(H.prof)}</th><th>${esc(H.dev)}</th><th>${esc(H.state)}</th><th></th></tr>${list.map(p=>`<tr>
+      <td data-label="${esc(H.serve)}"><span class="switch"><input type="checkbox" data-srs-serve="${esc(p.uid)}" ${p.served?'checked':''}><span></span></span></td>
       <td data-label="${esc(H.def)}"><input type="radio" name="srs-def" data-srs-def="${esc(p.uid)}" ${p.uid===def?'checked':''} ${p.served?'':'disabled'}></td>
       <td data-label="${esc(H.prof)}"><div>${esc(p.name||p.uid)}<div class="small muted mono">${esc(p.uid)}${p.missing?esc(T(' · 同步目录里已没有')):''}</div></div></td>
       <td class="small" data-label="${esc(H.dev)}"><div>${esc((p.devices||[]).join(T('、')))}${p.noteCount!=null?`<div class="muted">${esc(T('{0} 条笔记', p.noteCount))}</div>`:''}</div></td>
       <td class="small" data-label="${esc(H.state)}" data-srs-status="${esc(p.uid)}">${esc(statusOf(p.uid))}</td>
-      <td>${p.served?`<button class="b sec" data-srs-sync="${esc(p.uid)}">${esc(T('同步'))}</button>`:''}</td></tr>`).join('')}</table></div>`
+      <td>${p.served?`<button class="text-button" data-srs-sync="${esc(p.uid)}">${esc(T('同步'))}</button>`:''}</td></tr>`).join('')}</table>`
     : empty(T('同步目录里还没有任何配置文件：先让一台设备经互联同步一次复习数据。'), 'srs');
+  // 管理员给提供中的配置文件起名（srs.profile_names）：本机发布到同步位置的说明文件、远程复习的选择列表都用它；空 = 用设备报的名字。
+  const named = list.filter(p=>p.served);
+  if (named.length) {
+    $('#srs-profiles').insertAdjacentHTML('beforeend', `<div class="form-grid" style="margin-top:12px">${named.map(p=>`<label class="field is-wide">${esc(T('{0} 的名字（空 = 用设备报的名字）', p.uid))}<input data-srs-name="${esc(p.uid)}" maxlength="100" autocomplete="off" placeholder="${esc(p.name && p.name!==p.uid ? p.name : '')}" value="${esc((cfg.profileNames||{})[p.uid]||'')}"></label>`).join('')}</div><div class="action-row"><button class="text-button" id="btn-srs-names">${esc(T('保存名字'))}</button></div>`);
+    $('#btn-srs-names').onclick = guard(async()=>{
+      const profileNames = {}; document.querySelectorAll('[data-srs-name]').forEach(el=>{ if(el.value.trim()) profileNames[el.dataset.srsName]=el.value.trim(); });
+      await put('srs', {profileNames}); toast(T('已保存')); srsFormKey=null; loadSrs();
+    });
+  }
   document.querySelectorAll('[data-srs-serve]').forEach(el=>el.onchange = guard(async()=>{
     await put('srs', el.checked ? {addProfiles:[el.dataset.srsServe]} : {removeProfiles:[el.dataset.srsServe]});
     toast(el.checked ? T('已开始提供') : T('已停止提供')); srsFormKey=null; loadSrs();
@@ -1177,11 +1069,11 @@ async function loadSrs(){
   document.querySelectorAll('[data-srs-sync]').forEach(el=>el.onclick = guard(async()=>{ await post('srs/sync', {profile: el.dataset.srsSync}); toast(T('已同步')); loadSrs(); }));
 
   const servedList = list.filter(p=>p.served);
-  $('#srs-mining').innerHTML = `<p class="sup" style="margin:0">${esc(T('已配对设备「制卡到已配对设备」时卡片落到哪。手机可以在自己的设置里另选；没选时，手机当前的配置文件本机有就落进那份，否则落进默认那份。'))}</p>
-    <div class="grid"><label class="f">${esc(T('落到'))}<select id="srs-target">${[['auto',T('自动（没配好 Anki 时进复习）')],['review',T('Fushi 复习')],['anki','Anki']].map(([v,l])=>`<option value="${v}" ${cfg.miningTarget===v?'selected':''}>${esc(l)}</option>`).join('')}</select></label>
-    <label class="f">${esc(T('换日时刻'))}<select id="srs-rollover">${Array.from({length:24},(_,h)=>`<option value="${h}" ${h===Number(cfg.rolloverHour)?'selected':''}>${String(h).padStart(2,'0')}:00</option>`).join('')}</select></label>
-    ${servedList.map(p=>`<label class="f">${esc(T('{0} 的制卡牌组（空 = 默认牌组）', p.name||p.uid))}<input data-srs-deck="${esc(p.uid)}" list="srs-decks-${esc(p.uid)}" autocomplete="off" value="${esc((cfg.miningDecks||{})[p.uid]||'')}"><datalist id="srs-decks-${esc(p.uid)}"></datalist></label>`).join('')}</div>
-    <div class="actions"><button class="b" id="btn-srs-save">${esc(T('保存'))}</button></div>`;
+  $('#srs-mining').innerHTML = `<p class="kit-supporting">${esc(T('已配对设备「制卡到已配对设备」时卡片落到哪。手机可以在自己的设置里另选；没选时，手机当前的配置文件本机有就落进那份，否则落进默认那份。'))}</p>
+    <div class="form-grid"><label class="field">${esc(T('落到'))}<select id="srs-target">${[['auto',T('自动（没配好 Anki 时进复习）')],['review',T('Fushi 复习')],['anki','Anki']].map(([v,l])=>`<option value="${v}" ${cfg.miningTarget===v?'selected':''}>${esc(l)}</option>`).join('')}</select></label>
+    <label class="field">${esc(T('换日时刻'))}<select id="srs-rollover">${Array.from({length:24},(_,h)=>`<option value="${h}" ${h===Number(cfg.rolloverHour)?'selected':''}>${String(h).padStart(2,'0')}:00</option>`).join('')}</select></label>
+    ${servedList.map(p=>`<label class="field">${esc(T('{0} 的制卡牌组（空 = 默认牌组）', p.name||p.uid))}<input data-srs-deck="${esc(p.uid)}" list="srs-decks-${esc(p.uid)}" autocomplete="off" value="${esc((cfg.miningDecks||{})[p.uid]||'')}"><datalist id="srs-decks-${esc(p.uid)}"></datalist></label>`).join('')}</div>
+    <div class="action-row"><button class="primary-button" id="btn-srs-save">${esc(T('保存'))}</button></div>`;
   // 牌组框的建议：各份 profile 已有的牌组，取自 ctl 的 `GET srs/decks?profile=`（AdminSrsCtl，name 是 `父::子` 全名；取不到就不给建议，照样可手填新牌组名）。
   servedList.forEach(p=>api('srs/decks?profile='+encodeURIComponent(p.uid)).then(r=>{
     const dl = document.getElementById('srs-decks-'+p.uid);
@@ -1193,17 +1085,17 @@ async function loadSrs(){
     toast(T('已保存')); srsFormKey=null; loadSrs();
   });
 
-  $('#srs-rwkv').innerHTML = `<div class="grid"><label class="f">${esc(T('使用的模型'))}<select id="srs-rwkv-model">${[['small',T('Small（默认，准确度最好）')],['tiny',T('Tiny（每张卡省约 30% 内存，准确度略差）')]].map(([v,l])=>`<option value="${v}" ${(cfg.rwkvModel||'small')===v?'selected':''}>${esc(l)}</option>`).join('')}</select></label></div>`;
+  $('#srs-rwkv').innerHTML = `<div class="form-grid"><label class="field">${esc(T('使用的模型'))}<select id="srs-rwkv-model">${[['small',T('Small（默认，准确度最好）')],['tiny',T('Tiny（每张卡省约 30% 内存，准确度略差）')]].map(([v,l])=>`<option value="${v}" ${(cfg.rwkvModel||'small')===v?'selected':''}>${esc(l)}</option>`).join('')}</select></label></div>`;
   $('#srs-rwkv-model').onchange = guard(async()=>{ try { await put('srs', {rwkvModel: $('#srs-rwkv-model').value}); toast(T('已切换 RWKV 模型')); } finally { srsFormKey=null; loadSrs(); } });
 
   const setNote = (isSet) => isSet ? ` <span class="muted">${esc(T('(已设置，留空不改)'))}</span>` : '';
-  $('#srs-ankiconnect').innerHTML = `<div class="row" style="margin-top:16px">${swLabel('id="ac-enabled"', ac.enabled, T('开关'))}</div>
-    <div class="grid">
-    <label class="f">${esc(T('监听地址'))}${choiceCtl('ac-bind', BIND_CHOICES(), ac.bind||'127.0.0.1')}</label>
-    <label class="f">${esc(T('端口'))}<input type="number" id="ac-port" value="${ac.port||8765}"></label>
-    <label class="f">${esc(T('共用 key（落到默认配置文件）'))}${setNote(ac.apiKeySet)}<input type="password" id="ac-key" value=""></label>
-    ${servedList.map(p=>`<label class="f">${esc(T('{0} 专用 key', p.name||p.uid))}${setNote((ac.profileKeysSet||{})[p.uid])}<input type="password" data-ac-key="${esc(p.uid)}" value=""></label>`).join('')}</div>
-    <div class="actions"><button class="b" id="btn-ac-save">${esc(T('保存'))}</button>${ac.apiKeySet?`<button class="b text danger" id="btn-ac-clear">${esc(T('清除共用 key'))}</button>`:''}</div>`;
+  $('#srs-ankiconnect').innerHTML = `<div class="action-row">${swLabel('id="ac-enabled"', ac.enabled, T('开关'))}</div>
+    <div class="form-grid">
+    <label class="field">${esc(T('监听地址'))}${choiceCtl('ac-bind', BIND_CHOICES(), ac.bind||'127.0.0.1')}</label>
+    <label class="field">${esc(T('端口'))}<input type="number" id="ac-port" value="${ac.port||8765}"></label>
+    <label class="field">${esc(T('共用 key（落到默认配置文件）'))}${setNote(ac.apiKeySet)}<input type="password" id="ac-key" value=""></label>
+    ${servedList.map(p=>`<label class="field">${esc(T('{0} 专用 key', p.name||p.uid))}${setNote((ac.profileKeysSet||{})[p.uid])}<input type="password" data-ac-key="${esc(p.uid)}" value=""></label>`).join('')}</div>
+    <div class="action-row"><button class="primary-button" id="btn-ac-save">${esc(T('保存'))}</button>${ac.apiKeySet?`<button class="plain-button danger-button" id="btn-ac-clear">${esc(T('清除共用 key'))}</button>`:''}</div>`;
   $('#btn-ac-save').onclick = guard(async()=>{
     const body = {enabled: $('#ac-enabled').checked, bind: choiceValue('ac-bind') ?? '', port: parseInt($('#ac-port').value,10)};
     if ($('#ac-key').value) body.apiKey = $('#ac-key').value;
@@ -1248,7 +1140,7 @@ const OTHER = '__other';
 function choiceCtl(id, opts, v){
   v = v ?? '';
   const other = !opts.some(([o])=>o===v);
-  return `<div class="ctl stack"><select id="${id}" data-choice="1">${opts.map(([o,l])=>`<option value="${esc(o)}" ${o===v?'selected':''}>${esc(l)}</option>`).join('')}<option value="${OTHER}" ${other?'selected':''}>${esc(T('其他…'))}</option></select><input type="text" id="${id}-other" value="${esc(other?v:'')}" aria-label="${esc(T('其他…'))}" ${other?'':'hidden'}></div>`;
+  return `<div class="choice-ctl"><select id="${id}" data-choice="1">${opts.map(([o,l])=>`<option value="${esc(o)}" ${o===v?'selected':''}>${esc(l)}</option>`).join('')}<option value="${OTHER}" ${other?'selected':''}>${esc(T('其他…'))}</option></select><input type="text" id="${id}-other" value="${esc(other?v:'')}" aria-label="${esc(T('其他…'))}" ${other?'':'hidden'}></div>`;
 }
 function choiceValue(id){
   const sel=$('#'+id); if(!sel) return null;
@@ -1266,7 +1158,7 @@ const BYTE_UNITS = [['TB',1024**4],['GB',1024**3],['MB',1024**2]];
 function bytesCtl(id, v){
   const n = Number(v)||0;
   const [unit,size] = BYTE_UNITS.find(([,sz])=>n>0 && n%sz===0) || ['MB',1024**2];
-  return `<div class="ctl"><input type="number" min="0" step="any" id="${id}" value="${esc(String(n/size))}"><select id="${id}-unit" class="unit" aria-label="${esc(T('单位'))}">${BYTE_UNITS.map(([u])=>`<option value="${u}" ${u===unit?'selected':''}>${u}</option>`).join('')}</select></div>`;
+  return `<div class="bytes-ctl"><input type="number" min="0" step="any" id="${id}" value="${esc(String(n/size))}"><select id="${id}-unit" aria-label="${esc(T('单位'))}">${BYTE_UNITS.map(([u])=>`<option value="${u}" ${u===unit?'selected':''}>${u}</option>`).join('')}</select></div>`;
 }
 function bytesValue(id){
   const size = (BYTE_UNITS.find(([u])=>u===$('#'+id+'-unit').value)||BYTE_UNITS[2])[1];
@@ -1300,16 +1192,16 @@ async function loadSettings(){
     else if(type.startsWith('choice:')){ ctl = choiceCtl(id, CHOICES[type.slice(7)](s), v); wrapped = true; }
     else if(type==='bytes'){ ctl = bytesCtl(id, v); wrapped = true; }
     else if(type==='aimodel') ctl = `<input type="text" id="${id}" list="ai-model-list" value="${esc(v??'')}" autocomplete="off"><datalist id="ai-model-list"></datalist>`;
-    else if(type==='bool') ctl = `<input type="checkbox" class="sw" id="${id}" ${v?'checked':''}>`;
-    else if(type.startsWith('seg:')) ctl = `<div class="seg" id="${id}" role="radiogroup">${type.slice(4).split(',').map(o=>`<label><input type="radio" name="${id}" value="${esc(o)}" ${o===v?'checked':''}><span>${esc(LANGUAGE_NAMES[o]||o)}</span></label>`).join('')}</div>`;
+    else if(type==='bool') ctl = `<span class="switch"><input type="checkbox" id="${id}" ${v?'checked':''}><span></span></span>`;
+    else if(type.startsWith('seg:')) ctl = `<div class="segmented" id="${id}" role="radiogroup">${type.slice(4).split(',').map(o=>`<label><input type="radio" name="${id}" value="${esc(o)}" ${o===v?'checked':''}><span>${esc(LANGUAGE_NAMES[o]||o)}</span></label>`).join('')}</div>`;
     else if(type.startsWith('select:')) ctl = `<select id="${id}">${type.slice(7).split(',').map(o=>`<option value="${esc(o)}" ${o===v?'selected':''}>${esc(k==='language'?LANGUAGE_NAMES[o]:o)}</option>`).join('')}</select>`;
     else if(type==='password'){ extra += setNote(s.qbittorrent.passwordSet); ctl = `<input type="password" id="${id}" value="" autocomplete="off">`; }
     else if(type.startsWith('secret:')){ const sk=type.slice(7); const isSet = sk.includes('.') ? (s[sk.split('.')[0]]||{})[sk.split('.')[1]] : s[sk]; extra += setNote(isSet); ctl = `<input type="password" id="${id}" value="" autocomplete="off">`; }
     else ctl = `<input type="${type}" id="${id}" value="${esc(v??'')}">`;
     const [title, sub] = splitLabel(label);
-    return `<div class="srow${type==='bool'?' swr':''}"><label class="txt" for="${id}"><span class="t">${esc(title)}${RESTART.has(k)?tag('warn', T('需重启')):''}${extra}</span>${sub?`<span class="s">${esc(sub)}</span>`:''}</label>${wrapped?ctl:`<div class="ctl">${ctl}</div>`}</div>`;
+    return `<div class="setting-row"><label class="setting-copy" for="${id}"><strong>${esc(title)}${RESTART.has(k)?tag('warn', T('需重启')):''}${extra}</strong>${sub?`<small>${esc(sub)}</small>`:''}</label><div class="setting-trail${type==='bool'?'':' is-field'}">${ctl}</div></div>`;
   };
-  $('#settings-form').innerHTML = SETTING_GROUPS.map(([g,name])=>`<h3 class="sh">${esc(name)}</h3><div class="list" style="margin-top:16px">${FIELDS.filter(f=>f[3]===g).map(field).join('')}</div>`).join('');
+  $('#settings-form').innerHTML = SETTING_GROUPS.map(([g,name])=>`<h3 class="kit-section-title">${esc(name)}</h3><div class="setting-list is-surface">${FIELDS.filter(f=>f[3]===g).map(field).join('')}</div>`).join('');
   syncAiModelHint(); const ps=$('#f-ai-preset'); if(ps) ps.addEventListener('change', syncAiModelHint);
   settingsBaseline = FIELDS.map(([k,,type])=>fieldValue(k,type));
   updateDirty();
@@ -1357,10 +1249,10 @@ function renderSubtitleProviders(sp){
   const setNote = (isSet) => isSet ? ` <span class="muted">${esc(T('(已设置，留空不改)'))}</span>` : '';
   $('#subs-form').innerHTML = SUBS.map(([id,label,login])=>{ const x=sp[id]||{};
     const st = x.active ? tag('ok', T('生效中')) : tag('', T('未生效'));
-    return `<div class="inset" data-subs="${esc(id)}" style="margin:12px 0"><div class="row" style="margin-top:0"><b>${esc(label)}</b> ${st}${x.apiKeyFromEnv?` <span class="small muted">${esc(T('（环境变量里的 key 优先于这里存的）'))}</span>`:''}</div>
-    <div class="grid" style="margin:0"><label class="f">API key${setNote(x.apiKeySet)}<input type="password" data-k="apiKey" value="" autocomplete="off"></label>
-    ${login?`<label class="f">${esc(T('用户名（可选）'))}<input type="text" data-k="username" value="${esc(x.username||'')}"></label><label class="f">${esc(T('密码'))}${setNote(x.passwordSet)}<input type="password" data-k="password" value="" autocomplete="off"></label>`:''}</div>
-    <div class="row" style="margin-bottom:0">${swLabel('data-k="enabled"', x.enabled!==false, T('启用'))}${x.apiKeySet?swLabel('data-k="clearApiKey"', false, T('清除已存的 key')):''}${login&&x.passwordSet?swLabel('data-k="clearPassword"', false, T('清除已存的密码')):''}</div></div>`; }).join('');
+    return `<div class="card-inset" data-subs="${esc(id)}"><div class="action-row"><b>${esc(label)}</b> ${st}${x.apiKeyFromEnv?` <span class="small muted">${esc(T('（环境变量里的 key 优先于这里存的）'))}</span>`:''}</div>
+    <div class="form-grid"><label class="field">API key${setNote(x.apiKeySet)}<input type="password" data-k="apiKey" value="" autocomplete="off"></label>
+    ${login?`<label class="field">${esc(T('用户名（可选）'))}<input type="text" data-k="username" value="${esc(x.username||'')}"></label><label class="field">${esc(T('密码'))}${setNote(x.passwordSet)}<input type="password" data-k="password" value="" autocomplete="off"></label>`:''}</div>
+    <div class="action-row">${swLabel('data-k="enabled"', x.enabled!==false, T('启用'))}${x.apiKeySet?swLabel('data-k="clearApiKey"', false, T('清除已存的 key')):''}${login&&x.passwordSet?swLabel('data-k="clearPassword"', false, T('清除已存的密码')):''}</div></div>`; }).join('');
 }
 $('#btn-subs-save').onclick = guard(async()=>{
   const body={};
@@ -1394,7 +1286,7 @@ function renderP2pState(st){
     const bad = st.reason==='unavailable'||st.reason==='start_failed'||st.reason==='loopback_bind';
     el.innerHTML = tag(bad?'err':'', p2pSummary(st))
       + (st.nodeId?` NodeId <code>${esc(st.nodeId)}</code>`:'')
-      + (st.lastError?`<br><span style="color:var(--err)">${esc(st.lastError)}</span>`:'');
+      + (st.lastError?`<br><span style="color:var(--md-sys-color-error)">${esc(st.lastError)}</span>`:'');
   }
 }
 function renderRemoteReach(s){
@@ -1417,8 +1309,8 @@ const aiDevice = (s) => s.originPeerId ? (s.originDeviceName || s.originPeerId) 
 let aiOpen = null;
 async function loadAi(){
   const r = await api('ai/sessions');
-  $('#ai-sessions').innerHTML = r.sessions.map(s=>`<div class="lrow click${s.id===aiOpen?' sel':''}" data-ai="${esc(s.id)}" tabindex="0" role="button"><div class="lead">${icon('ai')}</div><div class="txt"><div class="t">${esc(s.title||T('新对话'))}</div><div class="s">${esc(aiDevice(s))} · ${esc(fmtTime(s.updatedAt))} · ${esc(s.tokens)} tokens</div></div><svg class="i chev"><use href="#i-chevron"/></svg></div>`).join('') || empty(T('还没有 AI 助手会话'), 'ai');
-  $('#ai-sessions').querySelectorAll('[data-ai]').forEach(el=>{ const open = guard(async()=>{ aiOpen=el.dataset.ai; await loadAiDetail(); $('#ai-sessions').querySelectorAll('[data-ai]').forEach(x=>x.classList.toggle('sel', x===el)); }); el.onclick=open; el.onkeydown=(e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); open(); } }; });
+  $('#ai-sessions').innerHTML = r.sessions.map(s=>`<div class="setting-row is-clickable${s.id===aiOpen?' is-selected':''}" data-ai="${esc(s.id)}" tabindex="0" role="button"><div class="list-lead">${icon('ai')}</div><div class="setting-copy"><strong>${esc(s.title||T('新对话'))}</strong><small>${esc(aiDevice(s))} · ${esc(fmtTime(s.updatedAt))} · ${esc(s.tokens)} tokens</small></div>${icon('chevron','chev')}</div>`).join('') || empty(T('还没有 AI 助手会话'), 'ai');
+  $('#ai-sessions').querySelectorAll('[data-ai]').forEach(el=>{ const open = guard(async()=>{ aiOpen=el.dataset.ai; await loadAiDetail(); $('#ai-sessions').querySelectorAll('[data-ai]').forEach(x=>x.classList.toggle('is-selected', x===el)); }); el.onclick=open; el.onkeydown=(e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); open(); } }; });
   if (aiOpen) await loadAiDetail();
 }
 async function loadAiDetail(){
@@ -1426,7 +1318,7 @@ async function loadAiDetail(){
   $('#ai-detail').style.display='block';
   $('#ai-detail-title').textContent = s.title || T('新对话');
   $('#ai-detail-meta').textContent = `${aiDevice(s)} · ${fmtTime(s.createdAt)} → ${fmtTime(s.updatedAt)} · ${s.tokens} tokens`;
-  $('#ai-entries').innerHTML = s.entries.map(e=>`<div class="entry">${tag(e.kind==='assistant'?'info':'', AI_KIND[e.kind]||e.kind)}<div>${esc(e.toolName?e.toolName+(e.text?' — '+e.text:''):(e.text||''))} ${e.status&&e.kind!=='user'&&e.kind!=='assistant'?stTag(e.status):''} ${e.errorCode?`<span class="small" style="color:var(--err)">${esc(e.errorCode)}</span>`:''}</div></div>`).join('') || empty(T('无'));
+  $('#ai-entries').innerHTML = s.entries.map(e=>`<div class="entry">${tag(e.kind==='assistant'?'info':'', AI_KIND[e.kind]||e.kind)}<div>${esc(e.toolName?e.toolName+(e.text?' — '+e.text:''):(e.text||''))} ${e.status&&e.kind!=='user'&&e.kind!=='assistant'?stTag(e.status):''} ${e.errorCode?`<span class="small" style="color:var(--md-sys-color-error)">${esc(e.errorCode)}</span>`:''}</div></div>`).join('') || empty(T('无'));
 }
 
 // ── 词典 ──
@@ -1458,7 +1350,7 @@ function dictRow(d, i, n){
   const label = d.displayName || d.name;
   const lang = d.sourceLanguage ? tag(d.languageOverride ? 'info' : '', d.sourceLanguage) : tag('warn', T('未标注语言'));
   const meta = [DICT_TYPE[d.type]||d.type, d.formatKey, d.revision ? T('版本 {0}', d.revision) : '', d.present ? fmtBytes(d.sizeBytes) : ''].filter(Boolean).join(' · ');
-  return `<div class="lrow"><div class="lead">${icon('dictionaries')}</div><div class="txt"><div class="t"><span class="dict-label"${label!==d.name?` title="${esc(d.name)}"`:''}>${esc(label)}</span><button class="icon-btn sm" data-dict-rename="${esc(d.name)}" title="${esc(T('修改显示名'))}" aria-label="${esc(T('修改显示名'))}">${icon('edit')}</button><input type="text" class="dict-name-edit" data-dict-name-edit="${esc(d.name)}" data-current="${esc(d.displayName||'')}" maxlength="200" placeholder="${esc(d.name)}" aria-label="${esc(T('显示名'))}" title="${esc(T('回车保存，Esc 取消，留空恢复原名'))}" hidden>${lang}${d.present?'':tag('err', T('文件缺失'))}</div><div class="s">${esc(meta)}</div>${label!==d.name?`<div class="s mono">${esc(d.name)}</div>`:''}</div><div class="trail more">${dictLangSelect(d)}<label class="check"><span>${esc(T('默认启用'))}</span><input type="checkbox" class="sw" data-dict-default="${esc(d.name)}"${d.defaultEnabled?' checked':''}></label><button class="icon-btn" data-mv="-1" data-i="${i}" ${i===0?'disabled':''} title="${esc(T('上移'))}" aria-label="${esc(T('上移'))}">${icon('up')}</button><button class="icon-btn" data-mv="1" data-i="${i}" ${i===n-1?'disabled':''} title="${esc(T('下移'))}" aria-label="${esc(T('下移'))}">${icon('down')}</button><button class="icon-btn" data-more title="${esc(T('更多'))}" aria-label="${esc(T('更多'))}" aria-haspopup="menu" aria-expanded="false">${icon('more')}</button><div class="more-menu" role="menu" hidden><button role="menuitem" class="danger" data-drm="${esc(d.name)}" data-label="${esc(label)}">${esc(T('删除'))}</button></div></div></div>`;
+  return `<div class="setting-row"><div class="list-lead">${icon('dictionaries')}</div><div class="setting-copy"><strong><span class="dict-label"${label!==d.name?` title="${esc(d.name)}"`:''}>${esc(label)}</span><button class="icon-button is-small" data-dict-rename="${esc(d.name)}" title="${esc(T('修改显示名'))}" aria-label="${esc(T('修改显示名'))}">${icon('edit')}</button><input type="text" class="dict-name-edit" data-dict-name-edit="${esc(d.name)}" data-current="${esc(d.displayName||'')}" maxlength="200" placeholder="${esc(d.name)}" aria-label="${esc(T('显示名'))}" title="${esc(T('回车保存，Esc 取消，留空恢复原名'))}" hidden>${lang}${d.present?'':tag('err', T('文件缺失'))}</strong><small>${esc(meta)}</small>${label!==d.name?`<small class="mono">${esc(d.name)}</small>`:''}</div><div class="setting-trail more">${dictLangSelect(d)}<label class="switch-row"><span>${esc(T('默认启用'))}</span><span class="switch"><input type="checkbox" data-dict-default="${esc(d.name)}"${d.defaultEnabled?' checked':''}><span></span></span></label><button class="icon-button" data-mv="-1" data-i="${i}" ${i===0?'disabled':''} title="${esc(T('上移'))}" aria-label="${esc(T('上移'))}">${icon('up')}</button><button class="icon-button" data-mv="1" data-i="${i}" ${i===n-1?'disabled':''} title="${esc(T('下移'))}" aria-label="${esc(T('下移'))}">${icon('down')}</button><button class="icon-button" data-more title="${esc(T('更多'))}" aria-label="${esc(T('更多'))}" aria-haspopup="menu" aria-expanded="false">${icon('more')}</button><div class="kit-menu" role="menu" hidden><button role="menuitem" class="kit-menu-item danger-button" data-drm="${esc(d.name)}" data-label="${esc(label)}">${esc(T('删除'))}</button></div></div></div>`;
 }
 async function loadDictionaries(){ renderDictionaries(await api('dictionaries')); }
 function renderDictionaries(r){
@@ -1467,7 +1359,7 @@ function renderDictionaries(r){
   $('#dict-engine').innerHTML = kvHtml([
     [T('引擎'), e.available ? tag('ok', T('已加载')) : tag('err', e.reason ? T('不可用：{0}', e.reason) : T('不可用')), true],
     [T('已装载'), e.available ? T('{0} 本', e.loadedCount) : '—'],
-    [T('变形表（去屈折）'), e.transformsLoaded ? tag('ok', T('已加载')) : `<span style="color:var(--error)">${esc(T('缺失：只能查原形（设 FUSHI_TRANSFORMS_DIR 或随包放 share/fushi/transforms）'))}</span>`, true],
+    [T('变形表（去屈折）'), e.transformsLoaded ? tag('ok', T('已加载')) : `<span style="color:var(--md-sys-color-error)">${esc(T('缺失：只能查原形（设 FUSHI_TRANSFORMS_DIR 或随包放 share/fushi/transforms）'))}</span>`, true],
     [T('原生库'), e.libraryPath || T('默认搜索路径')],
   ]);
   $('#btn-dict-reload').disabled = !e.available;
@@ -1547,8 +1439,8 @@ $('#btn-dict-up').onclick = guard(async()=>{
     const r = await uploadDictionary(f, (p)=>{ st.textContent = p<1 ? T('上传中 {0}%', Math.round(p*100)) : T('导入中…（大词典要几分钟）'); });
     const args = [r.name, DICT_TYPE[r.type]||r.type, r.termCount, r.kanjiCount?T('，{0} 汉字', r.kanjiCount):''];
     st.textContent = r.replaced ? T('已更新「{0}」（{1}，{2} 词条{3}）', ...args) : T('已导入「{0}」（{1}，{2} 词条{3}）', ...args);
-    toast(st.textContent); $('#dict-file').value=''; await loadDictionaries();
-  }catch(e){ st.style.color='var(--error)'; st.textContent=T('导入失败：{0}', e.message); throw e; }
+    toast(st.textContent); $('#dict-file').value=''; $('#dict-file-name').textContent=''; await loadDictionaries();
+  }catch(e){ st.style.color='var(--md-sys-color-error)'; st.textContent=T('导入失败：{0}', e.message); throw e; }
   finally{ btn.disabled=false; }
 });
 $('#btn-dict-reload').onclick = guard(async()=>{
@@ -1560,7 +1452,7 @@ async function dictLookup(){
   const q = $('#dict-q').value.trim(); if(!q) return;
   const r = await api('dictionaries/lookup?q='+encodeURIComponent(q));
   const head = r.searchTerm && r.searchTerm!==q ? `<p class="note" style="margin:12px 4px">${esc(T('按「{0}」查', r.searchTerm))}</p>` : '';
-  $('#dict-results').innerHTML = head + `<div class="list" style="margin-top:12px">${r.entries.map(e=>`<div class="lrow" style="align-items:flex-start"><div class="txt"><div class="t">${esc(e.word)}${e.reading&&e.reading!==e.word?` <span class="muted">${esc(e.reading)}</span>`:''}${tag('info', e.dictionary)}</div><div class="s" style="white-space:pre-wrap">${esc(e.meaning)}</div></div></div>`).join('') || empty(T('没有结果'), 'search')}</div>`;
+  $('#dict-results').innerHTML = head + `<div class="setting-list is-surface">${r.entries.map(e=>`<div class="setting-row" style="align-items:flex-start"><div class="setting-copy"><strong>${esc(e.word)}${e.reading&&e.reading!==e.word?` <span class="muted">${esc(e.reading)}</span>`:''}${tag('info', e.dictionary)}</strong><small style="white-space:pre-wrap">${esc(e.meaning)}</small></div></div>`).join('') || empty(T('没有结果'), 'search')}</div>`;
 }
 $('#btn-dict-q').onclick = guard(dictLookup);
 $('#dict-q').onkeydown = (ev)=>{ if(ev.key==='Enter') guard(dictLookup)(); };
@@ -1615,6 +1507,12 @@ String renderAdminWebUi(String language) {
       .replaceFirst('__FUSHI_HTML_LANG__', _htmlLang(language))
       .replaceFirst("'__FUSHI_LANG__'", jsonEncode(language))
       .replaceFirst('__FUSHI_EN__', en ? jsonEncode(kWebUiEnglish) : '{}')
+      .replaceFirst(
+        '__FUSHI_BT_PARSER_TEMPLATE__',
+        const HtmlEscape().convert(kBtSiteParserRuleTemplate),
+      )
+      .replaceFirst('__FUSHI_KIT_HEAD__', webKitHeadTags())
+      .replaceFirst('__FUSHI_KIT_BODY__', webKitBodyScripts())
       .replaceAll('__FUSHI_LOGO__', kWebUiLogoDataUri);
 }
 
@@ -1624,6 +1522,7 @@ String renderAdminLogin(String language, {bool tokenError = false}) {
   String t(String zh) => en ? (kWebUiEnglish[zh] ?? zh) : zh;
   String html = adminLoginHtml
       .replaceFirst('__FUSHI_HTML_LANG__', _htmlLang(language))
+      .replaceFirst('__FUSHI_KIT_HEAD__', webKitHeadTags())
       .replaceAll('__FUSHI_LOGO__', kWebUiLogoDataUri)
       .replaceAllMapped(_loginTextSlot, (Match m) => t(m.group(1)!));
   if (tokenError) {

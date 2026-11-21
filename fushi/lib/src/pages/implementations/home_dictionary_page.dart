@@ -29,6 +29,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.da
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pages/implementations/lookup_history_row.dart';
+import 'package:fushi/src/pages/implementations/shared_lookup_popup_host.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
@@ -39,7 +40,6 @@ import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
-import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
 import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -59,7 +59,6 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
@@ -172,7 +171,7 @@ class HomeDictionaryPage extends BaseTabPage {
 
 class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     with DictionaryPageMixin, WidgetsBindingObserver
-    implements HomeDictionarySearchDebug {
+    implements HomeDictionarySearchDebug, SharedLookupPopupOwner {
   @override
   AppModel get mixinAppModel => appModel;
 
@@ -195,10 +194,17 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   );
 
   DictionarySearchResult? _result;
-  final DictionaryPopupController _popup = DictionaryPopupController(
-    lowMemory: false,
-    onLookupStackDepthChanged: recordLookupStackDepth,
-  );
+
+  /// 查词弹窗栈与根 Overlay 浮层宿主。首页外壳里与游戏 tab 的 texthooker 共用同一个
+  /// （只有一个常驻热槽 WebView，拍板台 design-shared-lookup-webview）；外壳外（独立
+  /// 查词路由、新手引导）私有一个。
+  late final SharedLookupPopupHost _popupHost;
+
+  /// 外壳外私有的宿主（本页负责销毁）；共用时为 null。
+  SharedLookupPopupHost? _ownedPopupHost;
+
+  DictionaryPopupController get _popup => _popupHost.controller;
+
   final GlobalKey _resultStackKey = GlobalKey();
 
   /// 结果区 [DictionaryPopupWebView] 的 key——顶层查词把 WebView 局部 localRect 经它的
@@ -207,26 +213,14 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   final GlobalKey<DictionaryPopupWebViewState> _resultWebViewKey =
       GlobalKey<DictionaryPopupWebViewState>();
 
-  /// TODO-617：查词弹窗栈渲染在**根 Overlay**（全窗，跳出结果子区域 / DesktopContentLayout
-  /// 的限宽 + padding + 默认 hardEdge 裁剪），与 video 同范式。非空时 [_syncPopupOverlay]
-  /// 据当前栈插入 / 刷新 / 摘除。
-  OverlayEntry? _popupOverlayEntry;
-
-  /// 切 tab 销毁本页时的根 Overlay 兜底（照搬 video BUG-121）：本 State deactivate 后根
-  /// Overlay 仍可能同帧重建 [_buildPopupOverlay] → 读已失效 State 的 appModel/Theme 红屏；
-  /// 置位后 builder 一律空渲染。
-  bool _overlayInert = false;
-
   /// State 正被摘下（切模块销毁 / GlobalKey 换父节点途中）：根 Overlay 的浮层
-  /// 这时不能再读本 State，空渲染兜底（BUG-121）。与 [_overlayInert] 分开——
-  /// 后者只是「此刻不在屏上」，浮层要留在树上。
+  /// 这时不能再读本 State，空渲染兜底（BUG-121）。
   bool _deactivated = false;
 
   /// 本页所在的保活 tab 此刻是否是当前 tab（[SectionVisibility]；不在首页外壳里
   /// ——独立查词路由、新手引导——恒为 true）。藏着时不消费待查词与聚焦请求，
   /// 变成可见后再消费（见 [didChangeDependencies]）。
   bool _sectionVisible = true;
-  bool _popupOverlayRebuildScheduled = false;
 
   bool _isSearching = false;
   String _lastQuery = '';
@@ -326,12 +320,15 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   @override
   void initState() {
     super.initState();
+    _popupHost =
+        SharedLookupPopupScope.maybeOf(context) ??
+        (_ownedPopupHost = SharedLookupPopupHost());
+    // 登记为宿主页；成为渲染方时经 [onSharedLookupPopupClaimed] 接线查词计数。
+    _popupHost.attach(this);
     WidgetsBinding.instance.addObserver(this);
     // 挂载时键盘可能已经弹着（从别的输入框切过来），补读一次初值。
     WidgetsBinding.instance.addPostFrameCallback((_) => didChangeMetrics());
     appModelNoUpdate.dictionarySearchAgainNotifier.addListener(_searchAgain);
-    // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
-    attachLookupCounter(_popup);
     appModelNoUpdate.dictionaryEntriesNotifier.addListener(
       _onDictionaryEntriesChanged,
     );
@@ -594,15 +591,12 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     _debounceTimer?.cancel();
     _searchFocusNode.dispose();
     _controller.dispose();
-    // TODO-617：先摘根 Overlay 浮层 entry 再 clear 栈——entry 一旦移除就不会再被根
-    // Overlay 重建 [_buildPopupOverlay]，杜绝销毁期用失效 State 重建浮层（照搬 video）。
-    final OverlayEntry? entry = _popupOverlayEntry;
-    if (entry != null) {
-      removeAndDisposeOwnedOverlayEntry(entry);
-      _popupOverlayEntry = null;
-    }
-    // TODO-058：弹窗 controller 现持有挂起层兜底 Timer，dispose 取消防泄漏。
-    _popup.dispose();
+    // 共用宿主：注销即可（渲染方是本页时宿主把栈交给 texthooker 并收回热槽）。私有
+    // 宿主随本页销毁：先摘根 Overlay 浮层 entry 再释放 controller（TODO-617：entry 移除后
+    // 不会再被根 Overlay 重建，杜绝销毁期用失效 State 重建浮层；TODO-058：controller 的
+    // 挂起层兜底 Timer 随之取消）。
+    _popupHost.detach(this);
+    _ownedPopupHost?.dispose();
     super.dispose();
   }
 
@@ -610,13 +604,10 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   void didChangeDependencies() {
     super.didChangeDependencies();
     // 根 Overlay 的浮层不跟宿主路由一起隐藏：普通不透明路由完成转场后，以及
-    // 保活 tab 隐藏时，宿主的 TickerMode 会关闭。跟随这一可见性信号让浮层让位，
-    // 保留查词会话供返回时恢复；非不透明菜单不关闭宿主的 TickerMode。
-    final bool nextInert = !TickerMode.of(context);
-    if (nextInert != _overlayInert) {
-      _overlayInert = nextInert;
-      _schedulePopupOverlayRebuild();
-    }
+    // 保活 tab 隐藏时，宿主的 TickerMode 会关闭。把这一可见性信号上报宿主，本页是
+    // 渲染方而不可见时浮层让位（inert），保留查词会话供返回时恢复；非不透明菜单不
+    // 关闭宿主的 TickerMode。宿主帧后刷新浮层（根 Overlay 是祖先，不能当帧反向标脏）。
+    _popupHost.setOwnerVisible(this, TickerMode.of(context) && !_deactivated);
     // 保活 tab 由藏转显：补做「切入查词页」时要做的事——消费切过来之前排入的
     // 待查词（TODO-376）与聚焦请求。本页不保活时这两件事靠每次切入重新挂载、在
     // initState 的后帧回调里做；现在是同一条路换了个触发点。排后帧：外层分区此刻
@@ -634,23 +625,12 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     }
   }
 
-  void _schedulePopupOverlayRebuild() {
-    if (_popupOverlayRebuildScheduled) return;
-    _popupOverlayRebuildScheduled = true;
-    // 依赖变化发生在宿主 build 期间，根 Overlay 是祖先，不能当帧反向标脏。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _popupOverlayRebuildScheduled = false;
-      if (!mounted) return;
-      final OverlayEntry? entry = _popupOverlayEntry;
-      if (entry != null && entry.mounted) entry.markNeedsBuild();
-    });
-  }
-
   /// TODO-617：切 tab 销毁本页的根 Overlay 兜底（BUG-121 同范式）。本 State deactivate
-  /// 当帧根 Overlay 仍可能重建 entry → 读失效 State 红屏；置位让 builder 空渲染。
+  /// 当帧根 Overlay 仍可能重建 entry → 读失效 State 红屏；置位让浮层空渲染。
   @override
   void deactivate() {
     _deactivated = true;
+    _popupHost.setOwnerVisible(this, false);
     super.deactivate();
   }
 
@@ -659,6 +639,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     super.activate();
     // GlobalKey 重挂等重新激活：恢复正常渲染，下次 build 的 _syncPopupOverlay 重建浮层。
     _deactivated = false;
+    _popupHost.setOwnerVisible(this, true);
   }
 
   bool get _hasActiveQuery => _controller.text.isNotEmpty;
@@ -681,7 +662,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     _debounceTimer = null;
     _controller.clear();
     // TODO-931：保留常驻热槽（pruneToWarmSlot），别 clear 掉热 WebView。
-    _popup.pruneToWarmSlot();
+    _popupHost.pruneToWarmSlotFor(this);
     _result = null;
     _isSearching = false;
     _lastQuery = '';
@@ -697,7 +678,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     // 反馈 3D-JH966Kr：往上翻结果顶到头会被甩回搜索历史——查词设置里可关。
     if (!appModel.lookupPagePullToClear) return;
     // TODO-931：常驻热槽使 entries 永不空，可见性判据改用 hasVisiblePopup（隐藏热槽不算）。
-    if (_popup.hasVisiblePopup || _popup.isSearchingUi) return;
+    if (_hasVisiblePopup || (_ownsPopup && _popup.isSearchingUi)) return;
     _clearSearch();
   }
 
@@ -792,10 +773,19 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     final bool sectionVisible = SectionVisibility.of(context);
     return PopScope(
       // TODO-931：常驻热槽永远占着 entries[0]，返回判据改用 hasVisiblePopup（隐藏热槽不拦返回）。
-      canPop: !sectionVisible || (!_hasActiveQuery && !_popup.hasVisiblePopup),
+      canPop: !sectionVisible || (!_hasActiveQuery && !_hasVisiblePopup),
       onPopInvokedWithResult: (didPop, _) {
         if (didPop || !sectionVisible) return;
-        if (_popup.hasVisiblePopup) {
+        // BUG-4930（反馈 r3wf1i68Qn）：软键盘弹着、搜索框持焦时，返回的语义是
+        // 「收起键盘」（Android 惯例），只收键盘、保留查询与结果。输入第一个字后
+        // canPop 翻成 false，Flutter 才向系统登记 OnBackInvokedCallback——比键盘
+        // 弹起时 IME 登记的回调晚、同优先级后登记者先收，于是导航栏的收键盘 ﹀
+        // 被分发给本页，此前直接落进下面的 _clearSearch 把输入清掉。
+        if (_softKeyboardVisible && _searchFocusNode.hasFocus) {
+          _hideSoftKeyboard();
+          return;
+        }
+        if (_hasVisiblePopup) {
           _popNestedPopupAt(_popup.lastVisibleIndex);
         } else if (_hasActiveQuery) {
           _clearSearch();
@@ -1009,34 +999,31 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   /// 词典管理是弹层），主按钮位也不另造（稿里的「OCR 查词」本页没有）。独立
   /// 路由的返回键作前导。
   Widget _buildMasthead() {
-    return Padding(
-      padding: EdgeInsets.only(top: FushiDesignTokens.of(context).spacing.gap),
-      child: FushiStaticMasthead(
-        key: const ValueKey<String>('home-dictionary-masthead'),
-        title: t.nav_lookup,
-        leading: widget.showBackButton
-            ? FushiIconButton(
-                key: const ValueKey<String>('home-dictionary-route-back'),
-                tooltip: t.back,
-                icon: FushiIcons.back,
-                onTap: () => Navigator.of(context).maybePop(),
-              )
-            : null,
-        actions: <Widget>[
-          if (isGlassDesign(context))
-            FushiIconButton(
-              key: const ValueKey<String>('home-dictionary-manage'),
-              tooltip: t.dictionaries,
-              icon: CupertinoIcons.book,
-              onTap: appModel.showDictionaryMenu,
-            ),
+    return FushiStaticMasthead(
+      key: const ValueKey<String>('home-dictionary-masthead'),
+      title: t.nav_lookup,
+      leading: widget.showBackButton
+          ? FushiIconButton(
+              key: const ValueKey<String>('home-dictionary-route-back'),
+              tooltip: t.back,
+              icon: FushiIcons.back,
+              onTap: () => Navigator.of(context).maybePop(),
+            )
+          : null,
+      actions: <Widget>[
+        if (isGlassDesign(context))
           FushiIconButton(
-            tooltip: t.clear_dictionary_title,
-            icon: FushiIcons.deleteSweep,
-            onTap: _showDeleteDictionaryHistoryPrompt,
+            key: const ValueKey<String>('home-dictionary-manage'),
+            tooltip: t.dictionaries,
+            icon: CupertinoIcons.book,
+            onTap: appModel.showDictionaryMenu,
           ),
-        ],
-      ),
+        FushiIconButton(
+          tooltip: t.clear_dictionary_title,
+          icon: FushiIcons.deleteSweep,
+          onTap: _showDeleteDictionaryHistoryPrompt,
+        ),
+      ],
     );
   }
 
@@ -1778,7 +1765,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         cached,
       );
       // TODO-931：保留常驻热槽。
-      _popup.pruneToWarmSlot();
+      _popupHost.pruneToWarmSlotFor(this);
     });
   }
 
@@ -1855,7 +1842,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         _isSearching = true;
         if (replaceSourceLookupText) _sourceLookupText = trimmed;
         // TODO-931：保留常驻热槽。
-        _popup.pruneToWarmSlot();
+        _popupHost.pruneToWarmSlotFor(this);
       });
       final Future<void> dispatched = _searchWithGeneration(
         trimmed: trimmed,
@@ -2099,7 +2086,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
           // 根因修复（BUG-054）：结果区 WebView 仍整块在中和器下渲染（净缩放=1），否则被全局
           // 「界面大小」FittedBox 拉糊。源文本条是普通 app UI，留在中和器外继续吃界面大小。
           // TODO-617：嵌套弹窗栈不再挂在此页内 Stack（会被结果子区域 / DesktopContentLayout
-          // 限宽 + padding + 默认 hardEdge 裁住），改由 [_buildPopupOverlay] 渲染在根 Overlay。
+          // 限宽 + padding + 默认 hardEdge 裁住），改由 [SharedLookupPopupHost] 渲染在根 Overlay。
           Expanded(
             child: Padding(
               padding: EdgeInsets.fromLTRB(
@@ -2223,125 +2210,72 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     );
   }
 
-  /// TODO-617：把查词弹窗栈同步到根 Overlay（与 video [_syncPopupOverlay] 同范式）。栈非空
+  /// TODO-617：把查词弹窗栈同步到根 Overlay（[SharedLookupPopupHost] 持有 entry）。栈非空
   /// 且未插入则插入、栈空则摘除、否则 markNeedsBuild 刷新。在 [_buildSearchResultBody] 的
   /// post-frame 调，使根 Overlay 总反映当前栈。
   void _syncPopupOverlay() {
     if (!mounted) return;
-    if (_popup.entries.isEmpty) {
-      final OverlayEntry? entry = _popupOverlayEntry;
-      if (entry != null) {
-        removeAndDisposeOwnedOverlayEntry(entry);
-        _popupOverlayEntry = null;
-      }
-      return;
-    }
-    if (_popupOverlayEntry != null) {
-      _popupOverlayEntry!.markNeedsBuild();
-      return;
-    }
-    final OverlayState? overlay = Overlay.maybeOf(context, rootOverlay: true);
-    if (overlay == null) return;
-    final OverlayEntry entry = OverlayEntry(builder: _buildPopupOverlay);
-    _popupOverlayEntry = entry;
-    overlay.insert(entry);
+    _popupHost.sync(context);
   }
 
   /// TODO-617：根 Overlay 里的查词弹窗栈内容——透明 dismiss 遮罩 + 搜索期加载占位卡 + 各层
   /// [DictionaryPopupLayer]。根 Overlay 在 [FushiAppUiScale] 的 FittedBox 之内（缩放后的
-  /// 小画布），WebView 在此栅格化再拉大会字糊（BUG-051）；[FushiAppUiScaleNeutralizer] 把
-  /// 整棵子树中和回真实视口、净缩放=1（清晰），其坐标系即真实屏幕空间，与顶层 / 嵌套选区的
-  /// localToGlobal 屏幕 rect 同系，定位自洽。`Clip.none` 让飘出窗的弹窗 / 屏外热槽不被裁
-  /// （BUG-135）。`screen` = 中和后内层 LayoutBuilder 约束 = 整窗。
-  Widget _buildPopupOverlay(BuildContext overlayContext) {
-    // 切 tab 销毁本页当帧根 Overlay 仍会重建本 entry——彼时读失效 State 的 appModel/Theme
-    // 会红屏（BUG-121）。State 失效 / 销毁期标志置位则空渲染兜底；Theme 用 entry 自己的
-    // overlayContext（与本 entry 同寿命）而非更短命的 State context。
-    if (!mounted || _deactivated) return const SizedBox.shrink();
-    // inert（所在保活 tab 被藏起 / 被不透明路由盖住）时浮层**留在树上、整棵
-    // Offstage**：不画、不接点击、不持焦点、停动画，但常驻热槽的查词 WebView
-    // （TODO-931）不拆。这里曾在 inert 时收成 `SizedBox.shrink()`——热槽开页即
-    // seed、`entries` 永不空，于是每次切出查词 tab / 每推一个整页上来都销毁预热
-    // 好的 WebView，回来再冷建一个并重新装载 popup.html + JS + CSS
-    // （BUG-4849，与游戏工作台 BUG-4896 同一个坑）。祖先结构恒定、只翻
-    // `offstage` 参数（平台视图上方的祖先在层的生命周期内不能增删）。
-    final bool inert = _overlayInert;
-    // BUG-2953：浮层自带导航层，弹窗里唤出的菜单画在浮层之上（见 LookupOverlayNavigator）。
-    return Offstage(
-      offstage: inert,
-      child: TickerMode(
-        enabled: !inert,
-        child: ExcludeFocus(
-          excluding: inert,
-          child: _buildPopupOverlayBody(overlayContext),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPopupOverlayBody(BuildContext overlayContext) {
-    return LookupOverlayNavigator(
-      child: FushiAppUiScaleNeutralizer(
-        child: Theme(
-          data: appModel.overrideDictionaryTheme ?? Theme.of(overlayContext),
-          child: LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) {
-              if (!mounted || _deactivated) return const SizedBox.shrink();
-              final Size screen = Size(
-                constraints.maxWidth,
-                constraints.maxHeight,
-              );
-              return Stack(
-                // BUG-135：隐藏热槽停到屏幕右外侧（buildNestedPopupLayer），Clip.none 让它在
-                // 屏外照常预热又不被裁；飘出窗的弹窗同理不裁。
-                clipBehavior: Clip.none,
-                children: <Widget>[
-                  // BUG-1327：对话框期间连 barrier 一起撤——浮层子树挂在根 Overlay，排在
-                  // showAppDialog 推的路由之上，全屏 barrier 会把落在对话框上的点击吃掉并
-                  // 判成「点弹窗外面」关栈。判据收口在 [shouldShowLookupDismissBarrier]。
-                  if (shouldShowLookupDismissBarrier(
-                    hasVisiblePopup: _hasVisiblePopup,
-                    isSearching: _popup.isSearchingUi,
-                    hiddenByDialog: lookupPopupHiddenByDialog,
-                  ))
-                    Positioned.fill(
-                      // BUG-1757：barrier 收口成唯一原语 [LookupDismissBarrier]，
-                      // 横拖走它内部不入竞技场的 Listener 旁路 + 可单测的判轴。
-                      child: LookupDismissBarrier(
-                        // 本表面不按落点分流，点真空白一律关栈根层。
-                        onTapDismiss: (_) => _popNestedPopupAt(0),
-                        // TODO-1052：水平拖过阈关一层（逐层关）。
-                        onSwipeDismiss: _dismissTopNestedPopup,
-                        swipeEnabled:
-                            ReaderFushiSource.instance.enableSwipeToClose,
-                        // BUG-2770：触摸半边未设置时所有平台默认开。
-                        touchSwipeEnabled:
-                            ReaderFushiSource.instance.enableTouchSwipeToClose,
-                        sensitivity:
-                            ReaderFushiSource.instance.dismissSwipeSensitivity,
-                        // 弹窗可见时 barrier 吃掉全部指针，页面根收不到——「浮窗矩形
-                        // 之外」按鼠标非主键这半边只能在这里接（见钩子文档）。
-                        onNonPrimaryButtonDown:
-                            onDismissBarrierNonPrimaryButton,
-                      ),
-                    ),
-                  // 搜索期加载占位卡（搜索→就绪才显示，与书内同观感）。
-                  if (_popup.isSearchingUi && _popup.pendingRect != null)
-                    buildPopupLoadingPlaceholder(
-                      rect: _popup.pendingRect!,
-                      screen: screen,
-                    ),
-                  for (int i = 0; i < _popup.entries.length; i++)
-                    _buildNestedPopupLayer(i, screen),
-                  ...buildParkedRealmLayers(screen: screen, controller: _popup),
-                ],
-              );
-            },
+  /// 小画布），WebView 在此栅格化再拉大会字糊（BUG-051）；[SharedLookupPopupHost] 用
+  /// `FushiAppUiScaleNeutralizer` 把整棵子树中和回真实视口、净缩放=1（清晰），其坐标系即
+  /// 真实屏幕空间，与顶层 / 嵌套选区的 localToGlobal 屏幕 rect 同系，定位自洽。宿主的
+  /// Stack 是 `Clip.none`，飘出窗的弹窗 / 屏外热槽不被裁（BUG-135）。`screen` = 中和后
+  /// 内层 LayoutBuilder 约束 = 整窗。
+  @override
+  List<Widget> buildSharedLookupPopupLayers(BuildContext context, Size screen) {
+    return <Widget>[
+      // BUG-1327：对话框期间连 barrier 一起撤——浮层子树挂在根 Overlay，排在
+      // showAppDialog 推的路由之上，全屏 barrier 会把落在对话框上的点击吃掉并
+      // 判成「点弹窗外面」关栈。判据收口在 [shouldShowLookupDismissBarrier]。
+      if (shouldShowLookupDismissBarrier(
+        hasVisiblePopup: _hasVisiblePopup,
+        isSearching: _popup.isSearchingUi,
+        hiddenByDialog: lookupPopupHiddenByDialog,
+      ))
+        Positioned.fill(
+          // BUG-1757：barrier 收口成唯一原语 [LookupDismissBarrier]，
+          // 横拖走它内部不入竞技场的 Listener 旁路 + 可单测的判轴。
+          child: LookupDismissBarrier(
+            // 本表面不按落点分流，点真空白一律关栈根层。
+            onTapDismiss: (_) => _popNestedPopupAt(0),
+            // TODO-1052：水平拖过阈关一层（逐层关）。
+            onSwipeDismiss: _dismissTopNestedPopup,
+            swipeEnabled: ReaderFushiSource.instance.enableSwipeToClose,
+            // BUG-2770：触摸半边未设置时所有平台默认开。
+            touchSwipeEnabled:
+                ReaderFushiSource.instance.enableTouchSwipeToClose,
+            sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
+            // 弹窗可见时 barrier 吃掉全部指针，页面根收不到——「浮窗矩形
+            // 之外」按鼠标非主键这半边只能在这里接（见钩子文档）。
+            onNonPrimaryButtonDown: onDismissBarrierNonPrimaryButton,
           ),
         ),
-      ),
-    );
+      // 搜索期加载占位卡（搜索→就绪才显示，与书内同观感）。
+      if (_popup.isSearchingUi && _popup.pendingRect != null)
+        buildPopupLoadingPlaceholder(rect: _popup.pendingRect!, screen: screen),
+      for (int i = 0; i < _popup.entries.length; i++)
+        _buildNestedPopupLayer(i, screen),
+      ...buildParkedRealmLayers(screen: screen, controller: _popup),
+    ];
   }
+
+  @override
+  ThemeData? get sharedLookupPopupTheme => appModel.overrideDictionaryTheme;
+
+  @override
+  bool get sharedLookupPopupOwnerAlive => mounted && !_deactivated;
+
+  /// TODO-1204：成为弹窗栈渲染方时接线查词计数（每次查词 +1 → lookup_mining_counters）。
+  @override
+  void onSharedLookupPopupClaimed(DictionaryPopupController controller) =>
+      attachLookupCounter(controller);
+
+  /// 栈里是本页的查词会话（共用宿主时也可能是 texthooker 的）。
+  bool get _ownsPopup => _popupHost.isRenderOwner(this);
 
   /// 源文本条点字（或 Shift 悬停）：把**下方那份查词结果**换成从该字起的最长匹配，
   /// 并把 Yomitan 式扫描高亮落到真正被匹配的那几个字上。
@@ -2430,6 +2364,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
     String contextSentence = '',
   }) {
+    // 共用宿主：栈里若是 texthooker 的会话，先收回热槽、渲染方换成本页（嵌套层本来
+    // 就是本页的会话，no-op）。
+    _popupHost.claimForLookup(this);
     return pushNestedPopup(
       query: query,
       selectionRect: selectionRect,
@@ -2456,8 +2393,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         )
       : fields;
 
-  /// TODO-931：是否有任何**可见**弹窗层（常驻隐藏热槽不算）。
-  bool get _hasVisiblePopup => _popup.hasVisiblePopup;
+  /// TODO-931：本页的会话是否有任何**可见**弹窗层（常驻隐藏热槽不算；共用宿主时栈里
+  /// 是 texthooker 的会话则不算本页的）。
+  bool get _hasVisiblePopup => _ownsPopup && _popup.hasVisiblePopup;
 
   /// TODO-1052：查词浮层 barrier 上「水平拖过阈关一层」。判轴/累积/阈值全部收在
   /// [LookupDismissBarrier] 内（BUG-1757：横拖不进手势竞技场）。过阈关一层（逐层

@@ -43,6 +43,8 @@ import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.d
 import 'package:fushi_engine/media/discovery/import/discovery_import_executor.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
+import 'package:fushi_engine/media/manga/manga_archive_probe.dart'
+    show looksLikeImageArchiveInBackground;
 import 'package:fushi_engine/media/manga/manga_folder_plan.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/media/source_library/book_library_prune.dart'
@@ -134,11 +136,16 @@ bool _isMangaJson(String path) =>
 /// `import auto` 的分域判据（只读文件系统，不落库；单测直接调）。
 ///
 /// 单文件按扩展名；zip / rar / epub 先看包里是不是纯图（`looksLikeImageArchive`，
-/// 与漫画导入同一判据）。目录按内容，优先级：有音频 → 有声书；有 `.mokuro` →
+/// 与漫画导入同一判据，跑在后台 isolate：服务端事件循环上同步整本解析一本几百 MB
+/// 的文字 EPUB，期间所有请求都停住——BUG-4909 遗留）。给了 [db] 时 `.epub` 探测的
+/// 解压落点建在书库根的 `.tmp-*`（崩溃残留归导入残留清扫管），不进系统临时目录。目录按内容，优先级：有音频 → 有声书；有 `.mokuro` →
 /// 漫画卷；有漫画图包 → 漫画；有 EPUB / 文本 / PDF → 书；有页图目录 → 漫画卷；
 /// 只剩 zip / rar / 7z → 书（执行器解开再分类）。书优先于页图是因为小说目录里常带
 /// 封面图，而漫画目录里很少混正文。
-AutoImportRoute routeAutoImport(String path) {
+Future<AutoImportRoute> routeAutoImport(
+  String path, {
+  FushiDatabase? db,
+}) async {
   final FileSystemEntityType type = FileSystemEntity.typeSync(path);
   if (type == FileSystemEntityType.directory) {
     final List<String> files = <String>[
@@ -197,12 +204,12 @@ AutoImportRoute routeAutoImport(String path) {
     return const AutoImportRoute(AutoImportKind.mangaArchive);
   }
   if (ext == '.epub') {
-    return MangaArchiveImporter.looksLikeImageArchive(path)
+    return await looksLikeImageArchiveInBackground(path, db: db)
         ? const AutoImportRoute(AutoImportKind.mangaLocal)
         : const AutoImportRoute(AutoImportKind.novel);
   }
   if (ext == '.zip' || ext == '.rar') {
-    return MangaArchiveImporter.looksLikeImageArchive(path)
+    return await looksLikeImageArchiveInBackground(path, db: db)
         ? const AutoImportRoute(AutoImportKind.mangaArchive)
         : const AutoImportRoute(AutoImportKind.novel);
   }
@@ -470,7 +477,7 @@ class _Importer {
   }
 
   Future<List<ImportItem>> auto(String path) async {
-    final AutoImportRoute route = routeAutoImport(path);
+    final AutoImportRoute route = await routeAutoImport(path, db: db);
     switch (route.kind) {
       case AutoImportKind.mangaLocal:
         return manga(path);

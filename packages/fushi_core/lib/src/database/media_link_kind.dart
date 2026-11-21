@@ -48,13 +48,21 @@ enum MediaLinkKind {
 /// - [adaptation]：原作 → 改编（小说 → 动画、动画 → 游戏……）；
 /// - [themeSong] / [soundtrack]：音乐（曲目 / 专辑）→ 它所属的视频 / 游戏；
 /// - [sameWork]：无方向，落库前按 [canonicalMediaLinkEndpoints] 排序；
-/// - [cast]：声优 / 角色关联（人物页 L5 才有本地端点，先只定义值）。
+/// - [cast]：声优 / 角色关联（人物页 L5 才有本地端点，先只定义值）；
+/// - [sequel]：前作 → 续作（小说续篇、动画 2 期、游戏续作……）；
+/// - [sideStory]：本篇 → 外传 / 番外 / 剧场版 / FD。
+///
+/// [sequel] / [sideStory] 是系列关系：两端是**不同**的作品条目，不并进作品
+/// （不在 `workMergingRelations` 里），只在关系网的「系列」栏画出来。旧版遇到这两个
+/// 值按未知关系跳过（同步 / 备份合并 / 作品图都 `tryParse` 后丢弃）。
 enum MediaLinkRelation {
   adaptation('adaptation', directed: true),
   themeSong('theme_song', directed: true),
   soundtrack('soundtrack', directed: true),
   sameWork('same_work', directed: false),
-  cast('cast', directed: true);
+  cast('cast', directed: true),
+  sequel('sequel', directed: true),
+  sideStory('side_story', directed: true);
 
   const MediaLinkRelation(this.dbValue, {required this.directed});
 

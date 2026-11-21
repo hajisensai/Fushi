@@ -237,7 +237,10 @@ void main() {
       ),
     );
     await db.setPref('theme_mode', 'dark');
-    await db.setPref('favorite_sentences', '[]');
+    await db.customStatement(
+      'INSERT INTO favorite_sentences (id, sentence, created_at_us) '
+      "VALUES ('fav1', 'a sentence', 1)",
+    );
     await db.setPref('local_audio_dbs', '[]');
     final int pid = await db.insertProfile(
       ProfilesCompanion.insert(name: 'P1', createdAt: 1, updatedAt: 1),
@@ -894,9 +897,12 @@ void main() {
         reason: 'progress pref preserved under a settings strip',
       );
       expect(
-        prefs.containsKey('favorite_sentences'),
-        isTrue,
-        reason: 'favorites content preserved',
+        (await db
+                .customSelect('SELECT COUNT(*) AS c FROM favorite_sentences')
+                .getSingle())
+            .read<int>('c'),
+        1,
+        reason: 'favorites content (v166 a table, follows books) preserved',
       );
       expect(
         prefs.containsKey('local_audio_dbs'),

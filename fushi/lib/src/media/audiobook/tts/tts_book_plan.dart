@@ -91,6 +91,7 @@ Future<TtsBookPlan> buildTtsBookPlan(
   EpubBook book, {
   required int maxLength,
   List<TtsPronunciationRule> pronunciation = const <TtsPronunciationRule>[],
+  List<TtsPronunciationRule> preSynthesis = const <TtsPronunciationRule>[],
 }) {
   final EpubBook light = EpubBook(title: book.title, chapters: book.chapters);
   return Isolate.run(
@@ -98,6 +99,7 @@ Future<TtsBookPlan> buildTtsBookPlan(
       light,
       maxLength: maxLength,
       pronunciation: pronunciation,
+      preSynthesis: preSynthesis,
     ),
   );
 }
@@ -106,6 +108,7 @@ TtsBookPlan buildTtsBookPlanSync(
   EpubBook book, {
   required int maxLength,
   List<TtsPronunciationRule> pronunciation = const <TtsPronunciationRule>[],
+  List<TtsPronunciationRule> preSynthesis = const <TtsPronunciationRule>[],
 }) {
   final List<TtsPlanSentence> out = <TtsPlanSentence>[];
   for (int section = 0; section < book.chapters.length; section++) {
@@ -121,6 +124,7 @@ TtsBookPlan buildTtsBookPlanSync(
           input,
           maxLength: maxLength,
           pronunciation: pronunciation,
+          preSynthesis: preSynthesis,
         );
     final List<TtsTextSegment> segments = fitted.segments;
     // 每句之前的间隙与句子本身各占一段，整章一次归一化（一次 FFI）：第 j 段的起点就是
@@ -264,6 +268,7 @@ splitTtsTextWithPronunciation(
   EpubPlainTextWithRuby input, {
   required int maxLength,
   List<TtsPronunciationRule> pronunciation = const <TtsPronunciationRule>[],
+  List<TtsPronunciationRule> preSynthesis = const <TtsPronunciationRule>[],
 }) {
   // 切句内核要求上限至少 8（`TtsSplitNative.split`）。
   final int quarter = maxLength ~/ 4 < 8 ? 8 : maxLength ~/ 4;
@@ -273,7 +278,11 @@ splitTtsTextWithPronunciation(
     final List<TtsTextSegment> segments = splitTtsText(input, maxLength: limit);
     final List<String> spoken = <String>[
       for (final TtsTextSegment seg in segments)
-        applyTtsPronunciation(seg.spokenText, pronunciation),
+        applyTtsSpokenRules(
+          seg.spokenText,
+          pronunciation: pronunciation,
+          preSynthesis: preSynthesis,
+        ),
     ];
     int overflow = 0;
     for (final String text in spoken) {

@@ -47,6 +47,7 @@ import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 /// 步长输入（「1 10」/「1, 10」，单位分钟）→ 列表；有解析不了的项返回 null。
 List<double>? parseSrsSteps(String text) {
@@ -585,7 +586,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       await Navigator.of(context).maybePop();
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsDeckSettingsPage.save', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -671,7 +675,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       await _load();
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsDeckSettingsPage.optimize', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     } finally {
       if (mounted) setState(() => _optimizing = false);
     }
@@ -711,7 +718,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       await _load();
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsDeckSettingsPage.resetParams', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     }
   }
 

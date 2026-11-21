@@ -161,6 +161,22 @@ void main() {
       ffcSha256FileSync(file.path),
       '20b5c5508abef0cfd3784d2e210388efaa6bf03f1584aa1e501691bb1807da7a',
     );
+    // 整文件 CRC-32（读盘在原生里）与内存里同一份字节的分段结果一致。
+    expect(ffcCrc32FileSync(file.path), ffcCrc32(data));
+  });
+
+  test('whole-file hashes throw FileSystemException on unreadable paths', () {
+    final String missing =
+        '${Directory.systemTemp.path}${Platform.pathSeparator}'
+        'ffc-missing-${DateTime.now().microsecondsSinceEpoch}-文件.bin';
+    expect(
+      () => ffcSha256FileSync(missing),
+      throwsA(isA<FileSystemException>()),
+    );
+    expect(
+      () => ffcCrc32FileSync(missing),
+      throwsA(isA<FileSystemException>()),
+    );
   });
 
   test('CRC-32 matches the frozen package:archive vectors and chains', () {

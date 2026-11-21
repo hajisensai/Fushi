@@ -6,7 +6,12 @@
 /// - 每个片段经 [TtsAudioCache] 合成（键 = 音色身份 + 生效的演出参数 + 片段文字），
 ///   在线引擎的临时失败走 [ttsWithRetry]；同一份预设同时在途的请求不超过它的并发上限；
 /// - 一句的各片段用 ffmpeg 拼成一个 m4a，同时裁掉首尾静音（停顿只由时间表给，设计
-///   §7），统一 44.1 kHz 单声道 AAC；有声书片段按 cue 边界剪，不裁静音；
+///   §7），统一 44.1 kHz 单声道 AAC；有声书片段按 cue 边界剪，同样裁首尾静音，再加
+///   极短的淡入淡出（cue 边界不准时不出咔嗒声）；合成句与有声书片段都归一到同一个
+///   响度（[kMangaLoudnessFilter]），换音源时音量不跳；
+/// - 克隆旁白（`manga_audio_narrator.dart`）：参考片段剪成 WAV 放进缓存目录，按声音包
+///   同一条 Irodori 管线登记成虚拟预设（[mangaNarratorPreset]），合成走 [prepare] 的
+///   批处理；
 /// - 占位静音直接写 PCM WAV（精确时长，不经 ffmpeg）；
 /// - 声音包（`pack:<packId>/<group>`，Irodori v4-Large 批处理 worker）：整卷开跑前
 ///   [prepare] 把这次要新出、缓存里没有的片段整批交给 worker（worker 按参考音频组
@@ -15,6 +20,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
@@ -22,6 +28,7 @@ import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 import 'package:fushi_engine/tts/local/irodori_batch_worker.dart';
 import 'package:fushi_engine/tts/local/irodori_voice_pack.dart';
 import 'package:fushi_engine/tts/local/irodori_voice_pack_provider.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_narrator.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render_plan.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_renderer.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
@@ -30,12 +37,14 @@ import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_retry.dart';
+import 'package:fushi_engine/tts/tts_silence.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
+import 'package:fushi_engine/tts/tts_reject_split.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_encode.dart'
-    show buildTtsSilenceWav, kTtsOutputSampleRate;
+    show kTtsOutputSampleRate;
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_mix.dart'
     show readMp4PresentationDurationMs;
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_voices.dart'
@@ -49,8 +58,25 @@ const String kMangaTrimFilter =
     'silenceremove=start_periods=1:start_threshold=-50dB:start_silence=0.05,'
     'areverse';
 
+/// 响度归一：合成句与有声书片段统一到 −18 LUFS（真峰值 −1.5 dBTP），两种音源相邻时
+/// 音量一致。loudnorm 内部会升采样，所以后面必须再 `aresample` 回输出采样率。
+const String kMangaLoudnessFilter = 'loudnorm=I=-18:TP=-1.5:LRA=11';
+
+/// 有声书片段首尾各 15 ms 的淡入淡出（尾部用倒放后的淡入实现，不需要知道时长）。
+const String kMangaEdgeFadeFilter =
+    'afade=t=in:d=0.015,areverse,afade=t=in:d=0.015,areverse';
+
+/// 一句 / 一段片段整形的公共尾巴：裁首尾静音 →（片段）淡入淡出 → 响度归一 → 回到
+/// 输出采样率。
+String _mangaShapeChain({required bool fade}) => <String>[
+  kMangaTrimFilter,
+  if (fade) kMangaEdgeFadeFilter,
+  kMangaLoudnessFilter,
+  'aresample=$kTtsOutputSampleRate',
+].join(',');
+
 /// 一句（[inputs] 是它的各片段，按顺序）编码成 m4a 的 ffmpeg 参数：每个输入先统一成
-/// 44.1 kHz 单声道再拼接，拼完裁首尾静音。纯函数，单测覆盖。
+/// 44.1 kHz 单声道再拼接，拼完裁首尾静音、归一响度。纯函数，单测覆盖。
 List<String> buildMangaLineEncodeArgs({
   required List<String> inputs,
   required String outputPath,
@@ -65,7 +91,10 @@ List<String> buildMangaLineEncodeArgs({
   for (int i = 0; i < inputs.length; i++) {
     graph.write('[a$i]');
   }
-  graph.write('concat=n=${inputs.length}:v=0:a=1[c];[c]$kMangaTrimFilter[out]');
+  graph.write(
+    'concat=n=${inputs.length}:v=0:a=1[c];[c]${_mangaShapeChain(fade: false)}'
+    '[out]',
+  );
   return <String>[
     '-y',
     for (final String input in inputs) ...<String>['-i', input],
@@ -89,11 +118,16 @@ List<String> buildMangaLineEncodeArgs({
 /// 从有声书文件（或广播剧 / 动画音轨）剪 `[startMs, endMs)` 的 ffmpeg 参数（`-ss` 放在
 /// `-i` 前：音频按解码精确定位）。[endMs] 为 null = 剪到文件末尾（音轨最后一段）。
 /// 视频文件只取音轨（`-vn`）。纯函数，单测覆盖。
+///
+/// [shapeAsLine] = 这段要和合成句排在一起（漫画有声的有声书片段）：裁首尾静音、加
+/// 淡入淡出、归一响度，与合成句同一套整形。广播剧音轨按时间铺满整条音轨，段与段
+/// 首尾相接，**不能**整形（会吃掉段间的声音、各段响度各自归一会忽大忽小），保持默认。
 List<String> buildMangaClipArgs({
   required String sourcePath,
   required int startMs,
   required int? endMs,
   required String outputPath,
+  bool shapeAsLine = false,
 }) => <String>[
   '-y',
   '-ss',
@@ -106,7 +140,9 @@ List<String> buildMangaClipArgs({
   sourcePath,
   '-vn',
   '-af',
-  'aresample=$kTtsOutputSampleRate',
+  shapeAsLine
+      ? _mangaShapeChain(fade: true)
+      : 'aresample=$kTtsOutputSampleRate',
   '-ac',
   '1',
   '-c:a',
@@ -117,6 +153,63 @@ List<String> buildMangaClipArgs({
   'mp4',
   outputPath,
 ];
+
+/// 克隆旁白的一段参考音频：从有声书剪 `[startMs, endMs)`，与有声书片段同一套整形，
+/// 写 16 bit PCM WAV（参考音频交给 Irodori，不经有损编码）。纯函数，单测覆盖。
+List<String> buildMangaNarratorRefArgs({
+  required String sourcePath,
+  required int startMs,
+  required int endMs,
+  required String outputPath,
+}) => <String>[
+  '-y',
+  '-ss',
+  (startMs / 1000).toStringAsFixed(3),
+  '-t',
+  ((endMs - startMs) / 1000).toStringAsFixed(3),
+  '-i',
+  sourcePath,
+  '-vn',
+  '-af',
+  _mangaShapeChain(fade: true),
+  '-ac',
+  '1',
+  '-c:a',
+  'pcm_s16le',
+  '-f',
+  'wav',
+  outputPath,
+];
+
+/// 旁白声音的虚拟预设：走声音包同一条 Irodori 管线（引擎 id [kIrodoriPackProviderId]，
+/// 不挂 LoRA，参考音频 = [refFiles]，采样参数取默认）。[refFiles] 与
+/// [MangaNarratorVoice.refs] 一一对应。缓存键含参考音频路径，路径由片段决定，片段
+/// 不变缓存就一直命中。
+TtsVoicePreset mangaNarratorPreset(
+  MangaNarratorVoice narrator,
+  List<String> refFiles,
+) {
+  const IrodoriSampling sampling = IrodoriSampling();
+  return TtsVoicePreset(
+    id: narrator.id,
+    providerId: kIrodoriPackProviderId,
+    name: 'narrator',
+    params: <String, String>{
+      IrodoriPackParams.pack: 'manga-narrator',
+      IrodoriPackParams.group: narrator.id,
+      IrodoriPackParams.character: 'narrator',
+      IrodoriPackParams.adapter: '',
+      IrodoriPackParams.refs: jsonEncode(refFiles),
+      IrodoriPackParams.steps: '${sampling.steps}',
+      IrodoriPackParams.cfgText: '${sampling.cfgText}',
+      IrodoriPackParams.cfgSpeaker: '${sampling.cfgSpeaker}',
+      IrodoriPackParams.seed: '${sampling.seed}',
+    },
+  );
+}
+
+/// 参考音频放在 TTS 缓存根下的这个子目录（文件名 = `mangaNarratorRefName`）。
+const String kMangaNarratorRefDirName = '.manga_narrator';
 
 /// 一次 ffmpeg 没进度多久算卡死。
 const Duration kMangaEncodeStallTimeout = Duration(seconds: 60);
@@ -226,6 +319,9 @@ class AppMangaRenderBackend implements MangaRenderBackend {
   final Map<String, Future<_MangaVoice>> _voices =
       <String, Future<_MangaVoice>>{};
 
+  /// [prepareNarrator] 登记的旁白虚拟预设（声音 id → 预设）。
+  final Map<String, TtsVoicePreset> _narrators = <String, TtsVoicePreset>{};
+
   /// 各引擎自己的并发上限在 [_MangaVoice.gate] 里管；这里只是同时在出的句数（含
   /// 编码），给 4 句足以让在线引擎跑满、又不至于同时起太多 ffmpeg。
   @override
@@ -235,9 +331,11 @@ class AppMangaRenderBackend implements MangaRenderBackend {
       _voices[presetId] ??= _resolve(presetId);
 
   Future<_MangaVoice> _resolve(String presetId) async {
-    TtsVoicePreset? preset;
-    for (final TtsVoicePreset candidate in _presets) {
-      if (candidate.id == presetId) preset = candidate;
+    TtsVoicePreset? preset = _narrators[presetId];
+    if (preset == null) {
+      for (final TtsVoicePreset candidate in _presets) {
+        if (candidate.id == presetId) preset = candidate;
+      }
     }
     if (preset == null) throw const MangaLineFailure('voice_missing');
     final TtsProviderDescriptor? descriptor = _descriptorOf(preset.providerId);
@@ -253,6 +351,66 @@ class AppMangaRenderBackend implements MangaRenderBackend {
       identity: descriptor.audioIdentity(preset),
       gate: TtsRenderGate(ttsEffectiveConcurrency(descriptor, preset)),
     );
+  }
+
+  /// 本机 Irodori 批处理环境就绪（声音包描述符可用）才能克隆旁白。
+  @override
+  bool get canCloneNarrator =>
+      _descriptorOf(kIrodoriPackProviderId)?.isAvailable ?? false;
+
+  @override
+  Future<bool> prepareNarrator({
+    required MangaNarratorVoice narrator,
+    required TtsRenderCancelToken cancel,
+  }) async {
+    if (_narrators.containsKey(narrator.id)) return true;
+    final Directory dir = Directory(
+      p.join(_cache.root.path, kMangaNarratorRefDirName),
+    );
+    final List<String> refFiles = <String>[];
+    try {
+      await dir.create(recursive: true);
+      for (final MangaAudiobookClip clip in narrator.refs) {
+        final File out = File(
+          p.join(dir.path, '${mangaNarratorRefName(clip)}.wav'),
+        );
+        if (!await out.exists()) {
+          final List<String>? sources = clip.bookKey == null
+              ? null
+              : _clipSources[clip.bookKey];
+          if (sources == null ||
+              clip.fileIndex >= sources.length ||
+              !await File(sources[clip.fileIndex]).exists()) {
+            throw const MangaLineFailure('clip_source_missing');
+          }
+          final File part = File('${out.path}.part');
+          await _runFfmpeg(
+            buildMangaNarratorRefArgs(
+              sourcePath: sources[clip.fileIndex],
+              startMs: clip.startMs,
+              endMs: clip.endMs,
+              outputPath: part.path,
+            ),
+            outputPath: part.path,
+            cancel: cancel,
+            source: 'MangaRender.narratorRef',
+          );
+          await part.rename(out.path);
+        }
+        refFiles.add(out.path);
+      }
+    } on MangaLineFailure catch (e) {
+      cancel.throwIfCancelled();
+      // 剪不出参考音频：本次不克隆，合成句照旧用各自的声音（不让整卷失败）。
+      _log('MangaRender.narrator', 'reference unavailable: ${e.code}');
+      return false;
+    } on FileSystemException catch (e) {
+      cancel.throwIfCancelled();
+      _log('MangaRender.narrator', 'reference unavailable: ${e.osError}');
+      return false;
+    }
+    _narrators[narrator.id] = mangaNarratorPreset(narrator, refFiles);
+    return true;
   }
 
   /// 声音包的句子整批交给 worker（见库注释）。其余引擎逐句合成，这里不管。
@@ -395,7 +553,7 @@ class AppMangaRenderBackend implements MangaRenderBackend {
           final TtsCachedAudio audio = await ttsWithRetry(
             () => _cache.obtain(
               key,
-              (String out) => synthesizeWithDirection(
+              (String out) => ttsSynthesizeSplittingOnReject(
                 v.provider,
                 segment,
                 outputPath: out,
@@ -451,6 +609,7 @@ class AppMangaRenderBackend implements MangaRenderBackend {
         startMs: clip.startMs,
         endMs: clip.endMs,
         outputPath: outputPath,
+        shapeAsLine: true,
       ),
       outputPath: outputPath,
       cancel: cancel,

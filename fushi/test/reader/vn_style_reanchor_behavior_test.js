@@ -6,8 +6,8 @@
 // - this._styleReanchorOffset = charOffset;                 （begin 暂存锚）
 // - this.refitScreensToCurrentViewport(off);                （commit 按锚重切屏）
 // - var index = this.screenIndexForCharOffset(anchorCharOffset === undefined ? -1 : anchorCharOffset);
-const fs = require('fs');
-const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const { readPayload, compileScript } = require('./reader_harness_support.js');
+const data = readPayload();
 function assert(value, message) {
   if (!value) throw new Error(message);
 }
@@ -52,7 +52,7 @@ function makeVn(opts) {
     renderScreen(i) { log.render.push(i); vn.currentScreenIndex = i; }
   };
   window.fushiReader = vn;
-  new Function('window', 'document', shim)(window, document);
+  compileScript(['window', 'document'], shim, 'vn_style_reanchor_behavior_test-1.js')(window, document);
   assert(typeof vn.beginStyleReanchor === 'function',
     'shim must install beginStyleReanchor');
   assert(typeof vn.commitStyleReanchor === 'function',

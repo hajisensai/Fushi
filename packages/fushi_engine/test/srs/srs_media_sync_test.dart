@@ -12,10 +12,8 @@ import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
-import 'package:fushi_engine/srs/sync2/srs_location_migration.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
-import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -157,6 +155,92 @@ void main() {
     expect(r.missing, <String>{'dog.png'});
   });
 
+  // BUG-5061（反馈 arw7eXO895）：列出来之后本机文件没了（被删 / 被换走），以前 PathNotFoundException 让整趟媒体上传
+  // 作废、下一轮从头再来；现在只跳过那一项、记进 vanished，其余照传。
+  test('对账中途本机文件没了：只跳过那一项（记 vanished），其余照传，不抛', () async {
+    final Directory mediaA = mediaDir('a');
+    final File gone = File(p.join(mediaA.path, 'gone.mp3'));
+    final _VanishOnListStore loc = _VanishOnListStore(gone);
+    final SrsDbStore a = await device('a');
+    writeMedia(mediaA, 'cat.png', <int>[1, 2, 3]);
+    writeMedia(mediaA, 'gone.mp3', <int>[9, 9]);
+    t += 1000;
+    await a.createNote(
+      noteTypeId: a.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kProfile, 'Expression'): '猫',
+        srsLapisFieldId(kProfile, 'Picture'): '<img src="cat.png">',
+        srsLapisFieldId(kProfile, 'ExpressionAudio'): '[sound:gone.mp3]',
+      },
+    );
+    final SrsMediaSyncReport r = await srsSyncMedia(
+      location: loc,
+      store: a,
+      mediaRoot: mediaA,
+      uploadOnly: true,
+    );
+    expect(gone.existsSync(), isFalse, reason: '前提：哈希之后、上传之前文件没了');
+    expect(r.vanished, <String>{'gone.mp3'});
+    expect(r.uploaded, 1);
+    expect(r.completed, isTrue);
+    expect(remoteMedia(loc), <String>{
+      sha(<int>[1, 2, 3]),
+    });
+  });
+
+  // BUG-5061：发段之前那一步以前把全部没上传的媒体整份传完才放行，1 GB 媒体连云盘慢时段一直发不出去。
+  test('deferRemaining 为真后不再开始新的项：剩下的记 deferred 留给下一轮，进度按项报', () async {
+    final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
+    final Directory mediaA = mediaDir('a');
+    final SrsDbStore a = await device('a');
+    const int n = 20;
+    final StringBuffer pics = StringBuffer();
+    for (int i = 0; i < n; i++) {
+      writeMedia(mediaA, 'p$i.png', <int>[i, i + 1, i + 2]);
+      pics.write('<img src="p$i.png">');
+    }
+    await addNote(a, '絵', pics.toString());
+    final List<(int, int)> progress = <(int, int)>[];
+    final SrsMediaSyncReport first = await srsSyncMedia(
+      location: loc,
+      store: a,
+      mediaRoot: mediaA,
+      uploadOnly: true,
+      onProgress: (int done, int total) => progress.add((done, total)),
+      deferRemaining: () => progress.length > 3,
+    );
+    expect(first.completed, isTrue);
+    expect(first.uploaded, lessThan(n), reason: '到点之后不再开始新的');
+    expect(first.uploaded, greaterThan(0));
+    expect(first.uploaded + first.deferred, n, reason: '在途的做完，没开始的全部留下');
+    expect(progress.first, (0, n));
+    expect(progress.last, (first.uploaded, n));
+    expect(remoteMedia(loc), hasLength(first.uploaded));
+
+    final SrsMediaSyncReport second = await srsSyncMedia(
+      location: loc,
+      store: a,
+      mediaRoot: mediaA,
+      uploadOnly: true,
+    );
+    expect(second.deferred, 0);
+    expect(second.uploaded, first.deferred, reason: '下一轮只补剩下的');
+    expect(remoteMedia(loc), hasLength(n));
+  });
+
+  test('srsMediaDeadline：预算用完或要收手即为真', () async {
+    expect(srsMediaDeadline(Duration.zero)(), isTrue);
+    expect(srsMediaDeadline(const Duration(hours: 1))(), isFalse);
+    bool stop = false;
+    final bool Function() d = srsMediaDeadline(
+      const Duration(hours: 1),
+      shouldStop: () => stop,
+    );
+    expect(d(), isFalse);
+    stop = true;
+    expect(d(), isTrue);
+  });
+
   test('被删笔记的媒体：90 天内位置上保留、还能下载；过期后清掉独占的，共享的与本机不认识的不删', () async {
     final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
     final Directory mediaA = mediaDir('a');
@@ -223,96 +307,6 @@ void main() {
     expect((await media(a, loc, mediaA)).deleted, 1);
   });
 
-  test('旧格式（按写入者分目录）的媒体由一次性迁移搬进内容目录、补上绑定，绑定发布后逐个删旧文件', () async {
-    // 2026-10-30 断代：媒体对账不再读写入者目录（没有兜底读者），只有旧根媒体迁移（srsMigrateV1Media）搬一次。
-    final Directory remote = Directory(p.join(root.path, 'remote'))
-      ..createSync();
-    final LocalDirectoryAssetStore backend = LocalDirectoryAssetStore(remote);
-    final File legacyFile = File(
-      p.join(
-        remote.path,
-        kSrsSync2Namespace,
-        kProfile,
-        'a#1',
-        kSrsMediaFolder,
-        'old.png',
-      ),
-    )..createSync(recursive: true);
-    legacyFile.writeAsBytesSync(<int>[7, 7]);
-    final SrsLocationStore loc = SrsAssetLocationStore(
-      store: backend,
-      profileUid: kProfile,
-    );
-    final SrsDbStore a = await device('a');
-    final SrsDbStore b = await device('b');
-    await addNote(a, '古', '<img src="old.png">');
-    await srsSyncPeers(<SrsDbStore>[a, b], loc);
-
-    final Directory mediaB = mediaDir('b');
-    expect((await media(b, loc, mediaB)).missing, <String>{
-      'old.png',
-    }, reason: '媒体对账本身不读写入者目录');
-    final SrsV1Writers writers = SrsAssetV1Writers(backend, kProfile);
-    final Directory writerDir = Directory(
-      p.join(remote.path, kSrsSync2Namespace, kProfile, 'a#1'),
-    );
-    SrsLocationStore v1Root() => SrsAssetLocationStore(
-      store: backend,
-      profileUid: kProfile,
-      folder: kSrsSync2V1Folder,
-    );
-    final SrsLocationPrepared prepared = await srsPrepareLocation(
-      host: b,
-      v1: v1Root(),
-      current: loc,
-      locationId: 'remote',
-      key: null,
-      nowMs: () => b.now().$1,
-      writers: writers,
-    );
-    expect(prepared.error, isNull);
-    expect(prepared.mediaLeftover, isTrue);
-    final File lateFile = File(
-      p.join(writerDir.path, kSrsMediaFolder, 'late.png'),
-    );
-    bool keptUntilPublished = false;
-    final SrsV1MediaReport m = await srsMigrateV1Media(
-      host: b,
-      v1: v1Root(),
-      current: loc,
-      locationId: 'remote',
-      key: null,
-      nowMs: () => b.now().$1,
-      canBind: true,
-      progressId: 'test',
-      recordPresence: true,
-      writers: writers,
-      onBound: () async {
-        expect(
-          await loc.get(srsMediaContentPath(kSrsMediaFolder, sha(<int>[7, 7]))),
-          <int>[7, 7],
-        );
-        keptUntilPublished = legacyFile.existsSync();
-        // 删之前写入者目录里又来了一个（列表之后才出现的）文件：只删逐个确认搬好的那个。
-        lateFile.writeAsBytesSync(<int>[8]);
-        expect(await srsSyncOnce(b, loc), isA<SrsSync2Report>());
-      },
-    );
-    expect(m.bound, 1);
-    expect(keptUntilPublished, isTrue, reason: '绑定还没发布到位置：旧文件留着');
-    expect(m.deleted, 1);
-    expect(legacyFile.existsSync(), isFalse, reason: '绑定发布后删');
-    expect(lateFile.readAsBytesSync(), <int>[8], reason: '不整目录删');
-    final SrsMediaSyncReport r = await media(b, loc, mediaB);
-    expect(r.downloaded, 1);
-    expect(File(p.join(mediaB.path, 'old.png')).readAsBytesSync(), <int>[7, 7]);
-    // B 补上的绑定随同步到第三台，它直接从内容目录拿。
-    await srsSyncOnce(b, loc);
-    final SrsDbStore c = await device('c');
-    await srsSyncOnce(c, loc);
-    expect((await media(c, loc, mediaDir('c'))).downloaded, 1);
-  });
-
   test('BUG-3865：媒体对账不在调用方 isolate 上逐个同步 stat 本机文件', () async {
     final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
     final Directory mediaA = mediaDir('a');
@@ -328,20 +322,14 @@ void main() {
     }
     writeMedia(mediaA, 'localonly.png', <int>[1, 1]);
     // 别的设备传上去并绑定了的：按绑定从内容目录下载。
-    loc.files[at(<int>[2, 2])] = Uint8List.fromList(<int>[2, 2]);
+    final Directory mediaB = mediaDir('b');
+    final SrsDbStore b = await device('b');
+    writeMedia(mediaB, 'remoteonly.png', <int>[2, 2]);
+    await addNote(b, '远', '<img src="remoteonly.png">');
+    expect((await media(b, loc, mediaB)).uploaded, 1);
     pictures.write('<img src="localonly.png"><img src="remoteonly.png">');
     await addNote(a, '多', pictures.toString());
-    await a.sync2Command(<String, Object?>{
-      'op': 'media_bind_unbound',
-      'items': <Map<String, Object?>>[
-        <String, Object?>{
-          'name': 'remoteonly.png',
-          'sha': sha(<int>[2, 2]),
-          'size': 2,
-        },
-      ],
-      'now': a.now().$1,
-    });
+    await srsSyncPeers(<SrsDbStore>[a, b], loc);
 
     final List<String> syncStats = <String>[];
     final SrsMediaSyncReport r = await IOOverrides.runZoned(
@@ -569,6 +557,18 @@ void main() {
   });
 
   // 同上，记日志的位置（给了 locationId，不列目录）：可疑经日志传到持有者，持有者覆盖重传后记回「在」。
+  /// 在 [on] 上确认 [peer]（K2 首见信任：[on] 库已非空时第一次见到的设备是待确认，它的媒体清单不收——
+  /// `gen4/media.rs` 的 `IngestError::Untrusted`，「它说的在可能是要让别人别传」）。同一用户的两台设备，用户在设备页确认。
+  Future<void> trust(SrsDbStore on, SrsDbStore peer) async {
+    final String id =
+        (await peer.sync2Command(<String, Object?>{
+              'op': 'identity',
+              'now': 0,
+            })).map['device']!
+            as String;
+    await on.sync2Trust(id, trust: true);
+  }
+
   test('记日志的位置：读者把坏内容记为可疑（不删、不落地），可疑随日志传到持有者，持有者覆盖重传修复', () async {
     final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
     final SrsDbStore a = await device('a');
@@ -580,6 +580,8 @@ void main() {
     await addNote(a, '猫', '<img src="cat.png">');
     expect((await media(a, loc, mediaA, locationId: id)).uploaded, 1);
     await srsSyncPeers(<SrsDbStore>[a, b], loc, locationId: id);
+    // A 有笔记之后才第一次见到 B：B 在 A 上待确认，确认之后 B 记的可疑才进 A。
+    await trust(a, b);
 
     loc.files[at(<int>[1, 2, 3, 4])] = Uint8List.fromList(<int>[1, 2]);
     final SrsMediaSyncReport r = await media(b, loc, mediaB, locationId: id);
@@ -790,3 +792,16 @@ class _StatSpyFile implements File {
 
 /// 不覆盖任何东西的 [IOOverrides]：在代理里造真实 [File] 时跳出外层的 `createFile`。
 final class _NoOverrides extends IOOverrides {}
+
+/// 第一次列目录时删掉 [victim]：模拟对账中途（哈希之后、上传之前）本机文件被删。
+final class _VanishOnListStore extends SrsMemoryLocationStore {
+  _VanishOnListStore(this.victim);
+
+  final File victim;
+
+  @override
+  Future<List<SrsLocationEntry>> list(String dir) async {
+    if (victim.existsSync()) victim.deleteSync();
+    return super.list(dir);
+  }
+}

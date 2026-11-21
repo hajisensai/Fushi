@@ -99,6 +99,22 @@ import 'package:test/test.dart';
 /// `settings_schema_study_goals`（设置 schema 整族本就在环里，同 2026-11-15 的理由），
 /// 上限 +1 到 623。
 ///
+/// 2026-11-20 复习换代（协议 4）第六波合流合入 develop 实测 625（+4 −1）：新进环的 4 个是换代新加、本就读
+/// AppModel 的复习文件——迁移控制器 `srs_gen4_migration_controller`（主库开关 / 关库静默要读
+/// AppModel）、保留副本 `srs_retained_copy`（库目录按 AppModel 取）、迁移页 `srs_generation_view` 与载入失败页
+/// `srs_load_error`（后者被全部复习页 import、前者经它进环，二者都靠迁移控制器碰到 AppModel）；出环的 1 个是
+/// 换代删掉的预演区块 `srs_gen4_rehearsal_section`。逐个核过：没有底层（models / utils / storage / 服务层）
+/// 文件因此被接进环，与 2026-11-05 / 11-15 那几次「新增的是本就读 AppModel 的 UI 文件」同理，上限按实测调到 625。
+///
+/// 2026-11-21 develop 实测 627（+5 −3）。不调上限，拆掉三条把值类型 / 窄能力接进环的边：
+/// 网页视频会话（`web_video_session`）只为暖机两步 import 读 AppModel 的 `WebAdblockService`，
+/// 把会话与选轨 `web_video_track_selection` 拖进环——改收叶子接口 `WebAdblockWarmup`
+/// （`web_adblock_wiring.dart`，服务实现它）；扫描临时目录清理 `source_scan_temp` 只用
+/// 扫描占用表，却 import 了自动扫描调度器 `source_auto_scan`（它反向 import 扫描器）——占用表与
+/// 进度挪到叶子 `source_scan_activity.dart`；互联下载的任务映射只用值类型 `BackgroundTask`，
+/// 却 import 了后台任务入口 UI——值类型挪到叶子 `background_task.dart`。最大环降到 623，剩下
+/// 新进环的 1 个是本就读 AppModel 的音乐 UI `music_listen_from_video`，上限随之下调到 623。
+///
 /// 红了：新加的 import 把底层模块接到了 UI / AppModel 上。把用到的东西挪到
 /// 更底层的文件，或改用参数 / 回调注入，不要调大上限、不要把文件从目录里豁免。
 const int kMaxCycleFiles = 623;

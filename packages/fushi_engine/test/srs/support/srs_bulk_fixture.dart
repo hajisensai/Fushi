@@ -1,12 +1,16 @@
 /// 批量操作的往返计数 / 逐条等价测试共用：临时库 + 读命令计数 + 固定时钟 + 导入一批 Basic (and reversed) 笔记。
 library;
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:fushi_core/fushi_core.dart'
+    show SrsCardCacheRow, SrsNoteCacheRow;
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_fushisrs.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
@@ -51,7 +55,7 @@ class BulkFixture {
         // 句柄晚释放。
       }
     });
-    final TestSrs srs = await openTestSrsAt('${tmp.path}/srs.db');
+    final TestSrs srs = openTestSrsIn(tmp.path);
     final SrsDbStore store = await SrsDbStore.open(
       core: srs.core,
       profileUid: kBulkUid,
@@ -139,93 +143,118 @@ Future<ChangeSpec> reversedChange(SrsDbStore s) async {
   );
 }
 
-/// 本 profile 的全部 SRS 行（事件表、发件箱、本机状态、两张缓存），可逐条比较：
-/// 只抹掉本机「写入时刻」两列（receivedAt / updatedAt，墙钟，与语义无关），
-/// 本机产生的日志 ID（随机 UUIDv7）按 (卡, HLC) 顺序换成序号。
-Future<Map<String, List<String>>> dumpSrsState(SrsCore core) async {
-  Future<List<String>> rows(String sql) async => <String>[
-    for (final Map<String, Object?> r in core.debugSelectRaw(sql))
-      r.values.join('|'),
-  ];
-  final List<String> devices = await rows(
-    'SELECT srs_idt(device) AS device FROM sync2_self',
-  );
-  final String device = devices.isEmpty
-      ? '\u0000'
-      : core
-                .debugSelectRaw(
-                  'SELECT srs_idt(device) AS device FROM sync2_self',
-                )
-                .single['device']!
-            as String;
+/// 本 profile 的全部 SRS 状态，可逐条比较，只经公开读命令（新代没有协议 3 那几张表，也不再直接看表）：
+/// - 真相：导出的身份记录 / 修改记录 / 复习日志 / 不认识的事件（内核 `read events`），本机设备 ID（每个库随机）
+///   换成 `DEV`，修改记录不比自己的 ID（由 dot 派生），本机产生的日志 ID（随机 UUIDv7）按 (卡, 抹掉 ID 的规范 JSON)
+///   的顺序换成序号；
+/// - 操作日志条数与本机下一个序号（内核 `status` 的 `ops` / `nextSeq`：导出的是投影后的值，同一字段改两次只剩一条，
+///   写了几次靠这两个数）。本机修订号不比：新代按写命令推进（一条命令一次），逐条走与成批走命令数本来就不同；
+/// - 派生层：笔记缓存行、卡片缓存行（[SrsDbStore.listNotes] / [SrsDbStore.allCardRows]），按 ID 排。卡片行第 9 列
+///   （下标 8）是 hidden（`0` / `1`）。
+/// - 服务器时刻：`server_times` 读命令（日志 ID → 收到它的同步段的服务器时刻；统计与排程按它取时刻），日志 ID 同上
+///   换成序号后排序。
+Future<Map<String, List<String>>> dumpSrsState(SrsDbStore s) async {
+  final String device = s.sync2Device ?? '\u0000';
+  final List<SrsEvent> events = await s.exportAll();
+  String dev(String text) => text.replaceAll(device, 'DEV');
 
   // 排序键不能含 ID 本身（随机）：按 (卡, 抹掉 ID 的规范 JSON) 排。
   final List<(String, String)> logs = <(String, String)>[
-    for (final Map<String, Object?> r in core.debugSelectRaw(
-      'SELECT id, card_id, json FROM srs_review_logs',
-    ))
-      (
-        r['id']! as String,
-        '${r['card_id']}|'
-            '${(r['json']! as String).replaceAll(r['id']! as String, '')}',
-      ),
+    for (final SrsEvent e in events)
+      if (e case SrsLogEvent(:final SrsReviewLog log))
+        (
+          log.id,
+          '${log.cardId}|'
+              '${dev(jsonEncode(log.toJson()).replaceAll(log.id, ''))}',
+        ),
   ]..sort(((String, String) a, (String, String) b) => a.$2.compareTo(b.$2));
   final Map<String, String> logIds = <String, String>{
     for (int i = 0; i < logs.length; i++) logs[i].$1: 'log#$i',
   };
-  String norm(String s) {
-    String out = s;
+  String norm(String text) {
+    String out = text;
     for (final MapEntry<String, String> e in logIds.entries) {
       out = out.replaceAll(e.key, e.value);
     }
     return out;
   }
 
-  final Map<String, List<String>> out = <String, List<String>>{
-    'entities': await rows(
-      'SELECT id, profile_uid, kind, payload_json, created_at '
-      'FROM srs_entities ORDER BY id',
-    ),
-    // 同步 v2：修改记录的 dot 是 (本机 v2 设备 ID, op seq)，设备 ID 每个库随机生成；ID 由 dot 派生。
-    // 设备 ID 换成占位、按 (实体, 字段键, seq) 排、不比 ID 列——比的是语义（同样的写入、同样的先后）。
+  String bit(bool b) => b ? '1' : '0';
+  final Map<String, Object?> status = await s.sync2Status();
+  final SrsColumns serverTimes = await s.readTable(
+    'server_times',
+    const <String, Object?>{},
+  );
+  return <String, List<String>>{
+    'entities': <String>[
+      for (final SrsEvent e in events)
+        if (e case SrsEntityEvent(:final SrsEntityRecord record))
+          jsonEncode(record.toJson()),
+    ]..sort(),
+    // 同步 v2：修改记录的 dot 是 (本机设备 ID, op seq)，设备 ID 每个库随机生成；ID 由 dot 派生，不比——比的是语义
+    // （同样的写入、同样的先后）。
     'edits': <String>[
-      for (final String r in await rows(
-        'SELECT entity_kind, entity_id, field_key, writer_id, seq, json '
-        'FROM srs_field_edits ORDER BY entity_kind, entity_id, field_key, seq',
-      ))
-        r
-            .replaceAll(device, 'DEV')
-            .replaceAll(RegExp(r'"id":"[0-9a-f-]{36}",'), ''),
-    ],
-    'logs': (await rows(
-      'SELECT id, card_id, kind, rating, occurred_at, review_type, origin, '
-      'duration_ms, json FROM srs_review_logs',
-    )).map(norm).toList()..sort(),
-    'unknown': await rows(
-      'SELECT id, json FROM srs_unknown_events ORDER BY id',
-    ),
-    'eventLocal': (await rows(
-      'SELECT event_id, outbox_seq, server_time FROM srs_event_local',
-    )).map(norm).toList()..sort(),
-    // 本机状态里的纪元是开库时随机生成的（每个库各一个），不比。
-    'localState': <String>[
-      for (final String j in await rows('SELECT json FROM srs_local_state'))
-        j.replaceAll(RegExp(r'"epoch":"[^"]*"'), '"epoch":_'),
-    ],
-    'notesCache': await rows(
-      'SELECT id, note_type_id, guid, created_at, deck_id, deleted_at, '
-      'term_key, reading_key, sort_field, tags_json, pending_decision '
-      'FROM srs_notes_cache ORDER BY id',
-    ),
-    'cardsCache': (await rows(
-      'SELECT id, note_id, template_id, cloze_ord, deck_id, suspended, '
-      'buried_until_day, flag, hidden, queue, due_day, due_at, '
-      'scheduled_days, reps, lapses, stability, difficulty, '
-      'last_reviewed_at, last_log_id, scheduler, note_created_at '
-      'FROM srs_cards_cache ORDER BY id',
-    )).map(norm).toList(),
+      for (final SrsEvent e in events)
+        if (e case SrsEditEvent(:final SrsFieldEdit edit))
+          dev(
+            jsonEncode(edit.toJson()),
+          ).replaceAll(RegExp(r'"id":"[0-9a-f-]{36}",'), ''),
+    ]..sort(),
+    'logs': <String>[for (final (String _, String k) in logs) norm(k)],
+    'unknown': <String>[
+      for (final SrsEvent e in events)
+        if (e is SrsUnknownEvent) jsonEncode(e.toJson()),
+    ]..sort(),
+    'ops': <String>['${status['ops']}|${status['nextSeq']}'],
+    'serverTimes': <String>[
+      for (int i = 0; i < serverTimes.strings('id').length; i++)
+        '${norm(serverTimes.strings('id')[i])}|${serverTimes.ints('st')[i]}',
+    ]..sort(),
+    'notesCache': <String>[
+      for (final SrsNoteCacheRow n in await s.listNotes(limit: 1 << 30))
+        <Object?>[
+          n.id,
+          n.noteTypeId,
+          n.guid,
+          n.createdAt,
+          n.deckId,
+          n.deletedAt,
+          n.termKey,
+          n.readingKey,
+          n.sortField,
+          n.tagsJson,
+          bit(n.pendingDecision),
+        ].join('|'),
+    ]..sort(),
+    'cardsCache': <String>[
+      for (final SrsCardCacheRow c in await s.allCardRows())
+        norm(
+          <Object?>[
+            c.id,
+            c.noteId,
+            c.templateId,
+            c.clozeOrd,
+            c.deckId,
+            bit(c.suspended),
+            c.buriedUntilDay,
+            c.flag,
+            bit(c.hidden),
+            c.queue,
+            c.dueDay,
+            c.dueAt,
+            c.scheduledDays,
+            c.reps,
+            c.lapses,
+            c.stability,
+            c.difficulty,
+            c.lastReviewedAt,
+            c.lastLogId,
+            c.scheduler,
+            c.noteCreatedAt,
+          ].join('|'),
+        ),
+    ]..sort(),
   };
-  return out;
 }
 
 /// 两份状态逐表比较（失败时只报第一处不同，避免把几千行打进日志）。
@@ -245,5 +274,26 @@ void expectSameState(
       }
     }
     expect(a.length, e.length, reason: '$label$table row count');
+  }
+}
+
+/// 把 [src] 整个集合经 `.fushisrs`（导出 → 导入，内核 `import` + 另一个集合时 `collection_adopt`，用户确认）并进
+/// [dst]：新代里对端的数据只经集合并入 / 收段进来（`apply` 拒绝外来已盖戳的事件，`gen4/cmd/writes.rs`）。
+Future<void> joinCollectionFrom(SrsDbStore dst, SrsDbStore src) async {
+  final Directory tmp = Directory.systemTemp.createTempSync('srs_join_');
+  try {
+    final File file = File('${tmp.path}${Platform.pathSeparator}peer.fushisrs');
+    await srsExportFushiSrs(src, file, withMedia: false);
+    await srsImportFushiSrs(
+      dst,
+      file,
+      confirmForeign: (SrsFushiSrsForeign _) async => true,
+    );
+  } finally {
+    try {
+      tmp.deleteSync(recursive: true);
+    } on FileSystemException {
+      // 句柄晚释放。
+    }
   }
 }

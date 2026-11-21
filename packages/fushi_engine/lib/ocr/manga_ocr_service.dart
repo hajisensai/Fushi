@@ -100,6 +100,18 @@ abstract interface class MangaOcrFocusableService {
   });
 }
 
+/// 能报出「整卷任务此刻会用的引擎签名」的服务（本地 ONNX）。
+///
+/// 签名是逐页缓存子目录名、也写进产物 manga.json 的 `ocr.engine_signature`，按已
+/// 安装模型与识别选项解析（BUG-1173）。互联 host 用它给按页图内容键控的结果缓存
+/// 分区（`MangaOcrContentCache`）：签名不同的结果绝不互相顶替。报不出签名的服务
+/// （远端 / 外部 CLI / 测试替身）不实现本接口，host 对它们不做内容去重。
+abstract interface class MangaOcrEngineSignatureSource {
+  /// 与 [MangaOcrService.ocrFolder] 此刻起跑时用的签名同源；模型没装齐时也照常
+  /// 返回（按当前清单算），能不能跑由 `modelStatus` 判。
+  Future<String> resolveEngineSignature();
+}
+
 /// 可选的页级能力（阅读器「边看边 OCR」）：只填逐页原子缓存，绝不把半卷结果
 /// 发布成 manga.json。
 ///
@@ -143,6 +155,15 @@ abstract interface class MangaOcrPageSession {
   /// 关闭会话（幂等）：取消在跑页、让挂起请求失败，并释放 isolate 与 ORT 会话。
   /// 返回的 Future 在资源真正释放后完成。
   Future<void> close();
+}
+
+/// 页会话的可选能力：识别一整页已在内存里的像素（视频暂停 OCR 的播放器截帧），与
+/// [MangaOcrPageSession.ocrPage] 同一条漫画整页管线（检测器 → 阅读顺序 → 识别 → 补检），
+/// 但不读页图文件、不解码、不落逐页缓存：结果直接交回。
+abstract interface class MangaOcrPagePixelsSession {
+  /// 识别 [image]，返回整页结果（坐标是 [image] 的像素坐标）。会话关闭 / 建会话失败
+  /// 时抛错（与 ocrPage 同语义）；以 `textImagesOnly` 打开的会话上以 [StateError] 失败。
+  Future<OcrPageResult> ocrPagePixels(OcrRgbaImage image);
 }
 
 /// 页会话的可选能力：直接识别一张已裁好的文字图（字幕位图），跳过漫画检测器、补检、

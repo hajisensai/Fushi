@@ -7,6 +7,7 @@
 /// fushi_server status [--config …]
 /// fushi_server pair   ls | revoke <peerId>            [--config …]
 /// fushi_server admin  reset-token                     [--config …]
+/// fushi_server admin  reset-tls                       [--config …]
 /// fushi_server models pull|status --language ja        [--config …]
 /// fushi_server models pull moss [--moss-backend auto|cuda|vulkan|cpu]
 /// fushi_server transcribe <audio> --language ja [--out x.srt] [--config …]
@@ -25,6 +26,7 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_r
     show MossBackendPreference;
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/interconnect_owner_devices.dart';
+import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 import 'package:fushi_engine/asr/asr_host_job_runner.dart'
     show asrAudioProfileForJob, parseAsrAudioProfile;
 import 'package:fushi_server/src/self_update/server_self_updater.dart';
@@ -188,7 +190,7 @@ void _usage(ArgParser parser) {
   stdout.writeln('fushi_server <command> [options]\n');
   stdout.writeln(
     'commands: init | serve | scan | status | pair ls|revoke <peerId> | '
-    'admin reset-token | models pull|status -l <lang> [--profile mixedAudio] | models pull moss [--moss-backend …] | transcribe <audio> -l <lang> [--profile …] | '
+    'admin reset-token|reset-tls | models pull|status -l <lang> [--profile mixedAudio] | models pull moss [--moss-backend …] | transcribe <audio> -l <lang> [--profile …] | '
     'ctl <action>\n',
   );
   stdout.writeln(parser.usage);
@@ -388,6 +390,16 @@ Future<int> _serve(ServerRuntime rt, {required bool scan, bool? prune}) async {
     '${rt.config.bind}:${host.port} '
     '${rt.config.tls ? '(https, fingerprint ${host.hostFingerprint})' : '(http)'}',
   );
+  if (host.tlsCertificateChromeRejected) {
+    stderr.writeln(
+      tr(
+        '警告：本机 TLS 证书是旧版格式，Chrome 会以 ERR_CERT_INVALID 拒绝打开 WebUI。'
+            '停服后运行 `fushi_server admin reset-tls` 重签（已配对设备随后需要重新配对）。',
+        "Warning: this server's TLS certificate uses the old format; Chrome rejects the WebUI with ERR_CERT_INVALID. "
+            'Stop the server and run `fushi_server admin reset-tls` to reissue it (paired devices must pair again afterwards).',
+      ),
+    );
+  }
   stdout.writeln(
     tr(
       '设备名: ${rt.config.deviceName}   设备 id: ${rt.identity.deviceId}',
@@ -637,8 +649,32 @@ Future<int> _admin(ServerRuntime rt, List<String> rest) async {
         ),
       );
       return 0;
+    case 'reset-tls':
+      // 数据目录锁由 withServerRuntime 持有：serve 在跑时这里拿不到锁（75），
+      // 不会在运行中的进程脚下换掉证书。
+      final FushiTlsIdentity identity = await FushiTlsIdentityStore(
+        dataDir: rt.paths.syncData.path,
+      ).regenerate();
+      stdout.writeln(
+        tr(
+          '已重签 TLS 证书，新指纹: ${identity.fingerprintSha256}',
+          'TLS certificate reissued, new fingerprint: ${identity.fingerprintSha256}',
+        ),
+      );
+      stdout.writeln(
+        tr(
+          '已配对设备钉的是旧指纹，下次连接会被拒；请在这些设备上重新配对本机。',
+          'Paired devices pin the old fingerprint and will refuse to connect; pair them with this server again.',
+        ),
+      );
+      return 0;
     default:
-      stderr.writeln(tr('用法: admin reset-token', 'Usage: admin reset-token'));
+      stderr.writeln(
+        tr(
+          '用法: admin reset-token | admin reset-tls',
+          'Usage: admin reset-token | admin reset-tls',
+        ),
+      );
       return 64;
   }
 }

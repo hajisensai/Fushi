@@ -408,6 +408,26 @@ void main() {
     c.stop();
   });
 
+  test('查后从被查那句句首续读；对不上任何句子时同继续（BUG-4909）', () async {
+    final _Host host = threePages();
+    final MangaReadAloudController c = controllerFor(host);
+    c.start(fromPage: 0);
+    await _waitFor(() => player.playing);
+    c.pause();
+    await _settle();
+    // 查的是第 0 页第二句（块 1）。
+    c.resumeFromSentence(0, <int>[1]);
+    await _waitFor(() => player.played.length == 2 && player.playing);
+    expect(playedTexts(all), <String>['あ。', 'い。']);
+    c.pause();
+    await _settle();
+    // 块对不上：从当前句（い）开头重读。
+    c.resumeFromSentence(0, <int>[9]);
+    await _waitFor(() => player.played.length == 3 && player.playing);
+    expect(playedTexts(all), <String>['あ。', 'い。', 'い。']);
+    c.stop();
+  });
+
   test('App 生命周期：inactive 照常读，hidden / paused 才暂停', () async {
     final _Host host = threePages();
     final MangaReadAloudController c = controllerFor(host);

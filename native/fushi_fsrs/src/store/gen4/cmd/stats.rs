@@ -17,8 +17,8 @@
 //!   ID)（协议 3 只按时刻，同一时刻的先后随计划）。卡片上的浮点和按行序累加，所以与协议 3 的差最多是同一组数换个
 //!   顺序相加的末位误差，对拍按 1e-9 的相对误差比。
 //! - **原料缓存**（协议 3 `StatsCache`：按 profile + 统计指纹 + 写入代数留一份原料）不在这里：这里每条命令在一个读快照
-//!   里现读一份。缓存要知道「写连接上改过原料」，那是分发器与写路径的事，接线时（规划 §2.2 S1）由命令层持有，读
-//!   原料仍调 [snapshot_of]。`stats_release` 随缓存一起归命令层。
+//!   里现读一份。缓存由命令层持有（`kernel.rs` `G4Core` 的 `stats`，按集合 + 统计指纹 + 写入代数 + 缓存层代号命中），
+//!   分发器（`dispatch.rs` `stats`）没命中时调 [snapshot_of] 读原料；`stats_release` 也在分发器里丢掉它。
 //!
 //! # 代价
 //!
@@ -51,8 +51,9 @@ pub(crate) fn snapshot_of(t: &Truth<'_>, col: i64) -> Result<Snapshot, String> {
 }
 
 fn read_snapshot(t: &Truth<'_>, col: i64) -> Result<Snapshot, String> {
-    let profile = profile_of(t, col)?;
-    Snapshot::load_with(t.conn(), CARDS, REVIEWS, &col, &profile)
+    // 没绑定的集合照旧报错（读的是集合号，profile 本身原料里不留）。
+    profile_of(t, col)?;
+    Snapshot::load_with(t.conn(), CARDS, REVIEWS, &col)
 }
 
 /// `stats_report`：一个范围 + 一个牌组子集的全部聚合值（同协议 3）。
@@ -74,8 +75,8 @@ pub fn stats_rows(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String>
 }
 
 /// 原料与归一后的请求：同一个读快照里读原料、归一请求里的 ID（别名表与原料是同一个版本）。原料经 [snapshot_of]
-/// 读——它在已开的事务里直接沿用（[snapshot] 的约定），所以这里与接线后命令层的原料缓存走同一个入口：缓存（协议 3
-/// `StatsCache` 的新代对应物，要知道写连接上改没改过原料，归 S1 的命令层）没命中时也调它。
+/// 读——它在已开的事务里直接沿用（[snapshot] 的约定），与分发器的原料缓存（`G4Core` 的 `stats`，协议 3 `StatsCache`
+/// 的新代对应物）没命中时走同一个入口。分发器的统计命令走缓存，不经这里；这里是不带缓存的直读（测试与对拍）。
 fn load(t: &Truth<'_>, col: i64, req: &Value) -> Result<(Snapshot, Value), String> {
     snapshot(t, |t| {
         let req = canon_req(&Index::new(t, col), req)?;
@@ -84,8 +85,8 @@ fn load(t: &Truth<'_>, col: i64, req: &Value) -> Result<(Snapshot, Value), Strin
 }
 
 /// 请求里按 ID 给的东西归一成规范 ID（模块文件头「ID」）：`decks` / `recallDecks` 两个数组，`desired` / `deckModels`
-/// 两张以牌组为键的表，`recall.ids`（卡，与 `recall.r` 配成一张表按同一条撞键规则归一，模块文件头「ID」）。别的
-/// 字段原样。
+/// 两张以牌组为键的表，`recall.ids`（卡，与 `recall.r` 及 `recall.ahead` 里同位置的值配成一张表按同一条撞键规则
+/// 归一，模块文件头「ID」）。别的字段原样。
 pub(crate) fn canon_req(ix: &Index<'_, '_>, req: &Value) -> Result<Value, String> {
     let canon = |s: &str| -> Result<String, String> { Ok(ix.canonical(&ref_of(s))?.text()) };
     let mut out = req.clone();
@@ -119,20 +120,48 @@ pub(crate) fn canon_req(ix: &Index<'_, '_>, req: &Value) -> Result<Value, String
         if let (Some(Value::Array(ids)), Some(Value::Array(rs))) =
             (recall.get("ids"), recall.get("r"))
         {
-            // 协议 3 的读法（`stats::Ctx`）：按位置配对、不是字符串的 ID 跳过、同一个 ID 后者盖前者。
+            // `recall.ahead`：每个将来时刻一个与 `ids` 按位置对齐的数组（协议 3 只读前 RWKV_AHEAD 个，数组以外的跳过）。
+            let ahead: Option<Vec<Vec<Value>>> =
+                recall.get("ahead").and_then(Value::as_array).map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_array)
+                        .take(stats::RWKV_AHEAD)
+                        .cloned()
+                        .collect()
+                });
+            // 协议 3 的读法（`stats::Ctx`）：按位置配对、不是字符串的 ID 跳过、同一个 ID 后者盖前者。一张卡的值
+            // = [此刻, 将来时刻…]，整组跟着同一个 ID 走。
             let mut by: serde_json::Map<String, Value> = serde_json::Map::new();
-            for (id, r) in ids.iter().zip(rs) {
+            for (i, (id, r)) in ids.iter().zip(rs).enumerate() {
                 if let Some(id) = id.as_str() {
-                    by.insert(id.to_owned(), r.clone());
+                    let mut row = vec![r.clone()];
+                    for at in ahead.iter().flatten() {
+                        row.push(at.get(i).cloned().unwrap_or(Value::Null));
+                    }
+                    by.insert(id.to_owned(), Value::Array(row));
                 }
             }
             let keyed = super::canon_keyed(ix, &by)?;
-            let (ids, rs): (Vec<Value>, Vec<Value>) = keyed
-                .into_iter()
-                .map(|(k, v)| (Value::String(k), v))
-                .unzip();
+            let n = ahead.as_ref().map_or(0, Vec::len);
+            let mut ids = Vec::with_capacity(keyed.len());
+            let mut rs = Vec::with_capacity(keyed.len());
+            let mut later: Vec<Vec<Value>> = vec![Vec::with_capacity(keyed.len()); n];
+            for (k, v) in keyed {
+                let row = v.as_array().cloned().unwrap_or_default();
+                ids.push(Value::String(k));
+                rs.push(row.first().cloned().unwrap_or(Value::Null));
+                for (j, at) in later.iter_mut().enumerate() {
+                    at.push(row.get(j + 1).cloned().unwrap_or(Value::Null));
+                }
+            }
             recall.insert("ids".to_owned(), Value::Array(ids));
             recall.insert("r".to_owned(), Value::Array(rs));
+            if ahead.is_some() {
+                recall.insert(
+                    "ahead".to_owned(),
+                    Value::Array(later.into_iter().map(Value::Array).collect()),
+                );
+            }
         }
     }
     Ok(out)

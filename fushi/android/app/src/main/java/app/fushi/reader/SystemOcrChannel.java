@@ -15,6 +15,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
 import android.util.Log;
+import java.nio.ByteBuffer;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -99,6 +100,10 @@ public final class SystemOcrChannel {
     private static final String KEY_INSTALLED_VERSION_NAME = "installedVersionName";
     private static final String KEY_REQUIRED_VERSION_CODE = "requiredVersionCode";
     private static final String ARG_BYTES = "bytes";
+    /** 不透明 RGBA 像素（Dart {@code recognizePixels}，视频暂停 OCR 的播放器截帧），不经解码。 */
+    private static final String ARG_PIXELS = "pixels";
+    private static final String ARG_WIDTH = "width";
+    private static final String ARG_HEIGHT = "height";
     private static final String ARG_LANGUAGE = "language";
 
     /**
@@ -145,8 +150,14 @@ public final class SystemOcrChannel {
                         result.success(Boolean.TRUE);
                         return;
                     case METHOD_RECOGNIZE:
-                        handleRecognize(activity, call.argument(ARG_BYTES),
-                                call.argument(ARG_LANGUAGE), result);
+                        if (call.hasArgument(ARG_PIXELS)) {
+                            handleRecognizePixels(activity, call.argument(ARG_PIXELS),
+                                    call.argument(ARG_WIDTH), call.argument(ARG_HEIGHT),
+                                    call.argument(ARG_LANGUAGE), result);
+                        } else {
+                            handleRecognize(activity, call.argument(ARG_BYTES),
+                                    call.argument(ARG_LANGUAGE), result);
+                        }
                         return;
                     case METHOD_MODEL_STATUS:
                         handleModelStatus(activity, call.argument(ARG_LANGUAGE), result);
@@ -194,6 +205,78 @@ public final class SystemOcrChannel {
             final RecognizeReply reply = recognizeOffMainThread(appContext, bytes, recognizer);
             MAIN_HANDLER.post(() -> reply.deliver(result));
         });
+    }
+
+    /**
+     * 识别一块不透明 RGBA 像素（{@code width × height × 4} 字节）：不经编码 / 解码，像素直接
+     * 拷进 ARGB_8888 位图（其内存布局就是 RGBA 字节序）。与 {@link #handleRecognize} 同一条
+     * 串行执行器、同一像素预算（超出时等比缩小，回传坐标仍是原像素坐标）。
+     */
+    private static void handleRecognizePixels(
+            @NonNull Activity activity,
+            @Nullable byte[] rgba,
+            @Nullable Integer width,
+            @Nullable Integer height,
+            @Nullable String language,
+            @NonNull MethodChannel.Result result) {
+        if (rgba == null || width == null || height == null || width <= 0 || height <= 0
+                || (long) width * (long) height * 4L != rgba.length) {
+            result.error("INVALID_IMAGE", "pixels do not match width * height * 4", null);
+            return;
+        }
+        final TextRecognizer recognizer = recognizerFor(language);
+        final Context appContext = activity.getApplicationContext();
+        final int w = width;
+        final int h = height;
+        RECOGNIZE_EXECUTOR.execute(() -> {
+            final RecognizeReply reply =
+                    recognizePixelsOffMainThread(appContext, rgba, w, h, recognizer);
+            MAIN_HANDLER.post(() -> reply.deliver(result));
+        });
+    }
+
+    /** 跑在 {@link #RECOGNIZE_EXECUTOR} 上：像素 → 位图（按预算缩小）→ 识别 → 组载荷。 */
+    @NonNull
+    private static RecognizeReply recognizePixelsOffMainThread(
+            @NonNull Context context,
+            @NonNull byte[] rgba,
+            int width,
+            int height,
+            @NonNull TextRecognizer recognizer) {
+        Bitmap bitmap;
+        try {
+            bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(rgba));
+            final int sample = SystemOcrImageBudget.sampleSizeFor(
+                    width, height, SystemOcrImageBudget.MAX_RECOGNIZE_PIXELS);
+            if (sample > 1) {
+                final Bitmap scaled = Bitmap.createScaledBitmap(
+                        bitmap, Math.max(1, width / sample), Math.max(1, height / sample), true);
+                if (scaled != bitmap) {
+                    bitmap.recycle();
+                    bitmap = scaled;
+                }
+            }
+        } catch (OutOfMemoryError oom) {
+            Log.w(TAG, "system OCR pixel bitmap out of memory: " + width + "x" + height, oom);
+            return RecognizeReply.error("IMAGE_TOO_LARGE",
+                    "out of memory wrapping " + width + "x" + height);
+        }
+        try {
+            final Text text = Tasks.await(recognizer.process(InputImage.fromBitmap(bitmap, 0)));
+            return RecognizeReply.success(toPayload(
+                    text, width, height, bitmap.getWidth(), bitmap.getHeight()));
+        } catch (ExecutionException failed) {
+            final Throwable error = failed.getCause() != null ? failed.getCause() : failed;
+            return RecognizeReply.error(
+                    modelUnavailable(context, error) ? "MODEL_UNAVAILABLE" : "RECOGNIZE_FAILED",
+                    error.getMessage());
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return RecognizeReply.error("RECOGNIZE_FAILED", "interrupted");
+        } finally {
+            bitmap.recycle();
+        }
     }
 
     /** 跑在 {@link #RECOGNIZE_EXECUTOR} 上：解码 → 识别 → 组载荷，全程至多一张位图。 */

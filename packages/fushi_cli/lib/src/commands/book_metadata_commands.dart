@@ -15,7 +15,7 @@ const List<CtlCommandGroup> bookMetadataCommandGroups = <CtlCommandGroup>[
   CtlCommandGroup(
     name: 'book',
     summary:
-        '书的在线元数据与封面刮削（Bangumi / DLsite / MangaBaka / AniList / openBD / NDL / 楽天）',
+        '书的在线元数据与封面刮削（Bangumi / DLsite / MangaBaka / AniList / openBD / NDL / 楽天 / iTunes）',
     commands: <CtlCommandSpec>[
       CtlCommandSpec(
         name: 'search',
@@ -23,14 +23,15 @@ const List<CtlCommandGroup> bookMetadataCommandGroups = <CtlCommandGroup>[
             '搜候选：书名 / Bangumi 条目 URL / DLsite 编号（--source dlsite）/ '
             'ISBN（--source openbd|ndl|rakuten）',
         usage: '<query...>',
-        configure: _configureSource,
+        configure: _configureSearch,
         build: _buildSearch,
         render: _renderSearch,
       ),
       CtlCommandSpec(
         name: 'get',
         summary: '按源内 id 取一个候选的详情',
-        usage: '<bangumi|dlsite|mangabaka|anilist|openbd|ndl|rakuten> <id>',
+        usage:
+            '<bangumi|dlsite|mangabaka|anilist|openbd|ndl|rakuten|itunes> <id>',
         build: _buildGet,
         render: _renderCandidate,
       ),
@@ -87,6 +88,7 @@ const List<String> kBookScrapeSources = <String>[
   'openbd',
   'ndl',
   'rakuten',
+  'itunes',
 ];
 
 const String _collections = '/api/admin/book/collections';
@@ -96,7 +98,17 @@ void _configureSource(ArgParser parser) {
     'source',
     help:
         '刮削源：bangumi（默认）| dlsite | mangabaka | anilist（轻小说）| openbd（只按 ISBN）'
-        '| ndl（国立国会図書館）| rakuten（楽天ブックス，需先在 app 设置里填凭据）',
+        '| ndl（国立国会図書館）| rakuten（楽天ブックス，需先在 app 设置里填凭据）'
+        '| itunes（歌曲专辑封面，给以有声书导入的歌曲用）',
+  );
+}
+
+void _configureSearch(ArgParser parser) {
+  _configureSource(parser);
+  parser.addFlag(
+    'nsfw',
+    negatable: false,
+    help: '也列出源标成 NSFW（成人向）的候选；默认不列，只报藏了几条',
   );
 }
 
@@ -113,9 +125,14 @@ String? _sourceOption(CtlCommandContext context) {
 CtlRequestSpec _buildSearch(CtlCommandContext context) {
   final String query = context.joinedRest(0, 'query');
   final String? source = _sourceOption(context);
+  final bool nsfw = context.flag('nsfw');
   return CtlRequestSpec.get(
     _search,
-    query: <String, String>{'query': query, 'source': ?source},
+    query: <String, String>{
+      'query': query,
+      'source': ?source,
+      if (nsfw) 'nsfw': 'true',
+    },
   );
 }
 
@@ -181,19 +198,24 @@ CtlRequestSpec _buildApply(CtlCommandContext context) {
   );
 }
 
-String _renderSearch(Object? data) => renderCtlTable(
-  data,
-  const <(String, String)>[
-    ('源', 'source'),
-    ('id', 'id'),
-    ('标题', 'title'),
-    ('作者', 'author'),
-    ('出版社', 'publisher'),
-    ('年份', 'year'),
-  ],
-  listKey: 'candidates',
-  empty: '没有匹配的候选',
-);
+String _renderSearch(Object? data) {
+  final String table = renderCtlTable(
+    data,
+    const <(String, String)>[
+      ('源', 'source'),
+      ('id', 'id'),
+      ('标题', 'title'),
+      ('作者', 'author'),
+      ('出版社', 'publisher'),
+      ('年份', 'year'),
+    ],
+    listKey: 'candidates',
+    empty: '没有匹配的候选',
+  );
+  final Object? hidden = data is Map ? data['hiddenNsfw'] : null;
+  if (hidden is! int || hidden <= 0) return table;
+  return '$table\n另有 $hidden 条 NSFW 候选未列出（加 --nsfw 显示）';
+}
 
 String _renderCandidate(Object? data) {
   if (data is! Map) return '完成';
@@ -214,7 +236,7 @@ String _renderCandidate(Object? data) {
   ]) {
     if (data[field] case final Object value) out.writeln('$label：$value');
   }
-  if (data['adult'] == true) out.writeln('R18');
+  if (data['adult'] == true) out.writeln('NSFW');
   return out.toString().trimRight();
 }
 

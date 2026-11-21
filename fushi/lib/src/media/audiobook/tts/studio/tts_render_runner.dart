@@ -55,15 +55,18 @@ import 'package:fushi_engine/media/video/ffmpeg_backend.dart'
     show FfmpegBackend, FfmpegRunResult, resolveFfmpegBackend;
 import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
 import 'package:fushi_engine/tts/cast/cast_line_voicing.dart';
+import 'package:fushi_engine/tts/tts_silence.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/render/tts_pause.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_direction.dart';
+import 'package:fushi_engine/tts/tts_pronunciation.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_retry.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
+import 'package:fushi_engine/tts/tts_reject_split.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/asr_host/asr_host.dart';
@@ -88,12 +91,47 @@ const String kTtsRenderSrtFileName = 'tts_audiobook.srt';
 /// 已经重新合成好的音频又删掉）。
 const String _kRegeneratedMarker = 'regenerated.done';
 
-/// 合成一句要用的引擎实例；[group] = 预设 id，同组共用一个并发上限。
+/// 合成一句要用的引擎实例；[group] = 预设 id，同组共用一个并发上限；[gap] = 每个
+/// 实际发出的请求之后再等多久（在线声音的「每句间隔」）。
 typedef _SentenceVoice = ({
   TtsProvider provider,
   int maxConcurrency,
+  Duration gap,
   String group,
 });
+
+/// 一份声音在这次制作里的并发与每句间隔。任务的限流参数（「同时请求数」「每句间隔」）
+/// 只作用于在线引擎；本机 / 系统声音照声音预设自己的并发、不加间隔。
+({int concurrency, Duration gap}) ttsRenderVoicePacing(
+  TtsRenderJob job,
+  TtsProviderDescriptor descriptor,
+  TtsVoicePreset preset,
+) {
+  final int base = ttsEffectiveConcurrency(descriptor, preset);
+  if (descriptor.category != TtsProviderCategory.online) {
+    return (concurrency: base, gap: Duration.zero);
+  }
+  return (
+    concurrency: (job.onlineConcurrency ?? base).clamp(1, kTtsMaxConcurrency),
+    gap: Duration(milliseconds: job.sentenceGapMs),
+  );
+}
+
+/// 这次制作的重试策略：429 怎么处理由任务的「被限流时」决定
+/// （[TtsRateLimitAction]），其余临时失败照默认退避。
+TtsRetryPolicy ttsRenderRetryPolicy(TtsRenderJob job) =>
+    switch (job.rateLimitAction) {
+      TtsRateLimitAction.waitRetry => TtsRetryPolicy.patientRateLimit,
+      TtsRateLimitAction.pause => TtsRetryPolicy.pauseOnRateLimit,
+    };
+
+/// 合成失败 → 任务失败码。选了「被限流时暂停」的 429 记成 `rate_limited_paused`
+/// （界面提示稍后重试会接着做），其余 `tts_<码>`。
+String ttsRenderFailureCodeFor(TtsRenderJob job, TtsFailure failure) =>
+    failure.code == TtsFailureCode.rateLimited &&
+        job.rateLimitAction == TtsRateLimitAction.pause
+    ? 'rate_limited_paused'
+    : 'tts_${failure.code.name}';
 
 class AppTtsRenderRunner implements TtsRenderRunner {
   AppTtsRenderRunner({required this.appModel});
@@ -288,12 +326,15 @@ class AppTtsRenderRunner implements TtsRenderRunner {
       voiceOf: (int planIndex) {
         final String presetId = presetOf[planIndex]!;
         if (!voices.containsKey(presetId)) return null;
+        final ({int concurrency, Duration gap}) pacing = ttsRenderVoicePacing(
+          job,
+          voices[presetId]!.descriptor,
+          voices[presetId]!.preset,
+        );
         return (
           provider: providers[presetId]!,
-          maxConcurrency: ttsEffectiveConcurrency(
-            voices[presetId]!.descriptor,
-            voices[presetId]!.preset,
-          ),
+          maxConcurrency: pacing.concurrency,
+          gap: pacing.gap,
           group: presetId,
         );
       },
@@ -314,8 +355,12 @@ class AppTtsRenderRunner implements TtsRenderRunner {
       plan: plan,
       chapters: chapters,
       chapterCues: chapterCues,
+      // 占位句与纯标点句都是静音，不拿去和识别结果对。
       placeholders: <int>{
         for (final TtsUnvoicedLine line in rendered.unvoiced) line.planIndex,
+        for (final TtsRenderChapter chapter in chapters)
+          for (final int i in chapter.planIndices)
+            if (ttsTextIsSilent(textOf(i))) i,
       },
       workDir: workDir,
       onProgress: onProgress,
@@ -488,8 +533,10 @@ class AppTtsRenderRunner implements TtsRenderRunner {
           final ({
             Map<String, TtsCachedAudio> audio,
             Map<String, Object> failures,
+            Set<String> silent,
           })
           synth = await _synthesizeChapter(
+            job: job,
             chapter: chapter,
             keys: keys,
             textOf: textOf,
@@ -506,15 +553,18 @@ class AppTtsRenderRunner implements TtsRenderRunner {
               onProgress(TtsRenderJobPhase.synthesizing, done, totalSentences);
             },
           );
-          // 没配上的句：成品里占位静音，记下来交给账本。
-          final List<bool> placeholder = <bool>[
-            for (final String key in keys) synth.failures.containsKey(key),
-          ];
+          // 没配上的句：成品里占位静音，记下来交给账本。纯标点句同样放一段静音，
+          // 但不进账本、章清单里记真键（它没有要念的内容，不算失败）。
+          final List<bool> placeholder = ttsChapterPlaceholderMask(
+            keys: keys,
+            failures: synth.failures.keys.toSet(),
+            silent: synth.silent,
+          );
           final List<String> texts = <String>[
             for (final int i in chapter.planIndices) textOf(i),
           ];
           for (int k = 0; k < keys.length; k++) {
-            if (!placeholder[k]) continue;
+            if (!synth.failures.containsKey(keys[k])) continue;
             final int planIndex = chapter.planIndices[k];
             final Object error = synth.failures[keys[k]]!;
             unvoiced.add(
@@ -613,10 +663,10 @@ class AppTtsRenderRunner implements TtsRenderRunner {
           ).writeAsString(
             TtsChapterManifest(
               section: chapter.section,
-              keys: <String>[
-                for (int k = 0; k < keys.length; k++)
-                  placeholder[k] ? ttsPlaceholderManifestKey(keys[k]) : keys[k],
-              ],
+              keys: ttsChapterManifestKeys(
+                keys: keys,
+                failures: synth.failures.keys.toSet(),
+              ),
               durationsMs: durations,
               pausePreset: pause.name,
               loudnorm: loudnorm,
@@ -655,8 +705,18 @@ class AppTtsRenderRunner implements TtsRenderRunner {
   /// 一句在重试用尽后仍失败（[ttsFailureIsPerLine]）或声音解析不到：记进返回的
   /// `failures`（键 → 失败），其余句子照常合成。熔断（[breaker]）、取消或其它异常：
   /// 停止派发新句、取消同章在途请求，抛第一个失败。
-  Future<({Map<String, TtsCachedAudio> audio, Map<String, Object> failures})>
+  ///
+  /// 纯标点 / 符号句（[ttsTextIsSilent]，如「！」）不送引擎：记进返回的 `silent`，
+  /// 由调用方放一段停顿。
+  Future<
+    ({
+      Map<String, TtsCachedAudio> audio,
+      Map<String, Object> failures,
+      Set<String> silent,
+    })
+  >
   _synthesizeChapter({
+    required TtsRenderJob job,
     required TtsRenderChapter chapter,
     required List<String> keys,
     required String Function(int planIndex) textOf,
@@ -681,9 +741,15 @@ class AppTtsRenderRunner implements TtsRenderRunner {
         >();
     final Map<String, int> occurrences = <String, int>{};
     final Map<String, Object> failures = <String, Object>{};
+    final Set<String> silent = <String>{};
     for (int k = 0; k < keys.length; k++) {
       final int planIndex = chapter.planIndices[k];
       occurrences[keys[k]] = (occurrences[keys[k]] ?? 0) + 1;
+      final String text = textOf(planIndex);
+      if (ttsTextIsSilent(text)) {
+        silent.add(keys[k]);
+        continue;
+      }
       final _SentenceVoice? voice = voiceOf(planIndex);
       if (voice == null) {
         failures[keys[k]] = unavailableOf(planIndex)!;
@@ -691,15 +757,11 @@ class AppTtsRenderRunner implements TtsRenderRunner {
       }
       byKey.putIfAbsent(
         keys[k],
-        () => (
-          text: textOf(planIndex),
-          voice: voice,
-          direction: directionOf(planIndex),
-        ),
+        () => (text: text, voice: voice, direction: directionOf(planIndex)),
       );
     }
-    // 声音解析不到的句子不进合成池，直接算处理完（占位）。
-    for (final String key in failures.keys) {
+    // 纯标点句与声音解析不到的句子不进合成池，直接算处理完（停顿 / 占位）。
+    for (final String key in <String>{...silent, ...failures.keys}) {
       onSentencesDone(occurrences[key]!);
     }
     // 按声音分组（同一份预设 = 同一个引擎实例 = 同一个并发上限）。
@@ -716,30 +778,68 @@ class AppTtsRenderRunner implements TtsRenderRunner {
     Object? firstError;
     StackTrace? firstStack;
 
+    final TtsRetryPolicy retryPolicy = ttsRenderRetryPolicy(job);
+
     Future<void> pool(List<String> voiceKeys) async {
       final _SentenceVoice voice = byKey[voiceKeys.first]!.voice;
       int next = 0;
+      // 同一份声音被限流后的冷却截止时刻：一路拿到 429，同池其它路在发下一个请求前
+      // 也等到这里（按服务端 Retry-After / 退避算出），不在冷却期里继续打服务端。
+      DateTime? cooldownUntil;
       Future<void> worker() async {
+        bool pendingGap = false;
         while (firstError == null && !chapterCancel.isCancelled) {
+          if (next >= voiceKeys.length) return;
+          // 每句间隔：上一个请求真的发出去了（不是命中缓存）才等。
+          if (pendingGap) {
+            pendingGap = false;
+            try {
+              await ttsCancellableDelay(voice.gap, chapterCancel);
+            } on TtsFailure {
+              return;
+            }
+          }
+          final DateTime? until = cooldownUntil;
+          if (until != null) {
+            final Duration wait = until.difference(DateTime.now());
+            if (wait > Duration.zero) {
+              try {
+                await ttsCancellableDelay(wait, chapterCancel);
+              } on TtsFailure {
+                return;
+              }
+            }
+          }
+          if (firstError != null || chapterCancel.isCancelled) return;
           if (next >= voiceKeys.length) return;
           final String key = voiceKeys[next++];
           await gate.acquire();
           try {
             if (firstError != null || chapterCancel.isCancelled) return;
             // 在线引擎的临时失败（断连 / 超时 / 429 / 5xx）先有限次退避重试，
-            // 与朗读调度共用 ttsWithRetry；用尽仍失败才判整章失败。
+            // 与朗读调度共用 ttsWithRetry；429 的处理按任务的「被限流时」
+            // （[ttsRenderRetryPolicy]）。用尽仍失败才判整章失败。
             results[key] = await ttsWithRetry(
-              () => cache.obtain(
-                key,
-                (String outputPath) => synthesizeWithDirection(
+              () => cache.obtain(key, (String outputPath) {
+                pendingGap = voice.gap > Duration.zero;
+                return ttsSynthesizeSplittingOnReject(
                   voice.provider,
                   byKey[key]!.text,
                   outputPath: outputPath,
                   cancel: chapterCancel,
                   direction: byKey[key]!.direction,
-                ),
-              ),
+                );
+              }),
               cancel: chapterCancel,
+              policy: retryPolicy,
+              onRetry: (int retry, TtsFailure failure, Duration delay) {
+                if (failure.code != TtsFailureCode.rateLimited) return;
+                final DateTime end = DateTime.now().add(delay);
+                final DateTime? current = cooldownUntil;
+                if (current == null || end.isAfter(current)) {
+                  cooldownUntil = end;
+                }
+              },
             );
             breaker.recordSuccess();
             onSentencesDone(occurrences[key]!);
@@ -783,11 +883,14 @@ class AppTtsRenderRunner implements TtsRenderRunner {
     final Object? error = firstError;
     if (error != null) {
       if (error is TtsFailure) {
-        throw TtsRenderFailure('tts_${error.code.name}', error.detail);
+        throw TtsRenderFailure(
+          ttsRenderFailureCodeFor(job, error),
+          error.detail,
+        );
       }
       Error.throwWithStackTrace(error, firstStack ?? StackTrace.current);
     }
-    return (audio: results, failures: failures);
+    return (audio: results, failures: failures, silent: silent);
   }
 
   /// 语音识别校对。没开、平台不支持、识别模型没下载时跳过（verified = false，
@@ -821,6 +924,10 @@ class AppTtsRenderRunner implements TtsRenderRunner {
     if (!asrPlan.modelReady) return skipped;
 
     final List<TtsRenderFlag> flags = <TtsRenderFlag>[];
+    // 识别后替换：与设置页 / 制作台同一份规则，开始校对时读一次。
+    final List<TtsPronunciationRule> heardRewrites = TtsServices.of(
+      appModel.prefsRepo,
+    ).textRules.load(TtsTextRuleKind.postRecognition);
     onProgress(TtsRenderJobPhase.verifying, 0, chapters.length);
     for (int c = 0; c < chapters.length; c++) {
       cancel.throwIfCancelled();
@@ -859,6 +966,7 @@ class AppTtsRenderRunner implements TtsRenderRunner {
                   ),
             ],
             heard: ttsHeardTokensFromAsr(asrCues, timings),
+            heardRewrites: heardRewrites,
           ),
         );
         // 识别任务目录只为这次校对存在（断点续跑靠它），用完即删。

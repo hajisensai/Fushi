@@ -35,7 +35,9 @@ void main() {
   test(
     '真实牌组原生渲染审计',
     () async {
-      final SrsStorage storage = await SrsStorage.open(path: dbPath!);
+      final SrsStorage storage = await SrsStorage.open(
+        directory: File(dbPath!).parent.path,
+      );
       addTearDown(storage.close);
       final SrsDbStore store = await SrsDbStore.open(
         core: storage.core,

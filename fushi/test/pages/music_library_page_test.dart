@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, kSecondaryMouseButton;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -31,6 +33,7 @@ import 'package:fushi/src/utils/components/fushi_search.dart'
 import 'package:fushi/src/pages/implementations/music/music_cover.dart'
     show MusicCover;
 
+import '../helpers/cover_block_title_finder.dart';
 import '../helpers/test_platform_services.dart';
 
 MusicTracksCompanion _track(
@@ -127,6 +130,33 @@ MusicPluginManager _noPlugins() => MusicPluginManager(
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('装了推荐插件也不把默认分区抢成推荐；推荐来源没了才回曲库', () {
+    expect(
+      musicLibrarySectionAfterSourcesChanged(
+        current: MusicLibrarySection.albums,
+        lastLibrary: MusicLibrarySection.albums,
+        hasRecommend: true,
+      ),
+      MusicLibrarySection.albums,
+    );
+    expect(
+      musicLibrarySectionAfterSourcesChanged(
+        current: MusicLibrarySection.recommend,
+        lastLibrary: MusicLibrarySection.songs,
+        hasRecommend: true,
+      ),
+      MusicLibrarySection.recommend,
+    );
+    expect(
+      musicLibrarySectionAfterSourcesChanged(
+        current: MusicLibrarySection.recommend,
+        lastLibrary: MusicLibrarySection.songs,
+        hasRecommend: false,
+      ),
+      MusicLibrarySection.songs,
+    );
+  });
+
   testWidgets('五个分区；专辑网格 → 歌曲 → 作品空态', (WidgetTester tester) async {
     // 顶栏与其它库页同一套浮动 chrome：动作组至少占半行，窄窗时页签在胶囊里
     // 横滑。给一个桌面宽度，五个页签都在可视区内直接点。
@@ -146,7 +176,7 @@ void main() {
     )) {
       expect(find.text(musicLibrarySectionLabel(s)), findsWidgets);
     }
-    expect(find.text('Night Album'), findsOneWidget);
+    expect(findCoverBlockTitle('Night Album'), findsOneWidget);
     expect(find.textContaining('FLAC 24/96'), findsOneWidget);
 
     await tester.tap(find.text(t.music_section_songs));
@@ -222,6 +252,48 @@ void main() {
     expect(find.byKey(const ValueKey<String>('music_rescan')), findsOneWidget);
     await tester.tapAt(Offset.zero);
     await tester.pumpAndSettle();
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('专辑卡右键「从音乐库移除」：整张专辑写墓碑、从专辑墙消失，撤销放回（拍板台 mmXVwo0Ibv）', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1400, 900);
+    addTearDown(tester.view.reset);
+    final FushiDatabase db = await _seed();
+    addTearDown(db.close);
+    final AppModel app = AppModel(testPlatformServices())
+      ..wireDatabaseForTesting(db)
+      ..wireMusicPluginManagerForTesting(_noPlugins());
+    await _pump(tester, app, const MusicLibraryPage());
+    expect(findCoverBlockTitle('Night Album'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('music-album-meta-al')),
+      buttons: kSecondaryMouseButton,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    final Finder remove = find.text(t.music_action_remove_from_library);
+    expect(remove, findsOneWidget, reason: '普通专辑也有右键菜单');
+    await tester.tap(remove);
+    await tester.pumpAndSettle();
+    expect(await db.listMusicTracks(albumUid: 'al'), isEmpty);
+    expect((await db.getMusicTrack('t1'))!.hiddenAt, isNotNull);
+    expect((await db.getMusicTrack('t2'))!.hiddenAt, isNotNull);
+    expect(findCoverBlockTitle('Night Album'), findsNothing);
+    expect(
+      find.text(t.music_album_removed_from_library(title: 'Night Album')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey<String>('music-undo-action')));
+    await tester.pumpAndSettle();
+    expect((await db.listMusicTracks(albumUid: 'al')).length, 2);
+    expect(findCoverBlockTitle('Night Album'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
@@ -315,7 +387,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(field, findsNothing);
       expect(open, findsOneWidget);
-      expect(find.text('Night Album'), findsOneWidget);
+      expect(findCoverBlockTitle('Night Album'), findsOneWidget);
       expect(find.byType(FushiSearchBar), findsNothing);
 
       await tester.pumpWidget(const SizedBox.shrink());
@@ -422,6 +494,11 @@ void main() {
   });
 
   testWidgets('专辑页：碟片分组 + 格式徽章 + Hi-Res', (WidgetTester tester) async {
+    // 逐碟曲目是色块（W 原型双格比例），默认 800×600 视口里第二碟标题在懒加载
+    // 列表视口外、不会被建出来；给一个能放下两碟的桌面视口。
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1400, 1600);
+    addTearDown(tester.view.reset);
     final FushiDatabase db = await _seed();
     addTearDown(db.close);
     final AppModel app = AppModel(testPlatformServices())
@@ -617,7 +694,7 @@ void main() {
     expect(snap.searchable, isFalse);
     expect(snap.sorts, isEmpty);
 
-    Focus.of(tester.element(find.text('Night Album'))).requestFocus();
+    Focus.of(tester.element(findCoverBlockTitle('Night Album'))).requestFocus();
     await tester.pump();
     snap = CompanionLibraryMainSnapshot.fromJson(
       companionContexts.currentSnapshot!,

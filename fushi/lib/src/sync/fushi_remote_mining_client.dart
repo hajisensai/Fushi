@@ -122,11 +122,23 @@ class RemoteMineOutcomeUnknown implements Exception {
       'The Fushi Interconnect server may have received the card, but did not confirm it.';
 }
 
+/// 已配对主机连上了、但它此刻不收卡：制卡端点回 404 / 405（没有这个端点，或主机上没有任何可写的落点——服务端没带
+/// Anki helper、提供的复习库又都不可用时 `/api/mine/forward` 回 404 `Mining off`；协议 3 的服务端读到新代客户端立的
+/// 围栏后复习库进「需要升级」，正是这种情况）。请求没被执行，卡**确定没送到**，可以入队等主机好了再发。
+class RemoteMineRefused implements Exception {
+  const RemoteMineRefused();
+
+  @override
+  String toString() =>
+      'The Fushi Interconnect server is reachable but is not accepting cards.';
+}
+
 abstract class RemoteMineSender {
   /// 转发一次制卡；返回服务端 `{result, message?, detail?}`。
   ///
   /// 返回 null **只**表示「确定没送到」（没有已配对设备，或全部候选在建连阶段就失败），
-  /// 调用方可以把这张卡入队稍后重发；对端回过话却没给出结果、或请求发出后超时，抛
+  /// 调用方可以把这张卡入队稍后重发；主机连上了但制卡端点回 404 / 405（不收卡、什么都没做），抛
+  /// [RemoteMineRefused]（同样确定没送到）；对端回过话却没给出结果、或请求发出后超时，抛
   /// [RemoteMineOutcomeUnknown]（主机可能已经落卡，重发会造重复卡）；token 被拒抛
   /// [SyncAuthError]。
   Future<Map<String, dynamic>?> mineForward(ForwardedMinePayload payload);
@@ -408,12 +420,18 @@ class FushiRemoteMiningClient
     ForwardedMinePayload payload,
   ) async {
     final Map<String, dynamic> body = payload.toJson();
+    bool endpointOff = false;
     final InterconnectPostOutcome outcome = await _transport.post(
       path: '/api/mine/forward',
       body: body,
       timeout: _mineTimeout,
       authErrorMessage: 'Fushi server rejected remote mining token',
       bodyFor: await _targetedBody(body),
+      onRejectedResponse: (int status, Map<String, dynamic>? _) {
+        if (status == 404 || status == 405) {
+          endpointOff = true;
+        }
+      },
     );
     final Map<String, dynamic>? json = outcome.json;
     if (json != null) {
@@ -430,6 +448,9 @@ class FushiRemoteMiningClient
     // 坏 JSON）或请求发出后超时，主机可能已经落了卡——这不是「没送到」，重发会造
     // 重复卡，必须报成结果未知。
     if (outcome.mayHaveDelivered) throw const RemoteMineOutcomeUnknown();
+    // 连上了、只拿到「没有这个端点 / 没接线」：主机不收卡，不是连不上（以前这里报成「结果未知」，用户看到的是
+    // 「主机可能收到了卡但没确认」，卡也进不了待发队列）。
+    if (endpointOff) throw const RemoteMineRefused();
     return null;
   }
 

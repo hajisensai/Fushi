@@ -5,8 +5,6 @@
 /// 没有登记场景的页面，「应用外」是原生系统球。各场景的按钮目录见 [FloatingBallScope]。
 library;
 
-import 'dart:io';
-
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
@@ -25,6 +23,7 @@ import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 
 SettingsDestination buildFloatingBallDestination() {
   return SettingsDestination(
@@ -53,7 +52,7 @@ SettingsDestination buildFloatingBallDestination() {
             id: 'floating_ball.system',
             title: t.floating_ball_system,
             // 只有 Android 要「显示在其他应用上层」权限。
-            subtitle: Platform.isAndroid
+            subtitle: hostPlatform.isAndroid
                 ? t.floating_ball_system_hint
                 : t.floating_ball_system_hint_desktop,
             icon: FushiIcons.openInNew,
@@ -66,7 +65,7 @@ SettingsDestination buildFloatingBallDestination() {
               // 要「显示在其他应用上层」权限：没有就说明原因并跳授权页，回到前台时
               // 悬浮球宿主会再试一次起服务。
               if (value &&
-                  Platform.isAndroid &&
+                  hostPlatform.isAndroid &&
                   !await FloatingBallChannel.canDrawOverlays()) {
                 final BuildContext ctx = c.context;
                 if (ctx.mounted) {
@@ -88,7 +87,7 @@ SettingsDestination buildFloatingBallDestination() {
             icon: FushiIcons.touch,
             // 只有 Android 原生系统球实现了「点球直接执行、长按展开」。
             visible: (SettingsContext c) =>
-                Platform.isAndroid && _prefs(c).floatingBallSystem,
+                hostPlatform.isAndroid && _prefs(c).floatingBallSystem,
             options: <SettingsSegmentOption<FloatingBallTapAction>>[
               SettingsSegmentOption<FloatingBallTapAction>(
                 value: FloatingBallTapAction.expand,
@@ -189,7 +188,7 @@ SettingsDestination buildFloatingBallDestination() {
             dropdown: true,
             // 决定 4BBSaB12zj：Android 悬浮球截屏识字同样跟随（以前固定 ML Kit）。
             visible: (SettingsContext c) =>
-                isDesktopSystemBallPlatform || Platform.isAndroid,
+                isDesktopSystemBallPlatform || hostPlatform.isAndroid,
             options: _screenOcrEngineOptions(null),
             optionsBuilder: _screenOcrEngineOptions,
             selected: (SettingsContext c) => _prefs(c).screenOcrEngine,
@@ -205,7 +204,7 @@ SettingsDestination buildFloatingBallDestination() {
             title: t.screen_ocr_keep_session,
             subtitle: t.screen_ocr_keep_session_hint,
             icon: FushiIcons.cast,
-            visible: (SettingsContext c) => Platform.isAndroid,
+            visible: (SettingsContext c) => hostPlatform.isAndroid,
             value: (SettingsContext c) => _prefs(c).screenOcrKeepCaptureSession,
             onChanged: (SettingsContext c, bool value) async {
               await _prefs(c).setScreenOcrKeepCaptureSession(value);
@@ -325,7 +324,7 @@ String _screenOcrGlobalLabel(
 };
 
 bool get _systemBallSupported => FloatingBallScope.systemBallSupported(
-  isAndroid: Platform.isAndroid,
+  isAndroid: hostPlatform.isAndroid,
   isDesktop: isDesktopSystemBallPlatform,
 );
 
@@ -415,8 +414,8 @@ bool _buttonAvailable(SettingsContext c, FloatingBallScope scope, String id) {
   return global == null ||
       global.availableIn(
         scope,
-        isAndroid: Platform.isAndroid,
-        isIOS: Platform.isIOS,
+        isAndroid: hostPlatform.isAndroid,
+        isIOS: hostPlatform.isIOS,
         isDesktop: isDesktopSystemBallPlatform,
         lookupModuleEnabled: c.appModel.moduleVisibility.isEnabled(
           ModuleId.lookup,

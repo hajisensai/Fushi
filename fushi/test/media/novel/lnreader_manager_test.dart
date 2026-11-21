@@ -373,6 +373,7 @@ void main() {
 
     await m.setEnabled(m.installed.single, false);
     await m.setPinned(m.installed.single, true);
+    await m.setMergeLineBreaks(m.installed.single, true);
 
     index.first['version'] = '1.2.0';
     scripts['/Syosetu.js'] = 'exports.default = {v: 2};';
@@ -385,6 +386,8 @@ void main() {
     expect(m.installed.single.version, '1.2.0');
     expect(m.installed.single.enabled, isFalse);
     expect(m.installed.single.pinned, isTrue);
+    // 拍板台 zCkIxtnwcV：源级「合并段内换行」开关也随更新保留。
+    expect(m.installed.single.mergeLineBreaks, isTrue);
     expect(m.pluginFile(plugin.id).readAsStringSync(), contains('v: 2'));
     expect(runtime.forgotten, contains('yomou.syosetu'));
 

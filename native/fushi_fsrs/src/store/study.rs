@@ -432,9 +432,17 @@ pub(crate) trait Tables {
 pub(crate) enum CardIx {
     NewPosition,
     NewFreq,
+    /// 下面三个只有测试基准 [SqlSource] 用（生产的学习卡 / 到期卡 / 计数原料来自常驻会话）。
+    #[cfg(test)]
     Learning,
+    #[cfg(test)]
     ReviewDue,
+    #[cfg(test)]
     Tally,
+    /// 常驻会话整份建 / 按 id 重读卡行（`store/queue.rs`）：走主键。新代的主键 `(col, id)` 是表本身（WITHOUT ROWID），
+    /// 规划器会挑一个按 `col` 开头的二级索引（`cards_anki`）再逐行回表、`NOT INDEXED` 也拦不住，所以按主键的自动索引名
+    /// `sqlite_autoindex_cards_1` 钉住（`cmd/study_tests.rs` 的计划测试看着它）。
+    Rows,
 }
 
 impl CardIx {
@@ -443,9 +451,13 @@ impl CardIx {
         match self {
             CardIx::NewPosition => "new_position",
             CardIx::NewFreq => "new_freq",
+            #[cfg(test)]
             CardIx::Learning => "learning",
+            #[cfg(test)]
             CardIx::ReviewDue => "review_due",
+            #[cfg(test)]
             CardIx::Tally => "tally",
+            CardIx::Rows => "rows",
         }
     }
 }
@@ -519,8 +531,8 @@ impl Tables for P3Tables<'_> {
     }
 }
 
-/// 排队读的卡 / 日志数据：生产是常驻会话（[SessionSource]）；[SqlSource] 是 L2 的逐条 SQL 实现（会话的对拍基准，
-/// 也是新代 `store/gen4/cmd/study.rs` 的数据来源）。
+/// 排队读的卡 / 日志数据：生产是常驻会话（[SessionSource]，协议 3 与新代 `store/gen4/cmd/study.rs` 同一份）；
+/// [SqlSource] 是 L2 的逐条 SQL 实现（只在测试里当会话的对拍基准）。
 trait Source {
     /// 新卡 / 自定义学习那几条 SQL 落在哪。
     fn tables(&self) -> &dyn Tables;
@@ -553,11 +565,11 @@ trait Source {
     fn ensure_order(&mut self, order: ReviewOrder);
 }
 
-struct SessionSource<'a>(&'a mut Session, P3Tables<'a>);
+struct SessionSource<'a>(&'a mut Session, &'a dyn Tables);
 
 impl Source for SessionSource<'_> {
     fn tables(&self) -> &dyn Tables {
-        &self.1
+        self.1
     }
 
     fn logs(&self) -> &LogState {
@@ -633,10 +645,13 @@ fn marks(tb: &dyn Tables, n: usize) -> String {
 }
 
 /// 学习卡「在给定时刻前到期」（绑定一个参数）与它们的出卡顺序。
+#[cfg(test)]
 const LEARNING_WHERE: &str = "queue IN ('learning', 'relearning') AND COALESCE(due_at, 0) <= ?";
+#[cfg(test)]
 const LEARNING_ORDER: &str = "COALESCE(due_at, 0), id";
 
 /// 每个牌组自己的计数原料（参数：今天 ×2、学习卡的到期界、今天 ×2、分区，再是 [decks] 个牌组）。
+#[cfg(test)]
 fn tallies_sql(tb: &dyn Tables, decks: Option<usize>) -> String {
     let deck_sql = decks.map_or(String::new(), |n| {
         format!(" AND deck_id IN ({})", marks(tb, n))
@@ -654,6 +669,7 @@ fn tallies_sql(tb: &dyn Tables, decks: Option<usize>) -> String {
 }
 
 /// R 顺序的到期复习卡（参数：分区、今天、[decks] 个牌组、今天、[exclude] 个卡、此刻）。
+#[cfg(test)]
 fn due_sql(tb: &dyn Tables, decks: usize, exclude: usize) -> String {
     let not_in = if exclude == 0 {
         String::new()
@@ -673,6 +689,7 @@ fn due_sql(tb: &dyn Tables, decks: usize, exclude: usize) -> String {
 }
 
 /// 子树里全部到期复习候选（不排序）：id、上次作答、稳定度、到期日、间隔、难度（参数同 [due_sql]，没有此刻）。
+#[cfg(test)]
 fn due_all_sql(tb: &dyn Tables, decks: usize, exclude: usize) -> String {
     let not_in = if exclude == 0 {
         String::new()
@@ -691,14 +708,16 @@ fn due_all_sql(tb: &dyn Tables, decks: usize, exclude: usize) -> String {
 }
 
 /// L2 的逐条 SQL 排队（2026-10-29 搬进常驻会话之前的生产实现）：每次排队按子树聚合计数、顺着到期索引有界排序取
-/// 最低、日志由调用方整段扫好（[LogState]）。协议 3 里是会话的对拍基准；新代（`store/gen4/cmd/study.rs`）每条命令
-/// 在一个读快照里用它（常驻会话是命令层的状态，见那里的文件头）。
+/// 最低、日志由调用方整段扫好（[LogState]）。只留作测试的对拍基准：协议 3 与新代（`store/gen4/cmd/study.rs`，
+/// 2026-11 接线进常驻会话之前每条命令在读快照里用它）的会话都拿它对拍。
+#[cfg(test)]
 pub(crate) struct SqlSource<'a> {
     pub tb: &'a dyn Tables,
     pub today: i64,
     pub logs: LogState,
 }
 
+#[cfg(test)]
 impl Source for SqlSource<'_> {
     fn tables(&self) -> &dyn Tables {
         self.tb
@@ -839,6 +858,7 @@ impl Source for SqlSource<'_> {
     fn ensure_order(&mut self, _order: ReviewOrder) {}
 }
 
+#[cfg(test)]
 impl SqlSource<'_> {
     /// R 以外的复习顺序：把全部到期候选读出来（当天哈希在 SQL 里算不了），按（键, id）取最小。
     pub(crate) fn first_by_key(
@@ -878,19 +898,43 @@ impl SqlSource<'_> {
 
 /// RWKV-Instant 合格的复习卡（按 R 升序，同 R 按 id）。与旧 Dart `_instantReviews` 同口径：
 /// - R ≤ 卡所在牌组的目标保留率才合格；
-/// - 同日重复的间隔守卫：今天答过的卡，距上次作答不足 `repeat_seconds` 秒，或这之后 [scope] 里别的卡的作答不足
-///   `repeat_reviews` 次 → 暂缓；
+/// - 同日重复的间隔守卫：今天答过的卡，距上次作答不足 `repeat_seconds` 秒，或这之后共用这套设置（同一个参数归属
+///   牌组）的牌组里别的卡的作答不足 `repeat_reviews` 次 → 暂缓。只看牌组树、不看这次排队的范围：以前数的是请求
+///   子树里的作答，牌组列表（全部牌组）把别的牌组的作答也算进去、判合格，点进那个牌组排队却只数子树、判暂缓——
+///   列表上显示到期、复习页一张都不出（应用内反馈 ys9tMVHj3S）；
 /// - 每天最少复习数：共用一套设置（同一个参数归属牌组）的牌组今天已用的量（按归属牌组的 [LimitUnit]）加上合格卡
 ///   仍不到这个数时，从只因 R 高于目标被挡的卡里按 R 升序补足。
 fn instant_eligible(
     ctx: &Ctx<'_>,
-    scope: &HashSet<&str>,
     decks: &HashMap<String, InstantDeck>,
     cands: &[(String, String, Option<i64>, f64)],
     answered_deck: &HashMap<String, (String, bool)>,
 ) -> Vec<(String, String, f64)> {
     let day_start = ctx.day_start(ctx.today);
-    let spaced = |id: &str, last: Option<i64>, q: &InstantDeck| -> bool {
+    // 参数归属牌组（设置所在的 own 祖先）：间隔守卫数作答、「每天最少」记配额都按它分组。
+    // 不在牌组树里的牌组按默认牌组算（`DeckTree::effective`），与 Dart `_minimumTopUp` 分组同一口径。
+    let owner = |d: &str| {
+        let e = ctx.tree.effective(d);
+        ctx.tree.params_owner_id(&e).unwrap_or(&e).to_owned()
+    };
+    let mut owners: HashMap<String, String> = HashMap::new();
+    let mut owner_of = |d: &str| -> String {
+        owners
+            .entry(d.to_owned())
+            .or_insert_with(|| owner(d))
+            .clone()
+    };
+    // 今天的作答（卡, 时刻, 所在牌组的参数归属牌组），间隔守卫用；不在这个 profile 里的卡不算。
+    let answers: Vec<(&String, i64, String)> = ctx
+        .logs
+        .answers()
+        .filter_map(|(c, at)| {
+            answered_deck
+                .get(c)
+                .map(|(d, _)| (c, at, owner_of(d.as_str())))
+        })
+        .collect();
+    let spaced = |id: &str, group: &str, last: Option<i64>, q: &InstantDeck| -> bool {
         let Some(last) = last.filter(|l| *l >= day_start) else {
             return true;
         };
@@ -901,13 +945,8 @@ fn instant_eligible(
             return true;
         }
         let mut others = 0;
-        for (other, at) in ctx.logs.answers() {
-            if at > last
-                && other != id
-                && answered_deck
-                    .get(other)
-                    .is_some_and(|(d, _)| scope.contains(d.as_str()))
-            {
+        for (other, at, o) in &answers {
+            if *at > last && other.as_str() != id && o == group {
                 others += 1;
                 if others >= q.repeat_reviews {
                     return true;
@@ -920,7 +959,7 @@ fn instant_eligible(
     let mut above: Vec<(String, String, f64)> = Vec::new();
     for (id, deck, last, r) in cands {
         let Some(q) = decks.get(deck) else { continue };
-        if !r.is_finite() || !spaced(id, *last, q) {
+        if !r.is_finite() || !spaced(id, &owner_of(deck), *last, q) {
             continue;
         }
         if *r > q.target {
@@ -938,11 +977,6 @@ fn instant_eligible(
     if decks.values().any(|q| q.min_reviews > 0) && !above.is_empty() {
         // 配额按参数归属牌组（设置所在的 own 祖先）记：随参数继承的子牌组共用设置，也共用这一份「每天最少」，
         // 不是每个子牌组各补一份（Anki 导入的牌组常有几十个继承同一预设的子牌组）。
-        // 不在牌组树里的牌组按默认牌组算（`DeckTree::effective`），与 Dart `_minimumTopUp` 分组同一口径。
-        let owner = |d: &str| {
-            let e = ctx.tree.effective(d);
-            ctx.tree.params_owner_id(&e).unwrap_or(&e).to_owned()
-        };
         // 配额按归属牌组的单位（[LimitUnit]）记：次数 / 卡片数下今天复习过的卡按作答条数 / 1 张扣，合格卡与补上的
         // 卡各扣 1；分钟下只扣今天复习已用的时长（毫秒），没用满就把高于目标的卡全部按 R 升序补上（不预估以后的
         // 耗时），用满了一张也不补。
@@ -1631,17 +1665,28 @@ pub(crate) fn study(
     let (now, day) = when(req)?;
     hub.with_session(c, profile, day, day.index(now), uncommitted, |s| {
         let tree = DeckTree::load(c, profile)?;
-        run(&mut SessionSource(s, P3Tables { c, profile }), tree, req)
+        run(&mut SessionSource(s, &P3Tables { c, profile }), tree, req)
     })
 }
 
-/// 排队本身：数据从 [src] 取（会话，或 [SqlSource]），牌组树 [tree] 由调用方在同一个读快照里读好（ID 与 [src] 同一口径）。
+/// 测试基准的排队：数据从 [SqlSource] 取，牌组树 [tree] 由调用方在同一个读快照里读好（ID 与 [src] 同一口径）。
+#[cfg(test)]
 pub(crate) fn run_with(
     src: &mut SqlSource<'_>,
     tree: DeckTree,
     req: &Value,
 ) -> Result<Value, String> {
     run(src, tree, req)
+}
+
+/// 在常驻会话 [s] 上排队；新卡 / 自定义学习那几条 SQL 落在 [tb]（新代 `store/gen4/cmd/study.rs`：缓存层的表）。
+pub(crate) fn run_session(
+    s: &mut Session,
+    tb: &dyn Tables,
+    tree: DeckTree,
+    req: &Value,
+) -> Result<Value, String> {
+    run(&mut SessionSource(s, tb), tree, req)
 }
 
 fn run(src: &mut dyn Source, tree: DeckTree, req: &Value) -> Result<Value, String> {
@@ -1675,7 +1720,6 @@ fn run(src: &mut dyn Source, tree: DeckTree, req: &Value) -> Result<Value, Strin
             v
         }
     };
-    let scope: HashSet<&str> = ids.iter().map(String::as_str).collect();
     let mut t: HashMap<String, Tally> = src
         .tallies(now, root.map(|_| ids.as_slice()))?
         .into_iter()
@@ -1721,7 +1765,7 @@ fn run(src: &mut dyn Source, tree: DeckTree, req: &Value) -> Result<Value, Strin
     }
     let found = src.decks_of(&lookup)?;
     let eligible = if rwkv.is_some() {
-        instant_eligible(&ctx, &scope, &instant, &cands, &found)
+        instant_eligible(&ctx, &instant, &cands, &found)
     } else {
         Vec::new()
     };
@@ -1869,6 +1913,7 @@ fn run(src: &mut dyn Source, tree: DeckTree, req: &Value) -> Result<Value, Strin
 impl crate::store::SrsCore {
     /// 只读排队（牌组列表 / 复习页的计数与出卡）：走读连接的快照，不排在同步投递 / 缓存刷新这类长写后面
     /// （旧库搬迁的事务开着时在写连接上读，看得见未提交的行，[crate::store::SrsCore::read_visible_tx]）。
+    #[cfg(test)]
     pub fn study(&self, profile: &str, req: &Value) -> Result<Value, String> {
         self.read_visible_tx(|c, uncommitted| study(c, &self.study_hub, uncommitted, profile, req))
     }
@@ -4450,5 +4495,64 @@ mod tests {
         lab.close();
         // 混排下每一步的再下一张 = 真作答后的下一张（mix_run 里逐步断言）。
         assert_eq!(mix_run("mixed", 2).len(), 8);
+    }
+
+    /// 应用内反馈 ys9tMVHj3S：RWKV 的同日间隔守卫只按牌组树分组（共用一套设置的牌组）数「之后别的卡的作答」，
+    /// 不随这次排队的范围变——以前数请求子树里的作答，牌组列表（全部牌组）把别的牌组的作答算进去判合格、显示到期，
+    /// 点进那个牌组排队却只数子树、判暂缓，复习页一张都不出，退出后列表上的到期数还在。
+    #[test]
+    fn rwkv_repeat_guard_counts_the_settings_group_not_the_request_scope() {
+        let mut lab = OrderLab::new("rwkv_repeat_scope");
+        // RW 自己管参数，RWA / RWB 随它继承（同一组设置）；OT 是另一组设置的 RWKV 牌组。
+        lab.deck("RW", None, "rwkv", true);
+        lab.deck("RWA", Some("RW"), "rwkv", false);
+        lab.deck("RWB", Some("RW"), "rwkv", false);
+        lab.deck("OT", None, "rwkv", true);
+        lab.review("r1", "RWA", -1, 1, Some(5.0), 3, 1.0);
+        for i in 1..=5 {
+            lab.review(&format!("b{i}"), "RWB", -1, 1, Some(5.0), 3, 1.0);
+            lab.review(&format!("o{i}"), "OT", -1, 1, Some(5.0), 3, 1.0);
+        }
+        let answered_at = lab.now;
+        lab.answer("r1");
+        // 之后在另一组设置的牌组里答了 5 张：不算 r1 的间隔。
+        lab.now += 60_000;
+        for i in 1..=5 {
+            lab.answer(&format!("o{i}"));
+        }
+        lab.now += 60_000;
+        let q = json!([0.9, 0, 5, 30]);
+        let rwkv = json!({
+            "decks": {"RW": q, "RWA": q, "RWB": q, "OT": q},
+            "cands": [["r1", "RWA", answered_at, 0.3]],
+        });
+        let list = |lab: &OrderLab| -> Value {
+            let req = json!({"now": lab.now, "utcOff": 0, "rollover": 4, "rwkv": rwkv});
+            let got = lab.core.study(P, &req).unwrap();
+            let want = lab
+                .core
+                .read_visible(|c| oracle::study(c, P, &req))
+                .unwrap();
+            assert_eq!(got, want, "session vs SQL baseline, req {req}");
+            got
+        };
+        // [新, 学习, 到期, ...]
+        let listed = list(&lab);
+        let picked = lab.pick("RWA", &[], Some(&rwkv));
+        assert_eq!(listed["counts"]["RWA"][2], json!(0), "{listed}");
+        assert_eq!(picked["counts"]["RWA"][2], json!(0), "{picked}");
+        assert_eq!(picked["next"], Value::Null, "{picked}");
+        // 同一组设置里（RWA 子树之外的兄弟牌组）又答了 5 张：r1 已隔开，列表与复习页都出它。
+        for i in 1..=5 {
+            lab.answer(&format!("b{i}"));
+        }
+        lab.now += 60_000;
+        let listed = list(&lab);
+        let picked = lab.pick("RWA", &[], Some(&rwkv));
+        assert_eq!(listed["counts"]["RWA"][2], json!(1), "{listed}");
+        assert_eq!(listed["counts"]["RW"][2], json!(1), "{listed}");
+        assert_eq!(picked["counts"]["RWA"][2], json!(1), "{picked}");
+        assert_eq!(picked["next"], json!("r1"), "{picked}");
+        lab.close();
     }
 }

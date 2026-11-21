@@ -4,7 +4,12 @@ import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:fushi/src/models/library_grid_columns.dart'
     show kLibraryGridColumnsPrefKey;
 import 'package:fushi/src/models/preference_keys.dart'
-    show kAnkiSettingsPrefKey, kWorkProfileSessionPrefKey;
+    show
+        kAnkiSettingsPrefKey,
+        kWhatsNewCardDismissedVersionPrefKey,
+        kWhatsNewSeenSeqPrefKey,
+        kWhatsNewSeenVersionPrefKey,
+        kWorkProfileSessionPrefKey;
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
     show kPageBackdropDeviceLocalPrefKeys;
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
@@ -318,6 +323,10 @@ class SyncRepository {
   // 7c 视频刮削元数据增量拉取基线：本设备从该通道见过的最大 host updatedAt。
   // 设备本地：随备份到新设备会让它以为已见过、永远不全量拉。
   static const _keyVideoMetadataSyncSinceMs = 'sync_video_metadata_since_ms';
+  // 流媒体书拉取基线（拍板台 Z2OhxAjKVv）：本设备从该通道见过的最大 host 拥有时刻。
+  // 晚于它的 host 流媒体书才落到本机——早于它、本机却没有的，是本机删掉的，不再建回。
+  // 设备本地：随备份到新设备会让它以为已见过、永远拉不到。
+  static const _keyStreamVideoPullSinceMs = 'sync_stream_video_pull_since_ms';
   // 删除墓碑**推送**的因果基线（互联通道专用，与上面的消费基线镜像对称）：描述
   // 「本设备已把删除推给对端 host 到什么时刻」。deletedAt 晚于它的墓碑才需要推。
   //
@@ -697,6 +706,18 @@ class SyncRepository {
 
   Future<void> setVideoMetadataSyncSinceMs(SyncChannelScope scope, int ms) =>
       _setString(scope.key(_keyVideoMetadataSyncSinceMs), ms.toString());
+
+  /// 流媒体书拉取基线：上次从该通道见过的最大 host 拥有时刻（毫秒，host 时钟）。
+  /// 0 = 从未拉过（全量）。设备本地、按通道分槽。
+  Future<int> getStreamVideoPullSinceMs(SyncChannelScope scope) async {
+    final String? s = await _getStringOrNull(
+      scope.key(_keyStreamVideoPullSinceMs),
+    );
+    return s == null ? 0 : int.tryParse(s) ?? 0;
+  }
+
+  Future<void> setStreamVideoPullSinceMs(SyncChannelScope scope, int ms) =>
+      _setString(scope.key(_keyStreamVideoPullSinceMs), ms.toString());
 
   /// 删除墓碑消费的因果基线（毫秒）。远端删除标记 deletedAt 晚于它才弹逐条确认；
   /// 早于它视为本设备已处理过、不再反复弹。0 = 从未消费过。设备本地
@@ -2007,6 +2028,7 @@ class SyncRepository {
     _keyCollectionsBaselineMs,
     _keyDeletionTombstonesBaselineMs,
     _keyVideoMetadataSyncSinceMs,
+    _keyStreamVideoPullSinceMs,
     _keyContentSniffCache,
     // 云后端最近一次取到的账号（BUG-4434）：文件箱进度基线按它挑槽；随备份带到
     // 登着别的账号的设备，邮箱缺失时会挑错槽，且把账号邮箱带进备份。
@@ -2043,6 +2065,10 @@ class SyncRepository {
     kStatLegacyProfileIdPrefKey,
     // 主进程此刻打开的作品会话（值是本库自增配置 id，只给本机弹窗进程镜像用）。
     kWorkProfileSessionPrefKey,
+    // 「本版新内容」看到哪个版本：描述这台设备装过的包，跟去别的设备会误判。
+    kWhatsNewSeenVersionPrefKey,
+    kWhatsNewSeenSeqPrefKey,
+    kWhatsNewCardDismissedVersionPrefKey,
     // 库页「每行数量」：合适的列数取决于这台设备的屏幕（BUG-4219）。
     kLibraryGridColumnsPrefKey,
     // 库页布局出厂判定（G1：新安装 = 拼贴 / 升级上来 = 封面网格 + 待弹选择框）：
@@ -2061,6 +2087,8 @@ class SyncRepository {
     PreferencesRepository.widgetPrivacyHideProfileKey,
     // 复习同步 v2 的文件夹存储位置：路径是这台设备的磁盘 / 挂载点，换设备恢复带过去没有意义。
     PreferencesRepository.srsFolderLocationsKey,
+    // 移除了、本机复习内核还没忘掉的位置：描述的是这台设备的内核状态，与上一项同一个事务写。
+    PreferencesRepository.srsForgetPendingKey,
     // 复习同步 v2 里关掉的通道位置：是这台设备「在不在那里同步」的选择，别的设备恢复备份不能替它关 / 开。
     PreferencesRepository.srsDisabledLocationsKey,
     // 首次 v2 同步的确认是这台设备做的：别的设备恢复备份带过来不能替它确认。
@@ -2195,6 +2223,8 @@ class SyncRepository {
     'ai_web_search',
     // 「抓搜索结果网页交给 AI」的同意：同意的是这台设备上配的那个后端，跟着它设备本地。
     'ai_web_search_page_fetch',
+    // 「AI 助手自主联网搜索」的首次确认：同理跟着这台设备配的后端设备本地。
+    'ai_agent_web_search',
     // 「允许已配对设备远程使用 AI 助手」：授权的是这台机器的 AI 指派与操作目录，
     // 只对点它的那台设备成立；漂过去会让另一台设备静默对配对设备开放。
     'ai_agent_for_peers',
@@ -2281,6 +2311,8 @@ class SyncRepository {
     'tts_voice_presets',
     'tts_active_preset_id',
     // 制卡单词音频的 TTS 兜底声音：可能是上面清单里某份预设的 id，一起留在本机。
+    // 各配置自己那份按 uid 停放（`mining_tts_fallback_voice::<uid>`，
+    // PrefRedactionPolicy.deviceLocalKeyPrefixes），同样不离开本机。
     'mining_tts_fallback_voice',
     // galgame 台词浮窗 TTS 设置：里面的声音也是上面清单里的预设 id。
     'gal_line_tts_settings',

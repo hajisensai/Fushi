@@ -80,7 +80,7 @@ Rules:
 String buildAiFranchiseListUserPrompt({
   required String franchise,
   required List<WebKnowledgePage> pages,
-}) => const JsonEncoder.withIndent('  ').convert(<String, Object?>{
+}) => jsonEncode(<String, Object?>{
   'franchise': franchise,
   'excerpts': <Map<String, Object?>>[
     for (final WebKnowledgePage page in pages)

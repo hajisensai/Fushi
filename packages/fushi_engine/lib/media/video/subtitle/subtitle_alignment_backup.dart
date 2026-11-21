@@ -41,6 +41,19 @@ Future<Uint8List?> findSubtitleAlignmentOriginal(Uint8List current) async {
   return f.existsSync() ? f.readAsBytes() : null;
 }
 
+/// [bytes]（一份字幕的完整内容）是不是按内嵌轨对齐写下的产物：只查登记在不在
+/// （异步 stat），不读原稿。播放页开播时把读字幕解析 cue 时已读到的字节直接交给它，
+/// 不再整份重读一遍（video-20）。查不了 → false。
+Future<bool> isSubtitleAlignmentProductBytes(Uint8List bytes) async {
+  try {
+    return await File(
+      p.join((await _backupDir()).path, _keyOf(bytes)),
+    ).exists();
+  } catch (_) {
+    return false;
+  }
+}
+
 /// [path] 这份字幕文件是不是按内嵌轨对齐写下的产物（自动路径与播放页手动入口都经
 /// [saveSubtitleAlignmentOriginal] 登记）。读不了 / 不存在 → false。
 ///
@@ -49,9 +62,8 @@ Future<Uint8List?> findSubtitleAlignmentOriginal(Uint8List current) async {
 Future<bool> isSubtitleAlignmentProduct(String path) async {
   try {
     final File file = File(path);
-    if (!file.existsSync()) return false;
-    return await findSubtitleAlignmentOriginal(await file.readAsBytes()) !=
-        null;
+    if (!await file.exists()) return false;
+    return await isSubtitleAlignmentProductBytes(await file.readAsBytes());
   } catch (_) {
     return false;
   }

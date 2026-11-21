@@ -331,6 +331,15 @@ mixin _LocalLibraryHostVideos
       importedAt: row.importedAt,
       fileName: fileName,
       peerPlayable: _hostServesVideoBytes(row.videoPath),
+      // 流媒体书带上重开信息，对端据此落同 uid 的行（拍板台 Z2OhxAjKVv）。
+      stream:
+          isSyncableStreamVideo(bookUid: row.bookUid, videoPath: row.videoPath)
+          ? RemoteStreamVideoEntry(
+              url: row.videoPath.trim(),
+              streamSpecJson: row.streamSpecJson,
+              addedAt: row.localAddedAt ?? row.importedAt,
+            )
+          : null,
     );
   }
 
@@ -1023,7 +1032,7 @@ mixin _LocalLibraryHostVideos
     _assertSafeVideoId(id);
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
-    if (lease == null) throw StateError('视频刮削资料正在清理');
+    if (lease == null) throw VideoScrapeMaintenanceActiveError();
     try {
       await _runExclusive(
         () => VideoCoverMutationGate.runExclusive(() async {
@@ -1145,6 +1154,51 @@ mixin _LocalLibraryHostVideos
         }
       }
     }
+  }
+
+  /// 收下对端注册的流媒体书（[StreamVideoSyncHost]，拍板台 Z2OhxAjKVv）。
+  ///
+  /// 只建行、不碰任何视频字节：URL + 重开规格 + 标题。host 已有同 uid 的行一律不动
+  /// （host 的标题 / 封面 / 进度是它自己的真相）。删除墓碑闸门在端点（409），这里
+  /// 不重复；新建的行经 `upsertVideoBook` 清掉同 uid 的旧墓碑——端点已确认这是删除
+  /// 之后的重新加入。YouTube 行随后尽力补一张缩略图封面，失败只是没封面。
+  @override
+  Future<bool> registerStreamVideo(
+    String id,
+    StreamVideoRegistration entry,
+  ) async {
+    if (!isSyncableStreamVideo(bookUid: id, videoPath: entry.url)) {
+      throw ArgumentError.value(id, 'id', 'not a syncable stream video');
+    }
+    bool created = false;
+    await _runExclusive(() async {
+      if (await _db.getVideoBookByBookUid(id) != null) return;
+      await _db.upsertVideoBook(
+        streamVideoRowCompanion(
+          bookUid: id,
+          title: entry.title,
+          url: entry.url,
+          streamSpecJson: entry.streamSpecJson,
+          importedAt: entry.importedAt,
+          nowMs: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      created = true;
+    });
+    if (created) {
+      try {
+        await backfillStreamVideoThumbnailCover(
+          _db,
+          bookUid: id,
+          url: entry.url,
+          coversDir: _videoCoversDirectory ?? await VideoStorage.coversDir(),
+        );
+      } catch (error, stack) {
+        // best-effort：封面失败不影响注册成功。
+        engineLog.log('sync.streamVideo.cover', error, stack);
+      }
+    }
+    return created;
   }
 
   /// 接收 client 上传的视频外挂字幕并落到视频同目录（BUG-964，client→host live push）。
@@ -1422,7 +1476,7 @@ mixin _LocalLibraryHostVideos
         .toLowerCase();
     List<AudioCue> cues = const <AudioCue>[];
     try {
-      cues = parseSubtitleCues(
+      cues = await parseSubtitleCues(
         content: await readTextWithEncoding(File(preferred)),
         format: ext,
         bookUid: id,

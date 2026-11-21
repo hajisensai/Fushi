@@ -45,7 +45,7 @@ jobs:
     # 本机实测编译 + 跑 43 张约 2 分钟；冷 runner 的 pub get + 首次编译留足余量。
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       # 与发布 workflow 的 Windows job 同法：只缓存 pub、不缓存 SDK
       # （理由与实测见 build-multiplatform.yml windows job 同处注释）。
       # 不装 flutter-engine-overlay：它只替换 flutter_windows.dll（桌面 app 的
@@ -108,7 +108,7 @@ jobs:
       # 兜住将来 test/goldens 下再分子目录的情况。
       - name: Upload golden failure images
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: golden-failures
           path: fushi/test/goldens/**/failures/

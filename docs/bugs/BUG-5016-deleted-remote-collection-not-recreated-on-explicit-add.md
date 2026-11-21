@@ -1,0 +1,7 @@
+## BUG-5016 · 删掉的在线源作品合集再显式加入或下载也永不重建
+- **报告**：2026-11-20（应用内反馈 9zDeK06ikS，macOS 3.4.0-debug.29190）
+- **真实性**：✅ 真 bug。复现：在线动画源（Aniyomi 扩展）作品「加入媒体库」→ 删掉以作品名命名的 playlist → 再点「加入媒体库」或下载一集，集全部散落、不再建合集、无提示。
+  根因 `packages/fushi_core/lib/src/database/database_library.part.dart` `adoptRemoteCollectionMember`（原 :1340）：一见该自然键的合集级删除墓碑（`hasCollectionDeletionTombstone`）就 `return null`。它是被动收养（同步 / 目录刷新 / 后台库更新探针）的防复活闸，却也是用户显式入口唯一的收养路径——`fushi/lib/src/media/video/online/anime_source_library.dart:224`（`addMissing` 内）与 `:299`（`registerDownloaded`）、`fushi/lib/src/media/video/media_server/media_server_library.dart:215`（`addMissing`）都走它，接口里没有「这是用户意图」的通道，于是注释「合集被用户删掉后重新加入能回到合集里」永远做不到。只有手建同名合集（`createMediaCollection` 清墓碑）能绕开。
+- **[x] ① 已修复** — `adoptRemoteCollectionMember` / `RemoteCollectionAdoptionService.adoptVideo` / `adoptMembership` 加 `userIntent`（默认 false）：为 true 时同事务清该自然键的合集级墓碑（与 `createMediaCollection` 共用 `_clearCollectionDeletionTombstone`，重建 = 撤销删除），成员级墓碑仍照常拦。用户入口传 true：在线动画源 `addToLibrary`、`registerDownloaded`（下载由用户发起），媒体服务器 `addToLibrary`（同一缺陷）；后台库更新探针调的 `addMissing` 默认 false，删掉的合集不被被动刷新复活。
+- **[x] ② 已加自动化测试** — `fushi/test/database/remote_collection_adoption_dao_test.dart`（userIntent 清合集墓碑并重建；成员墓碑仍拦）、`fushi/test/media/video/online/anime_source_library_test.dart` group「a deleted anime playlist」（探针 addMissing 不复活、addToLibrary 重建、registerDownloaded 重建）。
+- **备注**：互联下载（`home_video_page.dart` 等）的收养仍是被动语义，未改；那条路径的合集归属来自对端同步，是否应撤销删除需另行判断。

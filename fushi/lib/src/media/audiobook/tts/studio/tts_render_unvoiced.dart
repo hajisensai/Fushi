@@ -34,9 +34,13 @@ String ttsSentenceSpokenText(TtsCast cast, TtsPlanSentence sentence) =>
     cast.sayFor(sentence.section, sentence.matchStart) ?? sentence.spokenText;
 
 /// 一句合成失败能不能占位（而不是让任务失败）：引擎对这一句报的失败都算；取消不算
-/// （那是用户在停任务），其它异常（文件系统、程序错误）也不算。
+/// （那是用户在停任务）；限流不算（服务端对整个账号 / IP 限流，不是这一句的问题——
+/// 占位只会把后面一串句子都变成静音，应当按任务的「被限流时」等待或暂停）；其它
+/// 异常（文件系统、程序错误）也不算。
 bool ttsFailureIsPerLine(Object error) =>
-    error is TtsFailure && error.code != TtsFailureCode.cancelled;
+    error is TtsFailure &&
+    error.code != TtsFailureCode.cancelled &&
+    error.code != TtsFailureCode.rateLimited;
 
 /// 记进账本的失败码：引擎失败用 `TtsFailureCode.name`，声音解析失败用制作的错误码。
 String ttsUnvoicedCode(Object error) => switch (error) {
@@ -139,3 +143,23 @@ List<int> ttsChapterDurationsWithPlaceholders({
   }
   return out;
 }
+
+/// 一章里哪些句在成品里放静音：没配上的（[failures]）与纯标点句（[silent]，见
+/// `ttsTextIsSilent`）。
+List<bool> ttsChapterPlaceholderMask({
+  required List<String> keys,
+  required Set<String> failures,
+  required Set<String> silent,
+}) => <bool>[
+  for (final String key in keys) failures.contains(key) || silent.contains(key),
+];
+
+/// 章清单里记的键序：没配上的句加 [kTtsPlaceholderKeyPrefix]（重跑时这章总会重新
+/// 合成、顺带再试失败句）；纯标点句记真键——它的静音就是成品，键序没变就沿用这章。
+List<String> ttsChapterManifestKeys({
+  required List<String> keys,
+  required Set<String> failures,
+}) => <String>[
+  for (final String key in keys)
+    failures.contains(key) ? ttsPlaceholderManifestKey(key) : key,
+];

@@ -194,8 +194,26 @@
     var mod = fushiNormalizeScanModifier(modifier);
     return !!(event && mod !== 'none' && event.key === FUSHI_SCAN_MODIFIER_KEYS[mod]);
   }
+  // 悬停扫描延迟（反馈 L4Vhk0hOjM）：与 content.js 同一个 storage.scanDelay，只在 none 模式生效；
+  // 下面两个函数是 content.js 同名函数的副本，shift-hover.test.js 交叉比对。
+  var scanDelayMs = 0;
+  var scanDelayTimer = null;
+  var FUSHI_SCAN_DELAY_MAX_MS = 2000;
+  function fushiNormalizeScanDelay(value) {
+    if (typeof value !== 'number' || !isFinite(value)) return 0;
+    var ms = Math.round(value);
+    return ms <= 0 ? 0 : Math.min(FUSHI_SCAN_DELAY_MAX_MS, ms);
+  }
+  function fushiEffectiveScanDelay(modifier, delay) {
+    return fushiNormalizeScanModifier(modifier) === 'none' ? fushiNormalizeScanDelay(delay) : 0;
+  }
+  function cancelScanDelay() {
+    if (scanDelayTimer === null) return;
+    clearTimeout(scanDelayTimer);
+    scanDelayTimer = null;
+  }
   try {
-    chrome.storage.local.get(['shiftHoverLookup', 'scanModifier'], function (saved) {
+    chrome.storage.local.get(['shiftHoverLookup', 'scanModifier', 'scanDelay'], function (saved) {
       try { if (chrome.runtime.lastError) return; } catch (_) { return; }
       if (saved && typeof saved.shiftHoverLookup === 'boolean') {
         shiftHoverLookup = saved.shiftHoverLookup;
@@ -203,11 +221,16 @@
       if (saved && typeof saved.scanModifier === 'string') {
         scanModifier = fushiNormalizeScanModifier(saved.scanModifier);
       }
+      if (saved && Object.prototype.hasOwnProperty.call(saved, 'scanDelay')) {
+        scanDelayMs = fushiNormalizeScanDelay(saved.scanDelay);
+      }
     });
     chrome.storage.onChanged.addListener(function (changes, area) {
       if (area !== 'local' || !changes) return;
       if (changes.shiftHoverLookup) shiftHoverLookup = changes.shiftHoverLookup.newValue !== false;
       if (changes.scanModifier) scanModifier = fushiNormalizeScanModifier(changes.scanModifier.newValue);
+      if (changes.scanDelay) scanDelayMs = fushiNormalizeScanDelay(changes.scanDelay.newValue);
+      if (changes.scanModifier || changes.scanDelay) cancelScanDelay();
     });
   } catch (_) { /* storage 不可用：按默认（开、Shift）走 */ }
   // 复杂词的 popupJson 可超过 2 MB，解析后的对象树通常还会膨胀数倍。只按“48 个词”
@@ -408,6 +431,8 @@
     var instantStep = parseFloat(theme['--fushi-instant-scroll-wheel-step']);
     window.__fushiPopupInstantScrollWheelStep =
       isFinite(instantStep) && instantStep > 0 ? instantStep : undefined;
+    // BUG-4935：弹窗显示偏好（自动展开行数、折叠、词频聚合、音调去重……）与页面弹窗同一解码点。
+    applyFushiPopupDisplayPrefs(theme);
     // 用户拖过尺寸（lookupUserResized）后，本会话内不再让主题下发的宽高盖掉用户的选择；
     // 拖拽结果经 popupSize 回写 app，下次会话由主题带回来。
     lookupThemeForBox = theme;
@@ -1117,12 +1142,21 @@
         lastPointer = {
           x: event.clientX, y: event.clientY, cue: cue, index: index, textEl: text,
         };
-        if (shiftHoverLookup && fushiScanModifierHeld(event, scanModifier)) schedulePointerLookup(lastPointer);
+        cancelScanDelay();
+        if (!shiftHoverLookup || !fushiScanModifierHeld(event, scanModifier)) return;
+        // none 模式的扫描延迟：指针停稳到点才扫这次的坐标，期间再动就重新计时。
+        var delay = fushiEffectiveScanDelay(scanModifier, scanDelayMs);
+        if (delay <= 0) { schedulePointerLookup(lastPointer); return; }
+        var pending = lastPointer;
+        scanDelayTimer = setTimeout(function () {
+          scanDelayTimer = null;
+          schedulePointerLookup(pending);
+        }, delay);
       }
       text.addEventListener('pointerenter', rememberPointer, { passive: true });
       text.addEventListener('pointermove', rememberPointer, { passive: true });
       text.addEventListener('pointerleave', function () {
-        if (lastPointer && lastPointer.textEl === text) lastPointer = null;
+        if (lastPointer && lastPointer.textEl === text) { lastPointer = null; cancelScanDelay(); }
       });
       row.addEventListener('click', function (event) {
         if (event.shiftKey) return;

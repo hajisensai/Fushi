@@ -7,6 +7,7 @@
 ///   rollover_hour: 4             # profile 设置里没有翻日时刻时的兜底
 ///   mining_target: auto          # auto | anki | review：互联制卡默认落到哪
 ///   mining_decks: {<uid>: <deckId>}
+///   profile_names: {<uid>: <名字>} # 服务端发布的 profile 名（空 = 用设备报的）
 /// ankiconnect:
 ///   enabled: false
 ///   bind: 127.0.0.1              # 非回环必须配 key（启动时拒绝裸开到局域网）
@@ -52,6 +53,7 @@ class ServerSrsConfig {
     this.rolloverHour = 4,
     this.miningTarget = ServerMiningTarget.auto,
     this.miningDecks = const <String, String>{},
+    this.profileNames = const <String, String>{},
   });
 
   factory ServerSrsConfig.fromYaml(Object? raw) {
@@ -71,6 +73,7 @@ class ServerSrsConfig {
       rolloverHour: hour,
       miningTarget: ServerMiningTarget.parse(_text(raw['mining_target'])),
       miningDecks: _stringMap(raw['mining_decks']),
+      profileNames: _stringMap(raw['profile_names']),
     );
   }
 
@@ -84,6 +87,11 @@ class ServerSrsConfig {
 
   /// 每份 profile 的制卡牌组 id；没有 = 那份的内置默认牌组。
   final Map<String, String> miningDecks;
+
+  /// 管理员给各份 profile 起的名字（键 = profile uid）。服务端发布自己的 profile 说明文件（`profile.json`）与
+  /// WebUI / 远程复习的选择列表用它；没有时取别的设备在同步位置里报的名字（server_srs.dart `_resolveName`）。
+  /// 只有服务端写过的新代集合（管理员手填目录名开的）没有任何设备报名字，靠这里命名。
+  final Map<String, String> profileNames;
 
   bool get enabled => profiles.isNotEmpty;
 
@@ -99,12 +107,14 @@ class ServerSrsConfig {
     int? rolloverHour,
     ServerMiningTarget? miningTarget,
     Map<String, String>? miningDecks,
+    Map<String, String>? profileNames,
   }) => ServerSrsConfig(
     profiles: profiles ?? this.profiles,
     defaultProfile: defaultProfile ?? this.defaultProfile,
     rolloverHour: rolloverHour ?? this.rolloverHour,
     miningTarget: miningTarget ?? this.miningTarget,
     miningDecks: miningDecks ?? this.miningDecks,
+    profileNames: profileNames ?? this.profileNames,
   );
 
   void writeYaml(StringBuffer b, String Function(String) q) {
@@ -117,6 +127,7 @@ class ServerSrsConfig {
     b.writeln('  rollover_hour: $rolloverHour');
     b.writeln('  mining_target: ${q(miningTarget.wire)}');
     _writeMap(b, 'mining_decks', miningDecks, q);
+    _writeMap(b, 'profile_names', profileNames, q);
   }
 }
 

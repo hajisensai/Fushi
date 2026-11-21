@@ -67,6 +67,14 @@ abstract interface class SystemOcrMangaRunner {
     required String language,
   });
 
+  /// 识别一整页内存像素（视频暂停 OCR 的播放器截帧）：不经编码 / 平台解码，切片与跨片
+  /// 合并同 [recognizePageBytes]。
+  Future<MokuroImage> recognizePagePixels(
+    OcrRgbaImage image, {
+    required String relativeUrl,
+    required String language,
+  });
+
   /// 本机能不能用（决定引擎选项出不出现）。
   Future<bool> isAvailable();
 
@@ -91,10 +99,10 @@ bool isSystemOcrModelUnavailableFailure(
     error.reason == kSystemOcrModelUnavailableReason;
 
 class SystemOcrMangaService implements SystemOcrMangaRunner {
-  SystemOcrMangaService({SystemOcrPlatform? platform})
+  SystemOcrMangaService({SystemOcrPixelPlatform? platform})
     : _platform = platform ?? const MethodChannelSystemOcr();
 
-  final SystemOcrPlatform _platform;
+  final SystemOcrPixelPlatform _platform;
 
   @override
   Future<bool> isAvailable() => _platform.isAvailable();
@@ -273,6 +281,29 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
     return buildSystemOcrPage(relativeUrl, mergeSystemOcrTiles(result, tiles));
   }
 
+  @override
+  Future<MokuroImage> recognizePagePixels(
+    OcrRgbaImage image, {
+    required String relativeUrl,
+    required String language,
+  }) async {
+    // 像素就在显示方向上，没有 EXIF 要转：切片直接按像素尺寸规划。
+    final List<OcrRect> tiles = planOcrPageTiles(image.width, image.height);
+    final SystemOcrPageResult result = await _platform
+        .recognizePixels(
+          image.rgba,
+          width: image.width,
+          height: image.height,
+          language: language,
+          tiles: <Rect>[
+            for (final OcrRect tile in tiles)
+              Rect.fromLTRB(tile.left, tile.top, tile.right, tile.bottom),
+          ],
+        )
+        .timeout(kSystemOcrPageTimeout);
+    return buildSystemOcrPage(relativeUrl, mergeSystemOcrTiles(result, tiles));
+  }
+
   Future<String> _writePayload(
     String imageDirPath,
     List<MokuroImage> images,
@@ -284,6 +315,7 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
         engine: 'system_ocr',
         engineSignature: systemOcrEngineSignature(language),
         schemaVersion: 1,
+        completedAt: DateTime.now().toUtc(),
       ),
     );
     final String output = p.join(
@@ -302,8 +334,16 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
 /// （后台 isolate）转成 JPEG：irot / imir 已应用、不带 EXIF，切片与识别坐标都落在显示
 /// 方向上——与导入时记录的页面尺寸同一坐标系。其余格式原样返回；转换失败也原样返回，
 /// 由平台按原来的方式报错。
+///
+/// TIFF（整卷 OCR 扫用户目录里的老扫描页）同理：Android 的 ImageDecoder 不认 TIFF，
+/// 一律先无损转成 PNG（同样按方向标签转正、不带方向元数据）。
 Future<Uint8List> systemOcrDecodableBytes(Uint8List bytes) async {
-  if (probeImageNative(bytes)?.format != FfcImageFormat.avif) return bytes;
+  final FfcImageFormat? format = probeImageNative(bytes)?.format;
+  if (format == FfcImageFormat.tiff) {
+    final Uint8List? png = await Isolate.run(() => encodeImageAsPng(bytes));
+    return png ?? bytes;
+  }
+  if (format != FfcImageFormat.avif) return bytes;
   final Uint8List? jpeg = await Isolate.run(
     () => encodeImageAsJpeg(bytes, quality: 95),
   );

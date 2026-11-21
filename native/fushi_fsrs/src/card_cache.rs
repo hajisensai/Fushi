@@ -255,7 +255,7 @@ fn decode_entities(text: &str) -> String {
         .into_owned()
 }
 
-/// 笔记缓存的 `sort_field`：首字段 `ankiStripHtml(..).trim()`，最多 200 个 UTF-16 码元。
+/// 笔记缓存的 `sort_field`：笔记类型的排序字段（registers.rs `note_type_view` 的 `se`，缺省第一个字段）`ankiStripHtml(..).trim()`，最多 200 个 UTF-16 码元。
 pub fn sort_field(first_field: &str) -> String {
     let stripped = decode_entities(&strip_tags(first_field));
     truncate_utf16(dart_trim(&stripped), 200)

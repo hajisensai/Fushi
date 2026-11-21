@@ -6,9 +6,12 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/item_scrape/item_scrape_store.dart';
 import 'package:fushi_engine/media/metadata/books/anilist_novels.dart'
     show parseAniListMediaUrl;
+import 'package:fushi_engine/media/metadata/books/itunes_music.dart'
+    show parseItunesUrl;
 import 'package:fushi_engine/media/metadata/books/rakuten_books.dart';
 import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart';
 import 'package:fushi_engine/media/metadata/image_download.dart';
+import 'package:fushi_engine/privacy/media_nsfw.dart' show isMediaNsfwEffective;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/media_cover_service.dart';
@@ -25,6 +28,18 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 /// 封面下载器（测试注入桩）；[headers] 是源要求的额外请求头。
 typedef BookCoverDownloader =
     Future<File> Function(String url, {Map<String, String>? headers});
+
+/// 一次搜索的结果：给用户看的候选 + 因作品没标 NSFW 而藏起来的 NSFW 候选条数
+/// （弹窗据此提示「标为 NSFW 后显示」）。AniList 在服务端就过滤掉了成人向条目，
+/// 那部分不计入 [hiddenNsfw]。
+typedef BookScrapeSearchResult = ({
+  List<BookScrapeCandidate> candidates,
+  int hiddenNsfw,
+});
+
+/// 书在 NSFW 标记表（`media_nsfw_flags`）里的宿主身份：EPUB / 漫画 / PDF =
+/// `(epub, bookKey)`，独立字幕书 = `(srt, uid)`，与书架菜单的「NSFW」开关同一口径。
+typedef BookNsfwHost = ({TagHostKind kind, String entryKey});
 
 /// 书的元数据写回会碰到的字段。
 enum BookMetadataField {
@@ -186,6 +201,51 @@ class BookMetadataScrapeFacade {
     Map<String, String>? headers,
   }) => downloadImageToTempFile(url, headers: headers);
 
+  /// [item] 的 NSFW 宿主身份（认不出为 null）。
+  static BookNsfwHost? nsfwHostForItem(MediaItem item) {
+    final String? bookKey = ReaderFushiSource.parseBookKey(
+      item.mediaIdentifier,
+    );
+    if (bookKey != null) return (kind: TagHostKind.epub, entryKey: bookKey);
+    final String? srtUid = ReaderFushiSource.parseSrtBookUid(
+      item.mediaIdentifier,
+    );
+    if (srtUid != null && srtUid.isNotEmpty) {
+      return (kind: TagHostKind.srt, entryKey: srtUid);
+    }
+    return null;
+  }
+
+  /// [host] 的**有效** NSFW（自己被标，或在 NSFW 合集里）。刮削搜索据此决定显不显示
+  /// NSFW 候选；null（认不出的书）按没标处理。
+  static Future<bool> isNsfwHost(FushiDatabase db, BookNsfwHost? host) async =>
+      host != null && await isMediaNsfwEffective(db, host.kind, host.entryKey);
+
+  /// [item] 是不是「以有声书导入的歌曲」：同步文件是 LRC 歌词（字幕书的字幕文件，或
+  /// EPUB 有声书的对齐文件）。是的话刮削弹窗默认选音乐封面源（[BookScrapeSource.itunes]），
+  /// 不再先去 Bangumi 搜出一堆动画 / 漫画条目（应用内反馈 T_KdsLEY9l）。
+  static Future<bool> isSongForItem(FushiDatabase db, MediaItem item) async {
+    final String? srtUid = ReaderFushiSource.parseSrtBookUid(
+      item.mediaIdentifier,
+    );
+    if (srtUid != null) {
+      final SrtBookRow? row = await db.getSrtBookByUid(srtUid);
+      return row != null && isLyricsSyncPath(row.srtPath);
+    }
+    final String? bookKey = ReaderFushiSource.parseBookKey(
+      item.mediaIdentifier,
+    );
+    if (bookKey == null) return false;
+    final AudiobookRow? audiobook = await db.getAudiobookByBookKey(bookKey);
+    if (audiobook == null) return false;
+    return audiobook.alignmentFormat.trim().toLowerCase() == 'lrc' ||
+        isLyricsSyncPath(audiobook.alignmentPath);
+  }
+
+  /// 同步文件路径是不是 LRC 歌词（按扩展名，大小写不敏感）。
+  static bool isLyricsSyncPath(String path) =>
+      p.extension(path.trim()).toLowerCase() == '.lrc';
+
   /// [source] 在当前凭据下能不能用（楽天要 applicationId + accessKey）。
   bool isSourceAvailable(BookScrapeSource source) =>
       !source.needsCredentials || _scraper.rakutenAvailable;
@@ -209,12 +269,46 @@ class BookMetadataScrapeFacade {
   /// subjectId 去重；其余走关键词搜索。DLsite：贴作品页 URL / 编号 → 直取；其余按名
   /// 搜音声 / 漫画 / 小说。AniList：贴 `anilist.co/manga/<id>` = 按 id 直取，其余按名搜
   /// 轻小说。openBD：只按输入里的 ISBN 查（没有 ISBN → 空表）。NDL / 楽天：输入里有
-  /// ISBN 按 ISBN，否则按书名。失败抛 [BookScrapeException]。
+  /// ISBN 按 ISBN，否则按书名。iTunes：贴 Apple Music 链接 / 数字 id = 按 id 直取（数字直取
+  /// 不中再当歌名搜），其余按歌名 / 歌手搜歌曲。失败抛 [BookScrapeException]。
+  ///
+  /// NSFW 候选（[BookScrapeCandidate.isAdult]）只在 [includeNsfw] 时返回——这是对**所有
+  /// 源**统一的一条规则，跟随作品自己的 NSFW 标记（拍板台 pr3497）；不再靠「把 DLsite
+  /// 单独做成一个源、默认不选」来把成人向结果挡在普通书搜索外。
   Future<List<BookScrapeCandidate>> search({
     required BookScrapeSource source,
     required String query,
+    bool includeNsfw = false,
+  }) async => (await searchDetailed(
+    source: source,
+    query: query,
+    includeNsfw: includeNsfw,
+  )).candidates;
+
+  /// 同 [search]，另报因 [includeNsfw] 为 false 而藏起来的 NSFW 候选条数。
+  Future<BookScrapeSearchResult> searchDetailed({
+    required BookScrapeSource source,
+    required String query,
+    bool includeNsfw = false,
   }) async {
-    final String keyword = query.trim();
+    final List<BookScrapeCandidate> all = await _searchAll(
+      source,
+      query.trim(),
+      includeNsfw: includeNsfw,
+    );
+    if (includeNsfw) return (candidates: all, hiddenNsfw: 0);
+    final List<BookScrapeCandidate> shown = <BookScrapeCandidate>[
+      for (final BookScrapeCandidate c in all)
+        if (!c.isAdult) c,
+    ];
+    return (candidates: shown, hiddenNsfw: all.length - shown.length);
+  }
+
+  Future<List<BookScrapeCandidate>> _searchAll(
+    BookScrapeSource source,
+    String keyword, {
+    required bool includeNsfw,
+  }) async {
     if (keyword.isEmpty) return const <BookScrapeCandidate>[];
     switch (source) {
       case BookScrapeSource.dlsite:
@@ -230,13 +324,26 @@ class BookMetadataScrapeFacade {
               ? const <BookScrapeCandidate>[]
               : <BookScrapeCandidate>[c];
         }
-        return _scraper.searchAniList(keyword);
+        return _scraper.searchAniList(keyword, includeNsfw: includeNsfw);
       case BookScrapeSource.openbd:
         return _scraper.searchOpenBd(keyword);
       case BookScrapeSource.ndl:
         return _scraper.searchNdl(keyword);
       case BookScrapeSource.rakuten:
         return _scraper.searchRakuten(keyword);
+      case BookScrapeSource.itunes:
+        // 贴 Apple Music / iTunes 链接（或纯数字 id）= 按 id 直取。
+        final String? itunesId = parseItunesUrl(keyword);
+        if (itunesId != null) {
+          final BookScrapeCandidate? c = await _scraper.fetchCatalogById(
+            source,
+            itunesId,
+          );
+          if (c != null) return <BookScrapeCandidate>[c];
+          // 纯数字也可能是歌名（「1984」「22」）：直取不中再按关键词搜。
+          if (itunesId != keyword) return const <BookScrapeCandidate>[];
+        }
+        return _scraper.searchItunes(keyword);
       case BookScrapeSource.mangabaka:
         return _searchMangaBaka(keyword);
       case BookScrapeSource.bangumi:
@@ -345,7 +452,8 @@ class BookMetadataScrapeFacade {
     BookScrapeSource.anilist ||
     BookScrapeSource.openbd ||
     BookScrapeSource.ndl ||
-    BookScrapeSource.rakuten => _scraper.fetchCatalogById(source, id.trim()),
+    BookScrapeSource.rakuten ||
+    BookScrapeSource.itunes => _scraper.fetchCatalogById(source, id.trim()),
   };
 
   /// 选中候选后把封面下到临时文件（失败抛 [ImageDownloadException]）。源要求的请求头

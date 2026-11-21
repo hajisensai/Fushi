@@ -43,12 +43,10 @@ import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
         musicDetailHeroGap;
 import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart'
-    show MusicMenuAction;
+    show MusicItemMenu, MusicMenuAction;
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_row_surface.dart';
 import 'package:fushi/src/pages/implementations/music/music_collection_view.dart';
-import 'package:fushi/src/utils/adaptive/shell_style.dart'
-    show shellContentLayoutOf;
 import 'package:fushi/src/utils/components/fushi_cover_block.dart'
     show FushiCoverBlockSize;
 import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'
@@ -131,6 +129,9 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
   late MusicDiscSourceRow? disc = widget.disc;
   StreamSubscription<Set<TableUpdate>>? _dbSub;
   bool _busy = false;
+
+  /// 已经在退回曲库（专辑被移除）。
+  bool _leaving = false;
 
   AppModel get _app => ref.read(appProvider);
 
@@ -318,15 +319,22 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
   Future<void> _reload() async {
     final FushiDatabase db = _app.database;
     final MusicAlbumRow? a = await db.getMusicAlbum(album.albumUid);
-    if (!mounted) return;
+    if (!mounted || _leaving) return;
     if (a == null) {
       // 专辑被移除（光盘从曲库移除）：退回曲库。
-      unawaited(Navigator.of(context).maybePop());
+      _leave();
       return;
     }
     final List<MusicTrackRow> rows = sortAlbumTracks(
       await db.listMusicTracks(albumUid: album.albumUid),
     );
+    if (!mounted || _leaving) return;
+    if (a.discUid == null && rows.isEmpty) {
+      // 普通专辑的曲目全被移出音乐库（整张移除 / 多选全移除）：专辑墙已不列它，退回曲库；
+      // 撤销提示挂在曲库那层的 ScaffoldMessenger 上，照样能点。
+      _leave();
+      return;
+    }
     final String? discUid = a.discUid;
     final MusicDiscSourceRow? d = discUid == null
         ? null
@@ -340,17 +348,31 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
     });
   }
 
-  Future<void> _runDisc(MusicDiscMenuAction action) async {
-    final MusicDiscSourceRow? d = disc;
-    if (d == null || _busy) return;
+  /// 退回曲库（只退一次：表变更会连发好几次重读）。只摘本页这条路由：本页上面压着别的
+  /// 页（播放页、别的详情）时 `maybePop` 会把顶上那页弹掉，专辑页反而留着。
+  void _leave() {
+    if (_leaving) return;
+    _leaving = true;
+    final NavigatorState navigator = Navigator.of(context);
+    final ModalRoute<Object?>? route = ModalRoute.of(context);
+    if (route == null || route.isCurrent) {
+      unawaited(navigator.maybePop());
+    } else if (route.isActive) {
+      navigator.removeRoute(route);
+    }
+  }
+
+  /// 专辑动作（光盘的导入 / 对号 / 移除整张盘；普通专辑整张移出音乐库）。
+  Future<void> _runAlbumAction(MusicAlbumMenuAction action) async {
+    if (_busy) return;
     setState(() => _busy = true);
     try {
-      await runMusicDiscMenuAction(
+      await runMusicAlbumMenuAction(
         context: context,
         app: _app,
         action: action,
         album: album,
-        disc: d,
+        disc: disc,
         tracks: tracks,
       );
     } finally {
@@ -473,7 +495,9 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
             key: const ValueKey<String>('music_disc_import'),
             onPressed: _busy
                 ? null
-                : () => unawaited(_runDisc(MusicDiscMenuAction.importChapters)),
+                : () => unawaited(
+                    _runAlbumAction(MusicAlbumMenuAction.importChapters),
+                  ),
             icon: const FushiIcon(FushiIcons.toc),
             label: Text(
               musicDiscImportLabel(disc, hasTracks: tracks.isNotEmpty),
@@ -487,7 +511,8 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
               key: const ValueKey<String>('music_disc_lookup'),
               onPressed: _busy
                   ? null
-                  : () => unawaited(_runDisc(MusicDiscMenuAction.lookup)),
+                  : () =>
+                        unawaited(_runAlbumAction(MusicAlbumMenuAction.lookup)),
               icon: const FushiIcon(FushiIcons.search),
               label: Text(t.music_disc_lookup),
             ),
@@ -498,12 +523,24 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
             key: const ValueKey<String>('music_disc_remove'),
             onPressed: _busy
                 ? null
-                : () => unawaited(_runDisc(MusicDiscMenuAction.remove)),
+                : () => unawaited(_runAlbumAction(MusicAlbumMenuAction.remove)),
             icon: const FushiIcon(FushiIcons.delete),
             label: Text(t.music_disc_remove),
           ),
         ),
-      ],
+      ] else if (tracks.isNotEmpty && _app.isDatabaseReady)
+        // 整张专辑移出音乐库（拍板台 mmXVwo0Ibv）：磁盘文件不动，带撤销。
+        FushiPressScale(
+          child: FushiFilledButton.tonalIcon(
+            size: FushiButtonSize.m,
+            key: const ValueKey<String>('music_album_remove'),
+            onPressed: _busy
+                ? null
+                : () => unawaited(_runAlbumAction(MusicAlbumMenuAction.remove)),
+            icon: const FushiIcon(FushiIcons.removeCircle),
+            label: Text(t.music_action_remove_from_library),
+          ),
+        ),
     ];
     final bool notImported = disc != null && tracks.isEmpty;
 
@@ -619,7 +656,7 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
         if (musicTrackRowSurfaceActive(context))
           musicViewStyleToggle(MusicViewKind.tracks, style),
       ],
-      body: _withSelection(
+      body: (BuildContext context) => _withSelection(
         albumMap,
         FushiEntranceScope(
           // Builder：顶部让位读的是脚手架给正文的 MediaQuery（页头高度在里面），
@@ -767,9 +804,9 @@ class _AlbumDiscListState extends ConsumerState<_AlbumDiscList> {
       key: ValueKey<String>('music-album-track-check-${tracks[i].trackUid}'),
       selected: sel.isSelected(tracks[i].trackUid),
     );
-    // 与曲目列表同一份本地曲目菜单（右键 / 上下文菜单键）：播放 / 入队 / 详情 / 加入歌单
-    // / 从音乐库移除，末尾追加「多选」。
-    Widget withMenu(int i, Widget row) => musicLocalTrackMenu(
+    // 与曲目列表同一份本地曲目菜单（右键 / 上下文菜单键 / 行尾「⋯」/ 色块长按）：播放 /
+    // 入队 / 详情 / 加入歌单 / 从音乐库移除，末尾追加「多选」。
+    MusicItemMenu menuOf(int i) => musicLocalTrackMenu(
       context,
       tracks[i],
       onPlay: () => play(i),
@@ -781,7 +818,8 @@ class _AlbumDiscListState extends ConsumerState<_AlbumDiscList> {
           run: (_) async => sel.enter(tracks[i].trackUid),
         ),
       ],
-    ).contextMenu(child: row);
+    );
+    Widget withMenu(int i, Widget row) => menuOf(i).contextMenu(child: row);
     Widget? subtitleOf(int i) => musicTrackSubtitleWithResume(
       tracks[i],
       tracks[i].artistCredit == null ||
@@ -790,12 +828,10 @@ class _AlbumDiscListState extends ConsumerState<_AlbumDiscList> {
           : Text(tracks[i].artistCredit!),
       resumes[i],
     );
-    if (widget.style == MusicViewStyle.blocks &&
-        musicTrackRowSurfaceActive(context)) {
+    if (musicCoverBlocksActive(context, widget.style)) {
       // 一碟十几首、排在外层列表里：盒子版色块（一次建完），与库页同一套几何。
       // 外层列表已整块错峰进场，格子不再各自进场。
       return FushiCoverBlocks(
-        layout: shellContentLayoutOf(context),
         staggerEntrance: false,
         itemCount: tracks.length,
         itemBuilder: (BuildContext context, int i, FushiCoverBlockSize size) =>
@@ -826,7 +862,9 @@ class _AlbumDiscListState extends ConsumerState<_AlbumDiscList> {
                         ),
                         playing: playing,
                         onTap: () => tap(i),
-                        onLongPress: () => longPress(i),
+                        // 色块不放「⋯」：平时长按弹菜单（多选在菜单里），多选态长按 = 勾选。
+                        onLongPress: sel.active ? () => longPress(i) : null,
+                        menu: menuOf(i),
                       ),
                 ),
               ),
@@ -859,7 +897,10 @@ class _AlbumDiscListState extends ConsumerState<_AlbumDiscList> {
                       playing: playing,
                       onTap: () => tap(i),
                       onLongPress: () => longPress(i),
-                      trailing: <Widget>[if (sel.active) check(i)],
+                      // 触屏没有右键：行尾「⋯」打开与右键同一份菜单。
+                      trailing: sel.active
+                          ? <Widget>[check(i)]
+                          : <Widget>[menuOf(i).button()],
                     ),
               ),
             ),
@@ -903,7 +944,7 @@ class _AlbumDiscListState extends ConsumerState<_AlbumDiscList> {
                         musicTrackTimeLabel(tracks[i].durationMs, resumes[i]),
                         style: context.fushiType.bodySmall,
                       ),
-                      if (sel.active) check(i),
+                      if (sel.active) check(i) else menuOf(i).button(),
                     ],
                   ),
                 ),

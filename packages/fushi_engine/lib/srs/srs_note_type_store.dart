@@ -194,8 +194,11 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
 
   // ------------------------------------------------------------------ 新建 / 删除
 
+  /// 返回内核落下的规范 ID（回包 `entityWrites`，[writeEdits] 的 `onRecords`）。
   Future<String> _writeNewType(SrsNewNoteType nt) async {
+    String landed = nt.id;
     await writeEdits(
+      onRecords: (List<String> ids) => landed = ids.single,
       <SrsEditSpec>[
         SrsEditSpec(SrsEntityKind.noteType, nt.id, SrsFieldKeys.name, nt.name),
         for (final SrsFieldDef f in nt.fields)
@@ -236,10 +239,24 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
             SrsFieldKeys.freqField,
             nt.freqFieldId,
           ),
+        if (nt.sortFieldId != null)
+          SrsEditSpec(
+            SrsEntityKind.noteType,
+            nt.id,
+            SrsFieldKeys.sortField,
+            nt.sortFieldId,
+          ),
+        if (nt.browseFieldIds != null)
+          SrsEditSpec(
+            SrsEntityKind.noteType,
+            nt.id,
+            SrsFieldKeys.browseFields,
+            nt.browseFieldIds,
+          ),
       ],
       records: <SrsEntityRecord>[nt.record],
     );
-    return nt.id;
+    return landed;
   }
 
   /// 新建一个基础笔记类型。
@@ -455,6 +472,27 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
           SrsFieldKeys.freqField,
           null,
         ),
+      if (t.sortFieldId == fieldId)
+        SrsEditSpec(
+          SrsEntityKind.noteType,
+          noteTypeId,
+          SrsFieldKeys.sortField,
+          null,
+        ),
+      // 删的是最后一个选中的副字段：回到自动（null），不写空列表——空列表是「不显示副字段」。
+      if (t.browseFieldIds?.contains(fieldId) ?? false)
+        SrsEditSpec(
+          SrsEntityKind.noteType,
+          noteTypeId,
+          SrsFieldKeys.browseFields,
+          switch (<String>[
+            for (final String id in t.browseFieldIds!)
+              if (id != fieldId) id,
+          ]) {
+            final List<String> rest when rest.isNotEmpty => rest,
+            _ => null,
+          },
+        ),
     ]);
   }
 
@@ -506,6 +544,28 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
           noteTypeId,
           SrsFieldKeys.freqField,
           fieldId,
+        ),
+      ]);
+
+  /// 排序字段（浏览页主字段、「排序字段」排序列、笔记缓存 `sort_field`）；null = 清掉显式设置，回到第一个字段。
+  Future<void> setSortField(String noteTypeId, String? fieldId) =>
+      writeEdits(<SrsEditSpec>[
+        SrsEditSpec(
+          SrsEntityKind.noteType,
+          noteTypeId,
+          SrsFieldKeys.sortField,
+          fieldId,
+        ),
+      ]);
+
+  /// 浏览预览的副字段（按字段顺序显示，最多 [srsBrowseFieldsMax] 个）；null = 回到自动。
+  Future<void> setBrowseFields(String noteTypeId, List<String>? fieldIds) =>
+      writeEdits(<SrsEditSpec>[
+        SrsEditSpec(
+          SrsEntityKind.noteType,
+          noteTypeId,
+          SrsFieldKeys.browseFields,
+          fieldIds,
         ),
       ]);
 

@@ -94,7 +94,7 @@ void main() {
       collectionId,
       <CollectionRelationsCompanion>[
         CollectionRelationsCompanion.insert(
-          collectionId: collectionId,
+          collectionId: Value<int?>(collectionId),
           relationType: 'sequel',
           sortIndex: const Value<int>(0),
           targetCollectionId: const Value<int?>(null),

@@ -1,7 +1,7 @@
-//! 按集合的两条小读命令（G7-4e）：`binding_get`、`profile_footprint`。**还没接分发器**：协议 3 的
-//! `SrsCore::binding_get`（`store/binding.rs`）与 `SrsCore::profile_footprint`（`store/profile_data.rs`）原地不动，
-//! 分发器在整批推送里一次切到这里（规划 §2.2 S1）。协议 3 按 profile uid 查，这里按本机集合号（profile → 集合由
-//! [Truth::binding_of] 换算，接线时做）。
+//! 按集合的两条小读命令（G7-4e）：`binding_get`、`profile_footprint`。已接分发器（`dispatch.rs`）；协议 3 的
+//! `SrsCore::binding_get`（`store/binding.rs`）与 `SrsCore::profile_footprint`（`store/profile_data.rs`）不再经
+//! 分发器调用（冻结）。
+//! 协议 3 按 profile uid 查，这里按本机集合号（profile → 集合由分发器经 [Truth::binding_of] 换算）。
 //!
 //! # 形状（与协议 3 逐键相同）
 //!
@@ -58,6 +58,16 @@ pub fn profile_footprint(t: &Truth<'_>, col: i64) -> Result<Value, String> {
         let reviews = reviews(t, col)?;
         let rows = rows(t, col)?;
         Ok(json!({"notes": notes, "cards": cards, "reviews": reviews, "rows": rows}))
+    })
+}
+
+/// `profile_footprint` 按 profile（分发器接的是这一条）：这个 profile 在本机没有集合（从没在新代里打开过、或已经被
+/// `profile_purge` 删掉）= 全 0——库里没有它的任何东西，与 `profile_purge` 对没绑定的 profile 回全 0 同口径。删 profile
+/// 的确认框、删完的核对、存量扫描都要能对这种 profile 数数，不能报「没有集合」让删除走不下去。绑定与计数同一个读快照。
+pub fn profile_footprint_of(t: &Truth<'_>, profile: &str) -> Result<Value, String> {
+    snapshot(t, |t| match t.binding_of(profile)? {
+        Some(b) => profile_footprint(t, b.col),
+        None => Ok(json!({"notes": 0, "cards": 0, "reviews": 0, "rows": 0})),
     })
 }
 

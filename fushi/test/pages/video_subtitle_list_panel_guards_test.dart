@@ -41,15 +41,16 @@ void main() {
     /// TODO-590 batch5：`_subtitleJumpSidePanel` 已抽到 `video_fushi/subtitle.part.dart`
     /// 并成为合并语料里的最后一个方法（其后只剩 extension 闭合 `}`），不再有「下一个顶层
     /// 方法签名」可作结束端点，故改用花括号配对截取方法体。
-    String pushAsidePanelBody() {
-      final int start = src.indexOf('Widget _subtitleJumpSidePanel(');
+    String methodBody(String signature) {
+      final int start = src.indexOf(signature);
       expect(
         start,
         greaterThanOrEqualTo(0),
         reason: '需有 push-aside 字幕面板列 _subtitleJumpSidePanel',
       );
-      final int open = src.indexOf('{', start);
-      expect(open, greaterThan(start), reason: '_subtitleJumpSidePanel 应有方法体');
+      // 方法体从参数表闭合后的 `) {` 起算（builder 有 `{required ...}` 命名参数）。
+      final int open = src.indexOf(') {', start) + 2;
+      expect(open, greaterThan(start), reason: '$signature 应有方法体');
       int depth = 0;
       int end = src.length;
       for (int i = open; i < src.length; i++) {
@@ -66,6 +67,12 @@ void main() {
       expect(end, greaterThan(start), reason: '_subtitleJumpSidePanel 应正常闭合');
       return src.substring(start, end);
     }
+
+    // 拍板台 P9AS-fvjJh：面板构造抽成 _buildSubtitleJumpPanel（竖屏页签复用），
+    // push-aside 面板 = 侧栏外壳 + 这个 builder，两段一起判。
+    String pushAsidePanelBody() =>
+        '${methodBody('Widget _subtitleJumpSidePanel(')}\n'
+        '${methodBody('Widget _buildSubtitleJumpPanel(')}';
 
     test('push-aside 字幕面板直接渲染 VideoSubtitleJumpPanel（自带 header，不双标题）', () {
       final String body = pushAsidePanelBody();

@@ -173,16 +173,19 @@ class MediaServerVideoLibrary {
   /// 加入媒体库：电影一行；剧把**全部季**的集逐页取回各落一行，归进剧名合集。
   /// 已在库的集跳过（再点一次只补新集，不动已看 / 已下载的行）。返回新加的条数。
   /// 之后服务器上新出的集由后台库更新探针补（`video_library_update_probe.dart`）。
+  /// 用户亲手点的：用户删过的剧名合集就此重建（BUG-5014）。
   Future<int> addToLibrary(
     MediaServerBrowser browser,
     MediaServerItem work,
-  ) async => (await addMissing(browser, work)).length;
+  ) async => (await addMissing(browser, work, userIntent: true)).length;
 
-  /// [addToLibrary] 的本体：返回这次新加的条目（探针据此投递新集提醒）。
+  /// [addToLibrary] 的本体：返回这次新加的条目（探针据此投递新集提醒）。探针是
+  /// 被动刷新，[userIntent] 保持 false——用户删掉的合集不被它复活。
   Future<List<RemoteVideoInfo>> addMissing(
     MediaServerBrowser browser,
-    MediaServerItem work,
-  ) async {
+    MediaServerItem work, {
+    bool userIntent = false,
+  }) async {
     final List<MediaServerItem> leaves = await _playableLeavesOf(browser, work);
     final RemoteCollectionAdoptionService adoption =
         RemoteCollectionAdoptionService(database);
@@ -212,7 +215,7 @@ class MediaServerVideoLibrary {
         addedInfos.add(info);
       }
       // 已在库的集也重新收养一次：合集被用户删掉后重新加入能回到合集里。
-      await adoption.adoptVideo(info);
+      await adoption.adoptVideo(info, userIntent: userIntent);
     }
     if (added.isNotEmpty) {
       await repository.recordVideoImportActivity(
@@ -347,7 +350,7 @@ class MediaServerVideoLibrary {
   }) async {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
-    if (lease == null) throw StateError('视频刮削资料正在清理');
+    if (lease == null) throw VideoScrapeMaintenanceActiveError();
     try {
       return await VideoCoverMutationGate.runExclusive(() async {
         if (bytes != null) {
@@ -409,6 +412,10 @@ class MediaServerLaunchUnavailable implements Exception {
 /// 的快照照常起播。这一次的结果由客户端留给随后的取流 / 取字幕
 /// （`LaunchItemDetailMemo`）：成功则同一份详情不再重取，失败则取流立刻抛同一个
 /// 错——这里不判失败，也就不用分辨「连不上」和「条目不可播」。
+///
+/// 换线路（gap-remote-7）不在这里做：客户端的请求漏斗在传输失败时经
+/// `MediaServerRouteFailover` 换到另一条可达线路、把这次详情请求重试一遍，客户端
+/// 自己改走新线路（之后取的流地址带新 host），起播用的就是它。
 /// [playlistCollectionId] 为空时只有这一条。
 Future<
   ({
@@ -483,14 +490,18 @@ buildMediaServerLaunch({
     (RemoteVideoInfo m) => m.id == spec.itemId,
   );
   if (startIndex < 0) startIndex = 0;
-  try {
-    final MediaServerItem detail = await browser.itemDetail(
+  Future<void> fetchLaunchDetail(MediaServerBrowser from) async {
+    final MediaServerItem detail = await from.itemDetail(
       spec.itemId,
       forLaunch: true,
     );
     if (detail.isPlayable) {
-      members[startIndex] = browser.toRemoteVideoInfo(detail);
+      members[startIndex] = from.toRemoteVideoInfo(detail);
     }
+  }
+
+  try {
+    await fetchLaunchDetail(browser);
   } on Object catch (error) {
     debugPrint('[media-server-library] detail ${spec.itemId} failed: $error');
   }

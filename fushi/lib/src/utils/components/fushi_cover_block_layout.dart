@@ -808,11 +808,18 @@ class FushiCoverBlockStrip extends StatelessWidget {
     this.rows = 1,
     this.tileHeight,
     this.tileWidth,
+    this.besideLeading = false,
     super.key,
   });
 
   final int itemCount;
   final FushiCoverBlockItemBuilder itemBuilder;
+
+  /// 横滑条起始侧紧挨着另一张卡（视频首页「继续观看」主卡右侧那两行）：
+  /// 起始侧不外扩悬停余量，视口就从条自己的起点开始，滑走的卡在视口边上被
+  /// 裁掉，不会伸进与主卡之间的间距、盖住主卡的圆角（2026-11-20 用户截图：
+  /// 主卡右缘两个角变直角，横滑卡在主卡边上竖直硬切）。
+  final bool besideLeading;
   final double spacing;
 
   /// 单行排法（[leadingHero] 为 false）每格的尺寸：默认半高卡；
@@ -893,23 +900,6 @@ class FushiCoverBlockStrip extends StatelessWidget {
   /// 横滑条的 key（测试按它找那一行）。
   final Key? stripKey;
 
-  /// 悬停放大 / 投影在滚动区里要的余量：滚动区按这个量向四周外扩（内容起点
-  /// 不变），半高卡的投影（[kFushiCoverBlockHalfShadowExtent]）连同悬停放大
-  /// （1.05 倍，半高卡上下各约 3、左右各约 7.5）整段留在视口里，
-  /// 不被视口矩形裁出一条带硬边的阴影带（2026-11-12 用户：「继续阅读底部阴影有点
-  /// 大，感觉总体不协调」）。左右取页边距 20：再宽就画进侧栏，投影尾巴那 1～2px
-  /// 的淡影被页边裁掉看不出来。
-  static final EdgeInsets _kBleed = EdgeInsets.fromLTRB(
-    20,
-    kFushiCoverBlockHalfShadowExtent.top + 3,
-    20,
-    kFushiCoverBlockHalfShadowExtent.bottom + 5,
-  );
-
-  /// 整块（[FushiCoverBlockSize.regular]）的投影（模糊 26、下移 10）连同悬停放大
-  /// 要的余量。
-  static const EdgeInsets _kRegularBleed = EdgeInsets.fromLTRB(20, 22, 20, 42);
-
   Widget _cell(BuildContext context, int i, FushiCoverBlockSize size) =>
       _maybeStaggered(
         staggerEntrance: staggerEntrance,
@@ -918,7 +908,7 @@ class FushiCoverBlockStrip extends StatelessWidget {
       );
 
   /// 横滑条：[rows] 行半高卡，从第 [first] 项排到末项。视口向四周外扩
-  /// [_kBleed]（内容起点不变）。
+  /// [fushiCoverBlockBleed]（内容起点不变）。
   Widget _strip(
     BuildContext context, {
     required int rows,
@@ -926,19 +916,29 @@ class FushiCoverBlockStrip extends StatelessWidget {
     int first = 1,
     FushiCoverBlockSize size = FushiCoverBlockSize.half,
     double? tileHeight,
+    bool clipLeading = false,
   }) {
     final double half = tileHeight ?? rowHeight(spacing: spacing);
     final double height = rows * half + (rows - 1) * spacing;
     final int count = itemCount - first;
-    final EdgeInsets bleed = size == FushiCoverBlockSize.regular
-        ? _kRegularBleed
-        : _kBleed;
+    final bool rtl = Directionality.of(context) == TextDirection.rtl;
+    // 投影 / 悬停放大的余量（[fushiCoverBlockBleed]）：视口向四周外扩，内容起点
+    // 不变（2026-11-12 用户：「继续阅读底部阴影有点大，感觉总体不协调」）。
+    final EdgeInsets baseBleed = fushiCoverBlockBleed(size);
+    // 起始侧紧挨着别的卡时不外扩（见 [besideLeading]）：外扩量比卡间距大，视口
+    // 会伸进主卡里，横滑卡就画在主卡圆角之上。
+    final EdgeInsets bleed = !clipLeading
+        ? baseBleed
+        : rtl
+        ? baseBleed.copyWith(right: 0)
+        : baseBleed.copyWith(left: 0);
     final EdgeInsets padding = bleed;
     Widget item(BuildContext context, int i) => _cell(context, i + first, size);
     // 单行 / 多行两种滚动件各自包 [HorizontalDragScrollable]（桌面鼠标可横拖）。
-    final Widget list = rows == 1
+    Widget list(ScrollController? controller) => rows == 1
         ? HorizontalDragScrollable(
             child: ListView.separated(
+              controller: controller,
               scrollDirection: Axis.horizontal,
               physics: desktopAwareScrollPhysics(),
               padding: padding,
@@ -951,6 +951,7 @@ class FushiCoverBlockStrip extends StatelessWidget {
           )
         : HorizontalDragScrollable(
             child: GridView.builder(
+              controller: controller,
               scrollDirection: Axis.horizontal,
               physics: desktopAwareScrollPhysics(),
               padding: padding,
@@ -967,17 +968,15 @@ class FushiCoverBlockStrip extends StatelessWidget {
     return SizedBox(
       key: stripKey,
       height: height,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: <Widget>[
-          Positioned(
-            left: -bleed.left,
-            top: -bleed.top,
-            right: -bleed.right,
-            bottom: -bleed.bottom,
-            child: SectionSwipeCascade(child: list),
-          ),
-        ],
+      child: FushiShadowBleedViewport(
+        bleed: bleed,
+        builder: (BuildContext _, EdgeInsets _) => clipLeading
+            ? _TrailingEdgeFade(
+                trailingInset: rtl ? bleed.left : bleed.right,
+                builder: (ScrollController controller) =>
+                    SectionSwipeCascade(child: list(controller)),
+              )
+            : SectionSwipeCascade(child: list(null)),
       ),
     );
   }
@@ -995,6 +994,7 @@ class FushiCoverBlockStrip extends StatelessWidget {
             rows: rows,
             first: 0,
             size: FushiCoverBlockSize.regular,
+            clipLeading: besideLeading,
             tileHeight:
                 tileHeight ??
                 (compact
@@ -1041,7 +1041,12 @@ class FushiCoverBlockStrip extends StatelessWidget {
         final int columns = (rest / 2).ceil();
         final double contentWidth = columns * tile + (columns - 1) * spacing;
         final bool fits = contentWidth <= width - heroWidth - spacing;
-        final Widget strip = _strip(context, rows: 2, tile: tile);
+        final Widget strip = _strip(
+          context,
+          rows: 2,
+          tile: tile,
+          clipLeading: true,
+        );
         return Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
@@ -1138,6 +1143,98 @@ class FushiCoverBlocks extends StatelessWidget {
                 staggerEntrance: staggerEntrance,
               ),
           ],
+        );
+      },
+    );
+  }
+}
+
+/// 横滑视口的结束侧渐隐：还能往结束方向滑时，视口结束边（减去外扩余量
+/// [trailingInset]，即条本身的结束边附近）那一段渐隐成透明，提示「右边还有」；
+/// 滑到底就不渐隐，最后一张卡完整显示。渐隐的出现 / 消失走 [FushiMotion]。
+class _TrailingEdgeFade extends StatefulWidget {
+  const _TrailingEdgeFade({required this.trailingInset, required this.builder});
+
+  final double trailingInset;
+
+  /// 滚动件（用给的 controller，渐隐按它的位置判断还能不能往后滑）。
+  final Widget Function(ScrollController controller) builder;
+
+  @override
+  State<_TrailingEdgeFade> createState() => _TrailingEdgeFadeState();
+}
+
+class _TrailingEdgeFadeState extends State<_TrailingEdgeFade> {
+  /// 渐隐段宽（不含外扩余量）。
+  static const double _kFadeExtent = 48;
+
+  final ScrollController _controller = ScrollController();
+  bool _more = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_sync);
+  }
+
+  @override
+  void dispose() {
+    _controller
+      ..removeListener(_sync)
+      ..dispose();
+    super.dispose();
+  }
+
+  /// 按当前滚动位置更新「还能往后滑」。首次布局不发 [ScrollMetricsNotification]，
+  /// 所以每帧建完后对一次；之后尺寸变化走通知、滚动走 controller 监听。
+  void _sync() {
+    if (!mounted || !_controller.hasClients) return;
+    final ScrollPosition position = _controller.position;
+    final bool more =
+        position.hasContentDimensions && position.extentAfter > 0.5;
+    if (more != _more) setState(() => _more = more);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool rtl = Directionality.of(context) == TextDirection.rtl;
+    WidgetsBinding.instance.addPostFrameCallback((Duration _) => _sync());
+    final Widget listened = NotificationListener<ScrollMetricsNotification>(
+      onNotification: (ScrollMetricsNotification _) {
+        _sync();
+        return false;
+      },
+      child: widget.builder(_controller),
+    );
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(end: _more ? 1 : 0),
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      curve: FushiMotion.standard,
+      child: listened,
+      // ShaderMask 恒在（t = 0 时全不透明）：渐隐开关不改子树结构，滚动件的
+      // 状态（位置）不会因此重建。
+      builder: (BuildContext context, double t, Widget? child) {
+        return ShaderMask(
+          blendMode: BlendMode.dstIn,
+          shaderCallback: (Rect bounds) {
+            final double w = math.max(bounds.width, 1);
+            final double end = ((w - widget.trailingInset) / w).clamp(0.0, 1.0);
+            final double start = ((w - widget.trailingInset - _kFadeExtent) / w)
+                .clamp(0.0, end);
+            final Color faded = Color.fromRGBO(255, 255, 255, 1 - t);
+            return LinearGradient(
+              begin: rtl ? Alignment.centerRight : Alignment.centerLeft,
+              end: rtl ? Alignment.centerLeft : Alignment.centerRight,
+              colors: <Color>[
+                const Color(0xFFFFFFFF),
+                const Color(0xFFFFFFFF),
+                faded,
+                faded,
+              ],
+              stops: <double>[0, start, end, 1],
+            ).createShader(bounds);
+          },
+          child: child,
         );
       },
     );
