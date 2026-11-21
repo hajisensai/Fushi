@@ -7,7 +7,13 @@
   "en",
   "zh-CN"
  ],
- "count": 887,
+ "platforms": [
+  "android",
+  "ios",
+  "windows",
+  "macos"
+ ],
+ "count": 893,
  "settings": [
   {
    "key": "appearance.language",
@@ -1180,7 +1186,12 @@
    "path": {
     "en": "Appearance › Background and scaling › Page background › Per-module backdrops › Browse › Style",
     "zh-CN": "外观 › 背景与缩放 › 页面背景 › 按模块设置 › 浏览 › 样式"
-   }
+   },
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "appearance.page_backdrop.module.dictionaries.preset",
@@ -1740,10 +1751,15 @@
     "zh-CN": "悬浮球 › 显示"
    },
    "description": {
-    "en": "Keeps floating above other programs after you switch away from Fushi",
-    "zh-CN": "切到其他程序后悬浮球仍浮在最上层"
+    "en": "Keep the ball on screen after switching to other apps. Needs the display-over-other-apps permission",
+    "zh-CN": "切到其他应用后悬浮球仍留在屏幕上，需要「显示在其他应用上层」权限"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "floating_ball.tap_action",
@@ -1829,6 +1845,13 @@
    },
    "options": [
     {
+     "value": "both",
+     "label": {
+      "en": "In and out of app",
+      "zh-CN": "应用内外"
+     }
+    },
+    {
      "value": "inApp",
      "label": {
       "en": "In app only",
@@ -1902,7 +1925,12 @@
      }
     }
    ],
-   "default": "followGlobal"
+   "default": "followGlobal",
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "floating_ball.screen_ocr_keep_session",
@@ -1920,7 +1948,10 @@
     "en": "After allowing screen recording once, screen OCR stops showing the system confirmation every time",
     "zh-CN": "同意一次录屏后，之后截屏识字不再每次弹系统确认框"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "android"
+   ]
   },
   {
    "key": "floating_ball.app_audio_capture",
@@ -1990,6 +2021,20 @@
    "title": {
     "en": "Bookmarks & saved sentences",
     "zh-CN": "书签与收藏"
+   },
+   "path": {
+    "en": "Floating ball › Book reader",
+    "zh-CN": "悬浮球 › 阅读器"
+   },
+   "default": false
+  },
+  {
+   "key": "floating_ball.reader.jumpHistory",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Jump history",
+    "zh-CN": "跳转记录"
    },
    "path": {
     "en": "Floating ball › Book reader",
@@ -2205,7 +2250,10 @@
     "en": "Floating ball › Book reader",
     "zh-CN": "悬浮球 › 阅读器"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "android"
+   ]
   },
   {
    "key": "floating_ball.reader.clipboard",
@@ -2233,7 +2281,11 @@
     "en": "Floating ball › Book reader",
     "zh-CN": "悬浮球 › 阅读器"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "android",
+    "ios"
+   ]
   },
   {
    "key": "floating_ball.reader.camera_ocr",
@@ -2247,7 +2299,11 @@
     "en": "Floating ball › Book reader",
     "zh-CN": "悬浮球 › 阅读器"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "android",
+    "ios"
+   ]
   },
   {
    "key": "floating_ball.reader.sync",
@@ -2415,7 +2471,10 @@
     "en": "Floating ball › Manga reader",
     "zh-CN": "悬浮球 › 漫画"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "android"
+   ]
   },
   {
    "key": "floating_ball.manga.clipboard",
@@ -2443,7 +2502,11 @@
     "en": "Floating ball › Manga reader",
     "zh-CN": "悬浮球 › 漫画"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "android",
+    "ios"
+   ]
   },
   {
    "key": "floating_ball.manga.camera_ocr",
@@ -2457,7 +2520,11 @@
     "en": "Floating ball › Manga reader",
     "zh-CN": "悬浮球 › 漫画"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "android",
+    "ios"
+   ]
   },
   {
    "key": "floating_ball.manga.sync",
@@ -2611,7 +2678,10 @@
     "en": "Floating ball › Video player",
     "zh-CN": "悬浮球 › 视频"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "android"
+   ]
   },
   {
    "key": "floating_ball.video.clipboard",
@@ -2639,7 +2709,11 @@
     "en": "Floating ball › Video player",
     "zh-CN": "悬浮球 › 视频"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "android",
+    "ios"
+   ]
   },
   {
    "key": "floating_ball.video.camera_ocr",
@@ -2653,7 +2727,11 @@
     "en": "Floating ball › Video player",
     "zh-CN": "悬浮球 › 视频"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "android",
+    "ios"
+   ]
   },
   {
    "key": "floating_ball.video.sync",
@@ -2737,7 +2815,10 @@
     "en": "Floating ball › Other pages",
     "zh-CN": "悬浮球 › 其它页面"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "android"
+   ]
   },
   {
    "key": "floating_ball.general.clipboard",
@@ -2765,7 +2846,11 @@
     "en": "Floating ball › Other pages",
     "zh-CN": "悬浮球 › 其它页面"
    },
-   "default": true
+   "default": true,
+   "platforms": [
+    "android",
+    "ios"
+   ]
   },
   {
    "key": "floating_ball.general.camera_ocr",
@@ -2779,7 +2864,11 @@
     "en": "Floating ball › Other pages",
     "zh-CN": "悬浮球 › 其它页面"
    },
-   "default": true
+   "default": true,
+   "platforms": [
+    "android",
+    "ios"
+   ]
   },
   {
    "key": "floating_ball.general.sync",
@@ -3658,7 +3747,10 @@
     "en": "Reading › Page turning & gestures",
     "zh-CN": "阅读 › 翻页与手势"
    },
-   "default": true
+   "default": true,
+   "platforms": [
+    "android"
+   ]
   },
   {
    "key": "reading_controls.page_turn_animation",
@@ -4011,7 +4103,7 @@
     "en": "Reading › Toolbar",
     "zh-CN": "阅读 › 工具栏"
    },
-   "default": "{\"wide\":{\"version\":1,\"slots\":{\"topLeft\":[\"back\"],\"topCenter\":[\"title\"],\"topRight\":[\"navigation\",\"audiobook\",\"settings\"],\"bottomLeft\":[],\"bottomCenter\":[],\"bottomRight\":[],\"overflow\":[\"modeToggle\",\"statistics\",\"gallery\",\"fullscreen\",\"bookmarks\"]},\"removed\":[\"studyTimer\",\"toolbars\",\"audiobookPrev\",\"audiobookPlayPause\",\"audiobookNext\",\"audiobookSeekBack\",\"audiobookSeekForward\",\"audiobookFollow\"]},\"compact\":{\"version\":1,\"slots\":{\"topLeft\":[\"back\"],\"topCenter\":[\"title\"],\"topRight\":[],\"bottomLeft\":[],\"bottomCenter\":[\"navigation\",\"audiobook\",\"settings\",\"statistics\"],\"bottomRight\":[],\"overflow\":[\"modeToggle\",\"gallery\",\"fullscreen\",\"bookmarks\"]},\"removed\":[\"studyTimer\",\"toolbars\",\"audiobookPrev\",\"audiobookPlayPause\",\"audiobookNext\",\"audiobookSeekBack\",\"audiobookSeekForward\",\"audiobookFollow\"]}}",
+   "default": "{\"wide\":{\"version\":1,\"slots\":{\"topLeft\":[\"back\"],\"topCenter\":[\"title\"],\"topRight\":[\"navigation\",\"audiobook\",\"settings\"],\"bottomLeft\":[],\"bottomCenter\":[],\"bottomRight\":[],\"overflow\":[\"modeToggle\",\"statistics\",\"gallery\",\"fullscreen\",\"bookmarks\",\"jumpHistory\"]},\"removed\":[\"studyTimer\",\"toolbars\",\"audiobookPrev\",\"audiobookPlayPause\",\"audiobookNext\",\"audiobookSeekBack\",\"audiobookSeekForward\",\"audiobookFollow\"]},\"compact\":{\"version\":1,\"slots\":{\"topLeft\":[\"back\"],\"topCenter\":[\"title\"],\"topRight\":[],\"bottomLeft\":[],\"bottomCenter\":[\"navigation\",\"audiobook\",\"settings\",\"statistics\"],\"bottomRight\":[],\"overflow\":[\"modeToggle\",\"gallery\",\"fullscreen\",\"bookmarks\",\"jumpHistory\"]},\"removed\":[\"studyTimer\",\"toolbars\",\"audiobookPrev\",\"audiobookPlayPause\",\"audiobookNext\",\"audiobookSeekBack\",\"audiobookSeekForward\",\"audiobookFollow\"]}}",
    "help": "{\"wide\": <布局 JSON，含 slots>, \"compact\": <布局 JSON>}（config get 的输出可改后原样写回）"
   },
   {
@@ -4241,7 +4333,10 @@
     "en": "Use the volume keys to jump to the previous or next sentence.",
     "zh-CN": "用音量加减键跳到上一句 / 下一句"
    },
-   "default": true
+   "default": true,
+   "platforms": [
+    "android"
+   ]
   },
   {
    "key": "listening.audiobook_jump_threshold",
@@ -5129,7 +5224,10 @@
     "en": "Use volume up and down to turn pages in the manga reader",
     "zh-CN": "在漫画阅读器中用音量加减键翻页"
    },
-   "default": true
+   "default": true,
+   "platforms": [
+    "android"
+   ]
   },
   {
    "key": "manga.reader_scale",
@@ -5439,6 +5537,81 @@
    "default": true
   },
   {
+   "key": "video.playback.resume_mode",
+   "kind": "value",
+   "type": "choice",
+   "title": {
+    "en": "Resume playback",
+    "zh-CN": "断点续播"
+   },
+   "path": {
+    "en": "Video › Playback",
+    "zh-CN": "视频 › 播放"
+   },
+   "description": {
+    "en": "Reopen a video where you left off. Long videos are 10 minutes or more. Progress is still saved when this is off.",
+    "zh-CN": "再次打开视频时从上次停下的位置接着放。长视频指 10 分钟及以上。关闭后仍会记录观看进度。"
+   },
+   "options": [
+    {
+     "value": "off",
+     "label": {
+      "en": "Off",
+      "zh-CN": "关"
+     }
+    },
+    {
+     "value": "longVideos",
+     "label": {
+      "en": "Long videos",
+      "zh-CN": "长视频"
+     }
+    },
+    {
+     "value": "all",
+     "label": {
+      "en": "All videos",
+      "zh-CN": "全部视频"
+     }
+    }
+   ],
+   "default": "all"
+  },
+  {
+   "key": "video.playback.playlist_order",
+   "kind": "value",
+   "type": "choice",
+   "title": {
+    "en": "Next episode order",
+    "zh-CN": "连播顺序"
+   },
+   "path": {
+    "en": "Video › Playback",
+    "zh-CN": "视频 › 播放"
+   },
+   "description": {
+    "en": "Which episode auto-play moves on to. Shuffle picks a random episode from the series without repeats until all have played; for repeat-one use Loop file",
+    "zh-CN": "自动连播时下一集怎么选。随机：从合集里随机挑一集，一轮播完前不重复；单集循环请开「单文件循环」"
+   },
+   "options": [
+    {
+     "value": "sequential",
+     "label": {
+      "en": "In order",
+      "zh-CN": "顺序"
+     }
+    },
+    {
+     "value": "shuffle",
+     "label": {
+      "en": "Shuffle",
+      "zh-CN": "随机"
+     }
+    }
+   ],
+   "default": "sequential"
+  },
+  {
    "key": "video.playback.theme_song_auto_skip",
    "kind": "value",
    "type": "bool",
@@ -5661,7 +5834,11 @@
     "en": "Desktop only. Leaving the disc restores the previous window size, position and maximized state.",
     "zh-CN": "仅桌面端。退出原盘后恢复进入前的窗口尺寸、位置与最大化状态。"
    },
-   "default": true
+   "default": true,
+   "platforms": [
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "video.playback.disc_launch_animation",
@@ -5756,7 +5933,100 @@
     "en": "Keep the video's aspect ratio when resizing the window, with no black bars",
     "zh-CN": "调整窗口大小时保持视频宽高比，不留黑边"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "windows",
+    "macos"
+   ]
+  },
+  {
+   "key": "video.playback.entry_orientation",
+   "kind": "value",
+   "type": "choice",
+   "title": {
+    "en": "Orientation when opening videos",
+    "zh-CN": "进入视频时的方向"
+   },
+   "path": {
+    "en": "Video › Picture and subtitles › Picture and quality › Scaling and aspect ratio",
+    "zh-CN": "视频 › 画面与字幕 › 画面与画质 › 缩放与比例"
+   },
+   "description": {
+    "en": "Switch any time with the rotate button in the player",
+    "zh-CN": "播放时可随时用控件栏的转屏按钮切换"
+   },
+   "options": [
+    {
+     "value": "landscape",
+     "label": {
+      "en": "Landscape",
+      "zh-CN": "横屏"
+     }
+    },
+    {
+     "value": "video_aspect",
+     "label": {
+      "en": "Match video",
+      "zh-CN": "按视频比例"
+     }
+    },
+    {
+     "value": "sensor",
+     "label": {
+      "en": "Auto-rotate",
+      "zh-CN": "跟随手机旋转"
+     }
+    }
+   ],
+   "default": "landscape",
+   "platforms": [
+    "android",
+    "ios"
+   ]
+  },
+  {
+   "key": "video.playback.portrait_subtitle_list",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Subtitle list in portrait",
+    "zh-CN": "竖屏时显示字幕列表"
+   },
+   "path": {
+    "en": "Video › Picture and subtitles › Picture and quality › Scaling and aspect ratio",
+    "zh-CN": "视频 › 画面与字幕 › 画面与画质 › 缩放与比例"
+   },
+   "description": {
+    "en": "Video on top, the current line and subtitle list below",
+    "zh-CN": "视频在上，下面是当前句和字幕列表"
+   },
+   "default": true,
+   "platforms": [
+    "android",
+    "ios"
+   ]
+  },
+  {
+   "key": "video.playback.remember_orientation",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Remember orientation per title",
+    "zh-CN": "记住每部作品的方向"
+   },
+   "path": {
+    "en": "Video › Picture and subtitles › Picture and quality › Scaling and aspect ratio",
+    "zh-CN": "视频 › 画面与字幕 › 画面与画质 › 缩放与比例"
+   },
+   "description": {
+    "en": "Reopen a title in the orientation you last switched to",
+    "zh-CN": "再打开时用上次手动转到的方向"
+   },
+   "default": false,
+   "platforms": [
+    "android",
+    "ios"
+   ]
   },
   {
    "key": "video.geometry.aspect",
@@ -6043,7 +6313,10 @@
    "path": {
     "en": "Video › Picture and subtitles › Picture and quality › Image quality",
     "zh-CN": "视频 › 画面与字幕 › 画面与画质 › 画质"
-   }
+   },
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "video.playback.hdr_output",
@@ -6084,7 +6357,10 @@
      }
     }
    ],
-   "default": "auto"
+   "default": "auto",
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "video.hdr.tone_mapping",
@@ -7197,7 +7473,11 @@
     "en": "Turn off so tapping the video only reveals the controls",
     "zh-CN": "关闭后点击画面只唤醒控制条，不再切换播放/暂停"
    },
-   "default": true
+   "default": true,
+   "platforms": [
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "video.playback.double_tap_toggles_playback",
@@ -7292,7 +7572,11 @@
      }
     }
    ],
-   "default": "medium"
+   "default": "medium",
+   "platforms": [
+    "android",
+    "ios"
+   ]
   },
   {
    "key": "video.playback.brightness_swipe_gesture",
@@ -7310,7 +7594,11 @@
     "en": "Swipe up/down on the left half of the video to change screen brightness. Turn off to use the system brightness slider instead",
     "zh-CN": "在画面左半边上下滑动调节屏幕亮度；关闭后改用系统亮度条"
    },
-   "default": true
+   "default": true,
+   "platforms": [
+    "android",
+    "ios"
+   ]
   },
   {
    "key": "video.playback.volume_swipe_gesture",
@@ -7328,7 +7616,11 @@
     "en": "Swipe up/down on the right half of the video to change volume. Turn off to use the physical volume buttons instead",
     "zh-CN": "在画面右半边上下滑动调节音量；关闭后改用实体音量键"
    },
-   "default": true
+   "default": true,
+   "platforms": [
+    "android",
+    "ios"
+   ]
   },
   {
    "key": "video.controls.reset_layout",
@@ -8619,7 +8911,10 @@
     "en": "Show the dictionary card inside the game window itself (KiriKiri engine, Windows only)",
     "zh-CN": "在游戏画面内直接显示词典卡片（KiriKiri 引擎，仅 Windows）"
    },
-   "default": true
+   "default": true,
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "game.ingame_lookup_exe_hash",
@@ -8651,7 +8946,10 @@
     "en": "Size the in-game lookup card separately from the desktop overlay card",
     "zh-CN": "让游戏内查词卡与桌面覆盖查词窗各自设置大小"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "game.gal_card_lookup_max_width",
@@ -8701,7 +8999,10 @@
     "en": "Off means clicks on the caption never trigger a lookup — useful with click-through on, when you would rather not hit a word by accident.",
     "zh-CN": "关掉后点台词不再触发查词。开着鼠标穿透时尤其有用——不想一不小心点到单词。"
    },
-   "default": true
+   "default": true,
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "game.gal_hook_lookup_trigger",
@@ -8742,7 +9043,10 @@
      }
     }
    ],
-   "default": "0"
+   "default": "0",
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "game.gal_hook_passthrough_blocks_mouse",
@@ -8760,7 +9064,10 @@
     "en": "On: text lines still take clicks so you can tap a word. Off: the whole overlay is transparent to the mouse — you can click whatever is underneath, but tapping words no longer works.",
     "zh-CN": "开：文字行仍接鼠标，能点字查词。关：整个浮窗对鼠标彻底透明，能点到底下的东西，但点字查词也就没了。"
    },
-   "default": true
+   "default": true,
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "game.gal_hook_toolbar_auto_hide",
@@ -8778,7 +9085,10 @@
     "en": "Hide the toolbar until the pointer reaches the caption box.",
     "zh-CN": "平时隐藏功能栏，鼠标移到台词框附近才现身。"
    },
-   "default": true
+   "default": true,
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "game.gal_hook_toolbar_labels",
@@ -8796,7 +9106,10 @@
     "en": "Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow",
     "zh-CN": "在浮窗工具条每个按钮下方显示简短文字；浮窗太窄时只显示图标，悬停仍有提示"
    },
-   "default": true
+   "default": true,
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "game.fold_progressive_lines",
@@ -8814,7 +9127,10 @@
     "en": "Fold multiple snapshots of the same line into one.",
     "zh-CN": "把同一句的多次快照折成一条。"
    },
-   "default": true
+   "default": true,
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "game.gal_hook_text_font_size",
@@ -8834,7 +9150,10 @@
    },
    "min": 12.0,
    "max": 72.0,
-   "default": 30.0
+   "default": 30.0,
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "game.gal_hook_text_letter_spacing",
@@ -8854,7 +9173,10 @@
    },
    "min": -2.0,
    "max": 12.0,
-   "default": 0.0
+   "default": 0.0,
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "game.gal_hook_text_line_height",
@@ -8874,7 +9196,10 @@
    },
    "min": 0.8,
    "max": 2.0,
-   "default": 1.0
+   "default": 1.0,
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "game.gal_hook_text_bold",
@@ -8892,7 +9217,10 @@
     "en": "Use semibold text for better readability over game graphics.",
     "zh-CN": "使用半粗体，提高文字在游戏画面上的可读性。"
    },
-   "default": true
+   "default": true,
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "game.gal_hook_text_alignment",
@@ -8922,7 +9250,10 @@
      }
     }
    ],
-   "default": "center"
+   "default": "center",
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "game.gal_hook_text_vertical_alignment",
@@ -8952,7 +9283,10 @@
      }
     }
    ],
-   "default": "center"
+   "default": "center",
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "game.gal_hook_text_color",
@@ -8967,6 +9301,9 @@
     "zh-CN": "游戏 › 台词浮窗 · 窗口"
    },
    "default": "theme",
+   "platforms": [
+    "windows"
+   ],
    "help": "theme（跟随主题）或 #RRGGBB / #AARRGGBB"
   },
   {
@@ -8982,6 +9319,9 @@
     "zh-CN": "游戏 › 台词浮窗 · 窗口"
    },
    "default": "theme",
+   "platforms": [
+    "windows"
+   ],
    "help": "theme（跟随主题）或 #RRGGBB / #AARRGGBB"
   },
   {
@@ -9002,7 +9342,10 @@
    },
    "min": 0.0,
    "max": 1.0,
-   "default": 0.0
+   "default": 0.0,
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "game.gal_hook_text_outline_color",
@@ -9017,6 +9360,9 @@
     "zh-CN": "游戏 › 台词浮窗 · 窗口"
    },
    "default": "theme",
+   "platforms": [
+    "windows"
+   ],
    "help": "theme（跟随主题）或 #RRGGBB / #AARRGGBB"
   },
   {
@@ -9037,7 +9383,10 @@
    },
    "min": 0.0,
    "max": 6.0,
-   "default": 1.6
+   "default": 1.6,
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "game.gal_hook_text_padding",
@@ -9057,7 +9406,10 @@
    },
    "min": 0.0,
    "max": 80.0,
-   "default": 20.0
+   "default": 20.0,
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "game.gal_hook_text_corner_radius",
@@ -9077,7 +9429,10 @@
    },
    "min": 0.0,
    "max": 40.0,
-   "default": 14.0
+   "default": 14.0,
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "game.gal_line_tts_auto",
@@ -9095,7 +9450,10 @@
     "en": "Read new lines aloud with TTS, e.g. to voice the narration or a protagonist without voice acting. Also toggled from the overlay toolbar.",
     "zh-CN": "用 TTS 读出新台词，给没有配音的旁白 / 主角补声音；浮窗工具条上也能开关"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "game.gal_line_tts_scope",
@@ -9129,7 +9487,10 @@
      }
     }
    ],
-   "default": "unvoicedOnly"
+   "default": "unvoicedOnly",
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "game.gal_line_tts_volume",
@@ -9145,7 +9506,10 @@
    },
    "min": 0.0,
    "max": 1.0,
-   "default": 1.0
+   "default": 1.0,
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "game.gal_line_tts_speed",
@@ -9161,7 +9525,10 @@
    },
    "min": 0.25,
    "max": 3.0,
-   "default": 1.0
+   "default": 1.0,
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "system.web_browser_tab_style",
@@ -9231,7 +9598,11 @@
     "en": "On phones, pull down at the top of a page to reload it. Turn off if you trigger it by accident",
     "zh-CN": "手机上在网页顶部往下拉即可刷新；容易误触可以关掉"
    },
-   "default": true
+   "default": true,
+   "platforms": [
+    "android",
+    "ios"
+   ]
   },
   {
    "key": "system.web_browser_search_engine",
@@ -9336,7 +9707,11 @@
     "en": "When off, holding the phone upright shows the video on top and the subtitle list below.",
     "zh-CN": "关掉后竖着拿手机：视频在上，字幕列表在下。"
    },
-   "default": true
+   "default": true,
+   "platforms": [
+    "android",
+    "ios"
+   ]
   },
   {
    "key": "system.web_browser_restore_tabs",
@@ -9670,7 +10045,11 @@
     "en": "Look up words automatically when the mouse hovers over text, without clicking or holding a modifier key.",
     "zh-CN": "鼠标悬停在文字上即自动查词，无需点击或按住修饰键。"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "lookup.hover_lookup_modifier",
@@ -9711,7 +10090,11 @@
      }
     }
    ],
-   "default": "shift"
+   "default": "shift",
+   "platforms": [
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "lookup.resume_on_lookup_leave",
@@ -9729,7 +10112,11 @@
     "en": "Close the lookup popup and resume playback when the mouse leaves the subtitles and the popup",
     "zh-CN": "鼠标离开字幕与查词窗即关闭查词窗并继续播放"
    },
-   "default": true
+   "default": true,
+   "platforms": [
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "lookup.collapse_dictionaries",
@@ -10255,7 +10642,12 @@
     "en": "Swipe horizontally on the popup to close it",
     "zh-CN": "在弹窗上横向滑动即可关闭"
    },
-   "default": true
+   "defaultByPlatform": {
+    "android": true,
+    "ios": true,
+    "windows": false,
+    "macos": true
+   }
   },
   {
    "key": "reading_controls.dismiss_swipe_sensitivity",
@@ -10532,7 +10924,11 @@
     "en": "Read surrounding text from the foreground app to show the current sentence (Windows / macOS)",
     "zh-CN": "从前台应用读取选区周围文本，在查词弹窗显示当前句（Windows / macOS）"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "lookup.accessibility_permission",
@@ -10899,6 +11295,10 @@
     "zh-CN": "让本机的 MCP 客户端（Claude Desktop 等）调用 Fushi 的操作。只监听本机；撤销不了的操作会先请你确认。"
    },
    "default": false,
+   "platforms": [
+    "windows",
+    "macos"
+   ],
    "userOnly": true
   },
   {
@@ -11233,7 +11633,12 @@
      }
     }
    ],
-   "default": ""
+   "default": "",
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "ai.video_download_source",
@@ -11281,7 +11686,12 @@
      }
     }
    ],
-   "default": "any"
+   "default": "any",
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "ai.video_download_bitrate",
@@ -11322,7 +11732,12 @@
      }
     }
    ],
-   "default": "any"
+   "default": "any",
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "ai.video_download_skip_extras",
@@ -11340,7 +11755,12 @@
     "en": "PV, CM, NCOP/NCED, menus and similar. Applies to every download into a video source: extras inside a torrent are not downloaded, and extras-only releases are never picked.",
     "zh-CN": "PV、CM、NCOP/NCED、菜单等。对所有下载到视频来源的任务生效：种子里的特典文件不下载，只有特典的发布也不会被选中。"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "ai.video_download_subtitle_language",
@@ -11535,7 +11955,12 @@
      }
     }
    ],
-   "default": ""
+   "default": "",
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "ai.library_curate_auto",
@@ -13345,7 +13770,11 @@
    "path": {
     "en": "Storage › Data storage location",
     "zh-CN": "存储 › 数据存储位置"
-   }
+   },
+   "platforms": [
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "storage.db_check",
@@ -13418,7 +13847,10 @@
    "description": {
     "en": "Long-press your home screen, choose Widgets, then pick Fushi.",
     "zh-CN": "长按主屏幕，选择「小组件」，再选 Fushi。"
-   }
+   },
+   "platforms": [
+    "android"
+   ]
   },
   {
    "key": "widgets.goal_total_minutes",
@@ -13434,7 +13866,10 @@
    },
    "min": 0,
    "max": 1440,
-   "default": 0
+   "default": 0,
+   "platforms": [
+    "android"
+   ]
   },
   {
    "key": "widgets.goal_reading_minutes",
@@ -13450,7 +13885,10 @@
    },
    "min": 0,
    "max": 1440,
-   "default": 0
+   "default": 0,
+   "platforms": [
+    "android"
+   ]
   },
   {
    "key": "widgets.goal_listening_minutes",
@@ -13466,7 +13904,10 @@
    },
    "min": 0,
    "max": 1440,
-   "default": 0
+   "default": 0,
+   "platforms": [
+    "android"
+   ]
   },
   {
    "key": "widgets.goal_video_minutes",
@@ -13482,7 +13923,10 @@
    },
    "min": 0,
    "max": 1440,
-   "default": 0
+   "default": 0,
+   "platforms": [
+    "android"
+   ]
   },
   {
    "key": "widgets.goal_reviews",
@@ -13498,7 +13942,10 @@
    },
    "min": 0,
    "max": 1000000,
-   "default": 0
+   "default": 0,
+   "platforms": [
+    "android"
+   ]
   },
   {
    "key": "widgets.goal_mined_cards",
@@ -13514,7 +13961,10 @@
    },
    "min": 0,
    "max": 1000000,
-   "default": 0
+   "default": 0,
+   "platforms": [
+    "android"
+   ]
   },
   {
    "key": "widgets.goal_chars",
@@ -13530,7 +13980,10 @@
    },
    "min": 0,
    "max": 7000000,
-   "default": 0
+   "default": 0,
+   "platforms": [
+    "android"
+   ]
   },
   {
    "key": "widgets.hide_titles",
@@ -13548,7 +14001,10 @@
     "en": "Hide book and video titles on widgets by default. Each widget can override this.",
     "zh-CN": "默认在小组件上隐藏书名和视频标题。每个小组件可单独覆盖。"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "android"
+   ]
   },
   {
    "key": "widgets.hide_definitions",
@@ -13566,7 +14022,10 @@
     "en": "Hide word definitions on the vocabulary widget by default.",
     "zh-CN": "默认在词汇小组件上隐藏释义。"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "android"
+   ]
   },
   {
    "key": "widgets.hide_profile",
@@ -13584,7 +14043,10 @@
     "en": "Do not show the profile name on widgets.",
     "zh-CN": "不在小组件上显示配置名。"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "android"
+   ]
   },
   {
    "key": "widgets.review_provider",
@@ -13602,6 +14064,9 @@
     "en": "The review widget follows Card creation: Fushi SRS or AnkiDroid.",
     "zh-CN": "复习小组件跟随「制卡」里的卡片去向：Fushi 复习或 AnkiDroid。"
    },
+   "platforms": [
+    "android"
+   ],
    "runnable": true
   },
   {
@@ -13931,7 +14396,12 @@
     "en": "Installs new versions of manga and video extensions at startup (only those whose signature is unchanged).",
     "zh-CN": "启动时自动安装漫画与视频扩展的新版本（只装签名未变的）。"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "system.network_proxy_mode",
@@ -14255,6 +14725,11 @@
     "en": "System and about › About",
     "zh-CN": "系统与关于 › 关于"
    },
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ],
    "runnable": true
   },
   {
@@ -14269,6 +14744,11 @@
     "en": "System and about › About",
     "zh-CN": "系统与关于 › 关于"
    },
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ],
    "runnable": true
   },
   {
@@ -14539,6 +15019,10 @@
     "en": "Picks a free port and writes it to both Fushi and the AnkiConnect add-on config. Restart Anki to apply.",
     "zh-CN": "自动挑一个空闲端口，同时写进 Fushi 和 Anki 的 AnkiConnect 插件配置。改完重启 Anki 生效。"
    },
+   "platforms": [
+    "windows",
+    "macos"
+   ],
    "runnable": true
   },
   {
@@ -14557,6 +15041,9 @@
     "en": "Downloads AnkiConnect from AnkiWeb and hands it to the running Anki. Anki will ask you to confirm, then advise a restart.",
     "zh-CN": "从 AnkiWeb 下载 AnkiConnect 并交给正在运行的 Anki。Anki 会弹窗请你确认，之后按它的提示重启。"
    },
+   "platforms": [
+    "windows"
+   ],
    "runnable": true
   },
   {
@@ -14607,6 +15094,9 @@
     "en": "Card creation › Anki › AnkiConnect",
     "zh-CN": "制卡 › Anki › AnkiConnect"
    },
+   "platforms": [
+    "windows"
+   ],
    "runnable": true
   },
   {
@@ -15541,7 +16031,12 @@
      }
     }
    ],
-   "default": "webmVp9"
+   "defaultByPlatform": {
+    "android": "webmVp9",
+    "ios": "mp4H264",
+    "windows": "webmVp9",
+    "macos": "webmVp9"
+   }
   },
   {
    "key": "card_creation.anki.cli.video_mining_animated_format",
@@ -15697,7 +16192,10 @@
      }
     }
    ],
-   "default": "gif"
+   "default": "gif",
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "card_creation.anki.cli.gal_mining_clip_format",
@@ -15738,7 +16236,15 @@
      }
     }
    ],
-   "default": "webmVp9"
+   "defaultByPlatform": {
+    "android": "webmVp9",
+    "ios": "mp4H264",
+    "windows": "webmVp9",
+    "macos": "webmVp9"
+   },
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "card_creation.anki.cli.gal_mining_animated_format",
@@ -15775,7 +16281,10 @@
      }
     }
    ],
-   "default": "avif"
+   "default": "avif",
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "card_creation.anki.cli.gal_mining_still_format",
@@ -15805,7 +16314,10 @@
      }
     }
    ],
-   "default": "jpg"
+   "default": "jpg",
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "card_creation.anki.cli.gal_mining_audio_mode",
@@ -15853,7 +16365,10 @@
      }
     }
    ],
-   "default": "auto"
+   "default": "auto",
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "card_creation.anki.cli.gal_mining_audio_seconds",
@@ -15873,7 +16388,10 @@
    },
    "min": 1.0,
    "max": 60.0,
-   "default": 8.0
+   "default": 8.0,
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "card_creation.anki.cli.dedup_auto",
@@ -16476,6 +16994,11 @@
     "en": "Online services › Resource indexers › Discovery sources",
     "zh-CN": "在线服务 › 资源索引器 › 发现来源"
    },
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ],
    "listOps": [
     "ls",
     "set"
@@ -16784,6 +17307,11 @@
     "zh-CN": "下载"
    },
    "default": "local",
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ],
    "help": "local = 本机；或已配对 host 的地址（候选见 `config run downloads.cli.execution_host_candidates`）"
   },
   {
@@ -16798,6 +17326,11 @@
     "en": "Downloads",
     "zh-CN": "下载"
    },
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ],
    "runnable": true
   },
   {
@@ -16835,7 +17368,17 @@
      }
     }
    ],
-   "default": "embedded"
+   "defaultByPlatform": {
+    "android": "embedded",
+    "ios": "qbittorrent",
+    "windows": "embedded",
+    "macos": "embedded"
+   },
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "downloads.cli.engine_host",
@@ -16865,6 +17408,11 @@
     "zh-CN": "下载"
    },
    "default": "",
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ],
    "help": "下载目录绝对路径（只影响之后新增的任务）；恢复默认用 config run downloads.cli.save_root_reset"
   },
   {
@@ -16879,6 +17427,11 @@
     "en": "Downloads",
     "zh-CN": "下载"
    },
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ],
    "runnable": true
   },
   {
@@ -16892,7 +17445,12 @@
    "path": {
     "en": "Downloads",
     "zh-CN": "下载"
-   }
+   },
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "downloads.cli.download_limit_kbps",
@@ -16911,7 +17469,12 @@
     "zh-CN": "0 = 不限"
    },
    "min": 0,
-   "default": 0
+   "default": 0,
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "downloads.cli.limit_lan",
@@ -16929,7 +17492,12 @@
     "en": "Off by default: transfers with peers on your local network ignore the limits above.",
     "zh-CN": "默认关闭：与局域网内 peer 的传输不受上面的限速约束。"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "downloads.cli.upload_enabled",
@@ -16947,7 +17515,12 @@
     "en": "Off by default. Seed back to the swarm after downloading.",
     "zh-CN": "默认关闭。下载完成后向网络回传做种。"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "downloads.cli.upload_limit_kbps",
@@ -17084,7 +17657,12 @@
     "en": "The list is cached for 6 hours. A subscription failure will not block the download.",
     "zh-CN": "列表缓存 6 小时；订阅获取失败不会阻止下载任务创建。"
    },
-   "default": true
+   "default": true,
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "downloads.cli.tracker_url",
@@ -17098,7 +17676,12 @@
     "en": "Downloads › Tracker subscription",
     "zh-CN": "下载 › Tracker 订阅"
    },
-   "default": "https://cf.trackerslist.com/best.txt"
+   "default": "https://cf.trackerslist.com/best.txt",
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "downloads.cli.tracker_refresh",
@@ -17112,6 +17695,11 @@
     "en": "Downloads › Tracker subscription",
     "zh-CN": "下载 › Tracker 订阅"
    },
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ],
    "runnable": true,
    "params": [
     {
@@ -17137,7 +17725,12 @@
     "en": "Downloads pushed by Fushi get this category; completion tracking only watches it.",
     "zh-CN": "Fushi 推送的下载会打上此分类，完成监听只关注该分类。"
    },
-   "default": "fushi"
+   "default": "fushi",
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "downloads.cli.max_connections",
@@ -17156,7 +17749,12 @@
     "zh-CN": "0 = 引擎默认"
    },
    "min": 0,
-   "default": 0
+   "default": 0,
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "downloads.cli.memory_limit_mb",
@@ -17175,7 +17773,12 @@
     "zh-CN": "限制引擎内存占用。0 = 自动（按设备内存推导）。"
    },
    "min": 0,
-   "default": 0
+   "default": 0,
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "downloads.cli.listen_port",
@@ -17195,7 +17798,12 @@
    },
    "min": 0,
    "max": 65535,
-   "default": 0
+   "default": 0,
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "downloads.cli.dht",
@@ -17209,7 +17817,12 @@
     "en": "Downloads › Engine and seeding",
     "zh-CN": "下载 › 引擎与做种"
    },
-   "default": true
+   "default": true,
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "downloads.cli.lsd",
@@ -17223,7 +17836,12 @@
     "en": "Downloads › Engine and seeding",
     "zh-CN": "下载 › 引擎与做种"
    },
-   "default": true
+   "default": true,
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "downloads.cli.upnp",
@@ -17237,7 +17855,12 @@
     "en": "Downloads › Engine and seeding",
     "zh-CN": "下载 › 引擎与做种"
    },
-   "default": true
+   "default": true,
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "downloads.cli.natpmp",
@@ -17251,7 +17874,12 @@
     "en": "Downloads › Engine and seeding",
     "zh-CN": "下载 › 引擎与做种"
    },
-   "default": true
+   "default": true,
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "downloads.cli.anonymous",
@@ -17265,7 +17893,12 @@
     "en": "Downloads › Engine and seeding",
     "zh-CN": "下载 › 引擎与做种"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "downloads.cli.encryption",
@@ -17302,7 +17935,12 @@
      }
     }
    ],
-   "default": "prefer"
+   "default": "prefer",
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "downloads.cli.max_active_downloads",
@@ -17321,7 +17959,12 @@
     "zh-CN": "0 = 默认"
    },
    "min": 0,
-   "default": 0
+   "default": 0,
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "downloads.cli.max_active_seeds",
@@ -17340,7 +17983,12 @@
     "zh-CN": "0 = 默认"
    },
    "min": 0,
-   "default": 0
+   "default": 0,
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "downloads.cli.max_upload_slots",
@@ -17359,7 +18007,12 @@
     "zh-CN": "0 = 默认"
    },
    "min": 0,
-   "default": 0
+   "default": 0,
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "downloads.cli.antileech",
@@ -17373,7 +18026,12 @@
     "en": "Downloads › Engine and seeding",
     "zh-CN": "下载 › 引擎与做种"
    },
-   "default": true
+   "default": true,
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "downloads.cli.ban_progress_cheat",
@@ -17387,7 +18045,12 @@
     "en": "Downloads › Engine and seeding",
     "zh-CN": "下载 › 引擎与做种"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "downloads.cli.ban_relative_cheat",
@@ -17401,7 +18064,12 @@
     "en": "Downloads › Engine and seeding",
     "zh-CN": "下载 › 引擎与做种"
    },
-   "default": false
+   "default": false,
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "downloads.cli.max_ip_ports",
@@ -17420,7 +18088,12 @@
     "zh-CN": "0 = 关闭"
    },
    "min": 0,
-   "default": 0
+   "default": 0,
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "downloads.cli.ban_time_minutes",
@@ -17439,7 +18112,12 @@
     "zh-CN": "0 = 永久"
    },
    "min": 0,
-   "default": 0
+   "default": 0,
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ]
   },
   {
    "key": "services.jimaku.cli.enabled",
@@ -17653,6 +18331,11 @@
     "en": "Online services › BT sites",
     "zh-CN": "在线服务 › BT 站"
    },
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ],
    "listOps": [
     "ls",
     "add",
@@ -17711,6 +18394,11 @@
     "en": "Online services › Torznab indexers",
     "zh-CN": "在线服务 › Torznab 索引器"
    },
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ],
    "listOps": [
     "ls",
     "add",
@@ -17768,6 +18456,11 @@
     "en": "Downloads › Completed downloads",
     "zh-CN": "下载 › 下载完成后"
    },
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ],
    "listOps": [
     "ls",
     "add",
@@ -17806,6 +18499,11 @@
     "zh-CN": "下载 › 下载完成后"
    },
    "default": "none",
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ],
    "help": "none = 不指定；或本机视频来源 id（候选见 `config run downloads.routing.cli.target_source_candidates`）"
   },
   {
@@ -17820,6 +18518,11 @@
     "en": "Downloads › Completed downloads",
     "zh-CN": "下载 › 下载完成后"
    },
+   "platforms": [
+    "android",
+    "windows",
+    "macos"
+   ],
    "runnable": true
   },
   {
@@ -18543,6 +19246,10 @@
     }
    ],
    "default": "default",
+   "platforms": [
+    "android",
+    "windows"
+   ],
    "help": "预设图标 key（default）；自定义图片用 `config run appearance.app_icon.cli.set_custom`"
   },
   {
@@ -18561,6 +19268,10 @@
     "en": "This will create a home screen shortcut with your chosen image. Continue?",
     "zh-CN": "将使用所选图片创建主屏幕快捷方式。是否继续？"
    },
+   "platforms": [
+    "android",
+    "windows"
+   ],
    "runnable": true,
    "params": [
     {
@@ -18583,6 +19294,10 @@
     "en": "Lookup › Extension",
     "zh-CN": "查词 › 浏览器扩展"
    },
+   "platforms": [
+    "windows",
+    "macos"
+   ],
    "runnable": true
   },
   {
@@ -18601,6 +19316,10 @@
     "en": "Starts the lookup server and unpacks the extension locally; the folder path is copied to the clipboard.",
     "zh-CN": "会自动开启查词服务并把扩展解压到本机，扩展文件夹路径已复制到剪贴板。"
    },
+   "platforms": [
+    "windows",
+    "macos"
+   ],
    "runnable": true
   },
   {
@@ -18619,6 +19338,10 @@
     "en": "Verify the extension is loaded and connected",
     "zh-CN": "验证插件已加载并连上本机"
    },
+   "platforms": [
+    "windows",
+    "macos"
+   ],
    "runnable": true,
    "params": [
     {
@@ -18644,6 +19367,10 @@
     "en": "Opens a page served by Fushi in your browser to check the toolbar popup and Shift lookup.",
     "zh-CN": "在浏览器里打开一张由 Fushi 提供的网页，验证右上角弹窗与 Shift 查词。"
    },
+   "platforms": [
+    "windows",
+    "macos"
+   ],
    "runnable": true
   },
   {
@@ -18658,6 +19385,10 @@
     "en": "Lookup › Extension",
     "zh-CN": "查词 › 浏览器扩展"
    },
+   "platforms": [
+    "windows",
+    "macos"
+   ],
    "runnable": true,
    "params": [
     {
