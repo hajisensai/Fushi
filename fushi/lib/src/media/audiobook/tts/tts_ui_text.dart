@@ -166,12 +166,9 @@ String _unslothLanguageLabel(String code) => switch (code) {
   _ => code,
 };
 
-/// 非必填的声音类参数「不选」时显示什么（系统语音：默认引擎 / 按文字语言自动挑；
-/// Unsloth Studio 的模型：用 Studio 当前载入的那个）。
+/// 非必填的声音类参数「不选」时显示什么（系统语音：默认引擎 / 按文字语言自动挑）。
 String ttsParamEmptyLabel(String key) => switch (key) {
   SystemTtsDescriptor.engineKey => t.audiobook_tts_param_engine_default,
-  UnslothStudioTtsDescriptor.modelKey =>
-    t.audiobook_tts_param_unsloth_model_loaded,
   _ => t.audiobook_tts_param_voice_auto,
 };
 

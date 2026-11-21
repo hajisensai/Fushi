@@ -103,7 +103,13 @@ void main() {
             }),
           );
         case ('POST', '/v1/audio/speech'):
-          res.add(buildWav(dataBytes: 3200));
+          final Object? ref = json is Map ? json['reference'] : null;
+          if (voiceDeleted && ref is Map && ref['voice_id'] == voiceId) {
+            // Studio 里删掉的声音：合成接口回 404。
+            res.statusCode = 404;
+          } else {
+            res.add(buildWav(dataBytes: 3200));
+          }
         default:
           res.statusCode = 404;
       }
@@ -121,6 +127,7 @@ void main() {
     String voice = voiceId,
     String language = 'auto',
     String apiKey = key,
+    bool snapshot = true,
   }) => const UnslothStudioTtsDescriptor().create(
     TtsVoicePreset(
       id: 'p',
@@ -132,6 +139,11 @@ void main() {
         UnslothStudioTtsDescriptor.modelKey: model,
         UnslothStudioTtsDescriptor.voiceKey: voice,
         UnslothStudioTtsDescriptor.languageKey: language,
+        // 设置页选声音时快照的文字稿 / 参考语言。
+        if (snapshot) ...<String, String>{
+          UnslothStudioTtsDescriptor.voiceTranscriptKey: transcript,
+          UnslothStudioTtsDescriptor.voiceLanguageKey: 'ja',
+        },
       },
       secrets: <String, String>{UnslothStudioTtsDescriptor.apiKeyKey: apiKey},
     ),
@@ -174,7 +186,43 @@ void main() {
     );
     expect(voices.first.displayName, 'narrator-ja');
     expect(voices.first.locale, 'ja');
+    expect(
+      voices.first.attributes[UnslothStudioTtsDescriptor.transcriptAttribute],
+      transcript,
+    );
     expect(voices.last.displayName, 'nameless');
+  });
+
+  test('picking a voice snapshots its transcript and reference language', () {
+    const UnslothStudioTtsDescriptor d = UnslothStudioTtsDescriptor();
+    const TtsVoice option = TtsVoice(
+      id: voiceId,
+      displayName: 'narrator-ja',
+      locale: 'ja',
+      attributes: <String, String>{
+        UnslothStudioTtsDescriptor.transcriptAttribute: transcript,
+      },
+    );
+    expect(
+      d.paramsForPickedOption(UnslothStudioTtsDescriptor.voiceKey, option),
+      <String, String?>{
+        UnslothStudioTtsDescriptor.voiceTranscriptKey: transcript,
+        UnslothStudioTtsDescriptor.voiceLanguageKey: 'ja',
+      },
+    );
+    // 清空声音 → 快照一起删。
+    expect(
+      d.paramsForPickedOption(UnslothStudioTtsDescriptor.voiceKey, null),
+      <String, String?>{
+        UnslothStudioTtsDescriptor.voiceTranscriptKey: null,
+        UnslothStudioTtsDescriptor.voiceLanguageKey: null,
+      },
+    );
+    // 模型不带快照。
+    expect(
+      d.paramsForPickedOption(UnslothStudioTtsDescriptor.modelKey, option),
+      isEmpty,
+    );
   });
 
   test(
@@ -209,8 +257,8 @@ void main() {
     expect(bodies[1]?['audio_options'], <String, Object?>{
       'template_name': 'cross_lingual',
     });
-    // 声音信息一个实例只取一次。
-    expect(log.where((e) => e.path == '/v1/audio/voices'), hasLength(1));
+    // 合成只用预设里的快照，不按次去问 Studio。
+    expect(log.where((e) => e.path == '/v1/audio/voices'), isEmpty);
   });
 
   test('a fixed language overrides detection (Spanish profile)', () async {
@@ -220,17 +268,17 @@ void main() {
     expect(speechBodies().single?['language'], 'es');
   });
 
-  test('unset model is omitted; non-CosyVoice models get no template', () {
+  test('model is always sent; non-CosyVoice models get no template', () {
     const UnslothVoice v = (id: 'v', name: 'v', transcript: '', language: 'ja');
-    final Map<String, Object?> resident = unslothSpeechRequest(
+    final Map<String, Object?> cosyBody = unslothSpeechRequest(
       text: 'hello',
       voice: v,
-      model: '',
+      model: cosy,
       language: 'auto',
     );
-    expect(resident.containsKey('model'), isFalse);
-    expect(resident.containsKey('reference_text'), isFalse);
-    expect(resident['audio_options'], isNotNull);
+    expect(cosyBody['model'], cosy);
+    expect(cosyBody.containsKey('reference_text'), isFalse);
+    expect(cosyBody['audio_options'], isNotNull);
     final Map<String, Object?> qwen = unslothSpeechRequest(
       text: 'hello',
       voice: v,
@@ -245,6 +293,42 @@ void main() {
     expect(unslothDetectLanguage('カタカナ'), 'ja');
     expect(unslothDetectLanguage('今天晚上的月亮好美喔。'), 'zh');
     expect(unslothDetectLanguage('Hello there.'), 'en');
+    // 中文里也用的「・」「ー」不算假名。
+    expect(unslothDetectLanguage('约翰・史密斯说：哈哈ー'), 'zh');
+    expect(unslothDetectLanguage('ｶﾀｶﾅ'), 'ja');
+  });
+
+  test('ambiguous script follows the voice reference language', () {
+    // 纯汉字句：日语声音按日语读，其余按中文。
+    expect(unslothDetectLanguage('東京駅。', voiceLanguage: 'ja-JP'), 'ja');
+    expect(unslothDetectLanguage('東京駅。', voiceLanguage: 'zh'), 'zh');
+    expect(unslothDetectLanguage('東京駅。'), 'zh');
+    // 有中文专用字的句子（简 / 繁）即使是日语声音也按中文读。
+    expect(unslothDetectLanguage('今晚的月亮真美啊。', voiceLanguage: 'ja'), 'zh');
+    expect(unslothDetectLanguage('你們在這裡嗎？', voiceLanguage: 'ja'), 'zh');
+    expect(unslothDetectLanguage('具体的な目的。', voiceLanguage: 'zh'), 'ja');
+    expect(unslothDetectLanguage('本日休業。', voiceLanguage: 'ja'), 'ja');
+    // 有假名一律日语，与声音无关。
+    expect(unslothDetectLanguage('赤い傘。', voiceLanguage: 'zh'), 'ja');
+    // 拉丁字母：西语声音按西语，其余按英语。
+    expect(unslothDetectLanguage('Hola.', voiceLanguage: 'es'), 'es');
+    expect(unslothDetectLanguage('Hello.', voiceLanguage: 'ja'), 'en');
+    const UnslothVoice ja = (
+      id: 'v',
+      name: 'v',
+      transcript: '',
+      language: 'ja',
+    );
+    final Map<String, Object?> body = unslothSpeechRequest(
+      text: '東京駅。',
+      voice: ja,
+      model: cosy,
+      language: 'auto',
+    );
+    expect(body['language'], 'ja');
+    expect(body['audio_options'], <String, Object?>{
+      'template_name': 'zero_shot',
+    });
   });
 
   test('template: unknown voice language falls back to cross_lingual', () {
@@ -258,25 +342,28 @@ void main() {
     );
   });
 
-  test('voice deleted in Studio is rejected, and retried next time', () async {
-    voiceDeleted = true;
-    final TtsProvider p = provider();
-    await expectLater(
-      say(p, '你好。', 'a'),
-      throwsA(
-        isA<TtsFailure>().having(
-          (TtsFailure f) => f.code,
-          'code',
-          TtsFailureCode.rejected,
+  test(
+    'voice deleted in Studio is rejected; works again once rebuilt',
+    () async {
+      voiceDeleted = true;
+      final TtsProvider p = provider();
+      await expectLater(
+        say(p, '你好。', 'a'),
+        throwsA(
+          isA<TtsFailure>().having(
+            (TtsFailure f) => f.code,
+            'code',
+            TtsFailureCode.rejected,
+          ),
         ),
-      ),
-    );
-    voiceDeleted = false;
-    await say(p, '你好。', 'b');
-    await p.dispose();
-    expect(log.where((e) => e.path == '/v1/audio/voices'), hasLength(2));
-    expect(speechBodies(), hasLength(1));
-  });
+      );
+      voiceDeleted = false;
+      await say(p, '你好。', 'b');
+      await p.dispose();
+      expect(log.where((e) => e.path == '/v1/audio/voices'), isEmpty);
+      expect(speechBodies(), hasLength(2));
+    },
+  );
 
   test('wrong API key surfaces as unauthorized', () async {
     final TtsProvider p = provider(apiKey: 'nope');
@@ -294,20 +381,44 @@ void main() {
   });
 
   test(
-    'missing voice is notConfigured; validate wants key and voice',
+    'missing voice, model or snapshot is notConfigured; validate wants them',
     () async {
-      final TtsProvider p = provider(voice: ' ');
-      await expectLater(
-        say(p, 'x', 'a'),
-        throwsA(
-          isA<TtsFailure>().having(
-            (TtsFailure f) => f.code,
-            'code',
-            TtsFailureCode.notConfigured,
+      for (final TtsProvider p in <TtsProvider>[
+        provider(voice: ' '),
+        provider(model: ''),
+        provider(snapshot: false),
+      ]) {
+        await expectLater(
+          say(p, 'x', 'a'),
+          throwsA(
+            isA<TtsFailure>().having(
+              (TtsFailure f) => f.code,
+              'code',
+              TtsFailureCode.notConfigured,
+            ),
+          ),
+        );
+        await p.dispose();
+      }
+      expect(speechBodies(), isEmpty);
+      // 声音不是经设置页选的（没有快照）：声音算没配好。
+      expect(
+        const UnslothStudioTtsDescriptor().validate(
+          const TtsVoicePreset(
+            id: 'p',
+            providerId: UnslothStudioTtsDescriptor.providerId,
+            name: 'p',
+            params: <String, String>{
+              UnslothStudioTtsDescriptor.modelKey: cosy,
+              UnslothStudioTtsDescriptor.voiceKey: voiceId,
+            },
+            secrets: <String, String>{
+              UnslothStudioTtsDescriptor.apiKeyKey: key,
+            },
           ),
         ),
+        <String>[UnslothStudioTtsDescriptor.voiceKey],
       );
-      await p.dispose();
       expect(
         const UnslothStudioTtsDescriptor().validate(
           const TtsVoicePreset(
@@ -318,35 +429,47 @@ void main() {
         ),
         <String>[
           UnslothStudioTtsDescriptor.apiKeyKey,
+          UnslothStudioTtsDescriptor.modelKey,
           UnslothStudioTtsDescriptor.voiceKey,
         ],
       );
     },
   );
 
-  test('cache identity: host, port, model, voice, language — not the key', () {
-    final Map<String, Object?> id = const UnslothStudioTtsDescriptor()
-        .audioIdentity(
-          const TtsVoicePreset(
-            id: 'p',
-            providerId: UnslothStudioTtsDescriptor.providerId,
-            name: 'p',
-            params: <String, String>{
-              UnslothStudioTtsDescriptor.endpointKey: 'http://192.168.1.5:9000',
-              UnslothStudioTtsDescriptor.modelKey: cosy,
-              UnslothStudioTtsDescriptor.voiceKey: voiceId,
-              UnslothStudioTtsDescriptor.languageKey: 'zh',
-            },
-            secrets: <String, String>{
-              UnslothStudioTtsDescriptor.apiKeyKey: key,
-            },
-          ),
-        );
+  test('cache identity: endpoint, model, voice, language, voice snapshot — '
+      'not the key', () {
+    Map<String, Object?> identity({
+      String voiceTranscript = transcript,
+      String voiceLanguage = 'ja',
+    }) => const UnslothStudioTtsDescriptor().audioIdentity(
+      TtsVoicePreset(
+        id: 'p',
+        providerId: UnslothStudioTtsDescriptor.providerId,
+        name: 'p',
+        params: <String, String>{
+          UnslothStudioTtsDescriptor.endpointKey: 'http://192.168.1.5:9000',
+          UnslothStudioTtsDescriptor.modelKey: cosy,
+          UnslothStudioTtsDescriptor.voiceKey: voiceId,
+          UnslothStudioTtsDescriptor.languageKey: 'zh',
+          UnslothStudioTtsDescriptor.voiceTranscriptKey: voiceTranscript,
+          UnslothStudioTtsDescriptor.voiceLanguageKey: voiceLanguage,
+        },
+        secrets: const <String, String>{
+          UnslothStudioTtsDescriptor.apiKeyKey: key,
+        },
+      ),
+    );
+    final Map<String, Object?> id = identity();
     expect(id['host'], '192.168.1.5');
     expect(id['port'], 9000);
     expect(id[UnslothStudioTtsDescriptor.modelKey], cosy);
     expect(id[UnslothStudioTtsDescriptor.voiceKey], voiceId);
     expect(id[UnslothStudioTtsDescriptor.languageKey], 'zh');
+    expect(id[UnslothStudioTtsDescriptor.voiceTranscriptKey], transcript);
+    expect(id[UnslothStudioTtsDescriptor.voiceLanguageKey], 'ja');
     expect(id.containsKey(UnslothStudioTtsDescriptor.apiKeyKey), isFalse);
+    // 文字稿 / 参考语言变了，请求体就变了：缓存键必须跟着变。
+    expect(identity(voiceTranscript: '別の文。'), isNot(equals(id)));
+    expect(identity(voiceLanguage: 'zh'), isNot(equals(id)));
   });
 }

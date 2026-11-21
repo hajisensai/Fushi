@@ -9,6 +9,11 @@
 /// 中文句子会读成乱码（2026-11-19 实测）。所以每句按文字判语言，再按「文本语言 ==
 /// 参考语言」选 `zero_shot`，否则 `cross_lingual`（选反了参考文字稿会混进句首）。
 ///
+/// 缓存键要看得到请求体里的每一项：模型必须明确选（「用 Studio 当前载入的」是服务端
+/// 状态，换了模型缓存键不变就会拿旧模型的音频）；声音的文字稿 / 参考语言在设置页选
+/// 声音时快照进预设（[UnslothStudioTtsDescriptor.paramsForPickedOption]），合成只用
+/// 快照、不再按次去问 Studio。Studio 里改了声音，在设置页重选一次即可。
+///
 /// 服务端倍速恒 1.0（播放倍速由本地播放器控制），整句已由调用方切好。
 library;
 
@@ -29,6 +34,13 @@ class UnslothStudioTtsDescriptor extends TtsProviderDescriptor {
   static const String modelKey = 'model';
   static const String voiceKey = 'voice';
   static const String languageKey = 'language';
+
+  /// 选声音时快照的参考文字稿 / 参考语言（不在 [params] 里，界面不显示；进缓存键）。
+  static const String voiceTranscriptKey = 'voice_transcript';
+  static const String voiceLanguageKey = 'voice_language';
+
+  /// [TtsVoice.attributes] 里放文字稿的键。
+  static const String transcriptAttribute = 'transcript';
 
   /// Studio 默认地址。
   static const String defaultEndpoint = 'http://127.0.0.1:8888';
@@ -75,8 +87,8 @@ class UnslothStudioTtsDescriptor extends TtsProviderDescriptor {
       affectsAudio: false,
     ),
     // 选择列表从服务拉（[TtsProvider.listParamOptions]），所以用 voice 形态。
-    // 不选 = Studio 当前载入的模型。
-    TtsParamSpec(key: modelKey, kind: TtsParamKind.voice),
+    // 必选：模型进缓存键，也决定发不发 CosyVoice 模板。
+    TtsParamSpec(key: modelKey, kind: TtsParamKind.voice, required: true),
     TtsParamSpec(key: voiceKey, kind: TtsParamKind.voice, required: true),
     TtsParamSpec(
       key: languageKey,
@@ -86,7 +98,19 @@ class UnslothStudioTtsDescriptor extends TtsProviderDescriptor {
     ),
   ];
 
+  /// 选了声音却没有文字稿 / 参考语言快照（不是经设置页选的）：声音算没配好，
+  /// 让用户在设置页重选一次。
+  @override
+  List<String> validate(TtsVoicePreset preset) {
+    final List<String> problems = super.validate(preset);
+    if (!problems.contains(voiceKey) && voiceSnapshotOf(preset) == null) {
+      problems.add(voiceKey);
+    }
+    return problems;
+  }
+
   /// 声音 id 只在一台 Studio 上有意义：地址进身份，换一台不复用另一台的缓存。
+  /// 文字稿与参考语言决定请求体（`reference_text` / 模板 / 纯汉字句的语言），也进身份。
   @override
   Map<String, Object?> audioIdentity(TtsVoicePreset preset) {
     final Uri? uri = Uri.tryParse(
@@ -96,19 +120,50 @@ class UnslothStudioTtsDescriptor extends TtsProviderDescriptor {
       ...super.audioIdentity(preset),
       'host': uri?.host ?? '',
       'port': uri?.port ?? 0,
+      voiceTranscriptKey: preset.param(voiceTranscriptKey).trim(),
+      voiceLanguageKey: preset.param(voiceLanguageKey).trim(),
     };
   }
 
   @override
-  TtsProvider create(TtsVoicePreset preset, TtsHost host) =>
-      UnslothStudioTtsProvider(
-        endpoint: preset.param(endpointKey, fallback: defaultEndpoint),
-        apiKey: preset.param(apiKeyKey),
-        model: preset.param(modelKey),
-        voice: preset.param(voiceKey),
-        language: preset.param(languageKey, fallback: autoLanguage),
-        host: host,
-      );
+  Map<String, String?> paramsForPickedOption(
+    String paramKey,
+    TtsVoice? option,
+  ) => paramKey != voiceKey
+      ? const <String, String?>{}
+      : <String, String?>{
+          voiceTranscriptKey: option == null
+              ? null
+              : (option.attributes[transcriptAttribute] ?? '').trim(),
+          voiceLanguageKey: option?.locale.trim(),
+        };
+
+  /// 预设里的声音快照；缺任一项返回 null（文字稿 / 参考语言本身可以是空串）。
+  static ({String transcript, String language})? voiceSnapshotOf(
+    TtsVoicePreset preset,
+  ) {
+    final String? transcript = preset.params[voiceTranscriptKey];
+    final String? language = preset.params[voiceLanguageKey];
+    if (transcript == null || language == null) return null;
+    return (transcript: transcript.trim(), language: language.trim());
+  }
+
+  @override
+  TtsProvider create(TtsVoicePreset preset, TtsHost host) {
+    final ({String transcript, String language})? snapshot = voiceSnapshotOf(
+      preset,
+    );
+    return UnslothStudioTtsProvider(
+      endpoint: preset.param(endpointKey, fallback: defaultEndpoint),
+      apiKey: preset.param(apiKeyKey),
+      model: preset.param(modelKey),
+      voice: preset.param(voiceKey),
+      voiceTranscript: snapshot?.transcript,
+      voiceLanguage: snapshot?.language,
+      language: preset.param(languageKey, fallback: autoLanguage),
+      host: host,
+    );
+  }
 }
 
 /// Studio 存的一个克隆声音（合成时要它的文字稿与参考语言）。
@@ -132,11 +187,15 @@ class UnslothStudioTtsProvider extends TtsProvider {
     required String apiKey,
     required String model,
     required String voice,
+    required String? voiceTranscript,
+    required String? voiceLanguage,
     required String language,
     required TtsHost host,
   }) : _apiKey = apiKey.trim(),
        _model = model.trim(),
        _voice = voice.trim(),
+       _voiceTranscript = voiceTranscript?.trim(),
+       _voiceLanguage = voiceLanguage?.trim(),
        _language = language.trim(),
        _base = unslothBaseUri(endpoint),
        _client = host.httpClientFactory();
@@ -144,12 +203,13 @@ class UnslothStudioTtsProvider extends TtsProvider {
   final String _apiKey;
   final String _model;
   final String _voice;
+
+  /// 选声音时快照的文字稿 / 参考语言；null = 没快照（预设不是经设置页选的声音）。
+  final String? _voiceTranscript;
+  final String? _voiceLanguage;
   final String _language;
   final Uri? _base;
   final HttpClient _client;
-
-  /// 选中声音的文字稿 / 参考语言（一个实例只取一次）。
-  Future<UnslothVoice>? _voiceInfo;
 
   @override
   TtsCapabilities get capabilities =>
@@ -159,33 +219,6 @@ class UnslothStudioTtsProvider extends TtsProvider {
     if (_apiKey.isNotEmpty) HttpHeaders.authorizationHeader: 'Bearer $_apiKey',
   };
 
-  Future<List<UnslothVoice>> _fetchVoices(
-    Uri base,
-    TtsCancelToken? cancel,
-  ) async => parseUnslothVoices(
-    await ttsGetJson(
-      client: _client,
-      uri: base.replace(path: '/v1/audio/voices'),
-      headers: _auth,
-      cancel: cancel,
-    ),
-  );
-
-  Future<UnslothVoice> _voiceFor(Uri base, TtsCancelToken cancel) =>
-      _voiceInfo ??= () async {
-        try {
-          for (final UnslothVoice v in await _fetchVoices(base, cancel)) {
-            if (v.id == _voice) return v;
-          }
-          // Studio 里删掉了这个声音：与服务端 404 / 422 同一个结论。
-          throw const TtsFailure(TtsFailureCode.rejected, 'voice missing');
-        } on TtsFailure {
-          // 不记住失败（断网、Studio 还没开、刚在 Studio 里重建了声音）。
-          _voiceInfo = null;
-          rethrow;
-        }
-      }();
-
   @override
   Future<TtsResult> synthesize(
     String text, {
@@ -193,10 +226,16 @@ class UnslothStudioTtsProvider extends TtsProvider {
     required TtsCancelToken cancel,
   }) async {
     final Uri? base = _base;
-    if (base == null || _voice.isEmpty) {
+    final String? transcript = _voiceTranscript;
+    final String? voiceLanguage = _voiceLanguage;
+    if (base == null ||
+        _model.isEmpty ||
+        _voice.isEmpty ||
+        transcript == null ||
+        voiceLanguage == null) {
       throw const TtsFailure(TtsFailureCode.notConfigured);
     }
-    final UnslothVoice voice = await _voiceFor(base, cancel);
+    // Studio 里删掉了这个声音时服务端回 404 / 422，ttsSendToFile 报 rejected。
     await ttsSendToFile(
       client: _client,
       method: 'POST',
@@ -207,7 +246,12 @@ class UnslothStudioTtsProvider extends TtsProvider {
         jsonEncode(
           unslothSpeechRequest(
             text: text,
-            voice: voice,
+            voice: (
+              id: _voice,
+              name: _voice,
+              transcript: transcript,
+              language: voiceLanguage,
+            ),
             model: _model,
             language: _language,
           ),
@@ -227,8 +271,22 @@ class UnslothStudioTtsProvider extends TtsProvider {
     final Uri? base = _base;
     if (base == null) throw const TtsFailure(TtsFailureCode.notConfigured);
     return <TtsVoice>[
-      for (final UnslothVoice v in await _fetchVoices(base, cancel))
-        TtsVoice(id: v.id, displayName: v.name, locale: v.language),
+      for (final UnslothVoice v in parseUnslothVoices(
+        await ttsGetJson(
+          client: _client,
+          uri: base.replace(path: '/v1/audio/voices'),
+          headers: _auth,
+          cancel: cancel,
+        ),
+      ))
+        TtsVoice(
+          id: v.id,
+          displayName: v.name,
+          locale: v.language,
+          attributes: <String, String>{
+            UnslothStudioTtsDescriptor.transcriptAttribute: v.transcript,
+          },
+        ),
     ];
   }
 
@@ -297,15 +355,36 @@ List<UnslothVoice> parseUnslothVoices(Object? raw) {
   ];
 }
 
-final RegExp _kKana = RegExp(r'[぀-ヿㇰ-ㇿｦ-ﾟ]');
-final RegExp _kHan = RegExp(r'[㐀-䶿一-鿿豈-﫿]');
+/// 只有日语用的字符：平假名 / 片假名的字母与叠字符号、片假名音标扩展、半角片假名、
+/// 「々」。不含中文里也常见的「・」（U+30FB）「ー」（U+30FC / U+FF70）与单独的浊点。
+final RegExp _kJapaneseOnly = RegExp(
+  '[々ぁ-ゖゝ-ゟァ-ヺヽ-ヿ'
+  'ㇰ-ㇿｦ-ｯｱ-ﾝ]',
+);
+final RegExp _kHan = RegExp('[㐀-䶿一-鿿豈-﫿]');
 
-/// 一句话的文本语言：有假名 → ja；有汉字没假名 → zh；否则 en。
-/// （西班牙语从文字上与英语分不可靠，要读西语就在预设里固定选 es。）
-String unslothDetectLanguage(String text) {
-  if (_kKana.hasMatch(text)) return 'ja';
-  if (_kHan.hasMatch(text)) return 'zh';
-  return 'en';
+/// 中文句子常见、日语文本里几乎不出现的字（简繁体的虚词、代词、语气词）。只收
+/// 日语复合词里也不用的：「的」「了」「個」「給」「還」等日语也常用，不收。
+final RegExp _kChineseOnly = RegExp('[们們这這吗嗎呢吧啊么麼没沒说說个给让还你她很什怎哪喔呀嘛哦啦咱裡]');
+
+/// 声音参考语言的主语言码（`ja-JP` → `ja`）。
+String _unslothLanguageBase(String tag) =>
+    tag.trim().split(RegExp('[-_]')).first.toLowerCase();
+
+/// 一句话的文本语言：
+/// - 有日语专用字符（假名等）→ ja；
+/// - 有汉字、没有假名：有中文专用字 → zh；否则中日都可能（「東京駅。」），声音的
+///   参考语言是 ja 就按 ja，否则 zh；
+/// - 没有汉字 → 参考语言是 es 就按 es，否则 en（西班牙语从文字上与英语分不可靠）。
+/// 要固定一种语言就在预设里选。
+String unslothDetectLanguage(String text, {String voiceLanguage = ''}) {
+  if (_kJapaneseOnly.hasMatch(text)) return 'ja';
+  final String ref = _unslothLanguageBase(voiceLanguage);
+  if (_kHan.hasMatch(text)) {
+    if (_kChineseOnly.hasMatch(text)) return 'zh';
+    return ref == 'ja' ? 'ja' : 'zh';
+  }
+  return ref == 'es' ? 'es' : 'en';
 }
 
 /// 文本语言与声音的参考语言相同 → `zero_shot`，否则 `cross_lingual`。参考语言
@@ -314,14 +393,13 @@ String unslothTemplateFor({
   required String textLanguage,
   required String voiceLanguage,
 }) {
-  final String ref = voiceLanguage.split(RegExp('[-_]')).first.toLowerCase();
+  final String ref = _unslothLanguageBase(voiceLanguage);
   return ref.isNotEmpty && ref == textLanguage ? 'zero_shot' : 'cross_lingual';
 }
 
-/// 合成模板是 CosyVoice 的概念：明确选了别的模型（Qwen3-TTS 等）就不发；
-/// 不选模型时用 Studio 当前载入的模型，按 CosyVoice 发（Studio 对不认的模板不报错）。
+/// 合成模板是 CosyVoice 的概念：别的模型（Qwen3-TTS、Breeze 等）不发。
 bool unslothUsesTemplates(String model) =>
-    model.isEmpty || model.toLowerCase().contains('cosyvoice');
+    model.toLowerCase().contains('cosyvoice');
 
 /// `POST /v1/audio/speech` 的请求体（纯函数，测试直接调）。
 Map<String, Object?> unslothSpeechRequest({
@@ -332,10 +410,10 @@ Map<String, Object?> unslothSpeechRequest({
 }) {
   final String textLanguage =
       language.isEmpty || language == UnslothStudioTtsDescriptor.autoLanguage
-      ? unslothDetectLanguage(text)
+      ? unslothDetectLanguage(text, voiceLanguage: voice.language)
       : language;
   return <String, Object?>{
-    if (model.isNotEmpty) 'model': model,
+    'model': model,
     'input': text,
     'language': textLanguage,
     'reference': <String, Object?>{'voice_id': voice.id},
