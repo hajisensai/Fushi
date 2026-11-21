@@ -7025,6 +7025,7 @@
   "music_action_unfollow": "取消关注",
   "music_action_unfollowed": "已取消关注",
   "music_action_unlove": "取消喜欢",
+  "music_album_removed_from_library": "已从音乐库移除「$title」，磁盘上的文件不动",
   "music_apple_music_account_connected": "已连接 · 可播放整首",
   "music_apple_music_account_denied": "Fushi 没有 Apple Music 访问权限。请在系统设置 › 隐私与安全性 › 媒体与 Apple Music 中允许。",
   "music_apple_music_account_disconnected": "未连接：只能浏览和试听 30 秒。",
