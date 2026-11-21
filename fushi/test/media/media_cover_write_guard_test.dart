@@ -220,6 +220,12 @@ kCoverPathDerivers = <String, (CoverDeriverRole, String)>{
         'videoCoverFileName 目的地后交给 downloadVideoCoverToPath（'
         'video_cover_extractor）收口落盘，本文件自己不写字节。',
   ),
+  'lib/src/sync/sync_orchestrator/stream_videos.part.dart': (
+    CoverDeriverRole.derivesPathOnly,
+    '互联拉下来的流媒体书补封面：只派生 VideoStorage.coversDir 交给 '
+        'backfillStreamVideoThumbnailCover（经 downloadVideoCoverToPath 收口落盘），'
+        '本文件自己不写字节。',
+  ),
   '../packages/fushi_engine/lib/media/video/video_storage.dart': (
     CoverDeriverRole.derivesPathOnly,
     '路径派生的定义处之一，自身不落盘。',
