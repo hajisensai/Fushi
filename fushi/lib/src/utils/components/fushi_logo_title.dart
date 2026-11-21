@@ -3,56 +3,82 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 
 // =============================================================================
-// 作品艺术字（刮削 logo）的尺寸规则——全站一份（2026-11-20 用户：「艺术字的宽度
-// 不要全部都全占满，真的很丑。要稍微适应一下」）。
+// 作品艺术字（刮削 logo）的标题槽——全站一份。
 //
-// 此前 logo 只限高度：横长的 logo（3:1 以上）会把文字列撑满、顶到卡片边，方形 /
-// 竖长的反而显得很小。改成按「视觉面积」统一：目标面积随档位上限走
-// （A = [kFushiLogoAreaFactor] × 上限²），宽 = √(A × 宽高比)，再夹在文字列的
-// [kFushiLogoMinWidthFraction]…[kFushiLogoMaxWidthFraction] 之间，最后高度不超过
-// 档位上限（超了按上限等比缩回）。色块（[FushiCoverBlock]）、继续观看剧照主卡
-// 等所有画 logo 的地方都走 [FushiLogoTitle]，不各写一份。
+// 2026-11-21 用户：「logo 长宽高大小一样主要是，而且标题文字的占位大小也不一样」
+// （设计稿：左右对照的实图稿，用户拍板「按右边改」）。此前按「视觉面积」给每个
+// logo 单算一个框（宽在文字列 38%～62% 浮动、高 ≤ 档位上限），横长 / 偏方 / 无
+// logo 三种情况标题区宽高各不相同，一排卡的标题上沿高低错开。现在每个尺寸档
+// 只有一个固定槽：宽 = 文字列 × [kFushiLogoSlotWidthFraction]、高 = 档位高度；
+// logo 等比缩进槽里贴起始侧底部，没有 logo 时标题文字（最多两行）也占同一个槽
+// （[FushiTitleSlot]）。色块（[FushiCoverBlock]）、继续观看剧照主卡等所有画
+// logo 的地方都走 [FushiLogoTitle]，不各写一份。
 // =============================================================================
 
-/// 目标面积系数：A = 系数 × 档位高度上限²。取值使 2.5:1 的 logo 在拼贴首块
-/// 文字列里约占 54%（设计稿 #2 的示意）。
-const double kFushiLogoAreaFactor = 1.8;
+/// 标题槽宽度占文字列宽的比例。
+const double kFushiLogoSlotWidthFraction = 0.7;
 
-/// logo 宽度下限（占文字列宽的比例）：方形 logo 不至于缩成一个小角标。
-const double kFushiLogoMinWidthFraction = 0.38;
-
-/// logo 宽度上限（占文字列宽的比例）：横长 logo 不撑满整行。
-const double kFushiLogoMaxWidthFraction = 0.62;
-
-/// 按「视觉面积」规则算 logo 的显示尺寸。[aspect] = 宽 / 高；[columnWidth] =
-/// logo 所在文字列宽（无界时不做宽度夹取）；[maxHeight] = 档位高度上限（已与
-/// 可用高度取小）。返回的尺寸恒满足：宽 ≤ 列宽 × 62%、高 ≤ [maxHeight]，且保持
-/// [aspect]。
-Size fushiLogoBoxSize({
-  required double aspect,
-  required double columnWidth,
-  required double maxHeight,
-}) {
-  if (!(aspect > 0) || !(maxHeight > 0)) return Size.zero;
-  final double area = kFushiLogoAreaFactor * maxHeight * maxHeight;
-  double width = math.sqrt(area * aspect);
-  if (columnWidth.isFinite && columnWidth > 0) {
-    width = width.clamp(
-      columnWidth * kFushiLogoMinWidthFraction,
-      columnWidth * kFushiLogoMaxWidthFraction,
-    );
-  }
-  double height = width / aspect;
-  if (height > maxHeight) {
-    height = maxHeight;
-    width = height * aspect;
-  }
+/// 标题槽尺寸：宽 = [columnWidth] × [kFushiLogoSlotWidthFraction]（列宽无界时
+/// 按 3:1 取 [height] 的三倍），高 = [height]。与 logo 的宽高比无关。
+Size fushiLogoSlotSize({required double columnWidth, required double height}) {
+  if (!(height > 0)) return Size.zero;
+  final double width = columnWidth.isFinite && columnWidth > 0
+      ? columnWidth * kFushiLogoSlotWidthFraction
+      : height * 3;
   return Size(width, height);
 }
 
-/// 标题位的 logo：先读出图的宽高比，按 [fushiLogoBoxSize] 定尺寸，起始侧底部
-/// 对齐。解码前按 [maxHeight] 高占位（不让布局在图到达时跳动太多），解码失败
-/// 画 [fallback]（标题文字）。语义标签是 [title]。
+/// 无 logo 时的标题文字槽：高 = [height]（与可用高度取小）、宽占满文字列，文字
+/// 贴起始侧底部、最多 [maxLines] 行（还会按槽高能放下的行数收紧）。与同档
+/// [FushiLogoTitle] 的槽同高，一排卡里有 logo 与没 logo 的标题区一样大。
+class FushiTitleSlot extends StatelessWidget {
+  const FushiTitleSlot({
+    required this.title,
+    required this.style,
+    required this.height,
+    this.maxLines = 2,
+    super.key,
+  });
+
+  final String title;
+  final TextStyle style;
+
+  /// 槽高（通常就是同档 logo 的槽高）。
+  final double height;
+  final int maxLines;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double slot = constraints.maxHeight.isFinite
+            ? math.min(height, constraints.maxHeight)
+            : height;
+        final double lineHeight =
+            scaler.scale(style.fontSize ?? 14) * (style.height ?? 1.15);
+        final int lines = (slot / lineHeight).floor().clamp(1, maxLines);
+        return SizedBox(
+          height: slot,
+          width: constraints.maxWidth.isFinite ? constraints.maxWidth : null,
+          child: Align(
+            alignment: AlignmentDirectional.bottomStart,
+            child: Text(
+              title,
+              maxLines: lines,
+              overflow: TextOverflow.ellipsis,
+              style: style,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// 标题位的 logo：恒占一个 [fushiLogoSlotSize] 固定槽（解码前后、横长竖长都
+/// 一样大，布局不跳），图等比缩进槽里贴起始侧底部；解码失败画 [fallback]（标题
+/// 文字）。语义标签是 [title]。
 class FushiLogoTitle extends StatefulWidget {
   const FushiLogoTitle({
     required this.logo,
@@ -65,7 +91,7 @@ class FushiLogoTitle extends StatefulWidget {
   final ImageProvider logo;
   final String title;
 
-  /// 档位高度上限（实际还会与可用高度取小）。
+  /// 槽高（档位高度，实际还会与可用高度取小）。
   final double maxHeight;
 
   /// 解码失败时的替身（通常是标题文字）。
@@ -108,20 +134,10 @@ class _FushiLogoTitleState extends State<FushiLogoTitle> {
         final double maxHeight = constraints.maxHeight.isFinite
             ? math.min(widget.maxHeight, constraints.maxHeight)
             : widget.maxHeight;
-        final double columnWidth = constraints.maxWidth;
-        final double? aspect = _probe.aspect;
-        final Size box = aspect == null
-            ? Size(
-                columnWidth.isFinite
-                    ? columnWidth * kFushiLogoMinWidthFraction
-                    : maxHeight,
-                maxHeight,
-              )
-            : fushiLogoBoxSize(
-                aspect: aspect,
-                columnWidth: columnWidth,
-                maxHeight: maxHeight,
-              );
+        final Size box = fushiLogoSlotSize(
+          columnWidth: constraints.maxWidth,
+          height: maxHeight,
+        );
         return Semantics(
           label: widget.title,
           image: true,
@@ -131,7 +147,7 @@ class _FushiLogoTitleState extends State<FushiLogoTitle> {
             heightFactor: 1,
             child: SizedBox.fromSize(
               size: box,
-              child: aspect == null
+              child: _probe.aspect == null
                   ? null
                   : Image(
                       image: widget.logo,

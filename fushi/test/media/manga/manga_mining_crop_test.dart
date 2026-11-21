@@ -154,12 +154,12 @@ void main() {
       MiningRequestOverrides? overrides,
       int? page = 2,
       bool setting = false,
-      bool webtoon = false,
+      bool strip = false,
     }) => resolveMangaCardImagePlan(
       overrides: overrides,
       miningPageIndex: page,
       cropToPanelByDefault: setting,
-      webtoon: webtoon,
+      stripPage: strip,
     );
 
     const MiningImageCrop crop = MiningImageCrop(
@@ -279,10 +279,10 @@ void main() {
       });
     });
 
-    test('没有 crop：设置关 / 条漫 / 不知道页 → 整页（行为不变）', () {
+    test('没有 crop：设置关 / 条漫长条页 / 不知道页 → 整页（行为不变）', () {
       expect(plan().kind, MangaCardImageKind.wholePage);
       expect(
-        plan(setting: true, webtoon: true).kind,
+        plan(setting: true, strip: true).kind,
         MangaCardImageKind.wholePage,
       );
       expect(
@@ -324,6 +324,29 @@ void main() {
         body.contains('cropToPanelByDefault:appModel.mangaMiningCropToPanel'),
         isTrue,
       );
+    });
+
+    test('分镜裁切按制卡页形状判条漫，不按阅读模式判', () {
+      // 普通分镜漫画用 webtoon / webtoonGaps 模式读时页面仍有分镜格；按阅读模式
+      // 关掉分镜会让这两种模式下自动裁切与对话框分镜预选都失效。
+      final String body = onMineBody();
+      expect(
+        body.contains(
+          'stripPage:miningPageIndex!=null&&_isStripPage(miningPageIndex)',
+        ),
+        isTrue,
+      );
+      final int start = flat.indexOf(
+        'Future<List<Rect>>_miningPanels(intpageIndex)async{',
+      );
+      expect(start, isNonNegative);
+      final String panels = flat.substring(
+        start,
+        flat.indexOf('Future<Rect?>_autoPanelCropRect', start),
+      );
+      expect(panels.contains('_isStripPage(pageIndex)'), isTrue);
+      expect(panels.contains('_mode.'), isFalse);
+      expect(body.contains('_mode.isWebtoon'), isFalse);
     });
 
     test('四种分支都接上：不要图 / 用户框 / 自动分镜 / 整页', () {
