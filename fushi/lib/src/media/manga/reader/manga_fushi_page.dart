@@ -3582,6 +3582,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     String inlineSelectionJs, {
     required MangaWindowNavigation navigation,
   }) {
+    // 新文档里没有气泡放大浮层。
+    _bubbleZoomOpen = false;
     final MokuroPayload payload = _payload!;
     final bool isWebtoon = _mode.isContinuous;
 
@@ -3668,6 +3670,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       // 在线直读章的 payload 尺寸是占位值（真尺寸要等页图到了才知道），只有本地卷 /
       // 已下载章的 manga.json 尺寸可信，降采样只对它们开（BUG-4704）。
       fitImagesToDisplay: _pageSession is! OnlineMangaReaderSession,
+      // 气泡放大浮层：展开走 spatial default、收起走 effects default；减弱动态效果
+      // 时归零（墨水屏在脚本里按阅读器偏好另判）。
+      bubbleZoomOpenMs: fushiMotionDuration(
+        context,
+        FushiMotion.medium,
+      ).inMilliseconds,
+      bubbleZoomCloseMs: fushiMotionDuration(
+        context,
+        FushiMotion.short,
+      ).inMilliseconds,
     );
     return (document: document, keptSpreads: keptSpreads.toSet());
   }
@@ -4365,6 +4377,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 (function(){
   var keep = new Set(${jsonEncode(pageIndices.toList())});
   var htmlByPage = ${jsonEncode(htmlByPage)};
+  // OCR 层要换：气泡放大浮层里是旧 OCR 的克隆，先收起。
+  if (window.__mangaBubbleZoomClose) window.__mangaBubbleZoomClose();
   document.querySelectorAll('.manga-page').forEach(function(page){
     var index = Number(page.getAttribute('data-page'));
     if (!keep.has(index)) {
@@ -4432,6 +4446,42 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   }
 
   MangaReaderInputAction? _lastReaderInputAction;
+
+  /// 页内气泡放大浮层是否开着（JS `onMangaBubbleZoom` 回报；换文档时清零）。
+  bool _bubbleZoomOpen = false;
+
+  /// 收起气泡放大浮层（Esc）。先在 Dart 侧置否：JS 的 close 回报是异步的，
+  /// 紧跟着的第二下 Esc 不能再被当成「收浮层」吞掉。
+  void _closeBubbleZoom() {
+    _bubbleZoomOpen = false;
+    unawaited(
+      _controller
+              ?.evaluateJavascript(
+                source:
+                    'window.__mangaBubbleZoomClose && '
+                    'window.__mangaBubbleZoomClose();',
+              )
+              .catchError((Object e, StackTrace stack) {
+                ErrorLogService.instance.log(
+                  'MangaFushiPage.bubbleZoomClose',
+                  e,
+                  stack,
+                );
+                return null;
+              }) ??
+          Future<void>.value(),
+    );
+  }
+
+  /// JS `onMangaBubbleZoom(state, retract)`：记下浮层开合；`retract` = 双击气泡时
+  /// 第一击已经发起的查词要撤回（[clearDictionaryResult] 推进查词代号，在途结果作废）。
+  void _onMangaBubbleZoom(List<dynamic> args) {
+    if (args.isEmpty) return;
+    _bubbleZoomOpen = args[0] == 'open';
+    final bool retract = args.length > 1 && args[1] == true;
+    if (retract && mounted) clearDictionaryResult();
+  }
+
   _MangaReaderInputSource? _lastReaderInputSource;
   DateTime? _lastReaderInputAt;
   Timer? _dictionaryTurnDismissTimer;
@@ -4532,6 +4582,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _lastReaderInputAction = action;
     _lastReaderInputSource = source;
     _lastReaderInputAt = now;
+    // 气泡放大浮层开着：关词典 / 返回键（默认都是 Esc）先收浮层，不退书。
+    if (_bubbleZoomOpen &&
+        (action == MangaReaderInputAction.dismissDictionary ||
+            action == MangaReaderInputAction.backOrExit)) {
+      _dictionaryTurnDismissTimer?.cancel();
+      if (isDictionaryShown) clearDictionaryResult();
+      _closeBubbleZoom();
+      return;
+    }
     if (action == MangaReaderInputAction.dismissDictionary) {
       _dictionaryTurnDismissTimer?.cancel();
       clearDictionaryResult();
@@ -6643,6 +6702,17 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   @visibleForTesting
   Future<Object?> debugEvaluateJavascript(String source) async =>
       _controller?.evaluateJavascript(source: source);
+
+  /// 集成测试探针：经 DevTools 协议给正文 WebView 投真实输入（`Input.dispatchMouseEvent`
+  /// 走 Chromium 的输入管线，页面收到的是真 pointer 事件，不是脚本合成的）。
+  @visibleForTesting
+  Future<Object?> debugCallDevToolsProtocolMethod(
+    String method,
+    Map<String, dynamic> parameters,
+  ) async => _controller?.callDevToolsProtocolMethod(
+    methodName: method,
+    parameters: parameters,
+  );
 
   /// 集成测试取证：抓取正文 WebView 的实际渲染像素。
   @visibleForTesting
@@ -9069,6 +9139,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
             _toggleFloatingChrome();
           },
+        );
+        controller.addJavaScriptHandler(
+          handlerName: 'onMangaBubbleZoom',
+          callback: _onMangaBubbleZoom,
         );
         controller.addJavaScriptHandler(
           handlerName: 'onMangaReaderHide',
