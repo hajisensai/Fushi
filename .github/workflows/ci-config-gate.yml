@@ -60,6 +60,9 @@ jobs:
       # 调试版流水线生成器（发布 run 里 continue-on-error 地调用，红了不会在那里暴露）。
       - name: Debug pulse generator unit tests
         run: python3 tool/gen_debug_pulse_test.py
+      # 符号索引（tool/symindex）：改动文件判定 / 自动降级 / Rust hover 解析。
+      - name: Symbol index unit tests
+        run: python3 tool/symindex/symdb_test.py
       # 下面的磁盘枚举按「引用了 .github / tool 文件」整文件收测试，其中有十几个会 import
       # package:fushi、pump 真页面（如 test/reader/continuous_*_test.dart 构建设置 schema）。
       # app 代码对 fushi_web_core 是硬依赖（设置 schema 的「广告拦截」分区在顶层取

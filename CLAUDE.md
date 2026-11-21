@@ -8,6 +8,7 @@
 - **改动必须在独立 Git worktree 里做**，新建后第一件事跑 `powershell -ExecutionPolicy Bypass -File tool/setup_worktree.ps1`（别手动 cp 密钥桩；只搬密钥加 `-SkipBootstrap`）。完成→验证→提交→push→开 PR 后就停，**不自己合并**，用户当轮明说「合并」才合；合并不得覆盖原工作区未提交改动。（[细则](docs/agent/rules-detail.md#worktree-初始化)）
 - 多 agent 并发：在 `.worktrees/coordination/claims/`（worktree 里用 `../coordination/claims/`）按 `_template.json` 登记 claim（任务、分支、base SHA、预计 / 高冲突文件），只编辑自己的 claim；普通 agent 不主动 rebase/merge `develop`，由 integration owner 统一合并与 broad verification。**长期集成分支也不追 `develop`**：只在对 `develop` 开整批 PR 前合一次（与最后一批合流并成一次验证），中途不合、不量、不汇报「落后多少提交」。（[细则](docs/agent/rules-detail.md#集成分支不追-develop)）
 - 子代理：≥2 个可独立推进的子任务才并行派发，后台派、不空等、不重复派；几次工具调用能做完的不派（首轮固定开销约 8 万 token）。分工与伪红判别见 [fast-workflow.md](docs/agent/fast-workflow.md)。子代理类型定义在 `.claude/agents/`（只带实际用到的工具），模型由 `tool/claude_hooks/subagent_model_router.mjs` 按类型钉死：`scout` / `worker` → Sonnet，`reviewer` / `general` → Opus，`general-purpose` 与省略类型自动改派 `general`；workflow 的 `agent()` 由 `workflow_agent_type_default.mjs` 默认补 `agentType: 'general'`。
+- **跨目录找 Dart / Rust 符号的定义或引用，先用 `python tool/symindex/sym.py def|refs|find <名字>`**（语义索引，0.5 秒；改动文件自动退回实时 grep，标 `[live]`），没有结果或要搜非符号文本时再 `grep`。（[README](tool/symindex/README.md)）
 - **方案取最优、一次做到位**（修 bug 与做功能都适用）：动手前先比较有没有更好的方案，有就用更好的，不因为「改动小 / 沿用现状省事」退而求其次；做到一半发现更好的就换，并在回复里说明换了什么、为什么。能根本修复 / 完整实现的就一次做完，不交「先凑一版、以后再补」的补丁式半成品。更好的方案若会改变用户可见行为或明显扩大范围，先列取舍问用户；确实只能分期的，写明还缺什么并登记（`docs/BUGS.md` / [拍板台](docs/agent/decision-board.md)），不只在汇报里提。
 - **根因修复**：先复现或沿真实代码路径定位，修数据结构 / 状态同步 / 生命周期 / 平台边界 / 依赖契约。根因在结构里就重写那一块，不在坏结构上打补丁；禁止用延迟、重试、吞异常、硬编码、特例分支掩盖症状。仅外部不可控限制可加临时兼容层，并写明影响范围与清理条件。
 - 用户报 bug 按 [docs/BUGS.md](docs/BUGS.md) 文件头流程：先验真伪，`dart run tool/bug.dart new <slug>` 一 bug 一文件，记根因 `file:line` → ① 根因修复 ② 最强可落地层的自动化测试；撞号不是需要处理或汇报的事（本机并行工作区取号互不相同，跨机器的由 develop 上的 settle CI 自动改号），真要改号用 `bug.dart renumber` / `settle`，别手动改文件名。
@@ -92,6 +93,7 @@
 | Galgame Hook | [galgame-hooking.md](docs/agent/galgame-hooking.md) |
 | 远程操作社区志愿者电脑做 galgame 适配（一个会话控多台、MCP 网关、打包） | [remote-adapt.md](docs/agent/remote-adapt.md) |
 | 本机重活租约 | [heavy-lease.md](docs/agent/heavy-lease.md) |
+| 符号索引（按名字查定义 / 引用、定时刷新、改动文件降级） | [tool/symindex/README.md](tool/symindex/README.md) |
 | 在线源 / 浏览 / 应用内反馈 | [online-sources.md](docs/agent/online-sources.md) |
 | 动画刮削 | [anime-scraping.md](docs/agent/anime-scraping.md) |
 | 各模块语言与职责 | [module-index.md](docs/agent/module-index.md) |
