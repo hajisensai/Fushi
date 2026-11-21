@@ -6,7 +6,8 @@
 //!   （`study`）、浏览（`browse_query` → `browse_ids`）、统计（`stats_report` / `stats_rows`）、冲突中心（`conflicts` /
 //!   `checkpoints`）；写（`apply` 一次作答 + 一次改字段）两侧各发一次，再比一遍读。各 `cmd/*_tests.rs` 已逐命令逐参数
 //!   对拍过实现本身，这里钉的是接线：profile → 集合号、读快照、写事务、回包外壳与常驻会话。
-//! - **常驻会话失效**：写入之后统计原料缓存重读（写入代数）、浏览会话按代号看见新行、出卡现读。
+//! - **常驻会话失效**：写入之后统计原料缓存重读（写入代数）、浏览会话按代号看见新行、出卡会话按触发器记的行重读
+//!   （逐场景的对拍在 `study_session_tests.rs`）。
 //! - **本机状态行**：写命令推进 `localRevision`，`apply` 的前置条件不成立什么都不写。
 //! - **打开状态**：未迁移 / 迁移进行中 / 封存只剩旧库 / 墓碑 / 旁边另有未迁移的协议 3 库 / 辅助进程只读。
 //! - **未接线 / 已删的命令**、没有绑定的 profile、别名类成员经分发器的回答、命令层新语句的查询计划。
@@ -541,7 +542,7 @@ fn writes_through_the_dispatcher_match_protocol_3_and_invalidate_sessions() {
     let (_, old) = browse_ids(&pair, &mut |op, r| p3(&m.d, op, T1, r, None).0, query);
     assert_eq!(old, new);
     assert!(new.contains(&pair.canon(&c)), "{new:?}");
-    // 出卡现读：两侧相同（作答过的卡不再到期）。
+    // 出卡（常驻会话重读这笔写入）：两侧相同（作答过的卡不再到期）。
     for now in [T1 + 10, T1 + 5 * DAY] {
         let req = study_req(now, json!({"deck": deck, "pick": true}));
         close(

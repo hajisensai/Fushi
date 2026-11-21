@@ -1253,6 +1253,36 @@ void main() {
       }
     });
 
+    test('复习库在换代途中（BUG-5069）：链上制卡回带分类码的失败，不吞成「复习不可用」', () async {
+      final ProviderContainer c = ProviderContainer(
+        overrides: <Override>[
+          platformServicesProvider.overrideWithValue(testPlatformServices()),
+          appProvider.overrideWith(
+            (Ref ref) => _TargetAppModel(SrsMiningTarget.srs),
+          ),
+          srsModuleEnabledProvider.overrideWithValue(true),
+          srsStoreProvider.overrideWith(
+            (Ref ref) async => throw const SrsStoreNotMigrated(
+              'not migrated',
+              SrsGenState.needsMigration,
+            ),
+          ),
+        ],
+      );
+      addTearDown(c.dispose);
+      final BaseAnkiRepository repo = c.read(ankiRepositoryProvider);
+      expect(repo, isA<SrsMiningAnkiRepository>());
+      final MineOutcome out = await repo.mineEntry(
+        rawPayloadJson: _payload('雪', 'ゆき'),
+        context: const AnkiMiningContext(sentence: ''),
+      );
+      expect(out.result, MineResult.error);
+      expect(out.errorCode, AnkiErrorCode.srsNeedsMigration);
+      expect(out.error, isA<SrsStoreNotMigrated>());
+      // 查词时的查重探测照旧回「不重复」。
+      expect(await repo.isDuplicate('雪', 'ゆき'), isFalse);
+    });
+
     test('模块开着、目标仍是 Anki：也不包', () {
       final BaseAnkiRepository repo = container(
         srsEnabled: true,

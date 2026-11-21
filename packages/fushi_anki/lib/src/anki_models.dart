@@ -2019,6 +2019,27 @@ class AnkiErrorCode {
   /// 主机已经收到请求，所以它**不是**「确定没送到」，不进待发队列。
   static const String pairedDeviceMineFailed = 'ANKI_PAIRED_DEVICE_MINE_FAILED';
 
+  /// BUG-5069：互联远端制卡送到了已配对设备，但那台设备上的 **Fushi 复习**库在换代途中（主机回包的
+  /// `errorCode` 是下面四个 `srs*` 之一），卡没写进去。与 [pairedDeviceMineFailed] 分开：那条的文案说的是
+  /// 「那台设备上的 Anki」，这里卡要去的是复习，要在那台设备上完成升级。主机已收到请求，不进待发队列。
+  static const String pairedDeviceReviewBlocked =
+      'ANKI_PAIRED_DEVICE_REVIEW_BLOCKED';
+
+  /// BUG-5069：挖词目标是 Fushi 复习，但复习库在换代途中、此刻不收卡（打开时内核报
+  /// `SrsStoreOpenBlocked` / 主库还留着协议 1 的数据）。四类按「用户下一步」分：
+  ///
+  /// - `srsNeedsMigration`：要做一次升级（去复习页「开始升级」，非主进程去主窗口）；
+  /// - `srsMigrationFailed`：上次升级没完成（去复习页重新升级）；
+  /// - `srsMigrating`：别的窗口 / 进程正在升级（等完成再试）；
+  /// - `srsNeedsAttention`：只剩封存旧库 / 旁边有没迁移的旧库 / 主库里还有协议 1 数据，要人处理（去复习页看说明）。
+  ///
+  /// 分类在 app 的 `srs_generation_kind.dart`（与代际状态页同一个判据）；这里只放与 locale 无关的码，互联主机原样
+  /// 回传，客户端据此包成 [pairedDeviceReviewBlocked]。
+  static const String srsNeedsMigration = 'SRS_NEEDS_MIGRATION';
+  static const String srsMigrationFailed = 'SRS_MIGRATION_FAILED';
+  static const String srsMigrating = 'SRS_MIGRATING';
+  static const String srsNeedsAttention = 'SRS_NEEDS_ATTENTION';
+
   /// BUG-1900：配置的字段名**一个都不属于**当前笔记类型。
   ///
   /// AnkiConnect 按字段**名**匹配，不认识的名字被静默丢弃；而
@@ -2068,6 +2089,14 @@ class AnkiErrorCode {
   /// 本机找不到 `fushi-anki-sync`（这个平台 / 安装包没带它）。
   static const String syncClientUnavailable = 'ANKI_SYNC_UNAVAILABLE';
 }
+
+/// [code] 是不是「复习库在换代途中」一类（[AnkiErrorCode.srsNeedsMigration] 等四个，BUG-5069）。与具体词条无关，
+/// 批量制卡同样应整批中止。
+bool isSrsGenerationErrorCode(String? code) =>
+    code == AnkiErrorCode.srsNeedsMigration ||
+    code == AnkiErrorCode.srsMigrationFailed ||
+    code == AnkiErrorCode.srsMigrating ||
+    code == AnkiErrorCode.srsNeedsAttention;
 
 /// [code] 是不是「字段映射配错」一类：映射整体为空、字段名全不属于笔记类型、首字段空。
 /// 这类失败与具体词条无关，同一批里后面每一条都会一样失败，批量制卡应整批中止。

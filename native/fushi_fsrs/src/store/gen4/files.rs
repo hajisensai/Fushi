@@ -35,7 +35,7 @@
 //! - **Secondary**（查词弹窗等辅助进程，只读）：不建库、不迁移、不建表；没有新代库就按锁的状态报
 //!   [OpenError::Migrating] / [OpenError::NotMigrated]。打开的连接 `query_only`，写不进去。
 
-use std::fs::{File, OpenOptions, TryLockError};
+use std::fs::{File, OpenOptions};
 use std::path::Path;
 
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
@@ -65,7 +65,8 @@ pub const MIGRATED_FROM_KEY: &str = "migrated_from";
 /// 水位就对不上，不封（那几笔写入没进新代）。
 pub const MIGRATED_LOG_KEY: &str = "migrated_log";
 
-/// 换代锁：`srs.gen.lock` 上的跨进程独占文件锁（`File::try_lock`：Unix 上是 `flock`，Windows 上是 `LockFileEx`）。
+/// 换代锁：`srs.gen.lock` 上的跨进程独占文件锁（Unix / Android 直接调 `flock`，避免 Rust 标准库
+/// `File::try_lock` 在 Android 上返回 `try_lock() not supported`；Windows 用 `File::try_lock` / `LockFileEx`）。
 /// 句柄在就持有，drop 即释放；进程死掉时由操作系统释放。同一进程里另开一个句柄也拿不到。
 #[derive(Debug)]
 pub struct GenLock {
@@ -83,11 +84,44 @@ impl GenLock {
             .truncate(false)
             .open(&path)
             .map_err(|e| format!("gen4 lock: open {}: {e}", path.display()))?;
-        match file.try_lock() {
-            Ok(()) => Ok(Some(GenLock { _file: file })),
-            Err(TryLockError::WouldBlock) => Ok(None),
-            Err(TryLockError::Error(e)) => Err(format!("gen4 lock: lock {}: {e}", path.display())),
+        match try_lock_exclusive(&file) {
+            Ok(true) => Ok(Some(GenLock { _file: file })),
+            Ok(false) => Ok(None),
+            Err(e) => Err(format!("gen4 lock: lock {}: {e}", path.display())),
         }
+    }
+}
+
+/// 非阻塞独占锁：拿到 = `Ok(true)`，已被别的句柄持有 = `Ok(false)`。
+#[cfg(unix)]
+fn try_lock_exclusive(file: &File) -> std::io::Result<bool> {
+    use std::io::ErrorKind;
+    use std::os::fd::AsRawFd;
+
+    let fd = file.as_raw_fd();
+    loop {
+        // SAFETY: fd 来自有效打开的 File 句柄，本调用期间未被关闭；flock 仅操作内核文件锁。
+        if unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+            return Ok(true);
+        }
+        let err = std::io::Error::last_os_error();
+        match err.kind() {
+            ErrorKind::Interrupted => continue,
+            ErrorKind::WouldBlock => return Ok(false),
+            _ => return Err(err),
+        }
+    }
+}
+
+/// 非阻塞独占锁：拿到 = `Ok(true)`，已被别的句柄持有 = `Ok(false)`。
+#[cfg(not(unix))]
+fn try_lock_exclusive(file: &File) -> std::io::Result<bool> {
+    use std::fs::TryLockError;
+
+    match file.try_lock() {
+        Ok(()) => Ok(true),
+        Err(TryLockError::WouldBlock) => Ok(false),
+        Err(TryLockError::Error(e)) => Err(e),
     }
 }
 
@@ -139,8 +173,9 @@ pub struct Opened {
     /// 新代库的连接：已经配好（WAL、页缓存）；Primary 的已经建齐表。
     pub conn: Connection,
     /// 保留副本 `srs.db` 在、但不是 SQLite 文件（打开 / 读它报 `SQLITE_NOTADB`）。旧版本同样拒绝打开它，所以不挡新代库，
-    /// 但用户的保留副本已经没法用了：这个状态向上报，由 G7-5 的状态枚举呈现。只有 Primary 拿到换代锁、检查过
-    /// `srs.db` 时才可能置位；Secondary 与锁被别人拿着时不看它，恒为 `false`。
+    /// 但用户的保留副本已经没法用了。开库只用它跳过到期自动删；呈现给用户走全局命令 `gen4_retained_state` 的
+    /// `copy: "unreadable"`（`retained::inspect` 同一判据，随时现读磁盘，设置 › 存储 / ctl 显示，BUG-5079）。只有 Primary
+    /// 拿到换代锁、检查过 `srs.db` 时才可能置位；Secondary 与锁被别人拿着时不看它，恒为 `false`。
     pub retained_copy_unreadable: bool,
 }
 
@@ -610,6 +645,61 @@ mod tests {
         assert!(GenLock::try_acquire(&dir.0).unwrap().is_some());
     }
 
+    /// BUG-5065：Rust 标准库只在 linux / apple / BSD 等目标上用 `flock` 实现 `File::try_lock` / `lock` /
+    /// `lock_shared`，`target_os = "android"` 落到「not supported」桩上，换代锁在 Android 上一次都拿不到、
+    /// 复习库整个打不开。Android 的 CI 只编译不跑测试，所以这里守住源码：Unix（含 Android）走 `libc::flock`，
+    /// 标准库的文件锁只允许出现在 `#[cfg(not(unix))]` 那一支里。
+    #[test]
+    fn unix_lock_never_goes_through_std_file_locking() {
+        let src = include_str!("files.rs").replace("\r\n", "\n");
+        let prod = &src[..src.find("\n#[cfg(test)]\nmod tests").expect("tests marker")];
+        let unix_at = prod
+            .find("#[cfg(unix)]\nfn try_lock_exclusive")
+            .expect("unix branch");
+        let unix_end = unix_at + prod[unix_at..].find("\n}\n").expect("unix fn end");
+        assert!(
+            prod[unix_at..unix_end].contains("libc::flock("),
+            "the unix branch must call libc::flock directly"
+        );
+        let other_at = prod
+            .find("#[cfg(not(unix))]\nfn try_lock_exclusive")
+            .expect("non-unix branch");
+        let other_end = other_at + prod[other_at..].find("\n}\n").expect("non-unix fn end");
+        let rest = format!("{}{}", &prod[..other_at], &prod[other_end..]);
+        for banned in [
+            ".try_lock(",
+            ".lock(",
+            ".lock_shared(",
+            ".try_lock_shared(",
+            "TryLockError",
+        ] {
+            assert!(
+                !rest.contains(banned),
+                "std file locking `{banned}` outside the cfg(not(unix)) branch is unsupported on Android"
+            );
+        }
+    }
+
+    /// Unix 那一支就是 `flock`：另开一个描述符直接 `flock` 会被挡住，锁放掉后能拿到。Linux / macOS 跑的就是
+    /// Android 上那段代码（同一个 `cfg(unix)` 分支）。
+    #[cfg(unix)]
+    #[test]
+    fn unix_lock_is_a_real_flock() {
+        use std::os::fd::AsRawFd;
+
+        let dir = tempdir::new("genlock-flock");
+        let lock = GenLock::try_acquire(&dir.0).unwrap().expect("first");
+        let other = File::open(dir.0.join(GEN_LOCK_FILE)).unwrap();
+        let try_raw = |f: &File| -> bool {
+            // SAFETY: f 是本测试里打开且仍存活的文件；flock 只动内核文件锁。
+            unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) == 0 }
+        };
+        assert!(!try_raw(&other), "a raw flock must see the GenLock");
+        drop(lock);
+        assert!(try_raw(&other), "released GenLock must free the flock");
+        assert!(GenLock::try_acquire(&dir.0).unwrap().is_none());
+    }
+
     #[test]
     fn secondary_never_creates_and_refuses_until_there_is_a_generation_4_library() {
         let dir = tempdir::new("open-secondary");
@@ -998,5 +1088,65 @@ mod tests {
             legacy_schema(&dir.0),
             crate::store::schema::SEALED_SCHEMA.to_string()
         );
+    }
+
+    /// 生产开库（`G4Core::open`）按协议 3 的内存预算配连接（`store/mod.rs` `tune_for_daily_use`）：写连接映射 256 MB、页缓存
+    /// 64 MB 起（取写连接时按可用内存下调，夹在 16..=64 MB）；读连接池与 Secondary 打开的连接按平台映射（32 位不映射）、
+    /// 页缓存 64 MB、只读。迁移用的 [schema::open] 保持保守值（不映射、16 MB，设计 §6.5）。
+    #[test]
+    fn production_connections_get_the_daily_mmap_and_page_cache() {
+        use crate::store::gen4::kernel::G4Core;
+        use crate::store::mem_budget::{MAX_KIB, MIN_KIB};
+        use crate::store::{MMAP_BYTES, MmapRole, mmap_size_for};
+        let pragma = |c: &Connection, p: &str| -> i64 {
+            c.query_row(&format!("PRAGMA {p}"), [], |r| r.get(0))
+                .unwrap()
+        };
+        let dir = tempdir::new("g4tune");
+        let core = G4Core::open(&dir.0, OpenMode::Primary).unwrap();
+        {
+            let w = core.writer().unwrap();
+            assert_eq!(pragma(&w, "mmap_size"), MMAP_BYTES);
+            let cache = -pragma(&w, "cache_size");
+            assert!(
+                (MIN_KIB..=MAX_KIB).contains(&cache),
+                "writer cache {cache} KiB"
+            );
+            assert_eq!(
+                pragma(&w, "secure_delete"),
+                1,
+                "schema::open's settings stay"
+            );
+        }
+        let secondary = mmap_size_for(MmapRole::Secondary);
+        assert_eq!(
+            secondary,
+            if cfg!(target_pointer_width = "32") {
+                0
+            } else {
+                MMAP_BYTES
+            }
+        );
+        {
+            let r = core.reader().unwrap();
+            assert_eq!(pragma(&r, "mmap_size"), secondary);
+            assert_eq!(pragma(&r, "cache_size"), -MAX_KIB);
+            assert_eq!(pragma(&r, "query_only"), 1);
+        }
+        let ro = G4Core::open(&dir.0, OpenMode::Secondary).unwrap();
+        {
+            let r = ro.reader().unwrap();
+            assert_eq!(pragma(&r, "mmap_size"), secondary);
+            assert_eq!(pragma(&r, "cache_size"), -MAX_KIB);
+        }
+        ro.close();
+        core.close();
+        let mig = schema::open(&dir.0.join(GEN4_FILE)).unwrap();
+        assert_eq!(
+            pragma(&mig, "mmap_size"),
+            0,
+            "migration connections do not map"
+        );
+        assert_eq!(pragma(&mig, "cache_size"), -16384);
     }
 }

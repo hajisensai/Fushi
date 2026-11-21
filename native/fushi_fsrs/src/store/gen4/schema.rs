@@ -773,8 +773,9 @@ pub fn install(conn: &Connection) -> Result<(), String> {
     Ok(())
 }
 
-/// 打开（不存在就建）新代库文件。不做内存映射（设计 §6.5：迁移用的连接不映射）；页缓存取保守值，接线时由调用方按
-/// 现有预算（`store/mem_budget.rs`）再调。
+/// 打开（不存在就建）新代库文件。不做内存映射（设计 §6.5：迁移用的连接不映射）、页缓存取保守值：迁移 / 干跑 / 建库
+/// 直接用这份；生产开库（`kernel.rs` `G4Core::open`）在这之上按协议 3 的内存预算重配（`store/mod.rs`
+/// `tune_for_daily_use` / `retune_writer_cache`，`store/mem_budget.rs`）。
 ///
 /// 并发：同一个文件可能有别的连接正拿着写锁（另一个线程的 `BEGIN IMMEDIATE`、迁移、收段）。打开要读文件头、切 WAL、
 /// 再跑一遍 [install]（它会写：装触发器、`srs_meta`）。[install] 先读（`check_kind`、`application_id`、
@@ -955,7 +956,7 @@ mod tests {
     #[test]
     fn lookups_with_a_key_never_walk_the_whole_collection() {
         // 本来就是对整个集合做的（多出来的相等条件是 `state` / `kind` / 键名这类过滤，不是定位）。
-        const WHOLE: [&str; 10] = [
+        const WHOLE: [&str; 12] = [
             "SELECT DISTINCT ekind, ent FROM reg_ix WHERE col = ?1 AND key = ?2",
             "SELECT k FROM reg_ix WHERE col = ?1 AND state = ?2 UNION SELECT k FROM tag_ix WHERE col = ?1 AND state = ?2",
             "SELECT k FROM reg_ix WHERE col = ?1 AND state = ?2 UNION SELECT k FROM purge_ix WHERE col = ?1 AND state = ?2",
@@ -969,6 +970,10 @@ mod tests {
             "SELECT id FROM ent_ix WHERE col = ?1 AND kind = ?2 AND win = 1",
             // 别名增量证明：全部笔记类型 / 牌组的身份记录（量小，扫的是身份记录表）。
             "SELECT id, k FROM ent_ix WHERE col = ?1 AND kind = ?2 AND typeof(id) = 'blob' ORDER BY id, k",
+            // 收尾时找检查点之前建的旧闭包行（`derive.rs` `Index::settle`）：一台承袭设备一行，`>=` 不是定位。
+            "SELECT device FROM closure_ix WHERE col = ?1 AND upto >= ?2 AND json_type(ctx, '$.at') IS NULL",
+            // 开库时问有没有要补检查点的闭包行（`derive.rs` `closure_steps_missing`）：跨集合，一台承袭设备一行。
+            "SELECT EXISTS (SELECT 1 FROM closure_ix WHERE upto >= ?1 AND json_type(ctx, '$.at') IS NULL)",
         ];
         let conn = open_in_memory().unwrap();
         let mut seen = 0;
