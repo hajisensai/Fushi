@@ -1,4 +1,4 @@
-## BUG-5069 · 复习库在换代途中时制卡只报「Fushi review is not available.」，不提示去升级
+## BUG-5085 · 复习库在换代途中时制卡只报「Fushi review is not available.」，不提示去升级
 - **报告**：2026-11-21（用户：维护者应用内反馈 mF9yZkbWdo，截图「导出卡片失败：Fushi review is not available.」）
 - **真实性**：✅ 真 bug。复习库处在代际状态（要迁移 / 别的窗口在迁移 / 上次迁移失败 / 只剩封存旧库 / 旁边有没迁移的旧库 / 主库还有协议 1 数据）时，`srsStoreProvider`（`fushi/lib/src/srs/srs_providers.dart:282`）经 `SrsStorageHost.acquire` 抛 `SrsStoreOpenBlocked` 子类或 `SrsLegacyMainDatabasePending`，但制卡器解析全部 catch 后返回 null：
   - `fushi/lib/src/anki/anki_view_model.dart` `_readSrsMiner` 的 catch（修前 :957 `return null`）；

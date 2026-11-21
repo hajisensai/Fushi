@@ -2985,7 +2985,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
             expression: fields['expression'],
             overwrite: updateNoteId != null,
           ) ??
-          // BUG-5069：复习库要升级时带「打开复习」。
+          // BUG-5085：复习库要升级时带「打开复习」。
           mineFailureToastAction(outcome),
     );
     // BUG-1908：失败时把 describeMineOutcome 算出的**同一句**本地化文案回给浮窗。

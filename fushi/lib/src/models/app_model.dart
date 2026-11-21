@@ -14276,7 +14276,7 @@ class AppModel
   }
 
   /// [profileUid] 那份复习的制卡器（落点读那份配置的设置）。打不开时 null；库在换代途中原样抛出代际异常
-  /// （[SrsMinerResolver] 的契约，BUG-5069：替对端制卡回带分类码的失败，而不是「复习不可用」）。
+  /// （[SrsMinerResolver] 的契约，BUG-5085：替对端制卡回带分类码的失败，而不是「复习不可用」）。
   Future<SrsMiner?> _hostReviewMiningMiner(String profileUid) async {
     final SrsProfileStores Function()? reader = srsProfileStoresReader;
     if (reader == null) return null;
@@ -14319,7 +14319,7 @@ class AppModel
   /// [view] 那份配置的复习制卡器：同一个 srs.db 句柄上那个配置 uid 的副本 + 它的媒体目录，
   /// 落点 / 日界读 [view]。复习不可用（模块关着 / 未注入）时为 null；打开失败留痕后同样为 null
   /// （制卡回「复习不可用」失败、查重回不重复——与激活配置的 `_readSrsMiner` 同一契约）。库在换代途中
-  /// 原样抛出代际异常（[SrsMinerResolver] 的契约，BUG-5069）：制卡据它回「去复习页完成升级」。
+  /// 原样抛出代际异常（[SrsMinerResolver] 的契约，BUG-5085）：制卡据它回「去复习页完成升级」。
   Future<SrsMiner?> extensionSrsMinerForView(ProfileSettingsView view) async {
     final SrsProfileStores Function()? reader = srsProfileStoresReader;
     if (reader == null) return null;
@@ -14941,7 +14941,7 @@ class AppModel
             // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
             action:
                 minedCardUndoToastAction(repo, outcome, expression: word) ??
-                // BUG-5069：复习库要升级时带「打开复习」。
+                // BUG-5085：复习库要升级时带「打开复习」。
                 mineFailureToastAction(outcome),
           );
         } catch (e, stack) {
