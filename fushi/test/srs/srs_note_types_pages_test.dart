@@ -1454,9 +1454,18 @@ void main() {
         find.byKey(const ValueKey<String>('srs_change_type_apply')).first,
       );
       await _settle(tester);
+      // 编辑页按新修订号重读笔记是异步的：机器忙时修订号到了、重读还没回来，
+      // 下面「编辑页显示新类型」的断言会抢跑。等重读后的界面状态，而不是等帧数。
+      final Finder newTypeRow = find.descendant(
+        of: find.byKey(const ValueKey<String>('srs-note-type-row')),
+        matching: find.text('A Target'),
+      );
       await srsUntilWritten(
         tester,
         () => tester.tap(find.text(t.srs_change_type_apply).last),
+        until: () =>
+            find.byType(SrsChangeNoteTypePage).evaluate().isEmpty &&
+            newTypeRow.evaluate().length == 1,
       );
       expect(find.byType(SrsChangeNoteTypePage), findsNothing);
 
