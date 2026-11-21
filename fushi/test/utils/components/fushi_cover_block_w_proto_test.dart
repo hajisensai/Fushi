@@ -330,7 +330,7 @@ void main() {
       expect(find.byKey(discKey), findsNothing);
     });
 
-    testWidgets('曲库色块不起拼贴加大首块：所有块等尺寸', (WidgetTester tester) async {
+    testWidgets('曲库色块跟库页布局：拼贴下首块加大、旁边叠半高卡（与书架一致）', (WidgetTester tester) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(1400, 900);
       addTearDown(tester.view.reset);
@@ -364,9 +364,10 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(sizes, isNotEmpty);
-      expect(sizes.toSet(), <FushiCoverBlockSize>{FushiCoverBlockSize.regular});
-      expect(boxes.map((Size b) => b.height).toSet().length, 1);
-      // 等尺寸块够宽（W 原型双格比例），无盘专辑走海报版式的装盒大字。
+      // 用户 11-21 拍板撤回「音乐一律等尺寸」：首块是拼贴加大块，旁边有半高卡。
+      expect(sizes.first, FushiCoverBlockSize.hero);
+      expect(sizes, contains(FushiCoverBlockSize.half));
+      // 加大首块够宽，无盘专辑走海报版式的装盒大字。
       expect(boxes.first.width / boxes.first.height, greaterThan(1.6));
       expect(fitPaint('Album 0'), findsOneWidget);
     });

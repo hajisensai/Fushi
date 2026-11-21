@@ -1,10 +1,53 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
 import 'package:fushi_engine/tts/providers/gpt_sovits_tts_provider.dart';
+import 'package:fushi_engine/tts/providers/unsloth_studio_tts_provider.dart';
+import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
+  group('ttsApplyPickedOptionParams', () {
+    test('选 Unsloth Studio 声音时把文字稿 / 参考语言快照进预设，清空时一起删', () {
+      const UnslothStudioTtsDescriptor d = UnslothStudioTtsDescriptor();
+      const TtsVoice option = TtsVoice(
+        id: 'v1',
+        displayName: 'narrator',
+        locale: 'ja',
+        attributes: <String, String>{
+          UnslothStudioTtsDescriptor.transcriptAttribute: '今日はいい天気。',
+        },
+      );
+      final Map<String, String> params = <String, String>{'model': 'cosy'};
+      ttsApplyPickedOptionParams(
+        params,
+        d.paramsForPickedOption(UnslothStudioTtsDescriptor.voiceKey, option),
+      );
+      expect(params, <String, String>{
+        'model': 'cosy',
+        UnslothStudioTtsDescriptor.voiceTranscriptKey: '今日はいい天気。',
+        UnslothStudioTtsDescriptor.voiceLanguageKey: 'ja',
+      });
+      ttsApplyPickedOptionParams(
+        params,
+        d.paramsForPickedOption(UnslothStudioTtsDescriptor.voiceKey, null),
+      );
+      expect(params, <String, String>{'model': 'cosy'});
+    });
+
+    test('默认引擎不写额外参数', () {
+      final Map<String, String> params = <String, String>{'voice': 'a'};
+      ttsApplyPickedOptionParams(
+        params,
+        const GptSovitsTtsDescriptor().paramsForPickedOption(
+          'voice',
+          const TtsVoice(id: 'b', displayName: 'b', locale: ''),
+        ),
+      );
+      expect(params, <String, String>{'voice': 'a'});
+    });
+  });
+
   group('ttsEndpointIsLoopback', () {
     test('本机地址可以在本机选参考音频', () {
       expect(ttsEndpointIsLoopback('http://127.0.0.1:9880'), isTrue);

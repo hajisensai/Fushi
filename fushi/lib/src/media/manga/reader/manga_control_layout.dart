@@ -134,7 +134,10 @@ enum MangaControlItem implements ControlItemSpec<MangaControlSlot> {
   /// 换）。出厂在右上角、紧挨统计键：小说的对等入口是状态行里恒可见的计时键
   /// （`ReaderStudyClockButton`），漫画没有状态行，收在托盘就只剩统计侧栏里那一个
   /// 可见入口——「打开时暂停」的开始方式下用户找不到从哪儿起表。
-  studyTimer('studyTimer', foldPriority: 2, recoverySlot: MangaControlSlot.top);
+  studyTimer('studyTimer', foldPriority: 2, recoverySlot: MangaControlSlot.top),
+
+  /// 台词文字条 / 台词栏（方案 C）开关：触屏底部文字条、桌面右侧台词栏。
+  textStrip('textStrip', foldPriority: 2, recoverySlot: MangaControlSlot.top);
 
   const MangaControlItem(
     this.storageValue, {
@@ -231,6 +234,7 @@ class MangaControlLayout {
           MangaControlItem.ocrVolume,
           MangaControlItem.statistics,
           MangaControlItem.studyTimer,
+          MangaControlItem.textStrip,
           MangaControlItem.backToStart,
           MangaControlItem.ocrRerun,
           MangaControlItem.hideChrome,
