@@ -328,7 +328,8 @@ HT_EXPORT int ht_set_file_priority(void* session, const char* info_hash,
 
 // 会话协议状态（详情页 Overview 的协议区）：
 // {"ok":true,"listen_port","dht_running"(bool),
-//  "dht_nodes"(DHT 路由表节点数，-1 = 尚未统计到),
+//  "dht_nodes"(DHT 路由表节点数，双栈 / 多网卡下为全部 DHT 实例之和，
+//   取自 session_stats 的 dht.dht_nodes；DHT 关着时 0；-1 = 尚未统计到),
 //  "lsd_enabled","upnp_enabled","natpmp_enabled"(settings 现值),
 //  "pex_enabled"(恒 true：本桥建 session 一律带默认插件，含 ut_pex),
 //  "down_rate"/"up_rate"(会话级全局速率，字节/秒，含协议开销；由相邻两次
@@ -336,7 +337,7 @@ HT_EXPORT int ht_set_file_priority(void* session, const char* info_hash,
 //  "port_mappings":[{"transport":"upnp"|"natpmp","protocol":"tcp"|"udp"|""
 //   (error 回执不带协议),"external_port"(失败为 0),"ok","error"}]}
 //
-// **非阻塞**：本函数发出 post_dht_stats/post_session_stats 请求后只收割
+// **非阻塞**：本函数发出 post_session_stats 请求后只收割
 // 已到的 alert 即返回 —— dht_nodes 首轮是 -1、下一轮即有值；速率（down_rate/
 // up_rate）要到**第三轮**才有值：首轮回执未到、第二轮收割到首个采样只够
 // 建基线，第三轮才差分得出（详情页本就秒级轮询；同步等待会把 UI isolate

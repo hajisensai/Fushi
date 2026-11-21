@@ -32,6 +32,16 @@ Future<void> _pollUntil(
   }
 }
 
+Future<bool> _canBindUdp(InternetAddress address) async {
+  try {
+    final RawDatagramSocket socket = await RawDatagramSocket.bind(address, 0);
+    socket.close();
+    return true;
+  } on SocketException {
+    return false;
+  }
+}
+
 void main() {
   final String? explicit = _resolveLibPath();
 
@@ -92,6 +102,65 @@ void main() {
     // 首轮统计可能 -1（非阻塞契约），但绝不能是别的负值。
     expect(status.dhtNodes, greaterThanOrEqualTo(-1));
     expect(status.downRate, greaterThanOrEqualTo(-1));
+  }, skip: skip);
+
+  test('sessionStatus.dhtNodes（BUG-5070）：双端点各一个 DHT 实例时报两者之和', () async {
+    // 双栈监听下 libtorrent 每个端点各一个 DHT 实例、各投一条
+    // dht_stats_alert；旧桥逐条赋值，后到的实例会覆盖先到的。这里让
+    // B 的 IPv4 / IPv6 两个实例各认识一个节点：汇总必须是 2，旧实现
+    // 恒定只报 1（无论 alert 先后）。全回环，零外网（回环源地址的包
+    // 出不了本机，引导域名即便解析成功也连不上）。
+    final bool hasV6Loopback = await _canBindUdp(InternetAddress.loopbackIPv6);
+    if (!hasV6Loopback) {
+      markTestSkipped('本机没有 IPv6 回环 ::1');
+      return;
+    }
+    final EmbeddedTorrentSession? a4 = EmbeddedTorrentSession.open(
+      engine!,
+      listenInterfaces: '127.0.0.1:0',
+      enableDht: true,
+    );
+    addTearDown(a4!.close);
+    final EmbeddedTorrentSession? a6 = EmbeddedTorrentSession.open(
+      engine,
+      listenInterfaces: '[::1]:0',
+      enableDht: true,
+    );
+    addTearDown(a6!.close);
+    final EmbeddedTorrentSession? b = EmbeddedTorrentSession.open(
+      engine,
+      listenInterfaces: '127.0.0.1:0,[::1]:0',
+      enableDht: true,
+    );
+    addTearDown(b!.close);
+    if (!b.supportsAddDhtNodes) {
+      markTestSkipped('库不带 ht_add_dht_nodes');
+      return;
+    }
+    await _pollUntil(
+      () => a4.listenPort > 0 && a6.listenPort > 0 && b.listenPort > 0,
+      timeout: const Duration(seconds: 10),
+      what: 'listen ports',
+    );
+    expect(
+      b.addDhtNodes(<String>[
+        '127.0.0.1:${a4.listenPort}',
+        '[::1]:${a6.listenPort}',
+      ]),
+      2,
+    );
+    int lastNodes = -1;
+    await _pollUntil(
+      () => lastNodes >= 2,
+      timeout: const Duration(seconds: 30),
+      what: 'aggregated dhtNodes >= 2',
+      onTick: () {
+        final FtSessionStatus? status = b.sessionStatus();
+        expect(status, isNotNull);
+        expect(status!.dhtRunning, isTrue);
+        lastNodes = status.dhtNodes;
+      },
+    );
   }, skip: skip);
 
   test(
