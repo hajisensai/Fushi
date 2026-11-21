@@ -78,13 +78,9 @@ Dictionary resolveCtlDictionary(List<Dictionary> dictionaries, String query) {
   throw CtlFailure.notFound('没有名为「$q」的词典（fushi_cli dict ls 查看）');
 }
 
-/// 把 [target] 移到它**所在语言组**里的 [position]（1 起算，越界钳到组的两端），
-/// 返回重排后的整个分区（`order` 已按新下标改写）。与词典管理页
-/// `_reorderDictionaries` 同一语义（反馈 D_Nz5R4vSH）：分区按「有效语言」分组
-/// （[groupDictionariesByLanguage]），排序只在组内进行（[moveDictionaryWithinLanguageGroup]）；
-/// 返回的分区是规范顺序——各语言组按显示顺序首尾相接，其它组的组内顺序不变，
-/// 旧数据里的跨组交错一并消掉（管理页显示顺序 == 查词顺序）。
-/// 分区里只有一个语言组时就是整个分区内排序。
+/// 把 [target] 移到分区里的 [position]（1 起算，越界钳到两端），返回重排后的整个
+/// 分区（`order` 已按新下标改写）。与词典管理页 `_reorderRows` 同一语义：内容语言
+/// 只是标签，不参与排序，任何两本词典都能互相排先后（拍板台 zBzX4B7037）。
 ///
 /// 只排本机词典：返回的 `order` 是本机分区内的下标，调用方交给
 /// `AppModel.updateDictionaryOrder`（仓库按名字与先后连同同分区的服务器词典一起
@@ -107,12 +103,13 @@ List<Dictionary> ctlReorderDictionaries(
     );
   }
   final List<Dictionary> merged =
-      moveDictionaryWithinLanguageGroup(
+      moveDictionarySectionRow<Dictionary>(
         sameType,
+        (Dictionary d) => d.name,
         sameType[sectionIndex].name,
         position - 1,
       ) ??
-      concatenateLanguageGroups(sameType);
+      List<Dictionary>.of(sameType);
   for (int i = 0; i < merged.length; i++) {
     merged[i].order = i;
   }
