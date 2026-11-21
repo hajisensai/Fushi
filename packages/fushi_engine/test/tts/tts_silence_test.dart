@@ -17,6 +17,9 @@ void main() {
         '  　',
         '',
         '（……）',
+        // 符号后带变体选择符（\p{Mn}）的 emoji 仍是纯符号句。
+        '❤️',
+        '「♪︎」',
       ]) {
         expect(ttsTextIsSilent(text), isTrue, reason: text);
       }
