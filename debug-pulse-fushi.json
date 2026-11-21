@@ -1,12 +1,43 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-21T14:47:01Z",
+ "generatedAt": "2026-11-21T15:37:32Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "cbdc2a45edcc279f0d2ea3f3f8bfd2ab3ede0bd1",
   "seq": 30656
  },
  "builds": [
+  {
+   "seq": 30656,
+   "version": "3.4.0",
+   "sha": "cbdc2a45edcc279f0d2ea3f3f8bfd2ab3ede0bd1",
+   "unknown": false,
+   "publishedAt": "2026-11-21T15:37:22Z",
+   "testflight": false,
+   "baseSeq": 30654,
+   "prs": [
+    4040
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44913365607"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44913365607"
+    },
+    "ios": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44913365607"
+    }
+   }
+  },
   {
    "seq": 30654,
    "version": "3.4.0",
@@ -113,7 +144,7 @@
    "unknown": false,
    "publishedAt": "2026-11-21T12:59:04Z",
    "testflight": false,
-   "baseSeq": 30478,
+   "baseSeq": 29224,
    "prs": [
     4002,
     3984,
@@ -129,50 +160,7 @@
     3768,
     3760,
     3755,
-    3983
-   ],
-   "direct": [
-    {
-     "sha": "03e68eab6470fce13f18ae238ac6a901db8bf8e3",
-     "subject": "docs(bugs): 合并 #3775/#3990–#4000 后重建 BUGS 索引"
-    },
-    {
-     "sha": "a11db40c13f7d70dd61c7f0928db22e396f9a7cd",
-     "subject": "Merge remote-tracking branch 'origin/develop' into claude/integration-20261121"
-    },
-    {
-     "sha": "1104f3f7f3b9617226be55f26d1922dd6dc174cc",
-     "subject": "fix(audiobook): TextToEpub 的 HTML5 回退改走 EpubBook.parseChapterHtml（#3738 合入后 epub_chapter_parse_entry 守卫红）"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44897183865"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44897183776"
-    },
-    "ios": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44897183776"
-    }
-   }
-  },
-  {
-   "seq": 30478,
-   "version": "3.4.0",
-   "sha": "62a2ac1320ef486e5e37fc5911db952bf2ed692c",
-   "unknown": false,
-   "publishedAt": "2026-11-21T09:36:27Z",
-   "testflight": false,
-   "baseSeq": 29224,
-   "prs": [
+    3983,
     3989,
     3844,
     3839,
@@ -396,6 +384,18 @@
    ],
    "direct": [
     {
+     "sha": "03e68eab6470fce13f18ae238ac6a901db8bf8e3",
+     "subject": "docs(bugs): 合并 #3775/#3990–#4000 后重建 BUGS 索引"
+    },
+    {
+     "sha": "a11db40c13f7d70dd61c7f0928db22e396f9a7cd",
+     "subject": "Merge remote-tracking branch 'origin/develop' into claude/integration-20261121"
+    },
+    {
+     "sha": "1104f3f7f3b9617226be55f26d1922dd6dc174cc",
+     "subject": "fix(audiobook): TextToEpub 的 HTML5 回退改走 EpubBook.parseChapterHtml（#3738 合入后 epub_chapter_parse_entry 守卫红）"
+    },
+    {
      "sha": "62a2ac1320ef486e5e37fc5911db952bf2ed692c",
      "subject": "fix(develop-red): 扩展取主题不再碰未就绪的 dictRepo；iOS umbrella 锁文件与原生许可汇编跟上 fushi_compute 的 ort 依赖"
     },
@@ -515,50 +515,24 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44897183865"
     },
     "windows": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44885059633"
+     "state": "ok"
     },
     "macos": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44885059633"
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44897183776"
     },
     "ios": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44885059633"
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44897183776"
     }
    }
   }
  ],
- "pending": {
-  "headSha": "cbdc2a45edcc279f0d2ea3f3f8bfd2ab3ede0bd1",
-  "headSeq": 30656,
-  "prs": [
-   4040
-  ],
-  "direct": [],
-  "truncated": false,
-  "platforms": {
-   "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44913365600"
-   },
-   "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44913365607"
-   },
-   "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44913365607"
-   },
-   "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44913365607"
-   }
-  }
- },
+ "pending": null,
  "prs": {
   "3448": {
    "number": 3448,
