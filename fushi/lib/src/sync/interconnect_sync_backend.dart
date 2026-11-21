@@ -2533,18 +2533,19 @@ class InterconnectSyncBackend extends SyncBackend
     );
   }
 
-  /// 通知对端 host 删除 displayName 为 [displayName] 的本地音频来源。
-  Future<void> deleteRemoteLocalAudio(String displayName) async {
+  /// 通知对端 host 删除内容身份为 [contentId] 的本地音频来源（HBK-AUDIT-022：
+  /// 删除只认内容身份，host 不按显示名删）。
+  Future<void> deleteRemoteLocalAudio(String contentId) async {
     await _ensureResolved();
     final HttpClientRequest req = await _ops!.buildRequest(
       'DELETE',
-      '$_apiBase/api/library/localaudio/${Uri.encodeComponent(displayName)}',
+      '$_apiBase/api/library/localaudio/${Uri.encodeComponent(contentId)}',
     );
     final HttpClientResponse res = await _sendBounded(req);
     await res.drain<void>();
     _ops!.checkStatus(
       res.statusCode,
-      'DELETE /api/library/localaudio/$displayName',
+      'DELETE /api/library/localaudio/$contentId',
     );
     remoteLibraryMutationRevision.value++;
   }
