@@ -35,28 +35,34 @@ Future<void> writeEpubBackedSrtBook({
   // 手抄一遍「把旧值搬过来」也能修，但那是纪律不是结构：新增列照样会漏抄。
   // `importedAt` 是原始入库时刻（跨设备保留、导入时间排序用），只在建行时写：换字幕 /
   // 换音频重新对齐不是新导入，不能让这本书在本机和对端书架上跳到「刚导入」。
-  final bool patched = await repo.patchByUid(
-    uid,
-    title: title,
-    srtPath: srtPath,
-    bookKey: bookKey,
-    author: author,
-    audioPaths: audioPaths.isNotEmpty ? List<String>.of(audioPaths) : null,
-  );
-  if (patched) return;
-
-  // 行不存在：这才是真正的整行创建。cover_path 刻意留空（见上文）。
-  final SrtBook book = SrtBook()
-    ..uid = uid
-    ..title = title
-    ..srtPath = srtPath
-    ..importedAt = DateTime.now().millisecondsSinceEpoch
-    ..bookKey = bookKey;
-  if (audioPaths.isNotEmpty) {
-    book.audioPaths = List<String>.of(audioPaths);
-  }
-  if (author != null) {
-    book.author = author;
-  }
-  await repo.save(book);
+  await repo.database.transaction(() async {
+    final bool patched = await repo.patchByUid(
+      uid,
+      title: title,
+      srtPath: srtPath,
+      bookKey: bookKey,
+      author: author,
+      audioPaths: audioPaths.isNotEmpty ? List<String>.of(audioPaths) : null,
+    );
+    if (!patched) {
+      // 行不存在：这才是真正的整行创建。cover_path 刻意留空（见上文）。
+      final SrtBook book = SrtBook()
+        ..uid = uid
+        ..title = title
+        ..srtPath = srtPath
+        ..importedAt = DateTime.now().millisecondsSinceEpoch
+        ..bookKey = bookKey;
+      if (audioPaths.isNotEmpty) {
+        book.audioPaths = List<String>.of(audioPaths);
+      }
+      if (author != null) {
+        book.author = author;
+      }
+      await repo.save(book);
+    }
+    await repo.database.inheritEpubCollectionsForPairedSrt(
+      bookKey: bookKey,
+      srtUid: uid,
+    );
+  });
 }
