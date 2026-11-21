@@ -837,4 +837,82 @@ void main() {
     );
     expect(await db.getAllEpubBooks(), isEmpty);
   });
+
+  // 反馈 Wn0wo9OTVe：archive.org 老扫描多是 TIFF，阅读器（WebView）与封面（Flutter codec）
+  // 都不认。导入时转成 PNG 落盘，manga.json 的 url / 封面都指向 PNG，像素无损。
+  test('TIFF pages are transcoded to lossless PNG on import', () async {
+    final Directory source = Directory(p.join(srcRoot.path, 'scan'))
+      ..createSync(recursive: true);
+    final img.Image gray = img.Image(width: 30, height: 50, numChannels: 1);
+    for (final img.Pixel px in gray) {
+      px.r = (px.x * 7 + px.y) % 256;
+    }
+    final img.Image rgb = img.Image(width: 40, height: 20);
+    for (final img.Pixel px in rgb) {
+      px
+        ..r = px.x * 5
+        ..g = px.y * 9
+        ..b = 77;
+    }
+    File(p.join(source.path, '1.tif')).writeAsBytesSync(img.encodeTiff(gray));
+    File(p.join(source.path, '2.TIFF')).writeAsBytesSync(img.encodeTiff(rgb));
+    // 与 1.tif 转码后同名：去重后两页都在，互不覆盖。
+    File(
+      p.join(source.path, '1.png'),
+    ).writeAsBytesSync(img.encodePng(img.Image(width: 8, height: 8)));
+
+    expect(mangaImportCanImport(<String>[source.path]), isTrue);
+    final String bookKey = await MangaImporter.importFromImageFolder(
+      db: db,
+      imageDirPath: source.path,
+      title: 'TIFF Scan',
+    );
+    final EpubBookRow row = (await db.getEpubBook(bookKey))!;
+    final List<Map<Object?, Object?>> pages =
+        (_readMangaJson(row.extractDir)['pages']! as List<Object?>)
+            .cast<Map<Object?, Object?>>();
+    final List<String> urls = pages
+        .map((Map<Object?, Object?> page) => page['url']! as String)
+        .toList();
+    expect(urls, hasLength(3));
+    expect(urls.every((String u) => u.endsWith('.png')), isTrue);
+    expect(urls.toSet(), hasLength(3));
+    expect(row.coverPath, urls.first);
+    expect(
+      Directory(row.extractDir)
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where(
+            (File f) => p.extension(f.path).toLowerCase().startsWith('.tif'),
+          ),
+      isEmpty,
+    );
+
+    Map<Object?, Object?> pageFrom(String sourceName) => pages.firstWhere(
+      (Map<Object?, Object?> page) =>
+          (page['url']! as String) != 'images/1.png' &&
+          p.basenameWithoutExtension(page['url']! as String).toLowerCase() ==
+              p.basenameWithoutExtension(sourceName).toLowerCase(),
+    );
+    img.Image decodedPage(Map<Object?, Object?> page) => img.decodePng(
+      MangaStorage.destFile(
+        row.extractDir,
+        page['url']! as String,
+      ).readAsBytesSync(),
+    )!;
+
+    final Map<Object?, Object?> grayPage = pages.firstWhere(
+      (Map<Object?, Object?> page) =>
+          (page['img_width'] ?? page['width']) == 30,
+    );
+    final img.Image grayOut = decodedPage(grayPage);
+    expect(grayOut.numChannels, 1);
+    expect((grayOut.width, grayOut.height), (30, 50));
+    expect(grayOut.getPixel(13, 29).r, (13 * 7 + 29) % 256);
+
+    final img.Image rgbOut = decodedPage(pageFrom('2.TIFF'));
+    expect((rgbOut.width, rgbOut.height), (40, 20));
+    final img.Pixel probe = rgbOut.getPixel(11, 3);
+    expect(<num>[probe.r, probe.g, probe.b], <num>[55, 27, 77]);
+  });
 }
