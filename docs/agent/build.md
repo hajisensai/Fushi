@@ -152,7 +152,7 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - CI：`main.yml` 的 `build` job 在 PR 改到 Android / 原生 / 插件 / pubspec（与 R8 校验同一个路径门）时跑
   `./gradlew :app:testDebugUnitTest`，红就判红；守卫 `fushi/test/build/android_jvm_unit_tests_ci_guard_test.dart`。
 - **新 worktree 里直接能跑（2026-11-20）**：gradle wrapper（`fushi/android/gradlew`、`gradlew.bat`、
-  `gradle/wrapper/gradle-wrapper.jar`，取自 Flutter 3.47.6 的 `bin/cache/artifacts/gradle_wrapper`）入库，不再靠
+  `gradle/wrapper/gradle-wrapper.jar`，取自 Flutter 的 `bin/cache/artifacts/gradle_wrapper`，3.47.6 与 3.50.0 是同一份）入库，不再靠
   `flutter build apk` 现生成；`checkFushi{Compute,Rwkv,Music,Corpus}Native` 从 `preBuild` 挪到
   `merge<Variant>JniLibFolders`（把 .so 收进包的任务），所以 JVM 单测与纯编译任务不要求本机有 Android 预编译
   `.so`，出 APK / AAB 的任务缺库照旧失败。守卫 `fushi/test/build/android_gradle_runs_in_fresh_checkout_guard_test.dart`
