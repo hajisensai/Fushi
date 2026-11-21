@@ -19,7 +19,6 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:ffi/ffi.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_host.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_worker.dart';
