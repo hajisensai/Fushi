@@ -17,13 +17,20 @@
 ///   跳过。事件里 [TtsSegmentFailed.blocking] 为假。
 /// - 被取消的请求（换位置移出窗口 / 关闭）以 [TtsFailureCode.cancelled] 结束，不算
 ///   失败。
+/// - 纯标点 / 符号句（[ttsTextIsSilent]，如「！」）不送引擎：缓存里写一段静音
+///   （长度同制作的占位停顿），播放照常走到它。有的引擎对这种句子直接 400，送了
+///   会让朗读停在这里。
 library;
 
 import 'dart:async';
+import 'dart:io';
 
+import 'package:fushi_engine/tts/cast/cast_line_voicing.dart'
+    show estimatePlaceholderMs;
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_retry.dart';
+import 'package:fushi_engine/tts/tts_silence.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 
 /// 一句合成好了 / 失败了。
@@ -297,14 +304,17 @@ class TtsSynthesisScheduler {
     _voiceInFlight[voice]++;
     try {
       // 每次尝试走一遍缓存的「写 .part → 校验 → 发布」，失败的半成品由缓存清掉。
+      final String text = _texts[index];
       final TtsCachedAudio audio = await ttsWithRetry(
         () => _cache.obtain(
           _keys[index],
-          (String outputPath) => _voices[voice].provider.synthesize(
-            _texts[index],
-            outputPath: outputPath,
-            cancel: token,
-          ),
+          (String outputPath) => ttsTextIsSilent(text)
+              ? writeTtsSilentLine(text, outputPath)
+              : _voices[voice].provider.synthesize(
+                  text,
+                  outputPath: outputPath,
+                  cancel: token,
+                ),
         ),
         cancel: token,
         policy: _retryPolicy,
@@ -367,4 +377,17 @@ class TtsSynthesisScheduler {
     await Future.wait(_running.toList());
     await _events.close();
   }
+}
+
+/// 纯标点句的「合成」：写一段静音 WAV（长度 = [estimatePlaceholderMs]）。
+Future<TtsResult> writeTtsSilentLine(String text, String outputPath) async {
+  await File(outputPath).writeAsBytes(
+    buildTtsSilenceWav(
+      ms: estimatePlaceholderMs(text),
+      sampleRate: kTtsSilentLineSampleRate,
+      channels: 1,
+    ),
+    flush: true,
+  );
+  return const TtsResult(format: TtsAudioFormat.wav);
 }

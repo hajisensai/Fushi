@@ -14,6 +14,7 @@ import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/render/tts_pause.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:fushi_engine/tts/tts_direction.dart';
+import 'package:fushi_engine/tts/tts_silence.dart';
 import 'package:path/path.dart' as p;
 
 EpubBook _book(String body) => EpubBook(

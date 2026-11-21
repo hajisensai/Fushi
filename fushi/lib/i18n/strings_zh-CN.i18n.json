@@ -1216,6 +1216,7 @@
   "audiobook_studio_regenerate_selected": "重新生成选中的句子（${n}）",
   "audiobook_studio_replace_warning": "这本书已有有声书，制作完成后会替换它",
   "audiobook_studio_retry": "重试",
+  "audiobook_studio_retry_resume_hint": "已做完的章直接沿用，只重做没做完的章",
   "audiobook_studio_retry_voices": "重试候选声音",
   "audiobook_studio_retry_voices_hint": "某句合成失败时，「换配置重试」按顺序试这些声音。",
   "audiobook_studio_retry_voices_none": "未设置",

@@ -16,6 +16,7 @@ import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
 import 'package:fushi_engine/tts/cast/cast_line_voicing.dart';
+import 'package:fushi_engine/tts/tts_silence.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
@@ -258,27 +259,30 @@ Future<TtsBackfillResult> backfillTtsUnvoiced({
       onProgress?.call(i, backfill.attempts.length);
       final TtsBackfillAttempt attempt = backfill.attempts[i];
       try {
-        final TtsRenderVoice voice = voices[attempt.presetId] ??=
-            resolveTtsRenderVoice(
-              tts,
-              attempt.presetId,
-              presets: productionPresets,
-            );
-        final TtsProvider provider = providers[attempt.presetId] ??= voice
-            .descriptor
-            .create(voice.preset, tts.host);
-        final String key = TtsAudioCache.keyFor(voice.identity, attempt.text);
-        await ttsWithRetry(
-          () => cache.obtain(
-            key,
-            (String outputPath) => provider.synthesize(
-              attempt.text,
-              outputPath: outputPath,
-              cancel: cancel,
+        // 纯标点句（「！」）没有要念的内容：不送引擎，制作时按停顿处理，直接销账。
+        if (!ttsTextIsSilent(attempt.text)) {
+          final TtsRenderVoice voice = voices[attempt.presetId] ??=
+              resolveTtsRenderVoice(
+                tts,
+                attempt.presetId,
+                presets: productionPresets,
+              );
+          final TtsProvider provider = providers[attempt.presetId] ??= voice
+              .descriptor
+              .create(voice.preset, tts.host);
+          final String key = TtsAudioCache.keyFor(voice.identity, attempt.text);
+          await ttsWithRetry(
+            () => cache.obtain(
+              key,
+              (String outputPath) => provider.synthesize(
+                attempt.text,
+                outputPath: outputPath,
+                cancel: cancel,
+              ),
             ),
-          ),
-          cancel: cancel,
-        );
+            cancel: cancel,
+          );
+        }
         cast.setLineOverrides(
           attempt.sentence.section,
           attempt.sentence.matchStart,
