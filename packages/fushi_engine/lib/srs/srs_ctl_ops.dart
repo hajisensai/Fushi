@@ -45,7 +45,8 @@ List<OpDescription> srsCtlOpDescriptions(
       summary:
           'Show the old-version retained copy of the review library (the '
           'sealed old-version library file kept after the upgrade): copy = sealed / tombstone / '
-          'absent / other, its size in bytes, when it expires (14 days after '
+          'absent / unreadable (damaged: no longer a usable way back to the '
+          'old version; never deleted) / other, its size in bytes, when it expires (14 days after '
           'the first successful sync, or 30 days after the upgrade without '
           'one) and the last automatic deletion error. It still holds the '
           'pre-upgrade text of anything purged since. Profile is ignored.',

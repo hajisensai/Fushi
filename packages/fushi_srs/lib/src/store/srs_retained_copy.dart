@@ -20,6 +20,9 @@ enum SrsRetainedCopyKind {
   /// 封存的保留副本：还在、可以删。
   sealed('sealed'),
 
+  /// 在，但不是 SQLite 文件：保留副本已经坏了，不能再用它退回旧版本（新代库不受影响）。不删，只提示（BUG-5079）。
+  unreadable('unreadable'),
+
   /// 别的（没封存的协议 3 库、读不了的文件……）：不是保留副本，不删。
   other('other');
 
@@ -80,6 +83,9 @@ final class SrsRetainedCopyState {
 
   /// 有一份可以删的保留副本。
   bool get present => kind == SrsRetainedCopyKind.sealed;
+
+  /// 保留副本坏了（[SrsRetainedCopyKind.unreadable]）：要提示用户退回旧版本这条路没了。
+  bool get unreadable => kind == SrsRetainedCopyKind.unreadable;
 }
 
 /// `gen4_retained_delete` 的结果。
@@ -100,7 +106,7 @@ final class SrsRetainedCopyDeletion {
   final bool deleted;
   final int freedBytes;
 
-  /// 没删时的原因：`absent`（没有保留副本）/ `migrating`（换代锁被别人拿着）。
+  /// 没删时的原因：`absent`（没有保留副本）/ `unreadable`（保留副本坏了，不删）/ `migrating`（换代锁被别人拿着）。
   final String? reason;
 }
 

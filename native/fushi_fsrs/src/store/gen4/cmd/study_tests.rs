@@ -5,8 +5,7 @@ use std::collections::BTreeSet;
 
 use serde_json::{Value, json};
 
-use super::study::study;
-use super::study::{card_set, log_state};
+use super::study::{card_set, log_state, study_stateless};
 use super::tests::{N1, N2, N3, Pair, T0, card, library, note, on_p3};
 use crate::projection::Day;
 use crate::store::gen4::derive::{Index, Ref};
@@ -27,6 +26,13 @@ const N6: &str = "0193a1b2-0000-7000-8000-0000000000a6";
 /// 今天已学 / 已复习都有东西可比。
 fn study_library() -> Device {
     let d = library();
+    study_extras(&d);
+    d
+}
+
+/// [study_library] 在 [library] 上加的那些（子牌组、今天的学习步、手动改到期的日志）：迁移来的库（`study_session_tests.rs`）
+/// 在协议 3 一侧迁移之前补同一批。
+pub(super) fn study_extras(d: &Device) {
     let deck = default_deck_id(P);
     let child = |id: &str| -> Value {
         json!({"t": "entity", "x": {"id": id, "p": P, "k": "deck", "d": {"createdAt": 2}}})
@@ -93,7 +99,6 @@ fn study_library() -> Device {
         T0 + DAY + 83,
         vec![manual("m1", &card(N3, "t1"), T0 + DAY + 83)],
     );
-    d
 }
 
 /// 一条手动改到期的日志（`kind = 'manual'`）。
@@ -103,6 +108,11 @@ fn manual(id: &str, card: &str, at: i64) -> Value {
     m["x"].as_object_mut().unwrap().remove("rating");
     m["x"]["res"] = json!({"queue": "review", "dueDay": 19_690, "ivl": 3, "step": 0, "reps": 3, "lapses": 0, "scheduler": "fushi"});
     m
+}
+
+/// 新代一侧：每次一个新的出卡会话（整份建；会话随写入增量维护的对拍在 `study_session_tests.rs`）。
+fn study(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
+    super::study::study(t, &StudyHub::default(), col, req, None)
 }
 
 /// 协议 3 一侧：同一份缓存配置重建缓存表之后，用一个新的会话排一次（`store/study.rs` 的生产路径）。
@@ -125,17 +135,25 @@ fn with(now: i64, extra: Value) -> Value {
     r
 }
 
-/// 一组请求：几个「此刻」× 全部牌组 / 各个根 / 出卡 / 排除 / 自定义学习各模式 / RWKV。
+/// 一组请求：几个「此刻」× [requests_at]。
 fn requests() -> Vec<Value> {
-    let deck = default_deck_id(P);
-    let c1 = card(N1, "t1");
-    let mut out = Vec::new();
-    for now in [
+    [
         T0 + DAY + 100,
         T0 + 2 * DAY + 5,
         T0 + 5 * DAY,
         T0 + 40 * DAY,
-    ] {
+    ]
+    .into_iter()
+    .flat_map(requests_at)
+    .collect()
+}
+
+/// 此刻 [now] 的一组请求：全部牌组 / 各个根 / 出卡 / 排除 / 自定义学习各模式（会话开始早于今天、在今天之内）/ RWKV。
+pub(super) fn requests_at(now: i64) -> Vec<Value> {
+    let deck = default_deck_id(P);
+    let c1 = card(N1, "t1");
+    let mut out = Vec::new();
+    {
         out.push(base(now));
         for root in [deck.as_str(), CHILD, MIX, NEW1] {
             out.push(with(now, json!({"deck": root, "pick": true})));
@@ -154,6 +172,8 @@ fn requests() -> Vec<Value> {
             json!({"since": T0, "mode": "filter", "states": ["learning", "due"], "limit": 2}),
             json!({"since": T0, "mode": "filter", "tags": ["A"]}),
             json!({"since": T0, "mode": "filter", "source": "book:none"}),
+            // 会话开始在今天之内（一小时前）：「会话里答过」取常驻会话今天的作答。
+            json!({"since": now - 3_600_000, "mode": "filter", "states": ["new", "learning", "due"]}),
         ] {
             out.push(with(
                 now,
@@ -318,7 +338,9 @@ fn study_queries_use_their_indexes() {
     {
         let t = Truth::new(&g4);
         for req in requests() {
+            // 生产路径（建会话）与测试基准（逐条 SQL 现读，`study_session_tests.rs` 拿它对拍）都要走索引。
             study(&t, col, &req).unwrap();
+            study_stateless(&t, col, &req).unwrap();
         }
     }
     g4.trace(None);
@@ -337,6 +359,11 @@ fn study_queries_use_their_indexes() {
     for q in &stmts {
         let up = q.trim_start().to_ascii_uppercase();
         if !up.starts_with("SELECT") && !up.starts_with("WITH") {
+            continue;
+        }
+        // 自定义学习「会话里答过」是空集合时条件是常量假（`AND 0`）：SQLite 在进循环之前判一次就结束，计划里的 SCAN
+        // 不会真跑。
+        if q.contains(" AND 0 ") || q.contains(" AND 0)") || q.ends_with(" AND 0") {
             continue;
         }
         let p = plan(q);
@@ -373,6 +400,13 @@ fn study_queries_use_their_indexes() {
             want("tallies", "cards_tally", false);
         } else if q.contains("ORDER BY 1.0 / (1.0 +") {
             want("due(R)", "cards_review_due", false);
+        } else if q.contains("FROM log_ix") && q.contains(" id = ") {
+            want("logs(id)", "log_id", false);
+        } else if q
+            .contains("difficulty FROM cards INDEXED BY sqlite_autoindex_cards_1 WHERE col = ")
+        {
+            // 建会话 / 按 id 重读卡行：主键 (col, id)。
+            want("session cards", "USING PRIMARY KEY (col=?", false);
         } else if q.contains("FROM log_ix") && q.contains("at >= ") {
             want("logs", "log_at", false);
         } else if q.contains("FROM stats WHERE col = ") && q.contains("rating = 1") {
@@ -397,7 +431,13 @@ fn study_queries_use_their_indexes() {
         "logs",
         "forgotten",
         "source",
+        "session cards",
     ] {
         assert!(seen.contains(label), "no {label} statement ran: {seen:?}");
     }
+    // 会话按规范日志 ID 重读日志（`cmd::logs_of_ids`，只在有写入时跑，上面的请求走不到）：`log_id (col, id, k)`。
+    let p = plan(
+        "SELECT k FROM log_ix WHERE col = 1 AND id = x'00112233445566778899aabbccddeeff' AND win = 1 AND at >= 0",
+    );
+    assert!(p.contains("log_id"), "{p}");
 }

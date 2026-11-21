@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_trends.dart';
@@ -6,6 +8,40 @@ StatDayData _day(String dateKey, int chars, int ms) =>
     StatDayData(dateKey: dateKey)
       ..chars = chars
       ..ms = ms;
+
+/// 公历日期 → 1970-01-01 起的天数（Howard Hinnant 的 days_from_civil，纯整数，
+/// 不碰 DateTime / 时区）。
+int _daysFromCivil(int y, int m, int d) {
+  final int yy = m <= 2 ? y - 1 : y;
+  final int era = (yy >= 0 ? yy : yy - 399) ~/ 400;
+  final int yoe = yy - era * 400;
+  final int doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) ~/ 5 + d - 1;
+  final int doe = yoe * 365 + yoe ~/ 4 - yoe ~/ 100 + doy;
+  return era * 146097 + doe - 719468;
+}
+
+/// [_daysFromCivil] 的逆运算。
+(int, int, int) _civilFromDays(int z) {
+  final int zz = z + 719468;
+  final int era = (zz >= 0 ? zz : zz - 146096) ~/ 146097;
+  final int doe = zz - era * 146097;
+  final int yoe = (doe - doe ~/ 1460 + doe ~/ 36524 - doe ~/ 146096) ~/ 365;
+  final int doy = doe - (365 * yoe + yoe ~/ 4 - yoe ~/ 100);
+  final int mp = (5 * doy + 2) ~/ 153;
+  final int d = doy - (153 * mp + 2) ~/ 5 + 1;
+  final int m = mp < 10 ? mp + 3 : mp - 9;
+  return (yoe + era * 400 + (m <= 2 ? 1 : 0), m, d);
+}
+
+/// 纯整数的 ISO 周参照：周四所在年份即 ISO 周年，周号 = 周四在该年的第几天 / 7。
+String _referenceIsoWeekKey(int day) {
+  // 1970-01-01 是周四：ISO 星期（周一 = 1）。
+  final int weekday = (day + 3) % 7 + 1;
+  final int thursday = day + 4 - weekday;
+  final int isoYear = _civilFromDays(thursday).$1;
+  final int week = (thursday - _daysFromCivil(isoYear, 1, 1)) ~/ 7 + 1;
+  return '$isoYear-W${week.toString().padLeft(2, '0')}';
+}
 
 void main() {
   group('computeCph', () {
@@ -80,6 +116,64 @@ void main() {
 
     test('malformed key returns input unchanged', () {
       expect(isoWeekKey('garbage'), 'garbage');
+    });
+
+    // BUG-5070：本地时间算日差时，夏令时那 23 小时被 `inDays` 向下取整，夏令时期间
+    // 每周的周号少一、开始夏令时的那周与下一周并成一桶（只在有夏令时的时区复现）。
+    // 用纯整数日历算的参照逐日对照 2000–2040 年，任何时区都必须一致。
+    test('every day 2000-2040 matches an integer-only ISO week reference', () {
+      final List<String> mismatches = <String>[];
+      for (
+        int day = _daysFromCivil(2000, 1, 1);
+        day <= _daysFromCivil(2040, 12, 31);
+        day++
+      ) {
+        final (int y, int m, int d) = _civilFromDays(day);
+        final String key =
+            '${y.toString().padLeft(4, '0')}-${m.toString().padLeft(2, '0')}'
+            '-${d.toString().padLeft(2, '0')}';
+        final String expected = _referenceIsoWeekKey(day);
+        final String actual = isoWeekKey(key);
+        if (actual != expected) mismatches.add('$key: $actual != $expected');
+      }
+      expect(mismatches, isEmpty);
+    });
+
+    test('weeks around DST starts stay separate buckets', () {
+      // 2026-03-08 美国 / 2026-03-29 欧洲开始夏令时：前后各一周必须是两个桶。
+      final List<StatTrendPoint> us = aggregateTrend(<StatDayData>[
+        _day('2026-03-05', 1, 0), // W10（周四，夏令时前）
+        _day('2026-03-12', 2, 0), // W11（周四，夏令时后）
+      ], StatTrendGranularity.weekly);
+      expect(us.map((StatTrendPoint p) => p.bucketKey), <String>[
+        '2026-W10',
+        '2026-W11',
+      ]);
+      final List<StatTrendPoint> eu = aggregateTrend(<StatDayData>[
+        _day('2026-03-26', 1, 0), // W13
+        _day('2026-04-02', 2, 0), // W14
+      ], StatTrendGranularity.weekly);
+      expect(eu.map((StatTrendPoint p) => p.bucketKey), <String>[
+        '2026-W13',
+        '2026-W14',
+      ]);
+    });
+
+    // CI 机器多是 UTC、没有夏令时，上面两条在那里测不出回退；源码层再钉死
+    // isoWeekKey 不构造本地时间（只许 DateTime.utc）。
+    test('isoWeekKey never builds a local DateTime', () {
+      final String source = File(
+        'lib/src/pages/implementations/stat_trends.dart',
+      ).readAsStringSync();
+      final int start = source.indexOf('String isoWeekKey(');
+      expect(start, isNonNegative);
+      final int end = source.indexOf('\n}\n', start);
+      final String body = source.substring(start, end);
+      expect(
+        RegExp(r'(?<![.\w])DateTime\(').hasMatch(body),
+        isFalse,
+        reason: '本地 DateTime 跨夏令时 difference().inDays 会少一天（BUG-5070）',
+      );
     });
   });
 
