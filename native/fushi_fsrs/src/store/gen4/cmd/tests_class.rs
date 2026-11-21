@@ -56,16 +56,16 @@ pub(super) fn u(i: Id) -> Key {
 }
 
 /// 两份带盐的笔记，连同它们规范的那一套。
-pub(super) struct Twin {
+pub(in crate::store::gen4) struct Twin {
     pub(super) nt: [Id; 2],
     pub(super) field: [Id; 2],
     pub(super) tmpl: [Id; 2],
     pub(super) note: [Id; 2],
-    pub(super) card: [Id; 2],
+    pub(in crate::store::gen4) card: [Id; 2],
     pub(super) log: [Id; 2],
     pub(super) c_field: Id,
     pub(super) c_note: Id,
-    pub(super) c_card: Id,
+    pub(in crate::store::gen4) c_card: Id,
     pub(super) c_log: Id,
 }
 
@@ -188,7 +188,7 @@ pub(super) fn base_seen(w: &Twin) -> (u8, u64) {
 
 /// 灌进集合 [col]：0xa1 的定义，再 0xb1 / 0xb2 互不相见地各改一份的同一字段，0xc1 删待裁决的笔记、0xc2 没见过这条删除
 /// 就改它的字段（删除被扣住）。返回场景。`center_tests.rs` 的别名类场景也用它。
-pub(super) fn land(t: &Truth<'_>, col: i64) -> Twin {
+pub(in crate::store::gen4) fn land(t: &Truth<'_>, col: i64) -> Twin {
     let w = twin();
     let cfg = json!({"defaultDeck": id(DECK).text()}).to_string();
     t.tx(|t| {
