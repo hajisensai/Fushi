@@ -1,12 +1,91 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-21T23:24:21Z",
+ "generatedAt": "2026-11-21T23:37:39Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "570a5bbe952a942cc4b80adb95e46445603169b8",
   "seq": 31044
  },
  "builds": [
+  {
+   "seq": 31026,
+   "version": "3.4.0",
+   "sha": "b2a6d23d7dcfe273334e0399efa7d8317fd8a667",
+   "unknown": false,
+   "publishedAt": "2026-11-21T23:37:20Z",
+   "testflight": true,
+   "baseSeq": 30766,
+   "prs": [
+    4088,
+    4033,
+    3996,
+    4064,
+    4035,
+    4062,
+    4091,
+    4089,
+    4090,
+    4034,
+    4031,
+    4022,
+    3998,
+    3997,
+    4024,
+    4023,
+    4087,
+    4074,
+    4085,
+    4083,
+    4070,
+    4084,
+    4075,
+    4068,
+    4082,
+    4049,
+    4078,
+    4079,
+    4063,
+    4047,
+    4056,
+    4069,
+    4051,
+    4061,
+    4050,
+    4048,
+    4066,
+    4059
+   ],
+   "direct": [
+    {
+     "sha": "b2a6d23d7dcfe273334e0399efa7d8317fd8a667",
+     "subject": "docs(bugs): 合并第 8 批后重建 BUGS 索引"
+    },
+    {
+     "sha": "ffce0350223e84a30a52e9286b7d2d56154e7697",
+     "subject": "fix(manga-audio): 复核页缺图占位底色走共享 surface token（M3E 守卫）"
+    },
+    {
+     "sha": "0db9f53d2b84a336a62d865e0c4146fa01d4b085",
+     "subject": "docs(bugs): 合并第 7 批后重建 BUGS 索引"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44947857702"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "ok"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
   {
    "seq": 30766,
    "version": "3.4.0",
@@ -122,8 +201,8 @@
    "version": "3.4.0",
    "sha": "cbdc2a45edcc279f0d2ea3f3f8bfd2ab3ede0bd1",
    "unknown": false,
-   "publishedAt": "2026-11-21T15:41:43Z",
-   "testflight": true,
+   "publishedAt": "2026-11-21T15:37:22Z",
+   "testflight": false,
    "baseSeq": 30654,
    "prs": [
     4040
@@ -135,13 +214,16 @@
      "state": "ok"
     },
     "windows": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44913365607"
     },
     "macos": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44913365607"
     },
     "ios": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44913365607"
     }
    }
   },
@@ -589,45 +671,7 @@
    4095,
    4097,
    4096,
-   4093,
-   4088,
-   4033,
-   3996,
-   4064,
-   4035,
-   4062,
-   4091,
-   4089,
-   4090,
-   4034,
-   4031,
-   4022,
-   3998,
-   3997,
-   4024,
-   4023,
-   4087,
-   4074,
-   4085,
-   4083,
-   4070,
-   4084,
-   4075,
-   4068,
-   4082,
-   4049,
-   4078,
-   4079,
-   4063,
-   4047,
-   4056,
-   4069,
-   4051,
-   4061,
-   4050,
-   4048,
-   4066,
-   4059
+   4093
   ],
   "direct": [
    {
@@ -637,18 +681,6 @@
    {
     "sha": "7cebc8dfc9b69202a62e7743b7b2362198e07efa",
     "subject": "chore(bugs): settle BUG number collisions on b2a6d23d7"
-   },
-   {
-    "sha": "b2a6d23d7dcfe273334e0399efa7d8317fd8a667",
-    "subject": "docs(bugs): 合并第 8 批后重建 BUGS 索引"
-   },
-   {
-    "sha": "ffce0350223e84a30a52e9286b7d2d56154e7697",
-    "subject": "fix(manga-audio): 复核页缺图占位底色走共享 surface token（M3E 守卫）"
-   },
-   {
-    "sha": "0db9f53d2b84a336a62d865e0c4146fa01d4b085",
-    "subject": "docs(bugs): 合并第 7 批后重建 BUGS 索引"
    }
   ],
   "truncated": false,
