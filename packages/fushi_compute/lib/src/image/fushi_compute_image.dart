@@ -112,6 +112,30 @@ typedef _ToRgbaC =
     );
 typedef _ToRgbaDart =
     int Function(Pointer<Uint8>, int, int, int, int, Pointer<Uint8>, int);
+typedef _BgraToRgbaC =
+    Int32 Function(
+      Pointer<Uint8>,
+      Size,
+      Size,
+      Uint32,
+      Uint32,
+      Uint32,
+      Uint32,
+      Pointer<Uint8>,
+      Size,
+    );
+typedef _BgraToRgbaDart =
+    int Function(
+      Pointer<Uint8>,
+      int,
+      int,
+      int,
+      int,
+      int,
+      int,
+      Pointer<Uint8>,
+      int,
+    );
 typedef _MosaicC =
     Int32 Function(
       Pointer<Uint8>,
@@ -534,6 +558,19 @@ class FushiComputeImage {
     }
   }
 
+  _BgraToRgbaDart? _bgraToRgba;
+
+  _BgraToRgbaDart get _bgraToRgbaFunction {
+    try {
+      return _bgraToRgba ??= _lib.library
+          .lookupFunction<_BgraToRgbaC, _BgraToRgbaDart>(
+            'ffc_image_bgra_to_rgba8',
+          );
+    } on ArgumentError catch (e) {
+      throw _lib.missingSymbols('image bgra to rgba', e.message ?? e);
+    }
+  }
+
   _ToPngDart? _toPng;
 
   _ToPngDart get _toPngFunction {
@@ -789,6 +826,48 @@ class FushiComputeImage {
         _toRgba(src, pixels.length, channels, width, height, out, outLen),
       ),
     );
+  }
+
+  /// 带行跨度 [stride] 的 BGRA 帧（每像素 4 字节，第四字节不用，如 mpv `screenshot-raw`）
+  /// 里取 `[x, x + width) × [y, y + height)`，转成行紧排的不透明 RGBA8888（alpha 恒 255）。
+  ///
+  /// 结果前面留 [headerBytes] 字节（置 0，由调用方填自己的头），像素从该偏移起，省掉调用方
+  /// 再拼一次。[bgra] 可以是原生缓冲的视图（只在调用期间读）：只把矩形覆盖的那段行一次性
+  /// 拷进暂存区，不拷整帧。
+  Uint8List bgraToRgba8(
+    Uint8List bgra, {
+    required int stride,
+    required int x,
+    required int y,
+    required int width,
+    required int height,
+    int headerBytes = 0,
+  }) {
+    if (x < 0 || y < 0 || width <= 0 || height <= 0 || headerBytes < 0) {
+      throw ArgumentError('bad rect ($x, $y, $width, $height) / header');
+    }
+    if ((x + width) * 4 > stride) {
+      throw ArgumentError.value(stride, 'stride', 'row exceeds stride');
+    }
+    // 矩形覆盖的字节段：首行左缘到末行右缘（中间行带上 stride 余下的部分，一次 memmove）。
+    final int start = y * stride + x * 4;
+    final int span = (height - 1) * stride + width * 4;
+    if (start + span > bgra.length) {
+      throw ArgumentError.value(bgra.length, 'bgra', 'shorter than the rect');
+    }
+    final _BgraToRgbaDart call = _bgraToRgbaFunction;
+    final Pointer<Uint8> src = NativeScratch.input.reserve(span);
+    src
+        .asTypedListOutOfLine(span)
+        .setRange(0, span, Uint8List.sublistView(bgra, start, start + span));
+    final int n = width * height * 4;
+    final Pointer<Uint8> out = NativeScratch.output.reserve(n);
+    _check(
+      'ffc_image_bgra_to_rgba8',
+      call(src, span, stride, 0, 0, width, height, out, n),
+    );
+    return Uint8List(headerBytes + n)
+      ..setRange(headerBytes, headerBytes + n, out.asTypedListOutOfLine(n));
   }
 
   /// 就地给 RGBA8888 缓冲 [rgba] 打码。[rects] 每项是已夹进图像的像素范围
