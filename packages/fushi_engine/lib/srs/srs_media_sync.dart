@@ -32,6 +32,22 @@ const String kSrsMediaFolder = 'media';
 /// 被删笔记的媒体在同步 / 媒体位置上的保留期（设计 §10.5；本机媒体回收同一口径，见 srs_purge.dart）。
 const Duration kSrsMediaRetention = Duration(days: 90);
 
+/// 发段之前那一步媒体上传（[srsSyncMedia] 的 `uploadOnly`）最多占的时长：到点不再开始新的一项，剩下的交给发段之后
+/// 的完整对账 / 下一轮（BUG-5061，反馈 arw7eXO895：以前把本机全部没上传的媒体整份传完才发复习记录段，1 GB 媒体
+/// 连 Google Drive 慢时整轮停在「同步卡片媒体」，另一端一直看不到进度）。平时新加几张卡的媒体远用不到这么久，
+/// 「媒体先于引用它的段」照旧成立；积压很多时段先发出去，读者暂缺的媒体按缺失记、下一轮再拿（[srsSyncMedia]）。
+const Duration kSrsMediaBeforeUploadBudget = Duration(seconds: 15);
+
+/// [budget] 计时的「该收手了」判断（[srsSyncMedia] 的 `deferRemaining`）：从调用这一刻起满 [budget]，或
+/// [shouldStop] 为真。
+bool Function() srsMediaDeadline(
+  Duration budget, {
+  bool Function()? shouldStop,
+}) {
+  final Stopwatch clock = Stopwatch()..start();
+  return () => (shouldStop?.call() ?? false) || clock.elapsed >= budget;
+}
+
 /// 一轮媒体同步的结果。
 class SrsMediaSyncReport {
   int uploaded = 0;
@@ -60,6 +76,13 @@ class SrsMediaSyncReport {
 
   /// 整轮跑完（没有中途抛错）。
   bool completed = false;
+
+  /// `deferRemaining` 为真时还没开始、留给下一轮的媒体项数（[srsSyncMedia]）。大于 0 时这一轮也不做过期清理。
+  int deferred = 0;
+
+  /// 对账中途本机文件没了（列出来之后被删 / 被换走）而这一轮没传的名字。不中断整轮：下一轮哈希时它已不在本机，
+  /// 不会再排进来（BUG-5061：以前一个这样的文件抛 PathNotFoundException 就让整趟媒体上传作废）。
+  final Set<String> vanished = <String>{};
 }
 
 /// 本 profile 全部未删除笔记（含模板正文里下划线开头的静态文件）引用的媒体文件名。
@@ -278,6 +301,10 @@ class _MediaItem {
 /// [onTransferStart] 在真有内容要传 / 要查（筛掉本机与位置都已一致的之后还剩下）时、开始做之前调一次；什么都不用做
 /// 的一轮不调——调用方据此报「媒体」阶段，不在每轮发件前都闪一下。
 ///
+/// [onProgress] 报媒体项的进度：开始做之前一次 `(0, 总数)`，之后每做完一项一次（总数 = 筛掉已一致的之后真要做的项）。
+/// [deferRemaining] 每开始一项之前问一次，为真就不再开始新的（在途的做完），剩下的记进 [SrsMediaSyncReport.deferred]
+/// 留给下一轮，也不做过期清理（调用方用 [srsMediaDeadline] 给时间预算 / 收手）。
+///
 /// [locationId]（位置的稳定身份，各设备相同）给出时，位置上有什么读日志投影（内核 `media_known`），不列目录：
 /// - 日志里还没有任何设备对这个位置的内容目录完整列举过 → 列一次（256 个前缀子目录），结果带「已列举」写进日志；
 /// - 之后只对投影里不认识的内容逐个查，确认结果同样写回日志；读取时发现投影说在、实际不在 → 记「不在」，持有它的
@@ -292,6 +319,8 @@ Future<SrsMediaSyncReport> srsSyncMedia({
   String? locationId,
   bool uploadOnly = false,
   void Function()? onTransferStart,
+  void Function(int done, int total)? onProgress,
+  bool Function()? deferRemaining,
 }) async {
   final SrsMediaSyncReport report = SrsMediaSyncReport();
   // 加密媒体按密钥指纹分目录（换了密钥 = 新目录，全部按新密钥重传）。
@@ -377,9 +406,18 @@ Future<SrsMediaSyncReport> srsSyncMedia({
   Future<bool> putContent(File src, String sha) async {
     final File staged = scratch('up');
     try {
-      final String got = cipher == null
-          ? await _copyHashing(src, staged)
-          : await cipher.sealFile(sha, src, staged);
+      final String got;
+      try {
+        got = cipher == null
+            ? await _copyHashing(src, staged)
+            : await cipher.sealFile(sha, src, staged);
+      } on Object {
+        // 列出来之后本机文件没了（被删 / 被换走）：这一项这一轮传不了，记下、接着做别的（BUG-5061）。文件还在却
+        // 读不了（被占用、读错、临时目录写不了）不是这种情况，照旧抛出。
+        if (await src.exists()) rethrow;
+        report.vanished.add(p.relative(src.path, from: mediaRoot.path));
+        return false;
+      }
       if (got != sha) return false;
       final String path = srsMediaContentPath(folder, sha);
       if (content.stateOf(sha) == _Remote.suspect) {
@@ -502,7 +540,10 @@ Future<SrsMediaSyncReport> srsSyncMedia({
       if (!it.have || content.stateOf(it.sha!) != _Remote.present)
         if (it.have || !uploadOnly) it,
   ];
-  if (work.isNotEmpty) onTransferStart?.call();
+  if (work.isNotEmpty) {
+    onTransferStart?.call();
+    onProgress?.call(0, work.length);
+  }
 
   try {
     await _reconcile(
@@ -514,6 +555,8 @@ Future<SrsMediaSyncReport> srsSyncMedia({
       content: content,
       prune: !archive && !uploadOnly,
       syncOne: syncOne,
+      onProgress: onProgress,
+      deferRemaining: deferRemaining,
     );
   } finally {
     if (landed.isNotEmpty) {
@@ -542,6 +585,8 @@ Future<void> _reconcile({
   required _Presence content,
   required bool prune,
   required Future<void> Function(_MediaItem item) syncOne,
+  void Function(int done, int total)? onProgress,
+  bool Function()? deferRemaining,
 }) async {
   // 媒体彼此无先后：同时最多 [kSrsSync2Concurrency] 个在途（首次同步一个牌组上千个图片 / 音频时，逐个等每个请求
   // 的固定延迟是主要耗时）。只差大小写的名字在不分大小写的文件系统上是同一个本机文件，归成一组在同一个任务里
@@ -550,14 +595,21 @@ Future<void> _reconcile({
   for (final _MediaItem it in work) {
     byFolded.putIfAbsent(it.name.toLowerCase(), () => <_MediaItem>[]).add(it);
   }
+  final int total = work.length;
+  int done = 0;
   await srsRunPooled(byFolded.values.toList(), kSrsSync2Concurrency, (
     List<_MediaItem> group,
   ) async {
+    if (deferRemaining?.call() ?? false) {
+      report.deferred += group.length;
+      return;
+    }
     for (final _MediaItem it in group) {
       await syncOne(it);
+      onProgress?.call(++done, total);
     }
   });
-  if (prune) {
+  if (prune && report.deferred == 0) {
     // 只删有正面证据的：被「删除已满保留期」的笔记引用、且不被任何存活引用。本机不认识的文件一律不删——
     // 它可能是别的设备新笔记的媒体，而本机还没收到那条笔记。
     final List<String> live = (await srsLiveMediaReferences(store)).toList();
