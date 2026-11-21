@@ -133,6 +133,40 @@ void main() {
 
     test('整形版本是整形参数的指纹；旁白参考音频文件名带上它', () {
       expect(kMangaShapeVersion, matches(RegExp(r'^[0-9a-f]{12}$')));
+      // 版本取自三个参数构造器的完整输出（不只整形滤镜）：拼接前的统一采样 / 声道、
+      // 参考音频的编码变了也要换版本。
+      expect(
+        kMangaShapeVersion,
+        mangaShapeFingerprint(<List<String>>[
+          buildMangaLineEncodeArgs(
+            inputs: const <String>['in0', 'in1'],
+            outputPath: 'out',
+          ),
+          buildMangaClipArgs(
+            sourcePath: 'in',
+            startMs: 0,
+            endMs: 1000,
+            outputPath: 'out',
+            shapeAsLine: true,
+          ),
+          buildMangaNarratorRefArgs(
+            sourcePath: 'in',
+            startMs: 0,
+            endMs: 1000,
+            outputPath: 'out',
+          ),
+        ]),
+      );
+      expect(
+        mangaShapeFingerprint(<List<String>>[
+          <String>['a', 'b'],
+        ]),
+        isNot(
+          mangaShapeFingerprint(<List<String>>[
+            <String>['ab'],
+          ]),
+        ),
+      );
       const MangaAudiobookClip clip = MangaAudiobookClip(
         bookKey: 'novel',
         fileIndex: 0,

@@ -88,18 +88,38 @@ const List<String> _kMangaLineCodecArgs = <String>[
   'mp4',
 ];
 
-/// 整形版本（[MangaRenderBackend.shapeVersion]）：合成句与有声书片段两条整形链、
-/// 旁白参考音频整形链与输出编码参数的指纹。改了裁静音 / 淡变 / 响度 / 采样率 / 编码
-/// 任何一项，它都会跟着变，存量演出重生成时旧音频不再原样沿用（与新出的句子同一套
-/// 处理），旁白参考音频也按新版本重剪。不用手动维护的版本号：参数就是版本。
-final String kMangaShapeVersion = sha1
+/// 整形版本（[MangaRenderBackend.shapeVersion]）：出音频的三个 ffmpeg 参数构造器
+/// （[buildMangaLineEncodeArgs] 合成句、[buildMangaClipArgs] 有声书片段、
+/// [buildMangaNarratorRefArgs] 旁白参考音频）在固定取样输入下的完整输出的指纹。
+/// 拼接前的统一采样 / 声道、裁静音 / 淡变 / 响度、采样率、编码任何一项变了，它都会
+/// 跟着变，存量演出重生成时旧音频不再原样沿用（与新出的句子同一套处理），旁白参考
+/// 音频也按新版本重剪。不用手动维护的版本号：参数就是版本。
+final String kMangaShapeVersion = mangaShapeFingerprint(<List<String>>[
+  buildMangaLineEncodeArgs(
+    inputs: const <String>['in0', 'in1'],
+    outputPath: 'out',
+  ),
+  buildMangaClipArgs(
+    sourcePath: 'in',
+    startMs: 0,
+    endMs: 1000,
+    outputPath: 'out',
+    shapeAsLine: true,
+  ),
+  buildMangaNarratorRefArgs(
+    sourcePath: 'in',
+    startMs: 0,
+    endMs: 1000,
+    outputPath: 'out',
+  ),
+]);
+
+/// [argLists]（各 ffmpeg 参数表）的 12 位十六进制 sha1 指纹；参数里不会出现的控制字符
+/// 作分隔，参数边界不同的两组不会撞成同一串。纯函数，单测覆盖。
+String mangaShapeFingerprint(List<List<String>> argLists) => sha1
     .convert(
       utf8.encode(
-        <String>[
-          _mangaShapeChain(fade: false),
-          _mangaShapeChain(fade: true),
-          ..._kMangaLineCodecArgs,
-        ].join('|'),
+        argLists.map((List<String> args) => args.join('\u0001')).join('\u0002'),
       ),
     )
     .toString()
