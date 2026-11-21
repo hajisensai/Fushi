@@ -7,84 +7,42 @@ import 'package:fushi/src/utils/components/fushi_logo_title.dart';
 import 'package:fushi/src/utils/components/fushi_series_cover_block.dart';
 import 'package:material_ui/material_ui.dart';
 
-// 11-20 反馈 #2：logo 此前只限高度，横长 logo 撑满整行、方形 / 竖长的显得很小。
-// 改成按「视觉面积」统一 + 宽度夹在文字列 38%～62% + 高度不超档位上限，全站
-// 一份规则（[fushiLogoBoxSize] / [FushiLogoTitle]）。#3：背景图自带片名时色块
-// 不再叠 logo。
+// 11-21 用户：「logo 长宽高大小一样主要是，而且标题文字的占位大小也不一样」——
+// 每个尺寸档一个固定标题槽（[fushiLogoSlotSize]）：logo 不论横长偏方都占同一个
+// 槽，没有 logo 的标题文字（[FushiTitleSlot]）也占同高的槽。11-20 #3：背景图自带
+// 片名时色块不再叠 logo。
 void main() {
   const double eps = 0.01;
 
-  /// 三种比例 × 三个尺寸档（半高卡 / 规整块 / 拼贴首块，宽窄两种）的纯函数契约。
-  group('fushiLogoBoxSize', () {
-    const List<double> aspects = <double>[3, 1, 0.5];
-    final List<({String tier, double maxHeight, double column})> tiers =
-        <({String tier, double maxHeight, double column})>[
-          (
-            tier: 'S',
-            maxHeight: fushiCoverBlockLogoMaxHeight(
-              FushiCoverBlockSize.half,
-              compact: false,
-            ),
-            column: 160,
-          ),
-          (
-            tier: 'M',
-            maxHeight: fushiCoverBlockLogoMaxHeight(
-              FushiCoverBlockSize.regular,
-              compact: false,
-            ),
-            column: 240,
-          ),
-          (
-            tier: 'M-compact',
-            maxHeight: fushiCoverBlockLogoMaxHeight(
-              FushiCoverBlockSize.regular,
-              compact: true,
-            ),
-            column: 200,
-          ),
-          (
-            tier: 'L',
-            maxHeight: fushiCoverBlockLogoMaxHeight(
-              FushiCoverBlockSize.hero,
-              compact: false,
-            ),
-            column: 360,
-          ),
-        ];
-    for (final ({String tier, double maxHeight, double column}) t in tiers) {
-      for (final double aspect in aspects) {
-        test('${t.tier} 档 · $aspect:1 → 宽 ≤ 62% 列宽、高 ≤ 档位上限、保持比例', () {
-          final Size box = fushiLogoBoxSize(
-            aspect: aspect,
-            columnWidth: t.column,
-            maxHeight: t.maxHeight,
-          );
-          expect(box.width, lessThanOrEqualTo(t.column * 0.62 + eps));
-          expect(box.height, lessThanOrEqualTo(t.maxHeight + eps));
-          expect((box.width / box.height - aspect).abs(), lessThan(1e-6));
-          expect(box.width, greaterThan(0));
-        });
-      }
-    }
-
-    test('横长 logo 不再撑满整行：3:1 在拼贴首块里卡在 62%', () {
-      final Size box = fushiLogoBoxSize(
-        aspect: 6,
-        columnWidth: 360,
-        maxHeight: 92,
-      );
-      expect(box.width, closeTo(360 * 0.62, eps));
+  group('fushiLogoSlotSize', () {
+    test('槽宽 = 文字列 70%、槽高 = 档位高度', () {
+      final Size slot = fushiLogoSlotSize(columnWidth: 240, height: 64);
+      expect(slot.width, closeTo(240 * kFushiLogoSlotWidthFraction, eps));
+      expect(slot.height, 64);
     });
 
-    test('方形 logo 不缩成小角标：宽至少到 38% 列宽，再被高度上限卡住', () {
-      final Size box = fushiLogoBoxSize(
-        aspect: 1,
-        columnWidth: 200,
-        maxHeight: 92,
+    test('列宽无界时按 3:1 取宽，高度为 0 时为空', () {
+      expect(
+        fushiLogoSlotSize(columnWidth: double.infinity, height: 50),
+        const Size(150, 50),
       );
-      expect(box.width, greaterThanOrEqualTo(200 * 0.38 - eps));
-      expect(box.height, lessThanOrEqualTo(92 + eps));
+      expect(fushiLogoSlotSize(columnWidth: 240, height: 0), Size.zero);
+    });
+
+    test('两行标题文字在规整块 / 拼贴首块的槽里都放得下（含窄窗）', () {
+      for (final (FushiCoverBlockSize size, bool compact, double font)
+          in <(FushiCoverBlockSize, bool, double)>[
+            (FushiCoverBlockSize.regular, false, 20),
+            (FushiCoverBlockSize.regular, true, 17),
+            (FushiCoverBlockSize.hero, false, 28),
+            (FushiCoverBlockSize.hero, true, 24),
+          ]) {
+        expect(
+          fushiCoverBlockLogoMaxHeight(size, compact: compact),
+          greaterThanOrEqualTo(font * 1.15 * 2),
+          reason: '${size.name} compact=$compact',
+        );
+      }
     });
   });
 
@@ -133,62 +91,97 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   }
 
-  /// 色块实测：logo 框宽 ≤ 文字列 62%、高 ≤ 档位上限（三种比例 × 规整块 / 拼贴
-  /// 首块）。文字列宽 = [FushiLogoTitle] 拿到的约束宽。
-  for (final ({FushiCoverBlockSize size, Size box, double maxHeight}) tier
-      in <({FushiCoverBlockSize size, Size box, double maxHeight})>[
-        (
-          size: FushiCoverBlockSize.regular,
-          box: const Size(420, 204),
-          maxHeight: 78,
-        ),
-        (
-          size: FushiCoverBlockSize.hero,
-          box: const Size(620, 264),
-          maxHeight: 92,
-        ),
+  const ValueKey<String> metaKey = ValueKey<String>('meta');
+
+  /// 色块实测：横长 / 方形 / 竖长三种 logo 占的标题槽完全一样大（规整块 / 拼贴
+  /// 首块），图等比画在槽内。
+  for (final ({FushiCoverBlockSize size, Size box}) tier
+      in <({FushiCoverBlockSize size, Size box})>[
+        (size: FushiCoverBlockSize.regular, box: const Size(420, 204)),
+        (size: FushiCoverBlockSize.hero, box: const Size(620, 264)),
       ]) {
-    for (final (int w, int h) in <(int, int)>[
-      (300, 100),
-      (200, 200),
-      (100, 200),
-    ]) {
-      testWidgets(
-        '${tier.size.name} 色块 · logo $w×$h：宽 ≤ 62% 文字列、高 ≤ ${tier.maxHeight}',
-        (WidgetTester tester) async {
-          final MemoryImage logo = await makeImage(tester, w, h);
-          await pumpBlock(
-            tester,
-            size: tier.box,
-            images: <ImageProvider>[logo],
-            block: FushiCoverBlock(
-              size: tier.size,
-              art: FushiCoverBlockArt.portrait,
-              title: '作品',
-              covers: const <Widget>[],
-              logo: logo,
-              metaKey: const ValueKey<String>('meta'),
-            ),
-          );
-          expect(tester.takeException(), isNull);
-          final Finder title = find.byType(FushiLogoTitle);
-          expect(title, findsOneWidget);
-          // 文字列 = 色块文字区（metaKey 那一块）的宽。
-          final double column = tester
-              .getSize(find.byKey(const ValueKey<String>('meta')))
-              .width;
-          final Size drawn = tester.getSize(
-            find.descendant(of: title, matching: find.byType(Image)),
-          );
-          expect(drawn.width, lessThanOrEqualTo(column * 0.62 + eps));
-          expect(drawn.height, lessThanOrEqualTo(tier.maxHeight + eps));
-          expect((drawn.width / drawn.height - w / h).abs(), lessThan(0.01));
-        },
+    testWidgets('${tier.size.name} 色块：三种比例的 logo 标题槽同宽同高', (
+      WidgetTester tester,
+    ) async {
+      final List<Size> slots = <Size>[];
+      for (final (int w, int h) in <(int, int)>[
+        (300, 100),
+        (200, 200),
+        (100, 200),
+      ]) {
+        final MemoryImage logo = await makeImage(tester, w, h);
+        await pumpBlock(
+          tester,
+          size: tier.box,
+          images: <ImageProvider>[logo],
+          block: FushiCoverBlock(
+            size: tier.size,
+            art: FushiCoverBlockArt.portrait,
+            title: '作品',
+            covers: const <Widget>[],
+            logo: logo,
+            metaKey: metaKey,
+          ),
+        );
+        expect(tester.takeException(), isNull);
+        final Finder title = find.byType(FushiLogoTitle);
+        expect(title, findsOneWidget);
+        final double column = tester.getSize(find.byKey(metaKey)).width;
+        final Size slot = tester.getSize(title);
+        expect(slot.width, closeTo(column * kFushiLogoSlotWidthFraction, eps));
+        expect(slot.height, lessThanOrEqualTo(tier.box.height));
+        expect(
+          find.descendant(of: title, matching: find.byType(Image)),
+          findsOneWidget,
+        );
+        slots.add(slot);
+      }
+      expect(slots.toSet(), hasLength(1), reason: '$slots');
+    });
+
+    testWidgets('${tier.size.name} 色块：无 logo 的标题文字与 logo 占同高的槽', (
+      WidgetTester tester,
+    ) async {
+      final MemoryImage logo = await makeImage(tester, 300, 100);
+      final MemoryImage backdrop = await makeImage(tester, 160, 90);
+      Widget blockWith({ImageProvider? logo}) => FushiCoverBlock(
+        size: tier.size,
+        art: FushiCoverBlockArt.portrait,
+        title: '映画ドラえもん のび太と翼の勇者たち 映画ドラえもん のび太と翼の勇者たち',
+        covers: const <Widget>[],
+        logo: logo,
+        backdrop: fushiSeriesBackdrop(backdrop),
+        metaKey: metaKey,
       );
-    }
+      await pumpBlock(
+        tester,
+        size: tier.box,
+        images: <ImageProvider>[logo, backdrop],
+        block: blockWith(logo: logo),
+      );
+      final double logoSlot = tester
+          .getSize(find.byType(FushiLogoTitle))
+          .height;
+
+      await pumpBlock(
+        tester,
+        size: tier.box,
+        images: <ImageProvider>[backdrop],
+        block: blockWith(),
+      );
+      expect(tester.takeException(), isNull);
+      expect(find.byType(FushiLogoTitle), findsNothing);
+      final Finder textSlot = find.byType(FushiTitleSlot);
+      expect(textSlot, findsOneWidget);
+      expect(tester.getSize(textSlot).height, closeTo(logoSlot, eps));
+      final Text text = tester.widget<Text>(
+        find.descendant(of: textSlot, matching: find.byType(Text)),
+      );
+      expect(text.maxLines, lessThanOrEqualTo(2));
+    });
   }
 
-  testWidgets('解码前按高度占位，不画图（布局不跳）', (WidgetTester tester) async {
+  testWidgets('解码前就占满整个槽，不画图（布局不跳）', (WidgetTester tester) async {
     final MemoryImage logo = await makeImage(tester, 300, 100);
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(800, 600);
@@ -203,19 +196,23 @@ void main() {
             child: FushiLogoTitle(
               logo: logo,
               title: '作品',
-              maxHeight: 78,
+              maxHeight: 64,
               fallback: const Text('作品'),
             ),
           ),
         ),
       ),
     );
-    final Finder box = find.descendant(
+    expect(find.byType(Image), findsNothing);
+    // 外层 300×200 是紧约束，量槽本身（FushiLogoTitle 里的 SizedBox）。
+    final Finder slot = find.descendant(
       of: find.byType(FushiLogoTitle),
       matching: find.byType(SizedBox),
     );
-    expect(find.byType(Image), findsNothing);
-    expect(tester.getSize(box.first).height, 78);
+    expect(
+      tester.getSize(slot.first),
+      Size(300 * kFushiLogoSlotWidthFraction, 64),
+    );
   });
 
   testWidgets('背景图自带片名（backdropHasText）：色块不画 logo，只留标题文字', (
