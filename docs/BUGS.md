@@ -99,6 +99,11 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5126](bugs/BUG-5126-ai-media-link-verdict-cache-full-read.md) | ✅ | ✅ | ai-media-link-verdict-cache-full-read |
+> 共 4415 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5128](bugs/BUG-5128-heavy-unc-paths.md) | ✅ | ✅ | heavy.dart 启动检查把 UNC 共享路径折成当前盘根路径，排队前就拒掉存在的脚本 |
 | [BUG-5140](bugs/BUG-5140-favorite-sentence-recolor.md) | 🚧 | 🚧 | 收藏句改色：已收藏的书摘不能改颜色（同步缺颜色更新时间） |
 | [BUG-5093](bugs/BUG-5093-smart-mask-bgra-crop-in-dart.md) | ✅ | ✅ | 智能遮布：截帧 BGRA→RGBA 裁块逐像素留在 Dart（HBK-AUDIT-008） |
 | [BUG-5092](bugs/BUG-5092-smart-mask-stale-ocr-after-seek.md) | ✅ | ✅ | 智能遮布：seek 后旧帧 OCR 结果把遮布盖回新时间点（HBK-AUDIT-007） |
