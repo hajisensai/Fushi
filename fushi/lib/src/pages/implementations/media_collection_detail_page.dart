@@ -328,9 +328,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       if (slot.remote case final RemoteVideoInfo info) info,
   ];
 
-  /// 分季：成员 [CollectionEpisodeSlot.entryKey] → 分组键，**由文件名现场派生**
-  /// （不落库，数据模型见 collection_season_groups.dart）。远端槽没有本地路径，用
-  /// host 下发的标题（host 端标题默认即文件名）。键不随重排变化，故只在 [_reload] 重算。
+  /// 分季：成员 [CollectionEpisodeSlot.entryKey] → 生效分栏键。本地槽是文件名派生
+  /// 叠上手动分栏 / 手动季集指定（`loadCollectionSections`）；远端槽用 host 下发的
+  /// 生效分栏，旧 host 回落 host 下发的文件名派生（[CollectionEpisodeSlot.baseSectionKey]，
+  /// BUG-5084）。键不随重排变化，故只在 [_reload] 重算。
   Map<String, String> _groupKeyByEntry = const <String, String>{};
 
   /// 用户 / AI 手动指定过分栏的成员（`entryKey → 分栏键`），「移到分栏…」框的初值。
@@ -593,10 +594,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               entry.key: entry.value,
         };
     // 分栏：文件名派生键叠上手动分栏 / 手动季集指定（拍板台 iR6ccUys9H）。远端集
-    // 本机没有指定，只有派生键。
+    // 的指定在 host 上，用 host 下发的生效分栏（BUG-5084，见
+    // [CollectionEpisodeSlot.baseSectionKey]）。
     final Map<String, String> groupKeys = <String, String>{
       for (final CollectionEpisodeSlot slot in episodeSlots)
-        slot.entryKey: collectionGroupKeyForFilename(slot.filename),
+        slot.entryKey: slot.baseSectionKey,
     };
     final Map<String, CollectionSectionResolution> resolvedSections =
         await loadCollectionSections(widget.database, <String, String>{

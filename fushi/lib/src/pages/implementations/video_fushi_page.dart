@@ -914,8 +914,10 @@ class _PlaylistEpisodeRef {
   final String? bookUid;
   final String title;
 
-  /// 本地集的生效分栏键（文件名派生叠上手动分栏 / 手动季集指定，见
-  /// `loadCollectionSections`）。null = 远端集，面板按 [path] / [title] 现场派生。
+  /// 生效分栏键：本地集是文件名派生叠上手动分栏 / 手动季集指定（见
+  /// `loadCollectionSections`）；互联远端合集成员是 host 下发的生效分栏
+  /// （`RemoteVideoInfo.collectionGroupKey`，BUG-5084）。null = 旧单行多集播放列表 /
+  /// 在线源集，面板按 [path] / [title] 现场派生。
   final String? sectionKey;
 
   /// 剧集面板展示名（v68 Jellyfin 对齐：集级刮削集名）。null = 无集级集名，
@@ -5198,6 +5200,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             progress: (m.durationMs ?? 0) > 0 && m.positionMs > 0
                 ? (m.positionMs / m.durationMs!).clamp(0.0, 1.0)
                 : null,
+            // 分栏与合集详情页同口径：host 下发的生效分栏（BUG-5084）。
+            sectionKey: m.collectionGroupKey,
           ),
       ];
       _activeRemoteMember = _remoteMembers[startIndex];
