@@ -310,6 +310,45 @@ void main() {
     expect((now?.seasonNumber, now?.episodeNumber), (0, 1));
   });
 
+  test('手动指定季集：快照读与写入之间别处提交的指定进快照，撤销不抹掉它（BUG-5143）', () async {
+    // pinEpisode 读「执行前指定」的那一刻，同进程另一任务提交指定 S0E1（不 await，
+    // 走根 zone，不混进 pinEpisode 的事务）。快照必须是这次写入实际覆盖掉的值：
+    // 要么 S0E1 先落、进快照，要么排在写入之后、撤销时判 superseded；都不能被撤销抹掉。
+    Future<void>? concurrent;
+    gate.arm('video_episode_binding_overrides', (QueryExecutor _) async {
+      concurrent = Zone.root.run(
+        () => db.setVideoEpisodeBindingOverride(
+          'ep2',
+          seasonNumber: 0,
+          episodeNumber: 1,
+        ),
+      );
+    });
+    final Map<String, Object?> payload =
+        jsonDecode(
+              jsonEncode(
+                await call(
+                  'POST',
+                  '$kVideoOrganizeCtlRoot/files/:uid/episode',
+                  params: <String, String>{'uid': 'ep2'},
+                  body: <String, Object?>{'season': 1, 'episode': 2},
+                ),
+              ),
+            )
+            as Map<String, Object?>;
+    await concurrent;
+    expect(gate.fired, 1);
+    await restoreVideoEpisodePin(
+      db,
+      bookUid: 'ep2',
+      applied: payload['applied'],
+      snapshot: payload['previous'],
+    );
+    final VideoEpisodeBindingOverrideRow? now = await db
+        .getVideoEpisodeBindingOverride('ep2');
+    expect((now?.seasonNumber, now?.episodeNumber), (0, 1));
+  });
+
   test('手动指定之后用户又改过：撤销不覆盖', () async {
     final Map<Object?, Object?> result =
         await call(

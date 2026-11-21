@@ -748,81 +748,87 @@ class _VideoOrganizeCtl {
     if (await _db.getVideoBookByBookUid(bookUid) == null) {
       throw CtlFailure.notFound('没有这个视频：$bookUid');
     }
-    final VideoEpisodeBindingOverrideRow? existing = await _db
-        .getVideoEpisodeBindingOverride(bookUid);
-    final List<VideoMetadataEpisodeRow> bound = await _db
-        .getVideoMetadataEpisodesByBook(bookUid);
-    final Map<String, Object?> previous = <String, Object?>{
-      'override': existing == null
-          ? null
-          : <String, Object?>{
-              'season': existing.seasonNumber,
-              'episode': existing.episodeNumber,
-            },
-      'episodes': <Map<String, Object?>>[
-        for (final VideoMetadataEpisodeRow row in bound)
-          _episodeBindingJson(row),
-      ],
-    };
-    if (call.optBool('clear') == true) {
-      if (existing == null) {
-        throw const CtlFailure.conflict('这个文件没有手动指定的季集');
-      }
-      await _db.clearVideoEpisodeBindingOverride(bookUid);
-      _db.notifyVideoLibraryChanged();
-      return <String, Object?>{
-        'uid': bookUid,
-        'cleared': true,
-        'applied': null,
-        'previous': previous,
-      };
-    }
+    final bool clear = call.optBool('clear') == true;
     final int? season = call.optInt('season');
     final int? episode = call.optInt('episode');
-    if (season == null || episode == null || season < 0 || episode < 0) {
-      throw const CtlFailure.badRequest(
-        '需要 season 与 episode（非负整数），或 clear=true',
-      );
-    }
-    final VideoMetadataWorkRow? work = await _workOfFile(bookUid, bound);
-    if (work == null) {
-      throw const CtlFailure.conflict('这个文件所在的作品还没有刮出季集，先识别作品（video identify）');
-    }
-    final VideoMetadataSeasonRow? targetSeason =
-        (await _db.getVideoMetadataSeasons(work.id))
-            .where((VideoMetadataSeasonRow s) => s.seasonNumber == season)
-            .firstOrNull;
-    final VideoMetadataEpisodeRow? target = targetSeason == null
-        ? null
-        : (await _db.getVideoMetadataEpisodes(targetSeason.id))
-              .where((VideoMetadataEpisodeRow e) => e.episodeNumber == episode)
+    // 撤销快照（当前指定 + 改绑会动的分集行）、占用检查与写入同一个事务：快照就是
+    // 这次写入实际覆盖掉的值。事务外先读时，读与写之间别处提交的指定 / 绑定会被记成
+    // 「执行前」，撤销时把它们一并抹掉（与 HBK-AUDIT-029 同类，BUG-5143）。
+    final Map<String, Object?> result = await _db.transaction(() async {
+      final VideoEpisodeBindingOverrideRow? existing = await _db
+          .getVideoEpisodeBindingOverride(bookUid);
+      final List<VideoMetadataEpisodeRow> bound = await _db
+          .getVideoMetadataEpisodesByBook(bookUid);
+      final List<Map<String, Object?>> episodes = <Map<String, Object?>>[
+        for (final VideoMetadataEpisodeRow row in bound)
+          _episodeBindingJson(row),
+      ];
+      final Map<String, Object?> previous = <String, Object?>{
+        'override': existing == null
+            ? null
+            : <String, Object?>{
+                'season': existing.seasonNumber,
+                'episode': existing.episodeNumber,
+              },
+        'episodes': episodes,
+      };
+      if (clear) {
+        if (existing == null) {
+          throw const CtlFailure.conflict('这个文件没有手动指定的季集');
+        }
+        await _db.clearVideoEpisodeBindingOverride(bookUid);
+        return <String, Object?>{
+          'uid': bookUid,
+          'cleared': true,
+          'applied': null,
+          'previous': previous,
+        };
+      }
+      if (season == null || episode == null || season < 0 || episode < 0) {
+        throw const CtlFailure.badRequest(
+          '需要 season 与 episode（非负整数），或 clear=true',
+        );
+      }
+      final VideoMetadataWorkRow? work = await _workOfFile(bookUid, bound);
+      if (work == null) {
+        throw const CtlFailure.conflict(
+          '这个文件所在的作品还没有刮出季集，先识别作品（video identify）',
+        );
+      }
+      final VideoMetadataSeasonRow? targetSeason =
+          (await _db.getVideoMetadataSeasons(work.id))
+              .where((VideoMetadataSeasonRow s) => s.seasonNumber == season)
               .firstOrNull;
-    if (target == null) {
-      throw CtlFailure.notFound(
-        '《${work.title}》没有 ${_slot(season, episode)} 这一集（video detail --all 看全部集）',
-      );
-    }
-    // 目标集原先的绑定也要进快照：改绑会把它指到这个文件上。
-    if (!bound.any((VideoMetadataEpisodeRow row) => row.id == target.id)) {
-      (previous['episodes']! as List<Map<String, Object?>>).add(
-        _episodeBindingJson(target),
-      );
-    }
-    // ifFree=true（库管家自动路径必带）：目标集已绑着另一个本机文件就拒绝，不悄悄
-    // 把那个文件挤成未绑定。
-    final String? occupant = target.bookUid;
-    if (call.optBool('ifFree') == true &&
-        occupant != null &&
-        occupant != bookUid &&
-        await _db.getVideoBookByBookUid(occupant) != null) {
-      throw CtlFailure(
-        409,
-        kVideoEpisodeOccupiedCode,
-        '${_slot(season, episode)} 已绑着另一个本机文件（$occupant），没有改绑',
-      );
-    }
-    // 指定与改绑同一个事务：不留「有指定、没改绑」的半成品。
-    await _db.transaction(() async {
+      final VideoMetadataEpisodeRow? target = targetSeason == null
+          ? null
+          : (await _db.getVideoMetadataEpisodes(targetSeason.id))
+                .where(
+                  (VideoMetadataEpisodeRow e) => e.episodeNumber == episode,
+                )
+                .firstOrNull;
+      if (target == null) {
+        throw CtlFailure.notFound(
+          '《${work.title}》没有 ${_slot(season, episode)} 这一集（video detail --all 看全部集）',
+        );
+      }
+      // 目标集原先的绑定也要进快照：改绑会把它指到这个文件上。
+      if (!bound.any((VideoMetadataEpisodeRow row) => row.id == target.id)) {
+        episodes.add(_episodeBindingJson(target));
+      }
+      // ifFree=true（库管家自动路径必带）：目标集已绑着另一个本机文件就拒绝，不悄悄
+      // 把那个文件挤成未绑定。
+      final String? occupant = target.bookUid;
+      if (call.optBool('ifFree') == true &&
+          occupant != null &&
+          occupant != bookUid &&
+          await _db.getVideoBookByBookUid(occupant) != null) {
+        throw CtlFailure(
+          409,
+          kVideoEpisodeOccupiedCode,
+          '${_slot(season, episode)} 已绑着另一个本机文件（$occupant），没有改绑',
+        );
+      }
+      // 指定与改绑同一个事务：不留「有指定、没改绑」的半成品。
       await _db.setVideoEpisodeBindingOverride(
         bookUid,
         seasonNumber: season,
@@ -834,15 +840,16 @@ class _VideoOrganizeCtl {
         seasonNumber: season,
         episodeNumber: episode,
       );
+      return <String, Object?>{
+        'uid': bookUid,
+        'work': work.title,
+        'episodeTitle': target.title,
+        'applied': <String, Object?>{'season': season, 'episode': episode},
+        'previous': previous,
+      };
     });
     _db.notifyVideoLibraryChanged();
-    return <String, Object?>{
-      'uid': bookUid,
-      'work': work.title,
-      'episodeTitle': target.title,
-      'applied': <String, Object?>{'season': season, 'episode': episode},
-      'previous': previous,
-    };
+    return result;
   }
 
   // ── 摆放审计 / 拆并作品 ─────────────────────────────────────────────────
