@@ -138,12 +138,32 @@ import 'package:fushi/src/pages/implementations/home_widget_frame.dart';
 import 'package:fushi/src/pages/implementations/home_widget_grid.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_schema_study_goals.dart'
+    show buildStudyGoalsDestination;
 import 'package:fushi/src/settings/settings_schema_tracking.dart';
+import 'package:fushi/src/pages/implementations/study_goal_edit_sheet.dart';
+import 'package:fushi/src/pages/implementations/study_goal_visuals.dart';
+import 'package:fushi/src/platform/widget_snapshot.dart'
+    show
+        StudyGoalCompactText,
+        StudyGoalDay,
+        StudyGoalProgress,
+        StudyGoalState,
+        WidgetGoalsInput,
+        computeStudyGoals,
+        studyGoalDailySeries,
+        studyGoalDailyShare;
+import 'package:fushi/src/srs/srs_home_stats.dart'
+    show SrsHomeStats, srsHomeStatsProvider;
+import 'package:fushi/src/stats/study_goal_record.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_engine/media/collections/shelf_sort.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
 import 'package:fushi/src/stats/stat_window.dart';
-import 'package:fushi/src/stats/study_goal_period.dart';
+import 'package:fushi/src/stats/study_goal_language_scope.dart';
+import 'package:fushi/src/stats/study_goals.dart';
+import 'package:fushi_engine/stats/study_goal_language.dart'
+    show StudyGoalUnit, loadStudyGoalMediaLanguages;
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
@@ -749,6 +769,14 @@ class _ContinueEntry {
 /// 重跑整批聚合——几百毫秒里各区只能挂骨架。快照让重建的首帧直接用上一轮的结果
 /// 渲染（旧数据先上屏），后台照常重拉一轮再替换，体感从「每次都等」变成「瞬开」。
 /// 只存本地聚合，远端补位（互联）仍由 [_loadRemoteDashboardData] 增量到达。
+/// 近 7 天柱条的一份数据（[_HomeDashboardPageState._weekBarsData]）。
+typedef _WeekBarsData = ({
+  List<int> values,
+  List<String> labels,
+  double? reference,
+  String semantic,
+});
+
 class _HomeDashboardSnapshot {
   const _HomeDashboardSnapshot({
     required this.profileId,
@@ -767,6 +795,8 @@ class _HomeDashboardSnapshot {
     required this.memberSortIndex,
     required this.videoWatchAtByUid,
     required this.videoDurationMsByPath,
+    required this.goalMediaLanguages,
+    required this.minedByDay,
   });
 
   /// 这轮聚合所属的激活 Profile（统计按 Profile 隔离）。快照只在同一 Profile 下
@@ -787,6 +817,12 @@ class _HomeDashboardSnapshot {
   final Map<String, int> memberSortIndex;
   final Map<String, int> videoWatchAtByUid;
   final Map<String, int> videoDurationMsByPath;
+
+  /// 媒体身份 → 内容语言（限定了语言的目标按它过滤分子）。
+  final Map<String, String> goalMediaLanguages;
+
+  /// 统计日 → 制卡数（制卡目标的分子，与小组件同口径）。
+  final Map<String, int> minedByDay;
 }
 
 class _HomeDashboardPageState
@@ -835,8 +871,8 @@ class _HomeDashboardPageState
   List<HomeWidgetItem> _widgetItemsShown = const <HomeWidgetItem>[];
   Set<HomeWidgetKind> _widgetAvailableKinds = const <HomeWidgetKind>{};
 
-  /// 刚添加的组件：网格下一帧把它滚进视野并聚焦。
-  HomeWidgetKind? _revealWidget;
+  /// 刚添加 / 刚改配置的组件（[HomeWidgetItem.slot]）：网格下一帧把它滚进视野并聚焦。
+  String? _revealWidget;
 
   /// 视频文件路径 → 容器时长（毫秒，[VideoFileSpecs] 探测缓存，只查在看的
   /// 视频）。`VideoBooks` 不存总时长，单视频 / 合集里的某一集要画「看到哪」的
@@ -903,6 +939,13 @@ class _HomeDashboardPageState
   /// （BUG-1993：目标口径 = 学习域）。派生 getter，不另存状态。
   Iterable<StatFact> get _dailyRows =>
       _readingRows.followedBy(_watchRows).followedBy(_gameRows);
+
+  /// 目标分子用的媒体语言表与制卡日表（随快照加载，改目标后 [_reloadGoalData] 重载）。
+  Map<String, String> _goalMediaLanguages = const <String, String>{};
+  Map<String, int> _minedByDay = const <String, int>{};
+
+  /// 一行高「语言目标」格（挑了几条目标）滑到第几页：slot 键 → 页号。只在本页内记。
+  final Map<String, int> _languageGoalsPage = <String, int>{};
 
   /// 合集归属映射（统计页/书架同源，显示名规则「非合集上下文拼合集名」用）：
   /// - [_collectionNamesById]：collectionId → 合集名。
@@ -1301,6 +1344,15 @@ class _HomeDashboardPageState
     // 游戏时长来自 galgame_sessions、游戏 hook 字数来自 legacy game 行 + 段），
     // 首页不再自己读六张表各自累加——与阅读/视频/游戏统计页同一份事实。
     final Future<StatFacts> factsF = loadStatFacts(db, profileId: profileId);
+    // 目标记录可能在别处（设置页）改出限定语言的目标：媒体语言表总是加载（三条
+    // 只取两列的查询），不随此刻的目标列表决定。
+    final Future<Map<String, String>> goalMediaF = loadStudyGoalMediaLanguages(
+      db,
+    );
+    final Future<Map<String, int>> minedByDayF = loadStudyMinedByDay(
+      db,
+      statWindow,
+    );
     final Future<List<MediaCollectionRow>> collectionsF = db
         .getAllMediaCollections();
     // 折叠归属主合集 + 组内 sortIndex 一次查回，且只查本机库里还在的条目
@@ -1334,6 +1386,8 @@ class _HomeDashboardPageState
       gamesF,
       trackingF,
       discCoversF,
+      goalMediaF,
+      minedByDayF,
     ]);
     final List<VideoBookRow> videos = await videosF;
     final StatFacts facts = await factsF;
@@ -1431,6 +1485,8 @@ class _HomeDashboardPageState
       memberSortIndex: memberSortIndex,
       videoWatchAtByUid: watchAt,
       videoDurationMsByPath: durationByPath,
+      goalMediaLanguages: await goalMediaF,
+      minedByDay: await minedByDayF,
     );
     _snapshots[db] = snapshot;
     if (!mounted) return;
@@ -1458,6 +1514,8 @@ class _HomeDashboardPageState
     _memberSortIndex = s.memberSortIndex;
     _videoWatchAtByUid = s.videoWatchAtByUid;
     _videoDurationMsByPath = s.videoDurationMsByPath;
+    _goalMediaLanguages = s.goalMediaLanguages;
+    _minedByDay = s.minedByDay;
   }
 
   /// 「继续也走 fushi 互联」：互联启用且已配对时，从 host 拉取书清单（内联
@@ -1860,13 +1918,12 @@ class _HomeDashboardPageState
         if (_widgetSessions[grid] == null &&
             appModel.homeWidgetLayout.itemsFor(grid) == null) {
           visible = fillHomeWidgetGaps(visible, grid);
-          final Map<HomeWidgetKind, HomeWidgetSize> filled =
-              <HomeWidgetKind, HomeWidgetSize>{
-                for (final HomeWidgetItem e in visible) e.kind: e.size,
-              };
+          final Map<String, HomeWidgetSize> filled = <String, HomeWidgetSize>{
+            for (final HomeWidgetItem e in visible) e.slot: e.size,
+          };
           items = <HomeWidgetItem>[
             for (final HomeWidgetItem e in items)
-              e.withSize(filled[e.kind] ?? e.size),
+              e.withSize(filled[e.slot] ?? e.size),
           ];
         }
         _widgetItemsShown = items;
@@ -1891,7 +1948,7 @@ class _HomeDashboardPageState
             : null;
         int fullIndexOf(List<HomeWidgetItem> full, int visibleIndex) =>
             full.indexWhere(
-              (HomeWidgetItem e) => e.kind == visible[visibleIndex].kind,
+              (HomeWidgetItem e) => e.slot == visible[visibleIndex].slot,
             );
         final Widget body = visible.isEmpty
             ? _buildWidgetEmptyState()
@@ -1908,7 +1965,7 @@ class _HomeDashboardPageState
                       books: books,
                       item: item,
                     ),
-                labelOf: homeWidgetLabel,
+                labelOf: homeWidgetItemLabel,
                 onEnterEdit: _enterWidgetEdit,
                 onExitEdit: () => unawaited(_finishWidgetEdit()),
                 onMove: (int from, int to) => _editWidgets(
@@ -1930,7 +1987,9 @@ class _HomeDashboardPageState
                     size,
                   ),
                 ),
-                revealKind: _revealWidget,
+                onConfigure: (int index) =>
+                    unawaited(_configureWidgetLanguage(visible[index])),
+                revealSlot: _revealWidget,
                 onRevealed: () => _revealWidget = null,
               );
         // 2026-10 首页统一浮动工具栏：顶部不再是贴边实体条，栏与「继续」FAB
@@ -2147,18 +2206,98 @@ class _HomeDashboardPageState
         for (final HomeWidgetKind kind in HomeWidgetKind.values)
           if (_widgetAvailableKinds.contains(kind)) kind,
       ],
-      present: <HomeWidgetKind>{for (final HomeWidgetItem e in items) e.kind},
+      // 可重复的组件（「语言目标」）永远能再加一块（加的时候挑一种还没有格子的语言）。
+      present: <HomeWidgetKind>{
+        for (final HomeWidgetItem e in items)
+          if (!e.kind.repeatable) e.kind,
+      },
       labelOf: homeWidgetLabel,
       descriptionOf: homeWidgetDescription,
     );
     if (picked == null || !mounted || !_editingWidgets) return;
     // 添加用默认尺寸；面板开着时窗口可能跨过断点，所以取此刻网格的默认尺寸。
-    final HomeWidgetItem item = picked.withSize(
-      picked.kind.defaultFor(_widgetGrid),
-    );
-    _revealWidget = item.kind;
+    HomeWidgetItem item = picked.withSize(picked.kind.defaultFor(_widgetGrid));
+    if (item.kind.repeatable) {
+      // 「语言目标」：加的时候就问是哪种语言（预选第一种还没有格子的候选语言），
+      // 加完格子标题就写着这种语言；之后编辑态右上角的语言角标可以再改。
+      final List<HomeWidgetItem> current =
+          _widgetSessions[_widgetGrid]?.items ?? _widgetItemsShown;
+      final Set<String> taken = <String>{
+        for (final HomeWidgetItem e in current) e.slot,
+      };
+      final AppModel model = ref.read(appProvider);
+      final List<String> candidates = await loadStudyGoalCandidateLanguages(
+        model.database,
+        model.prefsRepo,
+      );
+      if (!mounted || !_editingWidgets) return;
+      final ({String? language})? chosen = await _pickWidgetLanguage(
+        homeLanguageGoalsDefaultLanguage(candidates: candidates, taken: taken),
+        current,
+      );
+      if (chosen == null || !mounted || !_editingWidgets) return;
+      item = item.withLanguage(chosen.language);
+      if (current.any((HomeWidgetItem e) => e.slot == item.slot)) return;
+    }
+    _revealWidget = item.slot;
     _editWidgets((List<HomeWidgetItem> full) => addHomeWidget(full, item));
   }
+
+  /// 编辑态改「语言目标」格的语言（角标 / 手柄 Y / 菜单键）。换成的语言已有格子时不变
+  /// （选择器里那些语言标着「首页已有」、不可选）。
+  Future<void> _configureWidgetLanguage(HomeWidgetItem item) async {
+    final ({String? language})? chosen = await _pickWidgetLanguage(
+      item.language,
+      _widgetSessions[_widgetGrid]?.items ?? _widgetItemsShown,
+      onChooseGoals: () => unawaited(_configureWidgetGoals(item)),
+    );
+    if (chosen == null || !mounted || !_editingWidgets) return;
+    final HomeWidgetItem next = item.withLanguage(chosen.language);
+    _revealWidget = next.slot;
+    _editWidgets(
+      (List<HomeWidgetItem> full) => setHomeWidgetLanguage(
+        full,
+        full.indexWhere((HomeWidgetItem e) => e.slot == item.slot),
+        chosen.language,
+      ),
+    );
+  }
+
+  /// 编辑态给「语言目标」格挑显示哪些目标（语言选择框里的「挑选目标…」）：
+  /// [showHomeTileGoalsPicker]；空表 = 回到自动。
+  Future<void> _configureWidgetGoals(HomeWidgetItem item) async {
+    final List<String>? ids = await showHomeTileGoalsPicker(
+      context: context,
+      appModel: ref.read(appProvider),
+      language: item.language,
+      current: item.goals,
+    );
+    if (ids == null || !mounted || !_editingWidgets) return;
+    _revealWidget = item.slot;
+    _editWidgets(
+      (List<HomeWidgetItem> full) => <HomeWidgetItem>[
+        for (final HomeWidgetItem e in full)
+          e.slot == item.slot ? e.withGoals(ids) : e,
+      ],
+    );
+  }
+
+  /// 「语言目标」格的语言选择（全部语言 + 目标候选语言 +「其他…」，
+  /// [showStudyGoalLanguagePicker]）；[items] 里已有格子的语言不可选。关掉返回 null。
+  Future<({String? language})?> _pickWidgetLanguage(
+    String? current,
+    List<HomeWidgetItem> items, {
+    VoidCallback? onChooseGoals,
+  }) => showStudyGoalLanguagePicker(
+    context: context,
+    appModel: ref.read(appProvider),
+    current: current,
+    onChooseGoals: onChooseGoals,
+    taken: <String?>{
+      for (final HomeWidgetItem e in items)
+        if (e.kind == HomeWidgetKind.languageGoals) e.language,
+    },
+  );
 
   /// 一个组件都没有时：空态说明 + 「添加小组件」。
   Widget _buildWidgetEmptyState() => HomeEmptyState(
@@ -3037,22 +3176,135 @@ class _HomeDashboardPageState
     if (mounted) setState(() {});
   }
 
-  /// 近 7 天学习字数柱条（今天在最后），柱高 [height]。
-  Widget _buildWeekBars({required double height}) {
+  /// 近 7 天柱条的数据（今天在最后）。[goal] 为 null = 学习字数（全部语言，经典
+  /// 「今日」与「近 7 天」格）；否则 = 这条目标每天的量（同一个度量、同一种语言、
+  /// 同一套分子，[studyGoalDailySeries]），参考线是它摊到一天的目标量（周 / 月目标
+  /// 按 7 天 / 当月天数摊）。
+  _WeekBarsData _weekBarsData({
+    StudyGoalProgress? goal,
+    WidgetGoalsInput? input,
+  }) {
     final List<String> keys = _statWindow.lastDayKeys(7);
-    final List<int> values = <int>[
-      for (final String k in keys) studyGoalCharsForDay(_dailyRows, k),
-    ];
+    if (goal == null || input == null) {
+      final List<int> values = <int>[
+        for (final String k in keys) studyGoalCharsForDay(_dailyRows, k),
+      ];
+      final List<String> labels = <String>[
+        for (int i = 0; i < keys.length; i++)
+          '${keys[i]} · ${formatStatChars(values[i])}',
+      ];
+      return (
+        values: values,
+        labels: labels,
+        reference: null,
+        semantic: '${t.stat_week_past} · ${labels.join(', ')}',
+      );
+    }
+    final List<int> values = studyGoalDailySeries(
+      goal: goal.goal,
+      goals: input,
+      immersion: buildStudyImmersionInput(_dailyRows, _statWindow),
+      dayKeys: keys,
+      reviewsByDay: _studyGoalReviews(input),
+    );
+    String format(int v) {
+      if (goal.id.isTime) return formatStatTime(v);
+      final String? unit = studyGoalUnitLabel(goal.id, input.unitOf(goal.goal));
+      final String n = formatStatCharsAxis(v);
+      return unit == null ? n : '$n $unit';
+    }
+
     final List<String> labels = <String>[
-      for (int i = 0; i < keys.length; i++)
-        '${keys[i]} · ${formatStatChars(values[i])}',
+      for (int i = 0; i < keys.length; i++) '${keys[i]} · ${format(values[i])}',
     ];
-    return HomeWeekBars(
+    return (
       values: values,
       labels: labels,
-      height: height,
-      semanticLabel: '${t.stat_week_past} · ${labels.join(', ')}',
+      reference: studyGoalDailyShare(goal.goal, _statWindow.todayKey),
+      semantic:
+          '${t.stat_week_past} · ${studyGoalProgressLabel(goal, input)} · '
+          '${labels.join(', ')}',
     );
+  }
+
+  /// 近 7 天柱条（今天在最后），柱高 [height]；数据见 [_weekBarsData]。
+  Widget _buildWeekBars({
+    required double height,
+    StudyGoalProgress? goal,
+    WidgetGoalsInput? input,
+  }) {
+    final _WeekBarsData data = _weekBarsData(goal: goal, input: input);
+    return HomeWeekBars(
+      values: data.values,
+      labels: data.labels,
+      height: height,
+      reference: data.reference,
+      semanticLabel: data.semantic,
+      color: goal == null
+          ? null
+          : studyGoalColorsOf(
+              context,
+              language: goal.goal.language,
+              metric: goal.goal.metric,
+            ).ring,
+    );
+  }
+
+  /// 周 / 月目标的「本周」柱条（设计 B，[StudyGoalDayStrip]）：生效日一根柱 + 那天
+  /// 份额的短横，不生效日一个点，今天实色。数据是 [StudyGoalProgress.days]（与环、
+  /// 小组件同一次计算）。色块外观用色块色，分区卡用目标语言色（墨水屏黑白）。
+  Widget _buildGoalDayStrip(
+    StudyGoalProgress goal,
+    WidgetGoalsInput input, {
+    required double height,
+  }) {
+    return Builder(
+      builder: (BuildContext context) {
+        final FushiCoverBlockColors? colors = HomeWidgetStyle.maybeOf(
+          context,
+        )?.colors;
+        final StudyGoalColors goalColors = studyGoalColorsOf(
+          context,
+          language: goal.goal.language,
+          metric: goal.goal.metric,
+        );
+        final Color color = colors?.accent ?? goalColors.ring;
+        final Color fg =
+            colors?.onContainer ??
+            FushiDesignTokens.of(context).surfaces.onSurface;
+        final bool eink = isEinkTheme(context);
+        final List<String> labels = <String>[
+          for (final StudyGoalDay d in goal.days) _goalDayLabel(goal, d),
+        ];
+        return StudyGoalDayStrip(
+          key: const ValueKey<String>('home-today-day-strip'),
+          days: goal.days,
+          labels: labels,
+          semanticLabel:
+              '${studyGoalProgressLabel(goal, input)} · ${labels.join(', ')}',
+          height: height,
+          color: color,
+          past: eink ? goalColors.track : color.withValues(alpha: 0.45),
+          tick: fg.withValues(alpha: eink ? 1 : 0.75),
+          dot: fg.withValues(alpha: eink ? 0.6 : 0.35),
+        );
+      },
+    );
+  }
+
+  /// 「本周」柱条一天的提示 / 读屏：「11-18 · 12 / 20」，不生效日「11-21 · 休息日」。
+  String _goalDayLabel(StudyGoalProgress goal, StudyGoalDay d) {
+    final String day = d.dayKey.substring(5);
+    if (!d.inPeriod) return day;
+    if (!d.active) return '$day · ${t.study_goal_status_rest_day}';
+    final ({String value, String target}) pair = studyGoalCompactPair(
+      d.value,
+      d.share,
+      isTime: goal.id.isTime,
+    );
+    return d.future
+        ? '$day · ${pair.target}'
+        : '$day · ${pair.value} / ${pair.target}';
   }
 
   /// 「今日」色块里的近 7 天柱条（与 [_buildWeekBars] 同一份数据与读屏文案，今天
@@ -3061,25 +3313,21 @@ class _HomeDashboardPageState
     FushiCoverBlockColors colors, {
     required double height,
     Key key = const ValueKey<String>('home-week-bars'),
+    StudyGoalProgress? goal,
+    WidgetGoalsInput? input,
   }) {
-    final List<String> keys = _statWindow.lastDayKeys(7);
-    final List<int> values = <int>[
-      for (final String k in keys) studyGoalCharsForDay(_dailyRows, k),
-    ];
-    final List<String> labels = <String>[
-      for (int i = 0; i < keys.length; i++)
-        '${keys[i]} · ${formatStatChars(values[i])}',
-    ];
+    final _WeekBarsData data = _weekBarsData(goal: goal, input: input);
     return Semantics(
       key: key,
       container: true,
-      label: '${t.stat_week_past} · ${labels.join(', ')}',
+      label: data.semantic,
       child: FushiPosterBars(
-        values: values,
+        values: data.values,
         colors: colors,
-        highlightIndex: values.length - 1,
-        labels: labels,
+        highlightIndex: data.values.length - 1,
+        labels: data.labels,
         height: height,
+        reference: data.reference,
       ),
     );
   }
@@ -4131,65 +4379,176 @@ class _HomeDashboardPageState
 
   // ── 学习头部行 / 目标 ────────────────────────────────────────────────────
 
-  /// 学习头部行（[HomeStudyHeader]）：学习域（书 + 视频字幕 + 游戏 hook 文本）
-  /// 字数 vs 字数目标（与阅读统计页「今天」环同一持久化目标
-  /// [AppModel.readingGoalActiveChars]、同一分子函数，BUG-1993），右侧今日学习时长
-  /// （同一份日面行的 ms 合计）。目标周期（反馈 CjIr9RGSCe）：按日 → 今日字数
-  /// [studyGoalCharsForDay]；按周 → 本自然周字数 [studyGoalCharsForWeek]，进度文案带
-  /// 「本周」。目标为 0 → 旗子环 + 今日字数 + 「设定目标」按钮；否则进度环 +
-  /// 「X / Y 字」，点整行弹编辑对话框。
+  /// 经典「今日」外观对应的目标：没有目标记录 → null；**恰好一条**全部语言的每日字数
+  /// 目标 → 它。其余情况（别的目标 / 多条 / 限定语言 / 周月目标）走目标翻页
+  /// （[_todayClassic] 为 false）。
+  StudyGoal? get _classicCharsGoal {
+    final List<StudyGoal> goals = ref.read(appProvider).studyGoals;
+    if (goals.length != 1) return null;
+    final StudyGoal g = goals.single;
+    return g.metric == StudyGoalId.chars &&
+            g.period == StudyGoalPeriod.daily &&
+            g.language == null
+        ? g
+        : null;
+  }
+
+  /// 「今日」格是不是经典外观（今日字数大字 + 时长 + 字数目标环）。
+  bool get _todayClassic =>
+      ref.read(appProvider).studyGoals.isEmpty || _classicCharsGoal != null;
+
+  /// 学习头部行（[HomeStudyHeader]）：学习域（书 + 视频字幕 + 游戏 hook 文本）今日
+  /// 字数 vs 经典字数目标（[_classicCharsGoal]，与小组件同一条记录、同一分子函数，
+  /// BUG-1993），右侧今日学习时长（同一份日面行的 ms 合计）。没有目标 → 旗子环 +
+  /// 今日字数 + 「设定目标」按钮；否则进度环 +「X / Y 字」，点整行弹目标面板。
   Widget _buildStudyHeader(FushiDesignTokens tokens) {
     final AppModel appModel = ref.read(appProvider);
-    final StudyGoalPeriod period = appModel.readingGoalPeriod;
-    final int goal = appModel.readingGoalActiveChars;
+    final StudyGoal? goal = _classicCharsGoal;
     // BUG-2219：与本轮加载的聚合同一个窗口（跨午夜由 [_midnightReload] 重拉）。
-    final StatWindow w = _statWindow;
-    final String todayKey = w.todayKey;
+    final String todayKey = _statWindow.todayKey;
     final int todayChars = studyGoalCharsForDay(_dailyRows, todayKey);
-    final int goalChars = switch (period) {
-      StudyGoalPeriod.daily => todayChars,
-      StudyGoalPeriod.weekly => studyGoalCharsForWeek(_dailyRows, w),
-    };
     int todayMs = 0;
     for (final StatFact f in _dailyRows) {
       if (f.dateKey == todayKey) todayMs += f.ms;
     }
-    final bool hasGoal = goal > 0;
     final String todayTime = formatStatTime(todayMs);
     return HomeStudyHeader(
-      fraction: hasGoal ? (goalChars / goal).clamp(0.0, 1.0) : null,
-      value: !hasGoal
+      fraction: goal == null
+          ? null
+          : (todayChars / goal.target).clamp(0.0, 1.0),
+      value: goal == null
           ? formatStatChars(todayChars)
-          : switch (period) {
-              StudyGoalPeriod.daily => t.stat_goal_progress(
-                read: goalChars,
-                goal: goal,
-              ),
-              StudyGoalPeriod.weekly => t.stat_goal_progress_weekly(
-                read: goalChars,
-                goal: goal,
-              ),
-            },
+          : statGoalProgressLabel(
+              unit: studyGoalUnitOf(goal, appModel.readingGoalTextUnit),
+              read: todayChars,
+              goal: goal.target,
+            ),
       todayTime: todayTime,
       todayTimeSemanticLabel: '${t.stat_today} · $todayTime',
       onEditGoal: () => unawaited(_editGoal()),
-      setGoalLabel: hasGoal ? null : t.stat_goal_set,
+      setGoalLabel: goal == null ? t.stat_goal_set : null,
     );
   }
 
-  /// 弹目标编辑对话框（2026-10 体验优化：与统计页合并为同一份
-  /// [showStatGoalEditDialog]——日 / 周二选一 + 预设 + 近 7 日参考）。写回偏好后
-  /// setState 刷新目标行（与统计页读同一偏好，多处天然同步）。取消不写。
+  /// 经典「今日」外观的点按：编辑那条字数目标；还没有目标时新建（预填字数、每日、
+  /// 全部语言）。保存后重载目标数据（语言可能变了，要重查媒体语言表）。
   Future<void> _editGoal() async {
-    // 近 7 日参考吃本页窗口（跨午夜重拉，BUG-2219）。
-    final List<String> recentKeys = _statWindow.lastDayKeys(7);
-    final bool saved = await showStatGoalEditDialog(
+    final AppModel appModel = ref.read(appProvider);
+    final StudyGoalSheetResult? result = await showStudyGoalEditSheet(
+      context,
+      appModel,
+      goal: _classicCharsGoal,
+    );
+    if (result != null) await _reloadGoalData();
+  }
+
+  /// 「语言目标」格空态：新建预填该语言的目标。
+  Future<void> _addLanguageGoal(String? language) async {
+    final StudyGoalSheetResult? result = await showStudyGoalEditSheet(
       context,
       ref.read(appProvider),
-      recentDailyAverage: statRecentDailyAverageChars(_dailyRows, recentKeys),
-      recentWeeklyTotal: statRecentTotalChars(_dailyRows, recentKeys),
+      language: language,
     );
-    if (saved && mounted) setState(() {});
+    if (result != null) await _reloadGoalData();
+  }
+
+  /// 「目标」设置子页（「今日」格目标翻页的点按去处）。回来后重载目标数据。
+  Future<void> _openStudyGoalsSettings() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            const SettingsDetailPage.subPage(buildStudyGoalsDestination),
+      ),
+    );
+    await _reloadGoalData();
+  }
+
+  /// 目标记录变了之后重查分子要的库数据（媒体语言表、制卡日表），其余是偏好、重建
+  /// 即读到新值。
+  Future<void> _reloadGoalData() async {
+    if (!mounted) return;
+    final AppModel appModel = ref.read(appProvider);
+    final Map<String, String> media = await loadStudyGoalMediaLanguages(
+      appModel.database,
+    );
+    final Map<String, int> mined = await loadStudyMinedByDay(
+      appModel.database,
+      _statWindow,
+    );
+    if (!mounted) return;
+    setState(() {
+      _goalMediaLanguages = media;
+      _minedByDay = mined;
+    });
+  }
+
+  /// 目标输入（与 Android「目标」小组件同一装配）。
+  WidgetGoalsInput _studyGoalsInput() {
+    final AppModel appModel = ref.read(appProvider);
+    return buildStudyGoalsInput(
+      prefs: appModel.prefsRepo,
+      goals: appModel.studyGoals,
+      mediaLanguages: _goalMediaLanguages,
+      daily: _dailyRows,
+      window: _statWindow,
+      minedByDay: _minedByDay,
+    );
+  }
+
+  /// 复习日表（统计日 → 复习数）：只在有复习目标且走内置 SRS 时读（与复习首页共用
+  /// 一份统计）；null = 复习数不可得（复习目标不出现）。
+  Map<String, int>? _studyGoalReviews(WidgetGoalsInput input) {
+    final AppModel appModel = ref.read(appProvider);
+    final bool wantsReviews =
+        input.goals.any((StudyGoal g) => g.metric == StudyGoalId.reviews) &&
+        studyGoalsUseBuiltInSrs(
+          appModel.prefsRepo,
+          miningToReview: ref.watch(srsMiningToReviewProvider),
+        );
+    if (!wantsReviews) return null;
+    final SrsHomeStats? stats = ref.watch(srsHomeStatsProvider).value;
+    return stats == null
+        ? <String, int>{}
+        : studyReviewsByDateKey(
+            countsByDay: stats.countsByDay,
+            today: stats.today,
+            doneToday: stats.doneToday,
+            window: _statWindow,
+          );
+  }
+
+  /// 全部目标记录的进度（记录顺序）。
+  List<StudyGoalProgress> _studyGoalProgress(WidgetGoalsInput input) {
+    return computeStudyGoals(
+      goals: input,
+      immersion: buildStudyImmersionInput(_dailyRows, _statWindow),
+      day: _statWindow.todayKey,
+      reviewsByDay: _studyGoalReviews(input),
+    );
+  }
+
+  /// 「今日」目标翻页当前显示的那页：主目标（[AppModel.homeTodayMainGoal]，左右滑时
+  /// 也写它）在 [goals] 里的位置，指不到就是第一页。翻页与旁边的近 7 天柱条都按它。
+  int _todayGoalIndex(List<StudyGoalProgress> goals) => math.max(
+    0,
+    goals.indexWhere(
+      (StudyGoalProgress g) =>
+          g.goal.id == ref.read(appProvider).homeTodayMainGoal,
+    ),
+  );
+
+  /// 「今日」格的目标页：按「左右滑动」设置取每日目标或全部目标；只有周 / 月目标
+  /// 而选了「每日」时退回全部目标（不让格子空着）。
+  List<StudyGoalProgress> _todayGoals(WidgetGoalsInput input) {
+    final List<StudyGoalProgress> all = _studyGoalProgress(input);
+    if (ref.read(appProvider).homeTodaySwipeGoals == StudyGoalSwipeScope.all) {
+      return all;
+    }
+    final List<StudyGoalProgress> daily = <StudyGoalProgress>[
+      for (final StudyGoalProgress g in all)
+        if (g.goal.period == StudyGoalPeriod.daily) g,
+    ];
+    return daily.isEmpty ? all : daily;
   }
 
   /// 统计中心入口（唯一入口：各媒体页头的「xx统计」已撤，统一从首页进总览）。

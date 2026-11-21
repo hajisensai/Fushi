@@ -607,6 +607,7 @@ class FushiPosterBars extends StatelessWidget {
     this.highlightIndex = 0,
     this.labels,
     this.height = 46,
+    this.reference,
     super.key,
   });
 
@@ -614,17 +615,26 @@ class FushiPosterBars extends StatelessWidget {
   final FushiCoverBlockColors colors;
   final int highlightIndex;
 
+  /// 参考线（与 [values] 同单位，如每日目标量）；null = 不画。柱高按它与最大值里
+  /// 较大的那个归一，线画在它的高度上。
+  final double? reference;
+
   /// 与 [values] 对齐的悬停提示文案；null = 不挂提示。
   final List<String>? labels;
   final double height;
 
   @override
   Widget build(BuildContext context) {
-    final int peak = values.fold<int>(0, math.max);
+    final double? line = reference != null && reference! > 0
+        ? reference
+        : null;
+    final double peak = math.max(
+      values.fold<int>(0, math.max).toDouble(),
+      line ?? 0,
+    );
     final Duration duration = fushiMotionDuration(context, FushiMotion.long);
     final List<String>? tips = labels;
-    return ExcludeSemantics(
-      child: SizedBox(
+    final Widget bars = SizedBox(
         height: height,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
@@ -658,7 +668,16 @@ class FushiPosterBars extends StatelessWidget {
               ),
           ],
         ),
-      ),
+      );
+    return ExcludeSemantics(
+      child: line == null
+          ? bars
+          : FushiBarReferenceLine(
+              fraction: line / peak,
+              height: height,
+              color: colors.onContainer.withValues(alpha: 0.55),
+              child: bars,
+            ),
     );
   }
 
@@ -669,4 +688,48 @@ class FushiPosterBars extends StatelessWidget {
           excludeFromSemantics: true,
           child: child,
         );
+}
+
+/// 柱条上的一条横向参考线（目标量）：[fraction] = 线高 / 柱区高（0..1），画在
+/// [child]（高 [height] 的柱区）之上、不挡命中。
+class FushiBarReferenceLine extends StatelessWidget {
+  const FushiBarReferenceLine({
+    required this.fraction,
+    required this.height,
+    required this.color,
+    required this.child,
+    super.key,
+  });
+
+  final double fraction;
+  final double height;
+  final Color color;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: height,
+    child: Stack(
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        Positioned.fill(child: child),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: (height * fraction.clamp(0.0, 1.0)) - 0.75,
+          child: IgnorePointer(
+            child: SizedBox(
+              height: 1.5,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: const BorderRadius.all(Radius.circular(1)),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 }

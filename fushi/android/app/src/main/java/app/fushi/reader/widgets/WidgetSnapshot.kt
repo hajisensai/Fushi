@@ -80,7 +80,12 @@ data class WidgetOnDeck(val state: String = "none", val items: List<WidgetOnDeck
 /** One immersion category row (reading / listening / watching / games) of `today.categories`. */
 data class WidgetCategory(val id: String, val label: String, val ms: Long, val time: String, val link: String)
 
-/** One configured daily goal of `goals`. */
+/**
+ * One configured goal of `goals`. [label] / [value] / [target] / [frac] / [done] are the v1 fields;
+ * the rest are the compact v2 fields computed by the app (`_goalsJson` in `widget_snapshot.dart`):
+ * language and metric apart, value / target without repeated units, state and status text. An
+ * older snapshot without them falls back to the v1 fields (see [WidgetStore] parsing).
+ */
 data class WidgetGoal(
     val id: String,
     val label: String,
@@ -88,7 +93,31 @@ data class WidgetGoal(
     val target: String,
     val frac: Float,
     val done: Boolean,
-)
+    /** `daily` | `weekly` | `monthly`. */
+    val period: String = "daily",
+    /** Language name, "All languages", or empty for language-less metrics (cards mined, reviews). */
+    val language: String = "",
+    /** "Characters · Week" (daily goals: the metric alone). */
+    val caption: String = label,
+    /** "14.8K / 10K". */
+    val compact: String = "$value / $target",
+    val targetShort: String = target,
+    /** notStarted | inProgress | completed | exceeded | restDay. */
+    val state: String = if (done) "completed" else "inProgress",
+    /** "Completed" / "400 left" / "+4.8K" / "Rest day". */
+    val status: String = "",
+    /** Floored percent, 100 only when reached. */
+    val pct: Int = (frac * 100).toInt().coerceIn(0, if (done) 100 else 99),
+    /** v3: weekly / monthly goal split across its active days ("today's share"). */
+    val splits: Boolean = false,
+    /** v3: "12 / 20 today · On track" / "Rest day · 40 behind" / "Week done"; empty for daily goals. */
+    val todayLine: String = "",
+    /** v3: [todayLine] without the pace ("12 / 20 today" / "Rest day" / "Week done"). */
+    val todayShort: String = "",
+) {
+    val reached: Boolean get() = state == "completed" || state == "exceeded"
+    val restDay: Boolean get() = state == "restDay"
+}
 
 /** One vocabulary card of `vocab`. [origin] is `mined` or `favorite`. */
 data class WidgetVocab(
@@ -163,6 +192,11 @@ data class WidgetSnapshot(
     val weekReviews: Int? = null,
     val weekGoalDays: Int? = null,
     val monthMinutes: List<Int> = emptyList(),
+    /**
+     * Column of today in the month heatmap's last row (0 = first day of the user's week,
+     * `stats_week_start`). Snapshots without `firstWeekday` keep the old unaligned grid (6).
+     */
+    val monthTodayColumn: Int = 6,
     val monthTime: String = "",
     val monthActiveDays: Int = 0,
     val streakLongest: Int = 0,
@@ -239,6 +273,32 @@ object WidgetStore {
     }
 
     /** Due count at [now] from `srs.timeline` (last step with `at <= now`); no timeline -> `srs.due`. */
+    /** One `goals` entry; v2 fields fall back to the v1 ones when an older app wrote the snapshot. */
+    internal fun parseGoal(it: JSONObject): WidgetGoal {
+        val base = WidgetGoal(
+            id = it.optString("id"),
+            label = it.optString("label"),
+            value = it.optString("value"),
+            target = it.optString("target"),
+            frac = it.optDouble("frac", 0.0).toFloat().coerceIn(0f, 1f),
+            done = it.optBoolean("done", false),
+        )
+        fun text(key: String, fallback: String): String = it.optString(key).ifEmpty { fallback }
+        return base.copy(
+            period = text("period", base.period),
+            language = it.optString("language"),
+            caption = text("caption", base.caption),
+            compact = text("compact", base.compact),
+            targetShort = text("targetShort", base.targetShort),
+            state = text("state", base.state),
+            status = it.optString("status"),
+            pct = if (it.has("pct")) it.optInt("pct", base.pct).coerceIn(0, 100) else base.pct,
+            splits = it.optBoolean("splits", false),
+            todayLine = it.optString("todayLine"),
+            todayShort = it.optString("todayShort"),
+        )
+    }
+
     internal fun srsDueAt(srs: JSONObject?, now: Long): Int {
         val fallback = srs?.optInt("due", 0) ?: 0
         val steps = srs?.optJSONArray("timeline") ?: return fallback
@@ -275,6 +335,22 @@ object WidgetStore {
 
     private fun JSONObject.intOrNull(key: String): Int? = if (has(key) && !isNull(key)) optInt(key) else null
 
+    /**
+     * Column of today (0..6, counted from the week start) for a heatmap block that carries
+     * `minutes` (oldest -> today), `firstWeekday` (ISO weekday of `minutes[0]`) and
+     * `weekStart` (ISO weekday the user's week starts on; absent = Monday). Without
+     * `firstWeekday` the grid stays unaligned with today in the last cell (6), as before.
+     */
+    internal fun heatmapTodayColumn(block: JSONObject?): Int {
+        if (block == null || !block.has("firstWeekday")) return 6
+        val count = block.optJSONArray("minutes")?.length() ?: 0
+        if (count <= 0) return 6
+        val first = block.optInt("firstWeekday", 1).coerceIn(1, 7)
+        val weekStart = block.optInt("weekStart", 1).coerceIn(1, 7)
+        val todayWeekday = (first - 1 + count - 1) % 7 + 1
+        return Math.floorMod(todayWeekday - weekStart, 7)
+    }
+
     private fun parse(o: JSONObject, now: Long): WidgetSnapshot {
         val labels = HashMap<String, String>()
         o.optJSONObject("labels")?.let { l -> l.keys().forEach { k -> labels[k] = l.optString(k) } }
@@ -308,16 +384,7 @@ object WidgetStore {
         val goals = ArrayList<WidgetGoal>()
         o.optJSONArray("goals")?.let { a ->
             for (i in 0 until a.length()) a.optJSONObject(i)?.let {
-                goals.add(
-                    WidgetGoal(
-                        id = it.optString("id"),
-                        label = it.optString("label"),
-                        value = it.optString("value"),
-                        target = it.optString("target"),
-                        frac = it.optDouble("frac", 0.0).toFloat().coerceIn(0f, 1f),
-                        done = it.optBoolean("done", false),
-                    ),
-                )
+                goals.add(parseGoal(it))
             }
         }
         val streakWeek = ArrayList<Boolean>()
@@ -425,6 +492,7 @@ object WidgetStore {
             weekReviews = week?.intOrNull("reviews"),
             weekGoalDays = week?.intOrNull("goalDays"),
             monthMinutes = month?.ints("minutes").orEmpty(),
+            monthTodayColumn = heatmapTodayColumn(month),
             monthTime = month?.optString("time").orEmpty(),
             monthActiveDays = month?.optInt("activeDays", 0) ?: 0,
             streakLongest = streak?.optInt("longest", 0) ?: 0,

@@ -13,6 +13,8 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/home_widget_layout.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/content_language_picker.dart'
+    show contentLanguageLabelOf;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
@@ -35,6 +37,7 @@ String homeWidgetLabel(HomeWidgetKind kind) => switch (kind) {
   HomeWidgetKind.tracking => t.home_tracking_panel_title,
   HomeWidgetKind.aiAgent => t.ai_agent_title,
   HomeWidgetKind.panorama => t.home_panel_panorama_title,
+  HomeWidgetKind.languageGoals => t.home_widget_language_goals,
 };
 
 /// 组件一句话说明（添加面板）。
@@ -50,7 +53,20 @@ String homeWidgetDescription(HomeWidgetKind kind) => switch (kind) {
   HomeWidgetKind.tracking => t.home_widget_desc_tracking,
   HomeWidgetKind.aiAgent => t.home_widget_desc_ai_agent,
   HomeWidgetKind.panorama => t.home_panel_panorama_hint,
+  HomeWidgetKind.languageGoals => t.home_widget_desc_language_goals,
 };
+
+/// 布局里一块组件的名字（编辑态读屏 / 尺寸网格标题）：可配置的组件带上配置
+/// （「日本語目标」）。
+String homeWidgetItemLabel(HomeWidgetItem item) =>
+    switch (item.kind) {
+      HomeWidgetKind.languageGoals => t.home_language_goals_title(
+        language: item.language == null
+            ? t.stat_goal_language_all
+            : contentLanguageLabelOf(item.language!),
+      ),
+      _ => homeWidgetLabel(item.kind),
+    };
 
 /// 添加面板的分类筛选。
 enum HomeWidgetAddFilter { all, study, continueMedia, tools }
