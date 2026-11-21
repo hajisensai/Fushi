@@ -20,6 +20,12 @@
 ///   Irodori）都出 WAV，正是会遇到这类拒收的那一批。
 /// - 任一段在拆到底后仍被拒：上报**原句**最初的那次拒收（调用方照旧停下提示），
 ///   不跳句、不吞失败。
+///
+/// 这也是**所有经引擎合成一句的唯一入口**（朗读调度、整书制作、补配、漫画配音、
+/// Galgame 台词朗读、制作台 / 声音设置试听、制卡兜底）：纯标点 / 符号句
+/// （[ttsTextIsSilent]，「……」「！」「♪」）在这里写一段静音、不送引擎——有的引擎对
+/// 这种句子直接 400 拒收，拆也拆不出可读的片段，以前每个调用点各判一遍，漏判的入口
+/// 就把它记成「未配音」失败。
 library;
 
 import 'dart:io';
@@ -27,6 +33,7 @@ import 'dart:typed_data';
 
 import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
+import 'package:fushi_engine/tts/tts_silence.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 
 /// 被拒后最多拆几层（2 层 = 最多 4 段）。
@@ -36,6 +43,7 @@ const int kTtsRejectSplitDepth = 2;
 const int kTtsRejectSplitMinLength = 12;
 
 /// 合成 [text]；服务端拒收时按停顿拆开分别合成，再拼回一段写到 [outputPath]。
+/// 纯标点句（[ttsTextIsSilent]）不送引擎，写一段静音（[writeTtsSilentLine]）。
 ///
 /// [direction] 只对整句生效；拆开的片段只保留种子（给定时长是整句的，不能原样
 /// 套给半句）。
@@ -46,6 +54,10 @@ Future<TtsResult> ttsSynthesizeSplittingOnReject(
   required TtsCancelToken cancel,
   TtsDirection direction = TtsDirection.none,
 }) async {
+  if (ttsTextIsSilent(text)) {
+    cancel.throwIfCancelled();
+    return writeTtsSilentLine(text, outputPath);
+  }
   try {
     return await synthesizeWithDirection(
       provider,
