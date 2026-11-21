@@ -2459,6 +2459,23 @@ class ReaderFushiSource extends ReaderMediaSource {
     onSettingsChangedLive?.call();
   }
 
+  /// 新收藏句的颜色（键见 [ReaderSettings.favoriteHighlightColor]）。
+  String get favoriteHighlightColor =>
+      readerSettings?.favoriteHighlightColor ??
+      normalizeFavoriteHighlightColor(
+        getPreference<String>(
+          key: kFavoriteHighlightColorPrefKey,
+          defaultValue: kDefaultFavoriteHighlightColor,
+        ),
+      );
+  Future<void> setFavoriteHighlightColor(String v) async {
+    await (readerSettings?.setFavoriteHighlightColor(v) ??
+        setPreference<String>(
+          key: kFavoriteHighlightColorPrefKey,
+          value: normalizeFavoriteHighlightColor(v),
+        ));
+  }
+
   /// 一类高亮的笔触配置（键见 [ReaderSettings.highlightStrokeConfig]）。
   HighlightStrokeConfig highlightStrokeConfig(HighlightKind kind) {
     final ReaderSettings? s = readerSettings;
