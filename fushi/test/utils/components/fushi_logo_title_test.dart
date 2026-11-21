@@ -179,6 +179,70 @@ void main() {
       );
       expect(text.maxLines, lessThanOrEqualTo(2));
     });
+
+    // 一排卡里有的带 eyebrow / byline / subtitle / 进度，有的什么都没有：标题槽
+    // 必须一样高（=档位槽高），不能因为次要行按「logo 最少 24」预算保留下来就把
+    // 槽压扁。
+    testWidgets('${tier.size.name} 色块：带满 eyebrow/byline/subtitle 时标题槽仍与'
+        '空卡同高', (WidgetTester tester) async {
+      final MemoryImage logo = await makeImage(tester, 300, 100);
+      final MemoryImage backdrop = await makeImage(tester, 160, 90);
+      const String title = '映画ドラえもん のび太と翼の勇者たち 映画ドラえもん';
+      Widget blockWith({ImageProvider? logo, required bool full}) =>
+          FushiCoverBlock(
+            size: tier.size,
+            art: FushiCoverBlockArt.portrait,
+            title: title,
+            covers: const <Widget>[],
+            logo: logo,
+            backdrop: fushiSeriesBackdrop(backdrop),
+            eyebrow: full ? '第 2 季' : null,
+            byline: full ? '2024 · 12 集' : null,
+            subtitle: full ? '看到第 7 集' : null,
+            chip: full ? '更新' : null,
+            progress: full ? 0.4 : null,
+            overview: full ? '大雄和哆啦A梦又一次踏上冒险。' : null,
+            action: full
+                ? const FushiCoverBlockAction(
+                    icon: Icons.play_arrow_rounded,
+                    label: '继续',
+                  )
+                : null,
+            metaKey: metaKey,
+          );
+      final bool hero = tier.size == FushiCoverBlockSize.hero;
+      // 卡高从紧（次要行按 24 预算能留、按槽高预算要丢的区间）到宽松各取几档，
+      // 窄窗档（规整块 < 200、拼贴首块 < 260）与宽窗档都覆盖。
+      final List<double> boxHeights = hero
+          ? <double>[210, 225, 240, 264, 280]
+          : <double>[184, 200, 210, 220];
+      for (final double boxHeight in boxHeights) {
+        final double expected = fushiCoverBlockLogoMaxHeight(
+          tier.size,
+          compact: boxHeight < (hero ? 260 : 200),
+        );
+        final List<double> heights = <double>[];
+        for (final bool withLogo in <bool>[true, false]) {
+          for (final bool full in <bool>[false, true]) {
+            await pumpBlock(
+              tester,
+              size: Size(tier.box.width, boxHeight),
+              images: <ImageProvider>[logo, backdrop],
+              block: blockWith(logo: withLogo ? logo : null, full: full),
+            );
+            expect(tester.takeException(), isNull);
+            final Finder slot = withLogo
+                ? find.byType(FushiLogoTitle)
+                : find.byType(FushiTitleSlot);
+            expect(slot, findsOneWidget);
+            heights.add(tester.getSize(slot).height);
+          }
+        }
+        for (final double h in heights) {
+          expect(h, closeTo(expected, eps), reason: 'box $boxHeight: $heights');
+        }
+      }
+    });
   }
 
   testWidgets('解码前就占满整个槽，不画图（布局不跳）', (WidgetTester tester) async {

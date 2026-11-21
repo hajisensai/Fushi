@@ -1892,9 +1892,11 @@ class _BlockText extends StatelessWidget {
           if (value != null) wavy ? 10 : 6,
           if (showAction) compact ? 44 : 52,
         ].fold<double>(0, math.max);
-        // 半高卡按标题行数留高（两行标题时先丢次要行，标题不被压成一行）。
-        final double titleMin = logo != null
-            ? 24
+        // 固定标题槽（有 logo 必走槽）：按槽高预算，空间不够先丢次要行——不然
+        // 次要行按更小的估计留下来，Flexible 的标题被压得比槽矮，一排卡的槽高
+        // 又错开。半高卡按标题行数留高（两行标题时先丢次要行，标题不被压成一行）。
+        final double titleMin = titleSlot
+            ? logoMaxHeight
             : textLine(titleSize, 1.15) * (half ? titleLines : 1);
         // 可丢的行，按丢弃顺序（先丢的在前）。
         final List<(String, double)> optional = <(String, double)>[
