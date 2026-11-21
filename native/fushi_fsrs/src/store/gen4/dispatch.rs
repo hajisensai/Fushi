@@ -591,7 +591,7 @@ fn run(
         | "browse_stats" | "browse_counts" | "browse_sources" | "anki_find" | "anki_dupes"
         | "anki_tags" => {
             let r = c.reader()?;
-            let t = Truth::new(&r);
+            let t = c.truth(&r);
             // 集合号单独换算（模块文件头「读」）：浏览命令自己开快照，会话靠它分清是不是在写事务里读。
             let col = col_of(&t, profile)?;
             let mut b = c.browse.lock().unwrap_or_else(|e| e.into_inner());

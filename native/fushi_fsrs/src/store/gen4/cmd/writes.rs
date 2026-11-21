@@ -1,6 +1,6 @@
 //! 写命令的新代实现（规划 §2.1 G7-3b；设计 §2.2「真相只有操作」、§3.4「新写入不带 v1 形状的数据」、§5.2「新写入按
-//! 规范 ID」）。**还没接分发器**：协议 3 的写命令（`store/ffi.rs` `local_write_body` 与 `store/sync2/*` 的 `*_on`）
-//! 原地不动，分发器在整批推送里一次切到这里（规划 §2.2 S1）。
+//! 规范 ID」）。已接分发器（`dispatch.rs`「本机写命令」一节）；协议 3 的写命令（`store/legacy3` `local_write_body` 与
+//! `store/sync2/*` 的 `*_on`）不再经分发器调用（冻结）。
 //!
 //! 本文件是底座与「拼操作」一组：[Session]（一条写命令的事务、写入者、索引与回包）、`apply` / `import_drafts` /
 //! `purge` / `checkpoint` / `resolve`。意图命令（`note_fields_if`、`change`、`merge_notes`、`deck_delete`、`sched`）

@@ -344,6 +344,8 @@ fn join_into(
     let mut n = Native::open(t, b.col)?;
     let (op, chain) = n.write(ix, Body4::Join(join.clone()), now)?;
     t.rebind(b.col, into_collection, into_dir)?;
+    // 位置目录换了：各位置媒体「在不在」从头对账（`media.rs` 调用方契约）。
+    super::media::forget_all(t, b.col)?;
     Ok((op, chain, join))
 }
 

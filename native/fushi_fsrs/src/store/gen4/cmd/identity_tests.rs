@@ -721,3 +721,100 @@ fn profile_of_dir_refuses_untrusted_dir_names() {
     assert_eq!(of_dir(h, json!(edge)).unwrap(), json!({"profiles": []}));
     ffsrs_store_close(h);
 }
+
+// ---------------------------------------------------------------------- 媒体「在不在」随位置 / 根从头对账
+
+const SHA_A: &str = "aa00000000000000000000000000000000000000000000000000000000000001";
+
+/// 本机在 [loc] 的媒体目录上记一条「在」并标「列举过」（`media_record`）。
+fn media_seen_at(h: *mut crate::store::ffi::SrsCoreHandle, loc: &str) {
+    let v = g4(
+        h,
+        "media_record",
+        T1,
+        json!({"location": format!("{loc}/media#sha256"), "present": [SHA_A], "seeded": true}),
+    );
+    assert_eq!(v["appended"], json!(1), "{v}");
+}
+
+fn media_known_at(h: *mut crate::store::ffi::SrsCoreHandle, loc: &str) -> Value {
+    g4(
+        h,
+        "media_known",
+        T1,
+        json!({"location": format!("{loc}/media#sha256")}),
+    )
+}
+
+/// 移除位置（`location_forget`）也忘掉媒体在这个位置上的「在不在」与「列举过」：同一个位置身份再加回来时从头列举对账，
+/// 不会把旧事实当成位置上还有、漏传媒体（`gen4/media.rs` 调用方契约）。别的位置的不动；本机清单代号预留不动。
+#[test]
+fn forgetting_a_location_forgets_what_media_it_held() {
+    let m = migrated();
+    media_seen_at(m.h, "folder:usb");
+    media_seen_at(m.h, "folder:nas");
+    {
+        let c =
+            rusqlite::Connection::open(m.dir.0.join(crate::store::gen4::files::GEN4_FILE)).unwrap();
+        c.execute(
+            "INSERT INTO media_gen (col, loc, device, gen) SELECT col, 'folder:usb', x'00', 7 FROM collections",
+            [],
+        )
+        .unwrap();
+    }
+    let usb = media_known_at(m.h, "folder:usb");
+    assert_eq!(usb["present"], json!([SHA_A]), "{usb}");
+    assert_eq!(usb["seeded"], json!(true), "{usb}");
+    let v = g4(
+        m.h,
+        "location_forget",
+        T1,
+        json!({"location": "folder:usb"}),
+    );
+    assert_eq!(
+        v["forgotten"],
+        json!(1),
+        "the media_at row counts as forgotten state: {v}"
+    );
+    let usb = media_known_at(m.h, "folder:usb");
+    assert_eq!(usb["present"], json!([]), "{usb}");
+    assert_eq!(
+        usb["seeded"],
+        json!(false),
+        "the location is listed again: {usb}"
+    );
+    let nas = media_known_at(m.h, "folder:nas");
+    assert_eq!(
+        nas["present"],
+        json!([SHA_A]),
+        "other locations stay: {nas}"
+    );
+    let gens: i64 = rusqlite::Connection::open(m.dir.0.join(crate::store::gen4::files::GEN4_FILE))
+        .unwrap()
+        .query_row(
+            "SELECT COUNT(*) FROM media_gen WHERE loc = 'folder:usb'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(gens, 1, "manifest generations only go up");
+}
+
+/// 并入改绑（`collection_join`）换了集合的位置目录：`loc_key` 里没有目录，旧目录上的「在不在」不能套到新目录上，同一个
+/// 事务里全部忘掉、从头列举（`gen4/media.rs` [forget_all](crate::store::gen4::media::forget_all)）。
+#[test]
+fn a_join_forgets_media_presence_of_the_old_directory() {
+    let m = migrated();
+    media_seen_at(m.h, "folder:usb");
+    assert_eq!(media_known_at(m.h, "folder:usb")["present"], json!([SHA_A]));
+    let v = g4(
+        m.h,
+        "collection_join",
+        T1,
+        json!({"into": id(0x0a).text(), "dir": "0000-home"}),
+    );
+    assert_eq!(v["outcome"], json!("joined"), "{v}");
+    let usb = media_known_at(m.h, "folder:usb");
+    assert_eq!(usb["present"], json!([]), "{usb}");
+    assert_eq!(usb["seeded"], json!(false), "{usb}");
+}
