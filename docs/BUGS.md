@@ -47,6 +47,11 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5059](bugs/BUG-5059-apple-design-page-backdrop-missing.md) | ✅ | ✅ | Apple 设计下自定义背景图片不显示（首页 / 设置页全白底） |
+> 共 4384 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5057](bugs/BUG-5057-txt-oversized-single-paragraph.md) | ✅ | ✅ | TXT 超长段落绕过分章上限 |
 | [BUG-5056](bugs/BUG-5056-srs4-migration-nested-merge-verdict.md) | ✅ | ✅ | 复习库升级（gen4 迁移）在嵌套并入过的库上核对失败、整体撤回 |
 | [BUG-5054](bugs/BUG-5054-pitch-hl-pattern-not-drawn.md) | ✅ | ✅ | 音调词典 H/L 模式串只显示成文本、不画高低线，且与同型数字位分成两行 |
 | [BUG-5053](bugs/BUG-5053-mihon-page-request-id-collision.md) | ✅ | ✅ | Mihon 取图请求号拿 identityHashCode 拼，两个活页引用撞号时互相顶掉 / 取消错页 |
