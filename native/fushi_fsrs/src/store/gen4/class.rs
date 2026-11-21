@@ -21,7 +21,8 @@
 //!   相同（[Index::value]、[Index::tags_of]）。写入者归回对单成员实体同样生效：旧上下文写的是改名后的名字时，按类判
 //!   可以把原值判下的冲突判成支配（样本库 144 处都是这一种）。所以**不能**按「只有一个成员就沿用 `reg_ix` 状态」
 //!   走捷径；两种情形各有测试钉住（`a_class_of_one_reads_the_same_as_the_raw_id`、
-//!   `a_renamed_writer_on_a_class_of_one_is_not_the_raw_reading`）。
+//!   `a_renamed_writer_on_a_class_of_one_is_not_the_raw_reading`）。反过来，成员数也不是捷径的条件：一个规范键只来自
+//!   一个有行的原值寄存器、又没碰归回写入者时，类里有几个（没有行的）成员都与原值判相同（[Index::class_lines]）。
 //!   **定案（2026-11-15，所有者授权协调方定）**：这 144 处（笔记类型 `css` 1、字段 18、卡 `newPos` 125）从「有冲突」
 //!   变「没冲突」接受，根因是写入者归回、受 resolver「同 seq 同一条记录」的证明门槛约束；G9-2 在迁移报告里列为已知
 //!   差异并逐条佐证（被支配的 `(w1, s)` 在日志里另有 `(merged-…, s)` 副本，或 s 落在已证明的重叠区间），佐证不了的
@@ -31,8 +32,10 @@
 //!
 //! 负状态记在索引层的原值写入上，这里原样拿来：已清除（[super::weigh::S_PURGED]：Purge 点名的是原值实体，清的是
 //! 「作者没见过它」的、这个原值实体上的操作）、扣住的删除（[super::weigh::S_HELD]）、作者不可信（
-//! [super::weigh::S_DISTRUSTED]）。清除与不可信按原值实体判；一条 Purge 要不要清掉整个类仍是接线时定的事（设计
-//! §10 第 19 条同源），在那之前按类读与按原值读对这两种状态口径相同。**扣住按类判**（G7-4g 定，交接说明 §7.6 方案 1）：
+//! [super::weigh::S_DISTRUSTED]）。清除与不可信按原值实体判，按类读与按原值读对这两种状态口径相同。「清除要清掉
+//! 整个类」（所有者拍板，设计 §10 第 19 条同源）在写侧落实：`purge` 命令给类里此刻已知的每个成员各落一条点名原值成员
+//! 的 Purge（`cmd/writes.rs` `Session::purge_class`），索引层、真相层、语义摘要的「按原值实体」不变。
+//! **扣住按类判**（G7-4g 定，交接说明 §7.6 方案 1）：
 //! 「被见过它的写入盖掉」与「并发的操作」都在全类成员上取（`weigh.rs` 文件头「扣住的删除」），状态仍记在删除落的
 //! 原值成员上——与这里按类读寄存器同一个口径，裁决按规范 ID 写也盖得掉落在带盐成员上的删除。
 //!
@@ -41,7 +44,8 @@
 //! 只认规范形状的 UUID 文本（`gen4_ids::alias::strict_id`）；别的写法没有别名，原样。哪些位置嵌着 ID 只在这里写一次：
 //!
 //! - 修改值（[Index::canonical_value]，按修改键）：值本身是 ID 的键 [ID_VALUED_KEYS]（笔记的 `noteType`、卡的 `deck`、
-//!   牌组的 `parent`、笔记类型的 `termField` / `freqField`）；`tmplDef/<模板>` 的值里 `front` / `back` 两段模板文本中的
+//!   牌组的 `parent`、笔记类型的 `termField` / `freqField` / `sortField`），值是 ID 数组的键 [ID_LIST_VALUED_KEYS]
+//!   （笔记类型的 `browseFields`）；`tmplDef/<模板>` 的值里 `front` / `back` 两段模板文本中的
 //!   `{{…fld:<字段>}}`（与 `card_cache.rs` 的 `ids_to_names` 同一个分词：注释、普通文本、`{{…}}` 里不是整段
 //!   `fld:<UUID>` 的都不动）。别的值（字段内容等用户文本）一个字节不动。
 //! - 整份 JSON（[Index::canonical_json]：身份记录的载荷、日志投影、修改行）：键在 [JSON_ID_KEYS] 里的字符串（或字符串
@@ -76,12 +80,22 @@ use crate::sync2::op::EntKind;
 use crate::sync2::vv::OpId;
 
 /// 值本身是一个 ID 的修改键（[Index::canonical_value]）。
-pub const ID_VALUED_KEYS: [&str; 5] = ["noteType", "deck", "parent", "termField", "freqField"];
+pub const ID_VALUED_KEYS: [&str; 6] = [
+    "noteType",
+    "deck",
+    "parent",
+    "termField",
+    "freqField",
+    "sortField",
+];
+
+/// 值是 ID 数组的修改键（[Index::canonical_value]）：笔记类型的浏览预览副字段。
+pub const ID_LIST_VALUED_KEYS: [&str; 1] = ["browseFields"];
 
 /// 整份 JSON 里值是 ID（或 ID 数组）的键（[Index::canonical_json]）：实体与日志的 `id`、修改行的 `e`、日志的 `card` /
 /// `note` / `revokes`、笔记载荷的 `noteTypeId`、牌组 / 笔记类型 / 父牌组、词条与词频字段（含内置默认定义里的
 /// `…FieldId`）。
-pub const JSON_ID_KEYS: [&str; 14] = [
+pub const JSON_ID_KEYS: [&str; 16] = [
     "id",
     "e",
     "card",
@@ -94,6 +108,8 @@ pub const JSON_ID_KEYS: [&str; 14] = [
     "parent",
     "termField",
     "freqField",
+    "sortField",
+    "browseFields",
     "termFieldId",
     "freqFieldId",
 ];
@@ -131,6 +147,21 @@ pub(super) struct Canon<'a> {
     pub(super) key: String,
     /// 一次拼几个寄存器的行时（缓存层，[Index::class_lines]）每条写入（操作主键）各自的规范键；没有的取 `key`。
     keys: Option<&'a HashMap<i64, String>>,
+}
+
+/// 按类拼好的一行（[Index::class_lines_keyed]）：(规范键, 行 JSON, 服务器时刻)。
+pub(super) type ClassLine = (String, String, Option<i64>);
+
+/// [Index::class_lines_by] 要哪些寄存器的行。
+pub(super) enum Pick<'a> {
+    /// 全部寄存器活着的写入（缓存层、读命令的 `edits`）。
+    All,
+    /// 只要 [pre]（原值键文本）与 [tracks]（规范键）都留下、且可能有值不同的并发写入的寄存器
+    /// （[Index::class_conflict_lines]）。
+    Conflicts {
+        pre: &'a dyn Fn(&str) -> bool,
+        tracks: &'a dyn Fn(&str) -> bool,
+    },
 }
 
 /// 一份闭包是哪一段：整份（`closure_ix` 里那台设备的旧闭包，按 `upto` 记）还是只并到某个 seq 的一部分（[Index] 的
@@ -366,12 +397,17 @@ impl<'t, 'c> Index<'t, 'c> {
     /// 一个别名类（笔记）现在的标签：类内成员的标签操作并起来重判（文件头「标签」），顺序规则同 [Index::tags_of]。
     pub fn class_tags(&mut self, canon: &Ref) -> Result<Vec<String>, String> {
         self.aliases_settled()?;
-        let members = self.members(canon)?;
+        // 只有一个成员有标签操作时，并起来的行就是这个成员自己的行，重判与索引层（`weigh.rs` `weigh_tags`，同一个
+        // [Index::tag_states]、同一组行）得出同一份状态，直接用；按成员数判会让迁移来的库（每个实体都带一条旧 ID 的
+        // 别名，规范 ID 自己没有行）每条笔记都白重判一遍。
         let mut rows = Vec::new();
-        for m in &members {
-            rows.extend(self.tags_rows(m)?);
+        let mut with_rows = 0usize;
+        for m in &self.members(canon)? {
+            let mine = self.tags_rows(m)?;
+            with_rows += usize::from(!mine.is_empty());
+            rows.extend(mine);
         }
-        if members.len() > 1 {
+        if with_rows > 1 {
             rows.sort();
             rows.dedup();
             let want = self.tag_states(&rows)?;
@@ -559,16 +595,61 @@ impl<'t, 'c> Index<'t, 'c> {
     /// 寄存器内核的落库行（实体、键、值、三处写入者都是规范形，[Index::edit_lines_as]），与其中最大的 HLC 物理时刻
     /// （没有 = 0）。别名表没重算时报错。
     ///
-    /// 捷径只在「按类判与按原值判一定相同」时走：类里只有一个成员、这个规范键只来自一个原值键、寄存器里没有归回涉及的
-    /// 名字（改名后的名字或它的规范名）写的写入（dot 与 HLC 的写入者都看；集合里别处有归回写入者不影响这个寄存器）——
-    /// 这时支配关系逐条相同（dot 不换名、闭包不换名、不并寄存器），活着的集合直接取 `reg_ix` 的状态，只把行拼成规范形。
-    /// 值归一只会让「值不同」变少，不影响谁活着（文件头「只有一个成员」一条说的是冲突标志，缓存层取的是活着的写入，
-    /// 由寄存器内核在视图里再判）。
+    /// 捷径只在「按类判与按原值判一定相同」时走：这个规范键只来自一个 (成员, 原值键)（`reg_ix` 里只有一个原值寄存器
+    /// 有行）、寄存器里没有归回涉及的名字（改名后的名字或它的规范名）写的写入（dot 与 HLC 的写入者都看；集合里别处有
+    /// 归回写入者不影响这个寄存器）——这时参与判定的行与原值寄存器的行逐条相同，支配关系也逐条相同（dot 不换名、闭包
+    /// 不换名、不并寄存器），活着的集合直接取 `reg_ix` 的状态，只把行拼成规范形。类里有几个成员不影响这一点：没有行
+    /// 的成员什么也没并进来（迁移来的库里每个实体都带一条旧 ID 的别名，规范 ID 自己却没有行，按成员数判会让捷径全部
+    /// 落空、每个寄存器都重判一遍）。值归一只会让「值不同」变少，不影响谁活着（文件头「只有一个成员」一条说的是冲突
+    /// 标志，缓存层取的是活着的写入，由寄存器内核在视图里再判）。测试 `the_class_lines_shortcut_is_the_class_judgement`。
     pub(super) fn class_lines(
         &mut self,
         kind: EntKind,
         canon: &Ref,
     ) -> Result<(Vec<(String, Option<i64>)>, i64), String> {
+        let (lines, top) = self.class_lines_keyed(kind, canon)?;
+        Ok((lines.into_iter().map(|(_, j, st)| (j, st)).collect(), top))
+    }
+
+    /// [Index::class_lines]，每行另带它的规范键（行 JSON 的 `f`），调用方不必为取键再解一遍 JSON。
+    pub(super) fn class_lines_keyed(
+        &mut self,
+        kind: EntKind,
+        canon: &Ref,
+    ) -> Result<(Vec<ClassLine>, i64), String> {
+        self.class_lines_by(kind, canon, &Pick::All, true)
+    }
+
+    /// 同步冲突（`cmd/reads.rs` 的 `conflict_edits`）要的：别名类 [canon] 里 [tracks] 圈定的规范键上**可能有值不同的
+    /// 并发写入**的寄存器，各自按类判定活着的全部写入（行同 [Index::class_lines_keyed]）。只判这些键：别的键（笔记
+    /// 字段正文等）不读操作体（BUG-3947 的教训，协议 3 在 SQL 里先按类别筛）。
+    ///
+    /// 哪些寄存器算「可能有」：走 [Index::class_lines] 捷径的（单一原值寄存器、没有归回写入者）按 `reg_ix` 已落的状态
+    /// ——按类判与原值判活着的集合逐条相同，值归一只会让「值不同」变少，所以按类判有冲突的一定在原值判下就是
+    /// [R_CONFLICT]（反过来不一定：两个别名写法归一后可以相同，留给调用方的寄存器内核再判）；其余（跨成员、跨原值键
+    /// 并起来的，或碰到归回写入者的）按类重判，判出 [R_CONFLICT] 的才要。[pre] 先按原值键文本粗筛（归一前就能断定
+    /// 不要的键不去查别名表），[tracks] 按规范键定夺。测试 `conflict_lines_are_the_conflicted_class_registers`。
+    pub(super) fn class_conflict_lines(
+        &mut self,
+        kind: EntKind,
+        canon: &Ref,
+        pre: &dyn Fn(&str) -> bool,
+        tracks: &dyn Fn(&str) -> bool,
+    ) -> Result<Vec<ClassLine>, String> {
+        Ok(self
+            .class_lines_by(kind, canon, &Pick::Conflicts { pre, tracks }, true)?
+            .0)
+    }
+
+    /// [Index::class_lines_keyed] 与 [Index::class_conflict_lines] 的共同实现。[shortcut] = false 时每个寄存器都按类
+    /// 重判（测试拿它对拍捷径）。
+    pub(super) fn class_lines_by(
+        &mut self,
+        kind: EntKind,
+        canon: &Ref,
+        pick: &Pick<'_>,
+        shortcut: bool,
+    ) -> Result<(Vec<ClassLine>, i64), String> {
         self.aliases_settled()?;
         let entity = self.canonical(canon)?.text();
         let members = self.members(canon)?;
@@ -583,18 +664,29 @@ impl<'t, 'c> Index<'t, 'c> {
             for (key, k, state) in self.member_registers(kind, m)? {
                 let text = read_edit_key(&mut Reader::new(&key))
                     .map_err(|e| format!("gen4 index: bad register key: {e}"))?;
-                let g = groups.entry(self.canonical_key(&text)?).or_default();
+                if let Pick::Conflicts { pre, .. } = pick {
+                    if !pre(&text) {
+                        continue;
+                    }
+                }
+                let ck = self.canonical_key(&text)?;
+                if let Pick::Conflicts { tracks, .. } = pick {
+                    if !tracks(&ck) {
+                        continue;
+                    }
+                }
+                let g = groups.entry(ck).or_default();
                 g.0.push((k, state));
                 g.1.insert((m.clone(), key));
             }
         }
+        let conflicts_only = matches!(pick, Pick::Conflicts { .. });
         // 归回涉及的名字（改名后的名字与它的规范名）：寄存器里没有这些名字写的写入时，换名不改变谁见过谁（支配只问
         // 「上下文里这条写入的写入者那一格 ≥ 它的 seq」，那一格的写入者不在换名表里就不变），按类判与按原值判相同。
         let renamed_names: BTreeSet<&str> = writers
             .iter()
             .flat_map(|(n, o)| [n.as_str(), o.as_str()])
             .collect();
-        let single = members.len() == 1;
         let renamed = Renamed::default();
         // 每个规范键各自判活着的，行最后一次拼：不带旧戳的写入的上下文回答的是「见没见过别的要的行」，要的行跨键算
         // （笔记的「待裁决」看删除见没见过别的键上的内容修改，原值拼法也是整个实体一次拼）。
@@ -602,7 +694,10 @@ impl<'t, 'c> Index<'t, 'c> {
         let mut keys: HashMap<i64, String> = HashMap::new();
         for (key, (mut rows, raw)) in groups {
             rows.sort_unstable();
-            if single && raw.len() == 1 && !self.touches_renamed(&rows, &renamed_names)? {
+            if shortcut && raw.len() == 1 && !self.touches_renamed(&rows, &renamed_names)? {
+                if conflicts_only && !rows.iter().any(|&(_, s)| s == R_CONFLICT) {
+                    continue;
+                }
                 for &(k, s) in rows.iter().filter(|&&(_, s)| s >= R_DOMINATED) {
                     ks.push(k);
                     emit.push(s >= R_LIVE);
@@ -619,6 +714,9 @@ impl<'t, 'c> Index<'t, 'c> {
             };
             self.class_judged += 1;
             let (live, want) = self.judged(&rows, Some(&c))?;
+            if conflicts_only && !want.contains(&R_CONFLICT) {
+                continue;
+            }
             for (&(k, _), &w) in live.iter().zip(&want) {
                 ks.push(k);
                 emit.push(w >= R_LIVE);
@@ -638,7 +736,7 @@ impl<'t, 'c> Index<'t, 'c> {
         let (mut out, mut top) = (Vec::new(), 0i64);
         for l in self.edit_lines_as(&ks, &|i| emit[i], Some(&c))? {
             top = top.max(l.physical);
-            out.push((l.json, l.server_time));
+            out.push((c.key_of(ks[l.rep]).to_owned(), l.json, l.server_time));
         }
         Ok((out, top))
     }
@@ -1205,6 +1303,19 @@ fn value_ids_by(key: &str, v: &Value, text: IdText<'_>) -> Result<Value, String>
             _ => v.clone(),
         });
     }
+    if ID_LIST_VALUED_KEYS.contains(&key) {
+        if let Value::Array(xs) = v {
+            let mut ys = Vec::with_capacity(xs.len());
+            for x in xs {
+                ys.push(match x {
+                    Value::String(s) => Value::String(text(s)?),
+                    _ => x.clone(),
+                });
+            }
+            return Ok(Value::Array(ys));
+        }
+        return Ok(v.clone());
+    }
     if key.starts_with("tmplDef/") {
         if let Value::Object(m) = v {
             let mut out = m.clone();
@@ -1520,6 +1631,163 @@ mod tests {
 
     fn fkey(f: Id) -> String {
         format!("f/{}", f.text())
+    }
+
+    /// 按类拼行的四种来路（[Index::class_lines_by]）：(场景名, 0xa1 之后写的修改, 这个规范键上要不要按类重判)。
+    /// 每种都是两台设备互不相见地写同一个规范键、值不同（冲突）。
+    fn class_line_cases(w: &Twin) -> Vec<(&'static str, Vec<(Id, String, &'static str)>, bool)> {
+        let (old, canon) = (w.note[0], w.c_note);
+        vec![
+            // 迁移来的库：旧 ID 有行、规范 ID 没有行（类里两个成员）。单一原值寄存器，走捷径。
+            (
+                "only the old member has rows",
+                vec![(old, fkey(w.field[0]), "a"), (old, fkey(w.field[0]), "b")],
+                false,
+            ),
+            // 只有规范 ID 有行：同样单一原值寄存器。
+            (
+                "only the canonical id has rows",
+                vec![(canon, fkey(w.c_field), "a"), (canon, fkey(w.c_field), "b")],
+                false,
+            ),
+            // 旧成员与规范 ID 各有一条：跨成员并起来，必须按类重判。
+            (
+                "both members have rows",
+                vec![(old, fkey(w.field[0]), "a"), (canon, fkey(w.c_field), "b")],
+                true,
+            ),
+            // 同一个成员上两个原值键（键里嵌的字段 ID 一个带盐、一个规范）归一成同一个规范键：必须按类重判。
+            (
+                "two raw keys of one member merge",
+                vec![(old, fkey(w.field[0]), "a"), (old, fkey(w.c_field), "b")],
+                true,
+            ),
+        ]
+    }
+
+    /// 捷径（单一原值寄存器、没有归回写入者时直接取 `reg_ix` 状态）与逐个按类重判拼出的行逐字节相同，与类里有几个
+    /// 成员无关；跨成员、跨原值键并起来的照样重判（[Index::class_judged] 涨）。
+    #[test]
+    fn the_class_lines_shortcut_is_the_class_judgement() {
+        let w = twin();
+        for (name, writes, rejudged) in class_line_cases(&w) {
+            with(|t, col| {
+                t.tx(|t| {
+                    let mut ix = Index::new(t, col);
+                    feed(t, &mut ix, col, 0xa1, &twin_ops(&w));
+                    for (i, (e, k, v)) in writes.iter().enumerate() {
+                        let b = edit(EntKind::Note, *e, k, json!(v));
+                        native(
+                            t,
+                            &mut ix,
+                            col,
+                            &op(0xb1 + i as u8, 1, 200 + i as i64, &[], &b),
+                        );
+                    }
+                    ix.settle()?;
+                    assert!(ix.members(&r(w.c_note))?.len() > 1, "{name}");
+                    for id in [w.note[0], w.c_note] {
+                        let before = ix.class_judged;
+                        let fast = ix.class_lines_by(EntKind::Note, &r(id), &Pick::All, true)?;
+                        assert_eq!(ix.class_judged - before, u64::from(rejudged), "{name}");
+                        let slow = ix.class_lines_by(EntKind::Note, &r(id), &Pick::All, false)?;
+                        assert_eq!(fast, slow, "{name}");
+                        assert_eq!(fast.0.len(), 2, "{name}: both writes live");
+                        assert!(fast.0.iter().all(|l| l.0 == fkey(w.c_field)), "{name}");
+                    }
+                    Ok(())
+                })
+                .unwrap();
+            });
+        }
+    }
+
+    /// 同步冲突要的行（[Index::class_conflict_lines]）= 按类判有冲突的寄存器的活着的写入：四种来路的冲突都在、与全部
+    /// 按类重判得出的行相同；同值的并发写入（两台设备各导入同一个包的「所属牌组」）与不追踪的键不出。
+    #[test]
+    fn conflict_lines_are_the_conflicted_class_registers() {
+        let w = twin();
+        for (name, writes, _) in class_line_cases(&w) {
+            with(|t, col| {
+                t.tx(|t| {
+                    let mut ix = Index::new(t, col);
+                    feed(t, &mut ix, col, 0xa1, &twin_ops(&w));
+                    let n = writes.len();
+                    for (i, (e, k, v)) in writes.iter().enumerate() {
+                        let b = edit(EntKind::Note, *e, k, json!(v));
+                        native(
+                            t,
+                            &mut ix,
+                            col,
+                            &op(0xb1 + i as u8, 1, 200 + i as i64, &[], &b),
+                        );
+                        // 同一对设备各写一次同值的所属牌组：两条都活着，不是冲突。
+                        let d = edit(EntKind::Note, w.note[0], "deck", json!("d"));
+                        native(
+                            t,
+                            &mut ix,
+                            col,
+                            &op(0xb1 + i as u8, 2, 300 + i as i64, &[], &d),
+                        );
+                    }
+                    ix.settle()?;
+                    let all = |_: &str| true;
+                    let slow = ix
+                        .class_lines_by(EntKind::Note, &r(w.c_note), &Pick::All, false)?
+                        .0;
+                    assert_eq!(slow.iter().filter(|l| l.0 == "deck").count(), n, "{name}");
+                    let want: Vec<ClassLine> = slow.into_iter().filter(|l| l.0 != "deck").collect();
+                    for id in [w.note[0], w.c_note] {
+                        let got = ix.class_conflict_lines(EntKind::Note, &r(id), &all, &all)?;
+                        assert_eq!(got, want, "{name}");
+                        let got =
+                            ix.class_conflict_lines(EntKind::Note, &r(id), &all, &|k: &str| {
+                                k == "deck"
+                            })?;
+                        assert!(got.is_empty(), "{name}: untracked or not conflicted");
+                    }
+                    Ok(())
+                })
+                .unwrap();
+            });
+        }
+    }
+
+    /// 别名类里只有一个成员有标签操作时，按类读标签不重判也与原值读相同（[Index::class_tags]）。
+    #[test]
+    fn class_tags_of_a_class_with_one_member_holding_tags_are_the_raw_tags() {
+        with(|t, col| {
+            let w = twin();
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                feed(t, &mut ix, col, 0xa1, &twin_ops(&w));
+                native(
+                    t,
+                    &mut ix,
+                    col,
+                    &op(0xb1, 1, 200, &[], &tag_add(w.note[0], "x")),
+                );
+                native(
+                    t,
+                    &mut ix,
+                    col,
+                    &op(0xb2, 1, 201, &[], &tag_add(w.note[0], "y")),
+                );
+                native(
+                    t,
+                    &mut ix,
+                    col,
+                    &op(0xb2, 2, 202, &[(0xb1, 1)], &tag_remove(w.note[0], "x")),
+                );
+                ix.settle()?;
+                assert!(ix.members(&r(w.c_note))?.len() > 1);
+                let raw = ix.tags_of(&Key::Uuid(w.note[0]))?;
+                assert_eq!(raw, vec!["y".to_owned()]);
+                assert_eq!(ix.class_tags(&r(w.c_note))?, raw);
+                Ok(())
+            })
+            .unwrap();
+        });
     }
 
     /// 从没并入过的实体：按类读与按原值读相同（寄存器胜者、冲突、标签）。
@@ -2984,6 +3252,14 @@ mod tests {
                 assert_eq!(
                     ix.canonical_value("termField", &json!(s_f.text()))?,
                     json!(c_f.text())
+                );
+                assert_eq!(
+                    ix.canonical_value("sortField", &json!(s_f.text()))?,
+                    json!(c_f.text())
+                );
+                assert_eq!(
+                    ix.canonical_value("browseFields", &json!([s_f.text(), "plain"]))?,
+                    json!([c_f.text(), "plain"])
                 );
                 assert_eq!(
                     ix.canonical_json(&json!({"f": fkey(s_f), "termFieldId": s_f.text()}))?,

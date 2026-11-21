@@ -20,6 +20,8 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
+import 'package:fushi/src/media/video/media_server/media_server_route_failover.dart'
+    show MediaServerRouteFailover;
 import 'package:fushi/src/settings/settings_cli_tasks.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -143,53 +145,82 @@ Future<bool> probePlexConnection(
   client: httpClientFactory?.call(),
 );
 
-/// 媒体服务器请求在当前线路上失败之后自动换线路（gap-remote-7）：[config] 是
-/// Plex 且 [error] 是传输失败时，在它已存的连接里探测（核对 machineIdentifier），
-/// 找到另一条可达线路就写回配置、失效这台的远端清单缓存槽（槽里的封面 / 流 URL
-/// 烤着旧线路的 host，与手动「切换线路」同口径），返回新配置供调用方重建客户端；
-/// 其余情况返回 null、不写任何东西。
+/// 媒体服务器请求在当前线路上失败之后自动换线路（gap-remote-7）：[config] 的
+/// [error] 是传输失败时，在它已存的线路里探测（Plex 核对 machineIdentifier，Jellyfin
+/// 家族带现有令牌读一次媒体库，同时核对是同一台、令牌仍有效，见
+/// [JellyfinServerConfig.rerouteAfterFailure]），找到另一条可达线路就写回配置、失效
+/// [cache] 里这台的远端清单槽（槽里的封面 / 流 URL 烤着旧线路的 host，与手动「切换
+/// 线路」同口径），返回新配置；其余情况返回 null、不写任何东西。
 ///
-/// 只换 `activeServerUrl`，不存账号 token、不改连接清单。Jellyfin 家族同理：在用户
-/// 手填的线路（登录地址 + 备用线路）里探（带现有令牌读一次媒体库，同时核对是同一台、
-/// 令牌仍有效），见 [JellyfinServerConfig.rerouteAfterFailure]。
+/// 只换 `activeServerUrl`，不存账号 token、不改连接清单。写回按**落库时**的那份配置
+/// 换线路：探测期间这台已被登出（找不到）、或那条线路已被删掉时不写、返回 null，
+/// 不会把旧快照整份盖回去。请求漏斗里的自动换线路经 `MediaServerRouteFailover`
+/// 调到这里（单飞、清单缓存由它的通知失效，[cache] 留空）。
+/// 接数据库的线路故障转移器（`AppModel.initialise` 装进 [MediaServerRouteFailover.install]）：
+/// 用 [repository] 现取的 [SyncRepository] 读写配置（数据库在备份恢复时可能换实例，
+/// 所以每次现取），探测与写回走 [rerouteMediaServerAfterFailure]。
+/// [httpClientFactory] 只给测试注入探测用的假服务器。
+///
+/// 放在这里而不是 `MediaServerRouteFailover` 里：那个文件被协议客户端 import，
+/// 不能反向依赖设置页 / 仓储（import_cycle_guard）。
+MediaServerRouteFailover mediaServerRouteFailoverForRepository(
+  SyncRepository Function() repository, {
+  http.Client Function()? httpClientFactory,
+}) => MediaServerRouteFailover(
+  loadConfigs: () => repository().getMediaServers(),
+  reroute: (MediaServerConfig config, Object error) =>
+      rerouteMediaServerAfterFailure(
+        config,
+        error,
+        repo: repository(),
+        httpClientFactory: httpClientFactory,
+      ),
+);
+
 Future<MediaServerConfig?> rerouteMediaServerAfterFailure(
   MediaServerConfig config,
   Object error, {
   required SyncRepository repo,
-  required RemoteLibraryCache cache,
+  RemoteLibraryCache? cache,
   Duration probeTimeout = const Duration(seconds: 5),
   http.Client Function()? httpClientFactory,
 }) async {
-  if (config is JellyfinServerConfig) {
-    final JellyfinServerConfig? rerouted = await config.rerouteAfterFailure(
+  final MediaServerConfig? rerouted = switch (config) {
+    final JellyfinServerConfig jellyfin => await jellyfin.rerouteAfterFailure(
       error,
       probe: (String url) => probeJellyfinRoute(
-        config,
+        jellyfin,
         url,
         timeout: probeTimeout,
         httpClientFactory: httpClientFactory,
       ),
-    );
-    if (rerouted == null) return null;
-    await repo.upsertMediaServer(rerouted);
-    cache.invalidateSource(rerouted.sourceId);
-    return rerouted;
-  }
-  if (config is! PlexServerConfig) return null;
-  final PlexServerConfig? rerouted = await config.rerouteAfterFailure(
-    error,
-    probe: (String uri) => probePlexConnection(
-      uri,
-      config.machineIdentifier,
-      PlexClientInfo(clientIdentifier: config.clientIdentifier),
-      timeout: probeTimeout,
-      httpClientFactory: httpClientFactory,
     ),
-  );
+    final PlexServerConfig plex => await plex.rerouteAfterFailure(
+      error,
+      probe: (String uri) => probePlexConnection(
+        uri,
+        plex.machineIdentifier,
+        PlexClientInfo(clientIdentifier: plex.clientIdentifier),
+        timeout: probeTimeout,
+        httpClientFactory: httpClientFactory,
+      ),
+    ),
+    _ => null,
+  };
   if (rerouted == null) return null;
-  await repo.upsertMediaServer(rerouted);
-  cache.invalidateSource(rerouted.sourceId);
-  return rerouted;
+  final String next = rerouted.effectiveServerUrl;
+  MediaServerConfig? latest;
+  for (final MediaServerConfig saved in await repo.getMediaServers()) {
+    if (saved.sourceId == config.sourceId) {
+      latest = saved;
+      break;
+    }
+  }
+  if (latest == null || !latest.routeUrls.contains(next)) return null;
+  final MediaServerConfig written = latest.withActiveRoute(next);
+  await repo.upsertMediaServer(written);
+  cache?.invalidateSource(written.sourceId);
+  return written;
 }
 
 /// plex.tv 账号授权拿到账号 token 之后：列出账号下的服务器，各台按连接优先级探测

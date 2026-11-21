@@ -60,10 +60,9 @@ void main() {
     () {
       // 回看远端视频不再要求先下载：起播协商前不得有回看拦截。
       final int load = video.indexOf('Future<void> _loadRemoteEpisode(');
-      final int request = video.indexOf(
-        'await client.remoteVideoStreamUrls(',
-        load,
-      );
+      // 取流自 gap-remote-4（3bad0d66de）起与开播位置并行发：先用
+      // `.remoteVideoStreamUrls(info.id, ...)` 拿 Future、后 await，锚点跟着改。
+      final int request = video.indexOf('.remoteVideoStreamUrls(info.id', load);
       expect(load, greaterThan(0));
       expect(request, greaterThan(load));
       expect(

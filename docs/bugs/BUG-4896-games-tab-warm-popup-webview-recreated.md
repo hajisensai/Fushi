@@ -5,4 +5,4 @@
   - 与外壳改版（#3397）的关系：改版前一个提交上同样复现（游戏 tab 阻塞 76～104 ms），不是改版引入的回归。
 - **[x] ① 已修复** — `texthooker_page.dart` `_buildPopupOverlay`：inert 时浮层留在树上、整棵 `Offstage` + `TickerMode(false)` + `ExcludeFocus`（不画、不接点击、不持焦点、停动画），祖先结构恒定、只翻参数；WebView 不再随切 tab 拆建。BUG-953 的「不跨 tab 遮挡」照旧成立。提交 `67fae6543a5`。
 - **[x] ② 已加自动化测试** — `fushi/test/pages/texthooker_page_test.dart`「tab 藏起时查词浮层留在树上只是 Offstage，切回是同一棵子树（BUG-4896）」：藏起时浮层不在屏上但仍挂载、State 是同一个，切回复用同一棵子树（把 inert 即 `SizedBox.shrink()` 的旧写法放回去，这条红）。测试里没有热槽，`debugMountPopupOverlayForTesting` 把宿主钉住、不让 `_syncPopupOverlay` 按「栈空」摘掉。
-- **备注**：`home_dictionary_page.dart:2236` 有同一写法（inert 即 `SizedBox.shrink()`），但查词 tab 不保活、切走整页销毁，触发面只剩「被不透明路由盖住再回来」，本次未动、未实测。后续在 BUG-4849 里随查词 tab 保活一并改成了 `Offstage`。
+- **备注**：`home_dictionary_page.dart:2236` 有同一写法（inert 即 `SizedBox.shrink()`），但查词 tab 不保活、切走整页销毁，触发面只剩「被不透明路由盖住再回来」，本次未动、未实测。后续在 BUG-4849 里随查词 tab 保活一并改成了 `Offstage`。 2026-11-21 两页的浮层收进共用的 `SharedLookupPopupHost`（`shared_lookup_popup_host.dart` `_buildOverlay`），inert 仍是整棵 Offstage；换会话主人只换 Stack 子项的回调，热槽层按 entry 身份就地更新、WebView 不重建（`test/pages/shared_lookup_popup_host_test.dart`）。

@@ -496,3 +496,102 @@ test('同一页换成另一个 <video> 播：追踪跟过去，不锁死在旧�
   h.tick();
   assert.strictEqual(h.samples().at(-1).positionMs, 41000, '心跳认的是新那个');
 });
+
+// ───────── 反馈 PtsjrnVmH9：网页视频的查词 / 制卡进统计 ─────────
+
+test('study-tracker：identity() 给出正在统计的视频（标题在开表时冻结），停表后为 null', () => {
+  const h = loadStudy();
+  assert.strictEqual(h.sandbox.window.fushiStudyTracker.identity(), null, '没在统计时不给身份');
+  const v = h.makeVideo();
+  h.dispatch('play', v);
+  h.sandbox.document.title = '(1) 無職転生 第1話 - YouTube';
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(h.sandbox.window.fushiStudyTracker.identity())),
+    { mediaKey: 'web:yt-abc', title: '無職転生 第1話 - YouTube' },
+  );
+  h.dispatch('pagehide');
+  assert.strictEqual(h.sandbox.window.fushiStudyTracker.identity(), null);
+});
+
+function loadBackgroundForStudy() {
+  const fetches = [];
+  const tabRemoved = [];
+  const sandbox = {
+    console, URL, btoa: (s) => Buffer.from(s).toString('base64'),
+    setTimeout, clearTimeout, setInterval: () => 0, clearInterval,
+    performance: { now: () => 1, timeOrigin: 0 },
+    AbortSignal: { timeout: () => null },
+    fetch: (url, init) => {
+      fetches.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+      return Promise.resolve({
+        ok: true, status: 200, headers: { get: () => null },
+        text: () => Promise.resolve('{"popupJson":"[]"}'),
+        json: () => Promise.resolve({ result: 'success' }),
+      });
+    },
+    importScripts() {},
+    chrome: {
+      storage: storageMock({}),
+      runtime: { onMessage: { addListener: (fn) => { sandbox._onMessage = fn; } }, onStartup: { addListener() {} }, onInstalled: { addListener() {} }, getURL: (r) => r, id: 'x' },
+      alarms: { create() {}, onAlarm: { addListener() {} } },
+      action: { setBadgeText() {}, setBadgeBackgroundColor() {}, setTitle() {}, onClicked: { addListener() {} } },
+      tabs: { onUpdated: { addListener() {} }, onRemoved: { addListener: (fn) => { tabRemoved.push(fn); } }, query: () => Promise.resolve([]) },
+      webNavigation: { onCompleted: { addListener() {} } },
+      sidePanel: { setPanelBehavior: () => Promise.resolve(), setOptions() {} },
+      offscreen: { hasDocument: () => Promise.resolve(false) },
+      cookies: { getAll: () => Promise.resolve([]) },
+    },
+  };
+  sandbox.self = sandbox;
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(BG_SRC, sandbox, { filename: 'background.js' });
+  const ask = (msg, tabId) => new Promise((resolve) => {
+    sandbox._onMessage(msg, tabId == null ? {} : { tab: { id: tabId } }, resolve);
+  });
+  const last = (re) => fetches.filter((f) => re.test(f.url)).at(-1);
+  const sample = (over) => Object.assign({ mediaKind: 'video', mediaKey: 'web:yt-a', title: 'A 第1話', positionMs: 1000, playing: true, speed: 1 }, over);
+  return { ask, last, sample, removeTab: (id) => { for (const fn of tabRemoved) fn(id); } };
+}
+
+test('background：查词 / 制卡带上本标签页正在统计的视频；别的标签页、停表后、关页后都不带', async () => {
+  const b = loadBackgroundForStudy();
+  const LOOKUP = /\/api\/lookup\/dictionary$/;
+  const MINE = /\/api\/mine$/;
+  await b.ask({ type: 'lookup', term: '世界' }, 1);
+  assert.ok(!('study' in b.last(LOOKUP).body), '没有在统计的视频时不带 study（旧 app 契约不变）');
+
+  await b.ask({ type: 'studySample', sample: b.sample() }, 1);
+  // 标题中途变了（通知数前缀）：身份仍是第一条样本的标题，计数不分叉。
+  await b.ask({ type: 'studySample', sample: b.sample({ title: '(1) A 第1話' }) }, 1);
+  await b.ask({ type: 'lookup', term: '世界' }, 1);
+  assert.deepStrictEqual(b.last(LOOKUP).body.study, { mediaKey: 'web:yt-a', title: 'A 第1話' });
+  await b.ask({ type: 'mine', fields: { expression: '世界' }, sentence: '世界' }, 1);
+  assert.deepStrictEqual(b.last(MINE).body.study, { mediaKey: 'web:yt-a', title: 'A 第1話' });
+
+  await b.ask({ type: 'lookup', term: '世界' }, 2);
+  assert.ok(!('study' in b.last(LOOKUP).body), '在别的标签页查的不记到这条视频');
+  await b.ask({ type: 'lookup', term: '世界' });
+  assert.ok(!('study' in b.last(LOOKUP).body), '侧边栏（无 sender.tab）不归属');
+
+  // 消息显式带的身份（批量队列项入队时冻结）优先。
+  await b.ask({ type: 'mineClip', fields: {}, sentence: 's', clipBase64: 'AA==', clipDurationMs: 1000, study: { mediaKey: 'web:nf-9', title: 'N' } }, 1);
+  assert.deepStrictEqual(b.last(MINE).body.study, { mediaKey: 'web:nf-9', title: 'N' });
+
+  await b.ask({ type: 'studySample', sample: b.sample({ ended: true }) }, 1);
+  await b.ask({ type: 'lookup', term: '世界' }, 1);
+  assert.ok(!('study' in b.last(LOOKUP).body), '停表（ended）后不再归属');
+
+  await b.ask({ type: 'studySample', sample: b.sample({ mediaKey: 'web:yt-b', title: 'B' }) }, 3);
+  b.removeTab(3);
+  await b.ask({ type: 'lookup', term: '世界' }, 3);
+  assert.ok(!('study' in b.last(LOOKUP).body), '标签页关了即清');
+});
+
+test('YouTube 批量制卡：队列项入队时冻结的 study 随 /api/mine 发出；content 入队与 Netflix 回放都带它', () => {
+  assert.match(BG_SRC, /youtubeVideoId: q\.youtubeId,[\s\S]{0,400}study: \{ mediaKey: q\.study\.mediaKey/);
+  const CONTENT_SRC = fs.readFileSync(path.join(__dirname, 'content.js'), 'utf8');
+  assert.match(CONTENT_SRC, /tracker\.identity\(\)/, 'fushiEnqueue 要在点击那一刻冻结统计身份');
+  assert.match(CONTENT_SRC, /\.\.\.\(study \? \{ study: study \} : \{\}\)/);
+  assert.match(CONTENT_SRC, /\.\.\.\(q\.study \? \{ study: q\.study \} : \{\}\)/, 'Netflix 回放生成要透传队列项的 study');
+});

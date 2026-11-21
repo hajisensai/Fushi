@@ -263,4 +263,60 @@ void main() {
       expect(await readTtsPersistedChapter(tmp, chapter), isNull);
     });
   });
+
+  group('纯标点句（「！」）', () {
+    const List<String> keys = <String>['a', 'bang', 'c', 'bad'];
+
+    test('成品里放静音，但不当成没配上：清单记真键，键序没变就沿用这章', () {
+      expect(
+        ttsChapterPlaceholderMask(
+          keys: keys,
+          failures: <String>{'bad'},
+          silent: <String>{'bang'},
+        ),
+        <bool>[false, true, false, true],
+      );
+      final List<String> manifestKeys = ttsChapterManifestKeys(
+        keys: keys,
+        failures: <String>{'bad'},
+      );
+      expect(manifestKeys, <String>[
+        'a',
+        'bang',
+        'c',
+        ttsPlaceholderManifestKey('bad'),
+      ]);
+
+      // 只有纯标点句、没有失败句的章：重跑时与期望键序一致，直接沿用。
+      final TtsChapterManifest clean = TtsChapterManifest(
+        section: 1,
+        keys: ttsChapterManifestKeys(keys: keys, failures: <String>{}),
+        durationsMs: const <int>[100, 800, 100, 100],
+        pausePreset: 'standard',
+        loudnorm: false,
+        gapsMs: const <int>[0, 0, 0, 0, 0],
+      );
+      expect(
+        clean.matches(
+          1,
+          keys,
+          pausePreset: 'standard',
+          loudnorm: false,
+          gapsMs: const <int>[0, 0, 0, 0, 0],
+        ),
+        isTrue,
+      );
+    });
+
+    test('停顿长度按占位估算（纯标点 = 最短 0.8 秒）', () {
+      expect(
+        ttsChapterDurationsWithPlaceholders(
+          placeholder: const <bool>[false, true],
+          voicedDurationsMs: const <int>[1200],
+          texts: const <String>['あいう', '「！」'],
+        ),
+        <int>[1200, 800],
+      );
+    });
+  });
 }

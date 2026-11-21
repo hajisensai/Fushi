@@ -3,7 +3,7 @@
 /// 历史：两表各自手写整表，OCR 侧比导入侧少 `.bmp` / `.gif`——导入能收的
 /// bmp 漫画整卷 OCR 时 bmp 页被静默跳过、产物 manga.json 缺页无任何提示。
 /// 现两表统一取漫画页图共享表 `kMangaPageImageExtensions`（media_extensions.dart，
-/// = 图片扩展名基集 + `.avif`）。
+/// = 图片扩展名基集 + `.avif` + 导入时转 PNG 的 `.tif` / `.tiff`）。
 library;
 
 import 'package:test/test.dart';
@@ -31,6 +31,23 @@ void main() {
         kMangaOcrImageExtensions,
         containsAll(<String>{'.bmp', '.gif', '.avif'}),
       );
+    });
+
+    test('TIFF 导入时转成 PNG 落盘，书目录里不出现 TIFF（反馈 Wn0wo9OTVe）', () {
+      expect(
+        kMangaPageImageExtensions,
+        containsAll(kMangaImportTranscodedPageExtensions),
+      );
+      expect(mangaStoredPageExtension('.tif'), '.png');
+      expect(mangaStoredPageExtension('.TIFF'), '.png');
+      expect(mangaStoredPageExtension('.jpg'), '.jpg');
+      for (final String ext in kMangaPageImageExtensions) {
+        expect(
+          kMangaImportTranscodedPageExtensions,
+          isNot(contains(mangaStoredPageExtension(ext))),
+          reason: '$ext 落盘后不能仍是要转码的格式',
+        );
+      }
     });
   });
 }

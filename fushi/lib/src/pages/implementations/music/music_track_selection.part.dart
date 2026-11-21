@@ -59,11 +59,13 @@ void musicShowUndoableNotice(
 
 /// 从音乐库移除 [entries]：本地曲目写墓碑隐藏（磁盘文件不动、重扫不复活），在库的远程
 /// 曲目清入库时刻。提示带「撤销」（本地取消隐藏、远程按原入库时刻放回）。返回移除的条数。
+/// [notice] 换掉默认的「已移除 N 首」提示（整张专辑移除用）。
 Future<int> musicRemoveEntriesFromLibrary(
   BuildContext context,
   FushiDatabase db,
-  Iterable<MusicLibraryEntry> entries,
-) async {
+  Iterable<MusicLibraryEntry> entries, {
+  String? notice,
+}) async {
   // 第一个 await 之前取：动作跑完时调用方（菜单 / 多选条）可能已经卸载。
   final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(context);
   final ({List<String> local, List<MusicRemoteTrackRow> remote}) targets =
@@ -77,9 +79,10 @@ Future<int> musicRemoveEntriesFromLibrary(
   }
   musicShowUndoableNotice(
     messenger,
-    count == 1
-        ? t.music_action_removed_from_library
-        : t.music_selection_removed_from_library(n: count),
+    notice ??
+        (count == 1
+            ? t.music_action_removed_from_library
+            : t.music_selection_removed_from_library(n: count)),
     () async {
       await db.unhideMusicTracks(targets.local);
       for (final MusicRemoteTrackRow r in targets.remote) {
@@ -94,6 +97,19 @@ Future<int> musicRemoveEntriesFromLibrary(
   );
   return count;
 }
+
+/// 整张本地专辑「从音乐库移除」（拍板台 mmXVwo0Ibv）：走曲目批量移除同一条路径——
+/// [tracks] 全部写墓碑隐藏、磁盘文件不动、重扫不复活；专辑没了在库曲目就从专辑墙消失。
+/// 提示写明「磁盘上的文件不动」并带「撤销」，事后也能在「已移除的曲目」页逐首恢复。
+/// 光盘专辑不走这里（整张盘的移除是 `removeMusicDiscFromLibrary`）。返回移除的曲目数。
+Future<int> musicRemoveAlbumFromLibrary(
+  BuildContext context,
+  FushiDatabase db, {
+  required MusicAlbumRow album,
+  required List<MusicTrackRow> tracks,
+}) => musicRemoveEntriesFromLibrary(context, db, <MusicLibraryEntry>[
+  for (final MusicTrackRow tr in tracks) MusicLocalEntry(tr),
+], notice: t.music_album_removed_from_library(title: album.title));
 
 /// 从本地歌单 [playlist] 一次移除 [entryIds] 这几条，提示带「撤销」（按原位置放回）。
 Future<int> musicRemoveEntriesFromPlaylist(

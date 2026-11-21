@@ -37,6 +37,17 @@ class _Offline {
         return _utf8(_fixture('ndl_opensearch_kusuriya.rss'));
       case 'openapi.rakuten.co.jp':
         return _utf8(_fixture('rakuten_books_search_formatv2.json'));
+      case 'itunes.apple.com':
+        if (req.url.path == '/search') {
+          return _utf8(_fixture('itunes_search_lemon.json'));
+        }
+        return _utf8(
+          _fixture(
+            req.url.queryParameters['id'] == '1537460612'
+                ? 'itunes_lookup_1537460612.json'
+                : 'itunes_not_found.json',
+          ),
+        );
     }
     return http.Response('', 404);
   });
@@ -208,5 +219,86 @@ void main() {
       BookScrapeSource.bangumi,
       '薬屋のひとりごと',
     ));
+  });
+
+  test('弹窗初始源：导入的歌曲默认 iTunes（DLsite 编号 / ISBN 仍优先）', () {
+    expect(bookScrapeInitialState('Lemon', isSong: true), (
+      BookScrapeSource.itunes,
+      'Lemon',
+    ));
+    expect(bookScrapeInitialState('RJ01014447 某作', isSong: true), (
+      BookScrapeSource.dlsite,
+      'RJ01014447',
+    ));
+    expect(bookScrapeInitialState('Lemon'), (
+      BookScrapeSource.bangumi,
+      'Lemon',
+    ));
+  });
+
+  test('iTunes：按歌名搜出专辑封面候选，资料带日期 / 流派，详情页是 Apple Music', () async {
+    final _Offline offline = _Offline();
+    final BookMetadataScrapeFacade facade = BookMetadataScrapeFacade(
+      scraper: offline.scraper(),
+    );
+    final List<BookScrapeCandidate> found = await facade.search(
+      source: BookScrapeSource.itunes,
+      query: '米津玄師 Lemon',
+    );
+    expect(found, hasLength(3));
+    final BookScrapeCandidate c = found.first;
+    expect(c.source, BookScrapeSource.itunes);
+    expect(c.title, 'Lemon');
+    expect(c.author, '米津玄師');
+    expect(c.series, 'Lemon - Single');
+    expect(c.date, '2018-02-12');
+    expect(c.tags, <String>['J-Pop']);
+    expect(c.coverUrl, endsWith('/1200x1200bb.jpg'));
+    expect(
+      c.detailUrl,
+      'https://music.apple.com/jp/album/lemon/1537460610?i=1537460612',
+    );
+    expect(offline.requests.single.path, '/search');
+    expect(facade.isSourceAvailable(BookScrapeSource.itunes), isTrue);
+  });
+
+  test('iTunes：贴 Apple Music 链接只直取；纯数字直取不中再当歌名搜', () async {
+    final _Offline offline = _Offline();
+    final BookMetadataScrapeFacade facade = BookMetadataScrapeFacade(
+      scraper: offline.scraper(),
+    );
+    final List<BookScrapeCandidate> direct = await facade.search(
+      source: BookScrapeSource.itunes,
+      query: 'https://music.apple.com/jp/album/lemon/1537460610?i=1537460612',
+    );
+    expect(direct.single.subjectId, '1537460612');
+    expect(offline.requests.map((Uri u) => u.path), <String>['/lookup']);
+
+    offline.requests.clear();
+    final List<BookScrapeCandidate> numeric = await facade.search(
+      source: BookScrapeSource.itunes,
+      query: '22',
+    );
+    expect(numeric, hasLength(3));
+    expect(offline.requests.map((Uri u) => u.path), <String>[
+      '/lookup',
+      '/search',
+    ]);
+
+    offline.requests.clear();
+    expect(
+      await facade.search(
+        source: BookScrapeSource.itunes,
+        query: 'https://music.apple.com/jp/album/x/999',
+      ),
+      isEmpty,
+    );
+    expect(offline.requests.map((Uri u) => u.path), <String>['/lookup']);
+
+    final BookScrapeCandidate? byId = await facade.fetchById(
+      source: BookScrapeSource.itunes,
+      id: '1537460612',
+    );
+    expect(byId?.title, 'Lemon');
   });
 }

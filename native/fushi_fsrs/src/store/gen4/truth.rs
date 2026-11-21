@@ -473,6 +473,8 @@ pub struct Truth<'c> {
     no_deps: Arc<Vv>,
     /// 这个会话里有操作落成了空洞（[Truth::advance_purge]）：提交之后要做字节层收尾（`scrub.rs`）。
     voided: Cell<bool>,
+    /// 库句柄的缓存配置记忆（`cache.rs` [super::cache::CfgMemo]，`kernel.rs` `G4Core::truth` 给）。没有 = 每次现算。
+    cfg_memo: Option<Arc<super::cache::CfgMemo>>,
 }
 
 struct N<'a, 'c>(&'a Truth<'c>);
@@ -644,7 +646,20 @@ impl<'c> Truth<'c> {
             st: RefCell::new(State::default()),
             no_deps: Arc::new(Vv::new()),
             voided: Cell::new(false),
+            cfg_memo: None,
         }
+    }
+
+    /// [Truth::new]，缓存配置的解析结果跨命令记在 [memo] 里（`cache.rs` [super::cache::CfgMemo]）。
+    pub fn with_cfg_memo(conn: &'c Connection, memo: Arc<super::cache::CfgMemo>) -> Truth<'c> {
+        Truth {
+            cfg_memo: Some(memo),
+            ..Truth::new(conn)
+        }
+    }
+
+    pub(super) fn cfg_memo(&self) -> Option<&super::cache::CfgMemo> {
+        self.cfg_memo.as_deref()
     }
 
     pub fn conn(&self) -> &'c Connection {
@@ -2074,15 +2089,33 @@ impl<'c> Truth<'c> {
         col: i64,
         device: &Id,
         upto: u64,
+        f: impl FnMut(u64, &HeritageStamp) -> Result<(), String>,
+    ) -> Result<(), String> {
+        self.for_each_stamp_in(col, device, 1, upto, f)
+    }
+
+    /// [Truth::for_each_stamp] 只走 seq 在 `[from, upto]` 里的那一段（按主键区间，不碰段外的行）：派生层从旧闭包的
+    /// 检查点接着并（`derive.rs` [CLOSURE_STEP](super::derive::CLOSURE_STEP)）。
+    pub(crate) fn for_each_stamp_in(
+        &self,
+        col: i64,
+        device: &Id,
+        from: u64,
+        upto: u64,
         mut f: impl FnMut(u64, &HeritageStamp) -> Result<(), String>,
     ) -> Result<(), String> {
         let Some(dev) = self.dev_find(col, device)? else {
             return Ok(());
         };
-        if upto == 0 {
+        let from = from.max(1);
+        if upto < from {
             return Ok(());
         }
-        let (lo, top) = k_range(dev);
+        let (_, top) = k_range(dev);
+        if from > k_seq(top) {
+            return Ok(());
+        }
+        let lo = opk(dev, from)?;
         let hi = if upto >= k_seq(top) {
             top
         } else {

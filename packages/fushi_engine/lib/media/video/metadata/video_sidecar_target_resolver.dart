@@ -319,6 +319,16 @@ class VideoSidecarTargetResolver {
     );
   }
 
+  /// [resolveTv] 会拿来判「专属作品目录」的候选根：成员所在目录的公共目录，是季
+  /// 目录时再上一层。[resolveMovie] 只看视频自己所在目录，是它的子集（单成员时
+  /// 公共目录就是该目录）。[memberPaths] 不能为空。
+  static String workRootCandidate(Iterable<String> memberPaths) {
+    final String common = _commonDirectory(memberPaths.map(p.dirname));
+    return _looksLikeSeasonDirectory(p.basename(common))
+        ? p.dirname(common)
+        : common;
+  }
+
   static String _commonDirectory(Iterable<String> directories) {
     final List<List<String>> parts = directories
         .map((String path) => p.split(_absolute(path)))

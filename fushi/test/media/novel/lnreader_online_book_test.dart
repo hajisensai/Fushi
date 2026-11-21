@@ -9,6 +9,7 @@ import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/novel/online/lnreader_book_download.dart';
+import 'package:fushi/src/media/novel/online/lnreader_downloaded_book_images.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_missing_images.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
@@ -621,6 +622,177 @@ void main() {
       expect(
         (jsonDecode(row.chaptersJson) as List<Object?>)[0],
         containsPair('characters', characters),
+      );
+    });
+
+    test('下载成 EPUB 的书丢图：留带来源的占位；打开后按占位补取（自动至多 3 轮、手动不限），'
+        '插件被删时整轮不补并报出', () async {
+      runtime.chapterHtml = <String, String>{
+        ...runtime.chapterHtml,
+        '/1': '<p>一の本文<img src="$imageBase/flaky.png"/>続き</p>',
+      };
+      final String dir = p.join(books.path, 'downloaded');
+      await LnReaderBookDownload(
+        manager: manager,
+        database: db,
+        httpClientFactory: HttpClient.new,
+        isBlockedHost: (String _) => false,
+        isBlockedAddress: (InternetAddress _) => false,
+        importEpub:
+            ({
+              required FushiDatabase db,
+              required Uint8List bytes,
+              required String fileName,
+              required DuplicatePolicy policy,
+            }) async {
+              _unzipInto(bytes, dir);
+              return 'downloaded';
+            },
+      ).run(
+        plugin: plugin,
+        novel: novel,
+        chapters: chapters,
+        policy: const DuplicatePolicy.skip(),
+      );
+      expect(flakyHits, 1);
+      final File first = lnReaderOnlineChapterFile(dir, 0);
+      expect(first.readAsStringSync(), isNot(contains('<img')));
+      expect(first.readAsStringSync(), contains('一の本文'));
+
+      int managerCreations = 0;
+      final LnReaderDownloadedBookImages images = LnReaderDownloadedBookImages(
+        extractDir: dir,
+        manager: () {
+          managerCreations++;
+          return manager;
+        },
+        download: (LnReaderManager _) => download(),
+      );
+      expect(images.chapterIndexForFile(first.path), 0);
+      expect(
+        images.chapterIndexForFile(p.join(dir, 'OEBPS', 'nav.xhtml')),
+        isNull,
+      );
+      OnlineNovelMissingImages missing = await images.missingImages(0);
+      expect(missing.count, 1);
+      expect(missing.autoRetryAvailable, isTrue);
+      // 不缺图的章：0，且不为此拉起 LNReader 运行时。
+      expect((await images.missingImages(2)).count, 0);
+      expect(
+        (await images.retryMissingImages(2, automatic: true)).remaining,
+        0,
+      );
+      expect(managerCreations, 0);
+
+      for (int i = 0; i < kLnReaderMissingImageAutoRetries; i++) {
+        final OnlineNovelMissingImagesRetry retry = await images
+            .retryMissingImages(0, automatic: true);
+        expect(retry.recovered, 0);
+        expect(retry.remaining, 1);
+      }
+      expect(flakyHits, 1 + kLnReaderMissingImageAutoRetries);
+      missing = await images.missingImages(0);
+      expect(missing.autoRetryAvailable, isFalse);
+      await images.retryMissingImages(0, automatic: true);
+      expect(flakyHits, 1 + kLnReaderMissingImageAutoRetries);
+
+      // 插件被删：手动补取整轮不补（文件不动），抛出交给阅读器提示。
+      final LnReaderDownloadedBookImages orphan = LnReaderDownloadedBookImages(
+        extractDir: dir,
+        manager: () => manager,
+        download: (LnReaderManager _) => download(),
+      );
+      final String before = first.readAsStringSync();
+      await manager.uninstall(manager.installed.single);
+      await expectLater(
+        orphan.retryMissingImages(0, automatic: false),
+        throwsA(isA<LnReaderOnlinePluginMissing>()),
+      );
+      expect(first.readAsStringSync(), before);
+      expect(flakyHits, 1 + kLnReaderMissingImageAutoRetries);
+    });
+
+    test('下载书补取：图床恢复后手动补到，换回 <img>、图落盘', () async {
+      runtime.chapterHtml = <String, String>{
+        ...runtime.chapterHtml,
+        '/1': '<p>一の本文<img src="$imageBase/flaky.png"/>続き</p>',
+      };
+      final String dir = p.join(books.path, 'downloaded');
+      await LnReaderBookDownload(
+        manager: manager,
+        database: db,
+        httpClientFactory: HttpClient.new,
+        isBlockedHost: (String _) => false,
+        isBlockedAddress: (InternetAddress _) => false,
+        importEpub:
+            ({
+              required FushiDatabase db,
+              required Uint8List bytes,
+              required String fileName,
+              required DuplicatePolicy policy,
+            }) async {
+              _unzipInto(bytes, dir);
+              return 'downloaded';
+            },
+      ).run(
+        plugin: plugin,
+        novel: novel,
+        chapters: chapters,
+        policy: const DuplicatePolicy.skip(),
+      );
+      flakyOk = true;
+      final LnReaderDownloadedBookImages images = LnReaderDownloadedBookImages(
+        extractDir: dir,
+        manager: () => manager,
+        download: (LnReaderManager _) => download(),
+      );
+      final OnlineNovelMissingImagesRetry manual = await images
+          .retryMissingImages(0, automatic: false);
+      expect(manual.recovered, 1);
+      expect(manual.remaining, 0);
+      final File first = lnReaderOnlineChapterFile(dir, 0);
+      final String xhtml = first.readAsStringSync();
+      expect(xhtml, isNot(contains(kLnReaderMissingImageAttribute)));
+      expect(xhtml, contains('src="images/c1-0.png"'));
+      expect(
+        File(p.join(dir, 'OEBPS', 'images', 'c1-0.png')).readAsBytesSync(),
+        _png,
+      );
+      expect((await images.missingImages(0)).count, 0);
+    });
+
+    test('下载书补取只在合规门开时给（iOS / 无 headless WebView 的平台为 null）', () async {
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'plain',
+          title: 'plain',
+          epubPath: 'plain.epub',
+          extractDir: books.path,
+          chapterCount: 0,
+          chaptersJson: '[]',
+          importedAt: 0,
+        ),
+      );
+      final EpubBookRow row = (await db.getEpubBook('plain'))!;
+      expect(
+        lnReaderDownloadedBookImagesFor(
+          row: row,
+          extractDir: books.path,
+          database: db,
+          manager: () => manager,
+          onlineSourcesAvailable: false,
+        ),
+        isNull,
+      );
+      expect(
+        lnReaderDownloadedBookImagesFor(
+          row: row,
+          extractDir: books.path,
+          database: db,
+          manager: () => fail('不该为建补取器拉起 LNReader'),
+          onlineSourcesAvailable: true,
+        ),
+        isNotNull,
       );
     });
 

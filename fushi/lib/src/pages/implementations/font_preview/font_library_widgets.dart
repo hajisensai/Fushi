@@ -683,18 +683,24 @@ class FontSampleToolbar extends StatelessWidget {
     required this.onScriptChanged,
     required this.controller,
     required this.onCustomChanged,
+    this.chineseVariant = FontSampleScript.simplifiedChinese,
     super.key,
   });
 
   final FontSampleScript script;
   final ValueChanged<FontSampleScript> onScriptChanged;
+
+  /// 上次选的简 / 繁：从日文 / 西文切回「中文」时恢复它。
+  final FontSampleScript chineseVariant;
   final TextEditingController controller;
   final VoidCallback onCustomChanged;
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final Widget segments = FushiSegmentedButton<FontSampleScript>(
+    // 「中文」一档代表当前（或上次）的简 / 繁之一；简繁由紧贴其右的小开关切换。
+    final FontSampleScript chinese = script.isChinese ? script : chineseVariant;
+    final Widget scripts = FushiSegmentedButton<FontSampleScript>(
       key: const ValueKey<String>('font-sample-script'),
       showSelectedIcon: false,
       segments: <ButtonSegment<FontSampleScript>>[
@@ -703,7 +709,7 @@ class FontSampleToolbar extends StatelessWidget {
           label: Text(t.font_library_filter_japanese),
         ),
         ButtonSegment<FontSampleScript>(
-          value: FontSampleScript.chinese,
+          value: chinese,
           label: Text(t.font_library_filter_chinese),
         ),
         ButtonSegment<FontSampleScript>(
@@ -716,6 +722,21 @@ class FontSampleToolbar extends StatelessWidget {
         if (value.isNotEmpty) onScriptChanged(value.first);
       },
     );
+    // 文种三档 + （仅中文时）简繁开关同一行；窄到放不下时开关换到下一行，不溢出。
+    final Widget segments = script.isChinese
+        ? Wrap(
+            spacing: tokens.spacing.gap,
+            runSpacing: tokens.spacing.gap,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              scripts,
+              FontChineseVariantSwitch(
+                script: script,
+                onChanged: onScriptChanged,
+              ),
+            ],
+          )
+        : scripts;
     final Widget field = FushiTextField(
       key: const ValueKey<String>('font-sample-custom'),
       controller: controller,

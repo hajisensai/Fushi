@@ -7,7 +7,6 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
@@ -17,6 +16,7 @@ import 'package:fushi_engine/tts/render/tts_cast_timing.dart';
 import 'package:fushi_engine/tts/render/tts_pause.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:fushi_engine/tts/tts_direction.dart';
+import 'package:fushi_engine/tts/tts_silence.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
@@ -170,37 +170,6 @@ List<({String path, int durationMs})> interleaveTtsPauses({
   }
   gap(gapsMs[sentences.length]);
   return out;
-}
-
-/// [ms] 毫秒的 16-bit PCM 静音 WAV。
-Uint8List buildTtsSilenceWav({
-  required int ms,
-  required int sampleRate,
-  required int channels,
-}) {
-  final int frames = (sampleRate * ms / 1000).round();
-  final int dataBytes = frames * channels * 2;
-  final ByteData b = ByteData(44 + dataBytes);
-  void ascii(int at, String s) {
-    for (int i = 0; i < s.length; i++) {
-      b.setUint8(at + i, s.codeUnitAt(i));
-    }
-  }
-
-  ascii(0, 'RIFF');
-  b.setUint32(4, 36 + dataBytes, Endian.little);
-  ascii(8, 'WAVE');
-  ascii(12, 'fmt ');
-  b.setUint32(16, 16, Endian.little);
-  b.setUint16(20, 1, Endian.little);
-  b.setUint16(22, channels, Endian.little);
-  b.setUint32(24, sampleRate, Endian.little);
-  b.setUint32(28, sampleRate * channels * 2, Endian.little);
-  b.setUint16(32, channels * 2, Endian.little);
-  b.setUint16(34, 16, Endian.little);
-  ascii(36, 'data');
-  b.setUint32(40, dataBytes, Endian.little);
-  return b.buffer.asUint8List();
 }
 
 /// 工作目录里按（时长, 采样率, 声道）缓存的静音文件（同步写：一章最多几种时长）。

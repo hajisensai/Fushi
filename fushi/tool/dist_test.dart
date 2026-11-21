@@ -465,10 +465,9 @@ Future<void> _main(_Options options) async {
   final DistRunVerdict verdict = DistRunVerdict(
     results: scheduler.results,
     filtered: distTestFilterActive(options.flutterArgs),
-    unplaced: <String>[
-      for (final DistUnit u in <DistUnit>[...unplaceable, ...queue.remaining])
-        '${u.path} (${u.label})',
-    ],
+    // Every placement planned, not what the queue still holds: the verdict
+    // checks each one against the batches that came back.
+    requested: <String>[for (final DistUnit u in units) u.path],
   );
   _writeTimings(out, scheduler.results, weights.keys.toSet());
   if (options.coverage) {
@@ -508,7 +507,9 @@ Future<void> _main(_Options options) async {
   final String? failure = verdict.failure;
   stdout.writeln(
     failure == null
-        ? 'DIST TEST VERDICT: PASSED - ${verdict.testsCompleted} tests ran on '
+        ? 'DIST TEST VERDICT: PASSED - ${verdict.suitesRan} of '
+              '${verdict.requested.length} suites, '
+              '${verdict.testsCompleted} tests ran on '
               '${scheduler.results.map((DistBatchResult r) => r.worker).toSet().length} '
               'worker(s) in ${wall.elapsed.inSeconds}s'
         : 'DIST TEST VERDICT: FAILED - $failure '

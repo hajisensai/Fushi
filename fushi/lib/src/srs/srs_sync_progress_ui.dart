@@ -21,13 +21,19 @@ String srsSyncProgressLine(SrsSyncProgress p) {
     case SrsSyncStage.uploading:
       return t.srs_sync_progress_uploading;
     case SrsSyncStage.media:
-      return t.srs_sync_progress_media;
+      if (p.total <= 0) return t.srs_sync_progress_media;
+      return t.srs_sync_progress_media_count(
+        done: p.done.clamp(0, p.total),
+        total: p.total,
+      );
   }
 }
 
-/// 进度条数值（0..1）：只有「下载且知道总数」时是确定进度，其余阶段为 null（不确定进度条）。
+/// 进度条数值（0..1）：「下载」与「媒体」阶段知道总数时是确定进度，其余为 null（不确定进度条）。
 double? srsSyncProgressFraction(SrsSyncProgress p) {
-  if (p.stage != SrsSyncStage.downloading) return null;
+  if (p.stage != SrsSyncStage.downloading && p.stage != SrsSyncStage.media) {
+    return null;
+  }
   if (p.total <= 0) return null;
   return (p.done / p.total).clamp(0.0, 1.0);
 }

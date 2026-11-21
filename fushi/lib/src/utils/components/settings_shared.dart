@@ -21,6 +21,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_pill_segmented_button.dart';
 import 'package:fushi/src/utils/components/settings_section_anchor.dart';
@@ -805,21 +806,7 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
           // 不可折叠分组的标题一律在组上方（内嵌位置在分段形态下没有「卡内
           // 顶部」可放）。
           if (hasTitle && !collapsible)
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                tokens.spacing.rowHorizontal,
-                0,
-                tokens.spacing.rowHorizontal,
-                tokens.spacing.gap,
-              ),
-              child: Text(
-                title,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  color: theme.colorScheme.primary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
+            _Md3SegmentedTitle(title: title, tokens: tokens, theme: theme),
           group,
         ],
       ),
@@ -4962,6 +4949,68 @@ class _SettingsStepButton extends StatelessWidget {
         tooltip: tooltip,
         visualDensity: VisualDensity.compact,
         onPressed: onPressed,
+      ),
+    );
+  }
+}
+
+/// MD3 分段分组上方的分组标题（titleSmall、primary、w600）。
+///
+/// 页底是用户的自定义图片时，标题直接压在图上、对比度随图片明暗忽高忽低
+/// （2026-11-20 用户截图：樱花壁纸上的橙色小标题发糊），这时给它垫一枚与分段卡
+/// 同色的半透明胶囊；胶囊的左内边距从行内边距里扣出来，文字左缘位置不变。
+class _Md3SegmentedTitle extends StatelessWidget {
+  const _Md3SegmentedTitle({
+    required this.title,
+    required this.tokens,
+    required this.theme,
+  });
+
+  final String title;
+  final FushiDesignTokens tokens;
+  final ThemeData theme;
+
+  /// 胶囊的横向内边距（文字到胶囊边）。
+  static const double _pillHorizontal = 10;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget text = Text(
+      title,
+      style: theme.textTheme.titleSmall?.copyWith(
+        color: theme.colorScheme.primary,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+    final double inset = tokens.spacing.rowHorizontal;
+    if (!FushiPageBackdrop.imageOf(context)) {
+      return Padding(
+        padding: EdgeInsets.fromLTRB(inset, 0, inset, tokens.spacing.gap),
+        child: text,
+      );
+    }
+    return Padding(
+      padding: EdgeInsetsDirectional.fromSTEB(
+        inset - _pillHorizontal,
+        0,
+        inset,
+        tokens.spacing.gap,
+      ),
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: DecoratedBox(
+          decoration: ShapeDecoration(
+            color: tokens.surfaces.card.withValues(alpha: 0.9),
+            shape: const StadiumBorder(),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: _pillHorizontal,
+              vertical: 3,
+            ),
+            child: text,
+          ),
+        ),
       ),
     );
   }

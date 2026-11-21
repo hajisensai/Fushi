@@ -1,0 +1,10 @@
+## BUG-5059 · Apple 设计下自定义背景图片不显示（首页 / 设置页全白底）
+- **报告**：2026-11-19（用户：社区反馈截图——「页面背景」选了自定义图片、所有模块跟随全局，缩略图里有图，首页与设置页仍是白底）
+- **真实性**：✅ 真 bug。截图里出现「形状样式只在 Material 设计中显示」提示，即用户选的是 Apple（玻璃）设计；设置页文案与代码注释都承诺「自定义图片所有设计都显示」，实际 Apple 下一页都不画。三处叠加：
+  - 根因 1：`fushi/lib/src/models/theme_notifier.dart:3284` Apple 分支的 `pageTransitionsTheme` 没套 `FushiBackdropPageTransitionsBuilder`（只有 Material 分支套了），Apple 下没有任何路由挂 `FushiPageBackdrop`。
+  - 根因 2：`fushi/lib/src/utils/adaptive/adaptive_widgets.dart:809` `adaptivePageRoute` 在玻璃设计下给 `CupertinoPageRoute`，它自己画转场、不读主题，推入的页（设置子页等）即使主题套了背景层也垫不上。
+  - 根因 3：背景层画图时把脚手架底色换成透明，但 Apple 下两处整页实色仍盖在图上：`fushi/lib/src/pages/implementations/home_page.dart:4428` `_GlassContentSurface` 按「底色半透明 = 窗口材质」垫 `colorScheme.surface`；`fushi/lib/src/settings/settings_kit_core.dart:1638` `SettingsKitScaffold` 直接画 `groupedBackground`。
+- **[x] ① 已修复** — Apple 分支六个平台都套背景层（形状预设在 Apple 下由 `LibraryShapeBackdrop.enabledFor` 判为不画，此时背景层不改底色、不画装饰，等价于不套；墨水屏仍不套）。`adaptivePageRoute` 玻璃设计改走 `MaterialPageRoute` 查主题（Cupertino 推入、侧滑返回、减弱动态效果都由主题的 `FushiCupertinoPageTransitionsBuilder` 给，原 `CupertinoPageRoute` 还不认减弱动态效果）；隐藏的 `FushiDesignSystem.cupertino` 仍给 `CupertinoPageRoute`。新增 `fushiPageBackgroundColorOr(context, opaque)`（背景层在画时透明，否则 `opaque`），`SettingsKitScaffold` 的 Apple 分组底与 `_GlassContentSurface` 都按它让开。提交见本文件 Git 历史。
+- **[x] ② 已增加自动化测试** — `fushi/test/widgets/page_backdrop_apple_design_test.dart`（Apple 主题真路由：自定义图片垫进 home 路由与 `adaptivePageRoute` 推入页、Apple 设置页壳不画分组底、形状预设不改页底）；`fushi/test/models/theme_page_transitions_guard_test.dart` 守卫改为 Material 与 Apple 都套背景层、墨水屏不套；`fushi/test/utils/adaptive/adaptive_platform_test.dart` 加玻璃设计走 `MaterialPageRoute`。新测试在未修复代码上失败（`FushiPageBackdrop` 找到 0 个）。
+- **验证**：上述与 `apple_page_transitions_reduce_motion_test.dart`、`fushi_page_backdrop_layout_test.dart` 合跑 22 项全过（exit 0）。Windows 真 app 离屏集成跑（Apple 设计 + 生成的条纹图）：修复前首页内容区 / 设置页 / 推入的设置子页全白；修复后四页都透出图片，按渲染树逐层列出的不透明填充只剩图片下方的底色与卡片本身。Material 设计对照首页照旧显示图片。
+- **备注**：Apple 下选形状预设（不画图片）时行为不变：`_GlassContentSurface` 照旧在窗口材质下给内容区垫实色。

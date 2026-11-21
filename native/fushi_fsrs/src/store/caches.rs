@@ -290,6 +290,9 @@ pub(crate) struct TypeInfo {
     reading_field: Option<String>,
     /// 词频序字段（卡片缓存行的 `freq_rank` 从它解析），即视图的 `qe`（registers.rs `effective_frequency_field`）。
     freq_field: Option<String>,
+    /// 排序字段（笔记缓存行的 `sort_field` 从它取），即视图的 `se`（registers.rs `note_type_view`：显式设的
+    /// `sortField` 还在就用它，否则第一个字段）。
+    sort_field: Option<String>,
     deleted: bool,
 }
 
@@ -305,6 +308,7 @@ impl TypeInfo {
         TypeInfo {
             cloze: view["nk"].as_str() == Some("cloze"),
             freq_field: view["qe"].as_str().map(str::to_owned),
+            sort_field: view["se"].as_str().map(str::to_owned),
             fields,
             templates: view["ts"]
                 .as_array()
@@ -754,8 +758,8 @@ pub(crate) fn note_row(n: &NoteInfo, t: Option<&TypeInfo>) -> Result<NoteRow, St
         Some(f) => card_cache::normalize_term(n.field(f)),
         None => String::new(),
     };
-    let sort = match t.and_then(|t| t.fields.first()) {
-        Some((f, _)) => card_cache::sort_field(n.field(f)),
+    let sort = match t.and_then(|t| t.sort_field.as_deref()) {
+        Some(f) => card_cache::sort_field(n.field(f)),
         None => String::new(),
     };
     let freq = t
@@ -2645,5 +2649,71 @@ mod tests {
         );
         run(&d, &cfg, Dirty::of_projection(&r));
         assert_eq!(ranks(&d), pairs(&[(N1, "1"), (N2, "null"), (N3, "5")]));
+    }
+
+    fn sorts(d: &Device) -> Vec<(String, String)> {
+        d.rows("SELECT srs_idt(id), sort_field FROM srs_notes_cache ORDER BY id")
+            .into_iter()
+            .skip(1)
+            .map(|r| (r[0].clone(), r[1].clone()))
+            .collect()
+    }
+
+    /// 笔记缓存的 `sort_field` 取笔记类型的排序字段（Anki `sortf`）：没设时第一个字段；设 `sortField` 后类型标脏、
+    /// 成员笔记改取那个字段；指向的字段删了退回第一个字段。
+    #[test]
+    fn sort_field_follows_the_note_types_sort_field() {
+        let d = Device::new("sort-field");
+        let deck = crate::store::sync2::config::default_deck_id(P);
+        let fdef = |name: &str, ord: i64| json!({"name": name, "ord": ord});
+        d.apply(
+            T0,
+            vec![
+                deck_entity(&deck),
+                note_type("NT", json!({"createdAt": 1, "ntKind": "standard"})),
+                edit("notetype", "NT", "fieldDef/fa", fdef("Id", 0)),
+                edit("notetype", "NT", "fieldDef/fb", fdef("Word", 1)),
+                edit(
+                    "notetype",
+                    "NT",
+                    "tmplDef/t1",
+                    json!({"name": "C", "ord": 0, "front": "{{Word}}"}),
+                ),
+                note(N1, "NT"),
+                edit("note", N1, "f/fa", json!("0001")),
+                edit("note", N1, "f/fb", json!("<b>猫</b>")),
+            ],
+        );
+        let cfg = CacheConfig::parse(&json!({"defaultDeck": deck, "builtins": {}})).unwrap();
+        run(
+            &d,
+            &cfg,
+            Dirty {
+                all_notes: true,
+                ..Dirty::default()
+            },
+        );
+        assert_eq!(sorts(&d), pairs(&[(N1, "0001")]));
+
+        let r = d.apply(
+            T0 + 1,
+            vec![edit("notetype", "NT", "sortField", json!("fb"))],
+        );
+        let dirty = Dirty::of_projection(&r);
+        assert!(dirty.note_types.contains("NT"), "{r}");
+        run(&d, &cfg, dirty);
+        assert_eq!(sorts(&d), pairs(&[(N1, "猫")]));
+
+        let r = d.apply(
+            T0 + 2,
+            vec![edit(
+                "notetype",
+                "NT",
+                "fieldDef/fb",
+                json!({"name": "Word", "ord": 1, "deleted": true}),
+            )],
+        );
+        run(&d, &cfg, Dirty::of_projection(&r));
+        assert_eq!(sorts(&d), pairs(&[(N1, "0001")]));
     }
 }

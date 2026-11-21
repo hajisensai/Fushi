@@ -146,6 +146,7 @@ import 'package:fushi/src/utils/components/section_tab_order.dart'
         PrefsSectionTabOrderStore,
         SectionTabOrderStore,
         sectionTabOrderAppFallback;
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -178,6 +179,7 @@ import 'package:fushi/src/second_screen/second_screen_controller.dart';
 import 'package:fushi/src/second_screen/second_screen_host.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
+import 'package:fushi/src/srs/srs_generation_kind.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_profile_stores.dart';
@@ -455,6 +457,9 @@ import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_conflict_prompter.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/media/video/media_server/media_server_route_failover.dart';
+import 'package:fushi/src/sync/plex_settings_widget.dart'
+    show mediaServerRouteFailoverForRepository;
 import 'package:fushi/src/media/video/media_server/media_server_library.dart'
     show mediaServerTrackingEpisodeOf;
 import 'package:fushi/src/sync/sync_state_apply_lock.dart';
@@ -462,11 +467,15 @@ import 'package:fushi/src/sync/video_remote_host.dart';
 import 'package:fushi/src/sync/video_remote_library_port.dart';
 import 'package:fushi/src/models/theme_notifier.dart' as theme_notifier;
 import 'package:fushi/src/models/theme_notifier.dart'
-    show ThemeNotifier, CustomThemeEntry, ThemePreset;
+    show
+        ThemeNotifier,
+        CustomThemeEntry,
+        ThemePreset,
+        ThemeAccentOverrideSource;
 // TODO-930: re-export the multi-theme value type so `fushi/models.dart`
 // consumers (theme swatch row, CustomThemePage) can name it.
 export 'package:fushi/src/models/theme_notifier.dart'
-    show CustomThemeEntry, ThemePreset;
+    show CustomThemeEntry, ThemePreset, ThemeAccentOverrideSource;
 import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart'
     show MusicAssRenderPreference;
@@ -3694,8 +3703,13 @@ class AppModel
 
   /// 弹窗呈现（折叠 / 展开）该看的词典列表：打开的作品带着作品级配置时是那份配置的视图，
   /// 否则是激活配置（与 [hiddenDictionaryNames] 同一口径，反馈 r9SgiayKxa）。
+  ///
+  /// 词典仓库未就绪（启动早期、或 [_dictionaryRepoReady] 在重建期间置回 false）时返回空表：
+  /// 浏览器扩展取主题（[browserExtensionThemeColors] → [_activePopupDisplayPrefs]）可能
+  /// 在这段窗口里到达，不能去碰 late 的 [dictRepo]（BUG-4935 引入的依赖）。
   List<Dictionary> get lookupViewDictionaries =>
-      WorkProfileScope.instance.lookupView?.dictionaries ?? dictionaries;
+      WorkProfileScope.instance.lookupView?.dictionaries ??
+      (_dictionaryRepoReady ? dictionaries : const <Dictionary>[]);
 
   bool _dictSourceBackfillStarted = false;
 
@@ -4223,7 +4237,7 @@ class AppModel
     if (context == null || !context.mounted) return false;
     final bool accepted = await showFushiConfirmDialog(
       context: context,
-      icon: Icons.upgrade_rounded,
+      icon: FushiIcons.upgrade,
       title: t.dict_upgrade_format_prompt_title,
       message: t.dict_upgrade_format_prompt_body(count: pendingCount),
       confirmLabel: t.dict_upgrade_format_prompt_confirm,
@@ -5297,6 +5311,11 @@ class AppModel
       ErrorLogService.instance.markInitStep('open-database（Drift 打开 fushi.db）');
       _database = FushiDatabase(_databaseDirectory.path);
       _databaseOpened = true;
+      // 媒体服务器请求漏斗的自动换线路：按服务器共享、单飞，写回走现取的数据库
+      // （拍板台 design-media-server-failover-transport）。
+      MediaServerRouteFailover.install(
+        mediaServerRouteFailoverForRepository(() => SyncRepository(_database)),
+      );
       await _resetSrsStorageHost(isMainProcess: true);
       // 音乐来源扫完 → 缺 ReplayGain 标签的曲目进后台 EBU R128 测量（设计 §7.3）。
       onMusicSourceScanned = () => unawaited(musicLoudness.schedule());
@@ -6188,6 +6207,10 @@ class AppModel
   /// switch has written new values.
   Future<void> refreshPrefCache() async {
     await prefsRepo.refreshFromDb();
+    // 统计日界随 Profile 走：切 Profile / 别的进程改过偏好后重新镜像进
+    // FushiDatabase.statDayResetHour，否则新 Profile 一直按旧日界切「今天」直到重启
+    // （BUG-5073）。
+    _applyStatDayResetHour();
     navRailExpandedNotifier.value = prefsRepo.navRailExpanded;
     for (final sourceMap in mediaSources.values) {
       for (final source in sourceMap.values) {
@@ -6295,7 +6318,20 @@ class AppModel
   static String themeLabel(String key) => ThemeNotifier.themeLabel(key);
 
   String get appThemeKey => themeNotifier.appThemeKey;
+
+  /// 只换主题键、不碰取色覆盖：给「不是用户在选主题」的写入（删掉当前自定义主题后
+  /// 指回剩余主题）。用户选主题一律走 [pickAppThemeKey]。
   Future<void> setAppThemeKey(String key) => themeNotifier.setAppThemeKey(key);
+
+  /// 用户选主题的唯一入口（设置页色卡、自定义主题编辑页「应用」、`config set
+  /// appearance.theme`、控制通道 `select=true`）：先关掉正在生效的背景图 / 图标取色
+  /// 覆盖，再切主题键，同一批落库，见 [ThemeNotifier.pickAppThemeKey]。
+  Future<void> pickAppThemeKey(String key) =>
+      themeNotifier.pickAppThemeKey(key);
+
+  /// 正在覆盖所选主题配色的取色来源（没有覆盖为 null），主题选择处据此提示。
+  ThemeAccentOverrideSource? get activeAccentOverrideSource =>
+      themeNotifier.activeAccentOverrideSource;
 
   /// 阅读器纸色用的主题键：偏好原值（可能是已删的旧预设 id，如 ecru-theme），
   /// 让存量用户的阅读器纸色照旧生效（2026-10 预设精简时阅读器纸色不动）。
@@ -7229,6 +7265,12 @@ class AppModel
 
   Future<void> setVideoPortraitSubtitleList(bool value) =>
       prefsRepo.setVideoPortraitSubtitleList(value);
+
+  /// 手机 / 平板切出 app 或锁屏后视频声音继续播，默认关（拍板台 42UUu_kcwD）。
+  bool get videoBackgroundPlay => prefsRepo.videoBackgroundPlay;
+
+  Future<void> setVideoBackgroundPlay(bool value) =>
+      prefsRepo.setVideoBackgroundPlay(value);
 
   /// 记住每部作品上次手动转到的方向，默认关。
   bool get videoRememberOrientation => prefsRepo.videoRememberOrientation;
@@ -12333,16 +12375,6 @@ class AppModel
   Future<void> setBrowseMovedNoticeHandled() =>
       prefsRepo.setBrowseMovedNoticeHandled();
 
-  /// 库页默认改封面网格后的「拼贴仍可选」一次性提示是否已处理
-  /// （见 `library_layout_default_notice.dart`）。
-  bool get libraryLayoutDefaultNoticeHandled =>
-      prefsRepo.libraryLayoutDefaultNoticeHandled;
-  Future<void> setLibraryLayoutDefaultNoticeHandled() =>
-      prefsRepo.setLibraryLayoutDefaultNoticeHandled();
-
-  /// 当前 Profile 是否显式选过库页布局（落库值非空，含已删的 `blocks`）。
-  bool get shellContentLayoutChosen => themeNotifier.shellContentLayoutChosen;
-
   int get maximumTerms => prefsRepo.maximumTerms;
   void setMaximumTerms(int value) => prefsRepo.setMaximumTerms(value);
 
@@ -13270,7 +13302,8 @@ class AppModel
       '$kSrsDayRolloverSeenPrefKeyPrefix$profileUid';
 
   /// 把偏好镜像到 [FushiDatabase.statDayResetHour]——dateKey 派生的唯一输入。
-  /// 偏好加载后（主进程 / 弹窗进程两条初始化路径）与用户改设置时各调一次。
+  /// 偏好加载后（主进程 / 弹窗进程两条初始化路径）、偏好缓存整体重载后
+  /// （[refreshPrefCache]：切 Profile、别的进程改过偏好）与用户改设置时各调一次。
   void _applyStatDayResetHour() {
     FushiDatabase.statDayResetHour = statDayResetHour;
   }
@@ -14052,6 +14085,9 @@ class AppModel
       // 扩展网页视频沉浸时间：每条播放样本喂给桥 → 每个 mediaKey 一个
       // VideoWatchTracker + StudyClock（只计首次覆盖，与视频页同口径）。
       onExtensionStudy: _ensureBrowserVideoStudyBridge().onSample,
+      // 反馈 PtsjrnVmH9：扩展在统计中的网页视频页上查词 / 制卡，记到该视频名下
+      // （查词 / 制卡计数与 app 内视频页同一张表、同一来源 video）。
+      onExtensionStudyActivity: _ensureBrowserVideoStudyBridge().onActivity,
       // BUG-3141：扩展查词弹窗 ☆/★ 收藏。浏览器同属「app 外查词表面」，与 app 外浮窗 /
       // 剪贴板面板的 favoriteEntry / favoriteCheck 走同一份读写（跨源判 / 跨源删 / 单源写）。
       onExtensionFavorite: _browserExtensionFavorite,
@@ -14239,7 +14275,8 @@ class AppModel
     return view == null ? null : _reviewMiningRepositoryForView(view);
   }
 
-  /// [profileUid] 那份复习的制卡器（落点读那份配置的设置）。打不开时 null。
+  /// [profileUid] 那份复习的制卡器（落点读那份配置的设置）。打不开时 null；库在换代途中原样抛出代际异常
+  /// （[SrsMinerResolver] 的契约，BUG-5085：替对端制卡回带分类码的失败，而不是「复习不可用」）。
   Future<SrsMiner?> _hostReviewMiningMiner(String profileUid) async {
     final SrsProfileStores Function()? reader = srsProfileStoresReader;
     if (reader == null) return null;
@@ -14256,6 +14293,7 @@ class AppModel
       );
       return view == null ? null : await extensionSrsMinerForView(view);
     } catch (e, stack) {
+      if (isSrsGenerationBlocked(e)) rethrow;
       ErrorLogService.instance.log('hostReviewMiningMiner', e, stack);
       return null;
     }
@@ -14280,7 +14318,8 @@ class AppModel
 
   /// [view] 那份配置的复习制卡器：同一个 srs.db 句柄上那个配置 uid 的副本 + 它的媒体目录，
   /// 落点 / 日界读 [view]。复习不可用（模块关着 / 未注入）时为 null；打开失败留痕后同样为 null
-  /// （制卡回「复习不可用」失败、查重回不重复——与激活配置的 `_readSrsMiner` 同一契约）。
+  /// （制卡回「复习不可用」失败、查重回不重复——与激活配置的 `_readSrsMiner` 同一契约）。库在换代途中
+  /// 原样抛出代际异常（[SrsMinerResolver] 的契约，BUG-5085）：制卡据它回「去复习页完成升级」。
   Future<SrsMiner?> extensionSrsMinerForView(ProfileSettingsView view) async {
     final SrsProfileStores Function()? reader = srsProfileStoresReader;
     if (reader == null) return null;
@@ -14291,8 +14330,20 @@ class AppModel
         fallbackRolloverHour: () => view.prefs.statDayResetHour,
       );
     } catch (e, stack) {
+      if (isSrsGenerationBlocked(e)) rethrow;
       ErrorLogService.instance.log('extensionSrsMinerForView', e, stack);
       return null;
+    }
+  }
+
+  /// 打开笔记 / 词状态这类探测用的 [extensionSrsMinerForView]：库在换代途中与复习不可用同一个答案（null → 打不开 /
+  /// 没有状态），与激活配置那条链的探测同口径（`SrsMiningAnkiRepository._probeMiner`）。
+  Future<SrsMiner?> _extensionSrsMinerProbe(ProfileSettingsView view) async {
+    try {
+      return await extensionSrsMinerForView(view);
+    } on Object catch (e) {
+      if (isSrsGenerationBlocked(e)) return null;
+      rethrow;
     }
   }
 
@@ -14303,7 +14354,7 @@ class AppModel
   ) async {
     final Future<bool> Function(SrsMiner, String)? open = srsProfileNoteOpener;
     if (open == null) return false;
-    final SrsMiner? miner = await extensionSrsMinerForView(view);
+    final SrsMiner? miner = await _extensionSrsMinerProbe(view);
     return miner != null && await open(miner, noteId);
   }
 
@@ -14312,7 +14363,7 @@ class AppModel
   SrsExtensionApi? extensionSrsApiForView(ProfileSettingsView view) {
     if (SrsAppHost.current == null) return null;
     return SrsAppHost(
-      readStore: () async => (await extensionSrsMinerForView(view))?.store,
+      readStore: () async => (await _extensionSrsMinerProbe(view))?.store,
       openNote: (String noteId) => extensionSrsOpenNote(view, noteId),
       // 扩展不经这个入口打开浏览页。
       openBrowse: () async => false,
@@ -14888,7 +14939,10 @@ class AppModel
             msg: described.message,
             status: described.status,
             // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
-            action: minedCardUndoToastAction(repo, outcome, expression: word),
+            action:
+                minedCardUndoToastAction(repo, outcome, expression: word) ??
+                // BUG-5085：复习库要升级时带「打开复习」。
+                mineFailureToastAction(outcome),
           );
         } catch (e, stack) {
           ErrorLogService.instance.log('FloatingDict.ankiExport', e, stack);
@@ -14943,6 +14997,12 @@ class AppModel
     await prefsRepo.setNetworkProxyMode(value);
     _applyEmbeddedTorrentProxy();
   }
+
+  /// 是否允许 GitHub 下载走第三方加速镜像（[kGitHubMirrorPrefixes]）。读取端
+  /// [gitHubMirrorsEnabledReader] 是请求时现读的闭包，改了不用另行下发。
+  bool get gitHubMirrorsEnabled => prefsRepo.gitHubMirrorsEnabled;
+  Future<void> setGitHubMirrorsEnabled(bool value) =>
+      prefsRepo.setGitHubMirrorsEnabled(value);
 
   String get networkProxyUsername => prefsRepo.networkProxyUsername;
   Future<void> setNetworkProxyUsername(String value) async {

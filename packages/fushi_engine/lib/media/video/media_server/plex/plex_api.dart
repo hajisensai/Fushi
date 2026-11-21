@@ -30,6 +30,7 @@ import 'package:fushi_engine/media/metadata/credential_redaction.dart'
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
     show kMediaServerClientProduct;
 import 'package:fushi_engine/media/video/media_server/media_server_resumable_download.dart';
+import 'package:fushi_engine/media/video/media_server/media_server_route_failover.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 
@@ -138,12 +139,14 @@ Future<bool> verifyPlexServerIdentity(
 }
 
 /// [error] 是不是「这条连接不通」类失败：[PlexTransportException]、请求超时
-/// （[PlexApi.kRequestTimeout] 的 [TimeoutException]）或裸 [SocketException]。
+/// （[PlexApi.kRequestTimeout] 的 [TimeoutException]）、裸 [SocketException]，或播放
+/// 途中流断了（[MediaServerStreamInterrupted]，换不换由探测定）。
 /// 服务器答了话（[PlexApiException]、解析失败、条目不存在）都不算。
 bool isPlexTransportFailure(Object error) =>
     error is PlexTransportException ||
     error is TimeoutException ||
-    error is SocketException;
+    error is SocketException ||
+    error is MediaServerStreamInterrupted;
 
 /// 一个媒体库（`/library/sections` 的 `Directory`）。
 class PlexSection {
@@ -368,17 +371,33 @@ class PlexMetadataPage {
   final int rawCount;
 }
 
-/// PMS 的 HTTP 封装。一个实例 = 一台服务器的一条连接地址 + 一个 token。
+/// PMS 的 HTTP 封装。一个实例 = 一台服务器的当前连接地址 + 一个 token。
+///
+/// [onRouteFailure] 非空时，带 token 的请求在传输失败后问它换线路，换成功就把
+/// [serverUrl] 改成新地址、重试这一次请求（[MediaServerRouteState.run]）；之后现拼的
+/// 播放 / 封面 / 字幕 URL 都带新地址。[identity] 不带 token、正是换线路时核对身份
+/// 用的，它不走换线路。
 class PlexApi {
   PlexApi({
-    required this.serverUrl,
+    required String serverUrl,
     required this.token,
     required this.clientInfo,
     http.Client? client,
-  }) : _client = client ?? createAppHttpIoClient();
+    MediaServerRouteFailoverHook? onRouteFailure,
+  }) : _route = MediaServerRouteState(serverUrl, hook: onRouteFailure),
+       _client = client ?? createAppHttpIoClient();
 
-  /// 归一化后的服务器根 URL（含 scheme、无尾斜杠）。
-  final String serverUrl;
+  final MediaServerRouteState _route;
+
+  /// 归一化后的服务器根 URL（含 scheme、无尾斜杠）：当前线路，换线路后随之改变。
+  String get serverUrl => _route.baseUrl;
+
+  /// 当前线路以 [error] 失败（如播放途中流断了）后主动问一次换线路；换成功返回 true，
+  /// 之后的请求与现拼的 URL 都走新线路。
+  Future<bool> failoverRoute(Object error) => _route.failover(error);
+
+  Future<T> _withFailover<T>(Future<T> Function() attempt) =>
+      _route.run(attempt, isTransportFailure: isPlexTransportFailure);
 
   /// 访问这台服务器的 token（分享给本账号的服务器与账号 token 不同，取
   /// plex.tv resources 里该服务器自己的 `accessToken`）。
@@ -447,7 +466,16 @@ class PlexApi {
     String path, [
     Map<String, String>? query,
     bool authenticated = true,
-  ]) async {
+  ]) => authenticated
+      ? _withFailover(() => _sendOnce(method, path, query, true))
+      : _sendOnce(method, path, query, false);
+
+  Future<http.Response> _sendOnce(
+    String method,
+    String path,
+    Map<String, String>? query,
+    bool authenticated,
+  ) async {
     try {
       final http.Request req = http.Request(method, uri(path, query));
       req.headers.addAll(authenticated ? headers : anonymousHeaders);
@@ -664,8 +692,11 @@ class PlexApi {
     'url': imagePath,
   });
 
-  /// 拉取字节（封面）。
-  Future<Uint8List> fetchBytes(String url) async {
+  /// 拉取字节（封面）。[url] 是换线路之前拼的（带旧地址）时改走当前线路。
+  Future<Uint8List> fetchBytes(String url) =>
+      _withFailover(() => _fetchBytesOnce(_route.rebase(url)));
+
+  Future<Uint8List> _fetchBytesOnce(String url) async {
     try {
       final http.Response res = await _client
           .get(Uri.parse(url), headers: headers)
@@ -693,9 +724,31 @@ class PlexApi {
     Future<void>? cancelSignal,
     Exception Function()? cancelledError,
     Duration idleTimeout = kDownloadIdleTimeout,
-  }) async {
+  }) {
     bool cancelled = false;
     cancelSignal?.then((_) => cancelled = true, onError: (_) {});
+    return _withFailover(
+      () => _downloadToFileOnce(
+        _route.rebase(url),
+        dest,
+        onProgress: onProgress,
+        onBytes: onBytes,
+        isCancelled: () => cancelled,
+        cancelledError: cancelledError,
+        idleTimeout: idleTimeout,
+      ),
+    );
+  }
+
+  Future<void> _downloadToFileOnce(
+    String url,
+    File dest, {
+    required void Function(double progress)? onProgress,
+    required void Function(int received, int? total)? onBytes,
+    required bool Function() isCancelled,
+    required Exception Function()? cancelledError,
+    required Duration idleTimeout,
+  }) async {
     try {
       final http.Request req = http.Request('GET', Uri.parse(url));
       req.headers.addAll(headers);
@@ -711,7 +764,7 @@ class PlexApi {
       bool ok = false;
       try {
         await for (final List<int> chunk in res.stream.timeout(idleTimeout)) {
-          if (cancelled) {
+          if (isCancelled()) {
             final Exception? custom = cancelledError?.call();
             if (custom != null) throw custom;
             throw StateError('Plex download cancelled');
@@ -753,7 +806,7 @@ class PlexApi {
     Duration stallTimeout = kDownloadIdleTimeout,
   }) => downloadMediaServerFileResumable(
     client: _client,
-    url: url,
+    url: _route.rebase(url),
     headers: headers,
     resumeKey: resumeKey,
     dest: dest,
