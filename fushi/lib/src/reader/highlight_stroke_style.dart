@@ -334,6 +334,30 @@ String highlightStrokeCssVariables(
   return out.toString();
 }
 
+/// 收藏句的五种颜色名（`FavoriteSentence.color` 的取值；正文 CSS / JS 的
+/// `fushi-hl-<色>` 与预览的 `kFavoriteHighlightColors` 都按这五个键）。
+const List<String> kFavoriteHighlightColorNames = <String>[
+  'yellow',
+  'green',
+  'blue',
+  'pink',
+  'purple',
+];
+
+/// 收藏色未设置 / 存了不认识的值时用的颜色（与 `FavoriteSentence.color == null`
+/// 时正文的渲染色一致）。
+const String kDefaultFavoriteHighlightColor = 'yellow';
+
+/// 新收藏句颜色的偏好键（反馈 fMicnouU6V）。
+const String kFavoriteHighlightColorPrefKey = 'favorite_highlight_color';
+
+/// 把持久化的收藏色名收敛到五色之一：不认识的值（手改偏好、旧版本写入）回落到
+/// [kDefaultFavoriteHighlightColor]，保证写进收藏句的颜色正文一定画得出来。
+String normalizeFavoriteHighlightColor(String? name) =>
+    name != null && kFavoriteHighlightColorNames.contains(name)
+    ? name
+    : kDefaultFavoriteHighlightColor;
+
 /// 收藏选了笔触样式时不再画下划线：形状本身就是标记，下划线叠上去像两道。旧 WebView 的
 /// 包裹 span 把下划线写在内联样式上，所以这里要 `!important`。经典样式返回空串；墨水屏
 /// 下收藏一律画窄条层的下划线笔触（[HighlightKind.einkEffective]），所以同样去掉。
@@ -344,14 +368,7 @@ String favoriteHighlightUnderlineOverrideCss(
 }) {
   if (!einkMode && !favorite.style.isStroke) return '';
 
-  const List<String> colors = <String>[
-    'yellow',
-    'green',
-    'blue',
-    'pink',
-    'purple',
-  ];
-  final String selectors = colors
+  final String selectors = kFavoriteHighlightColorNames
       .map(
         (String c) =>
             '::highlight(fushi-hl-$c), .fushi-hl-$c, ruby.fushi-hl-$c-ruby-active',
