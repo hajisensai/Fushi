@@ -47,10 +47,16 @@ void main() {
   });
 
   test('自然播完只上报停止、不释放流', () {
-    final String b = body(episode, 'void _handlePlaybackCompleted(');
-    expect(b, contains('_reportRemotePlaybackStopped('));
-    expect(b, isNot(contains('_releaseRemotePlayback(')));
-    expect(b, isNot(contains('releaseRemoteVideoPlayback(')));
+    // #4007 起 EOF 入口先分流断流换线路，真正「播完」的收尾在
+    // [_finishPlaybackCompleted]：入口与收尾都不许释放流。
+    final String entry = body(episode, 'void _handlePlaybackCompleted(');
+    expect(entry, contains('_finishPlaybackCompleted('));
+    final String finish = body(episode, 'void _finishPlaybackCompleted(');
+    expect(finish, contains('_reportRemotePlaybackStopped('));
+    for (final String b in <String>[entry, finish]) {
+      expect(b, isNot(contains('_releaseRemotePlayback(')));
+      expect(b, isNot(contains('releaseRemoteVideoPlayback(')));
+    }
   });
 
   // 换档 / 换线路 / 断流换线路走 [_reloadRemoteEpisodeInSession] →
