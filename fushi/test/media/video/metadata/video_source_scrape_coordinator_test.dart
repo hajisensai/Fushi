@@ -16,6 +16,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
@@ -1298,6 +1299,98 @@ void main() {
       await File(p.join(root.path, 'Movie (2024)-fanart.jpg')).readAsBytes(),
       expected,
     );
+  });
+
+  // 拍板台 gtpgyff3l7-oneshot-scrape 方案 b：「仅此一次」导入扫完删掉临时来源行后，
+  // 视频的 sourceId 归 NULL。它们走与来源视频同一条刮削链：计划器出单元、协调器
+  // 写 NFO，运行记录与 sidecar 记账的 source_id 记 NULL（不写不存在的来源 id）。
+  test('无来源本机视频按同一条链刮削，运行与 sidecar 记账的来源记 NULL', () async {
+    final Directory movieDir = Directory(p.join(root.path, 'Movie'));
+    await movieDir.create(recursive: true);
+    final File video = File(p.join(movieDir.path, 'Movie (2024).mkv'));
+    await video.writeAsBytes(const <int>[0]);
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('loose-movie'),
+        title: const Value<String>('Movie'),
+        videoPath: Value<String>(video.path),
+      ),
+    );
+    final VideoSourceScrapeCoordinator coordinator =
+        VideoSourceScrapeCoordinator(
+          primaryProvider: VideoMetadataProviderKind.anidb,
+          database: db,
+          config: const VideoSourceScrapeGlobalConfig(hashEnabled: false),
+          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+            _PrimaryMovieProvider(),
+          ]),
+        );
+
+    final SourceScrapeReport report = await coordinator.scrapeSource(
+      sourcelessLocalVideoScrapeScope,
+      cancellationToken: VideoSourceScrapeCancellationToken(),
+      onProgress: (_) {},
+    );
+
+    expect(report.totalWorks, 1);
+    expect(report.succeededWorks, 1, reason: '${report.errors}');
+    final String nfo = p.join(movieDir.path, 'Movie (2024).nfo');
+    expect(await File(nfo).exists(), isTrue, reason: '${report.warnings}');
+    expect(await File(nfo).readAsString(), contains('主源电影'));
+    final VideoSidecarArtifactRow? artifact = await db
+        .getVideoSidecarArtifactByPath(p.normalize(p.absolute(nfo)));
+    expect(artifact, isNotNull);
+    expect(artifact!.sourceId, isNull);
+    final List<VideoSourceScrapeRunRow> runs = await db
+        .select(db.videoSourceScrapeRuns)
+        .get();
+    expect(runs.map((VideoSourceScrapeRunRow r) => r.sourceId), <int?>[null]);
+    expect((await db.getVideoMetadataWorkByBook('loose-movie'))?.title, '主源电影');
+  });
+
+  test('「仅此一次」导入的临时来源行不立项（行删掉后写记账会撞 FK 787）', () async {
+    final File video = File(p.join(root.path, 'Movie (2024).mkv'));
+    await video.writeAsBytes(const <int>[0]);
+    final int tempId = await db.insertMediaSource(
+      MediaSourcesCompanion.insert(
+        label: 'temp',
+        mediaKind: 'video',
+        rootPath: root.path,
+        createdAt: 1,
+        configJson: Value<String?>(
+          encodeSourceConfig(<String, Object?>{kSourceConfigOneShotKey: true}),
+        ),
+      ),
+    );
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('temp-movie'),
+        title: const Value<String>('Movie'),
+        videoPath: Value<String>(video.path),
+        sourceId: Value<int?>(tempId),
+      ),
+    );
+    final SourceLibraryRow temp = (await db.getMediaSourceById(tempId))!;
+    final VideoSourceScrapeCoordinator coordinator =
+        VideoSourceScrapeCoordinator(
+          primaryProvider: VideoMetadataProviderKind.anidb,
+          database: db,
+          config: const VideoSourceScrapeGlobalConfig(hashEnabled: false),
+          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+            _PrimaryMovieProvider(),
+          ]),
+        );
+
+    expect(await VideoSourceWorkPlanner(db).plan(temp), isEmpty);
+    final SourceScrapeReport report = await coordinator.scrapeSource(
+      temp,
+      cancellationToken: VideoSourceScrapeCancellationToken(),
+      onProgress: (_) {},
+    );
+
+    expect(report.totalWorks, 0);
+    expect(await db.select(db.videoSourceScrapeRuns).get(), isEmpty);
+    expect(await File(p.join(root.path, 'Movie (2024).nfo')).exists(), isFalse);
   });
 
   test('单作品精确刮削使用 AniDB confirmed lookup 且不进行标题搜索', () async {

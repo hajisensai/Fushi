@@ -43,6 +43,7 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dar
 import 'package:fushi_engine/media/video/metadata/video_collection_relation_sync.dart'
     show TmdbCollectionPartsRefreshResult, productionAniDbXmlDirectory;
 import 'package:fushi_engine/media/video/metadata/video_series_relation_refresh.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 
@@ -243,8 +244,8 @@ class _VideoCtl {
             await planScrapeWorkForVideoBook(_db, bookUid);
         if (planned == null) {
           throw CtlFailure.notFound(
-            '${id.stableKey} 不在任何本机视频来源的刮削计划里'
-            '（手动导入 / 远端下载的视频、目录分组来源或特典不参与刮削）',
+            '${id.stableKey} 不在任何本机视频的刮削计划里'
+            '（远端流 / 媒体服务器视频、目录分组导入或特典不参与刮削）',
           );
         }
         return planned;
@@ -266,10 +267,9 @@ class _VideoCtl {
 
   // ── 作品列表 ────────────────────────────────────────────────────────────
 
-  Future<List<SourceLibraryRow>> _localVideoSources() async =>
-      (await _db.getMediaSourcesByKind('video'))
-          .where((SourceLibraryRow s) => s.transport == 'local')
-          .toList(growable: false);
+  /// 本机视频来源 + 无来源本机视频（`sourceId` 为 null 的那条范围）。
+  Future<List<SourceLibraryRow>> _localVideoSources() =>
+      localVideoScrapeScopes(_db);
 
   Future<VideoMetadataWorkRow?> _workRow(VideoSourceScrapeWork work) =>
       work.collection == null
@@ -282,8 +282,9 @@ class _VideoCtl {
   ) => <String, Object?>{
     'id': work.stableKey,
     'title': work.title,
-    'sourceId': source.id,
-    'source': source.label,
+    // 无来源本机视频：sourceId / source 为 null。
+    'sourceId': persistedScrapeSourceId(source),
+    'source': isSourcelessVideoScrapeScope(source) ? null : source.label,
     'members': work.members.length,
   };
 

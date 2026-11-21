@@ -99,6 +99,9 @@ import 'package:fushi/src/media/video/metadata/video_country_display.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart'
+    show VideoSourceWorkPlanner;
 import 'package:fushi_engine/ai/ai_video_acquisition_assistant.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_runtime.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_dialog.dart';
@@ -3824,6 +3827,17 @@ class _HomePageState extends BasePageState<HomePage>
     _videoLibraryRefreshSignal.value++;
   }
 
+  /// 来源页改动了视频库（扫描 / 「仅此一次」导入 / 移除来源）。
+  ///
+  /// 「仅此一次」导入扫完删掉临时来源行、移除来源，都会让视频的 `sourceId` 归 NULL
+  /// 落进无来源刮削范围，但条目集合不变，视频页按条目集合变化发起的补刮等不到这一
+  /// 刻（扫描期间那一轮还对着临时行，计划器不为临时行立项）。这里补发一轮：补刮
+  /// 本身幂等、受总闸与退避记账约束（拍板台 gtpgyff3l7-oneshot-scrape）。
+  void _onVideoSourcesChangedLibrary() {
+    _notifyVideoLibraryChanged();
+    unawaited(_videoLibraryScrapeSweep.sweepOnce());
+  }
+
   VideoSourceScrapeTaskController get _videoSourceScrapeController =>
       _videoScrapeRuntime.controller;
 
@@ -4024,13 +4038,18 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Future<void> _scrapeAllVideosFromSources() async {
-    final List<SourceLibraryRow> sources = await appModel.database
-        .getMediaSourcesByKind('video');
-    final List<SourceLibraryRow> localSources = sources
-        .where((SourceLibraryRow source) => source.transport == 'local')
-        .toList(growable: false);
+    // 本机视频来源 + 无来源本机视频（「仅此一次」导入、手动导入的视频，拍板台
+    // gtpgyff3l7-oneshot-scrape）：两类走同一条刮削链。
+    final List<SourceLibraryRow> localSources = await localVideoScrapeScopes(
+      appModel.database,
+    );
+    final bool nothingToScrape =
+        localSources.every(isSourcelessVideoScrapeScope) &&
+        (await VideoSourceWorkPlanner(
+          appModel.database,
+        ).plan(sourcelessLocalVideoScrapeScope)).isEmpty;
     if (!mounted) return;
-    if (localSources.isEmpty) {
+    if (nothingToScrape) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(FushiSnackBar(content: Text(t.media_source_no_sources)));
@@ -4401,7 +4420,7 @@ class _HomePageState extends BasePageState<HomePage>
         onScrapeSource: _scrapeVideoSource,
         onVideoScanCompleted: _onVideoSourceScanCompleted,
         onOpenScrapeTasks: () => unawaited(_openVideoSourceScrapeTasks()),
-        onLibraryChanged: _notifyVideoLibraryChanged,
+        onLibraryChanged: _onVideoSourcesChangedLibrary,
         // 补刮的触发点收口在视频页：首次进入 / 切回 / 库里多出条目时各调一次
         // （BUG-2199）。旧实现把它挂在 HomePage 的进 tab 时机上并以进程为幂等
         // 键，于是本次会话下载入库的作品永远赶不上那唯一一轮。

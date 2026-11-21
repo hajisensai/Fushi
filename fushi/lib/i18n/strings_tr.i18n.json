@@ -12974,6 +12974,7 @@
   "video_scrape_pending_cause_provider_unavailable": "Metadata source unavailable",
   "video_scrape_pending_record_missing": "No reason in recent scrape runs",
   "video_scrape_rating_votes": "$count değerlendirme",
+  "video_scrape_scope_sourceless": "Local videos without a source",
   "video_scrape_tmdb_key_empty": "Bir TMDB API anahtarı kaydedin, ardından Ara'ya basın. Diğer kaynaklardan gelen sonuçlar burada gösterilmez.",
   "video_scrape_tmdb_key_hint": "TMDB API anahtarını girin",
   "video_scrape_tmdb_key_required": "TMDB bir API anahtarı gerektirir",

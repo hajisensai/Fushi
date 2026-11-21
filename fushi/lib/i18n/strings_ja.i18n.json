@@ -12974,6 +12974,7 @@
   "video_scrape_pending_cause_provider_unavailable": "Metadata source unavailable",
   "video_scrape_pending_record_missing": "No reason in recent scrape runs",
   "video_scrape_rating_votes": "$count件の評価",
+  "video_scrape_scope_sourceless": "Local videos without a source",
   "video_scrape_tmdb_key_empty": "TMDB APIキーを保存してから検索を押してください。他のソースの結果はここには表示されません。",
   "video_scrape_tmdb_key_hint": "TMDB APIキーを入力",
   "video_scrape_tmdb_key_required": "TMDBにはAPIキーが必要です",

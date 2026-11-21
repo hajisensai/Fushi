@@ -12974,6 +12974,7 @@
   "video_scrape_pending_cause_provider_unavailable": "Metadata source unavailable",
   "video_scrape_pending_record_missing": "No reason in recent scrape runs",
   "video_scrape_rating_votes": "$count évaluations",
+  "video_scrape_scope_sourceless": "Local videos without a source",
   "video_scrape_tmdb_key_empty": "Enregistrez une clé API TMDB, puis appuyez sur Rechercher. Les résultats d'autres sources ne sont pas affichés ici.",
   "video_scrape_tmdb_key_hint": "Entrer la clé API TMDB",
   "video_scrape_tmdb_key_required": "TMDB nécessite une clé API",

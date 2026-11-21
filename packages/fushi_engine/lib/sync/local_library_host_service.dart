@@ -46,6 +46,7 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
         SourceScrapeReport,
         VideoSourceScrapeConfirmationCandidate,
         VideoSourceScrapeTaskController;
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart'
     show SourceLibraryRow;
