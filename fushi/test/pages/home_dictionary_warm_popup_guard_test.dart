@@ -56,13 +56,17 @@ void main() {
       final String src = readSource();
 
       // 常驻热槽使 entries 永不空：返回 / barrier / pull 判据必须用 hasVisiblePopup（隐藏热槽不算）。
+      // 共用查词宿主（design-shared-lookup-webview）：栈里可能是 texthooker 的会话，
+      // 本页只认自己的可见层。
       expect(
         src,
-        contains('bool get _hasVisiblePopup => _popup.hasVisiblePopup;'),
+        contains(
+          'bool get _hasVisiblePopup => _ownsPopup && _popup.hasVisiblePopup;',
+        ),
       );
       expect(
         src,
-        contains('(!_hasActiveQuery && !_popup.hasVisiblePopup)'),
+        contains('(!_hasActiveQuery && !_hasVisiblePopup)'),
         reason: 'back/exit must ignore the hidden warm slot',
       );
       expect(
@@ -74,14 +78,14 @@ void main() {
       );
       expect(
         src,
-        contains('if (_popup.hasVisiblePopup) {'),
+        contains('if (_hasVisiblePopup) {'),
         reason: 'pop handling must key off visible popups, not raw stack size',
       );
 
       // 清空 / 新查词必须保留热槽（pruneToWarmSlot），不能 clear 掉热 WebView。
       expect(
         src,
-        contains('_popup.pruneToWarmSlot()'),
+        contains('_popupHost.pruneToWarmSlotFor(this)'),
         reason: 'clear/new-search must keep the warm slot alive',
       );
       expect(
