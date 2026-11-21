@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart';
 import 'package:fushi/src/media/video/video_playback_remote.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
     show blurayAnglePath;
@@ -1247,6 +1248,90 @@ void main() {
       );
     });
 
+    test('HBK-AUDIT-039：单独重新生成在飞时，同作品同语言的生成任务 / 保存 / 再次重新生成都拒绝；'
+        '完成后当前表是重新生成的结果', () async {
+      settings.provider = testProvider();
+      await addBook('a', video('ep01.mkv'));
+      final _GatedCompleter gated = _GatedCompleter(FakeAiCompleter(answerAll));
+      completer = gated;
+      final AppVideoSubtitleService service = buildService();
+      final AppVideoSubtitleTarget target = await service.resolveBook('a');
+      await service.saveGlossary(target.work, const <SubtitleGlossaryEntry>[
+        SubtitleGlossaryEntry(ja: 'あずにゃん', kind: '人名(愛称)'),
+      ]);
+      final Future<SubtitleGlossary> regen = service.regenerateGlossary(target);
+      await gated.entered.future;
+
+      Matcher refusedByRegen() => throwsA(
+        isA<AppVideoSubtitleStartRefused>().having(
+          (AppVideoSubtitleStartRefused r) => r.problem,
+          'problem',
+          AppVideoSubtitleStartProblem.glossaryRegenerating,
+        ),
+      );
+      // 主任务后起：S0 会读整表、生成、整表写回，与重新生成互相覆盖。
+      expect(
+        () => service.start(
+          target,
+          const AppVideoSubtitleOptions(proofread: true),
+        ),
+        refusedByRegen(),
+      );
+      await expectLater(
+        service.saveGlossary(target.work, const <SubtitleGlossaryEntry>[
+          SubtitleGlossaryEntry(ja: '梓', kind: '人名'),
+        ]),
+        refusedByRegen(),
+      );
+      await expectLater(service.regenerateGlossary(target), refusedByRegen());
+      // 不校对的任务不碰专名表；别的语言是另一张表。
+      final AppVideoSubtitleJob plain = service.start(
+        target,
+        const AppVideoSubtitleOptions(),
+      );
+      await plain.done;
+      await service.saveGlossary(target.work, const <SubtitleGlossaryEntry>[
+        SubtitleGlossaryEntry(ja: '梓'),
+      ], language: VideoSubtitleLanguage.mandarin);
+
+      gated.release.complete();
+      final SubtitleGlossary regenerated = await regen;
+      expect(
+        store.rows[VideoSubtitleLanguage.japanese.glossaryKey(
+          target.work.workKey,
+        )],
+        same(regenerated),
+      );
+      expect(
+        regenerated.entries.map((SubtitleGlossaryEntry e) => e.ja),
+        contains('あずにゃん'),
+      );
+      // 重新生成结束即放开。
+      final AppVideoSubtitleJob job = service.start(
+        target,
+        const AppVideoSubtitleOptions(proofread: true),
+      );
+      await job.done;
+      expect(job.status, AppVideoSubtitleJobStatus.succeeded);
+    });
+
+    test('HBK-AUDIT-039：重新生成失败 / 取消也放开写方登记', () async {
+      settings.provider = testProvider();
+      await addBook('a', video('ep01.mkv'));
+      completer = ExplodingAiCompleter('quota_exhausted');
+      final AppVideoSubtitleService service = buildService();
+      final AppVideoSubtitleTarget target = await service.resolveBook('a');
+      await expectLater(
+        service.regenerateGlossary(target),
+        throwsA(isNot(isA<AppVideoSubtitleStartRefused>())),
+      );
+      completer = FakeAiCompleter(answerAll);
+      await service.saveGlossary(target.work, const <SubtitleGlossaryEntry>[
+        SubtitleGlossaryEntry(ja: '梓'),
+      ]);
+      await service.regenerateGlossary(target);
+    });
+
     test('S0 进行中仍拒绝；S0 一完成、任务还在跑就放开编辑', () async {
       settings.provider = testProvider();
       await addBook('a', video('ep01.mkv'));
@@ -1342,6 +1427,26 @@ class _FlakySink implements AppSubtitleOutputSink {
 }
 
 /// 识别停在半路，直到测试放行（任务停在 S0 之前）。
+/// 第一次请求停在 [release] 上：让「单独重新生成」停在异步生成中间。
+class _GatedCompleter implements AiTextCompleter {
+  _GatedCompleter(this.inner);
+
+  final AiTextCompleter inner;
+  final Completer<void> entered = Completer<void>();
+  final Completer<void> release = Completer<void>();
+
+  @override
+  Future<AiChatCompletion> complete(
+    String prompt, {
+    String stablePrefix = '',
+    List<AiChatImage> images = const <AiChatImage>[],
+  }) async {
+    if (!entered.isCompleted) entered.complete();
+    await release.future;
+    return inner.complete(prompt, stablePrefix: stablePrefix, images: images);
+  }
+}
+
 class _GatedRecognizer implements VideoSubtitleRecognizer {
   _GatedRecognizer(this.inner);
 

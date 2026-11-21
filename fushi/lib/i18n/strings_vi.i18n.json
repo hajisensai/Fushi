@@ -13554,6 +13554,7 @@
   "video_subtitle_ai_frames_unsupported": "Image input is off for the provider assigned to \"Subtitle proofreading\", so frames are not sent",
   "video_subtitle_ai_generate_season_title": "Generate subtitles for the season",
   "video_subtitle_ai_generate_title": "Generate subtitles",
+  "video_subtitle_ai_glossary_regenerating": "This work's glossary is being regenerated. Try again when it finishes.",
   "video_subtitle_ai_hide": "Hide",
   "video_subtitle_ai_language_from_content": "Picked from this video's content language. Change it if it is wrong.",
   "video_subtitle_ai_language_from_default": "No language info found, so Japanese is selected. Change it if it is wrong.",

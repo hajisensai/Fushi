@@ -13554,6 +13554,7 @@
   "video_subtitle_ai_frames_unsupported": "为「字幕校对」指派的提供商没有开启图片输入，画面不会发送",
   "video_subtitle_ai_generate_season_title": "整季生成字幕",
   "video_subtitle_ai_generate_title": "生成字幕",
+  "video_subtitle_ai_glossary_regenerating": "这部作品的专名表正在重新生成，完成后再试",
   "video_subtitle_ai_hide": "收起",
   "video_subtitle_ai_language_from_content": "按该视频设置的内容语言选择，不对可以改。",
   "video_subtitle_ai_language_from_default": "没找到语言信息，默认选日语，不对可以改。",
