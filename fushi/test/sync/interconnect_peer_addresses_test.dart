@@ -308,6 +308,199 @@ void main() {
     });
   });
 
+  // BUG-5068（反馈 MDzxg3SNQc）：电脑改连手机热点后，手机存着的地址全是旧网段的，
+  // 选路只拨存量地址 → 全超时 → No reachable。存量直连全不通时必须先按 hostId 在
+  // 局域网上重新定位，核对身份后选中并学到新地址。
+  group('局域网重新定位（BUG-5068）', () {
+    const String fp = 'AA:BB:CC';
+    const String hotspot = 'https://192.168.43.10:38765';
+    final List<FushiClientUrl> stale = <FushiClientUrl>[
+      const FushiClientUrl(
+        url: 'https://192.168.31.36:38765',
+        hostId: 'H',
+        fingerprintSha256: fp,
+        token: 'tok',
+        deviceName: 'Desk PC',
+      ),
+      const FushiClientUrl(
+        url: 'https://172.19.83.237:38765',
+        hostId: 'H',
+        fingerprintSha256: fp,
+        token: 'tok',
+        learned: true,
+      ),
+    ];
+
+    tearDown(setInterconnectLanRelocation);
+
+    test('存量全失效 + mDNS 给出新地址：选中它、带本组指纹核对、落库学到', () async {
+      final List<String> asked = <String>[];
+      final List<FushiClientUrl> persisted = <FushiClientUrl>[];
+      setInterconnectLanRelocation(
+        relocator: (String hostId) async {
+          asked.add(hostId);
+          return <String>[hotspot];
+        },
+        sink: (FushiClientUrl v) async => persisted.add(v),
+      );
+      final List<(String, String?, String?)> probed =
+          <(String, String?, String?)>[];
+      final List<FushiClientUrl> ranked = await rankInterconnectCandidates(
+        stale,
+        probe: (FushiClientUrl c, String? hostId) async {
+          probed.add((c.url, hostId, c.fingerprintSha256));
+          return c.url == hotspot && hostId == 'H';
+        },
+      );
+      expect(asked, <String>['H']);
+      expect(ranked.first.url, hotspot);
+      expect(probed.where((e) => e.$1 == hotspot).single, (
+        hotspot,
+        'H',
+        fp,
+      ), reason: '新地址必须用本组钉扎的指纹 + hostId 去核对');
+      final FushiClientUrl learned = persisted.single;
+      expect(learned.url, hotspot);
+      expect(learned.hostId, 'H');
+      expect(learned.token, 'tok');
+      expect(learned.fingerprintSha256, fp);
+      expect(learned.learned, isTrue);
+
+      final List<FushiClientUrl> merged = mergeRelocatedInterconnectAddress(
+        stale,
+        learned,
+      );
+      expect(merged.map((FushiClientUrl u) => u.url), <String>[
+        'https://192.168.31.36:38765',
+        'https://172.19.83.237:38765',
+        hotspot,
+      ]);
+      expect(
+        interconnectPeerRepresentatives(merged).single.url,
+        stale.first.url,
+      );
+    });
+
+    test('应答方 hostId 不符：不选、不学', () async {
+      final List<FushiClientUrl> persisted = <FushiClientUrl>[];
+      setInterconnectLanRelocation(
+        relocator: (String hostId) async => <String>[hotspot],
+        sink: (FushiClientUrl v) async => persisted.add(v),
+      );
+      // 热点地址上应答的是另一台 Fushi host（自报 OTHER）。
+      final List<FushiClientUrl> ranked = await rankInterconnectCandidates(
+        stale,
+        probe: (FushiClientUrl c, String? hostId) async =>
+            c.url == hotspot && hostId == 'OTHER',
+      );
+      expect(ranked.map((FushiClientUrl u) => u.url), isNot(contains(hotspot)));
+      expect(persisted, isEmpty);
+    });
+
+    test('存量地址还通：不浏览局域网', () async {
+      int asked = 0;
+      setInterconnectLanRelocation(
+        relocator: (String hostId) async {
+          asked++;
+          return <String>[hotspot];
+        },
+      );
+      final List<FushiClientUrl> ranked = await rankInterconnectCandidates(
+        stale,
+        probe: (FushiClientUrl c, String? hostId) async =>
+            c.url == stale.first.url,
+      );
+      expect(ranked.first.url, stale.first.url);
+      expect(asked, 0);
+    });
+
+    test('单条 https 组也会被探测：唯一旧地址失效时照样重新定位', () async {
+      setInterconnectLanRelocation(
+        relocator: (String hostId) async => <String>[hotspot],
+      );
+      final List<FushiClientUrl> ranked = await rankInterconnectCandidates(
+        <FushiClientUrl>[stale.first],
+        probe: (FushiClientUrl c, String? hostId) async => c.url == hotspot,
+      );
+      expect(ranked.first.url, hotspot);
+    });
+
+    test('明文 host（组里没有钉扎指纹）不重新定位；mDNS 给的明文地址不用', () async {
+      int asked = 0;
+      setInterconnectLanRelocation(
+        relocator: (String hostId) async {
+          asked++;
+          return <String>['http://192.168.43.10:38765'];
+        },
+      );
+      final ({List<FushiClientUrl> ranked, int withheld}) plain =
+          await rankInterconnectCandidatesDetailed(<FushiClientUrl>[
+            url('http://192.168.31.36:38765', host: 'P'),
+          ], probe: (FushiClientUrl c, String? hostId) async => false);
+      expect(asked, 0, reason: '没有可证明身份的指纹，不去找');
+      expect(plain.ranked, isEmpty);
+
+      resetInterconnectRaceCache();
+      final List<FushiClientUrl> ranked = await rankInterconnectCandidates(
+        stale,
+        probe: (FushiClientUrl c, String? hostId) async =>
+            c.url.startsWith('http://'),
+      );
+      expect(asked, 1);
+      expect(
+        ranked.map((FushiClientUrl u) => u.url),
+        isNot(contains('http://192.168.43.10:38765')),
+        reason: '明文地址不学也不拿凭据',
+      );
+    });
+
+    test('mergeRelocatedInterconnectAddress 守地址归属闸', () {
+      const FushiClientUrl verified = FushiClientUrl(
+        url: hotspot,
+        hostId: 'H',
+        fingerprintSha256: fp,
+        token: 'tok',
+        learned: true,
+      );
+      // URL 已在列表里（归另一台 host）：一律不动。
+      final List<FushiClientUrl> owned = <FushiClientUrl>[
+        ...stale,
+        const FushiClientUrl(url: hotspot, hostId: 'OTHER', token: 'x'),
+      ];
+      expect(
+        identical(mergeRelocatedInterconnectAddress(owned, verified), owned),
+        isTrue,
+      );
+      // 这台 host 已被删掉：不加回来。
+      final List<FushiClientUrl> gone = <FushiClientUrl>[
+        url('https://a:1', host: 'Z'),
+      ];
+      expect(
+        identical(mergeRelocatedInterconnectAddress(gone, verified), gone),
+        isTrue,
+      );
+      // 组里钉的是另一张证书：不并入。
+      final List<FushiClientUrl> otherCert = <FushiClientUrl>[
+        stale.first.copyWith(fingerprintSha256: 'DD:EE'),
+      ];
+      expect(
+        identical(
+          mergeRelocatedInterconnectAddress(otherCert, verified),
+          otherCert,
+        ),
+        isTrue,
+      );
+      // token 取组里此刻那一份（中途重新配对换过）。
+      final List<FushiClientUrl> rotated = <FushiClientUrl>[
+        stale.first.copyWith(token: 'new-tok'),
+      ];
+      expect(
+        mergeRelocatedInterconnectAddress(rotated, verified).last.token,
+        'new-tok',
+      );
+    });
+  });
+
   group('mergeLearnedHostAddresses', () {
     const List<InterconnectHostAddress> published = <InterconnectHostAddress>[
       InterconnectHostAddress(
@@ -813,6 +1006,94 @@ void main() {
         ).refresh(urls.firstWhere((FushiClientUrl u) => u.url == anchor)),
         isFalse,
       );
+    });
+
+    // BUG-5068 端到端：真 TLS host + 真钉扎 ping，存量地址全死，局域网重新定位给出
+    // host 现在的地址 → 选中并经 [mergeRelocatedInterconnectAddress] 落库。
+    test('存量地址全死：重新定位到的地址经真钉扎 ping 核对后选中并落库', () async {
+      await startHost(tls: true);
+      final String live = 'https://127.0.0.1:${server.port}';
+      await repo.setFushiClientUrls(<FushiClientUrl>[
+        FushiClientUrl(
+          url: 'https://127.0.0.1:1',
+          hostId: 'HOST-1',
+          token: 'shared-token',
+          fingerprintSha256: fingerprint,
+        ),
+      ]);
+      setInterconnectLanRelocation(
+        relocator: (String hostId) async =>
+            hostId == 'HOST-1' ? <String>[live] : <String>[],
+        sink: (FushiClientUrl v) async {
+          await repo.updateFushiClientUrls(
+            (List<FushiClientUrl> before) =>
+                mergeRelocatedInterconnectAddress(before, v),
+          );
+        },
+      );
+      addTearDown(setInterconnectLanRelocation);
+
+      final List<FushiClientUrl> ranked = await rankInterconnectCandidates(
+        await repo.getFushiClientUrls(),
+      );
+      expect(ranked.first.url, live);
+      final List<FushiClientUrl> urls = await repo.getFushiClientUrls();
+      final FushiClientUrl learned = urls.firstWhere(
+        (FushiClientUrl u) => u.url == live,
+      );
+      expect(learned.hostId, 'HOST-1');
+      expect(learned.learned, isTrue);
+      expect(learned.token, 'shared-token');
+      expect(learned.fingerprintSha256, fingerprint);
+    });
+
+    test('重新定位到的地址 hostId 或证书对不上：不选、不落库', () async {
+      await startHost(tls: true);
+      final String live = 'https://127.0.0.1:${server.port}';
+      setInterconnectLanRelocation(
+        relocator: (String hostId) async => <String>[live],
+        sink: (FushiClientUrl v) async {
+          await repo.updateFushiClientUrls(
+            (List<FushiClientUrl> before) =>
+                mergeRelocatedInterconnectAddress(before, v),
+          );
+        },
+      );
+      addTearDown(setInterconnectLanRelocation);
+
+      // 同一张证书、但组是另一台 host（HOST-2）：ping 回报的 hostId 不符。
+      // 组是 HOST-1、但钉的是另一张证书：钉扎握手不过。
+      for (final FushiClientUrl row in <FushiClientUrl>[
+        FushiClientUrl(
+          url: 'https://127.0.0.1:1',
+          hostId: 'HOST-2',
+          token: 'shared-token',
+          fingerprintSha256: fingerprint,
+        ),
+        const FushiClientUrl(
+          url: 'https://127.0.0.1:1',
+          hostId: 'HOST-1',
+          token: 'shared-token',
+          fingerprintSha256:
+              '00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:'
+              '00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00',
+        ),
+      ]) {
+        resetInterconnectRaceCache();
+        await repo.setFushiClientUrls(<FushiClientUrl>[row]);
+        final List<FushiClientUrl> ranked = await rankInterconnectCandidates(
+          await repo.getFushiClientUrls(),
+        );
+        expect(
+          ranked.map((FushiClientUrl u) => u.url),
+          isNot(contains(live)),
+          reason: '${row.hostId} / ${row.fingerprintSha256}',
+        );
+        expect(
+          (await repo.getFushiClientUrls()).map((FushiClientUrl u) => u.url),
+          <String>['https://127.0.0.1:1'],
+        );
+      }
     });
 
     test('明文 host：不公布明文地址；明文锚点根本不学', () async {
