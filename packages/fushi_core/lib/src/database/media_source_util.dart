@@ -50,6 +50,17 @@ String normalizeSourceRootPath(String raw, {required String transport}) {
 String musicTrackPathKey(String path, {p.Context? context}) =>
     (context ?? p.context).canonicalize(path);
 
+/// 路径键（[musicTrackPathKey]）所在目录的前缀：到最后一个分隔符为止、含分隔符。专辑
+/// 归组按它认「同一目录」，也拿它当 `path_key` 的区间查询前缀（`[前缀, 前缀末字符 + 1)`
+/// 恰好是这个目录下的全部路径键）。根下文件 / 没有分隔符的（远程无目录）返回 null：
+/// 无从判断是否同一张盘，不参与归组。
+String? musicTrackDirPrefix(String pathKey) {
+  final int cut = pathKey.lastIndexOf('/') > pathKey.lastIndexOf(r'\')
+      ? pathKey.lastIndexOf('/')
+      : pathKey.lastIndexOf(r'\');
+  return cut <= 0 ? null : pathKey.substring(0, cut + 1);
+}
+
 /// 专辑名 / 艺人名的比较键：与 `native/fushi_music` `uid.rs` 的 `normalize_name` 同一口径
 /// ——去首尾空白、连续空白折成一个、全角 ASCII（含全角空格）折成半角、小写。只用来认
 /// 「同一个名字的写法差异」，不做模糊匹配。

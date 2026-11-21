@@ -17,6 +17,17 @@ class MusicScanBatchWrite {
   final List<MusicTrackCreditsCompanion> credits;
 }
 
+/// 归组读出的一首曲目（[_FushiDbMusic._musicGroupingRows]）：[group] 是（来源, 目录,
+/// 专辑名键），[origin] 是原始归属（[MusicTracks.scanAlbumUid]，NULL 时取生效专辑），
+/// [artist] 是原始专辑的专辑艺人比较键（没写为 null）。
+typedef _MusicGroupingRow = ({
+  String trackUid,
+  String group,
+  String? albumUid,
+  String origin,
+  String? artist,
+});
+
 mixin _FushiDbMusic on _$FushiDatabase {
   Future<void> _ensureMusicIndexes() async {
     const List<String> stmts = <String>[
@@ -95,10 +106,22 @@ mixin _FushiDbMusic on _$FushiDatabase {
         ),
       );
     }
+    final Map<int, Set<String>> touchedDirs = <int, Set<String>>{};
     for (final MusicTracksCompanion raw in batch.tracks) {
+      final String pathKey = musicTrackPathKey(raw.path.value);
+      // 落库值是按标签算的原始归属：生效专辑与原始归属同值落下，归组在本事务末尾按
+      // 受影响目录重算。
       final MusicTracksCompanion track = raw.copyWith(
-        pathKey: Value<String?>(musicTrackPathKey(raw.path.value)),
+        pathKey: Value<String?>(pathKey),
+        scanAlbumUid: raw.albumUid,
       );
+      if (raw.sourceId.present && raw.sourceId.value != null) {
+        if (musicTrackDirPrefix(pathKey) case final String dir) {
+          touchedDirs
+              .putIfAbsent(raw.sourceId.value!, () => <String>{})
+              .add(dir);
+        }
+      }
       await into(musicTracks).insert(
         track,
         onConflict: DoUpdate<$MusicTracksTable, MusicTrackRow>(
@@ -127,121 +150,207 @@ mixin _FushiDbMusic on _$FushiDatabase {
     if (creditedTracks.isNotEmpty) {
       await _reapplyMusicScrapeOverlaySql(this, creditedTracks.toList());
     }
+    await _regroupMusicAlbumDirs(touchedDirs);
     return remap.tracks;
   });
 
-  /// 扫描收尾：来源 [sourceId] 下本次没见到的曲目（uid 不在 [seenTrackUids]）软删。
-  /// 返回新软删的行数。
+  /// 扫描收尾：来源 [sourceId] 下本次没见到的曲目（uid 不在 [seenTrackUids]）软删，
+  /// 同一事务里在这些曲目所在的目录上重算专辑归组（[_regroupMusicAlbumDirs]：带专辑
+  /// 艺人的文件没了，同一张盘没写艺人的曲目要退回原专辑）。返回新软删的行数。
   Future<int> softDeleteMissingMusicTracks({
     required int sourceId,
     required Set<String> seenTrackUids,
     required int deletedAt,
   }) async {
-    final List<String> live =
+    final List<({String uid, String pathKey})> live =
         await (selectOnly(musicTracks)
-              ..addColumns(<Expression<Object>>[musicTracks.trackUid])
+              ..addColumns(<Expression<Object>>[
+                musicTracks.trackUid,
+                musicTracks.path,
+                musicTracks.pathKey,
+              ])
               ..where(
                 musicTracks.sourceId.equals(sourceId) &
                     musicTracks.deletedAt.isNull(),
               ))
-            .map((TypedResult r) => r.read(musicTracks.trackUid)!)
+            .map(
+              (TypedResult r) => (
+                uid: r.read(musicTracks.trackUid)!,
+                pathKey:
+                    r.read(musicTracks.pathKey) ??
+                    musicTrackPathKey(r.read(musicTracks.path)!),
+              ),
+            )
             .get();
-    final List<String> missing = live
-        .where((String uid) => !seenTrackUids.contains(uid))
+    final List<({String uid, String pathKey})> missing = live
+        .where(
+          (({String uid, String pathKey}) t) => !seenTrackUids.contains(t.uid),
+        )
         .toList();
     if (missing.isEmpty) return 0;
     return transaction(() async {
       int total = 0;
       for (int i = 0; i < missing.length; i += 500) {
-        final List<String> chunk = missing.sublist(
-          i,
-          (i + 500).clamp(0, missing.length),
-        );
+        final List<String> chunk = <String>[
+          for (final ({String uid, String pathKey}) t in missing.sublist(
+            i,
+            (i + 500).clamp(0, missing.length),
+          ))
+            t.uid,
+        ];
         total +=
             await (update(musicTracks)
                   ..where(($MusicTracksTable t) => t.trackUid.isIn(chunk)))
                 .write(MusicTracksCompanion(deletedAt: Value<int?>(deletedAt)));
       }
+      await _regroupMusicAlbumDirs(<int, Set<String>>{
+        sourceId: <String>{
+          for (final ({String uid, String pathKey}) t in missing)
+            ?musicTrackDirPrefix(t.pathKey),
+        },
+      });
       return total;
     });
   }
 
-  /// 扫描收尾：把来源 [sourceId] 下「同一张 CD 因专辑艺人标签不齐被拆开」的专辑并回去
-  /// （BUG-5080）。
+  /// 同一张 CD 因专辑艺人标签不齐被拆开时并回一张（BUG-5080），只在 [dirsBySource]
+  /// （来源 id → 目录前缀，见 [musicTrackDirPrefix]）这些目录上按当前在库状态重算。
   ///
   /// 专辑 uid 由 Rust 按单首曲目算（`native/fushi_music` `uid.rs` 的 `album_uid`）：有专辑
-  /// 艺人时按（专辑艺人, 专辑名），没有时按（专辑名, 所在目录）。同一目录的同一张 CD
-  /// 只有部分曲目写了专辑艺人时，两条规则各出一个 uid，一张 CD 被拆成两张。单首算 uid
-  /// 看不到同目录的兄弟曲目（增量扫描时没变的文件也不重读标签），所以在落库后按整源
-  /// 的在库状态归并：同一目录、同名（[musicAlbumNameKey]）的专辑里，带专辑艺人的
-  /// 专辑恰好只有一位艺人（多位艺人是真不同的专辑，不动）时，把没写专辑艺人的那几张的
-  /// 曲目改挂到带艺人的那张上。被并空的旧专辑行留着——[listMusicAlbums] 只列有在库
-  /// 曲目的专辑，之后某首文件改了被重新解析、又落回旧 uid 时，下次收尾再并一次。
-  /// 返回改挂的曲目数。
-  Future<int> mergeSplitMusicAlbumsOfSource(int sourceId) async {
-    final List<TypedResult> rows =
-        await (select(musicTracks).join(<Join>[
-              innerJoin(
-                musicAlbums,
-                musicAlbums.albumUid.equalsExp(musicTracks.albumUid),
-              ),
-            ])..where(
-              musicTracks.sourceId.equals(sourceId) &
-                  musicTracks.deletedAt.isNull(),
-            ))
-            .get();
-    // （目录, 专辑名键）→ 专辑 uid → (专辑艺人, 曲目 uid 列表)
-    final Map<String, Map<String, ({String? artist, List<String> tracks})>>
-    groups = <String, Map<String, ({String? artist, List<String> tracks})>>{};
-    for (final TypedResult r in rows) {
-      final MusicTrackRow track = r.readTable(musicTracks);
-      final MusicAlbumRow album = r.readTable(musicAlbums);
-      final String path = track.path;
-      final int cut = path.lastIndexOf(RegExp(r'[\\/]'));
-      if (cut <= 0) continue; // 远程无目录 / 根下文件：无从判断是否同一张。
-      final String key =
-          '${musicTrackPathKey(path.substring(0, cut))}\u0000'
-          '${musicAlbumNameKey(album.title)}';
-      final String? artist = album.albumArtistCredit?.trim().isEmpty ?? true
-          ? null
-          : album.albumArtistCredit;
-      groups
-          .putIfAbsent(
-            key,
-            () => <String, ({String? artist, List<String> tracks})>{},
-          )
-          .putIfAbsent(
-            album.albumUid,
-            () => (artist: artist, tracks: <String>[]),
-          )
-          .tracks
-          .add(track.trackUid);
+  /// 艺人按（艺人, 专辑名），没有就按（目录, 专辑名）。一张 CD 只有部分曲目写了专辑艺人
+  /// 时同一张盘被拆成两个 uid。Rust 一次只看一个文件，增量扫描时没变的文件也不重读标签，
+  /// 所以归组放在落库这一层、按在库状态算：同一来源、同一目录、同名（[musicAlbumNameKey]）
+  /// 的曲目里，按原始归属（[MusicTracks.scanAlbumUid]）带专辑艺人的恰好只有一位艺人时，
+  /// 没写专辑艺人的曲目生效专辑（[MusicTracks.albumUid]）指向带艺人的那张；否则（多位
+  /// 艺人是真不同的专辑、一位都没有）一律退回原始归属。原始归属从不被归组改写，所以组里
+  /// 艺人变了（HBK-AUDIT-027：新加第二位艺人的同名专辑、带艺人的文件删了）只要重算这个
+  /// 目录就能退回，不依赖重新解析没变的文件。
+  ///
+  /// 判据用的是还在磁盘上的曲目：未软删的，加上用户「从音乐库移除」的墓碑（文件还在、
+  /// 标签照旧，隐藏它不该让同一张盘的其它曲目换专辑）。返回改了生效专辑的曲目数。
+  Future<int> _regroupMusicAlbumDirs(Map<int, Set<String>> dirsBySource) async {
+    int changed = 0;
+    for (final MapEntry<int, Set<String>> source in dirsBySource.entries) {
+      for (final String prefix in source.value) {
+        changed += await _applyMusicAlbumGrouping(
+          await _musicGroupingRows(sourceId: source.key, dirPrefix: prefix),
+        );
+      }
     }
+    return changed;
+  }
+
+  /// 全部来源整库归组一次（v167 迁移：存量里 BUG-5080 拆开的专辑并回去）。日常扫描只走
+  /// [_regroupMusicAlbumDirs]。返回改了生效专辑的曲目数。
+  Future<int> regroupAllMusicAlbums() async =>
+      _applyMusicAlbumGrouping(await _musicGroupingRows());
+
+  /// 归组要的行：曲目 uid / 来源 / 路径键 / 生效与原始专辑 + 原始专辑的名字与专辑艺人。
+  /// 只列用到的列（`selectOnly`）：迁移阶梯里调用时后续版本才加的列还不存在。
+  /// [dirPrefix] 给了就只读这个目录（路径键区间走 `idx_music_tracks_path_key`，再排除
+  /// 子目录），否则读 [sourceId]（为 null 时全部来源）。
+  Future<List<_MusicGroupingRow>> _musicGroupingRows({
+    int? sourceId,
+    String? dirPrefix,
+  }) async {
+    final Expression<String> origin = coalesce<String>(<Expression<String>>[
+      musicTracks.scanAlbumUid,
+      musicTracks.albumUid,
+    ]);
+    final JoinedSelectStatement<HasResultSet, dynamic> q =
+        selectOnly(musicTracks).join(<Join>[
+          leftOuterJoin(musicAlbums, musicAlbums.albumUid.equalsExp(origin)),
+        ])..addColumns(<Expression<Object>>[
+          musicTracks.trackUid,
+          musicTracks.sourceId,
+          musicTracks.path,
+          musicTracks.pathKey,
+          musicTracks.albumUid,
+          origin,
+          musicAlbums.title,
+          musicAlbums.albumArtistCredit,
+        ]);
+    Expression<bool> where =
+        (musicTracks.deletedAt.isNull() | musicTracks.hiddenAt.isNotNull()) &
+        origin.isNotNull();
+    where &= sourceId == null
+        ? musicTracks.sourceId.isNotNull()
+        : musicTracks.sourceId.equals(sourceId);
+    if (dirPrefix != null) {
+      final int last = dirPrefix.codeUnitAt(dirPrefix.length - 1);
+      final String upper =
+          dirPrefix.substring(0, dirPrefix.length - 1) +
+          String.fromCharCode(last + 1);
+      final Expression<String> rest = musicTracks.pathKey.substrExpr(
+        Variable<String>(dirPrefix).length + const Constant<int>(1),
+      );
+      where &=
+          musicTracks.pathKey.isBiggerOrEqualValue(dirPrefix) &
+          musicTracks.pathKey.isSmallerThanValue(upper) &
+          rest.like('%/%').not() &
+          rest.like(r'%\%').not();
+    }
+    q.where(where);
+    return <_MusicGroupingRow>[
+      for (final TypedResult r in await q.get())
+        if (musicTrackDirPrefix(
+              r.read(musicTracks.pathKey) ??
+                  musicTrackPathKey(r.read(musicTracks.path)!),
+            )
+            case final String dir)
+          (
+            trackUid: r.read(musicTracks.trackUid)!,
+            group:
+                '${r.read(musicTracks.sourceId)}\u0000$dir\u0000'
+                '${musicAlbumNameKey(r.read(musicAlbums.title) ?? '')}',
+            albumUid: r.read(musicTracks.albumUid),
+            origin: r.read(origin)!,
+            artist: switch (r.read(musicAlbums.albumArtistCredit)?.trim()) {
+              final String a when a.isNotEmpty => musicAlbumNameKey(a),
+              _ => null,
+            },
+          ),
+    ];
+  }
+
+  /// 按 [_regroupMusicAlbumDirs] 的规则算每首的生效专辑，只写和现值不同的行。
+  Future<int> _applyMusicAlbumGrouping(List<_MusicGroupingRow> rows) async {
+    final Map<String, List<_MusicGroupingRow>> groups =
+        <String, List<_MusicGroupingRow>>{};
+    for (final _MusicGroupingRow r in rows) {
+      groups.putIfAbsent(r.group, () => <_MusicGroupingRow>[]).add(r);
+    }
+    // 生效专辑 → 要改成它的曲目。
     final Map<String, List<String>> moves = <String, List<String>>{};
-    for (final Map<String, ({String? artist, List<String> tracks})> albums
-        in groups.values) {
-      if (albums.length < 2) continue;
+    for (final List<_MusicGroupingRow> members in groups.values) {
       final Map<String, String> tagged = <String, String>{
-        for (final MapEntry<String, ({String? artist, List<String> tracks})> e
-            in albums.entries)
-          if (e.value.artist case final String a) musicAlbumNameKey(a): e.key,
+        for (final _MusicGroupingRow m in members)
+          if (m.artist case final String a) a: m.origin,
       };
-      if (tagged.length != 1) continue;
-      final String target = tagged.values.single;
-      for (final MapEntry<String, ({String? artist, List<String> tracks})> e
-          in albums.entries) {
-        if (e.value.artist != null) continue;
-        moves.putIfAbsent(target, () => <String>[]).addAll(e.value.tracks);
+      final String? target = tagged.length == 1 ? tagged.values.single : null;
+      for (final _MusicGroupingRow m in members) {
+        final String want = m.artist == null && target != null
+            ? target
+            : m.origin;
+        if (want != m.albumUid) {
+          moves.putIfAbsent(want, () => <String>[]).add(m.trackUid);
+        }
       }
     }
     if (moves.isEmpty) return 0;
     return transaction(() async {
       int total = 0;
       for (final MapEntry<String, List<String>> m in moves.entries) {
-        total +=
-            await (update(musicTracks)
-                  ..where(($MusicTracksTable t) => t.trackUid.isIn(m.value)))
-                .write(MusicTracksCompanion(albumUid: Value<String?>(m.key)));
+        for (int i = 0; i < m.value.length; i += 500) {
+          final List<String> chunk = m.value.sublist(
+            i,
+            (i + 500).clamp(0, m.value.length),
+          );
+          total +=
+              await (update(musicTracks)
+                    ..where(($MusicTracksTable t) => t.trackUid.isIn(chunk)))
+                  .write(MusicTracksCompanion(albumUid: Value<String?>(m.key)));
+        }
       }
       return total;
     });

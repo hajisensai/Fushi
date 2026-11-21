@@ -69152,6 +69152,17 @@ class $MusicTracksTable extends MusicTracks
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _scanAlbumUidMeta = const VerificationMeta(
+    'scanAlbumUid',
+  );
+  @override
+  late final GeneratedColumn<String> scanAlbumUid = GeneratedColumn<String>(
+    'scan_album_uid',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _discNoMeta = const VerificationMeta('discNo');
   @override
   late final GeneratedColumn<int> discNo = GeneratedColumn<int>(
@@ -69367,6 +69378,7 @@ class $MusicTracksTable extends MusicTracks
     titleSort,
     artistCredit,
     albumUid,
+    scanAlbumUid,
     discNo,
     trackNo,
     year,
@@ -69510,6 +69522,15 @@ class $MusicTracksTable extends MusicTracks
       context.handle(
         _albumUidMeta,
         albumUid.isAcceptableOrUnknown(data['album_uid']!, _albumUidMeta),
+      );
+    }
+    if (data.containsKey('scan_album_uid')) {
+      context.handle(
+        _scanAlbumUidMeta,
+        scanAlbumUid.isAcceptableOrUnknown(
+          data['scan_album_uid']!,
+          _scanAlbumUidMeta,
+        ),
       );
     }
     if (data.containsKey('disc_no')) {
@@ -69727,6 +69748,10 @@ class $MusicTracksTable extends MusicTracks
         DriftSqlType.string,
         data['${effectivePrefix}album_uid'],
       ),
+      scanAlbumUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}scan_album_uid'],
+      ),
       discNo: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}disc_no'],
@@ -69846,6 +69871,13 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
 
   /// 所属专辑（`MusicAlbums.albumUid`）；无专辑标签的散曲为 NULL。
   final String? albumUid;
+
+  /// 扫描时按这首曲目自己的标签算出的专辑 uid（schema v167，HBK-AUDIT-027）：归组前的
+  /// 原始归属。同一张 CD 只有部分曲目写了专辑艺人时，扫描落库按「同目录同名」把没写的
+  /// 那几首改挂到带艺人的那张上（[albumUid] 是归组后的生效值），这一列不动——之后同一组
+  /// 里艺人变了（新加第二位、带艺人的文件删了），没变的文件不重新解析也能从这里退回原专辑。
+  /// 只有扫描落库写它；光盘导入等别的写入方为 NULL，归组按 [albumUid] 认。设备本地。
+  final String? scanAlbumUid;
   final int? discNo;
   final int? trackNo;
   final int? year;
@@ -69902,6 +69934,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
     this.titleSort,
     this.artistCredit,
     this.albumUid,
+    this.scanAlbumUid,
     this.discNo,
     this.trackNo,
     this.year,
@@ -69966,6 +69999,9 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
     }
     if (!nullToAbsent || albumUid != null) {
       map['album_uid'] = Variable<String>(albumUid);
+    }
+    if (!nullToAbsent || scanAlbumUid != null) {
+      map['scan_album_uid'] = Variable<String>(scanAlbumUid);
     }
     if (!nullToAbsent || discNo != null) {
       map['disc_no'] = Variable<int>(discNo);
@@ -70061,6 +70097,9 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
       albumUid: albumUid == null && nullToAbsent
           ? const Value.absent()
           : Value(albumUid),
+      scanAlbumUid: scanAlbumUid == null && nullToAbsent
+          ? const Value.absent()
+          : Value(scanAlbumUid),
       discNo: discNo == null && nullToAbsent
           ? const Value.absent()
           : Value(discNo),
@@ -70131,6 +70170,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
       titleSort: serializer.fromJson<String?>(json['titleSort']),
       artistCredit: serializer.fromJson<String?>(json['artistCredit']),
       albumUid: serializer.fromJson<String?>(json['albumUid']),
+      scanAlbumUid: serializer.fromJson<String?>(json['scanAlbumUid']),
       discNo: serializer.fromJson<int?>(json['discNo']),
       trackNo: serializer.fromJson<int?>(json['trackNo']),
       year: serializer.fromJson<int?>(json['year']),
@@ -70172,6 +70212,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
       'titleSort': serializer.toJson<String?>(titleSort),
       'artistCredit': serializer.toJson<String?>(artistCredit),
       'albumUid': serializer.toJson<String?>(albumUid),
+      'scanAlbumUid': serializer.toJson<String?>(scanAlbumUid),
       'discNo': serializer.toJson<int?>(discNo),
       'trackNo': serializer.toJson<int?>(trackNo),
       'year': serializer.toJson<int?>(year),
@@ -70211,6 +70252,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
     Value<String?> titleSort = const Value.absent(),
     Value<String?> artistCredit = const Value.absent(),
     Value<String?> albumUid = const Value.absent(),
+    Value<String?> scanAlbumUid = const Value.absent(),
     Value<int?> discNo = const Value.absent(),
     Value<int?> trackNo = const Value.absent(),
     Value<int?> year = const Value.absent(),
@@ -70247,6 +70289,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
     titleSort: titleSort.present ? titleSort.value : this.titleSort,
     artistCredit: artistCredit.present ? artistCredit.value : this.artistCredit,
     albumUid: albumUid.present ? albumUid.value : this.albumUid,
+    scanAlbumUid: scanAlbumUid.present ? scanAlbumUid.value : this.scanAlbumUid,
     discNo: discNo.present ? discNo.value : this.discNo,
     trackNo: trackNo.present ? trackNo.value : this.trackNo,
     year: year.present ? year.value : this.year,
@@ -70299,6 +70342,9 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
           ? data.artistCredit.value
           : this.artistCredit,
       albumUid: data.albumUid.present ? data.albumUid.value : this.albumUid,
+      scanAlbumUid: data.scanAlbumUid.present
+          ? data.scanAlbumUid.value
+          : this.scanAlbumUid,
       discNo: data.discNo.present ? data.discNo.value : this.discNo,
       trackNo: data.trackNo.present ? data.trackNo.value : this.trackNo,
       year: data.year.present ? data.year.value : this.year,
@@ -70356,6 +70402,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
           ..write('titleSort: $titleSort, ')
           ..write('artistCredit: $artistCredit, ')
           ..write('albumUid: $albumUid, ')
+          ..write('scanAlbumUid: $scanAlbumUid, ')
           ..write('discNo: $discNo, ')
           ..write('trackNo: $trackNo, ')
           ..write('year: $year, ')
@@ -70397,6 +70444,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
     titleSort,
     artistCredit,
     albumUid,
+    scanAlbumUid,
     discNo,
     trackNo,
     year,
@@ -70437,6 +70485,7 @@ class MusicTrackRow extends DataClass implements Insertable<MusicTrackRow> {
           other.titleSort == this.titleSort &&
           other.artistCredit == this.artistCredit &&
           other.albumUid == this.albumUid &&
+          other.scanAlbumUid == this.scanAlbumUid &&
           other.discNo == this.discNo &&
           other.trackNo == this.trackNo &&
           other.year == this.year &&
@@ -70475,6 +70524,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
   final Value<String?> titleSort;
   final Value<String?> artistCredit;
   final Value<String?> albumUid;
+  final Value<String?> scanAlbumUid;
   final Value<int?> discNo;
   final Value<int?> trackNo;
   final Value<int?> year;
@@ -70512,6 +70562,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
     this.titleSort = const Value.absent(),
     this.artistCredit = const Value.absent(),
     this.albumUid = const Value.absent(),
+    this.scanAlbumUid = const Value.absent(),
     this.discNo = const Value.absent(),
     this.trackNo = const Value.absent(),
     this.year = const Value.absent(),
@@ -70550,6 +70601,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
     this.titleSort = const Value.absent(),
     this.artistCredit = const Value.absent(),
     this.albumUid = const Value.absent(),
+    this.scanAlbumUid = const Value.absent(),
     this.discNo = const Value.absent(),
     this.trackNo = const Value.absent(),
     this.year = const Value.absent(),
@@ -70593,6 +70645,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
     Expression<String>? titleSort,
     Expression<String>? artistCredit,
     Expression<String>? albumUid,
+    Expression<String>? scanAlbumUid,
     Expression<int>? discNo,
     Expression<int>? trackNo,
     Expression<int>? year,
@@ -70631,6 +70684,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
       if (titleSort != null) 'title_sort': titleSort,
       if (artistCredit != null) 'artist_credit': artistCredit,
       if (albumUid != null) 'album_uid': albumUid,
+      if (scanAlbumUid != null) 'scan_album_uid': scanAlbumUid,
       if (discNo != null) 'disc_no': discNo,
       if (trackNo != null) 'track_no': trackNo,
       if (year != null) 'year': year,
@@ -70671,6 +70725,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
     Value<String?>? titleSort,
     Value<String?>? artistCredit,
     Value<String?>? albumUid,
+    Value<String?>? scanAlbumUid,
     Value<int?>? discNo,
     Value<int?>? trackNo,
     Value<int?>? year,
@@ -70709,6 +70764,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
       titleSort: titleSort ?? this.titleSort,
       artistCredit: artistCredit ?? this.artistCredit,
       albumUid: albumUid ?? this.albumUid,
+      scanAlbumUid: scanAlbumUid ?? this.scanAlbumUid,
       discNo: discNo ?? this.discNo,
       trackNo: trackNo ?? this.trackNo,
       year: year ?? this.year,
@@ -70784,6 +70840,9 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
     }
     if (albumUid.present) {
       map['album_uid'] = Variable<String>(albumUid.value);
+    }
+    if (scanAlbumUid.present) {
+      map['scan_album_uid'] = Variable<String>(scanAlbumUid.value);
     }
     if (discNo.present) {
       map['disc_no'] = Variable<int>(discNo.value);
@@ -70865,6 +70924,7 @@ class MusicTracksCompanion extends UpdateCompanion<MusicTrackRow> {
           ..write('titleSort: $titleSort, ')
           ..write('artistCredit: $artistCredit, ')
           ..write('albumUid: $albumUid, ')
+          ..write('scanAlbumUid: $scanAlbumUid, ')
           ..write('discNo: $discNo, ')
           ..write('trackNo: $trackNo, ')
           ..write('year: $year, ')
@@ -133308,6 +133368,7 @@ typedef $$MusicTracksTableCreateCompanionBuilder =
       Value<String?> titleSort,
       Value<String?> artistCredit,
       Value<String?> albumUid,
+      Value<String?> scanAlbumUid,
       Value<int?> discNo,
       Value<int?> trackNo,
       Value<int?> year,
@@ -133347,6 +133408,7 @@ typedef $$MusicTracksTableUpdateCompanionBuilder =
       Value<String?> titleSort,
       Value<String?> artistCredit,
       Value<String?> albumUid,
+      Value<String?> scanAlbumUid,
       Value<int?> discNo,
       Value<int?> trackNo,
       Value<int?> year,
@@ -133459,6 +133521,11 @@ class $$MusicTracksTableFilterComposer
 
   ColumnFilters<String> get albumUid => $composableBuilder(
     column: $table.albumUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get scanAlbumUid => $composableBuilder(
+    column: $table.scanAlbumUid,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -133647,6 +133714,11 @@ class $$MusicTracksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get scanAlbumUid => $composableBuilder(
+    column: $table.scanAlbumUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get discNo => $composableBuilder(
     column: $table.discNo,
     builder: (column) => ColumnOrderings(column),
@@ -133808,6 +133880,11 @@ class $$MusicTracksTableAnnotationComposer
   GeneratedColumn<String> get albumUid =>
       $composableBuilder(column: $table.albumUid, builder: (column) => column);
 
+  GeneratedColumn<String> get scanAlbumUid => $composableBuilder(
+    column: $table.scanAlbumUid,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<int> get discNo =>
       $composableBuilder(column: $table.discNo, builder: (column) => column);
 
@@ -133927,6 +134004,7 @@ class $$MusicTracksTableTableManager
                 Value<String?> titleSort = const Value.absent(),
                 Value<String?> artistCredit = const Value.absent(),
                 Value<String?> albumUid = const Value.absent(),
+                Value<String?> scanAlbumUid = const Value.absent(),
                 Value<int?> discNo = const Value.absent(),
                 Value<int?> trackNo = const Value.absent(),
                 Value<int?> year = const Value.absent(),
@@ -133964,6 +134042,7 @@ class $$MusicTracksTableTableManager
                 titleSort: titleSort,
                 artistCredit: artistCredit,
                 albumUid: albumUid,
+                scanAlbumUid: scanAlbumUid,
                 discNo: discNo,
                 trackNo: trackNo,
                 year: year,
@@ -134003,6 +134082,7 @@ class $$MusicTracksTableTableManager
                 Value<String?> titleSort = const Value.absent(),
                 Value<String?> artistCredit = const Value.absent(),
                 Value<String?> albumUid = const Value.absent(),
+                Value<String?> scanAlbumUid = const Value.absent(),
                 Value<int?> discNo = const Value.absent(),
                 Value<int?> trackNo = const Value.absent(),
                 Value<int?> year = const Value.absent(),
@@ -134040,6 +134120,7 @@ class $$MusicTracksTableTableManager
                 titleSort: titleSort,
                 artistCredit: artistCredit,
                 albumUid: albumUid,
+                scanAlbumUid: scanAlbumUid,
                 discNo: discNo,
                 trackNo: trackNo,
                 year: year,
