@@ -1,6 +1,6 @@
-//! 冲突中心与时间线的只读命令（G7-4e）：`conflicts`、`checkpoints`、`undo_check`。**还没接分发器**：协议 3 的
-//! `sync2_conflicts`（`store/sync2/mod.rs`）、`sync2_checkpoints`（`store/sync2/timeline.rs`）、`sync2_undo_check`
-//! （`store/sync2/undo_check.rs`）原地不动，分发器在整批推送里一次切到这里（规划 §2.2 S1）。
+//! 冲突中心与时间线的只读命令（G7-4e）：`conflicts`、`checkpoints`、`undo_check`。已接分发器（`dispatch.rs`）；协议 3
+//! 的 `sync2_conflicts`（`store/sync2/mod.rs`）、`sync2_checkpoints`（`store/sync2/timeline.rs`）、`sync2_undo_check`
+//! （`store/sync2/undo_check.rs`）不再经分发器调用（冻结）。
 //!
 //! # 形状（与协议 3 逐键相同）
 //!

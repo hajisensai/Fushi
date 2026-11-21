@@ -620,3 +620,147 @@ fn a_purge_carried_by_an_import_voids_the_text_at_once() {
     assert!(bytes_carrying(&b.dir.0, "keep-c3") > 0);
     assert!(!meta_has(&b, DUE_KEY));
 }
+
+/// 导出（`export`，不给路径：流在回包的 `ops.bin` 里，压缩过）逐项解开之后，[needle] 出现在几项里（原生操作按载荷字节
+/// 比，其余按调试形）。
+fn export_carrying(d: &Dev, needle: &str) -> usize {
+    let (_, files) = cmd(d.h, "export", T1, json!({}), &[]);
+    let (mut r, _) = crate::gen4::export::Export4Reader::open(&files[0].1[..]).unwrap();
+    let mut n = 0;
+    while let Some(it) = r.next_item().unwrap() {
+        let carries = match &it {
+            crate::gen4::export::ExportItem::NativeOp(o) => o
+                .payload
+                .windows(needle.len())
+                .any(|w| w == needle.as_bytes()),
+            it => format!("{it:?}").contains(needle),
+        };
+        n += usize::from(carries);
+    }
+    n
+}
+
+/// 清除整个别名类（所有者拍板「清整个别名类」，设计 §10 第 19 条；`writes.rs` `Session::purge_class`）：同一条笔记在
+/// 两个盐下各一份（`tests_class.rs` 的双盐场景），两份带盐成员上各有一条带标记串的字段修改；按规范 ID 清除之后，本机
+/// 按类读（修改历史按规范 ID 与按成员问）、缓存层（`notes` 行）、导出、库文件字节里都没有标记串，类里每个成员各有一条
+/// 生效的清除；同步到另一台设备，那边也一样（清除是给每个成员各一条的普通操作，对端按同一条「按原值实体」的规则清，
+/// 不依赖它的别名表）。
+#[test]
+fn purging_a_canonical_id_purges_every_member_of_its_alias_class() {
+    use crate::store::gen4::cmd::tests_class::{self, set, u};
+    use crate::store::gen4::derive::Index;
+    use crate::store::gen4::derive::tests::{native, op};
+    use crate::sync2::op::EntKind;
+
+    let mut a = Dev::new("clsprga");
+    let mut b = Dev::new("clsprgb");
+    // 两台设备落同一份场景（同样的操作号与内容），再在两份带盐成员上各写一条带标记串的修改。
+    let land = |d: &mut Dev| {
+        d.direct(|t, col| {
+            let w = tests_class::land(t, col);
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                let seen = [tests_class::base_seen(&w)];
+                for (i, dev) in [(0usize, 0xb1u8), (1, 0xb2)] {
+                    let f = format!("f/{}", w.field[i].text());
+                    let v = json!(format!("secret-cls-{i}"));
+                    let body = set(EntKind::Note, u(w.note[i]), &f, v);
+                    native(t, &mut ix, col, &op(dev, 2, 500 + i as i64, &seen, &body));
+                }
+                ix.settle()?;
+                Ok(())
+            })?;
+            Ok(w)
+        })
+    };
+    let w = land(&mut a);
+    land(&mut b);
+    // 两边都已有数据：第一次同步之后互相是待确认的设备（`truth/trust.rs`），确认之后对方的清除才生效。
+    let mut loc = Loc::new();
+    sync_all(&[&a, &b], &mut loc, T1 + 590, Opts::default());
+    for (x, y) in [(&a, &b), (&b, &a)] {
+        let (v, _) = cmd(
+            x.h,
+            "trust",
+            T1 + 591,
+            json!({"device": y.device(), "trust": true}),
+            &[],
+        );
+        assert_eq!(v["trusted"], json!(true), "{v}");
+    }
+    let cache_text = |d: &mut Dev| -> String {
+        d.direct(|t, col| {
+            t.conn()
+                .query_row(
+                    "SELECT COALESCE(group_concat(sort_field || term_key || reading_key || dupe_norm), '') \
+                     FROM notes WHERE col = ?1",
+                    [col],
+                    |r| r.get(0),
+                )
+                .map_err(|e| e.to_string())
+        })
+    };
+    let live_purges = |d: &mut Dev| -> Vec<String> {
+        d.direct(|t, col| {
+            let mut st = t
+                .conn()
+                .prepare("SELECT hex(ent) FROM purge_ix WHERE col = ?1 AND state = 1 ORDER BY 1")
+                .unwrap();
+            let rows = st
+                .query_map([col], |r| r.get::<_, String>(0))
+                .unwrap()
+                .map(Result::unwrap)
+                .collect();
+            Ok(rows)
+        })
+    };
+    let hist = |d: &Dev, e: &crate::sync2::id::Id| -> String {
+        cmd(
+            d.h,
+            "history",
+            T1,
+            json!({"kind": "note", "entity": e.text()}),
+            &[],
+        )
+        .0
+        .to_string()
+    };
+    for d in [&mut a, &mut b] {
+        assert!(bytes_carrying(&d.dir.0, "secret-cls") > 0);
+        assert!(hist(d, &w.c_note).contains("secret-cls-0"));
+        assert!(
+            cache_text(d).contains("secret-cls"),
+            "the cache row carries it"
+        );
+    }
+    assert!(
+        export_carrying(&a, "secret-cls") > 0,
+        "the export check can see the text"
+    );
+
+    purge(&a, T1 + 600, &w.c_note.text());
+    sync_all(&[&a, &b], &mut loc, T1 + 601, Opts::default());
+    let mut class: Vec<String> = [w.c_note, w.note[0], w.note[1]]
+        .iter()
+        .map(|i| i.0.iter().map(|b| format!("{b:02X}")).collect())
+        .collect();
+    class.sort();
+    for d in [&mut a, &mut b] {
+        let who = d.device();
+        for e in [w.c_note, w.note[0], w.note[1]] {
+            assert!(!hist(d, &e).contains("secret-cls"), "{who}: history of {e}");
+        }
+        assert!(!cache_text(d).contains("secret-cls"), "{who}: cache rows");
+        assert_eq!(export_carrying(d, "secret-cls"), 0, "{who}: export");
+        assert_eq!(
+            bytes_carrying(&d.dir.0, "secret-cls"),
+            0,
+            "{who}: library bytes"
+        );
+        assert_eq!(
+            live_purges(d),
+            class,
+            "{who}: one live purge per class member"
+        );
+    }
+}

@@ -598,6 +598,15 @@ class EinkCupertinoPageTransitionsBuilder extends PageTransitionsBuilder {
 /// 「纯黑」语义改为明暗旁的独立开关（[ThemeNotifier.pureBlackDark]）。
 typedef ThemePreset = ({Color seed, DynamicSchemeVariant variant});
 
+/// 覆盖所选主题配色的取色来源（见 [ThemeNotifier.activeAccentOverrideSource]）。
+enum ThemeAccentOverrideSource {
+  /// 「从图片取色」：自定义背景图的颜色。
+  pageBackdrop,
+
+  /// 「主题色跟随图标」：自定义 app 图标的颜色。
+  appIcon,
+}
+
 /// 2026-10 精简前的内置预设（已删）：只为存量 `app_theme_key` 的只读映射保留
 /// 种子与语义——[neutral] = 中性灰变体、[dark] = 当年选中时写入的明暗（仅在
 /// `brightness_mode` 从未写过时作只读兜底）、[pureBlack] = 纯黑底。
@@ -1162,6 +1171,46 @@ class ThemeNotifier extends ChangeNotifier {
   /// 覆盖生效主题的种子：背景图取色优先，其次「主题色跟随图标」。两者都只是覆盖，
   /// 不改写主题偏好。
   Color? get _overrideAccentSeed => pageBackdropAccentSeed ?? appIconAccentSeed;
+
+  /// 当前是谁在覆盖主题配色（没有覆盖时为 null）。主题选择行 / 自定义主题编辑页据此
+  /// 提示「配色来自背景图 / 图标」——否则点色卡毫无反应、用户不知道为什么。与
+  /// [_overrideAccentSeed] 同优先级。
+  ThemeAccentOverrideSource? get activeAccentOverrideSource {
+    if (pageBackdropAccentSeed != null) {
+      return ThemeAccentOverrideSource.pageBackdrop;
+    }
+    if (appIconAccentSeed != null) return ThemeAccentOverrideSource.appIcon;
+    return null;
+  }
+
+  /// 用户选主题的唯一入口（设置页色卡、自定义主题编辑页「应用」、`config set
+  /// appearance.theme`、控制通道 `select=true`，都经 [AppModel.pickAppThemeKey]）：
+  /// 用户明确要这个主题，就关掉所有**正在生效**的取色覆盖，让所选主题真正显示。
+  /// 背景图 / 自定义图标本身保留，只是不再取色；没生效的开关不动；两个都生效时都关，
+  /// 否则关掉背景图取色后又落到图标取色上。
+  ///
+  /// 开关与主题键同一批落库、只通知一次：分步写会先按「关了取色、还没换主题」的
+  /// 中间态重建一帧（闪一下旧主题色）。
+  ///
+  /// [setAppThemeKey] 是另一种写法：只换键、不碰取色开关，只给「不是用户在选主题」
+  /// 的写入用（删掉当前自定义主题后指回剩余主题）。同步 / 恢复整份写偏好，取色开关
+  /// 随同一份快照一起到位，不经这两个入口。
+  Future<void> pickAppThemeKey(String key) async {
+    final bool releaseBackdrop = pageBackdropAccentSeed != null;
+    final bool releaseIcon = appIconAccentSeed != null;
+    await _setAppThemeKeyKeepingEffective(
+      key,
+      extraWrites: <String, String>{
+        if (releaseBackdrop)
+          kPageBackdropFollowImageAccentPrefKey: PrefCodec.encode(false),
+        if (releaseIcon) followAppIconPrefKey: PrefCodec.encode(false),
+      },
+    );
+    // 作废还在跑的图标取色（开关已关，晚到的结果不该再套上）。
+    if (releaseIcon) ++_appIconSeedGeneration;
+    notifyListeners();
+    _persistSplashColor();
+  }
 
   /// 背景图文件是否存在的核对结果（路径 → 存在）。快照发布在 UI isolate 上、每次
   /// 改任何一项背景设置都会重读，所以这里**不碰文件系统**：没核对过的路径先按存在
@@ -2921,6 +2970,8 @@ class ThemeNotifier extends ChangeNotifier {
   /// 切主题只换配色：**不改写 `brightness_mode`、不强制亮 / 暗**（2026-10-06 用户
   /// 「切换主题的时候如果我是深色就要继续保持深色」）。此前选 `system-theme` 会把
   /// 明暗写成 system、选预设会写成该预设自带的 light / dark。
+  ///
+  /// 只换键、不碰取色覆盖：用户选主题走 [pickAppThemeKey]，这里只给非用户选择的写入。
   Future<void> setAppThemeKey(String key) async {
     await _setAppThemeKeyKeepingEffective(key);
     notifyListeners();
@@ -2932,8 +2983,12 @@ class ThemeNotifier extends ChangeNotifier {
   /// 对旧「纯黑」预设的回退）按换键前的有效值补写成独立偏好，与新主题键同一批落库。
   /// 换掉主题键后那些兜底就读不到了：旧 black-theme 用户改个种子色纯黑消失、旧自定义深色
   /// 用户换预设变成跟随系统。已显式存过的键不动。
-  Future<void> _setAppThemeKeyKeepingEffective(String key) async {
-    final Map<String, String> writes = <String, String>{};
+  /// [extraWrites]（已编码）与主题键同一批落库（[pickAppThemeKey] 关取色开关用）。
+  Future<void> _setAppThemeKeyKeepingEffective(
+    String key, {
+    Map<String, String> extraWrites = const <String, String>{},
+  }) async {
+    final Map<String, String> writes = <String, String>{...extraWrites};
     if (_get('brightness_mode', defaultValue: '').isEmpty) {
       writes['brightness_mode'] = PrefCodec.encode(brightnessMode);
     }

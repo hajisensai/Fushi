@@ -31,10 +31,14 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:fushi/src/anki/delegating_anki_repository.dart';
 import 'package:fushi/src/anki/forwarded_mine_codec.dart';
 import 'package:fushi/src/mining/serial_job_queue.dart';
+import 'package:fushi/src/srs/srs_generation_kind.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi_engine/srs/srs_miner.dart';
 
 /// 打开 SRS 制卡所需的 store + 媒体目录（模块关着 / 打开失败时为 null）。
+///
+/// 库在换代途中（要迁移 / 别的窗口在迁移 / 上次迁移失败 / 有没迁移的旧库，[isSrsGenerationBlocked]）时**不吞成
+/// null**，原样抛出那个异常：制卡要据它告诉用户去复习页完成升级，而不是笼统的「复习不可用」（BUG-5085）。
 typedef SrsMinerResolver = Future<SrsMiner?> Function();
 
 /// 打开一条 SRS 笔记的编辑页（导航器不可用时返回 false）。
@@ -122,10 +126,38 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
 
   static const String _unavailable = 'Fushi review is not available.';
 
+  /// 一定要写 / 读复习的操作用：复习不可用抛 [StateError]；库在换代途中原样抛那个代际异常
+  /// （[isSrsGenerationBlocked]），调用方看得到真正的原因。
   Future<SrsMiner> _requireMiner() async {
     final SrsMiner? miner = await _miner();
     if (miner == null) throw StateError(_unavailable);
     return miner;
+  }
+
+  /// 「问不到就当没有」的探测用（查重、同词反查、读字段、打开笔记、已删复核）：库在换代途中与复习不可用同一个
+  /// 答案（null → 不重复 / 没有 / 打不开），与之前的契约一致——这些是每次查词都跑的探测，不是用户要的那次写入；
+  /// 原因由真正的制卡（[mineEntry] / [updateMinedNote]）报给用户。
+  Future<SrsMiner?> _probeMiner() async {
+    try {
+      return await _miner();
+    } on Object catch (e) {
+      if (isSrsGenerationBlocked(e)) return null;
+      rethrow;
+    }
+  }
+
+  /// 制卡 / 覆写用：复习不可用回 [_unavailable]；库在换代途中回带分类码的失败
+  /// （[srsGenerationMineFailure]，提示据码说「去复习页完成升级」等）。
+  Future<({SrsMiner? miner, MineOutcome? failure})> _minerForWrite() async {
+    try {
+      final SrsMiner? miner = await _miner();
+      return miner == null
+          ? (miner: null, failure: MineOutcome.failure(_unavailable))
+          : (miner: miner, failure: null);
+    } on Object catch (e, stack) {
+      if (!isSrsGenerationBlocked(e)) rethrow;
+      return (miner: null, failure: srsGenerationMineFailure(e, stack));
+    }
   }
 
   /// 整数句柄 → 现存 SRS 笔记 id（不存在 / 已删 / 复习不可用为 null）。
@@ -143,8 +175,8 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
     required String rawPayloadJson,
     required AnkiMiningContext context,
   }) async {
-    final SrsMiner? miner = await _miner();
-    if (miner == null) return MineOutcome.failure(_unavailable);
+    final (:SrsMiner? miner, :MineOutcome? failure) = await _minerForWrite();
+    if (miner == null) return failure!;
     if (_backgroundMining?.call() ?? false) {
       return _enqueueBackground(miner, rawPayloadJson, context);
     }
@@ -236,7 +268,7 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async {
-    final SrsMiner? miner = await _miner();
+    final SrsMiner? miner = await _probeMiner();
     return miner != null && await miner.isDuplicate(expression, reading);
   }
 
@@ -260,8 +292,8 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
     required String rawPayloadJson,
     required AnkiMiningContext context,
   }) async {
-    final SrsMiner? miner = await _miner();
-    if (miner == null) return MineOutcome.failure(_unavailable);
+    final (:SrsMiner? miner, :MineOutcome? failure) = await _minerForWrite();
+    if (miner == null) return failure!;
     final String? id = await _noteIdOf(miner, noteId);
     if (id == null) {
       return MineOutcome.failure(
@@ -298,7 +330,7 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
   ) async {
     final AnkiSettings settings = await inner.loadSettings();
     if (settings.overwriteScope != AnkiOverwriteScope.all) return null;
-    final SrsMiner? miner = await _miner();
+    final SrsMiner? miner = await _probeMiner();
     if (miner == null) return null;
     final List<SrsNoteCacheRow> notes = await miner.matchingNotes(
       expression,
@@ -313,7 +345,7 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
     String expression,
     String reading,
   ) async {
-    final SrsMiner? miner = await _miner();
+    final SrsMiner? miner = await _probeMiner();
     if (miner == null) return const <MinedNoteRef>[];
     return <MinedNoteRef>[
       for (final SrsNoteCacheRow n in await miner.matchingNotes(
@@ -329,7 +361,7 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
 
   @override
   Future<Map<String, String>?> noteFields(int noteId) async {
-    final SrsMiner? miner = await _miner();
+    final SrsMiner? miner = await _probeMiner();
     if (miner == null) return null;
     final String? id = await _noteIdOf(miner, noteId);
     return id == null ? null : miner.fieldsByName(id);
@@ -338,7 +370,7 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
   /// 复习卡按**它自己的**笔记类型覆写（[SrsMiner.overwrite]），覆写字段选择也按它记。
   @override
   Future<String?> overwriteNoteTypeName(int noteId) async {
-    final SrsMiner? miner = await _miner();
+    final SrsMiner? miner = await _probeMiner();
     if (miner == null) return null;
     final String? id = await _noteIdOf(miner, noteId);
     return id == null ? null : miner.noteTypeNameOf(id);
@@ -372,7 +404,7 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
   /// 只返回明确已不在复习里的句柄（复习不可用时返回空集：不知道 ≠ 已删）。
   @override
   Future<Set<int>> findDeletedNotes(Set<int> noteIds) async {
-    final SrsMiner? miner = await _miner();
+    final SrsMiner? miner = await _probeMiner();
     if (miner == null) return const <int>{};
     return <int>{
       for (final int handle in noteIds)
@@ -393,7 +425,7 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
   @override
   Future<bool> openNoteInAnki(int noteId) async {
     final SrsNoteOpener? open = _openNote;
-    final SrsMiner? miner = await _miner();
+    final SrsMiner? miner = await _probeMiner();
     if (open == null || miner == null) return false;
     final String? id = await _noteIdOf(miner, noteId);
     return id != null && await open(id);
@@ -407,7 +439,7 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
   ) async {
     if (expression.isEmpty) return AnkiOpenWordOutcome.failed;
     final SrsNoteOpener? open = _openNote;
-    final SrsMiner? miner = await _miner();
+    final SrsMiner? miner = await _probeMiner();
     if (open == null || miner == null) return AnkiOpenWordOutcome.failed;
     final List<SrsNoteCacheRow> notes = await miner.matchingNotes(
       expression,

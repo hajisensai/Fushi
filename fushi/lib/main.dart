@@ -57,6 +57,8 @@ import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDbStore;
 import 'package:fushi_engine/srs/srs_miner.dart' show SrsMiner;
 import 'package:fushi/src/srs/srs_providers.dart'
     show srsProfileStoresProvider, srsRevisionProvider;
+import 'package:fushi/src/sync/interconnect_lan_relocation.dart'
+    show InterconnectLanRelocator, installInterconnectLanRelocation;
 import 'package:fushi/src/sync/interconnect_p2p_app.dart'
     show installInterconnectP2pClient;
 import 'package:fushi/src/sync/sync_repository.dart' show SyncRepository;
@@ -166,6 +168,7 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankimobile_mined_ledger.dart';
 import 'package:fushi/src/anki/ankimobile_repository.dart';
 import 'package:fushi/src/anki/card_source_router.dart';
+import 'package:fushi/src/anki/source_review_navigation.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
 import 'package:fushi/src/platform/app_exit_coordinator.dart';
@@ -873,6 +876,22 @@ void main([List<String> args = const <String>[]]) {
       // 写入后同样刷新牌组列表 / 首页复习条的计数。
       appModel.srsCardsAddedNotifier = () =>
           container.read(srsRevisionProvider.notifier).state++;
+      // BUG-5085：复习库要升级时制卡失败提示上的「打开复习」：与小组件「复习」入口同一条路（切到复习 tab、
+      // 退回首页层级，编辑页的 PopScope 照常拦未保存改动）。复习 tab 本身就是升级 / 说明页。
+      mineFailureOpenReview = () {
+        if (!appModel.moduleVisibility.isEnabled(ModuleId.srs)) return;
+        final ExternalMediaNavigation media = ExternalMediaNavigation.instance;
+        unawaited(
+          media.navigate(() async {
+            homeShellTabNotifier.value = HomeTab.srs;
+            final NavigatorState? navigator =
+                appModel.navigatorKey.currentState;
+            if (navigator != null) {
+              await unwindToHomeRoute(navigator, media: media);
+            }
+          }),
+        );
+      };
       appModel.ankiRepositoryReader = () =>
           container.read(ankiRepositoryProvider);
       appModel.hostMiningRepositoryReader = () =>
@@ -896,6 +915,17 @@ void main([List<String> args = const <String>[]]) {
       // 互联 P2P 隧道（原生库可用才装）：client 选路在直连全失败后经隧道兜底
       // （docs/specs/2026-09-28-interconnect-remote-reach.md §5）。
       installInterconnectP2pClient(SyncRepository(appModel.database));
+      // BUG-5068：已配对 host 换了网段（电脑改连手机热点）、存量直连地址全不通时，
+      // 选路先在局域网上按 hostId 做一次限时 mDNS 浏览找它的新地址，再建隧道。
+      final SyncRepository relocationRepo = SyncRepository(appModel.database);
+      installInterconnectLanRelocation(
+        relocationRepo,
+        InterconnectLanRelocator(
+          ownDeviceId: relocationRepo.getOrCreateDeviceId,
+          onBrowseStart: appModel.syncServerController.registerDiscovery,
+          onBrowseEnd: appModel.syncServerController.unregisterDiscovery,
+        ).urlsFor,
+      );
       // BUG-4242：上一个进程上传途中被杀（iOS 挂起 / 内存压力）时，混淆临时目录
       // （与原文件同尺寸，有声书数百 MB）不会经 finally 删掉。启动时认领本进程的
       // 临时槽位，顺带删掉已死进程的槽位（活进程的锁拿不到、不删），并清旧版本留在

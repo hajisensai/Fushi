@@ -137,7 +137,10 @@ pub fn live_refs_json(t: &Truth<'_>, profile: &str, alive_after: i64) -> Result<
 }
 
 /// profile 绑定的集合与它的缓存配置；没绑定、或缓存层没物化（没设缓存配置）= None。
-fn materialized(t: &Truth<'_>, profile: &str) -> Result<Option<(i64, CacheConfig)>, String> {
+fn materialized(
+    t: &Truth<'_>,
+    profile: &str,
+) -> Result<Option<(i64, std::sync::Arc<CacheConfig>)>, String> {
     let Some(b) = t.binding_of(profile)? else {
         return Ok(None);
     };
