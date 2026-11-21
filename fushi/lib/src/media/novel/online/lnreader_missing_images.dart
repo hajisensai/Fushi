@@ -247,6 +247,10 @@ typedef MissingImageFetch =
 /// - [stillValid]：取图要等网络，回来后第 [index] 章是否还是这一章（解压树可能
 ///   已被就地重建）；false 就放弃这次结果。
 /// - [write]：原子写（先写临时文件再改名），阅读器读到的要么旧要么新。
+/// - [commit]：包住「[stillValid] 复核 → 图与章节文件写回」这一段（取图在它外面）。
+///   解压树还有别的写方（网页小说书的浏览器并章 / 开书补占位会整本就地重建）时，
+///   传它们共用的按书提交锁，让复核与写回和重建互斥：否则复核过后重建落地，写回
+///   会落进正在替换的树；或重建读旧树打包之后写回，补到的图又被重建覆盖掉。
 /// - [onStillMissing]：这一轮有图没补到（失败张数、试了几张、第一个原因），留痕用。
 Future<OnlineNovelMissingImagesRetry> retryChapterMissingImages({
   required int index,
@@ -258,6 +262,10 @@ Future<OnlineNovelMissingImagesRetry> retryChapterMissingImages({
   String? pendingAttribute,
   Future<void> Function()? prepare,
   Future<bool> Function()? stillValid,
+  Future<OnlineNovelMissingImagesRetry> Function(
+    Future<OnlineNovelMissingImagesRetry> Function() body,
+  )?
+  commit,
   void Function(int failed, int attempted, String? firstFailure)?
   onStillMissing,
 }) async {
@@ -291,28 +299,36 @@ Future<OnlineNovelMissingImagesRetry> retryChapterMissingImages({
       recovered[image.fileName] = fetched;
     }
   }
-  if (!await file.exists() || !(await stillValid?.call() ?? true)) {
-    return unchanged();
+  Future<OnlineNovelMissingImagesRetry> writeBack() async {
+    if (!await file.exists() || !(await stillValid?.call() ?? true)) {
+      return unchanged();
+    }
+    for (final LnReaderEpubImage image in recovered.values) {
+      await write(
+        File(p.join(extractDir, 'OEBPS', image.fileName)),
+        image.bytes,
+      );
+    }
+    // 重读再改：按占位键认占位，期间文件若被改过，对不上的占位自然跳过。
+    final String updated = applyLnReaderMissingImageRetry(
+      await file.readAsString(),
+      recovered: <String, String>{
+        for (final MapEntry<String, LnReaderEpubImage> entry
+            in recovered.entries)
+          entry.key: entry.value.fileName,
+      },
+      failed: failed,
+    );
+    await write(file, utf8.encode(updated));
+    if (failed.isNotEmpty) {
+      onStillMissing?.call(failed.length, targets.length, firstFailure);
+    }
+    return OnlineNovelMissingImagesRetry(
+      index: index,
+      recovered: recovered.length,
+      remaining: parseLnReaderMissingImages(updated).length,
+    );
   }
-  for (final LnReaderEpubImage image in recovered.values) {
-    await write(File(p.join(extractDir, 'OEBPS', image.fileName)), image.bytes);
-  }
-  // 重读再改：按占位键认占位，期间文件若被改过，对不上的占位自然跳过。
-  final String updated = applyLnReaderMissingImageRetry(
-    await file.readAsString(),
-    recovered: <String, String>{
-      for (final MapEntry<String, LnReaderEpubImage> entry in recovered.entries)
-        entry.key: entry.value.fileName,
-    },
-    failed: failed,
-  );
-  await write(file, utf8.encode(updated));
-  if (failed.isNotEmpty) {
-    onStillMissing?.call(failed.length, targets.length, firstFailure);
-  }
-  return OnlineNovelMissingImagesRetry(
-    index: index,
-    recovered: recovered.length,
-    remaining: parseLnReaderMissingImages(updated).length,
-  );
+
+  return commit == null ? writeBack() : commit(writeBack);
 }

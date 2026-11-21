@@ -899,6 +899,9 @@ class WebNovelChapterLoader extends SerialOnlineNovelChapterLoader
             return fetched;
           },
       stillValid: () async => await _snapshotChapterUrl(index) == chapterUrl,
+      // 复核与写回和浏览器并章 / 开书补占位的整本重建、追章提交互斥（HBK-AUDIT-034）。
+      commit: (Future<OnlineNovelMissingImagesRetry> Function() body) =>
+          webNovelBookCommits.run(bookKey, body),
       onStillMissing: (int failed, int attempted, String? firstFailure) {
         ErrorLogService.instance.log(
           'WebNovelChapterLoader.retryMissingImages',
@@ -1067,11 +1070,13 @@ String _workCommitKey(String? workKey) => 'web-novel-work:${workKey ?? ''}';
 
 /// 网页小说书的**按书提交锁**（HBK-AUDIT-034）。
 ///
-/// 同一本书有三个写方：浏览器并章（[WebNovelLibrary.save]）、开书补占位
+/// 同一本书有四个写方：浏览器并章（[WebNovelLibrary.save]）、开书补占位
 /// （[WebNovelLibrary.ensureTrailingPlaceholder]）、阅读器追章
-/// （[WebNovelChapterLoader]）。它们都是「读书行快照 → 改解压树 → 写回书行」，中间
-/// 隔着网络 / isolate。不串行时，后提交的一方拿旧快照整份覆盖，另一方刚写进的章
-/// 从快照里消失，解压树与书行还可能各是一方的结果。
+/// （[WebNovelChapterLoader]）、阅读器补取缺图
+/// （[WebNovelChapterLoader.retryMissingImages]，只写解压树）。前三个都是「读书行
+/// 快照 → 改解压树 → 写回书行」，中间隔着网络 / isolate。不串行时，后提交的一方
+/// 拿旧快照整份覆盖，另一方刚写进的章从快照里消失，解压树与书行还可能各是一方的
+/// 结果；补图写回若夹在整本重建「读旧树打包 → 换树」之间，补到的图也会被冲掉。
 ///
 /// 规则：取页 / 取图（慢、可能失败）在锁外做；锁内**重读书行**，以当前快照为准
 /// 重新并章再写，写完才放锁。进程内一把（所有写方都在主 isolate）。

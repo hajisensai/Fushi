@@ -726,6 +726,69 @@ void main() {
     expect(fetcher.requested, isEmpty);
   });
 
+  test('HBK-AUDIT-034：补取缺图的复核与写回进按书提交锁，'
+      '不夹进整本重建「读旧树打包 → 换树」之间', () async {
+    final WebNovelLibrary lib = library(
+      fetchImage: (Uri url, {required Uri referer}) async => _png,
+    );
+    final String bookKey = await readPage(
+      lib,
+      'syosetu_n9669bk_1.html',
+      ch1Url,
+    );
+    final EpubBookRow row = (await db.getEpubBook(bookKey))!;
+    final File file = lnReaderOnlineChapterFile(row.extractDir, 0);
+    const String imageUrl = 'https://img.example/a.png';
+    final String marker = lnReaderMissingImageMarker(
+      LnReaderMissingImage(
+        fileName: webNovelImageKey(imageUrl),
+        url: imageUrl,
+        alt: '',
+        tries: 1,
+      ),
+    );
+    file.writeAsStringSync(
+      file.readAsStringSync().replaceFirst('</section>', '$marker</section>'),
+    );
+    final String original = file.readAsStringSync();
+    final WebNovelChapterLoader loader = WebNovelChapterLoader(
+      database: db,
+      library: lib,
+      fetcher: _FakeFetcher(<String, WebNovelFetchedPage>{}),
+      bookKey: bookKey,
+      extractDir: row.extractDir,
+      pendingText: pending,
+      nextChapterTitle: nextTitle,
+    );
+    // 别的写方（如浏览器并章的整本重建）正持着这本书的提交锁。
+    final Completer<void> held = Completer<void>();
+    final Future<void> holder = webNovelBookCommits.run(
+      bookKey,
+      () => held.future,
+    );
+    bool retryDone = false;
+    final Future<OnlineNovelMissingImagesRetry> retrying = loader
+        .retryMissingImages(0, automatic: false);
+    unawaited(retrying.whenComplete(() => retryDone = true));
+    final Stopwatch waited = Stopwatch()..start();
+    while (!retryDone && webNovelBookCommits.queued(bookKey) < 2) {
+      expect(waited.elapsed, lessThan(const Duration(seconds: 30)));
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    // 图已取回，但写回排在锁后：章节文件一个字没动。
+    expect(retryDone, isFalse);
+    expect(file.readAsStringSync(), original);
+
+    held.complete();
+    await holder;
+    final OnlineNovelMissingImagesRetry recovered = await retrying;
+    expect(recovered.recovered, 1);
+    expect(recovered.remaining, 0);
+    final String name = webNovelImageFileName(imageUrl, 'image/png');
+    expect(file.readAsStringSync(), contains('src="$name"'));
+    expect(webNovelBookCommits.queued(bookKey), 0);
+  });
+
   test('只有网页小说书才有取章加载器（普通书 / LNReader 书为 null）', () async {
     final WebNovelLibrary lib = library();
     final String bookKey = await readPage(
