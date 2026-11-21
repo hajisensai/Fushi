@@ -6314,6 +6314,8 @@
   "media_audio_cd_rip_reading": "Reading the disc…",
   "media_audio_cd_rip_title": "Ripping audio CD",
   "media_audio_cd_rip_unreadable": "$n damaged sectors could not be read and were filled with silence",
+  "media_collection_episode_streams": "Streams",
+  "media_collection_episode_streams_source": "Streams · ${source}",
   "media_detail_start_reading": "Start reading",
   "media_detail_start_watching": "Start watching",
   "media_detail_status_completed": "Completed",
