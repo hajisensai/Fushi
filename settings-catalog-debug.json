@@ -7,7 +7,7 @@
   "en",
   "zh-CN"
  ],
- "count": 879,
+ "count": 887,
  "settings": [
   {
    "key": "appearance.language",
@@ -6729,6 +6729,40 @@
    "default": false
   },
   {
+   "key": "video.subtitle.mask_mode",
+   "kind": "value",
+   "type": "choice",
+   "title": {
+    "en": "Positioning",
+    "zh-CN": "定位方式"
+   },
+   "path": {
+    "en": "Video › Picture and subtitles › Subtitles › Burned-in subtitles",
+    "zh-CN": "视频 › 画面与字幕 › 字幕 › 硬字幕"
+   },
+   "description": {
+    "en": "Smart finds burned-in subtitles with on-device OCR and only covers them while they are on screen; the box becomes the search area",
+    "zh-CN": "智能：用本机 OCR 找画面里的硬字幕，只在有字时盖住；框变成搜索区域"
+   },
+   "options": [
+    {
+     "value": "manual",
+     "label": {
+      "en": "Manual",
+      "zh-CN": "手动"
+     }
+    },
+    {
+     "value": "smart",
+     "label": {
+      "en": "Smart",
+      "zh-CN": "智能"
+     }
+    }
+   ],
+   "default": "manual"
+  },
+  {
    "key": "video.subtitle.mask_style",
    "kind": "value",
    "type": "choice",
@@ -9269,6 +9303,42 @@
    "default": false
   },
   {
+   "key": "system.web_browser_fullscreen_takeover",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Fushi handles video full screen",
+    "zh-CN": "网页全屏由 Fushi 接管"
+   },
+   "path": {
+    "en": "Browser › Browsing",
+    "zh-CN": "浏览器 › 浏览"
+   },
+   "description": {
+    "en": "Full screen stays inside the browser so Fushi subtitles and lookup keep working (iPhone no longer switches to the system player). Takes effect after reloading the page.",
+    "zh-CN": "全屏留在浏览器里，Fushi 字幕和查词照常可用（iPhone 不再跳到系统播放器）。刷新网页后生效。"
+   },
+   "default": true
+  },
+  {
+   "key": "system.web_browser_fullscreen_auto_rotate",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Rotate to landscape in full screen",
+    "zh-CN": "全屏时横视频自动转横屏"
+   },
+   "path": {
+    "en": "Browser › Browsing",
+    "zh-CN": "浏览器 › 浏览"
+   },
+   "description": {
+    "en": "When off, holding the phone upright shows the video on top and the subtitle list below.",
+    "zh-CN": "关掉后竖着拿手机：视频在上，字幕列表在下。"
+   },
+   "default": true
+  },
+  {
    "key": "system.web_browser_restore_tabs",
    "kind": "value",
    "type": "bool",
@@ -11064,6 +11134,25 @@
    "userOnly": true
   },
   {
+   "key": "ai.web_search.agent",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Let the AI assistant search the web",
+    "zh-CN": "允许 AI 助手自主联网搜索"
+   },
+   "path": {
+    "en": "AI › Web search",
+    "zh-CN": "AI › 联网搜索"
+   },
+   "description": {
+    "en": "The first time the assistant wants to search, it asks you once. After you agree, its search words and the addresses of pages it reads go to the search backend above without asking again. Turning this off stops it; turning it back on asks again.",
+    "zh-CN": "助手第一次要联网搜索时会先问你一次；同意后，它的搜索词和要读的网页地址会直接发给上面的搜索后端，不再逐次询问。关掉后助手不能联网搜索，再打开会重新询问。"
+   },
+   "default": true,
+   "userOnly": true
+  },
+  {
    "key": "ai.video_download_quality",
    "kind": "value",
    "type": "choice",
@@ -11667,6 +11756,60 @@
     "zh-CN": "下载官方 Irodori-TTS 服务并在本机运行，无需命令行"
    },
    "hint": "本机 Irodori-TTS 用 fushi_cli models download / rm irodori 部署，models start / stop irodori 起停服务，voice add irodori_server 建声音"
+  },
+  {
+   "key": "models.tts_pronunciation",
+   "kind": "action",
+   "type": "action",
+   "title": {
+    "en": "Pronunciation dictionary",
+    "zh-CN": "发音词典"
+   },
+   "path": {
+    "en": "On-device models › Speech synthesis (TTS) › Text processing",
+    "zh-CN": "本机模型 › 语音合成（TTS） › 文本处理"
+   },
+   "description": {
+    "en": "Change how words are read, e.g. 今日 → きょう",
+    "zh-CN": "替换词语的读法，例如 今日 → きょう"
+   },
+   "hint": "TTS 文本处理规则只在 app 里编辑"
+  },
+  {
+   "key": "models.tts_pre_synthesis",
+   "kind": "action",
+   "type": "action",
+   "title": {
+    "en": "Replace before synthesis",
+    "zh-CN": "合成前替换"
+   },
+   "path": {
+    "en": "On-device models › Speech synthesis (TTS) › Text processing",
+    "zh-CN": "本机模型 › 语音合成（TTS） › 文本处理"
+   },
+   "description": {
+    "en": "Rewrite text before it goes to TTS, e.g. 〜 → ー",
+    "zh-CN": "送进 TTS 之前改写文本，例如 〜 → ー"
+   },
+   "hint": "TTS 文本处理规则只在 app 里编辑"
+  },
+  {
+   "key": "models.tts_post_recognition",
+   "kind": "action",
+   "type": "action",
+   "title": {
+    "en": "Replace after recognition",
+    "zh-CN": "识别后替换"
+   },
+   "path": {
+    "en": "On-device models › Speech synthesis (TTS) › Text processing",
+    "zh-CN": "本机模型 › 语音合成（TTS） › 文本处理"
+   },
+   "description": {
+    "en": "When speech recognition proofreads a made audiobook, change what it heard back to the original spelling, e.g. きょう → 今日",
+    "zh-CN": "语音识别校对有声书时，把识别出的文本改回原文写法，例如 きょう → 今日"
+   },
+   "hint": "TTS 文本处理规则只在 app 里编辑"
   },
   {
    "key": "services.subtitle_preferences",
@@ -13240,6 +13383,25 @@
     "zh-CN": "从覆盖导入前的快照恢复书库，或把盘上残留的书目录重新登记"
    },
    "hint": "恢复书库要逐条确认，只在界面里做：设置 › 存储 › 恢复书库"
+  },
+  {
+   "key": "storage.srs_retained_copy",
+   "kind": "action",
+   "type": "action",
+   "title": {
+    "en": "Delete old-version retained copy",
+    "zh-CN": "删除旧版本保留副本"
+   },
+   "path": {
+    "en": "Storage › Database maintenance",
+    "zh-CN": "存储 › 数据库维护"
+   },
+   "description": {
+    "en": "The review library from before the upgrade, kept so you can go back to the old version. It still holds the original text of anything purged since the upgrade.",
+    "zh-CN": "升级前的复习库，留着以便退回旧版本。升级后彻底清除的内容在里面仍有原文。"
+   },
+   "destructive": true,
+   "hint": "删除旧版本保留副本走复习的控制通道：srs.retained.status 看大小与到期，srs.retained.delete（confirm: true）删除"
   },
   {
    "key": "widgets.howto",

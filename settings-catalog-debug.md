@@ -1,6 +1,6 @@
 # Fushi settings reference
 
-> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 879 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
+> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 887 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
 
 How to read this:
 
@@ -378,6 +378,7 @@ How to read this:
 | `video.secondary_subtitle.obscure` | Obscure secondary subtitle | 副字幕遮蔽 | Picture and subtitles › Subtitles › Listening practice | choice | `none`, `blur`, `hide` | `none` | Blur or hide the secondary (translation) subtitle |
 | `video.secondary_subtitle.obscure_reveal` | Secondary: reveal when paused or hovered | 副字幕暂停或悬停时显形 | Picture and subtitles › Subtitles › Listening practice | bool |  | `true` | Same as the primary subtitle switch, but for the secondary (translation) subtitle. Turn it off to keep the translation obscured even while the primary subtitle is revealed. |
 | `video.subtitle.mask_enabled` | Subtitle mask | 字幕遮布 | Picture and subtitles › Subtitles › Burned-in subtitles | bool |  | `false` | Cover subtitles burned into the picture (e.g. built-in Chinese subtitles); Fushi subtitles stay on top |
+| `video.subtitle.mask_mode` | Positioning | 定位方式 | Picture and subtitles › Subtitles › Burned-in subtitles | choice | `manual`, `smart` | `manual` | Smart finds burned-in subtitles with on-device OCR and only covers them while they are on screen; the box becomes the search area |
 | `video.subtitle.mask_style` | Mask look | 遮布外观 | Picture and subtitles › Subtitles › Burned-in subtitles | choice | `blur`, `solid` | `blur` |  |
 | `video.subtitle.mask_strength` | Mask strength | 遮布强度 | Picture and subtitles › Subtitles › Burned-in subtitles | number | 0.1 – 1.0 | `0.85` |  |
 | `video.subtitle.mask_adjust` | Adjust mask position | 调整遮布位置 | Picture and subtitles › Subtitles › Burned-in subtitles | action |  |  | Drag to move, drag corners to resize |
@@ -531,6 +532,8 @@ How to read this:
 | `system.web_browser_search_engine` | Search engine | 搜索引擎 | Browsing | choice | `google`, `bing`, `duckDuckGo` | `google` |  |
 | `system.web_browser_force_dark` | Dark mode for web pages | 网页深色模式 | Browsing | bool |  | `false` | Show pages in dark colors when the app is dark |
 | `system.web_browser_desktop_mode_default` | Open desktop sites by default | 默认打开桌面版网页 | Browsing | bool |  | `false` |  |
+| `system.web_browser_fullscreen_takeover` | Fushi handles video full screen | 网页全屏由 Fushi 接管 | Browsing | bool |  | `true` | Full screen stays inside the browser so Fushi subtitles and lookup keep working (iPhone no longer switches to the system player). Takes effect after reloading the page. |
+| `system.web_browser_fullscreen_auto_rotate` | Rotate to landscape in full screen | 全屏时横视频自动转横屏 | Browsing | bool |  | `true` | When off, holding the phone upright shows the video on top and the subtitle list below. |
 | `system.web_browser_restore_tabs` | Restore tabs from last time | 恢复上次的标签页 | Browsing | bool |  | `true` | Incognito tabs are never restored |
 | `system.web_adblock_enabled` | Block ads and trackers on web pages | 拦截网页广告与跟踪器 | Web ad blocking | bool |  | `false` | Applies to in-app web browsing such as web manga, web novels and source login pages. Filter lists are downloaded and refreshed automatically. |
 | `system.web_adblock_list.easylist` | EasyList | EasyList | Web ad blocking | bool |  | `false` | easylist.to |
@@ -717,6 +720,7 @@ How to read this:
 | `ai.web_search.searxng_endpoint` | SearXNG address | SearXNG 地址 | Web search | text |  |  | Instance root URL. The instance must enable the json format (search.formats in settings.yml). · *user only* |
 | `ai.web_search.brave_api_key` | Brave API key | Brave API 密钥 | Web search | secret |  |  | Brave Search API subscription token. · *user only* |
 | `ai.web_search.page_fetch` | Send fetched pages to AI | 把抓到的网页交给 AI | Web search | bool |  | `false` | Fetch the top 3 search result pages and send their text to your AI provider (billed by tokens). Web search does nothing while this is off. Some AI providers have built-in web search (some charge for it); with those you can leave this section unconfigured. · *user only* |
+| `ai.web_search.agent` | Let the AI assistant search the web | 允许 AI 助手自主联网搜索 | Web search | bool |  | `true` | The first time the assistant wants to search, it asks you once. After you agree, its search words and the addresses of pages it reads go to the search backend above without asking again. Turning this off stops it; turning it back on asks again. · *user only* |
 | `ai.video_download_quality` | Default quality | 默认画质 | AI video download | choice | , `ask`, `best`, `2160p`, `1440p`, `1080p`, `720p`, `480p`, `any` |  | Used when the AI download assistant picks a release; "Best available" takes the highest resolution found, "Ask each time" asks on every request. |
 | `ai.video_download_source` | Preferred source | 片源偏好 | AI video download | choice | `any`, `best`, `bluray`, `web` | `any` | Versions from this source are tried first; others are still used when it is missing. Blu-ray includes BDRip and Remux. |
 | `ai.video_download_bitrate` | Bitrate | 码率偏好 | AI video download | choice | `any`, `high`, `low` | `any` | Estimated from the size per episode; ranks versions that already match the quality and source. |
@@ -737,6 +741,9 @@ How to read this:
 | `models.tts_voices` | Read-aloud voices | 朗读声音 | Speech synthesis (TTS) | action |  |  | GPT-SoVITS, Microsoft, Google or the system voice |
 | `models.tts_local_gpt_sovits` | Local GPT-SoVITS | 本机 GPT-SoVITS | Speech synthesis (TTS) | action |  |  | Download the official package and run it here, no command line needed |
 | `models.tts_local_irodori` | Local Irodori-TTS | 本机 Irodori-TTS | Speech synthesis (TTS) | action |  |  | Download the official Irodori-TTS server and run it here, no command line needed |
+| `models.tts_pronunciation` | Pronunciation dictionary | 发音词典 | Speech synthesis (TTS) › Text processing | action |  |  | Change how words are read, e.g. 今日 → きょう |
+| `models.tts_pre_synthesis` | Replace before synthesis | 合成前替换 | Speech synthesis (TTS) › Text processing | action |  |  | Rewrite text before it goes to TTS, e.g. 〜 → ー |
+| `models.tts_post_recognition` | Replace after recognition | 识别后替换 | Speech synthesis (TTS) › Text processing | action |  |  | When speech recognition proofreads a made audiobook, change what it heard back to the original spelling, e.g. きょう → 今日 |
 
 ## Online services (在线服务)
 
@@ -878,6 +885,7 @@ How to read this:
 | `sync.data_storage_location` | sync.data_storage_location | sync.data_storage_location | Data storage location | custom |  |  |  |
 | `storage.db_check` | Check database | 检查数据库 | Database maintenance | action |  |  | Check integrity, repair known damaged data and compact. A full backup is made first. · *destructive* |
 | `storage.library_recovery` | Recover library | 恢复书库 | Database maintenance | action |  |  | Restore books from the snapshot taken before an overwrite import, or re-register book folders left on disk |
+| `storage.srs_retained_copy` | Delete old-version retained copy | 删除旧版本保留副本 | Database maintenance | action |  |  | The review library from before the upgrade, kept so you can go back to the old version. It still holds the original text of anything purged since the upgrade. · *destructive* |
 | `storage.cli.categories` | Disk usage | 磁盘占用 |  | list |  |  |  |
 | `storage.cli.entries` | Disk usage · entries | 磁盘占用 · entries |  | list |  |  |  |
 | `storage.cli.bundled` | Bundled components | 随包组件 |  | list |  |  |  |
