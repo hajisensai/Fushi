@@ -309,7 +309,10 @@ struct ht_session_ctx {
 
   // ── TODO-2482：会话统计快照（drain_alerts 收割，ht_session_status 读）──
 
-  // 最近一次 dht_stats_alert 的路由表节点总数（-1 = 尚未收到过）。
+  // 最近一次 session_stats_alert 的 `dht.dht_nodes`（全部 DHT 实例的路由表
+  // 节点之和；-1 = 尚未采样过）。不用 dht_stats_alert：双栈 / 多网卡下
+  // libtorrent 每个监听端点各有一个 DHT 实例、各投一条 dht_stats_alert，
+  // 逐条赋值会让后到的空实例（如 Teredo IPv6）把 IPv4 的节点数盖成 0。
   int dht_nodes = -1;
 
   // 最近一次 session_stats_alert 的累计收发字节（-1 = 尚未采样过）与采样
@@ -453,19 +456,18 @@ void drain_alerts(ht_session_ctx* ctx) {
       continue;
     }
     // TODO-2482：会话统计（ht_session_status 的数据面）。
-    if (const auto* ds = lt::alert_cast<lt::dht_stats_alert>(a)) {
-      int nodes = 0;
-      for (const lt::dht_routing_bucket& b : ds->routing_table) {
-        nodes += b.num_nodes;
-      }
-      ctx->dht_nodes = nodes;
-      continue;
-    }
     if (const auto* ss = lt::alert_cast<lt::session_stats_alert>(a)) {
       // metric 下标在同一 libtorrent 版本内恒定，查一次缓存住。
       static const int recv_idx = lt::find_metric_idx("net.recv_bytes");
       static const int sent_idx = lt::find_metric_idx("net.sent_bytes");
+      // dht_tracker::update_stats_counters 在 post_session_stats 时把它清零
+      // 再逐实例累加，天然是跨端点汇总；DHT 关着时不更新（停在旧值），
+      // 由 ht_session_status 按 is_dht_running 收口。
+      static const int dht_nodes_idx = lt::find_metric_idx("dht.dht_nodes");
       const auto counters = ss->counters();
+      if (dht_nodes_idx >= 0 && dht_nodes_idx < int(counters.size())) {
+        ctx->dht_nodes = int(counters[dht_nodes_idx]);
+      }
       if (recv_idx >= 0 && sent_idx >= 0 &&
           recv_idx < int(counters.size()) && sent_idx < int(counters.size())) {
         const std::int64_t recv = counters[recv_idx];
@@ -1919,15 +1921,18 @@ HT_EXPORT char* ht_session_status(void* session) {
     // （同步等会卡 UI isolate）。dht_nodes 首轮 -1、下一轮即有值；速率要到
     // **第三轮**才有值：首轮回执未到、第二轮收割到首个采样只够建基线，
     // 第三轮才差分得出（契约见头文件）。
-    ctx->ses.post_dht_stats();
     ctx->ses.post_session_stats();
     drain_alerts(ctx);
     const lt::settings_pack sp = ctx->ses.get_settings();
+    const bool dht_running = ctx->ses.is_dht_running();
     std::string out = "{\"ok\":true";
     out += ",\"listen_port\":" + std::to_string(int(ctx->ses.listen_port()));
     out += std::string(",\"dht_running\":") +
-           (ctx->ses.is_dht_running() ? "true" : "false");
-    out += ",\"dht_nodes\":" + std::to_string(ctx->dht_nodes);
+           (dht_running ? "true" : "false");
+    // DHT 关着时指标不再更新，报 0 而不是残留的旧节点数（-1 仍表示未采样）。
+    const int dht_nodes =
+        (!dht_running && ctx->dht_nodes > 0) ? 0 : ctx->dht_nodes;
+    out += ",\"dht_nodes\":" + std::to_string(dht_nodes);
     out += std::string(",\"lsd_enabled\":") +
            (sp.get_bool(lt::settings_pack::enable_lsd) ? "true" : "false");
     out += std::string(",\"upnp_enabled\":") +
