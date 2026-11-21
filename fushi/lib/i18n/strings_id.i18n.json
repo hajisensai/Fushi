@@ -12292,6 +12292,7 @@
   "video_acquisition_results_empty": "No matches found",
   "video_acquisition_section_title": "Where to get it",
   "video_acquisition_sources_partial_failed": "$count sources failed",
+  "video_acquisition_sources_pending": "$count more sources still searching",
   "video_acquisition_torrent_add_site": "Add BT source",
   "video_acquisition_torrent_found": "$count resources found",
   "video_acquisition_torrent_unconfigured": "No BT sources for this title yet. Add a BT source to search for resources.",

@@ -33,8 +33,16 @@ class _FakeBackend implements VideoAcquisitionChannelBackend {
   final List<Completer<VideoAcquisitionLookup>> calls =
       <Completer<VideoAcquisitionLookup>>[];
 
+  /// 每次 lookup 收到的中途进度回调（与 [calls] 同下标）。
+  final List<VideoAcquisitionProgress?> progress =
+      <VideoAcquisitionProgress?>[];
+
   @override
-  Future<VideoAcquisitionLookup> lookup(VideoMediaReference reference) {
+  Future<VideoAcquisitionLookup> lookup(
+    VideoMediaReference reference, {
+    VideoAcquisitionProgress? onProgress,
+  }) {
+    progress.add(onProgress);
     final Completer<VideoAcquisitionLookup> completer =
         Completer<VideoAcquisitionLookup>();
     calls.add(completer);
@@ -146,6 +154,75 @@ void main() {
       expect(state.failedSourceCount, 1);
     });
 
+    test('多来源渠道的中途进度：有命中先出「部分结果 + 仍在搜」，最终结果收尾', () async {
+      unawaited(controller.load(VideoAcquisitionChannel.onlineSource));
+      final _FakeBackend backend =
+          backends[VideoAcquisitionChannel.onlineSource]!;
+      final VideoAcquisitionProgress progress = backend.progress.single!;
+
+      // 只有失败 / 无命中的来源回来：没东西可显示，保持加载中。
+      progress(
+        const VideoAcquisitionLookup.hits(
+          <VideoAcquisitionHit>[],
+          failedSourceCount: 1,
+          pendingSourceCount: 2,
+        ),
+      );
+      expect(
+        controller.stateOf(VideoAcquisitionChannel.onlineSource).status,
+        VideoAcquisitionChannelStatus.loading,
+      );
+
+      progress(
+        VideoAcquisitionLookup.hits(
+          <VideoAcquisitionHit>[_hit('fast')],
+          failedSourceCount: 1,
+          pendingSourceCount: 1,
+        ),
+      );
+      final VideoAcquisitionChannelState partial = controller.stateOf(
+        VideoAcquisitionChannel.onlineSource,
+      );
+      expect(partial.status, VideoAcquisitionChannelStatus.ready);
+      expect(partial.hits.single.id, 'fast');
+      expect(partial.pendingSourceCount, 1);
+      expect(partial.failedSourceCount, 1);
+      expect(partial.isSearching, isTrue);
+
+      backend.calls.single.complete(
+        VideoAcquisitionLookup.hits(<VideoAcquisitionHit>[
+          _hit('fast'),
+          _hit('slow'),
+        ], failedSourceCount: 1),
+      );
+      await pumpEventQueue();
+      final VideoAcquisitionChannelState done = controller.stateOf(
+        VideoAcquisitionChannel.onlineSource,
+      );
+      expect(done.hits.map((VideoAcquisitionHit h) => h.id), <String>[
+        'fast',
+        'slow',
+      ]);
+      expect(done.pendingSourceCount, 0);
+      expect(done.isSearching, isFalse);
+    });
+
+    test('重试之后旧查询的中途进度被丢弃', () async {
+      unawaited(controller.load(VideoAcquisitionChannel.mediaServer));
+      unawaited(controller.load(VideoAcquisitionChannel.mediaServer));
+      final _FakeBackend backend =
+          backends[VideoAcquisitionChannel.mediaServer]!;
+      backend.progress.first!(
+        VideoAcquisitionLookup.hits(<VideoAcquisitionHit>[
+          _hit('stale'),
+        ], pendingSourceCount: 1),
+      );
+      expect(
+        controller.stateOf(VideoAcquisitionChannel.mediaServer).status,
+        VideoAcquisitionChannelStatus.loading,
+      );
+    });
+
     test('dispose 之后晚到的结果不再通知', () async {
       int notifications = 0;
       final VideoWorkAcquisitionController local =
@@ -229,6 +306,68 @@ void main() {
       expect(queriedA, <String>['first', 'second']);
       expect(lookup.hits.map((VideoAcquisitionHit h) => h.id), <String>['a1']);
       expect(lookup.failedSourceCount, 1);
+    });
+
+    test('按来源逐个出结果：每个来源返回就报一次快照，命中按到达顺序追加', () async {
+      final Completer<List<VideoAcquisitionHit>> slow =
+          Completer<List<VideoAcquisitionHit>>();
+      final Completer<List<VideoAcquisitionHit>> fast =
+          Completer<List<VideoAcquisitionHit>>();
+      final Completer<List<VideoAcquisitionHit>> broken =
+          Completer<List<VideoAcquisitionHit>>();
+      final List<VideoAcquisitionLookup> snapshots = <VideoAcquisitionLookup>[];
+      final Future<VideoAcquisitionLookup> result =
+          searchVideoAcquisitionTargets(
+            targets: <VideoAcquisitionSearchTarget>[
+              VideoAcquisitionSearchTarget(
+                id: 'slow',
+                name: 'Slow',
+                search: (String query) => slow.future,
+              ),
+              VideoAcquisitionSearchTarget(
+                id: 'fast',
+                name: 'Fast',
+                search: (String query) => fast.future,
+              ),
+              VideoAcquisitionSearchTarget(
+                id: 'broken',
+                name: 'Broken',
+                search: (String query) => broken.future,
+              ),
+            ],
+            titles: const <String>['q'],
+            logTag: 'test',
+            onProgress: snapshots.add,
+          );
+      await pumpEventQueue();
+      expect(snapshots, isEmpty, reason: '还没有来源返回');
+
+      fast.complete(<VideoAcquisitionHit>[_hit('f1'), _hit('f2')]);
+      await pumpEventQueue();
+      expect(snapshots, hasLength(1));
+      expect(snapshots.last.hits.map((VideoAcquisitionHit h) => h.id), <String>[
+        'f1',
+        'f2',
+      ], reason: '快源先出，不等排在前面的慢源');
+      expect(snapshots.last.pendingSourceCount, 2);
+
+      broken.completeError(StateError('down'));
+      await pumpEventQueue();
+      expect(snapshots, hasLength(2));
+      expect(snapshots.last.failedSourceCount, 1);
+      expect(snapshots.last.pendingSourceCount, 1);
+      expect(snapshots.last.hits, hasLength(2));
+
+      slow.complete(<VideoAcquisitionHit>[_hit('s1')]);
+      final VideoAcquisitionLookup lookup = await result;
+      expect(snapshots, hasLength(2), reason: '最后一个来源的结果由返回值给出');
+      expect(lookup.hits.map((VideoAcquisitionHit h) => h.id), <String>[
+        'f1',
+        'f2',
+        's1',
+      ]);
+      expect(lookup.failedSourceCount, 1);
+      expect(lookup.pendingSourceCount, 0);
     });
 
     test('全部来源失败 = 整个渠道失败', () async {
