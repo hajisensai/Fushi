@@ -14047,6 +14047,9 @@ class AppModel
       // 扩展网页视频沉浸时间：每条播放样本喂给桥 → 每个 mediaKey 一个
       // VideoWatchTracker + StudyClock（只计首次覆盖，与视频页同口径）。
       onExtensionStudy: _ensureBrowserVideoStudyBridge().onSample,
+      // 反馈 PtsjrnVmH9：扩展在统计中的网页视频页上查词 / 制卡，记到该视频名下
+      // （查词 / 制卡计数与 app 内视频页同一张表、同一来源 video）。
+      onExtensionStudyActivity: _ensureBrowserVideoStudyBridge().onActivity,
       // BUG-3141：扩展查词弹窗 ☆/★ 收藏。浏览器同属「app 外查词表面」，与 app 外浮窗 /
       // 剪贴板面板的 favoriteEntry / favoriteCheck 走同一份读写（跨源判 / 跨源删 / 单源写）。
       onExtensionFavorite: _browserExtensionFavorite,

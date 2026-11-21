@@ -1305,6 +1305,12 @@ window.fushiEnqueue = async function (fields, sentence) {
   const youtubeId = ctx.youtubeId;
   const netflixId = ctx.netflixId;
   const documentTitle = ctx.documentTitle;
+  // 统计身份在点击那一刻冻结：批量生成时早已离开这页（反馈 PtsjrnVmH9）。
+  let study = null;
+  try {
+    const tracker = window.fushiStudyTracker;
+    study = tracker && typeof tracker.identity === 'function' ? tracker.identity() : null;
+  } catch (_) { study = null; }
   // 边距与「立即出卡」那条路同源（`fushiClipWindowWithMargin`）——两条路裁的是同一句话，
   // 边距不同步就会出现「B 站点一下的卡开头被切、YouTube 批量的卡不切」。
   // 多句合一：裁切窗取上下文并集（首句起→末句止），句子用合成句；与 app 内
@@ -1325,6 +1331,7 @@ window.fushiEnqueue = async function (fields, sentence) {
     youtubeId: youtubeId,
     netflixId: netflixId,
     documentTitle: documentTitle,
+    ...(study ? { study: study } : {}),
   };
   // TODO-1222：已在队列（同词同句同片）→ 不重复入队，返回 duplicate 让弹窗提示「已在队列中」。
   // 判重同样以 storage 现值为准（镜像可能落后）。
@@ -1557,6 +1564,8 @@ async function fushiRunNetflixBatch(introGate) {
                 clipStartMs: (typeof q.cueStartV === 'number' ? q.cueStartV : null),
                 clipEndMs: (typeof q.cueEndV === 'number' ? q.cueEndV : null),
                 mineAtMs: (typeof q.mineAtV === 'number' ? q.mineAtV : null),
+                // 入队时冻结的统计身份；旧队列项没有 → background 按本标签页正在统计的视频认。
+                ...(q.study ? { study: q.study } : {}),
                 documentTitle: q.documentTitle || (typeof netflixDocumentTitle === 'function' ? netflixDocumentTitle() : '') },
               (resp) => {
                 try { if (chrome.runtime.lastError) return resolve(null); } catch (_) { return resolve(null); }
