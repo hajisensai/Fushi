@@ -25,6 +25,7 @@ import 'package:fushi/src/ai/ai_manga_audio_assistant.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_series_run.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_annotate_flow.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_annotate_tasks.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_review_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart'
     show GlassSettingsRenderer;
@@ -142,7 +143,8 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _load() async {
+  /// [keepPage]：重读后停在当前页（从逐句复核回来时），否则跳到第一处要处理的页。
+  Future<void> _load({bool keepPage = false}) async {
     try {
       final MangaAudioAnnotateSession s = await MangaAudioAnnotateSession.open(
         _app,
@@ -156,7 +158,7 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
         _session = s;
         _seriesVolumes = volumes;
         _loadError = null;
-        _page = _initialPage(s);
+        _page = keepPage && _page < s.pageCount ? _page : _initialPage(s);
       });
       _syncTasks();
     } on MangaAudioAnnotateError catch (e) {
@@ -168,6 +170,9 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
     final List<int> ordered = _orderedPages(s);
     return ordered.isEmpty ? 0 : ordered.first;
   }
+
+  int _pendingCount(MangaAudioAnnotateSession s) =>
+      s.script.lines.where(mangaLineNeedsReview).length;
 
   int _reviewCount(MangaAudioAnnotateSession s, int page) =>
       s.script.linesOnPage(page).where(mangaLineNeedsReview).length;
@@ -186,6 +191,18 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
           .add(p);
     }
     return <int>[...first, ...rest];
+  }
+
+  /// 对照原页逐句复核；回来后重读（复核页用自己的会话写盘）。
+  Future<void> _openReview() async {
+    if (_session == null || _busy) return;
+    await openMangaAudioReviewPage(
+      context,
+      appModel: _app,
+      bookKey: widget.bookKey,
+      startPage: _page,
+    );
+    if (mounted) await _load(keepPage: true);
   }
 
   void _toast(String msg, {ToastSeverity severity = ToastSeverity.neutral}) =>
@@ -739,6 +756,17 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
                   : _stop,
             ),
           if (!_busy) ...<Widget>[
+            if (s.script.lines.isNotEmpty)
+              AdaptiveSettingsRow(
+                key: const ValueKey<String>('manga-audio-review'),
+                icon: FushiIcons.image,
+                showIcon: true,
+                title: t.manga_audio_review_action,
+                subtitle: _pendingCount(s) == 0
+                    ? null
+                    : t.manga_audio_page_review_count(n: _pendingCount(s)),
+                onTap: () => unawaited(_openReview()),
+              ),
             AdaptiveSettingsRow(
               key: const ValueKey<String>('manga-audio-annotate'),
               icon: FushiIcons.ai,
