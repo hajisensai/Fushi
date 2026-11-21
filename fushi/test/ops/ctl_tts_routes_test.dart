@@ -298,6 +298,7 @@ void main() {
                 durationMs: 900,
                 voice: voice,
                 text: 'おはよう',
+                shape: 'test-shape',
               );
             },
         stopPlayback: (List<String> keys) async {},
