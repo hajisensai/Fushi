@@ -234,6 +234,7 @@ Throwing an `Error` shows `error.message` to the user.
 | `radio` | `{ op: 'next', seedTrackId?, count? }` / `{ op: 'trash', id }` | next → `{ tracks: Track[], title? }` — the next batch (first 100 used), empty = no more; no `seedTrackId` = personal radio (throw if it needs login), with it = radio seeded by that track; `count` is only a hint. trash → `null` | Radio queue: the host asks for the next batch when it runs low; "don't recommend" |
 | `artistSimilar` | `{ id }` | `{ items: Artist[] }` — first 50 used | Artist page › Similar artists |
 | `collect` | `{ op: 'set', type: 'playlist' \| 'album' \| 'artist', id, on }` | `null`; throw on failure / logged out | Save playlists / albums, follow artists. Report the current state as `collected: boolean` on Playlist / Album / Artist (omit when logged out / unknown) |
+| `browse` | `{ op: 'schema' }` / `{ op: 'list', query, page, pageSize }` / `{ op: 'catalog', facet, query?, page, pageSize }` | schema → `{ facets?, sorts?, toggles?, choices? }` (each `{ id, label }`, choices add `values: [{ id, label }]`); list → `{ items, hasMore, total?, kind? }` — `kind` `'albums'` (default) / `'tracks'` / `'playlists'`, same on every page; catalog → `{ items: [{ id, name, count? }], hasMore }` | Source page › "All works" + catalogs; clickable `tags`; filtered lists (conditions bar: remove / add conditions, toggles, choices, sort), paged by `hasMore`; `Section.more` "View all". `query` = `{ filters?: Tag[], sort?, toggles?: string[], choices?: { id: valueId } }` |
 | `account` | `{}` | `{ loggedIn, name?, avatarUrl?, badge? }` | Settings › plugin account row |
 | `login` | see section 6 | | Sign-in screen |
 
@@ -244,9 +245,13 @@ are dropped. Text is trimmed; empty strings count as missing.
 
 ```ts
 Track    { id*, title*, artists?: [{ id?, name* }], album?: { id?, title? }, durationMs?, coverUrl?,
-           trackNo?, discNo?, isrc?, playable? (default true), note? ("VIP"), mvId? }
+           trackNo?, discNo?, isrc?, playable? (default true), note? ("VIP"), mvId?,
+           group? (album page groups tracks by it: "Main" / "Ambient version" / "Bonus", first-seen order) }
 Album    { id*, title*, artists?, coverUrl?, year?, trackCount?, releaseDate? ('YYYY'|'YYYY-MM'|'YYYY-MM-DD'),
-           company? (≤200 chars), description? (≤20000), collected?: bool (account saved it; omit if unknown) }
+           company? (≤200 chars), description? (≤20000), collected?: bool (account saved it; omit if unknown),
+           tags?: Tag[] (≤40, most common first; cards show 3), code? ("RJ01000001"), language?, durationMs?,
+           hasSubtitles?: bool, sourceUrl? (https only), related?: [{ label?, album* }] (album page, ≤20) }
+Tag      { facet*, id*, name* } — facet = one of your browse schema facets; clickable only with `browse`
 Artist   { id*, name*, coverUrl?, aliases?: string[] (≤10), description?, intro?: [{ title?, text* }] (≤20),
            stats?: { trackCount?, albumCount?, mvCount?, fanCount? }, collected?: bool (account follows it) }
 Playlist { id*, title*, coverUrl?, trackCount?, owner?, description?, playCount?, tags?: string[] (≤10),
@@ -256,7 +261,8 @@ Mv       { id*, title*, artists?, coverUrl? (16:9), durationMs?, playCount?, pub
 Stream   { url*, headers?, expiresAt?, codec?, bitrateKbps?, sampleRate?, bitDepth?, sizeBytes?,
            trial?: { startMs, endMs } (only a preview is available) }
 MvStream { url*, headers?, expiresAt?, width?, height? }
-Section  { id*, title*, subtitle?, kind*: 'tracks' | 'playlists' | 'albums', items*: [matching entities] }
+Section  { id*, title*, subtitle?, kind*: 'tracks' | 'playlists' | 'albums', items*: [matching entities],
+           more?: BrowseQuery ("View all" opens this filtered list; needs `browse`) }
 LyricText { format*: 'lrc' | 'yrc' | 'qrc' | 'krc' | 'ttml' | 'txt', text*, language? (BCP 47, e.g. 'ja') }
 ```
 
