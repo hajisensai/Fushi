@@ -3,6 +3,7 @@
 
 #include <flutter/method_channel.h>
 #include <flutter/standard_message_codec.h>
+#include <functional>
 #include <map>
 #include <string>
 #include <variant>
@@ -88,6 +89,11 @@ namespace flutter_inappwebview_plugin
     // 或最后一个 manager 析构兜底）按 dcomp -> WinRT 依赖顺序显式释放进程级共享单例，
     // 避免落到 CRT atexit。幂等：重复调用为 no-op。
     static void releaseSharedCompositionResources();
+    int host_window_proc_delegate_id_ = -1;
+    bool host_window_visible_ = true;
+    void forEachManagedWebView(const std::function<void(InAppWebView*)>& visitor) const;
+    void onHostWindowVisibilityChanged(bool visible);
+    void onHostWindowBoundsChanged();
   };
 }
 #endif //FLUTTER_INAPPWEBVIEW_PLUGIN_IN_APP_WEBVIEW_MANAGER_H_

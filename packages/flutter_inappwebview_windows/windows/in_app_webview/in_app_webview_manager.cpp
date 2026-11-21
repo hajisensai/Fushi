@@ -73,6 +73,55 @@ namespace flutter_inappwebview_plugin
     windowClass_.lpfnWndProc = &DefWindowProc;
 
     RegisterClass(&windowClass_);
+
+    if (plugin && plugin->registrar) {
+      if (auto* view = plugin->registrar->GetView()) {
+        if (HWND top_window = ::GetAncestor(view->GetNativeWindow(), GA_ROOT)) {
+          host_window_visible_ = ::IsWindowVisible(top_window) && !::IsIconic(top_window);
+        }
+      }
+      host_window_proc_delegate_id_ = plugin->registrar->RegisterTopLevelWindowProcDelegate(
+        [this](HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) -> std::optional<LRESULT> {
+          switch (message) {
+          case WM_SIZE:
+            if (wparam == SIZE_MINIMIZED) {
+              onHostWindowVisibilityChanged(false);
+            }
+            else if (wparam == SIZE_RESTORED || wparam == SIZE_MAXIMIZED) {
+              onHostWindowVisibilityChanged(::IsWindowVisible(hwnd) != FALSE);
+              onHostWindowBoundsChanged();
+            }
+            break;
+          case WM_SHOWWINDOW:
+            onHostWindowVisibilityChanged(wparam != FALSE && !::IsIconic(hwnd));
+            if (wparam != FALSE && !::IsIconic(hwnd)) {
+              onHostWindowBoundsChanged();
+            }
+            break;
+          case WM_WINDOWPOSCHANGED:
+          {
+            const auto* window_pos = reinterpret_cast<const WINDOWPOS*>(lparam);
+            if (window_pos) {
+              const bool visible =
+                !(window_pos->flags & SWP_HIDEWINDOW) &&
+                ::IsWindowVisible(hwnd) &&
+                !::IsIconic(hwnd);
+              onHostWindowVisibilityChanged(visible);
+              if (!(window_pos->flags & SWP_NOMOVE) || !(window_pos->flags & SWP_NOSIZE)) {
+                onHostWindowBoundsChanged();
+              }
+            }
+            break;
+          }
+          case WM_MOVE:
+            onHostWindowBoundsChanged();
+            break;
+          default:
+            break;
+          }
+          return std::nullopt;
+        });
+    }
   }
 
   void InAppWebViewManager::HandleMethodCall(const flutter::MethodCall<flutter::EncodableValue>& method_call,
@@ -157,6 +206,9 @@ namespace flutter_inappwebview_plugin
     if (keepAliveId.has_value() && map_contains(keepAliveWebViews, keepAliveId.value())) {
       auto webView = std::move(keepAliveWebViews.at(keepAliveId.value())->view);
       keepAliveWebViews.erase(keepAliveId.value());
+      if (webView) {
+        webView->setHostWindowVisible(host_window_visible_);
+      }
       auto customPlatformView = std::make_unique<CustomPlatformView>(plugin->registrar->messenger(),
         plugin->registrar->texture_registrar(),
         graphics_context(),
@@ -189,6 +241,7 @@ namespace flutter_inappwebview_plugin
           auto inAppWebView = std::make_unique<InAppWebView>(plugin, params, hwnd, std::move(webViewEnv), std::move(webViewController), std::move(webViewCompositionController));
           // 本函数建的 hwnd 归 InAppWebView 生命周期管（两种宿主模式都是），析构时回收。
           inAppWebView->destroyParentWindowOnClose = true;
+          inAppWebView->setHostWindowVisible(host_window_visible_);
 
           std::optional<std::shared_ptr<URLRequest>> urlRequest = urlRequestMap.has_value() ? std::make_shared<URLRequest>(urlRequestMap.value()) : std::optional<std::shared_ptr<URLRequest>>{};
           if (urlRequest.has_value()) {
@@ -293,9 +346,42 @@ namespace flutter_inappwebview_plugin
     return !!is_supported;
   }
 
+  void InAppWebViewManager::forEachManagedWebView(const std::function<void(InAppWebView*)>& visitor) const
+  {
+    for (const auto& entry : webViews) {
+      if (entry.second && entry.second->view) {
+        visitor(entry.second->view.get());
+      }
+    }
+    for (const auto& entry : keepAliveWebViews) {
+      if (entry.second && entry.second->view) {
+        visitor(entry.second->view.get());
+      }
+    }
+  }
+
+  void InAppWebViewManager::onHostWindowVisibilityChanged(bool visible)
+  {
+    host_window_visible_ = visible;
+    forEachManagedWebView([visible](InAppWebView* webView) {
+      webView->setHostWindowVisible(visible);
+    });
+  }
+
+  void InAppWebViewManager::onHostWindowBoundsChanged()
+  {
+    forEachManagedWebView([](InAppWebView* webView) {
+      webView->onHostWindowBoundsChanged();
+    });
+  }
+
   InAppWebViewManager::~InAppWebViewManager()
   {
     debugLog("dealloc InAppWebViewManager");
+    if (host_window_proc_delegate_id_ >= 0 && plugin && plugin->registrar) {
+      plugin->registrar->UnregisterTopLevelWindowProcDelegate(host_window_proc_delegate_id_);
+      host_window_proc_delegate_id_ = -1;
+    }
     // 先释放本实例拥有的 WebView（消费 compositor 的下游），再判断是否到了释放
     // 进程级共享单例的时机。webViews 等通过 graphics_context() 持有对 compositor_
     // 的弱引用使用，必须先全部清空再动 compositor_。
