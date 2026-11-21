@@ -181,7 +181,11 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     final String? hostCode = json['errorCode'] as String?;
     return MineOutcome.failure(
       reason,
-      errorCode: AnkiErrorCode.pairedDeviceMineFailed,
+      // BUG-5069：主机上卡要去的是 Fushi 复习、复习库在换代途中——不是「那台设备上的 Anki」失败，文案改说
+      // 那台设备上的复习要先完成升级（原因仍是主机回的那句）。
+      errorCode: isSrsGenerationErrorCode(hostCode)
+          ? AnkiErrorCode.pairedDeviceReviewBlocked
+          : AnkiErrorCode.pairedDeviceMineFailed,
       error: StateError(
         'Fushi Interconnect server could not create the card'
         '${hostCode == null ? '' : ' ($hostCode)'}: '

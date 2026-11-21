@@ -407,8 +407,15 @@ Future<InterconnectRankedCandidates> _rankGroup(
   // 老条目（无 hostId）没有可核对的身份，语义与升级前一致。
   if (hostId == null) return _dialable(group, withheld: 0);
   final bool hasPlain = group.any((FushiClientUrl u) => !_credentialSafe(u));
-  // 全员自带密码学身份的单地址组不必探测。
-  if (!hasPlain && group.length < 2) return _dialable(group, withheld: 0);
+  // 全员自带密码学身份的单地址组不必探测——除非装了局域网重新定位
+  // （[setInterconnectLanRelocation]）且这条是直连地址：不探就不知道它已经失效，
+  // 换网后唯一那条旧地址会被原样交给消费方撞超时，永远轮不到 mDNS 去找新地址
+  // （BUG-5068）。地址还活着时这一 ping 只多几毫秒。
+  if (!hasPlain &&
+      group.length < 2 &&
+      (_lanRelocator == null || _isP2pUrl(group.first.url))) {
+    return _dialable(group, withheld: 0);
+  }
 
   final (String, DateTime, Set<String>)? cached = _raceCache[hostId];
   FushiClientUrl? winner;
@@ -439,6 +446,15 @@ Future<InterconnectRankedCandidates> _rankGroup(
       onResult: (FushiClientUrl c, bool ok) {
         if (ok && !_credentialSafe(c)) fresh.add(c.url);
       },
+    );
+    // 存量直连地址全不通：先在局域网上按 hostId 找这台 host 现在的地址（换网 /
+    // 连手机热点后它换了网段，旧地址一条都不在新网络里，BUG-5068），再建隧道。
+    // 重新定位到的地址带本组钉扎的指纹，与 https 直连同属 [_credentialSafe]。
+    winner ??= await _raceRelocated(
+      group,
+      hostId: hostId,
+      probe: probe,
+      grace: grace,
     );
     winner ??= await _raceP2p(
       group,
@@ -496,6 +512,179 @@ Future<InterconnectRankedCandidates> _dialable(
     if (resolved != null) out.add(resolved);
   }
   return (ranked: out, withheld: withheld + group.length - out.length);
+}
+
+/// 局域网重新定位（BUG-5068）：存量直连地址全不通时，向 [_lanRelocator] 要这台 host
+/// 此刻在局域网上公布的地址，按本组身份核对后竞速；胜者交给 [_relocatedSink] 落库。
+///
+/// 只认 https，且必须用本组已钉扎的证书指纹去探：mDNS 的 TXT `id`（= hostId）是
+/// 无鉴权的公开值，冒名者能自报别人的 hostId，但给不出那台 host 私钥对应的证书——
+/// 钉扎握手 + ping 回报的 hostId 两样都对上才算同一台机器。组里没有钉扎指纹（明文
+/// host）或钉扎指纹互相不一致时不重新定位：明文地址按地址归属闸一律不学
+/// （[isInterconnectLearnableUrl]），也没有可以证明身份的东西。
+Future<FushiClientUrl?> _raceRelocated(
+  List<FushiClientUrl> group, {
+  required String hostId,
+  required InterconnectAddressProbe probe,
+  required Duration grace,
+}) async {
+  final InterconnectLanAddressLookup? relocator = _lanRelocator;
+  if (relocator == null) return null;
+  // 「存量直连地址全部探不通」才轮到这里：组里一条直连地址都没有（只有 `p2p://`）
+  // 时不是换网，不为它多等一轮局域网浏览。
+  if (!group.any((FushiClientUrl u) => !_isP2pUrl(u.url))) return null;
+  final FushiClientUrl? base = _relocationBase(group);
+  if (base == null) return null;
+  final List<String> found;
+  try {
+    found = await relocator(hostId);
+  } on Object catch (e, st) {
+    // 浏览失败（平台没有 mDNS 能力、权限被拒）只说明这条兜底此刻用不上，选路照常
+    // 走隧道；留痕便于诊断。
+    engineLog.log('InterconnectLanRelocate', e, st);
+    return null;
+  }
+  final Set<String> known = <String>{
+    for (final FushiClientUrl u in group) u.url,
+  };
+  final List<FushiClientUrl> fresh = <FushiClientUrl>[
+    for (final String url in found.toSet())
+      if (url.toLowerCase().startsWith('https://') && !known.contains(url))
+        FushiClientUrl(
+          url: url,
+          fingerprintSha256: base.fingerprintSha256,
+          deviceName: base.deviceName,
+          token: base.token,
+          hostId: hostId,
+          learned: true,
+          lookupEnabled: base.lookupEnabled,
+        ),
+  ];
+  if (fresh.isEmpty) return null;
+  final FushiClientUrl? winner = await raceInterconnectHostAddresses(
+    fresh,
+    hostId: hostId,
+    probe: probe,
+    grace: grace,
+  );
+  if (winner == null) return null;
+  final InterconnectRelocatedAddressSink? sink = _relocatedSink;
+  if (sink != null) {
+    try {
+      await sink(winner);
+    } on Object catch (e, st) {
+      // 落库失败不影响这一次连接（地址已当场核对过）；下次选路会重新定位。
+      engineLog.log('InterconnectLanRelocate.persist', e, st);
+    }
+  }
+  return winner;
+}
+
+/// 重新定位到的地址从哪一行继承凭据与指纹：组里第一条钉了指纹的行。组内钉扎指纹
+/// 不一致（证书换过、旧行没清）→ null：分不清哪张才是这台 host 现在的证书，不猜。
+FushiClientUrl? _relocationBase(List<FushiClientUrl> group) {
+  FushiClientUrl? base;
+  for (final FushiClientUrl u in group) {
+    final String? fp = u.fingerprintSha256;
+    if (fp == null || fp.isEmpty) continue;
+    if (base == null) {
+      base = u;
+    } else if (!fingerprintEquals(base.fingerprintSha256!, fp)) {
+      return null;
+    }
+  }
+  return base;
+}
+
+/// 按 hostId 在局域网上找这台 host 此刻公布的地址（`https://<ip>:<port>`），限时
+/// 返回。app 侧用 mDNS 浏览实现（`interconnect_lan_relocation.dart`）。
+typedef InterconnectLanAddressLookup =
+    Future<List<String>> Function(String hostId);
+
+/// 重新定位并核对通过的地址（learned 行，带本组 hostId / token / 指纹）交给它落库。
+typedef InterconnectRelocatedAddressSink =
+    Future<void> Function(FushiClientUrl verified);
+
+InterconnectLanAddressLookup? _lanRelocator;
+InterconnectRelocatedAddressSink? _relocatedSink;
+
+/// 局域网重新定位装配点（BUG-5068）：已配对 host 换了网段（电脑改连手机热点）后，
+/// 存量地址全失效、而学新地址又要先连上它——没有这一步就是死结。传 null 撤掉。
+void setInterconnectLanRelocation({
+  InterconnectLanAddressLookup? relocator,
+  InterconnectRelocatedAddressSink? sink,
+}) {
+  _lanRelocator = relocator;
+  _relocatedSink = sink;
+}
+
+/// 把局域网重新定位核对通过的 [verified] 并入候选列表（纯函数）。
+///
+/// 遵守地址归属闸：URL 是行主键，列表里已有这条 URL（不论归谁）一律不动；这台
+/// host 的组已不在列表里（用户刚删了它）不加；组内已钉扎的指纹必须与 [verified]
+/// 相同（与 [_anchorMayClaimHostId] 同一判据）。并入的是 learned 行，插在组内第一条
+/// 优先级更低的条目之前，token 取组里此刻的那一份（重新配对换过 token 时不写旧的）。
+/// 之后照常由 [InterconnectAddressLearner] 以它为锚点刷新整组地址集。
+List<FushiClientUrl> mergeRelocatedInterconnectAddress(
+  List<FushiClientUrl> list,
+  FushiClientUrl verified,
+) {
+  final String? hostId = verified.hostId;
+  final String? fp = verified.fingerprintSha256;
+  if (hostId == null ||
+      hostId.isEmpty ||
+      fp == null ||
+      fp.isEmpty ||
+      !verified.url.toLowerCase().startsWith('https://')) {
+    return list;
+  }
+  if (list.any((FushiClientUrl u) => u.url == verified.url)) return list;
+  String? token;
+  bool pinned = false;
+  bool inGroup = false;
+  for (final FushiClientUrl u in list) {
+    if (u.hostId != hostId) continue;
+    inGroup = true;
+    final String? memberFp = u.fingerprintSha256;
+    if (memberFp != null && memberFp.isNotEmpty) {
+      if (!fingerprintEquals(memberFp, fp)) return list;
+      pinned = true;
+    }
+    if (token == null && (u.token?.isNotEmpty ?? false)) token = u.token;
+  }
+  if (!inGroup || !pinned) return list;
+  final FushiClientUrl row = FushiClientUrl(
+    url: verified.url,
+    enabled: verified.enabled,
+    fingerprintSha256: fp,
+    deviceName: verified.deviceName,
+    token: token ?? verified.token,
+    hostId: hostId,
+    learned: true,
+    addressKind: verified.addressKind,
+    lookupEnabled: verified.lookupEnabled,
+  );
+  final List<FushiClientUrl> out = <FushiClientUrl>[...list];
+  _insertIntoHostGroup(out, row, hostId, interconnectEntryRank(row));
+  return out;
+}
+
+/// 把 [learned] 插进 [out] 里 [hostId] 那一组：组内第一个优先级（[rank] 刻度）更低的
+/// 条目之前，没有就放在组尾。
+void _insertIntoHostGroup(
+  List<FushiClientUrl> out,
+  FushiClientUrl learned,
+  String hostId,
+  int rank,
+) {
+  int insertAt = -1;
+  int lastInGroup = -1;
+  for (int i = 0; i < out.length; i++) {
+    if (out[i].hostId != hostId) continue;
+    lastInGroup = i;
+    if (insertAt < 0 && interconnectEntryRank(out[i]) > rank) insertAt = i;
+  }
+  out.insert(insertAt >= 0 ? insertAt : lastInGroup + 1, learned);
 }
 
 Future<FushiClientUrl?> _raceP2p(
@@ -911,15 +1100,7 @@ List<FushiClientUrl> mergeLearnedHostAddresses(
       // 重新拉回查词候选。
       lookupEnabled: anchor.lookupEnabled,
     );
-    final int rank = interconnectAddressRank(a.kind);
-    int insertAt = -1;
-    int lastInGroup = -1;
-    for (int i = 0; i < out.length; i++) {
-      if (out[i].hostId != hostId) continue;
-      lastInGroup = i;
-      if (insertAt < 0 && interconnectEntryRank(out[i]) > rank) insertAt = i;
-    }
-    out.insert(insertAt >= 0 ? insertAt : lastInGroup + 1, learned);
+    _insertIntoHostGroup(out, learned, hostId, interconnectAddressRank(a.kind));
   }
   return out;
 }
