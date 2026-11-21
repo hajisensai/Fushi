@@ -23,6 +23,7 @@ import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_retry.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
+import 'package:fushi_engine/tts/tts_reject_split.dart';
 
 import 'package:fushi/src/media/audiobook/tts/irodori_voice_packs.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
@@ -271,7 +272,8 @@ Future<TtsBackfillResult> backfillTtsUnvoiced({
         await ttsWithRetry(
           () => cache.obtain(
             key,
-            (String outputPath) => provider.synthesize(
+            (String outputPath) => ttsSynthesizeSplittingOnReject(
+              provider,
               attempt.text,
               outputPath: outputPath,
               cancel: cancel,
