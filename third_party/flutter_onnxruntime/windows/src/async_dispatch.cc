@@ -65,6 +65,64 @@ void WorkQueue::Run() {
   }
 }
 
+// ── DelayedTask ──────────────────────────────────────────────────────────────
+
+DelayedTask::DelayedTask(std::function<void()> fire) : fire_(std::move(fire)), thread_([this]() {
+  SetThreadDescription(GetCurrentThread(), L"flutter_onnxruntime delayed task");
+  Run();
+}) {}
+
+DelayedTask::~DelayedTask() {
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    stopping_ = true;
+    armed_ = false;
+  }
+  cv_.notify_all();
+  if (thread_.joinable()) {
+    thread_.join();
+  }
+}
+
+void DelayedTask::Schedule(std::chrono::milliseconds delay) {
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (stopping_) {
+      return;
+    }
+    armed_ = true;
+    deadline_ = std::chrono::steady_clock::now() + delay;
+  }
+  cv_.notify_all();
+}
+
+void DelayedTask::Cancel() {
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    armed_ = false;
+  }
+  cv_.notify_all();
+}
+
+void DelayedTask::Run() {
+  std::unique_lock<std::mutex> lock(mutex_);
+  for (;;) {
+    cv_.wait(lock, [this] { return stopping_ || armed_; });
+    if (stopping_) {
+      return;
+    }
+    // Wake on the deadline, or early when it moves / is cancelled / stopping.
+    const std::chrono::steady_clock::time_point deadline = deadline_;
+    if (cv_.wait_until(lock, deadline, [this, deadline] { return stopping_ || !armed_ || deadline_ != deadline; })) {
+      continue;
+    }
+    armed_ = false;
+    lock.unlock();
+    fire_();
+    lock.lock();
+  }
+}
+
 // ── PlatformThreadDispatcher ─────────────────────────────────────────────────
 
 PlatformThreadDispatcher::PlatformThreadDispatcher() {
