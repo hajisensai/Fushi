@@ -4,7 +4,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi_engine/media/collections/shelf_sort.dart';
-import 'package:fushi/src/media/tags/tag_drag_handle.dart';
+import 'package:fushi/src/media/tags/tag_chip_draggable.dart';
 import 'package:fushi/src/media/tags/tag_chips.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/pages/implementations/tag_management_page.dart';
@@ -27,7 +27,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
-/// 书架 / 视频 tab 共享的标签筛选栏：横向 tag chip（点选筛选、长按拖拽重排）+ 末尾
+/// 书架 / 视频 tab 共享的标签筛选栏：横向 tag chip（点选筛选、拖拽重排：鼠标按住即拖、触屏长按拖）+ 末尾
 /// 「管理标签」齿轮；可选「批量选择」动作（仅书架多选书需要，[onToggleSelectionMode]
 /// 为 null 时不渲染）。两处用同一组件，保证标签栏外观/交互完全一致。
 ///
@@ -294,11 +294,11 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
             borderRadius: tokens.radii.chipRadius,
             child: _tagFilterChip(tag: tag, isSelected: true, isDimmed: false),
           );
-          // BUG-4899：chip 左侧的「⋮⋮」柄是即时 Draggable——鼠标精确指针 hit slop
-          // 只有 1 px，长按计时里手一抖长按拖动就输给标签条的横滚；柄比滚动区深、
-          // 越过 slop 的同一帧先认领，桌面也拖得动。LongPressDraggable 留给触屏
-          // 长按整枚 chip；落点仍是 chip 上的 DragTarget。
-          final Widget draggableChip = LongPressDraggable<BookTagRow>(
+          // BUG-4899 / BUG-5066：chip 本身按指针类型分流起拖——鼠标 / 触控板即时
+          // 拖（精确指针 hit slop 只有 1 px，长按计时里手一抖就输给标签条横滚），
+          // 触屏长按拖；落点是 chip 上的 DragTarget。
+          return FushiTagChipDraggable<BookTagRow>(
+            key: ValueKey<String>('library_tag_draggable_${tag.id}'),
             data: tag,
             feedback: dragFeedback,
             childWhenDragging: Opacity(
@@ -333,17 +333,6 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
               },
             ),
           );
-          return Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              FushiTagDragHandle<BookTagRow>(
-                key: ValueKey<String>('library_tag_drag_handle_${tag.id}'),
-                data: tag,
-                feedback: dragFeedback,
-              ),
-              draggableChip,
-            ],
-          );
         },
       ),
     );
@@ -372,8 +361,10 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
         ),
       ),
       // 标签多了必须横向拖动才够用，而桌面默认 dragDevices 不含鼠标（拖不动，
-      // 只能滚轮）。放开鼠标拖动与区内标签 chip 的 LongPressDraggable 不冲突：
-      // 按下即动归滚动、按住不动满 kLongPressTimeout 归拖标签。
+      // 只能 Shift+滚轮）。HorizontalDragScrollable 放开鼠标拖动：鼠标在 chip 上
+      // 按住拖归拖标签（即时 Draggable 更深、先认领），在 chip 间空白处拖 /
+      // Shift+滚轮归横滚；
+      // 触屏短滑归横滚、长按归拖标签。
       child: widget.pinActions
           ? Row(
               children: <Widget>[

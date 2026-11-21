@@ -404,12 +404,14 @@ fn open_pool_reader(path: &Path) -> Result<Connection, String> {
 /// 连接把页拷进私有页缓存（cache_size 64 MB/条，真占内存）并多一次拷贝，是负优化。只有 32 位进程（Android
 /// armeabi-v7a，整个进程约 3 GB 地址空间）放不下：那里次要连接不映射，只保留写连接（内核读命令以前用的
 /// 常驻读连接也映射，BUG-4298 起读命令改走池子，32 位上读命令不再走 mmap、只用页缓存）。
+///
+/// 新代库（`gen4/kernel.rs` `G4Core`）按同一份角色配：写连接 [MmapRole::Primary]，读连接池与 Secondary 打开的连接
+/// [MmapRole::Secondary]；只有迁移用的连接不映射（设计 §6.5，`gen4/schema.rs` `open`）。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum MmapRole {
     /// 写连接。
     Primary,
-    /// 读连接池、快照整理（换代后两者都只在测试构建里编，G7-6）。
-    #[cfg(test)]
+    /// 读连接：新代读连接池；协议 3 的读连接池、快照整理换代后只在测试构建里编（G7-6）。
     Secondary,
 }
 
@@ -420,9 +422,7 @@ pub(crate) const MMAP_BYTES: i64 = 268_435_456;
 pub(crate) fn mmap_size_for(role: MmapRole) -> i64 {
     match role {
         MmapRole::Primary => MMAP_BYTES,
-        #[cfg(test)]
         MmapRole::Secondary if cfg!(target_pointer_width = "32") => 0,
-        #[cfg(test)]
         MmapRole::Secondary => MMAP_BYTES,
     }
 }
@@ -440,15 +440,41 @@ fn configure_as(conn: &Connection, role: MmapRole) -> Result<(), String> {
     // ID 列编码（store/ids.rs）：`srs_id` / `srs_idt`，Rust 与 Dart 的 SQL 都用。
     ids::register(conn).map_err(|e| e.to_string())?;
     slim::register(conn).map_err(|e| e.to_string())?;
-    // mmap + 64 MB 页缓存：缓存刷新 / 历史这类一次读几万行日志的命令，默认 2 MB 页缓存下每页一次
-    // 系统调用（3000 笔记 / 6.6 万条日志实测读取 320–400 ms → 158 ms）。mmap 只占虚拟地址，
-    // 上限 256 MB；WAL 模式下 SQLite 照常处理。哪些连接映射见 [MmapRole]。
+    conn.execute_batch("PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = OFF;")
+        .map_err(|e| e.to_string())?;
+    tune_for_daily_use(conn, role)
+}
+
+/// 日常连接的内存映射与页缓存（协议 3 [configure_as] 与新代 `gen4/kernel.rs` `G4Core` 共用这一份）。
+///
+/// mmap + 64 MB 页缓存：缓存刷新 / 历史这类一次读几万行日志的命令，默认 2 MB 页缓存下每页一次
+/// 系统调用（3000 笔记 / 6.6 万条日志实测读取 320–400 ms → 158 ms）。mmap 只占虚拟地址，
+/// 上限 256 MB；WAL 模式下 SQLite 照常处理。哪些连接映射见 [MmapRole]。写连接的页缓存上限之后按可用内存再调
+/// （[retune_writer_cache]），命令之间超出 [IDLE_CACHE_BYTES] 的页还掉（[trim_idle_cache]）。
+pub(crate) fn tune_for_daily_use(conn: &Connection, role: MmapRole) -> Result<(), String> {
     conn.execute_batch(&format!(
-        "PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = OFF; \
-         PRAGMA mmap_size = {}; PRAGMA cache_size = -65536;",
-        mmap_size_for(role)
+        "PRAGMA mmap_size = {}; PRAGMA cache_size = -{};",
+        mmap_size_for(role),
+        mem_budget::MAX_KIB
     ))
     .map_err(|e| e.to_string())
+}
+
+/// 写连接页缓存上限按可用内存重算（至多每 [mem_budget::RECHECK] 一次，store/mem_budget.rs）：[st] 是这条写连接的
+/// 预算状态，取写连接时调。调低时 SQLite 当场还掉超出的页。设不上（库正被关）不影响这次命令，下次再试。协议 3
+/// [SrsCore] 与新代 `G4Core` 共用。
+pub(crate) fn retune_writer_cache(st: &Mutex<mem_budget::WriterCache>, w: &Connection) {
+    // 只是几个数：panic 毒化过照常用。
+    let Ok(mut st) = lock_recovering(st, |_| Ok(())) else {
+        return;
+    };
+    if let Some(kib) = st.due(std::time::Instant::now(), mem_budget::available_bytes) {
+        if w.execute_batch(&format!("PRAGMA cache_size = -{kib}"))
+            .is_err()
+        {
+            st.checked = None;
+        }
+    }
 }
 
 impl SrsCore {
@@ -574,20 +600,9 @@ impl SrsCore {
         Ok(w)
     }
 
-    /// 写连接页缓存上限按可用内存重算（至多每 [mem_budget::RECHECK] 一次，store/mem_budget.rs）。调低时 SQLite 当场
-    /// 还掉超出的页。设不上（库正被关）不影响这次命令。
+    /// 写连接页缓存上限按可用内存重算（[retune_writer_cache]）。
     fn tune_writer_cache(&self, w: &Connection) {
-        // 只是几个数：panic 毒化过照常用。
-        let Ok(mut st) = lock_recovering(&self.writer_cache, |_| Ok(())) else {
-            return;
-        };
-        if let Some(kib) = st.due(std::time::Instant::now(), mem_budget::available_bytes) {
-            if w.execute_batch(&format!("PRAGMA cache_size = -{kib}"))
-                .is_err()
-            {
-                st.checked = None;
-            }
-        }
+        retune_writer_cache(&self.writer_cache, w);
     }
 
     /// 批量写入期间写连接放回时留着页缓存（[SrsCore] `bulk_holds_cache`）。只由 [SrsCore::bulk_begin] /
