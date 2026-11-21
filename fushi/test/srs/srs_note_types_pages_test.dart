@@ -22,6 +22,8 @@ import 'package:fushi/src/srs/srs_native_template.dart'
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_visual_template.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
+    show FushiChoiceRow;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
     show FushiCheckbox;
@@ -971,6 +973,70 @@ void main() {
       await _unmount(tester);
     });
 
+    testWidgets('[$ds] 编辑页：选排序字段（主字段）与浏览预览字段写进笔记类型', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String nt = await _db(
+        tester,
+        () => store.createStockNoteType(SrsStockNoteType.basic, 'B'),
+      );
+      final SrsNoteTypeView v = (await _db(tester, () => store.noteType(nt)))!;
+      final String front = v.fields[0].id;
+      final String back = v.fields[1].id;
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: SrsNoteTypeEditorPage(noteTypeId: nt),
+      );
+      expect(find.text(t.srs_note_types_sort_chip(name: 'Front')), findsOne);
+      expect(
+        find.text(
+          t.srs_note_types_browse_chip(
+            names: t.srs_note_types_browse_fields_auto,
+          ),
+        ),
+        findsOne,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs-note-type-sort-row')),
+      );
+      await _settle(tester);
+      await srsUntilWritten(
+        tester,
+        () => tester.tap(find.widgetWithText(FushiChoiceRow, 'Back')),
+        until: () => find
+            .text(t.srs_note_types_sort_chip(name: 'Back'))
+            .evaluate()
+            .isNotEmpty,
+      );
+      expect((await _db(tester, () => store.noteType(nt)))!.sortFieldId, back);
+
+      // 副字段的选项里没有排序字段本身；勾 Front 确认。
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs-note-type-browse-row')),
+      );
+      await _settle(tester);
+      expect(find.widgetWithText(FushiChoiceRow, 'Back'), findsNothing);
+      await tester.tap(find.widgetWithText(FushiChoiceRow, 'Front'));
+      await tester.pump();
+      await srsUntilWritten(
+        tester,
+        () => tester.tap(find.text(t.dialog_ok).last),
+        until: () => find
+            .text(t.srs_note_types_browse_chip(names: 'Front'))
+            .evaluate()
+            .isNotEmpty,
+      );
+      expect(
+        (await _db(tester, () => store.noteType(nt)))!.browseFieldIds,
+        <String>[front],
+      );
+      await _unmount(tester);
+    });
+
     testWidgets('[$ds] 编辑页：没被任何模板引用的新字段带「未上卡面」标签', (WidgetTester tester) async {
       final SrsDbStore store = await _openStore(tester);
       final String nt = await _db(
@@ -1388,9 +1454,18 @@ void main() {
         find.byKey(const ValueKey<String>('srs_change_type_apply')).first,
       );
       await _settle(tester);
+      // 编辑页按新修订号重读笔记是异步的：机器忙时修订号到了、重读还没回来，
+      // 下面「编辑页显示新类型」的断言会抢跑。等重读后的界面状态，而不是等帧数。
+      final Finder newTypeRow = find.descendant(
+        of: find.byKey(const ValueKey<String>('srs-note-type-row')),
+        matching: find.text('A Target'),
+      );
       await srsUntilWritten(
         tester,
         () => tester.tap(find.text(t.srs_change_type_apply).last),
+        until: () =>
+            find.byType(SrsChangeNoteTypePage).evaluate().isEmpty &&
+            newTypeRow.evaluate().length == 1,
       );
       expect(find.byType(SrsChangeNoteTypePage), findsNothing);
 

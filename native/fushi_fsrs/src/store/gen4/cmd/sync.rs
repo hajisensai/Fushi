@@ -1667,12 +1667,17 @@ pub(crate) const LOC_STATE_DROP_SQL: &str = "DELETE FROM loc_state WHERE col = ?
 ///   就**不再向它转发**；
 /// - [Truth::forget_location]：位置上各设备的 head 记录、转发记账与待删的转发件、旧根指纹；
 /// - 旧根接手累计的段结论（`oldroot.rs` [Truth::oldroot_forget_run]）；
-/// - 为它留着的可转发原文：按剩下的位置逐个作者重判（[super::sync_relay::prune]；只剩一个位置时全删）。
+/// - 为它留着的可转发原文：按剩下的位置逐个作者重判（[super::sync_relay::prune]；只剩一个位置时全删）；
+/// - 媒体在这个位置上的「在不在」缓存、「列举过」与已收清单代号（`gen4/media.rs` [forget]：同一个位置身份再加回来时
+///   从头列举对账，不把旧事实当成位置上还有、漏传媒体）。
 ///
 /// 不动：已传水位与承袭上传指纹（键带位置与密钥指纹，里面记着本机在那里写过的最大 head 代号——同一个位置再加回来时
-/// 代号必须接着往上，不能回到 1 让别的设备当成旧 head）；媒体的「在不在」记录与清单代号（`media_*`：代号只升不降，
-/// 一个代号只对应一个文件，G8-3）。位置上的文件一个不碰（位置已经不用了，上面的东西不归本机管），本机的卡片与复习
-/// 记录一条不动。没记过这个位置也照常回包（幂等）。回包 `{forgotten, relayDropped}`：删掉的状态行数、删掉的原文份数。
+/// 代号必须接着往上，不能回到 1 让别的设备当成旧 head）；本机的清单代号预留（`media_gen`：代号只升不降，一个代号只
+/// 对应一个文件，G8-3）。位置上的文件一个不碰（位置已经不用了，上面的东西不归本机管），本机的卡片与复习
+/// 记录一条不动。没记过这个位置也照常回包（幂等）。回包 `{forgotten, relayDropped}`：删掉的状态行数（含媒体「在不在」
+/// 的行）、删掉的原文份数。
+///
+/// [forget]: crate::store::gen4::media::forget
 pub fn location_forget(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
     let location = str_req(req, "location")?;
     let mut forgotten = t.forget_location(col, location)?;
@@ -1685,6 +1690,7 @@ pub fn location_forget(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, St
             .map(|n| n as u64)
     })?;
     t.oldroot_forget_run(col, location)?;
+    forgotten += crate::store::gen4::media::forget(t, col, location)? as u64;
     let authors: Vec<Vec<u8>> = {
         let mut stmt = t.conn().prepare_cached(RELAY_AUTHORS_SQL).map_err(sql)?;
         let rows = stmt.query_map([col], |r| r.get(0)).map_err(sql)?;

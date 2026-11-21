@@ -16,7 +16,8 @@ import 'package:fushi/i18n/strings.g.dart';
 ///   add / set 时带 `--arg select=true`。
 ///
 /// 业务与页面同一份：[AppModel.upsertCustomTheme] / [AppModel.selectCustomTheme] /
-/// [AppModel.setAppThemeKey] / [AppModel.deleteCustomTheme]，删除后的主题键回落与
+/// [AppModel.pickAppThemeKey]（选中）/ [AppModel.setAppThemeKey]（删除后回落）/
+/// [AppModel.deleteCustomTheme]，删除后的主题键回落与
 /// 页面 `_resolveThemeKeyAfterDelete` 同一规则。
 const String kCtlCustomThemesIdPrefix = 'appearance.custom_themes.cli.';
 
@@ -219,7 +220,8 @@ Future<void> _persist(
   await appModel.upsertCustomTheme(entry);
   if (!select) return;
   await appModel.selectCustomTheme(entry.id);
-  await appModel.setAppThemeKey('custom-theme:${entry.id}');
+  // 与编辑页「应用」同一入口：用户选这个主题，先关掉正在生效的取色覆盖。
+  await appModel.pickAppThemeKey('custom-theme:${entry.id}');
 }
 
 Future<Object?> _addTheme(SettingsContext c, Map<String, String> fields) async {

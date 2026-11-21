@@ -43,6 +43,7 @@ import 'package:fushi/src/media/kavita/kavita_open_books.dart';
 import 'package:fushi/src/media/kavita/kavita_progress_resolver.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/novel/online/lnreader_downloaded_book_images.dart';
 import 'package:fushi/src/media/novel/online/lnreader_online_book.dart';
 import 'package:fushi/src/media/novel/online/online_novel_chapter_loader.dart';
 import 'package:fushi/src/media/novel/online/online_novel_missing_images.dart';
@@ -2080,8 +2081,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// null。开书定位时按书行描述符建一次，拦截层读章节文件前经它把占位页换成正文。
   OnlineNovelChapterLoader? _onlineChapterLoader;
 
-  /// 在线书的缺图提示与补取（加载器能补取缺图时才有，见
-  /// [OnlineNovelMissingImagesRetrier]）。与 [_onlineChapterLoader] 同生共死。
+  /// 网文书的缺图提示与补取（[OnlineNovelMissingImagesRetrier]）：在线书 / 网页
+  /// 小说书由取章加载器补取，没有加载器的书（LNReader 下载成的 EPUB）由
+  /// [LnReaderDownloadedBookImages] 按章节里的缺图占位补取。开书时建、换书时换。
   OnlineNovelMissingImagesController? _onlineMissingImages;
 
   /// [_chapterCharCounts] 整表已是当前口径（[kChapterCharCountCaliber]）、并已
@@ -3550,9 +3552,21 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
           pendingText: t.novel_web_chapter_pending,
           nextChapterTitle: t.novel_web_chapter_next,
         );
-    if (_onlineChapterLoader
-        case final OnlineNovelMissingImagesRetrier retrier) {
-      _onlineMissingImages = _createOnlineMissingImagesController(retrier);
+    final OnlineNovelMissingImagesRetrier? missingImagesRetrier =
+        switch (_onlineChapterLoader) {
+          final OnlineNovelMissingImagesRetrier retrier => retrier,
+          null => lnReaderDownloadedBookImagesFor(
+            row: bookRow,
+            extractDir: extractDir,
+            database: db,
+            manager: () => appModelNoUpdate.lnReaderManager,
+          ),
+          _ => null,
+        };
+    if (missingImagesRetrier != null) {
+      _onlineMissingImages = _createOnlineMissingImagesController(
+        missingImagesRetrier,
+      );
     }
     // v82：子表（阅读位置/揭图）键 = 书稳定 uid，一次解析存字段。空 uid（不应
     // 出现，v81 回填兜底）视同缺失——相关写入跳过，不拿 bookKey 兜底。

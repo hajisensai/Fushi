@@ -262,4 +262,29 @@ void main() {
     expect(stroke, greaterThan(pressed));
     expect('strokePaint'.allMatches(draw).length, 1);
   });
+
+  // 反馈 Z0JMfFZXQ9：满屏文字时「点空白处关闭」没有空白可点，点哪都查词。顶部提示条
+  // 带 ✕、整条是关闭按钮，且必须先于行命中判断（否则压在它下面的行照样查词）。
+  test('the top hint chip closes the selection layer before any line hit', () {
+    final String tap = body(
+      service,
+      'private void onSelectionTap',
+      'private void setSelectionHidden',
+    );
+    final int close = tap.indexOf('selectionView.hitsCloseChip(rawX, rawY)');
+    final int hit = tap.indexOf('ScreenOcrLayout.hitLine(');
+    expect(close, isNonNegative, reason: '点顶部 ✕ 条要收尾');
+    expect(hit, greaterThan(close), reason: '关闭条优先于压在它下面的文字行');
+    expect(tap.substring(close, hit), contains('finishFlow()'));
+    final String chip = body(
+      service,
+      'private void drawCloseChip',
+      'boolean hitsCloseChip',
+    );
+    // 命中区补足 48dp 触控目标，文字过长省略号截断而不是把 ✕ 挤出屏。
+    expect(chip, contains('CLOSE_MIN_TOUCH_DP'));
+    expect(chip, contains('TextUtils.ellipsize'));
+    expect(chip, contains('closeHit.set('));
+    expect(service, contains('static final String LABEL_CLOSE = "ocr_close";'));
+  });
 }

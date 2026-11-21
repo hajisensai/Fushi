@@ -41,3 +41,19 @@ String animeSourceVideoPath({
   final String safe = safeWindowsFileName(label).trim();
   return '$_prefix$extensionPackage/$sourceId/${safe.isEmpty ? 'episode' : safe}';
 }
+
+/// 从标识里取回扩展包与源 id（[animeSourceVideoPath] 的逆）；不是本 scheme、或
+/// 缺包名 / 源 id 段时返回 null。末段（可读标签）不返回——身份永远是 bookUid + spec，
+/// 这里只给「显示是哪个源」这类不需要解 spec JSON 的消费端用。
+({String extensionPackage, String sourceId})? parseAnimeSourceVideoPath(
+  String? path,
+) {
+  if (path == null || !isAnimeSourceVideoPath(path)) return null;
+  final String rest = path.trimLeft().substring(_prefix.length);
+  final List<String> segments = rest.split('/');
+  if (segments.length < 2) return null;
+  final String extensionPackage = segments[0].trim();
+  final String sourceId = segments[1].trim();
+  if (extensionPackage.isEmpty || sourceId.isEmpty) return null;
+  return (extensionPackage: extensionPackage, sourceId: sourceId);
+}

@@ -8,6 +8,8 @@ import 'package:fushi/src/media/metadata/book_cover_scrape_dialog.dart';
 import 'package:fushi/src/media/metadata/book_metadata_scraper.dart';
 import 'package:fushi/src/media/metadata/transport_retry.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/media/metadata/books/book_catalog.dart'
+    show BookCatalogHttp;
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -46,6 +48,43 @@ void main() {
     expect(find.text('四叶妹妹！'), findsOneWidget);
     // 「使用」按钮存在。
     expect(find.text(t.book_scrape_use), findsOneWidget);
+  });
+
+  // 应用内反馈 T_KdsLEY9l：导入的歌曲（LRC 歌词）默认搜 iTunes，不再先去 Bangumi。
+  testWidgets('导入的歌曲：默认源 iTunes，自动搜索打到 iTunes 并渲染歌曲候选', (
+    WidgetTester tester,
+  ) async {
+    final List<Uri> requests = <Uri>[];
+    final MockClient client = MockClient((http.Request req) async {
+      requests.add(req.url);
+      return http.Response.bytes(
+        utf8.encode(
+          '{"resultCount":1,"results":[{"wrapperType":"track","kind":"song",'
+          '"trackId":1537460612,"trackName":"Lemon","artistName":"米津玄師",'
+          '"collectionName":"Lemon - Single",'
+          '"artworkUrl100":"https://i.test/a.jpg/100x100bb.jpg",'
+          '"releaseDate":"2018-02-12T12:00:00Z","primaryGenreName":"J-Pop"}]}',
+        ),
+        200,
+      );
+    });
+    await tester.pumpWidget(
+      wrap(
+        BookCoverScrapeDialog(
+          initialQuery: 'Lemon',
+          isSong: true,
+          scraperOverride: BookMetadataScraper(
+            client: client,
+            catalogHttp: BookCatalogHttp(client: client, throttle: false),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(requests.single.host, 'itunes.apple.com');
+    expect(find.text(BookScrapeSource.itunes.label), findsWidgets);
+    expect(find.text('Lemon'), findsWidgets);
+    expect(find.textContaining('米津玄師'), findsOneWidget);
   });
 
   // 拍板台 pr3497：NSFW 候选跟随书自己的 NSFW 标记，对所有源一视同仁。

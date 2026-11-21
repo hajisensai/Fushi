@@ -19,10 +19,11 @@ import 'package:fushi/src/media/manga/web/web_comic_chapter.dart'
 import 'package:fushi/src/media/manga/web/web_comic_scanner.dart'
     show readWebComicCookies;
 import 'package:fushi/src/media/novel/online/lnreader_book_download.dart'
-    show lnReaderSafeFileName, removeLnReaderImageReference;
+    show lnReaderSafeFileName;
 import 'package:fushi/src/media/novel/online/lnreader_epub_assembler.dart';
 import 'package:fushi/src/media/novel/online/lnreader_fetch_bridge.dart'
     show LnReaderFetchBridge, guardLnReaderConnections, isLnReaderBlockedHost;
+import 'package:fushi/src/media/novel/online/lnreader_missing_images.dart';
 import 'package:fushi/src/media/novel/online/lnreader_online_book.dart'
     show
         kLnReaderPendingChapterAttribute,
@@ -30,6 +31,7 @@ import 'package:fushi/src/media/novel/online/lnreader_online_book.dart'
         lnReaderPendingChapterBody,
         readLnReaderLoadedChapter;
 import 'package:fushi/src/media/novel/online/online_novel_chapter_loader.dart';
+import 'package:fushi/src/media/novel/online/online_novel_missing_images.dart';
 import 'package:fushi/src/media/novel/web/web_novel_gate.dart';
 import 'package:fushi/src/media/novel/web/web_novel_page_fetcher.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -41,7 +43,7 @@ typedef WebNovelChapterContent = ({
 });
 
 /// 取一张正文图（测试缝；生产 = [fetchWebNovelImage]）。取不到返回 null（正文里
-/// 删掉这张图的引用，书照样生成）。
+/// 留缺图占位，书照样生成，阅读器打开时提示并补取）。
 typedef WebNovelImageFetch =
     Future<Uint8List?> Function(Uri url, {required Uri referer});
 
@@ -50,17 +52,23 @@ String webNovelBookIdentifier(String workKey) => 'web-novel:$workKey';
 
 /// 正文图在书内的文件名：按图片 URL 派生（同一张图跨章只存一份，重建时不撞名）。
 String webNovelImageFileName(String url, String mediaType) {
-  final String digest = sha1
-      .convert(utf8.encode(url))
-      .toString()
-      .substring(0, 16);
   final String ext = switch (mediaType) {
     'image/png' => 'png',
     'image/gif' => 'gif',
     'image/webp' => 'webp',
     _ => 'jpg',
   };
-  return 'images/w$digest.$ext';
+  return '${webNovelImageKey(url)}.$ext';
+}
+
+/// [webNovelImageFileName] 去掉扩展名：取不到的图还不知道格式，缺图占位用它当键，
+/// 补到后再按格式定真文件名。
+String webNovelImageKey(String url) {
+  final String digest = sha1
+      .convert(utf8.encode(url))
+      .toString()
+      .substring(0, 16);
+  return 'images/w$digest';
 }
 
 /// 旧书里按 URL 找已取过的那一章正文；没有（新章 / 旧书缺文件）返回 null。
@@ -136,32 +144,62 @@ class WebNovelLibrary {
   }
 
   /// 把一页的提取结果落成可写进书的内容：按序号取正文图（带 Referer / 站点 cookie，
-  /// 走全局代理），占位 src 换成书内文件名；取不到的图从正文里删掉引用。
+  /// 走全局代理），占位 src 换成书内文件名；取不到的图换成缺图占位（记下原图地址
+  /// 与引用页，阅读器打开时提示并补取，见 [WebNovelChapterLoader.retryMissingImages]）。
   Future<WebNovelChapterContent> materialize(WebArticle article) async {
     String xhtml = article.xhtml;
     final List<LnReaderEpubImage> images = <LnReaderEpubImage>[];
     final Uri referer = Uri.parse(article.url);
     for (int i = 0; i < article.images.length; i++) {
       final String placeholder = '$kWebArticleImagePlaceholderPrefix$i';
-      final Uri? url = Uri.tryParse(article.images[i]);
-      final Uint8List? bytes = url == null
-          ? null
-          : await _fetchImage(url, referer: referer);
-      final String? mediaType = bytes == null
-          ? null
-          : sniffLnReaderImageMediaType(bytes);
-      if (bytes == null || mediaType == null) {
-        xhtml = removeLnReaderImageReference(xhtml, placeholder);
+      final String source = article.images[i];
+      final LnReaderEpubImage? image = await _fetchInto(
+        source,
+        referer: referer,
+      );
+      if (image == null) {
+        xhtml = replaceLnReaderImageWithMissingMarker(
+          xhtml,
+          fileName: webNovelImageKey(source),
+          src: placeholder,
+          url: source,
+          referer: article.url,
+        );
         continue;
       }
-      final String fileName = webNovelImageFileName(
-        article.images[i],
-        mediaType,
-      );
-      xhtml = xhtml.replaceAll('src="$placeholder"', 'src="$fileName"');
-      images.add((fileName: fileName, bytes: bytes, mediaType: mediaType));
+      xhtml = xhtml.replaceAll('src="$placeholder"', 'src="${image.fileName}"');
+      images.add(image);
     }
     return (xhtml: xhtml, images: images);
+  }
+
+  /// 补取一张缺图（[WebNovelChapterLoader] 用）：与 [materialize] 同一条取图路径，
+  /// 引用页取占位里记下的，没有就用 [fallbackReferer]（这一章的页地址）。
+  Future<LnReaderEpubImage?> fetchMissingImage(
+    LnReaderMissingImage image, {
+    required String fallbackReferer,
+  }) {
+    final Uri? referer = Uri.tryParse(image.referer ?? fallbackReferer);
+    if (referer == null) return Future<LnReaderEpubImage?>.value();
+    return _fetchInto(image.url, referer: referer);
+  }
+
+  /// 取 [source] 这张图、嗅探格式、定书内文件名；取不到 / 不是图片返回 null。
+  Future<LnReaderEpubImage?> _fetchInto(
+    String source, {
+    required Uri referer,
+  }) async {
+    final Uri? url = Uri.tryParse(source);
+    if (url == null) return null;
+    final Uint8List? bytes = await _fetchImage(url, referer: referer);
+    if (bytes == null) return null;
+    final String? mediaType = sniffLnReaderImageMediaType(bytes);
+    if (mediaType == null) return null;
+    return (
+      fileName: webNovelImageFileName(source, mediaType),
+      bytes: bytes,
+      mediaType: mediaType,
+    );
   }
 
   /// 把会话快照 [snapshot]（刚喂进第 [chapterIndex] 章、内容 [content]）落到书架：
@@ -502,7 +540,11 @@ WebNovelChapterLoader? webNovelChapterLoaderFor({
 /// 同一章并发请求只取一次；不同章串行取（骨架见
 /// [SerialOnlineNovelChapterLoader]）。不预取：每取一页要起一个无界面 WebView，
 /// 目标地址又靠上一章 ingest 出来的 `tailNext`，提前取既贵又会改快照。
-class WebNovelChapterLoader extends SerialOnlineNovelChapterLoader {
+///
+/// 正文图单张没取到时章节文件里留缺图占位（[WebNovelLibrary.materialize]），阅读器
+/// 经 [OnlineNovelMissingImagesRetrier] 查缺图、补取（只重取图，不重取页）。
+class WebNovelChapterLoader extends SerialOnlineNovelChapterLoader
+    implements OnlineNovelMissingImagesRetrier {
   WebNovelChapterLoader({
     required this.database,
     required this.library,
@@ -634,6 +676,85 @@ class WebNovelChapterLoader extends SerialOnlineNovelChapterLoader {
           ? List<int>.unmodifiable(counts.cast<int>())
           : null,
     );
+  }
+
+  /// 补取串行：同一章的两轮（自动 + 手动）不并发读改写同一个章节文件。
+  final MissingImagesRetryQueue _retries = MissingImagesRetryQueue();
+
+  @override
+  Future<OnlineNovelMissingImages> missingImages(int index) async =>
+      summarizeChapterMissingImages(
+        index,
+        index < 0
+            ? const <LnReaderMissingImage>[]
+            : await readChapterMissingImages(
+                lnReaderOnlineChapterFile(extractDir, index),
+                pendingAttribute: kLnReaderPendingChapterAttribute,
+              ),
+      );
+
+  @override
+  Future<OnlineNovelMissingImagesRetry> retryMissingImages(
+    int index, {
+    required bool automatic,
+  }) => _retries.run(() => _retryMissingImages(index, automatic: automatic));
+
+  Future<OnlineNovelMissingImagesRetry> _retryMissingImages(
+    int index, {
+    required bool automatic,
+  }) async {
+    // 这一章在快照里的页地址：取图的兜底引用页，也是「回来后还是不是这一章」
+    // 的判据（取图期间浏览器里可能又并进了章、整本就地重建过）。
+    final String? chapterUrl = await _snapshotChapterUrl(index);
+    if (chapterUrl == null) {
+      // 不在快照里（末尾「下一章」占位 / 书行已不在）：没有已取的正文，也就没有缺图。
+      return OnlineNovelMissingImagesRetry(
+        index: index,
+        recovered: 0,
+        remaining: (await missingImages(index)).count,
+      );
+    }
+    return retryChapterMissingImages(
+      index: index,
+      extractDir: extractDir,
+      file: lnReaderOnlineChapterFile(extractDir, index),
+      automatic: automatic,
+      pendingAttribute: kLnReaderPendingChapterAttribute,
+      write: writeAtomically,
+      fetch:
+          (
+            LnReaderMissingImage image,
+            void Function(String reason) onFailure,
+          ) async {
+            final LnReaderEpubImage? fetched = await library.fetchMissingImage(
+              image,
+              fallbackReferer: chapterUrl,
+            );
+            if (fetched == null) {
+              onFailure(Uri.tryParse(image.url)?.host ?? 'invalid url');
+            }
+            return fetched;
+          },
+      stillValid: () async => await _snapshotChapterUrl(index) == chapterUrl,
+      onStillMissing: (int failed, int attempted, String? firstFailure) {
+        ErrorLogService.instance.log(
+          'WebNovelChapterLoader.retryMissingImages',
+          '$chapterUrl: still missing $failed of $attempted images '
+              '(first: $firstFailure)',
+        );
+      },
+    );
+  }
+
+  /// 书行快照里第 [index] 章的页地址；不在快照里 / 书行已不在为 null。
+  Future<String?> _snapshotChapterUrl(int index) async {
+    final WebNovelSnapshot? snapshot = WebNovelSnapshot.tryParse(
+      (await database.getEpubBook(bookKey))?.sourceMetadata,
+    );
+    if (snapshot == null || index < 0 || index >= snapshot.chapters.length) {
+      return null;
+    }
+    return snapshot.chapters[index].url;
   }
 
   File _packageFile(String name) => File(p.join(extractDir, 'OEBPS', name));

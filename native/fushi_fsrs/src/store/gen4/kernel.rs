@@ -4,8 +4,12 @@
 //! - **连接**：Primary 一条写连接（[G4Core::writer]，互斥锁 = 写锁，唯一的写者，D10）+ 只读连接池（[G4Core::reader]）。
 //!   Secondary（查词弹窗等辅助进程）没有写连接，写命令报 [READ_ONLY]。读命令不排在写锁后面（协议 3 BUG-4298 的同一个
 //!   口径）；WAL 下读连接只看已提交的数据。
+//!   内存映射与页缓存按协议 3 的同一份预算（`store/mod.rs` [MmapRole] / `tune_for_daily_use`）：写连接映射、读连接按
+//!   平台（32 位不映射），页缓存 64 MB、写连接的上限随可用内存下调（`store/mem_budget.rs`），命令结束放回连接时超出
+//!   8 MB 的页还掉（`trim_idle_cache`，批量写入期间写连接留着）。`schema::open` 的保守值只留给迁移用的连接（设计 §6.5）。
 //! - **常驻会话**：浏览会话表 [Browse]（一个打开的库文件一份，在它自己的锁里；会话按缓存层代号自己失效，`cmd/browse.rs`
-//!   文件头）、统计原料缓存（[StatsEntry]，按集合 + 统计指纹 + 写入代数 + 缓存层代号命中，未命中调
+//!   文件头）、出卡会话 [G4Core::study]（`store/queue.rs` 的 `StudyHub`，一个打开的库文件一份、按集合号分；Primary 的写连接
+//!   上装着给它记账的临时触发器，`cmd/study.rs` 文件头）、统计原料缓存（[StatsEntry]，按集合 + 统计指纹 + 写入代数 + 缓存层代号命中，未命中调
 //!   `cmd/stats.rs` `snapshot_of`）。
 //! - **写入代数** [G4Core::writes]：每条写命令提交之后 +1。统计原料缓存按它判「本进程的写连接上改没改过原料」；别的进程
 //!   （只有 Primary 写）的写入由缓存层代号 `cache_gen` 兜住。
@@ -40,8 +44,8 @@ use super::files::{self, OpenError, OpenMode};
 use super::migrate;
 use super::schema::{self, sql};
 use super::truth::Truth;
-use crate::store::CLOSED;
 use crate::store::stats::Snapshot;
+use crate::store::{CLOSED, MmapRole};
 
 /// Secondary 打开的库上发写命令。
 pub const READ_ONLY: &str =
@@ -112,6 +116,7 @@ impl Readers {
         #[cfg_attr(not(feature = "id_audit"), allow(unused_mut))]
         let mut c = files::open_secondary(&self.path)?;
         c.busy_timeout(schema::BUSY_TIMEOUT).map_err(sql)?;
+        crate::store::tune_for_daily_use(&c, MmapRole::Secondary)?;
         #[cfg(feature = "id_audit")]
         super::id_audit::install(&mut c);
         Ok(c)
@@ -173,7 +178,7 @@ impl Readers {
     }
 }
 
-/// 借出的读连接（析构时放回）。
+/// 借出的读连接（析构时放回；放回前页缓存超出命令之间的上限就还掉，`crate::store::trim_idle_cache`）。
 pub struct Reader<'a> {
     pool: &'a Readers,
     conn: Option<Connection>,
@@ -188,13 +193,34 @@ impl Deref for Reader<'_> {
 
 impl Drop for Reader<'_> {
     fn drop(&mut self) {
+        if let Some(c) = self.conn.as_ref() {
+            crate::store::trim_idle_cache(c);
+        }
         self.pool.put_back(self.conn.take());
     }
 }
 
-/// 拿着写锁的写连接。
+/// 拿着写锁的写连接。析构（放锁）时页缓存超出命令之间的上限就还掉（`crate::store::trim_idle_cache`），批量写入期间
+/// 留着（[G4Core] `bulk_holds_cache`）。
 pub struct Writer<'a> {
     guard: MutexGuard<'a, Option<Connection>>,
+    study: &'a crate::store::queue::StudyHub,
+    hold: &'a AtomicBool,
+}
+
+impl Drop for Writer<'_> {
+    /// 写锁放下之前：写连接回到了自动提交（事务已提交或回滚完）就把出卡会话的「未提交」待重读挪成已提交（协议 3 写锁
+    /// 守卫同一个口径，`store/queue.rs` 文件头「事务边界」）；批量写入之外收回空闲页缓存。
+    fn drop(&mut self) {
+        if let Some(c) = self.guard.as_ref() {
+            if c.is_autocommit() {
+                self.study.settle();
+            }
+            if !self.hold.load(Ordering::Relaxed) {
+                crate::store::trim_idle_cache(c);
+            }
+        }
+    }
 }
 
 impl Deref for Writer<'_> {
@@ -232,6 +258,9 @@ pub struct G4Core {
     writer: Mutex<Option<Connection>>,
     /// 浏览会话表（`cmd/browse.rs`）：一个打开的库文件一份。
     pub(super) browse: Mutex<Browse>,
+    /// 出卡常驻会话（`cmd/study.rs`，会话本体 `store/queue.rs`）：一个打开的库文件一份，按集合号分；Primary 的写连接上
+    /// 装着给它记账的临时触发器（`cmd::study::install_touch`）。
+    pub(super) study: Arc<crate::store::queue::StudyHub>,
     /// 统计原料缓存（最近一份）。
     pub(super) stats: Mutex<Option<StatsEntry>>,
     /// 写入代数：每条写命令提交之后 +1（模块文件头）。
@@ -239,12 +268,47 @@ pub struct G4Core {
     bulk: Mutex<Bulk>,
     /// 进程内刷新计数（`refresh.rs`，S1c）：按 profile、按类别，写命令提交之后推进，`refresh_keys` 只读它。
     pub(super) refresh: Mutex<super::refresh::Refresh>,
-    /// 保留副本 `srs.db` 在、但不是 SQLite 文件（`files::Opened::retained_copy_unreadable`）。
-    pub retained_copy_unreadable: bool,
     /// 彻底清除的字节层收尾被读者挡住了（`scrub.rs`）：之后的写命令提交之后不等地再试。出错不置位（原因记在库里，
     /// 下一次打开 / 下一次清除再试）。
     scrub_pending: AtomicBool,
+    /// 连接内存预算（协议 3 同一份，`store/mod.rs` `tune_for_daily_use`）：写连接页缓存上限按可用内存自适应的状态
+    /// （`store/mem_budget.rs`），与批量写入期间写连接放回时留着页缓存（[G4Core] `bulk` 深度的无锁镜像：写连接守卫
+    /// 析构时不能去拿那把锁，只由 [G4Core::bulk] 与深度一起写）。
+    writer_cache: Mutex<crate::store::mem_budget::WriterCache>,
+    bulk_holds_cache: AtomicBool,
+    /// 各集合解析好的缓存配置（`cache.rs` [super::cache::CfgMemo]），经 [G4Core::truth] 交给每条命令的 [Truth]。
+    cfg_memo: Arc<super::cache::CfgMemo>,
     _live: Live,
+}
+
+/// Primary 开库时补建闭包检查点没做成的原因（`srs_meta`；补成了删掉）。只作诊断记录：开库不因它失败，下一次写命令的收尾照样补建。
+pub(crate) const CLOSURE_BACKFILL_ERROR_KEY: &str = "gen4_closure_backfill_error";
+
+/// Primary 开库时补建检查点之前建的闭包行（[super::derive::closure_steps_missing] 先问一句，有才开写事务）：每个
+/// 集合一次 [Index::backfill_closure_steps](super::derive::Index::backfill_closure_steps)，同一个事务。返回补了几台。
+fn backfill_closure_steps(
+    conn: &Connection,
+    cfg_memo: &Arc<super::cache::CfgMemo>,
+) -> Result<u64, String> {
+    if !super::derive::closure_steps_missing(conn)? {
+        return Ok(0);
+    }
+    let t = Truth::with_cfg_memo(conn, cfg_memo.clone());
+    t.tx_immediate(|t| {
+        let cols: Vec<i64> = {
+            let mut stmt = t
+                .conn()
+                .prepare_cached(super::dispatch::COLLECTIONS_SQL)
+                .map_err(sql)?;
+            let rows = stmt.query_map([], |r| r.get(0)).map_err(sql)?;
+            rows.collect::<Result<_, _>>().map_err(sql)?
+        };
+        let mut n = 0;
+        for col in cols {
+            n += super::derive::Index::new(t, col).backfill_closure_steps()?;
+        }
+        Ok(n)
+    })
 }
 
 impl G4Core {
@@ -263,12 +327,16 @@ impl G4Core {
             returned: Condvar::new(),
         };
         let mut scrub_due = false;
+        let cfg_memo: Arc<super::cache::CfgMemo> = Arc::default();
+        let study = Arc::new(crate::store::queue::StudyHub::default());
         let writer = match mode {
             OpenMode::Primary => {
                 opened
                     .conn
                     .busy_timeout(schema::BUSY_TIMEOUT)
                     .map_err(sql)?;
+                // 日常连接的内存映射与页缓存（`schema::open` 给的是迁移用的保守值，设计 §6.5）。
+                crate::store::tune_for_daily_use(&opened.conn, MmapRole::Primary)?;
                 // 开一条读连接放进池里：读得了才算打开成功（也让诊断计数里有连接）。
                 let first = readers.open_one()?;
                 readers.lock().idle.push(first);
@@ -285,13 +353,37 @@ impl G4Core {
                 // 是这个目录唯一的写者，幂等删掉。删不掉（文件被别的进程占着、权限）不挡开库：那只是一份过时的副本，与
                 // 用户的卡片无关，因它打不开库才是让用户出问题；下一次 Primary 打开或迁移再删。
                 let _ = super::migrate::remove_leftover_rehearsal(dir);
+                // 检查点之前建的旧闭包行（`derive.rs` `CLOSURE_STEP`：检查点上线前迁移的库）补上检查点，否则在第一次写命令
+                // 的收尾补建之前，每次排队都要把承袭设备的旧戳从头解一遍（真库 1.7 s）。只补闭包行、整份闭包不变：不推进
+                // 写入代数、不碰缓存层，装学习会话触发器之前做（它只记卡 / 日志 / 卡的寄存器，本来也看不见）。补不成（出错、
+                // 整份闭包与日志对不上）整笔回滚、不挡开库：下一次写命令的收尾照样补建；没补成的原因记进
+                // [CLOSURE_BACKFILL_ERROR_KEY]（与 `scrub` / `retained` 同一做法，记不下 = 库写不了，报回去），补成了删掉。
+                match backfill_closure_steps(&opened.conn, &cfg_memo) {
+                    Ok(_) => opened
+                        .conn
+                        .execute(
+                            "DELETE FROM srs_meta WHERE key = ?1",
+                            [CLOSURE_BACKFILL_ERROR_KEY],
+                        )
+                        .map_err(sql)?,
+                    Err(e) => opened
+                        .conn
+                        .execute(
+                            "INSERT INTO srs_meta (key, value) VALUES (?1, ?2)                              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                            [CLOSURE_BACKFILL_ERROR_KEY, e.as_str()],
+                        )
+                        .map_err(sql)?,
+                };
+                super::cmd::study::install_touch(&study, &opened.conn)?;
                 Some(opened.conn)
             }
+            // Secondary 不写（辅助进程可能在只读沙箱里）：缺检查点的闭包行照旧从头并，等 Primary 打开或写命令收尾补建。
             OpenMode::Secondary => {
                 opened
                     .conn
                     .busy_timeout(schema::BUSY_TIMEOUT)
                     .map_err(sql)?;
+                crate::store::tune_for_daily_use(&opened.conn, MmapRole::Secondary)?;
                 readers.lock().idle.push(opened.conn);
                 None
             }
@@ -303,12 +395,15 @@ impl G4Core {
             readers,
             writer: Mutex::new(writer),
             browse: Mutex::new(Browse::new()),
+            study,
             stats: Mutex::new(None),
             writes: AtomicU64::new(0),
             bulk: Mutex::new(Bulk::default()),
             refresh: Mutex::new(super::refresh::Refresh::new()),
-            retained_copy_unreadable: opened.retained_copy_unreadable,
             scrub_pending: AtomicBool::new(scrub_due),
+            writer_cache: Mutex::new(crate::store::mem_budget::WriterCache::new()),
+            bulk_holds_cache: AtomicBool::new(false),
+            cfg_memo,
             _live: Live::new(),
         })
     }
@@ -340,7 +435,18 @@ impl G4Core {
                 OpenMode::Primary => CLOSED.to_owned(),
             });
         }
-        Ok(Writer { guard })
+        let w = Writer {
+            guard,
+            study: &self.study,
+            hold: &self.bulk_holds_cache,
+        };
+        crate::store::retune_writer_cache(&self.writer_cache, &w);
+        Ok(w)
+    }
+
+    /// [conn] 上一条命令的 [Truth]：带上本库的缓存配置记忆（[G4Core] `cfg_memo`）。命令层开 [Truth] 一律经它。
+    pub(super) fn truth<'c>(&self, conn: &'c Connection) -> Truth<'c> {
+        Truth::with_cfg_memo(conn, self.cfg_memo.clone())
     }
 
     /// 借一条读连接。
@@ -354,7 +460,7 @@ impl G4Core {
         f: impl FnOnce(&Truth<'_>) -> Result<T, String>,
     ) -> Result<T, String> {
         let r = self.reader()?;
-        let t = Truth::new(&r);
+        let t = self.truth(&r);
         f(&t)
     }
 
@@ -384,7 +490,7 @@ impl G4Core {
     /// [G4Core::write] / [G4Core::write_local] 共用：写锁里、一开始就拿写锁的事务里跑 [f]，报错整笔回滚。
     fn write_tx<T>(&self, f: impl FnOnce(&Truth<'_>) -> Result<T, String>) -> Result<T, String> {
         let w = self.writer()?;
-        let t = Truth::new(&w);
+        let t = self.truth(&w);
         let v = t.tx_immediate(|t| {
             let v = f(t)?;
             // 测试注入：提交之前 panic（panic_recovery_tests.rs，同协议 3 `in_savepoint` 的注入点）。
@@ -531,6 +637,7 @@ impl G4Core {
                 ))
                 .map_err(sql)?;
                 b.restore = restore;
+                self.bulk_holds_cache.store(true, Ordering::Relaxed);
             }
             b.depth += 1;
             return Ok(b.depth);
@@ -543,6 +650,8 @@ impl G4Core {
             return Ok(b.depth);
         }
         let merged = self.wal_checkpoint();
+        // 先清标志：恢复阈值这一次放回写连接就把留着的页缓存收回（协议 3 `bulk_end` 同序）。
+        self.bulk_holds_cache.store(false, Ordering::Relaxed);
         let restored = self.writer().and_then(|w| {
             w.execute_batch(&format!("PRAGMA wal_autocheckpoint = {}", b.restore))
                 .map_err(sql)

@@ -39,12 +39,17 @@ class OnlineNovelMissingImagesRetry {
   final int remaining;
 }
 
-/// 按需取章加载器的可选能力：章节里没取到的插图能查、能补取。
+/// 网文书的可选能力：章节里没取到的插图能查、能补取。
 ///
-/// 只有 LNReader 在线书实现（插图失败时在章节文件里留占位，见
-/// `lnreader_missing_images.dart`）；阅读器按 `loader is OnlineNovelMissingImagesRetrier`
-/// 判断，不分来源。
+/// 三个实现，都靠章节文件里的缺图占位（`lnreader_missing_images.dart`）：
+/// LNReader 在线书与网页小说书的按需取章加载器（`LnReaderOnlineChapterLoader` /
+/// `WebNovelChapterLoader`），以及 LNReader 下载成 EPUB 的书
+/// （`LnReaderDownloadedBookImages`，没有取章加载器）。阅读器只认这个接口，不分来源。
 abstract interface class OnlineNovelMissingImagesRetrier {
+  /// [filePath] 对应的章（0 基）；不是本书的正文文件返回 null。阅读器据此把
+  /// 下发的章节文件对到章号、补到图后丢这一章的缓存。
+  int? chapterIndexForFile(String filePath);
+
   /// 第 [index] 章还缺几张图。章节文件不在 / 还是占位页时 count = 0。
   Future<OnlineNovelMissingImages> missingImages(int index);
 
