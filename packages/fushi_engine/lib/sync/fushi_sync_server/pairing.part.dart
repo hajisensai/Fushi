@@ -663,6 +663,13 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // Z2OhxAjKVv）。老 host 无此字段 → client 不推（见该端点注释）。
         kLiveLibraryStreamVideosCapability:
             _libraryService is StreamVideoSyncHost,
+        // 删除墓碑列举（`GET /api/tombstones`）与视频删除（`DELETE
+        // /api/library/videos/<id>`）。老 host 无这两位 → client 遇到 404 时在同步报告
+        // 里提示升级对端；有位但 false（host 实现不带这项能力）→ 不叫用户去升级。
+        kLiveLibraryDeletionTombstonesCapability:
+            _libraryService is DeletionTombstoneHost,
+        kLiveLibraryVideoDeletionCapability:
+            _libraryService is VideoDeletionHost,
         // 弱网实时转码（`/streamurl?maxHeight=&maxBitrate=`）。老 host 无此字段 →
         // client 不显示画质档，行为与从前一致。字段随用户开关与本机 ffmpeg 可用性
         // 实时变化，不是启动时的快照；最终真相仍是 `/streamurl` 回的 `transcoded`。

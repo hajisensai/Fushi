@@ -45,6 +45,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5078](bugs/BUG-5078-live-progress-test-teardown-temp-delete-fails.md) | 🚧 | 🚧 | live-progress-test-teardown-temp-delete-fails |
+| [BUG-5079](bugs/BUG-5079-sync-video-sweep-tests-teardown-temp-locked.md) | 🚧 | 🚧 | sync-video-sweep-tests-teardown-temp-locked |
 | [BUG-5077](bugs/BUG-5077-manga-read-aloud-bar-finished-no-regression-test.md) | ✅ | 🚧 | 漫画朗读读到章末播放条不退的修复（#3986）缺自动化回归测试 |
 | [BUG-5076](bugs/BUG-5076-db-enospc-misclassified-as-corruption.md) | 🚧 | 🚧 | 磁盘写满时 sqlite malformed(11) 被归到「数据库损坏」专屏，引导用户恢复备份 / 清数据 |
 | [BUG-5075](bugs/BUG-5075-tts-render-queue-test-windows-teardown.md) | 🚧 | 🚧 | Windows 上 tts_text_rules_and_rate_limit_test 的 tearDown 删临时目录报 errno 145（目录非空） |

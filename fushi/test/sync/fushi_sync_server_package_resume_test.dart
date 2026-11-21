@@ -223,7 +223,10 @@ void main() {
       ).syncCollectionsLiveForTest(report, backend);
 
       expect(
-        report.errors.any((String e) => e.contains('no collections endpoint')),
+        report.peerGaps.any(
+          (SyncPeerGap g) =>
+              g.dimension == SyncPeerGapDimension.collections && g.outdated,
+        ),
         isTrue,
         reason:
             '老 host 缺合集端点必须留痕（错误日志 + 手动同步失败计数），'

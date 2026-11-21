@@ -449,8 +449,8 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
 
     final int total = toPush.length;
     int index = 0;
-    // 老 host 无字幕端点（首个 404/405）后停止本轮后续字幕推送，只记一条可见提示
-    // （与合集端点缺失的可见性纪律一致），不把每条视频都刷成一条错误。
+    // 老 host 无字幕端点（首个 404/405）后停止本轮后续字幕推送，只记一条「对端版本
+    // 过旧」（统一提示，与合集端点缺失同一形态），不把每条视频都刷成一条错误。
     bool subtitleEndpointMissing = false;
     for (final ({VideoBookRow row, File file, bool pushVideo}) item in toPush) {
       final VideoBookRow v = item.row;
@@ -494,9 +494,9 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
           sidecarDirCache: sidecarDirCache,
         );
         if (subtitleEndpointMissing) {
-          report.errors.add(
-            'live push subtitles: host has no subtitle endpoint (older app '
-            'version) — update the host app to sync video subtitles',
+          report.notePeerGap(
+            SyncPeerGapDimension.videoSubtitles,
+            outdated: true,
           );
         }
       }

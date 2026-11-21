@@ -25,8 +25,6 @@ import 'package:fushi_engine/media/video/dvd/dvd_angle.dart'
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
     show isDvdTitlePath;
 import 'package:fushi_engine/sync/interconnect_dav_tree_listing.dart';
-import 'package:fushi_engine/sync/pdf_sync_package.dart'
-    show interconnectHostAcceptsPdfBooks;
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/interconnect_source_share.dart';
 import 'package:fushi/src/sync/interconnect_source_share_sync.dart'
@@ -950,19 +948,22 @@ class InterconnectSyncBackend extends SyncBackend
     }
   }
 
-  /// 对端 host 能否收下推来的 PDF 书（`liveLibrary.pdfBooks`，反馈 Jq1_ujHa4t）。
+  /// 对端 host 对 `liveLibrary.<key>` 能力位的声明状态（[liveLibraryCapabilityState]）。
   ///
-  /// 必须显式协商：老 host 会把 PDF 当 EPUB 导入、必然失败；无头服务端没有 PDF 引擎。
-  /// 能力每轮现问、不跨轮缓存（同一地址上的 host 可能被换成老版本 / 服务端）。
-  /// 老 host（无 capabilities 端点）= false；网络 / 鉴权失败照常抛给调用方记错误。
-  Future<bool> hostAcceptsPdfBooks() async {
+  /// 用途两类：PDF 书（`liveLibrary.pdfBooks`，反馈 Jq1_ujHa4t）必须显式协商——老 host
+  /// 会把 PDF 当 EPUB 导入、必然失败，无头服务端没有 PDF 引擎；以及同步维度在 host
+  /// 上走不通时区分「对端版本过旧」与「对端不支持」（拍板
+  /// other-sync-peer-version-errors）。能力每轮现问、不跨轮缓存（同一地址上的 host
+  /// 可能被换成老版本 / 服务端）。老 host（无 capabilities 端点）= undeclared；网络 /
+  /// 鉴权失败照常抛给调用方记错误。
+  Future<LiveLibraryCapabilityState> liveLibraryCapability(String key) async {
     await _ensureResolved();
-    return interconnectHostAcceptsPdfBooks(await _readHostCapabilities());
+    return liveLibraryCapabilityState(await _readHostCapabilities(), key);
   }
 
   /// 对端 host 的本地音频清单是否带内容身份（`liveLibrary.localAudioContentId`，
   /// 拍板 pr3481）。老 host = false：只能按显示名匹配。能力每轮现问、不跨轮缓存
-  /// （同 [hostAcceptsPdfBooks]）。
+  /// （同 [liveLibraryCapability]）。
   Future<bool> hostReportsLocalAudioContentId() async {
     await _ensureResolved();
     return interconnectHostReportsLocalAudioContentId(

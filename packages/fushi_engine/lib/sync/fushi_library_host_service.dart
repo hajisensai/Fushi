@@ -217,6 +217,41 @@ bool interconnectHostReportsLocalAudioContentId(Object? capabilities) {
   return live[kLiveLibraryLocalAudioContentIdCapability] == true;
 }
 
+/// `liveLibrary` 里声明「host 列得出删除墓碑」（`GET /api/tombstones`，
+/// [DeletionTombstoneHost]）的能力位。没有这一位的 host 若对该端点回 404，就是
+/// 版本过旧（拍板 other-sync-peer-version-errors）。
+const String kLiveLibraryDeletionTombstonesCapability = 'deletionTombstones';
+
+/// `liveLibrary` 里声明「host 能删视频」（`DELETE /api/library/videos/<id>`，
+/// [VideoDeletionHost]）的能力位。语义同 [kLiveLibraryDeletionTombstonesCapability]。
+const String kLiveLibraryVideoDeletionCapability = 'videoDeletion';
+
+/// host 对 `liveLibrary` 里某一能力位的声明状态。
+///
+/// 同步维度在 host 上走不通（端点 404 / 能力位不是 true）时，靠它区分两种情形：
+/// - [undeclared]：host 根本不认识这一位（或连 `/api/capabilities` 都没有）——它的
+///   Fushi 比这个能力旧，升级对端就能同步；
+/// - [declaredOff]：host 认识这一位但说不支持（例如无头服务端没有 PDF 引擎）——升级
+///   解决不了，是那台设备的能力边界。
+enum LiveLibraryCapabilityState { supported, declaredOff, undeclared }
+
+/// 读 [capabilities]（`GET /api/capabilities` 的解码结果，老 host 为 null）里
+/// `liveLibrary.<key>` 的声明状态：`true` → supported；键在但不是 `true` →
+/// declaredOff；键 / `liveLibrary` 段 / 整个能力表缺失 → undeclared。
+LiveLibraryCapabilityState liveLibraryCapabilityState(
+  Object? capabilities,
+  String key,
+) {
+  if (capabilities is! Map) return LiveLibraryCapabilityState.undeclared;
+  final Object? live = capabilities['liveLibrary'];
+  if (live is! Map || !live.containsKey(key)) {
+    return LiveLibraryCapabilityState.undeclared;
+  }
+  return live[key] == true
+      ? LiveLibraryCapabilityState.supported
+      : LiveLibraryCapabilityState.declaredOff;
+}
+
 /// 旧名兼容：本地音频 diff 已并入 [SyncKeyDiff]。
 @Deprecated('已并入 SyncKeyDiff（computeKeyUnionDiff），请改用新名')
 typedef LocalAudioSyncDiff = SyncKeyDiff;

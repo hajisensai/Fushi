@@ -171,7 +171,16 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
 
       final List<({String mediaType, String itemKey, int deletedAt})>? remote =
           await backend.getRemoteDeletionTombstones();
-      if (remote == null) return; // 老 host 无 /api/tombstones 端点，优雅跳过。
+      if (remote == null) {
+        // 老 host 无 /api/tombstones 端点：跳过消费，但记一条「对端版本过旧」——
+        // host 上的删除传不过来，用户要看得见（拍板 other-sync-peer-version-errors）。
+        await _notePeerGapLive(
+          report,
+          backend,
+          SyncPeerGapDimension.deletionTombstones,
+        );
+        return;
+      }
 
       final DeletionTombstoneEntries remoteTombstones =
           <String, Map<String, int>>{};
@@ -229,8 +238,9 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
   /// 两类失败区别对待：
   /// * **异常**（网络 / host 5xx）→ 不推进基线，下轮整批重试。这类失败通常是整体性的
   ///   （断网），整批重试正是想要的；DELETE 端点幂等，重推已成功的无害。
-  /// * **host 不支持**（视频 DELETE 端点 404/405 = 对端版本过旧）→ 记 `report.errors`
-  ///   但**不**阻塞基线。能力缺失不是暂时性故障，为它永久卡住基线会让书 / 有声书的
+  /// * **host 不支持**（视频 DELETE 端点 404/405）→ 经 [_notePeerGapLive] 记一条（每轮
+  ///   至多一条：对端版本过旧 / 对端不支持，拍板 other-sync-peer-version-errors）但
+  ///   **不**阻塞基线。能力缺失不是暂时性故障，为它永久卡住基线会让书 / 有声书的
   ///   删除每轮无谓重推。代价是对端升级前的这条视频删除会漏掉——UI 侧长按删除路径会
   ///   直接提示「对端版本过旧」，同步路径则留在日志里。
   Future<void> _pushDeletionTombstonesLive(
@@ -263,10 +273,12 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
             kind,
             row.itemKey,
           );
+          // 只有视频会报「不支持」（[_pushOneDeletionLive]）。
           if (!supported) {
-            report.errors.add(
-              'host does not support deleting ${row.mediaType} '
-              '"${row.itemKey}" (peer app too old); skipped',
+            await _notePeerGapLive(
+              report,
+              backend,
+              SyncPeerGapDimension.videoDeletion,
             );
           }
         } catch (e) {
