@@ -6,6 +6,7 @@
   - 本机库（509041 条操作）`rebuildS` 是 25.9。
   - 每条操作的耗时随库大小翻倍，说明不是纯线性。第一个资料库的 `settled.logs` 是 683385（`derive.rs` `rebuild_all` 里 `multi_ids("log_ix")`：几乎每个日志 ID 都有不止一份操作），`voids` 1855709，`aliases` 770155。另两个库的 `logs` 都是 0。这一形态是资料库并入留下的副本，本机复现不了。
   - 推测（未验证）：一是多份日志的 `pick_log` 逐 ID 点查 + 逐行 UPDATE；二是库超出页缓存后的随机读（迁移连接 `cache_size` 只有 16 MiB）。
-- **[ ] ① 未修复** — 先要复现：用合成库造出「每个日志 ID 都有两份操作、500 万条以上」的形态，跑 `gen4_dryrun` 按 `rebuild_all` 的阶段打点（扫描 `touch` / 闭包 / 别名 `rebuild_aliases` / `multi_regs` 判定 / `pick_log` / 摘要 / 缓存物化），定位到真热点再改结构。不要盲调 PRAGMA。
+- **本机分段实测（2026-11-22，本机库 50.9 万条操作，quick profile，`rebuild_all` 各段临时打点，没提交）**：总共 42 秒，其中缓存物化 `materialize_caches` 占 29 秒，扫描 5.2 秒，别名 1.3 秒，`weigh_rest` 1.8 秒，判定 2.1 秒，摘要 1.7 秒。缓存物化里，笔记行 `note_row` 占 10.4 秒，几乎全在 `expected_cards` 的模板判空：`card_front_is_empty` 对每条笔记的每个模板重新换名、分词、严格解析一遍同一份模板正面。另有笔记 `class_lines` 7.5 秒，卡的 `card_logs` 2.9 秒、`live_lines` 1.7 秒。页缓存 16 MiB 与 256 MiB 的 A/B 在本机没有差别（新库 235 MB，整份都在系统文件缓存里），IO 假设在本机验证不了。
+- **[ ] ① 部分修复** — 模板判空：正面改成按笔记类型解析一次（`card_cache::CardFront`，`caches.rs` `TypeInfo.templates` 存解析结果），每条笔记只求值。机器满载下同一轮里 `note_row` 从约 27 秒（按负载折算）降到 1.4 秒，干跑 verdict 仍是 `pass`、parity 无差异。还没做的：笔记 `class_lines`；以及用户那份库特有的部分，即 IO 与每个日志 ID 都有多份操作，仍需按下面的合成库复现。 先要复现：用合成库造出「每个日志 ID 都有两份操作、500 万条以上」的形态，跑 `gen4_dryrun` 按 `rebuild_all` 的阶段打点（扫描 `touch` / 闭包 / 别名 `rebuild_aliases` / `multi_regs` 判定 / `pick_log` / 摘要 / 缓存物化），定位到真热点再改结构。不要盲调 PRAGMA。
 - **[ ] ② 未加自动化测试** — 定位后加阶段耗时的规模测试（固定合成库，断言随规模近线性）。
 - **备注**：BUG-5063（同一份报告里的对拍误判）已单独修复。

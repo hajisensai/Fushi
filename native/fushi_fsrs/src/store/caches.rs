@@ -284,8 +284,8 @@ pub(crate) struct TypeInfo {
     cloze: bool,
     /// (字段 ID, 字段名)，按 ord。
     fields: Vec<(String, String)>,
-    /// (模板 ID, ord, 正面)，按 ord。
-    templates: Vec<(String, i64, String)>,
+    /// (模板 ID, ord, 解析好的正面)，按 ord。正面在这里解析一次，这个类型的每条笔记判空共用（[expected_cards]）。
+    templates: Vec<(String, i64, card_cache::CardFront)>,
     term_field: Option<String>,
     reading_field: Option<String>,
     /// 词频序字段（卡片缓存行的 `freq_rank` 从它解析），即视图的 `qe`（registers.rs `effective_frequency_field`）。
@@ -305,17 +305,32 @@ impl TypeInfo {
             .flatten()
             .map(|f| (s(&f["id"]), s(&f["name"])))
             .collect();
+        // 正面里的 `fld:<id>` 换成字段名（同 id 取最后一个，Dart `templateIdsToNames` 的表）。
+        let id_to_name = |id: &str| {
+            fields
+                .iter()
+                .rev()
+                .find(|(k, _)| k == id)
+                .map(|(_, name)| name.clone())
+        };
+        let templates = view["ts"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|t| {
+                (
+                    s(&t["id"]),
+                    t["ord"].as_i64().unwrap_or(0),
+                    card_cache::CardFront::parse(t["front"].as_str().unwrap_or(""), &id_to_name),
+                )
+            })
+            .collect();
         TypeInfo {
             cloze: view["nk"].as_str() == Some("cloze"),
             freq_field: view["qe"].as_str().map(str::to_owned),
             sort_field: view["se"].as_str().map(str::to_owned),
             fields,
-            templates: view["ts"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .map(|t| (s(&t["id"]), t["ord"].as_i64().unwrap_or(0), s(&t["front"])))
-                .collect(),
+            templates,
             term_field: view["tf"].as_str().map(str::to_owned),
             reading_field: view["bk"]
                 .as_str()
@@ -495,17 +510,9 @@ fn expected_cards(n: &NoteInfo, t: &TypeInfo) -> Result<Vec<(String, String, i64
             );
         }
     } else if !t.cloze {
-        let id_to_name = |id: &str| {
-            t.fields
-                .iter()
-                .rev()
-                .find(|(k, _)| k == id)
-                .map(|(_, name)| name.clone())
-        };
         for (tpl, ord, front) in &t.templates {
             // 模板语法错误：Dart 侧 catch 成「不空」。
-            let empty = card_cache::card_front_is_empty(front, &id_to_name, &by_name, *ord)
-                .unwrap_or(false);
+            let empty = front.is_empty(&by_name, *ord).unwrap_or(false);
             put(registers::card_id(&n.id, tpl, 0)?, tpl, 0, empty);
         }
     }
