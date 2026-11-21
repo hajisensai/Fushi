@@ -144,10 +144,7 @@ void main() {
     final String dispatch = maskComments(
       File('$vendored/windows/src/async_dispatch.cc').readAsStringSync(),
     );
-    final String schedule = methodBody(
-      dispatch,
-      'bool DelayedTask::Schedule(',
-    );
+    final String schedule = methodBody(dispatch, 'bool DelayedTask::Schedule(');
     expect(schedule, contains('if (stopping_) {'));
     expect(schedule, contains('return false;'));
   });
