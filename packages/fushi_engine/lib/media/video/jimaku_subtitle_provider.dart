@@ -3,6 +3,7 @@ import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart
 import 'package:fushi_engine/media/video/jimaku_client.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_source_season.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 
 class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
@@ -68,6 +69,10 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
       final List<ExternalProviderFailure> failures =
           <ExternalProviderFailure>[];
       for (final JimakuEntry entry in entries) {
+        // 候选的季号是来源事实，不是请求意图（HBK-AUDIT-049）：只有条目的 AniList id
+        // 与请求作品对上时，请求季号才是这个条目的季号；文本 / TMDB 回退搜到的条目
+        // 可能是任何一季，只认条目名里的季度记号，再由各文件名覆盖。
+        final int? entrySeason = jimakuEntrySeason(entry, request);
         // 电影条目没有「集」：文件名里的「Movie 25」会被当成第 25 集，按集过滤只会
         // 误伤，整季包补列也无从谈起——一次不带集号的列表就是全部。
         final int? episode = entry.flags.movie
@@ -116,7 +121,10 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
               entry: entry,
               file: file,
               language: language,
-              season: request.effectiveSeason,
+              season: subtitleSourceFileSeason(
+                fileName: file.name,
+                entrySeason: entrySeason,
+              ),
               providerPriority: priority,
               wantedEpisode: episode,
               requestedLanguages: request.languages,
@@ -268,6 +276,21 @@ SubtitleWorkClaim jimakuEntryWorkClaim(JimakuEntry entry) {
     kind: tmdbKind ?? (entry.flags.movie ? VideoMetadataMediaKind.movie : null),
     anilistId: entry.anilistId,
     tmdbId: tmdbKind == null ? null : int.tryParse(tmdb!.group(2)!),
+  );
+}
+
+/// Jimaku 条目层面的季号事实（[subtitleSourceEntrySeason]）：条目的 AniList id 与
+/// 请求作品的 AniList id 相等才采信请求季号（Jimaku 按季各开条目、各挂 AniList id），
+/// 否则只看条目名里唯一的季度记号。纯函数。
+int? jimakuEntrySeason(JimakuEntry entry, VideoSubtitleSearchRequest request) {
+  final int? requested = request.media?.anilistId;
+  return subtitleSourceEntrySeason(
+    identityConfirmed:
+        requested != null &&
+        entry.anilistId != null &&
+        entry.anilistId == requested,
+    requestedSeason: request.effectiveSeason,
+    entryNames: <String?>[entry.name, entry.englishName, entry.japaneseName],
   );
 }
 

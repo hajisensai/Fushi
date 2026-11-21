@@ -1171,7 +1171,16 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
           );
       if (!mounted || requestGeneration != _generation) return;
       final List<VideoSubtitleCandidate> seasonCandidates =
-          filterSubtitleCandidatesForSeason(result.items, season: season);
+          filterSubtitleCandidatesForSeason(
+            result.items,
+            season: season,
+            // 合集跨季时只配一季也不收季号未知的字幕，与批量同一判据
+            // （[runSubtitleBatch] 的 collectionSpansSeasons，HBK-AUDIT-049）。
+            allowUnseasoned: subtitleSeasonAllowsUnseasoned(
+              season: season,
+              collectionSpansSeasons: _hasMultipleSeasons,
+            ),
+          );
       final List<SubtitleCollectionSource> sources =
           groupSubtitleCollectionSources(
             seasonCandidates,
@@ -1321,6 +1330,8 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         download: _download,
         probedVersionLanguages: _probedLanguages,
         isCancelled: () => _stopRequested,
+        // 面板只传选中那一季的成员，合集跨季这件事要单独告诉批量（HBK-AUDIT-049）。
+        collectionSpansSeasons: _hasMultipleSeasons,
         onItemStart: (SubtitleBatchItem item) async {
           if (!mounted) return;
           setState(() => _statusByUid[item.target.bookUid] = item);
