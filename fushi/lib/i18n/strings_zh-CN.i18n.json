@@ -6301,6 +6301,8 @@
   "media_audio_cd_rip_reading": "正在读取光盘…",
   "media_audio_cd_rip_title": "正在抓取音频 CD",
   "media_audio_cd_rip_unreadable": "有 $n 个损坏扇区读不出来，已用静音填充",
+  "media_collection_episode_streams": "在线播放",
+  "media_collection_episode_streams_source": "在线播放 · ${source}",
   "media_detail_start_reading": "开始阅读",
   "media_detail_start_watching": "开始观看",
   "media_detail_status_completed": "已完成",
