@@ -771,6 +771,8 @@ class ShortcutDefaults {
     // 反馈 N8qzDdzIvD：galgame 台词朗读同样默认不绑键（OS 级热键全系统吞键，不玩
     // galgame 的用户不该被偷走组合键），要用的人在快捷键设置里自己录。
     ShortcutAction.globalExternalGalgameSpeakLine: const ShortcutBindingSet(),
+    ShortcutAction.globalExternalGalgameOverlayToggle:
+        const ShortcutBindingSet(),
     // 查词弹窗「上/下一个词条」：默认 Alt+滚轮（Yomitan 的 Next/Previous entry 同款
     // 手感）。裸滚轮永远滚动弹窗内容，故必须带修饰键；Alt 在 WebView 里没有默认滚轮
     // 语义（Ctrl+滚轮是缩放、Shift+滚轮是横向滚动，都不能占）。dictionaryPopup 是独立
