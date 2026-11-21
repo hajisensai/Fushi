@@ -32,7 +32,8 @@ import 'package:fushi_engine/media/video/video_subtitle_source.dart'
         subtitleFormatForCodec;
 import 'package:fushi_engine/media/video/video_sidecar.dart'
     show isSidecarSubtitleSuffix, sidecarSubtitleLanguageTag;
-import 'package:fushi_engine/sync/aggregate_snapshot.dart';
+import 'package:fushi_engine/utils/net/bounded_read.dart'
+    show readBoundedRequestBody;
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/repr_digest.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';

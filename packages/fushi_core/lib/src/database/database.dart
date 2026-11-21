@@ -5,6 +5,7 @@ import 'dart:math' show Random;
 
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
+import 'package:drift/isolate.dart' show DriftIsolate, ComputeWithDriftIsolate;
 // drift/remote.dart 标了 experimental，但 DriftRemoteException 是后台 isolate 连接
 // 抛错的唯一载体，开库时要靠它还原类型化异常（见 _TypedOpenErrorInterceptor）。
 // ignore: experimental_member_use
@@ -974,7 +975,11 @@ class _TypedOpenErrorInterceptor extends QueryInterceptor {
   }
 }
 
-LazyDatabase _openDb(String dbDirectory, {bool isMainProcess = true}) {
+LazyDatabase _openDb(
+  String dbDirectory, {
+  bool isMainProcess = true,
+  _OpenedExecutorRef? ref,
+}) {
   return LazyDatabase(() async {
     await _rejectPreRenameDatabase(dbDirectory);
     final file = File(p.join(dbDirectory, fushiDatabaseFileName));
@@ -982,8 +987,25 @@ LazyDatabase _openDb(String dbDirectory, {bool isMainProcess = true}) {
       file,
       allowSidecarDelete: isMainProcess,
     );
+    ref?.executor = executor;
     return executor.interceptWith(_TypedOpenErrorInterceptor(file.path));
   });
+}
+
+/// [_openDb] 开好的连接（拦截器之前那一层），供 [FushiDatabase.backgroundConnection]
+/// 取出 drift 后台 isolate 的 [DriftIsolate]。开库是惰性的：首个查询之前为 null。
+final class _OpenedExecutorRef {
+  QueryExecutor? executor;
+}
+
+/// [executor] 背后那条 drift 后台连接（`createInBackground` 交出的
+/// [DatabaseConnection]）；不是后台连接（测试的内存库等）返回 null。恢复阶梯换过
+/// 连接时取换上的那条。
+DatabaseConnection? _backgroundConnectionOf(QueryExecutor? executor) {
+  final QueryExecutor? current = executor is _RecoveringOpenExecutor
+      ? executor._inner
+      : executor;
+  return current is DatabaseConnection ? current : null;
 }
 
 /// Opens an arbitrary `.db` FILE (not a directory). Used by the backup MERGE
@@ -1235,19 +1257,85 @@ class FushiDatabase extends _$FushiDatabase
   /// while the separate `:popup` process passes `false` so it backs off on an
   /// IOERR instead of racing the main process to delete the same sidecar.
   FushiDatabase(String dbDirectory, {bool isMainProcess = true})
-    : _isMainProcess = isMainProcess,
-      super(_openDb(dbDirectory, isMainProcess: isMainProcess));
+    : this._opened(dbDirectory, isMainProcess, _OpenedExecutorRef());
+
+  FushiDatabase._opened(
+    String dbDirectory,
+    bool isMainProcess,
+    _OpenedExecutorRef ref,
+  ) : _isMainProcess = isMainProcess,
+      _openedRef = ref,
+      super(_openDb(dbDirectory, isMainProcess: isMainProcess, ref: ref));
 
   /// Opens a specific `.db` FILE (not a directory). Backup MERGE import
   /// (TODO-888) uses this to migrate an extracted backup DB to the current
   /// schema before merging it into the live DB.
   FushiDatabase.atFile(String dbFilePath, {bool isMainProcess = true})
     : _isMainProcess = isMainProcess,
+      _openedRef = null,
       super(_openDbFile(dbFilePath, isMainProcess: isMainProcess));
 
-  FushiDatabase.forTesting(super.e) : _isMainProcess = true;
+  FushiDatabase.forTesting(super.e) : _isMainProcess = true, _openedRef = null;
+
+  /// 在**另一个 isolate** 里接上同一个库：[connection] 来自
+  /// [backgroundConnection]（`DriftIsolate.connect()`）。语句与事务都经同一个 drift
+  /// 服务端串行（与本库原连接同一把 sqlite 连接，不另开库），写入的表更新会通知回
+  /// 其它连接上的 stream 查询。库早已由原连接开好、迁移跑完，这里不会再跑迁移。
+  FushiDatabase.shared(DatabaseConnection connection)
+    : _isMainProcess = false,
+      _openedRef = null,
+      super(connection);
 
   final bool _isMainProcess;
+
+  /// 见 [_OpenedExecutorRef]；只有按目录开的主库有。
+  final _OpenedExecutorRef? _openedRef;
+
+  /// 能发给别的 isolate 的本库连接（在那边 `await c.connect()` 后交给
+  /// [FushiDatabase.shared]）。
+  ///
+  /// 按目录开的库直接给 drift 后台 isolate 的端口：对端的语句不经本 isolate 中转，
+  /// 查询结果也不在本 isolate 解码——整份读取 / 写入的工作量都不落在调用方
+  /// （HBK-AUDIT-028 聚合同步的后台所有者靠这一点）。其它连接（测试的内存库）退回
+  /// drift 的 [serializableConnection]：在本 isolate 起一个转发服务端，语义相同，
+  /// 只是语句经本 isolate 转一手。
+  ///
+  /// 不要在 drift 事务里调用（转发服务端会排在事务后面等）。
+  Future<DriftIsolate> backgroundConnection() async {
+    // 开库是惰性的：先让原连接把库开好（迁移跑完），再交出端口。
+    await customSelect('SELECT 1').get();
+    final DatabaseConnection? background = _backgroundConnectionOf(
+      _openedRef?.executor,
+    );
+    if (background != null) {
+      final Object? data = await background.connectionData;
+      if (data is DriftIsolate) {
+        _forwardBackgroundTableUpdates(background);
+        return data;
+      }
+    }
+    return await serializableConnection();
+  }
+
+  /// 已在转发表更新的那条后台连接（见 [_forwardBackgroundTableUpdates]）。
+  DatabaseConnection? _tableUpdatesForwardedFrom;
+
+  /// 把别的 isolate 经 [backgroundConnection] 写入时、drift 服务端广播回本 isolate
+  /// 的表更新转进**本库**的 stream 查询（`tableUpdates` / `.watch()`）。
+  ///
+  /// 本库的执行器是「惰性库 → 拦截器 → 恢复阶梯 → 后台连接」，`GeneratedDatabase`
+  /// 因此另建了自己的 stream 存储；服务端广播的更新只进后台连接自己那个存储，没人
+  /// 听。不转的话，后台所有者写回的统计 / 收藏 / 浏览历史不会让首页、小组件、伴屏
+  /// 这些监听者刷新（[FushiDatabase.shared] 文档承诺的「通知回其它连接」也不成立）。
+  /// 本库自己的写入不经后台连接的存储，转发不会回环、不会重复。恢复阶梯换过连接时
+  /// 跟着换；库关闭时后台连接的存储关闭，订阅随之结束。
+  void _forwardBackgroundTableUpdates(DatabaseConnection background) {
+    if (identical(_tableUpdatesForwardedFrom, background)) return;
+    _tableUpdatesForwardedFrom = background;
+    background.streamQueries
+        .updatesForSync(TableUpdateQuery.any())
+        .listen(notifyUpdates);
+  }
 
   @override
   int get schemaVersion => kFushiDbSchemaVersion;

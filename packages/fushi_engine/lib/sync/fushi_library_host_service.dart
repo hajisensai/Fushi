@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/dandanplay_file_key.dart'
@@ -3726,18 +3727,22 @@ abstract class FushiLibraryHostService {
 
   // ── 聚合（统计 + 收藏，TODO-1056 phase C）────────────────────────────────────
 
-  /// 读 host 端当前聚合快照（四张统计表 + 挖掘计数 + 收藏词 + 收藏句），供 client
-  /// 拉取 host 真相源做并集合并（TODO-1056 phase C 互联 live 通道）。纯读，无副作用。
+  /// 读 host 端当前聚合快照（四张统计表 + 挖掘计数 + 收藏词 + 收藏句），编码成互联
+  /// 报文体（UTF-8 JSON，`aggregate_wire_codec.dart`），供 client 拉取 host 真相源做
+  /// 并集合并（TODO-1056 phase C 互联 live 通道）。纯读，无副作用。
   ///
   /// 与云后端 phase B 用同一 [AggregateSnapshot] 形状（materialize 自 host DB），
-  /// 但通道是互联 live 端点而非云上 per-device 快照文件。
-  Future<AggregateSnapshot> getAggregateSnapshot();
+  /// 但通道是互联 live 端点而非云上 per-device 快照文件。HBK-AUDIT-028：交出的是
+  /// 编码好的字节，组装与编码由实现方放在后台做，不经 host 所在 isolate。
+  Future<Uint8List> getAggregateBody();
 
-  /// 把 client 上报的（已在 client 端与 host 并集合并的）聚合快照折叠进 host 自己的
-  /// DB（TODO-1056 phase C）。写入语义只用 MAX / 并集 upsert（统计逐桶取大、挖掘计数
-  /// MAX 非 SUM、收藏词/句并集去重），故重复 apply 同一快照是幂等 no-op，删除绝不跨端
-  /// 传播——与云后端 phase B 的 applySnapshotToLocal 完全同语义（复用同一实现）。
-  Future<void> applyAggregateSnapshot(AggregateSnapshot snapshot);
+  /// 把 client 上报的（已在 client 端与 host 并集合并的）聚合快照报文体折叠进 host
+  /// 自己的 DB（TODO-1056 phase C）。写入语义只用 MAX / 并集 upsert（统计逐桶取大、
+  /// 挖掘计数 MAX 非 SUM、收藏词/句并集去重），故重复 apply 同一快照是幂等 no-op，
+  /// 删除绝不跨端传播——与云后端 phase B 的 applySnapshotToLocal 完全同语义（复用
+  /// 同一实现）。返回 false = 报文体不是合法的 JSON object（非法 UTF-8 / JSON、顶层
+  /// 不是 object），什么都不写，端点据此回 400。
+  Future<bool> applyAggregateBody(Uint8List body);
 
   // ── 合集清单（多端库联合视图 §2.3 任务5.2）──────────────────────────────────
 

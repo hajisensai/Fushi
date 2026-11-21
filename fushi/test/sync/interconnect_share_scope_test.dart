@@ -1,8 +1,10 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/aggregate_sync_service.dart';
+import 'package:fushi_engine/sync/aggregate_wire_codec.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -160,8 +162,10 @@ void main() {
 
       Object? pushedJson;
       await AggregateSyncService(db).syncOverClient(
-        fetchRemote: () async => _peerSnapshot().toJson(),
-        pushMerged: (Object json) async => pushedJson = json,
+        fetchRemote: () async =>
+            encodeAggregateWireJson(_peerSnapshot().toJson()),
+        pushMerged: (Uint8List body) async =>
+            pushedJson = decodeAggregateWireJson(body),
         shareStats: true,
         shareFavorites: false,
       );
@@ -198,8 +202,10 @@ void main() {
 
       Object? pushedJson;
       await AggregateSyncService(db).syncOverClient(
-        fetchRemote: () async => _peerSnapshot().toJson(),
-        pushMerged: (Object json) async => pushedJson = json,
+        fetchRemote: () async =>
+            encodeAggregateWireJson(_peerSnapshot().toJson()),
+        pushMerged: (Uint8List body) async =>
+            pushedJson = decodeAggregateWireJson(body),
         shareStats: false,
         shareFavorites: true,
       );
@@ -227,9 +233,9 @@ void main() {
       await AggregateSyncService(db).syncOverClient(
         fetchRemote: () async {
           fetched = true;
-          return _peerSnapshot().toJson();
+          return encodeAggregateWireJson(_peerSnapshot().toJson());
         },
-        pushMerged: (Object json) async => pushed = true,
+        pushMerged: (Uint8List body) async => pushed = true,
         shareStats: false,
         shareFavorites: false,
       );
@@ -253,7 +259,8 @@ void main() {
       Object? pushedJson;
       await AggregateSyncService(db).syncOverClient(
         fetchRemote: () async => null,
-        pushMerged: (Object json) async => pushedJson = json,
+        pushMerged: (Uint8List body) async =>
+            pushedJson = decodeAggregateWireJson(body),
         shareStats: true,
         shareFavorites: false,
       );

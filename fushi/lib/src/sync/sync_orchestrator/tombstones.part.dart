@@ -304,7 +304,7 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
 
   /// 该 kind 在互联 live 通道上有没有删除端点。
   ///
-  /// 收藏词 / 收藏句没有：它们经聚合快照通道同步，而 `applyAggregateSnapshot` 按设计
+  /// 收藏词 / 收藏句没有：它们经聚合快照通道同步，而 `applyAggregateBody` 按设计
   /// 只做 MAX / 并集（删除不跨端传播）。这里如实跳过——不假装推过（那会静默丢删除），
   /// 也不算作失败（那会为一件永远做不成的事永久卡住基线）。
   static bool _hasInterconnectDeletionChannel(SyncTombstoneKind kind) {
