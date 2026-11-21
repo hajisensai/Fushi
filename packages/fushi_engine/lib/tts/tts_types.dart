@@ -57,6 +57,7 @@ class TtsVoice {
     required this.displayName,
     required this.locale,
     this.gender,
+    this.attributes = const <String, String>{},
   });
 
   final String id;
@@ -65,6 +66,10 @@ class TtsVoice {
   /// BCP-47，如 `ja-JP`。
   final String locale;
   final String? gender;
+
+  /// 引擎自己的附加属性（如 Unsloth Studio 声音的参考文字稿），由
+  /// [TtsProviderDescriptor.paramsForPickedOption] 在选中时快照进预设。
+  final Map<String, String> attributes;
 }
 
 /// 合成产物里的一个词边界：[textOffset]/[textLength] 是相对请求文本的 UTF-16
