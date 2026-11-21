@@ -41,7 +41,8 @@
 //! 只认规范形状的 UUID 文本（`gen4_ids::alias::strict_id`）；别的写法没有别名，原样。哪些位置嵌着 ID 只在这里写一次：
 //!
 //! - 修改值（[Index::canonical_value]，按修改键）：值本身是 ID 的键 [ID_VALUED_KEYS]（笔记的 `noteType`、卡的 `deck`、
-//!   牌组的 `parent`、笔记类型的 `termField` / `freqField`）；`tmplDef/<模板>` 的值里 `front` / `back` 两段模板文本中的
+//!   牌组的 `parent`、笔记类型的 `termField` / `freqField` / `sortField`），值是 ID 数组的键 [ID_LIST_VALUED_KEYS]
+//!   （笔记类型的 `browseFields`）；`tmplDef/<模板>` 的值里 `front` / `back` 两段模板文本中的
 //!   `{{…fld:<字段>}}`（与 `card_cache.rs` 的 `ids_to_names` 同一个分词：注释、普通文本、`{{…}}` 里不是整段
 //!   `fld:<UUID>` 的都不动）。别的值（字段内容等用户文本）一个字节不动。
 //! - 整份 JSON（[Index::canonical_json]：身份记录的载荷、日志投影、修改行）：键在 [JSON_ID_KEYS] 里的字符串（或字符串
@@ -76,12 +77,22 @@ use crate::sync2::op::EntKind;
 use crate::sync2::vv::OpId;
 
 /// 值本身是一个 ID 的修改键（[Index::canonical_value]）。
-pub const ID_VALUED_KEYS: [&str; 5] = ["noteType", "deck", "parent", "termField", "freqField"];
+pub const ID_VALUED_KEYS: [&str; 6] = [
+    "noteType",
+    "deck",
+    "parent",
+    "termField",
+    "freqField",
+    "sortField",
+];
+
+/// 值是 ID 数组的修改键（[Index::canonical_value]）：笔记类型的浏览预览副字段。
+pub const ID_LIST_VALUED_KEYS: [&str; 1] = ["browseFields"];
 
 /// 整份 JSON 里值是 ID（或 ID 数组）的键（[Index::canonical_json]）：实体与日志的 `id`、修改行的 `e`、日志的 `card` /
 /// `note` / `revokes`、笔记载荷的 `noteTypeId`、牌组 / 笔记类型 / 父牌组、词条与词频字段（含内置默认定义里的
 /// `…FieldId`）。
-pub const JSON_ID_KEYS: [&str; 14] = [
+pub const JSON_ID_KEYS: [&str; 16] = [
     "id",
     "e",
     "card",
@@ -94,6 +105,8 @@ pub const JSON_ID_KEYS: [&str; 14] = [
     "parent",
     "termField",
     "freqField",
+    "sortField",
+    "browseFields",
     "termFieldId",
     "freqFieldId",
 ];
@@ -1204,6 +1217,19 @@ fn value_ids_by(key: &str, v: &Value, text: IdText<'_>) -> Result<Value, String>
             Value::String(s) => Value::String(text(s)?),
             _ => v.clone(),
         });
+    }
+    if ID_LIST_VALUED_KEYS.contains(&key) {
+        if let Value::Array(xs) = v {
+            let mut ys = Vec::with_capacity(xs.len());
+            for x in xs {
+                ys.push(match x {
+                    Value::String(s) => Value::String(text(s)?),
+                    _ => x.clone(),
+                });
+            }
+            return Ok(Value::Array(ys));
+        }
+        return Ok(v.clone());
     }
     if key.starts_with("tmplDef/") {
         if let Value::Object(m) = v {
@@ -2984,6 +3010,14 @@ mod tests {
                 assert_eq!(
                     ix.canonical_value("termField", &json!(s_f.text()))?,
                     json!(c_f.text())
+                );
+                assert_eq!(
+                    ix.canonical_value("sortField", &json!(s_f.text()))?,
+                    json!(c_f.text())
+                );
+                assert_eq!(
+                    ix.canonical_value("browseFields", &json!([s_f.text(), "plain"]))?,
+                    json!([c_f.text(), "plain"])
                 );
                 assert_eq!(
                     ix.canonical_json(&json!({"f": fkey(s_f), "termFieldId": s_f.text()}))?,

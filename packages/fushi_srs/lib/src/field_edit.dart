@@ -53,6 +53,9 @@ enum SrsFieldClass {
 }
 
 /// 字段键约定（冻结）。
+/// 浏览预览最多显示几个副字段（[SrsFieldKeys.browseFields]；与内核 registers.rs `BROWSE_FIELDS_MAX` 同值）。
+const int srsBrowseFieldsMax = 2;
+
 abstract final class SrsFieldKeys {
   /// 行删除时刻（毫秒；null = 未删 / 已恢复）。删除优先。
   static const String deleted = 'deleted';
@@ -85,6 +88,14 @@ abstract final class SrsFieldKeys {
   /// 词频序字段（fieldId；null = 按字段名 `FreqSort` 认）：制卡占位符 `{frequency-harmonic-rank}`
   /// 写进的那个字段。牌组「新卡顺序 = 按词频」时，新卡按这个字段里的名次出卡。
   static const String freqField = 'freqField';
+
+  /// 排序字段（fieldId；null = 第一个字段），即 Anki 笔记类型的 `sortf`：浏览页的主字段（列表放大的那一行、
+  /// 表格「正面」列）、「排序字段」排序列与笔记缓存 `sort_field` 都读它。
+  static const String sortField = 'sortField';
+
+  /// 浏览预览的副字段（fieldId 列表；null = 自动：排序字段之外按字段顺序的前两个非空字段；空列表 = 不显示副字段）。
+  /// 按字段顺序显示，最多 [srsBrowseFieldsMax] 个。
+  static const String browseFields = 'browseFields';
 
   // card
   static const String suspended = 'suspended';
@@ -201,6 +212,8 @@ const Map<SrsEntityKind, _SrsFieldClassRule> _kSrsFieldClassRules =
           SrsFieldKeys.name: SrsFieldClass.setting,
           SrsFieldKeys.termField: SrsFieldClass.setting,
           SrsFieldKeys.freqField: SrsFieldClass.setting,
+          SrsFieldKeys.sortField: SrsFieldClass.setting,
+          SrsFieldKeys.browseFields: SrsFieldClass.setting,
         },
       ),
       // 卡片：新卡位置是一整批机械重排的产物，两台设备各自重排同一牌组是常态，每张卡都进「同步冲突记录」只会

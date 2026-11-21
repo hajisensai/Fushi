@@ -435,8 +435,15 @@ pub(super) fn canon_req(src: &G4<'_, '_>, op: &str, req: &Value) -> Result<Value
     };
     if let Some(Value::Array(types)) = obj.get_mut("types") {
         for t in types.iter_mut() {
-            if let Some(id) = t.get_mut("id") {
-                canon_str(id)?;
+            for k in ["id", "sort"] {
+                if let Some(id) = t.get_mut(k) {
+                    canon_str(id)?;
+                }
+            }
+            if let Some(Value::Array(xs)) = t.get_mut("preview") {
+                for x in xs.iter_mut() {
+                    canon_str(x)?;
+                }
             }
             for k in ["fields", "tpls"] {
                 if let Some(Value::Array(xs)) = t.get_mut(k) {

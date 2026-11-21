@@ -239,6 +239,20 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
             SrsFieldKeys.freqField,
             nt.freqFieldId,
           ),
+        if (nt.sortFieldId != null)
+          SrsEditSpec(
+            SrsEntityKind.noteType,
+            nt.id,
+            SrsFieldKeys.sortField,
+            nt.sortFieldId,
+          ),
+        if (nt.browseFieldIds != null)
+          SrsEditSpec(
+            SrsEntityKind.noteType,
+            nt.id,
+            SrsFieldKeys.browseFields,
+            nt.browseFieldIds,
+          ),
       ],
       records: <SrsEntityRecord>[nt.record],
     );
@@ -458,6 +472,23 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
           SrsFieldKeys.freqField,
           null,
         ),
+      if (t.sortFieldId == fieldId)
+        SrsEditSpec(
+          SrsEntityKind.noteType,
+          noteTypeId,
+          SrsFieldKeys.sortField,
+          null,
+        ),
+      if (t.browseFieldIds?.contains(fieldId) ?? false)
+        SrsEditSpec(
+          SrsEntityKind.noteType,
+          noteTypeId,
+          SrsFieldKeys.browseFields,
+          <String>[
+            for (final String id in t.browseFieldIds!)
+              if (id != fieldId) id,
+          ],
+        ),
     ]);
   }
 
@@ -509,6 +540,28 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
           noteTypeId,
           SrsFieldKeys.freqField,
           fieldId,
+        ),
+      ]);
+
+  /// 排序字段（浏览页主字段、「排序字段」排序列、笔记缓存 `sort_field`）；null = 清掉显式设置，回到第一个字段。
+  Future<void> setSortField(String noteTypeId, String? fieldId) =>
+      writeEdits(<SrsEditSpec>[
+        SrsEditSpec(
+          SrsEntityKind.noteType,
+          noteTypeId,
+          SrsFieldKeys.sortField,
+          fieldId,
+        ),
+      ]);
+
+  /// 浏览预览的副字段（按字段顺序显示，最多 [srsBrowseFieldsMax] 个）；null = 回到自动。
+  Future<void> setBrowseFields(String noteTypeId, List<String>? fieldIds) =>
+      writeEdits(<SrsEditSpec>[
+        SrsEditSpec(
+          SrsEntityKind.noteType,
+          noteTypeId,
+          SrsFieldKeys.browseFields,
+          fieldIds,
         ),
       ]);
 
