@@ -250,6 +250,54 @@ void main() {
       expect(regroup.keyOf['Show S02E01.mkv'], 's2');
       expect(regroup.keyOf['Show PV Special.mkv'], kCollectionExtrasGroupKey);
     });
+
+    test('第 0 季文件归 PV·特典桶殿后，序与键一致', () {
+      final CollectionSeasonRegroup<String> regroup =
+          regroupMembersBySeason<String>(
+            members: <String>[
+              'Show PV.mkv',
+              'Show S00E01.mkv',
+              'Show S01E02.mkv',
+              'Show S01E01.mkv',
+            ],
+            filenameOf: (String f) => f,
+            titleOf: (String f) => f,
+          );
+      expect(regroup.ordered, <String>[
+        'Show S01E01.mkv',
+        'Show S01E02.mkv',
+        'Show S00E01.mkv',
+        'Show PV.mkv',
+      ]);
+      expect(regroup.keyOf['Show S00E01.mkv'], kCollectionExtrasGroupKey);
+    });
+
+    test('按生效分栏分桶：手动钉到 PV·特典的短篇排到正片之后', () {
+      final Map<String, String> manual = <String, String>{
+        'Show Petit 01.mkv': kCollectionExtrasGroupKey,
+        'Show Petit 02.mkv': kCollectionExtrasGroupKey,
+      };
+      final CollectionSeasonRegroup<String> regroup =
+          regroupMembersBySeason<String>(
+            members: <String>[
+              'Show Petit 02.mkv',
+              'Show 02.mkv',
+              'Show Petit 01.mkv',
+              'Show 01.mkv',
+            ],
+            filenameOf: (String f) => f,
+            titleOf: (String f) => f,
+            sectionKeyOf: (String f) => manual[f],
+          );
+      expect(regroup.ordered, <String>[
+        'Show 01.mkv',
+        'Show 02.mkv',
+        'Show Petit 01.mkv',
+        'Show Petit 02.mkv',
+      ]);
+      expect(regroup.keyOf['Show Petit 01.mkv'], kCollectionExtrasGroupKey);
+      expect(regroup.keyOf['Show 01.mkv'], 's1');
+    });
   });
 
   group('isValidCollectionSectionKey', () {

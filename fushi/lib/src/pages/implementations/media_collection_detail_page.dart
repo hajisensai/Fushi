@@ -1445,6 +1445,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           members: _slots,
           filenameOf: (CollectionEpisodeSlot slot) => slot.filename,
           titleOf: (CollectionEpisodeSlot slot) => slot.title,
+          // 按生效分栏分桶（手动分栏 / 手动季集指定优先），重排后与季 tab 一致。
+          sectionKeyOf: (CollectionEpisodeSlot slot) =>
+              _groupKeyByEntry[slot.entryKey],
         );
     setState(() {
       _slots = regroup.ordered;

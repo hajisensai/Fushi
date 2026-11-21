@@ -196,34 +196,43 @@ class CollectionSeasonRegroup<T> {
   final Map<T, String> keyOf;
 }
 
-/// 对合集成员按文件名重算季/集：产出新排序与分组键（「按季排序」动作据此
+/// 对合集成员按分栏重排：产出新排序与分组键（「按季排序」动作据此
 /// 经 `reorderCollectionItems` 落盘新序；键仅供展示层复用，不落库）。
+///
+/// 先按**生效分栏**分桶（季号升序、PV·特典殿后），桶内按文件名集号 → 标题。
+/// [sectionKeyOf] 给生效分栏（手动分栏 / 手动季集指定叠在文件名之上，见
+/// `loadCollectionSections`，拍板台 iR6ccUys9H）；不给或返回 null 时按文件名
+/// 派生（[collectionGroupKeyForFilename]，第 0 季归 PV·特典）。分桶与 [keyOf]
+/// 同一个键，所以重排后的全序与季 tab 分节一致。
 CollectionSeasonRegroup<T> regroupMembersBySeason<T>({
   required List<T> members,
   required String Function(T member) filenameOf,
   required String Function(T member) titleOf,
+  String? Function(T member)? sectionKeyOf,
 }) {
   final Map<T, VideoNameInfo> infoOf = <T, VideoNameInfo>{
     for (final T m in members) m: parseVideoPath(filenameOf(m)),
   };
+  final Map<T, String> keyOf = <T, String>{
+    for (final T m in members)
+      m:
+          sectionKeyOf?.call(m) ??
+          collectionSeasonGroupKey(
+            season: infoOf[m]!.season,
+            episode: infoOf[m]!.episode,
+          ),
+  };
+  // extras（及未知形状的键）排末尾。
+  int bucketOf(T m) => seasonNumberOfGroupKey(keyOf[m]!) ?? (1 << 20);
   final List<T> ordered = List<T>.of(members)
     ..sort((T a, T b) {
-      final VideoNameInfo ia = infoOf[a]!;
-      final VideoNameInfo ib = infoOf[b]!;
-      // extras（无集号）排末尾，组内季→集→标题（与导入分组排序同口径）。
-      final int sa = ia.episode == null ? 1 << 20 : (ia.season ?? 1);
-      final int sb = ib.episode == null ? 1 << 20 : (ib.season ?? 1);
+      final int sa = bucketOf(a);
+      final int sb = bucketOf(b);
       if (sa != sb) return sa.compareTo(sb);
-      final int ea = ia.episode ?? (1 << 30);
-      final int eb = ib.episode ?? (1 << 30);
+      final int ea = infoOf[a]!.episode ?? (1 << 30);
+      final int eb = infoOf[b]!.episode ?? (1 << 30);
       if (ea != eb) return ea.compareTo(eb);
       return titleOf(a).toLowerCase().compareTo(titleOf(b).toLowerCase());
     });
-  return CollectionSeasonRegroup<T>(
-    ordered: ordered,
-    keyOf: <T, String>{
-      for (final T m in members)
-        m: collectionGroupKeyForFilename(filenameOf(m)),
-    },
-  );
+  return CollectionSeasonRegroup<T>(ordered: ordered, keyOf: keyOf);
 }
