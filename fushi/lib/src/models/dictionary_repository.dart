@@ -587,18 +587,34 @@ class DictionaryRepository {
           ]);
       // 装载期间清过历史 / 已 dispose：这份旧快照不得再落进内存。
       if (_historyClearEpoch != clearEpoch) return;
+      // BUG-5064：非规范 / 读不回来的行以前只在内存里跳过、库里原样留着，没查新词
+      // （不触发落库）就每次启动都重报一遍。现在装载时就让库与内存对齐：能还原的
+      // 标成正文过期、按规范格式重写；读不回来的不进内存，下一次落库（增量同步只
+      // 保留内存里有的行 id）把它删掉——报错只记这一次。
+      final List<String> dropped = <String>[];
+      bool rewrite = false;
       for (int i = 0; i < decoded.length; i++) {
         final DecodedDictionaryHistoryResult item = decoded[i];
         final DictionarySearchResult? result = item.result;
         if (result != null) {
           _dictionaryHistoryResults.add(result);
           _historyRowIds[result] = rows[i].id;
+          if (!item.canonical) {
+            _historyJsonStale.add(result);
+            rewrite = true;
+          }
           continue;
         }
-        final String error = item.error ?? 'unknown decode failure';
-        ErrorLogService.instance.log('DictRepo.historyLoad', error);
-        debugPrint('[Fushi] skipping corrupted dictionary history: $error');
+        dropped.add(item.error ?? 'unknown decode failure');
       }
+      if (dropped.isNotEmpty) {
+        final String message =
+            'dropping ${dropped.length} unreadable dictionary history row(s); '
+            'first error: ${dropped.first}';
+        ErrorLogService.instance.log('DictRepo.historyLoad', message);
+        debugPrint('[Fushi] $message');
+      }
+      if (dropped.isNotEmpty || rewrite) _schedulePersistDictionaryHistory();
     } catch (e, stack) {
       ErrorLogService.instance.log('DictRepo.historyLoad', e, stack);
     }
@@ -1934,14 +1950,17 @@ class DictionaryRepository {
 // UTF-16，每字符按 2 字节计；每个对象/列表再加固定开销。宁可高估。
 
 /// [decodeDictionaryHistoryResults] 的一条结果：解析成功给 [result]，失败给 [error]。
+/// [canonical] = 库里那份正文就是 [DictionarySearchResult.toJson] 的规范格式；false
+/// 表示读得回来但格式不规范（BUG-5064：`entries` 存成对象），应按规范格式重写。
 typedef DecodedDictionaryHistoryResult = ({
   DictionarySearchResult? result,
   String? error,
+  bool canonical,
 });
 
 /// 在一次性后台 isolate 里把查词历史的 `resultJson` 逐条解析回对象
 /// （[encodeDictionaryHistoryResults] 的反向）。坏行不抛，带着错误文本回来，由调用方
-/// 记日志并跳过。
+/// 从库里清掉。
 Future<List<DecodedDictionaryHistoryResult>> decodeDictionaryHistoryResults(
   List<String> jsons,
 ) async {
@@ -1952,9 +1971,21 @@ Future<List<DecodedDictionaryHistoryResult>> decodeDictionaryHistoryResults(
         <DecodedDictionaryHistoryResult>[];
     for (final String json in jsons) {
       try {
-        out.add((result: DictionarySearchResult.fromJson(json), error: null));
+        final Object? decoded = jsonDecode(json);
+        if (decoded is! Map) {
+          throw FormatException(
+            'dictionary history row is not a JSON object: '
+            '${decoded.runtimeType}',
+          );
+        }
+        final Map<String, dynamic> map = Map<String, dynamic>.from(decoded);
+        out.add((
+          result: DictionarySearchResult.fromMap(map),
+          error: null,
+          canonical: DictionarySearchResult.hasCanonicalEntries(map),
+        ));
       } catch (e) {
-        out.add((result: null, error: e.toString()));
+        out.add((result: null, error: e.toString(), canonical: false));
       }
     }
     return out;
