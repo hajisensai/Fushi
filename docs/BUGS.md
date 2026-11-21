@@ -37,6 +37,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5069](bugs/BUG-5069-txt-oversized-single-paragraph.md) | ✅ | ✅ | TXT 超长段落绕过分章上限 |
 | [BUG-5064](bugs/BUG-5064-dict-history-entries-object-rows.md) | 🚧 | 🚧 | 查词历史 entries 存成对象的坏行每次启动重复报错不清理 |
 | [BUG-5063](bugs/BUG-5063-srs-gen4-migration-stats-logid-mismatch.md) | 🚧 | 🚧 | gen4 迁移对拍：4.7 GB 库第 7/10 步后 stats 两侧 log_id 集合不一致回滚 |
 | [BUG-5062](bugs/BUG-5062-masthead-title-ellipsis-phone.md) | ✅ | ✅ | masthead-title-ellipsis-phone |
@@ -44,7 +45,6 @@
 | [BUG-5060](bugs/BUG-5060-layout-maybe-later-double-prompt.md) | ✅ | ✅ | 「选一种库页布局」点「稍后再说」后紧接着又弹「库页现在默认封面网格」 |
 | [BUG-5059](bugs/BUG-5059-apple-design-page-backdrop-missing.md) | ✅ | ✅ | Apple 设计下自定义背景图片不显示（首页 / 设置页全白底） |
 | [BUG-5058](bugs/BUG-5058-music-disc-art-split-album-versions.md) | ✅ | ✅ | 同一张 CD 的另一个版本目录（如 24bit 版）不显示盘面图 |
-| [BUG-5057](bugs/BUG-5057-txt-oversized-single-paragraph.md) | ✅ | ✅ | TXT 超长段落绕过分章上限 |
 | [BUG-5057](bugs/BUG-5057-music-disc-art-numbered-scans.md) | ✅ | ✅ | 音乐 CD 盘面图认不出只有编号的扫图（`Scans/01.webp`、`BK/Scan 120.jpg`） |
 | [BUG-5056](bugs/BUG-5056-srs4-migration-nested-merge-verdict.md) | ✅ | ✅ | 复习库升级（gen4 迁移）在嵌套并入过的库上核对失败、整体撤回 |
 | [BUG-5055](bugs/BUG-5055-import-section-block-inherits-outer-scheme.md) | ✅ | ✅ | import-section-block-inherits-outer-scheme |
