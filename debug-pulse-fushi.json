@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-21T09:33:46Z",
+ "generatedAt": "2026-11-21T09:36:41Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "a11db40c13f7d70dd61c7f0928db22e396f9a7cd",
@@ -12,7 +12,7 @@
    "version": "3.4.0",
    "sha": "62a2ac1320ef486e5e37fc5911db952bf2ed692c",
    "unknown": false,
-   "publishedAt": "2026-11-21T09:14:18Z",
+   "publishedAt": "2026-11-21T09:36:27Z",
    "testflight": false,
    "baseSeq": 30416,
    "prs": [
@@ -43,8 +43,7 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44885059655"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
@@ -96,7 +95,7 @@
    "unknown": false,
    "publishedAt": "2026-11-21T06:11:17Z",
    "testflight": false,
-   "baseSeq": 30040,
+   "baseSeq": 29224,
    "prs": [
     3951,
     3979,
@@ -232,7 +231,78 @@
     3848,
     3847,
     3846,
-    3845
+    3845,
+    3894,
+    3881,
+    3838,
+    3831,
+    3829,
+    3826,
+    3825,
+    3824,
+    3821,
+    3837,
+    3835,
+    3834,
+    3833,
+    3832,
+    3819,
+    3818,
+    3817,
+    3816,
+    3814,
+    3813,
+    3812,
+    3811,
+    3810,
+    3808,
+    3804,
+    3803,
+    3797,
+    3794,
+    3791,
+    3785,
+    3784,
+    3783,
+    3780,
+    3762,
+    3448,
+    3836,
+    3830,
+    3828,
+    3827,
+    3820,
+    3815,
+    3807,
+    3806,
+    3805,
+    3801,
+    3800,
+    3799,
+    3798,
+    3796,
+    3795,
+    3793,
+    3792,
+    3790,
+    3789,
+    3788,
+    3787,
+    3786,
+    3782,
+    3781,
+    3779,
+    3778,
+    3777,
+    3776,
+    3774,
+    3773,
+    3769,
+    3767,
+    3761,
+    3757,
+    3752,
+    3751
    ],
    "direct": [
     {
@@ -310,108 +380,7 @@
     {
      "sha": "3e83c6ed3fbe6402f9224a522de62c011d81af47",
      "subject": "test(import): 开包定性调用方守卫改用 maskComments，不再手写 indexOf('//') 剥注释（合并后必跑 source_guard_adoption 红）"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
     },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44844555086"
-    },
-    "ios": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44844555086"
-    }
-   }
-  },
-  {
-   "seq": 30040,
-   "version": "3.4.0",
-   "sha": "1f24907329152192e0dcdcec69fca8287cd63dd0",
-   "unknown": false,
-   "publishedAt": "2026-11-21T01:18:47Z",
-   "testflight": false,
-   "baseSeq": 29224,
-   "prs": [
-    3894,
-    3881,
-    3838,
-    3831,
-    3829,
-    3826,
-    3825,
-    3824,
-    3821,
-    3837,
-    3835,
-    3834,
-    3833,
-    3832,
-    3819,
-    3818,
-    3817,
-    3816,
-    3814,
-    3813,
-    3812,
-    3811,
-    3810,
-    3808,
-    3804,
-    3803,
-    3797,
-    3794,
-    3791,
-    3785,
-    3784,
-    3783,
-    3780,
-    3762,
-    3448,
-    3836,
-    3830,
-    3828,
-    3827,
-    3820,
-    3815,
-    3807,
-    3806,
-    3805,
-    3801,
-    3800,
-    3799,
-    3798,
-    3796,
-    3795,
-    3793,
-    3792,
-    3790,
-    3789,
-    3788,
-    3787,
-    3786,
-    3782,
-    3781,
-    3779,
-    3778,
-    3777,
-    3776,
-    3774,
-    3773,
-    3769,
-    3767,
-    3761,
-    3757,
-    3752,
-    3751
-   ],
-   "direct": [
     {
      "sha": "c203a13e121f81d2792424fbae1a5a14b8a1f34b",
      "subject": "test(database): v163 迁移测试改用 package:test"
@@ -451,16 +420,15 @@
      "state": "ok"
     },
     "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44782863162"
+     "state": "ok"
     },
     "macos": {
      "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44782863162"
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44844555086"
     },
     "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44782863162"
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44844555086"
     }
    }
   }
