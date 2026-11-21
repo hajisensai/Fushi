@@ -377,3 +377,44 @@ or below the API version of the downloaded DirectML core.
     up from the same dir. Max GLIBC symbol version is 2.27.
     The Windows build already used NuGet. On a version bump update the pinned
     hash here and in `.github/scripts/fetch_onnxruntime_nuget.py`.
+
+18. `windows/src/cuda_provider.{h,cc}`, `windows/src/session_manager.{h,cc}`,
+    `windows/src/async_dispatch.{h,cc}`, `windows/flutter_onnxruntime_plugin.{h,cpp}`
+    + `lib/src/onnxruntime.dart` / platform interface / method channel:
+    **CUDA idle release** (BUG-5078).
+
+    - What stays behind after the last CUDA session closes is the CUDA primary
+      context: cudart retains it and never lets go for the life of the process.
+      Measured (RTX 4070 Ti, reazonspeech-k2-v2 fp16 on cu13-ep0.3.0, finished
+      and cancelled jobs alike): ~180 MiB of device memory and ~850 MiB of
+      private commit. Unregistering the plugin library alone gives back
+      nothing; `cuDevicePrimaryCtxReset_v2` afterwards returns device memory to
+      the pre-registration baseline.
+    - `CudaPluginRegistry` is now registered + loaded/unloaded: `Release()`
+      unregisters the library (keeping directory, EP names and
+      `IsRegistered()`), optionally resets the primary context of every
+      device; `AppendToSessionOptions()` reloads the library when needed. CUDA
+      stays in `getAvailableProviders` throughout, so the Dart side sees no
+      state change.
+    - The CUDA EP is appended in the GPU-queue task that builds the session
+      (it was appended on the platform thread): a release on the same queue
+      can no longer free the appended `OrtEpDevice` in between. A failed
+      append still answers `PROVIDER_ERROR`.
+    - Closing the last CUDA session arms a `DelayedTask`
+      (`FLUTTER_ONNXRUNTIME_CUDA_IDLE_MS`, default 60 s, 0 = never). When it
+      fires and no CUDA session was created since (`cudaGeneration()`
+      unchanged), the GPU queue unloads the library and resets the context.
+      Teardown (HBK-AUDIT-015) is explicit, not member-order based: a CUDA
+      close task still queued on the GPU queue arms the timer, and the timer
+      posts to the GPU queue, so no declaration order is safe. The Impl
+      destructor first `Shutdown()`s the `DelayedTask` (joins; later
+      `Schedule()` calls return false), then `Shutdown()`s every `WorkQueue`
+      (refuse new posts, drain queued tasks), all while every member is alive.
+      Native test: `windows/test/async_dispatch_teardown_test.cc` (build line in
+      its header; `/DFUSHI_TEARDOWN_LEGACY` reproduces the old order), run on
+      PRs by `.github/workflows/native-onnx-plugin-gate.yml` (which also
+      requires the legacy build to stay red).
+    - `releaseCudaRuntime({resetContext})` does the same on demand; refused
+      (`released: false`, `openCudaSessions > 0`) while a CUDA session is open.
+    - Guard: `fushi/test/onnx/cuda_idle_release_guard_test.dart`; device probe:
+      `fushi/integration_test/asr_cuda_vram_release_itest.dart`.
