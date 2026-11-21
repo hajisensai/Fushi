@@ -68,9 +68,25 @@ void main() {
     ]) {
       expect(body, contains('task.dependsOn($check)'));
     }
+    // fushi_web_core 只拦 Release，且必须是任务（排在 ensureFushiAndroidNative 之后）：
+    // 早先在 gradle.taskGraph.whenReady 里查，任何任务都还没跑，自动备库永远来不及。
+    expect(
+      body,
+      contains(
+        'if (task.name.contains("Release")) {\n'
+        '            task.dependsOn(checkFushiWebCoreNative)',
+      ),
+    );
+    final int ready = gradle.indexOf('gradle.taskGraph.whenReady');
+    expect(ready, greaterThanOrEqualTo(0));
+    final String readyBody = gradle.substring(
+      ready,
+      gradle.indexOf('\n}\n', ready),
+    );
+    expect(readyBody, isNot(contains('WebCore')));
   });
 
-  test('缺库时 gradle 自己备库：四个 check 都先跑 ensureFushiAndroidNative', () {
+  test('缺库时 gradle 自己备库：五个 check 都先跑 ensureFushiAndroidNative', () {
     final String gradle = read('android/app/build.gradle');
     expect(gradle, contains('tasks.register("ensureFushiAndroidNative")'));
     expect(gradle, contains("file('../../../tool/native_libs.ps1')"));
@@ -79,13 +95,15 @@ void main() {
       gradle,
       contains(
         '[checkFushiComputeNative, checkFushiRwkvNative, '
-        'checkFushiMusicNative, checkFushiCorpusNative].each { check ->\n'
+        'checkFushiMusicNative, checkFushiCorpusNative,\n'
+        ' checkFushiWebCoreNative].each { check ->\n'
         '    check.configure { dependsOn(ensureFushiAndroidNative) }',
       ),
     );
     // gradle 与脚本备的是同一组 crate。
     const String crates =
-        "'fushi_compute', 'fushi_rwkv', 'fushi_music', 'fushi_corpus'";
+        "'fushi_compute', 'fushi_rwkv', 'fushi_music', 'fushi_corpus', "
+        "'fushi_web_core'";
     expect(gradle, contains('def fushiAndroidNativeCrates = [$crates]'));
     final String script = read('../tool/native_libs.ps1');
     expect(script, contains('\$NativeAndroidCrates = @($crates)'));

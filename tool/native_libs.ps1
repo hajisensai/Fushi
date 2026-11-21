@@ -25,10 +25,10 @@
   native/<crate>/external_sources.txt（一行一个，相对仓库根），它们的 blob 并进戳记
   （与 tool/native_source_key.sh 同一算法；守卫 native_external_sources_stamp_guard_test）。
 
-  -Android：改为备 Android 出包硬依赖的 .so（fushi_compute / fushi_rwkv / fushi_music / fushi_corpus，
-  `fushi/android/app/build.gradle` 的 checkFushi*Native 查的那四个），落在
+  -Android：改为备 Android 出包硬依赖的 .so（fushi_compute / fushi_rwkv / fushi_music / fushi_corpus /
+  fushi_web_core，`fushi/android/app/build.gradle` 的 checkFushi*Native 查的那五个），落在
   native/<crate>/prebuilt/android/<abi>/。新 worktree 不带它们，bootstrap 也不编（多数 worktree 从不出
-  Android 包，四个 crate × 三个 ABI 的 release 交叉编译要几十分钟）；需要时由 gradle 的
+  Android 包，五个 crate × 三个 ABI 的 release 交叉编译要几十分钟）；需要时由 gradle 的
   ensureFushiAndroidNative 任务自动调用本模式，也可手动跑：
     powershell -ExecutionPolicy Bypass -File tool/native_libs.ps1 -Android [-Abis arm64-v8a,armeabi-v7a,x86_64]
   顺序同上，多一级本机缓存（worktree 每天被清理，兄弟里常常没有）：
@@ -354,8 +354,9 @@ function Install-NativeTestCrate {
 
 # --- Android 出包硬依赖的 .so（-Android） ------------------------------------------------------
 
-# fushi/android/app/build.gradle 的 checkFushi{Compute,Rwkv,Music,Corpus}Native 查的四个 crate。
-$NativeAndroidCrates = @('fushi_compute', 'fushi_rwkv', 'fushi_music', 'fushi_corpus')
+# fushi/android/app/build.gradle 的 checkFushi{Compute,Rwkv,Music,Corpus,WebCore}Native 查的五个 crate
+# （与 fushi/tool/dist_test/worker_build.sh 远端备的同一组）。
+$NativeAndroidCrates = @('fushi_compute', 'fushi_rwkv', 'fushi_music', 'fushi_corpus', 'fushi_web_core')
 # 本机缓存里每个产物保留最近用过的几棵源码树。
 $NativeCacheKeepTrees = 4
 

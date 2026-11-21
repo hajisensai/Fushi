@@ -162,28 +162,9 @@ def requireReleaseKeystore = {
     }
 }
 
-// 网页内容核心（native/fushi_web_core：广告拦截 + 漫画章末广告页识别）是硬依赖：Dart 侧没有
-// 「缺库判不可用」的分支，Release 包缺 .so 在运行时就是 FushiWebCoreLibraryMissing。按 Flutter
-// 传进来的 target-platform 逐 ABI 核对 prebuilt 在不在（build_android_so.* 产出），缺就拒绝出包。
-def requireWebCoreSo = {
-    def abiOf = ['android-arm': 'armeabi-v7a', 'android-arm64': 'arm64-v8a', 'android-x64': 'x86_64']
-    def platforms = (project.findProperty('target-platform') ?: 'android-arm,android-arm64,android-x64').toString().split(',')
-    platforms.each { platform ->
-        def abi = abiOf[platform.trim()]
-        if (abi == null) {
-            return
-        }
-        def so = file("../../../native/fushi_web_core/prebuilt/android/${abi}/libfushi_web_core.so")
-        if (!so.exists()) {
-            throw new GradleException("Missing required native library ${so}. Run native/fushi_web_core/build_android_so.{sh,ps1} for ${abi} before building a release APK.")
-        }
-    }
-}
-
 gradle.taskGraph.whenReady { taskGraph ->
     if (taskGraph.allTasks.any { it.name.toLowerCase().contains("release") }) {
         requireReleaseKeystore()
-        requireWebCoreSo()
     }
 }
 
@@ -226,7 +207,7 @@ android {
         main.jniLibs.srcDirs += '../../../native/fushi_fsrs/prebuilt/android'
         // 网页内容核心（fushi_web_core，硬依赖）：native/fushi_web_core/build_android_so.*
         // 产出 prebuilt/android/<abi>/libfushi_web_core.so；Release 构建缺它直接失败
-        // （见上面的 requireWebCoreSo），Debug 构建不挡、运行时用到时如实报错。
+        // （见下面的 checkFushiWebCoreNative），Debug 构建不挡、运行时用到时如实报错。
         main.jniLibs.srcDirs += '../../../native/fushi_web_core/prebuilt/android'
         // 计算内核（哈希 / 图像 / 文本，**硬依赖**）：native/fushi_compute/build_android_so.*
         // 产出 prebuilt/android/<abi>/libfushi_compute.so 随包；本次要出的任一 ABI 缺库时
@@ -544,11 +525,35 @@ def checkFushiCorpusNative = tasks.register("checkFushiCorpusNative") {
     }
 }
 
-// 缺库时先自己备，再由上面四个 check 判定：Windows 开发机上调 tool/native_libs.ps1 -Android
+// 网页内容核心 fushi_web_core（广告拦截 + 漫画章末广告页识别）是硬依赖：Dart 侧没有「缺库判不可用」
+// 的分支，Release 包缺 .so 在运行时就是 FushiWebCoreLibraryMissing。判据同上，但只挂 Release 的
+// merge*JniLibFolders（Debug 不挡）。以前在 gradle.taskGraph.whenReady 里查：那时任何任务都还没跑，
+// ensureFushiAndroidNative 来不及备库，新 worktree 本机出 Release 包必然死在这里。
+def fushiWebCoreAndroidDir = file('../../../native/fushi_web_core/prebuilt/android')
+def checkFushiWebCoreNative = tasks.register("checkFushiWebCoreNative") {
+    doLast {
+        String platforms = (project.findProperty('target-platform') ?: 'android-arm,android-arm64,android-x64').toString()
+        List<String> abis = platforms.split(',').collect { it.trim() }.findAll { !it.isEmpty() }
+            .collect { fushiComputeAbiOfPlatform[it] ?: it }
+        List<String> missing = abis.findAll { abi ->
+            !new File(fushiWebCoreAndroidDir, "${abi}/libfushi_web_core.so").isFile()
+        }
+        if (!missing.isEmpty()) {
+            throw new GradleException(
+                "fushi_web_core is a required native dependency of release builds, but libfushi_web_core.so is missing for ABI(s) " +
+                "${missing.join(', ')} under ${fushiWebCoreAndroidDir}. Build it first: " +
+                "native/fushi_web_core/build_android_so.ps1 -Abis ${abis.join(',')} (Windows) or " +
+                "bash native/fushi_web_core/build_android_so.sh <ndk-root> ${abis.join(' ')} " +
+                "(needs Rust + cargo-ndk; see docs/agent/build.md).")
+        }
+    }
+}
+
+// 缺库时先自己备，再由上面五个 check 判定：Windows 开发机上调 tool/native_libs.ps1 -Android
 // （本机缓存 → 兄弟 worktree → cargo-ndk 现编，同一份 native/<crate> 源码一台机器只编一次）。
 // 新 worktree 从不带这些 .so，以前本机出包必然死在 check 上，只能手动逐个 crate 去编。
 // 库齐了（CI 在出包前自己编好）就什么都不做；非 Windows 主机不代劳，仍由 check 报错说明怎么编。
-def fushiAndroidNativeCrates = ['fushi_compute', 'fushi_rwkv', 'fushi_music', 'fushi_corpus']
+def fushiAndroidNativeCrates = ['fushi_compute', 'fushi_rwkv', 'fushi_music', 'fushi_corpus', 'fushi_web_core']
 def ensureFushiAndroidNative = tasks.register("ensureFushiAndroidNative") {
     doLast {
         String platforms = (project.findProperty('target-platform') ?: 'android-arm,android-arm64,android-x64').toString()
@@ -580,7 +585,8 @@ def ensureFushiAndroidNative = tasks.register("ensureFushiAndroidNative") {
         }
     }
 }
-[checkFushiComputeNative, checkFushiRwkvNative, checkFushiMusicNative, checkFushiCorpusNative].each { check ->
+[checkFushiComputeNative, checkFushiRwkvNative, checkFushiMusicNative, checkFushiCorpusNative,
+ checkFushiWebCoreNative].each { check ->
     check.configure { dependsOn(ensureFushiAndroidNative) }
 }
 
@@ -643,5 +649,8 @@ tasks.configureEach { task ->
         task.dependsOn(checkFushiRwkvNative)
         task.dependsOn(checkFushiMusicNative)
         task.dependsOn(checkFushiCorpusNative)
+        if (task.name.contains("Release")) {
+            task.dependsOn(checkFushiWebCoreNative)
+        }
     }
 }

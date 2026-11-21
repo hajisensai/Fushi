@@ -272,8 +272,11 @@ case "$tool" in
     cd fushi && run_child flutter build "$target" --no-pub "$@" ;;
   gradle)
     # Gradle reads flutter.sdk (and the generated plugin settings) from what
-    # the Flutter tool writes.
-    (cd fushi && flutter build apk --config-only --no-pub) >> "$log" 2>&1 ||
+    # the Flutter tool writes. Not --no-pub: the tool rewrites the plugin
+    # registration (release mode: no dev_dependencies) only on a run that
+    # does its pub step; worker_prepare.sh's pub get left the debug one,
+    # which a release compile cannot build (integration_test missing).
+    (cd fushi && flutter build apk --config-only) >> "$log" 2>&1 ||
       finish 1
     cd fushi/android || finish 1
     if [ -n "$windows" ]; then

@@ -134,6 +134,94 @@ void main() {
     });
   });
 
+  group('heavyCommandIsAppGradle', () {
+    bool gradle(List<String> cmd, String cwd, {bool win = true}) =>
+        heavyCommandIsAppGradle(
+          cmd,
+          cwd: cwd,
+          checkout: win ? r'D:\wt' : '/wt',
+          isWindows: win,
+        );
+
+    test('fushi/android 下的 gradlew 要先刷新插件注册（release 编不过 debug 那份）', () {
+      expect(
+        gradle(<String>[
+          r'.\gradlew.bat',
+          ':app:assembleRelease',
+        ], r'D:\WT\fushi\android'),
+        true,
+      );
+      expect(
+        gradle(
+          <String>['./gradlew', ':app:testDebugUnitTest'],
+          '/wt/fushi/android',
+          win: false,
+        ),
+        true,
+      );
+    });
+
+    test('flutter / dart 命令、fushi/android 以外的 gradlew 不刷新', () {
+      expect(
+        gradle(<String>[
+          r'D:\sdk\bin\flutter.bat',
+          'build',
+          'apk',
+        ], r'D:\wt\fushi'),
+        false,
+      );
+      expect(
+        gradle(<String>[r'.\gradlew.bat', 'build'], r'D:\other\android'),
+        false,
+      );
+      expect(
+        gradle(<String>[r'.\gradlew.bat', 'build'], r'D:\wt\fushi'),
+        false,
+      );
+      expect(gradle(const <String>[], r'D:\wt\fushi\android'), false);
+    });
+  });
+
+  group('heavyGradleConfigFlutter', () {
+    test('取 pub get 记下的 SDK 的 flutter，没有就退回 PATH 上的', () {
+      const String cfg =
+          '{"configVersion":2,"packages":[],'
+          '"flutterRoot":"file:///D:/flutter%20sdk/f","flutterVersion":"3.47.6"}';
+      expect(
+        heavyGradleConfigFlutter(
+          checkout: 'D:/wt',
+          isWindows: true,
+          fileExists: (String p) => p == 'D:/flutter sdk/f/bin/flutter.bat',
+          read: (String p) =>
+              p == 'D:/wt/.dart_tool/package_config.json' ? cfg : null,
+        ),
+        'D:/flutter sdk/f/bin/flutter.bat',
+      );
+      expect(
+        heavyGradleConfigFlutter(
+          checkout: '/wt',
+          isWindows: false,
+          fileExists: (_) => false,
+          read: (_) => null,
+        ),
+        'flutter',
+      );
+    });
+  });
+
+  test(
+    'heavy.dart 本机跑 gradlew 前先 flutter build apk --config-only，失败即失败（lease 之前）',
+    () {
+      final String heavy = File('tool/heavy.dart').readAsStringSync();
+      final int gen = heavy.indexOf('heavyCommandNeedsI18n(');
+      final int config = heavy.indexOf('heavyCommandIsAppGradle(');
+      final int lease = heavy.indexOf('admitted = await acquireHeavyLease(');
+      expect(config, allOf(greaterThan(gen), lessThan(lease)));
+      expect(heavy, contains("<String>['build', 'apk', '--config-only']"));
+      expect(heavy, contains('exit(config);'));
+    },
+  );
+
   test('heavy.dart 在本机运行前（offload 之后、lease 之前）接了生成，失败即失败', () {
     final String heavy = File('tool/heavy.dart').readAsStringSync();
     // 外包先问一次别的机器（它们接走就直接以其退出码结束）；没接走才在本机生成、再排本机的租约。

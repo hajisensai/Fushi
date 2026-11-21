@@ -499,7 +499,7 @@ jobs:
         cd android
         ./gradlew :app:testDebugUnitTest -Ptarget-platform=android-arm64 --no-daemon
 
-    # 网页内容核心是硬依赖：fushi/android/app/build.gradle 的 requireWebCoreSo 在 release 构建里
+    # 网页内容核心是硬依赖：fushi/android/app/build.gradle 的 checkFushiWebCoreNative 在 release 构建里
     # 逐 ABI 核对 prebuilt/android/<abi>/libfushi_web_core.so，缺就拒绝出包。本验证构建只出
     # arm64，先编这一个 ABI（工具链与 native-web-core-gate.yml / release.yml 一致）。
     - name: Set up Rust (fushi_web_core, Android arm64)
