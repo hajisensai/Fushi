@@ -33,14 +33,17 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4411 条。点号进各自文件。
+> 共 4414 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5111](bugs/BUG-5111-book-manual-summary-fill.md) | 🚧 | 🚧 | 书的简介没有手填入口（BUG-5082 书侧剩余项） |
+| [BUG-5110](bugs/BUG-5110-video-work-locks-lost-on-collection-promotion.md) | 🚧 | 🚧 | 单集作品长成多集合集后重刮，挂在那一集上的手填值 / 字段锁丢失 |
 | [BUG-5088](bugs/BUG-5088-readintosync-blocks-gc-safepoint.md) | ✅ | ✅ | readintosync-blocks-gc-safepoint |
 | [BUG-5087](bugs/BUG-5087-sync-video-sweep-tests-teardown-temp-locked.md) | 🚧 | 🚧 | sync-video-sweep-tests-teardown-temp-locked |
 | [BUG-5086](bugs/BUG-5086-dist-test-verdict-coverage-shared-log.md) | ✅ | ✅ | 「dist 请求 7 个测试文件只跑 2 个仍判 PASSED」是并发代理共用日志名读串了；dist_test 判绿改为逐个核对请求的 suite |
 | [BUG-5085](bugs/BUG-5085-srs-mining-generation-blocked-message.md) | ✅ | ✅ | 复习库在换代途中时制卡只报「Fushi review is not available.」，不提示去升级 |
+| [BUG-5082](bugs/BUG-5082-anime-manual-metadata-fill.md) | ✅ | ✅ | 手动填元数据：刮削全失败的动画 / 非 EPUB 书无法手填简介、年份、作者等 |
 | [BUG-5081](bugs/BUG-5081-video-fullscreen-blank.md) | ✅ | ✅ | video-fullscreen-blank |
 | [BUG-5080](bugs/BUG-5080-srs-gen4-conflict-badge-minutes.md) | ✅ | ✅ | SRS 牌组列表冲突角标的 `conflict_edits` 在迁移库上跑几分钟 |
 | [BUG-5079](bugs/BUG-5079-srs-retained-copy-unreadable-unreported.md) | ✅ | ✅ | SRS 保留副本 srs.db 坏了（不是 SQLite 文件）用户毫无提示 |
