@@ -1042,6 +1042,22 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
                                           .videoDownloadPipelineService
                                           ?.cancelJob(job.jobId);
                                     },
+                                    // 已完成仍做种的任务：停 / 续做种，走任务
+                                    // 自己绑定的后端（BUG-5072）。
+                                    onPauseSeeding:
+                                        (VideoDownloadJobRow job) async {
+                                          await ref
+                                              .read(appProvider)
+                                              .videoDownloadPipelineService
+                                              ?.pauseSeedingJob(job.jobId);
+                                        },
+                                    onResumeSeeding:
+                                        (VideoDownloadJobRow job) async {
+                                          await ref
+                                              .read(appProvider)
+                                              .videoDownloadPipelineService
+                                              ?.resumeSeedingJob(job.jobId);
+                                        },
                                     onPairAudiobook:
                                         (VideoDownloadJobRow job) async {
                                           await _pairDownloadedAudiobook(job);

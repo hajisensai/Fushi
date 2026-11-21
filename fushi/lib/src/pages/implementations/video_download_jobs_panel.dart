@@ -66,6 +66,63 @@ bool videoDownloadJobCanResume(VideoDownloadJobRow job) =>
 bool videoDownloadJobCanPause(VideoDownloadJobRow job) =>
     job.lifecycle == VideoDownloadJobLifecycle.active;
 
+/// 已完成任务的种子此刻是否还在它自己的后端里（BUG-5072）。
+///
+/// 判据是后端快照：`VideoDownloadPipelineService.loadTaskSnapshots` 只按任务行
+/// 记的后端身份 + info hash 认领，后端里没有这颗种子就没有快照。种子已被移除
+/// 的 completed 任务因此不露暂停 / 恢复——没有东西可停。
+bool _completedJobSeedInBackend(
+  VideoDownloadJobRow job,
+  TorrentSnapshot? snapshot,
+) => job.lifecycle == VideoDownloadJobLifecycle.completed && snapshot != null;
+
+/// 能否停止做种：已完成、种子仍在后端且没暂停（做种中 / 排队 / 已完成未上传等）。
+/// 对应 `pauseSeedingJob`（后端用户显式暂停，生命周期保持 completed）。
+bool videoDownloadJobCanPauseSeeding(
+  VideoDownloadJobRow job,
+  TorrentSnapshot? snapshot,
+) =>
+    _completedJobSeedInBackend(job, snapshot) &&
+    torrentDisplayStatusFor(snapshot!.state) != TorrentDisplayStatus.paused;
+
+/// 能否继续做种：已完成、种子仍在后端且处于暂停态。对应 `resumeSeedingJob`。
+bool videoDownloadJobCanResumeSeeding(
+  VideoDownloadJobRow job,
+  TorrentSnapshot? snapshot,
+) =>
+    _completedJobSeedInBackend(job, snapshot) &&
+    torrentDisplayStatusFor(snapshot!.state) == TorrentDisplayStatus.paused;
+
+/// 这条任务此刻的「暂停」落到哪个回调：在跑的任务停持久流程（[onCancel]），
+/// 已完成仍做种的任务停做种（[onPauseSeeding]）；都不适用返回 null。
+///
+/// 卡片按钮与统一列表的批量槽位**共用这一个选择器**——两处各写一份判据，最后
+/// 必然表现为「卡片上有按钮、批量却计为不支持」（BUG-5072 正是批量这一侧漏了
+/// 已完成做种的任务）。
+VideoDownloadJobAction? videoDownloadJobPauseAction(
+  VideoDownloadJobRow job,
+  TorrentSnapshot? snapshot, {
+  required VideoDownloadJobAction? onCancel,
+  required VideoDownloadJobAction? onPauseSeeding,
+}) {
+  if (videoDownloadJobCanPause(job)) return onCancel;
+  if (videoDownloadJobCanPauseSeeding(job, snapshot)) return onPauseSeeding;
+  return null;
+}
+
+/// 「继续」的同款选择器：用户暂停的任务恢复持久流程（[onResume]），已完成且
+/// 做种已暂停的任务继续做种（[onResumeSeeding]）。
+VideoDownloadJobAction? videoDownloadJobResumeAction(
+  VideoDownloadJobRow job,
+  TorrentSnapshot? snapshot, {
+  required VideoDownloadJobAction? onResume,
+  required VideoDownloadJobAction? onResumeSeeding,
+}) {
+  if (videoDownloadJobCanResume(job)) return onResume;
+  if (videoDownloadJobCanResumeSeeding(job, snapshot)) return onResumeSeeding;
+  return null;
+}
+
 /// 优先级只对「还会被取走」的任务有意义。已完成 / 已暂停的任务调了也不会重新
 /// 排队，露出来只会让人以为能插队。
 bool videoDownloadJobCanSetPriority(VideoDownloadJobRow job) =>
@@ -255,6 +312,8 @@ class VideoDownloadJobsPanel extends StatefulWidget {
     this.onRetry,
     this.onResume,
     this.onCancel,
+    this.onPauseSeeding,
+    this.onResumeSeeding,
     this.onOpenDetails,
     this.onPairAudiobook,
     this.onSetPriority,
@@ -281,6 +340,8 @@ class VideoDownloadJobsPanel extends StatefulWidget {
     VideoDownloadJobAction? onRetry,
     VideoDownloadJobAction? onResume,
     VideoDownloadJobAction? onCancel,
+    VideoDownloadJobAction? onPauseSeeding,
+    VideoDownloadJobAction? onResumeSeeding,
     VideoDownloadJobAction? onOpenDetails,
     VideoDownloadJobAction? onPairAudiobook,
     VideoDownloadJobPriorityAction? onSetPriority,
@@ -305,6 +366,8 @@ class VideoDownloadJobsPanel extends StatefulWidget {
     onRetry: onRetry,
     onResume: onResume,
     onCancel: onCancel,
+    onPauseSeeding: onPauseSeeding,
+    onResumeSeeding: onResumeSeeding,
     onOpenDetails: onOpenDetails,
     onPairAudiobook: onPairAudiobook,
     onSetPriority: onSetPriority,
@@ -348,6 +411,12 @@ class VideoDownloadJobsPanel extends StatefulWidget {
   final VideoDownloadJobAction? onRetry;
   final VideoDownloadJobAction? onResume;
   final VideoDownloadJobAction? onCancel;
+
+  /// 已完成但仍在做种的任务：停止 / 继续做种（见
+  /// [videoDownloadJobCanPauseSeeding]）。与 [onCancel] / [onResume] 分开：那两个
+  /// 改的是持久任务的生命周期，这两个只动后端种子，任务仍是 completed。
+  final VideoDownloadJobAction? onPauseSeeding;
+  final VideoDownloadJobAction? onResumeSeeding;
   final VideoDownloadJobAction? onOpenDetails;
 
   /// 有声书任务下完只有孤立音频时的补救入口（见
@@ -372,6 +441,9 @@ class VideoDownloadJobsPanel extends StatefulWidget {
 class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
   late Stream<List<VideoDownloadJobRow>> _jobs;
   final Set<String> _busyJobIds = <String>{};
+
+  /// 每次暂停 / 继续完成后自增，[_VideoDownloadJobList] 据此立刻重读后端快照。
+  final ValueNotifier<int> _snapshotRefresh = ValueNotifier<int>(0);
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   String _searchQuery = '';
@@ -386,6 +458,7 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
 
   @override
   void dispose() {
+    _snapshotRefresh.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
@@ -413,19 +486,18 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
   ///
   /// 这里直连注入的回调、不经 [_runAction]：那层的 busy 门与逐条 SnackBar 是
   /// **单条**语义，批量有自己的进度与聚合报告，套上去会让一批操作弹出一串错误条。
-  DownloadTaskActions _entryActions(VideoDownloadJobRow job) {
-    final VideoDownloadJobAction? onPause = widget.onCancel;
-    final VideoDownloadJobAction? onResume = widget.onResume;
+  DownloadTaskActions _entryActions(
+    VideoDownloadJobRow job,
+    TorrentSnapshot? snapshot,
+  ) {
+    final VideoDownloadJobAction? onPause = _pauseActionFor(job, snapshot);
+    final VideoDownloadJobAction? onResume = _resumeActionFor(job, snapshot);
     final VideoDownloadJobAction? onRetry = widget.onRetry;
     final VideoDownloadJobDeleteAction? onDelete = widget.onDelete;
     final VideoDownloadJobPriorityAction? onSetPriority = widget.onSetPriority;
     return DownloadTaskActions(
-      pause: onPause != null && videoDownloadJobCanPause(job)
-          ? () => onPause(job)
-          : null,
-      resume: onResume != null && videoDownloadJobCanResume(job)
-          ? () => onResume(job)
-          : null,
+      pause: onPause == null ? null : () => onPause(job),
+      resume: onResume == null ? null : () => onResume(job),
       retry: onRetry != null && videoDownloadJobCanRetry(job)
           ? () => onRetry(job)
           : null,
@@ -441,6 +513,43 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
           ? (int priority) => onSetPriority(job, priority)
           : null,
     );
+  }
+
+  /// 暂停 / 继续改的是后端种子状态，列表靠 3 秒一轮的快照才看得到；动作一完成
+  /// 就让列表立刻重读一次，否则按钮会在旧快照上停留几秒、引人重复点击。
+  VideoDownloadJobAction _refreshingSnapshots(VideoDownloadJobAction action) =>
+      (VideoDownloadJobRow job) async {
+        try {
+          await action(job);
+        } finally {
+          if (mounted) _snapshotRefresh.value++;
+        }
+      };
+
+  VideoDownloadJobAction? _pauseActionFor(
+    VideoDownloadJobRow job,
+    TorrentSnapshot? snapshot,
+  ) {
+    final VideoDownloadJobAction? action = videoDownloadJobPauseAction(
+      job,
+      snapshot,
+      onCancel: widget.onCancel,
+      onPauseSeeding: widget.onPauseSeeding,
+    );
+    return action == null ? null : _refreshingSnapshots(action);
+  }
+
+  VideoDownloadJobAction? _resumeActionFor(
+    VideoDownloadJobRow job,
+    TorrentSnapshot? snapshot,
+  ) {
+    final VideoDownloadJobAction? action = videoDownloadJobResumeAction(
+      job,
+      snapshot,
+      onResume: widget.onResume,
+      onResumeSeeding: widget.onResumeSeeding,
+    );
+    return action == null ? null : _refreshingSnapshots(action);
   }
 
   Future<void> _runAction(
@@ -706,6 +815,7 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
       metricsLoader: widget.metricsLoader,
       selectedSizeLoader: widget.selectedSizeLoader,
       actionsFor: _entryActions,
+      snapshotRefresh: _snapshotRefresh,
       itemBuilder:
           (
             BuildContext context,
@@ -722,12 +832,20 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
             onRetry: widget.onRetry == null
                 ? null
                 : () => _runAction(job, widget.onRetry!),
-            onResume: widget.onResume == null
-                ? null
-                : () => _runAction(job, widget.onResume!),
-            onCancel: widget.onCancel == null
-                ? null
-                : () => _runAction(job, widget.onCancel!),
+            onResume: switch (_resumeActionFor(job, snapshot)) {
+              final VideoDownloadJobAction action => () => _runAction(
+                job,
+                action,
+              ),
+              null => null,
+            },
+            onCancel: switch (_pauseActionFor(job, snapshot)) {
+              final VideoDownloadJobAction action => () => _runAction(
+                job,
+                action,
+              ),
+              null => null,
+            },
             onOpenDetails: widget.onOpenDetails == null
                 ? null
                 : () => _runAction(job, widget.onOpenDetails!),
@@ -796,7 +914,8 @@ class _VideoDownloadJobList extends StatefulWidget {
     required this.metricsLoader,
     required this.selectedSizeLoader,
     required this.itemBuilder,
-    required this.actionsFor,
+    required this.unified,
+    required this.snapshotRefresh,
     required this.unified,
     required this.additionalTasks,
     this.loading = false,
@@ -817,7 +936,15 @@ class _VideoDownloadJobList extends StatefulWidget {
   final VoidCallback? onOpenExecutionSettings;
 
   /// 统一列表里一条 video job 支持的批量动作，由 panel 按注入的回调组装。
-  final DownloadTaskActions Function(VideoDownloadJobRow job) actionsFor;
+  /// 带上实时快照：已完成任务能否暂停 / 继续做种取决于后端种子状态。
+  final DownloadTaskActions Function(
+    VideoDownloadJobRow job,
+    TorrentSnapshot? snapshot,
+  )
+  actionsFor;
+
+  /// 暂停 / 继续完成后触发，立刻重读后端快照（不等下一轮定时刷新）。
+  final Listenable snapshotRefresh;
 
   final bool unified;
   final List<DownloadTaskEntry> additionalTasks;
@@ -841,12 +968,19 @@ class _VideoDownloadJobListState extends State<_VideoDownloadJobList> {
   @override
   void initState() {
     super.initState();
+    widget.snapshotRefresh.addListener(_onSnapshotRefreshRequested);
     _restartMetrics();
   }
+
+  void _onSnapshotRefreshRequested() => unawaited(_refreshMetrics());
 
   @override
   void didUpdateWidget(_VideoDownloadJobList oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.snapshotRefresh, widget.snapshotRefresh)) {
+      oldWidget.snapshotRefresh.removeListener(_onSnapshotRefreshRequested);
+      widget.snapshotRefresh.addListener(_onSnapshotRefreshRequested);
+    }
     final bool jobsChanged =
         _jobIdentity(oldWidget.jobs) != _jobIdentity(widget.jobs);
     if (oldWidget.metricsLoader != widget.metricsLoader || jobsChanged) {
@@ -911,6 +1045,7 @@ class _VideoDownloadJobListState extends State<_VideoDownloadJobList> {
 
   @override
   void dispose() {
+    widget.snapshotRefresh.removeListener(_onSnapshotRefreshRequested);
     _timer?.cancel();
     super.dispose();
   }
@@ -973,7 +1108,7 @@ class _VideoDownloadJobListState extends State<_VideoDownloadJobList> {
             if (job.resourceTitle != null) job.resourceTitle!,
             job.resourceProvider,
           ],
-          actions: widget.actionsFor(job),
+          actions: widget.actionsFor(job, snapshot),
           builder: (BuildContext context) => widget.itemBuilder(
             context,
             job,
@@ -1036,6 +1171,10 @@ class _VideoDownloadJobCard extends StatelessWidget {
   final int? selectedSizeBytes;
   final bool busy;
   final VoidCallback? onRetry;
+
+  /// 「继续」/「暂停」：由 panel 按 [videoDownloadJobResumeAction] /
+  /// [videoDownloadJobPauseAction] 预先判好可用性（与批量槽位同一判据），
+  /// 非 null 即可用，卡片不再自己判一遍。已完成任务上它们是继续 / 停止做种。
   final VoidCallback? onResume;
   final VoidCallback? onCancel;
   final VoidCallback? onOpenDetails;
@@ -1052,9 +1191,9 @@ class _VideoDownloadJobCard extends StatelessWidget {
 
   bool get _canRetry => videoDownloadJobCanRetry(job);
 
-  bool get _canResume => videoDownloadJobCanResume(job);
-
-  bool get _canCancel => videoDownloadJobCanPause(job);
+  /// 暂停 / 继续作用于做种（已完成任务）而不是持久下载流程。
+  bool get _seedingControl =>
+      job.lifecycle == VideoDownloadJobLifecycle.completed;
 
   bool get _canSetPriority => videoDownloadJobCanSetPriority(job);
 
@@ -1253,8 +1392,8 @@ class _VideoDownloadJobCard extends StatelessWidget {
           ),
         ],
         if ((_canRetry && onRetry != null) ||
-            (_canResume && onResume != null) ||
-            (_canCancel && onCancel != null) ||
+            onResume != null ||
+            onCancel != null ||
             onPairAudiobook != null ||
             onOpenDetails != null ||
             onOpenLocation != null ||
@@ -1301,7 +1440,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
                         : const FushiIcon(Icons.refresh, size: 18),
                     label: Text(t.retry),
                   ),
-                if (_canResume && onResume != null)
+                if (onResume != null)
                   FushiFilledButton.tonalIcon(
                     key: ValueKey<String>(
                       'video-download-job-resume-${job.jobId}',
@@ -1317,10 +1456,12 @@ class _VideoDownloadJobCard extends StatelessWidget {
                         : const FushiIcon(Icons.play_arrow, size: 18),
                     label: Text(t.download_task_resume),
                   ),
-                if (_canCancel && onCancel != null)
+                if (onCancel != null)
                   FushiOutlinedButton.icon(
                     key: ValueKey<String>(
-                      'video-download-job-cancel-${job.jobId}',
+                      _seedingControl
+                          ? 'video-download-job-pause-seeding-${job.jobId}'
+                          : 'video-download-job-cancel-${job.jobId}',
                     ),
                     onPressed: busy ? null : onCancel,
                     icon: busy
@@ -1330,8 +1471,13 @@ class _VideoDownloadJobCard extends StatelessWidget {
                               strokeWidth: 2,
                             ),
                           )
-                        : const FushiIcon(Icons.close, size: 18),
-                    label: Text(t.cancel),
+                        : FushiIcon(
+                            _seedingControl ? Icons.pause : Icons.close,
+                            size: 18,
+                          ),
+                    label: Text(
+                      _seedingControl ? t.download_task_pause : t.cancel,
+                    ),
                   ),
                 // 优先级只对「还在排队/还没做完」的任务有意义：已完成或已取消
                 // 的任务再调也不会被重新取走，给了只会让人以为能插队。
@@ -1679,9 +1825,9 @@ class _VideoDownloadJobCard extends StatelessWidget {
     ];
   }
 
-  /// 行尾主操作：在跑 → 暂停、已暂停 → 继续、出错 → 重试。
+  /// 行尾主操作：在跑 / 做种 → 暂停、已暂停 → 继续、出错 → 重试。
   DownloadTaskQuickAction? get _quickAction {
-    if (_canCancel && onCancel != null) {
+    if (onCancel != null) {
       return DownloadTaskQuickAction(
         key: ValueKey<String>('video-download-job-quick-pause-${job.jobId}'),
         icon: FushiIcons.pause,
@@ -1689,7 +1835,7 @@ class _VideoDownloadJobCard extends StatelessWidget {
         onPressed: busy ? null : onCancel,
       );
     }
-    if (_canResume && onResume != null) {
+    if (onResume != null) {
       return DownloadTaskQuickAction(
         key: ValueKey<String>('video-download-job-quick-resume-${job.jobId}'),
         icon: FushiIcons.play,

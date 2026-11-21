@@ -1804,6 +1804,71 @@ class VideoDownloadPipelineService {
     }
   }
 
+  /// 停止一个**已完成**任务的做种（BUG-5072）：在它自己绑定的后端上把那颗
+  /// 种子按用户显式暂停（内置引擎 = `pauseTorrentByUser`，记进跨会话持久的
+  /// user_paused 集，上传策略下一轮不会把它恢复；外接 qb 是 stop；`fushi_host`
+  /// 由对端引擎执行同一原语）。
+  ///
+  /// 任务生命周期保持 `completed` 不动：做种与否只是后端种子的状态，真相在
+  /// 后端（快照的 paused 态），持久任务行不存镜像。后端按任务行的
+  /// kind/profile/fingerprint 校验（[_validateBackendBinding]），设置已切到别的
+  /// 后端时拒绝，不会去另一台下载器上暂停同 hash 的种子。
+  Future<void> pauseSeedingJob(String jobId) =>
+      _setCompletedJobSeedingPaused(jobId, paused: true);
+
+  /// 恢复 [pauseSeedingJob] 停掉的做种（用户显式恢复，清掉 user_paused 记录；
+  /// 做种超限的种子仍会被上传策略按策略语义再停）。
+  Future<void> resumeSeedingJob(String jobId) =>
+      _setCompletedJobSeedingPaused(jobId, paused: false);
+
+  Future<void> _setCompletedJobSeedingPaused(
+    String jobId, {
+    required bool paused,
+  }) async {
+    final VideoDownloadJobRow? job = await database.getVideoDownloadJob(jobId);
+    if (job == null) {
+      throw const VideoDownloadPipelineActionRequired(
+        'The selected download job no longer exists',
+      );
+    }
+    if (job.lifecycle != VideoDownloadJobLifecycle.completed) {
+      throw const VideoDownloadPipelineActionRequired(
+        'Only completed download jobs can pause or resume seeding',
+      );
+    }
+    final String torrentId = (job.backendTaskId ?? job.torrentHash ?? '')
+        .trim()
+        .toLowerCase();
+    if (torrentId.isEmpty) {
+      throw const VideoDownloadPipelineActionRequired(
+        'This download job has no torrent in the download backend',
+      );
+    }
+    final VideoDownloadBackendBinding? binding = await backendResolver(job);
+    _validateBackendBinding(job, binding);
+    final TorrentBackend backend = binding!.backend;
+    if (backend is! TorrentPauseBackend || !backend.pauseControlAvailable) {
+      throw const VideoDownloadPipelineActionRequired(
+        'The original download backend cannot pause or resume seeding',
+      );
+    }
+    if (await _findBackendTorrent(backend, torrentId) == null) {
+      throw const VideoDownloadPipelineActionRequired(
+        'The torrent is no longer available in the original backend',
+      );
+    }
+    final bool ok = paused
+        ? await backend.pauseTorrent(torrentId)
+        : await backend.resumeTorrent(torrentId);
+    if (!ok) {
+      throw VideoDownloadPipelineActionRequired(
+        paused
+            ? 'The original download backend could not pause seeding'
+            : 'The original download backend could not resume seeding',
+      );
+    }
+  }
+
   /// Returns the most useful existing path for Explorer/Finder integration.
   /// Final organized files win; an in-progress task falls back to the backend
   /// content path and then its observed save directory.
