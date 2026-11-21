@@ -7663,6 +7663,8 @@
   "nav_tab_bar_to_sidebar": "Show sidebar",
   "nav_video": "Vídeo",
   "nav_web": "Navegador",
+  "network_github_mirrors_hint": "When a direct GitHub download fails (updates, dictionaries, fonts, shaders, extension repositories), retry through third-party mirrors such as ghproxy. Turn off to use only direct connections and jsDelivr.",
+  "network_github_mirrors_label": "Use GitHub download mirrors",
   "network_proxy_address_hint": "Servidor proxy HTTP usado por todas las solicitudes a Internet público",
   "network_proxy_auto_hint": "Se aplica a todas las solicitudes de Internet de la aplicación: actualizaciones, sincronización en la nube, diccionarios, descargas, subtítulos y metadatos. Déjelo en blanco para automático: variables de entorno y, después, el proxy del sistema habilitado. Las transferencias P2P (torrent) se conectan directamente de forma predeterminada; puede activarlas por separado abajo.",
   "network_proxy_credentials_scope_hint": "Las credenciales solo se aplican a las solicitudes HTTP; el motor de torrents integrado no puede usarlas",

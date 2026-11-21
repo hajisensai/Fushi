@@ -7663,6 +7663,8 @@
   "nav_tab_bar_to_sidebar": "Show sidebar",
   "nav_video": "Video",
   "nav_web": "Trình duyệt",
+  "network_github_mirrors_hint": "When a direct GitHub download fails (updates, dictionaries, fonts, shaders, extension repositories), retry through third-party mirrors such as ghproxy. Turn off to use only direct connections and jsDelivr.",
+  "network_github_mirrors_label": "Use GitHub download mirrors",
   "network_proxy_address_hint": "Máy chủ proxy HTTP dùng cho mọi yêu cầu ra Internet công cộng",
   "network_proxy_auto_hint": "Áp dụng cho mọi yêu cầu Internet của ứng dụng: cập nhật, đồng bộ đám mây, từ điển, tải xuống, phụ đề và siêu dữ liệu. Để trống để tự động: biến môi trường, sau đó là proxy hệ thống đã bật. Truyền P2P (torrent) mặc định kết nối trực tiếp; bạn có thể bật riêng bên dưới.",
   "network_proxy_credentials_scope_hint": "Thông tin đăng nhập chỉ áp dụng cho yêu cầu HTTP; công cụ torrent tích hợp không dùng được",

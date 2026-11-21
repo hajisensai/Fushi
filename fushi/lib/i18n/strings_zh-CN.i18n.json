@@ -7663,6 +7663,8 @@
   "nav_tab_bar_to_sidebar": "展开侧栏",
   "nav_video": "视频",
   "nav_web": "浏览器",
+  "network_github_mirrors_hint": "GitHub 直连下载失败时（更新、词典、字体、着色器、扩展仓库），改走 ghproxy 等第三方加速镜像重试。关闭后只走直连和 jsDelivr。",
+  "network_github_mirrors_label": "使用 GitHub 加速镜像",
   "network_proxy_address_hint": "供应用全部公网请求使用的 HTTP 代理服务器",
   "network_proxy_auto_hint": "应用的全部联网请求都走这里：更新、云同步、词典、下载、字幕与元数据。留空为自动：先读环境变量，再读已启用的系统代理。P2P（torrent）传输默认直连，可在下方单独开启。",
   "network_proxy_credentials_scope_hint": "凭据仅用于 HTTP 请求；内置 torrent 引擎无法使用",

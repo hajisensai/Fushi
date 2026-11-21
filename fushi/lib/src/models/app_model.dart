@@ -14992,6 +14992,12 @@ class AppModel
     _applyEmbeddedTorrentProxy();
   }
 
+  /// 是否允许 GitHub 下载走第三方加速镜像（[kGitHubMirrorPrefixes]）。读取端
+  /// [gitHubMirrorsEnabledReader] 是请求时现读的闭包，改了不用另行下发。
+  bool get gitHubMirrorsEnabled => prefsRepo.gitHubMirrorsEnabled;
+  Future<void> setGitHubMirrorsEnabled(bool value) =>
+      prefsRepo.setGitHubMirrorsEnabled(value);
+
   String get networkProxyUsername => prefsRepo.networkProxyUsername;
   Future<void> setNetworkProxyUsername(String value) async {
     await prefsRepo.setNetworkProxyUsername(value);

@@ -7663,6 +7663,8 @@
   "nav_tab_bar_to_sidebar": "Show sidebar",
   "nav_video": "Video",
   "nav_web": "Peramban",
+  "network_github_mirrors_hint": "When a direct GitHub download fails (updates, dictionaries, fonts, shaders, extension repositories), retry through third-party mirrors such as ghproxy. Turn off to use only direct connections and jsDelivr.",
+  "network_github_mirrors_label": "Use GitHub download mirrors",
   "network_proxy_address_hint": "Server proxy HTTP yang dipakai semua permintaan internet publik",
   "network_proxy_auto_hint": "Berlaku untuk semua permintaan Internet aplikasi: pembaruan, sinkronisasi cloud, kamus, unduhan, subtitel, dan metadata. Kosongkan untuk otomatis: variabel lingkungan, lalu proksi sistem yang diaktifkan. Transfer P2P (torrent) terhubung langsung secara default; Anda dapat mengaktifkannya secara terpisah di bawah.",
   "network_proxy_credentials_scope_hint": "Kredensial hanya berlaku untuk permintaan HTTP; mesin torrent bawaan tidak dapat menggunakannya",

@@ -7663,6 +7663,8 @@
   "nav_tab_bar_to_sidebar": "Show sidebar",
   "nav_video": "วิดีโอ",
   "nav_web": "เบราว์เซอร์",
+  "network_github_mirrors_hint": "When a direct GitHub download fails (updates, dictionaries, fonts, shaders, extension repositories), retry through third-party mirrors such as ghproxy. Turn off to use only direct connections and jsDelivr.",
+  "network_github_mirrors_label": "Use GitHub download mirrors",
   "network_proxy_address_hint": "เซิร์ฟเวอร์พร็อกซี HTTP ที่ใช้กับคำขออินเทอร์เน็ตสาธารณะทั้งหมด",
   "network_proxy_auto_hint": "ใช้กับคำขออินเทอร์เน็ตทั้งหมดของแอป: การอัปเดต การซิงค์คลาวด์ พจนานุกรม การดาวน์โหลด คำบรรยาย และข้อมูลเมตา เว้นว่างไว้เพื่อใช้อัตโนมัติ: ตัวแปรสภาพแวดล้อม จากนั้นพร็อกซีระบบที่เปิดใช้งาน การถ่ายโอน P2P (torrent) จะเชื่อมต่อโดยตรงตามค่าเริ่มต้น สามารถเปิดแยกได้ด้านล่าง",
   "network_proxy_credentials_scope_hint": "ข้อมูลรับรองใช้ได้กับคำขอ HTTP เท่านั้น เอนจิน torrent ในตัวไม่สามารถใช้ได้",

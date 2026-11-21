@@ -7663,6 +7663,8 @@
   "nav_tab_bar_to_sidebar": "Show sidebar",
   "nav_video": "影片",
   "nav_web": "瀏覽器",
+  "network_github_mirrors_hint": "When a direct GitHub download fails (updates, dictionaries, fonts, shaders, extension repositories), retry through third-party mirrors such as ghproxy. Turn off to use only direct connections and jsDelivr.",
+  "network_github_mirrors_label": "Use GitHub download mirrors",
   "network_proxy_address_hint": "所有公網請求都會使用的 HTTP 代理伺服器",
   "network_proxy_auto_hint": "應用程式的全部連線請求都經此處：更新、雲端同步、詞典、下載、字幕與中繼資料。留空為自動：先讀取環境變數，再讀取已啟用的系統代理。P2P（torrent）傳輸預設直連，可在下方單獨開啟。",
   "network_proxy_credentials_scope_hint": "憑證僅用於 HTTP 請求；內建 torrent 引擎無法使用",
