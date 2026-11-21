@@ -82,7 +82,6 @@ import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart'
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
-import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_dropdown.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
@@ -108,6 +107,7 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/pages/implementations/shared_lookup_popup_host.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi_core/fushi_core.dart'
@@ -196,11 +196,16 @@ class TexthookerPage extends ConsumerStatefulWidget {
 }
 
 class _TexthookerPageState extends ConsumerState<TexthookerPage>
-    with DictionaryPageMixin, WidgetsBindingObserver {
-  final DictionaryPopupController _popup = DictionaryPopupController(
-    lowMemory: false,
-    onLookupStackDepthChanged: recordLookupStackDepth,
-  );
+    with DictionaryPageMixin, WidgetsBindingObserver
+    implements SharedLookupPopupOwner {
+  /// 查词弹窗栈与根 Overlay 浮层宿主。首页外壳里与查词 tab 共用同一个（只有一个常驻
+  /// 热槽 WebView，拍板台 design-shared-lookup-webview）；外壳外（串流副屏等）私有一个。
+  late final SharedLookupPopupHost _popupHost;
+
+  /// 外壳外私有的宿主（本页负责销毁）；共用时为 null。
+  SharedLookupPopupHost? _ownedPopupHost;
+
+  DictionaryPopupController get _popup => _popupHost.controller;
   final ScrollController _scroll = ScrollController();
 
   /// 本平台能不能跑 hook 注入 / 捕获 / 窗口绑定（只有 Windows）。非 Windows 桌面
@@ -211,16 +216,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   ).supportsHookCapture;
 
   final GalHookSessionController _session = GalHookSessionController.instance;
-  OverlayEntry? _popupOverlayEntry;
-  bool _overlayInert = false;
-
-  /// 仅测试置位，见 [debugMountPopupOverlayForTesting]。
-  bool _debugPopupOverlayPinned = false;
 
   /// BUG-1799：「已制卡」徽章向 Anki 复核的单次在途守卫。切回前台可能连发多次
   /// （resumed 事件 + 首帧），复核本身是一次网络往返，重入只会白打。
   bool _revalidatingMined = false;
-  bool _popupOverlayRebuildScheduled = false;
   String? _activeLineId;
   String? _activeSentence;
   bool _followLive = true;
@@ -615,6 +614,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   @override
   void initState() {
     super.initState();
+    _popupHost =
+        SharedLookupPopupScope.maybeOf(context) ??
+        (_ownedPopupHost = SharedLookupPopupHost());
+    // 登记为宿主页；成为渲染方时经 [onSharedLookupPopupClaimed] 接线查词计数。
+    _popupHost.attach(this);
     final List<TexthookerLineEntry> initialLines =
         TexthookerService.instance.entries;
     _lastObservedLineId = initialLines.isEmpty ? null : initialLines.last.id;
@@ -626,8 +630,6 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     // BUG-1799：监听前台/后台切换，用户去 Anki 删卡再切回来时复核「已制卡」徽章。
     WidgetsBinding.instance.addObserver(this);
     HardwareKeyboard.instance.addHandler(_handlePopupMineHardwareKey);
-    // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
-    attachLookupCounter(_popup);
     // BUG-1028：开页 seed 常驻隐藏热槽，使查词弹窗 WebView 冷加载一次后全程复用，
     // 消除本页此前「每次点词 replaceStack 冷建 WebView」的高延迟（对齐 home_dictionary_page）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -712,66 +714,45 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     GalHookTextOverlayController.instance.attachedText.removeListener(
       _onAttachedTextChanged,
     );
-    final OverlayEntry? popupOverlay = _popupOverlayEntry;
-    if (popupOverlay != null) {
-      if (popupOverlay.mounted) popupOverlay.remove();
-      popupOverlay.dispose();
-      _popupOverlayEntry = null;
-    }
-    _popup.dispose();
+    // 共用宿主：注销即可（渲染方是本页时宿主把栈交给查词 tab 并收回热槽）；私有
+    // 宿主随本页销毁（摘浮层、释放 controller）。
+    _popupHost.detach(this);
+    _ownedPopupHost?.dispose();
     _scroll.dispose();
     super.dispose();
   }
 
   @override
   void deactivate() {
-    _overlayInert = true;
+    _popupHost.setOwnerVisible(this, false);
     super.deactivate();
   }
 
   @override
   void activate() {
     super.activate();
-    _overlayInert = false;
+    _popupHost.setOwnerVisible(this, true);
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     // BUG-953：games 是保活 tab，切走时用 Offstage 隐藏（**不触发 deactivate**），但 home_page
-    // 同步把 TickerMode 关掉。用 TickerMode 作可见性信号：tab 不可见时把插在 root Overlay 的
-    // 查词浮层置 inert 并重建（整棵 Offstage，见 [_buildPopupOverlay]），防止弹窗/barrier
-    // 跨 tab 残留遮挡新 tab；重新可见时恢复，保留用户查词浮层状态。仅 Offstage 隐藏这一路
-    // deactivate 覆盖不到。
-    final bool nextInert = !TickerMode.of(context);
-    if (nextInert != _overlayInert) {
-      _overlayInert = nextInert;
-      _schedulePopupOverlayRebuild();
-    }
-  }
-
-  /// A dependency change is delivered while this page itself is rebuilding.
-  /// The popup lives in the root Overlay, which is an ancestor rather than a
-  /// descendant of this element, so dirtying its entry synchronously from
-  /// [didChangeDependencies] violates Flutter's build ordering and can corrupt
-  /// the subsequent LayoutBuilder dirty queue. Coalesce visibility changes and
-  /// update the overlay only after the current frame has finished building.
-  void _schedulePopupOverlayRebuild() {
-    if (_popupOverlayRebuildScheduled) return;
-    _popupOverlayRebuildScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _popupOverlayRebuildScheduled = false;
-      if (!mounted) return;
-      final OverlayEntry? entry = _popupOverlayEntry;
-      if (entry != null && entry.mounted) {
-        entry.markNeedsBuild();
-      }
-    });
+    // 同步把 TickerMode 关掉。用 TickerMode 作可见性信号上报宿主：本页是渲染方而不可见时，
+    // 插在 root Overlay 的查词浮层置 inert（整棵 Offstage，见 [SharedLookupPopupHost]），防止
+    // 弹窗/barrier 跨 tab 残留遮挡新 tab；重新可见时恢复，保留用户查词浮层状态。仅 Offstage
+    // 隐藏这一路 deactivate 覆盖不到。宿主在帧后刷新浮层（根 Overlay 是祖先，build 期间
+    // 不能反向标脏）。
+    _popupHost.setOwnerVisible(this, TickerMode.of(context));
   }
 
   /// 测试可见：查词浮层当前是否被置为 inert（隐藏 tab / 失活时收起）。BUG-953 守卫用。
   @visibleForTesting
-  bool get debugOverlayInert => _overlayInert;
+  bool get debugOverlayInert => _popupHost.overlayInert;
+
+  /// 测试可见：本页用的查词浮层宿主（共用 / 私有）。
+  @visibleForTesting
+  SharedLookupPopupHost get debugPopupHost => _popupHost;
 
   /// Installs the root-overlay host without starting a dictionary lookup.
   ///
@@ -783,14 +764,40 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// 这里把宿主钉住，免得 [_syncPopupOverlay] 在下一帧按「栈空」把它摘掉。
   @visibleForTesting
   void debugMountPopupOverlayForTesting() {
-    _debugPopupOverlayPinned = true;
-    if (_popupOverlayEntry != null) return;
-    final OverlayState? overlay = Overlay.maybeOf(context, rootOverlay: true);
-    if (overlay == null) return;
-    final OverlayEntry entry = OverlayEntry(builder: _buildPopupOverlay);
-    _popupOverlayEntry = entry;
-    overlay.insert(entry);
+    _popupHost.debugPinForTesting(context);
   }
+
+  // ── SharedLookupPopupOwner ─────────────────────────────────────────
+
+  @override
+  List<Widget> buildSharedLookupPopupLayers(
+    BuildContext context,
+    Size screen,
+  ) => _buildPopups(context, screen);
+
+  @override
+  ThemeData? get sharedLookupPopupTheme => _appModel.overrideDictionaryTheme;
+
+  @override
+  bool get sharedLookupPopupOwnerAlive => mounted;
+
+  /// TODO-1204：成为弹窗栈渲染方时接线查词计数（每次查词 +1 → lookup_mining_counters，
+  /// 归游戏域）。
+  @override
+  void onSharedLookupPopupClaimed(DictionaryPopupController controller) =>
+      attachLookupCounter(controller);
+
+  /// 本页的查词会话此刻在屏上有可见弹窗：栈归本页、本页可见、且有可见层。共用宿主
+  /// 时栈可能是查词 tab 的会话——那时本页的快捷键不能去碰别人的弹窗。
+  bool get _ownsVisiblePopup =>
+      _popupHost.isRenderOwner(this) &&
+      !_popupHost.overlayInert &&
+      _popup.hasVisiblePopup;
+
+  /// 测试可见：制卡热键（[_handlePopupMineHardwareKey] / [_mineFromTopPopup]）此刻是否
+  /// 会作用到弹窗。
+  @visibleForTesting
+  bool get debugPopupMineHotkeyArmed => _ownsVisiblePopup;
 
   /// BUG-1137：texthooker 页制出的卡归「游戏」分类标签——外部窗口模式走
   /// [GalHookMiningCoordinator]（自带 game 来源），fallback 纯文本卡走 mixin 的
@@ -1753,6 +1760,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final String word = lookupQueryFromIndex(line.text, charIndex);
     if (word.isEmpty) return;
     _selectLine(line);
+    // 共用宿主：栈里若是查词 tab 的会话，先收回热槽、渲染方换成本页。
+    _popupHost.claimForLookup(this);
     // BUG-1028：顶层查词复用常驻热槽（reuseWarmSlot:true）而非 replaceStack 冷建，
     // 复用已预热的弹窗 WebView，消除冷启动延迟（对齐 home_dictionary_page.dart:752）。
     // 无热槽（低内存 / seed 未就绪）时 beginTop 自动退回压新层，行为不变。
@@ -1785,7 +1794,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// 在宿主侧把 [ShortcutAction.popupMineEntry]（默认 Ctrl+Enter）接回当前
   /// 顶层弹窗的既有制卡按钮；执行体仍走 WebView 的三态、查重与单飞门。
   void _mineFromTopPopup() {
-    if (!_popup.hasVisiblePopup) return;
+    if (!_ownsVisiblePopup) return;
     final int index = _topVisiblePopupIndex;
     final DictionaryPopupWebViewState? popup =
         _popup.entries[index].webViewKey.currentState;
@@ -1799,7 +1808,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// handler 接收用户配置的制卡绑定。它先于 Focus/Shortcuts 路由处理命中的事件，
   /// 不依赖浮层焦点，也不会让同一次按键再落到 WebView 形成重复制卡。
   bool _handlePopupMineHardwareKey(KeyEvent event) {
-    if (!mounted || !_popup.hasVisiblePopup) return false;
+    if (!mounted || !_ownsVisiblePopup) return false;
     for (final InputBinding binding
         in mixinAppModel.shortcutRegistry
             .bindingsFor(ShortcutAction.popupMineEntry)
@@ -3066,8 +3075,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     );
   }
 
-  List<Widget> _buildPopups(BuildContext context) {
-    final Size screen = MediaQuery.sizeOf(context);
+  List<Widget> _buildPopups(BuildContext context, Size screen) {
     return <Widget>[
       // TODO-1052：查词浮层显示（或搜索中）时叠一层全屏 dismiss barrier——点真空白关一层
       // （逐层关，与其它表面同语义），桌面开滑动关闭时水平拖过阈亦关一层。texthooker 原
@@ -3123,78 +3131,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     ];
   }
 
-  /// 查词浮层放到根 Overlay，并把整棵浮层子树中和到净缩放 1。
+  /// 查词浮层放到根 Overlay（[SharedLookupPopupHost] 持有 entry，并把整棵浮层子树
+  /// 中和到净缩放 1）。
   ///
   /// 这样平台 WebView 不会在缩放画布内低分辨率栅格化，且点词得到的
   /// `localToGlobal` 屏幕矩形与浮层处在同一坐标系。
   void _syncPopupOverlay() {
     if (!mounted) return;
-    if (_popup.entries.isEmpty &&
-        !_popup.isSearchingUi &&
-        !_debugPopupOverlayPinned) {
-      final OverlayEntry? entry = _popupOverlayEntry;
-      if (entry != null) {
-        if (entry.mounted) entry.remove();
-        entry.dispose();
-        _popupOverlayEntry = null;
-      }
-      return;
-    }
-    if (_popupOverlayEntry != null) {
-      _popupOverlayEntry!.markNeedsBuild();
-      return;
-    }
-    final OverlayState? overlay = Overlay.maybeOf(context, rootOverlay: true);
-    if (overlay == null) return;
-    final OverlayEntry entry = OverlayEntry(builder: _buildPopupOverlay);
-    _popupOverlayEntry = entry;
-    overlay.insert(entry);
-  }
-
-  Widget _buildPopupOverlay(BuildContext overlayContext) {
-    if (!mounted) return const SizedBox.shrink();
-    // inert（所在 tab 被藏起 / 页面失活）时浮层**留在树上、整棵 Offstage**：不画、
-    // 不接点击、不持焦点、停动画，但常驻热槽的查词 WebView（BUG-1028）不拆。
-    //
-    // BUG-4896：这里曾在 inert 时收成 `SizedBox.shrink()`。热槽开页即 seed、
-    // `entries` 永不空，于是每次切出游戏 tab 都同步销毁一个 WebView2
-    // （`ICoreWebView2Controller::Close()` + `DestroyWindow`），每次切回又冷建一个并
-    // 重新装载 popup.html + JS + CSS——实测切回后约 0.3～0.4 s 处 UI 线程被堵
-    // 80～150 ms，预热也白做。祖先结构恒定、只翻 `offstage` 参数（平台视图上方的
-    // 祖先在层的生命周期内不能增删，见 [parkedPopupLayer]）。
-    final bool inert = _overlayInert;
-    // 本浮层插在 root Overlay，不是 TexthookerPage 页面子树的后代；键盘接线由
-    // 页面生命周期内的 HardwareKeyboard handler 承担，不再依赖浮层 Focus 链。
-    // BUG-2953：浮层自带导航层，弹窗里唤出的菜单画在浮层之上（见 LookupOverlayNavigator）。
-    return Offstage(
-      offstage: inert,
-      child: TickerMode(
-        enabled: !inert,
-        child: ExcludeFocus(
-          excluding: inert,
-          child: _buildPopupOverlayBody(overlayContext),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPopupOverlayBody(BuildContext overlayContext) {
-    return LookupOverlayNavigator(
-      child: FushiAppUiScaleNeutralizer(
-        child: Theme(
-          data: _appModel.overrideDictionaryTheme ?? Theme.of(overlayContext),
-          child: Builder(
-            builder: (BuildContext context) {
-              if (!mounted) return const SizedBox.shrink();
-              return Stack(
-                clipBehavior: Clip.none,
-                children: _buildPopups(context),
-              );
-            },
-          ),
-        ),
-      ),
-    );
+    _popupHost.sync(context);
   }
 }
 
