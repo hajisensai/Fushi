@@ -50,6 +50,11 @@
 | [BUG-5101](bugs/BUG-5101-sync-peer-gap-capability-reads.md) | ✅ | ✅ | 互联对端缺能力判定每轮多读能力表、逐条墓碑重复记错、降级同步被说成没同步 |
 | [BUG-5090](bugs/BUG-5090-video-scrape-sourceless-scope-issue-blank-title.md) | ✅ | ✅ | video-scrape-sourceless-scope-issue-blank-title |
 > 共 4413 条。点号进各自文件。
+> 共 4412 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5089](bugs/BUG-5089-lnreader-missing-image-path-traversal.md) | ✅ | ✅ | lnreader-missing-image-path-traversal |
 > 共 4414 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
