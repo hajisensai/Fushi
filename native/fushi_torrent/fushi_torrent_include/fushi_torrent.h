@@ -97,12 +97,14 @@ HT_EXPORT int ht_pause_torrent(void* session, const char* info_hash,
                                int pause);
 
 // 单种子「停止上传、继续下载」（fRmEhU4XIK：分享率按整个生命周期计算，下载
-// 途中达到上限也要停上传）。libtorrent 没有 per-torrent 的「零上传」原语：
-// torrent_handle::set_upload_limit / set_max_uploads 的 0 与 -1 都表示「不限」，
-// 唯一的「停」是把该种子的上传带宽限到下限 1 B/s（一个 16 KiB block 需数小时，
-// 等效于不发 payload；piece 请求是协议消息不走上传配额，下载不受影响）。
-// [blocked] 非 0 = 限到 1 B/s；0 = 清除单种子上传限速（-1，回到会话级限速）。
-// 该限速会随 fastResume 落盘，宿主每次启动首轮 sweep 都会重新下发真实意图。
+// 途中达到上限也要停上传）。libtorrent 没有 per-torrent 的「零上传」原语，且
+// per-torrent 限速（set_upload_limit）管的是连接上全部出向字节 —— 握手 /
+// request 也走它，限到 1 B/s 会把下载一起饿死（BUG-5071）。故桥内挂一个
+// session 插件只拦 piece payload：截停期间吞掉对端 request、生效时 choke 已
+// unchoke 的连接并把该种子 unchoke 名额压到 1；解除时恢复名额、给已表态
+// interested 的连接补 unchoke。控制消息与本端下载一概不受影响。
+// [blocked] 非 0 = 截停；0 = 解除。截停状态不落盘，宿主每次启动首轮 sweep
+// 重新下发真实意图（ht_load_resume_dir 同时清掉旧版本落盘的单种子限速残留）。
 // 返回 1 成功、0 失败（种子不存在 / 异常）。
 HT_EXPORT int ht_set_torrent_upload_blocked(void* session,
                                             const char* info_hash,
@@ -274,7 +276,10 @@ HT_EXPORT char* ht_save_resume_data(void* session, const char* out_dir,
 // added=0 而非错误。坏文件逐个跳过并计入 failed，绝不因一个坏文件整批失败。
 //
 // add 语义与 ht_add_magnet 一致：清 paused 旗标，加回来即开始跑。已在 session
-// 里的重复种子按成功计（幂等，可重复调用）。
+// 里的重复种子按成功计（幂等，可重复调用）。例外（BUG-5072）：resume 声称持有
+// 数据而 save_path 此刻不存在（盘未挂载等）时保持暂停并清 auto_managed
+// ——否则 libtorrent 会在空路径上全检得 0 片并把全 0 位图写回 .resume，
+// 路径恢复后也不再校验。暂停期间保存的是空位图，下次路径可达时自动全量校验。
 //
 // 返回 JSON：{"ok":true,"added":N,"failed":M,"ids":["<infohash>",...]}。
 HT_EXPORT char* ht_load_resume_dir(void* session, const char* dir);

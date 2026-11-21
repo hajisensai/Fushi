@@ -123,4 +123,126 @@ void main() {
     skip: skip,
     timeout: const Timeout(Duration(minutes: 3)),
   );
+
+  // BUG-5071：单种子「停上传、续下载」（fRmEhU4XIK，分享率达标下载途中截停）
+  // 旧实现是 set_upload_limit(1)——per-torrent 限速管的是该种子连接上的
+  // **全部**出向字节（握手 / interested / request 都要排 1 B/s 的预算），
+  // 下载随之饿死。新实现只拦 piece payload，控制消息照常。
+  test(
+    'download completes while the torrent itself is upload-blocked',
+    () async {
+      final LocalSeedRig rig = await LocalSeedRig.start(
+        engine: engine!,
+        workDir: tempDir,
+        contentBytes: 2 * 1024 * 1024,
+      );
+      addTearDown(rig.dispose);
+
+      final EmbeddedTorrentSession? leecher = EmbeddedTorrentSession.open(
+        engine,
+        listenInterfaces: '127.0.0.1:0',
+      );
+      expect(leecher, isNotNull);
+      addTearDown(leecher!.close);
+      expect(leecher.supportsTorrentUploadBlock, isTrue);
+
+      final Directory dlDir = Directory('${tempDir.path}/dl')..createSync();
+      final FtAddResult added = leecher.addMagnet(
+        rig.magnetUri,
+        savePath: dlDir.path,
+      );
+      expect(added.ok, isTrue, reason: 'addMagnet: ${added.error}');
+      // 下载开始前就截停该种子的上传（= 生产里分享率在下载途中达标）。
+      expect(
+        leecher.setTorrentUploadBlocked(rig.infoHash, blocked: true),
+        isTrue,
+      );
+      expect(
+        leecher.connectPeer(rig.infoHash, '127.0.0.1', rig.seederPort),
+        isTrue,
+      );
+
+      await _pollUntil(
+        () => leecher.listTorrents().any(
+          (FtTorrentStatus t) => t.id == rig.infoHash && t.isFinished,
+        ),
+        timeout: const Duration(seconds: 60),
+        what: 'download completion with the torrent upload-blocked',
+        onTick: () =>
+            leecher.connectPeer(rig.infoHash, '127.0.0.1', rig.seederPort),
+      );
+    },
+    skip: skip,
+    timeout: const Timeout(Duration(minutes: 3)),
+  );
+
+  // 截停的另一半语义：被截停的一方确实不再供出 payload；解除后对端立即
+  // 能续上（截停期间被压住的 interested 要在解除时补回，否则对端以为自己
+  // 已表态、本端却永远不 unchoke）。
+  test(
+    'upload-blocked seeder serves no payload until unblocked',
+    () async {
+      final LocalSeedRig rig = await LocalSeedRig.start(
+        engine: engine!,
+        workDir: tempDir,
+        contentBytes: 2 * 1024 * 1024,
+      );
+      addTearDown(rig.dispose);
+      expect(
+        rig.seeder.setTorrentUploadBlocked(rig.infoHash, blocked: true),
+        isTrue,
+      );
+
+      final EmbeddedTorrentSession? leecher = EmbeddedTorrentSession.open(
+        engine,
+        listenInterfaces: '127.0.0.1:0',
+      );
+      expect(leecher, isNotNull);
+      addTearDown(leecher!.close);
+
+      final Directory dlDir = Directory('${tempDir.path}/dl')..createSync();
+      final FtAddResult added = leecher.addMagnet(
+        rig.magnetUri,
+        savePath: dlDir.path,
+      );
+      expect(added.ok, isTrue, reason: 'addMagnet: ${added.error}');
+
+      FtTorrentStatus? leech() {
+        for (final FtTorrentStatus t in leecher.listTorrents()) {
+          if (t.id == rig.infoHash) return t;
+        }
+        return null;
+      }
+
+      // 先等连上并拿到元数据（ut_metadata 是控制面，截停不该挡它）。
+      await _pollUntil(
+        () => (leech()?.total ?? 0) > 0,
+        timeout: const Duration(seconds: 30),
+        what: 'metadata from the upload-blocked seeder',
+        onTick: () =>
+            leecher.connectPeer(rig.infoHash, '127.0.0.1', rig.seederPort),
+      );
+      // 截停期间给足请求窗口：一个 payload 字节都不该过来。
+      final Stopwatch window = Stopwatch()..start();
+      while (window.elapsed < const Duration(seconds: 5)) {
+        leecher.connectPeer(rig.infoHash, '127.0.0.1', rig.seederPort);
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      }
+      expect(leech()!.done, 0, reason: 'blocked seeder leaked payload');
+
+      expect(
+        rig.seeder.setTorrentUploadBlocked(rig.infoHash, blocked: false),
+        isTrue,
+      );
+      await _pollUntil(
+        () => leech()?.isFinished ?? false,
+        timeout: const Duration(seconds: 60),
+        what: 'download completion after unblocking the seeder',
+        onTick: () =>
+            leecher.connectPeer(rig.infoHash, '127.0.0.1', rig.seederPort),
+      );
+    },
+    skip: skip,
+    timeout: const Timeout(Duration(minutes: 3)),
+  );
 }

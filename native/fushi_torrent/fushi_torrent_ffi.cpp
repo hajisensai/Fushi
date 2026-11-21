@@ -19,8 +19,11 @@
 #include <libtorrent/create_torrent.hpp>
 #include <libtorrent/download_priority.hpp>
 #include <libtorrent/error_code.hpp>
+#include <libtorrent/extensions.hpp>
 #include <libtorrent/ip_filter.hpp>
 #include <libtorrent/magnet_uri.hpp>
+#include <libtorrent/peer_connection_handle.hpp>
+#include <libtorrent/peer_request.hpp>
 #include <libtorrent/peer_class.hpp>
 #include <libtorrent/read_resume_data.hpp>
 #include <libtorrent/portmap.hpp>
@@ -36,6 +39,7 @@
 #include <libtorrent/write_resume_data.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <chrono>
 #include <cstdint>
@@ -45,6 +49,8 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -275,6 +281,104 @@ struct StorageOp {
   }
 };
 
+// ── BUG-5071：单种子「停上传、续下载」闸（fRmEhU4XIK）──────────────────────
+//
+// libtorrent 没有 per-torrent 的「零上传」原语。旧实现拿 set_upload_limit(1)
+// 冒充，但 per-torrent 限速走的是该种子 peer class 的上传带宽通道，管的是
+// 连接上**全部**出向字节：握手（68 B 要排 68 s 预算）、interested、request、
+// ut_metadata 都得排队，下载被一起饿死（分享率在下载途中达标的种子永久
+// 卡住，限速还随 fastResume 落盘）。set_max_uploads 的 0/-1 都是「不限」。
+//
+// 正确的位置是 payload 本身：piece 只会作为对 request 的应答发出，所以
+// 截停期间吞掉对端的 request（含 allowed-fast），控制消息一概不动。附带
+// 两件不让截停「看着像在传」的事：
+// - 截停生效那一刻 choke 已 unchoke 的对端（choke 会顺带 reject 已排队的
+//   请求），并把该种子的 unchoke 名额压到 1，免得 choker 把一堆全局上传
+//   槽位浪费在只会被吞请求的连接上；
+// - 解除那一刻把仍被 choke 着、但对端早已表态 interested 的连接补一次
+//   unchoke 机会 —— 尤其是本地对端（ignore_unchoke_slots，choker 不管它们，
+//   只在收到 interested 时 unchoke 一次），不补就永远卡在 choked。
+// 状态只在 libtorrent 网络线程读（peer_plugin 回调），由 FFI 线程写；单个
+// atomic<bool> 足矣。
+struct UploadGate {
+  std::atomic<bool> blocked{false};
+};
+
+class UploadGatePeerPlugin final : public lt::peer_plugin {
+ public:
+  UploadGatePeerPlugin(lt::peer_connection_handle pc,
+                       std::shared_ptr<UploadGate> gate)
+      : pc_(std::move(pc)),
+        gate_(std::move(gate)),
+        applied_(gate_->blocked.load()) {}
+
+  lt::string_view type() const override { return "fushi_upload_gate"; }
+
+  bool on_request(const lt::peer_request&) override {
+    // true = 已处理，libtorrent 不再排这个请求 → 不发 piece。
+    return gate_->blocked.load();
+  }
+
+  void tick() override {
+    const bool blocked = gate_->blocked.load();
+    if (blocked == applied_) return;
+    applied_ = blocked;
+    if (pc_.is_disconnecting() || pc_.is_connecting()) return;
+    if (blocked) {
+      pc_.choke_this_peer();  // 已 choke 时是 no-op
+    } else if (pc_.is_choked() && pc_.is_peer_interested()) {
+      pc_.maybe_unchoke_this_peer();
+    }
+  }
+
+ private:
+  lt::peer_connection_handle pc_;
+  std::shared_ptr<UploadGate> gate_;
+  bool applied_;  // 本连接已落实的截停状态（边沿触发，免得与 choker 拉锯）
+};
+
+class UploadGateTorrentPlugin final : public lt::torrent_plugin {
+ public:
+  explicit UploadGateTorrentPlugin(std::shared_ptr<UploadGate> gate)
+      : gate_(std::move(gate)) {}
+
+  std::shared_ptr<lt::peer_plugin> new_connection(
+      const lt::peer_connection_handle& pc) override {
+    return std::make_shared<UploadGatePeerPlugin>(pc, gate_);
+  }
+
+ private:
+  std::shared_ptr<UploadGate> gate_;
+};
+
+// session 级插件：每个种子入 session 时发一个闸，按 torrent_handle 登记，
+// FFI 侧按 handle 找到闸翻转。种子销毁 → torrent_plugin 析构 → 闸随之过期。
+class UploadGatePlugin final : public lt::plugin {
+ public:
+  std::shared_ptr<lt::torrent_plugin> new_torrent(
+      const lt::torrent_handle& h, lt::client_data_t) override {
+    auto gate = std::make_shared<UploadGate>();
+    {
+      std::lock_guard<std::mutex> lock(mu_);
+      for (auto it = gates_.begin(); it != gates_.end();) {
+        it = it->second.expired() ? gates_.erase(it) : std::next(it);
+      }
+      gates_[h] = gate;
+    }
+    return std::make_shared<UploadGateTorrentPlugin>(std::move(gate));
+  }
+
+  std::shared_ptr<UploadGate> find(const lt::torrent_handle& h) {
+    std::lock_guard<std::mutex> lock(mu_);
+    const auto it = gates_.find(h);
+    return it == gates_.end() ? nullptr : it->second.lock();
+  }
+
+ private:
+  std::mutex mu_;
+  std::map<lt::torrent_handle, std::weak_ptr<UploadGate>> gates_;
+};
+
 // session 句柄的真身：拥有 lt::session + 已收割待取的 alert 队列。
 //
 // TODO-1961-b：为什么必须有队列 —— `pop_alerts` 是**破坏性**的（取走即从
@@ -284,9 +388,16 @@ struct StorageOp {
 // 的。正解不是加第二个 pop 点，而是**一个 session 只有一个收割点**
 // （[drain_alerts]），收割后按类型分派进各自队列，各 poll 函数只读自己的队列。
 struct ht_session_ctx {
-  explicit ht_session_ctx(lt::settings_pack sp) : ses(std::move(sp)) {}
+  explicit ht_session_ctx(lt::settings_pack sp)
+      : ses(std::move(sp)), upload_gate(std::make_shared<UploadGatePlugin>()) {
+    // 先于任何 add_torrent 注册（同一网络线程按序执行），每个种子都带闸。
+    ses.add_extension(upload_gate);
+  }
 
   lt::session ses;
+
+  // BUG-5071：单种子停上传闸（ht_set_torrent_upload_blocked 翻转）。
+  std::shared_ptr<UploadGatePlugin> upload_gate;
 
   // 已收割待取的 piece 完成事件。
   std::vector<PieceEvent> pieces;
@@ -956,8 +1067,14 @@ HT_EXPORT int ht_set_torrent_upload_blocked(void* session,
   try {
     lt::torrent_handle h = find_torrent(as_session(session), info_hash);
     if (!h.is_valid()) return 0;
-    // 0 / -1 在 libtorrent 里都是「不限」，1 B/s 是可表达的最低上传限速。
-    h.set_upload_limit(blocked != 0 ? 1 : -1);
+    // BUG-5071：只拦 payload（见 UploadGate），绝不用 per-torrent 限速 ——
+    // 那会连握手 / request 一起饿死，下载随之永久卡住。
+    const std::shared_ptr<UploadGate> gate = as_ctx(session)->upload_gate->find(h);
+    if (!gate) return 0;
+    const bool want = blocked != 0;
+    gate->blocked.store(want);
+    // 截停期间该种子最多占 1 个 unchoke 名额（0 在 libtorrent 里是「不限」）。
+    h.set_max_uploads(want ? 1 : -1);
     return 1;
   } catch (...) {
     return 0;
@@ -1632,10 +1749,37 @@ HT_EXPORT char* ht_load_resume_dir(void* session, const char* dir) {
       }
       // 与 add_with_params 同一语义：本引擎的 add = 「开始跑」。resume 里
       // 存的 paused 旗标必须清掉，否则加回来是暂停态，既不续传也不做种。
-      params.flags &= ~lt::torrent_flags::paused;
+      //
+      // BUG-5072 例外：resume 声称持有数据、而 save_path 此刻不存在（盘未
+      // 挂载 / 网络盘未重连 / 目录被挪走）。照常开跑的话 libtorrent 拒掉
+      // fast-resume 后在空路径上全检得 0 片（torrent.cpp on_resume_data_checked
+      // → start_checking），周期快照随即把「全长全 0」位图写回 .resume；
+      // 而全 0 位图下次加载时无片可核、fast-resume 被直接接受，路径回来也
+      // 永不再校验，从 0% 重下。保持暂停（并清 auto_managed，免得队列管理
+      // 器自动 resume）则不会开始全检，期间写出的是空位图，下次路径可达时
+      // libtorrent 对已有文件做全量校验，进度原样找回。
+      std::error_code save_path_ec;
+      const bool holds_data =
+          !params.have_pieces.none_set() ||
+          bool(params.flags & lt::torrent_flags::seed_mode);
+      const bool save_path_missing =
+          holds_data &&
+          !std::filesystem::exists(std::filesystem::u8path(params.save_path),
+                                   save_path_ec);
+      if (save_path_missing) {
+        params.flags |= lt::torrent_flags::paused;
+        params.flags &= ~lt::torrent_flags::auto_managed;
+      } else {
+        params.flags &= ~lt::torrent_flags::paused;
+      }
       // BUG-1293：旧版本把「关上传」误写成置 upload_mode（实际语义是停止
       // 下载），已升级用户的 resume 里可能带着残留 flag，加载时一律治愈。
       params.flags &= ~lt::torrent_flags::upload_mode;
+      // BUG-5071：旧版本单种子停上传用 set_upload_limit(1)，随 fastResume 落盘
+      // 后种子一加载就饿死。本桥没有任何 per-torrent 限速功能（限速只走会话
+      // 级 ht_apply_limits），所以 resume 里的单种子限速一律是那条 bug 的残留，
+      // 清掉；截停意图由宿主首轮 sweep 经 ht_set_torrent_upload_blocked 重下。
+      params.upload_limit = -1;
       lt::error_code add_ec;
       lt::torrent_handle h = ses->add_torrent(std::move(params), add_ec);
       if ((add_ec && add_ec != lt::errors::duplicate_torrent) ||
