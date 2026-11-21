@@ -4,6 +4,7 @@
 // （与 lnreader_online_book_test 同一做法），取页 / 取图换成测试缝。
 //
 // 🔴 本文件不调 `TestWidgetsFlutterBinding.ensureInitialized()`（同 lnreader_online_book_test）。
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -21,6 +22,7 @@ import 'package:fushi/src/media/novel/web/web_novel_library.dart';
 import 'package:fushi/src/media/novel/web/web_novel_page_fetcher.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
+import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_web_core/fushi_web_core.dart';
 import 'package:fushi_web_core/testing.dart';
 import 'package:path/path.dart' as p;
@@ -55,6 +57,15 @@ class _FakeFetcher implements WebNovelPageFetcher {
   }
 }
 
+/// 浏览器预览的结果（[WebNovelLibrary.save] 的输入）。
+typedef _Preview = ({
+  WebNovelFetchedPage page,
+  WebNovelSnapshot snapshot,
+  int index,
+  WebNovelChapterContent content,
+  EpubBookRow? existing,
+});
+
 void main() {
   final Directory vectors = locateWebCoreVectors()!;
   Uint8List fixture(String name) =>
@@ -71,9 +82,16 @@ void main() {
   late int imports;
   late int rebuilds;
 
+  /// 非 null 时，就地重建进来先完成 [rebuildEntered]、再等它放行（模拟浏览器并章
+  /// 重建解压树正在进行）。
+  Completer<void>? rebuildGate;
+  Completer<void>? rebuildEntered;
+
   setUp(() async {
     imports = 0;
     rebuilds = 0;
+    rebuildGate = null;
+    rebuildEntered = null;
     root = await Directory.systemTemp.createTemp('web_novel_library_');
     db = FushiDatabase.forTesting(NativeDatabase.memory());
   });
@@ -89,6 +107,11 @@ void main() {
     required String extractDir,
   }) async {
     rebuilds++;
+    final Completer<void>? gate = rebuildGate;
+    if (gate != null) {
+      rebuildEntered?.complete();
+      await gate.future;
+    }
     Directory(extractDir).deleteSync(recursive: true);
     _unzipInto(File(epubFilePath).readAsBytesSync(), extractDir);
     final int count = Directory(p.join(extractDir, 'OEBPS'))
@@ -143,10 +166,10 @@ void main() {
     rebuildInPlace: rebuildInPlace,
   );
 
-  /// 浏览器动作的核心路径：开会话（有书用书的快照）→ 喂页 → 落书。
-  Future<String> readPage(
+  /// 浏览器动作的预览段：开会话（有书用书的快照）→ 喂页 → 落成正文。
+  Future<_Preview> previewPage(
     WebNovelLibrary lib,
-    String fixtureName,
+    Uint8List html,
     String url,
   ) async {
     final String workKey = WebArticleExtractor.workKeyForUrl(Uri.parse(url))!;
@@ -155,23 +178,53 @@ void main() {
       snapshot: WebNovelSnapshot.tryParse(existing?.sourceMetadata)?.raw,
     );
     try {
-      final WebNovelIngest ingest = await session.ingest(
-        fixture(fixtureName),
-        Uri.parse(url),
-      );
-      expect(ingest.status.accepted, isTrue, reason: fixtureName);
-      return await lib.save(
+      final WebNovelIngest ingest = await session.ingest(html, Uri.parse(url));
+      expect(ingest.status.accepted, isTrue, reason: url);
+      return (
+        page: (html: html, url: Uri.parse(url)),
         snapshot: session.snapshot(),
-        chapterIndex: ingest.index!,
+        index: ingest.index!,
         content: await lib.materialize(ingest.article),
-        pendingText: pending,
-        nextChapterTitle: nextTitle,
         existing: existing,
       );
     } finally {
       session.close();
     }
   }
+
+  /// 浏览器动作的确认段：落书。
+  Future<({String bookKey, int chapterIndex})> commitPreview(
+    WebNovelLibrary lib,
+    _Preview preview,
+  ) => lib.save(
+    page: preview.page,
+    snapshot: preview.snapshot,
+    chapterIndex: preview.index,
+    content: preview.content,
+    pendingText: pending,
+    nextChapterTitle: nextTitle,
+    existing: preview.existing,
+  );
+
+  /// 浏览器动作的核心路径：预览后立刻确认。
+  Future<String> readPage(
+    WebNovelLibrary lib,
+    String fixtureName,
+    String url,
+  ) async => (await commitPreview(
+    lib,
+    await previewPage(lib, fixture(fixtureName), url),
+  )).bookKey;
+
+  /// 第 2 话的页：用第 10 话的页冒充（会话只看 URL / 链接 / 指纹），正文改一句，
+  /// 让内容指纹与真第 10 话不同（会话按 URL 或指纹去重）。
+  Uint8List ch2Page() => Uint8List.fromList(
+    utf8.encode(
+      utf8
+          .decode(fixture('syosetu_n9669bk_10.html'))
+          .replaceAll('ゼニスの妊娠がわかった。', 'ノルンの誕生日だった。'),
+    ),
+  );
 
   String chapterText(EpubBookRow row, int index) =>
       lnReaderOnlineChapterFile(row.extractDir, index).readAsStringSync();
@@ -331,9 +384,16 @@ void main() {
     final String grownOpf = withoutModified(package('content.opf'));
     expect(grownNav, isNot(contains('chapter-2.xhtml">$nextTitle<')));
     expect(grownNav, contains('chapter-3.xhtml">$nextTitle<'));
+    // 补占位以书行当前状态为准：把书行 spine 改回「没有占位」逼它整本重建一次。
+    await db.updateEpubBookMihonState(
+      bookKey,
+      sourceMetadata: row.sourceMetadata!,
+      chapterCount: 2,
+      chaptersJson: row.chaptersJson,
+    );
     expect(
       await lib.ensureTrailingPlaceholder(
-        row.copyWith(chapterCount: 2),
+        row,
         pendingText: pending,
         nextChapterTitle: nextTitle,
       ),
@@ -706,5 +766,177 @@ void main() {
       ),
       same(plain),
     );
+  });
+
+  test('HBK-AUDIT-034：浏览器预览期间阅读器追了新章，确认后在最新快照上重新并章，'
+      '阅读器写进的章不被预览时的旧快照覆盖', () async {
+    final WebNovelLibrary lib = library();
+    final String bookKey = await readPage(
+      lib,
+      'syosetu_n9669bk_1.html',
+      ch1Url,
+    );
+    // 浏览器里打开第 10 话：预览基于「只有第 1 话」的快照。
+    final _Preview preview = await previewPage(
+      lib,
+      fixture('syosetu_n9669bk_10.html'),
+      ch10Url,
+    );
+    expect(preview.index, 1);
+    // 预览对话框开着时，阅读器读到末尾占位、追回第 2 话并提交。
+    final EpubBookRow before = (await db.getEpubBook(bookKey))!;
+    final OnlineNovelChapterLoaded? loaded = await WebNovelChapterLoader(
+      database: db,
+      library: lib,
+      fetcher: _FakeFetcher(<String, WebNovelFetchedPage>{
+        ch2Url: (html: ch2Page(), url: Uri.parse(ch2Url)),
+      }),
+      bookKey: bookKey,
+      extractDir: before.extractDir,
+      pendingText: pending,
+      nextChapterTitle: nextTitle,
+    ).ensureLoaded(lnReaderOnlineChapterFile(before.extractDir, 1).path);
+    expect(loaded?.index, 1);
+
+    // 用户确认预览。
+    final ({String bookKey, int chapterIndex}) saved = await commitPreview(
+      lib,
+      preview,
+    );
+    expect(saved.bookKey, bookKey);
+    final EpubBookRow row = (await db.getEpubBook(bookKey))!;
+    final WebNovelSnapshot snapshot = WebNovelSnapshot.tryParse(
+      row.sourceMetadata,
+    )!;
+    expect(snapshot.chapters.map((WebNovelChapter c) => c.url), <String>[
+      ch1Url,
+      ch2Url,
+      ch10Url,
+    ]);
+    // 第 10 话在最新快照里的序号（开书跳转用它）。
+    expect(saved.chapterIndex, 2);
+    expect(chapterText(row, 1), contains('ノルンの誕生日だった。'));
+    expect(chapterText(row, 2), contains('ゼニスの妊娠がわかった。'));
+    expect(row.chapterCount, 4);
+    expect(chapterText(row, 3), contains(kLnReaderPendingChapterAttribute));
+  });
+
+  test('HBK-AUDIT-034：浏览器并章正在重建解压树时阅读器追章，提交排在它之后、'
+      '以并章后的书行为准，不把取回的章当成已被别的章占住的位置交回', () async {
+    final WebNovelLibrary lib = library();
+    final String bookKey = await readPage(
+      lib,
+      'syosetu_n9669bk_1.html',
+      ch1Url,
+    );
+    final EpubBookRow before = (await db.getEpubBook(bookKey))!;
+    final _Preview preview = await previewPage(
+      lib,
+      fixture('syosetu_n9669bk_10.html'),
+      ch10Url,
+    );
+    rebuildGate = Completer<void>();
+    rebuildEntered = Completer<void>();
+    final Future<({String bookKey, int chapterIndex})> saving = commitPreview(
+      lib,
+      preview,
+    );
+    await rebuildEntered!.future;
+
+    bool loaderDone = false;
+    final Future<OnlineNovelChapterLoaded?> loading = WebNovelChapterLoader(
+      database: db,
+      library: lib,
+      fetcher: _FakeFetcher(<String, WebNovelFetchedPage>{
+        ch2Url: (html: ch2Page(), url: Uri.parse(ch2Url)),
+      }),
+      bookKey: bookKey,
+      extractDir: before.extractDir,
+      pendingText: pending,
+      nextChapterTitle: nextTitle,
+    ).ensureLoaded(lnReaderOnlineChapterFile(before.extractDir, 1).path);
+    unawaited(loading.whenComplete(() => loaderDone = true));
+    // 等阅读器的提交排进这本书的提交队列（不串行的实现会不等、直接写完）。
+    final Stopwatch waited = Stopwatch()..start();
+    while (!loaderDone && webNovelBookCommits.queued(bookKey) < 2) {
+      expect(waited.elapsed, lessThan(const Duration(seconds: 30)));
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    rebuildGate!.complete();
+    final ({String bookKey, int chapterIndex}) saved = await saving;
+    final OnlineNovelChapterLoaded? loaded = await loading;
+
+    final EpubBookRow row = (await db.getEpubBook(bookKey))!;
+    final WebNovelSnapshot snapshot = WebNovelSnapshot.tryParse(
+      row.sourceMetadata,
+    )!;
+    expect(snapshot.chapters.map((WebNovelChapter c) => c.url), <String>[
+      ch1Url,
+      ch10Url,
+    ]);
+    expect(saved.chapterIndex, 1);
+    // 第 2 项已是浏览器并进的第 10 话：阅读器那次取回的第 2 话不能当作第 2 项交回
+    // （否则阅读器内存里的字数 / spine 与盘上、书行都对不上）。
+    expect(loaded, isNull);
+    expect(chapterText(row, 1), contains('ゼニスの妊娠がわかった。'));
+    expect(chapterText(row, 1), isNot(contains('ノルンの誕生日だった。')));
+    expect(webNovelBookCommits.queued(bookKey), 0);
+  });
+
+  test('HBK-AUDIT-040：追章只重数这一章与新占位的字数，其余章沿用书行里的'
+      '（不重读整本正文）', () async {
+    final WebNovelLibrary lib = library();
+    final String bookKey = await readPage(
+      lib,
+      'syosetu_n9669bk_1.html',
+      ch1Url,
+    );
+    EpubBookRow row = (await db.getEpubBook(bookKey))!;
+    // 书行换成真实导入口径的 chaptersJson（测试的假重建不数字数）。
+    final ({int chapterCount, String chaptersJson, String? coverPath})
+    reparsed = await EpubImporter.reparseExtractedBook(row.extractDir);
+    await db.updateEpubBookMihonState(
+      bookKey,
+      sourceMetadata: row.sourceMetadata!,
+      chapterCount: reparsed.chapterCount,
+      chaptersJson: reparsed.chaptersJson,
+    );
+    int charactersOf(String chaptersJson, int index) =>
+        ((jsonDecode(chaptersJson) as List<Object?>)[index]!
+                as Map<String, Object?>)['characters']!
+            as int;
+    final int firstCount = charactersOf(reparsed.chaptersJson, 0);
+    expect(firstCount, greaterThan(100));
+    // 第 1 章的文件被改大、书行没变：追章后它的字数仍是书行里的，说明没被重读。
+    final File first = lnReaderOnlineChapterFile(row.extractDir, 0);
+    first.writeAsStringSync(
+      first.readAsStringSync().replaceFirst(
+        '</section>',
+        '<p>${'あ' * 500}</p></section>',
+      ),
+    );
+
+    final OnlineNovelChapterLoaded? loaded = await WebNovelChapterLoader(
+      database: db,
+      library: lib,
+      fetcher: _FakeFetcher(<String, WebNovelFetchedPage>{
+        ch2Url: (html: ch2Page(), url: Uri.parse(ch2Url)),
+      }),
+      bookKey: bookKey,
+      extractDir: row.extractDir,
+      pendingText: pending,
+      nextChapterTitle: nextTitle,
+    ).ensureLoaded(lnReaderOnlineChapterFile(row.extractDir, 1).path);
+
+    row = (await db.getEpubBook(bookKey))!;
+    expect(row.chapterCount, 3);
+    expect(charactersOf(row.chaptersJson, 0), firstCount);
+    expect(loaded!.characters, greaterThan(100));
+    expect(charactersOf(row.chaptersJson, 1), loaded.characters);
+    expect(loaded.grownSpineCharacters, <int>[
+      firstCount,
+      loaded.characters!,
+      charactersOf(row.chaptersJson, 2),
+    ]);
   });
 }
