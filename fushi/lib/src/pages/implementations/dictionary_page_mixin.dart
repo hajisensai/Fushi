@@ -749,10 +749,7 @@ mixin DictionaryPageMixin {
     if (pending == null) return null;
     final CrossAppAudioSnapshot? snapshot = await pending;
     if (snapshot == null) return null;
-    return prepareCrossAppSentenceAudio(
-      snapshot,
-      encode: CrossAppAudioCapture.instance.encodeAac,
-    );
+    return CrossAppAudioCapture.instance.prepareSentenceAudio(snapshot);
   }
 
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {

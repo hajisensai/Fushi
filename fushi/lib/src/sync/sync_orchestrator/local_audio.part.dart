@@ -50,7 +50,9 @@ extension _SyncOrchestratorLocalAudio on SyncOrchestrator {
     // 改过名就会再传一次。两边都有库时才记——这时匹配结果才受影响。
     if (remoteEntries.isNotEmpty &&
         locals.isNotEmpty &&
-        !await backend.hostReportsLocalAudioContentId()) {
+        !interconnectHostReportsLocalAudioContentId(
+          await _roundHostCapabilities(report, backend),
+        )) {
       report.notePeerGap(
         SyncPeerGapDimension.localAudioIdentity,
         outdated: true,

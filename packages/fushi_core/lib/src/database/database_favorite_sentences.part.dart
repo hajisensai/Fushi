@@ -71,6 +71,22 @@ mixin _FushiDbFavoriteSentences on _$FushiDatabase, _FushiDbInfra {
         return true;
       });
 
+  /// 改一条收藏句的颜色并记下改色时刻（[colorUpdatedAtUs]，颜色的 LWW 时钟，见
+  /// `FavoriteSentences.colorUpdatedAtUs`）。返回改到的行数（id 不存在 = 0）。
+  Future<int> updateFavoriteSentenceColor(
+    String id, {
+    required String color,
+    required int colorUpdatedAtUs,
+  }) =>
+      (update(
+        favoriteSentences,
+      )..where(($FavoriteSentencesTable t) => t.id.equals(id))).write(
+        FavoriteSentencesCompanion(
+          color: Value<String?>(color),
+          colorUpdatedAtUs: Value<int?>(colorUpdatedAtUs),
+        ),
+      );
+
   /// 按 id 删，返回删掉的行数。
   Future<int> deleteFavoriteSentenceById(String id) => (delete(
     favoriteSentences,

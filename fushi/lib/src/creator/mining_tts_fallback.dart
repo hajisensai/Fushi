@@ -19,6 +19,7 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show immersionMiningAudioExtension;
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
+import 'package:fushi_engine/tts/tts_silence.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:fushi_engine/tts/tts_reject_split.dart';
@@ -395,6 +396,11 @@ Future<File?> _synthesizeAtSourceSpeed({
   required MiningTtsVoiceSource Function() voices,
   String? languageTag,
 }) async {
+  // 纯标点 / 符号词条（[ttsTextIsSilent]）没有能念的内容：合成入口只会给它一段
+  // 静音，静音进卡片比没有音频更糟，按「没有单词音频」报出来。
+  if (choice.kind != MiningTtsFallbackKind.none && ttsTextIsSilent(text)) {
+    throw WordAudioUnavailable(t.models_tts_fallback_nothing_to_read);
+  }
   switch (choice.kind) {
     case MiningTtsFallbackKind.none:
       return null;

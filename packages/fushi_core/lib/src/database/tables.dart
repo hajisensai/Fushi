@@ -1046,6 +1046,12 @@ class FavoriteSentences extends Table {
   IntColumn get normCharOffset => integer().nullable()();
   IntColumn get normCharLength => integer().nullable()();
   TextColumn get color => text().nullable()();
+
+  /// [color] 最后一次被用户改的时刻（微秒，v167，BUG-5081）：同步 / 备份合并按内容键
+  /// 去重时，颜色取这个时钟较新的一侧（LWW）；NULL = 收藏后没改过色，时钟按
+  /// [createdAtUs] 算。没有它，同一条收藏两端 createdAt 相同、合并各留本机行，改色
+  /// 永远传不到别的设备。
+  IntColumn get colorUpdatedAtUs => integer().nullable()();
   TextColumn get source => text().withDefault(const Constant('book'))();
   TextColumn get dateKey => text().nullable()();
   TextColumn get expression => text().nullable()();

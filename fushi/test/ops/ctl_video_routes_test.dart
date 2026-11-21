@@ -13,6 +13,8 @@ import 'package:fushi_engine/media/torrent/video_resource_provider.dart'
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
     show VideoMetadataLookup;
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart'
+    show kSourcelessLocalVideoScrapeScopeId, sourcelessLocalVideoScrapeScope;
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart'
     show VideoSourceScrapeWork;
@@ -323,6 +325,27 @@ void main() {
     expect(json['failedWorks'], 1);
     expect(json['errors'], <Object?>[
       <String, Object?>{'work': 'W', 'message': 'boom', 'workId': 'book:x'},
+    ]);
+  });
+
+  test('刮削报告 JSON 给范围级问题带结构化 scope，作品级问题不带', () {
+    final SourceScrapeReport report = SourceScrapeReport(
+      sourceIds: const <int>[kSourcelessLocalVideoScrapeScopeId],
+      errors: <SourceScrapeIssue>[
+        SourceScrapeIssue.scope(
+          sourcelessLocalVideoScrapeScope,
+          message: 'no provider',
+        ),
+        const SourceScrapeIssue(workTitle: 'W', message: 'boom'),
+      ],
+    );
+    expect(ctlVideoReportJson(report)['errors'], <Object?>[
+      <String, Object?>{
+        'work': '',
+        'message': 'no provider',
+        'scope': kSourcelessLocalVideoScrapeScopeId,
+      },
+      <String, Object?>{'work': 'W', 'message': 'boom'},
     ]);
   });
 

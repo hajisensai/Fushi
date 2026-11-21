@@ -44,6 +44,10 @@ class VideoFingerprintWarmer {
   DateTime? _lastFinished;
   Timer? _deferred;
 
+  /// 两个文件之间的歇息（[pause]）；[dispose] 时提前结束，不让停机多等一个 [pause]。
+  Timer? _pauseTimer;
+  Completer<void>? _pauseDone;
+
   /// 当前这一轮（含补跑）；没在跑时为 null。供测试与停机等待。
   Future<void>? get running => _running;
 
@@ -97,15 +101,40 @@ class VideoFingerprintWarmer {
         continue;
       }
       if (_disposed) return;
-      await Future<void>.delayed(pause);
+      await _rest();
     }
   }
 
-  /// 停止：之后不再开新的文件。当前在算的那个照常在后台 isolate 算完（原生哈希不可
-  /// 打断），不等它——停服务不该被一个几 GB 的文件拖住几十秒；要等用 [running]。
+  Future<void> _rest() {
+    final Completer<void> done = Completer<void>();
+    _pauseDone = done;
+    _pauseTimer = Timer(pause, _endRest);
+    return done.future;
+  }
+
+  void _endRest() {
+    _pauseTimer?.cancel();
+    _pauseTimer = null;
+    final Completer<void>? done = _pauseDone;
+    _pauseDone = null;
+    if (done != null && !done.isCompleted) done.complete();
+  }
+
+  /// 停止：之后不再开新的文件，两文件间的歇息立即结束。当前在算的那个照常在后台
+  /// isolate 算完（原生整文件哈希不可打断）；要等它收尾用 [close]。
   void dispose() {
     _disposed = true;
     _deferred?.cancel();
     _deferred = null;
+    _endRest();
+  }
+
+  /// [dispose] 并等当前这一轮收尾：返回后预热不再读任何视频文件、不再写指纹落盘缓存
+  /// （BUG-5078 / BUG-5087：host 停机后预热仍开着视频文件、仍往 sync-data 旁写
+  /// `video_fingerprints.json`，Windows 上删 host 目录报文件被占用 / 目录非空）。
+  /// 最多等正在算的那一个文件。
+  Future<void> close() async {
+    dispose();
+    await _running;
   }
 }

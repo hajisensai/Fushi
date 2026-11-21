@@ -67,6 +67,10 @@ class VideoFingerprintStore {
   Future<void>? _saving;
   bool _dirty = false;
 
+  /// 在途的 [put] 数（含它触发的落盘）；归零时完成 [_idle]。
+  int _activePuts = 0;
+  Completer<void>? _idle;
+
   Future<LinkedHashMap<String, _StoredFingerprint>> _load() {
     final LinkedHashMap<String, _StoredFingerprint>? loaded = _entries;
     if (loaded != null) return Future.value(loaded);
@@ -105,6 +109,27 @@ class VideoFingerprintStore {
   /// 记下 [absolutePath] 在状态 [stat] 下的指纹 [digest]，并等它落盘。
   Future<void> put(String absolutePath, FileStat stat, String digest) async {
     if (!_digestPattern.hasMatch(digest)) return;
+    _activePuts++;
+    try {
+      await _put(absolutePath, stat, digest);
+    } finally {
+      if (--_activePuts == 0) {
+        final Completer<void>? idle = _idle;
+        _idle = null;
+        idle?.complete();
+      }
+    }
+  }
+
+  /// 等所有在途的读盘（首次 [lookup] 的加载）与 [put]（含落盘）结束。互联 host 停机时
+  /// 先把本缓存从 `VideoSourceFingerprint.instance` 摘下再调它：返回后不会再有人写
+  /// [file]（BUG-5078 / BUG-5087）。
+  Future<void> idle() async {
+    if (_activePuts > 0) await (_idle ??= Completer<void>()).future;
+    await _loading;
+  }
+
+  Future<void> _put(String absolutePath, FileStat stat, String digest) async {
     final LinkedHashMap<String, _StoredFingerprint> map = await _load();
     map.remove(absolutePath);
     map[absolutePath] = _StoredFingerprint(

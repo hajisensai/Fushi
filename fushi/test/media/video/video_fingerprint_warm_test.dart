@@ -213,5 +213,56 @@ void main() {
       await warmer.running;
       expect(computed, hasLength(1));
     });
+
+    test('BUG-5078 / BUG-5087：close 等在算的文件与落盘收尾才返回', () async {
+      final File f = await video('a.mkv', 1);
+      final Completer<void> started = Completer<void>();
+      final Completer<void> release = Completer<void>();
+      final VideoSourceFingerprint hashes = VideoSourceFingerprint(
+        compute: (String absolutePath, FileStat stat) async {
+          started.complete();
+          await release.future;
+          return 'a' * 64;
+        },
+      )..store = VideoFingerprintStore(storeFile);
+      final VideoFingerprintWarmer warmer = VideoFingerprintWarmer(
+        listPaths: () async => <String>[f.path],
+        fingerprints: hashes,
+        pause: Duration.zero,
+      );
+      warmer.request();
+      await started.future;
+      bool closed = false;
+      final Future<void> close = warmer.close().then((_) => closed = true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(closed, isFalse, reason: '还开着视频文件，close 不能先返回');
+      release.complete();
+      await close;
+      expect(storeFile.readAsStringSync(), contains('a' * 64));
+    });
+
+    test('两文件之间歇息时 close 立即结束歇息，不再开下一个文件', () async {
+      final List<File> files = <File>[
+        for (int i = 0; i < 2; i++) await video('v$i.mkv', i + 1),
+      ];
+      final List<String> computed = <String>[];
+      final Completer<void> first = Completer<void>();
+      final VideoFingerprintWarmer warmer = VideoFingerprintWarmer(
+        listPaths: () async => <String>[for (final File f in files) f.path],
+        fingerprints: VideoSourceFingerprint(
+          compute: (String absolutePath, FileStat stat) async {
+            computed.add(absolutePath);
+            if (!first.isCompleted) first.complete();
+            return 'a' * 64;
+          },
+        ),
+        pause: const Duration(hours: 1),
+      );
+      warmer.request();
+      await first.future;
+      await warmer.close().timeout(const Duration(seconds: 10));
+      expect(computed, hasLength(1));
+      expect(warmer.running, isNull);
+    });
   });
 }

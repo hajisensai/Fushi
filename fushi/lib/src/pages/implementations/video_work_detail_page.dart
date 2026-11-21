@@ -17,6 +17,7 @@ import 'package:fushi/src/utils/adaptive/shell_style.dart'
     show shellRedesignActive;
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_edit_dialog.dart';
 import 'package:fushi/src/media/video/metadata/video_credit_rail.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_image_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_country_display.dart';
@@ -43,6 +44,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_manual_edit.dart';
 
 /// Stable reference to a canonical video work. A work is owned by either a
 /// collection (episodic TV) or one VideoBook (standalone movie).
@@ -356,6 +358,25 @@ class _StandaloneVideoWorkDetailState
     });
   }
 
+  /// 手填作品资料（BUG-5082）：没有作品行时挂在这个视频上新建，改过的字段上锁。
+  Future<void> _editMetadata(VideoBookRow book) async {
+    final VideoWorkManualTarget target = await videoWorkManualTargetForBook(
+      widget.database,
+      book.bookUid,
+    );
+    if (!mounted) return;
+    final bool saved = await editVideoWorkManualMetadata(
+      context: context,
+      database: widget.database,
+      target: target,
+      fallbackTitle: book.title,
+    );
+    if (!saved || !mounted) return;
+    FushiToast.show(msg: t.video_work_edit_metadata_saved);
+    widget.onChanged();
+    await _loadGuarded();
+  }
+
   /// 本地图 / 远程图都按种类封顶解码（#3722 video-18，见 [videoMetadataRowImage]）。
   ImageProvider? _image(String kind) => videoMetadataRowImage(
     _images,
@@ -436,6 +457,13 @@ class _StandaloneVideoWorkDetailState
           label: t.video_disc_play,
           onPressed: () => _openDisc(disc),
         ),
+      // 手填资料（BUG-5082）：刮削全失败的散装视频也能补简介 / 年份等。
+      MediaDetailSecondaryButton(
+        buttonKey: const ValueKey<String>('video-work-edit-metadata'),
+        icon: FushiIcons.edit,
+        label: t.video_work_edit_metadata,
+        onPressed: () => unawaited(_editMetadata(book)),
+      ),
     ];
     final String playLabel = discPrimary
         ? t.video_disc_play

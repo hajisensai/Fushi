@@ -664,3 +664,46 @@ class MangaReadAloudController extends ChangeNotifier {
   @visibleForTesting
   Set<int> get debugPlannedPages => _plans.keys.toSet();
 }
+
+/// 把 [MangaReadAloudController] 的变化翻译成阅读器页面要做的两件事：
+///
+/// - [onActiveChanged]：[MangaReadAloudController.isActive] 翻转时（会话起止）。
+///   底栏那一行在「播放条 / 工具栏」之间切换、工具栏朗读按钮的激活态都以
+///   isActive 为准，所以只按它的翻转重建；暂停 / 合成 / 换句这些会话内的状态变化
+///   由播放条自己监听，不惊动整页。
+/// - [onFinished]：刚进入 [MangaReadAloudState.finished]（读到章末 / 整章无字）。
+///
+/// 判据不能看「跨不跨 idle」：读到章末是 playing → finished，不经过 idle，
+/// 那样播放条就停在底栏不退（BUG-5077 / #3986）。
+class MangaReadAloudSessionWatch {
+  MangaReadAloudSessionWatch(
+    this.controller, {
+    required VoidCallback onActiveChanged,
+    required void Function(MangaReadAloudFinish? finish) onFinished,
+  }) : _onActiveChanged = onActiveChanged,
+       _onFinished = onFinished,
+       _lastState = controller.state,
+       _lastActive = controller.isActive {
+    controller.addListener(_onControllerChanged);
+  }
+
+  final MangaReadAloudController controller;
+  final VoidCallback _onActiveChanged;
+  final void Function(MangaReadAloudFinish? finish) _onFinished;
+  MangaReadAloudState _lastState;
+  bool _lastActive;
+
+  void _onControllerChanged() {
+    final MangaReadAloudState state = controller.state;
+    final bool active = controller.isActive;
+    final bool finishedNow =
+        state != _lastState && state == MangaReadAloudState.finished;
+    final bool activeFlipped = active != _lastActive;
+    _lastState = state;
+    _lastActive = active;
+    if (finishedNow) _onFinished(controller.finish);
+    if (activeFlipped) _onActiveChanged();
+  }
+
+  void dispose() => controller.removeListener(_onControllerChanged);
+}

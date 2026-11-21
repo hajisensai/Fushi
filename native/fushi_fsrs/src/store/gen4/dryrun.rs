@@ -895,6 +895,9 @@ fn known_json(k: &Known) -> Value {
         "cacheStatCardsMasked": k.stat_cols.len(),
         "cacheStatCardsAside": k.stats_aside.len(),
         "cacheStatCardsEventCopies": k.stats_event_copies.len(),
+        // 同一事件的副本两边选了不同代表、只换了日志 ID 那一格的统计行与卡行（BUG-5063）。
+        "cacheStatRepresentativeSwaps": k.stat_swaps.len(),
+        "cacheCardRepresentativeSwaps": k.card_swaps.len(),
         "cacheRowsMasked": k.rows,
         "cacheRowsMaskedDiffer": k.rows_differ,
         "entries": entries,

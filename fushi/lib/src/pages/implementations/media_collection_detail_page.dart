@@ -54,6 +54,7 @@ import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/video/metadata/video_country_display.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
 import 'package:fushi/src/media/video/metadata/video_credit_rail.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_manual_edit.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
@@ -124,6 +125,7 @@ import 'package:fushi/src/media/video/video_watched_marks.dart';
 import 'package:fushi/src/sync/remote_video_client.dart'
     show RemoteVideoPlayedMark;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_edit_dialog.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_lock_dialog.dart';
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
@@ -3550,6 +3552,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       case _CollectionManageAction.splitBySeason:
         await _splitBySeason();
         return;
+      case _CollectionManageAction.editMetadata:
+        await _editMetadata();
+        return;
       case _CollectionManageAction.lockFields:
         await _editLockedFields();
         return;
@@ -3560,6 +3565,31 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         await _delete();
         return;
     }
+  }
+
+  /// 手填作品资料（BUG-5082）：刮削全失败、还没有作品行时也能填——写到刮削
+  /// 日后会写的同一行上（[videoWorkManualTargetForCollection]），改过的字段上锁。
+  Future<void> _editMetadata() async {
+    final VideoWorkManualTarget? target =
+        await videoWorkManualTargetForCollection(
+          widget.database,
+          widget.collection.id,
+        );
+    if (!mounted) return;
+    if (target == null) {
+      FushiToast.show(msg: t.video_work_edit_metadata_unavailable);
+      return;
+    }
+    final bool saved = await editVideoWorkManualMetadata(
+      context: context,
+      database: widget.database,
+      target: target,
+      fallbackTitle: _name,
+    );
+    if (!saved || !mounted) return;
+    FushiToast.show(msg: t.video_work_edit_metadata_saved);
+    widget.onChanged();
+    await _reload();
   }
 
   /// 字段锁：勾中的字段下次刮削保留当前值。作品行还没刮出来时菜单项本身就是灰的
@@ -3744,12 +3774,18 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         t.collection_split_by_season,
         enabled: _hasSeasonTabs,
       ),
+      // 手填资料不要求已有作品行：刮削全失败的作品正是要靠它补资料（BUG-5082）。
+      action(
+        _CollectionManageAction.editMetadata,
+        FushiIcons.edit,
+        t.video_work_edit_metadata,
+        dividerBefore: true,
+      ),
       action(
         _CollectionManageAction.lockFields,
         FushiIcons.lock,
         t.video_work_locked_fields,
         enabled: _canonicalWork != null,
-        dividerBefore: true,
       ),
       action(
         _CollectionManageAction.rename,
@@ -4208,6 +4244,7 @@ enum _CollectionManageAction {
   scrapeOnHost,
   scrapeForHost,
   splitBySeason,
+  editMetadata,
   lockFields,
   rename,
   delete,

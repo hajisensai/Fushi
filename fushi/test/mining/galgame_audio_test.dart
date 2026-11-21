@@ -378,6 +378,46 @@ void main() {
       expect(fmt.isFloat, true);
     });
 
+    test('租约：stop 只交回本实例的租约，没持有租约时不发 stop', () async {
+      final List<MethodCall> calls = <MethodCall>[];
+      int nextLease = 40;
+      setHandler((call) async {
+        calls.add(call);
+        if (call.method == 'start') {
+          return <String, Object?>{
+            'sampleRate': 48000,
+            'channels': 2,
+            'bitsPerSample': 32,
+            'isFloat': true,
+            'lease': ++nextLease,
+          };
+        }
+        return null;
+      });
+      final src = LoopbackGalAudioSource();
+      // 从没起过 / 起失败后的兜底 stop：不能去停别人共用的那一路。
+      await src.stop();
+      expect(calls, isEmpty);
+      await src.start();
+      expect(src.holdsLease, isTrue);
+      // 重复 start：先拿新租约、再交回旧的（这一路不会因计数归零被停）。
+      await src.start();
+      expect(calls.map((c) => c.method), <String>['start', 'start', 'stop']);
+      expect(calls.last.arguments, <String, Object?>{'lease': 41});
+      calls.clear();
+      await src.grabRecent(1000);
+      expect(calls.single.arguments, <String, Object?>{
+        'backMs': 1000,
+        'lease': 42,
+      });
+      calls.clear();
+      await src.stop();
+      await src.stop();
+      expect(calls.single.method, 'stop');
+      expect(calls.single.arguments, <String, Object?>{'lease': 42});
+      expect(src.holdsLease, isFalse);
+    });
+
     test('start 返回 error map -> null（降级）', () async {
       setHandler((call) async => <String, Object?>{'error': 'no device'});
       expect(await LoopbackGalAudioSource().start(), isNull);
