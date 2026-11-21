@@ -12333,16 +12333,6 @@ class AppModel
   Future<void> setBrowseMovedNoticeHandled() =>
       prefsRepo.setBrowseMovedNoticeHandled();
 
-  /// 库页默认改封面网格后的「拼贴仍可选」一次性提示是否已处理
-  /// （见 `library_layout_default_notice.dart`）。
-  bool get libraryLayoutDefaultNoticeHandled =>
-      prefsRepo.libraryLayoutDefaultNoticeHandled;
-  Future<void> setLibraryLayoutDefaultNoticeHandled() =>
-      prefsRepo.setLibraryLayoutDefaultNoticeHandled();
-
-  /// 当前 Profile 是否显式选过库页布局（落库值非空，含已删的 `blocks`）。
-  bool get shellContentLayoutChosen => themeNotifier.shellContentLayoutChosen;
-
   int get maximumTerms => prefsRepo.maximumTerms;
   void setMaximumTerms(int value) => prefsRepo.setMaximumTerms(value);
 

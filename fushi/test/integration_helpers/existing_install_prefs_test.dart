@@ -1,6 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/library_layout_default_notice.dart'
-    show LibraryLayoutDefaultNoticeDecision, decideLibraryLayoutDefaultNotice;
 import 'package:fushi/src/pages/implementations/shell_layout_choice_dialog.dart'
     show shouldShowShellLayoutChoice;
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
@@ -41,19 +39,6 @@ void main() {
         redesignActive: true,
       ),
       isFalse,
-    );
-  });
-
-  test('library layout default notice is already handled', () {
-    expect(
-      decideLibraryLayoutDefaultNotice(
-        handled: read<bool>('library_layout_default_notice_handled', false),
-        freshInstall: read<bool>('first_time_setup', true),
-        layoutChosen: false,
-        layoutActive: true,
-        layoutChoiceOffered: false,
-      ),
-      LibraryLayoutDefaultNoticeDecision.none,
     );
   });
 }

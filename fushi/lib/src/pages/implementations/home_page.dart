@@ -125,8 +125,6 @@ import 'package:fushi/src/pages/implementations/shell_layout_choice_dialog.dart'
     show maybeShowShellLayoutChoice;
 import 'package:fushi/src/pages/implementations/browse_moved_notice.dart'
     show maybeShowBrowseMovedNotice;
-import 'package:fushi/src/pages/implementations/library_layout_default_notice.dart'
-    show maybeShowLibraryLayoutDefaultNotice;
 import 'package:fushi/src/pages/implementations/overwrite_snapshot_notice.dart'
     show maybeShowOverwriteSnapshotNotice;
 import 'package:fushi/src/pages/implementations/media_server/media_server_browse_page.dart'
@@ -766,16 +764,6 @@ class _HomePageState extends BasePageState<HomePage>
       // 更新弹窗之前，与它们串行，不抢同一帧。
       if (mounted) {
         await maybeShowBrowseMovedNotice(
-          context: context,
-          appModel: appModelNoUpdate,
-          freshInstall: freshInstall,
-        );
-      }
-
-      // 库页默认布局改成封面网格：升级上来、没选过布局的用户提醒一次「拼贴仍可选」
-      // （拍板台 pr3454，2026-11-16）。同样排在更新弹窗之前、串行。
-      if (mounted) {
-        await maybeShowLibraryLayoutDefaultNotice(
           context: context,
           appModel: appModelNoUpdate,
           freshInstall: freshInstall,
