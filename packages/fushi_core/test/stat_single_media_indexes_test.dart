@@ -5,7 +5,7 @@ import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:test/test.dart';
 
-/// HBK-AUDIT-042（BUG 见 docs/bugs）：统计侧栏只看一本书 / 一个视频时，单媒体读路径
+/// HBK-AUDIT-042 / BUG-5127：统计侧栏只看一本书 / 一个视频时，单媒体读路径
 /// 的等值条件没有可用索引——段表只能按 `(profile_id)` 扫本 Profile 全部段，计数表、
 /// 视频 legacy 行、书表的标题回退整表扫。v167 按真实 WHERE 建四条索引，段查询拆成
 /// 两支全等值查询。
@@ -274,22 +274,25 @@ void main() {
     final FushiDatabase upgraded = FushiDatabase.forTesting(
       NativeDatabase(file),
     );
-    expect(await _indexNames(upgraded), containsAll(_singleMediaIndexes));
-    expect(
-      (await upgraded.customSelect('PRAGMA user_version').getSingle())
-          .read<int>('user_version'),
-      kFushiDbSchemaVersion,
-    );
-    expect(
-      await upgraded.getStudySegments(
-        profileId: 1,
-        mediaKind: 'book',
-        mediaKey: 'bk',
-        orTitle: 'Book',
-      ),
-      hasLength(2),
-    );
-    await upgraded.close();
+    try {
+      expect(await _indexNames(upgraded), containsAll(_singleMediaIndexes));
+      expect(
+        (await upgraded.customSelect('PRAGMA user_version').getSingle())
+            .read<int>('user_version'),
+        kFushiDbSchemaVersion,
+      );
+      expect(
+        await upgraded.getStudySegments(
+          profileId: 1,
+          mediaKind: 'book',
+          mediaKey: 'bk',
+          orTitle: 'Book',
+        ),
+        hasLength(2),
+      );
+    } finally {
+      await upgraded.close();
+    }
 
     final FushiDatabase reopened = FushiDatabase.forTesting(
       NativeDatabase(file),
