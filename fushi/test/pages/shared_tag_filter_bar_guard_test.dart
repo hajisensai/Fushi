@@ -22,10 +22,33 @@ void main() {
     );
     expect(src.contains('class FushiTagFilterBar'), isTrue);
     expect(src.contains('FushiTagChip('), isTrue, reason: '用共享 MD3 tag chip');
+    // BUG-5066 起 chip 本身按指针类型起拖（FushiTagChipDraggable：鼠标 / 触控板
+    // 即时拖，触屏长按拖），落点是 chip 上的 DragTarget，落下调 onReorder。
     expect(
-      src.contains('LongPressDraggable<BookTagRow>'),
+      src.contains('FushiTagChipDraggable<BookTagRow>('),
       isTrue,
       reason: '长按拖拽重排',
+    );
+    expect(src.contains('DragTarget<BookTagRow>('), isTrue, reason: '拖拽落点');
+    expect(
+      src.contains('widget.onReorder(oldIdx, newIdx)'),
+      isTrue,
+      reason: '落下要真重排',
+    );
+    final String draggable = _read(
+      'lib/src/media/tags/tag_chip_draggable.dart',
+    );
+    expect(
+      RegExp(
+        r'longPressDevices = <PointerDeviceKind>\{[^}]*PointerDeviceKind\.touch',
+      ).hasMatch(draggable),
+      isTrue,
+      reason: '触屏仍是长按起拖',
+    );
+    expect(
+      draggable.contains('extends LongPressDraggable<T>'),
+      isTrue,
+      reason: '触屏走 LongPressDraggable',
     );
     expect(src.contains('TagManagementPage'), isTrue, reason: '末尾管理标签动作');
     // 批量选择可选入参：书架与视频 tab 都传（TODO-063 起视频也启用批量选择）。

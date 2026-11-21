@@ -53,7 +53,11 @@ final List<_EntrySite> _sites = <_EntrySite>[
   _EntrySite(
     '库页多选的「AI 整理所选」',
     RegExp(r't\.library_organize_selection_action'),
-    RegExp(r'if \(isAiModuleEnabled\([^\n]*\)\)\s*FushiIconButton\('),
+    // 多选动作栏从逐个 FushiIconButton 收成 BatchAction 列表（视频页）后两种写法都认；
+    // 门必须直接包住带这个 label 的那一项。
+    RegExp(
+      r'if \(isAiModuleEnabled\([^\n]*\)\)\s*(?:FushiIconButton|BatchAction)\(',
+    ),
   ),
   _EntrySite(
     '漫画 OCR 的 AI 档位面板',

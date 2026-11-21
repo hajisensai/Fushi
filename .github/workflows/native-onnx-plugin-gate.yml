@@ -59,3 +59,6 @@ jobs:
           & .\legacy.exe
           if ($LASTEXITCODE -ne 1) { throw "legacy build expected exit 1 (defect detected), got $LASTEXITCODE" }
           Write-Host 'legacy build red as expected: the test still detects the pre-fix teardown order'
+          # 上面预期内的 exit 1 还留在 $LASTEXITCODE；Actions 的 pwsh 包装点源执行后追加
+          # `exit $LASTEXITCODE`，不显式收尾整步会以 1 无声变红。
+          exit 0
