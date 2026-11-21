@@ -617,6 +617,82 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('专辑曲目在别处被全部移走、专辑页上面还压着别的页：只摘专辑页，顶上那页不动', (
+    WidgetTester tester,
+  ) async {
+    await db.writeMusicScanBatch(
+      MusicScanBatchWrite(
+        tracks: <MusicTracksCompanion>[
+          _track('d1').copyWith(albumUid: const Value<String?>('al')),
+          _track('d2').copyWith(albumUid: const Value<String?>('al')),
+        ],
+        albums: <MusicAlbumsCompanion>[
+          MusicAlbumsCompanion.insert(
+            albumUid: 'al',
+            title: 'Night Album',
+            addedAt: 1,
+            updatedAt: 1,
+          ),
+        ],
+        artists: const <MusicArtistsCompanion>[],
+        credits: const <MusicTrackCreditsCompanion>[],
+      ),
+    );
+    final MusicAlbumRow album = (await db.getMusicAlbum('al'))!;
+    final List<MusicTrackRow> albumTracks = sortAlbumTracks(
+      await db.listMusicTracks(albumUid: 'al'),
+    );
+    await pumpList(
+      tester,
+      Builder(
+        builder: (BuildContext context) => TextButton(
+          key: const ValueKey<String>('open-album'),
+          onPressed: () => unawaited(
+            Navigator.of(context).push<void>(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    MusicAlbumPage(album: album, tracks: albumTracks),
+              ),
+            ),
+          ),
+          child: const Text('open'),
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('open-album')));
+    await tester.pumpAndSettle();
+    final NavigatorState navigator = tester.state<NavigatorState>(
+      find.byType(Navigator).first,
+    );
+    unawaited(
+      navigator.push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => const Scaffold(
+            body: Text('on-top', key: ValueKey<String>('on-top')),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await db.hideMusicTracks(<String>['d1', 'd2'], at: 10);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('on-top')),
+      findsOneWidget,
+      reason: '顶上那页不该被弹掉',
+    );
+    expect(
+      find.byType(MusicAlbumPage, skipOffstage: false),
+      findsNothing,
+      reason: '专辑页自己被摘掉',
+    );
+    navigator.pop();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey<String>('open-album')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   // 拍板台 left3648（BUG-4769）：色块样式的曲目格没有放「⋯」的位置，触屏长按改成弹与
   // 右键同一份菜单（详情 / 多选都在里面）；多选态长按仍是勾选。
   testWidgets('触屏：色块样式曲目格长按开菜单（有详情与多选），多选态长按 = 勾选', (

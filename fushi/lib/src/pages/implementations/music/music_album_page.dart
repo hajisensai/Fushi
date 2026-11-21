@@ -348,11 +348,18 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
     });
   }
 
-  /// 退回曲库（只退一次：表变更会连发好几次重读）。
+  /// 退回曲库（只退一次：表变更会连发好几次重读）。只摘本页这条路由：本页上面压着别的
+  /// 页（播放页、别的详情）时 `maybePop` 会把顶上那页弹掉，专辑页反而留着。
   void _leave() {
     if (_leaving) return;
     _leaving = true;
-    unawaited(Navigator.of(context).maybePop());
+    final NavigatorState navigator = Navigator.of(context);
+    final ModalRoute<Object?>? route = ModalRoute.of(context);
+    if (route == null || route.isCurrent) {
+      unawaited(navigator.maybePop());
+    } else if (route.isActive) {
+      navigator.removeRoute(route);
+    }
   }
 
   /// 专辑动作（光盘的导入 / 对号 / 移除整张盘；普通专辑整张移出音乐库）。
