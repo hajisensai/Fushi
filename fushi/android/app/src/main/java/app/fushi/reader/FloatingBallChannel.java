@@ -67,6 +67,8 @@ final class FloatingBallChannel {
     static final String METHOD_SCREEN_OCR_ENGINE = "screenOcrEngine";
     /** 原生 → Dart：把定格帧交给 Dart 侧识别器（本机模型 / Lens）。 */
     static final String METHOD_RECOGNIZE_SCREEN_OCR_FRAME = "recognizeScreenOcrFrame";
+    /** 原生 → Dart：用户在识别中的通知上点了取消，放弃那次识别（BUG-4790）。 */
+    static final String METHOD_CANCEL_SCREEN_OCR_RECOGNITION = "cancelScreenOcrRecognition";
 
     /** 主引擎上的通道；MainActivity 销毁时 {@link #detach} 置空，之后回调安全跳过。 */
     @Nullable
@@ -181,10 +183,12 @@ final class FloatingBallChannel {
 
     /**
      * 把定格帧（PNG）交给 Dart 侧的 [engine] 识别；[fallback] = 设备自带 OCR 报模型
-     * 不可用后退到本机模型再试。主引擎不在返回 false。主线程调用，回调在主线程。
+     * 不可用后退到本机模型再试；[flow] = 截屏流程编号，取消时用它点名
+     * （{@link #cancelScreenOcrRecognition}）。主引擎不在返回 false。主线程调用，
+     * 回调在主线程。
      */
     static boolean recognizeScreenOcrFrame(@NonNull byte[] png, @NonNull String engine,
-            boolean fallback, @NonNull MethodChannel.Result callback) {
+            boolean fallback, long flow, @NonNull MethodChannel.Result callback) {
         MethodChannel ch = ocrChannel;
         PendingDartReplies replies = ocrReplies;
         if (ch == null || replies == null) return false;
@@ -192,6 +196,7 @@ final class FloatingBallChannel {
         args.put("png", png);
         args.put("engine", engine);
         args.put("fallback", fallback);
+        args.put("flow", flow);
         MethodChannel.Result tracked = replies.track(callback);
         try {
             ch.invokeMethod(METHOD_RECOGNIZE_SCREEN_OCR_FRAME, args, tracked);
@@ -200,6 +205,23 @@ final class FloatingBallChannel {
             replies.forget(tracked);
             Log.w(TAG, "recognizeScreenOcrFrame could not be delivered", e);
             return false;
+        }
+    }
+
+    /**
+     * 用户在识别中的通知上取消了流程 [flow]（BUG-4790）：让 Dart 放弃那次识别（Lens
+     * 断开请求，本机模型的结果到了也不用）并尽快回 {@code {cancelled: true}}。不等回话：
+     * 原生已经收尾，那次识别的回话按过期流程丢掉。主引擎不在就没什么可取消的。主线程。
+     */
+    static void cancelScreenOcrRecognition(long flow) {
+        MethodChannel ch = ocrChannel;
+        if (ch == null) return;
+        Map<String, Object> args = new HashMap<>();
+        args.put("flow", flow);
+        try {
+            ch.invokeMethod(METHOD_CANCEL_SCREEN_OCR_RECOGNITION, args);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "cancelScreenOcrRecognition could not be delivered", e);
         }
     }
 

@@ -120,6 +120,8 @@ List<CtlRoute> buildFeedbackCtlRoutesFor({
       'deviceInfoAttached': draft.includeDeviceInfo,
       // 正文已交上去、但没传上去的附件（日志）数：留在待传区，反馈中心详情页可重试。
       'failedAttachments': result.failedAttachments,
+      // 有附件因每 IP 每天上传额度用完没传上去时，额度重置时刻（UTC ISO 8601）；否则 null。
+      'uploadQuotaResetAt': result.quotaResetAt?.toUtc().toIso8601String(),
     };
   }),
 ];

@@ -234,7 +234,20 @@ void main() {
       await pumpMotion(true);
       await tester.pump(const Duration(seconds: 1));
       expect(tester.takeException(), isNull);
-      expect(tester.binding.transientCallbackCount, greaterThan(0));
+      // 装饰 ticker 节流（BUG-4961）：两次 tick 之间不挂帧回调，「在动」看画面变没变。
+      Matrix4 drift() => tester
+          .widget<Transform>(
+            find
+                .descendant(
+                  of: find.byType(PageBackdropLayer),
+                  matching: find.byType(Transform),
+                )
+                .first,
+          )
+          .transform;
+      final Matrix4 before = drift();
+      await tester.pump(const Duration(seconds: 1));
+      expect(drift(), isNot(equals(before)));
     });
   });
 }

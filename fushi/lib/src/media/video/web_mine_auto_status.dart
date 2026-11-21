@@ -27,17 +27,41 @@ final class WebMineAutoRunning extends WebMineAutoStatus {
 }
 
 /// 一轮结束：成功 [ok]、失败 [failed]；[remaining] > 0 = 用户回来让位、余下的留在队列。
+/// [errored] = 这一轮出错中止（见 `webMineRoundEndedOnError`）：此时 [remaining] 不是
+/// 让位留下的，文案不能说「已完成」或「你回来了已暂停」。
 final class WebMineAutoFinished extends WebMineAutoStatus {
   const WebMineAutoFinished({
     required this.ok,
     required this.failed,
     required this.remaining,
     this.auto = true,
+    this.errored = false,
   });
   final int ok;
   final int failed;
   final int remaining;
   final bool auto;
+  final bool errored;
+}
+
+/// 一轮结束后给用户看的那句话（结果胶囊与交接页 / 后台页的 Toast 共用）。
+/// [forToast]：Toast 场景下自动跑不区分「让位暂停」（页已经交还 / 关掉，胶囊才说得清）。
+String webMineFinishedText(WebMineAutoFinished s, {bool forToast = false}) {
+  // 准备步骤抛出时计数是 0 / 0：旧文案「已制卡 0，失败 0」读起来像「没东西可做」。
+  if (s.errored) {
+    return t.web_video_mine_queue_errored(ok: s.ok, failed: s.failed);
+  }
+  if (!s.auto) {
+    return t.web_video_mine_queue_finished(ok: s.ok, failed: s.failed);
+  }
+  if (!forToast && s.remaining > 0) {
+    return t.web_video_mine_auto_paused(
+      ok: s.ok,
+      failed: s.failed,
+      count: s.remaining,
+    );
+  }
+  return t.web_video_mine_auto_finished(ok: s.ok, failed: s.failed);
 }
 
 /// 静音录音起不来（系统不支持 process loopback / 找不到 WebView2 进程），本轮跳过——
@@ -95,25 +119,15 @@ class WebMineAutoStatusChip extends StatelessWidget {
               : t.web_video_mine_queue_running(done: done, total: total),
           false,
         ),
-      WebMineAutoFinished(
-        :final int ok,
-        :final int failed,
-        :final int remaining,
-        :final bool auto,
-      ) =>
-        (
-          failed > 0 ? FushiIcons.warning : FushiIcons.check,
-          !auto
-              ? t.web_video_mine_queue_finished(ok: ok, failed: failed)
-              : remaining > 0
-              ? t.web_video_mine_auto_paused(
-                  ok: ok,
-                  failed: failed,
-                  count: remaining,
-                )
-              : t.web_video_mine_auto_finished(ok: ok, failed: failed),
-          true,
-        ),
+      WebMineAutoFinished(:final int failed, :final bool errored) => (
+        errored
+            ? FushiIcons.error
+            : failed > 0
+            ? FushiIcons.warning
+            : FushiIcons.check,
+        webMineFinishedText(s),
+        true,
+      ),
       WebMineAutoUnavailable() => (
         FushiIcons.error,
         t.web_video_mine_auto_unavailable,

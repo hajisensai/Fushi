@@ -10,9 +10,50 @@
 /// 用例体里经 [NodeTestRuntime.requireNode] 拿 node（CI 缺依赖在这里失败）。
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+
+/// 一次 node 跑手运行的退出码与输出。
+typedef NodeHarnessResult = ({int exitCode, String stdout, String stderr});
+
+/// 跑一个 node 跑手：[payload] 编成 JSON 经 stdin 送入，命令行不传文件路径（跑手用
+/// `test/reader/reader_harness_support.js` 的 `readPayload()` 读）。[arguments] 只放不涉及
+/// 文件的参数（如变异名）。工作目录是当前目录（`fushi/`），[harness] 写相对路径。
+///
+/// [timeout]（应短于用例超时）到了就杀进程树（跑手起的 headless Chrome 一并杀掉），
+/// 退出码记为 -1，输出照常带回已打印的部分，失败原因可读。
+Future<NodeHarnessResult> runNodeHarness(
+  String node,
+  String harness,
+  Object? payload, {
+  List<String> arguments = const <String>[],
+  Map<String, String>? environment,
+  Duration? timeout,
+}) async {
+  final Process process = await Process.start(
+    node,
+    <String>[harness, ...arguments],
+    workingDirectory: Directory.current.path,
+    environment: environment,
+  );
+  final Future<String> stdout = process.stdout.transform(utf8.decoder).join();
+  final Future<String> stderr = process.stderr.transform(utf8.decoder).join();
+  process.stdin.add(utf8.encode(jsonEncode(payload)));
+  await process.stdin.close();
+  Future<int> exitCode = process.exitCode;
+  if (timeout != null) {
+    exitCode = exitCode.timeout(
+      timeout,
+      onTimeout: () {
+        killProcessTree(process);
+        return -1;
+      },
+    );
+  }
+  return (exitCode: await exitCode, stdout: await stdout, stderr: await stderr);
+}
 
 /// 是否跑在 CI 上（GitHub Actions 同时设 `CI=true` 与 `GITHUB_ACTIONS=true`）。
 bool get isCiEnvironment {

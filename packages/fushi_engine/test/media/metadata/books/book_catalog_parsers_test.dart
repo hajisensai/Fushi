@@ -92,7 +92,30 @@ void main() {
           jsonDecode(seen.body) as Map<String, Object?>;
       expect(body['query'], contains('format: NOVEL'));
       expect(body['query'], contains('type: MANGA'));
+      // 默认不要成人向：服务端过滤，不占一页的名额（拍板台 pr3497）。
+      expect(body['query'], contains('isAdult: false'));
       expect(seen.headers['User-Agent'], kBookCatalogUserAgent);
+    });
+
+    test('includeAdult: true 时查询不带 isAdult 过滤', () async {
+      late http.Request seen;
+      final AniListNovelClient client = AniListNovelClient(
+        BookCatalogHttp(
+          client: MockClient((http.Request req) async {
+            seen = req;
+            return http.Response.bytes(
+              utf8.encode(fixture('anilist_search_kusuriya.json')),
+              200,
+            );
+          }),
+          throttle: false,
+        ),
+      );
+      await client.search('薬屋のひとりごと', includeAdult: true);
+      final Map<String, Object?> body =
+          jsonDecode(seen.body) as Map<String, Object?>;
+      expect(body['query'], isNot(contains('isAdult:')));
+      expect(body['query'], contains('format: NOVEL'));
     });
 
     test('GraphQL 报错且无 data → BookCatalogException', () {

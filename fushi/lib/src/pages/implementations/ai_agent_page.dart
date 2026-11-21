@@ -15,6 +15,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:fushi_engine/ai/agent/agent_session.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/web_search.dart' show WebSearchConfig;
 import 'package:intl/intl.dart' show Intl, NumberFormat;
 import 'package:material_ui/material_ui.dart';
 
@@ -33,6 +34,7 @@ import 'package:fushi_engine/sync/assistant/video_acquisition_assistant_host.dar
         kHostAssistantReasonNoProvider,
         kHostAssistantReasonNotReady;
 import 'package:fushi/src/ai/agent/ai_agent_in_process_ops.dart';
+import 'package:fushi/src/ai/ai_agent_web_search_policy.dart';
 import 'package:fushi/src/models/preferences_repository.dart'
     show kAiAgentExecutorLocal, kAiAgentExecutorRemote;
 import 'package:fushi/src/ocr/screen_ocr_language.dart';
@@ -118,6 +120,15 @@ const double kAiAgentTightAttachmentWidthFactor = 0.4;
 final RegExp _kExtensionInstallOp = RegExp(
   r'^online\.(extension\.(install|update)\w*|repo\.add)$',
 );
+
+/// 联网搜索确认卡里写的后端名：本机配的那个后端；没配（远端执行等）写泛称。
+String _agentWebSearchBackendName() {
+  final WebSearchConfig? config =
+      appOpContext?.appModel.prefsRepo.aiWebSearchConfig;
+  return config == null
+      ? t.ai_web_search_backend
+      : webSearchBackendLabel(config);
+}
 
 /// 打开 AI 助手（悬浮球「AI」、首页卡片、快捷键共用这一个入口）。
 ///
@@ -1444,6 +1455,8 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final TextTheme text = Theme.of(context).textTheme;
     final bool install = _kExtensionInstallOp.hasMatch(entry.toolName ?? '');
+    // 联网搜索（web.search / web.read）的首次确认：写明发给哪个后端、同意后记住。
+    final bool webSearch = kAgentWebSearchOp.hasMatch(entry.toolName ?? '');
     final bool irreversible = entry.risk == AgentToolRisk.irreversible;
     final bool pending =
         entry.status == AgentEntryStatus.pending &&
@@ -1465,6 +1478,8 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
               Text(
                 install
                     ? t.ai_agent_confirm_install_title
+                    : webSearch
+                    ? t.ai_agent_web_search_consent_title
                     : t.ai_agent_confirm_title,
                 style: text.titleSmall,
               ),
@@ -1480,7 +1495,11 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
                 ),
               const SizedBox(height: 6),
               Text(
-                irreversible
+                webSearch
+                    ? t.ai_agent_web_search_consent_body(
+                        backend: _agentWebSearchBackendName(),
+                      )
+                    : irreversible
                     ? t.ai_agent_confirm_irreversible
                     : t.ai_agent_confirm_undoable,
                 style: text.bodySmall?.copyWith(

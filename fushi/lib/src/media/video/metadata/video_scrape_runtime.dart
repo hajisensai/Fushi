@@ -13,6 +13,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show VoidCallback;
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:fushi_engine/ai/ai_video_identity_assistant.dart';
+import 'package:fushi_engine/media/video/metadata/anidb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/tmdb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
@@ -155,6 +156,13 @@ class VideoScrapeRuntime {
       isEnabled: _isAutoBackfillEnabled,
       // 与协调器同一份快照：哈希就绪时纯集号文件与已识别作品的新文件也进补刮。
       isHashReady: () => config.anidbHashReady,
+      // 标题目录摘要（catalogOnly）存量作品的 AniDB 详情补全：XML 拿得到才排队。
+      isAniDbDetailReady: () {
+        final VideoMetadataProvider? anidb = coordinator.registry.provider(
+          VideoMetadataProviderKind.anidb,
+        );
+        return anidb is AniDbVideoMetadataProvider && anidb.isHttpApiAvailable;
+      },
       ledger: _createLedger(),
       configFingerprint: fingerprint,
       // 配上 / 换掉 AI 后，之前「试过没认出」的作品立即重新进补刮。

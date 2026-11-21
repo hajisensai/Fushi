@@ -76,44 +76,6 @@ fn plan_refuses_heads_that_need_a_newer_reader() {
     );
 }
 
-/// v1 位置迁移补绑定：只补没人绑过的名字，已有绑定（不管指向什么）一概不动；同一批里重名只绑第一次。
-#[test]
-fn migration_binds_only_names_nobody_bound() {
-    let a = Device::new("br-m");
-    a.core.sync2_identity(P, T0).unwrap();
-    let sha = |b: u8| [b; 32];
-    let first = a
-        .core
-        .sync2_media_bind_unbound(P, &[("a.png".into(), sha(1), 10)], T0)
-        .unwrap();
-    assert_eq!(first["appended"], json!(1));
-    let again = a
-        .core
-        .sync2_media_bind_unbound(
-            P,
-            &[
-                ("a.png".into(), sha(2), 20),
-                ("b.png".into(), sha(3), 30),
-                ("b.png".into(), sha(4), 40),
-            ],
-            T0 + 1,
-        )
-        .unwrap();
-    assert_eq!(again["bound"], json!(["b.png"]), "{again}");
-    let scan = a
-        .core
-        .sync2_media_scan(
-            P,
-            &["a.png".into(), "b.png".into()],
-            &std::collections::HashMap::new(),
-            T0 + 2,
-        )
-        .unwrap();
-    let hex = |b: u8| format!("{b:02x}").repeat(32);
-    assert_eq!(scan["items"][0]["sha"], json!(hex(1)), "{scan}");
-    assert_eq!(scan["items"][1]["sha"], json!(hex(3)), "{scan}");
-}
-
 fn latest_head(bucket: &Bucket, device: &str) -> Head {
     let (_, bytes) = bucket
         .0

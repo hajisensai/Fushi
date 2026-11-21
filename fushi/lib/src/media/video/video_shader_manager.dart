@@ -22,10 +22,12 @@ import 'package:path/path.dart' as p;
 const Set<String> kShaderExtensions = <String>{'.glsl', '.hook'};
 
 /// 着色器存放目录：`<appDocs>/mpv_shaders`（不存在则创建）。
+///
+/// 开播时经 [resolveEnabledShaderPaths] 走这里，一律异步 IO（video-20）。
 Future<Directory> mpvShaderDirectory() async {
   // TODO-935 E0：经唯一入口 [AppPaths] 派生 `<documents>/mpv_shaders`。
   final Directory dir = await AppPaths.mpvShadersDirectory();
-  if (!dir.existsSync()) dir.createSync(recursive: true);
+  if (!await dir.exists()) await dir.create(recursive: true);
   return dir;
 }
 
@@ -77,15 +79,22 @@ List<String> decodeEnabledShaders(String? json) {
   return const <String>[];
 }
 
-/// 把启用的着色器文件名（相对目录）解析成存在的绝对路径，过滤掉已删除的。纯函数
-/// （除存在性检查外不碰内容），便于注入临时目录单测。
-List<String> resolveShaderPathsIn(Directory dir, List<String> enabledNames) {
-  final List<String> out = <String>[];
-  for (final String name in enabledNames) {
-    final File f = File(p.join(dir.path, name));
-    if (f.existsSync()) out.add(f.path);
-  }
-  return out;
+/// 把启用的着色器文件名（相对目录）解析成存在的绝对路径，过滤掉已删除的，保持
+/// 启用顺序。除存在性检查（异步、并行）外不碰内容，便于注入临时目录单测。
+Future<List<String>> resolveShaderPathsIn(
+  Directory dir,
+  List<String> enabledNames,
+) async {
+  final List<File> files = <File>[
+    for (final String name in enabledNames) File(p.join(dir.path, name)),
+  ];
+  final List<bool> exists = await Future.wait(
+    files.map((File f) => f.exists()),
+  );
+  return <String>[
+    for (int i = 0; i < files.length; i++)
+      if (exists[i]) files[i].path,
+  ];
 }
 
 /// 异步包装 [resolveShaderPathsIn]：用默认着色器目录解析启用集为绝对路径。

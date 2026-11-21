@@ -272,7 +272,7 @@ Forbid-Pattern $serverWorkflow $serverContent '(?m)^\s+push:' 'server releases a
 Forbid-Pattern $serverWorkflow $serverContent '(?m)^\s+workflow_dispatch:' 'no dispatch entry in the app repo: a server release here would become the app updater''s releases/latest; dispatch from hajisensai/fushi-server'
 # Every checkout must pin the source repo; a bare `actions/checkout` in a reusable
 # workflow checks out the CALLER (fushi-server), which has no source at all.
-$serverCheckouts = [regex]::Matches($serverContent, '(?m)^\s+- uses: actions/checkout@v\d+\s*\n(?:\s+with:\s*\n(?:\s+[a-z_-]+:.*\n)*)?')
+$serverCheckouts = [regex]::Matches($serverContent, '(?m)^\s+- uses: actions/checkout@[0-9a-f]{40}[^\n]*\n(?:\s+with:\s*\n(?:\s+[a-z_-]+:.*\n)*)?')
 if ($serverCheckouts.Count -eq 0) {
   $failures.Add("${serverWorkflow}: no actions/checkout step found")
 }

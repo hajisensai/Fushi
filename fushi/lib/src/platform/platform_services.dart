@@ -22,6 +22,7 @@ import 'package:fushi/src/platform/ios/ios_lifecycle_service.dart';
 import 'package:fushi/src/platform/ios/ios_clipboard_service.dart';
 import 'package:fushi/src/platform/ios/ios_permission_service.dart';
 import 'package:fushi/src/platform/ios/ios_device_info_service.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 
 /// Anki 后端工厂：[settingsStore] 非 null 时新实例读写它而不是进程级装配点
 /// （`BaseAnkiRepository.defaultSettingsStore`）。反馈 biLEesNqWb：浏览器扩展所选的
@@ -113,15 +114,13 @@ class PlatformServices {
     bool? hasSystemMediaSession,
     AnkiSyncSession? Function()? ankiSyncSession,
   }) : _ankiSyncSession = ankiSyncSession ?? (() => sharedAnkiSyncSession),
-       isWindows = isWindows ?? Platform.isWindows,
-       isDesktop =
-           isDesktop ??
-           (Platform.isWindows || Platform.isMacOS || Platform.isLinux),
-       isIOS = isIOS ?? Platform.isIOS,
-       isAndroid = isAndroid ?? Platform.isAndroid,
+       isWindows = isWindows ?? hostPlatform.isWindows,
+       isDesktop = isDesktop ?? hostPlatform.isDesktop,
+       isIOS = isIOS ?? hostPlatform.isIOS,
+       isAndroid = isAndroid ?? hostPlatform.isAndroid,
        hasSystemMediaSession =
            hasSystemMediaSession ??
-           (Platform.isAndroid || Platform.isIOS || Platform.isMacOS),
+           (hostPlatform.isMobile || hostPlatform.isMacOS),
        _createDefaultAnkiRepository = createAnkiRepository,
        _createMobileAnkiConnectRepository = createMobileAnkiConnectRepository,
        _isMobile = isMobile,

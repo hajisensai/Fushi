@@ -1024,6 +1024,37 @@ class FavoriteWords extends Table {
   ];
 }
 
+// ── favorite_sentences（v166）───────────────────────────────────────
+/// 收藏句（阅读器 / 有声书 / 视频 / 游戏 / 漫画 / 音乐 / 网页视频共用，按 [source]
+/// 区分）。v166 之前存在偏好 `favorite_sentences` 的一整段 JSON 里，每次读都要在
+/// 主 isolate 解码整段（实测大库 425 KB、27.6 ms，拍板台 design-nmv-stats-main-isolate）。
+/// 模型与跨设备内容身份见 `FavoriteSentence` / `FavoriteSentenceRepository.itemKeyOf`
+/// （正文 + 出处 + 章节 + 锚点；[id] 只是本机身份）。同步 wire
+/// （`AggregateSnapshot.favoriteSentences`）仍是原 JSON 形状，字节不变。
+@DataClassName('FavoriteSentenceRow')
+class FavoriteSentences extends Table {
+  TextColumn get id => text()();
+  TextColumn get sentence => text()();
+  TextColumn get bookTitle => text().withDefault(const Constant(''))();
+  TextColumn get chapterLabel => text().nullable()();
+
+  /// 收藏时刻（`DateTime.microsecondsSinceEpoch`）：wire 上的 ISO 串精确到微秒，
+  /// 存微秒才能原样写回。
+  IntColumn get createdAtUs => integer()();
+  TextColumn get bookKey => text().nullable()();
+  IntColumn get sectionIndex => integer().nullable()();
+  IntColumn get normCharOffset => integer().nullable()();
+  IntColumn get normCharLength => integer().nullable()();
+  TextColumn get color => text().nullable()();
+  TextColumn get source => text().withDefault(const Constant('book'))();
+  TextColumn get dateKey => text().nullable()();
+  TextColumn get expression => text().nullable()();
+  TextColumn get reading => text().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 // ── mining_statistics ───────────────────────────────────────────────
 /// 制卡计数：卡片本体落在 Anki（外部），这里只按 dateKey + sourceType 记成功制卡
 /// 次数，供阅读/视频统计页展示。与时长/字数统计表同构（按日期累加）。
@@ -1864,14 +1895,27 @@ class VideoScrapeMeta extends Table {
 // 与 [CollectionScrapeMeta] 同族：可重建的刮削缓存（删了重刮即回填），删除合集
 // FK cascade 连带清边；目标合集被删则 setNull 退回纯刮削态（刮削事实还在，只是
 // 本地绑定失效——这正是「目标两态」的语义，不需要墓碑）。
+//
+// v162：起点与已绑定目标都可以是**单视频**（挂在单个视频上的作品，散装电影）。
+// 起点合集 / 单视频二选一（CHECK，同 [MediaImages] 的单一归属），删视频 cascade
+// 清边；已绑定目标合集 / 单视频至多一个，目标视频被删 setNull 退回纯刮削态。
+// 存量行（起点都是合集）按列名原样拷贝，新两列为 NULL。
 @DataClassName('CollectionRelationRow')
 class CollectionRelations extends Table {
   IntColumn get id => integer().autoIncrement()();
 
-  /// 边的起点：本地合集。删合集 cascade 清边。
-  IntColumn get collectionId => integer().references(
+  /// 边的起点：本地合集（与 [bookUid] 二选一）。删合集 cascade 清边。
+  IntColumn get collectionId => integer().nullable().references(
     MediaCollections,
     #id,
+    onDelete: KeyAction.cascade,
+  )();
+
+  /// 边的起点：单视频（v162，与 [collectionId] 二选一；挂在单个视频上的作品，
+  /// 散装电影）。删视频 cascade 清边。
+  TextColumn get bookUid => text().nullable().references(
+    VideoBooks,
+    #bookUid,
     onDelete: KeyAction.cascade,
   )();
 
@@ -1891,6 +1935,14 @@ class CollectionRelations extends Table {
     onDelete: KeyAction.setNull,
   )();
 
+  /// 已绑定态（v162）：目标在本地库中是单视频（散装电影）时的 bookUid，与
+  /// [targetCollectionId] 至多一个非空。目标视频被删自动 setNull 退回纯刮削态。
+  TextColumn get targetBookUid => text().nullable().references(
+    VideoBooks,
+    #bookUid,
+    onDelete: KeyAction.setNull,
+  )();
+
   /// 目标条目来源（`ScrapeSource.name`：bangumi / tmdb）。
   TextColumn get source => text()();
 
@@ -1906,10 +1958,19 @@ class CollectionRelations extends Table {
   /// 目标封面本地路径（抓取层下载落地后回填）。
   TextColumn get coverPath => text().nullable()();
 
-  /// 同一合集下同一源内条目只此一边（重复刮削按此去重）。
+  /// 起点合集 / 单视频恰好一个；已绑定目标合集 / 单视频至多一个。
+  @override
+  List<String> get customConstraints => <String>[
+    'CHECK ((collection_id IS NULL) != (book_uid IS NULL))',
+    'CHECK (target_collection_id IS NULL OR target_book_uid IS NULL)',
+  ];
+
+  /// 同一起点下同一源内条目只此一边（重复刮削按此去重）。两条唯一键分别覆盖两种
+  /// 起点——SQLite 的 UNIQUE 对 NULL 不判等，各自只约束自己那种起点的行。
   @override
   List<Set<Column>> get uniqueKeys => [
     {collectionId, source, subjectId},
+    {bookUid, source, subjectId},
   ];
 }
 

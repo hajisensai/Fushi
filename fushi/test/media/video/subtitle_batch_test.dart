@@ -605,6 +605,52 @@ void main() {
     expect(many.first.message, 'jimaku subtitles carry no episode numbers');
   });
 
+  test('中途停止：手上那一集做完落盘，其余集记 skipped、不下载，并逐集回调 onItemDone', () async {
+    final _FakeProvider provider = _FakeProvider();
+    bool stop = false;
+    final List<SubtitleBatchItem> started = <SubtitleBatchItem>[];
+    final List<SubtitleBatchStatus> finished = <SubtitleBatchStatus>[];
+    final List<SubtitleBatchItem> results = await runSubtitleBatch(
+      registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]),
+      candidates: <VideoSubtitleCandidate>[
+        _Cand('Show - 01.ja.srt', episode: 1),
+        _Cand('Show - 02.ja.srt', episode: 2),
+        _Cand('Show - 03.ja.srt', episode: 3),
+      ],
+      targets: <SubtitleBatchTarget>[
+        _target(0, 'Show - 01'),
+        _target(1, 'Show - 02'),
+        _target(2, 'Show - 03'),
+      ],
+      saveDirectory: tmp.path,
+      isCancelled: () => stop,
+      // 第 1 集开始下载时用户点了「停止」。
+      onItemStart: (SubtitleBatchItem item) async {
+        started.add(item);
+        stop = true;
+      },
+      onItemDone: (SubtitleBatchItem item) async => finished.add(item.status),
+    );
+    expect(started, hasLength(1), reason: '停止后不再开始新的一集');
+    expect(
+      results.map((SubtitleBatchItem i) => i.status),
+      <SubtitleBatchStatus>[
+        SubtitleBatchStatus.done,
+        SubtitleBatchStatus.skipped,
+        SubtitleBatchStatus.skipped,
+      ],
+    );
+    expect(File(results[0].subtitlePath!).existsSync(), isTrue);
+    expect(results[1].subtitlePath, isNull);
+    expect(provider.downloaded, <String>['Show - 01.ja.srt']);
+    expect(finished, <SubtitleBatchStatus>[
+      SubtitleBatchStatus.done,
+      SubtitleBatchStatus.skipped,
+      SubtitleBatchStatus.skipped,
+    ]);
+    expect(tmp.listSync().whereType<File>(), hasLength(1));
+  });
+
   test('单集下载失败记 failed，不中断后面的集', () async {
     final _FakeProvider provider = _FakeProvider(
       failNames: <String>{'Show - 01.ja.srt'},
@@ -633,6 +679,25 @@ void main() {
       ),
     );
     expect(results[1].error, isNull);
+    expect(results[0].failureStage, SubtitleBatchFailureStage.download);
+    expect(results[1].failureStage, isNull);
+  });
+
+  test('下载到了但写不进本地：failed 记在「写盘」这一步，行文案不说成「下载失败」', () async {
+    // 保存目录的位置上是个文件：createSync / 写盘必抛。
+    final File blocker = File('${tmp.path}/not_a_dir');
+    await blocker.writeAsString('x');
+    final List<SubtitleBatchItem> results = await runSubtitleBatch(
+      registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[_FakeProvider()]),
+      candidates: <VideoSubtitleCandidate>[
+        _Cand('Show - 01.ja.srt', episode: 1),
+      ],
+      targets: <SubtitleBatchTarget>[_target(0, 'Show - 01')],
+      saveDirectory: blocker.path,
+    );
+    expect(results.single.status, SubtitleBatchStatus.failed);
+    expect(results.single.failureStage, SubtitleBatchFailureStage.write);
+    expect(results.single.error, isA<FileSystemException>());
   });
 
   test('onItemDone 抛错（调用方持久化失败）只算这一集失败：保留已落盘路径，后面的集照常处理', () async {
@@ -663,6 +728,9 @@ void main() {
       ],
     );
     expect(results[1].error, isStateError);
+    // 已经落盘：失败在「设为这一集的字幕」这一步，行上不能再说「下载失败」。
+    expect(results[1].failureStage, SubtitleBatchFailureStage.persist);
+    expect(results[0].failureStage, isNull);
     expect(
       File(results[1].subtitlePath!).existsSync(),
       isTrue,

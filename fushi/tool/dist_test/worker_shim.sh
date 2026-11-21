@@ -258,6 +258,10 @@ cmd_lock() {
   [ -d .git ] || git init -q || die "git init failed"
   # Pack and build paths under a Windows profile pass MAX_PATH easily.
   [ "$(os_kind)" = windows ] && git config core.longpaths true
+  # No gc inside receive-pack: it runs after the ref report and before the
+  # push returns, silent, and the coordinator kills a push that prints
+  # nothing for two minutes. worker_prepare.sh runs `git gc --auto` instead.
+  git config receive.autogc false
   # Borrow objects so a push only carries what is new: secondary slots from
   # the first checkout, the first one from the owner's seed clone
   # (worker_setup clones the public repo there), if any.
@@ -309,7 +313,7 @@ cmd_receive() {
   local dir
   dir=$(slot_dir "$slot")
   check_owner "$dir"
-  exec git receive-pack "$dir"
+  exec git -c receive.autogc=false receive-pack "$dir"
 }
 
 cmd_prepare() {

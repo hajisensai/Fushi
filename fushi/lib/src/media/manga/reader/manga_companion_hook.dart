@@ -173,6 +173,16 @@ abstract interface class MangaCompanionReader {
   /// Counts one lookup made on the companion for this manga, with the page's
   /// own lookup counter (the one its in-page popup uses).
   void countLookup();
+
+  /// The companion shows a lookup for this manga (also every main-screen tap
+  /// while it is up: those lookups show there instead of the in-page popup):
+  /// the page's "pause on lookup", as when its in-page popup opens
+  /// (BUG-4908).
+  void lookupOpened();
+
+  /// That lookup closed ([resume]: by the user) or went away with the
+  /// companion: the page's popup-close resume.
+  void lookupClosed({required bool resume});
 }
 
 /// "OCR this page" state: one page at a time, only ever started by [run]
@@ -364,6 +374,8 @@ class MangaCompanionHook {
       route: nextRoute,
       onCommand: handleCommand,
       onLookupCounted: _reader.countLookup,
+      onLookupOpened: _reader.lookupOpened,
+      onLookupClosed: _reader.lookupClosed,
     );
     if (!_started) {
       _started = true;

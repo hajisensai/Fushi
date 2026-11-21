@@ -64,8 +64,9 @@ pub enum Cipher {
     Raw,
 }
 
-/// 判断字节是不是加密 QRC。本地缓存靠文件头认，不看提示；十六进制串与裸密文只在提示是
-/// `qrc` 时才认（别的格式里一串十六进制可能就是正文）。明文 / XML 包装 QRC 返回 None。
+/// 判断字节是不是加密 QRC。本地缓存靠文件头认，不看提示；十六进制串（含旧接口 XML 的
+/// CDATA 包装，见 [hex_payload]）与裸密文只在提示是 `qrc` 时才认（别的格式里一串十六进制
+/// 可能就是正文）。明文 / XML 包装 QRC 返回 None。
 pub fn sniff_encrypted(bytes: &[u8], qrc_hint: bool) -> Option<Cipher> {
     if bytes.starts_with(&LOCAL_MAGIC) {
         return Some(Cipher::Local);
@@ -73,16 +74,64 @@ pub fn sniff_encrypted(bytes: &[u8], qrc_hint: bool) -> Option<Cipher> {
     if !qrc_hint {
         return None;
     }
-    let trimmed = bytes.trim_ascii();
-    if !trimmed.is_empty() && trimmed.iter().all(u8::is_ascii_hexdigit) {
+    if hex_payload(bytes).is_some() {
         return Some(Cipher::Hex);
     }
     let textual = bytes.contains(&b'[') || contains(bytes, b"LyricContent");
     (!textual).then_some(Cipher::Raw)
 }
 
+const CDATA_OPEN: &[u8] = b"<![CDATA[";
+const CDATA_CLOSE: &[u8] = b"]]>";
+
+fn is_hex(s: &[u8]) -> bool {
+    !s.is_empty() && s.iter().all(u8::is_ascii_hexdigit)
+}
+
+/// `s`（去首尾空白后）是 `<![CDATA[…]]>` 时返回里面（去空白后）的内容。
+fn cdata_body(s: &[u8]) -> Option<&[u8]> {
+    s.trim_ascii()
+        .strip_prefix(CDATA_OPEN)?
+        .strip_suffix(CDATA_CLOSE)
+        .map(<[u8]>::trim_ascii)
+}
+
+/// 十六进制密文本体。三种形态：
+/// - 整份就是十六进制串（新接口 `lyric` 字段）；
+/// - 旧接口 XML（`<content><![CDATA[hex]]></content>`，同一份里还有翻译 `<contentts>`、
+///   罗马音 `<contentroma>`）：只取 `<content>` 元素，CDATA 包装或裸写都认；有 `<content>`
+///   却不是十六进制（空的、明文）就不认，不退去拿翻译当原文；
+/// - 没有 `<content>` 元素时，第一段内容全是十六进制的 `<![CDATA[…]]>`。
+fn hex_payload(bytes: &[u8]) -> Option<&[u8]> {
+    let trimmed = bytes.trim_ascii();
+    if is_hex(trimmed) {
+        return Some(trimmed);
+    }
+    if let Some(open) = find(bytes, b"<content>") {
+        let body = &bytes[open + b"<content>".len()..];
+        let body = &body[..find(body, b"</content>")?];
+        let inner = cdata_body(body).unwrap_or(body.trim_ascii());
+        return is_hex(inner).then_some(inner);
+    }
+    let mut rest = bytes;
+    while let Some(start) = find(rest, CDATA_OPEN) {
+        let body = &rest[start + CDATA_OPEN.len()..];
+        let end = find(body, CDATA_CLOSE)?;
+        let inner = body[..end].trim_ascii();
+        if is_hex(inner) {
+            return Some(inner);
+        }
+        rest = &body[end + CDATA_CLOSE.len()..];
+    }
+    None
+}
+
+fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    hay.windows(needle.len()).position(|w| w == needle)
+}
+
 fn contains(hay: &[u8], needle: &[u8]) -> bool {
-    hay.windows(needle.len()).any(|w| w == needle)
+    find(hay, needle).is_some()
 }
 
 /// 解密成明文 QRC 字节（UTF-8）。密文长度不是 8 的倍数、zlib 解不开都返回 None。
@@ -94,7 +143,7 @@ pub fn decrypt(bytes: &[u8], cipher: Cipher) -> Option<Vec<u8>> {
             d.split_off(LOCAL_MAGIC.len())
         }
         Cipher::Hex => data_encoding::HEXLOWER_PERMISSIVE
-            .decode(bytes.trim_ascii())
+            .decode(hex_payload(bytes)?)
             .ok()?,
         Cipher::Raw => bytes.to_vec(),
     };
@@ -635,6 +684,41 @@ mod tests {
         assert_eq!(sniff_encrypted(plain, true), None);
         assert_eq!(decrypt(b"0123456789ABCDEF", Cipher::Hex), None);
         assert_eq!(decrypt(b"short", Cipher::Raw), None);
+    }
+
+    #[test]
+    fn old_api_xml_cdata_wrapped_hex_is_recognised() {
+        let plain = "[1000,500]夜(1000,500)".as_bytes();
+        let hex = encrypt_hex(plain);
+        let tr = encrypt_hex("[1000,500]夜晚(1000,500)".as_bytes());
+        // 旧接口整份响应：原文在 <content>，翻译在 <contentts>，只取原文。
+        let full = format!(
+            "<?xml version=\"1.0\" encoding=\"GB2312\" ?>\n<QrcInfos>\n\
+             <content><![CDATA[\n{hex}\n]]></content>\n\
+             <contentts><![CDATA[{tr}]]></contentts>\n\
+             <contentroma><![CDATA[]]></contentroma>\n</QrcInfos>"
+        );
+        assert_eq!(sniff_encrypted(full.as_bytes(), true), Some(Cipher::Hex));
+        assert_eq!(sniff_encrypted(full.as_bytes(), false), None);
+        assert_eq!(decrypt(full.as_bytes(), Cipher::Hex).unwrap(), plain);
+        // 只交 <content> 片段 / 裸 CDATA / <content> 里不带 CDATA 的十六进制。
+        for wrapped in [
+            format!("<content><![CDATA[{hex}]]></content>"),
+            format!("  <![CDATA[{hex}]]>\n"),
+            format!("<content>{hex}</content>"),
+        ] {
+            assert_eq!(sniff_encrypted(wrapped.as_bytes(), true), Some(Cipher::Hex));
+            assert_eq!(decrypt(wrapped.as_bytes(), Cipher::Hex).unwrap(), plain);
+        }
+        // <content> 是空的：不退去拿翻译当原文。
+        let empty =
+            format!("<content><![CDATA[]]></content><contentts><![CDATA[{tr}]]></contentts>");
+        assert_eq!(sniff_encrypted(empty.as_bytes(), true), None);
+        // CDATA 里是明文 QRC（带 `[`）：不是密文。
+        let plain_cdata = "<content><![CDATA[[1000,500]夜(1000,500)]]></content>";
+        assert_eq!(sniff_encrypted(plain_cdata.as_bytes(), true), None);
+        // 没闭合的 CDATA 不认。
+        assert_eq!(hex_payload(format!("<![CDATA[{hex}").as_bytes()), None);
     }
 
     #[test]

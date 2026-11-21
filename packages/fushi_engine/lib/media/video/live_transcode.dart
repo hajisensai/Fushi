@@ -132,6 +132,12 @@ const int kTranscodeAudioBitrate = 128000;
 /// CPU 被瓜分之后**每一段都变慢**，结果是本来为了不卡而降的画质反而更卡。
 const int kMaxConcurrentTranscodes = 3;
 
+/// 后台预取（host 预取下一段）始终给前台分段请求留着的名额数。
+///
+/// 预取只在「此刻没人排队、拿走一个之后仍至少剩这么多空名额」时才起，且**从不排
+/// 队**：前台请求永远不会因为预取而等名额（最坏只是和一段在跑的预取分 CPU）。
+const int kTranscodeSlotsReservedForForeground = 1;
+
 /// 纯函数：拼一段转码的 ffmpeg 参数。
 ///
 /// `-ss` / `-to` 都放在 `-i` **之前**：输入 seek 既快又精确，且此时两者都按源的原始
@@ -531,6 +537,37 @@ void _releaseTranscodeSlot() {
 @visibleForTesting
 int get liveTranscodeCount => _liveTranscodes;
 
+/// 后台工作预先拿到的一个并发名额（见 [tryLeaseIdleTranscodeSlot]）。[release] 幂等：
+/// 交还时与前台名额同一条交棒逻辑（有人排队就直接交给队首）。
+class TranscodeSlotLease {
+  TranscodeSlotLease._();
+
+  bool _released = false;
+
+  /// 是否已交还。
+  bool get released => _released;
+
+  void release() {
+    if (_released) return;
+    _released = true;
+    _releaseTranscodeSlot();
+  }
+}
+
+/// 只拿**空闲**名额给后台工作（host 预取下一段）：此刻没人排队、且拿走之后仍剩
+/// [kTranscodeSlotsReservedForForeground] 个空名额才给，否则返回 null——从不排队，
+/// 所以预取永远不会挡在前台请求前面。拿到的名额交给 [transcodeSegment] 的 `slot`，
+/// 由它在工作结束（含被取消、未开跑即作废）时交还。
+TranscodeSlotLease? tryLeaseIdleTranscodeSlot() {
+  if (_transcodeQueue.isNotEmpty) return null;
+  if (_liveTranscodes >=
+      kMaxConcurrentTranscodes - kTranscodeSlotsReservedForForeground) {
+    return null;
+  }
+  _liveTranscodes++;
+  return TranscodeSlotLease._();
+}
+
 /// 转出一段，返回**已经可以直接发给播放器**的 MPEG-TS 分段字节：ffmpeg 的产物
 /// 就是最终产物（时间轴已由 `-output_ts_offset` 平移到片中绝对位置，TS 自描述、
 /// 没有初始化段），不做任何字节层改写。
@@ -543,26 +580,37 @@ Future<Uint8List> transcodeSegment({
   int segmentSeconds = kTranscodeSegmentSeconds,
   String? workKey,
   bool Function()? isAlive,
+  TranscodeSlotLease? slot,
 }) {
   // [workKey]：这段工作归属的流（host 侧传签发它的 token），[cancelTranscodeWork]
   // 按它取消；[isAlive]：这条流此刻是否还有效，排队前、拿到名额后、回退重跑前各判
   // 一次。两者都不传时行为与之前完全相同。
-  final ({Duration start, Duration end}) range = transcodeSegmentRange(
-    index,
-    durationMs,
-    segmentSeconds: segmentSeconds,
-  );
-  return _runSegment(
-    buildTranscodeSegmentArgs(
-      inputPath: inputPath,
-      profile: profile,
-      start: range.start,
-      end: range.end,
-      audioStreamIndex: audioStreamIndex,
-    ),
-    workKey: workKey,
-    isAlive: isAlive,
-  );
+  //
+  // [slot]：调用方已用 [tryLeaseIdleTranscodeSlot] 拿到的名额（后台预取）。传了就
+  // 不再排队取名额，工作结束时（成功 / 失败 / 被取消 / 未开跑即作废）交还它。
+  try {
+    final ({Duration start, Duration end}) range = transcodeSegmentRange(
+      index,
+      durationMs,
+      segmentSeconds: segmentSeconds,
+    );
+    final Future<Uint8List> run = _runSegment(
+      buildTranscodeSegmentArgs(
+        inputPath: inputPath,
+        profile: profile,
+        start: range.start,
+        end: range.end,
+        audioStreamIndex: audioStreamIndex,
+      ),
+      workKey: workKey,
+      isAlive: isAlive,
+      slot: slot,
+    );
+    return slot == null ? run : run.whenComplete(slot.release);
+  } catch (_) {
+    slot?.release();
+    rethrow;
+  }
 }
 
 /// 单段转码的墙钟上界。一段只有 [kTranscodeSegmentSeconds] 秒内容，正常几百毫秒到
@@ -657,6 +705,7 @@ Future<Uint8List> _runSegment(
   List<String> input, {
   String? workKey,
   bool Function()? isAlive,
+  TranscodeSlotLease? slot,
 }) {
   final List<String> args = prepareDvdFfmpegArgs(input);
   return _runTranscodeWork<Uint8List>(
@@ -673,7 +722,8 @@ Future<Uint8List> _runSegment(
         );
       }
 
-      await _acquireTranscodeSlot(work);
+      // 带着预先拿到的名额（后台预取）就不排队；那个名额由 [transcodeSegment] 交还。
+      if (slot == null) await _acquireTranscodeSlot(work);
       try {
         work.throwIfAbandoned();
         return await runWithBlurayFfmpegInput(
@@ -682,7 +732,7 @@ Future<Uint8List> _runSegment(
               _spawnResolvedSegment(resolved, session, work),
         );
       } finally {
-        _releaseTranscodeSlot();
+        if (slot == null) _releaseTranscodeSlot();
       }
     },
   );
@@ -723,6 +773,158 @@ Future<Uint8List> _spawnResolvedSegment(
     throw TranscodeFailure(r.code, stderr);
   }
   return r.bytes;
+}
+
+/// 转码分段缓存的总字节上限。
+///
+/// 一段 = [kTranscodeSegmentSeconds] 秒内容：3 Mbps 档约 2.3 MB，8 Mbps 档约 6 MB，
+/// 64 MB 能装下最近十来段——够「往回拖一下」「同一段被重新请求」命中，又不至于让
+/// 无头 host（NAS / 小主机）为一条播放会话常驻几百 MB。
+const int kTranscodeSegmentCacheBytes = 64 * 1024 * 1024;
+
+/// 一段转码产物在缓存里的身份：签发它的流（host 侧是流 token，画质档与音轨都绑在
+/// token 上）、段号、以及本次反查到的输入路径（同一 token 下库里换了文件就不命中）。
+typedef _TranscodeSegmentKey = ({String stream, int index, String input});
+
+/// 转码分段的小 LRU（video-34）：同一条流同一段只转一次。
+///
+/// 背景：一段一个进程（见文件头）没有可泄漏的状态，但也意味着播放器往回拖、或因
+/// 重连 / seek 重新请求同一段时，host 要把这 6 秒再完整转一遍——转码是整条链路里
+/// 最贵的一步，4K HEVC 源的一段要占满多核好几秒。
+///
+/// 两层：
+/// - **完成的段**按最近使用排序，总字节超过 [maxBytes] 时从最久未用的一头淘汰；单段
+///   比 [maxBytes] 还大的不入缓存。
+/// - **在途的段**按同一个键合流：同一段的并发请求共用一次转码，不起第二个 ffmpeg。
+///   失败 / 被取消的结果原样传给每个等待者，**不入缓存**（下次请求重新转）。
+///
+/// 生命周期跟流走：调用方在流作废时（释放流票、TTL / 上限淘汰、吊销）调
+/// [evictStream]，该流的段立即出缓存；作废那一刻还在途的段转完后也不再入缓存。
+class TranscodeSegmentCache {
+  TranscodeSegmentCache({this.maxBytes = kTranscodeSegmentCacheBytes});
+
+  final int maxBytes;
+
+  /// 插入顺序即 LRU 顺序：命中时移到末尾，淘汰从头部开始。
+  final Map<_TranscodeSegmentKey, Uint8List> _done =
+      <_TranscodeSegmentKey, Uint8List>{};
+  final Map<_TranscodeSegmentKey, Future<Uint8List>> _inflight =
+      <_TranscodeSegmentKey, Future<Uint8List>>{};
+  int _bytes = 0;
+
+  /// 当前缓存的总字节数（只计完成的段）。
+  int get bytes => _bytes;
+
+  /// 当前缓存的完成段数。
+  int get length => _done.length;
+
+  /// 当前在途（正在转、可被合流）的段数。
+  int get inflightCount => _inflight.length;
+
+  /// [stream] 的第 [index] 段是否已缓存或正在转（后台预取据此判断要不要起）。
+  bool contains({
+    required String stream,
+    required int index,
+    required String input,
+  }) {
+    final _TranscodeSegmentKey key = (
+      stream: stream,
+      index: index,
+      input: input,
+    );
+    return _done.containsKey(key) || _inflight.containsKey(key);
+  }
+
+  /// 放弃 [stream] 第 [index] 段的在途转码（调用方随后会取消它）：立即摘掉合流登记，
+  /// 之后同键的请求另起一次转码，不会合流到这次注定以取消结束的工作上；它的结果也
+  /// 不入缓存。已完成的段不受影响。
+  void abandonInflight({
+    required String stream,
+    required int index,
+    required String input,
+  }) {
+    _inflight.remove((stream: stream, index: index, input: input));
+  }
+
+  /// 取 [stream] 的第 [index] 段：命中直接返回；同键在途就等那一次；否则跑
+  /// [compute]，成功后入缓存。
+  Future<Uint8List> obtain({
+    required String stream,
+    required int index,
+    required String input,
+    required Future<Uint8List> Function() compute,
+  }) {
+    final _TranscodeSegmentKey key = (
+      stream: stream,
+      index: index,
+      input: input,
+    );
+    final Uint8List? hit = _done.remove(key);
+    if (hit != null) {
+      _done[key] = hit;
+      return Future<Uint8List>.value(hit);
+    }
+    final Future<Uint8List>? pending = _inflight[key];
+    if (pending != null) return pending;
+    // 先登记再开跑：compute 同步抛出时也由下面的 catch 收进 Future，不会留下登记。
+    final Completer<Uint8List> result = Completer<Uint8List>();
+    final Future<Uint8List> self = result.future;
+    _inflight[key] = self;
+    unawaited(_computeInto(key, self, compute, result));
+    return self;
+  }
+
+  Future<void> _computeInto(
+    _TranscodeSegmentKey key,
+    Future<Uint8List> self,
+    Future<Uint8List> Function() compute,
+    Completer<Uint8List> result,
+  ) async {
+    try {
+      final Uint8List bytes = await compute();
+      // 在途期间流被作废（evictStream 摘掉了登记）就不入缓存。
+      if (identical(_inflight[key], self)) {
+        _inflight.remove(key);
+        _store(key, bytes);
+      }
+      result.complete(bytes);
+    } catch (e, st) {
+      if (identical(_inflight[key], self)) _inflight.remove(key);
+      result.completeError(e, st);
+    }
+  }
+
+  void _store(_TranscodeSegmentKey key, Uint8List bytes) {
+    if (bytes.length > maxBytes) return;
+    final Uint8List? old = _done.remove(key);
+    if (old != null) _bytes -= old.length;
+    _done[key] = bytes;
+    _bytes += bytes.length;
+    while (_bytes > maxBytes && _done.isNotEmpty) {
+      final _TranscodeSegmentKey oldest = _done.keys.first;
+      _bytes -= _done.remove(oldest)!.length;
+    }
+  }
+
+  /// 流 [stream] 作废：它的完成段立即出缓存，在途段转完后不入缓存（等待中的请求照常
+  /// 拿到那次转码的结果——是否还认这条流由调用方自己的存活判定决定）。
+  void evictStream(String stream) {
+    _done.removeWhere((_TranscodeSegmentKey k, Uint8List v) {
+      if (k.stream != stream) return false;
+      _bytes -= v.length;
+      return true;
+    });
+    _inflight.removeWhere(
+      (_TranscodeSegmentKey k, Future<Uint8List> _) => k.stream == stream,
+    );
+  }
+
+  /// 清空（host 停机）。
+  void clear() {
+    _done.clear();
+    _inflight.clear();
+    _bytes = 0;
+  }
 }
 
 /// 转码进程以非 0 退出。带上 ffmpeg 的 stderr，好让 host 日志里能看出是源文件的问题

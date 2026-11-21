@@ -49,6 +49,7 @@ import 'package:fushi/src/web_browser/tab_view/web_browser_tab_actions.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_visit_recorder.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab_host.dart';
+import 'package:fushi/src/web_browser/web_browser_fullscreen.dart';
 import 'package:fushi/src/web_browser/web_browser_prefs.dart';
 import 'package:fushi/src/webview/web_payload_limits.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
@@ -153,6 +154,10 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
   bool _appliedDesktopMode = false;
   int _appliedTextZoom = 100;
   bool _appliedForceDark = false;
+
+  /// 当前装着的全屏脚本（「Fushi 接管网页全屏」开关变了就换掉它，下次加载生效）。
+  late UserScript _fullscreenScript;
+  late bool _appliedFullscreenTakeover;
   Offset? _lastPointerDown;
   bool _closed = false;
 
@@ -173,6 +178,8 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     _appliedDesktopMode = _tab.desktopMode;
     _appliedTextZoom = _tab.textZoom;
     _appliedForceDark = _readForceDark();
+    _appliedFullscreenTakeover = _readFullscreenTakeover();
+    _fullscreenScript = _buildFullscreenScript();
     _downloader = WebBrowserDownloader(
       store: widget.host.store,
       // 按标签页会话取 cookie：Android 无痕页取本会话具名 Profile；其它平台无痕页
@@ -302,6 +309,19 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
 
   // ── 设置 ─────────────────────────────────────────────────────────────
 
+  bool _readFullscreenTakeover() {
+    try {
+      return webBrowserFullscreenTakeover(_prefs);
+    } on Object {
+      return kWebBrowserFullscreenTakeoverDefault;
+    }
+  }
+
+  UserScript _buildFullscreenScript() => UserScript(
+    source: webBrowserFullscreenScript(takeover: _appliedFullscreenTakeover),
+    injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+  );
+
   bool _readForceDark() {
     try {
       return webBrowserForceDark(_prefs);
@@ -414,10 +434,35 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
 
   void _onPrefsChanged() {
     _pullToRefresh?.sync();
+    _syncFullscreenTakeover();
     final bool forceDark = _readForceDark();
     if (forceDark == _appliedForceDark) return;
     _appliedForceDark = forceDark;
     unawaited(_applySettings(reload: false));
+  }
+
+  /// 「Fushi 接管网页全屏」开关变化：换掉以后每个文档的全屏脚本（当前文档里已装的
+  /// 拦截收不回，刷新后生效——设置项的说明里写明了）。
+  void _syncFullscreenTakeover() {
+    final bool takeover = _readFullscreenTakeover();
+    if (takeover == _appliedFullscreenTakeover) return;
+    _appliedFullscreenTakeover = takeover;
+    final UserScript old = _fullscreenScript;
+    _fullscreenScript = _buildFullscreenScript();
+    final InAppWebViewController? controller = _controller;
+    if (controller == null) return;
+    unawaited(() async {
+      try {
+        await controller.removeUserScript(userScript: old);
+        await controller.addUserScript(userScript: _fullscreenScript);
+      } on Object catch (error, stack) {
+        ErrorLogService.instance.log(
+          'WebBrowserTabView.fullscreenTakeover',
+          error,
+          stack,
+        );
+      }
+    }());
   }
 
   void _onTabChanged() {
@@ -482,10 +527,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
         source: kWebBrowserScrollScript,
         injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
       ),
-      UserScript(
-        source: kWebBrowserFullscreenScript,
-        injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
-      ),
+      _fullscreenScript,
       // 链接 / 图片菜单盖在网页上方：macOS 点到网页也要能关（showFushiMenu 统一）。
       WebViewMenuDismissBridge.userScript,
       // 桌面右键换成本 app 的链接 / 图片菜单；手机走原生长按命中（Android 的
@@ -669,7 +711,10 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     _tab.setError(classified);
   }
 
-  void _setFullscreen(bool fullscreen) {
+  void _setFullscreen(
+    bool fullscreen, {
+    WebBrowserFullscreenFit fit = WebBrowserFullscreenFit.unknown,
+  }) {
     if (_platform == TargetPlatform.android) {
       if (fullscreen) {
         _fullscreenZoom.onEnterFullscreen();
@@ -677,9 +722,16 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
         _applyZoomCorrection(_fullscreenZoom.onExitFullscreen());
       }
     }
-    if (_tab.fullscreen == fullscreen) return;
-    _tab.update(fullscreen: fullscreen);
-    widget.host.onFullscreenChanged(_tab, fullscreen: fullscreen);
+    // 原生全屏回调（关了接管时）不带方向：沿用页内脚本刚报过的那个。
+    final WebBrowserFullscreenFit nextFit = !fullscreen
+        ? WebBrowserFullscreenFit.unknown
+        : (fit == WebBrowserFullscreenFit.unknown && _tab.fullscreen
+              ? _tab.fullscreenFit
+              : fit);
+    if (_tab.fullscreen == fullscreen && _tab.fullscreenFit == nextFit) return;
+    final bool toggled = _tab.fullscreen != fullscreen;
+    _tab.update(fullscreen: fullscreen, fullscreenFit: nextFit);
+    if (toggled) widget.host.onFullscreenChanged(_tab, fullscreen: fullscreen);
   }
 
   void _onZoomScaleChanged(double newScale) {
@@ -1253,7 +1305,12 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
         kWebPayloadTinyMaxChars,
         (List<dynamic> args) {
           if (mounted && args.isNotEmpty && args.first is bool) {
-            _setFullscreen(args.first as bool);
+            _setFullscreen(
+              args.first as bool,
+              fit: WebBrowserFullscreenFit.fromWire(
+                args.length > 1 ? args[1] : null,
+              ),
+            );
           }
           return null;
         },

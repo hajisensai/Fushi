@@ -39,6 +39,51 @@ Future<void> showMediaPrivacyDialog(
       MediaPrivacyDialog(db: db, kind: kind, entryKey: entryKey, title: title),
 );
 
+/// 菜单开关行（[showMediaPrivacyDialog] 的轻量入口，#4b）读的状态：与对话框同一
+/// 口径的**有效**私密（作品自己 / 所在私密合集 / 私密来源库），[locked] = 来自
+/// 继承、在作品这一行拨不掉。
+Future<({bool value, bool locked})> loadMediaPrivacyToggleState(
+  FushiDatabase db,
+  TagHostKind kind,
+  String entryKey,
+) async {
+  final bool own = await db.isMediaPrivate(kind, entryKey);
+  final List<MediaCollectionRow> collections =
+      await privateCollectionsContaining(db, kind, entryKey);
+  final MediaSourceRow? source = await privateSourceLibraryContaining(
+    db,
+    kind,
+    entryKey,
+  );
+  final bool inherited = collections.isNotEmpty || source != null;
+  return (value: own || inherited, locked: inherited);
+}
+
+/// 写作品自己的私密标记并给结果提示（对话框与菜单开关行共用）。失败时提示后
+/// 重新抛出，调用方把开关拨回去。
+Future<void> writeMediaPrivacy(
+  FushiDatabase db,
+  TagHostKind kind,
+  String entryKey,
+  bool private,
+) async {
+  try {
+    await db.setMediaPrivate(kind, entryKey, private);
+  } on Object catch (error) {
+    // 写失败必须明说：用户以为已经藏起来了、其实下一轮照常上传，正是这个开关
+    // 要防的事。
+    FushiToast.show(
+      msg: t.media_privacy_save_failed(reason: error.toString()),
+      severity: ToastSeverity.error,
+    );
+    rethrow;
+  }
+  FushiToast.show(
+    msg: private ? t.media_privacy_marked_toast : t.media_privacy_cleared_toast,
+    severity: ToastSeverity.success,
+  );
+}
+
 class MediaPrivacyDialog extends StatefulWidget {
   const MediaPrivacyDialog({
     super.key,
@@ -116,22 +161,11 @@ class _MediaPrivacyDialogState extends State<MediaPrivacyDialog> {
   Future<void> _set(bool private) async {
     setState(() => _writing = true);
     try {
-      await widget.db.setMediaPrivate(widget.kind, widget.entryKey, private);
+      await writeMediaPrivacy(widget.db, widget.kind, widget.entryKey, private);
       if (!mounted) return;
       setState(() => _private = private);
-      FushiToast.show(
-        msg: private
-            ? t.media_privacy_marked_toast
-            : t.media_privacy_cleared_toast,
-        severity: ToastSeverity.success,
-      );
-    } on Object catch (error) {
-      // 写失败时开关保持原状态，但必须明说：用户以为已经藏起来了、其实下一轮照常
-      // 上传，正是这个开关要防的事。
-      FushiToast.show(
-        msg: t.media_privacy_save_failed(reason: error.toString()),
-        severity: ToastSeverity.error,
-      );
+    } on Object {
+      // writeMediaPrivacy 已明说失败；开关保持原状态。
     } finally {
       if (mounted) setState(() => _writing = false);
     }

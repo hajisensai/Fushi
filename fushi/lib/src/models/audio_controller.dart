@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:audio_service/audio_service.dart' as ag;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/i18n/strings.g.dart' show t;
+import 'package:fushi/src/platform/android/android_notification_channels.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
 
 /// 系统媒体会话（锁屏 / 通知 / 耳机键）此刻归谁：有声书与音乐**同一时刻只有一个**
@@ -90,13 +92,15 @@ class AudioController {
           onSkipToPrevious: () => _skipPreviousController.add(null),
           onToggleFloatingLyric: () => _toggleFloatingLyricController.add(null),
         ),
-        config: const ag.AudioServiceConfig(
-          androidNotificationChannelId: 'app.fushi.reader.channel.audio',
-          androidNotificationChannelName: 'fushi',
+        config: ag.AudioServiceConfig(
+          androidNotificationChannelId: kAudioServiceNotificationChannelId,
+          // 只在渠道还不存在时生效；之后跟界面语言改名由启动同步负责
+          // （android_notification_channels.dart，拍板台 left3621）。
+          androidNotificationChannelName: t.notification_channel_media_playback,
           androidNotificationIcon: 'drawable/ic_stat_fushi',
           notificationColor: Colors.black,
-          fastForwardInterval: Duration(seconds: 5),
-          rewindInterval: Duration(seconds: 5),
+          fastForwardInterval: const Duration(seconds: 5),
+          rewindInterval: const Duration(seconds: 5),
         ),
       );
     } catch (e) {

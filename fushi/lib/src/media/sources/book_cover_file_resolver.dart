@@ -39,6 +39,10 @@ String? resolveBookCoverCaseInsensitive({
   required List<String> relPaths,
   required List<String> Function(String dir) listDir,
 }) {
+  // 一次调用内同一目录只列一次（novel-9）：候选 `cover.jpg` / `cover.jpeg` /
+  // `cover.png` 与声明封面的首段都从 extractDir 起走，之前每个候选各
+  // `listSync` 一遍同一个目录，书架上每本无封面书一次刷新要列 4 次。
+  final Map<String, List<String>> listed = <String, List<String>>{};
   for (final String rel in relPaths) {
     if (rel.isEmpty || p.isAbsolute(rel)) continue;
     final List<String> segs = p
@@ -49,7 +53,10 @@ String? resolveBookCoverCaseInsensitive({
     String current = extractDir;
     bool resolvedAll = true;
     for (final String seg in segs) {
-      final List<String> children = listDir(current);
+      final List<String> children = listed.putIfAbsent(
+        current,
+        () => listDir(current),
+      );
       String? match;
       for (final String child in children) {
         if (p.basename(child) == seg) {
@@ -111,4 +118,26 @@ String? resolveBookCoverFilePath({
   );
   if (resolved != null && File(resolved).existsSync()) return resolved;
   return null;
+}
+
+/// 阅读器里「这本书的封面文件」（BUG-5045）：制卡 `{book-cover}`、迷你播放条、
+/// 歌词页、快捷设置、TTS 通知、伴屏共用这一处，与书架字幕书 / 有声书卡
+/// （`reader_history/books.part.dart` 的 `_buildSrtCover`）同序：
+///
+/// 1. 配对 `srt_books.cover_path`（[pairedSrtCoverPath]）——字幕 + 音频导入的书
+///    （乐曲、独立字幕书）封面只落在这里：导入时选的图或从音频抽出的内嵌封面，
+///    正文是字幕行生成的 EPUB，OPF 里根本没有 cover-image；
+/// 2. 正文 EPUB 的封面（[extractDir] + [coverHref]，大小写不敏感，见
+///    [resolveBookCoverFilePath]）。
+///
+/// 只认真实存在的文件；都没有返回 null。
+String? resolveReaderBookCoverFilePath({
+  String? pairedSrtCoverPath,
+  String? extractDir,
+  String? coverHref,
+}) {
+  final String? own = pairedSrtCoverPath;
+  if (own != null && own.isNotEmpty && File(own).existsSync()) return own;
+  if (extractDir == null) return null;
+  return resolveBookCoverFilePath(extractDir: extractDir, coverPath: coverHref);
 }

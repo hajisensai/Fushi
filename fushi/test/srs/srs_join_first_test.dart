@@ -3,6 +3,9 @@
 // （BUG-4011 的裁决）。
 //
 // 真数据库 + 真同步引擎 + 真关联（SrsDbProfileLinker），位置是本机目录（LocalDirectoryAssetStore）。
+//
+// 新代（协议 4，G9-5）：「加入」= 内核 `collection_adopt` 把本机 profile 绑到对方的集合（同一个集合标识、同一个位置
+// 目录），**profile uid 不变**（协议 3 换 uid 的做法已删）；两边都空时按 D27 收敛到目录名小的那个集合。
 import 'dart:async';
 import 'dart:io';
 
@@ -108,21 +111,29 @@ void main() {
     }
   });
 
-  test('两台空设备在同一目录上、都不写入：收敛到最小 uid，两边都定下', () async {
+  test('两台空设备在同一目录上、都不写入：收敛到目录名小的那个集合，两边都定下，profile uid 不变', () async {
     final LocalDirectoryAssetStore dir = LocalDirectoryAssetStore(root);
     final _Device a = await _Device.open('a');
     final _Device b = await _Device.open('b');
-    final String smallest = a.store.profileUid.compareTo(b.store.profileUid) < 0
-        ? a.store.profileUid
-        : b.store.profileUid;
+    final (String aUid, String bUid) = (a.store.profileUid, b.store.profileUid);
+    // 新开的 profile 绑的是自己的集合，目录名就是自己的 uid（内核 `identity`）。
+    expect(a.store.sync2Dir, aUid);
+    expect(b.store.sync2Dir, bUid);
+    final String smallest = aUid.compareTo(bUid) < 0 ? aUid : bUid;
     final SrsSyncScheduler sa = a.scheduler(dir, 'L');
     final SrsSyncScheduler sb = b.scheduler(dir, 'L');
     for (int i = 0; i < 3; i++) {
       await sa.syncNow();
       await sb.syncNow();
     }
-    expect(a.store.profileUid, smallest);
-    expect(b.store.profileUid, smallest);
+    expect(a.store.sync2Dir, smallest);
+    expect(b.store.sync2Dir, smallest);
+    expect(a.store.sync2Collection, isNotNull);
+    expect(a.store.sync2Collection, b.store.sync2Collection);
+    expect(a.store.profileUid, aUid, reason: '新代加入不改 profile uid');
+    expect(b.store.profileUid, bUid, reason: '新代加入不改 profile uid');
+    expect(await a.db.profileUidOf(a.profileId), aUid);
+    expect(await b.db.profileUidOf(b.profileId), bUid);
     for (final _Device d in <_Device>[a, b]) {
       final SrsCollectionBinding? binding = await d.store.collectionBinding();
       expect(binding?.state, SrsCollectionBindingState.settled);
@@ -143,9 +154,13 @@ void main() {
     );
     await host.scheduler(dir, 'L').syncNow();
 
+    final String phoneUid = phone.store.profileUid;
     final SrsSyncScheduler sp = phone.scheduler(dir, 'L');
     expect(await sp.joinExistingCollection(), SrsCollectionJoin.joined);
-    expect(phone.store.profileUid, host.store.profileUid);
+    // 加入的是 host 的集合（同一个集合标识、同一个位置目录）；phone 的 profile uid 不变。
+    expect(phone.store.sync2Collection, host.store.sync2Collection);
+    expect(phone.store.sync2Dir, host.store.sync2Dir);
+    expect(phone.store.profileUid, phoneUid);
     expect(
       (await phone.store.collectionBinding())?.state,
       SrsCollectionBindingState.settled,
@@ -161,7 +176,8 @@ void main() {
     await sp.syncNow();
     await host.scheduler(dir, 'L').syncNow();
     expect(await host.store.note(note), isNotNull);
-    expect(host.store.profileUid, phone.store.profileUid);
+    expect(host.store.sync2Collection, phone.store.sync2Collection);
+    expect(phone.store.profileUid, phoneUid);
   });
 
   test('位置卡住：到点记为 provisional，照常写入、不挡', () async {

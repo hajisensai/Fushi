@@ -669,6 +669,27 @@ UpgradeDictionaryDart? lookupUpgradeDictionary() {
   }
 }
 
+typedef _TidyDictionaryNative = Int32 Function(Pointer<Utf8> dictDir);
+typedef TidyDictionaryDart = int Function(Pointer<Utf8> dictDir);
+
+/// `fushidicts_tidy_dictionary` 的绑定，用到时才解析（理由同
+/// [lookupUpgradeDictionary]）。
+///
+/// 原生语义（`fushidicts/upgrade.hpp` 的 `convert = false`）：只检查 + 清理。已是新索引
+/// 的词典顺带清掉遗留旧文件、把完成标记换成 `.fushidicts_3`，返回 0；旧式词典**不改写**，
+/// 返回 3（待升级）；装不进新索引的返回 2；读不了返回 -1。宿主每次启动静默调用，有待
+/// 升级的先征得用户同意再调 [lookupUpgradeDictionary]。会碰磁盘，放后台 isolate。
+TidyDictionaryDart? lookupTidyDictionary() {
+  try {
+    return _openNativeLib()
+        .lookupFunction<_TidyDictionaryNative, TidyDictionaryDart>(
+          'fushidicts_tidy_dictionary',
+        );
+  } on ArgumentError {
+    return null;
+  }
+}
+
 // ── zstd 文件解压（按需解析） ───────────────────────────────────────
 
 typedef _ZstdDecompressFileNative =

@@ -16,6 +16,7 @@ import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_track.d
 import 'package:fushi_engine/media/video/bitmap_subtitle/graphic_subtitle_track_extract.dart'
     show readGraphicSubtitleTrackInBackground;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:media_kit/media_kit.dart' show SubtitleTrack;
 
 /// 远端播放（互联 host / 媒体服务器 / 通用 http / 在线源）的图形字幕逐句时间表。
 ///
@@ -297,7 +298,11 @@ void main() {
         <(int, int)>[(1000, 2600), (4000, 5000)],
         reason: '暂定时长的边播边记句让位给整轨里的真实结束',
       );
-      expect(payload.existsSync(), isFalse, reason: '回传的整轨解析完即删');
+      expect(
+        payload.existsSync(),
+        isTrue,
+        reason: '选轨期间控制器持有这份整轨（整轨 OCR 再要时直接用，不下第二份）',
+      );
       expect(
         c.graphicSubtitleRegionTrack.value?.regions,
         hasLength(2),
@@ -322,6 +327,7 @@ void main() {
         ),
       );
       await pumpEventQueue();
+      expect(payload.existsSync(), isFalse, reason: '换了取数输入：上一份放下即删');
       c.debugLoadGraphicSubtitleTimingsWithInputForTesting(
         GraphicSubtitleTimingHostTrack(
           streamIndex: 2,
@@ -348,6 +354,157 @@ void main() {
         1000,
         reason: '迟到的作废结果也不覆盖遮蔽层的位图时间表',
       );
+    });
+
+    test('host 整轨：时间表 / 遮蔽层与整轨 OCR 共用一次下载，放下才删', () async {
+      final VideoPlayerController c = _graphicController();
+      addTearDown(c.dispose);
+      final Directory tmp = Directory.systemTemp.createTempSync('gfx_share_');
+      addTearDown(() => tmp.deleteSync(recursive: true));
+      final File payload = File('${tmp.path}/dl.bin')
+        ..writeAsBytesSync(_oneCueSup(canvasW: 1920, canvasH: 1080));
+      final File header = File('${tmp.path}/dl.header.download.json')
+        ..writeAsStringSync(
+          '{"codec":"hdmv_pgs_subtitle","width":0,"height":0}',
+        );
+      int downloads = 0;
+      final GraphicSubtitleTimingHostTrack host =
+          GraphicSubtitleTimingHostTrack(
+            streamIndex: 2,
+            codec: 'hdmv_pgs_subtitle',
+            download: () async {
+              downloads++;
+              return (payload: payload, header: header);
+            },
+          );
+      c.debugLoadGraphicSubtitleTimingsWithInputForTesting(host);
+      // 生产解码走后台 isolate：等位图时间表到手。
+      for (
+        int i = 0;
+        i < 500 && c.graphicSubtitleRegionTrack.value == null;
+        i++
+      ) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(downloads, 1);
+      expect(c.graphicSubtitleRegionTrack.value?.regions, hasLength(1));
+      // 整轨 OCR 拿控制器手里同一个输入（页面 [_remoteGraphicTrackOcrInput]）。
+      expect(
+        c.graphicSubtitleTimingInputForTrack(
+          streamIndex: 2,
+          codec: 'hdmv_pgs_subtitle',
+        ),
+        same(host),
+      );
+      final String out = '${tmp.path}/work/track.bin';
+      expect(
+        await materializeGraphicSubtitleTrack(input: host, outputPath: out),
+        isTrue,
+      );
+      expect(downloads, 1, reason: '同一份整轨不从 host 下第二遍');
+      expect(
+        (await readGraphicSubtitleTrackInBackground(
+          out,
+          complete: true,
+        )).map((BitmapSubtitleCue x) => (x.startMs, x.endMs)),
+        <(int, int)>[(1000, 3000)],
+      );
+      expect(payload.existsSync(), isTrue, reason: 'OCR 用完控制器仍持有');
+      expect(header.existsSync(), isTrue, reason: '共用的下载件只复制不挪动');
+      // 换轨 / 换片走的同一个复位：放下最后一份持有，下载件删掉。
+      c.debugResetGraphicTimingTablesForTesting();
+      expect(host.debugHolds, 0);
+      expect(payload.existsSync(), isFalse);
+      expect(header.existsSync(), isFalse);
+      expect(
+        File(bitmapSubtitleTrackHeaderPath(payload.path)).existsSync(),
+        isFalse,
+        reason: '解码放到约定位置的轨头副本一并删',
+      );
+    });
+
+    test('host 整轨：控制器销毁放下持有；下载失败不留缓存，下一位重新下', () async {
+      final Directory tmp = Directory.systemTemp.createTempSync('gfx_share_');
+      addTearDown(() => tmp.deleteSync(recursive: true));
+      final File payload = File('${tmp.path}/dl.bin')
+        ..writeAsBytesSync(<int>[1, 2, 3]);
+      int downloads = 0;
+      bool fail = true;
+      final GraphicSubtitleTimingHostTrack host =
+          GraphicSubtitleTimingHostTrack(
+            streamIndex: 2,
+            codec: 'hdmv_pgs_subtitle',
+            download: () async {
+              downloads++;
+              return fail ? null : (payload: payload, header: null);
+            },
+          );
+      expect(await host.retain(), isNull);
+      host.release();
+      fail = false;
+      expect(await host.retain(), isNotNull);
+      expect(downloads, 2);
+      host.release();
+      expect(payload.existsSync(), isFalse);
+
+      payload.writeAsBytesSync(<int>[1, 2, 3]);
+      final VideoPlayerController c = _graphicController();
+      c.graphicSubtitleTrackFileRegionLoad =
+          (
+            GraphicSubtitleHostTrackFiles files, {
+            required Size fallbackCanvas,
+          }) async => null;
+      c.debugLoadGraphicSubtitleTimingsWithInputForTesting(host);
+      await pumpEventQueue();
+      expect(host.debugHolds, 1);
+      expect(payload.existsSync(), isTrue);
+      c.dispose();
+      expect(host.debugHolds, 0);
+      expect(payload.existsSync(), isFalse);
+    });
+
+    test('host 整轨：关字幕 / 切到文本字幕即放下持有，不留到换集 / 退页', () async {
+      final Directory tmp = Directory.systemTemp.createTempSync('gfx_share_');
+      addTearDown(() => tmp.deleteSync(recursive: true));
+      final File payload = File('${tmp.path}/dl.bin');
+      GraphicSubtitleTimingHostTrack hostTrack() =>
+          GraphicSubtitleTimingHostTrack(
+            streamIndex: 2,
+            codec: 'hdmv_pgs_subtitle',
+            download: () async {
+              payload.writeAsBytesSync(<int>[1, 2, 3]);
+              return (payload: payload, header: null);
+            },
+          );
+      Future<GraphicSubtitleRegionTrack?> noRegions(
+        GraphicSubtitleHostTrackFiles files, {
+        required Size fallbackCanvas,
+      }) async => null;
+
+      // 关字幕（`no()`，[selectSubtitleTrack]）。
+      final VideoPlayerController off = _graphicController()
+        ..graphicSubtitleTrackFileRegionLoad = noRegions;
+      addTearDown(off.dispose);
+      final GraphicSubtitleTimingHostTrack a = hostTrack();
+      off.debugLoadGraphicSubtitleTimingsWithInputForTesting(a);
+      await pumpEventQueue();
+      expect(a.debugHolds, 1);
+      expect(payload.existsSync(), isTrue);
+      await off.selectSubtitleTrack(SubtitleTrack.no());
+      expect(a.debugHolds, 0, reason: '离开图形渲染即放下控制器那份');
+      expect(payload.existsSync(), isFalse);
+
+      // 换成文本 cue（[setCues] 非空：切到可点 overlay 文本字幕）。
+      final VideoPlayerController text = _graphicController()
+        ..graphicSubtitleTrackFileRegionLoad = noRegions;
+      addTearDown(text.dispose);
+      final GraphicSubtitleTimingHostTrack b = hostTrack();
+      text.debugLoadGraphicSubtitleTimingsWithInputForTesting(b);
+      await pumpEventQueue();
+      expect(b.debugHolds, 1);
+      text.setCues(<AudioCue>[_timing(0, 1000)..text = 'こんにちは']);
+      expect(b.debugHolds, 0);
+      expect(payload.existsSync(), isFalse);
     });
 
     test('换轨：位图时间表随两张时间表一起清空', () {

@@ -1,0 +1,9 @@
+## BUG-4912 · Jellyfin / Emby / Plex 整片下载不能续传、无空闲超时，暂停或断网后从 0 重下
+- **报告**：2026-11-20（来源：路线图 #3722 c47 的 video-26，回到代码复核成立）
+- **真实性**：✅ 真 bug。下载中心与续传清单（`fushi/lib/src/sync/interconnect_download_manager.dart` 的 `pause` / `resume` / `InterconnectVideoResumeRecord`）假定传输原语「中断留 `.part` 可续」，但媒体服务器两家都不是：
+  - `fushi/lib/src/sync/jellyfin_video_client.dart` `JellyfinVideoClient.downloadRemoteVideo` → `JellyfinApi.downloadToFile`：一次 GET 直接写 `dest`，失败 / 暂停时 `dest.deleteSync()`，下次从 0 开始；正文 `await for` 没有空闲超时，服务器接了连接不送数据就永远挂着；进程被杀时留下的是半截 `dest` 本身。
+  - `fushi/lib/src/sync/plex_video_client.dart` `PlexVideoClient.downloadRemoteVideo` → `packages/fushi_engine/lib/media/video/media_server/plex/plex_api.dart` `PlexApi.downloadToFile`：同上。
+  几个 GB 的片子暂停一次或断一次网就白下。
+- **[x] ① 已修复** — 新增 `packages/fushi_engine/lib/media/video/media_server/media_server_resumable_download.dart` 的 `downloadMediaServerFileResumable`：走 `ResumableDownloader`（`.part` + Range + If-Range，服务器 / 兼容层回 200 时丢弃旧 part 从 0 写，回 206 但验证器 / 总长对不上就作废重开），首字节 15 秒、正文空闲 45 秒超时，暂停经 `AbortableRequest` 真正中止并保留 `.part`。断点侧车 `<dest>.part.resume` 的键是条目身份（Jellyfin `jellyfin:<条目 id>:<版本 id>`、Plex `plex:<条目 id>`），只存键与 ETag / Last-Modified / 总长，**不存 URL**；错误文本经 `redactCredentialsInText` 脱敏。`JellyfinApi.downloadResumable` / `PlexApi.downloadResumable` 包装它，两家的 `downloadRemoteVideo` 改走它（都只下原文件端点：Jellyfin `static=true` 直出、Plex `download=1`，转码流不续传）；下载中心「放弃」同时清掉新侧车。分支 `pr/remote-stream-timeouts-resume`。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/media_server_resumable_download_test.dart`（真实本机 HTTP 服务端，支持 Range / If-Range / ETag）：空闲超时后留 `.part`、下一次带 Range + If-Range 续上并拼出完整文件、侧车不含令牌与地址；暂停抛 `RemoteDownloadCancelled` 且 `.part` 保留；兼容层不支持 Range（回 200）从 0 重下；ETag 变了不拼坏片；断点键不同不续传；401 错误文本不带令牌；Plex 同一路径续传且令牌只走请求头。
+- **备注**：计划要求的「真 Emby docker 下载几个 GB 的片暂停再继续」「兼容层（飞牛等）不支持 Range 时的回落」只在本机测试服务端上验证，没在真服务器上做（本轮所有者定不做设备 / 服务器实测）。

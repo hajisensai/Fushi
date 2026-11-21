@@ -7,15 +7,15 @@
 // 哪句才处理哪句：Blink 上把下一句的文本节点切进 wrapper span，含 ruby 的段落重新排出不同的行盒。
 // 这里钉住根因不变量：VN 在支持 CSS Highlight 的引擎上播放推进时屏上 DOM 一字不改，当前句由
 // CSS.highlights('fushi-sentence-audio') 承载、文本恰为该句（不含注音），所有字形坐标不动。
-import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
+import { readPayload } from './reader_harness_support.js';
 
+const scripts = readPayload();
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
-const scripts = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const W = 1200;
 const H = 800;
 // 原书 p-002.xhtml 原样标记：逐字配对 ruby 在段首，同段两句。

@@ -3,9 +3,9 @@
 ///
 /// 设置 › 外观 的三项选择用行尾的紧凑选择块（[ShellChoiceTiles]：迷你示意 + 短
 /// 标签）；首页「选一种库页布局」弹窗与新手引导欢迎页用带说明的大选择卡
-/// （[ShellLayoutChoiceCards]）。预览只按当前主题色与书库前几张封面画示意，不挂
-/// 真实库页（拿不到封面时用主题色块），几何随盒子缩放、不放真实文字以外的固定
-/// 尺寸，任何盒子都不溢出。
+/// （[ShellLayoutChoiceCards]）。拼贴示意用库页的真实色块组件按真实尺寸排好再整体
+/// 缩小（[_CollagePreview]）；封面网格、色块摆放、侧栏样式按当前主题色与书库前几张
+/// 封面画示意（拿不到封面时用主题色块）。几何随盒子缩放，任何盒子都不溢出。
 library;
 
 import 'dart:math' as math;
@@ -24,6 +24,8 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart'
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -33,9 +35,18 @@ import 'package:fushi/src/utils/components/fushi_typography.dart';
 /// 预览最多用几张封面（封面网格一屏 10 格，拼贴只用首块那一张）。
 const int kShellPreviewCoverLimit = 10;
 
+/// 预览用的一本书：书名（拼贴示意的大字标题 / 生成封面用）+ 封面图。
+@immutable
+class ShellPreviewCover {
+  const ShellPreviewCover({required this.title, required this.image});
+
+  final String title;
+  final ImageProvider<Object> image;
+}
+
 /// 书库（小说 / 漫画书架）里有封面的前几本的封面图，给预览用（[ref] 订阅书架，
 /// 载入完成后重建）。书架还没载入或一本带封面的都没有时为空表，预览改画主题色块。
-List<ImageProvider<Object>> shellPreviewCoversOf(
+List<ShellPreviewCover> shellPreviewCoversOf(
   WidgetRef ref,
   AppModel appModel, {
   int limit = kShellPreviewCoverLimit,
@@ -47,7 +58,7 @@ List<ImageProvider<Object>> shellPreviewCoversOf(
 );
 
 /// 不订阅、只取书架此刻已载入的那份（弹窗打开前取一次）。
-List<ImageProvider<Object>> shellPreviewCoversNow(
+List<ShellPreviewCover> shellPreviewCoversNow(
   BuildContext context,
   AppModel appModel, {
   int limit = kShellPreviewCoverLimit,
@@ -65,12 +76,12 @@ List<ImageProvider<Object>> shellPreviewCoversNow(
 const int kShellPreviewCoverDecodeWidth = 160;
 
 /// [books] 里有封面的前 [limit] 本的封面图（解码宽度 [kShellPreviewCoverDecodeWidth]）。
-List<ImageProvider<Object>> shellPreviewCoversFrom(
+List<ShellPreviewCover> shellPreviewCoversFrom(
   AppModel appModel,
   List<MediaItem> books, {
   int limit = kShellPreviewCoverLimit,
 }) {
-  final List<ImageProvider<Object>> covers = <ImageProvider<Object>>[];
+  final List<ShellPreviewCover> covers = <ShellPreviewCover>[];
   for (final MediaItem item in books) {
     if (covers.length >= limit) break;
     final String? url = item.imageUrl;
@@ -83,7 +94,9 @@ List<ImageProvider<Object>> shellPreviewCoversFrom(
       appModel: appModel,
       decodeWidth: kShellPreviewCoverDecodeWidth,
     );
-    if (cover != null) covers.add(cover);
+    if (cover != null) {
+      covers.add(ShellPreviewCover(title: item.title, image: cover));
+    }
   }
   return covers;
 }
@@ -171,14 +184,14 @@ class _PreviewCover extends StatelessWidget {
   }
 }
 
-/// 库页布局的缩略预览：拼贴 = 首块加大（带首张封面）+ 右侧四块；封面网格 =
-/// 5 × 2 封面格。拼贴的各块按 [arrangement] 偏移 / 旋转，换摆放时用
+/// 库页布局的缩略预览：拼贴 = 真实拼贴色块缩小（[_CollagePreview]）；封面网格 =
+/// 5 × 2 封面格。拼贴的各块按 [arrangement] 偏移 / 旋转，切换布局时用
 /// [fushiMotionDuration] 过渡。
 class ShellLayoutPreview extends StatelessWidget {
   const ShellLayoutPreview({
     required this.layout,
     required this.arrangement,
-    this.covers = const <ImageProvider<Object>>[],
+    this.covers = const <ShellPreviewCover>[],
     this.gridColumns = 5,
     this.gridRows = 2,
     super.key,
@@ -186,7 +199,7 @@ class ShellLayoutPreview extends StatelessWidget {
 
   final ShellContentLayout layout;
   final ShellBlockArrangement arrangement;
-  final List<ImageProvider<Object>> covers;
+  final List<ShellPreviewCover> covers;
 
   /// 封面网格的列数 / 行数（选择卡里窄，弹窗里可以少放几列）。
   final int gridColumns;
@@ -217,105 +230,127 @@ class ShellLayoutPreview extends StatelessWidget {
   }
 }
 
+/// 拼贴示意里排几块：首行（加大首块 + 旁边的半高卡）之后再排两行规整块，
+/// 任何预览盒的比例下都不会露出空白。
+const int kShellCollagePreviewItemCount = 9;
+
+/// 拼贴示意画布的「可见高度」基准（逻辑像素，真实库页尺寸）：首行 264 + 大半行
+/// 规整块。画布宽按预览盒的宽高比反推，再夹在 [kShellCollagePreviewMinCanvasWidth]
+/// ～ [kShellCollagePreviewMaxCanvasWidth] 之间（窄于下限会退成单列窄窗排法，宽于
+/// 上限会走超宽行的另一套首块比例，都不像用户实际看到的库页）。
+const double kShellCollagePreviewCanvasHeight = 520;
+const double kShellCollagePreviewMinCanvasWidth = 820;
+const double kShellCollagePreviewMaxCanvasWidth = 1400;
+
+/// 书库里还没有带封面的书时，示意卡用的书名（日语经典作品名，与学习语言一致；
+/// 只是示意内容，不是界面文字）。封面按书名生成（[FushiCoverBlock] 的空封面
+/// 回落），色块底色也随之取色。
+const List<String> kShellCollagePreviewSampleTitles = <String>[
+  '銀河鉄道の夜',
+  '吾輩は猫である',
+  '羅生門',
+  '雪国',
+  '走れメロス',
+  '坊っちゃん',
+  '檸檬',
+  '山月記',
+  '高瀬舟',
+];
+
+/// 拼贴示意：直接用库页的真实色块组件（[FushiCoverBlocks] 排版 +
+/// [FushiCoverBlock] 卡片）按真实尺寸排在一块虚拟画布上，再整体缩进预览盒。
+/// 首块是带封面与大字标题的加大块，其余是「取色色块 + 封面」的小卡，与库页
+/// 同一套代码，不另画示意。色块摆放按 [arrangement] 覆盖到子树的外壳主题上。
 class _CollagePreview extends StatelessWidget {
   const _CollagePreview({required this.arrangement, required this.covers});
 
   final ShellBlockArrangement arrangement;
-  final List<ImageProvider<Object>> covers;
+  final List<ShellPreviewCover> covers;
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    final List<Color> colors = shellPreviewBlockColors(scheme);
+    final ThemeData theme = Theme.of(context);
+    final FushiShellTheme shell = shellThemeOf(context).copyWith(
+      contentLayout: ShellContentLayout.collage,
+      blockArrangement: arrangement,
+    );
+    // 换掉子树外壳主题里的 [FushiShellTheme]，其余扩展原样保留。
+    final ThemeData previewTheme = theme.copyWith(
+      extensions: theme.extensions.values
+          .where((Object e) => e is! FushiShellTheme)
+          .followedBy(<FushiShellTheme>[shell]),
+    );
     return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final double gap = math.max(3, constraints.maxWidth * 0.025);
-        final double radius = math.max(4, constraints.maxWidth * 0.04);
-        Widget block(int index, {Widget? child}) => _PosedBlock(
-          arrangement: arrangement,
-          index: index,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(radius),
-            child: ColoredBox(
-              color: colors[index % colors.length],
-              child: child ?? const SizedBox.expand(),
-            ),
-          ),
-        );
-        final Widget hero = block(
-          0,
-          child: LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints box) {
-              final double coverSide = math.min(
-                box.maxWidth * 0.5,
-                box.maxHeight * 0.55,
-              );
-              return Stack(
-                clipBehavior: Clip.hardEdge,
-                children: <Widget>[
-                  // 大字水印（示意拼贴首块的标题大字）。
-                  PositionedDirectional(
-                    end: -box.maxWidth * 0.04,
-                    top: -box.maxHeight * 0.12,
-                    child: ExcludeSemantics(
-                      child: Text(
-                        'Aa',
-                        style: TextStyle(
-                          fontSize: box.maxHeight * 0.55,
-                          fontWeight: FontWeight.w900,
-                          height: 1,
-                          color: scheme.onPrimaryContainer.withValues(
-                            alpha: 0.14,
-                          ),
-                        ),
-                      ),
+      builder: (BuildContext context, BoxConstraints box) {
+        if (!box.hasBoundedWidth ||
+            !box.hasBoundedHeight ||
+            box.maxWidth <= 0) {
+          return const SizedBox.shrink();
+        }
+        final double canvasWidth =
+            (box.maxWidth /
+                    math.max(1, box.maxHeight) *
+                    kShellCollagePreviewCanvasHeight)
+                .clamp(
+                  kShellCollagePreviewMinCanvasWidth,
+                  kShellCollagePreviewMaxCanvasWidth,
+                );
+        final double scale = box.maxWidth / canvasWidth;
+        return ClipRect(
+          child: OverflowBox(
+            alignment: AlignmentDirectional.topStart,
+            minWidth: canvasWidth,
+            maxWidth: canvasWidth,
+            minHeight: 0,
+            maxHeight: double.infinity,
+            child: Transform.scale(
+              scale: scale,
+              alignment: AlignmentDirectional.topStart,
+              child: IgnorePointer(
+                child: ExcludeSemantics(
+                  child: Theme(
+                    data: previewTheme,
+                    child: FushiCoverBlocks(
+                      layout: ShellContentLayout.collage,
+                      itemCount: kShellCollagePreviewItemCount,
+                      staggerEntrance: false,
+                      itemBuilder: _block,
                     ),
                   ),
-                  PositionedDirectional(
-                    start: box.maxWidth * 0.12,
-                    bottom: box.maxHeight * 0.12,
-                    width: coverSide * 0.72,
-                    height: coverSide,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(radius * 0.6),
-                      child: _PreviewCover(
-                        image: covers.isEmpty ? null : covers.first,
-                        color: scheme.primary.withValues(alpha: 0.55),
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
+                ),
+              ),
+            ),
           ),
-        );
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Expanded(flex: 2, child: hero),
-            SizedBox(width: gap),
-            Expanded(
-              child: Column(
-                children: <Widget>[
-                  Expanded(child: block(1)),
-                  SizedBox(height: gap),
-                  Expanded(child: block(3)),
-                ],
-              ),
-            ),
-            SizedBox(width: gap),
-            Expanded(
-              child: Column(
-                children: <Widget>[
-                  Expanded(child: block(2)),
-                  SizedBox(height: gap),
-                  Expanded(child: block(4)),
-                ],
-              ),
-            ),
-          ],
         );
       },
+    );
+  }
+
+  Widget _block(BuildContext context, int index, FushiCoverBlockSize size) {
+    final ShellPreviewCover? cover = index < covers.length
+        ? covers[index]
+        : null;
+    final String title =
+        cover?.title ??
+        kShellCollagePreviewSampleTitles[index %
+            kShellCollagePreviewSampleTitles.length];
+    return FushiCoverBlock(
+      size: size,
+      art: FushiCoverBlockArt.book,
+      title: title,
+      tintImage: cover?.image,
+      hoverEnabled: false,
+      // 没有真实封面时 covers 留空：与库页里无封面的书完全一致（按书名生成封面、
+      // 色块取同一色相）。有真实封面时首块另带大字水印，同样与库页一致。
+      covers: <Widget>[
+        if (cover != null)
+          Image(
+            image: cover.image,
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+            excludeFromSemantics: true,
+          ),
+      ],
     );
   }
 }
@@ -360,7 +395,7 @@ class _GridPreview extends StatelessWidget {
     required this.rows,
   });
 
-  final List<ImageProvider<Object>> covers;
+  final List<ShellPreviewCover> covers;
   final int columns;
   final int rows;
 
@@ -392,7 +427,7 @@ class _GridPreview extends StatelessWidget {
                           borderRadius: BorderRadius.circular(radius),
                           child: _PreviewCover(
                             image: r * columns + c < covers.length
-                                ? covers[r * columns + c]
+                                ? covers[r * columns + c].image
                                 : null,
                             color: colors[(r * columns + c) % colors.length],
                           ),
@@ -1020,7 +1055,7 @@ class ShellLayoutChoiceCards extends StatelessWidget {
     required this.selected,
     required this.onSelected,
     required this.arrangement,
-    this.covers = const <ImageProvider<Object>>[],
+    this.covers = const <ShellPreviewCover>[],
     this.collageLabel,
     this.gridLabel,
     this.previewHeight = 96,
@@ -1032,7 +1067,7 @@ class ShellLayoutChoiceCards extends StatelessWidget {
 
   /// 拼贴卡里色块的摆放（跟着当前设置）。
   final ShellBlockArrangement arrangement;
-  final List<ImageProvider<Object>> covers;
+  final List<ShellPreviewCover> covers;
   final String? collageLabel;
   final String? gridLabel;
   final double previewHeight;
@@ -1246,14 +1281,14 @@ class ShellLayoutChoiceTiles extends StatelessWidget {
     required this.selected,
     required this.onSelected,
     required this.arrangement,
-    this.covers = const <ImageProvider<Object>>[],
+    this.covers = const <ShellPreviewCover>[],
     super.key,
   });
 
   final ShellContentLayout selected;
   final ValueChanged<ShellContentLayout> onSelected;
   final ShellBlockArrangement arrangement;
-  final List<ImageProvider<Object>> covers;
+  final List<ShellPreviewCover> covers;
 
   @override
   Widget build(BuildContext context) {

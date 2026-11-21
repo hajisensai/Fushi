@@ -1,9 +1,10 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'package:fushi/src/reader/reader_study_unit_script.dart';
+
+import '../helpers/node_runtime.dart';
 
 /// BUG-4808：分页恢复落点后的 16 ms settle、以及揭示落页后的下一帧重写，把**延后之前
 /// 捕获的像素位置**原样写回。
@@ -23,7 +24,7 @@ void main() {
   test(
     'deferred settle / reveal-frame callbacks re-derive the landing from the semantic anchor',
     () async {
-      final String? nodeExe = _resolveNode();
+      final String? nodeExe = resolveNodeExecutable();
       if (nodeExe == null) {
         markTestSkipped(
           'node not found on PATH; skipping JS behavior execution',
@@ -40,8 +41,8 @@ void main() {
         reason: 'behavior harness ${jsTest.path} must exist',
       );
 
-      final ({int exitCode, String stdout, String stderr}) result =
-          await _runNodeHarness(nodeExe, jsTest.path, <String, String>{
+      final NodeHarnessResult result =
+          await runNodeHarness(nodeExe, jsTest.path, <String, String>{
             'paged': ReaderPaginationScripts.paginatedShellSource(),
             'studyUnits': kStudyUnitJs,
           });
@@ -60,43 +61,4 @@ void main() {
       );
     },
   );
-}
-
-/// Runs the Node harness with [payload] piped as JSON on stdin (no file path
-/// crosses the process boundary) and returns its exit code, stdout and stderr.
-Future<({int exitCode, String stdout, String stderr})> _runNodeHarness(
-  String nodeExe,
-  String harness,
-  Map<String, String> payload,
-) async {
-  final Process process = await Process.start(nodeExe, <String>[
-    harness,
-  ], workingDirectory: Directory.current.path);
-  final Future<String> stdout = process.stdout.transform(utf8.decoder).join();
-  final Future<String> stderr = process.stderr.transform(utf8.decoder).join();
-  process.stdin.add(utf8.encode(jsonEncode(payload)));
-  await process.stdin.close();
-  return (
-    exitCode: await process.exitCode,
-    stdout: await stdout,
-    stderr: await stderr,
-  );
-}
-
-/// Resolve a usable `node` executable, returning null when none is on PATH.
-String? _resolveNode() {
-  final List<String> candidates = Platform.isWindows
-      ? <String>['node.exe', 'node']
-      : <String>['node'];
-  for (final String name in candidates) {
-    try {
-      final ProcessResult probe = Process.runSync(name, <String>['--version']);
-      if (probe.exitCode == 0) {
-        return name;
-      }
-    } on ProcessException {
-      // Not found; try next candidate.
-    }
-  }
-  return null;
 }

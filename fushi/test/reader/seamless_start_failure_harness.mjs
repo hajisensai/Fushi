@@ -11,7 +11,7 @@
 // 样式改写都是真浏览器的。引擎只给模块实际调用到的最小替身。
 import assert from 'node:assert/strict';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
-import { readPayload } from './vn_shell_harness_support.mjs';
+import { readPayload } from './reader_harness_support.js';
 
 const scripts = readPayload();
 if (!resolveChrome()) {

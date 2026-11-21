@@ -5,6 +5,8 @@ import 'package:flutter/gestures.dart'
     show PointerDeviceKind, kDoubleTapMinTime, kDoubleTapTimeout;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/pages/base_source_page.dart'
+    show CaptionTapAction, resolveCaptionTapAction;
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -141,5 +143,43 @@ void main() {
     expect(body, contains('isDictionaryShown'));
     expect(body, contains('isCurrent'));
     expect(body, contains('onDismissBarrierTap(globalPosition)'));
+    // BUG-4967：弹窗不在时交给页面的「顶部空白单击」钩子，而不是直接丢掉。
+    expect(body, contains('onCaptionBlankTap(globalPosition)'));
+  });
+
+  test('BUG-4967 标题行单击分派：被盖住不动 / 有弹窗关弹窗 / 无弹窗算点空白', () {
+    expect(
+      resolveCaptionTapAction(routeIsCurrent: false, dictionaryShown: true),
+      CaptionTapAction.ignore,
+    );
+    expect(
+      resolveCaptionTapAction(routeIsCurrent: false, dictionaryShown: false),
+      CaptionTapAction.ignore,
+    );
+    expect(
+      resolveCaptionTapAction(routeIsCurrent: true, dictionaryShown: true),
+      CaptionTapAction.dismissPopup,
+    );
+    expect(
+      resolveCaptionTapAction(routeIsCurrent: true, dictionaryShown: false),
+      CaptionTapAction.blankTap,
+    );
+  });
+
+  test('BUG-4967 阅读器把标题行空白单击当正文点空白（悬浮控制栏开 / 关）', () {
+    final String src = maskComments(
+      File(
+        'lib/src/pages/implementations/reader_fushi_page.dart',
+      ).readAsStringSync(),
+    );
+    final int start = src.indexOf(
+      'void onCaptionBlankTap(Offset globalPosition)',
+    );
+    expect(start, greaterThanOrEqualTo(0), reason: '阅读器必须覆写顶部空白单击');
+    final String body = src.substring(start, src.indexOf('\n  }', start));
+    // 与 onTapEmpty 同一入口（悬浮态 → _handleFloatingChromeReveal 纯开关）。
+    expect(body, contains('_handleReaderBlankTap('));
+    // 歌词覆盖层自带手势，不经这里。
+    expect(body, contains('_lyricsOverlayShown'));
   });
 }

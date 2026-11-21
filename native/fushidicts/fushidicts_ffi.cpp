@@ -467,6 +467,23 @@ int32_t fushidicts_upgrade_dictionary(const char* dict_dir, int32_t allow_meta_r
       []() -> int32_t { return static_cast<int32_t>(fushidicts::UpgradeResult::Failed); });
 }
 
+// 存量词典的只检查 + 清理（语义见 fushidicts/upgrade.hpp 的 convert = false）：0 已是
+// 最新（顺带清理遗留旧文件、把完成标记换成 .fushidicts_3）/ 3 旧式、待升级（本次什么都
+// 没写）/ 2 不适用（留在旧式）/ -1 失败。宿主每次启动对全部词典静默调用；有待升级的
+// 先征得用户同意，再调 fushidicts_upgrade_dictionary。不需要句柄；会碰磁盘，宿主应在
+// 后台 isolate 调用。
+FUSHI_EXPORT
+int32_t fushidicts_tidy_dictionary(const char* dict_dir) {
+  return ffi_guard_or(
+      "fushidicts_tidy_dictionary",
+      [&]() -> int32_t {
+        if (!dict_dir) return static_cast<int32_t>(fushidicts::UpgradeResult::Failed);
+        return static_cast<int32_t>(
+            fushidicts::upgrade_dictionary(std::string(dict_dir), /*allow_meta_rewrite=*/false, /*convert=*/false));
+      },
+      []() -> int32_t { return static_cast<int32_t>(fushidicts::UpgradeResult::Failed); });
+}
+
 // ── query handle ────────────────────────────────────────────────────
 
 // 当前存活（尚未真正 delete）的句柄数；只给测试观测「退役后最后一次 release 才销毁、

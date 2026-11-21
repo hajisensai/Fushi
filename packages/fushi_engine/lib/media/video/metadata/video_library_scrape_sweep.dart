@@ -25,11 +25,14 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:drift/drift.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/video/download/download_confirmed_identity.dart';
+import 'package:fushi_engine/media/video/metadata/anidb_video_metadata_provider.dart'
+    show AniDbVideoMetadataProvider;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ignored_works.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
@@ -176,6 +179,7 @@ class VideoLibraryScrapeSweep {
     required VideoSourceScrapeTaskController controller,
     bool Function()? isEnabled,
     bool Function()? isHashReady,
+    bool Function()? isAniDbDetailReady,
     TmdbChangedTvIdsProbe? tmdbChangedTvIds,
     DateTime Function()? now,
     VideoScrapeSweepLedger? ledger,
@@ -189,6 +193,7 @@ class VideoLibraryScrapeSweep {
        _controller = controller,
        _isEnabled = isEnabled,
        _isHashReady = isHashReady,
+       _isAniDbDetailReady = isAniDbDetailReady,
        _tmdbChangedTvIds = tmdbChangedTvIds,
        _ledger = ledger ?? VideoScrapeSweepLedger(),
        _configFingerprint = configFingerprint,
@@ -248,6 +253,16 @@ class VideoLibraryScrapeSweep {
 
   /// AniDB 哈希识别开关已开且账号 / 客户端配齐（`config.anidbHashReady`）。
   final bool Function()? _isHashReady;
+
+  /// AniDB HTTP anime XML 此刻拿得到（已登记的 HTTP 客户端身份、未被拒、未封禁；
+  /// 生产装配 `AniDbVideoMetadataProvider.isHttpApiAvailable`）。null = 不设闸
+  /// （测试）。
+  ///
+  /// 只管「标题目录摘要」存量作品的补全（[_refreshBacklog]）：AniDB HTTP 客户端
+  /// 登记之前（#3563）刮成 catalogOnly 的作品只有标题、没类型 / 年份 / 集数，XML
+  /// 拿得到时它们优先进刷新、不等 [staleAfter]；拿不到时补刮只会再得一份摘要，
+  /// 不白跑。
+  final bool Function()? _isAniDbDetailReady;
   final VideoSourceScrapeTaskController _controller;
 
   /// 自动补刮总闸（`AppModel.videoLibraryAutoBackfillScrape`，默认开，设置页
@@ -464,6 +479,13 @@ class VideoLibraryScrapeSweep {
   ) async {
     if (identified.isEmpty) return const <VideoPendingScrapeWork>[];
     final DateTime now = _now();
+    // 主身份是 AniDB、details 快照还是标题目录摘要的作品：XML 拿得到就优先补全。
+    // 走同一份刷新记账，补完快照换成完整 XML 后自然退出；XML 仍没取到（临时
+    // 失败）的在 [refreshProbeInterval] 之后再试，不每轮重刮。
+    final Set<int> catalogOnlyIds = (_isAniDbDetailReady?.call() ?? true)
+        ? await anidbCatalogOnlyVideoWorkIds(_database)
+        : const <int>{};
+    final List<VideoPendingScrapeWork> catalogOnly = <VideoPendingScrapeWork>[];
     final List<VideoPendingScrapeWork> stale = <VideoPendingScrapeWork>[];
     final List<(VideoPendingScrapeWork, int, DateTime)> fresh =
         <(VideoPendingScrapeWork, int, DateTime)>[];
@@ -475,6 +497,10 @@ class VideoLibraryScrapeSweep {
       }
       final VideoMetadataWorkRow? row = await _canonicalWork(entry.work);
       if (row == null) continue;
+      if (catalogOnlyIds.contains(row.id)) {
+        catalogOnly.add(entry);
+        continue;
+      }
       final DateTime scrapedAt = DateTime.fromMillisecondsSinceEpoch(
         row.updatedAt,
       );
@@ -488,9 +514,12 @@ class VideoLibraryScrapeSweep {
       );
       if (tmdbId != null) fresh.add((entry, tmdbId, scrapedAt));
     }
+    // 上限 [maxRefreshPerSweep] 三类合算（保护 AniDB / TMDB 配额，下轮接着刷），
+    // 摘要补全排最前。
     final List<VideoPendingScrapeWork> result = <VideoPendingScrapeWork>[
+      ...catalogOnly,
       ...stale,
-    ];
+    ].take(maxRefreshPerSweep).toList();
     final TmdbChangedTvIdsProbe? probe = _tmdbChangedTvIds;
     final DateTime? lastProbe = _ledger.lastRefreshProbeAt;
     if (probe != null &&
@@ -728,6 +757,38 @@ Future<VideoMetadataWorkRow?> canonicalVideoMetadataWork(
 ) => work.collection == null
     ? database.getVideoMetadataWorkByBook(work.members.single.bookUid)
     : database.getVideoMetadataWorkByCollection(work.collection!.id);
+
+/// 主身份是 AniDB、且 details 快照仍是标题目录摘要
+/// （[AniDbVideoMetadataProvider.catalogOnlyPayloadKey]）的规范作品 id。
+///
+/// AniDB HTTP anime XML 不可用时 provider 退回离线标题目录：作品只有标题，没有
+/// 类型 / 年份 / 集数。完整 XML 刮完后快照整份替换（不再带这个键），所以这份
+/// 集合就是「还缺 AniDB 详情」的作品。一条查询读完，不逐作品查库。
+Future<Set<int>> anidbCatalogOnlyVideoWorkIds(FushiDatabase database) async {
+  const String key = AniDbVideoMetadataProvider.catalogOnlyPayloadKey;
+  final List<QueryRow> rows = await database
+      .customSelect(
+        'SELECT i.work_id AS wid, s.raw_json AS raw '
+        'FROM video_metadata_provider_identities i '
+        'JOIN video_metadata_raw_snapshots s '
+        "ON s.identity_key = i.identity_key AND s.snapshot_kind = 'details' "
+        "WHERE i.provider = 'anidb' AND i.is_primary = 1 "
+        'AND i.work_id IS NOT NULL AND s.raw_json LIKE ?',
+        variables: <Variable<Object>>[Variable<String>('%$key%')],
+      )
+      .get();
+  final Set<int> ids = <int>{};
+  for (final QueryRow row in rows) {
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(row.read<String>('raw'));
+    } on FormatException {
+      continue;
+    }
+    if (decoded is Map && decoded[key] == true) ids.add(row.read<int>('wid'));
+  }
+  return ids;
+}
 
 /// 规范身份存在判据：works 行存在且至少有一条作品级 provider 身份。合集单元
 /// 没有合集级作品行时，成员**各自**拥有带身份的作品行也算（按 AniDB 作品拆成

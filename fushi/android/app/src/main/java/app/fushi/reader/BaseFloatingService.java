@@ -193,7 +193,8 @@ public abstract class BaseFloatingService extends Service {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                     notificationChannelId,
-                    notificationChannelName,
+                    NotificationChannelNames.nameFor(
+                            this, notificationChannelId, notificationChannelName),
                     NotificationManager.IMPORTANCE_LOW);
             channel.setShowBadge(false);
             getSystemService(NotificationManager.class)

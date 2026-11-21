@@ -97,15 +97,49 @@ void main() {
       );
     });
 
-    test('next: in a gap of file 1 goes to the first cue of file 1', () {
+    // 反馈 Y7g59hUCPn：句间静音里的「下一句」是刚播完那句的后一条，不是退回
+    // 本文件首句（单文件书的本文件首句 = 全书第一句）。
+    test(
+      'next: in a gap of file 1 goes to the cue after the one just played',
+      () {
+        expect(
+          AudiobookPlayerController.nextCueIndexForTesting(
+            cues: cues,
+            currentCueIndex: -1,
+            audioFileIndex: 1,
+            positionMs: 700,
+          ),
+          3,
+        );
+      },
+    );
+
+    test('next: before the first cue of file 1 goes to that first cue', () {
+      final List<AudioCue> lateStart = <AudioCue>[
+        cue(0, 0, 500),
+        cue(1, 300, 800),
+        cue(1, 1000, 1500),
+      ];
+      expect(
+        AudiobookPlayerController.nextCueIndexForTesting(
+          cues: lateStart,
+          currentCueIndex: -1,
+          audioFileIndex: 1,
+          positionMs: 100,
+        ),
+        1,
+      );
+    });
+
+    test('next: in the trailing gap of file 1 crosses to file 2', () {
       expect(
         AudiobookPlayerController.nextCueIndexForTesting(
           cues: cues,
           currentCueIndex: -1,
           audioFileIndex: 1,
-          positionMs: 700,
+          positionMs: 1800,
         ),
-        2,
+        4,
       );
     });
 

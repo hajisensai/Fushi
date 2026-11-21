@@ -210,7 +210,10 @@ class BookSeriesGrouper {
     // 以前这里只读 `epub_books.title` 原名，改名对归组毫无作用、重启也不变。
     final Map<String, OverrideTitleEntry> overrides =
         await readOverrideTitlesByBookKey(_database);
-    for (final EpubBookRow book in await _database.getAllEpubBooks()) {
+    // novel-9：归组只要身份 / 书名 / 格式 / sourceMetadata，走瘦投影，不把每本
+    // 几十到几百 KB 的章节与目录 JSON 整表拉出来。
+    for (final EpubBookSeriesFacts book
+        in await _database.getEpubBookSeriesFacts()) {
       if (isOnlineMangaSourceMetadata(book.sourceMetadata)) continue;
       final String title = overrides[book.bookKey]?.title ?? book.title;
       // 包里声明的系列优先（n4KC1azJvw：每卷副标题不同、书名里没有系列线索的作品

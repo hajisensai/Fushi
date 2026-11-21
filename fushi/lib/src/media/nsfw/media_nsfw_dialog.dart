@@ -36,6 +36,46 @@ Future<void> showMediaNsfwDialog(
       MediaNsfwDialog(db: db, kind: kind, entryKey: entryKey, title: title),
 );
 
+/// 菜单开关行读的状态：与对话框同一口径的**有效** NSFW（作品自己 / 所在 NSFW
+/// 合集），[locked] = 来自合集继承、在作品这一行拨不掉。
+Future<({bool value, bool locked})> loadMediaNsfwToggleState(
+  FushiDatabase db,
+  TagHostKind kind,
+  String entryKey,
+) async {
+  final bool own = await db.isMediaNsfw(kind, entryKey);
+  final List<MediaCollectionRow> collections = await nsfwCollectionsContaining(
+    db,
+    kind,
+    entryKey,
+  );
+  return (value: own || collections.isNotEmpty, locked: collections.isNotEmpty);
+}
+
+/// 写作品自己的 NSFW 标记并给结果提示（对话框与菜单开关行共用）。失败时提示后
+/// 重新抛出，调用方把开关拨回去。
+Future<void> writeMediaNsfw(
+  FushiDatabase db,
+  TagHostKind kind,
+  String entryKey,
+  bool nsfw,
+) async {
+  try {
+    await db.setMediaNsfw(kind, entryKey, nsfw);
+  } on Object catch (error) {
+    // 写失败必须明说：用户以为封面已经藏起来了、其实没有。
+    FushiToast.show(
+      msg: t.media_nsfw_save_failed(reason: error.toString()),
+      severity: ToastSeverity.error,
+    );
+    rethrow;
+  }
+  FushiToast.show(
+    msg: nsfw ? t.media_nsfw_marked_toast : t.media_nsfw_cleared_toast,
+    severity: ToastSeverity.success,
+  );
+}
+
 class MediaNsfwDialog extends StatefulWidget {
   const MediaNsfwDialog({
     super.key,
@@ -100,19 +140,11 @@ class _MediaNsfwDialogState extends State<MediaNsfwDialog> {
   Future<void> _set(bool nsfw) async {
     setState(() => _writing = true);
     try {
-      await widget.db.setMediaNsfw(widget.kind, widget.entryKey, nsfw);
+      await writeMediaNsfw(widget.db, widget.kind, widget.entryKey, nsfw);
       if (!mounted) return;
       setState(() => _nsfw = nsfw);
-      FushiToast.show(
-        msg: nsfw ? t.media_nsfw_marked_toast : t.media_nsfw_cleared_toast,
-        severity: ToastSeverity.success,
-      );
-    } on Object catch (error) {
-      // 写失败时开关保持原状态，并明说：用户以为封面已经藏起来了、其实没有。
-      FushiToast.show(
-        msg: t.media_nsfw_save_failed(reason: error.toString()),
-        severity: ToastSeverity.error,
-      );
+    } on Object {
+      // writeMediaNsfw 已明说失败；开关保持原状态。
     } finally {
       if (mounted) setState(() => _writing = false);
     }

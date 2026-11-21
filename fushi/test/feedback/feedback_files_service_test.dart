@@ -2,7 +2,7 @@
 // - 提交时原件复制进待传区（原件不动），按 f0..f2 流式 PUT，带编码后的原文件名；
 // - 传失败留在待传区（连同原文件名旁注），详情页重试时照样带原文件名；永久拒收丢弃；
 // - 本机先拦住服务端必然拒收的（扩展名 / 空文件 / 超限）；
-// - 视频先于样本文件传（两者共用服务端每 IP 每天的大附件额度），重试同序；
+// - 视频（主证据）先于样本文件传，重试同序；撞每 IP 日额度（429 upload_quota_daily）留待传并给重置时刻；
 // - 待传区里本体在 = 原文件名旁注在（copyFile 本体最后落地）；缺旁注的槽位当损坏丢掉，不编假名上传。
 
 import 'dart:convert';
@@ -197,7 +197,7 @@ void main() {
     );
   });
 
-  test('视频与样本文件同交：视频先传（共用每 IP 每天额度，不被样本文件挤掉），重试也是视频先', () async {
+  test('视频与样本文件同交：录屏（主证据）先传，重试也是视频先', () async {
     final File clip = File(p.join(root.path, 'user', 'clip.mp4'))
       ..writeAsBytesSync(List<int>.filled(64, 7));
     handler = (http.Request r) async {
@@ -218,6 +218,9 @@ void main() {
       onStage: stages.add,
     );
     expect(result.failedAttachments, 3);
+    // 普通限流（rate_limited）不是日额度用完：不提醒「几点后重试」。
+    expect(result.quotaResetAt, isNull);
+    expect(s.uploadQuotaResetAt('abcdefghij'), isNull);
     expect(
       requests.map((http.Request r) => p.url.basename(r.url.path)).skip(1),
       <String>['v0', 'f0', 'f1'],
@@ -241,6 +244,59 @@ void main() {
     expect(
       requests.map((http.Request r) => p.url.basename(r.url.path)),
       <String>['v0', 'f0', 'f1'],
+    );
+  });
+
+  test('样本文件撞上每 IP 日额度（429 upload_quota_daily）：留在待传区并给出额度重置时刻，'
+      '重试传上去后提醒消失', () async {
+    handler = (http.Request r) async {
+      if (r.url.path == '/v1/feedback') return receipt(r);
+      if (r.url.path.endsWith('/f0')) {
+        return _json(<String, dynamic>{'slot': 'f0'}, 201);
+      }
+      return _json(<String, dynamic>{
+        'error': FeedbackLimits.dailyQuotaError,
+      }, 429);
+    };
+    final FeedbackService s = service();
+    final DateTime before = DateTime.now();
+    final FeedbackSubmitResult result = await s.submit(draft());
+    expect(result.failedAttachments, 1);
+    final DateTime expected = FeedbackLimits.dailyQuotaResetAfter(before);
+    expect(result.quotaResetAt, expected);
+    expect(result.quotaResetAt!.isUtc, isTrue);
+    expect(s.uploadQuotaResetAt('abcdefghij'), expected);
+    expect(s.pendingSlots('abcdefghij'), <String>{'f1'});
+
+    // 额度还没恢复：重试仍撞额度，结果带重置时刻，槽位继续留着。
+    final FeedbackRetryResult still = await s.retryPending('abcdefghij');
+    expect(still.remaining, 1);
+    expect(still.quotaResetAt, expected);
+
+    // 额度恢复后重试成功：待传清空，提醒消失。
+    handler = (http.Request r) async =>
+        _json(<String, dynamic>{'slot': 'f1'}, 201);
+    final FeedbackRetryResult retry = await s.retryPending('abcdefghij');
+    expect(retry.uploaded, 1);
+    expect(retry.quotaResetAt, isNull);
+    expect(s.uploadQuotaResetAt('abcdefghij'), isNull);
+    expect(s.pendingSlots('abcdefghij'), isEmpty);
+  });
+
+  test('dailyQuotaResetAfter：下一个 UTC 零点（服务端按 UTC 日窗口计）', () {
+    expect(
+      FeedbackLimits.dailyQuotaResetAfter(DateTime.utc(2026, 11, 21, 23, 59)),
+      DateTime.utc(2026, 11, 22),
+    );
+    expect(
+      FeedbackLimits.dailyQuotaResetAfter(DateTime.utc(2026, 12, 31)),
+      DateTime.utc(2027),
+    );
+    // 本地时间入参按同一时刻换算。
+    final DateTime utc = DateTime.utc(2026, 11, 21, 3);
+    expect(
+      FeedbackLimits.dailyQuotaResetAfter(utc.toLocal()),
+      DateTime.utc(2026, 11, 22),
     );
   });
 

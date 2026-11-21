@@ -692,32 +692,28 @@ void 0;
     return TtuReaderSettings.fromMap(const <String, dynamic>{});
   }
 
-  static Future<void> setReaderSetting(
-    InAppWebViewController controller, {
-    required String key,
-    required Object value,
-  }) async {}
-
   static Future<List<BookSearchResult>> searchBook(
     EpubBook book,
     String query,
   ) async {
     if (query.isEmpty) return const <BookSearchResult>[];
 
-    // 每章搜索文本只算一次（后台 isolate、原生扫描），之后的查询直接复用。章节
-    // 正文可能被换掉（在线小说占位页 → 正文，`discardCachedHtml`），所以缓存按
-    // 每章 html 字符串的对象同一性校验，变了就整本重算。
-    final List<String> htmls = <String>[
-      for (final EpubChapter c in book.chapters) c.html,
-    ];
-    final _SearchTextCache? cached = _searchTextCache[book];
-    final List<String> texts;
-    if (cached != null && cached.matches(htmls)) {
-      texts = cached.texts;
-    } else {
-      texts = await compute(_buildSearchTexts, htmls);
-      _searchTextCache[book] = _SearchTextCache(htmls, texts);
+    // 每章搜索文本只算一次（后台 isolate、原生扫描），之后的查询直接复用。
+    // UI isolate 不碰章节正文：lazy 章节只把文件路径交给 isolate 自己读盘（以前
+    // 这里逐章读 `c.html`，首搜在 UI isolate 上同步读整本，读进来的正文随后一直
+    // 驻留在各章的缓存里）。章节正文可能被换掉（在线小说占位页 → 正文，
+    // `discardCachedHtml`），缓存按每章的显式内容版本号判新旧，只重算变了的章。
+    final _SearchTextCache cache = _searchTextCache[book] ??=
+        _SearchTextCache();
+    final int chapterCount = book.chapters.length;
+    final List<_SearchTextJob> jobs = cache.staleJobs(book.chapters);
+    if (jobs.isNotEmpty) {
+      final List<String> built = await compute(_buildSearchTexts, jobs);
+      // 按发任务时的版本快照入账：isolate 读盘期间章节被换掉
+      // （discardCachedHtml）的，记的仍是旧版本号，下次搜索照样重算。
+      cache.store(chapterCount, jobs, built);
     }
+    final List<String> texts = cache.texts;
     return compute(
       _searchIsolate,
       _SearchParams(chapterTexts: texts, query: query),
@@ -792,18 +788,63 @@ void 0;
 
 // ── 搜索 isolate ─────────────────────────────────────────────────────────────
 
+/// 一章搜索文本的来源：lazy 章节给盘上路径（isolate 自己读），eager 章节给
+/// 已在内存里的正文。[version] / [filePath] 是发任务那一刻的快照，结果按它入账。
+typedef _SearchTextJob = ({
+  int index,
+  int version,
+  String? filePath,
+  String? html,
+});
+
+/// [AudiobookBridge.searchBook] 的按书缓存：每章的搜索文本及其对应的
+/// [EpubChapter.contentVersion] / [EpubChapter.filePath]。不持有章节正文。
 class _SearchTextCache {
-  _SearchTextCache(this.htmls, this.texts);
+  List<String> texts = const <String>[];
+  List<int> _versions = const <int>[];
+  List<String?> _paths = const <String?>[];
 
-  final List<String> htmls;
-  final List<String> texts;
+  /// 缺失或版本 / 路径对不上的章。章数变了整本重算。
+  List<_SearchTextJob> staleJobs(List<EpubChapter> chapters) {
+    final bool sameShape = texts.length == chapters.length;
+    return <_SearchTextJob>[
+      for (int i = 0; i < chapters.length; i++)
+        if (!sameShape ||
+            _versions[i] != chapters[i].contentVersion ||
+            _paths[i] != chapters[i].filePath)
+          (
+            index: i,
+            version: chapters[i].contentVersion,
+            filePath: chapters[i].filePath,
+            // eager 章节没有盘上文件，正文本来就在内存里。
+            html: chapters[i].filePath == null ? chapters[i].html : null,
+          ),
+    ];
+  }
 
-  bool matches(List<String> current) {
-    if (current.length != htmls.length) return false;
-    for (int i = 0; i < current.length; i++) {
-      if (!identical(current[i], htmls[i])) return false;
+  /// 把 [jobs] 的结果 [built] 记进 [chapterCount] 章的缓存。版本号 / 路径记
+  /// 任务里的快照而不是入账时章节的当前值：任务在 isolate 里跑的时候章节可能
+  /// 已被换掉，那样记当前值就会把旧正文算出的文本当成新版本永久缓存住。
+  void store(int chapterCount, List<_SearchTextJob> jobs, List<String> built) {
+    final bool sameShape = texts.length == chapterCount;
+    final List<String> nextTexts = sameShape
+        ? List<String>.of(texts)
+        : List<String>.filled(chapterCount, '');
+    final List<int> nextVersions = sameShape
+        ? List<int>.of(_versions)
+        : List<int>.filled(chapterCount, -1);
+    final List<String?> nextPaths = sameShape
+        ? List<String?>.of(_paths)
+        : List<String?>.filled(chapterCount, null);
+    for (int j = 0; j < jobs.length; j++) {
+      final _SearchTextJob job = jobs[j];
+      nextTexts[job.index] = built[j];
+      nextVersions[job.index] = job.version;
+      nextPaths[job.index] = job.filePath;
     }
-    return true;
+    texts = nextTexts;
+    _versions = nextVersions;
+    _paths = nextPaths;
   }
 }
 
@@ -813,22 +854,24 @@ class _SearchParams {
   final String query;
 }
 
-/// 后台 isolate：每章的搜索坐标系文本（[EpubBook.chapterSearchText]）。
-List<String> _buildSearchTexts(List<String> chapterHtmls) {
+/// 后台 isolate：每章的搜索坐标系文本（[EpubBook.chapterSearchText]）。lazy 章节
+/// 在这里按路径读盘（[EpubChapter.readHtmlFile]，与 UI isolate 的 `html` 同一套
+/// 解码），读完即弃，不回传正文。
+List<String> _buildSearchTexts(List<_SearchTextJob> jobs) {
   final EpubBook book = EpubBook(
     title: '',
     chapters: <EpubChapter>[
-      for (int i = 0; i < chapterHtmls.length; i++)
+      for (final _SearchTextJob job in jobs)
         EpubChapter(
-          id: '$i',
-          href: '$i',
+          id: '${job.index}',
+          href: '${job.index}',
           mediaType: 'application/xhtml+xml',
-          html: chapterHtmls[i],
+          html: job.html ?? EpubChapter.readHtmlFile(job.filePath!),
         ),
     ],
   );
   return <String>[
-    for (int i = 0; i < chapterHtmls.length; i++) book.chapterSearchText(i),
+    for (int i = 0; i < jobs.length; i++) book.chapterSearchText(i),
   ];
 }
 

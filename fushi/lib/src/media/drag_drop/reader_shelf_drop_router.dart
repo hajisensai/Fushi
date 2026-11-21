@@ -60,6 +60,7 @@ Future<void> routeReaderShelfDrop({
   final Map<String, bool> imageArchives = await probeDroppedImageArchives(
     paths,
     preferManga: mangaOnly,
+    db: appModel.database,
   );
   if (!context.mounted) return;
 

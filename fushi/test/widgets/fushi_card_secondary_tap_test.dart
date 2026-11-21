@@ -72,12 +72,15 @@ void main() {
     //
     // BUG-2111 之后判据换成语义等价物：右键不再由 InkWell.onSecondaryTap 硬绑，而是
     // 经 [ContextMenuTrigger] 按绑定表判定唤出键。断言的事实没变——书架卡的右键必须
-    // 落到与长按相同的那个回调，且多选态压制（让位祖先 SelectionDragArea 扫选）。
+    // 落到与长按相同的那个回调。#3803 起多选态下参与勾选的卡右键弹针对选中集的
+    // 批量菜单（不再是单卡菜单），不参与勾选的卡右键让位；长按在多选态仍置 null
+    // 让位祖先 SelectionDragArea 扫选。
     final String text = readReaderHistorySource();
     expect(
-      text.contains(
-        'onInvoke: contextMenuInvoker(_selectionMode ? null : onLongPress)',
-      ),
+      RegExp(
+        r'onInvoke: contextMenuInvoker\(\s*_selectionMode\s*\?\s*'
+        r'\(slot == null \? null : _showBatchMenu\)\s*:\s*onLongPress,?\s*\)',
+      ).hasMatch(text),
       isTrue,
       reason: '_bookCardShell 必须把右键映射到与长按相同的上下文菜单回调，否则桌面右键回归无效',
     );

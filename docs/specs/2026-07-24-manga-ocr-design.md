@@ -129,7 +129,7 @@
 追求与 mokuro 逐比特同产物（含 ctd 行级坐标）的专业用户走外部工具模式：探测顺序 设置指定 → `HIBIKI_MOKURO` 环境变量 → PATH（与 `HIBIKI_FFMPEG` 同模式），子进程跑 `mokuro --disable_confirmation`，GPL 零传染。**不打包 Python 环境**。B 落地后 B' 只是设置页里一个可选项，优先级低。
 
 **C：互联 host 代跑 OCR（P3）**
-手机端对裸漫画发起 OCR → 转发已配对桌面 host。**因为 B 是 app 内置的，host 端零额外依赖**（就是桌面 Hibiki 自己跑 B），这比 v1 设计（host 装 mokuro）简化了一整层。端点沿现有风格：`POST /api/ocr/job`（上传卷图或引用 host 已有路径）→ `GET /api/ocr/job/<id>` 进度 → 完成拉 manga.json。job 串行单并发、可取消、断点续传复用 B 的逐页缓存；能力协商走 `/api/capabilities`，老 host 隐藏入口。
+手机端对裸漫画发起 OCR → 转发已配对桌面 host。**因为 B 是 app 内置的，host 端零额外依赖**（就是桌面 Hibiki 自己跑 B），这比 v1 设计（host 装 mokuro）简化了一整层。端点沿现有风格：`POST /api/ocr/job`（上传卷图或引用 host 已有路径）→ `GET /api/ocr/job/<id>` 进度 → 完成拉 manga.json。job 串行单并发、可取消、断点续传复用 B 的逐页缓存；能力协商走 `/api/capabilities`，老 host 隐藏入口。（2026-11 补：host 报 `mangaOcr.contentDedup` 时，对端上传前先 `POST /api/ocr/job/<id>/manifest` 发整卷「页名 + 页图 SHA-256」，host 按「引擎签名 + 页图内容」已有结果的页不必上传，结果按清单页序组装；见 `fushi_manga_ocr_host.dart` / `manga_ocr_content_cache.dart`。）
 
 **D：单框补扫 + 云端手写兜底（P4）** — **已移除（2026-09-12 用户决策：阅读器内不触发 OCR）**。阅读器内的整卷按钮、点击即识别、框选重识别三个入口整体删除；OCR 只能在阅读器**外**（作品页 / 书架）触发，阅读器只保留观察外部任务进度的 HUD + 逐页热替换 + 取消按钮。下文保留为历史设计记录。
 - 端侧单框：阅读中对漏识别/识别错的气泡**手动框选** → B 的识别链（单框免检测器）→ 立即查词/制卡，并回写本页 manga.json（下次直接查）。手机端单框 0.5–0.8s 估算完全可用；这也是移动端内置 OCR 的第一落点（整卷视 P4 真机基准再定）。

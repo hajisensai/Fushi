@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -521,6 +523,40 @@ void main() {
         tracker.dispose();
       },
     );
+
+    // BUG-5012：离开时的完成判定要经远端客户端取追番身份；播放页按 close() 的 future
+    // 等它用完才关自建的客户端。close() 早于回调结束就完成，客户端会在请求途中被关。
+    test('close() 等离开时的完成回调跑完才完成', () async {
+      final Completer<void> trackingLookup = Completer<void>();
+      bool lookupStarted = false;
+      final _FakeSource src = _FakeSource()
+        ..positionMs = 95
+        ..durationMs = 100;
+      final VideoWatchTracker tracker = VideoWatchTracker(
+        bookUid: 'u1',
+        clock: _clock(_Sink()),
+        onEpisodeCompleted: () {
+          lookupStarted = true;
+          return trackingLookup.future;
+        },
+      )..attach(src);
+
+      bool closed = false;
+      final Future<void> closing = tracker.close().then((_) => closed = true);
+      for (int i = 0; i < 20 && !lookupStarted; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(lookupStarted, isTrue);
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        closed,
+        isFalse,
+        reason: 'completion lookup still needs the client',
+      );
+      trackingLookup.complete();
+      await closing;
+      expect(closed, isTrue);
+    });
   });
 
   group('观看时长 = 墙钟（2026-11-07 取代 BUG-2108 首次覆盖：实际看了多久就计多久）', () {

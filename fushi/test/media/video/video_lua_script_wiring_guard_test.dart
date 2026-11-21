@@ -117,10 +117,12 @@ void main() {
         // （completeEmbeddedTextBridge）走的也是它，两条入口都要重挂。
         expect(
           body('void setCues(List<AudioCue> cues) {'),
-          contains('_replaceCues(cues);'),
+          contains('_replaceCues(cues, newSource: true);'),
         );
         expect(
-          body('void _replaceCues(List<AudioCue> cues) {'),
+          body(
+            'void _replaceCues(List<AudioCue> cues, {required bool newSource}) {',
+          ),
           contains('_scheduleLuaSubtitleMirrorSync();'),
         );
       });

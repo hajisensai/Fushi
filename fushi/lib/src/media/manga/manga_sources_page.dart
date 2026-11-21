@@ -11,6 +11,7 @@ import 'package:fushi/src/media/import/import_carrier.dart'
     show kMangaCarrierFileExtensions;
 import 'package:fushi/src/media/import/import_collage_page.dart';
 import 'package:fushi/src/media/import/import_inbox.dart';
+import 'package:fushi/src/media/import/import_inbox_text.dart';
 import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart'
     show kMangaImageExtensions;
@@ -153,7 +154,7 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
             kind: ImportMethodKind.folder,
             icon: FushiIcons.folderOpen,
             label: t.media_import_inbox,
-            description: t.media_import_inbox_hint(
+            description: importInboxHintText(
               folder: ImportInbox.folderNameFor('manga') ?? '',
             ),
             destination: ImportDestination.dialog,

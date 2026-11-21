@@ -11,6 +11,8 @@ import 'package:crypto/crypto.dart' show sha1;
 import 'package:fushi_compute/fushi_compute.dart';
 import 'package:image/image.dart' as img;
 
+import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRgbaImage;
+
 /// 单个位图对象 / 区域的边长上限。BD PGS 与 DVB 的对象都不超过 4096（DVB 对象坐标
 /// 只有 12 bit，DVD 同样）；码流声明更大的尺寸只可能是损坏数据——照单全收时
 /// 65535×65535 的声明会一次分配 4 GB 平面把进程打爆。
@@ -65,8 +67,9 @@ class BitmapSubtitleImage {
   /// 一次。
   String get contentKey => '${width}x$height:${sha1.convert(rgba).toString()}';
 
-  /// 编码成 PNG（只在要交给大模型 / 非本机引擎时才需要）。
-  Uint8List encodePng() => img.encodePng(toImage());
+  /// 交给 OCR 引擎的像素（零拷贝，共用 [rgba]）：不经 PNG 编码。
+  OcrRgbaImage toOcrImage() =>
+      OcrRgbaImage(rgba: rgba, width: width, height: height);
 
   img.Image toImage() => img.Image.fromBytes(
     width: width,

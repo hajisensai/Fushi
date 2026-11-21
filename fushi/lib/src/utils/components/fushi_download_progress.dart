@@ -182,6 +182,7 @@ class FushiDownloadCoverOverlay extends StatelessWidget {
     this.receivedBytes,
     this.totalBytes,
     this.semanticsLabel,
+    this.caption,
   });
 
   /// 0..1；null 时按 [receivedBytes] / [totalBytes] 推，仍推不出即不定态。
@@ -195,6 +196,10 @@ class FushiDownloadCoverOverlay extends StatelessWidget {
 
   /// 读屏标签（如「下载中」），值读百分比 / 字节。
   final String? semanticsLabel;
+
+  /// 环下的一行说明（多阶段任务的阶段名，如「有声书」「导入中…」）；非 null 时
+  /// 取代字节行——同一行位置，封面放不下时同样省略。
+  final String? caption;
 
   @override
   Widget build(BuildContext context) {
@@ -221,9 +226,11 @@ class FushiDownloadCoverOverlay extends StatelessWidget {
     final Color scrim = glass
         ? Colors.black.withValues(alpha: 0.4)
         : cs.scrim.withValues(alpha: 0.48);
-    final String? bytesLabel = v == null && receivedBytes != null
-        ? formatDiscoveryBytes(receivedBytes!)
-        : null;
+    final String? bytesLabel =
+        caption ??
+        (v == null && receivedBytes != null
+            ? formatDiscoveryBytes(receivedBytes!)
+            : null);
 
     return IgnorePointer(
       child: Semantics(

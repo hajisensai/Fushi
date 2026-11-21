@@ -15,19 +15,9 @@
 // （由 eink_continuous_page_turn_behavior_test.dart 在 `flutter test` 内驱动）
 
 const assert = require('assert');
-const fs = require('fs');
+const { readPayload, shellObjectLiteral, compileScript } = require('./reader_harness_support.js');
 
-const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-
-function objectLiteral(source) {
-  const marker = 'window.fushiReader = {';
-  const start = source.indexOf(marker);
-  assert.ok(start >= 0, 'fushiReader object missing');
-  const brace = source.indexOf('{', start);
-  const end = source.indexOf('\n};', brace);
-  assert.ok(end >= 0, 'fushiReader object terminator missing');
-  return source.slice(brace, end + 2);
-}
+const data = readPayload();
 
 function makeEnv(writingMode) {
   const vertical = writingMode === 'vertical-rl';
@@ -68,10 +58,10 @@ function makeEnv(writingMode) {
 }
 
 function instantiate(env) {
-  const factory = new Function(
-    'window', 'document', 'C', 'global', 'CSS', 'Highlight', 'getComputedStyle', 'Node',
-    'requestAnimationFrame',
-    'return ' + objectLiteral(data.continuous) + ';'
+  const factory = compileScript(
+    ['window', 'document', 'C', 'global', 'CSS', 'Highlight', 'getComputedStyle', 'Node', 'requestAnimationFrame'],
+    'return ' + shellObjectLiteral(data.continuous) + ';',
+    'eink_continuous_page_turn_behavior_test-1.js',
   );
   const reader = factory(env.window, env.document, { perfTraceEnabled: false }, {},
     env.window.CSS, env.window.Highlight, env.getComputedStyle, { TEXT_NODE: 3 },

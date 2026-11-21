@@ -426,6 +426,32 @@ String buildAgentJsonSystemPrompt(
   return prompt.toString();
 }
 
+/// `ops.describe` 交给模型的结果。
+///
+/// 原生 tool calling（[native]）时，describe 过的工具从下一次请求起就在 `tools` 里，
+/// 名字、描述、参数 schema 全在那份工具定义中；结果里再放一遍描述与 schema，等于
+/// 同一份 schema 在之后每一轮都发两次（历史里一份、工具表里一份）。所以这里只给
+/// 工具表里没有的东西：风险级 / 确认 / 可撤销 / 长任务标记与调用名。度量见
+/// docs/agent/ai-token-budget.md。
+///
+/// 降级协议（无原生 tool calling）的系统提示只给一行签名，完整描述与 schema 只在
+/// 这份结果里，照旧全给。
+Map<String, Object?> agentDescribeResult(
+  AgentToolSpec spec, {
+  required bool native,
+}) {
+  final Map<String, Object?> full = spec.toJson();
+  if (!native) {
+    return <String, Object?>{...full, 'callAs': agentWireToolName(spec.name)};
+  }
+  return <String, Object?>{
+    for (final MapEntry<String, Object?> e in full.entries)
+      if (e.key != 'description' && e.key != 'parameters') e.key: e.value,
+    'callAs': agentWireToolName(spec.name),
+    'schema': 'now in your tool list',
+  };
+}
+
 /// 一场 AI 助手对话。
 class AgentSession {
   AgentSession({
@@ -856,10 +882,7 @@ class AgentSession {
         return (
           wrapAgentUntrusted(
             'ops.describe',
-            jsonEncode(<String, Object?>{
-              ...spec.toJson(),
-              'callAs': agentWireToolName(spec.name),
-            }),
+            jsonEncode(agentDescribeResult(spec, native: _llm.supportsTools)),
           ),
           false,
         );

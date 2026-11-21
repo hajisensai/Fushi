@@ -130,6 +130,7 @@ required = {
     "preferenceCallbacks": True,
     "imageProxy": True,
     "sourceUrls": True,
+    "apkByDigest": True,
 }
 if any(value.get(key) != expected for key, expected in required.items()):
     raise SystemExit(f"incompatible Mihon capabilities: {value!r}")
@@ -144,6 +145,12 @@ for route in / /capabilities /dalvik /inspect /source-image \
     exit 1
   fi
 done
+status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  --max-time 2 -X PUT --data-binary x "$base_url/apk/not-registered" || true)"
+if [[ "$status" != "401" ]]; then
+  echo "unauthenticated PUT /apk returned $status, expected 401" >&2
+  exit 1
+fi
 
 lan_address="$(ipconfig getifaddr en0 2>/dev/null || true)"
 if [[ -n "$lan_address" ]]; then

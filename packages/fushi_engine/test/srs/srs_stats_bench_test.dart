@@ -37,7 +37,7 @@ void main() {
           // 句柄晚释放。
         }
       });
-      final TestSrs srs = await openTestSrsAt('${tmp.path}/srs.db');
+      final TestSrs srs = openTestSrsIn(tmp.path);
       final SrsCore db = srs.core;
       final SrsDbStore store = await SrsDbStore.open(
         core: srs.core,

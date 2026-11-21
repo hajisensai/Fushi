@@ -35,6 +35,12 @@ bool isMangaOcrPageJsonCacheDirectory(String directoryName) =>
 /// volume succeeds. Until then each engine's atomic page cache is the source of
 /// truth. Reopening a book therefore has to merge those valid caches back into
 /// otherwise-empty pages so lookup remains available without restarting OCR.
+///
+/// 「空页」也可能是整卷结果判定的无字页：一卷先用引擎 A 跑过一部分、后来换引擎 B
+/// 整卷跑完，B 判无字的页不能被 A 更早留下的逐页缓存填回来。所以回填只收
+/// [isMangaOcrCacheEligibleForRecovery] 放行的缓存：与 manga.json 同引擎（同签名）
+/// 的，或比整卷结果落盘更新的（拍板 design-nmv-ocr-cache-rule 方案 b：不删别的
+/// 引擎的缓存，切回去仍可复用）。
 class MangaOcrCacheRecovery {
   const MangaOcrCacheRecovery({
     required this.payload,
@@ -45,12 +51,36 @@ class MangaOcrCacheRecovery {
   final List<int> recoveredPageIndices;
 }
 
+/// 逐页缓存（目录名 [cacheSignature]、文件修改时间 [cachedAt]）能不能回填进
+/// 整卷结果 [formal] 里的空页。
+///
+/// - 还没有整卷结果（[formal] 为 null）：空页就是没识别过，全部放行。
+/// - 同引擎同签名：整卷结果本来就由这份缓存组装，判无字的页它也是无字，放行。
+/// - 别的引擎 / 语言：只有比整卷落盘时刻 [formalAt] 严格更新才放行（整卷之后又
+///   换引擎跑了一部分）；拿不到落盘时刻时按「不更新」处理——宁可留空页让用户
+///   重认，也不把过期文字冒充整卷结果。
+bool isMangaOcrCacheEligibleForRecovery({
+  required MangaOcrMetadata? formal,
+  required DateTime? formalAt,
+  required String cacheSignature,
+  required DateTime cachedAt,
+}) {
+  if (formal == null) return true;
+  if (cacheSignature == formal.engineSignature) return true;
+  return formalAt != null && cachedAt.isAfter(formalAt);
+}
+
 /// [localEngineSignature] 是本地 ONNX 引擎的缓存子目录名。默认按本机**已安装模型**
 /// 解析（含内容指纹），只恢复与当前模型同源的页；测试可直接传入固定签名
 /// （BUG-1173）。
+///
+/// [mangaJsonPath] 是 [basePayload] 所在的 manga.json：整卷元数据没记落盘时刻
+/// （[MangaOcrMetadata.completedAt] 之前写的旧卷）时，退回用它的修改时间当整卷
+/// 落盘时刻。之后的读-改-写只会让这个时刻偏晚，偏向「不回填」，不会放出过期缓存。
 Future<MangaOcrCacheRecovery> recoverCachedMangaOcr({
   required String managedDirectory,
   required MokuroPayload basePayload,
+  required String mangaJsonPath,
   String? localEngineSignature,
 }) async {
   final List<MangaOcrPageFile> pages = enumerateMangaPages(
@@ -99,6 +129,18 @@ Future<MangaOcrCacheRecovery> recoverCachedMangaOcr({
       GoogleLensPageCache(directory),
   ];
 
+  final MangaOcrMetadata? formal = basePayload.ocr;
+  final DateTime? formalAt = formal == null
+      ? null
+      : formal.completedAt ?? await _modifiedOrNull(File(mangaJsonPath));
+  bool eligible(String cacheSignature, DateTime cachedAt) =>
+      isMangaOcrCacheEligibleForRecovery(
+        formal: formal,
+        formalAt: formalAt,
+        cacheSignature: cacheSignature,
+        cachedAt: cachedAt,
+      );
+
   final List<MokuroImage> images = List<MokuroImage>.of(basePayload.images);
   final Map<String, int> payloadIndexByUrl = <String, int>{
     for (int index = 0; index < images.length; index++)
@@ -113,32 +155,42 @@ Future<MangaOcrCacheRecovery> recoverCachedMangaOcr({
       continue;
     }
 
-    final OcrPageResult? local = await localCache.read('manga_ocr', pageIndex);
     // 候选统一成 (mtime, page) 再取最新，本地 / 各引擎各语言的逐页缓存无特殊分支。
+    // 先按文件时间过资格判据，不合格的缓存不读不解析。
     final List<(DateTime, MokuroImage)> candidates =
         <(DateTime, MokuroImage)>[];
-    if (local != null) {
-      final File localFile = File(
+    final DateTime? localAt = await _modifiedOrNull(
+      File(
         p.join(
           localDirectory.path,
           ocrPageCacheFileName(pages[pageIndex].relativeUrl),
         ),
+      ),
+    );
+    if (localAt != null && eligible(localSignature, localAt)) {
+      final OcrPageResult? local = await localCache.read(
+        'manga_ocr',
+        pageIndex,
       );
-      candidates.add((
-        (await localFile.stat()).modified,
-        _localPage(pages[pageIndex], local),
-      ));
+      if (local != null) {
+        candidates.add((localAt, _localPage(pages[pageIndex], local)));
+      }
     }
     for (final GoogleLensPageCache cache in pageJsonCaches) {
-      final MokuroImage? cached = await cache.read(pageIndex, pages[pageIndex]);
-      if (cached == null) continue;
-      final File cachedFile = File(
-        p.join(
-          cache.directory.path,
-          '${pageIndex.toString().padLeft(6, '0')}.json',
+      final DateTime? cachedAt = await _modifiedOrNull(
+        File(
+          p.join(
+            cache.directory.path,
+            '${pageIndex.toString().padLeft(6, '0')}.json',
+          ),
         ),
       );
-      candidates.add(((await cachedFile.stat()).modified, cached));
+      if (cachedAt == null ||
+          !eligible(p.basename(cache.directory.path), cachedAt)) {
+        continue;
+      }
+      final MokuroImage? cached = await cache.read(pageIndex, pages[pageIndex]);
+      if (cached != null) candidates.add((cachedAt, cached));
     }
     if (candidates.isEmpty) {
       continue;
@@ -157,6 +209,16 @@ Future<MangaOcrCacheRecovery> recoverCachedMangaOcr({
     payload: MokuroPayload(images: images, ocr: basePayload.ocr),
     recoveredPageIndices: recovered,
   );
+}
+
+/// 文件的修改时间；不存在 / 读不到返回 null。
+Future<DateTime?> _modifiedOrNull(File file) async {
+  try {
+    final FileStat stat = await file.stat();
+    return stat.type == FileSystemEntityType.notFound ? null : stat.modified;
+  } on FileSystemException {
+    return null;
+  }
 }
 
 MokuroImage _localPage(MangaOcrPageFile page, OcrPageResult result) =>

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -17,6 +18,9 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_work_co
     show fallbackSubtitleWorkKey;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer.dart';
 import 'package:fushi_engine/media/video/dvd/dvd_angle.dart'
     show dvdTitleAnglePath;
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
@@ -41,6 +45,7 @@ void main() {
   AppVideoSubtitleService buildService({
     Future<VideoSubtitleRecognizerChoice> Function()? resolve,
     AppVideoSubtitleAudioTrackProbe? probeAudioTracks,
+    AppVideoSubtitleDurationProbe? probeDurationMs,
   }) => AppVideoSubtitleService(
     database: db,
     probeAudioTracks: probeAudioTracks,
@@ -48,7 +53,7 @@ void main() {
     glossaryStore: store,
     jobRegistry: registry,
     jobsRoot: () async => jobs,
-    probeDurationMs: (String _) async => 24 * 60 * 1000,
+    probeDurationMs: probeDurationMs ?? (String _) async => 24 * 60 * 1000,
     mossPort: const ReadyModels(),
     asrModelPort: const ReadyModels(),
     nowMs: () => 4242,
@@ -1079,6 +1084,44 @@ void main() {
   });
 
   group('费用预估', () {
+    test('BUG-4993：重估不重复探测时长；探测失败的下次重探', () async {
+      settings.provider = testProvider();
+      final String ep1 = video('ep01.mkv');
+      final String ep2 = video('ep02.mkv');
+      await addBook('a', ep1);
+      await addBook('b', ep2);
+      final Map<String, int> probes = <String, int>{};
+      bool ep2Fails = true;
+      final AppVideoSubtitleService service = buildService(
+        probeDurationMs: (String path) async {
+          probes[path] = (probes[path] ?? 0) + 1;
+          if (path == ep2 && ep2Fails) return null;
+          return 24 * 60 * 1000;
+        },
+      );
+      final AppVideoSubtitleTarget a = await service.resolveBook('a');
+      final AppVideoSubtitleTarget b = await service.resolveBook('b');
+      // 面板切开关 / 换语言：同一目标连估三次，外加两次并发。
+      await service.estimateCost(a);
+      await service.estimateCost(a, frames: true);
+      await service.estimateCost(a, language: VideoSubtitleLanguage.mandarin);
+      await Future.wait(<Future<AppVideoSubtitleCostEstimate>>[
+        service.estimateCost(a),
+        service.estimateCost(a),
+      ]);
+      expect(probes[ep1], 1);
+
+      final AppVideoSubtitleCostEstimate failed = await service.estimateCost(b);
+      expect(failed.unknownDurationEpisodes, 1);
+      ep2Fails = false;
+      final AppVideoSubtitleCostEstimate retried = await service.estimateCost(
+        b,
+      );
+      expect(retried.unknownDurationEpisodes, 0);
+      expect(retried.basis, AppVideoSubtitleEstimateBasis.duration);
+      expect(probes[ep2], 2);
+    });
+
     test('没识别过按时长粗估；识别过按字幕稿；全部完成 = nothing', () async {
       settings.provider = testProvider();
       await addBook('a', video('ep01.mkv'));
@@ -1111,4 +1154,220 @@ void main() {
       expect(done.basis, AppVideoSubtitleEstimateBasis.nothing);
     });
   });
+
+  group('BUG-5008 生成管线的失败隔离', () {
+    test('一集登记抛错不连带后面的集；任务仍按第一处错误判失败', () async {
+      final String ep1 = video('ep01.mkv');
+      final String ep2 = video('ep02.mkv');
+      await addBook('a', ep1);
+      await addBook('b', ep2);
+      final int collection = await addCollection(<String>['a', 'b']);
+      final AppVideoSubtitleService service = buildService();
+      final AppVideoSubtitleTarget season = await service.resolveCollection(
+        collection,
+      );
+      final _FlakySink sink = _FlakySink(
+        failOn: ep1,
+        exportDir: Directory(p.join(tmp.path, 'out')),
+      );
+      final AppVideoSubtitleTarget target = AppVideoSubtitleTarget(
+        title: season.title,
+        work: season.work,
+        episodes: season.episodes,
+        collectionId: season.collectionId,
+        sink: sink,
+      );
+      final AppVideoSubtitleJob job = service.start(
+        target,
+        const AppVideoSubtitleOptions(),
+      );
+      await job.done;
+      expect(sink.attempted, <String>[ep1, ep2]);
+      expect(job.registeredBookUids, <String>['b']);
+      expect(job.status, AppVideoSubtitleJobStatus.failed);
+      expect(job.errorMessage, contains('db locked'));
+    });
+
+    test('S0 还没完成时，同作品同语言的专名表拒绝保存 / 重新生成；别的语言照常', () async {
+      settings.provider = testProvider();
+      final String ep1 = video('ep01.mkv');
+      await addBook('a', ep1);
+      final _GatedRecognizer gated = _GatedRecognizer(recognizer);
+      final AppVideoSubtitleService service = buildService(
+        resolve: () async => VideoSubtitleRecognizerChoice(recognizer: gated),
+      );
+      final AppVideoSubtitleTarget target = await service.resolveBook('a');
+      final AppVideoSubtitleJob job = service.start(
+        target,
+        const AppVideoSubtitleOptions(proofread: true),
+      );
+      await gated.entered.future;
+      expect(service.glossaryWriterFor(target.work), same(job));
+      const List<SubtitleGlossaryEntry> entries = <SubtitleGlossaryEntry>[
+        SubtitleGlossaryEntry(ja: '梓', kind: '人名'),
+      ];
+      await expectLater(
+        service.saveGlossary(target.work, entries),
+        throwsA(
+          isA<AppVideoSubtitleStartRefused>()
+              .having(
+                (AppVideoSubtitleStartRefused r) => r.problem,
+                'problem',
+                AppVideoSubtitleStartProblem.busy,
+              )
+              .having(
+                (AppVideoSubtitleStartRefused r) => r.activeJob,
+                'activeJob',
+                same(job),
+              ),
+        ),
+      );
+      await expectLater(
+        service.regenerateGlossary(target),
+        throwsA(isA<AppVideoSubtitleStartRefused>()),
+      );
+      // 普通话的表与这次任务无关。
+      await service.saveGlossary(
+        target.work,
+        entries,
+        language: VideoSubtitleLanguage.mandarin,
+      );
+
+      gated.release.complete();
+      await job.done;
+      expect(service.glossaryWriterFor(target.work), isNull);
+      final SubtitleGlossary saved = await service.saveGlossary(
+        target.work,
+        entries,
+        previous: await service.loadGlossary(target.work),
+      );
+      expect(
+        saved.entries.map((SubtitleGlossaryEntry e) => e.ja),
+        contains('梓'),
+      );
+    });
+
+    test('S0 进行中仍拒绝；S0 一完成、任务还在跑就放开编辑', () async {
+      settings.provider = testProvider();
+      await addBook('a', video('ep01.mkv'));
+      final AppVideoSubtitleService service = buildService();
+      final AppVideoSubtitleTarget target = await service.resolveBook('a');
+      final AppVideoSubtitleJob job = service.start(
+        target,
+        const AppVideoSubtitleOptions(proofread: true),
+      );
+      // 每次进度回报时（同步）看一眼：S0 的 0 与 1 两次回报、以及之后的阶段。
+      final List<(VideoSubtitleStage, double, bool)> seen =
+          <(VideoSubtitleStage, double, bool)>[];
+      job.addListener(() {
+        final VideoSubtitleProgress? p = job.progress;
+        if (p == null || !job.isRunning) return;
+        seen.add((
+          p.stage,
+          p.fraction,
+          service.glossaryWriterFor(target.work) != null,
+        ));
+      });
+      await job.done;
+      expect(job.status, AppVideoSubtitleJobStatus.succeeded);
+      final Iterable<(VideoSubtitleStage, double, bool)> s0 = seen.where(
+        ((VideoSubtitleStage, double, bool) e) =>
+            e.$1 == VideoSubtitleStage.glossary,
+      );
+      expect(
+        s0.where(((VideoSubtitleStage, double, bool) e) => e.$2 < 1),
+        <(VideoSubtitleStage, double, bool)>[
+          (VideoSubtitleStage.glossary, 0.0, true),
+        ],
+      );
+      expect(
+        s0.where(((VideoSubtitleStage, double, bool) e) => e.$2 >= 1),
+        <(VideoSubtitleStage, double, bool)>[
+          (VideoSubtitleStage.glossary, 1.0, false),
+        ],
+      );
+      final Iterable<(VideoSubtitleStage, double, bool)> after = seen.where(
+        ((VideoSubtitleStage, double, bool) e) =>
+            e.$1.index > VideoSubtitleStage.glossary.index,
+      );
+      expect(after, isNotEmpty);
+      expect(
+        after.every(((VideoSubtitleStage, double, bool) e) => !e.$3),
+        isTrue,
+      );
+    });
+  });
+}
+
+/// 指定一集登记时抛错，其余照常记下（模拟写库失败）。
+class _FlakySink implements AppSubtitleOutputSink {
+  _FlakySink({required this.failOn, required this.exportDir});
+
+  final String failOn;
+  final Directory exportDir;
+  final List<String> attempted = <String>[];
+
+  @override
+  AppSubtitleTargetDomain get domain => AppSubtitleTargetDomain.video;
+
+  @override
+  Directory? exportDirFor(String mediaPath) => exportDir;
+
+  @override
+  bool get usesStyleReference => false;
+
+  @override
+  VideoRemoteJobKind get mirrorKind => VideoRemoteJobKind.subtitleGenerate;
+
+  @override
+  String mirrorSubject(AppVideoSubtitleTarget target) => target.key;
+
+  @override
+  Future<List<String>> extraEvidenceFiles(
+    AppVideoSubtitleEpisode episode,
+  ) async => const <String>[];
+
+  @override
+  bool get registersSkippedExisting => false;
+
+  @override
+  Future<List<String>> register(
+    AppVideoSubtitleEpisode episode,
+    VideoSubtitleEpisodeResult result,
+  ) async {
+    attempted.add(episode.videoPath);
+    if (episode.videoPath == failOn) throw StateError('db locked');
+    return <String>[?episode.bookUid];
+  }
+}
+
+/// 识别停在半路，直到测试放行（任务停在 S0 之前）。
+class _GatedRecognizer implements VideoSubtitleRecognizer {
+  _GatedRecognizer(this.inner);
+
+  final VideoSubtitleRecognizer inner;
+  final Completer<void> entered = Completer<void>();
+  final Completer<void> release = Completer<void>();
+
+  @override
+  String get id => inner.id;
+
+  @override
+  Future<List<SubtitleDraftCue>> recognize({
+    required String videoPath,
+    required Directory workDir,
+    required VideoSubtitleRecognizeProgress onProgress,
+    required SubtitleCancelToken cancel,
+    int? audioStreamIndex,
+  }) async {
+    if (!entered.isCompleted) entered.complete();
+    await release.future;
+    return inner.recognize(
+      videoPath: videoPath,
+      workDir: workDir,
+      onProgress: onProgress,
+      cancel: cancel,
+      audioStreamIndex: audioStreamIndex,
+    );
+  }
 }

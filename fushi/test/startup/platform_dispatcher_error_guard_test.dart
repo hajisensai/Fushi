@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:test/test.dart';
 
 /// TODO-607 P0-1/①：main.dart 必须装 PlatformDispatcher.onError，并让致命级错误
-/// （FlutterError / UncaughtZone / PlatformDispatcher）走同步 flush 落盘。
+/// （FlutterError / UncaughtZone / PlatformDispatcher）走同步写落盘（不 fsync，BUG-4943）。
 ///
 /// 此前 main.dart 只有 FlutterError.onError + runZonedGuarded 的 onError，平台/引擎
 /// 层未捕获的异步错误（platform message handler、原生回调、microtask）不经这两条，
@@ -45,7 +45,7 @@ void main() {
     );
   });
 
-  test('致命级错误（FlutterError / UncaughtZone）走 logFatal 同步 flush', () {
+  test('致命级错误（FlutterError / UncaughtZone）走 logFatal 同步写', () {
     // 判据是「处理体里调的是 logFatal」，不是来源字符串长什么样：来源已由
     // flutterErrorLogSource(details) 按 details 推导（这样日志里能看到
     // FlutterError/RenderFlex 这类可读上下文），点名旧字面量只会挡住改进。
@@ -86,21 +86,19 @@ void main() {
     );
   });
 
-  test('logFatal 用 writeAsStringSync(flush:true) 同步落盘（崩溃前存活）', () {
+  test('logFatal 用 writeAsStringSync 同步写（崩溃前存活），不 fsync（BUG-4943）', () {
     final String svc = File(
       'lib/src/utils/misc/error_log_service.dart',
     ).readAsStringSync();
     final int idx = svc.indexOf('void logFatal(');
     expect(idx, isNonNegative, reason: '必须有 logFatal 方法');
-    // logFatal 方法体内用同步 flush 写文件。
-    final String body = svc.substring(idx, idx + 800);
+    // logFatal 方法体内同步写文件：写进页缓存后进程怎么死都留得下；fsync 只防整机掉电，
+    // 却会在主线程上卡成 ANR，见 diagnostic_marker_no_fsync_guard_test.dart。
+    final String body = svc.substring(idx, idx + 1000);
     expect(
-      RegExp(
-        r'writeAsStringSync\([^;]*flush:\s*true',
-        dotAll: true,
-      ).hasMatch(body),
+      RegExp(r'_logFile\?\.writeAsStringSync\(', dotAll: true).hasMatch(body),
       isTrue,
-      reason: 'logFatal 必须同步 flush 落盘，否则崩溃前来不及写盘',
+      reason: 'logFatal 必须同步写，否则崩溃前来不及排上异步写',
     );
   });
 }

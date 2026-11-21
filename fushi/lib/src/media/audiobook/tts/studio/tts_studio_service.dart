@@ -11,6 +11,7 @@ import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
+import 'package:fushi_engine/tts/tts_pronunciation.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
@@ -71,5 +72,6 @@ Future<TtsBookPlan> buildStudioPlan(EpubBook book, TtsServices tts) =>
     buildTtsBookPlan(
       book,
       maxLength: kStudioSentenceMaxLength,
-      pronunciation: tts.pronunciation.load(),
+      pronunciation: tts.textRules.load(TtsTextRuleKind.pronunciation),
+      preSynthesis: tts.textRules.load(TtsTextRuleKind.preSynthesis),
     );

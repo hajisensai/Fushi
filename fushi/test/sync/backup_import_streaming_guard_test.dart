@@ -133,9 +133,12 @@ void main() {
         isTrue,
         reason: '导入失败必须切 failed 态，根治「失败却显绿✓成功」',
       );
-      // 成功路径仍显成功文案。
+      // 成功路径仍显成功文案。G11-4 起与「有复习数据没并入」的文案三元二选一，正则里的词边界让带后缀的
+      // 那条不算数。
       expect(
-        importBody.contains('completeBackupImport(t.backup_import_success)'),
+        RegExp(
+          r'completeBackupImport\(\s*[^;]*\bt\.backup_import_success\b[^;]*\);',
+        ).hasMatch(importBody),
         isTrue,
       );
     });

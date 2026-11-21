@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart' show shellShape;
 import 'package:fushi/src/utils/components/fushi_cover_block.dart'
     show FushiCoverBlockColors, FushiCoverBlockSize, fushiCoverBlockShape;
+import 'package:fushi/src/utils/components/fushi_block_color_scope.dart';
 import 'package:fushi/src/utils/components/fushi_fit_title.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -129,7 +130,9 @@ class FushiPosterBlock extends StatelessWidget {
                   style: TextStyle(color: colors.onContainer),
                   child: IconTheme.merge(
                     data: IconThemeData(color: colors.onContainer),
-                    child: child,
+                    // 子树（按钮 / 开关 / 胶囊 / 图表 / 弹层）取块自己的配色，
+                    // 不退回全局 primary / tertiary。
+                    child: FushiBlockColorScope(colors: colors, child: child),
                   ),
                 ),
               ),

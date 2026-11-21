@@ -26,9 +26,10 @@ SourceFileSystem buildSourceFileSystem({
   required Map<String, Object?> config,
   String? password,
   String? privateKey,
+  SourceListingProgressCallback? onDirectoryListed,
 }) {
   if (transport == 'local') {
-    return const LocalSourceFileSystem();
+    return LocalSourceFileSystem(onDirectoryListed: onDirectoryListed);
   }
   final int port =
       (config['port'] as num?)?.toInt() ?? (transport == 'sftp' ? 22 : 21);
@@ -45,5 +46,6 @@ SourceFileSystem buildSourceFileSystem({
       useTls: (config['useTls'] as bool?) ?? false,
       baseUrl: (config['baseUrl'] as String?),
     ),
+    onDirectoryListed: onDirectoryListed,
   );
 }

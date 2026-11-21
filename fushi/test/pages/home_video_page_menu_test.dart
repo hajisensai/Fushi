@@ -756,12 +756,16 @@ void main() {
     // 在指针处弹右键菜单（设计稿 E），不再是居中对话框。
     expect(find.byType(MediaItemDialogFrame), findsOneWidget);
     expect(find.byType(FushiDialogFrame), findsNothing);
+    // 2026-11-20 #4b 统一骨架：整理组平铺标签 / 加入合集，重命名与封面收进
+    // 「编辑信息 ›」，选字幕收进工作台「字幕与刮削 ›」——副文字列出子项。
     expect(find.text(t.tag_label), findsOneWidget);
-    expect(find.text(t.video_rename), findsOneWidget);
-    expect(find.text(t.srt_import_pick_cover), findsOneWidget);
-    expect(find.text(t.video_import_pick_subtitle), findsOneWidget);
-    expect(find.text(t.video_scrape_info), findsNothing);
     expect(find.text(t.add_to_collection), findsOneWidget);
+    expect(find.text(t.media_stats_action), findsOneWidget);
+    expect(find.text(t.item_menu_video_workbench), findsOneWidget);
+    expect(find.textContaining(t.video_rename), findsOneWidget);
+    expect(find.textContaining(t.srt_import_pick_cover), findsOneWidget);
+    expect(find.textContaining(t.video_import_pick_subtitle), findsOneWidget);
+    expect(find.text(t.video_scrape_info), findsNothing);
     expect(find.text(t.dialog_delete), findsOneWidget);
   });
 

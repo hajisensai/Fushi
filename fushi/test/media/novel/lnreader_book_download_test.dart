@@ -251,7 +251,10 @@ void main() {
         return cloudflare;
       }
 
-      Future<LnReaderEpubChapter> fetchSecond(LnReaderManager manager) async {
+      Future<LnReaderEpubChapter> fetchSecond(
+        LnReaderManager manager, {
+        LnReaderInstalledPlugin source = plugin,
+      }) async {
         final FushiDatabase db = FushiDatabase.forTesting(
           NativeDatabase.memory(),
         );
@@ -267,7 +270,7 @@ void main() {
           final LnReaderPluginInfo info = await manager.load(plugin);
           return await download.fetchChapter(
             client: client,
-            plugin: plugin,
+            plugin: source,
             info: info,
             chapter: chapters[1],
             imagePrefix: 'images/c2-',
@@ -277,6 +280,19 @@ void main() {
           await db.close();
         }
       }
+
+      // 拍板台 zCkIxtnwcV：源级开关「合并段内换行」只在开了的源上生效。
+      test('源开了「合并段内换行」才把句中折行接回去', () async {
+        final (LnReaderManager manager, FakeLnReaderRuntime _) =
+            await setUpManager(chapter2: '<p>空を見上げると、</p><p>星が瞬いていた。</p>');
+        final LnReaderEpubChapter off = await fetchSecond(manager);
+        expect(off.xhtmlBody, '<p>空を見上げると、</p><p>星が瞬いていた。</p>');
+        final LnReaderEpubChapter on = await fetchSecond(
+          manager,
+          source: plugin.copyWith(mergeLineBreaks: true),
+        );
+        expect(on.xhtmlBody, '<p>空を見上げると、星が瞬いていた。</p>');
+      });
 
       test('与封面同一套头：放行 cookie、Accept、浏览器 UA；Referer 是章节页', () async {
         final (

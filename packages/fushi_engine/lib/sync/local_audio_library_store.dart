@@ -11,6 +11,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_engine/foundation/pref_store.dart';
+import 'package:fushi_engine/models/local_audio_content_id.dart';
 import 'package:fushi_engine/models/local_audio_db_entry.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:path/path.dart' as p;
@@ -59,19 +60,36 @@ class LocalAudioLibraryStore {
       e.copyWith(path: _resolve(e.path)),
   ];
 
-  /// 登记一个已解包的本地音频包：把 DB 拷进库目录并追加登记。按 displayName
-  /// 去重（已存在则跳过，与 app `importSyncedLocalAudioDb` 同语义），返回是否
-  /// 真的新增了。
+  /// 登记一个已解包的本地音频包：把 DB 拷进库目录并追加登记。按**内容身份**
+  /// 去重（拍板 pr3481，与 app `importSyncedLocalAudioDb` 同语义）：同一份库换了
+  /// 名字也不再登记第二份；名字撞了但内容不同的库换个不撞的名字登记。只有一边
+  /// 读不出身份（包里的 DB 损坏 / 已登记的库文件不在）时才退回按 displayName
+  /// 认。返回是否真的新增了。
   Future<bool> importPackage(LocalAudioPackageContents contents) async {
     final List<LocalAudioDbEntry> stored = _readStored();
-    if (stored.any(
-      (LocalAudioDbEntry e) => e.displayName == contents.displayName,
-    )) {
-      return false;
-    }
     if (!await _isSqliteFile(contents.dbFile)) {
       throw InvalidLocalAudioPackageException(contents.displayName);
     }
+    final String? incomingId = isLocalAudioContentId(contents.contentId)
+        ? contents.contentId
+        : await computeLocalAudioContentIdInBackground(contents.dbFile.path);
+    for (final LocalAudioDbEntry e in stored) {
+      final String? have = await resolveLocalAudioContentId(
+        e.copyWith(path: _resolve(e.path)),
+      );
+      if (isSameLocalAudioLibrary(
+        nameA: e.displayName,
+        contentIdA: have,
+        nameB: contents.displayName,
+        contentIdB: incomingId,
+      )) {
+        return false;
+      }
+    }
+    final String displayName = uniqueLocalAudioDisplayName(
+      contents.displayName,
+      stored.map((LocalAudioDbEntry e) => e.displayName),
+    );
     await _databaseDirectory.create(recursive: true);
     // 文件名只要唯一：毫秒相同强制 +1，撞上已有文件（上次进程留下）也跳过。
     int stamp = DateTime.now().millisecondsSinceEpoch;
@@ -91,9 +109,10 @@ class LocalAudioLibraryStore {
         ...stored,
         LocalAudioDbEntry(
           path: internalPath,
-          displayName: contents.displayName,
+          displayName: displayName,
           enabled: contents.enabled,
           sources: contents.sources,
+          contentId: incomingId,
         ),
       ]);
     } catch (_) {
@@ -117,6 +136,40 @@ class LocalAudioLibraryStore {
     if (_isInternalCopyName(removed.path)) {
       await _deleteFiles(_resolve(removed.path));
     }
+  }
+
+  /// 启动时跑一次：给旧版本登记、没存内容身份的库补写身份，并把内容相同的重复
+  /// 登记收成一条（保留先登记的那条，删掉后来者的内部副本）。拍板 pr3481 之前
+  /// 同步按显示名去重，新旧版本混用时同一份库会在这里登记两份、占两份磁盘。
+  /// 返回删掉的重复条数。
+  Future<int> normalizeContentIdentities() async {
+    final List<LocalAudioDbEntry> stored = _readStored();
+    final List<LocalAudioDbEntry> kept = <LocalAudioDbEntry>[];
+    final List<LocalAudioDbEntry> duplicates = <LocalAudioDbEntry>[];
+    final Set<String> seen = <String>{};
+    bool changed = false;
+    for (final LocalAudioDbEntry e in stored) {
+      final String? id = await resolveLocalAudioContentId(
+        e.copyWith(path: _resolve(e.path)),
+      );
+      if (id != null && !seen.add(id)) {
+        duplicates.add(e);
+        changed = true;
+        continue;
+      }
+      if (id != null && e.contentId != id) {
+        kept.add(e.copyWith(contentId: id));
+        changed = true;
+      } else {
+        kept.add(e);
+      }
+    }
+    if (!changed) return 0;
+    await _writeStored(kept);
+    for (final LocalAudioDbEntry d in duplicates) {
+      if (_isInternalCopyName(d.path)) await _deleteFiles(_resolve(d.path));
+    }
+    return duplicates.length;
   }
 
   List<LocalAudioDbEntry> _readStored() {

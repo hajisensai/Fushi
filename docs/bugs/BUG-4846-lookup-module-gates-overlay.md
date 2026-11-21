@@ -10,4 +10,5 @@
   - `moduleOfShortcutScope(globalExternal) => null`：app 外热键分区恒可编辑、热键恒装。
   - 同步更新 `docs/specs/2026-09-30-desktop-system-floating-ball.md`。
 - **[x] ② 已加自动化测试** — `fushi/test/lookup/global_lookup_module_independence_test.dart`（新，替换 `global_lookup_follow_module_test.dart`）：查词模块关、games 开时 `startDesktopLookupSurfaces` 照样起覆盖窗（`isAvailable` 且 `prepare` 一次），模块开关来回切不重复建窗、不停。改：`test/floating_ball/floating_ball_test.dart`（模块关时桌面应用外球仍有 `popupLookup` / `screenOcr`）、`test/floating_ball/app_floating_ball_host_test.dart`（模块关时下发 `popup_lookup` / `clipboard` / `screen_ocr`）、`test/models/module_registry_test.dart`（`globalExternal` 恒在）、`test/lookup/global_hotkey_backend_wiring_test.dart`（模块关时 `start` 照装热键）。
-- **备注**：行为变化——关掉查词页的用户升级后会装上默认 app 外取词热键（Windows / Linux Ctrl+Alt+D，macOS Ctrl+⌥D），可在快捷键设置页「全局（应用外）」分区改键或清空。未在 Windows 真机 + 真 galgame 上复测原始失败路径。
+- **备注**：行为变化——关掉查词页的用户升级后会装上默认 app 外取词热键（Windows / Linux Ctrl+Alt+D，macOS Ctrl+⌥D），可在快捷键设置页「全局（应用外）」分区改键或清空。
+  - 后续（拍板台 pr3605，维护者 2026-11-17「热键应该单独有个东西开关」）：该分区顶部加「启用应用外快捷键」总开关（pref `app_external_hotkeys_enabled`，默认开），关掉后 OS 热键后端、鼠标侧键 RawInput 监听、手柄触发全部撤掉、不留系统钩子，覆盖窗不受影响（`GlobalLookupController.applyAppExternalTriggersEnabled`；测试 `fushi/test/lookup/global_external_triggers_toggle_test.dart`）。未在 Windows 真机 + 真 galgame 上复测原始失败路径。
