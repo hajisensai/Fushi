@@ -458,6 +458,23 @@ void cmdMigrate() {
 // git 薄封装
 // ---------------------------------------------------------------------------
 
+/// git 子进程的环境。[root] 非空（[runInBugRepoScope] 指定了仓库根）时，把它的父目录设成
+/// `GIT_CEILING_DIRECTORIES`：git 只认 [root] 自己这一层的仓库，绝不往上爬进外层某个
+/// 无关的真仓库。
+///
+/// 起因：dist 测试机把系统临时目录放在某个 git 工作区里时，「不在 git 仓库里」的 fixture
+/// 会被 git 认成外层那个仓库——取号读了外层的基线 ref、扫了外层的工作区，还把外层
+/// `.git/` 里的本机预留号计数推进了（[allocateBugNumber]）。作用域外（CLI，运行目录就是
+/// 仓库根）不设，照旧按 cwd 找仓库。
+Map<String, String> gitEnvironmentFor(String? root) {
+  final env = <String, String>{'GIT_TERMINAL_PROMPT': '0'};
+  if (root != null) {
+    final parent = Directory(root).absolute.parent.path.replaceAll(r'\', '/');
+    env['GIT_CEILING_DIRECTORIES'] = parent;
+  }
+  return env;
+}
+
 /// 跑 git；失败（git 不存在 / 超时）返回 null，不抛。
 /// stdout 按 latin1 解码：`cat-file --batch` 会吐二进制 tree，latin1 是无损字节映射，
 /// 我们只在里面正则找 ASCII 文件名；其它子命令输出是 ASCII 路径，同样安全。
@@ -471,7 +488,7 @@ Future<ProcessResult?> runGit(
       'git',
       args,
       workingDirectory: bugRepoRoot,
-      environment: const <String, String>{'GIT_TERMINAL_PROMPT': '0'},
+      environment: gitEnvironmentFor(bugRepoRoot),
     );
     final out = StringBuffer();
     final err = StringBuffer();
