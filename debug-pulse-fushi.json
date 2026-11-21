@@ -1,12 +1,62 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-21T11:51:46Z",
+ "generatedAt": "2026-11-21T12:59:20Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "c8a39f3df1fbaf8c178b21239de005f2ba82f094",
-  "seq": 30647
+  "sha": "854b707f792c2bf8b39eebc2c3f5a89e0d7b2344",
+  "seq": 30651
  },
  "builds": [
+  {
+   "seq": 30562,
+   "version": "3.4.0",
+   "sha": "7e4a45ce089f60c62bcc73ba37fcd78d40c711b9",
+   "unknown": false,
+   "publishedAt": "2026-11-21T12:59:04Z",
+   "testflight": false,
+   "baseSeq": 30481,
+   "prs": [
+    4002,
+    3984,
+    4000,
+    3995,
+    3994,
+    3992,
+    3991,
+    3990,
+    3775,
+    4003,
+    3763,
+    3768,
+    3760,
+    3755,
+    3983
+   ],
+   "direct": [
+    {
+     "sha": "03e68eab6470fce13f18ae238ac6a901db8bf8e3",
+     "subject": "docs(bugs): 合并 #3775/#3990–#4000 后重建 BUGS 索引"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44897183865"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44897183776"
+    },
+    "ios": {
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44897183776"
+    }
+   }
+  },
   {
    "seq": 30481,
    "version": "3.4.0",
@@ -114,7 +164,8 @@
      "state": "ok"
     },
     "windows": {
-     "state": "ok"
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44870572665"
     },
     "macos": {
      "state": "failed",
@@ -473,9 +524,10 @@
   }
  ],
  "pending": {
-  "headSha": "c8a39f3df1fbaf8c178b21239de005f2ba82f094",
-  "headSeq": 30647,
+  "headSha": "854b707f792c2bf8b39eebc2c3f5a89e0d7b2344",
+  "headSeq": 30651,
   "prs": [
+   4037,
    4021,
    4020,
    4019,
@@ -495,24 +547,13 @@
    4005,
    4004,
    4001,
-   4026,
-   4002,
-   3984,
-   4000,
-   3995,
-   3994,
-   3992,
-   3991,
-   3990,
-   3775,
-   4003,
-   3763,
-   3768,
-   3760,
-   3755,
-   3983
+   4026
   ],
   "direct": [
+   {
+    "sha": "854b707f792c2bf8b39eebc2c3f5a89e0d7b2344",
+    "subject": "chore(bugs): settle BUG number collisions on c68133e6a"
+   },
    {
     "sha": "c8a39f3df1fbaf8c178b21239de005f2ba82f094",
     "subject": "Merge remote-tracking branch 'origin/develop' into integrate-4"
@@ -524,29 +565,25 @@
    {
     "sha": "b6c4ad00f13827d4694de454becb48daafbf04ad",
     "subject": "test(srs): 更改笔记类型用例等编辑页重读落定再断言（机器忙时抢跑）"
-   },
-   {
-    "sha": "03e68eab6470fce13f18ae238ac6a901db8bf8e3",
-    "subject": "docs(bugs): 合并 #3775/#3990–#4000 后重建 BUGS 索引"
    }
   ],
   "truncated": false,
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44900714732"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44901279888"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44900714712"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44901279831"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44900714712"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44901279831"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44900714712"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44901279831"
    }
   }
  },
@@ -2872,6 +2909,15 @@
    "mergedAt": "2026-11-21T11:46:45Z",
    "additions": 490,
    "deletions": 360,
+   "labels": []
+  },
+  "4037": {
+   "number": 4037,
+   "title": "fix(video): Windows 视频一全屏整屏底色（BUG-5081）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-21T11:54:04Z",
+   "additions": 165,
+   "deletions": 3,
    "labels": []
   }
  }
