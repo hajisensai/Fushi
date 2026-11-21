@@ -201,6 +201,24 @@ void main() {
   });
 
   test(
+    'malformed html with a self-closing <script/> keeps the body (BUG-2017)',
+    () async {
+      // 不良构（<br> 未闭合）→ 走 HTML5 回退；head 里 kobo 式自闭合 <script/> 不能把
+      // 整个 <body> 吞成脚本文本。
+      final reader = await _convertText(
+        tmpDir,
+        '<html><head><script src="kobo.js"/></head>'
+        '<body><p>一行目<br>二行目</p></body></html>',
+        name: 'input.html',
+      );
+      final String chapter = reader['OEBPS/chapter-1.xhtml']!;
+      expect(chapter, contains('一行目'));
+      expect(chapter, contains('二行目'));
+      expect(chapter, isNot(contains('kobo.js')));
+    },
+  );
+
+  test(
     'long input splits into multiple chapters at paragraph boundaries',
     () async {
       // Build > kMaxCharsPerChapter of HTML from many paragraphs.

@@ -3,10 +3,10 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:characters/characters.dart';
+import 'package:fushi_engine/epub/epub_book.dart' show EpubBook;
 import 'package:fushi_engine/epub/epub_importer.dart' show EpubImporter;
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:html/dom.dart' as dom;
-import 'package:html/parser.dart' as html_parser;
 import 'package:xml/xml.dart' as xml;
 
 /// Converts plain text files (TXT, HTML, MD, etc.) into valid EPUB 3 bytes
@@ -227,7 +227,9 @@ class TextToEpub {
         for (final xml.XmlNode n in nodes) ?_fromXml(n),
       ]);
     }
-    final dom.Element? body = html_parser.parse(content).body;
+    // 不良构输入同样可能带 kobo 式自闭合 <script/>：走章节解析入口先归一化，否则
+    // HTML5 tokenizer 会把整个 <body> 吞成脚本文本（BUG-2017）。
+    final dom.Element? body = EpubBook.parseChapterHtml(content).body;
     if (body == null) return const <_BodyNode>[];
     return _trimEdgeWhitespace(<_BodyNode>[
       for (final dom.Node n in body.nodes) ?_fromDom(n),
