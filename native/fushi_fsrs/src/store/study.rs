@@ -421,8 +421,15 @@ pub(crate) trait Tables {
     fn id_arg(&self, id: &str) -> Sql;
     /// 读出 [Tables::id_sel] 那一列的文本 ID。
     fn id_get(&self, r: &rusqlite::Row<'_>, i: usize) -> rusqlite::Result<String>;
-    /// 自定义学习「卡在 [since] 之后有作答日志」：对 `id` 列的条件与它的参数。
-    fn answered(&self, since: i64) -> Result<(String, Vec<Sql>), String>;
+    /// 自定义学习「卡在 [since] 之后有作答日志」：对 `id` 列的条件与它的参数。[resident] = 常驻会话的计数上下文（测试
+    /// 基准没有），[today_start] = 它「今天的作答」从哪一刻起（[LogState::window] 的第二项）：实现可以直接读它，不再
+    /// 另查日志（新代）。
+    fn answered(
+        &self,
+        since: i64,
+        resident: Option<&LogState>,
+        today_start: i64,
+    ) -> Result<(String, Vec<Sql>), String>;
     /// 自定义学习「卡在 [from] 之后有评『重来』的有效复习」：对 `id` 列的条件与它的参数。
     fn forgotten(&self, from: i64) -> (String, Vec<Sql>);
 }
@@ -514,7 +521,12 @@ impl Tables for P3Tables<'_> {
         r.get(i)
     }
 
-    fn answered(&self, since: i64) -> Result<(String, Vec<Sql>), String> {
+    fn answered(
+        &self,
+        since: i64,
+        _resident: Option<&LogState>,
+        _today_start: i64,
+    ) -> Result<(String, Vec<Sql>), String> {
         Ok((
             "id IN (SELECT card_id FROM srs_review_logs WHERE profile_uid = srs_id(?) AND kind = 'review' AND occurred_at >= ?)"
                 .to_owned(),
@@ -537,6 +549,8 @@ trait Source {
     /// 新卡 / 自定义学习那几条 SQL 落在哪。
     fn tables(&self) -> &dyn Tables;
     fn logs(&self) -> &LogState;
+    /// 常驻会话的计数上下文（[Tables::answered] 可直接读它）；测试基准（[SqlSource]）没有。
+    fn resident(&self) -> Option<&LogState>;
     /// 每个牌组**自己**（不含子牌组）的计数原料；只给有 hidden = 0 的卡的牌组。[decks] 为 None = 全部牌组。
     fn tallies(
         &self,
@@ -574,6 +588,10 @@ impl Source for SessionSource<'_> {
 
     fn logs(&self) -> &LogState {
         self.0.logs()
+    }
+
+    fn resident(&self) -> Option<&LogState> {
+        Some(self.0.logs())
     }
 
     fn tallies(
@@ -725,6 +743,10 @@ impl Source for SqlSource<'_> {
 
     fn logs(&self) -> &LogState {
         &self.logs
+    }
+
+    fn resident(&self) -> Option<&LogState> {
+        None
     }
 
     fn tallies(
@@ -1845,7 +1867,11 @@ fn run(src: &mut dyn Source, tree: DeckTree, req: &Value) -> Result<Value, Strin
             ctx: &ctx,
             decks: &ids,
             cu,
-            answered: src.tables().answered(cu.since)?,
+            answered: src.tables().answered(
+                cu.since,
+                src.resident(),
+                LogState::window(ctx.day, ctx.today).1,
+            )?,
         };
         let (n, a, left, learn) = picker.pick(&ex)?;
         if req["pick"] == Value::Bool(true) {
