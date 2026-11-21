@@ -499,10 +499,23 @@ class MangaAudioAnnotateSession {
     _editSeries((SeriesCastProfile p) => p.learnRoster(<TtsCastCharacter>[c]));
   }
 
-  /// 存盘（演出稿 + 账本 + 系列档案）。复核界面每次改动后调用。
+  /// 存盘（演出稿 + 账本 + 系列档案）。
   Future<void> saveAll() async {
     await save();
     await _saveSeries();
+  }
+
+  /// 逐句复核的存盘：只写复核会改的演出稿与系列档案改动，账本不动（复核不改账本，
+  /// 写回会拿本会话的旧账本盖掉标注任务刚记下的失败）。演出稿按读盘修订写
+  /// （[MangaAudioScriptStore.saveIfCurrent]）：本会话读盘后这卷被别处存过就不写、
+  /// 返回 false，调用方应重开会话，不能拿整份旧稿盖掉新结果。
+  Future<bool> saveReviewEdits() async {
+    final bool written = await mangaAudioScriptStoreFor(
+      appModel,
+    ).saveIfCurrent(bookKey, script);
+    if (!written) return false;
+    await _saveSeries();
+    return true;
   }
 }
 

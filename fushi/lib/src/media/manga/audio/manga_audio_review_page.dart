@@ -4,7 +4,8 @@
 ///
 /// 「确认」= 保留当前说话人并记为手改（含「不明」：保留给默认声线处理），之后重标
 /// 不会再覆盖。页面自己开一份标注会话：本卷有标注任务在跑时编辑锁住，任务跑完重读
-/// 盘上的演出稿，避免拿旧会话覆盖任务的结果。
+/// 盘上的演出稿，新会话装上后才解锁（[MangaReviewEditGate]）；存盘再按读盘修订校验
+/// （[MangaAudioAnnotateSession.saveReviewEdits]），避免拿旧会话覆盖任务的结果。
 library;
 
 import 'dart:async';
@@ -41,37 +42,117 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 // 纯逻辑
 // -----------------------------------------------------------------------------
 
-/// 复核队列：按页序、页内按演出稿顺序排的 `lineId`；[pendingOnly] 只取待复核的行。
-List<String> mangaReviewQueue(
-  MangaAudioScript script, {
-  required bool pendingOnly,
-}) {
-  final List<(int, int, MangaScriptLine)> indexed =
-      <(int, int, MangaScriptLine)>[
-        for (int i = 0; i < script.lines.length; i++)
-          if (!pendingOnly || mangaLineNeedsReview(script.lines[i]))
-            (script.lines[i].page, i, script.lines[i]),
-      ];
-  indexed.sort(
-    ((int, int, MangaScriptLine) a, (int, int, MangaScriptLine) b) =>
-        a.$1 != b.$1 ? a.$1.compareTo(b.$1) : a.$2.compareTo(b.$2),
+/// 复核队列：按页序、页内按演出稿顺序排的 `lineId`，连同每项所在页与反查表。
+///
+/// 页号随队列一起存，从某页开始复核是对页号二分；行身份 → 队列位置是哈希表。
+/// 定位、存完找下一句、点气泡跳句都不再逐项回演出稿里线性找行。
+class MangaReviewQueue {
+  MangaReviewQueue._(this.ids, this._pages)
+    : _positions = <String, int>{
+        for (int i = 0; i < ids.length; i++) ids[i]: i,
+      };
+
+  /// [pendingOnly] 只取待复核的行。
+  factory MangaReviewQueue.of(
+    MangaAudioScript script, {
+    required bool pendingOnly,
+  }) {
+    final List<(int, int, MangaScriptLine)> indexed =
+        <(int, int, MangaScriptLine)>[
+          for (int i = 0; i < script.lines.length; i++)
+            if (!pendingOnly || mangaLineNeedsReview(script.lines[i]))
+              (script.lines[i].page, i, script.lines[i]),
+        ];
+    indexed.sort(
+      ((int, int, MangaScriptLine) a, (int, int, MangaScriptLine) b) =>
+          a.$1 != b.$1 ? a.$1.compareTo(b.$1) : a.$2.compareTo(b.$2),
+    );
+    return MangaReviewQueue._(
+      List<String>.unmodifiable(<String>[
+        for (final (int, int, MangaScriptLine) e in indexed) e.$3.lineId,
+      ]),
+      List<int>.unmodifiable(<int>[
+        for (final (int, int, MangaScriptLine) e in indexed) e.$1,
+      ]),
+    );
+  }
+
+  static final MangaReviewQueue empty = MangaReviewQueue._(
+    const <String>[],
+    const <int>[],
   );
-  return <String>[
-    for (final (int, int, MangaScriptLine) e in indexed) e.$3.lineId,
-  ];
+
+  final List<String> ids;
+  final List<int> _pages;
+  final Map<String, int> _positions;
+
+  int get length => ids.length;
+
+  /// [lineId] 在队列里的位置；不在队列里为 null。
+  int? indexOf(String lineId) => _positions[lineId];
+
+  /// 从第 [page] 页开始复核：队列里第一条落在该页或之后的行；都在前面则从头。
+  int startIndex(int page) {
+    int lo = 0;
+    int hi = _pages.length;
+    while (lo < hi) {
+      final int mid = (lo + hi) >> 1;
+      if (_pages[mid] < page) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo < _pages.length ? lo : 0;
+  }
+
+  /// 存完 [lineId] 后该停的位置：它在队列里的下一句；它是最后一句（或已不在队列
+  /// 里）时为 null。
+  int? nextAfter(String lineId) {
+    final int? at = _positions[lineId];
+    return at != null && at < ids.length - 1 ? at + 1 : null;
+  }
 }
 
-/// 从第 [page] 页开始复核：队列里第一条落在该页或之后的行；都在前面则从头。
-int mangaReviewStartIndex(
-  MangaAudioScript script,
-  List<String> queue,
-  int page,
-) {
-  for (int i = 0; i < queue.length; i++) {
-    final MangaScriptLine? line = script.lineById(queue[i]);
-    if (line != null && line.page >= page) return i;
+/// 复核页什么时候能改稿。
+///
+/// 页面手里的会话只在「本卷没有标注任务在跑，且最近一次请求的会话已经装上」时才是
+/// 盘上的最新稿。任务结束不等于可以改：结束后要重读盘上的稿子，读盘是异步的，这段
+/// 时间里旧会话还在屏幕上，用它提交会把整份旧稿写回去、盖掉任务刚写的结果。所以
+/// 解锁挂在「新会话装上」上，而不是「任务结束」上；读盘按代号认领，晚到的旧读盘结果
+/// 不会盖掉新的。
+class MangaReviewEditGate {
+  bool _taskRunning = false;
+  int _requested = 0;
+  int _installed = -1;
+
+  /// 本卷有标注任务在跑。
+  bool get taskRunning => _taskRunning;
+
+  /// 最近一次请求的会话还没装上（读盘中，或读盘失败）。
+  bool get sessionPending => _installed != _requested;
+
+  bool get editable => !_taskRunning && !sessionPending;
+
+  /// 记下任务状态；返回 true = 任务刚结束，调用方应 [beginLoad] 重读。
+  bool taskChanged({required bool running}) {
+    final bool ended = _taskRunning && !running;
+    _taskRunning = running;
+    return ended;
   }
-  return 0;
+
+  /// 要开一份新会话：返回这次读盘的代号，从此刻起到 [install] 这个代号之前不能改。
+  int beginLoad() => ++_requested;
+
+  /// 这次读盘还是最近一次请求的吗（不是就丢掉结果）。
+  bool isLatest(int load) => load == _requested;
+
+  /// 装上代号为 [load] 的会话；不是最近一次请求的返回 false，什么也不改。
+  bool install(int load) {
+    if (load != _requested) return false;
+    _installed = load;
+    return true;
+  }
 }
 
 /// 页上第 [block] 块属于哪一句（没有任何行用到它时为 null）。
@@ -84,13 +165,6 @@ MangaScriptLine? mangaLineOfBlock(
     if (l.page == page && l.blocks.contains(block)) return l;
   }
   return null;
-}
-
-/// 存完 [lineId] 后该停的位置：它在 [queue] 里的下一句；它是最后一句（或已不在
-/// 队列里）时为 null。
-int? mangaReviewNextIndex(List<String> queue, String lineId) {
-  final int at = queue.indexOf(lineId);
-  return at >= 0 && at < queue.length - 1 ? at + 1 : null;
 }
 
 /// 原页坐标（OCR 像素）里命中 [point] 的块下标；块重叠时取 zIndex 高的。
@@ -151,13 +225,19 @@ class _MangaAudioReviewPageState extends State<MangaAudioReviewPage> {
   /// 本卷正在跑的标注任务；非 null 时编辑锁住。
   MangaAnnotateTask? _task;
 
+  /// 能不能改稿（任务在跑 / 新会话还没装上时都不能），见 [MangaReviewEditGate]。
+  final MangaReviewEditGate _gate = MangaReviewEditGate();
+
   bool _pendingOnly = true;
 
   /// 当前队列（进页 / 切筛选时定一次：复核过的行不从队列里消失，前后翻不跳号）。
-  List<String> _queue = const <String>[];
+  MangaReviewQueue _queue = MangaReviewQueue.empty;
   int _index = 0;
 
-  bool get _busy => _task != null;
+  /// 待复核的行数：装上会话时数一次，之后每提交一句按这句前后的状态增减。
+  int _pendingCount = 0;
+
+  bool get _busy => !_gate.editable;
 
   /// 正在存刚改的那句；期间不接受新的提交（见 [_commit]）。
   bool _saving = false;
@@ -167,7 +247,8 @@ class _MangaAudioReviewPageState extends State<MangaAudioReviewPage> {
     super.initState();
     _tasks.addListener(_syncTask);
     _task = _tasks.runningFor(widget.bookKey);
-    unawaited(_load(page: widget.startPage));
+    _gate.taskChanged(running: _task != null);
+    unawaited(_load(_gate.beginLoad(), page: widget.startPage));
   }
 
   @override
@@ -179,55 +260,60 @@ class _MangaAudioReviewPageState extends State<MangaAudioReviewPage> {
   void _syncTask() {
     final MangaAnnotateTask? task = _tasks.runningFor(widget.bookKey);
     if (identical(task, _task)) return;
-    final bool ended = _task != null && task == null;
+    // 任务跑完：同一拍里先开新一轮读盘再改状态，锁一直挂到新会话装上（[_load]）。
+    final bool ended = _gate.taskChanged(running: task != null);
+    final int? load = ended ? _gate.beginLoad() : null;
+    final MangaScriptLine? current = _current;
     setState(() => _task = task);
-    // 任务跑完：重读盘上的演出稿，停在原来那一句附近。
-    if (ended) {
-      final MangaScriptLine? current = _current;
-      unawaited(_load(page: current?.page ?? widget.startPage, keep: current));
+    if (load != null) {
+      unawaited(
+        _load(load, page: current?.page ?? widget.startPage, keep: current),
+      );
     }
   }
 
-  Future<void> _load({required int page, MangaScriptLine? keep}) async {
+  /// 开一份新会话并装上；[load] 是 [MangaReviewEditGate.beginLoad] 给的代号，
+  /// 期间又请求了更新的读盘时丢掉这次的结果。
+  Future<void> _load(
+    int load, {
+    required int page,
+    MangaScriptLine? keep,
+  }) async {
     try {
       final MangaAudioAnnotateSession s = await MangaAudioAnnotateSession.open(
         widget.appModel,
         widget.bookKey,
       );
-      if (!mounted) return;
+      if (!mounted || !_gate.isLatest(load)) return;
       setState(() {
+        _gate.install(load);
         // 首次进页：有待复核的行就只看它们，没有就看全部；重读时沿用用户选的筛选。
-        if (_session == null) {
-          _pendingOnly = mangaReviewQueue(
-            s.script,
-            pendingOnly: true,
-          ).isNotEmpty;
-        }
+        final int pending = s.script.lines.where(mangaLineNeedsReview).length;
+        if (_session == null) _pendingOnly = pending > 0;
         _session = s;
+        _pendingCount = pending;
         _loadError = null;
         _rebuildQueue(page: page, keepLineId: keep?.lineId);
       });
     } on MangaAudioAnnotateError catch (e) {
-      if (mounted) setState(() => _loadError = e.code);
+      if (mounted && _gate.isLatest(load)) {
+        setState(() => _loadError = e.code);
+      }
     }
   }
 
   void _rebuildQueue({required int page, String? keepLineId}) {
     final MangaAudioAnnotateSession s = _session!;
-    _queue = mangaReviewQueue(s.script, pendingOnly: _pendingOnly);
-    final int kept = keepLineId == null ? -1 : _queue.indexOf(keepLineId);
-    _index = kept >= 0 ? kept : mangaReviewStartIndex(s.script, _queue, page);
+    _queue = MangaReviewQueue.of(s.script, pendingOnly: _pendingOnly);
+    final int? kept = keepLineId == null ? null : _queue.indexOf(keepLineId);
+    _index = kept ?? _queue.startIndex(page);
   }
 
   MangaScriptLine? get _current {
     final MangaAudioAnnotateSession? s = _session;
     if (s == null || _index < 0 || _index >= _queue.length) return null;
-    return s.script.lineById(_queue[_index]);
+    return s.script.lineById(_queue.ids[_index]);
   }
-
-  int get _pendingCount => _session == null
-      ? 0
-      : _session!.script.lines.where(mangaLineNeedsReview).length;
 
   void _setFilter(bool pendingOnly) {
     if (pendingOnly == _pendingOnly || _session == null) return;
@@ -256,36 +342,52 @@ class _MangaAudioReviewPageState extends State<MangaAudioReviewPage> {
     );
     if (line == null || line.lineId == current.lineId) return;
     setState(() {
-      if (!_queue.contains(line.lineId)) {
+      if (_queue.indexOf(line.lineId) == null) {
         _pendingOnly = false;
-        _queue = mangaReviewQueue(s.script, pendingOnly: false);
+        _queue = MangaReviewQueue.of(s.script, pendingOnly: false);
       }
-      _index = _queue.indexOf(line.lineId);
+      _index = _queue.indexOf(line.lineId)!;
     });
   }
 
   /// 写入说话人（或原样确认）并记为手改，存盘后跳到这句的下一句。
   ///
   /// 一次只存一句（[_saving]）：存盘是异步的，连点两下会让两次提交都落在同一句上、
-  /// 各自 `+1` 而跳过下一句，并让两次存盘并发写同一个临时文件。下一句按刚存的这句
-  /// 在队列里的位置算，不依赖存盘期间 [_index] 有没有被翻动。
+  /// 各自 `+1` 而跳过下一句。下一句按刚存的这句在队列里的位置算，不依赖存盘期间
+  /// [_index] 有没有被翻动。存盘按读盘修订写：这份会话读盘后本卷被别处存过（例如
+  /// 标注任务）就不写，重开会话并提示重做，不拿整份旧稿盖掉新结果。
   Future<void> _commit(String speaker) async {
     final MangaAudioAnnotateSession? s = _session;
     final MangaScriptLine? line = _current;
     if (s == null || line == null || _busy || _saving) return;
     setState(() => _saving = true);
+    final bool wasPending = mangaLineNeedsReview(line);
     s.script.replaceLine(
       line.lineId,
       (MangaScriptLine l) =>
           l.copyWith(speaker: speaker, source: TtsCastSource.user),
     );
+    final bool written;
     try {
-      await s.saveAll();
+      written = await s.saveReviewEdits();
     } finally {
       _saving = false;
     }
     if (!mounted) return;
-    final int? next = mangaReviewNextIndex(_queue, line.lineId);
+    if (!written) {
+      final int load = _gate.beginLoad();
+      setState(() {});
+      FushiToast.show(
+        msg: t.manga_audio_review_conflict,
+        severity: ToastSeverity.warning,
+      );
+      await _load(load, page: line.page, keep: line);
+      return;
+    }
+    final MangaScriptLine? saved = s.script.lineById(line.lineId);
+    final bool nowPending = saved != null && mangaLineNeedsReview(saved);
+    _pendingCount += (nowPending ? 1 : 0) - (wasPending ? 1 : 0);
+    final int? next = _queue.nextAfter(line.lineId);
     if (next != null) {
       setState(() => _index = next);
     } else {
@@ -360,8 +462,9 @@ class _MangaAudioReviewPageState extends State<MangaAudioReviewPage> {
                 total: _queue.length,
                 pendingOnly: _pendingOnly,
                 pendingCount: _pendingCount,
-                locked: _busy,
-                saving: _saving,
+                locked: _gate.taskRunning,
+                // 新会话还没装上时同「正在存」：能看不能改，不显示标注中的提示。
+                saving: _saving || _gate.sessionPending,
                 onFilter: _setFilter,
                 onPrevious: () => _go(-1),
                 onNext: () => _go(1),

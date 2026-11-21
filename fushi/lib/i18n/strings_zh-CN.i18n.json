@@ -5676,6 +5676,7 @@
   "manga_audio_retry_with": "换用 ${provider} 重试",
   "manga_audio_review_action": "对照原页逐句复核",
   "manga_audio_review_confirm": "确认说话人",
+  "manga_audio_review_conflict": "演出稿已在别处更新，已重新载入，请重做这一处修改",
   "manga_audio_review_done": "待复核的台词都已复核",
   "manga_audio_review_empty": "没有待复核的台词",
   "manga_audio_review_locked": "本卷正在标注，标完前不能修改",

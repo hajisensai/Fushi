@@ -58,6 +58,40 @@ Future<void> _tap(WidgetTester tester, Finder finder) async {
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.zhCn));
 
+  group('编辑锁（HBK-AUDIT-016）', () {
+    test('任务结束后到新会话装上之前都不能改', () {
+      final MangaReviewEditGate gate = MangaReviewEditGate();
+      gate.taskChanged(running: false);
+      final int first = gate.beginLoad();
+      expect(gate.editable, isFalse);
+      expect(gate.install(first), isTrue);
+      expect(gate.editable, isTrue);
+
+      // 标注开始：锁住。
+      expect(gate.taskChanged(running: true), isFalse);
+      expect(gate.editable, isFalse);
+      // 标注结束：要重读，旧会话还在屏幕上，仍然锁着。
+      expect(gate.taskChanged(running: false), isTrue);
+      final int reload = gate.beginLoad();
+      expect(gate.taskRunning, isFalse);
+      expect(gate.sessionPending, isTrue);
+      expect(gate.editable, isFalse);
+      expect(gate.install(reload), isTrue);
+      expect(gate.editable, isTrue);
+    });
+
+    test('晚到的旧读盘结果不装、不解锁', () {
+      final MangaReviewEditGate gate = MangaReviewEditGate();
+      final int older = gate.beginLoad();
+      final int newer = gate.beginLoad();
+      expect(gate.isLatest(older), isFalse);
+      expect(gate.install(older), isFalse);
+      expect(gate.editable, isFalse);
+      expect(gate.install(newer), isTrue);
+      expect(gate.editable, isTrue);
+    });
+  });
+
   group('复核队列', () {
     final MangaAudioScript script = MangaAudioScript(
       lines: <MangaScriptLine>[
@@ -69,31 +103,43 @@ void main() {
     );
 
     test('按页序、页内按演出稿顺序；只看待复核时去掉有把握 / 手改的行', () {
-      expect(mangaReviewQueue(script, pendingOnly: false), <String>[
+      expect(MangaReviewQueue.of(script, pendingOnly: false).ids, <String>[
         'p0b1',
         'p0b0',
         'p1b0',
         'p2b0',
       ]);
-      expect(mangaReviewQueue(script, pendingOnly: true), <String>[
+      expect(MangaReviewQueue.of(script, pendingOnly: true).ids, <String>[
         'p0b0',
         'p2b0',
       ]);
     });
 
     test('从当前页开始：取第一条落在该页或之后的行，都在前面则从头', () {
-      final List<String> q = mangaReviewQueue(script, pendingOnly: true);
-      expect(mangaReviewStartIndex(script, q, 0), 0);
-      expect(mangaReviewStartIndex(script, q, 1), 1);
-      expect(mangaReviewStartIndex(script, q, 9), 0);
+      final MangaReviewQueue q = MangaReviewQueue.of(script, pendingOnly: true);
+      expect(q.startIndex(0), 0);
+      expect(q.startIndex(1), 1);
+      expect(q.startIndex(2), 1);
+      expect(q.startIndex(9), 0);
+      final MangaReviewQueue all = MangaReviewQueue.of(
+        script,
+        pendingOnly: false,
+      );
+      expect(all.startIndex(1), 2);
+      expect(MangaReviewQueue.empty.startIndex(3), 0);
     });
 
     test('存完一句停在它在队列里的下一句；最后一句 / 不在队列里时为 null', () {
-      const List<String> q = <String>['p0b0', 'p1b0', 'p2b0'];
-      expect(mangaReviewNextIndex(q, 'p0b0'), 1);
-      expect(mangaReviewNextIndex(q, 'p1b0'), 2);
-      expect(mangaReviewNextIndex(q, 'p2b0'), isNull);
-      expect(mangaReviewNextIndex(q, 'p9b0'), isNull);
+      final MangaReviewQueue q = MangaReviewQueue.of(
+        script,
+        pendingOnly: false,
+      );
+      expect(q.nextAfter('p0b1'), 1);
+      expect(q.nextAfter('p1b0'), 3);
+      expect(q.nextAfter('p2b0'), isNull);
+      expect(q.nextAfter('p9b0'), isNull);
+      expect(q.indexOf('p1b0'), 2);
+      expect(q.indexOf('p9b0'), isNull);
     });
 
     test('块 → 句；原页坐标命中块时重叠取 zIndex 高的', () {
