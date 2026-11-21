@@ -283,6 +283,17 @@ fn closure_text(upto: u64, ctx: &Dvv, steps: &[(u64, Dvv)]) -> String {
     v.to_string()
 }
 
+/// 文件里有没有检查点之前建的闭包行（够一个检查点区间、`ctx` 里没有 `at`；全部集合）。Primary 开库时先问这一句
+/// （一台承袭设备一行），有才开写事务补建（[Index::backfill_closure_steps]）。
+pub(crate) fn closure_steps_missing(conn: &rusqlite::Connection) -> Result<bool, String> {
+    conn.prepare_cached(
+        "SELECT EXISTS (SELECT 1 FROM closure_ix WHERE upto >= ?1 AND json_type(ctx, '$.at') IS NULL)",
+    )
+    .map_err(sql)?
+    .query_row([CLOSURE_STEP as i64], |r| r.get(0))
+    .map_err(sql)
+}
+
 /// [closure_text] 里的检查点；没有 `at` = None（检查点之前建的行）。
 fn closure_steps(text: &str) -> Option<Vec<(u64, Dvv)>> {
     let v: Value = serde_json::from_str(text).ok()?;
@@ -784,6 +795,59 @@ impl<'t, 'c> Index<'t, 'c> {
             }
         }
         Ok(changed)
+    }
+
+    /// 收尾的闭包那段：旧戳变了的设备（[Index::stale]）与检查点之前建的闭包行（够一个检查点区间、`ctx` 里没有 `at`）
+    /// 从头重算。返回 (重算了几台, 其中整份闭包变了的几台)；只差检查点的不算变（[Index::put_closure]）。
+    fn settle_closures(&mut self) -> Result<(u64, u64), String> {
+        {
+            let mut stmt = self
+                .t
+                .conn()
+                .prepare_cached(
+                    "SELECT device FROM closure_ix WHERE col = ?1 AND upto >= ?2 AND json_type(ctx, '$.at') IS NULL",
+                )
+                .map_err(sql)?;
+            let rows = stmt
+                .query_map(params![self.col, CLOSURE_STEP as i64], |r| {
+                    r.get::<_, [u8; 16]>(0)
+                })
+                .map_err(sql)?;
+            for d in rows {
+                self.stale.insert(Id(d.map_err(sql)?));
+            }
+        }
+        let (mut redone, mut changed) = (0u64, 0u64);
+        for d in std::mem::take(&mut self.stale) {
+            let mut acc = Acc::default();
+            self.t.for_each_stamp(self.col, &d, u64::MAX, |seq, s| {
+                acc.note(seq, s);
+                Ok(())
+            })?;
+            redone += 1;
+            if self.put_closure(&d, acc)? {
+                changed += 1;
+            }
+        }
+        Ok((redone, changed))
+    }
+
+    /// 开库时补建检查点之前建的闭包行（`kernel.rs` `G4Core::open`，Primary）：[Index::settle] 的闭包那段，别的什么都
+    /// 不碰（不重判寄存器、不动缓存层）。这些行的整份闭包本来就与真相一致，重算只补上 `at`；万一整份闭包变了（索引与
+    /// 真相不一致），这里不替收尾做后续的重判，报错让调用方整笔回滚，留给下一次写命令的收尾（它按「闭包变了」重判）。
+    /// 返回补了几台。
+    pub(crate) fn backfill_closure_steps(&mut self) -> Result<u64, String> {
+        self.writing()?;
+        if !self.stale.is_empty() {
+            return Err("gen4 index: closure backfill with pending stamp changes".to_owned());
+        }
+        let (redone, changed) = self.settle_closures()?;
+        if changed > 0 {
+            return Err(format!(
+                "gen4 index: {changed} legacy closures differ from the log; left to the next settle"
+            ));
+        }
+        Ok(redone)
     }
 
     /// 一台设备闭包行里的检查点（[closure_text]）：没有行、行是检查点之前建的、或这台设备的旧戳变了还没收尾
@@ -1308,34 +1372,7 @@ impl<'t, 'c> Index<'t, 'c> {
     pub fn settle(&mut self) -> Result<Settled, String> {
         self.writing()?;
         let mut out = Settled::default();
-        // 检查点之前建的闭包行（够一个检查点区间、`ctx` 里没有 `at`）补建：同一份重算，整份闭包不变、不算变。
-        {
-            let mut stmt = self
-                .t
-                .conn()
-                .prepare_cached(
-                    "SELECT device FROM closure_ix WHERE col = ?1 AND upto >= ?2 AND json_type(ctx, '$.at') IS NULL",
-                )
-                .map_err(sql)?;
-            let rows = stmt
-                .query_map(params![self.col, CLOSURE_STEP as i64], |r| {
-                    r.get::<_, [u8; 16]>(0)
-                })
-                .map_err(sql)?;
-            for d in rows {
-                self.stale.insert(Id(d.map_err(sql)?));
-            }
-        }
-        for d in std::mem::take(&mut self.stale) {
-            let mut acc = Acc::default();
-            self.t.for_each_stamp(self.col, &d, u64::MAX, |seq, s| {
-                acc.note(seq, s);
-                Ok(())
-            })?;
-            if self.put_closure(&d, acc)? {
-                out.closures += 1;
-            }
-        }
+        out.closures = self.settle_closures()?.1;
         let trust = self.weigh_purged(false, &mut out)?;
         // 别名表在扣住之前定：扣住按别名类判（`weigh.rs` 文件头「扣住的删除」），别名表只看清除状态、不看扣住与
         // 寄存器的判定（`alias.rs` 文件头「证据」）。
@@ -1901,6 +1938,93 @@ pub(crate) mod tests {
         });
     }
 
+    /// 承袭设备 d1 迁进来 w1 的第 1..=[n] 条旧修改，每条见过 w1 之前的全部（真库那台承袭设备的形态）。seq 在 [on_field]
+    /// 里的落在 FIELD 寄存器上，其余各自一个寄存器（不让一个寄存器攒上千条写入）。只告诉索引，不收尾。
+    pub(crate) fn long_heritage(
+        t: &Truth<'_>,
+        ix: &mut Index<'_, '_>,
+        col: i64,
+        n: u64,
+        on_field: &[u64],
+    ) {
+        for seq in 1..=n {
+            let st = stamp(
+                "w1",
+                seq as i64,
+                &format!(r#"{{"vv":{{"w1":{}}}}}"#, seq - 1),
+                seq as i64,
+            );
+            let key = if on_field.contains(&seq) {
+                field()
+            } else {
+                let mut b = [0x7au8; 16];
+                b[8..].copy_from_slice(&seq.to_be_bytes());
+                format!("f/{}", Id(b).text())
+            };
+            let body = Body4::Edit(Edit4 {
+                key,
+                value: format!("\"old{seq}\""),
+                stamp: Some(st),
+                ..native_edit()
+            });
+            let o = op(0xd1, seq, seq as i64, &[], &body);
+            let oid = o.id;
+            t.put_heritage(
+                col,
+                &id(0xc0),
+                &HeritageSlot::op(seq.to_be_bytes(), o),
+                T_VERSION,
+            )
+            .unwrap();
+            ix.add(&t.entry(col, &oid).unwrap().unwrap()).unwrap();
+        }
+    }
+
+    /// 检查点之前建的库（真库迁移时还没有检查点）：Primary 打开时在一个写事务里补上缺 `at` 的闭包行，同一份重算
+    /// （[Index::settle] 的闭包那段），整份闭包不变——派生表逐行回到「按检查点建」的样子，写入代数不动；Secondary 不写。
+    #[test]
+    fn a_primary_open_backfills_closure_checkpoints_without_counting_a_write() {
+        use crate::store::gen4::files::OpenMode;
+        use crate::store::gen4::kernel::G4Core;
+        use crate::store::sync2::tests::tempdir;
+        let dir = tempdir::new("g4closurebackfill");
+        let n = CLOSURE_STEP + 100;
+        let (col, built) = {
+            let c = G4Core::open(&dir.0, OpenMode::Primary).unwrap();
+            let col = c.write(|t| t.bind(P, &id(0xc0), "dir")).unwrap();
+            c.write(|t| {
+                let mut ix = Index::new(t, col);
+                long_heritage(t, &mut ix, col, n, &[n]);
+                ix.settle()
+            })
+            .unwrap();
+            let built = c.read(|t| Ok(dump(t.conn(), col))).unwrap();
+            assert!(
+                built
+                    .iter()
+                    .any(|l| l.starts_with("closure_ix ") && l.contains(r#"\"at\""#))
+            );
+            c.write(|t| {
+                t.conn()
+                    .execute("UPDATE closure_ix SET ctx = json_remove(ctx, '$.at')", [])
+                    .map_err(sql)
+            })
+            .unwrap();
+            c.close();
+            (col, built)
+        };
+        let missing = |c: &G4Core| -> bool { c.read(|t| closure_steps_missing(t.conn())).unwrap() };
+        // Secondary 只读：不补，行照旧缺 `at`（下一次 Primary 打开或写命令的收尾补）。
+        let c = G4Core::open(&dir.0, OpenMode::Secondary).unwrap();
+        assert!(missing(&c));
+        c.close();
+        let c = G4Core::open(&dir.0, OpenMode::Primary).unwrap();
+        assert!(!missing(&c));
+        assert_eq!(c.read(|t| Ok(dump(t.conn(), col))).unwrap(), built);
+        assert_eq!(c.writes.load(std::sync::atomic::Ordering::SeqCst), 0);
+        c.close();
+    }
+
     /// 迁移来的库的形态（真库：一台承袭设备 34 万条旧戳，迁移途中另一台设备只同步到它的一部分就写了牌组设置）：
     /// 不带旧戳的写入只见过承袭设备旧戳的一部分（前缀 s < `upto`）。
     ///
@@ -1914,45 +2038,11 @@ pub(crate) mod tests {
         let seen_at = 2 * CLOSURE_STEP + 10;
         let prefix = 2 * CLOSURE_STEP + 200;
         let other = format!("f/{}", id(5).text());
-        let filler_key = |seq: u64| {
-            let mut b = [0x7au8; 16];
-            b[8..].copy_from_slice(&seq.to_be_bytes());
-            format!("f/{}", Id(b).text())
-        };
         with(|t, col| {
             t.tx(|t| {
                 let mut ix = Index::new(t, col);
-                // 承袭设备 d1：w1 的第 1..=n 条旧修改，每条见过 w1 之前的全部。seen_at 与 n 两条落在 FIELD 上，其余各自
-                // 一个寄存器。
-                for seq in 1..=n {
-                    let st = stamp(
-                        "w1",
-                        seq as i64,
-                        &format!(r#"{{"vv":{{"w1":{}}}}}"#, seq - 1),
-                        seq as i64,
-                    );
-                    let key = if seq == seen_at || seq == n {
-                        field()
-                    } else {
-                        filler_key(seq)
-                    };
-                    let body = Body4::Edit(Edit4 {
-                        key,
-                        value: format!("\"old{seq}\""),
-                        stamp: Some(st),
-                        ..native_edit()
-                    });
-                    let o = op(0xd1, seq, seq as i64, &[], &body);
-                    let oid = o.id;
-                    t.put_heritage(
-                        col,
-                        &id(0xc0),
-                        &HeritageSlot::op(seq.to_be_bytes(), o),
-                        T_VERSION,
-                    )
-                    .unwrap();
-                    ix.add(&t.entry(col, &oid).unwrap().unwrap()).unwrap();
-                }
+                // 承袭设备 d1：w1 的第 1..=n 条旧修改（[long_heritage]），seen_at 与 n 两条落在 FIELD 上。
+                long_heritage(t, &mut ix, col, n, &[seen_at, n]);
                 // a1 只见过 d1 的前 prefix 条：见过 w1:seen_at、没见过 w1:n。
                 native(
                     t,

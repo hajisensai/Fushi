@@ -141,3 +141,67 @@ fn study_realdb_bench_answer_and_study() {
     ffsrs_store_close(h);
     let _ = std::fs::remove_dir_all(&work);
 }
+
+/// 真库的打开耗时（Primary 开库时补建检查点之前建的闭包行，`kernel.rs` `backfill_closure_steps`）与打开后第一次单独
+/// 排队；再关掉重开一次（已补过，只剩一句存在性查询）对照。跑法同上。
+#[test]
+#[ignore = "benchmark on a copy of a real library: set FUSHI_G4_REALDB"]
+fn study_realdb_bench_open_backfill() {
+    let Ok(src) = std::env::var(REALDB_ENV) else {
+        eprintln!("[realdb] {REALDB_ENV} not set: skipped");
+        return;
+    };
+    let src = std::path::PathBuf::from(src);
+    let work = src
+        .parent()
+        .unwrap()
+        .join(format!("open-{}", std::process::id()));
+    std::fs::create_dir_all(&work).unwrap();
+    std::fs::copy(&src, work.join("srs4.db")).unwrap();
+    let (profile, deck): (String, String) = {
+        let c = rusqlite::Connection::open(work.join("srs4.db")).unwrap();
+        let missing: i64 = c
+            .query_row(
+                "SELECT COUNT(*) FROM closure_ix WHERE upto >= 1024 AND json_type(ctx, '$.at') IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        eprintln!("[realdb] closure rows without checkpoints: {missing}");
+        let (profile, col): (String, i64) = c
+            .query_row(
+                "SELECT c.profile_uid, c.col FROM collections c \
+                 ORDER BY (SELECT COUNT(*) FROM cards WHERE col = c.col) DESC LIMIT 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        let deck: Ref = c
+            .query_row(
+                "SELECT deck_id FROM cards WHERE col = ?1 AND hidden = 0 \
+                 GROUP BY deck_id ORDER BY COUNT(*) DESC LIMIT 1",
+                [col],
+                |r| r.get(0),
+            )
+            .unwrap();
+        (profile, deck.text())
+    };
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    let req = json!({"op": "study", "profile": profile,
+        "now": now, "utcOff": 480, "rollover": 4, "deck": deck, "pick": true});
+    for round in ["first open (backfills)", "reopen"] {
+        let t = Instant::now();
+        let h = open(&work, 0).unwrap_or_else(|(rc, e)| panic!("{rc} {e}"));
+        eprintln!("[realdb] {round}: open {:.1} ms", ms(t));
+        for i in 0..2 {
+            let t = Instant::now();
+            call(h, &req, None).unwrap();
+            eprintln!("[realdb] {round}: study #{} {:.1} ms", i + 1, ms(t));
+        }
+        ffsrs_store_close(h);
+    }
+    let _ = std::fs::remove_dir_all(&work);
+}

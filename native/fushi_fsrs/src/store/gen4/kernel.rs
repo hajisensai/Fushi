@@ -281,6 +281,33 @@ pub struct G4Core {
     _live: Live,
 }
 
+/// Primary 开库时补建检查点之前建的闭包行（[super::derive::closure_steps_missing] 先问一句，有才开写事务）：每个
+/// 集合一次 [Index::backfill_closure_steps](super::derive::Index::backfill_closure_steps)，同一个事务。返回补了几台。
+fn backfill_closure_steps(
+    conn: &Connection,
+    cfg_memo: &Arc<super::cache::CfgMemo>,
+) -> Result<u64, String> {
+    if !super::derive::closure_steps_missing(conn)? {
+        return Ok(0);
+    }
+    let t = Truth::with_cfg_memo(conn, cfg_memo.clone());
+    t.tx_immediate(|t| {
+        let cols: Vec<i64> = {
+            let mut stmt = t
+                .conn()
+                .prepare_cached(super::dispatch::COLLECTIONS_SQL)
+                .map_err(sql)?;
+            let rows = stmt.query_map([], |r| r.get(0)).map_err(sql)?;
+            rows.collect::<Result<_, _>>().map_err(sql)?
+        };
+        let mut n = 0;
+        for col in cols {
+            n += super::derive::Index::new(t, col).backfill_closure_steps()?;
+        }
+        Ok(n)
+    })
+}
+
 impl G4Core {
     /// 打开 [dir] 里的新代库（`files::open_gen4` 的打开模式；没迁移 / 迁移中 / 旁边有没迁移的旧库照它报）。
     pub fn open(dir: &Path, mode: OpenMode) -> Result<G4Core, OpenError> {
@@ -297,6 +324,7 @@ impl G4Core {
             returned: Condvar::new(),
         };
         let mut scrub_due = false;
+        let cfg_memo: Arc<super::cache::CfgMemo> = Arc::default();
         let study = Arc::new(crate::store::queue::StudyHub::default());
         let writer = match mode {
             OpenMode::Primary => {
@@ -322,9 +350,15 @@ impl G4Core {
                 // 是这个目录唯一的写者，幂等删掉。删不掉（文件被别的进程占着、权限）不挡开库：那只是一份过时的副本，与
                 // 用户的卡片无关，因它打不开库才是让用户出问题；下一次 Primary 打开或迁移再删。
                 let _ = super::migrate::remove_leftover_rehearsal(dir);
+                // 检查点之前建的旧闭包行（`derive.rs` `CLOSURE_STEP`：检查点上线前迁移的库）补上检查点，否则在第一次写命令
+                // 的收尾补建之前，每次排队都要把承袭设备的旧戳从头解一遍（真库 1.7 s）。只补闭包行、整份闭包不变：不推进
+                // 写入代数、不碰缓存层，装学习会话触发器之前做（它只记卡 / 日志 / 卡的寄存器，本来也看不见）。补不成（出错、
+                // 整份闭包与日志对不上）整笔回滚、不挡开库：下一次写命令的收尾照样补建，错在那时报给那条命令。
+                let _ = backfill_closure_steps(&opened.conn, &cfg_memo);
                 super::cmd::study::install_touch(&study, &opened.conn)?;
                 Some(opened.conn)
             }
+            // Secondary 不写（辅助进程可能在只读沙箱里）：缺检查点的闭包行照旧从头并，等 Primary 打开或写命令收尾补建。
             OpenMode::Secondary => {
                 opened
                     .conn
@@ -350,7 +384,7 @@ impl G4Core {
             scrub_pending: AtomicBool::new(scrub_due),
             writer_cache: Mutex::new(crate::store::mem_budget::WriterCache::new()),
             bulk_holds_cache: AtomicBool::new(false),
-            cfg_memo: Arc::default(),
+            cfg_memo,
             _live: Live::new(),
         })
     }

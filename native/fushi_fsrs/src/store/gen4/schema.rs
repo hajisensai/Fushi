@@ -956,7 +956,7 @@ mod tests {
     #[test]
     fn lookups_with_a_key_never_walk_the_whole_collection() {
         // 本来就是对整个集合做的（多出来的相等条件是 `state` / `kind` / 键名这类过滤，不是定位）。
-        const WHOLE: [&str; 11] = [
+        const WHOLE: [&str; 12] = [
             "SELECT DISTINCT ekind, ent FROM reg_ix WHERE col = ?1 AND key = ?2",
             "SELECT k FROM reg_ix WHERE col = ?1 AND state = ?2 UNION SELECT k FROM tag_ix WHERE col = ?1 AND state = ?2",
             "SELECT k FROM reg_ix WHERE col = ?1 AND state = ?2 UNION SELECT k FROM purge_ix WHERE col = ?1 AND state = ?2",
@@ -972,6 +972,8 @@ mod tests {
             "SELECT id, k FROM ent_ix WHERE col = ?1 AND kind = ?2 AND typeof(id) = 'blob' ORDER BY id, k",
             // 收尾时找检查点之前建的旧闭包行（`derive.rs` `Index::settle`）：一台承袭设备一行，`>=` 不是定位。
             "SELECT device FROM closure_ix WHERE col = ?1 AND upto >= ?2 AND json_type(ctx, '$.at') IS NULL",
+            // 开库时问有没有要补检查点的闭包行（`derive.rs` `closure_steps_missing`）：跨集合，一台承袭设备一行。
+            "SELECT EXISTS (SELECT 1 FROM closure_ix WHERE upto >= ?1 AND json_type(ctx, '$.at') IS NULL)",
         ];
         let conn = open_in_memory().unwrap();
         let mut seen = 0;
