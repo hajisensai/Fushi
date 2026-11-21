@@ -36,6 +36,8 @@ import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 String mangaBubbleZoomJs({
   required MangaReaderPreferences preferences,
   required bool bookRtl,
+  // 悬停查词修饰键在 JS 事件上的字段名（`shiftKey` / `ctrlKey` / …），同手势机的 hoverKey。
+  required String hoverKey,
   required int openMs,
   required int closeMs,
   required String easing,
@@ -54,6 +56,10 @@ String mangaBubbleZoomJs({
   var BZ_ENABLED = $enabled;
   var BZ_HOVER = '${preferences.bubbleZoomHover}';
   var BZ_DELAY = ${preferences.bubbleZoomDelay};
+  // 原有的悬停查词意图（按住查词修饰键 / 用户开了「悬停自动查词」）优先于悬停放大：
+  // 默认开着的停留放大不能悄悄改掉存量用户的悬停查词习惯。
+  var BZ_LOOKUP_ON_HOVER = ${preferences.lookupOnHover};
+  var BZ_LOOKUP_KEY = '$hoverKey';
   var BZ_SCALE = $scale;
   // 阅读顺序跟书的开本方向走（条漫没有开本方向时 Dart 传的是书的设置）。
   var BZ_RTL = $bookRtl;
@@ -265,7 +271,7 @@ String mangaBubbleZoomJs({
   // ── 气泡放大：手势 ──
   var bzLastTap = null, bzDblArmed = false, bzPress = null, bzPointerType = '';
   var bzHoverTimer = null, bzHoverKey = null, bzLeaveTimer = null;
-  var bzMouseX = -1, bzMouseY = -1, bzCtrl = false;
+  var bzMouseX = -1, bzMouseY = -1, bzCtrl = false, bzLookupKey = false;
   function _bzNotify(state, retract){
     var b = _bridge();
     if (b) b.callHandler('onMangaBubbleZoom', state, !!retract);
@@ -430,13 +436,20 @@ String mangaBubbleZoomJs({
     _bzOpen(next, _bzTakeSelection());
     return true;
   }
-  function _bzHoverTrigger(ctrl){
-    return BZ_ENABLED && (BZ_HOVER === 'dwell' || (BZ_HOVER === 'ctrl' && ctrl));
+  function _bzLookupKeyHeld(e){ return !!(e && e[BZ_LOOKUP_KEY]); }
+  // 鼠标指向原图气泡时这次悬停算不算「要放大」。显式的查词意图优先：
+  // - 按住查词修饰键（lookupKey）= 要查原图上的字，不放大（修饰键恰好也是 Ctrl 时
+  //   「按住 Ctrl 放大」让位给查词）；
+  // - 开了「悬停自动查词」时，悬停本身就是查词，停留放大不接管（「按住 Ctrl」
+  //   是另一个显式手势，照常放大）。
+  function _bzHoverTrigger(ctrl, lookupKey){
+    if (!BZ_ENABLED || lookupKey) return false;
+    if (BZ_HOVER === 'dwell') return !BZ_LOOKUP_ON_HOVER;
+    return BZ_HOVER === 'ctrl' && !!ctrl;
   }
-  // 悬停放大开着时，原图上的悬停（自动悬停查词 / 按住修饰键查词）只触发放大，
-  // 查词只在浮层里发生。
-  function _bzBlocksHoverLookup(x, y, ctrl){
-    return _bzHoverTrigger(ctrl) && !_bzInLayer(x, y);
+  // 这次悬停归放大时，原图上的悬停查词让位（查词在浮层里做）；浮层里照常悬停查词。
+  function _bzBlocksHoverLookup(x, y, ctrl, lookupKey){
+    return _bzHoverTrigger(ctrl, lookupKey) && !_bzInLayer(x, y);
   }
   function _bzLeaveFire(){
     bzLeaveTimer = null;
@@ -451,12 +464,12 @@ String mangaBubbleZoomJs({
   function _bzArmLeave(){
     if (bzLayer && !bzLeaveTimer) bzLeaveTimer = setTimeout(_bzLeaveFire, BZ_LEAVE_MS);
   }
-  function _bzHover(x, y, ctrl, buttons){
-    bzMouseX = x; bzMouseY = y; bzCtrl = ctrl;
+  function _bzHover(x, y, ctrl, buttons, lookupKey){
+    bzMouseX = x; bzMouseY = y; bzCtrl = ctrl; bzLookupKey = !!lookupKey;
     if (!BZ_ENABLED || BZ_HOVER === 'off') return;
     if (buttons) { _bzCancelHover(); return; }
     if (bzLayer && _bzInLayer(x, y)) { _bzCancelHover(); _bzCancelLeave(); return; }
-    var bubble = _bzHoverTrigger(ctrl) ? _bzBubbleAt(x, y) : null;
+    var bubble = _bzHoverTrigger(ctrl, lookupKey) ? _bzBubbleAt(x, y) : null;
     if (bubble && bzLayer && bubble.key === bzLayer.bubble.key) bubble = null;
     if (!bubble) { _bzCancelHover(); _bzArmLeave(); return; }
     if (bzHoverKey === bubble.key) return;
@@ -467,7 +480,7 @@ String mangaBubbleZoomJs({
       bzHoverKey = null;
       // 停住才弹：到点时鼠标还在同一个气泡上、触发条件仍成立。
       var again = bzMouseX >= 0 ? _bzBubbleAt(bzMouseX, bzMouseY) : null;
-      if (!again || again.key !== bubble.key || !_bzHoverTrigger(bzCtrl)) {
+      if (!again || again.key !== bubble.key || !_bzHoverTrigger(bzCtrl, bzLookupKey)) {
         _bzArmLeave();
         return;
       }
@@ -476,7 +489,7 @@ String mangaBubbleZoomJs({
   }
   document.addEventListener('pointermove', function(e){
     if (e.pointerType !== 'mouse') return;
-    _bzHover(e.clientX, e.clientY, !!e.ctrlKey, e.buttons);
+    _bzHover(e.clientX, e.clientY, !!e.ctrlKey, e.buttons, _bzLookupKeyHeld(e));
   }, {passive: true});
   if (document.documentElement) {
     document.documentElement.addEventListener('mouseleave', function(){
@@ -487,10 +500,15 @@ String mangaBubbleZoomJs({
   }
   // 「按住 Ctrl」触发：鼠标停着不动、只按下 Ctrl 也要弹。Esc 由 Dart 统一处理
   // （它要决定是收浮层还是退书，两边各判一次会抢）。
+  // 鼠标停着不动时按下查词修饰键：撤掉还没到点的停留放大，让这次悬停归查词。
   window.addEventListener('keydown', function(e){
+    if (_bzLookupKeyHeld(e)) { bzLookupKey = true; _bzCancelHover(); }
     if (e.key === 'Control' && !e.repeat && BZ_HOVER === 'ctrl' && bzMouseX >= 0) {
-      _bzHover(bzMouseX, bzMouseY, true, 0);
+      _bzHover(bzMouseX, bzMouseY, true, 0, _bzLookupKeyHeld(e));
     }
+  }, true);
+  window.addEventListener('keyup', function(e){
+    bzLookupKey = _bzLookupKeyHeld(e);
   }, true);
   // 视口变了（滚动 / 翻页 / 缩放平移 / 窗口尺寸）浮层就失去锚点：立即收起。
   window.addEventListener('scroll', function(){

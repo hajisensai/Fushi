@@ -1130,12 +1130,14 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     'showPageGaps' =>
       _value('mode') == MangaReadingMode.pagedVertical.storageKey,
     // 气泡放大的子项只在开关开着时出现；鼠标触发两项只在桌面出现，停留时长只对
-    // 「停留自动放大」有意义。
+    // 「停留自动放大」有意义；开了「悬停自动查词」时悬停归查词、停留放大不接管
+    // （见 manga_bubble_zoom_js.dart 的 _bzHoverTrigger），停留时长也就不出现。
     'bubbleZoomScale' => _value('bubbleZoom') != false,
     'bubbleZoomHover' => isDesktopPlatform && _value('bubbleZoom') != false,
     'bubbleZoomDelay' =>
       isDesktopPlatform &&
           _value('bubbleZoom') != false &&
+          _value('lookupOnHover') != true &&
           (_value('bubbleZoomHover') ?? 'dwell') == 'dwell',
     _ => true,
   };

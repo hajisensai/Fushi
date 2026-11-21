@@ -516,16 +516,66 @@ assert.deepEqual(opens(),['onMangaBubbleZoom:open:false']);
       );
     });
 
-    test('悬停查词与悬停放大并存：原图上只放大，查词只在放大层里', () async {
+    // 拍板台 pr3839：默认开着的停留放大不能悄悄改掉存量用户的悬停查词习惯——
+    // 按住查词修饰键 / 开了悬停自动查词时，原图上的悬停照旧直接查词、不弹浮层。
+    test('默认设置下按住查词修饰键：原图照旧直接查词，停留不放大', () async {
       await runJs(
         harness('''
+fire('d:pointermove',{pointerType:'mouse',clientX:120,clientY:200,buttons:0,ctrlKey:false,shiftKey:true});
+fire('d:mousemove',{clientX:120,clientY:200,shiftKey:true,ctrlKey:false});
+advance(2000);
+assert.deepEqual(selects,['hover@page']);
+assert.deepEqual(opens(),[]);
+assert.equal(window.__mangaBarrierHoverAt(122,202),true);
+'''),
+      );
+    });
+
+    test('鼠标停着时按下查词修饰键：撤掉未到点的停留放大', () async {
+      await runJs(
+        harness('''
+fire('d:pointermove',{pointerType:'mouse',clientX:120,clientY:200,buttons:0,ctrlKey:false,shiftKey:false});
+advance(BZ_DELAY-100);
+fire('w:keydown',{key:'Shift',repeat:false,shiftKey:true,ctrlKey:false});
+advance(2000);
+assert.deepEqual(opens(),[]);
+fire('w:keyup',{key:'Shift',shiftKey:false,ctrlKey:false});
+fire('d:pointermove',{pointerType:'mouse',clientX:121,clientY:201,buttons:0,ctrlKey:false,shiftKey:false});
+advance(BZ_DELAY);
+assert.deepEqual(opens(),['onMangaBubbleZoom:open:false']);
+'''),
+      );
+    });
+
+    test('开了悬停自动查词：原图悬停照旧查词，停留放大不接管', () async {
+      await runJs(
+        harness('''
+fire('d:pointermove',{pointerType:'mouse',clientX:120,clientY:200,buttons:0,ctrlKey:false,shiftKey:false});
 fire('d:mousemove',{clientX:120,clientY:200,shiftKey:false,ctrlKey:false});
+advance(2000);
+assert.deepEqual(selects,['hover@page']);
+assert.deepEqual(opens(),[]);
+''', preferences: const MangaReaderPreferences(lookupOnHover: true)),
+      );
+    });
+
+    test('悬停自动查词 + 按住 Ctrl 放大：按 Ctrl 才放大，放大后查词在浮层里', () async {
+      await runJs(
+        harness(
+          '''
+fire('d:mousemove',{clientX:120,clientY:200,shiftKey:false,ctrlKey:true});
 assert.deepEqual(selects,[]);
-assert.equal(window.__mangaBarrierHoverAt(120,200),false);
-_bzOpen({key:'p0:3',l:100,t:100,r:200,b:300},false);
+fire('d:pointermove',{pointerType:'mouse',clientX:120,clientY:200,buttons:0,ctrlKey:true,shiftKey:false});
+advance(0);
+assert.deepEqual(opens(),['onMangaBubbleZoom:open:false']);
 fire('d:mousemove',{clientX:300,clientY:300,shiftKey:false,ctrlKey:false});
 assert.deepEqual(selects,['hover@layer']);
-''', preferences: const MangaReaderPreferences(lookupOnHover: true)),
+''',
+          preferences: const MangaReaderPreferences(
+            lookupOnHover: true,
+            bubbleZoomHover: 'ctrl',
+          ),
+        ),
       );
     });
 

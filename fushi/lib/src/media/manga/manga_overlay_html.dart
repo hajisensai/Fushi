@@ -2821,7 +2821,8 @@ String _mangaGestureJs({
   };
   window.__mangaBarrierHoverAt = function(x, y){
     try {
-      if (typeof _bzBlocksHoverLookup === 'function' && _bzBlocksHoverLookup(x, y, false)) return false;
+      // Dart 只在显式查词意图（按住查词修饰键 / 开了悬停自动查词）下转发 barrier 悬停，
+      // 显式查词优先于悬停放大（_bzHoverTrigger），这里不用再判放大。
       return _selectOcrChar(x, y, true);
     } catch (e) { return false; }
   };
@@ -2831,7 +2832,7 @@ String _mangaGestureJs({
   document.addEventListener('mousemove', function(e){
     if (!e.$hoverKey && !${preferences.lookupOnHover}) { shiftHoverX = -1; shiftHoverY = -1; return; }
     if (typeof _bzBlocksHoverLookup === 'function' &&
-        _bzBlocksHoverLookup(e.clientX, e.clientY, !!e.ctrlKey)) { shiftHoverX = -1; shiftHoverY = -1; return; }
+        _bzBlocksHoverLookup(e.clientX, e.clientY, !!e.ctrlKey, !!e.$hoverKey)) { shiftHoverX = -1; shiftHoverY = -1; return; }
     var dx = e.clientX - shiftHoverX, dy = e.clientY - shiftHoverY;
     if (shiftHoverX >= 0 && dx * dx + dy * dy < 16) return;
     shiftHoverX = e.clientX; shiftHoverY = e.clientY;
@@ -3608,7 +3609,7 @@ String _mangaGestureJs({
   }
   // 气泡放大模块放在 IIFE 末尾：上面的钩子都用 typeof 守卫调它（函数声明会提升），
   // 只截取局部片段跑的 JS 单测不受影响。
-${mangaBubbleZoomJs(preferences: preferences, bookRtl: bookRtl, openMs: bubbleZoomOpenMs, closeMs: bubbleZoomCloseMs, easing: kMangaPageTurnEasing)}
+${mangaBubbleZoomJs(preferences: preferences, bookRtl: bookRtl, hoverKey: hoverKey, openMs: bubbleZoomOpenMs, closeMs: bubbleZoomCloseMs, easing: kMangaPageTurnEasing)}
 })();
 ''';
 }
