@@ -25,7 +25,11 @@ pub(crate) type Dropped = Vec<u64>;
 
 impl Queue {
     pub(crate) fn new() -> Self {
-        Self { jobs: Vec::new(), focus: 0, window: 3 }
+        Self {
+            jobs: Vec::new(),
+            focus: 0,
+            window: 3,
+        }
     }
 
     fn keep(&self, page: i32) -> bool {
@@ -55,9 +59,9 @@ impl Queue {
     pub(crate) fn set_focus(&mut self, page: i32, window: i32) -> Dropped {
         self.focus = page;
         self.window = window.max(0);
-        let (keep, drop): (Vec<Job>, Vec<Job>) = std::mem::take(&mut self.jobs).into_iter().partition(|j| {
-            j.page >= page - 1 && j.page <= page + window.max(0)
-        });
+        let (keep, drop): (Vec<Job>, Vec<Job>) = std::mem::take(&mut self.jobs)
+            .into_iter()
+            .partition(|j| j.page >= page - 1 && j.page <= page + window.max(0));
         self.jobs = keep;
         drop.into_iter().map(|j| j.token).collect()
     }
@@ -67,7 +71,10 @@ impl Queue {
     }
 
     pub(crate) fn clear(&mut self) -> Dropped {
-        std::mem::take(&mut self.jobs).into_iter().map(|j| j.token).collect()
+        std::mem::take(&mut self.jobs)
+            .into_iter()
+            .map(|j| j.token)
+            .collect()
     }
 
     /// 取优先级最高的任务（同优先级先来先做）。
@@ -92,7 +99,13 @@ mod tests {
     use super::*;
 
     fn job(token: u64, page: i32) -> Job {
-        Job { token, key: format!("k{page}"), page, data: Vec::new(), boxes: Vec::new() }
+        Job {
+            token,
+            key: format!("k{page}"),
+            page,
+            data: Vec::new(),
+            boxes: Vec::new(),
+        }
     }
 
     #[test]
@@ -113,13 +126,23 @@ mod tests {
         for p in 0..4 {
             q.push(job(p as u64, p));
         }
-        assert_eq!(q.push(job(99, 9)), vec![99], "beyond the window is not queued");
+        assert_eq!(
+            q.push(job(99, 9)),
+            vec![99],
+            "beyond the window is not queued"
+        );
         let mut dropped = q.set_focus(3, 2);
         dropped.sort();
         assert_eq!(dropped, vec![0, 1]);
         assert_eq!(q.len(), 2);
         // 同键替换
-        assert_eq!(q.push(Job { token: 7, ..job(0, 3) }), vec![3]);
+        assert_eq!(
+            q.push(Job {
+                token: 7,
+                ..job(0, 3)
+            }),
+            vec![3]
+        );
         assert_eq!(q.clear().len(), 2);
     }
 }

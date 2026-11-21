@@ -19,7 +19,12 @@ pub(crate) trait SrNet {
     /// 输入宽高须是它的倍数。
     fn align(&self) -> usize;
     /// 推理一块：返回 `(数据, 输出高, 输出宽)`。
-    fn infer(&mut self, input: &[f32], h: usize, w: usize) -> Result<(Vec<f32>, usize, usize), String>;
+    fn infer(
+        &mut self,
+        input: &[f32],
+        h: usize,
+        w: usize,
+    ) -> Result<(Vec<f32>, usize, usize), String>;
 }
 
 /// 分块参数（输入像素）。
@@ -145,10 +150,17 @@ pub(crate) mod tests {
         fn align(&self) -> usize {
             self.align
         }
-        fn infer(&mut self, x: &[f32], h: usize, w: usize) -> Result<(Vec<f32>, usize, usize), String> {
+        fn infer(
+            &mut self,
+            x: &[f32],
+            h: usize,
+            w: usize,
+        ) -> Result<(Vec<f32>, usize, usize), String> {
             self.calls += 1;
             let (uh, uw) = (2 * h, 2 * w);
-            let up: Vec<f32> = (0..uh * uw).map(|i| x[(i / uw / 2) * w + (i % uw) / 2]).collect();
+            let up: Vec<f32> = (0..uh * uw)
+                .map(|i| x[(i / uw / 2) * w + (i % uw) / 2])
+                .collect();
             let mean = x.iter().sum::<f32>() / x.len() as f32;
             let r = self.r as isize;
             let mut out = vec![0f32; uh * uw];
@@ -169,7 +181,9 @@ pub(crate) mod tests {
             }
             let o = self.off;
             let (rh, rw) = (uh - 2 * o, uw - 2 * o);
-            let cropped: Vec<f32> = (0..rh * rw).map(|i| out[(i / rw + o) * uw + i % rw + o]).collect();
+            let cropped: Vec<f32> = (0..rh * rw)
+                .map(|i| out[(i / rw + o) * uw + i % rw + o])
+                .collect();
             Ok((cropped, rh, rw))
         }
     }
@@ -178,7 +192,9 @@ pub(crate) mod tests {
         (0..h * w)
             .map(|i| {
                 let (y, x) = (i / w, i % w);
-                (((x * 7 + y * 13) % 17) as f32 / 16.0 + if (x / 5 + y / 3) % 2 == 0 { 0.3 } else { 0.0 }).min(1.0)
+                (((x * 7 + y * 13) % 17) as f32 / 16.0
+                    + if (x / 5 + y / 3) % 2 == 0 { 0.3 } else { 0.0 })
+                .min(1.0)
             })
             .collect()
     }
@@ -195,19 +211,55 @@ pub(crate) mod tests {
     fn tiles_with_enough_context_have_no_seams() {
         let (h, w) = (70usize, 53usize);
         let img = page(h, w);
-        let mut whole_net = MockNet { r: 6, global: 0.0, off: 2, align: 4, calls: 0 };
-        let whole = upscale_tiled(&mut whole_net, &img, h, w, TileSpec { tile: 256, ctx: 8 }, None).unwrap();
+        let mut whole_net = MockNet {
+            r: 6,
+            global: 0.0,
+            off: 2,
+            align: 4,
+            calls: 0,
+        };
+        let whole = upscale_tiled(
+            &mut whole_net,
+            &img,
+            h,
+            w,
+            TileSpec { tile: 256, ctx: 8 },
+            None,
+        )
+        .unwrap();
         for tile in [16usize, 24, 31] {
-            let mut net = MockNet { r: 6, global: 0.0, off: 2, align: 4, calls: 0 };
-            let tiled = upscale_tiled(&mut net, &img, h, w, TileSpec { tile, ctx: 8 }, None).unwrap();
-            let max = whole.iter().zip(&tiled).map(|(a, b)| (a - b).abs()).fold(0f32, f32::max);
+            let mut net = MockNet {
+                r: 6,
+                global: 0.0,
+                off: 2,
+                align: 4,
+                calls: 0,
+            };
+            let tiled =
+                upscale_tiled(&mut net, &img, h, w, TileSpec { tile, ctx: 8 }, None).unwrap();
+            let max = whole
+                .iter()
+                .zip(&tiled)
+                .map(|(a, b)| (a - b).abs())
+                .fold(0f32, f32::max);
             assert!(max < 1e-5, "tile {tile}: max diff {max}");
             assert!(net.calls > 1);
         }
         // 对照：上下文不够（感受野 6 输出像素 = 3 输入像素 > 上下文 1 + 裁边 1）就会在交界出台阶。
-        let mut short = MockNet { r: 6, global: 0.0, off: 2, align: 4, calls: 0 };
-        let tiled = upscale_tiled(&mut short, &img, h, w, TileSpec { tile: 16, ctx: 1 }, None).unwrap();
-        let max = whole.iter().zip(&tiled).map(|(a, b)| (a - b).abs()).fold(0f32, f32::max);
+        let mut short = MockNet {
+            r: 6,
+            global: 0.0,
+            off: 2,
+            align: 4,
+            calls: 0,
+        };
+        let tiled =
+            upscale_tiled(&mut short, &img, h, w, TileSpec { tile: 16, ctx: 1 }, None).unwrap();
+        let max = whole
+            .iter()
+            .zip(&tiled)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0f32, f32::max);
         assert!(max > 1e-3, "short context should show seams, got {max}");
     }
 
@@ -215,8 +267,22 @@ pub(crate) mod tests {
     fn want_limits_inference_to_intersecting_tiles() {
         let (h, w) = (64usize, 64usize);
         let img = page(h, w);
-        let mut net = MockNet { r: 2, global: 0.0, off: 0, align: 1, calls: 0 };
-        let out = upscale_tiled(&mut net, &img, h, w, TileSpec { tile: 16, ctx: 4 }, Some(&[[20, 20, 30, 30]])).unwrap();
+        let mut net = MockNet {
+            r: 2,
+            global: 0.0,
+            off: 0,
+            align: 1,
+            calls: 0,
+        };
+        let out = upscale_tiled(
+            &mut net,
+            &img,
+            h,
+            w,
+            TileSpec { tile: 16, ctx: 4 },
+            Some(&[[20, 20, 30, 30]]),
+        )
+        .unwrap();
         assert_eq!(net.calls, 1);
         let ow = 2 * w;
         assert!(out[50 * ow + 50] > 0.0);
@@ -225,7 +291,23 @@ pub(crate) mod tests {
 
     #[test]
     fn rejects_mismatched_input() {
-        let mut net = MockNet { r: 1, global: 0.0, off: 0, align: 1, calls: 0 };
-        assert!(upscale_tiled(&mut net, &[0.0; 10], 3, 3, TileSpec { tile: 4, ctx: 1 }, None).is_err());
+        let mut net = MockNet {
+            r: 1,
+            global: 0.0,
+            off: 0,
+            align: 1,
+            calls: 0,
+        };
+        assert!(
+            upscale_tiled(
+                &mut net,
+                &[0.0; 10],
+                3,
+                3,
+                TileSpec { tile: 4, ctx: 1 },
+                None
+            )
+            .is_err()
+        );
     }
 }

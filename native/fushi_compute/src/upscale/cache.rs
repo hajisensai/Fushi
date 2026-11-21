@@ -33,7 +33,11 @@ impl DiskCache {
             if !name.ends_with(".jpg") {
                 continue;
             }
-            found.push((meta.modified().unwrap_or(SystemTime::UNIX_EPOCH), name, meta.len()));
+            found.push((
+                meta.modified().unwrap_or(SystemTime::UNIX_EPOCH),
+                name,
+                meta.len(),
+            ));
         }
         found.sort();
         let mut cache = Self {
@@ -117,7 +121,8 @@ mod tests {
     use super::*;
 
     fn temp_dir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("fushi-upscale-cache-{tag}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("fushi-upscale-cache-{tag}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         dir
     }

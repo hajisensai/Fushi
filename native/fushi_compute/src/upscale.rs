@@ -180,20 +180,32 @@ fn emit_all(callback: Option<Callback>, kind: i32, tokens: Vec<u64>) {
 }
 
 fn cpu_threads() -> usize {
-    thread::available_parallelism().map(|n| (n.get() / 2).clamp(1, 6)).unwrap_or(2)
+    thread::available_parallelism()
+        .map(|n| (n.get() / 2).clamp(1, 6))
+        .unwrap_or(2)
 }
 
 fn load_nets(config: &Config) -> Result<Nets, String> {
     let threads = cpu_threads();
-    let load = |path: &Path, align: usize, spec: TileSpec| -> Result<(Box<dyn SrNet + Send>, TileSpec), String> {
+    let load = |path: &Path,
+                align: usize,
+                spec: TileSpec|
+     -> Result<(Box<dyn SrNet + Send>, TileSpec), String> {
         let calib = spec.tile + 2 * spec.ctx + 64;
         let net = OnnxSr::load(path, config.backend, align, calib, threads)?;
         Ok((Box::new(net), spec))
     };
     match config.tier {
-        Tier::Light => Ok(Nets { tier: Tier::Light, inside: None, outside: load(&config.outside, ARTCNN_ALIGN, ARTCNN_SPEC)? }),
+        Tier::Light => Ok(Nets {
+            tier: Tier::Light,
+            inside: None,
+            outside: load(&config.outside, ARTCNN_ALIGN, ARTCNN_SPEC)?,
+        }),
         Tier::High => {
-            let inside = config.inside.as_deref().ok_or("high tier needs the text model")?;
+            let inside = config
+                .inside
+                .as_deref()
+                .ok_or("high tier needs the text model")?;
             Ok(Nets {
                 tier: Tier::High,
                 inside: Some(load(inside, SWIN_ALIGN, SWIN_SPEC)?),
@@ -212,7 +224,12 @@ fn worker_loop(engine: &Engine) {
                 if state.config.is_some() && state.cache.is_some() {
                     if let Some(job) = state.queue.pop() {
                         state.running = Some(job.key.clone());
-                        break (job, state.config.clone().unwrap(), state.generation, state.callback);
+                        break (
+                            job,
+                            state.config.clone().unwrap(),
+                            state.generation,
+                            state.callback,
+                        );
                     }
                 }
                 state = engine.wake.wait(state).unwrap_or_else(|e| e.into_inner());
@@ -220,8 +237,9 @@ fn worker_loop(engine: &Engine) {
         };
         if nets.as_ref().map(|n| n.0) != Some(generation) {
             nets = None;
-            let loaded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| load_nets(&config)))
-                .unwrap_or_else(|p| Err(format!("panic: {}", panic_message(p.as_ref()))));
+            let loaded =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| load_nets(&config)))
+                    .unwrap_or_else(|p| Err(format!("panic: {}", panic_message(p.as_ref()))));
             match loaded {
                 Ok(loaded) => nets = Some((generation, loaded)),
                 Err(e) => {
@@ -241,8 +259,10 @@ fn worker_loop(engine: &Engine) {
         }
         let (_, loaded) = nets.as_mut().expect("nets loaded");
         // 一页出 panic 不能带走工作线程（之后所有页都不会再做）：按这页失败处理、记下原因。
-        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| pipeline::process(&job.data, &job.boxes, loaded)))
-            .unwrap_or_else(|p| Err(format!("panic: {}", panic_message(p.as_ref()))));
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            pipeline::process(&job.data, &job.boxes, loaded)
+        }))
+        .unwrap_or_else(|p| Err(format!("panic: {}", panic_message(p.as_ref()))));
         let mut state = engine.state.lock().unwrap_or_else(|e| e.into_inner());
         let kind = match outcome {
             Ok(Outcome::Done(jpeg)) => match state.cache.as_mut().map(|c| c.put(&job.key, &jpeg)) {
@@ -295,7 +315,10 @@ unsafe fn opt_str<'a>(p: *const c_char) -> Result<Option<&'a str>, i32> {
     if p.is_null() {
         return Ok(None);
     }
-    CStr::from_ptr(p).to_str().map(Some).map_err(|_| status::INVALID_ARGUMENT)
+    CStr::from_ptr(p)
+        .to_str()
+        .map(Some)
+        .map_err(|_| status::INVALID_ARGUMENT)
 }
 
 /// 启动（或更新）引擎：接上 ORT（`ort_path` 为空 = 从本进程符号找，只在 Apple 上可用），打开缓存目录
@@ -311,8 +334,12 @@ pub unsafe extern "C" fn ffc_upscale_start(
     callback: Option<Callback>,
 ) -> i32 {
     guard(|| {
-        let Ok(ort_path) = opt_str(ort_path) else { return status::INVALID_ARGUMENT };
-        let Ok(Some(cache_dir)) = opt_str(cache_dir) else { return status::NULL_ARGUMENT };
+        let Ok(ort_path) = opt_str(ort_path) else {
+            return status::INVALID_ARGUMENT;
+        };
+        let Ok(Some(cache_dir)) = opt_str(cache_dir) else {
+            return status::NULL_ARGUMENT;
+        };
         if let Err(e) = runtime::ensure_loaded(ort_path) {
             log_error(&e);
             return UPSCALE_RUNTIME_UNAVAILABLE;
@@ -349,10 +376,12 @@ pub extern "C" fn ffc_upscale_backend_available(backend: u32) -> i32 {
 /// （[tier_supported]）。调用方据此在下载模型之前就决定降档。
 #[no_mangle]
 pub extern "C" fn ffc_upscale_tier_supported(tier: u32, backend: u32) -> i32 {
-    guard(|| match (Tier::from_code(tier), Backend::from_code(backend)) {
-        (Some(t), Some(b)) => tier_supported(t, b) as i32,
-        _ => 0,
-    })
+    guard(
+        || match (Tier::from_code(tier), Backend::from_code(backend)) {
+            (Some(t), Some(b)) => tier_supported(t, b) as i32,
+            _ => 0,
+        },
+    )
 }
 
 /// 配置档位（1 轻量 / 2 高质量）、后端与模型文件：轻量档 `outside` = ArtCNN C4F32，`inside` 为空；
@@ -369,10 +398,12 @@ pub unsafe extern "C" fn ffc_upscale_configure(
     outside_model: *const c_char,
 ) -> i32 {
     guard(|| {
-        let (Some(tier), Some(backend)) = (Tier::from_code(tier), Backend::from_code(backend)) else {
+        let (Some(tier), Some(backend)) = (Tier::from_code(tier), Backend::from_code(backend))
+        else {
             return status::INVALID_ARGUMENT;
         };
-        let (Ok(inside), Ok(Some(outside))) = (opt_str(inside_model), opt_str(outside_model)) else {
+        let (Ok(inside), Ok(Some(outside))) = (opt_str(inside_model), opt_str(outside_model))
+        else {
             return status::NULL_ARGUMENT;
         };
         if tier == Tier::High && inside.is_none() {
@@ -381,7 +412,12 @@ pub unsafe extern "C" fn ffc_upscale_configure(
         if !tier_supported(tier, backend) {
             return UPSCALE_UNSUPPORTED;
         }
-        let config = Config { tier, backend, inside: inside.map(PathBuf::from), outside: PathBuf::from(outside) };
+        let config = Config {
+            tier,
+            backend,
+            inside: inside.map(PathBuf::from),
+            outside: PathBuf::from(outside),
+        };
         let engine = engine();
         let mut state = engine.state.lock().unwrap_or_else(|e| e.into_inner());
         if state.config.as_ref() != Some(&config) {
@@ -411,7 +447,9 @@ pub unsafe extern "C" fn ffc_upscale_submit(
     box_count: usize,
 ) -> i32 {
     guard(|| {
-        let Ok(Some(key)) = opt_str(key) else { return status::NULL_ARGUMENT };
+        let Ok(Some(key)) = opt_str(key) else {
+            return status::NULL_ARGUMENT;
+        };
         if data.is_null() || len == 0 || (box_count > 0 && boxes.is_null()) {
             return status::NULL_ARGUMENT;
         }
@@ -430,9 +468,18 @@ pub unsafe extern "C" fn ffc_upscale_submit(
         let boxes: Vec<[f32; 4]> = if box_count == 0 {
             Vec::new()
         } else {
-            std::slice::from_raw_parts(boxes, box_count * 4).chunks_exact(4).map(|b| [b[0], b[1], b[2], b[3]]).collect()
+            std::slice::from_raw_parts(boxes, box_count * 4)
+                .chunks_exact(4)
+                .map(|b| [b[0], b[1], b[2], b[3]])
+                .collect()
         };
-        let job = Job { token, key: key.to_string(), page, data: std::slice::from_raw_parts(data, len).to_vec(), boxes };
+        let job = Job {
+            token,
+            key: key.to_string(),
+            page,
+            data: std::slice::from_raw_parts(data, len).to_vec(),
+            boxes,
+        };
         let dropped = state.queue.push(job);
         let callback = state.callback;
         drop(state);
@@ -450,8 +497,14 @@ pub unsafe extern "C" fn ffc_upscale_submit(
 #[no_mangle]
 pub unsafe extern "C" fn ffc_upscale_query(key: *const c_char) -> i32 {
     guard(|| {
-        let Ok(Some(key)) = opt_str(key) else { return status::NULL_ARGUMENT };
-        engine().state.lock().unwrap_or_else(|e| e.into_inner()).query(key)
+        let Ok(Some(key)) = opt_str(key) else {
+            return status::NULL_ARGUMENT;
+        };
+        engine()
+            .state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .query(key)
     })
 }
 
@@ -508,18 +561,30 @@ pub unsafe extern "C" fn ffc_upscale_last_error(out_ptr: *mut *mut u8, out_len: 
 /// # Safety
 /// `key` 为 NUL 结尾 UTF-8；输出指针可写。
 #[no_mangle]
-pub unsafe extern "C" fn ffc_upscale_cached_path(key: *const c_char, out_ptr: *mut *mut u8, out_len: *mut usize) -> i32 {
+pub unsafe extern "C" fn ffc_upscale_cached_path(
+    key: *const c_char,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
     guard(|| {
-        let Ok(Some(key)) = opt_str(key) else { return status::NULL_ARGUMENT };
+        let Ok(Some(key)) = opt_str(key) else {
+            return status::NULL_ARGUMENT;
+        };
         if out_ptr.is_null() || out_len.is_null() {
             return status::NULL_ARGUMENT;
         }
         let engine = engine();
         let mut state = engine.state.lock().unwrap_or_else(|e| e.into_inner());
-        let Some(cache) = state.cache.as_mut() else { return UPSCALE_NOT_READY };
+        let Some(cache) = state.cache.as_mut() else {
+            return UPSCALE_NOT_READY;
+        };
         match cache.get(key) {
             Some(path) => {
-                hand_over_bytes(path.to_string_lossy().into_owned().into_bytes(), out_ptr, out_len);
+                hand_over_bytes(
+                    path.to_string_lossy().into_owned().into_bytes(),
+                    out_ptr,
+                    out_len,
+                );
                 status::OK
             }
             None => UPSCALE_NOT_CACHED,
@@ -551,43 +616,71 @@ mod tests {
         let img = image::open(page).unwrap().into_luma8();
         let (iw, ih) = (img.width() as usize, img.height() as usize);
         let (w, h) = (w.min(iw), h.min(ih));
-        (0..h).flat_map(|y| (0..w).map(move |x| (y, x))).map(|(y, x)| img.get_pixel(x as u32, y as u32)[0]).collect()
+        (0..h)
+            .flat_map(|y| (0..w).map(move |x| (y, x)))
+            .map(|(y, x)| img.get_pixel(x as u32, y as u32)[0])
+            .collect()
     }
 
     fn load(models: &Path, file: &str, backend: Backend, align: usize, spec: TileSpec) -> OnnxSr {
-        OnnxSr::load(&models.join(file), backend, align, spec.tile + 2 * spec.ctx + 64, cpu_threads()).expect("load model")
+        OnnxSr::load(
+            &models.join(file),
+            backend,
+            align,
+            spec.tile + 2 * spec.ctx + 64,
+            cpu_threads(),
+        )
+        .expect("load model")
     }
 
     /// 交界一像素跳变（相对参照）与非交界列的比值；> 2 就是看得见的接缝。
     fn seam_ratio(out: &[f32], reference: &[f32], h2: usize, w2: usize, step: usize) -> f32 {
         let jump = |k: usize| -> f32 {
-            (0..h2).map(|y| ((out[y * w2 + k] - out[y * w2 + k - 1]) - (reference[y * w2 + k] - reference[y * w2 + k - 1])).abs()).sum::<f32>()
+            (0..h2)
+                .map(|y| {
+                    ((out[y * w2 + k] - out[y * w2 + k - 1])
+                        - (reference[y * w2 + k] - reference[y * w2 + k - 1]))
+                        .abs()
+                })
+                .sum::<f32>()
                 / h2 as f32
         };
         let seams: Vec<f32> = (step..w2).step_by(step).map(jump).collect();
         let ctrl: Vec<f32> = (step / 2..w2).step_by(step).map(jump).collect();
-        (seams.iter().sum::<f32>() / seams.len() as f32) / (ctrl.iter().sum::<f32>() / ctrl.len() as f32).max(1e-6)
+        (seams.iter().sum::<f32>() / seams.len() as f32)
+            / (ctrl.iter().sum::<f32>() / ctrl.len() as f32).max(1e-6)
     }
 
     /// 真模型接缝回归：swin 按引擎的分块参数切块的结果，与整张一块推理比，交界处没有台阶。
     #[test]
     #[ignore = "needs FUSHI_UPSCALE_ORT / FUSHI_UPSCALE_MODELS / FUSHI_UPSCALE_PAGE"]
     fn real_model_swin_tiles_have_no_visible_seams() {
-        let Some((ort, models, page)) = real_env() else { return };
+        let Some((ort, models, page)) = real_env() else {
+            return;
+        };
         real_ort(&ort);
         let (w, h) = (640usize, 768usize);
         let px = gray(&page, w, h);
         let input: Vec<f32> = px.iter().flat_map(|v| [*v as f32 / 255.0; 1]).collect();
         let rgb = [input.as_slice(), input.as_slice(), input.as_slice()].concat();
         let backend = env_backend().unwrap_or(Backend::Cpu);
-        for file in ["swin_unet_art_noise1_scale2x.onnx", "swin_unet_art_scale2x.onnx"] {
+        for file in [
+            "swin_unet_art_noise1_scale2x.onnx",
+            "swin_unet_art_scale2x.onnx",
+        ] {
             let whole_spec = TileSpec { tile: 1024, ctx: 0 };
             let mut whole = load(&models, file, backend, SWIN_ALIGN, whole_spec);
             let reference = tile::upscale_tiled(&mut whole, &rgb, h, w, whole_spec, None).unwrap();
             let mut net = load(&models, file, backend, SWIN_ALIGN, SWIN_SPEC);
             let tiled = tile::upscale_tiled(&mut net, &rgb, h, w, SWIN_SPEC, None).unwrap();
             let n = 4 * w * h;
-            let ratio = seam_ratio(&tiled[..n], &reference[..n], 2 * h, 2 * w, 2 * SWIN_SPEC.tile);
+            let ratio = seam_ratio(
+                &tiled[..n],
+                &reference[..n],
+                2 * h,
+                2 * w,
+                2 * SWIN_SPEC.tile,
+            );
             eprintln!("{file}: seam/control jump ratio {ratio:.2}");
             assert!(ratio < 2.0, "{file}: visible seam, ratio {ratio}");
         }
@@ -597,7 +690,9 @@ mod tests {
     #[test]
     #[ignore = "needs FUSHI_UPSCALE_ORT (Windows: DirectML core) / FUSHI_UPSCALE_MODELS / FUSHI_UPSCALE_PAGE"]
     fn real_model_accelerated_backend_matches_cpu() {
-        let Some((ort, models, page)) = real_env() else { return };
+        let Some((ort, models, page)) = real_env() else {
+            return;
+        };
         real_ort(&ort);
         let accel = env_backend().unwrap_or(if cfg!(windows) {
             Backend::DirectMl
@@ -621,15 +716,32 @@ mod tests {
         .into_iter()
         .filter(|(file, _, _)| swin || !file.starts_with("swin"))
         {
-            let mut cpu: Box<dyn SrNet + Send> = Box::new(load(&models, file, Backend::Cpu, align, spec));
+            let mut cpu: Box<dyn SrNet + Send> =
+                Box::new(load(&models, file, Backend::Cpu, align, spec));
             let mut fast: Box<dyn SrNet + Send> = Box::new(load(&models, file, accel, align, spec));
             let a = pipeline_one(&mut cpu, spec, &px, w, h);
             let b = pipeline_one(&mut fast, spec, &px, w, h);
-            let max = a.iter().zip(&b).map(|(x, y)| (*x as i32 - *y as i32).abs()).max().unwrap();
-            let mean = a.iter().zip(&b).map(|(x, y)| (*x as i32 - *y as i32).abs() as f64).sum::<f64>() / a.len() as f64;
+            let max = a
+                .iter()
+                .zip(&b)
+                .map(|(x, y)| (*x as i32 - *y as i32).abs())
+                .max()
+                .unwrap();
+            let mean = a
+                .iter()
+                .zip(&b)
+                .map(|(x, y)| (*x as i32 - *y as i32).abs() as f64)
+                .sum::<f64>()
+                / a.len() as f64;
             eprintln!("{file}: {accel:?} vs CPU max {max} mean {mean:.4}");
-            assert!(mean < 0.05 && max <= 8, "{file}: {accel:?} diverges from CPU (max {max}, mean {mean})");
-            assert!(b.iter().any(|v| *v > 0), "{file}: {accel:?} produced an all-black image");
+            assert!(
+                mean < 0.05 && max <= 8,
+                "{file}: {accel:?} diverges from CPU (max {max}, mean {mean})"
+            );
+            assert!(
+                b.iter().any(|v| *v > 0),
+                "{file}: {accel:?} produced an all-black image"
+            );
         }
     }
 
@@ -644,11 +756,24 @@ mod tests {
         }
     }
 
-    fn pipeline_one(net: &mut Box<dyn SrNet + Send>, spec: TileSpec, px: &[u8], w: usize, h: usize) -> Vec<u8> {
+    fn pipeline_one(
+        net: &mut Box<dyn SrNet + Send>,
+        spec: TileSpec,
+        px: &[u8],
+        w: usize,
+        h: usize,
+    ) -> Vec<u8> {
         let input: Vec<f32> = px.iter().map(|v| *v as f32 / 255.0).collect();
-        let planes = if net.channels() == 3 { [input.as_slice(), input.as_slice(), input.as_slice()].concat() } else { input };
+        let planes = if net.channels() == 3 {
+            [input.as_slice(), input.as_slice(), input.as_slice()].concat()
+        } else {
+            input
+        };
         let out = tile::upscale_tiled(net.as_mut(), &planes, h, w, spec, None).unwrap();
-        out[..4 * w * h].iter().map(|v| (v * 255.0).round().clamp(0.0, 255.0) as u8).collect()
+        out[..4 * w * h]
+            .iter()
+            .map(|v| (v * 255.0).round().clamp(0.0, 255.0) as u8)
+            .collect()
     }
 
     /// 单页耗时（各平台实测用）：`FUSHI_UPSCALE_BACKEND` = cpu / dml / coreml / xnnpack。打印两档的单页秒数
@@ -656,35 +781,71 @@ mod tests {
     #[test]
     #[ignore = "benchmark; needs FUSHI_UPSCALE_ORT / FUSHI_UPSCALE_MODELS / FUSHI_UPSCALE_PAGE"]
     fn real_model_page_timing() {
-        let Some((ort, models, page)) = real_env() else { return };
+        let Some((ort, models, page)) = real_env() else {
+            return;
+        };
         real_ort(&ort);
         let backend = env_backend().unwrap_or(Backend::Cpu);
         let data = std::fs::read(&page).unwrap();
         let (px, w, h, ch, _) = crate::image::decode_opaque(&data).unwrap();
         // 典型对话页的文字框：右上与中部两块。
         let boxes = [[0.62f32, 0.05, 0.92, 0.35], [0.15, 0.45, 0.4, 0.7]];
-        for tier in [Tier::Light, Tier::High].into_iter().filter(|t| tier_supported(*t, backend) || backend == Backend::Cpu) {
+        for tier in [Tier::Light, Tier::High]
+            .into_iter()
+            .filter(|t| tier_supported(*t, backend) || backend == Backend::Cpu)
+        {
             let config = Config {
                 tier,
                 backend,
                 inside: Some(models.join("swin_unet_art_scale2x.onnx")),
-                outside: models.join(if tier == Tier::High { "swin_unet_art_noise1_scale2x.onnx" } else { "ArtCNN_C4F32.onnx" }),
+                outside: models.join(if tier == Tier::High {
+                    "swin_unet_art_noise1_scale2x.onnx"
+                } else {
+                    "ArtCNN_C4F32.onnx"
+                }),
             };
             let t0 = Instant::now();
             let mut nets = load_nets(&config).unwrap();
             let load = t0.elapsed().as_secs_f64();
             let t1 = Instant::now();
-            let out = pipeline::upscale_pixels(&px, w as usize, h as usize, ch as usize, &boxes, &mut nets).unwrap().unwrap();
+            let out = pipeline::upscale_pixels(
+                &px,
+                w as usize,
+                h as usize,
+                ch as usize,
+                &boxes,
+                &mut nets,
+            )
+            .unwrap()
+            .unwrap();
             let first = t1.elapsed().as_secs_f64();
             let t2 = Instant::now();
-            let _ = pipeline::upscale_pixels(&px, w as usize, h as usize, ch as usize, &boxes, &mut nets).unwrap();
+            let _ = pipeline::upscale_pixels(
+                &px,
+                w as usize,
+                h as usize,
+                ch as usize,
+                &boxes,
+                &mut nets,
+            )
+            .unwrap();
             let second = t2.elapsed().as_secs_f64();
-            eprintln!("TIMING backend={backend:?} tier={tier:?} page={w}x{h} load={load:.2}s first={first:.2}s steady={second:.2}s");
+            eprintln!(
+                "TIMING backend={backend:?} tier={tier:?} page={w}x{h} load={load:.2}s first={first:.2}s steady={second:.2}s"
+            );
             assert_eq!(out.len(), 4 * w as usize * h as usize * ch as usize);
-            assert!(out.iter().any(|v| *v < 64) && out.iter().any(|v| *v > 192), "output looks blank");
+            assert!(
+                out.iter().any(|v| *v < 64) && out.iter().any(|v| *v > 192),
+                "output looks blank"
+            );
             if let Ok(dir) = std::env::var("FUSHI_UPSCALE_OUT") {
-                let jpeg = crate::image::encode_fit_jpeg(&out, 2 * w, 2 * h, ch as usize, 94, None).unwrap();
-                std::fs::write(Path::new(&dir).join(format!("{backend:?}-{tier:?}.jpg")), jpeg).unwrap();
+                let jpeg = crate::image::encode_fit_jpeg(&out, 2 * w, 2 * h, ch as usize, 94, None)
+                    .unwrap();
+                std::fs::write(
+                    Path::new(&dir).join(format!("{backend:?}-{tier:?}.jpg")),
+                    jpeg,
+                )
+                .unwrap();
             }
         }
     }
@@ -692,22 +853,51 @@ mod tests {
     #[test]
     fn ffi_rejects_bad_arguments_before_touching_the_runtime() {
         unsafe {
-            assert_eq!(ffc_upscale_configure(9, 0, std::ptr::null(), c"x".as_ptr()), status::INVALID_ARGUMENT);
-            assert_eq!(ffc_upscale_configure(2, 0, std::ptr::null(), c"x".as_ptr()), status::NULL_ARGUMENT);
-            assert_eq!(ffc_upscale_submit(1, std::ptr::null(), 0, [1u8].as_ptr(), 1, std::ptr::null(), 0), status::NULL_ARGUMENT);
-            assert_eq!(ffc_upscale_submit(1, c"k".as_ptr(), 0, [1u8].as_ptr(), 1, std::ptr::null(), 1), status::NULL_ARGUMENT);
+            assert_eq!(
+                ffc_upscale_configure(9, 0, std::ptr::null(), c"x".as_ptr()),
+                status::INVALID_ARGUMENT
+            );
+            assert_eq!(
+                ffc_upscale_configure(2, 0, std::ptr::null(), c"x".as_ptr()),
+                status::NULL_ARGUMENT
+            );
+            assert_eq!(
+                ffc_upscale_submit(
+                    1,
+                    std::ptr::null(),
+                    0,
+                    [1u8].as_ptr(),
+                    1,
+                    std::ptr::null(),
+                    0
+                ),
+                status::NULL_ARGUMENT
+            );
+            assert_eq!(
+                ffc_upscale_submit(1, c"k".as_ptr(), 0, [1u8].as_ptr(), 1, std::ptr::null(), 1),
+                status::NULL_ARGUMENT
+            );
             let mut p: *mut u8 = std::ptr::null_mut();
             let mut n = 0usize;
-            assert_eq!(ffc_upscale_cached_path(std::ptr::null(), &mut p, &mut n), status::NULL_ARGUMENT);
+            assert_eq!(
+                ffc_upscale_cached_path(std::ptr::null(), &mut p, &mut n),
+                status::NULL_ARGUMENT
+            );
         }
         assert_eq!(ffc_upscale_backend_available(42), 0);
-        assert_eq!(unsafe { ffc_upscale_query(std::ptr::null()) }, status::NULL_ARGUMENT);
+        assert_eq!(
+            unsafe { ffc_upscale_query(std::ptr::null()) },
+            status::NULL_ARGUMENT
+        );
         assert_eq!(ffc_upscale_tier_supported(1, 2), 1);
         assert_eq!(ffc_upscale_tier_supported(2, 1), 1);
         assert_eq!(ffc_upscale_tier_supported(2, 0), 0);
         assert_eq!(ffc_upscale_tier_supported(2, 2), 0);
         assert_eq!(ffc_upscale_tier_supported(9, 0), 0);
-        assert_eq!(unsafe { ffc_upscale_configure(2, 2, c"a".as_ptr(), c"b".as_ptr()) }, UPSCALE_UNSUPPORTED);
+        assert_eq!(
+            unsafe { ffc_upscale_configure(2, 2, c"a".as_ptr(), c"b".as_ptr()) },
+            UPSCALE_UNSUPPORTED
+        );
     }
 
     /// 引擎自己记住「正在算 / 判过不做 / 失败过」：调用方查一次就知道要不要读原图提交，换配置清零。
@@ -717,9 +907,20 @@ mod tests {
         let mut state = State::new();
         assert_eq!(state.query("a"), UPSCALE_NOT_READY);
         state.cache = Some(DiskCache::open(&dir, 1 << 20).unwrap());
-        state.config = Some(Config { tier: Tier::Light, backend: Backend::Cpu, inside: None, outside: PathBuf::from("m") });
+        state.config = Some(Config {
+            tier: Tier::Light,
+            backend: Backend::Cpu,
+            inside: None,
+            outside: PathBuf::from("m"),
+        });
         assert_eq!(state.query("a"), QUERY_UNKNOWN);
-        let job = |key: &str| Job { token: 1, key: key.into(), page: 0, data: vec![1], boxes: Vec::new() };
+        let job = |key: &str| Job {
+            token: 1,
+            key: key.into(),
+            page: 0,
+            data: vec![1],
+            boxes: Vec::new(),
+        };
         let _ = state.queue.push(job("a"));
         assert_eq!(state.query("a"), QUERY_PENDING);
         let popped = state.queue.pop().unwrap();

@@ -61,7 +61,15 @@ fn to_u8(v: f32) -> u8 {
 
 /// 交错 u8（`ch` 通道）→ 每通道一个 0..1 平面。
 fn planes(px: &[u8], ch: usize) -> Vec<Vec<f32>> {
-    (0..ch).map(|c| px.iter().skip(c).step_by(ch).map(|v| *v as f32 / 255.0).collect()).collect()
+    (0..ch)
+        .map(|c| {
+            px.iter()
+                .skip(c)
+                .step_by(ch)
+                .map(|v| *v as f32 / 255.0)
+                .collect()
+        })
+        .collect()
 }
 
 /// 用 `net` 把 `px`（`w × h × ch` 交错）放大 2 倍，输出同通道数交错 u8。网络通道与图不同时：灰度图喂
@@ -84,13 +92,17 @@ fn sr_page(
         (nc, ic) if nc == ic => {
             let input: Vec<f32> = planes(px, ch).concat();
             let out = upscale_tiled(net, &input, h, w, spec, want)?;
-            Ok((0..n * ch).map(|i| to_u8(out[(i % ch) * n + i / ch])).collect())
+            Ok((0..n * ch)
+                .map(|i| to_u8(out[(i % ch) * n + i / ch]))
+                .collect())
         }
         (3, 1) => {
             let p: Vec<f32> = px.iter().map(|v| *v as f32 / 255.0).collect();
             let input = [p.as_slice(), p.as_slice(), p.as_slice()].concat();
             let out = upscale_tiled(net, &input, h, w, spec, want)?;
-            Ok((0..n).map(|i| to_u8((out[i] + out[n + i] + out[2 * n + i]) / 3.0)).collect())
+            Ok((0..n)
+                .map(|i| to_u8((out[i] + out[n + i] + out[2 * n + i]) / 3.0))
+                .collect())
         }
         (1, 3) => {
             let y: Vec<f32> = px
@@ -101,7 +113,11 @@ fn sr_page(
             let base = resample::resample(px, w, h, 3, ow, oh, Filter::CatmullRom, false);
             let mut out = vec![0u8; n * 3];
             for i in 0..n {
-                let (r, g, b) = (base[i * 3] as f32, base[i * 3 + 1] as f32, base[i * 3 + 2] as f32);
+                let (r, g, b) = (
+                    base[i * 3] as f32,
+                    base[i * 3 + 1] as f32,
+                    base[i * 3 + 2] as f32,
+                );
                 let yb = 0.299 * r + 0.587 * g + 0.114 * b;
                 let d = sy[i] * 255.0 - yb;
                 out[i * 3] = (r + d).round().clamp(0.0, 255.0) as u8;
@@ -159,7 +175,15 @@ pub(crate) fn upscale_pixels(
             if rects.is_empty() {
                 return sr_page(inside_net.as_mut(), *inside_spec, px, w, h, ch, None).map(Some);
             }
-            let inside = sr_page(inside_net.as_mut(), *inside_spec, px, w, h, ch, Some(&rects))?;
+            let inside = sr_page(
+                inside_net.as_mut(),
+                *inside_spec,
+                px,
+                w,
+                h,
+                ch,
+                Some(&rects),
+            )?;
             let (net, spec) = &mut nets.outside;
             let outside = sr_page(net.as_mut(), *spec, px, w, h, ch, None)?;
             let mask = resample::text_mask(boxes, ow, oh);
@@ -170,15 +194,29 @@ pub(crate) fn upscale_pixels(
 
 /// 一页（编码过的图片字节）→ 放大 2 倍的 JPEG（带源图 ICC）。
 pub(crate) fn process(data: &[u8], boxes: &[[f32; 4]], nets: &mut Nets) -> Result<Outcome, String> {
-    let (px, w, h, ch, icc) = decode_opaque(data).map_err(|code| format!("decode failed ({code})"))?;
+    let (px, w, h, ch, icc) =
+        decode_opaque(data).map_err(|code| format!("decode failed ({code})"))?;
     let (w, h, ch) = (w as usize, h as usize, ch as usize);
     match upscale_pixels(&px, w, h, ch, boxes, nets)? {
         None => Ok(Outcome::Skipped),
         Some(out) => {
             drop(px);
-            encode_fit_jpeg(&out, (w * 2) as u32, (h * 2) as u32, ch, UPSCALE_JPEG_QUALITY, icc.as_deref())
-                .map(Outcome::Done)
-                .map_err(|code| if code == status::BAD_INPUT { "encode failed".into() } else { format!("encode failed ({code})") })
+            encode_fit_jpeg(
+                &out,
+                (w * 2) as u32,
+                (h * 2) as u32,
+                ch,
+                UPSCALE_JPEG_QUALITY,
+                icc.as_deref(),
+            )
+            .map(Outcome::Done)
+            .map_err(|code| {
+                if code == status::BAD_INPUT {
+                    "encode failed".into()
+                } else {
+                    format!("encode failed ({code})")
+                }
+            })
         }
     }
 }
@@ -189,19 +227,46 @@ mod tests {
     use crate::upscale::tile::tests::MockNet;
 
     fn mock(global: f32) -> (Box<dyn SrNet + Send>, TileSpec) {
-        (Box::new(MockNet { r: 1, global, off: 0, align: 1, calls: 0 }), TileSpec { tile: 32, ctx: 4 })
+        (
+            Box::new(MockNet {
+                r: 1,
+                global,
+                off: 0,
+                align: 1,
+                calls: 0,
+            }),
+            TileSpec { tile: 32, ctx: 4 },
+        )
     }
 
     fn gray_page(w: usize, h: usize) -> Vec<u8> {
-        (0..w * h).map(|i| if (i % w / 3 + i / w / 3) % 2 == 0 { 30 } else { 220 }).collect()
+        (0..w * h)
+            .map(|i| {
+                if (i % w / 3 + i / w / 3) % 2 == 0 {
+                    30
+                } else {
+                    220
+                }
+            })
+            .collect()
     }
 
     #[test]
     fn light_tier_skips_pages_without_text_boxes() {
-        let mut nets = Nets { tier: Tier::Light, inside: None, outside: mock(0.0) };
+        let mut nets = Nets {
+            tier: Tier::Light,
+            inside: None,
+            outside: mock(0.0),
+        };
         let px = gray_page(40, 30);
-        assert!(upscale_pixels(&px, 40, 30, 1, &[], &mut nets).unwrap().is_none());
-        let out = upscale_pixels(&px, 40, 30, 1, &[[0.1, 0.1, 0.4, 0.4]], &mut nets).unwrap().unwrap();
+        assert!(
+            upscale_pixels(&px, 40, 30, 1, &[], &mut nets)
+                .unwrap()
+                .is_none()
+        );
+        let out = upscale_pixels(&px, 40, 30, 1, &[[0.1, 0.1, 0.4, 0.4]], &mut nets)
+            .unwrap()
+            .unwrap();
         assert_eq!(out.len(), 80 * 60);
     }
 
@@ -210,14 +275,26 @@ mod tests {
     fn high_tier_uses_text_model_inside_boxes_only() {
         let (w, h) = (64usize, 64usize);
         let px = vec![100u8; w * h];
-        let mut nets = Nets { tier: Tier::High, inside: Some(mock(0.5)), outside: mock(0.0) };
-        let out = upscale_pixels(&px, w, h, 1, &[[0.0, 0.0, 0.25, 0.25]], &mut nets).unwrap().unwrap();
+        let mut nets = Nets {
+            tier: Tier::High,
+            inside: Some(mock(0.5)),
+            outside: mock(0.0),
+        };
+        let out = upscale_pixels(&px, w, h, 1, &[[0.0, 0.0, 0.25, 0.25]], &mut nets)
+            .unwrap()
+            .unwrap();
         let ow = 2 * w;
         // 框内（输出 10,10）：100/255 + 0.5 × 100/255 ≈ 150
-        assert!((out[10 * ow + 10] as i32 - 150).abs() <= 1, "inside {}", out[10 * ow + 10]);
+        assert!(
+            (out[10 * ow + 10] as i32 - 150).abs() <= 1,
+            "inside {}",
+            out[10 * ow + 10]
+        );
         // 远离框（输出 120,120）：背景模型 = 100
         assert_eq!(out[120 * ow + 120], 100);
-        let whole = upscale_pixels(&px, w, h, 1, &[], &mut nets).unwrap().unwrap();
+        let whole = upscale_pixels(&px, w, h, 1, &[], &mut nets)
+            .unwrap()
+            .unwrap();
         assert!(whole.iter().all(|v| (*v as i32 - 150).abs() <= 1));
     }
 
@@ -225,20 +302,34 @@ mod tests {
     fn color_pages_through_a_luma_model_keep_their_hue() {
         let (w, h) = (16usize, 16usize);
         let px: Vec<u8> = (0..w * h).flat_map(|_| [200u8, 40, 40]).collect();
-        let mut nets = Nets { tier: Tier::Light, inside: None, outside: mock(0.0) };
-        let out = upscale_pixels(&px, w, h, 3, &[[0.0, 0.0, 0.1, 0.1]], &mut nets).unwrap().unwrap();
+        let mut nets = Nets {
+            tier: Tier::Light,
+            inside: None,
+            outside: mock(0.0),
+        };
+        let out = upscale_pixels(&px, w, h, 3, &[[0.0, 0.0, 0.1, 0.1]], &mut nets)
+            .unwrap()
+            .unwrap();
         let p = &out[(20 * 32 + 20) * 3..(20 * 32 + 20) * 3 + 3];
-        assert!((p[0] as i32 - 200).abs() <= 2 && (p[1] as i32 - 40).abs() <= 2, "{p:?}");
+        assert!(
+            (p[0] as i32 - 200).abs() <= 2 && (p[1] as i32 - 40).abs() <= 2,
+            "{p:?}"
+        );
     }
 
     #[test]
     fn process_round_trips_a_png_to_a_2x_jpeg() {
-        let img = image::GrayImage::from_fn(30, 20, |x, y| image::Luma([((x * 8 + y) % 256) as u8]));
+        let img =
+            image::GrayImage::from_fn(30, 20, |x, y| image::Luma([((x * 8 + y) % 256) as u8]));
         let mut png = Vec::new();
         image::DynamicImage::ImageLuma8(img)
             .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
             .unwrap();
-        let mut nets = Nets { tier: Tier::Light, inside: None, outside: mock(0.0) };
+        let mut nets = Nets {
+            tier: Tier::Light,
+            inside: None,
+            outside: mock(0.0),
+        };
         let Outcome::Done(jpeg) = process(&png, &[[0.0, 0.0, 0.5, 0.5]], &mut nets).unwrap() else {
             panic!("expected output");
         };
