@@ -7715,6 +7715,7 @@
   "novel_online_images_missing": "本章有 $n 张插图没取到",
   "novel_online_images_recovered": "插图已补上",
   "novel_online_images_retry": "重新获取插图",
+  "novel_online_images_retry_failed": "插图获取失败：$error",
   "novel_online_images_still_missing": "仍有 $n 张插图没取到",
   "novel_online_open_failed": "在线打开失败：$error",
   "novel_online_sources_empty": "还没有小说源。请先在「扩展」里安装插件。",

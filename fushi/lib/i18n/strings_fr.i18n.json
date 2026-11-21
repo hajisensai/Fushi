@@ -7715,6 +7715,7 @@
   "novel_online_images_missing": "Couldn't fetch $n illustration(s) in this chapter",
   "novel_online_images_recovered": "Illustrations restored",
   "novel_online_images_retry": "Retry images",
+  "novel_online_images_retry_failed": "Couldn't fetch the illustrations: $error",
   "novel_online_images_still_missing": "Still couldn't fetch $n illustration(s)",
   "novel_online_open_failed": "Impossible d'ouvrir en ligne : $error",
   "novel_online_sources_empty": "Aucune source de romans pour l'instant. Installez d'abord un plugin dans Extensions.",

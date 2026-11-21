@@ -7715,6 +7715,7 @@
   "novel_online_images_missing": "Couldn't fetch $n illustration(s) in this chapter",
   "novel_online_images_recovered": "Illustrations restored",
   "novel_online_images_retry": "Retry images",
+  "novel_online_images_retry_failed": "Couldn't fetch the illustrations: $error",
   "novel_online_images_still_missing": "Still couldn't fetch $n illustration(s)",
   "novel_online_open_failed": "온라인으로 열 수 없습니다: $error",
   "novel_online_sources_empty": "아직 소설 소스가 없습니다. 먼저 확장 프로그램에서 플러그인을 설치하세요.",

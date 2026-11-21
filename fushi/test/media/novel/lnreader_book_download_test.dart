@@ -11,6 +11,7 @@ import 'package:fushi/src/media/novel/online/lnreader_cloudflare.dart';
 import 'package:fushi/src/media/novel/online/lnreader_epub_assembler.dart';
 import 'package:fushi/src/media/novel/online/lnreader_fetch_bridge.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
+import 'package:fushi/src/media/novel/online/lnreader_missing_images.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -181,10 +182,19 @@ void main() {
       expect(second, contains('src="images/c2-0.png"'));
       expect(
         second,
-        isNot(contains('images/c2-1.png')),
-        reason: '404 的插图要从正文摘掉，不能留断链。',
+        isNot(contains('src="images/c2-1.png"')),
+        reason: '404 的插图不能留断链。',
       );
+      // 留缺图占位（带原图地址、引用页、插件 id），阅读器打开时据此提示并补取。
+      final LnReaderMissingImage missing = parseLnReaderMissingImages(
+        second,
+      ).single;
+      expect(missing.fileName, 'images/c2-1.png');
+      expect(missing.url, '$imageBase/missing.png');
+      expect(missing.pluginId, plugin.id);
+      expect(missing.referer, isNotNull);
       expect(archive.findFile('OEBPS/images/c2-0.png'), isNotNull);
+      expect(archive.findFile('OEBPS/images/c2-1.png'), isNull);
     });
 
     // 审查 B1：插图地址来自插件 / 站点。HttpClient 自动跟随重定向时只有首跳过
@@ -228,9 +238,11 @@ void main() {
         reason: '重定向目标是被拦主机，一次都不能被请求到。',
       );
       final Archive archive = _unzip(imported!);
+      final String second = _entry(archive, 'OEBPS/chapter-2.xhtml');
+      expect(second, isNot(contains('src="images/c2-0')));
       expect(
-        _entry(archive, 'OEBPS/chapter-2.xhtml'),
-        isNot(contains('images/c2-0')),
+        parseLnReaderMissingImages(second).single.url,
+        contains('/redirect.png'),
       );
     });
 
