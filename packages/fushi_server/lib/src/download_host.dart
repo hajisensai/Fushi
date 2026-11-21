@@ -25,7 +25,10 @@ import 'package:fushi_engine/media/torrent/embedded_torrent_host.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_host_client.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_host_slot.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_worker.dart'
-    show EmbeddedTorrentHostOpenArgs;
+    show
+        EmbeddedTorrentHostFactory,
+        EmbeddedTorrentHostOpenArgs,
+        openEmbeddedTorrentHost;
 import 'package:fushi_engine/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/remote_torrent_wire.dart';
 import 'package:fushi_engine/media/torrent/qbittorrent_client.dart';
@@ -75,7 +78,9 @@ class ServerDownloadHost implements HostDownloadHost {
     List<String> Function()? peerTorrentRoots,
     ServerTorrentSessionConfig Function()? torrentSession,
     bool Function()? embeddedEngineProbe,
+    EmbeddedTorrentHostFactory embeddedHostFactory = openEmbeddedTorrentHost,
   }) : _embeddedEngineProbe = embeddedEngineProbe,
+       _embeddedHostFactory = embeddedHostFactory,
        _torrentSession = torrentSession ?? (() => config.torrentSession),
        _subtitleLanguage = subtitleLanguage ?? (() => config.subtitleLanguage),
        _peerTorrentRoots = peerTorrentRoots ?? (() => config.torrentPeerRoots),
@@ -94,6 +99,9 @@ class ServerDownloadHost implements HostDownloadHost {
 
   /// 内置引擎可用性探测（测试接缝；默认加载原生库判断，不建 session）。
   final bool Function()? _embeddedEngineProbe;
+
+  /// 工作 isolate 里建宿主的工厂（测试接缝：顶层函数，伪造 C ABI 而不加载原生库）。
+  final EmbeddedTorrentHostFactory _embeddedHostFactory;
   final ServerPaths paths;
   final FushiDatabase db;
   final ServerPrefs prefs;
@@ -534,6 +542,7 @@ class ServerDownloadHost implements HostDownloadHost {
             restoreIds: restoreIds,
             listenInterfaces: config.torrentListen,
           ),
+          factory: _embeddedHostFactory,
         );
     if (host == null) {
       engineLog.logDiagnostic(
