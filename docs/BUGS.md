@@ -33,10 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4393 条。点号进各自文件。
+> 共 4396 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5073](bugs/BUG-5073-download-card-completed-live-snapshot-tear.md) | 🚧 | 🚧 | 已完成任务卡片：色调/速度/操作读 DB lifecycle，状态文案/进度读引擎实时快照，引擎回退时显示「完成色 + 下载中 4%」 |
+| [BUG-5072](bugs/BUG-5072-torrent-resume-offline-save-path-zeroes-progress.md) | ✅ | ✅ | 重启时 save_path 暂不可达：fast-resume 被拒后在空路径全检得 0 片，周期快照把全 0 位图写回 .resume，路径恢复后永久跳过校验从 0% 重下 |
+| [BUG-5071](bugs/BUG-5071-torrent-upload-block-starves-download.md) | ✅ | ✅ | 单种子停上传（分享率达标）用 set_upload_limit(1) 把下载一起饿死 |
 | [BUG-5069](bugs/BUG-5069-txt-oversized-single-paragraph.md) | ✅ | ✅ | TXT 超长段落绕过分章上限 |
 | [BUG-5064](bugs/BUG-5064-dict-history-entries-object-rows.md) | 🚧 | 🚧 | 查词历史 entries 存成对象的坏行每次启动重复报错不清理 |
 | [BUG-5063](bugs/BUG-5063-srs-gen4-migration-stats-logid-mismatch.md) | 🚧 | 🚧 | gen4 迁移对拍：4.7 GB 库第 7/10 步后 stats 两侧 log_id 集合不一致回滚 |

@@ -878,8 +878,9 @@ class EmbeddedTorrentSession {
   /// 底层库是否支持单种子停上传（[setTorrentUploadBlocked]）。老 DLL 为 false。
   bool get supportsTorrentUploadBlock => _b.hasTorrentUploadBlock;
 
-  /// 单种子停止上传、继续下载（fRmEhU4XIK）。[blocked] true = 上传限到
-  /// libtorrent 下限 1 B/s，false = 清除单种子上传限速。库不支持返回 false。
+  /// 单种子停止上传、继续下载（fRmEhU4XIK）。[blocked] true = 桥内上传闸
+  /// 只拦 piece payload（BUG-5071：不再用 1 B/s 限速，那会连握手 / request
+  /// 一起饿死下载），false = 解除。库不支持返回 false。
   bool setTorrentUploadBlocked(String infoHash, {required bool blocked}) {
     if (isClosed || !_b.hasTorrentUploadBlock) return false;
     final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
