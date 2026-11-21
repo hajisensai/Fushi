@@ -11,6 +11,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:http/http.dart' as http;
 
+import 'package:fushi_engine/media/collections/collection_season_groups.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
@@ -135,6 +136,7 @@ class SubtitleCollectionSpec {
   const SubtitleCollectionSpec({
     required this.collection,
     required this.members,
+    this.initialSeason,
   });
 
   final MediaCollectionRow collection;
@@ -142,9 +144,18 @@ class SubtitleCollectionSpec {
   /// 合集里**有序**的视频成员。
   final List<VideoBookRow> members;
 
+  /// 多季合集打开时优先选中的季号；null = 第一季。入口按
+  /// [subtitleCollectionSeasonOfMember]（与面板分季同口径）算，不各自另解文件名。
+  final int? initialSeason;
+
   /// 语言记忆键（合集名小写 trim，与批量对话框约定一致）。
   String get seriesKey => collection.name.trim().toLowerCase();
 }
+
+/// 合集成员所在季的季号，与面板分季（[subtitleCollectionSeasonKeyOf]）同口径：没写
+/// 季号的集算第 1 季，PV·特典为 null。入口据此算 [SubtitleCollectionSpec.initialSeason]。
+int? subtitleCollectionSeasonOfMember(VideoBookRow member) =>
+    seasonNumberOfGroupKey(subtitleCollectionSeasonKeyOf(member));
 
 /// 工作台依赖的宿主能力（全部可注入，便于 widget 测试不碰 AppModel）。
 abstract interface class SubtitleWorkbenchHost {
@@ -362,6 +373,7 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
       onRemoteSubtitlePersist: host.persistRemoteSubtitle,
       onSubtitlePersisted: widget.onCollectionSubtitlePersisted,
       subtitleAligner: host.subtitleAligner,
+      initialSeason: spec.initialSeason,
     );
   }
 
