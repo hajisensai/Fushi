@@ -3112,16 +3112,6 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('browse_moved_notice_handled', true);
   }
 
-  /// 库页默认布局改成封面网格（2026-11-15）后的一次性「拼贴仍可选」提示是否已处理：
-  /// 弹过，或首次启动新版时判定本安装不需要弹（全新安装 / 显式选过布局）。默认 false。
-  bool get libraryLayoutDefaultNoticeHandled =>
-      getPref('library_layout_default_notice_handled', defaultValue: false)
-          as bool;
-
-  Future<void> setLibraryLayoutDefaultNoticeHandled() async {
-    await setPref('library_layout_default_notice_handled', true);
-  }
-
   /// 弹幕样式（字号/不透明度/速度/显示区域，JSON；见 [VideoDanmakuStyle]，TODO-1376）。
   /// 读盘经 [VideoDanmakuStyle.decode] 已 clamp 到合法区间。
   VideoDanmakuStyle get videoDanmakuStyle => VideoDanmakuStyle.decode(

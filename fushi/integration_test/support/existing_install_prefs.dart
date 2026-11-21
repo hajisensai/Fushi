@@ -14,8 +14,6 @@ import 'package:fushi_core/fushi_core.dart' show PrefCodec;
 Map<String, String> existingInstallSeedPrefs() => <String, String>{
   'first_time_setup': PrefCodec.encode(false),
   'onboarding_completed': PrefCodec.encode(true),
-  // 「库页默认改为封面网格」一次性提示（library_layout_default_notice.dart）。
-  'library_layout_default_notice_handled': PrefCodec.encode(true),
   // 「选一种库页布局」选择框（shell_layout_choice_dialog.dart）：出厂判定落成
   // 「新安装」——与真实新装用户第二次启动时的状态一致（布局已在新手引导里选，
   // 不弹框）。缺了它，启动时 `first_time_setup` 已在，会被判成「升级上来、待选」。

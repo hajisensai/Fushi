@@ -2170,11 +2170,6 @@ class ThemeNotifier extends ChangeNotifier {
     fallback: shellContentLayoutDefault,
   );
 
-  /// 显式选过库页布局（落库值非空，含已删的 `blocks`）；false = 跟着
-  /// [ShellContentLayout.defaultLayout] 走。
-  bool get shellContentLayoutChosen =>
-      (_get('shell_content_layout', defaultValue: '') as String).isNotEmpty;
-
   /// 显式选库页布局（设置页 / 新手引导 / 选择框）。选过就等于回答了「选一种库页
   /// 布局」，待弹的选择框一并记成已处理——否则墨水屏期间留着的待处理状态会在
   /// 用户已经在设置里选过之后再弹一次。
