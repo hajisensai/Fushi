@@ -142,12 +142,11 @@ Future<TtsCast> annotateTtsCast({
           reply,
           promptRoster: promptRoster,
         );
-        if (parsed == null ||
-            parsed.looping ||
-            (parsed.ops.isEmpty && parsed.rawCount > 0)) {
+        final String? rosterError = ttsRosterReplyFailureReason(parsed);
+        if (parsed == null || rosterError != null) {
           throw TtsCastAnnotateFailure(
             'bad_output',
-            'roster, section $section: ${_badReason(parsed?.looping)}',
+            'roster, section $section: ${rosterError ?? 'no JSON array'}',
           );
         }
         applyTtsRosterOps(cast, parsed.ops);
@@ -188,13 +187,11 @@ Future<TtsCast> annotateTtsCast({
           speakers: index,
           promptRoster: promptRoster,
         );
-        if (parsed == null ||
-            parsed.looping ||
-            (parsed.labels.isEmpty &&
-                (parsed.rawCount > 0 || chunk.hasDialogue))) {
+        final String? linesError = ttsCastReplyFailureReason(parsed);
+        if (parsed == null || linesError != null) {
           throw TtsCastAnnotateFailure(
             'bad_output',
-            'lines, section $section: ${_badReason(parsed?.looping)}',
+            'lines, section $section: ${linesError ?? 'no JSON array'}',
           );
         }
         final Map<String, TtsCastLine> lines = ttsCastLinesForChunk(
@@ -223,12 +220,6 @@ Future<TtsCast> annotateTtsCast({
   }
   return cast;
 }
-
-String _badReason(bool? looping) => switch (looping) {
-  null => 'no JSON array',
-  true => 'looping output',
-  false => 'no usable entries',
-};
 
 /// 旧版选角表（只有逐句标注、没有角色表）或用户手填的新名字：先补进角色表，
 /// 否则第二遍只能从角色表里选人，这些名字会被打成「不明」。

@@ -90,10 +90,66 @@ const Map<String, String> _kQuotePairs = <String, String>{
   '«': '»',
 };
 
-/// 句子是否以引号开头。句中引号多是强调 / 书名，不算。
+/// CJK 括弧闭合后的纯标点 / 空白尾缀（仍是完整台词）。
+final RegExp _kTrailingPunctOnly = RegExp(
+  r'^[。．.！!？?…‥—―ー～〜・、,）)」』】\s\u3000]*$',
+);
+
+/// 日文「…」闭合后紧跟体言助词或释义框，说明引号里是句首引用的词 / 概念，不是台词。
+final RegExp _kJapaneseNominalTail = RegExp(
+  r'^(?:[はがをにのもへやで]|から|まで|より|とは|という|といった|として|など)',
+);
+
+/// 日文『…』闭合后的显式说话归属（如 `『待て』と声が響いた`、`『助けて』、と叫んだ`）；
+/// 排除 `とは / という / といった / として` 这类体言释义。
+final RegExp _kJapaneseDoubleQuoteSpeechTail = RegExp(
+  r'^[、,…‥—―\s\u3000]*と(?!は|いう|いった|して)',
+);
+
+/// 找到 [text] 开头括弧（[text][0] 在 [_kQuotePairs] 中）对应的闭合位置，支持嵌套；
+/// 未闭合返回 -1。
+int _matchingCloseQuote(String text) {
+  final String? firstClose = _kQuotePairs[text[0]];
+  if (firstClose == null) return -1;
+  final List<String> stack = <String>[firstClose];
+  for (int i = 1; i < text.length; i++) {
+    final String ch = text[i];
+    if (ch == stack.last) {
+      stack.removeLast();
+      if (stack.isEmpty) return i;
+    } else if (_kQuotePairs.containsKey(ch)) {
+      stack.add(_kQuotePairs[ch]!);
+    }
+  }
+  return -1;
+}
+
+/// 句子是否像台词：以引号开头，且对于句首的日文/中文括弧（`「…」`/`『…』`），
+/// 排除闭合后紧接旁白叙述的书名或引用词（如 `『書名』で…`、`『書名』六巻です！`、
+/// `「魔女」は…`）。句中引号多是强调 / 书名，也不算。
 bool ttsCastLooksLikeDialogue(String text) {
   final String trimmed = text.trimLeft().replaceFirst(RegExp(r'^\u3000+'), '');
-  return trimmed.isNotEmpty && _kOpenQuotes.contains(trimmed[0]);
+  if (trimmed.isEmpty) return false;
+  final String first = trimmed[0];
+  if (!_kOpenQuotes.contains(first)) return false;
+  if (first != '「' && first != '『') return true;
+
+  final int closeIdx = _matchingCloseQuote(trimmed);
+  if (closeIdx < 0) return true; // 长台词跨句未闭合
+
+  final String tail = trimmed
+      .substring(closeIdx + 1)
+      .trimLeft()
+      .replaceFirst(RegExp(r'^\u3000+'), '');
+  if (tail.isEmpty ||
+      _kTrailingPunctOnly.hasMatch(tail) ||
+      _kOpenQuotes.contains(tail[0])) {
+    return true;
+  }
+  if (first == '『') {
+    return _kJapaneseDoubleQuoteSpeechTail.hasMatch(tail);
+  }
+  return !_kJapaneseNominalTail.hasMatch(tail);
 }
 
 /// 整章逐句的台词标记：引号开头的句子是台词；计划按长度切开的长台词，后面几段
@@ -396,6 +452,17 @@ TtsRosterParseResult? parseTtsRosterReply(
   );
 }
 
+/// 第一遍回复的失败原因；null 表示可用。
+///
+/// 空数组 `[]`（`rawCount == 0`）表示本块没有可登记的新角色 / 别名，是合法回复；
+/// 非空数组但一条都没解析出来（`rawCount > 0 && ops.isEmpty`）才是坏输出。
+String? ttsRosterReplyFailureReason(TtsRosterParseResult? parsed) {
+  if (parsed == null) return 'no JSON array';
+  if (parsed.looping) return 'looping output';
+  if (parsed.ops.isEmpty && parsed.rawCount > 0) return 'no usable entries';
+  return null;
+}
+
 /// 把第一遍的操作依次并进 [cast]：
 /// - add / update 同一口径：名字（或它的别名）已在表里就补别名 / 空特征（不覆盖
 ///   已有值——那可能是用户改的），否则新增；
@@ -621,6 +688,19 @@ TtsCastParseResult? parseTtsCastReply(
     rawCount: array.length,
     looping: _looksLooping(array, lineCount * 2 + 10),
   );
+}
+
+/// 第二遍回复的失败原因；null 表示可用。
+///
+/// 空数组 `[]`（`rawCount == 0`）表示模型按提示词判断本块没有角色说出口的台词
+/// （如著者简介、后记、既刊案内、引言或纯旁白里的书名 / 标牌），属于合法回复；
+/// 只有缺少 JSON 数组、复读或非空数组全不合格（`rawCount > 0 && labels.isEmpty`）
+/// 才判为坏输出。
+String? ttsCastReplyFailureReason(TtsCastParseResult? parsed) {
+  if (parsed == null) return 'no JSON array';
+  if (parsed.looping) return 'looping output';
+  if (parsed.labels.isEmpty && parsed.rawCount > 0) return 'no usable entries';
+  return null;
 }
 
 /// 本地校验 AI 给的台词类型：不在词表、或是旁白专用的「叙述」/ 小说没有的「不读」，

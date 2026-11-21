@@ -266,6 +266,74 @@ void main() {
       ], maxSentences: 1);
       expect(chunks[1].dialogue, <bool>[true]);
     });
+
+    test('句首书名与体言引用不算台词（『…』/「…」后接旁白）', () {
+      for (final String sentence in <String>[
+        '『赤城山卓球場に歌声は響く』で第３回えんため大賞小説部門最優秀賞を受賞。',
+        '『ドレス』は、大学時代にノートに書いていた、まったく別の物語でした。',
+        '『ヒカル』の最終巻を書いた時点で、次作の候補だったのですが…',
+        '『リリーの冒険』を読んだリリエンは、微笑んだ。',
+        '『ドレスな僕がやんごとなき方々の家庭教師様な件』六巻です！',
+        '『ドレスな僕がやんごとなき方々の家庭教師様な件』お買い上げいただき、ありがとうございました。',
+        '『二人』ってキーワードが、まずかった？',
+        '『ドレス』とは何か。',
+        '『ドレス』という小説。',
+        '「魔女」は昔から恐れられていた。',
+        '「ありがとう」の言葉が胸に残った。',
+        '「赤ずきん」を読んだことがある。',
+        '「魔女」とは何か。',
+        '「魔女」という言葉がある。',
+        '「魔女」として生きる。',
+      ]) {
+        expect(ttsCastLooksLikeDialogue(sentence), isFalse, reason: sentence);
+      }
+    });
+
+    test('真台词（含嵌套、尾标点、归属语与未闭合双括弧）仍判为台词', () {
+      for (final String sentence in <String>[
+        '「行くぞ」。',
+        '「行くぞ」「おう」',
+        '「『おなかがすきましたー』って」',
+        '「おはよう」と彼女は言った。',
+        '「ありがとう」って言った。',
+        '「待って！」スバルは叫んだ。',
+        '「你好。」他說。',
+        '『待て』と声が響いた。',
+        '『助けて』、と電話口で叫んだ。',
+        '『待って』と言って消えた。',
+        '『待って』としずかに言った。',
+        '『死なないで！',
+      ]) {
+        expect(ttsCastLooksLikeDialogue(sentence), isTrue, reason: sentence);
+      }
+    });
+
+    test('未闭合长台词中间出现句首『書名』不会打断续行', () {
+      final List<bool> flags = ttsCastDialogueFlags(<TtsPlanSentence>[
+        _s(0, 0, '「長い台詞の前半で、'),
+        _s(0, 20, '『リリーの冒険』の話なんだけど、'),
+        _s(0, 50, 'すごく面白かったよ」'),
+      ]);
+      expect(flags, <bool>[true, true, true]);
+    });
+
+    test('著者简介 / 后记含『書名』且模型回空数组时全标为旁白，不污染待复核', () {
+      final TtsCastChunk chunk = chunkTtsCastSection(<TtsPlanSentence>[
+        _s(50, 0, '著者'),
+        _s(50, 5, '『赤城山卓球場に歌声は響く』で第３回えんため大賞小説部門最優秀賞を受賞。'),
+      ]).single;
+      expect(chunk.hasDialogue, isFalse);
+      final Map<String, TtsCastLine> lines = ttsCastLinesForChunk(
+        chunk,
+        const <TtsCastLabel>[],
+      );
+      expect(
+        lines.values.every(
+          (TtsCastLine l) => l.speaker == kTtsNarrator && !l.needsReview,
+        ),
+        isTrue,
+      );
+    });
   });
 
   group('说话人索引', () {
@@ -700,6 +768,75 @@ void main() {
       expect(recent.last, (speaker: kTtsUnknown, text: '「台詞9」'));
       expect(recent[recent.length - 2], (speaker: 'スバル', text: '「台詞8」'));
       expect(recent[recent.length - 3], (speaker: 'エミリア', text: '「台詞7」'));
+    });
+  });
+
+  group('回复可用性校验', () {
+    test('第一遍回复：缺数组 / 复读 / 非空全废判错，空数组 `[]` 与有效操作放行', () {
+      expect(ttsRosterReplyFailureReason(null), 'no JSON array');
+      expect(
+        ttsRosterReplyFailureReason((
+          ops: const <TtsRosterOp>[],
+          rawCount: 1,
+          looping: true,
+        )),
+        'looping output',
+      );
+      expect(
+        ttsRosterReplyFailureReason(parseTtsRosterReply('[{"bad":1}]')),
+        'no usable entries',
+      );
+      expect(ttsRosterReplyFailureReason(parseTtsRosterReply('[]')), isNull);
+      expect(
+        ttsRosterReplyFailureReason(
+          parseTtsRosterReply('[{"op":"add","name":"スバル"}]'),
+        ),
+        isNull,
+      );
+    });
+
+    test('第二遍回复：缺数组 / 复读 / 非空全废判错，空数组 `[]` 放行', () {
+      expect(ttsCastReplyFailureReason(null), 'no JSON array');
+      expect(
+        ttsCastReplyFailureReason((
+          labels: const <TtsCastLabel>[],
+          rawCount: 1,
+          looping: true,
+        )),
+        'looping output',
+      );
+      expect(
+        ttsCastReplyFailureReason(
+          parseTtsCastReply('[{"i":99,"s":"スバル"}]', 3, speakers: _index),
+        ),
+        'no usable entries',
+      );
+      expect(
+        ttsCastReplyFailureReason(
+          parseTtsCastReply(
+            '[{"line":1,"speaker":"スバル"}]',
+            3,
+            speakers: _index,
+          ),
+        ),
+        'no usable entries',
+      );
+      // 块内哪怕含独立书名 / 标牌（如『書名』、「立ち入り禁止」），模型按规则返回 [] 也不应判为坏输出。
+      final TtsCastChunk standaloneQuotedChunk = _chunk(<TtsPlanSentence>[
+        _s(0, 0, '『ドレスな僕がやんごとなき方々の家庭教師様な件』'),
+        _s(0, 30, '「立ち入り禁止」'),
+      ]);
+      expect(standaloneQuotedChunk.hasDialogue, isTrue);
+      expect(
+        ttsCastReplyFailureReason(parseTtsCastReply('[]', 2, speakers: _index)),
+        isNull,
+      );
+      expect(
+        ttsCastReplyFailureReason(
+          parseTtsCastReply('[{"i":1,"s":"スバル"}]', 3, speakers: _index),
+        ),
+        isNull,
+      );
     });
   });
 }
