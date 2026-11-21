@@ -1,5 +1,6 @@
 #include "audio_loopback_capture.h"
 
+#include "audio_loopback_leases.h"
 #include "audio_session_ducker.h"
 
 #include <audioclient.h>
@@ -17,6 +18,7 @@
 #include <condition_variable>
 #include <cwctype>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <set>
 #include <thread>
@@ -224,8 +226,10 @@ HRESULT ActivateProcessLoopback(DWORD pid, ComPtr<IAudioClient>& out) {
 
 // ── 采集状态 ──────────────────────────────────────────────────────────────
 
-// 全进程唯一采集状态。所有跨线程字段用 g_mutex / g_ring_mutex 保护。
+// 一路采集（一个来源）的状态。所有跨线程字段用 init_mutex / ring_mutex 保护。
 struct CaptureState {
+  LoopbackOptions options;  // 这一路的来源
+  std::wstring key;         // LoopbackSourceKey(options)
   std::thread thread;
   std::atomic<bool> stop{false};
   std::atomic<bool> running{false};
@@ -236,9 +240,8 @@ struct CaptureState {
   bool init_done = false;
   LoopbackFormat format;  // ok 表示初始化是否成功
   LoopbackError error = LoopbackError::kNone;
-  LoopbackOptions options;  // 当前在跑的来源（Start 幂等判定用）
 
-  // 环形缓冲（字节），g_ring_mutex 保护。
+  // 环形缓冲（字节），ring_mutex 保护。
   std::mutex ring_mutex;
   std::vector<uint8_t> ring;
   size_t capacity = 0;   // = byteRate * kRingSeconds，帧对齐
@@ -248,33 +251,122 @@ struct CaptureState {
   int byte_rate = 0;     // 每秒字节数
 };
 
-CaptureState g_state;
+// 全进程的采集注册表：每个来源最多一路采集，每路挂若干租约（见 audio_loopback_leases.h）。
+// 所有公开方法都先拿 mutex；起停（含握手与 join）在锁内完成，保证同一来源「旧的一路
+// 停干净（含 silent 还原音量）之后新的一路才开始压低」。
+struct Registry {
+  std::mutex mutex;
+  std::map<uint32_t, std::unique_ptr<CaptureState>> sessions;
+  LoopbackLeaseTable leases;
+  uint32_t next_session = 0;
+};
 
-bool SameSource(const LoopbackOptions& a, const LoopbackOptions& b) {
-  return a.target_pid == b.target_pid && a.silent == b.silent &&
-         Lower(a.user_data_folder) == Lower(b.user_data_folder);
+Registry g_registry;
+
+// 查词那一刻钉住的一段 PCM（跨应用语音缓存）。只留最近一份：桌面应用外查词同一时刻
+// 只有一张根查词卡，新查词顶替旧的；制卡时按 id 落盘，id 不匹配（已被顶替）就不给，
+// 绝不把别的查词的声音挂到这张卡上。
+struct PinnedSnapshot {
+  std::mutex mutex;
+  uint64_t next_id = 0;
+  uint64_t id = 0;
+  uint32_t session = 0;
+  LoopbackFormat format;
+  std::vector<uint8_t> pcm;
+};
+
+PinnedSnapshot g_pinned;
+
+// 系统混音没有 silent 一说（只有进程树模式会压低会话音量）。
+LoopbackOptions Normalize(const LoopbackOptions& options) {
+  LoopbackOptions normalized = options;
+  if (!normalized.process_tree()) {
+    normalized.silent = false;
+  }
+  return normalized;
+}
+
+std::wstring SourceKey(const LoopbackOptions& options) {
+  return LoopbackSourceKey(options.user_data_folder,
+                           static_cast<uint32_t>(options.target_pid));
+}
+
+// 注册表锁内调用：停掉 [s] 的采集线程（silent 模式线程收尾时还原会话音量）。
+void StopSessionLocked(CaptureState& s) {
+  s.stop.store(true);
+  if (s.thread.joinable()) {
+    s.thread.join();
+  }
+}
+
+// 注册表锁内调用：会话 [id] 没了，钉住的快照若来自它也一并释放（内存有界）。
+void DropPinnedForSession(uint32_t id) {
+  std::lock_guard<std::mutex> lock(g_pinned.mutex);
+  if (g_pinned.session == id) {
+    g_pinned.id = 0;
+    g_pinned.session = 0;
+    g_pinned.format = LoopbackFormat{};
+    g_pinned.pcm.clear();
+    g_pinned.pcm.shrink_to_fit();
+  }
+}
+
+// 把 [s] 环里「最近 [back_ms] 毫秒」拷进 [out]（按时间先后，帧对齐）。
+LoopbackFormat GrabFromSession(CaptureState& s, int back_ms,
+                               std::vector<uint8_t>& out) {
+  out.clear();
+  LoopbackFormat fmt;
+  {
+    std::lock_guard<std::mutex> lock(s.init_mutex);
+    fmt = s.format;
+  }
+  if (!fmt.ok || back_ms <= 0) {
+    return LoopbackFormat{};
+  }
+  std::lock_guard<std::mutex> lock(s.ring_mutex);
+  if (s.filled == 0 || s.byte_rate <= 0) {
+    return LoopbackFormat{};
+  }
+  size_t want = static_cast<size_t>(s.byte_rate) *
+                static_cast<size_t>(back_ms) / 1000;
+  want = (std::min)(want, s.filled);
+  if (s.block_align > 0) {
+    want -= (want % s.block_align);
+  }
+  if (want == 0) {
+    return LoopbackFormat{};
+  }
+  // 最近 want 字节起点 = write_pos 往回 want（环形）。
+  const size_t start = (s.write_pos + s.capacity - want) % s.capacity;
+  out.resize(want);
+  const size_t first = (std::min)(want, s.capacity - start);
+  memcpy(out.data(), s.ring.data() + start, first);
+  if (want > first) {
+    memcpy(out.data() + first, s.ring.data(), want - first);
+  }
+  return fmt;
 }
 
 // 把 [len] 字节追加进环形缓冲（写满即覆盖最旧）。ring_mutex 已持有时调用。
-void RingAppendLocked(const uint8_t* data, size_t len) {
-  if (g_state.capacity == 0 || len == 0) {
+void RingAppendLocked(CaptureState& s, const uint8_t* data, size_t len) {
+  if (s.capacity == 0 || len == 0) {
     return;
   }
   // 超过一整圈的数据只需保留最后 capacity 字节，缓冲写满、下一次从头写。
-  if (len >= g_state.capacity) {
-    data += (len - g_state.capacity);
-    memcpy(g_state.ring.data(), data, g_state.capacity);
-    g_state.write_pos = 0;
-    g_state.filled = g_state.capacity;
+  if (len >= s.capacity) {
+    data += (len - s.capacity);
+    memcpy(s.ring.data(), data, s.capacity);
+    s.write_pos = 0;
+    s.filled = s.capacity;
     return;
   }
-  const size_t first = (std::min)(len, g_state.capacity - g_state.write_pos);
-  memcpy(g_state.ring.data() + g_state.write_pos, data, first);
+  const size_t first = (std::min)(len, s.capacity - s.write_pos);
+  memcpy(s.ring.data() + s.write_pos, data, first);
   if (len > first) {
-    memcpy(g_state.ring.data(), data + first, len - first);
+    memcpy(s.ring.data(), data + first, len - first);
   }
-  g_state.write_pos = (g_state.write_pos + len) % g_state.capacity;
-  g_state.filled = (std::min)(g_state.capacity, g_state.filled + len);
+  s.write_pos = (s.write_pos + len) % s.capacity;
+  s.filled = (std::min)(s.capacity, s.filled + len);
 }
 
 // 从 GetMixFormat 的 WAVEFORMATEX 解析 LoopbackFormat（区分整型/浮点）。
@@ -295,7 +387,8 @@ LoopbackFormat ParseFormat(const WAVEFORMATEX* wf) {
 }
 
 // 采集线程主体：初始化 WASAPI loopback → 握手回报格式 → 循环拉包写环形缓冲 → 收尾。
-void CaptureThreadMain(LoopbackOptions options) {
+void CaptureThreadMain(CaptureState* s) {
+  const LoopbackOptions options = s->options;
   const HRESULT co = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
   const bool co_ok = SUCCEEDED(co);
 
@@ -381,17 +474,17 @@ void CaptureThreadMain(LoopbackOptions options) {
   }
   if (SUCCEEDED(hr)) {
     // 环形缓冲容量：byteRate * kRingSeconds，向下取整到帧对齐。
-    std::lock_guard<std::mutex> lock(g_state.ring_mutex);
-    g_state.block_align = format.channels * (format.bits_per_sample / 8);
-    g_state.byte_rate = format.sample_rate * g_state.block_align;
-    size_t cap = static_cast<size_t>(g_state.byte_rate) * kRingSeconds;
-    if (g_state.block_align > 0) {
-      cap -= (cap % g_state.block_align);
+    std::lock_guard<std::mutex> lock(s->ring_mutex);
+    s->block_align = format.channels * (format.bits_per_sample / 8);
+    s->byte_rate = format.sample_rate * s->block_align;
+    size_t cap = static_cast<size_t>(s->byte_rate) * kRingSeconds;
+    if (s->block_align > 0) {
+      cap -= (cap % s->block_align);
     }
-    g_state.capacity = cap;
-    g_state.ring.assign(cap, 0);
-    g_state.write_pos = 0;
-    g_state.filled = 0;
+    s->capacity = cap;
+    s->ring.assign(cap, 0);
+    s->write_pos = 0;
+    s->filled = 0;
   }
   if (SUCCEEDED(hr)) {
     hr = client->Start();
@@ -408,12 +501,15 @@ void CaptureThreadMain(LoopbackOptions options) {
 
   // 握手回报：无论成败都要 notify，否则 Start() 永久阻塞。
   {
-    std::lock_guard<std::mutex> lock(g_state.init_mutex);
-    g_state.format = SUCCEEDED(hr) ? format : LoopbackFormat{};
-    g_state.error = SUCCEEDED(hr) ? LoopbackError::kNone : error;
-    g_state.init_done = true;
+    std::lock_guard<std::mutex> lock(s->init_mutex);
+    s->format = SUCCEEDED(hr) ? format : LoopbackFormat{};
+    s->error = SUCCEEDED(hr) ? LoopbackError::kNone : error;
+    // running 在 notify 之前置位：Start 一返回，同来源的下一次 Start 就必须看到「在跑」
+    // 并共用这一路，不能把它当成已退出的旧会话。
+    s->running.store(SUCCEEDED(hr));
+    s->init_done = true;
   }
-  g_state.init_cv.notify_all();
+  s->init_cv.notify_all();
 
   if (FAILED(hr)) {
     release_ducking();
@@ -429,13 +525,12 @@ void CaptureThreadMain(LoopbackOptions options) {
     return;
   }
 
-  g_state.running.store(true);
   const bool float_samples = format.is_float && format.bits_per_sample == 32;
   DWORD last_duck = GetTickCount();
   DWORD last_tree = last_duck;
   std::vector<uint8_t> scratch;
   // 采集循环：按 kPollIntervalMs（或 process loopback 的包事件）拉尽所有已就绪包。
-  while (!g_state.stop.load()) {
+  while (!s->stop.load()) {
     if (packet_event != nullptr) {
       WaitForSingleObject(packet_event, kPollIntervalMs);
     } else {
@@ -466,23 +561,23 @@ void CaptureThreadMain(LoopbackOptions options) {
         break;
       }
       const size_t bytes =
-          static_cast<size_t>(frames) * static_cast<size_t>(g_state.block_align);
+          static_cast<size_t>(frames) * static_cast<size_t>(s->block_align);
       {
-        std::lock_guard<std::mutex> lock(g_state.ring_mutex);
+        std::lock_guard<std::mutex> lock(s->ring_mutex);
         if ((flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0) {
           // 静音包：WASAPI 不保证 data 有效，按静音写零（保持时间轴连续）。
           static thread_local std::vector<uint8_t> silence;
           if (silence.size() < bytes) {
             silence.assign(bytes, 0);
           }
-          RingAppendLocked(silence.data(), bytes);
+          RingAppendLocked(*s, silence.data(), bytes);
         } else if (data != nullptr && silent && float_samples) {
           scratch.assign(data, data + bytes);
           RestoreDuckedGain(reinterpret_cast<float*>(scratch.data()),
                             bytes / sizeof(float));
-          RingAppendLocked(scratch.data(), bytes);
+          RingAppendLocked(*s, scratch.data(), bytes);
         } else if (data != nullptr) {
-          RingAppendLocked(data, bytes);
+          RingAppendLocked(*s, data, bytes);
         }
       }
       capture->ReleaseBuffer(frames);
@@ -495,7 +590,7 @@ void CaptureThreadMain(LoopbackOptions options) {
   client->Stop();
   // 先停采集再还原音量：还原那一刻的满电平样本不会进缓冲。
   release_ducking();
-  g_state.running.store(false);
+  s->running.store(false);
   if (packet_event != nullptr) {
     CloseHandle(packet_event);
   }
@@ -515,113 +610,196 @@ AudioLoopbackCapture& AudioLoopbackCapture::Instance() {
 }
 
 AudioLoopbackCapture::~AudioLoopbackCapture() {
-  Stop();
+  StopAll();
 }
 
-LoopbackFormat AudioLoopbackCapture::Start(const LoopbackOptions& options,
+LoopbackFormat AudioLoopbackCapture::Start(const LoopbackOptions& raw_options,
+                                           uint64_t* lease,
                                            LoopbackError* error) {
+  if (lease != nullptr) {
+    *lease = 0;
+  }
   if (error != nullptr) {
     *error = LoopbackError::kNone;
   }
-  if (g_state.running.load()) {
-    std::lock_guard<std::mutex> lock(g_state.init_mutex);
-    if (!SameSource(g_state.options, options)) {
-      // galgame 的系统混音与网页制卡的进程树不能共用一路缓冲。
+  const LoopbackOptions options = Normalize(raw_options);
+  const std::wstring key = SourceKey(options);
+  std::lock_guard<std::mutex> registry(g_registry.mutex);
+  uint32_t stale = 0;
+  for (auto& entry : g_registry.sessions) {
+    CaptureState& s = *entry.second;
+    if (s.key != key) {
+      continue;
+    }
+    if (s.options.silent != options.silent) {
+      // 同一进程树一边压低会话音量、一边要原样录：两者互斥。
       if (error != nullptr) {
         *error = LoopbackError::kBusy;
       }
       return LoopbackFormat{};
     }
-    return g_state.format;
+    if (s.running.load()) {
+      LoopbackFormat fmt;
+      {
+        std::lock_guard<std::mutex> lock(s.init_mutex);
+        fmt = s.format;
+      }
+      const uint64_t granted = g_registry.leases.Acquire(entry.first);
+      if (lease != nullptr) {
+        *lease = granted;
+      }
+      return fmt;
+    }
+    // 采集线程已自行退出（设备拔掉 / 渲染端点失效）：重起一路，旧租约迁过去。
+    stale = entry.first;
+    break;
   }
-  // 上一次的线程若已退出但未 join，先收尾。
-  if (g_state.thread.joinable()) {
-    g_state.stop.store(true);
-    g_state.thread.join();
-  }
-  g_state.stop.store(false);
-  {
-    std::lock_guard<std::mutex> lock(g_state.init_mutex);
-    g_state.init_done = false;
-    g_state.format = LoopbackFormat{};
-    g_state.error = LoopbackError::kNone;
-    g_state.options = options;
-  }
-  g_state.thread = std::thread(CaptureThreadMain, options);
 
-  std::unique_lock<std::mutex> lock(g_state.init_mutex);
-  g_state.init_cv.wait(lock, [] { return g_state.init_done; });
-  const LoopbackFormat result = g_state.format;
-  const LoopbackError result_error = g_state.error;
-  lock.unlock();
+  auto session = std::make_unique<CaptureState>();
+  session->options = options;
+  session->key = key;
+  CaptureState* s = session.get();
+  s->thread = std::thread(CaptureThreadMain, s);
+  LoopbackFormat result;
+  LoopbackError result_error = LoopbackError::kNone;
+  {
+    std::unique_lock<std::mutex> lock(s->init_mutex);
+    s->init_cv.wait(lock, [s] { return s->init_done; });
+    result = s->format;
+    result_error = s->error;
+  }
   if (!result.ok) {
+    // 初始化失败：线程已自行退出，join 释放。旧的那一路（若有）原样留着。
+    if (s->thread.joinable()) {
+      s->thread.join();
+    }
     if (error != nullptr) {
       *error = result_error;
     }
-    // 初始化失败：线程已自行退出，join 释放。
-    if (g_state.thread.joinable()) {
-      g_state.thread.join();
+    return LoopbackFormat{};
+  }
+  const uint32_t id = ++g_registry.next_session;
+  if (stale != 0) {
+    g_registry.leases.Rebind(stale, id);
+    auto old = g_registry.sessions.find(stale);
+    if (old != g_registry.sessions.end()) {
+      StopSessionLocked(*old->second);
+      g_registry.sessions.erase(old);
     }
+    DropPinnedForSession(stale);
+  }
+  g_registry.sessions[id] = std::move(session);
+  const uint64_t granted = g_registry.leases.Acquire(id);
+  if (lease != nullptr) {
+    *lease = granted;
   }
   return result;
 }
 
-void AudioLoopbackCapture::Stop() {
-  g_state.stop.store(true);
-  if (g_state.thread.joinable()) {
-    g_state.thread.join();
+void AudioLoopbackCapture::Release(uint64_t lease) {
+  std::lock_guard<std::mutex> registry(g_registry.mutex);
+  bool last = false;
+  const uint32_t id = g_registry.leases.Release(lease, &last);
+  if (id == 0 || !last) {
+    // 未知 / 已交回的租约，或这一路还有别人在用：什么都不停。
+    return;
   }
-  std::lock_guard<std::mutex> lock(g_state.ring_mutex);
-  g_state.ring.clear();
-  g_state.ring.shrink_to_fit();
-  g_state.capacity = 0;
-  g_state.write_pos = 0;
-  g_state.filled = 0;
+  auto it = g_registry.sessions.find(id);
+  if (it != g_registry.sessions.end()) {
+    StopSessionLocked(*it->second);
+    g_registry.sessions.erase(it);
+  }
+  DropPinnedForSession(id);
 }
 
-LoopbackFormat AudioLoopbackCapture::GrabRecent(int back_ms,
+void AudioLoopbackCapture::StopAll() {
+  std::lock_guard<std::mutex> registry(g_registry.mutex);
+  g_registry.leases.Clear();
+  for (auto& entry : g_registry.sessions) {
+    StopSessionLocked(*entry.second);
+    DropPinnedForSession(entry.first);
+  }
+  g_registry.sessions.clear();
+}
+
+LoopbackFormat AudioLoopbackCapture::GrabRecent(uint64_t lease, int back_ms,
                                                 std::vector<uint8_t>& out) {
   out.clear();
+  std::lock_guard<std::mutex> registry(g_registry.mutex);
+  const uint32_t id = g_registry.leases.SessionOf(lease);
+  const auto it = g_registry.sessions.find(id);
+  if (id == 0 || it == g_registry.sessions.end()) {
+    return LoopbackFormat{};
+  }
+  return GrabFromSession(*it->second, back_ms, out);
+}
+
+uint64_t AudioLoopbackCapture::PinSnapshot(uint64_t lease, int back_ms) {
+  std::vector<uint8_t> pcm;
   LoopbackFormat fmt;
+  uint32_t id = 0;
   {
-    std::lock_guard<std::mutex> lock(g_state.init_mutex);
-    fmt = g_state.format;
+    std::lock_guard<std::mutex> registry(g_registry.mutex);
+    id = g_registry.leases.SessionOf(lease);
+    const auto it = g_registry.sessions.find(id);
+    if (id == 0 || it == g_registry.sessions.end()) {
+      return 0;
+    }
+    fmt = GrabFromSession(*it->second, back_ms, pcm);
   }
-  if (!fmt.ok || back_ms <= 0) {
+  if (!fmt.ok || pcm.empty()) {
+    return 0;
+  }
+  std::lock_guard<std::mutex> lock(g_pinned.mutex);
+  g_pinned.pcm.swap(pcm);
+  g_pinned.format = fmt;
+  g_pinned.session = id;
+  g_pinned.id = ++g_pinned.next_id;
+  return g_pinned.id;
+}
+
+LoopbackFormat AudioLoopbackCapture::SaveSnapshot(uint64_t snapshot,
+                                                  const std::wstring& path) {
+  std::lock_guard<std::mutex> lock(g_pinned.mutex);
+  if (snapshot == 0 || snapshot != g_pinned.id || g_pinned.pcm.empty() ||
+      path.empty()) {
     return LoopbackFormat{};
   }
-  std::lock_guard<std::mutex> lock(g_state.ring_mutex);
-  if (g_state.filled == 0 || g_state.byte_rate <= 0) {
+  HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr,
+                            CREATE_ALWAYS, FILE_ATTRIBUTE_TEMPORARY, nullptr);
+  if (file == INVALID_HANDLE_VALUE) {
     return LoopbackFormat{};
   }
-  size_t want =
-      static_cast<size_t>(g_state.byte_rate) * static_cast<size_t>(back_ms) /
-      1000;
-  want = (std::min)(want, g_state.filled);
-  if (g_state.block_align > 0) {
-    want -= (want % g_state.block_align);
+  const uint8_t* data = g_pinned.pcm.data();
+  size_t remaining = g_pinned.pcm.size();
+  bool ok = true;
+  while (remaining > 0) {
+    const DWORD chunk = static_cast<DWORD>((std::min)(
+        remaining, static_cast<size_t>(16u * 1024u * 1024u)));
+    DWORD written = 0;
+    if (!WriteFile(file, data, chunk, &written, nullptr) || written == 0) {
+      ok = false;
+      break;
+    }
+    data += written;
+    remaining -= written;
   }
-  if (want == 0) {
+  CloseHandle(file);
+  if (!ok) {
+    DeleteFileW(path.c_str());
     return LoopbackFormat{};
   }
-  // 最近 want 字节起点 = write_pos 往回 want（环形）。
-  const size_t start =
-      (g_state.write_pos + g_state.capacity - want) % g_state.capacity;
-  out.resize(want);
-  const size_t first = (std::min)(want, g_state.capacity - start);
-  memcpy(out.data(), g_state.ring.data() + start, first);
-  if (want > first) {
-    memcpy(out.data() + first, g_state.ring.data(), want - first);
-  }
-  return fmt;
+  return g_pinned.format;
 }
 
 int AudioLoopbackCapture::RestoreDuckedSessions(const LoopbackOptions& options) {
   // silent 采集在跑时压低是有意的：此时「还原」会让站点从扬声器外放。
   {
-    std::lock_guard<std::mutex> lock(g_state.init_mutex);
-    if (g_state.running.load() && g_state.options.silent) {
-      return 0;
+    std::lock_guard<std::mutex> registry(g_registry.mutex);
+    for (const auto& entry : g_registry.sessions) {
+      if (entry.second->running.load() && entry.second->options.silent) {
+        return 0;
+      }
     }
   }
   const DWORD target = ResolveTarget(options);

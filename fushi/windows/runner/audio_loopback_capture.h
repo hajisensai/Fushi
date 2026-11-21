@@ -56,26 +56,43 @@ enum class LoopbackError {
   kStartFailed,       // WASAPI 初始化失败 / 无渲染端点
   kTargetNotFound,    // 进程树模式：找不到目标 WebView2 浏览器进程
   kProcessLoopbackUnsupported,  // 系统不支持 process loopback（Win10 20348 之前）
-  kBusy,              // 已有另一种来源的采集在跑
+  kBusy,              // 同一进程树已有 silent 设置相反的采集在跑
 };
 
-// 单例：整个进程一路 loopback 采集。所有方法可从 UI 线程调用（内部与采集线程用
-// 互斥/条件变量握手，COM 全部在采集线程的 MTA apartment 内完成）。绝不抛异常。
+// 单例：整个进程的 loopback 采集。每个来源（系统混音 / 某个 WebView2 进程树）最多一路
+// 采集，各路可并存（跨应用语音缓存常驻系统混音时，网页视频制卡的静音进程树照常起）。
+// 每次 [Start] 发一张租约，[Release] 只交回自己那张，某一路最后一张租约交回时才真的停
+// （见 audio_loopback_leases.h）。所有方法可从 UI 线程调用（内部与采集线程用互斥/条件
+// 变量握手，COM 全部在采集线程的 MTA apartment 内完成）。绝不抛异常。
 class AudioLoopbackCapture {
  public:
   static AudioLoopbackCapture& Instance();
 
-  // 启动采集（幂等：同一来源已在跑则直接返回当前格式）。失败返回 ok=false 的格式，
-  // [error]（可空）给出原因。
-  LoopbackFormat Start(const LoopbackOptions& options = LoopbackOptions{},
+  // 启动（或共用同一来源已在跑的）采集，成功时 [*lease] 是这次的租约（非 0）。失败返回
+  // ok=false 的格式、[*lease]=0，[error]（可空）给出原因。
+  LoopbackFormat Start(const LoopbackOptions& options, uint64_t* lease,
                        LoopbackError* error = nullptr);
 
-  // 停止采集并释放环形缓冲与 COM 对象；silent 模式先把压低的会话音量还原。幂等。
-  void Stop();
+  // 交回租约；这一路没有别的租约时停止采集并释放环形缓冲与 COM 对象（silent 模式先把
+  // 压低的会话音量还原）。未知 / 已交回的租约是无操作。
+  void Release(uint64_t lease);
 
-  // 把「最近 [back_ms] 毫秒」的 PCM 拷进 [out]（按时间先后，帧对齐）。缓冲不足则返回现有
-  // 全部。未启动 / 无数据时 [out] 清空、返回 ok=false 的格式。
-  LoopbackFormat GrabRecent(int back_ms, std::vector<uint8_t>& out);
+  // 进程退出兜底：停掉全部采集、作废全部租约。
+  void StopAll();
+
+  // 把租约 [lease] 那一路「最近 [back_ms] 毫秒」的 PCM 拷进 [out]（按时间先后，帧对齐）。
+  // 缓冲不足则返回现有全部。租约无效 / 无数据时 [out] 清空、返回 ok=false 的格式。
+  LoopbackFormat GrabRecent(uint64_t lease, int back_ms,
+                            std::vector<uint8_t>& out);
+
+  // 跨应用语音缓存：查词那一刻把租约那一路最近 [back_ms] 毫秒钉在内存里（只留最近一份，
+  // 顶替上一份），返回快照 id；没东西返回 0。只在内存里拷一次，不落盘——悬停查词
+  // 每次都钉，真制卡时才 [SaveSnapshot]。
+  uint64_t PinSnapshot(uint64_t lease, int back_ms);
+
+  // 把快照 [snapshot] 的裸 PCM 写到 [path]，返回它的格式；快照已被顶替 / 写失败返回
+  // ok=false（绝不把另一次查词的声音给出去）。
+  LoopbackFormat SaveSnapshot(uint64_t snapshot, const std::wstring& path);
 
   // 崩溃兜底：Windows 按可执行文件持久化会话音量，上次 silent 采集没走到 Stop（进程被杀）
   // 时目标进程树的会话会一直停在 kSilentDuckLevel。把该树里音量 ≤ 阈值的会话还原到 1.0。
