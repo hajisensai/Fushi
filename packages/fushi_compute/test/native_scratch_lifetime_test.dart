@@ -158,6 +158,7 @@ void main() {
       'probe': () => FushiComputeImage.instance.probe(Uint8List(0)),
       'toJpeg': () =>
           FushiComputeImage.instance.toJpeg(Uint8List(0), quality: 80),
+      'toPng': () => FushiComputeImage.instance.toPng(Uint8List(0)),
       'fitJpeg': () => FushiComputeImage.instance.fitJpeg(
         Uint8List(0),
         width: 8,
