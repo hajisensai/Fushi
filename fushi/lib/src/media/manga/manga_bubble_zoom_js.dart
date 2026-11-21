@@ -224,6 +224,8 @@ String mangaBubbleZoomJs({
       }
     }
     layer.appendChild(clone);
+    // 逐格读（manga_bubble_focus_js.dart）在浮层右上角加「⤢」入口。
+    if (typeof _fcDecorateLayer === 'function') _fcDecorateLayer(layer);
     document.body.appendChild(layer);
     return {el: layer, geom: g, bubble: bubble};
   }
@@ -254,14 +256,22 @@ String mangaBubbleZoomJs({
     layer.style.opacity = '0';
     setTimeout(function(){ layer.remove(); }, BZ_CLOSE_MS);
   }
-  // 落点在打开的浮层里时返回浮层里的克隆页（命中只在它里面挑），否则 null。
-  function _bzScopeAt(x, y){
-    if (!bzLayer) return null;
+  // 落点在打开的浮层里时返回浮层里的克隆页，否则 null。
+  function _bzInLayer(x, y){
+    if (!bzLayer) return false;
     var r = bzLayer.el.getBoundingClientRect();
-    if (x < r.left || x > r.right || y < r.top || y > r.bottom) return null;
-    return bzLayer.el.firstChild;
+    return !(x < r.left || x > r.right || y < r.top || y > r.bottom);
   }
-  function _bzInLayer(x, y){ return !!_bzScopeAt(x, y); }
+  function _bzLayerScopeAt(x, y){
+    return _bzInLayer(x, y) ? bzLayer.el.firstChild : null;
+  }
+  // 字格命中的限定范围：放大浮层，或文字条 / 台词栏（manga_bubble_focus_js.dart）。
+  // 范围里是原 OCR 节点的克隆，盖在原图字格之上，不限定就会被「最小面积」挑走下面的原字格。
+  function _bzScopeAt(x, y){
+    var layer = _bzLayerScopeAt(x, y);
+    if (layer) return layer;
+    return typeof _tsScopeAt === 'function' ? _tsScopeAt(x, y) : null;
+  }
   // 当前选区（查词）是否落在浮层里——查词弹窗开着时浮层不随鼠标离开收起。
   function _bzSelectionInLayer(){
     var s = window.fushiSelection && window.fushiSelection.selection;
@@ -332,6 +342,8 @@ String mangaBubbleZoomJs({
   }
   // 直接打在 WebView 上的单击（浮层里的按压走 _bzRelease）。true = 已消费。
   function _bzOnTap(x, y){
+    // 逐格读里鼠标的单击（触屏的按压由 _fcClaimPress 接管）。
+    if (typeof fcOn !== 'undefined' && fcOn) return _fcTap(x, y);
     if (!BZ_ENABLED) return false;
     var armed = bzDblArmed;
     bzDblArmed = false;
@@ -357,7 +369,7 @@ String mangaBubbleZoomJs({
   // barrier（查词弹窗开着）转进来的单击。返回 null = 照常走命中；'zoom' / 'miss'
   // = 已处理，Dart 关弹窗。
   function _bzBarrierTap(x, y){
-    if (!BZ_ENABLED) return null;
+    if (!BZ_ENABLED || (typeof fcOn !== 'undefined' && fcOn)) return null;
     if (bzLayer) {
       if (!_bzInLayer(x, y)) { bzLastTap = null; _bzClose(false, false); return 'miss'; }
       if (_bzRecentTap(x, y, BZ_BARRIER_SLACK, true)) {
@@ -388,12 +400,22 @@ String mangaBubbleZoomJs({
   // 按下落在打开的浮层里：这次按压归浮层（不平移、不翻页），长按照旧弹图片动作面板。
   function _bzPointerDown(e){
     bzPointerType = e.pointerType || '';
+    // 文字条 / 台词栏、逐格读里的按压归它们（manga_bubble_focus_js.dart）。
+    var claimed = typeof _fcClaimPress === 'function' ? _fcClaimPress(e) : null;
+    if (claimed) {
+      bzPress = claimed;
+      has = false;
+      _cancelPendingEmptyTap();
+      _armLongPress(e);
+      return true;
+    }
     if (!bzLayer || !_bzInLayer(e.clientX, e.clientY)) {
       _bzArmOnDown(e.clientX, e.clientY);
       return false;
     }
     bzPress = {id: e.pointerId, x: e.clientX, y: e.clientY, t: Date.now(),
-      type: e.pointerType || '', armed: _bzRecentTap(e.clientX, e.clientY, 0, true)};
+      type: e.pointerType || '', armed: _bzRecentTap(e.clientX, e.clientY, 0, true),
+      btn: !!(e.target && e.target.closest && e.target.closest('.manga-bz-focus'))};
     has = false;
     _cancelPendingEmptyTap();
     _armLongPress(e);
@@ -402,6 +424,14 @@ String mangaBubbleZoomJs({
   function _bzRelease(p, x, y){
     var dx = x - p.x, dy = y - p.y, el = Math.max(1, Date.now() - p.t);
     var ax = Math.abs(dx), ay = Math.abs(dy);
+    if (p.kind && typeof _fcRelease === 'function') {
+      if (p.kind === 'ts') _tsRelease(p, x, y); else _fcRelease(p, x, y);
+      return;
+    }
+    if (p.btn) {
+      if (ax < 20 && ay < 20 && bzLayer && typeof _fcEnter === 'function') _fcEnter(bzLayer.bubble);
+      return;
+    }
     // 左右滑 = 换相邻气泡（阈值与翻页 swipe 同口径）；RTL 书向右滑是下一个。
     if (p.type !== 'mouse' && ax > ay * 1.5 &&
         (ax >= 72 || (ax >= 36 && ax / el * 1000 >= 900))) {
@@ -426,6 +456,7 @@ String mangaBubbleZoomJs({
   }
   function _bzViewportChanged(){
     if (bzLayer) _bzClose(true, false);
+    if (typeof _fcPlaceDim === 'function') _fcPlaceDim();
   }
   function _bzStep(dir){
     if (!bzLayer) return false;
@@ -447,9 +478,11 @@ String mangaBubbleZoomJs({
     if (BZ_HOVER === 'dwell') return !BZ_LOOKUP_ON_HOVER;
     return BZ_HOVER === 'ctrl' && !!ctrl;
   }
-  // 这次悬停归放大时，原图上的悬停查词让位（查词在浮层里做）；浮层里照常悬停查词。
+  // 这次悬停归放大时，原图上的悬停查词让位（查词在浮层 / 文字条里做）；浮层里照常悬停查词。
   function _bzBlocksHoverLookup(x, y, ctrl, lookupKey){
-    return _bzHoverTrigger(ctrl, lookupKey) && !_bzInLayer(x, y);
+    // 逐格读里读的就是原图，原图上的悬停查词照常。
+    if (typeof fcOn !== 'undefined' && fcOn) return false;
+    return _bzHoverTrigger(ctrl, lookupKey) && !_bzScopeAt(x, y);
   }
   function _bzLeaveFire(){
     bzLeaveTimer = null;
@@ -467,6 +500,8 @@ String mangaBubbleZoomJs({
   function _bzHover(x, y, ctrl, buttons, lookupKey){
     bzMouseX = x; bzMouseY = y; bzCtrl = ctrl; bzLookupKey = !!lookupKey;
     if (!BZ_ENABLED || BZ_HOVER === 'off') return;
+    if (typeof fcOn !== 'undefined' && fcOn) return;
+    if (typeof _tsScopeAt === 'function' && _tsScopeAt(x, y)) { _bzCancelHover(); _bzArmLeave(); return; }
     if (buttons) { _bzCancelHover(); return; }
     if (bzLayer && _bzInLayer(x, y)) { _bzCancelHover(); _bzCancelLeave(); return; }
     var bubble = _bzHoverTrigger(ctrl, lookupKey) ? _bzBubbleAt(x, y) : null;

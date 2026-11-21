@@ -310,6 +310,25 @@ List<MangaReaderPreferenceDescriptor> mangaReaderPreferenceDescriptors(
     min: kMangaBubbleZoomScaleMin,
     max: kMangaBubbleZoomScaleMax,
   ),
+  // 逐格读压暗（关 / 浅 / 中，默认浅）与文字条 / 台词栏（默认关）及其字号。
+  MangaReaderPreferenceDescriptor(
+    key: 'bubbleFocusDim',
+    kind: MangaReaderPreferenceKind.choice,
+    title: t.manga_reader_bubble_focus_dim,
+    choices: const <String>['off', 'light', 'medium'],
+  ),
+  MangaReaderPreferenceDescriptor(
+    key: 'bubbleTextStrip',
+    kind: MangaReaderPreferenceKind.toggle,
+    title: t.manga_reader_bubble_text_strip,
+  ),
+  MangaReaderPreferenceDescriptor(
+    key: 'bubbleTextStripSize',
+    kind: MangaReaderPreferenceKind.integer,
+    title: t.manga_reader_bubble_text_strip_size,
+    min: kMangaBubbleTextStripSizeMin,
+    max: kMangaBubbleTextStripSizeMax,
+  ),
   MangaReaderPreferenceDescriptor(
     key: 'showOcrBoxes',
     kind: MangaReaderPreferenceKind.toggle,
@@ -724,6 +743,11 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
       'off' => t.manga_reader_bubble_zoom_hover_off,
       _ => t.manga_reader_bubble_zoom_hover_dwell,
     },
+    'bubbleFocusDim' => switch (value) {
+      'off' => t.manga_reader_bubble_focus_dim_off,
+      'medium' => t.manga_reader_bubble_focus_dim_medium,
+      _ => t.manga_reader_bubble_focus_dim_light,
+    },
     'aiUpscale' => switch (value) {
       'light' => t.manga_reader_ai_upscale_light,
       'high' => t.manga_reader_ai_upscale_high,
@@ -800,6 +824,9 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     'bubbleZoomHover' => FushiIcons.mouse,
     'bubbleZoomDelay' => FushiIcons.speed,
     'bubbleZoomScale' => FushiIcons.zoomIn,
+    'bubbleFocusDim' => FushiIcons.brightnessAuto,
+    'bubbleTextStrip' => FushiIcons.subtitles,
+    'bubbleTextStripSize' => FushiIcons.textFields,
     'showOcrBoxes' => FushiIcons.visibility,
     'ocrTrigger' => FushiIcons.ocr,
     'ocrProgressBadge' => FushiIcons.visibility,
@@ -872,6 +899,7 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
   static String _integerReadout(String key, int value) => switch (key) {
     'bubbleZoomScale' => '${(value / 100).toStringAsFixed(1)}×',
     'bubbleZoomDelay' => '$value ms',
+    'bubbleTextStripSize' => '$value px',
     _ => '$value',
   };
 
@@ -1047,6 +1075,9 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
       'bubbleZoomHover',
       'bubbleZoomDelay',
       'bubbleZoomScale',
+      'bubbleFocusDim',
+      'bubbleTextStrip',
+      'bubbleTextStripSize',
     }.contains(key)) {
       return 3;
     }
@@ -1163,6 +1194,9 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
           'bubbleZoomHover',
           'bubbleZoomDelay',
           'bubbleZoomScale',
+          'bubbleFocusDim',
+          'bubbleTextStrip',
+          'bubbleTextStripSize',
         ],
       ),
     ],
@@ -1178,6 +1212,7 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     // 「停留自动放大」有意义；开了「悬停自动查词」时悬停归查词、停留放大不接管
     // （见 manga_bubble_zoom_js.dart 的 _bzHoverTrigger），停留时长也就不出现。
     'bubbleZoomScale' => _value('bubbleZoom') != false,
+    'bubbleTextStripSize' => _value('bubbleTextStrip') == true,
     'bubbleZoomHover' => isDesktopPlatform && _value('bubbleZoom') != false,
     'bubbleZoomDelay' =>
       isDesktopPlatform &&

@@ -89,6 +89,11 @@ const int kMangaBubbleZoomScaleDefault = 240;
 const int kMangaBubbleZoomScaleMin = 200;
 const int kMangaBubbleZoomScaleMax = 300;
 
+/// 文字条 / 台词栏字号（逻辑像素）的默认值与区间。
+const int kMangaBubbleTextStripSizeDefault = 22;
+const int kMangaBubbleTextStripSizeMin = 14;
+const int kMangaBubbleTextStripSizeMax = 40;
+
 /// Immutable, validated reader defaults. Per-book overrides are sparse JSON:
 /// absent/null fields inherit the current global value, including future changes.
 class MangaReaderPreferences {
@@ -147,6 +152,9 @@ class MangaReaderPreferences {
     this.bubbleZoomHover = 'dwell',
     this.bubbleZoomDelay = kMangaBubbleZoomDelayDefault,
     this.bubbleZoomScale = kMangaBubbleZoomScaleDefault,
+    this.bubbleFocusDim = 'light',
+    this.bubbleTextStrip = false,
+    this.bubbleTextStripSize = kMangaBubbleTextStripSizeDefault,
     this.showOcrBoxes = false,
     this.invertColors = false,
     this.grayscale = false,
@@ -255,6 +263,16 @@ class MangaReaderPreferences {
 
   /// 放大倍率（百分比，200–300）。气泡放大后放不进视口时自动降到放得下。
   final int bubbleZoomScale;
+
+  /// 逐格读（聚焦模式）时气泡外的压暗：`off` / `light`（默认）/ `medium`。用户嫌
+  /// 深压暗「只看字不看漫画」，所以没有更深的档、默认浅。
+  final String bubbleFocusDim;
+
+  /// 文字条 / 台词栏（方案 C）：移动端底部大字文字条、桌面右侧本页台词栏。默认关。
+  final bool bubbleTextStrip;
+
+  /// 文字条 / 台词栏字号（逻辑像素）。
+  final int bubbleTextStripSize;
   final bool showOcrBoxes;
   final bool invertColors;
   final bool grayscale;
@@ -329,6 +347,9 @@ class MangaReaderPreferences {
     'bubbleZoomHover': bubbleZoomHover,
     'bubbleZoomDelay': bubbleZoomDelay,
     'bubbleZoomScale': bubbleZoomScale,
+    'bubbleFocusDim': bubbleFocusDim,
+    'bubbleTextStrip': bubbleTextStrip,
+    'bubbleTextStripSize': bubbleTextStripSize,
     'showOcrBoxes': showOcrBoxes,
     'invertColors': invertColors,
     'grayscale': grayscale,
@@ -458,6 +479,18 @@ class MangaReaderPreferences {
         kMangaBubbleZoomScaleDefault,
         kMangaBubbleZoomScaleMin,
         kMangaBubbleZoomScaleMax,
+      ),
+      bubbleFocusDim: text('bubbleFocusDim', 'light', <String>{
+        'off',
+        'light',
+        'medium',
+      }),
+      bubbleTextStrip: flag('bubbleTextStrip', false),
+      bubbleTextStripSize: number(
+        'bubbleTextStripSize',
+        kMangaBubbleTextStripSizeDefault,
+        kMangaBubbleTextStripSizeMin,
+        kMangaBubbleTextStripSizeMax,
       ),
       showOcrBoxes: flag('showOcrBoxes', false),
       invertColors: flag('invertColors', false),

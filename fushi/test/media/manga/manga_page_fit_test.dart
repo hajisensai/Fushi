@@ -792,7 +792,7 @@ void main() {
 
 const String _resizeHarness = r'''
 const assert=require('node:assert/strict');
-var ZOOM=1, CURRENT=0, IS_WEBTOON=false, IS_VERTICAL_PAGED=false;
+var ZOOM=1, CURRENT=0, IS_WEBTOON=false, IS_VERTICAL_PAGED=false, RESERVE_R=0, RESERVE_B=0;
 var ROTATE_WIDE=false, SPREAD_GUTTER=false;
 const listeners={};
 const window={innerWidth:800,innerHeight:1200,devicePixelRatio:2,

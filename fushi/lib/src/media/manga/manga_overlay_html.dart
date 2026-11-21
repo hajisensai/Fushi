@@ -3,6 +3,7 @@ import 'dart:ui' show Rect;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 
+import 'package:fushi/src/media/manga/manga_bubble_focus_js.dart';
 import 'package:fushi/src/media/manga/manga_bubble_zoom_js.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
@@ -820,6 +821,13 @@ String mangaWindowDocument(
   // 减弱动态效果时为 0；墨水屏在脚本里另判归零）。
   int bubbleZoomOpenMs = 325,
   int bubbleZoomCloseMs = 165,
+  // 文字条 / 台词栏（方案 C）：移动端底部文字条、桌面右侧台词栏。
+  MangaTextStripLayout textStripLayout = MangaTextStripLayout.strip,
+  // 逐格读：浮层「⤢」按钮的无障碍名；跨窗翻页重建文档时接着聚焦的首 / 末气泡
+  // （'first' / 'last'，空 = 不在逐格读）。
+  String bubbleFocusLabel = '',
+  String bubbleFocusResume = '',
+  String textStripEmptyLabel = '',
 }) {
   final MangaReaderPreferences preferences =
       readerPreferences ?? const MangaReaderPreferences();
@@ -974,6 +982,22 @@ String mangaWindowDocument(
             '.manga-cover-layer{position:absolute;left:0;top:0;width:100vw;'
             'height:100vh;pointer-events:none;z-index:2;'
             'box-shadow:0 0 28px rgba(0,0,0,.45);}';
+  // 文字条 / 台词栏让出的边：spread 在扣掉它的区域里居中；长条漫页宽按扣掉右边的
+  // 视口算、底部留出文字条高度可滚到最后一页底。与脚本里 RESERVE_R / RESERVE_B 同值。
+  final ({double right, double bottom}) reserve = mangaTextStripReserve(
+    preferences,
+    textStripLayout,
+  );
+  final String reserveCss = reserve.right == 0 && reserve.bottom == 0
+      ? ''
+      : isWebtoon
+      ? '#manga-root{width:calc(100vw - ${_num(reserve.right)}px);}'
+            '.manga-page{width:calc((100vw - ${_num(reserve.right)}px) * '
+            '${_num(1 - longStripSidePadding.clamp(0, 24) * 2 / 100)});}'
+            'body{padding-bottom:${_num(reserve.bottom)}px;}'
+      : '.manga-spread{box-sizing:border-box;'
+            'padding-right:${_num(reserve.right)}px;'
+            'padding-bottom:${_num(reserve.bottom)}px;}';
   // #manga-root 的过渡声明单独一张样式表：设置 / 系统「减弱动态效果」变化时
   // JS（__mangaSetPageAnimation）只换这张表的内容，不重建文档。
   final String animCss = isWebtoon
@@ -1045,6 +1069,36 @@ String mangaWindowDocument(
       // 气泡放大浮层（manga_bubble_zoom_js.dart）：里面是本页 .manga-page 的克隆，
       // 类名换成 .manga-zoom-page，所以页级 / 图片规则两边都要写。
       '.manga-zoom-page{overflow:hidden;}'
+      '$reserveCss'
+      // 浮层右上角「⤢ 逐格读」（manga_bubble_focus_js.dart）。
+      '.manga-bz-focus{position:absolute;right:6px;top:6px;width:36px;height:36px;'
+      'border:0;border-radius:18px;padding:0;z-index:2;cursor:pointer;'
+      'font:20px/36px sans-serif;text-align:center;'
+      '${preferences.einkMode ? 'background:#fff;color:#000;border:1px solid #000;' : 'background:rgba(20,20,20,.62);color:#fff;'}}'
+      // 逐格读压暗：一个与当前气泡同大的透明洞，四周用超大 box-shadow 压暗。
+      '.manga-focus-dim{position:fixed;pointer-events:none;z-index:5;border-radius:12px;'
+      'outline:2px solid rgba(255,196,0,.9);}'
+      '.manga-focus-dim-light{box-shadow:0 0 0 200vmax rgba(0,0,0,.28);}'
+      '.manga-focus-dim-medium{box-shadow:0 0 0 200vmax rgba(0,0,0,.5);}'
+      // 文字条 / 台词栏：气泡原 OCR 节点的克隆，去掉绝对定位改成行内横排。
+      '.manga-text-strip{position:fixed;z-index:7;box-sizing:border-box;overflow:auto;'
+      'touch-action:pan-y;line-height:1.5;'
+      '${preferences.einkMode ? 'background:#fff;color:#000;border:0 solid #000;' : 'background:rgba(24,24,24,.94);color:#f4f4f4;'}}'
+      '.manga-ts-strip{left:0;right:0;bottom:0;'
+      'height:${_num(reserve.bottom)}px;padding:12px 16px;border-top-width:1px;}'
+      '.manga-ts-panel{top:0;right:0;bottom:0;'
+      'width:${_num(reserve.right)}px;padding:12px;border-left-width:1px;}'
+      '.manga-text-strip .manga-zoom-page{position:static;overflow:visible;'
+      'padding:6px 10px;border-radius:10px;margin:0 0 6px;}'
+      '.manga-ts-panel .manga-zoom-page:hover{background:rgba(127,127,127,.18);}'
+      '.manga-ts-panel .manga-ts-active{outline:2px solid rgba(255,196,0,.9);}'
+      '.manga-text-strip .ocr-box{position:static;display:block;font-size:inherit;'
+      'color:inherit;writing-mode:horizontal-tb;}'
+      '.manga-text-strip .ocr-char{position:static;display:inline;color:inherit;'
+      'overflow:visible;line-height:inherit;}'
+      '.manga-ts-empty{opacity:.6;font-size:.7em;}'
+      '.manga-page .ocr-box.manga-ts-current,.manga-page .ocr-box.manga-ts-hover'
+      '{outline:3px solid rgba(255,196,0,.95);border-radius:4px;}'
       '.manga-bubble-zoom{position:fixed;overflow:hidden;z-index:6;'
       'border-radius:16px;background:$backgroundCss;touch-action:none;'
       'transform-origin:50% 50%;'
@@ -1104,7 +1158,7 @@ String mangaWindowDocument(
       '<script>$inlineSelectionJs</script>'
       '<script>'
       'window.__mangaDocumentGeneration=$documentGeneration;'
-      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, restZoomPercent: restZoomPercent ?? zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, pageAnimationSpeed: pageAnimationSpeed, followDrag: followDrag, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition, preferences: preferences, hoverKey: hoverKey, cropBorders: cropBorders, scaleType: scaleType, longStripSidePadding: longStripSidePadding, isVerticalPaged: isVerticalPaged, enableMouseTextSelection: enableMouseTextSelection, fitImagesToDisplay: fitImagesToDisplay, spreadGutterPx: spreadGutterPx, bookRtl: spreadDirection == 'rtl', bubbleZoomOpenMs: bubbleZoomOpenMs, bubbleZoomCloseMs: bubbleZoomCloseMs)}'
+      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, restZoomPercent: restZoomPercent ?? zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, pageAnimationSpeed: pageAnimationSpeed, followDrag: followDrag, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition, preferences: preferences, hoverKey: hoverKey, cropBorders: cropBorders, scaleType: scaleType, longStripSidePadding: longStripSidePadding, isVerticalPaged: isVerticalPaged, enableMouseTextSelection: enableMouseTextSelection, fitImagesToDisplay: fitImagesToDisplay, spreadGutterPx: spreadGutterPx, bookRtl: spreadDirection == 'rtl', bubbleZoomOpenMs: bubbleZoomOpenMs, bubbleZoomCloseMs: bubbleZoomCloseMs, textStripLayout: textStripLayout, bubbleFocusLabel: bubbleFocusLabel, bubbleFocusResume: bubbleFocusResume, textStripEmptyLabel: textStripEmptyLabel)}'
       '</script>'
       '</body></html>';
 }
@@ -1208,7 +1262,15 @@ String _mangaGestureJs({
   bool bookRtl = true,
   int bubbleZoomOpenMs = 325,
   int bubbleZoomCloseMs = 165,
+  MangaTextStripLayout textStripLayout = MangaTextStripLayout.strip,
+  String bubbleFocusLabel = '',
+  String bubbleFocusResume = '',
+  String textStripEmptyLabel = '',
 }) {
+  final ({double right, double bottom}) reserve = mangaTextStripReserve(
+    preferences,
+    textStripLayout,
+  );
   // 点击翻页热区表 → JS 字面量 `[l,t,w,h,forward]` 的逗号串（外层中括号在模板里
   // 补）。几何与阅读方向镜像都在 Dart 侧算完（[mangaTapZones] 有单测），注入的脚本
   // 只负责遍历命中。webtoon 的 rtl 恒 false（长条漫没有开本方向），热区的
@@ -1281,6 +1343,8 @@ String _mangaGestureJs({
   // innerHeight*(1-ZOOM)/2 —— 画面自己上下跳一截。IS_WEBTOON 必须在这里就绪：
   // 下面的 _recenterPan / _applyCanvas 在文档解析期就会跑。
   var IS_WEBTOON = $isWebtoon;
+  // 文字条 / 台词栏让出的右边 / 底边（px）：页面按扣掉它们后的视口适配。
+  var RESERVE_R = ${_num(reserve.right)}, RESERVE_B = ${_num(reserve.bottom)};
   // 纵向分页（pagedVertical）走 webtoon 的滚动桥，但相邻翻页要平滑滚动。
   var IS_VERTICAL_PAGED = $isVerticalPaged;
   // 折叠屏书本姿态的铰链缝（mangaWindowDocument 的 spreadGutterPx）：有缝时双页之间
@@ -1358,11 +1422,11 @@ String _mangaGestureJs({
     var vw = rotated ? crop.height : crop.width;
     var vh = rotated ? crop.width : crop.height;
     var slots = Number(page.dataset.spreadPages) || 1;
-    var maxW = window.innerWidth / slots;
-    var maxH = window.innerHeight;
+    var maxW = (window.innerWidth - RESERVE_R) / slots;
+    var maxH = window.innerHeight - RESERVE_B;
     var sx = maxW / vw, sy = maxH / vh;
     var fit = Math.min(sx, sy);
-    if (IS_WEBTOON) fit = window.innerWidth * ${1 - longStripSidePadding.clamp(0, 24) * 2 / 100} / vw;
+    if (IS_WEBTOON) fit = (window.innerWidth - RESERVE_R) * ${1 - longStripSidePadding.clamp(0, 24) * 2 / 100} / vw;
     else if ('${scaleType.key}' === 'fit_width') fit = sx;
     else if ('${scaleType.key}' === 'fit_height') fit = sy;
     else if ('${scaleType.key}' === 'original') fit = 1;
@@ -1882,7 +1946,20 @@ String _mangaGestureJs({
     _pageAnim = null;
     if (a) a.finish();
   }
-  // 登记一段时长 ms 的动画；到点或被 finish 时恰好执行一次 done。
+  // 「翻页落定」：没有在播的翻页动画、strip 已停在 CURRENT 上。_onPageSettled(fn)
+  // 此刻已落定就立即执行，否则挂到当前动画收尾（到点 / 被 finish 打断都算）之后。
+  // 关闭动画 / 墨水屏 / 长距离跳页走瞬时落位，没有 _pageAnim，同一条路径立即生效。
+  var _pageSettleWaiters = [];
+  function _onPageSettled(fn){
+    if (_pageAnim) _pageSettleWaiters.push(fn); else fn();
+  }
+  function _flushPageSettled(){
+    if (_pageAnim) return;
+    var waiters = _pageSettleWaiters;
+    _pageSettleWaiters = [];
+    for (var i = 0; i < waiters.length; i++) waiters[i]();
+  }
+  // 登记一段时长 ms 的动画；到点或被 finish 时恰好执行一次 done，随后通知落定。
   function _runPageAnim(ms, done){
     var a = {timer: null, finish: null};
     var ran = false;
@@ -1892,6 +1969,7 @@ String _mangaGestureJs({
       if (a.timer) { clearTimeout(a.timer); a.timer = null; }
       if (_pageAnim === a) _pageAnim = null;
       done();
+      _flushPageSettled();
     };
     a.finish = run;
     a.timer = setTimeout(run, ms + 34);
@@ -2062,7 +2140,13 @@ String _mangaGestureJs({
     out.sort(function(a, c){ return a[0] - c[0]; });
     return out;
   };
+  // 翻页：先落位（瞬时或起动画），再通知气泡模块——它在「翻页落定」时再量新跨页
+  // （_onPageSettled），所以必须排在本次动画登记之后，不能被上一段动画的收尾提前触发。
   window.__mangaApplyTranslate = function(target){
+    _applyTranslate(target);
+    if (typeof _bzAfterTranslate === 'function') _bzAfterTranslate();
+  };
+  function _applyTranslate(target){
     TURN_SERIAL++;
     if (typeof _bzViewportChanged === 'function') _bzViewportChanged();
     // 翻到含失败页的跨页 = 读者要看它：重取一次。
@@ -2117,7 +2201,7 @@ String _mangaGestureJs({
           Math.max(1, window.innerWidth || 1))));
     }
     _slideTurn(target, slideMs);
-  };
+  }
   // 运行中换翻页动画设置（设置面板 / 系统「减弱动态效果」切换）。
   function _rootTransitionDecl(){
     if (PAGE_ANIM === 'slide') {
@@ -3236,6 +3320,8 @@ String _mangaGestureJs({
         pinchGuard = true;
         has = false;
         if (typeof _bzTakePress === 'function') _bzTakePress(null);
+        // 捏合 = 用户自己接管视图：退出逐格读，保留当前缩放。
+        if (typeof _fcExit === 'function') _fcExit(true);
         _cancelLongPress();
         // 跟到一半的页面立即复位（不播回弹），捏合从静止的当前跨页开始。
         _swipeRelease(false, true);
@@ -3674,6 +3760,7 @@ String _mangaGestureJs({
   // 气泡放大模块放在 IIFE 末尾：上面的钩子都用 typeof 守卫调它（函数声明会提升），
   // 只截取局部片段跑的 JS 单测不受影响。
 ${mangaBubbleZoomJs(preferences: preferences, bookRtl: bookRtl, hoverKey: hoverKey, openMs: bubbleZoomOpenMs, closeMs: bubbleZoomCloseMs, easing: kMangaPageTurnEasing)}
+${mangaBubbleFocusJs(preferences: preferences, focusMs: bubbleZoomOpenMs, focusLabel: bubbleFocusLabel, resumeEdge: bubbleFocusResume, stripLayout: textStripLayout, stripEmptyLabel: textStripEmptyLabel)}
 })();
 ''';
 }
