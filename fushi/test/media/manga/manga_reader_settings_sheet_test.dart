@@ -260,7 +260,11 @@ void main() {
         MangaReaderSettingsSheet(
           globalDefaults: const MangaReaderPreferences(),
           // 纵向分页：只对它生效的「显示页间距」也要出现（见下一条测试）。
-          overrides: const <String, Object?>{'mode': 'paged_vertical'},
+          // 台词文字条开着：只在它开着时才有意义的「文字条字号」也要出现。
+          overrides: const <String, Object?>{
+            'mode': 'paged_vertical',
+            'bubbleTextStrip': true,
+          },
           onChanged: (Map<String, Object?> next) async {},
         ),
         width: null,

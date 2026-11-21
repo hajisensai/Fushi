@@ -822,9 +822,12 @@ Route<T> adaptivePageRoute<T>({
   RouteSettings? settings,
   bool fullscreenDialog = false,
 }) {
-  // Apple 设计系统全平台走 Cupertino 推入转场（主题层 pageTransitionsTheme 也已
-  // 全平台 Cupertino，这里直接给 CupertinoPageRoute，不经主题查表）。
-  if (isCupertinoPlatform(context) || isGlassDesign(context)) {
+  // Apple（玻璃）设计系统的 Cupertino 推入转场由主题层 pageTransitionsTheme 给
+  // （[FushiCupertinoPageTransitionsBuilder] 外套页面背景层），这里必须走
+  // MaterialPageRoute 查主题：CupertinoPageRoute 自己画转场、不读主题，推进来的
+  // 页就垫不上用户的背景图片（设置子页始终白底），也不认系统「减弱动态效果」。
+  // 只有隐藏的 [FushiDesignSystem.cupertino] 仍给原生 CupertinoPageRoute。
+  if (isCupertinoPlatform(context)) {
     return CupertinoPageRoute<T>(
       builder: builder,
       settings: settings,

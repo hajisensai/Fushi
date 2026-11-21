@@ -2170,11 +2170,6 @@ class ThemeNotifier extends ChangeNotifier {
     fallback: shellContentLayoutDefault,
   );
 
-  /// 显式选过库页布局（落库值非空，含已删的 `blocks`）；false = 跟着
-  /// [ShellContentLayout.defaultLayout] 走。
-  bool get shellContentLayoutChosen =>
-      (_get('shell_content_layout', defaultValue: '') as String).isNotEmpty;
-
   /// 显式选库页布局（设置页 / 新手引导 / 选择框）。选过就等于回答了「选一种库页
   /// 布局」，待弹的选择框一并记成已处理——否则墨水屏期间留着的待处理状态会在
   /// 用户已经在设置里选过之后再弹一次。
@@ -3283,15 +3278,33 @@ ThemeData buildFushiThemeData({
         // 系统返回键 / 手势照常 pop，也就不存在那套手势计数失配的口子。
         // 系统「减弱动态效果」下 FushiCupertinoPageTransitionsBuilder 退化成原地
         // 线性淡入（无推入视差），边缘侧滑返回仍装着（见该类注释）。
+        //
+        // 同样套 [FushiBackdropPageTransitionsBuilder]：用户自选的背景图片在 Apple
+        // 下也要画（设置页提示「自定义图片所有设计都显示」）。此前这一支没套，
+        // Apple 下整个 app 一页都不垫背景层，选了图也是白底。形状类预设在 Apple
+        // 下由 [LibraryShapeBackdrop.enabledFor] 判为不画，那时背景层不改底色、
+        // 不画装饰，与不套等价。
         : appleDesign
         ? const PageTransitionsTheme(
             builders: <TargetPlatform, PageTransitionsBuilder>{
-              TargetPlatform.android: FushiCupertinoPageTransitionsBuilder(),
-              TargetPlatform.iOS: FushiCupertinoPageTransitionsBuilder(),
-              TargetPlatform.macOS: FushiCupertinoPageTransitionsBuilder(),
-              TargetPlatform.windows: FushiCupertinoPageTransitionsBuilder(),
-              TargetPlatform.linux: FushiCupertinoPageTransitionsBuilder(),
-              TargetPlatform.fuchsia: FushiCupertinoPageTransitionsBuilder(),
+              TargetPlatform.android: FushiBackdropPageTransitionsBuilder(
+                FushiCupertinoPageTransitionsBuilder(),
+              ),
+              TargetPlatform.iOS: FushiBackdropPageTransitionsBuilder(
+                FushiCupertinoPageTransitionsBuilder(),
+              ),
+              TargetPlatform.macOS: FushiBackdropPageTransitionsBuilder(
+                FushiCupertinoPageTransitionsBuilder(),
+              ),
+              TargetPlatform.windows: FushiBackdropPageTransitionsBuilder(
+                FushiCupertinoPageTransitionsBuilder(),
+              ),
+              TargetPlatform.linux: FushiBackdropPageTransitionsBuilder(
+                FushiCupertinoPageTransitionsBuilder(),
+              ),
+              TargetPlatform.fuchsia: FushiBackdropPageTransitionsBuilder(
+                FushiCupertinoPageTransitionsBuilder(),
+              ),
             },
           )
         // Android 侧滑返回改走自带手势记账的转场：Flutter 自带实现把平台事件直接
