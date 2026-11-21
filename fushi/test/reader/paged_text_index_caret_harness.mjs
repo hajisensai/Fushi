@@ -127,6 +127,23 @@ const caretMovesFn = `function caretMoves(fails, total) {
     r.setPagePosition(ctx, Math.round((m.minScroll + (m.maxScroll - m.minScroll) * f) / ctx.pageSize) * ctx.pageSize);
   }
   var k = window.fushiCaret, moves = 0, caretRects = [], refRects = [];
+  // 页上全部落点（含页首 / 页尾行）与整节点逐字扫描逐个一致：只比较移动结果覆盖不到
+  // 首末行，_visibleSpan 的二分边界偏一行（漏掉页首 / 页尾的字）也会被这里抓到。
+  function stopKey(p) { return p ? (p.el ? 'el' : r.countChars(p.node.textContent) + '/' + p.offset + '/' + p.node.textContent.slice(0, 8)) : 'null'; }
+  function stopsAt(f) {
+    goTo(f);
+    var own = k._visibleSpan, got = k._collectVisibleStops(false), first = k._firstVisibleStop();
+    var ref, refFirst;
+    k._visibleSpan = function(node, text) { return {start: 0, end: text.length}; };
+    try { ref = k._collectVisibleStops(false); refFirst = k._firstVisibleStop(); } finally { k._visibleSpan = own; }
+    var same = got.length === ref.length && got.every(function(s, i) {
+      return s.node === ref[i].node && s.offset === ref[i].offset && s.el === ref[i].el;
+    });
+    if (!ref.length) fails.push('no visible stops at ' + f);
+    if (!same) fails.push('visible stops at ' + f + ': ' + got.length + ' vs whole-node ' + ref.length);
+    if (!first || !refFirst || first.node !== refFirst.node || first.offset !== refFirst.offset) fails.push('first visible stop at ' + f + ': ' + stopKey(first) + ' vs ' + stopKey(refFirst));
+  }
+  [0, 0.4, 1].forEach(stopsAt);
   goTo(0.4);
   k.enter();
   var dirs = r.isVertical() ? ['left', 'right'] : ['down', 'up'];
