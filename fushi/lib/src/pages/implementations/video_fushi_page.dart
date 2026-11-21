@@ -224,6 +224,7 @@ import 'package:fushi/src/media/audiobook/audiobook_auto_transcribe.dart'
 import 'package:fushi/src/media/video/subtitle_embedded_fonts.dart';
 import 'package:fushi/src/media/video/subtitle_retiming_service.dart';
 import 'package:fushi/src/media/video/video_display_claim.dart';
+import 'package:fushi/src/media/video/remote_session_reload.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/video/video_study_clock_cover.dart';
@@ -6186,6 +6187,43 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (info == null || releaseClient is! RemoteVideoPlaybackRelease) return;
     if (!_remotePlaybackReleaseGenerations.add(generation)) return;
     unawaited(releaseClient.releaseRemoteVideoPlayback(info.id));
+  }
+
+  /// 在第 [generation] 次远端播放会话里把当前集重载到 [positionMs]：换线路 / 手动
+  /// 换档 / 自适应换档 / 换版本共用（HBK-AUDIT-005）。次序与每个异步边界的会话复核
+  /// 见 [reloadRemoteEpisodeInSession]；[generation] 由调用方在**发起时**（它自己的
+  /// 第一个 await 之前）取。会话的 info / client / 集号在这里一次取定，只在会话仍是
+  /// [generation] 时才被用到。返回本程是否收尾成功（false = 页面没了或已被换集接管）。
+  Future<bool> _reloadRemoteEpisodeInSession({
+    required int generation,
+    required int positionMs,
+  }) {
+    final RemoteVideoInfo? info = _effectiveRemoteInfo;
+    final RemoteVideoClient? client = _effectiveRemoteClient;
+    final int episode = _currentEpisode < 0 ? 0 : _currentEpisode;
+    return reloadRemoteEpisodeInSession(
+      generation: generation,
+      currentGeneration: () => _remotePlaybackGeneration,
+      isMounted: () => mounted,
+      release: () => _releaseRemotePlayback(
+        info: info,
+        client: client,
+        generation: generation,
+      ),
+      reportStopped: () => _reportRemotePlaybackStopped(
+        info: info,
+        client: client,
+        positionMs: positionMs,
+        generation: generation,
+      ),
+      load: () => _loadRemoteEpisode(
+        episode,
+        // 必须是 explicitCue，否则 near-end 判据会把「快看完时换档 / 换线路」直接
+        // 归零回片头。
+        startIntent: EpisodeStartIntent.explicitCue,
+        initialPositionMsOverride: positionMs,
+      ),
+    );
   }
 
   /// Flush the local position and then report the remote session stop.

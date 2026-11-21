@@ -42,8 +42,9 @@ extension _VideoEpisode on _VideoFushiPageState {
 
   /// 流断了之后换线路重载（[_handlePlaybackCompleted]）：[client] 改走新线路成功时
   /// 与换档同一条路收尾旧会话、按 [positionMs] 重新取流（取流地址带新 host），弹
-  /// OSD；没有别的可达线路 / 当前线路其实还通时按「播完」处理。等待期间用户换了集
-  /// （播放代际变了）或退出页面就什么都不做。
+  /// OSD；没有别的可达线路 / 当前线路其实还通时按「播完」处理。整程绑定发起时的
+  /// 播放会话（[_reloadRemoteEpisodeInSession]）：问线路、停止上报、重新取流任一
+  /// 等待期间用户换了集（播放代际变了）或退出页面，就什么都不做（HBK-AUDIT-005）。
   Future<void> _recoverInterruptedStream(
     RemoteVideoRouteFailover client,
     int positionMs,
@@ -63,24 +64,12 @@ extension _VideoEpisode on _VideoFushiPageState {
       _finishPlaybackCompleted(positionMs);
       return;
     }
-    _releaseRemotePlayback(
-      info: _effectiveRemoteInfo,
-      client: _effectiveRemoteClient,
-      generation: _remotePlaybackGeneration,
-    );
-    await _reportRemotePlaybackStopped(
-      info: _effectiveRemoteInfo,
-      client: _effectiveRemoteClient,
+    if (!await _reloadRemoteEpisodeInSession(
+      generation: generation,
       positionMs: positionMs,
-      generation: _remotePlaybackGeneration,
-    );
-    if (!mounted) return;
-    await _loadRemoteEpisode(
-      _currentEpisode < 0 ? 0 : _currentEpisode,
-      startIntent: EpisodeStartIntent.explicitCue,
-      initialPositionMsOverride: positionMs,
-    );
-    if (!mounted) return;
+    )) {
+      return;
+    }
     _showOsd(t.video_media_server_route_switched, icon: Icons.swap_horiz);
   }
 
