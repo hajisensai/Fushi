@@ -38,15 +38,25 @@ if (-not $Force) {
 }
 
 # 依赖解析（pub get + 补丁 + strings.g.dart）；依赖没变时很快
-& powershell -ExecutionPolicy Bypass -File (Join-Path $wt 'tool\setup_worktree.ps1') | Out-Null
-if ($LASTEXITCODE -ne 0) { Write-Log 'setup_worktree failed'; exit 1 }
+# setup_worktree.ps1 处理的是「当前目录所在的 worktree」，必须先进 $wt
+Push-Location $wt
+try {
+    & cmd.exe /d /c "powershell -NoProfile -ExecutionPolicy Bypass -File tool\setup_worktree.ps1 >> `"$log`" 2>&1"
+    $code = $LASTEXITCODE
+} finally { Pop-Location }
+if ($code -ne 0 -or -not (Test-Path (Join-Path $wt '.dart_tool\package_config.json'))) {
+    Write-Log "setup_worktree failed (exit $code) or workspace still unresolved"; exit 1
+}
 
 $dart = if ($env:FUSHI_DART) { $env:FUSHI_DART } else { 'D:/flutter_sdk/flutter_3.47.6/bin/cache/dart-sdk/bin/dart.exe' }
-$flags = @('--repo', $wt)
-if (-not $Force) { $flags += '--if-changed' }
+$flags = "--repo `"$wt`""
+if (-not $Force) { $flags += ' --if-changed' }
+# 经 cmd 重定向：PS 5.1 里对原生命令用 2>&1，会把 stderr 每行（heavy 的排队提示）包成
+# NativeCommandError，配合 ErrorActionPreference=Stop 直接中断脚本。
+$cmdLine = "`"$dart`" tool/heavy.dart -- `"$py`" `"$build`" $flags >> `"$log`" 2>&1"
 Push-Location (Join-Path $wt 'fushi')
 try {
-    & $dart tool/heavy.dart -- $py $build @flags 2>&1 | Out-File -Append -Encoding utf8 $log
+    & cmd.exe /d /c $cmdLine
     $code = $LASTEXITCODE
 } finally { Pop-Location }
 Write-Log "build exit $code at $tip"

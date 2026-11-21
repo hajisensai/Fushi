@@ -92,6 +92,10 @@ class Loader:
 
 
 def index_dart(repo: Path, loader: Loader) -> None:
+    # 依赖没解析时 analyzer 照样「解析成功」，只是跨包引用全丢——宁可失败也不出一份残缺索引
+    for need in (repo / '.dart_tool' / 'package_config.json', repo / 'fushi' / 'lib' / 'i18n' / 'strings.g.dart'):
+        if not need.exists():
+            raise SystemExit(f'build.py: 缺 {need}，先在 {repo} 跑 tool/setup_worktree.ps1')
     tool: Path = HERE  # 用本脚本旁边的索引器，被索引的 checkout 可以还没有 tool/symindex
     if not (tool / '.dart_tool' / 'package_config.json').exists():
         subprocess.run([DART, 'pub', 'get'], cwd=tool, check=True, stdout=subprocess.DEVNULL)
