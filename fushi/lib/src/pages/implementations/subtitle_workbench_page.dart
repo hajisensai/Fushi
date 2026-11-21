@@ -12,6 +12,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:fushi_engine/media/collections/collection_season_groups.dart';
+import 'package:fushi_engine/media/collections/collection_section_loader.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
@@ -137,6 +138,7 @@ class SubtitleCollectionSpec {
     required this.collection,
     required this.members,
     this.initialSeason,
+    this.sectionKeys = const <String, String>{},
   });
 
   final MediaCollectionRow collection;
@@ -148,14 +150,40 @@ class SubtitleCollectionSpec {
   /// [subtitleCollectionSeasonOfMember]（与面板分季同口径）算，不各自另解文件名。
   final int? initialSeason;
 
+  /// 成员的生效分栏（`book_uid → 键`，入口经 `loadCollectionSections` 解析：手动
+  /// 分栏 / 手动季集指定优先，拍板台 iR6ccUys9H）；缺的成员按文件名派生。
+  final Map<String, String> sectionKeys;
+
   /// 语言记忆键（合集名小写 trim，与批量对话框约定一致）。
   String get seriesKey => collection.name.trim().toLowerCase();
 }
 
+/// 「为合集获取字幕」入口用：按 [subtitleCollectionDerivedSeasonKeyOf] 派生，叠上
+/// 手动分栏 / 手动季集指定，得到喂给 [SubtitleCollectionPanel.sectionKeys] 的表。
+Future<Map<String, String>> loadCollectionSubtitleSectionKeys(
+  FushiDatabase database,
+  List<VideoBookRow> members,
+) async {
+  final Map<String, CollectionSectionResolution> resolved =
+      await loadCollectionSections(database, <String, String>{
+        for (final VideoBookRow member in members)
+          member.bookUid: subtitleCollectionDerivedSeasonKeyOf(member),
+      });
+  return <String, String>{
+    for (final MapEntry<String, CollectionSectionResolution> entry
+        in resolved.entries)
+      entry.key: entry.value.groupKey,
+  };
+}
+
 /// 合集成员所在季的季号，与面板分季（[subtitleCollectionSeasonKeyOf]）同口径：没写
 /// 季号的集算第 1 季，PV·特典为 null。入口据此算 [SubtitleCollectionSpec.initialSeason]。
-int? subtitleCollectionSeasonOfMember(VideoBookRow member) =>
-    seasonNumberOfGroupKey(subtitleCollectionSeasonKeyOf(member));
+int? subtitleCollectionSeasonOfMember(
+  VideoBookRow member, {
+  Map<String, String> sectionKeys = const <String, String>{},
+}) => seasonNumberOfGroupKey(
+  subtitleCollectionSeasonKeyOf(member, sectionKeys: sectionKeys),
+);
 
 /// 工作台依赖的宿主能力（全部可注入，便于 widget 测试不碰 AppModel）。
 abstract interface class SubtitleWorkbenchHost {
@@ -374,6 +402,7 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
       onSubtitlePersisted: widget.onCollectionSubtitlePersisted,
       subtitleAligner: host.subtitleAligner,
       initialSeason: spec.initialSeason,
+      sectionKeys: spec.sectionKeys,
     );
   }
 

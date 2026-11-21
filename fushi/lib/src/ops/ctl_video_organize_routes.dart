@@ -1,6 +1,8 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/collections/collection_season_groups.dart';
+import 'package:fushi_engine/media/collections/collection_section_loader.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
     show VideoMetadataLookup;
 import 'package:fushi_engine/media/video/metadata/video_metadata_work_loader.dart'
@@ -10,6 +12,8 @@ import 'package:fushi_engine/media/video/organize/video_filename_organize_servic
 import 'package:fushi_engine/media/video/organize/video_library_listing.dart';
 import 'package:fushi_engine/media/video/organize/video_placement_audit.dart';
 import 'package:fushi_engine/media/video/organize/video_work_regroup.dart';
+import 'package:fushi_engine/media/video/video_filename_parser.dart'
+    show VideoNameInfo, parseVideoPath;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/models/module_id.dart';
@@ -36,6 +40,11 @@ import 'package:fushi/src/ops/op_context.dart';
 /// * `POST regroup`            —— 把文件从一部作品里拆出来 / 并进另一部 / 另组一部
 ///   （[regroupVideoFiles]）。**作品单元由合集成员关系决定，不由磁盘位置决定**：
 ///   电影被挂成某部剧的第 0 季，修法是把它拆出来再按电影识别，不是搬文件。
+/// * `GET  works/:id/sections` —— 合集详情页的分栏（第 N 季 / PV·特典）：每个文件
+///   在哪一栏、为什么（手动分栏 / 手动季集 / 文件名）、绑到哪一集，外加可疑点
+///   （刮削说是特别篇却在正片栏、同一栏里集号撞车）。拍板台 iR6ccUys9H。
+/// * `POST sections`           —— 把一批文件钉到某一季 / PV·特典，或改回自动
+///   （`video_collection_section_overrides`，跟着文件走，合并 / 重新刮削都保留）。
 ///
 /// 发给调用方的路径一律是**相对来源库根**的（库根之外的只给文件名）；撤销要用的
 /// 绝对路径不进应答，留在本进程的 [takeVideoOrganizeUndo] 里按回执号取。
@@ -79,6 +88,8 @@ List<CtlRoute> buildVideoOrganizeCtlRoutesFor({
     CtlRoute.get('$kVideoOrganizeCtlRoot/audit', ctl.audit),
     CtlRoute.get('$kVideoOrganizeCtlRoot/files', ctl.libraryFiles),
     CtlRoute.post('$kVideoOrganizeCtlRoot/regroup', ctl.regroup),
+    CtlRoute.get('$kVideoOrganizeCtlRoot/works/:id/sections', ctl.sections),
+    CtlRoute.post('$kVideoOrganizeCtlRoot/sections', ctl.setSections),
   ];
 }
 
@@ -245,15 +256,17 @@ Future<bool> restoreVideoEpisodePin(
   required Object? applied,
   required Object? snapshot,
 }) async {
-  final VideoEpisodeBindingOverrideRow? now = await db
-      .getVideoEpisodeBindingOverride(bookUid);
-  final (int, int)? current = now == null
-      ? null
-      : (now.seasonNumber, now.episodeNumber);
   final (int, int)? written = _pairOf(applied);
-  if (current != written) return false;
   final Map<Object?, Object?> before = snapshot is Map ? snapshot : const {};
-  await db.transaction(() async {
+  // 读当前指定、比较、写回同一个事务（HBK-AUDIT-029）：事务外先读再写时，两步
+  // 之间别处提交的新指定会被这份旧快照无声盖掉。
+  final bool applies = await db.transaction(() async {
+    final VideoEpisodeBindingOverrideRow? pinned = await db
+        .getVideoEpisodeBindingOverride(bookUid);
+    final (int, int)? current = pinned == null
+        ? null
+        : (pinned.seasonNumber, pinned.episodeNumber);
+    if (current != written) return false;
     final (int, int)? previous = _pairOf(before['override']);
     if (previous == null) {
       await db.clearVideoEpisodeBindingOverride(bookUid);
@@ -265,7 +278,7 @@ Future<bool> restoreVideoEpisodePin(
       );
     }
     final Object? rows = before['episodes'];
-    if (rows is! List) return;
+    if (rows is! List) return true;
     final int now = DateTime.now().millisecondsSinceEpoch;
     for (final Object? row in rows) {
       if (row is! Map || row['id'] is! num) continue;
@@ -283,7 +296,9 @@ Future<bool> restoreVideoEpisodePin(
         ),
       );
     }
+    return true;
   });
+  if (!applies) return false;
   db.notifyVideoLibraryChanged();
   return true;
 }
@@ -292,6 +307,50 @@ Future<bool> restoreVideoEpisodePin(
     raw is Map && raw['season'] is num && raw['episode'] is num
     ? ((raw['season'] as num).toInt(), (raw['episode'] as num).toInt())
     : null;
+
+/// 把 `POST sections` 的撤销载荷写回库：每个文件的手动分栏恢复成执行前（没有就
+/// 清掉）。之后又被改过的文件（当前手动分栏已不是 [applied]）保留现状。
+///
+/// 每个文件用一条条件写（[FushiDatabase.compareAndSetVideoCollectionSectionOverride]）
+/// 比较并写入，不在事务外先读快照：读与写之间提交的新值不会被撤销无声盖掉
+/// （HBK-AUDIT-029）。
+Future<({int reverted, int superseded})> restoreVideoCollectionSections(
+  FushiDatabase db, {
+  required Object? applied,
+  required Object? previous,
+}) async {
+  final Map<Object?, Object?> before = previous is Map ? previous : const {};
+  final List<String> uids = <String>[
+    for (final Object? uid in before.keys)
+      if (uid is String) uid,
+  ];
+  if (uids.isEmpty) return (reverted: 0, superseded: 0);
+  final String? written = applied is String ? applied : null;
+  int reverted = 0;
+  int superseded = 0;
+  await db.transaction(() async {
+    for (final String uid in uids) {
+      final Object? old = before[uid];
+      final bool hit = await db.compareAndSetVideoCollectionSectionOverride(
+        uid,
+        expected: written,
+        replacement: old is String && isValidCollectionSectionKey(old)
+            ? old
+            : null,
+      );
+      hit ? reverted++ : superseded++;
+    }
+  });
+  if (reverted > 0) db.notifyVideoLibraryChanged();
+  return (reverted: reverted, superseded: superseded);
+}
+
+/// 分栏来源的线上名（`GET works/:id/sections` 的 `files[].source`）。
+String _sectionSourceName(CollectionSectionSource source) => switch (source) {
+  CollectionSectionSource.manual => 'manual',
+  CollectionSectionSource.pinnedEpisode => 'pinnedEpisode',
+  CollectionSectionSource.filename => 'filename',
+};
 
 /// `video.library.files` 一页的行数：默认 / 上限。
 const int kVideoLibraryFilesDefaultLimit = 300;
@@ -451,6 +510,222 @@ class _VideoOrganizeCtl {
       'S${season.toString().padLeft(2, '0')}'
       'E${episode.toString().padLeft(2, '0')}';
 
+  // ── 合集分栏 ────────────────────────────────────────────────────────────
+
+  /// `video sections <workId>`：合集详情页上每个文件在哪一栏（与界面同一个
+  /// [loadCollectionSections]），分栏从哪来、绑到哪一集，以及值得核对的可疑点。只读。
+  Future<Object?> sections(CtlCall call) async {
+    _requireVideo();
+    final CtlVideoWorkId id = CtlVideoWorkId.parse(call.params['id']!);
+    final List<VideoBookRow> members = await _membersOf(id);
+    final VideoMetadataWorkRow? work = switch (id) {
+      // 与合集详情页同一个规范作品解析（那一页的分栏就是按它挑出本地特典的）。
+      CtlVideoCollectionWorkId(:final int collectionId) =>
+        await _db.resolveVideoMetadataWorkForCollection(collectionId),
+      CtlVideoBookWorkId() => await _workOf(id),
+    };
+    final List<String> roots = await _libraryRoots();
+    // 刮削认成本地特典（NCOP / 映像特典）的文件：详情页不进分栏，单列「特典」排。
+    final Set<String> railExtras = <String>{
+      if (work != null)
+        for (final VideoMetadataExtraRow extra
+            in await _db.getVideoMetadataExtras(work.id))
+          if (extra.bookUid != null) extra.bookUid!,
+    };
+    final List<VideoBookRow> listed = <VideoBookRow>[
+      for (final VideoBookRow row in members)
+        if (!railExtras.contains(row.bookUid)) row,
+    ];
+    final Map<String, CollectionSectionResolution> resolved =
+        await loadCollectionSections(_db, <String, String>{
+          for (final VideoBookRow row in listed)
+            row.bookUid: collectionGroupKeyForFilename(row.videoPath),
+        });
+    final Map<String, VideoEpisodeBindingOverrideRow> pins = await _db
+        .getVideoEpisodeBindingOverrides(
+          members.map((VideoBookRow row) => row.bookUid),
+        );
+    final Map<int, int> seasonNumberById = <int, int>{
+      for (final VideoMetadataSeasonRow season
+          in await _db.getAllVideoMetadataSeasons())
+        season.id: season.seasonNumber,
+    };
+    final List<Map<String, Object?>> files = <Map<String, Object?>>[];
+    final List<Map<String, Object?>> warnings = <Map<String, Object?>>[];
+    // (分栏, 文件名集号) → 文件：同一栏里集号撞车多半是短篇 / 特典混进了正片。
+    final Map<(String, int), List<String>> byEpisode =
+        <(String, int), List<String>>{};
+    for (final VideoBookRow row in listed) {
+      final CollectionSectionResolution r = resolved[row.bookUid]!;
+      final List<VideoMetadataEpisodeRow> bound = await _db
+          .getVideoMetadataEpisodesByBook(row.bookUid);
+      final List<int> boundSeasons = <int>[
+        for (final VideoMetadataEpisodeRow e in bound)
+          if (seasonNumberById[e.seasonId] case final int n) n,
+      ];
+      final VideoNameInfo info = parseVideoPath(row.videoPath);
+      final VideoEpisodeBindingOverrideRow? pin = pins[row.bookUid];
+      final int? section = seasonNumberOfGroupKey(r.groupKey);
+      files.add(<String, Object?>{
+        'uid': row.bookUid,
+        'title': row.title,
+        'path': _relative(row.videoPath, roots),
+        'section': r.groupKey,
+        'source': _sectionSourceName(r.source),
+        if (r.derivedKey != r.groupKey) 'derivedSection': r.derivedKey,
+        if (info.season != null) 'fileSeason': info.season,
+        if (info.episode != null) 'fileEpisode': info.episode,
+        'boundTo': <String>[
+          for (final VideoMetadataEpisodeRow e in bound)
+            if (seasonNumberById[e.seasonId] case final int n)
+              _slot(n, e.episodeNumber),
+        ],
+        if (bound.firstOrNull?.anidbMatchRating case final String rating)
+          'match': rating,
+        if (pin != null)
+          'pinned': <String, Object?>{
+            'season': pin.seasonNumber,
+            'episode': pin.episodeNumber,
+          },
+      });
+      if (section != null &&
+          r.source == CollectionSectionSource.filename &&
+          boundSeasons.isNotEmpty &&
+          boundSeasons.every((int n) => n == 0)) {
+        warnings.add(<String, Object?>{
+          'uid': row.bookUid,
+          'kind': 'bound_to_special',
+          'message':
+              'Scraped as a special (season 0) but shown under season '
+              '$section: move it with section=extras, or pin the right episode.',
+        });
+      }
+      if (section != null && info.episode != null) {
+        (byEpisode[(r.groupKey, info.episode!)] ??= <String>[]).add(
+          row.bookUid,
+        );
+      }
+    }
+    for (final MapEntry<(String, int), List<String>> entry
+        in byEpisode.entries) {
+      if (entry.value.length < 2) continue;
+      warnings.add(<String, Object?>{
+        'uids': entry.value,
+        'kind': 'duplicate_episode_number',
+        'message':
+            '${entry.value.length} files in ${entry.key.$1} are all episode '
+            '${entry.key.$2} by file name: shorts / specials are probably '
+            'mixed into the main episodes.',
+      });
+    }
+    final List<CollectionSeasonSection<Map<String, Object?>>> sections =
+        sortCollectionSeasonSections<Map<String, Object?>>(
+          buildCollectionSeasonSections<Map<String, Object?>>(
+            members: files,
+            keyOf: (Map<String, Object?> f) => f['section'] as String?,
+          ),
+        );
+    return <String, Object?>{
+      'id': id.stableKey,
+      // 详情页只有 ≥2 栏才出季 tab；1 栏时整页就是一张平铺列表。
+      'tabs': sections.length >= 2,
+      'sections': <Map<String, Object?>>[
+        for (final CollectionSeasonSection<Map<String, Object?>> s in sections)
+          <String, Object?>{
+            'key': s.groupKey,
+            if (seasonNumberOfGroupKey(s.groupKey) case final int n)
+              'season': n,
+            'files': <Object?>[
+              for (final Map<String, Object?> f in s.items) f['uid'],
+            ],
+          },
+      ],
+      'files': files,
+      'scrapedExtras': <Map<String, Object?>>[
+        for (final VideoBookRow row in members)
+          if (railExtras.contains(row.bookUid))
+            <String, Object?>{
+              'uid': row.bookUid,
+              'title': row.title,
+              'path': _relative(row.videoPath, roots),
+            },
+      ],
+      'warnings': warnings,
+    };
+  }
+
+  /// `video section <bookUid...> --extras | --season N | --auto`：把一批文件钉到
+  /// 某一季 / PV·特典栏，或清掉手动分栏（回到手动季集指定 → 文件名）。与集卡菜单
+  /// 「移到分栏…」同一张表。
+  Future<Object?> setSections(CtlCall call) async {
+    _requireVideo();
+    final List<String> uids = call.stringList('items').toSet().toList();
+    if (uids.isEmpty) {
+      throw const CtlFailure.badRequest('需要 items（视频文件 uid 列表）');
+    }
+    final String section = call.requireString('section');
+    final String? key;
+    switch (section) {
+      case 'auto':
+        key = null;
+      case 'extras':
+        key = kCollectionExtrasGroupKey;
+      case 'season':
+        final int? season = call.optInt('season');
+        if (season == null || season < 1) {
+          throw const CtlFailure.badRequest(
+            'section=season 需要 season（≥1 的整数）；特别篇用 section=extras',
+          );
+        }
+        key = 's$season';
+      default:
+        throw CtlFailure.badRequest(
+          'section 只能是 season / extras / auto：$section',
+        );
+    }
+    final List<VideoBookRow> rows = <VideoBookRow>[];
+    final List<String> missing = <String>[];
+    for (final String uid in uids) {
+      final VideoBookRow? row = await _db.getVideoBookByBookUid(uid);
+      row == null ? missing.add(uid) : rows.add(row);
+    }
+    if (missing.isNotEmpty) {
+      throw CtlFailure.notFound('没有这些视频：${missing.join(', ')}');
+    }
+    // 撤销快照与写入同一事务：快照就是这次写入实际覆盖掉的值。
+    final String? sectionKey = key;
+    final Map<String, String> before = await _db.transaction(() async {
+      final Map<String, String> snapshot = await _db
+          .getVideoCollectionSectionOverrides(uids);
+      if (sectionKey == null) {
+        await _db.clearVideoCollectionSectionOverrides(uids);
+      } else {
+        await _db.setVideoCollectionSectionOverrides(uids, sectionKey);
+      }
+      return snapshot;
+    });
+    _db.notifyVideoLibraryChanged();
+    final Map<String, CollectionSectionResolution> after =
+        await loadCollectionSections(_db, <String, String>{
+          for (final VideoBookRow row in rows)
+            row.bookUid: collectionGroupKeyForFilename(row.videoPath),
+        });
+    return <String, Object?>{
+      'applied': key,
+      'items': <Map<String, Object?>>[
+        for (final VideoBookRow row in rows)
+          <String, Object?>{
+            'uid': row.bookUid,
+            'section': after[row.bookUid]!.groupKey,
+            'source': _sectionSourceName(after[row.bookUid]!.source),
+          },
+      ],
+      'previous': <String, Object?>{
+        for (final String uid in uids) uid: before[uid],
+      },
+    };
+  }
+
   // ── 手动指定季集 ────────────────────────────────────────────────────────
 
   /// 文件所在的作品行：已绑到分集 → 那一集的作品；否则按它所在的合集找。
@@ -488,81 +763,87 @@ class _VideoOrganizeCtl {
     if (await _db.getVideoBookByBookUid(bookUid) == null) {
       throw CtlFailure.notFound('没有这个视频：$bookUid');
     }
-    final VideoEpisodeBindingOverrideRow? existing = await _db
-        .getVideoEpisodeBindingOverride(bookUid);
-    final List<VideoMetadataEpisodeRow> bound = await _db
-        .getVideoMetadataEpisodesByBook(bookUid);
-    final Map<String, Object?> previous = <String, Object?>{
-      'override': existing == null
-          ? null
-          : <String, Object?>{
-              'season': existing.seasonNumber,
-              'episode': existing.episodeNumber,
-            },
-      'episodes': <Map<String, Object?>>[
-        for (final VideoMetadataEpisodeRow row in bound)
-          _episodeBindingJson(row),
-      ],
-    };
-    if (call.optBool('clear') == true) {
-      if (existing == null) {
-        throw const CtlFailure.conflict('这个文件没有手动指定的季集');
-      }
-      await _db.clearVideoEpisodeBindingOverride(bookUid);
-      _db.notifyVideoLibraryChanged();
-      return <String, Object?>{
-        'uid': bookUid,
-        'cleared': true,
-        'applied': null,
-        'previous': previous,
-      };
-    }
+    final bool clear = call.optBool('clear') == true;
     final int? season = call.optInt('season');
     final int? episode = call.optInt('episode');
-    if (season == null || episode == null || season < 0 || episode < 0) {
-      throw const CtlFailure.badRequest(
-        '需要 season 与 episode（非负整数），或 clear=true',
-      );
-    }
-    final VideoMetadataWorkRow? work = await _workOfFile(bookUid, bound);
-    if (work == null) {
-      throw const CtlFailure.conflict('这个文件所在的作品还没有刮出季集，先识别作品（video identify）');
-    }
-    final VideoMetadataSeasonRow? targetSeason =
-        (await _db.getVideoMetadataSeasons(work.id))
-            .where((VideoMetadataSeasonRow s) => s.seasonNumber == season)
-            .firstOrNull;
-    final VideoMetadataEpisodeRow? target = targetSeason == null
-        ? null
-        : (await _db.getVideoMetadataEpisodes(targetSeason.id))
-              .where((VideoMetadataEpisodeRow e) => e.episodeNumber == episode)
+    // 撤销快照（当前指定 + 改绑会动的分集行）、占用检查与写入同一个事务：快照就是
+    // 这次写入实际覆盖掉的值。事务外先读时，读与写之间别处提交的指定 / 绑定会被记成
+    // 「执行前」，撤销时把它们一并抹掉（与 HBK-AUDIT-029 同类，BUG-5143）。
+    final Map<String, Object?> result = await _db.transaction(() async {
+      final VideoEpisodeBindingOverrideRow? existing = await _db
+          .getVideoEpisodeBindingOverride(bookUid);
+      final List<VideoMetadataEpisodeRow> bound = await _db
+          .getVideoMetadataEpisodesByBook(bookUid);
+      final List<Map<String, Object?>> episodes = <Map<String, Object?>>[
+        for (final VideoMetadataEpisodeRow row in bound)
+          _episodeBindingJson(row),
+      ];
+      final Map<String, Object?> previous = <String, Object?>{
+        'override': existing == null
+            ? null
+            : <String, Object?>{
+                'season': existing.seasonNumber,
+                'episode': existing.episodeNumber,
+              },
+        'episodes': episodes,
+      };
+      if (clear) {
+        if (existing == null) {
+          throw const CtlFailure.conflict('这个文件没有手动指定的季集');
+        }
+        await _db.clearVideoEpisodeBindingOverride(bookUid);
+        return <String, Object?>{
+          'uid': bookUid,
+          'cleared': true,
+          'applied': null,
+          'previous': previous,
+        };
+      }
+      if (season == null || episode == null || season < 0 || episode < 0) {
+        throw const CtlFailure.badRequest(
+          '需要 season 与 episode（非负整数），或 clear=true',
+        );
+      }
+      final VideoMetadataWorkRow? work = await _workOfFile(bookUid, bound);
+      if (work == null) {
+        throw const CtlFailure.conflict(
+          '这个文件所在的作品还没有刮出季集，先识别作品（video identify）',
+        );
+      }
+      final VideoMetadataSeasonRow? targetSeason =
+          (await _db.getVideoMetadataSeasons(work.id))
+              .where((VideoMetadataSeasonRow s) => s.seasonNumber == season)
               .firstOrNull;
-    if (target == null) {
-      throw CtlFailure.notFound(
-        '《${work.title}》没有 ${_slot(season, episode)} 这一集（video detail --all 看全部集）',
-      );
-    }
-    // 目标集原先的绑定也要进快照：改绑会把它指到这个文件上。
-    if (!bound.any((VideoMetadataEpisodeRow row) => row.id == target.id)) {
-      (previous['episodes']! as List<Map<String, Object?>>).add(
-        _episodeBindingJson(target),
-      );
-    }
-    // ifFree=true（库管家自动路径必带）：目标集已绑着另一个本机文件就拒绝，不悄悄
-    // 把那个文件挤成未绑定。
-    final String? occupant = target.bookUid;
-    if (call.optBool('ifFree') == true &&
-        occupant != null &&
-        occupant != bookUid &&
-        await _db.getVideoBookByBookUid(occupant) != null) {
-      throw CtlFailure(
-        409,
-        kVideoEpisodeOccupiedCode,
-        '${_slot(season, episode)} 已绑着另一个本机文件（$occupant），没有改绑',
-      );
-    }
-    // 指定与改绑同一个事务：不留「有指定、没改绑」的半成品。
-    await _db.transaction(() async {
+      final VideoMetadataEpisodeRow? target = targetSeason == null
+          ? null
+          : (await _db.getVideoMetadataEpisodes(targetSeason.id))
+                .where(
+                  (VideoMetadataEpisodeRow e) => e.episodeNumber == episode,
+                )
+                .firstOrNull;
+      if (target == null) {
+        throw CtlFailure.notFound(
+          '《${work.title}》没有 ${_slot(season, episode)} 这一集（video detail --all 看全部集）',
+        );
+      }
+      // 目标集原先的绑定也要进快照：改绑会把它指到这个文件上。
+      if (!bound.any((VideoMetadataEpisodeRow row) => row.id == target.id)) {
+        episodes.add(_episodeBindingJson(target));
+      }
+      // ifFree=true（库管家自动路径必带）：目标集已绑着另一个本机文件就拒绝，不悄悄
+      // 把那个文件挤成未绑定。
+      final String? occupant = target.bookUid;
+      if (call.optBool('ifFree') == true &&
+          occupant != null &&
+          occupant != bookUid &&
+          await _db.getVideoBookByBookUid(occupant) != null) {
+        throw CtlFailure(
+          409,
+          kVideoEpisodeOccupiedCode,
+          '${_slot(season, episode)} 已绑着另一个本机文件（$occupant），没有改绑',
+        );
+      }
+      // 指定与改绑同一个事务：不留「有指定、没改绑」的半成品。
       await _db.setVideoEpisodeBindingOverride(
         bookUid,
         seasonNumber: season,
@@ -574,15 +855,16 @@ class _VideoOrganizeCtl {
         seasonNumber: season,
         episodeNumber: episode,
       );
+      return <String, Object?>{
+        'uid': bookUid,
+        'work': work.title,
+        'episodeTitle': target.title,
+        'applied': <String, Object?>{'season': season, 'episode': episode},
+        'previous': previous,
+      };
     });
     _db.notifyVideoLibraryChanged();
-    return <String, Object?>{
-      'uid': bookUid,
-      'work': work.title,
-      'episodeTitle': target.title,
-      'applied': <String, Object?>{'season': season, 'episode': episode},
-      'previous': previous,
-    };
+    return result;
   }
 
   // ── 摆放审计 / 拆并作品 ─────────────────────────────────────────────────

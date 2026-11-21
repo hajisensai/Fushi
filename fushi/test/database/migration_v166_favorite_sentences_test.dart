@@ -80,7 +80,7 @@ void main() {
 
     final FushiDatabase db = FushiDatabase.atFile(path, isMainProcess: false);
     addTearDown(db.close);
-    expect(db.schemaVersion, 168);
+    expect(db.schemaVersion, 169);
     final List<FavoriteSentence> all = await FavoriteSentenceRepository(
       db,
     ).getAll();

@@ -2291,6 +2291,31 @@ class VideoEpisodeBindingOverrides extends Table {
   Set<Column> get primaryKey => <Column>{bookUid};
 }
 
+// ── video_collection_section_overrides ──────────────────────────────
+/// v167：用户指定的「文件 → 合集分栏」（拍板台 iR6ccUys9H）。合集详情页 / 播放器
+/// 剧集面板 / 「为合集获取字幕」的季分栏默认按文件名现场派生（见引擎
+/// `collection_season_groups.dart`）；文件名推断不了或推断错（`01`–`08` 的短篇其实
+/// 是特典、NCOP 文件名里带集号）时，用户或 AI 在这里钉死它属于哪一栏。
+///
+/// **稀疏覆盖**：没有行 = 照旧派生（存量零迁移，派生语义原样保留）。身份是文件
+/// （`book_uid`），不是合集成员行：合并合集、拆并作品、重新刮削都不碰这张表，指定
+/// 跟着文件走。删视频随 FK 一起清；改回「自动」即删行。随备份「视频」类别走
+/// （同 `video_episode_binding_overrides`）。
+@DataClassName('VideoCollectionSectionOverrideRow')
+class VideoCollectionSectionOverrides extends Table {
+  TextColumn get bookUid =>
+      text().references(VideoBooks, #bookUid, onDelete: KeyAction.cascade)();
+
+  /// 分栏键，与引擎派生键同一值域：`s<N>`（N ≥ 1，第 N 季）或 `extras`（PV·特典）。
+  /// 写入口只接受这两种形状（引擎 `isValidCollectionSectionKey`）；读到别的形状按
+  /// 「没有指定」处理。
+  TextColumn get sectionKey => text()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{bookUid};
+}
+
 // ── video_metadata_people / characters ──────────────────────────────
 // TEXT 主键由抓取层生成（首个可用 provider + 外部 id；无 id 时使用规范化内容 hash），
 // 让一次事务可在插入 credit 前确定引用，并允许多个 provider identity 汇聚到同一人。

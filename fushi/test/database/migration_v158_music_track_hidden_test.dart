@@ -33,7 +33,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 168);
+    expect(migrated.schemaVersion, 169);
     final MusicTrackRow row = (await migrated.getMusicTrack('t1'))!;
     expect(row.hiddenAt, isNull);
     expect(row.deletedAt, isNull);
@@ -41,7 +41,7 @@ void main() {
     await migrated.close();
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
-    expect(probe.select('PRAGMA user_version').first.values.first, 168);
+    expect(probe.select('PRAGMA user_version').first.values.first, 169);
     expect(
       probe
           .select("SELECT hidden_at FROM music_tracks WHERE track_uid = 't1'")
