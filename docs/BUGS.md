@@ -55,6 +55,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5089](bugs/BUG-5089-lnreader-missing-image-path-traversal.md) | ✅ | ✅ | lnreader-missing-image-path-traversal |
+> 共 4412 条。点号进各自文件。
 > 共 4414 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
@@ -66,6 +67,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5095](bugs/BUG-5095-text-to-epub-implied-body.md) | ✅ | ✅ | text-to-epub-implied-body |
+| [BUG-5098](bugs/BUG-5098-video-fingerprint-store-quadratic-rewrite.md) | ✅ | ✅ | video-fingerprint-store-quadratic-rewrite |
 | [BUG-5088](bugs/BUG-5088-readintosync-blocks-gc-safepoint.md) | ✅ | ✅ | readintosync-blocks-gc-safepoint |
 | [BUG-5087](bugs/BUG-5087-sync-video-sweep-tests-teardown-temp-locked.md) | ✅ | ✅ | sync-video-sweep-tests-teardown-temp-locked |
 | [BUG-5086](bugs/BUG-5086-dist-test-verdict-coverage-shared-log.md) | ✅ | ✅ | 「dist 请求 7 个测试文件只跑 2 个仍判 PASSED」是并发代理共用日志名读串了；dist_test 判绿改为逐个核对请求的 suite |
