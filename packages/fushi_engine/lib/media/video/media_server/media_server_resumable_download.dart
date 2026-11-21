@@ -10,9 +10,13 @@
 ///   拿它当键既续不上、又会把令牌落进侧车。侧车只存键与响应验证器
 ///   （ETag / Last-Modified / 总长），**绝不存 URL**；错误文本一律经
 ///   [redactCredentialsInText] 脱敏。
+/// - 只在有**强验证器**（强 ETag / Last-Modified，见 [ResumeValidator]）时续传：
+///   总长相同不是版本身份（BUG-5117 / HBK-AUDIT-033），没有强验证器的 `.part`
+///   直接从 0 重下。
 /// - 续传时带 `If-Range`；服务器（或不支持 Range 的兼容层）回 200 时
-///   [ResumableDownloader] 丢弃旧 `.part` 从 0 写；回了 206 但验证器 / 总长对不上
-///   （无视 If-Range 的服务器）就作废这条响应、不带 Range 重开，不把两份字节拼成坏片。
+///   [ResumableDownloader] 丢弃旧 `.part` 从 0 写；回了 206 但没回显 If-Range 用的
+///   验证器、或验证器 / 总长对不上（无视 If-Range 的服务器）就作废这条响应、不带
+///   Range 重开，不把两份字节拼成坏片。
 /// - 只下原始文件：调用方只给直出 / 原文件端点；转码流每次字节都不同，不续传。
 library;
 
@@ -26,6 +30,7 @@ import 'package:meta/meta.dart';
 import 'package:fushi_engine/media/metadata/credential_redaction.dart'
     show redactCredentialsInText;
 import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
+import 'package:fushi_engine/utils/misc/resume_validator.dart';
 
 /// 发请求到拿到响应头的上限（与 JellyfinApi / PlexApi 的小请求超时同口径）。
 const Duration kMediaServerDownloadFirstByteTimeout = Duration(seconds: 15);
@@ -51,11 +56,15 @@ class MediaServerResumeSidecar {
   final String? lastModified;
   final int? totalBytes;
 
-  /// 至少有一个可比对的验证器：凭它才能确认续上的是同一份字节。
-  bool get hasValidator =>
-      (etag?.isNotEmpty ?? false) ||
-      (lastModified?.isNotEmpty ?? false) ||
-      totalBytes != null;
+  ResumeValidator get validator => ResumeValidator(
+    etag: etag,
+    lastModified: lastModified,
+    totalBytes: totalBytes,
+  );
+
+  /// 有强验证器（强 ETag / Last-Modified）：凭它才能确认续上的是同一版本。只有
+  /// 总长 / 只有弱 ETag 不算（BUG-5117）。
+  bool get hasStrongValidator => validator.hasStrongValidator;
 
   String encode() => jsonEncode(<String, Object?>{
     'key': resumeKey,
@@ -87,37 +96,10 @@ class MediaServerResumeSidecar {
     }
   }
 
-  /// 续传响应（206）是否仍是侧车记下的那份字节：两边都有的字段逐一比对，任一不同
-  /// 即不是；一个可比的字段都没有也算不是（宁可重下，不拼坏片）。
-  bool sameStreamAs(ResumableDownloadResponse response) {
-    int compared = 0;
-    final String? etagNow = response.header(HttpHeaders.etagHeader);
-    if (etag != null && etagNow != null && etagNow.isNotEmpty) {
-      compared++;
-      if (etagNow != etag) return false;
-    }
-    final String? modifiedNow = response.header(HttpHeaders.lastModifiedHeader);
-    if (lastModified != null && modifiedNow != null && modifiedNow.isNotEmpty) {
-      compared++;
-      if (modifiedNow != lastModified) return false;
-    }
-    final int? totalNow = _contentRangeTotal(
-      response.header(HttpHeaders.contentRangeHeader),
-    );
-    if (totalBytes != null && totalNow != null) {
-      compared++;
-      if (totalNow != totalBytes) return false;
-    }
-    return compared > 0;
-  }
-
-  static int? _contentRangeTotal(String? value) {
-    if (value == null) return null;
-    final RegExpMatch? match = RegExp(
-      r'^bytes\s+\d+-\d+/(\d+)$',
-    ).firstMatch(value.trim());
-    return match == null ? null : int.tryParse(match.group(1)!);
-  }
+  /// 续传响应（206）是否证明仍是侧车记下的那个版本：If-Range 用的强验证器必须
+  /// 回显且相等，其余共有字段任一不同即不是；缺证据算不是（宁可重下，不拼坏片）。
+  bool sameStreamAs(ResumableDownloadResponse response) =>
+      validator.provesSameRepresentation(response);
 }
 
 /// 下载 [url] 到 [dest]，中断（暂停 / 断网 / 空闲超时 / 进程被杀）后留 `.part` 与
@@ -147,11 +129,12 @@ Future<void> downloadMediaServerFileResumable({
 
   MediaServerResumeSidecar? stored = await _readSidecar(sidecarFile);
   if (stored != null &&
-      (stored.resumeKey != resumeKey || !stored.hasValidator)) {
+      (stored.resumeKey != resumeKey || !stored.hasStrongValidator)) {
     stored = null;
   }
   if (stored == null) {
-    // 没有可比对的身份（别的条目留下的 / 旧版本留下的 / 上次一个验证器都没给）：
+    // 没有可证明同一版本的身份（别的条目留下的 / 旧版本留下的 / 上次只给了总长或
+    // 弱 ETag）：
     // 宁可从 0 重下，也不冒把两份字节拼成坏片的险。
     await _deleteQuietly(part);
     await _deleteQuietly(sidecarFile);
@@ -244,12 +227,7 @@ Future<void> downloadMediaServerFileResumable({
     url: url,
     destination: dest,
     partFile: part,
-    resumeState: resumeFrom == null
-        ? null
-        : ResumableDownloadState(
-            etag: resumeFrom.etag,
-            lastModified: resumeFrom.lastModified,
-          ),
+    resumeState: resumeFrom?.validator.ifRangeState,
     bodyTimeout: stallTimeout,
     open: (Uri _, Map<String, String> rangeHeaders) async {
       final ResumableDownloadResponse response = await send(rangeHeaders);
@@ -259,7 +237,8 @@ Future<void> downloadMediaServerFileResumable({
       if (!resumed || resumeFrom == null || resumeFrom.sameStreamAs(response)) {
         return response;
       }
-      // 服务器无视 If-Range 照回 206，但验证器 / 总长已经变了：作废这条响应，不带
+      // 服务器无视 If-Range 照回 206，且没回显 If-Range 的验证器或验证器 / 总长
+      // 已经变了：作废这条响应，不带
       // Range 重开——下载器见到 200 就丢弃旧 part 从 0 写。
       await _abandon(response);
       return send(const <String, String>{});
@@ -313,7 +292,7 @@ Future<MediaServerResumeSidecar?> _readSidecar(File file) async {
 /// 能力（下次没有侧车 → 从 0），不影响本次下载。
 void _writeSidecarSync(File file, MediaServerResumeSidecar sidecar) {
   try {
-    if (!sidecar.hasValidator) {
+    if (!sidecar.hasStrongValidator) {
       if (file.existsSync()) file.deleteSync();
       return;
     }
