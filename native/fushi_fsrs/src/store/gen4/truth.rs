@@ -2074,15 +2074,33 @@ impl<'c> Truth<'c> {
         col: i64,
         device: &Id,
         upto: u64,
+        f: impl FnMut(u64, &HeritageStamp) -> Result<(), String>,
+    ) -> Result<(), String> {
+        self.for_each_stamp_in(col, device, 1, upto, f)
+    }
+
+    /// [Truth::for_each_stamp] 只走 seq 在 `[from, upto]` 里的那一段（按主键区间，不碰段外的行）：派生层从旧闭包的
+    /// 检查点接着并（`derive.rs` [CLOSURE_STEP](super::derive::CLOSURE_STEP)）。
+    pub(crate) fn for_each_stamp_in(
+        &self,
+        col: i64,
+        device: &Id,
+        from: u64,
+        upto: u64,
         mut f: impl FnMut(u64, &HeritageStamp) -> Result<(), String>,
     ) -> Result<(), String> {
         let Some(dev) = self.dev_find(col, device)? else {
             return Ok(());
         };
-        if upto == 0 {
+        let from = from.max(1);
+        if upto < from {
             return Ok(());
         }
-        let (lo, top) = k_range(dev);
+        let (_, top) = k_range(dev);
+        if from > k_seq(top) {
+            return Ok(());
+        }
+        let lo = opk(dev, from)?;
         let hi = if upto >= k_seq(top) {
             top
         } else {
