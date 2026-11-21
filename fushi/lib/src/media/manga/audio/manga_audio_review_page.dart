@@ -86,6 +86,13 @@ MangaScriptLine? mangaLineOfBlock(
   return null;
 }
 
+/// 存完 [lineId] 后该停的位置：它在 [queue] 里的下一句；它是最后一句（或已不在
+/// 队列里）时为 null。
+int? mangaReviewNextIndex(List<String> queue, String lineId) {
+  final int at = queue.indexOf(lineId);
+  return at >= 0 && at < queue.length - 1 ? at + 1 : null;
+}
+
 /// 原页坐标（OCR 像素）里命中 [point] 的块下标；块重叠时取 zIndex 高的。
 int? mangaBlockAt(MokuroImage image, Offset point) {
   int? hit;
@@ -151,6 +158,9 @@ class _MangaAudioReviewPageState extends State<MangaAudioReviewPage> {
   int _index = 0;
 
   bool get _busy => _task != null;
+
+  /// 正在存刚改的那句；期间不接受新的提交（见 [_commit]）。
+  bool _saving = false;
 
   @override
   void initState() {
@@ -254,20 +264,30 @@ class _MangaAudioReviewPageState extends State<MangaAudioReviewPage> {
     });
   }
 
-  /// 写入说话人（或原样确认）并记为手改，存盘后跳到下一句。
+  /// 写入说话人（或原样确认）并记为手改，存盘后跳到这句的下一句。
+  ///
+  /// 一次只存一句（[_saving]）：存盘是异步的，连点两下会让两次提交都落在同一句上、
+  /// 各自 `+1` 而跳过下一句，并让两次存盘并发写同一个临时文件。下一句按刚存的这句
+  /// 在队列里的位置算，不依赖存盘期间 [_index] 有没有被翻动。
   Future<void> _commit(String speaker) async {
     final MangaAudioAnnotateSession? s = _session;
     final MangaScriptLine? line = _current;
-    if (s == null || line == null || _busy) return;
+    if (s == null || line == null || _busy || _saving) return;
+    setState(() => _saving = true);
     s.script.replaceLine(
       line.lineId,
       (MangaScriptLine l) =>
           l.copyWith(speaker: speaker, source: TtsCastSource.user),
     );
-    await s.saveAll();
+    try {
+      await s.saveAll();
+    } finally {
+      _saving = false;
+    }
     if (!mounted) return;
-    if (_index < _queue.length - 1) {
-      setState(() => _index++);
+    final int? next = mangaReviewNextIndex(_queue, line.lineId);
+    if (next != null) {
+      setState(() => _index = next);
     } else {
       setState(() {});
       FushiToast.show(
@@ -283,7 +303,7 @@ class _MangaAudioReviewPageState extends State<MangaAudioReviewPage> {
 
   Future<void> _newSpeaker() async {
     final MangaAudioAnnotateSession? s = _session;
-    if (s == null || _busy) return;
+    if (s == null || _busy || _saving) return;
     final String? typed = await showFushiTextInputDialog(
       context: context,
       title: t.audiobook_studio_cast_new_speaker,
@@ -341,6 +361,7 @@ class _MangaAudioReviewPageState extends State<MangaAudioReviewPage> {
                 pendingOnly: _pendingOnly,
                 pendingCount: _pendingCount,
                 locked: _busy,
+                saving: _saving,
                 onFilter: _setFilter,
                 onPrevious: () => _go(-1),
                 onNext: () => _go(1),
@@ -377,6 +398,7 @@ class MangaAudioReviewView extends StatelessWidget {
     this.pageFile,
     this.pageImage,
     this.locked = false,
+    this.saving = false,
     super.key,
   });
 
@@ -401,6 +423,11 @@ class MangaAudioReviewView extends StatelessWidget {
 
   /// 本卷正在标注：只能看，不能改。
   final bool locked;
+
+  /// 正在存上一次改动：改说话人 / 确认 / 新角色暂不可点，存完自动跳下一句。
+  final bool saving;
+
+  bool get _readOnly => locked || saving;
 
   final ValueChanged<bool> onFilter;
   final VoidCallback onPrevious;
@@ -544,7 +571,7 @@ class MangaAudioReviewView extends StatelessWidget {
                 key: const ValueKey<String>('$keyPrefix-new-speaker'),
                 icon: FushiIcons.personAdd,
                 label: t.audiobook_studio_cast_new_speaker,
-                onPressed: onNewSpeaker,
+                onPressed: saving ? null : onNewSpeaker,
               ),
           ],
         ),
@@ -559,7 +586,7 @@ class MangaAudioReviewView extends StatelessWidget {
           key: const ValueKey<String>('$keyPrefix-confirm'),
           icon: const Icon(FushiIcons.check),
           label: Text(t.manga_audio_review_confirm),
-          onPressed: locked ? null : () => onSpeaker(l.speaker),
+          onPressed: _readOnly ? null : () => onSpeaker(l.speaker),
         ),
       ],
     ];
@@ -587,7 +614,7 @@ class MangaAudioReviewView extends StatelessWidget {
         key: ValueKey<String>('$keyPrefix-speaker-$value'),
         label: Text(label),
         selected: line.speaker == value,
-        onSelected: locked ? null : (_) => onSpeaker(value),
+        onSelected: _readOnly ? null : (_) => onSpeaker(value),
       );
 }
 

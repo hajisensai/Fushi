@@ -88,6 +88,14 @@ void main() {
       expect(mangaReviewStartIndex(script, q, 9), 0);
     });
 
+    test('存完一句停在它在队列里的下一句；最后一句 / 不在队列里时为 null', () {
+      const List<String> q = <String>['p0b0', 'p1b0', 'p2b0'];
+      expect(mangaReviewNextIndex(q, 'p0b0'), 1);
+      expect(mangaReviewNextIndex(q, 'p1b0'), 2);
+      expect(mangaReviewNextIndex(q, 'p2b0'), isNull);
+      expect(mangaReviewNextIndex(q, 'p9b0'), isNull);
+    });
+
     test('块 → 句；原页坐标命中块时重叠取 zIndex 高的', () {
       expect(mangaLineOfBlock(script, 0, 1)?.speaker, 'そよ');
       expect(mangaLineOfBlock(script, 0, 2), isNull);
@@ -103,6 +111,7 @@ void main() {
     required bool glass,
     MangaScriptLine? line,
     bool locked = false,
+    bool saving = false,
     Size size = const Size(1280, 800),
   }) async {
     tester.view.physicalSize = size;
@@ -132,6 +141,7 @@ void main() {
               pendingOnly: true,
               pendingCount: 2,
               locked: locked,
+              saving: saving,
               onFilter: (bool v) => calls.add('filter:$v'),
               onPrevious: () => calls.add('prev'),
               onNext: () => calls.add('next'),
@@ -220,6 +230,21 @@ void main() {
       );
       await _tap(tester, find.byKey(const ValueKey<String>('$_p-speaker-爱音')));
       await _tap(tester, find.byKey(const ValueKey<String>('$_p-confirm')));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(calls, isEmpty);
+    });
+
+    testWidgets('$design：上一句还在存盘时不接受新的提交', (WidgetTester tester) async {
+      final List<String> calls = await pump(
+        tester,
+        glass: glass,
+        saving: true,
+        line: _line(0, <int>[1], speaker: 'そよ', confidence: 0.2),
+      );
+      expect(find.byKey(const ValueKey<String>('$_p-locked')), findsNothing);
+      await _tap(tester, find.byKey(const ValueKey<String>('$_p-speaker-爱音')));
+      await _tap(tester, find.byKey(const ValueKey<String>('$_p-confirm')));
+      await _tap(tester, find.byKey(const ValueKey<String>('$_p-new-speaker')));
       await tester.pump(const Duration(milliseconds: 500));
       expect(calls, isEmpty);
     });
