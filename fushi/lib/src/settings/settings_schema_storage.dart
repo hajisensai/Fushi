@@ -83,7 +83,7 @@ SettingsDestination buildStorageDestination() {
             onTap: (SettingsContext c) =>
                 confirmAndDeleteSrsRetainedCopy(c.context),
           ),
-          // BUG-5065：保留副本在、但已不是可读的文件（内核 `gen4_retained_state` 报 `unreadable`）。退回旧版本的路没了，
+          // BUG-5079：保留副本在、但已不是可读的文件（内核 `gen4_retained_state` 报 `unreadable`）。退回旧版本的路没了，
           // 新代库不受影响；内核不删它（不是封存的保留副本），所以只是状态行、没有动作。只在这种情况下出现。
           SettingsStatusItem(
             id: 'storage.srs_retained_copy_unreadable',

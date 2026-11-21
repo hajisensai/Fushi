@@ -50,7 +50,7 @@ void main() {
       () => SrsRetainedCopyState.fromJson(const <String, Object?>{'copy': '?'}),
       throwsA(isA<SrsCoreException>()),
     );
-    // BUG-5065：坏了的保留副本有自己的线上名，不再混进 other。
+    // BUG-5079：坏了的保留副本有自己的线上名，不再混进 other。
     final SrsRetainedCopyState bad = SrsRetainedCopyState.fromJson(
       const <String, Object?>{'copy': 'unreadable'},
     );

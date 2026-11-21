@@ -293,7 +293,7 @@ fn a_fresh_install_has_nothing_to_delete() {
     );
 }
 
-/// BUG-5065：迁移后保留副本 `srs.db` 变成了不是 SQLite 的文件。开库照常（不挡新代库、不动它），状态命令报
+/// BUG-5079：迁移后保留副本 `srs.db` 变成了不是 SQLite 的文件。开库照常（不挡新代库、不动它），状态命令报
 /// `copy: "unreadable"` 让设置页 / ctl 提示用户（以前只记在开库结果里、没人读，报成 `other` 后 UI 直接不显示）；
 /// 立即删除拒绝（`reason: "unreadable"`）且文件原样不动；到期了也不自动删。换回封存的副本后恢复 `sealed`。
 #[test]

@@ -1,4 +1,4 @@
-## BUG-5065 · SRS 保留副本 srs.db 坏了（不是 SQLite 文件）用户毫无提示
+## BUG-5079 · SRS 保留副本 srs.db 坏了（不是 SQLite 文件）用户毫无提示
 - **报告**：2026-11-21（来源：SRS 新代存储交接文档 `docs/specs/2026-11-15-srs-gen4-handoff.md` N2 条「`kernel.rs` `retained_copy_unreadable` 从没被读（G7-5 状态枚举的缺口，应按 bug 登记）」）
 - **真实性**：✅ 真 bug。迁移后原位封存的旧代库 `srs.db`（保留副本，用途：退回旧版本的后路）变成不是 SQLite 的文件时：
   - 开库检测到了（`native/fushi_fsrs/src/store/gen4/files.rs` `finish_seal` → `Retained::Unreadable`），存进 `G4Core::retained_copy_unreadable`（`native/fushi_fsrs/src/store/gen4/kernel.rs:243`，赋值 `:310`），但 FFI 与 Dart 都不读，只有测试断言；

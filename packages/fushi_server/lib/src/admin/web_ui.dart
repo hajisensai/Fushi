@@ -986,7 +986,7 @@ function renderSrsMigration(g){
 }
 // 旧版本保留副本（D32，engine srs_ctl_routes.dart 的 retained 路由）：迁移时封存在原位的协议 3 srs.db。只在还是封存的
 // 副本时显示；删除不可撤销（之后不能退回旧版本，清除过的原文随之消失），一定先确认、带 confirm: true 才发。副本坏了
-// （copy = unreadable，BUG-5065）只提示、不给删除。
+// （copy = unreadable，BUG-5079）只提示、不给删除。
 function renderSrsRetained(r){
   const box = $('#srs-retained');
   if (r && r.copy === 'unreadable') { box.innerHTML = `<div class="kv-grid" style="margin-top:12px">${kvHtml([[T('旧版本保留副本'), T('已损坏（不是可读的 SQLite 文件），不能再用它退回旧版本；当前复习库不受影响')]])}</div>`; return; }

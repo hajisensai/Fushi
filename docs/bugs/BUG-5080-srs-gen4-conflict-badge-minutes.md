@@ -1,4 +1,4 @@
-## BUG-5075 · SRS 牌组列表冲突角标的 `conflict_edits` 在迁移库上跑几分钟
+## BUG-5080 · SRS 牌组列表冲突角标的 `conflict_edits` 在迁移库上跑几分钟
 - **报告**：2026-11-21（用户转来的排查报告：`3.4.0-debug.30040` Windows，656 MB `srs4.db` 上单次 `core:read:conflict_edits` 356,645 ms、返回 44,245 行 / 19.8 MB，Dart 过滤后 0 条）
 - **真实性**：✅ 真 bug（本机真库副本形态不同，复现为 9.3–17.0 s / 42 行）：
   - `native/fushi_fsrs/src/store/gen4/cmd/reads.rs` `conflict_edits` 对每个候选实体调 `class_rows` 拼出全部键（含笔记正文 `f/*` 与合成 tags 行）后才 `rules.tracks` 过滤——协议 3 `store/reads.rs:390-398` 在 SQL 阶段下推，BUG-3947 的同一教训。

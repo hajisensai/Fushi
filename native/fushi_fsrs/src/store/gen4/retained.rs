@@ -119,7 +119,7 @@ pub enum CopyState {
     Sealed { bytes: u64 },
     /// 在，但不是 SQLite 文件（打开 / 读它报 `SQLITE_NOTADB`，与 `files::finish_seal` 的 `Retained::Unreadable` 同一判据）：
     /// 保留副本已经坏了，退回旧版本这条路没了（旧版本同样拒绝打开它）。新代库不受影响；不认作保留副本、不删，只报给
-    /// 设置页 / ctl 提示用户（BUG-5065）。
+    /// 设置页 / ctl 提示用户（BUG-5079）。
     Unreadable,
     /// 别的（没封存的协议 3 库、不是 SQLite 的文件、读不了……）：不是这里管的保留副本。
     Other,
