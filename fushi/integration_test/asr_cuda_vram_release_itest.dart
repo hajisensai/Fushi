@@ -1,9 +1,16 @@
-/// CUDA 转录后台 isolate 退出 / 显存不跨轮叠加的真机探针（BUG-3997）。
+/// CUDA 转录后台 isolate 退出 / 显存不跨轮叠加 / 空闲后归还 CUDA 上下文的真机探针
+/// （BUG-3997、BUG-5078）。
 ///
-/// 报告的现象：用过一次 GPU（CUDA）转录后进程显存常驻约 4.4 GB——**报告了，未复现**
-/// （实测显存在会话关闭时回落，收尾后约 180 MiB 残留应是 CUDA 主上下文，不随轮次增长）。
+/// BUG-3997：用过一次 GPU（CUDA）转录后进程显存常驻约 4.4 GB——**报告了，未复现**
+/// （实测显存在会话关闭时回落，收尾后约 180 MiB 残留是 CUDA 主上下文，不随轮次增长）。
 /// 实测确认的是另一件事：每转录一次漏一个不退出的后台 isolate（上游已改为
 /// `Isolate.exit` 收尾）。
+///
+/// BUG-5078：那约 180 MiB 显存连同约 620 MiB 私有提交其实就是 CUDA 主上下文——
+/// cudart 一直 retain 它，进程不退就不还（只卸插件库什么也回不来）。插件现在在最后
+/// 一个 CUDA 会话关闭、空闲 `FLUTTER_ONNXRUNTIME_CUDA_IDLE_MS` 后卸库并重置主上下文；
+/// 下一个 CUDA 会话再装回来。本探针把延时设短，钉住：空闲后显存回到注册后的基线，
+/// 释放之后再转录一轮照常落在 CUDA 上，并再次归还。
 ///
 /// 本测试走生产同一条路：`AsrIsolateTranscription.spawn` + 宿主真 bootstrap
 /// （挂 `BackgroundIsolateBinaryMessenger`，method channel 插件后端），CUDA 插件
@@ -20,6 +27,12 @@
 ///   ASR_AUDIO=<音频>（建议 ≥5 分钟真实朗读，显存池才长得起来）
 ///   ASR_LANG=ja|en（缺省 ja）
 ///   ASR_MATERIAL_MS=<素材毫秒数>（可选；≥15 分钟触发静态桶全预热）
+///   ASR_FP16=0（可选；关 fp16 编码器。缺省与生产同为 fp16）
+///   ASR_CANCEL_AFTER_MS=<毫秒>（可选；跑到这么久时按「制作有声书」校对的取消
+///     路径请求暂停：收到 paused 即跳出事件流，再 dispose。要比转完整段短，
+///     素材用 ≥1 小时的才落得到转录中途）
+///   FLUTTER_ONNXRUNTIME_CUDA_IDLE_MS=<毫秒>（必填，≤ 10000；插件空闲释放的延时，
+///     只能走进程环境变量）
 library;
 
 import 'dart:async';
@@ -42,6 +55,10 @@ String _param(String name, {String defaultValue = ''}) {
     'ASR_AUDIO' => const String.fromEnvironment('ASR_AUDIO'),
     'ASR_LANG' => const String.fromEnvironment('ASR_LANG'),
     'ASR_MATERIAL_MS' => const String.fromEnvironment('ASR_MATERIAL_MS'),
+    'ASR_FP16' => const String.fromEnvironment('ASR_FP16'),
+    'ASR_CANCEL_AFTER_MS' => const String.fromEnvironment(
+      'ASR_CANCEL_AFTER_MS',
+    ),
     _ => '',
   };
   if (fromDefine.isNotEmpty) return fromDefine;
@@ -77,6 +94,38 @@ Future<String> _gpuUsedMiB() async {
       '--format=csv,noheader,nounits',
     ]);
     return '${r.stdout}'.trim();
+  } on Object catch (error) {
+    return 'n/a ($error)';
+  }
+}
+
+/// 本进程私有提交（MiB）。只作旁证打印。
+Future<String> _privateMiB() async {
+  try {
+    final ProcessResult r = await Process.run('powershell', <String>[
+      '-NoProfile',
+      '-Command',
+      '[int]((Get-Process -Id $pid).PrivateMemorySize64 / 1MB)',
+    ]);
+    return '${r.stdout}'.trim();
+  } on Object catch (error) {
+    return 'n/a ($error)';
+  }
+}
+
+/// 本进程还挂着的 CUDA 相关模块（名字 + 映像 MiB）。只作旁证打印。
+Future<String> _cudaModules() async {
+  try {
+    final ProcessResult r = await Process.run('powershell', <String>[
+      '-NoProfile',
+      '-Command',
+      // 本进程 pid 由 Dart 插值进去；PowerShell 里的 `$pid` 是它自己。
+      '(Get-Process -Id $pid).Modules | '
+          r'Where-Object { $_.ModuleName -match '
+          r"'^(cu|nv|onnxruntime_providers)' } | ForEach-Object { "
+          r"'{0}:{1}' -f $_.ModuleName, [int]($_.ModuleMemorySize / 1MB) }",
+    ]);
+    return '${r.stdout}'.trim().split(RegExp(r'\s+')).join(' ');
   } on Object catch (error) {
     return 'n/a ($error)';
   }
@@ -128,6 +177,7 @@ Future<({int afterBytes, int peakBytes, bool isolateExited})> _round({
         pack: store.pack,
         language: language,
         variant: AsrEncoderVariant.fp32,
+        useFp16Encoder: _param('ASR_FP16') != '0',
         preference: AsrAccelerationPreference.cuda,
         audioPaths: <String>[audio],
         jobDirPath: jobDir.path,
@@ -157,15 +207,35 @@ Future<({int afterBytes, int peakBytes, bool isolateExited})> _round({
       OnnxExecutionProvider.cuda,
       reason: '本探针只量 CUDA；没落到 CUDA 说明注册或环境不对',
     );
-    AsrTranscribeFinishedEvent? finished;
-    await for (final AsrTranscribeEvent e in running.run()) {
-      if (e is AsrTranscribeFinishedEvent) finished = e;
+    final int? cancelAfterMs = int.tryParse(_param('ASR_CANCEL_AFTER_MS'));
+    Timer? cancelTimer;
+    if (cancelAfterMs != null) {
+      cancelTimer = Timer(Duration(milliseconds: cancelAfterMs), () {
+        _log('round $index cancel at ${sw.elapsedMilliseconds}ms');
+        running.requestPause();
+      });
     }
-    await running.dispose();
-    expect(finished, isNotNull, reason: '第 $index 轮没有正常跑完');
+    AsrTranscribeFinishedEvent? finished;
+    bool paused = false;
+    try {
+      await for (final AsrTranscribeEvent e in running.run()) {
+        if (e is AsrTranscribeFinishedEvent) finished = e;
+        // 与 tts_render_runner `_transcribe` 同形：paused 一到就跳出事件流。
+        if (e is AsrTranscribePausedEvent) {
+          paused = true;
+          break;
+        }
+      }
+    } finally {
+      cancelTimer?.cancel();
+      await running.dispose();
+    }
+    if (cancelAfterMs == null) {
+      expect(finished, isNotNull, reason: '第 $index 轮没有正常跑完');
+    }
     _log(
-      'round $index finished: cues=${finished!.result.cueCount} '
-      'wall=${sw.elapsedMilliseconds}ms',
+      'round $index ended: cues=${finished?.result.cueCount} paused=$paused '
+      'wall=${sw.elapsedMilliseconds}ms private=${await _privateMiB()} MiB',
     );
     isolateExited = await exited.future
         .then((_) => true)
@@ -210,8 +280,10 @@ void main() {
       );
       _log('probe=${await probeCuda()}');
       final int beforeRegister = await _processVramBytes();
+      _log('private before register=${await _privateMiB()} MiB');
       _log('register=${await registerCudaRuntime(cudaDir)}');
       final int baseline = await _processVramBytes();
+      _log('private after register=${await _privateMiB()} MiB');
       _log(
         'vram before register=${beforeRegister ~/ _mib} MiB '
         'baseline=${baseline ~/ _mib} MiB gpu=${await _gpuUsedMiB()} MiB',
@@ -239,13 +311,60 @@ void main() {
         'round 2 peak=${second.peakBytes ~/ _mib} MiB '
         'after=${second.afterBytes ~/ _mib} MiB gpu=${await _gpuUsedMiB()} MiB',
       );
+      _log('modules before idle release: ${await _cudaModules()}');
+
+      final int idleMs =
+          int.tryParse(
+            Platform.environment['FLUTTER_ONNXRUNTIME_CUDA_IDLE_MS'] ?? '',
+          ) ??
+          -1;
+      expect(
+        idleMs > 0 && idleMs <= 10000,
+        isTrue,
+        reason: '需要 FLUTTER_ONNXRUNTIME_CUDA_IDLE_MS=1..10000（插件空闲释放延时）',
+      );
+      final Duration settle = Duration(milliseconds: idleMs + 5000);
+
+      // 空闲释放：最后一个 CUDA 会话关掉、过了延时，插件自己卸库 + 重置主上下文。
+      await Future<void>.delayed(settle);
+      final int idle2 = await _processVramBytes();
+      _log(
+        'idle after round 2: vram=${idle2 ~/ _mib} MiB '
+        'private=${await _privateMiB()} MiB gpu=${await _gpuUsedMiB()} MiB',
+      );
+      _log('modules after idle: ${await _cudaModules()}');
+
+      // 释放之后：下一个 CUDA 会话把库装回来，照常跑在 CUDA 上，空闲后再归还。
+      final ({int afterBytes, int peakBytes, bool isolateExited}) third =
+          await _round(
+            index: 3,
+            store: store,
+            language: language,
+            audio: audio,
+          );
+      _log(
+        'round 3 peak=${third.peakBytes ~/ _mib} MiB '
+        'after=${third.afterBytes ~/ _mib} MiB private=${await _privateMiB()} MiB',
+      );
+      await Future<void>.delayed(settle);
+      final int idle3 = await _processVramBytes();
+      _log(
+        'idle after round 3: vram=${idle3 ~/ _mib} MiB '
+        'private=${await _privateMiB()} MiB gpu=${await _gpuUsedMiB()} MiB',
+      );
+      // 已经释放过：手动再调一次是空操作，不报错。
+      final Map<String, dynamic>? again = await OnnxRuntime()
+          .releaseCudaRuntime();
+      _log('release again=$again');
 
       // 先量完再断言：任何一条红都要带着完整的显存数字。
       expect(first.isolateExited, isTrue, reason: '第 1 轮转录 isolate 没有退出');
       expect(second.isolateExited, isTrue, reason: '第 2 轮转录 isolate 没有退出');
+      expect(third.isolateExited, isTrue, reason: '第 3 轮转录 isolate 没有退出');
       // 转录期间显存确实涨上去过，否则这个探针什么也没量到。
       expect(first.peakBytes - baseline, greaterThan(512 * _mib));
-      // 收尾后回到基线附近（留 256 MiB 给驱动 / 上下文的零头）。
+      expect(third.peakBytes - baseline, greaterThan(512 * _mib));
+      // 会话关闭当下回到基线附近（留 256 MiB 给尚未释放的 CUDA 主上下文）。
       expect(first.afterBytes - baseline, lessThan(256 * _mib));
       expect(second.afterBytes - baseline, lessThan(256 * _mib));
       // 两轮之间不叠加。
@@ -253,6 +372,19 @@ void main() {
         (second.afterBytes - first.afterBytes).abs(),
         lessThan(128 * _mib),
       );
+      // 空闲释放后回到注册前的基线（主上下文已重置；留 32 MiB 驱动零头）。
+      expect(
+        idle2 - baseline,
+        lessThan(32 * _mib),
+        reason: '空闲 ${settle.inSeconds}s 后 CUDA 主上下文没有归还',
+      );
+      expect(
+        idle3 - baseline,
+        lessThan(32 * _mib),
+        reason: '释放后重新装载的那一轮，空闲后没有再次归还',
+      );
+      expect(again?['released'], isFalse);
+      expect(again?['openCudaSessions'], 0);
     });
   }, timeout: const Timeout(Duration(minutes: 20)));
 }

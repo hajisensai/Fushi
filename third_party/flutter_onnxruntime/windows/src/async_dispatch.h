@@ -16,10 +16,13 @@
 //   * PlatformThreadDispatcher: a message-only window created on the platform
 //     thread; `Post` marshals a callback back onto that thread so MethodResult
 //     replies are always completed where Flutter expects them.
+//   * DelayedTask: one callback that fires once after a delay, re-armable and
+//     cancellable (the CUDA idle release, see cuda_provider.h).
 
 #ifndef FLUTTER_ONNXRUNTIME_ASYNC_DISPATCH_H_
 #define FLUTTER_ONNXRUNTIME_ASYNC_DISPATCH_H_
 
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <functional>
@@ -82,6 +85,35 @@ private:
   static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam);
 
   HWND hwnd_ = nullptr;
+};
+
+// Runs [fire] on its own thread once the armed delay has passed. Schedule()
+// replaces a pending deadline; Cancel() drops it. The destructor cancels and
+// joins, so [fire] never runs after it returns: destroy a DelayedTask before
+// anything its callback touches.
+class DelayedTask {
+public:
+  explicit DelayedTask(std::function<void()> fire);
+  ~DelayedTask();
+
+  DelayedTask(const DelayedTask &) = delete;
+  DelayedTask &operator=(const DelayedTask &) = delete;
+
+  void Schedule(std::chrono::milliseconds delay);
+  void Cancel();
+
+private:
+  void Run();
+
+  // Same rule as WorkQueue: thread_ LAST, so Run() never sees uninitialised
+  // members.
+  std::function<void()> fire_;
+  std::mutex mutex_;
+  std::condition_variable cv_;
+  bool armed_ = false;
+  std::chrono::steady_clock::time_point deadline_;
+  bool stopping_ = false;
+  std::thread thread_;
 };
 
 } // namespace flutter_onnxruntime
