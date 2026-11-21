@@ -58,13 +58,14 @@ use rusqlite::params;
 use rusqlite::types::ValueRef;
 use serde_json::{Map, Value};
 
-use super::alias::key_ids_by;
+use super::alias::{WRITER_UPTO_KEY, key_ids_by};
 use super::derive::{Index, R_CONFLICT, R_DOMINATED, R_LIVE, R_WINNER, Ref, body_of};
 use super::schema::sql;
 use crate::card_cache::ids_to_names;
 use crate::gen4::name::read_edit_key;
 use crate::gen4::op::Body4;
 use crate::gen4::stamp::StampHlc;
+use crate::gen4_ids::alias::WriterBound;
 use crate::gen4_ids::alias::strict_id;
 use crate::gen4_ids::builtins::BUILTIN_NOTE_TYPES;
 use crate::gen4_ids::rules;
@@ -97,10 +98,34 @@ pub const JSON_ID_KEYS: [&str; 14] = [
     "freqFieldId",
 ];
 
+/// 旧并入改名、已归回的写入者（[Index::writer_aliases]）：解引用成「原名 → 规范名」的表；另带各原名归回时证据撑得住
+/// 的范围（[WriterAliases::bound]）。
+#[derive(Clone, Debug, Default)]
+pub(crate) struct WriterAliases {
+    names: BTreeMap<String, String>,
+    bounds: BTreeMap<String, WriterBound>,
+}
+
+impl WriterAliases {
+    /// 原名 [w] 换成规范名时旧上下文能换的范围（`gen4_ids::alias::WriterBound`）。None = 不是归回的原名，或这份库的
+    /// 派生层还是记范围之前建的（`CACHE_RULES` 4 之前，下次打开整层重建时补上），按旧口径整段换。
+    pub(crate) fn bound(&self, w: &str) -> Option<&WriterBound> {
+        self.bounds.get(w)
+    }
+}
+
+impl std::ops::Deref for WriterAliases {
+    type Target = BTreeMap<String, String>;
+
+    fn deref(&self) -> &BTreeMap<String, String> {
+        &self.names
+    }
+}
+
 /// 按类拼行要的换名（[Index::edit_lines_as]）：写入者表（只放规范名与原名不同的）、这个寄存器的规范实体与规范键，
 /// 以及闭包换名的缓存（[Renamed]，同一次读里各寄存器共用）。
 pub(super) struct Canon<'a> {
-    writers: &'a BTreeMap<String, String>,
+    writers: &'a WriterAliases,
     renamed: &'a Renamed,
     pub(super) entity: String,
     pub(super) key: String,
@@ -161,21 +186,53 @@ impl Canon<'_> {
     }
 
     /// 旧上下文的键换成规范写入者：前缀取大、零散 dot 取并，再按 [Dvv::merge] 的规则收紧。
+    ///
+    /// 改名的写入者只换证据撑得住的部分（[WriterAliases::bound]，`gen4_ids::alias::WriterBound`）：`{merged-…: n}`
+    /// 换成 `{w: min(n, upto)}`，再加上原名自己在 `upto` 以上、n 以内的记录（换名后是 `w` 名下的同号 dot，按零散 dot
+    /// 覆盖），整段也留在原名下；零散 dot 落在 `upto` 以内或正是原名自己的记录才换名，其余留在原名下。于是原名下的
+    /// 记录照样被覆盖，规范名下没有「是同一条」证据的写入不算见过（照原值判）。
     pub(super) fn dvv(&self, d: &Dvv) -> Dvv {
         if !self.renames(d) {
             return d.clone();
         }
         let mut renamed = Dvv::default();
-        for (w, &v) in &d.vv {
-            let e = renamed.vv.entry(self.writer(w).to_owned()).or_insert(0);
+        let mut put = |w: &str, v: i64| {
+            let e = renamed.vv.entry(w.to_owned()).or_insert(0);
             *e = (*e).max(v);
+        };
+        let mut dots: Vec<(String, i64)> = Vec::new();
+        for (w, &v) in &d.vv {
+            let to = self.writer(w);
+            match self.writers.bound(w).filter(|_| to != w) {
+                Some(b) if v > b.upto as i64 => {
+                    put(to, b.upto as i64);
+                    put(w, v);
+                    dots.extend(
+                        b.own
+                            .iter()
+                            .map(|&q| q as i64)
+                            .take_while(|&q| q <= v)
+                            .map(|q| (to.to_owned(), q)),
+                    );
+                }
+                _ => put(to, v),
+            }
         }
         for (w, s) in &d.cloud {
-            renamed
-                .cloud
-                .entry(self.writer(w).to_owned())
-                .or_default()
-                .extend(s.iter().copied());
+            let to = self.writer(w);
+            let bound = self.writers.bound(w).filter(|_| to != w);
+            for &q in s {
+                let name = match bound {
+                    Some(b) if q > b.upto as i64 && b.own.binary_search(&(q as u64)).is_err() => {
+                        w.as_str()
+                    }
+                    _ => to,
+                };
+                dots.push((name.to_owned(), q));
+            }
+        }
+        for (w, q) in dots {
+            renamed.cloud.entry(w).or_default().insert(q);
         }
         let mut out = Dvv::default();
         out.merge(&renamed);
@@ -372,8 +429,9 @@ impl<'t, 'c> Index<'t, 'c> {
         Ok(())
     }
 
-    /// 旧并入改名、已归回的写入者（`alias_writer_ix`）：原名 → 规范名。
-    pub(super) fn writer_aliases(&self) -> Result<BTreeMap<String, String>, String> {
+    /// 旧并入改名、已归回的写入者（`alias_writer_ix`）：原名 → 规范名，与各原名证据撑得住的范围（`derive_cfg` 的
+    /// [WRITER_UPTO_KEY]，[WriterAliases::bound]）。
+    pub(super) fn writer_aliases(&self) -> Result<WriterAliases, String> {
         let mut stmt = self
             .t
             .conn()
@@ -382,7 +440,14 @@ impl<'t, 'c> Index<'t, 'c> {
         let rows = stmt
             .query_map([self.col], |r| Ok((r.get(0)?, r.get(1)?)))
             .map_err(sql)?;
-        rows.collect::<Result<_, _>>().map_err(sql)
+        let names: BTreeMap<String, String> = rows.collect::<Result<_, _>>().map_err(sql)?;
+        let bounds: BTreeMap<String, WriterBound> =
+            match self.t.derive_cfg(self.col, WRITER_UPTO_KEY)? {
+                Some(text) if !names.is_empty() => serde_json::from_str(&text)
+                    .map_err(|e| format!("gen4 index: bad {WRITER_UPTO_KEY}: {e}"))?,
+                _ => BTreeMap::new(),
+            };
+        Ok(WriterAliases { names, bounds })
     }
 
     /// 类内全部成员的寄存器行按规范键成组再判；[only] = 只要这一个规范键；[keep] = 只要这些写入（按操作主键）。
@@ -581,7 +646,7 @@ impl<'t, 'c> Index<'t, 'c> {
         kind: EntKind,
         canon: &Ref,
         ckey: &str,
-        writers: &BTreeMap<String, String>,
+        writers: &WriterAliases,
         live: (&str, i64),
         ours: (&str, i64),
     ) -> Result<bool, String> {
@@ -687,8 +752,9 @@ impl<'t, 'c> Index<'t, 'c> {
     /// - 规范键来自不止一个原值寄存器（两个成员各有一份）：协议 3 里是两个寄存器，没有一对一的基准，只计数
     ///   （[ClassDiffs::merged]）；
     /// - 其余逐条比：原值判下活着、按类判被支配的写入（[Dominated]）要佐证——被支配的 `(w, s)` 在这个集合里另有归到
-    ///   同一个规范写入者的名字下的同 seq 记录（[DiffEvidence::Copy]），或 s 落在那两个名字已证明的重叠区间里
-    ///   （两个名字下同 seq、同 HLC 物理时刻与计数的记录的最小到最大 seq，[DiffEvidence::Overlap]）；原值判下被支配、
+    ///   同一个规范写入者的名字下的同 seq 记录（[DiffEvidence::Copy]），或 s 不超过那两个名字已证明的重叠区间的上端
+    ///   （两个名字下同 seq、同 HLC 物理时刻与计数的记录的最大 seq：同一个写入者的计数器走到那一号时，之前的每一号都
+    ///   出自同一段历史，[DiffEvidence::Overlap]）；原值判下被支配、
     ///   按类判反而活着的（[ClassDiff::revived]）与按类判多出来的冲突没有这种佐证，一律算佐证不了。佐证不了的按 bug
     ///   处理（回 resolver 收紧），干跑据此判失败。
     pub fn class_differences(&mut self) -> Result<ClassDiffs, String> {
@@ -914,7 +980,7 @@ impl<'t, 'c> Index<'t, 'c> {
         } else {
             for n in &others {
                 if let Some((lo, hi)) = overlap(dots, &writer, n) {
-                    if lo <= seq && seq <= hi {
+                    if seq <= hi {
                         evidence = DiffEvidence::Overlap {
                             name: (*n).to_owned(),
                             lo,
@@ -952,6 +1018,10 @@ impl<'t, 'c> Index<'t, 'c> {
     }
 
     /// 改名写入者与它们的最初写入者名下的全部带旧戳记录：名字 → seq → [(HLC 物理时刻, 计数)]（解不开的 HLC 不记）。
+    ///
+    /// 与 resolver 归回写入者用同一份证据（`alias.rs` 的 `alias_evidence`：[Truth::for_each_stamp]）：承袭的修改**与
+    /// 副本记录**（`op_alias`，协议 3 去重留下的同一条记录的另一份）各自带的旧戳。只扫修改的操作体会漏掉副本记录上的
+    /// 旧戳，佐证用的重叠区间比 resolver 认定的窄，resolver 有证据归回的支配在这里反而判成佐证不了。
     fn writer_dots(&self, writers: &BTreeMap<String, String>) -> Result<WriterDots, String> {
         let names: BTreeSet<&str> = writers
             .iter()
@@ -959,25 +1029,20 @@ impl<'t, 'c> Index<'t, 'c> {
             .collect();
         let mut out = WriterDots::new();
         for d in self.t.devices(self.col)? {
-            self.t.for_each(self.col, &d.id, 1, |e| {
-                if let Some(Body4::Edit(ed)) = body_of(&e) {
-                    if let Some(s) = ed
-                        .stamp
-                        .as_ref()
-                        .filter(|s| names.contains(s.writer.as_str()))
-                    {
-                        let at = out
-                            .entry(s.writer.clone())
-                            .or_default()
-                            .entry(s.seq)
-                            .or_default();
-                        if let StampHlc::Parsed {
-                            physical, counter, ..
-                        } = &s.hlc
-                        {
-                            at.push((*physical, *counter));
-                        }
-                    }
+            self.t.for_each_stamp(self.col, &d.id, u64::MAX, |_, s| {
+                if !names.contains(s.writer.as_str()) {
+                    return Ok(());
+                }
+                let at = out
+                    .entry(s.writer.clone())
+                    .or_default()
+                    .entry(s.seq)
+                    .or_default();
+                if let StampHlc::Parsed {
+                    physical, counter, ..
+                } = &s.hlc
+                {
+                    at.push((*physical, *counter));
                 }
                 Ok(())
             })?;
@@ -1033,7 +1098,8 @@ pub enum DiffEvidence {
     /// 同一个规范写入者的另一个名字下有同 seq、同 HLC 物理时刻与计数的同一条记录（被支配的 `(w, s)` 另有
     /// `(merged-…, s)` 副本，或反过来）。
     Copy { name: String },
-    /// s 落在这条写入的名字与 [name] 已证明的重叠区间 `[lo, hi]` 里。
+    /// s 不超过这条写入的名字与 [name] 已证明的重叠区间 `[lo, hi]` 的上端 `hi`（同 seq 同记录证明到 `hi` 为止是同一段
+    /// 历史，`gen4_ids::alias::WriterBound` 同一个口径）。
     Overlap { name: String, lo: i64, hi: i64 },
     /// [name] 下有同 seq 的记录、HLC 却不同：不是同一条记录，归回本身可疑（resolver bug），佐证不了。
     Mismatch { name: String },
@@ -1757,6 +1823,163 @@ mod tests {
         }
     }
 
+    /// 嵌套并入（真实库的形状：w1 的库先并进一份库、w1 在那里改名成 merged，那份库再并进来）：那份库的写入 `(v, 1)`
+    /// 上下文写着 `merged:9`，可 merged 名下在这个集合里的记录只到 seq 1（更高的副本被那份库自己裁掉了），w1 名下的
+    /// `(w1, 5)` 没有任何「是同一条」的证据。原值判 `(w1, 5)` 与 `(v, 1)` 并发；按类判只把 `merged:9` 换到归回上界
+    /// `w1:1`，照样并发——不再凭空判成被支配（修复前这里是一条佐证不了的已知差异，迁移核对因此失败）。
+    #[test]
+    fn bounded_writer_rename_keeps_writes_above_the_proven_bound_concurrent() {
+        with(|t, col| {
+            let merged = merged_w1();
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                let salts = Body4::salts([U1]).unwrap();
+                native(t, &mut ix, col, &op(0xa1, 1, 1, &[], &salts));
+                proof_pair(t, &mut ix, col, &merged, 1, 1);
+                let x = stamped("x", stamp("w1", 5, r#"{"vv":{}}"#, 100));
+                let ctx = format!(r#"{{"vv":{{"{merged}":9}}}}"#);
+                let y = stamped("y", stamp("v", 1, &ctx, 200));
+                heritage(t, &mut ix, col, op(0xd1, 1, 20, &[], &x));
+                heritage(t, &mut ix, col, op(0xd2, 1, 21, &[], &y));
+                ix.settle()?;
+                assert_eq!(ix.canonical_writer(&merged)?, "w1");
+                assert_eq!(
+                    ix.writer_aliases()?.bound(&merged),
+                    Some(&WriterBound {
+                        upto: 1,
+                        own: vec![]
+                    })
+                );
+                let got = diffs_on_test_key(&mut ix);
+                assert!(got.is_empty(), "{got:?}");
+                assert_eq!(ix.class_differences()?.unproven().count(), 0);
+                let e = native_edit();
+                let w: Vec<ClassWinner> = ix
+                    .class_winners(EntKind::Note, &Ref::of(&e.entity))?
+                    .into_iter()
+                    .filter(|w| w.key == e.key)
+                    .collect();
+                assert_eq!(w.len(), 1, "{w:?}");
+                assert!(w[0].conflict, "{w:?}");
+                Ok(())
+            })
+            .unwrap();
+            assert_rebuild_is_identity(t, col);
+        });
+    }
+
+    /// 佐证与 resolver 用同一份证据：副本记录（`op_alias`，协议 3 去重留下的同一条记录的另一份）上的旧戳也算。
+    /// merged 名下 seq 5 的那条只以副本记录的形式在（原件是 `(w1, 5)`），`(v, 1)` 的上下文写着 `merged:5`：resolver
+    /// 凭 seq 5 上的同一条记录把上界定到 5，按类判 `(w1, 5)` 被支配；佐证也要认出这份副本（[DiffEvidence::Copy]）。
+    /// 只扫修改的操作体时 merged 名下只看得到 seq 1，区间 `[1, 1]` 罩不住 5，判成佐证不了（真实库里 102 条这样的寄存器）。
+    #[test]
+    fn a_copy_record_is_evidence_as_it_is_for_the_resolver() {
+        use crate::gen4::heritage::{Alias, HeritageSlot};
+        use crate::gen4::translate::T_VERSION;
+        with(|t, col| {
+            let merged = merged_w1();
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                let salts = Body4::salts([U1]).unwrap();
+                native(t, &mut ix, col, &op(0xa1, 1, 1, &[], &salts));
+                proof_pair(t, &mut ix, col, &merged, 1, 1);
+                let x = op(
+                    0xd1,
+                    1,
+                    20,
+                    &[],
+                    &stamped("x", stamp("w1", 5, r#"{"vv":{}}"#, 100)),
+                );
+                let xid = x.id;
+                heritage(t, &mut ix, col, x);
+                let copy = OpId {
+                    device: id(0xc2),
+                    seq: 2,
+                };
+                let slot = HeritageSlot::alias(
+                    copy,
+                    [0x77; 8],
+                    Alias {
+                        kind: crate::gen4::op::KIND_EDIT,
+                        wall: 20,
+                        logical: 0,
+                        of: xid,
+                        stamp: Some(stamp(&merged, 5, r#"{"vv":{}}"#, 100)),
+                    },
+                );
+                t.put_heritage(col, &id(0xc0), &slot, T_VERSION)?;
+                ix.add(&t.entry(col, &copy)?.expect("copy record landed"))?;
+                let ctx = format!(r#"{{"vv":{{"{merged}":5}}}}"#);
+                let y = stamped("y", stamp("v", 1, &ctx, 200));
+                heritage(t, &mut ix, col, op(0xd2, 1, 21, &[], &y));
+                ix.settle()?;
+                assert_eq!(ix.canonical_writer(&merged)?, "w1");
+                assert_eq!(ix.writer_aliases()?.bound(&merged).map(|b| b.upto), Some(5));
+                let got = diffs_on_test_key(&mut ix);
+                assert_eq!(got.len(), 1, "{got:?}");
+                let d = &got[0];
+                assert!(d.raw_conflict && !d.class_conflict, "{d:?}");
+                assert_eq!(d.dominated.len(), 1, "{d:?}");
+                assert_eq!(
+                    d.dominated[0].evidence,
+                    DiffEvidence::Copy {
+                        name: merged.clone()
+                    }
+                );
+                assert!(d.proven, "{d:?}");
+                Ok(())
+            })
+            .unwrap();
+        });
+    }
+
+    /// [Canon::dvv] 对改名写入者只换证据撑得住的部分：前缀截到 `upto`，原名自己在 `upto` 以上、前缀以内的记录（5）换成
+    /// 规范名的零散 dot，超出的整段留在原名下；零散 dot 落在 `upto` 以内或是原名自己的记录（13）才换名；没有记范围
+    /// （[WriterAliases::bound] = None，记范围之前建的派生层）时整段换。
+    #[test]
+    fn bounded_writer_rename_splits_a_context_at_the_bound() {
+        let writers = |bound: Option<WriterBound>| WriterAliases {
+            names: BTreeMap::from([("m".to_owned(), "w1".to_owned())]),
+            bounds: bound
+                .map(|b| BTreeMap::from([("m".to_owned(), b)]))
+                .unwrap_or_default(),
+        };
+        let renamed = Renamed::default();
+        let mut d = Dvv::default();
+        d.vv.insert("m".to_owned(), 9);
+        d.vv.insert("w1".to_owned(), 2);
+        d.cloud.insert("m".to_owned(), BTreeSet::from([12, 13]));
+        d.cloud.insert("w1".to_owned(), BTreeSet::from([20]));
+        let w = writers(Some(WriterBound {
+            upto: 3,
+            own: vec![5, 11, 13],
+        }));
+        let c = Canon {
+            writers: &w,
+            renamed: &renamed,
+            entity: String::new(),
+            key: String::new(),
+            keys: None,
+        };
+        let got = c.dvv(&d);
+        assert!(got.contains("w1", 3) && !got.contains("w1", 4), "{got:?}");
+        assert!(got.contains("w1", 5) && !got.contains("w1", 6), "{got:?}");
+        // 11 是原名的记录但超出了 m:9 那段前缀：不算见过；13 是零散 dot 里的原名记录：算见过。
+        assert!(!got.contains("w1", 11) && got.contains("w1", 13), "{got:?}");
+        assert!(got.contains("w1", 20) && !got.contains("w1", 12), "{got:?}");
+        assert!(got.contains("m", 9) && got.contains("m", 12), "{got:?}");
+        let w = writers(None);
+        let c = Canon {
+            writers: &w,
+            renamed: &renamed,
+            entity: String::new(),
+            key: String::new(),
+            keys: None,
+        };
+        let got = c.dvv(&d);
+        assert!(got.contains("w1", 9) && got.contains("w1", 12), "{got:?}");
+    }
+
     /// 「副本」要是同一条记录（resolver 归回写入者的判据：同 seq、同 HLC 物理时刻与计数）。端到端造不出来——resolver
     /// 见到同 seq 不同 HLC 就不归回（下面先钉住这一点）——佐证正是为了在 resolver 放错时把它抓出来，所以直接喂
     /// [Index::dominated] 一份「已归回」的写入者表与记录表：
@@ -2078,7 +2301,8 @@ mod tests {
     /// 原生写入问闭包与带旧戳写入的上下文用同一个换名（设计 §5.3「三处一起换」）。寄存器里只有一条带旧戳的
     /// (`[reg_writer]`, 2)；原生写入依赖的另一条承袭记录落在别的键上，它的旧上下文是 {`[ctx_writer]`: 2}。两个名字
     /// 一个是 `w1`、一个是归回到 `w1` 的 `merged-…~w1`：按类读，原生写入见过那条、盖掉它、没有冲突；按原值读，名字
-    /// 不同 = 没见过 = 冲突。
+    /// 不同 = 没见过 = 冲突。两个名字在 seq 3 上另有同一条记录，证明到 seq 3 为止是同一段历史（`WriterBound`）——
+    /// 只有 seq 1 的证据时 `merged:2` 换不到 `w1:2`，见 `bounded_writer_rename_*`。
     fn native_write_sees_through_the_renamed_closure(renamed_in_register: bool) {
         with(|t, col| {
             let merged = merged_w1();
@@ -2090,6 +2314,7 @@ mod tests {
             t.tx(|t| {
                 let mut ix = Index::new(t, col);
                 renamed_writer_evidence(t, &mut ix, col, &merged);
+                proof_pair(t, &mut ix, col, &merged, 3, 2);
                 let x = stamped("x", stamp(&reg_writer, 2, r#"{"vv":{}}"#, 100));
                 heritage(t, &mut ix, col, op(0xd1, 1, 1, &[], &x));
                 let ctx = format!(r#"{{"vv":{{"{ctx_writer}":2}}}}"#);
@@ -2490,7 +2715,7 @@ mod tests {
                                 }
                             }
                             rows.sort_unstable();
-                            let none = BTreeMap::new();
+                            let none = WriterAliases::default();
                             let fresh = Renamed::default();
                             let plain = Canon {
                                 writers: &none,

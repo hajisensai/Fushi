@@ -294,7 +294,10 @@ pub const RULES_KEY: &str = "cacheRules";
 /// - 3（第六波，交接 §44「第六波 导入红测试收尾」）：同一派生加上界——外来日志的发生时刻晚于载着它的那条操作时不派生、
 ///   回落到操作 HLC（第五波复核修复，`derived_log_hlc` 的 `op_wall`）。2 推出时还没有这道上界，按 2 物化过的开发库里
 ///   带未来时刻的外来日志排在派生位置上，要重建一次才换成新口径。
-pub const CACHE_RULES: i64 = 3;
+/// - 4（嵌套并入的改名写入者）：按类判时改名写入者的旧上下文只换到归回证据撑得住的 seq 上界（`class.rs` 的
+///   `Canon::dvv`，上界记在 `derive_cfg` 的 `alias::WRITER_UPTO_KEY`）。之前整段换：被并入两次的库里，中间那份库的
+///   `{merged-…: n}` 把最初写入者名下 seq ≤ n、它其实没见过的写入判成已被覆盖（冲突变支配）。整层重建才写下上界。
+pub const CACHE_RULES: i64 = 4;
 
 /// [Index::log_class_rep] 每个成员一次的点查（走 `log_id (col, id, k)`；查询计划测试用同一份）。
 pub(crate) const LOG_REP_SQL: &str =
@@ -3157,7 +3160,17 @@ mod tests {
                 "{what}：派生口径变了，改期望、记新修订号并升 CACHE_RULES"
             );
         }
-        let latest = table.iter().map(|r| r.8).max().unwrap();
+        // 不在日志排序键上的修订（各自由对应模块的测试钉口径）：(说明, 修订号)。
+        const ELSEWHERE: [(&str, i64); 1] = [(
+            "改名写入者的旧上下文只换到归回上界（class.rs 的 bounded_writer_rename_* 测试）",
+            4,
+        )];
+        let latest = table
+            .iter()
+            .map(|r| r.8)
+            .chain(ELSEWHERE.iter().map(|r| r.1))
+            .max()
+            .unwrap();
         assert_eq!(
             super::CACHE_RULES,
             latest,

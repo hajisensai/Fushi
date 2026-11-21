@@ -18,16 +18,16 @@
 //! 它们真喂得到的列（[known_effect]：胜者变了的盖这个寄存器喂得到的列，只是冲突标志变了的只盖笔记的
 //! `pending_decision`），行的其余列与行的有无照比。佐证不了的记成 `classRegisters` 差异（按 bug 处理，结论判失败）。
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use rusqlite::{Connection, ToSql, params};
+use rusqlite::{Connection, OptionalExtension, ToSql, params};
 
 use super::cache::CFG_KEY;
 use super::class::{ClassDiff, ClassDiffs, builtin_rule_canon, legacy_config_for};
 use super::derive::{Index, R_LIVE, Ref, body_of};
 use super::schema::sql;
 use super::truth::Truth;
-use crate::gen4::op::Body4;
+use crate::gen4::op::{Body4, Log4};
 use crate::store::sync2::semantics::current_tags;
 use crate::sync2::id::{Id, Key};
 use crate::sync2::op::EntKind;
@@ -196,6 +196,8 @@ pub(crate) struct Known {
     pub stat_cols: BTreeMap<String, BTreeSet<&'static str>>,
     /// 统计行整行不比的卡（血统变了：哪些日志归这张卡本身就跟着变，[Effect::stats_aside]）。
     pub stats_aside: BTreeSet<String>,
+    /// 其中因为「同一次复习的副本按规范卡成了一个事件」而统计行整行不比、卡行的重放列不比的卡（[event_copies]）。
+    pub stats_event_copies: BTreeSet<String>,
     /// 盖了列 / 整行不比的行（两侧合计，按盖之前的原文去重）与其中两侧原文不同的。
     pub rows: u64,
     pub rows_differ: u64,
@@ -770,6 +772,18 @@ pub(crate) fn cache_pairs(
     let skip_note = |id: &str| collided.contains(&format!("note:{id}")) || skip.notes.contains(id);
     // 已知差异喂得到的列（[Known]、[known_effect]）：笔记类型上的落到这个类型的全部笔记，笔记上的落到它的卡（卡列
     // 另记），卡上的落到它的统计行。
+    // 同一次复习的副本按规范卡成了一个事件（[event_copies]）：这张卡的历史少了一条，统计行整行不比、卡行里由历史
+    // 重放的列不比（与 `historyFrom` 的已知差异同一口径，[cache_effect]）。
+    let new_stats = new("stats", STAT_COLS)?;
+    known.stats_event_copies = event_copies(t, col, &canon, old_stats, &new_stats)?;
+    for c in &known.stats_event_copies {
+        known.stats_aside.insert(c.clone());
+        known
+            .card_cols
+            .entry(c.clone())
+            .or_default()
+            .extend(CARD_DERIVED.iter().copied());
+    }
     let mut new_notes = new("notes", NOTE_COLS)?;
     let mut note_card: BTreeMap<String, BTreeSet<&'static str>> = BTreeMap::new();
     {
@@ -919,13 +933,86 @@ pub(crate) fn cache_pairs(
             })
             .collect()
     };
-    let new_stats = new("stats", STAT_COLS)?;
     let old_side = stats(old_stats, &mut aside.0);
     let new_side = stats(&new_stats, &mut aside.1);
     push_pair(diff, ("stats", old_side, new_side));
     known.rows = aside.0.union(&aside.1).count() as u64;
     known.rows_differ = aside.0.symmetric_difference(&aside.1).count() as u64;
     Ok(CacheBaseline::Rows(old))
+}
+
+/// 协议 3 一侧多出来、新代按规范卡归成同一事件的复习副本落在哪些（规范）卡上（[Known::stats_event_copies]）。
+///
+/// 卡片历史按 [`EventKey`](crate::history) 把同一次复习的副本归成一个事件、只算代表那一份；新代的成组键用规范卡 ID
+/// （设计 §5.3「别名表怎么用」），协议 3 用原值卡 ID。资料库并入留下的两张卡副本（同一张卡的两个带盐 ID）各带一份同一次
+/// 复习、日志 ID 又没归到一起时，协议 3 在后继卡的统计里算两次，新代算一次——之后的统计行（`maturity_delta` 等按前一次
+/// 复习算的列）也跟着不同。
+///
+/// 只认佐证得了的：协议 3 一侧有一行的日志 L 不在新代的统计里，同一张规范卡、同一发生时刻上另有一行的日志 L' 在新代的
+/// 统计里，且新代存的两条日志体 HLC（含写入者）、发生时刻、种类、来源、评分类型、评分、Anki id 逐个相同，原值卡不同、
+/// 规范卡相同——正是成组键只差在卡 ID 归一上的情形。别的统计行差异照比。
+fn event_copies(
+    t: &Truth<'_>,
+    col: i64,
+    canon: &CanonMap,
+    old_stats: &[Vec<String>],
+    new_stats: &[Vec<String>],
+) -> Result<BTreeSet<String>, String> {
+    let pos = |name: &str| -> usize {
+        STAT_COLS
+            .iter()
+            .position(|c| c.0 == name)
+            .expect("column listed in the constant")
+    };
+    let (log, card, at) = (pos("log"), pos("card"), pos("at"));
+    let counted: HashSet<&str> = new_stats.iter().map(|r| r[log].as_str()).collect();
+    let mut by_card: BTreeMap<&str, Vec<&Vec<String>>> = BTreeMap::new();
+    for r in old_stats {
+        by_card.entry(r[card].as_str()).or_default().push(r);
+    }
+    let body = |id: &str| -> Result<Option<Log4>, String> {
+        let k: Option<i64> = t
+            .conn()
+            .prepare_cached("SELECT k FROM log_ix WHERE col = ?1 AND id = ?2 ORDER BY k LIMIT 1")
+            .map_err(sql)?
+            .query_row(params![col, Ref::of(&Key::of(id))], |r| r.get(0))
+            .optional()
+            .map_err(sql)?;
+        let Some(k) = k else { return Ok(None) };
+        Ok(t.entry_by_key(k)?.and_then(|e| match body_of(&e) {
+            Some(Body4::Log(l)) => Some(l),
+            _ => None,
+        }))
+    };
+    let same_event = |a: &Log4, b: &Log4| -> bool {
+        a.hlc.is_some()
+            && a.hlc == b.hlc
+            && a.at == b.at
+            && a.kind == b.kind
+            && a.origin == b.origin
+            && a.rtype == b.rtype
+            && a.rating == b.rating
+            && a.anki_id == b.anki_id
+            && a.card != b.card
+            && canon.of(&Ref::of(&a.card)) == canon.of(&Ref::of(&b.card))
+    };
+    let mut out = BTreeSet::new();
+    for (c, rows) in by_card {
+        'row: for r in rows.iter().filter(|r| !counted.contains(r[log].as_str())) {
+            for o in rows
+                .iter()
+                .filter(|o| o[at] == r[at] && counted.contains(o[log].as_str()))
+            {
+                if let (Some(a), Some(b)) = (body(&r[log])?, body(&o[log])?) {
+                    if same_event(&a, &b) {
+                        out.insert(c.to_owned());
+                        break 'row;
+                    }
+                }
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// 一类对拍：(类别, 旧库一侧, 新库一侧)。
@@ -1242,7 +1329,103 @@ pub(crate) fn differences(pairs: impl IntoIterator<Item = Pair>) -> Diff {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::gen4::stamp::StampHlc;
     use crate::store::gen4::class::ClassDiff;
+    use crate::store::gen4::cmd::tests_class::land;
+    use crate::store::gen4::derive::tests::{heritage, op, with};
+    use crate::sync2::op::Intent;
+
+    /// 一条带旧 HLC 的原生复习日志（[event_copies] 比的那几项之外照抄）。
+    fn review(id: Id, card: Id, at: i64, hlc: (i64, i64, &str)) -> Body4 {
+        Body4::Log(Log4 {
+            id: Key::Uuid(id),
+            card: Key::Uuid(card),
+            note: None,
+            kind: "review".into(),
+            rating: Some(1),
+            revokes: None,
+            at,
+            ts: 1,
+            origin: "fushi".into(),
+            rtype: "review".into(),
+            dur: 10_000,
+            params: None,
+            alg: Some("fsrs7".into()),
+            utc_off: 480,
+            rollover: 4,
+            anki_id: None,
+            fv: 1,
+            intent: Intent::Absolute,
+            res: None,
+            extra: "{}".into(),
+            hlc: Some(StampHlc::Parsed {
+                physical: hlc.0,
+                counter: hlc.1,
+                writer: hlc.2.to_owned(),
+            }),
+            server_time: None,
+        })
+    }
+
+    /// 统计行（[STAT_COLS] 列序；[event_copies] 只看日志、卡、时刻）。
+    fn stat(log: Id, card: Id, at: i64) -> Vec<String> {
+        let mut r = vec!["0".to_owned(); STAT_COLS.len()];
+        r[0] = log.text();
+        r[1] = card.text();
+        r[2] = at.to_string();
+        r
+    }
+
+    /// 同一次复习在两份带盐的卡上各留一条日志、日志 ID 没归到一起（真实库：资料库并入后又被并入）：协议 3 按原值卡
+    /// 成组算两次，新代按规范卡算一次。HLC、时刻、内容逐个相同、原值卡不同、规范卡相同才认（规范卡记进结果）；
+    /// HLC 不同（两次真复习撞同一毫秒）、或两条落在同一张原值卡上（协议 3 也会归成一个事件）都不认。
+    #[test]
+    fn event_copies_are_known_only_when_the_canonical_card_is_all_that_differs() {
+        const AT: i64 = 1_792_431_298_815;
+        for (case, b_card, b_hlc, want) in [
+            (
+                "same event on the two salted copies",
+                1,
+                (AT, 0, "w1"),
+                true,
+            ),
+            (
+                "another review in the same millisecond",
+                1,
+                (AT, 1, "w1"),
+                false,
+            ),
+            ("both on one raw card", 0, (AT, 0, "w1"), false),
+        ] {
+            with(|t, col| {
+                let w = land(t, col);
+                let (a, b) = (Id::new_v7(AT as u64), Id::new_v7(AT as u64 + 1));
+                t.tx(|t| {
+                    let mut ix = Index::new(t, col);
+                    let la = review(a, w.card[0], AT, (AT, 0, "w1"));
+                    let lb = review(b, w.card[b_card], AT, b_hlc);
+                    heritage(t, &mut ix, col, op(0xf1, 1, AT, &[], &la));
+                    heritage(t, &mut ix, col, op(0xf2, 1, AT, &[], &lb));
+                    ix.settle()?;
+                    Ok(())
+                })
+                .unwrap();
+                let canon = CanonMap::load(t, col).unwrap();
+                let old = [stat(a, w.c_card, AT), stat(b, w.c_card, AT)];
+                let new = [stat(a, w.c_card, AT)];
+                let got = event_copies(t, col, &canon, &old, &new).unwrap();
+                let expect: BTreeSet<String> = if want {
+                    BTreeSet::from([w.c_card.text()])
+                } else {
+                    BTreeSet::new()
+                };
+                assert_eq!(got, expect, "{case}");
+                // 两边一致（新代也算了两次）：不是差异，什么都不认。
+                let got = event_copies(t, col, &canon, &old, &old).unwrap();
+                assert!(got.is_empty(), "{case}: {got:?}");
+            });
+        }
+    }
 
     fn diff(
         kind: EntKind,

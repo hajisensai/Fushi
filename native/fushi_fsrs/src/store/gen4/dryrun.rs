@@ -894,6 +894,7 @@ fn known_json(k: &Known) -> Value {
         "cacheCardsMasked": k.card_cols.len(),
         "cacheStatCardsMasked": k.stat_cols.len(),
         "cacheStatCardsAside": k.stats_aside.len(),
+        "cacheStatCardsEventCopies": k.stats_event_copies.len(),
         "cacheRowsMasked": k.rows,
         "cacheRowsMaskedDiffer": k.rows_differ,
         "entries": entries,
