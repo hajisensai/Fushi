@@ -12318,6 +12318,7 @@
   "video_acquisition_results_empty": "没有找到匹配的结果",
   "video_acquisition_section_title": "获取途径",
   "video_acquisition_sources_partial_failed": "$count 个来源查询失败",
+  "video_acquisition_sources_pending": "还有 $count 个来源在搜索",
   "video_acquisition_torrent_add_site": "添加 BT 来源",
   "video_acquisition_torrent_found": "找到 $count 条资源",
   "video_acquisition_torrent_unconfigured": "还没有适用于这部作品的 BT 来源，添加 BT 来源后即可搜索资源",
