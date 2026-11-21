@@ -241,15 +241,17 @@ Future<bool> restoreVideoEpisodePin(
   required Object? applied,
   required Object? snapshot,
 }) async {
-  final VideoEpisodeBindingOverrideRow? now = await db
-      .getVideoEpisodeBindingOverride(bookUid);
-  final (int, int)? current = now == null
-      ? null
-      : (now.seasonNumber, now.episodeNumber);
   final (int, int)? written = _pairOf(applied);
-  if (current != written) return false;
   final Map<Object?, Object?> before = snapshot is Map ? snapshot : const {};
-  await db.transaction(() async {
+  // 读当前指定、比较、写回同一个事务（HBK-AUDIT-029）：事务外先读再写时，两步
+  // 之间别处提交的新指定会被这份旧快照无声盖掉。
+  final bool applies = await db.transaction(() async {
+    final VideoEpisodeBindingOverrideRow? now = await db
+        .getVideoEpisodeBindingOverride(bookUid);
+    final (int, int)? current = now == null
+        ? null
+        : (now.seasonNumber, now.episodeNumber);
+    if (current != written) return false;
     final (int, int)? previous = _pairOf(before['override']);
     if (previous == null) {
       await db.clearVideoEpisodeBindingOverride(bookUid);
@@ -261,7 +263,7 @@ Future<bool> restoreVideoEpisodePin(
       );
     }
     final Object? rows = before['episodes'];
-    if (rows is! List) return;
+    if (rows is! List) return true;
     final int now = DateTime.now().millisecondsSinceEpoch;
     for (final Object? row in rows) {
       if (row is! Map || row['id'] is! num) continue;
@@ -279,7 +281,9 @@ Future<bool> restoreVideoEpisodePin(
         ),
       );
     }
+    return true;
   });
+  if (!applies) return false;
   db.notifyVideoLibraryChanged();
   return true;
 }
@@ -291,6 +295,10 @@ Future<bool> restoreVideoEpisodePin(
 
 /// 把 `POST sections` 的撤销载荷写回库：每个文件的手动分栏恢复成执行前（没有就
 /// 清掉）。之后又被改过的文件（当前手动分栏已不是 [applied]）保留现状。
+///
+/// 每个文件用一条条件写（[FushiDatabase.compareAndSetVideoCollectionSectionOverride]）
+/// 比较并写入，不在事务外先读快照：读与写之间提交的新值不会被撤销无声盖掉
+/// （HBK-AUDIT-029）。
 Future<({int reverted, int superseded})> restoreVideoCollectionSections(
   FushiDatabase db, {
   required Object? applied,
@@ -303,24 +311,19 @@ Future<({int reverted, int superseded})> restoreVideoCollectionSections(
   ];
   if (uids.isEmpty) return (reverted: 0, superseded: 0);
   final String? written = applied is String ? applied : null;
-  final Map<String, String> now = await db.getVideoCollectionSectionOverrides(
-    uids,
-  );
   int reverted = 0;
   int superseded = 0;
   await db.transaction(() async {
     for (final String uid in uids) {
-      if (now[uid] != written) {
-        superseded++;
-        continue;
-      }
       final Object? old = before[uid];
-      if (old is String && isValidCollectionSectionKey(old)) {
-        await db.setVideoCollectionSectionOverrides(<String>[uid], old);
-      } else {
-        await db.clearVideoCollectionSectionOverrides(<String>[uid]);
-      }
-      reverted++;
+      final bool hit = await db.compareAndSetVideoCollectionSectionOverride(
+        uid,
+        expected: written,
+        replacement: old is String && isValidCollectionSectionKey(old)
+            ? old
+            : null,
+      );
+      hit ? reverted++ : superseded++;
     }
   });
   if (reverted > 0) db.notifyVideoLibraryChanged();
@@ -674,13 +677,18 @@ class _VideoOrganizeCtl {
     if (missing.isNotEmpty) {
       throw CtlFailure.notFound('没有这些视频：${missing.join(', ')}');
     }
-    final Map<String, String> before = await _db
-        .getVideoCollectionSectionOverrides(uids);
-    if (key == null) {
-      await _db.clearVideoCollectionSectionOverrides(uids);
-    } else {
-      await _db.setVideoCollectionSectionOverrides(uids, key);
-    }
+    // 撤销快照与写入同一事务：快照就是这次写入实际覆盖掉的值。
+    final String? sectionKey = key;
+    final Map<String, String> before = await _db.transaction(() async {
+      final Map<String, String> snapshot = await _db
+          .getVideoCollectionSectionOverrides(uids);
+      if (sectionKey == null) {
+        await _db.clearVideoCollectionSectionOverrides(uids);
+      } else {
+        await _db.setVideoCollectionSectionOverrides(uids, sectionKey);
+      }
+      return snapshot;
+    });
     _db.notifyVideoLibraryChanged();
     final Map<String, CollectionSectionResolution> after =
         await loadCollectionSections(_db, <String, String>{
