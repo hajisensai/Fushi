@@ -12012,6 +12012,8 @@
   "theme_accent_follow_system_unavailable": "Das System stellt auf diesem Gerät keine Akzentfarbe bereit.",
   "theme_accent_low_contrast_dark": "Auf dem Hintergrund des Dunkelmodus schwer erkennbar. Wähle eine hellere Farbe.",
   "theme_accent_low_contrast_light": "Auf dem Hintergrund des Hellmodus schwer erkennbar. Wähle eine dunklere Farbe.",
+  "theme_accent_override_app_icon": "Using colors from your app icon · pick a theme to switch \"Theme color follows icon\" off",
+  "theme_accent_override_page_backdrop": "Using colors from your background image · pick a theme to switch \"Colors from image\" off",
   "theme_ai_applied": "KI-Vorschlag in den Editor geladen. Prüfe die Vorschau und wende ihn dann an.",
   "theme_ai_card_desc": "Describe the look you want — AI fills the colors into this draft.",
   "theme_ai_hint": "Beschreibe das gewünschte Design, z. B. warmes Papier-Lesedesign mit dunkelgrünem Akzent",
