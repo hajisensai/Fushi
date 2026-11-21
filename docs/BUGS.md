@@ -34,6 +34,14 @@
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
 > 共 4411 条。点号进各自文件。
+> 共 4399 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5083](bugs/BUG-5083-game-sentence-mining-all-games.md) | 🚧 | 🚧 | GSM 式全游戏台词制卡：非 Hook 游戏没有连续台词流可制卡 |
+| [BUG-5082](bugs/BUG-5082-anime-manual-metadata-fill.md) | 🚧 | 🚧 | 手动填元数据：刮削全失败的动画 / 非 EPUB 书无法手填简介、年份、作者等 |
+| [BUG-5081](bugs/BUG-5081-favorite-sentence-recolor.md) | 🚧 | 🚧 | 收藏句改色：已收藏的书摘不能改颜色（同步缺颜色更新时间） |
+> 共 4406 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
