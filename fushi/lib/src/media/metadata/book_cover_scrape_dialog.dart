@@ -35,13 +35,14 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 书籍 / 漫画 / 有声书「在线匹配封面」弹窗（统一刮削 P1b）。
 ///
-/// 源用下拉切换（[BookScrapeSource]，七个源分段放不下）：Bangumi 书籍条目
+/// 源用下拉切换（[BookScrapeSource]，八个源分段放不下）：Bangumi 书籍条目
 /// （`filter.type=[1]`）、DLsite 音声 / 漫画 / 小说作品、MangaBaka 漫画 / 轻小说系列（选中
 /// 系列后进卷封面网格，预选本地卷号 [BookCoverScrapeDialog.volume] 那一卷；结果区底部显示
 /// MangaBaka 署名）、AniList 轻小说、openBD（只按 ISBN）、NDL Search、楽天ブックス（要设备
-/// 本地凭据；没填时下拉里照样列出，**只有选中它时**结果区才提示去哪填，不发请求）。
-/// 默认 Bangumi（填了楽天凭据也不会变成默认源）；预填词里认得出 DLsite 编号时默认切到
-/// DLsite 并只填编号（直取），预填词本身就是 ISBN 时默认 openBD。切到 openBD 而搜索框里
+/// 本地凭据；没填时下拉里照样列出，**只有选中它时**结果区才提示去哪填，不发请求）、iTunes
+/// 歌曲（专辑封面）。默认 Bangumi（填了楽天凭据也不会变成默认源）；预填词里认得出 DLsite
+/// 编号时默认切到 DLsite 并只填编号（直取），预填词本身就是 ISBN 时默认 openBD；这本「书」
+/// 其实是导入的歌曲（[isSong]，同步文件是 LRC 歌词）时默认 iTunes。切到 openBD 而搜索框里
 /// 没有 ISBN 时，用书本身的 ISBN（[isbn]，EPUB 导入时从 OPF 读出）。
 ///
 /// NSFW 候选（各源标的成人向条目）对所有源一视同仁：书自己标了 NSFW（或在 NSFW 合集里，
@@ -59,6 +60,7 @@ Future<BookCoverScrapeSelection?> showBookCoverScrapeDialog({
   String? isbn,
   RakutenBooksCredentials? rakuten,
   bool includeNsfw = false,
+  bool isSong = false,
   Future<void> Function()? onMarkNsfw,
 }) {
   return showAppDialog<BookCoverScrapeSelection>(
@@ -69,13 +71,15 @@ Future<BookCoverScrapeSelection?> showBookCoverScrapeDialog({
       isbn: isbn,
       rakuten: rakuten,
       includeNsfw: includeNsfw,
+      isSong: isSong,
       onMarkNsfw: onMarkNsfw,
     ),
   );
 }
 
-/// 给书架上的 [item] 开刮削弹窗：先读它的 ISBN（openBD 预填）与有效 NSFW 标记
-/// （决定显不显示 NSFW 候选），「标为 NSFW」写回同一个宿主。书架卡菜单与编辑弹窗共用。
+/// 给书架上的 [item] 开刮削弹窗：先读它的 ISBN（openBD 预填）、有效 NSFW 标记
+/// （决定显不显示 NSFW 候选）与是不是导入的歌曲（默认 iTunes），「标为 NSFW」写回同一个
+/// 宿主。书架卡菜单与编辑弹窗共用。
 Future<BookCoverScrapeSelection?> showBookCoverScrapeDialogForItem({
   required BuildContext context,
   required FushiDatabase db,
@@ -87,6 +91,7 @@ Future<BookCoverScrapeSelection?> showBookCoverScrapeDialogForItem({
   final String? isbn = await BookMetadataScrapeFacade.isbnForItem(db, item);
   final BookNsfwHost? host = BookMetadataScrapeFacade.nsfwHostForItem(item);
   final bool nsfw = await BookMetadataScrapeFacade.isNsfwHost(db, host);
+  final bool song = await BookMetadataScrapeFacade.isSongForItem(db, item);
   if (!context.mounted) return null;
   return showBookCoverScrapeDialog(
     context: context,
@@ -95,6 +100,7 @@ Future<BookCoverScrapeSelection?> showBookCoverScrapeDialogForItem({
     isbn: isbn,
     rakuten: rakuten,
     includeNsfw: nsfw,
+    isSong: song,
     onMarkNsfw: host == null
         ? null
         : () => writeMediaNsfw(db, host.kind, host.entryKey, true),
@@ -118,10 +124,14 @@ class BookCoverScrapeDialog extends StatefulWidget {
     this.isbn,
     this.rakuten,
     this.includeNsfw = false,
+    this.isSong = false,
     this.onMarkNsfw,
   });
 
   final String initialQuery;
+
+  /// 这本「书」其实是导入的歌曲（LRC 歌词 + 音频）：默认源切到 iTunes。
+  final bool isSong;
 
   /// 显示 NSFW 候选（书自己是 NSFW 时为 true）。
   final bool includeNsfw;
@@ -147,12 +157,17 @@ class BookCoverScrapeDialog extends StatefulWidget {
 }
 
 /// 纯函数：弹窗的初始源与搜索词。预填词里带 DLsite 编号 → (DLsite, 编号)；预填词
-/// 本身是一个 ISBN → (openBD, ISBN-13)；否则 (Bangumi, 原词)。
-(BookScrapeSource, String) bookScrapeInitialState(String initialQuery) {
+/// 本身是一个 ISBN → (openBD, ISBN-13)；[isSong]（导入的歌曲）→ (iTunes, 原词)；否则
+/// (Bangumi, 原词)。
+(BookScrapeSource, String) bookScrapeInitialState(
+  String initialQuery, {
+  bool isSong = false,
+}) {
   final DlsiteWorkId? id = DlsiteWorkId.findIn(initialQuery);
   if (id != null) return (BookScrapeSource.dlsite, id.value);
   final String? isbn = normalizeIsbn13(initialQuery);
   if (isbn != null) return (BookScrapeSource.openbd, isbn);
+  if (isSong) return (BookScrapeSource.itunes, initialQuery);
   return (BookScrapeSource.bangumi, initialQuery);
 }
 
@@ -204,6 +219,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     super.initState();
     final (BookScrapeSource source, String query) = bookScrapeInitialState(
       widget.initialQuery,
+      isSong: widget.isSong,
     );
     _source = source;
     _includeNsfw = widget.includeNsfw;

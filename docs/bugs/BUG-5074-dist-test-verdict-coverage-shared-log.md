@@ -1,0 +1,12 @@
+## BUG-5074 · 「dist 请求 7 个测试文件只跑 2 个仍判 PASSED」是并发代理共用日志名读串了；dist_test 判绿改为逐个核对请求的 suite
+- **报告**：2026-11-21（合并 PR #3763 的审查代理：`heavy.dart -- flutter test <7 个文件>` 外包到 dist，输出 2 个文件、54 个测试、`DIST TEST VERDICT: PASSED`）
+- **真实性**：❌ dist_test 没有漏跑后判绿，报告看到的是**另一个代理那次运行的结尾**。✅ 但 dist_test 的覆盖核对是隐式的，已改成显式。证据：
+  - 审查代理（worktree `wf_3db34525-377-4`）把输出重定向到会话 scratchpad 的固定名 `test.log`；同一 workflow 的另一个代理（`wf_3db34525-377-3`）同时把它自己的 `flutter test <2 个字体测试>` 也写进同一个 `scratchpad/test.log`（workflow 子代理共用父会话的 scratchpad）。审查代理读到的内容前半是自己的运行（`7 suite placements`、快照 `9f0b222851fa`、日志目录 `377-4/.codex-test/dist/20261121-162236-e964`），中间一段 NUL 字节（两个进程各自 `O_TRUNC` 后在不同偏移写，留下空洞），后半是 377-3 的运行（快照 `070956597bcd`、`batch 1 (2 suites)`、54 tests、PASSED、`exit=0`）。
+  - 377-4 那次 dist 运行目录里只有 `prepare.*.log`、没有任何 batch / summary；heavy 历史记录这次实际是 `where: here`、`exit: 1`（`%LOCALAPPDATA%/fushi-heavy/history.jsonl` 08:26:07Z）——外包被拒后在本机跑、而且是红的。54 tests 的 summary 在 `377-3/.codex-test/dist/20261121-162056-1926`，那次请求的就是 2 个文件（377-3 代理的命令原文），2 个都有 `suite` 事件。
+  - 沿代码核对 dist_test 本身：每个 batch 的 suite 缺事件即红（`fushi/tool/test_flow/dist_results.dart` `DistBatchResult.missingSuites`）；队列里取出的 batch 要么 `giveBack` / `retryAfterInfra` 回队、要么进 `results`（`fushi/tool/dist_test.dart` `_Scheduler.drive`）；剩在队列里的和无合格 worker 的由 `main()` 拼成 `unplaced` 判红。没有找到让请求的 suite 既不在结果里也不判红的路径。
+  - 隐式之处（本次修掉）：整轮判绿不核对「请求集合 ⊆ 结果集合」，而是信 `main()` 从 `unplaceable + queue.remaining` 拼出的清单（原 `dist_test.dart:468`）。调度器以后任何一处把 batch 弄丢（既不回队也不进 results）都会静默判绿；PASSED 行也只报测试数、不报跑了几个 suite，读日志的人无从对照请求数。
+- **[x] ① 已修复** — `DistRunVerdict` 改收 `requested`（计划里的每个 suite placement，`main()` 传 `units` 全集），`notRun` 由「请求 − 回来的 batch 文件」多重集差算出，非空即 FAILED 并列出缺失清单（前 5 个进 VERDICT 行，全部进 `summary.md` 的「Never ran」）；不再依赖调度器的队列状态。PASSED 行与 summary 增加 `N of M suites`，一眼能对出与请求数不符的日志。
+- **[x] ② 已加自动化测试** — `fushi/test/tools/dist_results_test.dart`「run verdict: every requested suite must come back」：7 个请求、回来的 batch 只含 2 个且自身全绿 → FAILED、`notRun` 为其余 5 个、summary `suites ran: 2 of 7` 且无 PASSED；同一 suite 两个平台 placement 只回来一个 → FAILED；全部回来 → 绿。变异实测：把 `failure` 里的 `notRun` 判红删掉，该组 2 条红。
+- **备注**：
+  - 真正的事故根因在代理侧：`.claude/agents/{general,reviewer,worker}.md` 的「`<命令> > <日志>`」模板没要求日志名唯一，而同一会话下的 workflow 子代理共用一个 scratchpad，固定名 `test.log` 会互相截断 / 覆盖，`until grep -q '^exit='` 还会匹配到别人的 `exit=` 行。改代理配置需用户点头，未改；建议模板写成日志名带 worktree 名（如 `<scratchpad>/<worktree名>-test.log`）。
+  - 相关但不同的另一条：BUG-4965（heavy 排队时跟随了别的工作区的 dist 运行），本次改动不覆盖它——那种情况下外来运行自身的覆盖是完整的。

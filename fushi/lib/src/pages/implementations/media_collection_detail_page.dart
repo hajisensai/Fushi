@@ -57,6 +57,7 @@ import 'package:fushi/src/media/video/metadata/video_credit_rail.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
+import 'package:fushi/src/media/video/online/anime_source_stream_label.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show localVideoFileCandidates, videoBookHasLocalFiles;
 import 'package:fushi/src/media/video/scraper/episode_rename.dart';
@@ -394,6 +395,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 播放器记下的各集真实片长（bookUid → 毫秒，BUG-3491，见 video_duration_pref.dart）。
   Map<String, int> _knownDurationsMs = const <String, int>{};
 
+  /// 只能在线播放（在线视频源入库、还没下载）的集：bookUid → 源名（查不到为
+  /// null）。集卡状态行据此写「Streams · 源名」代替空着的规格摘要（拍板台
+  /// 646L8W6DK2），一眼分清哪些集还没下载。
+  Map<String, String?> _streamingSourceByUid = const <String, String?>{};
+
   /// 本页**派出去的播放**还没回来：从播放页返回（本页路由重新成为栈顶）时据此
   /// 重读成员进度（BUG-3491）。
   ///
@@ -584,6 +590,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     final Map<String, int> knownDurations = await loadKnownVideoDurationsMs(
       widget.database,
     );
+    final Map<String, String?> streamingSources =
+        await loadAnimeSourceStreamingNames(widget.database, members);
     final List<DiscRef> discs = collectDiscRefs(members);
     final bool remoteDisc =
         discs.isEmpty &&
@@ -596,6 +604,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       _discs = discs;
       _hasRemoteDisc = remoteDisc;
       _knownDurationsMs = knownDurations;
+      _streamingSourceByUid = streamingSources;
       _slots = episodeSlots;
       _groupKeyByEntry = <String, String>{
         for (final CollectionEpisodeSlot slot in episodeSlots)
@@ -2825,6 +2834,31 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     );
   }
 
+  /// 集卡状态行右端：只在线播放的集写「Streams · 源名」（拍板台 646L8W6DK2，
+  /// 不复用云角标——那枚表示「只在对端设备」）；其余照旧是规格摘要
+  /// （`1080p · HDR10 · HEVC`，v95）。
+  Widget _episodeTrailingStatus(
+    BuildContext context,
+    CollectionEpisodeSlot episode,
+  ) {
+    final VideoBookRow? local = episode.local;
+    if (local != null && _streamingSourceByUid.containsKey(local.bookUid)) {
+      final ThemeData theme = Theme.of(context);
+      return Text(
+        animeSourceStreamingLabel(_streamingSourceByUid[local.bookUid]),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      );
+    }
+    return VideoSpecsInlineLine(
+      service: widget.videoSpecs,
+      filePath: local?.videoPath,
+    );
+  }
+
   /// 单张集卡：序号 / 集名 / 集简介 / 观看状态 / 规格摘要在本页求值，视觉交给
   /// 共享 [CollectionEpisodeCard]（hayase 式宽卡，整卡 IgnorePointer——手势归
   /// [FushiReorderableGrid]）；键盘/手柄焦点不走指针，[FushiFocusTarget] 照常可
@@ -2854,10 +2888,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             isContinue: episode.entryKey == _continueKey,
             isRemote: episode.isRemote,
             downloadBadge: downloadBadge,
-            trailingStatus: VideoSpecsInlineLine(
-              service: widget.videoSpecs,
-              filePath: episode.local?.videoPath,
-            ),
+            trailingStatus: _episodeTrailingStatus(context, episode),
           )
         : CollectionEpisodeCard(
             thumb: collectionEpisodeThumb(context, _episodeCover(episode)),
@@ -2877,10 +2908,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             isRemote: episode.isRemote,
             downloadBadge: downloadBadge,
             // v95：该集的规格摘要（`1080p · HDR10 · HEVC`），挤在状态行右端。
-            trailingStatus: VideoSpecsInlineLine(
-              service: widget.videoSpecs,
-              filePath: episode.local?.videoPath,
-            ),
+            trailingStatus: _episodeTrailingStatus(context, episode),
           );
     // 远端集 + 库页注入了下载管理器 → 集卡跟着该集任务快照重绘（进度环 / 失败
     // 角标）。任务键 = 远端集 id = entryKey，与库页远端占位卡同一张表；管理器是

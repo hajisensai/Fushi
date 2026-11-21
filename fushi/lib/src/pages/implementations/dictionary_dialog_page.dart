@@ -2141,7 +2141,7 @@ class _DictionaryDialogPageState extends BasePageState {
                           child: FushiListItem(
                             minHeight: 44,
                             leading: const FushiIcon(
-                              Icons.upgrade_rounded,
+                              FushiIcons.upgrade,
                               size: 18,
                             ),
                             title: Text(

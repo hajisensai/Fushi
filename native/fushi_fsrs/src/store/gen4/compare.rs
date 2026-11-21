@@ -302,7 +302,8 @@ pub(crate) fn cache_effect(kind: EntKind, key: &str) -> Effect {
         "pending_decision",
     ];
     match (kind, head) {
-        (EntKind::NoteType, "name" | "css" | "fieldDesc") => NO_EFFECT,
+        // `browseFields` 只给浏览页挑副字段，不进任何缓存列。
+        (EntKind::NoteType, "name" | "css" | "fieldDesc" | "browseFields") => NO_EFFECT,
         (EntKind::NoteType, _) => Effect {
             note: &[
                 "term_key",
@@ -1472,6 +1473,8 @@ mod tests {
             "tmplDef/x",
             "termField",
             "freqField",
+            "sortField",
+            "browseFields",
             "deleted",
             "f/x",
             "deck",
