@@ -49,7 +49,10 @@ class LibraryAcquisitionBackend implements VideoAcquisitionChannelBackend {
   VideoAcquisitionChannel get channel => VideoAcquisitionChannel.library;
 
   @override
-  Future<VideoAcquisitionLookup> lookup(VideoMediaReference reference) async {
+  Future<VideoAcquisitionLookup> lookup(
+    VideoMediaReference reference, {
+    VideoAcquisitionProgress? onProgress,
+  }) async {
     final VideoAcquisitionHit? hit = await find(reference);
     return VideoAcquisitionLookup.hits(<VideoAcquisitionHit>[?hit]);
   }
@@ -90,7 +93,10 @@ class TorrentAcquisitionBackend implements VideoAcquisitionChannelBackend {
   VideoAcquisitionChannel get channel => VideoAcquisitionChannel.torrent;
 
   @override
-  Future<VideoAcquisitionLookup> lookup(VideoMediaReference reference) async {
+  Future<VideoAcquisitionLookup> lookup(
+    VideoMediaReference reference, {
+    VideoAcquisitionProgress? onProgress,
+  }) async {
     final VideoResourceRegistry? registry = this.registry();
     if (registry == null ||
         !hasApplicableVideoResourceProvider(
@@ -153,18 +159,34 @@ class VideoAcquisitionSearchTarget {
 
 /// 对每个来源依次试 [titles]，第一个有命中的为准；来源之间有界并发。全部来源都
 /// 失败时抛出第一个错误，部分失败计入 failedSourceCount。
+///
+/// 按来源逐个出结果：每个来源一返回（命中 / 无命中 / 失败），只要还有来源没回来
+/// 就调一次 [onProgress]，交出「已到命中 + 仍未返回的来源数」快照。命中按**到达
+/// 顺序**追加（快源在前），最终返回值与最后一份快照同序，面板上已显示的行不会
+/// 因为慢源晚到而换位。
 Future<VideoAcquisitionLookup> searchVideoAcquisitionTargets({
   required List<VideoAcquisitionSearchTarget> targets,
   required List<String> titles,
   required String logTag,
   int maxConcurrent = 4,
+  VideoAcquisitionProgress? onProgress,
 }) async {
-  final List<List<VideoAcquisitionHit>> perTarget =
-      List<List<VideoAcquisitionHit>>.filled(
-        targets.length,
-        const <VideoAcquisitionHit>[],
-      );
+  final List<VideoAcquisitionHit> arrived = <VideoAcquisitionHit>[];
   final List<Object> errors = <Object>[];
+  int pending = targets.length;
+  void settle() {
+    pending--;
+    if (pending > 0) {
+      onProgress?.call(
+        VideoAcquisitionLookup.hits(
+          List<VideoAcquisitionHit>.unmodifiable(arrived),
+          failedSourceCount: errors.length,
+          pendingSourceCount: pending,
+        ),
+      );
+    }
+  }
+
   await runBoundedTasks<int>(
     <int>[for (int i = 0; i < targets.length; i++) i],
     maxConcurrent: maxConcurrent,
@@ -174,22 +196,25 @@ Future<VideoAcquisitionLookup> searchVideoAcquisitionTargets({
         for (final String title in titles) {
           final List<VideoAcquisitionHit> hits = await target.search(title);
           if (hits.isNotEmpty) {
-            perTarget[index] = hits;
+            arrived.addAll(hits);
             return;
           }
         }
       } on Object catch (error, stack) {
         ErrorLogService.instance.log('$logTag[${target.name}]', error, stack);
         errors.add(error);
+      } finally {
+        settle();
       }
     },
   );
   if (targets.isNotEmpty && errors.length == targets.length) {
     throw VideoAcquisitionChannelFailure(errors.first);
   }
-  return VideoAcquisitionLookup.hits(<VideoAcquisitionHit>[
-    for (final List<VideoAcquisitionHit> hits in perTarget) ...hits,
-  ], failedSourceCount: errors.length);
+  return VideoAcquisitionLookup.hits(
+    List<VideoAcquisitionHit>.unmodifiable(arrived),
+    failedSourceCount: errors.length,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -208,7 +233,10 @@ class OnlineSourceAcquisitionBackend implements VideoAcquisitionChannelBackend {
   VideoAcquisitionChannel get channel => VideoAcquisitionChannel.onlineSource;
 
   @override
-  Future<VideoAcquisitionLookup> lookup(VideoMediaReference reference) async {
+  Future<VideoAcquisitionLookup> lookup(
+    VideoMediaReference reference, {
+    VideoAcquisitionProgress? onProgress,
+  }) async {
     final List<VideoAcquisitionSearchTarget> sources = await targets();
     if (sources.isEmpty) {
       return VideoAcquisitionLookup.unconfigured(configure: configure);
@@ -220,6 +248,7 @@ class OnlineSourceAcquisitionBackend implements VideoAcquisitionChannelBackend {
         max: kVideoAcquisitionMaxSearchTitles,
       ),
       logTag: 'VideoAcquisition.onlineSource',
+      onProgress: onProgress,
     );
   }
 }
@@ -304,7 +333,10 @@ class MediaServerAcquisitionBackend implements VideoAcquisitionChannelBackend {
   VideoAcquisitionChannel get channel => VideoAcquisitionChannel.mediaServer;
 
   @override
-  Future<VideoAcquisitionLookup> lookup(VideoMediaReference reference) async {
+  Future<VideoAcquisitionLookup> lookup(
+    VideoMediaReference reference, {
+    VideoAcquisitionProgress? onProgress,
+  }) async {
     final List<MediaServerSession> servers = await sessions();
     if (servers.isEmpty) {
       return VideoAcquisitionLookup.unconfigured(configure: configure);
@@ -323,6 +355,7 @@ class MediaServerAcquisitionBackend implements VideoAcquisitionChannelBackend {
         max: kVideoAcquisitionMaxSearchTitles,
       ),
       logTag: 'VideoAcquisition.mediaServer',
+      onProgress: onProgress,
     );
   }
 
