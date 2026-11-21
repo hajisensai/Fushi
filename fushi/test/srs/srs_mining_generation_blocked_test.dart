@@ -118,7 +118,7 @@ void main() {
 
   group('SrsMiningAnkiRepository：解析器抛代际异常', () {
     SrsMiningAnkiRepository repoThrowing(
-      Object error, {
+      Exception error, {
       _Anki? inner,
       bool background = false,
     }) => SrsMiningAnkiRepository(
@@ -235,7 +235,7 @@ void main() {
   });
 
   group('互联主机替对端制卡（HostRemoteMiningTargets）', () {
-    HostRemoteMiningTargets targetsBlockedBy(Object error, _Anki anki) =>
+    HostRemoteMiningTargets targetsBlockedBy(Exception error, _Anki anki) =>
         HostRemoteMiningTargets(
           defaultKind: () => kRemoteMiningKindReview,
           defaultRepository: () => SrsMiningAnkiRepository(
