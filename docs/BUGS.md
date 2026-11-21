@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4385 条。点号进各自文件。
+> 共 4386 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5069](bugs/BUG-5069-srs-mining-generation-blocked-message.md) | ✅ | ✅ | 复习库在换代途中时制卡只报「Fushi review is not available.」，不提示去升级 |
 | [BUG-5064](bugs/BUG-5064-dict-history-entries-object-rows.md) | 🚧 | 🚧 | 查词历史 entries 存成对象的坏行每次启动重复报错不清理 |
 | [BUG-5063](bugs/BUG-5063-srs-gen4-migration-stats-logid-mismatch.md) | 🚧 | 🚧 | gen4 迁移对拍：4.7 GB 库第 7/10 步后 stats 两侧 log_id 集合不一致回滚 |
 | [BUG-5056](bugs/BUG-5056-srs4-migration-nested-merge-verdict.md) | ✅ | ✅ | 复习库升级（gen4 迁移）在嵌套并入过的库上核对失败、整体撤回 |
