@@ -62489,6 +62489,296 @@ class VideoEpisodeBindingOverridesCompanion
   }
 }
 
+class $VideoCollectionSectionOverridesTable
+    extends VideoCollectionSectionOverrides
+    with
+        TableInfo<
+          $VideoCollectionSectionOverridesTable,
+          VideoCollectionSectionOverrideRow
+        > {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $VideoCollectionSectionOverridesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _bookUidMeta = const VerificationMeta(
+    'bookUid',
+  );
+  @override
+  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
+    'book_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES video_books (book_uid) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _sectionKeyMeta = const VerificationMeta(
+    'sectionKey',
+  );
+  @override
+  late final GeneratedColumn<String> sectionKey = GeneratedColumn<String>(
+    'section_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [bookUid, sectionKey, updatedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'video_collection_section_overrides';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<VideoCollectionSectionOverrideRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('book_uid')) {
+      context.handle(
+        _bookUidMeta,
+        bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_bookUidMeta);
+    }
+    if (data.containsKey('section_key')) {
+      context.handle(
+        _sectionKeyMeta,
+        sectionKey.isAcceptableOrUnknown(data['section_key']!, _sectionKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sectionKeyMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {bookUid};
+  @override
+  VideoCollectionSectionOverrideRow map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return VideoCollectionSectionOverrideRow(
+      bookUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}book_uid'],
+      )!,
+      sectionKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}section_key'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $VideoCollectionSectionOverridesTable createAlias(String alias) {
+    return $VideoCollectionSectionOverridesTable(attachedDatabase, alias);
+  }
+}
+
+class VideoCollectionSectionOverrideRow extends DataClass
+    implements Insertable<VideoCollectionSectionOverrideRow> {
+  final String bookUid;
+
+  /// 分栏键，与引擎派生键同一值域：`s<N>`（N ≥ 1，第 N 季）或 `extras`（PV·特典）。
+  /// 写入口只接受这两种形状（引擎 `isValidCollectionSectionKey`）；读到别的形状按
+  /// 「没有指定」处理。
+  final String sectionKey;
+  final int updatedAt;
+  const VideoCollectionSectionOverrideRow({
+    required this.bookUid,
+    required this.sectionKey,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['book_uid'] = Variable<String>(bookUid);
+    map['section_key'] = Variable<String>(sectionKey);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  VideoCollectionSectionOverridesCompanion toCompanion(bool nullToAbsent) {
+    return VideoCollectionSectionOverridesCompanion(
+      bookUid: Value(bookUid),
+      sectionKey: Value(sectionKey),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory VideoCollectionSectionOverrideRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return VideoCollectionSectionOverrideRow(
+      bookUid: serializer.fromJson<String>(json['bookUid']),
+      sectionKey: serializer.fromJson<String>(json['sectionKey']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'bookUid': serializer.toJson<String>(bookUid),
+      'sectionKey': serializer.toJson<String>(sectionKey),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  VideoCollectionSectionOverrideRow copyWith({
+    String? bookUid,
+    String? sectionKey,
+    int? updatedAt,
+  }) => VideoCollectionSectionOverrideRow(
+    bookUid: bookUid ?? this.bookUid,
+    sectionKey: sectionKey ?? this.sectionKey,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  VideoCollectionSectionOverrideRow copyWithCompanion(
+    VideoCollectionSectionOverridesCompanion data,
+  ) {
+    return VideoCollectionSectionOverrideRow(
+      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
+      sectionKey: data.sectionKey.present
+          ? data.sectionKey.value
+          : this.sectionKey,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoCollectionSectionOverrideRow(')
+          ..write('bookUid: $bookUid, ')
+          ..write('sectionKey: $sectionKey, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(bookUid, sectionKey, updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is VideoCollectionSectionOverrideRow &&
+          other.bookUid == this.bookUid &&
+          other.sectionKey == this.sectionKey &&
+          other.updatedAt == this.updatedAt);
+}
+
+class VideoCollectionSectionOverridesCompanion
+    extends UpdateCompanion<VideoCollectionSectionOverrideRow> {
+  final Value<String> bookUid;
+  final Value<String> sectionKey;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const VideoCollectionSectionOverridesCompanion({
+    this.bookUid = const Value.absent(),
+    this.sectionKey = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  VideoCollectionSectionOverridesCompanion.insert({
+    required String bookUid,
+    required String sectionKey,
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  }) : bookUid = Value(bookUid),
+       sectionKey = Value(sectionKey),
+       updatedAt = Value(updatedAt);
+  static Insertable<VideoCollectionSectionOverrideRow> custom({
+    Expression<String>? bookUid,
+    Expression<String>? sectionKey,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (bookUid != null) 'book_uid': bookUid,
+      if (sectionKey != null) 'section_key': sectionKey,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  VideoCollectionSectionOverridesCompanion copyWith({
+    Value<String>? bookUid,
+    Value<String>? sectionKey,
+    Value<int>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return VideoCollectionSectionOverridesCompanion(
+      bookUid: bookUid ?? this.bookUid,
+      sectionKey: sectionKey ?? this.sectionKey,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (bookUid.present) {
+      map['book_uid'] = Variable<String>(bookUid.value);
+    }
+    if (sectionKey.present) {
+      map['section_key'] = Variable<String>(sectionKey.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoCollectionSectionOverridesCompanion(')
+          ..write('bookUid: $bookUid, ')
+          ..write('sectionKey: $sectionKey, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $PendingMineQueueTable extends PendingMineQueue
     with TableInfo<$PendingMineQueueTable, PendingMineRow> {
   @override
@@ -85336,6 +85626,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       $AnidbFileIdentitiesTable(this);
   late final $VideoEpisodeBindingOverridesTable videoEpisodeBindingOverrides =
       $VideoEpisodeBindingOverridesTable(this);
+  late final $VideoCollectionSectionOverridesTable
+  videoCollectionSectionOverrides = $VideoCollectionSectionOverridesTable(this);
   late final $PendingMineQueueTable pendingMineQueue = $PendingMineQueueTable(
     this,
   );
@@ -85510,6 +85802,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     mangaDownloadJobs,
     anidbFileIdentities,
     videoEpisodeBindingOverrides,
+    videoCollectionSectionOverrides,
     pendingMineQueue,
     videoSubtitleGlossaries,
     videoSubtitleTextOverrides,
@@ -86049,6 +86342,18 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       ),
       result: [
         TableUpdate('video_episode_binding_overrides', kind: UpdateKind.delete),
+      ],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'video_books',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [
+        TableUpdate(
+          'video_collection_section_overrides',
+          kind: UpdateKind.delete,
+        ),
       ],
     ),
     WritePropagation(
@@ -94534,6 +94839,36 @@ final class $$VideoBooksTableReferences
       manager.$state.copyWith(prefetchedData: cache),
     );
   }
+
+  static MultiTypedResultKey<
+    $VideoCollectionSectionOverridesTable,
+    List<VideoCollectionSectionOverrideRow>
+  >
+  _videoCollectionSectionOverridesRefsTable(
+    _$FushiDatabase db,
+  ) => MultiTypedResultKey.fromTable(
+    db.videoCollectionSectionOverrides,
+    aliasName:
+        'video_books__book_uid__video_collection_section_overrides__book_uid',
+  );
+
+  $$VideoCollectionSectionOverridesTableProcessedTableManager
+  get videoCollectionSectionOverridesRefs {
+    final manager =
+        $$VideoCollectionSectionOverridesTableTableManager(
+          $_db,
+          $_db.videoCollectionSectionOverrides,
+        ).filter(
+          (f) => f.bookUid.bookUid.sqlEquals($_itemColumn<String>('book_uid')!),
+        );
+
+    final cache = $_typedResult.readTableOrNull(
+      _videoCollectionSectionOverridesRefsTable($_db),
+    );
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
 }
 
 class $$VideoBooksTableFilterComposer
@@ -94819,6 +95154,35 @@ class $$VideoBooksTableFilterComposer
               }) => $$VideoEpisodeBindingOverridesTableFilterComposer(
                 $db: $db,
                 $table: $db.videoEpisodeBindingOverrides,
+                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                joinBuilder: joinBuilder,
+                $removeJoinBuilderFromRootComposer:
+                    $removeJoinBuilderFromRootComposer,
+              ),
+        );
+    return f(composer);
+  }
+
+  Expression<bool> videoCollectionSectionOverridesRefs(
+    Expression<bool> Function(
+      $$VideoCollectionSectionOverridesTableFilterComposer f,
+    )
+    f,
+  ) {
+    final $$VideoCollectionSectionOverridesTableFilterComposer composer =
+        $composerBuilder(
+          composer: this,
+          getCurrentColumn: (t) => t.bookUid,
+          referencedTable: $db.videoCollectionSectionOverrides,
+          getReferencedColumn: (t) => t.bookUid,
+          builder:
+              (
+                joinBuilder, {
+                $addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer,
+              }) => $$VideoCollectionSectionOverridesTableFilterComposer(
+                $db: $db,
+                $table: $db.videoCollectionSectionOverrides,
                 $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
                 joinBuilder: joinBuilder,
                 $removeJoinBuilderFromRootComposer:
@@ -95248,6 +95612,35 @@ class $$VideoBooksTableAnnotationComposer
         );
     return f(composer);
   }
+
+  Expression<T> videoCollectionSectionOverridesRefs<T extends Object>(
+    Expression<T> Function(
+      $$VideoCollectionSectionOverridesTableAnnotationComposer a,
+    )
+    f,
+  ) {
+    final $$VideoCollectionSectionOverridesTableAnnotationComposer composer =
+        $composerBuilder(
+          composer: this,
+          getCurrentColumn: (t) => t.bookUid,
+          referencedTable: $db.videoCollectionSectionOverrides,
+          getReferencedColumn: (t) => t.bookUid,
+          builder:
+              (
+                joinBuilder, {
+                $addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer,
+              }) => $$VideoCollectionSectionOverridesTableAnnotationComposer(
+                $db: $db,
+                $table: $db.videoCollectionSectionOverrides,
+                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                joinBuilder: joinBuilder,
+                $removeJoinBuilderFromRootComposer:
+                    $removeJoinBuilderFromRootComposer,
+              ),
+        );
+    return f(composer);
+  }
 }
 
 class $$VideoBooksTableTableManager
@@ -95271,6 +95664,7 @@ class $$VideoBooksTableTableManager
             bool videoMetadataEpisodesRefs,
             bool videoMetadataExtrasRefs,
             bool videoEpisodeBindingOverridesRefs,
+            bool videoCollectionSectionOverridesRefs,
           })
         > {
   $$VideoBooksTableTableManager(_$FushiDatabase db, $VideoBooksTable table)
@@ -95401,6 +95795,7 @@ class $$VideoBooksTableTableManager
                 videoMetadataEpisodesRefs = false,
                 videoMetadataExtrasRefs = false,
                 videoEpisodeBindingOverridesRefs = false,
+                videoCollectionSectionOverridesRefs = false,
               }) {
                 return PrefetchHooks(
                   db: db,
@@ -95412,6 +95807,8 @@ class $$VideoBooksTableTableManager
                     if (videoMetadataExtrasRefs) db.videoMetadataExtras,
                     if (videoEpisodeBindingOverridesRefs)
                       db.videoEpisodeBindingOverrides,
+                    if (videoCollectionSectionOverridesRefs)
+                      db.videoCollectionSectionOverrides,
                   ],
                   addJoins:
                       <
@@ -95574,6 +95971,27 @@ class $$VideoBooksTableTableManager
                               ),
                           typedResults: items,
                         ),
+                      if (videoCollectionSectionOverridesRefs)
+                        await $_getPrefetchedData<
+                          VideoBookRow,
+                          $VideoBooksTable,
+                          VideoCollectionSectionOverrideRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$VideoBooksTableReferences
+                              ._videoCollectionSectionOverridesRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$VideoBooksTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).videoCollectionSectionOverridesRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.bookUid == item.bookUid,
+                              ),
+                          typedResults: items,
+                        ),
                     ];
                   },
                 );
@@ -95602,6 +96020,7 @@ typedef $$VideoBooksTableProcessedTableManager =
         bool videoMetadataEpisodesRefs,
         bool videoMetadataExtrasRefs,
         bool videoEpisodeBindingOverridesRefs,
+        bool videoCollectionSectionOverridesRefs,
       })
     >;
 typedef $$VideoWatchStatisticsTableCreateCompanionBuilder =
@@ -129636,6 +130055,321 @@ typedef $$VideoEpisodeBindingOverridesTableProcessedTableManager =
       VideoEpisodeBindingOverrideRow,
       PrefetchHooks Function({bool bookUid})
     >;
+typedef $$VideoCollectionSectionOverridesTableCreateCompanionBuilder =
+    VideoCollectionSectionOverridesCompanion Function({
+      required String bookUid,
+      required String sectionKey,
+      required int updatedAt,
+      Value<int> rowid,
+    });
+typedef $$VideoCollectionSectionOverridesTableUpdateCompanionBuilder =
+    VideoCollectionSectionOverridesCompanion Function({
+      Value<String> bookUid,
+      Value<String> sectionKey,
+      Value<int> updatedAt,
+      Value<int> rowid,
+    });
+
+final class $$VideoCollectionSectionOverridesTableReferences
+    extends
+        BaseReferences<
+          _$FushiDatabase,
+          $VideoCollectionSectionOverridesTable,
+          VideoCollectionSectionOverrideRow
+        > {
+  $$VideoCollectionSectionOverridesTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $VideoBooksTable _bookUidTable(_$FushiDatabase db) =>
+      db.videoBooks.createAlias(
+        'video_collection_section_overrides__book_uid__video_books__book_uid',
+      );
+
+  $$VideoBooksTableProcessedTableManager get bookUid {
+    final $_column = $_itemColumn<String>('book_uid')!;
+
+    final manager = $$VideoBooksTableTableManager(
+      $_db,
+      $_db.videoBooks,
+    ).filter((f) => f.bookUid.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_bookUidTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$VideoCollectionSectionOverridesTableFilterComposer
+    extends Composer<_$FushiDatabase, $VideoCollectionSectionOverridesTable> {
+  $$VideoCollectionSectionOverridesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get sectionKey => $composableBuilder(
+    column: $table.sectionKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$VideoBooksTableFilterComposer get bookUid {
+    final $$VideoBooksTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.bookUid,
+      referencedTable: $db.videoBooks,
+      getReferencedColumn: (t) => t.bookUid,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VideoBooksTableFilterComposer(
+            $db: $db,
+            $table: $db.videoBooks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$VideoCollectionSectionOverridesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $VideoCollectionSectionOverridesTable> {
+  $$VideoCollectionSectionOverridesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get sectionKey => $composableBuilder(
+    column: $table.sectionKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$VideoBooksTableOrderingComposer get bookUid {
+    final $$VideoBooksTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.bookUid,
+      referencedTable: $db.videoBooks,
+      getReferencedColumn: (t) => t.bookUid,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VideoBooksTableOrderingComposer(
+            $db: $db,
+            $table: $db.videoBooks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$VideoCollectionSectionOverridesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $VideoCollectionSectionOverridesTable> {
+  $$VideoCollectionSectionOverridesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get sectionKey => $composableBuilder(
+    column: $table.sectionKey,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  $$VideoBooksTableAnnotationComposer get bookUid {
+    final $$VideoBooksTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.bookUid,
+      referencedTable: $db.videoBooks,
+      getReferencedColumn: (t) => t.bookUid,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VideoBooksTableAnnotationComposer(
+            $db: $db,
+            $table: $db.videoBooks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$VideoCollectionSectionOverridesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $VideoCollectionSectionOverridesTable,
+          VideoCollectionSectionOverrideRow,
+          $$VideoCollectionSectionOverridesTableFilterComposer,
+          $$VideoCollectionSectionOverridesTableOrderingComposer,
+          $$VideoCollectionSectionOverridesTableAnnotationComposer,
+          $$VideoCollectionSectionOverridesTableCreateCompanionBuilder,
+          $$VideoCollectionSectionOverridesTableUpdateCompanionBuilder,
+          (
+            VideoCollectionSectionOverrideRow,
+            $$VideoCollectionSectionOverridesTableReferences,
+          ),
+          VideoCollectionSectionOverrideRow,
+          PrefetchHooks Function({bool bookUid})
+        > {
+  $$VideoCollectionSectionOverridesTableTableManager(
+    _$FushiDatabase db,
+    $VideoCollectionSectionOverridesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$VideoCollectionSectionOverridesTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$VideoCollectionSectionOverridesTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$VideoCollectionSectionOverridesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> bookUid = const Value.absent(),
+                Value<String> sectionKey = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => VideoCollectionSectionOverridesCompanion(
+                bookUid: bookUid,
+                sectionKey: sectionKey,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String bookUid,
+                required String sectionKey,
+                required int updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => VideoCollectionSectionOverridesCompanion.insert(
+                bookUid: bookUid,
+                sectionKey: sectionKey,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$VideoCollectionSectionOverridesTableReferences(
+                    db,
+                    table,
+                    e,
+                  ),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({bookUid = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (bookUid) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.bookUid,
+                                referencedTable:
+                                    $$VideoCollectionSectionOverridesTableReferences
+                                        ._bookUidTable(db),
+                                referencedColumn:
+                                    $$VideoCollectionSectionOverridesTableReferences
+                                        ._bookUidTable(db)
+                                        .bookUid,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$VideoCollectionSectionOverridesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $VideoCollectionSectionOverridesTable,
+      VideoCollectionSectionOverrideRow,
+      $$VideoCollectionSectionOverridesTableFilterComposer,
+      $$VideoCollectionSectionOverridesTableOrderingComposer,
+      $$VideoCollectionSectionOverridesTableAnnotationComposer,
+      $$VideoCollectionSectionOverridesTableCreateCompanionBuilder,
+      $$VideoCollectionSectionOverridesTableUpdateCompanionBuilder,
+      (
+        VideoCollectionSectionOverrideRow,
+        $$VideoCollectionSectionOverridesTableReferences,
+      ),
+      VideoCollectionSectionOverrideRow,
+      PrefetchHooks Function({bool bookUid})
+    >;
 typedef $$PendingMineQueueTableCreateCompanionBuilder =
     PendingMineQueueCompanion Function({
       required String id,
@@ -141675,6 +142409,12 @@ class $FushiDatabaseManager {
       $$VideoEpisodeBindingOverridesTableTableManager(
         _db,
         _db.videoEpisodeBindingOverrides,
+      );
+  $$VideoCollectionSectionOverridesTableTableManager
+  get videoCollectionSectionOverrides =>
+      $$VideoCollectionSectionOverridesTableTableManager(
+        _db,
+        _db.videoCollectionSectionOverrides,
       );
   $$PendingMineQueueTableTableManager get pendingMineQueue =>
       $$PendingMineQueueTableTableManager(_db, _db.pendingMineQueue);

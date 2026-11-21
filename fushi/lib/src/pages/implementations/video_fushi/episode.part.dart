@@ -394,9 +394,12 @@ extension _VideoEpisode on _VideoFushiPageState {
           episodeNumber: numberByKey[e.path.isNotEmpty ? e.path : e.title],
           // 季分组与合集详情页季 tab 同源（文件名纯函数，BUG-2520）：多季合集
           // 在播放器内也能切季，而不是一条混着 S01/S02/PV 的长轨道。
-          groupKey: collectionGroupKeyForFilename(
-            e.path.isNotEmpty ? e.path : e.title,
-          ),
+          // 本地集带着预先解析好的生效分栏（手动分栏 / 季集指定优先）。
+          groupKey:
+              e.sectionKey ??
+              collectionGroupKeyForFilename(
+                e.path.isNotEmpty ? e.path : e.title,
+              ),
           cover:
               resolveMediaCoverImage(
                 kind: MediaKind.video,

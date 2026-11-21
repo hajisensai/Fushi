@@ -11439,6 +11439,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     }
     final MediaCollectionRow fresh =
         await db.getMediaCollectionById(collection.id) ?? collection;
+    // 分季与合集详情页同口径（手动分栏 / 手动季集指定优先）。
+    final Map<String, String> sectionKeys =
+        await loadCollectionSubtitleSectionKeys(db, members);
     if (!mounted) return;
     if (members.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -11452,7 +11455,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       context,
       host: AppSubtitleWorkbenchHost(ref.read(appProvider)),
       saveDirectory: saveDir,
-      collection: SubtitleCollectionSpec(collection: fresh, members: members),
+      collection: SubtitleCollectionSpec(
+        collection: fresh,
+        members: members,
+        sectionKeys: sectionKeys,
+      ),
       initialScope: SubtitleWorkbenchScope.collection,
     );
   }

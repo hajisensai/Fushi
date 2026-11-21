@@ -805,6 +805,69 @@ mixin _FushiDbVideoDomain
           ))
           .go();
 
+  // ── video_collection_section_overrides（v167，拍板台 iR6ccUys9H）──
+
+  /// 一批文件的手动分栏（`book_uid → section_key`）；没指定的不在结果里。
+  Future<Map<String, String>> getVideoCollectionSectionOverrides(
+    Iterable<String> bookUids,
+  ) async {
+    final List<String> uids = bookUids.toSet().toList(growable: false);
+    if (uids.isEmpty) return const <String, String>{};
+    final Map<String, String> out = <String, String>{};
+    // SQLite 变量上限：大合集分块取。
+    for (int i = 0; i < uids.length; i += 500) {
+      final List<String> chunk = uids.sublist(
+        i,
+        i + 500 > uids.length ? uids.length : i + 500,
+      );
+      for (final VideoCollectionSectionOverrideRow row
+          in await (select(videoCollectionSectionOverrides)..where(
+                ($VideoCollectionSectionOverridesTable t) =>
+                    t.bookUid.isIn(chunk),
+              ))
+              .get()) {
+        out[row.bookUid] = row.sectionKey;
+      }
+    }
+    return out;
+  }
+
+  /// 写 / 覆盖一批文件的手动分栏（同一事务）。键形状由调用方校验。
+  Future<void> setVideoCollectionSectionOverrides(
+    Iterable<String> bookUids,
+    String sectionKey,
+  ) {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    return transaction(() async {
+      for (final String uid in bookUids.toSet()) {
+        await into(videoCollectionSectionOverrides).insertOnConflictUpdate(
+          VideoCollectionSectionOverridesCompanion.insert(
+            bookUid: uid,
+            sectionKey: sectionKey,
+            updatedAt: now,
+          ),
+        );
+      }
+    });
+  }
+
+  /// 清除一批文件的手动分栏（回到按文件名 / 手动季集派生）。
+  Future<void> clearVideoCollectionSectionOverrides(
+    Iterable<String> bookUids,
+  ) async {
+    final List<String> uids = bookUids.toSet().toList(growable: false);
+    for (int i = 0; i < uids.length; i += 500) {
+      final List<String> chunk = uids.sublist(
+        i,
+        i + 500 > uids.length ? uids.length : i + 500,
+      );
+      await (delete(videoCollectionSectionOverrides)..where(
+            ($VideoCollectionSectionOverridesTable t) => t.bookUid.isIn(chunk),
+          ))
+          .go();
+    }
+  }
+
   /// 把 [bookUid] 立刻改绑到 [workId] 下的 (季, 集) 分集行：原先绑它的行解绑
   /// （AniDB 身份三列随之清），目标行绑上并继承该文件的 AniDB eid / 原生集号、
   /// 评级写 `userVerified`。目标行不存在返回 false（UI 只让选已有的集）。

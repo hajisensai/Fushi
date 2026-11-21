@@ -34,6 +34,7 @@ import 'package:fushi/src/media/async_file_existence_cache.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/video_duration_pref.dart';
+import 'package:fushi/src/media/video/metadata/video_collection_section_dialog.dart';
 import 'package:fushi/src/media/video/metadata/video_episode_binding_dialog.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
@@ -45,6 +46,7 @@ import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
 import 'package:fushi/src/media/collections/collection_relation.dart';
 import 'package:fushi/src/media/collections/collection_scrape_metadata_compat.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart';
+import 'package:fushi_engine/media/collections/collection_section_loader.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/video/anilist_client.dart' show AniListMedia;
@@ -328,6 +330,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// host 下发的标题（host 端标题默认即文件名）。键不随重排变化，故只在 [_reload] 重算。
   Map<String, String> _groupKeyByEntry = const <String, String>{};
 
+  /// 用户 / AI 手动指定过分栏的成员（`entryKey → 分栏键`），「移到分栏…」框的初值。
+  Map<String, String> _manualSectionByEntry = const <String, String>{};
+
   /// 由 [_slots] + [_groupKeyByEntry] 派生的分节（季号升序、PV/特典殿后）。
   /// ≥2 节 → 顶部出季 tab；否则整页与单季合集完全一致（不平白加一层 UI）。
   List<CollectionSeasonSection<CollectionEpisodeSlot>> _sections =
@@ -579,6 +584,25 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             if (entry.value.episodeNumber != null || canonicalWork == null)
               entry.key: entry.value,
         };
+    // 分栏：文件名派生键叠上手动分栏 / 手动季集指定（拍板台 iR6ccUys9H）。远端集
+    // 本机没有指定，只有派生键。
+    final Map<String, String> groupKeys = <String, String>{
+      for (final CollectionEpisodeSlot slot in episodeSlots)
+        slot.entryKey: collectionGroupKeyForFilename(slot.filename),
+    };
+    final Map<String, CollectionSectionResolution> resolvedSections =
+        await loadCollectionSections(widget.database, <String, String>{
+          for (final CollectionEpisodeSlot slot in episodeSlots)
+            if (slot.local != null) slot.entryKey: groupKeys[slot.entryKey]!,
+        });
+    final Map<String, String> manualSections = <String, String>{};
+    for (final MapEntry<String, CollectionSectionResolution> entry
+        in resolvedSections.entries) {
+      groupKeys[entry.key] = entry.value.groupKey;
+      if (entry.value.source == CollectionSectionSource.manual) {
+        manualSections[entry.key] = entry.value.groupKey;
+      }
+    }
     final MediaCollectionRow? fresh = await widget.database
         .getMediaCollectionById(widget.collection.id);
     final Map<String, int> knownDurations = await loadKnownVideoDurationsMs(
@@ -597,10 +621,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       _hasRemoteDisc = remoteDisc;
       _knownDurationsMs = knownDurations;
       _slots = episodeSlots;
-      _groupKeyByEntry = <String, String>{
-        for (final CollectionEpisodeSlot slot in episodeSlots)
-          slot.entryKey: collectionGroupKeyForFilename(slot.filename),
-      };
+      _groupKeyByEntry = groupKeys;
+      _manualSectionByEntry = manualSections;
       _rebuildSections();
       _episodeMetaByUid = episodeMeta;
       _canonicalEpisodesByUid = canonicalEpisodes;
@@ -1423,6 +1445,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           members: _slots,
           filenameOf: (CollectionEpisodeSlot slot) => slot.filename,
           titleOf: (CollectionEpisodeSlot slot) => slot.title,
+          // 按生效分栏分桶（手动分栏 / 手动季集指定优先），重排后与季 tab 一致。
+          sectionKeyOf: (CollectionEpisodeSlot slot) =>
+              _groupKeyByEntry[slot.entryKey],
         );
     setState(() {
       _slots = regroup.ordered;
@@ -1498,6 +1523,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         initialSeason: selected == null
             ? null
             : seasonNumberOfGroupKey(selected.groupKey),
+        sectionKeys: _groupKeyByEntry,
       ),
       initialScope: SubtitleWorkbenchScope.collection,
     );
@@ -3112,6 +3138,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                     group: DialogActionGroup.organize,
                     onPressed: () => pick(_EpisodeMenuAction.pinEpisode),
                   ),
+                // 「移到分栏…」（拍板台 iR6ccUys9H）：文件名推断错的集（短篇其实是
+                // 特典）钉到某一季 / PV·特典，合并合集与重新刮削都保留。只对本地文件。
+                if (episode.local != null)
+                  DialogListAction(
+                    label: t.collection_section_move,
+                    icon: FushiIcons.viewAgenda,
+                    group: DialogActionGroup.organize,
+                    onPressed: () => pick(_EpisodeMenuAction.moveSection),
+                  ),
                 DialogListAction(
                   label: t.collection_remove_member,
                   icon: FushiIcons.linkOff,
@@ -3178,6 +3213,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         await _clearEpisodeWatchProgress(episode);
       case _EpisodeMenuAction.pinEpisode:
         await _pinEpisodeBinding(episode);
+      case _EpisodeMenuAction.moveSection:
+        await _moveToSection(<CollectionEpisodeSlot>[episode]);
       case _EpisodeMenuAction.removeFromCollection:
         await _removeEpisode(episode);
       case _EpisodeMenuAction.organizeFilenames:
@@ -3281,6 +3318,39 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     await _markEpisodes(targets, watched: watched);
   }
 
+  /// 多选底栏「移到分栏…」：选中的本地集一次钉到同一栏。
+  Future<void> _moveSelectedToSection() async {
+    final Set<String> keys = _selection.looseKeys;
+    final List<CollectionEpisodeSlot> targets = <CollectionEpisodeSlot>[
+      for (final CollectionEpisodeSlot s in _slots)
+        if (keys.contains(s.entryKey) && s.local != null) s,
+    ];
+    if (targets.isEmpty) return;
+    final bool changed = await _moveToSection(targets);
+    if (changed && mounted) setState(_selection.exit);
+  }
+
+  /// 「移到分栏…」：把 [episodes]（本地集）钉到某一季 / PV·特典，或改回自动；改了就
+  /// 重载（分节与季 tab 跟着新分栏走）。单集时框里预选它当前的手动分栏。
+  Future<bool> _moveToSection(List<CollectionEpisodeSlot> episodes) async {
+    final List<String> uids = <String>[
+      for (final CollectionEpisodeSlot slot in episodes)
+        if (slot.local case final VideoBookRow local) local.bookUid,
+    ];
+    if (uids.isEmpty) return false;
+    final bool changed = await moveVideosToCollectionSection(
+      context: context,
+      database: widget.database,
+      bookUids: uids,
+      existingKeys: _groupKeyByEntry.values,
+      initial: uids.length == 1 ? _manualSectionByEntry[uids.single] : null,
+    );
+    if (!changed || !mounted) return changed;
+    widget.onChanged();
+    await _reload();
+    return true;
+  }
+
   /// 多选态底栏：已选数 + 全选本季 + 标记已看 / 未看 + 取消。走共享底部动作条
   /// （MD3 贴底 surfaceContainer 条 / Apple 悬浮玻璃面）；按钮放进可换行的 Wrap，
   /// 窄屏放不下一行时折到下一行。
@@ -3300,6 +3370,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           FushiTextButton(
             onPressed: _selectAllInSeason,
             child: Text(t.collection_select_all_in_season),
+          ),
+          FushiTextButton(
+            key: const ValueKey<String>('collection-selection-section'),
+            onPressed: _selection.isEmpty
+                ? null
+                : () => unawaited(_moveSelectedToSection()),
+            child: Text(t.collection_section_move),
           ),
           FushiTextButton(
             key: const ValueKey<String>('collection-selection-unwatched'),
@@ -4160,6 +4237,7 @@ enum _EpisodeMenuAction {
   mediaInfo,
   clearWatchProgress,
   pinEpisode,
+  moveSection,
   removeFromCollection,
   organizeFilenames,
 }
