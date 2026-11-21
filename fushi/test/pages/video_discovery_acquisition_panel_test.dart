@@ -293,6 +293,40 @@ void main() {
     );
   });
 
+  testWidgets('同一渠道里重复 id 的命中只列一行（行按 id 定 key，不能撞键）', (
+    WidgetTester tester,
+  ) async {
+    _tallView(tester);
+    final _FakeBackend online = _FakeBackend(
+      VideoAcquisitionChannel.onlineSource,
+    );
+    await tester.pumpWidget(
+      _harness(
+        VideoDiscoveryDetailPage(
+          item: _item(),
+          actions: VideoDiscoveryActions(
+            acquisitionChannels: (_) => <VideoAcquisitionChannelBackend>[
+              online,
+            ],
+          ),
+        ),
+      ),
+    );
+    await _settle(tester);
+    online.calls.single.complete(
+      const VideoAcquisitionLookup.hits(<VideoAcquisitionHit>[
+        VideoAcquisitionHit(id: 'dup', title: 'A'),
+        VideoAcquisitionHit(id: 'dup', title: 'B'),
+      ]),
+    );
+    await _settle(tester);
+    await _settle(tester);
+    expect(tester.takeException(), isNull);
+    expect(_key('video-acquisition-onlineSource-hit-dup'), findsOneWidget);
+    expect(find.text('A'), findsOneWidget);
+    expect(find.text('B'), findsNothing);
+  });
+
   testWidgets('没接获取面板时 hero「搜索资源」照旧直进 BT 搜索', (WidgetTester tester) async {
     _tallView(tester);
     bool searchedResource = false;

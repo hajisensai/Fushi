@@ -223,6 +223,40 @@ void main() {
       );
     });
 
+    test('同一渠道里重复 id 的命中按首次出现保留一条，中途快照与最终结果一致', () async {
+      unawaited(controller.load(VideoAcquisitionChannel.mediaServer));
+      final _FakeBackend backend =
+          backends[VideoAcquisitionChannel.mediaServer]!;
+      backend.progress.single!(
+        VideoAcquisitionLookup.hits(<VideoAcquisitionHit>[
+          _hit('a'),
+          _hit('a'),
+        ], pendingSourceCount: 1),
+      );
+      final VideoAcquisitionChannelState partial = controller.stateOf(
+        VideoAcquisitionChannel.mediaServer,
+      );
+      expect(partial.hits.map((VideoAcquisitionHit h) => h.id), <String>['a']);
+      expect(partial.totalCount, 1);
+
+      backend.calls.single.complete(
+        VideoAcquisitionLookup.hits(<VideoAcquisitionHit>[
+          _hit('a'),
+          _hit('a'),
+          _hit('b'),
+        ]),
+      );
+      await pumpEventQueue();
+      final VideoAcquisitionChannelState done = controller.stateOf(
+        VideoAcquisitionChannel.mediaServer,
+      );
+      expect(done.hits.map((VideoAcquisitionHit h) => h.id), <String>[
+        'a',
+        'b',
+      ]);
+      expect(done.totalCount, 2);
+    });
+
     test('dispose 之后晚到的结果不再通知', () async {
       int notifications = 0;
       final VideoWorkAcquisitionController local =

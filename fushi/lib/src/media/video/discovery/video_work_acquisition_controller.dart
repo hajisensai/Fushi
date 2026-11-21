@@ -264,12 +264,20 @@ class VideoWorkAcquisitionController extends ChangeNotifier {
         configure: lookup.configure,
       );
     }
+    // 面板按命中 id 给行定 key（分批到达时已显示的行靠它保持身份），同一渠道里
+    // id 必须唯一：同一来源一页里重复返回的条目、或两个配置指向同一台服务器时
+    // 合并出的同 id 命中，在这里按首次出现保留一条（到达顺序不变）。
+    final Set<String> seen = <String>{};
+    final List<VideoAcquisitionHit> hits = <VideoAcquisitionHit>[
+      for (final VideoAcquisitionHit hit in lookup.hits)
+        if (seen.add(hit.id)) hit,
+    ];
     return VideoAcquisitionChannelState(
-      status: lookup.hits.isEmpty
+      status: hits.isEmpty
           ? VideoAcquisitionChannelStatus.empty
           : VideoAcquisitionChannelStatus.ready,
-      hits: List<VideoAcquisitionHit>.unmodifiable(lookup.hits),
-      totalCount: lookup.effectiveTotalCount,
+      hits: List<VideoAcquisitionHit>.unmodifiable(hits),
+      totalCount: lookup.totalCount < 0 ? hits.length : lookup.totalCount,
       failedSourceCount: lookup.failedSourceCount,
       pendingSourceCount: lookup.pendingSourceCount,
       entry: lookup.entry,
