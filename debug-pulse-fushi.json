@@ -1,12 +1,52 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-21T17:50:05Z",
+ "generatedAt": "2026-11-21T19:49:28Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "8b8e6acd2801fd48718ccc716f82ee779f9c0b7c",
-  "seq": 30680
+  "sha": "669c2527eb9b2c30081d03b00dbb0c104305daf7",
+  "seq": 30766
  },
  "builds": [
+  {
+   "seq": 30680,
+   "version": "3.4.0",
+   "sha": "8b8e6acd2801fd48718ccc716f82ee779f9c0b7c",
+   "unknown": false,
+   "publishedAt": "2026-11-21T19:49:17Z",
+   "testflight": true,
+   "baseSeq": 30656,
+   "prs": [
+    4036,
+    4029,
+    4028,
+    4025
+   ],
+   "direct": [
+    {
+     "sha": "8b8e6acd2801fd48718ccc716f82ee779f9c0b7c",
+     "subject": "docs(bugs): 合并 #4025/#4028/#4029/#4036 后重建 BUGS 索引"
+    },
+    {
+     "sha": "cb4417351b17f2077d3b1f92e6a38f93c47860dd",
+     "subject": "test(dictionary): 停驻 realm 守卫跟上共用弹窗宿主（委托给 SharedLookupPopupOwner 时逐个查渲染方）"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "ok"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
   {
    "seq": 30656,
    "version": "3.4.0",
@@ -76,9 +116,9 @@
    "version": "3.4.0",
    "sha": "c68133e6a430df425b0959828ec81dc89d5ce8ba",
    "unknown": false,
-   "publishedAt": "2026-11-21T14:00:17Z",
+   "publishedAt": "2026-11-21T13:51:43Z",
    "testflight": false,
-   "baseSeq": 30562,
+   "baseSeq": 29224,
    "prs": [
     4037,
     4021,
@@ -100,49 +140,7 @@
     4005,
     4004,
     4001,
-    4026
-   ],
-   "direct": [
-    {
-     "sha": "c8a39f3df1fbaf8c178b21239de005f2ba82f094",
-     "subject": "Merge remote-tracking branch 'origin/develop' into integrate-4"
-    },
-    {
-     "sha": "4e15eaadd412986420ca6bea4a39f859f30fa524",
-     "subject": "docs(bugs): 合并 #4001–#4026 后重建 BUGS 索引"
-    },
-    {
-     "sha": "b6c4ad00f13827d4694de454becb48daafbf04ad",
-     "subject": "test(srs): 更改笔记类型用例等编辑页重读落定再断言（机器忙时抢跑）"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44901279831"
-    },
-    "ios": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44901279831"
-    }
-   }
-  },
-  {
-   "seq": 30562,
-   "version": "3.4.0",
-   "sha": "7e4a45ce089f60c62bcc73ba37fcd78d40c711b9",
-   "unknown": false,
-   "publishedAt": "2026-11-21T12:59:04Z",
-   "testflight": false,
-   "baseSeq": 29224,
-   "prs": [
+    4026,
     4002,
     3984,
     4000,
@@ -381,6 +379,18 @@
    ],
    "direct": [
     {
+     "sha": "c8a39f3df1fbaf8c178b21239de005f2ba82f094",
+     "subject": "Merge remote-tracking branch 'origin/develop' into integrate-4"
+    },
+    {
+     "sha": "4e15eaadd412986420ca6bea4a39f859f30fa524",
+     "subject": "docs(bugs): 合并 #4001–#4026 后重建 BUGS 索引"
+    },
+    {
+     "sha": "b6c4ad00f13827d4694de454becb48daafbf04ad",
+     "subject": "test(srs): 更改笔记类型用例等编辑页重读落定再断言（机器忙时抢跑）"
+    },
+    {
      "sha": "03e68eab6470fce13f18ae238ac6a901db8bf8e3",
      "subject": "docs(bugs): 合并 #3775/#3990–#4000 后重建 BUGS 索引"
     },
@@ -512,59 +522,88 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44897183865"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44901279888"
     },
     "windows": {
      "state": "ok"
     },
     "macos": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44897183776"
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44901279831"
     },
     "ios": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44897183776"
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44901279831"
     }
    }
   }
  ],
  "pending": {
-  "headSha": "8b8e6acd2801fd48718ccc716f82ee779f9c0b7c",
-  "headSeq": 30680,
+  "headSha": "669c2527eb9b2c30081d03b00dbb0c104305daf7",
+  "headSeq": 30766,
   "prs": [
-   4036,
-   4029,
-   4028,
-   4025
+   4086,
+   4067,
+   4080,
+   4044,
+   4055,
+   4072,
+   4052,
+   4076,
+   4065,
+   4071,
+   4060,
+   4045,
+   4046,
+   4053,
+   4054,
+   4057,
+   4073
   ],
   "direct": [
    {
-    "sha": "8b8e6acd2801fd48718ccc716f82ee779f9c0b7c",
-    "subject": "docs(bugs): 合并 #4025/#4028/#4029/#4036 后重建 BUGS 索引"
+    "sha": "669c2527eb9b2c30081d03b00dbb0c104305daf7",
+    "subject": "test(tts): 整书分拣纯函数测试改用 package:test（纯 Dart 测试守卫）"
    },
    {
-    "sha": "cb4417351b17f2077d3b1f92e6a38f93c47860dd",
-    "subject": "test(dictionary): 停驻 realm 守卫跟上共用弹窗宿主（委托给 SharedLookupPopupOwner 时逐个查渲染方）"
+    "sha": "e666bfa2dbd7ec380074a047693b943a0fbfcad1",
+    "subject": "docs(bugs): 合并第 6 批后重建 BUGS 索引"
+   },
+   {
+    "sha": "c80387a24ccd306067f8d83f6f337326e7d13726",
+    "subject": "chore(bugs): settle BUG number collisions on 8a50939c3"
+   },
+   {
+    "sha": "8a50939c3e2364aac23e8c36baaac693e80be6bf",
+    "subject": "Merge remote-tracking branch 'origin/develop' into review-4058"
+   },
+   {
+    "sha": "0bc29ac6cee0222b488e052860776618c4f2d360",
+    "subject": "tool(heavy): 结果缓存键计入会改变结论的项目环境变量；读产物 / 机器输出的命令不进缓存"
+   },
+   {
+    "sha": "61a869553bca457da1d96115e01a92e9786c6846",
+    "subject": "tool(heavy): test / analyze 绿结果按工作树内容缓存，同内容同命令不再排队重跑；审查代理不重跑已绿测试"
    }
   ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44931340738"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44942269234"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44931340750"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44942269203"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44931340750"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44942269203"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44931340750"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44942269203"
    }
   }
  },
@@ -2953,6 +2992,159 @@
    "mergedAt": "2026-11-21T14:19:50Z",
    "additions": 191,
    "deletions": 5,
+   "labels": []
+  },
+  "4044": {
+   "number": 4044,
+   "title": "fix(agents): 子代理长命令日志名与 exit 行带唯一标签（BUG-5086 根因）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T19:41:22Z",
+   "additions": 52,
+   "deletions": 10,
+   "labels": []
+  },
+  "4045": {
+   "number": 4045,
+   "title": "fix(srs): 位置迁到 v4 后清掉 v3.0.x 写入者目录（BUG-5017）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T19:41:22Z",
+   "additions": 319,
+   "deletions": 3,
+   "labels": []
+  },
+  "4046": {
+   "number": 4046,
+   "title": "fix(srs-gen4): 迁移对拍认出同一事件副本两边选了不同代表（BUG-5063）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T19:41:22Z",
+   "additions": 390,
+   "deletions": 29,
+   "labels": []
+  },
+  "4052": {
+   "number": 4052,
+   "title": "fix(tts): 纯标点判定收进统一合成入口，漫画 / Galgame / 试听不再把「……」「！」送引擎（BUG-5107）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T19:41:22Z",
+   "additions": 418,
+   "deletions": 75,
+   "labels": []
+  },
+  "4053": {
+   "number": 4053,
+   "title": "fix(dictionary): 查词历史非规范 / 坏行装载时还原或清掉，不再每次启动重报（BUG-5064）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T19:41:22Z",
+   "additions": 3130,
+   "deletions": 1820,
+   "labels": []
+  },
+  "4054": {
+   "number": 4054,
+   "title": "test(manga): 朗读章末播放条退回工具栏的回归测试（BUG-5077）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T19:41:22Z",
+   "additions": 3031,
+   "deletions": 1828,
+   "labels": []
+  },
+  "4055": {
+   "number": 4055,
+   "title": "fix(sync): 对端缺能力判定按轮复用能力表、每维度只判一次，降级同步不说成没同步（BUG-5101）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T19:41:22Z",
+   "additions": 3245,
+   "deletions": 1858,
+   "labels": []
+  },
+  "4057": {
+   "number": 4057,
+   "title": "fix(db): 磁盘写满不再判成数据库损坏、不在写满的卷上删侧车（BUG-5076）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T19:41:22Z",
+   "additions": 506,
+   "deletions": 59,
+   "labels": []
+  },
+  "4060": {
+   "number": 4060,
+   "title": "fix(reader): progress 落点跳过没有排版盒的文本节点，不再随起始页漂移（BUG-5015）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T19:41:22Z",
+   "additions": 288,
+   "deletions": 104,
+   "labels": []
+  },
+  "4065": {
+   "number": 4065,
+   "title": "fix(favorites): 已收藏句子可改色，颜色带 LWW 时钟跨设备 / 备份合并取新（BUG-5081，v167）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T19:41:22Z",
+   "additions": 1196,
+   "deletions": 231,
+   "labels": []
+  },
+  "4067": {
+   "number": 4067,
+   "title": "feat(ops): 漫画有声成品导入接进 CLI / 操作目录；界面导入导出流程的 CLI 缺口守卫与盘点（PGpPujl99g）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T19:41:22Z",
+   "additions": 871,
+   "deletions": 18,
+   "labels": []
+  },
+  "4071": {
+   "number": 4071,
+   "title": "test: 断流换线路重载页面级测试 + 阅读器下载书缺图接线测试",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T19:41:22Z",
+   "additions": 806,
+   "deletions": 49,
+   "labels": []
+  },
+  "4072": {
+   "number": 4072,
+   "title": "fix(video-scrape): 无来源范围的整批级刮削问题不再显示空标题（BUG-5090）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T19:41:21Z",
+   "additions": 310,
+   "deletions": 19,
+   "labels": []
+  },
+  "4073": {
+   "number": 4073,
+   "title": "fix(sync): host 停机等视频指纹计算收尾；TTS 限流用例先关队列（BUG-5075/5078/5087）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T19:41:21Z",
+   "additions": 369,
+   "deletions": 45,
+   "labels": []
+  },
+  "4076": {
+   "number": 4076,
+   "title": "fix: 刮削全失败的动画可手填资料并上锁防重刮覆盖；PDF 可改作者（BUG-5082）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T19:41:21Z",
+   "additions": 1440,
+   "deletions": 74,
+   "labels": []
+  },
+  "4080": {
+   "number": 4080,
+   "title": "test(stall): 卡顿测度取多次采样最小值，修 lnreader 重建 stall 用例负载下伪红（BUG-5121）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T19:41:21Z",
+   "additions": 119,
+   "deletions": 40,
+   "labels": []
+  },
+  "4086": {
+   "number": 4086,
+   "title": "feat(mining): 电脑端应用外查词制卡带查词前最后一句语音；loopback 按租约共用（BUG-5136）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T19:41:22Z",
+   "additions": 1675,
+   "deletions": 222,
    "labels": []
   }
  }
