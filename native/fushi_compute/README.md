@@ -27,6 +27,8 @@ Fushi 的 Rust 计算内核：CPU 密集操作（哈希 / 图像 / 文本匹配 
 | `ffc_hash_ed2k_finish(ctx*, u8 out[32], i32* has_alt) -> i32` | `out[0..16]` 红变体；`*has_alt=1` 时 `out[16..32]` 为蓝变体（长度恰为 9728000 的非零整数倍） |
 | `ffc_hash_ed2k_free(ctx*)` | 释放（NULL 无操作） |
 | `ffc_hash_sha256_new / _update / _finish(ctx*, u8 out[32]) / _free` | SHA-256，同上形态 |
+| `ffc_hash_sha256_file(const u8* path, usize, u8 out[32], u64* out_len) -> i32` | 整文件 SHA-256，读盘也在 Rust（路径 UTF-8）；打不开 / 读失败回 `-5`（IO_ERROR）。Dart 以非叶调用，不挡 GC 安全点（BUG-5088） |
+| `ffc_hash_crc32_file(const u8* path, usize, u32* out, u64* out_len) -> i32` | 整文件 CRC-32，同上 |
 | `ffc_hash_crc32(u32 crc, const u8*, usize) -> u32` | CRC-32（zip / IEEE），在上一段结果上续算，首段传 0 |
 | `ffc_hash_uuid_v5_batch(const u8* ns[16n], const u8* names, const u64* offsets[n+1], usize n, u8* out[16n]) -> i32` | 批量 RFC 9562 UUIDv5（SHA-1）；名字是打包的 UTF-8（第 i 个 = `names[offsets[i]..offsets[i+1]]`） |
 | `ffc_hash_hash53_batch(const u8* data, const u64* offsets[n+1], usize n, u64* out[n]) -> i32` | 批量 53 位确定性正整数（SHA-256 前 7 字节大端取低 53 位，0 记作 1） |

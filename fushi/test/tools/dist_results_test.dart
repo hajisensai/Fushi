@@ -187,29 +187,95 @@ void main() {
     expect(second.failure, isNotNull);
   });
 
-  test('run verdict: unplaced suites and failed batches are red', () {
-    final DistBatchResult ok = _result(files, _run(files));
+  test('run verdict: no batch or a failed batch is red', () {
     expect(
-      DistRunVerdict(
-        results: <DistBatchResult>[ok],
-        unplaced: <String>[],
-      ).failure,
-      isNull,
-    );
-    expect(
-      DistRunVerdict(
-        results: <DistBatchResult>[ok],
-        unplaced: <String>['test/c_test.dart (windows)'],
-      ).failure,
-      contains('no eligible worker'),
-    );
-    expect(
-      DistRunVerdict(
-        results: <DistBatchResult>[],
-        unplaced: <String>[],
-      ).failure,
+      DistRunVerdict(results: <DistBatchResult>[], requested: files).failure,
       isNotNull,
     );
+    expect(
+      DistRunVerdict(
+        results: <DistBatchResult>[_result(files, _run(files, success: false))],
+        requested: files,
+      ).failure,
+      contains('batch(es) failed'),
+    );
+  });
+
+  group('run verdict: every requested suite must come back', () {
+    // 2026-11-21: a "7 suites asked, 2 ran, PASSED" report. The verdict now
+    // holds each requested placement against the batches that came back.
+    const List<String> seven = <String>[
+      'test/s1_test.dart',
+      'test/s2_test.dart',
+      'test/s3_test.dart',
+      'test/s4_test.dart',
+      'test/s5_test.dart',
+      'test/s6_test.dart',
+      'test/s7_test.dart',
+    ];
+
+    test('all of them in green batches: green, counted', () {
+      final DistRunVerdict v = DistRunVerdict(
+        results: <DistBatchResult>[
+          _result(seven.sublist(0, 2), _run(seven.sublist(0, 2))),
+          _result(seven.sublist(2), _run(seven.sublist(2))),
+        ],
+        requested: seven,
+      );
+      expect(v.failure, isNull);
+      expect(v.notRun, isEmpty);
+      expect(v.suitesRan, 7);
+    });
+
+    test('green batches covering only some of them: red, missing listed', () {
+      // Every batch that came back is green by itself (its own suites all
+      // ran); the five others never reached a worker.
+      final List<String> two = seven.sublist(0, 2);
+      final DistBatchResult ok = _result(two, _run(two));
+      expect(ok.failure, isNull);
+      final DistRunVerdict v = DistRunVerdict(
+        results: <DistBatchResult>[ok],
+        requested: seven,
+      );
+      expect(v.notRun, seven.sublist(2));
+      expect(v.suitesRan, 2);
+      expect(v.failure, isNotNull);
+      expect(v.failure, contains('5 of 7 suite(s) never ran'));
+      expect(v.failure, contains('test/s3_test.dart'));
+      final String summary = renderDistSummary(
+        verdict: v,
+        estimatedMsByBatch: const <int, int>{},
+        wall: Duration.zero,
+        snapshot: 'abc',
+      );
+      expect(summary, contains('- suites ran: 2 of 7'));
+      expect(summary, isNot(contains('verdict: PASSED')));
+      for (final String s in seven.sublist(2)) {
+        expect(summary, contains('- `$s`'));
+      }
+    });
+
+    test('a suite placed on two platforms needs both placements', () {
+      const String pinned = 'test/both_test.dart';
+      final DistBatchResult once = _result(<String>[
+        pinned,
+      ], _run(<String>[pinned]));
+      final List<String> twice = <String>[pinned, pinned];
+      expect(
+        DistRunVerdict(
+          results: <DistBatchResult>[once],
+          requested: twice,
+        ).failure,
+        contains('1 of 2 suite(s) never ran'),
+      );
+      expect(
+        DistRunVerdict(
+          results: <DistBatchResult>[once, once],
+          requested: twice,
+        ).failure,
+        isNull,
+      );
+    });
   });
 
   group('name / tag filter (heavy.dart --name/--plain-name/--tags)', () {
@@ -320,7 +386,7 @@ void main() {
       expect(
         DistRunVerdict(
           results: <DistBatchResult>[none, some],
-          unplaced: <String>[],
+          requested: files,
           filtered: true,
         ).failure,
         isNull,
@@ -328,7 +394,7 @@ void main() {
       expect(
         DistRunVerdict(
           results: <DistBatchResult>[none],
-          unplaced: <String>[],
+          requested: files,
           filtered: true,
         ).failure,
         contains('no test matched'),

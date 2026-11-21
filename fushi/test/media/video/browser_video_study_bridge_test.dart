@@ -465,6 +465,97 @@ void main() {
     }
   });
 
+  // 反馈 PtsjrnVmH9：扩展在统计中的网页视频页上查词 / 制卡 → 记到该视频名下，与 app 内
+  // 视频页的查词 / 制卡计数同一张表（lookup_mining_counters）、同一来源 video、book_key =
+  // mediaKey；制卡另进全局按日汇总（mining_statistics）。
+  group('PtsjrnVmH9 查词 / 制卡归属网页视频', () {
+    test('查词 / 制卡记进 video 来源、book_key = mediaKey', () async {
+      final _Rig rig = _Rig.create();
+      const BrowserVideoStudyIdentity id = BrowserVideoStudyIdentity(
+        mediaKey: 'web:yt-zzz',
+        title: '動画Z',
+      );
+      rig.bridge
+        ..onActivity(id, BrowserVideoStudyActivity.lookup)
+        ..onActivity(id, BrowserVideoStudyActivity.lookup)
+        ..onActivity(id, BrowserVideoStudyActivity.mine);
+      await rig.bridge.stopAll();
+      final List<LookupMiningCounterRow> rows = await rig.db
+          .getAllLookupMiningCounters();
+      expect(rows, hasLength(1));
+      final LookupMiningCounterRow row = rows.single;
+      expect(row.sourceType, kStatSourceVideo);
+      expect(row.bookKey, 'web:yt-zzz');
+      expect(row.title, '動画Z');
+      expect(row.dateKey, FushiDatabase.statDateKeyOf(_fakeNow));
+      expect(row.lookupCount, 2);
+      expect(row.mineCount, 1);
+      final List<MiningStatisticRow> mined = await rig.db
+          .getAllMiningStatistics();
+      expect(
+        mined
+            .where((MiningStatisticRow r) => r.sourceType == kStatSourceVideo)
+            .fold<int>(0, (int a, MiningStatisticRow r) => a + r.count),
+        1,
+      );
+    });
+
+    test('同 key 正在计时：标题取会话快照（与统计段同一标题）', () async {
+      final _Rig rig = _Rig.create();
+      await rig.open(_sample(positionMs: 0, title: 'Video A'));
+      rig.bridge.onActivity(
+        const BrowserVideoStudyIdentity(
+          mediaKey: 'web:yt-abc',
+          title: '(1) Video A',
+        ),
+        BrowserVideoStudyActivity.lookup,
+      );
+      // 别的 key（批量队列里入队时冻结的另一条视频）用请求带来的标题，空标题回落 mediaKey。
+      rig.bridge.onActivity(
+        const BrowserVideoStudyIdentity(mediaKey: 'web:yt-old', title: ''),
+        BrowserVideoStudyActivity.mine,
+      );
+      await rig.bridge.stopAll();
+      final Map<String, String> titleByKey = <String, String>{
+        for (final LookupMiningCounterRow r
+            in await rig.db.getAllLookupMiningCounters())
+          r.bookKey: r.title,
+      };
+      expect(titleByKey, <String, String>{
+        'web:yt-abc': 'Video A',
+        'web:yt-old': 'web:yt-old',
+      });
+    });
+
+    test('study 字段解析：缺 mediaKey / 类型不对 / 超长 → null', () {
+      expect(
+        BrowserVideoStudyIdentity.tryParse(<String, dynamic>{
+          'mediaKey': 'web:yt-a',
+          'title': 'T',
+        })?.mediaKey,
+        'web:yt-a',
+      );
+      expect(
+        BrowserVideoStudyIdentity.tryParse(<String, dynamic>{
+          'mediaKey': 'web:yt-a',
+        })?.title,
+        '',
+      );
+      for (final Object? bad in <Object?>[
+        null,
+        'web:yt-a',
+        <String, dynamic>{'mediaKey': ''},
+        <String, dynamic>{'mediaKey': 1},
+        <String, dynamic>{'mediaKey': 'web:yt-a', 'title': 3},
+        <String, dynamic>{
+          'mediaKey': 'k' * (BrowserVideoStudyIdentity.maxFieldLength + 1),
+        },
+      ]) {
+        expect(BrowserVideoStudyIdentity.tryParse(bad), isNull, reason: '$bad');
+      }
+    });
+  });
+
   test('没开过的 ended 不建段', () async {
     final _Rig rig = _Rig.create();
     rig.bridge.onSample(_sample(positionMs: 0, ended: true));

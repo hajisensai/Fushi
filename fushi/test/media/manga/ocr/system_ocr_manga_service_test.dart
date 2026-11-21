@@ -442,6 +442,16 @@ void main() {
       expect((jpeg.width, jpeg.height), (24, 40));
     });
 
+    test('TIFF 无损转成 PNG（Android ImageDecoder 不认 TIFF）', () async {
+      final Uint8List tiff = Uint8List.fromList(
+        img.encodeTiff(img.Image(width: 12, height: 30)),
+      );
+      final Uint8List out = await systemOcrDecodableBytes(tiff);
+      expect(out.sublist(0, 4), <int>[0x89, 0x50, 0x4e, 0x47]);
+      final img.Image png = img.decodePng(out)!;
+      expect((png.width, png.height), (12, 30));
+    });
+
     test('非 AVIF 原样透传（同一对象，不重编码）', () async {
       final Uint8List png = Uint8List.fromList(
         img.encodePng(img.Image(width: 8, height: 4)),

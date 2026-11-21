@@ -39,10 +39,32 @@
 |---|:--:|:--:|---|
 | [BUG-5132](bugs/BUG-5132-symindex-rust-failure-published-current.md) | ✅ | ✅ | 符号索引 Rust crate 索引失败仍发布成最新、同一提交不再重建 |
 | [BUG-5131](bugs/BUG-5131-symindex-cjk-path-quoted.md) | ✅ | ✅ | 符号索引按行读 git 文件清单，中文路径被转义后改动文件漏判、返回旧结果 |
+> 共 4414 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5088](bugs/BUG-5088-readintosync-blocks-gc-safepoint.md) | ✅ | ✅ | readintosync-blocks-gc-safepoint |
+| [BUG-5087](bugs/BUG-5087-sync-video-sweep-tests-teardown-temp-locked.md) | 🚧 | 🚧 | sync-video-sweep-tests-teardown-temp-locked |
+| [BUG-5086](bugs/BUG-5086-dist-test-verdict-coverage-shared-log.md) | ✅ | ✅ | 「dist 请求 7 个测试文件只跑 2 个仍判 PASSED」是并发代理共用日志名读串了；dist_test 判绿改为逐个核对请求的 suite |
+| [BUG-5085](bugs/BUG-5085-srs-mining-generation-blocked-message.md) | ✅ | ✅ | 复习库在换代途中时制卡只报「Fushi review is not available.」，不提示去升级 |
+| [BUG-5083](bugs/BUG-5083-game-sentence-mining-all-games.md) | 🚧 | 🚧 | GSM 式全游戏台词制卡：非 Hook 游戏没有连续台词流可制卡 |
+| [BUG-5082](bugs/BUG-5082-anime-manual-metadata-fill.md) | 🚧 | 🚧 | 手动填元数据：刮削全失败的动画 / 非 EPUB 书无法手填简介、年份、作者等 |
+| [BUG-5081](bugs/BUG-5081-video-fullscreen-blank.md) | ✅ | ✅ | video-fullscreen-blank |
+| [BUG-5081](bugs/BUG-5081-favorite-sentence-recolor.md) | 🚧 | 🚧 | 收藏句改色：已收藏的书摘不能改颜色（同步缺颜色更新时间） |
+| [BUG-5080](bugs/BUG-5080-srs-gen4-conflict-badge-minutes.md) | ✅ | ✅ | SRS 牌组列表冲突角标的 `conflict_edits` 在迁移库上跑几分钟 |
+| [BUG-5079](bugs/BUG-5079-srs-retained-copy-unreadable-unreported.md) | ✅ | ✅ | SRS 保留副本 srs.db 坏了（不是 SQLite 文件）用户毫无提示 |
+| [BUG-5078](bugs/BUG-5078-live-progress-test-teardown-temp-delete-fails.md) | 🚧 | 🚧 | live-progress-test-teardown-temp-delete-fails |
 | [BUG-5077](bugs/BUG-5077-manga-read-aloud-bar-finished-no-regression-test.md) | ✅ | 🚧 | 漫画朗读读到章末播放条不退的修复（#3986）缺自动化回归测试 |
 | [BUG-5076](bugs/BUG-5076-db-enospc-misclassified-as-corruption.md) | 🚧 | 🚧 | 磁盘写满时 sqlite malformed(11) 被归到「数据库损坏」专屏，引导用户恢复备份 / 清数据 |
 | [BUG-5075](bugs/BUG-5075-tts-render-queue-test-windows-teardown.md) | 🚧 | 🚧 | Windows 上 tts_text_rules_and_rate_limit_test 的 tearDown 删临时目录报 errno 145（目录非空） |
+| [BUG-5074](bugs/BUG-5074-srs-gen4-review-lag-after-upgrade.md) | ✅ | ✅ | SRS 升级到新代存储（gen4）后一背卡就卡、越背越卡 |
+| [BUG-5073](bugs/BUG-5073-stat-day-reset-hour-profile-switch.md) | ✅ | ✅ | 切 Profile 后统计日界仍按旧 Profile 的值直到重启 |
+| [BUG-5070](bugs/BUG-5070-stat-trend-iso-week-dst.md) | ✅ | ✅ | 统计趋势按周聚合在有夏令时的时区把相邻两周并成一桶、周号少一 |
 | [BUG-5069](bugs/BUG-5069-txt-oversized-single-paragraph.md) | ✅ | ✅ | TXT 超长段落绕过分章上限 |
+| [BUG-5068](bugs/BUG-5068-interconnect-mdns-fallback-new-network.md) | ✅ | ✅ | 电脑改连手机热点后手机连不上已配对的互联主机（只拨旧地址，从不在局域网上重新找它） |
+| [BUG-5067](bugs/BUG-5067-ios-flutter-logs-enospc-abort.md) | ✅ | ✅ | ios-flutter-logs-enospc-abort |
+| [BUG-5066](bugs/BUG-5066-tag-filter-chip-drag-handle-removed.md) | ✅ | ✅ | 库页标签 chip 左侧的拖动柄删除，拖动改由 chip 按指针类型分流 |
+| [BUG-5065](bugs/BUG-5065-android-gen4-lock-unsupported.md) | ✅ | ✅ | Android 上 gen4 换代锁永远拿不到，复习库打不开（`try_lock() not supported`） |
 | [BUG-5064](bugs/BUG-5064-dict-history-entries-object-rows.md) | 🚧 | 🚧 | 查词历史 entries 存成对象的坏行每次启动重复报错不清理 |
 | [BUG-5063](bugs/BUG-5063-srs-gen4-migration-stats-logid-mismatch.md) | 🚧 | 🚧 | gen4 迁移对拍：4.7 GB 库第 7/10 步后 stats 两侧 log_id 集合不一致回滚 |
 | [BUG-5062](bugs/BUG-5062-masthead-title-ellipsis-phone.md) | ✅ | ✅ | masthead-title-ellipsis-phone |

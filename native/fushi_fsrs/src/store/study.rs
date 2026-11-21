@@ -432,9 +432,17 @@ pub(crate) trait Tables {
 pub(crate) enum CardIx {
     NewPosition,
     NewFreq,
+    /// 下面三个只有测试基准 [SqlSource] 用（生产的学习卡 / 到期卡 / 计数原料来自常驻会话）。
+    #[cfg(test)]
     Learning,
+    #[cfg(test)]
     ReviewDue,
+    #[cfg(test)]
     Tally,
+    /// 常驻会话整份建 / 按 id 重读卡行（`store/queue.rs`）：走主键。新代的主键 `(col, id)` 是表本身（WITHOUT ROWID），
+    /// 规划器会挑一个按 `col` 开头的二级索引（`cards_anki`）再逐行回表、`NOT INDEXED` 也拦不住，所以按主键的自动索引名
+    /// `sqlite_autoindex_cards_1` 钉住（`cmd/study_tests.rs` 的计划测试看着它）。
+    Rows,
 }
 
 impl CardIx {
@@ -443,9 +451,13 @@ impl CardIx {
         match self {
             CardIx::NewPosition => "new_position",
             CardIx::NewFreq => "new_freq",
+            #[cfg(test)]
             CardIx::Learning => "learning",
+            #[cfg(test)]
             CardIx::ReviewDue => "review_due",
+            #[cfg(test)]
             CardIx::Tally => "tally",
+            CardIx::Rows => "rows",
         }
     }
 }
@@ -519,8 +531,8 @@ impl Tables for P3Tables<'_> {
     }
 }
 
-/// 排队读的卡 / 日志数据：生产是常驻会话（[SessionSource]）；[SqlSource] 是 L2 的逐条 SQL 实现（会话的对拍基准，
-/// 也是新代 `store/gen4/cmd/study.rs` 的数据来源）。
+/// 排队读的卡 / 日志数据：生产是常驻会话（[SessionSource]，协议 3 与新代 `store/gen4/cmd/study.rs` 同一份）；
+/// [SqlSource] 是 L2 的逐条 SQL 实现（只在测试里当会话的对拍基准）。
 trait Source {
     /// 新卡 / 自定义学习那几条 SQL 落在哪。
     fn tables(&self) -> &dyn Tables;
@@ -553,11 +565,11 @@ trait Source {
     fn ensure_order(&mut self, order: ReviewOrder);
 }
 
-struct SessionSource<'a>(&'a mut Session, P3Tables<'a>);
+struct SessionSource<'a>(&'a mut Session, &'a dyn Tables);
 
 impl Source for SessionSource<'_> {
     fn tables(&self) -> &dyn Tables {
-        &self.1
+        self.1
     }
 
     fn logs(&self) -> &LogState {
@@ -633,10 +645,13 @@ fn marks(tb: &dyn Tables, n: usize) -> String {
 }
 
 /// 学习卡「在给定时刻前到期」（绑定一个参数）与它们的出卡顺序。
+#[cfg(test)]
 const LEARNING_WHERE: &str = "queue IN ('learning', 'relearning') AND COALESCE(due_at, 0) <= ?";
+#[cfg(test)]
 const LEARNING_ORDER: &str = "COALESCE(due_at, 0), id";
 
 /// 每个牌组自己的计数原料（参数：今天 ×2、学习卡的到期界、今天 ×2、分区，再是 [decks] 个牌组）。
+#[cfg(test)]
 fn tallies_sql(tb: &dyn Tables, decks: Option<usize>) -> String {
     let deck_sql = decks.map_or(String::new(), |n| {
         format!(" AND deck_id IN ({})", marks(tb, n))
@@ -654,6 +669,7 @@ fn tallies_sql(tb: &dyn Tables, decks: Option<usize>) -> String {
 }
 
 /// R 顺序的到期复习卡（参数：分区、今天、[decks] 个牌组、今天、[exclude] 个卡、此刻）。
+#[cfg(test)]
 fn due_sql(tb: &dyn Tables, decks: usize, exclude: usize) -> String {
     let not_in = if exclude == 0 {
         String::new()
@@ -673,6 +689,7 @@ fn due_sql(tb: &dyn Tables, decks: usize, exclude: usize) -> String {
 }
 
 /// 子树里全部到期复习候选（不排序）：id、上次作答、稳定度、到期日、间隔、难度（参数同 [due_sql]，没有此刻）。
+#[cfg(test)]
 fn due_all_sql(tb: &dyn Tables, decks: usize, exclude: usize) -> String {
     let not_in = if exclude == 0 {
         String::new()
@@ -691,14 +708,16 @@ fn due_all_sql(tb: &dyn Tables, decks: usize, exclude: usize) -> String {
 }
 
 /// L2 的逐条 SQL 排队（2026-10-29 搬进常驻会话之前的生产实现）：每次排队按子树聚合计数、顺着到期索引有界排序取
-/// 最低、日志由调用方整段扫好（[LogState]）。协议 3 里是会话的对拍基准；新代（`store/gen4/cmd/study.rs`）每条命令
-/// 在一个读快照里用它（常驻会话是命令层的状态，见那里的文件头）。
+/// 最低、日志由调用方整段扫好（[LogState]）。只留作测试的对拍基准：协议 3 与新代（`store/gen4/cmd/study.rs`，
+/// 2026-11 接线进常驻会话之前每条命令在读快照里用它）的会话都拿它对拍。
+#[cfg(test)]
 pub(crate) struct SqlSource<'a> {
     pub tb: &'a dyn Tables,
     pub today: i64,
     pub logs: LogState,
 }
 
+#[cfg(test)]
 impl Source for SqlSource<'_> {
     fn tables(&self) -> &dyn Tables {
         self.tb
@@ -839,6 +858,7 @@ impl Source for SqlSource<'_> {
     fn ensure_order(&mut self, _order: ReviewOrder) {}
 }
 
+#[cfg(test)]
 impl SqlSource<'_> {
     /// R 以外的复习顺序：把全部到期候选读出来（当天哈希在 SQL 里算不了），按（键, id）取最小。
     pub(crate) fn first_by_key(
@@ -1645,17 +1665,28 @@ pub(crate) fn study(
     let (now, day) = when(req)?;
     hub.with_session(c, profile, day, day.index(now), uncommitted, |s| {
         let tree = DeckTree::load(c, profile)?;
-        run(&mut SessionSource(s, P3Tables { c, profile }), tree, req)
+        run(&mut SessionSource(s, &P3Tables { c, profile }), tree, req)
     })
 }
 
-/// 排队本身：数据从 [src] 取（会话，或 [SqlSource]），牌组树 [tree] 由调用方在同一个读快照里读好（ID 与 [src] 同一口径）。
+/// 测试基准的排队：数据从 [SqlSource] 取，牌组树 [tree] 由调用方在同一个读快照里读好（ID 与 [src] 同一口径）。
+#[cfg(test)]
 pub(crate) fn run_with(
     src: &mut SqlSource<'_>,
     tree: DeckTree,
     req: &Value,
 ) -> Result<Value, String> {
     run(src, tree, req)
+}
+
+/// 在常驻会话 [s] 上排队；新卡 / 自定义学习那几条 SQL 落在 [tb]（新代 `store/gen4/cmd/study.rs`：缓存层的表）。
+pub(crate) fn run_session(
+    s: &mut Session,
+    tb: &dyn Tables,
+    tree: DeckTree,
+    req: &Value,
+) -> Result<Value, String> {
+    run(&mut SessionSource(s, tb), tree, req)
 }
 
 fn run(src: &mut dyn Source, tree: DeckTree, req: &Value) -> Result<Value, String> {

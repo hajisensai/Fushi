@@ -37,12 +37,14 @@ import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_retry.dart';
+import 'package:fushi_engine/tts/tts_silence.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
+import 'package:fushi_engine/tts/tts_reject_split.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_encode.dart'
-    show buildTtsSilenceWav, kTtsOutputSampleRate;
+    show kTtsOutputSampleRate;
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_mix.dart'
     show readMp4PresentationDurationMs;
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_voices.dart'
@@ -551,7 +553,7 @@ class AppMangaRenderBackend implements MangaRenderBackend {
           final TtsCachedAudio audio = await ttsWithRetry(
             () => _cache.obtain(
               key,
-              (String out) => synthesizeWithDirection(
+              (String out) => ttsSynthesizeSplittingOnReject(
                 v.provider,
                 segment,
                 outputPath: out,

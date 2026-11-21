@@ -127,6 +127,8 @@ class SrsNewNoteType {
     required this.css,
     required this.termFieldId,
     this.freqFieldId,
+    this.sortFieldId,
+    this.browseFieldIds,
   });
 
   final SrsEntityRecord record;
@@ -138,6 +140,12 @@ class SrsNewNoteType {
 
   /// 显式的词频序字段（[SrsFieldKeys.freqField]）；null = 不写，按字段名认。
   final String? freqFieldId;
+
+  /// 显式的排序字段（[SrsFieldKeys.sortField]）；null = 不写，第一个字段。
+  final String? sortFieldId;
+
+  /// 显式的浏览副字段（[SrsFieldKeys.browseFields]）；null = 不写，自动。
+  final List<String>? browseFieldIds;
 
   String get id => record.id;
 }
@@ -270,6 +278,15 @@ SrsNewNoteType srsCloneNoteType({
     freqFieldId: source.freqFieldId == null
         ? null
         : oldToNew[source.freqFieldId],
+    sortFieldId: source.sortFieldId == null
+        ? null
+        : oldToNew[source.sortFieldId],
+    browseFieldIds: source.browseFieldIds == null
+        ? null
+        : <String>[
+            for (final String id in source.browseFieldIds!)
+              if (oldToNew[id] case final String mapped) mapped,
+          ],
   );
 }
 

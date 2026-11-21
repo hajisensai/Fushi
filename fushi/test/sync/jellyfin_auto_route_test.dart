@@ -119,8 +119,8 @@ void main() {
     expect(rerouted, isA<JellyfinServerConfig>());
     expect(rerouted!.effectiveServerUrl, _wan);
     expect(rerouted.sourceId, config.sourceId);
-    // 当前那条不再探，只探其余两条。
-    expect(requested.toSet(), <String>{_wan, _tunnel});
+    // 全部线路（含当前这条）一起探，取顺序最靠前的可达那条。
+    expect(requested.toSet(), <String>{_login, _wan, _tunnel});
     final JellyfinServerConfig saved =
         (await repo.getMediaServers()).single as JellyfinServerConfig;
     expect(saved.effectiveServerUrl, _wan);
@@ -159,6 +159,24 @@ void main() {
     );
     expect(rerouted, isNull);
     expect((await repo.getMediaServers()).single.effectiveServerUrl, _login);
+    expect(cache.invalidated, isEmpty);
+  });
+
+  test('当前线路其实可达（刚才只是抖动 / 流断另有原因）：不切换、不写回', () async {
+    final JellyfinServerConfig config = _config(active: _wan);
+    await repo.upsertMediaServer(config);
+    final MediaServerConfig? rerouted = await rerouteMediaServerAfterFailure(
+      config,
+      const JellyfinTransportException('Connection reset'),
+      repo: repo,
+      cache: cache,
+      httpClientFactory: () => _fakeServers(const <String, _Answer>{
+        _wan: _Answer.ok,
+        _tunnel: _Answer.ok,
+      }, <String>[]),
+    );
+    expect(rerouted, isNull);
+    expect((await repo.getMediaServers()).single.effectiveServerUrl, _wan);
     expect(cache.invalidated, isEmpty);
   });
 
