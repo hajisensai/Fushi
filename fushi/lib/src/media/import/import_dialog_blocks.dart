@@ -761,7 +761,10 @@ class ImportSectionBlock extends StatelessWidget {
         child: fields,
       );
     }
-    return DecoratedBox(
+    // 块里的字段 / 下拉 / 分段钮读主题色：不下发块配色就拿外层配色（从深色主
+    // 方式块弹出的对话框里，浅色表单块上的输入字、下拉值、未选分段成了浅色字，
+    // 看不见）。与 [ImportPickBlock] / [ImportPickTile] 同样包局部配色。
+    final Widget block = DecoratedBox(
       decoration: ShapeDecoration(
         color: colors.container,
         shape: fushiCoverBlockShape(
@@ -812,5 +815,6 @@ class ImportSectionBlock extends StatelessWidget {
         ),
       ),
     );
+    return FushiBlockColorScope(colors: colors, child: block);
   }
 }

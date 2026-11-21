@@ -22,6 +22,7 @@ class MangaWindowNavigation {
     required this.currentSpread,
     required this.restoreFraction,
     required this.zoomPercent,
+    this.bubbleFocusResume = '',
   });
 
   /// 文档自证归属用的 generation（每次装载都不同）。
@@ -36,13 +37,18 @@ class MangaWindowNavigation {
   /// 装载时的会话缩放（捏合 / 滚轮缩放在 JS 里改，不重载）。
   final int zoomPercent;
 
+  /// 逐格读走到跨页尽头、换窗重建文档时新文档接着聚焦的落点（'first' / 'last'，
+  /// 空 = 不接着聚焦）。装载时由 Dart 注入、之后由 JS 消费，属于装载那一刻的输入。
+  final String bubbleFocusResume;
+
   @override
   bool operator ==(Object other) =>
       other is MangaWindowNavigation &&
       other.documentGeneration == documentGeneration &&
       other.currentSpread == currentSpread &&
       other.restoreFraction == restoreFraction &&
-      other.zoomPercent == zoomPercent;
+      other.zoomPercent == zoomPercent &&
+      other.bubbleFocusResume == bubbleFocusResume;
 
   @override
   int get hashCode => Object.hash(
@@ -50,6 +56,7 @@ class MangaWindowNavigation {
     currentSpread,
     restoreFraction,
     zoomPercent,
+    bubbleFocusResume,
   );
 }
 

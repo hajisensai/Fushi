@@ -118,7 +118,9 @@ class SrsFolderSyncReport {
 /// 媒体按新根 meta 的 `media` 落在旧根（存量集合）或新根（新集合）。
 ///
 /// 进度 / 收手 / 诊断与云盘、互联那条路径（[srsSync2Round]）同一套：[onFetchProgress] / [onUploadStart] /
-/// [shouldStop] / [onStep] 原样交给这一轮，[onMediaStart] 在开始传媒体之前调一次（发段前那一步只在真有媒体要传时）。以前这里一个都不传：大库
+/// [shouldStop] / [onStep] 原样交给这一轮，[onMediaStart] 在开始传媒体之前调一次（发段前那一步只在真有媒体要传时），
+/// [onMediaProgress] 报媒体项的进度（[srsSyncMedia] 的 `onProgress`）。发段前那一步最多占
+/// [kSrsMediaBeforeUploadBudget]，剩下的由发段之后的完整对账接着传（BUG-5061：段不被媒体积压挡住）。以前这里一个都不传：大库
 /// 首次从文件夹收几百个段要跑好几分钟，界面全程停在「正在准备」、切 profile 停不下来、进程死在里面也不留面包屑。
 /// [shouldStop] 也管完整媒体对账：开头前看一次，为真就以 [kSrsSync2Stopped] 交回。
 Future<SrsFolderSyncReport> srsSyncFolderLocation({
@@ -129,6 +131,7 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
   void Function(int done, int total)? onFetchProgress,
   void Function()? onUploadStart,
   void Function()? onMediaStart,
+  void Function(int done, int total)? onMediaProgress,
   bool Function()? shouldStop,
   SrsSyncStepCallback? onStep,
 }) async {
@@ -184,6 +187,11 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
                   uploadOnly: true,
                   // 本机没有要先传的媒体就不报「媒体」阶段（云盘那条路径同样只在内容可能变了时才报）。
                   onTransferStart: onMediaStart,
+                  onProgress: onMediaProgress,
+                  deferRemaining: srsMediaDeadline(
+                    kSrsMediaBeforeUploadBudget,
+                    shouldStop: shouldStop,
+                  ),
                 )).uploaded;
               } on FileSystemException {
                 // 见上：完整对账会再报。
@@ -239,6 +247,9 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
       mediaRoot: mediaRoot,
       archive: location.archive,
       cipher: mediaKey == null ? null : SrsMediaCipher(store, mediaKey),
+      onProgress: onMediaProgress,
+      // 收手（库要关 / 位置被关掉）时不再开始新的媒体项，剩下的下一轮接着做。
+      deferRemaining: shouldStop,
     );
   }
   mediaReport?.uploaded += uploadedEarly;
