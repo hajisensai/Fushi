@@ -45,6 +45,8 @@ final List<String> _keys = <String>[
   SrsFieldKeys.css,
   SrsFieldKeys.termField,
   SrsFieldKeys.freqField,
+  SrsFieldKeys.sortField,
+  SrsFieldKeys.browseFields,
   SrsFieldKeys.suspended,
   SrsFieldKeys.buriedUntilDay,
   SrsFieldKeys.flag,
