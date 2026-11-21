@@ -197,12 +197,13 @@ void main() {
   ) async {
     final PageBackdropSettings saved = pageBackdropSettings.value;
     addTearDown(() => pageBackdropSettings.value = saved);
+    final AppModel appModel = await _buildAppModel();
+    // 在 ThemeNotifier 读完偏好之后再设：读偏好会按存档重写全局页底设置。
     pageBackdropSettings.value = const PageBackdropSettings(
       preset: PageBackdropPreset.custom,
       // 不存在的文件：图片层走 errorBuilder 画空，这里只验 imageOf 分支。
       landscapeImagePath: 'missing-wallpaper.png',
     );
-    final AppModel appModel = await _buildAppModel();
     tester.view.devicePixelRatio = 1.0;
     tester.view.physicalSize = const Size(1200, 900);
     addTearDown(() {
