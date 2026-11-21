@@ -14,7 +14,7 @@ import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/media/video/media_server/media_server_route_failover.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart';
 import 'package:fushi/src/sync/plex_settings_widget.dart'
-    show rerouteMediaServerAfterFailure;
+    show mediaServerRouteFailoverForRepository, rerouteMediaServerAfterFailure;
 import 'package:fushi/src/sync/plex_video_client.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -349,7 +349,7 @@ void main() {
       await repo.upsertMediaServer(config);
       final List<String> requested = <String>[];
       MediaServerRouteFailover.install(
-        MediaServerRouteFailover.forRepository(
+        mediaServerRouteFailoverForRepository(
           () => repo,
           httpClientFactory: () => _servers(<String>{_jfWan}, requested),
         ),
@@ -377,7 +377,7 @@ void main() {
       await repo.upsertMediaServer(config);
       final List<String> probed = <String>[];
       MediaServerRouteFailover.install(
-        MediaServerRouteFailover.forRepository(
+        mediaServerRouteFailoverForRepository(
           () => repo,
           httpClientFactory: () => _servers(<String>{_plexWan}, probed),
         ),

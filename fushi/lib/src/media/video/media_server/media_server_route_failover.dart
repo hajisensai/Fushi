@@ -2,12 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:fushi_engine/media/video/media_server/media_server_route_failover.dart';
-import 'package:http/http.dart' as http;
 
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
-import 'package:fushi/src/sync/plex_settings_widget.dart'
-    show rerouteMediaServerAfterFailure;
-import 'package:fushi/src/sync/sync_repository.dart';
 
 /// 媒体服务器线路故障转移器：按服务器（[MediaServerConfig.sourceId]）共享、单飞
 /// （拍板台 design-media-server-failover-transport）。
@@ -19,7 +15,7 @@ import 'package:fushi/src/sync/sync_repository.dart';
 ///    的客户端先撞上并换好了，或用户手动切了）→ 直接给当前线路，不再探测。
 /// 2. 同一台服务器已有一次探测在跑 → 等它的结果（单飞：浏览页一屏十几个请求同时
 ///    失败也只探一次）。
-/// 3. 否则在这台服务器已存的线路里探测（[rerouteMediaServerAfterFailure]：Plex 无
+/// 3. 否则在这台服务器已存的线路里探测（`rerouteMediaServerAfterFailure`：Plex 无
 ///    凭据核对 machineIdentifier，Jellyfin 家族带令牌读一次媒体库），找到另一条可达
 ///    线路就写回配置，并经 [reroutedSources] 通知清单缓存失效（缓存里的封面 / 流 URL
 ///    烤着旧线路的 host）。
@@ -42,22 +38,11 @@ class MediaServerRouteFailover {
        _reroute = reroute,
        _clock = clock ?? DateTime.now;
 
-  /// 用 [repository] 现取的 [SyncRepository] 读写配置（数据库在备份恢复时可能换实例，
-  /// 所以每次现取）。
-  /// [httpClientFactory] 只给测试注入探测用的假服务器。
-  factory MediaServerRouteFailover.forRepository(
-    SyncRepository Function() repository, {
-    http.Client Function()? httpClientFactory,
-  }) => MediaServerRouteFailover(
-    loadConfigs: () => repository().getMediaServers(),
-    reroute: (MediaServerConfig config, Object error) =>
-        rerouteMediaServerAfterFailure(
-          config,
-          error,
-          repo: repository(),
-          httpClientFactory: httpClientFactory,
-        ),
-  );
+  // 接数据库的那一份由 `mediaServerRouteFailoverForRepository`（plex_settings_widget.dart，
+  // 与探测 / 写回的 `rerouteMediaServerAfterFailure` 同处）建。本文件被协议客户端
+  // （jellyfin_video_client / plex_video_client）与清单缓存 import，处在 SyncRepository
+  // 之下，不许反过来 import 设置页 / 仓储——否则 models / utils / storage 整层经
+  // sync_repository → jellyfin_video_client 连到 AppModel（import_cycle_guard）。
 
   final Future<List<MediaServerConfig>> Function() _loadConfigs;
   final Future<MediaServerConfig?> Function(

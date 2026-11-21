@@ -20,6 +20,8 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
+import 'package:fushi/src/media/video/media_server/media_server_route_failover.dart'
+    show MediaServerRouteFailover;
 import 'package:fushi/src/settings/settings_cli_tasks.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -154,6 +156,27 @@ Future<bool> probePlexConnection(
 /// 换线路：探测期间这台已被登出（找不到）、或那条线路已被删掉时不写、返回 null，
 /// 不会把旧快照整份盖回去。请求漏斗里的自动换线路经 `MediaServerRouteFailover`
 /// 调到这里（单飞、清单缓存由它的通知失效，[cache] 留空）。
+/// 接数据库的线路故障转移器（`AppModel.initialise` 装进 [MediaServerRouteFailover.install]）：
+/// 用 [repository] 现取的 [SyncRepository] 读写配置（数据库在备份恢复时可能换实例，
+/// 所以每次现取），探测与写回走 [rerouteMediaServerAfterFailure]。
+/// [httpClientFactory] 只给测试注入探测用的假服务器。
+///
+/// 放在这里而不是 `MediaServerRouteFailover` 里：那个文件被协议客户端 import，
+/// 不能反向依赖设置页 / 仓储（import_cycle_guard）。
+MediaServerRouteFailover mediaServerRouteFailoverForRepository(
+  SyncRepository Function() repository, {
+  http.Client Function()? httpClientFactory,
+}) => MediaServerRouteFailover(
+  loadConfigs: () => repository().getMediaServers(),
+  reroute: (MediaServerConfig config, Object error) =>
+      rerouteMediaServerAfterFailure(
+        config,
+        error,
+        repo: repository(),
+        httpClientFactory: httpClientFactory,
+      ),
+);
+
 Future<MediaServerConfig?> rerouteMediaServerAfterFailure(
   MediaServerConfig config,
   Object error, {
