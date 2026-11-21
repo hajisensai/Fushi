@@ -244,6 +244,13 @@ SettingsDestination _subtitleDestination() => SettingsDestination(
       id: 'subtitle_more',
       title: _x('opt_more_options'),
       items: <SettingsItem>[
+        // YouTube 自动字幕（ASR 轨）分句整合：宿主装的 content.js / youtube-bridge 照样读它。
+        _switch(
+          'subtitleMergeAsrSentences',
+          fallback: false,
+          label: 'opt_subtitleMergeAsrSentences',
+          icon: FushiIcons.merge,
+        ),
         _switch(
           'subtitleOverlayBlur',
           fallback: false,

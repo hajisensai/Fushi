@@ -105,7 +105,8 @@ void main() {
       final String exit = slice(
         read(chromePath),
         'onExitReader:',
-        'webViewController:',
+        // BUG-4945 起侧板不再收 webViewController，下一个具名参数是 appModel。
+        'appModel:',
       );
       expect(exit.contains('_exitReaderBook('), isTrue);
     });

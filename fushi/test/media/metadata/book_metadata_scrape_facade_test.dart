@@ -13,6 +13,19 @@ import 'package:fushi/src/models/preferences_repository.dart';
 
 import '../../ops/book_metadata_test_fixture.dart';
 
+/// 测试里只关心可见候选：[BookMetadataScrapeFacade.searchDetailed] 的候选列表。
+extension on BookMetadataScrapeFacade {
+  Future<List<BookScrapeCandidate>> search({
+    required BookScrapeSource source,
+    required String query,
+    bool includeNsfw = false,
+  }) async => (await searchDetailed(
+    source: source,
+    query: query,
+    includeNsfw: includeNsfw,
+  )).candidates;
+}
+
 /// [BookMetadataScrapeFacade]：从弹窗搬出来的候选解析规则 + 写回 / 快照 / 恢复。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

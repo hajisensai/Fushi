@@ -48,6 +48,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/content_language_picker.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_dropdown.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
@@ -2126,9 +2127,9 @@ class _DictionaryDialogPageState extends BasePageState {
             builder: (_, DictionaryDownloadPhase phase, __) {
               final bool show =
                   pending > 0 && phase == DictionaryDownloadPhase.idle;
-              return AnimatedSize(
+              return FushiAnimatedSize(
                 duration: fushiMotionDuration(context, FushiMotion.medium),
-                curve: Curves.easeOutCubic,
+                curve: context.fushiMotion.spatialDefault.curve,
                 alignment: Alignment.topCenter,
                 child: !show
                     ? const SizedBox(width: double.infinity)

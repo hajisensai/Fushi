@@ -93,6 +93,8 @@ void main() {
     t.media_stats_action,
     t.game_rename,
     t.game_set_cover,
+    // 拍板 left3612：「在线搜索封面」（刮削候选封面）紧跟设置封面，仍属封面类。
+    t.game_cover_online_search,
     t.game_auto_cover,
     t.game_scrape,
     t.add_to_collection,

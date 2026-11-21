@@ -713,8 +713,21 @@ class SyncRepository {
     final String? s = await _getStringOrNull(
       scope.key(_keyStreamVideoPullSinceMs),
     );
-    return s == null ? 0 : int.tryParse(s) ?? 0;
+    return _parseStreamVideoPullSinceMs(s);
   }
+
+  /// 同 [getStreamVideoPullSinceMs]，但从调用方已整表读出的偏好快照
+  /// （[FushiDatabase.getAllPrefs]）里取，不再单独查一次库：视频进度 sweep 每轮
+  /// 本来就读整表偏好，拉取基线跟着那份快照走，稳态 SQL 条数不随功能增加而涨。
+  static int streamVideoPullSinceMsFromPrefs(
+    Map<String, String> prefs,
+    SyncChannelScope scope,
+  ) => _parseStreamVideoPullSinceMs(
+    prefs[scope.key(_keyStreamVideoPullSinceMs)],
+  );
+
+  static int _parseStreamVideoPullSinceMs(String? s) =>
+      s == null ? 0 : int.tryParse(s) ?? 0;
 
   Future<void> setStreamVideoPullSinceMs(SyncChannelScope scope, int ms) =>
       _setString(scope.key(_keyStreamVideoPullSinceMs), ms.toString());

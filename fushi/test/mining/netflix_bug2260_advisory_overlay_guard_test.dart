@@ -132,9 +132,32 @@ void main() {
     ).readAsStringSync();
 
     test('onLoadStop 按 _mineRunning 重挂 chrome 隐藏（整页换集不丢）', () {
-      final int start = page.indexOf('onLoadStop:');
+      // gap-webvideo-11 起 WebView 归共享的 WebVideoSession：它的 onLoadStop 走
+      // `_onLoadStop()` 回调页面的 onDocumentReady，页面在 `_onDocumentReady` 里重挂。
+      // 三段链路缺一环，整页换集后的新文档就不再隐藏 chrome。
+      final String session = File(
+        'lib/src/media/video/web_video_session.dart',
+      ).readAsStringSync();
+      final int loadStop = session.indexOf('onLoadStop:');
+      expect(loadStop, greaterThanOrEqualTo(0));
+      final int loadStopEnd = session.indexOf('onRenderProcessGone:', loadStop);
+      expect(loadStopEnd, greaterThan(loadStop));
+      expect(
+        session.substring(loadStop, loadStopEnd),
+        contains('session._onLoadStop()'),
+      );
+      final int handler = session.indexOf('void _onLoadStop() {');
+      expect(handler, greaterThanOrEqualTo(0));
+      final int handlerEnd = session.indexOf('\n  }\n', handler);
+      expect(
+        session.substring(handler, handlerEnd),
+        contains('onDocumentReady?.call()'),
+      );
+
+      expect(page, contains('onDocumentReady: _onDocumentReady'));
+      final int start = page.indexOf('void _onDocumentReady() {');
       expect(start, greaterThanOrEqualTo(0));
-      final int end = page.indexOf('onRenderProcessGone:', start);
+      final int end = page.indexOf('\n  }\n', start);
       expect(end, greaterThan(start));
       expect(
         page

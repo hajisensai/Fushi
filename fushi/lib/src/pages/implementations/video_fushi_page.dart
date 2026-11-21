@@ -555,6 +555,7 @@ import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
 import 'package:fushi/src/utils/components/copy_feedback.dart';
 import 'package:fushi/src/utils/components/fading_chrome_gate.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';

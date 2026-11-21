@@ -52,6 +52,10 @@ class _LookupAppModel extends AppModel {
 
   @override
   bool get compactGlossaries => false;
+
+  // controller.start 读「应用外快捷键」总开关（aec1f10078），本 fake 没接 prefsRepo。
+  @override
+  bool get appExternalHotkeysEnabled => true;
   @override
   bool get dictionaryUnifiedStyle => true;
 

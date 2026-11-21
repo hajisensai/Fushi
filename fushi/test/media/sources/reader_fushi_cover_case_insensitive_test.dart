@@ -295,38 +295,82 @@ void main() {
     });
   });
 
-  group(
-    '制卡路径接线守卫: mining 复用 resolveCoverFilePath 而非裸 existsSync (BUG-703)',
-    () {
-      // 源码扫描守卫: 无论平台大小写敏感与否恒定判定——若有人把制卡封面解析改回裸
-      // `File(p.join(_extractDir!, coverHref)).existsSync()`(对大小写不敏感、Android
-      // 上会丢封面)，此测试立即变红。这是修复本质(制卡与显示对称)的最强可落地守卫。
-      test('mining.part.dart 调用 ReaderFushiSource.resolveCoverFilePath', () {
-        final String src = File(
-          'lib/src/pages/implementations/reader_fushi/mining.part.dart',
-        ).readAsStringSync();
-        expect(
-          src,
-          contains('ReaderFushiSource.resolveCoverFilePath('),
-          reason: '制卡封面必须复用书架同一个 case-insensitive 兜底解析',
-        );
-        expect(
-          src,
-          isNot(contains('File(p.join(_extractDir!, _book!.coverHref))')),
-          reason: '不得回退到裸大小写敏感 existsSync 探测(Android 上会丢封面)',
-        );
-      });
+  group('制卡路径接线守卫: mining 复用 resolveCoverFilePath 而非裸 existsSync (BUG-703)', () {
+    // 源码扫描守卫: 无论平台大小写敏感与否恒定判定——若有人把制卡封面解析改回裸
+    // `File(p.join(_extractDir!, coverHref)).existsSync()`(对大小写不敏感、Android
+    // 上会丢封面)，此测试立即变红。这是修复本质(制卡与显示对称)的最强可落地守卫。
+    // BUG-5045（原 BUG-4913）起制卡封面经页面 getter `_bookCoverFilePath` →
+    // `resolveReaderBookCoverFilePath`（字幕书封面优先，再落到 EPUB 封面）→
+    // `resolveBookCoverFilePath`（与 `ReaderFushiSource.resolveCoverFilePath` 同一实现）。
+    // 下面逐跳钉死这条链：任何一跳换回裸 existsSync 都会红。
+    test('mining.part.dart 经 _bookCoverFilePath 走书架同一个大小写不敏感解析', () {
+      final String src = File(
+        'lib/src/pages/implementations/reader_fushi/mining.part.dart',
+      ).readAsStringSync();
+      expect(
+        src,
+        contains(': _bookCoverFilePath;'),
+        reason: '制卡封面必须取页面统一的 _bookCoverFilePath（与书架同源）',
+      );
+      expect(
+        src,
+        isNot(contains('File(p.join(_extractDir!, _book!.coverHref))')),
+        reason: '不得回退到裸大小写敏感 existsSync 探测(Android 上会丢封面)',
+      );
 
-      test('书架 _resolveCoverUrl 也经 resolveCoverFilePath(两条路径同源)', () {
-        final String src = File(
-          'lib/src/media/sources/reader_fushi_source.dart',
-        ).readAsStringSync();
-        expect(
-          src,
-          contains('resolveCoverFilePath('),
-          reason: '书架与制卡必须共享同一封面解析，避免两份漂移',
-        );
-      });
-    },
-  );
+      final String page = File(
+        'lib/src/pages/implementations/reader_fushi_page.dart',
+      ).readAsStringSync();
+      final RegExp getter = RegExp(
+        r'String\? get _bookCoverFilePath => resolveReaderBookCoverFilePath\(\s*'
+        r'pairedSrtCoverPath: _pairedSrtCoverPath,\s*'
+        r'extractDir: _extractDir,\s*'
+        r'coverHref: _book\?\.coverHref,',
+      );
+      expect(
+        getter.hasMatch(page),
+        isTrue,
+        reason: '_bookCoverFilePath 必须把 extractDir + coverHref 交给共享解析',
+      );
+
+      final String resolver = File(
+        'lib/src/media/sources/book_cover_file_resolver.dart',
+      ).readAsStringSync().replaceAll('\r\n', '\n');
+      final int at = resolver.indexOf(
+        'String? resolveReaderBookCoverFilePath({',
+      );
+      expect(at, greaterThanOrEqualTo(0));
+      final String body = resolver.substring(at, resolver.indexOf('\n}\n', at));
+      expect(
+        body,
+        contains(
+          'resolveBookCoverFilePath(extractDir: extractDir, coverPath: coverHref)',
+        ),
+        reason: 'EPUB 封面一跳必须落到大小写不敏感的 resolveBookCoverFilePath',
+      );
+      expect(
+        body,
+        isNot(contains('p.join(extractDir')),
+        reason: '不得在阅读器封面解析里另写裸路径拼接探测',
+      );
+    });
+
+    test('书架 _resolveCoverUrl 也经 resolveCoverFilePath(两条路径同源)', () {
+      final String src = File(
+        'lib/src/media/sources/reader_fushi_source.dart',
+      ).readAsStringSync();
+      expect(
+        src,
+        contains('resolveCoverFilePath('),
+        reason: '书架与制卡必须共享同一封面解析，避免两份漂移',
+      );
+      expect(
+        src,
+        contains(
+          '}) => resolveBookCoverFilePath(extractDir: extractDir, coverPath: coverPath);',
+        ),
+        reason: 'ReaderFushiSource.resolveCoverFilePath 必须直接委托制卡用的同一实现',
+      );
+    });
+  });
 }

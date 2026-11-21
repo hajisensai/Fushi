@@ -1188,6 +1188,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 归一失败时安全直连不偷用系统代理、legacy 存量值 fail-open、407 凭据只交付一次）
   // 由 app_proxy_local_bypass_test 的纯判据用例咬住。
   'system/Proxy mode': 'test/utils/net/app_proxy_local_bypass_test.dart',
+  // GitHub 加速镜像开关（拍板台 0E-r9q489Y）：写 network_github_mirrors_enabled（changed=true），
+  // 生效点是请求时现读的 gitHubMirrorsEnabledReader → activeGitHubMirrorPrefixes 生成的下载
+  // 候选（更新 / 词典 / 字体 / 着色器 / Mihon 仓库），harness 里没有下载在跑可探。关掉后候选
+  // 只剩直连与 jsDelivr、重新打开立即恢复，由 github_mirrors_test 的读取器用例咬住。
+  'system/Use GitHub download mirrors':
+      'test/utils/net/github_mirrors_test.dart（用户关掉 GitHub 加速镜像组）',
   // P2P 代理三档（direct/proxy/mixed）：写 prefsRepo（changed=true），生效点是
   // libtorrent session 的 proxy 设置，harness 里没有原生引擎可探。档位语义
   // （默认直连 / 改档才跟全局出口 / mixed=tracker 经代理、DHT 与 peer 直连）

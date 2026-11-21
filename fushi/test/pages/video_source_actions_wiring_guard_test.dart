@@ -152,7 +152,14 @@ void main() {
     ).readAsStringSync();
     expect(home, contains('ValueNotifier<int> _videoLibraryRefreshSignal'));
     expect(home, contains('libraryRefreshSignal: _videoLibraryRefreshSignal'));
-    expect(home, contains('onLibraryChanged: _notifyVideoLibraryChanged'));
+    // 来源页的库变化回调先发同一个刷新信号，再补一轮无来源刮削（gtpgyff3l7-oneshot-scrape）。
+    expect(home, contains('onLibraryChanged: _onVideoSourcesChangedLibrary'));
+    final int changed = home.indexOf('void _onVideoSourcesChangedLibrary() {');
+    expect(changed, greaterThanOrEqualTo(0));
+    expect(
+      home.substring(changed, home.indexOf('\n  }\n', changed)),
+      contains('_notifyVideoLibraryChanged();'),
+    );
     expect(home, contains('onScrapeAll: _scrapeAllVideosFromSources'));
     expect(
       home,

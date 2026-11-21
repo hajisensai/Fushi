@@ -10,6 +10,10 @@
 // 重新生成（只在有意改变排队语义时）：SRS_STUDY_VECTORS_WRITE=1 跑本文件。
 // 2026-11-07 重新生成：RWKV 牌组不再按复习量调整新卡，RWKV 牌组行的复习预算列变成 0（新卡配额、调整原因与 FSRS 的
 // Root::B / Root::B1 行逐项不变，脚本逐值核对过）。
+// 2026-11-22 重新生成：RWKV 同日间隔守卫改数「同一参数归属牌组」里的作答（BUG-4915，33039f2941），
+// 自己管参数的 FSRS 牌组 Root::B 的作答不再替 RWKV 卡攒间隔。只有 rwkv_mixed 第 20 步变了：c5 在第 14 步
+// 答过，之后同组只答了 c1 / c18 / c6 三张（c11 / c12 在 Root::B 里不算），不足 5 张 → 暂缓，A1 / A / Root 的
+// 到期列 1 → 0、instantDue 由 [c5] 变空；出卡（answered）与其余各步逐项不变，脚本逐值核对过。
 import 'dart:convert';
 import 'dart:io';
 

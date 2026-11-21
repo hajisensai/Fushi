@@ -118,7 +118,7 @@ extension _VideoPortrait on _VideoFushiPageState {
         onTapCue: _handleSubtitleJumpTap,
         emptyHint: t.video_portrait_no_cue,
         fontFamily: appModel.subtitleFontFamily,
-        fontSize: 22 * _videoUiScale,
+        fontSize: context.fushiType.titleLarge.fontSize! * _videoUiScale,
       ),
       pane: (EdgeInsets insets) => VideoPortraitPane(
         tabs: _portraitTabs(controller),
@@ -173,7 +173,8 @@ extension _VideoPortrait on _VideoFushiPageState {
                 title: t.video_episode_list,
                 emptyHint: t.video_episode_list_empty,
                 seasonLabelOf: _episodeSeasonLabel,
-                fontSize: 14 * _videoUiScale,
+                fontSize:
+                    context.fushiType.bodyMedium.fontSize! * _videoUiScale,
               ),
             ),
           ),
@@ -206,7 +207,7 @@ extension _VideoPortrait on _VideoFushiPageState {
           child: FushiIconButtonControl(
             key: const ValueKey<String>('video-portrait-mine-queue'),
             tooltip: t.video_mine_queue_title,
-            icon: Badge(
+            icon: FushiBadgeControl(
               label: Text('$count'),
               child: const FushiIcon(FushiIcons.ankiCard),
             ),

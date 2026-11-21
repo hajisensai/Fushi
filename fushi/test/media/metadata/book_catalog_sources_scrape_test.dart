@@ -62,6 +62,19 @@ class _Offline {
   }
 }
 
+/// 测试里只关心可见候选：[BookMetadataScrapeFacade.searchDetailed] 的候选列表。
+extension on BookMetadataScrapeFacade {
+  Future<List<BookScrapeCandidate>> search({
+    required BookScrapeSource source,
+    required String query,
+    bool includeNsfw = false,
+  }) async => (await searchDetailed(
+    source: source,
+    query: query,
+    includeNsfw: includeNsfw,
+  )).candidates;
+}
+
 void main() {
   const RakutenBooksCredentials creds = RakutenBooksCredentials(
     applicationId: 'app',

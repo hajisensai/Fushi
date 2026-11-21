@@ -98,7 +98,11 @@ void main() {
   test('lib/ 不新增裸数字 fontSize（用 context.fushiType / textTheme）', () {
     final List<String> offenders = overBudget(
       scan(_fontSizePattern),
-      <String, int>{..._fontSizeBudget, ..._fontSpecimenBudget},
+      <String, int>{
+        ..._fontSizeBudget,
+        ..._fontSpecimenBudget,
+        ..._typeScaleOwnerBudget,
+      },
     );
     expect(
       offenders,
@@ -135,6 +139,13 @@ int _curveCount(String path, String code) {
 /// 保持对照样张的固定字号，周围标题、按钮与说明仍须走主题字阶。
 const Map<String, int> _fontSpecimenBudget = <String, int>{
   'lib/src/pages/implementations/font_preview/font_library_widgets.dart': 5,
+};
+
+/// 字阶表本身（与 `fushi_typography.dart` 同级的令牌源）：页头大字的
+/// `FushiPageTitleScale` 两档（phone / wide）各写一次 `fontSize:`，是「页面里
+/// 不写死字号」所取的那张表，不是 UI 调用点。计数钉死为 2，表外任何新增仍红。
+const Map<String, int> _typeScaleOwnerBudget = <String, int>{
+  'lib/src/utils/components/fushi_page_title_metrics.dart': 2,
 };
 
 /// 2026-10-05 存量：`Curves.` 每文件出现次数（只许减少）。

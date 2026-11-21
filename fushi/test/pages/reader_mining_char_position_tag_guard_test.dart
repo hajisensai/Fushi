@@ -127,14 +127,30 @@ void main() {
         reason: '制卡位置必须与阅读账本共用 absoluteCharOffsetOf 换算',
       );
 
-      // 两级锚都在：句锚（与制卡历史同源）+ 视口锚兜底。
+      // 两级锚都在：句锚（与制卡历史同源）+ 视口锚兜底。BUG-4914 起句锚经
+      // `_miningStudySpan()`（来源链接 / 制卡历史 / 制卡位置同一学习单位口径），
+      // 由它把句级 span 与选区交给 readerSourceStudySpan（句级优先、退到选区）。
       expect(
-        containsIdentifier(body, '_cachedSentenceRange'),
+        containsIdentifierCall(body, '_miningStudySpan'),
+        isTrue,
+        reason: '一级锚是制卡那句话在本章的偏移（与制卡历史同一口径）',
+      );
+      final String studySpan = methodBody(
+        readReaderPageSource(),
+        '({int offset, int length})? _miningStudySpan()',
+      );
+      expect(
+        containsIdentifierCall(studySpan, 'readerSourceStudySpan'),
+        isTrue,
+        reason: '句锚 / 选区的取舍只在 readerSourceStudySpan 一处',
+      );
+      expect(
+        containsIdentifier(studySpan, '_cachedSentenceRange'),
         isTrue,
         reason: '一级锚是制卡那句话在本章的偏移',
       );
       expect(
-        containsIdentifier(body, '_cachedSelectionRange'),
+        containsIdentifier(studySpan, '_cachedSelectionRange'),
         isTrue,
         reason: '无句级 span 时退到选区偏移',
       );

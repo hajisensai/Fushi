@@ -289,6 +289,12 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// 展开右键菜单的「更多 ›」二级菜单（低频 / 进度类动作的落点）。
+  Future<void> openMoreSubmenu(WidgetTester tester) async {
+    await tester.tap(find.text(t.item_menu_more));
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('单集菜单「整理文件名」：库页注入了才出现，点了交出这一集（ZDYNkAP3Ln）', (
     WidgetTester tester,
   ) async {
@@ -345,6 +351,8 @@ void main() {
     await tester.pumpAndSettle();
 
     await openEpisodeMenu(tester, 'video/e2');
+    // #4b 统一骨架（ea85099929）：未指定 slot 的「进度」组动作收进「更多 ›」二级菜单。
+    await openMoreSubmenu(tester);
     expect(
       find.text(t.video_watch_progress_clear),
       findsOneWidget,
@@ -367,6 +375,7 @@ void main() {
 
     // 清完再右键同一集：没有痕迹了，按钮不再出现。
     await openEpisodeMenu(tester, 'video/e2');
+    await openMoreSubmenu(tester);
     expect(find.text(t.video_watch_progress_clear), findsNothing);
     expect(
       find.text(t.collection_remove_member),

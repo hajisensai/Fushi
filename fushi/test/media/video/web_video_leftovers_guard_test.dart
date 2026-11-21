@@ -22,12 +22,17 @@ void main() {
     // 发起时冻结库与归属，成功（非重复）分支记账。
     expect(body, contains('final FushiDatabase mineDb = appModel.database;'));
     expect(body, contains('_studyStatsIdentity'));
-    final int duplicate = body.indexOf("res.result == 'duplicate'");
-    final int record = body.indexOf(
-      '_recordVideoMineStat(mineDb, statIdentity)',
-    );
-    expect(duplicate, greaterThanOrEqualTo(0));
-    expect(record, greaterThan(duplicate), reason: '只在非重复的成功分支记账');
+    // 结局按 `switch (res.result)` 分支：记账只能落在 `case 'success':` 里（排在
+    // `case 'duplicate':` 之前），且整段只记一次——重复 / 失败分支都不记。
+    const String record = '_recordVideoMineStat(mineDb, statIdentity)';
+    final int success = body.indexOf("case 'success':");
+    final int duplicate = body.indexOf("case 'duplicate':");
+    final int recordAt = body.indexOf(record);
+    expect(success, greaterThanOrEqualTo(0));
+    expect(duplicate, greaterThan(success));
+    expect(recordAt, greaterThan(success), reason: '只在新制成功分支记账');
+    expect(recordAt, lessThan(duplicate), reason: '只在新制成功分支记账');
+    expect(body.lastIndexOf(record), recordAt, reason: '重复 / 失败分支不记账');
   });
 
   test('原生页播放器层进程死后不释放共享的窗口宿主档环境', () {

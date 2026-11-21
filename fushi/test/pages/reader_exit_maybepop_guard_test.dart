@@ -38,18 +38,19 @@ void main() {
   }
 
   /// 切出 `onExitReader:` 回调块——从 `onExitReader:` 起，到下一个具名参数
-  /// `webViewController:` 止（不含其上方的 BUG-782 中文注释，避免注释里
+  /// `appModel:` 止（不含其上方的 BUG-782 中文注释，避免注释里
   /// 复述根因用的「Navigator.pop()」字样污染下面的「无裸 pop」断言）。
+  /// BUG-4945 起侧板不再收 `webViewController:`，紧随其后的具名参数是 `appModel:`。
   String readExitCallbackSlice(String source) {
     const String start = 'onExitReader:';
-    const String end = 'webViewController:';
+    const String end = 'appModel:';
     final int startIdx = source.indexOf(start);
     final int endIdx = source.indexOf(end, startIdx);
     expect(startIdx, greaterThanOrEqualTo(0), reason: 'onExitReader 回调应存在');
     expect(
       endIdx,
       greaterThan(startIdx),
-      reason: 'onExitReader 之后应有 webViewController 具名参数作为切片终点',
+      reason: 'onExitReader 之后应有 appModel 具名参数作为切片终点',
     );
     return source.substring(startIdx, endIdx);
   }

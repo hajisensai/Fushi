@@ -1000,6 +1000,10 @@ class MemoAppModel extends AppModel {
   bool get dictionaryUnifiedStyle => true;
   @override
   List<Dictionary> get dictionaries => dictionariesValue;
+  // 上面的 dictionaries 是一个已就绪的假词典仓库；lookupViewDictionaries（弹窗折叠 /
+  // 展开名单的真相源）按就绪态门控（62a2ac1320），这里如实声明就绪。
+  @override
+  bool get isDictionaryRepoReady => true;
   @override
   Map<String, String> get customDictCSS => customDictCSSValue;
   @override

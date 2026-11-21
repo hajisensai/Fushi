@@ -66,16 +66,23 @@ void main() {
 
   group('reader JS hwKataToFw 副本 parity（跨语言锁）', () {
     test('JS 查表与共享 Dart 表逐项一致、基址 0xFF66', () {
+      // 6e5f5d353f 起三种 view mode 共用的重定位 JS（含 foldCodePoint）唯一住在
+      // kSentenceAudioRelocationJs，查表副本随之搬家改名 HW_KATA_BASE / HW_KATA_TO_FW。
       final String src = File(
-        'lib/src/reader/reader_pagination_scripts.dart',
+        'lib/src/reader/reader_sentence_audio_relocation_script.dart',
       ).readAsStringSync();
       expect(
-        src.contains('hwKataToFwBase: 0xFF66'),
+        src.contains('var HW_KATA_BASE = 0xFF66;'),
         isTrue,
         reason: 'JS 查表基址必须是 0xFF66（与 Dart 表索引约定一致）',
       );
+      expect(
+        src.contains('HW_KATA_TO_FW[cp - HW_KATA_BASE]'),
+        isTrue,
+        reason: 'JS foldCodePoint 必须按基址查这张表',
+      );
       final RegExpMatch? m = RegExp(
-        r'hwKataToFw:\s*\[([0-9xA-Fa-f,\s]+)\]',
+        r'var HW_KATA_TO_FW = \[([0-9xA-Fa-f,\s]+)\]',
       ).firstMatch(src);
       expect(m, isNotNull, reason: '运行期 JS 必须持有 hwKataToFw 查表副本');
       final List<int> jsTable = m!

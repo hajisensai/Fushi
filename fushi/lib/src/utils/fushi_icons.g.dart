@@ -740,6 +740,12 @@ abstract final class FushiIcons {
     fontFamily: kFushiSymbolsFontFamily,
   );
 
+  /// 分流 / 备用线路（GitHub 加速镜像、P2P 混合档）：Symbols `alt_route`（取代 Icons.alt_route_outlined / Icons.alt_route）
+  static const IconData altRoute = IconData(
+    0xf184,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
   /// 监听端口：Symbols `settings_ethernet`（取代 Icons.settings_ethernet_outlined / Icons.settings_ethernet）
   static const IconData networkPort = IconData(
     0xe8be,
@@ -1924,6 +1930,7 @@ abstract final class FushiIcons {
     'hub': hub,
     'localApi': localApi,
     'lan': lan,
+    'altRoute': altRoute,
     'networkPort': networkPort,
     'wifi': wifi,
     'person': person,
@@ -2478,6 +2485,7 @@ abstract final class FushiIcons {
     0xf0fb: IconData(0xf0fb, fontFamily: kFushiSymbolsFilledFontFamily),
     0xf10d: IconData(0xf10d, fontFamily: kFushiSymbolsFilledFontFamily),
     0xf15c: IconData(0xf15c, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xf184: IconData(0xf184, fontFamily: kFushiSymbolsFilledFontFamily),
     0xf18a: IconData(0xf18a, fontFamily: kFushiSymbolsFilledFontFamily),
     0xf1b7: IconData(0xf1b7, fontFamily: kFushiSymbolsFilledFontFamily),
     0xf1ca: IconData(0xf1ca, fontFamily: kFushiSymbolsFilledFontFamily),
@@ -2957,6 +2965,7 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
   0xf0fb: (CupertinoIcons.arrow_up_circle, CupertinoIcons.arrow_up_circle_fill),
   0xf10d: (CupertinoIcons.pin, CupertinoIcons.pin_fill),
   0xf15c: (CupertinoIcons.cloud, CupertinoIcons.cloud_fill),
+  0xf184: (CupertinoIcons.arrow_branch, CupertinoIcons.arrow_branch),
   0xf18a: (CupertinoIcons.envelope_badge, CupertinoIcons.envelope_badge_fill),
   0xf1b7: (
     CupertinoIcons.chevron_left_slash_chevron_right,

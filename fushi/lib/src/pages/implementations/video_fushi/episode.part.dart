@@ -81,7 +81,7 @@ extension _VideoEpisode on _VideoFushiPageState {
       initialPositionMsOverride: positionMs,
     );
     if (!mounted) return;
-    _showOsd(t.video_media_server_route_switched, icon: Icons.swap_horiz);
+    _showOsd(t.video_media_server_route_switched, icon: FushiIcons.swap);
   }
 
   /// 「播完」的收尾：上报停止，满足条件时进自动连播倒计时。
@@ -687,7 +687,7 @@ extension _VideoEpisode on _VideoFushiPageState {
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
                       FushiIcon(
-                        Icons.playlist_play_outlined,
+                        FushiIcons.playlist,
                         size: 18,
                         color: _osdTextColor(cs),
                       ),

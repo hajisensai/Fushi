@@ -75,9 +75,14 @@ void main() {
       prepare,
       contains('if (audioFiles != null && !(overrides?.omitAudio ?? false))'),
     );
+    // BUG-5045：书封改取页面统一的 _bookCoverFilePath；「不要图片」时整个是 null。
     expect(
-      prepare,
-      contains('if (_extractDir != null && !(overrides?.omitImage ?? false))'),
+      RegExp(
+        r'coverPath = \(overrides\?\.omitImage \?\? false\)\s*'
+        r'\? null\s*: _bookCoverFilePath;',
+      ).hasMatch(prepare),
+      isTrue,
+      reason: '选了不要图片时书封不得进卡',
     );
   });
 

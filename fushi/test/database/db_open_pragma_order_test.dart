@@ -19,11 +19,23 @@ void main() {
     final String src = File(
       '../packages/fushi_core/lib/src/database/database.dart',
     ).readAsStringSync();
+    // BUG-4954 起 PRAGMA 组从 `_openWithRecovery` 的局部函数提成顶层
+    // `_applyOpenPragmas`（探测连接与 drift 后台连接 `setup` 共用）。
     final RegExpMatch? body = RegExp(
-      r'void applyPragmas\(CommonDatabase db\) \{(.*?)\n  \}',
+      r'void _applyOpenPragmas\(CommonDatabase db\) \{(.*?)\r?\n\}',
       dotAll: true,
     ).firstMatch(src);
-    expect(body, isNotNull, reason: '找不到 applyPragmas 方法体');
+    expect(body, isNotNull, reason: '找不到 _applyOpenPragmas 函数体');
+    expect(
+      src.contains('_applyOpenPragmas(probe);'),
+      isTrue,
+      reason: 'Layer 0 探测连接必须跑同一组 PRAGMA',
+    );
+    expect(
+      src.contains('setup: _applyOpenPragmas'),
+      isTrue,
+      reason: 'drift 后台连接的 setup 必须跑同一组 PRAGMA',
+    );
     final String b = body!.group(1)!;
     final int busyAt = b.indexOf('installWallClockBusyTimeout(db)');
     // 只认真正执行的语句，注释里提到的 journal_mode=WAL 不算。

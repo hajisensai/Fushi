@@ -355,8 +355,10 @@ void main() {
       'handleAudioLookup(',
       'handleAudioFile(',
     ];
+    // dart format 会把长调用折成 `_routesFor(` / `services,` / `).handleMine(` 三行，接收者
+    // 内部与 `.` 前允许空白 / 尾逗号。
     final RegExp routesReceiver = RegExp(
-      r'(_lookupRoutes|_routesFor\(services\))\.',
+      r'(_lookupRoutes|_routesFor\(\s*services,?\s*\))\s*\.',
     );
 
     banned.forEach((String path, List<String> needles) {

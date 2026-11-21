@@ -3709,7 +3709,7 @@ class AppModel
   /// 在这段窗口里到达，不能去碰 late 的 [dictRepo]（BUG-4935 引入的依赖）。
   List<Dictionary> get lookupViewDictionaries =>
       WorkProfileScope.instance.lookupView?.dictionaries ??
-      (_dictionaryRepoReady ? dictionaries : const <Dictionary>[]);
+      (isDictionaryRepoReady ? dictionaries : const <Dictionary>[]);
 
   bool _dictSourceBackfillStarted = false;
 
@@ -11193,9 +11193,13 @@ class AppModel
     ProfileSettingsView? profileView,
   }) {
     final String hostId = remoteDictionaryHostIdOf(candidate);
-    return profileView != null
-        ? profileView.filtersForHost(hostId)
-        : dictRepo.filtersForHost(hostId);
+    if (profileView != null) return profileView.filtersForHost(hostId);
+    // 词典仓库未就绪（启动早期 / 初始化重试把它 dispose 后，见 [isDictionaryRepoReady]）
+    // 时本端没有可说的词典选择：返回 null 让请求体与旧版相同、由 host 按自己的配置查，
+    // 而不是读未初始化 / 已释放的仓库抛错，把整次远端查词（视频遥控 / 游戏串流）打成
+    // 「没查到」。
+    if (!isDictionaryRepoReady) return null;
+    return dictRepo.filtersForHost(hostId);
   }
 
   Future<DictionarySearchResult?> _searchRemoteDictionary({

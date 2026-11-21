@@ -47,7 +47,14 @@ void main() {
   });
 
   test('自然播完只上报停止、不释放流', () {
-    final String b = body(episode, 'void _handlePlaybackCompleted(');
+    // 换线路（design-media-server-failover-transport）后 EOF 入口先判「流中途断了」：
+    // 能换线路就走 [_recoverInterruptedStream] 重取流（那是换流，按换档同一条路释放旧流）；
+    // 其余一律交 [_finishPlaybackCompleted] 按「播完」收尾——播完这条路只报停止。
+    final String entry = body(episode, 'void _handlePlaybackCompleted(');
+    expect(entry, contains('_finishPlaybackCompleted('));
+    expect(entry, isNot(contains('_releaseRemotePlayback(')));
+    expect(entry, isNot(contains('releaseRemoteVideoPlayback(')));
+    final String b = body(episode, 'void _finishPlaybackCompleted(');
     expect(b, contains('_reportRemotePlaybackStopped('));
     expect(b, isNot(contains('_releaseRemotePlayback(')));
     expect(b, isNot(contains('releaseRemoteVideoPlayback(')));

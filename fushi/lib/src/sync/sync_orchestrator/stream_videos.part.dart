@@ -15,18 +15,25 @@ part of '../sync_orchestrator.dart';
 /// 两边都有之后 [_syncVideoProgressLive] 原样接管进度、播放偏好与看完标记。
 extension _SyncOrchestratorStreamVideos on SyncOrchestrator {
   /// 对齐流媒体书的行，返回之后进度阶段该用的 host 清单：推过东西就重取（刚注册的
-  /// 行这一轮就要对上进度，也要进拉取基线），否则原样返回 [hostList]。
+  /// 行这一轮就要对上进度，也要进拉取基线），否则原样返回 [hostList]；`pulled`
+  /// 为本轮是否在本机新建了行（调用方据此决定要不要重读本地视频行）。
+  ///
+  /// [localRows] / [prefs] 是调用方（[_syncVideoProgressLive]）这一轮已读出的本地
+  /// 视频行与整表偏好快照，这里复用、不再各查一次：稳态（两端已对齐）时本阶段零 SQL，
+  /// 进度 sweep 的稳态 SQL 条数保持「视频行 + 偏好快照 + 基线 / 待确认基线」各一条。
   ///
   /// 整段错误进 [report] 不中断 sweep；失败时返回 [hostList]，进度照旧按它同步。
-  Future<List<RemoteVideoInfo>> _reconcileStreamVideosLive(
+  Future<({List<RemoteVideoInfo> hostList, bool pulled})>
+  _reconcileStreamVideosLive(
     SyncRunReport report,
     InterconnectSyncBackend backend,
-    List<RemoteVideoInfo> hostList,
-  ) async {
+    List<RemoteVideoInfo> hostList, {
+    required List<VideoBookRow> localRows,
+    required Map<String, String> prefs,
+  }) async {
     final Set<String> hostUids = <String>{
       for (final RemoteVideoInfo info in hostList) info.id,
     };
-    final List<VideoBookRow> localRows = await _db.allVideoBooks();
     final Set<String> localUids = <String>{
       for (final VideoBookRow r in localRows) r.bookUid,
     };
@@ -61,15 +68,24 @@ extension _SyncOrchestratorStreamVideos on SyncOrchestrator {
         ? await backend.listRemoteVideos()
         : hostList;
 
+    final int pulledBefore = report.streamVideosPulled;
     try {
-      await _pullStreamVideosLive(report, current, localUids);
+      await _pullStreamVideosLive(
+        report,
+        current,
+        localUids,
+        since: SyncRepository.streamVideoPullSinceMsFromPrefs(prefs, _scope),
+      );
     } on SyncCancelledException {
       rethrow;
     } catch (e) {
       report.noteError('live pull stream videos', e);
     }
 
-    return current;
+    return (
+      hostList: current,
+      pulled: report.streamVideosPulled > pulledBefore,
+    );
   }
 
   /// 把 [rows]（本机有、host 没有的流媒体书）注册给 host。返回是否改变了 host 清单。
@@ -128,14 +144,15 @@ extension _SyncOrchestratorStreamVideos on SyncOrchestrator {
     return changed;
   }
 
-  /// 把 host 新有、本机没有的流媒体书落到本机（见扩展注释的基线语义）。
+  /// 把 host 新有、本机没有的流媒体书落到本机（见扩展注释的基线语义）。[since] 是
+  /// 本通道的拉取基线（调用方从本轮偏好快照取）。
   Future<void> _pullStreamVideosLive(
     SyncRunReport report,
     List<RemoteVideoInfo> hostList,
-    Set<String> localUids,
-  ) async {
+    Set<String> localUids, {
+    required int since,
+  }) async {
     final SyncRepository repo = SyncRepository(_db);
-    final int since = await repo.getStreamVideoPullSinceMs(_scope);
     Map<String, int>? localTombstones;
     int newest = since;
     bool incomplete = false;

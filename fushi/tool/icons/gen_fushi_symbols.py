@@ -170,6 +170,7 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
     ("hub", "hub", "hub_outlined", "hub", "互联中枢"),
     ("localApi", "api", "api_outlined", "api", "本机 API 服务"),
     ("lan", "lan", "lan_outlined", "lan", "局域网访问范围"),
+    ("altRoute", "alt_route", "alt_route_outlined", "alt_route", "分流 / 备用线路（GitHub 加速镜像、P2P 混合档）"),
     ("networkPort", "settings_ethernet", "settings_ethernet_outlined", "settings_ethernet", "监听端口"),
     ("wifi", "wifi", "wifi", "wifi", "局域网"),
     ("person", "person", "person_outline", "person", "个人 / 档案"),
