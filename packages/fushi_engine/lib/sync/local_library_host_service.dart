@@ -208,7 +208,7 @@ abstract class _LocalLibraryHostBase
   Directory? get _localAudioStagingDir;
   Future<void> Function(LocalAudioPackageContents)? get _onLocalAudioImported;
   Directory? get _audioDatabaseRoot;
-  Future<void> Function(String displayName)? get _removeLocalAudioEntry;
+  Future<void> Function(String contentId)? get _removeLocalAudioEntry;
   String get _videoSubtitleLangCode;
   Directory? get _uploadedVideoRoot;
   Directory? get _videoCoversDirectory;
@@ -268,7 +268,7 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
     Directory? localAudioStagingDir,
     Future<void> Function(LocalAudioPackageContents)? onLocalAudioImported,
     Directory? audioDatabaseRoot,
-    Future<void> Function(String displayName)? removeLocalAudioEntry,
+    Future<void> Function(String contentId)? removeLocalAudioEntry,
     Future<bool> Function()? isProfileTransferEnabled,
     Future<String> Function()? exportActiveProfileJson,
     Future<String> Function(String json)? importProfileJson,
@@ -415,9 +415,10 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
   final Directory? _audioDatabaseRoot;
 
   /// deleteLocalAudio 回调（可选；null 时 deleteLocalAudio 仅做名称校验，静默跳过删除）。
-  /// 生产传按 displayName 从 LocalAudioManager 移除条目的回调（T3.4 接线）。
+  /// 参数是要删的库的**内容身份**（HBK-AUDIT-022：不再按显示名删），回调删掉所有
+  /// 身份等于它的登记。生产传 AppModel / 服务端 `LocalAudioLibraryStore.remove`。
   @override
-  final Future<void> Function(String displayName)? _removeLocalAudioEntry;
+  final Future<void> Function(String contentId)? _removeLocalAudioEntry;
 
   // ── 视频（P4-1）──────────────────────────────────────────────────────────────
 
