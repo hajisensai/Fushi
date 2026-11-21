@@ -124,6 +124,26 @@ void main() {
     expect(r.fieldPreview, <String>['cat']);
   });
 
+  test('选过的副字段一个都不剩（删掉 / 选成了排序字段）：回到自动，不变成「不显示副字段」', () async {
+    final SrsDbStore s = await open();
+    final (String typeId, Map<String, String> ids) = await seed(s);
+    await s.setBrowseFields(typeId, <String>[ids['Word']!]);
+    await s.setSortField(typeId, ids['Word']);
+    SrsNoteTypeView v = (await s.noteType(typeId))!;
+    expect(v.browseFieldIds, isNull, reason: '唯一的副字段成了排序字段');
+    SrsBrowseRow r = (await rows(s)).single;
+    expect(r.fieldPreview, <String>['0042', 'cat']);
+
+    await s.setSortField(typeId, null);
+    await s.setBrowseFields(typeId, <String>[ids['Meaning']!]);
+    await s.deleteField(typeId, ids['Meaning']!);
+    v = (await s.noteType(typeId))!;
+    expect(v.browseFieldIds, isNull, reason: '删了唯一的副字段');
+    expect(v.edits[SrsFieldKeys.browseFields]?.value, isNull);
+    r = (await rows(s)).single;
+    expect(r.fieldPreview, <String>['猫', 'n5']);
+  });
+
   test('克隆笔记类型：排序字段与副字段指向克隆出的对应字段', () async {
     final SrsDbStore s = await open();
     final (String typeId, Map<String, String> ids) = await seed(s);

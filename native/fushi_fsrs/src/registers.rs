@@ -821,7 +821,8 @@ fn note_type_view(ent: &Entity<'_, '_>, payload: &Value, builtin: &Value) -> Res
         .map(str::to_owned)
         .or_else(|| live_fields.first().map(|f| f.id.clone()));
     // 浏览预览的副字段（字段 ID 列表，按字段顺序、只留还在的、去掉排序字段，最多 [BROWSE_FIELDS_MAX] 个）；没设 =
-    // None（自动：排序字段之外按字段顺序的前两个非空字段）。设成空列表 = 不显示副字段。
+    // None（自动：排序字段之外按字段顺序的前两个非空字段）。设成空列表 = 不显示副字段；选过的字段一个都不剩时也是
+    // None（回到自动）。
     let browse = browse_fields(
         ent.value("browseFields"),
         &live_fields,
@@ -861,14 +862,18 @@ fn browse_fields(
         Value::Array(xs) => xs.iter().filter_map(Value::as_str).collect(),
         _ => return Err(format!("browseFields: expected List<String>?, got {v}")),
     };
-    Ok(Some(
-        fields
-            .iter()
-            .filter(|f| Some(f.id.as_str()) != sort && picked.contains(&f.id.as_str()))
-            .take(BROWSE_FIELDS_MAX)
-            .map(|f| f.id.clone())
-            .collect(),
-    ))
+    if picked.is_empty() {
+        return Ok(Some(Vec::new()));
+    }
+    let live: Vec<String> = fields
+        .iter()
+        .filter(|f| Some(f.id.as_str()) != sort && picked.contains(&f.id.as_str()))
+        .take(BROWSE_FIELDS_MAX)
+        .map(|f| f.id.clone())
+        .collect();
+    // 选过的字段一个都不剩（被删 / 后来被选成排序字段 / 同步来的别名对不上）：回到自动，而不是悄悄变成
+    // 「不显示副字段」——那只有显式存空列表才算。
+    Ok(if live.is_empty() { None } else { Some(live) })
 }
 
 /// 见 [note_type_view] 里 `qe` 的说明。
@@ -1728,6 +1733,15 @@ mod tests {
 
         let v = view(&[edit(5, "browseFields", json!([]))]);
         assert_eq!(v["bf"], json!([]));
+
+        // 选过的字段一个都不剩（选的正是后来的排序字段 / 都已删 / 不存在）：回到自动，不变成「不显示副字段」。
+        let v = view(&[
+            edit(5, "browseFields", json!(["c"])),
+            edit(6, "sortField", json!("c")),
+        ]);
+        assert_eq!(v["bf"], Value::Null);
+        let v = view(&[edit(5, "browseFields", json!(["zzz"]))]);
+        assert_eq!(v["bf"], Value::Null);
 
         let v = view(&[
             edit(5, "sortField", json!("c")),

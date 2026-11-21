@@ -479,15 +479,19 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
           SrsFieldKeys.sortField,
           null,
         ),
+      // 删的是最后一个选中的副字段：回到自动（null），不写空列表——空列表是「不显示副字段」。
       if (t.browseFieldIds?.contains(fieldId) ?? false)
         SrsEditSpec(
           SrsEntityKind.noteType,
           noteTypeId,
           SrsFieldKeys.browseFields,
-          <String>[
+          switch (<String>[
             for (final String id in t.browseFieldIds!)
               if (id != fieldId) id,
-          ],
+          ]) {
+            final List<String> rest when rest.isNotEmpty => rest,
+            _ => null,
+          },
         ),
     ]);
   }

@@ -52,10 +52,10 @@ enum SrsFieldClass {
   viewState,
 }
 
-/// 字段键约定（冻结）。
 /// 浏览预览最多显示几个副字段（[SrsFieldKeys.browseFields]；与内核 registers.rs `BROWSE_FIELDS_MAX` 同值）。
 const int srsBrowseFieldsMax = 2;
 
+/// 字段键约定（冻结）。
 abstract final class SrsFieldKeys {
   /// 行删除时刻（毫秒；null = 未删 / 已恢复）。删除优先。
   static const String deleted = 'deleted';
@@ -93,7 +93,7 @@ abstract final class SrsFieldKeys {
   /// 表格「正面」列）、「排序字段」排序列与笔记缓存 `sort_field` 都读它。
   static const String sortField = 'sortField';
 
-  /// 浏览预览的副字段（fieldId 列表；null = 自动：排序字段之外按字段顺序的前两个非空字段；空列表 = 不显示副字段）。
+  /// 浏览预览的副字段（fieldId 列表；null = 自动：排序字段之外按字段顺序的前两个非空字段；空列表 = 不显示副字段；选过的字段一个都不剩时回到自动）。
   /// 按字段顺序显示，最多 [srsBrowseFieldsMax] 个。
   static const String browseFields = 'browseFields';
 
