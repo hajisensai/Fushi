@@ -2326,6 +2326,9 @@ class SyncRepository {
     // 从互联对端下载的有声书当时的内容版本：记的是「这台设备手上是哪一份」，带到别的
     // 设备上会让它误报 / 漏报「对端有更新」。
     kInterconnectAudiobookRevisionsPrefKey,
+    // 电脑端「缓存其他应用的声音」：开着就常驻录这台机器的系统混音，是这台设备的
+    // 录音许可，不能随备份 / 同步在别的设备上被替用户打开。
+    PreferencesRepository.crossAppAudioCaptureDesktopKey,
   ];
 
   // ── Helpers ───────────────────────────────────────────────────────

@@ -6924,6 +6924,7 @@
   "mining_animated_play_once_hint": "卡片裡的動圖（GIF / WebP / AVIF）在 Anki 中只播放一遍，不再循環，和影片片段一樣。只對之後新製的卡生效。",
   "mining_app_audio_capture": "Capture other apps' audio",
   "mining_app_audio_capture_hint": "Keeps the last 60 seconds of sound played by other apps in memory (Android 10+). Cards mined from out-of-app lookups get the voice line from just before the lookup as sentence audio. Some games block capture and record silence.",
+  "mining_app_audio_capture_hint_desktop": "Keeps the last 60 seconds of system audio in memory. Cards mined from out-of-app lookups (lookup hotkey, floating ball, screen OCR) get the voice line from just before the lookup as sentence audio. Shares the capture with game sessions.",
   "mining_app_audio_denied": "Audio capture was not allowed",
   "mining_app_audio_failed": "Could not start audio capture",
   "mining_app_audio_notification": "Keeping recent app audio for card mining",

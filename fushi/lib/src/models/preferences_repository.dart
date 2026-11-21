@@ -1424,6 +1424,21 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 电脑端（Windows）「缓存其他应用的声音」开关的偏好键（设备本地）。
+  static const String crossAppAudioCaptureDesktopKey =
+      'mining_app_audio_capture_desktop';
+
+  /// 电脑端「缓存其他应用的声音」（拍板 design-cross-app-audio-desktop）：开着时启动即
+  /// 常驻录系统混音环（与 galgame 会话共用同一路 loopback），应用外查词制卡带查词前最后
+  /// 一句语音。默认关。Android 不持久化（每次都要用户重新同意屏幕共享）。
+  bool get crossAppAudioCaptureDesktop =>
+      getPref(crossAppAudioCaptureDesktopKey, defaultValue: false);
+
+  Future<void> setCrossAppAudioCaptureDesktop(bool value) async {
+    await setPref(crossAppAudioCaptureDesktopKey, value);
+    notifyListeners();
+  }
+
   /// 桌面截屏识字的 OCR 引擎设置（反馈 Eemf0HOZhj）：出厂跟随全局 OCR 引擎偏好
   /// （[mangaOcrEnginePreference]），解析见 [resolveScreenOcrEngine]。
   ScreenOcrEngineSetting get screenOcrEngine =>

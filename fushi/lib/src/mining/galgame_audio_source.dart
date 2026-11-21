@@ -47,12 +47,19 @@ class GalAudioSlice {
 /// native 侧（`fushi/windows/runner/audio_loopback_capture.cpp`）注册 `audio_loopback`
 /// MethodChannel，方法：
 ///   - `start` `{userDataFolder?, silent?}` -> `Map`：`{sampleRate, channels, bitsPerSample,
-///     isFloat}` 或 `{error, code}`。带 userDataFolder = 进程树模式（只录该 WebView2 环境
-///     浏览器进程树的声音）；silent 再把它的音频会话压到 -100 dB 不出扬声器、采集侧还原。
+///     isFloat, lease}` 或 `{error, code}`。带 userDataFolder = 进程树模式（只录该 WebView2
+///     环境浏览器进程树的声音）；silent 再把它的音频会话压到 -100 dB 不出扬声器、采集侧还原。
+///     同一来源已在跑时共用那一路，另发一张租约 `lease`。
 ///   - `restoreDucked` `{userDataFolder}` -> int：崩溃残留兜底（见 [restoreDuckedSessions]）。
-///   - `stop` -> void。
-///   - `grabRecent` `{backMs}` -> `Map`：`{pcm:Uint8List, sampleRate, channels,
+///   - `stop` `{lease}` -> void：只交回本实例的租约；同一路还有别的持有者（galgame 会话 /
+///     常驻的跨应用语音缓存）时不停。
+///   - `grabRecent` `{backMs, lease}` -> `Map`：`{pcm:Uint8List, sampleRate, channels,
 ///     bitsPerSample, isFloat}` 或 `{error}`。
+///   - `pinSnapshot` `{backMs, lease}` -> `{id}` 或 `{error}`；`saveSnapshot` `{id, path}` ->
+///     格式 map 或 `{error}`（跨应用语音缓存：查词那一刻钉住，制卡时才落盘）。
+///
+/// 一个实例至多持有一张租约：[start] 成功后持有，[stop] 交回。没持有租约时 [stop] 是
+/// 无操作——失败的 start 之后的兜底 stop 不再能停掉别人的那一路。
 ///
 /// native 缺失（未构建 / 非 Windows）时所有方法以 [MissingPluginException] /
 /// [PlatformException] 收敛为 null（调用方降级）。
@@ -75,6 +82,12 @@ class LoopbackGalAudioSource implements GalAudioSource {
   /// 进程树模式下不从扬声器出声（见类注释）。
   final bool silent;
 
+  /// 本实例持有的 native 租约（[start] 成功后非空，[stop] 后清空）。
+  int? _lease;
+
+  /// 是否持有租约（= 本实例启动的采集还在为它跑）。
+  bool get holdsLease => _lease != null;
+
   /// 最近一次 [start] 失败时 native 给的原因码（`target_not_found` / `unsupported` /
   /// `busy` / `start_failed`；native 缺失为 `missing_plugin`）；成功为 null。
   String? get lastStartError => _lastStartError;
@@ -96,7 +109,15 @@ class LoopbackGalAudioSource implements GalAudioSource {
         _lastStartError = (r?['code'] as String?) ?? 'start_failed';
         return null;
       }
-      return _parseFormat(r);
+      final PcmFormat? format = _parseFormat(r);
+      final Object? lease = r['lease'];
+      if (lease is int && lease != 0) {
+        // 重复 start：先拿到新租约再交回旧的，这一路中间不会因计数归零被停。
+        final int? previous = _lease;
+        _lease = lease;
+        if (previous != null && previous != lease) await _release(previous);
+      }
+      return format;
     } on PlatformException {
       _lastStartError = 'start_failed';
       return null;
@@ -127,8 +148,17 @@ class LoopbackGalAudioSource implements GalAudioSource {
 
   @override
   Future<void> stop() async {
+    final int? lease = _lease;
+    _lease = null;
+    if (lease == null) return;
+    await _release(lease);
+  }
+
+  Future<void> _release(int lease) async {
     try {
-      await _channel.invokeMethod<void>('stop');
+      await _channel.invokeMethod<void>('stop', <String, Object?>{
+        'lease': lease,
+      });
     } on PlatformException {
       // 停不掉不该崩上层（native 会在进程退出兜底释放）。
     } on MissingPluginException {
@@ -145,6 +175,7 @@ class LoopbackGalAudioSource implements GalAudioSource {
       final Map<Object?, Object?>? r = await _channel
           .invokeMethod<Map<Object?, Object?>>('grabRecent', <String, Object?>{
             'backMs': backMs,
+            if (_lease != null) 'lease': _lease,
           });
       if (r == null || r['error'] != null) {
         return null;
@@ -155,6 +186,48 @@ class LoopbackGalAudioSource implements GalAudioSource {
         return null;
       }
       return GalAudioSlice(pcm: pcm, format: fmt);
+    } on PlatformException {
+      return null;
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
+  /// 把最近 [backMs] 毫秒钉在 native 内存里（只留最近一份，顶替上一份），返回快照 id；
+  /// 没持有租约 / 环里没东西 / native 缺失返回 null。不跨通道搬 PCM、不落盘。
+  Future<int?> pinSnapshot(int backMs) async {
+    final int? lease = _lease;
+    if (lease == null || backMs <= 0) return null;
+    try {
+      final Map<Object?, Object?>? r = await _channel
+          .invokeMethod<Map<Object?, Object?>>('pinSnapshot', <String, Object?>{
+            'lease': lease,
+            'backMs': backMs,
+          });
+      final Object? id = r?['id'];
+      return id is int && id != 0 ? id : null;
+    } on PlatformException {
+      return null;
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
+  /// 把 [pinSnapshot] 钉住的快照 [id] 写成裸 PCM 文件 [path]，返回它的格式；快照已被
+  /// 后来的查词顶替 / 写失败 / native 缺失返回 null。
+  static Future<PcmFormat?> saveSnapshot(
+    int id,
+    String path, {
+    MethodChannel channel = kAudioLoopbackChannel,
+  }) async {
+    try {
+      final Map<Object?, Object?>? r = await channel
+          .invokeMethod<Map<Object?, Object?>>(
+            'saveSnapshot',
+            <String, Object?>{'id': id, 'path': path},
+          );
+      if (r == null || r['error'] != null) return null;
+      return _parseFormat(r);
     } on PlatformException {
       return null;
     } on MissingPluginException {
