@@ -1106,4 +1106,136 @@ void main() {
       expect(after.createdCollectionIds, isEmpty, reason: '合集级删除墓碑挡住重建');
     });
   });
+
+  group('存量脱离的配对有声书自愈', () {
+    late FushiDatabase db;
+    late BookSeriesGrouper grouper;
+
+    setUp(() {
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
+      grouper = BookSeriesGrouper(db);
+    });
+
+    tearDown(() => db.close());
+
+    Future<String> addEpub(String title) async {
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: title,
+          title: title,
+          epubPath: '/b/$title.epub',
+          extractDir: '/b/$title',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: 1000,
+          format: const Value<String>('epub'),
+        ),
+      );
+      return (await db.resolveEpubBookUid(title))!;
+    }
+
+    Future<String> addDetachedPairedSrt(String bookKey) async {
+      final String uid = 'srtbook_epub_$bookKey';
+      await db.upsertSrtBook(
+        SrtBooksCompanion.insert(
+          uid: uid,
+          title: bookKey,
+          srtPath: '/s/$bookKey.srt',
+          importedAt: 2000,
+          bookKey: Value<String>(bookKey),
+        ),
+      );
+      return uid;
+    }
+
+    Future<List<String>> members(int collectionId) async {
+      final Map<String, String> titleByUid = <String, String>{
+        for (final EpubBookRow b in await db.getAllEpubBooks()) b.uid: b.title,
+        for (final SrtBookRow s in await db.getAllSrtBooks())
+          s.uid: 'srt:${s.title}',
+      };
+      return <String>[
+        for (final MediaCollectionItemRow item in await db.getCollectionItems(
+          collectionId,
+        ))
+          titleByUid[item.entryKey] ?? item.entryKey,
+      ];
+    }
+
+    test('系列合集里脱离的配对有声书在 groupAll 后自动补回且幂等', () async {
+      await addEpub('安達としまむら');
+      await addEpub('安達としまむら2');
+      await addEpub('安達としまむら3');
+      final int cid = (await grouper.groupAll()).createdCollectionIds.single;
+
+      await addDetachedPairedSrt('安達としまむら2');
+
+      final BookSeriesGroupSummary summary = await grouper.groupAll();
+      expect(summary.updatedCollectionIds, contains(cid));
+      expect(await members(cid), <String>[
+        '安達としまむら',
+        '安達としまむら2',
+        'srt:安達としまむら2',
+        '安達としまむら3',
+      ]);
+      final MediaCollectionRow col = (await db.getMediaCollectionById(cid))!;
+      expect(col.origin, CollectionOrigin.rule.dbValue);
+
+      final BookSeriesGroupSummary again = await grouper.groupAll();
+      expect(again.createdCollectionIds, isEmpty);
+      expect(again.updatedCollectionIds, isEmpty);
+    });
+
+    test('非系列手动合集里脱离的配对有声书同样自愈且不改写 orderUpdatedAt', () async {
+      final String uidA = await addEpub('单卷甲');
+      final String uidB = await addEpub('单卷乙');
+      final int cid = await db.createMediaCollection('手动合集');
+      await db.addToCollection(cid, MediaKind.epub, uidA);
+      await db.addToCollection(cid, MediaKind.epub, uidB);
+      await db.reorderCollectionItems(cid, <CollectionMemberKey>[
+        (mediaType: MediaKind.epub.dbValue, entryKey: uidA),
+        (mediaType: MediaKind.epub.dbValue, entryKey: uidB),
+      ]);
+      final int orderBefore = (await db.getMediaCollectionById(
+        cid,
+      ))!.orderUpdatedAt;
+      expect(orderBefore, greaterThan(0));
+
+      await addDetachedPairedSrt('单卷甲');
+
+      final BookSeriesGroupSummary summary = await grouper.groupAll();
+      expect(summary.updatedCollectionIds, contains(cid));
+      expect(await members(cid), <String>['单卷甲', 'srt:单卷甲', '单卷乙']);
+      expect(
+        (await db.getMediaCollectionById(cid))!.orderUpdatedAt,
+        orderBefore,
+      );
+    });
+
+    test('自愈尊重用户移出墓碑与已有归属，不复活、不抢回', () async {
+      await addEpub('志乃と恋 1');
+      await addEpub('志乃と恋 2');
+      await addEpub('志乃と恋 3');
+      final int cid = (await grouper.groupAll()).createdCollectionIds.single;
+
+      final String srt1 = await addDetachedPairedSrt('志乃と恋 1');
+      final String srt3 = await addDetachedPairedSrt('志乃と恋 3');
+      final int otherCid = await db.createMediaCollection('单独听力');
+      await db.addToCollection(otherCid, MediaKind.srt, srt3);
+
+      await grouper.groupAll();
+      expect(await members(cid), <String>[
+        '志乃と恋 1',
+        'srt:志乃と恋 1',
+        '志乃と恋 2',
+        '志乃と恋 3',
+      ]);
+
+      await db.removeFromCollection(cid, MediaKind.srt, srt1);
+      final BookSeriesGroupSummary afterRemoval = await grouper.groupAll();
+      expect(afterRemoval.updatedCollectionIds, isEmpty);
+      expect(await members(cid), <String>['志乃と恋 1', '志乃と恋 2', '志乃と恋 3']);
+      expect(await members(otherCid), <String>['srt:志乃と恋 3']);
+    });
+  });
 }

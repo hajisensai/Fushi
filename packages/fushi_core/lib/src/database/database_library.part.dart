@@ -1501,6 +1501,219 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     }
   });
 
+  /// EPUB / PDF 已有有声书配对行（[srtUid]）时，把 `('srt', srtUid)` 同步继承到
+  /// 原书（`epub|<uid>` 或旧行 `epub|<bookKey>`）所属的全部合集，紧邻原书之后，
+  /// 保持致密 `sortIndex` 与原合集 `origin` / `orderUpdatedAt` / `pinnedByUser`
+  /// 不变。
+  ///
+  /// 跳过条件：
+  /// - 原书不存在或不支持有声书（如 `manga`）；
+  /// - `('srt', srtUid)` 已在任意合集里（尊重用户手动调整或已同步的放置）；
+  /// - 目标合集存在 `('srt', srtUid)` 的成员移出墓碑（不复活用户移出过的条目）。
+  ///
+  /// 返回实际插入了配对行的合集 id 列表。
+  Future<List<int>> inheritEpubCollectionsForPairedSrt({
+    required String bookKey,
+    required String srtUid,
+  }) async {
+    if (bookKey.isEmpty || srtUid.isEmpty) return const <int>[];
+    return transaction(() async {
+      final TypedResult? epubRow =
+          await (selectOnly(epubBooks)
+                ..addColumns(<Expression<Object>>[
+                  epubBooks.uid,
+                  epubBooks.format,
+                ])
+                ..where(epubBooks.bookKey.equals(bookKey))
+                ..limit(1))
+              .getSingleOrNull();
+      if (epubRow == null) return const <int>[];
+      final String epubUid = epubRow.read(epubBooks.uid) ?? '';
+      final String formatRaw = epubRow.read(epubBooks.format) ?? '';
+      if (!BookFormat.parseOrEpub(formatRaw).supportsAudiobook) {
+        return const <int>[];
+      }
+
+      final MediaCollectionItemRow? existingSrtItem =
+          await (select(mediaCollectionItems)
+                ..where(
+                  (t) =>
+                      t.mediaType.equals(MediaKind.srt.dbValue) &
+                      t.entryKey.equals(srtUid),
+                )
+                ..limit(1))
+              .getSingleOrNull();
+      if (existingSrtItem != null) return const <int>[];
+
+      final List<String> epubKeys = <String>{
+        if (epubUid.isNotEmpty) epubUid,
+        bookKey,
+      }.toList(growable: false);
+      final List<MediaCollectionItemRow> epubMemberships =
+          await (select(mediaCollectionItems)
+                ..where(
+                  (t) =>
+                      t.mediaType.equals(MediaKind.epub.dbValue) &
+                      t.entryKey.isIn(epubKeys),
+                )
+                ..orderBy([
+                  (t) => OrderingTerm(expression: t.collectionId),
+                  (t) => OrderingTerm(expression: t.sortIndex),
+                  (t) => OrderingTerm(expression: t.entryKey),
+                ]))
+              .get();
+      if (epubMemberships.isEmpty) return const <int>[];
+
+      final Map<int, ({String entryKey, int sortIndex, bool pinnedByUser})>
+      anchors = <int, ({String entryKey, int sortIndex, bool pinnedByUser})>{};
+      for (final MediaCollectionItemRow row in epubMemberships) {
+        final ({String entryKey, int sortIndex, bool pinnedByUser})? prev =
+            anchors[row.collectionId];
+        if (prev == null) {
+          anchors[row.collectionId] = (
+            entryKey: row.entryKey,
+            sortIndex: row.sortIndex,
+            pinnedByUser: row.pinnedByUser,
+          );
+        } else {
+          final bool pickRow = row.sortIndex < prev.sortIndex;
+          anchors[row.collectionId] = (
+            entryKey: pickRow ? row.entryKey : prev.entryKey,
+            sortIndex: pickRow ? row.sortIndex : prev.sortIndex,
+            pinnedByUser: prev.pinnedByUser || row.pinnedByUser,
+          );
+        }
+      }
+
+      final List<int> collectionIds = anchors.keys.toList()..sort();
+      final List<int> updatedIds = <int>[];
+      final String srtTombstoneKey = '${MediaKind.srt.dbValue}\u0000$srtUid';
+      for (final int collectionId in collectionIds) {
+        final MediaCollectionRow? col = await getMediaCollectionById(
+          collectionId,
+        );
+        if (col == null) continue;
+        final Set<String> tombstones = await collectionMemberTombstoneKeysFor(
+          col.name,
+          col.collectionType,
+        );
+        if (tombstones.contains(srtTombstoneKey)) continue;
+
+        final ({String entryKey, int sortIndex, bool pinnedByUser}) anchor =
+            anchors[collectionId]!;
+        final List<MediaCollectionItemRow> existingItems =
+            await getCollectionItems(collectionId);
+        await into(mediaCollectionItems).insert(
+          MediaCollectionItemsCompanion.insert(
+            collectionId: collectionId,
+            mediaType: MediaKind.srt.dbValue,
+            entryKey: srtUid,
+            sortIndex: Value<int>(anchor.sortIndex),
+            pinnedByUser: Value<bool>(anchor.pinnedByUser),
+          ),
+          mode: InsertMode.insertOrIgnore,
+        );
+        final List<CollectionMemberKey> reordered = <CollectionMemberKey>[];
+        bool inserted = false;
+        for (final MediaCollectionItemRow item in existingItems) {
+          if (item.mediaType == MediaKind.srt.dbValue &&
+              item.entryKey == srtUid) {
+            continue;
+          }
+          reordered.add((mediaType: item.mediaType, entryKey: item.entryKey));
+          if (!inserted &&
+              item.mediaType == MediaKind.epub.dbValue &&
+              item.entryKey == anchor.entryKey) {
+            reordered.add((mediaType: MediaKind.srt.dbValue, entryKey: srtUid));
+            inserted = true;
+          }
+        }
+        if (!inserted) {
+          reordered.add((mediaType: MediaKind.srt.dbValue, entryKey: srtUid));
+        }
+        for (int i = 0; i < reordered.length; i++) {
+          await (update(mediaCollectionItems)..where(
+                (t) =>
+                    t.collectionId.equals(collectionId) &
+                    t.mediaType.equals(reordered[i].mediaType) &
+                    t.entryKey.equals(reordered[i].entryKey),
+              ))
+              .write(MediaCollectionItemsCompanion(sortIndex: Value<int>(i)));
+        }
+        updatedIds.add(collectionId);
+      }
+      return updatedIds;
+    });
+  }
+
+  /// 存量自愈：对已存在但尚未进入任何合集的 EPUB 配对有声书（`srt_books.book_key`
+  /// 非空），补齐继承原书所属的合集归属。返回实际改写过的合集 id 列表。
+  Future<List<int>> backfillMissingPairedSrtCollectionMembers() async {
+    final List<TypedResult> rows =
+        await (selectOnly(srtBooks)
+              ..addColumns(<Expression<Object>>[srtBooks.uid, srtBooks.bookKey])
+              ..where(srtBooks.bookKey.isNotValue(''))
+              ..orderBy([OrderingTerm(expression: srtBooks.uid)]))
+            .get();
+    if (rows.isEmpty) return const <int>[];
+
+    final List<({String uid, String bookKey})> paired =
+        <({String uid, String bookKey})>[];
+    final Set<String> seenUids = <String>{};
+    for (final TypedResult r in rows) {
+      final String? uid = r.read(srtBooks.uid);
+      final String? bookKey = r.read(srtBooks.bookKey);
+      if (uid == null ||
+          uid.isEmpty ||
+          bookKey == null ||
+          bookKey.isEmpty ||
+          !seenUids.add(uid)) {
+        continue;
+      }
+      paired.add((uid: uid, bookKey: bookKey));
+    }
+    if (paired.isEmpty) return const <int>[];
+
+    final Set<String> alreadyInCollection = <String>{};
+    for (final List<String> chunk in _chunkForSqlVariables<String>(
+      seenUids.toList(growable: false),
+      _kVideoDeleteChunkSize,
+    )) {
+      final List<TypedResult> memberRows =
+          await (selectOnly(mediaCollectionItems)
+                ..addColumns(<Expression<Object>>[
+                  mediaCollectionItems.entryKey,
+                ])
+                ..where(
+                  mediaCollectionItems.mediaType.equals(MediaKind.srt.dbValue) &
+                      mediaCollectionItems.entryKey.isIn(chunk),
+                ))
+              .get();
+      for (final TypedResult r in memberRows) {
+        final String? key = r.read(mediaCollectionItems.entryKey);
+        if (key != null && key.isNotEmpty) alreadyInCollection.add(key);
+      }
+    }
+
+    final List<({String uid, String bookKey})> candidates =
+        <({String uid, String bookKey})>[
+          for (final ({String uid, String bookKey}) item in paired)
+            if (!alreadyInCollection.contains(item.uid)) item,
+        ];
+    if (candidates.isEmpty) return const <int>[];
+
+    final Set<int> updated = <int>{};
+    for (final ({String uid, String bookKey}) item in candidates) {
+      updated.addAll(
+        await inheritEpubCollectionsForPairedSrt(
+          bookKey: item.bookKey,
+          srtUid: item.uid,
+        ),
+      );
+    }
+    return updated.toList()..sort();
+  }
+
   /// uid → bookKey 反向换算口（v83；resolveEpubBookUid 的对偶，住本 mixin 是
   /// 因为 on 链拓扑——misc mixin 在本 mixin 之上）。出 wire / 写 bookKey 域
   /// 墓碑前用。书不在库返回 null——透传行（远端 epub 的 entryKey 本就是对端
