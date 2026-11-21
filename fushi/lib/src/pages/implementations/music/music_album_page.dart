@@ -130,6 +130,9 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
   StreamSubscription<Set<TableUpdate>>? _dbSub;
   bool _busy = false;
 
+  /// 已经在退回曲库（专辑被移除）。
+  bool _leaving = false;
+
   AppModel get _app => ref.read(appProvider);
 
   /// 曲目多选（拍板台 IDeN5PYaI7）：跨碟按曲目 uid 选，与曲目列表（[MusicTrackList]）
@@ -316,15 +319,22 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
   Future<void> _reload() async {
     final FushiDatabase db = _app.database;
     final MusicAlbumRow? a = await db.getMusicAlbum(album.albumUid);
-    if (!mounted) return;
+    if (!mounted || _leaving) return;
     if (a == null) {
       // 专辑被移除（光盘从曲库移除）：退回曲库。
-      unawaited(Navigator.of(context).maybePop());
+      _leave();
       return;
     }
     final List<MusicTrackRow> rows = sortAlbumTracks(
       await db.listMusicTracks(albumUid: album.albumUid),
     );
+    if (!mounted || _leaving) return;
+    if (a.discUid == null && rows.isEmpty) {
+      // 普通专辑的曲目全被移出音乐库（整张移除 / 多选全移除）：专辑墙已不列它，退回曲库；
+      // 撤销提示挂在曲库那层的 ScaffoldMessenger 上，照样能点。
+      _leave();
+      return;
+    }
     final String? discUid = a.discUid;
     final MusicDiscSourceRow? d = discUid == null
         ? null
@@ -338,17 +348,24 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
     });
   }
 
-  Future<void> _runDisc(MusicDiscMenuAction action) async {
-    final MusicDiscSourceRow? d = disc;
-    if (d == null || _busy) return;
+  /// 退回曲库（只退一次：表变更会连发好几次重读）。
+  void _leave() {
+    if (_leaving) return;
+    _leaving = true;
+    unawaited(Navigator.of(context).maybePop());
+  }
+
+  /// 专辑动作（光盘的导入 / 对号 / 移除整张盘；普通专辑整张移出音乐库）。
+  Future<void> _runAlbumAction(MusicAlbumMenuAction action) async {
+    if (_busy) return;
     setState(() => _busy = true);
     try {
-      await runMusicDiscMenuAction(
+      await runMusicAlbumMenuAction(
         context: context,
         app: _app,
         action: action,
         album: album,
-        disc: d,
+        disc: disc,
         tracks: tracks,
       );
     } finally {
@@ -471,7 +488,9 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
             key: const ValueKey<String>('music_disc_import'),
             onPressed: _busy
                 ? null
-                : () => unawaited(_runDisc(MusicDiscMenuAction.importChapters)),
+                : () => unawaited(
+                    _runAlbumAction(MusicAlbumMenuAction.importChapters),
+                  ),
             icon: const FushiIcon(FushiIcons.toc),
             label: Text(
               musicDiscImportLabel(disc, hasTracks: tracks.isNotEmpty),
@@ -485,7 +504,8 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
               key: const ValueKey<String>('music_disc_lookup'),
               onPressed: _busy
                   ? null
-                  : () => unawaited(_runDisc(MusicDiscMenuAction.lookup)),
+                  : () =>
+                        unawaited(_runAlbumAction(MusicAlbumMenuAction.lookup)),
               icon: const FushiIcon(FushiIcons.search),
               label: Text(t.music_disc_lookup),
             ),
@@ -496,12 +516,24 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
             key: const ValueKey<String>('music_disc_remove'),
             onPressed: _busy
                 ? null
-                : () => unawaited(_runDisc(MusicDiscMenuAction.remove)),
+                : () => unawaited(_runAlbumAction(MusicAlbumMenuAction.remove)),
             icon: const FushiIcon(FushiIcons.delete),
             label: Text(t.music_disc_remove),
           ),
         ),
-      ],
+      ] else if (tracks.isNotEmpty && _app.isDatabaseReady)
+        // 整张专辑移出音乐库（拍板台 mmXVwo0Ibv）：磁盘文件不动，带撤销。
+        FushiPressScale(
+          child: FushiFilledButton.tonalIcon(
+            size: FushiButtonSize.m,
+            key: const ValueKey<String>('music_album_remove'),
+            onPressed: _busy
+                ? null
+                : () => unawaited(_runAlbumAction(MusicAlbumMenuAction.remove)),
+            icon: const FushiIcon(FushiIcons.removeCircle),
+            label: Text(t.music_action_remove_from_library),
+          ),
+        ),
     ];
     final bool notImported = disc != null && tracks.isEmpty;
 

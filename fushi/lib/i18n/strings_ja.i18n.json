@@ -7010,6 +7010,7 @@
   "music_action_unfollow": "Unfollow",
   "music_action_unfollowed": "Unfollowed",
   "music_action_unlove": "Remove from Loved",
+  "music_album_removed_from_library": "Removed “$title” from the library. Files on disk are untouched",
   "music_apple_music_account_connected": "Connected · full tracks",
   "music_apple_music_account_denied": "Fushi isn't allowed to use Apple Music. Allow it in system Settings › Privacy & Security › Media & Apple Music.",
   "music_apple_music_account_disconnected": "Not connected. Browsing and 30-second previews only.",

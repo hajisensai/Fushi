@@ -469,27 +469,31 @@ Future<String?> readAudioCdIntoLibrary({
   return albumUid;
 }
 
-/// 光盘专辑的菜单项。
-enum MusicDiscMenuAction { importChapters, lookup, remove }
+/// 本地专辑的菜单项：章节导入 / 对号只有光盘专辑有；[remove] 人人都有（光盘专辑移除整张
+/// 盘，普通专辑把全部曲目移出音乐库，拍板台 mmXVwo0Ibv）。
+enum MusicAlbumMenuAction { importChapters, lookup, remove }
 
-/// 专辑卡右键 / 长按菜单（光盘专辑才有）。[globalPosition] 是按下处的全局坐标。
-Future<void> showMusicDiscAlbumMenu({
+/// 专辑卡右键 / 长按菜单。[disc] 为 null = 普通专辑，只有「从音乐库移除」；光盘专辑另有
+/// 章节导入 / 重新读盘与 MusicBrainz 对号。[globalPosition] 是按下处的全局坐标。
+Future<void> showMusicAlbumMenu({
   required BuildContext context,
   required AppModel app,
   required Offset globalPosition,
   required MusicAlbumRow album,
-  required MusicDiscSourceRow disc,
+  required MusicDiscSourceRow? disc,
   required List<MusicTrackRow> tracks,
 }) async {
+  // 普通专辑没有在库曲目时菜单为空（专辑墙本不列这种专辑），不弹。
+  if (disc == null && tracks.isEmpty) return;
   final RenderObject? overlay = Overlay.of(context).context.findRenderObject();
   if (overlay is! RenderBox) return;
   // 坐标经 Overlay globalToLocal 消掉界面缩放（BUG-781 同族纪律）。
   final Offset anchor = overlay.globalToLocal(globalPosition);
-  PopupMenuItem<MusicDiscMenuAction> item(
-    MusicDiscMenuAction value,
+  PopupMenuItem<MusicAlbumMenuAction> item(
+    MusicAlbumMenuAction value,
     IconData icon,
     String label,
-  ) => PopupMenuItem<MusicDiscMenuAction>(
+  ) => PopupMenuItem<MusicAlbumMenuAction>(
     value: value,
     child: Row(
       children: <Widget>[
@@ -499,30 +503,42 @@ Future<void> showMusicDiscAlbumMenu({
       ],
     ),
   );
-  final MusicDiscMenuAction? action = await showFushiMenu<MusicDiscMenuAction>(
-    context: context,
-    position: RelativeRect.fromRect(
-      Rect.fromPoints(anchor, anchor),
-      Offset.zero & overlay.size,
-    ),
-    items: <PopupMenuEntry<MusicDiscMenuAction>>[
-      item(
-        MusicDiscMenuAction.importChapters,
-        FushiIcons.toc,
-        musicDiscImportLabel(disc, hasTracks: tracks.isNotEmpty),
-      ),
-      if (tracks.isNotEmpty &&
-          MusicDiscKind.fromWire(disc.kind) != MusicDiscKind.cdda)
-        item(
-          MusicDiscMenuAction.lookup,
-          FushiIcons.search,
-          t.music_disc_lookup,
+  final MusicAlbumMenuAction? action =
+      await showFushiMenu<MusicAlbumMenuAction>(
+        context: context,
+        position: RelativeRect.fromRect(
+          Rect.fromPoints(anchor, anchor),
+          Offset.zero & overlay.size,
         ),
-      item(MusicDiscMenuAction.remove, FushiIcons.delete, t.music_disc_remove),
-    ],
-  );
+        items: <PopupMenuEntry<MusicAlbumMenuAction>>[
+          if (disc != null) ...<PopupMenuEntry<MusicAlbumMenuAction>>[
+            item(
+              MusicAlbumMenuAction.importChapters,
+              FushiIcons.toc,
+              musicDiscImportLabel(disc, hasTracks: tracks.isNotEmpty),
+            ),
+            if (tracks.isNotEmpty &&
+                MusicDiscKind.fromWire(disc.kind) != MusicDiscKind.cdda)
+              item(
+                MusicAlbumMenuAction.lookup,
+                FushiIcons.search,
+                t.music_disc_lookup,
+              ),
+            item(
+              MusicAlbumMenuAction.remove,
+              FushiIcons.delete,
+              t.music_disc_remove,
+            ),
+          ] else if (tracks.isNotEmpty)
+            item(
+              MusicAlbumMenuAction.remove,
+              FushiIcons.removeCircle,
+              t.music_action_remove_from_library,
+            ),
+        ],
+      );
   if (action == null || !context.mounted) return;
-  await runMusicDiscMenuAction(
+  await runMusicAlbumMenuAction(
     context: context,
     app: app,
     action: action,
@@ -545,16 +561,29 @@ String musicDiscImportLabel(
       : t.music_disc_import_chapters;
 }
 
-Future<void> runMusicDiscMenuAction({
+/// 执行专辑菜单项。[disc] 为 null 的普通专辑只接 [MusicAlbumMenuAction.remove]（光盘专属
+/// 的两项直接忽略）。
+Future<void> runMusicAlbumMenuAction({
   required BuildContext context,
   required AppModel app,
-  required MusicDiscMenuAction action,
+  required MusicAlbumMenuAction action,
   required MusicAlbumRow album,
-  required MusicDiscSourceRow disc,
+  required MusicDiscSourceRow? disc,
   required List<MusicTrackRow> tracks,
 }) async {
+  if (disc == null) {
+    if (action == MusicAlbumMenuAction.remove) {
+      await musicRemoveAlbumFromLibrary(
+        context,
+        app.database,
+        album: album,
+        tracks: tracks,
+      );
+    }
+    return;
+  }
   switch (action) {
-    case MusicDiscMenuAction.importChapters:
+    case MusicAlbumMenuAction.importChapters:
       if (MusicDiscKind.fromWire(disc.kind) == MusicDiscKind.cdda) {
         await readAudioCdIntoLibrary(
           context: context,
@@ -564,14 +593,14 @@ Future<void> runMusicDiscMenuAction({
       } else {
         await importMusicDiscChapters(context: context, app: app, disc: disc);
       }
-    case MusicDiscMenuAction.lookup:
+    case MusicAlbumMenuAction.lookup:
       await lookupMusicDiscRelease(
         context: context,
         app: app,
         album: album,
         tracks: tracks,
       );
-    case MusicDiscMenuAction.remove:
+    case MusicAlbumMenuAction.remove:
       await removeMusicDiscFromLibrary(context: context, app: app, disc: disc);
   }
 }

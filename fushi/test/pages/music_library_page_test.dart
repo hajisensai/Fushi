@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, kSecondaryMouseButton;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -250,6 +252,48 @@ void main() {
     expect(find.byKey(const ValueKey<String>('music_rescan')), findsOneWidget);
     await tester.tapAt(Offset.zero);
     await tester.pumpAndSettle();
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('专辑卡右键「从音乐库移除」：整张专辑写墓碑、从专辑墙消失，撤销放回（拍板台 mmXVwo0Ibv）', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1400, 900);
+    addTearDown(tester.view.reset);
+    final FushiDatabase db = await _seed();
+    addTearDown(db.close);
+    final AppModel app = AppModel(testPlatformServices())
+      ..wireDatabaseForTesting(db)
+      ..wireMusicPluginManagerForTesting(_noPlugins());
+    await _pump(tester, app, const MusicLibraryPage());
+    expect(findCoverBlockTitle('Night Album'), findsOneWidget);
+
+    await tester.tap(
+      findCoverBlockTitle('Night Album'),
+      buttons: kSecondaryMouseButton,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    final Finder remove = find.text(t.music_action_remove_from_library);
+    expect(remove, findsOneWidget, reason: '普通专辑也有右键菜单');
+    await tester.tap(remove);
+    await tester.pumpAndSettle();
+    expect(await db.listMusicTracks(albumUid: 'al'), isEmpty);
+    expect((await db.getMusicTrack('t1'))!.hiddenAt, isNotNull);
+    expect((await db.getMusicTrack('t2'))!.hiddenAt, isNotNull);
+    expect(findCoverBlockTitle('Night Album'), findsNothing);
+    expect(
+      find.text(t.music_album_removed_from_library(title: 'Night Album')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey<String>('music-undo-action')));
+    await tester.pumpAndSettle();
+    expect((await db.listMusicTracks(albumUid: 'al')).length, 2);
+    expect(findCoverBlockTitle('Night Album'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
