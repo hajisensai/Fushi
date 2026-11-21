@@ -1020,7 +1020,10 @@ fn limited_counts_and_has_user_data_stop_at_the_answer() {
 /// 作答数），落在规范卡上；请求里按成员卡给的排除与 RWKV 候选都落到规范卡上，候选同一张规范卡只留一份。
 #[test]
 fn study_counts_a_log_class_once_and_takes_member_ids_in_the_request() {
-    use super::study::{log_state, study};
+    use super::study::log_state;
+    let study = |t: &Truth<'_>, col: i64, req: &Value| {
+        super::study::study(t, &crate::store::queue::StudyHub::default(), col, req, None)
+    };
     use crate::projection::Day;
     with(|t, col| {
         let w = land(t, col);

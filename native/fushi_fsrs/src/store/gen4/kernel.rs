@@ -5,7 +5,8 @@
 //!   Secondary（查词弹窗等辅助进程）没有写连接，写命令报 [READ_ONLY]。读命令不排在写锁后面（协议 3 BUG-4298 的同一个
 //!   口径）；WAL 下读连接只看已提交的数据。
 //! - **常驻会话**：浏览会话表 [Browse]（一个打开的库文件一份，在它自己的锁里；会话按缓存层代号自己失效，`cmd/browse.rs`
-//!   文件头）、统计原料缓存（[StatsEntry]，按集合 + 统计指纹 + 写入代数 + 缓存层代号命中，未命中调
+//!   文件头）、出卡会话 [G4Core::study]（`store/queue.rs` 的 `StudyHub`，一个打开的库文件一份、按集合号分；Primary 的写连接
+//!   上装着给它记账的临时触发器，`cmd/study.rs` 文件头）、统计原料缓存（[StatsEntry]，按集合 + 统计指纹 + 写入代数 + 缓存层代号命中，未命中调
 //!   `cmd/stats.rs` `snapshot_of`）。
 //! - **写入代数** [G4Core::writes]：每条写命令提交之后 +1。统计原料缓存按它判「本进程的写连接上改没改过原料」；别的进程
 //!   （只有 Primary 写）的写入由缓存层代号 `cache_gen` 兜住。
@@ -195,6 +196,17 @@ impl Drop for Reader<'_> {
 /// 拿着写锁的写连接。
 pub struct Writer<'a> {
     guard: MutexGuard<'a, Option<Connection>>,
+    study: &'a crate::store::queue::StudyHub,
+}
+
+impl Drop for Writer<'_> {
+    /// 写锁放下之前：写连接回到了自动提交（事务已提交或回滚完）就把出卡会话的「未提交」待重读挪成已提交（协议 3 写锁
+    /// 守卫同一个口径，`store/queue.rs` 文件头「事务边界」）。
+    fn drop(&mut self) {
+        if self.guard.as_ref().is_some_and(Connection::is_autocommit) {
+            self.study.settle();
+        }
+    }
 }
 
 impl Deref for Writer<'_> {
@@ -232,6 +244,9 @@ pub struct G4Core {
     writer: Mutex<Option<Connection>>,
     /// 浏览会话表（`cmd/browse.rs`）：一个打开的库文件一份。
     pub(super) browse: Mutex<Browse>,
+    /// 出卡常驻会话（`cmd/study.rs`，会话本体 `store/queue.rs`）：一个打开的库文件一份，按集合号分；Primary 的写连接上
+    /// 装着给它记账的临时触发器（`cmd::study::install_touch`）。
+    pub(super) study: Arc<crate::store::queue::StudyHub>,
     /// 统计原料缓存（最近一份）。
     pub(super) stats: Mutex<Option<StatsEntry>>,
     /// 写入代数：每条写命令提交之后 +1（模块文件头）。
@@ -261,6 +276,7 @@ impl G4Core {
             returned: Condvar::new(),
         };
         let mut scrub_due = false;
+        let study = Arc::new(crate::store::queue::StudyHub::default());
         let writer = match mode {
             OpenMode::Primary => {
                 opened
@@ -283,6 +299,7 @@ impl G4Core {
                 // 是这个目录唯一的写者，幂等删掉。删不掉（文件被别的进程占着、权限）不挡开库：那只是一份过时的副本，与
                 // 用户的卡片无关，因它打不开库才是让用户出问题；下一次 Primary 打开或迁移再删。
                 let _ = super::migrate::remove_leftover_rehearsal(dir);
+                super::cmd::study::install_touch(&study, &opened.conn)?;
                 Some(opened.conn)
             }
             OpenMode::Secondary => {
@@ -301,6 +318,7 @@ impl G4Core {
             readers,
             writer: Mutex::new(writer),
             browse: Mutex::new(Browse::new()),
+            study,
             stats: Mutex::new(None),
             writes: AtomicU64::new(0),
             bulk: Mutex::new(Bulk::default()),
@@ -337,7 +355,10 @@ impl G4Core {
                 OpenMode::Primary => CLOSED.to_owned(),
             });
         }
-        Ok(Writer { guard })
+        Ok(Writer {
+            guard,
+            study: &self.study,
+        })
     }
 
     /// 借一条读连接。

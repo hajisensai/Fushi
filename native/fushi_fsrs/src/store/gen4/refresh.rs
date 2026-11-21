@@ -228,7 +228,7 @@ impl Default for Refresh {
 pub(crate) use super::dispatch::CACHE_MARK_SQL;
 
 /// Secondary 的键（模块文件头「读」）：在调用方的读快照里读本机状态行与缓存层代号。
-fn secondary_key(t: &Truth<'_>, open: &str, profile: &str) -> Result<String, String> {
+pub(super) fn secondary_key(t: &Truth<'_>, open: &str, profile: &str) -> Result<String, String> {
     let st = super::local::read(t, profile)?;
     let epoch = if st["epochStored"] == Value::Bool(true) {
         st[EPOCH_KEY].as_str().unwrap_or("unstored").to_owned()

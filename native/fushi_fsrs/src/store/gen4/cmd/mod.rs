@@ -105,6 +105,12 @@ mod purge_scrub_tests;
 #[cfg(test)]
 mod refresh_tests;
 #[cfg(test)]
+mod study_bench_tests;
+#[cfg(test)]
+mod study_realdb_bench_tests;
+#[cfg(test)]
+mod study_session_tests;
+#[cfg(test)]
 mod study_tests;
 #[cfg(test)]
 mod sync_complete_tests;
@@ -352,17 +358,60 @@ pub(super) fn logs_between(
             .map_err(sql)?,
     };
     for (k, id) in rows {
-        let c = ix.canonical(&id)?;
-        let op = t.id_of_key(k)?;
-        if reps.get(&c).is_some_and(|(o, _, _)| *o <= op) {
-            continue;
+        merge_rep(t, ix, reps, k, &id)?;
+    }
+    Ok(())
+}
+
+/// 规范日志 ID 在 [ids] 里（规范 ID）、发生时刻 ≥ [lo] 的日志并进 [reps]：与 [logs_between] 同一份代表规则，只是按 ID
+/// 取（每个规范 ID 的别名类成员各走一次 `log_id (col, id, k)`）。出卡常驻会话按 ID 重读日志用（[study]）。
+pub(super) fn logs_of_ids(
+    t: &Truth<'_>,
+    ix: &Index<'_, '_>,
+    col: i64,
+    lo: i64,
+    ids: &std::collections::BTreeSet<Ref>,
+    reps: &mut LogReps,
+) -> Result<(), String> {
+    for c in ids {
+        for m in ix.class_of(c)? {
+            let ks: Vec<i64> = t
+                .conn()
+                .prepare_cached(
+                    "SELECT k FROM log_ix WHERE col = ?1 AND id = ?2 AND win = 1 AND at >= ?3",
+                )
+                .map_err(sql)?
+                .query_map(rusqlite::params![col, m, lo], |r| r.get(0))
+                .map_err(sql)?
+                .collect::<Result<_, _>>()
+                .map_err(sql)?;
+            for k in ks {
+                merge_rep(t, ix, reps, k, &m)?;
+            }
         }
-        let Some(e) = t.entry_by_key(k)? else {
-            continue;
-        };
-        if let Some(Body4::Log(l)) = body_of(&e) {
-            reps.insert(c, (op, k, l));
-        }
+    }
+    Ok(())
+}
+
+/// 日志操作 [k]（原值日志 ID [id]）并进 [reps]：每个规范日志 ID 取操作号最小的一份（[logs_between] / [logs_of_ids]
+/// 共用的代表规则）。
+fn merge_rep(
+    t: &Truth<'_>,
+    ix: &Index<'_, '_>,
+    reps: &mut LogReps,
+    k: i64,
+    id: &Ref,
+) -> Result<(), String> {
+    let c = ix.canonical(id)?;
+    let op = t.id_of_key(k)?;
+    if reps.get(&c).is_some_and(|(o, _, _)| *o <= op) {
+        return Ok(());
+    }
+    let Some(e) = t.entry_by_key(k)? else {
+        return Ok(());
+    };
+    if let Some(Body4::Log(l)) = body_of(&e) {
+        reps.insert(c, (op, k, l));
     }
     Ok(())
 }
