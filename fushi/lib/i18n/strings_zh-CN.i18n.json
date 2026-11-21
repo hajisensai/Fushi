@@ -6926,6 +6926,7 @@
   "mining_animated_play_once_hint": "卡片里的动图（GIF / WebP / AVIF）在 Anki 中只播放一遍，不再循环，和视频片段一样。只对之后新制的卡生效。",
   "mining_app_audio_capture": "缓存其他应用的声音",
   "mining_app_audio_capture_hint": "在内存里循环保留其他应用最近 60 秒的声音（Android 10 及以上）。应用外查词制卡时，把查词前最后一句语音作为句子音频放进卡片。部分游戏禁止被录音，录到的是静音。",
+  "mining_app_audio_capture_hint_desktop": "在内存里循环保留电脑最近 60 秒的声音。应用外查词（取词热键、悬浮球、截屏识字）制卡时，把查词前最后一句语音作为句子音频放进卡片。与 galgame 会话共用同一路录音。",
   "mining_app_audio_denied": "未获得录音或屏幕共享授权",
   "mining_app_audio_failed": "无法开始缓存声音",
   "mining_app_audio_notification": "正在缓存应用声音用于制卡",
