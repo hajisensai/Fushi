@@ -202,79 +202,182 @@ class WebNovelLibrary {
     );
   }
 
-  /// 把会话快照 [snapshot]（刚喂进第 [chapterIndex] 章、内容 [content]）落到书架：
-  /// 没有这部作品就新建一本，有就**就地重建**（书的身份 / 进度 / 合集 / 标签不变，
-  /// 已取过的章按 URL 原样搬过去）。返回 bookKey。
-  Future<String> save({
+  /// 把浏览器里确认过的一页 [page] 落到书架：没有这部作品就新建一本，有
+  /// （[existing]）就**就地重建**（书的身份 / 进度 / 合集 / 标签不变，已取过的章按
+  /// URL 原样搬过去）。
+  ///
+  /// [snapshot] / [chapterIndex] / [content] 是预览时把 [page] 并进 [existing] 的
+  /// 快照得到的结果。预览到确认可能隔很久，这期间阅读器可能已在同一本书里追了新章
+  /// （[WebNovelChapterLoader]），别的标签页也可能并进了别的章：提交一律在按书的
+  /// 提交锁（[webNovelBookCommits]）里做，锁内重读书行，快照变过就把 [page] 重新
+  /// 并进**最新**快照、按最新解压树重建，不拿预览时的旧快照整本覆盖（HBK-AUDIT-034）。
+  ///
+  /// 返回落到的 bookKey 与这一章在最终快照里的序号（重新并章后序号可能变）。
+  Future<({String bookKey, int chapterIndex})> save({
+    required WebNovelFetchedPage page,
     required WebNovelSnapshot snapshot,
     required int chapterIndex,
     required WebNovelChapterContent content,
     required String pendingText,
     required String nextChapterTitle,
     EpubBookRow? existing,
-  }) async {
+  }) {
+    final _WebNovelMerge preview = (
+      base: existing?.sourceMetadata,
+      page: page,
+      snapshot: snapshot,
+      chapterIndex: chapterIndex,
+      content: content,
+      pendingText: pendingText,
+      nextChapterTitle: nextChapterTitle,
+    );
+    if (existing != null) {
+      return webNovelBookCommits.run(
+        existing.bookKey,
+        () => _commitMerge(existing.bookKey, preview),
+      );
+    }
+    // 新书：按作品身份串行「查书架 → 入库」，同一部作品并发确认两次不会建出两本；
+    // 锁内发现已有（别处刚建好）就改为并进它（锁序固定：作品锁 → 书锁）。
+    return webNovelBookCommits.run(_workCommitKey(snapshot.workKey), () async {
+      final String? workKey = snapshot.workKey;
+      final EpubBookRow? created = workKey == null
+          ? null
+          : await findBook(workKey);
+      if (created != null) {
+        return webNovelBookCommits.run(
+          created.bookKey,
+          () => _commitMerge(created.bookKey, preview),
+        );
+      }
+      return _create(preview);
+    });
+  }
+
+  /// 锁内提交（[save]）：以书行的**当前**快照为准；它与预览时的基底不同就把这一页
+  /// 重新并进去。书行已被删掉就当新书建。
+  Future<({String bookKey, int chapterIndex})> _commitMerge(
+    String bookKey,
+    _WebNovelMerge preview,
+  ) async {
+    final EpubBookRow? latest = await database.getEpubBook(bookKey);
+    if (latest == null) {
+      return _create(await _remerge(preview, base: null));
+    }
+    final _WebNovelMerge merge =
+        latest.sourceMetadata == preview.base && preview.base != null
+        ? preview
+        : await _remerge(preview, base: latest.sourceMetadata);
     final Uint8List bytes = await buildWebNovelEpubInBackground(
       WebNovelEpubRequest(
-        snapshot: snapshot,
-        title: existing?.title ?? _bookTitle(snapshot),
-        nextChapterTitle: nextChapterTitle,
-        pendingText: pendingText,
-        previous: existing == null
-            ? null
-            : (
-                sourceMetadata: existing.sourceMetadata,
-                extractDir: existing.extractDir,
-              ),
-        fresh: (index: chapterIndex, content: content),
+        snapshot: merge.snapshot,
+        title: latest.title,
+        nextChapterTitle: merge.nextChapterTitle,
+        pendingText: merge.pendingText,
+        previous: (
+          sourceMetadata: latest.sourceMetadata,
+          extractDir: latest.extractDir,
+        ),
+        fresh: (index: merge.chapterIndex, content: merge.content),
       ),
     );
-    if (existing == null) {
-      final String bookKey = await _importEpub(
-        db: database,
-        bytes: bytes,
-        fileName: '${lnReaderSafeFileName(_bookTitle(snapshot))}.epub',
-        // 程序化入库：与同名的已有书并存（加后缀），不打断用户。
-        policy: const DuplicatePolicy.suffix(),
+    await _rebuild(latest, bytes, merge.snapshot.raw);
+    return (bookKey: bookKey, chapterIndex: merge.chapterIndex);
+  }
+
+  Future<({String bookKey, int chapterIndex})> _create(
+    _WebNovelMerge merge,
+  ) async {
+    final Uint8List bytes = await buildWebNovelEpubInBackground(
+      WebNovelEpubRequest(
+        snapshot: merge.snapshot,
+        title: _bookTitle(merge.snapshot),
+        nextChapterTitle: merge.nextChapterTitle,
+        pendingText: merge.pendingText,
+        fresh: (index: merge.chapterIndex, content: merge.content),
+      ),
+    );
+    final String bookKey = await _importEpub(
+      db: database,
+      bytes: bytes,
+      fileName: '${lnReaderSafeFileName(_bookTitle(merge.snapshot))}.epub',
+      // 程序化入库：与同名的已有书并存（加后缀），不打断用户。
+      policy: const DuplicatePolicy.suffix(),
+    );
+    await (database.update(
+      database.epubBooks,
+    )..where((EpubBooks t) => t.bookKey.equals(bookKey))).write(
+      EpubBooksCompanion(sourceMetadata: Value<String?>(merge.snapshot.raw)),
+    );
+    return (bookKey: bookKey, chapterIndex: merge.chapterIndex);
+  }
+
+  /// 把 [preview] 那一页重新并进 [base] 快照（null = 空会话）。并不进去（最新快照
+  /// 里它已不属于这部作品 / 没取到正文）抛 [WebNovelChapterRejected]。
+  Future<_WebNovelMerge> _remerge(
+    _WebNovelMerge preview, {
+    required String? base,
+  }) async {
+    final WebNovelSession session = WebNovelSession.open(snapshot: base);
+    try {
+      final WebNovelIngest ingest = await session.ingest(
+        preview.page.html,
+        preview.page.url,
       );
-      await (database.update(
-        database.epubBooks,
-      )..where((EpubBooks t) => t.bookKey.equals(bookKey))).write(
-        EpubBooksCompanion(sourceMetadata: Value<String?>(snapshot.raw)),
+      if (!ingest.status.accepted || ingest.index == null) {
+        throw WebNovelChapterRejected(ingest.status);
+      }
+      return (
+        base: base,
+        page: preview.page,
+        snapshot: session.snapshot(),
+        chapterIndex: ingest.index!,
+        content: preview.content,
+        pendingText: preview.pendingText,
+        nextChapterTitle: preview.nextChapterTitle,
       );
-      return bookKey;
+    } finally {
+      session.close();
     }
-    await _rebuild(existing, bytes, snapshot.raw);
-    return existing.bookKey;
   }
 
   /// 阅读器开书前调用：网页小说书的快照有下一章、而 spine 末尾还没有占位页时，
   /// 就地重建补上（追更：读到末尾就能拉下一章）。改了返回 true（调用方重读书行）。
   /// 不是网页小说书 / 合规门关 / 不需要时返回 false。
+  ///
+  /// 判定与重建都在按书的提交锁里、以书行的当前状态为准（[row] 只取 bookKey）：
+  /// 与浏览器并章 / 阅读器追章互斥，不拿开书时的旧快照覆盖别处刚写的章。
   Future<bool> ensureTrailingPlaceholder(
     EpubBookRow row, {
     required String pendingText,
     required String nextChapterTitle,
   }) async {
     if (!webNovelReaderActionAvailable()) return false;
-    final WebNovelSnapshot? snapshot = WebNovelSnapshot.tryParse(
-      row.sourceMetadata,
-    );
-    if (snapshot == null || snapshot.tailNext == null) return false;
-    if (row.chapterCount > snapshot.chapters.length) return false;
-    final Uint8List bytes = await buildWebNovelEpubInBackground(
-      WebNovelEpubRequest(
-        snapshot: snapshot,
-        title: row.title,
-        nextChapterTitle: nextChapterTitle,
-        pendingText: pendingText,
-        previous: (
-          sourceMetadata: row.sourceMetadata,
-          extractDir: row.extractDir,
+    if (WebNovelSnapshot.tryParse(row.sourceMetadata) == null) return false;
+    return webNovelBookCommits.run(row.bookKey, () async {
+      final EpubBookRow? latest = await database.getEpubBook(row.bookKey);
+      final WebNovelSnapshot? snapshot = WebNovelSnapshot.tryParse(
+        latest?.sourceMetadata,
+      );
+      if (latest == null || snapshot == null || snapshot.tailNext == null) {
+        return false;
+      }
+      if (latest.chapterCount > snapshot.chapters.length) return false;
+      final Uint8List bytes = await buildWebNovelEpubInBackground(
+        WebNovelEpubRequest(
+          snapshot: snapshot,
+          title: latest.title,
+          nextChapterTitle: nextChapterTitle,
+          pendingText: pendingText,
+          previous: (
+            sourceMetadata: latest.sourceMetadata,
+            extractDir: latest.extractDir,
+          ),
         ),
-      ),
-    );
-    await _rebuild(row, bytes, snapshot.raw);
-    return true;
+      );
+      await _rebuild(latest, bytes, snapshot.raw);
+      return true;
+    });
   }
 
   String _bookTitle(WebNovelSnapshot snapshot) {
@@ -621,22 +724,76 @@ class WebNovelChapterLoader extends SerialOnlineNovelChapterLoader
     final WebNovelChapterContent content = await library.materialize(
       ingest.article,
     );
-    // 取页要等网络：这期间书行可能被别处改过（浏览器里又并进了一章），以当前书行
-    // 为准再核一次，对不上就放弃这次结果。
+    // 取页 / 取图要等网络，这期间书行可能被别处改过（浏览器里又并进了一章、开书
+    // 补了占位）：提交进按书的提交锁，锁内以当前书行为准（HBK-AUDIT-034）。
+    return webNovelBookCommits.run(
+      bookKey,
+      () => _commitChapter(
+        index: index,
+        file: file,
+        page: page,
+        fetchedFrom: snapshot,
+        ingest: ingest,
+        updated: updated,
+        content: content,
+      ),
+    );
+  }
+
+  /// 锁内提交取回的第 [index] 章：以书行的**当前**快照为准。取页期间书行没变
+  /// （[fetchedFrom] 仍是当前快照）直接写；变过就先看这一章是不是已被别处补上
+  /// （是就不再写），否则把这一页重新并进当前快照，仍落在第 [index] 章才写——
+  /// 落不到说明章序变了、这个文件已不是这一章，放弃这次结果（返回 null）。
+  Future<OnlineNovelChapterLoaded?> _commitChapter({
+    required int index,
+    required File file,
+    required WebNovelFetchedPage page,
+    required WebNovelSnapshot fetchedFrom,
+    required WebNovelIngest ingest,
+    required WebNovelSnapshot updated,
+    required WebNovelChapterContent content,
+  }) async {
     final EpubBookRow? current = await database.getEpubBook(bookKey);
-    if (current == null || current.sourceMetadata != snapshot.raw) {
+    final WebNovelSnapshot? currentSnapshot = WebNovelSnapshot.tryParse(
+      current?.sourceMetadata,
+    );
+    if (current == null || currentSnapshot == null || !file.existsSync()) {
       return null;
+    }
+    WebNovelSnapshot base = fetchedFrom;
+    WebNovelIngest merged = ingest;
+    WebNovelSnapshot next = updated;
+    if (current.sourceMetadata != fetchedFrom.raw) {
+      final bool pending = (await file.readAsString()).contains(
+        kLnReaderPendingChapterAttribute,
+      );
+      final bool behind =
+          index == currentSnapshot.chapters.length &&
+          currentSnapshot.tailNext != null;
+      if (!pending && !behind) return null;
+      final WebNovelSession session = WebNovelSession.open(
+        snapshot: currentSnapshot.raw,
+        library: _core,
+      );
+      try {
+        merged = await session.ingest(page.html, page.url);
+        next = session.snapshot();
+      } finally {
+        session.close();
+      }
+      if (!merged.status.accepted || merged.index != index) return null;
+      base = currentSnapshot;
     }
     // 取的是末尾那一章（spine 里它是「下一章」占位）：目录标题换成章名；站点又
     // 给了再下一章就在 spine 末尾续挂新占位。补丁先算好再落盘：目录不是本装配器
     // 的格式时只放弃续挂（下次开书照旧由 ensureTrailingPlaceholder 整本补），
     // 正文照常写。
-    final bool tail = index == snapshot.chapters.length;
-    final bool grows = tail && updated.tailNext != null;
+    final bool tail = index == base.chapters.length;
+    final bool grows = tail && next.tailNext != null;
     final _PackagePatch? package = tail
         ? await _patchPackage(
             index: index,
-            title: updated.chapters[index].title,
+            title: next.chapters[index].title,
             grows: grows,
           )
         : null;
@@ -650,24 +807,30 @@ class WebNovelChapterLoader extends SerialOnlineNovelChapterLoader
       file,
       utf8.encode(
         LnReaderEpubAssembler.chapterXhtml(
-          title: ingest.article.title.trim().isEmpty
+          title: merged.article.title.trim().isEmpty
               ? '${index + 1}'
-              : ingest.article.title,
+              : merged.article.title,
           body: content.xhtml,
-          languageTag: updated.lang ?? '',
+          languageTag: next.lang ?? '',
         ),
       ),
     );
-    if (package != null) await _writePackage(package, updated.lang ?? '');
+    if (package != null) await _writePackage(package, next.lang ?? '');
+    // 只重数这一章（和新续挂的占位，旧表里没有它）的字数，其余章沿用书行里的：
+    // 整本重解析会逐章重读全部正文，连续追 N 章累计 O(N²)（HBK-AUDIT-040）。
     final ({int chapterCount, String chaptersJson, String? coverPath})
-    reparsed = await EpubImporter.reparseExtractedBook(extractDir);
+    reindexed = await EpubImporter.reindexExtractedBook(
+      extractDir: extractDir,
+      previousChaptersJson: current.chaptersJson,
+      changedHrefs: <String>{p.relative(file.path, from: extractDir)},
+    );
     await database.updateEpubBookMihonState(
       bookKey,
-      sourceMetadata: updated.raw,
-      chapterCount: reparsed.chapterCount,
-      chaptersJson: reparsed.chaptersJson,
+      sourceMetadata: next.raw,
+      chapterCount: reindexed.chapterCount,
+      chaptersJson: reindexed.chaptersJson,
     );
-    final List<int?> counts = _chapterCharacters(reparsed.chaptersJson);
+    final List<int?> counts = _chapterCharacters(reindexed.chaptersJson);
     final bool grew = package?.placeholderNumber != null;
     return OnlineNovelChapterLoaded(
       index: index,
@@ -736,6 +899,9 @@ class WebNovelChapterLoader extends SerialOnlineNovelChapterLoader
             return fetched;
           },
       stillValid: () async => await _snapshotChapterUrl(index) == chapterUrl,
+      // 复核与写回和浏览器并章 / 开书补占位的整本重建、追章提交互斥（HBK-AUDIT-034）。
+      commit: (Future<OnlineNovelMissingImagesRetry> Function() body) =>
+          webNovelBookCommits.run(bookKey, body),
       onStillMissing: (int failed, int attempted, String? firstFailure) {
         ErrorLogService.instance.log(
           'WebNovelChapterLoader.retryMissingImages',
@@ -885,4 +1051,63 @@ Future<EpubBookRow?> prepareWebNovelBookForReading({
     ErrorLogService.instance.log('prepareWebNovelBookForReading', error, stack);
     return row;
   }
+}
+
+/// 一次浏览器并章（[WebNovelLibrary.save]）要提交的东西：并章时的快照基底
+/// （[base]，书行原 `sourceMetadata`；新书为 null）、那一页、并章结果与落成的正文。
+typedef _WebNovelMerge = ({
+  String? base,
+  WebNovelFetchedPage page,
+  WebNovelSnapshot snapshot,
+  int chapterIndex,
+  WebNovelChapterContent content,
+  String pendingText,
+  String nextChapterTitle,
+});
+
+/// 新书提交按作品身份串行用的锁键（与 bookKey 不会撞：bookKey 不含这个前缀）。
+String _workCommitKey(String? workKey) => 'web-novel-work:${workKey ?? ''}';
+
+/// 网页小说书的**按书提交锁**（HBK-AUDIT-034）。
+///
+/// 同一本书有四个写方：浏览器并章（[WebNovelLibrary.save]）、开书补占位
+/// （[WebNovelLibrary.ensureTrailingPlaceholder]）、阅读器追章
+/// （[WebNovelChapterLoader]）、阅读器补取缺图
+/// （[WebNovelChapterLoader.retryMissingImages]，只写解压树）。前三个都是「读书行
+/// 快照 → 改解压树 → 写回书行」，中间隔着网络 / isolate。不串行时，后提交的一方
+/// 拿旧快照整份覆盖，另一方刚写进的章从快照里消失，解压树与书行还可能各是一方的
+/// 结果；补图写回若夹在整本重建「读旧树打包 → 换树」之间，补到的图也会被冲掉。
+///
+/// 规则：取页 / 取图（慢、可能失败）在锁外做；锁内**重读书行**，以当前快照为准
+/// 重新并章再写，写完才放锁。进程内一把（所有写方都在主 isolate）。
+final KeyedCommitQueue webNovelBookCommits = KeyedCommitQueue();
+
+/// 按键串行的异步提交队列：同一键的 [run] 依次执行（前一个结束——成功或抛错——
+/// 后一个才开始），不同键互不等待。
+class KeyedCommitQueue {
+  final Map<String, Future<void>> _tails = <String, Future<void>>{};
+  final Map<String, int> _queued = <String, int>{};
+
+  /// 在 [key] 的队尾执行 [action]，返回它的结果（异常原样抛给调用方）。
+  Future<T> run<T>(String key, Future<T> Function() action) {
+    final Future<void> previous = _tails[key] ?? Future<void>.value();
+    final Completer<void> done = Completer<void>();
+    final Future<void> tail = done.future;
+    _tails[key] = tail;
+    _queued[key] = (_queued[key] ?? 0) + 1;
+    return previous.then((_) => action()).whenComplete(() {
+      done.complete();
+      final int left = _queued[key]! - 1;
+      if (left == 0) {
+        _queued.remove(key);
+      } else {
+        _queued[key] = left;
+      }
+      if (identical(_tails[key], tail)) _tails.remove(key);
+    });
+  }
+
+  /// 测试用：[key] 上在跑 + 排队的提交数。
+  @visibleForTesting
+  int queued(String key) => _queued[key] ?? 0;
 }
