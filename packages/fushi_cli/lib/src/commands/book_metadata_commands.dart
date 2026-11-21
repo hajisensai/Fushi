@@ -15,7 +15,7 @@ const List<CtlCommandGroup> bookMetadataCommandGroups = <CtlCommandGroup>[
   CtlCommandGroup(
     name: 'book',
     summary:
-        '书的在线元数据与封面刮削（Bangumi / DLsite / MangaBaka / AniList / openBD / NDL / 楽天）',
+        '书的在线元数据与封面刮削（Bangumi / DLsite / MangaBaka / AniList / openBD / NDL / 楽天 / iTunes）',
     commands: <CtlCommandSpec>[
       CtlCommandSpec(
         name: 'search',
@@ -30,7 +30,8 @@ const List<CtlCommandGroup> bookMetadataCommandGroups = <CtlCommandGroup>[
       CtlCommandSpec(
         name: 'get',
         summary: '按源内 id 取一个候选的详情',
-        usage: '<bangumi|dlsite|mangabaka|anilist|openbd|ndl|rakuten> <id>',
+        usage:
+            '<bangumi|dlsite|mangabaka|anilist|openbd|ndl|rakuten|itunes> <id>',
         build: _buildGet,
         render: _renderCandidate,
       ),
@@ -87,6 +88,7 @@ const List<String> kBookScrapeSources = <String>[
   'openbd',
   'ndl',
   'rakuten',
+  'itunes',
 ];
 
 const String _collections = '/api/admin/book/collections';
@@ -96,7 +98,8 @@ void _configureSource(ArgParser parser) {
     'source',
     help:
         '刮削源：bangumi（默认）| dlsite | mangabaka | anilist（轻小说）| openbd（只按 ISBN）'
-        '| ndl（国立国会図書館）| rakuten（楽天ブックス，需先在 app 设置里填凭据）',
+        '| ndl（国立国会図書館）| rakuten（楽天ブックス，需先在 app 设置里填凭据）'
+        '| itunes（歌曲专辑封面，给以有声书导入的歌曲用）',
   );
 }
 

@@ -518,6 +518,181 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('专辑页「从音乐库移除」整张专辑：全部写墓碑、退回上一页，撤销放回（拍板台 mmXVwo0Ibv）', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 1600);
+    addTearDown(tester.view.reset);
+    MusicTracksCompanion albumTrack(String uid, int disc, int no) =>
+        _track(uid).copyWith(
+          albumUid: const Value<String?>('al'),
+          discNo: Value<int?>(disc),
+          trackNo: Value<int?>(no),
+        );
+    await db.writeMusicScanBatch(
+      MusicScanBatchWrite(
+        tracks: <MusicTracksCompanion>[
+          albumTrack('d1', 1, 1),
+          albumTrack('d2', 1, 2),
+          albumTrack('e1', 2, 1),
+        ],
+        albums: <MusicAlbumsCompanion>[
+          MusicAlbumsCompanion.insert(
+            albumUid: 'al',
+            title: 'Night Album',
+            addedAt: 1,
+            updatedAt: 1,
+          ),
+        ],
+        artists: const <MusicArtistsCompanion>[],
+        credits: const <MusicTrackCreditsCompanion>[],
+      ),
+    );
+    final MusicAlbumRow album = (await db.getMusicAlbum('al'))!;
+    final List<MusicTrackRow> albumTracks = sortAlbumTracks(
+      await db.listMusicTracks(albumUid: 'al'),
+    );
+    await pumpList(
+      tester,
+      Builder(
+        builder: (BuildContext context) => TextButton(
+          key: const ValueKey<String>('open-album'),
+          onPressed: () => unawaited(
+            Navigator.of(context).push<void>(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    MusicAlbumPage(album: album, tracks: albumTracks),
+              ),
+            ),
+          ),
+          child: const Text('open'),
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('open-album')));
+    await tester.pumpAndSettle();
+    final Finder remove = find.byKey(
+      const ValueKey<String>('music_album_remove'),
+    );
+    expect(remove, findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('music_disc_remove')),
+      findsNothing,
+      reason: '普通专辑不出光盘的移除钮',
+    );
+
+    await tester.ensureVisible(remove);
+    await tester.pumpAndSettle();
+    await tester.tap(remove);
+    await tester.pumpAndSettle();
+    expect(await db.listMusicTracks(albumUid: 'al'), isEmpty);
+    for (final String uid in <String>['d1', 'd2', 'e1']) {
+      expect((await db.getMusicTrack(uid))!.hiddenAt, isNotNull, reason: uid);
+    }
+    expect(
+      (await db.listMusicAlbums()).map((MusicAlbumRow a) => a.albumUid),
+      isNot(contains('al')),
+      reason: '没有在库曲目的专辑不再列在专辑墙',
+    );
+    expect(find.byType(MusicAlbumPage), findsNothing, reason: '专辑没了退回上一页');
+    expect(
+      find.byKey(const ValueKey<String>('open-album')),
+      findsOneWidget,
+      reason: '只退一层，不连退',
+    );
+    expect(
+      find.text(t.music_album_removed_from_library(title: 'Night Album')),
+      findsOneWidget,
+      reason: '提示写明磁盘文件不动',
+    );
+
+    await tester.tap(find.byKey(const ValueKey<String>('music-undo-action')));
+    await tester.pumpAndSettle();
+    expect(liveUids(await db.listMusicTracks(albumUid: 'al')), <String>{
+      'd1',
+      'd2',
+      'e1',
+    });
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('专辑曲目在别处被全部移走、专辑页上面还压着别的页：只摘专辑页，顶上那页不动', (
+    WidgetTester tester,
+  ) async {
+    await db.writeMusicScanBatch(
+      MusicScanBatchWrite(
+        tracks: <MusicTracksCompanion>[
+          _track('d1').copyWith(albumUid: const Value<String?>('al')),
+          _track('d2').copyWith(albumUid: const Value<String?>('al')),
+        ],
+        albums: <MusicAlbumsCompanion>[
+          MusicAlbumsCompanion.insert(
+            albumUid: 'al',
+            title: 'Night Album',
+            addedAt: 1,
+            updatedAt: 1,
+          ),
+        ],
+        artists: const <MusicArtistsCompanion>[],
+        credits: const <MusicTrackCreditsCompanion>[],
+      ),
+    );
+    final MusicAlbumRow album = (await db.getMusicAlbum('al'))!;
+    final List<MusicTrackRow> albumTracks = sortAlbumTracks(
+      await db.listMusicTracks(albumUid: 'al'),
+    );
+    await pumpList(
+      tester,
+      Builder(
+        builder: (BuildContext context) => TextButton(
+          key: const ValueKey<String>('open-album'),
+          onPressed: () => unawaited(
+            Navigator.of(context).push<void>(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    MusicAlbumPage(album: album, tracks: albumTracks),
+              ),
+            ),
+          ),
+          child: const Text('open'),
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('open-album')));
+    await tester.pumpAndSettle();
+    final NavigatorState navigator = tester.state<NavigatorState>(
+      find.byType(Navigator).first,
+    );
+    unawaited(
+      navigator.push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => const Scaffold(
+            body: Text('on-top', key: ValueKey<String>('on-top')),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await db.hideMusicTracks(<String>['d1', 'd2'], at: 10);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('on-top')),
+      findsOneWidget,
+      reason: '顶上那页不该被弹掉',
+    );
+    expect(
+      find.byType(MusicAlbumPage, skipOffstage: false),
+      findsNothing,
+      reason: '专辑页自己被摘掉',
+    );
+    navigator.pop();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey<String>('open-album')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   // 拍板台 left3648（BUG-4769）：色块样式的曲目格没有放「⋯」的位置，触屏长按改成弹与
   // 右键同一份菜单（详情 / 多选都在里面）；多选态长按仍是勾选。
   testWidgets('触屏：色块样式曲目格长按开菜单（有详情与多选），多选态长按 = 勾选', (

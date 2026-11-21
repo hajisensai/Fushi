@@ -10,8 +10,7 @@ import 'package:flutter/foundation.dart' show VoidCallback;
 import 'package:material_ui/material_ui.dart' show IconData;
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/sync/background_tasks_indicator.dart'
-    show BackgroundTask;
+import 'package:fushi/src/sync/background_task.dart' show BackgroundTask;
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart'

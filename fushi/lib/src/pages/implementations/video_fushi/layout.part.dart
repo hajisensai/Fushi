@@ -184,6 +184,7 @@ extension _VideoLayout on _VideoFushiPageState {
               onExitFullscreen: _exitVideoNativeFullscreen,
             ),
           ),
+          surfaceKey: _videoSurfaceKey,
         ),
       ),
     );
@@ -1256,12 +1257,21 @@ extension _VideoLayout on _VideoFushiPageState {
   /// 可见性走 [_subtitleListVisible]（[ValueNotifier]，全屏路由也响应，BUG-120 同源）。
   /// 面板列宽按界面宽取 ~28%（横屏右侧栏，clamp 240..420），参照 asbplayer / YouTube
   /// transcript 侧栏占比。
+  ///
+  /// [surfaceKey]：画面的 GlobalKey 身份，**只有窗口宿主传**（[_videoSurfaceKey]）。
+  /// 全屏路由压在窗口页之上时窗口侧那棵 `Video` 仍挂在树里（路由 maintainState），
+  /// 两处同时挂同一个 GlobalKey 会让框架把 element 在两个宿主间抢来抢去——全屏后
+  /// 窗口与全屏两边都没有 `Video`，整屏只剩路由底色（BUG：一全屏就白屏）。全屏路由
+  /// 只在桌面出现、不会切竖屏学习版式，用不着跨版式保留身份，传 null。
   Widget _videoWithSubtitlePanel(
     VideoPlayerController controller,
-    Widget surface,
-  ) {
+    Widget surface, {
+    required GlobalKey? surfaceKey,
+  }) {
     // 画面在横屏布局与竖屏学习版式之间搬家时保留同一个 element（拍板台 P9AS-fvjJh）。
-    final Widget video = KeyedSubtree(key: _videoSurfaceKey, child: surface);
+    final Widget video = surfaceKey == null
+        ? surface
+        : KeyedSubtree(key: surfaceKey, child: surface);
     // TODO-637：字幕列表是「带 × 的非阻塞侧栏」——画面区不再叠任何 barrier。此前
     // BUG-256 在画面区叠一层不透明（opaque）的「点画面关列表」barrier，它罩在画面
     // 字幕 overlay（[VideoSubtitleOverlay] 的查词手势）之上吃掉所有画面点击 → 列表

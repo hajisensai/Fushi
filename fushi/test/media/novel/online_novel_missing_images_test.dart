@@ -21,6 +21,9 @@ class _FakeRetrier implements OnlineNovelMissingImagesRetrier {
       <({int index, bool automatic})>[];
 
   @override
+  int? chapterIndexForFile(String filePath) => null;
+
+  @override
   Future<OnlineNovelMissingImages> missingImages(int index) async =>
       OnlineNovelMissingImages(
         index: index,
@@ -74,7 +77,7 @@ void main() {
       for (int i = 0; i < kLnReaderMissingImageAutoRetries; i++) {
         next = applyLnReaderMissingImageRetry(
           next,
-          recovered: const <String>{},
+          recovered: const <String, String>{},
           failed: const <String>{'images/p-0.png'},
         );
       }
@@ -88,7 +91,7 @@ void main() {
       // 补到：换回原 alt 的 <img>，占位消失，其余内容不动。
       final String restored = applyLnReaderMissingImageRetry(
         next,
-        recovered: const <String>{'images/p-0.png'},
+        recovered: const <String, String>{'images/p-0.png': 'images/p-0.png'},
         failed: const <String>{},
       );
       expect(
@@ -96,6 +99,68 @@ void main() {
         contains('<p>前<img alt="挿絵" src="images/p-0.png"/>後</p>'),
       );
       expect(restored, contains('src="images/p-1.png"'));
+      expect(parseLnReaderMissingImages(restored), isEmpty);
+    });
+  });
+
+  group('缺图占位带来源（下载书 / 网页小说书）', () {
+    test('引用页与插件 id 随占位往返，记次后仍在；没有来源的旧占位照样解析', () {
+      const String referer = 'https://site.example/novel/1?a=1&b="x"';
+      final String body = replaceLnReaderImageWithMissingMarker(
+        '<p><img src="images/c1-0.png" alt="図"/></p>',
+        fileName: 'images/c1-0.png',
+        url: 'https://img.example/1.png',
+        referer: referer,
+        pluginId: 'test.plugin',
+      );
+      LnReaderMissingImage image = parseLnReaderMissingImages(body).single;
+      expect(image.referer, referer);
+      expect(image.pluginId, 'test.plugin');
+      final String retried = applyLnReaderMissingImageRetry(
+        body,
+        recovered: const <String, String>{},
+        failed: const <String>{'images/c1-0.png'},
+      );
+      image = parseLnReaderMissingImages(retried).single;
+      expect(image.tries, 2);
+      expect(image.referer, referer);
+      expect(image.pluginId, 'test.plugin');
+
+      // #3916 时写下的占位（没有来源两项）。
+      const String legacy =
+          '<span data-fushi-lnreader-missing-file="images/p-0.png" '
+          'data-fushi-lnreader-missing-url="https://img.example/0.png" '
+          'data-fushi-lnreader-missing-alt="" '
+          'data-fushi-lnreader-missing-tries="2" hidden="hidden"></span>';
+      final LnReaderMissingImage old = parseLnReaderMissingImages(
+        '<p>$legacy</p>',
+      ).single;
+      expect(old.tries, 2);
+      expect(old.referer, isNull);
+      expect(old.pluginId, isNull);
+    });
+
+    test('网页小说书：按提取占位 src 认图，占位键不带扩展名，补到后换成真文件名', () {
+      final String body = replaceLnReaderImageWithMissingMarker(
+        '<p><img src="fushi-img-1" alt="挿絵"/><img src="fushi-img-10"/></p>',
+        fileName: 'images/wabc',
+        src: 'fushi-img-1',
+        url: 'https://img.example/1.png',
+        referer: 'https://site.example/1.html',
+      );
+      expect(body, contains('src="fushi-img-10"'));
+      expect(body, isNot(contains('src="fushi-img-1"')));
+      final LnReaderMissingImage image = parseLnReaderMissingImages(
+        body,
+      ).single;
+      expect(image.fileName, 'images/wabc');
+      expect(image.pluginId, isNull);
+      final String restored = applyLnReaderMissingImageRetry(
+        body,
+        recovered: const <String, String>{'images/wabc': 'images/wabc.png'},
+        failed: const <String>{},
+      );
+      expect(restored, contains('<img alt="挿絵" src="images/wabc.png"/>'));
       expect(parseLnReaderMissingImages(restored), isEmpty);
     });
   });

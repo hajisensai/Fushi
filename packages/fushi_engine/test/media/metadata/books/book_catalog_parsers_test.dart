@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:fushi_engine/media/metadata/books/anilist_novels.dart';
 import 'package:fushi_engine/media/metadata/books/book_catalog.dart';
+import 'package:fushi_engine/media/metadata/books/itunes_music.dart';
 import 'package:fushi_engine/media/metadata/books/ndl_search.dart';
 import 'package:fushi_engine/media/metadata/books/openbd.dart';
 import 'package:fushi_engine/media/metadata/books/rakuten_books.dart';
@@ -391,5 +392,139 @@ void main() {
       ),
     );
     BookCatalogHttp.resetRateLimitForTesting();
+  });
+
+  group('iTunes', () {
+    // 2026-11-21 live：日区 `term=米津玄師 Lemon&entity=song&limit=3`、按 trackId lookup。
+    test('搜索响应：歌名 / 歌手 / 专辑 / 日期 / 流派，封面换成 1200px，详情页去跟踪参数', () {
+      final List<BookCatalogRecord> found = parseItunesResponse(
+        fixture('itunes_search_lemon.json'),
+      );
+      expect(found, hasLength(3));
+      final BookCatalogRecord r = found.first;
+      expect(r.id, '1537460612');
+      expect(r.title, 'Lemon');
+      expect(r.author, '米津玄師');
+      expect(r.series, 'Lemon - Single');
+      expect(r.date, '2018-02-12');
+      expect(r.year, 2018);
+      expect(r.tags, <String>['J-Pop']);
+      expect(
+        r.coverUrl,
+        endsWith('/jacket_SRCL09749B00Z_550.jpg/1200x1200bb.jpg'),
+      );
+      expect(
+        r.pageUrl,
+        'https://music.apple.com/jp/album/lemon/1537460610?i=1537460612',
+      );
+      expect(r.isAdult, isFalse);
+    });
+
+    test('lookup 按 trackId 直取；查无 = 空表；非对象 JSON 抛异常', () {
+      expect(
+        parseItunesResponse(fixture('itunes_lookup_1537460612.json')).single.id,
+        '1537460612',
+      );
+      expect(parseItunesResponse(fixture('itunes_not_found.json')), isEmpty);
+      expect(
+        () => parseItunesResponse('[]'),
+        throwsA(isA<BookCatalogException>()),
+      );
+      expect(
+        () => parseItunesResponse('<html>'),
+        throwsA(isA<BookCatalogException>()),
+      );
+    });
+
+    test('专辑条目用 collectionName / collectionId；艺人条目与缺封面的跳过', () {
+      final List<BookCatalogRecord> found = parseItunesResponse(
+        '{"results":['
+        '{"wrapperType":"collection","collectionId":7,"collectionName":"Album",'
+        '"artistName":"A","artworkUrl100":"https://x.test/a/100x100bb.png"},'
+        '{"wrapperType":"artist","artistId":8,"artistName":"B"},'
+        '{"wrapperType":"track","trackId":9,"trackName":"No art"}'
+        ']}',
+      );
+      expect(found, hasLength(1));
+      expect(found.single.id, '7');
+      expect(found.single.title, 'Album');
+      expect(found.single.series, isNull);
+      expect(found.single.coverUrl, 'https://x.test/a/1200x1200bb.png');
+    });
+
+    test('itunesArtworkUrl 只换末段尺寸；认不出原样返回', () {
+      expect(
+        itunesArtworkUrl('https://x.test/i/abc.jpg/100x100bb.jpg', size: 600),
+        'https://x.test/i/abc.jpg/600x600bb.jpg',
+      );
+      expect(
+        itunesArtworkUrl('https://x.test/cover.jpg'),
+        'https://x.test/cover.jpg',
+      );
+      expect(itunesArtworkUrl(null), isNull);
+    });
+
+    test('parseItunesUrl：?i= 优先，其次路径末尾数字 / id 前缀；别的站与非数字 null', () {
+      expect(
+        parseItunesUrl(
+          'https://music.apple.com/jp/album/lemon/1537460610?i=1537460612',
+        ),
+        '1537460612',
+      );
+      expect(
+        parseItunesUrl('https://music.apple.com/jp/album/lemon/1537460610'),
+        '1537460610',
+      );
+      expect(
+        parseItunesUrl('https://itunes.apple.com/jp/album/id1537460610'),
+        '1537460610',
+      );
+      expect(
+        parseItunesUrl('music.apple.com/jp/song/lemon/1537460612'),
+        '1537460612',
+      );
+      expect(parseItunesUrl('1537460612'), '1537460612');
+      expect(parseItunesUrl('https://example.com/album/123'), isNull);
+      expect(parseItunesUrl('Lemon 米津玄師'), isNull);
+    });
+
+    test('客户端：日区参数、entity=song；非 2xx 抛带状态码的异常；非数字 id 不发请求', () async {
+      final List<Uri> requests = <Uri>[];
+      int status = 200;
+      final ItunesMusicClient client = ItunesMusicClient(
+        BookCatalogHttp(
+          throttle: false,
+          client: MockClient((http.Request req) async {
+            requests.add(req.url);
+            if (status != 200) return http.Response('busy', status);
+            return http.Response.bytes(
+              utf8.encode(fixture('itunes_search_lemon.json')),
+              200,
+            );
+          }),
+        ),
+      );
+      expect(await client.search('Lemon'), hasLength(3));
+      final Uri q = requests.single;
+      expect(q.host, 'itunes.apple.com');
+      expect(q.path, '/search');
+      expect(q.queryParameters['entity'], 'song');
+      expect(q.queryParameters['media'], 'music');
+      expect(q.queryParameters['country'], 'JP');
+      expect(await client.fetchById('not-a-number'), isNull);
+      expect(requests, hasLength(1));
+      status = 403;
+      await expectLater(
+        client.fetchById('1537460612'),
+        throwsA(
+          isA<BookCatalogException>().having(
+            (BookCatalogException e) => e.statusCode,
+            'statusCode',
+            403,
+          ),
+        ),
+      );
+      expect(requests.last.path, '/lookup');
+    });
   });
 }

@@ -155,6 +155,15 @@ typedef _DecodeDart =
       Pointer<Size>,
       Pointer<Uint32>,
     );
+typedef _ToPngC =
+    Int32 Function(
+      Pointer<Uint8>,
+      Size,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+typedef _ToPngDart =
+    int Function(Pointer<Uint8>, int, Pointer<Pointer<Uint8>>, Pointer<Size>);
 typedef _ProbeC = Int32 Function(Pointer<Uint8>, Size, Int32, Pointer<Uint32>);
 typedef _ProbeDart = int Function(Pointer<Uint8>, int, int, Pointer<Uint32>);
 typedef _ToJpegC =
@@ -522,6 +531,18 @@ class FushiComputeImage {
           );
     } on ArgumentError catch (e) {
       throw _lib.missingSymbols('image composite', e.message ?? e);
+    }
+  }
+
+  _ToPngDart? _toPng;
+
+  _ToPngDart get _toPngFunction {
+    try {
+      return _toPng ??= _lib.library.lookupFunction<_ToPngC, _ToPngDart>(
+        'ffc_image_to_png',
+      );
+    } on ArgumentError catch (e) {
+      throw _lib.missingSymbols('image to png', e.message ?? e);
     }
   }
 
@@ -932,6 +953,24 @@ class FushiComputeImage {
       final int status = _toJpeg(src, bytes.length, quality, outPtr, outLen);
       if (status == FfcStatus.badInput) return null;
       _check('ffc_image_to_jpeg', status);
+      return _takeBytes(outPtr, outLen);
+    } finally {
+      malloc.free(outPtr);
+      malloc.free(outLen);
+    }
+  }
+
+  /// 解码（转正 EXIF / TIFF 方向）后无损编码成 PNG（灰度源出 8 位灰度 PNG，16 位截成
+  /// 8 位，多页 TIFF 只取首页）；认不出 / 解不开返回 null。漫画导入把 TIFF 页图落盘成 PNG 用。
+  Uint8List? toPng(Uint8List bytes) {
+    final _ToPngDart toPng = _toPngFunction;
+    final Pointer<Uint8> src = _copyIn(bytes);
+    final Pointer<Pointer<Uint8>> outPtr = malloc<Pointer<Uint8>>();
+    final Pointer<Size> outLen = malloc<Size>();
+    try {
+      final int status = toPng(src, bytes.length, outPtr, outLen);
+      if (status == FfcStatus.badInput) return null;
+      _check('ffc_image_to_png', status);
       return _takeBytes(outPtr, outLen);
     } finally {
       malloc.free(outPtr);

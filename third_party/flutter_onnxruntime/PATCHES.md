@@ -369,8 +369,12 @@ or below the API version of the downloaded DirectML core.
     `build/native/include/*.h` -> `include/`,
     `runtimes/<rid>/native/libonnxruntime.so` (rid `linux-x64` /
     `linux-arm64`) -> `lib/`. The NuGet `.so` is a single real file with
-    SONAME `libonnxruntime.so.1` (no symlink chain), so delta #12 takes its
-    `libonnxruntime.so.1` fallback name. Max GLIBC symbol version is 2.27.
+    SONAME `libonnxruntime.so.1` (no symlink chain), so the staging step
+    creates `lib/libonnxruntime.so.1 -> libonnxruntime.so` itself: the
+    runner's link step resolves the plugin's DT_NEEDED through the plugin's
+    build-tree RUNPATH (that lib dir), and without the SONAME file ld fails
+    with `libonnxruntime.so.1 ... not found`. Delta #12 then picks the SONAME
+    up from the same dir. Max GLIBC symbol version is 2.27.
     The Windows build already used NuGet. On a version bump update the pinned
     hash here and in `.github/scripts/fetch_onnxruntime_nuget.py`.
 

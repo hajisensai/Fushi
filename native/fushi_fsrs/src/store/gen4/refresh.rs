@@ -49,8 +49,9 @@
 //! # 别的进程
 //!
 //! 同一个库只有 Primary 写（D10，换代锁 + 写连接只在 Primary 上开）。所以 Primary 的内存计数覆盖全部写入；Secondary
-//! 按上面的落盘值判。收段会话期间的 RWKV 延后（协议 3 `rwkv_held`）属于同步命令（G8-7），这里留了 [G4Core::refresh_note]
-//! 的 `merged` 入口，会话的攒 / 放由 G8-7 接线时按协议 3 口径补。
+//! 按上面的落盘值判。收段会话期间的 RWKV 延后（协议 3 `rwkv_held`）已接：分发器的 `ingest_begin` / `ingest_end` 调
+//! [G4Core::refresh_hold] / [G4Core::refresh_release]，会话里收段推进的 RWKV 键攒到结束并成一次（[Counters]
+//! `rwkv_held`）；别的设备的事件经 [G4Core::refresh_note] 的 `merged` 入口记。
 
 use std::collections::HashMap;
 use std::sync::MutexGuard;
@@ -228,7 +229,7 @@ impl Default for Refresh {
 pub(crate) use super::dispatch::CACHE_MARK_SQL;
 
 /// Secondary 的键（模块文件头「读」）：在调用方的读快照里读本机状态行与缓存层代号。
-fn secondary_key(t: &Truth<'_>, open: &str, profile: &str) -> Result<String, String> {
+pub(super) fn secondary_key(t: &Truth<'_>, open: &str, profile: &str) -> Result<String, String> {
     let st = super::local::read(t, profile)?;
     let epoch = if st["epochStored"] == Value::Bool(true) {
         st[EPOCH_KEY].as_str().unwrap_or("unstored").to_owned()

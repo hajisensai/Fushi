@@ -294,6 +294,18 @@ abstract interface class RemoteVideoClientConnections {
   void close();
 }
 
+/// 「当前线路断了，换一条接着用」的可选能力（媒体服务器：Plex / Jellyfin 家族，拍板台
+/// design-media-server-failover-transport）。
+///
+/// 元数据请求在传输失败时由协议层自己换线路重试，播放页不用管；这里给的是没有
+/// Dart 侧请求可失败的那种断线：播放器手里的流在播放途中断了。播放页以
+/// `MediaServerStreamInterrupted` 问一次，返回 true = 这只客户端已改走另一条可达
+/// 线路（之后现取的流地址带新 host），调用方按当前位置重新取流重载；false = 没有
+/// 别的可达线路、或当前线路其实还通（流断另有原因），照旧处理。
+abstract interface class RemoteVideoRouteFailover {
+  Future<bool> failoverRemoteVideoRoute(Object error);
+}
+
 /// 「只摘会话、停转码，不上报停止」的可选能力（BUG-5020）。
 ///
 /// 卡片片段回看（BUG-3490）不得改服务器进度，所以 [RemoteVideoPlaybackStop] 在回看中

@@ -169,7 +169,7 @@ class SrsBrowseRow {
   final String cardId;
   final String noteId;
 
-  /// 排序字段去 HTML、trim 后的文本。
+  /// 排序字段（笔记类型的 [SrsNoteTypeView.effectiveSortFieldId]，没设时第一个字段）去 HTML、trim 后的文本。
   final String sortText;
   final String deckName;
   final String deckId;
@@ -222,8 +222,9 @@ class SrsBrowseRow {
   /// 主卡上次复习时刻（毫秒）；没复习过 null。
   final int? lastReviewAt;
 
-  /// 排序字段（第一个字段）之外、按字段顺序的前两个非空字段的纯文本（去 HTML 与 `[sound:…]`、trim，各截到
-  /// 120 个字符）；不足两个就少给。
+  /// 副字段摘要：笔记类型选的浏览副字段（[SrsNoteTypeView.browseFieldIds]）里非空的那几个；没选时排序字段
+  /// （[SrsNoteTypeView.effectiveSortFieldId]）之外、按字段顺序的前两个非空字段。各是纯文本（去 HTML 与
+  /// `[sound:…]`、trim，各截到 120 个字符）；不足两个就少给。
   final List<String> fieldPreview;
 
   /// [fieldPreview] 每一项来自的字段名（同长度、同顺序）：表格原地改这两列时按名字写回。
@@ -459,6 +460,8 @@ Future<Map<String, Object?>> srsBrowseContext(
           'name': t.name,
           'cloze': t.isCloze,
           'deleted': t.deletedAt != null,
+          'sort': ?t.effectiveSortFieldId,
+          'preview': ?t.browseFieldIds,
           'fields': <Object?>[
             for (final SrsFieldDef f in t.fields)
               <Object?>[

@@ -313,7 +313,7 @@ List<String> anime4kMirrorUrls(
 /// **直链优先、镜像兜底**：用户粘的就是 GitHub 链接，先试它本身（`blob` 链接转成可
 /// 直接下载的 `raw` 形式）——能直连 / 有系统代理 VPN 就直接用；**跑不通才回退**与
 /// [anime4kMirrorUrls] 同款的 jsDelivr 多 CDN 节点（[_kJsDelivrHosts]）+ gh 加速代理
-/// 前缀（[kGitHubMirrorPrefixes]，BUG-319 名单）兜底（中国网络）。其它任意直链原样单条返回。
+/// 前缀（[activeGitHubMirrorPrefixes]，BUG-319 名单；用户关掉镜像时为空）兜底（中国网络）。其它任意直链原样单条返回。
 /// 让用户从 GitHub/教程里复制任意 `.glsl` 链接粘进来即可下，不必本机装 mpv。
 List<String> shaderDownloadUrlsFor(String userUrl) {
   final String url = userUrl.trim();
@@ -335,7 +335,7 @@ List<String> shaderDownloadUrlsFor(String userUrl) {
     // 跑不通才走镜像（与 anime4kMirrorUrls 同款多节点 + 代理前缀，中国网络兜底）。
     for (final String host in _kJsDelivrHosts)
       'https://$host/gh/$owner/$repo@$refAndPath',
-    for (final String prefix in kGitHubMirrorPrefixes) '$prefix$direct',
+    for (final String prefix in activeGitHubMirrorPrefixes) '$prefix$direct',
   ];
 }
 

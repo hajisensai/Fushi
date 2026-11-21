@@ -363,6 +363,41 @@ void main() {
     },
   );
 
+  test('全局热键 toggleVisibility：可见时收起并压住本局，再按重新放出（fMicnouU6V）', () async {
+    // 未启动（没在 Hook 游戏）时按热键静默无动作，不打任何 native 调用。
+    await controller.toggleVisibility();
+    expect(nativeCalls, isEmpty);
+
+    await controller.start(appModel: AppModel(testPlatformServices()));
+    await startSession();
+    final TexthookerLineEntry first = textService.appendLine(
+      '热键显隐',
+      source: TexthookerLineSource.websocket,
+    )!;
+    await _waitUntil(() => controller.displayedLineId == first.id);
+    expect(controller.isVisible, isTrue);
+
+    await controller.toggleVisibility();
+    expect(controller.isVisible, isFalse);
+    expect(controller.isSuppressedForSession, isTrue);
+    expect(nativeShowing, isFalse);
+    final int showsAfterHide = nativeCalls
+        .where((MethodCall call) => call.method == 'show')
+        .length;
+    // 收起后新台词不得把浮窗自动弹回来（与浮窗「关闭」按钮同语义）。
+    textService.appendLine('收起后不自动出现', source: TexthookerLineSource.websocket);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(
+      nativeCalls.where((MethodCall call) => call.method == 'show').length,
+      showsAfterHide,
+    );
+
+    await controller.toggleVisibility();
+    await _waitUntil(() => controller.isVisible);
+    expect(controller.isSuppressedForSession, isFalse);
+    expect(nativeShowing, isTrue);
+  });
+
   test('native 推 overlayDestroyed 后镜像被动复位，下一条台词重建窗口', () async {
     await controller.start(appModel: AppModel(testPlatformServices()));
     await startSession();
