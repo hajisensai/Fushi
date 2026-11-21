@@ -132,16 +132,24 @@ require('./relative')   // 只能加载包内已校验的 .js
 | `radio` | `{ op: 'next', seedTrackId?, count? }` / `{ op: 'trash', id }` | next → `{ tracks: [Track], title? }`：每次给「接下来的一批」（宿主快播完时再调、拼进队列，取前 100 首，坏项丢弃），空数组 = 没有更多；无 `seedTrackId` 是个人电台（如网易云私人 FM，需要登录时抛错），有则以这首为种子；`count` 只是建议值，宿主默认不传。trash → `null`：不喜欢 / 不再推荐这首，需要登录时抛错。需同时声明 `stream` |
 | `artistSimilar` | `{ id }` | `{ items: [Artist] }`：相似艺人（宿主取前 50，坏项丢弃）。需同时声明 `artist` |
 | `collect` | `{ op: 'set', type: 'playlist'\|'album'\|'artist', id, on: bool }` | `null`：收藏 / 取消收藏歌单、专辑，关注 / 取消关注艺人；未登录或平台拒绝时抛错。需同时声明 `login` / `account` |
+| `browse` | `{ op: 'schema' }` / `{ op: 'list', query: BrowseQuery, page: 0 起, pageSize }` / `{ op: 'catalog', facet, query?, page: 0 起, pageSize }` | schema → `{ facets?, sorts?, toggles?: [{ id, label }], choices?: [{ id, label, values: [{ id, label }] }] }`（分类目录 / 排序 / 开关 / 单选，宿主各取前 20 / 20 / 10 / 10，单选值前 50，坏项与重复 id 丢弃）；list → `{ items, hasMore, total?, kind?: 'albums'\|'tracks'\|'playlists' }`（缺省 albums，续页种类必须与首页相同，否则那一批丢弃）；catalog → `{ items: [{ id, name, count? }], hasMore }`（条目的 facet 一律按请求的 facet 记，按 id 去重）。原生浏览（决定台 2Z0ogo7v-Q）：不依赖别的能力 |
 
 实体（`id` 一律字符串，由插件定义，宿主只做不透明键）：
 
 ```ts
 Track    { id, title, artists: [{ id?, name }], album?: { id?, title }, durationMs?, coverUrl?,
            trackNo?, discNo?, isrc?, playable?: bool /* 缺省 true */, note?: string /* 如「VIP」 */,
-           mvId?: string /* 这首歌的 MV，插件声明了 mvStream 才会被用到 */ }
+           mvId?: string /* 这首歌的 MV，插件声明了 mvStream 才会被用到 */,
+           group?: string /* 专辑详情的曲目分组（正篇 / 环境音版 / 特典），按首次出现排；优先于按碟分组 */ }
 Album    { id, title, artists: [{ id?, name }], coverUrl?, year?, trackCount?,
            releaseDate?: 'YYYY' | 'YYYY-MM' | 'YYYY-MM-DD', company?, description?,
-           collected?: bool /* 当前账号已收藏；未登录或不知道时省略 */ }
+           collected?: bool /* 当前账号已收藏；未登录或不知道时省略 */,
+           tags?: [Tag] /* 可点条件，按常用程度排；作品行露前 3 个，详情全部（先露 12 个可展开），最多 40 */,
+           code?: string /* 作品编号 */, language?: string, durationMs?: int /* 总时长 */,
+           hasSubtitles?: bool, sourceUrl?: string /* 只收 https，用户点「打开原站页面」才外部打开 */,
+           related?: [{ label?, album: Album }] /* 只在 album 详情里用：原版 / 译制版 / 同系列，最多 20，不递归 */ }
+Tag      { facet, id, name } /* facet = browse schema 的分类 id；声明了 browse 才可点，否则只是文字 chip */
+BrowseQuery { filters?: [Tag] /* AND */, sort?: string, toggles?: [string], choices?: { [choiceId]: valueId } }
 Artist   { id, name, coverUrl?, aliases?: [string] /* 别名 + 译名 */, description?: string /* 简介全文 */,
            intro?: [{ title?, text }] /* 其它介绍段落 */,
            stats?: { trackCount?, albumCount?, mvCount?, fanCount? },
@@ -157,7 +165,8 @@ Playlist { id, title, coverUrl?, trackCount?, owner?, description?, playCount?, 
               坏条目、截断到前 3 条、丢弃其中的 coverUrl；主要用于 home 的 playlists 段 */
 Stream   { url, headers?: {k: v}, expiresAt?: epochMs, codec?, bitrateKbps?, sampleRate?, bitDepth?,
            sizeBytes?, trial?: { startMs, endMs } /* 只给了试听片段 */ }
-Section  { id, title, subtitle?, kind: 'tracks' | 'playlists' | 'albums', items: [对应实体] }
+Section  { id, title, subtitle?, kind: 'tracks' | 'playlists' | 'albums', items: [对应实体],
+           more?: BrowseQuery /* 声明了 browse 才认：「查看全部」进保留这组条件、按 hasMore 续载的列表 */ }
            /* 宿主最多取前 12 段、每段前 50 项；空段不显示 */
 LyricText { format: 'yrc' | 'lrc' | 'ttml' | 'qrc' | 'krc' | 'txt', text, language?: 'zh-Hans' 等 BCP 47 }
 ```
@@ -241,6 +250,13 @@ Challenge {
   收藏 / 取消收藏（`collect`，按 `collected` 只给一项，未知时两项都给）、删除自己的歌单；艺人页：关注 /
   取消关注、「相似艺人」页签（`artistSimilar`，取不到不出页签）；「我的歌单」：新建歌单；推荐页插件段头：
   个人电台。
+- 原生浏览（`browse`，决定台 2Z0ogo7v-Q；`pages/implementations/music/music_plugin_browse_pages.dart`）：音源
+  推荐页插件段头下是「全部作品」+ 各分类目录入口（只声明 browse、没有 home 的插件也有这一页，只露入口）；分类
+  目录用户打开时才分页取、可按名字过滤；作品行露前 3 个可点标签，专辑详情全部；点标签 / 目录项进只带这个条件的
+  列表。列表页顶部是当前条件（可移除，「添加条件」从分类目录挑）、开关、单选与排序，改条件从第 0 页重取；按
+  `hasMore` 续载（首屏不满一屏也会接着取），下一批失败保留已有结果、底部给重试，不自动重试；列表页留在路由栈里，
+  从作品详情返回时条件、排序与滚动位置原样都在。专辑详情另显示作品编号 / 语言 / 总时长 / 字幕状态、「打开原站
+  页面」、按 `group` 分组的曲目与关联作品。筛选项定义按插件 id + 版本缓存在内存（取失败不缓存）。
 - 电台播放：`radio` 不走 MusicKit 那种自管队列，队列仍在 Fushi 手里——`media/music/music_queue_feed.dart`
   的 `MusicQueueFeedRunner` 在离队尾不到 2 首时调 `radio next` 并 `MusicPlayerEngine.appendToQueue`
   追加；用户换了别的队列即停。
