@@ -6,6 +6,9 @@
 //    页上校验不再建 walker，正文 DOM 变化同步失效索引。
 // 2. 光标换行移动只对与视口相交的文本节点逐字量几何：落点与不做节点预筛时逐次一致，
 //    一次移动的 getClientRects 次数远少于章内字数（旧实现每个字各量一次）。
+// 3. HBK-AUDIT-023：整章只有一个不换段的长文本节点时，节点预筛挡不住（它总与视口相交），
+//    逐字量几何须收窄到可见行盒：落点与整节点逐字扫描一致，一次移动的几何查询与页上字数
+//    同量级，远少于该节点字数。
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
 import { readPayload } from './reader_harness_support.js';
 
@@ -19,9 +22,14 @@ const PARAGRAPHS = 960;
 const PIXEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 const BRIDGE = 'window.flutter_inappwebview={callHandler:function(){return Promise.resolve(null);}};';
 
-function page(writingMode) {
+// 一整段不换行的长文（单个文本节点跨很多页）。
+const LONG_UNIT = 'これは改段のない長い章の本文で、行の幾何を検証するための文字列です。';
+const LONG_REPEAT = 2400;
+
+function page(writingMode, layout) {
   const paras = [];
-  for (let i = 0; i < PARAGRAPHS; i++) {
+  if (layout === 'long') paras.push(`<p>${LONG_UNIT.repeat(LONG_REPEAT)}</p>`);
+  for (let i = 0; layout !== 'long' && i < PARAGRAPHS; i++) {
     if (i === PARAGRAPHS / 2) paras.push(`<p id="fig"><img src="${PIXEL}" width="400" height="600" alt=""></p>`);
     paras.push(`<p>P${i} これは<ruby>試験<rt>しけん</rt></ruby>本文です。<ruby>頁<rt>ぺーじ</rt></ruby>`
       + 'の幾何を<span>検証</span>するための十分な長さのダミーテキストを並べています。'
@@ -107,7 +115,18 @@ const check = `(async () => {
   extra.remove();
 
   // 光标：换行移动的落点与不做节点预筛时一致，几何查询远少于章内字数。
-  var k = window.fushiCaret, moves = 0, caretRects = [];
+  return Object.assign({fails: fails, scanRects: scanRects, nodes: nodes, total: total}, caretMoves(fails, total));
+})()`;
+
+// 光标换行移动：落点与「每个与视口相交的节点都整节点逐字扫描」一致（参照实现
+// = _visibleSpan 恒返回整节点），记录每次移动的 getClientRects 次数（新 / 参照）。
+const caretMovesFn = `function caretMoves(fails, total) {
+  var r = window.fushiReader, R = Range.prototype, orig = R.getClientRects;
+  function goTo(f) {
+    var m = r.buildPaginationMetrics(), ctx = r.getScrollContext();
+    r.setPagePosition(ctx, Math.round((m.minScroll + (m.maxScroll - m.minScroll) * f) / ctx.pageSize) * ctx.pageSize);
+  }
+  var k = window.fushiCaret, moves = 0, caretRects = [], refRects = [];
   goTo(0.4);
   k.enter();
   var dirs = r.isVertical() ? ['left', 'right'] : ['down', 'up'];
@@ -119,9 +138,11 @@ const check = `(async () => {
     caretRects.push(n0);
     var to = {node: k.node, offset: k.offset, el: k.el};
     k.node = from.node; k.offset = from.offset; k.el = from.el;
-    var own = k._nodeTouchesViewport;
-    k._nodeTouchesViewport = function() { return true; };
-    var refRes; try { refRes = k.move(dir); } finally { k._nodeTouchesViewport = own; }
+    var own = k._visibleSpan, n1 = 0;
+    k._visibleSpan = function(node, text) { return {start: 0, end: text.length}; };
+    R.getClientRects = function() { n1++; return orig.apply(this, arguments); };
+    var refRes; try { refRes = k.move(dir); } finally { k._visibleSpan = own; R.getClientRects = orig; }
+    refRects.push(n1);
     if (res.status !== refRes.status || k.node !== to.node || k.offset !== to.offset || k.el !== to.el) fails.push('caret ' + dir + '#' + s + ' ' + res.status + '/' + refRes.status);
     moves++;
   }
@@ -129,22 +150,52 @@ const check = `(async () => {
   // 旧实现每次移动对整章每个字各量一次（>= total 次）；现在每个文本节点量一次行盒，
   // 只有与视口相交的节点才逐字量。
   if (!(maxCaret < total / 2)) fails.push('caret geometry ' + maxCaret + ' per move for ' + total + ' chars');
-  return {fails: fails, scanRects: scanRects, nodes: nodes, total: total, caretRects: caretRects, moves: moves};
+  return {caretRects: caretRects, refRects: refRects, moves: moves, maxCaret: maxCaret};
+}`;
+
+// HBK-AUDIT-023：整章一个文本节点。每次移动的几何查询不超过页上字数的量级（一页约
+// 千字，加二分探测的对数项）；整节点扫描（旧实现）是该节点的全部字数。
+const longCheck = `(async () => {
+  await document.fonts.ready;
+  var fails = [], r = window.fushiReader, w = r.createWalker(), n, total = 0, nodes = 0;
+  while ((n = w.nextNode())) { total += r.countChars(n.textContent); nodes++; }
+  if (nodes !== 1) fails.push('long chapter has ' + nodes + ' text nodes');
+  var res = caretMoves(fails, total);
+  if (!(res.maxCaret < total / 20)) fails.push('long caret geometry ' + res.maxCaret + ' per move for ' + total + ' chars in one node');
+  return Object.assign({fails: fails, total: total}, res);
 })()`;
+
+// evalOnPage 只收表达式：把 caretMoves 声明包进一个立即调用的函数里。
+function withCaretMoves(expr) {
+  return `(function(){ ${caretMovesFn}
+ return ${expr}; })()`;
+}
 
 const driver = await launchChromeDriver();
 let failed = 0;
 let cases = 0;
 try {
   for (const mode of ['horizontal-tb', 'vertical-rl']) {
-    const res = await driver.evalOnPage(page(mode), check);
+    const res = await driver.evalOnPage(page(mode, 'paras'), withCaretMoves(check));
     cases++;
     if (res.fails.length) {
       failed++;
       console.log(`FAIL ${mode}: ${res.fails.join('; ')}`);
     } else {
       console.log(`ok ${mode}: scan ${res.scanRects} geometry calls for ${res.nodes} text nodes; `
-        + `caret ${res.caretRects.join('/')} per move over ${res.total} chars`);
+        + `caret ${res.caretRects.join('/')} per move over ${res.total} chars `
+        + `(whole-node scan ${res.refRects.join('/')})`);
+    }
+  }
+  for (const mode of ['horizontal-tb', 'vertical-rl']) {
+    const res = await driver.evalOnPage(page(mode, 'long'), withCaretMoves(longCheck));
+    cases++;
+    if (res.fails.length) {
+      failed++;
+      console.log(`FAIL long ${mode}: ${res.fails.join('; ')}`);
+    } else {
+      console.log(`ok long ${mode}: caret ${res.caretRects.join('/')} per move over ${res.total} chars in one node `
+        + `(whole-node scan ${res.refRects.join('/')})`);
     }
   }
 } finally {
