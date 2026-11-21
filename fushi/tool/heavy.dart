@@ -1,7 +1,7 @@
 // Runs one heavy command under the machine-wide lease (test_flow/heavy_lease.dart):
 //
 //   dart run tool/heavy.dart [--wait-max-min=0] [--max-minutes=120]
-//                            [--cap-mb=N] [--here] [--check-only]
+//                            [--cap-mb=N] [--here] [--check-only] [--no-cache]
 //                            -- <command...>
 //   dart run tool/heavy.dart --status
 //   dart run tool/heavy.dart --stats[=days]    how long runs queued and ran
@@ -79,6 +79,14 @@
 // test_flow/heavy_analyze_path.dart), where the analysis server's path-keyed
 // cache is warm; paths it prints are written back as the checkout's.
 // FUSHI_HEAVY_ANALYZE_VIA=off runs it from the real path.
+//
+// A test / analyze that exited 0 is remembered by content (the working
+// tree's git tree object, the resolved command, the directory relative to the
+// checkout; test_flow/heavy_result_cache.dart): the same command on the same
+// content -- in this worktree or any other -- prints `CACHED PASS` with the
+// remembered run's last lines and exits 0 without queueing. Red runs, builds,
+// --coverage / --update-goldens never come from it; --no-cache,
+// FUSHI_HEAVY_CACHE=off, CI and FUSHI_HEAVY=off skip it.
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -94,6 +102,7 @@ import 'test_flow/heavy_lease.dart';
 import 'test_flow/heavy_offload.dart';
 import 'test_flow/heavy_offload_rival.dart';
 import 'test_flow/heavy_replay.dart';
+import 'test_flow/heavy_result_cache.dart';
 import 'test_flow/heavy_sdk_check.dart';
 import 'test_flow/heavy_test_closure.dart';
 
@@ -211,6 +220,49 @@ Future<void> main(List<String> args) async {
     );
   }
 
+  // A test / analyze that already went green on this exact content answers
+  // from that run: no queue, no slot (test_flow/heavy_result_cache.dart).
+  final String? cacheKey = await _resultCacheKey(
+    kind: classified.kind,
+    argv: sdk.command,
+    own: own,
+    checkout: checkout,
+  );
+  if (cacheKey != null) {
+    final HeavyCachedResult? hit = readHeavyResult(
+      heavyStateDir(),
+      cacheKey,
+      now: DateTime.now(),
+    );
+    if (hit != null) {
+      stdout.writeln(hit.describe(DateTime.now()));
+      _noteCacheHit(label, hit.ranS);
+      exit(0);
+    }
+  }
+  // Remembers a green run of a cacheable command.
+  void remember(
+    HeavyRanWhere where,
+    int code, {
+    required Duration ran,
+    String tail = '',
+  }) {
+    if (cacheKey == null || code != 0) return;
+    writeHeavyResult(
+      heavyStateDir(),
+      cacheKey,
+      HeavyCachedResult(
+        at: DateTime.now(),
+        label: command.join(' '),
+        ranS: ran.inSeconds,
+        where: where.name,
+        checkout: checkout ?? '',
+        tail: tail,
+      ),
+      now: DateTime.now(),
+    );
+  }
+
   // The same command from the same directory is one run: submitted again
   // while it still queues here, it takes the queued one's place.
   final String runKey = heavyRunKey(
@@ -245,6 +297,7 @@ Future<void> main(List<String> args) async {
     switch (heavyOffloadNext(code, offload.plan.kind)) {
       case HeavyOffloadNext.done:
         record(HeavyRanWhere.elsewhere, Duration.zero, code);
+        remember(HeavyRanWhere.elsewhere, code, ran: total.elapsed);
         exit(code);
       case HeavyOffloadNext.runHere:
         _sayRunHere(code, offload.plan.kind);
@@ -409,6 +462,11 @@ Future<void> main(List<String> args) async {
     switch (heavyOffloadNext(code, target!.plan.kind)) {
       case HeavyOffloadNext.done:
         record(HeavyRanWhere.elsewhere, queuedUntilTaken, code);
+        remember(
+          HeavyRanWhere.elsewhere,
+          code,
+          ran: total.elapsed - queuedUntilTaken,
+        );
         exit(code);
       case HeavyOffloadNext.runHere:
         _sayRunHere(code, target.plan.kind);
@@ -449,6 +507,13 @@ Future<void> main(List<String> args) async {
   );
 
   final Stopwatch ran = Stopwatch()..start();
+  // A cacheable run whose output goes to a pipe (an agent's tool call) is
+  // teed, so a later cache hit can repeat its last lines (test count,
+  // "No issues found"). On a terminal it keeps the live reporter.
+  final HeavyOutputTail? tail =
+      cacheKey != null && via == null && !stdout.hasTerminal
+      ? HeavyOutputTail()
+      : null;
   final Process p;
   try {
     p = await Process.start(
@@ -457,7 +522,7 @@ Future<void> main(List<String> args) async {
       workingDirectory: via?.cwd,
       runInShell: Platform.isWindows,
       // Through a junction: piped, to write its paths back as this checkout's.
-      mode: via == null
+      mode: via == null && tail == null
           ? ProcessStartMode.inheritStdio
           : ProcessStartMode.normal,
       environment: lease.childEnvironment,
@@ -490,9 +555,21 @@ Future<void> main(List<String> args) async {
           callerLeft = true;
           _killTree(p);
         });
-  final Future<void>? piped = via == null
-      ? null
-      : forwardHeavyAnalyzeOutput(p, via);
+  final Future<void>? piped = via != null
+      ? forwardHeavyAnalyzeOutput(p, via)
+      : tail != null
+      ? Future.wait(<Future<void>>[
+          p.stdout.forEach((List<int> d) {
+            stdout.add(d);
+            tail.add(d);
+          }),
+          p.stderr.forEach((List<int> d) {
+            stderr.add(d);
+            tail.add(d);
+          }),
+        ])
+      : null;
+  if (tail != null) p.stdin.close();
   final int exited = await p.exitCode;
   await piped;
   limit?.cancel();
@@ -513,6 +590,14 @@ Future<void> main(List<String> args) async {
 
   final int? peak = job?.peakMb();
   record(HeavyRanWhere.here, queuedHere, cut ? 124 : code, peakMb: peak);
+  if (!cut) {
+    remember(
+      HeavyRanWhere.here,
+      code,
+      ran: ran.elapsed,
+      tail: tail?.text ?? '',
+    );
+  }
   stderr.writeln(
     'heavy: $label -> exit $code'
     '${lease.skipReason != null ? ' (no lease: ${lease.skipReason})' : ', slot ${lease.slot}'}'
@@ -1051,4 +1136,48 @@ int? _intArg(List<String> args, String prefix) {
     if (a.startsWith(prefix)) return int.tryParse(a.substring(prefix.length));
   }
   return null;
+}
+
+/// The result-cache key of this run, or null when it is not cacheable or the
+/// content cannot be fingerprinted (test_flow/heavy_result_cache.dart).
+Future<String?> _resultCacheKey({
+  required HeavyKind kind,
+  required List<String> argv,
+  required List<String> own,
+  required String? checkout,
+}) async {
+  if (checkout == null) return null;
+  if (!heavyResultCacheable(
+    kind: kind,
+    argv: argv,
+    own: own,
+    environment: Platform.environment,
+    leaseSkipReason: heavyLeaseSkipReason(Platform.environment),
+  )) {
+    return null;
+  }
+  final String? rel = heavyCwdInCheckout(
+    Directory.current.absolute.path,
+    checkout,
+  );
+  if (rel == null) return null;
+  final String? tree = await heavyWorkingTree(
+    checkout,
+    scratch: Directory('${heavyStateDir().path}/$kHeavyResultDir/index'),
+  );
+  if (tree == null) return null;
+  return heavyResultKey(tree: tree, argv: argv, cwdInCheckout: rel);
+}
+
+/// One line per cache hit next to the history (what the cache saved).
+void _noteCacheHit(String label, int savedS) {
+  try {
+    final Directory dir = heavyStateDir()..createSync(recursive: true);
+    File('${dir.path}/cache_hits.jsonl').writeAsStringSync(
+      '${jsonEncode(<String, Object>{'at': DateTime.now().toUtc().toIso8601String(), 'label': label, 'savedS': savedS, 'cwd': Directory.current.absolute.path})}\n',
+      mode: FileMode.append,
+    );
+  } on Object {
+    // Bookkeeping only.
+  }
 }
