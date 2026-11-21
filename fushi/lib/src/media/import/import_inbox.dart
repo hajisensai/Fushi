@@ -42,6 +42,8 @@ import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath, kVideoExtensions;
 import 'package:fushi_engine/media/manga/manga_importer.dart'
     show kMangaImageExtensions;
+import 'package:fushi_engine/media/video/video_sidecar.dart'
+    show listSidecarSubtitles;
 import 'package:fushi/src/media/drag_drop/drop_classification.dart'
     show
         kDragAudioExtensions,
@@ -263,7 +265,12 @@ class ImportInbox {
 
   /// 把用户确认过的根上散文件 [files]（取自 [pendingRootFiles]）移进 [mediaKind] 的分类
   /// 子目录，之后走该页面原有的收件箱导入。返回移不动的条目（`名字: 原因`），它们留在
-  /// 根上。分类子目录里已有同名文件时改名为 `名字 (2).扩展名`，不覆盖用户已放进去的文件。
+  /// 根上。
+  ///
+  /// 目标路径按**依赖组**整组分配（HBK-AUDIT-019）：外挂字幕靠与视频 / 音频同 stem 配对
+  /// （`pickSidecar`），所以一个主文件和它的同 stem 字幕必须落到同一个 stem 上。分类子
+  /// 目录里组内任一成员已有同名文件时，整组一起改名为 `<stem> (2)<后缀>`——不覆盖用户已
+  /// 放进去的文件，也不会让新视频丢字幕、旧视频配上新字幕。
   static Future<List<String>> adoptRootFiles({
     required Directory inbox,
     required String mediaKind,
@@ -273,26 +280,98 @@ class ImportInbox {
     if (kindDir == null || files.isEmpty) return const <String>[];
     await kindDir.create(recursive: true);
     final List<String> failures = <String>[];
-    for (final File file in files) {
-      final String name = p.basename(file.path);
-      try {
-        await _moveFile(file, await _freeFilePath(kindDir, name));
-      } on FileSystemException catch (e) {
-        failures.add('$name: $e');
+    for (final _SidecarGroup group in _groupBySidecarStem(files)) {
+      final String stem = await _freeGroupStem(kindDir, group);
+      for (final _SidecarGroupMember member in group.members) {
+        final String name = p.basename(member.file.path);
+        try {
+          await _moveFile(
+            member.file,
+            p.join(kindDir.path, '$stem${member.suffix}'),
+          );
+        } on FileSystemException catch (e) {
+          failures.add('$name: $e');
+        }
       }
     }
     return failures;
   }
 
-  /// [dir] 下不与已有条目重名的 [name]：重名时在扩展名前追加 ` (2)`、` (3)`…
-  static Future<String> _freeFilePath(Directory dir, String name) async {
-    String candidate = p.join(dir.path, name);
-    final String stem = p.basenameWithoutExtension(name);
-    final String ext = p.extension(name);
+  /// 把 [files] 分成依赖组：每个非字幕文件（视频 / 音频 / 书…）以自己的
+  /// `basenameWithoutExtension` 为 stem 开一组；字幕按 `listSidecarSubtitles` 的同一配对
+  /// 规则（不分大小写、可带语言标记）归入能配上的**最长** stem 的组；配不上任何主文件的
+  /// 字幕自成一组。组的顺序与成员顺序都随 [files]。
+  static List<_SidecarGroup> _groupBySidecarStem(List<File> files) {
+    final List<_SidecarGroup> groups = <_SidecarGroup>[];
+    final Map<String, _SidecarGroup> byStemLower = <String, _SidecarGroup>{};
+    final List<File> subtitles = <File>[];
+    for (final File file in files) {
+      final String name = p.basename(file.path);
+      if (_isSubtitleName(name)) {
+        subtitles.add(file);
+        continue;
+      }
+      final String stem = p.basenameWithoutExtension(name);
+      final _SidecarGroup group = byStemLower.putIfAbsent(
+        stem.toLowerCase(),
+        () {
+          final _SidecarGroup g = _SidecarGroup(stem);
+          groups.add(g);
+          return g;
+        },
+      );
+      group.members.add(
+        _SidecarGroupMember(file, name.substring(group.stem.length)),
+      );
+    }
+    for (final File file in subtitles) {
+      final String name = p.basename(file.path);
+      _SidecarGroup? owner;
+      for (final _SidecarGroup g in byStemLower.values) {
+        if (g.stem.length < name.length &&
+            listSidecarSubtitles(g.stem, <String>[name]).isNotEmpty &&
+            (owner == null || g.stem.length > owner.stem.length)) {
+          owner = g;
+        }
+      }
+      if (owner == null) {
+        final String stem = p.basenameWithoutExtension(name);
+        owner = _SidecarGroup(stem);
+        groups.add(owner);
+      }
+      owner.members.add(
+        _SidecarGroupMember(file, name.substring(owner.stem.length)),
+      );
+    }
+    return groups;
+  }
+
+  static bool _isSubtitleName(String name) =>
+      _bare(kDragSubtitleExtensions).contains(_extensionOf(name));
+
+  /// [dir] 下能让 [group] 所有成员都不与已有条目重名的 stem：原 stem 可用就用原 stem，
+  /// 否则依次试 `<stem> (2)`、`<stem> (3)`…，整组共用同一个。
+  static Future<String> _freeGroupStem(
+    Directory dir,
+    _SidecarGroup group,
+  ) async {
+    Future<bool> free(String stem) async {
+      for (final _SidecarGroupMember m in group.members) {
+        if (await FileSystemEntity.type(
+              p.join(dir.path, '$stem${m.suffix}'),
+              followLinks: false,
+            ) !=
+            FileSystemEntityType.notFound) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    String candidate = group.stem;
     int n = 2;
-    while (await FileSystemEntity.type(candidate, followLinks: false) !=
-        FileSystemEntityType.notFound) {
-      candidate = p.join(dir.path, '$stem ($n)$ext');
+    while (!await free(candidate)) {
+      candidate = '${group.stem} ($n)';
       n++;
     }
     return candidate;
@@ -373,4 +452,22 @@ class ImportInbox {
       await source.delete();
     }
   }
+}
+
+/// 根上散文件的一个依赖组（主文件 + 同 stem 外挂字幕），见 [ImportInbox.adoptRootFiles]。
+class _SidecarGroup {
+  _SidecarGroup(this.stem);
+
+  /// 组的原 stem（主文件的 `basenameWithoutExtension`，保留原始大小写）。
+  final String stem;
+  final List<_SidecarGroupMember> members = <_SidecarGroupMember>[];
+}
+
+class _SidecarGroupMember {
+  const _SidecarGroupMember(this.file, this.suffix);
+
+  final File file;
+
+  /// 文件名去掉组 stem 后的部分（`.mkv` / `.ja.srt`…），改名时原样接在新 stem 后。
+  final String suffix;
 }

@@ -339,5 +339,82 @@ void main() {
         reason: '移进分类子目录后与「文件」App 放进去的文件同路导入',
       );
     });
+
+    // HBK-AUDIT-019：外挂字幕靠与视频同 stem 配对（pickSidecar），逐个文件避重名会把
+    // 同组拆成不同 stem——新视频丢字幕、旧视频反而配上新字幕。
+    Future<List<String>> adoptAll() async => ImportInbox.adoptRootFiles(
+      inbox: inbox,
+      mediaKind: 'video',
+      files: await ImportInbox.pendingRootFiles(
+        inbox: inbox,
+        mediaKind: 'video',
+      ),
+    );
+    String videoDirContent(String name) =>
+        File(p.join(inbox.path, 'Video', name)).readAsStringSync();
+
+    test('只有视频撞名时，同 stem 的外挂字幕跟着视频一起改名', () async {
+      await ImportInbox.ensureKindFolders(inbox);
+      touch(p.join(inbox.path, 'Video', 'EP01.mkv')).writeAsStringSync('old');
+      touch(p.join(inbox.path, 'EP01.mkv')).writeAsStringSync('new');
+      touch(p.join(inbox.path, 'EP01.srt')).writeAsStringSync('new-srt');
+      touch(p.join(inbox.path, 'ep01.ja.ass')).writeAsStringSync('new-ja');
+
+      expect(await adoptAll(), isEmpty);
+      expect(videoDirContent('EP01.mkv'), 'old');
+      expect(videoDirContent('EP01 (2).mkv'), 'new');
+      expect(videoDirContent('EP01 (2).srt'), 'new-srt');
+      expect(videoDirContent('EP01 (2).ja.ass'), 'new-ja');
+      expect(
+        File(p.join(inbox.path, 'Video', 'EP01.srt')).existsSync(),
+        isFalse,
+        reason: '新字幕不能落到旧视频的 stem 上被旧视频配走',
+      );
+    });
+
+    test('只有字幕撞名时，视频也换 stem，不去配旧字幕', () async {
+      await ImportInbox.ensureKindFolders(inbox);
+      touch(p.join(inbox.path, 'Video', 'EP01.srt')).writeAsStringSync('old');
+      touch(p.join(inbox.path, 'EP01.mkv')).writeAsStringSync('new');
+      touch(p.join(inbox.path, 'EP01.srt')).writeAsStringSync('new-srt');
+
+      expect(await adoptAll(), isEmpty);
+      expect(videoDirContent('EP01.srt'), 'old');
+      expect(videoDirContent('EP01 (2).mkv'), 'new');
+      expect(videoDirContent('EP01 (2).srt'), 'new-srt');
+      expect(
+        File(p.join(inbox.path, 'Video', 'EP01.mkv')).existsSync(),
+        isFalse,
+      );
+    });
+
+    test('不撞名的组与不相干文件原名搬入，字幕只认最长匹配的视频 stem', () async {
+      await ImportInbox.ensureKindFolders(inbox);
+      touch(p.join(inbox.path, 'Video', 'EP02.mkv')).writeAsStringSync('old');
+      touch(p.join(inbox.path, 'EP01.mkv'));
+      touch(p.join(inbox.path, 'EP01.v2.mkv')).writeAsStringSync('v2');
+      touch(p.join(inbox.path, 'EP01.v2.srt')).writeAsStringSync('v2-srt');
+      touch(p.join(inbox.path, 'EP02.mkv')).writeAsStringSync('new');
+      touch(p.join(inbox.path, 'EP03.srt')).writeAsStringSync('lone');
+
+      expect(await adoptAll(), isEmpty);
+      final String video = p.join(inbox.path, 'Video');
+      expect(
+        (Directory(video).listSync().map((FileSystemEntity e) {
+          return p.basename(e.path);
+        }).toList()..sort()),
+        <String>[
+          'EP01.mkv',
+          'EP01.v2.mkv',
+          'EP01.v2.srt',
+          'EP02 (2).mkv',
+          'EP02.mkv',
+          'EP03.srt',
+        ],
+      );
+      expect(videoDirContent('EP01.v2.srt'), 'v2-srt');
+      expect(videoDirContent('EP02 (2).mkv'), 'new');
+      expect(videoDirContent('EP03.srt'), 'lone');
+    });
   });
 }
