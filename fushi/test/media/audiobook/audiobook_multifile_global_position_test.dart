@@ -314,6 +314,14 @@ void main() {
             'real duration of the last file is known',
       );
       expect(c.globalPosition.inMilliseconds, 70000);
+      // 首次激活前末文件真实时长仍未知：时间轴末端至少要盖住当前位置，否则进度条
+      // 显示「1:10 / 0:18」，按 totalDuration 夹目标的相对跳转（远程 ctl）会把
+      // 片尾位置拽回末句结束。
+      expect(
+        c.totalDuration.inMilliseconds,
+        70000,
+        reason: 'the timeline end must cover the restored position',
+      );
 
       await c.play();
       await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -326,10 +334,7 @@ void main() {
       await c.pause();
       expect(c.currentFilePosition.fileIndex, 1);
       // 播放期间 just_audio 按墙钟外推几十毫秒。
-      expect(
-        c.globalPosition.inMilliseconds,
-        inInclusiveRange(70000, 70999),
-      );
+      expect(c.globalPosition.inMilliseconds, inInclusiveRange(70000, 70999));
       expect(c.totalDuration.inMilliseconds, 110000);
       await c.disposeAndRelease();
     });

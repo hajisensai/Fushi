@@ -1037,11 +1037,28 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 全书时间轴的末端要按它延长——[totalDuration] 与 [seekGlobalMs] 共用这一个口径，
   /// 否则进度条显示得出片尾却拖不进去（sGoT-tNpkx）。前序文件仍用 cue 估算（与持久化
   /// 的全书毫秒编码一致，不能改）。
+  ///
+  /// 真实时长还没报出（冷启动恢复后、首次激活平台前，平台根本没载入该文件）时，
+  /// 当前落在末文件里的位置本身就是它真实时长的下界：位置来自上次真实播放
+  /// （HBK-AUDIT-036：load 不再按 cue 估算夹末文件）。取它，保证时间轴末端
+  /// 永远盖住当前位置——否则进度条显示「1:10 / 0:18」，按 [totalDuration] 夹目标的
+  /// 跳转会把片尾位置拽回末句结束。真实时长到达后 just_audio 的位置被夹在时长内，
+  /// 两者取大即真实时长。
   int? get _knownLastFileDurationMs {
     if (_fileDurationsMs.isEmpty) return null;
-    if ((_player.currentIndex ?? 0) != _fileDurationsMs.length - 1) return null;
-    final int? ms = _player.duration?.inMilliseconds;
-    return ms == null || ms <= 0 ? null : ms;
+    final int lastIndex = _fileDurationsMs.length - 1;
+    int? known;
+    if ((_player.currentIndex ?? 0) == lastIndex) {
+      final int? ms = _player.duration?.inMilliseconds;
+      if (ms != null && ms > 0) known = ms;
+    }
+    final ({int fileIndex, int positionMs}) at = _effectiveFilePosition;
+    if (at.fileIndex == lastIndex &&
+        at.positionMs > 0 &&
+        (known == null || at.positionMs > known)) {
+      known = at.positionMs;
+    }
+    return known;
   }
 
   /// 末文件在全书时间轴上的跨度：cue 估算与已知真实时长取较大者。
