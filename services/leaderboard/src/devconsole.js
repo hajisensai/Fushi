@@ -20,6 +20,9 @@
 //   POST /dev/d/:id/files         拍板台网页上传附件（multipart file，可多个；拖放 / 粘贴 / 选文件）
 //   GET  /dev/d/:id/f/:n          拍板台附件（设计图 html / md / 图片；CSP sandbox，见 decisions.js）
 //   POST /dev/d/:id  {v,text,back} 拍板并 / 或留言（Accept: application/json → 回新卡片 JSON，不跳转）
+//   GET  /dev/keys                拍板台个人密钥：本人签发过的密钥（只显示末 4 位）与用法（decisions_api.js）
+//   POST /dev/keys   {label}      签发一把新密钥，明文只在这次的响应页里显示
+//   POST /dev/keys/:id/revoke     吊销本人的一把密钥
 //
 // 安全：页面默认无脚本（CSP script-src 为 none），只有拍板台放行本站脚本 /dev/decisions.js；会话 Cookie HttpOnly + Secure + SameSite=Strict，
 // 只发往 /dev；所有 POST 另验 Origin 与本站一致（双保险防 CSRF）。会话 7 天，库里只存 token 哈希。
@@ -48,6 +51,7 @@ import {
 } from './decisions.js';
 import { DECISIONS_CLIENT_JS } from './decisions_client.js';
 import { NOTICE_LIMITS, listKnown, listRules, seenSummary } from './notices.js';
+import { DECISION_KEY_LIMITS, createDecisionKey, listDecisionKeys, revokeDecisionKey } from './decisions_api.js';
 
 export const SESSION_COOKIE = 'fushi_dev';
 export const SESSION_TTL_MS = 7 * 24 * 3600 * 1000;
@@ -138,7 +142,7 @@ function fmtBytes(n) {
 
 function layout(title, body, { signedIn = false } = {}) {
   const logout = signedIn
-    ? '<nav class="top"><a href="/dev">反馈</a><a href="/dev/decisions">拍板</a><a href="/dev/stats">统计</a><a href="/dev/project">项目</a><a href="/dev/notices">公告</a>'
+    ? '<nav class="top"><a href="/dev">反馈</a><a href="/dev/decisions">拍板</a><a href="/dev/stats">统计</a><a href="/dev/project">项目</a><a href="/dev/notices">公告</a><a href="/dev/keys">密钥</a>'
       + '<form method="post" action="/dev/logout" class="inline"><button class="link">退出</button></form></nav>'
     : '';
   return `<!doctype html>
@@ -898,6 +902,43 @@ async function noticesPage(env, now) {
   { signedIn: true }));
 }
 
+/** 签发 / 吊销失败的错误码 → 中文。 */
+const KEY_ERROR_TEXT = {
+  too_many_keys: `每人最多 ${DECISION_KEY_LIMITS.activePerAccount} 把未吊销的密钥，先吊销不用的。`,
+  bad_label: `备注最多 ${DECISION_KEY_LIMITS.labelMax} 字、不能换行。`,
+};
+
+/**
+ * /dev/keys：本人的拍板台密钥。fresh = 刚签发的明文（只在签发那次的响应里出现，不进 URL、不入库）。
+ * @param {object} env
+ * @param {{id: string}} dev
+ * @param {{fresh?: string|null, error?: string}} [opts]
+ * @returns {Promise<Response>}
+ */
+async function keysPage(env, dev, { fresh = null, error = '' } = {}) {
+  const keys = await listDecisionKeys(env, dev.id);
+  const rows = keys.map((k) => `<tr${k.revoked_at ? ' class="muted"' : ''}><td><code>fdk_…${esc(k.hint)}</code></td>`
+    + `<td>${esc(k.label || '')}</td><td>${esc(fmtTime(k.created_at))}</td><td>${esc(k.last_used_at ? fmtTime(k.last_used_at) : '没用过')}</td>`
+    + `<td>${k.revoked_at ? `已吊销 ${esc(fmtTime(k.revoked_at))}` : `<form method="post" action="/dev/keys/${esc(k.id)}/revoke" class="inline">`
+      + '<button class="link">吊销</button></form>'}</td></tr>`).join('');
+  const freshBlock = fresh ? `<div class="card"><p><b>新密钥（只显示这一次，关掉页面就再也看不到了）</b></p>
+<p><code>${esc(fresh)}</code></p>
+<p class="muted">存进代理所在机器的环境变量 <code>FUSHI_DECISIONS_TOKEN</code>，不要提交进仓库、不要发到群里。丢了就吊销重签。</p></div>` : '';
+  return html(layout('密钥', `<h1>拍板台密钥</h1>
+<p class="muted">给自己的 AI 代理用：带上密钥后 <code>node scripts/decisions.mjs</code> 直接走 HTTPS 读写拍板台，不需要 Cloudflare 凭据。
+密钥只能读写拍板台（列事项、写待拍事项、留言、结单、校正决定、附件），碰不到反馈和账户数据；你的账户被撤开发者后全部失效。</p>
+${error ? `<p class="err">${esc(error)}</p>` : ''}${freshBlock}
+<div class="card"><p>用法（PowerShell）：</p>
+<p><code>$env:FUSHI_DECISIONS_TOKEN = "fdk_…"</code><br><code>node services/leaderboard/scripts/decisions.mjs list</code></p>
+<p class="muted">设了这个环境变量就走 HTTP 模式；另可用 <code>FUSHI_DECISIONS_URL</code> 改服务地址（默认 https://rank.fushi.moe）。</p></div>
+<h2>我的密钥</h2>
+<div class="card">${rows ? `<table class="grid"><tr><th>密钥</th><th>备注</th><th>签发</th><th>最近使用</th><th></th></tr>${rows}</table>`
+    : '<p class="muted">还没有签发过。</p>'}</div>
+<form method="post" action="/dev/keys" class="card">
+<label>备注（可选，比如哪台机器）<input name="label" maxlength="${DECISION_KEY_LIMITS.labelMax}"></label>
+<button>签发新密钥</button></form>`, { signedIn: true }));
+}
+
 export async function routeDevConsole(request, env, url, now, ctx, ip) {
   const path = url.pathname;
   const method = request.method;
@@ -1031,6 +1072,21 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
     if (conflict) return redirect(`/dev/decisions?stage=all&conflict=1#d-${m[1]}`);
     // 回到原来那一栏、定位到这条（拍完它可能已离开当前栏，锚点找不到就停在栏顶）。
     return redirect(`/dev/decisions?stage=${decisionStageParam(form.get('back'))}#d-${m[1]}`);
+  }
+  if (method === 'GET' && path === '/dev/keys') return keysPage(env, dev);
+  if (method === 'POST' && path === '/dev/keys') {
+    const form = await readForm(request);
+    try {
+      const { token } = await createDecisionKey(env, dev, form.get('label') || '', now);
+      return keysPage(env, dev, { fresh: token });
+    } catch (e) {
+      if (e instanceof HttpError && KEY_ERROR_TEXT[e.code]) return keysPage(env, dev, { error: KEY_ERROR_TEXT[e.code] });
+      throw e;
+    }
+  }
+  if (method === 'POST' && (m = /^\/dev\/keys\/([A-Za-z0-9_-]{1,16})\/revoke$/.exec(path))) {
+    await revokeDecisionKey(env, dev, m[1], now);
+    return redirect('/dev/keys');
   }
   if (method === 'GET' && path === '/dev/project') return projectPage(env, now);
   if (method === 'POST' && path === '/dev/project/refresh') {
