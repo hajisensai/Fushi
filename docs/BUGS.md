@@ -71,6 +71,13 @@
 | [BUG-5098](bugs/BUG-5098-video-fingerprint-store-quadratic-rewrite.md) | ✅ | ✅ | video-fingerprint-store-quadratic-rewrite |
 | [BUG-5106](bugs/BUG-5106-subtitle-postprocess-on-ui-isolate.md) | ✅ | ✅ | 大 SRT / VTT 字幕轨异步解析后，复制 + 排序 + 重叠收口回到 UI isolate |
 | [BUG-5105](bugs/BUG-5105-remote-reload-crosses-episode-switch.md) | ✅ | ✅ | 换线路 / 换档重载在停止上报期间被换集，仍拿旧集位置重载并作废新集 |
+> 共 4417 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5116](bugs/BUG-5116-manga-fit-resample-whole-image-f32-buffer.md) | ✅ | ✅ | 漫画画质缩放：Rust 重采样为整张图留 f32 中间缓冲，长条页工作集上百 MB |
+| [BUG-5113](bugs/BUG-5113-upscale-cache-io-under-state-lock.md) | ✅ | ✅ | 漫画超分：工作线程持状态锁写磁盘缓存，UI isolate 的同步 FFI 跟着排队 |
+| [BUG-5112](bugs/BUG-5112-upscale-stale-generation-models-failed.md) | ✅ | ✅ | 漫画超分：旧档迟到的模型加载失败能关掉新档、清掉新档的队列 |
 | [BUG-5088](bugs/BUG-5088-readintosync-blocks-gc-safepoint.md) | ✅ | ✅ | readintosync-blocks-gc-safepoint |
 | [BUG-5087](bugs/BUG-5087-sync-video-sweep-tests-teardown-temp-locked.md) | ✅ | ✅ | sync-video-sweep-tests-teardown-temp-locked |
 | [BUG-5086](bugs/BUG-5086-dist-test-verdict-coverage-shared-log.md) | ✅ | ✅ | 「dist 请求 7 个测试文件只跑 2 个仍判 PASSED」是并发代理共用日志名读串了；dist_test 判绿改为逐个核对请求的 suite |
