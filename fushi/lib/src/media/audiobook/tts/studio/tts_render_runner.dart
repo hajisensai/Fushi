@@ -65,6 +65,7 @@ import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_retry.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
+import 'package:fushi_engine/tts/tts_reject_split.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/asr_host/asr_host.dart';
@@ -801,7 +802,7 @@ class AppTtsRenderRunner implements TtsRenderRunner {
             results[key] = await ttsWithRetry(
               () => cache.obtain(key, (String outputPath) {
                 pendingGap = voice.gap > Duration.zero;
-                return synthesizeWithDirection(
+                return ttsSynthesizeSplittingOnReject(
                   voice.provider,
                   byKey[key]!.text,
                   outputPath: outputPath,

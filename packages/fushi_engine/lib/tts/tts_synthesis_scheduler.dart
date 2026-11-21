@@ -15,6 +15,9 @@
 ///   成功、播放前进到别的句子或 [resume] 即恢复预取（失败句本身仍跳过）。等播放器
 ///   真要到失败句时 [ensure] 重新请求它，再失败才按上一条停下——失败句不会被静默
 ///   跳过。事件里 [TtsSegmentFailed.blocking] 为假。
+/// - **服务端拒收一句**（HTTP 400/404/422）先按停顿拆开分别合成再拼回一段
+///   （`ttsSynthesizeSplittingOnReject`，原样重发同一句必然再被拒）；拆到底仍被拒
+///   才按上面的规则停下提示。
 /// - 被取消的请求（换位置移出窗口 / 关闭）以 [TtsFailureCode.cancelled] 结束，不算
 ///   失败。
 library;
@@ -25,6 +28,7 @@ import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_retry.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
+import 'package:fushi_engine/tts/tts_reject_split.dart';
 
 /// 一句合成好了 / 失败了。
 sealed class TtsSegmentEvent {
@@ -300,7 +304,8 @@ class TtsSynthesisScheduler {
       final TtsCachedAudio audio = await ttsWithRetry(
         () => _cache.obtain(
           _keys[index],
-          (String outputPath) => _voices[voice].provider.synthesize(
+          (String outputPath) => ttsSynthesizeSplittingOnReject(
+            _voices[voice].provider,
             _texts[index],
             outputPath: outputPath,
             cancel: token,
