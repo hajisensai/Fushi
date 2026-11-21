@@ -33,10 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4411 条。点号进各自文件。
+> 共 4414 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5130](bugs/BUG-5130-caret-line-move-node-prefilter-linear.md) | 🚧 | 🚧 | 阅读器光标每次行移动仍对章内每个文本节点各做一次行盒查询（随章长线性） |
+| [BUG-5097](bugs/BUG-5097-manga-text-strip-hover-remeasures-ocr.md) | ✅ | ✅ | 台词栏悬停在同一气泡逐字节点间反复重量整屏 OCR 框（HBK-AUDIT-045） |
+| [BUG-5094](bugs/BUG-5094-caret-line-move-long-paragraph-per-glyph.md) | ✅ | ✅ | 阅读器方向键行移动对跨页长段落逐字量几何（HBK-AUDIT-023） |
 | [BUG-5088](bugs/BUG-5088-readintosync-blocks-gc-safepoint.md) | ✅ | ✅ | readintosync-blocks-gc-safepoint |
 | [BUG-5087](bugs/BUG-5087-sync-video-sweep-tests-teardown-temp-locked.md) | 🚧 | 🚧 | sync-video-sweep-tests-teardown-temp-locked |
 | [BUG-5086](bugs/BUG-5086-dist-test-verdict-coverage-shared-log.md) | ✅ | ✅ | 「dist 请求 7 个测试文件只跑 2 个仍判 PASSED」是并发代理共用日志名读串了；dist_test 判绿改为逐个核对请求的 suite |
