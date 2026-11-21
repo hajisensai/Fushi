@@ -1,11 +1,14 @@
-// BUG（resume 回执被 alert 队列溢出吞掉）回归：一次 saveResumeData 面对的
-// 种子数超过 libtorrent alert 队列上限（alert_queue_size，默认 2000）时，
-// 旧实现一口气对所有种子发 save_resume_data，回执超过队列上限的部分被
-// libtorrent 直接丢弃（只留一条 alerts_dropped_alert），桥接层却毫不知情地
-// 等到超时 —— 生产上种子 >2000 时 resume 落盘缺失，重启即丢种子。
+// BUG-5158 回归：一次 saveResumeData 面对的种子数远超 libtorrent alert 队列
+// 上限（alert_queue_size 默认 2000；critical 档的 save_resume_data_alert 到
+// 3 倍）时，旧实现既不先腾空队列、又一口气对所有种子发 save_resume_data：
+// 加种子时堆下的 add_torrent / 状态 alert 早把队列顶满，回执一到就被
+// libtorrent 丢弃（只留一条 alerts_dropped_alert），桥接层毫不知情地等满
+// 超时 —— 生产上种子 >2000 时 resume 落盘缺失，重启即丢种子。旧实现在本测试
+// 上是 saved=0 / timed_out=全部。
 //
-// 本测试在一个 session 里放进明显多于默认队列上限的种子，断言一轮保存就
-// 全部落盘、没有一颗靠「超时」糊过去。
+// 本测试在一个 session 里放进 5000 颗种子（加完不做任何 drain，正是宿主
+// 启动加回大量种子后的状态），断言一轮保存就全部落盘、没有一颗靠「超时」
+// 糊过去，且盘上的 .resume 与加进去的种子一一对应。
 //
 // 库路径解析同其它 native 测试：FUSHI_TORRENT_LIB 指向 DLL；缺库整组 skip。
 
@@ -14,8 +17,8 @@ import 'dart:io';
 import 'package:fushi_torrent/fushi_torrent.dart';
 import 'package:test/test.dart';
 
-/// 明显多于 libtorrent 默认 alert_queue_size（2000）的种子数。
-const int _torrentCount = 3000;
+/// 远多于 libtorrent 默认 alert_queue_size（2000）的种子数。
+const int _torrentCount = 5000;
 
 String? _resolveLibPath() {
   final String? env = Platform.environment['FUSHI_TORRENT_LIB'];

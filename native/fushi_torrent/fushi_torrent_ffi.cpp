@@ -1549,11 +1549,16 @@ HT_EXPORT char* ht_save_resume_data(void* session, const char* out_dir,
     std::filesystem::create_directories(
         std::filesystem::u8path(std::string(out_dir)), fs_ec);
 
-    // 先把 libtorrent 队列里积压的 alert 收走。两次 drain 之间（宿主每分钟
-    // 才保存一次）piece_finished / 状态类 alert 会一直堆在 libtorrent 内部
-    // 队列里，堆满 alert_queue_size 后新 alert 一律被丢弃 —— 不先腾空，本轮
-    // 的 resume 回执一到就被丢，一颗都收不到（BUG-5158 复现：加 3000 颗后
-    // 保存，saved=0 / timed_out=3000）。
+    // BUG-5158：先把 libtorrent 内部队列里积压的 alert 收走。
+    //
+    // 只有调用方碰到 drain 的入口（本函数、改名 / 移动、piece 事件、会话
+    // 状态）时 alert 才被取走；宿主平时每分钟才保存一次，期间 add_torrent /
+    // state_changed / torrent_checked / piece_finished 全堆在 libtorrent 里。
+    // libtorrent 按优先级给队列上限：normal 满 alert_queue_size（默认 2000）
+    // 即丢，high 到 2 倍、critical（save_resume_data_alert 属此档）到 3 倍。
+    // 种子一多（加回几千颗就有几千条 add_torrent + 成倍的状态 alert），队列
+    // 早已顶到 critical 的上限，本轮回执一到就被丢，一颗都收不到 —— 复现：
+    // 加 3000 颗后保存，saved=0 / timed_out=3000，白等满整个超时预算。
     drain_alerts(ctx);
 
     // 前一轮的残留（超时未收齐）不该算进本轮：清账再发。
@@ -1571,10 +1576,11 @@ HT_EXPORT char* ht_save_resume_data(void* session, const char* out_dir,
       queue.push_back(h);
     }
 
-    // 在飞上限：每颗种子恰好产生一条回执，在飞的回执数不超过队列容量的
-    // 四分之一，给同期的 piece / 状态类 alert 留足余量 —— 种子再多，本轮
-    // 的回执也不可能把队列挤爆。按回执到达逐颗补发（滑动窗口），总耗时
-    // 不因分批变长。
+    // 在飞上限：每颗种子恰好产生一条回执。一口气全发出去时，回执数随种子数
+    // 线性涨，超过 critical 档的余量（3 × alert_queue_size 减去同期别的
+    // alert）就丢 —— 腾空队列只解决「开局已满」，解决不了「本轮自己挤爆」。
+    // 在飞数钉在队列容量的四分之一以内（且 ≤ kMaxResumeInFlight），种子再多
+    // 也挤不爆；按回执到达逐颗补发（滑动窗口），总耗时不因分批变长。
     const int queue_cap =
         ctx->ses.get_settings().get_int(lt::settings_pack::alert_queue_size);
     const std::size_t window =

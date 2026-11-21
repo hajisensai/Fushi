@@ -263,9 +263,14 @@ HT_EXPORT char* ht_move_storage(void* session, const char* info_hash,
 // 期间靠 wait_for_alert 挂起而**不是** sleep 轮询。收齐即提前返回，通常几十
 // 毫秒内完成。调用方应在退出前与周期性（如每分钟）各调一次。
 //
-// 返回 JSON：{"ok":true,"saved":N,"failed":M,"timed_out":K}。
-// `timed_out` > 0 表示这么多种子在预算内没回执，本次没存（下轮再存即可，
-// 不是错误）。session 为 NULL / out_dir 为空 → {"ok":false,...}。
+// 种子再多也收得齐（BUG-5158）：开局先腾空 libtorrent 的 alert 队列，请求按
+// 滑动窗口在飞（≤ alert_queue_size / 4），不会被 alert 队列上限吞掉回执；
+// 万一仍有 resume 回执被丢（alerts_dropped_alert），对还没回执的种子补发。
+//
+// 返回 JSON：{"ok":true,"saved":N,"failed":M,"timed_out":K,"reissued":R}。
+// `timed_out` > 0 表示这么多种子在预算内没回执（含窗口没轮到、没发出去的），
+// 本次没存（下轮再存即可，不是错误）。`reissued` 是因回执被队列丢弃而补发的
+// 请求数（诊断用，正常为 0）。session 为 NULL / out_dir 为空 → {"ok":false,...}。
 HT_EXPORT char* ht_save_resume_data(void* session, const char* out_dir,
                                     int timeout_ms);
 
