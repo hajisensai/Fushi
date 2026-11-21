@@ -78,6 +78,40 @@ class LnReaderMissingImage {
   );
 }
 
+/// 网文书内插图条目名（`OEBPS/` 下的相对路径）的唯一判据：只认三条管线自己生成
+/// 的名字——LNReader 在线书 `images/<章节哈希>-<n>.<ext>`
+/// （`lnReaderOnlineImagePrefix`）、LNReader 下载书 `images/c<章>-<n>.<ext>`、
+/// 网页小说书 `images/w<URL 哈希>[.<ext>]`（`webNovelImageKey` /
+/// `webNovelImageFileName`）。扩展名只有宿主 / 嗅探会给的四种。
+///
+/// 这些名字是从章节文件（缺图占位、`<img src>`）里读回来的，而章节文件可以来自
+/// 第三方 EPUB（下载书管线对任何书行都挂）或站点正文，属于不可信输入：形如
+/// `../`、绝对路径、驱动器号、反斜杠的名字一律不认（HBK-AUDIT-002）。
+final RegExp _bookImageKeyPattern = RegExp(
+  r'^images/[a-z0-9][a-z0-9-]*(?:\.(?:jpg|png|gif|webp))?$',
+);
+final RegExp _bookImageFilePattern = RegExp(
+  r'^images/[a-z0-9][a-z0-9-]*\.(?:jpg|png|gif|webp)$',
+);
+
+/// [name] 是不是本应用生成的插图占位键（可不带扩展名）。
+bool isLnReaderBookImageKey(String name) => _bookImageKeyPattern.hasMatch(name);
+
+/// 解压树 [extractDir] 里插图条目 [name] 对应的文件；[name] 不是生成规则下的
+/// 插图文件名、或规范化后不在该书 `OEBPS/images/` 目录内时为 null（调用方不得
+/// 读写它）。
+File? lnReaderBookImageFile(String extractDir, String name) {
+  if (!_bookImageFilePattern.hasMatch(name)) return null;
+  final String imagesDir = p.normalize(
+    p.absolute(p.join(extractDir, 'OEBPS', 'images')),
+  );
+  final String target = p.normalize(
+    p.absolute(p.join(extractDir, 'OEBPS', name)),
+  );
+  if (!p.isWithin(imagesDir, target)) return null;
+  return File(target);
+}
+
 final RegExp _markerPattern = RegExp(
   '<span $kLnReaderMissingImageAttribute="([^"]*)" '
   'data-fushi-lnreader-missing-url="([^"]*)" '
@@ -160,14 +194,17 @@ String replaceLnReaderImageWithMissingMarker(
   );
 }
 
-/// [xhtml] 里所有没取到的插图（文档序）。
+/// [xhtml] 里所有没取到的插图（文档序）。占位键不符合生成规则
+/// （[isLnReaderBookImageKey]）的不是本应用写的占位，不认：不计数、不补取。
 List<LnReaderMissingImage> parseLnReaderMissingImages(String xhtml) {
   if (!xhtml.contains(kLnReaderMissingImageAttribute)) {
     return const <LnReaderMissingImage>[];
   }
   return <LnReaderMissingImage>[
     for (final RegExpMatch match in _markerPattern.allMatches(xhtml))
-      _imageOf(match),
+      if (_imageOf(match) case final LnReaderMissingImage image
+          when isLnReaderBookImageKey(image.fileName))
+        image,
   ];
 }
 
@@ -276,8 +313,8 @@ Future<OnlineNovelMissingImagesRetry> retryChapterMissingImages({
   );
   if (targets.isEmpty) return unchanged();
   await prepare?.call();
-  final Map<String, LnReaderEpubImage> recovered =
-      <String, LnReaderEpubImage>{};
+  final Map<String, ({LnReaderEpubImage image, File target})> recovered =
+      <String, ({LnReaderEpubImage image, File target})>{};
   final Set<String> failed = <String>{};
   String? firstFailure;
   for (final LnReaderMissingImage image in targets) {
@@ -285,24 +322,35 @@ Future<OnlineNovelMissingImagesRetry> retryChapterMissingImages({
       image,
       (String reason) => firstFailure ??= reason,
     );
-    if (fetched == null) {
+    // 写入目标只由生成规则下的文件名在本书图片目录里定出来；取图方给出的名字
+    // 不合规（占位键来自章节文件，可被伪造）就当这张没补到，不落盘。
+    final File? target = fetched == null
+        ? null
+        : lnReaderBookImageFile(extractDir, fetched.fileName);
+    if (fetched != null && target == null) {
+      firstFailure ??= 'invalid image file name';
+    }
+    if (fetched == null || target == null) {
       failed.add(image.fileName);
     } else {
-      recovered[image.fileName] = fetched;
+      recovered[image.fileName] = (image: fetched, target: target);
     }
   }
   if (!await file.exists() || !(await stillValid?.call() ?? true)) {
     return unchanged();
   }
-  for (final LnReaderEpubImage image in recovered.values) {
-    await write(File(p.join(extractDir, 'OEBPS', image.fileName)), image.bytes);
+  for (final ({LnReaderEpubImage image, File target}) entry
+      in recovered.values) {
+    await write(entry.target, entry.image.bytes);
   }
   // 重读再改：按占位键认占位，期间文件若被改过，对不上的占位自然跳过。
   final String updated = applyLnReaderMissingImageRetry(
     await file.readAsString(),
     recovered: <String, String>{
-      for (final MapEntry<String, LnReaderEpubImage> entry in recovered.entries)
-        entry.key: entry.value.fileName,
+      for (final MapEntry<String, ({LnReaderEpubImage image, File target})>
+          entry
+          in recovered.entries)
+        entry.key: entry.value.image.fileName,
     },
     failed: failed,
   );
