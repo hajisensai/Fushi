@@ -369,6 +369,9 @@ void main() {
       lessThan(2),
       reason: '同一行',
     );
+    // 短标签固定中文（字形示例）；悬停提示 / 读屏名称跟随界面语言走 i18n。
+    expect(find.byTooltip('Simplified Chinese'), findsOneWidget);
+    expect(find.byTooltip('Traditional Chinese'), findsOneWidget);
     await tester.tap(find.text('繁'));
     expect(picked, FontSampleScript.traditionalChinese);
   });

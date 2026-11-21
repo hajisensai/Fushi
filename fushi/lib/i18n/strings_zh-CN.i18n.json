@@ -3593,6 +3593,8 @@
   "font_library_priority_title": "优先级",
   "font_library_reorder_filtered_hint": "清除搜索与筛选后可拖拽排序",
   "font_library_sample_latin": "西文",
+  "font_library_script_simplified_chinese": "简体中文",
+  "font_library_script_traditional_chinese": "繁体中文",
   "font_library_section_fonts": "字体",
   "font_library_section_sources": "获取字体",
   "font_library_size_label": "字号",

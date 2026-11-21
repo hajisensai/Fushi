@@ -3593,6 +3593,8 @@
   "font_library_priority_title": "Priority",
   "font_library_reorder_filtered_hint": "Clear search and filters to reorder",
   "font_library_sample_latin": "Latin",
+  "font_library_script_simplified_chinese": "簡体字中国語",
+  "font_library_script_traditional_chinese": "繁体字中国語",
   "font_library_section_fonts": "フォント",
   "font_library_section_sources": "Get fonts",
   "font_library_size_label": "Size",

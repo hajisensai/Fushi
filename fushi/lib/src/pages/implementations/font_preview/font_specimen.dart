@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_font_loader.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show ReaderCustomFontCss;
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
@@ -27,7 +28,8 @@ extension FontSampleScriptGroup on FontSampleScript {
 
 /// 样张工具栏里紧贴「中文」一档右侧的简繁开关：紧凑的胶囊二段「简 | 繁」，与
 /// 文种三档同一套分段组件（配色、圆角、字体随主题），只是更矮更窄。标签固定用
-/// 中文书写，不随界面语言翻译——这是给看中文的人分辨字形用的；悬停提示给全称。
+/// 中文书写，不随界面语言翻译——这是给看中文的人分辨字形用的；悬停提示（也是读屏
+/// 朗读的名称）给全称，走 i18n。
 ///
 /// [script] 不是中文时不渲染（返回空盒）。
 class FontChineseVariantSwitch extends StatelessWidget {
@@ -50,16 +52,16 @@ class FontChineseVariantSwitch extends StatelessWidget {
         visualDensity: const VisualDensity(horizontal: -4, vertical: -2),
         padding: const EdgeInsets.symmetric(horizontal: 8),
       ),
-      segments: const <ButtonSegment<FontSampleScript>>[
+      segments: <ButtonSegment<FontSampleScript>>[
         ButtonSegment<FontSampleScript>(
           value: FontSampleScript.simplifiedChinese,
-          label: Text('简'),
-          tooltip: '简体',
+          label: const Text('简'),
+          tooltip: t.font_library_script_simplified_chinese,
         ),
         ButtonSegment<FontSampleScript>(
           value: FontSampleScript.traditionalChinese,
-          label: Text('繁'),
-          tooltip: '繁體',
+          label: const Text('繁'),
+          tooltip: t.font_library_script_traditional_chinese,
         ),
       ],
       selected: <FontSampleScript>{script},
