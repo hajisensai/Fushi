@@ -644,6 +644,61 @@ mod tests {
         assert!(GenLock::try_acquire(&dir.0).unwrap().is_some());
     }
 
+    /// BUG-5065：Rust 标准库只在 linux / apple / BSD 等目标上用 `flock` 实现 `File::try_lock` / `lock` /
+    /// `lock_shared`，`target_os = "android"` 落到「not supported」桩上，换代锁在 Android 上一次都拿不到、
+    /// 复习库整个打不开。Android 的 CI 只编译不跑测试，所以这里守住源码：Unix（含 Android）走 `libc::flock`，
+    /// 标准库的文件锁只允许出现在 `#[cfg(not(unix))]` 那一支里。
+    #[test]
+    fn unix_lock_never_goes_through_std_file_locking() {
+        let src = include_str!("files.rs").replace("\r\n", "\n");
+        let prod = &src[..src.find("\n#[cfg(test)]\nmod tests").expect("tests marker")];
+        let unix_at = prod
+            .find("#[cfg(unix)]\nfn try_lock_exclusive")
+            .expect("unix branch");
+        let unix_end = unix_at + prod[unix_at..].find("\n}\n").expect("unix fn end");
+        assert!(
+            prod[unix_at..unix_end].contains("libc::flock("),
+            "the unix branch must call libc::flock directly"
+        );
+        let other_at = prod
+            .find("#[cfg(not(unix))]\nfn try_lock_exclusive")
+            .expect("non-unix branch");
+        let other_end = other_at + prod[other_at..].find("\n}\n").expect("non-unix fn end");
+        let rest = format!("{}{}", &prod[..other_at], &prod[other_end..]);
+        for banned in [
+            ".try_lock(",
+            ".lock(",
+            ".lock_shared(",
+            ".try_lock_shared(",
+            "TryLockError",
+        ] {
+            assert!(
+                !rest.contains(banned),
+                "std file locking `{banned}` outside the cfg(not(unix)) branch is unsupported on Android"
+            );
+        }
+    }
+
+    /// Unix 那一支就是 `flock`：另开一个描述符直接 `flock` 会被挡住，锁放掉后能拿到。Linux / macOS 跑的就是
+    /// Android 上那段代码（同一个 `cfg(unix)` 分支）。
+    #[cfg(unix)]
+    #[test]
+    fn unix_lock_is_a_real_flock() {
+        use std::os::fd::AsRawFd;
+
+        let dir = tempdir::new("genlock-flock");
+        let lock = GenLock::try_acquire(&dir.0).unwrap().expect("first");
+        let other = File::open(dir.0.join(GEN_LOCK_FILE)).unwrap();
+        let try_raw = |f: &File| -> bool {
+            // SAFETY: f 是本测试里打开且仍存活的文件；flock 只动内核文件锁。
+            unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) == 0 }
+        };
+        assert!(!try_raw(&other), "a raw flock must see the GenLock");
+        drop(lock);
+        assert!(try_raw(&other), "released GenLock must free the flock");
+        assert!(GenLock::try_acquire(&dir.0).unwrap().is_none());
+    }
+
     #[test]
     fn secondary_never_creates_and_refuses_until_there_is_a_generation_4_library() {
         let dir = tempdir::new("open-secondary");
