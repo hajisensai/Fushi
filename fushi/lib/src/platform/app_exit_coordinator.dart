@@ -16,8 +16,9 @@
 //    集合），被打断时知道卡在哪。
 // 3. 看门狗时长由各串行阶段的预算推出（[watchdogTimeoutFor]），不再拍一个比预算还短的数。
 // 4. 终止进程只经 [AppExitCoordinator.terminate]：先标 clean（带 terminatedBy），再
-//    `exit`。`lib/` 下其余地方禁止裸 `exit(`（守卫
-//    `test/build/process_exit_single_exit_guard_test.dart`）。
+//    结束进程（Windows 在落盘完成后走 `TerminateProcess` 跳过
+//    `DllMain(DLL_PROCESS_DETACH)` 死锁，其他平台走 `io.exit`）。`lib/` 下其余地方
+//    禁止裸 `exit(`（守卫 `test/build/process_exit_single_exit_guard_test.dart`）。
 // 5. [begin] 在写意图之前先同步摘掉 libmpv 指向 Dart 的唤醒回调（反馈 H6Vou-6uYX）。
 //    发布构建的 media_kit 给每个播放器注册一个 `NativeCallable.listener` 当 libmpv
 //    唤醒回调，只有逐个 `Player.dispose` 才解绑。退出链不 dispose 播放器，而进程
@@ -33,6 +34,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/diagnostics/previous_exit_log.dart';
+import 'package:fushi/src/platform/windows_process_exit.dart';
 import 'package:media_kit/native_exit.dart';
 
 /// 退出意图 / 阶段 / clean 的落点。生产实现写 [PreviousExitLog] 的会话标记。
@@ -57,7 +59,8 @@ class _PreviousExitLogSink implements ExitMarkerSink {
       PreviousExitLog.markCleanExit(terminatedBy: terminatedBy);
 }
 
-void _systemExit(int code) => io.exit(code);
+void _systemExit(int code) =>
+    exitProcessForPlatform(code, fallbackExit: io.exit);
 
 class AppExitCoordinator {
   AppExitCoordinator({
