@@ -33,67 +33,32 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4417 条。点号进各自文件。
-> 共 4408 条。点号进各自文件。
-> 共 4412 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5141](bugs/BUG-5141-game-ocr-mode-phase2.md) | 🚧 | 🚧 | OCR 游戏模式第二期：持续截窗、按游戏记区域、小字预处理、游戏内嵌查词、AI 操作路由 |
-> 共 4414 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5143](bugs/BUG-5143-video-section-undo-overwrites-concurrent-edit.md) | ✅ | ✅ | video-section-undo-overwrites-concurrent-edit |
-| [BUG-5084](bugs/BUG-5084-interconnect-client-collection-sections-ignore-host-override.md) | 🚧 | 🚧 | 互联客户端看 host 合集时分栏不认 host 上的手动分栏 |
-> 共 4407 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5084](bugs/BUG-5084-interconnect-client-collection-sections-ignore-host-override.md) | ✅ | ✅ | 互联客户端看 host 合集时分栏不认 host 上的手动分栏 |
-> 共 4414 条。点号进各自文件。
-> 共 4416 条。点号进各自文件。
+> 共 4488 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5159](bugs/BUG-5159-aggregate-cloud-snapshot-json-codec-on-caller.md) | 🚧 | 🚧 | aggregate-cloud-snapshot-json-codec-on-caller |
-| [BUG-5149](bugs/BUG-5149-aggregate-live-snapshot-copy-materialize-on-caller.md) | ✅ | ✅ | aggregate-live-snapshot-copy-materialize-on-caller |
-> 共 4416 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5147](bugs/BUG-5147-music-album-regroup-provenance-lost.md) | ✅ | ✅ | 专辑补归组后丢失原始归属，后续增量扫描无法纠正；收尾零变化也整源重读 |
-| [BUG-5140](bugs/BUG-5140-favorite-sentence-recolor.md) | 🚧 | 🚧 | 收藏句改色：已收藏的书摘不能改颜色（同步缺颜色更新时间） |
-| [BUG-5102](bugs/BUG-5102-aggregate-live-codec-merge-on-caller-isolate.md) | ✅ | ✅ | aggregate-live-codec-merge-on-caller-isolate |
-> 共 4475 条。点号进各自文件。
-> 共 4415 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-5158](bugs/BUG-5158-torrent-resume-save-alert-queue-overflow.md) | ✅ | ✅ | torrent-resume-save-alert-queue-overflow |
+| [BUG-5157](bugs/BUG-5157-web-pseudo-fullscreen-survives-navigation.md) | ✅ | ✅ | web-pseudo-fullscreen-survives-navigation |
 | [BUG-5156](bugs/BUG-5156-manga-audio-shape-version-reuse.md) | ✅ | ✅ | 重新生成存量漫画演出时复用旧响度片段（整形版本没进复用判据） |
-| [BUG-5140](bugs/BUG-5140-favorite-sentence-recolor.md) | 🚧 | 🚧 | 收藏句改色：已收藏的书摘不能改颜色（同步缺颜色更新时间） |
-> 共 4425 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-5155](bugs/BUG-5155-music-plugin-search-artist-empty-page-stops-paging.md) | 🚧 | 🚧 | music-plugin-search-artist-empty-page-stops-paging |
 | [BUG-5154](bugs/BUG-5154-manga-render-backfill-overwrites-script-edits.md) | 🚧 | 🚧 | manga-render-backfill-overwrites-script-edits |
 | [BUG-5153](bugs/BUG-5153-subtitle-glossary-host-runner-unguarded-writer.md) | 🚧 | 🚧 | subtitle-glossary-host-runner-unguarded-writer |
 | [BUG-5151](bugs/BUG-5151-torrent-offline-mountpoint-resume-freeze.md) | ✅ | ✅ | 空挂载点目录还在而数据不可达时仍开跑清零续传；离线期间写出的空位图让下次启动把种子放出来；上传闸登记表每加一颗种子清扫全表 |
-> 共 4426 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5158](bugs/BUG-5158-torrent-resume-save-alert-queue-overflow.md) | ✅ | ✅ | torrent-resume-save-alert-queue-overflow |
 | [BUG-5150](bugs/BUG-5150-loopback-dead-capture-stale-ring-pinned.md) | ✅ | ✅ | loopback 采集线程自行退出后，环里的旧声音仍被当成「最近 N 秒」交出去；常驻的跨应用语音缓存从此再也起不来 |
+| [BUG-5149](bugs/BUG-5149-aggregate-live-snapshot-copy-materialize-on-caller.md) | ✅ | ✅ | aggregate-live-snapshot-copy-materialize-on-caller |
+| [BUG-5147](bugs/BUG-5147-music-album-regroup-provenance-lost.md) | ✅ | ✅ | 专辑补归组后丢失原始归属，后续增量扫描无法纠正；收尾零变化也整源重读 |
 | [BUG-5146](bugs/BUG-5146-batch-seeding-toggle-relists-backend.md) | ✅ | ✅ | 下载页批量停 / 续做种（及批量继续）每条重列整个后端、每条各刷新一次面板 |
 | [BUG-5145](bugs/BUG-5145-manga-review-stale-session-overwrite.md) | ✅ | ✅ | manga-review-stale-session-overwrite |
 | [BUG-5144](bugs/BUG-5144-music-plugin-empty-page-stops-paging.md) | ✅ | ✅ | music-plugin-empty-page-stops-paging |
+| [BUG-5143](bugs/BUG-5143-video-section-undo-overwrites-concurrent-edit.md) | ✅ | ✅ | video-section-undo-overwrites-concurrent-edit |
 | [BUG-5142](bugs/BUG-5142-favorite-sentence-refavorite-lost-under-tombstone.md) | 🚧 | 🚧 | 同键收藏句合并只留最早 createdAt：删了重收藏后遇到墓碑会被整条压掉 |
+| [BUG-5141](bugs/BUG-5141-game-ocr-mode-phase2.md) | 🚧 | 🚧 | OCR 游戏模式第二期：持续截窗、按游戏记区域、小字预处理、游戏内嵌查词、AI 操作路由 |
 | [BUG-5140](bugs/BUG-5140-favorite-sentence-recolor.md) | ✅ | ✅ | 收藏句改色：已收藏的书摘不能改颜色（同步缺颜色更新时间） |
 | [BUG-5139](bugs/BUG-5139-cross-app-audio-preview-trim.md) | 🚧 | 🚧 | 跨应用语音缓存：制卡前试听 + 调起止（波形选区）两端都还没有 |
 | [BUG-5138](bugs/BUG-5138-decision-api-key-leaks-feedback.md) | ✅ | ✅ | 拍板台个人密钥 API 带出关联反馈原文 / 附件与账户 id |
 | [BUG-5136](bugs/BUG-5136-loopback-shared-ring-stopped-by-other-holder.md) | ✅ | ✅ | loopback 一路被多方共用时，任何一方 stop（含失败 start 后的兜底 stop）都会停掉别人的环 |
+| [BUG-5135](bugs/BUG-5135-torrent-active-slots-hot-reset-zero.md) | ✅ | ✅ | 活跃下载 / 做种名额热更新回 0（引擎默认）不生效 |
 | [BUG-5134](bugs/BUG-5134-jimaku-season-filter.md) | ✅ | ✅ | 合集字幕只点第二季批量下载仍可能写入第一季字幕（Jimaku 把请求季号抄成候选季号） |
 | [BUG-5132](bugs/BUG-5132-symindex-rust-failure-published-current.md) | ✅ | ✅ | 符号索引 Rust crate 索引失败仍发布成最新、同一提交不再重建 |
 | [BUG-5131](bugs/BUG-5131-symindex-cjk-path-quoted.md) | ✅ | ✅ | 符号索引按行读 git 文件清单，中文路径被转义后改动文件漏判、返回旧结果 |
@@ -125,6 +90,7 @@
 | [BUG-5105](bugs/BUG-5105-remote-reload-crosses-episode-switch.md) | ✅ | ✅ | 换线路 / 换档重载在停止上报期间被换集，仍拿旧集位置重载并作废新集 |
 | [BUG-5104](bugs/BUG-5104-srs-relay-reclaim-decodes-all-versions.md) | 🚧 | 🚧 | 中继回收每收新头解码整位作者的签名版本（HBK-AUDIT-052，未复现） |
 | [BUG-5103](bugs/BUG-5103-srs-study-walks-todays-answers.md) | ✅ | ✅ | 常驻出卡会话每次排队复制并整表扫描今天的作答（HBK-AUDIT-010） |
+| [BUG-5102](bugs/BUG-5102-aggregate-live-codec-merge-on-caller-isolate.md) | ✅ | ✅ | aggregate-live-codec-merge-on-caller-isolate |
 | [BUG-5101](bugs/BUG-5101-sync-peer-gap-capability-reads.md) | ✅ | ✅ | 互联对端缺能力判定每轮多读能力表、逐条墓碑重复记错、降级同步被说成没同步 |
 | [BUG-5100](bugs/BUG-5100-manga-page-size-reread-prefix.md) | ✅ | ✅ | WebP/AVIF 漫画页探尺寸重复打开并重读前缀（HBK-AUDIT-051） |
 | [BUG-5099](bugs/BUG-5099-manga-epub-volume-double-parse.md) | ✅ | ✅ | 漫画 EPUB 整卷导入在调用 isolate 上重复解析（HBK-AUDIT-013） |
@@ -138,22 +104,16 @@
 | [BUG-5091](bugs/BUG-5091-video-organize-concurrent-move-overwrite.md) | ✅ | ✅ | 两次独立发起的视频整理 / 搬动落到同一目标时后一个 rename 静默覆盖先搬过去的视频；撤销不核对文件身份 |
 | [BUG-5090](bugs/BUG-5090-video-scrape-sourceless-scope-issue-blank-title.md) | ✅ | ✅ | video-scrape-sourceless-scope-issue-blank-title |
 | [BUG-5089](bugs/BUG-5089-lnreader-missing-image-path-traversal.md) | ✅ | ✅ | lnreader-missing-image-path-traversal |
-> 共 4415 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5157](bugs/BUG-5157-web-pseudo-fullscreen-survives-navigation.md) | ✅ | ✅ | web-pseudo-fullscreen-survives-navigation |
-| [BUG-5140](bugs/BUG-5140-favorite-sentence-recolor.md) | 🚧 | 🚧 | 收藏句改色：已收藏的书摘不能改颜色（同步缺颜色更新时间） |
-| [BUG-5135](bugs/BUG-5135-torrent-active-slots-hot-reset-zero.md) | ✅ | ✅ | 活跃下载 / 做种名额热更新回 0（引擎默认）不生效 |
 | [BUG-5088](bugs/BUG-5088-readintosync-blocks-gc-safepoint.md) | ✅ | ✅ | readintosync-blocks-gc-safepoint |
 | [BUG-5087](bugs/BUG-5087-sync-video-sweep-tests-teardown-temp-locked.md) | ✅ | ✅ | sync-video-sweep-tests-teardown-temp-locked |
 | [BUG-5086](bugs/BUG-5086-dist-test-verdict-coverage-shared-log.md) | ✅ | ✅ | 「dist 请求 7 个测试文件只跑 2 个仍判 PASSED」是并发代理共用日志名读串了；dist_test 判绿改为逐个核对请求的 suite |
 | [BUG-5085](bugs/BUG-5085-srs-mining-generation-blocked-message.md) | ✅ | ✅ | 复习库在换代途中时制卡只报「Fushi review is not available.」，不提示去升级 |
+| [BUG-5084](bugs/BUG-5084-interconnect-client-collection-sections-ignore-host-override.md) | ✅ | ✅ | 互联客户端看 host 合集时分栏不认 host 上的手动分栏 |
 | [BUG-5083](bugs/BUG-5083-game-sentence-mining-all-games.md) | 🚧 | 🚧 | GSM 式全游戏台词制卡：非 Hook 游戏没有连续台词流可制卡 |
 | [BUG-5082](bugs/BUG-5082-anime-manual-metadata-fill.md) | ✅ | ✅ | 手动填元数据：刮削全失败的动画 / 非 EPUB 书无法手填简介、年份、作者等 |
 | [BUG-5081](bugs/BUG-5081-video-fullscreen-blank.md) | ✅ | ✅ | video-fullscreen-blank |
-| [BUG-5080](bugs/BUG-5080-srs-gen4-conflict-badge-minutes.md) | ✅ | ✅ | SRS 牌组列表冲突角标的 `conflict_edits` 在迁移库上跑几分钟 |
 | [BUG-5080](bugs/BUG-5080-music-split-album-partial-album-artist.md) | ✅ | ✅ | 同一张 CD 只有部分曲目写了专辑艺人，被拆成两张专辑 |
+| [BUG-5080](bugs/BUG-5080-srs-gen4-conflict-badge-minutes.md) | ✅ | ✅ | SRS 牌组列表冲突角标的 `conflict_edits` 在迁移库上跑几分钟 |
 | [BUG-5079](bugs/BUG-5079-srs-retained-copy-unreadable-unreported.md) | ✅ | ✅ | SRS 保留副本 srs.db 坏了（不是 SQLite 文件）用户毫无提示 |
 | [BUG-5078](bugs/BUG-5078-live-progress-test-teardown-temp-delete-fails.md) | ✅ | ✅ | live-progress-test-teardown-temp-delete-fails |
 | [BUG-5078](bugs/BUG-5078-cuda-context-held-after-asr.md) | ✅ | ✅ | ASR/TTS 校对用过 CUDA 后进程常驻约 180 MiB 显存与约 850 MiB 私有提交 |
