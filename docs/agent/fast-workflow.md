@@ -567,6 +567,20 @@ printf '%s\n' "$BODY"   # 先回显逐字确认，再喂给看板 / gh / git
 
 统计口径与脚本留在 PR 描述里；要复查就按上面的折算口径对 `~/.claude/projects/*fushi*/**/*.jsonl` 重算。
 
+## 失败的工具调用
+
+每次被拒或报错的调用也要把整段上下文重读一遍，还常常引出两三轮绕路。2026-11-21 复盘一个合并 / 修复会话（主会话加上 9 个 workflow 共 469 个代理，12,602 条 shell 命令，408 次失败调用，白读约 3900 万 token 缓存）：
+
+| 现象 | 实测 | 对策 |
+|---|---|---|
+| 子代理改主 checkout 下 `.worktrees/rev-NNNN` 的文件被拒（「is in the base repo checkout」） | 98 次，失败后再改用 Python 脚本写文件 | worktree 会话另建的 worktree 放仓库目录外 `../fushi-wt/<名>`（[rules-detail.md](rules-detail.md#worktree-初始化)） |
+| `isolation: 'worktree'` 的代理把 git 写进复合命令，被判「too complex」拒跑 | 122 次，连 `git diff --cached --check; echo check=$?` 都会被拒 | 含 `git` 的命令写成单条朴素命令，多步分几次调用（[.claude/agents](../../.claude/agents)） |
+| 租约 hook 把引号里的 `flutter build` / `gradlew`（grep 模式、JSON 说明文字）当成裸跑重活 | 回放 12,602 条命令：旧版拦 13 条，其中 10 条误判 | `tool/claude_hooks/require_heavy_lease.mjs` 改为认引号、跳过 heredoc 正文切分，回放只剩 3 条真裸跑 |
+| 输出太长被落盘后又被整份 Read 回来 | 26 次，86.6 万字符 | 落盘文件用 `grep -n` / `sed -n` 取需要的部分 |
+| 单个子代理连跑 1 小时以上，主会话的 1 小时缓存在等它时过期 | 主会话 2 次整段重写共 60.7 万 token（按 2 倍价），其中一次重写 32.7 万之后 1 分钟就压缩了上下文 | 一个子代理只做一件事，预计超过 45 分钟的拆成几段派 |
+
+另外两点：桌面端 usage report 里的 `Session` 只算主会话自己的调用，这次只占总成本约 5%，算额度要把 `<会话>/subagents/**` 一起算；缓存命中本身健康，扣掉新内容后，本该命中却没命中的只有 251 万 token。
+
 ## 空等浪费禁止清单
 
 - ❌ 前台跑 bootstrap / 全量 test / gradle 并盯着输出——一律后台，期间推进其它步骤。
