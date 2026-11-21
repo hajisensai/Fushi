@@ -1,4 +1,4 @@
-# 注册 / 更新计划任务 FushiSymindexRefresh：每小时跑一次主 checkout 里的 tool/symindex/refresh.ps1
+﻿# 注册 / 更新计划任务 FushiSymindexRefresh：每小时跑一次主 checkout 里的 tool/symindex/refresh.ps1
 # （develop 没动时几秒就退出）。只需在本机跑一次；删掉用 Unregister-ScheduledTask FushiSymindexRefresh。
 #
 #   powershell -ExecutionPolicy Bypass -File tool/symindex/install_task.ps1

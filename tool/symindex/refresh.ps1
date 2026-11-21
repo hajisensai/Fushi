@@ -1,4 +1,4 @@
-# 定时刷新符号索引：把专用 worktree（<主 checkout>/.worktrees/symindex）拨到最新 origin/develop，
+﻿# 定时刷新符号索引：把专用 worktree（<主 checkout>/.worktrees/symindex）拨到最新 origin/develop，
 # develop 没动就什么都不做；动了就解析依赖、经本机重活租约（fushi/tool/heavy.dart）重建索引。
 # 由计划任务每小时调用（tool/symindex/install_task.ps1 注册），也可手动跑。
 #
