@@ -177,6 +177,40 @@ describe('/v1/decisions 读写', () => {
     expect((await api(env, key, 'POST', '/v1/decisions/pr1/verdict', { body: { v: 'do' } })).data.error).toBe('decision_closed');
   });
 
+  it('个人密钥只拿拍板台字段：反馈类事项不带关联反馈的标题 / 正文 / 附件，也不带账户 id（HBK-AUDIT-024）', async () => {
+    const { env, s, key } = await setup();
+    const att = JSON.stringify([{ slot: 's0', kind: 'screenshot', key: 'feedback/secret-shot', bytes: 10 }]);
+    env.DB.raw.prepare(`INSERT INTO feedback (id, ticket_hash, category, title, body, attachments, created_at, updated_at)
+      VALUES ('fbsec1', 'h', 'bug', '反馈私密标题', '反馈私密正文', ?, ?, ?)`).run(att, NOW - 50, NOW - 50);
+    env.DB.raw.exec(addSql([
+      { id: 'fbsec1', kind: 'feedback', title: '按 id 关联', ask: '要不要' },
+      { id: 'fbsrc1', kind: 'feedback', title: '按 source 关联', ask: '要不要', source: 'fbsec1', original: '代理摘录' },
+    ], NOW - 10).sql);
+    env.DB.raw.prepare("UPDATE decisions SET verdict = 'do', verdict_by = ?, verdict_at = ? WHERE id = 'fbsrc1'").run(s.dev.id, NOW - 5);
+    env.DB.raw.prepare("INSERT INTO decision_notes (decision_id, author, account_id, body, created_at) VALUES ('fbsrc1', 'dev', ?, '开发者留言', ?)")
+      .run(s.dev.id, NOW - 4);
+
+    const allowedItem = new Set(['id', 'kind', 'title', 'ask', 'pros', 'cons', 'choices', 'source', 'original', 'rec', 'state',
+      'resolution', 'verdict', 'choice', 'verdict_at', 'verdict_nick', 'claude_at', 'files', 'created_at', 'updated_at', 'stage', 'notes']);
+    const allowedNote = new Set(['id', 'author', 'nick', 'body', 'created_at']);
+    const list = await api(env, key, 'GET', '/v1/decisions');
+    const one = await api(env, key, 'GET', '/v1/decisions/fbsrc1');
+    const byId = await api(env, key, 'GET', '/v1/decisions/fbsec1');
+    for (const r of [list, one, byId]) {
+      expect(r.status).toBe(200);
+      const text = JSON.stringify(r.data);
+      for (const leaked of ['反馈私密标题', '反馈私密正文', 'feedback/secret-shot', s.dev.id]) expect(text).not.toContain(leaked);
+      for (const item of r.data.items || [r.data.item]) {
+        expect(Object.keys(item).filter((k) => !allowedItem.has(k))).toEqual([]);
+        for (const n of item.notes) expect(Object.keys(n).filter((k) => !allowedNote.has(k))).toEqual([]);
+      }
+    }
+    // 拍板台本身的字段照常带：代理摘录、决定、开发者昵称、留言、stage。
+    expect(one.data.item).toMatchObject({ id: 'fbsrc1', source: 'fbsec1', original: '代理摘录', verdict: 'do', verdict_nick: 'dev', stage: 'exec' });
+    expect(one.data.item.notes.map((n) => [n.author, n.nick, n.body])).toEqual([['dev', 'dev', '开发者留言']]);
+    expect(byId.data.item.original).toBeNull();
+  });
+
   it('附件：上传写 R2 并追加（不标开发者上传）、取回、删除；校验格式 / 数量 / 结单', async () => {
     const { env, key } = await setup();
     env.DB.raw.exec(addSql(ITEMS, NOW - 10).sql);

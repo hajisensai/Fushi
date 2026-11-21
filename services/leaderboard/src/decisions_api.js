@@ -123,8 +123,41 @@ export function isDecisionsApiPath(path) {
   return path === '/v1/decisions' || path.startsWith('/v1/decisions/');
 }
 
-function withStage(row) {
-  return { ...row, stage: decisionStage(row) };
+/**
+ * 个人密钥能拿到的事项字段白名单。listDecisions / getDecision 是网页与 wrangler CLI 共用的完整行，
+ * 联表带着关联反馈的标题 / 正文 / 附件（feedback_*）和拍板人账户 id（verdict_by）；密钥的约定是
+ * 碰不到反馈和账户数据，所以这里按白名单逐字段挑，新加的列不在名单里就不出去。
+ * verdict_nick / 留言 nick 是拍板台上本来就展示的开发者署名，claude_at 是 CLI 算 stage 要用的。
+ */
+const API_ITEM_FIELDS = Object.freeze([
+  'id', 'kind', 'title', 'ask', 'pros', 'cons', 'choices', 'source', 'original', 'rec', 'state', 'resolution',
+  'verdict', 'choice', 'verdict_at', 'verdict_nick', 'claude_at', 'files', 'created_at', 'updated_at',
+]);
+const API_NOTE_FIELDS = Object.freeze(['id', 'author', 'nick', 'body', 'created_at']);
+
+/**
+ * @param {Record<string, unknown>} row
+ * @param {readonly string[]} fields
+ * @returns {Record<string, unknown>}
+ */
+function pick(row, fields) {
+  /** @type {Record<string, unknown>} */
+  const out = {};
+  for (const k of fields) out[k] = row[k] ?? null;
+  return out;
+}
+
+/**
+ * 完整行 → 个人密钥的响应形状（白名单字段 + stage + 白名单留言）。
+ * @param {Record<string, any>} row
+ * @returns {Record<string, unknown>}
+ */
+export function apiDecision(row) {
+  return {
+    ...pick(row, API_ITEM_FIELDS),
+    stage: decisionStage(row),
+    notes: (row.notes || []).map((n) => pick(n, API_NOTE_FIELDS)),
+  };
 }
 
 async function readJson(request, max) {
@@ -222,7 +255,7 @@ export async function routeDecisionsApi(request, env, url, now) {
   let m;
 
   if (path === '/v1/decisions') {
-    if (method === 'GET') return json({ items: (await listDecisions(env)).map(withStage) }, 200, noStore);
+    if (method === 'GET') return json({ items: (await listDecisions(env)).map(apiDecision) }, 200, noStore);
     if (method === 'POST') {
       const body = await readJson(request, ADD_BODY_MAX);
       return json(await addDecisions(env, body.items, now), 200, noStore);
@@ -230,7 +263,7 @@ export async function routeDecisionsApi(request, env, url, now) {
     throw new HttpError(405, 'method_not_allowed');
   }
   if ((m = /^\/v1\/decisions\/([A-Za-z0-9_-]{1,40})$/.exec(path)) && method === 'GET') {
-    return json({ item: withStage(await getDecision(env, m[1])) }, 200, noStore);
+    return json({ item: apiDecision(await getDecision(env, m[1])) }, 200, noStore);
   }
   if ((m = /^\/v1\/decisions\/([A-Za-z0-9_-]{1,40})\/notes$/.exec(path)) && method === 'POST') {
     const body = await readJson(request, SMALL_BODY_MAX);
