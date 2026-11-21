@@ -1348,6 +1348,92 @@ void main() {
     expect((await db.getVideoMetadataWorkByBook('loose-movie'))?.title, '主源电影');
   });
 
+  // 无来源范围没有一次完整的来源扫描，库里的视频集合证明不了作品目录是专属的：
+  // 手动导入的一集躺在混着别的（没导入的）视频的下载目录里时，tvshow.nfo /
+  // season.nfo 不能写进去。专属与否按磁盘实况判。
+  group('无来源本机视频的作品级 sidecar 按磁盘实况判专属目录', () {
+    Future<SourceScrapeReport> scrapeSourcelessShow({
+      required bool strayUnimportedVideo,
+    }) async {
+      final Directory seasonDir = Directory(
+        p.join(root.path, 'Show', 'Season 01'),
+      );
+      await seasonDir.create(recursive: true);
+      final File episode1 = File(p.join(seasonDir.path, 'Show S01E01.mkv'));
+      final File episode2 = File(p.join(seasonDir.path, 'Show S01E02.mkv'));
+      await episode1.writeAsBytes(const <int>[0]);
+      await episode2.writeAsBytes(const <int>[0]);
+      if (strayUnimportedVideo) {
+        await File(
+          p.join(root.path, 'Show', 'Unrelated Movie (2020).mkv'),
+        ).writeAsBytes(const <int>[0]);
+      }
+      for (final (String uid, File file) in <(String, File)>[
+        ('e1', episode1),
+        ('e2', episode2),
+      ]) {
+        await db.upsertVideoBook(
+          VideoBooksCompanion(
+            bookUid: Value<String>(uid),
+            title: Value<String>(p.basenameWithoutExtension(file.path)),
+            videoPath: Value<String>(file.path),
+          ),
+        );
+      }
+      final int collectionId = await db.createMediaCollection(
+        'Show',
+        collectionType: 'playlist',
+      );
+      await db.addToCollection(collectionId, MediaKind.video, 'e1');
+      await db.addToCollection(collectionId, MediaKind.video, 'e2');
+      final VideoSourceScrapeCoordinator coordinator =
+          VideoSourceScrapeCoordinator(
+            primaryProvider: VideoMetadataProviderKind.anidb,
+            database: db,
+            config: const VideoSourceScrapeGlobalConfig(hashEnabled: false),
+            registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+              _FakeAniDbProvider(),
+            ]),
+          );
+      return coordinator.scrapeSource(
+        sourcelessLocalVideoScrapeScope,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+      );
+    }
+
+    test('目录里混着没导入的视频：不写 tvshow.nfo / season.nfo，只写逐集', () async {
+      final SourceScrapeReport report = await scrapeSourcelessShow(
+        strayUnimportedVideo: true,
+      );
+
+      expect(report.succeededWorks, 1, reason: '${report.errors}');
+      expect(
+        File(p.join(root.path, 'Show', 'tvshow.nfo')).existsSync(),
+        isFalse,
+      );
+      expect(
+        File(
+          p.join(root.path, 'Show', 'Season 01', 'Show S01E01.nfo'),
+        ).existsSync(),
+        isTrue,
+      );
+    });
+
+    test('专属作品目录：照常写 tvshow.nfo', () async {
+      final SourceScrapeReport report = await scrapeSourcelessShow(
+        strayUnimportedVideo: false,
+      );
+
+      expect(report.succeededWorks, 1, reason: '${report.errors}');
+      expect(
+        File(p.join(root.path, 'Show', 'tvshow.nfo')).existsSync(),
+        isTrue,
+        reason: '${report.warnings}',
+      );
+    });
+  });
+
   test('「仅此一次」导入的临时来源行不立项（行删掉后写记账会撞 FK 787）', () async {
     final File video = File(p.join(root.path, 'Movie (2024).mkv'));
     await video.writeAsBytes(const <int>[0]);

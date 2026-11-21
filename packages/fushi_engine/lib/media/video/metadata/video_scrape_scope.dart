@@ -1,5 +1,10 @@
+import 'dart:io';
+
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/media_extensions.dart' show isVideoMediaPath;
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/metadata/video_sidecar_target_resolver.dart'
+    show VideoSidecarTargetResolver;
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show isLocalVideoFilePath;
 import 'package:path/path.dart' as p;
@@ -91,8 +96,8 @@ Future<List<SourceLibraryRow>> localVideoScrapeScopes(
 ///
 /// 来源范围就是来源的扫描根。无来源范围没有扫描根，取首个成员所在盘的根（与把整
 /// 块盘登记成来源同一形态）：写哪里由 sidecar 解析器按作品目录决定，「作品目录里
-/// 有没有混着别的作品」靠调用方传入的完整已知视频集合判定
-/// （[videoScrapeKnownPathsFor]），所以边界放宽不会让 tvshow.nfo 写进混装目录。
+/// 有没有混着别的作品」靠写 sidecar 前补齐的磁盘实况判定
+/// （[videoScrapeKnownPathsForWork]），所以边界放宽不会让 tvshow.nfo 写进混装目录。
 String videoScrapeRootFor(
   SourceLibraryRow scope,
   Iterable<String> memberPaths,
@@ -117,3 +122,57 @@ List<String> videoScrapeKnownPathsFor(
         : book.sourceId == scope.id)
       book.videoPath,
 ];
+
+/// 写 [memberPaths] 这部作品的 sidecar 时交给解析器的「已知视频集合」。
+///
+/// 解析器判「专属作品目录」（tvshow.nfo / season.nfo、电影的通用 `poster.jpg` 图名）
+/// 的前提是已知集合覆盖候选目录里的全部视频。来源范围成立：[knownPaths] 就是来源
+/// 扫描的结果，原样返回。无来源范围不成立：没有任何一次扫描覆盖过成员所在目录，
+/// 手动导入的一集可能躺在混着别的（没导入的）视频的下载目录里，只拿库里的行会把
+/// 混装目录误判成专属目录。所以无来源范围在 [knownPaths] 之外补上候选作品目录
+/// （[VideoSidecarTargetResolver.workRootCandidate]）下磁盘上实际存在的视频文件。
+///
+/// - 候选目录是盘根时不列：解析器本就不把边界根本身当专属目录；
+/// - 不进 `BDMV` / `VIDEO_TS`：原盘内部的流文件由库里的盘成员路径代表，与来源扫描
+///   把整棵树归盘管同口径；
+/// - 列不动的目录（无权限等）当「里面有未知视频」：在集合里记一条该目录下的占位
+///   路径（[_unlistedDirectoryMarker]），它不是成员，解析器因此判不出专属目录、电影
+///   也按混装目录用防碰撞图名。证明不了就不写作品级文件，而不是假设它是空的。
+/// 列不动的目录在已知集合里的占位文件名（不会与真实视频同名：带不可作文件名的 `*`）。
+const String _unlistedDirectoryMarker = '*unlisted*';
+
+Future<List<String>> videoScrapeKnownPathsForWork(
+  SourceLibraryRow scope,
+  List<String> knownPaths,
+  Iterable<String> memberPaths,
+) async {
+  if (!isSourcelessVideoScrapeScope(scope)) return knownPaths;
+  final List<String> members = memberPaths.toList(growable: false);
+  if (members.isEmpty) return knownPaths;
+  final String candidate = p.normalize(
+    p.absolute(VideoSidecarTargetResolver.workRootCandidate(members)),
+  );
+  if (p.equals(candidate, p.rootPrefix(candidate))) return knownPaths;
+  final List<String> onDisk = <String>[];
+  Future<void> walk(Directory directory) async {
+    final List<FileSystemEntity> entries;
+    try {
+      entries = await directory.list(followLinks: false).toList();
+    } on FileSystemException {
+      onDisk.add(p.join(directory.path, _unlistedDirectoryMarker));
+      return;
+    }
+    for (final FileSystemEntity entity in entries) {
+      if (entity is Directory) {
+        final String name = p.basename(entity.path).toUpperCase();
+        if (name == 'BDMV' || name == 'VIDEO_TS') continue;
+        await walk(entity);
+      } else if (entity is File && isVideoMediaPath(entity.path)) {
+        onDisk.add(entity.path);
+      }
+    }
+  }
+
+  await walk(Directory(candidate));
+  return <String>[...knownPaths, ...onDisk];
+}

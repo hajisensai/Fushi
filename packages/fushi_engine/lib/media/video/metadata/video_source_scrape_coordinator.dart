@@ -4807,15 +4807,22 @@ class VideoSourceScrapeCoordinator
     }
     final List<SourceScrapeIssue> warnings = <SourceScrapeIssue>[];
     final List<SourceScrapeIssue> errors = <SourceScrapeIssue>[];
-    final String sidecarRoot = videoScrapeRootFor(source, <String>[
+    final List<String> memberPaths = <String>[
       for (final VideoBookRow member in localWork.members) member.videoPath,
-    ]);
+    ];
+    final String sidecarRoot = videoScrapeRootFor(source, memberPaths);
+    // 无来源范围补齐成员所在作品目录的磁盘实况，否则专属目录判定缺前提。
+    final List<String> knownWorkPaths = await videoScrapeKnownPathsForWork(
+      source,
+      knownSourcePaths,
+      memberPaths,
+    );
     final VideoSidecarLayout layout;
     if (metadata.kind == VideoMetadataMediaKind.movie) {
       layout = VideoSidecarTargetResolver.resolveMovie(
         sourceRoot: sidecarRoot,
         videoPath: localWork.members.single.videoPath,
-        knownSourceVideoPaths: knownSourcePaths,
+        knownSourceVideoPaths: knownWorkPaths,
       );
     } else {
       final List<VideoEpisodePath> members = <VideoEpisodePath>[];
@@ -4842,7 +4849,7 @@ class VideoSourceScrapeCoordinator
       layout = VideoSidecarTargetResolver.resolveTv(
         sourceRoot: sidecarRoot,
         members: members,
-        knownSourceVideoPaths: knownSourcePaths,
+        knownSourceVideoPaths: knownWorkPaths,
       );
     }
     warnings.addAll(<SourceScrapeIssue>[
