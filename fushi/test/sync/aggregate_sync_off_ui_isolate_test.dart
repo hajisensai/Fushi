@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:drift/drift.dart' show TableUpdateQuery;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
@@ -296,6 +297,26 @@ void main() {
       expect(lockEntries, 0);
       expect(await db.getMiningStatisticsBySource('book'), isEmpty);
     });
+  });
+
+  // 审查 PR #4062：写回挪到后台所有者的连接上之后，调用方库上的 stream 查询（首页
+  // `watchDashboardDataChanges`、小组件、伴屏、收藏句监听）一度收不到这些写入的表
+  // 更新——drift 服务端只把更新广播到后台连接自己的存储，调用方库另有一个存储。
+  test('后台所有者写回的表更新会通知调用方库上的 stream 查询', () async {
+    final FushiDatabase db = await _freshDb('agg_owner_notify_');
+    final Uint8List hostBody = encodeAggregateWireJson(
+      _mining(<String, int>{'2026-10-21': 2}).toJson(),
+    );
+    // 在同步开始前就订阅：之后第一条 miningStatistics 更新必须到达。
+    final Future<void> notified = db
+        .tableUpdates(TableUpdateQuery.onTable(db.miningStatistics))
+        .first;
+    await AggregateSyncService(db).syncOverClient(
+      fetchRemote: () async => hostBody,
+      pushMerged: (Uint8List body) async {},
+    );
+    expect(await _miningCount(db, '2026-10-21'), 2, reason: '确实在后台写了库');
+    await notified;
   });
 
   test('对比弹窗：只回每本书的统计条数，解码在后台', () async {
