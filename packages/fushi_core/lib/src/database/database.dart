@@ -423,6 +423,12 @@ QueryExecutor _createBackgroundExecutor(File dbFile) =>
 /// 连接撞上侧车错误」。生产代码从不设置它。
 void Function(String dbPath)? debugAfterOpenProbeForTesting;
 
+/// 仅供测试：替换 Layer 2 快照的文件复制（BUG-5076）。测试里无法真把卷写满，用它让
+/// 快照复制像 ENOSPC 那样写了半截后失败，验证「快照失败 → 清半截快照、不删侧车」。
+/// 生产代码从不设置它。
+Future<void> Function(File src, String destPath)?
+debugSidecarSnapshotCopyForTesting;
+
 /// 开库错误分流（Layer 0 与 drift 后台连接共用一套判据）：
 ///  - 主库自身损坏（CORRUPT）→ 终态，不进恢复阶梯、不碰任何文件（见
 ///    [_isMainDbCorruptError]）；
@@ -657,7 +663,13 @@ Future<void> _rebuildSidecar(File dbFile) async {
     if (!await src.exists()) return;
     final File dest = File('$path.corrupt-bak-$stamp$suffix');
     written.add(dest);
-    await src.copy(dest.path);
+    final Future<void> Function(File src, String destPath)? copyOverride =
+        debugSidecarSnapshotCopyForTesting;
+    if (copyOverride != null) {
+      await copyOverride(src, dest.path);
+    } else {
+      await src.copy(dest.path);
+    }
   }
 
   try {

@@ -31,6 +31,7 @@ void main() {
 
   tearDown(() {
     debugDbVolumeOutOfSpaceForTesting = null;
+    debugSidecarSnapshotCopyForTesting = null;
     if (tempDir.existsSync()) {
       try {
         tempDir.deleteSync(recursive: true);
@@ -144,6 +145,46 @@ void main() {
     expect(File(dbPath).readAsBytesSync(), before);
     expect(snapshots(), isEmpty);
   });
+
+  test(
+    'Layer 2 快照复制因 ENOSPC 失败 → 终态 insufficientSpace，清掉半截快照、不删 -wal',
+    () async {
+      await seedHealthyDb();
+      // 卷探测报「有空间」（开库时还剩一点），侧车类错误照常进恢复阶梯；Layer 1 对占住
+      // `-wal` 的目录无能为力，落到 Layer 2——快照主库时空间耗尽：写了半截后 ENOSPC。
+      Directory('$dbPath-wal').createSync();
+      final Uint8List before = File(dbPath).readAsBytesSync();
+      debugDbVolumeOutOfSpaceForTesting = (String _) => false;
+      final List<String> attempted = <String>[];
+      debugSidecarSnapshotCopyForTesting = (File src, String destPath) async {
+        attempted.add(destPath);
+        File(destPath).writeAsBytesSync(Uint8List(16));
+        throw FileSystemException(
+          'Cannot copy file',
+          destPath,
+          OSError('No space left on device', Platform.isWindows ? 112 : 28),
+        );
+      };
+
+      final Object? caught = await openAndCapture();
+      expect(attempted, isNotEmpty, reason: '必须真的走到 Layer 2 快照');
+      expect(
+        caught,
+        isA<FushiDatabaseUnrecoverableException>().having(
+          (FushiDatabaseUnrecoverableException e) => e.kind,
+          'kind',
+          FushiDatabaseFailureKind.insufficientSpace,
+        ),
+      );
+      expect(
+        Directory('$dbPath-wal').existsSync(),
+        isTrue,
+        reason: '快照失败时删侧车 = 无备份删掉已提交事务的唯一副本',
+      );
+      expect(File(dbPath).readAsBytesSync(), before);
+      expect(snapshots(), isEmpty, reason: '半截快照必须清掉，不占用户本就不够的空间');
+    },
+  );
 
   test('SQLITE_FULL(13) 与 ENOSPC 文件系统异常本身判 insufficientSpace', () async {
     await seedHealthyDb();
