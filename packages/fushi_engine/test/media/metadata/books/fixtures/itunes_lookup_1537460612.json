@@ -1,0 +1,38 @@
+{
+ "resultCount": 1,
+ "results": [
+  {
+   "wrapperType": "track",
+   "kind": "song",
+   "artistId": 530814268,
+   "collectionId": 1537460610,
+   "trackId": 1537460612,
+   "artistName": "米津玄師",
+   "collectionName": "Lemon - Single",
+   "trackName": "Lemon",
+   "collectionCensoredName": "Lemon - Single",
+   "trackCensoredName": "Lemon",
+   "artistViewUrl": "https://music.apple.com/jp/artist/%E7%B1%B3%E6%B4%A5%E7%8E%84%E5%B8%AB/530814268?uo=4",
+   "collectionViewUrl": "https://music.apple.com/jp/album/lemon/1537460610?i=1537460612&uo=4",
+   "trackViewUrl": "https://music.apple.com/jp/album/lemon/1537460610?i=1537460612&uo=4",
+   "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/27/17/9b/27179b15-2153-25e8-d035-35fdb4d059d8/mzaf_757024838235216109.plus.aac.p.m4a",
+   "artworkUrl30": "https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/86/b0/9d/86b09d63-367a-563a-1e24-d5d62c220ac8/jacket_SRCL09749B00Z_550.jpg/30x30bb.jpg",
+   "artworkUrl60": "https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/86/b0/9d/86b09d63-367a-563a-1e24-d5d62c220ac8/jacket_SRCL09749B00Z_550.jpg/60x60bb.jpg",
+   "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/86/b0/9d/86b09d63-367a-563a-1e24-d5d62c220ac8/jacket_SRCL09749B00Z_550.jpg/100x100bb.jpg",
+   "collectionPrice": 764.0,
+   "trackPrice": 255.0,
+   "releaseDate": "2018-02-12T12:00:00Z",
+   "collectionExplicitness": "notExplicit",
+   "trackExplicitness": "notExplicit",
+   "discCount": 1,
+   "discNumber": 1,
+   "trackCount": 3,
+   "trackNumber": 1,
+   "trackTimeMillis": 256116,
+   "country": "JPN",
+   "currency": "JPY",
+   "primaryGenreName": "J-Pop",
+   "isStreamable": true
+  }
+ ]
+}

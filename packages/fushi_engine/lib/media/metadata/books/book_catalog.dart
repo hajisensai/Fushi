@@ -1,4 +1,4 @@
-/// 书目类元数据源（AniList 轻小说 / openBD / NDL Search / 楽天ブックス）的共用层：
+/// 书目类元数据源（AniList 轻小说 / openBD / NDL Search / 楽天ブックス / iTunes 歌曲）的共用层：
 /// 中间表示 [BookCatalogRecord]、领域异常 [BookCatalogException]、ISBN 工具与
 /// 带按 host 节流的传输 [BookCatalogHttp]。
 ///
@@ -46,6 +46,8 @@ class BookCatalogRecord {
     this.volume,
     this.isbn,
     this.year,
+    this.date,
+    this.tags = const <String>[],
     this.summary,
     this.coverUrl,
     this.coverHeaders,
@@ -54,7 +56,7 @@ class BookCatalogRecord {
     this.isAdult = false,
   });
 
-  /// 源内 id：AniList media id / ISBN-13（openBD、NDL、楽天）。
+  /// 源内 id：AniList media id / ISBN-13（openBD、NDL、楽天）/ iTunes trackId 或 collectionId。
   final String id;
   final String title;
 
@@ -74,6 +76,12 @@ class BookCatalogRecord {
   /// 规范化 ISBN-13。
   final String? isbn;
   final int? year;
+
+  /// 发行日期原文（`YYYY-MM-DD`，可只到年或年月）；源没给为 null（落库退回 [year]）。
+  final String? date;
+
+  /// 类型 / 标签名（iTunes `primaryGenreName`）；源没给为空表。
+  final List<String> tags;
   final String? summary;
 
   /// 封面图 URL；null = 源没有封面。
@@ -117,11 +125,13 @@ String? findIsbnIn(String text) {
 /// - NDL Search：按同时连接数限流（实测并发撞 429），1 s 一次且串行。
 /// - 楽天：官方限额 1 req/s / applicationId。
 /// - openBD：无公开限额，节制一点。
+/// - iTunes Search API：Apple 写的是约 20 次 / 分钟，取 3 s 一次。
 const Map<String, Duration> kBookCatalogMinIntervals = <String, Duration>{
   'graphql.anilist.co': Duration(seconds: 2),
   'ndlsearch.ndl.go.jp': Duration(seconds: 1),
   'openapi.rakuten.co.jp': Duration(milliseconds: 1100),
   'api.openbd.jp': Duration(milliseconds: 500),
+  'itunes.apple.com': Duration(seconds: 3),
 };
 
 /// 单次请求的整体超时。
