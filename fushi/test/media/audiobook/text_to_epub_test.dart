@@ -34,14 +34,18 @@ String _textWithBreaks(XmlNode node) {
   return node.children.map(_textWithBreaks).join();
 }
 
-/// Reads one original paragraph split across bounded XHTML chapters. Artificial
-/// paragraph boundaries add no source text; only original <br/> nodes add LF.
-String _readBoundedChapterText(EpubZipReader reader) {
+/// Reads every bounded XHTML chapter in order and returns the text of each
+/// paragraph-level block ([blockName]; `<br/>` read as LF). Checks the size
+/// contract on the raw body HTML and that every chapter is well-formed XML.
+List<String> _readBoundedBlocks(
+  EpubZipReader reader, {
+  String blockName = 'p',
+}) {
   final int chapterCount = reader.names
       .where((String name) => name.startsWith('OEBPS/chapter-'))
       .length;
   expect(chapterCount, greaterThan(1));
-  final StringBuffer text = StringBuffer();
+  final List<String> blocks = <String>[];
   for (int i = 1; i <= chapterCount; i++) {
     final String name = 'OEBPS/chapter-$i.xhtml';
     final String chapter = reader[name]!;
@@ -61,12 +65,45 @@ String _readBoundedChapterText(EpubZipReader reader) {
     final XmlElement body = document.descendants
         .whereType<XmlElement>()
         .singleWhere((XmlElement element) => element.name.local == 'body');
-    for (final XmlElement paragraph in body.childElements) {
-      expect(paragraph.name.local, 'p');
-      text.write(_textWithBreaks(paragraph));
+    for (final XmlElement block in body.descendants.whereType<XmlElement>()) {
+      if (block.name.local != blockName) continue;
+      final String text = _textWithBreaks(block);
+      expect(
+        text.startsWith('\n'),
+        isFalse,
+        reason: '$name: a split block must not start with <br/>',
+      );
+      blocks.add(text);
     }
   }
-  return text.toString();
+  return blocks;
+}
+
+/// Asserts [blocks] reassemble [content] exactly. A split that lands on a
+/// source line break absorbs that one LF into the block boundary; with
+/// [cutsOnlyAtNewlines] every split must land on one (no mid-line splits).
+void _expectReassembles(
+  List<String> blocks,
+  String content, {
+  bool cutsOnlyAtNewlines = false,
+}) {
+  int pos = 0;
+  for (int i = 0; i < blocks.length; i++) {
+    final String block = blocks[i];
+    expect(
+      content.startsWith(block, pos),
+      isTrue,
+      reason: 'block $i must continue the source text at $pos',
+    );
+    pos += block.length;
+    if (i == blocks.length - 1) break;
+    if (pos < content.length && content[pos] == '\n') {
+      pos++;
+    } else if (cutsOnlyAtNewlines) {
+      fail('block $i was split mid-line at $pos');
+    }
+  }
+  expect(pos, content.length, reason: 'no source text may be lost');
 }
 
 // ── tests ────────────────────────────────────────────────────────────────────
@@ -219,7 +256,14 @@ void main() {
 
     final EpubZipReader reader = await _convertText(tmpDir, content);
 
-    expect(_readBoundedChapterText(reader), content);
+    final List<String> blocks = _readBoundedBlocks(reader);
+    // Every split lands on an original line break: no sentence is cut.
+    _expectReassembles(blocks, content, cutsOnlyAtNewlines: true);
+    for (final String block in blocks) {
+      for (final String l in block.split('\n')) {
+        expect(l == line || l == '${line}z', isTrue, reason: l);
+      }
+    }
   });
 
   test('one long paragraph without newlines has bounded chapters', () async {
@@ -227,7 +271,7 @@ void main() {
 
     final EpubZipReader reader = await _convertText(tmpDir, content);
 
-    expect(_readBoundedChapterText(reader), content);
+    _expectReassembles(_readBoundedBlocks(reader), content);
   });
 
   test(
@@ -249,14 +293,77 @@ void main() {
           name: 'boundary-$offset.txt',
         );
 
-        expect(
-          _readBoundedChapterText(reader),
-          content,
-          reason: 'Boundary offset $offset must preserve all source characters',
-        );
+        _expectReassembles(_readBoundedBlocks(reader), content);
       }
     },
   );
+
+  test(
+    'markdown paragraph with single newlines splits only at lines',
+    () async {
+      final String line = '${'本' * 50}。';
+      final String content =
+          '# 見出し\n\n${List<String>.filled(1500, line).join('\n')}';
+
+      final EpubZipReader reader = await _convertText(
+        tmpDir,
+        content,
+        name: 'long.md',
+      );
+
+      expect(reader['OEBPS/chapter-1.xhtml'], contains('<h1>見出し</h1>'));
+      _expectReassembles(
+        _readBoundedBlocks(reader),
+        content.substring('# 見出し\n\n'.length),
+        cutsOnlyAtNewlines: true,
+      );
+    },
+  );
+
+  test('html with one oversized block splits inside the block', () async {
+    final String line = '${'字' * 50}。';
+    final List<String> lines = List<String>.filled(1500, line);
+    final String content =
+        '<html><head><title>t</title></head><body>'
+        '<div class="c"><p>${lines.join('<br>')}</p></div>'
+        '</body></html>';
+
+    final EpubZipReader reader = await _convertText(
+      tmpDir,
+      content,
+      name: 'long.html',
+    );
+
+    // Malformed HTML (<br> unclosed) is re-serialised as well-formed XHTML and
+    // the split block keeps its full ancestor chain in every chapter.
+    final int chapterCount = reader.names
+        .where((String name) => name.startsWith('OEBPS/chapter-'))
+        .length;
+    for (int i = 1; i <= chapterCount; i++) {
+      expect(
+        reader['OEBPS/chapter-$i.xhtml'],
+        contains('<div class="c"><p>'),
+        reason: 'chapter $i',
+      );
+    }
+    _expectReassembles(
+      _readBoundedBlocks(reader),
+      lines.join('\n'),
+      cutsOnlyAtNewlines: true,
+    );
+  });
+
+  test('well-formed xhtml keeps self-closed non-void elements empty', () async {
+    final EpubZipReader reader = await _convertText(
+      tmpDir,
+      '<html xmlns="http://www.w3.org/1999/xhtml"><body>'
+      '<p><a id="p1"/>本文&amp;続き</p></body></html>',
+      name: 'input.xhtml',
+    );
+    final String chapter = reader['OEBPS/chapter-1.xhtml']!;
+    expect(chapter, contains('<p><a id="p1"></a>本文&amp;続き</p>'));
+    XmlDocument.parse(chapter);
+  });
 
   // c40 novel-14：切章 + XHTML 拼装 + ZIP 压缩与输入大小成正比，以前整段在调用方
   // （UI）isolate 上同步跑，几 MB 的 TXT 导入时界面卡住。自校准：先量同样的
