@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4411 条。点号进各自文件。
+> 共 4413 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5104](bugs/BUG-5104-srs-relay-reclaim-decodes-all-versions.md) | 🚧 | 🚧 | 中继回收每收新头解码整位作者的签名版本（HBK-AUDIT-052，未复现） |
+| [BUG-5103](bugs/BUG-5103-srs-study-walks-todays-answers.md) | ✅ | ✅ | 常驻出卡会话每次排队复制并整表扫描今天的作答（HBK-AUDIT-010） |
 | [BUG-5088](bugs/BUG-5088-readintosync-blocks-gc-safepoint.md) | ✅ | ✅ | readintosync-blocks-gc-safepoint |
 | [BUG-5087](bugs/BUG-5087-sync-video-sweep-tests-teardown-temp-locked.md) | 🚧 | 🚧 | sync-video-sweep-tests-teardown-temp-locked |
 | [BUG-5086](bugs/BUG-5086-dist-test-verdict-coverage-shared-log.md) | ✅ | ✅ | 「dist 请求 7 个测试文件只跑 2 个仍判 PASSED」是并发代理共用日志名读串了；dist_test 判绿改为逐个核对请求的 suite |
