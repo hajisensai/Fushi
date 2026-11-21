@@ -1,12 +1,50 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-21T09:36:41Z",
+ "generatedAt": "2026-11-21T11:03:39Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "a11db40c13f7d70dd61c7f0928db22e396f9a7cd",
-  "seq": 30481
+  "sha": "7e4a45ce089f60c62bcc73ba37fcd78d40c711b9",
+  "seq": 30562
  },
  "builds": [
+  {
+   "seq": 30481,
+   "version": "3.4.0",
+   "sha": "a11db40c13f7d70dd61c7f0928db22e396f9a7cd",
+   "unknown": false,
+   "publishedAt": "2026-11-21T11:03:27Z",
+   "testflight": false,
+   "baseSeq": 30478,
+   "prs": [],
+   "direct": [
+    {
+     "sha": "a11db40c13f7d70dd61c7f0928db22e396f9a7cd",
+     "subject": "Merge remote-tracking branch 'origin/develop' into claude/integration-20261121"
+    },
+    {
+     "sha": "1104f3f7f3b9617226be55f26d1922dd6dc174cc",
+     "subject": "fix(audiobook): TextToEpub 的 HTML5 回退改走 EpubBook.parseChapterHtml（#3738 合入后 epub_chapter_parse_entry 守卫红）"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44886118190"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44886118151"
+    },
+    "ios": {
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44886118151"
+    }
+   }
+  },
   {
    "seq": 30478,
    "version": "3.4.0",
@@ -420,7 +458,8 @@
      "state": "ok"
     },
     "windows": {
-     "state": "ok"
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44844555086"
     },
     "macos": {
      "state": "failed",
@@ -434,36 +473,48 @@
   }
  ],
  "pending": {
-  "headSha": "a11db40c13f7d70dd61c7f0928db22e396f9a7cd",
-  "headSeq": 30481,
-  "prs": [],
+  "headSha": "7e4a45ce089f60c62bcc73ba37fcd78d40c711b9",
+  "headSeq": 30562,
+  "prs": [
+   4002,
+   3984,
+   4000,
+   3995,
+   3994,
+   3992,
+   3991,
+   3990,
+   3775,
+   4003,
+   3763,
+   3768,
+   3760,
+   3755,
+   3983
+  ],
   "direct": [
    {
-    "sha": "a11db40c13f7d70dd61c7f0928db22e396f9a7cd",
-    "subject": "Merge remote-tracking branch 'origin/develop' into claude/integration-20261121"
-   },
-   {
-    "sha": "1104f3f7f3b9617226be55f26d1922dd6dc174cc",
-    "subject": "fix(audiobook): TextToEpub 的 HTML5 回退改走 EpubBook.parseChapterHtml（#3738 合入后 epub_chapter_parse_entry 守卫红）"
+    "sha": "03e68eab6470fce13f18ae238ac6a901db8bf8e3",
+    "subject": "docs(bugs): 合并 #3775/#3990–#4000 后重建 BUGS 索引"
    }
   ],
   "truncated": false,
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44886118190"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44897183865"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44886118151"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44897183776"
    },
    "macos": {
-    "state": "failed",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44886118151"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44897183776"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44886118151"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44897183776"
    }
   }
  },
@@ -561,6 +612,17 @@
     "merge-approved"
    ]
   },
+  "3755": {
+   "number": 3755,
+   "title": "feat(tts): Unsloth Studio voice engine / Unsloth Studio 语音引擎",
+   "author": "samutw",
+   "mergedAt": "2026-11-21T09:39:47Z",
+   "additions": 1209,
+   "deletions": 3,
+   "labels": [
+    "merge-approved"
+   ]
+  },
   "3756": {
    "number": 3756,
    "title": "fix(library): no second layout prompt after \"Maybe later\" (BUG-4906)",
@@ -581,6 +643,17 @@
    "deletions": 0,
    "labels": []
   },
+  "3760": {
+   "number": 3760,
+   "title": "fix(font-library): Chinese font samples — Simplified/Traditional switch, previews follow the sample language",
+   "author": "samutw",
+   "mergedAt": "2026-11-21T09:39:46Z",
+   "additions": 521,
+   "deletions": 36,
+   "labels": [
+    "merge-approved"
+   ]
+  },
   "3761": {
    "number": 3761,
    "title": "fix(manga-audio): 有声书片段与合成句混排不脱节——统一响度、裁静音淡入淡出、克隆旁白音色",
@@ -599,6 +672,17 @@
    "deletions": 13,
    "labels": []
   },
+  "3763": {
+   "number": 3763,
+   "title": "fix(subtitle): isolate multi-season collections by season in batch subtitle fetch",
+   "author": "zymy8848",
+   "mergedAt": "2026-11-21T09:39:47Z",
+   "additions": 1327,
+   "deletions": 88,
+   "labels": [
+    "merge-approved"
+   ]
+  },
   "3767": {
    "number": 3767,
    "title": "feat(work-network): 关系网接入刮削的系列关系（续作 / 前传 / 外传 / 剧场版），未入库作品也画出来，任何时候都能手动加",
@@ -607,6 +691,17 @@
    "additions": 4965,
    "deletions": 334,
    "labels": []
+  },
+  "3768": {
+   "number": 3768,
+   "title": "fix(manga-mining): panel crop gates on page shape, not reading mode",
+   "author": "samutw",
+   "mergedAt": "2026-11-21T09:39:47Z",
+   "additions": 398,
+   "deletions": 14,
+   "labels": [
+    "merge-approved"
+   ]
   },
   "3769": {
    "number": 3769,
@@ -634,6 +729,17 @@
    "additions": 1286,
    "deletions": 10,
    "labels": []
+  },
+  "3775": {
+   "number": 3775,
+   "title": "feat(theme): explain and release accent override in the theme picker",
+   "author": "samutw",
+   "mergedAt": "2026-11-21T10:46:09Z",
+   "additions": 795,
+   "deletions": 183,
+   "labels": [
+    "merge-approved"
+   ]
   },
   "3776": {
    "number": 3776,
@@ -2419,6 +2525,26 @@
    "deletions": 1,
    "labels": []
   },
+  "3983": {
+   "number": 3983,
+   "title": "feat(series-art): 艺术字与标题文字改用固定标题槽",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T09:39:47Z",
+   "additions": 301,
+   "deletions": 201,
+   "labels": []
+  },
+  "3984": {
+   "number": 3984,
+   "title": "fix(srs): Android 下 gen4 换代锁改用 libc::flock，修复 try_lock() not supported",
+   "author": "zymy8848",
+   "mergedAt": "2026-11-21T10:55:32Z",
+   "additions": 40,
+   "deletions": 6,
+   "labels": [
+    "merge-approved"
+   ]
+  },
   "3985": {
    "number": 3985,
    "title": "fix(srs-gen4): 嵌套并入的库迁移核对失败（BUG-5056）",
@@ -2462,6 +2588,78 @@
    "mergedAt": "2026-11-21T08:28:35Z",
    "additions": 371,
    "deletions": 18,
+   "labels": []
+  },
+  "3990": {
+   "number": 3990,
+   "title": "fix(ios): flutter_logs 磁盘写满时追加日志不再 SIGABRT（BUG-5067）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T10:46:09Z",
+   "additions": 372,
+   "deletions": 1,
+   "labels": []
+  },
+  "3991": {
+   "number": 3991,
+   "title": "fix(interconnect): 已配对 host 换网段后按 hostId 经 mDNS 重新定位（BUG-5068）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T10:46:09Z",
+   "additions": 876,
+   "deletions": 11,
+   "labels": []
+  },
+  "3992": {
+   "number": 3992,
+   "title": "fix(stats): isoWeekKey 夏令时少一周（BUG-5070，基于 #3980）+ 切 Profile 后统计日界不更新（BUG-5073）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T10:46:09Z",
+   "additions": 154,
+   "deletions": 3,
+   "labels": []
+  },
+  "3994": {
+   "number": 3994,
+   "title": "fix(srs-gen4): Android 换代锁改用 libc::flock（BUG-5065，基于 #3984）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T10:46:09Z",
+   "additions": 107,
+   "deletions": 6,
+   "labels": []
+  },
+  "3995": {
+   "number": 3995,
+   "title": "fix(tags): 删掉标签 chip 左侧的拖动柄，chip 按指针类型起拖（BUG-5066）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T10:46:09Z",
+   "additions": 494,
+   "deletions": 340,
+   "labels": []
+  },
+  "4000": {
+   "number": 4000,
+   "title": "fix(srs): 复习库换代途中制卡提示去升级，不再报「复习不可用」（BUG-5069）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T10:46:09Z",
+   "additions": 800,
+   "deletions": 90,
+   "labels": []
+  },
+  "4002": {
+   "number": 4002,
+   "title": "fix(srs-gen4): 背卡卡顿与冲突角标几分钟的根因修复，补齐接线漏做的常驻会话 / 开库参数 / 对账项",
+   "author": "W1ght",
+   "mergedAt": "2026-11-21T11:02:37Z",
+   "additions": 3781,
+   "deletions": 384,
+   "labels": []
+  },
+  "4003": {
+   "number": 4003,
+   "title": "docs(bugs): 登记合并审查遗留 BUG-5075 / 5076 / 5077",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T09:41:33Z",
+   "additions": 22,
+   "deletions": 1,
    "labels": []
   }
  }
