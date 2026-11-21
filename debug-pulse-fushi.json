@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-21T11:27:53Z",
+ "generatedAt": "2026-11-21T11:51:46Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "7e4a45ce089f60c62bcc73ba37fcd78d40c711b9",
-  "seq": 30562
+  "sha": "c8a39f3df1fbaf8c178b21239de005f2ba82f094",
+  "seq": 30647
  },
  "builds": [
   {
@@ -473,9 +473,29 @@
   }
  ],
  "pending": {
-  "headSha": "7e4a45ce089f60c62bcc73ba37fcd78d40c711b9",
-  "headSeq": 30562,
+  "headSha": "c8a39f3df1fbaf8c178b21239de005f2ba82f094",
+  "headSeq": 30647,
   "prs": [
+   4021,
+   4020,
+   4019,
+   4018,
+   4013,
+   4017,
+   4016,
+   4015,
+   4014,
+   4012,
+   4011,
+   4010,
+   4009,
+   4008,
+   4007,
+   4006,
+   4005,
+   4004,
+   4001,
+   4026,
    4002,
    3984,
    4000,
@@ -494,6 +514,18 @@
   ],
   "direct": [
    {
+    "sha": "c8a39f3df1fbaf8c178b21239de005f2ba82f094",
+    "subject": "Merge remote-tracking branch 'origin/develop' into integrate-4"
+   },
+   {
+    "sha": "4e15eaadd412986420ca6bea4a39f859f30fa524",
+    "subject": "docs(bugs): 合并 #4001–#4026 后重建 BUGS 索引"
+   },
+   {
+    "sha": "b6c4ad00f13827d4694de454becb48daafbf04ad",
+    "subject": "test(srs): 更改笔记类型用例等编辑页重读落定再断言（机器忙时抢跑）"
+   },
+   {
     "sha": "03e68eab6470fce13f18ae238ac6a901db8bf8e3",
     "subject": "docs(bugs): 合并 #3775/#3990–#4000 后重建 BUGS 索引"
    }
@@ -502,19 +534,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44897183865"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44900714732"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44897183776"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44900714712"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44897183776"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44900714712"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44897183776"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44900714712"
    }
   }
  },
@@ -2644,6 +2676,15 @@
    "deletions": 90,
    "labels": []
   },
+  "4001": {
+   "number": 4001,
+   "title": "fix(tts): 服务端拒收一句时按停顿拆开合成再拼回（VPTTS 86 字 400）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T11:46:45Z",
+   "additions": 699,
+   "deletions": 10,
+   "labels": []
+  },
   "4002": {
    "number": 4002,
    "title": "fix(srs-gen4): 背卡卡顿与冲突角标几分钟的根因修复，补齐接线漏做的常驻会话 / 开库参数 / 对账项",
@@ -2660,6 +2701,177 @@
    "mergedAt": "2026-11-21T09:41:33Z",
    "additions": 22,
    "deletions": 1,
+   "labels": []
+  },
+  "4004": {
+   "number": 4004,
+   "title": "fix(library): 系统返回键先退出导入页（拍板 Ph8RkXJOWv）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T11:46:45Z",
+   "additions": 80,
+   "deletions": 40,
+   "labels": []
+  },
+  "4005": {
+   "number": 4005,
+   "title": "feat(video): 合集详情里只在线播放的集写「Streams · 源名」（拍板台 646L8W6DK2）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T11:46:45Z",
+   "additions": 337,
+   "deletions": 8,
+   "labels": []
+  },
+  "4006": {
+   "number": 4006,
+   "title": "feat(books): 封面刮削加 iTunes 歌曲源，导入的歌曲默认选它",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T11:46:45Z",
+   "additions": 807,
+   "deletions": 24,
+   "labels": []
+  },
+  "4007": {
+   "number": 4007,
+   "title": "feat(media-server): 换线路下沉到传输层（浏览 / 浏览起播 / 播放途中断流）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T11:46:45Z",
+   "additions": 1116,
+   "deletions": 202,
+   "labels": []
+  },
+  "4008": {
+   "number": 4008,
+   "title": "feat(stats): 浏览器扩展网页视频的查词 / 制卡计入统计中心",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T11:46:45Z",
+   "additions": 652,
+   "deletions": 12,
+   "labels": []
+  },
+  "4009": {
+   "number": 4009,
+   "title": "feat(extension): 悬停查词扫描延迟（仅不按键模式，反馈 L4Vhk0hOjM）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T11:46:45Z",
+   "additions": 484,
+   "deletions": 16,
+   "labels": []
+  },
+  "4010": {
+   "number": 4010,
+   "title": "feat(manga): 漫画导入支持 TIFF 页图（导入时原生无损转 PNG）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T11:46:45Z",
+   "additions": 342,
+   "deletions": 2,
+   "labels": []
+  },
+  "4011": {
+   "number": 4011,
+   "title": "fix(dist_test): 判绿逐个核对请求的 suite 都有执行结果（BUG-5074）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T11:46:45Z",
+   "additions": 150,
+   "deletions": 34,
+   "labels": []
+  },
+  "4012": {
+   "number": 4012,
+   "title": "feat(net): 设置里可关闭 GitHub 加速镜像（拍板台 0E-r9q489Y）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T11:46:45Z",
+   "additions": 225,
+   "deletions": 24,
+   "labels": []
+  },
+  "4013": {
+   "number": 4013,
+   "title": "feat(screen-ocr): 截屏识字选取层顶部提示条带 ✕ 关闭，满屏文字也能关（拍板台 Z0JMfFZXQ9）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T11:46:45Z",
+   "additions": 145,
+   "deletions": 15,
+   "labels": []
+  },
+  "4014": {
+   "number": 4014,
+   "title": "feat(srs): 笔记类型排序字段与浏览预览字段（第三方牌组浏览不再乱）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T11:46:45Z",
+   "additions": 1047,
+   "deletions": 23,
+   "labels": []
+  },
+  "4015": {
+   "number": 4015,
+   "title": "feat(music): 专辑整张「从音乐库移除」（拍板台 mmXVwo0Ibv）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T11:46:45Z",
+   "additions": 398,
+   "deletions": 87,
+   "labels": []
+  },
+  "4016": {
+   "number": 4016,
+   "title": "feat(novel): 下载成 EPUB 的网文与网页小说书丢图也提示并补取",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T11:46:45Z",
+   "additions": 1056,
+   "deletions": 240,
+   "labels": []
+  },
+  "4017": {
+   "number": 4017,
+   "title": "fix(tts): 纯标点句不送引擎、制作与朗读按停顿处理；重试说明续跑按章（拍板台 gGer_yD72I）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T11:46:45Z",
+   "additions": 316,
+   "deletions": 78,
+   "labels": []
+  },
+  "4018": {
+   "number": 4018,
+   "title": "fix(video-scrape): 无来源本机视频走同一条刮削链，「仅此一次」临时来源行不立项（拍板台 gtpgyff3l7-oneshot-scrape 方案 b）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T11:46:45Z",
+   "additions": 704,
+   "deletions": 103,
+   "labels": []
+  },
+  "4019": {
+   "number": 4019,
+   "title": "feat(sync): 互联同步流媒体书的行，YouTube 等在线视频进度跨设备对上（拍板台 Z2OhxAjKVv）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T11:46:45Z",
+   "additions": 1008,
+   "deletions": 9,
+   "labels": []
+  },
+  "4020": {
+   "number": 4020,
+   "title": "feat(video): 视频后台继续播放声音的开关（拍板台 42UUu_kcwD）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T11:46:45Z",
+   "additions": 771,
+   "deletions": 0,
+   "labels": []
+  },
+  "4021": {
+   "number": 4021,
+   "title": "feat(sync): 互联对端版本过旧时，被跳过 / 降级的同步维度统一在同步报告里报出（拍板 other-sync-peer-version-errors）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T11:46:45Z",
+   "additions": 649,
+   "deletions": 61,
+   "labels": []
+  },
+  "4026": {
+   "number": 4026,
+   "title": "fix: 修 develop 上 4 条既有红（术语、图标棘轮、import 大环、fsrs gate 超时）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T11:46:45Z",
+   "additions": 490,
+   "deletions": 360,
    "labels": []
   }
  }
