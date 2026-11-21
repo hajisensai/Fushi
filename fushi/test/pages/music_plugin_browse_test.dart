@@ -400,7 +400,11 @@ void main() {
         .first;
     await tester.tap(tag);
     await tester.pumpAndSettle();
-    expect(find.byType(MusicPluginBrowseListPage), findsNWidgets(2));
+    // 原列表页留在路由栈里（被新页盖住、在 offstage）。
+    expect(
+      find.byType(MusicPluginBrowseListPage, skipOffstage: false),
+      findsNWidgets(2),
+    );
     final (MusicPluginBrowseQuery, int) opened = app.manager.log.lists.last;
     expect(opened.$1.filters, <MusicPluginTag>[_whisper]);
     expect(opened.$1.sort, isNull);

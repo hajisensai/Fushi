@@ -8,22 +8,22 @@ part of 'music_plugin_pages.dart';
 // - 分类目录（[MusicPluginCatalogPage]）：标签 / 声优 / 社团……用户打开时才分页取；
 // - 音源推荐页顶部的浏览入口（[MusicPluginBrowseBar]）：全部作品 + 各分类目录。
 
-/// 筛选项定义缓存：按插件 id + 版本记（插件更新后换键重取），取失败不缓存。
-final Map<String, Future<MusicPluginBrowseSchema>> _browseSchemaCache =
-    <String, Future<MusicPluginBrowseSchema>>{};
+/// 筛选项定义缓存：按插件 id + 版本记（插件更新后换键重取）。只缓存取到的值、不缓存在途
+/// Future（取失败下次重取；Future 绑定创建它的 zone，跨 zone 复用会卡住等待方）。
+final Map<String, MusicPluginBrowseSchema> _browseSchemaCache =
+    <String, MusicPluginBrowseSchema>{};
 
 Future<MusicPluginBrowseSchema> _browseSchemaOf(
   AppModel app,
   MusicPluginManifest manifest,
-) {
+) async {
   final String key = '${manifest.id}@${manifest.version}';
-  return _browseSchemaCache[key] ??= app.musicPluginManager
+  final MusicPluginBrowseSchema? cached = _browseSchemaCache[key];
+  if (cached != null) return cached;
+  final MusicPluginBrowseSchema schema = await app.musicPluginManager
       .source(manifest.id)
-      .browseSchema()
-      .catchError((Object e, StackTrace st) {
-        _browseSchemaCache.remove(key);
-        Error.throwWithStackTrace(e, st);
-      });
+      .browseSchema();
+  return _browseSchemaCache[key] = schema;
 }
 
 /// 打开带 [query] 条件的作品列表。[title] 缺省按条件生成。
@@ -448,12 +448,12 @@ class _MusicPluginBrowseListPageState
   Widget _buildPage(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final MusicViewKind viewKind = _viewKind;
+    // 缺省单列行：作品行带作品编号 / 字幕状态与可点标签（色块只露第一个标签），
+    // 按标签发现同类是这一页的主要用途。
     final MusicViewStyle style = musicViewStyleOf(
       context,
       viewKind,
-      _kind == MusicPluginHomeKind.tracks
-          ? MusicViewStyle.list
-          : MusicViewStyle.blocks,
+      MusicViewStyle.list,
     );
     final bool masthead = shellRedesignActive(context);
     final Widget header = _conditions(context);

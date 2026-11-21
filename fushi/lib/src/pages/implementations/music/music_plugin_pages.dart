@@ -91,6 +91,7 @@ import 'package:fushi/src/utils/components/fushi_section_title.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
@@ -973,6 +974,8 @@ Widget musicPluginItemBlock(
         size: size,
         title: album.title,
         subtitle: _pluginAlbumSubtitle(album),
+        // 色块只放得下一个标签（插件按常用程度排序给）；可点的全部标签在行与详情里。
+        chip: album.tags.firstOrNull?.name,
         coverPath: album.coverUrl,
         onTap: () => unawaited(
           _push(
