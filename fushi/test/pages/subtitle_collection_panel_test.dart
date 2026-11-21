@@ -1918,5 +1918,145 @@ void main() {
       expect(find.text('Show S01E01'), findsOneWidget);
       expect(find.text('Show PV'), findsNothing);
     });
+
+    testWidgets(
+      '单季 + PV、没绑 anilistId、合集名带 4th season：分节季号不当显式季号，按第四季检索并配上 S04 字幕',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(600, 1400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        // 文件名不带季号：分季规则把这两集归到推断出的 s1，PV 另成一节。
+        final VideoBookRow e1 = await upsertBook(
+          bookUid: 'video/rezero4-01',
+          title: 'Re Zero - 01',
+          videoPath: 'C:/video/Re Zero - 01.mkv',
+        );
+        final VideoBookRow e2 = await upsertBook(
+          bookUid: 'video/rezero4-02',
+          title: 'Re Zero - 02',
+          videoPath: 'C:/video/Re Zero - 02.mkv',
+        );
+        final VideoBookRow pv = await upsertBook(
+          bookUid: 'video/rezero4-pv',
+          title: 'Re Zero PV',
+          videoPath: 'C:/video/Re Zero PV.mkv',
+        );
+        final int collectionId = await db.createMediaCollection(
+          'Re Zero kara Hajimeru Isekai Seikatsu 4th Season',
+          collectionType: 'collection',
+        );
+        final MediaCollectionRow collection = (await db.getMediaCollectionById(
+          collectionId,
+        ))!;
+        // 相关度首条恒为第一季：只有合集名里的「4th Season」能把它挑到第四季。
+        Future<http.Client> factory() async => MockClient(
+          (http.Request request) async => http.Response(
+            jsonEncode(<String, Object?>{
+              'data': <String, Object?>{
+                'Page': <String, Object?>{
+                  'media': <Object?>[
+                    for (final (int id, String romaji) in const <(int, String)>[
+                      (21355, 'Re:Zero kara Hajimeru Isekai Seikatsu'),
+                      (
+                        108632,
+                        'Re:Zero kara Hajimeru Isekai Seikatsu 2nd Season',
+                      ),
+                      (
+                        189046,
+                        'Re:Zero kara Hajimeru Isekai Seikatsu 4th Season',
+                      ),
+                    ])
+                      <String, Object?>{
+                        'id': id,
+                        'title': <String, Object?>{'romaji': romaji},
+                      },
+                  ],
+                },
+              },
+            }),
+            200,
+          ),
+        );
+        final List<VideoSubtitleSearchRequest> requests =
+            <VideoSubtitleSearchRequest>[];
+        final List<String> downloadedFiles = <String>[];
+        await tester.pumpWidget(
+          wrap(
+            collection: collection,
+            member: e1,
+            members: <VideoBookRow>[e1, e2, pv],
+            httpClientFactory: factory,
+            onSearch: (VideoSubtitleSearchRequest request) async {
+              requests.add(request);
+              return ProviderBatchResult<VideoSubtitleCandidate>.success(
+                <VideoSubtitleCandidate>[
+                  _Cand('Re Zero S04E01.ja.srt', source: 's4', episode: 1),
+                  _Cand('Re Zero S04E02.ja.srt', source: 's4', episode: 2),
+                ],
+              );
+            },
+            onDownload: (VideoSubtitleCandidate candidate) async {
+              downloadedFiles.add(candidate.fileName);
+              return VideoSubtitleDownload(
+                bytes: Uint8List.fromList(
+                  utf8.encode(
+                    '1\n00:00:01,000 --> 00:00:02,000\n${candidate.fileName}\n',
+                  ),
+                ),
+                fileName: candidate.fileName,
+                language: candidate.language,
+              );
+            },
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(
+            const ValueKey<String>('subtitle-collection-season-extras'),
+          ),
+          findsOneWidget,
+        );
+        expect(requests, isNotEmpty);
+        expect(
+          requests.last.media?.anilistId,
+          189046,
+          reason: '推断出的 s1 不能压过合集名里的季度记号，否则挑中第一季条目',
+        );
+        expect(
+          requests.last.season,
+          isNull,
+          reason: '只有成员文件名里的显式季号才作为 season_number 发给来源',
+        );
+
+        await tester.tap(downloadButton());
+        final String doneBanner = t.video_jimaku_batch_done(done: 2, total: 2);
+        for (
+          int i = 0;
+          i < 50 && find.text(doneBanner).evaluate().isEmpty;
+          i++
+        ) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 20)),
+          );
+          await tester.pump();
+        }
+        await tester.pumpAndSettle();
+        expect(find.text(doneBanner), findsOneWidget);
+        expect(downloadedFiles, <String>[
+          'Re Zero S04E01.ja.srt',
+          'Re Zero S04E02.ja.srt',
+        ], reason: '文件名带 S04 的正确候选不能被推断出的第 1 季滤掉');
+        expect(
+          (await repo.getByBookUid(e1.bookUid))!.subtitleSource,
+          isNotNull,
+        );
+        expect(
+          (await repo.getByBookUid(e2.bookUid))!.subtitleSource,
+          isNotNull,
+        );
+      },
+    );
   });
 }

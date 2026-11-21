@@ -528,6 +528,17 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   int? get _selectedSeasonNumber =>
       _seasonKey == null ? null : seasonNumberOfGroupKey(_seasonKey!);
 
+  /// 分节给出的季号能不能当成**显式**季号用（发给来源、过滤候选、钉批量目标）。
+  ///
+  /// 只有合集真有 ≥2 个真实季时才算：分季规则把没写季号的集一律归到 `s1`，
+  /// 「单季 + PV·特典」也会拆成两节，那个 `s1` 是推断出来的——把它当显式季号，
+  /// 合集名里的「4th season」就不再起作用，`season_number=1` 会发给
+  /// OpenSubtitles / SubDL，文件名带 `S04` 的正确候选还会被当成别季滤掉。
+  /// 单季时返回 null，季号回到成员文件名里的显式季号（[_memberSeason] /
+  /// [resolveSubtitleBatchSeason]）。
+  int? get _sectionSeasonOverride =>
+      _hasMultipleSeasons ? _selectedSeasonNumber : null;
+
   /// 本面板实际作用的成员：分季时只取选中那一季，否则整张合集。
   ///
   /// **所有**按成员算的东西（目标集号、版本覆盖、行状态、批量目标）都读它而不是
@@ -996,9 +1007,10 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   /// 只有它会作为 `season_number` 发给 OpenSubtitles / SubDL：从查询词、合集名推断
   /// 的季号只用来挑 AniList 条目（标题记号与 TMDB 季号并不总对得上）。
   int? _memberSeason() {
-    // 分季时只配选中的那一节，季号就是它（分季规则里没写季号的集算第 1 季，
-    // 与详情页季 tab 同口径）。选中 PV·特典时没有季号。
-    if (_hasSeasonSections) return _selectedSeasonNumber;
+    // 多季合集只配选中的那一节，季号就是它（分季规则里没写季号的集算第 1 季，
+    // 与详情页季 tab 同口径）；选中 PV·特典时没有季号。单季（含「单季 + PV·特典」）
+    // 的分节季号是推断的，仍按成员文件名的显式季号走，见 [_sectionSeasonOverride]。
+    if (_hasMultipleSeasons) return _selectedSeasonNumber;
     final Set<int?> memberSeasons = <int?>{
       for (final VideoBookRow member in _members)
         _seasonOfMemberPathOrTitle(member),
@@ -1278,7 +1290,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       videoPath: member.videoPath,
       sortIndex: index,
       isStream: isStreamVideoBook(member),
-      season: _selectedSeasonNumber,
+      season: _sectionSeasonOverride,
     );
   }
 
