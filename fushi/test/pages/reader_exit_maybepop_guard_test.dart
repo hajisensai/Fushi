@@ -1,6 +1,8 @@
 import 'dart:io';
 
-import 'package:test/test.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import '../helpers/source_guard.dart';
 
 /// BUG-782 守卫：阅读器快捷设置面板「退出」按钮直接 `Navigator.pop()` 绕过
 /// PopScope，导致关书后书架陈旧、关书自动同步不触发。
@@ -37,21 +39,16 @@ void main() {
     return File(path).readAsStringSync();
   }
 
-  /// 切出 `onExitReader:` 回调块——从 `onExitReader:` 起，到下一个具名参数
-  /// `webViewController:` 止（不含其上方的 BUG-782 中文注释，避免注释里
-  /// 复述根因用的「Navigator.pop()」字样污染下面的「无裸 pop」断言）。
-  String readExitCallbackSlice(String source) {
-    const String start = 'onExitReader:';
-    const String end = 'webViewController:';
-    final int startIdx = source.indexOf(start);
-    final int endIdx = source.indexOf(end, startIdx);
-    expect(startIdx, greaterThanOrEqualTo(0), reason: 'onExitReader 回调应存在');
-    expect(
-      endIdx,
-      greaterThan(startIdx),
-      reason: 'onExitReader 之后应有 webViewController 具名参数作为切片终点',
-    );
-    return source.substring(startIdx, endIdx);
+  /// 取出每处 `onExitReader:` 命名实参的**值**（回调本体）。
+  ///
+  /// 用 [namedArgumentValues] 按结构收口：值从 `:` 后起，到同层下一个 `,` /
+  /// 闭括号止，注释与字符串已掩码。以前用「下一个具名参数 `webViewController:`」
+  /// 当终点，BUG-4945 删掉那个参数后锚点失效；现在与相邻参数的名字、顺序都无关，
+  /// 上方 BUG-782 注释里复述根因用的「Navigator.pop()」也不会落进切片。
+  List<String> readExitCallbacks(String source) {
+    final List<String> values = namedArgumentValues(source, 'onExitReader');
+    expect(values, isNotEmpty, reason: 'onExitReader 回调应存在');
+    return values;
   }
 
   /// 退出回调直接写 `maybePop(`，或经 `_exitReaderBook(`（显式退书：在 maybePop
@@ -72,7 +69,7 @@ void main() {
   });
 
   test('onExitReader 回调必须走 maybePop（触发 PopScope→onWillPop 链）', () {
-    final String slice = readExitCallbackSlice(readSource());
+    final String slice = readExitCallbacks(readSource()).first;
     expect(
       routesThroughMaybePop(slice),
       isTrue,
@@ -83,7 +80,7 @@ void main() {
   });
 
   test('onExitReader 回调不得直接 Navigator.pop()（绕过 PopScope）', () {
-    final String slice = readExitCallbackSlice(readSource());
+    final String slice = readExitCallbacks(readSource()).first;
     // 精确复发形态：`Navigator.of(context).pop(`。maybePop 写作
     // `Navigator.of(context).maybePop(`，不含该子串，故不会误命中。
     expect(
@@ -102,37 +99,22 @@ void main() {
   });
 
   test('全文件级：每处 onExitReader 回调都必须走 maybePop、无裸 pop（防复发变体）', () {
-    final String source = readSource();
-    const String marker = 'onExitReader:';
-    // chrome.part.dart 里 onExitReader 只应有一处定义；逐处切窗校验，
+    // chrome.part.dart 里 onExitReader 只应有一处；逐处校验回调本体，
     // 未来若新增第二处退出入口也强制走 maybePop。
-    int cursor = source.indexOf(marker);
-    expect(cursor, greaterThanOrEqualTo(0), reason: '至少应有一处 onExitReader');
-    int occurrences = 0;
-    while (cursor >= 0) {
-      occurrences++;
-      // 取 onExitReader 后 200 字符窗口（足够覆盖单行 lambda 体）。
-      final int windowEnd = (cursor + 200) > source.length
-          ? source.length
-          : cursor + 200;
-      final String window = source.substring(cursor, windowEnd);
+    final List<String> callbacks = readExitCallbacks(readSource());
+    for (int i = 0; i < callbacks.length; i++) {
+      final String callback = callbacks[i];
       expect(
-        routesThroughMaybePop(window),
+        routesThroughMaybePop(callback),
         isTrue,
-        reason: '第 $occurrences 处 onExitReader 附近必须出现 maybePop()',
+        reason: '第 ${i + 1} 处 onExitReader 回调必须走 maybePop()',
       );
       expect(
-        window.contains('Navigator.of(context).pop(') ||
-            window.contains('Navigator.pop(context'),
+        callback.contains('Navigator.of(context).pop(') ||
+            callback.contains('Navigator.pop(context'),
         isFalse,
-        reason: '第 $occurrences 处 onExitReader 附近不得直接 pop（绕过 PopScope）',
+        reason: '第 ${i + 1} 处 onExitReader 回调不得直接 pop（绕过 PopScope）',
       );
-      cursor = source.indexOf(marker, cursor + marker.length);
     }
-    expect(
-      occurrences,
-      greaterThanOrEqualTo(1),
-      reason: 'onExitReader 回调应存在且被逐处校验',
-    );
   });
 }

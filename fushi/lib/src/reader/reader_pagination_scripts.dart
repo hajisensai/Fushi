@@ -623,8 +623,9 @@ class ReaderPaginationScripts {
   // JS `foldCodePoint` 的 Dart 影子：与 `AudioTextNormalizer.appendNormalized`
   // 的值转换同口径。改用 fushi_core 共享码点原语（`jp_codepoint_fold.dart`）后
   // 与 AudioTextNormalizer 同源；在白名单域（`_jsIsMatchableCodePoint` 为 true
-  // 的码点）与 JS 分段平移逐码点等价。运行期 JS 副本（`hwKataToFw` 查表）由
-  // `fushi/test/utils/jp_codepoint_fold_test.dart` 的 parity 测试逐项锁定。
+  // 的码点）与 JS 分段平移逐码点等价。运行期 JS 副本（`kSentenceAudioRelocationJs` 的
+  // `HW_KATA_TO_FW` 查表）由 `fushi/test/utils/jp_codepoint_fold_test.dart` 的
+  // parity 测试逐项锁定。
   static int _jsFoldCodePoint(int cp) {
     int out = fullwidthAsciiToHalfwidth(cp);
     if (out >= 0x41 && out <= 0x5A) {
@@ -1097,9 +1098,15 @@ window.__fushiInstallShell = function(C) {
   }
 
   /// 三个 shell 各自仍以 `<script>…</script>` 形式返回（它们的单测按这个形状钉着），
-  /// 拼进引擎时剥掉外层标签。
-  static String _stripShellScriptTags(String js) =>
-      js.replaceAll('<script>', '').replaceAll('</script>', '').trim();
+  /// 拼进引擎时**只**剥掉首尾那一对外层标签。shell 正文里出现的 `<script>` 字样
+  /// （注释、字符串字面量）必须原样保留：以前用 `replaceAll` 全局删，会把 BUG-5015
+  /// 注释里的「<script> / <style>」一并抠掉，要是哪天出现在字符串里就是静默改写了
+  /// 脚本语义（守卫 `reader_engine_static_source_guard_test.dart` 的「整段原样在场」）。
+  static String _stripShellScriptTags(String js) => js
+      .trim()
+      .replaceFirst(RegExp(r'^<script>'), '')
+      .replaceFirst(RegExp(r'</script>$'), '')
+      .trim();
 
   // ── Shared JS (properties + methods used by both modes) ────────────
 
