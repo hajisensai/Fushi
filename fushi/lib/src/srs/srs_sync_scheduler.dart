@@ -1218,9 +1218,10 @@ class SrsSyncScheduler {
         final Directory? root = await readMediaRoot();
         if (root != null) {
           _reportMediaStart();
+          final SrsDbStore mediaStore = store;
           final SrsMediaSyncReport media = await _mediaRunner(
             backend,
-            store,
+            mediaStore,
             root,
             cipher: report.encrypted && locKey != null
                 ? SrsMediaCipher(store, locKey.keyHex)
@@ -1229,7 +1230,8 @@ class SrsSyncScheduler {
             onProgress: _reportMediaProgress,
             deferRemaining: srsMediaDeadline(
               kSrsMediaRoundBudget,
-              shouldStop: () => _locationStopped(key) || store.isWindingDown,
+              shouldStop: () =>
+                  _locationStopped(key) || mediaStore.isWindingDown,
             ),
           );
           mediaChanged = media.downloaded > 0;
