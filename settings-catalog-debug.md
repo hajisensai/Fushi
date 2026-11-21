@@ -1,6 +1,6 @@
 # Fushi settings reference
 
-> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 893 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
+> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 896 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
 
 How to read this:
 
@@ -341,6 +341,7 @@ How to read this:
 | `video.playback.lock_window_aspect` | Lock window to video aspect | 锁定窗口为视频比例 | Picture and subtitles › Picture and quality › Scaling and aspect ratio | bool |  | `false` | Keep the video's aspect ratio when resizing the window, with no black bars · *only on windows, macos* |
 | `video.playback.entry_orientation` | Orientation when opening videos | 进入视频时的方向 | Picture and subtitles › Picture and quality › Scaling and aspect ratio | choice | `landscape`, `video_aspect`, `sensor` | `landscape` | Switch any time with the rotate button in the player · *only on android, ios* |
 | `video.playback.portrait_subtitle_list` | Subtitle list in portrait | 竖屏时显示字幕列表 | Picture and subtitles › Picture and quality › Scaling and aspect ratio | bool |  | `true` | Video on top, the current line and subtitle list below · *only on android, ios* |
+| `video.playback.background_play` | Keep playing audio in background | 后台继续播放声音 | Picture and subtitles › Picture and quality › Scaling and aspect ratio | bool |  | `false` | Sound keeps playing after you leave the app or lock the screen; the picture comes back when you return · *only on android, ios* |
 | `video.playback.remember_orientation` | Remember orientation per title | 记住每部作品的方向 | Picture and subtitles › Picture and quality › Scaling and aspect ratio | bool |  | `false` | Reopen a title in the orientation you last switched to · *only on android, ios* |
 | `video.geometry.aspect` | Aspect ratio | 画面比例 | Picture and subtitles › Picture and quality › Scaling and aspect ratio | choice | `-1`, `16:9`, `4:3`, `2.35:1`, `1:1` | `-1` |  |
 | `video.geometry.rotate` | Rotation | 旋转 | Picture and subtitles › Picture and quality › Scaling and aspect ratio | choice | `0`, `90`, `180`, `270` | `0` |  |
@@ -893,6 +894,7 @@ How to read this:
 | `storage.db_check` | Check database | 检查数据库 | Database maintenance | action |  |  | Check integrity, repair known damaged data and compact. A full backup is made first. · *destructive* |
 | `storage.library_recovery` | Recover library | 恢复书库 | Database maintenance | action |  |  | Restore books from the snapshot taken before an overwrite import, or re-register book folders left on disk |
 | `storage.srs_retained_copy` | Delete old-version retained copy | 删除旧版本保留副本 | Database maintenance | action |  |  | The review library from before the upgrade, kept so you can go back to the old version. It still holds the original text of anything purged since the upgrade. · *destructive* |
+| `storage.srs_retained_copy_unreadable` | Old-version retained copy is damaged | 旧版本保留副本已损坏 | Database maintenance | status |  |  | The review library from before the upgrade is no longer a readable file, so it can no longer be used to go back to the old version. Your current review data is not affected. |
 | `storage.cli.categories` | Disk usage | 磁盘占用 |  | list |  |  |  |
 | `storage.cli.entries` | Disk usage · entries | 磁盘占用 · entries |  | list |  |  |  |
 | `storage.cli.bundled` | Bundled components | 随包组件 |  | list |  |  |  |
@@ -937,6 +939,7 @@ How to read this:
 | `system.network_proxy` | Network proxy | 网络代理 | Network | text |  |  | HTTP proxy server used by all public internet requests · *user only* |
 | `system.network_proxy_username` | Proxy username (optional) | 代理用户名（可选） | Network | secret |  |  | Credentials apply to HTTP requests only; the built-in torrent engine cannot use them · *user only* |
 | `system.network_proxy_password` | Proxy password (optional) | 代理密码（可选） | Network | secret |  |  | *user only* |
+| `system.network_github_mirrors` | Use GitHub download mirrors | 使用 GitHub 加速镜像 | Network | bool |  | `true` | When a direct GitHub download fails (updates, dictionaries, fonts, shaders, extension repositories), retry through third-party mirrors such as ghproxy. Turn off to use only direct connections and jsDelivr. |
 | `system.network_proxy_p2p` | P2P (torrent) proxy | P2P（torrent）代理 | Network | choice | `direct`, `proxy`, `mixed` | `direct` | Direct by default. A proxy may slow things down and many proxies forbid BitTorrent; mixed mode only fixes connectivity and still exposes your real IP. |
 | `system.usage_stats_enabled` | Share usage statistics | 发送使用统计 | Privacy | bool |  | `true` | Once a day, sends an anonymous install ID, version and platform to fushi.moe to count active users. No account, library or reading content. |
 | `system.updates.crash_report_auto_send` | Automatically send crash logs | 自动发送闪退日志 | Privacy | bool |  | `false` | After a crash, send the log to the developers on next launch without asking |

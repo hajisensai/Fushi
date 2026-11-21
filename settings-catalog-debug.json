@@ -13,7 +13,7 @@
   "windows",
   "macos"
  ],
- "count": 893,
+ "count": 896,
  "settings": [
   {
    "key": "appearance.language",
@@ -6001,6 +6001,28 @@
     "zh-CN": "视频在上，下面是当前句和字幕列表"
    },
    "default": true,
+   "platforms": [
+    "android",
+    "ios"
+   ]
+  },
+  {
+   "key": "video.playback.background_play",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Keep playing audio in background",
+    "zh-CN": "后台继续播放声音"
+   },
+   "path": {
+    "en": "Video › Picture and subtitles › Picture and quality › Scaling and aspect ratio",
+    "zh-CN": "视频 › 画面与字幕 › 画面与画质 › 缩放与比例"
+   },
+   "description": {
+    "en": "Sound keeps playing after you leave the app or lock the screen; the picture comes back when you return",
+    "zh-CN": "切出 app 或锁屏后声音继续播放，回来时画面恢复"
+   },
+   "default": false,
    "platforms": [
     "android",
     "ios"
@@ -13833,6 +13855,23 @@
    "hint": "删除旧版本保留副本走复习的控制通道：srs.retained.status 看大小与到期，srs.retained.delete（confirm: true）删除"
   },
   {
+   "key": "storage.srs_retained_copy_unreadable",
+   "kind": "status",
+   "type": "status",
+   "title": {
+    "en": "Old-version retained copy is damaged",
+    "zh-CN": "旧版本保留副本已损坏"
+   },
+   "path": {
+    "en": "Storage › Database maintenance",
+    "zh-CN": "存储 › 数据库维护"
+   },
+   "description": {
+    "en": "The review library from before the upgrade is no longer a readable file, so it can no longer be used to go back to the old version. Your current review data is not affected.",
+    "zh-CN": "升级前的复习库已不是可读的文件，不能再用它退回旧版本。当前的复习数据不受影响。"
+   }
+  },
+  {
    "key": "widgets.howto",
    "kind": "status",
    "type": "status",
@@ -14496,6 +14535,24 @@
    },
    "secret": true,
    "userOnly": true
+  },
+  {
+   "key": "system.network_github_mirrors",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Use GitHub download mirrors",
+    "zh-CN": "使用 GitHub 加速镜像"
+   },
+   "path": {
+    "en": "System and about › Network",
+    "zh-CN": "系统与关于 › 网络"
+   },
+   "description": {
+    "en": "When a direct GitHub download fails (updates, dictionaries, fonts, shaders, extension repositories), retry through third-party mirrors such as ghproxy. Turn off to use only direct connections and jsDelivr.",
+    "zh-CN": "GitHub 直连下载失败时（更新、词典、字体、着色器、扩展仓库），改走 ghproxy 等第三方加速镜像重试。关闭后只走直连和 jsDelivr。"
+   },
+   "default": true
   },
   {
    "key": "system.network_proxy_p2p",
