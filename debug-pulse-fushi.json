@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-21T06:26:18Z",
+ "generatedAt": "2026-11-21T07:02:28Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "2ddafb44b41ef4afdabd4497b6e91fde97bc0316",
@@ -12,7 +12,7 @@
    "version": "3.4.0",
    "sha": "2ddafb44b41ef4afdabd4497b6e91fde97bc0316",
    "unknown": false,
-   "publishedAt": "2026-11-21T06:26:05Z",
+   "publishedAt": "2026-11-21T07:02:16Z",
    "testflight": false,
    "baseSeq": 30413,
    "prs": [
@@ -22,8 +22,7 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44870572568"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
@@ -408,39 +407,6 @@
     },
     "ios": {
      "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 29224,
-   "version": "3.4.0",
-   "sha": "76811fc25da95f3be200a8769d48aafa00522396",
-   "unknown": false,
-   "publishedAt": "2026-11-20T15:01:54Z",
-   "testflight": false,
-   "baseSeq": 29213,
-   "prs": [
-    3841,
-    3822,
-    3823
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44745158665"
-    },
-    "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44745158665"
-    },
-    "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44745158665"
     }
    }
   }
@@ -966,24 +932,6 @@
    "deletions": 616,
    "labels": []
   },
-  "3822": {
-   "number": 3822,
-   "title": "省额度：集成分支不追 develop；本机并行工作区取 BUG 号不再相撞",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-20T13:30:42Z",
-   "additions": 162,
-   "deletions": 15,
-   "labels": []
-  },
-  "3823": {
-   "number": 3823,
-   "title": "tool(dist_test): 支持 Linux worker（PVE VM103 加入负载均衡）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-20T12:18:28Z",
-   "additions": 84,
-   "deletions": 6,
-   "labels": []
-  },
   "3824": {
    "number": 3824,
    "title": "fix: 路线图 #3722 遗留 L4——启动挂点、host 删书清理、导入定性移出 UI isolate、网页小说重建后台化",
@@ -1117,15 +1065,6 @@
    "mergedAt": "2026-11-20T17:23:21Z",
    "additions": 78507,
    "deletions": 28169,
-   "labels": []
-  },
-  "3841": {
-   "number": 3841,
-   "title": "fix(dist_test): 本机作为同级 worker 参与外包测试；snapshot push 卡死 120 秒即剔除",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-20T13:32:10Z",
-   "additions": 676,
-   "deletions": 55,
    "labels": []
   },
   "3845": {
