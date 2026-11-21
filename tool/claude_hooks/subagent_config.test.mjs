@@ -99,6 +99,42 @@ test('agent definitions, router and workflow helper agree', () => {
   assert.deepEqual(helperMap, declared);
 });
 
+// BUG-5086: workflow subagents of one session share a scratchpad. The old template
+// (`<命令> > <日志> ...; echo "exit=$?"` + `grep -q '^exit='`) let two agents both pick
+// `test.log`: each truncated the other's file and the waiter matched the other run's
+// `exit=` line. Every log path and exit marker in the template must carry the run's tag.
+test('long-command log template names logs and exit lines by a unique tag', () => {
+  const agentsDir = fileURLToPath(new URL('../../.claude/agents/', import.meta.url));
+  const LOG = '<scratchpad>/<标签>.log';
+  /** @type {string[]} */
+  const withTemplate = [];
+  for (const file of readdirSync(agentsDir).filter((f) => f.endsWith('.md')).sort()) {
+    const text = readFileSync(`${agentsDir}${file}`, 'utf8');
+    assert.ok(!text.includes('"exit=$?"'), `${file}: exit line without the run tag`);
+    assert.ok(!/'\^exit='/.test(text), `${file}: wait loop matches any run's exit line`);
+    const spans = [...text.matchAll(/`([^`\n]+)`/g)].map((m) => m[1]);
+    const runs = spans.filter((s) => /\becho\b/.test(s) && s.includes('exit='));
+    const waits = spans.filter((s) => /\buntil grep\b/.test(s));
+    if (runs.length === 0 && waits.length === 0) continue;
+    withTemplate.push(file.replace(/\.md$/, ''));
+    for (const span of [...runs, ...waits]) {
+      const echoes = [...span.matchAll(/\becho\s+"([^"]*)"/g)].map((m) => m[1]);
+      for (const e of echoes) assert.equal(e, '<标签> exit=$?', `${file}: ${span}`);
+      const greps = [...span.matchAll(/\bgrep\s+-q\s+'([^']*)'\s+(\S+?);/g)];
+      for (const [, pattern, target] of greps) {
+        assert.equal(pattern, '^<标签> exit=', `${file}: ${span}`);
+        assert.equal(target, LOG, `${file}: ${span}`);
+      }
+      // Redirections and tails stand alone (`<命令>` / `<标签>` contain `>` themselves).
+      const targets = [...span.matchAll(/(?:^|\s)(?:\d?>>?|tail -n \d+)\s+([^\s;"]+)/g)].map((m) => m[1]);
+      assert.ok(targets.length > 0, `${file}: no log target found in ${span}`);
+      for (const t of targets) assert.equal(t, LOG, `${file}: log target must be the tagged log: ${span}`);
+    }
+    assert.ok(runs.length > 0 && waits.length > 0, `${file}: run and wait templates must come together`);
+  }
+  assert.deepEqual(withTemplate, ['general', 'reviewer', 'worker']);
+});
+
 test('hooks answer on stdin as real processes', () => {
   const dir = fileURLToPath(new URL('.', import.meta.url));
   const wf = spawnSync(process.execPath, [`${dir}workflow_agent_type_default.mjs`], {

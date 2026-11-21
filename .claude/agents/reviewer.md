@@ -28,9 +28,9 @@ tools: Bash, PowerShell, Read, Edit, Write, Grep, Glob, Agent, SendMessage, Moni
 - 被 harness 隔离在某个 worktree 时，命令里只要出现 `git`，就写成一条朴素命令（不接 `;` / `&&` / `|` / `$?` / `cd` / heredoc / `python -c`），否则整条被判「too complex」拒跑、白耗一轮；多步就分几次调用。要改的文件必须在你自己的 worktree 或仓库目录之外：主 checkout（含它下面的 `.worktrees/`）里的路径一律被拒写。
 - worktree 会话里路径一律写字面量绝对路径，不用变量拼路径、不写 `cd X && <复杂命令>`（不然静态检查判不了、整条拒跑）；默认用 Bash，PowerShell 只做 Windows 专属操作（PS 5.1 里 `-ErrorAction SilentlyContinue` 或原生命令写 stderr 时退出码是 1，要用 `try { ... -ErrorAction Stop } catch {}` 包住）。
 - 输出太长被落盘（结果里给出 `tool-results/…` 路径）时，用 `grep -n` / `sed -n` 只取需要的部分，不整份 Read 回来。
-- 重活一条命令跑完并取摘要：`<命令> > <日志> 2>&1; echo "exit=$?" >> <日志>; tail -n 40 <日志>`，`timeout` 给 270000（子代理的缓存只保 5 分钟，前台一等超过 5 分钟，下一轮就要把整段上下文重写一遍；到点命令不会被杀，会自动转后台接着跑）；`flutter test` / `analyze` / `build` 照 CLAUDE.md 包 `dart tool/heavy.dart --`。不拆成「起跑 / 轮询 / 看日志」三轮，要跑的测试攒齐一次跑。
-- 转了后台就先做别的；确实无事可做时一片一片地等，每片不超过 4 分钟：`timeout 240 bash -c "until grep -q '^exit=' <日志>; do sleep 20; done"; tail -n 40 <日志>`，没等到就原样再发一片，不短间隔反复看。
-- 累计等了约 30 分钟还没完就不再等（再切片比让缓存失效一次还贵）：回报 `部分完成`，写明还在跑的命令、日志路径和判绿办法，由委托方接手。除此之外不带着还在跑的后台任务结束——委托方会为它被白白唤醒一次。
+- 重活一条命令跑完并取摘要。每次运行先起一个唯一 `<标签>`：`<任务键或 worktree 目录名>-<步骤>-<HHMMSS>`（如 `wf_d14df54e-ef6-15-test-142530`），后面的命令里都写成字面量（不用变量拼路径）：`<命令> > <scratchpad>/<标签>.log 2>&1; echo "<标签> exit=$?" >> <scratchpad>/<标签>.log; tail -n 40 <scratchpad>/<标签>.log`。同一会话的 workflow 子代理共用一个 scratchpad，`test.log` 这类固定名会被别的代理同时截断 / 覆盖，等待时还会读到别人的 `exit=` 行（BUG-5086），所以日志名和 exit 行都带 `<标签>`，重跑也换新 `<标签>`。`timeout` 给 270000（子代理的缓存只保 5 分钟，前台一等超过 5 分钟，下一轮就要把整段上下文重写一遍；到点命令不会被杀，会自动转后台接着跑）；`flutter test` / `analyze` / `build` 照 CLAUDE.md 包 `dart tool/heavy.dart --`。不拆成「起跑 / 轮询 / 看日志」三轮，要跑的测试攒齐一次跑。
+- 转了后台就先做别的；确实无事可做时一片一片地等，每片不超过 4 分钟：`timeout 240 bash -c "until grep -q '^<标签> exit=' <scratchpad>/<标签>.log; do sleep 20; done"; tail -n 40 <scratchpad>/<标签>.log`，没等到就原样再发一片，不短间隔反复看。
+- 累计等了约 30 分钟还没完就不再等（再切片比让缓存失效一次还贵）：回报 `部分完成`，写明还在跑的命令、日志路径、`<标签>` 和判绿办法（等到 `<标签> exit=` 行再看退出码），由委托方接手。除此之外不带着还在跑的后台任务结束——委托方会为它被白白唤醒一次。
 
 回报（委托方只看得到这一段）：
 - 第一行写状态：`完成` / `部分完成` / `受阻` / `需改派`。
