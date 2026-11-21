@@ -1,6 +1,8 @@
 /// 发现作品详情页「获取途径」面板的查询层：媒体库 / 在线源 / BT 搜索 / 媒体服务器
 /// 四个渠道各自并发查询、各自一份状态（加载中 / 未配置 / 无结果 / 有结果 / 失败），
-/// 一个渠道慢或失败不拖累其余。
+/// 一个渠道慢或失败不拖累其余。多来源渠道（在线源 / 媒体服务器）在渠道内部也
+/// 按来源逐个出结果：先回来的来源先显示，状态带上「仍未返回的来源数」
+/// （[VideoAcquisitionChannelState.pendingSourceCount]），一个慢来源不再拖住整组。
 ///
 /// 本文件不依赖任何 widget 树：渠道后端由装配层注入（生产见
 /// `video_work_acquisition_backends.dart`，测试给假后端），面板只渲染
@@ -39,6 +41,12 @@ enum VideoAcquisitionChannelStatus {
 /// 控制器本身从不调用它——只原样转交给面板。
 typedef VideoAcquisitionOpen = Future<void> Function(BuildContext context);
 
+/// 多来源渠道的中途进度回调：每有一个来源返回（命中 / 无命中 / 失败）就交出一份
+/// 「已到结果」快照（[VideoAcquisitionLookup.pendingSourceCount] > 0）。最终结果
+/// 仍由 [VideoAcquisitionChannelBackend.lookup] 的返回值给出。
+typedef VideoAcquisitionProgress =
+    void Function(VideoAcquisitionLookup partial);
+
 /// 渠道里的一条命中。
 @immutable
 class VideoAcquisitionHit {
@@ -72,16 +80,19 @@ class VideoAcquisitionLookup {
       hits = const <VideoAcquisitionHit>[],
       totalCount = 0,
       failedSourceCount = 0,
+      pendingSourceCount = 0,
       entry = null;
 
   /// 查过了。[hits] 可为空（= 无结果）；[totalCount] 是渠道里的命中总数（面板只
   /// 展示前几条时用它写「共 N 条」），缺省等于 `hits.length`。[failedSourceCount]
-  /// 是本次失败的来源数（部分失败仍算查过）。[entry] 是渠道的完整入口（BT 渠道 =
+  /// 是本次失败的来源数（部分失败仍算查过）。[pendingSourceCount] 是中途快照里
+  /// 仍未返回的来源数（最终结果恒为 0）。[entry] 是渠道的完整入口（BT 渠道 =
   /// 进现有资源搜索页）。
   const VideoAcquisitionLookup.hits(
     this.hits, {
     int? totalCount,
     this.failedSourceCount = 0,
+    this.pendingSourceCount = 0,
     this.entry,
   }) : configured = true,
        totalCount = totalCount ?? -1,
@@ -91,6 +102,7 @@ class VideoAcquisitionLookup {
   final List<VideoAcquisitionHit> hits;
   final int totalCount;
   final int failedSourceCount;
+  final int pendingSourceCount;
   final VideoAcquisitionOpen? configure;
   final VideoAcquisitionOpen? entry;
 
@@ -109,10 +121,15 @@ class VideoAcquisitionChannelFailure implements Exception {
 
 /// 一个获取渠道的后端。整个渠道失败时**抛出**（控制器收成 [failed]）；只有部分
 /// 来源失败时返回 [VideoAcquisitionLookup.hits] 并带上 failedSourceCount。
+///
+/// 多来源渠道每有一个来源返回就调一次 [onProgress]（可选；单来源渠道不调）。
 abstract interface class VideoAcquisitionChannelBackend {
   VideoAcquisitionChannel get channel;
 
-  Future<VideoAcquisitionLookup> lookup(VideoMediaReference reference);
+  Future<VideoAcquisitionLookup> lookup(
+    VideoMediaReference reference, {
+    VideoAcquisitionProgress? onProgress,
+  });
 }
 
 /// 一个渠道的不可变快照。
@@ -123,6 +140,7 @@ class VideoAcquisitionChannelState {
     this.hits = const <VideoAcquisitionHit>[],
     this.totalCount = 0,
     this.failedSourceCount = 0,
+    this.pendingSourceCount = 0,
     this.error,
     this.configure,
     this.entry,
@@ -137,9 +155,17 @@ class VideoAcquisitionChannelState {
   final List<VideoAcquisitionHit> hits;
   final int totalCount;
   final int failedSourceCount;
+
+  /// [ready] 时仍未返回的来源数：> 0 = 「已到结果 + 仍在搜」的中间态，面板保留
+  /// 转圈并写明还有几个来源没回来。
+  final int pendingSourceCount;
   final Object? error;
   final VideoAcquisitionOpen? configure;
   final VideoAcquisitionOpen? entry;
+
+  /// 渠道是否还有查询在进行（整体加载中，或已出部分结果但仍有来源未返回）。
+  bool get isSearching =>
+      status == VideoAcquisitionChannelStatus.loading || pendingSourceCount > 0;
 }
 
 /// 把作品的标题 / 原名 / 别名按搜索口径（[normalizeMediaSearchText]）去重，取前
@@ -210,7 +236,16 @@ class VideoWorkAcquisitionController extends ChangeNotifier {
     _set(channel, VideoAcquisitionChannelState.loading);
     VideoAcquisitionChannelState next;
     try {
-      final VideoAcquisitionLookup lookup = await backend.lookup(reference);
+      final VideoAcquisitionLookup lookup = await backend.lookup(
+        reference,
+        onProgress: (VideoAcquisitionLookup partial) {
+          // 重试 / dispose 之后旧查询的中途进度一样丢弃。还没有任何命中时保持
+          // 加载中骨架（只有失败 / 无命中的来源回来，面板上没东西可换）。
+          if (_disposed || _generations[channel] != generation) return;
+          if (partial.hits.isEmpty) return;
+          _set(channel, _stateFor(partial));
+        },
+      );
       next = _stateFor(lookup);
     } on Object catch (error) {
       next = VideoAcquisitionChannelState(
@@ -229,13 +264,22 @@ class VideoWorkAcquisitionController extends ChangeNotifier {
         configure: lookup.configure,
       );
     }
+    // 面板按命中 id 给行定 key（分批到达时已显示的行靠它保持身份），同一渠道里
+    // id 必须唯一：同一来源一页里重复返回的条目、或两个配置指向同一台服务器时
+    // 合并出的同 id 命中，在这里按首次出现保留一条（到达顺序不变）。
+    final Set<String> seen = <String>{};
+    final List<VideoAcquisitionHit> hits = <VideoAcquisitionHit>[
+      for (final VideoAcquisitionHit hit in lookup.hits)
+        if (seen.add(hit.id)) hit,
+    ];
     return VideoAcquisitionChannelState(
-      status: lookup.hits.isEmpty
+      status: hits.isEmpty
           ? VideoAcquisitionChannelStatus.empty
           : VideoAcquisitionChannelStatus.ready,
-      hits: List<VideoAcquisitionHit>.unmodifiable(lookup.hits),
-      totalCount: lookup.effectiveTotalCount,
+      hits: List<VideoAcquisitionHit>.unmodifiable(hits),
+      totalCount: lookup.totalCount < 0 ? hits.length : lookup.totalCount,
       failedSourceCount: lookup.failedSourceCount,
+      pendingSourceCount: lookup.pendingSourceCount,
       entry: lookup.entry,
     );
   }

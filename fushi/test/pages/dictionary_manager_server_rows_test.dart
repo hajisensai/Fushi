@@ -24,7 +24,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/test_platform_services.dart';
 
-/// 词典管理页的服务器托管词典行（设计稿 1）：与本机词典同一条按语言分组的列表，
+/// 词典管理页的服务器托管词典行（设计稿 1）：与本机词典同一条混排列表，
 /// 每行一个来源标签，列表上方来源筛选，服务器行的开关写配置的 hidden，服务器上
 /// 已没有的行才有「忘掉」，混排重排两张表一起写。全部用焦点 + 按键驱动。
 class _FakeAppModel extends AppModel {
@@ -1109,8 +1109,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('region-tagged server language: header is the native name '
-      'with the full tag', (WidgetTester tester) async {
+  testWidgets('region-tagged server language: row tag and language filter use '
+      'the native name with the full tag', (WidgetTester tester) async {
     await _pumpPage(
       tester,
       remote: const <RemoteDictionary>[
@@ -1124,8 +1124,13 @@ void main() {
         ),
       ],
     );
-    expect(find.text('한국어 (ko-KR) · 1'), findsOneWidget);
-    expect(find.text('ko-KR · 1'), findsNothing);
+    // 行上的语言标签 + 上方语言筛选的那一枚，都用语言自称 + 完整标签。
+    expect(
+      find.byKey(const ValueKey<String>('dict-language-filter-ko-KR')),
+      findsOneWidget,
+    );
+    expect(find.text('한국어 (ko-KR)'), findsNWidgets(2));
+    expect(find.text('ko-KR'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
