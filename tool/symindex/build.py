@@ -41,7 +41,8 @@ CREATE INDEX ref_sym ON ref(sym);
 
 
 def git(repo: Path, *args: str) -> str:
-    return subprocess.run(['git', '-C', str(repo), *args], capture_output=True, text=True, check=True).stdout.strip()
+    # git 输出 UTF-8；不指定 encoding 时 Windows 按本地代码页（cp936）解码，仓库路径含中文就解码失败
+    return subprocess.run(['git', '-C', str(repo), *args], capture_output=True, text=True, encoding='utf-8', check=True).stdout.strip()
 
 
 def workspace_packages(repo: Path) -> list[str]:

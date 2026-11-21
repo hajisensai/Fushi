@@ -194,6 +194,30 @@ class RustFailureTest(unittest.TestCase):
             ix.close()
 
 
+class CjkRepoRootTest(unittest.TestCase):
+    """仓库根路径含中文：build.py / sym.py 读 git rev-parse 输出须按 UTF-8 解码（Windows 默认 cp936 会解码失败崩掉）。"""
+
+    def test_build_and_query_in_cjk_repo_root(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            repo: Path = Path(td) / '中文仓库'
+            repo.mkdir()
+            sh(repo, 'init', '-q')
+            sh(repo, 'config', 'user.email', 't@example.com')
+            sh(repo, 'config', 'user.name', 't')
+            (repo / 'a.dart').write_text('class Foo {}\n', encoding='utf-8')
+            sh(repo, 'add', '.')
+            sh(repo, 'commit', '-q', '-m', 'base')
+            db: Path = Path(td) / 'index.sqlite'
+            env: dict[str, str] = {**os.environ, 'FUSHI_SYMINDEX_DB': str(db)}
+            subprocess.run([sys.executable, str(HERE / 'build.py'), '--repo', str(repo), '--skip-dart', '--skip-rust'],
+                           env=env, capture_output=True, check=True)
+            self.assertTrue(build.is_current(db, sh(repo, 'rev-parse', 'HEAD')))
+            (repo / 'a.dart').write_text('class Foo {}\nvoid liveOne() {}\n', encoding='utf-8')
+            out: str = subprocess.run([sys.executable, str(HERE / 'sym.py'), 'def', 'liveOne'], cwd=repo, env=env,
+                                      capture_output=True, text=True, encoding='utf-8', check=True).stdout
+            self.assertIn('a.dart:2  void liveOne() {}', out)
+
+
 class WorkspaceTest(unittest.TestCase):
     def test_reads_workspace_members_that_exist(self) -> None:
         with tempfile.TemporaryDirectory() as td:

@@ -22,7 +22,8 @@ from symdb import Hit, Index, Sym, changed_files, default_db_path, files_under, 
 
 
 def repo_root() -> Path:
-    r = subprocess.run(['git', 'rev-parse', '--show-toplevel'], capture_output=True, text=True)
+    # 按 UTF-8 解码：Windows 默认本地代码页解不了含中文的仓库路径
+    r = subprocess.run(['git', 'rev-parse', '--show-toplevel'], capture_output=True, text=True, encoding='utf-8')
     if r.returncode != 0:
         sys.exit('sym.py: 不在 git 仓库里')
     return Path(r.stdout.strip())
