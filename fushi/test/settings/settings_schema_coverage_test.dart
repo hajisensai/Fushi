@@ -228,6 +228,22 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 设置页 harness 里没有展开的悬浮球。行为由 floating_ball_labels_test 咬住。
   'floatingBall/Show button labels':
       'test/floating_ball/floating_ball_labels_test.dart',
+  // 「跳转记录」顶栏图标开关（小说 / 漫画 / 视频三页共用，页面现读 jumpHistoryToolbar）：
+  // 生效点在阅读 / 播放页顶栏，harness 设置页里没有这些页。行为由三页各自的专项测试咬住。
+  'floatingBall/Jump history':
+      'test/utils/jump_history_controls_test.dart + '
+      'test/media/video/video_jump_history_test.dart + '
+      'test/media/manga/reader/manga_jump_history_chrome_test.dart',
+  // 视频「续播」（关 / 仅长视频 / 全部）：生效点是打开剧集时的起点，harness 里没有播放页。
+  // 判据 resolveVideoStart 由 video_resume_test 咬住，播放页读偏好走它由静态守卫咬住。
+  'video/Resume playback':
+      'test/media/video/video_resume_test.dart + '
+      'test/media/video/video_lifecycle_static_test.dart（播放页起点认 resolveVideoStart）',
+  // 视频「下一集顺序」（顺序 / 随机）：生效点是自动连播选下一集，harness 里没有播放页。
+  // 选集判据由 video_playlist_order_test 咬住，连播接线由静态守卫咬住。
+  'video/Next episode order':
+      'test/media/video/video_playlist_order_test.dart + '
+      'test/pages/video_playlist_auto_advance_guard_static_test.dart',
   // 吉祥物图标换色开关：生效点是全局 appLogoFollowsAccent 与 AccentLogoImage
   // 的着色——harness 设置页里没有 logo 渲染面，渲染输入无变化。行为由
   // theme_app_icon_link_test（发布到全局开关）与 accent_logo_image_test 咬住。
