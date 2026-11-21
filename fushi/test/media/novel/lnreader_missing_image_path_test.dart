@@ -50,6 +50,17 @@ const List<String> _illegalNames = <String>[
   'images/evil.png/',
   'images/EVIL.PNG',
   'cover.png',
+  // 在 images/ 下、但不是三条管线生成的形状（封面、任意名、设备名、缺扩展名的
+  // 非网页小说键、哈希位数不对）。
+  'images/cover.png',
+  'images/evil.png',
+  'images/con.png',
+  'images/nul',
+  'images/0123456789ab-0',
+  'images/c1-0',
+  'images/0123456789-0.png',
+  'images/w0123.png',
+  'images/W0123456789ABCDEF.png',
   '',
 ];
 

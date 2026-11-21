@@ -87,15 +87,23 @@ class LnReaderMissingImage {
 /// 这些名字是从章节文件（缺图占位、`<img src>`）里读回来的，而章节文件可以来自
 /// 第三方 EPUB（下载书管线对任何书行都挂）或站点正文，属于不可信输入：形如
 /// `../`、绝对路径、驱动器号、反斜杠的名字一律不认（HBK-AUDIT-002）。
-final RegExp _bookImageKeyPattern = RegExp(
-  r'^images/[a-z0-9][a-z0-9-]*(?:\.(?:jpg|png|gif|webp))?$',
-);
+///
+/// 判据逐字对应三种生成形状（SHA-1 前 12 / 16 位小写十六进制、章序号、图序号），
+/// 不放宽成「images/ 下任意名字」：否则伪造占位能指名同一本书里不是插图的条目
+/// （如封面 `images/cover.<ext>`）去覆盖，或在 Windows 上指名 `con` / `nul` 这类
+/// 设备名。
 final RegExp _bookImageFilePattern = RegExp(
-  r'^images/[a-z0-9][a-z0-9-]*\.(?:jpg|png|gif|webp)$',
+  r'^images/(?:(?:[0-9a-f]{12}|c[0-9]+)-[0-9]+|w[0-9a-f]{16})'
+  r'\.(?:jpg|png|gif|webp)$',
 );
 
+/// 网页小说书取不到的图还不知道格式，占位键是不带扩展名的 `images/w<哈希>`。
+final RegExp _webNovelImageKeyPattern = RegExp(r'^images/w[0-9a-f]{16}$');
+
 /// [name] 是不是本应用生成的插图占位键（可不带扩展名）。
-bool isLnReaderBookImageKey(String name) => _bookImageKeyPattern.hasMatch(name);
+bool isLnReaderBookImageKey(String name) =>
+    _bookImageFilePattern.hasMatch(name) ||
+    _webNovelImageKeyPattern.hasMatch(name);
 
 /// 解压树 [extractDir] 里插图条目 [name] 对应的文件；[name] 不是生成规则下的
 /// 插图文件名、或规范化后不在该书 `OEBPS/images/` 目录内时为 null（调用方不得
