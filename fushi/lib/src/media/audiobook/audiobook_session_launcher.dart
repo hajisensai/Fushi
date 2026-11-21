@@ -1,6 +1,5 @@
 export 'package:fushi/src/media/audiobook/audiobook_session_start_request.dart';
 
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
@@ -51,9 +50,12 @@ class AudiobookSessionLauncher {
   /// 会话来源的唯一裁决点：Audiobook 行（有可播放音频）优先，否则 SrtBook 行（有可
   /// 播放音频），都没有 = 无有声书。
   Future<_SessionSource?> _pickSource(String bookKey) async {
-    final AudiobookRow? abRow = await _db.getAudiobookByBookKey(bookKey);
-    if (abRow != null) {
-      final Audiobook audiobook = _audiobookFromRow(abRow);
+    // 行 → 模型只走仓库的那一份映射（gap-novelmisc-7：这里曾各抄一份、漏了
+    // importedAt / language / 健康度等列）。
+    final Audiobook? audiobook = await AudiobookRepository(
+      _db,
+    ).findByBookKey(bookKey);
+    if (audiobook != null) {
       final List<File> audioFiles = await _resolveAudioFiles(
         audioPaths: audiobook.audioPaths,
         audioRoot: audiobook.audioRoot,
@@ -66,9 +68,10 @@ class AudiobookSessionLauncher {
         );
       }
     }
-    final SrtBookRow? srtRow = await _db.getSrtBookByBookKey(bookKey);
-    if (srtRow == null) return null;
-    final SrtBook srtBook = _srtBookFromRow(srtRow);
+    final SrtBook? srtBook = await SrtBookRepository(
+      _db,
+    ).findByBookKey(bookKey);
+    if (srtBook == null) return null;
     final List<File> audioFiles = await _resolveAudioFiles(
       audioPaths: srtBook.audioPaths,
       audioRoot: srtBook.audioRoot,
@@ -307,37 +310,6 @@ class AudiobookSessionLauncher {
     audioPaths: audioPaths,
     audioRoot: audioRoot,
   );
-
-  Audiobook _audiobookFromRow(AudiobookRow row) {
-    final Audiobook ab = Audiobook()
-      ..id = row.id
-      ..bookKey = row.bookKey
-      ..audioRoot = row.audioRoot
-      ..alignmentFormat = row.alignmentFormat
-      ..alignmentPath = row.alignmentPath;
-    if (row.audioPathsJson != null) {
-      ab.audioPaths = (jsonDecode(row.audioPathsJson!) as List<dynamic>)
-          .cast<String>();
-    }
-    return ab;
-  }
-
-  SrtBook _srtBookFromRow(SrtBookRow row) {
-    final SrtBook book = SrtBook()
-      ..id = row.id
-      ..uid = row.uid
-      ..title = row.title
-      ..author = row.author
-      ..audioRoot = row.audioRoot
-      ..srtPath = row.srtPath
-      ..coverPath = row.coverPath
-      ..bookKey = row.bookKey;
-    if (row.audioPathsJson != null) {
-      book.audioPaths = (jsonDecode(row.audioPathsJson!) as List<dynamic>)
-          .cast<String>();
-    }
-    return book;
-  }
 }
 
 /// 一本书的会话启动材料聚合。

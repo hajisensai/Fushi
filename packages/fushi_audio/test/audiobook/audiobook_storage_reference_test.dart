@@ -130,5 +130,18 @@ void main() {
     test('空列表 → 无断链', () {
       expect(AudiobookStorage.hasMissingPaths(const <String>[]), isFalse);
     });
+
+    test('hasMissingPaths 遇到第一个断链就停，不把整组探完', () {
+      final List<String> probed = <String>[];
+      final bool missing = AudiobookStorage.hasMissingPaths(
+        <String>['/a/gone.m4a', '/b/present.m4a', '/c/present.m4a'],
+        exists: (String path) {
+          probed.add(path);
+          return fakeExists(path);
+        },
+      );
+      expect(missing, isTrue);
+      expect(probed, <String>['/a/gone.m4a']);
+    });
   });
 }

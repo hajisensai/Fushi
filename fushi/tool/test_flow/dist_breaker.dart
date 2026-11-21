@@ -47,6 +47,9 @@ Duration distBreakerHold(int fails) {
 /// work for a while, or null when the breaker has nothing to learn from it.
 String? distBreakerReason(Object error) {
   if (error is DistWorkerUnreachable) return 'unreachable';
+  // The link to it died mid-push (kDistPushStall): asked again a minute
+  // later from heavy.dart's queue, it would hang the same 120 s every time.
+  if (error is DistWorkerStalled) return 'push stalled';
   if (error is DistWorkerBusy && error.message.contains('free disk')) {
     return 'short of disk';
   }

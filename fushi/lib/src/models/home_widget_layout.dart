@@ -754,7 +754,8 @@ String encodeHomeWidgetLayout(HomeWidgetLayout layout) {
 
 // ── 迁移 / 默认模板 ─────────────────────────────────────────────────────
 
-/// 旧可选面板「自动」档在迁移那一刻的判据结果（各面板自己的默认判据，见
+/// 旧可选面板「自动」档此刻的判据结果（没编辑过的布局每次渲染都现算，不做快照，
+/// 见 spec「持久化」与拍板台 pr3464；各面板自己的默认判据，见
 /// `home_srs_panel.dart` / `home_tracking_panel.dart` / `home_ai_agent_panel.dart` /
 /// `home_panorama_panel.dart`）。
 @immutable
@@ -773,7 +774,7 @@ class HomeWidgetAutoFacts {
 }
 
 /// 用户从没编辑过 [grid] 那份布局时的首个布局：默认模板里，旧偏好钉成 hidden 的
-/// 可选面板不放、钉成 shown 的放上，auto 的按 [auto]（迁移那一刻的默认判据）决定。
+/// 可选面板不放、钉成 shown 的放上，auto 的按 [auto]（此刻的默认判据）决定。
 /// 「恢复默认」也走这里。
 ///
 /// - 窄：继续 2×2；半栏组件今日 / 近 7 天 / 复习 / 追踪 / AI 各 1×1 两两并排（个数为奇数

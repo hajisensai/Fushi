@@ -269,12 +269,21 @@ resolvePinnedSubtitleVersion(
   return null;
 }
 
-/// 批量下载能否开放：选中来源存在且确有可解析字幕、没在搜索/下载中。纯函数。
+/// 批量下载能否开放：选中来源存在且确有可下的字幕、没在搜索/下载中。纯函数。
+///
+/// 「可下的字幕」= 单集文件（[SubtitleCollectionSource.index]）**或**能解开的整季包
+/// （[SubtitleCollectionSource.unpackablePackFormat]）。整季包不进 index（它不是某一
+/// 集的文件），但批量会按集号从包里拆（`runSubtitleBatch`），成员行也据此预览「将从
+/// 整季包中拆出」；只看 index 的话只有整季包的来源按钮是灰的，与成员行自相矛盾。
 bool canRunSubtitleCollectionBatch({
   required SubtitleCollectionSource? selected,
   required bool searching,
   required bool running,
-}) => selected != null && !searching && !running && !selected.index.isEmpty;
+}) =>
+    selected != null &&
+    !searching &&
+    !running &&
+    (!selected.index.isEmpty || selected.unpackablePackFormat != null);
 
 /// 合集成员的分季键（与合集详情页季 tab 同一派生规则 [collectionGroupKeyForFilename]）。
 ///
@@ -409,6 +418,10 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   bool _resolving = false;
   bool _searching = false;
   bool _running = false;
+
+  /// 用户点了「停止」：批量不再开始下一集，正在跑的那一集做完落盘。只有这个按钮
+  /// 能停批量——面板 / 工作台关掉不取消（BUG-4496）。
+  bool _stopRequested = false;
   List<AniListMedia> _seriesMatches = const <AniListMedia>[];
   String? _seriesMatchesQuery;
   int? _selectedSeriesId;
@@ -1280,6 +1293,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     if (candidates.isEmpty) return;
     setState(() {
       _running = true;
+      _stopRequested = false;
       _notice = null;
       _statusByUid.clear();
     });
@@ -1294,6 +1308,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         subtitleAligner: widget.subtitleAligner,
         download: _download,
         probedVersionLanguages: _probedLanguages,
+        isCancelled: () => _stopRequested,
         onItemStart: (SubtitleBatchItem item) async {
           if (!mounted) return;
           setState(() => _statusByUid[item.target.bookUid] = item);
@@ -1322,7 +1337,20 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     final int done = _statusByUid.values
         .where((SubtitleBatchItem i) => i.status == SubtitleBatchStatus.done)
         .length;
-    _setNotice(t.video_jimaku_batch_done(done: done, total: _members.length));
+    final bool stopped = results.any(
+      (SubtitleBatchItem i) => i.status == SubtitleBatchStatus.skipped,
+    );
+    _setNotice(
+      stopped
+          ? t.video_subtitle_batch_stopped(done: done, total: _members.length)
+          : t.video_jimaku_batch_done(done: done, total: _members.length),
+    );
+  }
+
+  /// 「停止」：只置标记，[runSubtitleBatch] 在下一集开始前看到就把剩下的记成跳过。
+  void _requestStop() {
+    if (!_running || _stopRequested) return;
+    setState(() => _stopRequested = true);
   }
 
   /// 单集持久化：本地视频写 DB（subtitleSource 列 + 解析的 cue），远端/流媒体写 prefs。
@@ -1379,6 +1407,8 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
           );
         case SubtitleBatchStatus.pending:
           return const FushiIcon(FushiIcons.schedule, size: 18);
+        case SubtitleBatchStatus.skipped:
+          return const FushiIcon(FushiIcons.skipNext, size: 18);
       }
     }
     if (_searching) {
@@ -1441,13 +1471,24 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                   ),
           );
         case SubtitleBatchStatus.failed:
-          // 与本集面板同一套文案（BUG-1844）：key 被拒 / 连不上 / HTTP 状态码。
-          return Text(
-            describeSubtitleFailure(t.video_jimaku_download_failed, item.error),
-          );
+          return Text(switch (item.failureStage) {
+            // 下下来了：说成「下载失败」用户会去换来源，而问题在本地。
+            SubtitleBatchFailureStage.write =>
+              t.video_subtitle_batch_save_failed,
+            SubtitleBatchFailureStage.persist =>
+              t.video_subtitle_batch_persist_failed,
+            // 与本集面板同一套文案（BUG-1844）：key 被拒 / 连不上 / HTTP 状态码。
+            SubtitleBatchFailureStage.download ||
+            null => describeSubtitleFailure(
+              t.video_jimaku_download_failed,
+              item.error,
+            ),
+          });
         case SubtitleBatchStatus.downloading:
         case SubtitleBatchStatus.pending:
           return Text(t.video_jimaku_source_loading);
+        case SubtitleBatchStatus.skipped:
+          return Text(t.video_subtitle_batch_skipped);
       }
     }
     if (_searching) return Text(t.video_jimaku_source_loading);
@@ -1951,18 +1992,35 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                 onPressed: _running ? null : widget.onCancel,
                 child: Text(t.dialog_close),
               ),
-            FushiFilledButton.icon(
-              key: const ValueKey<String>('subtitle-collection-download-all'),
-              onPressed: canDownload ? _downloadAll : null,
-              icon: _running
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: FushiCircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const FushiIcon(FushiIcons.download),
-              label: Text(t.video_jimaku_batch_download),
-            ),
+            // 跑起来后主按钮换成「停止（当前集/总数）」；点了之后在等手上那一集
+            // 收尾，显示「正在停止…」并禁用。
+            if (_running)
+              FushiFilledButton.icon(
+                key: const ValueKey<String>('subtitle-collection-stop'),
+                onPressed: _stopRequested ? null : _requestStop,
+                icon: _stopRequested
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: FushiCircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const FushiIcon(FushiIcons.stop),
+                label: Text(
+                  _stopRequested
+                      ? t.video_subtitle_batch_stopping
+                      : t.video_subtitle_batch_stop(
+                          current: _statusByUid.length,
+                          total: _members.length,
+                        ),
+                ),
+              )
+            else
+              FushiFilledButton.icon(
+                key: const ValueKey<String>('subtitle-collection-download-all'),
+                onPressed: canDownload ? _downloadAll : null,
+                icon: const FushiIcon(FushiIcons.download),
+                label: Text(t.video_jimaku_batch_download),
+              ),
           ],
         ),
       ],

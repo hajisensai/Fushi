@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:test/test.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart'
+    show parseMangaJson;
 import 'package:path/path.dart' as p;
 
 /// 章目录布局与「已下载」判据（设计稿 2026-09-12 §2.1）。
@@ -139,4 +141,50 @@ void main() {
       <String>{'/c/a'},
     );
   });
+
+  test('mangaChapterKeysByDirectory 与逐章 p.equals 同口径（gap-mangamisc-4）', () {
+    final List<String> keys = <String>['/c/1', '/c/2', '/c/3'];
+    final index = mangaChapterKeysByDirectory(bookDir.path, keys);
+    for (final String key in keys) {
+      final String dir = mangaChapterDirectory(bookDir.path, key).path;
+      expect(index[dir], key);
+      // 未规范化的写法（多余的 `.` / `..`）按 p.equals 仍是同一目录。
+      final String messy = p.join(
+        p.dirname(dir),
+        '.',
+        'x',
+        '..',
+        p.basename(dir),
+      );
+      expect(p.equals(messy, dir), isTrue);
+      expect(index[messy], key);
+    }
+    if (Platform.isWindows) {
+      final String dir = mangaChapterDirectory(bookDir.path, '/c/2').path;
+      expect(p.equals(dir.toUpperCase(), dir), isTrue);
+      expect(index[dir.toUpperCase()], '/c/2');
+    }
+    expect(index[p.join(bookDir.path, 'chapters', 'nope')], isNull);
+  });
+
+  test(
+    'readDownloadedChapterPayload 用调用方的 parse，并把 payload 交回（manga-4）',
+    () async {
+      final Directory dir = await writeChapter(
+        '/c/1',
+        urls: <String>['images/page-000001.jpg'],
+      );
+      int parses = 0;
+      final payload = await readDownloadedChapterPayload(
+        dir,
+        parse: (String source) async {
+          parses++;
+          return parseMangaJson(source);
+        },
+      );
+      expect(parses, 1);
+      expect(payload, isNotNull);
+      expect(payload!.images.single.url, 'images/page-000001.jpg');
+    },
+  );
 }

@@ -90,9 +90,16 @@ import 'package:test/test.dart';
 /// `ExternalStorageAccess`；`AiSavedPromptButton` 的存取由调用方注入、不再读
 /// `appProvider`。最大环降到 622（剩下进环的是本就读 AppModel 的制作台页面），上限随之下调。
 ///
+/// 2026-11-20 复习换代（协议 4）第六波合流合入 develop 实测 625（+4 −1）：新进环的 4 个是换代新加、本就读
+/// AppModel 的复习文件——迁移控制器 `srs_gen4_migration_controller`（主库开关 / 关库静默要读
+/// AppModel）、保留副本 `srs_retained_copy`（库目录按 AppModel 取）、迁移页 `srs_generation_view` 与载入失败页
+/// `srs_load_error`（后者被全部复习页 import、前者经它进环，二者都靠迁移控制器碰到 AppModel）；出环的 1 个是
+/// 换代删掉的预演区块 `srs_gen4_rehearsal_section`。逐个核过：没有底层（models / utils / storage / 服务层）
+/// 文件因此被接进环，与 2026-11-05 / 11-15 那几次「新增的是本就读 AppModel 的 UI 文件」同理，上限按实测调到 625。
+///
 /// 红了：新加的 import 把底层模块接到了 UI / AppModel 上。把用到的东西挪到
 /// 更底层的文件，或改用参数 / 回调注入，不要调大上限、不要把文件从目录里豁免。
-const int kMaxCycleFiles = 622;
+const int kMaxCycleFiles = 625;
 
 const String kAppModel = 'lib/src/models/app_model.dart';
 

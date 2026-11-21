@@ -5,15 +5,16 @@ part of 'srs_deck_list_page.dart';
 //
 // 每个顶层牌组（手机详情页的子牌组清单里是每个直接子牌组）连同它的子孙画成一块
 // 按牌组取色的圆角色块（[_DeckBandGroup]），配色与首页拼贴的牌组海报同一套
-// （[fushiPosterColors] + 色相键 `srs-deck:<id>`，所以树里的色块和上方选中牌组的
-// 海报同色）。块里每个牌组是一张透明的内层行（[_DeckRow] 的色块分支）：顶层行
+// （[fushiPosterColors] + 色相键 `srs-deck:<牌组全名>`，所以树里的色块和上方选中牌组的
+// 海报同色；按名字而不是 id 取色，已配对设备上的同名牌组与本机同色，设计稿 11-20 #17）。块里每个牌组是一张透明的内层行（[_DeckRow] 的色块分支）：顶层行
 // 带 M3E 多边形首字徽章 + 粗圆角进度条，子牌组是缩进 + 细分隔线的内层行；行尾
 // 三个计数是带颜色语义的 chip（[SrsDeckCountChips]，0 弱化），播放按钮是块内
 // 右侧的圆形 tonal 按钮（[_SrsDeckBandPlayButton]）。展开 / 收起沿用
 // [FushiTreeReveal] 的弹簧高度动画与 [FushiTreeChevron] 的箭头旋转；色块底在
 // reveal 外面，子行收起时块高跟着弹簧收，块面不会被缩放 / 淡出切出缺口。
 //
-// 墨水屏（[shellRedesignActive] 为 false）与已配对设备分区仍走原来的分段卡行。
+// 本机牌组树与「已配对设备」分区共用这一套（[_srsDeckBandGroups]）；墨水屏
+// （[shellRedesignActive] 为 false）两处都走分段卡行。
 // =============================================================================
 
 /// 色块的圆角（与拼贴半高块同档，见 `fushiCoverBlockRadius`）。
@@ -38,11 +39,54 @@ double _deckBandHoverScaleFor(double width) {
   return cap < _kDeckBandHoverScale ? cap : _kDeckBandHoverScale;
 }
 
-/// 牌组 [groupId] 的色块配色：与首页拼贴的牌组海报（`_SrsDeckPoster`）同一个色相键。
+/// 牌组 [deck] 的色块配色：与首页拼贴的牌组海报（`_SrsDeckPoster`）同一个色相键。
+/// 键是牌组全名：本机与已配对设备上的同名牌组同色（两边的牌组 id 不相干）。
 FushiCoverBlockColors _srsDeckBandColors(
   BuildContext context,
-  String groupId,
-) => fushiPosterColors(context, fushiPosterHue('srs-deck:$groupId'));
+  SrsDeckSummary deck,
+) => fushiPosterColors(context, fushiPosterHue('srs-deck:${deck.fullName}'));
+
+/// 先序牌组列表 [decks] 切成色块：一个组 = 一个（相对 [baseDepth]）顶层牌组 + 紧跟其后的
+/// 子孙，块按组头牌组取色（[_srsDeckBandColors]）。行由调用方的 [rowAt] 建（本机树与已配对
+/// 设备分区各自接自己的数据源与动作，行组件都是 [_DeckRow]）；[index] 是行在块里的位置。
+List<Widget> _srsDeckBandGroups(
+  BuildContext context, {
+  required List<SrsDeckSummary> decks,
+  required int baseDepth,
+  required String keyPrefix,
+  required Widget Function(int i, {required int index, required _DeckBand band})
+  rowAt,
+}) {
+  final List<Widget> groups = <Widget>[];
+  int i = 0;
+  while (i < decks.length) {
+    final SrsDeckSummary head = decks[i];
+    final FushiCoverBlockColors colors = _srsDeckBandColors(context, head);
+    final List<Widget> rows = <Widget>[
+      rowAt(i, index: 0, band: _DeckBand(colors: colors, inner: false)),
+    ];
+    int j = i + 1;
+    while (j < decks.length && decks[j].depth - baseDepth > 0) {
+      rows.add(
+        rowAt(
+          j,
+          index: j - i,
+          band: _DeckBand(colors: colors, inner: true),
+        ),
+      );
+      j++;
+    }
+    groups.add(
+      _DeckBandGroup(
+        key: ValueKey<String>('$keyPrefix${head.deck.id}'),
+        colors: colors,
+        children: rows,
+      ),
+    );
+    i = j;
+  }
+  return groups;
+}
 
 /// 行所在的色块：配色 + 是不是块里的内层（子牌组）行。
 @immutable

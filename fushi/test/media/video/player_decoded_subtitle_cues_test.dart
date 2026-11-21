@@ -222,9 +222,14 @@ void main() {
       final int end = src.indexOf('\n  }\n', start);
       // setCues 的本体是 _replaceCues（「先播后补」换装要先找回当前句再通知，见
       // completeEmbeddedTextBridge），回流结束挂在本体上。
-      expect(src.substring(start, end).contains('_replaceCues(cues);'), isTrue);
+      expect(
+        src
+            .substring(start, end)
+            .contains('_replaceCues(cues, newSource: true);'),
+        isTrue,
+      );
       final int replaceAt = src.indexOf(
-        'void _replaceCues(List<AudioCue> cues) {',
+        'void _replaceCues(List<AudioCue> cues, {required bool newSource}) {',
       );
       expect(replaceAt, greaterThanOrEqualTo(0));
       expect(

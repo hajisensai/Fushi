@@ -39,8 +39,21 @@ void main() {
     );
 
     expect(fn, contains('if (!mounted) return'));
-    // 统一合集 Phase 3：下一集索引内联计算（有下一集才连播；末集/单集/越界 → null）。
-    expect(fn, contains('cur < _episodes.length - 1'));
+    // 拍板台 QHbRRctQdW：目标集由连播顺序决定——顺序模式走纯函数
+    // sequentialNextEpisode（末集/单集/越界 → null），随机模式走跨页面的轮次记录。
+    expect(
+      fn,
+      contains('final int? nextEpisode = _autoAdvanceTargetEpisode();'),
+    );
+    expect(
+      fn,
+      contains('appModel.videoPlaylistOrder == VideoPlaylistOrder.sequential'),
+    );
+    expect(
+      fn,
+      contains('sequentialNextEpisode(count: episodes.length, current: cur)'),
+    );
+    expect(fn, contains('VideoShuffleRounds.instance.next('));
     // TODO-639: the advance decision is the pure predicate gating on the
     // user's auto-play-next preference, next-episode existence, and reentry.
     expect(fn, contains('shouldAutoPlayNextOnCompletion('));

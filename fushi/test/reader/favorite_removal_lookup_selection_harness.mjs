@@ -8,17 +8,17 @@
 // 17.2+) and the span-wrapping fallback (iOS / macOS Safari before 17.2), which
 // is the one that unwrapped the favourite spans and merged text nodes under the
 // lookup selection's "text node + offset" points.
-import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
+import { readPayload } from './reader_harness_support.js';
 
+const scripts = readPayload();
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
 // The only argument is the temp payload file the Dart test just wrote (production
 // scripts serialized from the repo); there is no user- or model-supplied path here.
-const scripts = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));  // NOSONAR: S8707 false positive, path comes from the Dart test harness
 
 const PARAGRAPH = '<p>前の文。猫がいる。後の文です。</p>';
 

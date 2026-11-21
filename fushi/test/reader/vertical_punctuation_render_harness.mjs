@@ -8,15 +8,15 @@
 // horizontal pages must paint #t exactly like #bad (nothing injected, the body font is used).
 // #t2 / #ref2 / #bad2 do the same for the long-vowel mark ー (UAX #50 Tr like 「: Blink also
 // paints it as a horizontal bar when the font lacks `vert`, feedback mTof77pMTe).
-import fs from 'node:fs';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
+import { readPayload } from './reader_harness_support.js';
 
+const payload = readPayload();
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
 // The only argument is the temp payload file the Dart test just wrote.
-const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));  // NOSONAR: S8707 path comes from the Dart test harness
 
 const RECTS = String.raw`(async () => {
   await document.fonts.ready;

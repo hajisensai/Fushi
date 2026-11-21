@@ -241,6 +241,11 @@ fn encrypted_qrc_with_kana_track_parses_to_ruby_through_ffi() {
     // 本地缓存 `.qrc`：靠文件头认，扩展名提示缺失也能解。
     let local = qrc::encrypt_local(plain.as_bytes());
     assert_eq!(ruby(&ffi_parse(&local, "", -1).unwrap()), expect);
+    // 旧接口 XML 原样交上来：`<content>` 里 CDATA 包装的十六进制也能解。
+    let xml = format!(
+        "<?xml version=\"1.0\" encoding=\"GB2312\" ?>\n<QrcInfos><content><![CDATA[{hex}]]></content><contentts><![CDATA[]]></contentts></QrcInfos>"
+    );
+    assert_eq!(ruby(&ffi_parse(xml.as_bytes(), "qrc", -1).unwrap()), expect);
     // 坏的十六进制密文明确报错，不出乱码。
     assert!(
         ffi_parse(b"0011223344556677", "qrc", -1)

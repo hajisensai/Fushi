@@ -49,6 +49,8 @@ import 'package:fushi_engine/media/manga/manga_importer.dart'
     show kMangaImageExtensions;
 import 'package:fushi_engine/media/manga/mokuro_legacy_html.dart'
     show legacyMokuroHtmlPathsIn;
+import 'package:fushi_engine/media/system_junk_entries.dart'
+    show isAppleDoubleFileName, isSystemJunkDirectoryName;
 import 'package:path/path.dart' as p;
 
 /// `.mokuro` 卷 manifest 的扩展名（含点、小写）。
@@ -186,6 +188,18 @@ MangaFolderPlan planMangaFolders({
   // 直接子目录。
   final Map<String, Set<String>> grandchildNames = <String, Set<String>>{};
   final Set<String> childrenWithDirectImages = <String>{};
+  // 「相对扫描根」按文件所在目录算一次、同目录的文件共用：`relative` / `normalize`
+  // 是这一趟里最贵的路径运算，逐文件算的话 3 万张页图就是 3 万次（几百毫秒）。
+  final Map<String, _DirUnderRoot?> dirUnderRoot = <String, _DirUnderRoot?>{};
+  _DirUnderRoot? dirOf(String path) =>
+      dirUnderRoot.putIfAbsent(ctx.dirname(path), () {
+        final String dir = ctx.normalize(ctx.dirname(path));
+        final String relative = ctx.relative(dir, from: root);
+        if (relative == '.') return _DirUnderRoot(dir, const <String>[]);
+        final List<String> segments = ctx.split(relative);
+        if (segments.first == '..') return null;
+        return _DirUnderRoot(dir, segments);
+      });
   for (final String path in filePaths) {
     final String ext = ctx.extension(path).toLowerCase();
     if (ext == kMokuroExtension) {
@@ -193,22 +207,22 @@ MangaFolderPlan planMangaFolders({
       continue;
     }
     if (carrierExtensions.contains(ext)) {
-      final String relative = ctx.relative(ctx.normalize(path), from: root);
-      if (ctx.split(relative).first == '..') continue;
+      if (dirOf(path) == null) continue;
       carrierPaths.add(path);
       continue;
     }
     if (!kMangaImageExtensions.contains(ext)) continue;
-    final String relative = ctx.relative(ctx.normalize(path), from: root);
-    final List<String> segments = ctx.split(relative);
-    if (segments.isEmpty || segments.first == '..') continue;
-    imageDirs.add(ctx.dirname(ctx.normalize(path)));
-    if (segments.length == 1) {
+    final _DirUnderRoot? dir = dirOf(path);
+    if (dir == null) continue;
+    imageDirs.add(dir.normalized);
+    // 文件相对扫描根的分段 = 目录分段 + 文件名。
+    final List<String> segments = dir.segments;
+    if (segments.isEmpty) {
       rootHasImages = true;
     } else {
       final String child = ctx.join(root, segments.first);
       childFolders.add(child);
-      if (segments.length == 2) {
+      if (segments.length == 1) {
         childrenWithDirectImages.add(child);
       } else {
         (grandchildNames[child] ??= <String>{}).add(segments[1]);
@@ -274,28 +288,47 @@ MangaFolderPlan planMangaFolders({
     }
     candidates.sort(_compareIgnoreCase);
   }
+  // 下面三处「X 与候选目录是否同一 / 互为祖先后代」都按祖先链查表，不再对每个候选
+  // 线性扫一遍全部 `.mokuro` / 页图目录 / 单文件卷：那是 候选数 ×（页图目录数 + 卷数）
+  // 次路径比较，3000 卷的库在 UI isolate 上同步卡 3 秒（#3722 m2 gap-scanner-5）。
+  final _DirAncestry ancestry = _DirAncestry(ctx);
+  // 用全部 `.mokuro`（含 sidecar）判：sidecar 所在目录的页图同样属于那一卷。
+  final Set<String> mokuroDirKeys = <String>{};
+  final Set<String> mokuroDirSelfAndAncestorKeys = <String>{};
+  for (final String mokuroPath in allMokuroPaths) {
+    final String mokuroDir = ctx.dirname(ctx.normalize(mokuroPath));
+    mokuroDirKeys.add(ancestry.keyOf(mokuroDir));
+    mokuroDirSelfAndAncestorKeys.addAll(
+      ancestry.selfAndAncestorKeys(mokuroDir),
+    );
+  }
+  // 祖先目录 key → 位于它之内（含它自己）的页图目录。
+  final Map<String, List<String>> imageDirsWithin = <String, List<String>>{};
+  for (final String dir in imageDirs) {
+    for (final String key in ancestry.selfAndAncestorKeys(dir)) {
+      (imageDirsWithin[key] ??= <String>[]).add(dir);
+    }
+  }
+  final Set<String> carrierDirKeys = ancestry.carrierDirSelfAndAncestorKeys(
+    carrierPaths,
+  );
   final List<String> imageFolders = <String>[];
   for (final String candidate in candidates) {
-    // 用全部 `.mokuro`（含 sidecar）判：sidecar 所在目录的页图同样属于那一卷。
-    final bool claimedByMokuro = allMokuroPaths.any((String mokuroPath) {
-      final String mokuroDir = ctx.dirname(ctx.normalize(mokuroPath));
-      return ctx.equals(mokuroDir, candidate) ||
-          ctx.isWithin(mokuroDir, candidate) ||
-          ctx.isWithin(candidate, mokuroDir);
-    });
+    final String candidateKey = ancestry.keyOf(candidate);
+    // mokuro 目录 == 候选、在候选之内（前一项），或候选在 mokuro 目录之内（后一项）。
+    final bool claimedByMokuro =
+        mokuroDirSelfAndAncestorKeys.contains(candidateKey) ||
+        ancestry.selfAndAncestorKeys(candidate).any(mokuroDirKeys.contains);
     if (claimedByMokuro) continue;
     // 散图让位给单文件卷，只在**每一个**含页图的目录自己（或其子树）都躺着单文件卷
     // 时成立：`系列/cover.jpg` + `系列/第1巻.cbz` 里那张图是封面。只要有一个页图
     // 目录的子树里没有任何单文件卷（`系列/ch01/*.jpg` + `系列/extra.cbz`），那批图
     // 就是真正的页，这个候选仍成卷——否则一个散装章节目录会因为隔壁多了一个包而
     // 被整卷静默丢掉。
-    final bool claimedByCarrier = mangaImageDirsClaimedByCarriers(
-      imageDirs: <String>[
-        for (final String dir in imageDirs)
-          if (ctx.equals(dir, candidate) || ctx.isWithin(candidate, dir)) dir,
-      ],
-      carrierPaths: carrierPaths,
-      context: ctx,
+    final bool claimedByCarrier = _imageDirsClaimedByCarrierKeys(
+      imageDirsWithin[candidateKey] ?? const <String>[],
+      carrierDirKeys,
+      ancestry,
     );
     if (!claimedByCarrier) imageFolders.add(candidate);
   }
@@ -325,22 +358,64 @@ bool mangaImageDirsClaimedByCarriers({
   required Iterable<String> carrierPaths,
   p.Context? context,
 }) {
-  final p.Context ctx = context ?? p.context;
-  final List<String> carrierDirs = <String>[
-    for (final String carrierPath in carrierPaths)
-      ctx.dirname(ctx.normalize(carrierPath)),
-  ];
+  final _DirAncestry ancestry = _DirAncestry(context ?? p.context);
+  return _imageDirsClaimedByCarrierKeys(
+    imageDirs,
+    ancestry.carrierDirSelfAndAncestorKeys(carrierPaths),
+    ancestry,
+  );
+}
+
+/// [mangaImageDirsClaimedByCarriers] 的判据本体：[carrierDirKeys] 是全部单文件卷所在
+/// 目录**及其祖先**的 key，页图目录在表里 ⇔ 某个单文件卷就在它自己或它的子树里。
+bool _imageDirsClaimedByCarrierKeys(
+  Iterable<String> imageDirs,
+  Set<String> carrierDirKeys,
+  _DirAncestry ancestry,
+) {
   bool any = false;
   for (final String imageDir in imageDirs) {
     any = true;
-    final String dir = ctx.normalize(imageDir);
-    final bool claimed = carrierDirs.any(
-      (String carrierDir) =>
-          ctx.equals(carrierDir, dir) || ctx.isWithin(dir, carrierDir),
-    );
-    if (!claimed) return false;
+    if (!carrierDirKeys.contains(ancestry.keyOf(imageDir))) return false;
   }
   return any;
+}
+
+/// 扫描根之内的一个目录：规范化路径 + 相对扫描根的分段（扫描根自己是空表）。
+class _DirUnderRoot {
+  const _DirUnderRoot(this.normalized, this.segments);
+
+  final String normalized;
+  final List<String> segments;
+}
+
+/// 「A 与 B 是同一目录 / A 在 B 之内」的查表形式：目录按 [p.Context.canonicalize]
+/// 取 key（与 [p.Context.equals] / [p.Context.isWithin] 同一口径：规范化、转绝对路径，
+/// Windows 上不分大小写），「A 在 B 之内或等于 B」⇔ B 的 key 在 A 的祖先链上。
+class _DirAncestry {
+  _DirAncestry(this.ctx);
+
+  final p.Context ctx;
+
+  String keyOf(String dir) => ctx.canonicalize(dir);
+
+  /// [dir] 自己及其全部祖先目录的 key，自内向外，到文件系统根为止。
+  Iterable<String> selfAndAncestorKeys(String dir) sync* {
+    String current = keyOf(dir);
+    while (true) {
+      yield current;
+      final String parent = ctx.dirname(current);
+      if (parent == current) return;
+      current = parent;
+    }
+  }
+
+  /// 每个单文件卷所在目录及其全部祖先的 key。
+  Set<String> carrierDirSelfAndAncestorKeys(Iterable<String> carrierPaths) =>
+      <String>{
+        for (final String carrierPath in carrierPaths)
+          ...selfAndAncestorKeys(ctx.dirname(ctx.normalize(carrierPath))),
+      };
 }
 
 /// 系列目录下探判据（规则见库文档「系列目录下探一层」）：[seriesDir] 下含页图的
@@ -374,6 +449,12 @@ Map<String, MangaSeriesVolume>? _seriesVolumes(
 
 /// `dart:io` 便捷入口：递归枚举 [root] 下的文件（不跟符号链接；无权限/瞬时 IO
 /// 的子目录整个跳过，不让整次归组失败）后交给 [planMangaFolders]。
+///
+/// 系统 / 垃圾条目（`@eaDir`、`__MACOSX`、回收站目录，`._` 资源叉文件，判据见
+/// `system_junk_entries.dart`）在枚举时就丢掉：纯函数 [planMangaFolders] 只看扩展名，
+/// 不丢的话群晖每页一份的 `@eaDir/<页名>/SYNOPHOTO_THUMB_*.jpg` 会让 `@eaDir` 自成
+/// 一卷，只有 `._001.jpg` 的根会被当成「根本身有页图」。app 源库扫描在列目录时已按
+/// 同一判据过滤（`excludeSourceJunkEntries`）。
 MangaFolderPlan planMangaFoldersInDirectory(Directory root) {
   final List<String> files = <String>[];
   void walk(Directory dir) {
@@ -384,10 +465,11 @@ MangaFolderPlan planMangaFoldersInDirectory(Directory root) {
       return;
     }
     for (final FileSystemEntity entity in entries) {
+      final String name = p.basename(entity.path);
       if (entity is File) {
-        files.add(entity.path);
+        if (!isAppleDoubleFileName(name)) files.add(entity.path);
       } else if (entity is Directory) {
-        walk(entity);
+        if (!isSystemJunkDirectoryName(name)) walk(entity);
       }
     }
   }

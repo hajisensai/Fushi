@@ -1,8 +1,9 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
+
+import '../helpers/node_runtime.dart';
 
 /// BUG-2575 / BUG-2576：VN 量尺盒尺寸优先级 + restore 进度落屏的**行为级**覆盖。
 ///
@@ -22,13 +23,9 @@ import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 /// 把 [ReaderVisualNovelScripts.vnShellScript] 的 `window.fushiReader = {…}` 对象字面量
 /// 原文丢进 node 求值，用替身补齐协作者后调真实方法。
 void main() {
-  test('VN 行为级：量尺盒宽高 important / restore 0.99 落末屏 / fragment 失效回退进度', () {
+  test('VN 行为级：量尺盒宽高 important / restore 0.99 落末屏 / fragment 失效回退进度', () async {
     final String shell = ReaderVisualNovelScripts.vnShellScript();
-    final Directory temp = Directory.systemTemp.createTempSync(
-      'fushi-vn-measure-restore-js-',
-    );
-    final File payload = File('${temp.path}/payload.json')
-      ..writeAsStringSync(jsonEncode(<String, String>{'shell': shell}));
+    final Map<String, String> payload = <String, String>{'shell': shell};
     final File runner = File(
       'test/reader/vn_measure_box_restore_progress_behavior_test.js',
     );
@@ -37,17 +34,11 @@ void main() {
       isTrue,
       reason: 'behavior harness ${runner.path} must exist',
     );
-    late final ProcessResult result;
-    try {
-      result = Process.runSync(
-        'node',
-        <String>[runner.path, payload.path],
-        stdoutEncoding: utf8,
-        stderrEncoding: utf8,
-      );
-    } finally {
-      temp.deleteSync(recursive: true);
-    }
+    final NodeHarnessResult result = await runNodeHarness(
+      'node',
+      runner.path,
+      payload,
+    );
     expect(
       result.exitCode,
       0,

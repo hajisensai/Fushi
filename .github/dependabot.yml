@@ -1,0 +1,28 @@
+# 第三方 action 一律钉 40 位 commit SHA（行尾注释写版本，如 `@<sha> # v6.1.0`），
+# 由 Dependabot 每周把升级合成一个 PR 提上来，SHA 与注释一起改。
+# 拍板：rank.fushi.moe/dev/decisions 的 ci-pin-actions（2026-11-17 选 A）。
+# 守卫：fushi/test/build/workflow_action_sha_pin_guard_test.dart（禁浮动引用、
+# 要求本文件覆盖 workflows 与 .github/actions 下的组合 action）。
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories:
+      - "/"
+      - "/.github/actions/*"
+    # 仓库默认分支是 main（只收正式版），日常集成在 develop。
+    target-branch: develop
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    ignore:
+      # 钉在 master 分支的 SHA 上（工具链版本由 `toolchain:` 输入决定）；该仓库
+      # 唯一的版本 tag v1 是 2022 年前后的旧提交，交给 Dependabot 会被「升」回旧版。
+      # 需要新版时手动换成 master 最新 SHA，注释保持 `# master`。
+      - dependency-name: dtolnay/rust-toolchain

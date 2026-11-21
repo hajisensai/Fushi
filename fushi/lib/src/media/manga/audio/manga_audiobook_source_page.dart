@@ -498,8 +498,10 @@ class _MangaAudiobookSourcePanelState extends State<MangaAudiobookSourcePanel> {
       child: AdaptiveSettingsSegmentedRow<MangaAudioSourcePolicy>(
         title: t.manga_audio_source_policy,
         subtitle: switch (_policy) {
+          // 有声书 + 合成混排时生成端会克隆旁白音色（manga_audio_narrator.dart）。
           MangaAudioSourcePolicy.audiobookFirst =>
-            t.manga_audio_source_policy_hint_first,
+            '${t.manga_audio_source_policy_hint_first} '
+                '${t.manga_audio_source_policy_narrator_note}',
           MangaAudioSourcePolicy.audiobookOnly =>
             t.manga_audio_source_policy_hint_only,
           MangaAudioSourcePolicy.synthOnly =>

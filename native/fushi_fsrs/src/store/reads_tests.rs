@@ -90,7 +90,7 @@ fn decode(b: &[u8]) -> Vec<(String, Vec<Cell>)> {
 /// 发一条命令，返回 (回包 JSON, 各结果表)。
 fn command(core: &SrsCore, req: Value) -> Result<(Value, Vec<(String, Vec<u8>)>), String> {
     let mut files = Vec::new();
-    let v = crate::store::ffi::sync2_dispatch(core, &req, &mut Vec::new(), &mut files)?;
+    let v = crate::store::legacy3::sync2_dispatch(core, &req, &mut Vec::new(), &mut files)?;
     Ok((v, files))
 }
 
@@ -602,7 +602,7 @@ fn a_read_sees_the_write_that_just_returned() {
 }
 
 /// `reviewed_decks {before}`：只看本 profile、`before` 之前评过分的卡，按卡现在所在的牌组去重升序；没评分的（rating
-/// 为空）和之后的不算。
+/// 为空）和之后的不算；从 Anki 导入的复习（日志 ID 是 UUIDv5）不算，本机作答（UUIDv7）算。
 #[test]
 fn reviewed_decks_lists_current_decks_of_cards_rated_before_the_cutoff() {
     let (core, _dir) = open("reads_reviewed_decks");
@@ -613,6 +613,8 @@ fn reviewed_decks_lists_current_decks_of_cards_rated_before_the_cutoff() {
             (P, "C2", "DA"),
             (P, "C3", "DC"),
             (P, "C4", "DD"),
+            (P, "C5", "DE"),
+            (P, "C6", "DF"),
             (Q, "C9", "DQ"),
         ] {
             w.execute(
@@ -628,6 +630,9 @@ fn reviewed_decks_lists_current_decks_of_cards_rated_before_the_cutoff() {
             ("L4", P, "C3", 200, Some(3)),
             ("L5", P, "C4", 50, None),
             ("L6", Q, "C9", 10, Some(3)),
+            // Anki 导入（UUIDv5）：不算；同一时刻本机作答（UUIDv7）：算。
+            ("0193a1b2-0000-5000-8000-0000000000f1", P, "C5", 10, Some(3)),
+            ("0193a1b2-0000-7000-8000-0000000000f2", P, "C6", 10, Some(3)),
         ] {
             w.execute(
                 "INSERT INTO srs_stat_reviews (log_id, profile_uid, card_id, occurred_at, rating)                  VALUES (srs_id(?1), srs_id(?2), srs_id(?3), ?4, ?5)",
@@ -639,9 +644,10 @@ fn reviewed_decks_lists_current_decks_of_cards_rated_before_the_cutoff() {
     let decks = |before: i64| {
         read(&core, P, "reviewed_decks", json!({"before": before})).0["decks"].clone()
     };
-    assert_eq!(decks(200), json!(["DA", "DB"]));
-    assert_eq!(decks(201), json!(["DA", "DB", "DC"]));
-    assert_eq!(decks(100), json!([]));
+    assert_eq!(decks(200), json!(["DA", "DB", "DF"]));
+    assert_eq!(decks(201), json!(["DA", "DB", "DC", "DF"]));
+    assert_eq!(decks(100), json!(["DF"]));
+    assert_eq!(decks(10), json!([]));
     assert_eq!(
         read(&core, Q, "reviewed_decks", json!({"before": 1000})).0["decks"],
         json!(["DQ"])

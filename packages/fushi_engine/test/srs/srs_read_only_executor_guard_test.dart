@@ -8,7 +8,8 @@
 //    报错文案 Dart 与内核同文。
 // 2. `ffsrs_store_exec` 只剩这条测试通道（mode 4 / 5）：srs.db 上的 Drift 执行器（mode 0–3、只读报错
 //    `READ_ONLY`）已删，读只有内核读命令 `read` / `read_lib`（store/reads.rs）。
-// 3. Dart 的改投影命令集合与内核 `PROJECTING_OPS` 同一组（Dart 据此断言这些命令在独占区里发、吸收回包里的投影变化）。
+// 3. Dart 的改投影命令集合与内核新代分发器（`store/gen4/dispatch.rs`）的 `PROJECTING_OPS` 同一组（Dart 据此断言这些命令
+//    在独占区里发、吸收回包里的投影变化）。内核那边另有测试核对它们都接了线、且覆盖每条走 `local_write` 的命令。
 import 'dart:io';
 
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -204,9 +205,9 @@ void main() {
 
   test('Dart 的改投影命令集合与内核 PROJECTING_OPS 同一组', () {
     final String src = File(
-      p.join(_kRepoRoot, 'native/fushi_fsrs/src/store/ffi.rs'),
+      p.join(_kRepoRoot, 'native/fushi_fsrs/src/store/gen4/dispatch.rs'),
     ).readAsStringSync().replaceAll('\r\n', '\n');
-    final int from = src.indexOf('const PROJECTING_OPS: &[&str] = &[');
+    final int from = src.indexOf('pub const PROJECTING_OPS: &[&str] = &[');
     expect(from, greaterThanOrEqualTo(0));
     final String body = src.substring(from, src.indexOf('];', from));
     final Set<String> rust = <String>{

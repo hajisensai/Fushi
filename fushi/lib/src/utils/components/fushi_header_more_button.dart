@@ -41,10 +41,26 @@ class FushiHeaderMoreButton extends StatelessWidget {
   const FushiHeaderMoreButton({
     required this.entries,
     required this.buttonKey,
+    this.leadingEntries = const <FushiHeaderMoreEntry>[],
     super.key,
   });
 
   final List<FushiHeaderMoreEntry> entries;
+
+  /// 排在 [entries] 前面、用分隔线隔开的一组：页头自适应收纳
+  /// （[fushiResolveHeaderActions]）放不下的外露动作合进这颗「⋯」，而不是再生
+  /// 一颗并排的「⋯」（设计稿 11-20 #16「顶栏两个 ⋮」）。
+  final List<FushiHeaderMoreEntry> leadingEntries;
+
+  /// 同一颗按钮再并进一组 [leading]（排在已有的 [leadingEntries] 前面）。
+  FushiHeaderMoreButton withLeadingEntries(
+    List<FushiHeaderMoreEntry> leading,
+  ) => FushiHeaderMoreButton(
+    key: key,
+    buttonKey: buttonKey,
+    entries: entries,
+    leadingEntries: <FushiHeaderMoreEntry>[...leading, ...leadingEntries],
+  );
 
   /// 按钮本体的 key（测试 / 焦点驱动定位用，如 `video-library-more`）。
   final Key buttonKey;
@@ -81,19 +97,13 @@ class FushiHeaderMoreButton extends StatelessWidget {
           context: anchorContext,
           position: position,
           items: <PopupMenuEntry<FushiHeaderMoreEntry>>[
-            for (final FushiHeaderMoreEntry entry in entries)
-              PopupMenuItem<FushiHeaderMoreEntry>(
-                key: entry.key,
-                value: entry,
-                enabled: entry.enabled,
-                child: Row(
-                  children: <Widget>[
-                    FushiIcon(entry.icon, size: 20),
-                    const SizedBox(width: 12),
-                    Expanded(child: Text(entry.label)),
-                  ],
-                ),
+            for (final FushiHeaderMoreEntry entry in leadingEntries)
+              _item(entry),
+            if (leadingEntries.isNotEmpty && entries.isNotEmpty)
+              const PopupMenuDivider(
+                key: ValueKey<String>('fushi-header-more-divider'),
               ),
+            for (final FushiHeaderMoreEntry entry in entries) _item(entry),
           ],
         );
     if (choice == null) return;
@@ -104,4 +114,19 @@ class FushiHeaderMoreButton extends StatelessWidget {
     }
     await FushiActionOrigin.dispatch(anchorContext, choice.onSelected);
   }
+
+  static PopupMenuItem<FushiHeaderMoreEntry> _item(
+    FushiHeaderMoreEntry entry,
+  ) => PopupMenuItem<FushiHeaderMoreEntry>(
+    key: entry.key,
+    value: entry,
+    enabled: entry.enabled,
+    child: Row(
+      children: <Widget>[
+        FushiIcon(entry.icon, size: 20),
+        const SizedBox(width: 12),
+        Expanded(child: Text(entry.label)),
+      ],
+    ),
+  );
 }

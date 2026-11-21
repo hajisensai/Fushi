@@ -24,8 +24,8 @@ export const LIMITS = {
   deviceLinkPerHour: 10,
 };
 
-/** 在 bucket 的当前窗口里累加 amount（默认 1），超过 limit 抛 429。 */
-export async function hit(env, bucket, windowMs, limit, now, amount = 1) {
+/** 在 bucket 的当前窗口里累加 amount（默认 1），超过 limit 抛 429（错误码默认 rate_limited）。 */
+export async function hit(env, bucket, windowMs, limit, now, amount = 1, code = 'rate_limited') {
   const windowStart = Math.floor(now / windowMs) * windowMs;
   const row = await env.DB
     .prepare(
@@ -35,7 +35,7 @@ export async function hit(env, bucket, windowMs, limit, now, amount = 1) {
     )
     .bind(bucket, windowStart, amount)
     .first();
-  if (row.count > limit) throw new HttpError(429, 'rate_limited');
+  if (row.count > limit) throw new HttpError(429, code);
 }
 
 /** 清掉早于 cutoff 的限流窗口，以及已超出签名时效的防重放记录（scheduled 里跑）。 */

@@ -13,12 +13,16 @@
 ///   包含关系只作建议。
 /// - [matchSubjectsByTitle]：两个条目没有共享 id 但规范化标题相同（游戏 ↔ 动画等）→
 ///   低置信候选，交 AI 裁决；没配 AI 时作为低置信建议。
+/// - [matchSeriesByTitle]：同类条目（视频 ↔ 视频、游戏 ↔ 游戏）标题沾边、刮削源又
+///   没给出系列关系 → 续作候选，只交 AI 裁决，没有 AI 结论就不写。
 ///
 /// AI 裁决（[MediaLinkJudge]）只在已缩小的候选上给结构化结论（是否相关、关系、方向、
 /// 置信度、理由），**不让 AI 编 id**：结论按候选下标回填，端点永远来自本地数据。
 library;
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/links/work_graph.dart'
+    show workSeriesRelations;
 
 import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart'
     show MalSourceMaterial;
@@ -33,6 +37,7 @@ class MediaLinkSubject {
     required this.titles,
     this.year,
     this.externalIds = const <String, String>{},
+    this.seriesSources = const <String>{},
   });
 
   final MediaLinkEndpoint endpoint;
@@ -43,6 +48,11 @@ class MediaLinkSubject {
 
   /// provider → id（`mal` / `anidb` / `vndb` …，Bangumi 不收）。
   final Map<String, String> externalIds;
+
+  /// 已经把这个条目的系列关系（续作 / 前传 / 外传…）刮进 `collection_relations` 的
+  /// 资料源（`anidb` / `mal` / 是合集成员的 TMDB 电影的 `tmdb`）。只有身份、源不提供
+  /// 系列关系的不算：VNDB（游戏关系不落库）、TMDB 剧集与不在合集里的电影。
+  final Set<String> seriesSources;
 
   String get displayTitle => titles.isEmpty ? endpoint.key : titles.first;
 }
@@ -57,6 +67,7 @@ class MediaLinkCandidate {
     required this.confidence,
     required this.reason,
     this.idEvidence = false,
+    this.aiOnly = false,
   });
 
   final MediaLinkSubject from;
@@ -69,6 +80,12 @@ class MediaLinkCandidate {
   /// 是否有共享外部 id 佐证（而不只是标题像）。为 true 时两条路径都直接生效
   /// （除非 AI 判不相关），见 [mediaLinkDispositionOf]。
   final bool idEvidence;
+
+  /// 只有 AI 给了结论才落库的候选（[matchSeriesByTitle]：同类条目标题沾边，规则
+  /// 自己分不出是续作、外传、重复入库还是碰巧同名）。没有 AI 结论（没配 AI / 请求
+  /// 失败 / 这一条没判出来）时直接丢弃，不写成建议——否则每个「标题包含」都会变成
+  /// 一条要用户手动否决的噪音。
+  final bool aiOnly;
 
   MediaLinkCandidate copyWith({
     MediaLinkSubject? from,
@@ -85,7 +102,17 @@ class MediaLinkCandidate {
     confidence: confidence ?? this.confidence,
     reason: reason ?? this.reason,
     idEvidence: idEvidence,
+    aiOnly: aiOnly,
   );
+}
+
+/// 一对端点的无序键（不分关系与方向）：候选去重、「已有系列关系」集合共用。
+String mediaLinkPairKey(MediaLinkEndpoint a, MediaLinkEndpoint b) {
+  final List<String> pair = <String>[
+    '${a.kind.dbValue}\u0000${a.key}',
+    '${b.kind.dbValue}\u0000${b.key}',
+  ]..sort();
+  return pair.join('\u0001');
 }
 
 /// 标题比较口径：与库页搜索同一归一化（[foldMediaTitle]），丢掉空串。
@@ -200,6 +227,97 @@ List<MediaLinkCandidate> matchSubjectsByTitle({
   return out;
 }
 
+/// 一个端点最多出几条同类系列候选（[matchSeriesByTitle]）。
+const int kMediaLinkSeriesCandidateLimit = 6;
+
+/// 同类系列候选只在这两族里出：视频（合集 / 散装电影）之间、游戏之间。书不出——
+/// 同一系列的各卷标题互相包含，N 卷就是 N² 对，而「第 3 卷是第 2 卷的续作」对用户
+/// 没有信息量（卷的归属由系列合集管）。
+String? _seriesFamily(MediaLinkKind kind) => switch (kind) {
+  MediaLinkKind.videoCollection || MediaLinkKind.videoEpisode => 'video',
+  MediaLinkKind.game => 'game',
+  _ => null,
+};
+
+/// 两个条目的系列关系是否都已由同一个资料源刮进 `collection_relations`
+/// （[MediaLinkSubject.seriesSources]）。是 = 那个源对这一对是权威的：源里没写它们
+/// 有关系，就不拿去问 AI。只是两端在同一个源都有 id 不够——VNDB 的游戏关系、TMDB
+/// 剧集与剧场版之间的关系从不落库，按 id 跳过会让这两类最常见的系列一条候选都出不来。
+bool _shareSeriesSource(MediaLinkSubject a, MediaLinkSubject b) =>
+    a.seriesSources.any(b.seriesSources.contains);
+
+int _shortestTitle(MediaLinkSubject s) {
+  int best = 1 << 30;
+  for (final String t in s.titles) {
+    final int n = foldMediaTitle(t).length;
+    if (n > 0 && n < best) best = n;
+  }
+  return best;
+}
+
+/// 规则 R3：[subject] 与**同类**的 [others]（视频 ↔ 视频、游戏 ↔ 游戏）标题沾边
+/// （相同或一方包含另一方）→ 「续作」候选，**只交 AI 裁决**（[MediaLinkCandidate.aiOnly]）：
+/// 第二季、剧场版、外传、Fan Disc 在刮削源拿不到关系时（没刮过的合集、两端不在同一个
+/// 资料源）由 AI 判是续作 / 外传 / 同一作品 / 不相关。
+///
+/// - [alreadyLinked] 为 true 的对（刮削的系列关系已经把它们连上）不出；
+/// - 两端的系列关系都已由同一个资料源刮过的不出（[_shareSeriesSource]）；
+/// - 方向先按年份（早的是前作），没有年份按标题短的在前（本篇标题通常是续作标题的
+///   前缀）——只是给 AI 的初始猜测，AI 说不清方向时落库前还会再判一次；
+/// - 标题相同的排在包含关系前面，最多 [kMediaLinkSeriesCandidateLimit] 条。
+List<MediaLinkCandidate> matchSeriesByTitle({
+  required MediaLinkSubject subject,
+  required List<MediaLinkSubject> others,
+  bool Function(MediaLinkEndpoint a, MediaLinkEndpoint b)? alreadyLinked,
+}) {
+  final String? family = _seriesFamily(subject.endpoint.kind);
+  if (family == null) return const <MediaLinkCandidate>[];
+  final List<({MediaLinkSubject other, double strength})> hits =
+      <({MediaLinkSubject other, double strength})>[];
+  for (final MediaLinkSubject other in others) {
+    if (_seriesFamily(other.endpoint.kind) != family) continue;
+    if (other.endpoint == subject.endpoint) continue;
+    if (_shareSeriesSource(subject, other)) continue;
+    if (alreadyLinked?.call(subject.endpoint, other.endpoint) ?? false) {
+      continue;
+    }
+    final double strength = titleMatchStrength(subject.titles, other.titles);
+    if (strength <= 0) continue;
+    hits.add((other: other, strength: strength));
+  }
+  // List.sort 不稳定：强度相同的按原顺序（下标）排，结果确定。
+  final List<int> order = <int>[for (int i = 0; i < hits.length; i++) i]
+    ..sort((int x, int y) {
+      final int byStrength = hits[y].strength.compareTo(hits[x].strength);
+      return byStrength != 0 ? byStrength : x.compareTo(y);
+    });
+  final List<MediaLinkCandidate> out = <MediaLinkCandidate>[];
+  for (final int i in order.take(kMediaLinkSeriesCandidateLimit)) {
+    final MediaLinkSubject other = hits[i].other;
+    final int? sy = subject.year;
+    final int? oy = other.year;
+    final bool subjectFirst = sy != null && oy != null && sy != oy
+        ? sy < oy
+        : _shortestTitle(subject) <= _shortestTitle(other);
+    final MediaLinkSubject from = subjectFirst ? subject : other;
+    final MediaLinkSubject to = subjectFirst ? other : subject;
+    out.add(
+      MediaLinkCandidate(
+        from: from,
+        to: to,
+        relation: MediaLinkRelation.sequel,
+        source: kMediaLinkTitleMatchSource,
+        confidence: hits[i].strength >= 1 ? 0.25 : 0.2,
+        reason:
+            'Titles overlap: "${from.displayTitle}" / "${to.displayTitle}" '
+            '(same kind, no series relation from a metadata source).',
+        aiOnly: true,
+      ),
+    );
+  }
+  return out;
+}
+
 /// AI 对一条候选的结构化结论。
 class MediaLinkVerdict {
   const MediaLinkVerdict({
@@ -289,7 +407,8 @@ const double kMediaLinkAiMediumConfidence = 0.6;
 const double kMediaLinkMalStrongTitleConfidence = 0.6;
 
 /// 一条连接的两端各自所在作品（作品图谱连通分量）的身份与规模，由调用方提供
-/// （§5.4 第二条兜底用）。返回 null = 不知道，跳过这条检查。
+/// （§5.4 第二条兜底用）。返回 null = 端点不在作品图里（还没有任何连接），按只有
+/// 自己一个成员的作品记账。
 typedef MediaLinkWorkOf =
     ({Object id, int size})? Function(MediaLinkEndpoint endpoint);
 
@@ -390,6 +509,26 @@ MediaLinkVerdict? fitMediaLinkVerdict(
   );
 }
 
+/// 同一对条目出现多条候选时谁留下：声纹实测 > 共享外部 id > MAL 原作强匹配 >
+/// 普通标题匹配 > 只有 AI 能定的同类候选。
+int mediaLinkEvidenceRank(MediaLinkCandidate c) {
+  if (c.source == MediaLinkSource.fingerprint) return 4;
+  if (c.idEvidence) return 3;
+  if (c.source == MediaLinkSource.mal &&
+      c.confidence >= kMediaLinkMalStrongTitleConfidence) {
+    return 2;
+  }
+  return c.aiOnly ? 0 : 1;
+}
+
+/// 两端年份都有且不同时：true = [a] 更早，false = [b] 更早；否则 null。
+bool? _earlierByYear(MediaLinkSubject a, MediaLinkSubject b) {
+  final int? ya = a.year;
+  final int? yb = b.year;
+  if (ya == null || yb == null || ya == yb) return null;
+  return ya < yb;
+}
+
 /// 把候选（可选经 AI 裁决）按 [mediaLinkDispositionOf] 的门槛落库：生效的写成
 /// `confirmed_by = ai`（`FushiDatabase.applyAiMediaLink`），建议走
 /// `FushiDatabase.proposeMediaLink`。同一对条目已有任何行（含否决墓碑、用户确认）的
@@ -401,7 +540,8 @@ MediaLinkVerdict? fitMediaLinkVerdict(
 /// 确定性规则），这里不吞。
 ///
 /// §5.4 兜底：[mediaLinkExternalIdsConflict] 两条路径都降为建议；[workOf] 给出时，
-/// 自动路径上 [mediaLinkFusesWorks] 的降为建议（本轮已生效的连接计入分量合并）。
+/// 自动路径上 [mediaLinkFusesWorks] 的降为建议（本轮已生效的连接计入分量合并；
+/// [workOf] 返回 null 的端点按单成员作品记账）。
 Future<MediaLinkInferenceOutcome> applyMediaLinkCandidates({
   required FushiDatabase db,
   required List<MediaLinkCandidate> candidates,
@@ -409,18 +549,28 @@ Future<MediaLinkInferenceOutcome> applyMediaLinkCandidates({
   MediaLinkJudge? judge,
   MediaLinkWorkOf? workOf,
 }) async {
-  final List<MediaLinkCandidate> fresh = <MediaLinkCandidate>[];
-  final Set<String> seen = <String>{};
+  // 同一对条目只留一条：证据强的顶掉弱的（一批端点一起推断时，同一对可能先从一端
+  // 以「标题像」出现、再从另一端以 MAL 原作出现），同样强的先到先得。
+  final List<MediaLinkCandidate> unique = <MediaLinkCandidate>[];
+  final Map<String, int> slotOf = <String, int>{};
   for (final MediaLinkCandidate c in candidates) {
     final MediaLinkEndpoint a = c.from.endpoint;
     final MediaLinkEndpoint b = c.to.endpoint;
     if (a.kind == b.kind && a.key == b.key) continue;
-    final List<String> pair = <String>[
-      '${a.kind.dbValue}\u0000${a.key}',
-      '${b.kind.dbValue}\u0000${b.key}',
-    ]..sort();
-    if (!seen.add(pair.join('\u0001'))) continue;
-    if (await db.mediaLinkPairExists(a, b)) continue;
+    // 只有 AI 能定的候选：没有裁决器就不必留着。
+    if (c.aiOnly && judge == null) continue;
+    final String key = mediaLinkPairKey(a, b);
+    final int? slot = slotOf[key];
+    if (slot == null) {
+      slotOf[key] = unique.length;
+      unique.add(c);
+    } else if (mediaLinkEvidenceRank(c) > mediaLinkEvidenceRank(unique[slot])) {
+      unique[slot] = c;
+    }
+  }
+  final List<MediaLinkCandidate> fresh = <MediaLinkCandidate>[];
+  for (final MediaLinkCandidate c in unique) {
+    if (await db.mediaLinkPairExists(c.from.endpoint, c.to.endpoint)) continue;
     fresh.add(c);
   }
   if (fresh.isEmpty) {
@@ -459,9 +609,12 @@ Future<MediaLinkInferenceOutcome> applyMediaLinkCandidates({
     return r;
   }
 
+  // 作品图里没有的端点（还没有任何连接、也不在系列合集里）就是只有自己一个成员的
+  // 作品：照样进并查集，本轮先生效的连接把它并进别的作品后，后面的连接才看得到真实
+  // 分量（否则孤立端点先连上 A 作品、再连上 B 作品会绕过 §5.4 第二条）。
   ({Object id, int size})? work(MediaLinkEndpoint e) {
-    final ({Object id, int size})? w = workOf?.call(e);
-    if (w == null) return null;
+    if (workOf == null) return null;
+    final ({Object id, int size}) w = workOf(e) ?? (id: e, size: 1);
     sizeOf.putIfAbsent(w.id, () => w.size);
     final Object r = root(w.id);
     return (id: r, size: sizeOf[r]!);
@@ -474,6 +627,11 @@ Future<MediaLinkInferenceOutcome> applyMediaLinkCandidates({
     final MediaLinkCandidate original = fresh[i];
     MediaLinkCandidate c = original;
     final MediaLinkVerdict? v = verdicts[i];
+    // 只有 AI 能定的候选没拿到结论（请求失败 / 这一条没判出来）：不写。
+    if (original.aiOnly && v == null) {
+      discarded++;
+      continue;
+    }
     MediaLinkDisposition disposition = mediaLinkDispositionOf(
       original: original,
       verdict: v,
@@ -483,18 +641,43 @@ Future<MediaLinkInferenceOutcome> applyMediaLinkCandidates({
       discarded++;
       continue;
     }
+    // 关系 / 方向拿不准、不该不经用户就生效的结论。
+    bool needsReview = false;
     if (v != null) {
-      final bool swap = v.relation.directed && v.fromIsOriginal == false;
+      final bool series = workSeriesRelations.contains(v.relation);
+      bool? fromIsOriginal = v.fromIsOriginal;
+      if (series) {
+        final bool? byYear = _earlierByYear(c.from, c.to);
+        if (fromIsOriginal == null) {
+          // AI 说不清谁在前：两端年份不同就按年份定，否则沿用候选原方向但只作建议
+          // （续作 / 外传两端是不同作品，退成 same_work 会把它们并成一部）。
+          fromIsOriginal = byYear;
+          needsReview = byYear == null;
+        } else if (v.relation == MediaLinkRelation.sequel &&
+            byYear != null &&
+            byYear != fromIsOriginal) {
+          // AI 说的「前作」比「续作」晚出：方向与年份矛盾，交用户看。
+          needsReview = true;
+        }
+      }
+      // 同类候选（视频 ↔ 视频 / 游戏 ↔ 游戏）被判成同一作品 / 改编 = 要把两个条目
+      // 并成一部作品，多半是重复入库或版本差异，不自动并。
+      if (original.aiOnly && !series) needsReview = true;
+      final bool swap = v.relation.directed && fromIsOriginal == false;
       c = c.copyWith(
         from: swap ? c.to : c.from,
         to: swap ? c.from : c.to,
-        relation: v.relation.directed && v.fromIsOriginal == null
+        // 方向不明的改编退成 same_work。
+        relation: v.relation.directed && fromIsOriginal == null && !series
             ? MediaLinkRelation.sameWork
             : v.relation,
         source: MediaLinkSource.ai,
         confidence: v.confidence,
         reason: '${v.reason}\n— ${c.reason}',
       );
+    }
+    if (needsReview && disposition == MediaLinkDisposition.apply) {
+      disposition = MediaLinkDisposition.suggest;
     }
     ({Object id, int size})? wa;
     ({Object id, int size})? wb;

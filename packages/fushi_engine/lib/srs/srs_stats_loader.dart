@@ -82,19 +82,36 @@ class SrsStatsLoad {
 }
 
 /// 备好当前 profile 的一次统计装载。[day] / [nowMs] 只给测试覆写（默认取 store 的口径与可信时钟）。
+///
+/// [rwkvAhead]：RWKV 牌组的复习卡再按 [SrsRwkvHorizon] 几个将来时刻各打一次分，报告里给出
+/// [SrsRwkvNow.ahead]（复习首页「停在这里的话」）。要多打两次分（今天结束那一刻与排队共用分数表），只有显示它的
+/// 地方才要。
 Future<SrsStatsLoad> loadSrsStats(
   SrsDbStore store, {
   SrsDayContext? day,
   int? nowMs,
+  bool rwkvAhead = false,
 }) => SrsOpLedger.track(
   'dart:load_stats',
-  () => _loadSrsStats(store, day: day, nowMs: nowMs),
+  () => _loadSrsStats(store, day: day, nowMs: nowMs, rwkvAhead: rwkvAhead),
 );
+
+/// [horizon] 对应的时刻（毫秒）：[nowMs] 之后 1 / 3 小时，或今天结束（[day] 的下一个翻日时刻前 1 ms）。
+int srsRwkvHorizonMs(
+  SrsRwkvHorizon horizon, {
+  required int nowMs,
+  required SrsDayContext day,
+}) => switch (horizon) {
+  SrsRwkvHorizon.oneHour => nowMs + 3600000,
+  SrsRwkvHorizon.threeHours => nowMs + 3 * 3600000,
+  SrsRwkvHorizon.dayEnd => day.dayStartMs(day.dayIndexOf(nowMs) + 1) - 1,
+};
 
 Future<SrsStatsLoad> _loadSrsStats(
   SrsDbStore store, {
   SrsDayContext? day,
   int? nowMs,
+  bool rwkvAhead = false,
 }) async {
   final String fingerprint = store.statsFingerprint;
   final SrsDayContext dayCtx = day ?? await store.dayContext();
@@ -177,12 +194,29 @@ Future<SrsStatsLoad> _loadSrsStats(
     );
     if (r != null) {
       final List<String> ids = r.keys.toList();
+      final List<Map<String, double>>? ahead = rwkvAhead
+          ? await store.rwkvRetrievabilityAt(
+              candidates,
+              atMs: <int>[
+                for (final SrsRwkvHorizon h in SrsRwkvHorizon.values)
+                  srsRwkvHorizonMs(h, nowMs: now, day: dayCtx),
+              ],
+              dayEndMs: srsRwkvHorizonMs(
+                SrsRwkvHorizon.dayEnd,
+                nowMs: now,
+                day: dayCtx,
+              ),
+            )
+          : null;
+      Object? finite(double? x) => x != null && x.isFinite ? x : null;
       context['recall'] = <String, Object?>{
         'ids': ids,
-        'r': <Object?>[
-          for (final String id in ids)
-            if (r[id]! case final double x when x.isFinite) x else null,
-        ],
+        'r': <Object?>[for (final String id in ids) finite(r[id])],
+        if (ahead != null)
+          'ahead': <Object?>[
+            for (final Map<String, double> at in ahead)
+              <Object?>[for (final String id in ids) finite(at[id])],
+          ],
       };
     }
   }

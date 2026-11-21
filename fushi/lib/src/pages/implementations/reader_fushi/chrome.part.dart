@@ -1882,6 +1882,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   int _readerControlGroup(ReaderControlItem item) => switch (item) {
     ReaderControlItem.navigation ||
     ReaderControlItem.bookmarks ||
+    ReaderControlItem.jumpHistory ||
     ReaderControlItem.gallery ||
     ReaderControlItem.statistics => 0,
     ReaderControlItem.audiobook => 2,
@@ -1963,6 +1964,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // 面板只显示收藏句，按钮照样有用，故恒渲染（歌词模式书签按当前句定位）。
       case ReaderControlItem.bookmarks:
         return true;
+      // 跳转记录：没跳转过也照常渲染（动作置灰，见 [_readerControlAction]），入口
+      // 不随历史有无忽隐忽现（拍板台 ymMpf0raAu）。
+      case ReaderControlItem.jumpHistory:
+        return true;
       case ReaderControlItem.gallery:
         return !_lyricsMode;
       // 「听书」模块关掉时整颗不渲染（不是画一个点了没反应的按钮）。
@@ -2041,6 +2046,18 @@ extension _ReaderChrome on _ReaderFushiPageState {
           onPressed: () => unawaited(
             _showAppearanceSheet(initialSubPage: _kReaderNavSubPageBookmarks),
           ),
+        );
+      case ReaderControlItem.jumpHistory:
+        // 还没有跳转记录：按钮 / 菜单项照常列出、置灰（onPressed = null），与歌词
+        // 模式的 [LyricsControlItem.jumpHistory] 一致。
+        return ReaderHeaderAction(
+          key: const ValueKey<String>('fushi_reader_jump_history_button'),
+          icon: FushiIcons.history,
+          label: t.media_jump_history_title,
+          semanticsId: 'fushi.reader.header.jump_history',
+          onPressed: _jumpHistory.isEmpty
+              ? null
+              : () => unawaited(_openJumpHistoryPanel()),
         );
       case ReaderControlItem.gallery:
         return ReaderHeaderAction(
@@ -2835,7 +2852,6 @@ extension _ReaderChrome on _ReaderFushiPageState {
     String? initialSettingsTab,
   }) {
     final List<TtuTocEntry> toc = _buildTtuToc();
-    final String? extractDir = _extractDir;
     // 快照一次：[AppModel.moduleVisibility] 每读一次都重新合成一个 Set，下面三个
     // 有声书回调都要问它。
     final bool listeningEnabled = _moduleVisibility.isEnabled(
@@ -2845,12 +2861,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       controller: _audiobookController,
       toc: toc,
       nsfw: MediaNsfwTarget.book(widget.bookKey),
-      coverPath: extractDir == null
-          ? null
-          : ReaderFushiSource.resolveCoverFilePath(
-              extractDir: extractDir,
-              coverPath: _book?.coverHref,
-            ),
+      coverPath: _bookCoverFilePath,
       readerProgress: (_readingChapter, _book!.chapters.length),
       readerCharOffset: _readingTocCharOffset,
       onJumpSection: (int index, String? fragment) async {
@@ -2873,7 +2884,6 @@ extension _ReaderChrome on _ReaderFushiPageState {
       onExitReader: () {
         unawaited(_exitReaderBook());
       },
-      webViewController: _controller!,
       appModel: appModel,
       ref: ref,
       isFushiReader: true,
@@ -3467,12 +3477,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
             ..._jumpHistoryHeaderActions(),
             ..._readerControlActionsIn(ReaderControlSlot.topRight),
           ],
-          // 布局的「更多」槽（2026-10 精简：中频按钮）恒在 ⋮ 菜单；「问 AI」排最后，
-          // 其后是「跳转记录」（有历史时）。
-          overflowActions: <ReaderHeaderAction>[
-            ..._overflowControlActions(),
-            ..._jumpHistoryMenuActions(),
-          ],
+          // 布局的「更多」槽（2026-10 精简：中频按钮）恒在 ⋮ 菜单；「跳转记录」是
+          // 布局里的一颗按钮（[ReaderControlItem.jumpHistory]），不再另外追加。
+          overflowActions: _overflowControlActions(),
         ),
       ),
     );
@@ -3535,8 +3542,6 @@ extension _ReaderChrome on _ReaderFushiPageState {
               for (final ReaderHeaderAction a in _overflowControlActions())
                 _toolbarItem(a),
             ],
-            // 「跳转记录」入口恒在 ⋯ 里（有历史时）。
-            menu: _jumpHistoryMenuItems(),
             colors: _floatingToolbarColors(),
           ),
         ),
@@ -3580,12 +3585,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
             key: const ValueKey<String>('fushi_play_bar'),
             controller: ctrl,
             showPlayButton: true,
-            coverPath: _extractDir == null
-                ? null
-                : ReaderFushiSource.resolveCoverFilePath(
-                    extractDir: _extractDir!,
-                    coverPath: _book?.coverHref,
-                  ),
+            coverPath: _bookCoverFilePath,
             chapterLabel: _lyricsMode ? null : _currentChapterLabel(),
             skipActionSeconds: ReaderFushiSource.instance.skipActionSeconds,
             invertSkip: ReaderFushiSource.instance.invertAudiobookSkipDirection,
@@ -3779,10 +3779,16 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 本书今日 / 累计：只经统一事实面 `loadStatFacts`（统计域 v92 读取纪律）。
   Future<ReaderBookStatTotals> _loadReaderBookStatTotals() async {
     // includeCounters：今天的查词 / 制卡数从 per-book 计数面切（`lookup_mining_counters`）。
+    // 只读本书（m5：全量读在大库上每开一次侧栏都要几百毫秒）。
     final StatFacts facts = await loadStatFacts(
       appModel.database,
       activityLimit: 0,
       includeCounters: true,
+      scope: StatFactsScope.media(
+        mediaKind: kActivityMediaBook,
+        mediaKey: widget.bookKey,
+        title: _book?.title,
+      ),
     );
     return summarizeReaderBookStats(
       facts.dailyBooks,

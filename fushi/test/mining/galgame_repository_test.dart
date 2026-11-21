@@ -214,6 +214,31 @@ void main() {
       },
     );
 
+    test('setNsfw 写「成人向」覆盖：显式值压过刮削分级，其余覆盖字段不动', () async {
+      await repo.addAll(<GalgameEntry>[newEntry('g1')]);
+      await repo.setCustomData('g1', const GalgameCustomData(name: '改名'));
+      expect(repo.byId('g1')!.isNsfw, isFalse);
+
+      await repo.setNsfw('g1', true);
+      expect(repo.byId('g1')!.isNsfw, isTrue);
+      expect(repo.byId('g1')!.customData.nsfw, isTrue);
+      expect(repo.byId('g1')!.displayName, '改名');
+
+      // 刮削源说是成人向，菜单关掉后仍要真的关掉（覆盖层写显式 false）。
+      await repo.saveScrapeResult(
+        gameId: 'g1',
+        source: GalgameMetadataSource.bgm,
+        draft: const GalgameMetadataDraft(name: 'n', nsfw: true),
+        primarySource: GalgameMetadataSource.bgm.key,
+      );
+      await repo.setNsfw('g1', false);
+      expect(repo.byId('g1')!.isNsfw, isFalse);
+      expect(repo.byId('g1')!.customData.nsfw, isFalse);
+      expect(repo.byId('g1')!.displayName, '改名');
+
+      await repo.setNsfw('missing', true); // 不认识的 id：什么都不做、不抛
+    });
+
     test('saveScrapeResult 落源快照 + 回写主显示源与发行日', () async {
       await repo.addAll(<GalgameEntry>[newEntry('g1')]);
       await repo.saveScrapeResult(

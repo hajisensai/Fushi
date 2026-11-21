@@ -14,7 +14,7 @@ import '../../helpers/source_guard.dart' show compactCode;
 ///   video_volume_<bookUid> key silently became per-episode); single videos keep
 ///   video_volume_<bookUid>; reads fall back to the per-title key;
 /// - local and remote loads read the value before controller.load;
-/// - controller.load receives and applies initialVolume before autoPlay;
+/// - controller.load receives and applies initialVolume before open / autoPlay;
 /// - real volume changes persist, but temporary M mute does not;
 /// - pending writes debounce and flush on lifecycle / dispose / process exit.
 /// 源码扫描的归一化：压掉全部空白，并把 tall-style 拆行补出来的尾随逗号
@@ -183,7 +183,7 @@ void main() {
       expect(loadSig, contains('double initialVolume = 100.0'));
     });
 
-    test('initialVolume is applied after open and before autoPlay', () {
+    test('initialVolume is applied before open, hence before autoPlay', () {
       final String loadBody = methodBody(controller, 'Future<void> load({');
       // BUG-528：open 现随 Media(httpHeaders:) 多行下发，锚点收敛到唯一的 `await player.open(`。
       final int open = loadBody.indexOf('await player.open(');
@@ -196,14 +196,17 @@ void main() {
         'if (autoPlay && _isCurrentLoad(player, loadToken))',
       );
       expect(open, greaterThanOrEqualTo(0));
+      // #3722 video-19：音量与 mpv 配置一起在 open 之前下发（open 后的属性写要排在
+      // 加载文件后面，拖慢首帧）；`volume-max` 先于音量。
+      final int config = loadBody.indexOf('await applyMpvConfigToPlayer(');
       expect(
         lastVolume,
-        greaterThan(open),
+        allOf(greaterThan(config), lessThan(open)),
         reason: '_lastVolume must reflect the saved value before UI reads it',
       );
       expect(
         setVolume,
-        greaterThan(open),
+        allOf(greaterThan(config), lessThan(open)),
         reason: 'player must receive saved volume before playback starts',
       );
       expect(

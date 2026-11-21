@@ -1,10 +1,11 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'package:fushi/src/reader/reader_study_unit_script.dart';
+
+import '../helpers/node_runtime.dart';
 
 /// BUG-2492：分页首字探针兜底返章首 0 → 统计把整段前文计成已读（iOS 一页记 5172 字）。
 ///
@@ -26,7 +27,7 @@ void main() {
   test(
     'paged first-visible scan counts along the page-turn axis and off-page starts never become units',
     () async {
-      final String? nodeExe = _resolveNode();
+      final String? nodeExe = resolveNodeExecutable();
       if (nodeExe == null) {
         markTestSkipped(
           'node not found on PATH; skipping JS behavior execution',
@@ -43,28 +44,16 @@ void main() {
         reason: 'behavior harness ${jsTest.path} must exist',
       );
 
-      final String payload = jsonEncode(<String, String>{
+      final Map<String, String> payload = <String, String>{
         'paged': ReaderPaginationScripts.paginatedShellSource(),
         'studyUnits': kStudyUnitJs,
         'engine': readerFushiEngineSourceUncompacted(),
-      });
-      final Directory temp = Directory.systemTemp.createTempSync(
-        'fushi-paged-first-visible-axis-',
+      };
+      final NodeHarnessResult result = await runNodeHarness(
+        nodeExe,
+        jsTest.path,
+        payload,
       );
-      final File payloadFile = File('${temp.path}/payload.json')
-        ..writeAsStringSync(payload);
-      late final ProcessResult result;
-      try {
-        result = await Process.run(
-          nodeExe,
-          <String>[jsTest.path, payloadFile.path],
-          workingDirectory: Directory.current.path,
-          stdoutEncoding: utf8,
-          stderrEncoding: utf8,
-        );
-      } finally {
-        temp.deleteSync(recursive: true);
-      }
 
       expect(
         result.exitCode,
@@ -80,22 +69,4 @@ void main() {
       );
     },
   );
-}
-
-/// Resolve a usable `node` executable, returning null when none is on PATH.
-String? _resolveNode() {
-  final List<String> candidates = Platform.isWindows
-      ? <String>['node.exe', 'node']
-      : <String>['node'];
-  for (final String name in candidates) {
-    try {
-      final ProcessResult probe = Process.runSync(name, <String>['--version']);
-      if (probe.exitCode == 0) {
-        return name;
-      }
-    } on ProcessException {
-      // Not found; try next candidate.
-    }
-  }
-  return null;
 }

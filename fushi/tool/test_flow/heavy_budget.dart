@@ -15,7 +15,7 @@
 //
 // Instead (2026-10-19, owner's call) runs are booked against a fixed budget:
 // the memory ceilings ([HeavyNeed.capMb]) of the runs holding slots plus the
-// next one's may not exceed [defaultHeavyBudgetMb] (half the RAM). Three
+// next one's may not exceed [defaultHeavyBudgetMb] (5/8 of the RAM). Three
 // slots with 12-16 GB ceilings used to promise up to 48 GB on a 64 GB
 // desktop already running a dozen agent sessions, and the commit limit ran
 // out under everyone. The booking reads only the holders' declared ceilings,
@@ -62,9 +62,9 @@ class HeavyNeed {
 /// all slot files, so they book the budget for every checkout's tool.
 const int kLightSlotBase = 100;
 
-/// At most this many light runs at once (two analyzes book 16 GB: all of a
-/// 32 GB machine's budget, half a 64 GB one's; they still have to fit the
-/// budget next to the tests and builds).
+/// At most this many light runs at once (two analyzes book 16 GB: most of a
+/// 32 GB machine's 20 GB budget; they still have to fit the budget next to
+/// the tests and builds).
 const int kLightSlotCount = 2;
 
 const HeavyNeed _test = HeavyNeed(
@@ -282,11 +282,16 @@ List<String> withDefaultTestConcurrency(List<String> argv) {
 int defaultHeavySlots(int totalPhysMb) =>
     (totalPhysMb ~/ (20 * 1024)).clamp(1, 4);
 
-/// The memory the heavy runs' ceilings may book together: half the RAM in
-/// whole GB (64 GB -> 32 GB: two test runs and an analyze, or a build and a
-/// test; never three test runs).
+/// The memory the heavy runs' ceilings may book together: 5/8 of the RAM in
+/// whole GB (64 GB -> 40 GB, 32 GB -> 20 GB).
+///
+/// It was half the RAM from 2026-10-19 to 2026-11-20. Replaying the 1973 runs
+/// of 11-15..20 through the same admission rules gave 146 h of queueing at
+/// 32 GB, 97 h at 36, 86 h at 40 and 79 h at 44: the budget, not the slots,
+/// was what the queue waited for, and past 40 GB the gain flattens. The owner
+/// picked 40 GB on 2026-11-20.
 int defaultHeavyBudgetMb(int totalPhysMb) =>
-    ((totalPhysMb / 1024).round() ~/ 2) * 1024;
+    ((totalPhysMb / 1024).round() * 5 ~/ 8) * 1024;
 
 /// What a holder that recorded no ceiling (an older checkout's tool) is
 /// booked at: the largest ceiling of any kind.

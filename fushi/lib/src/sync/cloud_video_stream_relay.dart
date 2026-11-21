@@ -11,6 +11,7 @@ import 'package:fushi/src/diagnostics/video_diag_log.dart'
 import 'package:fushi/src/media/video/youtube_range_relay.dart'
     show parseRelayRange;
 import 'package:fushi/src/sync/sync_asset_range_reader.dart';
+import 'package:fushi/src/utils/net/loopback_relay_slot.dart';
 
 /// 本地 loopback 中继：把云盘资产的**明文区间读**（[SyncAssetRangeReader]）翻成
 /// 普通可 seek 的 HTTP 流交给 libmpv / ffmpeg，实现云盘视频不下载直接流播。
@@ -29,27 +30,18 @@ import 'package:fushi/src/sync/sync_asset_range_reader.dart';
 ///
 /// 登记表与端口只活在进程内；进度等持久化状态一律按云端资产身份（manifest uid）记，
 /// 不记本地地址。
-class CloudVideoStreamRelay {
+class CloudVideoStreamRelay implements LoopbackRelay {
   CloudVideoStreamRelay._(this._server);
 
-  static Future<CloudVideoStreamRelay>? _shared;
+  static final LoopbackRelaySlot<CloudVideoStreamRelay> _shared =
+      LoopbackRelaySlot<CloudVideoStreamRelay>(
+        start: start,
+        log: (String message) => debugPrint('[cloud-stream-relay] $message'),
+      );
 
   /// 进程内单例。监听 socket 死了（移动端挂起后被系统回收）就另起一个，与
-  /// [YoutubeRangeRelay.instance] 同一口径。
-  static Future<CloudVideoStreamRelay> instance() async {
-    final Future<CloudVideoStreamRelay>? cached = _shared;
-    if (cached != null) {
-      try {
-        final CloudVideoStreamRelay relay = await cached;
-        if (relay.isRunning) return relay;
-      } on Object catch (error) {
-        debugPrint('[cloud-stream-relay] restarting after $error');
-      }
-    }
-    final Future<CloudVideoStreamRelay> started = start();
-    _shared = started;
-    return started;
-  }
+  /// [YoutubeRangeRelay.instance] 同用 [LoopbackRelaySlot]（交出前真连探活）。
+  static Future<CloudVideoStreamRelay> instance() => _shared.acquire();
 
   /// 起一个绑定 loopback 随机端口的中继（测试直接调；生产走 [instance]）。
   static Future<CloudVideoStreamRelay> start() async {
@@ -89,8 +81,10 @@ class CloudVideoStreamRelay {
   final Random _random = Random.secure();
   bool _closed = false;
 
+  @override
   bool get isRunning => !_closed;
 
+  @override
   int get port => _server.port;
 
   /// 当前登记项数（测试用）。
@@ -147,6 +141,7 @@ class CloudVideoStreamRelay {
     pathSegments: <String>['cloud', token, fileName],
   );
 
+  @override
   Future<void> close() async {
     _closed = true;
     await _server.close(force: true);

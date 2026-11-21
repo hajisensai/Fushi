@@ -26,6 +26,7 @@ import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart'
     show FileDropCallback;
 import 'package:fushi/src/media/import/import_collage_page.dart';
 import 'package:fushi/src/media/import/import_inbox.dart';
+import 'package:fushi/src/media/import/import_inbox_text.dart';
 import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/media/video/iptv_playlist_import_dialog.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
@@ -94,7 +95,7 @@ ImportSurfaceSpec buildVideoImportSpec({
         kind: ImportMethodKind.folder,
         icon: FushiIcons.folderOpen,
         label: t.media_import_inbox,
-        description: t.media_import_inbox_hint(
+        description: importInboxHintText(
           folder: ImportInbox.folderNameFor('video') ?? '',
         ),
         destination: ImportDestination.dialog,

@@ -64,16 +64,17 @@ ImageProvider? resolveMediaCoverImage({
   int decodeWidth = kLocalCoverDecodePixelWidth,
 }) {
   if (book != null && appModel != null) {
-    final ImageProvider<Object> provider = book
+    // 宽度交给书的缩略图链自己用：本地文件经 [resizedFileImage] 降采样并登记驱逐
+    // 宽度。不能在返回值外面再包 [ResizeImage]——内层本来就是 [ResizeImage]，嵌套
+    // 违反 Flutter 断言，且外层键不在 [evictLocalCoverCache] 的驱逐表里。
+    return book
         .getMediaSource(appModel: appModel)
         .getDisplayThumbnailFromMediaItem(
           appModel: appModel,
           item: book,
           fallbackUrl: fallbackUrl,
+          decodeWidth: decodeWidth,
         );
-    return decodeWidth == kLocalCoverDecodePixelWidth
-        ? provider
-        : ResizeImage(provider, width: decodeWidth, allowUpscaling: false);
   }
   if (remoteUrl != null && remoteUrl.isNotEmpty && remoteFetcher != null) {
     // 远端封面与本机文件**对称**套解码上限（BUG-959 的远端半边）：host 下发的

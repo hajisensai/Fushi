@@ -119,8 +119,22 @@ mixin DictionaryPageMixin {
   /// 覆写。与 `BaseSourcePageState` 的同名钩子对称。
   ModuleId? get lookupHostModule => null;
 
-  /// 本页查词弹窗实际是否底部停靠（[lookupHostModule] 自己的开关）。
+  /// 宿主此刻要求查词弹窗强制底部停靠（不看「底部停靠」开关）。视频页竖屏时覆写为
+  /// true：屏幕只有手机宽，跟随选区的小窗会挡住当前那句字幕，改成从底部升起的半屏卡
+  /// （拍板台 P9AS-fvjJh 设计图 C）。
+  bool get lookupHostForcesBottomDock => false;
+
+  /// 强制停靠时卡片的高度（逻辑像素，已含界面缩放）；只在 [lookupHostForcesBottomDock]
+  /// 为 true 时读。
+  double lookupHostDockedHeight(Size screen) => screen.height / 2;
+
+  /// 强制停靠时卡片顶部最多能升到哪（距屏顶的预留）；视频页竖屏传视频条下沿，卡片
+  /// 拉满也不盖住画面。
+  double lookupHostDockTopReserve(Size screen) => 0;
+
+  /// 本页查词弹窗实际是否底部停靠（[lookupHostModule] 自己的开关，或宿主强制）。
   bool get _popupBottomDocked =>
+      lookupHostForcesBottomDock ||
       mixinAppModel.popupBottomDockedFor(lookupHostModule);
 
   /// BUG-1269：本页的快捷键作用域。非空即启用「弹窗内输入交回宿主」的桥。
@@ -523,6 +537,9 @@ mixin DictionaryPageMixin {
     final Rect layerSelection = selectionRect.shift(
       -rootOverlayScreenOrigin(context),
     );
+    // 宿主强制停靠（视频页竖屏）：高度与顶部预留都由宿主定，不吃偏好尺寸与内容自适应
+    // ——卡片收起是半屏、拉满是到视频下沿，用户拖的是宿主那份状态。
+    final bool forcedDock = lookupHostForcesBottomDock;
     final Rect anchored = resolvePopupRect(
       selectionRect: layerSelection,
       screen: screen,
@@ -530,7 +547,10 @@ mixin DictionaryPageMixin {
       maxWidth:
           (_popupResizePreview?.width ?? mixinAppModel.popupMaxWidth) *
           mixinAppModel.appUiScale,
-      maxHeight: effectiveMaxHeight,
+      maxHeight: forcedDock
+          ? lookupHostDockedHeight(screen)
+          : effectiveMaxHeight,
+      topReserve: forcedDock ? lookupHostDockTopReserve(screen) : 0.0,
     );
     // Phase B 拖拽尺寸（2026-07-15）：被拖的那张卡（选区匹配）冻结左上角，从右下生长，
     // 消除「词靠右缘时贴词定位把左缘左移」的 bug（同 base_source_page）。dock 模式不冻结。
@@ -1374,7 +1394,8 @@ mixin DictionaryPageMixin {
               : null,
           // Phase B：app 内弹窗右下角尺寸拖拽把手（video/首页/texthooker 共用此收口）。
           // 拖动 = 可视化改「最大宽高」偏好（与设置滑杆同一真值）；预览态在 mixin 级。
-          showResizeGrip: true,
+          // 宿主强制停靠时尺寸归宿主（视频页竖屏查词卡有自己的拖动条），不出这个把手。
+          showResizeGrip: !lookupHostForcesBottomDock,
           onResizeStart: _onMixinPopupResizeStart,
           onResizeUpdate: _onMixinPopupResizeUpdate,
           onResizeEnd: _onMixinPopupResizeEnd,

@@ -67,6 +67,21 @@ class _PackCand extends VideoSubtitleCandidate {
       );
 }
 
+/// 整季 RAR 包候选（本仓解不开）。
+class _RarCand extends VideoSubtitleCandidate {
+  _RarCand(String name, {required String source})
+    : super(
+        providerId: 'fake',
+        remoteId: '$source:$name',
+        fileName: name,
+        language: 'ja',
+        providerPriority: 1,
+        collectionId: source,
+        collectionLabel: source,
+        archiveFormat: SubtitleArchiveFormat.rar,
+      );
+}
+
 typedef _Search =
     Future<ProviderBatchResult<VideoSubtitleCandidate>> Function(
       VideoSubtitleSearchRequest request,
@@ -501,6 +516,100 @@ void main() {
     );
   });
 
+  testWidgets('批量跑起来后主按钮变「停止（1/2）」：点了之后手上那一集落盘，其余集标已跳过', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final VideoBookRow first = await seedMember();
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value<String>('video/show-02'),
+        title: Value<String>('Show - 02'),
+        videoPath: Value<String>('C:/video/Show - 02.mkv'),
+      ),
+    );
+    final VideoBookRow second = (await repo.getByBookUid('video/show-02'))!;
+    final MediaCollectionRow collection = await seedCollection(anilistId: 21);
+    final Completer<VideoSubtitleDownload> pendingDownload =
+        Completer<VideoSubtitleDownload>();
+    final List<String> downloaded = <String>[];
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: first,
+        members: <VideoBookRow>[first, second],
+        onSearch: (_) async =>
+            ProviderBatchResult<VideoSubtitleCandidate>.success(
+              <VideoSubtitleCandidate>[
+                _Cand('Show - 01.ja.srt', source: 'Source', episode: 1),
+                _Cand('Show - 02.ja.srt', source: 'Source', episode: 2),
+              ],
+            ),
+        onDownload: (VideoSubtitleCandidate c) {
+          downloaded.add(c.fileName);
+          return pendingDownload.future;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(downloadButton());
+    await tester.pump();
+    await tester.pump();
+
+    final Finder stopButton = find.byKey(
+      const ValueKey<String>('subtitle-collection-stop'),
+    );
+    expect(downloadButton(), findsNothing);
+    expect(
+      find.text(t.video_subtitle_batch_stop(current: 1, total: 2)),
+      findsOneWidget,
+    );
+    await tester.tap(stopButton);
+    await tester.pump();
+    expect(find.text(t.video_subtitle_batch_stopping), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(glassUnwrap<FilledButton>(stopButton))
+          .onPressed,
+      isNull,
+      reason: '停止中不能重复点',
+    );
+
+    // 手上那一集照常收尾、落盘。
+    pendingDownload.complete(
+      VideoSubtitleDownload(
+        bytes: utf8.encode('1\n00:00:01,000 --> 00:00:02,000\nx\n'),
+        fileName: 'Show - 01.ja.srt',
+        language: 'ja',
+      ),
+    );
+    // 落盘与解析 cue 是真文件 IO，在 runAsync 里让它们跑完。
+    for (int i = 0; i < 100 && stopButton.evaluate().isNotEmpty; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+
+    expect(downloaded, <String>['Show - 01.ja.srt'], reason: '第 2 集不再下载');
+    expect(find.text(t.video_subtitle_batch_skipped), findsOneWidget);
+    expect(
+      find.text(t.video_subtitle_batch_stopped(done: 1, total: 2)),
+      findsOneWidget,
+    );
+    expect(stopButton, findsNothing);
+    expect(downloadButton(), findsOneWidget);
+    expect(
+      (await repo.getByBookUid('video/show-01'))!.subtitleSource,
+      isNotNull,
+    );
+    expect((await repo.getByBookUid('video/show-02'))!.subtitleSource, isNull);
+  });
+
   testWidgets('BUG-4799 批量途中在输入框回车不重搜：在跑的行状态与来源不被清掉', (
     WidgetTester tester,
   ) async {
@@ -718,6 +827,47 @@ void main() {
           selected: source,
           searching: false,
           running: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('canRunSubtitleCollectionBatch：只有能解开的整季包、没有单集文件的来源也能批量下载', () {
+      // 成员行对这种来源预览「将从整季包中拆出」，批量（runSubtitleBatch）也确实会拆；
+      // 修复前按钮只看单集索引，这里是灰的。
+      final SubtitleCollectionSource packOnly = groupSubtitleCollectionSources(
+        <VideoSubtitleCandidate>[_PackCand('season.zip', source: 'P')],
+      ).single;
+      expect(packOnly.index.isEmpty, isTrue);
+      expect(packOnly.unpackablePackFormat, SubtitleArchiveFormat.zip);
+      expect(
+        canRunSubtitleCollectionBatch(
+          selected: packOnly,
+          searching: false,
+          running: false,
+        ),
+        isTrue,
+      );
+      expect(
+        canRunSubtitleCollectionBatch(
+          selected: packOnly,
+          searching: false,
+          running: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('canRunSubtitleCollectionBatch：只有解不开的整季包（RAR）仍禁用', () {
+      final SubtitleCollectionSource rarOnly = groupSubtitleCollectionSources(
+        <VideoSubtitleCandidate>[_RarCand('season.rar', source: 'R')],
+      ).single;
+      expect(rarOnly.unsupportedPackFormat, SubtitleArchiveFormat.rar);
+      expect(
+        canRunSubtitleCollectionBatch(
+          selected: rarOnly,
+          searching: false,
+          running: false,
         ),
         isFalse,
       );

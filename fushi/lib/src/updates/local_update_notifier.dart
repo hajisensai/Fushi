@@ -73,15 +73,22 @@ UpdateNotificationResponse decodeNotificationResponse(
 class LocalUpdateNotifier implements UpdateNotifier {
   LocalUpdateNotifier({
     required this.appName,
+    String? androidChannelName,
     this.groupTitle,
     this.onResponse,
     FlutterLocalNotificationsPlugin? plugin,
     String? windowsIconPath,
-  }) : _plugin = plugin ?? FlutterLocalNotificationsPlugin(),
+  }) : androidChannelName = androidChannelName ?? appName,
+       _plugin = plugin ?? FlutterLocalNotificationsPlugin(),
        _windowsIconPath = windowsIconPath;
 
   /// 通知里显示的应用名 + Windows 的 AUMID 名。
   final String appName;
+
+  /// Android 渠道 [kUpdateNotificationChannelId] 在系统通知设置里的名字。插件每发一条
+  /// 通知都会用它重建渠道，所以必须和启动时推给原生的那份本地化名字一致（拍板台
+  /// left3621，`android_notification_channels.dart`）；不传 = [appName]。
+  final String androidChannelName;
 
   /// Windows 通知中心里这组通知的页眉（如「订阅更新」）；null = 不分组。
   final String? groupTitle;
@@ -337,7 +344,7 @@ class LocalUpdateNotifier implements UpdateNotifier {
     final String? image = _existingImage(notification);
     return AndroidNotificationDetails(
       kUpdateNotificationChannelId,
-      appName,
+      androidChannelName,
       importance: Importance.defaultImportance,
       priority: Priority.defaultPriority,
       // 更新提醒不是即时通讯，不该震动/响铃打断用户。

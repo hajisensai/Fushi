@@ -9,7 +9,7 @@
 //   100% = 所有核跑满）；另给单核口径方便看「某个线程打满一核」。
 // - 各线程 CPU：[readThreadCpuTimes] 两次读数之差按线程组汇总（[summarizeThreadCpu]），
 //   回答「CPU 是谁吃的」——UI 线程、光栅、mpv、Rust 核心、Dart 后台 isolate。读一次要遍历
-//   全部线程，放后台 isolate。
+//   本进程全部线程，放在采样期间常驻的后台 isolate（[ThreadCpuWorker]）里读，停止采样即撤掉。
 // - 内存：进程 RSS（各平台）；Windows 另有私有提交与系统可用内存；Android 另有 malloc；
 //   各平台都有 Flutter 解码图缓存；另附已有子系统探针读数（SRS 原生内核、anon/file/shm）。
 // - 帧：本秒内实际渲染的帧数、超出刷新预算的卡顿帧数、最慢的构建 / 光栅耗时
@@ -25,7 +25,6 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
-import 'dart:isolate';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -230,7 +229,7 @@ class StatusMonitorSources {
     imageCache: () => PaintingBinding.instance.imageCache,
     cores: Platform.numberOfProcessors,
     refreshRate: _currentRefreshRate,
-    threadTimes: _platformThreadTimes(),
+    threadTimes: _platformThreadTimes,
     uiActivity: () => scanUiActivity(WidgetsBinding.instance.rootElement),
     memoryNotes: _platformMemoryNotes,
   );
@@ -243,8 +242,9 @@ class StatusMonitorSources {
   final int cores;
   final double Function() refreshRate;
 
-  /// 各线程累计 CPU（后台读）；null = 不读。
-  final Future<List<ThreadCpuTime>> Function()? threadTimes;
+  /// 开始采样时调用一次，得到各线程累计 CPU 的读数来源（后台读），停止采样时 close；
+  /// null = 不读。
+  final ThreadCpuSource Function()? threadTimes;
 
   /// 当前可见页面与活跃动画（只在卡顿那一秒调用）；null = 不扫。
   final UiActivitySnapshot Function()? uiActivity;
@@ -254,10 +254,8 @@ class StatusMonitorSources {
 }
 
 /// 在主 isolate 上取一次自身线程 id（= UI 线程），后台 isolate 读线程时据此标出 UI 线程。
-Future<List<ThreadCpuTime>> Function() _platformThreadTimes() {
-  final int? ui = currentThreadId();
-  return () => Isolate.run(() => readThreadCpuTimes(uiThreadId: ui));
-}
+ThreadCpuSource _platformThreadTimes() =>
+    ThreadCpuWorker(uiThreadId: currentThreadId());
 
 List<String> _platformMemoryNotes() {
   final List<String> out = <String>[];
@@ -313,6 +311,7 @@ class StatusMonitor extends ChangeNotifier {
   int _holders = 0;
   int? _lastCpuMicros;
   int _lastTickMicros = 0;
+  ThreadCpuSource? _threadSource;
   List<ThreadCpuTime>? _lastThreads;
   int _lastThreadMicros = 0;
   bool _sampling = false;
@@ -405,6 +404,7 @@ class StatusMonitor extends ChangeNotifier {
     _lastTickMicros = _now();
     _lastCpuMicros = _readCpu();
     _lastThreads = null;
+    _threadSource = _openThreadSource();
     _pendingFrames.clear();
     SchedulerBinding.instance.addTimingsCallback(_onTimings);
     _timer = Timer.periodic(kStatusMonitorInterval, (_) => sample());
@@ -417,6 +417,16 @@ class StatusMonitor extends ChangeNotifier {
     SchedulerBinding.instance.removeTimingsCallback(_onTimings);
     _pendingFrames.clear();
     _lastThreads = null;
+    _threadSource?.close();
+    _threadSource = null;
+  }
+
+  ThreadCpuSource? _openThreadSource() {
+    try {
+      return _src.threadTimes?.call();
+    } on Object {
+      return null;
+    }
   }
 
   void _onTimings(List<FrameTiming> timings) {
@@ -438,11 +448,11 @@ class StatusMonitor extends ChangeNotifier {
 
   /// 读一次各线程 CPU，与上一次比出各线程组占用；第一次（或读失败）返回空表。
   Future<List<ThreadGroupUsage>> _readThreads(int generation) async {
-    final Future<List<ThreadCpuTime>> Function()? read = _src.threadTimes;
-    if (read == null) return const <ThreadGroupUsage>[];
+    final ThreadCpuSource? source = _threadSource;
+    if (source == null) return const <ThreadGroupUsage>[];
     final List<ThreadCpuTime> now;
     try {
-      now = await read();
+      now = await source.read();
     } on Object {
       return const <ThreadGroupUsage>[];
     }

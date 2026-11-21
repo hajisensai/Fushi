@@ -94,7 +94,7 @@ void main() {
         ),
       );
       final Directory tmp = Directory.systemTemp.createTempSync('srs_bench_');
-      final TestSrs srs = await openTestSrsAt('${tmp.path}/srs.db');
+      final TestSrs srs = openTestSrsIn(tmp.path);
       addTearDown(() async {
         try {
           tmp.deleteSync(recursive: true);

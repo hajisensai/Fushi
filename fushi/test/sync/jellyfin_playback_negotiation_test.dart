@@ -506,6 +506,31 @@ void main() {
       expect(cleanup.url.queryParameters['PlaySessionId'], 'ps-1');
     });
 
+    // BUG-5020：卡片片段回看结束只摘会话、停转码——不发 Stopped（那会判已看、写断点）。
+    test('回看结束 detach：转码会话 DELETE ActiveEncodings，不发 Stopped', () async {
+      final JellyfinVideoClient c = await negotiated(transcode: true);
+      await c.detachRemoteVideoPlayback('ep1');
+      final http.Request cleanup = seen.lastWhere(
+        (http.Request r) => r.url.path == '/Videos/ActiveEncodings',
+      );
+      expect(cleanup.method, 'DELETE');
+      expect(cleanup.url.queryParameters['PlaySessionId'], 'ps-1');
+      expect(
+        seen.where((http.Request r) => r.url.path.startsWith('/Sessions/')),
+        isEmpty,
+        reason: '回看不得发任何会话上报',
+      );
+      expect(c.debugActiveSession('ep1'), isNull, reason: '会话出队');
+    });
+
+    test('回看结束 detach：直播放没有转码可清，只出队', () async {
+      final JellyfinVideoClient c = await negotiated();
+      final int before = seen.length;
+      await c.detachRemoteVideoPlayback('ep1');
+      expect(seen.length, before, reason: '直播放 detach 不发任何请求');
+      expect(c.debugActiveSession('ep1'), isNull);
+    });
+
     test('同一条目「退出→立刻重开」：Stopped 按先进先出取旧会话，不拿新会话报停', () async {
       int issued = 0;
       final JellyfinVideoClient c = clientWith((http.Request req) async {

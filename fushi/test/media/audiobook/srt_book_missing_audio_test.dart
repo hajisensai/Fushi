@@ -1,7 +1,12 @@
+import 'dart:io';
+
 import 'package:drift/native.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
 import 'package:fushi/src/media/audiobook/srt_book_missing_audio.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart'
+    show srtBookMissingAudioUidsProvider, srtBooksProvider;
 import 'package:fushi/src/sync/settings_sync.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -147,5 +152,65 @@ void main() {
       ),
       isFalse,
     );
+  });
+
+  group('gap-novelmisc-2：书架断链结论异步算一次、按 uid 缓存', () {
+    test('probeMissingUids 只收断链的书，每本遇到第一个断链就停', () async {
+      final List<String> probed = <String>[];
+      final Set<String> present = <String>{'/ok/a.mp3', '/ok/b.mp3'};
+      final Set<String> uids = await SrtBookMissingAudio.probeMissingUids(
+        <SrtBook>[
+          book(uid: 'broken')
+            ..audioPaths = <String>['/gone/a.mp3', '/ok/a.mp3'],
+          book(uid: 'fine')..audioPaths = <String>['/ok/a.mp3', '/ok/b.mp3'],
+          book(uid: 'subtitle_only')..audioPaths = null,
+        ],
+        exists: (String path) async {
+          probed.add(path);
+          return present.contains(path);
+        },
+      );
+      expect(uids, <String>{'broken'});
+      expect(probed.where((String p) => p == '/ok/a.mp3').length, 1);
+      expect(probed, isNot(contains('/gone/b.mp3')));
+    });
+
+    test('showsWarning 用调用方给的结论，不现场探盘', () {
+      final SrtBookMissingAudio noProbe = SrtBookMissingAudio(
+        prefs: prefs,
+        repository: repo,
+        exists: (String path) => fail('build 路径不该同步探盘：$path'),
+      );
+      final SrtBook b = book(uid: 'srtbook_x');
+      expect(noProbe.showsWarning(b, hasMissing: true), isTrue);
+      expect(noProbe.showsWarning(b, hasMissing: false), isFalse);
+    });
+
+    test('provider 随书单重算：书单变了断链集合跟着变', () async {
+      final Directory dir = await Directory.systemTemp.createTemp('srt_miss_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final File real = File('${dir.path}/a.mp3')..writeAsStringSync('A');
+      List<SrtBook> shelf = <SrtBook>[
+        book(uid: 'u1')..audioPaths = <String>['${dir.path}/gone.mp3'],
+      ];
+      final ProviderContainer container = ProviderContainer(
+        overrides: <Override>[
+          srtBooksProvider.overrideWith((ref) async => shelf),
+        ],
+      );
+      addTearDown(container.dispose);
+      expect(
+        await container.read(srtBookMissingAudioUidsProvider.future),
+        <String>{'u1'},
+      );
+      shelf = <SrtBook>[
+        book(uid: 'u1')..audioPaths = <String>[real.path],
+      ];
+      container.invalidate(srtBooksProvider);
+      expect(
+        await container.read(srtBookMissingAudioUidsProvider.future),
+        isEmpty,
+      );
+    });
   });
 }

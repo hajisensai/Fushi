@@ -871,8 +871,9 @@ PR2：数据层（schema 取合并时的下一个空号，当前 develop 是 v11
     每日上限、步长等仍是每个牌组自己的。每日上限的单位（`limitUnit`：reviews 作答次数 = 缺省 / cards 不同卡片数 /
     minutes 用时分钟，只计今天的复习作答）同样是牌组自己的，同时管复习上限与参数归属牌组上的 RWKV 每天最少复习数；
     规则在 Rust 排队内核（native/fushi_fsrs/src/store/study.rs `LimitUnit`）。新建 / 导入新建的牌组明写 reviews；
-    没写过单位、又在改缺省（`kSrsLimitUnitDefaultChangedAtMs`）之前评过分的存量牌组（以前按卡片数计）在牌组页提醒一次，
-    用户选「保持按卡片数」写 cards，否则写 reviews（`SrsDbStore.limitUnitLegacyDecks`，拍板台 pr3460）。分钟单位下计数行
+    没写过单位、又在本机第一次跑懂单位的版本之前（本机状态行 `limitUnitSince`，按设备记、不同步）在 Fushi 里评过分的
+    存量牌组（以前按卡片数计）在牌组页提醒一次，从 Anki 导入的复习（日志 ID 是 UUIDv5）不算；用户选「保持按卡片数」
+    写 cards，否则写 reviews（`SrsDbStore.limitUnitLegacyDecks`，拍板台 pr3460 / left3551）。分钟单位下计数行
     第 9 列给今天还剩的复习分钟，牌组列表的到期一格显示它，不显示没截断的张数。
   · 自动优化（PR6）在 own 牌组上跑，训练数据 = 它整棵子树里所有 inherit 后代的有效复习（遇到 own 的后代就停，那棵归它自己）。
   · 用户可在子牌组设置里改成「单独设置参数」（own），会拷一份祖先当前的参数作为起点。改 own 祖先的参数时，

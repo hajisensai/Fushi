@@ -57,6 +57,20 @@ abstract final class FeedbackLimits {
   /// 单个样本文件上限：100 MB（十进制，与视频同口径），服务端 `FEEDBACK_LIMITS.fileMaxBytes`。
   static const int fileMaxBytes = 100 * 1000 * 1000;
 
+  /// 每个上传 IP 每天（UTC 日窗口）样本文件总字节上限：100 MiB，与服务端
+  /// `FEEDBACK_LIMITS.fileBytesPerIpDay` 同值（feedback_files.test.js 按字面量核对）。录屏另有一份
+  /// 200 MiB 的额度，两者互不挤占（拍板台 left3660）。撰写页选的文件合计超过它时先提醒。
+  static const int fileBytesPerDay = 100 * 1024 * 1024;
+
+  /// 大附件（视频 / 样本文件）撞上每 IP 每天字节额度时服务端回的错误码（HTTP 429）。
+  static const String dailyQuotaError = 'upload_quota_daily';
+
+  /// 每 IP 日额度在 [now] 之后的下一次重置时刻：服务端按 UTC 日窗口计，即下一个 UTC 零点。
+  static DateTime dailyQuotaResetAfter(DateTime now) {
+    final DateTime u = now.toUtc();
+    return DateTime.utc(u.year, u.month, u.day + 1);
+  }
+
   /// 第 [index] 个样本文件的槽位名（`f0`..`f2`）。
   static String fileSlot(int index) => 'f$index';
 

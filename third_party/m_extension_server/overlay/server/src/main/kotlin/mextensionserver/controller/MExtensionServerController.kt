@@ -75,11 +75,12 @@ class MExtensionServerController {
 
         override fun serve(session: IHTTPSession): Response {
             if (!authorized(session)) {
+                // The body is left unread, so this connection cannot be reused.
                 return newFixedLengthResponse(
                     Response.Status.UNAUTHORIZED,
                     "application/json",
                     """{"error":"Unauthorized"}""",
-                )
+                ).apply { closeConnection(true) }
             }
             return when (session.uri) {
                 "/dalvik" -> DalvikHandler().serve(session)
@@ -91,7 +92,7 @@ class MExtensionServerController {
                     newFixedLengthResponse(
                         Response.Status.OK,
                         "application/json",
-                        """{"fushiMihonBridge":1,"sourceFactory":true,"preferenceCallbacks":true,"imageProxy":true,"sourceUrls":true,"hostProxyPolicy":true}""",
+                        """{"fushiMihonBridge":1,"sourceFactory":true,"preferenceCallbacks":true,"imageProxy":true,"sourceUrls":true,"hostProxyPolicy":true,"apkByDigest":true,"streamingImages":true}""",
                     )
                 "/stop" ->
                     newFixedLengthResponse("Server stopping").also {
@@ -103,6 +104,9 @@ class MExtensionServerController {
                 else ->
                     if (session.uri.startsWith(ImageProxyHandler.ROUTE_PREFIX)) {
                         ImageProxyHandler().serve(session)
+                    } else if (session.uri.startsWith(ApkUploadHandler.ROUTE_PREFIX)) {
+                        // APKs travel once per process by digest (manga-28); see ExtensionApkStore.
+                        ApkUploadHandler().serve(session)
                     } else {
                         newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Not Found")
                     }

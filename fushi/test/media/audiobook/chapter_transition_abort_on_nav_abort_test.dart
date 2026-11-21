@@ -123,12 +123,23 @@ void main() {
     });
 
     test('content-ready 兜底超时经 _failNavigation 收口', () {
+      // BUG-4975：兜底超时与 JS 失败回执共用 _abortStalledRestore 收尾，
+      // 收口点仍是 _failNavigation，这里沿调用链两段各钉一次。
       final String body = methodBody(
         navigation,
         'void _startContentReadyTimeout() {',
       );
       expect(
-        containsIdentifierCall(body, '_failNavigation'),
+        containsIdentifierCall(body, '_abortStalledRestore'),
+        isTrue,
+        reason: '兜底超时必须走共用的中止收尾',
+      );
+      final String abort = methodBody(
+        navigation,
+        'void _abortStalledRestore({required String message}) {',
+      );
+      expect(
+        containsIdentifierCall(abort, '_failNavigation'),
         isTrue,
         reason:
             '兜底超时是「WebView 回执永远不来」的那条路径，'

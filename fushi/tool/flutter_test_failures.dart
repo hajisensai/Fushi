@@ -5,6 +5,7 @@ import 'dart:io';
 import 'test_flow/flutter_sdk_executables.dart';
 import 'test_flow/flutter_test_failure_filter.dart';
 import 'test_flow/heavy_budget.dart';
+import 'test_flow/heavy_history.dart';
 import 'test_flow/heavy_lease.dart';
 import 'test_flow/suite_timings.dart';
 import 'test_flow/test_file_shards.dart';
@@ -19,12 +20,14 @@ Future<void> main(List<String> args) async {
   // sqlite3.dll and flutter_test.jsonl.
   final HeavyNeed need = heavyNeedFor(HeavyKind.test);
   final HeavyJob? job = joinHeavyJob(need.capMb, log: stderr.writeln);
+  final String label = 'flutter_test_failures -> ${options.outputDir}';
+  final String? checkout = locateCheckoutRoot();
   final HeavyLease lease;
   try {
     lease = await acquireHeavyLease(
       need: need,
-      label: 'flutter_test_failures -> ${options.outputDir}',
-      worktreeRoot: locateCheckoutRoot(),
+      label: label,
+      worktreeRoot: checkout,
       waitMax: options.waitMaxMinutes > 0
           ? Duration(minutes: options.waitMaxMinutes)
           : null,
@@ -37,6 +40,7 @@ Future<void> main(List<String> args) async {
     );
     exit(75);
   }
+  final Stopwatch held = Stopwatch()..start();
   final Directory outputDir = Directory(options.outputDir)
     ..createSync(recursive: true);
   final File jsonLog = File('${outputDir.path}/flutter_test.jsonl');
@@ -86,6 +90,24 @@ Future<void> main(List<String> args) async {
   await stderrSink.close();
   lease.release();
   final int? peak = job?.peakMb();
+  // A holder of the machine-wide queue like a heavy.dart run: one history
+  // line (heavy.dart --stats / --replay). None when no slot was taken
+  // (nested under a lease, CI).
+  if (lease.slot != null) {
+    appendHeavyHistory(
+      heavyStateDir(),
+      heavyHolderEntry(
+        via: kHeavyViaFlutterTestFailures,
+        need: need,
+        label: label,
+        cwd: checkout,
+        queued: lease.waited,
+        ran: held.elapsed,
+        exitCode: exitCode,
+        peakMb: peak,
+      ),
+    );
+  }
   if (peak != null && heavyCapHit(peak, need.capMb)) {
     stderr.writeln(
       'heavy: MEMORY CAP HIT ($peak MB of ${need.capMb} MB) -- '

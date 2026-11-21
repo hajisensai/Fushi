@@ -34,9 +34,12 @@ echo "ffsrs_* symbols looked up by the Dart bindings: $expected_count"
 # 恒真。下界取当前全部 37 个：ABI 4（2026-10-30）把 Anki 搜索语料搬进 srs.db 的常驻浏览会话（store/browse.rs，
 # 走 ffsrs_store_* 命令），删掉了 9 个 ffsrs_search_corpus_* / ffsrs_search_chunk_* 语料与分块符号（原 46 个）。
 # ABI 7（2026-11-15）删掉只读会话 ffsrs_store_read_begin / _read_query / _read_end，下界改取当时全部 41 个。
+# ABI 8（SRS 换代，2026-11-18 G7-6）删掉协议 1 主库搬迁的 6 个 ffsrs_store_legacy_abort / _begin / _commit /
+# _mark_none / _page / _state（换代后它们只报 Unwired），下界改取当时全部 35 个。ABI 8 本身还在未发布的换代列车里
+# （develop 仍是 7），所以同列车内不再升版本号，只在 lib.rs 的 ABI 8 说明里补记这批删除。
 # 真删符号是破坏性 ABI 变更（ffsrs_abi_version 同时要升），应当同时改这里。
-if [[ "$expected_count" -lt 41 ]]; then
-  echo "::error title=ABI symbol extraction collapsed::只从绑定里解析出 $expected_count 个 ffsrs_* 名（<41），正则失效或绑定被大改，不能当通过。" >&2
+if [[ "$expected_count" -lt 35 ]]; then
+  echo "::error title=ABI symbol extraction collapsed::只从绑定里解析出 $expected_count 个 ffsrs_* 名（<35），正则失效或绑定被大改，不能当通过。" >&2
   exit 1
 fi
 

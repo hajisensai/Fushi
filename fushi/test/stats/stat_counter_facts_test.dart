@@ -11,6 +11,13 @@ import 'package:fushi_core/fushi_core.dart';
 /// + 游戏 tab 之和——所以四处只许有一份取数与一份切分判据（[StatCounterFacts]）。
 /// game 域自 [kStatSourceGame] 起加入（此前 galgame hook 会话里的查词 / 制卡 /
 /// 收藏全被记成 book，数字堆在阅读域、游戏 tab 只剩游玩次数一行）。
+/// 收藏句 → 计数面的三列行（生产读口 `getFavoriteSentenceStatRows` 的形状）。
+List<FavoriteSentenceStatRow> _statRows(List<FavoriteSentence> favs) =>
+    <FavoriteSentenceStatRow>[
+      for (final FavoriteSentence s in favs)
+        (source: s.source, dateKey: s.dateKey, createdAt: s.createdAt),
+    ];
+
 MiningStatisticRow _mining(String source, String dateKey, int count) =>
     MiningStatisticRow(
       id: 0,
@@ -74,7 +81,7 @@ void main() {
       _word(kStatSourceVideo, yesterday),
       _word(kStatSourceGame, today),
     ],
-    favoriteSentences: <FavoriteSentence>[
+    favoriteSentences: _statRows(<FavoriteSentence>[
       FavoriteSentence(
         text: 'b',
         bookTitle: 'B',
@@ -99,7 +106,7 @@ void main() {
         createdAt: DateTime(2026, 7, 18, 9),
         source: kFavoriteSentenceSourceAudiobook,
       ),
-    ],
+    ]),
   );
 
   group('按来源切片', () {

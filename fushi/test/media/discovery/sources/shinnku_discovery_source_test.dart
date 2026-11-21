@@ -65,6 +65,15 @@ void main() {
       reason: '合集走 B2 桶且首段带反引号前缀(%60)',
     );
     expect(collectionPayload.url, isNot(contains('合集系列')));
+    expect(
+      collectionPayload.url,
+      endsWith('?X-Amz-Signature=1'),
+      reason: 'BUG-4924：galgamedownload.date 防火墙要求该查询参数',
+    );
+    expect(
+      Uri.parse(collectionPayload.url).queryParameters['X-Amz-Signature'],
+      '1',
+    );
 
     final DiscoveryResourceItem apk = entries[2] as DiscoveryResourceItem;
     expect(apk.gameLocalization, DiscoveryGameLocalization.mobile);
@@ -142,6 +151,7 @@ void main() {
       expect(
         shinnkuDownloadUrl('zd/1501-2000/x.rar'),
         'https://zd.shinnku.top/file/shinnku/zd/1501-2000/x.rar',
+        reason: 'zd 源没有防火墙参数要求，上游也不加',
       );
       expect(shinnkuGameTypeNote('zd/1501-2000/x.rar'), '熟肉');
     });
@@ -151,6 +161,15 @@ void main() {
       expect(url, startsWith('https://galgamedownload.date/'));
       expect(url, contains('%60')); // 反引号前缀
       expect(url, contains(Uri.encodeComponent('子目录')));
+      // BUG-4924：不带 X-Amz-Signature 查询参数会被该站 Cloudflare 防火墙 403。
+      expect(
+        url,
+        'https://galgamedownload.date/'
+        '${Uri.encodeComponent('`【合集系列】')}/'
+        '${Uri.encodeComponent('子目录')}/y.rar?X-Amz-Signature=1',
+      );
+      expect(Uri.parse(url).queryParameters['X-Amz-Signature'], '1');
+      expect(Uri.parse(url).pathSegments.last, 'y.rar');
       expect(shinnkuGameTypeNote('合集系列/子目录/y.rar'), '生肉');
     });
 

@@ -49,8 +49,12 @@ Future<String> importPastedTextBook({
   required String text,
   required String title,
   DuplicatePolicy policy = const DuplicatePolicy.suffix(),
-}) {
-  final Uint8List bytes = TextToEpub.convertText(content: text, title: title);
+}) async {
+  // 粘贴进来的可能是整本书：拼装 + 压缩不占 UI isolate。
+  final Uint8List bytes = await TextToEpub.convertTextInBackground(
+    content: text,
+    title: title,
+  );
   return EpubImporter.import(
     db: db,
     bytes: bytes,

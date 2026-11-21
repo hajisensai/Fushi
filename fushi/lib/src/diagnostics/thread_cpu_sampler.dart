@@ -2,16 +2,19 @@
 // 「CPU 是谁吃的」——Flutter UI 线程（Dart 代码 / 构建 / 布局）、光栅线程（绘制）、
 // mpv、Rust 核心、Dart 后台 isolate……
 //
-// - Windows：Toolhelp32 线程快照筛出本进程线程 → `OpenThread` + `GetThreadTimes`；
-//   线程名 `GetThreadDescription`（Win10 1607+，取不到就当未命名）。
+// - Windows：`NtGetNextThread` 只枚举本进程线程 → `GetThreadTimes`；线程名
+//   `GetThreadDescription`（Win10 1607+），没有就按入口模块命名，按 tid 缓存。
 // - Android / Linux：`/proc/self/task/*/stat`（[readProcThreads]，与内存归因探针同源）。
 // - macOS / iOS：mach `task_threads` + `thread_info(THREAD_EXTENDED_INFO)`（带 pthread 名）。
 //
-// 一次读取要遍历全部线程（Windows 的快照还包含全机线程），几毫秒级，调用方须放后台
-// isolate（[readThreadCpuTimes] 是纯同步的顶层函数，可直接交给 `Isolate.run`）。
+// 一次读取要遍历本进程全部线程，每条线程一两次系统调用，调用方须放后台 isolate：
+// 状态监测用常驻的 [ThreadCpuWorker]，不每秒新起 isolate。
 
+import 'dart:async';
+import 'dart:collection';
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
@@ -248,27 +251,11 @@ ThreadKind _classifyModule(String module) {
 // Windows
 // ---------------------------------------------------------------------------
 
-/// `THREADENTRY32`（tlhelp32.h）。
-final class _ThreadEntry32 extends Struct {
-  @Uint32()
-  external int dwSize;
-  @Uint32()
-  external int cntUsage;
-  @Uint32()
-  external int th32ThreadID;
-  @Uint32()
-  external int th32OwnerProcessID;
-  @Int32()
-  external int tpBasePri;
-  @Int32()
-  external int tpDeltaPri;
-  @Uint32()
-  external int dwFlags;
-}
-
-const int _th32csSnapThread = 0x00000004;
 const int _threadQueryLimitedInformation = 0x0800;
 const int _threadQueryInformation = 0x0040;
+
+/// `GetCurrentProcess()` 的伪句柄。
+const int _currentProcess = -1;
 
 /// `THREADINFOCLASS.ThreadQuerySetWin32StartAddress`。
 const int _threadQuerySetWin32StartAddress = 9;
@@ -276,28 +263,29 @@ const int _threadQuerySetWin32StartAddress = 9;
 /// `GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT`。
 const int _moduleFromAddressNoRef = 0x4 | 0x2;
 
+/// 线程名要在前几次见到时都重新取：线程常在刚创建后才 `SetThreadDescription`，
+/// 第一次撞上时可能还没起名。
+const int _windowsNameResolveSightings = 2;
+
+/// 全部是叶子调用（不回调 Dart、很短），用 `isLeaf` 省掉每次调用的线程状态切换。
 final class _Win32Threads {
-  _Win32Threads(DynamicLibrary k32)
-    : snapshot = k32
+  _Win32Threads(DynamicLibrary k32, DynamicLibrary ntdll)
+    : nextThread = ntdll
           .lookupFunction<
-            IntPtr Function(Uint32, Uint32),
-            int Function(int, int)
-          >('CreateToolhelp32Snapshot'),
-      first = k32
-          .lookupFunction<
-            Int32 Function(IntPtr, Pointer<_ThreadEntry32>),
-            int Function(int, Pointer<_ThreadEntry32>)
-          >('Thread32First'),
-      next = k32
-          .lookupFunction<
-            Int32 Function(IntPtr, Pointer<_ThreadEntry32>),
-            int Function(int, Pointer<_ThreadEntry32>)
-          >('Thread32Next'),
-      openThread = k32
-          .lookupFunction<
-            IntPtr Function(Uint32, Int32, Uint32),
-            int Function(int, int, int)
-          >('OpenThread'),
+            Int32 Function(
+              IntPtr,
+              IntPtr,
+              Uint32,
+              Uint32,
+              Uint32,
+              Pointer<IntPtr>,
+            ),
+            int Function(int, int, int, int, int, Pointer<IntPtr>)
+          >('NtGetNextThread', isLeaf: true),
+      threadId = k32.lookupFunction<Uint32 Function(IntPtr), int Function(int)>(
+        'GetThreadId',
+        isLeaf: true,
+      ),
       threadTimes = k32
           .lookupFunction<
             Int32 Function(
@@ -314,20 +302,19 @@ final class _Win32Threads {
               Pointer<Uint64>,
               Pointer<Uint64>,
             )
-          >('GetThreadTimes'),
+          >('GetThreadTimes', isLeaf: true),
       closeHandle = k32
           .lookupFunction<Int32 Function(IntPtr), int Function(int)>(
             'CloseHandle',
+            isLeaf: true,
           ),
-      currentPid = k32.lookupFunction<Uint32 Function(), int Function()>(
-        'GetCurrentProcessId',
-      ),
       localFree = k32
           .lookupFunction<IntPtr Function(IntPtr), int Function(int)>(
             'LocalFree',
+            isLeaf: true,
           ),
       description = _lookupDescription(k32),
-      queryThread = DynamicLibrary.open('ntdll.dll')
+      queryThread = ntdll
           .lookupFunction<
             Int32 Function(
               IntPtr,
@@ -337,17 +324,17 @@ final class _Win32Threads {
               Pointer<Uint32>,
             ),
             int Function(int, int, Pointer<IntPtr>, int, Pointer<Uint32>)
-          >('NtQueryInformationThread'),
+          >('NtQueryInformationThread', isLeaf: true),
       moduleFromAddress = k32
           .lookupFunction<
             Int32 Function(Uint32, IntPtr, Pointer<IntPtr>),
             int Function(int, int, Pointer<IntPtr>)
-          >('GetModuleHandleExW'),
+          >('GetModuleHandleExW', isLeaf: true),
       moduleFileName = k32
           .lookupFunction<
             Uint32 Function(IntPtr, Pointer<Utf16>, Uint32),
             int Function(int, Pointer<Utf16>, int)
-          >('GetModuleFileNameW');
+          >('GetModuleFileNameW', isLeaf: true);
 
   static int Function(int, Pointer<Pointer<Utf16>>)? _lookupDescription(
     DynamicLibrary k32,
@@ -356,16 +343,14 @@ final class _Win32Threads {
       return k32.lookupFunction<
         Int32 Function(IntPtr, Pointer<Pointer<Utf16>>),
         int Function(int, Pointer<Pointer<Utf16>>)
-      >('GetThreadDescription');
+      >('GetThreadDescription', isLeaf: true);
     } on ArgumentError {
       return null; // Win10 1607 之前没有。
     }
   }
 
-  final int Function(int, int) snapshot;
-  final int Function(int, Pointer<_ThreadEntry32>) first;
-  final int Function(int, Pointer<_ThreadEntry32>) next;
-  final int Function(int, int, int) openThread;
+  final int Function(int, int, int, int, int, Pointer<IntPtr>) nextThread;
+  final int Function(int) threadId;
   final int Function(
     int,
     Pointer<Uint64>,
@@ -375,7 +360,6 @@ final class _Win32Threads {
   )
   threadTimes;
   final int Function(int) closeHandle;
-  final int Function() currentPid;
   final int Function(int) localFree;
   final int Function(int, Pointer<Pointer<Utf16>>)? description;
   final int Function(int, int, Pointer<IntPtr>, int, Pointer<Uint32>)
@@ -386,97 +370,123 @@ final class _Win32Threads {
 
 _Win32Threads? _win32;
 
+/// 已解析过的线程名：tid → （创建时间, 名字, 见过几次）。创建时间对不上说明 tid 被新线程
+/// 复用了，重新解析；线程消失就删掉。只在同一个 isolate 里跨读数复用（[ThreadCpuWorker]
+/// 常驻 isolate 正是为此）。
+final Map<int, (int created, String name, int sightings)> _windowsNames =
+    <int, (int, String, int)>{};
+
+/// 用 `NtGetNextThread` 只枚举**本进程**的线程（直接拿到句柄），每条线程一次
+/// `GetThreadTimes`。不用 Toolhelp32：它的快照包含全机所有进程的线程，本机实测一次
+/// ~20 ms，而本进程枚举 ~100 µs / 十几条线程。线程名（描述或入口模块）按 tid 缓存，
+/// 稳定后每秒不再重复查。
 List<ThreadCpuTime> _readWindowsThreads() {
   final _Win32Threads w = _win32 ??= _Win32Threads(
     DynamicLibrary.open('kernel32.dll'),
+    DynamicLibrary.open('ntdll.dll'),
   );
-  final int snap = w.snapshot(_th32csSnapThread, 0);
-  if (snap == -1 || snap == 0) {
-    throw StateError('CreateToolhelp32Snapshot failed');
-  }
   final List<ThreadCpuTime> out = <ThreadCpuTime>[];
-  try {
-    using((Arena arena) {
-      final Pointer<_ThreadEntry32> entry = arena<_ThreadEntry32>();
-      final Pointer<Uint64> creation = arena<Uint64>();
-      final Pointer<Uint64> exit = arena<Uint64>();
-      final Pointer<Uint64> kernel = arena<Uint64>();
-      final Pointer<Uint64> user = arena<Uint64>();
-      final Pointer<Pointer<Utf16>> desc = arena<Pointer<Utf16>>();
-      final Pointer<IntPtr> startAddress = arena<IntPtr>();
-      final Pointer<IntPtr> module = arena<IntPtr>();
-      final Pointer<Utf16> path = arena<Uint16>(520).cast<Utf16>();
-      final Map<int, String> moduleNames = <int, String>{};
-      // 没有线程名时按入口地址所在模块命名：`[flutter_windows.dll]`、`[libmpv-2.dll]`……
-      String moduleOf(int thread) {
-        startAddress.value = 0;
-        if (w.queryThread(
-                  thread,
-                  _threadQuerySetWin32StartAddress,
-                  startAddress,
-                  sizeOf<IntPtr>(),
-                  nullptr,
-                ) !=
-                0 ||
-            startAddress.value == 0) {
-          return '';
-        }
-        module.value = 0;
-        if (w.moduleFromAddress(
-                  _moduleFromAddressNoRef,
-                  startAddress.value,
-                  module,
-                ) ==
-                0 ||
-            module.value == 0) {
-          return '';
-        }
-        return moduleNames.putIfAbsent(module.value, () {
-          final int n = w.moduleFileName(module.value, path, 260);
-          if (n == 0) return '';
-          final String full = path.toDartString(length: n);
-          return '[${full.split(RegExp(r'[\\/]')).last.toLowerCase()}]';
-        });
+  final Set<int> alive = <int>{};
+  using((Arena arena) {
+    final Pointer<IntPtr> next = arena<IntPtr>();
+    final Pointer<Uint64> creation = arena<Uint64>();
+    final Pointer<Uint64> exit = arena<Uint64>();
+    final Pointer<Uint64> kernel = arena<Uint64>();
+    final Pointer<Uint64> user = arena<Uint64>();
+    final Pointer<Pointer<Utf16>> desc = arena<Pointer<Utf16>>();
+    final Pointer<IntPtr> startAddress = arena<IntPtr>();
+    final Pointer<IntPtr> module = arena<IntPtr>();
+    final Pointer<Utf16> path = arena<Uint16>(520).cast<Utf16>();
+    final Map<int, String> moduleNames = <int, String>{};
+    // 没有线程名时按入口地址所在模块命名：`[flutter_windows.dll]`、`[libmpv-2.dll]`……
+    String moduleOf(int thread) {
+      startAddress.value = 0;
+      if (w.queryThread(
+                thread,
+                _threadQuerySetWin32StartAddress,
+                startAddress,
+                sizeOf<IntPtr>(),
+                nullptr,
+              ) !=
+              0 ||
+          startAddress.value == 0) {
+        return '';
       }
+      module.value = 0;
+      if (w.moduleFromAddress(
+                _moduleFromAddressNoRef,
+                startAddress.value,
+                module,
+              ) ==
+              0 ||
+          module.value == 0) {
+        return '';
+      }
+      return moduleNames.putIfAbsent(module.value, () {
+        final int n = w.moduleFileName(module.value, path, 260);
+        if (n == 0) return '';
+        final String full = path.toDartString(length: n);
+        return '[${full.split(RegExp(r'[\\/]')).last.toLowerCase()}]';
+      });
+    }
 
-      final int pid = w.currentPid();
-      entry.ref.dwSize = sizeOf<_ThreadEntry32>();
-      for (int ok = w.first(snap, entry); ok != 0; ok = w.next(snap, entry)) {
-        if (entry.ref.th32OwnerProcessID != pid) continue;
-        final int tid = entry.ref.th32ThreadID;
-        final int h = w.openThread(
-          _threadQueryLimitedInformation | _threadQueryInformation,
-          0,
-          tid,
-        );
-        if (h == 0) continue;
-        try {
-          if (w.threadTimes(h, creation, exit, kernel, user) == 0) continue;
-          String name = '';
-          final int Function(int, Pointer<Pointer<Utf16>>)? d = w.description;
-          if (d != null) {
-            desc.value = nullptr;
-            if (d(h, desc) >= 0 && desc.value != nullptr) {
-              name = desc.value.toDartString();
-              w.localFree(desc.value.address);
-            }
-          }
-          if (name.isEmpty) name = moduleOf(h);
-          out.add(
-            ThreadCpuTime(
-              id: tid,
-              name: name,
-              cpuMicros: (kernel.value + user.value) ~/ 10,
-            ),
-          );
-        } finally {
-          w.closeHandle(h);
+    String nameOf(int thread) {
+      final int Function(int, Pointer<Pointer<Utf16>>)? d = w.description;
+      if (d != null) {
+        desc.value = nullptr;
+        if (d(thread, desc) >= 0 && desc.value != nullptr) {
+          final String name = desc.value.toDartString();
+          w.localFree(desc.value.address);
+          if (name.isNotEmpty) return name;
         }
       }
-    });
-  } finally {
-    w.closeHandle(snap);
-  }
+      return moduleOf(thread);
+    }
+
+    int current = 0;
+    try {
+      while (w.nextThread(
+            _currentProcess,
+            current,
+            _threadQueryLimitedInformation | _threadQueryInformation,
+            0,
+            0,
+            next,
+          ) ==
+          0) {
+        // 上一个句柄是枚举游标，拿到下一个之后才能关。
+        if (current != 0) w.closeHandle(current);
+        current = next.value;
+        final int tid = w.threadId(current);
+        if (tid == 0) continue;
+        if (w.threadTimes(current, creation, exit, kernel, user) == 0) continue;
+        alive.add(tid);
+        final (int, String, int)? cached = _windowsNames[tid];
+        final String name;
+        if (cached != null &&
+            cached.$1 == creation.value &&
+            cached.$3 >= _windowsNameResolveSightings) {
+          name = cached.$2;
+        } else {
+          name = nameOf(current);
+          final int seen = cached != null && cached.$1 == creation.value
+              ? cached.$3 + 1
+              : 1;
+          _windowsNames[tid] = (creation.value, name, seen);
+        }
+        out.add(
+          ThreadCpuTime(
+            id: tid,
+            name: name,
+            cpuMicros: (kernel.value + user.value) ~/ 10,
+          ),
+        );
+      }
+    } finally {
+      if (current != 0) w.closeHandle(current);
+    }
+  });
+  _windowsNames.removeWhere((int tid, _) => !alive.contains(tid));
   return out;
 }
 
@@ -596,4 +606,113 @@ List<ThreadCpuTime> _readMachThreads() {
     }
   });
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// 常驻后台 isolate
+// ---------------------------------------------------------------------------
+
+/// 线程 CPU 读数来源：状态监测开始采样时创建、停止时 [close]。测试里替换。
+abstract interface class ThreadCpuSource {
+  /// 读一次本进程全部线程。[close] 之后调用、或读取失败时以错误结束。
+  Future<List<ThreadCpuTime>> read();
+
+  /// 释放后台资源；还没返回的 [read] 以 [StateError] 结束。
+  void close();
+}
+
+/// 在一个常驻后台 isolate 里反复调 [readThreadCpuTimes]。
+///
+/// 不用每秒 `Isolate.run`：那样每次都要新起 isolate（本机实测 ~0.4 ms）、重新查一遍
+/// FFI 符号，跨读数的线程名缓存也随 isolate 一起丢掉。
+final class ThreadCpuWorker implements ThreadCpuSource {
+  ThreadCpuWorker({int? uiThreadId}) {
+    _responses.listen(_onResponse);
+    _isolate = Isolate.spawn<(SendPort, int?)>(
+      _threadCpuWorkerMain,
+      (_responses.sendPort, uiThreadId),
+      debugName: 'thread-cpu-sampler',
+      // 后台 isolate 意外退出时收到 null：还在等的读取以错误结束，之后不再可用。
+      onExit: _responses.sendPort,
+    );
+    unawaited(
+      _isolate.then<void>((Isolate isolate) {
+        if (_closed) isolate.kill(priority: Isolate.immediate);
+      }, onError: (Object e, StackTrace st) => _failAll(e, st)),
+    );
+  }
+
+  final ReceivePort _responses = ReceivePort('thread-cpu-sampler');
+  late final Future<Isolate> _isolate;
+  final Completer<SendPort> _requests = Completer<SendPort>();
+  final Queue<Completer<List<ThreadCpuTime>>> _pending =
+      Queue<Completer<List<ThreadCpuTime>>>();
+  bool _closed = false;
+
+  @override
+  Future<List<ThreadCpuTime>> read() async {
+    if (_closed) throw StateError('ThreadCpuWorker closed');
+    final SendPort port = await _requests.future;
+    if (_closed) throw StateError('ThreadCpuWorker closed');
+    final Completer<List<ThreadCpuTime>> done =
+        Completer<List<ThreadCpuTime>>();
+    _pending.addLast(done);
+    port.send(true);
+    return done.future;
+  }
+
+  void _onResponse(Object? message) {
+    if (message == null) {
+      close();
+      return;
+    }
+    if (message is SendPort) {
+      _requests.complete(message);
+      return;
+    }
+    if (_pending.isEmpty) return;
+    final Completer<List<ThreadCpuTime>> done = _pending.removeFirst();
+    if (message is List<ThreadCpuTime>) {
+      done.complete(message);
+    } else {
+      done.completeError(StateError('thread cpu read failed: $message'));
+    }
+  }
+
+  void _failAll(Object error, [StackTrace? stack]) {
+    while (_pending.isNotEmpty) {
+      _pending.removeFirst().completeError(error, stack);
+    }
+    if (!_requests.isCompleted) _requests.completeError(error, stack);
+    // 没人等这个 future 时别把错误抛成未处理异常。
+    unawaited(_requests.future.then<void>((_) {}, onError: (_) {}));
+  }
+
+  @override
+  void close() {
+    if (_closed) return;
+    _closed = true;
+    _failAll(StateError('ThreadCpuWorker closed'));
+    _responses.close();
+    unawaited(
+      _isolate.then<void>(
+        (Isolate isolate) => isolate.kill(priority: Isolate.immediate),
+        onError: (_) {},
+      ),
+    );
+  }
+}
+
+/// 后台 isolate 入口：先回传自己的请求端口，之后每收到一个请求读一次。
+void _threadCpuWorkerMain((SendPort, int?) args) {
+  final (SendPort reply, int? uiThreadId) = args;
+  final ReceivePort requests = ReceivePort();
+  reply.send(requests.sendPort);
+  requests.listen((Object? _) {
+    try {
+      reply.send(readThreadCpuTimes(uiThreadId: uiThreadId));
+    } on Object catch (e) {
+      reply.send('$e');
+    }
+  });
 }

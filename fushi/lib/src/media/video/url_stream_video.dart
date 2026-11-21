@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
-import 'package:flutter/foundation.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 
 import 'package:fushi/src/media/source_library/stream_auth_scope.dart';
@@ -16,9 +15,13 @@ import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
         resolveYoutubeAudioStream,
         youtubeVideoIdOrNull,
         YoutubeAudioStream,
-        YoutubeCaptionTrack;
+        YoutubeCaptionTrack,
+        YoutubeVariantSet,
+        YoutubeVideoVariant,
+        resolveYoutubeVideoVariants;
 import 'package:http/http.dart' as http;
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/deadline_get.dart';
 
 /// 纯函数：判断 [url] 是否是可直接交给播放器的网络流 URL（TODO-850 阶段①）。
 ///
@@ -265,11 +268,19 @@ String? separatedAudioFallbackStreamUrl(RemoteVideoStreamUrls urls) {
 typedef YoutubeAudioStreamResolver =
     Future<YoutubeAudioStream> Function(String videoId);
 
+/// 现取一份 YouTube 画质档（生产 [resolveYoutubeVideoVariants]；测试注入假件）。
+typedef YoutubeVariantsResolver =
+    Future<YoutubeVariantSet> Function(
+      String watchUrl,
+      int? playbackTargetHeight,
+    );
+
 class UrlStreamVideoClient
     implements
         RemoteVideoClient,
         RemoteVideoStreamHeaders,
-        RemoteVideoSubtitleAudioRefresh {
+        RemoteVideoSubtitleAudioRefresh,
+        RemoteVideoClientConnections {
   UrlStreamVideoClient({
     required this.streamUrl,
     this.subtitleUrl,
@@ -284,7 +295,19 @@ class UrlStreamVideoClient
     http.Client? httpClient,
     YoutubeStreamRelay? youtubeStreamRelay,
     YoutubeAudioStreamResolver? youtubeAudioResolver,
-  }) : _httpClient = httpClient ?? createAppHttpIoClient(),
+    this.subtitleFetchTimeout = kRemoteSubtitleFetchTimeout,
+    YoutubeVariantSet? youtubeVariants,
+    int? youtubeVariantsTargetHeight,
+    YoutubeVariantsResolver? youtubeVariantsResolver,
+  }) : _youtubeVariants = youtubeVariants,
+       _youtubeVariantsTargetHeight = youtubeVariantsTargetHeight,
+       _youtubeVariantsResolver =
+           youtubeVariantsResolver ??
+           ((String watchUrl, int? target) => resolveYoutubeVideoVariants(
+             watchUrl,
+             playbackTargetHeight: target,
+           )),
+       _httpClient = httpClient ?? createAppHttpIoClient(),
        _youtubeStreamRelay = youtubeStreamRelay ?? relayYoutubeStreamUrl,
        _youtubeAudioResolver =
            youtubeAudioResolver ??
@@ -377,6 +400,48 @@ class UrlStreamVideoClient
   final Map<String, String> httpHeaderFields;
 
   final http.Client _httpClient;
+
+  /// 外挂字幕下载（[getRemoteVideoSubtitle]）的总预算，测试可调短。
+  final Duration subtitleFetchTimeout;
+
+  /// 本次起播的 YouTube 画质档（gap-remote-10）：起播解析那次 getManifest 顺手算出的
+  /// 各档（[YoutubeResolvedSource.variants]）、持久缓存命中时和播放流一起存下的那份
+  /// （`YoutubeStreamCacheEntry.variants`，过期时间按全部直链里最早的 expire 算），或
+  /// 画质菜单第一次现取的结果。跟着本客户端走（换集 / 重开就是新客户端）。
+  YoutubeVariantSet? _youtubeVariants;
+
+  /// [_youtubeVariants] 是按哪个画质目标算的（「自动」档下标随它变）。
+  int? _youtubeVariantsTargetHeight;
+
+  final YoutubeVariantsResolver _youtubeVariantsResolver;
+
+  /// 画质菜单的各档：起播时已从同一份 manifest 算好（且画质目标没变）就直接用，不再
+  /// 重取 manifest；否则现取一次并记在本客户端上，同一次播放再点开菜单也不重取。
+  /// 不是 YouTube 流时返回空集。现取失败照常抛出，不记结果（下次点开再试）。
+  Future<YoutubeVariantSet> youtubeQualityVariants({
+    int? playbackTargetHeight,
+  }) async {
+    final String? watch = youtubeCaptionsUrl;
+    if (watch == null || !isYoutubeUrl(watch)) {
+      return const YoutubeVariantSet(
+        variants: <YoutubeVideoVariant>[],
+        audioStreamUrl: null,
+        defaultIndex: -1,
+      );
+    }
+    final YoutubeVariantSet? cached = _youtubeVariants;
+    if (cached != null &&
+        _youtubeVariantsTargetHeight == playbackTargetHeight) {
+      return cached;
+    }
+    final YoutubeVariantSet fetched = await _youtubeVariantsResolver(
+      watch,
+      playbackTargetHeight,
+    );
+    _youtubeVariants = fetched;
+    _youtubeVariantsTargetHeight = playbackTargetHeight;
+    return fetched;
+  }
 
   /// BUG-2507：googlevideo 直链交给播放内核前换成本地有界分块中继地址（默认
   /// [relayYoutubeStreamUrl]；非 googlevideo 原样）。测试注入假件以离线覆盖。
@@ -475,8 +540,11 @@ class UrlStreamVideoClient
     final Map<String, String>? headers = (httpHeaderFields.isEmpty || !sameSite)
         ? null
         : httpHeaderFields;
-    final http.Response res = await _httpClient.get(
+    // 直链流的默认字幕同样挡在开流之前：字幕站不回数据时到点放弃（播放页照常起播）。
+    final http.Response res = await getWithDeadline(
+      _httpClient,
       Uri.parse(url),
+      timeout: subtitleFetchTimeout,
       headers: headers,
     );
     if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -518,8 +586,9 @@ class UrlStreamVideoClient
     int episodeIndex = 0,
   }) async {}
 
-  /// 释放底层 http client（页面 dispose 时调用）。
-  @visibleForTesting
+  /// 释放底层 http client 与来源直链解析器（AList 登录态 / SFTP 的 SSH 连接）。播放页
+  /// 退出收尾用完后经 `RemoteClientTeardown` 调（BUG-5012）。
+  @override
   void close() {
     _httpClient.close();
     urlResolver?.close();

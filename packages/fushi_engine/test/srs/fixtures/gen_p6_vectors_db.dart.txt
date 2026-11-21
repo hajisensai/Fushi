@@ -1,0 +1,85 @@
+// 一次性：生成 srs_p6_vectors_test 用的协议 3 冻结库 fixtures/p6_vectors.db.gz（交接 §41 第 3 条、§32 K1 留的步骤）。
+//
+// 必须在 S1 之前最后一个协议 3 提交 5ad47c2edb（S1 合并 c9d7703dd6 的第一父）上跑：另开临时 worktree 检出它，
+// 编出那一版的 fushi_fsrs 原生库，把本文件改名 packages/fushi_engine/test/srs/p6_gen_db_test.dart，在
+// packages/fushi_engine 下 `dart test test/srs/p6_gen_db_test.dart`，产物拷回集成分支的 fixtures/。
+//
+// 造法与 srs_stats_vectors（SRS_STATS_VECTORS_WRITE=1 分支）相同：灌库 → `snapshotInto(stripDeviceLocal: false)` → gzip。
+// 灌库与 5ad47c2edb 上 srs_p6_vectors_test 的 setUpAll 相同（第 i 份历史 = profile `p$i` 的卡 `v$i`），只多一处：
+// 向量里日志 JSON 的 `card` 是占位（`c` / `pred`）、`p` 是 `p`，与 `card_id` / `profile_uid` 列不一致；换代迁移的对拍
+// 会正确地把这种自相矛盾的库判 fail（实测 1080/1200），所以落库前把 JSON 里的 `card` / `p` 改写成 `v$i` / `p$i`
+// （解码后改值再编码，键序不变）。随后每个 profile 发 `identity` 与 `migrate`（把投影里的日志收进 sync2_ops），时刻固定
+// 2026-01-01T00:00:00Z。
+//
+// 核对（2026-11-18 对已入库的 p6_vectors.db.gz）：schema 29；srs_review_logs 8548 条且 jslim 的 `card` 全部等于
+// `v$i`；srs_event_local 2811 条；sync2_ops 8548 条；sync2_self 1200 行、migrated_at 全是 1767225600000（没有日志的
+// 120 个 profile hlc_wall = 0）。本文件按交接描述与夹具内容复原，留档时没有在 5ad47c2edb 上重跑逐字节比对。
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:fushi_srs/fushi_srs.dart';
+import 'package:test/test.dart';
+
+const int _now = 1767225600000; // 2026-01-01T00:00:00Z
+
+List<Map<String, Object?>> _load(String path) {
+  final Map<String, Object?> root =
+      jsonDecode(utf8.decode(gzip.decode(File(path).readAsBytesSync())))
+          as Map<String, Object?>;
+  return (root['vectors']! as List<Object?>).cast<Map<String, Object?>>();
+}
+
+void main() {
+  test('生成 p6_vectors.db.gz', () {
+    expect(FushiFsrs.instance, isNotNull, reason: 'fushi_fsrs 原生库缺失');
+    final List<Map<String, Object?>> vectors = _load(
+      'test/srs/fixtures/p6_vectors.json.gz',
+    );
+    expect(vectors, hasLength(1200));
+    final Directory dir = Directory.systemTemp.createTempSync('srs_p6_gen_');
+    final SrsCore core = SrsCore.open('${dir.path}/srs.db')..legacyMarkNone();
+    final List<(int, List<Object?>)> apps = <(int, List<Object?>)>[];
+    for (int i = 0; i < vectors.length; i++) {
+      final Map<String, Object?> server = (vectors[i]['server']! as Map)
+          .cast<String, Object?>();
+      for (final Object? j in vectors[i]['logs']! as List<Object?>) {
+        final Map<String, Object?> l = (jsonDecode(j! as String) as Map)
+            .cast<String, Object?>();
+        l['card'] = 'v$i';
+        l['p'] = 'p$i';
+        apps.add((
+          0,
+          <Object?>[l['id'], 'p$i', 'v$i', l['kind'], l['at'], jsonEncode(l)],
+        ));
+        if (server[l['id']] case final int st) {
+          apps.add((1, <Object?>[l['id'], 'p$i', st]));
+        }
+      }
+    }
+    core.debugExecBatchRaw(<String>[
+      'INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, '
+          "review_type, origin, duration_ms, jslim) VALUES (srs_id(?), srs_id(?), srs_id(?), ?, NULL, ?, 'r', 'fushi', 0, ?)",
+      'INSERT INTO srs_event_local (event_id, profile_uid, server_time) VALUES (srs_id(?), srs_id(?), ?)',
+    ], apps);
+    for (int i = 0; i < vectors.length; i++) {
+      core.sync2(<String, Object?>{
+        'op': 'identity',
+        'profile': 'p$i',
+        'now': _now,
+      });
+      while (core.sync2(<String, Object?>{
+            'op': 'migrate',
+            'profile': 'p$i',
+            'now': _now,
+          }).map['done'] !=
+          true) {}
+    }
+    final String snap = '${dir.path}/snap.db';
+    core.snapshotInto(snap, stripDeviceLocal: false);
+    core.close();
+    File(
+      'test/srs/fixtures/p6_vectors.db.gz',
+    ).writeAsBytesSync(gzip.encode(File(snap).readAsBytesSync()));
+    dir.deleteSync(recursive: true);
+  });
+}

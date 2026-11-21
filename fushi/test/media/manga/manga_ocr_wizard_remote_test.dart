@@ -21,6 +21,7 @@ import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRgbaImage;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
@@ -88,6 +89,13 @@ class _FakeRemoteRunner implements MangaOcrRemoteRunner {
 
 /// Lens 只用来「凑出第二个可用引擎」，从不真的跑。
 class _NoopLensRunner implements GoogleLensMangaOcrRunner {
+  @override
+  Future<MokuroImage> recognizePagePixels(
+    OcrRgbaImage image, {
+    required String relativeUrl,
+    required String language,
+  }) => throw UnimplementedError();
+
   @override
   Stream<MangaOcrVolumeEvent> ocrFolder({
     required String imageDirPath,

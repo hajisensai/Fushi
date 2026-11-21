@@ -47,7 +47,14 @@ void main() {
     ).readAsStringSync();
     // 去空白再比：dart format 的折行（参数是否逐行、尾逗号）不该让接线守卫变红。
     final String flat = src.replaceAll(RegExp(r'\s+'), '');
-    expect(flat, contains('await_openReader(bookKey,chapterIndex:index);'));
+    // 按 chapterKey 选章后以写回章表里的下标为准（gap-mangamisc-1），
+    // 写回没给下标才退回页面手上的 index。
+    expect(
+      flat,
+      contains(
+        'await_openReader(bookKey,chapterIndex:selected.currentChapterIndex??index',
+      ),
+    );
     expect(
       flat,
       contains(

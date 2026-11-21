@@ -274,6 +274,7 @@ class SubtitleTranscriptText extends StatefulWidget {
     required this.text,
     required this.style,
     required this.onLookup,
+    this.richSpan,
     this.textKey,
     this.onBackgroundTap,
     this.keyboardLookup = false,
@@ -284,6 +285,12 @@ class SubtitleTranscriptText extends StatefulWidget {
 
   final String text;
   final TextStyle style;
+
+  /// 带自身样式的正文（字幕列表「显示特效字幕」，left3545）；挂在 [style] 之下继承
+  /// 字号 / 字体。拍平文本必须等于 [text]（逐字命中按 [text] 的 UTF-16 偏移算）。
+  /// null = 纯 [text]。键盘光标显示时退回纯文本（光标要逐字切分正文）。
+  final InlineSpan? richSpan;
+
   final void Function(int graphemeIndex, Rect anchor) onLookup;
   final Key? textKey;
   final VoidCallback? onBackgroundTap;
@@ -389,7 +396,7 @@ class _SubtitleTranscriptTextState extends State<SubtitleTranscriptText> {
                   TextSpan(text: graphemes.skip(caret + 1).join()),
                 ],
               )
-            : TextSpan(text: widget.text, style: widget.style);
+            : _plainOrRichSpan();
         final TextDirection textDirection = Directionality.of(context);
         final TextScaler textScaler = MediaQuery.textScalerOf(context);
         final double maxWidth = constraints.maxWidth;
@@ -497,6 +504,16 @@ class _SubtitleTranscriptTextState extends State<SubtitleTranscriptText> {
         );
       },
     );
+  }
+
+  TextSpan _plainOrRichSpan() {
+    final InlineSpan? rich = widget.richSpan;
+    if (rich == null) return TextSpan(text: widget.text, style: widget.style);
+    assert(
+      rich.toPlainText(includeSemanticsLabels: false) == widget.text,
+      'richSpan must flatten to text',
+    );
+    return TextSpan(style: widget.style, children: <InlineSpan>[rich]);
   }
 
   /// 没有高亮时原样返回 [child]（调用方的组件树零变化）；有高亮时在字形之下

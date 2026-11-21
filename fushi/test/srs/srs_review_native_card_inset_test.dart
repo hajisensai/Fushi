@@ -149,6 +149,21 @@ double _underBarCut(WidgetTester tester) {
   return clip.size.height - clip.clipper!.getClip(clip.size).bottom;
 }
 
+/// 原生卡面里铺满整个卡面的不透明 [ColoredBox]（卡面自己的整面底色）。
+List<ColoredBox> _nativeOpaqueFills(WidgetTester tester) {
+  final Size face = tester.getSize(_native);
+  return tester
+      .widgetList<ColoredBox>(
+        find.descendant(of: _native, matching: find.byType(ColoredBox)),
+      )
+      .where((ColoredBox b) => b.color.a > 0)
+      .where((ColoredBox b) {
+        final Size s = tester.getSize(find.byWidget(b));
+        return s.width >= face.width - 1 && s.height >= face.height - 1;
+      })
+      .toList();
+}
+
 /// 底栏里的 [row]（默认「显示答案」那一行；翻面后传评分按钮行）往上直到卡面宿主，
 /// 祖先链上画了不透明底的 widget。
 List<Widget> _opaqueBarAncestors(
@@ -303,7 +318,7 @@ void main() {
     }
   }
 
-  testWidgets('卡面自定义配色（卡面自己铺底）：底栏垫同色底板，卡面不裁', (WidgetTester tester) async {
+  testWidgets('卡面自定义配色（卡面自己铺底）：底栏同样不画底，卡面在底栏上沿裁掉', (WidgetTester tester) async {
     final SrsDbStore store = await _openStore(tester);
     await _addFushiCard(tester, store);
     await _pumpReview(
@@ -320,18 +335,36 @@ void main() {
     final Finder bar = find.byKey(
       const ValueKey<String>('srs-review-bottom-bar'),
     );
-    final Finder scrim = find.byKey(
-      const ValueKey<String>('srs-review-bottom-bar-scrim'),
+    // 以前这里垫「透明 → 卡面 surface」的渐变底板；所有者 11-20：底部也不应该有背景。
+    expect(
+      find.byKey(const ValueKey<String>('srs-review-bottom-bar-scrim')),
+      findsNothing,
     );
-    expect(scrim, findsOneWidget);
-    expect(tester.getSize(scrim).height, tester.getSize(bar).height);
-    final LinearGradient gradient =
-        (tester.widget<DecoratedBox>(scrim).decoration as BoxDecoration)
-                .gradient!
-            as LinearGradient;
-    expect(gradient.colors.first.a, 0);
-    expect(gradient.colors.last.a, 1);
-    expect(_underBarCut(tester), 0);
+    expect(_opaqueBarAncestors(tester), isEmpty);
+    // 不靠底色挡内容：卡面在底栏上沿裁掉，末尾内容靠底部滚动内边距滚到底栏以上。
+    expect(_underBarCut(tester), tester.getSize(bar).height);
+    expect(
+      tester.widget<SrsFushiCardView>(_native).bottomInset?.value,
+      tester.getSize(bar).height,
+    );
+    // 自定义配色时原生卡面仍铺用户选的 surface（有意为之的卡面底色）。
+    expect(_nativeOpaqueFills(tester), isNotEmpty);
+    await _unmount(tester);
+  });
+
+  testWidgets('跟随 app 配色：原生卡面不铺任何整面底色，透出页面背景', (WidgetTester tester) async {
+    final SrsDbStore store = await _openStore(tester);
+    await _addFushiCard(tester, store);
+    await _pumpReview(tester, store: store, apple: false);
+    expect(_nativeOpaqueFills(tester), isEmpty);
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await _settle(tester);
+    expect(
+      find.byKey(const ValueKey<String>('srs-answer-bar')),
+      findsOneWidget,
+    );
+    // 答案面同样不铺。
+    expect(_nativeOpaqueFills(tester), isEmpty);
     await _unmount(tester);
   });
 

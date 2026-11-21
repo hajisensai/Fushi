@@ -5,21 +5,29 @@
 //! （字段改回、复活被删的、删除之后新建的、配置改回；可选：撤回此后的复习）。补偿操作照常同步，不覆盖任何
 //! 设备；恢复之前先打还原点，所以恢复本身也能再恢复回去。
 
+#[cfg(test)]
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+#[cfg(test)]
 use rusqlite::{Connection, OptionalExtension, params};
+#[cfg(test)]
 use serde_json::{Value, json};
 
+#[cfg(test)]
 use super::{Local, canonical, edit_row, in_savepoint, load_op, sql};
 use crate::store::SrsCore;
+#[cfg(test)]
 use crate::sync2::id::{Id, Key};
+#[cfg(test)]
 use crate::sync2::op::{self as op, Body, EditBody, EntKind, Intent, LogBody};
+#[cfg(test)]
 use crate::sync2::vv::{OpId, Vv};
 
 /// 恢复的目标：一个时刻，或一个还原点（打还原点那台设备当时已应用的全部操作 + 它自己到还原点为止的前缀）。
 ///
 /// 还原点不能按它自己的墙钟截断：打还原点与随后的批量删除常落在同一毫秒，按 `wall <= t` 会把删除也算进
 /// 「那一刻」，恢复什么都不做。按还原点操作的因果（deps + 自己的 seq）截断才是「它之前」。
+#[cfg(test)]
 pub enum RestoreTarget {
     At(i64),
     Checkpoint(OpId),
@@ -44,25 +52,30 @@ pub enum RestoreTarget {
 /// 取 min 而不是只取原始时刻：一条操作不可能晚于它进日志的时刻（时钟偏差的旧 HLC 不会把已有的内容推到未来）。于是墙钟
 /// ≤ 时刻的操作一定在截面里（就是原来的版本向量前缀），只需对墙钟在后的修改 / 日志看原始时刻。
 /// 还原点目标按因果截（见 [RestoreTarget]），迁移操作在还原点之前就都在它的依赖里，不需要原始时刻。
+#[cfg(test)]
 pub(crate) struct Cut {
     vv: Vv,
     /// 墙钟在那一刻之后、原始时刻在那一刻之前（含）的操作。
     stamped_before: HashSet<OpId>,
 }
 
+#[cfg(test)]
 impl Cut {
+    #[cfg(test)]
     pub(crate) fn contains(&self, id: &OpId) -> bool {
         self.vv.contains(id) || self.stamped_before.contains(id)
     }
 }
 
 /// 旧 HLC 文本（`physical:counter:writer`）的物理时刻（解析与字段寄存器同一份 [crate::history::parse_hlc]）。
+#[cfg(test)]
 fn hlc_physical(hlc: &str) -> Option<i64> {
     crate::history::parse_hlc(hlc).ok().map(|(p, _, _)| p)
 }
 
 /// 按时刻 [t] 的截面：墙钟前缀 + 墙钟在后但原始时刻 ≤ [t] 的修改 / 日志。整张操作表只顺序扫一遍（墙钟没有索引，
 /// 版本向量前缀与原始时刻同一次扫出来），载荷只对墙钟在后的修改 / 日志读。
+#[cfg(test)]
 fn cut_at(conn: &Connection, profile: &str, t: i64) -> Result<Cut, String> {
     let mut vv = Vv::new();
     let mut stamped_before = HashSet::new();
@@ -123,6 +136,7 @@ fn cut_at(conn: &Connection, profile: &str, t: i64) -> Result<Cut, String> {
     Ok(Cut { vv, stamped_before })
 }
 
+#[cfg(test)]
 pub(crate) fn target_cut(
     conn: &Connection,
     profile: &str,
@@ -143,6 +157,7 @@ pub(crate) fn target_cut(
 }
 
 #[derive(Default, Debug)]
+#[cfg(test)]
 pub(crate) struct Plan {
     pub bodies: Vec<Body>,
     pub fields: usize,
@@ -153,6 +168,7 @@ pub(crate) struct Plan {
 }
 
 /// 求补偿操作。
+#[cfg(test)]
 pub(crate) fn plan(
     conn: &Connection,
     profile: &str,
@@ -359,6 +375,7 @@ pub(crate) fn plan(
 }
 
 /// 实体在 [target] 里有没有任何内容（字段修改、标签操作；不算日志 / 移卡索引 / 清除）。
+#[cfg(test)]
 fn has_content_in(
     conn: &Connection,
     profile: &str,
@@ -371,6 +388,7 @@ fn has_content_in(
         .any(|(id, w)| !matches!(w.as_str(), "#log" | "#move" | "#purge") && target.contains(id)))
 }
 
+#[cfg(test)]
 fn edit_body(kind: EntKind, entity: &str, key: &str, v: Value) -> Body {
     Body::Edit(EditBody {
         kind,
@@ -391,6 +409,7 @@ fn edit_body(kind: EntKind, entity: &str, key: &str, v: Value) -> Body {
 ///   从血统继承到的值；血统里也没有就写 null。
 /// - 其余寄存器写 null：读路径把「生效值为 null」与「没有记录」视为同一状态（registers.rs `Entity::is_set`），
 ///   带子键的映射（笔记类型 `fieldDef/` `tmplDef/` `fieldDesc/`、笔记 `f/`）里这一项消失，内置笔记类型回到跟随代码的默认值。
+#[cfg(test)]
 fn restored_value(
     conn: &Connection,
     profile: &str,
@@ -410,10 +429,12 @@ fn restored_value(
     Ok(Value::Null)
 }
 
+#[cfg(test)]
 const HISTORY_FROM: &str = "historyFrom/";
 
 /// [card] 在 [target] 时从血统继承到的 [key]：与 registers.rs `cards_group` 同一规则——血统按广度优先（自己在前，
 /// 前身按 ID 排，防环，最多 256 张），第一张对这个键有生效记录的前身的值。只在 [card] 自己那时没有记录时调用。
+#[cfg(test)]
 fn card_inherited_at(
     conn: &Connection,
     profile: &str,
@@ -466,6 +487,7 @@ fn card_inherited_at(
 /// 每条写入的落库行优先取投影里那一行（按 [edit_row] 的 ID 规则查 `srs_field_edits`，就是落库时它算出的那一行），已被
 /// 支配删掉的才现算——[edit_row] 对本机写入要求旧记录因果闭包，某台设备只覆盖了另一台迁移操作的一部分时要逐条扫那台
 /// 设备的迁移操作（用户库实测一条 1.7 秒），不能每个寄存器都重算一遍。
+#[cfg(test)]
 fn value_at(
     conn: &Connection,
     profile: &str,
@@ -556,6 +578,7 @@ fn value_at(
 }
 
 /// 某笔记在 [target] 时的标签（OR-Set 按那时已有的添加 / 观察删除重算）。
+#[cfg(test)]
 fn tags_at(
     conn: &Connection,
     profile: &str,
@@ -614,6 +637,7 @@ fn tags_at(
 impl SrsCore {
     /// 预览恢复到 [to]：会改回多少字段、复活 / 删除多少实体、改多少标签、撤回多少次复习。只读（[plan] 只算补偿
     /// 操作、不落库）：走读连接的快照（[SrsCore::read_visible]）。
+    #[cfg(test)]
     pub fn sync2_plan_restore(
         &self,
         profile: &str,
@@ -629,6 +653,7 @@ impl SrsCore {
     }
 
     /// 恢复到 [to]（先打还原点，再追加补偿操作）。返回与 `sync2_apply_local` 同形的投影变化。
+    #[cfg(test)]
     pub fn sync2_restore(
         &self,
         profile: &str,
@@ -641,6 +666,7 @@ impl SrsCore {
     }
 
     /// 还原点列表（新的在前）。
+    #[cfg(test)]
     pub fn sync2_checkpoints(&self, profile: &str) -> Result<Value, String> {
         let r = self.reader()?;
         let mut stmt = r
@@ -670,6 +696,7 @@ impl SrsCore {
     /// 一个实体的修改历史（设计 §10.2：每张卡、每个字段的修改历史——谁、哪台设备、何时）：碰过它的全部字段修改与
     /// 标签操作，**含**被覆盖、被因果支配而早已不在投影里的；新的在前。迁移来的旧记录按旧写入者 / 旧 HLC 报。
     /// 被彻底清除的实体只剩骨架：报 `purged`，不报内容。
+    #[cfg(test)]
     pub fn sync2_history(&self, profile: &str, kind: &str, entity: &str) -> Result<Value, String> {
         let r = self.reader()?;
         let mut out: Vec<(i64, u32, Value)> = Vec::new();
@@ -723,6 +750,7 @@ mod tests;
 
 /// [SrsCore::sync2_restore] 的本体：在调用方的写连接、调用方开的 SAVEPOINT 里算补偿操作、打还原点并追加（不自己取锁）。
 /// 算与写在同一个 SAVEPOINT 里：补偿操作针对的就是写入时的投影。
+#[cfg(test)]
 pub(crate) fn restore_on(
     c: &Connection,
     profile: &str,
