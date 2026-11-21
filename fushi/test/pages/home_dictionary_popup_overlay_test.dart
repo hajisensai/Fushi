@@ -231,9 +231,18 @@ void main() {
     'home_dictionary_page mounts the popup stack in the root Overlay '
     '(full-window, Clip.none, neutralized), not a clamped sub-area Stack',
     () {
-      final String page = File(
+      // 根 Overlay entry / 中和器 / Clip.none / inert 门归共用宿主
+      // （design-shared-lookup-webview）；本页只出浮层子项并经宿主同步。
+      final String pageSrc = File(
         'lib/src/pages/implementations/home_dictionary_page.dart',
       ).readAsStringSync();
+      expect(pageSrc, contains('_popupHost.sync(context)'));
+      expect(pageSrc, contains('List<Widget> buildSharedLookupPopupLayers('));
+      final String page =
+          pageSrc +
+          File(
+            'lib/src/pages/implementations/shared_lookup_popup_host.dart',
+          ).readAsStringSync();
 
       expect(
         page.contains('rootOverlay: true'),
