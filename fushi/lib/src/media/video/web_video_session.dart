@@ -48,8 +48,6 @@ import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/src/lookup/hover_lookup_modifier.dart';
 import 'package:fushi/src/webview/web_payload_limits.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/web_adblock/web_adblock_service.dart'
-    show WebAdblockService;
 import 'package:fushi/src/web_adblock/web_adblock_wiring.dart';
 import 'package:fushi/src/web_browser/data/web_browser_site_settings.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_page_settings.dart';
@@ -192,7 +190,7 @@ Future<WebViewEnvironment>? discardWebVideoWindowedEnvironment() =>
 /// 同法，先等缓存引擎进内存（本地反序列化，不等网络），否则首页子资源请求与 documentStart 取的
 /// cosmetic 都落在空引擎上；联网刷新过期列表留在后台。失败只记日志（最坏是本页不拦广告）。
 Future<void> warmWebVideoAdblock(
-  WebAdblockService adblock, {
+  WebAdblockWarmup adblock, {
   required String logTag,
 }) async {
   void logError(Object e, StackTrace s) =>
