@@ -207,24 +207,17 @@ class TextToEpub {
     return blocks;
   }
 
-  /// HTML / XHTML 只取 `<body>` 的内容。良构的（X）HTML 按 XML 解析，保住
+  /// HTML / XHTML 只取正文（body）内容。良构的（X）HTML 按 XML 解析，保住
   /// `<a id="x"/>` 这类非空元素自闭合的写法；不良构的再交给 HTML5 解析器
-  /// （与浏览器同一套容错），两条路都重新序列化成良构 XHTML 再切章。
+  /// （与浏览器同一套容错），两条路都重新序列化成良构 XHTML 再切章。两条路的
+  /// 正文范围都按 HTML 的 body 规则定：`<body>`/`<head>` 标签可省略，XML 路径
+  /// 由 [_xmlBodyNodes] 复刻 HTML5 树构建的隐含 body 判定（HBK-AUDIT-003）。
   static List<_BodyNode> _htmlBlocks(String content) {
     content = _stripBom(content);
     final xml.XmlDocument? document = _tryParseXml(content);
     if (document != null) {
-      final xml.XmlElement? body = document.descendants
-          .whereType<xml.XmlElement>()
-          .where((xml.XmlElement e) => e.name.local.toLowerCase() == 'body')
-          .firstOrNull;
-      final Iterable<xml.XmlNode> nodes = body != null
-          ? body.children
-          : document.rootElement.name.local.toLowerCase() == 'html'
-          ? const <xml.XmlNode>[]
-          : <xml.XmlNode>[document.rootElement];
       return _trimEdgeWhitespace(<_BodyNode>[
-        for (final xml.XmlNode n in nodes) ?_fromXml(n),
+        for (final xml.XmlNode n in _xmlBodyNodes(document)) ?_fromXml(n),
       ]);
     }
     // 不良构输入同样可能带 kobo 式自闭合 <script/>：走章节解析入口先归一化，否则
@@ -234,6 +227,54 @@ class TextToEpub {
     return _trimEdgeWhitespace(<_BodyNode>[
       for (final dom.Node n in body.nodes) ?_fromDom(n),
     ]);
+  }
+
+  /// HTML 里只能出现在 head、且正文开始前遇到时归 head 的元素（HTML5 树构建
+  /// 「in head」插入模式处理的元素）。正文开始后再出现的同名元素留在 body。
+  static const Set<String> _headOnlyElements = <String>{
+    'base', 'basefont', 'bgsound', 'link', 'meta', 'noscript', //
+    'script', 'style', 'template', 'title',
+  };
+
+  /// 良构 XML 文档按 HTML 的 body 规则取正文节点：
+  /// - 有 `<body>` 元素 → 它的子节点；
+  /// - 否则正文是隐含的：把根当作 `<html>` 的内容逐个看（根本身不是 `html` 时
+  ///   根就是唯一的内容节点），正文开始前跳过 `<head>`、注释 / 处理指令、空白
+  ///   文本与 [_headOnlyElements]；首个非空白文本或其他元素开始正文，此后的节点
+  ///   全归正文（正文中途的 `<head>` 标签按 HTML5 忽略标签本身、保留其子节点）。
+  static List<xml.XmlNode> _xmlBodyNodes(xml.XmlDocument document) {
+    String local(xml.XmlElement e) => e.name.local.toLowerCase();
+    final xml.XmlElement? body = document.descendants
+        .whereType<xml.XmlElement>()
+        .where((xml.XmlElement e) => local(e) == 'body')
+        .firstOrNull;
+    if (body != null) return body.children;
+
+    final xml.XmlElement root = document.rootElement;
+    final List<xml.XmlNode> content = local(root) == 'html'
+        ? root.children
+        : <xml.XmlNode>[root];
+    final List<xml.XmlNode> out = <xml.XmlNode>[];
+    bool started = false;
+    for (final xml.XmlNode node in content) {
+      if (!started) {
+        if (node is xml.XmlElement) {
+          final String name = local(node);
+          if (name == 'head' || _headOnlyElements.contains(name)) continue;
+        } else if (node is xml.XmlText || node is xml.XmlCDATA) {
+          if (node.value!.trim().isEmpty) continue;
+        } else {
+          continue; // 注释 / 处理指令 / doctype 不开始正文
+        }
+        started = true;
+      }
+      if (node is xml.XmlElement && local(node) == 'head') {
+        out.addAll(node.children);
+      } else {
+        out.add(node);
+      }
+    }
+    return out;
   }
 
   /// 输入是否良构 XML：是就返回文档，不是返回 null（由调用方改走 HTML5 解析）。
