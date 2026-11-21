@@ -40,9 +40,15 @@ void main() {
 
   test('分镜导航的模式判据统一走枚举语义', () {
     // pagedVertical 与 spread 共用分页几何，分镜导航对它成立；webtoonGaps 是连续
-    // 长条，和 webtoon 一样没有「分镜格」。裸比 `== MangaReadingMode.webtoon` /
+    // 滚动，和 webtoon 一样没有「逐格翻页」。裸比 `== MangaReadingMode.webtoon` /
     // `== MangaReadingMode.spread` 会让四值枚举里的两个新模式各错一边——
     // 检测/翻页放行 webtoonGaps，状态 chip 又漏掉 pagedVertical。
+    //
+    // 制卡取分镜（_miningPanels）的判据不同：它按**制卡页的形状**判条漫长条
+    // （_isStripPage → isMangaStripPage），不按阅读模式判。分镜导航是翻页交互，
+    // 连续滚动模式下没有「下一格」可翻，所以看模式；制卡裁切看的是这一页有没有
+    // 分镜格——普通分镜漫画用 webtoon / webtoonGaps 读时每页仍有分镜格，
+    // 真正的长条页在分页模式下也没有（PR #3768，维护者已拍板接受）。
     final String flat = readerPage.readAsStringSync().replaceAll(
       RegExp(r'\s+'),
       '',
@@ -53,9 +59,14 @@ void main() {
       reason: '_tryPanelTurn 与翻页预热 _prewarmPanels 都按导航开关与 isWebtoon 收口',
     );
     expect(
-      flat.contains('if(_mode.isWebtoon)returnconst<Rect>[];'),
+      flat.contains('if(_isStripPage(pageIndex))returnconst<Rect>[];'),
       isTrue,
-      reason: '制卡取分镜（_miningPanels）同样按 isWebtoon 跳过分镜一级',
+      reason: '制卡取分镜（_miningPanels）按制卡页形状跳过条漫长条，不按阅读模式',
+    );
+    expect(
+      flat.contains('if(_mode.isWebtoon)returnconst<Rect>[];'),
+      isFalse,
+      reason: '制卡取分镜不能再按阅读模式关掉：webtoon 模式下读普通漫画也有分镜格',
     );
     expect(
       flat.contains('appModel.mangaPanelNavigation&&_mode.isPaged'),
