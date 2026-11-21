@@ -1298,6 +1298,22 @@ class ReaderFushiSource extends ReaderMediaSource {
     }
   }
 
+  /// 这本书有没有用户自定义的显示书名或封面（[deleteBook] 会经
+  /// [_clearBookOverridesLogged] 把它们一起清掉）。只查内存偏好与一次文件 stat。
+  ///
+  /// HBK-AUDIT-032：Kavita 缓存副本的自动淘汰 / 一键清理据此把「用户改过名 / 换过
+  /// 封面」的书当作带用户数据的书保留——这两样只在本机、服务器上没有副本，而它们按
+  /// bookKey（= 净化后的书名）存，书删了就不能留着（同名书会把它「复活」，BUG-4979），
+  /// 所以只能不删书。
+  bool hasBookCustomization({
+    required AppModel appModel,
+    required String bookKey,
+  }) {
+    final MediaItem item = overrideTitleMediaItemForBookKey(bookKey);
+    return getOverrideTitleFromMediaItem(item) != null ||
+        resolveOverrideThumbnailFile(appModel: appModel, item: item) != null;
+  }
+
   /// 清掉这本书的 override 书名偏好与 override 封面文件（封面文件名只由 bookKey
   /// 派生，同名重导拿到同一个 bookKey，不清旧封面就「复活」，BUG-4979）。失败只记
   /// 日志：DB 行是唯一真相源，删书结果不因这一步翻转。
