@@ -17,6 +17,8 @@ import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart'
 import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart'
     show sourcelessLocalVideoScrapeScope;
 import 'package:fushi/src/media/video/metadata/video_source_scrape_dialog.dart';
+import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart'
+    show showVideoSourceScrapeRunDetailDialog;
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart'
     show VideoSourceScrapeWork;
@@ -973,6 +975,10 @@ void main() {
   // 映射成本地化名字，不显示空标题；范围级问题不对应作品，不给「手动指定」。
   testWidgets('scope-level issues show the localized scope name in run detail '
       'and the task panel', (WidgetTester tester) async {
+    // 任务面板的问题列表是懒列表：屏幕放大到让四条问题都在可视区内。
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final int sourceId = await _seedSource(db, mediaKind: 'video');
@@ -1076,6 +1082,10 @@ void main() {
         matching: find.text(t.video_scrape_scope_sourceless),
       ),
       findsNWidgets(2),
+    );
+    expect(
+      find.descendant(of: list, matching: find.text('Unknown Show')),
+      findsOneWidget,
     );
   });
 
