@@ -1,3 +1,4 @@
+import 'package:fushi/src/media/downloads/download_batch.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
@@ -50,6 +51,14 @@ export 'package:fushi/src/media/downloads/download_task_delete_confirm.dart'
 
 typedef VideoDownloadJobAction = Future<void> Function(VideoDownloadJobRow job);
 
+/// 整批执行的任务动作（HBK-AUDIT-025）：来源整批复用一次后端枚举。单条失败
+/// 不中断整批；返回失败的 jobId → 错误，成功的不在表里。单条入口传一条的列表。
+typedef VideoDownloadJobsBatchAction =
+    Future<Map<String, Object>> Function(List<VideoDownloadJobRow> jobs);
+
+/// 「暂停」/「继续」此刻作用在哪一层：持久任务生命周期，还是已完成任务的做种。
+enum VideoDownloadJobToggleTarget { lifecycle, seeding }
+
 /// 能否重试：只有真失败 / 需要处理的任务能重跑；legacy 导入报告不是可重跑任务。
 bool videoDownloadJobCanRetry(VideoDownloadJobRow job) =>
     job.resourceProvider != 'legacy-import-report' &&
@@ -93,33 +102,37 @@ bool videoDownloadJobCanResumeSeeding(
     _completedJobSeedInBackend(job, snapshot) &&
     torrentDisplayStatusFor(snapshot!.state) == TorrentDisplayStatus.paused;
 
-/// 这条任务此刻的「暂停」落到哪个回调：在跑的任务停持久流程（[onCancel]），
-/// 已完成仍做种的任务停做种（[onPauseSeeding]）；都不适用返回 null。
+/// 这条任务此刻的「暂停」作用在哪：在跑的任务停持久流程（lifecycle → cancel），
+/// 已完成仍做种的任务停做种（seeding）；都不适用返回 null。
 ///
-/// 卡片按钮与统一列表的批量槽位**共用这一个选择器**——两处各写一份判据，最后
-/// 必然表现为「卡片上有按钮、批量却计为不支持」（BUG-5072 正是批量这一侧漏了
-/// 已完成做种的任务）。
-VideoDownloadJobAction? videoDownloadJobPauseAction(
+/// 卡片按钮、统一列表的批量槽位与批量整批执行**共用这一个选择器**——各写一份
+/// 判据，最后必然表现为「卡片上有按钮、批量却计为不支持」（BUG-5072 正是批量
+/// 这一侧漏了已完成做种的任务）。
+VideoDownloadJobToggleTarget? videoDownloadJobPauseTarget(
   VideoDownloadJobRow job,
-  TorrentSnapshot? snapshot, {
-  required VideoDownloadJobAction? onCancel,
-  required VideoDownloadJobAction? onPauseSeeding,
-}) {
-  if (videoDownloadJobCanPause(job)) return onCancel;
-  if (videoDownloadJobCanPauseSeeding(job, snapshot)) return onPauseSeeding;
+  TorrentSnapshot? snapshot,
+) {
+  if (videoDownloadJobCanPause(job)) {
+    return VideoDownloadJobToggleTarget.lifecycle;
+  }
+  if (videoDownloadJobCanPauseSeeding(job, snapshot)) {
+    return VideoDownloadJobToggleTarget.seeding;
+  }
   return null;
 }
 
-/// 「继续」的同款选择器：用户暂停的任务恢复持久流程（[onResume]），已完成且
-/// 做种已暂停的任务继续做种（[onResumeSeeding]）。
-VideoDownloadJobAction? videoDownloadJobResumeAction(
+/// 「继续」的同款选择器：用户暂停的任务恢复持久流程（lifecycle），已完成且
+/// 做种已暂停的任务继续做种（seeding）。
+VideoDownloadJobToggleTarget? videoDownloadJobResumeTarget(
   VideoDownloadJobRow job,
-  TorrentSnapshot? snapshot, {
-  required VideoDownloadJobAction? onResume,
-  required VideoDownloadJobAction? onResumeSeeding,
-}) {
-  if (videoDownloadJobCanResume(job)) return onResume;
-  if (videoDownloadJobCanResumeSeeding(job, snapshot)) return onResumeSeeding;
+  TorrentSnapshot? snapshot,
+) {
+  if (videoDownloadJobCanResume(job)) {
+    return VideoDownloadJobToggleTarget.lifecycle;
+  }
+  if (videoDownloadJobCanResumeSeeding(job, snapshot)) {
+    return VideoDownloadJobToggleTarget.seeding;
+  }
   return null;
 }
 
@@ -338,10 +351,10 @@ class VideoDownloadJobsPanel extends StatefulWidget {
     required FushiDatabase database,
     Key? key,
     VideoDownloadJobAction? onRetry,
-    VideoDownloadJobAction? onResume,
+    VideoDownloadJobsBatchAction? onResume,
     VideoDownloadJobAction? onCancel,
-    VideoDownloadJobAction? onPauseSeeding,
-    VideoDownloadJobAction? onResumeSeeding,
+    VideoDownloadJobsBatchAction? onPauseSeeding,
+    VideoDownloadJobsBatchAction? onResumeSeeding,
     VideoDownloadJobAction? onOpenDetails,
     VideoDownloadJobAction? onPairAudiobook,
     VideoDownloadJobPriorityAction? onSetPriority,
@@ -409,14 +422,18 @@ class VideoDownloadJobsPanel extends StatefulWidget {
   final List<DownloadTaskEntry> additionalTasks;
   final VideoDownloadJobsPanelStore store;
   final VideoDownloadJobAction? onRetry;
-  final VideoDownloadJobAction? onResume;
+
+  /// 恢复用户暂停的任务。整批形态：统一列表批量「继续」整批一次调用，后端
+  /// 只枚举一次（HBK-AUDIT-025）；卡片单条传一条的列表。
+  final VideoDownloadJobsBatchAction? onResume;
   final VideoDownloadJobAction? onCancel;
 
   /// 已完成但仍在做种的任务：停止 / 继续做种（见
   /// [videoDownloadJobCanPauseSeeding]）。与 [onCancel] / [onResume] 分开：那两个
-  /// 改的是持久任务的生命周期，这两个只动后端种子，任务仍是 completed。
-  final VideoDownloadJobAction? onPauseSeeding;
-  final VideoDownloadJobAction? onResumeSeeding;
+  /// 改的是持久任务的生命周期，这两个只动后端种子，任务仍是 completed。整批
+  /// 形态，理由同 [onResume]。
+  final VideoDownloadJobsBatchAction? onPauseSeeding;
+  final VideoDownloadJobsBatchAction? onResumeSeeding;
   final VideoDownloadJobAction? onOpenDetails;
 
   /// 有声书任务下完只有孤立音频时的补救入口（见
@@ -443,7 +460,14 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
   final Set<String> _busyJobIds = <String>{};
 
   /// 每次暂停 / 继续完成后自增，[_VideoDownloadJobList] 据此立刻重读后端快照。
+  /// 单条动作自增一次，批量整批只自增一次（[_batchGroup]）。
   final ValueNotifier<int> _snapshotRefresh = ValueNotifier<int>(0);
+
+  /// 统一列表批量暂停 / 继续的整批执行器：本面板所有条目共用这一个实例，
+  /// `runDownloadTaskBatch` 按它把选中的 video job 合成一次执行。
+  late final _VideoJobToggleBatchGroup _batchGroup = _VideoJobToggleBatchGroup(
+    this,
+  );
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   String _searchQuery = '';
@@ -512,8 +536,23 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
       setPriority: onSetPriority != null && videoDownloadJobCanSetPriority(job)
           ? (int priority) => onSetPriority(job, priority)
           : null,
+      batchMember: DownloadTaskBatchMember<_VideoJobBatchItem>(
+        group: _batchGroup,
+        item: (job: job, snapshot: snapshot),
+      ),
     );
   }
+
+  /// 整批形态的回调用作单条：失败原样抛给调用方（单条 SnackBar / 批量计数）。
+  static VideoDownloadJobAction _single(VideoDownloadJobsBatchAction batch) =>
+      (VideoDownloadJobRow job) async {
+        final Object? failure = (await batch(<VideoDownloadJobRow>[
+          job,
+        ]))[job.jobId];
+        if (failure != null) {
+          Error.throwWithStackTrace(failure, StackTrace.current);
+        }
+      };
 
   /// 暂停 / 继续改的是后端种子状态，列表靠 3 秒一轮的快照才看得到；动作一完成
   /// 就让列表立刻重读一次，否则按钮会在旧快照上停留几秒、引人重复点击。
@@ -530,12 +569,16 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
     VideoDownloadJobRow job,
     TorrentSnapshot? snapshot,
   ) {
-    final VideoDownloadJobAction? action = videoDownloadJobPauseAction(
+    final VideoDownloadJobsBatchAction? onPauseSeeding = widget.onPauseSeeding;
+    final VideoDownloadJobAction? action = switch (videoDownloadJobPauseTarget(
       job,
       snapshot,
-      onCancel: widget.onCancel,
-      onPauseSeeding: widget.onPauseSeeding,
-    );
+    )) {
+      VideoDownloadJobToggleTarget.lifecycle => widget.onCancel,
+      VideoDownloadJobToggleTarget.seeding =>
+        onPauseSeeding == null ? null : _single(onPauseSeeding),
+      null => null,
+    };
     return action == null ? null : _refreshingSnapshots(action);
   }
 
@@ -543,13 +586,13 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
     VideoDownloadJobRow job,
     TorrentSnapshot? snapshot,
   ) {
-    final VideoDownloadJobAction? action = videoDownloadJobResumeAction(
-      job,
-      snapshot,
-      onResume: widget.onResume,
-      onResumeSeeding: widget.onResumeSeeding,
-    );
-    return action == null ? null : _refreshingSnapshots(action);
+    final VideoDownloadJobsBatchAction? batch =
+        switch (videoDownloadJobResumeTarget(job, snapshot)) {
+          VideoDownloadJobToggleTarget.lifecycle => widget.onResume,
+          VideoDownloadJobToggleTarget.seeding => widget.onResumeSeeding,
+          null => null,
+        };
+    return batch == null ? null : _refreshingSnapshots(_single(batch));
   }
 
   Future<void> _runAction(
@@ -2139,4 +2182,116 @@ class _MessageState extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
       FushiPlaceholderMessage(icon: icon, message: message);
+}
+
+typedef _VideoJobBatchItem = ({
+  VideoDownloadJobRow job,
+  TorrentSnapshot? snapshot,
+});
+
+/// 统一列表批量暂停 / 继续的整批执行（HBK-AUDIT-025）。
+///
+/// 逐条执行时每条做种 / 恢复动作都要把整个后端的种子列一遍、再各刷新一次
+/// 面板：N 条选中 × M 颗种子。这里按 [videoDownloadJobPauseTarget] /
+/// [videoDownloadJobResumeTarget]（与单条槽位同一判据）分流：做种与恢复生命周期
+/// 各自整批交给来源一次（后端只枚举一次），停持久流程（cancel 不枚举后端）逐条；
+/// 整批结束只刷新一次快照。
+final class _VideoJobToggleBatchGroup
+    implements DownloadTaskBatchGroup<_VideoJobBatchItem> {
+  _VideoJobToggleBatchGroup(this._state);
+
+  final _VideoDownloadJobsPanelState _state;
+
+  @override
+  bool handlesBatchAction(DownloadBatchAction action) =>
+      action == DownloadBatchAction.pause ||
+      action == DownloadBatchAction.resume;
+
+  @override
+  Future<List<DownloadTaskBatchFailure?>> runBatch(
+    DownloadBatchAction action,
+    List<_VideoJobBatchItem> items,
+  ) async {
+    final VideoDownloadJobsPanel widget = _state.widget;
+    final List<DownloadTaskBatchFailure?> results =
+        List<DownloadTaskBatchFailure?>.filled(items.length, null);
+    final Map<VideoDownloadJobToggleTarget, List<int>> byTarget =
+        <VideoDownloadJobToggleTarget, List<int>>{};
+    for (int i = 0; i < items.length; i++) {
+      final _VideoJobBatchItem item = items[i];
+      final VideoDownloadJobToggleTarget? target =
+          action == DownloadBatchAction.pause
+          ? videoDownloadJobPauseTarget(item.job, item.snapshot)
+          : videoDownloadJobResumeTarget(item.job, item.snapshot);
+      if (target == null) {
+        results[i] = DownloadTaskBatchFailure(
+          StateError('${action.name} is not available for ${item.job.jobId}'),
+          StackTrace.current,
+        );
+        continue;
+      }
+      byTarget.putIfAbsent(target, () => <int>[]).add(i);
+    }
+    try {
+      for (final MapEntry<VideoDownloadJobToggleTarget, List<int>> entry
+          in byTarget.entries) {
+        final List<int> indexes = entry.value;
+        if (action == DownloadBatchAction.pause &&
+            entry.key == VideoDownloadJobToggleTarget.lifecycle) {
+          await _runEach(widget.onCancel, items, indexes, results);
+          continue;
+        }
+        final VideoDownloadJobsBatchAction? batch =
+            action == DownloadBatchAction.pause
+            ? widget.onPauseSeeding
+            : (entry.key == VideoDownloadJobToggleTarget.lifecycle
+                  ? widget.onResume
+                  : widget.onResumeSeeding);
+        await _runBatched(batch, items, indexes, results);
+      }
+    } finally {
+      if (_state.mounted) _state._snapshotRefresh.value++;
+    }
+    return results;
+  }
+
+  static Future<void> _runEach(
+    VideoDownloadJobAction? action,
+    List<_VideoJobBatchItem> items,
+    List<int> indexes,
+    List<DownloadTaskBatchFailure?> results,
+  ) async {
+    for (final int i in indexes) {
+      try {
+        if (action == null) throw StateError('action is not configured');
+        await action(items[i].job);
+      } on Object catch (error, stackTrace) {
+        results[i] = DownloadTaskBatchFailure(error, stackTrace);
+      }
+    }
+  }
+
+  static Future<void> _runBatched(
+    VideoDownloadJobsBatchAction? batch,
+    List<_VideoJobBatchItem> items,
+    List<int> indexes,
+    List<DownloadTaskBatchFailure?> results,
+  ) async {
+    try {
+      if (batch == null) throw StateError('action is not configured');
+      final Map<String, Object> failures = await batch(<VideoDownloadJobRow>[
+        for (final int i in indexes) items[i].job,
+      ]);
+      for (final int i in indexes) {
+        final Object? failure = failures[items[i].job.jobId];
+        if (failure != null) {
+          results[i] = DownloadTaskBatchFailure(failure, StackTrace.empty);
+        }
+      }
+    } on Object catch (error, stackTrace) {
+      for (final int i in indexes) {
+        results[i] = DownloadTaskBatchFailure(error, stackTrace);
+      }
+    }
+  }
 }

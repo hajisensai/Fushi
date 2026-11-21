@@ -309,12 +309,20 @@ void main() {
           unified: true,
           onCancel: (VideoDownloadJobRow job) async =>
               lifecycleCalls.add('cancel:${job.jobId}'),
-          onResume: (VideoDownloadJobRow job) async =>
-              lifecycleCalls.add('resume:${job.jobId}'),
-          onPauseSeeding: (VideoDownloadJobRow job) async =>
-              pausedSeeding.add(job.jobId),
-          onResumeSeeding: (VideoDownloadJobRow job) async =>
-              resumedSeeding.add(job.jobId),
+          onResume: (List<VideoDownloadJobRow> jobs) async {
+            lifecycleCalls.addAll(<String>[
+              for (final VideoDownloadJobRow job in jobs) 'resume:${job.jobId}',
+            ]);
+            return const <String, Object>{};
+          },
+          onPauseSeeding: (List<VideoDownloadJobRow> jobs) async {
+            pausedSeeding.addAll(_ids(jobs));
+            return const <String, Object>{};
+          },
+          onResumeSeeding: (List<VideoDownloadJobRow> jobs) async {
+            resumedSeeding.addAll(_ids(jobs));
+            return const <String, Object>{};
+          },
           metricsLoader: (Iterable<VideoDownloadJobRow> jobs) async =>
               <String, TorrentSnapshot>{
                 for (final VideoDownloadJobRow job in jobs)
@@ -400,7 +408,112 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+
+  // HBK-AUDIT-025：批量暂停 / 继续整批交给来源一次（来源整批只枚举一次后端），
+  // 整批结束只重读一次快照。修复前逐条调做种回调、每条各刷新一次面板。
+  testWidgets('batch pause / resume hands each source one batch call and '
+      'refreshes snapshots once', (WidgetTester tester) async {
+    final _JobsStore store = _JobsStore();
+    addTearDown(store.close);
+    final List<List<String>> seedingPauseCalls = <List<String>>[];
+    final List<List<String>> seedingResumeCalls = <List<String>>[];
+    final List<List<String>> lifecycleResumeCalls = <List<String>>[];
+    final List<String> cancelled = <String>[];
+    final Set<String> pausedSeeds = <String>{};
+    int metricsLoads = 0;
+    await _pump(
+      tester,
+      VideoDownloadJobsPanel(
+        store: store,
+        unified: true,
+        onCancel: (VideoDownloadJobRow job) async => cancelled.add(job.jobId),
+        onResume: (List<VideoDownloadJobRow> jobs) async {
+          lifecycleResumeCalls.add(_ids(jobs));
+          return const <String, Object>{};
+        },
+        onPauseSeeding: (List<VideoDownloadJobRow> jobs) async {
+          seedingPauseCalls.add(_ids(jobs));
+          pausedSeeds.addAll(_ids(jobs));
+          // 第一条在来源侧失败：只它计入失败，其余照常。
+          return <String, Object>{jobs.first.jobId: StateError('boom')};
+        },
+        onResumeSeeding: (List<VideoDownloadJobRow> jobs) async {
+          seedingResumeCalls.add(_ids(jobs));
+          return const <String, Object>{};
+        },
+        metricsLoader: (Iterable<VideoDownloadJobRow> jobs) async {
+          metricsLoads++;
+          return <String, TorrentSnapshot>{
+            for (final VideoDownloadJobRow job in jobs)
+              if (job.lifecycle == VideoDownloadJobLifecycle.completed)
+                job.jobId: TorrentSnapshot(
+                  hash: job.jobId,
+                  name: job.title,
+                  progress: 1,
+                  state: job.jobId.startsWith('stopped')
+                      ? 'pausedUP'
+                      : 'uploading',
+                  savePath: '',
+                  contentPath: '',
+                  amountLeft: 0,
+                ),
+          };
+        },
+      ),
+    );
+    const String completed = VideoDownloadJobLifecycle.completed;
+    store.controller.add(<VideoDownloadJobRow>[
+      for (int i = 0; i < 4; i++)
+        _job(id: 'seed-$i', title: 'Seed $i', lifecycle: completed),
+      for (int i = 0; i < 3; i++)
+        _job(id: 'stopped-$i', title: 'Stopped $i', lifecycle: completed),
+      _job(id: 'running', title: 'Running'),
+      _job(
+        id: 'paused',
+        title: 'Paused',
+        lifecycle: VideoDownloadJobLifecycle.cancelled,
+      ),
+    ]);
+    await tester.pumpAndSettle();
+    final List<DownloadTaskEntry> tasks = _entries(tester);
+    expect(tasks, hasLength(9));
+
+    final int loadsBeforePause = metricsLoads;
+    final DownloadBatchOutcome pause = await runDownloadTaskBatch(
+      tasks: tasks,
+      action: DownloadBatchAction.pause,
+    );
+    await tester.pump();
+    expect(seedingPauseCalls, <List<String>>[
+      <String>['seed-0', 'seed-1', 'seed-2', 'seed-3'],
+    ]);
+    expect(cancelled, <String>['running']);
+    expect(pause.done, 4);
+    expect(pause.failed, 1);
+    expect(pause.unsupported, 4);
+    expect(metricsLoads - loadsBeforePause, 1);
+
+    final int loadsBeforeResume = metricsLoads;
+    final DownloadBatchOutcome resume = await runDownloadTaskBatch(
+      tasks: tasks,
+      action: DownloadBatchAction.resume,
+    );
+    await tester.pump();
+    expect(seedingResumeCalls, <List<String>>[
+      <String>['stopped-0', 'stopped-1', 'stopped-2'],
+    ]);
+    expect(lifecycleResumeCalls, <List<String>>[
+      <String>['paused'],
+    ]);
+    expect(resume.done, 4);
+    expect(metricsLoads - loadsBeforeResume, 1);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 }
+
+List<String> _ids(List<VideoDownloadJobRow> jobs) => <String>[
+  for (final VideoDownloadJobRow job in jobs) job.jobId,
+];
 
 VideoDownloadJobRow _job({
   required String id,
