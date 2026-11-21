@@ -577,6 +577,7 @@ printf '%s\n' "$BODY"   # 先回显逐字确认，再喂给看板 / gh / git
 | `isolation: 'worktree'` 的代理把 git 写进复合命令，被判「too complex」拒跑 | 122 次，连 `git diff --cached --check; echo check=$?` 都会被拒 | 含 `git` 的命令写成单条朴素命令，多步分几次调用（[.claude/agents](../../.claude/agents)） |
 | 租约 hook 把引号里的 `flutter build` / `gradlew`（grep 模式、JSON 说明文字）当成裸跑重活 | 回放 12,602 条命令：旧版拦 13 条，其中 10 条误判 | `tool/claude_hooks/require_heavy_lease.mjs` 改为认引号、跳过 heredoc 正文切分，回放只剩 3 条真裸跑 |
 | 输出太长被落盘后又被整份 Read 回来 | 26 次，86.6 万字符 | 落盘文件用 `grep -n` / `sed -n` 取需要的部分 |
+| 每个子代理第一轮都把 CLAUDE.md 各写一遍缓存 | 467 个代理第一轮共写 911 万 token（每个约 1.95 万），共享的只有工具 + 系统提示词约 2 万：CLAUDE.md 排在各自的任务文字之前，缓存断点在任务文字之后 | 代理定义设 `omitClaudeMd: true`，由 `tool/claude_hooks/sync_agent_claude_md.mjs` 把根 CLAUDE.md 原文生成进定义正文（即系统提示词），同类型代理共享缓存；`subagent_config.test.mjs` 守同步，`ci-config-gate` 在改 CLAUDE.md 时触发 |
 | 单个子代理连跑 1 小时以上，主会话的 1 小时缓存在等它时过期 | 主会话 2 次整段重写共 60.7 万 token（按 2 倍价），其中一次重写 32.7 万之后 1 分钟就压缩了上下文 | 一个子代理只做一件事，预计超过 45 分钟的拆成几段派 |
 
 另外两点：桌面端 usage report 里的 `Session` 只算主会话自己的调用，这次只占总成本约 5%，算额度要把 `<会话>/subagents/**` 一起算；缓存命中本身健康，扣掉新内容后，本该命中却没命中的只有 251 万 token。
