@@ -66,7 +66,11 @@ Future<VideoWorkManualTarget?> videoWorkManualTargetForCollection(
     return VideoWorkManualTargetExisting(memberWorks.single);
   }
   if (memberWorks.length > 1) return null;
-  if (videoMembers.length == 1) {
+  // 唯一成员只在互联对端时（合集清单跨端 union，entryKey 是 host 侧 bookUid、
+  // 本机没有视频行）本机计划器根本不会刮它，按单集建行还会撞 `book_uid` 外键：
+  // 挂在合集上。
+  if (videoMembers.length == 1 &&
+      await database.getVideoBookByBookUid(videoMembers.single) != null) {
     return VideoWorkManualTargetBook(videoMembers.single);
   }
   return VideoWorkManualTargetCollection(collectionId);

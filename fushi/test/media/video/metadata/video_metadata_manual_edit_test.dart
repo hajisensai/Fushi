@@ -222,6 +222,52 @@ void main() {
       expect(row.overview, '刮到的简介');
       expect(row.year, 1999, reason: '年份仍是手填，仍锁着');
     });
+
+    test('对话框开着时补刮落库：没碰过的字段保留刮削值、不上锁（以初值为基准）', () async {
+      final VideoWorkManualTarget target = await videoWorkManualTargetForBook(
+        database,
+        book.bookUid,
+      );
+      final VideoWorkManualEdit initial = await store.currentManualEdit(
+        target,
+        fallbackTitle: book.title,
+      );
+      expect(initial.overview, isNull);
+
+      // 用户还在填，自动补刮先一步落库。
+      final PersistedVideoMetadata persisted = await store.apply(
+        localWork,
+        scraped(),
+      );
+
+      final int workId = await store.applyManualEdit(
+        target,
+        VideoWorkManualEdit(
+          title: initial.title,
+          originalTitle: initial.originalTitle,
+          overview: initial.overview,
+          tagline: initial.tagline,
+          year: 1999,
+          genres: initial.genres,
+          studios: initial.studios,
+        ),
+        fallbackTitle: book.title,
+        baseline: initial,
+      );
+
+      expect(workId, persisted.workId);
+      final VideoMetadataWorkRow row = (await database.getVideoMetadataWorkById(
+        workId,
+      ))!;
+      expect(row.year, 1999);
+      expect(row.overview, '刮到的简介', reason: '用户没碰简介，不能被旧初值清空');
+      expect(row.tagline, '刮到的标语');
+      expect(row.title, '刮到的标题');
+      expect(parseLockedFields(row.lockedFields), <VideoMetadataLockableField>{
+        VideoMetadataLockableField.year,
+      });
+      expect((await termsOf(workId))['genre'], <String>['Drama']);
+    });
   });
 
   group('已刮过的作品：只锁改过的字段', () {
@@ -347,6 +393,28 @@ void main() {
           await videoWorkManualTargetForCollection(database, collectionId);
       expect(target, isA<VideoWorkManualTargetBook>());
       expect((target! as VideoWorkManualTargetBook).bookUid, only.bookUid);
+    });
+
+    test('互联客户端：唯一成员只在对端（本机没有视频行）时挂合集，不按单集建行', () async {
+      // 合集清单跨端 union：entryKey 是 host 侧 bookUid、本机没有 video_books 行
+      // （collection_episode_slot.dart）。按单集建行会撞 book_uid 外键。
+      final int collectionId = await addCollection('对端单集', <String>[
+        'host-only-uid',
+      ]);
+      final VideoWorkManualTarget? target =
+          await videoWorkManualTargetForCollection(database, collectionId);
+      expect(target, isA<VideoWorkManualTargetCollection>());
+      final int workId = await store.applyManualEdit(
+        target!,
+        const VideoWorkManualEdit(title: '对端单集', overview: '手填'),
+        fallbackTitle: '对端单集',
+      );
+      expect(
+        (await database.resolveVideoMetadataWorkForCollection(
+          collectionId,
+        ))?.id,
+        workId,
+      );
     });
 
     test('已有行：合集行优先；成员上恰好一条就是它；多条不猜', () async {

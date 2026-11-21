@@ -798,7 +798,6 @@ class VideoMetadataDatabaseStore {
     );
   }
 
-  /// 读回本作品当前的词条，按 kind 分组（字段锁保留整组词时用）。
   /// 编辑对话框的初值：目标作品行的当前值；还没有作品行时只有标题（取
   /// [fallbackTitle]，即合集名 / 视频名），其余为空。
   Future<VideoWorkManualEdit> currentManualEdit(
@@ -826,15 +825,21 @@ class VideoMetadataDatabaseStore {
 
   /// 落库用户手填的作品资料（BUG-5082），返回作品行 id。
   ///
-  /// 逐字段与当前值比较：**改过**的字段写新值并进字段锁（之后刮削保留手填值，
+  /// 逐字段判断「用户改没改」：**改过**的字段写新值并进字段锁（之后刮削保留手填值，
   /// 与封面锁同一语义）；**改成空**的字段清值并解锁（撤回手填，下次刮削回填）；
-  /// 没改的字段值与锁状态都不动。标题列非空：清空标题 = 回到 [fallbackTitle]
-  /// 并解锁。目标还没有作品行（刮削全失败）时按 [target] 的归属新建一行，不写
-  /// provider 身份——作品仍算未识别，自动补刮照常会去找它。
+  /// 没改的字段值与锁状态都不动（保留库里此刻的值）。标题列非空：清空标题 = 回到
+  /// [fallbackTitle] 并解锁。目标还没有作品行（刮削全失败）时按 [target] 的归属
+  /// 新建一行，不写 provider 身份——作品仍算未识别，自动补刮照常会去找它。
+  ///
+  /// 「改没改」以 [baseline] 为准——对话框打开时展示给用户的那份值
+  /// （[currentManualEdit]）。对话框开着时自动补刮可能已经落库：拿库里的新值当
+  /// 基准，用户没碰过的旧初值会被当成「改过」，把刚刮到的简介 / 类型清空或锁成
+  /// 旧值（丢失更新）。不传 [baseline] 时以库里当前值为基准（程序化调用）。
   Future<int> applyManualEdit(
     VideoWorkManualTarget target,
     VideoWorkManualEdit edit, {
     required String fallbackTitle,
+    VideoWorkManualEdit? baseline,
   }) async {
     final int now = DateTime.now().millisecondsSinceEpoch;
     return database.transaction<int>(() async {
@@ -854,66 +859,115 @@ class VideoMetadataDatabaseStore {
       final Set<VideoMetadataLockableField> locked = parseLockedFields(
         existing?.lockedFields,
       );
-      // 改成非空 → 上锁；改成空 → 解锁；没改 → 维持原状。返回是否改过。
-      bool track<T>(VideoMetadataLockableField field, T? before, T? after) {
-        if (before == after) return false;
+      final Map<String, List<String>> currentTerms = existing == null
+          ? const <String, List<String>>{}
+          : await _termsByKind(existing.id);
+      final String fallback =
+          normalizeManualText(fallbackTitle) ?? fallbackTitle;
+
+      // 基准：对话框初值；没给时取库里当前值。
+      final VideoWorkManualEdit base =
+          baseline ??
+          VideoWorkManualEdit(
+            title: existing?.title ?? fallback,
+            originalTitle: existing?.originalTitle,
+            overview: existing?.overview,
+            tagline: existing?.tagline,
+            year: existing?.year,
+            genres: currentTerms['genre'] ?? const <String>[],
+            studios: currentTerms['studio'] ?? const <String>[],
+          );
+
+      // 改过（与基准不同）→ 写 [after] 并按空 / 非空解锁 / 上锁；没改 → 原值原锁。
+      T? resolve<T>(
+        VideoMetadataLockableField field,
+        T? before,
+        T? after,
+        T? current,
+      ) {
+        if (before == after) return current;
         if (after == null) {
           locked.remove(field);
         } else {
           locked.add(field);
         }
-        return true;
+        return after;
       }
 
-      final String fallback =
-          normalizeManualText(fallbackTitle) ?? fallbackTitle;
       final String? typedTitle = normalizeManualText(edit.title);
-      final String title = typedTitle ?? fallback;
-      final String beforeTitle = existing?.title ?? fallback;
+      final String baseTitle = normalizeManualText(base.title) ?? fallback;
+      final String currentTitle = existing?.title ?? fallback;
+      final String title;
       if (typedTitle == null) {
         locked.remove(VideoMetadataLockableField.title);
-      } else if (typedTitle != beforeTitle) {
+        title = fallback;
+      } else if (typedTitle != baseTitle) {
         locked.add(VideoMetadataLockableField.title);
+        title = typedTitle;
+      } else {
+        title = currentTitle;
       }
-      final String? originalTitle = normalizeManualText(edit.originalTitle);
-      final String? overview = normalizeManualText(edit.overview);
-      final String? tagline = normalizeManualText(edit.tagline);
-      final int? year = edit.year;
-      track<String>(
+      final String? originalTitle = resolve<String>(
         VideoMetadataLockableField.originalTitle,
-        normalizeManualText(existing?.originalTitle),
-        originalTitle,
+        normalizeManualText(base.originalTitle),
+        normalizeManualText(edit.originalTitle),
+        existing?.originalTitle,
       );
-      track<String>(
+      final String? overview = resolve<String>(
         VideoMetadataLockableField.overview,
-        normalizeManualText(existing?.overview),
-        overview,
+        normalizeManualText(base.overview),
+        normalizeManualText(edit.overview),
+        existing?.overview,
       );
-      track<String>(
+      final String? tagline = resolve<String>(
         VideoMetadataLockableField.tagline,
-        normalizeManualText(existing?.tagline),
-        tagline,
+        normalizeManualText(base.tagline),
+        normalizeManualText(edit.tagline),
+        existing?.tagline,
       );
-      track<int>(VideoMetadataLockableField.year, existing?.year, year);
+      final int? year = resolve<int>(
+        VideoMetadataLockableField.year,
+        base.year,
+        edit.year,
+        existing?.year,
+      );
 
-      final Map<String, List<String>> beforeTerms = existing == null
-          ? const <String, List<String>>{}
-          : await _termsByKind(existing.id);
-      final List<String> genres = normalizeManualTerms(edit.genres);
-      final List<String> studios = normalizeManualTerms(edit.studios);
       // 列表按「逐项相同且同序」比较；空列表与 null 同义（没有手填值）。
       String? termsKey(List<String> values) =>
           values.isEmpty ? null : values.join('\u0000');
-      final bool genresChanged = track<String>(
+      List<String> resolveTerms(
+        VideoMetadataLockableField field,
+        List<String> before,
+        List<String> after,
+        List<String> current,
+      ) {
+        final List<String> normalizedAfter = normalizeManualTerms(after);
+        final String? beforeKey = termsKey(normalizeManualTerms(before));
+        final String? afterKey = termsKey(normalizedAfter);
+        if (beforeKey == afterKey) return current;
+        resolve<String>(field, beforeKey, afterKey, null);
+        return normalizedAfter;
+      }
+
+      final List<String> currentGenres =
+          currentTerms['genre'] ?? const <String>[];
+      final List<String> currentStudios =
+          currentTerms['studio'] ?? const <String>[];
+      final List<String> genres = resolveTerms(
         VideoMetadataLockableField.genres,
-        termsKey(beforeTerms['genre'] ?? const <String>[]),
-        termsKey(genres),
+        base.genres,
+        edit.genres,
+        currentGenres,
       );
-      final bool studiosChanged = track<String>(
+      final List<String> studios = resolveTerms(
         VideoMetadataLockableField.studios,
-        termsKey(beforeTerms['studio'] ?? const <String>[]),
-        termsKey(studios),
+        base.studios,
+        edit.studios,
+        currentStudios,
       );
+      final bool termsChanged =
+          !identical(genres, currentGenres) ||
+          !identical(studios, currentStudios);
 
       final int workId;
       if (existing != null) {
@@ -966,19 +1020,20 @@ class VideoMetadataDatabaseStore {
           ),
         );
       }
-      if (genresChanged || studiosChanged) {
+      if (termsChanged) {
         await _replaceTerms(
           workId,
           genres: genres,
           studios: studios,
-          countries: beforeTerms['country'] ?? const <String>[],
-          keywords: beforeTerms['keyword'] ?? const <String>[],
+          countries: currentTerms['country'] ?? const <String>[],
+          keywords: currentTerms['keyword'] ?? const <String>[],
         );
       }
       return workId;
     });
   }
 
+  /// 读回本作品当前的词条，按 kind 分组（字段锁保留整组词 / 手填时用）。
   Future<Map<String, List<String>>> _termsByKind(int workId) async {
     final Map<String, List<String>> out = <String, List<String>>{};
     for (final VideoMetadataTermRow row

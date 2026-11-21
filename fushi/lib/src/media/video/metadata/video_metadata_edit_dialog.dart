@@ -45,7 +45,14 @@ Future<bool> editVideoWorkManualMetadata({
         VideoWorkManualEditDialog(initial: initial),
   );
   if (edited == null) return false;
-  await store.applyManualEdit(target, edited, fallbackTitle: fallbackTitle);
+  // 以打开时的初值为基准判「改没改」：对话框开着时补刮可能已落库，没碰过的字段
+  // 不能被旧初值覆盖（见 [VideoMetadataDatabaseStore.applyManualEdit]）。
+  await store.applyManualEdit(
+    target,
+    edited,
+    fallbackTitle: fallbackTitle,
+    baseline: initial,
+  );
   return true;
 }
 
