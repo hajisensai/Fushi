@@ -268,6 +268,8 @@ HT_EXPORT char* ht_move_storage(void* session, const char* info_hash,
 // 返回 JSON：{"ok":true,"saved":N,"failed":M,"timed_out":K}。
 // `timed_out` > 0 表示这么多种子在预算内没回执，本次没存（下轮再存即可，
 // 不是错误）。session 为 NULL / out_dir 为空 → {"ok":false,...}。
+// 加载时数据离线而冻结的种子（见 ht_load_resume_dir）不存，盘上原 .resume
+// 保持不动，也不计入 saved / failed。
 HT_EXPORT char* ht_save_resume_data(void* session, const char* out_dir,
                                     int timeout_ms);
 
@@ -276,10 +278,15 @@ HT_EXPORT char* ht_save_resume_data(void* session, const char* out_dir,
 // added=0 而非错误。坏文件逐个跳过并计入 failed，绝不因一个坏文件整批失败。
 //
 // add 语义与 ht_add_magnet 一致：清 paused 旗标，加回来即开始跑。已在 session
-// 里的重复种子按成功计（幂等，可重复调用）。例外（BUG-5072）：resume 声称持有
-// 数据而 save_path 此刻不存在（盘未挂载等）时保持暂停并清 auto_managed
-// ——否则 libtorrent 会在空路径上全检得 0 片并把全 0 位图写回 .resume，
-// 路径恢复后也不再校验。暂停期间保存的是空位图，下次路径可达时自动全量校验。
+// 里的重复种子按成功计（幂等，可重复调用）。例外（BUG-5072 / HBK-AUDIT-030）：
+// resume 声称持有数据而数据此刻不可达——save_path 不是目录，或（有元数据时）
+// 一个种子文件都不在盘上（盘 / 网络挂载不在而空挂载点目录还在）——时保持暂停
+// 并清 auto_managed，且**冻结**它的 resume：之后的 ht_save_resume_data 跳过
+// 它，盘上原 .resume 原样保留。否则 libtorrent 会在空路径上全检得 0 片并把
+// 全 0 位图写回（路径恢复后不再校验）；或暂停期间写出空位图，下次启动若数据
+// 仍不可达便照常开跑、在空挂载点上从 0 下载。数据回来后的下次启动按原 .resume
+// 正常核对。用户显式恢复（ht_pause_torrent pause=0）、移动存储成功、移除种子
+// 时解冻。
 //
 // 返回 JSON：{"ok":true,"added":N,"failed":M,"ids":["<infohash>",...]}。
 HT_EXPORT char* ht_load_resume_dir(void* session, const char* dir);
@@ -335,6 +342,8 @@ HT_EXPORT int ht_set_file_priority(void* session, const char* info_hash,
 // {"ok":true,"listen_port","dht_running"(bool),
 //  "dht_nodes"(DHT 路由表节点数，-1 = 尚未统计到),
 //  "lsd_enabled","upnp_enabled","natpmp_enabled"(settings 现值),
+//  "upload_gates"(上传闸登记表项数，应恒等于种子数),
+//  "offline_resume_frozen"(因数据离线冻结 resume 的种子数),
 //  "pex_enabled"(恒 true：本桥建 session 一律带默认插件，含 ut_pex),
 //  "down_rate"/"up_rate"(会话级全局速率，字节/秒，含协议开销；由相邻两次
 //  session_stats 采样差分，-1 = 未知),

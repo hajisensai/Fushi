@@ -342,4 +342,130 @@ void main() {
     skip: skip,
     timeout: const Timeout(Duration(minutes: 4)),
   );
+
+  // HBK-AUDIT-030：盘 / 网络挂载不在、空挂载点目录还在。只看 save_path
+  // 目录存在会照常开跑、在空目录上全检得 0 片并把全 0 位图写回；暂停期间写
+  // 出的空位图又会让下次启动（数据仍不可达）把它重新放出来。必须按真实数据
+  // 判可达，且离线期间盘上的原 .resume 一字节都不动——连续两次启动都如此。
+  test(
+    'an empty mount point keeps the original resume across two offline '
+    'restarts and the torrent seeds once the data is back',
+    () async {
+      final (
+        String id,
+        Directory library,
+        String name,
+        int numPieces,
+        Directory resumeDir,
+      ) = await completedAndOrganized();
+      final File resumeFile = File('${resumeDir.path}/$id.resume');
+      final List<int> original = resumeFile.readAsBytesSync();
+      expect(_resumePieces(_readResume(resumeFile)).have, numPieces);
+
+      final Directory offline = Directory('${library.path}.offline');
+      library.renameSync(offline.path);
+      library.createSync(); // 空挂载点：目录在，数据不在。
+
+      for (int boot = 1; boot <= 2; boot++) {
+        final EmbeddedTorrentSession s = openSession();
+        expect(s.loadResumeDir(resumeDir.path), <String>[id]);
+        await _pollUntil(
+          () => statusOf(s, id)?.hasMetadata ?? false,
+          timeout: const Duration(seconds: 30),
+          what: 'torrent to be listed (boot $boot)',
+          describe: () => describe(s, id),
+        );
+        expect(
+          statusOf(s, id)!.isPaused,
+          isTrue,
+          reason:
+              'boot $boot: data offline must stay paused: ${describe(s, id)}',
+        );
+        expect(s.sessionStatus()!.offlineResumeFrozen, 1);
+        final FtResumeSaveResult saved = s.saveResumeData(resumeDir.path);
+        expect(saved.saved, 0, reason: 'boot $boot: frozen resume was written');
+        expect(
+          resumeFile.readAsBytesSync(),
+          original,
+          reason: 'boot $boot: the original .resume must stay untouched',
+        );
+        s.close();
+      }
+      expect(library.listSync(), isEmpty, reason: 'nothing written offline');
+
+      library.deleteSync(recursive: true);
+      offline.renameSync(library.path);
+      expect(File('${library.path}/$name').existsSync(), isTrue);
+      final EmbeddedTorrentSession healed = openSession();
+      expect(healed.loadResumeDir(resumeDir.path), <String>[id]);
+      await _pollUntil(
+        () => statusOf(healed, id)?.isSeeding ?? false,
+        timeout: const Duration(seconds: 30),
+        what: 'seeding once the data is reachable again',
+        describe: () => describe(healed, id),
+      );
+      expect(healed.torrentPieces(id)!.haveCount, numPieces);
+      expect(healed.sessionStatus()!.offlineResumeFrozen, 0);
+    },
+    skip: skip,
+    timeout: const Timeout(Duration(minutes: 4)),
+  );
+
+  // 用户在离线状态下显式继续 = 接受按现状校验：解冻，resume 照常落盘。
+  test(
+    'an explicit resume of an offline torrent unfreezes its resume',
+    () async {
+      final (
+        String id,
+        Directory library,
+        String _,
+        int _,
+        Directory resumeDir,
+      ) = await completedAndOrganized();
+      library.renameSync('${library.path}.offline');
+      library.createSync();
+
+      final EmbeddedTorrentSession s = openSession();
+      expect(s.loadResumeDir(resumeDir.path), <String>[id]);
+      expect(s.sessionStatus()!.offlineResumeFrozen, 1);
+      expect(s.pauseTorrent(id, pause: false), isTrue);
+      expect(s.sessionStatus()!.offlineResumeFrozen, 0);
+      expect(s.saveResumeData(resumeDir.path).saved, 1);
+    },
+    skip: skip,
+    timeout: const Timeout(Duration(minutes: 4)),
+  );
+
+  // HBK-AUDIT-030：上传闸登记表按种子生命周期精确增删（旧实现每加一颗种子
+  // 持锁清扫整张表，N 颗累计 O(N²)，移除后的过期项还要等下一次加种子才清）。
+  test('upload gate registry tracks exactly the live torrents', () async {
+    final EmbeddedTorrentSession s = openSession();
+    final Directory data = Directory('${tempDir.path}/gates')..createSync();
+    final List<String> ids = <String>[];
+    for (int i = 0; i < 20; i++) {
+      final File f = File('${data.path}/f$i.bin')..writeAsStringSync('gate $i');
+      final String t = '${data.path}/t$i.torrent';
+      expect(
+        engine!.makeTorrent(contentPath: f.path, outTorrentPath: t).ok,
+        isTrue,
+      );
+      final FtAddResult added = s.addTorrentFile(t, savePath: data.path);
+      expect(added.ok, isTrue, reason: added.error);
+      ids.add(added.id!);
+    }
+    expect(s.sessionStatus()!.uploadGates, 20);
+    for (final String id in ids.skip(5)) {
+      expect(s.removeTorrent(id), isTrue);
+    }
+    await _pollUntil(
+      () => s.sessionStatus()!.uploadGates == 5,
+      timeout: const Duration(seconds: 10),
+      what: 'removed torrents to leave the gate registry',
+      describe: () => 'upload_gates=${s.sessionStatus()!.uploadGates}',
+    );
+    // 剩下的闸仍可用。
+    for (final String id in ids.take(5)) {
+      expect(s.setTorrentUploadBlocked(id, blocked: true), isTrue);
+    }
+  }, skip: skip);
 }
