@@ -11,6 +11,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
     show VideoMetadataLookup;
 import 'package:fushi_engine/media/video/metadata/video_metadata_wire.dart';
+import 'package:fushi_engine/media/video/stream_video_sync.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
@@ -24,8 +25,6 @@ import 'package:fushi_engine/media/video/dvd/dvd_angle.dart'
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
     show isDvdTitlePath;
 import 'package:fushi_engine/sync/interconnect_dav_tree_listing.dart';
-import 'package:fushi_engine/sync/pdf_sync_package.dart'
-    show interconnectHostAcceptsPdfBooks;
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/interconnect_source_share.dart';
 import 'package:fushi/src/sync/interconnect_source_share_sync.dart'
@@ -949,19 +948,22 @@ class InterconnectSyncBackend extends SyncBackend
     }
   }
 
-  /// 对端 host 能否收下推来的 PDF 书（`liveLibrary.pdfBooks`，反馈 Jq1_ujHa4t）。
+  /// 对端 host 对 `liveLibrary.<key>` 能力位的声明状态（[liveLibraryCapabilityState]）。
   ///
-  /// 必须显式协商：老 host 会把 PDF 当 EPUB 导入、必然失败；无头服务端没有 PDF 引擎。
-  /// 能力每轮现问、不跨轮缓存（同一地址上的 host 可能被换成老版本 / 服务端）。
-  /// 老 host（无 capabilities 端点）= false；网络 / 鉴权失败照常抛给调用方记错误。
-  Future<bool> hostAcceptsPdfBooks() async {
+  /// 用途两类：PDF 书（`liveLibrary.pdfBooks`，反馈 Jq1_ujHa4t）必须显式协商——老 host
+  /// 会把 PDF 当 EPUB 导入、必然失败，无头服务端没有 PDF 引擎；以及同步维度在 host
+  /// 上走不通时区分「对端版本过旧」与「对端不支持」（拍板
+  /// other-sync-peer-version-errors）。能力每轮现问、不跨轮缓存（同一地址上的 host
+  /// 可能被换成老版本 / 服务端）。老 host（无 capabilities 端点）= undeclared；网络 /
+  /// 鉴权失败照常抛给调用方记错误。
+  Future<LiveLibraryCapabilityState> liveLibraryCapability(String key) async {
     await _ensureResolved();
-    return interconnectHostAcceptsPdfBooks(await _readHostCapabilities());
+    return liveLibraryCapabilityState(await _readHostCapabilities(), key);
   }
 
   /// 对端 host 的本地音频清单是否带内容身份（`liveLibrary.localAudioContentId`，
   /// 拍板 pr3481）。老 host = false：只能按显示名匹配。能力每轮现问、不跨轮缓存
-  /// （同 [hostAcceptsPdfBooks]）。
+  /// （同 [liveLibraryCapability]）。
   Future<bool> hostReportsLocalAudioContentId() async {
     await _ensureResolved();
     return interconnectHostReportsLocalAudioContentId(
@@ -2846,6 +2848,48 @@ class InterconnectSyncBackend extends SyncBackend
     final HttpClientResponse res = await req.close();
     await res.drain<void>();
     _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id');
+  }
+
+  /// host 是否声明能收流媒体书注册（`liveLibrary.streamVideos`，拍板台 Z2OhxAjKVv）。
+  ///
+  /// 推之前必须先问：老 host 没有 `.../streamentry` 路由，带后缀的 PUT 会落进它的
+  /// 「裸 id 上传视频」分支，把 JSON 请求体当视频文件入库。同一 host 基址只探一次。
+  Future<bool> hostAcceptsStreamVideos() async =>
+      (await _liveLibraryCapabilities())[kLiveLibraryStreamVideosCapability] ==
+      true;
+
+  /// 在对端 host 视频库注册一本流媒体书（只有标题 + URL + 重开规格，不传字节）。
+  ///
+  /// [presentSinceAt] 是本机开始拥有这一行的时刻，host 的删除墓碑闸门据此判断这份
+  /// 是删除之前就有的（409 → [StreamVideoPushResult.vetoed]），还是删后重新加入的。
+  /// 其余非 2xx 照常抛。调用方须先确认 [hostAcceptsStreamVideos]。
+  Future<StreamVideoPushResult> putRemoteStreamVideo(
+    String id,
+    StreamVideoRegistration entry, {
+    int? presentSinceAt,
+  }) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'PUT',
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/'
+          '$kStreamVideoEntryPathSuffix',
+    );
+    req.headers.set('Content-Type', 'application/json; charset=utf-8');
+    _setPresentSinceHeader(req.headers, presentSinceAt);
+    req.add(utf8.encode(jsonEncode(entry.toJson())));
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == 409) {
+      await res.drain<void>();
+      return StreamVideoPushResult.vetoed;
+    }
+    _ops!.checkStatus(
+      res.statusCode,
+      'PUT /api/library/videos/$id/$kStreamVideoEntryPathSuffix',
+    );
+    final Object? decoded = jsonDecode(await _readBodyBounded(res));
+    return decoded is Map && decoded['created'] == true
+        ? StreamVideoPushResult.created
+        : StreamVideoPushResult.existed;
   }
 
   /// 通知对端 host 删除 bookUid 为 [id] 的视频（远端视频卡长按删除 / 「从所有设备

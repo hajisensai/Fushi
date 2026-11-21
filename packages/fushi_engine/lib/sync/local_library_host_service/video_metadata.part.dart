@@ -277,10 +277,7 @@ mixin _LocalLibraryHostVideoMetadata on _LocalLibraryHostBase {
       return _PlannedUnitResolution.ambiguous(planned);
     }
     final String stableKey = 'book:${key.bookUid}';
-    final List<SourceLibraryRow> sources =
-        (await _db.getMediaSourcesByKind('video'))
-            .where((SourceLibraryRow s) => s.transport == 'local')
-            .toList(growable: false);
+    final List<SourceLibraryRow> sources = await localVideoScrapeScopes(_db);
     for (final SourceLibraryRow source in sources) {
       for (final VideoSourceScrapeWork work in await VideoSourceWorkPlanner(
         _db,

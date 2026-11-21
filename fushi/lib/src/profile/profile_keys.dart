@@ -163,6 +163,9 @@ class ProfileKeys {
     // 设备本地的，模式却跟着 Profile 走 = 切一次 Profile 就把全局网络出口翻掉，
     // 事后极难归因。
     'network_proxy_mode',
+    // GitHub 加速镜像开关同族：描述的是这台设备所处的网络 / 安全软件环境，跟着
+    // Profile 走会让切 Profile 悄悄改掉下载出口。
+    'network_github_mirrors_enabled',
     // 更新下载源与 update_beta_channel / update_debug_channel / update_auto_install
     // 同族（HBK-AUDIT-045：所有更新通道/策略键保持 app-global）。
     'update_download_source',

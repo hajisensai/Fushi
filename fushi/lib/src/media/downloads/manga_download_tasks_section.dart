@@ -355,7 +355,7 @@ DownloadTaskEntry mangaDownloadTaskEntry(
       quickAction: verifiable
           ? DownloadTaskQuickAction(
               key: ValueKey<String>('manga-download-quick-verify-${job.jobId}'),
-              icon: Icons.verified_user_outlined,
+              icon: FushiIcons.verifiedUser,
               tooltip: t.manga_source_cloudflare_verify_title,
               onPressed: verifying
                   ? null
@@ -618,7 +618,7 @@ class _MangaDownloadTaskRow extends StatelessWidget {
                       'manga-download-row-verify-${job.jobId}',
                     ),
                     tooltip: t.manga_source_cloudflare_verify_title,
-                    icon: Icons.verified_user_outlined,
+                    icon: FushiIcons.verifiedUser,
                     size: 20,
                     constraints: _actionTarget,
                     onTap: verifying

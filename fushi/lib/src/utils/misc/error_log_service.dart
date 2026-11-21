@@ -588,7 +588,7 @@ String mineFailureMessage(MineOutcome outcome) {
   if (outcome.errorCode == AnkiErrorCode.pairedDeviceMineFailed) {
     return t.anki_error_paired_device_mine_failed(reason: detail ?? '');
   }
-  // BUG-5069：同上，卡要去的是那台设备上的 Fushi 复习、它的复习库在换代途中。
+  // BUG-5085：同上，卡要去的是那台设备上的 Fushi 复习、它的复习库在换代途中。
   if (outcome.errorCode == AnkiErrorCode.pairedDeviceReviewBlocked) {
     return t.anki_error_paired_device_review_blocked(reason: detail ?? '');
   }
@@ -603,7 +603,7 @@ String mineFailureMessage(MineOutcome outcome) {
 /// 进程由 main.dart 装上；弹窗 / 查词窗进程不装（那里没有复习页可去，文案本身指向主窗口）。
 VoidCallback? mineFailureOpenReview;
 
-/// BUG-5069：制卡失败提示上的动作。复习库要升级 / 上次没升级完 / 要人处理时给「打开复习」（[mineFailureOpenReview]
+/// BUG-5085：制卡失败提示上的动作。复习库要升级 / 上次没升级完 / 要人处理时给「打开复习」（[mineFailureOpenReview]
 /// 装上时）；正在升级（等它完成就行）与其它失败不给。
 MineNoticeAction? mineFailureToastAction(MineOutcome outcome) {
   final VoidCallback? open = mineFailureOpenReview;
@@ -688,7 +688,7 @@ String? localizeAnkiMineError(String? code) {
       return t.anki_error_sync_signed_out;
     case AnkiErrorCode.syncClientUnavailable:
       return t.anki_error_sync_unavailable;
-    // BUG-5069：挖词目标是 Fushi 复习、复习库在换代途中（分类见 srs_generation_kind.dart）。此前一律是
+    // BUG-5085：挖词目标是 Fushi 复习、复习库在换代途中（分类见 srs_generation_kind.dart）。此前一律是
     // 「Fushi review is not available.」，用户不知道该去复习页完成升级。
     case AnkiErrorCode.srsNeedsMigration:
       return t.srs_mining_error_needs_migration;

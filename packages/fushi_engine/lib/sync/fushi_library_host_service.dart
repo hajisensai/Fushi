@@ -7,6 +7,7 @@ import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/dandanplay_file_key.dart'
     show DandanplayFileKey;
 import 'package:fushi_engine/models/local_audio_content_id.dart';
+import 'package:fushi_engine/media/video/stream_video_sync.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
@@ -216,6 +217,41 @@ bool interconnectHostReportsLocalAudioContentId(Object? capabilities) {
   final Object? live = capabilities['liveLibrary'];
   if (live is! Map) return false;
   return live[kLiveLibraryLocalAudioContentIdCapability] == true;
+}
+
+/// `liveLibrary` 里声明「host 列得出删除墓碑」（`GET /api/tombstones`，
+/// [DeletionTombstoneHost]）的能力位。没有这一位的 host 若对该端点回 404，就是
+/// 版本过旧（拍板 other-sync-peer-version-errors）。
+const String kLiveLibraryDeletionTombstonesCapability = 'deletionTombstones';
+
+/// `liveLibrary` 里声明「host 能删视频」（`DELETE /api/library/videos/<id>`，
+/// [VideoDeletionHost]）的能力位。语义同 [kLiveLibraryDeletionTombstonesCapability]。
+const String kLiveLibraryVideoDeletionCapability = 'videoDeletion';
+
+/// host 对 `liveLibrary` 里某一能力位的声明状态。
+///
+/// 同步维度在 host 上走不通（端点 404 / 能力位不是 true）时，靠它区分两种情形：
+/// - [undeclared]：host 根本不认识这一位（或连 `/api/capabilities` 都没有）——它的
+///   Fushi 比这个能力旧，升级对端就能同步；
+/// - [declaredOff]：host 认识这一位但说不支持（例如无头服务端没有 PDF 引擎）——升级
+///   解决不了，是那台设备的能力边界。
+enum LiveLibraryCapabilityState { supported, declaredOff, undeclared }
+
+/// 读 [capabilities]（`GET /api/capabilities` 的解码结果，老 host 为 null）里
+/// `liveLibrary.<key>` 的声明状态：`true` → supported；键在但不是 `true` →
+/// declaredOff；键 / `liveLibrary` 段 / 整个能力表缺失 → undeclared。
+LiveLibraryCapabilityState liveLibraryCapabilityState(
+  Object? capabilities,
+  String key,
+) {
+  if (capabilities is! Map) return LiveLibraryCapabilityState.undeclared;
+  final Object? live = capabilities['liveLibrary'];
+  if (live is! Map || !live.containsKey(key)) {
+    return LiveLibraryCapabilityState.undeclared;
+  }
+  return live[key] == true
+      ? LiveLibraryCapabilityState.supported
+      : LiveLibraryCapabilityState.declaredOff;
 }
 
 /// 旧名兼容：本地音频 diff 已并入 [SyncKeyDiff]。
@@ -2873,6 +2909,7 @@ class RemoteVideoInfo {
     this.fileName,
     this.sectionKey,
     this.peerPlayable = true,
+    this.stream,
   });
 
   final String id;
@@ -2908,6 +2945,13 @@ class RemoteVideoInfo {
   /// wire：只在 false 时写 `peerPlayable: false`；缺省 = true，旧 host（不带该键）
   /// 与改动前逐字节同行为；旧 client 不认识该键，按旧行为照常列出。
   final bool peerPlayable;
+
+  /// 流媒体书（「粘贴 URL 导入」/ 网页视频站，[isSyncableStreamVideo]）的重开信息：
+  /// URL + 重开规格 + host 拥有时刻。client 据此在本机落一本同 uid 的流媒体书，行两端
+  /// 都有之后进度 / 播放偏好 sweep 照常接管（拍板台 Z2OhxAjKVv）。其余条目恒 null。
+  ///
+  /// wire：`stream: {url, spec?, addedAt?}`，只在非 null 时写；旧 client 不认识该键。
+  final RemoteStreamVideoEntry? stream;
 
   /// host 视频文件的**文件名**（只取 basename，绝不带目录——目录结构仍留在 host）。
   ///
@@ -3078,6 +3122,7 @@ class RemoteVideoInfo {
     fileName: fileName,
     sectionKey: sectionKey,
     peerPlayable: peerPlayable,
+    stream: stream,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -3126,6 +3171,7 @@ class RemoteVideoInfo {
     if (_isNonEmpty(fileName)) 'fileName': fileName,
     if (_isNonEmpty(sectionKey)) 'sectionKey': sectionKey,
     if (!peerPlayable) 'peerPlayable': false,
+    if (stream != null) kRemoteStreamVideoWireKey: stream!.toJson(),
   };
 
   RemoteVideoInfo copyWith({
@@ -3185,6 +3231,7 @@ class RemoteVideoInfo {
     fileName: fileName,
     sectionKey: sectionKey,
     peerPlayable: peerPlayable,
+    stream: stream,
   );
 
   static RemoteVideoInfo fromJson(Map<String, Object?> json) {
@@ -3234,6 +3281,7 @@ class RemoteVideoInfo {
       fileName: _jsonString(json['fileName']),
       sectionKey: _jsonSectionKey(json['sectionKey']),
       peerPlayable: json['peerPlayable'] != false,
+      stream: RemoteStreamVideoEntry.tryParse(json[kRemoteStreamVideoWireKey]),
     );
   }
 }
@@ -3827,6 +3875,22 @@ abstract interface class MediaLinkSyncHost {
 
   /// 把 client 上报的清单按 LWW 并入 host DB，返回并入后的 host 清单。
   Future<MediaLinkManifest> mergeMediaLinkManifest(MediaLinkManifest incoming);
+}
+
+/// host 端「收下对端注册的流媒体书」的**可选**能力（拍板台 Z2OhxAjKVv，
+/// `stream_video_sync.dart`）。
+///
+/// 与 [MediaLinkSyncHost] 同范式：server 用 `is` 探测，不实现 →
+/// `PUT /api/library/videos/<id>/streamentry` 404，能力位
+/// `liveLibrary.streamVideos=false`。client **先看能力位再推**：老 host 没有这条
+/// 路由，带后缀的 PUT 会落进「裸 id 上传视频」分支，把请求体当视频文件入库。
+abstract interface class StreamVideoSyncHost {
+  /// 在 host 视频库落一本 uid 为 [id] 的流媒体书（不传任何视频字节）。
+  ///
+  /// host 已有同 uid 的行时不改它（host 自己的标题 / 封面 / 进度是真相），返回
+  /// false；新建返回 true。[id] / URL 不满足 [isSyncableStreamVideo] 抛
+  /// [ArgumentError]（端点回 400）。
+  Future<bool> registerStreamVideo(String id, StreamVideoRegistration entry);
 }
 
 /// host 端「视频刮削元数据」的**可选**能力（`docs/specs/2026-09-12-interconnect-scrape-metadata.md`）。
