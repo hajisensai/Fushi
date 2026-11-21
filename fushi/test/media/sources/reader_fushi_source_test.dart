@@ -10,6 +10,7 @@ import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/sources/reader_pdf_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_audio/fushi_audio.dart' show SrtBook, SrtBookRepository;
 import 'package:fushi_core/fushi_core.dart';
@@ -576,6 +577,34 @@ void main() {
         '藤本タツキ',
         reason: '漫画作者编辑委托 ReaderFushiSource 写同一 epubBooks.author 列',
       );
+    });
+
+    test('ReaderPdfSource 也支持作者编辑，写同一 epubBooks.author（BUG-5082）', () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+      await db.insertEpubBook(bookWithAuthor('PdfBook'));
+
+      // 此前 PDF 源沿用 MediaSource 默认 false：编辑框里没有作者栏，写入是空操作。
+      expect(ReaderPdfSource.instance.supportsAuthorEdit, isTrue);
+
+      final item = MediaItem(
+        mediaIdentifier: ReaderFushiSource.mediaIdentifierFor('PdfBook'),
+        title: 'PdfBook',
+        mediaTypeIdentifier: ReaderPdfSource.instance.mediaType.uniqueKey,
+        mediaSourceIdentifier: ReaderPdfSource.kUniqueKey,
+        position: 0,
+        duration: 1,
+        canDelete: false,
+        canEdit: true,
+      );
+      await ReaderPdfSource.instance.setAuthorFromMediaItem(
+        item: item,
+        author: '  森鷗外  ',
+      );
+
+      final row = await db.getEpubBook('PdfBook');
+      expect(row!.author, '森鷗外');
     });
 
     test(
@@ -1192,8 +1221,9 @@ void main() {
     });
 
     test('author override writes back to epubBooks.author column', () {
+      // BUG-5082：作者能力挂在书族基类上（EPUB / 漫画 / PDF 同一列），不再逐子类覆盖。
       final String source = File(
-        'lib/src/media/sources/reader_fushi_source.dart',
+        'lib/src/media/sources/reader_media_source.dart',
       ).readAsStringSync();
       expect(source, contains('bool get supportsAuthorEdit => true'));
       expect(source, contains('updateEpubBookAuthor'));
