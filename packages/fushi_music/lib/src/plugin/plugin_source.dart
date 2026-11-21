@@ -189,6 +189,8 @@ class MusicPluginSource {
       MusicPluginCapability.home,
       <String, Object?>{if (refresh) 'refresh': true},
     );
+    // 段的「查看全部」条件只对声明了 browse 的插件有意义（列表靠 browse 的 list 取）。
+    final bool canBrowse = inst.info.manifest.can(MusicPluginCapability.browse);
     final Object? raw = _object(v, 'home')['sections'];
     if (raw is! List<Object?>) {
       throw MusicPluginException('插件 home 返回值缺 sections', pluginId: pluginId);
@@ -210,6 +212,7 @@ class MusicPluginSource {
       };
       if (items.isEmpty) continue;
       final Object? subtitle = e['subtitle'];
+      final Object? more = e['more'];
       parsed.add(
         MusicPluginHomeSection(
           id: id,
@@ -217,6 +220,9 @@ class MusicPluginSource {
           subtitle: subtitle is String && subtitle.isNotEmpty ? subtitle : null,
           kind: kind,
           items: items.take(MusicPluginHomeSection.maxItems).toList(),
+          more: canBrowse && more is Map<Object?, Object?>
+              ? MusicPluginBrowseQuery.fromJson(more)
+              : null,
         ),
       );
     }
@@ -237,6 +243,7 @@ class MusicPluginSource {
           title: s.title,
           subtitle: s.subtitle,
           kind: s.kind,
+          more: s.more,
           items: switch (s.kind) {
             MusicPluginHomeKind.tracks => _withTrackCovers(
               s.items.cast<MusicPluginTrack>(),
@@ -286,7 +293,7 @@ class MusicPluginSource {
       <String, Object?>{'id': id},
     );
     final Map<String, Object?> r = _object(v, 'album');
-    final MusicPluginAlbum? album = MusicPluginAlbum.fromJson(r['album']);
+    final MusicPluginAlbum? album = MusicPluginAlbum.detailFromJson(r['album']);
     if (album == null) {
       throw MusicPluginException('插件 album 返回值缺 album', pluginId: pluginId);
     }
@@ -296,10 +303,18 @@ class MusicPluginSource {
     final String? Function(String?) cover = await _covers(inst, <String?>[
       album.coverUrl,
       ...tracks.map((MusicPluginTrack t) => t.coverUrl),
+      ...album.related.map((MusicPluginRelatedAlbum r) => r.album.coverUrl),
     ]);
-    final MusicPluginAlbum clean = _withAlbumCovers(<MusicPluginAlbum>[
-      album,
-    ], cover).single;
+    final MusicPluginAlbum clean = album.withCover(
+      cover(album.coverUrl),
+      related: <MusicPluginRelatedAlbum>[
+        for (final MusicPluginRelatedAlbum r in album.related)
+          MusicPluginRelatedAlbum(
+            album: r.album.withCover(cover(r.album.coverUrl)),
+            label: r.label,
+          ),
+      ],
+    );
     return (
       album: clean,
       tracks: _withTrackCovers(
@@ -444,6 +459,130 @@ class MusicPluginSource {
       height: s.height,
     );
   }
+
+  /// 浏览的筛选项定义（分类目录 / 排序 / 开关 / 单选）。插件没给的部分为空。
+  Future<MusicPluginBrowseSchema> browseSchema() async {
+    final (MusicPluginRuntime _, Object? v) = await _call(
+      MusicPluginCapability.browse,
+      const <String, Object?>{'op': 'schema'},
+    );
+    return MusicPluginBrowseSchema.fromJson(_object(v, 'browse schema'));
+  }
+
+  /// 按 [query] 取浏览列表的第 [page] 页（0 起）。条目种类由插件的 `kind` 决定（缺省专辑），
+  /// 坏条目丢弃；封面整批核对一次。
+  Future<MusicPluginBrowseResult> browseList(
+    MusicPluginBrowseQuery query, {
+    int page = 0,
+    int pageSize = 30,
+  }) async {
+    final (MusicPluginRuntime inst, Object? v) = await _call(
+      MusicPluginCapability.browse,
+      <String, Object?>{
+        'op': 'list',
+        'query': query.toJson(),
+        'page': page,
+        'pageSize': pageSize,
+      },
+    );
+    final Map<String, Object?> r = _object(v, 'browse list');
+    if (r['items'] is! List<Object?>) {
+      throw MusicPluginException(
+        '插件 browse list 返回值缺 items',
+        pluginId: pluginId,
+      );
+    }
+    final MusicPluginHomeKind kind = r['kind'] == null
+        ? MusicPluginHomeKind.albums
+        : MusicPluginHomeKind.parse(r['kind']) ??
+              (throw MusicPluginException(
+                '插件 browse list 的 kind 不认识',
+                pluginId: pluginId,
+              ));
+    final List<Object> items = switch (kind) {
+      MusicPluginHomeKind.tracks => MusicPluginTrack.listFrom(r['items']),
+      MusicPluginHomeKind.playlists => MusicPluginPlaylist.listFrom(r['items']),
+      MusicPluginHomeKind.albums => MusicPluginAlbum.listFrom(r['items']),
+    };
+    final String? Function(String?) cover = await _covers(inst, <String?>[
+      for (final Object x in items)
+        switch (x) {
+          MusicPluginTrack t => t.coverUrl,
+          MusicPluginPlaylist p => p.coverUrl,
+          MusicPluginAlbum a => a.coverUrl,
+          _ => null,
+        },
+    ]);
+    return MusicPluginBrowseResult(
+      kind: kind,
+      items: switch (kind) {
+        MusicPluginHomeKind.tracks => _withTrackCovers(
+          items.cast<MusicPluginTrack>(),
+          cover,
+        ),
+        MusicPluginHomeKind.playlists => <MusicPluginPlaylist>[
+          for (final MusicPluginPlaylist p in items.cast<MusicPluginPlaylist>())
+            _withPlaylistCover(p, cover),
+        ],
+        MusicPluginHomeKind.albums => _withAlbumCovers(
+          items.cast<MusicPluginAlbum>(),
+          cover,
+        ),
+      },
+      hasMore: r['hasMore'] == true && items.isNotEmpty,
+      total: _countOf(r['total']),
+    );
+  }
+
+  /// 分类目录 [facet]（schema 的 facets 之一）的第 [page] 页；[query] 非空时按名字过滤。
+  /// 条目的 facet 一律按请求的 [facet] 记（插件给别的也不认）。
+  Future<MusicPluginPage<MusicPluginCatalogEntry>> browseCatalog(
+    String facet, {
+    String? query,
+    int page = 0,
+    int pageSize = 60,
+  }) async {
+    final (
+      MusicPluginRuntime _,
+      Object? v,
+    ) = await _call(MusicPluginCapability.browse, <String, Object?>{
+      'op': 'catalog',
+      'facet': facet,
+      if (query != null && query.trim().isNotEmpty) 'query': query.trim(),
+      'page': page,
+      'pageSize': pageSize,
+    });
+    final Map<String, Object?> r = _object(v, 'browse catalog');
+    final Object? raw = r['items'];
+    if (raw is! List<Object?>) {
+      throw MusicPluginException(
+        '插件 browse catalog 返回值缺 items',
+        pluginId: pluginId,
+      );
+    }
+    final List<MusicPluginCatalogEntry> entries = <MusicPluginCatalogEntry>[];
+    final Set<String> seen = <String>{};
+    for (final Object? e in raw) {
+      if (e is! Map<Object?, Object?>) continue;
+      final MusicPluginTag? tag = MusicPluginTag.fromJson(<String, Object?>{
+        'facet': facet,
+        'id': e['id'],
+        'name': e['name'],
+      });
+      if (tag == null || !seen.add(tag.id)) continue;
+      entries.add(
+        MusicPluginCatalogEntry(tag: tag, count: _countOf(e['count'])),
+      );
+    }
+    return MusicPluginPage<MusicPluginCatalogEntry>(
+      items: entries,
+      hasMore: r['hasMore'] == true && entries.isNotEmpty,
+      total: _countOf(r['total']),
+    );
+  }
+
+  static int? _countOf(Object? v) =>
+      v is num && v.isFinite && v >= 0 ? v.toInt() : null;
 
   /// 搜索最佳匹配（`searchBest`）；插件不支持或返回 null 时为 [MusicPluginSearchBest.none]。
   Future<MusicPluginSearchBest> searchBest(String query) async {
@@ -860,6 +999,7 @@ class MusicPluginSource {
         playable: t.playable,
         note: t.note,
         mvId: t.mvId,
+        group: t.group,
       ),
   ];
 

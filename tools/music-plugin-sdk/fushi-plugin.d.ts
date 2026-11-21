@@ -11,6 +11,44 @@ declare namespace Fushi {
     name: string;
   }
 
+  /**
+   * A clickable browse condition: a tag, voice actor, circle, ... `facet` is your own category id (one of the
+   * `facets` from `browse({ op: 'schema' })`), `id` is the value passed back in `browse({ op: 'list' })`.
+   * Clickable only when you declare `browse`; otherwise shown as plain chips.
+   */
+  interface Tag {
+    facet: string;
+    id: string;
+    name: string;
+  }
+
+  /** Conditions for `browse({ op: 'list' })`; also `Section.more`. */
+  interface BrowseQuery {
+    /** AND-ed conditions. */
+    filters?: Tag[];
+    /** One of `schema.sorts[].id`; omitted = your default order. */
+    sort?: string;
+    /** Ids of the `schema.toggles` that are on. */
+    toggles?: string[];
+    /** `schema.choices[].id` -> chosen `values[].id`; a missing key = any. */
+    choices?: { [choiceId: string]: string };
+  }
+
+  interface BrowseOption {
+    id: string;
+    label: string;
+  }
+
+  interface BrowseSchema {
+    /** Catalogs the user can open and pick conditions from (tags, voice actors, circles, ...). */
+    facets?: BrowseOption[];
+    sorts?: BrowseOption[];
+    /** On / off switches, e.g. { id: 'subtitle', label: 'With subtitles' }. */
+    toggles?: BrowseOption[];
+    /** Single choice with an implicit "any", e.g. language. */
+    choices?: { id: string; label: string; values: BrowseOption[] }[];
+  }
+
   interface Track {
     id: string;
     title: string;
@@ -28,6 +66,8 @@ declare namespace Fushi {
     note?: string;
     /** This song's music video; used only when the plugin declares `mvStream`. */
     mvId?: string;
+    /** Album page groups tracks by this label (e.g. "Main", "Ambient version", "Bonus") in first-seen order. */
+    group?: string;
   }
 
   interface Album {
@@ -42,6 +82,19 @@ declare namespace Fushi {
     description?: string;
     /** The logged-in account has saved this album. Omit when logged out / unknown. */
     collected?: boolean;
+    /** Clickable conditions (most common first): cards show the first 3, the album page all (max 40). */
+    tags?: Tag[];
+    /** Work code, e.g. "RJ01000001". */
+    code?: string;
+    /** Display text, e.g. "日本語". */
+    language?: string;
+    /** Total length in milliseconds. */
+    durationMs?: number;
+    hasSubtitles?: boolean;
+    /** https only; opened in the browser when the user taps "Open original page". */
+    sourceUrl?: string;
+    /** Album page only (max 20): original / translated editions, same series, ... */
+    related?: { label?: string; album: Album }[];
   }
 
   interface Artist {
@@ -136,10 +189,11 @@ declare namespace Fushi {
     ref: unknown;
   }
 
+  /** `more` (needs `browse`): "View all" opens a list with these conditions, paged by `browse({ op: 'list' })`. */
   type Section =
-    | { id: string; title: string; subtitle?: string; kind: 'tracks'; items: Track[] }
-    | { id: string; title: string; subtitle?: string; kind: 'playlists'; items: Playlist[] }
-    | { id: string; title: string; subtitle?: string; kind: 'albums'; items: Album[] };
+    | { id: string; title: string; subtitle?: string; kind: 'tracks'; items: Track[]; more?: BrowseQuery }
+    | { id: string; title: string; subtitle?: string; kind: 'playlists'; items: Playlist[]; more?: BrowseQuery }
+    | { id: string; title: string; subtitle?: string; kind: 'albums'; items: Album[]; more?: BrowseQuery };
 
   interface Page<T> {
     items: T[];
@@ -240,6 +294,12 @@ declare namespace Fushi {
     artistSimilar(args: { id: string }): Awaitable<{ items: Artist[] }>;
     /** Save / unsave a playlist or album, follow / unfollow an artist (needs login/account). */
     collect(args: { op: 'set'; type: 'playlist' | 'album' | 'artist'; id: string; on: boolean }): Awaitable<null>;
+    /** Native browsing: filter definitions, a filtered paged list, and catalogs (tags / voice actors / circles ...). */
+    browse(args: { op: 'schema' }): Awaitable<BrowseSchema>;
+    /** `kind` defaults to 'albums'; keep it the same on every page. */
+    browse(args: { op: 'list'; query: BrowseQuery; page: number; pageSize: number }): Awaitable<Page<Album | Track | Playlist> & { kind?: 'albums' | 'tracks' | 'playlists' }>;
+    /** `query` = the user's filter text (omitted when empty). */
+    browse(args: { op: 'catalog'; facet: string; query?: string; page: number; pageSize: number }): Awaitable<Page<{ id: string; name: string; count?: number }>>;
     account(args: {}): Awaitable<Account>;
     login(args: LoginArgs): Awaitable<{ methods: LoginMethod[] } | Challenge | null>;
   }
