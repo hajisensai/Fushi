@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-21T14:05:41Z",
+ "generatedAt": "2026-11-21T14:36:08Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "9f782cbde9ec0af9ce231dbf0665f3c8b156450b",
-  "seq": 30654
+  "sha": "cbdc2a45edcc279f0d2ea3f3f8bfd2ab3ede0bd1",
+  "seq": 30656
  },
  "builds": [
   {
@@ -77,7 +77,7 @@
    "unknown": false,
    "publishedAt": "2026-11-21T12:59:04Z",
    "testflight": false,
-   "baseSeq": 30481,
+   "baseSeq": 30478,
    "prs": [
     4002,
     3984,
@@ -99,6 +99,14 @@
     {
      "sha": "03e68eab6470fce13f18ae238ac6a901db8bf8e3",
      "subject": "docs(bugs): 合并 #3775/#3990–#4000 后重建 BUGS 索引"
+    },
+    {
+     "sha": "a11db40c13f7d70dd61c7f0928db22e396f9a7cd",
+     "subject": "Merge remote-tracking branch 'origin/develop' into claude/integration-20261121"
+    },
+    {
+     "sha": "1104f3f7f3b9617226be55f26d1922dd6dc174cc",
+     "subject": "fix(audiobook): TextToEpub 的 HTML5 回退改走 EpubBook.parseChapterHtml（#3738 合入后 epub_chapter_parse_entry 守卫红）"
     }
    ],
    "truncated": false,
@@ -117,44 +125,6 @@
     "ios": {
      "state": "superseded",
      "url": "https://github.com/hajisensai/Fushi/actions/runs/44897183776"
-    }
-   }
-  },
-  {
-   "seq": 30481,
-   "version": "3.4.0",
-   "sha": "a11db40c13f7d70dd61c7f0928db22e396f9a7cd",
-   "unknown": false,
-   "publishedAt": "2026-11-21T11:03:27Z",
-   "testflight": false,
-   "baseSeq": 30478,
-   "prs": [],
-   "direct": [
-    {
-     "sha": "a11db40c13f7d70dd61c7f0928db22e396f9a7cd",
-     "subject": "Merge remote-tracking branch 'origin/develop' into claude/integration-20261121"
-    },
-    {
-     "sha": "1104f3f7f3b9617226be55f26d1922dd6dc174cc",
-     "subject": "fix(audiobook): TextToEpub 的 HTML5 回退改走 EpubBook.parseChapterHtml（#3738 合入后 epub_chapter_parse_entry 守卫红）"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44886118190"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44886118151"
-    },
-    "ios": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44886118151"
     }
    }
   },
@@ -558,9 +528,10 @@
   }
  ],
  "pending": {
-  "headSha": "9f782cbde9ec0af9ce231dbf0665f3c8b156450b",
-  "headSeq": 30654,
+  "headSha": "cbdc2a45edcc279f0d2ea3f3f8bfd2ab3ede0bd1",
+  "headSeq": 30656,
   "prs": [
+   4040,
    4038
   ],
   "direct": [
@@ -572,20 +543,20 @@
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44910863008"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44913365600"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44910863176"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44913365607"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44910863176"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44913365607"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44910863176"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44913365607"
    }
   }
  },
@@ -2929,6 +2900,15 @@
    "mergedAt": "2026-11-21T13:50:25Z",
    "additions": 313,
    "deletions": 40,
+   "labels": []
+  },
+  "4040": {
+   "number": 4040,
+   "title": "fix(build): onnxruntime Apple pod 源失效改用 release 镜像；Linux 补 SONAME 链接",
+   "author": "W1ght",
+   "mergedAt": "2026-11-21T14:19:50Z",
+   "additions": 191,
+   "deletions": 5,
    "labels": []
   }
  }
