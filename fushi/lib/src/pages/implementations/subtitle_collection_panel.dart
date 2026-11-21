@@ -285,11 +285,24 @@ bool canRunSubtitleCollectionBatch({
     !running &&
     (!selected.index.isEmpty || selected.unpackablePackFormat != null);
 
-/// 合集成员的分季键（与合集详情页季 tab 同一派生规则 [collectionGroupKeyForFilename]）。
+/// 合集成员的分季键（与合集详情页季 tab 同一规则）。
 ///
-/// 先看完整路径（季号可能只写在父目录 `Show/Season 2/01.mkv`）；路径解不出集号
-/// （流媒体成员的 `anime-source://…` 描述等）再退到标题（远端标题常带 `S04E18`）。
-String subtitleCollectionSeasonKeyOf(VideoBookRow member) {
+/// [sectionKeys] 是入口预先解析好的生效分栏（`book_uid → 键`，手动分栏 / 手动
+/// 季集指定优先，见 `loadCollectionSections`，拍板台 iR6ccUys9H），有就用它。
+/// 没有时按文件名派生（[collectionGroupKeyForFilename]）：先看完整路径（季号可能
+/// 只写在父目录 `Show/Season 2/01.mkv`）；路径解不出集号（流媒体成员的
+/// `anime-source://…` 描述等）再退到标题（远端标题常带 `S04E18`）。
+String subtitleCollectionSeasonKeyOf(
+  VideoBookRow member, {
+  Map<String, String> sectionKeys = const <String, String>{},
+}) {
+  if (sectionKeys[member.bookUid] case final String resolved) return resolved;
+  return subtitleCollectionDerivedSeasonKeyOf(member);
+}
+
+/// [subtitleCollectionSeasonKeyOf] 不看任何手动指定时的文件名派生键（入口把它喂给
+/// `loadCollectionSections` 当派生键）。
+String subtitleCollectionDerivedSeasonKeyOf(VideoBookRow member) {
   final String fromPath = collectionGroupKeyForFilename(member.videoPath);
   if (fromPath != kCollectionExtrasGroupKey) return fromPath;
   return collectionGroupKeyForFilename(member.title);
@@ -301,11 +314,13 @@ String subtitleCollectionSeasonKeyOf(VideoBookRow member) {
 /// 而批量只按集号匹配——整张合集一起配时，第一季条目的第 1 集会同时被当成
 /// S02E01、S03E01 的字幕（集号都是 1），静默装到每一季上。返回不足 2 节 = 单季合集。
 List<CollectionSeasonSection<VideoBookRow>> subtitleCollectionSeasonSections(
-  List<VideoBookRow> members,
-) => sortCollectionSeasonSections<VideoBookRow>(
+  List<VideoBookRow> members, {
+  Map<String, String> sectionKeys = const <String, String>{},
+}) => sortCollectionSeasonSections<VideoBookRow>(
   buildCollectionSeasonSections<VideoBookRow>(
     members: members,
-    keyOf: subtitleCollectionSeasonKeyOf,
+    keyOf: (VideoBookRow member) =>
+        subtitleCollectionSeasonKeyOf(member, sectionKeys: sectionKeys),
   ),
 );
 
@@ -353,12 +368,17 @@ class SubtitleCollectionPanel extends StatefulWidget {
     this.showTitle = true,
     this.subtitleAligner,
     this.initialSeason,
+    this.sectionKeys = const <String, String>{},
     super.key,
   });
 
   /// 多季合集打开时先选的季号（入口的「当前季」）；null / 合集里没有这一季 = 第一季。
   /// 单季合集忽略。
   final int? initialSeason;
+
+  /// 成员的生效分栏（`book_uid → 键`，手动分栏 / 手动季集指定优先）；缺的成员按
+  /// 文件名派生。见 [subtitleCollectionSeasonKeyOf]。
+  final Map<String, String> sectionKeys;
 
   /// 每集落盘前按该集视频的内嵌字幕轨对时间轴；null = 不对齐。
   final AutomaticSubtitleAligner? subtitleAligner;
@@ -554,7 +574,10 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
 
   /// 成员变化时重算分季；已选的季仍在就保留，否则回到初始季。
   void _rebuildSeasonSections() {
-    _seasonSections = subtitleCollectionSeasonSections(widget.members);
+    _seasonSections = subtitleCollectionSeasonSections(
+      widget.members,
+      sectionKeys: widget.sectionKeys,
+    );
     if (!_hasSeasonSections) {
       _seasonKey = null;
       return;
@@ -709,7 +732,8 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   void didUpdateWidget(covariant SubtitleCollectionPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     // 成员（集号 / 内容语言）与全局默认语言都是派生状态的输入。
-    if (!identical(oldWidget.members, widget.members)) {
+    if (!identical(oldWidget.members, widget.members) ||
+        !identical(oldWidget.sectionKeys, widget.sectionKeys)) {
       _rebuildSeasonSections();
     }
     if (!identical(oldWidget.members, widget.members) ||

@@ -9,10 +9,16 @@ import 'package:fushi_engine/media/video/video_filename_parser.dart';
 /// 分组，S01/S02/PV 天生混进同一个 playlist 合集；而 Bangumi 一季一条目，「整合集
 /// 映射 + 合集下标当集数」会把 S02E01 报成 E13、完结误报给第一季条目。
 ///
-/// **分组是文件名的纯函数，不是持久化状态**——一律在读取时从 `videoPath` 现场
-/// 派生，不落库。存储方案（曾试过 `group_key` 列）会制造三个本可不存在的问题：
-/// 存量合集要手动补键、旧成员 null 新成员有键的「半截态」、跨端同步对端无键退化。
-/// 派生让全部存量/新导入/同步来的多季合集**立即**获得同一语义，零迁移零手动。
+/// **分组默认是文件名的纯函数**——在读取时从 `videoPath` 现场派生，不落库。整列
+/// 存储方案（曾试过 `group_key` 列）会制造三个本可不存在的问题：存量合集要手动
+/// 补键、旧成员 null 新成员有键的「半截态」、跨端同步对端无键退化。派生让全部
+/// 存量/新导入/同步来的多季合集**立即**获得同一语义，零迁移零手动。
+///
+/// 文件名推断不了或推断错的成员（`01`–`08` 的短篇其实是特典）由用户 / AI 显式
+/// 指定，按优先级叠在派生键之上（[resolveCollectionSection]，拍板台 iR6ccUys9H）：
+/// ① 手动分栏（`video_collection_section_overrides`，稀疏行）→ ② 手动季集指定
+/// （`video_episode_binding_overrides`：第 0 季 = 特别篇 → PV·特典，第 N 季 → 第 N
+/// 季）→ ③ 文件名派生。没有指定的成员照旧派生，上面三条好处原样保留。
 /// 消费点：详情页顶部**季 tab**（切 tab 换该季剧集，单季合集不出 tab）、tracking
 /// 绕开结构性失真的合集级映射（改走季度感知的按集通道）。
 
@@ -41,6 +47,72 @@ String collectionGroupKeyForFilename(String filename) {
 int? seasonNumberOfGroupKey(String groupKey) {
   if (!groupKey.startsWith('s')) return null;
   return int.tryParse(groupKey.substring(1));
+}
+
+/// 写入口接受的手动分栏键：`extras` 或规范形 `s<N>`（N ≥ 1）。第 0 季不是一栏
+/// （特别篇就是 PV·特典栏），`s01` / `s-1` 这类非规范形一律拒收。
+bool isValidCollectionSectionKey(String key) {
+  if (key == kCollectionExtrasGroupKey) return true;
+  final int? season = seasonNumberOfGroupKey(key);
+  return season != null && season >= 1 && key == 's$season';
+}
+
+/// 一个成员的分栏从哪来（查询接口如实报给调用方，便于核对「为什么在这一栏」）。
+enum CollectionSectionSource {
+  /// 用户 / AI 手动指定的分栏。
+  manual,
+
+  /// 手动季集指定（第 0 季 → PV·特典）。
+  pinnedEpisode,
+
+  /// 文件名 / 路径派生（默认）。
+  filename,
+}
+
+/// 一个成员的生效分栏 + 来源 + 不看任何指定时的派生键。
+class CollectionSectionResolution {
+  const CollectionSectionResolution({
+    required this.groupKey,
+    required this.source,
+    required this.derivedKey,
+  });
+
+  /// 生效分栏键（`s<N>` / `extras`）。
+  final String groupKey;
+
+  final CollectionSectionSource source;
+
+  /// 文件名派生键（清掉全部指定后会回到的那一栏）。
+  final String derivedKey;
+}
+
+/// 按优先级合成生效分栏：手动分栏（形状合法才算）→ 手动季集指定 → 派生键。纯函数。
+CollectionSectionResolution resolveCollectionSection({
+  required String derivedKey,
+  String? manualKey,
+  int? pinnedSeason,
+}) {
+  if (manualKey != null && isValidCollectionSectionKey(manualKey)) {
+    return CollectionSectionResolution(
+      groupKey: manualKey,
+      source: CollectionSectionSource.manual,
+      derivedKey: derivedKey,
+    );
+  }
+  if (pinnedSeason != null && pinnedSeason >= 0) {
+    return CollectionSectionResolution(
+      groupKey: pinnedSeason == 0
+          ? kCollectionExtrasGroupKey
+          : 's$pinnedSeason',
+      source: CollectionSectionSource.pinnedEpisode,
+      derivedKey: derivedKey,
+    );
+  }
+  return CollectionSectionResolution(
+    groupKey: derivedKey,
+    source: CollectionSectionSource.filename,
+    derivedKey: derivedKey,
+  );
 }
 
 /// 多季判定：派生出的组数 ≥ 2（单季、纯电影、全 PV 都是单组 → 不启用分季语义）。

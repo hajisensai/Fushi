@@ -1094,6 +1094,7 @@ void _requireOneVideoMetadataOwner({
     MangaDownloadJobs,
     AnidbFileIdentities,
     VideoEpisodeBindingOverrides,
+    VideoCollectionSectionOverrides,
     PendingMineQueue,
     VideoSubtitleGlossaries,
     VideoSubtitleTextOverrides,
@@ -3461,6 +3462,15 @@ class FushiDatabase extends _$FushiDatabase
           await m.createTable(favoriteSentences);
         }
         await _migrateFavoriteSentencesPrefToTable();
+      }
+      if (from < 167) {
+        // v167：video_collection_section_overrides——用户 / AI 钉死的「文件 → 合集
+        // 分栏」（拍板台 iR6ccUys9H：短篇被文件名集号推进正片栏、指定第 0 季后分栏
+        // 不动）。稀疏覆盖、FK 随视频删除；纯建表，没有行 = 照旧按文件名派生。
+        // 幂等守卫同 v131。
+        if (!await _tableExists('video_collection_section_overrides')) {
+          await m.createTable(videoCollectionSectionOverrides);
+        }
       }
       // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建
       // （video-36i），每次升 schema 都幂等补一次。

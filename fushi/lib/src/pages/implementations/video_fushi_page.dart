@@ -910,9 +910,14 @@ class _PlaylistEpisodeRef {
     this.completed = false,
     this.started = false,
     this.progress,
+    this.sectionKey,
   });
   final String? bookUid;
   final String title;
+
+  /// 本地集的生效分栏键（文件名派生叠上手动分栏 / 手动季集指定，见
+  /// `loadCollectionSections`）。null = 远端集，面板按 [path] / [title] 现场派生。
+  final String? sectionKey;
 
   /// 剧集面板展示名（v68 Jellyfin 对齐：集级刮削集名）。null = 无集级集名，
   /// 面板回落 [title]。**刻意与 [title] 分开**：title 还流向制卡
@@ -4974,6 +4979,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _playlistCollectionImages = snapshot.images;
       final String? workTitle = snapshot.collectionMeta?.title.trim();
       final List<_PlaylistEpisodeRef> refs = <_PlaylistEpisodeRef>[];
+      // 季分栏与合集详情页同一个入口（手动分栏 / 手动季集指定优先，拍板台
+      // iR6ccUys9H）：一次批量查齐。
+      final Map<String, String> sectionKeys = snapshot.sectionKeys;
       // 非视频成员与孤儿成员（集行已删）已在快照里按读取期过滤掉。
       for (final VideoBookRow er in snapshot.episodes) {
         String? scrapedName;
@@ -4991,6 +4999,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             coverPath: er.coverPath,
             completed: er.completedAt != null,
             started: er.lastPositionMs > 0,
+            sectionKey: sectionKeys[er.bookUid],
           ),
         );
       }
