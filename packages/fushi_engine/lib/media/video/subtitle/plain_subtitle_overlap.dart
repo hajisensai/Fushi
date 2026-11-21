@@ -15,6 +15,14 @@
 library;
 
 import 'package:fushi_audio/fushi_audio_core.dart';
+import 'package:meta/meta.dart';
+
+/// 本 isolate 里 [clampPlainTextCueOverlaps] 处理过的整轨数（只计 >=2 条的轨）。
+///
+/// 计数是 isolate 局部的静态量：测试据此断言大字幕轨的整轨后处理没有落在调用方
+/// isolate 上（HBK-AUDIT-012）。
+@visibleForTesting
+int debugPlainTextOverlapClampRuns = 0;
 
 /// 就地把 [cues] 里「前一句尾巴盖住下一句开头」的前一句 `endMs` 收到下一句的
 /// `startMs`，返回同一个列表（顺序不变）。
@@ -23,6 +31,7 @@ import 'package:fushi_audio/fushi_audio_core.dart';
 /// 终点（部分重叠）才收口。本句完整包住下一句、或下一句与本句同起点时不动。
 List<AudioCue> clampPlainTextCueOverlaps(List<AudioCue> cues) {
   if (cues.length < 2) return cues;
+  debugPlainTextOverlapClampRuns++;
   final List<AudioCue> sorted = List<AudioCue>.of(cues)
     ..sort((AudioCue a, AudioCue b) => a.startMs.compareTo(b.startMs));
   // 每个下标所在「同起点组」之后那一组的起点与组内最大终点（从尾往前一趟算出）。
