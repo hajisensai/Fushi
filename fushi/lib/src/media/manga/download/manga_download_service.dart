@@ -1342,15 +1342,16 @@ class MangaDownloadService {
     }
     // 全部页齐 → 用真实字节尺寸写章 manga.json。
     final List<MokuroImage> payloadImages = <MokuroImage>[];
-    // 全章校验逐页读整页并解尺寸，几百页的高清章要好几秒：每页都与中止信号
-    // 赛跑，暂停 / 取消不必等校验走完（HBK-AUDIT-046）。
+    // 全章校验逐页读整页并解尺寸，几百页的高清章要好几秒：每页前后都看中止令牌，
+    // 解尺寸与令牌赛跑，暂停 / 取消不必等校验走完（HBK-AUDIT-046）。
+    // 读页**不**与令牌赛跑、要读完：赛跑会把仍开着句柄的读丢在后台，取消随即删
+    // 章目录，Windows 上删有打开句柄的文件报 errno 32（ERROR_SHARING_VIOLATION），
+    // 半成品就删不掉了。单页读是有界的本地 I/O，最多多等一页。
     for (final _PageFile? file in files) {
       _throwIfCancelled(token);
       if (file == null) throw StateError('A page is missing after download');
-      final Uint8List bytes = await _untilTripped(
-        file.file.readAsBytes(),
-        token,
-      );
+      final Uint8List bytes = await file.file.readAsBytes();
+      _throwIfCancelled(token);
       final ({int width, int height})? size = await _untilTripped(
         _pageDimensions(bytes),
         token,
