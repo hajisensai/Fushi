@@ -7,7 +7,7 @@
 //! 两步判定：
 //! - 帧（`feed_png`）：解码 PNG、按客户区归一化坐标裁出台词框、降成 96×24 灰度网格签名；
 //!   画面变了且稳定下来、并且与上次送 OCR 的那帧不同，才交出裁好的 RGBA 让调用方 OCR。
-//!   打字机逐字出现期间帧一直在变，不会 OCR 半句；框里没字（边缘密度极低）回 `cleared`。
+//!   打字机逐字出现期间帧一直在变，不会 OCR 半句；框里没字（几乎没有文字边缘）回 `cleared`。
 //! - 文本（`feed_text`）：拼行规范化（CJK 之间去空白）→ 与上一句去重（编辑距离 ≤ 10%）/
 //!   打字机续写（输出上一句 + 新尾巴，保证是严格前缀扩展，台词流的渐进折叠能并成一行）。
 
@@ -28,8 +28,10 @@ const MIN_CHANGED_CELLS: usize = 2;
 /// 相邻像素亮度差超过它算一条边（文字笔画的边缘）。
 const EDGE_DELTA: i32 = 40;
 
-/// 边缘密度低于它算「框里没字」。
-const BLANK_EDGE_DENSITY: f64 = 0.002;
+/// 边缘像素少于它算「框里没字」。用绝对数而不是密度：宽台词框里的一两个字（「はい」）
+/// 按面积算密度极低，按密度判会被当成空白、永远不 OCR；而真正的空框（纯色 / 渐变底）
+/// 一条超过 [EDGE_DELTA] 的边都没有。
+const BLANK_MAX_EDGES: usize = 24;
 
 /// 去重 / 续写的编辑距离上限（相对长度）。
 const SIMILAR_RATIO: f64 = 0.10;
@@ -223,7 +225,7 @@ fn to_luma(rgba: &[u8], width: usize, height: usize) -> Vec<u8> {
     out
 }
 
-/// 水平边缘密度过低 = 框里没字。
+/// 水平边缘像素太少 = 框里没字。
 fn is_blank(luma: &[u8], width: usize, height: usize) -> bool {
     if width < 2 || height == 0 {
         return true;
@@ -236,7 +238,7 @@ fn is_blank(luma: &[u8], width: usize, height: usize) -> bool {
             }
         }
     }
-    (edges as f64) / (((width - 1) * height) as f64) < BLANK_EDGE_DENSITY
+    edges < BLANK_MAX_EDGES
 }
 
 /// 面积平均降到 [GRID_W]×[GRID_H] 的灰度网格。
@@ -662,6 +664,24 @@ mod tests {
             t.feed_png(b"not png", [0.0, 0.0, 1.0, 1.0]),
             Err(status::BAD_INPUT)
         );
+    }
+
+    #[test]
+    fn short_line_in_wide_box_is_not_blank() {
+        // 1920×300 的宽台词框里只有一个小字块（「はい」量级）：按面积密度会被判成空白。
+        let (w, h) = (1920usize, 300usize);
+        let mut px = vec![255u8; w * h * 4];
+        for y in 120..150 {
+            for x in (100..140).step_by(6) {
+                for dx in 0..2 {
+                    let i = (y * w + x + dx) * 4;
+                    px[i..i + 3].copy_from_slice(&[0, 0, 0]);
+                }
+            }
+        }
+        let mut t = OcrLineTracker::new();
+        assert_eq!(t.feed_rgba(&px, w, h), FrameAction::Settling);
+        assert!(is_ocr(&t.feed_rgba(&px, w, h)));
     }
 
     #[test]
