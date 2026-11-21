@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -34,6 +35,13 @@ import 'package:fushi/src/mining/gal_audio_tracks_panel.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/gal_mining_settings.dart';
+import 'package:fushi/src/mining/gal_ocr_line_source.dart';
+import 'package:fushi/src/mining/gal_ocr_recognizer.dart';
+import 'package:fushi/src/mining/gal_ocr_region_picker.dart';
+import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/ocr/local_screen_ocr.dart';
+import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart';
 import 'package:fushi/src/mining/galgame_hook_code_profile.dart';
@@ -1171,6 +1179,102 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     );
   }
 
+  /// OCR 游戏模式（拍板台 v5GSgDau9u / BUG-5083）：Hook 进不去的游戏（联网游戏、模拟器、
+  /// 未适配引擎）改为定时截窗 + OCR 识别固定的台词区域。顺序：选窗口 → 解析识别器（不可用
+  /// 就在起会话前说清）→ 在一帧截图上框台词区域 → 起会话。会话、台词流、制卡都在
+  /// [GalHookSessionController.startOcrCapture]，页面只发起。
+  Future<void> _startOcrCapture() async {
+    final ExternalWindowInfo? picked = await _showExternalWindowPicker();
+    if (picked == null || !mounted) return;
+    final PreferencesRepository prefs = _appModel.prefsRepo;
+    final GalOcrRecognizerResolution resolution = await resolveGalOcrRecognizer(
+      setting: prefs.screenOcrEngine,
+      global: MangaOcrEnginePreferenceKey.fromKey(
+        prefs.mangaOcrEnginePreference,
+      ),
+      language: prefs.screenOcrLanguage,
+      local: LocalScreenOcr(ref.read(mangaOcrServiceProvider)),
+    );
+    final GalOcrRecognize? recognize = resolution.recognize;
+    if (recognize == null) {
+      FushiToast.show(
+        msg: resolution.unavailableReason == kSystemOcrModelUnavailableReason
+            ? t.floating_ball_ocr_model_missing
+            : t.floating_ball_ocr_failed,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (!mounted) return;
+    final GalOcrRegion? region = await _pickOcrRegion(picked.hwnd);
+    if (region == null || !mounted) return;
+    // 反馈 kEFPY4cuKZ：与「附着」同理，先取好配置视图模型——会话起来后页面可能已卸载。
+    final ProfileViewModel profileVm = ref.read(
+      profileViewModelProvider.notifier,
+    );
+    await _session.startOcrCapture(
+      picked,
+      region: region,
+      recognize: recognize,
+    );
+    unawaited(
+      profileVm.enterWorkSession(
+        owner: _session,
+        mediaType: ProfileMediaKind.game,
+        endWhen: (listenable: _session, ended: () => !_session.state.isActive),
+      ),
+    );
+  }
+
+  /// 会话中「调整识别区域」：截一帧当前画面重新框。
+  Future<void> _adjustOcrRegion() async {
+    final GalHookSessionState state = _session.state;
+    final ExternalWindowInfo? window = state.boundWindow;
+    if (!state.isOcrMode || window == null) return;
+    final GalOcrRegion? region = await _pickOcrRegion(window.hwnd);
+    if (region != null) _session.setOcrRegion(region);
+  }
+
+  /// 截 [hwnd] 一帧，在上面框台词区域；初始框 = 本局的框 / 上次记住的框 / 默认的画面下方。
+  /// 确认后把框记进偏好（下次开 OCR 模式直接用）。
+  Future<GalOcrRegion?> _pickOcrRegion(int hwnd) async {
+    final WindowCaptureResult shot = await WindowCaptureChannel.captureWindow(
+      hwnd,
+    );
+    final Uint8List? png = shot.pngBytes;
+    if (png == null || png.isEmpty) {
+      FushiToast.show(
+        msg: t.game_ocr_frame_failed,
+        severity: ToastSeverity.error,
+      );
+      return null;
+    }
+    if (!context.mounted) return null;
+    final PreferencesRepository prefs = _appModel.prefsRepo;
+    final GalOcrRegion initial =
+        _session.state.ocrRegion ??
+        _storedOcrRegion(prefs.galOcrRegionJson) ??
+        GalOcrRegion.defaultDialogue;
+    final GalOcrRegion? region = await showGalOcrRegionPicker(
+      context,
+      framePng: png,
+      initial: initial,
+    );
+    if (region != null) {
+      unawaited(prefs.setGalOcrRegionJson(jsonEncode(region.toJson())));
+    }
+    return region;
+  }
+
+  static GalOcrRegion? _storedOcrRegion(String? json) {
+    if (json == null || json.isEmpty) return null;
+    try {
+      return GalOcrRegion.fromJson(jsonDecode(json));
+    } on FormatException {
+      return null;
+    }
+  }
+
   /// galgame 引擎-hook（launch 模式）：页面只发起会话；位数解析、注入器选择、窗口绑定、
   /// 音频源回退都在 [GalHookSessionController]。KiriKiriZ 仍走早注入；SiglusEngine 由
   /// injector 自动改为 Enigma-safe 延迟附着，并通过 raw-only Ogg 路径提供制卡音频。
@@ -1861,6 +1965,21 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           focusId: const FushiFocusId('game-toolbar-attach'),
           onTap: _attachToRunningGame,
         ),
+      // 第三个起点：Hook 进不去的游戏走 OCR（不注入）。
+      if (_hookCapture && !primaryStart)
+        _SessionTool(
+          icon: Icons.document_scanner_outlined,
+          label: t.game_ocr_capture,
+          focusId: const FushiFocusId('game-toolbar-ocr'),
+          onTap: _startOcrCapture,
+        ),
+      if (state.isActive && state.isOcrMode)
+        _SessionTool(
+          icon: Icons.crop_free,
+          label: t.game_ocr_region_adjust,
+          focusId: const FushiFocusId('game-toolbar-ocr-region'),
+          onTap: _adjustOcrRegion,
+        ),
       // 嵌入模式的「停止监听」是状态块里的带字主操作，不在工具组里重复。
       if (state.isActive && !embedded)
         _SessionTool(
@@ -2112,6 +2231,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                     ankiConfigured: ankiConfigured,
                     onLaunch: canStart ? _launchGalgameEngineHook : null,
                     onAttach: canStart ? _attachToRunningGame : null,
+                    onOcr: canStart ? _startOcrCapture : null,
                     onStop: embeddedSession && state.isActive
                         ? () => unawaited(_session.stopCapture())
                         : null,
@@ -3185,6 +3305,7 @@ class _SessionOverviewCard extends StatelessWidget {
     this.ankiConfigured = false,
     this.onLaunch,
     this.onAttach,
+    this.onOcr,
     this.onStop,
     this.tools = const <List<_SessionTool>>[],
     this.notices = const <Widget>[],
@@ -3205,6 +3326,9 @@ class _SessionOverviewCard extends StatelessWidget {
   /// 未开始时的两个起点；null = 不显示（会话进行中 / 非 Hook 平台）。
   final VoidCallback? onLaunch;
   final VoidCallback? onAttach;
+
+  /// 「OCR 识别台词」起点（Hook 进不去的游戏）。
+  final VoidCallback? onOcr;
 
   /// 会话进行中的「停止监听」；null = 不显示。
   final VoidCallback? onStop;
@@ -3389,6 +3513,15 @@ class _SessionOverviewCard extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: hintStyle,
         ),
+      // OCR 泵的健康状况（截不到窗口 / 识别器不可用）：窄屏也显示，这是 OCR 模式下
+      // 「为什么没有台词」唯一的线索。
+      if (state.isOcrMode && _ocrIssueText(state.ocrIssue) != null)
+        Text(
+          _ocrIssueText(state.ocrIssue)!,
+          maxLines: compact ? 2 : 3,
+          overflow: TextOverflow.ellipsis,
+          style: type.bodySmallEmphasized.copyWith(color: foreground),
+        ),
     ];
     // 语音信号的值：采样率 / 声道 / 位深只在宽屏出现，窄屏收进 tooltip。
     final String audioChipLabel = compact || format == null
@@ -3421,6 +3554,13 @@ class _SessionOverviewCard extends StatelessWidget {
           label: t.game_session_japanese_locale_skipped,
           tone: FushiTagTone.neutral,
           tooltip: localeSkippedHint,
+        ),
+      if (state.isOcrMode)
+        GalWorkbenchStatusChip(
+          icon: Icons.document_scanner_outlined,
+          label: t.game_ocr_mode_chip,
+          tone: FushiTagTone.accent,
+          tooltip: t.game_workbench_ocr_hint,
         ),
     ];
     final double leadingSize = _side ? 56 : (compact ? 48 : 56);
@@ -3559,6 +3699,15 @@ class _SessionOverviewCard extends StatelessWidget {
           title: t.game_attach_and_capture,
           hint: t.game_workbench_attach_hint,
           onTap: onAttach!,
+        ),
+      if (onOcr != null)
+        GalWorkbenchStartTile(
+          key: const ValueKey<String>('game-action-ocr'),
+          focusId: const FushiFocusId('game-action-ocr'),
+          icon: Icons.document_scanner_outlined,
+          title: t.game_ocr_capture,
+          hint: t.game_workbench_ocr_hint,
+          onTap: onOcr!,
         ),
     ];
     final Widget heroBody = FushiAnimatedSize(
@@ -5288,3 +5437,11 @@ class _HookCodePasteDialogState extends State<_HookCodePasteDialog> {
     );
   }
 }
+
+/// OCR 泵健康状况 → 状态卡提示；正常为 null。
+String? _ocrIssueText(GalOcrSourceIssue issue) => switch (issue) {
+  GalOcrSourceIssue.none => null,
+  GalOcrSourceIssue.captureFailed => t.game_ocr_issue_capture_failed,
+  GalOcrSourceIssue.recognizeFailed => t.game_ocr_issue_recognize_failed,
+  GalOcrSourceIssue.recognizerUnavailable => t.game_ocr_issue_unavailable,
+};

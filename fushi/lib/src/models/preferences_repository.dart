@@ -1454,6 +1454,12 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// OCR 游戏模式上次框选的台词区域（`GalOcrRegion.toJson` 的 JSON 串）；没框过为 null。
+  String? get galOcrRegionJson => getPref('gal_ocr_region') as String?;
+
+  Future<void> setGalOcrRegionJson(String json) =>
+      setPref('gal_ocr_region', json);
+
   /// 应用外悬浮球菜单里有没有「打开 Fushi」。默认有；习惯切屏回 Fushi 的人可以
   /// 关掉（反馈 9bdhVTgq3A）。
   bool get floatingBallSystemOpenApp =>
