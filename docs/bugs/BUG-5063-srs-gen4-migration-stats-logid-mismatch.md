@@ -1,6 +1,12 @@
 ## BUG-5063 · gen4 迁移对拍：4.7 GB 库第 7/10 步后 stats 两侧 log_id 集合不一致回滚
 - **报告**：2026-11-21（应用内反馈 9G1OHF2dQe：复习库升级卡在 7/10 超过 30 分钟，随后对拍失败并回滚，srs.db 4.7 GB）
-- **真实性**：⏳ 待复现。日志显示对拍报告里 stats 两侧 log_id 集合完全不同（各 162960 条），canonicalCounts 却一致，2387 张卡的重放列不一致，knownDifferences 为 0。推测根因在 `native/fushi_fsrs/src/store/gen4/compare.rs`（STAT_COLS 约 :535，stats 对拍约 :940-950）：带盐 / derived 别名的日志 ID 两侧写法不同，对拍前没有先归一。与 BUG-5056（a7e1258ca1、cb5d32859d，classRegisters 加事件副本）签名不同；用户跑的 30040 包早于 5056 修复。
-- **[ ] ① 未修复** — 需要用户的 srs.db（或 srs4.db-migrating）副本，用 gen4_dryrun 复现；确认后在对拍前把两侧 log_id 过 CanonMap / 别名归一，报告补差异列与归一信息。
-- **[ ] ② 未加自动化测试** — 复现后用最小化样本加 compare.rs 单测。
-- **备注**：第 7/10 步重建 6.8M 条操作耗时 1537 秒，慢的问题另看。junction 路径显示不算 bug。
+- **真实性**：✅ 真 bug（对拍器误判，迁移结果本身没错）。证据是反馈附带的 `srs4-migration-report.json`（附件 f0），没有拿到用户的库。
+  - 第一个资料库（`01a13fa0…`）的 parity 只有两类不过：`stats` 两侧各 162960 行，`cards` 两侧各 2387 行。`knownDifferences` 是 0，`canonicalCounts`（日志类数 703877、带日志的卡 18712，`merged` 0）与 `canonicalStats`（每张卡的统计行数）都一致。
+  - `cards` 两侧的例子是同一批卡 ID，说明行在、只是有列不同；`stats` 两侧的例子是两批完全不同的派生（v5）日志 ID。每张卡的统计行数一样，同一批卡上却是两批日志在当统计行，所以是「留哪一份」不同，ID 写法本身没问题。
+  - 根因：卡片历史把同一次复习的副本归成一个事件（`native/fushi_fsrs/src/history.rs` `select` 约 :265，`EventKey`），组里**日志 ID（UTF-16 序）最小**的那份当代表，只有它进统计、当卡的 `last_log_id`。协议 3 拿原值（带盐）日志 ID 比，新代缓存层拿规范日志 ID 比（`store/gen4/cache.rs` 文件头「缓存层按规范 ID 物化」，设计 §5.3）。资料库并入留下的副本组（同一次复习在两张带盐副本卡上各一条，这个库 derived 726863、salted 42082）归一后先后次序会变，大约一半的组换了代表。被换的那 162960 行两侧的日志 ID 不同，卡的 `last_log_id` 跟着不同（2387 张卡）。对拍器 `store/gen4/compare.rs` `cache_pairs` 只认得 BUG-5056 的「协议 3 多算一份」（`event_copies`），不认「两边都算一份、代表不同」。
+- **[x] ① 已修复** — `compare.rs` 新增 `representative_swaps`：协议 3 一侧没对上的统计行日志 X、新代没对上的日志 Y，日志体的 HLC（含写入者）、发生时刻、种类、来源、评分类型、评分、Anki id 逐个相同（非 Anki 来源另要求规范卡相同，与 `EventKey` 同一口径），这个事件在两侧各只剩这一条，且 Y 按 UTF-16 序小于 X（正是按规范 ID 取最小的结果），才认作代表换了一份（`Known::stats_rep_swaps`）。对拍前把协议 3 一侧的统计行日志列与卡行 `last_log_id` 换成 Y（`apply_swaps`），行的其余列照比，不盖任何列。报告新增 `knownDifferences.cacheStatRepresentativeSwaps`。
+- **[x] ② 已加自动化测试** — `compare.rs` 单测 `representative_swaps_are_known_only_for_one_to_one_smaller_copies`：内容相同且新代那份更小才认，并验证换完后统计行与 `last_log_id` 一致；HLC 不同、新代那份反而更大、一侧有两条候选、已证出是多算副本的都不认。
+- **备注**：
+  - 没有用户的库，修复后能否整体 pass 只按报告推断：parity 只有这两类，数字与机制吻合。用户升级到含本修复的版本后重试即可（失败会回滚，旧库不动）。
+  - 第 7/10 步重建 1537 秒（683 万条操作，i5-4460）：同一台机器上小库约 117 µs/条，大库约 225 µs/条，随规模变慢。已拆成 [BUG-5137](BUG-5137-srs-gen4-rebuild-slow-on-duplicated-log-library.md)。
+  - 报告路径显示 junction 路径 `G:\`，不是 bug。

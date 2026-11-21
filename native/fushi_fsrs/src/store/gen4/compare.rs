@@ -199,6 +199,9 @@ pub(crate) struct Known {
     /// 「同一次复习的副本按规范卡成了一个事件」的卡 → 证出的那几条协议 3 多算的副本日志（[event_copies]）：只这几条
     /// 统计行不比，同卡其余统计行盖重放列、卡行盖 `CARD_DERIVED`。
     pub stats_event_copies: BTreeMap<String, BTreeSet<String>>,
+    /// 同一事件的副本两边都只算一次、代表换了一份（[representative_swaps]）：协议 3 一侧的（规范）日志 → 新代的代表。
+    /// 对拍前协议 3 一侧的统计行日志列与卡的 `last_log_id` 按它换掉，行的其余列照比。
+    pub stats_rep_swaps: BTreeMap<String, String>,
     /// 盖了列 / 整行不比的行（两侧合计，按盖之前的原文去重）与其中两侧原文不同的。
     pub rows: u64,
     pub rows_differ: u64,
@@ -750,14 +753,7 @@ pub(crate) fn cache_pairs(
     };
     // 协议 3 一侧改写成规范 ID（模块文件头「按规范 ID 比」）；跳过 / 扣住的集合同样改写。
     let canon = CanonMap::load(t, col)?;
-    let canonical = canon.rows(&old);
-    let (old_notes, old_cards, old_stats) = (&canonical.0, &canonical.1, &canonical.2);
-    let held = &canon.kinded(held);
-    let collided = &canon.kinded(collided);
-    let skip = &Skip {
-        notes: skip.notes.iter().map(|n| canon.text(n)).collect(),
-        cards: skip.cards.iter().map(|c| canon.text(c)).collect(),
-    };
+    let mut canonical = canon.rows(&old);
     let news = |cols: &[(&'static str, &'static str)]| -> Vec<&'static str> {
         cols.iter().map(|c| c.0).collect()
     };
@@ -765,6 +761,29 @@ pub(crate) fn cache_pairs(
         |table: &str, cols: &[(&'static str, &'static str)]| -> Result<Vec<Vec<String>>, String> {
             rows_of(t.conn(), table, &news(cols), "col = ?1", &col)
         };
+    // 同一次复习的副本按规范卡成了一个事件（[event_copies]）：这张卡的历史少了证出的那几条。只剔掉这几条统计行，
+    // 同卡其余统计行照比、只盖由历史重放的列（同卡寄存器的已知差异同一口径，[cache_effect]），卡行盖重放列。
+    let new_stats = new("stats", STAT_COLS)?;
+    known.stats_event_copies = event_copies(t, col, &canon, &canonical.2, &new_stats)?;
+    // 同一事件的副本两边都只算一次、但代表不是同一份（[representative_swaps]）：协议 3 一侧的统计行与卡的
+    // `last_log_id` 换成新代的代表再比，行的其余列照比。
+    known.stats_rep_swaps = {
+        let copies: HashSet<&str> = known
+            .stats_event_copies
+            .values()
+            .flatten()
+            .map(String::as_str)
+            .collect();
+        representative_swaps(t, col, &canon, &canonical.2, &new_stats, &copies)?
+    };
+    apply_swaps(&mut canonical, &known.stats_rep_swaps);
+    let (old_notes, old_cards, old_stats) = (&canonical.0, &canonical.1, &canonical.2);
+    let held = &canon.kinded(held);
+    let collided = &canon.kinded(collided);
+    let skip = &Skip {
+        notes: skip.notes.iter().map(|n| canon.text(n)).collect(),
+        cards: skip.cards.iter().map(|c| canon.text(c)).collect(),
+    };
     let at = |cols: &[(&str, &str)], name: &str| -> usize {
         cols.iter()
             .position(|c| c.0 == name)
@@ -774,10 +793,6 @@ pub(crate) fn cache_pairs(
     let skip_note = |id: &str| collided.contains(&format!("note:{id}")) || skip.notes.contains(id);
     // 已知差异喂得到的列（[Known]、[known_effect]）：笔记类型上的落到这个类型的全部笔记，笔记上的落到它的卡（卡列
     // 另记），卡上的落到它的统计行。
-    // 同一次复习的副本按规范卡成了一个事件（[event_copies]）：这张卡的历史少了证出的那几条。只剔掉这几条统计行，
-    // 同卡其余统计行照比、只盖由历史重放的列（同卡寄存器的已知差异同一口径，[cache_effect]），卡行盖重放列。
-    let new_stats = new("stats", STAT_COLS)?;
-    known.stats_event_copies = event_copies(t, col, &canon, old_stats, &new_stats)?;
     for c in known.stats_event_copies.keys() {
         known
             .stat_cols
@@ -983,20 +998,7 @@ fn event_copies(
     for r in old_stats {
         by_card.entry(r[card].as_str()).or_default().push(r);
     }
-    let body = |id: &str| -> Result<Option<Log4>, String> {
-        let k: Option<i64> = t
-            .conn()
-            .prepare_cached("SELECT k FROM log_ix WHERE col = ?1 AND id = ?2 ORDER BY k LIMIT 1")
-            .map_err(sql)?
-            .query_row(params![col, Ref::of(&Key::of(id))], |r| r.get(0))
-            .optional()
-            .map_err(sql)?;
-        let Some(k) = k else { return Ok(None) };
-        Ok(t.entry_by_key(k)?.and_then(|e| match body_of(&e) {
-            Some(Body4::Log(l)) => Some(l),
-            _ => None,
-        }))
-    };
+    let body = |id: &str| log_body(t, col, id);
     let same_event = |a: &Log4, b: &Log4| -> bool {
         a.hlc.is_some()
             && a.hlc == b.hlc
@@ -1026,6 +1028,124 @@ fn event_copies(
         }
     }
     Ok(out)
+}
+
+/// 日志 ID（文本）在新代存的日志体：`log_ix` 里这个 ID 操作号最小的那份；没有 / 不是日志 = None。
+fn log_body(t: &Truth<'_>, col: i64, id: &str) -> Result<Option<Log4>, String> {
+    let k: Option<i64> = t
+        .conn()
+        .prepare_cached("SELECT k FROM log_ix WHERE col = ?1 AND id = ?2 ORDER BY k LIMIT 1")
+        .map_err(sql)?
+        .query_row(params![col, Ref::of(&Key::of(id))], |r| r.get(0))
+        .optional()
+        .map_err(sql)?;
+    let Some(k) = k else { return Ok(None) };
+    Ok(t.entry_by_key(k)?.and_then(|e| match body_of(&e) {
+        Some(Body4::Log(l)) => Some(l),
+        _ => None,
+    }))
+}
+
+/// 同一事件的副本两边都只算一次、但当代表的不是同一份：协议 3 一侧统计行的（规范）日志 → 新代当代表的日志
+/// （[Known::stats_rep_swaps]）。
+///
+/// 卡片历史把同一次复习的副本归成一个事件（`history.rs` 的 `EventKey`），组里日志 ID（UTF-16 序）最小的那份当代表、
+/// 只有它进统计、当卡的 `last_log_id`。协议 3 比的是原值日志 ID，新代比的是规范日志 ID（设计 §5.3「别名表怎么用」）；
+/// 带盐 / 派生的日志 ID 归一后先后次序会变，资料库并入留下的副本组里大约一半换了代表（BUG-5063：16 万条统计行、
+/// 2387 张卡的 `last_log_id` 因此对不上）。
+///
+/// 只认佐证得了的：协议 3 一侧有一行的日志 X 不在新代统计里、新代有一行的日志 Y 不在协议 3 一侧，两条日志体的 HLC
+/// （含写入者）、发生时刻、种类、来源、评分类型、评分、Anki id 逐个相同（非 Anki 来源另要规范卡相同，与 `EventKey`
+/// 同一口径），这个事件在两边各只剩这一条没对上的，且 Y 按 UTF-16 序小于 X——正是新代按规范 ID 取最小的结果。
+/// [copies] 是 [event_copies] 已证出的协议 3 多算的副本，不参与。
+fn representative_swaps(
+    t: &Truth<'_>,
+    col: i64,
+    canon: &CanonMap,
+    old_stats: &[Vec<String>],
+    new_stats: &[Vec<String>],
+    copies: &HashSet<&str>,
+) -> Result<BTreeMap<String, String>, String> {
+    let log = STAT_COLS
+        .iter()
+        .position(|c| c.0 == "log")
+        .expect("column listed in the constant");
+    let old_logs: HashSet<&str> = old_stats.iter().map(|r| r[log].as_str()).collect();
+    let new_logs: HashSet<&str> = new_stats.iter().map(|r| r[log].as_str()).collect();
+    // 事件签名 → 这一侧没对上的日志。
+    let sign = |id: &str| -> Result<Option<String>, String> {
+        let Some(l) = log_body(t, col, id)? else {
+            return Ok(None);
+        };
+        let Some(hlc) = &l.hlc else { return Ok(None) };
+        let card = if l.origin == "anki" {
+            String::new()
+        } else {
+            canon.of(&Ref::of(&l.card)).text()
+        };
+        Ok(Some(format!(
+            "{hlc:?}|{}|{}|{}|{}|{:?}|{:?}|{card}",
+            l.at, l.kind, l.origin, l.rtype, l.rating, l.anki_id
+        )))
+    };
+    let mut groups: HashMap<String, (Vec<&str>, Vec<&str>)> = HashMap::new();
+    for r in old_stats {
+        let id = r[log].as_str();
+        if new_logs.contains(id) || copies.contains(id) {
+            continue;
+        }
+        if let Some(s) = sign(id)? {
+            groups.entry(s).or_default().0.push(id);
+        }
+    }
+    if groups.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    for r in new_stats {
+        let id = r[log].as_str();
+        if old_logs.contains(id) {
+            continue;
+        }
+        if let Some(s) = sign(id)? {
+            if let Some(g) = groups.get_mut(&s) {
+                g.1.push(id);
+            }
+        }
+    }
+    Ok(groups
+        .into_values()
+        .filter_map(|(o, n)| match (o.as_slice(), n.as_slice()) {
+            ([x], [y]) if crate::ordering::cmp_utf16(y, x) == std::cmp::Ordering::Less => {
+                Some(((*x).to_owned(), (*y).to_owned()))
+            }
+            _ => None,
+        })
+        .collect())
+}
+
+/// 把 [representative_swaps] 证出的代表换到协议 3 一侧（已改写成规范 ID 的缓存行）：统计行的日志列、卡行的
+/// `last_log_id`。
+fn apply_swaps(rows: &mut CacheRows, swaps: &BTreeMap<String, String>) {
+    if swaps.is_empty() {
+        return;
+    }
+    let at = |cols: &[(&str, &str)], name: &str| -> usize {
+        cols.iter()
+            .position(|c| c.0 == name)
+            .expect("column listed in the constant")
+    };
+    let last = at(CARD_COLS, "last_log_id");
+    for r in &mut rows.1 {
+        if let Some(y) = swaps.get(&r[last]) {
+            r[last] = y.clone();
+        }
+    }
+    let log = at(STAT_COLS, "log");
+    for r in &mut rows.2 {
+        if let Some(y) = swaps.get(&r[log]) {
+            r[log] = y.clone();
+        }
+    }
 }
 
 /// 一类对拍：(类别, 旧库一侧, 新库一侧)。
@@ -1438,6 +1558,121 @@ mod tests {
                 assert!(got.is_empty(), "{case}: {got:?}");
             });
         }
+    }
+
+    /// 同一事件的两份副本两边都只算一次、代表不是同一份（BUG-5063：协议 3 按原值日志 ID 取最小、新代按规范日志 ID
+    /// 取最小）：内容逐个相同、各只剩这一条没对上、新代那条按 UTF-16 序更小才认，认了之后协议 3 一侧的统计行日志列与
+    /// 卡的 `last_log_id` 换成新代的代表；HLC 不同（两次真复习）、新代那条反而更大（不是「取最小」换出来的）、
+    /// 一边有两条候选（配不成一对一）、已证出是多算副本的都不认。
+    #[test]
+    fn representative_swaps_are_known_only_for_one_to_one_smaller_copies() {
+        const AT: i64 = 1_792_431_298_815;
+        for (case, b_hlc, swap_sides, extra_old, as_copy, want) in [
+            (
+                "copies with the smaller one kept by gen4",
+                (AT, 0, "w1"),
+                false,
+                false,
+                false,
+                true,
+            ),
+            (
+                "another review in the same millisecond",
+                (AT, 1, "w1"),
+                false,
+                false,
+                false,
+                false,
+            ),
+            (
+                "gen4 kept the larger one",
+                (AT, 0, "w1"),
+                true,
+                false,
+                false,
+                false,
+            ),
+            (
+                "two unmatched old rows for one event",
+                (AT, 0, "w1"),
+                false,
+                true,
+                false,
+                false,
+            ),
+            (
+                "already proven as an event copy",
+                (AT, 0, "w1"),
+                false,
+                false,
+                true,
+                false,
+            ),
+        ] {
+            with(|t, col| {
+                let w = land(t, col);
+                let ids = [
+                    Id::new_v7(AT as u64),
+                    Id::new_v7(AT as u64 + 1),
+                    Id::new_v7(AT as u64 + 2),
+                ];
+                t.tx(|t| {
+                    let mut ix = Index::new(t, col);
+                    let la = review(ids[0], w.card[0], AT, (AT, 0, "w1"));
+                    let lb = review(ids[1], w.card[0], AT, b_hlc);
+                    let lc = review(ids[2], w.card[0], AT, b_hlc);
+                    heritage(t, &mut ix, col, op(0xf1, 1, AT, &[], &la));
+                    heritage(t, &mut ix, col, op(0xf2, 1, AT, &[], &lb));
+                    heritage(t, &mut ix, col, op(0xf3, 1, AT, &[], &lc));
+                    ix.settle()?;
+                    Ok(())
+                })
+                .unwrap();
+                let canon = CanonMap::load(t, col).unwrap();
+                let (small, large) = (ids[0].text(), ids[1].text());
+                assert!(cmp_utf16_less(&small, &large));
+                // 协议 3 留了较大的那份、新代留了较小的那份（swap_sides 反过来）。
+                let (old_id, new_id) = if swap_sides {
+                    (ids[0], ids[1])
+                } else {
+                    (ids[1], ids[0])
+                };
+                let mut old = vec![stat(old_id, w.c_card, AT)];
+                if extra_old {
+                    old.push(stat(ids[2], w.c_card, AT));
+                }
+                let new = [stat(new_id, w.c_card, AT)];
+                let copies: HashSet<&str> = if as_copy {
+                    HashSet::from([old[0][0].as_str()])
+                } else {
+                    HashSet::new()
+                };
+                let got = representative_swaps(t, col, &canon, &old, &new, &copies).unwrap();
+                let expect: BTreeMap<String, String> = if want {
+                    BTreeMap::from([(old_id.text(), new_id.text())])
+                } else {
+                    BTreeMap::new()
+                };
+                assert_eq!(got, expect, "{case}");
+                // 两边一致：不是差异，什么都不认。
+                let got =
+                    representative_swaps(t, col, &canon, &old, &old, &HashSet::new()).unwrap();
+                assert!(got.is_empty(), "{case}: {got:?}");
+                if want {
+                    let last = CARD_COLS.iter().position(|c| c.0 == "last_log_id").unwrap();
+                    let mut card = vec!["0".to_owned(); CARD_COLS.len()];
+                    card[last] = old_id.text();
+                    let mut rows: CacheRows = (Vec::new(), vec![card], old.clone());
+                    apply_swaps(&mut rows, &expect);
+                    assert_eq!(rows.1[0][last], new_id.text(), "{case}: last_log_id");
+                    assert_eq!(rows.2, new.to_vec(), "{case}: stat rows");
+                }
+            });
+        }
+    }
+
+    fn cmp_utf16_less(a: &str, b: &str) -> bool {
+        crate::ordering::cmp_utf16(a, b) == std::cmp::Ordering::Less
     }
 
     fn diff(

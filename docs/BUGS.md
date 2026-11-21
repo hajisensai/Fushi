@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4414 条。点号进各自文件。
+> 共 4415 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5137](bugs/BUG-5137-srs-gen4-rebuild-slow-on-duplicated-log-library.md) | 🚧 | 🚧 | gen4 迁移第 7/10 步重建在 683 万条操作的库上要 1537 秒 |
 | [BUG-5088](bugs/BUG-5088-readintosync-blocks-gc-safepoint.md) | ✅ | ✅ | readintosync-blocks-gc-safepoint |
 | [BUG-5087](bugs/BUG-5087-sync-video-sweep-tests-teardown-temp-locked.md) | 🚧 | 🚧 | sync-video-sweep-tests-teardown-temp-locked |
 | [BUG-5086](bugs/BUG-5086-dist-test-verdict-coverage-shared-log.md) | ✅ | ✅ | 「dist 请求 7 个测试文件只跑 2 个仍判 PASSED」是并发代理共用日志名读串了；dist_test 判绿改为逐个核对请求的 suite |
@@ -60,7 +61,7 @@
 | [BUG-5066](bugs/BUG-5066-tag-filter-chip-drag-handle-removed.md) | ✅ | ✅ | 库页标签 chip 左侧的拖动柄删除，拖动改由 chip 按指针类型分流 |
 | [BUG-5065](bugs/BUG-5065-android-gen4-lock-unsupported.md) | ✅ | ✅ | Android 上 gen4 换代锁永远拿不到，复习库打不开（`try_lock() not supported`） |
 | [BUG-5064](bugs/BUG-5064-dict-history-entries-object-rows.md) | 🚧 | 🚧 | 查词历史 entries 存成对象的坏行每次启动重复报错不清理 |
-| [BUG-5063](bugs/BUG-5063-srs-gen4-migration-stats-logid-mismatch.md) | 🚧 | 🚧 | gen4 迁移对拍：4.7 GB 库第 7/10 步后 stats 两侧 log_id 集合不一致回滚 |
+| [BUG-5063](bugs/BUG-5063-srs-gen4-migration-stats-logid-mismatch.md) | ✅ | ✅ | gen4 迁移对拍：4.7 GB 库第 7/10 步后 stats 两侧 log_id 集合不一致回滚 |
 | [BUG-5062](bugs/BUG-5062-masthead-title-ellipsis-phone.md) | ✅ | ✅ | masthead-title-ellipsis-phone |
 | [BUG-5061](bugs/BUG-5061-srs-sync-media-upload-blocks-review-log.md) | ✅ | ✅ | srs-sync-media-upload-blocks-review-log |
 | [BUG-5060](bugs/BUG-5060-layout-maybe-later-double-prompt.md) | ✅ | ✅ | 「选一种库页布局」点「稍后再说」后紧接着又弹「库页现在默认封面网格」 |
