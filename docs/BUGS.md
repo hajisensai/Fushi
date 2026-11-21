@@ -48,6 +48,11 @@
 | [BUG-5154](bugs/BUG-5154-manga-render-backfill-overwrites-script-edits.md) | 🚧 | 🚧 | manga-render-backfill-overwrites-script-edits |
 | [BUG-5153](bugs/BUG-5153-subtitle-glossary-host-runner-unguarded-writer.md) | 🚧 | 🚧 | subtitle-glossary-host-runner-unguarded-writer |
 | [BUG-5151](bugs/BUG-5151-torrent-offline-mountpoint-resume-freeze.md) | ✅ | ✅ | 空挂载点目录还在而数据不可达时仍开跑清零续传；离线期间写出的空位图让下次启动把种子放出来；上传闸登记表每加一颗种子清扫全表 |
+> 共 4426 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5158](bugs/BUG-5158-torrent-resume-save-alert-queue-overflow.md) | ✅ | ✅ | torrent-resume-save-alert-queue-overflow |
 | [BUG-5150](bugs/BUG-5150-loopback-dead-capture-stale-ring-pinned.md) | ✅ | ✅ | loopback 采集线程自行退出后，环里的旧声音仍被当成「最近 N 秒」交出去；常驻的跨应用语音缓存从此再也起不来 |
 | [BUG-5146](bugs/BUG-5146-batch-seeding-toggle-relists-backend.md) | ✅ | ✅ | 下载页批量停 / 续做种（及批量继续）每条重列整个后端、每条各刷新一次面板 |
 | [BUG-5145](bugs/BUG-5145-manga-review-stale-session-overwrite.md) | ✅ | ✅ | manga-review-stale-session-overwrite |
