@@ -4511,6 +4511,10 @@ class _HomePageState extends BasePageState<HomePage>
 /// 是实色分组底，所以这里给内容区垫回 `colorScheme.surface`。
 ///
 /// 结构恒定：MD3 / 无窗口材质时也挂着，只是透明色（不画任何像素、不接命中）。
+///
+/// 路由层背景层在画用户背景图片时（[FushiPageBackdrop.activeOf]）不垫：那时脚手架
+/// 底色被背景层换成透明，这里若照「半透明 = 窗口材质」垫实色，就把图片整片盖住
+/// （Apple 下选了背景图首页仍是白底）。图片本身已盖住窗口材质。
 class _GlassContentSurface extends StatelessWidget {
   const _GlassContentSurface({required this.child});
 
@@ -4520,7 +4524,9 @@ class _GlassContentSurface extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool solid =
-        isGlassDesign(context) && theme.scaffoldBackgroundColor.a < 1;
+        isGlassDesign(context) &&
+        theme.scaffoldBackgroundColor.a < 1 &&
+        !FushiPageBackdrop.activeOf(context);
     // 底色画在不参与命中测试的背景槽里：ColoredBox 自身是 opaque 命中，直接
     // 包住内容会改变 MD3 下空白区的点击穿透。
     return Stack(

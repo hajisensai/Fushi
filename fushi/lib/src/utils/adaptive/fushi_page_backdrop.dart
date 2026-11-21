@@ -156,9 +156,17 @@ class _FushiPageBackdropScope extends InheritedWidget {
 /// 否则是设计 token 的页面底色。页面级 Scaffold / 整页 Material 的底色走这里，
 /// 不要直接写 `tokens.surfaces.page`。
 Color fushiPageBackgroundColor(BuildContext context) =>
-    FushiPageBackdrop.activeOf(context)
-    ? Colors.transparent
-    : FushiDesignTokens.of(context).surfaces.page;
+    fushiPageBackgroundColorOr(
+      context,
+      FushiDesignTokens.of(context).surfaces.page,
+    );
+
+/// [fushiPageBackgroundColor] 的自带底色版：整页底色不是 `surfaces.page` 的地方
+/// （Apple 设计的分组底 `groupedBackground`、玻璃外壳内容区的实色底）用它——
+/// 背景层在画（用户的背景图片）时一律透明，否则 [opaque]。直接画 [opaque] 会把
+/// 背景图片整片盖住（Apple 下选了图首页 / 设置页仍是白底）。
+Color fushiPageBackgroundColorOr(BuildContext context, Color opaque) =>
+    FushiPageBackdrop.activeOf(context) ? Colors.transparent : opaque;
 
 /// 整页必须透明的路由（不画底色、不画形状）。
 final ValueNotifier<Set<Route<Object?>>> _transparentPageRoutes =
