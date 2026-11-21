@@ -108,12 +108,16 @@ Future<SrsMediaSyncReport> srsRunLocationMedia(
   SrsMediaCipher? cipher,
   required String locationId,
   bool uploadOnly = false,
+  void Function(int done, int total)? onProgress,
+  bool Function()? deferRemaining,
 }) async {
   final String dir = await srsLocationDir(store);
   return srsSyncMedia(
     cipher: cipher,
     locationId: locationId,
     uploadOnly: uploadOnly,
+    onProgress: onProgress,
+    deferRemaining: deferRemaining,
     location: backend.location(
       dir,
       folder: await srsLocationMediaFolder(

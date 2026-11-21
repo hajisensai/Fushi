@@ -128,6 +128,33 @@ MusicPluginManager _noPlugins() => MusicPluginManager(
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('装了推荐插件也不把默认分区抢成推荐；推荐来源没了才回曲库', () {
+    expect(
+      musicLibrarySectionAfterSourcesChanged(
+        current: MusicLibrarySection.albums,
+        lastLibrary: MusicLibrarySection.albums,
+        hasRecommend: true,
+      ),
+      MusicLibrarySection.albums,
+    );
+    expect(
+      musicLibrarySectionAfterSourcesChanged(
+        current: MusicLibrarySection.recommend,
+        lastLibrary: MusicLibrarySection.songs,
+        hasRecommend: true,
+      ),
+      MusicLibrarySection.recommend,
+    );
+    expect(
+      musicLibrarySectionAfterSourcesChanged(
+        current: MusicLibrarySection.recommend,
+        lastLibrary: MusicLibrarySection.songs,
+        hasRecommend: false,
+      ),
+      MusicLibrarySection.songs,
+    );
+  });
+
   testWidgets('五个分区；专辑网格 → 歌曲 → 作品空态', (WidgetTester tester) async {
     // 顶栏与其它库页同一套浮动 chrome：动作组至少占半行，窄窗时页签在胶囊里
     // 横滑。给一个桌面宽度，五个页签都在可视区内直接点。
@@ -423,6 +450,11 @@ void main() {
   });
 
   testWidgets('专辑页：碟片分组 + 格式徽章 + Hi-Res', (WidgetTester tester) async {
+    // 逐碟曲目是色块（W 原型双格比例），默认 800×600 视口里第二碟标题在懒加载
+    // 列表视口外、不会被建出来；给一个能放下两碟的桌面视口。
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1400, 1600);
+    addTearDown(tester.view.reset);
     final FushiDatabase db = await _seed();
     addTearDown(db.close);
     final AppModel app = AppModel(testPlatformServices())

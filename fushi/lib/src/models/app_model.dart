@@ -3694,8 +3694,13 @@ class AppModel
 
   /// 弹窗呈现（折叠 / 展开）该看的词典列表：打开的作品带着作品级配置时是那份配置的视图，
   /// 否则是激活配置（与 [hiddenDictionaryNames] 同一口径，反馈 r9SgiayKxa）。
+  ///
+  /// 词典仓库未就绪（启动早期、或 [_dictionaryRepoReady] 在重建期间置回 false）时返回空表：
+  /// 浏览器扩展取主题（[browserExtensionThemeColors] → [_activePopupDisplayPrefs]）可能
+  /// 在这段窗口里到达，不能去碰 late 的 [dictRepo]（BUG-4935 引入的依赖）。
   List<Dictionary> get lookupViewDictionaries =>
-      WorkProfileScope.instance.lookupView?.dictionaries ?? dictionaries;
+      WorkProfileScope.instance.lookupView?.dictionaries ??
+      (_dictionaryRepoReady ? dictionaries : const <Dictionary>[]);
 
   bool _dictSourceBackfillStarted = false;
 
@@ -12336,16 +12341,6 @@ class AppModel
   bool get browseMovedNoticeHandled => prefsRepo.browseMovedNoticeHandled;
   Future<void> setBrowseMovedNoticeHandled() =>
       prefsRepo.setBrowseMovedNoticeHandled();
-
-  /// 库页默认改封面网格后的「拼贴仍可选」一次性提示是否已处理
-  /// （见 `library_layout_default_notice.dart`）。
-  bool get libraryLayoutDefaultNoticeHandled =>
-      prefsRepo.libraryLayoutDefaultNoticeHandled;
-  Future<void> setLibraryLayoutDefaultNoticeHandled() =>
-      prefsRepo.setLibraryLayoutDefaultNoticeHandled();
-
-  /// 当前 Profile 是否显式选过库页布局（落库值非空，含已删的 `blocks`）。
-  bool get shellContentLayoutChosen => themeNotifier.shellContentLayoutChosen;
 
   int get maximumTerms => prefsRepo.maximumTerms;
   void setMaximumTerms(int value) => prefsRepo.setMaximumTerms(value);

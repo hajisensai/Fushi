@@ -499,8 +499,6 @@ void main() {
     await launchFushiTestApp(
       seedPrefs: <String, String>{
         ModuleId.startupPrefKey: 's:${ModuleId.video.prefKey}',
-        // 一次性「库页默认改为封面网格」弹窗会盖住网格、吞掉滚轮。
-        'library_layout_default_notice_handled': 'b:true',
       },
     );
     expect(await waitForHome(tester), isTrue, reason: '主页应在 90s 内出现');
