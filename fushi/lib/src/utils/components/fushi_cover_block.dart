@@ -1287,13 +1287,15 @@ class _BlockGeometry {
           titleLines: half ? 2 : 3,
         );
       case FushiCoverBlockArt.square:
-        // 专辑：左上方形封面（设计稿 `.ab .cv`），右侧文字。
-        final double s = h - (half ? 24 : 40);
+        // 专辑：起始侧方形封面（设计稿 `.ab .cv`），右侧文字。封面边长另限在块宽
+        // 的 0.42 以内并垂直居中：规整块（约 470 × 280）按块高给封面会占掉近一半
+        // 宽度，长专辑名只剩两三个词就被截断（2026-11-21 音乐页重做实测）。
+        final double s = math.min(h - (half ? 24 : 40), w * 0.42);
         final double left = half ? 12 : 20;
         return _BlockGeometry(
           slots: <_CoverSlot>[
             _CoverSlot(
-              rect: Rect.fromLTWH(left, half ? 12 : 18, s, s),
+              rect: Rect.fromLTWH(left, (h - s) / 2, s, s),
               rest: const _Pose(rotation: -5),
               hover: const _Pose(rotation: -9, scale: 1.04),
             ),
