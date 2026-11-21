@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/pages/implementations/home_dictionary_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -17,8 +18,10 @@ import 'test_helpers.dart';
 /// 两个 tab 都进过后后台挂两个；改成 HomePage 持有一个 [SharedLookupPopupHost] 共用。
 /// 本探针依次进首页 → 游戏 → 查词 → 游戏，每步等 WebView 装载完，记下树里挂着的
 /// [DictionaryPopupWebView] 个数与本进程派生的 msedgewebview2 进程数 / 私有字节 /
-/// 工作集，以 `[lookup-mem]` 前缀打进日志。比较「进游戏后」与「再进查词后」两行即是
-/// 第二个热槽 WebView 的增量。
+/// 工作集，以 `[lookup-mem]` 前缀打进日志。查词页只在结果区渲染出来之后才把浮层挂上
+/// 根 Overlay（热槽 WebView 此时才真正建出来），所以进查词 tab 后先查一个词（生成的测试
+/// 词典里的「猫」）。`popupWebViews` 含结果区那一个；修前「查词」一步是结果区 + 两个
+/// 热槽，修后是结果区 + 一个热槽。
 ///
 /// 跑法（fushi/ 下）：
 ///   .\tool\run_windows_itest.ps1 integration_test\lookup_warm_webview_memory_itest.dart
@@ -42,8 +45,19 @@ void main() {
     expect(tabs, contains(HomeTab.games), reason: '游戏模块需开启');
     expect(tabs, contains(HomeTab.dictionaries), reason: '查词模块需开启');
 
-    Future<void> step(String label, HomeTab? tab) async {
+    expect(await seedDictionary(tester), isTrue, reason: '需要测试词典才能出结果');
+
+    Future<void> step(
+      String label,
+      HomeTab? tab, {
+      Future<void> Function()? then,
+    }) async {
       if (tab != null) homeShellTabNotifier.value = tab;
+      if (then != null) {
+        await Future<void>.delayed(const Duration(seconds: 2));
+        await tester.pump();
+        await then();
+      }
       // 等页面挂载、热槽 seed、WebView2 装完 popup.html 并稳定下来。
       await Future<void>.delayed(const Duration(seconds: 10));
       await tester.pump();
@@ -62,7 +76,16 @@ void main() {
 
     await step('home', null);
     await step('games', HomeTab.games);
-    await step('dictionaries', HomeTab.dictionaries);
+    await step(
+      'dictionaries+search',
+      HomeTab.dictionaries,
+      then: () async {
+        final HomeDictionarySearchDebug page =
+            tester.state(find.byType(HomeDictionaryPage))
+                as HomeDictionarySearchDebug;
+        await page.debugSearch('猫');
+      },
+    );
     await step('games-again', HomeTab.games);
   });
 }
