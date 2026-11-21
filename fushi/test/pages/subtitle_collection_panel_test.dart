@@ -1980,6 +1980,141 @@ void main() {
       );
     });
 
+    testWidgets('HBK-AUDIT-049 多季合集只点第二季、AniList 没有第二季条目：不拿第一季的 id 冒充第二季身份', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(600, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final List<VideoBookRow> members = <VideoBookRow>[
+        for (final String name in <String>[
+          'Show S01E01',
+          'Show S01E02',
+          'Show S02E01',
+          'Show S02E02',
+        ])
+          await upsertBook(
+            bookUid: 'video/$name',
+            title: name,
+            videoPath: 'C:/video/$name.mkv',
+          ),
+      ];
+      final MediaCollectionRow collection = await seedCollection();
+
+      // AniList 模糊搜索只回第一季条目（续作改了名 / 不在首页）。按季挑系列挑不出
+      // 第二季时若退回首条，就会拿第一季的 AniList id 去问 Jimaku：命中第一季条目、
+      // 身份「对上」，第一季字幕被自报成第二季写进去。
+      final List<String> jimakuDownloads = <String>[];
+      final List<String> jimakuSearches = <String>[];
+      final MockClient jimakuHttp = MockClient((http.Request req) async {
+        final String path = req.url.path;
+        if (path == '/api/entries/search') {
+          jimakuSearches.add(req.url.query);
+          final String? byId = req.url.queryParameters['anilist_id'];
+          if (byId != null && byId != '21355') {
+            return http.Response('[]', 200);
+          }
+          return http.Response(
+            jsonEncode(<Object?>[
+              <String, Object?>{
+                'id': 7,
+                'name': 'Show',
+                'anilist_id': 21355,
+                'flags': <String, Object?>{'anime': true},
+                'last_modified': '2023-05-06T07:08:09.000Z',
+              },
+            ]),
+            200,
+          );
+        }
+        if (path == '/api/entries/7/files') {
+          return http.Response(
+            jsonEncode(<Object?>[
+              for (final String name in <String>[
+                'Show - 01.ja.srt',
+                'Show - 02.ja.srt',
+              ])
+                <String, Object?>{
+                  'url': 'https://jimaku.cc/entry/7/download/$name',
+                  'name': name,
+                  'size': 100,
+                  'last_modified': '2023-05-06T07:08:09.000Z',
+                },
+            ]),
+            200,
+          );
+        }
+        if (path.startsWith('/entry/7/download/')) {
+          final String name = Uri.decodeComponent(path.split('/').last);
+          jimakuDownloads.add(name);
+          return http.Response(
+            '1\n00:00:01,000 --> 00:00:02,000\n$name\n',
+            200,
+            headers: <String, String>{
+              'content-type': 'text/plain; charset=utf-8',
+            },
+          );
+        }
+        return http.Response('not found', 404);
+      });
+
+      await tester.pumpWidget(
+        wrap(
+          collection: collection,
+          member: members.first,
+          members: members,
+          initialSeason: 2,
+          onSearch: (_) => throw UnimplementedError(),
+          providers: <VideoSubtitleProvider>[
+            JimakuVideoSubtitleProvider(
+              client: JimakuClient(apiKey: 'k', client: jimakuHttp),
+            ),
+          ],
+          httpClientFactory: () async =>
+              MockClient((http.Request request) async {
+                if (request.url.host == 'graphql.anilist.co') {
+                  return http.Response(
+                    jsonEncode(<String, Object?>{
+                      'data': <String, Object?>{
+                        'Page': <String, Object?>{
+                          'media': <Object?>[
+                            <String, Object?>{
+                              'id': 21355,
+                              'title': <String, Object?>{'romaji': 'Show'},
+                            },
+                          ],
+                        },
+                      },
+                    }),
+                    200,
+                  );
+                }
+                return http.Response('not found', 404);
+              }),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Show S02E01'), findsOneWidget);
+      expect(
+        tester
+            .widget<FilledButton>(glassUnwrap<FilledButton>(downloadButton()))
+            .onPressed,
+        isNull,
+        reason: '第一季条目的字幕不能成为第二季的来源',
+      );
+      for (final VideoBookRow m in members) {
+        expect((await repo.getByBookUid(m.bookUid))!.subtitleSource, isNull);
+      }
+      expect(jimakuDownloads, isEmpty);
+      expect(
+        jimakuSearches.any((String q) => q.contains('anilist_id=21355')),
+        isFalse,
+        reason: '第二季挑不出对应的 AniList 条目时不拿第一季的 id 当第二季身份',
+      );
+    });
+
     testWidgets('initialSeason 传入当前季：打开即定位到第 2 季并按第 2 季检索', (
       WidgetTester tester,
     ) async {

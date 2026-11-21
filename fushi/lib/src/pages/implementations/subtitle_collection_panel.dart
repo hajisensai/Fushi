@@ -974,7 +974,8 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       );
       if (picked != null) {
         // **只搜不绑**：模糊搜索的首条命中是猜测，不是用户的选择。相关度首条恒为
-        // 第一季，按合集成员的季号挑对应那一季（挑不出才退回首条）。
+        // 第一季，按合集成员的季号挑对应那一季；挑不出就纯文本搜，不拿别季的 id 冒充
+        // 这一季的身份（HBK-AUDIT-049）。
         await _applySeries(picked, generation: generation);
       } else {
         setState(() => _selectedSeriesId = null);
