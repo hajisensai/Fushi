@@ -161,6 +161,16 @@ isolate，整页一次跨 FFI。处理失败返回 null，不可回退上传原�
 回归覆盖原生像素合成、EXIF、透明度与参数校验，Dart FFI 生命周期，以及 Flutter 横竖排、缩放坐标、
 倾斜块范围与最终上传 JPEG 的实际像素。
 
+## 图像域：视频截帧 BGRA → RGBA 裁块（HBK-AUDIT-008）
+
+`ffc_image_bgra_to_rgba8(src, src_len, stride, x0, y0, w, h, out, out_len)` 从带行跨度的 BGRA
+帧（mpv `screenshot-raw` 的 `bgr0`，第四字节未定义）取矩形，写行紧排的不透明 RGBA8888。智能遮布
+每次抽样的裁块与暂停 OCR 的整帧都走它：Dart 入口 `FushiComputeImage.bgraToRgba8` 在 media_kit
+补丁的截帧 isolate 上把矩形覆盖的那段行一次拷进暂存区、调用、按需前置字节头拷回 Dart 堆；
+`fushi/lib/src/media/video/raw_video_frame.dart` 只算裁剪矩形与头。原先的 Dart 逐像素循环已删。
+逐字节对照（多种 stride / 矩形，含原生缓冲视图）见 `packages/fushi_compute/test/image_bgra_to_rgba_test.dart`，
+耗时对比用 `packages/fushi_compute/benchmark/bgra_to_rgba_bench.dart`。
+
 ## 字体域
 
 `ffc_font_woff2_to_sfnt(const u8*, usize, u8** out, usize* out_len) -> i32`：WOFF2 → 裸 sfnt

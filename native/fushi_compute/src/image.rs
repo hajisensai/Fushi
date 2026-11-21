@@ -533,6 +533,59 @@ pub unsafe extern "C" fn ffc_image_to_rgba8(
     })
 }
 
+/// 带行跨度的 BGRA 帧（mpv `screenshot-raw` 的 `bgr0`：每像素 4 字节，第四字节未定义）
+/// 里取矩形 `[x0, x0 + w) × [y0, y0 + h)`，写成行紧排的不透明 RGBA8888（alpha 恒 255）。
+/// 智能遮布每次抽样的裁块与暂停 OCR 的整帧都走这里（HBK-AUDIT-008：原先是截帧 isolate
+/// 上的 Dart 逐像素循环）。
+///
+/// # Safety
+/// 指针按给定长度可读 / 可写。
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn ffc_image_bgra_to_rgba8(
+    src: *const u8,
+    src_len: usize,
+    stride: usize,
+    x0: u32,
+    y0: u32,
+    w: u32,
+    h: u32,
+    out: *mut u8,
+    out_len: usize,
+) -> i32 {
+    guard(|| {
+        if src.is_null() || out.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let view = match View::new(slice(src, src_len), stride, 4, x0, y0, w, h) {
+            Ok(v) => v,
+            Err(code) => return code,
+        };
+        let row_bytes = view.w * 4;
+        let n = row_bytes * view.h;
+        if out_len < n {
+            return status::BUFFER_TOO_SMALL;
+        }
+        bgra_to_rgba8(&view, slice_mut(out, n));
+        status::OK
+    })
+}
+
+/// [ffc_image_bgra_to_rgba8] 的内核：`out` 恰好 `w * h * 4` 字节。
+fn bgra_to_rgba8(view: &View<'_>, out: &mut [u8]) {
+    let row_bytes = view.w * 4;
+    for (y, dst_row) in out.chunks_exact_mut(row_bytes).enumerate() {
+        let start = view.offset(0, y);
+        let src_row = &view.data[start..start + row_bytes];
+        for (d, s) in dst_row.chunks_exact_mut(4).zip(src_row.chunks_exact(4)) {
+            d[0] = s[2];
+            d[1] = s[1];
+            d[2] = s[0];
+            d[3] = 255;
+        }
+    }
+}
+
 /// 就地给 RGBA8888 缓冲打码（`applyMosaicRgba` 的内核）。`rects` 是 `rect_count` 组
 /// `[x0, y0, x1, y1)`（像素、已夹进图像，即 `mosaicPixelBounds` 的结果），`block` 是块边长。
 ///
@@ -2766,6 +2819,82 @@ pub unsafe extern "C" fn ffc_image_decode_png(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 带填充 stride 的 BGRA 帧：B = x、G = y、R = 200、第四字节 = 7（bgr0 未定义）、填充 = 0xEE。
+    fn bgra_frame(width: usize, height: usize, stride: usize) -> Vec<u8> {
+        let mut f = vec![0xEE_u8; stride * height];
+        for y in 0..height {
+            for x in 0..width {
+                let i = y * stride + x * 4;
+                f[i..i + 4].copy_from_slice(&[x as u8, y as u8, 200, 7]);
+            }
+        }
+        f
+    }
+
+    #[test]
+    fn bgra_to_rgba8_crops_with_stride_and_forces_alpha() {
+        let (width, height, stride) = (10usize, 10usize, 48usize);
+        let f = bgra_frame(width, height, stride);
+        let (x0, y0, w, h) = (2u32, 5u32, 4u32, 3u32);
+        let mut out = vec![0u8; (w * h * 4) as usize];
+        let code = unsafe {
+            ffc_image_bgra_to_rgba8(
+                f.as_ptr(),
+                f.len(),
+                stride,
+                x0,
+                y0,
+                w,
+                h,
+                out.as_mut_ptr(),
+                out.len(),
+            )
+        };
+        assert_eq!(code, status::OK);
+        for y in 0..h as usize {
+            for x in 0..w as usize {
+                let o = (y * w as usize + x) * 4;
+                let (fx, fy) = (x0 as u8 + x as u8, y0 as u8 + y as u8);
+                assert_eq!(&out[o..o + 4], &[200, fy, fx, 255], "at ({x}, {y})");
+            }
+        }
+    }
+
+    #[test]
+    fn bgra_to_rgba8_rejects_bad_geometry() {
+        let f = bgra_frame(4, 2, 16);
+        let mut out = vec![0u8; 64];
+        let call = |src: &[u8], stride: usize, x0, y0, w, h, out: &mut [u8]| unsafe {
+            ffc_image_bgra_to_rgba8(
+                src.as_ptr(),
+                src.len(),
+                stride,
+                x0,
+                y0,
+                w,
+                h,
+                out.as_mut_ptr(),
+                out.len(),
+            )
+        };
+        // 一行越过 stride。
+        assert_eq!(call(&f, 8, 0, 0, 4, 2, &mut out), status::INVALID_ARGUMENT);
+        // 缓冲短于 h 行。
+        assert_eq!(
+            call(&f[..20], 16, 0, 0, 4, 2, &mut out),
+            status::BUFFER_TOO_SMALL
+        );
+        // 空矩形。
+        assert_eq!(call(&f, 16, 0, 0, 0, 2, &mut out), status::INVALID_ARGUMENT);
+        // 输出不够。
+        assert_eq!(
+            call(&f, 16, 0, 0, 4, 2, &mut out[..31]),
+            status::BUFFER_TOO_SMALL
+        );
+        // 最后一行只需读到矩形右缘，不要求整行 stride。
+        assert_eq!(call(&f[..16 + 16], 16, 0, 0, 4, 2, &mut out), status::OK);
+    }
 
     /// 不透明 RGBA 测试图（带行尾填充，模拟 mpv 的行跨度）。
     fn opaque_rgba(w: usize, h: usize, pad: usize) -> (Vec<u8>, usize) {
