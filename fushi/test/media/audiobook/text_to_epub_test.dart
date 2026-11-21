@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:test/test.dart';
 import 'package:fushi_engine/media/audiobook/text_to_epub.dart';
+import 'package:html/parser.dart' as html_parser;
 import 'package:xml/xml.dart';
 
 import '../../helpers/epub_zip_reader.dart';
@@ -412,6 +413,31 @@ void main() {
       expect(body, '前文<p id="s1">本文</p><script>var x;</script>');
     },
   );
+
+  // 同一条 HTML body 规则下，<body> 标签在场也不能只取它的子节点：浏览器把
+  // <body> 前（head 之后）、</body> 后、以及 <head> 里非 head 元素起的内容都
+  // 归进正文（结果与 HTML5 解析器 parse(...).body 逐一核对过）。
+  test('well-formed html keeps body content outside the <body> tags', () async {
+    const String input =
+        '<html><head><title>題名</title><p id="h">頭</p></head>'
+        '<noframes>nf</noframes><p id="b">前</p>'
+        '<body><p id="m">中</p></body><p id="a">後</p></html>';
+    const String expected =
+        '<p id="h">頭</p><noframes>nf</noframes><p id="b">前</p>'
+        '<p id="m">中</p><p id="a">後</p>';
+    // 期望值就是浏览器（HTML5 树构建）给出的 body。
+    expect(html_parser.parse(input).body!.innerHtml, expected);
+    final EpubZipReader reader = await _convertText(
+      tmpDir,
+      input,
+      name: 'input.xhtml',
+    );
+    final String chapter = reader['OEBPS/chapter-1.xhtml']!;
+    final String body = RegExp(
+      r'<body>\n([\s\S]*)</body>',
+    ).firstMatch(chapter)!.group(1)!;
+    expect(body, expected);
+  });
 
   test(
     'well-formed short html fragment without <html> keeps its anchor',

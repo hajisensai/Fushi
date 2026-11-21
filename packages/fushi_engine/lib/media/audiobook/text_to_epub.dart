@@ -232,48 +232,41 @@ class TextToEpub {
   /// HTML 里只能出现在 head、且正文开始前遇到时归 head 的元素（HTML5 树构建
   /// 「in head」插入模式处理的元素）。正文开始后再出现的同名元素留在 body。
   static const Set<String> _headOnlyElements = <String>{
-    'base', 'basefont', 'bgsound', 'link', 'meta', 'noscript', //
+    'base', 'basefont', 'bgsound', 'link', 'meta', 'noframes', 'noscript', //
     'script', 'style', 'template', 'title',
   };
 
-  /// 良构 XML 文档按 HTML 的 body 规则取正文节点：
-  /// - 有 `<body>` 元素 → 它的子节点；
-  /// - 否则正文是隐含的：把根当作 `<html>` 的内容逐个看（根本身不是 `html` 时
-  ///   根就是唯一的内容节点），正文开始前跳过 `<head>`、注释 / 处理指令、空白
-  ///   文本与 [_headOnlyElements]；首个非空白文本或其他元素开始正文，此后的节点
-  ///   全归正文（正文中途的 `<head>` 标签按 HTML5 忽略标签本身、保留其子节点）。
-  static List<xml.XmlNode> _xmlBodyNodes(xml.XmlDocument document) {
-    String local(xml.XmlElement e) => e.name.local.toLowerCase();
-    final xml.XmlElement? body = document.descendants
-        .whereType<xml.XmlElement>()
-        .where((xml.XmlElement e) => local(e) == 'body')
-        .firstOrNull;
-    if (body != null) return body.children;
+  /// HTML 的空白只有 ASCII 这 5 个（不是 Dart `trim` 认的全部 Unicode 空白）。
+  static final RegExp _htmlSpaceOnly = RegExp(r'^[\t\n\f\r ]*$');
 
-    final xml.XmlElement root = document.rootElement;
-    final List<xml.XmlNode> content = local(root) == 'html'
-        ? root.children
-        : <xml.XmlNode>[root];
+  /// 良构 XML 文档按 HTML5 树构建定 body 的规则取正文节点，与不良构输入走的
+  /// HTML5 解析器结论一致：`<html>` / `<head>` / `<body>` 三个标签本身都不进
+  /// 正文（可省略、可出现在「不该在」的位置），只看它们里面的节点按文档顺序
+  /// 逐个判定——正文开始前，空白文本与 [_headOnlyElements] 归 head；首个非空白
+  /// 文本、其他元素或 `<body>` 标签开始正文，此后的节点（含 `</body>` 之后、
+  /// 中途 `<head>` 里的）全归正文。注释 / 处理指令 / doctype 从不进正文。
+  static List<xml.XmlNode> _xmlBodyNodes(xml.XmlDocument document) {
     final List<xml.XmlNode> out = <xml.XmlNode>[];
     bool started = false;
-    for (final xml.XmlNode node in content) {
-      if (!started) {
-        if (node is xml.XmlElement) {
-          final String name = local(node);
-          if (name == 'head' || _headOnlyElements.contains(name)) continue;
-        } else if (node is xml.XmlText || node is xml.XmlCDATA) {
-          if (node.value!.trim().isEmpty) continue;
-        } else {
-          continue; // 注释 / 处理指令 / doctype 不开始正文
+    void visit(xml.XmlNode node) {
+      if (node is xml.XmlElement) {
+        final String name = node.name.local.toLowerCase();
+        if (name == 'html' || name == 'head' || name == 'body') {
+          if (name == 'body') started = true;
+          node.children.forEach(visit);
+          return;
         }
-        started = true;
-      }
-      if (node is xml.XmlElement && local(node) == 'head') {
-        out.addAll(node.children);
+        if (!started && _headOnlyElements.contains(name)) return;
+      } else if (node is xml.XmlText || node is xml.XmlCDATA) {
+        if (!started && _htmlSpaceOnly.hasMatch(node.value!)) return;
       } else {
-        out.add(node);
+        return;
       }
+      started = true;
+      out.add(node);
     }
+
+    document.children.forEach(visit);
     return out;
   }
 
