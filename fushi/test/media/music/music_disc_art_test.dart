@@ -260,6 +260,63 @@ void main() {
     });
   });
 
+  group('同一张专辑的各版本共用盘面图（BUG-5058）', () {
+    const String cds = '/v/Onimai/CDs';
+    test('标签不一致被拆开的两个版本：同父目录 + 同名（全角半角不计）借用', () {
+      final Map<String, String> out = shareMusicDiscArtAcrossVersions(
+        found: <String, String>{'webp': '$cds/A (flac+webp)/Scans/07.webp'},
+        albums: <String, ({String title, List<String> trackPaths})>{
+          'webp': (
+            title: 'ひめごと＊クライシスターズ',
+            trackPaths: <String>['$cds/A (flac+webp)/01.flac'],
+          ),
+          'hires': (
+            title: 'ひめごと*クライシスターズ',
+            trackPaths: <String>['$cds/A [24bit_48kHz] (flac)/01.flac'],
+          ),
+        },
+      );
+      expect(out['hires'], '$cds/A (flac+webp)/Scans/07.webp');
+      expect(out['webp'], '$cds/A (flac+webp)/Scans/07.webp');
+    });
+
+    test('分碟目录并回版本目录再比父目录', () {
+      final Map<String, String> out = shareMusicDiscArtAcrossVersions(
+        found: <String, String>{'a': '$cds/X (flac)/Scans/01.jpg'},
+        albums: <String, ({String title, List<String> trackPaths})>{
+          'a': (title: 'X', trackPaths: <String>['$cds/X (flac)/01.flac']),
+          'b': (
+            title: 'X',
+            trackPaths: <String>['$cds/X [Hi-Res]/Disc 2/01.flac'],
+          ),
+        },
+      );
+      expect(out['b'], '$cds/X (flac)/Scans/01.jpg');
+    });
+
+    test('不同父目录的同名专辑、同目录的不同名专辑都不借', () {
+      final Map<String, String> out = shareMusicDiscArtAcrossVersions(
+        found: <String, String>{'a': '$cds/OST/Scans/01.jpg'},
+        albums: <String, ({String title, List<String> trackPaths})>{
+          'a': (title: 'OST', trackPaths: <String>['$cds/OST/01.flac']),
+          'other': (
+            title: 'OST',
+            trackPaths: <String>['/v/Another/CDs/OST/01.flac'],
+          ),
+          'single': (
+            title: 'Single',
+            trackPaths: <String>['$cds/Single/01.flac'],
+          ),
+        },
+      );
+      expect(out.keys.toSet(), <String>{'a'});
+    });
+
+    test('比较键：全角折半角、空白归一、小写', () {
+      expect(musicAlbumTitleKey('  ＡＢ　 ＣＤ！ '), 'ab cd!');
+    });
+  });
+
   group('MusicDiscArtIndex', () {
     late Directory tmp;
     final MusicDiscFaceSampler realSampler = MusicDiscArtIndex.instance.sampler;

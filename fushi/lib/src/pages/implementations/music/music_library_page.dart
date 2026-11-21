@@ -34,7 +34,7 @@ import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/music/music_audio_intake.dart'
     show MusicAudioIntake, MusicAudioIntakeResult;
 import 'package:fushi/src/media/music/music_disc_art.dart'
-    show MusicDiscArtIndex;
+    show MusicDiscArtIndex, shareMusicDiscArtAcrossVersions;
 import 'package:fushi/src/media/music/music_file_drop.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
@@ -526,9 +526,18 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
       if (album == null) continue;
       tracksByAlbum.putIfAbsent(album, () => <String>[]).add(t.path);
     }
-    final Map<String, String> found = tracksByAlbum.isEmpty
+    final Map<String, String> resolved = tracksByAlbum.isEmpty
         ? const <String, String>{}
         : await MusicDiscArtIndex.instance.resolve(tracksByAlbum);
+    // 标签不一致被拆成两张专辑的同一张 CD（一份带扫图、一份不带）共用盘面图。
+    final Map<String, String> found = shareMusicDiscArtAcrossVersions(
+      found: resolved,
+      albums: <String, ({String title, List<String> trackPaths})>{
+        for (final MapEntry<String, List<String>> e in tracksByAlbum.entries)
+          if (snap.albumByUid[e.key] case final MusicAlbumRow a)
+            e.key: (title: a.title, trackPaths: e.value),
+      },
+    );
     if (!mounted || !identical(snap, _snapshot)) return;
     MusicDiscArtIndex.instance.publish(found);
   }

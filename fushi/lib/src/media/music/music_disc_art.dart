@@ -262,6 +262,75 @@ List<String> musicAlbumDiscArtRoots(Iterable<String> trackPaths) {
   ];
 }
 
+/// 专辑名的比较键：全角 ASCII（`＊` / `！` / `Ａ`）折成半角、全角空格折成空格、
+/// 连续空白并一个、去首尾、小写。纯函数。
+String musicAlbumTitleKey(String title) {
+  final StringBuffer out = StringBuffer();
+  for (final int rune in title.runes) {
+    if (rune >= 0xFF01 && rune <= 0xFF5E) {
+      out.writeCharCode(rune - 0xFEE0);
+    } else if (rune == 0x3000) {
+      out.write(' ');
+    } else {
+      out.writeCharCode(rune);
+    }
+  }
+  return out.toString().toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+}
+
+/// 盘面图在同一张专辑的各版本间共享（BUG-5058）。
+///
+/// 同一张专辑的两份目录（`(flac+webp)` 带扫图、`[24bit_96kHz] (flac)` 不带）专辑艺人
+/// 标签一致时扫描器合成一个专辑 uid，[MusicDiscArtIndex.resolve] 按全部版本目录找图，
+/// 本来就共享；标签不一致（一份有专辑艺人一份没有、`＊` 与 `*`、艺人笔误）时被拆成
+/// 两张专辑，没扫图的那份就没有盘面。这里把「专辑名比较键（[musicAlbumTitleKey]）
+/// 相同、且有版本目录（[musicTrackVersionDirectory]）在同一个父目录下」的专辑视为
+/// 同一张的不同版本：没有盘面图的借用有图的那份。只看同一父目录，不跨目录按同名
+/// 匹配（不同作品的同名专辑不串图）。
+///
+/// [found]：已认出的盘面图（专辑 uid → 图路径）；[albums]：专辑 uid →（专辑名，
+/// 曲目路径）。返回补全后的映射；同一组里有多份图时取专辑 uid 字典序最小的那份
+/// （结果稳定）。纯函数。
+Map<String, String> shareMusicDiscArtAcrossVersions({
+  required Map<String, String> found,
+  required Map<String, ({String title, List<String> trackPaths})> albums,
+}) {
+  Set<String> keysOf(({String title, List<String> trackPaths}) a) {
+    final String title = musicAlbumTitleKey(a.title);
+    if (title.isEmpty) return const <String>{};
+    return <String>{
+      for (final String path in a.trackPaths)
+        if (isLocalMusicTrackPath(path))
+          '$title\u0000${p.dirname(musicTrackVersionDirectory(path))}',
+    };
+  }
+
+  final Map<String, String> discByKey = <String, String>{};
+  final List<String> withDisc = <String>[
+    for (final String uid in albums.keys)
+      if (found.containsKey(uid)) uid,
+  ]..sort();
+  for (final String uid in withDisc) {
+    for (final String key in keysOf(albums[uid]!)) {
+      discByKey.putIfAbsent(key, () => found[uid]!);
+    }
+  }
+  if (discByKey.isEmpty) return found;
+  final Map<String, String> out = Map<String, String>.of(found);
+  for (final MapEntry<String, ({String title, List<String> trackPaths})> e
+      in albums.entries) {
+    if (out.containsKey(e.key)) continue;
+    for (final String key in keysOf(e.value)) {
+      final String? disc = discByKey[key];
+      if (disc != null) {
+        out[e.key] = disc;
+        break;
+      }
+    }
+  }
+  return out;
+}
+
 /// 一个根目录里认出的最佳盘面图（绝对路径 + 得分）。
 typedef MusicDiscArtHit = ({String path, int score});
 
