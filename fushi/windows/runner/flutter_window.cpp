@@ -4087,13 +4087,19 @@ void FlutterWindow::RegisterAudioLoopbackChannel() {
           return;
         }
         if (method == "pinSnapshot") {
+          bool stopped = false;
           const uint64_t id = fushi::AudioLoopbackCapture::Instance().PinSnapshot(
               static_cast<uint64_t>(read_int64("lease")),
-              static_cast<int>(read_int64("backMs")));
+              static_cast<int>(read_int64("backMs")), &stopped);
           if (id == 0) {
+            // code=stopped：租约那一路的采集线程已退出，持有方应重新 start 同一来源。
             result->Success(flutter::EncodableValue(flutter::EncodableMap{
                 {flutter::EncodableValue("error"),
-                 flutter::EncodableValue(std::string("no audio buffered"))}}));
+                 flutter::EncodableValue(std::string(
+                     stopped ? "capture stopped" : "no audio buffered"))},
+                {flutter::EncodableValue("code"),
+                 flutter::EncodableValue(
+                     std::string(stopped ? "stopped" : "empty"))}}));
             return;
           }
           result->Success(flutter::EncodableValue(flutter::EncodableMap{

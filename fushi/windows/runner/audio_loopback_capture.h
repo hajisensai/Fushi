@@ -81,14 +81,17 @@ class AudioLoopbackCapture {
   void StopAll();
 
   // 把租约 [lease] 那一路「最近 [back_ms] 毫秒」的 PCM 拷进 [out]（按时间先后，帧对齐）。
-  // 缓冲不足则返回现有全部。租约无效 / 无数据时 [out] 清空、返回 ok=false 的格式。
+  // 缓冲不足则返回现有全部。租约无效 / 无数据 / 这一路采集线程已退出（环里是旧声音）
+  // 时 [out] 清空、返回 ok=false 的格式。
   LoopbackFormat GrabRecent(uint64_t lease, int back_ms,
                             std::vector<uint8_t>& out);
 
   // 跨应用语音缓存：查词那一刻把租约那一路最近 [back_ms] 毫秒钉在内存里（只留最近一份，
   // 顶替上一份），返回快照 id；没东西返回 0。只在内存里拷一次，不落盘——悬停查词
-  // 每次都钉，真制卡时才 [SaveSnapshot]。
-  uint64_t PinSnapshot(uint64_t lease, int back_ms);
+  // 每次都钉，真制卡时才 [SaveSnapshot]。租约那一路的采集线程已自行退出（渲染端点
+  // 被拔掉等）时返回 0 且 [*stopped]（可空）置 true：环里是旧声音，不钉；持有方应重新
+  // [Start] 同一来源（重起一路，旧租约迁过去）。
+  uint64_t PinSnapshot(uint64_t lease, int back_ms, bool* stopped = nullptr);
 
   // 把快照 [snapshot] 的裸 PCM 写到 [path]，返回它的格式；快照已被顶替 / 写失败返回
   // ok=false（绝不把另一次查词的声音给出去）。

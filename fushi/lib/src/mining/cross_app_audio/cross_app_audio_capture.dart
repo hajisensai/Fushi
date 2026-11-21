@@ -260,10 +260,34 @@ class CrossAppAudioCapture {
     unawaited(sweepStaleCrossAppAudioDirs());
   }
 
+  /// 采集线程已退出的那一路：用本门面持有的同一个 source 重新 start（native 同来源
+  /// 重起、旧租约迁过去，再发一张新租约后交回旧的）。期间被用户关掉 / 换了 source 就
+  /// 不动。起不来（此刻没有输出设备）只留痕：租约照旧挂在那一路上，下次查词再发现、
+  /// 再起。
+  Future<void> _reviveDesktop(LoopbackGalAudioSource source) async {
+    if (!identical(_loopback, source) || !source.holdsLease) return;
+    final PcmFormat? format = await source.start();
+    if (format == null) {
+      ErrorLogService.instance.log(
+        'CrossAppAudio.reviveDesktop',
+        'loopback restart failed: ${source.lastStartError}',
+      );
+    }
+  }
+
   Future<CrossAppAudioSnapshot?> _snapshotDesktop(int backMs) async {
     final LoopbackGalAudioSource? source = _loopback;
     if (source == null) return null;
-    final int? id = await source.pinSnapshot(backMs);
+    final ({int? id, bool captureStopped}) pinned = await source.pinSnapshot(
+      backMs,
+    );
+    if (pinned.captureStopped) {
+      // 常驻录环的采集线程已退出（输出设备被拔掉等）：这次查词没有可信的声音；
+      // 对同一来源重新 start 把这一路重起（旧租约在 native 迁到新的一路），之后的
+      // 查词照常取得到。
+      unawaited(_serialDesktop(() => _reviveDesktop(source)));
+    }
+    final int? id = pinned.id;
     if (id == null) return null;
     final MethodChannel channel = _loopbackChannel!;
     return CrossAppAudioPinnedSnapshot(

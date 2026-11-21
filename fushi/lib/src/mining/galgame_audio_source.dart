@@ -55,7 +55,8 @@ class GalAudioSlice {
 ///     常驻的跨应用语音缓存）时不停。
 ///   - `grabRecent` `{backMs, lease}` -> `Map`：`{pcm:Uint8List, sampleRate, channels,
 ///     bitsPerSample, isFloat}` 或 `{error}`。
-///   - `pinSnapshot` `{backMs, lease}` -> `{id}` 或 `{error}`；`saveSnapshot` `{id, path}` ->
+///   - `pinSnapshot` `{backMs, lease}` -> `{id}` 或 `{error, code}`（`code: stopped` = 这一路
+///     采集线程已退出，需重新 start）；`saveSnapshot` `{id, path}` ->
 ///     格式 map 或 `{error}`（跨应用语音缓存：查词那一刻钉住，制卡时才落盘）。
 ///
 /// 一个实例至多持有一张租约：[start] 成功后持有，[stop] 交回。没持有租约时 [stop] 是
@@ -193,11 +194,19 @@ class LoopbackGalAudioSource implements GalAudioSource {
     }
   }
 
-  /// 把最近 [backMs] 毫秒钉在 native 内存里（只留最近一份，顶替上一份），返回快照 id；
-  /// 没持有租约 / 环里没东西 / native 缺失返回 null。不跨通道搬 PCM、不落盘。
-  Future<int?> pinSnapshot(int backMs) async {
+  /// 把最近 [backMs] 毫秒钉在 native 内存里（只留最近一份，顶替上一份），返回快照 `id`；
+  /// 没持有租约 / 环里没东西 / native 缺失时 `id` 为 null。不跨通道搬 PCM、不落盘。
+  ///
+  /// `captureStopped`：租约还在，但这一路的采集线程已自行退出（渲染端点被拔掉等，native
+  /// 回 `code: stopped`）——环里是退出前的旧声音，native 不钉。持有方应对同一来源重新
+  /// [start]（native 重起一路并把旧租约迁过去），否则常驻持有方从此再也取不到声音。
+  Future<({int? id, bool captureStopped})> pinSnapshot(int backMs) async {
+    const ({int? id, bool captureStopped}) none = (
+      id: null,
+      captureStopped: false,
+    );
     final int? lease = _lease;
-    if (lease == null || backMs <= 0) return null;
+    if (lease == null || backMs <= 0) return none;
     try {
       final Map<Object?, Object?>? r = await _channel
           .invokeMethod<Map<Object?, Object?>>('pinSnapshot', <String, Object?>{
@@ -205,11 +214,14 @@ class LoopbackGalAudioSource implements GalAudioSource {
             'backMs': backMs,
           });
       final Object? id = r?['id'];
-      return id is int && id != 0 ? id : null;
+      return (
+        id: id is int && id != 0 ? id : null,
+        captureStopped: r?['code'] == 'stopped',
+      );
     } on PlatformException {
-      return null;
+      return none;
     } on MissingPluginException {
-      return null;
+      return none;
     }
   }
 

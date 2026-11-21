@@ -323,6 +323,12 @@ LoopbackFormat GrabFromSession(CaptureState& s, int back_ms,
   if (!fmt.ok || back_ms <= 0) {
     return LoopbackFormat{};
   }
+  // 采集线程已自行退出（渲染端点被拔掉 / 失效）：环停在退出那一刻，里面是不知多久
+  // 以前的声音，绝不能当成「最近 back_ms」交出去挂到卡上。同来源的下一次 Start 会
+  // 重起一路并把租约迁过去（见 Start 的 stale 分支）。
+  if (!s.running.load()) {
+    return LoopbackFormat{};
+  }
   std::lock_guard<std::mutex> lock(s.ring_mutex);
   if (s.filled == 0 || s.byte_rate <= 0) {
     return LoopbackFormat{};
@@ -734,7 +740,11 @@ LoopbackFormat AudioLoopbackCapture::GrabRecent(uint64_t lease, int back_ms,
   return GrabFromSession(*it->second, back_ms, out);
 }
 
-uint64_t AudioLoopbackCapture::PinSnapshot(uint64_t lease, int back_ms) {
+uint64_t AudioLoopbackCapture::PinSnapshot(uint64_t lease, int back_ms,
+                                           bool* stopped) {
+  if (stopped != nullptr) {
+    *stopped = false;
+  }
   std::vector<uint8_t> pcm;
   LoopbackFormat fmt;
   uint32_t id = 0;
@@ -743,6 +753,14 @@ uint64_t AudioLoopbackCapture::PinSnapshot(uint64_t lease, int back_ms) {
     id = g_registry.leases.SessionOf(lease);
     const auto it = g_registry.sessions.find(id);
     if (id == 0 || it == g_registry.sessions.end()) {
+      return 0;
+    }
+    if (!it->second->running.load()) {
+      // 租约还在、这一路的采集线程却已退出：持有方据此重新 Start（同来源重起、租约
+      // 迁过去），不让常驻的跨应用缓存从此一直交不出声音。
+      if (stopped != nullptr) {
+        *stopped = true;
+      }
       return 0;
     }
     fmt = GrabFromSession(*it->second, back_ms, pcm);

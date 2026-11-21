@@ -23,6 +23,11 @@ class FakeLoopbackNative {
   /// 下一次 start 回失败（模拟 start 失败后调用方的兜底 stop）。
   bool failNextStart = false;
 
+  /// 采集线程已自行退出（输出设备被拔掉）：租约还在，但环里是旧声音——grabRecent /
+  /// pinSnapshot 不交（pinSnapshot 回 `code: stopped`）；下一次 start 重起这一路、
+  /// 旧租约照旧有效（native 的 stale 分支把它们迁到新的一路）。
+  bool captureDead = false;
+
   /// 这一路此刻在不在录（= 还有活租约）。
   bool get running => leases.isNotEmpty;
 
@@ -54,6 +59,7 @@ class FakeLoopbackNative {
           failNextStart = false;
           return <String, Object?>{'error': 'start failed', 'code': 'busy'};
         }
+        captureDead = false;
         final int lease = ++_nextLease;
         leases.add(lease);
         return <String, Object?>{...format, 'lease': lease};
@@ -62,13 +68,22 @@ class FakeLoopbackNative {
         if (!running) _pinned = 0;
         return null;
       case 'grabRecent':
-        if (!leases.contains(args['lease'])) {
+        if (!leases.contains(args['lease']) || captureDead) {
           return <String, Object?>{'error': 'no audio buffered'};
         }
         return <String, Object?>{...format, 'pcm': pcm};
       case 'pinSnapshot':
         if (!leases.contains(args['lease'])) {
-          return <String, Object?>{'error': 'no audio buffered'};
+          return <String, Object?>{
+            'error': 'no audio buffered',
+            'code': 'empty',
+          };
+        }
+        if (captureDead) {
+          return <String, Object?>{
+            'error': 'capture stopped',
+            'code': 'stopped',
+          };
         }
         _pinned = ++_nextSnapshot;
         return <String, Object?>{'id': _pinned};

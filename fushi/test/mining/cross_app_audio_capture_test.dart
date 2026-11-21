@@ -315,6 +315,28 @@ void main() {
       },
     );
 
+    test(
+      'a capture thread that died never pins stale audio and gets restarted',
+      () async {
+        final CrossAppAudioCapture capture = desktopCapture();
+        expect((await capture.start()).running, isTrue);
+        // 输出设备被拔掉：native 采集线程退出，环停在退出那一刻。
+        native.captureDead = true;
+        expect(await capture.snapshot(), isNull, reason: '死掉那一路的环里是旧声音，绝不挂到卡上');
+        await pumpEventQueue();
+        expect(
+          native.calls.where((MethodCall c) => c.method == 'start'),
+          hasLength(2),
+          reason: '常驻缓存对同一来源重新 start，把这一路重起',
+        );
+        expect(native.captureDead, isFalse);
+        expect(native.leases, hasLength(1), reason: '新租约到手后交回旧的那张');
+        expect(await capture.snapshot(), isA<CrossAppAudioPinnedSnapshot>());
+        await capture.stop();
+        expect(native.running, isFalse);
+      },
+    );
+
     test('no snapshot while the cache is off', () async {
       final CrossAppAudioCapture capture = desktopCapture();
       expect(await capture.snapshot(), isNull);
