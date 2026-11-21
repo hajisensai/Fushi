@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4417 条。点号进各自文件。
+> 共 4418 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5151](bugs/BUG-5151-torrent-offline-mountpoint-resume-freeze.md) | ✅ | ✅ | 空挂载点目录还在而数据不可达时仍开跑清零续传；离线期间写出的空位图让下次启动把种子放出来；上传闸登记表每加一颗种子清扫全表 |
 | [BUG-5140](bugs/BUG-5140-favorite-sentence-recolor.md) | 🚧 | 🚧 | 收藏句改色：已收藏的书摘不能改颜色（同步缺颜色更新时间） |
 | [BUG-5088](bugs/BUG-5088-readintosync-blocks-gc-safepoint.md) | ✅ | ✅ | readintosync-blocks-gc-safepoint |
 | [BUG-5087](bugs/BUG-5087-sync-video-sweep-tests-teardown-temp-locked.md) | 🚧 | 🚧 | sync-video-sweep-tests-teardown-temp-locked |
