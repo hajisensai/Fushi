@@ -28,6 +28,7 @@ import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_cue.dar
 import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_track.dart';
 import 'package:fushi_engine/media/video/bitmap_subtitle/graphic_subtitle_input.dart';
 import 'package:fushi_engine/media/video/bitmap_subtitle/mpegts_subtitle_demuxer.dart';
+import 'package:fushi_engine/media/video/bitmap_subtitle/pgs_subtitle_parser.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 import 'package:meta/meta.dart' show visibleForTesting;
@@ -351,9 +352,12 @@ BitmapSubtitleTrackHeader? readGraphicSubtitleTrackHeader(
 /// 认不出视为空）：边抽边识别时每隔几秒重读一次增长中的文件，解码不该占 UI 线程。
 /// [complete] 为假 = 抽轨还在写，尾部没收完的包不交出。
 ///
-/// 经 TS 承载的编码（VobSub / DVB）**增量**解复用：同一路径的会话记住解析到哪，下次只读、
-/// 只解析新写出的字节（[MpegTsSubtitleDemuxSession]，交出的包与每次从头重解整个文件逐包
-/// 相同）；cue 仍按攒下的全部包整轨解码。`complete` 那次读完后会话即释放。PGS 仍整文件重读。
+/// 一律**增量**：同一路径的会话记住解析到哪，下次只读、只解析新写出的字节，结果与每次
+/// 从头重解整个文件逐条相同；`complete` 那次读完后会话即释放，文件变短（抽轨重来）换新会话。
+/// - 经 TS 承载的编码（VobSub / DVB）：[MpegTsSubtitleDemuxSession] 增量解复用，cue 仍按
+///   攒下的全部包整轨解码；
+/// - PGS：[PgsSubtitleParseSession] 增量解析段流（新字节在后台 isolate 解析，已攒下的 cue
+///   留在会话里不来回拷贝）。
 Future<List<BitmapSubtitleCue>> readGraphicSubtitleTrackInBackground(
   String payloadPath, {
   bool complete = false,
@@ -370,10 +374,7 @@ Future<List<BitmapSubtitleCue>> readGraphicSubtitleTrackInBackground(
     );
     if (header == null) return const <BitmapSubtitleCue>[];
     if (header.codec == BitmapSubtitleCodec.pgs) {
-      final Uint8List bytes = await payload.readAsBytes();
-      return await Isolate.run(
-        () => decodeBitmapSubtitlePayload(bytes, header, complete: complete),
-      );
+      return await _readPgsCues(payloadPath, complete: complete);
     }
     final List<BitmapSubtitlePacket> packets = await _readTsPackets(
       payloadPath,
@@ -397,11 +398,13 @@ Future<Uint8List> _readPrefix(File file, int length) async {
   }
 }
 
-/// 同时在增量解复用的抽轨文件上限：边抽边识别同一时刻只有一两条轨，留几条给切换回来的轨。
+/// 同时在增量读取的抽轨文件上限（PGS 与 TS 共用）：边抽边识别同一时刻只有一两条轨，
+/// 留几条给切换回来的轨。
 const int _kMaxTsSessions = 4;
 
-/// 路径 → 增量解复用会话（插入序即最近使用序）。
-final Map<String, _TsSessionSlot> _tsSessions = <String, _TsSessionSlot>{};
+/// 路径 → 增量读取会话（插入序即最近使用序）。
+final Map<String, _TrackSessionSlot> _tsSessions =
+    <String, _TrackSessionSlot>{};
 
 /// 新建增量解复用会话的工厂。生产恒为原生会话；测试换成能在 worker 读取中途挂住的 fake，
 /// 验证淘汰 / 文件消失时句柄释放不越过在途读取。
@@ -412,28 +415,44 @@ MpegTsSubtitleDemuxSession Function() debugTsDemuxSessionFactory =
 /// 测试间清场：退役全部缓存中的会话（各自等在途读取结束后释放）。
 @visibleForTesting
 void debugRetireAllTsDemuxSessions() {
-  final List<_TsSessionSlot> slots = _tsSessions.values.toList();
+  final List<_TrackSessionSlot> slots = _tsSessions.values.toList();
   _tsSessions.clear();
-  for (final _TsSessionSlot slot in slots) {
+  for (final _TrackSessionSlot slot in slots) {
     slot.retire();
   }
 }
 
-class _TsSessionSlot {
-  _TsSessionSlot() : session = debugTsDemuxSessionFactory();
-
-  final MpegTsSubtitleDemuxSession session;
-
-  /// 同一会话上的全部使用——每次读取和最终的释放——都串在这条链上：原生句柄不能被两个
-  /// isolate 同时用，更不能在 worker isolate 还拿着裸地址读 / 喂的时候被释放
-  /// （[MpegTsSubtitleDemuxSession.readMore] 把地址带进 `Isolate.run`）。
+/// 一条抽轨文件的增量读取会话（[_tsSessions] 里的一格）。
+sealed class _TrackSessionSlot {
+  /// 同一会话上的全部使用——每次读取和最终的释放——都串在这条链上：会话状态不能被两次
+  /// 读取交错改写；TS 的原生句柄更不能被两个 isolate 同时用，也不能在 worker isolate 还
+  /// 拿着裸地址读 / 喂的时候被释放（[MpegTsSubtitleDemuxSession.readMore] 把地址带进
+  /// `Isolate.run`）。
   Future<void> tail = Future<void>.value();
 
   bool _retired = false;
 
+  /// 退役：调用方已把它移出 [_tsSessions]，之后不会再有新读取排进来。幂等。
+  void retire();
+}
+
+/// PGS 段流的增量解析会话：纯 Dart 状态，退役只是不再接新读取。
+final class _PgsSessionSlot extends _TrackSessionSlot {
+  final PgsSubtitleParseSession session = PgsSubtitleParseSession();
+
+  @override
+  void retire() => _retired = true;
+}
+
+final class _TsSessionSlot extends _TrackSessionSlot {
+  _TsSessionSlot() : session = debugTsDemuxSessionFactory();
+
+  final MpegTsSubtitleDemuxSession session;
+
   /// 退役这个会话：调用方已把它移出 [_tsSessions]，之后不会再有新读取排进来；释放排在链尾，
   /// 等已排队 / 在途的读取全部结束才真正关原生句柄。幂等，句柄恰好释放一次；链上每一环都
   /// 吞掉了读取错误，所以释放一定会执行（不泄漏）。
+  @override
   void retire() {
     if (_retired) return;
     _retired = true;
@@ -444,19 +463,66 @@ class _TsSessionSlot {
 /// 把 [path] 的会话移出缓存并退役（在途读取结束后才释放，见 [_TsSessionSlot.retire]）。
 void _dropTsSession(String path) => _tsSessions.remove(path)?.retire();
 
-Future<List<BitmapSubtitlePacket>> _readTsPackets(
-  String path, {
-  required bool complete,
-}) {
-  _TsSessionSlot? slot = _tsSessions.remove(path);
-  if (slot == null) {
-    slot = _TsSessionSlot();
+/// 取 [path] 的会话并挪到最近使用的位置；没有（或是别的编码的会话）就按 [create] 新建，
+/// 超过上限时淘汰最久没用的。
+T _takeSession<T extends _TrackSessionSlot>(String path, T Function() create) {
+  final _TrackSessionSlot? existing = _tsSessions.remove(path);
+  T slot;
+  if (existing is T) {
+    slot = existing;
+  } else {
+    existing?.retire();
+    slot = create();
     while (_tsSessions.length >= _kMaxTsSessions) {
       _dropTsSession(_tsSessions.keys.first);
     }
   }
-  _tsSessions[path] = slot; // 挪到最近使用的位置
-  final _TsSessionSlot current = slot;
+  _tsSessions[path] = slot;
+  return slot;
+}
+
+/// PGS 抽轨文件的增量读取：只读会话 [PgsSubtitleParseSession.offset] 之后新写出的字节，
+/// 在后台 isolate 解析后并入会话。
+Future<List<BitmapSubtitleCue>> _readPgsCues(
+  String path, {
+  required bool complete,
+}) {
+  final _PgsSessionSlot current = _takeSession(path, _PgsSessionSlot.new);
+  assert(!current._retired, 'a retired PGS session must not take new reads');
+  final Future<List<BitmapSubtitleCue>> run = current.tail.then((_) async {
+    final PgsSubtitleParseSession session = current.session;
+    final RandomAccessFile raf = await File(path).open();
+    final Uint8List? chunk;
+    try {
+      final int length = await raf.length();
+      if (length < session.offset) {
+        chunk = null;
+      } else {
+        await raf.setPosition(session.offset);
+        chunk = await raf.read(length - session.offset);
+      }
+    } finally {
+      await raf.close();
+    }
+    if (chunk == null) {
+      // 文件比已解析的位置还短：抽轨重来了，换新会话从头解。
+      _retireSession(path, current);
+      return _readPgsCues(path, complete: complete);
+    }
+    await session.addWith(chunk, Isolate.run<PgsParsedChunk>);
+    final List<BitmapSubtitleCue> cues = session.cues;
+    if (complete) _retireSession(path, current);
+    return cues;
+  });
+  current.tail = run.then<void>((_) {}, onError: (Object _) {});
+  return run;
+}
+
+Future<List<BitmapSubtitlePacket>> _readTsPackets(
+  String path, {
+  required bool complete,
+}) {
+  final _TsSessionSlot current = _takeSession(path, _TsSessionSlot.new);
   assert(!current._retired, 'a retired TS session must not take new reads');
   final Future<List<BitmapSubtitlePacket>> run = current.tail.then((_) async {
     if (current.session.completed) {
@@ -483,7 +549,7 @@ Future<List<BitmapSubtitlePacket>> _readTsPackets(
 
 /// 退役 [slot] 的会话；它还占着 [path] 的位置时一并移除。在链上的读取里调用时，释放排在
 /// 这次读取（及其后已排队的读取）之后。
-void _retireSession(String path, _TsSessionSlot slot) {
+void _retireSession(String path, _TrackSessionSlot slot) {
   if (identical(_tsSessions[path], slot)) _tsSessions.remove(path);
   slot.retire();
 }

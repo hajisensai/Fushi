@@ -588,6 +588,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
         ref: ref,
         game: game,
         onDetail: () => unawaited(_openDetailFrom(game, origin)),
+        onLaunch: () => unawaited(_launchGame(game)),
       );
 
   /// 带着视图跳到游戏库：落进库页的视图偏好（库页尚未挂载时读到的就是它），
@@ -615,7 +616,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
       } else {
         content = Padding(
           padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
-          child: collage ? _buildCollageEmpty(context) : _buildEmpty(context),
+          child: _buildEmptyState(context),
         );
       }
     } else {
@@ -660,20 +661,6 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
           ),
           Expanded(child: content),
         ],
-      ),
-    );
-  }
-
-  /// 空库态：与库页同一个共享空态 [FushiPlaceholderMessage]（M3E 饱和色块图标 /
-  /// Apple ContentUnavailableView 式无底居中）+「添加游戏」主按钮（切到库页添加）。
-  Widget _buildEmpty(BuildContext context) {
-    return FushiPlaceholderMessage(
-      icon: FushiIcons.games,
-      message: t.game_empty,
-      action: FushiFilledButton.icon(
-        onPressed: widget.onShowLibrary,
-        icon: const FushiIcon(FushiIcons.add),
-        label: Text(t.game_add),
       ),
     );
   }
@@ -886,8 +873,9 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     );
   }
 
-  /// 拼贴版空库：引导块（导入 / 去发现）。「去发现」只跟 externalDiscovery 门控。
-  Widget _buildCollageEmpty(BuildContext context) {
+  /// 空库态（拼贴版与经典版同一份，BUG-4992）：居中的共享空态 + 导入 / 去发现。
+  /// 「去发现」只跟 externalDiscovery 门控。
+  Widget _buildEmptyState(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),

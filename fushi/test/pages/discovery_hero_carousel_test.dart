@@ -1,4 +1,14 @@
+import 'dart:io';
+import 'dart:ui' as ui;
+
 import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart'
+    show
+        RenderClipPath,
+        RenderClipRect,
+        RenderClipRRect,
+        RenderRepaintBoundary,
+        RenderViewportBase;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,6 +20,8 @@ import 'package:fushi/src/pages/implementations/discovery/discovery_widgets.dart
 /// 一处钉死。
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
+
+  heroShadowBleedTests();
 
   Future<void> pumpCarousel(
     WidgetTester tester, {
@@ -224,4 +236,156 @@ bool _primaryFocusInside(WidgetTester tester, Finder finder) {
     return !inside;
   });
   return inside;
+}
+
+/// 设计稿 11-20 #14：漫画发现页大卡外面一圈「框」= 首块投影被轮播 PageView 的视口
+/// 按自身矩形裁成直角。视口要给投影留出余量：首块色块到轮播之间每一层会裁切的
+/// 祖先（滚动视口 / ClipRect…）都得把「块 + 投影范围」整个装下；像素上卡片下沿
+/// 外 8px 处仍在投影里（比远处背景暗、且比 30px 处更暗 = 渐变，而不是硬台阶）。
+void heroShadowBleedTests() {
+  Rect shadowBounds(Rect block, List<BoxShadow> shadows) {
+    Rect out = block;
+    for (final BoxShadow s in shadows) {
+      out = out.expandToInclude(
+        block.shift(s.offset).inflate(s.blurRadius + s.spreadRadius),
+      );
+    }
+    return out;
+  }
+
+  testWidgets('首块投影不被轮播视口裁切：裁切祖先都装得下块 + 投影，下沿外有渐变', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final GlobalKey boundary = GlobalKey();
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            backgroundColor: Colors.white,
+            body: RepaintBoundary(
+              key: boundary,
+              child: ColoredBox(
+                color: Colors.white,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    const SizedBox(height: 60),
+                    DiscoveryHeroCarousel(
+                      itemCount: 2,
+                      autoAdvanceInterval: null,
+                      itemBuilder: (BuildContext context, int index) =>
+                          DiscoveryHeroBanner(
+                            title: 'Title $index',
+                            actionKey: ValueKey<String>('open-$index'),
+                            onOpen: () {},
+                          ),
+                    ),
+                    const Expanded(child: SizedBox()),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final RenderObject carousel = tester.renderObject(
+      find.byType(DiscoveryHeroCarousel),
+    );
+    // 首块色块那层带投影的 DecoratedBox。
+    final Finder shadowed = find.descendant(
+      of: find.byKey(const ValueKey<String>('open-0')),
+      matching: find.byWidgetPredicate(
+        (Widget w) =>
+            w is DecoratedBox &&
+            w.decoration is ShapeDecoration &&
+            ((w.decoration as ShapeDecoration).shadows?.isNotEmpty ?? false),
+      ),
+    );
+    // 色块本身（最大的那层；竖封面也带一层小投影）。
+    expect(shadowed, findsWidgets);
+    final Element blockElement = shadowed.evaluate().reduce(
+      (Element a, Element b) =>
+          (a.size!.width * a.size!.height) >= (b.size!.width * b.size!.height)
+          ? a
+          : b,
+    );
+    final DecoratedBox box = blockElement.widget as DecoratedBox;
+    final RenderBox blockBox = blockElement.renderObject! as RenderBox;
+    final Rect block = blockBox.localToGlobal(Offset.zero) & blockBox.size;
+    final Rect need = shadowBounds(
+      block,
+      (box.decoration as ShapeDecoration).shadows!,
+    );
+    RenderObject? node = blockBox.parent;
+    int clips = 0;
+    while (node != null && !identical(node, carousel.parent)) {
+      // Material(transparency) 恒插一层 RenderClipPath，clipBehavior 为
+      // none 时不裁，只算真正会裁的那几层。
+      final bool clipping =
+          (node is RenderViewportBase && node.clipBehavior != Clip.none) ||
+          (node is RenderClipRect && node.clipBehavior != Clip.none) ||
+          (node is RenderClipRRect && node.clipBehavior != Clip.none) ||
+          (node is RenderClipPath && node.clipBehavior != Clip.none);
+      if (clipping) {
+        clips++;
+        final RenderBox clipBox = node as RenderBox;
+        final Rect clip = clipBox.localToGlobal(Offset.zero) & clipBox.size;
+        expect(
+          clip.left <= need.left + 0.5 &&
+              clip.top <= need.top + 0.5 &&
+              clip.right >= need.right - 0.5 &&
+              clip.bottom >= need.bottom - 0.5,
+          isTrue,
+          reason: '${node.runtimeType} $clip 裁掉了投影 $need（块 $block）',
+        );
+      }
+      node = node.parent;
+    }
+    expect(clips, greaterThan(0), reason: 'PageView 视口本身就是一层裁切');
+
+    // 像素：下沿外 8px 在投影里、30px 更淡、远处是背景白。
+    final ui.Image image =
+        await tester.runAsync(
+              () =>
+                  (boundary.currentContext!.findRenderObject()!
+                          as RenderRepaintBoundary)
+                      .toImage(),
+            )
+            as ui.Image;
+    final ByteData data = (await tester.runAsync<ByteData?>(
+      () => image.toByteData(),
+    ))!;
+    int luma(Offset p) {
+      final int i = (p.dy.round() * image.width + p.dx.round()) * 4;
+      return data.getUint8(i) + data.getUint8(i + 1) + data.getUint8(i + 2);
+    }
+
+    final Offset origin = tester.getTopLeft(find.byKey(boundary));
+    final double x = block.center.dx - origin.dx;
+    final int near = luma(Offset(x, block.bottom - origin.dy + 8));
+    final int mid = luma(Offset(x, block.bottom - origin.dy + 30));
+    final int far = luma(Offset(x, block.bottom - origin.dy + 120));
+    expect(far, 255 * 3, reason: '远处是背景白');
+    expect(near, lessThan(mid), reason: '8px 处比 30px 处更暗（渐变）');
+    expect(mid, lessThanOrEqualTo(far));
+    expect(near, lessThan(far - 6), reason: '8px 处在投影里，不是被裁掉的背景');
+    final String? shotDir = Platform.environment['FUSHI_PREVIEW_DIR'];
+    if (shotDir != null) {
+      final ByteData? png = await tester.runAsync<ByteData?>(
+        () => image.toByteData(format: ui.ImageByteFormat.png),
+      );
+      await tester.runAsync(() async {
+        final File out = File('$shotDir/discovery_hero_shadow.png');
+        await out.parent.create(recursive: true);
+        await out.writeAsBytes(png!.buffer.asUint8List());
+      });
+    }
+    image.dispose();
+  });
 }

@@ -660,9 +660,9 @@ class _MusicTrackVideosSectionState extends State<MusicTrackVideosSection> {
               spacing: tokens.spacing.gap,
               runSpacing: tokens.spacing.gap,
               children: <Widget>[
-                // 曲目本身就是 MV（曲库里的视频容器，拍板台 jeNKF9u0WJ）：在视频播放页
-                // 看（ASS 特效字幕 / 暂停识别画面文字）。视频模块关掉时不给入口。
-                if (isMusicLocalVideoTrack(widget.track) &&
+                // 曲目本身就是 MV（曲库里的视频容器，拍板台 jeNKF9u0WJ；网络来源的串流看，
+                // left3568）：在视频播放页看。视频模块关掉时不给入口。
+                if (isMusicWatchableVideoTrack(widget.track) &&
                     ProviderScope.containerOf(context, listen: false)
                         .read(appProvider)
                         .moduleVisibility

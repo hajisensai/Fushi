@@ -144,8 +144,17 @@ mixin _FushiDbStatistics
         ),
       );
 
-  Future<List<ReadingStatisticRow>> getAllReadingStatistics() =>
-      select(readingStatistics).get();
+  /// 全部逐日阅读统计行；[fromDateKey] 非 null 时只取统计日 ≥ 它的行。
+  Future<List<ReadingStatisticRow>> getAllReadingStatistics({
+    String? fromDateKey,
+  }) {
+    final SimpleSelectStatement<$ReadingStatisticsTable, ReadingStatisticRow>
+    q = select(readingStatistics);
+    if (fromDateKey != null) {
+      q.where((t) => t.dateKey.isBiggerOrEqualValue(fromDateKey));
+    }
+    return q.get();
+  }
 
   /// 一本书（按统计行的 `title`）的全部逐日统计行。走 (title, dateKey) 唯一键的
   /// 前缀，不扫整表——同步每导入 / 导出一本书都要读它一次（jHQpTfjrNB）。
@@ -209,9 +218,18 @@ mixin _FushiDbStatistics
         readingHourlyLogs,
       )..where((t) => t.dateKey.equals(dateKey))).get();
 
-  /// 逐行读取全部阅读小时日志，供云聚合同步 materialize 快照（TODO-1056 phase B）。
-  Future<List<ReadingHourlyLogRow>> getAllReadingHourlyLogs() =>
-      select(readingHourlyLogs).get();
+  /// 逐行读取全部阅读小时日志，供云聚合同步 materialize 快照（TODO-1056 phase B）
+  /// 与统计事实面；[fromDateKey] 非 null 时只取统计日 ≥ 它的行。
+  Future<List<ReadingHourlyLogRow>> getAllReadingHourlyLogs({
+    String? fromDateKey,
+  }) {
+    final SimpleSelectStatement<$ReadingHourlyLogsTable, ReadingHourlyLogRow>
+    q = select(readingHourlyLogs);
+    if (fromDateKey != null) {
+      q.where((t) => t.dateKey.isBiggerOrEqualValue(fromDateKey));
+    }
+    return q.get();
+  }
 
   /// OVERWRITE 语义：把 (dateKey, hour, format) 桶设为绝对值 [readingTimeMs]。
   /// 云聚合合并已在 Dart 侧算好 MAX，这里直接落绝对值（对照
@@ -240,8 +258,36 @@ mixin _FushiDbStatistics
   );
 
   // ── video watch statistics ──────────────────────────────────────
-  Future<List<VideoWatchStatisticRow>> getAllVideoWatchStatistics() =>
-      select(videoWatchStatistics).get();
+  /// 全部逐日观看统计行；[fromDateKey] 非 null 时只取统计日 ≥ 它的行。
+  Future<List<VideoWatchStatisticRow>> getAllVideoWatchStatistics({
+    String? fromDateKey,
+  }) {
+    final SimpleSelectStatement<
+      $VideoWatchStatisticsTable,
+      VideoWatchStatisticRow
+    >
+    q = select(videoWatchStatistics);
+    if (fromDateKey != null) {
+      q.where((t) => t.dateKey.isBiggerOrEqualValue(fromDateKey));
+    }
+    return q.get();
+  }
+
+  /// 一个视频的 legacy 逐日观看行：`book_uid` 命中，无身份行（NULL / ''）按
+  /// [orTitle] 回退——与 `statFactBelongsToBook` 同一口径（[orTitle] 为 null / 空 =
+  /// 不回退）。统计侧栏按视频读，不再把全表拉回来再丢掉。
+  Future<List<VideoWatchStatisticRow>> getVideoWatchStatisticsForMedia({
+    required String bookUid,
+    String? orTitle,
+  }) =>
+      (select(videoWatchStatistics)..where(
+            (t) => orTitle == null || orTitle.isEmpty
+                ? t.bookUid.equals(bookUid)
+                : t.bookUid.equals(bookUid) |
+                      ((t.bookUid.isNull() | t.bookUid.equals('')) &
+                          t.title.equals(orTitle)),
+          ))
+          .get();
 
   // ── activity events (v49) ───────────────────────────────────────
   /// 追加一条活动事件（每次阅读/观看 session 结束或导入完成时写一行）。纯追加，
@@ -334,9 +380,11 @@ mixin _FushiDbStatistics
 
   /// 取最近 [limit] 条活动事件，按精确时刻倒序（首页 Activity 面板消费）。
   /// [eventTypes] 非空时只取这些类别（如只看 'read'），null = 全部类别。
+  /// [fromDateKey] 非 null 时只取统计日 ≥ 它的行。
   Future<List<ActivityEventRow>> getRecentActivityEvents({
     int limit = 200,
     List<String>? eventTypes,
+    String? fromDateKey,
   }) {
     final SimpleSelectStatement<$ActivityEventsTable, ActivityEventRow> query =
         select(activityEvents)
@@ -349,6 +397,9 @@ mixin _FushiDbStatistics
           ..limit(limit);
     if (eventTypes != null && eventTypes.isNotEmpty) {
       query.where((t) => t.eventType.isIn(eventTypes));
+    }
+    if (fromDateKey != null) {
+      query.where((t) => t.dateKey.isBiggerOrEqualValue(fromDateKey));
     }
     return query.get();
   }
@@ -565,17 +616,35 @@ mixin _FushiDbStatistics
   ///
   /// v105：默认只取 [profileId]（null = 当前激活 Profile）的段；只有同步 / 备份
   /// 导出这种要搬**整库**的调用方传 `allProfiles: true`。
+  ///
+  /// [mediaKind] 只取一个域；再给 [mediaKey] 就只取一个媒体：身份行按
+  /// `media_key` 命中，无身份行（`media_key = ''`）按 [orTitle] 回退——与
+  /// `statFactBelongsToBook` 同一口径（[orTitle] 为 null / 空 = 不回退）。
   Future<List<StudySegmentRow>> getStudySegments({
     String? fromDateKey,
     String? toDateKey,
     int? profileId,
     bool allProfiles = false,
+    String? mediaKind,
+    String? mediaKey,
+    String? orTitle,
   }) async {
     final SimpleSelectStatement<$StudySegmentsTable, StudySegmentRow> q =
         select(studySegments);
     if (!allProfiles) {
       final int scope = profileId ?? await resolveActiveProfileId();
       q.where((t) => t.profileId.equals(scope));
+    }
+    if (mediaKind != null) {
+      q.where((t) => t.mediaKind.equals(mediaKind));
+    }
+    if (mediaKey != null) {
+      q.where(
+        (t) => orTitle == null || orTitle.isEmpty
+            ? t.mediaKey.equals(mediaKey)
+            : t.mediaKey.equals(mediaKey) |
+                  (t.mediaKey.equals('') & t.title.equals(orTitle)),
+      );
     }
     if (fromDateKey != null) {
       q.where((t) => t.dateKey.isBiggerOrEqualValue(fromDateKey));
@@ -733,12 +802,17 @@ mixin _FushiDbStatistics
   /// v113：游戏已从库移除的孤儿会话照样计入；[getGalgameSessionTitles] 给它们的
   /// 显示名快照。
   Future<List<(String gameId, String dateKey, int totalSeconds)>>
-  getGalgameDailySecondsByGame({int? profileId}) async {
+  getGalgameDailySecondsByGame({int? profileId, String? fromDateKey}) async {
     final int scope = profileId ?? await resolveActiveProfileId();
     final List<QueryRow> rows = await customSelect(
       'SELECT game_id, date_key, COALESCE(SUM(duration_seconds), 0) AS s '
-      'FROM galgame_sessions WHERE profile_id = ? GROUP BY game_id, date_key',
-      variables: [Variable.withInt(scope)],
+      'FROM galgame_sessions WHERE profile_id = ?'
+      '${fromDateKey == null ? '' : ' AND date_key >= ?'} '
+      'GROUP BY game_id, date_key',
+      variables: <Variable<Object>>[
+        Variable.withInt(scope),
+        if (fromDateKey != null) Variable.withString(fromDateKey),
+      ],
       readsFrom: {galgameSessions},
     ).get();
     return <(String, String, int)>[
@@ -1189,9 +1263,16 @@ mixin _FushiDbStatistics
   Future<List<VideoHourlyLogRow>> getVideoHourlyLogsForDate(String dateKey) =>
       (select(videoHourlyLogs)..where((t) => t.dateKey.equals(dateKey))).get();
 
-  /// 逐行读取全部视频小时日志，供云聚合同步 materialize 快照（TODO-1056 phase B）。
-  Future<List<VideoHourlyLogRow>> getAllVideoHourlyLogs() =>
-      select(videoHourlyLogs).get();
+  /// 逐行读取全部视频小时日志，供云聚合同步 materialize 快照（TODO-1056 phase B）
+  /// 与统计事实面；[fromDateKey] 非 null 时只取统计日 ≥ 它的行。
+  Future<List<VideoHourlyLogRow>> getAllVideoHourlyLogs({String? fromDateKey}) {
+    final SimpleSelectStatement<$VideoHourlyLogsTable, VideoHourlyLogRow> q =
+        select(videoHourlyLogs);
+    if (fromDateKey != null) {
+      q.where((t) => t.dateKey.isBiggerOrEqualValue(fromDateKey));
+    }
+    return q.get();
+  }
 
   /// OVERWRITE 语义：把 (dateKey, hour) 桶设为绝对值 [watchTimeMs]（对照
   /// [addVideoHourlyWatchTime] 的累加）。云聚合合并已在 Dart 侧算好 MAX。
@@ -1704,6 +1785,21 @@ mixin _FushiDbStatistics
   /// 写回用 [setLookupCount] / [setMineCountPerBook]（MAX 语义、幂等）。
   Future<List<LookupMiningCounterRow>> getAllLookupMiningCounters() =>
       select(lookupMiningCounters).get();
+
+  /// 一本书 / 一个视频的查词 / 制卡计数行（不分来源）：`book_key` 命中，`book_key`
+  /// 为空的旧行按 [orTitle] 回退（[orTitle] 为 null / 空 = 不回退）——与
+  /// `summarizeReaderBookStats` 切本书计数同一口径。
+  Future<List<LookupMiningCounterRow>> getLookupMiningCountersForBook({
+    required String bookKey,
+    String? orTitle,
+  }) =>
+      (select(lookupMiningCounters)..where(
+            (t) => orTitle == null || orTitle.isEmpty
+                ? t.bookKey.equals(bookKey)
+                : t.bookKey.equals(bookKey) |
+                      (t.bookKey.equals('') & t.title.equals(orTitle)),
+          ))
+          .get();
 
   // ── mined sentences ──────────────────────────────────────────────
 

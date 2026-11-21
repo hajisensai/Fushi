@@ -2,7 +2,9 @@
 ///
 /// - `GET  /api/admin/backups`          列出 `<data>/backups/` 里的备份 + 进行中 / 上次失败；
 /// - `POST /api/admin/backups`          后台开始一份（正文 `{"documents": false}` 跳过
-///                                       documents/），立即回 202 + 文件名；已在跑回 409；
+///                                       documents/），立即回 202 + 文件名；已在跑回 409；复习库正在换代迁移回
+///                                       409 `srs_migration_running`（提交点会改名出 `srs4.db`、原位封存 `srs.db`，中途拷
+///                                       出来的包可能只有封存的旧库）。备份期间迁移不开始，备份完再判定（`ServerSrs.holdForBackup`）；
 /// - `GET  /api/admin/backups/<name>`   下载；
 /// - `DELETE /api/admin/backups/<name>` 删除。
 ///
@@ -17,6 +19,8 @@ import 'dart:io';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/backup/server_backup.dart';
+import 'package:fushi_server/src/server_srs.dart'
+    show ServerSrs, ServerSrsBackupHold;
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 
@@ -119,17 +123,29 @@ class AdminBackups {
     if (docs != null && docs is! bool) {
       throw const FormatException('documents must be a boolean');
     }
+    // 复习库目录在迁移中不一致：拒绝；不在迁移就占住，备份期间不让迁移开始（复习关着 = 没有 ServerSrs，不用占）。
+    final ServerSrs? srs = ctx.host.srs;
+    final ServerSrsBackupHold? hold = srs?.holdForBackup();
+    if (srs != null && hold == null) {
+      return _jsonResponse(<String, Object?>{
+        'error': 'srs_migration_running',
+      }, 409);
+    }
     String name = serverBackupFileName(_now());
     for (int i = 2; File(p.join(_dir.path, name)).existsSync(); i++) {
       name = serverBackupFileName(_now()).replaceFirst('.zip', '-$i.zip');
     }
     _running = name;
     _lastError = null;
-    _job = _run(name, includeDocuments: docs as bool? ?? true);
+    _job = _run(name, includeDocuments: docs as bool? ?? true, hold: hold);
     return _jsonResponse(<String, Object?>{'name': name}, 202);
   }
 
-  Future<void> _run(String name, {required bool includeDocuments}) async {
+  Future<void> _run(
+    String name, {
+    required bool includeDocuments,
+    required ServerSrsBackupHold? hold,
+  }) async {
     try {
       // 备份目录只给属主：里面每份包都含全部凭据。
       await _dir.create(recursive: true);
@@ -147,6 +163,7 @@ class AdminBackups {
       engineLog.log('AdminBackups.create', e, stack);
     } finally {
       _running = null;
+      hold?.release();
     }
   }
 }

@@ -229,12 +229,14 @@ class OnlineSourceAcquisitionBackend implements VideoAcquisitionChannelBackend {
 Future<List<VideoAcquisitionSearchTarget>> mihonAnimeAcquisitionTargets(
   MihonManager manager,
 ) async {
-  // initialise 的最后一步是刷新扩展仓库，离线时会抛，但已装的来源在那之前就已
-  // 读出——有来源就照常搜；一个来源都没读出来又抛了，才如实当「整个渠道失败」
-  // 报，而不是伪装成「没装扩展」。
+  // 只等本地就绪段（建目录 + 读库，不发网络）：这里只要已装扩展里启用的来源，
+  // 与在线漫画开章同一口径（MihonLibraryAdapter._context）。等完整 initialise()
+  // 会陪着刷新扩展仓库目录——仓库多 / 连不上时以分钟计，找片就一直转圈。
+  // 本地段后半（回收预览 / 暂存 APK）失败时来源可能已读出——有来源就照常搜；一个
+  // 来源都没读出来又抛了，才如实当「整个渠道失败」报，而不是伪装成「没装扩展」。
   Object? initError;
   try {
-    await manager.initialise();
+    await manager.ensureLocalReady();
   } on Object catch (error) {
     initError = error;
   }

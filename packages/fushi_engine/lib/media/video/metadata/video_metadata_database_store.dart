@@ -3,11 +3,13 @@ library;
 
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart' show BooleanExpressionOperators, Value;
 import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart'
     show hasIncompleteMalCredits;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_collection_relation_sync.dart';
+import 'package:fushi_engine/media/video/metadata/video_related_works.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
@@ -280,6 +282,39 @@ class VideoMetadataDatabaseStore {
         now: now,
       );
       await _replaceRawSnapshot(workId, metadata, now);
+      // 系列关系（续作 / 前传 / 外传…）：起点是作品的归属——合集，或挂在单个
+      // 视频上的作品（散装电影，v162）。只用本次响应里本来就有的关系（TMDB 电影
+      // 的合集成员由 provider 在刮削时随详情附上）；载荷没带关系信息（AniDB 只有
+      // 目录、TMDB 剧集、合集请求失败）时不动已有行。
+      final MediaCollectionRow? ownerCollection = localWork.collection;
+      final VideoRelationOwner relationOwner = ownerCollection != null
+          ? VideoRelationOwner.collection(ownerCollection.id)
+          : VideoRelationOwner.video(localWork.members.single.bookUid);
+      final List<VideoRelatedWork>? related = relatedWorksFromRawPayload(
+        metadata.provider.name,
+        metadata.rawPayload,
+      );
+      if (related != null) {
+        await syncScrapedCollectionRelations(
+          database,
+          owner: relationOwner,
+          source: metadata.provider.name,
+          related: related,
+        );
+      }
+      // 别处指向本作品外部 id 的纯刮削行升级成已绑定。
+      await bindCollectionRelationsToWork(
+        database,
+        owner: relationOwner,
+        identities: <(String, String)>[
+          for (final VideoMetadataId id in _uniqueIds(metadata.ids))
+            if (canBindRelationIdentity(
+              provider: id.type.trim().toLowerCase(),
+              mediaType: metadata.kind.name,
+            ))
+              (id.type.trim().toLowerCase(), id.value),
+        ],
+      );
       // 锁住的整组词（genres / studios）保留旧集合；其余种类照常整体替换。
       final Map<String, List<String>> lockedTerms =
           isLocked(VideoMetadataLockableField.genres) ||
@@ -596,10 +631,18 @@ class VideoMetadataDatabaseStore {
   /// 删掉合集自己拥有的作品行（成员按 AniDB 作品拆成各自的电影作品后，合集级
   /// 的那一行是残留——否则合集详情页会继续展示旧身份）。与
   /// [_removeBookOwnedWorksForCollection] 对称；季 / 集 / 身份 / 图随 FK 级联。
+  /// 那部作品刮来的系列关系（合集起点、非 `local` 的行）一并删掉——它们描述的是
+  /// 已经不存在的身份；按季拆分建的 `local` 行是用户结构，不动。
   Future<void> removeCollectionOwnedWork(int collectionId) async {
     await (database.delete(
       database.videoMetadataWorks,
     )..where((table) => table.collectionId.equals(collectionId))).go();
+    await (database.delete(database.collectionRelations)..where(
+          (table) =>
+              table.collectionId.equals(collectionId) &
+              table.source.equals('local').not(),
+        ))
+        .go();
   }
 
   Future<void> _removeBookOwnedWorksForCollection(int collectionId) async {
@@ -611,6 +654,10 @@ class VideoMetadataDatabaseStore {
     if (memberBookUids.isEmpty) return;
     await (database.delete(
       database.videoMetadataWorks,
+    )..where((table) => table.bookUid.isIn(memberBookUids))).go();
+    // 成员自己那部作品（散装电影）刮来的系列关系随作品一起作废（v162 单视频起点）。
+    await (database.delete(
+      database.collectionRelations,
     )..where((table) => table.bookUid.isIn(memberBookUids))).go();
   }
 

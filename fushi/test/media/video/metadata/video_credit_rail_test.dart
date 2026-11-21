@@ -64,7 +64,13 @@ void main() {
         characterImageUrl: 'https://img/character.jpg',
       ),
     );
-    expect(image?.image, isA<AppCachedHttpImage>());
+    // 解码封顶（TMDB 人物照默认 original 尺寸）：远端图包一层 ResizeImage。
+    final ImageProvider? provider = image?.image;
+    expect(provider, isA<ResizeImage>());
+    final ResizeImage resized = provider! as ResizeImage;
+    expect(resized.imageProvider, isA<AppCachedHttpImage>());
+    expect(resized.width, kVideoCreditAvatarDecodePixelWidth);
+    expect(resized.allowUpscaling, isFalse);
     expect(image?.source, 'https://img/person.jpg');
   });
 
@@ -108,7 +114,11 @@ void main() {
       ),
       fileExists: (String path) => path == file.path,
     );
-    expect(image?.image, isA<FileImage>());
+    final ImageProvider? provider = image?.image;
+    expect(provider, isA<ResizeImage>());
+    final ResizeImage resized = provider! as ResizeImage;
+    expect(resized.imageProvider, isA<FileImage>());
+    expect(resized.width, kVideoCreditAvatarDecodePixelWidth);
     expect(image?.source, file.path);
   });
 

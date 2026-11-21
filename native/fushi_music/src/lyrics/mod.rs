@@ -39,7 +39,9 @@ use model::*;
 /// 3：翻译合并改为估计整体偏移 + 单调对齐，对不上的翻译挂靠原文行、不再成独立行。
 /// 4：加密 QRC（本地缓存 / 接口十六进制串）解密；QRC `[kana:]` 注音轨挂成音节 ruby。
 /// 5：QRC `[kana:]` 的汉字计数口径：补扩展 H / J（U+31350–3347F），`〇` `〆` 两种取舍都做完整对齐校验。
-pub const PARSER_VERSION: u32 = 5;
+/// 6：QRC `[kana:]` 注音轨对不上时标记 `ruby_dropped`（线格式 flags bit2），界面提示已隐藏。
+/// 7：接口十六进制密文认旧接口 XML 的 CDATA 包装（`<content><![CDATA[hex]]></content>`）。
+pub const PARSER_VERSION: u32 = 7;
 
 /// 按格式提示（扩展名或格式名，大小写不敏感，可空）+ 内容嗅探解析。`duration_ms` 是曲长
 /// （补最后一行终点），未知传 None。

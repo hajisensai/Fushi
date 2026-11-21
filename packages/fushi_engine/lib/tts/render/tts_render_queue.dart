@@ -20,6 +20,7 @@ import 'dart:io';
 
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/engine_notifier.dart';
+import 'package:fushi_engine/tts/tts_provider.dart' show kTtsMaxConcurrency;
 import 'package:path/path.dart' as p;
 
 /// 任务 [jobId] 的工作目录（制作流程与队列共用这一个口径）。
@@ -106,6 +107,21 @@ class TtsRenderFlag {
   }
 }
 
+/// 在线声音被限流（HTTP 429）时整本书制作怎么办。
+enum TtsRateLimitAction {
+  /// 按服务端 `Retry-After` 退避后接着做（没给就指数退避）。
+  waitRetry,
+
+  /// 停下整个任务（已合成的句子留在缓存里，重试时从停下处接着做）。
+  pause,
+}
+
+/// 制作参数「同时请求数」可选的档位（在线声音）。
+const List<int> kTtsRenderOnlineConcurrencyChoices = <int>[1, 2, 4];
+
+/// 制作参数「每句间隔」的上限（毫秒）。
+const int kTtsRenderMaxSentenceGapMs = 2000;
+
 class TtsRenderJob {
   TtsRenderJob({
     required this.id,
@@ -121,6 +137,9 @@ class TtsRenderJob {
     this.regenerate = const <int>[],
     this.pausePreset = 'standard',
     this.normalizeLoudness = true,
+    this.onlineConcurrency,
+    this.sentenceGapMs = 0,
+    this.rateLimitAction = TtsRateLimitAction.waitRetry,
     this.status = TtsRenderJobStatus.queued,
     this.phase,
     this.done = 0,
@@ -156,6 +175,16 @@ class TtsRenderJob {
 
   /// 编码时做响度归一化（ffmpeg 有 loudnorm 时；没有就如实记 [loudnessSkipped]）。
   final bool normalizeLoudness;
+
+  /// 在线声音同时发几个请求；null = 用声音预设自己的并发（`ttsEffectiveConcurrency`）。
+  /// 只作用于在线引擎（本机 / 系统声音的并发由显卡与进程决定，不受它影响）。
+  final int? onlineConcurrency;
+
+  /// 在线声音每个请求之后等多久再发下一个（毫秒；命中缓存的句子不等）。
+  final int sentenceGapMs;
+
+  /// 在线声音被限流时怎么办。
+  final TtsRateLimitAction rateLimitAction;
 
   /// 要求了响度归一化但本机 ffmpeg 不支持而跳过（UI 提示，不算失败）。
   bool loudnessSkipped = false;
@@ -202,6 +231,10 @@ class TtsRenderJob {
     'regenerate': regenerate,
     'pause': pausePreset,
     'loudnorm': normalizeLoudness,
+    'onlineConcurrency': ?onlineConcurrency,
+    if (sentenceGapMs > 0) 'gapMs': sentenceGapMs,
+    if (rateLimitAction != TtsRateLimitAction.waitRetry)
+      'onRateLimit': rateLimitAction.name,
     'loudnessSkipped': loudnessSkipped,
     if (unvoiced > 0) 'unvoiced': unvoiced,
     'createdAt': createdAt,
@@ -253,6 +286,17 @@ class TtsRenderJob {
         regenerate: ints(json['regenerate']),
         pausePreset: (json['pause'] as String?) ?? 'standard',
         normalizeLoudness: json['loudnorm'] != false,
+        onlineConcurrency: json['onlineConcurrency'] is int
+            ? (json['onlineConcurrency']! as int).clamp(1, kTtsMaxConcurrency)
+            : null,
+        sentenceGapMs: json['gapMs'] is int
+            ? (json['gapMs']! as int).clamp(0, kTtsRenderMaxSentenceGapMs)
+            : 0,
+        rateLimitAction: byName(
+          TtsRateLimitAction.values,
+          json['onRateLimit'],
+          TtsRateLimitAction.waitRetry,
+        ),
         createdAt: (json['createdAt'] as int?) ?? 0,
         updatedAt: (json['updatedAt'] as int?) ?? 0,
         status: byName(
@@ -449,6 +493,9 @@ class TtsRenderQueue extends EngineChangeNotifier {
     List<int> regenerate = const <int>[],
     String pausePreset = 'standard',
     bool normalizeLoudness = true,
+    int? onlineConcurrency,
+    int sentenceGapMs = 0,
+    TtsRateLimitAction rateLimitAction = TtsRateLimitAction.waitRetry,
   }) async {
     await load();
     for (final TtsRenderJob job in _jobs) {
@@ -467,6 +514,9 @@ class TtsRenderQueue extends EngineChangeNotifier {
       regenerate: List<int>.unmodifiable(regenerate),
       pausePreset: pausePreset,
       normalizeLoudness: normalizeLoudness,
+      onlineConcurrency: onlineConcurrency,
+      sentenceGapMs: sentenceGapMs.clamp(0, kTtsRenderMaxSentenceGapMs),
+      rateLimitAction: rateLimitAction,
       createdAt: now,
       updatedAt: now,
     );

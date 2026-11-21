@@ -253,6 +253,83 @@ void main() {
         expect(hot.script, contains('"renderJs"'));
       },
     );
+
+    // BUG-4939：macOS / Linux 的应用外宿主接不住 https 取回地址。大结果在这些宿主上
+    // 必须从一开始就把词条写进脚本，不能发一个永远取不回的 fetch——取回挂着时卡片
+    // 停在上一次的词条上（反馈 JjwV57oM44：每次点字都显示同一张「Lock」卡）。
+    testWidgets(
+      'global host without entries interception renders large results inline',
+      (WidgetTester tester) async {
+        final MemoAppModel appModel = MemoAppModel();
+        final String gloss = 'g' * (kPopupEntriesFetchMinChars + 1024);
+        DictionarySearchResult bigResult() => DictionarySearchResult(
+          searchTerm: '語',
+          entries: <DictionaryEntry>[
+            DictionaryEntry(
+              dictionaryName: 'd',
+              word: '語',
+              reading: 'ご',
+              meaning: gloss,
+            ),
+          ],
+        );
+        late GlobalLookupFrameSettingsJs unsupported;
+        late GlobalLookupFrameSettingsJs supported;
+        late GlobalLookupEntriesStore supportedStore;
+        bool built = false;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Builder(
+              builder: (BuildContext context) {
+                if (!built) {
+                  built = true;
+                  unsupported = buildFrameSettingsJsParts(
+                    context: context,
+                    appModel: appModel,
+                    result: bigResult(),
+                    entriesStore: GlobalLookupEntriesStore(
+                      fetchSupported: false,
+                    ),
+                  );
+                  supportedStore = GlobalLookupEntriesStore(
+                    fetchSupported: true,
+                  );
+                  supported = buildFrameSettingsJsParts(
+                    context: context,
+                    appModel: appModel,
+                    result: bigResult(),
+                    entriesStore: supportedStore,
+                  );
+                }
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        );
+
+        expect(
+          unsupported.entriesAsync,
+          isFalse,
+          reason: '宿主不拦截取回地址时根卡不能等一个取不回的异步词条',
+        );
+        expect(
+          unsupported.entriesJs,
+          isNot(contains(GlobalLookupEntriesStore.urlPrefix)),
+        );
+        expect(unsupported.entriesJs, isNot(contains('fetch(')));
+        expect(unsupported.entriesJs, contains(gloss));
+        expect(unsupported.entriesJs, contains('window.__fushiRenderToken ='));
+        expect(unsupported.renderJs, contains('window.renderPopup'));
+
+        // 对照：拦截可用的宿主（Windows WebView2）照旧走取回，地址能取回原样字节。
+        expect(supported.entriesAsync, isTrue);
+        expect(supported.entriesJs, isNot(contains(gloss)));
+        expect(
+          supported.entriesJs,
+          contains(GlobalLookupEntriesStore.urlPrefix),
+        );
+      },
+    );
   });
 
   // BUG-2434：这条是墨水屏适配链路的**后半段**。前半段（覆盖主题必须带

@@ -4,7 +4,8 @@
 //   - dialog：同一 id 只弹一次（已弹过的 id 记在设备本地偏好）；
 //   - block：盖住全部路由的全屏层，不可关闭。
 // 服务端通知的文字都来自服务端，客户端只提供按钮标签。另可接一条本地对话框
-// （[NoticeLayer.localDialog]，见 build_listing.dart），与服务端对话框同一套展示、同一个队列。
+// （[NoticeLayer.localDialog]，见 build_listing.dart），与服务端对话框同一套展示、同一个队列、
+// 同一份「已弹过」记录（同一 id 只弹一次）。
 //
 // 本层在 navigator 之上，没有 Navigator 祖先：对话框经 [NoticeLayer.navigatorKey] 弹到
 // navigator 里。结构恒定：无论有没有通知都是同一棵 Stack / Column，navigator 子树
@@ -130,8 +131,10 @@ class _NoticeLayerState extends State<NoticeLayer> {
         final RemoteNotice notice;
         final RemoteNotice? local = _localPending;
         if (local != null) {
-          notice = local;
           _localPending = null;
+          if (widget.feed.seenDialogIds.contains(local.id)) continue;
+          notice = local;
+          await widget.feed.markDialogSeen(local.id);
         } else {
           final List<RemoteNotice> pending = widget.feed.pendingDialogs;
           if (pending.isEmpty) break;

@@ -39,7 +39,8 @@ fn meta(c: &Connection, key: &str) -> Result<Option<String>, String> {
 /// 原位封存一份协议 3 的库：一个事务里把 `schema` 改成 [SEALED_SCHEMA]，记 `sealed_into` = [into]、`sealed_from` = 原
 /// schema。只改 `srs_meta` 这三行，别的页不动。
 ///
-/// 要求：库是这一版协议 3 的（`schema` = [SCHEMA_VERSION]），连接不在事务里。已经封存过、`sealed_into` 相同 = 什么也
+/// 要求：库是这一版或更老的协议 3 的（`schema` 在 1..=[SCHEMA_VERSION]；G7-2b：迁移的前提补完在副本上升级，原件保持
+/// 写它的那个版本的 schema，例如 v3.3.0 的 26，封存的就是它，`sealed_from` 记原号），连接不在事务里。已经封存过、`sealed_into` 相同 = 什么也
 /// 不写（提交点之后中断、下次启动重做时幂等：`gen4::files::open_gen4` 的 Primary 打开发现 `srs4.db` 记着的迁移来源
 /// 就是这份还没封存的 `srs.db` 就重做）；封存进了别的文件、或 schema 是别的值都报错、不改。
 ///
@@ -80,7 +81,7 @@ fn seal_in_tx(conn: &Connection, into: &str) -> Result<(), String> {
 fn seal_rows(c: &Connection, into: &str) -> Result<bool, String> {
     let current = meta(c, "schema")?;
     match current.as_deref().map(str::parse::<i64>) {
-        Some(Ok(v)) if v == SCHEMA_VERSION => {
+        Some(Ok(v)) if (1..=SCHEMA_VERSION).contains(&v) => {
             for (key, value) in [
                 ("schema", SEALED_SCHEMA.to_string()),
                 ("sealed_into", into.to_owned()),
@@ -104,7 +105,7 @@ fn seal_rows(c: &Connection, into: &str) -> Result<bool, String> {
             }
         }
         other => Err(e(format!(
-            "cannot seal a library at schema {other:?} (this build seals {SCHEMA_VERSION})"
+            "cannot seal a library at schema {other:?} (this build seals 1..={SCHEMA_VERSION})"
         ))),
     }
 }
@@ -548,6 +549,30 @@ mod tests {
         assert_refused_without_change(&path);
     }
 
+    /// 设计 §6.3「回退到旧版本」的另一个方向：有人把新代库 `srs4.db` 拷成 `srs.db`（或回退后的旧版本在别处读到
+    /// 一份新代文件）。协议 3 的内核读到 `schema` 比自己大就拒绝，页内容一个字节不改，新代照常能打开它。
+    #[test]
+    fn a_generation_4_library_copied_under_the_old_name_is_refused_by_protocol_3() {
+        let dir = tempdir::new("seal-g4-as-old");
+        let gen4 = dir.0.join("srs4.db");
+        let c = crate::store::gen4::schema::open(&gen4).unwrap();
+        c.execute(
+            "INSERT INTO srs_meta (key, value) VALUES ('probe', 'kept')",
+            [],
+        )
+        .unwrap();
+        drop(c);
+        drain_wal(&gen4).unwrap();
+        let path = dir.0.join("srs.db");
+        fs::copy(&gen4, &path).unwrap();
+        assert_refused_without_change(&path);
+        assert!(meta_rows(&path).contains(&(
+            "schema".to_owned(),
+            crate::store::gen4::schema::SCHEMA.to_string()
+        )));
+        drop(crate::store::gen4::schema::open(&path).unwrap());
+    }
+
     thread_local! {
         static TRACED: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
     }
@@ -753,7 +778,7 @@ mod tests {
         let c = Connection::open_in_memory().unwrap();
         c.execute_batch(
             "CREATE TABLE srs_meta (key TEXT NOT NULL PRIMARY KEY, value TEXT NOT NULL);
-             INSERT INTO srs_meta VALUES ('schema', '28');",
+             INSERT INTO srs_meta VALUES ('schema', '0');",
         )
         .unwrap();
         assert!(
@@ -769,6 +794,15 @@ mod tests {
                 .contains("cannot seal")
         );
         assert!(seal_legacy(&c, "").unwrap_err().contains("empty target"));
+        // 比这一版旧的协议 3 库（v3.3.0 的 26）照封，记下原号。
+        c.execute("UPDATE srs_meta SET value = '26' WHERE key = 'schema'", [])
+            .unwrap();
+        seal_legacy(&c, "srs4.db").unwrap();
+        assert_eq!(
+            meta(&c, "schema").unwrap().as_deref(),
+            Some(SEALED_SCHEMA.to_string().as_str())
+        );
+        assert_eq!(meta(&c, "sealed_from").unwrap().as_deref(), Some("26"));
     }
 
     #[test]

@@ -357,6 +357,9 @@ void main() {
       );
       await tester.pump(const Duration(milliseconds: 20));
     }
+    // [done] 可能是在上一帧画完之后的微任务里才成立的（如 `notifyListeners` 落在
+    // pump 收尾的 flushMicrotasks 里）：再出一帧，让已标脏的界面按最新状态重建。
+    await tester.pump();
   }
 
   /// 本机资料缓存已落盘（`writeSelf` 的临时文件写完并 rename）。登录 / `refreshSelf`
@@ -366,6 +369,24 @@ void main() {
     supportRoot: root,
     profileId: 1,
   ).selfCacheFile.existsSync();
+
+  /// 服务把服务端回来的自己收进来、写完资料缓存、**并已通知 UI**（`_adopt` /
+  /// `_adoptFreshSelf` 都是「写缓存 → `_notify`」）。必须在触发刷新之前调用以挂上监听。
+  ///
+  /// 不能只看 [selfCached]：rename 在 IO 线程上一完成，文件就对 `existsSync` 可见，
+  /// 而 rename future 的完成消息还没被事件循环处理——此时 `_notify` 尚未执行、页面还
+  /// 没按新的 `service.self` 重建。[settleIo] 恰在这个窗口里看到文件就收手，紧随其后的
+  /// UI 断言偶发读到旧副标题。这里以「缓存已在盘上时发生的那次通知」为准。
+  bool Function() selfAdopted(LeaderboardService service) {
+    bool adopted = false;
+    void onNotify() {
+      if (service.self != null && selfCached()) adopted = true;
+    }
+
+    service.addListener(onNotify);
+    addTearDown(() => service.removeListener(onNotify));
+    return () => adopted;
+  }
 
   Future<void> settle(WidgetTester tester) async {
     for (int i = 0; i < 10; i++) {
@@ -1663,6 +1684,7 @@ void main() {
         ),
       ),
     );
+    final bool Function() adopted = selfAdopted(service);
     unawaited(
       nav.currentState!.push<void>(
         MaterialPageRoute<void>(
@@ -1670,7 +1692,8 @@ void main() {
         ),
       ),
     );
-    await settleIo(tester, selfCached);
+    await settleIo(tester, adopted);
+    expect(adopted(), isTrue, reason: '页面的 refreshSelf 已收进自己并通知');
     // 现行页头（masthead）：不再有「返回圆钮 + 头像标题胶囊」那条悬浮顶栏。
     expect(byKey('leaderboard-top-bar'), findsNothing);
     expect(find.byType(FushiMastheadScaffold), findsOneWidget);

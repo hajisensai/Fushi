@@ -135,6 +135,8 @@ pub(crate) struct Local {
     pub clock: Clock,
     pub head_gen: u64,
     pub migrated: bool,
+    /// 设备显示名：只有协议 3 的 `sync2_identity` 回包读它，换代后那条命令只在测试构建里编（G7-6）。
+    #[cfg(test)]
     pub name: String,
 }
 
@@ -170,7 +172,7 @@ impl Local {
         )
         .optional()
         .map_err(sql)?
-        .map(|(c, d, k, n, ch, w, l, g, m, name)| {
+        .map(|(c, d, k, n, ch, w, l, g, m, _name)| {
             let device = id_of(d)?;
             let seed: [u8; 32] = k.try_into().map_err(|_| "bad key".to_string())?;
             let mut clock = Clock::new(device);
@@ -185,7 +187,8 @@ impl Local {
                 clock,
                 head_gen: g as u64,
                 migrated: m.is_some(),
-                name,
+                #[cfg(test)]
+                name: _name,
             })
         })
         .transpose()
@@ -205,6 +208,7 @@ impl Local {
             clock: Clock::new(device),
             head_gen: 0,
             migrated: false,
+            #[cfg(test)]
             name: String::new(),
         };
         conn.execute(
@@ -272,6 +276,7 @@ pub(crate) fn intern_deps(conn: &Connection, bytes: &[u8]) -> Result<i64, String
         .map_err(sql)
 }
 
+#[cfg(test)]
 pub(crate) fn insert_op(
     conn: &Connection,
     profile: &str,
@@ -525,7 +530,7 @@ pub(crate) fn revoke_copies_of_revoked_events(c: &Connection, now: i64) -> Resul
         }
         let mut bodies: std::collections::BTreeMap<String, LogBody> = Default::default();
         for tail in &groups {
-            let Group { rows, .. } = group_of(c, tail, None)?;
+            let Group { rows, .. } = group_of(c, tail)?;
             let parsed: Vec<crate::history::Log<'_>> = rows
                 .iter()
                 .map(|(_, j, s, _, _)| crate::history::parse_full(j, *s).map(|p| p.0))
@@ -1205,6 +1210,7 @@ pub(crate) fn land_media_binding(
 /// 收到（已应用的）远端操作后推进本机 HLC 并持久化（设计 §3.2：`hlc = max(local, remote) + 1`，+1 在下一次发出时）。[seen] = 这批
 /// 远端操作里不超前的最大 HLC；超前（远端 wall 超出本机墙钟 [crate::sync2::hlc::MAX_AHEAD_MS]）的作者在
 /// [ahead] 里：照收，`sync2_devices.warning` 打 `clock_ahead`（已有分叉告警的不覆盖），不把本机时钟拽过去。
+#[cfg(test)]
 pub(crate) fn observe_remote(
     conn: &Connection,
     profile: &str,
@@ -1666,12 +1672,14 @@ pub(crate) fn group_lineage(
 }
 
 /// 一个归属组（链尾 + 广度优先的全部前身）的日志行与链尾所属的笔记（日志上记的，没有则取调用方给的）。
+/// 笔记只有协议 3 的作答预览（[preview_on]）读，换代后它只在测试构建里编（G7-6）：生产构建不取。
 struct Group {
     rows: Vec<(String, String, Option<i64>, Intent, String)>,
+    #[cfg(test)]
     note: Option<String>,
 }
 
-fn group_of(conn: &Connection, tail: &str, note_hint: Option<&str>) -> Result<Group, String> {
+fn group_of(conn: &Connection, tail: &str) -> Result<Group, String> {
     let tail = &tail.to_owned();
     // 归属组：链尾 + 广度优先的全部前身。
     let lineage = group_lineage(tail, &mut |c| {
@@ -1681,6 +1689,7 @@ fn group_of(conn: &Connection, tail: &str, note_hint: Option<&str>) -> Result<Gr
         Ok(config::predecessors(&es))
     })?;
     let mut rows: Vec<(String, String, Option<i64>, Intent, String)> = Vec::new();
+    #[cfg(test)]
     let mut note: Option<String> = None;
     for c in &lineage {
         let mut stmt = conn
@@ -1697,10 +1706,13 @@ fn group_of(conn: &Connection, tail: &str, note_hint: Option<&str>) -> Result<Gr
             let st: Option<i64> = r.get(2).map_err(sql)?;
             let code: Option<i64> = r.get(3).map_err(sql)?;
             let arg: Option<i64> = r.get(4).map_err(sql)?;
-            let n: Option<String> = r.get(5).map_err(sql)?;
             // 笔记取链尾自己日志上记的；链尾还没有日志就取前身的（换笔记类型不换笔记）。
-            if n.is_some() && (note.is_none() || c == tail) {
-                note = n;
+            #[cfg(test)]
+            {
+                let n: Option<String> = r.get(5).map_err(sql)?;
+                if n.is_some() && (note.is_none() || c == tail) {
+                    note = n;
+                }
             }
             let intent = match code {
                 Some(k) => intent_of(k, arg),
@@ -1709,10 +1721,11 @@ fn group_of(conn: &Connection, tail: &str, note_hint: Option<&str>) -> Result<Gr
             rows.push((id, json, st, intent, c.clone()));
         }
     }
-    if note.is_none() {
-        note = note_hint.map(str::to_owned);
-    }
-    Ok(Group { rows, note })
+    Ok(Group {
+        rows,
+        #[cfg(test)]
+        note,
+    })
 }
 
 pub(crate) fn replay_cards(
@@ -1731,7 +1744,7 @@ pub(crate) fn replay_cards(
     }
     for tail in &groups {
         let p_group = crate::store::prof::span("replay.group");
-        let Group { rows, .. } = group_of(conn, tail, None)?;
+        let Group { rows, .. } = group_of(conn, tail)?;
         drop(p_group);
         if rows.is_empty() {
             continue;
@@ -1740,6 +1753,7 @@ pub(crate) fn replay_cards(
         let input: Vec<Row<'_>> = rows
             .iter()
             .map(|(_, j, s, i, _)| Row {
+                seed_card: None,
                 json: j,
                 server_time: *s,
                 intent: i.clone(),
@@ -2190,6 +2204,7 @@ fn note_written_edit(out: &mut Vec<Value>, op: &Op, b: &Body) {
 }
 
 /// [SrsCore::sync2_identity] 的结果。
+#[cfg(test)]
 fn identity_json(l: &Local) -> Value {
     json!({
         "device": l.device.text(),
@@ -2207,6 +2222,7 @@ impl SrsCore {
     /// 身份已在（每轮同步、开库都走这里，绝大多数情况）只是一次读：走读连接的快照，不排写锁
     /// （[SrsCore::read_visible]）。只有还没有身份时才进写连接，
     /// 在 SAVEPOINT 里重查一遍再建（两个调用方同时看到「没有」，后进写锁的那个读到先建的那份，不会建两份）。
+    #[cfg(test)]
     pub fn sync2_identity(&self, profile: &str, now: i64) -> Result<Value, String> {
         if let Some(l) = self.read_visible(|c| Local::load(c, profile))? {
             return Ok(identity_json(&l));
@@ -2227,7 +2243,7 @@ impl SrsCore {
     /// 指向别的 profile 实体的输入项不追加、不投影（[ownership]，在 [apply_local_on] 里判），下标在 `foreign` 里交回。
     ///
     /// 不带旧版时钟（[apply_local_on] 的 `legacy` 为 None）：内核自己的测试 / 基准用。宿主的 `apply` 命令走分发器
-    /// （store/ffi.rs `local_write`），那里必带。
+    /// （store/legacy3 `local_write`），那里必带。
     pub fn sync2_apply_local(
         &self,
         profile: &str,
@@ -2348,6 +2364,7 @@ impl SrsCore {
     /// `{"writers": {写入者: [seq, wall, logical, seq, wall, logical, ...]}}`。读操作日志而不是投影：被支配、已不在
     /// 投影里的记录也在。档案合并（Dart `srs_profile_merge.dart` `_Writers.alias`）据此判断目标里是否已有同一批记录
     /// （BUG-4011）。已清除内容的操作不算（载荷已剥掉）。
+    #[cfg(test)]
     pub fn sync2_legacy_dots(&self, profile: &str) -> Result<Value, String> {
         let r = self.reader()?;
         let mut out: Map<String, Value> = Map::new();
@@ -2387,6 +2404,7 @@ impl SrsCore {
     }
 
     /// 追加一批本机内部操作（冲突解决、清除、还原点）：与 [SrsCore::sync2_apply_local] 同一条落库 / 投影 / 重放路径。
+    #[cfg(test)]
     pub(crate) fn sync2_append(
         &self,
         profile: &str,
@@ -2399,6 +2417,7 @@ impl SrsCore {
 
     /// 冲突中心（设计 §5.3）：待用户定的破坏性并发。每项
     /// `{"id","kind":"delete_edit|delete_review|delete_move","entityKind","entity","by","others","at"}`。
+    #[cfg(test)]
     pub fn sync2_conflicts(&self, profile: &str) -> Result<Value, String> {
         let r = self.reader()?;
         let mut stmt = r
@@ -2427,6 +2446,7 @@ impl SrsCore {
 
     /// 解决一项冲突：`delete` = 以删除为准（一条因果覆盖并发方的新删除）；`keep` = 保留（一条覆盖删除的恢复）。
     /// 结论是普通操作，同步到各设备后同一冲突不会在别处再冒出来。
+    #[cfg(test)]
     pub fn sync2_resolve(
         &self,
         profile: &str,
@@ -2440,6 +2460,7 @@ impl SrsCore {
 
     /// 冲突 [conflict] 的实体（[SrsCore::sync2_resolve] 的预读）：在读连接上读已提交的冲突表，写锁外做。命令本身还没写过
     /// 任何东西，读不到「本命令内未提交」的行是对的；冲突行只由投影写入、只在写锁里改，读到的就是写锁里会看到的。
+    #[cfg(test)]
     pub(crate) fn sync2_conflict_target(
         &self,
         profile: &str,
@@ -2461,6 +2482,7 @@ impl SrsCore {
     }
 
     /// 彻底清除（设计 §10.5）：二次确认由界面做。先删除（保证实体不可见），再追加清除操作。
+    #[cfg(test)]
     pub fn sync2_purge(
         &self,
         profile: &str,
@@ -2472,6 +2494,7 @@ impl SrsCore {
     }
 
     /// 自动 / 手动还原点（设计 §10.2）。
+    #[cfg(test)]
     pub fn sync2_checkpoint(
         &self,
         profile: &str,
@@ -2483,6 +2506,7 @@ impl SrsCore {
     }
 
     /// 全量重放一个 profile 的全部卡（参数整体变更、自检用；设计 §3.4 `rebuild_all` 的调度部分）。
+    #[cfg(test)]
     pub fn sync2_replay_all(&self, profile: &str) -> Result<Vec<String>, String> {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
@@ -2499,6 +2523,7 @@ impl SrsCore {
 }
 
 /// 设备 ID 文本 → 字节（FFI 入参）。
+#[cfg(test)]
 pub fn parse_device(s: &str) -> Result<Id, String> {
     Id::parse(s).ok_or_else(|| format!("bad device id {s}"))
 }
@@ -2583,6 +2608,7 @@ impl SrsCore {
     ///
     /// 只读（牌组树、血统日志、修改记录全是 SELECT，重放与 FSRS 是纯计算）：走读连接的快照，复习时每张卡的
     /// 预览不排在同步投递 / 缓存刷新这类长写后面（[SrsCore::read_visible]）。
+    #[cfg(test)]
     pub fn sync2_preview(
         &self,
         profile: &str,
@@ -2597,6 +2623,7 @@ impl SrsCore {
 }
 
 /// [SrsCore::sync2_preview] 在连接 [c] 上（调用方负责快照；对拍测试在写连接的 SAVEPOINT 里调）。
+#[cfg(test)]
 pub(crate) fn preview_on(
     c: &Connection,
     profile: &str,
@@ -2633,8 +2660,10 @@ pub(crate) fn preview_on(
             note: None,
         }
     } else {
-        group_of(c, card, note)?
+        group_of(c, card)?
     };
+    // 组里的日志都没记笔记：取调用方给的（或按缓存行补上的）。
+    let group_note = group_note.or_else(|| note.map(str::to_owned));
     let deck = if rows.is_empty() && note.is_none() {
         None
     } else {
@@ -2643,6 +2672,7 @@ pub(crate) fn preview_on(
     let input: Vec<Row<'_>> = rows
         .iter()
         .map(|(_, j, s, i, _)| Row {
+            seed_card: None,
             json: j,
             server_time: *s,
             intent: i.clone(),
@@ -2772,7 +2802,7 @@ pub(crate) fn parse_apply_input(input: &str) -> Result<Vec<Value>, String> {
     serde_json::from_str(input).map_err(|e| format!("bad apply input: {e}"))
 }
 
-/// `apply` 的旧版时钟部分（store/legacy_clock.rs；宿主的 `apply` 命令必带，见 store/ffi.rs `local_write_body`）。
+/// `apply` 的旧版时钟部分（store/legacy_clock.rs；宿主的 `apply` 命令必带，见 store/legacy3 `local_write_body`）。
 ///
 /// 输入项的 `clk` 是这一项对旧版时钟的指令（与以前 Dart `SrsDbStore` 发命令前在内存时钟上做的逐值相同）：
 /// - `"r"`：这一项带着来源给的 HLC（导入的日志 / 记录、并入的外来事件）——按收到对端事件的规则推进（先钳位，
@@ -2802,7 +2832,7 @@ fn clk_of(it: &Value) -> Result<Option<char>, String> {
 }
 
 /// [SrsCore::sync2_apply_local] 的本体：在调用方持着的写连接、调用方开的 SAVEPOINT 里做（不自己取锁），分发器把它与
-/// 缓存刷新、排队、本机状态行合进同一个 SAVEPOINT（store/ffi.rs `local_write`）。[legacy]：旧版时钟（见
+/// 缓存刷新、排队、本机状态行合进同一个 SAVEPOINT（store/legacy3 `local_write`）。[legacy]：旧版时钟（见
 /// [LegacyApply]）；None 时输入里不得有 `clk`。
 ///
 /// 归属核对在这里（ownership.rs）：所有经这个本体落库的命令——`apply`、`change`、`import_drafts`、`note_fields_if`、
@@ -2974,6 +3004,7 @@ pub(crate) fn apply_local_on(
 /// - 回包 `existed`：这批身份记录里落库前就已存在的实体 ID（导入据此按实际新建数计数）。
 ///
 /// 其余回包与 `apply` 同形；`landed` 按去掉不落的项之后的顺序。
+#[cfg(test)]
 pub(crate) fn import_drafts_on(
     c: &Connection,
     profile: &str,
@@ -3064,6 +3095,7 @@ pub(crate) fn import_drafts_on(
 
 /// [SrsCore::sync2_append] 的本体：在调用方的写连接、调用方开的 SAVEPOINT 里追加并投影（不自己取锁）。
 /// 指向别的 profile 实体的操作按「没有这个实体」跳过（ownership.rs；冲突解决、彻底清除都经这里）。
+#[cfg(test)]
 pub(crate) fn append_on(
     c: &Connection,
     profile: &str,

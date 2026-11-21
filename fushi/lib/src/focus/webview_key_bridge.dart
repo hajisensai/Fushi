@@ -100,6 +100,12 @@ bool get hostOwnsWebViewHoverLookup => isMacOSPlatform;
 /// stopPropagation 时，挂在 document 上的桥会被它截走。配合「桥在页面脚本之前注册」才
 /// 完整（复习卡面把桥写进外壳 `<head>`）。
 ///
+/// [yieldActivationToKeyboardFocus] 为 true 时，Enter / 空格按在**键盘焦点**（`:focus-visible`）
+/// 所在的页内控件（`button` / `summary` / `a[href]` / `[role=button]`）上放行，由控件自己
+/// 激活：复习卡面里的「展开全文」、词典折叠头等用 Tab / 手柄移过去后要能按 Enter 触发，
+/// 不能被翻面 / 评分键截走。只认 `:focus-visible`——鼠标点过控件留下的焦点不算，点过
+/// 之后照样按空格 / Enter 翻面、评分。
+///
 /// [installMouseListeners] 为 true 时额外装 `mousedown`/`auxclick`/`contextmenu`
 /// 监听。默认 false：只用键盘的宿主生成的脚本里完全不含鼠标块（零行为变化）。
 /// 注意它与 [mouseButtons] 是否为空**无关**——弹窗要在「用户当前没绑鼠标键、之后
@@ -120,6 +126,7 @@ String webViewKeyBridgeScript({
   bool forwardRepeats = true,
   bool stopPropagation = false,
   bool listenOnWindow = false,
+  bool yieldActivationToKeyboardFocus = false,
 }) {
   // 空键表 + 不装鼠标监听**是合法的**：脚本每次注入都覆盖 window 上的 token 表，
   // 宿主靠「注入空 spec」来清掉热槽 WebView 上残留的旧表（弹窗跨查词长期存活）。
@@ -152,6 +159,20 @@ String webViewKeyBridgeScript({
   final String keyTarget = listenOnWindow ? 'window' : 'document';
   final String propagationGuard = stopPropagation
       ? '\n    e.stopImmediatePropagation();'
+      : '';
+  final String activationGuard = yieldActivationToKeyboardFocus
+      ? '''
+    if (t && (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space') &&
+        _fushiKeyboardFocusedControl(t)) return;'''
+      : '';
+  final String activationHelper = yieldActivationToKeyboardFocus
+      ? '''
+  function _fushiKeyboardFocusedControl(t) {
+    try {
+      return !!(t.matches && t.matches('button, summary, a[href], [role="button"]') &&
+        t.matches(':focus-visible'));
+    } catch (err) { return false; }
+  }'''
       : '';
   final String mouseListeners = installMouseListeners
       ? '''
@@ -191,7 +212,7 @@ String webViewKeyBridgeScript({
     if (e.key) out.push(mods + e.key);
     if (e.code && e.code !== e.key) out.push(mods + e.code);
     return out;
-  }
+  }$activationHelper
   $keyTarget.addEventListener('keydown', function(e) {
     if (!e) return;
     if (e.isComposing) return;$repeatGuard$popupModalGuard
@@ -199,7 +220,7 @@ String webViewKeyBridgeScript({
     if (t) {
       var tag = t.tagName ? t.tagName.toUpperCase() : '';
       if (tag === 'INPUT' || tag === 'TEXTAREA' || t.isContentEditable) return;
-    }
+    }$activationGuard
     var _keys = window[$keysVar] || [];
     var _cand = _fushiBridgeTokens(e);
     var _hit = null;

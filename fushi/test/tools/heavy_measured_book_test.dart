@@ -73,6 +73,37 @@ void main() {
     );
   });
 
+  test('lines of tools that took the lease themselves are no samples', () {
+    // dist_test's local worker / pre_push_check / flutter_test_failures: the
+    // peak is their whole tool's, not one run of the class.
+    HeavyHistoryEntry via(int peakMb) => HeavyHistoryEntry(
+      at: _now.subtract(const Duration(hours: 1)),
+      kind: 'analyze',
+      label: 'pre-push analyze',
+      where: HeavyRanWhere.here,
+      queued: Duration.zero,
+      ran: const Duration(seconds: 200),
+      exitCode: 0,
+      bookMb: 8192,
+      staticMb: 8192,
+      peakMb: peakMb,
+      via: kHeavyViaPrePush,
+    );
+    expect(
+      _measured(<HeavyHistoryEntry>[
+        for (int i = 0; i < kHeavyMeasuredMinSamples; i++) via(12000),
+      ]),
+      isNull,
+    );
+    expect(
+      _measured(<HeavyHistoryEntry>[
+        for (int i = 1; i <= 100; i++) _run(peakMb: 4000 + i),
+        for (int i = 0; i < 100; i++) via(12000),
+      ]),
+      4608,
+    );
+  });
+
   test('a class that was booked too low books more', () {
     // Small-closure tests booked 4096 MB and peaked at p95 5358 MB.
     expect(

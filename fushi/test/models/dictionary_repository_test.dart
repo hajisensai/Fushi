@@ -17,12 +17,21 @@ class _CountingDb extends FushiDatabase {
 
   int replaceAllCalls = 0;
 
+  /// 最近一次增量写的参数（BUG-4956）。
+  List<DictionaryHistoryRetainedRow> lastRetained =
+      const <DictionaryHistoryRetainedRow>[];
+  List<DictionaryHistoryCompanion> lastInserted =
+      const <DictionaryHistoryCompanion>[];
+
   @override
-  Future<void> replaceAllDictionaryHistory(
-    List<DictionaryHistoryCompanion> items,
-  ) {
+  Future<DictionaryHistorySyncResult> syncDictionaryHistory({
+    required List<DictionaryHistoryRetainedRow> retained,
+    required List<DictionaryHistoryCompanion> inserted,
+  }) {
     replaceAllCalls++;
-    return super.replaceAllDictionaryHistory(items);
+    lastRetained = retained;
+    lastInserted = inserted;
+    return super.syncDictionaryHistory(retained: retained, inserted: inserted);
   }
 }
 
@@ -626,8 +635,8 @@ void main() {
     test(
       'scroll index update lands in persisted resultJson (memo invalidation)',
       () async {
-        // 守回归：逐条序列化 memo（Expando）在就地改 scrollPosition 后必须失效；
-        // 否则第二次 flush 复用 stale JSON，滚动位置永远停在旧值。
+        // 守回归：就地改 scrollPosition 后库里那份正文过期，下次 flush 必须重写；
+        // 否则滚动位置永远停在旧值。
         repo.addHistoryResult(_result(searchTerm: '猫', scrollPosition: 0), 10);
         await repo.flushDictionaryHistoryNow(); // 第一次 flush 填充该条 memo
         final rows0 = await db.getAllDictionaryHistory();
@@ -689,6 +698,124 @@ void main() {
         await db2.close();
       },
     );
+  });
+
+  // ── history incremental persistence (BUG-4956) ───────────────────────
+
+  group('history incremental persistence (BUG-4956)', () {
+    late _CountingDb countingDb;
+    late DictionaryRepository repo2;
+
+    setUp(() async {
+      countingDb = _CountingDb();
+      repo2 = DictionaryRepository(countingDb);
+      await repo2.loadFromDb();
+    });
+
+    tearDown(() async {
+      repo2.dispose();
+      await countingDb.close();
+    });
+
+    Future<List<String>> persistedTerms() async => <String>[
+      for (final DictionaryHistoryRow r
+          in await countingDb.getAllDictionaryHistory())
+        DictionarySearchResult.fromJson(r.resultJson).searchTerm,
+    ];
+
+    Future<Map<String, int>> rowIdsByTerm() async => <String, int>{
+      for (final DictionaryHistoryRow r
+          in await countingDb.getAllDictionaryHistory())
+        DictionarySearchResult.fromJson(r.resultJson).searchTerm: r.id,
+    };
+
+    test('a new lookup inserts one row; unchanged rows only move', () async {
+      // 守回归：每次查词不得再整表重写十份 MB 级 JSON——只插入新增那条，其余
+      // 行保留原行（id 不变）、正文不重写。
+      repo2.addHistoryResult(_result(searchTerm: 'a'), 10);
+      repo2.addHistoryResult(_result(searchTerm: 'b'), 10);
+      await repo2.flushDictionaryHistoryNow();
+      final Map<String, int> before = await rowIdsByTerm();
+
+      repo2.addHistoryResult(_result(searchTerm: 'c'), 10);
+      await repo2.flushDictionaryHistoryNow();
+
+      expect(countingDb.lastInserted, hasLength(1));
+      expect(
+        countingDb.lastRetained.map((r) => r.resultJson),
+        everyElement(isNull),
+        reason: '没变的条目不得重新序列化写入',
+      );
+      expect(await persistedTerms(), <String>['a', 'b', 'c']);
+      final Map<String, int> after = await rowIdsByTerm();
+      expect(after['a'], before['a']);
+      expect(after['b'], before['b']);
+    });
+
+    test('re-looking up an existing term reorders without rewriting', () async {
+      final DictionarySearchResult a = _result(searchTerm: 'a');
+      repo2.addHistoryResult(a, 10);
+      repo2.addHistoryResult(_result(searchTerm: 'b'), 10);
+      await repo2.flushDictionaryHistoryNow();
+
+      repo2.addHistoryResult(a, 10); // 缓存命中：同一个结果对象回到末尾
+      await repo2.flushDictionaryHistoryNow();
+
+      expect(countingDb.lastInserted, isEmpty);
+      expect(
+        countingDb.lastRetained.map((r) => r.resultJson),
+        everyElement(isNull),
+      );
+      expect(await persistedTerms(), <String>['b', 'a']);
+    });
+
+    test('evicted entries are deleted from the table', () async {
+      repo2.addHistoryResult(_result(searchTerm: 'a'), 2);
+      repo2.addHistoryResult(_result(searchTerm: 'b'), 2);
+      await repo2.flushDictionaryHistoryNow();
+      repo2.addHistoryResult(_result(searchTerm: 'c'), 2);
+      repo2.removeHistoryResult('b');
+      await repo2.flushDictionaryHistoryNow();
+      expect(await persistedTerms(), <String>['c']);
+    });
+
+    test('history loaded from the DB is not re-serialized', () async {
+      repo2.addHistoryResult(_result(searchTerm: 'a'), 10);
+      repo2.addHistoryResult(_result(searchTerm: 'b'), 10);
+      await repo2.flushDictionaryHistoryNow();
+
+      final DictionaryRepository reloaded = DictionaryRepository(countingDb);
+      addTearDown(reloaded.dispose);
+      await reloaded.loadFromDb();
+      reloaded.addHistoryResult(_result(searchTerm: 'c'), 10);
+      await reloaded.flushDictionaryHistoryNow();
+
+      expect(countingDb.lastInserted, hasLength(1));
+      expect(countingDb.lastRetained, hasLength(2));
+      expect(
+        countingDb.lastRetained.map((r) => r.resultJson),
+        everyElement(isNull),
+      );
+      expect(await persistedTerms(), <String>['a', 'b', 'c']);
+    });
+
+    test('rows deleted behind the repository are written back', () async {
+      // 行身份过期（表被别处整表替换 / 删掉）：保留行改 position 命中 0 行，
+      // 这几条必须作为新行写回，不能静默丢掉。
+      repo2.addHistoryResult(_result(searchTerm: 'a'), 10);
+      repo2.addHistoryResult(_result(searchTerm: 'b'), 10);
+      await repo2.flushDictionaryHistoryNow();
+      await countingDb.clearDictionaryHistory();
+
+      repo2.addHistoryResult(_result(searchTerm: 'c'), 10);
+      await repo2.flushDictionaryHistoryNow();
+
+      expect(await persistedTerms(), <String>['a', 'b', 'c']);
+      repo2.addHistoryResult(_result(searchTerm: 'd'), 10);
+      await repo2.flushDictionaryHistoryNow();
+      expect(countingDb.lastInserted, hasLength(1));
+      expect(await persistedTerms(), <String>['a', 'b', 'c', 'd']);
+    });
   });
 
   // ── baseName / findUpdatable / deleteDictionaryMeta ──────────────────

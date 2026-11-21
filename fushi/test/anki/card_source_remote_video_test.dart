@@ -137,6 +137,8 @@ void main() {
       expect(r.info?.id, 'uid-b');
       expect(r.fingerprintMismatch, isFalse);
       expect(host.calls, <String>['uid-b#0']);
+      // 拍板台 left3657：回跳不让 host 当场整文件哈希，只要它已算好的。
+      expect(host.waits, <bool>[false]);
     });
 
     test('host 上同 bookUid 换成了别的片子：不放行、报指纹不符', () async {
@@ -146,6 +148,17 @@ void main() {
       );
       expect(r.info, isNull);
       expect(r.fingerprintMismatch, isTrue);
+    });
+
+    test('host 还没算好（wait: false 得 null）：按 bookUid 放行、不干等', () async {
+      final _FakeFingerprints host = _FakeFingerprints.pending(a);
+      final ({RemoteVideoInfo? info, bool fingerprintMismatch}) r = await run(
+        link(CardSourceKind.video, 'uid-a'),
+        host,
+      );
+      expect(r.info?.id, 'uid-a');
+      expect(r.fingerprintMismatch, isFalse);
+      expect(host.waits, <bool>[false]);
     });
 
     test('老 host 算不出（null）：按 bookUid 放行', () async {
@@ -240,21 +253,31 @@ void main() {
       value: null,
       cancelled: false,
       fingerprintMismatch: false,
+      hostUnreadable: false,
     );
     const RemoteCardSourceLookup hostMismatch = (
       value: null,
       cancelled: false,
       fingerprintMismatch: true,
+      hostUnreadable: false,
     );
     const RemoteCardSourceLookup cancelled = (
       value: null,
       cancelled: true,
       fingerprintMismatch: false,
+      hostUnreadable: false,
+    );
+    const RemoteCardSourceLookup hostUnreadable = (
+      value: null,
+      cancelled: false,
+      fingerprintMismatch: false,
+      hostUnreadable: true,
     );
     final RemoteCardSourceLookup hostHas = (
       value: found,
       cancelled: false,
       fingerprintMismatch: false,
+      hostUnreadable: false,
     );
 
     final List<
@@ -323,6 +346,23 @@ void main() {
             notFound,
             CardSourceVideoAction.mediaMissing,
           ),
+          // 拍板台 left3657：host 清单里有、却读不了文件 → 专门提示，不说「没有来源」；
+          // 本机那份也读不了时同样（让用户「先下载」也下不成）；字节不符仍优先。
+          (
+            CardSourceLocalVideoCheck.absent,
+            hostUnreadable,
+            CardSourceVideoAction.hostUnreadable,
+          ),
+          (
+            CardSourceLocalVideoCheck.unreadable,
+            hostUnreadable,
+            CardSourceVideoAction.hostUnreadable,
+          ),
+          (
+            CardSourceLocalVideoCheck.mismatch,
+            hostUnreadable,
+            CardSourceVideoAction.fingerprintMismatch,
+          ),
           // 等 host 时取消：不论本机如何都静默放弃，不弹提示。
           (
             CardSourceLocalVideoCheck.mismatch,
@@ -348,6 +388,7 @@ void main() {
         final RemoteCardSourceLookup l when l.value != null => 'host 有',
         final RemoteCardSourceLookup l when l.fingerprintMismatch =>
           'host 字节不符',
+        final RemoteCardSourceLookup l when l.hostUnreadable => 'host 读不了',
         _ => 'host 没有',
       };
       test('本机 ${local.name} + $host → ${expected.name}', () {
@@ -428,31 +469,47 @@ void main() {
 }
 
 class _FakeFingerprints implements RemoteVideoFingerprintSource {
-  _FakeFingerprints(this.fingerprint) : fail = false, unverifiable = false;
+  _FakeFingerprints(this.fingerprint)
+    : fail = false,
+      unverifiable = false,
+      pending = false;
   _FakeFingerprints.failing()
     : fingerprint = null,
       fail = true,
-      unverifiable = false;
+      unverifiable = false,
+      pending = false;
   _FakeFingerprints.unavailable()
     : fingerprint = null,
       fail = false,
-      unverifiable = true;
+      unverifiable = true,
+      pending = false;
+
+  /// 新 host 还没算好：`wait: false` 时得 null，`wait: true` 才给 [fingerprint]。
+  _FakeFingerprints.pending(this.fingerprint)
+    : fail = false,
+      unverifiable = false,
+      pending = true;
 
   final String? fingerprint;
   final bool fail;
   final bool unverifiable;
+  final bool pending;
   final List<String> calls = <String>[];
+  final List<bool> waits = <bool>[];
 
   @override
   Future<String?> fetchRemoteVideoFingerprint(
     String id, {
     int episodeIndex = 0,
+    bool wait = true,
   }) async {
     calls.add('$id#$episodeIndex');
+    waits.add(wait);
     if (fail) throw const SocketException('host unreachable');
     if (unverifiable) {
       throw RemoteVideoFingerprintUnavailable(id, 'unreadable');
     }
+    if (pending && !wait) return null;
     return fingerprint;
   }
 }

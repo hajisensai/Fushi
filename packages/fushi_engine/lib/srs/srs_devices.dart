@@ -53,6 +53,64 @@ String srsDeviceKey(String id) {
   return base.replaceAll('-', '').toLowerCase();
 }
 
+/// 停着的重切件为什么收不了（内核 `relayBlocked[].reason`，`cmd/sync_park.rs`）。
+enum SrsRelayBlockedReason {
+  /// 在等这台设备的一条彻底清除（它同步一次这个位置就好）。
+  purge,
+
+  /// 这台设备待确认（确认它就能收）。
+  pending,
+
+  /// 这台设备已被拒绝（经它转发的收不了，作者自己同步就好）。
+  rejected;
+
+  static SrsRelayBlockedReason? parse(Object? v) => switch (v) {
+    'purge' => SrsRelayBlockedReason.purge,
+    'pending' => SrsRelayBlockedReason.pending,
+    'rejected' => SrsRelayBlockedReason.rejected,
+    _ => null,
+  };
+}
+
+/// 一组在等这台设备的重切件（内核 `relayBlocked` 的一项）：同步位置 [location] 上作者 [author] 的 [pieces] 件，
+/// 因为 [reason] 本机收不了——这个位置对本机不完整。
+class SrsRelayBlocked {
+  const SrsRelayBlocked({
+    required this.location,
+    required this.author,
+    required this.reason,
+    required this.pieces,
+  });
+
+  final String location;
+  final String author;
+  final SrsRelayBlockedReason reason;
+  final int pieces;
+
+  /// 内核的一项；认不出的原因 / 缺字段返回 null（跳过，不猜）。
+  static SrsRelayBlocked? fromStatus(Object? v) {
+    if (v is! Map) return null;
+    final SrsRelayBlockedReason? reason = SrsRelayBlockedReason.parse(
+      v['reason'],
+    );
+    final Object? location = v['location'];
+    final Object? author = v['author'];
+    final Object? pieces = v['pieces'];
+    if (reason == null ||
+        location is! String ||
+        author is! String ||
+        pieces is! num) {
+      return null;
+    }
+    return SrsRelayBlocked(
+      location: location,
+      author: author,
+      reason: reason,
+      pieces: pieces.toInt(),
+    );
+  }
+}
+
 /// 内核 `sync2_status.devices` 的一行。
 class SrsDeviceView {
   const SrsDeviceView({
@@ -77,6 +135,7 @@ class SrsDeviceView {
     this.heldPurges = 0,
     this.rulesTheirs,
     this.rulesMine,
+    this.relayBlocked = const <SrsRelayBlocked>[],
   });
 
   factory SrsDeviceView.fromStatus(Map<String, Object?> d) {
@@ -104,6 +163,11 @@ class SrsDeviceView {
       heldPurges: n('heldPurges'),
       rulesTheirs: ((d['rules'] as Map?)?['theirs'] as num?)?.toInt(),
       rulesMine: ((d['rules'] as Map?)?['mine'] as num?)?.toInt(),
+      relayBlocked: <SrsRelayBlocked>[
+        for (final Object? b
+            in (d['relayBlocked'] as List?) ?? const <Object?>[])
+          ?SrsRelayBlocked.fromStatus(b),
+      ],
     );
   }
 
@@ -137,6 +201,15 @@ class SrsDeviceView {
   final int? trustSince;
   final int heldDeletes;
   final int heldPurges;
+
+  /// 在等这台设备的重切件（第六波，内核 `cmd/sync_park.rs`）：等它的一条彻底清除、或等本机确认它；有这样的件时
+  /// 相关同步位置对本机不完整，同步页这一行说明原因与出路。
+  final List<SrsRelayBlocked> relayBlocked;
+
+  /// [relayBlocked] 里原因为 [reason] 的件数合计。
+  int relayBlockedPieces(SrsRelayBlockedReason reason) => relayBlocked
+      .where((SrsRelayBlocked b) => b.reason == reason)
+      .fold(0, (int n, SrsRelayBlocked b) => n + b.pieces);
 
   /// 待本机确认（冲突中心的确认卡片与角标、服务端管理接口的待确认列表）。
   bool get needsTrust => trust == SrsDeviceTrust.pending;

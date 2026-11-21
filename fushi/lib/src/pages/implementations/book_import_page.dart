@@ -12,6 +12,7 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart'
 import 'package:fushi/src/media/drag_drop/reader_shelf_drop_router.dart';
 import 'package:fushi/src/media/import/import_collage_page.dart';
 import 'package:fushi/src/media/import/import_inbox.dart';
+import 'package:fushi/src/media/import/import_inbox_text.dart';
 import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/media/import/pasted_text_book_dialog.dart';
 import 'package:fushi/src/media/media_item.dart';
@@ -165,7 +166,7 @@ class _BookImportPageState extends ConsumerState<BookImportPage> {
             kind: ImportMethodKind.folder,
             icon: FushiIcons.folderOpen,
             label: t.media_import_inbox,
-            description: t.media_import_inbox_hint(
+            description: importInboxHintText(
               folder: ImportInbox.folderNameFor('book') ?? '',
             ),
             destination: ImportDestination.dialog,

@@ -24,8 +24,12 @@ class InterconnectOnlineMangaHostReader implements OnlineMangaHostReader {
 
   /// 最近几章的页表：对端逐页取图，每页都重新解析整章页表会把源站打爆。失败的
   /// 解析不留（下次重试），容量够覆盖「当前章 + 预取下一章」再加几章余量。
-  final Map<String, Future<List<OnlineMangaPageRef>>> _pageTables =
-      <String, Future<List<OnlineMangaPageRef>>>{};
+  ///
+  /// 页表经 [OnlineMangaChapterPageRefs] 持有：桌面 sidecar 一重启（装 / 更新 /
+  /// 卸扩展），缓存里的取页引用整份作废，由它重解析换新（BUG-4917）；源端页数变了
+  /// 就把这份页表丢掉，对端下次按新页数重开。
+  final Map<String, Future<OnlineMangaChapterPageRefs>> _pageTables =
+      <String, Future<OnlineMangaChapterPageRefs>>{};
   static const int _pageTableCapacity = 8;
 
   @override
@@ -51,17 +55,27 @@ class InterconnectOnlineMangaHostReader implements OnlineMangaHostReader {
     required Map<String, Object?> chapter,
     required int index,
   }) async {
-    final List<OnlineMangaPageRef> pages = await _pages(
+    final Future<OnlineMangaChapterPageRefs> table = _pages(
       bookKey,
       sourceMetadata,
       chapter,
     );
-    RangeError.checkValidIndex(index, pages, 'index');
-    final OnlineMangaLibraryEntry entry = _parse(sourceMetadata);
-    return _serviceFor(entry.runtime).adapter.fetchChapterPage(pages[index]);
+    final OnlineMangaChapterPageRefs pages = await table;
+    RangeError.checkValidIndex(index, null, 'index', pages.length);
+    try {
+      return await pages.fetch(index);
+    } catch (_) {
+      if (pages.pageCountChanged) {
+        _pageTables.removeWhere(
+          (String _, Future<OnlineMangaChapterPageRefs> cached) =>
+              identical(cached, table),
+        );
+      }
+      rethrow;
+    }
   }
 
-  Future<List<OnlineMangaPageRef>> _pages(
+  Future<OnlineMangaChapterPageRefs> _pages(
     String bookKey,
     String sourceMetadata,
     Map<String, Object?> chapterJson,
@@ -77,7 +91,7 @@ class InterconnectOnlineMangaHostReader implements OnlineMangaHostReader {
       throw StateError('malformed online manga chapter: $bookKey');
     }
     final String cacheKey = '$bookKey\u0000${chapter.key}';
-    final Future<List<OnlineMangaPageRef>>? cached = _pageTables.remove(
+    final Future<OnlineMangaChapterPageRefs>? cached = _pageTables.remove(
       cacheKey,
     );
     if (cached != null) {
@@ -85,19 +99,31 @@ class InterconnectOnlineMangaHostReader implements OnlineMangaHostReader {
       _pageTables[cacheKey] = cached;
       return cached;
     }
-    final Future<List<OnlineMangaPageRef>> resolving = _serviceFor(
+    final OnlineMangaRuntimeAdapter adapter = _serviceFor(
       entry.runtime,
-    ).adapter.resolveChapterPages(entry: entry, chapter: chapter);
+    ).adapter;
+    final Future<OnlineMangaChapterPageRefs> resolving = adapter
+        .resolveChapterPages(entry: entry, chapter: chapter)
+        .then(
+          (List<OnlineMangaPageRef> pages) => OnlineMangaChapterPageRefs(
+            adapter: adapter,
+            entry: entry,
+            chapter: chapter,
+            pages: pages,
+          ),
+        );
     _pageTables[cacheKey] = resolving;
     while (_pageTables.length > _pageTableCapacity) {
       _pageTables.remove(_pageTables.keys.first);
     }
-    resolving.catchError((Object _) {
-      if (identical(_pageTables[cacheKey], resolving)) {
-        _pageTables.remove(cacheKey);
-      }
-      return const <OnlineMangaPageRef>[];
-    });
+    resolving.then<void>(
+      (OnlineMangaChapterPageRefs _) {},
+      onError: (Object _) {
+        if (identical(_pageTables[cacheKey], resolving)) {
+          _pageTables.remove(cacheKey);
+        }
+      },
+    );
     return resolving;
   }
 

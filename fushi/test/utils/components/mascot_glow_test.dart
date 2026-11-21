@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' show ImageFilter;
 
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/mascot_glow.dart';
@@ -9,16 +10,23 @@ import 'package:material_ui/material_ui.dart';
 
 /// 吉祥物光晕：开关、忙碌档、减弱动态效果下的行为。
 void main() {
+  final TestWidgetsFlutterBinding binding =
+      TestWidgetsFlutterBinding.ensureInitialized();
   late ValueNotifier<bool> busy;
+  late SchedulingStrategy savedStrategy;
 
   setUp(() {
     mascotGlowEnabled.value = false;
     busy = ValueNotifier<bool>(false);
+    // 生产 binding 装的就是它（FushiWidgetsFlutterBinding.ensureInitialized）。
+    savedStrategy = binding.schedulingStrategy;
+    binding.schedulingStrategy = ambientAwareSchedulingStrategy;
   });
 
   tearDown(() {
     mascotGlowEnabled.value = false;
     busy.dispose();
+    binding.schedulingStrategy = savedStrategy;
   });
 
   Widget host({bool disableAnimations = false}) => MaterialApp(
@@ -109,6 +117,7 @@ void main() {
   testWidgets('呼吸是常驻装饰动画：不算真实动画，等空闲照常完成', (WidgetTester tester) async {
     mascotGlowEnabled.value = true;
     await tester.pumpWidget(host());
+    expect(AmbientTickers.liveCount, 1);
     expect(tester.binding.transientCallbackCount, 1);
     expect(AmbientTickers.scheduledFrameCallbackCount, 1);
     expect(hasRealAnimations(tester.binding), isFalse);
@@ -121,12 +130,40 @@ void main() {
     // 忙碌档换节奏后仍是同一个 ambient ticker。
     busy.value = true;
     await tester.pump();
-    expect(AmbientTickers.scheduledFrameCallbackCount, 1);
+    expect(AmbientTickers.liveCount, 1);
     expect(hasRealAnimations(tester.binding), isFalse);
 
     mascotGlowEnabled.value = false;
     await tester.pump();
     expect(AmbientTickers.liveCount, 0);
+  });
+
+  // BUG-4961：光晕开着时不再按屏幕刷新率逐帧重画整窗（4K 144 Hz 下 raster 约 47%）。
+  testWidgets('呼吸约 30 fps 采样，不按刷新率逐帧', (WidgetTester tester) async {
+    mascotGlowEnabled.value = true;
+    await tester.pumpWidget(host());
+    final Animation<double> opacity = tester
+        .widget<FadeTransition>(
+          find.descendant(
+            of: find.byKey(kMascotGlowHaloKey),
+            matching: find.byType(FadeTransition),
+          ),
+        )
+        .opacity;
+    int ticks = 0;
+    void count() => ticks++;
+    opacity.addListener(count);
+    for (int ms = 0; ms < 1000; ms++) {
+      await tester.pump(const Duration(milliseconds: 1));
+    }
+    opacity.removeListener(count);
+    expect(
+      ticks,
+      lessThanOrEqualTo(
+        1000 ~/ FushiMotion.ambientFrameInterval.inMilliseconds + 2,
+      ),
+    );
+    expect(ticks, greaterThan(10), reason: '仍在呼吸');
   });
 
   testWidgets('减弱动态效果：静止光晕，不跑 ticker', (WidgetTester tester) async {

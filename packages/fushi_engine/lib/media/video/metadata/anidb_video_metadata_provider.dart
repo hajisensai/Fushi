@@ -17,6 +17,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_json.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_languages.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_related_works.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
@@ -703,6 +704,7 @@ class AniDbVideoMetadataProvider
       specials: specials,
       malIds: malIds.toSet().toList(growable: false),
       prequelIds: prequelIds.toSet().toList(growable: false),
+      related: aniDbRelatedWorksFromRoot(root),
       episodeTitles: episodeTitles,
     );
   }
@@ -782,6 +784,11 @@ class AniDbVideoMetadataProvider
         'aid': anime.animeId,
         'type': anime.animeType,
         'restricted': anime.restricted,
+        // 系列关系（全部 relatedanime 类型）：随 details 快照落库，作品资料写库时
+        // 落进 collection_relations（video_collection_relation_sync.dart）。
+        kAniDbRelatedPayloadKey: <Map<String, Object?>>[
+          for (final VideoRelatedWork r in anime.related) r.toPayload(),
+        ],
       },
     );
   }
@@ -1434,6 +1441,7 @@ class _AniDbAnime {
     this.specials = const <VideoMetadataEpisode>[],
     this.malIds = const <int>[],
     this.prequelIds = const <int>[],
+    this.related = const <VideoRelatedWork>[],
     this.episodeTitles = const <int, List<AniDbTitle>>{},
   });
 
@@ -1442,6 +1450,9 @@ class _AniDbAnime {
 
   /// `<relatedanime type="Prequel">` 的 aid。
   final List<int> prequelIds;
+
+  /// `<relatedanime>` 全部条目（各类型，已映射成 collection_relations 落库值）。
+  final List<VideoRelatedWork> related;
 
   /// eid → 该集全部语言标题（逐集链接与 UDP 兜底用）。
   final Map<int, List<AniDbTitle>> episodeTitles;

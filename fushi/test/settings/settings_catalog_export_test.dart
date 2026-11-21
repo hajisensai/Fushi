@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -14,6 +15,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/ops/settings_index.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
@@ -103,8 +105,14 @@ _LocalePass _collect(String tag, SettingsContext settings) {
   return _LocalePass(tag, rows, texts);
 }
 
-/// 把各语言的一遍结果合成目录条目。非文案字段以第一遍（英文）为准。
-List<Map<String, Object?>> _buildEntries(List<_LocalePass> passes) {
+/// 把各语言的一遍结果合成目录条目。文案与结构字段以第一遍（基准平台的英文）为准；
+/// 出厂默认值与「在哪些平台上显示」取自 [platformRows]（每个出包平台一遍的原始应答）：
+/// 各平台默认值一致时只给 `default`，不一致时改给 `defaultByPlatform`；只在部分
+/// 平台显示的行给 `platforms`。
+List<Map<String, Object?>> _buildEntries(
+  List<_LocalePass> passes,
+  Map<HostPlatform, Map<String, Map<String, Object?>>> platformRows,
+) {
   final _LocalePass base = passes.first;
   Map<String, String> localized(
     String key,
@@ -126,6 +134,20 @@ List<Map<String, Object?>> _buildEntries(List<_LocalePass> passes) {
       (_LocaleTexts t) => t.description,
     );
     final List<Object?>? options = json['options'] as List<Object?>?;
+    // 全新 AppModel 上读到的值就是出厂默认；机密项与读取失败的不给。
+    final Map<String, Object?> defaults = <String, Object?>{};
+    final List<String> shownOn = <String>[];
+    for (final MapEntry<HostPlatform, Map<String, Map<String, Object?>>> pass
+        in platformRows.entries) {
+      final Map<String, Object?>? platformRow = pass.value[key];
+      if (platformRow == null) continue;
+      if (platformRow['visible'] == true) shownOn.add(pass.key.wireName);
+      if (isValue && !secret && platformRow['error'] == null) {
+        defaults[pass.key.wireName] = platformRow['value'];
+      }
+    }
+    final bool uniformDefault =
+        defaults.values.map((Object? v) => jsonEncode(v)).toSet().length <= 1;
     entries.add(<String, Object?>{
       'key': key,
       'kind': json['kind'],
@@ -147,8 +169,12 @@ List<Map<String, Object?>> _buildEntries(List<_LocalePass> passes) {
         ],
       if (json['min'] != null) 'min': json['min'],
       if (json['max'] != null) 'max': json['max'],
-      // 全新 AppModel 上读到的值就是出厂默认；机密项与读取失败的不给。
-      if (isValue && !secret && json['error'] == null) 'default': json['value'],
+      if (defaults.isNotEmpty && uniformDefault)
+        'default': defaults.values.first,
+      if (!uniformDefault) 'defaultByPlatform': defaults,
+      // 全平台都显示 / 全平台都不显示（多半是要先开别的开关）的行不标平台。
+      if (shownOn.isNotEmpty && shownOn.length < platformRows.length)
+        'platforms': shownOn,
       if (secret) 'secret': true,
       if (json['userOnly'] == true) 'userOnly': true,
       if (json['runnable'] == true) 'runnable': true,
@@ -167,6 +193,7 @@ Map<String, Object?> _buildCatalog(
   List<Map<String, Object?>> entries, {
   required String appVersion,
   required List<String> locales,
+  required List<String> platforms,
 }) => <String, Object?>{
   'schema': kSettingsCatalogSchema,
   'app': 'Fushi',
@@ -174,6 +201,8 @@ Map<String, Object?> _buildCatalog(
   'source':
       'https://github.com/hajisensai/Fushi/blob/develop/fushi/test/settings/settings_catalog_export_test.dart',
   'locales': locales,
+  // 默认值 / 可见行按这些出包平台各算了一遍（Linux 不出包，不算）。
+  'platforms': platforms,
   'count': entries.length,
   'settings': entries,
 };
@@ -225,8 +254,14 @@ String _renderMarkdown(Map<String, Object?> catalog) {
       'drawn by the app, changed only in the Settings page).',
     )
     ..writeln(
-      '- **Default** is the value on a fresh install. Some rows only appear '
-      'on certain platforms or when their module is enabled.',
+      '- **Default** is the value on a fresh install. Where it differs '
+      'between platforms, each value is listed with the platforms it applies '
+      'to (${(catalog['platforms']! as List<Object?>).join(', ')}).',
+    )
+    ..writeln(
+      '- *Only on ...* in Notes: the row is shown only on those platforms. '
+      'Rows without it may still depend on another setting or module being '
+      'enabled.',
     )
     ..writeln(
       '- Notes: *user only* = the AI assistant may not change it; '
@@ -280,6 +315,8 @@ void _writeRow(StringBuffer out, Map<String, Object?> entry) {
   final List<String> notes = <String>[
     _localizedOf(entry['description'], 'en'),
     if (entry['help'] != null) '${entry['help']}',
+    if (entry['platforms'] != null)
+      '*only on ${(entry['platforms']! as List<Object?>).join(', ')}*',
     if (entry['userOnly'] == true) '*user only*',
     if (entry['destructive'] == true) '*destructive*',
   ].where((String s) => s.isNotEmpty).toList();
@@ -290,9 +327,31 @@ void _writeRow(StringBuffer out, Map<String, Object?> entry) {
     '| ${_cell(crumbs.skip(1).join(_kCrumbSeparator))} '
     '| ${entry['type']} '
     '| $values '
-    '| ${entry.containsKey('default') ? _code(entry['default']) : ''} '
+    '| ${_defaultCell(entry)} '
     '| ${_cell(notes.join(' · '))} |',
   );
+}
+
+/// Default 列：各平台一致时就是那个值；不一致时按值归并平台，
+/// 如 `` `mp4` (android, windows, macos) · `webm` (ios) ``。
+String _defaultCell(Map<String, Object?> entry) {
+  if (entry.containsKey('default')) return _code(entry['default']);
+  final Map<String, Object?>? byPlatform =
+      entry['defaultByPlatform'] as Map<String, Object?>?;
+  if (byPlatform == null) return '';
+  final Map<String, List<String>> platformsByValue = <String, List<String>>{};
+  for (final MapEntry<String, Object?> e in byPlatform.entries) {
+    final String value = _code(e.value);
+    (platformsByValue[value.isEmpty ? '(empty)' : value] ??= <String>[]).add(
+      e.key,
+    );
+  }
+  return platformsByValue.entries
+      .map(
+        (MapEntry<String, List<String>> e) =>
+            '${e.key} (${e.value.join(', ')})',
+      )
+      .join(' · ');
 }
 
 String _appVersion() {
@@ -304,75 +363,152 @@ String _appVersion() {
   return match.group(1)!;
 }
 
+/// 在 [platform] 上「全新安装」的 app 里取一份 [SettingsContext]。
+///
+/// 全新安装的状态：空的内存库 + 刚加载的偏好仓库（一条偏好都没写过），读到的值
+/// 就是出厂默认。裸 AppModel 没有偏好仓库，绝大多数值闭包会直接空指针。
+/// 平台覆盖要先于 [PlatformServices] / [AppModel] 的构造（它们在构造时读平台）。
+Future<SettingsContext> _freshInstallSettings(
+  WidgetTester tester,
+  HostPlatform platform,
+) async {
+  // 先卸掉上一个平台的树：pump 一帧把 riverpod 挂起的调度冲掉再卸，否则卸载时
+  // autoDispose 再排一个任务会撞 `Only one task can be scheduled at a time`。
+  await _unmountTree(tester);
+  debugHostPlatformOverride = platform;
+  debugDefaultTargetPlatformOverride = platform.targetPlatform;
+  final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+  addTearDown(db.close);
+  final PreferencesRepository prefs = PreferencesRepository(db);
+  await tester.runAsync(prefs.loadFromDb);
+  final Directory dataDir = Directory.systemTemp.createTempSync(
+    'fushi_settings_catalog_',
+  );
+  addTearDown(() {
+    if (dataDir.existsSync()) dataDir.deleteSync(recursive: true);
+  });
+  final PlatformServices services = testPlatformServices();
+  final AppModel appModel = AppModel(services)
+    // 空快照 = 主题 / 明暗 / 设计系统全取默认。
+    ..themeNotifier = (ThemeNotifier(db, () => const TextTheme())
+      ..loadFromPrefsSnapshot(const <String, String>{}))
+    ..populateLocales()
+    ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: dataDir)
+    ..wireDatabaseForTesting(db);
+
+  late SettingsContext settings;
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [platformServicesProvider.overrideWithValue(services)],
+      child: MaterialApp(
+        home: Consumer(
+          builder: (BuildContext context, WidgetRef ref, Widget? _) {
+            settings = SettingsContext(
+              context: context,
+              appModel: appModel,
+              ref: ref,
+              readerSource: ReaderFushiSource.instance,
+              refresh: () {},
+            );
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    ),
+  );
+  return settings;
+}
+
+Future<void> _unmountTree(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pumpWidget(const SizedBox.shrink());
+  await tester.pump();
+}
+
+void _resetPlatformOverrides() {
+  debugHostPlatformOverride = null;
+  debugDefaultTargetPlatformOverride = null;
+}
+
 void main() {
   tearDown(() {
+    _resetPlatformOverrides();
     LocaleSettings.setLocale(AppLocale.en);
     resetSettingsSchemaCache();
   });
 
-  testWidgets('设置项目录：走完整棵 schema，中英双语，机密不出值', (WidgetTester tester) async {
-    // 全新安装的状态：空的内存库 + 刚加载的偏好仓库（一条偏好都没写过），读到的值
-    // 就是出厂默认。裸 AppModel 没有偏好仓库，绝大多数值闭包会直接空指针。
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-    final PreferencesRepository prefs = PreferencesRepository(db);
-    await tester.runAsync(prefs.loadFromDb);
-    final Directory dataDir = Directory.systemTemp.createTempSync(
-      'fushi_settings_catalog_',
-    );
-    addTearDown(() {
-      if (dataDir.existsSync()) dataDir.deleteSync(recursive: true);
-    });
-    final PlatformServices services = testPlatformServices();
-    final AppModel appModel = AppModel(services)
-      // 空快照 = 主题 / 明暗 / 设计系统全取默认。
-      ..themeNotifier = (ThemeNotifier(db, () => const TextTheme())
-        ..loadFromPrefsSnapshot(const <String, String>{}))
-      ..populateLocales()
-      ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: dataDir)
-      ..wireDatabaseForTesting(db);
-
-    late SettingsContext settings;
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [platformServicesProvider.overrideWithValue(services)],
-        child: MaterialApp(
-          home: Consumer(
-            builder: (BuildContext context, WidgetRef ref, Widget? _) {
-              settings = SettingsContext(
-                context: context,
-                appModel: appModel,
-                ref: ref,
-                readerSource: ReaderFushiSource.instance,
-                refresh: () {},
-              );
-              return const SizedBox.shrink();
-            },
-          ),
-        ),
-      ),
-    );
-
+  testWidgets('设置项目录：走完整棵 schema，四个出包平台，中英双语，机密不出值', (
+    WidgetTester tester,
+  ) async {
+    // 文案取基准平台（第一个出包平台 = Android）的中英两遍；其余平台只要原始应答
+    // （默认值 / 可见性），英文一遍即可。
     final List<_LocalePass> passes = <_LocalePass>[];
-    for (final (String tag, AppLocale locale) in <(String, AppLocale)>[
-      ('en', AppLocale.en),
-      ('zh-CN', AppLocale.zhCn),
-    ]) {
-      LocaleSettings.setLocale(locale);
-      passes.add(_collect(tag, settings));
+    final Map<HostPlatform, Map<String, Map<String, Object?>>> platformRows =
+        <HostPlatform, Map<String, Map<String, Object?>>>{};
+    try {
+      for (final HostPlatform platform in HostPlatform.shipping) {
+        final SettingsContext settings = await _freshInstallSettings(
+          tester,
+          platform,
+        );
+        final bool isBase = platform == HostPlatform.shipping.first;
+        for (final (String tag, AppLocale locale) in <(String, AppLocale)>[
+          ('en', AppLocale.en),
+          if (isBase) ('zh-CN', AppLocale.zhCn),
+        ]) {
+          LocaleSettings.setLocale(locale);
+          final _LocalePass pass = _collect(tag, settings);
+          if (isBase) passes.add(pass);
+          if (tag == 'en') platformRows[platform] = pass.rows;
+        }
+      }
+      // 卸掉最后一棵树再复位：复位后不能再有按旧平台构建的 widget 在跑。
+      await _unmountTree(tester);
+    } finally {
+      _resetPlatformOverrides();
     }
 
-    final List<Map<String, Object?>> entries = _buildEntries(passes);
+    final List<Map<String, Object?>> entries = _buildEntries(
+      passes,
+      platformRows,
+    );
     final Map<String, Object?> catalog = _buildCatalog(
       entries,
       appVersion: _appVersion(),
       locales: <String>[for (final _LocalePass pass in passes) pass.tag],
+      platforms: <String>[
+        for (final HostPlatform platform in platformRows.keys)
+          platform.wireName,
+      ],
     );
     final String json = const JsonEncoder.withIndent(' ').convert(catalog);
     final String markdown = _renderMarkdown(catalog);
 
-    // 两种语言走到的是同一批键（schema 结构不随语言变）。
+    // 两种语言、四个平台走到的是同一批键（schema 结构不随语言 / 平台变，平台只改
+    // 可见性与值）。
     expect(passes[1].rows.keys.toList(), passes[0].rows.keys.toList());
+    for (final MapEntry<HostPlatform, Map<String, Map<String, Object?>>> pass
+        in platformRows.entries) {
+      expect(
+        pass.value.keys.toSet(),
+        passes[0].rows.keys.toSet(),
+        reason: '${pass.key.wireName} 上的设置键与基准平台不同',
+      );
+    }
+    // 平台覆盖真的生效了：galgame 设置只在 Windows 显示，挖矿片段格式 iOS 默认不同。
+    expect(
+      entries.any(
+        (Map<String, Object?> e) =>
+            (e['platforms'] as List<Object?>?)?.join(',') == 'windows',
+      ),
+      isTrue,
+      reason: '没有任何只在 Windows 显示的行：平台覆盖没有生效',
+    );
+    expect(
+      entries.any((Map<String, Object?> e) => e['defaultByPlatform'] != null),
+      isTrue,
+      reason: '所有默认值在四个平台上都一样：平台覆盖没有生效',
+    );
     expect(entries.length, greaterThan(300), reason: '遍历没走完 schema');
     final Set<String> kinds = <String>{
       for (final Map<String, Object?> e in entries) e['kind']! as String,
@@ -396,17 +532,24 @@ void main() {
       ),
       isTrue,
     );
-    // 读取失败的条目没有默认值；全默认的 AppModel 上不该成片失败。
-    final List<String> failed = <String>[
-      for (final MapEntry<String, Map<String, Object?>> row
-          in passes[0].rows.entries)
-        if (row.value['error'] != null) '${row.key}: ${row.value['error']}',
-    ];
-    expect(
-      failed.length,
-      lessThan(entries.length ~/ 20),
-      reason: '读取失败的设置项过多：\n${failed.join('\n')}',
-    );
+    // 读取失败的条目没有默认值；全默认的 AppModel 上任何一个平台都不该成片失败。
+    final Map<String, List<String>> failedByPlatform = <String, List<String>>{
+      for (final MapEntry<HostPlatform, Map<String, Map<String, Object?>>> pass
+          in platformRows.entries)
+        pass.key.wireName: <String>[
+          for (final MapEntry<String, Map<String, Object?>> row
+              in pass.value.entries)
+            if (row.value['error'] != null) '${row.key}: ${row.value['error']}',
+        ],
+    };
+    for (final MapEntry<String, List<String>> failed
+        in failedByPlatform.entries) {
+      expect(
+        failed.value.length,
+        lessThan(entries.length ~/ 20),
+        reason: '${failed.key} 上读取失败的设置项过多：\n${failed.value.join('\n')}',
+      );
+    }
     expect(jsonDecode(json), isA<Map<String, Object?>>());
     expect(markdown, contains('| `appearance.brightness` '));
     // 每个一级分类只出一节（逃生口页面的条目并进同名分类）。
@@ -418,11 +561,24 @@ void main() {
     expect(headings.length, greaterThan(15));
 
     // 统计行总是打印：CI 日志与分流到别的机器的运行都能看到走到了多少条。
+    final int platformDefaults = entries
+        .where((Map<String, Object?> e) => e['defaultByPlatform'] != null)
+        .length;
+    final int platformOnlyRows = entries
+        .where((Map<String, Object?> e) => e['platforms'] != null)
+        .length;
+    final String unreadable = failedByPlatform.entries
+        .map(
+          (MapEntry<String, List<String>> e) =>
+              '${e.key} ${e.value.length} [${e.value.take(8).join(' | ')}]',
+        )
+        .join('; ');
     // ignore: avoid_print
     print(
       'settings catalog: ${entries.length} entries, '
-      '${failed.length} unreadable, ${json.length} bytes json, '
-      '${markdown.length} bytes md; unreadable: ${failed.take(12).join(' | ')}',
+      '$platformDefaults platform-specific defaults, '
+      '$platformOnlyRows platform-only rows, ${json.length} bytes json, '
+      '${markdown.length} bytes md; unreadable: $unreadable',
     );
     final String? outDir = Platform.environment[kSettingsCatalogDirEnv];
     if (outDir != null && outDir.isNotEmpty) {

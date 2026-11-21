@@ -302,7 +302,7 @@ void main() {
 
     String onMineBody() {
       final int start = flat.indexOf(
-        'Future<MinePopupResult>onMineFromPopup(Map<String,String>fields)async{',
+        'Future<MinePopupResult>_mineFromPopup(Map<String,String>fields,{int?overwriteNoteId,})async{',
       );
       expect(start, isNonNegative);
       return flat.substring(

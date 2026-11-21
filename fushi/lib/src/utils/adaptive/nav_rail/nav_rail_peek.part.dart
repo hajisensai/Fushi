@@ -12,6 +12,8 @@ class AdaptiveNavPeekEntry {
     this.icon,
     this.status,
     this.statusTone = AdaptiveNavPeekStatusTone.neutral,
+    this.statusIcon,
+    this.action,
     this.blurCover = false,
   });
 
@@ -40,8 +42,29 @@ class AdaptiveNavPeekEntry {
   /// [status] 的语义色。
   final AdaptiveNavPeekStatusTone statusTone;
 
+  /// [status] 小签前的图标（漫画「有声」签的耳机）；null = 只有文字。
+  final IconData? statusIcon;
+
+  /// 列表行的行内动作（漫画「加声音」）：鼠标悬停或键盘焦点落在这一行时出现在行尾；
+  /// null = 没有。速览卡只在鼠标悬停侧栏时弹出，所以没有触摸形态。
+  final AdaptiveNavPeekAction? action;
+
   /// 点了直接打开这个条目（打开阅读器 / 播放器 / 切到对应库页）。
   final VoidCallback onOpen;
+}
+
+/// 速览列表行的行内动作（见 [AdaptiveNavPeekEntry.action]）。
+@immutable
+class AdaptiveNavPeekAction {
+  const AdaptiveNavPeekAction({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
 }
 
 /// 速览条目状态小签的语义色。
@@ -300,6 +323,12 @@ class _NavRailPeekScopeState extends State<_NavRailPeekScope>
     target.onSelect();
   }
 
+  /// 行内动作（「加声音」）和打开条目一样先收起速览卡，再跳去目标页。
+  void _runAction(AdaptiveNavPeekAction action) {
+    close();
+    action.onPressed();
+  }
+
   void _openEntry(AdaptiveNavPeekEntry entry) {
     close();
     entry.onOpen();
@@ -356,6 +385,7 @@ class _NavRailPeekScopeState extends State<_NavRailPeekScope>
         data: _dataFor(target),
         onOpenModule: () => _openModule(target),
         onOpenEntry: _openEntry,
+        onRunAction: _runAction,
       ),
     );
     return AnimatedBuilder(
@@ -459,6 +489,7 @@ class _NavRailPeekContent extends StatelessWidget {
     required this.data,
     required this.onOpenModule,
     required this.onOpenEntry,
+    required this.onRunAction,
   });
 
   final AdaptiveNavItem item;
@@ -466,6 +497,7 @@ class _NavRailPeekContent extends StatelessWidget {
   final Future<AdaptiveNavPeekData> data;
   final VoidCallback onOpenModule;
   final ValueChanged<AdaptiveNavPeekEntry> onOpenEntry;
+  final ValueChanged<AdaptiveNavPeekAction> onRunAction;
 
   @override
   Widget build(BuildContext context) {
@@ -634,10 +666,11 @@ class _NavRailPeekContent extends StatelessWidget {
                   ),
                 )
             else
-              _NavPeekCoverList(
+              AdaptiveNavPeekCoverList(
                 entries: rest,
                 fallbackIcon: item.icon,
                 onOpen: onOpenEntry,
+                onAction: onRunAction,
               ),
           ],
         ],
@@ -878,16 +911,27 @@ class _NavPeekBlock extends StatelessWidget {
 /// 状态签），每行前面是按自身朝向摆的完整封面缩略图——不再是两列只剩封面一角
 /// 与半截标题的小色块（用户 2026-11-16「预览还是有点简陋」：同一部作品的两个
 /// 下载任务在小块里只看得出两张一样的封面）。
-class _NavPeekCoverList extends StatelessWidget {
-  const _NavPeekCoverList({
+///
+/// 悬停变深由行外壳（[FushiGroupedListItem] → FushiCard 的 InkWell 状态层）画，
+/// 与指针同帧开始淡入（2026-11-20 反馈 #6 的根因修在 FushiCard：形变圆角不再让
+/// InkWell 每帧重建悬停高亮）；行内动作（[AdaptiveNavPeekEntry.action]）跟本行的
+/// 悬停 / 焦点一起出现。
+class AdaptiveNavPeekCoverList extends StatelessWidget {
+  const AdaptiveNavPeekCoverList({
     required this.entries,
     required this.fallbackIcon,
     required this.onOpen,
+    this.onAction,
+    super.key,
   });
 
   final List<AdaptiveNavPeekEntry> entries;
   final IconData fallbackIcon;
   final ValueChanged<AdaptiveNavPeekEntry> onOpen;
+
+  /// 点了行内动作；null = 直接调 [AdaptiveNavPeekAction.onPressed]。速览卡借它
+  /// 先收起自己。
+  final ValueChanged<AdaptiveNavPeekAction>? onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -901,14 +945,14 @@ class _NavPeekCoverList extends StatelessWidget {
         for (int i = 0; i < shown.length; i++)
           FushiStaggeredEntrance(
             index: i + 1,
-            child: FushiGroupedListItem(
+            child: _NavPeekCoverRow(
+              key: ValueKey<String>('nav-peek-row-$i'),
               index: i,
               count: shown.length,
-              onTap: () => onOpen(shown[i]),
-              child: _NavPeekCoverRow(
-                entry: shown[i],
-                fallbackIcon: shown[i].icon ?? fallbackIcon,
-              ),
+              entry: shown[i],
+              fallbackIcon: shown[i].icon ?? fallbackIcon,
+              onOpen: () => onOpen(shown[i]),
+              onAction: onAction,
             ),
           ),
       ],
@@ -922,32 +966,63 @@ const int kNavPeekMaxListRows = 4;
 /// 列表行缩略图的高。
 const double kNavPeekThumbHeight = 52;
 
-class _NavPeekCoverRow extends StatelessWidget {
-  const _NavPeekCoverRow({required this.entry, required this.fallbackIcon});
+class _NavPeekCoverRow extends StatefulWidget {
+  const _NavPeekCoverRow({
+    required this.index,
+    required this.count,
+    required this.entry,
+    required this.fallbackIcon,
+    required this.onOpen,
+    this.onAction,
+    super.key,
+  });
 
+  final ValueChanged<AdaptiveNavPeekAction>? onAction;
+  final int index;
+  final int count;
   final AdaptiveNavPeekEntry entry;
   final IconData fallbackIcon;
+  final VoidCallback onOpen;
+
+  @override
+  State<_NavPeekCoverRow> createState() => _NavPeekCoverRowState();
+}
+
+class _NavPeekCoverRowState extends State<_NavPeekCoverRow> {
+  bool _hovered = false;
+  bool _focused = false;
+
+  void _setHovered(bool value) {
+    if (_hovered != value) setState(() => _hovered = value);
+  }
+
+  void _setFocused(bool value) {
+    if (_focused != value) setState(() => _focused = value);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final AdaptiveNavPeekEntry entry = widget.entry;
     final ColorScheme colors = Theme.of(context).colorScheme;
     final TextTheme text = Theme.of(context).textTheme;
     final double? progress = entry.progress;
     final bool showProgress = progress != null && progress > 0 && progress < 1;
-    return Semantics(
-      button: true,
-      label: entry.title,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 8, 12, 8),
-        child: Row(
-          children: <Widget>[
-            _NavPeekThumb(
-              cover: entry.cover,
-              fallbackIcon: fallbackIcon,
-              blur: entry.blurCover,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
+    final AdaptiveNavPeekAction? action = entry.action;
+    final bool actionShown = _hovered || _focused;
+    final Widget row = Padding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 12, 8),
+      child: Row(
+        children: <Widget>[
+          _NavPeekThumb(
+            cover: entry.cover,
+            fallbackIcon: widget.fallbackIcon,
+            blur: entry.blurCover,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Semantics(
+              button: true,
+              label: entry.title,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
@@ -986,11 +1061,51 @@ class _NavPeekCoverRow extends StatelessWidget {
                 ],
               ),
             ),
-            if (entry.status case final String status) ...<Widget>[
-              const SizedBox(width: 10),
-              _NavPeekStatusChip(label: status, tone: entry.statusTone),
-            ],
+          ),
+          if (entry.status case final String status) ...<Widget>[
+            const SizedBox(width: 10),
+            _NavPeekStatusChip(
+              label: status,
+              tone: entry.statusTone,
+              icon: entry.statusIcon,
+            ),
           ],
+          if (action != null) ...<Widget>[
+            const SizedBox(width: 6),
+            // 隐藏时仍在树里、仍可聚焦（Tab 走到它时本行有焦点，它随之出现），
+            // 只是不接指针：看不见的按钮不该吃掉点击。
+            IgnorePointer(
+              ignoring: !actionShown,
+              child: AnimatedOpacity(
+                key: const ValueKey<String>('nav-peek-row-action'),
+                opacity: actionShown ? 1 : 0,
+                duration: fushiMotionDuration(context, FushiMotion.short),
+                curve: FushiMotion.standard,
+                child: FushiTextButton.icon(
+                  onPressed: () => widget.onAction == null
+                      ? action.onPressed()
+                      : widget.onAction!(action),
+                  icon: FushiIcon(action.icon, size: 18),
+                  label: Text(action.label),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+    return MouseRegion(
+      onEnter: (_) => _setHovered(true),
+      onExit: (_) => _setHovered(false),
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        onFocusChange: _setFocused,
+        child: FushiGroupedListItem(
+          index: widget.index,
+          count: widget.count,
+          onTap: widget.onOpen,
+          child: row,
         ),
       ),
     );
@@ -1062,10 +1177,15 @@ class _NavPeekThumb extends StatelessWidget {
 
 /// 列表行尾部的状态小签（「42%」「已完成」「需要处理」）。
 class _NavPeekStatusChip extends StatelessWidget {
-  const _NavPeekStatusChip({required this.label, required this.tone});
+  const _NavPeekStatusChip({
+    required this.label,
+    required this.tone,
+    this.icon,
+  });
 
   final String label;
   final AdaptiveNavPeekStatusTone tone;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
@@ -1099,13 +1219,21 @@ class _NavPeekStatusChip extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        child: Text(
-          label,
-          maxLines: 1,
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: fg,
-            fontWeight: FontWeight.w600,
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          spacing: 4,
+          children: <Widget>[
+            if (icon case final IconData icon)
+              FushiIcon(icon, size: 14, color: fg),
+            Text(
+              label,
+              maxLines: 1,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: fg,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ),
       ),
     );

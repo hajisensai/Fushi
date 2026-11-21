@@ -5,7 +5,7 @@ Fushi is free software, licensed under the GNU General Public License, version 3
 free of charge.**
 
 In accordance with Section 7 of the GPLv3, the copyright holders add the
-following additional terms (items (a)–(f) below). Each of them is one of the
+following additional terms (items (a)–(e) below). Each of them is one of the
 terms that Section 7 expressly permits; none of them is a "further
 restriction" within the meaning of Sections 7 and 10.
 
@@ -29,13 +29,12 @@ their own license header); such material remains under its own license.
 - **"Official Channels"**: <https://github.com/hajisensai/Fushi>,
   <https://fushi.moe>, and any distribution channel those two pages list as
   official.
-- **"Fushi Notices"**: (1) the statement, wherever the Program shows it, that
-  Fushi is free and open-source software and that Official Builds are free of
-  charge; (2) the notice the Program shows when it detects that it is not an
-  Official Build; (3) the copyright and author attribution of the Fushi
-  Authors, the link to the Official Channels, and the license information shown
-  in the Program's "About" / "Open-source licenses" screens; (4) the copyright
-  notices and this file in the source code.
+- **"Fushi Notices"**: (1) the statement that Fushi is free and open-source
+  software and that Official Builds are free of charge; (2) the copyright and
+  author attribution of the Fushi Authors, the link to the Official Channels,
+  and the license information shown in the Program's "About" /
+  "Open-source licenses" screens; (3) the copyright notices and this file in
+  the source code.
 
 ## Additional terms
 
@@ -50,11 +49,10 @@ from such a transaction or from any version that is not an Official Build.
 Notices are "Appropriate Legal Notices" and author attributions for the
 purposes of Sections 0, 5(d) and 7(b). Anyone who conveys the Program or a
 modified version of it, in source or object form, must preserve the Fushi
-Notices unaltered in substance, and must keep them displayed in the user
-interface in every place, and on every occasion, where the original Program
-displays them, with comparable prominence. Disabling, hiding, obscuring,
-shortening the display time of, or otherwise defeating a Fushi Notice
-(including the detection that triggers notice (2)) counts as removing it.
+Notices unaltered in substance, and an interactive user interface must keep
+displaying notices (1) and (2) in a reasonable place, such as an "About"
+screen. This term does not require keeping any particular detection logic,
+startup dialog, or display frequency.
 
 **(c) No misrepresentation of origin; modified versions must be marked.** You
 may not misrepresent the origin of the Program. In particular, you may not
@@ -72,16 +70,18 @@ purposes or to endorse or promote a product, service, sale or modified
 version, without prior written permission. Accurate attribution required by
 term (b) is not publicity.
 
-**(e) No trademark rights.** This license grants no rights under trademark law
-in the name "Fushi", the Fushi logo and icon, the domain "fushi.moe", or any
-confusingly similar name or sign. Their use is governed by
-[TRADEMARK.md](TRADEMARK.md).
-
-**(f) Indemnification.** Anyone who conveys the Program, or a modified version
+**(e) Indemnification.** Anyone who conveys the Program, or a modified version
 of it, with contractual assumptions of liability to the recipient (for example
 a sale, subscription, warranty, after-sales service, or a device sold with the
 Program pre-installed) must indemnify the Fushi Authors for any liability that
 those contractual assumptions directly impose on the Fushi Authors.
+
+## Where these terms are stated
+
+As Section 7 requires, the source tree states where to find these terms: the
+[README](README.md) "License" section, [CONTRIBUTING.md](CONTRIBUTING.md) and
+this file at the repository root apply to every file covered by the Scope
+above.
 
 ## Reminders (these are not additional terms; they are already in the GPLv3)
 
@@ -107,7 +107,7 @@ those contractual assumptions directly impose on the Fushi Authors.
 Fushi 是自由软件，以 GNU 通用公共许可证第 3 版（GPLv3，见 [LICENSE](LICENSE)）发布。
 **Fushi 官方版本现在免费，以后也永远免费。**
 
-依据 GPLv3 第 7 条，版权人附加以下条款（下列 (a)–(f)）。每一条都属于第 7 条明确允许的附加条款，均不构成第 7 条、第 10 条意义上的“进一步限制”。
+依据 GPLv3 第 7 条，版权人附加以下条款（下列 (a)–(e)）。每一条都属于第 7 条明确允许的附加条款，均不构成第 7 条、第 10 条意义上的“进一步限制”。
 
 ## 适用范围
 
@@ -117,21 +117,23 @@ Fushi 是自由软件，以 GNU 通用公共许可证第 3 版（GPLv3，见 [LI
 
 - **“官方构建”**：由 Fushi 作者通过官方渠道发布、未经修改、使用 Fushi 作者签名密钥签名的 Fushi 构建。
 - **“官方渠道”**：<https://github.com/hajisensai/Fushi>、<https://fushi.moe>，以及这两个页面列为官方的分发渠道。
-- **“Fushi 声明”**：(1) 程序中出现的“Fushi 是免费开源软件、官方版本免费”的声明；(2) 程序检测到自己不是官方构建时显示的提示；(3) 程序“关于”/“开源许可”页面中 Fushi 作者的版权与署名、官方渠道链接和许可证信息；(4) 源代码中的版权声明与本文件。
+- **“Fushi 声明”**：(1)“Fushi 是免费开源软件、官方版本免费”的声明；(2) 程序“关于”/“开源许可”页面中 Fushi 作者的版权与署名、官方渠道链接和许可证信息；(3) 源代码中的版权声明与本文件。
 
 ## 附加条款
 
 **(a) 免责与责任限制。** 在 GPLv3 第 15、16 条之外：Fushi 作者不从任何一份程序副本中获得报酬，不是第三方转让本程序时任何买卖、订阅、“买断”、设备捆绑、售后服务或其他交易的当事方，对此类交易以及任何非官方构建引起的后果不承担任何责任。
 
-**(b) 保留法律声明与作者署名。** Fushi 声明属于 GPLv3 第 0 条、第 5(d) 条与第 7(b) 条所称的“适当法律声明”和作者署名。以源代码或目标代码形式转让本程序或其修改版的任何人，必须保留 Fushi 声明且实质内容不变，并在原程序显示这些声明的每一个界面位置、每一个时机以相当的显著程度继续显示。停用、隐藏、遮挡、缩短显示时间或以其他方式使某条 Fushi 声明失效（包括使触发声明 (2) 的检测失效），均视为删除该声明。
+**(b) 保留法律声明与作者署名。** Fushi 声明属于 GPLv3 第 0 条、第 5(d) 条与第 7(b) 条所称的“适当法律声明”和作者署名。以源代码或目标代码形式转让本程序或其修改版的任何人，必须保留 Fushi 声明且实质内容不变；有交互界面的，须在合理位置（如“关于”页面）继续显示声明 (1)、(2)。本条不要求保留任何特定的检测逻辑、启动弹窗或显示频率。
 
 **(c) 禁止误导来源；修改版必须标明。** 不得误导本程序的来源，尤其不得声称或暗示：你是本程序的作者；你转让的版本是官方构建或得到 Fushi 作者认可；本程序本身需要付费。修改版必须以合理方式标明与原版不同，至少要 (i) 使用不同于“Fushi”及其图标的名称和图标，(ii) 在显示 Fushi 声明的界面中说明这是基于 Fushi 的修改版，并附官方渠道链接。
 
 **(d) 不得用名称做宣传。** 未经事先书面许可，不得将 hajisensai、W1ght 或任何其他 Fushi 作者的名称、用户名或形象用于宣传，或用于为任何产品、服务、销售或修改版背书、推广。按 (b) 条要求的如实署名不算宣传。
 
-**(e) 不授予商标权。** 本许可证不授予“Fushi”名称、Fushi 标志与图标、“fushi.moe”域名以及任何易混淆名称或标志的商标权利，其使用以 [TRADEMARK.md](TRADEMARK.md) 为准。
+**(e) 赔偿。** 以对接收者承担合同责任的方式（如出售、订阅、保修、售后服务，或随设备预装出售）转让本程序或其修改版的任何人，对于这些合同责任直接给 Fushi 作者造成的任何责任，必须向 Fushi 作者作出赔偿。
 
-**(f) 赔偿。** 以对接收者承担合同责任的方式（如出售、订阅、保修、售后服务，或随设备预装出售）转让本程序或其修改版的任何人，对于这些合同责任直接给 Fushi 作者造成的任何责任，必须向 Fushi 作者作出赔偿。
+## 条款的声明位置
+
+按第 7 条要求，源代码树中写明了这些条款的位置：仓库根目录的 [README](README.md)“许可证”一节、[CONTRIBUTING.md](CONTRIBUTING.md) 与本文件，适用于上文“适用范围”所涵盖的每一个文件。
 
 ## 提醒（以下不是附加条款，GPLv3 原本就有）
 

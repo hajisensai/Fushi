@@ -1,8 +1,9 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
+
+import '../helpers/node_runtime.dart';
 
 /// 墨水屏「每 N 页全刷」（拍板台 oF0jVdOTIE）：连续滚动模式下点击区 / 音量键 / 键盘 /
 /// 手柄 / 翻页按钮的一步翻页必须计一页。
@@ -13,7 +14,7 @@ import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 /// 拖动仍按满一屏计、到尽头不计。没有 node 的环境自动 skip。
 void main() {
   test('continuous paginate reports one e-ink page per step', () async {
-    final String? nodeExe = _resolveNode();
+    final String? nodeExe = resolveNodeExecutable();
     if (nodeExe == null) {
       markTestSkipped('node not found on PATH; skipping JS behavior execution');
       return;
@@ -22,27 +23,14 @@ void main() {
       'test/reader/eink_continuous_page_turn_behavior_test.js',
     );
     expect(jsTest.existsSync(), isTrue);
-    final Directory temp = Directory.systemTemp.createTempSync(
-      'fushi-eink-continuous-',
+    final Map<String, String> payload = <String, String>{
+      'continuous': ReaderPaginationScripts.continuousShellSource(),
+    };
+    final NodeHarnessResult result = await runNodeHarness(
+      nodeExe,
+      jsTest.path,
+      payload,
     );
-    late final ProcessResult result;
-    try {
-      final File payload = File('${temp.path}/payload.json')
-        ..writeAsStringSync(
-          jsonEncode(<String, String>{
-            'continuous': ReaderPaginationScripts.continuousShellSource(),
-          }),
-        );
-      result = await Process.run(
-        nodeExe,
-        <String>[jsTest.path, payload.path],
-        workingDirectory: Directory.current.path,
-        stdoutEncoding: utf8,
-        stderrEncoding: utf8,
-      );
-    } finally {
-      temp.deleteSync(recursive: true);
-    }
     expect(
       result.exitCode,
       0,
@@ -50,20 +38,4 @@ void main() {
     );
     expect(result.stdout.toString(), contains('all assertions passed'));
   });
-}
-
-/// Resolve a usable `node` executable, returning null when none is on PATH.
-String? _resolveNode() {
-  final List<String> candidates = Platform.isWindows
-      ? <String>['node.exe', 'node']
-      : <String>['node'];
-  for (final String name in candidates) {
-    try {
-      final ProcessResult probe = Process.runSync(name, <String>['--version']);
-      if (probe.exitCode == 0) return name;
-    } on ProcessException {
-      // Not found; try next candidate.
-    }
-  }
-  return null;
 }

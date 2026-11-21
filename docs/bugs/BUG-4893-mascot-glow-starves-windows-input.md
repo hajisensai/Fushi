@@ -9,5 +9,6 @@
 - **[x] ② 已加自动化测试** — `fushi/test/utils/scheduling/ambient_ticker_test.dart`（假调度器 + FakeAsync：忙 200 帧期间定时器数恒为 0、帧后回调恒为 1；空闲不同步完成；完成前又起动画接着等；真 binding 下真实动画撤掉后完成、只有装饰动画时照常完成）、`fushi/test/utils/components/mascot_glow_test.dart`（光晕呼吸登记为 ambient、不算真实动画、等空闲照常完成、换忙碌档仍是 ambient）、`fushi/test/build/ui_idle_wait_guard_test.dart`（目录枚举守卫：`lib` + `packages/*/lib` 禁调 `scheduleTask`；每个 `.repeat(` 文件必须归类为 ambient 或写明跟着什么状态停，清单不许有陈旧条目）。
 - **备注**：
   - 未在真机上用修复后的构建复测原始失败路径（需要带光晕偏好的数据根 + Windows Release 构建）；卡住实例上的取证与 widget 层测试覆盖了机制，合入后的调试版要在本机开着光晕冷启动确认一次。
-  - GPU 占用本条不处理：光晕开着时主窗口按 144 Hz 持续出帧，60 px 的呼吸带着整个 4K 主窗口每帧重新合成（raster 线程约 47%、GPU 约 20%）。修复后输入恢复、UI 线程不再空转，但只要光晕开着这部分成本还在；与 BUG-4387 备注里的「主页常驻背景动效每帧成本」是同一类性能问题。
+  - 2026-11-21 收敛（拍板台 pr3569）：本条并入 develop 时，BUG-4725 的 `FramePacedTaskScheduler` 已在 binding 层根治「怎么等」（推迟时按帧重查，不零延迟空转），上面「根因二」说的 `scheduleTask` 空转在生产 binding 下已不成立，两套等待并存。收敛为只留 binding 层一套：`waitForUiIdle` 改成往调度器排一个 idle 空任务（不再自带帧后回调循环），守卫的「`lib` 禁调 `scheduleTask`」换成「`lib` 禁调裸 `WidgetsFlutterBinding.ensureInitialized()`」，并补上原先覆盖不到的入口——悬浮查词 / 弹窗 / 副屏三个副引擎改用 `FushiSecondaryWidgetsFlutterBinding`。光晕登记 ambient 与 `.repeat(` 归类守卫保留。integration_test 的 binding 不混入该 mixin，集成测试里忙时等空闲仍是框架原行为（只影响测试进程）。
+  - GPU 占用本条不处理（已由 BUG-4961 处理）：光晕开着时主窗口按 144 Hz 持续出帧，60 px 的呼吸带着整个 4K 主窗口每帧重新合成（raster 线程约 47%、GPU 约 20%）。修复后输入恢复、UI 线程不再空转，但只要光晕开着这部分成本还在；与 BUG-4387 备注里的「主页常驻背景动效每帧成本」是同一类性能问题。
   - Windows 引擎只上报高对比度（`flutter_windows_engine.cc` 的 `SendAccessibilityFeatures`），系统「动画效果」开关到不了 `MediaQuery.disableAnimations`，所以关系统动画不能当临时规避。

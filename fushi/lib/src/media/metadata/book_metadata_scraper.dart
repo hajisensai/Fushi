@@ -165,7 +165,9 @@ class BookScrapeCandidate {
   /// 简介摘要（搜索端点提供时）。
   final String? summary;
 
-  /// 源侧明确标成人向（DLsite 年龄分级 / MangaBaka erotica、pornographic / AniList isAdult）。
+  /// 源侧明确标成 NSFW（DLsite 年龄分级 / MangaBaka erotica、pornographic / AniList
+  /// isAdult / Bangumi nsfw）。界面上标「NSFW」；搜索结果是否显示它们跟随作品自己的
+  /// NSFW 标记（见 `BookMetadataScrapeFacade.searchDetailed`）。
   final bool isAdult;
 
   /// 出版 / 发售日期原文（`YYYY-MM-DD`，可只到年或年月）；源没给为 null，此时
@@ -378,13 +380,17 @@ class BookMetadataScraper {
     return work == null ? null : mapDlsiteWork(work);
   }
 
-  /// AniList 按名搜轻小说（format NOVEL）。
+  /// AniList 按名搜轻小说（format NOVEL）。[includeNsfw] 为 false 时服务端就排除
+  /// isAdult 条目，一页名额不被它们占掉。
   Future<List<BookScrapeCandidate>> searchAniList(
     String keyword, {
     int limit = 10,
+    bool includeNsfw = false,
   }) => _catalogList(
     BookScrapeSource.anilist,
-    () => AniListNovelClient(_catalog).search(keyword, limit: limit),
+    () => AniListNovelClient(
+      _catalog,
+    ).search(keyword, limit: limit, includeAdult: includeNsfw),
   );
 
   /// openBD 按 ISBN 查（输入里找不到 ISBN → 空表）。
@@ -728,6 +734,7 @@ BookScrapeCandidate? mapBookSubject(Map<String, Object?> subject) {
     rating: _bangumiScore(subject['rating']),
     ratingCount: _bangumiRatingTotal(subject['rating']),
     tags: _bangumiTagNames(subject['tags']),
+    isAdult: subject['nsfw'] == true,
   );
 }
 

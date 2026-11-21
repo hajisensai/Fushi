@@ -37,6 +37,8 @@ import 'package:fushi/src/storage/macos_data_root_access.dart';
 import 'package:fushi/src/sync/backup_merge_engine.dart'
     show BackupMergePreview;
 import 'package:fushi/src/sync/backup_service.dart';
+import 'package:fushi_engine/srs/srs_backup_merge.dart'
+    show SrsBackupMergeAction, SrsBackupMergeResult;
 import 'package:fushi/src/sync/backup_archive_name.dart';
 import 'package:fushi/src/sync/backup_validating_overlay_route.dart';
 import 'package:fushi/src/sync/desktop_oauth.dart'
@@ -818,6 +820,8 @@ SettingsDestination buildInterconnectDestination() {
                     ctx.appModel.prefsRepo.gameStreamVideoSettings,
                 writeSettings:
                     ctx.appModel.prefsRepo.setGameStreamVideoSettings,
+                dictionaryConfigFor:
+                    ctx.appModel.remoteLookupDictionaryConfigFor,
                 readLookupLayout: () =>
                     ctx.appModel.prefsRepo.gameStreamLookupLayout,
                 writeLookupLayout:

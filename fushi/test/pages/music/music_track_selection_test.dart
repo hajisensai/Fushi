@@ -16,7 +16,11 @@ import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/music/music_album_page.dart';
+import 'package:fushi/src/pages/implementations/music/music_collection_view.dart'
+    show MusicViewKind, MusicViewStyle, MusicViewStyleStore;
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_row_surface.dart'
+    show MusicTrackBlock;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show FushiEinkTheme;
 import 'package:fushi_core/fushi_core.dart';
@@ -511,6 +515,145 @@ void main() {
       'd1',
       'e1',
     });
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  // 拍板台 left3648（BUG-4769）：色块样式的曲目格没有放「⋯」的位置，触屏长按改成弹与
+  // 右键同一份菜单（详情 / 多选都在里面）；多选态长按仍是勾选。
+  testWidgets('触屏：色块样式曲目格长按开菜单（有详情与多选），多选态长按 = 勾选', (
+    WidgetTester tester,
+  ) async {
+    await pumpList(
+      tester,
+      MusicTrackList.entries(
+        entries: <MusicLibraryEntry>[
+          for (final MusicTrackRow r in await tracks()) MusicLocalEntry(r),
+        ],
+        albums: const <String, MusicAlbumRow>{},
+        context: MusicQueueContext.mixed,
+        style: MusicViewStyle.blocks,
+      ),
+    );
+    Finder block(String uid) =>
+        find.byKey(ValueKey<String>('music-track-$uid'));
+    expect(find.byType(MusicTrackBlock), findsWidgets, reason: '色块样式排色块');
+    await tester.longPress(block('a')); // 默认触屏指针。
+    await tester.pumpAndSettle();
+    expect(menuAction('detail'), findsOneWidget, reason: '详情挪进菜单');
+    final Finder select = menuAction('select');
+    await tester.ensureVisible(select);
+    await tester.pumpAndSettle();
+    await tester.tap(select);
+    await tester.pumpAndSettle();
+    expect(bar(), findsOneWidget);
+    expect(find.text(t.music_selection_count(n: 1)), findsOneWidget);
+
+    await tester.longPress(block('b'));
+    await tester.pumpAndSettle();
+    expect(menuAction('select'), findsNothing, reason: '多选态长按不弹菜单');
+    expect(find.text(t.music_selection_count(n: 2)), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  Future<MusicAlbumPage> albumPage() async {
+    MusicTracksCompanion albumTrack(String uid, int no) => _track(uid).copyWith(
+      albumUid: const Value<String?>('al'),
+      discNo: const Value<int?>(1),
+      trackNo: Value<int?>(no),
+    );
+    await db.writeMusicScanBatch(
+      MusicScanBatchWrite(
+        tracks: <MusicTracksCompanion>[
+          albumTrack('d1', 1),
+          albumTrack('d2', 2),
+        ],
+        albums: <MusicAlbumsCompanion>[
+          MusicAlbumsCompanion.insert(
+            albumUid: 'al',
+            title: 'Night Album',
+            addedAt: 1,
+            updatedAt: 1,
+          ),
+        ],
+        artists: const <MusicArtistsCompanion>[],
+        credits: const <MusicTrackCreditsCompanion>[],
+      ),
+    );
+    return MusicAlbumPage(
+      album: (await db.getMusicAlbum('al'))!,
+      tracks: sortAlbumTracks(await db.listMusicTracks(albumUid: 'al')),
+    );
+  }
+
+  // 拍板台 left3648（BUG-4770）：专辑页本地曲目行原来只能右键开菜单，触屏点不到加入
+  // 队列 / 加入歌单 / 从音乐库移除。行尾补「⋯」（重设计行与 eink 旧行），多选态换成勾选圈。
+  for (final bool eink in <bool>[false, true]) {
+    testWidgets('触屏：专辑页曲目行尾「⋯」开菜单，从音乐库移除真落库（eink=$eink）', (
+      WidgetTester tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1200, 1600);
+      addTearDown(tester.view.reset);
+      await pumpList(tester, await albumPage(), eink: eink);
+      final Finder more = find.byKey(
+        const ValueKey<String>('music-track-menu-d2'),
+      );
+      expect(more, findsOneWidget, reason: '专辑曲目行尾要有「⋯」');
+      await tester.tap(more);
+      await tester.pumpAndSettle();
+      expect(menuAction('addToQueue'), findsOneWidget);
+      expect(menuAction('select'), findsOneWidget);
+      final Finder remove = menuAction('removeFromLibrary');
+      await tester.ensureVisible(remove);
+      await tester.pumpAndSettle();
+      await tester.tap(remove);
+      await tester.pumpAndSettle();
+      expect(liveUids(await db.listMusicTracks(albumUid: 'al')), <String>{
+        'd1',
+      });
+
+      // 多选态行尾只剩勾选圈，不再有「⋯」。
+      await tester.longPress(
+        find.byKey(const ValueKey<String>('music-album-track-d1')),
+      );
+      await tester.pumpAndSettle();
+      expect(bar(), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('music-track-menu-d1')),
+        findsNothing,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
+  testWidgets('触屏：专辑页色块长按开菜单，菜单「多选」进入；多选态长按 = 勾选', (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 1600);
+    addTearDown(tester.view.reset);
+    MusicViewStyleStore.instance.resetForTesting();
+    addTearDown(MusicViewStyleStore.instance.resetForTesting);
+    await MusicViewStyleStore.instance.set(
+      MusicViewKind.tracks,
+      MusicViewStyle.blocks,
+    );
+    await pumpList(tester, await albumPage());
+    Finder block(String uid) =>
+        find.byKey(ValueKey<String>('music-album-track-$uid'));
+    expect(tester.widget(block('d1')), isA<MusicTrackBlock>());
+    await tester.longPress(block('d1'));
+    await tester.pumpAndSettle();
+    expect(bar(), findsNothing, reason: '长按先弹菜单，不直接进多选');
+    final Finder select = menuAction('select');
+    await tester.ensureVisible(select);
+    await tester.pumpAndSettle();
+    await tester.tap(select);
+    await tester.pumpAndSettle();
+    expect(find.text(t.music_selection_count(n: 1)), findsOneWidget);
+
+    await tester.longPress(block('d2'));
+    await tester.pumpAndSettle();
+    expect(menuAction('select'), findsNothing);
+    expect(find.text(t.music_selection_count(n: 2)), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 }
