@@ -52,6 +52,7 @@ IconData mangaControlItemIcon(MangaControlItem item) => switch (item) {
   MangaControlItem.hideChrome => FushiIcons.visibilityOff,
   MangaControlItem.statistics => FushiIcons.statistics,
   MangaControlItem.studyTimer => FushiIcons.timer,
+  MangaControlItem.textStrip => FushiIcons.subtitles,
 };
 
 /// 漫画按钮的名称（编辑器 chip / 菜单 / 无障碍语义）。
@@ -74,6 +75,7 @@ String mangaControlItemLabel(MangaControlItem item) => switch (item) {
   MangaControlItem.hideChrome => t.manga_interface_hide,
   MangaControlItem.statistics => t.reading_statistics,
   MangaControlItem.studyTimer => t.shortcut_action_reader_toggle_study_clock,
+  MangaControlItem.textStrip => t.manga_reader_bubble_text_strip,
 };
 
 String _zoneLabel(MangaControlSlot slot) => switch (slot) {

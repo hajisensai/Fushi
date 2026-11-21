@@ -1092,18 +1092,19 @@ bool musicRecommendPosterMode(BuildContext context) =>
 /// 推荐页歌单 / 专辑栏目在色块版式下最多排几行（其余进「查看全部」）。
 const int kMusicRecommendShelfRows = 2;
 
-/// [width] 宽的等尺寸色块前 [rows] 行能放下几块色块（与
+/// [width] 宽、[layout] 布局（null = 等尺寸色块）下前 [rows] 行能放下几块色块（与
 /// [SliverFushiCoverBlocks] 同一份 [computeFushiCoverBlockPlacement] 几何——含两侧悬停
 /// 余量，目标块宽取音乐的 [kFushiCoverBlockTargetWidthMedia]）。
 int musicCoverBlockRowCapacity({
   required double width,
   required int itemCount,
   required int rows,
+  ShellContentLayout? layout,
 }) =>
     computeFushiCoverBlockPlacement(
           width: width,
           itemCount: itemCount,
-          layout: null,
+          layout: layout,
           targetWidth: kFushiCoverBlockTargetWidthMedia,
         ).rows
         .take(rows)
@@ -2090,6 +2091,7 @@ class _MusicPluginLibrarySectionState
                   builder: (BuildContext context, MusicViewStyle style) =>
                       musicCoverBlocksActive(context, style)
                       ? FushiCoverBlocks(
+                          layout: shellContentLayoutOf(context),
                           staggerEntrance: false,
                           itemCount: lists.length,
                           itemBuilder:
@@ -3057,13 +3059,15 @@ class _RecentPlaysState extends ConsumerState<_RecentPlays> {
         disc: e.discArt == null ? null : musicDiscArtImage(e.discArt!),
       );
 
-  /// 色块版式：推荐页排一行等尺寸色块，其余进「查看全部」；二级页
-  /// （[_RecentPlays.full]）全部列出。
+  /// 色块版式：推荐页按库页布局排一行（拼贴 = 最近一条是加大块、旁边叠半高卡），
+  /// 其余进「查看全部」；二级页（[_RecentPlays.full]）全部列出。
   Widget _buildSliver(BuildContext context, List<_RecentEntry> entries) {
+    final ShellContentLayout layout = shellContentLayoutOf(context);
     Widget block(BuildContext context, int i, FushiCoverBlockSize size) =>
         _block(entries[i], size);
     if (widget.full) {
       return SliverFushiCoverBlocks(
+        layout: layout,
         itemCount: entries.length,
         itemBuilder: block,
       );
@@ -3073,6 +3077,7 @@ class _RecentPlaysState extends ConsumerState<_RecentPlays> {
         final int shown = musicCoverBlockRowCapacity(
           width: constraints.crossAxisExtent,
           itemCount: entries.length,
+          layout: layout,
           rows: 1,
         );
         return SliverMainAxisGroup(
@@ -3080,7 +3085,11 @@ class _RecentPlaysState extends ConsumerState<_RecentPlays> {
             SliverToBoxAdapter(
               child: _header(context, more: entries.length > shown),
             ),
-            SliverFushiCoverBlocks(itemCount: shown, itemBuilder: block),
+            SliverFushiCoverBlocks(
+              layout: layout,
+              itemCount: shown,
+              itemBuilder: block,
+            ),
           ],
         );
       },
