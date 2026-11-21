@@ -34,6 +34,7 @@ module.exports = {
           { label: '原版', album: { id: 'RJ0', title: '原作', coverUrl: 'https://img.example.com/0.jpg',
                                    related: [{ album: { id: 'deep', title: '不递归' } }] } },
           { label: '坏', album: { title: '缺 id' } },
+          { label: '同系列', album: { id: 'RJ2', title: '续作', coverUrl: 'https://img.cdn.example.com/2.jpg' } },
         ],
       },
       tracks: [
@@ -69,7 +70,8 @@ module.exports = {
       const items = [];
       for (let i = 0; i < a.pageSize; i++) {
         items.push({ id: `p${a.page}-${i}`, title: 'W', tags: [{ facet: 'tag', id: '12', name: '低语' }],
-                     coverUrl: i === 0 ? 'https://evil.com/x.jpg' : undefined });
+                     coverUrl: i === 0 ? 'https://evil.com/x.jpg' : undefined,
+                     related: [{ album: { id: 'r', title: 'R', coverUrl: 'https://evil.com/r.jpg' } }] });
       }
       items.push({ title: '缺 id' });
       return { items, hasMore: a.page < 1, total: 99, echo: a.query };
@@ -163,6 +165,11 @@ void main() {
     final MusicPluginAlbum first = p0.items.first as MusicPluginAlbum;
     expect(first.coverUrl, isNull, reason: '越权封面清空');
     expect(first.tags.single, whisper);
+    expect(
+      first.related,
+      isEmpty,
+      reason: '关联作品只在 album 详情里认，列表条目的不进模型（其封面没经核对）',
+    );
     final MusicPluginBrowseResult p1 = await src.browseList(
       q,
       page: 1,
@@ -235,10 +242,15 @@ void main() {
     expect(a.durationMs, 3600000);
     expect(a.hasSubtitles, isTrue);
     expect(a.sourceUrl, 'https://asmr.example.com/work/RJ1');
-    expect(a.related.length, 1);
-    expect(a.related.single.label, '原版');
-    expect(a.related.single.album.id, 'RJ0');
-    expect(a.related.single.album.related, isEmpty);
+    expect(a.related.map((MusicPluginRelatedAlbum x) => x.album.id), <String>[
+      'RJ0',
+      'RJ2',
+    ]);
+    expect(a.related.first.label, '原版');
+    expect(a.related.first.album.related, isEmpty);
+    // 关联作品的封面与主封面同批按网络授权核对：越权的清空，授权域名下的保留。
+    expect(a.related.first.album.coverUrl, isNull);
+    expect(a.related.last.album.coverUrl, 'https://img.cdn.example.com/2.jpg');
     expect(r.tracks.map((MusicPluginTrack t) => t.group), <String?>[
       '正篇',
       '环境音版',

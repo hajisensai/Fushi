@@ -293,7 +293,7 @@ class MusicPluginSource {
       <String, Object?>{'id': id},
     );
     final Map<String, Object?> r = _object(v, 'album');
-    final MusicPluginAlbum? album = MusicPluginAlbum.fromJson(r['album']);
+    final MusicPluginAlbum? album = MusicPluginAlbum.detailFromJson(r['album']);
     if (album == null) {
       throw MusicPluginException('插件 album 返回值缺 album', pluginId: pluginId);
     }
@@ -460,7 +460,6 @@ class MusicPluginSource {
     );
   }
 
-  /// 搜索最佳匹配（`searchBest`）；插件不支持或返回 null 时为 [MusicPluginSearchBest.none]。
   /// 浏览的筛选项定义（分类目录 / 排序 / 开关 / 单选）。插件没给的部分为空。
   Future<MusicPluginBrowseSchema> browseSchema() async {
     final (MusicPluginRuntime _, Object? v) = await _call(
@@ -585,6 +584,7 @@ class MusicPluginSource {
   static int? _countOf(Object? v) =>
       v is num && v.isFinite && v >= 0 ? v.toInt() : null;
 
+  /// 搜索最佳匹配（`searchBest`）；插件不支持或返回 null 时为 [MusicPluginSearchBest.none]。
   Future<MusicPluginSearchBest> searchBest(String query) async {
     final MusicPluginRuntime probe = await _manager.runtime(pluginId);
     if (!probe.info.manifest.can(MusicPluginCapability.searchBest)) {

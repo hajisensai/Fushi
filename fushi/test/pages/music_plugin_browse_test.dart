@@ -353,8 +353,8 @@ void main() {
         ),
       ),
     );
-    // 条件 chip 带分类名。
-    expect(find.text('Tags：Whisper'), findsOneWidget);
+    // 条件 chip 带分类名（「分类: 值」走 i18n，英文界面用半角冒号）。
+    expect(find.text('Tags: Whisper'), findsOneWidget);
 
     await tester.tap(
       find.byKey(const ValueKey<String>('music-plugin-browse-toggle-subtitle')),
@@ -377,7 +377,7 @@ void main() {
     );
     expect(last.$1.filters, isEmpty);
     expect(last.$1.toggles, <String>{'subtitle'}, reason: '其余条件保留');
-    expect(find.text('Tags：Whisper'), findsNothing);
+    expect(find.text('Tags: Whisper'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 

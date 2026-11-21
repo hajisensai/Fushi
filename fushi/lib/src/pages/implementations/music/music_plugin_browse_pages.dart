@@ -71,8 +71,10 @@ Widget? _browseFooter(
         children: <Widget>[
           Flexible(
             child: Text(
-              '${t.music_plugin_browse_load_more_failed}：'
-              '${musicPluginErrorText(error)}',
+              t.music_plugin_browse_label_value(
+                label: t.music_plugin_browse_load_more_failed,
+                value: musicPluginErrorText(error),
+              ),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: context.fushiType.bodySmall,
@@ -340,7 +342,10 @@ class _MusicPluginBrowseListPageState
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final MusicPluginBrowseSchema schema = _schema;
     String chipLabel(MusicPluginTag f) => switch (schema.facetLabel(f.facet)) {
-      final String facet => '$facet：${f.name}',
+      final String facet => t.music_plugin_browse_label_value(
+        label: facet,
+        value: f.name,
+      ),
       null => f.name,
     };
     final List<Widget> chips = <Widget>[
@@ -404,7 +409,18 @@ class _MusicPluginBrowseListPageState
           ],
           child: _menuTrigger(
             FushiIcons.filterList,
-            '${c.label}：${c.values.where((MusicPluginBrowseOption v) => v.id == _query.choices[c.id]).firstOrNull?.label ?? t.music_plugin_browse_any}',
+            t.music_plugin_browse_label_value(
+              label: c.label,
+              value:
+                  c.values
+                      .where(
+                        (MusicPluginBrowseOption v) =>
+                            v.id == _query.choices[c.id],
+                      )
+                      .firstOrNull
+                      ?.label ??
+                  t.music_plugin_browse_any,
+            ),
           ),
         ),
       if (schema.sorts.isNotEmpty)

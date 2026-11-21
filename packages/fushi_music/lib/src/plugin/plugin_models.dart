@@ -446,7 +446,7 @@ class MusicPluginRelatedAlbum {
   static List<MusicPluginRelatedAlbum> listFrom(Object? v) =>
       <MusicPluginRelatedAlbum>[
         for (final Object? x in _list(v))
-          if (MusicPluginAlbum._fromJson(_map(x)['album'], nested: true)
+          if (MusicPluginAlbum._fromJson(_map(x)['album'], withRelated: false)
               case final MusicPluginAlbum album)
             MusicPluginRelatedAlbum(
               album: album,
@@ -568,11 +568,17 @@ class MusicPluginAlbum {
     this.related = const <MusicPluginRelatedAlbum>[],
   });
 
+  /// 列表 / 推荐段 / 搜索里的专辑：不带关联作品（[related] 只在 `album` 详情里有，
+  /// 列表条目里的 `related` 一律不认——否则这些关联作品的封面不经宿主核对就留在模型里）。
   static MusicPluginAlbum? fromJson(Object? raw) =>
-      _fromJson(raw, nested: false);
+      _fromJson(raw, withRelated: false);
 
-  /// [nested] = 关联作品里的专辑：不再解析它自己的关联作品（不递归）。
-  static MusicPluginAlbum? _fromJson(Object? raw, {required bool nested}) {
+  /// `album` 详情里的专辑：额外解析关联作品（关联作品自己的关联作品不再解析，不递归）。
+  /// 调用方负责把关联作品的封面与主封面同批按网络授权核对。
+  static MusicPluginAlbum? detailFromJson(Object? raw) =>
+      _fromJson(raw, withRelated: true);
+
+  static MusicPluginAlbum? _fromJson(Object? raw, {required bool withRelated}) {
     final Map<String, Object?> j = _map(raw);
     final String? id = _str(j['id']);
     final String? title = _str(j['title']);
@@ -594,9 +600,9 @@ class MusicPluginAlbum {
       durationMs: _count(j['durationMs']),
       hasSubtitles: _bool(j['hasSubtitles']),
       sourceUrl: _httpsUrl(j['sourceUrl']),
-      related: nested
-          ? const <MusicPluginRelatedAlbum>[]
-          : MusicPluginRelatedAlbum.listFrom(j['related']),
+      related: withRelated
+          ? MusicPluginRelatedAlbum.listFrom(j['related'])
+          : const <MusicPluginRelatedAlbum>[],
     );
   }
 
