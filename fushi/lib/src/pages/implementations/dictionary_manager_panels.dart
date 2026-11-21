@@ -1136,7 +1136,7 @@ class DictionaryLanguageTag extends StatelessWidget {
   @override
   Widget build(BuildContext context) => FushiTag(
     text: dictionaryLanguageTagLabel(language),
-    icon: Icons.translate,
+    icon: FushiIcons.language,
     tone: FushiTagTone.neutral,
     dense: true,
     message: t.dict_language_tooltip,
