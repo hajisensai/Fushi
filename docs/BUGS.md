@@ -33,151 +33,67 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4425 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5150](bugs/BUG-5150-loopback-dead-capture-stale-ring-pinned.md) | ✅ | ✅ | loopback 采集线程自行退出后，环里的旧声音仍被当成「最近 N 秒」交出去；常驻的跨应用语音缓存从此再也起不来 |
-| [BUG-5142](bugs/BUG-5142-favorite-sentence-refavorite-lost-under-tombstone.md) | 🚧 | 🚧 | 同键收藏句合并只留最早 createdAt：删了重收藏后遇到墓碑会被整条压掉 |
-| [BUG-5140](bugs/BUG-5140-favorite-sentence-recolor.md) | ✅ | ✅ | 收藏句改色：已收藏的书摘不能改颜色（同步缺颜色更新时间） |
-| [BUG-5139](bugs/BUG-5139-cross-app-audio-preview-trim.md) | 🚧 | 🚧 | 跨应用语音缓存：制卡前试听 + 调起止（波形选区）两端都还没有 |
-| [BUG-5136](bugs/BUG-5136-loopback-shared-ring-stopped-by-other-holder.md) | ✅ | ✅ | loopback 一路被多方共用时，任何一方 stop（含失败 start 后的兜底 stop）都会停掉别人的环 |
-| [BUG-5123](bugs/BUG-5123-cli-ui-only-ops-gaps.md) | 🚧 | ✅ | cli-ui-only-ops-gaps |
-| [BUG-5121](bugs/BUG-5121-stall-test-preemption-noise.md) | ✅ | ✅ | stall-test-preemption-noise |
-| [BUG-5111](bugs/BUG-5111-book-manual-summary-fill.md) | 🚧 | 🚧 | 书的简介没有手填入口（BUG-5082 书侧剩余项） |
-| [BUG-5110](bugs/BUG-5110-video-work-locks-lost-on-collection-promotion.md) | 🚧 | 🚧 | 单集作品长成多集合集后重刮，挂在那一集上的手填值 / 字段锁丢失 |
-| [BUG-5107](bugs/BUG-5107-tts-silence-not-at-shared-entry.md) | ✅ | ✅ | 纯标点句判定只接了部分合成入口：漫画配音 / Galgame 朗读 / 试听仍把「……」「！」送引擎 |
-| [BUG-5101](bugs/BUG-5101-sync-peer-gap-capability-reads.md) | ✅ | ✅ | 互联对端缺能力判定每轮多读能力表、逐条墓碑重复记错、降级同步被说成没同步 |
-| [BUG-5090](bugs/BUG-5090-video-scrape-sourceless-scope-issue-blank-title.md) | ✅ | ✅ | video-scrape-sourceless-scope-issue-blank-title |
-> 共 4413 条。点号进各自文件。
-> 共 4412 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5089](bugs/BUG-5089-lnreader-missing-image-path-traversal.md) | ✅ | ✅ | lnreader-missing-image-path-traversal |
-> 共 4412 条。点号进各自文件。
-> 共 4413 条。点号进各自文件。
-> 共 4413 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5100](bugs/BUG-5100-manga-page-size-reread-prefix.md) | ✅ | ✅ | WebP/AVIF 漫画页探尺寸重复打开并重读前缀（HBK-AUDIT-051） |
-| [BUG-5099](bugs/BUG-5099-manga-epub-volume-double-parse.md) | ✅ | ✅ | 漫画 EPUB 整卷导入在调用 isolate 上重复解析（HBK-AUDIT-013） |
-| [BUG-5109](bugs/BUG-5109-manga-series-page-other-book-progress-refresh.md) | ✅ | ✅ | manga-series-page-other-book-progress-refresh |
-| [BUG-5108](bugs/BUG-5108-manga-download-pause-waits-verify.md) | ✅ | ✅ | manga-download-pause-waits-verify |
-> 共 4414 条。点号进各自文件。
-> 共 4416 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5115](bugs/BUG-5115-local-audio-delete-tombstone-by-display-name.md) | ✅ | ✅ | local-audio-delete-tombstone-by-display-name |
-| [BUG-5114](bugs/BUG-5114-local-audio-identity-ignores-recordings.md) | ✅ | ✅ | local-audio-identity-ignores-recordings |
-> 共 4415 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5095](bugs/BUG-5095-text-to-epub-implied-body.md) | ✅ | ✅ | text-to-epub-implied-body |
-| [BUG-5098](bugs/BUG-5098-video-fingerprint-store-quadratic-rewrite.md) | ✅ | ✅ | video-fingerprint-store-quadratic-rewrite |
-| [BUG-5106](bugs/BUG-5106-subtitle-postprocess-on-ui-isolate.md) | ✅ | ✅ | 大 SRT / VTT 字幕轨异步解析后，复制 + 排序 + 重叠收口回到 UI isolate |
-| [BUG-5105](bugs/BUG-5105-remote-reload-crosses-episode-switch.md) | ✅ | ✅ | 换线路 / 换档重载在停止上报期间被换集，仍拿旧集位置重载并作废新集 |
-> 共 4417 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5116](bugs/BUG-5116-manga-fit-resample-whole-image-f32-buffer.md) | ✅ | ✅ | 漫画画质缩放：Rust 重采样为整张图留 f32 中间缓冲，长条页工作集上百 MB |
-| [BUG-5113](bugs/BUG-5113-upscale-cache-io-under-state-lock.md) | ✅ | ✅ | 漫画超分：工作线程持状态锁写磁盘缓存，UI isolate 的同步 FFI 跟着排队 |
-| [BUG-5112](bugs/BUG-5112-upscale-stale-generation-models-failed.md) | ✅ | ✅ | 漫画超分：旧档迟到的模型加载失败能关掉新档、清掉新档的队列 |
-> 共 4416 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5130](bugs/BUG-5130-caret-line-move-node-prefilter-linear.md) | 🚧 | 🚧 | 阅读器光标每次行移动仍对章内每个文本节点各做一次行盒查询（随章长线性） |
-| [BUG-5097](bugs/BUG-5097-manga-text-strip-hover-remeasures-ocr.md) | ✅ | ✅ | 台词栏悬停在同一气泡逐字节点间反复重量整屏 OCR 框（HBK-AUDIT-045） |
-| [BUG-5094](bugs/BUG-5094-caret-line-move-long-paragraph-per-glyph.md) | ✅ | ✅ | 阅读器方向键行移动对跨页长段落逐字量几何（HBK-AUDIT-023） |
-> 共 4415 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5126](bugs/BUG-5126-ai-media-link-verdict-cache-full-read.md) | ✅ | ✅ | ai-media-link-verdict-cache-full-read |
-> 共 4415 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5128](bugs/BUG-5128-heavy-unc-paths.md) | ✅ | ✅ | heavy.dart 启动检查把 UNC 共享路径折成当前盘根路径，排队前就拒掉存在的脚本 |
-> 共 4415 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5134](bugs/BUG-5134-jimaku-season-filter.md) | ✅ | ✅ | 合集字幕只点第二季批量下载仍可能写入第一季字幕（Jimaku 把请求季号抄成候选季号） |
-> 共 4416 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5129](bugs/BUG-5129-onnx-plugin-teardown-cuda-close-uaf.md) | ✅ | ✅ | ONNX 插件析构时 GPU 队列排空在途 CUDA 关会话任务，碰到已析构的空闲释放 mutex 与定时器 |
-> 共 4416 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5132](bugs/BUG-5132-symindex-rust-failure-published-current.md) | ✅ | ✅ | 符号索引 Rust crate 索引失败仍发布成最新、同一提交不再重建 |
-| [BUG-5131](bugs/BUG-5131-symindex-cjk-path-quoted.md) | ✅ | ✅ | 符号索引按行读 git 文件清单，中文路径被转义后改动文件漏判、返回旧结果 |
-> 共 4416 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5146](bugs/BUG-5146-batch-seeding-toggle-relists-backend.md) | ✅ | ✅ | 下载页批量停 / 续做种（及批量继续）每条重列整个后端、每条各刷新一次面板 |
-> 共 4418 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5151](bugs/BUG-5151-torrent-offline-mountpoint-resume-freeze.md) | ✅ | ✅ | 空挂载点目录还在而数据不可达时仍开跑清零续传；离线期间写出的空位图让下次启动把种子放出来；上传闸登记表每加一颗种子清扫全表 |
-> 共 4416 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5154](bugs/BUG-5154-manga-render-backfill-overwrites-script-edits.md) | 🚧 | 🚧 | manga-render-backfill-overwrites-script-edits |
-| [BUG-5145](bugs/BUG-5145-manga-review-stale-session-overwrite.md) | ✅ | ✅ | manga-review-stale-session-overwrite |
-> 共 4416 条。点号进各自文件。
+> 共 4475 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5155](bugs/BUG-5155-music-plugin-search-artist-empty-page-stops-paging.md) | 🚧 | 🚧 | music-plugin-search-artist-empty-page-stops-paging |
+| [BUG-5154](bugs/BUG-5154-manga-render-backfill-overwrites-script-edits.md) | 🚧 | 🚧 | manga-render-backfill-overwrites-script-edits |
+| [BUG-5153](bugs/BUG-5153-subtitle-glossary-host-runner-unguarded-writer.md) | 🚧 | 🚧 | subtitle-glossary-host-runner-unguarded-writer |
+| [BUG-5151](bugs/BUG-5151-torrent-offline-mountpoint-resume-freeze.md) | ✅ | ✅ | 空挂载点目录还在而数据不可达时仍开跑清零续传；离线期间写出的空位图让下次启动把种子放出来；上传闸登记表每加一颗种子清扫全表 |
+| [BUG-5150](bugs/BUG-5150-loopback-dead-capture-stale-ring-pinned.md) | ✅ | ✅ | loopback 采集线程自行退出后，环里的旧声音仍被当成「最近 N 秒」交出去；常驻的跨应用语音缓存从此再也起不来 |
+| [BUG-5146](bugs/BUG-5146-batch-seeding-toggle-relists-backend.md) | ✅ | ✅ | 下载页批量停 / 续做种（及批量继续）每条重列整个后端、每条各刷新一次面板 |
+| [BUG-5145](bugs/BUG-5145-manga-review-stale-session-overwrite.md) | ✅ | ✅ | manga-review-stale-session-overwrite |
 | [BUG-5144](bugs/BUG-5144-music-plugin-empty-page-stops-paging.md) | ✅ | ✅ | music-plugin-empty-page-stops-paging |
-| [BUG-5140](bugs/BUG-5140-favorite-sentence-recolor.md) | 🚧 | 🚧 | 收藏句改色：已收藏的书摘不能改颜色（同步缺颜色更新时间） |
-| [BUG-5093](bugs/BUG-5093-smart-mask-bgra-crop-in-dart.md) | ✅ | ✅ | 智能遮布：截帧 BGRA→RGBA 裁块逐像素留在 Dart（HBK-AUDIT-008） |
-| [BUG-5092](bugs/BUG-5092-smart-mask-stale-ocr-after-seek.md) | ✅ | ✅ | 智能遮布：seek 后旧帧 OCR 结果把遮布盖回新时间点（HBK-AUDIT-007） |
-| [BUG-5104](bugs/BUG-5104-srs-relay-reclaim-decodes-all-versions.md) | 🚧 | 🚧 | 中继回收每收新头解码整位作者的签名版本（HBK-AUDIT-052，未复现） |
-| [BUG-5103](bugs/BUG-5103-srs-study-walks-todays-answers.md) | ✅ | ✅ | 常驻出卡会话每次排队复制并整表扫描今天的作答（HBK-AUDIT-010） |
-> 共 4415 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5096](bugs/BUG-5096-srs-media-prep-ignores-budget.md) | ✅ | ✅ | SRS 媒体准备阶段不守发段前预算，复习记录段被挡 |
-> 共 4412 条。点号进各自文件。
-| [BUG-5120](bugs/BUG-5120-kavita-evict-rescans-shelf-per-victim.md) | ✅ | ✅ | Kavita 缓存淘汰每删一本扫两遍书架、逐本查用户数据表（O(M·N) 查询） |
-| [BUG-5119](bugs/BUG-5119-kavita-evict-drops-custom-cover.md) | ✅ | ✅ | Kavita 缓存自动淘汰 / 一键清理把用户自定义的封面与书名一起删掉 |
-| [BUG-5117](bugs/BUG-5117-media-server-resume-needs-strong-validator.md) | ✅ | ✅ | 断点续传把「总长相同」当版本身份，等长替换后拼成坏片 |
+| [BUG-5142](bugs/BUG-5142-favorite-sentence-refavorite-lost-under-tombstone.md) | 🚧 | 🚧 | 同键收藏句合并只留最早 createdAt：删了重收藏后遇到墓碑会被整条压掉 |
+| [BUG-5140](bugs/BUG-5140-favorite-sentence-recolor.md) | ✅ | ✅ | 收藏句改色：已收藏的书摘不能改颜色（同步缺颜色更新时间） |
+| [BUG-5139](bugs/BUG-5139-cross-app-audio-preview-trim.md) | 🚧 | 🚧 | 跨应用语音缓存：制卡前试听 + 调起止（波形选区）两端都还没有 |
+| [BUG-5138](bugs/BUG-5138-decision-api-key-leaks-feedback.md) | ✅ | ✅ | 拍板台个人密钥 API 带出关联反馈原文 / 附件与账户 id |
+| [BUG-5136](bugs/BUG-5136-loopback-shared-ring-stopped-by-other-holder.md) | ✅ | ✅ | loopback 一路被多方共用时，任何一方 stop（含失败 start 后的兜底 stop）都会停掉别人的环 |
+| [BUG-5134](bugs/BUG-5134-jimaku-season-filter.md) | ✅ | ✅ | 合集字幕只点第二季批量下载仍可能写入第一季字幕（Jimaku 把请求季号抄成候选季号） |
+| [BUG-5132](bugs/BUG-5132-symindex-rust-failure-published-current.md) | ✅ | ✅ | 符号索引 Rust crate 索引失败仍发布成最新、同一提交不再重建 |
+| [BUG-5131](bugs/BUG-5131-symindex-cjk-path-quoted.md) | ✅ | ✅ | 符号索引按行读 git 文件清单，中文路径被转义后改动文件漏判、返回旧结果 |
+| [BUG-5130](bugs/BUG-5130-caret-line-move-node-prefilter-linear.md) | 🚧 | 🚧 | 阅读器光标每次行移动仍对章内每个文本节点各做一次行盒查询（随章长线性） |
+| [BUG-5129](bugs/BUG-5129-onnx-plugin-teardown-cuda-close-uaf.md) | ✅ | ✅ | ONNX 插件析构时 GPU 队列排空在途 CUDA 关会话任务，碰到已析构的空闲释放 mutex 与定时器 |
+| [BUG-5128](bugs/BUG-5128-heavy-unc-paths.md) | ✅ | ✅ | heavy.dart 启动检查把 UNC 共享路径折成当前盘根路径，排队前就拒掉存在的脚本 |
+| [BUG-5127](bugs/BUG-5127-stats-single-media-scan.md) | ✅ | ✅ | 只看一本书的统计仍扫描本 Profile 全部段与整张计数表 |
+| [BUG-5126](bugs/BUG-5126-ai-media-link-verdict-cache-full-read.md) | ✅ | ✅ | ai-media-link-verdict-cache-full-read |
 | [BUG-5125](bugs/BUG-5125-web-novel-chapter-fetch-full-reparse.md) | ✅ | ✅ | web-novel-chapter-fetch-full-reparse |
 | [BUG-5124](bugs/BUG-5124-web-novel-merge-entries-overwrite.md) | ✅ | ✅ | web-novel-merge-entries-overwrite |
-| [BUG-5118](bugs/BUG-5118-audiobook-multitrack-cold-resume-tail.md) | ✅ | ✅ | audiobook-multitrack-cold-resume-tail |
-> 共 4414 条。点号进各自文件。
-> 共 4415 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5091](bugs/BUG-5091-video-organize-concurrent-move-overwrite.md) | ✅ | ✅ | 两次独立发起的视频整理 / 搬动落到同一目标时后一个 rename 静默覆盖先搬过去的视频；撤销不核对文件身份 |
-> 共 4416 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5153](bugs/BUG-5153-subtitle-glossary-host-runner-unguarded-writer.md) | 🚧 | 🚧 | subtitle-glossary-host-runner-unguarded-writer |
-| [BUG-5140](bugs/BUG-5140-favorite-sentence-recolor.md) | 🚧 | 🚧 | 收藏句改色：已收藏的书摘不能改颜色（同步缺颜色更新时间） |
+| [BUG-5123](bugs/BUG-5123-cli-ui-only-ops-gaps.md) | 🚧 | ✅ | cli-ui-only-ops-gaps |
 | [BUG-5122](bugs/BUG-5122-subtitle-glossary-regenerate-overwrites-job.md) | ✅ | ✅ | subtitle-glossary-regenerate-overwrites-job |
-| [BUG-5127](bugs/BUG-5127-stats-single-media-scan.md) | ✅ | ✅ | 只看一本书的统计仍扫描本 Profile 全部段与整张计数表 |
-> 共 4415 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5138](bugs/BUG-5138-decision-api-key-leaks-feedback.md) | ✅ | ✅ | 拍板台个人密钥 API 带出关联反馈原文 / 附件与账户 id |
+| [BUG-5121](bugs/BUG-5121-stall-test-preemption-noise.md) | ✅ | ✅ | stall-test-preemption-noise |
+| [BUG-5120](bugs/BUG-5120-kavita-evict-rescans-shelf-per-victim.md) | ✅ | ✅ | Kavita 缓存淘汰每删一本扫两遍书架、逐本查用户数据表（O(M·N) 查询） |
+| [BUG-5119](bugs/BUG-5119-kavita-evict-drops-custom-cover.md) | ✅ | ✅ | Kavita 缓存自动淘汰 / 一键清理把用户自定义的封面与书名一起删掉 |
+| [BUG-5118](bugs/BUG-5118-audiobook-multitrack-cold-resume-tail.md) | ✅ | ✅ | audiobook-multitrack-cold-resume-tail |
+| [BUG-5117](bugs/BUG-5117-media-server-resume-needs-strong-validator.md) | ✅ | ✅ | 断点续传把「总长相同」当版本身份，等长替换后拼成坏片 |
+| [BUG-5116](bugs/BUG-5116-manga-fit-resample-whole-image-f32-buffer.md) | ✅ | ✅ | 漫画画质缩放：Rust 重采样为整张图留 f32 中间缓冲，长条页工作集上百 MB |
+| [BUG-5115](bugs/BUG-5115-local-audio-delete-tombstone-by-display-name.md) | ✅ | ✅ | local-audio-delete-tombstone-by-display-name |
+| [BUG-5114](bugs/BUG-5114-local-audio-identity-ignores-recordings.md) | ✅ | ✅ | local-audio-identity-ignores-recordings |
+| [BUG-5113](bugs/BUG-5113-upscale-cache-io-under-state-lock.md) | ✅ | ✅ | 漫画超分：工作线程持状态锁写磁盘缓存，UI isolate 的同步 FFI 跟着排队 |
+| [BUG-5112](bugs/BUG-5112-upscale-stale-generation-models-failed.md) | ✅ | ✅ | 漫画超分：旧档迟到的模型加载失败能关掉新档、清掉新档的队列 |
+| [BUG-5111](bugs/BUG-5111-book-manual-summary-fill.md) | 🚧 | 🚧 | 书的简介没有手填入口（BUG-5082 书侧剩余项） |
+| [BUG-5110](bugs/BUG-5110-video-work-locks-lost-on-collection-promotion.md) | 🚧 | 🚧 | 单集作品长成多集合集后重刮，挂在那一集上的手填值 / 字段锁丢失 |
+| [BUG-5109](bugs/BUG-5109-manga-series-page-other-book-progress-refresh.md) | ✅ | ✅ | manga-series-page-other-book-progress-refresh |
+| [BUG-5108](bugs/BUG-5108-manga-download-pause-waits-verify.md) | ✅ | ✅ | manga-download-pause-waits-verify |
+| [BUG-5107](bugs/BUG-5107-tts-silence-not-at-shared-entry.md) | ✅ | ✅ | 纯标点句判定只接了部分合成入口：漫画配音 / Galgame 朗读 / 试听仍把「……」「！」送引擎 |
+| [BUG-5106](bugs/BUG-5106-subtitle-postprocess-on-ui-isolate.md) | ✅ | ✅ | 大 SRT / VTT 字幕轨异步解析后，复制 + 排序 + 重叠收口回到 UI isolate |
+| [BUG-5105](bugs/BUG-5105-remote-reload-crosses-episode-switch.md) | ✅ | ✅ | 换线路 / 换档重载在停止上报期间被换集，仍拿旧集位置重载并作废新集 |
+| [BUG-5104](bugs/BUG-5104-srs-relay-reclaim-decodes-all-versions.md) | 🚧 | 🚧 | 中继回收每收新头解码整位作者的签名版本（HBK-AUDIT-052，未复现） |
+| [BUG-5103](bugs/BUG-5103-srs-study-walks-todays-answers.md) | ✅ | ✅ | 常驻出卡会话每次排队复制并整表扫描今天的作答（HBK-AUDIT-010） |
+| [BUG-5101](bugs/BUG-5101-sync-peer-gap-capability-reads.md) | ✅ | ✅ | 互联对端缺能力判定每轮多读能力表、逐条墓碑重复记错、降级同步被说成没同步 |
+| [BUG-5100](bugs/BUG-5100-manga-page-size-reread-prefix.md) | ✅ | ✅ | WebP/AVIF 漫画页探尺寸重复打开并重读前缀（HBK-AUDIT-051） |
+| [BUG-5099](bugs/BUG-5099-manga-epub-volume-double-parse.md) | ✅ | ✅ | 漫画 EPUB 整卷导入在调用 isolate 上重复解析（HBK-AUDIT-013） |
+| [BUG-5098](bugs/BUG-5098-video-fingerprint-store-quadratic-rewrite.md) | ✅ | ✅ | video-fingerprint-store-quadratic-rewrite |
+| [BUG-5097](bugs/BUG-5097-manga-text-strip-hover-remeasures-ocr.md) | ✅ | ✅ | 台词栏悬停在同一气泡逐字节点间反复重量整屏 OCR 框（HBK-AUDIT-045） |
+| [BUG-5096](bugs/BUG-5096-srs-media-prep-ignores-budget.md) | ✅ | ✅ | SRS 媒体准备阶段不守发段前预算，复习记录段被挡 |
+| [BUG-5095](bugs/BUG-5095-text-to-epub-implied-body.md) | ✅ | ✅ | text-to-epub-implied-body |
+| [BUG-5094](bugs/BUG-5094-caret-line-move-long-paragraph-per-glyph.md) | ✅ | ✅ | 阅读器方向键行移动对跨页长段落逐字量几何（HBK-AUDIT-023） |
+| [BUG-5093](bugs/BUG-5093-smart-mask-bgra-crop-in-dart.md) | ✅ | ✅ | 智能遮布：截帧 BGRA→RGBA 裁块逐像素留在 Dart（HBK-AUDIT-008） |
+| [BUG-5092](bugs/BUG-5092-smart-mask-stale-ocr-after-seek.md) | ✅ | ✅ | 智能遮布：seek 后旧帧 OCR 结果把遮布盖回新时间点（HBK-AUDIT-007） |
+| [BUG-5091](bugs/BUG-5091-video-organize-concurrent-move-overwrite.md) | ✅ | ✅ | 两次独立发起的视频整理 / 搬动落到同一目标时后一个 rename 静默覆盖先搬过去的视频；撤销不核对文件身份 |
+| [BUG-5090](bugs/BUG-5090-video-scrape-sourceless-scope-issue-blank-title.md) | ✅ | ✅ | video-scrape-sourceless-scope-issue-blank-title |
+| [BUG-5089](bugs/BUG-5089-lnreader-missing-image-path-traversal.md) | ✅ | ✅ | lnreader-missing-image-path-traversal |
 | [BUG-5088](bugs/BUG-5088-readintosync-blocks-gc-safepoint.md) | ✅ | ✅ | readintosync-blocks-gc-safepoint |
 | [BUG-5087](bugs/BUG-5087-sync-video-sweep-tests-teardown-temp-locked.md) | ✅ | ✅ | sync-video-sweep-tests-teardown-temp-locked |
 | [BUG-5086](bugs/BUG-5086-dist-test-verdict-coverage-shared-log.md) | ✅ | ✅ | 「dist 请求 7 个测试文件只跑 2 个仍判 PASSED」是并发代理共用日志名读串了；dist_test 判绿改为逐个核对请求的 suite |
@@ -188,18 +104,14 @@
 | [BUG-5080](bugs/BUG-5080-srs-gen4-conflict-badge-minutes.md) | ✅ | ✅ | SRS 牌组列表冲突角标的 `conflict_edits` 在迁移库上跑几分钟 |
 | [BUG-5079](bugs/BUG-5079-srs-retained-copy-unreadable-unreported.md) | ✅ | ✅ | SRS 保留副本 srs.db 坏了（不是 SQLite 文件）用户毫无提示 |
 | [BUG-5078](bugs/BUG-5078-live-progress-test-teardown-temp-delete-fails.md) | ✅ | ✅ | live-progress-test-teardown-temp-delete-fails |
+| [BUG-5078](bugs/BUG-5078-cuda-context-held-after-asr.md) | ✅ | ✅ | ASR/TTS 校对用过 CUDA 后进程常驻约 180 MiB 显存与约 850 MiB 私有提交 |
 | [BUG-5077](bugs/BUG-5077-manga-read-aloud-bar-finished-no-regression-test.md) | ✅ | ✅ | 漫画朗读读到章末播放条不退的修复（#3986）缺自动化回归测试 |
 | [BUG-5076](bugs/BUG-5076-db-enospc-misclassified-as-corruption.md) | ✅ | ✅ | 磁盘写满时 sqlite malformed(11) 被归到「数据库损坏」专屏，引导用户恢复备份 / 清数据 |
 | [BUG-5075](bugs/BUG-5075-tts-render-queue-test-windows-teardown.md) | ✅ | ✅ | Windows 上 tts_text_rules_and_rate_limit_test 的 tearDown 删临时目录报 errno 145（目录非空） |
-| [BUG-5078](bugs/BUG-5078-live-progress-test-teardown-temp-delete-fails.md) | 🚧 | 🚧 | live-progress-test-teardown-temp-delete-fails |
-| [BUG-5078](bugs/BUG-5078-cuda-context-held-after-asr.md) | ✅ | ✅ | ASR/TTS 校对用过 CUDA 后进程常驻约 180 MiB 显存与约 850 MiB 私有提交 |
-| [BUG-5077](bugs/BUG-5077-manga-read-aloud-bar-finished-no-regression-test.md) | ✅ | 🚧 | 漫画朗读读到章末播放条不退的修复（#3986）缺自动化回归测试 |
-| [BUG-5076](bugs/BUG-5076-db-enospc-misclassified-as-corruption.md) | 🚧 | 🚧 | 磁盘写满时 sqlite malformed(11) 被归到「数据库损坏」专屏，引导用户恢复备份 / 清数据 |
-| [BUG-5075](bugs/BUG-5075-tts-render-queue-test-windows-teardown.md) | 🚧 | 🚧 | Windows 上 tts_text_rules_and_rate_limit_test 的 tearDown 删临时目录报 errno 145（目录非空） |
 | [BUG-5074](bugs/BUG-5074-srs-gen4-review-lag-after-upgrade.md) | ✅ | ✅ | SRS 升级到新代存储（gen4）后一背卡就卡、越背越卡 |
 | [BUG-5073](bugs/BUG-5073-stat-day-reset-hour-profile-switch.md) | ✅ | ✅ | 切 Profile 后统计日界仍按旧 Profile 的值直到重启 |
-| [BUG-5072](bugs/BUG-5072-completed-seeding-not-pausable.md) | ✅ | ✅ | 下载页已完成仍做种的视频任务无法暂停/恢复做种（单条与批量） |
 | [BUG-5073](bugs/BUG-5073-download-card-completed-live-snapshot-tear.md) | 🚧 | 🚧 | 已完成任务卡片：色调/速度/操作读 DB lifecycle，状态文案/进度读引擎实时快照，引擎回退时显示「完成色 + 下载中 4%」 |
+| [BUG-5072](bugs/BUG-5072-completed-seeding-not-pausable.md) | ✅ | ✅ | 下载页已完成仍做种的视频任务无法暂停/恢复做种（单条与批量） |
 | [BUG-5072](bugs/BUG-5072-torrent-resume-offline-save-path-zeroes-progress.md) | ✅ | ✅ | 重启时 save_path 暂不可达：fast-resume 被拒后在空路径全检得 0 片，周期快照把全 0 位图写回 .resume，路径恢复后永久跳过校验从 0% 重下 |
 | [BUG-5071](bugs/BUG-5071-torrent-upload-block-starves-download.md) | ✅ | ✅ | 单种子停上传（分享率达标）用 set_upload_limit(1) 把下载一起饿死 |
 | [BUG-5070](bugs/BUG-5070-stat-trend-iso-week-dst.md) | ✅ | ✅ | 统计趋势按周聚合在有夏令时的时区把相邻两周并成一桶、周号少一 |
