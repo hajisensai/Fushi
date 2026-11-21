@@ -108,6 +108,10 @@ struct State {
     running: Option<String>,
     /// 本配置下判过不做（[QUERY_SKIPPED]）/ 失败过（[QUERY_FAILED]）的键；换配置清空。
     settled: HashMap<String, i32>,
+    /// 这一代（[State::generation]）的模型加载失败过：引擎对这代配置按「没就绪」处理——不收提交、
+    /// 工作线程不取任务，直到调用方重新 [ffc_upscale_configure]。否则每次新提交都会触发一次注定失败的
+    /// 重载（swin 两个模型一次数秒）并再发一次 [EVENT_MODELS_FAILED]。
+    models_failed: Option<u64>,
 }
 
 impl State {
@@ -120,12 +124,19 @@ impl State {
             generation: 0,
             running: None,
             settled: HashMap::new(),
+            models_failed: None,
         }
     }
 
-    /// 引擎对 `key` 的认知（[QUERY_UNKNOWN] 等）；没启动 / 没配置返回 [UPSCALE_NOT_READY]。
+    /// 配置好了、缓存开了、且这代配置的模型没加载失败过。
+    fn ready(&self) -> bool {
+        self.config.is_some() && self.cache.is_some() && self.models_failed != Some(self.generation)
+    }
+
+    /// 引擎对 `key` 的认知（[QUERY_UNKNOWN] 等）；没启动 / 没配置 / 这代模型加载失败返回
+    /// [UPSCALE_NOT_READY]。
     fn query(&self, key: &str) -> i32 {
-        if self.config.is_none() || self.cache.is_none() {
+        if !self.ready() {
             return UPSCALE_NOT_READY;
         }
         if self.cache.as_ref().is_some_and(|c| c.contains(key)) {
@@ -221,7 +232,7 @@ fn worker_loop(engine: &Engine) {
         let (job, config, generation, callback) = {
             let mut state = engine.state.lock().unwrap_or_else(|e| e.into_inner());
             loop {
-                if state.config.is_some() && state.cache.is_some() {
+                if state.ready() {
                     if let Some(job) = state.queue.pop() {
                         state.running = Some(job.key.clone());
                         break (
@@ -244,14 +255,18 @@ fn worker_loop(engine: &Engine) {
                 Ok(loaded) => nets = Some((generation, loaded)),
                 Err(e) => {
                     log_error(&format!("load models: {e}"));
-                    emit(callback, EVENT_MODELS_FAILED, 0);
-                    emit(callback, EVENT_FAILED, job.token);
-                    // 同一配置不反复重载：清掉队列，等调用方换配置。
+                    // 同一配置不反复重载：记下这代失败（之后的提交返回没就绪）、清掉队列，等调用方重新
+                    // 配置。先落状态再发事件：调用方收到事件时查到的已经是「没就绪」。
                     let dropped = {
                         let mut state = engine.state.lock().unwrap_or_else(|e| e.into_inner());
                         state.running = None;
+                        if state.generation == generation {
+                            state.models_failed = Some(generation);
+                        }
                         state.queue.clear()
                     };
+                    emit(callback, EVENT_MODELS_FAILED, 0);
+                    emit(callback, EVENT_FAILED, job.token);
                     emit_all(callback, EVENT_CANCELLED, dropped);
                     continue;
                 }
@@ -420,10 +435,12 @@ pub unsafe extern "C" fn ffc_upscale_configure(
         };
         let engine = engine();
         let mut state = engine.state.lock().unwrap_or_else(|e| e.into_inner());
-        if state.config.as_ref() != Some(&config) {
+        // 配置变了，或这代模型加载失败过（调用方重新启用 = 显式要求再试一次）：换一代，工作线程重载。
+        if state.config.as_ref() != Some(&config) || state.models_failed == Some(state.generation) {
             state.config = Some(config);
             state.generation += 1;
             state.settled.clear();
+            state.models_failed = None;
         }
         engine.wake.notify_all();
         status::OK
@@ -932,6 +949,14 @@ mod tests {
         assert_eq!(state.query("a"), QUERY_SKIPPED);
         assert_eq!(state.query("b"), QUERY_FAILED);
         state.cache.as_mut().unwrap().put("c", b"jpeg").unwrap();
+        assert_eq!(state.query("c"), QUERY_CACHED);
+        // 这代模型加载失败：不收提交、不给工作线程派活；换一代就恢复。
+        state.models_failed = Some(state.generation);
+        assert!(!state.ready());
+        assert_eq!(state.query("c"), UPSCALE_NOT_READY);
+        assert_eq!(state.query("z"), UPSCALE_NOT_READY);
+        state.generation += 1;
+        assert!(state.ready());
         assert_eq!(state.query("c"), QUERY_CACHED);
         let _ = std::fs::remove_dir_all(&dir);
     }
