@@ -105,7 +105,7 @@
 | [BUG-5018](bugs/BUG-5018-remote-subtitle-temp-dir-leak.md) | ✅ | ✅ | 远端字幕生成失败 / 取消时不清产物临时目录 |
 | [BUG-5017](bugs/BUG-5017-srs-v30-writer-dirs-never-dropped.md) | 🚧 | 🚧 | v3.0.x 复习同步写入者目录迁移完也永远留在位置上 |
 | [BUG-5016](bugs/BUG-5016-deleted-remote-collection-not-recreated-on-explicit-add.md) | ✅ | ✅ | 删掉的在线源作品合集再显式加入或下载也永不重建 |
-| [BUG-5015](bugs/BUG-5015-paged-progress-landing-first-after-metrics-invalidation.md) | 🚧 | 🚧 | 竖排分页 progress 0.9 落点在度量缓存作废后第一次与之后几次不一致 |
+| [BUG-5015](bugs/BUG-5015-paged-progress-landing-first-after-metrics-invalidation.md) | ✅ | ✅ | 竖排分页 progress 0.9 落点在度量缓存作废后第一次与之后几次不一致 |
 | [BUG-5014](bugs/BUG-5014-subtitle-episode-download-scope-switch-silent-abort.md) | ✅ | ✅ | 本集字幕下载途中重搜或切作用域静默丢下载 |
 | [BUG-5013](bugs/BUG-5013-manga-epub-import-no-actual-byte-cap.md) | ✅ | ✅ | 纯图 EPUB 漫画导入不按实际解出字节封顶、探测白解整本 |
 | [BUG-5012](bugs/BUG-5012-stream-book-client-never-closed.md) | ✅ | ✅ | 流媒体书客户端与来源直链解析器从不关闭（SFTP 每开一次留一条 SSH 连接） |
