@@ -1325,7 +1325,7 @@ fn canon_counts(
 /// - `canonicalCards`：每张规范卡的调度状态（队列、到期、稳定度、难度、复习 / 遗忘次数）——同一张规范卡在一侧有几行
 ///   就有几条，两侧的多重集合要相同；
 /// - `canonicalLogs`：每张规范卡（含不在缓存里的历史血统卡）名下的规范日志 ID 集合（日志表全集，未去重前的口径）；
-/// - `canonicalStats`：每张规范卡的有效复习（统计行）条数。
+/// - `canonicalStats`：每张规范卡的有效复习（统计行）条数（协议 3 一侧不计已证出的同一次复习的副本）。
 fn canonical_pairs(
     src: &Connection,
     profile: &str,
@@ -1430,9 +1430,17 @@ fn canonical_pairs(
         }
         by.into_iter().map(|(c, logs)| (c, logs.len())).collect()
     };
+    // 协议 3 多算的同一次复习的副本（`compare.rs` 的 `event_copies`，已证出）不计：新代按规范卡只算一次。
+    let copies: BTreeSet<&str> = known
+        .stats_event_copies
+        .values()
+        .flatten()
+        .map(String::as_str)
+        .collect();
     let old_stats: Vec<(Ref, Ref)> = old
         .2
         .iter()
+        .filter(|r| !copies.contains(r[0].as_str()))
         .map(|r| (Ref::of(&Key::of(&r[1])), Ref::of(&Key::of(&r[0]))))
         .collect();
     let old_stats = counts(old_stats);

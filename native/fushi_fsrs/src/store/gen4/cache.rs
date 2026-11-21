@@ -1433,7 +1433,7 @@ impl<'t, 'c> Index<'t, 'c> {
         out: &mut Settled,
     ) -> Result<(), String> {
         // 归回的写入者表在这一趟里不变：按类拼行（`class.rs` [Index::class_lines]）每个实体都要它，读一次。
-        self.pass_writers = Some(self.writer_aliases()?);
+        self.pass_writers = Some(std::rc::Rc::new(self.writer_aliases()?));
         self.pass_rules_begin()?;
         let done = self.cache_pass_with(cfg, notes, cards, all, out);
         self.pass_writers = None;
@@ -2998,6 +2998,88 @@ mod tests {
             })
             .unwrap();
             assert_eq!(sort_field(t.conn()), "a");
+            assert_rebuild_is_identity(t, col);
+        });
+    }
+
+    /// 名字表不变、只有归回写入者的证据范围变了（BUG-5056 的 `aliasWriterUpto`）：一样整层重建。被测笔记的字段寄存器
+    /// 里 `(w1, 2)`（HLC 100）与 `(v, 1)`（上下文 `merged:2`、HLC 90）：范围只到 seq 1 时 `merged:2` 证不到盖住
+    /// `(w1, 2)`，两条并发、HLC 大的 `a` 胜；另一条笔记上来了 `(merged, 2)` 与 `(w1, 2)` 的同一条记录，范围升到 2，
+    /// `b` 支配 `a`。这条笔记不在这一批碰到的实体里，只有整层重建才会更新它的 `sort_field`。
+    #[test]
+    fn a_writer_bound_moving_rebuilds_rows_the_batch_did_not_touch() {
+        use crate::gen4_ids::rules;
+        use crate::store::gen4::derive::tests::{heritage, stamp};
+        with(|t, col| {
+            put_cfg(t, col);
+            let w = twin();
+            let merged = format!("merged-{}~w1", rules::merged_writer_hash(U1, "w1").text());
+            let f0 = format!("f/{}", rules::field(&w.nt[0], 0).text());
+            let write = |entity: &crate::sync2::id::Id, key: &str, value: &str, s| {
+                Body4::Edit(Edit4 {
+                    kind: EntKind::Note,
+                    entity: Key::Uuid(*entity),
+                    key: key.to_owned(),
+                    value: format!("\"{value}\""),
+                    stamp: Some(s),
+                    ..native_edit()
+                })
+            };
+            let steps: Vec<Body4> = twin_steps(&w)
+                .into_iter()
+                .filter(|b| !matches!(b, Body4::Edit(e) if e.key.starts_with("f/")))
+                .collect();
+            let sort_field = |conn: &Connection| -> String {
+                rows(
+                    conn,
+                    &format!(
+                        "SELECT sort_field FROM notes WHERE id = {}",
+                        blob(&w.c_note)
+                    ),
+                )[0][0]
+                    .clone()
+            };
+            let proof = |wr: &str, seq: i64, physical: i64| {
+                write(
+                    &w.note[1],
+                    "proof",
+                    "p",
+                    stamp(wr, seq, r#"{"vv":{}}"#, physical),
+                )
+            };
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                let mut first = vec![Body4::salts([U1]).unwrap()];
+                first.extend(steps.iter().cloned());
+                feed(t, &mut ix, col, 1, &first);
+                heritage(t, &mut ix, col, op(0xc1, 1, 1, &[], &proof("w1", 1, 50)));
+                heritage(t, &mut ix, col, op(0xc2, 1, 2, &[], &proof(&merged, 1, 50)));
+                let ctx = format!(r#"{{"vv":{{"{merged}":2}}}}"#);
+                let a = write(&w.note[0], &f0, "a", stamp("w1", 2, r#"{"vv":{}}"#, 100));
+                let b = write(&w.note[0], &f0, "b", stamp("v", 1, &ctx, 90));
+                heritage(t, &mut ix, col, op(0xd1, 1, 3, &[], &a));
+                heritage(t, &mut ix, col, op(0xd2, 1, 4, &[], &b));
+                ix.settle()?;
+                assert_eq!(ix.canonical_writer(&merged)?, "w1");
+                assert_eq!(ix.writer_aliases()?.bound(&merged).map(|b| b.upto), Some(1));
+                Ok(())
+            })
+            .unwrap();
+            assert_eq!(sort_field(t.conn()), "a");
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                heritage(
+                    t,
+                    &mut ix,
+                    col,
+                    op(0xc3, 1, 5, &[], &proof(&merged, 2, 100)),
+                );
+                ix.settle()?;
+                assert_eq!(ix.writer_aliases()?.bound(&merged).map(|b| b.upto), Some(2));
+                Ok(())
+            })
+            .unwrap();
+            assert_eq!(sort_field(t.conn()), "b");
             assert_rebuild_is_identity(t, col);
         });
     }

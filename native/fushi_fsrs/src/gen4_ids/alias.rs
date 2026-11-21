@@ -105,6 +105,8 @@ pub struct Dot {
 pub struct WriterEv {
     pub name: String,
     pub dots: Vec<Dot>,
+    /// 名下 HLC 解不开的记录的 seq（不当「同一条记录」的证据，只说明这个名字在这一号上有记录，[WriterBound::own]）。
+    pub raw: Vec<u64>,
 }
 
 /// 一个集合的证据。各项都是集合语义：顺序、重复都不影响结果；同一个 ID 的多条证据取并集。
@@ -239,7 +241,7 @@ struct WriterEntry {
 pub struct WriterBound {
     /// 与最初写入者同 seq 同记录的最大 seq；一条都没有（经类里别的名字连上的）= 0。
     pub upto: u64,
-    /// 这个名字在集合里、seq 大于 [upto] 的记录，升序。
+    /// 这个名字在集合里、seq 大于 [upto] 的记录（含 HLC 解不开的），升序。
     pub own: Vec<u64>,
 }
 
@@ -1304,6 +1306,13 @@ impl<'a> Resolver<'a> {
         }
 
         let ev = self.ev;
+        // 名字 → 名下 HLC 解不开的记录的 seq（只进 [WriterBound::own]）。
+        let raw: HashMap<&str, BTreeSet<u64>> = ev
+            .writers
+            .iter()
+            .filter(|w| !w.raw.is_empty())
+            .map(|w| (w.name.as_str(), w.raw.iter().copied().collect()))
+            .collect();
         // 在操作里出现过的名字与它名下的记录（同一个 seq 有两种戳 = 证据自相矛盾，记 None：和谁都对不上）。
         let mut dots: BTreeMap<&'a str, Dots> = BTreeMap::new();
         for w in &ev.writers {
@@ -1454,7 +1463,12 @@ impl<'a> Resolver<'a> {
                                 .rev()
                                 .find(|(seq, x)| x.is_some() && root_dots.get(*seq) == Some(*x))
                                 .map_or(0, |(seq, _)| *seq);
-                            let own = mine.range(upto + 1..).map(|(seq, _)| *seq).collect();
+                            let mut own: BTreeSet<u64> =
+                                mine.range(upto + 1..).map(|(seq, _)| *seq).collect();
+                            if let Some(r) = raw.get(*m) {
+                                own.extend(r.range(upto + 1..).copied());
+                            }
+                            let own = own.into_iter().collect();
                             WriterBound { upto, own }
                         },
                     },

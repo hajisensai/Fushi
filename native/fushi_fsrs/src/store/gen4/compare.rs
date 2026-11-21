@@ -196,8 +196,9 @@ pub(crate) struct Known {
     pub stat_cols: BTreeMap<String, BTreeSet<&'static str>>,
     /// 统计行整行不比的卡（血统变了：哪些日志归这张卡本身就跟着变，[Effect::stats_aside]）。
     pub stats_aside: BTreeSet<String>,
-    /// 其中因为「同一次复习的副本按规范卡成了一个事件」而统计行整行不比、卡行的重放列不比的卡（[event_copies]）。
-    pub stats_event_copies: BTreeSet<String>,
+    /// 「同一次复习的副本按规范卡成了一个事件」的卡 → 证出的那几条协议 3 多算的副本日志（[event_copies]）：只这几条
+    /// 统计行不比，同卡其余统计行盖重放列、卡行盖 `CARD_DERIVED`。
+    pub stats_event_copies: BTreeMap<String, BTreeSet<String>>,
     /// 盖了列 / 整行不比的行（两侧合计，按盖之前的原文去重）与其中两侧原文不同的。
     pub rows: u64,
     pub rows_differ: u64,
@@ -772,12 +773,16 @@ pub(crate) fn cache_pairs(
     let skip_note = |id: &str| collided.contains(&format!("note:{id}")) || skip.notes.contains(id);
     // 已知差异喂得到的列（[Known]、[known_effect]）：笔记类型上的落到这个类型的全部笔记，笔记上的落到它的卡（卡列
     // 另记），卡上的落到它的统计行。
-    // 同一次复习的副本按规范卡成了一个事件（[event_copies]）：这张卡的历史少了一条，统计行整行不比、卡行里由历史
-    // 重放的列不比（与 `historyFrom` 的已知差异同一口径，[cache_effect]）。
+    // 同一次复习的副本按规范卡成了一个事件（[event_copies]）：这张卡的历史少了证出的那几条。只剔掉这几条统计行，
+    // 同卡其余统计行照比、只盖由历史重放的列（同卡寄存器的已知差异同一口径，[cache_effect]），卡行盖重放列。
     let new_stats = new("stats", STAT_COLS)?;
     known.stats_event_copies = event_copies(t, col, &canon, old_stats, &new_stats)?;
-    for c in &known.stats_event_copies {
-        known.stats_aside.insert(c.clone());
+    for c in known.stats_event_copies.keys() {
+        known
+            .stat_cols
+            .entry(c.clone())
+            .or_default()
+            .extend(["prev_due_day", "maturity_delta"]);
         known
             .card_cols
             .entry(c.clone())
@@ -915,12 +920,19 @@ pub(crate) fn cache_pairs(
     push_pair(diff, ("cards", old_side, new_side));
     drop(new_cards);
     let (stat_cols, stats_aside) = (&known.stat_cols, &known.stats_aside);
+    let copy_logs: HashSet<&str> = known
+        .stats_event_copies
+        .values()
+        .flatten()
+        .map(String::as_str)
+        .collect();
     let stats = |rows: &[Vec<String>], aside: &mut BTreeSet<String>| -> BTreeSet<String> {
         let card = at(STAT_COLS, "card");
+        let log = at(STAT_COLS, "log");
         rows.iter()
             .filter(|r| !skipped_cards.contains(&r[card]))
             .filter_map(|r| {
-                if stats_aside.contains(&r[card]) {
+                if stats_aside.contains(&r[card]) || copy_logs.contains(r[log].as_str()) {
                     aside.insert(r.join(" | "));
                     return None;
                 }
@@ -941,7 +953,7 @@ pub(crate) fn cache_pairs(
     Ok(CacheBaseline::Rows(old))
 }
 
-/// 协议 3 一侧多出来、新代按规范卡归成同一事件的复习副本落在哪些（规范）卡上（[Known::stats_event_copies]）。
+/// 协议 3 一侧多出来、新代按规范卡归成同一事件的复习副本：（规范）卡 → 证出的副本日志（[Known::stats_event_copies]）。
 ///
 /// 卡片历史按 [`EventKey`](crate::history) 把同一次复习的副本归成一个事件、只算代表那一份；新代的成组键用规范卡 ID
 /// （设计 §5.3「别名表怎么用」），协议 3 用原值卡 ID。资料库并入留下的两张卡副本（同一张卡的两个带盐 ID）各带一份同一次
@@ -957,7 +969,7 @@ fn event_copies(
     canon: &CanonMap,
     old_stats: &[Vec<String>],
     new_stats: &[Vec<String>],
-) -> Result<BTreeSet<String>, String> {
+) -> Result<BTreeMap<String, BTreeSet<String>>, String> {
     let pos = |name: &str| -> usize {
         STAT_COLS
             .iter()
@@ -996,7 +1008,7 @@ fn event_copies(
             && a.card != b.card
             && canon.of(&Ref::of(&a.card)) == canon.of(&Ref::of(&b.card))
     };
-    let mut out = BTreeSet::new();
+    let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for (c, rows) in by_card {
         'row: for r in rows.iter().filter(|r| !counted.contains(r[log].as_str())) {
             for o in rows
@@ -1005,8 +1017,8 @@ fn event_copies(
             {
                 if let (Some(a), Some(b)) = (body(&r[log])?, body(&o[log])?) {
                     if same_event(&a, &b) {
-                        out.insert(c.to_owned());
-                        break 'row;
+                        out.entry(c.to_owned()).or_default().insert(r[log].clone());
+                        continue 'row;
                     }
                 }
             }
@@ -1377,7 +1389,7 @@ mod tests {
     }
 
     /// 同一次复习在两份带盐的卡上各留一条日志、日志 ID 没归到一起（真实库：资料库并入后又被并入）：协议 3 按原值卡
-    /// 成组算两次，新代按规范卡算一次。HLC、时刻、内容逐个相同、原值卡不同、规范卡相同才认（规范卡记进结果）；
+    /// 成组算两次，新代按规范卡算一次。HLC、时刻、内容逐个相同、原值卡不同、规范卡相同才认（规范卡与多算的那条日志记进结果）；
     /// HLC 不同（两次真复习撞同一毫秒）、或两条落在同一张原值卡上（协议 3 也会归成一个事件）都不认。
     #[test]
     fn event_copies_are_known_only_when_the_canonical_card_is_all_that_differs() {
@@ -1414,10 +1426,10 @@ mod tests {
                 let old = [stat(a, w.c_card, AT), stat(b, w.c_card, AT)];
                 let new = [stat(a, w.c_card, AT)];
                 let got = event_copies(t, col, &canon, &old, &new).unwrap();
-                let expect: BTreeSet<String> = if want {
-                    BTreeSet::from([w.c_card.text()])
+                let expect: BTreeMap<String, BTreeSet<String>> = if want {
+                    BTreeMap::from([(w.c_card.text(), BTreeSet::from([old[1][0].clone()]))])
                 } else {
-                    BTreeSet::new()
+                    BTreeMap::new()
                 };
                 assert_eq!(got, expect, "{case}");
                 // 两边一致（新代也算了两次）：不是差异，什么都不认。

@@ -107,8 +107,8 @@ pub(crate) struct WriterAliases {
 }
 
 impl WriterAliases {
-    /// 原名 [w] 换成规范名时旧上下文能换的范围（`gen4_ids::alias::WriterBound`）。None = 不是归回的原名，或这份库的
-    /// 派生层还是记范围之前建的（`CACHE_RULES` 4 之前，下次打开整层重建时补上），按旧口径整段换。
+    /// 原名 [w] 换成规范名时旧上下文能换的范围（`gen4_ids::alias::WriterBound`）。None = 不是归回的原名（读库时
+    /// 有归回的原名就一定有范围，[Index::writer_aliases]；测试直接造的表可以没有，按整段换）。
     pub(crate) fn bound(&self, w: &str) -> Option<&WriterBound> {
         self.bounds.get(w)
     }
@@ -183,6 +183,26 @@ impl Canon<'_> {
             .entry(at)
             .or_insert_with(|| self.renames(d).then(|| self.dvv(d)));
         r.as_ref().unwrap_or(d).contains(w, q)
+    }
+
+    /// 旧上下文 [d] 换成规范写入者之后含不含 dot `(w, q)`（[w] 是规范写入者）：与 `self.dvv(d).contains(w, q)` 相同，
+    /// 不物化换名后的上下文（按类判每条带旧戳的写入都要问一次，`derive.rs` 的 `write_sees`）。
+    pub(super) fn dvv_contains(&self, d: &Dvv, w: &str, q: i64) -> bool {
+        if !self.renames(d) {
+            return d.contains(w, q);
+        }
+        if self.writer(w) != w {
+            return self.dvv(d).contains(w, q);
+        }
+        self.names(w).any(|n| {
+            let bound = self.writers.bound(n).filter(|_| n != w);
+            let covered = |q: i64| match bound {
+                None => true,
+                Some(b) => q <= b.upto as i64 || b.own.binary_search(&(q as u64)).is_ok(),
+            };
+            (q <= d.vv.get(n).copied().unwrap_or(0) && covered(q))
+                || d.cloud.get(n).is_some_and(|s| s.contains(&q) && covered(q))
+        })
     }
 
     /// 旧上下文的键换成规范写入者：前缀取大、零散 dot 取并，再按 [Dvv::merge] 的规则收紧。
@@ -441,12 +461,18 @@ impl<'t, 'c> Index<'t, 'c> {
             .query_map([self.col], |r| Ok((r.get(0)?, r.get(1)?)))
             .map_err(sql)?;
         let names: BTreeMap<String, String> = rows.collect::<Result<_, _>>().map_err(sql)?;
-        let bounds: BTreeMap<String, WriterBound> =
-            match self.t.derive_cfg(self.col, WRITER_UPTO_KEY)? {
-                Some(text) if !names.is_empty() => serde_json::from_str(&text)
-                    .map_err(|e| format!("gen4 index: bad {WRITER_UPTO_KEY}: {e}"))?,
-                _ => BTreeMap::new(),
-            };
+        if names.is_empty() {
+            return Ok(WriterAliases::default());
+        }
+        // 有归回的写入者却没记范围：派生层是 `CACHE_RULES` 4 之前建的、还没重建（宿主打开时的 `cache_config_set`
+        // 会重建）。不按已知有错的「整段换」静默判，同别名表没重算一样拒绝按类读。
+        let Some(text) = self.t.derive_cfg(self.col, WRITER_UPTO_KEY)? else {
+            return Err(format!(
+                "gen4 index: renamed writers without {WRITER_UPTO_KEY} (derived layer predates cache rules 4; rebuild first)"
+            ));
+        };
+        let bounds: BTreeMap<String, WriterBound> = serde_json::from_str(&text)
+            .map_err(|e| format!("gen4 index: bad {WRITER_UPTO_KEY}: {e}"))?;
         Ok(WriterAliases { names, bounds })
     }
 
@@ -547,8 +573,8 @@ impl<'t, 'c> Index<'t, 'c> {
         let entity = self.canonical(canon)?.text();
         let members = self.members(canon)?;
         let writers = match &self.pass_writers {
-            Some(w) => w.clone(),
-            None => self.writer_aliases()?,
+            Some(w) => std::rc::Rc::clone(w),
+            None => std::rc::Rc::new(self.writer_aliases()?),
         };
         // 规范键 → (写入 (k, state), 来自哪几个 (成员, 原值键))。
         type Group = (Vec<(i64, i64)>, BTreeSet<(Ref, Vec<u8>)>);

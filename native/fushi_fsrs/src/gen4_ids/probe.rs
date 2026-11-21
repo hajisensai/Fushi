@@ -506,7 +506,11 @@ fn load(c: &Connection) -> (Evidence, Census) {
                     })
                     .collect()
             });
-            WriterEv { name, dots }
+            WriterEv {
+                name,
+                dots,
+                raw: Vec::new(),
+            }
         })
         .collect();
     (ev, cs)

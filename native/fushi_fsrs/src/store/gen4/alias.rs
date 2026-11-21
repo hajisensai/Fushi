@@ -804,7 +804,7 @@ impl Index<'_, '_> {
         }
 
         // 写入者：有 `merged-…` 形状的名字才值得扫旧戳。
-        let mut writers: BTreeMap<String, Vec<Dot>> = BTreeMap::new();
+        let mut writers: BTreeMap<String, (Vec<Dot>, Vec<u64>)> = BTreeMap::new();
         let devices = t.devices(col)?;
         if self.merged_known()? {
             for d in &devices {
@@ -812,19 +812,19 @@ impl Index<'_, '_> {
                     if s.seq <= 0 {
                         return Ok(());
                     }
-                    let dots = match writers.get_mut(&s.writer) {
+                    let (dots, raw) = match writers.get_mut(&s.writer) {
                         Some(d) => d,
                         None => writers.entry(s.writer.clone()).or_default(),
                     };
-                    if let StampHlc::Parsed {
-                        physical, counter, ..
-                    } = &s.hlc
-                    {
-                        dots.push(Dot {
+                    match &s.hlc {
+                        StampHlc::Parsed {
+                            physical, counter, ..
+                        } => dots.push(Dot {
                             seq: s.seq as u64,
                             physical: *physical,
                             counter: *counter,
-                        });
+                        }),
+                        StampHlc::Raw(_) => raw.push(s.seq as u64),
                     }
                     Ok(())
                 })?;
@@ -838,7 +838,7 @@ impl Index<'_, '_> {
             logs,
             writers: writers
                 .into_iter()
-                .map(|(name, dots)| WriterEv { name, dots })
+                .map(|(name, (dots, raw))| WriterEv { name, dots, raw })
                 .collect(),
             ..Evidence::default()
         };
@@ -1332,8 +1332,14 @@ impl Index<'_, '_> {
         let text = (!upto.is_empty())
             .then(|| serde_json::to_string(&upto).map_err(|e| e.to_string()))
             .transpose()?;
-        self.t
-            .set_derive_cfg(self.col, WRITER_UPTO_KEY, text.as_deref())?;
+        // 名字表没变、只有范围变了（新到的旧戳把 `upto` 推高、清除让它缩回）也改判：缓存层按归回的写入者重看
+        // （同 [Index::alias_diff] 的 `writers_moved`）。
+        if self
+            .t
+            .set_derive_cfg(self.col, WRITER_UPTO_KEY, text.as_deref())?
+        {
+            self.writers_moved = true;
+        }
         self.alias_dirty = false;
         self.alias_delta = AliasDelta::default();
         Ok(n)
