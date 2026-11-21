@@ -32,7 +32,7 @@ Future<(SrsDbStore, SrsReadCounter)> openCounted() async {
       // 句柄晚释放。
     }
   });
-  final TestSrs srs = await openTestSrsAt('${tmp.path}/srs.db');
+  final TestSrs srs = openTestSrsIn(tmp.path);
   final SrsDbStore store = await SrsDbStore.open(
     core: srs.core,
     profileUid: kUid,

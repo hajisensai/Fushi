@@ -831,7 +831,7 @@ void main() {
       );
       expect(
         compactCode(
-          read('lib/src/pages/implementations/media_sources_page.dart'),
+          read('lib/src/pages/implementations/video_import_page.dart'),
         ),
         isNot(contains('animeMihonManager')),
         reason: '视频导入页只剩本地来源，不得再取 animeMihonManager。',
@@ -929,7 +929,7 @@ void main() {
       );
       expect(
         compactCode(
-          read('lib/src/pages/implementations/media_sources_page.dart'),
+          read('lib/src/pages/implementations/book_import_page.dart'),
         ),
         isNot(contains('lnReaderManager')),
         reason: '书导入页只剩本地来源，不得再取 lnReaderManager。',

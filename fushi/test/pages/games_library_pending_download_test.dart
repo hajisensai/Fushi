@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -17,7 +18,8 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/games_library_page.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
-import 'package:fushi/src/utils/components/shelf_cover_material.dart';
+import 'package:fushi/src/utils/components/fushi_generated_cover.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 
 import '../helpers/test_platform_services.dart';
 
@@ -99,13 +101,35 @@ void main() {
     });
   });
 
+  group('gameDownloadBlockTasks', () {
+    test('下载块列「游戏域 + 在途」加上失败的，完成 / 取消 / 别的域不列', () {
+      final List<DiscoveryDownloadTask> tasks = <DiscoveryDownloadTask>[
+        _task(title: '在下', status: DiscoveryDownloadStatus.running),
+        _task(title: '排队', status: DiscoveryDownloadStatus.queued),
+        _task(title: '重试', status: DiscoveryDownloadStatus.waitingRetry),
+        _task(title: '完成', status: DiscoveryDownloadStatus.done),
+        // 失败是用户必须知道的真实状态（重试 / 清除在下载页），不能悄悄消失。
+        _task(title: '失败', status: DiscoveryDownloadStatus.failed),
+        _task(title: '取消', status: DiscoveryDownloadStatus.cancelled),
+        _task(title: '一本书', kind: DiscoveryMediaKind.novel),
+      ];
+
+      expect(
+        gameDownloadBlockTasks(
+          tasks,
+        ).map((DiscoveryDownloadTask t) => t.item.title).toList(),
+        <String>['在下', '排队', '重试', '失败'],
+      );
+    });
+  });
+
   group('pendingGameDownloadLabel', () {
-    test('有总大小时显示百分比', () {
+    test('下载中有总大小时是「下载中 · 百分比」', () {
       expect(
         pendingGameDownloadLabel(
           _task(title: 'x', receivedBytes: 250, totalBytes: 1000),
         ),
-        '25%',
+        '${t.game_library_downloading} · 25%',
       );
     });
 
@@ -114,9 +138,10 @@ void main() {
         pendingGameDownloadLabel(_task(title: 'x')),
         t.game_library_downloading,
       );
+      expect(gameDownloadProgress(_task(title: 'x')), isNull);
     });
 
-    test('排队/重试各有自己的文案', () {
+    test('排队 / 重试 / 失败各有自己的文案', () {
       expect(
         pendingGameDownloadLabel(
           _task(title: 'x', status: DiscoveryDownloadStatus.queued),
@@ -129,19 +154,32 @@ void main() {
         ),
         t.game_library_download_retrying,
       );
+      expect(
+        pendingGameDownloadLabel(
+          _task(title: 'x', status: DiscoveryDownloadStatus.failed),
+        ),
+        t.game_library_download_failed,
+      );
     });
   });
 
-  testWidgets('占位卡渲染发现页拿到的名称，并给出进度', (WidgetTester tester) async {
+  Future<void> pumpBlock(
+    WidgetTester tester,
+    List<DiscoveryDownloadTask> tasks, {
+    VoidCallback? onOpen,
+    double width = 900,
+  }) async {
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(
-          home: Scaffold(
-            body: SizedBox(
-              width: 168,
-              height: 260,
-              child: buildPendingGameDownloadCard(
-                _task(title: '9-nine-', receivedBytes: 500, totalBytes: 1000),
+          home: FushiFocusRoot(
+            child: Scaffold(
+              body: Align(
+                alignment: Alignment.topLeft,
+                child: SizedBox(
+                  width: width,
+                  child: GameDownloadsBlock(tasks: tasks, onOpen: onOpen),
+                ),
               ),
             ),
           ),
@@ -149,44 +187,81 @@ void main() {
       ),
     );
     await tester.pump();
+  }
 
+  testWidgets('下载块：头行项数 + 外部来源标，逐项是发现页名称 + 真实状态 + 进度条', (
+    WidgetTester tester,
+  ) async {
+    await pumpBlock(tester, <DiscoveryDownloadTask>[
+      _task(title: '9-nine-', receivedBytes: 500, totalBytes: 1000),
+      _task(title: '坏了', status: DiscoveryDownloadStatus.failed),
+    ]);
+
+    expect(find.text(t.game_library_downloads_title(n: 2)), findsOneWidget);
+    expect(
+      find.text(t.download_source_external),
+      findsOneWidget,
+      reason: '第三方资源站来源要保留风险提示（10-09）',
+    );
     expect(
       find.text('9-nine-'),
       findsOneWidget,
       reason: '名称必须来自发现页条目 —— 用户正是靠它确认「加进来了」',
     );
-    // 2026-10-25 卡盒定版：进度与状态不再压在封面上，进封面下文字块（副行
-    // 「外部来源 · 50%」+ 进度条）。
-    final ShelfCardMeta meta = tester.widget<ShelfCardMeta>(
-      find.byType(ShelfCardMeta),
-    );
-    expect(meta.progress, closeTo(0.5, 0.001));
-    expect(meta.subtitle, '${t.download_source_external} · 50%');
+    expect(find.text('${t.game_library_downloading} · 50%'), findsOneWidget);
+    expect(find.text(t.game_library_download_failed), findsOneWidget);
+    final FushiLinearProgressIndicator bar = tester
+        .widget<FushiLinearProgressIndicator>(
+          find.byType(FushiLinearProgressIndicator),
+        );
+    expect(bar.value, closeTo(0.5, 0.001), reason: '只有下载中的那项画进度条');
+    // 没给入口（iOS 商店合规没有下载中心 / 宿主没接）时不画「打开下载」。
     expect(
-      meta.tone,
-      ShelfMetaTone.warning,
-      reason: '第三方资源站来源要保留风险提示语气（10-09）',
+      find.byKey(const ValueKey<String>('games_downloads_open')),
+      findsNothing,
     );
+    expect(tester.takeException(), isNull);
   });
 
-  testWidgets('没有封面时不崩，退回占位图标', (WidgetTester tester) async {
-    await tester.pumpWidget(
-      TranslationProvider(
-        child: MaterialApp(
-          home: Scaffold(
-            body: SizedBox(
-              width: 168,
-              height: 260,
-              child: buildPendingGameDownloadCard(_task(title: '无封面')),
-            ),
-          ),
-        ),
+  testWidgets('「打开下载 ›」可用焦点 + Enter 触发', (WidgetTester tester) async {
+    int opened = 0;
+    await pumpBlock(tester, <DiscoveryDownloadTask>[
+      _task(title: '9-nine-'),
+    ], onOpen: () => opened++);
+
+    final Finder open = find.byKey(
+      const ValueKey<String>('games_downloads_open'),
+    );
+    expect(open, findsOneWidget);
+    final FocusNode node = Focus.of(
+      tester.element(
+        find.descendant(of: open, matching: find.byType(Text)).first,
       ),
     );
+    node.requestFocus();
     await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(opened, 1);
+  });
+
+  testWidgets('窄屏放不下时横向滑动，不挤压条目', (WidgetTester tester) async {
+    await pumpBlock(tester, <DiscoveryDownloadTask>[
+      for (int i = 0; i < 4; i++) _task(title: 'game-$i'),
+    ], width: 360);
+
+    expect(
+      find.byKey(const ValueKey<String>('games_downloads_strip')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('没有封面时不崩，退回按标题生成的封面', (WidgetTester tester) async {
+    await pumpBlock(tester, <DiscoveryDownloadTask>[_task(title: '无封面')]);
 
     expect(tester.takeException(), isNull);
-    expect(find.byIcon(Icons.download_outlined), findsOneWidget);
+    expect(find.byType(FushiGeneratedCover), findsOneWidget);
   });
 
   test('占位是渲染出来的，不是往 Galgames 表写假行（BUG-1911）', () {

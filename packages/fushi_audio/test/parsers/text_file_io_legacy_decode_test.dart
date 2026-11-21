@@ -25,10 +25,10 @@ Uint8List _fixture(String name) => File('$_fixtureDir/$name').readAsBytesSync();
 String _expected(String name) =>
     utf8.decode(File('$_fixtureDir/$name.expected.txt').readAsBytesSync());
 
-/// Windows-1252 的英文 SRT：每句都有弯撇号 `’`（0x92），末尾一条 `“Wait…”`（0x85 0x94
+/// Windows-1252 的英文 SRT 原文：每句都有弯撇号 `’`（0x92），末尾一条 `“Wait…”`（0x85 0x94
 /// 相邻）。0x92 与后一个字母恰好是 Shift_JIS / GBK 的一个合法双字节字，只看「解码零错误」
 /// 会整份判成 Shift_JIS（`I don稚 know what you池e talking about.`）。
-Uint8List _cp1252EnglishSrt() {
+String _cp1252EnglishText() {
   const List<String> lines = <String>[
     'I don\u2019t know what you\u2019re talking about.',
     'It\u2019s fine, we\u2019ll manage.',
@@ -36,12 +36,6 @@ Uint8List _cp1252EnglishSrt() {
     'They\u2019ve left already.',
     'I\u2019m sure he\u2019d agree.',
   ];
-  const Map<int, int> cp1252 = <int, int>{
-    0x2019: 0x92,
-    0x201C: 0x93,
-    0x201D: 0x94,
-    0x2026: 0x85,
-  };
   final StringBuffer doc = StringBuffer();
   int n = 0;
   void cue(String line) {
@@ -56,8 +50,19 @@ Uint8List _cp1252EnglishSrt() {
     lines.forEach(cue);
   }
   cue('\u201CWait\u2026\u201D');
+  return doc.toString();
+}
+
+/// [_cp1252EnglishText] 的 Windows-1252 字节。
+Uint8List _cp1252EnglishSrt() {
+  const Map<int, int> cp1252 = <int, int>{
+    0x2019: 0x92,
+    0x201C: 0x93,
+    0x201D: 0x94,
+    0x2026: 0x85,
+  };
   return Uint8List.fromList(<int>[
-    for (final int rune in doc.toString().runes) cp1252[rune] ?? rune,
+    for (final int rune in _cp1252EnglishText().runes) cp1252[rune] ?? rune,
   ]);
 }
 
@@ -73,6 +78,7 @@ void main() {
       'ja_eucjp.srt',
       'zh_gbk.srt',
       'zh_big5.srt',
+      'ko_euckr.srt',
     ]) {
       test(name, () async {
         final Uint8List bytes = _fixture(name);
@@ -138,22 +144,25 @@ void main() {
       expect(text.contains('\u{FFFD}'), isTrue);
     });
 
-    test('Windows-1252 的英文字幕不被解成 Shift_JIS / GBK，弯撇号仍只坏那一处', () async {
-      final Uint8List bytes = _cp1252EnglishSrt();
-      expect(decodeUnicodeText(bytes), isNull);
-      expect(await decodeLegacyText(bytes), isNull);
-      final String text = await decodeTextBytes(bytes);
-      expect(text, utf8.decode(bytes, allowMalformed: true));
-      expect(
-        text,
-        contains('I don\u{FFFD}t know what you\u{FFFD}re talking about.'),
-      );
-      // 一个汉字 / 假名都不该冒出来。
-      expect(
-        RegExp(r'[\u3040-\u30FF\u3400-\u9FFF\uFF61-\uFF9F]').hasMatch(text),
-        isFalse,
-      );
-    });
+    test(
+      'Windows-1252 的英文字幕按 Windows-1252 解回原文，不被解成 Shift_JIS / GBK',
+      () async {
+        final Uint8List bytes = _cp1252EnglishSrt();
+        expect(decodeUnicodeText(bytes), isNull);
+        final String text = await decodeTextBytes(bytes);
+        // 从前判不出、降级成宽松 UTF-8，每个弯撇号都变 U+FFFD。
+        expect(text, _cp1252EnglishText());
+        expect(
+          text,
+          contains('I don\u2019t know what you\u2019re talking about.'),
+        );
+        // 一个汉字 / 假名都不该冒出来。
+        expect(
+          RegExp(r'[\u3040-\u30FF\u3400-\u9FFF\uFF61-\uFF9F]').hasMatch(text),
+          isFalse,
+        );
+      },
+    );
 
     test('UTF-8 BOM + CP932 正文：BOM 不混进首行', () async {
       for (final String name in <String>['ja_cp932.ass', 'ja_eucjp.srt']) {
@@ -231,6 +240,16 @@ void main() {
       expect(cues.length, 24);
       expect(cues[0].text, '早安，今天天氣真不錯。');
       expect(cues[4].text, '喬治·華盛頓與湯瑪斯·傑佛遜');
+    });
+
+    test('EUC-KR 的 SRT（从前被解成汉字）', () async {
+      final List<AudioCue> cues = await SrtParser.parse(
+        srtFile: await copyFixture('ko_euckr.srt'),
+        bookKey: 'bug4798',
+      );
+      expect(cues.length, 24);
+      expect(cues[0].text, '안녕하세요, 오늘은 날씨가 정말 좋네요.');
+      expect(cues[3].text, '「약속이야」 그녀는 그렇게 말하며 웃었다.');
     });
   });
 }

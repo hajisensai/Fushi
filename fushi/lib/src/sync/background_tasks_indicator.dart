@@ -173,23 +173,21 @@ BackgroundTask syncTaskToBackgroundTask(SyncTask task) {
 }
 
 /// 此刻的同步类任务：常规同步**每一轮一项**（按资源加锁后全量 sweep 与退出书的单本
-/// 同步可能同时在跑，各自一段弧），复习同步（没有一轮在跑时是旧文件迁移）一项。
+/// 同步可能同时在跑，各自一段弧），复习同步一项。
 /// 复习同步不经任务表（「立即同步」/ 进复习 tab 也会单独触发），所以单独成项。
 /// 已结束但有失败的那几轮排在最后，只在明细里显示。
 List<BackgroundTask> syncBackgroundTasks() {
   final SrsSyncProgress? srs = srsSyncProgress.value;
-  final SrsSyncProgress? migration = srsMigrationProgress.value;
-  final SrsSyncProgress? srsLike = srs ?? migration;
   final List<SyncTask> all = syncTasks.value;
   return <BackgroundTask>[
     for (final SyncTask task in all)
       if (task.isActive) syncTaskToBackgroundTask(task),
-    if (srsLike != null)
+    if (srs != null)
       BackgroundTask(
-        id: srs != null ? 'srs' : 'srs-migration',
-        icon: srs != null ? FushiIcons.cloudSync : FushiIcons.storage,
-        line: srsSyncProgressLine(srsLike),
-        fraction: srsSyncProgressFraction(srsLike),
+        id: 'srs',
+        icon: FushiIcons.cloudSync,
+        line: srsSyncProgressLine(srs),
+        fraction: srsSyncProgressFraction(srs),
       ),
     for (final SyncTask task in all)
       if (!task.isActive) syncTaskToBackgroundTask(task),

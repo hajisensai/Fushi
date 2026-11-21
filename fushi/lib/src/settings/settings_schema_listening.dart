@@ -25,6 +25,7 @@ import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_schema_reading.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 
 /// 「听书」一级分类：有声书播放、朗读声音、素材与转录、悬浮字幕。
 ///
@@ -96,7 +97,7 @@ SettingsDestination buildListeningDestination() {
             subtitle: t.settings_listening_volume_key_nav_hint,
             icon: FushiIcons.skipNext,
             // VolumeKeyChannel 仅 Android 实现，桌面隐藏此项（TODO-1155）。
-            visible: (_) => Platform.isAndroid,
+            visible: (_) => hostPlatform.isAndroid,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
               order: 10,

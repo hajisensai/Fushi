@@ -25,6 +25,9 @@ import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/updates/host_self_update_service.dart';
 import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
+import 'package:fushi/src/updates/whats_new.dart';
+import 'package:fushi/src/utils/misc/build_version.dart'
+    show resolveCurrentAppVersion;
 import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/usage_heartbeat.dart';
 import 'package:fushi_engine/media/metadata/books/rakuten_books.dart'
@@ -37,6 +40,9 @@ import 'package:fushi_engine/media/video/media_server_video_path.dart'
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
     show mediaServerClientIdentity, resolveMediaServerClientIdentity;
 import 'package:fushi_engine/media/video/video_member_file.dart';
+import 'package:fushi/src/media/video/video_resume.dart';
+import 'package:fushi_engine/media/video/video_local_files.dart'
+    show videoBookDiscTitlePath, videoBookEpisodePath;
 import 'package:fushi_engine/media/video/video_storage.dart' show VideoStorage;
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
     show YoutubeManifestException;
@@ -119,10 +125,12 @@ import 'package:fushi/src/media/sources/reader_pdf_source.dart';
 import 'package:fushi/src/media/types/dictionary_media_type.dart';
 import 'package:fushi/src/media/types/reader_media_type.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
+import 'package:fushi/src/media/video/video_playlist_order.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart'
     show VideoHdrOutputMode;
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
+import 'package:fushi/src/pages/implementations/dictionary_import_action.dart';
 import 'package:fushi/src/pages/implementations/example_sentences_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/open_stash_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/profile_management_page.dart';
@@ -131,6 +139,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/section_tab_order.dart'
     show
@@ -161,6 +170,7 @@ import 'package:fushi_engine/ai/ai_video_search_assistant.dart';
 import 'package:fushi_engine/ai/ai_relay.dart' show aiRelayTransport;
 import 'package:fushi/src/ai/ai_interconnect_relay.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
+import 'package:fushi/src/models/dictionary_format_upgrade.dart';
 import 'package:fushi/src/models/dictionary_download_resume.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
@@ -415,6 +425,11 @@ import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.d
         isDuplicateDiscoveryAudiobookContent;
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 import 'package:fushi/src/sync/app_download_host.dart';
+import 'package:fushi/src/sync/interconnect_host_channel.dart'
+    show InterconnectHostRef;
+import 'package:fushi/src/sync/app_peer_torrent_engine.dart';
+import 'package:fushi/src/sync/interconnect_torrent_engine_backend.dart';
+import 'package:fushi_engine/sync/torrent_engine/host_torrent_engine.dart';
 import 'package:fushi/src/ai/agent/ai_agent_assistant_host.dart'
     show createAppAssistantHost;
 import 'package:fushi/src/sync/backup_service.dart';
@@ -526,6 +541,7 @@ import 'package:fushi/src/models/audio_source_config.dart';
 import 'package:fushi/src/models/dictionary_import_manager.dart';
 import 'package:fushi/src/models/file_export_manager.dart';
 import 'package:fushi/src/models/local_audio_manager.dart';
+import 'package:fushi_engine/models/local_audio_content_id.dart';
 import 'package:fushi_engine/models/local_audio_source_pref.dart';
 import 'package:fushi/src/models/anki_integration.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_client.dart';
@@ -596,10 +612,14 @@ import 'package:fushi/src/sync/extension_image_ocr_service.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/shortcut_preferences.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/platform/android/android_notification_channels.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
 import 'package:fushi/src/stats/study_goal_period.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
+import 'package:fushi/src/media/import/external_storage_access.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 export 'package:fushi/src/stats/study_goal_period.dart' show StudyGoalPeriod;
 
 export 'package:fushi/src/models/local_audio_manager.dart'
@@ -876,14 +896,33 @@ class _LocalDictionaryLookup {
   final bool isTerminal;
 }
 
-/// 从 `blobs.bin` 头部字节解码词典实际类型（freq/pitch），供 term 词典的类型回填迁移。
+/// 词典目录里装记录的文件，按优先级：导入写的 `blobs.bin`，没有时是存量升级把纯
+/// freq / pitch / ipa 词典的记录重写进去的 `blobs3.bin`（升级提交后 `blobs.bin` 被删；
+/// Windows 上删不掉时两份并存，内容是同一本词典，取哪份结论都一样）。
+const List<String> kDictRecordFileNames = <String>['blobs.bin', 'blobs3.bin'];
+
+/// [dictDir] 里现存的记录文件（见 [kDictRecordFileNames]），都没有时为 null。
+/// 「记录文件是哪一个」只在这里判一次。
+@visibleForTesting
+File? dictRecordFileIn(String dictDir) {
+  for (final String name in kDictRecordFileNames) {
+    final File file = File(path.join(dictDir, name));
+    if (file.existsSync()) return file;
+  }
+  return null;
+}
+
+/// 从记录文件（[dictRecordFileIn]）头部字节解码词典实际类型（freq/pitch），供 term
+/// 词典的类型回填迁移。
 /// 此前解析与 `RandomAccessFile` 的分次读/定位深交织（[AppModel._migrateDictionaryTypes]），
 /// 无法单测（依赖真文件）。纯逻辑吃**已读入的字节**（调用方负责打开/读盘/关闭），按
 /// 相同偏移解析，返回检测到的类型；非 freq/pitch 或头部不合法返回 `null`（调用方
 /// `continue` 跳过该词典，保持 term 类型不动）。
 ///
 /// 布局（与原 raf 逐次读逐字对齐）：
-/// - `bytes[0]` 必须是标志 `0x01`，否则 `null`；
+/// - `bytes[0]` 是记录类型，必须是 meta 记录：`0x01`（原样 JSON）或 `0x03`（预解析，
+///   新导入 / 存量升级后的纯 freq / pitch / ipa 词典）。两者前缀相同（
+///   `native/fushidicts/fushidicts_src/json/meta_record.hpp`），否则 `null`；
 /// - `bytes[1] | (bytes[2] << 8)` 是 exprLen（小端 16 位）；
 /// - modeLen 在偏移 `3 + exprLen` 处单字节，越界或 `0` 返回 `null`；
 /// - mode 串是其后**至多** `modeLen` 字节（`String.fromCharCodes`）。原逻辑用
@@ -893,7 +932,7 @@ class _LocalDictionaryLookup {
 @visibleForTesting
 DictionaryType? decodeDictTypeFromBlobHeader(List<int> bytes) {
   if (bytes.length < 4) return null;
-  if (bytes[0] != 0x01) return null;
+  if (bytes[0] != 0x01 && bytes[0] != 0x03) return null;
 
   final exprLen = bytes[1] | (bytes[2] << 8);
   final modeLenIndex = 3 + exprLen;
@@ -952,7 +991,11 @@ class HomeDictionaryTabRequest {
 /// especially for preferences that persist across application restarts.
 class AppModel
     with ChangeNotifier
-    implements MusicAudioEffectsHost, MusicPluginQualityHost {
+    implements
+        MusicAudioEffectsHost,
+        MusicPluginQualityHost,
+        AudioProductionHost,
+        ExternalStorageAccess {
   /// Platform-specific service implementations, injected at construction.
   final PlatformServices platformServices;
 
@@ -1062,12 +1105,7 @@ class AppModel
   /// 经 [syncServerController] 把它注入为 `videoRemoteControlV1` 能力。
   late final VideoRemoteHost videoRemoteHost = VideoRemoteHost(
     favorites: () => FavoriteSentenceRepository(database),
-    favoriteChanges: () =>
-        (database.select(database.preferences)
-              ..where((row) => row.key.equals('favorite_sentences')))
-            .watchSingleOrNull()
-            .map((PreferenceRow? row) => row?.value)
-            .distinct(),
+    favoriteChanges: () => FavoriteSentenceRepository(database).watchChanges(),
     // 点播：手机遥控从电脑视频库里选片、让电脑播放（不必先在电脑上开视频）。
     library: createVideoRemoteLibrary(
       database: () => database,
@@ -1143,6 +1181,7 @@ class AppModel
             ),
             database: () => database,
             resolveVideoPath: _resolveHostVideoPath,
+            resolveDiscTitlePath: _resolveHostDiscTitlePath,
             aiSettings: () => prefsRepo,
             mossStatus: appMossProvisionStatus,
           ),
@@ -1153,6 +1192,8 @@ class AppModel
     },
     downloadsFactory: () => appDownloadHost,
     subscriptionsFactory: () => appDownloadHost.subscriptions,
+    // 把本机 BT 引擎借给已配对设备（对端「下载后端 = 互联设备」）。
+    torrentEngineFactory: () => appPeerTorrentEngine,
     // AI 助手会话：手机经互联把「下载 xxx」交给本机，用本机的 AI 指派 / 资源
     // 搜索 / 下载管线办（装配与首页对话页入口同一份）；另有整场 AI 助手会话
     // （feature `agent`，工具集是本机的操作目录，记账与撤销落本机）。
@@ -1225,6 +1266,15 @@ class AppModel
     libraryServiceFactory: () => LocalLibraryHostService(
       db: database,
       dictionaryResourceRoot: dictionaryResourceDirectory,
+      // 对端删书时 host 上 DB 行以外的东西：有声书 / 配对字幕书持久目录、override
+      // 书名与封面（#3722 c37 审查遗留，同 BUG-4973）。
+      cleanupBookOnDisk: (EpubBookRow row, String? pairedSrtUid) =>
+          ReaderFushiSource.instance.cleanupBookFilesForHostDelete(
+            db: database,
+            appModel: this,
+            row: row,
+            pairedSrtUid: pairedSrtUid,
+          ),
       packages: SyncAssetPackageService(db: database),
       scrapeController: () async => videoScrapeControllerResolver?.call(),
       // 书架上的在线漫画没下载的章由本机运行时现取给对端（iPhone 没有在线源
@@ -1479,6 +1529,8 @@ class AppModel
     List<DeletionPropagationCandidate> confirmed,
   ) async {
     bool deletedVideoBook = false;
+    // 书逐本不回收数据库空间，整批结束后回收一次（与视频同一纪律）。
+    bool deletedBook = false;
     for (final DeletionPropagationCandidate c in confirmed) {
       try {
         // 命名统一 Phase 3.4：墓碑 mediaType 经 [SyncTombstoneKind.tryParse]
@@ -1486,12 +1538,15 @@ class AppModel
         // 分支，跳过但留痕（语义与旧 default 一致）。
         switch (SyncTombstoneKind.tryParse(c.mediaType)) {
           case SyncTombstoneKind.book:
-            await ReaderFushiSource.instance.deleteBook(
-              db: database,
-              bookKey: c.itemKey,
-              appModel: this,
-              scope: DeleteScope.keepLocalOnly,
-            );
+            final DeleteBookResult result = await ReaderFushiSource.instance
+                .deleteBook(
+                  db: database,
+                  bookKey: c.itemKey,
+                  appModel: this,
+                  scope: DeleteScope.keepLocalOnly,
+                  compactDatabase: false,
+                );
+            deletedBook = deletedBook || result.deleted;
           case SyncTombstoneKind.video:
             final bool deleted = await VideoBookRepository(database)
                 .deleteVideoBookAndReclaimAssets(
@@ -1553,6 +1608,9 @@ class AppModel
       } catch (e) {
         debugPrint('[sync] apply deletion ${c.mediaType}/${c.itemKey}: $e');
       }
+    }
+    if (deletedBook) {
+      await ReaderFushiSource.compactAfterBookDeleteBestEffort(database);
     }
     if (deletedVideoBook) {
       await VideoBookRepository(database).compactAfterVideoDeleteBestEffort();
@@ -1692,17 +1750,15 @@ class AppModel
     }
   }
 
-  /// 备份导出要读的本机 SRS 存储：复习模块开着时照常打开；模块关着时只在 srs.db 已经存在
-  /// （以前用过复习、数据还在）时打开——数据在就得能随备份走，没用过复习的设备不凭空建库。
-  /// 返回 null = 本机没有 srs.db（SRS 若还在主库老表里，由主库副本按老形态带走）。
+  /// 备份导出要读的本机 SRS 存储：复习模块开着时照常打开；模块关着时只在本机有复习库文件（新代 `srs4.db`
+  /// 或协议 3 的 `srs.db`，[SrsStorageHost.hasStoredLibrary]）时打开——数据在就得能随备份走，没用过复习的设备
+  /// 不凭空建库。返回 null = 本机没有复习库（SRS 若还在主库老表里，由主库副本按老形态带走）。
   Future<SrsStorage?> srsStorageForBackup() async {
     final SrsStorageHost? host = _srsStorageHost;
     if (host == null) return null;
-    if (!moduleVisibility.isEnabled(ModuleId.srs) &&
-        !File(host.path).existsSync()) {
-      return null;
-    }
-    return host.acquire();
+    return host.acquireIfStored(
+      moduleEnabled: moduleVisibility.isEnabled(ModuleId.srs),
+    );
   }
 
   /// Test seam：注入一份 SRS 存储持有者（不经初始化路径）。
@@ -1717,8 +1773,10 @@ class AppModel
 
   /// Preference management, extracted from AppModel for testability.
   PreferencesRepository? _prefsRepo;
+  @override
   PreferencesRepository get prefsRepo => _prefsRepo!;
 
+  @override
   bool get isPreferencesReady => _prefsRepo != null;
 
   /// v101 统一更新提醒。懒建：四个投递方（番剧订阅检查、漫画库刷新、扩展检查、
@@ -1747,6 +1805,7 @@ class AppModel
       _systemNotifier ??= LocalUpdateNotifier.isSupportedPlatform
       ? LocalUpdateNotifier(
           appName: 'Fushi',
+          androidChannelName: t.notification_channel_updates,
           groupTitle: t.updates_notification_header,
           onResponse: _onSystemNotificationResponse,
         )
@@ -1897,17 +1956,6 @@ class AppModel
           await runOnlineMangaUpdateProbe(
             database: database,
             serviceFor: onlineMangaLibraryService,
-            // 订阅且开了「新章自动下载」的条目：新章直接入队（设计稿 §5），
-            // `auto_ocr` 取作品页 chip 的持久值。
-            autoDownload:
-                (
-                  OnlineMangaLibraryEntry entry,
-                  List<OnlineMangaChapter> chapters,
-                ) => mangaDownloadService.enqueueChapters(
-                  entry: entry,
-                  chapters: chapters,
-                  autoOcr: mangaDownloadAutoOcr,
-                ),
           );
         },
         UpdateFeedKind.mangaExtension: () => _runMihonExtensionProbe(
@@ -2266,6 +2314,7 @@ class AppModel
   /// 进程级常驻有声书会话（TODO-291 阶段2）：唯一持有 AudiobookPlayerController +
   /// 当前书元数据，常驻执行 cue→悬浮窗/媒体通知/位置落库同步，脱离 reader 页生命周期。
   /// reader 在场时经 [AudiobookSession.attachReader] 注册 WebView 侧回调。
+  @override
   late final AudiobookSession audiobookSession =
       AudiobookSession(
           audioHandler: () => audioCtrl.audioHandler,
@@ -3471,6 +3520,7 @@ class AppModel
   late Directory _appDirectory;
 
   /// Directory where database data is persisted.
+  @override
   Directory get databaseDirectory => _databaseDirectory;
   late Directory _databaseDirectory;
 
@@ -3759,8 +3809,8 @@ class AppModel
       if (d.type != DictionaryType.term) continue;
       _dictTypeProbeAttempted.add(probeDir);
 
-      final blobsFile = File(path.join(probeDir, 'blobs.bin'));
-      if (!blobsFile.existsSync()) continue;
+      final File? blobsFile = dictRecordFileIn(probeDir);
+      if (blobsFile == null) continue;
 
       final raf = blobsFile.openSync();
       DictionaryType? detected;
@@ -3885,6 +3935,7 @@ class AppModel
           hidden: states[i].hidden,
           metadata: states[i].metadata,
           order: d.order,
+          languageOverride: d.languageOverride,
         ),
       );
     }
@@ -3892,6 +3943,7 @@ class AppModel
     // 类型自愈每本、隐藏/折叠/语言开关），就地重建会把总代价推成 O(N²)。真正的
     // 装载推迟到下次要用引擎时，批量写入期间的 N 次排期塌成 1 次装载。
     final b = bucketDictPaths(entries);
+    final Map<String, String> termLanguages = termDictLanguagesOf(entries);
     dictRepo.noteEngineTermDictionaries(<String>[
       for (final String p in b.term) path.basename(p),
     ]);
@@ -3900,8 +3952,10 @@ class AppModel
       freqPaths: b.freq,
       pitchPaths: b.pitch,
       kanjiPaths: b.kanji,
+      termLanguages: termLanguages,
     );
     _lastScheduledDictBuckets = b;
+    _lastScheduledTermLanguages = termLanguages;
   }
 
   /// 最近一次排期给引擎的分桶结果（两条装载路径排期时都记下）。
@@ -3918,7 +3972,12 @@ class AppModel
   })?
   _lastScheduledDictBuckets;
 
-  /// [b] 与 [_lastScheduledDictBuckets] 逐桶相同（同序同路径）。
+  /// 最近一次排期时随 term 桶交给引擎的词典语言（[termDictLanguagesOf]）。语言是装载
+  /// 时的属性，变了就得重装，所以与分桶一起比较。
+  Map<String, String> _lastScheduledTermLanguages = const <String, String>{};
+
+  /// [b] 与 [_lastScheduledDictBuckets] 逐桶相同（同序同路径），且 term 词典的语言
+  /// [termLanguages] 也没变。
   bool _sameAsLastScheduledDictBuckets(
     ({
       List<String> term,
@@ -3927,13 +3986,15 @@ class AppModel
       List<String> kanji,
     })
     b,
+    Map<String, String> termLanguages,
   ) {
     final last = _lastScheduledDictBuckets;
     return last != null &&
         _samePaths(last.term, b.term) &&
         _samePaths(last.freq, b.freq) &&
         _samePaths(last.pitch, b.pitch) &&
-        _samePaths(last.kanji, b.kanji);
+        _samePaths(last.kanji, b.kanji) &&
+        mapEquals(_lastScheduledTermLanguages, termLanguages);
   }
 
   static bool _samePaths(List<String> a, List<String> b) {
@@ -4072,6 +4133,107 @@ class AppModel
     }
   }
 
+  /// 本进程是否已经跑过启动期那一轮 [_upgradeDictionaryFormats]。
+  bool _dictFormatUpgradeStarted = false;
+
+  /// 正在跑的那一轮（启动期或词典页按钮发起的）；同一时刻只跑一轮。
+  Future<void>? _dictFormatUpgradeRunning;
+
+  /// 还停在旧格式、可以升级的词典本数（词典页据此显示升级入口；0 = 不显示）。
+  final ValueNotifier<int> dictFormatUpgradePending = ValueNotifier<int>(0);
+
+  /// 启动期（首帧之后）的词典维护：先检查存量词典的磁盘格式（有待升级的问用户），再
+  /// 补写 redirect 标记。串行：两者都逐本读词典，并发只会互相抢 IO；升级在前，补写
+  /// 标记时读到的就是升级后的记录文件。只挂在主进程 init 路径上（查词弹窗进程不跑）。
+  Future<void> _runDictionaryStartupMaintenance() async {
+    await WidgetsBinding.instance.endOfFrame;
+    if (!_dictFormatUpgradeStarted) {
+      _dictFormatUpgradeStarted = true;
+      await _upgradeDictionaryFormats(fromUser: false);
+    }
+    await _migrateDictionaryRedirectFlags();
+  }
+
+  /// 词典页「升级」按钮：用户点按钮本身就是同意，不再弹确认框。
+  Future<void> upgradeDictionaryFormatsNow() =>
+      _upgradeDictionaryFormats(fromUser: true);
+
+  /// 存量词典升级到当前磁盘格式，编排见 [DictionaryFormatUpgradeCoordinator]：先不占
+  /// 词典写锁静默检查（常态启动到此为止，不挡下载 / 自动更新，旧式词典一个字节都不
+  /// 写）；有待升级的先征得用户同意（拍板台 pr3554）——启动期弹一次确认框（点过「以后
+  /// 再说」就不再弹，只在词典页留入口），词典页按钮直接算同意；同意了才占写锁、亮状态
+  /// 行升级，升级过就异步重载引擎让新格式生效、重载后静默补跑一遍清旧文件。失败 /
+  /// 不适用只记日志（词典仍按旧格式可用）。
+  Future<void> _upgradeDictionaryFormats({required bool fromUser}) {
+    final Future<void>? running = _dictFormatUpgradeRunning;
+    if (running != null) return running;
+    final Future<void> run = _runDictionaryFormatUpgrade(
+      fromUser: fromUser,
+    ).whenComplete(() => _dictFormatUpgradeRunning = null);
+    _dictFormatUpgradeRunning = run;
+    return run;
+  }
+
+  Future<void> _runDictionaryFormatUpgrade({required bool fromUser}) async {
+    try {
+      final DictionaryFormatUpgradeRun result =
+          await DictionaryFormatUpgradeCoordinator(
+            controller: dictionaryDownloadController,
+            dictDirs: () => <String>[
+              for (final Dictionary d in dictRepo.dictionaries)
+                path.join(dictionaryResourceDirectory.path, d.name),
+            ],
+            tidy: FushiDicts.tidyDictionaryFormats,
+            upgrade: FushiDicts.upgradeDictionaryFormats,
+            confirm: fromUser ? (_) async => true : _confirmDictFormatUpgrade,
+            reload: _rebuildDictPathsCacheAsync,
+            settleOldEngine: FushiDicts.whenBackgroundBorrowsSettled,
+            message: (int done, int total) =>
+                t.dict_upgrade_format_progress(done: done, total: total),
+            log: (String tag, Object info) =>
+                ErrorLogService.instance.log(tag, info),
+          ).run();
+      final FushiDictUpgradeReport? cleanup = result.cleanup;
+      final FushiDictUpgradeReport? upgraded = result.upgrade;
+      dictFormatUpgradePending.value = cleanup != null
+          ? cleanup.pending.length
+          : upgraded != null
+          ? upgraded.failed.length
+          : result.pending.length;
+      if (upgraded != null && upgraded.anyUpgraded) {
+        debugPrint(
+          '[Fushi] dictionary format upgraded: '
+          '${upgraded.upgraded.map(path.basename).join(', ')}',
+        );
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        DictionaryFormatUpgradeCoordinator.logTag,
+        e,
+        stack,
+      );
+    }
+  }
+
+  /// 启动期的升级确认框。点过「以后再说」的不再弹（词典页的入口照常在）；没有可用的
+  /// 界面上下文时不升级（下次启动再问）。
+  Future<bool> _confirmDictFormatUpgrade(int pendingCount) async {
+    if (prefsRepo.dictFormatUpgradePromptDismissed) return false;
+    final BuildContext? context = navigatorKey.currentContext;
+    if (context == null || !context.mounted) return false;
+    final bool accepted = await showFushiConfirmDialog(
+      context: context,
+      icon: Icons.upgrade_rounded,
+      title: t.dict_upgrade_format_prompt_title,
+      message: t.dict_upgrade_format_prompt_body(count: pendingCount),
+      confirmLabel: t.dict_upgrade_format_prompt_confirm,
+      cancelLabel: t.dict_upgrade_format_prompt_later,
+      barrierDismissible: false,
+    );
+    if (!accepted) await prefsRepo.setDictFormatUpgradePromptDismissed();
+    return accepted;
+  }
+
   /// 给存量释义词典补写 `redirect_glossary.flag`（[FushiDicts.ensureRedirectFlags]）。
   ///
   /// 装载只读这份标记、不扫描（扫描是整本、单本最多约 1 s）；缺标记的旧词典在查词时
@@ -4083,7 +4245,6 @@ class AppModel
     if (_redirectFlagsMigrated) return;
     _redirectFlagsMigrated = true;
     try {
-      await WidgetsBinding.instance.endOfFrame;
       final List<String> dirs = <String>[
         for (final Dictionary d in dictRepo.dictionaries)
           if (d.type == DictionaryType.term)
@@ -4210,10 +4371,14 @@ class AppModel
           hidden: states[i].hidden,
           metadata: states[i].metadata,
           order: dictList[i].order,
+          languageOverride: dictList[i].languageOverride,
         ),
     ];
     final b = bucketDictPaths(entries);
-    if (onlyIfChanged && _sameAsLastScheduledDictBuckets(b)) return false;
+    final Map<String, String> termLanguages = termDictLanguagesOf(entries);
+    if (onlyIfChanged && _sameAsLastScheduledDictBuckets(b, termLanguages)) {
+      return false;
+    }
     dictRepo.noteEngineTermDictionaries(<String>[
       for (final String p in b.term) path.basename(p),
     ]);
@@ -4222,8 +4387,10 @@ class AppModel
       freqPaths: b.freq,
       pitchPaths: b.pitch,
       kanjiPaths: b.kanji,
+      termLanguages: termLanguages,
     );
     _lastScheduledDictBuckets = b;
+    _lastScheduledTermLanguages = termLanguages;
     return true;
   }
 
@@ -5087,6 +5254,17 @@ class AppModel
       StartupTimeline.mark('init-enter');
       _packageInfo = await PackageInfo.fromPlatform();
       _mediaTrackingAppVersion = _packageInfo.version;
+      final String runningVersion = resolveCurrentAppVersion(
+        _packageInfo.version,
+      );
+      _whatsNew = WhatsNewController(
+        prefs: () => prefsRepo,
+        runningVersion: runningVersion,
+        runningSeq: currentReleaseSequence(
+          version: runningVersion,
+          buildNumber: _packageInfo.buildNumber,
+        ),
+      );
       // 媒体服务器认证头的客户端身份（产品名 / 本机设备名 / 应用版本，
       // AL8qJr6yr-）：之后所有 Jellyfin / Emby 请求都按它报。
       mediaServerClientIdentity = await resolveMediaServerClientIdentity(
@@ -5244,6 +5422,8 @@ class AppModel
       // 系统语音兜底（「朗读声音」里的系统语音预设拿不到 AppModel）按已装词典
       // 的词头语言定语言：现读，词典增删即时生效（BUG-3669）。
       systemTtsDictionaryLanguages = () => installedDictionarySourceLanguages;
+      // 制卡抽取并发按低内存模式现算（引擎不持有 AppModel）。
+      ImmersionMiningEngine.lowMemoryModeReader = () => prefsRepo.lowMemoryMode;
       mediaHistoryRepo = MediaHistoryRepository(_database);
 
       StartupTimeline.mark('platform-services');
@@ -5419,6 +5599,9 @@ class AppModel
       // 词形变化语法说明的译文表跟界面语言走（BUG-2038）。装的是一张内存查表，
       // 与词典引擎里那份英文 transforms JSON 无关，所以放在引擎初始化之后也没问题。
       unawaited(applyTransformDescriptionLocale(appLocale.toLanguageTag()));
+      // 系统通知设置里的渠道名跟界面语言（拍板台 left3621）：只有主引擎注册了这条
+      // 通道，手机端换语言会重启 app，所以每次主引擎初始化推一次整表就够。
+      unawaited(syncAndroidNotificationChannelNames());
       populateMediaTypes();
       populateMediaSources();
       populateDictionaryFormats();
@@ -5442,6 +5625,9 @@ class AppModel
         '[Fushi] init: reader settings + enhancements + quick actions + media sources (parallel)',
       );
       StartupTimeline.mark('language+licenses+local-audio');
+      // 本地音频库补内容身份 + 收掉内容相同的重复登记（拍板 pr3481）：要扫库，
+      // 后台跑，不挡启动；只在主进程跑（弹窗进程不改登记）。
+      unawaited(_normalizeLocalAudioLibrariesQuietly());
       MediaSource.setDatabase(_database);
       final readerSettings = ReaderSettings(_database);
       await readerSettings.loadFromPrefsSnapshot(prefsSnapshot);
@@ -5557,7 +5743,7 @@ class AppModel
       );
       StartupTimeline.mark('shortcuts');
       unawaited(_warmUpSearchAfterFirstFrame());
-      unawaited(_migrateDictionaryRedirectFlags());
+      unawaited(_runDictionaryStartupMaintenance());
       // 曲库歌词搜索的本机语料库：延后打开、清掉已下架「我库里的例句」留下的书 / 视频 /
       // 游戏文档（反馈 4S2_J80DfK），再对账歌词、订阅歌词表做增量。
       LibraryCorpusService.instance.start(
@@ -5570,6 +5756,11 @@ class AppModel
       // 旧版按「无画面视频」收进视频库的纯音频搬到音乐库（反馈 QAondMh4M5）。按数据
       // 幂等：没有这类行就什么都不做；搬不动的行原样留在视频库，下次启动再试。
       unawaited(_migrateAudioOnlyVideosToMusic());
+      // 上个进程被杀 / 崩溃留在书库根的导入残留（`.tmp-*` 暂存、`.bak-*` 让位旧树、
+      // 拷到一半的半成品）：开库后清一次，不等下一次导入才清（BUG-4841，#3722 c07
+      // 遗留）。Android 就地重建拷贝回退期间被杀时，这一步把 bak 还原成完整的书。
+      // 每进程只跑一次、失败只记日志；导入入口等的是同一个 Future。
+      unawaited(EpubImporter.ensureImportResidueSwept(_database));
       // 启动关键路径上的查询都发完了：这时才读查词历史整表（见
       // DictionaryRepository.loadFromDb 的 deferHistory）。
       dictRepo.startDeferredHistoryLoad();
@@ -5892,6 +6083,8 @@ class AppModel
       // 系统语音兜底（「朗读声音」里的系统语音预设拿不到 AppModel）按已装词典
       // 的词头语言定语言：现读，词典增删即时生效（BUG-3669）。
       systemTtsDictionaryLanguages = () => installedDictionarySourceLanguages;
+      // 制卡抽取并发按低内存模式现算（引擎不持有 AppModel）。
+      ImmersionMiningEngine.lowMemoryModeReader = () => prefsRepo.lowMemoryMode;
       await dictRepo.loadFromDb();
       // 同主进程：全局「远程查词」并入每台 host 的开关（幂等，主进程先跑过就是
       // no-op）。更新后第一次查词可能先拉起弹窗进程，不能只靠主进程迁移。
@@ -6316,9 +6509,38 @@ class AppModel
         wheelSpeed: popupWheelSpeed,
         instantScroll: popupInstantScroll,
         instantScrollWheelStep: popupInstantScrollWheelStep,
-        dedupPitch: deduplicatePitchAccents,
+        displayPrefs: _activePopupDisplayPrefs,
         einkMode: einkMode,
       ));
+
+  /// App 当前生效的查词弹窗显示偏好（与 popup_settings_injection 注入 in-app 弹窗的同一批
+  /// 值同源），随 theme 下发给浏览器扩展（BUG-4935）。
+  PopupDisplayPrefs get _activePopupDisplayPrefs => (
+    dedupPitch: deduplicatePitchAccents,
+    harmonicFrequency: harmonicFrequency,
+    showExpressionTags: showExpressionTags,
+    collapseDictionaries: collapseDictionaries,
+    compactGlossaries: compactGlossaries,
+    autoExpandRows: popupAutoExpandDictionaries,
+    collapsedDictionaryNames: _popupCollapsedNamesOf(lookupViewDictionaries),
+    expandedDictionaryNames: _popupExpandedNamesOf(lookupViewDictionaries),
+  );
+
+  /// 词典管理里逐本「折叠」/「展开」的词典名（BUG-2158 三态），与 in-app 弹窗注入的
+  /// `collapsedDictionaryNames` / `expandedDictionaryNames` 同一判据（BUG-4935 扩展下发）。
+  static List<String> _popupCollapsedNamesOf(List<Dictionary> dictionaries) =>
+      dictionaries
+          .where((Dictionary d) => d.isCollapsed(JapaneseLanguage.instance))
+          .map((Dictionary d) => d.name)
+          .toList(growable: false);
+
+  static List<String> _popupExpandedNamesOf(List<Dictionary> dictionaries) =>
+      dictionaries
+          .where(
+            (Dictionary d) => d.isExplicitlyExpanded(JapaneseLanguage.instance),
+          )
+          .map((Dictionary d) => d.name)
+          .toList(growable: false);
 
   /// 反馈 biLEesNqWb：[browserExtensionThemeColors] 按浏览器扩展所选的**非激活**配置算
   /// ——主题、弹窗列数 / 字号 / 尺寸 / 滚动 / 滑动关闭 / 音调去重都取 [view]；墨水屏是设备
@@ -6343,7 +6565,16 @@ class AppModel
       wheelSpeed: p.popupWheelSpeed,
       instantScroll: p.popupInstantScroll,
       instantScrollWheelStep: p.popupInstantScrollWheelStep,
-      dedupPitch: p.deduplicatePitchAccents,
+      displayPrefs: (
+        dedupPitch: p.deduplicatePitchAccents,
+        harmonicFrequency: p.harmonicFrequency,
+        showExpressionTags: p.showExpressionTags,
+        collapseDictionaries: p.collapseDictionaries,
+        compactGlossaries: p.compactGlossaries,
+        autoExpandRows: p.popupAutoExpandDictionaries,
+        collapsedDictionaryNames: _popupCollapsedNamesOf(view.dictionaries),
+        expandedDictionaryNames: _popupExpandedNamesOf(view.dictionaries),
+      ),
       einkMode: theme.einkMode,
     ));
   }
@@ -6474,11 +6705,12 @@ class AppModel
       // window.__fushiPopupInstantScrollWheelStep。触摸半边扩展侧不挂监听，不下发。
       '--fushi-instant-scroll-wheel-step': inputs.instantScrollWheelStep
           .toStringAsFixed(3),
-      // BUG-2397：「音调去重」下发给扩展 content.js（非 CSS 变量、仅 JS 消费）。扩展弹窗
-      // 与 in-app 弹窗跑同一份 popup.js，而它的去重分支读 `window.deduplicatePitchAccents`：
-      // in-app 由 popup_settings_injection 注入，扩展侧此前没有任何赋值路径，恒 undefined
-      // → 浏览器里的音调去重永远是关的。走 theme 通道与 --fushi-instant-scroll 同法。
-      '--fushi-dedup-pitch': inputs.dedupPitch ? '1' : '0',
+      // BUG-2397 / BUG-4935：弹窗显示偏好（音调去重、词频聚合、自动展开行数、折叠开关与
+      // 逐本折叠 / 展开名单……）下发给扩展（非 CSS 变量、仅 JS 消费）。扩展弹窗与 in-app 弹窗
+      // 跑同一份 popup.js，它读的这批 `window.*` 在 in-app 由 popup_settings_injection 注入，
+      // 扩展侧只有这条通道；编码 / 解码各收口一处（buildPopupDisplayPrefsThemeVars ↔
+      // dict-media.js applyFushiPopupDisplayPrefs）。
+      ...buildPopupDisplayPrefsThemeVars(inputs.displayPrefs),
       // 浏览器扩展的唯一材质是液态玻璃（不再跟随 app 设计系统，用户 2026-10-04 拍板）；
       // 这条只剩墨水屏开关：墨水屏下发 '0'，content.js 让浮动弹窗保持不透明（非 CSS 变量、
       // 仅 content.js 消费）。
@@ -6845,6 +7077,20 @@ class AppModel
   Future<void> setVideoAutoPlayNext(bool value) =>
       prefsRepo.setVideoAutoPlayNext(value);
 
+  /// 视频断点续播模式（video_resume.dart）：只影响之后的打开，不打断当前播放。
+  VideoResumeMode get videoResumeMode => prefsRepo.videoResumeMode;
+
+  Future<void> setVideoResumeMode(VideoResumeMode value) async {
+    await prefsRepo.setVideoResumeMode(value);
+    notifyListeners();
+  }
+
+  /// 合集自动连播的选集顺序（拍板台 QHbRRctQdW，落 Drift preferences，默认顺序）。
+  VideoPlaylistOrder get videoPlaylistOrder => prefsRepo.videoPlaylistOrder;
+
+  Future<void> setVideoPlaylistOrder(VideoPlaylistOrder order) =>
+      prefsRepo.setVideoPlaylistOrder(order);
+
   /// 原盘会话三项（落 Drift preferences，默认都开）：桌面自动全屏 / 启动动画 /
   /// 详情页主按钮默认进菜单。
   bool get videoDiscAutoFullscreen => prefsRepo.videoDiscAutoFullscreen;
@@ -6971,6 +7217,31 @@ class AppModel
 
   Future<void> setVideoLockWindowAspectRatio(bool value) =>
       prefsRepo.setVideoLockWindowAspectRatio(value);
+
+  /// 手机 / 平板进入视频时的方向（拍板台 P9AS-fvjJh，`VideoEntryOrientation` 落库值）。
+  String get videoEntryOrientation => prefsRepo.videoEntryOrientation;
+
+  Future<void> setVideoEntryOrientation(String value) =>
+      prefsRepo.setVideoEntryOrientation(value);
+
+  /// 手机竖屏看横版视频时用学习版式（视频在上、当前句 + 字幕列表在下），默认开。
+  bool get videoPortraitSubtitleList => prefsRepo.videoPortraitSubtitleList;
+
+  Future<void> setVideoPortraitSubtitleList(bool value) =>
+      prefsRepo.setVideoPortraitSubtitleList(value);
+
+  /// 记住每部作品上次手动转到的方向，默认关。
+  bool get videoRememberOrientation => prefsRepo.videoRememberOrientation;
+
+  Future<void> setVideoRememberOrientation(bool value) =>
+      prefsRepo.setVideoRememberOrientation(value);
+
+  /// 某部作品记住的方向（`landscape` / `portrait`，空串 = 没记过）。
+  String videoOrientationForWork(String bookUid) =>
+      prefsRepo.videoOrientationForWork(bookUid);
+
+  Future<void> setVideoOrientationForWork(String bookUid, String value) =>
+      prefsRepo.setVideoOrientationForWork(bookUid, value);
 
   /// YouTube 显式画质目标高度（0=自动；非 0 起播即选 ≤目标 的最高档，可达 1440p/4K）。
   int get youtubeQualityTargetHeight => prefsRepo.youtubeQualityTargetHeight;
@@ -7116,7 +7387,11 @@ class AppModel
   /// Jimaku API key（自动获取日语字幕）。
   String get jimakuApiKey => prefsRepo.jimakuApiKey;
 
+  /// 值没变直接返回：字幕搜索 / 合集面板在「输入框与面板打开时的 key 不同」时每次
+  /// 搜索都会调到这里（面板的初始 key 不随保存刷新），按原值重建一遍下载管线运行时
+  /// 与查字幕 registry 纯属浪费（BUG-4973）。
   Future<void> setJimakuApiKey(String key) async {
+    if (key == prefsRepo.jimakuApiKey) return;
     await prefsRepo.setJimakuApiKey(key);
     await reloadVideoDownloadPipelineRuntime();
   }
@@ -7629,6 +7904,7 @@ class AppModel
           rootDirectory: manager.rootDirectory,
           adapter: MihonLibraryAdapter(manager),
           updateFeed: updateFeedService,
+          autoDownload: _enqueueSubscribedMangaChapters,
         );
       case OnlineMangaRuntimeKind.aidoku:
         return OnlineMangaLibraryService(
@@ -7636,6 +7912,7 @@ class AppModel
           rootDirectory: aidokuLibraryRoot,
           adapter: const LegacyAidokuLibraryAdapter(),
           updateFeed: updateFeedService,
+          autoDownload: _enqueueSubscribedMangaChapters,
         );
       // 互联对端同样不碰 [mihonManager]：它五端都可用，而 mihonManager 在
       // 没有 Mihon 宿主的平台（iOS）上直接抛 UnsupportedError。
@@ -7644,6 +7921,7 @@ class AppModel
           database: database,
           rootDirectory: interconnectMangaLibraryRoot,
           adapter: const InterconnectLibraryAdapter(),
+          autoDownload: _enqueueSubscribedMangaChapters,
         );
       // 网页漫画同样不碰 [mihonManager]（不依赖任何扩展运行时）；iOS 上由
       // 适配器的合规门回报不可用。
@@ -7654,6 +7932,7 @@ class AppModel
           adapter: WebComicLibraryAdapter(
             adFilterEnabled: () => prefsRepo.webComicAdFilter,
           ),
+          autoDownload: _enqueueSubscribedMangaChapters,
         );
       // Kavita 同样五端可用，不碰 [mihonManager]；服务器配置每次现读偏好。
       case OnlineMangaRuntimeKind.kavita:
@@ -7662,9 +7941,22 @@ class AppModel
           rootDirectory: kavitaMangaLibraryRoot,
           adapter: KavitaLibraryAdapter(servers: () => prefsRepo.kavitaServers),
           updateFeed: updateFeedService,
+          autoDownload: _enqueueSubscribedMangaChapters,
         );
     }
   }
+
+  /// 订阅自动下载的生产入队口（[OnlineMangaLibraryService.autoDownload]）：
+  /// 五个运行时的书架服务共用，不管新章是后台探针还是作品页刷出来的都走这里。
+  /// `auto_ocr` 取作品页 chip 的持久值。
+  Future<void> _enqueueSubscribedMangaChapters(
+    OnlineMangaLibraryEntry entry,
+    List<OnlineMangaChapter> chapters,
+  ) => mangaDownloadService.enqueueChapters(
+    entry: entry,
+    chapters: chapters,
+    autoOcr: mangaDownloadAutoOcr,
+  );
 
   /// 网页漫画书架条目的旧落盘根（只为 [OnlineMangaLibraryService] 的构造参数；
   /// 新条目一律住 `fushi_books`，这里从不写东西）。目录名是持久化名，冻结。
@@ -7907,6 +8199,11 @@ class AppModel
   /// 启动竞态里一次早到的剪枝就会把用户全部下载/做种任务永久蒸发
   /// （见 [pruneResumeFiles] 的哨兵与 [startAnimeDownloadService] 的顺序注释）。
   Set<String>? _animeDownloadPlanIds;
+
+  /// 已配对设备借本机引擎下载时登记的种子（`/api/torrent-engine`）。下载中心起来、
+  /// 数据根定下来后才建；并进 [_animeDownloadPlanIds]，否则 resume 剪枝会删掉
+  /// 远程任务、重启后也不续传。
+  PeerTorrentLeaseStore? _peerTorrentLeases;
 
   /// 启动时用户配置的下载目录不可用（不存在且建不出/写不进）时记下原因与路径，
   /// 设置页据此显示警告。**不静默**：回退默认根这件事必须让用户看见。
@@ -8374,6 +8671,15 @@ class AppModel
       baseDir.path,
       kEmbeddedTorrentFastResumeDirName,
     );
+    // 租约跟 resume 同在下载数据根下（数据根迁移时一起搬）；必须在下面第一次
+    // 刷新计划 id 之前建好，那次刷新的保留集合才含远程任务。
+    final String leaseFile = path.join(baseDir.path, kPeerTorrentLeaseFileName);
+    if (_peerTorrentLeases?.file.path != leaseFile) {
+      _peerTorrentLeases = PeerTorrentLeaseStore(
+        File(leaseFile),
+        onChanged: _onPeerTorrentLeasesChanged,
+      );
+    }
 
     // schema v78 cut-over 必须先于两个 JSON service 的首次 tick。每个 JSON 文件
     // 事务提交后才归档；崩溃重放依靠稳定 legacy id 幂等，不移动字幕 staging。
@@ -8562,6 +8868,10 @@ class AppModel
     final QbConnectionConfig config = effectiveTorrentConfig(
       qbConnectionConfig,
     );
+    if (config.backend == QbConnectionConfig.backendFushiHost) {
+      // 选了互联设备就只认它：没选定设备 = 没配好，不悄悄退回本机引擎。
+      return config.isConfigured ? QbConnectionConfig.backendFushiHost : null;
+    }
     if (isEmbeddedTorrentReady &&
         config.backend != QbConnectionConfig.backendQbittorrent) {
       return QbConnectionConfig.backendEmbedded;
@@ -8595,14 +8905,43 @@ class AppModel
     return sources.firstOrNull?.id;
   }
 
-  /// `/api/jobs` ASR 任务的 `videoId` → 本机视频文件（host 库）。
-  Future<String?> _resolveHostVideoPath(String videoId) async {
+  /// `/api/jobs` ASR / 字幕任务的 `videoId`（+ 播放列表集下标 [episodeIndex]）→ 本机
+  /// 视频文件（host 库）。按集取文件与播放端点同一判据（[videoBookEpisodePath]）。
+  Future<String?> _resolveHostVideoPath(
+    String videoId, {
+    int episodeIndex = 0,
+  }) async {
     final VideoBookRow? row = await VideoBookRepository(
       database,
     ).getByBookUid(videoId);
     if (row == null) return null;
-    // ASR 要读媒体字节：DVD title / 网络流 / .strm 没有本地媒体文件。
-    return await hasLocalMediaFile(row.videoPath) ? row.videoPath : null;
+    final String? path = videoBookEpisodePath(
+      videoPath: row.videoPath,
+      playlistJson: row.playlistJson,
+      episodeIndex: episodeIndex,
+    );
+    if (path == null) return null;
+    // ASR 要本机读得到媒体（网络流 / .strm 没有）；DVD title 经 dvdvideo demuxer 读。
+    return await hasLocalMediaFile(path) ? path : null;
+  }
+
+  /// `/api/jobs` 字幕任务的 (`videoId`, `discTitle`) → 那一行所在蓝光盘上那条 title 的
+  /// 成员路径（远端原盘会话里库中没有行的 title）。判据是 [videoBookDiscTitlePath]，
+  /// 与 fushi_server 同一份。
+  Future<String?> _resolveHostDiscTitlePath(
+    String videoId,
+    String discTitle,
+  ) async {
+    final VideoBookRow? row = await VideoBookRepository(
+      database,
+    ).getByBookUid(videoId);
+    if (row == null) return null;
+    final String? path = videoBookDiscTitlePath(
+      videoPath: row.videoPath,
+      discTitle: discTitle,
+    );
+    if (path == null) return null;
+    return await hasLocalMediaFile(path) ? path : null;
   }
 
   /// 只暴露当前设备可访问的本地受管视频来源，供发现页新任务/订阅选择。
@@ -8626,6 +8965,9 @@ class AppModel
     );
     if (resolved == QbConnectionConfig.backendEmbedded) {
       return _embeddedTorrentBackendProxy(config);
+    }
+    if (resolved == QbConnectionConfig.backendFushiHost) {
+      return _remoteFushiTorrentBackend(config);
     }
     if (config.baseUrl.trim().isEmpty) return null;
     return QbTorrentBackend(
@@ -8956,6 +9298,7 @@ class AppModel
       embeddedSessionAlive: _embeddedTorrentHost != null,
       embeddedHasResumeFiles: _embeddedTorrentHasResumeFiles(),
       qbBaseUrl: config.baseUrl,
+      remoteHostSelected: config.backend == QbConnectionConfig.backendFushiHost,
     );
     return VideoFilenameOrganizeService(
       database: database,
@@ -9002,12 +9345,83 @@ class AppModel
     AnimeDownloadPlanStore store,
   ) async {
     final List<AnimeDownloadPlan> plans = await store.loadAll();
+    final PeerTorrentLeaseStore? leases = _peerTorrentLeases;
     final Set<String> ids = <String>{
       for (final AnimeDownloadPlan plan in plans) plan.id.toLowerCase(),
       ...await loadEmbeddedTorrentResumeIds(database),
+      if (leases != null) ...await leases.hashes(),
     };
     _animeDownloadPlanIds = ids;
     return ids;
+  }
+
+  /// 租约一变就并进保留集合（新租约同步并入，不等下一轮 tick 的刷新——其间的
+  /// 周期 resume 快照会把刚交来的远程任务剪掉）；撤销的租约随后台刷新移出。
+  void _onPeerTorrentLeasesChanged(Set<String> hashes) {
+    final Set<String>? ids = _animeDownloadPlanIds;
+    // null 是「还没加载过」的哨兵，不能被局部集合顶掉（见字段注释）。
+    if (ids != null) _animeDownloadPlanIds = <String>{...ids, ...hashes};
+    final AnimeDownloadPlanStore? store = _animeDownloadPlanStore;
+    if (store != null) unawaited(_refreshAnimeDownloadPlanIds(store));
+  }
+
+  /// 借给已配对设备的 BT 引擎（互联 host 的 `/api/torrent-engine`）。
+  late final AppPeerTorrentEngine appPeerTorrentEngine = AppPeerTorrentEngine(
+    leases: () => _peerTorrentLeases,
+    roots: _peerTorrentRoots,
+    backend: _peerLendableTorrentBackend,
+    traits: _peerLendableTorrentTraits,
+  );
+
+  /// 可借出的本机下载配置：本机自己借别人的引擎（`fushi_host`）时不转借，不做
+  /// 多跳链（对端绕一圈回到这里，租约、路径白名单都对不上）。
+  QbConnectionConfig? _peerLendableTorrentConfig() {
+    final QbConnectionConfig config = effectiveTorrentConfig(
+      prefsRepo.qbConnectionConfig,
+    );
+    final String resolved = config.resolveBackend(
+      embeddedSupported: _supportsEmbeddedTorrent(),
+    );
+    return resolved == QbConnectionConfig.backendFushiHost ? null : config;
+  }
+
+  TorrentBackend? _peerLendableTorrentBackend() {
+    final QbConnectionConfig? config = _peerLendableTorrentConfig();
+    return config == null ? null : _createExactTorrentBackend(config);
+  }
+
+  /// 可借出后端的只读能力（`/api/pairing` 每次探测都问）：**不建 session**。
+  /// 内置引擎的运行期能力位来自 DLL 符号探测，本就不需要 session。
+  ({String backend, bool? pause, bool? detail})? _peerLendableTorrentTraits() {
+    final QbConnectionConfig? config = _peerLendableTorrentConfig();
+    if (config == null) return null;
+    final String resolved = config.resolveBackend(
+      embeddedSupported: _supportsEmbeddedTorrent(),
+    );
+    if (resolved == QbConnectionConfig.backendEmbedded) {
+      final EmbeddedTorrentHostCapabilities? caps =
+          _embeddedTorrentHostCapabilities();
+      if (caps == null) return null;
+      return (
+        backend: resolved,
+        pause: caps.supportsPauseControl,
+        detail: caps.supportsDetailInfo,
+      );
+    }
+    if (config.baseUrl.trim().isEmpty) return null;
+    return (backend: resolved, pause: true, detail: true);
+  }
+
+  /// 远程任务允许落盘的根：本机下载根（当前 + 历史）与本地受管视频来源根——对端
+  /// 把这些目录挂过去、配一条路径映射，下载就直接进本机的库。
+  Future<List<String>> _peerTorrentRoots() async {
+    final TorrentSaveRoots? saveRoots = _embeddedTorrentSaveRoots;
+    return <String>[
+      if (saveRoots != null) ...<String>[saveRoots.active, ...saveRoots.legacy],
+      for (final MediaSourceRow source
+          in await getManagedVideoDownloadSources())
+        source.rootPath,
+    ];
   }
 
   /// 发现页新内容类型（有声书/游戏）种子完成后的入库回调：整包路径交给
@@ -9723,6 +10137,21 @@ class AppModel
     );
   }
 
+  /// 「下载后端 = 互联设备」：借那台已配对 host 的 BT 引擎。没选定设备 → null。
+  TorrentBackend? _remoteFushiTorrentBackend(QbConnectionConfig config) {
+    if (!config.isConfigured) return null;
+    return RemoteFushiTorrentBackend(
+      repo: SyncRepository(database),
+      host: InterconnectHostRef.persisted(
+        hostId: config.remoteHostId,
+        anchorUrl: config.remoteHostUrl,
+      ),
+      trackerSubscriptionService: _trackers,
+      autoAddTrackerSubscription: config.autoAddTrackerSubscription,
+      trackerSubscriptionUrl: config.trackerSubscriptionUrl,
+    );
+  }
+
   /// 后端选择：配置选内置且宿主可用 → 内置引擎的共享 session 视图；否则
   /// 外接 qBittorrent（默认 / 内置不可用时的回退）。
   TorrentBackend _torrentBackendFor(QbConnectionConfig config) {
@@ -9732,6 +10161,10 @@ class AppModel
     if (backend == QbConnectionConfig.backendEmbedded) {
       final TorrentBackend? embedded = _embeddedTorrentBackendProxy(config);
       if (embedded != null) return embedded;
+    }
+    if (backend == QbConnectionConfig.backendFushiHost) {
+      final TorrentBackend? remote = _remoteFushiTorrentBackend(config);
+      if (remote != null) return remote;
     }
     return QbTorrentBackend(
       QBittorrentClient(
@@ -9752,10 +10185,7 @@ class AppModel
   /// 内置 libtorrent 支持的平台：桌面 + Android（`libfushi_torrent_ffi.so`
   /// 经 jniLibs 随包）。iOS 不支持：从不构建也从不打包内置引擎产物。
   bool _supportsEmbeddedTorrent() =>
-      Platform.isWindows ||
-      Platform.isMacOS ||
-      Platform.isLinux ||
-      Platform.isAndroid;
+      hostPlatform.isDesktop || hostPlatform.isAndroid;
 
   /// 每系列记住的 Jimaku 字幕语言偏好（TODO-674）。
   Map<String, String> get jimakuPreferredLanguages =>
@@ -9796,8 +10226,11 @@ class AppModel
 
   /// Show the dictionary menu. This should be callable from many parts of the
   /// app, so it is appropriately handled by the model.
+  ///
+  /// [initialAction]：页面一出现就跑的导入动作（查词主页空态的导入面方式块，IM23）。
   Future<void> showDictionaryMenu({
     List<String> initialImportPaths = const <String>[],
+    DictionaryImportAction? initialAction,
   }) async {
     final ctx = _ctx;
     if (ctx == null) return;
@@ -9805,8 +10238,10 @@ class AppModel
       ctx,
       adaptivePageRoute(
         context: ctx,
-        builder: (context) =>
-            DictionaryDialogPage(initialImportPaths: initialImportPaths),
+        builder: (context) => DictionaryDialogPage(
+          initialImportPaths: initialImportPaths,
+          initialAction: initialAction,
+        ),
       ),
     );
 
@@ -10705,6 +11140,22 @@ class AppModel
     _remoteDictionaryCatalog = null;
   }
 
+  /// 本端生效配置对 [candidate] 这台 host 的词典选择，随远端查词请求的 `dictionaries`
+  /// 字段发出；host 只按它排除与排序，不需要知道配置是什么。[profileView] 非 null 时用
+  /// 作品 / 扩展所选的配置视图，否则用激活配置。null = 没有可说的（请求体与旧版相同）。
+  ///
+  /// 普通远端查词、游戏串流与视频遥控查词共用这一份：用户在词典管理里对这台 host 做的
+  /// 隐藏与排序在三条路径上一致生效（拍板台 pr3602：尊重接收端的选择）。
+  RemoteLookupDictionaryConfig? remoteLookupDictionaryConfigFor(
+    FushiClientUrl candidate, {
+    ProfileSettingsView? profileView,
+  }) {
+    final String hostId = remoteDictionaryHostIdOf(candidate);
+    return profileView != null
+        ? profileView.filtersForHost(hostId)
+        : dictRepo.filtersForHost(hostId);
+  }
+
   Future<DictionarySearchResult?> _searchRemoteDictionary({
     required String searchTerm,
     required bool searchWithWildcards,
@@ -10741,12 +11192,11 @@ class AppModel
             rubySpans: rubySpans,
             // 本端生效配置（作品 / 扩展所选配置视图，否则激活配置）对每台 host 的词典
             // 选择：host 只按它排除与排序，不需要知道配置是什么。
-            dictionaryConfigFor: (FushiClientUrl candidate) {
-              final String hostId = remoteDictionaryHostIdOf(candidate);
-              return profileView != null
-                  ? profileView.filtersForHost(hostId)
-                  : dictRepo.filtersForHost(hostId);
-            },
+            dictionaryConfigFor: (FushiClientUrl candidate) =>
+                remoteLookupDictionaryConfigFor(
+                  candidate,
+                  profileView: profileView,
+                ),
           );
       // 每台 host 的可达 / 不可达已由传输层经全局上报点逐候选记进 [_remoteDictionaryReachability]。
       return result;
@@ -10777,6 +11227,7 @@ class AppModel
   /// 早退门同样只看存储：旧版的 `&& hasCameraPermission()` 在安卓上恒为 false
   /// （CAMERA 未在 manifest 声明 → permission_handler 直接判 denied），使得存储已授权时
   /// 也永远走不进早退分支。
+  @override
   Future<void> requestExternalStoragePermissions() async {
     if (await platformServices.permission.hasExternalStoragePermission()) {
       return;
@@ -10792,6 +11243,11 @@ class AppModel
 
     await platformServices.permission.requestExternalStoragePermission();
   }
+
+  /// 当前是否已有全文件访问权限（[ExternalStorageAccess]，真实路径选择器用）。
+  @override
+  Future<bool> hasExternalStoragePermission() =>
+      platformServices.permission.hasExternalStoragePermission();
 
   // ── Anki integration (delegated to AnkiIntegration) ─────────────────
 
@@ -11526,6 +11982,7 @@ class AppModel
         // 灌全书 cue：后台听书无 reader 喂 cue，否则悬浮窗推空串（TODO-354 根因②）。
         cues: req.cues,
         remote: req.remote,
+        companion: req.companion,
       );
       if (controller == null) return BackgroundListenResult.loadFailed;
     } catch (e, stack) {
@@ -11906,6 +12363,7 @@ class AppModel
   bool get isDatabaseOpen => _isInitialised;
 
   /// Direct access to the Drift database instance.
+  @override
   FushiDatabase get database => _database;
 
   /// Close the database and notify listeners, without exiting the app.
@@ -12331,6 +12789,17 @@ class AppModel
       _prefsRepo?.srsFolderLocations ?? const <SrsFolderLocation>[];
   Future<void> setSrsFolderLocations(List<SrsFolderLocation> value) =>
       prefsRepo.setSrsFolderLocations(value);
+
+  /// 移除文件夹位置 [id]：配置里去掉、同一个事务里记进「内核待忘」清单（透传 prefsRepo，见
+  /// [PreferencesRepository.removeSrsFolderLocation]）。
+  Future<void> removeSrsFolderLocation(String id) =>
+      prefsRepo.removeSrsFolderLocation(id);
+
+  /// 移除了、复习内核还没忘掉的位置身份（同步调度器逐个 `location_forget`）。
+  Set<String> get srsPendingLocationForgets =>
+      _prefsRepo?.srsPendingLocationForgets ?? const <String>{};
+  Future<void> markSrsLocationForgotten(String locationId) =>
+      prefsRepo.markSrsLocationForgotten(locationId);
 
   /// 复习同步 v2 里这台设备关掉的通道位置（设备本地；透传 prefsRepo）。
   Set<String> get srsDisabledLocations =>
@@ -12903,7 +13372,7 @@ class AppModel
 
   /// 把当前 server 真值写进本机已解压的浏览器扩展副本（没装过不落盘）。
   Future<void> syncBrowserExtensionServerConfig() async {
-    if (!DesktopLookupService.isDesktop) return;
+    if (!browserExtensionInstallAvailableOn(defaultTargetPlatform)) return;
     if (!moduleVisibility.isEnabled(ModuleId.web)) return;
     await rewriteBrowserExtensionServerConfig(
       BrowserExtensionServerConfig(
@@ -12991,6 +13460,11 @@ class AppModel
   bool get lookupBlockCapture => prefsRepo.lookupBlockCapture;
   Future<void> setLookupBlockCapture(bool v) =>
       prefsRepo.setLookupBlockCapture(v);
+
+  /// 应用外快捷键总开关（见 [PreferencesRepository.appExternalHotkeysEnabled]）。
+  bool get appExternalHotkeysEnabled => prefsRepo.appExternalHotkeysEnabled;
+  Future<void> setAppExternalHotkeysEnabled(bool v) =>
+      prefsRepo.setAppExternalHotkeysEnabled(v);
 
   Map<String, String> get customDictCSS => prefsRepo.customDictCSS;
   String getCustomCSSForDict(String dictName) =>
@@ -13229,7 +13703,8 @@ class AppModel
     final Map<String, LocalAudioDbEntry> current = <String, LocalAudioDbEntry>{
       for (final LocalAudioDbEntry db in localAudioDbs) db.path: db,
     };
-    // 删除传播：本地音频源按 displayName 跨设备同步（__local_audio__ / _syncLocalAudioLive）。
+    // 删除传播：本地音频源的跨设备同步身份是内容身份 contentId（拍板 pr3481），但删除
+    // 墓碑的 itemKey 是冻结的 displayName（host 删除端点先认 contentId、再认显示名）。
     // 检测本次保存移除/新增的本地音频源，按 scope 写/清删除墓碑（itemKey=displayName）。
     final Set<String> nextLocalPaths = <String>{
       for (final AudioSourceConfig s in sources)
@@ -13897,9 +14372,9 @@ class AppModel
 
   /// BUG-726：把已解压的浏览器扩展副本刷新到当前 app 内置版本（详见
   /// [refreshBundledBrowserExtensionIfStale]），并缓存内置指纹供查词响应下发。
-  /// 仅桌面（扩展解压引导仅桌面有意义）；移动端 no-op。
+  /// 只在有扩展安装引导的平台跑（[browserExtensionInstallAvailableOn]）；iOS no-op。
   Future<void> refreshBrowserExtensionCopy() async {
-    if (!DesktopLookupService.isDesktop) return;
+    if (!browserExtensionInstallAvailableOn(defaultTargetPlatform)) return;
     _browserExtensionBuild = await bundledBrowserExtensionFingerprint();
     await refreshBundledBrowserExtensionIfStale(
       serverConfig: BrowserExtensionServerConfig(
@@ -14034,33 +14509,73 @@ class AppModel
   /// 同步拉到一个远端本地音频库：把 staging 的 .db 拷进本机库目录（重建本机 path，
   /// 绝不复用远端 manifest 的绝对 path——它在本机不存在），经 [setAudioSourceConfigs]
   /// 双写 `audio_source_configs` + `local_audio_dbs` + 推 native，再还原子来源偏好
-  /// 并刷 UI。按 displayName 去重：同名库已在本机可用则跳过。
+  /// 并刷 UI。
   ///
-  /// 同名条目在、但它指向的库文件**本机没有**（BUG-3702：从另一台设备导入的
-  /// 配置方案带来了那台设备的库引用，`.db` 本身没过来）时不跳过——把拉到的库
-  /// 落进本机库目录，并**原位**改指那一条（保留它在源列表里的顺序、开关与子来源
-  /// 偏好），而不是追加一条同名新源。否则这条悬空引用会永久挡住同步修复。
+  /// 按**内容身份**去重（拍板 pr3481，`local_audio_content_id.dart`）：本机已有
+  /// 同一份库（名字不同也算——`android.db` / 按子来源起的名 / 推荐包的 Japanese
+  /// audio）且文件可用就跳过；名字撞了但内容不同的库换个不撞的名字登记，不再被
+  /// 同名的另一份库挡住。只有一边读不出身份（悬空引用没存身份）才退回按名认。
+  ///
+  /// 匹配到的条目指向的库文件**本机没有**（BUG-3702：从另一台设备导入的配置
+  /// 方案带来了那台设备的库引用，`.db` 本身没过来）时不跳过——把拉到的库落进
+  /// 本机库目录，并**原位**改指那一条（保留它在源列表里的顺序、开关与子来源
+  /// 偏好），而不是追加一条新源。否则这条悬空引用会永久挡住同步修复。
   ///
   /// 由 [SyncOrchestrator.onLocalAudioImported] 调用，故注册逻辑集中在此（拥有
   /// LocalAudioManager 的 AppModel），保持双真相源一致。
   Future<void> importSyncedLocalAudioDb(LocalAudioPackageContents c) async {
     final List<AudioSourceConfig> configs = audioSourceConfigs;
-    final int existingIndex = configs.indexWhere(
-      (AudioSourceConfig s) =>
-          s.kind == AudioSourceKind.localAudio &&
-          s.displayLabel == c.displayName,
-    );
+    final String? incomingId = isLocalAudioContentId(c.contentId)
+        ? c.contentId
+        : await computeLocalAudioContentIdInBackground(c.dbFile.path);
+    final Map<String, LocalAudioDbEntry> entryByPath =
+        <String, LocalAudioDbEntry>{
+          for (final LocalAudioDbEntry e in _localAudioManager.entries)
+            e.path: e,
+        };
+    int existingIndex = -1;
+    for (int i = 0; i < configs.length; i++) {
+      final AudioSourceConfig s = configs[i];
+      if (s.kind != AudioSourceKind.localAudio) continue;
+      final String stored = s.path ?? '';
+      final bool available = await isLocalAudioDbAvailable(stored);
+      final String? storedId = entryByPath[stored]?.contentId;
+      final String? id = available
+          ? await resolveLocalAudioContentId(
+              LocalAudioDbEntry(
+                path: LocalAudioManager.resolveInternalPath(
+                  stored,
+                  databaseDirectory.path,
+                ),
+                displayName: s.displayLabel,
+                contentId: storedId,
+              ),
+            )
+          : storedId;
+      if (!isSameLocalAudioLibrary(
+        nameA: s.displayLabel,
+        contentIdA: id,
+        nameB: c.displayName,
+        contentIdB: incomingId,
+      )) {
+        continue;
+      }
+      if (available) return; // 本机已有这份库。
+      if (existingIndex < 0) existingIndex = i;
+    }
+    if (!await c.dbFile.exists()) return;
     final AudioSourceConfig? existing = existingIndex < 0
         ? null
         : configs[existingIndex];
-    if (existing != null &&
-        await isLocalAudioDbAvailable(existing.path ?? '')) {
-      return;
-    }
-    if (!await c.dbFile.exists()) return;
+    final String label =
+        existing?.displayLabel ??
+        uniqueLocalAudioDisplayName(c.displayName, <String>[
+          for (final AudioSourceConfig s in configs)
+            if (s.kind == AudioSourceKind.localAudio) s.displayLabel,
+        ]);
     final LocalAudioDbEntry entry = await importLocalAudioDbFile(
       c.dbFile.path,
-      displayName: c.displayName,
+      displayName: label,
     );
     if (existing != null) {
       final List<LocalAudioSourcePref> keptSources = sourcePrefsForLocalDb(
@@ -14084,7 +14599,7 @@ class AppModel
       return;
     }
     final AudioSourceConfig cfg = AudioSourceConfig.localAudio(
-      label: c.displayName,
+      label: label,
       path: entry.path,
       enabled: c.enabled,
     );
@@ -14097,6 +14612,63 @@ class AppModel
           : <String, List<LocalAudioSourcePref>>{entry.path: c.sources},
     );
     notifyListeners();
+  }
+
+  /// [normalizeLocalAudioLibraries] 的启动包装：失败只记日志（发音库整理不能
+  /// 影响启动）。
+  Future<void> _normalizeLocalAudioLibrariesQuietly() async {
+    try {
+      await normalizeLocalAudioLibraries();
+    } catch (error, stack) {
+      ErrorLogService.instance.log(
+        'AppModel.normalizeLocalAudioLibraries',
+        error,
+        stack,
+      );
+    }
+  }
+
+  /// 本地音频库整理（拍板 pr3481）：先给旧版本登记的库补写内容身份，再把内容
+  /// 相同的重复登记收成一条——保留源列表里靠前（优先级高）的那条，被收掉的那条
+  /// 若是启用的，保留下来的那条也设为启用；被收掉的内部副本由
+  /// [setAudioSourceConfigs] 的孤儿回收删掉，引用模式的用户原文件只摘登记、不删。
+  ///
+  /// 重复的来源：身份改成按内容之前，同步按显示名去重，新旧设备 / 新旧推荐包
+  /// 混用时同一份 GB 级库会以两个名字各落一份。返回收掉的条数。
+  Future<int> normalizeLocalAudioLibraries() async {
+    await _localAudioManager.backfillContentIds();
+    final Map<String, String> idByPath = <String, String>{
+      for (final LocalAudioDbEntry e in _localAudioManager.entries)
+        if (isLocalAudioContentId(e.contentId)) e.path: e.contentId!,
+    };
+    final List<AudioSourceConfig> configs = audioSourceConfigs;
+    final List<AudioSourceConfig> next = <AudioSourceConfig>[];
+    final Map<String, int> keptIndexById = <String, int>{};
+    int removed = 0;
+    for (final AudioSourceConfig s in configs) {
+      final String? id = s.kind == AudioSourceKind.localAudio
+          ? idByPath[s.path ?? '']
+          : null;
+      // 只收两边文件都在本机的重复：悬空引用的身份来自别的设备，留给同步修。
+      if (id == null || !await isLocalAudioDbAvailable(s.path ?? '')) {
+        next.add(s);
+        continue;
+      }
+      final int? kept = keptIndexById[id];
+      if (kept == null) {
+        keptIndexById[id] = next.length;
+        next.add(s);
+        continue;
+      }
+      if (s.enabled && !next[kept].enabled) {
+        next[kept] = next[kept].copyWith(enabled: true);
+      }
+      removed++;
+    }
+    if (removed == 0) return 0;
+    await setAudioSourceConfigs(next);
+    notifyListeners();
+    return removed;
   }
 
   // ── UI visibility (delegated) ────────────────────────────────────────
@@ -14349,6 +14921,12 @@ class AppModel
       prefsRepo.setUpdateBetaChannel(value);
 
   bool get updateDebugChannel => prefsRepo.updateDebugChannel;
+
+  /// 「本版新内容」（首页卡片 / 顶栏入口 / 新内容页）的状态。要知道本机跑的版本
+  /// 才能判，所以在主进程 [initialise] 读完 [packageInfo] 后才建；之前（以及没走
+  /// 初始化的测试夹具）是 null——不知道版本就不提示。
+  WhatsNewController? get whatsNew => _whatsNew;
+  WhatsNewController? _whatsNew;
   Future<void> setUpdateDebugChannel(bool value) =>
       prefsRepo.setUpdateDebugChannel(value);
 
@@ -14688,6 +15266,7 @@ RemoteMineResult remoteMineError(
   Object? error,
   StackTrace? stackTrace,
   RemoteMineErrorKind errorKind = RemoteMineErrorKind.transient,
+  bool mediaUnavailable = false,
 }) {
   ErrorLogService.instance.log(source, error ?? detail ?? reason, stackTrace);
   return RemoteMineResult(
@@ -14695,6 +15274,7 @@ RemoteMineResult remoteMineError(
     message: reason,
     detail: detail,
     errorKind: errorKind,
+    mediaUnavailable: mediaUnavailable,
   );
 }
 
@@ -15088,6 +15668,7 @@ class _AppModelRemoteLookupService
           error: e,
           stackTrace: st,
           errorKind: youtubeMineResolveErrorKind(e),
+          mediaUnavailable: true,
         );
       }
       final ImmersionMiningResult ytRes = await ImmersionMiningEngine().mine(
@@ -15133,6 +15714,7 @@ class _AppModelRemoteLookupService
           'Anki.mineImmersion.youtube',
           youtubeMineAbortMessage(ytRes.abortReason),
           detail: ytRes.abortReason,
+          mediaUnavailable: true,
         );
       }
       return remoteMineResultFromOutcome(ytRes.outcome! as MineOutcome);
@@ -15216,6 +15798,7 @@ class _AppModelRemoteLookupService
           detail: 'resolve failed: $e',
           error: e,
           stackTrace: st,
+          mediaUnavailable: true,
         );
       }
       final ImmersionMiningResult biRes = await ImmersionMiningEngine().mine(
@@ -15268,6 +15851,7 @@ class _AppModelRemoteLookupService
           'Anki.mineImmersion.bilibili',
           'bilibili 制卡失败：${biRes.abortReason ?? '媒体抽取失败'}',
           detail: biRes.abortReason,
+          mediaUnavailable: true,
         );
       }
       return remoteMineResultFromOutcome(biRes.outcome! as MineOutcome);
@@ -15848,6 +16432,6 @@ typedef _PopupAppearanceInputs = ({
   double wheelSpeed,
   bool instantScroll,
   double instantScrollWheelStep,
-  bool dedupPitch,
+  PopupDisplayPrefs displayPrefs,
   bool einkMode,
 });

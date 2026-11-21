@@ -22,9 +22,16 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi_engine/srs/srs_backup_bundle.dart';
 import 'package:fushi_engine/srs/srs_backup_merge.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
-import 'package:fushi_srs/fushi_srs.dart' show SrsCore;
+import 'package:fushi_srs/fushi_srs.dart'
+    show
+        SrsCore,
+        SrsGen4Migration,
+        SrsGen4MigrationStatus,
+        SrsGenState,
+        SrsStoreOpenBlocked;
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
@@ -34,6 +41,7 @@ import 'package:fushi/src/storage/download_layout.dart';
 part 'backup_service/fs_retry.part.dart';
 part 'backup_service/path_rebase.part.dart';
 part 'backup_service/restore.part.dart';
+part 'backup_service/srs_restore.part.dart';
 part 'backup_service/table_rules.part.dart';
 
 /// Optional file-tree categories a backup export can include. The database
@@ -122,15 +130,14 @@ enum BackupCategory {
   /// instead of being wiped to empty. Included by default.
   profiles,
 
-  /// 复习（SRS）：Rust 的 `srs.db` 快照（zip 条目 `srs.db`，四张同步数据表随包、六张设备
-  /// 本地表在快照里清空）+ 媒体目录 `<support>/srs_media/`（按 profile 子目录原样打包，
-  /// 归档前缀 `srs_media/`，文件名 = 内容 sha1）。老形态备份（2026-10-23 之前）的 SRS 表在
-  /// `fushi.db` 条目里，恢复 / 合并照样认（见 backup_srs_tables.dart）。
+  /// 复习（SRS）：内核按集合导出的操作流（`srs/manifest.json` + `srs/<n>.bin`，G11-4，
+  /// srs_backup_bundle.dart）+ 媒体目录 `<support>/srs_media/`（按 profile 子目录原样打包，
+  /// 归档前缀 `srs_media/`，文件名 = 内容 sha1）。旧形态照样认：协议 3 的 `srs.db` 条目
+  /// （2026-10-23 起）、SRS 表在 `fushi.db` 条目里的老备份（见 backup_srs_tables.dart）。
   ///
-  /// **依赖 `profiles` 的 uid**：SRS 行按 `profiles.uid` 归属。覆盖恢复时，配置档案
-  /// 若来自备份（勾了导入设置与配置档案），本机 srs.db 就整份换成备份的；否则本机配置档案被保留、
-  /// 备份的 uid 对不上任何本机档案，SRS 数据改走 SRS 专用合并（同 uid 并入 / 同名且
-  /// 无笔记未发布则采用 uid / 否则新建「（备份）」档案），不留孤儿。导出时不勾
+  /// **依赖 `profiles` 的 uid**：复习数据按 profile 归属。覆盖恢复 = 新建一份空的新代库、把备份的
+  /// 复习数据落进去、再换下本机的（本机的旧库改名留作回退，不删）；落库时按 uid / 名字对上本机
+  /// 档案（同 uid / 同名且无数据未发布则认领备份的集合 / 否则新建「（备份）」档案），不留孤儿。导出时不勾
   /// `profiles` 但勾了本类别，仍保留拥有 SRS 数据的那几行 `profiles`（只有名字与 uid，
   /// 档案设置照样剥离），否则恢复端无从得知这些数据该归到哪个档案。
   ///
@@ -380,6 +387,7 @@ class BackupContentSummary {
   const BackupContentSummary({
     this.counts = const <BackupCategory, int>{},
     this.present = const <BackupCategory>{},
+    this.needsUpgrade = const <BackupCategory>{},
   });
 
   /// Item count per category that carries countable content in this backup.
@@ -387,6 +395,11 @@ class BackupContentSummary {
 
   /// Every category this backup / device carries content for.
   final Set<BackupCategory> present;
+
+  /// 本机有这类数据、但要先升级才能导出的类别（导出侧）：目前只有复习——本机只有协议 3 的复习库、还没迁移成新代
+  /// （[SrsStoreOpenBlocked]）时打不开、数不了，也打不进备份。导出界面把这一行显示成「需先升级」、不可勾选，其余
+  /// 类别照常导出；它也在 [present] 里（数据在，不能让这一行凭空消失），[counts] 里没有它。
+  final Set<BackupCategory> needsUpgrade;
 
   int countFor(BackupCategory c) => counts[c] ?? 0;
   bool has(BackupCategory c) => present.contains(c);
@@ -432,8 +445,8 @@ const String _gameCoversPrefix = 'game_covers';
 /// 与磁盘目录同名（[SrsMediaStore.mediaRootFor]），各 profile 子目录原样往返。
 const String _srsMediaPrefix = 'srs_media';
 
-/// 备份 zip 里的 SRS 事件库快照条目名（与磁盘上的 `srs.db` 同名）。新形态备份（2026-10-23 起）
-/// 勾「复习」时带它；老形态备份的 SRS 表在 `fushi.db` 条目里（见 backup_srs_tables.dart）。
+/// 协议 3 时代备份（2026-10-23 起、这一版之前）的 SRS 库快照条目名（与磁盘上的 `srs.db` 同名）：只读，这一版
+/// 不再写它（新形态见 [kSrsBackupManifestEntry]）。更老的备份 SRS 表在 `fushi.db` 条目里（见 backup_srs_tables.dart）。
 const String _srsDbName = kSrsDatabaseFileName;
 
 /// 媒体存储写入中途的临时文件（`<name>.<rand>.tmp`，见 [SrsMediaStore.store]）：
@@ -548,6 +561,11 @@ const List<String> _deviceLocalTables = <String>[
   // v131：OP / ED 声纹比对的按集缓存。纯缓存、可重算；本机文件的实测结果（另一台设备
   // 可能是另一份片源，OP 位置不同），设备本地。无外键，删除 / 回灌顺序无约束。
   'video_theme_song_spans',
+  // v163：作品图谱 AI 裁决缓存。纯缓存（AI 配置本身就是设备本地的），无外键。
+  'media_link_ai_verdicts',
+  // v165：视频内容指纹（搬家识别）。纯缓存、可由本机文件重算；另一台设备同一个
+  // book_uid 可能是另一份片源，设备本地。无外键，删除 / 回灌顺序无约束。
+  'video_content_fingerprints',
   // v135：游戏 VNDB 配音表缓存。纯缓存、可由 VNDB 重新取得，设备本地。无外键。
   'game_voice_casts',
   // v133：音乐刮削三表。键是 track_uid（含本机路径）、内容可由重刮重建，与曲库目录
@@ -598,6 +616,8 @@ const List<String> _deviceLocalTablesParentFirst = <String>[
   'music_tracks',
   'music_track_credits',
   'video_theme_song_spans',
+  'media_link_ai_verdicts',
+  'video_content_fingerprints',
   'game_voice_casts',
   'music_scrape_meta',
   'music_metadata_raw_snapshots',
@@ -1104,8 +1124,17 @@ class BackupService {
     final int progress = await _countProgressRows();
     final int statistics = await _countStatisticsRows();
     // 复习：用户笔记数 + 媒体文件数（预览计数 = 实际打包内容）。两者都为 0 时
-    // 不进 present，导出界面不显示这一项（SRS 是默认关闭的模块）。
-    final int srs = await _countSrsNotes() + (await _srsMediaFiles()).length;
+    // 不进 present，导出界面不显示这一项（SRS 是默认关闭的模块）。本机的复习库还没升级成新代（打开抛
+    // [SrsStoreOpenBlocked]）时数不了、也导不出：这一类记成「需先升级」，不让整个预览抛错——其余类别照常备份。
+    int? srsNotes;
+    try {
+      srsNotes = await _countSrsNotes();
+    } on SrsStoreOpenBlocked {
+      srsNotes = null;
+    }
+    final int? srs = srsNotes == null
+        ? null
+        : srsNotes + (await _srsMediaFiles()).length;
     final int music = await _countMusicRows();
     final Map<BackupCategory, int> counts = <BackupCategory, int>{
       BackupCategory.dictionary: dictionaries,
@@ -1117,15 +1146,18 @@ class BackupService {
       BackupCategory.games: games,
       BackupCategory.progress: progress,
       BackupCategory.statistics: statistics,
-      BackupCategory.srs: srs,
+      BackupCategory.srs: ?srs,
       BackupCategory.music: music,
     };
     return BackupContentSummary(
       counts: counts,
-      present: counts.entries
-          .where((MapEntry<BackupCategory, int> e) => e.value > 0)
-          .map((MapEntry<BackupCategory, int> e) => e.key)
-          .toSet(),
+      present: <BackupCategory>{
+        ...counts.entries
+            .where((MapEntry<BackupCategory, int> e) => e.value > 0)
+            .map((MapEntry<BackupCategory, int> e) => e.key),
+        if (srs == null) BackupCategory.srs,
+      },
+      needsUpgrade: <BackupCategory>{if (srs == null) BackupCategory.srs},
     );
   }
 
@@ -1216,18 +1248,21 @@ class BackupService {
     return total;
   }
 
-  /// 用 Rust 把本机 srs.db `VACUUM INTO` 到 [path]（必须不存在），并清空快照里的 6 张设备本地表。
-  /// 在后台 isolate 跑（库大时要几百毫秒）；句柄线程安全。
-  static Future<void> _snapshotSrs(SrsStorage srs, String path) {
-    final int address = srs.core.address;
-    final String? libraryPath = srs.core.libraryPath;
-    return Isolate.run<void>(
-      () => SrsCore.fromAddress(
-        address,
-        libraryPath: libraryPath,
-      ).snapshotInto(path, stripDeviceLocal: true),
-    );
-  }
+  /// 主库里有 uid 的 profile（复习导出按它们找集合；按自增 id 排，确定性）。
+  Future<List<SrsBackupProfile>> _srsBackupProfiles() async =>
+      <SrsBackupProfile>[
+        for (final QueryRow r
+            in await _db
+                .customSelect(
+                  'SELECT name, uid FROM profiles '
+                  "WHERE uid IS NOT NULL AND uid != '' ORDER BY id",
+                )
+                .get())
+          SrsBackupProfile(
+            uid: r.read<String>('uid'),
+            name: r.read<String>('name'),
+          ),
+      ];
 
   /// 复习媒体根（`<support>/srs_media`）。支持目录即 [_dbDirectory]（活库所在目录，
   /// 与 `AppPaths.supportRootDirectory` 同一个根），规则与
@@ -1333,17 +1368,39 @@ class BackupService {
         await File(_dbPath).copy(cleanDbPath);
       }
 
-      // 复习：SRS 事件在 Rust 的 srs.db 里，另由 Rust 出一份快照（设备本地表已清空）作为
-      // zip 里的 `srs.db` 条目；主库副本里不带 SRS（老形态的残表在下面剥掉）。本机还没有
-      // srs.db（SRS 仍在主库老表里）时没有快照，老表照旧随主库副本走。
+      // 复习（G11-4，新代）：内核按集合导出操作流（`srs/<n>.bin`，FSRS4EXP）+ 清单
+      // `srs/manifest.json`（srs_backup_bundle.dart）；不再写 `srs.db` 快照条目，也不带签名私钥。主库副本里不带
+      // SRS（老形态的残表在下面剥掉）。本机复习库没开（SRS 仍在主库老表里）时没有流，老表照旧随主库副本走。
       final bool includeSrs = wants(BackupCategory.srs);
       final SrsStorage? srs = includeSrs ? await _srsStorage?.call() : null;
-      String? srsSnapshotPath;
+      final Map<String, String> srsEntries = <String, String>{};
       Set<String>? srsProfileUidSet;
       if (srs != null) {
-        srsSnapshotPath = p.join(tmpDir.path, _srsDbName);
-        await _snapshotSrs(srs, srsSnapshotPath);
-        srsProfileUidSet = await srsProfileUidsIn(srs.core);
+        final Directory srsDir = Directory(p.join(tmpDir.path, 'srs'));
+        await srsDir.create();
+        final SrsBackupBundleManifest? manifest = await srsExportBackupStreams(
+          core: srs.core,
+          profiles: await _srsBackupProfiles(),
+          outDir: srsDir.path,
+          nowMs: DateTime.now().millisecondsSinceEpoch,
+        );
+        srsProfileUidSet = <String>{};
+        if (manifest != null) {
+          final String manifestPath = p.join(srsDir.path, 'manifest.json');
+          await File(
+            manifestPath,
+          ).writeAsString(jsonEncode(manifest.toJson()), flush: true);
+          srsEntries[kSrsBackupManifestEntry] = manifestPath;
+          for (final SrsBackupUnit u in manifest.units) {
+            srsEntries[srsBackupStreamEntry(u.n)] = p.join(
+              srsDir.path,
+              '${u.n}.bin',
+            );
+            srsProfileUidSet.addAll(<String>[
+              for (final SrsBackupProfile pr in u.profiles) pr.uid,
+            ]);
+          }
+        }
       }
 
       // Strip sync credentials from the copy before it leaves the device.
@@ -1446,9 +1503,9 @@ class BackupService {
       final bool includeStatistics = wants(BackupCategory.statistics);
       final bool includeSettings = wants(BackupCategory.settings);
       final bool includeProfiles = wants(BackupCategory.profiles);
-      // 复习：srs.db 快照 + srs_media/ 文件树，一起随勾选走。主库副本里老形态的 SRS 表只在
-      // 「勾了复习、本机还没有 srs.db」时保留（那时它们就是 SRS 数据本身）。
-      final bool stripLegacySrs = !includeSrs || srsSnapshotPath != null;
+      // 复习：操作流 + srs_media/ 文件树，一起随勾选走。主库副本里老形态的 SRS 表只在
+      // 「勾了复习、本机复习库没开」时保留（那时它们就是 SRS 数据本身）。
+      final bool stripLegacySrs = !includeSrs || srs != null;
       if (!includeProgress ||
           !includeStatistics ||
           !includeSettings ||
@@ -1493,12 +1550,12 @@ class BackupService {
       });
 
       // BUG-816: content-registry preference rows follow their OWNING content
-      // category, not `settings` — strip favorites when `books` is unticked,
-      // the font registry when `fonts` is, and the local-audio registry (incl.
-      // the localAudio entries of `audio_source_configs`) when `localAudio` is.
+      // category, not `settings` — the font registry when `fonts` is unticked,
+      // and the local-audio registry (incl. the localAudio entries of
+      // `audio_source_configs`) when `localAudio` is. Favorites (v166 a table
+      // following `books`) went with the table-rule strip above.
       await _stripExcludedContentRegistry(
         tmpDir.path,
-        stripFavorites: !includeBooks,
         stripFonts: !wants(BackupCategory.fonts),
         stripLocalAudio: !wants(BackupCategory.localAudio),
       );
@@ -1519,7 +1576,7 @@ class BackupService {
       // the UI isolate — that froze the app (ANR) on any non-trivial library.
       final Map<String, String> files = <String, String>{
         _dbName: cleanDbPath,
-        if (srsSnapshotPath != null) _srsDbName: srsSnapshotPath,
+        ...srsEntries,
       };
       Map<String, String> videoFiles = const <String, String>{};
       if (includeVideos) {
@@ -2041,6 +2098,23 @@ class BackupService {
         "OR (media_kind = 'game' AND entry_key NOT IN "
         '(SELECT id FROM galgames))',
       );
+      // v161 条目刮削资料 / 附加图：键与合集成员同一套（epub=uid / srt=uid /
+      // game=galgames.id），宿主不在本份导出里的行一并收敛。
+      for (final String table in const <String>[
+        'item_scrape_meta',
+        'item_images',
+      ]) {
+        await db.customStatement(
+          'DELETE FROM $table WHERE '
+          "(media_type = 'epub' AND entry_key NOT IN "
+          '(SELECT uid FROM epub_books)) '
+          "OR (media_type = 'srt' AND entry_key NOT IN "
+          '(SELECT uid FROM srt_books)) '
+          "OR (media_type = 'game' AND entry_key NOT IN "
+          '(SELECT id FROM galgames))',
+        );
+      }
+
       // v156 NSFW 标记：同一套宿主逻辑外键，同口径收敛。
       await db.customStatement(
         'DELETE FROM media_nsfw_flags WHERE '
@@ -2079,7 +2153,8 @@ class BackupService {
   /// BUG-816: strips the content-registry preference rows whose OWNING content
   /// category the user unticked, from the standalone export DB copy. Each key is
   /// governed by the feature it belongs to, NOT `settings`:
-  ///  - favorites (`favorite_sentences`)          -> `books`
+  ///  - favorites: v166 起是 `favorite_sentences` 表，归 `books`，由
+  ///    [backupTableRules] 的统一兜底整表清空（不再在这里）
   ///  - font catalog + legacy font prefs          -> `fonts`
   ///  - local-audio registry (`local_audio_dbs`)  -> `localAudio`
   ///  - `audio_source_configs` localAudio entries -> `localAudio` (option B:
@@ -2088,18 +2163,12 @@ class BackupService {
   /// Mirrored on an overwrite import by [_reapplyExcludedContentRegistry].
   static Future<void> _stripExcludedContentRegistry(
     String dbDirectory, {
-    required bool stripFavorites,
     required bool stripFonts,
     required bool stripLocalAudio,
   }) async {
-    if (!stripFavorites && !stripFonts && !stripLocalAudio) return;
+    if (!stripFonts && !stripLocalAudio) return;
     final FushiDatabase db = FushiDatabase(dbDirectory);
     try {
-      if (stripFavorites) {
-        await db.customStatement(
-          "DELETE FROM preferences WHERE key = '$_favoriteSentencesPrefKey'",
-        );
-      }
       if (stripFonts) {
         for (final String k in <String>[
           _fontCatalogPrefKey,

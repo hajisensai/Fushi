@@ -167,7 +167,7 @@ final ValueNotifier<Set<Route<Object?>>> _transparentPageRoutes =
 /// 让 [route] 的 [FushiPageBackdrop] 整个让开（[transparent] = true）或恢复。
 ///
 /// 给底层合成用（`underlay_composition.dart`：窗口宿主档的 WebView2 子窗口垫在 Flutter
-/// 下面、从透明像素处透出来）：这一页的底色和角落形状一旦画出来，就把网页整个盖住——
+/// 下面、从透明像素处透出来）：这一页的底色和背景装饰一旦画出来，就把网页整个盖住——
 /// 2026-10-26 用户截图「加载不出来」，Netflix 登录页只剩一片底色和三块形状。只让开持有
 /// 底层合成的那一页，盖在它上面的其它页照旧不透明。
 ///
@@ -233,7 +233,7 @@ Color fushiOpaquePageColor(BuildContext context) {
 
 /// 去掉 [theme] 页面转场里垫的 [FushiPageBackdrop]：每个平台的
 /// [FushiBackdropPageTransitionsBuilder] 还原成它包着的内层 builder，转场动效 / 返回
-/// 手势不变，只是路由不再垫页面底色和角落形状。
+/// 手势不变，只是路由不再垫页面底色和背景装饰。
 ///
 /// 给盖在别的 app 上的透明浮窗用（app 外查词 `popup_main`、悬浮词典
 /// `floating_dict_main`）：这类窗口没有「页」，卡片以外必须透出背后的 app。

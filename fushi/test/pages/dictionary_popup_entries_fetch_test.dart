@@ -72,6 +72,9 @@ void main() {
     const String url2 = 'https://fushi.local/popup-entries/1/2.json';
     const String url3 = 'https://fushi.local/popup-entries/1/3.json';
     const String url4 = 'https://fushi.local/popup-entries/1/4.json';
+    const String url5 = 'https://fushi.local/popup-entries/1/5.json';
+    const String url6 = 'fushi-popup://fushi.local/popup-entries/1/6.json';
+    const String url7 = 'fushi-popup://fushi.local/popup-entries/1/7.json';
     const String record =
         'window.__rendered.push('
         'window.lookupEntries.length ? window.lookupEntries[0].w : null);';
@@ -110,6 +113,32 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
   await tick(); await tick();
   assert.deepStrictEqual(calls, [['popupEntriesFetchFailed', 4, 'blocked']]);
   assert.deepStrictEqual(window.__rendered, ['new'], 'failure must not render');
+
+  // BUG-4956：http(s) 上 status 0 仍是失败。
+  calls.length = 0;
+  window.__fushiRenderToken = 5;
+  eval(${jsonEncode(script(token: 5, url: url5, afterEntriesJs: record))});
+  pending[${jsonEncode(url5)}].res({ ok: false, status: 0, text: () => Promise.resolve('[{"w":"x"}]') });
+  await tick(); await tick();
+  assert.deepStrictEqual(calls, [['popupEntriesFetchFailed', 5, 'HTTP 0']]);
+
+  // BUG-4956：iOS / macOS 自定义 scheme（WKURLSchemeHandler 非 HTTP 响应）status
+  // 恒为 0、ok 恒为 false，有正文就是成功，必须渲染、不得回退字面量。
+  calls.length = 0;
+  window.__fushiRenderToken = 6;
+  eval(${jsonEncode(script(token: 6, url: url6, afterEntriesJs: record))});
+  pending[${jsonEncode(url6)}].res({ ok: false, status: 0, text: () => Promise.resolve('[{"w":"scheme"}]') });
+  await tick(); await tick(); await tick();
+  assert.deepStrictEqual(calls, [], 'custom-scheme status 0 must not fall back');
+  assert.deepStrictEqual(window.__rendered, ['new', 'scheme']);
+
+  // 自定义 scheme 空正文（宿主不认这个令牌）仍是失败。
+  window.__fushiRenderToken = 7;
+  eval(${jsonEncode(script(token: 7, url: url7, afterEntriesJs: record))});
+  pending[${jsonEncode(url7)}].res({ ok: false, status: 0, text: () => Promise.resolve('') });
+  await tick(); await tick(); await tick();
+  assert.deepStrictEqual(calls, [['popupEntriesFetchFailed', 7, 'empty response']]);
+  assert.deepStrictEqual(window.__rendered, ['new', 'scheme']);
   console.log('all assertions passed');
 })().catch((e) => { console.error(e); process.exit(1); });
 ''';

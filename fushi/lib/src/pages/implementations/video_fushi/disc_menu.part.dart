@@ -3,11 +3,14 @@ part of '../video_fushi_page.dart';
 /// The disc supplies the picture and buttons. Flutter only forwards input and
 /// binds a selected physical playlist to the existing learning pipeline.
 extension _VideoDiscMenu on _VideoFushiPageState {
-  Future<bool> _ensureDiscMenuRuntime(String playlistPath) async {
+  Future<_DiscMenuRuntimeCheck?> _ensureDiscMenuRuntime(
+    String playlistPath,
+  ) async {
     // DVD menus run in libdvdnav: no BD-J runtime to provision.
-    if (isDvdTitlePath(playlistPath)) return true;
+    if (isDvdTitlePath(playlistPath)) return const _DiscMenuRuntimeCheck();
     final String? root = discRootForMemberPath(playlistPath);
-    if (root == null) return true; // Controller reports malformed input.
+    // Controller reports malformed input.
+    if (root == null) return const _DiscMenuRuntimeCheck();
     final BlurayMenuInfo? info;
     try {
       info = await readBlurayMenuInfo(root);
@@ -19,40 +22,44 @@ extension _VideoDiscMenu on _VideoFushiPageState {
           _failReason = t.video_disc_runtime_required;
         });
       }
-      return false;
+      return null;
     }
     return _ensureDiscMenuRuntimeFor(info);
   }
 
   /// BD-J 运行时检查本体：本地盘读本机 `index.bdmv`，远端盘读共享里的同一文件，
-  /// 之后完全相同。
-  Future<bool> _ensureDiscMenuRuntimeFor(BlurayMenuInfo? info) async {
+  /// 之后完全相同。null = 不开盘（失败态已写好）；否则带上这次已验证的 Java 目录，
+  /// 交给 `controller.load` 免得它再探测一遍。
+  Future<_DiscMenuRuntimeCheck?> _ensureDiscMenuRuntimeFor(
+    BlurayMenuInfo? info,
+  ) async {
     try {
-      if (!mounted) return false;
-      if (info?.requiresJava != true) return true;
+      if (!mounted) return null;
+      if (info?.requiresJava != true) return const _DiscMenuRuntimeCheck();
       final BlurayJavaRuntimeManager manager = BlurayJavaRuntimeManager();
-      if (await manager.probeJavaHome() != null) return mounted;
-      if (!mounted) return false;
+      final String? probed = await manager.probeJavaHome();
+      if (!mounted) return null;
+      if (probed != null) return _DiscMenuRuntimeCheck(javaHome: probed);
       if (!manager.canInstall) {
-        if (!Platform.isWindows) return true;
+        if (!Platform.isWindows) return const _DiscMenuRuntimeCheck();
         throw const VideoDiscMenuException('java-runtime-unavailable');
       }
-      final bool installed =
-          await _focusOwnership.guardOverlay(
-            () => showAppDialog<bool>(
-              context: context,
-              barrierDismissible: false,
-              builder: (_) => _BlurayJavaRuntimeInstallDialog(manager: manager),
-            ),
-          ) ??
-          false;
-      if (!installed && mounted) {
+      final String? installed = await _focusOwnership.guardOverlay(
+        () => showAppDialog<String>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => _BlurayJavaRuntimeInstallDialog(manager: manager),
+        ),
+      );
+      if (!mounted) return null;
+      if (installed == null) {
         _rebuild(() {
           _failed = true;
           _failReason = t.video_disc_runtime_required;
         });
+        return null;
       }
-      return installed && mounted;
+      return _DiscMenuRuntimeCheck(javaHome: installed);
     } catch (error, stack) {
       ErrorLogService.instance.log('VideoDiscMenu.runtime', error, stack);
       if (mounted) {
@@ -61,7 +68,7 @@ extension _VideoDiscMenu on _VideoFushiPageState {
           _failReason = t.video_disc_runtime_required;
         });
       }
-      return false;
+      return null;
     }
   }
 
@@ -69,7 +76,6 @@ extension _VideoDiscMenu on _VideoFushiPageState {
     if (!controller.isBlurayNavigationSession) return true;
     if (controller.discMiningAvailable && !_discLearningBlocked) return true;
     final String message = switch (controller.discMiningUnavailableReason) {
-      'multi-angle-source' => t.video_disc_angle_extraction_unavailable,
       'audio-track-unavailable' => t.video_disc_audio_selection_pending,
       'extraction-source-unavailable' => t.video_clip_export_input_missing,
       'encrypted-extraction-source' => t.video_disc_extraction_unavailable,
@@ -79,6 +85,16 @@ extension _VideoDiscMenu on _VideoFushiPageState {
     };
     _showOsd(message, severity: ToastSeverity.warning);
     return false;
+  }
+
+  /// 生成字幕 / 本机转录要读当前 title 的音轨：远端原盘会话里由放盘的 host 读（当前
+  /// title 能在 host 上定位就放行，见 `_remoteDiscHostTitle`）；其余与制卡抽取同一道闸门
+  /// （[_discExtractionAllowed]，抽不了时说明原因）。
+  bool _discSubtitleAudioAllowed(VideoPlayerController controller) {
+    if (controller.isRemoteDiscSession && _remoteDiscHostTitle() != null) {
+      return true;
+    }
+    return _discExtractionAllowed(controller);
   }
 
   // Pending menus still own input so arrows cannot leak into seek/volume.
@@ -418,6 +434,15 @@ extension _VideoDiscMenu on _VideoFushiPageState {
       // Remote disc: the title is the host's; there is no row to bind here.
       if (controller.isRemoteDiscSession) {
         if (!current()) return;
+        // 换了 title：上一条 title 登记 / 选中的外挂字幕（生成、转录取回的）不属于这一条，
+        // 与本机原盘换 title 同样清掉。
+        _rebuild(() {
+          _currentSubtitleSource = null;
+          _importedSubtitleSources = const <SubtitleSource>[];
+          _subtitleMenuSources = const <SubtitleSource>[];
+          _subtitleMenuSourcesPath = null;
+          _subtitleMenuLoading = false;
+        });
         controller.bindRemoteDiscTitle(expectedGeneration: nativeGeneration);
         return;
       }
@@ -947,6 +972,14 @@ extension _VideoDiscMenu on _VideoFushiPageState {
   }
 }
 
+/// 开盘前 BD-J 运行时检查通过后的结论。[javaHome] 是这次刚探测到 / 装好并验证过的
+/// 私有 Java 目录；null = 不需要 Java 或本机没有私有运行时（controller 照原路径处理）。
+class _DiscMenuRuntimeCheck {
+  const _DiscMenuRuntimeCheck({this.javaHome});
+  final String? javaHome;
+}
+
+/// 安装成功时以 [BlurayJavaRuntimeManager.install] 返回的 Java 目录关闭，取消关闭为 null。
 class _BlurayJavaRuntimeInstallDialog extends StatefulWidget {
   const _BlurayJavaRuntimeInstallDialog({required this.manager});
   final BlurayJavaRuntimeManager manager;
@@ -967,7 +1000,7 @@ class _BlurayJavaRuntimeInstallDialogState
       _failed = false;
     });
     try {
-      await widget.manager.install(
+      final String javaHome = await widget.manager.install(
         onProgress: (int received, int? total) {
           if (mounted) {
             setState(
@@ -978,7 +1011,7 @@ class _BlurayJavaRuntimeInstallDialogState
           }
         },
       );
-      if (mounted) Navigator.of(context).pop(true);
+      if (mounted) Navigator.of(context).pop(javaHome);
     } catch (error, stack) {
       ErrorLogService.instance.log(
         'VideoDiscMenu.installRuntime',
@@ -1024,7 +1057,7 @@ class _BlurayJavaRuntimeInstallDialogState
         FushiTextButton(
           onPressed: () {
             widget.manager.cancel();
-            Navigator.of(context).pop(false);
+            Navigator.of(context).pop();
           },
           child: Text(t.cancel),
         ),

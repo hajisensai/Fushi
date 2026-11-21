@@ -580,6 +580,12 @@ void main() {
     await tester.runAsync(
       () => appModel.setSrsMiningFieldMapping('nt-vocab', 'fw', ''),
     );
+    // 字段映射行读的是 srsMiningChoicesProvider 解析好的（归一成规范 ID 的）落点（G9-6），
+    // 正式 app 里偏好变更经 initialise 接上的 `prefsRepo.addListener(notifyListeners)` 让它重算；
+    // 这里的 wire() 不走 initialise、没接那条转发，所以照它的效果显式让 provider 重算。
+    ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    ).invalidate(srsMiningChoicesProvider);
     await pumpDestination(
       tester,
       SettingsDestinationId.cardCreation,
@@ -600,8 +606,9 @@ void main() {
     final Finder strip = find.byKey(
       const ValueKey<String>('card-target-switch'),
     );
-    SrsMiningTarget selected(WidgetTester tester) =>
-        tester.widget<FushiSegmentedStrip<SrsMiningTarget>>(strip).selected;
+    SrsMiningTarget selected(WidgetTester tester) => tester
+        .widget<AdaptiveSettingsSegmentedRow<SrsMiningTarget>>(strip)
+        .selected;
     Finder segment(String label) =>
         find.descendant(of: strip, matching: find.text(label));
 

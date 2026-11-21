@@ -5,6 +5,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart' show DatabaseSnapshotDeletionResult;
+import 'package:fushi_engine/sync/interconnect_file_box_prune.dart'
+    show pruneDeadInterconnectFileBox;
 import 'package:material_color_utilities/material_color_utilities.dart'
     show Hct;
 
@@ -59,6 +61,9 @@ class StorageUsageView extends ConsumerStatefulWidget {
     this.deleteVideo,
     this.anime4kBytesProvider = anime4kInstalledBytes,
     this.anime4kDelete = deleteAnime4kShaderFiles,
+    this.pruneInterconnectFileBox = pruneDeadInterconnectFileBox,
+    this.interconnectHostStatus,
+    this.isInterconnectHostRunning,
     super.key,
   });
 
@@ -83,10 +88,24 @@ class StorageUsageView extends ConsumerStatefulWidget {
          deleteVideo: actions.deleteVideo,
          anime4kBytesProvider: actions.anime4kBytesProvider,
          anime4kDelete: actions.anime4kDelete,
+         pruneInterconnectFileBox: actions.pruneInterconnectFileBox,
+         interconnectHostStatus: actions.interconnectHostStatus,
+         isInterconnectHostRunning: actions.isInterconnectHostRunning,
          key: key,
        );
 
   final StorageUsageService service;
+
+  /// 清理互联同步数据里的「旧版残留」（见
+  /// [StorageUsageActions.pruneInterconnectFileBox]；参数是 `<sync-data>` 目录）。
+  final Future<List<String>> Function(String syncDataDir)
+  pruneInterconnectFileBox;
+
+  /// 见 [StorageUsageActions.interconnectHostStatus]：起停时重建「旧版残留」那一行。
+  final Listenable? interconnectHostStatus;
+
+  /// 见 [StorageUsageActions.isInterconnectHostRunning]：运行中「立即清理」禁用。
+  final bool Function()? isInterconnectHostRunning;
 
   /// 书籍清单取数（真实现读 `epub_books` 表）。
   final Future<List<StorageBookRef>> Function() booksProvider;
@@ -257,13 +276,17 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
 
   // ── 删除动作 ────────────────────────────────────────────────────────
 
-  Future<bool> _confirmDelete(String name, String body) async {
+  Future<bool> _confirmDelete(
+    String name,
+    String body, {
+    String? confirmLabel,
+  }) async {
     final bool ok = await showFushiConfirmDialog(
       context: context,
       title: t.storage_entry_delete_confirm_title(name: name),
       message: body,
       icon: FushiIcons.delete,
-      confirmLabel: t.dialog_delete,
+      confirmLabel: confirmLabel ?? t.dialog_delete,
       destructive: true,
     );
     return ok && mounted;
@@ -285,9 +308,19 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
       StorageEntryKind.backupArchives =>
         t.storage_entry_delete_backups_confirm_body,
       StorageEntryKind.derivedFile => t.storage_entry_delete_files_confirm_body,
+      StorageEntryKind.interconnectLegacyFileBox =>
+        t.storage_entry_interconnect_legacy_confirm_body,
       StorageEntryKind.readOnly => throw StateError('read-only entry'),
     };
-    if (!await _confirmDelete(_entryTitle(entry), body)) return;
+    if (!await _confirmDelete(
+      _entryTitle(entry),
+      body,
+      confirmLabel: entry.kind == StorageEntryKind.interconnectLegacyFileBox
+          ? t.storage_entry_interconnect_legacy_clean_action
+          : null,
+    )) {
+      return;
+    }
     setState(() => _busyEntryId = entry.id);
     String? failure;
     // 磁盘是否真的变了。快照删除是逐文件容错的：**部分**成功也必须重扫，否则
@@ -330,6 +363,9 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     deleteVideo: widget.deleteVideo,
     anime4kBytesProvider: widget.anime4kBytesProvider,
     anime4kDelete: widget.anime4kDelete,
+    pruneInterconnectFileBox: widget.pruneInterconnectFileBox,
+    interconnectHostStatus: widget.interconnectHostStatus,
+    isInterconnectHostRunning: widget.isInterconnectHostRunning,
   );
 
   // ── 一键清除全部缓存（反馈 jg3XoDVISk）─────────────────────────────────
@@ -445,6 +481,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
         StorageCategoryId.videoDownloads: FushiIcons.video,
         StorageCategoryId.covers: FushiIcons.image,
         StorageCategoryId.subtitles: FushiIcons.subtitles,
+        StorageCategoryId.subtitleJobs: FushiIcons.ai,
         StorageCategoryId.shaders: FushiIcons.ai,
         StorageCategoryId.customFonts: FushiIcons.font,
         StorageCategoryId.web: FushiIcons.globe,
@@ -861,6 +898,23 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
   }
 
   Widget _buildEntryRow(StorageEntryUsage entry) {
+    final Listenable? hostStatus = widget.interconnectHostStatus;
+    if (entry.kind == StorageEntryKind.interconnectLegacyFileBox &&
+        hostStatus != null) {
+      // host 起停时只重建这一行（按钮可用性与说明跟着变）。
+      return ListenableBuilder(
+        listenable: hostStatus,
+        builder: (BuildContext _, Widget? _) => _buildEntryRowNow(entry),
+      );
+    }
+    return _buildEntryRowNow(entry);
+  }
+
+  Widget _buildEntryRowNow(StorageEntryUsage entry) {
+    // 互联 host 运行中不清「旧版残留」（在跑的旧客户端可能正往里写），副标题写明原因。
+    final bool hostBlocks =
+        entry.kind == StorageEntryKind.interconnectLegacyFileBox &&
+        (widget.isInterconnectHostRunning?.call() ?? false);
     final bool deletable = isStorageEntryDeletable(
       entry,
       canDeleteVideos: widget.deleteVideo != null,
@@ -872,7 +926,10 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
       // 外，既不占应用空间也删不掉。不加这句说明的话，条目只显示 EPUB 正文那几百
       // KB，用户会以为音频丢了——体积统计的口径必须自己说清楚。
       subtitle: Text(
-        entry.externalPaths.isEmpty
+        hostBlocks
+            ? '${formatStorageBytes(entry.bytes)} · '
+                  '${t.storage_entry_interconnect_legacy_host_running}'
+            : entry.externalPaths.isEmpty
             ? formatStorageBytes(entry.bytes)
             : '${formatStorageBytes(entry.bytes)} · '
                   '${t.storage_entry_external_audio_hint}',
@@ -889,6 +946,18 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
                     width: 16,
                     height: 16,
                     child: FushiCircularProgressIndicator(strokeWidth: 2),
+                  )
+                : entry.kind == StorageEntryKind.interconnectLegacyFileBox
+                // 「旧版残留」是一次性整批清理，不是删某个对象：给明确的文字
+                // 动作（MD3 / Apple 由 FushiTextButton 分派，自带按压反馈）。
+                ? FushiTextButton(
+                    destructive: true,
+                    onPressed: _deleteBusy || hostBlocks
+                        ? null
+                        : () => _deleteEntry(entry),
+                    child: Text(
+                      t.storage_entry_interconnect_legacy_clean_action,
+                    ),
                   )
                 : FushiIconButtonControl(
                     tooltip: t.dialog_delete,

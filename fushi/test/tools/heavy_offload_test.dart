@@ -3,6 +3,7 @@
 
 import 'package:test/test.dart';
 
+import '../../tool/test_flow/dist_plan.dart' show kDistNoLocalFlag;
 import '../../tool/test_flow/heavy_offload.dart';
 
 const String _flutter = r'D:\flutter_sdk\flutter_3.47.6\bin\flutter.bat';
@@ -411,7 +412,10 @@ void main() {
     expect(test.distArgs, contains('--busy-retries=$kHeavyOffloadBusyRetries'));
     final List<String> queued = heavyOffloadQueuedArgs(test.distArgs);
     expect(queued, contains('--busy-retries=$kHeavyOffloadQueuedBusyRetries'));
-    expect(queued.length, test.distArgs.length);
+    // Its own queue here is this machine's bid: no local worker in dist_test.
+    expect(queued.first, kDistNoLocalFlag);
+    expect(test.distArgs, isNot(contains(kDistNoLocalFlag)));
+    expect(queued.length, test.distArgs.length + 1);
     expect(queued.last, 'test/b_test.dart');
     expect(kHeavyOffloadQueuedBusyRetries, greaterThan(0));
 
@@ -425,6 +429,7 @@ void main() {
         '--busy-retries=0',
       ]),
       <String>[
+        kDistNoLocalFlag,
         '--build',
         '--busy-retries=$kHeavyOffloadQueuedBusyRetries',
         '--',

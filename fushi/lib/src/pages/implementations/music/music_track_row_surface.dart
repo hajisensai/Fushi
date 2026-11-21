@@ -8,7 +8,7 @@
 ///   [MusicCoverPalette]），字换色块前景色，封面小图轻微抬起、偏转
 ///   （[FushiHoverLift]）；
 /// - 正在播放的行常驻色块底，并在末端压一行 900 字重的低透明度标题水印（与
-///   `FushiCoverBlock` 的水印同一套字号比例 / 字距 / 透明度），被条带裁掉；
+///   `FushiCoverBlock` 的水印同一套装盒大字与透明度），放不下就不画；
 /// - 标题 800 字重、时长等宽数字、序号（专辑曲序 / 榜单名次）用强调色 900 字重。
 ///
 /// 行为不归本组件管：点按 / 长按 / 右键 / 焦点由内部的 [FushiCard] 照常承接，行尾
@@ -16,10 +16,14 @@
 /// / [MusicTrackRowSurface.badges] 原样传进来。
 library;
 
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_actions.dart'
+    show MusicItemMenu, musicMenuAnchorOf;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart'
     show MusicCover, MusicCoverTintSource, kMusicHoverLiftScale;
 import 'package:fushi/src/pages/implementations/music/music_detail_chrome.dart'
@@ -43,7 +47,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
-import 'package:fushi/src/utils/components/fushi_bleed_title.dart';
+import 'package:fushi/src/utils/components/fushi_fit_title.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiCard;
@@ -238,7 +242,9 @@ class MusicTrackGridPanel extends StatelessWidget {
 /// `music_collection_view.dart`）：与推荐页 / 曲库同款的封面色块——方形专辑
 /// 摆法、封面取色底、曲名水印大字；副行是歌手 · 专辑，底行 chip 是时长，正在播放
 /// 时顶上多一枚「正在播放」chip。点块 = 从这首起播（[onTap] 为 null 的不可播曲目
-/// 不响应）；右键菜单由调用方包（[musicWithContextMenu]）。几千首的歌单由
+/// 不响应）；右键菜单由调用方包（[musicWithContextMenu]）。长按 = 弹 [menu]（触屏
+/// 没有右键、色块上也不放「⋯」，拍板台 left3648：长按开菜单，详情 / 多选都在菜单里）；
+/// 调用方给了 [onLongPress]（多选态 = 勾选）时以它为准。几千首的歌单由
 /// `SliverFushiCoverBlocks` 按行惰性构建（2026-11-12 用户：「做成多列的……色块弄大，
 /// 跟外面一样并且有大字」）。
 class MusicTrackBlock extends StatelessWidget {
@@ -253,6 +259,7 @@ class MusicTrackBlock extends StatelessWidget {
     this.playing = false,
     this.onTap,
     this.onLongPress,
+    this.menu,
     this.focusId,
   });
 
@@ -267,6 +274,9 @@ class MusicTrackBlock extends StatelessWidget {
   final bool playing;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+
+  /// 这首的动作菜单（与右键同一份）：[onLongPress] 为 null 时长按从色块处弹它。
+  final MusicItemMenu? menu;
   final FushiFocusId? focusId;
 
   static String? _nonEmpty(String? value) =>
@@ -279,7 +289,12 @@ class MusicTrackBlock extends StatelessWidget {
       shape: fushiCoverBlockShape(context, size),
       focusId: focusId,
       onTap: onTap,
-      onLongPress: onLongPress,
+      onLongPress:
+          onLongPress ??
+          switch (menu) {
+            final MusicItemMenu m => () => m.open(musicMenuAnchorOf(context)),
+            null => null,
+          },
       child: MusicCoverTintSource(
         coverPath: coverPath,
         embeddedFromPath: embeddedFromPath,
@@ -610,9 +625,10 @@ class _MusicTrackRowSurfaceState extends State<MusicTrackRowSurface> {
   }
 }
 
-/// 正在播放行末端的标题水印：纯装饰，不进语义、不参与命中；字号比例 / 字距 /
-/// 行高 / 透明度与 `FushiCoverBlock` 的水印同一套，从条带中段起往末端排、被条带
-/// 裁掉。
+/// 正在播放行末端的标题水印：纯装饰，不进语义、不参与命中；透明度与
+/// `FushiCoverBlock` 的水印同一套。装在条带中段到末端的盒子里（[FushiFitTitle]：
+/// 整段标题取放得下的最大字号，上限为条带高的 0.62），连最小字号都放不下就不画——
+/// 不再出血裁成半个字（设计稿 G2）。
 class _RowWatermark extends StatelessWidget {
   const _RowWatermark({required this.title, required this.colors});
 
@@ -623,13 +639,20 @@ class _RowWatermark extends StatelessWidget {
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (BuildContext context, BoxConstraints box) {
       final double height = box.maxHeight.isFinite ? box.maxHeight : 64;
-      // 画出来的装饰大字（不是 Text）：不进语义、不进文字查找，标题只读一遍。
-      return FushiBleedTitle(
-        text: title,
-        textSize: height * 0.62,
-        color: colors.accent.withValues(alpha: colors.watermarkOpacity),
-        start: box.maxWidth.isFinite ? box.maxWidth * 0.42 : 0,
-        top: height * 0.02,
+      return Padding(
+        padding: EdgeInsetsDirectional.only(
+          start: box.maxWidth.isFinite ? box.maxWidth * 0.42 : 0,
+          end: 12,
+          top: height * 0.06,
+          bottom: height * 0.06,
+        ),
+        child: FushiFitTitle(
+          text: title,
+          color: colors.accent.withValues(alpha: colors.watermarkOpacity),
+          maxSize: height * 0.62,
+          minSize: math.min(height * 0.62, 18.0),
+          align: FushiFitTitleAlign.top,
+        ),
       );
     },
   );

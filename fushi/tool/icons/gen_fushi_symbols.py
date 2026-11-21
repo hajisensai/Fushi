@@ -58,6 +58,7 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
     ("audiobook", "headphones", "headphones_outlined", "headphones", "有声书 / 听力"),
     ("dictionary", "dictionary", "library_books_outlined", "library_books", "词典"),
     ("subtitles", "subtitles", "subtitles_outlined", "subtitles", "字幕"),
+    ("transcribe", "transcribe", "transcribe_outlined", "transcribe", "生成字幕 / 字幕工作台（语音转文字）"),
     ("collection", "collections_bookmark", "collections_bookmark_outlined", "collections_bookmark", "合集"),
     ("tag", "sell", "sell_outlined", "sell", "标签"),
     ("statistics", "insights", "insights_outlined", "insights", "统计"),
@@ -305,6 +306,7 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
     ("doubleChevronRight", "keyboard_double_arrow_right", "keyboard_double_arrow_right_outlined", "keyboard_double_arrow_right", "到最后"),
     ("laptop", "laptop", "laptop_outlined", "laptop", "电脑"),
     ("lightbulb", "lightbulb", "lightbulb_outlined", "lightbulb", "提示"),
+    ("celebration", "celebration", "celebration_outlined", "celebration", "本版新内容"),
     ("merge", "merge_type", "merge_type_outlined", "merge_type", "合并"),
     ("notificationsActive", "notifications_active", "notifications_active_outlined", "notifications_active", "通知开启"),
     ("notificationsOff", "notifications_off", "notifications_off_outlined", "notifications_off", "通知关闭"),
@@ -354,6 +356,10 @@ APPLE_OVERRIDES: dict[str, tuple[str, str]] = {
     "pageBackdrop": ("rectangle_stack", "rectangle_stack_fill"),
     # 旧映射表里没有 flash_on（只有 bolt 系列），SF 风格对应字形就是 bolt。
     "flash": ("bolt", "bolt_fill"),
+    # 本版新内容：SF 风格没有彩带，取「闪光」。
+    "celebration": ("sparkles", "sparkles"),
+    # 旧映射表里没有 transcribe；SF 风格取「字幕气泡」。
+    "transcribe": ("captions_bubble", "captions_bubble_fill"),
     "opacity": ("drop", "drop_fill"),
     "subtitleMask": ("rectangle", "rectangle_fill"),
     "scrim": ("circle_lefthalf_fill", "circle_lefthalf_fill"),

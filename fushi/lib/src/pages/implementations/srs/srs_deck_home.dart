@@ -116,6 +116,21 @@ Widget _srsTopStackLayout(Widget? current, List<Widget> previous) => Stack(
   children: <Widget>[...previous, ?current],
 );
 
+/// 外壳叠在正文右下的悬浮按钮（「后台任务」FAB，同步 / 刷新已配对设备时出现）要让出的高度：
+/// 按钮边长 + 离底边距。
+final double _kSrsHomeFabClearance =
+    fushiFabMetrics(FushiFabSize.regular).extent +
+    kFushiFloatingToolbarEdgeMargin;
+
+/// 复习首页各版式列表的底部内边距：分区间距 + 底部浮动工具栏 / 手势区（外壳 `extendBody`
+/// 把悬浮底栏的高度并进 MediaQuery 底部 padding，[bottomSafeInsetOf]）+ 悬浮按钮
+/// （[_kSrsHomeFabClearance]）。末尾的「已配对设备」行、说明文字与统计卡都能滚到底栏和
+/// 按钮之上（设计稿 11-20 #17）。
+double srsHomeListBottomPadding(BuildContext context) =>
+    FushiDesignTokens.of(context).spacing.section +
+    bottomSafeInsetOf(context) +
+    _kSrsHomeFabClearance;
+
 /// 复习首页：根层（今日计划 + 牌组树 + 热力图 / 预测），宽屏右栏是选中牌组详情；手机上 [focus]
 /// 非 null 时是该牌组的详情页。
 class _SrsHomeView extends StatelessWidget {
@@ -335,9 +350,11 @@ class _SrsHomeView extends StatelessWidget {
               ),
           ],
           footer: _pairedSection(),
-          padding: withBottomSafeInset(
-            context,
-            EdgeInsets.fromLTRB(side, top, side, tokens.spacing.section),
+          padding: EdgeInsets.fromLTRB(
+            side,
+            top,
+            side,
+            srsHomeListBottomPadding(context),
           ),
           onOpen: (SrsDeckSummary d) => onSelect(d.deck.id),
         );
@@ -371,14 +388,11 @@ class _SrsHomeView extends StatelessWidget {
             0,
             (constraints.maxWidth - content) / 2 - tokens.spacing.gap / 2,
           );
-          final EdgeInsets columnPadding = withBottomSafeInset(
-            context,
-            EdgeInsets.fromLTRB(
-              tokens.spacing.gap / 2,
-              top,
-              tokens.spacing.gap / 2,
-              tokens.spacing.section,
-            ),
+          final EdgeInsets columnPadding = EdgeInsets.fromLTRB(
+            tokens.spacing.gap / 2,
+            top,
+            tokens.spacing.gap / 2,
+            srsHomeListBottomPadding(context),
           );
           final bool three = content >= _kSrsHomeThreeColumnMin;
           final List<Widget> statCards = <Widget>[
@@ -387,13 +401,10 @@ class _SrsHomeView extends StatelessWidget {
                 key: const ValueKey<String>('srs-home-heatmap'),
                 stats: s,
               ),
-              _SrsForecastCard(
-                key: const ValueKey<String>('srs-home-forecast'),
-                stats: s,
-              ),
+              ..._srsHomeDueCards(s),
             ],
           ];
-          // 两栏时热力图（宽）跟在树下面，未来 7 天（窄）跟在详情下面，两栏高度大致平衡；
+          // 两栏时热力图（宽）跟在树下面，未来 7 天 / RWKV 此刻（窄）跟在详情下面，两栏高度大致平衡；
           // 三栏时两张统计卡自成一栏。
           Widget sideColumn(List<Widget> children) => SingleChildScrollView(
             // 侧栏各自滚动；不接主滚动控制器（主滚动归左栏的树）。
@@ -448,7 +459,7 @@ class _SrsHomeView extends StatelessWidget {
                   flex: three ? 8 : 9,
                   child: sideColumn(<Widget>[
                     detail,
-                    if (!three && statCards.length > 1) statCards.last,
+                    if (!three) ...statCards.skip(1),
                   ]),
                 ),
                 if (three) Expanded(flex: 7, child: sideColumn(statCards)),
@@ -459,14 +470,11 @@ class _SrsHomeView extends StatelessWidget {
       );
     }
 
-    final EdgeInsets padding = withBottomSafeInset(
-      context,
-      EdgeInsets.fromLTRB(
-        tokens.spacing.page,
-        top,
-        tokens.spacing.page,
-        tokens.spacing.section,
-      ),
+    final EdgeInsets padding = EdgeInsets.fromLTRB(
+      tokens.spacing.page,
+      top,
+      tokens.spacing.page,
+      srsHomeListBottomPadding(context),
     );
     final SrsDeckSummary? focused = focus;
     final Widget body;
@@ -1190,7 +1198,10 @@ class _SrsDeckDetail extends StatelessWidget {
     final SrsHomeDeckDetail? d = detail;
     final int? day = today;
     final bool work = _srsDeckHasWork(deck);
+    // 纯 RWKV 的牌组没有到期日预测（恒为空），不画那张图，改画「RWKV 此刻」。
+    final bool showForecast = d == null || d.showsForecast;
     final List<int>? forecast = d?.forecast;
+    final SrsRwkvNow? rwkvNow = d?.rwkvNow;
 
     final Widget head = Row(
       spacing: tokens.spacing.gap * 1.5,
@@ -1342,13 +1353,23 @@ class _SrsDeckDetail extends StatelessWidget {
             children: <Widget>[
               head,
               SizedBox(height: tokens.spacing.gap / 2),
-              Text(t.srs_home_forecast_title, style: small),
-              chart,
-              if (forecast != null && forecast.length > 1)
-                Text(
-                  t.srs_home_forecast_tomorrow(n: forecast[1]),
-                  style: small,
+              if (showForecast) ...<Widget>[
+                Text(t.srs_home_forecast_title, style: small),
+                chart,
+                if (forecast != null && forecast.length > 1)
+                  Text(
+                    t.srs_home_forecast_tomorrow(n: forecast[1]),
+                    style: small,
+                  ),
+              ],
+              if (rwkvNow != null) ...<Widget>[
+                Text(t.srs_stats_rwkv_now_title, style: small),
+                _SrsRwkvNowView(
+                  key: const ValueKey<String>('srs-home-detail-rwkv'),
+                  now: rwkvNow,
+                  target: d?.desiredRetention,
                 ),
+              ],
               SizedBox(height: tokens.spacing.gap / 2),
               actions,
             ],
@@ -1390,11 +1411,8 @@ class _SrsDeckPoster extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 色相键与今日计划块（按牌组 id）错开：只有一个牌组时两块并排也不同色。
-    final FushiCoverBlockColors colors = fushiPosterColors(
-      context,
-      fushiPosterHue('srs-deck:${deck.deck.id}'),
-    );
+    // 与牌组树里这个牌组的色块同色（[_srsDeckBandColors]，按牌组全名取色相）。
+    final FushiCoverBlockColors colors = _srsDeckBandColors(context, deck);
     final TextStyle base =
         Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
     final TextStyle caption = FushiPosterText.caption
@@ -1409,6 +1427,9 @@ class _SrsDeckPoster extends StatelessWidget {
     final List<int>? days = d?.forecast;
     final double? retention = d?.retention;
     final double? target = d?.desiredRetention;
+    // 纯 RWKV 的牌组没有到期日预测（恒为空），不画那排柱，改画「RWKV 此刻」。
+    final bool showForecast = d == null || d.showsForecast;
+    final SrsRwkvNow? rwkvNow = d?.rwkvNow;
 
     final Widget head = Row(
       spacing: 14,
@@ -1634,7 +1655,22 @@ class _SrsDeckPoster extends StatelessWidget {
             key: const ValueKey<String>('srs-home-detail-retention'),
             child: retentionPart,
           ),
-          forecastPart,
+          if (showForecast) forecastPart,
+          if (rwkvNow != null)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              spacing: 6,
+              children: <Widget>[
+                Text(t.srs_stats_rwkv_now_title, style: caption),
+                _SrsRwkvNowView(
+                  key: const ValueKey<String>('srs-home-detail-rwkv'),
+                  now: rwkvNow,
+                  target: target,
+                  poster: colors,
+                ),
+              ],
+            ),
           actions,
         ],
       ),
@@ -1880,10 +1916,7 @@ class _SrsHomeStatsPair extends StatelessWidget {
           key: const ValueKey<String>('srs-home-heatmap'),
           stats: stats,
         ),
-        _SrsForecastCard(
-          key: const ValueKey<String>('srs-home-forecast'),
-          stats: stats,
-        ),
+        ..._srsHomeDueCards(stats),
       ],
     );
   }
@@ -2023,6 +2056,10 @@ List<PopupMenuEntry<_DeckAction>> _deckMenuItems({
       ];
 
 /// 在 [anchorContext] 的位置弹出牌组菜单，选中后交给 [onAction]。
+///
+/// 右键经 [contextMenuInvoker] 同步派发到这里时，菜单贴着按下点弹出（M3 / 桌面右键
+/// 菜单的约定，反馈 Ne6WHI9TYE）；长按 / 菜单键 / 「选项」按钮没有按下坐标，贴在
+/// [anchorContext] 的右端。
 Future<void> _showDeckMenu(
   BuildContext anchorContext, {
   required SrsDeckSummary deck,
@@ -2031,8 +2068,9 @@ Future<void> _showDeckMenu(
   required bool canMoveDown,
   required void Function(SrsDeckSummary deck, _DeckAction action) onAction,
   bool remote = false,
-  Offset? at,
 }) async {
+  // 必须在第一个 await 之前读：只在右键回调同步执行期间非空。
+  final Offset? pointer = activeContextMenuAnchor;
   final RenderBox? box = anchorContext.findRenderObject() as RenderBox?;
   final RenderBox? overlay =
       Navigator.of(anchorContext).overlay?.context.findRenderObject()
@@ -2040,13 +2078,13 @@ Future<void> _showDeckMenu(
   if (box == null || overlay == null || !box.hasSize) return;
   final Rect rowRect =
       box.localToGlobal(Offset.zero, ancestor: overlay) & box.size;
-  final Offset anchor = at ?? rowRect.centerRight;
+  // 全局 UI 缩放下 Overlay 与屏幕坐标不同尺度：按下点经 globalToLocal 换算（BUG-781）。
+  final Rect anchorRect = pointer != null
+      ? overlay.globalToLocal(pointer) & Size.zero
+      : Rect.fromLTWH(rowRect.right, rowRect.top, 0, rowRect.height);
   final _DeckAction? picked = await showFushiMenu<_DeckAction>(
     context: anchorContext,
-    position: RelativeRect.fromRect(
-      Rect.fromLTWH(anchor.dx, rowRect.top, 0, rowRect.height),
-      Offset.zero & overlay.size,
-    ),
+    position: RelativeRect.fromRect(anchorRect, Offset.zero & overlay.size),
     semanticLabel: t.srs_deck_menu,
     items: _deckMenuItems(
       isDefault: isDefault,

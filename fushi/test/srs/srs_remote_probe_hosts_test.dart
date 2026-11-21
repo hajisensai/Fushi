@@ -71,8 +71,8 @@ void main() {
   test(
     'probeSrsRemoteHosts：代对不上的列出来并标明该升级哪边，没应答 / 抛错 / 超时 / 没有远程复习的不列',
     () async {
-      // 本机这个构建仍只说 V1：主机已是新代 → 本机需要升级。
-      expect(kSrsRemoteClientWire, SrsRemoteWireVersion.v1);
+      // 本机这个构建说 V2（G10-2）：只声明 V1 的旧主机 → 主机需要升级。
+      expect(kSrsRemoteClientWire, SrsRemoteWireVersion.v2);
       final Map<String, SrsRemoteHostCompat> compat = await probeSrsRemoteHosts(
         repo,
         candidates,
@@ -80,8 +80,8 @@ void main() {
         timeout: timeout,
       );
       expect(compat, <String, SrsRemoteHostCompat>{
-        'v1': SrsRemoteHostCompat.ready,
-        'v2': SrsRemoteHostCompat.clientNeedsUpgrade,
+        'v1': SrsRemoteHostCompat.hostNeedsUpgrade,
+        'v2': SrsRemoteHostCompat.ready,
       });
     },
   );
@@ -94,6 +94,6 @@ void main() {
           probe: probe,
           timeout: timeout,
         );
-    expect(targets.map((InterconnectHostTarget t) => t.hostId), <String>['v1']);
+    expect(targets.map((InterconnectHostTarget t) => t.hostId), <String>['v2']);
   });
 }

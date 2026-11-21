@@ -5,9 +5,13 @@
 /// 扩展 API 核心只依赖协议那一半，不被拖进 AppModel 的 import 环。
 library;
 
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart';
+import 'package:fushi_engine/media/image_kernels.dart'
+    show decodeOcrRgbaImageNative;
+import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRgbaImage;
 
 /// app 侧的抓图识别服务：持有一个识别会话（引擎只解析一次，本地 ONNX 模型常驻），
 /// 设置变了（[configKey] 变）就换新会话。
@@ -38,8 +42,16 @@ class ExtensionImageOcrService {
       // 先关旧会话（释放上一个模型的 isolate）再开新的，免得两份模型同时常驻。
       if (stale != null) await stale.close();
     }
+    // 截图是编码字节（扩展把 canvas 压成 PNG / JPEG）：后台原生解一次成像素，之后与
+    // 视频暂停帧同一条像素路径（引擎不再落盘、不再解码）。
+    final OcrRgbaImage? pixels = await Isolate.run(
+      () => decodeOcrRgbaImageNative(image),
+    );
+    if (pixels == null) {
+      throw const FormatException('extension OCR image could not be decoded');
+    }
     try {
-      final GraphicSubtitleOcrFrame? frame = await session.recognize(image);
+      final GraphicSubtitleOcrFrame? frame = await session.recognize(pixels);
       // 会话在这次识别途中被关掉（设置刚改 / app 在拆）：这次请求如实失败，
       // 扩展照常提示「识别失败」，下一次指针移动按新会话识别。
       if (frame == null) throw StateError('extension OCR session closed');

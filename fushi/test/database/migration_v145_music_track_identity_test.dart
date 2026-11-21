@@ -138,8 +138,18 @@ void main() {
       "INSERT INTO preferences (key, value, updated_at) VALUES ('favorite_sentences', ?, 1)",
       <Object?>[
         jsonEncode(<Map<String, Object?>>[
-          <String, Object?>{'source': 'music', 'bookKey': 'lose', 'text': 'a'},
-          <String, Object?>{'source': 'book', 'bookKey': 'lose', 'text': 'b'},
+          <String, Object?>{
+            'source': 'music',
+            'bookKey': 'lose',
+            'text': 'a',
+            'createdAt': '2026-11-06T10:00:00.000',
+          },
+          <String, Object?>{
+            'source': 'book',
+            'bookKey': 'lose',
+            'text': 'b',
+            'createdAt': '2026-11-06T10:00:00.000',
+          },
         ]),
       ],
     );
@@ -147,7 +157,7 @@ void main() {
     raw.dispose();
 
     Future<void> check(FushiDatabase db) async {
-      expect(db.schemaVersion, 159);
+      expect(db.schemaVersion, 166);
       expect(
         await _col(db, 'SELECT track_uid FROM music_tracks ORDER BY track_uid'),
         <String>['other', 'win'],
@@ -193,15 +203,16 @@ void main() {
         <String>['booklose', 'musicwin'],
         reason: '只改音乐来源的出处',
       );
-      final List<Object?> favs =
-          jsonDecode((await db.getPref(kFavoriteSentencesPrefKey))!)
-              as List<Object?>;
+      // v145 改写偏好里的旧 JSON，随后 v166 把它原样搬进收藏句表。
       expect(
-        <Object?>[
-          for (final Object? f in favs) (f! as Map<String, Object?>)['bookKey'],
-        ],
-        <String>['win', 'lose'],
+        await _col(
+          db,
+          'SELECT source || book_key FROM favorite_sentences ORDER BY source',
+        ),
+        <String>['booklose', 'musicwin'],
+        reason: '收藏句只改音乐来源的出处',
       );
+      expect(await db.getPref(kFavoriteSentencesPrefKey), isNull);
       expect(
         await _col(
           db,

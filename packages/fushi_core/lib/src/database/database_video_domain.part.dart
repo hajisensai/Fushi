@@ -165,7 +165,7 @@ mixin _FushiDbVideoDomain
           .go();
 
   /// 升级绑定：把一条纯刮削目标边绑定为本地合集（[targetCollectionId] 传 null
-  /// 即解绑退回纯刮削态）。
+  /// 即解绑退回纯刮削态）。目标只能有一个（v162 CHECK），同时清掉单视频目标。
   Future<void> bindCollectionRelationTarget(
     int relationId,
     int? targetCollectionId,
@@ -175,8 +175,61 @@ mixin _FushiDbVideoDomain
       )..where(($CollectionRelationsTable t) => t.id.equals(relationId))).write(
         CollectionRelationsCompanion(
           targetCollectionId: Value<int?>(targetCollectionId),
+          targetBookUid: const Value<String?>(null),
         ),
       );
+
+  /// 按展示顺序（sortIndex → id）列出**单视频起点**（v162：挂在单个视频上的
+  /// 作品，散装电影）[bookUid] 的相关作品。
+  Future<List<CollectionRelationRow>> getVideoBookRelations(String bookUid) =>
+      (select(collectionRelations)
+            ..where(($CollectionRelationsTable t) => t.bookUid.equals(bookUid))
+            ..orderBy([
+              ($CollectionRelationsTable t) =>
+                  OrderingTerm(expression: t.sortIndex),
+              ($CollectionRelationsTable t) => OrderingTerm(expression: t.id),
+            ]))
+          .get();
+
+  /// [replaceSourceCollectionRelations] 的单视频起点版（v162）：整体替换单视频
+  /// [bookUid] 来自 [source] 的相关作品边，别的源的行不动。
+  Future<void> replaceSourceVideoBookRelations(
+    String bookUid,
+    String source,
+    List<CollectionRelationsCompanion> relations,
+  ) => transaction(() async {
+    await (delete(collectionRelations)..where(
+          ($CollectionRelationsTable t) =>
+              t.bookUid.equals(bookUid) & t.source.equals(source),
+        ))
+        .go();
+    for (final CollectionRelationsCompanion c in relations) {
+      await into(collectionRelations).insert(c);
+    }
+  });
+
+  /// [bindCollectionRelationsBySubject] 的单视频目标版（v162）：把指向
+  /// `(source, subjectId)`、尚未绑定的纯刮削边绑定到本地单视频 [targetBookUid]
+  /// （散装电影入库 / 刮削完成时调）。起点就是该视频自己的边不绑（自环）。
+  /// 返回绑定的行数。
+  Future<int> bindCollectionRelationsBySubjectToVideo(
+    String source,
+    String subjectId,
+    String targetBookUid,
+  ) =>
+      (update(collectionRelations)..where(
+            ($CollectionRelationsTable t) =>
+                t.source.equals(source) &
+                t.subjectId.equals(subjectId) &
+                t.targetCollectionId.isNull() &
+                t.targetBookUid.isNull() &
+                (t.bookUid.isNull() | t.bookUid.equals(targetBookUid).not()),
+          ))
+          .write(
+            CollectionRelationsCompanion(
+              targetBookUid: Value<String?>(targetBookUid),
+            ),
+          );
 
   /// 反查：已把 (source, subjectId) 刮成资料的本地合集 id 列表（抓取层用它把
   /// 「纯刮削目标」自动升级绑定为本地合集）。
@@ -192,6 +245,58 @@ mixin _FushiDbVideoDomain
             .get();
     return <int>[for (final CollectionScrapeMetaRow r in rows) r.collectionId];
   }
+
+  /// 整体替换某合集**来自 [source] 这一个源**的相关作品边（作品资料写库时按主源
+  /// 的完整关系列表替换）。只动该源的行：`local`（按季拆分建的前后作）与别的源
+  /// 留下的行不受影响；该源本轮已不存在的关系随之删除，重刮不重复、不残留。
+  Future<void> replaceSourceCollectionRelations(
+    int collectionId,
+    String source,
+    List<CollectionRelationsCompanion> relations,
+  ) => transaction(() async {
+    await (delete(collectionRelations)..where(
+          ($CollectionRelationsTable t) =>
+              t.collectionId.equals(collectionId) & t.source.equals(source),
+        ))
+        .go();
+    for (final CollectionRelationsCompanion c in relations) {
+      await into(collectionRelations).insertOnConflictUpdate(c);
+    }
+  });
+
+  /// 升级绑定（批量）：把指向 `(source, subjectId)`、尚未绑定的纯刮削边绑定到本地
+  /// 合集 [targetCollectionId]（目标作品入库 / 刮削完成时调）。起点就是目标合集
+  /// 自己的边不绑（自环）。返回绑定的行数。
+  Future<int> bindCollectionRelationsBySubject(
+    String source,
+    String subjectId,
+    int targetCollectionId,
+  ) =>
+      (update(collectionRelations)..where(
+            ($CollectionRelationsTable t) =>
+                t.source.equals(source) &
+                t.subjectId.equals(subjectId) &
+                t.targetCollectionId.isNull() &
+                t.targetBookUid.isNull() &
+                (t.collectionId.isNull() |
+                    t.collectionId.equals(targetCollectionId).not()),
+          ))
+          .write(
+            CollectionRelationsCompanion(
+              targetCollectionId: Value<int?>(targetCollectionId),
+            ),
+          );
+
+  /// 全部相关作品边（作品图快照整表一次读，按 collectionId → sortIndex → id）。
+  Future<List<CollectionRelationRow>> getAllCollectionRelations() =>
+      (select(collectionRelations)..orderBy([
+            ($CollectionRelationsTable t) =>
+                OrderingTerm(expression: t.collectionId),
+            ($CollectionRelationsTable t) =>
+                OrderingTerm(expression: t.sortIndex),
+            ($CollectionRelationsTable t) => OrderingTerm(expression: t.id),
+          ]))
+          .get();
 
   // ── media_images（媒体附加图组，schema v68 / Jellyfin 图组对齐）──────
 
@@ -297,10 +402,13 @@ mixin _FushiDbVideoDomain
 
   /// 全表附加图组（库页/首页批量预取，替代逐归属查询的 N+1；调用方按
   /// collectionId / bookUid 内存分组）。
+  /// 排序与 [compareMediaImagesForDisplay] 同一口径（id 兜底，同位次也有确定顺序，
+  /// 库页增量重读才能与整表重读逐项一致）。
   Future<List<MediaImageRow>> getAllMediaImages() =>
       (select(mediaImages)..orderBy([
             ($MediaImagesTable t) => OrderingTerm(expression: t.kind),
             ($MediaImagesTable t) => OrderingTerm(expression: t.position),
+            ($MediaImagesTable t) => OrderingTerm(expression: t.id),
           ]))
           .get();
 
@@ -638,6 +746,7 @@ mixin _FushiDbVideoDomain
             ]))
           .get();
 
+  /// 排序与 [compareVideoMetadataEpisodesForDisplay] 同一口径（id 兜底）。
   Future<List<VideoMetadataEpisodeRow>> getAllVideoMetadataEpisodes() =>
       (select(videoMetadataEpisodes)
             ..orderBy(<OrderingTerm Function($VideoMetadataEpisodesTable)>[
@@ -645,6 +754,7 @@ mixin _FushiDbVideoDomain
                   OrderingTerm(expression: t.seasonId),
               ($VideoMetadataEpisodesTable t) =>
                   OrderingTerm(expression: t.episodeNumber),
+              ($VideoMetadataEpisodesTable t) => OrderingTerm(expression: t.id),
             ]))
           .get();
 
@@ -3151,26 +3261,54 @@ mixin _FushiDbVideoDomain
   /// CI 全量单测卡 60min）。[tableUpdates] 流不是 QueryStream、取消时不走 markAsClosed、
   /// 不安排该 Timer，故切走视频页不再遗留孤儿 async。消费方（`_onVideoUidsChanged`）按
   /// 集合去重，表内非集合变更（进度/封面回写）触发的额外重查无害。
+  ///
+  /// gap-scanner-4：首次扫描逐条提交，每条都发一次表级通知。重查只选 `book_uid`
+  /// 一列（不再整行读 `video_books`），且同一时刻最多一条在途：在途期间来的通知只记
+  /// 一笔，在途那条回来后再补查一次，N 条连发的通知收敛成至多两次查询，结果也按
+  /// 查询顺序发出、不会乱序。
   Stream<List<String>> watchVideoBookUids() {
-    Future<List<String>> currentUids() async => (await select(
-      videoBooks,
-    ).get()).map((VideoBookRow row) => row.bookUid).toList();
+    Future<List<String>> currentUids() async {
+      final JoinedSelectStatement<$VideoBooksTable, VideoBookRow> query =
+          selectOnly(videoBooks)
+            ..addColumns(<Expression<Object>>[videoBooks.bookUid]);
+      return <String>[
+        for (final TypedResult row in await query.get())
+          row.read(videoBooks.bookUid)!,
+      ];
+    }
+
     late final StreamController<List<String>> controller;
     StreamSubscription<void>? updatesSub;
+    bool inFlight = false;
+    bool dirty = false;
+    Future<void> refresh() async {
+      if (inFlight) {
+        dirty = true;
+        return;
+      }
+      inFlight = true;
+      try {
+        do {
+          dirty = false;
+          final List<String> uids = await currentUids();
+          if (controller.isClosed) return;
+          controller.add(uids);
+        } while (dirty);
+      } catch (error, stack) {
+        if (!controller.isClosed) controller.addError(error, stack);
+      } finally {
+        inFlight = false;
+      }
+    }
+
     controller = StreamController<List<String>>(
       onListen: () {
         // 初始 emit：等同旧 drift keyed `.watch()` 首发，库页首次加载不回归。
-        currentUids().then((List<String> v) {
-          if (!controller.isClosed) controller.add(v);
-        });
+        unawaited(refresh());
         // 表级变更重查：BUG-793 自动刷新保留。
-        updatesSub = tableUpdates(TableUpdateQuery.onTable(videoBooks)).listen((
-          _,
-        ) {
-          currentUids().then((List<String> v) {
-            if (!controller.isClosed) controller.add(v);
-          });
-        });
+        updatesSub = tableUpdates(
+          TableUpdateQuery.onTable(videoBooks),
+        ).listen((_) => unawaited(refresh()));
       },
       // BUG-834 follow-up：async* + `await for` 广播流的订阅 cancel() 永不完成，
       // 让 flutter_test 的 awaited tearDown 挂死超时。改为手动 StreamController，
@@ -3516,6 +3654,10 @@ mixin _FushiDbVideoDomain
         // v131：OP / ED 声纹比对缓存（无外键，见 theme_song_span_tables.dart）。
         await (delete(
           videoThemeSongSpans,
+        )..where((t) => t.bookUid.isIn(chunk))).go();
+        // v165：内容指纹缓存（无外键，见 video_content_fingerprint_tables.dart）。
+        await (delete(
+          videoContentFingerprints,
         )..where((t) => t.bookUid.isIn(chunk))).go();
       }
       final List<String> filePaths = <String>{

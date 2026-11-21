@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/module_id.dart';
@@ -41,6 +42,8 @@ void main() {
               serverEnabled: serverEnabled,
               hasToken: hasToken,
               portConflict: portConflict,
+              // flutter_test 默认平台是安卓；这些用例钉的是桌面流程。
+              flow: BrowserExtensionInstallFlow.desktop,
             ),
           ),
         ),
@@ -95,6 +98,87 @@ void main() {
     },
   );
 
+  testWidgets('Android flow: Vivaldi step, no desktop browser chips', (
+    WidgetTester tester,
+  ) async {
+    const String path =
+        '/storage/emulated/0/Download/Fushi/fushi-browser-extension';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: buildBrowserExtensionInstallStepsForTest(
+              path: path,
+              serverEnabled: true,
+              hasToken: true,
+              flow: BrowserExtensionInstallFlow.android,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // 5 步都在，前两步换成安卓的。
+    for (final String n in <String>['1', '2', '3', '4', '5']) {
+      expect(find.text(n), findsOneWidget, reason: 'missing step $n');
+    }
+    expect(find.text(t.browser_extension_android_step_browser), findsOneWidget);
+    expect(find.text(t.browser_extension_android_browser_hint), findsOneWidget);
+    expect(find.text(t.browser_extension_android_get_browser), findsOneWidget);
+    expect(find.text(t.browser_extension_android_step_manager), findsOneWidget);
+    expect(find.text(t.browser_extension_step_load_unpacked), findsOneWidget);
+    // 桌面的浏览器分段与扩展页地址不出现。
+    for (final BrowserKind kind in BrowserKind.values) {
+      expect(find.text(browserExtensionsPageUrl(kind)), findsNothing);
+    }
+    // 第 4 步：路径 + 安卓文件夹选择提示，没有「在文件管理器中打开」。
+    final Finder step4 = find.byKey(
+      const ValueKey<String>('browser-extension-step-3'),
+    );
+    await tester.ensureVisible(step4);
+    await tester.pumpAndSettle();
+    await tester.tap(step4);
+    await tester.pumpAndSettle();
+    expect(find.text(path), findsOneWidget);
+    expect(find.text(t.browser_extension_android_folder_hint), findsOneWidget);
+    expect(find.byTooltip(t.media_file_location_open), findsNothing);
+    // 第 5 步：提醒 Fushi 要留在后台。
+    final Finder step5 = find.byKey(
+      const ValueKey<String>('browser-extension-step-4'),
+    );
+    await tester.ensureVisible(step5);
+    await tester.pumpAndSettle();
+    await tester.tap(step5);
+    await tester.pumpAndSettle();
+    expect(find.text(t.browser_extension_android_keep_running), findsOneWidget);
+  });
+
+  testWidgets('desktop flow keeps the browser step', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: buildBrowserExtensionInstallStepsForTest(
+              path: '/x',
+              serverEnabled: true,
+              hasToken: true,
+              flow: BrowserExtensionInstallFlow.desktop,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(t.browser_extension_android_step_browser), findsNothing);
+    expect(find.text(t.browser_extension_step_dev_mode), findsOneWidget);
+    expect(
+      find.text(browserExtensionsPageUrl(BrowserKind.values.first)),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('detected default browser is preselected', (
     WidgetTester tester,
   ) async {
@@ -108,6 +192,7 @@ void main() {
               serverEnabled: true,
               hasToken: true,
               detectedBrowser: detected,
+              flow: BrowserExtensionInstallFlow.desktop,
             ),
           ),
         ),
@@ -147,9 +232,13 @@ void main() {
       expect(find.text(t.browser_extension_enable_server_first), findsNothing);
       // 「完成」文案只在最后一步（验证连接）展开后出现一次。
       expect(find.text(t.browser_extension_step_done_auto), findsNothing);
-      await tester.tap(
-        find.byKey(const ValueKey<String>('browser-extension-step-4')),
+      // #3515 的状态块 + 三格检查让步骤列表变长，第 5 步落到 800×600 视口外。
+      final Finder step5 = find.byKey(
+        const ValueKey<String>('browser-extension-step-4'),
       );
+      await tester.ensureVisible(step5);
+      await tester.pumpAndSettle();
+      await tester.tap(step5);
       await tester.pumpAndSettle();
       expect(find.text(t.browser_extension_step_done_auto), findsOneWidget);
     },
@@ -233,7 +322,37 @@ void main() {
       },
     );
 
-    test('browser extension tab is desktop-only (电脑才有)', () {
+    test('install guide: desktop and Android have it, iOS does not', () {
+      // 2026-11-20 用户拍板：安卓也给安装引导（Vivaldi 从文件夹加载）。判据只在
+      // browserExtensionInstallFlowOn 一处；「浏览器」页、设置入口、新手引导都问它。
+      for (final TargetPlatform p in <TargetPlatform>[
+        TargetPlatform.windows,
+        TargetPlatform.macOS,
+        TargetPlatform.linux,
+      ]) {
+        expect(
+          browserExtensionInstallFlowOn(p),
+          BrowserExtensionInstallFlow.desktop,
+          reason: '$p',
+        );
+      }
+      expect(
+        browserExtensionInstallFlowOn(TargetPlatform.android),
+        BrowserExtensionInstallFlow.android,
+      );
+      expect(
+        browserExtensionInstallFlowOn(TargetPlatform.iOS),
+        isNull,
+        reason: 'iOS 没有 Safari Web Extension 目标，装不了这个扩展',
+      );
+      expect(browserExtensionInstallAvailableOn(TargetPlatform.iOS), isFalse);
+      expect(
+        webHubSectionAvailable(WebHubSection.browserExtension),
+        browserExtensionInstallAvailableOn(defaultTargetPlatform),
+      );
+    });
+
+    test('login-import bridge stays desktop-only (电脑才有)', () {
       // 原本扫的是 home_page.dart 里的字面量
       // `browserExtensionEnabled: DesktopLookupService.isDesktop`。那个参数已经
       // 不存在了：模块门控收口后，平台判据只在 ModuleId.availableOn 写一次
@@ -249,10 +368,7 @@ void main() {
         reason: '手机浏览器装不了未解压扩展，非桌面必须没有扩展子页',
       );
       expect(browserExtensionSupportedOn(isDesktop: true), isTrue);
-      expect(
-        webHubSectionAvailable(WebHubSection.browserExtension),
-        browserExtensionSupportedOn(isDesktop: DesktopLookupService.isDesktop),
-      );
+      expect(DesktopLookupService.isDesktop, isA<bool>());
     });
 
     test('contradictory dead i18n keys stay removed across all locales', () {

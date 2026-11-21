@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/reader_quick_settings_sheet.dart';
@@ -21,11 +20,6 @@ import '../helpers/test_platform_services.dart';
 
 /// 2026-10 阅读设置侧板：「歌词模式」专属分页——歌词模式下置首、按任务分三组、
 /// 版式与边距默认折叠，「当前行高亮色」开关真写穿偏好并触发实时样式更新。
-class _FakeInAppWebViewController implements InAppWebViewController {
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
 Future<AppModel> _testAppModel(WidgetTester tester, FushiDatabase db) async {
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
     ..loadFromPrefsSnapshot(<String, String>{
@@ -81,7 +75,6 @@ void main() {
                     readerProgress: const (1, 3),
                     onJumpSection: (_, __) async {},
                     onExitReader: () {},
-                    webViewController: _FakeInAppWebViewController(),
                     appModel: model,
                     ref: ref,
                     isFushiReader: true,
@@ -201,7 +194,6 @@ void main() {
                     readerProgress: const (1, 3),
                     onJumpSection: (_, __) async {},
                     onExitReader: () {},
-                    webViewController: _FakeInAppWebViewController(),
                     appModel: model,
                     ref: ref,
                     isFushiReader: true,
@@ -278,7 +270,6 @@ void main() {
                     readerProgress: const (1, 3),
                     onJumpSection: (_, __) async {},
                     onExitReader: () {},
-                    webViewController: _FakeInAppWebViewController(),
                     appModel: model,
                     ref: ref,
                     isFushiReader: true,

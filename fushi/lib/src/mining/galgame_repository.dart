@@ -9,6 +9,8 @@
 /// 踩过的坑）。
 library;
 
+import 'dart:io';
+
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -16,6 +18,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_merge.dart';
+import 'package:fushi_engine/media/item_scrape/item_scrape_store.dart';
 import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
 
 /// 某游戏的游玩聚合（[FushiDatabase.getGalgamePlayTotals] 的一行）。
@@ -103,9 +106,58 @@ GalgamesCompanion galgamesCompanionFromEntry(GalgameEntry entry) {
 /// 整库规模是几百条，全量重载三个查询在 SQLite 上是毫秒级；换来「缓存与表恒一致」，
 /// 不用维护一套增量更新 + 校验兜底（就是契约 §1.4 拒绝统计投影表的同一个理由）。
 class GalgameRepository extends ChangeNotifier {
-  GalgameRepository(this._db, {this.onPlayStatusChanged});
+  GalgameRepository(
+    this._db, {
+    this.onPlayStatusChanged,
+    this.itemImagesDirectory,
+    this.itemImageDownload,
+  });
 
   final FushiDatabase _db;
+
+  /// 条目附加图目录（v161 `video_covers/items/`）；测试注入，生产为 null。
+  final Directory? itemImagesDirectory;
+
+  /// 附加图下载（测试接缝；生产为 null = 引擎默认下载器）。
+  final Future<File> Function(String url)? itemImageDownload;
+
+  ItemScrapeStore get _itemStore => ItemScrapeStore(
+    _db,
+    imagesDirectory: itemImagesDirectory,
+    downloadImage: itemImageDownload,
+  );
+
+  /// 把刮削源给的横版图（VNDB 截图）下成该游戏的横版背景（v161 `item_images`，
+  /// 游戏库系列色块铺在尾侧）。[replaceExisting] = 显式刮削（换条目就换背景）；
+  /// false = 自动补齐，已有可用背景文件就不动。下载 / 解码失败只记日志（背景是
+  /// 锦上添花，不打断刮削落库）。
+  Future<void> applyScrapedBackdrop(
+    String gameId,
+    String url, {
+    required bool replaceExisting,
+  }) async {
+    if (byId(gameId) == null) return;
+    if (!replaceExisting) {
+      for (final ItemImageRow row in await _db.getItemImages(
+        MediaKind.game,
+        gameId,
+      )) {
+        if (row.kind == MediaImageKind.backdrop.dbValue &&
+            await File(row.path).exists()) {
+          return;
+        }
+      }
+    }
+    try {
+      await _itemStore.setImageFromUrl(
+        ItemScrapeKey(MediaKind.game, gameId),
+        MediaImageKind.backdrop,
+        url,
+      );
+    } catch (e) {
+      debugPrint('GalgameRepository.applyScrapedBackdrop($gameId): $e');
+    }
+  }
 
   /// 游玩状态落库后的通知钩子（可选，测试与纯本地场景可不接）。
   ///
@@ -192,6 +244,7 @@ class GalgameRepository extends ChangeNotifier {
     for (final String id in removed) {
       await _db.removeEntryFromAllCollections(MediaKind.game, id);
     }
+    if (removed.isNotEmpty) await _reclaimItemImages();
     await load();
   }
 
@@ -223,8 +276,14 @@ class GalgameRepository extends ChangeNotifier {
   Future<void> remove(String id) async {
     await _db.deleteGalgame(id, sessionTitle: byId(id)?.displayName);
     await _db.removeEntryFromAllCollections(MediaKind.game, id);
+    await _reclaimItemImages();
     await load();
   }
+
+  /// v155：游戏的横版背景 / logo 行已随 [FushiDatabase.deleteGalgame] 同事务删，
+  /// 文件在这里回收（只删不再被任何 item_images 行引用的；失败只记日志）。
+  /// [itemImagesDirectory] 是测试接缝（缺省生产目录）。
+  Future<void> _reclaimItemImages() => _itemStore.reclaimUnreferencedFiles();
 
   /// 只改游玩状态。
   ///
@@ -240,6 +299,16 @@ class GalgameRepository extends ChangeNotifier {
   Future<void> setCustomData(String id, GalgameCustomData custom) async {
     await _db.setGalgameCustomData(id, custom.isEmpty ? null : custom.encode());
     await load();
+  }
+
+  /// 只改「成人向」覆盖（卡菜单 NSFW 开关；与编辑页「成人向」同一字段
+  /// `GalgameCustomData.nsfw`）。写显式 true / false：覆盖层压过刮削源分级
+  /// （[mergeGalgameMetadata] 的 `overlay.nsfw ??`），关掉就真的关掉。不认识的 id
+  /// 什么都不做。
+  Future<void> setNsfw(String id, bool nsfw) async {
+    final GalgameEntry? game = byId(id);
+    if (game == null) return;
+    await setCustomData(id, game.customData.copyWith(nsfw: nsfw));
   }
 
   /// 只改本地封面路径（null / 空串 = 回落默认手柄图标）。

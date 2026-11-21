@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:test/test.dart';
@@ -32,6 +33,12 @@ void main() {
     expect(kDefaultMangaOcrLocalModel, MangaOcrLocalModel.mangaCtc);
     expect(MangaOcrLocalModel.values, <MangaOcrLocalModel>[
       MangaOcrLocalModel.mangaCtc,
+      MangaOcrLocalModel.ppOcrV6Medium,
+      MangaOcrLocalModel.ppOcrV5Korean,
+      MangaOcrLocalModel.charspotSmall,
+      MangaOcrLocalModel.charspotNano,
+      MangaOcrLocalModel.narSmall,
+      MangaOcrLocalModel.custom,
     ]);
   });
 
@@ -296,7 +303,10 @@ void main() {
     expect(old.manifest.last.expectedBytes, 21167540);
     expect(old.recFileName, 'kellenok_manga_rec_v0.2.onnx');
     expect(old.recDictFileName, kPpOcrRecDictFileName);
-    expect(old.recDictFormat, PpOcrCharacterDictFormat.paddleYaml);
+    expect(
+      (old.recognizer as MangaOcrCtcColumnSpec).dictFormat,
+      PpOcrCharacterDictFormat.paddleYaml,
+    );
     expect(
       MangaOcrLocalModel.mangaCtc.supersededGeneration,
       same(kMangaCtcSupersededGeneration),
@@ -477,4 +487,480 @@ void main() {
       },
     );
   }
+
+  group('general PaddleOCR recognisers (ppocrv6_medium, ppocrv5_korean)', () {
+    const Map<MangaOcrLocalModel, ({String dir, String rec, String dict})>
+    expected = <MangaOcrLocalModel, ({String dir, String rec, String dict})>{
+      MangaOcrLocalModel.ppOcrV6Medium: (
+        dir: 'ppocrv6-medium',
+        rec: 'ppocrv6_medium_rec.onnx',
+        dict: 'ppocrv6_medium_rec.yml',
+      ),
+      MangaOcrLocalModel.ppOcrV5Korean: (
+        dir: 'ppocrv5-korean',
+        rec: 'ppocrv5_korean_rec.onnx',
+        dict: 'ppocrv5_korean_rec.yml',
+      ),
+    };
+
+    test('selectable on every platform, each in its own directory', () async {
+      final EnginePaths previous = enginePaths;
+      final Directory root = Directory(
+        p.join(Directory.systemTemp.path, 'ocr-model-resolution-general'),
+      );
+      enginePaths = FixedEnginePaths(
+        documents: root,
+        support: root,
+        temp: root,
+      );
+      addTearDown(() => enginePaths = previous);
+
+      for (final MapEntry<
+            MangaOcrLocalModel,
+            ({String dir, String rec, String dict})
+          >
+          entry
+          in expected.entries) {
+        final MangaOcrLocalModel model = entry.key;
+        for (final String os in <String>[
+          'windows',
+          'android',
+          'ios',
+          'macos',
+          'linux',
+        ]) {
+          expect(
+            MangaOcrLocalModel.forPlatform(model.key, operatingSystem: os),
+            model,
+            reason: '${model.key} on $os',
+          );
+        }
+        expect(model.availableOnAllPlatforms, isTrue);
+        expect(MangaOcrLocalModel.fromKey(model.key), model);
+        expect(
+          (await model.modelsDirectory()).path,
+          p.join(root.path, 'ocr_models', entry.value.dir),
+        );
+      }
+    });
+
+    test(
+      'manifest: shared detectors + own recogniser + own YAML dictionary',
+      () {
+        for (final MapEntry<
+              MangaOcrLocalModel,
+              ({String dir, String rec, String dict})
+            >
+            entry
+            in expected.entries) {
+          final MangaOcrLocalModel model = entry.key;
+          final MangaOcrModelGeneration generation = model.generation;
+          expect(
+            <String>[
+              for (final MangaOcrModelFile file in model.manifest)
+                file.fileName,
+            ],
+            <String>[
+              'detector-v4-s_int8.onnx',
+              kPpOcrDetFileName,
+              entry.value.rec,
+              entry.value.dict,
+            ],
+            reason: model.key,
+          );
+          expect(generation.recFileName, entry.value.rec);
+          expect(generation.recDictFileName, entry.value.dict);
+          expect(
+            (generation.recognizer as MangaOcrCtcColumnSpec).dictFormat,
+            PpOcrCharacterDictFormat.paddleYaml,
+          );
+          // 没有上一代：这两个模型从未换过 rec。
+          expect(model.supersededGeneration, isNull);
+          // 离线导入按字节数认文件：同一份清单里不能有两个文件一样大。
+          final List<int> sizes = <int>[
+            for (final MangaOcrModelFile file in model.manifest)
+              file.expectedBytes,
+          ];
+          expect(sizes.toSet(), hasLength(sizes.length), reason: model.key);
+        }
+      },
+    );
+
+    test('recogniser and dictionary are pinned to a commit, not a branch', () {
+      final RegExp pinned = RegExp(r'/resolve/[0-9a-f]{40}/');
+      for (final MangaOcrLocalModel model in expected.keys) {
+        final MangaOcrModelGeneration generation = model.generation;
+        for (final MangaOcrModelFile file in model.manifest) {
+          if (file.fileName != generation.recFileName &&
+              file.fileName != generation.recDictFileName) {
+            continue;
+          }
+          expect(
+            pinned.hasMatch(file.url),
+            isTrue,
+            reason: '${model.key}: ${file.url}',
+          );
+        }
+      }
+      MangaOcrModelFile rec(MangaOcrLocalModel model) =>
+          model.manifest.firstWhere(
+            (MangaOcrModelFile f) => f.fileName == model.generation.recFileName,
+          );
+      expect(rec(MangaOcrLocalModel.ppOcrV6Medium).expectedBytes, 76554979);
+      expect(
+        rec(MangaOcrLocalModel.ppOcrV6Medium).url,
+        contains('PaddlePaddle/PP-OCRv6_medium_rec_onnx/'),
+      );
+      expect(rec(MangaOcrLocalModel.ppOcrV5Korean).expectedBytes, 13418787);
+      expect(
+        rec(MangaOcrLocalModel.ppOcrV5Korean).url,
+        contains('PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx/'),
+      );
+    });
+  });
+
+  group('muscgab manga-ocr-nar-small (nar_small)', () {
+    const MangaOcrLocalModel model = MangaOcrLocalModel.narSmall;
+
+    test('key, every platform, own directory', () async {
+      final EnginePaths previous = enginePaths;
+      final Directory root = Directory(
+        p.join(Directory.systemTemp.path, 'ocr-model-resolution-nar'),
+      );
+      enginePaths = FixedEnginePaths(
+        documents: root,
+        support: root,
+        temp: root,
+      );
+      addTearDown(() => enginePaths = previous);
+
+      expect(model.key, 'nar_small');
+      for (final String os in <String>[
+        'windows',
+        'android',
+        'ios',
+        'macos',
+        'linux',
+      ]) {
+        expect(
+          MangaOcrLocalModel.forPlatform(model.key, operatingSystem: os),
+          model,
+          reason: os,
+        );
+      }
+      expect(model.isUserImported, isFalse);
+      expect(MangaOcrLocalModel.builtInValues, contains(model));
+      expect(
+        (await model.modelsDirectory()).path,
+        p.join(root.path, 'ocr_models', 'nar-small'),
+      );
+    });
+
+    test('manifest: shared detectors + weights + vocab, no PP rec', () {
+      final MangaOcrModelGeneration generation = model.generation;
+      expect(
+        <String>[
+          for (final MangaOcrModelFile file in model.manifest) file.fileName,
+        ],
+        <String>[
+          'detector-v4-s_int8.onnx',
+          kPpOcrDetFileName,
+          'nar_small.onnx',
+          'nar_small_vocab.json',
+        ],
+      );
+      expect(generation.recFileName, 'nar_small.onnx');
+      expect(generation.recDictFileName, 'nar_small_vocab.json');
+      expect(generation.recognizer, isA<MangaOcrNarSpec>());
+      // 模型按「文字块 → 正文」训练，不读振假名：开关对它不起额外作用。
+      expect(generation.recognizer.honoursIgnoreFurigana, isFalse);
+      expect(model.supersededGeneration, isNull);
+      expect(
+        model.cacheSignature,
+        allOf(contains('nar-small'), endsWith(kMangaOcrPipelineRevision)),
+      );
+      expect(mangaOcrGenerationForRecFile('nar_small.onnx'), same(generation));
+      // 离线导入按字节数认文件：同一份清单里不能有两个文件一样大。
+      final List<int> sizes = <int>[
+        for (final MangaOcrModelFile file in model.manifest) file.expectedBytes,
+      ];
+      expect(sizes.toSet(), hasLength(sizes.length));
+    });
+
+    test('weights and vocab are pinned to a commit and a sha256', () {
+      const String base =
+          'https://huggingface.co/muscgab/manga-ocr-nar-small/resolve/'
+          '81ff4f3313263d1da349946a9dd20d14e0fb0e66';
+      final MangaOcrModelFile rec = model.manifest[2];
+      final MangaOcrModelFile vocab = model.manifest[3];
+      expect(rec.url, '$base/onnx/mangaocr_nar_small_fp32.onnx');
+      expect(vocab.url, '$base/nar_vocabulary_6817.json');
+      expect(rec.expectedBytes, 213095336);
+      expect(vocab.expectedBytes, 48538);
+      // 与上游 HF LFS 指纹逐字一致（下载后按它校验）。
+      expect(
+        rec.sha256,
+        '5ee628dfd40c59c522022d87c31f8f903104198877b9ba4cf795603dc540dcf5',
+      );
+      expect(
+        vocab.sha256,
+        '9f1059427b54216c869dbf1244157f86bef74b1a0061c46a6001402c6f0c1dbf',
+      );
+      for (final MangaOcrModelFile file in <MangaOcrModelFile>[rec, vocab]) {
+        expect(file.role, MangaOcrModelRole.recognizer);
+      }
+    });
+
+    test('README credits the model and states the non-commercial licence', () {
+      for (final String readme in <String>[
+        File('../README.md').readAsStringSync(),
+        File('../README.zh-CN.md').readAsStringSync(),
+      ]) {
+        expect(readme, contains('muscgab/manga-ocr-nar-small'));
+        expect(readme, contains('CC BY-NC-SA 4.0'));
+      }
+    });
+  });
+
+  group('muscgab charspot (charspot_small, charspot_nano)', () {
+    const Map<
+      MangaOcrLocalModel,
+      ({
+        String dir,
+        String rec,
+        String vocab,
+        String repo,
+        String revision,
+        int recBytes,
+        int vocabBytes,
+        int budget,
+      })
+    >
+    expected =
+        <
+          MangaOcrLocalModel,
+          ({
+            String dir,
+            String rec,
+            String vocab,
+            String repo,
+            String revision,
+            int recBytes,
+            int vocabBytes,
+            int budget,
+          })
+        >{
+          MangaOcrLocalModel.charspotSmall: (
+            dir: 'charspot-small',
+            rec: 'charspot_small.onnx',
+            vocab: 'charspot_small_vocab.json',
+            repo: 'muscgab/manga-ocr-charspot-small',
+            revision: '72ca29202673880ca9c67b1c02c107535be4472b',
+            recBytes: 43992111,
+            vocabBytes: 62244,
+            budget: 256,
+          ),
+          MangaOcrLocalModel.charspotNano: (
+            dir: 'charspot-nano',
+            rec: 'charspot_nano.onnx',
+            vocab: 'charspot_nano_vocab.json',
+            repo: 'muscgab/manga-ocr-charspot-nano',
+            revision: '978dc91bde3bcb36eed3cf2de679d607d1d0f30b',
+            recBytes: 6926056,
+            vocabBytes: 48538,
+            budget: 196,
+          ),
+        };
+
+    test('keys, every platform, own directory', () async {
+      final EnginePaths previous = enginePaths;
+      final Directory root = Directory(
+        p.join(Directory.systemTemp.path, 'ocr-model-resolution-charspot'),
+      );
+      enginePaths = FixedEnginePaths(
+        documents: root,
+        support: root,
+        temp: root,
+      );
+      addTearDown(() => enginePaths = previous);
+
+      expect(MangaOcrLocalModel.charspotSmall.key, 'charspot_small');
+      expect(MangaOcrLocalModel.charspotNano.key, 'charspot_nano');
+      for (final MangaOcrLocalModel model in expected.keys) {
+        for (final String os in <String>[
+          'windows',
+          'android',
+          'ios',
+          'macos',
+          'linux',
+        ]) {
+          expect(
+            MangaOcrLocalModel.forPlatform(model.key, operatingSystem: os),
+            model,
+            reason: '${model.key} on $os',
+          );
+        }
+        expect(MangaOcrLocalModel.fromKey(model.key), model);
+        expect(
+          (await model.modelsDirectory()).path,
+          p.join(root.path, 'ocr_models', expected[model]!.dir),
+        );
+      }
+    });
+
+    test(
+      'manifest: shared detectors + charspot weights + vocab, no PP rec',
+      () {
+        for (final MangaOcrLocalModel model in expected.keys) {
+          final MangaOcrModelGeneration generation = model.generation;
+          final String rec = expected[model]!.rec;
+          final String vocab = expected[model]!.vocab;
+          expect(
+            <String>[
+              for (final MangaOcrModelFile file in model.manifest)
+                file.fileName,
+            ],
+            <String>['detector-v4-s_int8.onnx', kPpOcrDetFileName, rec, vocab],
+            reason: model.key,
+          );
+          expect(generation.recFileName, rec);
+          expect(generation.recDictFileName, vocab);
+          final MangaOcrRecognizerSpec spec = generation.recognizer;
+          expect(spec, isA<MangaOcrCharspotSpec>());
+          expect(
+            (spec as MangaOcrCharspotSpec).cellBudget,
+            expected[model]!.budget,
+          );
+          // 振假名在模型里就去掉了：「忽略振假名」对它不起额外作用。
+          expect(spec.honoursIgnoreFurigana, isFalse);
+          expect(model.supersededGeneration, isNull);
+          expect(
+            model.cacheSignature,
+            allOf(
+              contains(
+                model == MangaOcrLocalModel.charspotSmall ? 'small' : 'nano',
+              ),
+              contains('charspot'),
+              endsWith(kMangaOcrPipelineRevision),
+            ),
+          );
+          final List<int> sizes = <int>[
+            for (final MangaOcrModelFile file in model.manifest)
+              file.expectedBytes,
+          ];
+          expect(sizes.toSet(), hasLength(sizes.length), reason: model.key);
+        }
+        expect(
+          MangaOcrLocalModel
+              .mangaCtc
+              .generation
+              .recognizer
+              .honoursIgnoreFurigana,
+          isTrue,
+        );
+      },
+    );
+
+    test('weights and vocab are pinned to a commit and a sha256', () {
+      for (final MangaOcrLocalModel model in expected.keys) {
+        final ({
+          String dir,
+          String rec,
+          String vocab,
+          String repo,
+          String revision,
+          int recBytes,
+          int vocabBytes,
+          int budget,
+        })
+        e = expected[model]!;
+        MangaOcrModelFile file(String name) => model.manifest.firstWhere(
+          (MangaOcrModelFile f) => f.fileName == name,
+        );
+        expect(
+          file(e.rec).url,
+          'https://huggingface.co/${e.repo}/resolve/${e.revision}/model.onnx',
+        );
+        expect(
+          file(e.vocab).url,
+          'https://huggingface.co/${e.repo}/resolve/${e.revision}/vocab.json',
+        );
+        expect(file(e.rec).expectedBytes, e.recBytes);
+        expect(file(e.vocab).expectedBytes, e.vocabBytes);
+        for (final String name in <String>[e.rec, e.vocab]) {
+          expect(file(name).sha256, matches(RegExp(r'^[0-9a-f]{64}$')));
+          expect(file(name).role, MangaOcrModelRole.recognizer);
+        }
+      }
+      // 与上游 HF LFS 指纹逐字一致（下载后按它校验）。
+      expect(
+        kCharspotSmallGeneration.manifest[2].sha256,
+        '05fb79760f8e3dbc989b61f23a34c46b511818a2166573ce7e41d994f4403843',
+      );
+      expect(
+        kCharspotNanoGeneration.manifest[2].sha256,
+        'f4fc3f4d59f982f050dd4f57bde0e8d7335041a224c3813a5dfbc20c34b0e28c',
+      );
+    });
+
+    test('README credits muscgab and states the non-commercial licence', () {
+      for (final String readme in <String>[
+        File('../README.md').readAsStringSync(),
+        File('../README.zh-CN.md').readAsStringSync(),
+      ]) {
+        expect(readme, contains('muscgab'));
+        expect(readme, contains('manga-ocr-charspot'));
+        expect(readme, contains('CC BY-NC-SA 4.0'));
+      }
+    });
+
+    test('model descriptions name the model and the licence', () {
+      final Map<String, Object?> en =
+          jsonDecode(File('lib/i18n/strings.i18n.json').readAsStringSync())
+              as Map<String, Object?>;
+      for (final String size in <String>['small', 'nano']) {
+        final String desc = en['manga_ocr_charspot_${size}_desc']! as String;
+        expect(desc, contains('Japanese only'));
+        expect(desc, contains('Non-commercial licence'));
+        expect(desc, contains('muscgab/manga-ocr-charspot-$size'));
+        expect(en['manga_ocr_charspot_${size}_model'], isA<String>());
+      }
+    });
+  });
+
+  group('mangaOcrGenerationForRecFile', () {
+    test('every generation has a recogniser file name of its own', () {
+      final List<String> names = <String>[
+        for (final MangaOcrLocalModel model in MangaOcrLocalModel.values) ...[
+          model.generation.recFileName,
+          ?model.supersededGeneration?.recFileName,
+        ],
+      ];
+      expect(names.toSet(), hasLength(names.length));
+    });
+
+    test('maps a recogniser file back to the generation that owns it', () {
+      // The user-imported slot's generation comes from its import metadata;
+      // the synchronous lookup never claims its recogniser file.
+      expect(
+        mangaOcrGenerationForRecFile(
+          MangaOcrLocalModel.custom.generation.recFileName,
+        ),
+        isNull,
+      );
+      for (final MangaOcrLocalModel model in MangaOcrLocalModel.builtInValues) {
+        expect(
+          mangaOcrGenerationForRecFile(model.generation.recFileName),
+          same(model.generation),
+          reason: model.key,
+        );
+      }
+      // 上一代（v0.2 还在替 v0.3 读）要查回上一代，签名才落在老用户原来的缓存上。
+      expect(
+        mangaOcrGenerationForRecFile(kMangaCtcSupersededRecFileName),
+        same(kMangaCtcSupersededGeneration),
+      );
+      expect(mangaOcrGenerationForRecFile('rec.onnx'), isNull);
+    });
+  });
 }

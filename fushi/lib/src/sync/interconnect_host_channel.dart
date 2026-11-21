@@ -49,6 +49,19 @@ final class InterconnectHostRef {
     return InterconnectHostRef._(hostId, anchor);
   }
 
+  /// 从持久化的「hostId + 持久 URL」还原（偏好里存的那台 host）。[hostId] 为空 =
+  /// 老条目，按 URL 认。
+  factory InterconnectHostRef.persisted({
+    required String? hostId,
+    required String anchorUrl,
+  }) {
+    final String anchor = interconnectPersistedUrl(anchorUrl);
+    if (hostId == null || hostId.trim().isEmpty) {
+      return InterconnectHostRef.legacyUrl(anchor);
+    }
+    return InterconnectHostRef._(hostId.trim(), anchor);
+  }
+
   /// 老条目 ref（仅 URL）。
   const InterconnectHostRef.legacyUrl(this.anchorUrl) : hostId = null;
 

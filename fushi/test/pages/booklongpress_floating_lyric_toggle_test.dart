@@ -87,6 +87,13 @@ void main() {
       contains('t.book_scrape_cover'),
       reason: '书卡菜单必须直挂「在线刮削封面」（统一刮削入口层级）。',
     );
+    // 拍板 left3612：有声书 / 字幕书卡对称直挂，同一刮削流程。
+    expect(
+      srtActions,
+      contains('t.book_scrape_cover'),
+      reason: '有声书卡菜单也要直挂「在线刮削封面」（拍板 left3612）。',
+    );
+    expect(srtActions, contains('_scrapeBookItem(item)'));
 
     expect(epubActions, contains('t.view_illustrations'));
     expect(epubActions, contains('t.audiobook_import'));
@@ -295,8 +302,15 @@ void main() {
     expect(srtDialog, contains('showLaunchAction: false'));
     expect(epubDialog, contains('showLaunchAction: false'));
     // 副屏「库」模式（S5）起点按书卡的打开逻辑抽成 _openEpubCard（副屏焦点驱动
-    // 与本机点按共用）：书卡 onTap 只转发到它，它负责 openMedia 开书。
-    expect(epubCard, contains('onTap: () => _openEpubCard(item),'));
+    // 与本机点按共用），它负责 openMedia 开书。#3515 起书卡 onTap 先经
+    // _activateEpubCard：刮削过的书进元数据详情页，没刮削的仍落到 _openEpubCard。
+    expect(epubCard, contains('onTap: () => _activateEpubCard(item),'));
+    final String activateCard = _sectionSource(
+      src,
+      'Future<void> _activateEpubCard(MediaItem item) async {',
+      '\n  }\n',
+    );
+    expect(activateCard, contains('await _openEpubCard(item);'));
     final String openCard = _sectionSource(
       src,
       'Future<void> _openEpubCard(MediaItem item) async {',

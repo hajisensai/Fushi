@@ -13,6 +13,7 @@
 ///   同目录的 `series-links.json`。都是原子写。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -215,6 +216,45 @@ class SeriesCastStore {
     return SeriesCastProfile(seriesKey: seriesKey);
   }
 
+  /// 同一进程里每份档案（按文件路径，跨 [SeriesCastStore] 实例）的读-改-写队尾。
+  static final Map<String, Future<void>> _tails = <String, Future<void>>{};
+
+  /// **改档案的唯一入口**：读最新的档案 → [mutate] 原地改 → 存盘，同一份档案的所有
+  /// 写入在进程内串行（制作台、按系列跑、AI 标注、漫画制作台各自拿着一份旧拷贝时，
+  /// 谁也不会用自己的整份快照覆盖别人刚写进去的改动）。返回存盘后的档案，持有拷贝的
+  /// 一方用它换掉自己的旧拷贝。[mutate] 抛异常时不存盘、异常原样传给调用方。
+  Future<SeriesCastProfile> update(
+    String seriesKey,
+    FutureOr<void> Function(SeriesCastProfile profile) mutate, {
+    DateTime? now,
+  }) => _serialized(seriesKey, () async {
+    final SeriesCastProfile profile = await load(seriesKey);
+    await mutate(profile);
+    await save(profile, now: now);
+    return profile;
+  });
+
+  Future<T> _serialized<T>(String seriesKey, Future<T> Function() body) {
+    final String path = p.normalize(_profileFile(seriesKey).absolute.path);
+    final Future<void> previous = _tails[path] ?? Future<void>.value();
+    final Completer<T> done = Completer<T>();
+    final Future<void> tail = previous.then((_) async {
+      try {
+        done.complete(await body());
+      } catch (e, stack) {
+        done.completeError(e, stack);
+      }
+    });
+    _tails[path] = tail;
+    unawaited(
+      tail.whenComplete(() {
+        if (identical(_tails[path], tail)) _tails.remove(path);
+      }),
+    );
+    return done.future;
+  }
+
+  /// 直接整份落盘（不读最新）。只给建档 / 测试用；改已有档案一律走 [update]。
   Future<void> save(SeriesCastProfile profile, {DateTime? now}) async {
     profile.updatedAt = (now ?? DateTime.now()).millisecondsSinceEpoch;
     await _atomicWrite(
@@ -258,18 +298,17 @@ class SeriesCastStore {
     }
     await _atomicWrite(_linksFile, jsonEncode(links));
     if (previous != null) {
-      final SeriesCastProfile old = await load(previous);
-      if (old.members.remove(bookKey)) await save(old);
+      await update(previous, (SeriesCastProfile old) {
+        old.members.remove(bookKey);
+      });
     }
     if (seriesKey != null) await _ensureMember(seriesKey, bookKey);
   }
 
-  Future<void> _ensureMember(String seriesKey, String bookKey) async {
-    final SeriesCastProfile profile = await load(seriesKey);
-    if (profile.members.contains(bookKey)) return;
-    profile.members.add(bookKey);
-    await save(profile);
-  }
+  Future<void> _ensureMember(String seriesKey, String bookKey) =>
+      update(seriesKey, (SeriesCastProfile profile) {
+        if (!profile.members.contains(bookKey)) profile.members.add(bookKey);
+      });
 
   /// 书改键（改标题）后把关联与成员表跟着改。
   Future<void> rekeyBook(String from, String to) async {
@@ -278,12 +317,10 @@ class SeriesCastStore {
     if (series == null) return;
     links[to] = series;
     await _atomicWrite(_linksFile, jsonEncode(links));
-    final SeriesCastProfile profile = await load(series);
-    final int at = profile.members.indexOf(from);
-    if (at >= 0) {
-      profile.members[at] = to;
-      await save(profile);
-    }
+    await update(series, (SeriesCastProfile profile) {
+      final int at = profile.members.indexOf(from);
+      if (at >= 0) profile.members[at] = to;
+    });
   }
 
   static Future<void> _atomicWrite(File f, String content) async {

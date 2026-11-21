@@ -80,6 +80,7 @@ class GalTextProcessEditorPage extends StatefulWidget {
     this.resolveAiProvider,
     this.aiClientFactory,
     this.aiEnabled = true,
+    this.savedPromptStoreOf,
   });
 
   /// 进页面时生效的管线（来自 `GalHookSessionController.textProcessPipeline`）。
@@ -95,6 +96,10 @@ class GalTextProcessEditorPage extends StatefulWidget {
   /// 「让 AI 帮忙」区是否出现。调用方按 AI 模块开关（`isAiModuleEnabled`）求值后
   /// 传入——本页零 Riverpod 依赖，不自己读 AppModel；false 时整段不渲染。
   final bool aiEnabled;
+
+  /// 「已保存的提示词」的存取（生产 = 应用偏好仓库，由调用方传入，理由同
+  /// [aiEnabled]）；null = 不显示该按钮。
+  final AiSavedPromptStore Function()? savedPromptStoreOf;
 
   @visibleForTesting
   final GalTextProcessAiClientFactory? aiClientFactory;
@@ -996,12 +1001,15 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
                     : const FushiIcon(Icons.auto_awesome_outlined),
                 label: Text(t.game_text_process_ai_generate),
               ),
-              AiSavedPromptButton(
-                scene: AiPromptScene.galTextProcess,
-                controller: _aiRequestController,
-                enabled: !_aiBusy,
-                showLabel: true,
-              ),
+              if (widget.savedPromptStoreOf
+                  case final AiSavedPromptStore Function() savedPromptStoreOf)
+                AiSavedPromptButton(
+                  scene: AiPromptScene.galTextProcess,
+                  controller: _aiRequestController,
+                  enabled: !_aiBusy,
+                  showLabel: true,
+                  storeOf: savedPromptStoreOf,
+                ),
             ],
           ),
           if (_aiMessage != null) ...<Widget>[

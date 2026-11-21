@@ -428,7 +428,7 @@ void main() {
       "grep -q 'native library not found'",
       'native/fushi_anki_sync/build.sh --debug --install-dir build/fushi_server_linux/bundle/bin',
       'dart build cli --target packages/fushi_server/bin/fushi_server.dart',
-      'libonnxruntime.so',
+      '.github/scripts/fetch_onnxruntime_nuget.py "\$ORT_VERSION" linux-x64',
       'bash native/fushidicts/build_linux_so.sh',
       'build/fushi_server_linux/bundle/lib/libfushidicts_ffi.so',
       'lib.fushidicts_create.restype',

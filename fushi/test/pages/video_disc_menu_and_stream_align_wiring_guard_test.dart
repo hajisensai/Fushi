@@ -82,7 +82,11 @@ void main() {
       subtitle,
       'Future<List<double>> _loadSubtitleWaveformSegment(',
     );
-    expect(waveform, contains('if (_canResolveSubtitleTimingAudio)'));
+    // 判据是「本机 / host 现成的整集音源」：`_canResolveSubtitleTimingAudio` 自字幕工作台
+    // 起还包含「在线流能把整集音频拉到本机」（转录用），波形若沿用它就会为看一段波形
+    // 去拉整集流音频。
+    expect(waveform, contains('if (_hasLocalOrHostTimingAudio)'));
+    expect(waveform, isNot(contains('_canResolveSubtitleTimingAudio')));
     expect(waveform, contains('_streamAlignAudioSource'));
     expect(
       _member(subtitle, 'Future<List<double>> _extractStreamWaveformSegment('),
@@ -115,6 +119,40 @@ void main() {
         r'_canResolveSubtitleAlignAudio\s*\n?\s*\? _autoAlignSubtitle',
       ).hasMatch(page),
       isTrue,
+    );
+  });
+
+  // 拍板台 design-nmv-autosync-epoch：图形字幕 OCR 边识别边发布时，只有首次发布
+  // （图形轨 → 文本）算换源；之后的补发走 updateCuesInSameSource，不推进
+  // cueSourceEpoch，否则期间跑着的自动对轴会把同一源的结果当过期丢掉。
+  test('graphic OCR live re-publish keeps the cue source epoch', () {
+    final String subtitle = _read(
+      'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
+    );
+    const String start = 'Future<void> publishLive() async {';
+    final int at = subtitle.indexOf(start);
+    expect(at, isNonNegative);
+    final int end = subtitle.indexOf(
+      'final List<GraphicSubtitleTextCue>? texts',
+      at,
+    );
+    expect(end, greaterThan(at));
+    final String body = subtitle.substring(at, end);
+    final int firstPublish = body.indexOf('if (!livePublished) {');
+    final int sameSource = body.indexOf(
+      'controller.updateCuesInSameSource(live);',
+    );
+    expect(firstPublish, isNonNegative);
+    expect(sameSource, greaterThan(firstPublish));
+    expect(
+      'controller.setCues(live);'.allMatches(body).length,
+      1,
+      reason: '只有首次发布用 setCues',
+    );
+    expect(
+      body.indexOf('controller.setCues(live);'),
+      lessThan(sameSource),
+      reason: 'setCues 只能在首次发布分支里',
     );
   });
 

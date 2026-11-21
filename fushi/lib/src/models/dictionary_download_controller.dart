@@ -31,6 +31,11 @@ enum DictionaryDownloadPhase {
 
   /// 正在导入（不可取消）。
   importing,
+
+  /// 正在把存量词典升级到新磁盘格式（不可取消：原生升级是一次不可分割的 FFI 调用，
+  /// 且中途停下也没有意义——每本都是「写新文件再改名提交」，词典始终可用）。只由
+  /// [DictionaryDownloadController.runWhenIdle] 的任务体在确有词典要升级时切进来。
+  upgrading,
 }
 
 /// 一次任务结束后要展示给用户的结果。
@@ -94,6 +99,11 @@ class DictionaryDownloadJob {
   /// 切到导入阶段（取消按钮禁用）。
   void markImportPhase() =>
       _controller._setPhase(DictionaryDownloadPhase.importing);
+
+  /// 切到「升级词典格式」阶段（取消按钮禁用）。[DictionaryDownloadController.runWhenIdle]
+  /// 的任务体在此之前 phase 保持 idle、状态行不出现；调用这里才亮出来。
+  void markUpgradePhase() =>
+      _controller._setPhase(DictionaryDownloadPhase.upgrading);
 }
 
 /// 接手上一进程的下载后「下完怎么导入」（见
@@ -182,8 +192,18 @@ class DictionaryDownloadController {
   CancelToken _cancelToken = CancelToken();
   bool _cancelRequested = false;
 
-  /// 是否有任务在跑（含静默自动更新）。
-  bool get isBusy => phase.value != DictionaryDownloadPhase.idle;
+  /// 写锁是否被占着。与 [phase] 分开：[runWhenIdle] 的任务可以占着锁但 phase 仍是
+  /// idle（静默阶段，状态行不出现）。
+  bool _locked = false;
+
+  /// 本次任务是否已经亮过非 idle 阶段（亮过才在收尾时撤保活租约）。
+  bool _shownThisJob = false;
+
+  /// 等锁释放的 [runWhenIdle] 调用。
+  final List<Completer<void>> _unlockWaiters = <Completer<void>>[];
+
+  /// 是否有任务在跑（含静默自动更新、词典格式升级）。
+  bool get isBusy => _locked;
 
   /// 本次任务是否已被请求取消。
   bool get cancelRequested => _cancelRequested;
@@ -228,26 +248,78 @@ class DictionaryDownloadController {
   }) async {
     if (isBusy) return false;
 
-    _cancelRequested = false;
-    _cancelToken = CancelToken();
-    progress.value = 0;
+    _acquire();
     message.value = initialMessage;
-    detail.value = '';
     _setPhase(DictionaryDownloadPhase.downloading);
 
     DictionaryDownloadOutcome? outcome;
     try {
       outcome = await body(DictionaryDownloadJob._(this));
     } finally {
-      _setPhase(DictionaryDownloadPhase.idle);
-      progress.value = 0;
-      message.value = '';
-      detail.value = '';
       // 导入也要保活到底：native 导入跑在本进程里，被杀会停在「删旧之后」。
-      await _keepAlive.stop();
+      await _release();
     }
     if (outcome != null) _showOutcome(outcome);
     return true;
+  }
+
+  /// 等写锁空闲后占锁跑 [body]。phase 由 [body] 自己切：它调
+  /// [DictionaryDownloadJob.markUpgradePhase]（或别的 mark*）状态行才出现。占着锁就会
+  /// 让 [run] 的调用方（用户点的下载、启动自动更新）被拒，所以 [body] 应当一进来就
+  /// 切阶段，让用户看得到是什么占着；确认「有没有事要做」的那部分放在占锁之前。
+  ///
+  /// 与 [run] 的区别：[run] 忙时直接返回 false（用户发起的下载要立刻告诉用户「已有
+  /// 下载在跑」；自动更新是 check-due，跳过一轮零损失）；这里忙时**排队等**它结束，
+  /// 给「必须做、但不急」的后台维护任务用（启动期的词典格式升级）——不能因为撞上
+  /// 一次下载就永久跳过，也不能和写词典的任务并发。
+  ///
+  /// 没有结果提示（维护任务不打扰用户）。[body] 抛出原样传给调用方。
+  Future<T> runWhenIdle<T>(
+    Future<T> Function(DictionaryDownloadJob job) body,
+  ) async {
+    while (_locked) {
+      final Completer<void> waiter = Completer<void>();
+      _unlockWaiters.add(waiter);
+      await waiter.future;
+    }
+    _acquire();
+    try {
+      return await body(DictionaryDownloadJob._(this));
+    } finally {
+      await _release();
+    }
+  }
+
+  void _acquire() {
+    _locked = true;
+    _shownThisJob = false;
+    _cancelRequested = false;
+    _cancelToken = CancelToken();
+    progress.value = 0;
+    message.value = '';
+    detail.value = '';
+  }
+
+  Future<void> _release() async {
+    _setPhase(DictionaryDownloadPhase.idle);
+    progress.value = 0;
+    message.value = '';
+    detail.value = '';
+    final bool shown = _shownThisJob;
+    _shownThisJob = false;
+    try {
+      if (shown) await _keepAlive.stop();
+    } finally {
+      _locked = false;
+      // 唤醒全部等待者：它们各自在循环里重查 [_locked]，先醒的占锁，其余接着等。
+      final List<Completer<void>> waiters = List<Completer<void>>.of(
+        _unlockWaiters,
+      );
+      _unlockWaiters.clear();
+      for (final Completer<void> w in waiters) {
+        w.complete();
+      }
+    }
   }
 
   /// 接手上一个进程留下的在途词典下载（BUG-3887 续，iOS 系统后台会话）。
@@ -346,7 +418,9 @@ class DictionaryDownloadController {
   /// 节流 / 去重在 [DownloadKeepAlive] 实现里做。导入阶段没有可信进度
   /// （[progress] 停在下载结束时的值），一律报不确定。
   void _reportKeepAlive() {
-    if (!isBusy) return;
+    // 按 phase 判而不是 [isBusy]：静默占锁（[runWhenIdle] 尚未亮状态行）时不上报，
+    // 否则 Android 上一次「什么都不用做」的启动维护也会拉起前台服务通知。
+    if (phase.value == DictionaryDownloadPhase.idle) return;
     final double ratio = progress.value;
     final int? percent =
         phase.value == DictionaryDownloadPhase.downloading && ratio > 0
@@ -362,6 +436,7 @@ class DictionaryDownloadController {
   }
 
   void _setPhase(DictionaryDownloadPhase next) {
+    if (next != DictionaryDownloadPhase.idle) _shownThisJob = true;
     cancellable.value =
         next == DictionaryDownloadPhase.downloading && !_cancelRequested;
     if (phase.value == next) return;

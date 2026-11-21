@@ -61,7 +61,7 @@ void main() {
       expect(s.overwriteFieldsFor(null), isNull);
     });
 
-    test('按笔记类型记住；空 / null 选择 = 删掉条目回到全部字段', () {
+    test('按笔记类型记住；null 选择 = 删掉条目回到全部字段；空选择 = 一个都不写', () {
       final AnkiSettings s = const AnkiSettings()
           .withOverwriteFields('Lapis', <String>['Sentence', 'Picture'])
           .withOverwriteFields('Basic', <String>['Back']);
@@ -73,11 +73,14 @@ void main() {
           .withOverwriteFields('Lapis', null)
           .withOverwriteFields('Basic', const <String>[]);
       expect(cleared.overwriteFieldsFor('Lapis'), isNull);
-      expect(cleared.overwriteFieldsFor('Basic'), isNull);
-      expect(cleared.overwriteFieldsByNoteType, isEmpty);
+      // 拍板 lt2wobUYfE：「全部字段」取消全选 = 空选择，要记住，不能退回整卡替换。
+      expect(cleared.overwriteFieldsFor('Basic'), isEmpty);
+      expect(cleared.overwriteFieldsByNoteType, <String, List<String>>{
+        'Basic': <String>[],
+      });
     });
 
-    test('toJson / fromJson 往返；坏形状与空清单容错成「全部字段」', () {
+    test('toJson / fromJson 往返（含空选择）；坏形状容错成「全部字段」', () {
       final AnkiSettings s = const AnkiSettings().withOverwriteFields(
         'Lapis',
         <String>['Sentence', 'Picture'],
@@ -86,6 +89,19 @@ void main() {
         jsonDecode(jsonEncode(s.toJson())) as Map<String, dynamic>,
       );
       expect(back.overwriteFieldsFor('Lapis'), <String>{'Sentence', 'Picture'});
+
+      final AnkiSettings none = AnkiSettings.fromJson(
+        jsonDecode(
+              jsonEncode(
+                const AnkiSettings()
+                    .withOverwriteFields('Lapis', const <String>[])
+                    .toJson(),
+              ),
+            )
+            as Map<String, dynamic>,
+      );
+      expect(none.overwriteFieldsFor('Lapis'), isEmpty);
+      expect(none.overwriteFieldsFor('Basic'), isNull);
 
       expect(overwriteFieldsByNoteTypeFromJson(null), isEmpty);
       expect(overwriteFieldsByNoteTypeFromJson('x'), isEmpty);
@@ -97,8 +113,20 @@ void main() {
         }),
         <String, List<String>>{
           'Lapis': <String>['Sentence'],
+          'Empty': <String>[],
         },
       );
+    });
+
+    test('rejectNoOverwriteFieldsSelectedOutcome：只拦空选择', () {
+      expect(rejectNoOverwriteFieldsSelectedOutcome(null), isNull);
+      expect(rejectNoOverwriteFieldsSelectedOutcome(<String>{'Hint'}), isNull);
+      final MineOutcome? none = rejectNoOverwriteFieldsSelectedOutcome(
+        <String>{},
+      );
+      expect(none?.result, MineResult.error);
+      expect(none?.errorCode, AnkiErrorCode.overwriteNoFieldsSelected);
+      expect(isFieldMappingConfigError(none?.errorCode), isFalse);
     });
   });
 
@@ -199,6 +227,26 @@ void main() {
       expect(service.updateCalls, isEmpty);
     });
 
+    test('一个字段都没勾 → 拒绝（overwriteNoFieldsSelected），不写字段不打标签', () async {
+      final _RecordingService service = _RecordingService()
+        ..noteModelName = 'Lapis'
+        ..existingFields = lapisNote();
+      final MineOutcome outcome =
+          await _ConfiguredConnectRepo(
+            service: service,
+            settings: settings().withOverwriteFields('Lapis', const <String>[]),
+          ).updateMinedNote(
+            noteId: 888,
+            rawPayloadJson: kPayload,
+            context: context,
+          );
+
+      expect(outcome.result, MineResult.error);
+      expect(outcome.errorCode, AnkiErrorCode.overwriteNoFieldsSelected);
+      expect(service.updateCalls, isEmpty);
+      expect(service.addTagsCalls, isEmpty);
+    });
+
     test('选择器取键 = 覆写取键：按这张卡自己的 modelName，不是当前选中的笔记类型', () async {
       final _RecordingService service = _RecordingService()
         ..noteModelName = 'Basic'
@@ -247,6 +295,31 @@ void main() {
       expect(
         Map<String, String>.from(args['fieldValues'] as Map),
         <String, String>{'Sentence': context.sentence, 'SentenceFurigana': ''},
+      );
+    });
+
+    test('一个字段都没勾 → 拒绝（overwriteNoFieldsSelected），不调 native 写卡', () async {
+      final List<MethodCall> calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall call) async {
+            if (call.method == 'requestAnkidroidPermissions') return true;
+            calls.add(call);
+            return null;
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      final MineOutcome outcome = await _ConfiguredDroidRepo(
+        settings().withOverwriteFields('Lapis', const <String>[]),
+      ).updateMinedNote(noteId: 42, rawPayloadJson: kPayload, context: context);
+
+      expect(outcome.result, MineResult.error);
+      expect(outcome.errorCode, AnkiErrorCode.overwriteNoFieldsSelected);
+      expect(
+        calls.where((MethodCall c) => c.method == 'updateNoteFields'),
+        isEmpty,
       );
     });
   });

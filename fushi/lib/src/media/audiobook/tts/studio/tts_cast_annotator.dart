@@ -7,6 +7,9 @@
 /// 用在前面章节的归属上。中途取消或失败，已落盘的角色表与已标完的章不丢；重跑时
 /// 未标完的章会重做第一遍（并入是幂等的：同名补别名 / 空特征，不覆盖已有值）。
 ///
+/// 系列：开标注前把系列里记住的角色并进本书角色表（同一个人在各卷用同一个名字），
+/// 结束（含取消 / 失败）后把本书角色表学回系列，下一卷接着用。
+///
 /// 采样温度：[AiChatClient.complete] 不暴露 temperature（各协议默认值不同，推理
 /// 模型还拒收这个字段），这里用服务端默认值；稳定性靠严格 JSON 约束 + 本地校验。
 library;
@@ -14,12 +17,17 @@ library;
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/tts/cast/series_cast.dart';
+import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
+import 'package:fushi_engine/tts/cast/cast_prompt_roster.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 
+import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_cast_prompt.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/tts_series_cast.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
-import 'package:fushi/src/models/app_model.dart';
 
 /// 单块回复的输出上限：100 句全是台词时约 4k token，给推理模型的思考留余量。
 const int _kAnnotateMaxTokens = 8192;
@@ -47,7 +55,7 @@ class TtsCastAnnotateFailure implements Exception {
 /// [onProgress] = 两遍都完成的章数 / 待标章数；[onPhase] = 当前阶段
 /// （[kTtsCastPhaseRoster] / [kTtsCastPhaseLines]）内完成的章数 / 待标章数。
 Future<TtsCast> annotateTtsCast({
-  required AppModel appModel,
+  required AudioProductionHost appModel,
   required String bookKey,
   required TtsBookPlan plan,
   Set<int> sections = const <int>{},
@@ -66,6 +74,12 @@ Future<TtsCast> annotateTtsCast({
 
   final TtsCastStore store = ttsCastStoreFor(appModel);
   final TtsCast cast = await store.load(bookKey);
+  final SeriesCastProfile? series = await loadTtsSeriesProfile(
+    appModel,
+    bookKey,
+  );
+  cast.series = series?.voices;
+  seedTtsRosterFromSeries(cast, series);
   _seedRosterFromLines(cast);
 
   final Map<int, List<TtsPlanSentence>> bySection =
@@ -109,11 +123,25 @@ Future<TtsCast> annotateTtsCast({
         bySection[section]!,
       )) {
         if (isCancelled()) throw const TtsCastAnnotateFailure('cancelled');
+        final CastPromptRoster promptRoster = CastPromptRoster(
+          roster: _orderedRoster(cast),
+          substitutions:
+              series?.substitutions ?? const <CastTextSubstitution>[],
+        );
         final String reply = await ask(
           kTtsRosterSystemPrompt,
-          buildTtsRosterUserPrompt(chunk, roster: _orderedRoster(cast)),
+          buildTtsRosterUserPrompt(
+            chunk,
+            roster: _orderedRoster(cast),
+            promptRoster: promptRoster,
+            substitutions:
+                series?.substitutions ?? const <CastTextSubstitution>[],
+          ),
         );
-        final TtsRosterParseResult? parsed = parseTtsRosterReply(reply);
+        final TtsRosterParseResult? parsed = parseTtsRosterReply(
+          reply,
+          promptRoster: promptRoster,
+        );
         if (parsed == null ||
             parsed.looping ||
             (parsed.ops.isEmpty && parsed.rawCount > 0)) {
@@ -133,6 +161,10 @@ Future<TtsCast> annotateTtsCast({
       final int section = todo[done];
       final List<TtsCastCharacter> roster = _orderedRoster(cast);
       final TtsCastSpeakerIndex index = TtsCastSpeakerIndex(roster);
+      final CastPromptRoster promptRoster = CastPromptRoster(
+        roster: roster,
+        substitutions: series?.substitutions ?? const <CastTextSubstitution>[],
+      );
       final Map<String, TtsCastLine> annotated = <String, TtsCastLine>{};
       List<TtsCastRecentLine> recent = const <TtsCastRecentLine>[];
       for (final TtsCastChunk chunk in chunkTtsCastSection(
@@ -141,12 +173,20 @@ Future<TtsCast> annotateTtsCast({
         if (isCancelled()) throw const TtsCastAnnotateFailure('cancelled');
         final String reply = await ask(
           kTtsCastLinesSystemPrompt,
-          buildTtsCastLinesUserPrompt(chunk, roster: roster, recent: recent),
+          buildTtsCastLinesUserPrompt(
+            chunk,
+            roster: roster,
+            promptRoster: promptRoster,
+            recent: recent,
+            substitutions:
+                series?.substitutions ?? const <CastTextSubstitution>[],
+          ),
         );
         final TtsCastParseResult? parsed = parseTtsCastReply(
           reply,
           chunk.sentences.length,
           speakers: index,
+          promptRoster: promptRoster,
         );
         if (parsed == null ||
             parsed.looping ||
@@ -171,6 +211,15 @@ Future<TtsCast> annotateTtsCast({
     }
   } finally {
     client.close();
+    // 取消 / 失败时已抽到的角色也学回系列（角色表只增不减，并入幂等）。
+    // 在最新的系列档案上学（串行读-改-写：同时开着的制作台改的声音不会被这份旧拷贝
+    // 覆盖）。
+    if (series != null && learnTtsRosterIntoSeries(cast, series)) {
+      await seriesCastStoreFor(appModel).update(
+        series.seriesKey,
+        (SeriesCastProfile fresh) => learnTtsRosterIntoSeries(cast, fresh),
+      );
+    }
   }
   return cast;
 }

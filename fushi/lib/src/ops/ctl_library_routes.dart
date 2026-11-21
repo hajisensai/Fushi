@@ -30,6 +30,7 @@ import 'package:fushi/src/ops/ctl_audiobook_routes.dart';
 import 'package:fushi/src/ops/ctl_library_entries.dart';
 import 'package:fushi/src/ops/ctl_library_import.dart';
 import 'package:fushi/src/ops/ctl_library_manage_routes.dart';
+import 'package:fushi/src/ops/ctl_library_scrape_routes.dart';
 import 'package:fushi/src/ops/ctl_manga_ocr_routes.dart';
 import 'package:fushi/src/ops/ctl_reader_routes.dart';
 import 'package:fushi/src/ops/op_context.dart';
@@ -43,7 +44,7 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 ///
 /// - 列书：[ReaderFushiSource.getBooksFromDb]（书架同源）+ [SrtBookRepository.listAll]
 ///   + [VideoBookRepository.listAll] + [GalgameRepository.games]；
-/// - 删除：[ReaderFushiSource.deleteBook] / [SrtBookRepository.delete]（书架单删）、
+/// - 删除：[ReaderFushiSource.deleteBook] / [ReaderFushiSource.deleteSrtShelfBook]（书架单删）、
 ///   [deleteVideoBooksWithDecision]（视频页单删）、[GalgameRepository.remove]（游戏库「移除」）；
 /// - 打开：[AppModel.openMedia]（书架点卡）、[MangaSeriesPage]（漫画先进作品页）、
 ///   [VideoFushiPage.neutralized]（视频页 / 外部打开同一出口）、[GalgameDetailPage]
@@ -64,6 +65,8 @@ List<CtlRoute> buildLibraryCtlRoutes(OpContext context) {
     // 书架管理（合集 / 标签 / 书签 / 收藏句 / 改名 / 封面 / 读完 / 重置 / 来源增删改）、
     // 阅读会话遥控、有声书、漫画 OCR：各自一个文件，路径同在 library 前缀下。
     ...buildLibraryManageCtlRoutes(context),
+    // v161 条目刮削资料 / 横版背景（CLI `library scrape-meta`）。
+    ...buildLibraryScrapeCtlRoutes(context),
     ...buildReaderCtlRoutes(context),
     ...buildAudiobookCtlRoutes(context),
     ...buildMangaOcrCtlRoutes(context),
@@ -458,6 +461,7 @@ class _LibraryCtlHandlers {
     final DeleteBookResult result = await ReaderFushiSource.instance.deleteBook(
       db: _db,
       bookKey: key.id,
+      appModel: _app,
       scope: decision.scope,
       deleteLocalFiles: decision.deleteLocalFiles,
       deleteStatistics: decision.deleteStatistics,
@@ -490,24 +494,23 @@ class _LibraryCtlHandlers {
         if (book.bookKey.isNotEmpty) book.bookKey,
       ]);
     }
-    LocalFileDeleteReport localFiles = const LocalFileDeleteReport();
-    if (book.bookKey.isNotEmpty) {
-      final DeleteBookResult result = await ReaderFushiSource.instance
-          .deleteBook(
-            db: _db,
-            bookKey: book.bookKey,
-            scope: decision.scope,
-            deleteLocalFiles: decision.deleteLocalFiles,
-            deleteStatistics: decision.deleteStatistics,
-          );
-      localFiles = localFiles.merge(result.localFiles);
+    // 与书架字幕书卡删除同一个原语，按身份只走一条删除路径（BUG-3101）：配对了 EPUB
+    // 的整本删（srt 行随 deleteEpubBook 级联删），纯字幕书删 srt 行。以前这里先
+    // deleteBook、再按 uid 删一次 srt 行（行早已不在），而且两边的失败都不看，删不掉
+    // 也回报成功（#3722 c37 遗留）；现在与 [_removeBook] 一样回 conflict。
+    final DeleteBookResult result = await ReaderFushiSource.instance
+        .deleteSrtShelfBook(
+          db: _db,
+          book: book,
+          appModel: _app,
+          scope: decision.scope,
+          deleteLocalFiles: decision.deleteLocalFiles,
+          deleteStatistics: decision.deleteStatistics,
+        );
+    if (!result.deleted) {
+      throw CtlFailure.conflict('删除失败：${result.failureReason ?? '原因未知'}');
     }
-    final SrtBookDeleteResult srtResult = await repo.delete(
-      book.uid,
-      propagateDeletion: decision.scope == DeleteScope.syncEverywhere,
-      deleteLocalFiles: decision.deleteLocalFiles,
-    );
-    localFiles = localFiles.merge(srtResult.localFiles);
+    final LocalFileDeleteReport localFiles = result.localFiles;
     _refreshShelf();
     return _deletedJson(key, book.title, decision, localFiles);
   }

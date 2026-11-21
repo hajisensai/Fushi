@@ -158,6 +158,104 @@ void main() {
     expect(find.text(t.mihon_store_add), findsNWidgets(2));
   });
 
+  /// 根目录位置上是个**文件**：`rootDirectory.create` 必抛 IO 错误 = state.json 读不出来。
+  /// 删掉它之后同一个 manager 的下一次 initialise 就能读到（全新目录）。
+  Future<(LnReaderManager, File)> unreadableManager() async {
+    final File blocker = File('${root.path}/blocked');
+    await blocker.writeAsString('not a directory');
+    final LnReaderManager broken = LnReaderManager(
+      rootDirectory: Directory(blocker.path),
+      runtime: runtime,
+      httpClientFactory: HttpClient.new,
+    );
+    return (broken, blocker);
+  }
+
+  /// 交替推进真实 IO 与帧，直到 [done]；5 秒兜底失败。
+  Future<void> pumpUntil(WidgetTester tester, bool Function() done) async {
+    final DateTime deadline = DateTime.now().add(const Duration(seconds: 5));
+    while (!done()) {
+      if (DateTime.now().isAfter(deadline)) fail('condition never met');
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump();
+    }
+    await tester.pump();
+  }
+
+  Finder stateFailed() =>
+      find.byKey(const ValueKey<String>('lnreader-state-load-failed'));
+
+  testWidgets('state.json 读不出来：已装源段说「读取失败」而不是「还没有小说源」，重试能恢复', (
+    WidgetTester tester,
+  ) async {
+    final (LnReaderManager broken, File blocker) = (await tester.runAsync(
+      unreadableManager,
+    ))!;
+    addTearDown(broken.dispose);
+    await tester.runAsync(broken.initialise);
+    expect(broken.stateError, isNotNull);
+
+    await pumpSlivers(tester, <Widget>[
+      LnReaderInstalledSourcesSection(
+        manager: broken,
+        onOpenSource: (LnReaderInstalledPlugin _) {},
+      ),
+    ]);
+    // initState 里的 initialise 再失败一次、落定后骨架让位。
+    await pumpUntil(tester, () => stateFailed().evaluate().isNotEmpty);
+    // 修复前：这里画「还没有小说源」，引用户去重新安装，而安装必然被拒。
+    expect(find.text(t.novel_online_sources_empty), findsNothing);
+    expect(find.text(t.novel_sources_state_load_failed), findsOneWidget);
+
+    // 盘恢复后点「重试」：重读成功，错误态让位给真实（这里是全新）状态。
+    await tester.runAsync(blocker.delete);
+    await tester.tap(find.text(t.retry));
+    await pumpUntil(tester, () => broken.stateError == null);
+    await tester.pump();
+    expect(stateFailed(), findsNothing);
+    expect(find.text(t.novel_online_sources_empty), findsOneWidget);
+  });
+
+  testWidgets('state.json 读不出来：仓库段说「读取失败」而不是「还没有仓库」，同屏的扩展目录不重复', (
+    WidgetTester tester,
+  ) async {
+    final (LnReaderManager broken, File _) = (await tester.runAsync(
+      unreadableManager,
+    ))!;
+    addTearDown(broken.dispose);
+    await tester.runAsync(broken.initialise);
+    await pumpSlivers(tester, <Widget>[
+      LnReaderExtensionsSection(
+        manager: broken,
+        showStores: true,
+        showCatalog: true,
+      ),
+    ]);
+    await pumpUntil(tester, () => stateFailed().evaluate().isNotEmpty);
+    // 修复前：画「还没有仓库」+ 添加入口，添加必然被 ensureReady 拒绝。
+    expect(find.text(t.novel_store_empty), findsNothing);
+    expect(stateFailed(), findsOneWidget);
+  });
+
+  testWidgets('state.json 读不出来：只显示扩展目录时也给错误态', (WidgetTester tester) async {
+    final (LnReaderManager broken, File _) = (await tester.runAsync(
+      unreadableManager,
+    ))!;
+    addTearDown(broken.dispose);
+    await tester.runAsync(broken.initialise);
+    await pumpSlivers(tester, <Widget>[
+      LnReaderExtensionsSection(
+        manager: broken,
+        showStores: false,
+        showCatalog: true,
+      ),
+    ]);
+    await pumpUntil(tester, () => stateFailed().evaluate().isNotEmpty);
+    expect(find.text(t.novel_sources_state_load_failed), findsOneWidget);
+  });
+
   testWidgets('扩展段：共享扩展行 + 无下载量时按名字排 + 有更新显示版本跳变 + 语言筛选生效', (
     WidgetTester tester,
   ) async {
@@ -179,24 +277,38 @@ void main() {
       reason: '与漫画 / 视频同口径：组内按下载量排，没有数据的同档按名字排。',
     );
     expect(
-      find.text(t.mihon_extension_download_count_unknown),
+      find.textContaining(
+        t.mihon_extension_download_count_unknown,
+        findRichText: true,
+      ),
       findsNWidgets(3),
     );
     // M3E：元信息是一排小标签（语言 / 版本跳变 / 站点），有更新时标题后挂
     // 「可更新」强调小胶囊。
-    expect(find.text('1.0.0 → 1.2.0'), findsOneWidget);
-    expect(find.text('syosetu.example'), findsOneWidget);
+    expect(
+      find.textContaining('1.0.0 → 1.2.0', findRichText: true),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('syosetu.example', findRichText: true),
+      findsOneWidget,
+    );
     expect(find.text(t.extension_update_available), findsOneWidget);
     expect(find.text(t.mihon_extension_update), findsOneWidget);
     expect(find.text(t.mihon_extension_install), findsNWidgets(2));
 
-    // 语言筛选是一排 choice chip（key `novel_extension_language_<lang>`）。
-    final Finder english = find.byKey(
-      const ValueKey<String>('novel_extension_language_English'),
+    // 语言筛选是下拉胶囊（`novel_extension_language_filter`），菜单项 key
+    // `novel_extension_language_<lang>`。
+    final Finder languageFilter = find.byKey(
+      const ValueKey<String>('novel_extension_language_filter'),
     );
-    await tester.ensureVisible(english);
+    await tester.ensureVisible(languageFilter);
     await tester.pumpAndSettle();
-    await tester.tap(english);
+    await tester.tap(languageFilter);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('novel_extension_language_English')),
+    );
     await tester.pumpAndSettle();
     expect(find.byType(MangaExtensionManagementTile), findsOneWidget);
     expect(find.text('royalroad'), findsOneWidget);
@@ -278,25 +390,35 @@ void main() {
         .toList();
     expect(titles(), <String>['hot', 'warm', 'syosetu', 'cold', 'unknown']);
     expect(
-      find.text(t.mihon_extension_download_count(count: '1.5k')),
+      find.textContaining(
+        t.mihon_extension_download_count(count: '1.5k'),
+        findRichText: true,
+      ),
       findsOneWidget,
     );
-    expect(find.text(t.mihon_extension_download_count_unknown), findsOneWidget);
+    expect(
+      find.textContaining(
+        t.mihon_extension_download_count_unknown,
+        findRichText: true,
+      ),
+      findsOneWidget,
+    );
 
     // 与漫画 / 视频同一个动作行：下载量门槛 + 批量安装 + 一键更新。
     expect(find.byType(ExtensionCatalogActions), findsOneWidget);
-    // 下载量门槛是一排 choice chip（行 key `novel_extension_min_downloads`，
-    // chip key `novel_extension_min_downloads_<档位>`），直接点 50 档。
-    expect(
-      find.byKey(const ValueKey<String>('novel_extension_min_downloads')),
-      findsOneWidget,
+    // 下载量门槛是下拉胶囊（key `novel_extension_min_downloads`，菜单项 key
+    // `novel_extension_min_downloads_<档位>`）：先开菜单再点 50 档。
+    final Finder minDownloads = find.byKey(
+      const ValueKey<String>('novel_extension_min_downloads'),
     );
-    final Finder fifty = find.byKey(
-      const ValueKey<String>('novel_extension_min_downloads_50'),
-    );
-    await tester.ensureVisible(fifty);
+    expect(minDownloads, findsOneWidget);
+    await tester.ensureVisible(minDownloads);
     await tester.pumpAndSettle();
-    await tester.tap(fifty);
+    await tester.tap(minDownloads);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('novel_extension_min_downloads_50')),
+    );
     await tester.pumpAndSettle();
     expect(titles(), <String>[
       'hot',

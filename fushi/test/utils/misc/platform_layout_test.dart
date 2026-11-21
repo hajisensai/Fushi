@@ -197,22 +197,29 @@ void main() {
       // 自身零内边距——共享留白一撤就直接贴窗口边 0px。所以它们必须在页面壳里自己
       // 补，量级与其余媒体墙页一致（这里取 spacing.page，与同页 FushiPageHeader 的
       // 横向内边距同源，标题与正文左缘对齐）。注释先剥掉，防止说明文字假绿。
-      for (final ({String path, String label}) page
-          in const <({String path, String label})>[
+      // 导入视图（导入稿 v2）：页面壳声明 readerShelf，横向内边距由共用骨架
+      // ImportCollagePage 自己补（insetPath）。
+      for (final ({String path, String? insetPath, String label}) page
+          in const <({String path, String? insetPath, String label})>[
             (
-              path: 'lib/src/pages/implementations/media_sources_page.dart',
-              label: '来源页',
+              path: 'lib/src/pages/implementations/video_import_page.dart',
+              insetPath: 'lib/src/media/import/import_collage_page.dart',
+              label: '导入视图',
             ),
             (
               path: 'lib/src/media/manga/online/mokuro_moe_catalog_page.dart',
+              insetPath: null,
               label: 'mokuro 在线目录页',
             ),
           ]) {
-        final String code = stripDartComments(
+        final String shell = stripDartComments(
           File(page.path).readAsStringSync(),
         );
+        final String code = page.insetPath == null
+            ? shell
+            : stripDartComments(File(page.insetPath!).readAsStringSync());
         expect(
-          code.contains('DesktopContentKind.readerShelf'),
+          shell.contains('DesktopContentKind.readerShelf'),
           isTrue,
           reason: '${page.label} 不再是 readerShelf 页，本守卫需重新定标',
         );

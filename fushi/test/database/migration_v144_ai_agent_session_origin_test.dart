@@ -59,7 +59,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 159);
+    expect(migrated.schemaVersion, 166);
     final List<AiAgentSessionSummary> all = await migrated
         .listAiAgentSessionSummaries();
     expect(
@@ -114,7 +114,7 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 159);
+    expect(probe.select('PRAGMA user_version').first.values.first, 166);
     expect(columnsOf(probe), contains('origin_peer_id'));
     expect(indexExists(probe), isTrue);
   });
@@ -149,6 +149,6 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 159);
+    expect(probe.select('PRAGMA user_version').first.values.first, 166);
   });
 }

@@ -242,7 +242,8 @@ public final class DownloadKeepAliveService extends Service {
         if (manager == null) return;
         NotificationChannel channel = new NotificationChannel(
                 NotificationIds.CHANNEL_DOWNLOAD_KEEP_ALIVE,
-                "Downloads",
+                NotificationChannelNames.nameFor(
+                        this, NotificationIds.CHANNEL_DOWNLOAD_KEEP_ALIVE, "Downloads"),
                 NotificationManager.IMPORTANCE_LOW);
         channel.setShowBadge(false);
         channel.setSound(null, null);
@@ -258,6 +259,14 @@ public final class DownloadKeepAliveService extends Service {
         PendingIntent contentIntent = PendingIntent.getActivity(this, 0, open,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         boolean determinate = progress >= 0 && progress <= 100;
+        // Android 16+ 提升为 Live Update（Pixel 胶囊 / ColorOS 流体云），见 DownloadLiveUpdate。
+        return DownloadLiveUpdate.promote(this, buildBaseNotification(contentIntent, title, text,
+                progress, determinate), progress);
+    }
+
+    @NonNull
+    private Notification buildBaseNotification(@NonNull PendingIntent contentIntent,
+            @NonNull String title, @NonNull String text, int progress, boolean determinate) {
         return new NotificationCompat.Builder(this, NotificationIds.CHANNEL_DOWNLOAD_KEEP_ALIVE)
                 .setSmallIcon(R.drawable.ic_stat_fushi)
                 .setContentTitle(title)

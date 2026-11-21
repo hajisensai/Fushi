@@ -81,13 +81,17 @@ void main() {
     ),
   );
 
-  test('三条路由齐全', () {
+  test('路由齐全（元数据刮削 + 每卷封面 / 横幅）', () {
     expect(
       <String>[for (final CtlRoute r in routes) '${r.method} ${r.pattern}'],
       <String>[
         'GET /api/admin/book/scrape',
         'GET /api/admin/book/scrape/:source/:id',
+        'GET /api/admin/book/scrape/:source/:id/volumes',
         'POST /api/admin/book/items/:key/scrape',
+        'POST /api/admin/book/collections/:id/scrape-art',
+        'DELETE /api/admin/book/collections/:id/scrape-art',
+        'DELETE /api/admin/book/items/:key/scraped-art',
       ],
     );
   });
@@ -115,6 +119,51 @@ void main() {
       ),
       _ctlFailure(400),
     );
+  });
+
+  test('search：源标 NSFW 的候选默认不回、只报条数；nsfw=true 才带上（拍板台 pr3497）', () async {
+    bookMetadataFacadeFactory = ({RakutenBooksCredentials? rakuten}) =>
+        BookMetadataScrapeFacade(
+          scraper: offlineScraper(
+            searchHits: <Map<String, Object?>>[
+              bangumiSubject('11', 'Yotsuba to!', cn: '四叶妹妹'),
+              <String, Object?>{
+                ...bangumiSubject('12', 'Adult work'),
+                'nsfw': true,
+              },
+            ],
+          ),
+          downloadImage: fakeDownloader(thumbs),
+        );
+    routes = buildBookMetadataCtlRoutes(OpContext(ref: ref));
+
+    final Map<String, Object?> plain =
+        (await call(
+              'GET',
+              kBookMetadataCtlSearch,
+              query: <String, String>{'query': '四叶'},
+            ))!
+            as Map<String, Object?>;
+    final List<Object?> plainHits = plain['candidates']! as List<Object?>;
+    expect(
+      <Object?>[
+        for (final Object? c in plainHits) (c! as Map<String, Object?>)['id'],
+      ],
+      <Object?>['11'],
+    );
+    expect(plain['hiddenNsfw'], 1);
+
+    final Map<String, Object?> withNsfw =
+        (await call(
+              'GET',
+              kBookMetadataCtlSearch,
+              query: <String, String>{'query': '四叶', 'nsfw': 'true'},
+            ))!
+            as Map<String, Object?>;
+    final List<Object?> all = withNsfw['candidates']! as List<Object?>;
+    expect(all, hasLength(2));
+    expect((all[1]! as Map<String, Object?>)['adult'], isTrue);
+    expect(withNsfw.containsKey('hiddenNsfw'), isFalse);
   });
 
   test('get：命中回候选，查无 404', () async {
@@ -155,7 +204,7 @@ void main() {
     );
   });
 
-  test('apply：默认只换封面；--title 写显示名；结果带快照与封面备份', () async {
+  test('apply：默认换封面 + 写条目资料；--title 写显示名；结果带快照与封面备份', () async {
     await seedBook(db, '猫');
     final Map<String, Object?> cover =
         (await call(
@@ -165,8 +214,23 @@ void main() {
               body: <String, Object?>{'id': '11'},
             ))!
             as Map<String, Object?>;
-    expect(cover['applied'], <String>['cover']);
+    expect(cover['applied'], <String>['cover', 'details']);
     expect(((cover['after']! as Map<String, Object?>)['coverSha']), isNotNull);
+    // v155：默认连条目资料一起写（书架系列色块读它），键 = (epub, uid)。
+    final String uid = (await db.resolveEpubBookUid('猫'))!;
+    final ItemScrapeMetaRow meta = (await db.getItemScrapeMeta(
+      MediaKind.epub,
+      uid,
+    ))!;
+    expect(meta.source, 'bangumi');
+    expect(meta.subjectId, '11');
+    expect(meta.airDate, '2010-01-01');
+    expect(meta.detailUrl, 'https://bgm.tv/subject/11');
+    expect(
+      (cover['before']! as Map<String, Object?>)['state'],
+      containsPair('details', null),
+      reason: '撤销快照记下「执行前没有资料」',
+    );
     expect(ref.invalidations, greaterThan(0));
 
     final Map<String, Object?> both =

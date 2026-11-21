@@ -1,0 +1,6 @@
+## BUG-4857 · 视频导入视图画拖放虚线与悬停态，祖先链却没有落点，拖进来什么都不发生（IM2）
+- **报告**：2026-11-16（用户：导入界面设计稿 v2 IM2，所有者确认按稿实现）
+- **真实性**：✅ 真 bug（代码路径验真；实机拖放未测，见备注）。视频导入视图 `MediaSourcesPage`（`fushi/lib/src/pages/implementations/media_sources_page.dart:186` 的 `QuickImportSection`）画虚线框（`fushi/lib/src/media/import/quick_import_section.dart:200` `_DashedRRectPainter`）并订阅 `FushiFileDropTarget.dragHoveringOf`（同文件 `:174`），但它在视频壳里只包了一层 `DropSurfaceScope`（`fushi/lib/src/pages/implementations/video_library_shell.dart:605` `_dropScoped`），这不是落点；`MediaSourcesPage` 自己也没有 `FushiFileDropTarget`。库页 `HomeVideoPage` 的落点（`home_video_page.dart:5471`）此刻 `DropSurfaceScope.isActive` 为 false。结果：悬停态永远不亮，拖进来的文件被静默丢掉，虚线框却在暗示「往这里拖」。
+- **[x] ① 已修复** — 导入视图换成 `VideoImportPage`（`fushi/lib/src/pages/implementations/video_import_page.dart`，套 `ImportCollagePage`，spec 带 `onDrop` 时整页包 `FushiFileDropTarget`）；落下经壳持有的 `VideoLibraryDropPort`（`video_library_drop_port.dart`）交给 `HomeVideoPage._handleVideoDrop` 同一套分类与意图判定，`cardTargets: false` 不做视频卡命中（库页此刻在 Offstage，注册表里是陈旧矩形）。壳里把 `MediaSourcesPage(...)` 换成 `VideoImportPage(onDrop: _importDropPort.drop, ...)` 的最后一步要等新 i18n key 生成后才能切（见备注）。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/video_import_page_test.dart`（spec 带落点、端口转交 / 撤销、壳与库页接线守卫）。
+- **备注**：壳调用点切换待 i18n_sync + gen_i18n 之后由主会话完成（切换前接线守卫「壳把同一个端口交给库页与导入视图」为红）。Windows / macOS 实机拖放复测待补。

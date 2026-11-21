@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/video/strm_file.dart'
     show lacksLocalMediaFile;
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/subtitle/plain_subtitle_overlap.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi_engine/platform/media_disk_identity.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
@@ -308,6 +309,9 @@ String? subtitleExtensionForCodec(String codec) {
   return format == null ? null : subtitleExtensionForFormat(format);
 }
 
+///
+/// SRT / VTT 的部分重叠在这里收口（[clampPlainTextCueOverlaps]，拍板台 0jnNr_P5Rd：
+/// 重叠的纯文本句子在 overlay 槽位里上下交替跳）；ASS 原样保留。
 List<AudioCue> parseSubtitleContent(
   SubtitleFormat format, {
   required String content,
@@ -318,7 +322,9 @@ List<AudioCue> parseSubtitleContent(
   // for its cues is its own book_uid, so pass bookUid as the cue's bookKey.
   switch (format) {
     case SubtitleFormat.srt:
-      return SrtParser.parseString(content: content, bookKey: bookUid);
+      return clampPlainTextCueOverlaps(
+        SrtParser.parseString(content: content, bookKey: bookUid),
+      );
     case SubtitleFormat.ass:
       return AssParser.parseString(
         content: content,
@@ -326,7 +332,9 @@ List<AudioCue> parseSubtitleContent(
         includeDrawings: includeDrawings,
       );
     case SubtitleFormat.vtt:
-      return VttParser.parseString(content: content, bookKey: bookUid);
+      return clampPlainTextCueOverlaps(
+        VttParser.parseString(content: content, bookKey: bookUid),
+      );
   }
 }
 
@@ -360,17 +368,20 @@ Map<String, dynamic> buildParsedSubtitleResponse({
   };
 }
 
+/// 异步版 [parseSubtitleContent]，重叠收口语义相同。
 Future<List<AudioCue>> parseSubtitleContentAsync(
   SubtitleFormat format, {
   required String content,
   required String bookUid,
   bool includeDrawings = false,
-}) {
+}) async {
   // AudioCue is keyed by `bookKey` (name-PK rename); a video book's owner key
   // for its cues is its own book_uid, so pass bookUid as the cue's bookKey.
   switch (format) {
     case SubtitleFormat.srt:
-      return SrtParser.parseStringAsync(content: content, bookKey: bookUid);
+      return clampPlainTextCueOverlaps(
+        await SrtParser.parseStringAsync(content: content, bookKey: bookUid),
+      );
     case SubtitleFormat.ass:
       return AssParser.parseStringAsync(
         content: content,
@@ -378,7 +389,9 @@ Future<List<AudioCue>> parseSubtitleContentAsync(
         includeDrawings: includeDrawings,
       );
     case SubtitleFormat.vtt:
-      return VttParser.parseStringAsync(content: content, bookKey: bookUid);
+      return clampPlainTextCueOverlaps(
+        await VttParser.parseStringAsync(content: content, bookKey: bookUid),
+      );
   }
 }
 
@@ -1911,7 +1924,9 @@ Duration subtitleExtractTimeoutForBytes(int sizeBytes) {
 /// 与主页把字幕拖到视频卡（`attachSubtitleToVideoBook`）共用同一份失败分类，
 /// 不各自 `readAsString` + 解析（那样失败原因会退化成空列表或未捕获异常，BUG-1504）。
 ///
-/// [contentReader] 仅供测试注入（默认 [readTextWithEncoding]）。
+/// [contentReader] 默认 [readTextWithEncoding]；播放页载入链注入自己的读法，同一份
+/// 字节顺手判对齐产物（只读一次盘）。须与 [readTextWithEncoding] 同样任何字节都能解出
+/// 字符串。
 Future<SubtitleCueLoadResult> loadExternalSubtitleCueResult(
   String path,
   String bookUid, {

@@ -15,7 +15,7 @@
 ## 同步基线
 
 - **上游 `origin/main` 当前 tip**（批4 同步参照，2026-08-16）：`8993838`（"train zstd dict on import"）。
-- **2026-11-16 性能批的评估参照 tip**：`34074bd`（性能提交见「2026-11 性能批」，其中 5 条功能提交见「2026-11 功能同步」，`1c230f3` / `fcea33f` 未评估）。
+- **2026-11-16 性能批的评估参照 tip**：`34074bd`（性能提交见「2026-11 性能批」，其中 5 条功能提交见「2026-11 功能同步」，`fcea33f` 在格式批移植，`1c230f3` 未评估）。
 - **Hibiki 批4 同步后所含的上游主线 commit**：截至 `8993838`，但**跳过**了主线上的若干提交（见「批4 明确跳过/暂缓」）。
 - Hibiki 是 hoshidicts 的**深度 fork**：在上游主线 `2dd5199`（"count freq and pitch entries"，2026-05-16）一带分叉后，
   额外吸收了 sibling commit `feb48f5`（"add detected_type to ImportResult"，非 origin/main 主线，分叉自 `2dd5199`），
@@ -65,7 +65,8 @@
 
 **磁盘格式 v2（`.fushidicts_2`，fork 首个版本阶梯）：**
 - `import_yomitan` 产出 `.fushidicts_2`；`write_simple_dict`（MDX/StarDict/DSL）仍产 `.fushidicts_1`。
-- 读侧 `dict_format_version()`（query.cpp）：`.fushidicts_2`→2，`.fushidicts_1`/`.hoshidicts_1`（改名前存量，冻结只读）→1，无 marker→不加载。
+- 读侧 `dict_format_version()`（query.cpp，委托 `util/dict_marker.hpp` 单一真相源）：`.fushidicts_3`→文件体记的记录布局版本（"2" / "1"，其余→不加载），`.fushidicts_2`→2，`.fushidicts_1`/`.hoshidicts_1`（改名前存量，冻结只读）→1，无 marker→不加载。
+- **`.fushidicts_3`（key.index 索引，拍板台 pr3554）**：索引写成 key.index（不再有 hash.table / bloom.filter）的词典一律写 `.fushidicts_3`，文件体是记录布局版本；装不进 key.index 退回旧式索引的仍写 `.fushidicts_2` / `.fushidicts_1`。存量升级（`upgrade.cpp`）提交 key.index 后先写新标记、落盘目录项，再删旧标记。旧引擎读 v3 盘＝整目录不加载（降级要重导，不会静默查不到词）。宿主每次启动只调 `fushidicts_tidy_dictionary`（只检查 + 清理，旧式词典不改写、报待升级），用户同意后才调 `fushidicts_upgrade_dictionary`。
 - v2 增量：① kanji 记录尾部追加 stats 段 `[u8 count]([u8 klen][k][u16 vlen][v])*`（radical/strokes 之外全保留，JLPT/grade 等；S0 契约注释在 importer.cpp）；② term 记录尾部追加 `[i32 score]`（Yomitan 排序信号，多记录合并取 max）；③ term glossary 可能用训练字典压缩，`dict.zstd` 存在才挂 DDict（训练样本不足时不写，退普通压缩）。
 - 兼容矩阵：新引擎读 v1 老盘**完全不变**；旧引擎读 v2 盘＝整目录不加载（降级后新导入词典不可见，不毁数据，重导可救）。kanji meanings / meta 记录恒普通 zstd 帧，不吃训练字典。
 - FFI：`FfiKanjiResult` 追加 `stat_keys/stat_values/stat_count`（native+Dart 同 commit 镜像，照 918744d transcriptions 先例双层 malloc/free）；其余 ABI 零变化。
@@ -89,17 +90,18 @@
 
 上游 tip（评估参照，2026-11-16）：`34074bd`。本批**只评估性能相关提交**；同一区间里的功能
 提交 `30ad52f` 去片假名中点、`3f0c2d9`、`ad0be91` 强调っ / 片假名边界、`e2a007f` 歴史的仮名遣い、
-`8e89a5d` -やしない 见下「2026-11 功能同步」；`1c230f3` 原地增删词典、`fcea33f` 数字串频率
-仍未评估，留给下一次功能同步。
+`8e89a5d` -やしない 见下「2026-11 功能同步」；`fcea33f` 数字串频率已在格式批移植（见下表）；
+`1c230f3` 原地增删词典仍未评估，留给下一次功能同步。
 
 | 上游 commit | 标题 | 处置 | 说明 |
 |---|---|---|---|
 | `9cabc17` | perf: reduce Japanese text preprocessing overhead (#34) | **采纳思路、重写** | `text_processor::process`：处理器表进程内只建一次、变体表 `std::map` → 排序向量、各处理器 `reserve`。fork 多走一步：「不改写」那一档不占 option 编号（不调用也不拷贝），一轮没产出新变体就不重排。变体顺序仍是码点字典序（它决定 lookup 的同长度取舍，是行为的一部分）。 |
 | `9daeea4` | query meta after filtering | **已等价** | fork 自 BUG-1304 起就是「过滤 / 去重后再查 freq、截断后再查 pitch」（`lookup.cpp`）。 |
 | `e6af33e` | fix: read media on on demand | **已等价** | fork 的 BUG-4013：`media.bin` 不映射、按请求 `file_reader` 定位读。 |
-| `2f0e5c5` | replace linear hash and bloom filter with phf | **暂缓（待决策）** | 换磁盘格式：每本词典的 `hash.table` + `bloom.filter` 换成 PHF（分区 4096 字节、256 桶 pilot、8 字节 slot + 前置 blocked bloom）。它降的是**单次探测**的成本；fork 实测耗时大头是**探测次数**（一次查词约 1.85 万次逐词典探测），下面的联合过滤器把这部分直接拿掉、且不动格式。PHF 剩下的收益是索引体积约减半，代价是存量词典要现场迁移（上游 `phf::migrate` 迁完删旧文件）——迁过的词典旧版 app 打不开（降级即坏），所以单列为待决策项，不夹在本批里。 |
-| `eb4e5dd` | preparse meta dicts during import | **暂缓（待决策）** | 导入期把 freq / pitch 的 JSON 预解析成二进制（type 3 记录）。同样是格式变更，且只有**新导入**的词典受益；fork 实测频率富化里 JSON 解析只占约三成（每次查词约 600 条、约 0.1 ms），其余是读记录的缓存未命中，已由下面的分遍预取覆盖一部分。 |
-| `c28a687` | bump format version | **不适用** | 上游为上两条把 marker 升到 `.hoshidicts_5`；fork 的格式阶梯是 `.fushidicts_1 / _2`，本批不动格式。 |
+| `2f0e5c5` | replace linear hash and bloom filter with phf | **不采纳（另做 key.index，见下节）** | 换磁盘格式：每本词典的 `hash.table` + `bloom.filter` 换成 PHF（分区 4096 字节、256 桶 pilot、8 字节 slot + 前置 blocked bloom）。它降的是**单次探测**的成本；fork 实测耗时大头是**探测次数**（一次查词约 1.85 万次逐词典探测），下面的联合过滤器把这部分直接拿掉、且不动格式。PHF 剩下的收益是索引体积约减半，代价是存量词典要现场迁移（上游 `phf::migrate` 迁完删旧文件）——迁过的词典旧版 app 打不开（降级即坏），所以单列为待决策项，不夹在本批里。2026-11 格式批改做桶式键索引 `key.index`（下节），不移植 PHF。 |
+| `eb4e5dd` | preparse meta dicts during import | **已采纳（格式批，见下节）** | 导入期把 freq / pitch 的 JSON 预解析成二进制（type 3 记录）。同样是格式变更，且只有**新导入**的词典受益；fork 实测频率富化里 JSON 解析只占约三成（每次查词约 600 条、约 0.1 ms），其余是读记录的缓存未命中，已由下面的分遍预取覆盖一部分。2026-11 格式批采纳：type 3 记录布局与上游一致，另加存量词典原地重写。 |
+| `c28a687` | bump format version | **不适用** | 上游为上两条把 marker 升到 `.hoshidicts_5`；fork 的格式阶梯是 `.fushidicts_1 / _2`。格式批也不升 marker：用哪种索引由目录里有没有合法 `key.index` 决定，记录类型逐条自描述（type 1 / 3 混存合法）。 |
+| `fcea33f` | numeric-string frequencies | **已移植（格式批）** | 频率值是数字串（`["語","freq","123"]`）时此前整条被丢；`json/yomitan_parser.cpp parse_frequency` 先按数字读、失败再按 `quoted_num` 读。查询期（type 1）与导入期预解析（type 3）走同一函数，两种形态结果相同（`dict_upgrade_test` 的 `走る` 条目）。真实 64 本词典里没有这种条目，指纹不变。 |
 
 **本地改动（上游没有）：**
 
@@ -111,8 +113,9 @@
   任何词典目录、存量词典不必重导；缓存文件 `union-<hash>.filter`（校验和覆盖文件头、身份列表与块区，每次装载都验；写入时不同步刷盘）放
   宿主给的缓存目录，丢了 / 坏了 / 词典集合变了就重建，身份集合是当前集合超集的旧文件可复用
   （关掉一本词典不重建）。约 2 字节 / 键（64 本、1200 万键 ≈ 24 MB，文件映射、可换出）。
-  - 词典身份 = `hash.table` 的大小 + 修改时间 + 首页内容 + `blobs.bin` 大小（`query.cpp
-    table_identity`），与词典在引擎里的次序无关。
+  - 词典身份 = 实际在用的索引文件（`key.index` 或 `hash.table`）的大小 + 修改时间 + 首页内容 +
+    记录文件大小（`hash/dict_index.cpp file_identity`），与词典在引擎里的次序无关。格式批起过滤器
+    建在键的 29 位 tag 上（见下节）。
   - 生命周期：`DictionaryQuery::prepare_union_filter(cache_dir, wait)` 由宿主在装完一套词典后
     调；后台线程归引擎独占，`add_*_dict` 作废过滤器并叫停构建，引擎析构时叫停并等线程退出
     （毫秒级）——线程撑着各 `hash.table` 的映射，不收回的话「释放映射后马上删词典目录」会撞
@@ -147,6 +150,104 @@
 不留半截文件 / 有无过滤器时真词典上的 lookup、query 逐字段相同 / `add_dict` 后作废 / 后台构建
 就绪 / 引擎销毁后不留文件映射）+ Dart `packages/fushi_dictionary/test/union_filter_native_test.dart`。
 既有的查词守卫（混写、关西、韩语、简繁、重定向、排除词典、分词批量比对）全部照过。
+
+## 2026-11 格式批：key.index 键索引 + type 3 meta 记录 + 存量词典原地升级
+
+接上节的联合过滤器。三件事都改磁盘格式，但**旧格式照常可读**：引擎按目录里实际有的文件选路径，
+没升级的词典不受影响。
+
+**打开词典只有一处**：`fushidicts_src/hash/dict_index.{hpp,cpp}`。`key.index` 合法且它指的记录
+文件（`blobs.bin`，或 `rewritten` 时的 `blobs3.bin`）打得开 → 用它；否则退回 `hash.table` +
+`bloom.filter`（损坏的 `key.index` 旁边旧文件还在时词典照常可查）；旧式也打不开时再看一次
+`key.index`——装载不拿升级的锁，而升级是先提交 `key.index` 后删旧文件，「刚才没有 key.index、
+转头旧文件也没了」只可能是它在这两步之间提交了。头里 `num_keys` 多过槽位数的不装载。查库、整本扫描
+（`probe_dict_content`、`ensure_redirect_glossary_flag`、`redirect_glossary` 扫描）、联合过滤器
+来源都经它，不再各自拼文件名。
+
+- **key.index**（`hash/key_index.{hpp,cpp}`，布局沿用 `ce12a7aa7b0` 未改）：64 字节一桶 8 个
+  槽位，每槽 29 位 tag + 溢出 / 占用 / single 三个标志 + 32 位 offset；每个键一个主桶一个备桶，
+  主桶满了才进备桶并给主桶打溢出位。`single` 的键 offset 直接指记录（不写 offset 表），多记录
+  的键指 offset 表。offset 超 32 位时 `build_to_file` 拒绝，导入退回旧式。
+  - **与上游 PHF 的区别**：不是完美哈希，查一个键读一条缓存行（溢出时两条）；不需要前置
+    bloom（没有联合过滤器时直接探主桶，代价同样是一条缓存行）；构建是线性的，不需要 pilot
+    搜索。
+  - **核对**：tag 只有 29 位，候选可能是别的键。`locate` / `locate_all` 对每个候选读第一条
+    记录的键（term 的 expression 或 reading，其他类型的首串）核对，主桶都不中且有溢出位才看
+    备桶，所以无假阴性；旧式 `hash.table` 也一样核对（此前 64 位哈希相等就当命中）。
+  - **构建端保证查找路径上没有第二个同 tag 的键**（同一桶里不放两个同 tag 的键；住在备桶
+    的键，它的主桶里也没有同 tag 的键）。撞上了就把桶数加一重排，最多 8 次，仍不行则
+    `build_to_file` 返回 false（导入退回旧式 / 升级报不适用）。有了它，「只核对第一条记录」
+    是精确的：两个同 tag 的键共用首记录（一条 term 的 expression 与 reading）也不会查错。
+  - **联合过滤器**改建在 tag 上：tag 选块，块内位由（tag, 词典身份）决定；`kVersion = 2`、
+    `kLayout` 带 tag 位数，旧缓存一律被拒并重建。key.index 来源直接枚举 tag、有确切键数。
+- **type 3 meta 记录**（`json/meta_record.{hpp,cpp}`）：布局同上游 `eb4e5dd`（freq：reading +
+  i32 值 + 显示串；pitch：reading + 若干 {位置, pattern, nasal[], devoice[]}；ipa：reading +
+  若干串）。导入期解析失败的条目、长度超 u16 的条目留 type 1；查询期两种类型走同一套解析结果
+  结构，结果逐字段相同。
+- **原地升级**（`fushidicts_src/upgrade.cpp`、`fushidicts_include/fushidicts/upgrade.hpp`；
+  C ABI `fushidicts_upgrade_dictionary(dir, allow_meta_rewrite)` 经 `ffi_guard`，返回
+  -1 失败 / 0 已是最新 / 1 已升级 / 2 不适用）：从 `hash.table` 读出全部键，写新 `key.index`；
+  `allow_meta_rewrite` 且全部记录都是 type 1 时把记录重写成 `blobs3.bin`（能解析的转 type 3）并
+  写 `rewritten` 的 key.index。**不修改、不截断、不覆盖任何在用的文件**：新文件写到唯一命名的
+  临时文件、落盘（`memory::sync_file`：`FlushFileBuffers` / `F_FULLFSYNC` / `fsync`）再改名，
+  改名成 `key.index` 是提交点；之后把目录项落盘（`memory::sync_directory`）再删旧文件
+  （Windows 上引擎还映射着就删不掉，留到下一次调用再删；常态没有旧文件时不碰磁盘）。遗留的
+  临时文件超过 10 分钟才清，孤儿 `blobs3.bin` 被清掉。
+  - **同一本词典的升级跨进程、跨线程串行化**：整个调用持有导入标记文件上的独占锁
+    （`memory::file_lock`：POSIX `flock`、Windows `LockFileEx` 锁文件末尾之外的一个字节，
+    阻塞等待），拿到锁后再看目录现状。没有这把锁时两个调用交错会互相删掉对方刚提交的
+    `key.index`（或把它改回指向已删除的 `blobs.bin`），词典从此打不开——审查时在 Mac 与
+    Windows 上都复现过。
+  - `add_dict` 从不升级（升级是宿主显式调的一次性动作）。offset 超 32 位、或一个键都没有的
+    词典返回不适用。
+- **宿主接线**：`FushiDicts.upgradeDictionaryFormats`（逐本在后台 isolate 跑，借用账本与删 /
+  覆盖词典串行，同 `ensureRedirectFlags`）。app 启动首帧后由
+  `DictionaryFormatUpgradeCoordinator` 编排：先不占词典写锁逐本静默检查（常态启动到此为止）；
+  确有词典升级且后面还有，才占写锁、在词典页状态行显示「正在升级词典格式（n/总数）」；升级过
+  就影子引擎重载、等旧引擎放手后静默补跑一遍清旧文件。`fushi_server` 在首次装载前同步升级。
+- 新导入默认写 key.index + type 3；`FUSHIDICTS_LEGACY_INDEX=1` 只给测试用，强制旧式。
+
+**风险 / 已知限制：**
+
+- **降级即坏**：升级过 / 新导入的词典没有 `hash.table`，旧版 app 打不开；`rewritten` 的词典连
+  `blobs.bin` 也没有。
+- 联合过滤器因 tag 截断多出约 n/2^29 的假阳性（n 为全部键数），只多一次精确探测。
+- `key.index` / `blobs3.bin` 没有校验和：防的是「没写全」（改名前落盘），不防介质上的位翻转
+  ——与 `hash.table` / `blobs.bin` 一向的口径相同。
+- Windows 上查词弹窗是独立进程、也映射着词典文件：它没重载之前，补跑那一遍删不掉旧文件，
+  留到下次启动清（只是多占一阵磁盘，不影响查词）。
+
+**实测**（同上节的 64 本词典与语料；副本在 `D:/hibiki-tmp/dictfmt3/`，原目录只读；三种状态
+——基线 exe 读原目录、新 exe 读未升级副本、新 exe 读升级后副本——三种模式的结果指纹全部
+等于基线 `5966df6ff1a00285` / `017aac1a38ae2360` / `e56884189c8a2956`）：
+
+- 升级 64 本（全新副本，含改名前落盘）：0 失败，合计 5.3 秒（最慢 BCCWJ 频率 0.94 秒，其次
+  两本各约 0.47 秒）；再调一遍 64 本全部「已是最新」合计 64 ms。索引 303.0 MB → 115.1 MB
+  （-62%），记录文件 1839.0 MB → 1694.0 MB（meta 重写，-8%），词典目录合计 2148 MB → 1815 MB。
+- 查词（同机交替 3 轮、每轮每个配置 10 遍取 warm 最好的平均值，再取 3 轮最好；测时机器上
+  还开着别的程序，绝对值比上节略高，三个配置交替跑、相对差可比）：
+
+  | 模式 | 基线（原目录） | 新代码 + 未升级 | 新代码 + 升级后 |
+  |---|---|---|---|
+  | 弹窗查词 | 1.755 ms | 1.794 ms（+2.2%） | 1.714 ms（-2.3%） |
+  | `materialize = false` | 1.014 ms | 1.035 ms（+2.1%） | 0.959 ms（-5.4%） |
+  | `materialize = false`、`max 1` | 0.999 ms | 1.028 ms（+2.9%） | 0.953 ms（-4.6%） |
+
+  未升级词典多出的 2～3% 是旧式路径新增的记录键核对（每个命中多读一次记录头）。
+- 联合过滤器首次构建（文件缓存已热）：未升级 545 ms、升级后 430 ms；之后每次装载 5～6 ms；
+  缓存文件都是 24,471,488 字节（块数由键数估计取整决定，键数相同）。
+
+守卫：`tests/dict_upgrade_test.cpp`（旧式 / 旧式+升级 / 只换索引 / 新式与混装四种状态下
+lookup、query、query_kanji 逐字段相同，有无联合过滤器都比；A 的哈希指向 B 的记录必须查不到、
+主桶塞满同 tag 假候选时真键在备桶必须查得到、旧式表同样核对；升级幂等、遗留临时文件 / 孤儿
+`blobs3.bin`、key.index 损坏回退、引擎装着词典时升级、新引擎装着升级后的词典时补跑清理；
+手写索引：主桶只有溢出位而真键在备桶、主桶无溢出位则不看备桶、tag 相符但 offset 越界、
+`num_keys` 超槽位数；并发：别人持锁时升级必须等、4 线程混合参数同时升级同一批词典后每本
+恰好一个调用报已升级且结果与旧式相同），`tests/key_index_test.cpp`（同 tag 的键可分开时
+分开、分不开时拒绝构建），`union_filter_test`
+（新增 key.index 来源与混装来源；引擎层新式 / 旧式各跑一遍），`hash_truncated_table_guard_test`
+（key.index 截断 / 桶数被改 / 全 0xFF 被拒）。以上与受影响的既有测试在
+`FUSHIDICTS_BLOB_WINDOWED=1` 下同样通过。
 
 ## 2026-11 功能同步：上游 `30ad52f` / `3f0c2d9` / `ad0be91` / `e2a007f` / `8e89a5d`
 
@@ -220,6 +321,7 @@
 - **安全上限**：导入/查询期的资源/尺寸上限加固。
 - **FFI 桥**：`fushidicts_ffi.cpp`（Dart FFI，五端共用）。**不用上游 `c-bindings` 分支**。原 Android JNI 桥 `fushidicts_jni.cpp`（只服务已删除的原生弹窗 `PopupDictActivity`）已删除，Android `:popup` 进程走同一条 Dart FFI。
   - 注意：`score` / `get_freq_value(s)_for_dict` / `Dictionary` 均为引擎内部符号，FFI 桥与 Dart binding 均未暴露——本批三处改动**不影响 FFI 签名**。
+- **只查词频的查询入口**（2026-11，上游没有）：`DictionaryQuery::query_frequencies` / FFI `fushidicts_query_frequencies` / Dart `FushiDicts.queryFrequencies`——与 `query()` 同一批词条、同样的 rules 与 frequencies，但不富化音调、不解压释义（glossaries / pitches 恒为空）。给 Anki 卡组按词频重排用（每张卡查一次、只读 reading 与 frequencies）。实测（64 本词典、677 个词，`lookup_bench --query-compare`）：`query()` 平均每个词解压 376 KB 释义，0.33 ms → 0.03 ms，两者词条 / 词频逐项相同。守卫 `tests/freq_pitch_merge_query_test.cpp`（每个查询点都比 `query()`）。
 - **额外吸收的 sibling commit**：`feb48f5`（`ImportResult.detected_type`，自动词典类型检测），非 origin/main 主线。
 
 ## 依赖差异

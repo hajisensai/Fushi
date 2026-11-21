@@ -26,6 +26,8 @@ library;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi/src/media/source_library/source_auto_scan.dart'
+    show SourceScanActivity, sourceScanActivity;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -182,23 +184,36 @@ void markOneShotSourceDone(int sourceId) =>
 
 /// 删掉**以前的进程**留下的临时来源行（带标记、且不是本进程正在跑的那几条），返回
 /// 删掉的行数。与正常收尾同一个动作：释放访问授权后删行，已导入的媒体靠 FK setNull
-/// 留在库里。[keep]：调用方此刻正在扫的来源，不动（用户对着残留行点了「重新扫描」
-/// 时，不能把扫描脚下的行删掉；它留到下一次进程再清）。
+/// 留在库里。
+///
+/// 每一行都在这个来源的扫描锁里删（[SourceScanActivity.tryRun]，拍板台
+/// design-nmv-fyi-tail ③）：有人正在扫它（用户对着残留行点了「重新扫描」、或调用方
+/// 自己就是这次扫描）就跳过，留到下一次进程再清，不把扫描脚下的行删掉；删的期间
+/// 到来的扫描排在后面，拿到锁时发现行已不在（[SourceLibraryScanner.scan] 会复核）。
+/// 以前靠调用方传 `keep` 排除「自己正在扫的那条」：首页首帧的清扫不在任何来源锁里，
+/// 又与扫描入口共用每库一次的结果，那条 `keep` 管不到首帧之后才发起的重扫。
 Future<int> sweepStaleOneShotSources(
   FushiDatabase db, {
   Future<void> Function(int sourceId)? releaseAccess,
-  Set<int> keep = const <int>{},
+  SourceScanActivity? activity,
 }) async {
+  final SourceScanActivity locks = activity ?? sourceScanActivity;
   int removed = 0;
   for (final MediaSourceRow row in await db.getAllMediaSources()) {
-    if (!isOneShotSourceRow(row) ||
-        _liveOneShotSourceIds.contains(row.id) ||
-        keep.contains(row.id)) {
+    if (!isOneShotSourceRow(row) || _liveOneShotSourceIds.contains(row.id)) {
       continue;
     }
-    await releaseAccess?.call(row.id);
-    await db.deleteMediaSource(row.id);
-    removed++;
+    final Future<bool>? deleted = locks.tryRun<bool>(row.id, () async {
+      // 拿锁前读到的行可能已被别处删掉 / 认领：锁里再确认一次。
+      if (_liveOneShotSourceIds.contains(row.id) ||
+          await db.getMediaSourceById(row.id) == null) {
+        return false;
+      }
+      await releaseAccess?.call(row.id);
+      await db.deleteMediaSource(row.id);
+      return true;
+    });
+    if (deleted != null && await deleted) removed++;
   }
   return removed;
 }
@@ -208,18 +223,14 @@ final Expando<Future<void>> _leftoverSweeps = Expando<Future<void>>();
 /// 每个库实例只跑一次的残留清扫：以前的进程留下的临时来源行 + 临时目录。
 ///
 /// 清扫失败（库正忙、目录删不掉）不能连累调用它的那次扫描，所以错误在这里报进
-/// 错误日志、不向上抛；下一次进程启动再试。
+/// 错误日志、不向上抛；下一次进程启动再试。谁先调都一样：正在被扫的来源由扫描锁
+/// 排除（[sweepStaleOneShotSources]），不依赖调用方是谁。
 Future<void> sweepSourceScanLeftoversOnce(
   FushiDatabase db, {
   Future<void> Function(int sourceId)? releaseAccess,
-  Set<int> keep = const <int>{},
 }) => _leftoverSweeps[db] ??= () async {
   try {
-    await sweepStaleOneShotSources(
-      db,
-      releaseAccess: releaseAccess,
-      keep: keep,
-    );
+    await sweepStaleOneShotSources(db, releaseAccess: releaseAccess);
     await sweepDeadSourceScanSessions();
   } catch (error, stack) {
     FlutterError.reportError(

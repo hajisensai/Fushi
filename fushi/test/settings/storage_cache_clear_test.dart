@@ -62,6 +62,8 @@ void main() {
         StorageCategoryId.videoDownloads,
         StorageCategoryId.covers,
         StorageCategoryId.subtitles,
+        // 任务缓存删了要从头重跑、产物是登记着的字幕：不算一键清的纯缓存。
+        StorageCategoryId.subtitleJobs,
         StorageCategoryId.shaders,
         StorageCategoryId.customFonts,
         StorageCategoryId.web,

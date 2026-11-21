@@ -124,6 +124,8 @@
     }
     const wheelSpeed = Number.parseFloat(theme['--fushi-wheel-speed']);
     window.__fushiPopupWheelSpeed = Number.isFinite(wheelSpeed) && wheelSpeed > 0 ? wheelSpeed : 1;
+    // BUG-4935：弹窗显示偏好与第一层同一解码点（嵌套层是独立 realm，全局要自己落一份）。
+    applyFushiPopupDisplayPrefs(theme);
     applyFushiPopupCss(data);
     installDictMediaPlaceholderResolver(root);
     window.renderPopup();

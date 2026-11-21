@@ -19,11 +19,11 @@ extension _VideoRemoteControl on _VideoFushiPageState {
 
   /// 遥控会话身份：作品 / 集 / 视频路径 / 制卡来源任一变了就是新会话。网页档的视频
   /// 路径恒空、站内换片不一定换书（站点入口还没落书时 bookUid 不动），身份另加站点
-  /// 视频 key（[_webVideoKey]）。
+  /// 视频 key（[_webTrackSel.videoKey]）。
   String _videoRemoteIdentity(VideoPlayerController controller) =>
       '$_activeBookUid|$_currentEpisode|$_currentVideoPath|'
       '${controller.miningSource}|'
-      '${controller.isWebBackend ? _webVideoKey : ''}';
+      '${controller.isWebBackend ? _webTrackSel.videoKey : ''}';
 
   /// 本地 / 远端 / 网页档三种片源共用这一个绑定：按片源分流的只有字幕轨、在线字幕下载
   /// 与制卡（网页档没有本地媒体，字幕按「站点视频 → 轨」管，见 [_VideoWebSource]），其余
@@ -43,7 +43,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
         'speed': controller.speed,
         'controlRevision': controller.remoteControlRevision,
         'primaryTrack': web
-            ? _webActiveTrackKey
+            ? _webTrackSel.activeKey
             : controller.activeSubtitleTrackId,
         'secondaryTrack': controller.secondaryCues.isNotEmpty
             ? 'secondary'
@@ -349,7 +349,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
             kind: track.siteTrackId.isEmpty && !track.isLive
                 ? 'external'
                 : 'embedded',
-            selected: track.key == _webActiveTrackKey,
+            selected: track.key == _webTrackSel.activeKey,
             selectable: true,
           ),
         for (final WebVideoSiteTrack track in _unloadedWebSiteTracks())
@@ -387,7 +387,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
     throw const VideoRemoteException(404, 'subtitle_track_missing');
   }
 
-  /// 网页档的在线字幕：落盘后解析成 cue，作为当前站点视频的一条轨登记进 [_webTracks]
+  /// 网页档的在线字幕：落盘后解析成 cue，作为当前站点视频的一条轨登记进 [_webTrackSel.tracks]
   /// 并选中。网页档的字幕都按「站点视频 → 轨」管（[_reselectWebTrack] 每次轨集变化按轨
   /// 重灌 controller），直接 setCues 会被下一次站点轨回报覆盖；登记成轨后设置面板网页档
   /// 轨列表同样列出它、可切回。
@@ -413,21 +413,12 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       if (cues.isEmpty) {
         throw const VideoRemoteException(409, 'subtitle_track_unavailable');
       }
-      final String name = p.basename(path);
-      final String key = '$_webVideoKey|download:$name';
-      // 网页轨的显示名取 lang（[_webTrackLabel]）：下载档用文件名。
-      _webTracks[key] = WebVideoTrack(
-        key: key,
-        videoKey: _webVideoKey,
-        lang: name,
-        cues: cues,
-      );
-      _selectWebTrack(key);
+      _selectWebLocalSubtitleTrack(path, cues);
     };
   }
 
-  /// 网页档的遥控制卡：与本页网页档制卡（[_onWebMineEntry]）同两条路——YouTube 按视频
-  /// id + 字幕时间窗从真实视频流裁音频与画面、当场出卡；其它站点没有可截的本地媒体，
+  /// 网页档的遥控制卡：与本页网页档制卡（[_onWebMineEntry]）同一条分流——YouTube 按视频
+  /// id + 字幕时间窗从真实视频流裁音频与画面、当场出卡，裁不出来退回队列；其它站点没有可截的本地媒体，
   /// 冻结字段与时间窗进网页制卡队列，之后切到可捕获档逐句重放落卡（手机收到「已收下」）。
   Future<Map<String, Object?>> _mineRemoteWebCue(
     VideoRemoteCue cue,
@@ -444,7 +435,29 @@ extension _VideoRemoteControl on _VideoFushiPageState {
     final String href = state != null && state.href.isNotEmpty
         ? state.href
         : row.videoPath;
-    final String? youtubeId = youtubeVideoIdOrNull(href);
+    final String bookUid = _activeBookUid;
+    final String videoKey = _webTrackSel.videoKey;
+    Future<void> enqueue() async {
+      await _webMineQueue.enqueue(
+        bookUid: bookUid,
+        videoKey: videoKey,
+        href: href,
+        cueStartMs: selection.startMs,
+        cueEndMs: selection.endMs,
+        sentence: sentence,
+        cueSentence: selection.cueSentence,
+        fields: parsed.fields,
+      );
+      await _refreshStagedMineCount();
+      if (mounted) {
+        _showOsd(
+          t.web_video_mine_queued(count: _stagedMineCount.value),
+          icon: FushiIcons.checklist,
+        );
+      }
+    }
+
+    final String? youtubeId = webVideoDirectMineVideoId(href);
     if (youtubeId != null) {
       // 与手机试听同一个窗（含首尾留白与调轴，BUG-3350）：服务端 YouTube 裁剪不再加留白。
       final VideoPlayerController? controller = _controller;
@@ -456,42 +469,35 @@ extension _VideoRemoteControl on _VideoFushiPageState {
             selection.startMs,
             selection.endMs,
           );
-      final RemoteMineResult res = await appModel
-          .createRemoteMiningService()
-          .mineImmersion(
-            ImmersionMinePayload(
-              fields: parsed.fields,
-              sentence: sentence,
-              cueSentence: selection.cueSentence,
-              documentTitle: row.title,
-              youtubeVideoId: youtubeId,
-              clipStartMs: window.clipStartMs,
-              clipEndMs: window.clipEndMs,
-            ),
-          );
-      return <String, Object?>{
-        'success': res.result == 'success',
-        if (res.result == 'duplicate') 'duplicate': true,
-        if (res.result != 'success' && res.result != 'duplicate')
-          'error': 'mining_failed',
-      };
-    }
-    await _webMineQueue.enqueue(
-      bookUid: _activeBookUid,
-      videoKey: _webVideoKey,
-      href: href,
-      cueStartMs: selection.startMs,
-      cueEndMs: selection.endMs,
-      sentence: sentence,
-      cueSentence: selection.cueSentence,
-      fields: parsed.fields,
-    );
-    await _refreshStagedMineCount();
-    if (mounted) {
-      _showOsd(
-        t.web_video_mine_queued(count: _stagedMineCount.value),
-        icon: FushiIcons.checklist,
+      // 裁不出来退回队列（[mineWebVideoCueDirectOrQueue]，与本页制卡同一条分流）。
+      final RemoteMineResult? res = await mineWebVideoCueDirectOrQueue(
+        mineDirect: () => appModel.createRemoteMiningService().mineImmersion(
+          ImmersionMinePayload(
+            fields: parsed.fields,
+            sentence: sentence,
+            cueSentence: selection.cueSentence,
+            documentTitle: row.title,
+            youtubeVideoId: youtubeId,
+            clipStartMs: window.clipStartMs,
+            clipEndMs: window.clipEndMs,
+          ),
+        ),
+        enqueue: enqueue,
+        onFallback: (String reason) => ErrorLogService.instance.log(
+          'VideoFushi.web',
+          'remote YouTube direct mine failed, queued for replay: $reason',
+        ),
       );
+      if (res != null) {
+        return <String, Object?>{
+          'success': res.result == 'success',
+          if (res.result == 'duplicate') 'duplicate': true,
+          if (res.result != 'success' && res.result != 'duplicate')
+            'error': 'mining_failed',
+        };
+      }
+    } else {
+      await enqueue();
     }
     return <String, Object?>{
       ...const MinePopupResult.queued().toJson(),
@@ -687,7 +693,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       return;
     }
     _ownsHandedOverNativeFullscreen = false;
-    _didInitialFullscreen = true;
+    _initialFullscreen.settle();
     unawaited(navigator.push<void>(route));
     if (oldFullscreenRoute != null && oldFullscreenRoute.isActive) {
       rootNavigator.removeRoute<void>(oldFullscreenRoute);

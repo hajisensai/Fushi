@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_cli/fushi_cli.dart';
+import 'package:fushi_core/fushi_core.dart' show MediaCollectionItemRow;
 import 'package:fushi_dictionary/fushi_dictionary.dart' show JapaneseLanguage;
 import 'package:fushi_engine/media/metadata/books/book_catalog.dart'
     show findIsbnIn;
@@ -10,6 +11,10 @@ import 'package:fushi_engine/media/metadata/books/rakuten_books.dart';
 import 'package:fushi_engine/media/metadata/image_download.dart';
 
 import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/metadata/book_art_scrape_service.dart';
+import 'package:fushi/src/media/metadata/book_art_store.dart';
+import 'package:fushi_engine/media/metadata/book_art/book_art_plan.dart'
+    show BookArtSource;
 import 'package:fushi/src/media/metadata/book_metadata_scrape_facade.dart';
 import 'package:fushi/src/media/metadata/book_metadata_scraper.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -28,6 +33,10 @@ import 'package:fushi/src/ops/op_context.dart';
 /// 一样受「在线服务」模块门：模块关掉时刮削按钮不渲染，这里回 422。
 List<CtlRoute> buildBookMetadataCtlRoutes(OpContext context) {
   AppModel app() => context.appModel;
+  void invalidateBooks() {
+    context.ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
+    context.ref.invalidate(srtBooksProvider);
+  }
 
   void requireServices() {
     if (!app().moduleVisibility.isEnabled(ModuleId.services)) {
@@ -55,20 +64,27 @@ List<CtlRoute> buildBookMetadataCtlRoutes(OpContext context) {
       if (source.isbnOnly && findIsbnIn(query) == null) {
         throw CtlFailure.badRequest('${source.label} 只能按 ISBN 查：$query');
       }
+      // NSFW 候选默认不回（与弹窗对没标 NSFW 的书同一口径），`nsfw=true` 才带上。
+      final bool includeNsfw = call.optBool('nsfw') ?? false;
       final BookMetadataScrapeFacade facade = bookMetadataFacadeFactory(
         rakuten: requireSourceUsable(source),
       );
       try {
-        final List<BookScrapeCandidate> found = await _scrape(
-          () => facade.search(source: source, query: query),
+        final BookScrapeSearchResult found = await _scrape(
+          () => facade.searchDetailed(
+            source: source,
+            query: query,
+            includeNsfw: includeNsfw,
+          ),
         );
         return <String, Object?>{
           'source': source.name,
           'query': query,
           'candidates': <Map<String, Object?>>[
-            for (final BookScrapeCandidate c in found)
+            for (final BookScrapeCandidate c in found.candidates)
               bookScrapeCandidateJson(c),
           ],
+          if (found.hiddenNsfw > 0) 'hiddenNsfw': found.hiddenNsfw,
         };
       } finally {
         facade.close();
@@ -93,6 +109,39 @@ List<CtlRoute> buildBookMetadataCtlRoutes(OpContext context) {
         facade.close();
       }
     }),
+    CtlRoute.get('$kBookMetadataCtlSearch/:source/:id/volumes', (
+      CtlCall call,
+    ) async {
+      requireServices();
+      final BookScrapeSource source = _source(call.params['source']);
+      if (source != BookScrapeSource.mangabaka) {
+        throw const CtlFailure.badRequest('只有 mangabaka 提供每卷封面');
+      }
+      final String id = call.params['id'] ?? '';
+      final BookMetadataScrapeFacade facade = bookMetadataFacadeFactory();
+      try {
+        final List<BookVolumeCover> volumes = await _scrape(
+          () => facade.volumeCovers(id),
+        );
+        return <String, Object?>{
+          'source': source.name,
+          'id': id,
+          'volumes': <Map<String, Object?>>[
+            for (final BookVolumeCover v in volumes)
+              <String, Object?>{
+                'volume': v.volume,
+                'label': v.label,
+                'url': v.url,
+                'width': ?v.width,
+                'height': ?v.height,
+              },
+          ],
+          'attribution': 'Data from MangaBaka (CC BY-NC-SA 4.0)',
+        };
+      } finally {
+        facade.close();
+      }
+    }),
     CtlRoute.post('$kBookMetadataCtlItems/:key/scrape', (CtlCall call) async {
       requireServices();
       if (app().isMigrationReadonly) {
@@ -105,13 +154,17 @@ List<CtlRoute> buildBookMetadataCtlRoutes(OpContext context) {
       final BookScrapeSource source = _source(call.optString('source'));
       final String id = call.requireString('id');
       final Set<BookMetadataField> fields = _fields(call.stringList('fields'));
+      final num? volume = _volume(call);
+      if (volume != null && source != BookScrapeSource.mangabaka) {
+        throw const CtlFailure.badRequest('volume 只对 mangabaka 有效');
+      }
       final BookMetadataScrapeFacade facade = bookMetadataFacadeFactory(
         rakuten: requireSourceUsable(source),
       );
       File? cover;
       try {
         // onlyEmpty：只填当前空着的字段（库管家自动写回用）。显示名覆盖 / 作者 /
-        // override 封面都没有「谁设的」标记，有值就一律不碰。
+        // override 封面 / 条目资料都没有「谁设的」标记，有值就一律不碰。
         if (call.optBool('onlyEmpty') ?? false) {
           final BookMetadataState now = await facade.currentState(
             appModel: app(),
@@ -123,6 +176,7 @@ List<CtlRoute> buildBookMetadataCtlRoutes(OpContext context) {
                 (now.overrideTitle ?? '').trim().isNotEmpty,
               BookMetadataField.author => (now.author ?? '').trim().isNotEmpty,
               BookMetadataField.cover => now.coverSha != null,
+              BookMetadataField.details => now.details != null,
             },
           );
           if (fields.isEmpty) {
@@ -136,7 +190,22 @@ List<CtlRoute> buildBookMetadataCtlRoutes(OpContext context) {
           throw CtlFailure.notFound('${source.label} 没有 $id（或该条目没有封面）');
         }
         if (fields.contains(BookMetadataField.cover)) {
-          cover = await _scrape(() => facade.downloadCover(candidate));
+          if (volume == null) {
+            cover = await _scrape(() => facade.downloadCover(candidate));
+          } else {
+            final List<BookVolumeCover> volumes = await _scrape(
+              () => facade.volumeCovers(candidate.subjectId),
+            );
+            final BookVolumeCover? picked = volumes
+                .where((BookVolumeCover v) => (v.volume - volume).abs() < 0.01)
+                .firstOrNull;
+            if (picked == null) {
+              throw CtlFailure.notFound(
+                'MangaBaka 上 ${candidate.title} 没有第 $volume 卷的日文封面',
+              );
+            }
+            cover = await _scrape(() => facade.downloadVolumeCover(picked));
+          }
         }
         final BookMetadataApplyResult result = await facade.applyToBook(
           appModel: app(),
@@ -147,6 +216,9 @@ List<CtlRoute> buildBookMetadataCtlRoutes(OpContext context) {
               : null,
           author: fields.contains(BookMetadataField.author)
               ? candidate.author
+              : null,
+          details: fields.contains(BookMetadataField.details)
+              ? candidate
               : null,
           keepBackup: true,
         );
@@ -180,7 +252,168 @@ List<CtlRoute> buildBookMetadataCtlRoutes(OpContext context) {
         }
       }
     }),
+    // ── 每卷封面 + 横幅（刮削层，与 override 分开存） ──
+    CtlRoute.post('$kBookArtCtlCollections/:id/scrape-art', (
+      CtlCall call,
+    ) async {
+      requireServices();
+      final bool dryRun = call.optBool('dryRun') ?? false;
+      if (!dryRun && app().isMigrationReadonly) {
+        throw const CtlFailure.rejected('数据已迁移到新版，旧版处于只读状态');
+      }
+      final int collectionId = _collectionId(call);
+      final BookArtScrapeService service = bookArtServiceFactory(app());
+      try {
+        final List<String> keys = await service.collectionBookKeys(
+          collectionId,
+        );
+        if (keys.isEmpty) {
+          throw CtlFailure.notFound('合集 $collectionId 里没有本地书');
+        }
+        final Map<String, BookArtSeriesPin> pins = _pins(call);
+        final BookArtRunResult result = await service.run(
+          keys,
+          dryRun: dryRun,
+          pins: pins,
+          onlyPinnedGroups: pins.isNotEmpty,
+        );
+        if (pins.isNotEmpty && result.series.isEmpty) {
+          throw CtlFailure.notFound(
+            '合集 $collectionId 里没有系列键 ${pins.keys.single}',
+          );
+        }
+        if (!dryRun) invalidateBooks();
+        return <String, Object?>{
+          'collectionId': collectionId,
+          ...result.toJson(),
+          if (!dryRun) ...await _undoState(app(), result.snapshots),
+        };
+      } finally {
+        service.close();
+      }
+    }),
+    CtlRoute.delete('$kBookArtCtlCollections/:id/scrape-art', (
+      CtlCall call,
+    ) async {
+      if (app().isMigrationReadonly) {
+        throw const CtlFailure.rejected('数据已迁移到新版，旧版处于只读状态');
+      }
+      final int collectionId = _collectionId(call);
+      final List<String> keys = <String>[
+        for (final MediaCollectionItemRow r
+            in await app().database.getCollectionItems(collectionId))
+          if (r.mediaType == 'epub') r.entryKey,
+      ];
+      return _removeArt(app(), keys, invalidateBooks, reject: false);
+    }),
+    CtlRoute.delete('$kBookMetadataCtlItems/:key/scraped-art', (
+      CtlCall call,
+    ) async {
+      if (app().isMigrationReadonly) {
+        throw const CtlFailure.rejected('数据已迁移到新版，旧版处于只读状态');
+      }
+      final LibraryCtlKey? key = LibraryCtlKey.tryParse(
+        call.params['key'] ?? '',
+      );
+      if (key == null || key.store != LibraryCtlStore.book) {
+        throw CtlFailure.badRequest('只有本地书（book:<bookKey>）有已获取的封面');
+      }
+      return _removeArt(app(), <String>[key.id], invalidateBooks, reject: true);
+    }),
   ];
+}
+
+/// `volume`（可带小数，如 28.5）；没给 → null。
+num? _volume(CtlCall call) {
+  final String? raw = call.optString('volume');
+  if (raw == null) return null;
+  final num? parsed = num.tryParse(raw);
+  if (parsed == null) throw CtlFailure.badRequest('volume 必须是数字：$raw');
+  return parsed;
+}
+
+/// 清除 [bookKeys] 的刮削层；返回清掉的书与撤销所需的快照。[reject]（单本移除）时
+/// 记为否决：之后重刮不会把同一张图写回来；合集清除是整体重置，不记否决。
+Future<Map<String, Object?>> _removeArt(
+  AppModel app,
+  List<String> bookKeys,
+  void Function() invalidate, {
+  required bool reject,
+}) async {
+  final BookArtStore store = BookArtStore.of(app.thumbnailsDirectory);
+  final List<BookArtSnapshot> snapshots = <BookArtSnapshot>[];
+  for (final String key in bookKeys) {
+    if (!store.hasCover(key) && store.recordFor(key) == null) continue;
+    snapshots.add(await store.snapshot(key));
+    if (reject) {
+      await store.rejectCover(key);
+    } else {
+      await store.remove(key);
+    }
+  }
+  invalidate();
+  return <String, Object?>{
+    'removed': <String>[for (final BookArtSnapshot s in snapshots) s.bookKey],
+    ...await _undoState(app, snapshots),
+  };
+}
+
+/// 撤销载荷：执行前快照 + 执行后各书刮削层指纹（撤销前比对，之后被改过就 superseded）。
+Future<Map<String, Object?>> _undoState(
+  AppModel app,
+  List<BookArtSnapshot> snapshots,
+) async {
+  final BookArtStore store = BookArtStore.of(app.thumbnailsDirectory);
+  return <String, Object?>{
+    'undo': <String, Object?>{
+      'snapshots': <Map<String, Object?>>[
+        for (final BookArtSnapshot s in snapshots) s.toJson(),
+      ],
+      'after': <String, Object?>{
+        for (final BookArtSnapshot s in snapshots)
+          s.bookKey: await store.fingerprint(s.bookKey),
+      },
+    },
+  };
+}
+
+/// 测试接缝：造每卷封面刮削服务（测试注入离线 http client）。
+@visibleForTesting
+BookArtScrapeService Function(AppModel app) bookArtServiceFactory =
+    (AppModel app) => BookArtScrapeService(
+      database: app.database,
+      store: BookArtStore.of(app.thumbnailsDirectory),
+    );
+
+/// 合集每卷封面路由根（`/:id/scrape-art`）。
+const String kBookArtCtlCollections = '/api/admin/book/collections';
+
+int _collectionId(CtlCall call) {
+  final int? id = int.tryParse(call.params['id'] ?? '');
+  if (id == null) throw CtlFailure.badRequest('合集 id 不对：${call.params['id']}');
+  return id;
+}
+
+/// `seriesKey` + `source` + `seriesId` 三个一起给 = 钉死那一组的系列（待确认时由调用方选定）。
+Map<String, BookArtSeriesPin> _pins(CtlCall call) {
+  final String? seriesKey = call.optString('seriesKey');
+  final String? source = call.optString('source');
+  final String? id = call.optString('seriesId');
+  if (seriesKey == null && source == null && id == null) {
+    return const <String, BookArtSeriesPin>{};
+  }
+  final BookArtSource? parsed = BookArtSource.tryParse(source);
+  if (seriesKey == null || parsed == null || id == null) {
+    throw const CtlFailure.badRequest(
+      '钉死系列要同时给 seriesKey、source（mangabaka / bangumi）与 seriesId',
+    );
+  }
+  if (int.tryParse(id) == null) {
+    throw CtlFailure.badRequest('seriesId 必须是数字：$id');
+  }
+  return <String, BookArtSeriesPin>{
+    seriesKey: BookArtSeriesPin(source: parsed, id: id),
+  };
 }
 
 /// 造门面的工厂（[rakuten] = 本机楽天凭据，路由从设置里读出后传入）。
@@ -272,11 +505,18 @@ BookScrapeSource _source(String? raw) {
 }
 
 Set<BookMetadataField> _fields(List<String> raw) {
-  if (raw.isEmpty) return <BookMetadataField>{BookMetadataField.cover};
+  if (raw.isEmpty) {
+    return <BookMetadataField>{
+      BookMetadataField.cover,
+      BookMetadataField.details,
+    };
+  }
   return <BookMetadataField>{
     for (final String r in raw)
       BookMetadataField.tryParse(r.toLowerCase()) ??
-          (throw CtlFailure.badRequest('fields 只能是 cover / title / author：$r')),
+          (throw CtlFailure.badRequest(
+            'fields 只能是 cover / title / author / details：$r',
+          )),
   };
 }
 

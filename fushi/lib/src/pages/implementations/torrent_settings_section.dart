@@ -30,6 +30,7 @@ import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/storage/download_layout.dart';
 import 'package:fushi/src/storage/download_root_migrator.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
+import 'package:fushi/src/sync/interconnect_torrent_engine_backend.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -70,6 +71,9 @@ Future<TorrentConnectionProbe> probeTorrentConnection(
     version = await backend.probeConnection();
   } finally {
     if (version == null && backend is QbTorrentBackend) {
+      failure = backend.lastProbeFailure;
+    }
+    if (version == null && backend is RemoteFushiTorrentBackend) {
       failure = backend.lastProbeFailure;
     }
     backend.close();
@@ -454,31 +458,38 @@ class _TorrentSettingsSectionState
   ///
   /// 内置引擎排在第一段：它才是本平台的默认（`backendAuto` 解析结果），也是
   /// 开箱即用的那一个。qb 需要用户另装并配好 WebUI 才能用，排第二。
+  /// 下载引擎：与其它设置行同一种分段行（标题 + 随选中项变化的说明在卡片内，
+  /// 分段在右侧或下方撑满），不再是卡片里一条靠左的裸分段条 + 卡外脚注。
   Widget _backendRow(String backend) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return SettingsSearchTarget(
       key: const ValueKey<String>('downloads.backend'),
       id: 'downloads.backend',
-      child: Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: tokens.spacing.rowHorizontal,
-          vertical: 10,
-        ),
-        child: FushiSegmentedStrip<String>(
-          segments: <ButtonSegment<String>>[
-            ButtonSegment<String>(
-              value: QbConnectionConfig.backendEmbedded,
-              label: Text(t.video_setting_torrent_backend_embedded),
-            ),
-            ButtonSegment<String>(
-              value: QbConnectionConfig.backendQbittorrent,
-              label: Text(t.video_setting_torrent_backend_qb),
-            ),
-          ],
-          selected: backend,
-          onChanged: (String value) =>
-              _commit((QbConnectionConfig c) => c.copyWith(backend: value)),
-        ),
+      child: AdaptiveSettingsSegmentedRow<String>(
+        title: t.download_backend_title,
+        subtitle: switch (backend) {
+          QbConnectionConfig.backendEmbedded =>
+            t.download_backend_embedded_hint,
+          QbConnectionConfig.backendFushiHost =>
+            t.download_backend_fushi_host_hint,
+          _ => t.download_backend_qb_hint,
+        },
+        segments: <ButtonSegment<String>>[
+          ButtonSegment<String>(
+            value: QbConnectionConfig.backendEmbedded,
+            label: Text(t.video_setting_torrent_backend_embedded),
+          ),
+          ButtonSegment<String>(
+            value: QbConnectionConfig.backendQbittorrent,
+            label: Text(t.video_setting_torrent_backend_qb),
+          ),
+          ButtonSegment<String>(
+            value: QbConnectionConfig.backendFushiHost,
+            label: Text(t.video_setting_torrent_backend_fushi_host),
+          ),
+        ],
+        selected: backend,
+        onChanged: (String value) =>
+            _commit((QbConnectionConfig c) => c.copyWith(backend: value)),
       ),
     );
   }
@@ -539,6 +550,55 @@ class _TorrentSettingsSectionState
             )
           : null,
       onTap: canPair ? () => unawaited(_openInterconnectSettings()) : null,
+    );
+  }
+
+  /// 「下载后端 = 互联设备」借哪台 host 的引擎。没配对过 → 与执行设备同一个
+  /// 「去配对」入口；存 hostId（换地址不换身份）+ 代表地址。
+  Widget _engineHostRow(AppModel appModel) {
+    final QbConnectionConfig c = _config;
+    if (_pairedHosts.isEmpty) return _executionHostUnpairedRow(appModel);
+    final String selected =
+        _pairedHosts.any((FushiClientUrl h) => h.url == c.remoteHostUrl)
+        ? c.remoteHostUrl
+        : '';
+    return SettingsSearchTarget(
+      key: const ValueKey<String>('downloads.engine_host'),
+      id: 'downloads.engine_host',
+      child: AdaptiveSettingsPickerRow<String>(
+        key: const ValueKey<String>('downloads-engine-host'),
+        title: t.video_setting_torrent_engine_host_title,
+        subtitle: selected.isEmpty
+            ? t.download_engine_host_unset
+            : t.download_engine_host_hint,
+        selected: selected,
+        options: <AdaptiveSettingsPickerOption<String>>[
+          if (selected.isEmpty)
+            AdaptiveSettingsPickerOption<String>(
+              value: '',
+              label: t.download_engine_host_unset,
+            ),
+          for (final FushiClientUrl host in _pairedHosts)
+            AdaptiveSettingsPickerOption<String>(
+              value: host.url,
+              label: host.deviceName ?? host.url,
+            ),
+        ],
+        onChanged: (String value) {
+          final FushiClientUrl? host = _pairedHosts
+              .where((FushiClientUrl h) => h.url == value)
+              .firstOrNull;
+          if (host == null) return;
+          unawaited(
+            _commit(
+              (QbConnectionConfig c) => c.copyWith(
+                remoteHostId: host.hostId ?? '',
+                remoteHostUrl: host.url,
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -604,6 +664,7 @@ class _TorrentSettingsSectionState
     );
     final bool isQb = backend == QbConnectionConfig.backendQbittorrent;
     final bool isEmbedded = backend == QbConnectionConfig.backendEmbedded;
+    final bool isFushiHost = backend == QbConnectionConfig.backendFushiHost;
 
     final bool common =
         widget.scope == TorrentSettingsScope.all ||
@@ -635,9 +696,6 @@ class _TorrentSettingsSectionState
         if (_supportsEmbedded)
           _group(
             key: 'downloads.group.backend',
-            footer: isEmbedded
-                ? t.download_backend_embedded_hint
-                : t.download_backend_qb_hint,
             rows: <Widget>[_backendRow(backend)],
           )
         else
@@ -646,6 +704,22 @@ class _TorrentSettingsSectionState
             key: const ValueKey<String>('downloads.backend_unsupported'),
           ),
       ],
+
+      // 借互联设备的引擎：选哪台 + 测试连接。
+      if (isFushiHost && connection)
+        _group(
+          key: 'downloads.group.engine_host',
+          footer: t.download_engine_host_mapping_hint,
+          rows: <Widget>[
+            _engineHostRow(appModel),
+            _actionRow(
+              id: 'downloads.test_engine_host',
+              title: t.download_test_connection,
+              busy: _probing,
+              onTap: _probeConnection,
+            ),
+          ],
+        ),
 
       // 外接 qb 连接。
       if (isQb && connection)

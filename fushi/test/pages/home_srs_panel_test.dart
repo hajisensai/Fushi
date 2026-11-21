@@ -10,7 +10,8 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:drift/native.dart';
-import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
+import 'package:flutter/rendering.dart'
+    show MatrixUtils, RenderParagraph, RenderRepaintBoundary;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -36,6 +37,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi_engine/srs/srs_mining_target.dart';
+import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
@@ -473,10 +475,10 @@ void main() {
         for (final SrsDeckSummary d in decks.where(
           (SrsDeckSummary d) => d.depth == 0,
         )) {
-          final SrsCountTriple row = tester.widget<SrsCountTriple>(
+          final SrsDeckCountChips row = tester.widget<SrsDeckCountChips>(
             find.descendant(
               of: find.byKey(ValueKey<String>('srs-deck-${d.deck.id}')),
-              matching: find.byType(SrsCountTriple),
+              matching: find.byType(SrsDeckCountChips),
             ),
           );
           sumNew += row.newCount;
@@ -680,6 +682,188 @@ void main() {
     }
   }
 
+  // ── 「今日」「复习」两张卡文字完整（设计稿 11-20 #12：不许把卡片变大） ────────
+  //
+  // 用户实机：今日卡副行「21687 / 300…」、复习卡副行「… · 正确…」被截断。卡片尺寸
+  // 由网格决定、这里钉死与改前相同；卡里每段文字既不省略号截断，也不被格子裁掉。
+  group('今日 / 复习卡文字完整', () {
+    const Map<String, Size> sizes = <String, Size>{
+      'wide-min': Size(620, 420),
+      'desktop': Size(1280, 720),
+      // 「今日」够宽时柱条挂在结束侧（用户截图那一档）。
+      'desktop-wide': Size(1920, 1080),
+      'phone': Size(392, 820),
+    };
+    // 改前量得的卡片尺寸（[_kCardSizes]）：本组断言改后完全一致。
+    for (final bool apple in <bool>[false, true]) {
+      for (final ShellContentLayout? layout in <ShellContentLayout?>[
+        null,
+        ShellContentLayout.grid,
+      ]) {
+        for (final MapEntry<String, Size> size in sizes.entries) {
+          final String tag =
+              '${apple ? 'Apple' : 'MD3'} · ${layout?.name ?? 'collage'} · '
+              '${size.key}';
+          testWidgets('$tag：两张卡所有文字都没溢出，卡片尺寸不变', (WidgetTester tester) async {
+            useSize(tester, size.value);
+            final String? shotDir = Platform.environment['FUSHI_PREVIEW_DIR'];
+            await tester.runAsync(() async {
+              if (shotDir != null) {
+                // 真实像素预览：图标字体 + 系统中文字体（否则是 Ahem 方块）。
+                await loadFushiIconFonts();
+                final Uint8List bytes = await File(
+                  r'C:\Windows\Fonts\Deng.ttf',
+                ).readAsBytes();
+                for (final String family in <String>[
+                  'Roboto',
+                  '.SF UI Text',
+                  '.SF Pro Text',
+                ]) {
+                  await (FontLoader(family)..addFont(
+                        Future<ByteData>.value(ByteData.sublistView(bytes)),
+                      ))
+                      .load();
+                }
+              }
+              await useSrs(target: SrsMiningTarget.srs);
+              await appModel.setReadingGoalDailyChars(30000);
+              await db.setReadingStatistic(
+                ReadingStatisticsCompanion.insert(
+                  title: '陰の実力者になりたくて！',
+                  dateKey: FushiTimeFormat.dayKey(DateTime.now()),
+                  charactersRead: 21687,
+                  readingTimeMs: (2 * 60 + 45) * 60000,
+                  lastStatisticModified: DateTime.now().millisecondsSinceEpoch,
+                ),
+              );
+              final List<String> cards = <String>[];
+              for (final String w in <String>['食べる', '飲む', '走る', '読む']) {
+                final String note = await store.createNote(
+                  noteTypeId: store.lapisNoteTypeId,
+                  fieldsById: <String, String>{
+                    srsLapisFieldId(_kProfile, 'Expression'): w,
+                    srsLapisFieldId(_kProfile, 'MainDefinition'): 'meaning',
+                  },
+                );
+                cards.add((await store.cardsOfNote(note)).first.id);
+              }
+              await store.answer(cards[0], 3, durationMs: 46 * 60000);
+              await store.answer(cards[1], 1, durationMs: 5000);
+              await storeLayout(
+                compact: const <HomeWidgetItem>[
+                  HomeWidgetItem(HomeWidgetKind.today, HomeWidgetSize(2, 1)),
+                  HomeWidgetItem(
+                    HomeWidgetKind.srsReview,
+                    HomeWidgetSize(2, 1),
+                  ),
+                ],
+                wide: const <HomeWidgetItem>[
+                  HomeWidgetItem(HomeWidgetKind.today, HomeWidgetSize(2, 1)),
+                  HomeWidgetItem(
+                    HomeWidgetKind.srsReview,
+                    HomeWidgetSize(1, 1),
+                  ),
+                ],
+              );
+            });
+            await tester.pumpWidget(
+              app(dashboard(), apple: apple, layout: layout),
+            );
+            await settle(tester, rounds: 20);
+            expect(tester.takeException(), isNull);
+
+            final Finder today = find.byKey(
+              const ValueKey<String>('home-study-card'),
+            );
+            final Finder review = find.byKey(
+              const ValueKey<String>('home-srs-panel'),
+            );
+            expect(today, findsOneWidget);
+            expect(review, findsOneWidget);
+            for (final (String name, Finder card) in <(String, Finder)>[
+              ('today', today),
+              ('review', review),
+            ]) {
+              final Rect box = tester.getRect(card);
+              // ignore: avoid_print
+              print('CARD $tag $name ${box.size}');
+              final Size? want = _kCardSizes['$tag $name'];
+              if (want != null) {
+                // 表里是 toStringAsFixed(1) 的值。
+                expect(
+                  (box.width - want.width).abs() < 0.06 &&
+                      (box.height - want.height).abs() < 0.06,
+                  isTrue,
+                  reason: '$tag $name 卡片尺寸变了：${box.size} ≠ $want',
+                );
+              }
+              final Iterable<Element> texts = find
+                  .descendant(of: card, matching: find.byType(RichText))
+                  .evaluate();
+              expect(texts, isNotEmpty);
+              for (final Element e in texts) {
+                final RenderParagraph p = e.renderObject! as RenderParagraph;
+                final String s = p.text.toPlainText();
+                if (s.trim().isEmpty) continue;
+                expect(
+                  p.didExceedMaxLines,
+                  isFalse,
+                  reason: '$tag $name「$s」被截断',
+                );
+                final Rect r = MatrixUtils.transformRect(
+                  p.getTransformTo(null),
+                  Offset.zero & p.size,
+                );
+                // 文字本身的盒子也不能露出卡外（被格子裁掉看不见）。
+                expect(
+                  r.left >= box.left - 0.5 &&
+                      r.right <= box.right + 0.5 &&
+                      r.top >= box.top - 0.5 &&
+                      r.bottom <= box.bottom + 0.5,
+                  isTrue,
+                  reason: '$tag $name「$s」$r 超出卡片 $box',
+                );
+                // 自然宽度放得下（softWrap:false 的单行被横向挤掉也算截断）。
+                final TextPainter tp = TextPainter(
+                  text: p.text,
+                  textDirection: TextDirection.ltr,
+                  textScaler: p.textScaler,
+                  maxLines: 1,
+                )..layout();
+                final bool fitsOneLine = tp.width <= p.size.width + 0.5;
+                tp.dispose();
+                expect(
+                  fitsOneLine || p.maxLines != 1 || p.softWrap,
+                  isTrue,
+                  reason: '$tag $name「$s」单行放不下',
+                );
+              }
+            }
+            if (shotDir != null) {
+              await tester.runAsync(() async {
+                final RenderRepaintBoundary boundary =
+                    boundaryKey.currentContext!.findRenderObject()!
+                        as RenderRepaintBoundary;
+                final ui.Image image = await boundary.toImage(pixelRatio: 2);
+                final ByteData? png = await image.toByteData(
+                  format: ui.ImageByteFormat.png,
+                );
+                final String name = tag.replaceAll(
+                  RegExp(r'[^A-Za-z0-9-]+'),
+                  '_',
+                );
+                final File out = File('$shotDir/home_today_review_$name.png');
+                await out.parent.create(recursive: true);
+                await out.writeAsBytes(png!.buffer.asUint8List());
+              });
+            }
+            await unmount(tester);
+          });
+        }
+      }
+    }
+  });
+
   // ── 真实像素预览（FUSHI_PREVIEW_DIR 设了才跑） ──────────────────────────
 
   final String? previewDir = Platform.environment['FUSHI_PREVIEW_DIR'];
@@ -736,3 +920,39 @@ void main() {
     }
   }
 }
+
+/// 「今日 / 复习卡文字完整」组：改前量得的卡片尺寸（键 = 用例标签 + 卡名）。
+const Map<String, Size> _kCardSizes = <String, Size>{
+  'MD3 · collage · desktop review': Size(195.0, 131.6),
+  'MD3 · collage · desktop-wide today': Size(617.3, 140.0),
+  'MD3 · collage · desktop-wide review': Size(301.7, 140.0),
+  'MD3 · grid · desktop-wide today': Size(617.3, 140.0),
+  'MD3 · grid · desktop-wide review': Size(301.7, 140.0),
+  'Apple · collage · desktop review': Size(195.0, 131.6),
+  'Apple · collage · desktop-wide today': Size(617.3, 140.0),
+  'Apple · collage · desktop-wide review': Size(301.7, 140.0),
+  'Apple · grid · desktop-wide today': Size(617.3, 140.0),
+  'Apple · grid · desktop-wide review': Size(301.7, 140.0),
+  'MD3 · collage · desktop today': Size(404.0, 131.6),
+  'MD3 · collage · phone review': Size(352.0, 81.1),
+  'MD3 · collage · phone today': Size(352.0, 81.1),
+  'MD3 · collage · wide-min review': Size(85.0, 104.0),
+  'MD3 · collage · wide-min today': Size(184.0, 104.0),
+  'MD3 · grid · desktop review': Size(195.0, 131.6),
+  'MD3 · grid · desktop today': Size(404.0, 131.6),
+  'MD3 · grid · phone review': Size(352.0, 81.1),
+  'MD3 · grid · phone today': Size(352.0, 81.1),
+  'MD3 · grid · wide-min review': Size(85.0, 104.0),
+  'MD3 · grid · wide-min today': Size(184.0, 104.0),
+  'Apple · collage · desktop today': Size(404.0, 131.6),
+  'Apple · collage · phone review': Size(352.0, 81.1),
+  'Apple · collage · phone today': Size(352.0, 81.1),
+  'Apple · collage · wide-min review': Size(85.0, 104.0),
+  'Apple · collage · wide-min today': Size(184.0, 104.0),
+  'Apple · grid · desktop review': Size(195.0, 131.6),
+  'Apple · grid · desktop today': Size(404.0, 131.6),
+  'Apple · grid · phone review': Size(352.0, 81.1),
+  'Apple · grid · phone today': Size(352.0, 81.1),
+  'Apple · grid · wide-min review': Size(85.0, 104.0),
+  'Apple · grid · wide-min today': Size(184.0, 104.0),
+};

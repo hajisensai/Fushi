@@ -412,6 +412,53 @@ void main() {
     expect(find.textContaining('pass=x'), findsNothing, reason: 'Cookie 是凭据');
   });
 
+  testWidgets('怎么写解析规则：给通用说明与模板；规则框为空才能填入模板，不覆盖已写的规则', (
+    WidgetTester tester,
+  ) async {
+    final _FakeStore store = _FakeStore();
+    await _pump(tester, store);
+
+    await _tapKey(tester, 'bt-site-add');
+    await _tapKey(tester, 'bt-site-dialog-parser-toggle');
+    await _tapKey(tester, 'bt-site-dialog-parser-help');
+
+    expect(find.text(t.bt_site_parser_help_title), findsOneWidget);
+    expect(find.text(t.bt_site_parser_help_rows), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('bt-site-parser-help-template')),
+      findsOneWidget,
+    );
+    await _tapKey(tester, 'bt-site-parser-help-use-template');
+
+    expect(find.text(t.bt_site_parser_help_title), findsNothing);
+    final EditableText parser = tester.widget<EditableText>(
+      _field('bt-site-dialog-parser'),
+    );
+    expect(parser.controller.text, kBtSiteParserRuleTemplate);
+    // 填进去的模板本身就是能保存的合法规则。
+    expect(
+      () => BtSiteParserRule.fromJson(parser.controller.text),
+      returnsNormally,
+    );
+
+    await tester.enterText(_field('bt-site-dialog-parser'), '{"x": 1}');
+    await tester.pump();
+    await _tapKey(tester, 'bt-site-dialog-parser-help');
+    expect(
+      find.byKey(const ValueKey<String>('bt-site-parser-help-use-template')),
+      findsNothing,
+    );
+    await _tapKey(tester, 'bt-site-parser-help-close');
+    expect(
+      tester
+          .widget<EditableText>(_field('bt-site-dialog-parser'))
+          .controller
+          .text,
+      '{"x": 1}',
+    );
+    expect(store.detectCalls, isEmpty);
+  });
+
   testWidgets('解析规则畸形：就地报错、不发起验证、不写入', (WidgetTester tester) async {
     final _FakeStore store = _FakeStore();
     await _pump(tester, store);

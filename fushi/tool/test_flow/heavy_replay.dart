@@ -10,8 +10,11 @@
 // What the replay cannot know, so its totals are for comparing two rules on
 // the same runs, not a forecast:
 //   * a run takes as long as it did (more runs at once make each slower);
-//   * holders that write no history (pre_push_check, flutter_test_failures,
-//     dist_test's local worker) and the per-worktree lock are left out;
+//   * the per-worktree lock is left out (lines since 2026-11-20 say which
+//     worktree each run was for, HeavyHistoryEntry.cwd). pre_push_check,
+//     flutter_test_failures and dist_test's local worker write history since
+//     then (HeavyHistoryEntry.via) and are replayed like any run; before that
+//     they held slots unseen, so a replay of older days leaves them out;
 //   * a run another machine took leaves the queue when it did then, unless
 //     the replay admits it here first.
 //

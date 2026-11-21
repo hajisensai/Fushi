@@ -52,7 +52,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 159);
+    expect(migrated.schemaVersion, 166);
     final List<MediaSourceRow> rows = await migrated
         .select(migrated.mediaSources)
         .get();
@@ -89,7 +89,7 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 159);
+    expect(probe.select('PRAGMA user_version').first.values.first, 166);
     expect(columnsOf(probe), contains('auto_scan'));
   });
 
@@ -113,7 +113,7 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 159);
+    expect(probe.select('PRAGMA user_version').first.values.first, 166);
     expect(columnsOf(probe), contains('auto_scan'));
   });
 }

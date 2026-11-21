@@ -73,7 +73,7 @@ void main() {
     if (imageDir.existsSync()) imageDir.deleteSync(recursive: true);
   });
 
-  testWidgets('local engine downloads the only model without a picker', (
+  testWidgets('local engine lets the user pick and download a model', (
     WidgetTester tester,
   ) async {
     final List<String> storedModels = <String>[];
@@ -102,15 +102,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 五端都只列得出逐列 CTC 一个模型：只有一个选项的模型下拉不画；选中的
-    // 模型没下时下载入口仍在向导里，开跑按钮置灰。
-    expect(platformMangaOcrLocalModels(), <MangaOcrLocalModel>[
-      MangaOcrLocalModel.mangaCtc,
-    ]);
+    // 三个模型五端都列得出：模型下拉与下载入口都在向导里；选中的模型没下时
+    // 开跑按钮置灰。
+    expect(platformMangaOcrLocalModels(), MangaOcrLocalModel.values);
     final Finder modelField = find.byKey(
       const ValueKey<String>('manga_ocr_wizard_local_model'),
     );
-    expect(modelField, findsNothing);
+    expect(modelField, findsOneWidget);
     final Finder run = find.widgetWithText(
       FilledButton,
       t.manga_ocr_wizard_run,
@@ -141,7 +139,25 @@ void main() {
       tester.widget<FilledButton>(glassUnwrap<FilledButton>(run)).onPressed,
       isNotNull,
     );
-    // 没有选择器就不会改写模型偏好。
+    // 只下载不改写模型偏好。
     expect(storedModels, isEmpty);
+
+    // 换成还没下的韩文模型：写回全局模型偏好，仍停在本地引擎；它有自己的一份
+    // 模型文件，所以下载入口重新出现、开跑按钮重新置灰。
+    await tester.ensureVisible(modelField);
+    await tester.pumpAndSettle();
+    await tester.tap(modelField);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.text(localModelLabel(MangaOcrLocalModel.ppOcrV5Korean)).last,
+    );
+    await tester.pumpAndSettle();
+    expect(storedModels, <String>['ppocrv5_korean']);
+    expect(modelField, findsOneWidget);
+    expect(download, findsOneWidget);
+    expect(
+      tester.widget<FilledButton>(glassUnwrap<FilledButton>(run)).onPressed,
+      isNull,
+    );
   });
 }

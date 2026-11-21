@@ -2,6 +2,8 @@ library;
 
 import 'package:fushi_engine/media/video/metadata/video_metadata_json.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_languages.dart';
+import 'package:fushi_engine/media/video/metadata/video_related_works.dart'
+    show kTmdbCollectionPartsPayloadKey, tmdbCollectionPartsFromResponse;
 import 'package:fushi_engine/media/video/metadata/video_metadata_merge.dart'
     show stripVoiceRoleSuffix;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
@@ -230,6 +232,9 @@ class TmdbVideoMetadataProvider
           '$language',
     );
     if (payload == null) return null;
+    if (lookup.mediaKind == VideoMetadataMediaKind.movie) {
+      await _attachCollectionParts(payload);
+    }
     VideoMetadataWork work = _mapDetailedWork(payload, lookup.mediaKind);
     // Shoko 图片语言序里的 `Main` = 片子原语。请求端按资料语言过滤图片，原语
     // 不在其中时（zh-CN 用户看日本动画）再按原语补拉一次 images（独立缓存键、
@@ -264,6 +269,48 @@ class TmdbVideoMetadataProvider
     return lookup.episodeGroupId == null
         ? work
         : work.copyWith(episodeGroupId: lookup.episodeGroupId);
+  }
+
+  /// 电影属于某个 TMDB 合集（`belongs_to_collection`）时，多打一次
+  /// `/collection/{id}` 拿合集成员，精简后挂进详情载荷
+  /// （[kTmdbCollectionPartsPayloadKey]），随 details 快照落盘，落库时换成系列
+  /// 关系（前传 / 续作）。只在这部电影本来就在刮削时发，走同一个 transport（限流 /
+  /// 重试 / 缓存）与 [language]；请求失败只是没有系列关系，不影响作品刮削本身
+  /// （载荷不带这个键 = 关系未知，落库时不清旧行）。
+  Future<void> _attachCollectionParts(Map<String, Object?> payload) async {
+    final int? collectionId = metadataInt(
+      metadataObject(payload['belongs_to_collection'])?['id'],
+    );
+    if (collectionId == null) return;
+    try {
+      final List<Map<String, Object?>>? parts = await fetchCollectionParts(
+        collectionId,
+      );
+      if (parts == null) return;
+      payload[kTmdbCollectionPartsPayloadKey] = parts;
+    } on Exception {
+      return;
+    }
+  }
+
+  /// TMDB 合集 [collectionId] 的精简成员表（与刮削时挂进详情载荷
+  /// [kTmdbCollectionPartsPayloadKey] 的同一份形状、同一缓存键、同一 [language]）。
+  /// 合集不存在（404）→ null；未配置凭据或其余失败照常抛出。
+  ///
+  /// 刮削详情时由 [_attachCollectionParts] 调用；存量补齐（旧快照只有
+  /// `belongs_to_collection.id`、缺成员表）由 `refreshMissingTmdbCollectionParts`
+  /// 按合集去重后调用。
+  Future<List<Map<String, Object?>>?> fetchCollectionParts(
+    int collectionId,
+  ) async {
+    _requireAvailable();
+    final Map<String, Object?>? collection = await _getObjectOrNull(
+      '/collection/$collectionId',
+      operation: 'TMDB collection',
+      cacheKey: 'tmdb:collection:$collectionId:$language',
+    );
+    if (collection == null) return null;
+    return tmdbCollectionPartsFromResponse(collection);
   }
 
   @override

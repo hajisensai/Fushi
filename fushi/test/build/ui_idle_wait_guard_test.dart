@@ -1,0 +1,193 @@
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+
+import '../helpers/scan_scale.dart';
+import '../helpers/source_guard.dart';
+
+/// BUG-4387 / BUG-4725 / BUG-4893：Windows 上「画面在动、鼠标键盘全失灵」的两道结构守卫。
+///
+/// 1. 所有入口都用带 `FramePacedTaskScheduler` 的 binding：`lib` 下不得调裸
+///    `WidgetsFlutterBinding.ensureInitialized()`。裸 binding 的调度器在策略不放行时用零延迟
+///    定时器把任务一圈圈重排，Windows 嵌入层每圈一条 posted 消息，输入永远排不上；「怎么等」
+///    只靠 binding 层这一套（`waitForUiIdle` 也只是往里排一个 idle 任务）。
+/// 2. 每个调 `.repeat(` 的文件都要表态：应用级常驻装饰（必须走 ambient ticker，不算
+///    「有动画在跑」），还是随某个状态存续（播放 / 加载 / 录制，状态结束就停）。
+///    吉祥物光晕就是没表态的常驻装饰——开着它启动，等空闲的工作永远等不到。
+const String _ambientMixin = 'AmbientTickerProviderStateMixin';
+
+/// 应用级常驻装饰动画：只要开关开着就一直循环，与用户在哪一页、在做什么无关。
+const Set<String> _ambientRepeatFiles = <String>{
+  'lib/src/utils/components/mascot_glow.dart',
+  'lib/src/utils/components/page_backdrop_layer.dart',
+};
+
+/// 随状态存续的循环动画 → 它跟着哪个状态停。新增条目前先想清楚：启动后不经任何用户
+/// 操作就会一直转的，属于上面那一类。
+const Map<String, String> _stateBoundRepeatFiles = <String, String>{
+  'lib/src/media/import/import_glyph.dart': '导入方式图形自转：spinning（导入进行中）为真',
+  'lib/src/media/video/video_danmaku_overlay.dart': '弹幕：视频在播且弹幕开着',
+  'lib/src/media/video/video_m3e_chrome.dart': '进度条波浪：视频在播',
+  'lib/src/pages/implementations/games/galgame_home_blocks.dart':
+      '「游戏中」chip 呼吸点：游戏处于游玩状态',
+  'lib/src/pages/implementations/home_widget_grid.dart': '编辑态抖动：主页小组件在编辑态',
+  'lib/src/pages/implementations/music/music_cd_detail.dart':
+      '唱片慢转：CD 详情面板打开期间（关面板即 dispose）',
+  'lib/src/pages/implementations/music/music_lyrics_page.dart': '唱片旋转：音乐在播',
+  'lib/src/pages/implementations/shortcut_settings/shortcut_browser.part.dart':
+      '录制脉冲：正在录快捷键',
+  'lib/src/utils/components/fushi_expressive_progress.dart': '进度指示器：不定态或进度在变',
+  'lib/src/utils/components/fushi_m3e_feedback.dart': '骨架屏扫光：有限圈数',
+  'lib/src/utils/components/glass/fushi_glass_feedback.dart': '玻璃进度条：不定态',
+};
+
+final RegExp _bareBindingInit = RegExp(
+  r'(?<![A-Za-z0-9_$])WidgetsFlutterBinding\s*\.\s*ensureInitialized\s*\(',
+);
+final RegExp _repeatCall = RegExp(r'\.\s*repeat\s*\(');
+
+void main() {
+  test('判据自校验：只认裸 WidgetsFlutterBinding.ensureInitialized 调用', () {
+    expect(
+      _bareBindingInits('''
+// WidgetsFlutterBinding.ensureInitialized();
+/* WidgetsFlutterBinding.ensureInitialized() */
+final String hint = 'WidgetsFlutterBinding.ensureInitialized()';
+void a() => FushiWidgetsFlutterBinding.ensureInitialized();
+void b() => FushiSecondaryWidgetsFlutterBinding.ensureInitialized();
+void c() => WidgetsFlutterBinding.ensureInitialized();
+void d() {
+  WidgetsFlutterBinding
+      .ensureInitialized();
+}
+'''),
+      2,
+    );
+  });
+
+  test('lib 下所有入口都用带按帧调度的 binding（不调裸 WidgetsFlutterBinding）', () {
+    final List<String> offenders = <String>[];
+    int scanned = 0;
+    for (final File file in _dartFiles()) {
+      scanned++;
+      if (_bareBindingInits(file.readAsStringSync()) > 0) {
+        offenders.add(_normalize(file.path));
+      }
+    }
+    expectScanScale(
+      scanned,
+      what: 'fushi/lib + packages/*/lib 的 .dart',
+      atLeast: 3000,
+      measured: 3972,
+    );
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          '裸 WidgetsFlutterBinding 的调度器碰上常驻动画会零延迟空转，饿死 Windows 输入'
+          '（BUG-4725 / BUG-4893）。主引擎用 FushiWidgetsFlutterBinding，副引擎入口用 '
+          'FushiSecondaryWidgetsFlutterBinding（lib/src/diagnostics/fushi_binding.dart）。',
+    );
+  });
+
+  test('判据自校验：只认真正的 .repeat( 调用', () {
+    expect(
+      _repeatCalls('''
+// controller.repeat();
+final String hint = 'controller.repeat(reverse: true)';
+const ImageRepeat tile = ImageRepeat.repeat;
+void run(AnimationController controller) {
+  controller.repeat(reverse: true);
+  controller
+    ..stop()
+    ..repeat();
+}
+'''),
+      2,
+    );
+  });
+
+  test('每个循环动画都表了态：常驻装饰走 ambient ticker，其余写明跟着什么停', () {
+    final Set<String> actual = <String>{};
+    int scanned = 0;
+    for (final File file in _dartFiles(includePackages: false)) {
+      scanned++;
+      if (_repeatCalls(file.readAsStringSync()) > 0) {
+        actual.add(_normalize(file.path));
+      }
+    }
+    expectScanScale(
+      scanned,
+      what: 'fushi/lib 的 .dart',
+      atLeast: 2200,
+      measured: 2786,
+    );
+    final Set<String> declared = <String>{
+      ..._ambientRepeatFiles,
+      ..._stateBoundRepeatFiles.keys,
+    };
+    expect(
+      _ambientRepeatFiles.intersection(_stateBoundRepeatFiles.keys.toSet()),
+      isEmpty,
+      reason: '一个文件只能归一类',
+    );
+    expect(
+      actual.difference(declared),
+      isEmpty,
+      reason:
+          '新的 .repeat( 循环动画没表态。开关开着就一直转、与页面无关的装饰 → 用 '
+          '$_ambientMixin 并登记进 _ambientRepeatFiles；随播放 / 加载等状态存续的 → '
+          '登记进 _stateBoundRepeatFiles 并写明跟着什么停。',
+    );
+    expect(
+      declared.difference(actual),
+      isEmpty,
+      reason: '清单里的文件已经没有 .repeat( 了，把陈旧条目删掉',
+    );
+    for (final String path in _ambientRepeatFiles) {
+      final String code = maskCommentsAndStrings(File(path).readAsStringSync());
+      expect(
+        code.contains(_ambientMixin),
+        isTrue,
+        reason: '$path 登记为常驻装饰动画，ticker 必须由 $_ambientMixin 提供',
+      );
+      expect(
+        RegExp(
+          r'\b(?:Single)?TickerProviderStateMixin\b',
+        ).hasMatch(code.replaceAll(_ambientMixin, '')),
+        isFalse,
+        reason: '$path 里的常驻装饰动画不能再混用普通 ticker provider',
+      );
+    }
+  });
+}
+
+/// `FushiWidgetsFlutterBinding.ensureInitialized()` 这类子类入口由正则的前瞻排除，不算。
+int _bareBindingInits(String source) =>
+    _bareBindingInit.allMatches(maskCommentsAndStrings(source)).length;
+
+int _repeatCalls(String source) =>
+    _repeatCall.allMatches(maskCommentsAndStrings(source)).length;
+
+String _normalize(String path) => path.replaceAll(r'\', '/');
+
+Iterable<File> _dartFiles({bool includePackages = true}) sync* {
+  final List<Directory> roots = <Directory>[Directory('lib')];
+  if (includePackages) {
+    for (final FileSystemEntity package in Directory(
+      '../packages',
+    ).listSync()) {
+      if (package is! Directory) continue;
+      final Directory lib = Directory('${package.path}/lib');
+      if (lib.existsSync()) roots.add(lib);
+    }
+  }
+  for (final Directory root in roots) {
+    for (final FileSystemEntity entry in root.listSync(recursive: true)) {
+      if (entry is! File) continue;
+      final String path = _normalize(entry.path);
+      if (!path.endsWith('.dart') || path.endsWith('.g.dart')) continue;
+      yield entry;
+    }
+  }
+}

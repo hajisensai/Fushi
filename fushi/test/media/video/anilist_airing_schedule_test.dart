@@ -36,6 +36,7 @@ void main() {
               'media': <String, dynamic>{
                 'title': <String, dynamic>{'romaji': 'Sousou no Frieren'},
                 'coverImage': <String, dynamic>{'large': 'https://x/c.png'},
+                'bannerImage': 'https://x/b.jpg',
                 'episodes': 28,
                 'seasonYear': 2026,
                 'format': 'TV',
@@ -51,6 +52,7 @@ void main() {
       expect(episode.airingAtSeconds, 1770000000);
       expect(episode.media.displayTitle, 'Sousou no Frieren');
       expect(episode.media.coverUrl, 'https://x/c.png');
+      expect(episode.media.bannerUrl, 'https://x/b.jpg');
       expect(episode.media.format, 'TV');
     });
 
@@ -95,6 +97,11 @@ void main() {
         expect(variables['to'], 200);
         expect(variables['page'], 1);
         expect(variables.containsKey('ids'), isFalse);
+        expect(
+          captured['query'] as String,
+          contains('bannerImage'),
+          reason: '日历 / 今日放送色块的尾侧剧照取自 AniList bannerImage',
+        );
       },
     );
 

@@ -1,8 +1,11 @@
 package mextensionserver.impl
 
+import eu.kanade.tachiyomi.network.HttpException
+import eu.kanade.tachiyomi.network.newCallWithProgress
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.online.HttpSource
 import kotlinx.coroutines.runBlocking
+import okhttp3.Response
 import java.util.UUID
 
 /**
@@ -14,11 +17,6 @@ import java.util.UUID
  */
 internal object MihonImageProxy {
     private const val MAX_ENTRIES = 4096
-
-    data class ImageData(
-        val bytes: ByteArray,
-        val contentType: String,
-    )
 
     private data class Entry(
         val key: String,
@@ -78,7 +76,12 @@ internal object MihonImageProxy {
         return "http://127.0.0.1:$currentPort/image/$token"
     }
 
-    fun fetch(token: String): ImageData? {
+    /**
+     * Starts the page's image request and hands back the live response; the
+     * caller relays its body and closes it (manga-18b, see
+     * `streamingImageResponse`). Returns null for an unknown token.
+     */
+    fun open(token: String): Response? {
         val entry = synchronized(lock) { entriesByToken[token] } ?: return null
         if (entry.page.imageUrl == null) {
             entry.page.imageUrl =
@@ -86,21 +89,20 @@ internal object MihonImageProxy {
                     entry.source.getImageUrl(entry.page)
                 }
         }
-        return entry.source
-            .fetchImage(entry.page)
-            .map { response ->
-                // The Rx call adapter cancels its socket on unsubscription.
-                // Consume and close the body while onNext still owns the call;
-                // only detached image bytes may cross the blocking boundary.
-                response.use {
-                    val body = requireNotNull(it.body) { "Extension returned an empty image response" }
-                    ImageData(
-                        bytes = body.bytes(),
-                        contentType = body.contentType()?.toString() ?: "application/octet-stream",
-                    )
-                }
-            }.toBlocking()
-            .single()
+        // `HttpSource.fetchImage` is final in this ABI, so no extension
+        // replaces it, and it is exactly this call wrapped in an Rx Observable
+        // whose unsubscription cancels the call. Going through it would cut the
+        // body the moment the observable completed -- the reason upstream had
+        // to read the whole image inside onNext before responding.
+        val response =
+            entry.source.client
+                .newCallWithProgress(entry.source.imageRequest(entry.page), entry.page)
+                .execute()
+        if (!response.isSuccessful) {
+            response.close()
+            throw HttpException(response.code)
+        }
+        return response
     }
 
     fun clear() {

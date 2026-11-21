@@ -82,6 +82,38 @@ void main() {
     return app.path;
   }
 
+  test('BUG-4862：只设 FUSHI_TEST_ROOT 时连 <测试根>/ctl 的实例', () async {
+    final String testRoot = p.join(root.path, 'test-root');
+    final CtlServer server = CtlServer(
+      handler: FakeHandler()..initialised = true,
+      stateDir: p.join(testRoot, 'ctl'),
+    );
+    servers.add(server);
+    await server.start();
+    final int code = await runFushiCli(
+      <String>['--json', '--no-launch', 'status'],
+      // 不设 FUSHI_CTL_DIR：漏传 testRoot 时会回落平台默认目录（安装版）。
+      environment: <String, String>{
+        'FUSHI_TEST_ROOT': testRoot,
+        'LOCALAPPDATA': p.join(root.path, 'platform-default'),
+        'HOME': p.join(root.path, 'platform-default'),
+        'XDG_STATE_HOME': p.join(root.path, 'platform-default'),
+      },
+      operatingSystem: Platform.operatingSystem,
+      cliExecutable: p.join(root.path, 'bin', 'fushi_cli'),
+      out: out,
+      err: err,
+      starter: (String exe, List<String> args) async => fail('不应拉起 app：$exe'),
+      pollInterval: const Duration(milliseconds: 20),
+      groups: testGroups,
+    );
+    expect(code, kCliExitOk, reason: err.toString());
+    expect(
+      (jsonDecode(out.toString().trim()) as Map<String, Object?>)['running'],
+      isTrue,
+    );
+  });
+
   test('status：没在运行 → 69，且不拉起 app', () async {
     expect(await run(<String>['status', '--json']), kCliExitUnavailable);
     expect(jsonDecode(out.toString().trim()), <String, Object?>{

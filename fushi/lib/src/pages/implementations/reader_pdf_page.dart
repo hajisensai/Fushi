@@ -1030,7 +1030,23 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   /// 查词弹窗里点「+」制卡。句子来自最近一次查词（[_lastSentence]），卡图是**当前页
   /// 栅格化 PNG**（PDF 没有视频帧/封面图可用，页面本身就是最有信息量的图）。
   @override
-  Future<MinePopupResult> onMineFromPopup(Map<String, String> fields) async {
+  Future<MinePopupResult> onMineFromPopup(Map<String, String> fields) =>
+      _mineFromPopup(fields);
+
+  /// 点 ✓ 选「覆盖这张」：与新制同一条路（同一份句子 / 页图 / NSFW 口径），只把最后
+  /// 一步换成 `updateMinedNote`。BUG-4933：此前落到基类空实现，覆写静默无效。
+  @override
+  Future<MinePopupResult> onUpdateFromPopup(
+    int noteId,
+    Map<String, String> fields,
+  ) => _mineFromPopup(fields, overwriteNoteId: noteId);
+
+  /// [overwriteNoteId] 非空 = 覆写那张卡：不计入制卡统计，也不给「撤销」（撤销 = 删卡，
+  /// 会把被覆写的旧卡一并删掉）。
+  Future<MinePopupResult> _mineFromPopup(
+    Map<String, String> fields, {
+    int? overwriteNoteId,
+  }) async {
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     Directory? tempDir;
     try {
@@ -1072,11 +1088,20 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
         msg: t.card_mining_pending,
         status: MineToastStatus.pending,
       );
-      final MineOutcome outcome = await repo.mineEntry(
-        rawPayloadJson: jsonEncode(fields),
-        context: miningContext,
+      final MineOutcome outcome = overwriteNoteId != null
+          ? await repo.updateMinedNote(
+              noteId: overwriteNoteId,
+              rawPayloadJson: jsonEncode(fields),
+              context: miningContext,
+            )
+          : await repo.mineEntry(
+              rawPayloadJson: jsonEncode(fields),
+              context: miningContext,
+            );
+      final described = describeMineOutcome(
+        outcome,
+        overwrite: overwriteNoteId != null,
       );
-      final described = describeMineOutcome(outcome);
       if (described.record) {
         unawaited(_recordMinedCount());
       }
@@ -1085,11 +1110,13 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
           msg: described.message,
           status: described.status,
           // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
-          action: minedCardUndoToastAction(
-            repo,
-            outcome,
-            expression: fields['expression'],
-          ),
+          action: overwriteNoteId != null
+              ? null
+              : minedCardUndoToastAction(
+                  repo,
+                  outcome,
+                  expression: fields['expression'],
+                ),
         );
         return MinePopupResult.mined(outcome);
       }

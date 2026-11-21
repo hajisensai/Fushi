@@ -195,7 +195,7 @@ void main() {
     );
   });
 
-  test('弹窗初始源：DLsite 编号 > ISBN（openBD）> Bangumi；楽天无凭据不列', () {
+  test('弹窗初始源：DLsite 编号 > ISBN（openBD）> Bangumi（填没填楽天凭据都不会默认楽天）', () {
     expect(bookScrapeInitialState('RJ01014447 某作'), (
       BookScrapeSource.dlsite,
       'RJ01014447',
@@ -208,13 +208,5 @@ void main() {
       BookScrapeSource.bangumi,
       '薬屋のひとりごと',
     ));
-    expect(
-      bookScrapeSelectableSources(rakutenAvailable: false),
-      isNot(contains(BookScrapeSource.rakuten)),
-    );
-    expect(
-      bookScrapeSelectableSources(rakutenAvailable: true),
-      BookScrapeSource.values,
-    );
   });
 }

@@ -11,6 +11,7 @@ import 'dart:ui' show AppLifecycleState;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi/src/reader/reader_control_layout.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 
 /// 测试缝，与 `GlobalLookupController.platformOverride` 同形：「这台机器有没有
 /// 桌面应用外球」与起停 / 按钮过滤 / 动作分发这些 Dart 逻辑正交。不覆盖的话，
@@ -22,9 +23,9 @@ bool? debugDesktopSystemBallPlatformOverride;
 /// 同时在）。Linux 只在 X11 会话里有：Wayland 不让程序摆放自己的窗口。
 bool get isDesktopSystemBallPlatform =>
     debugDesktopSystemBallPlatformOverride ??
-    (Platform.isWindows ||
-        Platform.isMacOS ||
-        (Platform.isLinux && linuxSessionIsX11(Platform.environment)));
+    (hostPlatform.isWindows ||
+        hostPlatform.isMacOS ||
+        (hostPlatform.isLinux && linuxSessionIsX11(Platform.environment)));
 
 /// Whether GTK on Linux talks to an X server: forced with `GDK_BACKEND=x11`, or
 /// an X display without a Wayland one (a Plasma X11 session, the Steam Deck's
@@ -277,10 +278,11 @@ enum FloatingBallGlobalAction {
   /// 路径），截屏识字是截球所在的显示器、在冻结画面上点字（结果用同一张全局查词
   /// 卡），拍照查词桌面不提供；其余场景同 [availableOn]。
   ///
-  /// [lookupModuleEnabled]：「查词」模块开着没有。桌面应用外球的「查词」（打开
-  /// 查词页）、「应用外查词」与「截屏识字」（都用全局查词覆盖窗）都挂在这个模块
-  /// 上——模块关着时查词页没有入口、全局查词也不启动，按钮点了没反应，所以干脆
-  /// 不出现。剪贴板查词在覆盖窗不可用时退回主窗查词弹窗，不受影响。
+  /// [lookupModuleEnabled]：「查词」模块开着没有。它只关**查词页入口**（用户拍板
+  /// 「关掉查词模块只关页面入口、查词能力全留」），所以只门住桌面应用外球的
+  /// 「查词」（打开查词页）。「应用外查词」与「截屏识字」是查词能力、结果落在全局
+  /// 查词覆盖窗上，覆盖窗只按平台能力启动、不看这个模块（BUG-4846），它们只受
+  /// [globalLookupSupported] 约束。
   ///
   /// [globalLookupSupported]：这台桌面有没有全局查词覆盖窗（Linux 只在 X11 且
   /// 带了 `fushi_lookup_card` 时有）。「应用外查词」与「截屏识字」的结果都在那张卡
@@ -301,8 +303,7 @@ enum FloatingBallGlobalAction {
       return switch (this) {
         FloatingBallGlobalAction.lookup => lookupModuleEnabled,
         FloatingBallGlobalAction.popupLookup ||
-        FloatingBallGlobalAction.screenOcr =>
-          lookupModuleEnabled && globalLookupSupported,
+        FloatingBallGlobalAction.screenOcr => globalLookupSupported,
         FloatingBallGlobalAction.clipboard => true,
         FloatingBallGlobalAction.cameraOcr => false,
         FloatingBallGlobalAction.sync => true,

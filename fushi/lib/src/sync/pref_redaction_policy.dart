@@ -1,6 +1,7 @@
 import 'package:fushi/src/models/preference_keys.dart'
     show
         kAnkiSettingsPrefKey,
+        kMiningTtsFallbackVoiceProfilePrefKeyPrefix,
         kMusicScanParserRevisionPrefKeyPrefix,
         kSrsDayRolloverPendingPrefKeyPrefix,
         kSrsDayRolloverSeenPrefKeyPrefix;
@@ -79,6 +80,7 @@ abstract final class PrefRedactionPolicy {
     'network_proxy_username',
     'video_anidb_username',
     'video_anidb_password',
+    'video_anidb_udp_api_key',
     // 第三方服务 API key（都被 `api_key` 子串覆盖，显式列出以便审计时一眼看全）。
     'yomitan_api_key',
     'jimaku_api_key',
@@ -139,7 +141,10 @@ abstract final class PrefRedactionPolicy {
   ///   带到别的设备会让那台设备补写一个不是它的用户刚改的值，或把真正新来的修改当成见过的。
   /// - 音乐来源上次全量解析的扫描修订号（后缀 = 本机来源 id，`MusicLibraryScanner`）：描述的是这台设备的曲库
   ///   （设备本地表）用哪版解析器入的库；带到别的设备会让那台设备以为自己已经重新解析过、存量曲目永远不更新。
+  /// - 各配置停放的 TTS 兜底声音（后缀 = profile uid，`ProfileRepository` 切换配置时停放 / 换回）：值多半指向
+  ///   本机的朗读声音预设，与 live 键 `mining_tts_fallback_voice` 同族，带到别的设备只会指向不存在的预设。
   static const List<String> deviceLocalKeyPrefixes = <String>[
+    kMiningTtsFallbackVoiceProfilePrefKeyPrefix,
     kMusicScanParserRevisionPrefKeyPrefix,
     kSrsDayRolloverPendingPrefKeyPrefix,
     kSrsDayRolloverSeenPrefKeyPrefix,

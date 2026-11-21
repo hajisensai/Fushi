@@ -3,6 +3,9 @@ part of '../manga_fushi_page.dart';
 /// 漫画朗读在阅读器侧的接线：编排全在 [MangaReadAloudController]，这里只实现
 /// [MangaReadAloudHost]（页文字 / 高亮 / 翻页 / 学习时钟）并管理入口与生命周期。
 ///
+/// 两种音源：这卷登记过漫画有声成品（`manga_audio_library.dart`）时「朗读」播成品
+/// （[MangaAudioPlaybackDriver]，会话级、后台可继续播，本页只当宿主），否则现场合成。
+///
 /// 页文字的等待者按页登记（[_waiters]），由 OCR 的各个出口落定：
 /// - 热替换 / 整卷逐页 / 整卷完成 → [_pageTextArrived]（Ready）；
 /// - 无引擎 / Lens 被拒 / 失败 / 取消 / 换章 → [_failWaiters]（Unavailable）；
@@ -27,11 +30,18 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
 
   MangaReadAloudController? controller;
 
-  /// 正在高亮的句子（文字层重建后由 [_replaceSpreadOcr] 重新挂上）。
-  (int, int)? _speaking;
+  /// 成品音频的句序驱动（会话持有，本页只 attach / detach）。
+  MangaAudioPlaybackDriver? audio;
+
+  /// 本页向有声书会话登记的阅读器视图：只为让会话知道「阅读器在场」，后台那只学习
+  /// 时钟让位给本页的时钟（同一段时间不记两遍）。漫画没有章节跨越 / 文字领读。
+  final _MangaAudioReaderView _audioView = _MangaAudioReaderView();
+
+  /// 正在高亮的句子（页, 块下标）（文字层重建后由 [_replaceSpreadOcr] 重新挂上）。
+  (int, List<int>)? _speaking;
   bool _starting = false;
 
-  bool get active => controller?.isActive ?? false;
+  bool get active => (controller?.isActive ?? false) || audio != null;
 
   // ── MangaReadAloudHost ────────────────────────────────────────────────
 
@@ -94,8 +104,8 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
   }
 
   @override
-  Future<void> show(int pageIndex, int group) async {
-    _speaking = (pageIndex, group);
+  Future<void> show(int pageIndex, List<int> blocks) async {
+    _speaking = blocks.isEmpty ? null : (pageIndex, blocks);
     if (!_s.mounted) return;
     if (!isSameSpread(pageIndex, _s._currentPage)) {
       await _s._jumpToPage(pageIndex + 1);
@@ -118,6 +128,7 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
   /// 一页的 OCR 落定（热替换 / 整卷逐页）。
   void _pageTextArrived(int pageIndex, MokuroImage page) {
     _ocrSettledPages.add(pageIndex);
+    _recheckAudioAgainstOcr();
     final Completer<MangaPageTextResult>? waiter = _waiters.remove(pageIndex);
     if (waiter != null && !waiter.isCompleted) {
       waiter.complete(MangaPageTextReady(page));
@@ -126,6 +137,7 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
 
   /// 整卷完成：所有等待者按落盘结果落定。
   void _volumeSettled(MokuroPayload payload) {
+    _recheckAudioAgainstOcr();
     for (final int pageIndex in _waiters.keys.toList()) {
       if (pageIndex >= 0 && pageIndex < payload.images.length) {
         _pageTextArrived(pageIndex, payload.images[pageIndex]);
@@ -170,6 +182,9 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
   /// 换章 / 重载正文：页号只对旧章有效。
   void _onChapterReset() {
     controller?.stop();
+    // 成品音频的会话不跟章走（后台照常播），只是本页不再当它的宿主；正文装好后由
+    // [attachActiveAudio] 接回。
+    _detachAudio();
     _speaking = null;
     _ocrSettledPages.clear();
     _failWaiters(MangaPageTextUnavailableReason.cancelled);
@@ -178,9 +193,9 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
   // ── 高亮 JS ──────────────────────────────────────────────────────────
 
   String _speakingJs() {
-    final (int, int)? speaking = _speaking;
+    final (int, List<int>)? speaking = _speaking;
     return 'window.__mangaSetSpeaking && window.__mangaSetSpeaking('
-        '${speaking?.$1 ?? -1}, ${speaking?.$2 ?? -1});';
+        '${speaking?.$1 ?? -1}, ${jsonEncode(speaking?.$2 ?? const <int>[])});';
   }
 
   /// 文字层重建（窗口重载 / 懒挂 OCR 框）之后重新挂高亮；没在朗读时为空。
@@ -190,13 +205,269 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
 
   TtsServices get _tts => TtsServices.of(_s.appModel.prefsRepo);
 
-  /// 工具栏「朗读」：没在读就从当前页开始，在读就停。
+  /// 工具栏「朗读」：没在读就从当前页开始，在读就停。登记过成品音频的卷播成品，
+  /// 否则现场合成。
   Future<void> toggle() async {
+    if (audio != null) {
+      stopAudio();
+      return;
+    }
     if (active) {
       stop();
       return;
     }
+    if (await _startAudioIfRegistered()) return;
     await start();
+  }
+
+  // ── 成品音频 ────────────────────────────────────────────────────────
+
+  AudiobookSession get _session => _s.appModel.audiobookSession;
+
+  /// 会话里正在播的、属于本卷的成品音频驱动。
+  MangaAudioPlaybackDriver? _activeDriver() {
+    final AudiobookSessionCompanion? companion = _session.companion;
+    return companion is MangaAudioPlaybackDriver &&
+            !companion.isDisposed &&
+            companion.bookKey == _s.widget.bookKey
+        ? companion
+        : null;
+  }
+
+  /// 成品音频只配本地卷：在线直读章的页与登记的清单不是一回事。
+  bool get _audioEligible => !_s._streamingChapter && _s._payload != null;
+
+  /// 成品与本页眼前这份 OCR 对不对得上：页数不符 / OCR 签名不符（OCR 重跑过，块
+  /// 下标变了）都对不上。判据与导入同一个（[mangaManifestVolumeMismatch]），签名取
+  /// 本页正在显示的 payload——高亮用的就是它的块下标。
+  MangaAudioImportResult? _audioMismatch(MangaRenderManifest manifest) {
+    final MokuroPayload? payload = _s._payload;
+    if (payload == null) return MangaAudioImportResult.pageMismatch;
+    return mangaManifestVolumeMismatch(manifest, payload);
+  }
+
+  void _toastAudioMismatch(MangaAudioImportResult mismatch) {
+    FushiToast.show(
+      msg: mismatch == MangaAudioImportResult.ocrMismatch
+          ? t.manga_audio_playback_ocr_stale
+          : t.manga_audio_import_page_mismatch,
+      severity: ToastSeverity.warning,
+    );
+  }
+
+  /// 对不上的成品不在阅读器里播：不按错位的块下标高亮，也不在读者眼前静默播一份
+  /// 和画面对不上的音频——停掉会话并提示需重新标注 / 生成（与导入时拒收一致）。
+  void _rejectStaleAudio(MangaAudioImportResult mismatch) {
+    _detachAudio();
+    unawaited(_session.stop());
+    if (!_s.mounted) return;
+    unawaited(clearHighlight());
+    _toastAudioMismatch(mismatch);
+    _rebuild();
+  }
+
+  /// 正文装好后：本卷的成品音频正在会话里播（退出阅读器后台听、再回来）就接回；
+  /// 这期间 OCR 重跑过（与成品对不上）则停掉它而不是接回错位的高亮。
+  void attachActiveAudio() {
+    if (!_audioEligible) return;
+    final MangaAudioPlaybackDriver? driver = _activeDriver();
+    if (driver == null) return;
+    final MangaAudioImportResult? mismatch = _audioMismatch(driver.manifest);
+    if (mismatch != null) {
+      _rejectStaleAudio(mismatch);
+      return;
+    }
+    _attachAudio(driver);
+  }
+
+  /// 播放中本页的 OCR 变了（热替换 / 整卷重跑逐页落定 / 整卷完成）：成品与新 OCR
+  /// 对不上就停，不带着错位的块下标继续高亮。没在播成品时什么都不做。
+  void _recheckAudioAgainstOcr() {
+    final MangaAudioPlaybackDriver? driver = audio;
+    if (driver == null || driver.isDisposed) return;
+    final MangaAudioImportResult? mismatch = _audioMismatch(driver.manifest);
+    if (mismatch != null) _rejectStaleAudio(mismatch);
+  }
+
+  /// 本卷登记过成品音频就播它并返回 true（含页数 / OCR 签名对不上时提示后不再落到
+  /// 现场合成）；没登记返回 false。
+  Future<bool> _startAudioIfRegistered() async {
+    if (!_audioEligible || _starting) return false;
+    final FushiDatabase db = _s.appModel.database;
+    final MangaAudioRegistration? registration = await loadMangaAudio(
+      db,
+      _s.widget.bookKey,
+    );
+    if (registration == null || !_s.mounted) return false;
+    final MangaAudioImportResult? mismatch = _audioMismatch(
+      registration.manifest,
+    );
+    if (mismatch != null) {
+      // 会话里可能还在播这份旧成品（后台起的）：一并停掉。
+      if (_activeDriver() != null) {
+        _rejectStaleAudio(mismatch);
+      } else {
+        _toastAudioMismatch(mismatch);
+      }
+      return true;
+    }
+    _starting = true;
+    try {
+      MangaAudioPlaybackDriver? driver = _activeDriver();
+      if (driver == null) {
+        await _s.appModel.initialiseAudioHandler();
+        final AudiobookSessionStartRequest req =
+            await resolveMangaAudioSessionRequest(
+              db,
+              registration: registration,
+              title: _s._bookRow?.title ?? _s.widget.bookKey,
+              author: _s._bookRow?.author,
+            );
+        await _session.start(
+          info: req.info,
+          audioFiles: req.audioFiles,
+          prefs: req.prefs,
+          persist: req.persist,
+          cues: req.cues,
+          companion: req.companion,
+        );
+        driver = _activeDriver();
+        if (driver == null || !_s.mounted) return true;
+        // 续播点不在读者眼前这一屏：从眼前这页的页段起点开始（与现场朗读「从当前页
+        // 开始」一致）；就在这一屏则接着上次听到的地方。
+        if (!isSameSpread(driver.currentPage, visiblePage)) {
+          await driver.seekTo(driver.plan.pageStartMs(visiblePage));
+        }
+      }
+      _attachAudio(driver);
+      await driver.play();
+    } catch (error, stack) {
+      ErrorLogService.instance.log('MangaFushiPage.mangaAudio', error, stack);
+      FushiToast.show(
+        msg: t.manga_audio_start_failed,
+        severity: ToastSeverity.error,
+      );
+    } finally {
+      _starting = false;
+    }
+    return true;
+  }
+
+  void _attachAudio(MangaAudioPlaybackDriver driver) {
+    if (identical(audio, driver)) return;
+    _detachAudio();
+    controller?.stop();
+    audio = driver;
+    driver.attachHost(
+      this,
+      visible: readerVisibleForLifecycleState(
+        WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.resumed,
+      ),
+    );
+    _session.attachReader(_audioView);
+    _session.addListener(_onSessionChanged);
+    _rebuild();
+  }
+
+  void _detachAudio() {
+    final MangaAudioPlaybackDriver? driver = audio;
+    if (driver == null) return;
+    audio = null;
+    _lookupPause.drop();
+    _session.removeListener(_onSessionChanged);
+    _session.detachReader(_audioView);
+    if (!driver.isDisposed) driver.detachHost(this);
+    _speaking = null;
+  }
+
+  /// 会话停了 / 换了书（伴随对象随之释放）：本页不再有成品音频。
+  void _onSessionChanged() {
+    final MangaAudioPlaybackDriver? driver = audio;
+    if (driver == null) return;
+    if (!identical(_session.companion, driver) || driver.isDisposed) {
+      _detachAudio();
+      if (_s.mounted) {
+        unawaited(clearHighlight());
+        _rebuild();
+      }
+    }
+  }
+
+  // ── 查词暂停 ────────────────────────────────────────────────────────
+
+  /// 查词按住播放的标记（BUG-4907 / 4908 / 4909，见 [MangaLookupPause]）。
+  final MangaLookupPause _lookupPause = MangaLookupPause();
+
+  /// 眼前在用的音源：成品音频优先（两者不会同时在），否则现场合成。
+  MangaLookupPausable? get _lookupPlayback {
+    final MangaAudioPlaybackDriver? driver = audio;
+    if (driver != null) return _DriverLookupPausable(driver);
+    final MangaReadAloudController? c = controller;
+    return c == null ? null : _ControllerLookupPausable(c);
+  }
+
+  /// 主屏点 OCR 字要查词了：记下被查的句子（查后从句首重播用）。
+  void noteLookupSentence(MangaLookupSentence? sentence) =>
+      _lookupPause.noteSentence(sentence);
+
+  /// [source] 的查词出现（每层弹窗 / 每个新查词都会来，幂等）。
+  void lookupOpened(MangaLookupSource source) => _lookupPause.lookupOpened(
+    source,
+    _lookupPlayback,
+    enabled: ReaderFushiSource.instance.pauseOnLookup,
+  );
+
+  /// [source] 的查词关闭（[resume]：用户关的）。另一来源还开着就继续按住。
+  void lookupClosed(MangaLookupSource source, {required bool resume}) =>
+      _lookupPause.lookupClosed(
+        source,
+        _lookupPlayback,
+        resume: resume,
+        restartSentence: ReaderFushiSource.instance.restartSentenceAfterLookup,
+      );
+
+  /// 停掉成品音频的会话（不是暂停：播放条的「停止」与工具栏再点一次）。
+  void stopAudio() {
+    _lookupPause.drop();
+    _detachAudio();
+    unawaited(_session.stop());
+    unawaited(clearHighlight());
+    _rebuild();
+  }
+
+  /// 快捷键（[ShortcutScope.manga] 的播放暂停 / 上一句 / 下一句，只开键盘）。
+  void onShortcut(MangaReaderInputAction action) {
+    final MangaAudioPlaybackDriver? driver = audio;
+    final MangaReadAloudController? c = controller;
+    switch (action) {
+      case MangaReaderInputAction.readAloudPlayPause:
+        if (driver != null) {
+          unawaited(driver.togglePlayPause());
+        } else if (c != null && c.isActive) {
+          if (c.state == MangaReadAloudState.paused ||
+              c.state == MangaReadAloudState.failed) {
+            c.resume();
+          } else {
+            c.pause();
+          }
+        } else {
+          unawaited(toggle());
+        }
+      case MangaReaderInputAction.readAloudPrevious:
+        if (driver != null) {
+          unawaited(driver.previous());
+        } else {
+          c?.previous();
+        }
+      case MangaReaderInputAction.readAloudNext:
+        if (driver != null) {
+          unawaited(driver.next());
+        } else {
+          c?.next();
+        }
+      default:
+        break;
+    }
   }
 
   Future<void> start() async {
@@ -224,7 +495,8 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
         c = MangaReadAloudController(
           host: this,
           rig: rig,
-          pronunciation: _tts.pronunciation.load(),
+          pronunciation: _tts.textRules.load(TtsTextRuleKind.pronunciation),
+          preSynthesis: _tts.textRules.load(TtsTextRuleKind.preSynthesis),
           playToEnd: (String path, double speed) =>
               DesktopAudioPlayback.playFileToEnd(path, speed: speed),
           stopPlayback: DesktopAudioPlayback.stop,
@@ -271,17 +543,28 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
     if (rebuild) _rebuild();
   }
 
-  void stop() => controller?.stop();
+  void stop() {
+    _lookupPause.drop();
+    controller?.stop();
+  }
 
   void pause() => controller?.pause();
 
   /// 朗读不做后台播放：阅读器看不见（hidden / paused / detached）才暂停，回来从
   /// 当前句开头续。与有声书同一判据（[readerVisibleForLifecycleState]）：inactive
   /// 时画面仍在（下拉通知栏 / 控制中心 / 系统弹窗、桌面窗口失焦），不打断。
-  void onAppLifecycleChanged(AppLifecycleState state) =>
-      controller?.onAppLifecycleChanged(state);
+  ///
+  /// 成品音频不暂停（它本来就能后台播），只切播放形态：看不见时转纯听（跳过页停留 /
+  /// `lead`），回来恢复边看边听。
+  void onAppLifecycleChanged(AppLifecycleState state) {
+    controller?.onAppLifecycleChanged(state);
+    audio?.setReaderVisible(readerVisibleForLifecycleState(state));
+  }
 
-  void onPageChanged(int page) => controller?.onPageChanged(page);
+  void onPageChanged(int page) {
+    controller?.onPageChanged(page);
+    audio?.onPageChanged(page);
+  }
 
   /// 朗读中快速切换声音：选中即设为使用中，用新声音从当前句重读。
   Future<void> switchVoice() async {
@@ -313,12 +596,76 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
   }
 
   void dispose() {
+    // 成品音频会话比本页活得久（退出阅读器继续听），只解宿主。
+    _detachAudio();
     final MangaReadAloudController? c = controller;
     controller = null;
     _failWaiters(MangaPageTextUnavailableReason.cancelled);
     if (c == null) return;
     c.removeListener(_onControllerChanged);
     c.dispose();
+  }
+}
+
+/// 成品音频驱动的查词按住适配。从句首重播时被查那句按页 + 块在清单里找
+/// （与制卡取句子音频同一判据 [mangaMiningAudioLineIndex]）。
+class _DriverLookupPausable implements MangaLookupPausable {
+  _DriverLookupPausable(this._d);
+
+  final MangaAudioPlaybackDriver _d;
+
+  @override
+  bool get isRunning => !_d.isDisposed && _d.isPlaying;
+
+  @override
+  void pause() => unawaited(_d.pause());
+
+  @override
+  void resume({required bool restartSentence, MangaLookupSentence? sentence}) {
+    if (_d.isDisposed || _d.isPlaying) return;
+    if (!restartSentence) {
+      unawaited(_d.play());
+      return;
+    }
+    final int? line = sentence == null
+        ? null
+        : mangaMiningAudioLineIndex(
+            _d.manifest,
+            pageIndex: sentence.pageIndex,
+            blocks: sentence.blocks,
+          );
+    unawaited(_d.playFromLine(line));
+  }
+}
+
+/// 现场合成控制器的查词按住适配：等页文字 / 合成中也算在播。它的继续本来就从当前句
+/// 开头重读，所以「从句首重播」只在有被查句时换成那一句。
+class _ControllerLookupPausable implements MangaLookupPausable {
+  _ControllerLookupPausable(this._c);
+
+  final MangaReadAloudController _c;
+
+  @override
+  bool get isRunning =>
+      _c.isActive &&
+      switch (_c.state) {
+        MangaReadAloudState.preparingText ||
+        MangaReadAloudState.synthesizing ||
+        MangaReadAloudState.playing => true,
+        _ => false,
+      };
+
+  @override
+  void pause() => _c.pause();
+
+  @override
+  void resume({required bool restartSentence, MangaLookupSentence? sentence}) {
+    if (_c.state != MangaReadAloudState.paused) return;
+    if (restartSentence && sentence != null) {
+      _c.resumeFromSentence(sentence.pageIndex, sentence.blocks);
+    } else {
+      _c.resume();
+    }
   }
 }
 
@@ -377,4 +724,27 @@ class _MangaReadAloudServicesRig implements MangaReadAloudVoiceRig {
 
   @override
   Future<void> dispose() => _provider.dispose();
+}
+
+/// 本页登记给有声书会话的阅读器视图（见 [_MangaReadAloudSupport._audioView]）。漫画
+/// 有声的页跟随由 [MangaAudioPlaybackDriver] 自己做，这里的回调都不需要动作；
+/// [getCurrentReaderSection] 返回 -1 让控制器的跨章守卫不动作。
+class _MangaAudioReaderView implements ReaderAudiobookView {
+  @override
+  int getCurrentReaderSection() => -1;
+
+  @override
+  Future<void> onCueCrossChapter(int sectionIndex) async {}
+
+  @override
+  Future<void> onBoundarySkip(int delta) async {}
+
+  @override
+  void onExplicitCueJump(AudioCue cue) {}
+
+  @override
+  void onBeforeAudioJump(int fromGlobalMs, JumpSource source) {}
+
+  @override
+  void onReaderCueChanged() {}
 }

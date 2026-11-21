@@ -166,8 +166,11 @@ bool isAiModuleEnabled(ModuleVisibility visibility) =>
 ///
 /// `dictionaryPopup`（划词弹窗内部导航）判 `null`：它跨全部弹窗宿主常驻，属于
 /// 查词**能力**而非查词页面，与 lookup 模块开关无关。
-/// `globalExternal`（app 外系统级取词热键）判 lookup：它是把用户送进查词界面的
-/// 外部入口，模块关掉时不该还能装系统钩子。
+/// `globalExternal`（app 外系统级热键：取词、打开查词页、有声书播放控制）也判
+/// `null`：取词是查词**能力**（用户拍板「关掉查词模块只关页面入口、查词能力
+/// 全留」），有声书那几条更与 lookup 无关；打开查词页在模块关着时由独立路由
+/// 承载（`home_page.dart` 的 `_revealDictionary`）。此前判 lookup 会让关掉查词页
+/// 的用户连这一分区和 OS 热键一起丢掉（BUG-4846）。
 ModuleId? moduleOfShortcutScope(ShortcutScope scope) => switch (scope) {
   ShortcutScope.global => null,
   ShortcutScope.universal => null,
@@ -178,7 +181,9 @@ ModuleId? moduleOfShortcutScope(ShortcutScope scope) => switch (scope) {
   // 合成时也改用它打开站点（video_fushi/web_source.part.dart）。跟着 web 模块藏起
   // 来就会出现「浏览器能用、快捷键却没处改」，故与 dictionaryPopup 同判恒在。
   ShortcutScope.webBrowser => null,
-  ShortcutScope.globalExternal => ModuleId.lookup,
+  // app 外热键不随查词页模块（BUG-4846），由自己的总开关
+  // `app_external_hotkeys_enabled` 管（拍板台 pr3605）。
+  ShortcutScope.globalExternal => null,
   ShortcutScope.reader => ModuleId.books,
   ShortcutScope.audiobook => ModuleId.listening,
   ShortcutScope.manga => ModuleId.manga,

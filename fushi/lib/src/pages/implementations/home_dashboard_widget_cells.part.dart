@@ -54,7 +54,7 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
         books,
         poster,
       ),
-      HomeWidgetKind.tracking => _trackingCell(poster),
+      HomeWidgetKind.tracking => _trackingCell(appModel, books, poster),
       HomeWidgetKind.aiAgent => HomeAiAgentPanel(
         key: const ValueKey<String>('home-ai-agent-card'),
         poster: poster,
@@ -149,6 +149,9 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
               entries.first,
               0,
               FushiCoverBlockSize.hero,
+              // 首页拼贴（BUG-4903）：视频一律竖版海报摆法，没有海报时剧照裁成
+              // 竖版，不整张铺成横版背景（小块里看起来像没封面）。
+              portraitOnly: true,
             );
             final _ContinueSplit split = _continueSplitFor(
               c.biggest,
@@ -293,6 +296,7 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
               entries[i + 1],
               i + 1,
               FushiCoverBlockSize.half,
+              portraitOnly: true,
             ),
           ),
       ],
@@ -338,23 +342,29 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
     double height,
   ) {
     final double tileWidth = height * 1.9;
-    return SectionSwipeCascade(
-      child: HorizontalDragScrollable(
-        child: ListView.separated(
-          key: const ValueKey<String>('home-continue-row'),
-          scrollDirection: Axis.horizontal,
-          physics: desktopAwareScrollPhysics(),
-          itemCount: entries.length - 1,
-          separatorBuilder: (BuildContext _, int _) =>
-              const SizedBox(width: kFushiCoverBlockSpacing),
-          itemBuilder: (BuildContext _, int i) => SizedBox(
-            width: tileWidth,
-            child: _continueBlock(
-              tokens,
-              appModel,
-              entries[i + 1],
-              i + 1,
-              FushiCoverBlockSize.half,
+    // 视口给半高色块的投影留余量（[FushiShadowBleedViewport]），不把阴影裁成直角框。
+    return FushiShadowBleedViewport(
+      bleed: kFushiCoverBlockHalfBleed,
+      builder: (BuildContext _, EdgeInsets padding) => SectionSwipeCascade(
+        child: HorizontalDragScrollable(
+          child: ListView.separated(
+            key: const ValueKey<String>('home-continue-row'),
+            scrollDirection: Axis.horizontal,
+            physics: desktopAwareScrollPhysics(),
+            padding: padding,
+            itemCount: entries.length - 1,
+            separatorBuilder: (BuildContext _, int _) =>
+                const SizedBox(width: kFushiCoverBlockSpacing),
+            itemBuilder: (BuildContext _, int i) => SizedBox(
+              width: tileWidth,
+              child: _continueBlock(
+                tokens,
+                appModel,
+                entries[i + 1],
+                i + 1,
+                FushiCoverBlockSize.half,
+                portraitOnly: true,
+              ),
             ),
           ),
         ),
@@ -790,12 +800,19 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
                       },
                     );
                     if (box.maxWidth >= _kTodayBarsSideWidth) {
+                      // 细柱（设计稿 11-20 #12「宁可把柱状图变小」）：柱状图只占卡宽
+                      // 约 20%、最多 7 根 12px 细柱的宽，省出的宽度给左边的大字与
+                      // 副行，卡片尺寸不变。
+                      final double barsWidth = math.min(
+                        box.maxWidth * _kTodayBarsWidthShare,
+                        _kTodayBarsMaxWidth,
+                      );
                       return Row(
                         children: <Widget>[
-                          Expanded(flex: 11, child: main),
+                          Expanded(child: main),
                           const SizedBox(width: 12),
-                          Expanded(
-                            flex: 9,
+                          SizedBox(
+                            width: barsWidth,
                             child: HomeWidgetOverflowClip(
                               child: bars(math.max(16, box.maxHeight)),
                             ),
@@ -855,16 +872,16 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
     }
     final bool hasGoal = goal > 0;
     final String todayTime = formatStatTime(todayMs);
+    // 副行只写目标（设计稿 11-20 #12）：大字已经是今日字数（「2.2 万」），副行再写
+    // 一遍原始字数「21687 / 30000 字」只会把时长挤成省略号。读到多少由起始侧的
+    // 目标环给（环 = 已读 / 目标，读超了封顶 100%）。
+    final String goalFigure = formatStatCharsAxis(goal);
     final String? goalLine = !hasGoal
         ? null
         : switch (period) {
-            StudyGoalPeriod.daily => t.stat_goal_progress(
-              read: goalChars,
-              goal: goal,
-            ),
-            StudyGoalPeriod.weekly => t.stat_goal_progress_weekly(
-              read: goalChars,
-              goal: goal,
+            StudyGoalPeriod.daily => t.home_today_goal_target(goal: goalFigure),
+            StudyGoalPeriod.weekly => t.home_today_goal_target_weekly(
+              goal: goalFigure,
             ),
           };
     return Builder(
@@ -980,9 +997,13 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
 
   // ── 最近添加 / 追踪 ──────────────────────────────────────────────────────
 
-  /// 「最近添加」：条目小行按格子实际大小铺成几行几列（[_widgetMiniList]，格子越大
-  /// 列得越多，最多 [_HomeDashboardPageState._kRecentLimit] 条；「继续」里已有的
-  /// 去重）。
+  /// 「最近添加」（用户 2026-11-17 重设计）：按格子实际大小选样式——
+  /// - 色块外观、够宽放色块（每块宽 ≥ [_kRecentBlockMinWidth]、高 ≥
+  ///   [_kContinueBlockRowMin]）：与「继续」卡同一套封面色块铺成几行几列；够大
+  ///   （≥ 2 列 × 3 行）时最新一项放大成占满起始侧一整列的主色块；
+  /// - 否则（1 列宽的窄格 / 分区卡外观）：条目小行（[_widgetMiniList]）。
+  /// 同一合集已在数据层合成一项（扇形 + 卷数）；「继续」里已有的去重。有内容时外框
+  /// 不画「最近添加」大水印（会压在条目文字后面）。
   Widget _recentCell(
     FushiDesignTokens tokens,
     AppModel appModel,
@@ -993,41 +1014,160 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
         ? _recentlyAddedEntries(appModel, books)
         : const <_ContinueEntry>[];
     final DateTime now = DateTime.now();
-    return HomeWidgetFrame(
-      key: const ValueKey<String>('home-recent-card'),
-      title: t.home_recently_added,
-      icon: FushiIcons.schedule,
-      hueKey: HomeWidgetKind.recentlyAdded.id,
-      poster: poster,
-      dense: false,
-      child: list.isEmpty
-          ? _widgetEmptyLine(
-              tokens,
-              _initialLoadDone ? t.home_widget_recent_empty : '',
-            )
-          : LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints c) =>
-                  _widgetMiniList(
-                    tokens: tokens,
-                    appModel: appModel,
-                    key: const ValueKey<String>('home-recent-list'),
-                    keyPrefix: 'home-recent-item',
-                    entries: list,
-                    area: c.biggest,
-                    subtitleOf: (_ContinueEntry e) => _recentSubtitle(e, now),
-                  ),
-            ),
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints c) {
+        // 色块模式下外框不画底（[HomeWidgetFrame.bare]）、四周不留内边距：内容区
+        // = 整格减去小标题行。
+        final Size blockArea = Size(
+          c.maxWidth,
+          math.max(
+            0,
+            c.maxHeight - kHomeWidgetHeaderHeight - kHomeWidgetHeaderGap,
+          ),
+        );
+        final _RecentBlockGrid? blocks = poster && list.isNotEmpty
+            ? _recentBlockGridFor(blockArea, list.length)
+            : null;
+        return HomeWidgetFrame(
+          key: const ValueKey<String>('home-recent-card'),
+          title: t.home_recently_added,
+          icon: FushiIcons.schedule,
+          hueKey: HomeWidgetKind.recentlyAdded.id,
+          poster: poster,
+          dense: false,
+          bare: blocks != null,
+          child: list.isEmpty
+              ? _widgetEmptyLine(
+                  tokens,
+                  _initialLoadDone ? t.home_widget_recent_empty : '',
+                )
+              : blocks != null
+              ? _recentBlocks(tokens, appModel, list, blocks, blockArea, now)
+              : LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints box) =>
+                      _widgetMiniList(
+                        tokens: tokens,
+                        appModel: appModel,
+                        key: const ValueKey<String>('home-recent-list'),
+                        keyPrefix: 'home-recent-item',
+                        entries: list,
+                        area: box.biggest,
+                        subtitleOf: (_ContinueEntry e) =>
+                            _recentSubtitle(e, now),
+                      ),
+                ),
+        );
+      },
     );
   }
 
-  /// 媒体追踪同步状态（模块门控在可用性判据里；按格子实际大小排版在面板里）。
-  Widget _trackingCell(bool poster) {
+  /// 按 [grid] 把色块铺满 [area]：有主色块时它占起始侧一整列（全高、宽约四成），
+  /// 其余在剩下的区域里几行几列；放不下的条目不画（不缩字号）。
+  Widget _recentBlocks(
+    FushiDesignTokens tokens,
+    AppModel appModel,
+    List<_ContinueEntry> list,
+    _RecentBlockGrid grid,
+    Size area,
+    DateTime now,
+  ) {
+    const double gap = kFushiCoverBlockSpacing;
+    Widget tiles(Size box, int cols, int rows, int offset) {
+      final double w = (box.width - gap * (cols - 1)) / cols;
+      final double h = (box.height - gap * (rows - 1)) / rows;
+      final int count = math.min(list.length - offset, cols * rows);
+      return Wrap(
+        spacing: gap,
+        runSpacing: gap,
+        children: <Widget>[
+          for (int i = 0; i < count; i++)
+            SizedBox(
+              width: w,
+              height: h,
+              child: FushiStaggeredEntrance(
+                index: i + offset,
+                child: _recentBlock(
+                  tokens,
+                  appModel,
+                  list[i + offset],
+                  i + offset,
+                  FushiCoverBlockSize.half,
+                  now,
+                ),
+              ),
+            ),
+        ],
+      );
+    }
+
+    if (!grid.featured) {
+      return KeyedSubtree(
+        key: const ValueKey<String>('home-recent-blocks'),
+        child: tiles(area, grid.cols, grid.rows, 0),
+      );
+    }
+    final double leadWidth = (area.width - gap) * _kRecentLeadShare;
+    final double restWidth = area.width - leadWidth - gap;
+    final int restCols = math.max(
+      1,
+      ((restWidth + gap) / (_kRecentBlockMinWidth + gap)).floor(),
+    );
+    return Row(
+      key: const ValueKey<String>('home-recent-blocks'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        SizedBox(
+          width: leadWidth,
+          child: FushiStaggeredEntrance(
+            index: 0,
+            child: _recentBlock(
+              tokens,
+              appModel,
+              list.first,
+              0,
+              FushiCoverBlockSize.regular,
+              now,
+            ),
+          ),
+        ),
+        const SizedBox(width: gap),
+        SizedBox(
+          width: restWidth,
+          child: tiles(Size(restWidth, area.height), restCols, grid.rows, 1),
+        ),
+      ],
+    );
+  }
+
+  /// 媒体追踪同步状态（模块门控在可用性判据里）。色块外观且格子够宽够高（宽格、
+  /// 高 ≥ [_trackingPosterMinHeight]）时画拼贴追踪块（[HomeTrackingPoster]，设计
+  /// 稿 H6：按状态取色、待关联数大字兼水印、待关联条目封面扇形叠放、「处理 ›」）；
+  /// 其余（半栏 / 矮格 / 分区卡外观）按格子实际大小排版在 [HomeTrackingPanel] 里。
+  Widget _trackingCell(AppModel appModel, List<MediaItem> books, bool poster) {
     final HomeTrackingSummary summary = HomeTrackingSummary.of(_tracking);
-    return HomeTrackingPanel(
-      key: const ValueKey<String>('home-tracking-card'),
-      summary: summary,
-      onOpen: () => _openTrackingPage(summary),
-      poster: poster,
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints c) {
+        if (poster &&
+            homeWidgetIsWide(c.maxWidth) &&
+            c.maxHeight >=
+                _trackingPosterMinHeight(MediaQuery.textScalerOf(context))) {
+          return KeyedSubtree(
+            key: const ValueKey<String>('home-tracking-card'),
+            child: HomeTrackingPoster(
+              summary: summary,
+              covers: _trackingUnlinkedCovers(appModel, books),
+              onOpen: () => _openTrackingPage(summary),
+              height: c.maxHeight,
+            ),
+          );
+        }
+        return HomeTrackingPanel(
+          key: const ValueKey<String>('home-tracking-card'),
+          summary: summary,
+          onOpen: () => _openTrackingPage(summary),
+          poster: poster,
+        );
+      },
     );
   }
 }
@@ -1053,9 +1193,52 @@ const double _kContinueMiniSideMin = 64;
 /// 色块外观其余条目铺多行时每行至少多高。
 const double _kContinueBlockRowMin = 96;
 
+/// 「最近添加」一块色块的最小宽度：再窄标题只剩几个字，退回条目小行。
+const double _kRecentBlockMinWidth = 220;
+
+/// 「最近添加」主色块占的宽度比例。
+const double _kRecentLeadShare = 0.4;
+
+/// 「最近添加」色块的排法（[_recentBlockGridFor]）。
+@immutable
+class _RecentBlockGrid {
+  const _RecentBlockGrid({
+    required this.cols,
+    required this.rows,
+    required this.featured,
+  });
+
+  final int cols;
+  final int rows;
+
+  /// 最新一项放大成占满起始侧一整列的主色块。
+  final bool featured;
+}
+
+/// [area] 里「最近添加」色块怎么排；放不下一块够宽的色块时为 null（退回条目
+/// 小行）。[count] 是条目数（够 3 项才有主色块）。
+_RecentBlockGrid? _recentBlockGridFor(Size area, int count) {
+  const double gap = kFushiCoverBlockSpacing;
+  final int cols = ((area.width + gap) / (_kRecentBlockMinWidth + gap)).floor();
+  final int rows = ((area.height + gap) / (_kContinueBlockRowMin + gap))
+      .floor();
+  if (cols < 1 || rows < 1) return null;
+  return _RecentBlockGrid(
+    cols: cols,
+    rows: rows,
+    featured: cols >= 2 && rows >= 3 && count >= 3,
+  );
+}
+
 /// 分区卡外观主卡旁的封面卡横滑行最高多高；更高就改铺条目小行（封面放大没有意义，
 /// 多列条目更有用）。
 const double _kContinueCoverRowMax = 300;
+
+/// 拼贴追踪块（[HomeTrackingPoster]）至少要多高才不溢出（纯函数）：上下内边距
+/// 32 + 标题行（12 号）+ 大字（34 号）+ chip 行 26 + 余量 8，字号随系统缩放。
+/// 宽网格 2×1（约 104…140）在默认字号的常见桌面宽下放得下，窄网格一行高放不下。
+double _trackingPosterMinHeight(TextScaler scaler) =>
+    32 + scaler.scale(12) * 1.25 + scaler.scale(34) + 26 + 8;
 
 /// 条目小行：行高范围、每列最小宽、间距。
 const double _kMiniRowMin = 52;
@@ -1067,6 +1250,10 @@ const double _kMiniGap = 8;
 const double _kTodayBarsSideWidth = 380;
 const double _kTodayBarsBelowHeight = 130;
 const double _kTodayMainMaxHeight = 72;
+
+/// 「今日」结束侧近 7 天柱条占内容宽的比例，与上限（7 根 12px 细柱 + 6 道 5px 间隔）。
+const double _kTodayBarsWidthShare = 0.2;
+const double _kTodayBarsMaxWidth = 7 * 12 + 6 * 5;
 
 /// 「继续」主角怎么分：只放主卡 / 其余条目挂在主卡旁 / 挂在主卡下。
 enum _ContinueSplit { none, side, below }

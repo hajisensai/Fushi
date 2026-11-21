@@ -13,6 +13,7 @@
 //   GET  /dev/stats               安装统计（读定时快照，迁移 0021）：日活 / 周活 / 月活、近 30 天每日活跃与新增、平台 / 通道 / 版本分布（installs.js）
 //   GET  /dev/stats.json          同一份数据的 JSON（安装统计快照 + computedAt），给维护者自己的看板（Fushi Pulse）取数；没有会话 → 401 JSON
 //   POST /dev/stats/refresh       立即重算安装统计快照（距上次不足 15 分钟则不重算）
+//   GET  /dev/notices             服务端公告：规则、已登记摘要与按构建信息的计数（只读；增改走 /admin/api/notices/**，notices.js）
 //   GET  /dev/decisions           拍板台：AI 代理写入的待拍事项（decisions.js）
 //   GET  /dev/decisions.json      拍板台同步（?sig= 没变回 {same:true}）
 //   GET  /dev/decisions.js        拍板台客户端脚本（decisions_client.js）
@@ -46,6 +47,7 @@ import {
   DECISION_UPLOAD_BODY_MAX, ORIGINAL_IMAGE_ORIGINS, decisionFileResponse, uploadDecisionFiles, listDecisions, renderDecisions, submitDecision,
 } from './decisions.js';
 import { DECISIONS_CLIENT_JS } from './decisions_client.js';
+import { NOTICE_LIMITS, listKnown, listRules, seenSummary } from './notices.js';
 
 export const SESSION_COOKIE = 'fushi_dev';
 export const SESSION_TTL_MS = 7 * 24 * 3600 * 1000;
@@ -136,7 +138,7 @@ function fmtBytes(n) {
 
 function layout(title, body, { signedIn = false } = {}) {
   const logout = signedIn
-    ? '<nav class="top"><a href="/dev">反馈</a><a href="/dev/decisions">拍板</a><a href="/dev/stats">统计</a><a href="/dev/project">项目</a>'
+    ? '<nav class="top"><a href="/dev">反馈</a><a href="/dev/decisions">拍板</a><a href="/dev/stats">统计</a><a href="/dev/project">项目</a><a href="/dev/notices">公告</a>'
       + '<form method="post" action="/dev/logout" class="inline"><button class="link">退出</button></form></nav>'
     : '';
   return `<!doctype html>
@@ -854,6 +856,48 @@ ${installSection(f.install, f.fix)}
 }
 
 /** /dev 下的全部请求。 */
+const NOTICE_KIND_LABEL = {
+  h: '摘要等于',
+  id: '应用 id 等于',
+  h_unlisted: '摘要都未登记',
+  hk_disjoint: '两组摘要不相交',
+  all: '全部',
+};
+
+/** 摘要缩写（全文放 title 里悬停看）。 */
+function shortDigest(h) {
+  return h ? `<span title="${esc(h)}">${esc(h.slice(0, 12))}…</span>` : '<span class="muted">—</span>';
+}
+
+async function noticesPage(env, now) {
+  const [rules, known, seen] = await Promise.all([listRules(env), listKnown(env), seenSummary(env, now)]);
+  const ruleRows = rules.map((r) => `<tr${r.enabled ? '' : ' class="muted"'}><td>r${r.id}</td>`
+    + `<td>${esc(NOTICE_KIND_LABEL[r.kind] || r.kind)}${r.value ? ` ${r.kind === 'h' ? shortDigest(r.value) : esc(r.value)}` : ''}</td>`
+    + `<td>${esc(r.platform || '任意')}</td><td>${esc(r.level)}</td>`
+    + `<td>${esc(r.title_zh || '')}${r.title_en ? `<br><span class="muted">${esc(r.title_en)}</span>` : ''}</td>`
+    + `<td>${r.enabled ? '启用' : '停用'}</td></tr>`).join('');
+  const knownRows = known.map((k) => `<tr><td>${shortDigest(k.h)}</td><td>${esc(k.label || '')}</td>`
+    + `<td>${esc(fmtTime(k.created_at))}</td></tr>`).join('');
+  const seenRows = seen.map((r) => `<tr><td>${esc(r.id || '—')}</td><td>${shortDigest(r.h)}</td>`
+    + `<td>${esc(r.label || '')}</td><td>${r.hkDisjoint ? '是' : ''}</td><td>${esc(r.v)}</td><td>${esc(r.p)}</td>`
+    + `<td>${esc(r.country ? countryLabel(r.country) : '—')}</td><td>${r.n}</td>`
+    + `<td>${esc(r.firstDay)} ~ ${esc(r.lastDay)}</td></tr>`).join('');
+  return html(layout('公告', `<h1>服务端公告</h1>
+<p class="muted">App 按构建信息来问有没有公告，服务端按下面的规则匹配后下发（notices.js）。本页只读；增改规则与登记摘要走管理端
+<code>/admin/api/notices/**</code>。block（全屏锁）只能用「未登记摘要」「两组摘要不相交」或具体的非官方摘要；请求里带着已登记摘要时 block 一律不下发。</p>
+<h2>规则</h2>
+<div class="card">${ruleRows ? `<table class="grid"><tr><th>id</th><th>匹配</th><th>平台</th><th>级别</th><th>标题</th><th>状态</th></tr>${ruleRows}</table>`
+    : '<p class="muted">还没有规则。</p>'}</div>
+<h2>已登记摘要</h2>
+<div class="card">${knownRows ? `<table class="grid"><tr><th>摘要</th><th>备注</th><th>登记于</th></tr>${knownRows}</table>`
+    : '<p class="muted">还没有登记。</p>'}</div>
+<h2>近 ${NOTICE_LIMITS.seenDays} 天的构建信息</h2>
+<p class="muted">按「应用 id × 首个摘要 × 两组摘要是否不相交 × 版本 × 平台 × 国家 / 地区」合计的请求次数（只计开着「发送使用统计」的客户端，是下限；不存 IP；当天计数预算用完后只匹配不计数）。</p>
+<div class="card">${seenRows ? `<table class="grid"><tr><th>应用 id</th><th>摘要</th><th>备注</th><th>不相交</th><th>版本</th><th>平台</th>`
+    + `<th>国家 / 地区</th><th>次数</th><th>日期</th></tr>${seenRows}</table>` : '<p class="muted">还没有数据。</p>'}</div>`,
+  { signedIn: true }));
+}
+
 export async function routeDevConsole(request, env, url, now, ctx, ip) {
   const path = url.pathname;
   const method = request.method;
@@ -904,6 +948,7 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
 
   if (method === 'GET' && path === '/dev') return listPage(env, url, dev);
   if (method === 'GET' && path === '/dev/stats') return statsPage(env, now);
+  if (method === 'GET' && path === '/dev/notices') return noticesPage(env, now);
   if (method === 'GET' && path === '/dev/stats.json') {
     // 快照内容 + computedAt（毫秒时间戳）：数字最多滞后 snapshotEveryMs。
     const { computedAt, stats } = await loadInstallStats(env, now);

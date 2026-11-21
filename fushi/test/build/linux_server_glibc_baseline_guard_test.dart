@@ -80,12 +80,14 @@ void main() {
       'build-multiplatform.yml': <String>[
         'native/fushi_anki_sync/build.sh --debug --install-dir',
         'cp native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so',
-        'libonnxruntime.so* \\',
+        'fetch_onnxruntime_nuget.py "\$ORT_VERSION" linux-x64',
       ],
+      // 构建命令在 packages/fushi_server/tool/build_linux_bundle.sh（与 Docker 共用），
+      // workflow 按子命令调；下一个 test 核脚本里这三件确实进 bundle。
       'release-server.yml': <String>[
-        'native/fushi_anki_sync/build.sh --install-dir',
-        'cp native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so',
-        'libonnxruntime.so* build/fushi_server_linux/bundle/lib/',
+        'build_linux_bundle.sh anki-sync',
+        'build_linux_bundle.sh fushidicts',
+        'build_linux_bundle.sh cli',
       ],
     };
     const Map<String, String> after = <String, String>{
@@ -105,6 +107,35 @@ void main() {
       expect(end > at, isTrue, reason: '$wf：glibc 检查要在「${after[wf]}」之前');
     }
   });
+
+  test(
+    'build_linux_bundle.sh 的 cli / fushidicts / anki-sync 把各自的 ELF 放进 bundle',
+    () {
+      final String bundle = File(
+        '../packages/fushi_server/tool/build_linux_bundle.sh',
+      ).readAsStringSync();
+      String body(String fn) {
+        final int at = bundle.indexOf('\n$fn() {');
+        expect(at, greaterThanOrEqualTo(0), reason: '脚本没有 $fn');
+        return bundle.substring(at, bundle.indexOf('\n}\n', at));
+      }
+
+      expect(
+        body('cmd_cli'),
+        contains('fetch_onnxruntime_nuget.py "\$ORT_VERSION" linux-x64'),
+      );
+      expect(
+        body('cmd_fushidicts'),
+        contains(
+          'cp native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so',
+        ),
+      );
+      expect(
+        body('cmd_anki_sync'),
+        contains('native/fushi_anki_sync/build.sh --install-dir'),
+      );
+    },
+  );
 }
 
 /// workflow 里某个 job 的原文（`jobs:` 下两格缩进的键到下一个同级键）。

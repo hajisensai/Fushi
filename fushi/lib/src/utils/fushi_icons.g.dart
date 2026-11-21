@@ -82,6 +82,12 @@ abstract final class FushiIcons {
     fontFamily: kFushiSymbolsFontFamily,
   );
 
+  /// 生成字幕 / 字幕工作台（语音转文字）：Symbols `transcribe`（取代 Icons.transcribe_outlined / Icons.transcribe）
+  static const IconData transcribe = IconData(
+    0xf8ec,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
   /// 合集：Symbols `collections_bookmark`（取代 Icons.collections_bookmark_outlined / Icons.collections_bookmark）
   static const IconData collection = IconData(
     0xe431,
@@ -1542,6 +1548,12 @@ abstract final class FushiIcons {
     fontFamily: kFushiSymbolsFontFamily,
   );
 
+  /// 本版新内容：Symbols `celebration`（取代 Icons.celebration_outlined / Icons.celebration）
+  static const IconData celebration = IconData(
+    0xea65,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
   /// 合并：Symbols `merge_type`（取代 Icons.merge_type_outlined / Icons.merge_type）
   static const IconData merge = IconData(
     0xe252,
@@ -1780,6 +1792,7 @@ abstract final class FushiIcons {
     'audiobook': audiobook,
     'dictionary': dictionary,
     'subtitles': subtitles,
+    'transcribe': transcribe,
     'collection': collection,
     'tag': tag,
     'statistics': statistics,
@@ -2020,6 +2033,7 @@ abstract final class FushiIcons {
     'doubleChevronRight': doubleChevronRight,
     'laptop': laptop,
     'lightbulb': lightbulb,
+    'celebration': celebration,
     'merge': merge,
     'notificationsActive': notificationsActive,
     'notificationsOff': notificationsOff,
@@ -2386,6 +2400,7 @@ abstract final class FushiIcons {
     0xea4d: IconData(0xea4d, fontFamily: kFushiSymbolsFilledFontFamily),
     0xea5b: IconData(0xea5b, fontFamily: kFushiSymbolsFilledFontFamily),
     0xea5d: IconData(0xea5d, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xea65: IconData(0xea65, fontFamily: kFushiSymbolsFilledFontFamily),
     0xea76: IconData(0xea76, fontFamily: kFushiSymbolsFilledFontFamily),
     0xea77: IconData(0xea77, fontFamily: kFushiSymbolsFilledFontFamily),
     0xeac3: IconData(0xeac3, fontFamily: kFushiSymbolsFilledFontFamily),
@@ -2441,6 +2456,7 @@ abstract final class FushiIcons {
     0xf539: IconData(0xf539, fontFamily: kFushiSymbolsFilledFontFamily),
     0xf7e4: IconData(0xf7e4, fontFamily: kFushiSymbolsFilledFontFamily),
     0xf8b6: IconData(0xf8b6, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xf8ec: IconData(0xf8ec, fontFamily: kFushiSymbolsFilledFontFamily),
   };
 }
 
@@ -2811,6 +2827,7 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
   ),
   0xea5b: (CupertinoIcons.hourglass, CupertinoIcons.hourglass),
   0xea5d: (CupertinoIcons.goforward_plus, CupertinoIcons.goforward_plus),
+  0xea65: (CupertinoIcons.sparkles, CupertinoIcons.sparkles),
   0xea76: (CupertinoIcons.search, CupertinoIcons.search),
   0xea77: (
     CupertinoIcons.arrow_right_to_line,
@@ -2917,4 +2934,5 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
     CupertinoIcons.exclamationmark_circle,
     CupertinoIcons.exclamationmark_circle_fill,
   ),
+  0xf8ec: (CupertinoIcons.captions_bubble, CupertinoIcons.captions_bubble_fill),
 };

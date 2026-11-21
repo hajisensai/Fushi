@@ -23,10 +23,16 @@
 //!   一起重写，[Index::member_numbers]）。笔记的成员 = 别名类里出现过的成员；卡的成员 = 别名类里出现过的成员，
 //!   **加上从没在操作里出现过的带盐卡**：笔记的成员 × 模板的成员按卡的公式（`gen4_ids::rules::card`）算出来的 ID
 //!   ——协议 3 给从没复习、没改过的卡也发了号（缓存行的 `anki_id`），新代的别名表里没有那个带盐 ID（它只记操作里
-//!   出现过的 ID），号从这里来。每一边都取规范 ID 自己加出现过的成员：随机 ID 的笔记（规范 ID 就是它协议 3 的 ID）配
+//!   出现过的 ID），号从这里来。内置笔记类型的模板从不作为实体出现（只嵌在宿主配置里），它的成员由笔记类型的成员
+//!   按规则算（`class.rs` `builtin_template_members`）。每一边都取规范 ID 自己加出现过的成员：随机 ID 的笔记（规范 ID 就是它协议 3 的 ID）配
 //!   带盐的模板、带盐的笔记配内置模板时规范 ID 那一边就是旧号的来源，类里另有成员（随机 ID 笔记的旧并入兜底副本，
 //!   `gen4_ids::alias` 的 `root_fallbacks`）时也不能丢；规范 ID 是新代才有的那种（带盐的类）多出来的组合没有旧号，
 //!   不撞别人的号就无害（与多盐交叉组合是同一类取舍；规范卡自己那个组合不写，它的号在 `cards.anki_id`）。
+//!   **量级（第五波定，不收窄到同盐组合）**：一张卡的行数 = (1 + 笔记成员数) × (1 + 模板成员数)。内置模板的成员
+//!   由笔记类型的成员按盐各算一个，所以 k 个盐（并入过 k 个 profile 的内置笔记类型）下每张内置笔记的卡是
+//!   (k+1)² 行，只配同盐是 k+1 行（加规范自己）；k 实际是 1～2（一个 profile 并入过另一个才是 2），即每卡 4～9 行
+//!   对 2～3 行，库按卡线性，不随别的量放大。收窄要在这里认出笔记成员的盐（逐盐 `rules::note(盐, guid)` 对比），
+//!   换来的只是少几行无旧号的组合，没收益，不做；交叉组合的号是新 UUID 的号，与真实卡撞号的概率同随机 53 位号。
 //!   行是「别名表 + 应有的卡」的函数，所以落在缓存层、随笔记的行维护（别名表变了的行经 [Index::moved_rows] 牵动
 //!   所属笔记重算），重建同样物化。
 //!   **为什么不在迁移时把协议 3 `srs_cards_cache` 的卡 ID 写进别名表**：别名表是「操作集合 + 盐 + 内置表」的函数
@@ -113,8 +119,10 @@ use rusqlite::types::ValueRef;
 use rusqlite::{OptionalExtension, params};
 use serde_json::{Value, json};
 
+use super::class::builtin_template_members;
 use super::derive::{Index, R_LIVE, Ref, Reg, Settled, body_of};
 use super::schema::sql;
+use crate::anki_import_rules::derived_log_hlc;
 use crate::gen4::heritage::SlotBody;
 use crate::gen4::name::{read_edit_key, write_edit_key};
 use crate::gen4::op::{Body4, Log4};
@@ -126,7 +134,9 @@ use crate::store::caches::{
     anki_duplicate_log_ids, card_row, note_row, sorted_ids, stat_groups,
 };
 use crate::store::schema::anki_numeric_id;
-use crate::store::sync2::{canonical, config, group_lineage, log_json, tails_with};
+use crate::store::sync2::{
+    canonical, config, group_lineage, log_json, note_type_key_affects_caches, tails_with,
+};
 use crate::sync2::codec::{Reader, Writer};
 use crate::sync2::id::{Id, Key};
 use crate::sync2::op::{EntKind, Intent, LogBody};
@@ -191,6 +201,9 @@ CREATE TABLE IF NOT EXISTS cards (
   PRIMARY KEY (col, id)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS cards_note ON cards (col, note_id);
+-- 实体归属闸（cmd/writes_owner.rs）：按卡 ID 问别的集合有没有这张卡。col > 0 同 schema.rs 的 ent_id（只有归属闸的
+-- 查询用得上）。
+CREATE INDEX IF NOT EXISTS cards_id ON cards (id) WHERE col > 0;
 CREATE INDEX IF NOT EXISTS cards_deck ON cards (col, deck_id);
 CREATE INDEX IF NOT EXISTS cards_template ON cards (col, template_id);
 CREATE INDEX IF NOT EXISTS cards_anki ON cards (col, anki_id);
@@ -263,6 +276,33 @@ const TABLES: [&str; 4] = ["notes", "cards", "stats", "anki_members"];
 /// `derive_cfg` 里缓存配置的键。
 pub const CFG_KEY: &str = "caches";
 
+/// `derive_cfg` 里「缓存层按哪一版推导口径物化的」的键（文件头「缓存配置」）。值是 [CACHE_RULES] 的十进制文本；没有 =
+/// 0（这个口径之前建的库）。
+pub const RULES_KEY: &str = "cacheRules";
+
+/// 缓存层推导口径修订号：同一份真相、同一份缓存配置算出的缓存行变了（规则改了）时 +1，并在这里记一行。整份物化
+/// （[Index::materialize_caches]，`rebuild_all` / `rebuild_caches` 的最后一步）写下当前值；`cache_config_set`（宿主每次
+/// 打开都发，`dispatch.rs`）发现库里记的不是当前值就整层重建一次——已有的新代库不必等配置变了才换上新口径。
+/// 真相不动、线格式不动，所以不升 schema；不进 head 的 `derive`（摘要不含缓存行，`digest.rs`）。
+///
+/// - 1（K3，交接 §26 C4）：Anki 来源日志的排序键改为来源数据派生的 HLC（[log_body]、`crate::anki_import_rules`）。之前
+///   新导入的 Anki 日志按操作 HLC 排：同一条 revlog 在血统两张卡上的副本各算一次、更早的 Anki 复习排到原生复习之后
+///   覆盖当前排程。
+/// - 2（第五波，交接 §38「第五波 导入与写接口」）：回导的外来原生日志（带 `foreignLog` 标记，Dart `_remapExtLog`）的排序键改为
+///   由发生时刻派生的 HLC（`crate::anki_import_rules::derived_log_hlc`）。之前按导入时刻的操作 HLC 排：更早的外来复习排到
+///   本机更晚的复习之后、改掉当前排程。
+/// - 3（第六波，交接 §44「第六波 导入红测试收尾」）：同一派生加上界——外来日志的发生时刻晚于载着它的那条操作时不派生、
+///   回落到操作 HLC（第五波复核修复，`derived_log_hlc` 的 `op_wall`）。2 推出时还没有这道上界，按 2 物化过的开发库里
+///   带未来时刻的外来日志排在派生位置上，要重建一次才换成新口径。
+/// - 4（嵌套并入的改名写入者）：按类判时改名写入者的旧上下文只换到归回证据撑得住的 seq 上界（`class.rs` 的
+///   `Canon::dvv`，上界记在 `derive_cfg` 的 `alias::WRITER_UPTO_KEY`）。之前整段换：被并入两次的库里，中间那份库的
+///   `{merged-…: n}` 把最初写入者名下 seq ≤ n、它其实没见过的写入判成已被覆盖（冲突变支配）。整层重建才写下上界。
+pub const CACHE_RULES: i64 = 4;
+
+/// [Index::log_class_rep] 每个成员一次的点查（走 `log_id (col, id, k)`；查询计划测试用同一份）。
+pub(crate) const LOG_REP_SQL: &str =
+    "SELECT k, at, card FROM log_ix WHERE col = ?1 AND id = ?2 AND win = 1";
+
 /// 一批碰到的东西里缓存层要重看的（[Index::settle] 边判边记，收尾时 [Index::refresh_caches] 用掉）。
 #[derive(Default, Debug)]
 pub(crate) struct Dirt {
@@ -279,9 +319,35 @@ impl Dirt {
         self.entities.insert((ekind, ent.clone()));
     }
 
-    pub(super) fn registers(&mut self, regs: &BTreeSet<Reg>) {
+    /// 一个寄存器（写入落库、状态重判变了）要不要让缓存层重看它的实体：笔记类型只看影响缓存行的键（协议 3
+    /// `note_type_key_affects_caches` 同一条规则：名字、CSS、字段说明只在渲染 / 编辑时读，不进笔记 / 卡行），别的
+    /// 种类一律要。笔记类型脏了就要把这一类的全部笔记重算（[Index::refresh_caches]），所以这几个键不能记脏（H5 读放大）。
+    pub(super) fn register(&mut self, r: &Reg) -> Result<(), String> {
+        if r.ekind == EntKind::NoteType as i64 {
+            let key = read_edit_key(&mut Reader::new(&r.key))
+                .map_err(|e| format!("gen4 cache: register key: {e}"))?;
+            if !note_type_key_affects_caches(&key) {
+                return Ok(());
+            }
+        }
+        self.entity(r.ekind, &r.ent);
+        Ok(())
+    }
+
+    pub(super) fn registers(&mut self, regs: &BTreeSet<Reg>) -> Result<(), String> {
         for r in regs {
-            self.entity(r.ekind, &r.ent);
+            self.register(r)?;
+        }
+        Ok(())
+    }
+
+    /// 收尾时一批碰过的实体（`Index::touched`，扣住 / 清除按它重看）：笔记类型不从这里记脏——它被碰过只因为写入
+    /// （由 [Dirt::register] 按键判）、清除（`derive.rs` 落 `Purge` 时直接记）或重判（同 [Dirt::register]），各自已记。
+    pub(super) fn touched(&mut self, ents: &BTreeSet<(i64, Ref)>) {
+        for (ekind, ent) in ents {
+            if *ekind != EntKind::NoteType as i64 {
+                self.entity(*ekind, ent);
+            }
         }
     }
 }
@@ -306,7 +372,13 @@ pub(super) struct LogIn {
     pub(super) k: i64,
     /// 日志上记的笔记（原值，未归一；协议 3 `sync2_log_meta.note_id`）。用到的地方自己归一，缓存层的重放不付这份代价。
     pub(super) note: Option<Ref>,
+    /// 日志上记的卡（原值，未归一）：重放的 fuzz 种子（`sync2/replay.rs` [Row::seed_card]）。[json] 里的 `card` 已归一成
+    /// 规范卡；种子跟着换的话，带盐的存量日志迁移后到期日会变。
+    pub(super) seed_card: String,
 }
+
+/// 归属组的一行重放输入（[Index::group_rows]）：(投影行 JSON, server_time, 意图, fuzz 种子用的原值卡)。
+pub(super) type GroupRow = (String, Option<i64>, Intent, String);
 
 /// 统计去重要跨批看的东西（全量重建时一批一个或几个连通分量）。
 #[derive(Default)]
@@ -357,7 +429,16 @@ fn ref_of(text: &str) -> Ref {
     Ref::of(&Key::of(text))
 }
 
-fn log_body(l: Log4) -> LogBody {
+/// [op_wall]：载着这条日志的操作 HLC 的物理时刻（外来日志派生排序键的上界，[derived_log_hlc]）。
+fn log_body(l: Log4, op_wall: i64) -> LogBody {
+    // 承袭的日志带作者给的旧 HLC；原生日志没有，排序键回落到操作自己的 HLC（[Index::log_at]）——Anki 来源与回导的外来
+    // 原生日志除外：它们的 HLC 由来源数据派生（铁律 C，`crate::anki_import_rules` [derived_log_hlc]）。协议 3 的卡片历史
+    // 规则（`crate::history`）靠它把同一条 revlog 落在血统里几张卡上的副本归成一个事件、把更早的 Anki / 外来复习排在
+    // 更晚的原生复习之前。
+    let legacy_hlc = match l.hlc {
+        Some(h) => Some(h.text()),
+        None => derived_log_hlc(&l.origin, &l.kind, l.anki_id, l.at, &l.extra, op_wall),
+    };
     LogBody {
         id: l.id,
         card: l.card,
@@ -379,7 +460,7 @@ fn log_body(l: Log4) -> LogBody {
         intent: l.intent,
         res: l.res,
         extra: l.extra,
-        legacy_hlc: l.hlc.map(|h| h.text()),
+        legacy_hlc,
         legacy_server_time: l.server_time,
     }
 }
@@ -411,7 +492,8 @@ impl<'t, 'c> Index<'t, 'c> {
 
     // ------------------------------------------------------------ 入口
 
-    fn cache_config(&self) -> Result<Option<CacheConfig>, String> {
+    /// 这个集合的缓存配置（已按规范 ID 归一）；没设 = None（缓存层没物化，三张表这个集合没有行）。
+    pub(crate) fn cache_config(&self) -> Result<Option<CacheConfig>, String> {
         let Some(text) = self.t.derive_cfg(self.col, CFG_KEY)? else {
             return Ok(None);
         };
@@ -462,7 +544,11 @@ impl<'t, 'c> Index<'t, 'c> {
             }
             out
         };
-        self.cache_pass(&cfg, notes, BTreeSet::new(), true, out)
+        self.cache_pass(&cfg, notes, BTreeSet::new(), true, out)?;
+        // 整份物化完：这一层是按当前推导口径建的（[CACHE_RULES]）。
+        self.t
+            .set_derive_cfg(self.col, RULES_KEY, Some(&CACHE_RULES.to_string()))?;
+        Ok(())
     }
 
     /// 收尾（[Index::settle] 的最后一步）：只重算这一批碰到的。别名表还没重算（[Index::hold_aliases] 攒着）时不动、
@@ -788,15 +874,22 @@ impl<'t, 'c> Index<'t, 'c> {
 
     /// 一个规范日志 ID（类 [log_class]）的代表：全部份里操作号最小的；它落在 [cards] 里才返回 (发生时刻, 操作主键)。
     fn log_rep(&self, log_class: &[Ref], cards: &[Ref]) -> Result<Option<(i64, i64)>, String> {
+        Ok(self
+            .log_class_rep(log_class)?
+            .filter(|(_, _, card)| cards.contains(card))
+            .map(|(k, at, _)| (at, k)))
+    }
+
+    /// 一个规范日志 ID（类 [log_class]：规范 ID 与出现过的成员）的代表：类里每个成员的 `win = 1` 行（每个原值日志 ID
+    /// 操作号最小的那份）中操作号最小的那条，(操作主键, 发生时刻, 落在哪张卡上（原值）)；类里一条日志都没有 = None。
+    /// 「按类取代表」只有这一份：缓存层的 [Index::card_logs]、`cmd/training.rs` 的 RWKV 尾巴都调它。
+    pub(crate) fn log_class_rep(
+        &self,
+        log_class: &[Ref],
+    ) -> Result<Option<(i64, i64, Ref)>, String> {
         let mut best: Option<(crate::sync2::vv::OpId, i64, i64, Ref)> = None;
         for id in log_class {
-            let mut stmt = self
-                .t
-                .conn()
-                .prepare_cached(
-                    "SELECT k, at, card FROM log_ix WHERE col = ?1 AND id = ?2 AND win = 1",
-                )
-                .map_err(sql)?;
+            let mut stmt = self.t.conn().prepare_cached(LOG_REP_SQL).map_err(sql)?;
             let rows: Vec<(i64, i64, Ref)> = stmt
                 .query_map(params![self.col, id], |r| {
                     Ok((r.get(0)?, r.get(1)?, r.get(2)?))
@@ -811,9 +904,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 }
             }
         }
-        Ok(best
-            .filter(|b| cards.contains(&b.3))
-            .map(|(_, k, at, _)| (at, k)))
+        Ok(best.map(|(_, k, at, card)| (k, at, card)))
     }
 
     /// 一条日志操作的投影行（协议 3 `log_row` 同一份拼法）。
@@ -835,9 +926,10 @@ impl<'t, 'c> Index<'t, 'c> {
         };
         let (server_time, intent) = (l.server_time, l.intent.clone());
         let note = l.note.as_ref().map(Ref::of);
+        let seed_card = Ref::of(&l.card).text();
         let device = e.id.device;
         // 投影行里的 profile 只是协议 3 的分区列，读侧不用；集合内取常量。
-        let row = log_json("", &log_body(l), || {
+        let row = log_json("", &log_body(l, wall), || {
             format!("{wall}:{logical}:{}", device.text())
         });
         // 日志 ID、卡、笔记、`revokes` 归一（文件头「别名」第 3 条）：重放与统计读的是规范 ID。
@@ -848,6 +940,7 @@ impl<'t, 'c> Index<'t, 'c> {
             intent,
             k,
             note,
+            seed_card,
         })
     }
 
@@ -1236,11 +1329,12 @@ impl<'t, 'c> Index<'t, 'c> {
         Ok(caches::type_info_of(&payload, &stored, cfg).ok())
     }
 
-    /// 规范笔记 [n] 在 `anki_members` 里的行（文件头「表」）：先删旧的，再按它现在的别名类与应有的卡 [cards]
-    /// （(规范卡, 规范模板, cloze 序号)）写。[all] = 全量物化（表已空，不删）。
+    /// 规范笔记 [n]（规范笔记类型 [nt]）在 `anki_members` 里的行（文件头「表」）：先删旧的，再按它现在的别名类与应有的卡
+    /// [cards]（(规范卡, 规范模板, cloze 序号)）写。[all] = 全量物化（表已空，不删）。
     fn member_numbers(
         &self,
         n: &Ref,
+        nt: &Ref,
         cards: &[(Ref, Ref, i64)],
         all: bool,
         tmpl_members: &mut HashMap<Ref, Vec<Ref>>,
@@ -1284,7 +1378,15 @@ impl<'t, 'c> Index<'t, 'c> {
         let notes = side(&note_members, n);
         for (card, tpl, ord) in cards {
             if !tmpl_members.contains_key(tpl) {
-                let m = self.aliases_of(tpl)?;
+                let mut m = self.aliases_of(tpl)?;
+                // 内置模板从不作为实体出现、别名表里没有它的带盐 ID：由笔记类型的成员按规则算回来（协议 3 给从没复习过
+                // 的内置笔记的卡也发了号，那张卡的 ID 由带盐笔记 × 带盐模板配出）。
+                let nt_members = self.aliases_of(nt)?;
+                for x in builtin_template_members(nt, &nt_members, tpl) {
+                    if !m.contains(&x) {
+                        m.push(x);
+                    }
+                }
                 tmpl_members.insert(tpl.clone(), m);
             }
             let tpls = side(&tmpl_members[tpl], tpl);
@@ -1331,7 +1433,7 @@ impl<'t, 'c> Index<'t, 'c> {
         out: &mut Settled,
     ) -> Result<(), String> {
         // 归回的写入者表在这一趟里不变：按类拼行（`class.rs` [Index::class_lines]）每个实体都要它，读一次。
-        self.pass_writers = Some(self.writer_aliases()?);
+        self.pass_writers = Some(std::rc::Rc::new(self.writer_aliases()?));
         self.pass_rules_begin()?;
         let done = self.cache_pass_with(cfg, notes, cards, all, out);
         self.pass_writers = None;
@@ -1429,7 +1531,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 .zip(&row.expected)
                 .map(|(c, (_, tpl, ord, _))| (c.clone(), ref_of(tpl), *ord))
                 .collect();
-            self.member_numbers(n, &shape, all, &mut tmpl_members)?;
+            self.member_numbers(n, &tref, &shape, all, &mut tmpl_members)?;
             for c in existing.iter().filter(|c| !expected.contains(c)) {
                 self.t
                     .conn()
@@ -1523,22 +1625,16 @@ impl<'t, 'c> Index<'t, 'c> {
     }
 
     /// 卡 [tail] 当链尾的归属组（链尾 + 广度优先的全部前身，`group_lineage`）的日志，按组里卡的顺序、各卡按
-    /// (发生时刻, 操作主键)：(投影行 JSON, server_time, 意图)，未经重放写回（重放的输入）。写命令 `sched`（G7-3b，
+    /// (发生时刻, 操作主键)：(投影行 JSON, server_time, 意图, fuzz 种子用的原值卡)，未经重放写回（重放的输入）。写命令 `sched`（G7-3b，
     /// `cmd/writes_intent.rs`）据它算这张卡此刻的头状态——协议 3 `store/sync2/mod.rs` `group_of` 的新代版。
-    pub(super) fn group_rows(
-        &mut self,
-        tail: &Ref,
-    ) -> Result<Vec<(String, Option<i64>, Intent)>, String> {
+    pub(super) fn group_rows(&mut self, tail: &Ref) -> Result<Vec<GroupRow>, String> {
         Ok(self.group(tail)?.0)
     }
 
     /// [group_rows] 连同归属组的笔记（规范 ID）：取链尾自己日志上记的（链尾的日志里最后一条记了笔记的），链尾没有就取
     /// 前身里第一条记了笔记的——协议 3 `group_of` 的同一条规则（换笔记类型不换笔记）。评分预览（`cmd/preview.rs`）用。
     #[allow(clippy::type_complexity)]
-    pub(super) fn group(
-        &mut self,
-        tail: &Ref,
-    ) -> Result<(Vec<(String, Option<i64>, Intent)>, Option<String>), String> {
+    pub(super) fn group(&mut self, tail: &Ref) -> Result<(Vec<GroupRow>, Option<String>), String> {
         let tail = self.canon(tail)?;
         let lineage = {
             let mut preds = |c: &str| -> Result<Vec<String>, String> {
@@ -1555,7 +1651,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 if l.note.is_some() && (note.is_none() || *c == tail_text) {
                     note = l.note.clone();
                 }
-                out.push((l.json, l.server_time, l.intent));
+                out.push((l.json, l.server_time, l.intent, l.seed_card));
             }
         }
         let note = note.map(|n| self.canon(&n).map(|c| c.text())).transpose()?;
@@ -1609,6 +1705,7 @@ impl<'t, 'c> Index<'t, 'c> {
                         json: &l.json,
                         server_time: l.server_time,
                         intent: l.intent.clone(),
+                        seed_card: Some(&l.seed_card),
                     });
                 }
             }
@@ -2516,6 +2613,56 @@ mod tests {
         });
     }
 
+    /// 笔记类型的名字、CSS、字段说明不进笔记 / 卡行（协议 3 `note_type_key_affects_caches`）：改它们不把这一类的笔记
+    /// 重算（H5 读放大，交接 §26 C5）；改词条字段、模板照样重算这一类。每一步之后增量与重建相同。
+    #[test]
+    fn note_type_keys_outside_the_rows_do_not_recompute_its_notes() {
+        with(|t, col| {
+            put_cfg(t, col);
+            let (a, _) = script();
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                for s in &a {
+                    land(t, &mut ix, col, 0xa1, s);
+                }
+                ix.settle()?;
+                Ok(())
+            })
+            .unwrap();
+            let nt_key = |k: &str, b: u8| format!("{k}/{}", id(b).text());
+            let steps: [(String, Value, u64); 6] = [
+                ("name".to_owned(), json!("Renamed"), 0),
+                ("css".to_owned(), json!(".card {}"), 0),
+                (nt_key("fieldDesc", FA), json!("the word"), 0),
+                ("termField".to_owned(), json!(id(FA).text()), 1),
+                (
+                    nt_key("tmplDef", T1),
+                    json!({"name": "A2", "ord": 0, "front": "{{E}}!"}),
+                    1,
+                ),
+                ("name".to_owned(), json!("Again"), 0),
+            ];
+            for (i, (key, value, want)) in steps.iter().enumerate() {
+                let i = i as u64;
+                let did = t
+                    .tx(|t| {
+                        let mut ix = Index::new(t, col);
+                        let step: Step = (
+                            i + 1,
+                            900 + i as i64,
+                            vec![],
+                            set(EntKind::NoteType, uuid(NT), key, value.clone()),
+                        );
+                        land(t, &mut ix, col, 0xc3, &step);
+                        ix.settle()
+                    })
+                    .unwrap();
+                assert_eq!(did.cache_notes, *want, "{key}");
+                assert_rebuild_is_identity(t, col);
+            }
+        });
+    }
+
     // ---------------------------------------------------------------- 按规范 ID 物化（G9-2）
 
     const U1: &str = "0192f0aa-0000-7000-8000-00000000000a";
@@ -2855,6 +3002,88 @@ mod tests {
         });
     }
 
+    /// 名字表不变、只有归回写入者的证据范围变了（BUG-5056 的 `aliasWriterUpto`）：一样整层重建。被测笔记的字段寄存器
+    /// 里 `(w1, 2)`（HLC 100）与 `(v, 1)`（上下文 `merged:2`、HLC 90）：范围只到 seq 1 时 `merged:2` 证不到盖住
+    /// `(w1, 2)`，两条并发、HLC 大的 `a` 胜；另一条笔记上来了 `(merged, 2)` 与 `(w1, 2)` 的同一条记录，范围升到 2，
+    /// `b` 支配 `a`。这条笔记不在这一批碰到的实体里，只有整层重建才会更新它的 `sort_field`。
+    #[test]
+    fn a_writer_bound_moving_rebuilds_rows_the_batch_did_not_touch() {
+        use crate::gen4_ids::rules;
+        use crate::store::gen4::derive::tests::{heritage, stamp};
+        with(|t, col| {
+            put_cfg(t, col);
+            let w = twin();
+            let merged = format!("merged-{}~w1", rules::merged_writer_hash(U1, "w1").text());
+            let f0 = format!("f/{}", rules::field(&w.nt[0], 0).text());
+            let write = |entity: &crate::sync2::id::Id, key: &str, value: &str, s| {
+                Body4::Edit(Edit4 {
+                    kind: EntKind::Note,
+                    entity: Key::Uuid(*entity),
+                    key: key.to_owned(),
+                    value: format!("\"{value}\""),
+                    stamp: Some(s),
+                    ..native_edit()
+                })
+            };
+            let steps: Vec<Body4> = twin_steps(&w)
+                .into_iter()
+                .filter(|b| !matches!(b, Body4::Edit(e) if e.key.starts_with("f/")))
+                .collect();
+            let sort_field = |conn: &Connection| -> String {
+                rows(
+                    conn,
+                    &format!(
+                        "SELECT sort_field FROM notes WHERE id = {}",
+                        blob(&w.c_note)
+                    ),
+                )[0][0]
+                    .clone()
+            };
+            let proof = |wr: &str, seq: i64, physical: i64| {
+                write(
+                    &w.note[1],
+                    "proof",
+                    "p",
+                    stamp(wr, seq, r#"{"vv":{}}"#, physical),
+                )
+            };
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                let mut first = vec![Body4::salts([U1]).unwrap()];
+                first.extend(steps.iter().cloned());
+                feed(t, &mut ix, col, 1, &first);
+                heritage(t, &mut ix, col, op(0xc1, 1, 1, &[], &proof("w1", 1, 50)));
+                heritage(t, &mut ix, col, op(0xc2, 1, 2, &[], &proof(&merged, 1, 50)));
+                let ctx = format!(r#"{{"vv":{{"{merged}":2}}}}"#);
+                let a = write(&w.note[0], &f0, "a", stamp("w1", 2, r#"{"vv":{}}"#, 100));
+                let b = write(&w.note[0], &f0, "b", stamp("v", 1, &ctx, 90));
+                heritage(t, &mut ix, col, op(0xd1, 1, 3, &[], &a));
+                heritage(t, &mut ix, col, op(0xd2, 1, 4, &[], &b));
+                ix.settle()?;
+                assert_eq!(ix.canonical_writer(&merged)?, "w1");
+                assert_eq!(ix.writer_aliases()?.bound(&merged).map(|b| b.upto), Some(1));
+                Ok(())
+            })
+            .unwrap();
+            assert_eq!(sort_field(t.conn()), "a");
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                heritage(
+                    t,
+                    &mut ix,
+                    col,
+                    op(0xc3, 1, 5, &[], &proof(&merged, 2, 100)),
+                );
+                ix.settle()?;
+                assert_eq!(ix.writer_aliases()?.bound(&merged).map(|b| b.upto), Some(2));
+                Ok(())
+            })
+            .unwrap();
+            assert_eq!(sort_field(t.conn()), "b");
+            assert_rebuild_is_identity(t, col);
+        });
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(48))]
 
@@ -2890,5 +3119,144 @@ mod tests {
                 assert_rebuild_is_identity(t, col);
             });
         }
+    }
+
+    /// [super::CACHE_RULES] 与派生排序键的实际口径对表（交接 §44「第六波 导入红测试收尾」）。每一行是一条派生输入、
+    /// 当前口径下的输出、以及让这一行输出成为现在这样的那一版修订号（文档注释里的修订表）。
+    ///
+    /// 钉两件事：
+    /// - 派生口径改了（任一行输出变了）就红——改的人要在这里改期望、把那一行的修订号记成新的一版，并升 `CACHE_RULES`；
+    /// - 表里最新一版必须等于 `CACHE_RULES`：常量退回去（比如退回 2，`op_wall` 上界还在）就红。
+    ///   `a_cache_built_under_older_rules_is_rebuilt_once_on_open` 只钉「旧口径的库开库重建一次」，钉不住这一条。
+    #[test]
+    fn cache_rules_matches_the_pinned_derivation_table() {
+        use crate::anki_import_rules::derived_log_hlc;
+
+        const FOREIGN: &str = r#"{"foreignLog":true}"#;
+        // (说明, origin, kind, anki_id, at, extra, op_wall, 期望, 修订号)
+        type Row = (
+            &'static str,
+            &'static str,
+            &'static str,
+            Option<i64>,
+            i64,
+            &'static str,
+            i64,
+            Option<&'static str>,
+            i64,
+        );
+        let table: [Row; 8] = [
+            (
+                "原生日志：用操作 HLC",
+                "dev-a",
+                "review",
+                None,
+                1_000,
+                "{}",
+                2_000,
+                None,
+                0,
+            ),
+            (
+                "Anki revlog：(ankiId, 0, anki)，不看操作时刻",
+                "anki",
+                "review",
+                Some(1_699_999_999_000),
+                1_699_999_999_000,
+                "{}",
+                1,
+                Some("1699999999000:0:anki"),
+                1,
+            ),
+            (
+                "Anki 导入锚点：(at, 1, anki)",
+                "anki",
+                "importAnchor",
+                None,
+                1_700_000_000_000,
+                "{}",
+                1,
+                Some("1700000000000:1:anki"),
+                1,
+            ),
+            (
+                "外来日志早于操作：(at, 0, fushi)",
+                "dev-b",
+                "review",
+                None,
+                1_000,
+                FOREIGN,
+                2_000,
+                Some("1000:0:fushi"),
+                2,
+            ),
+            (
+                "外来日志与操作同一毫秒：仍派生",
+                "dev-b",
+                "review",
+                None,
+                2_000,
+                FOREIGN,
+                2_000,
+                Some("2000:0:fushi"),
+                2,
+            ),
+            (
+                "外来标记不是 true：用操作 HLC",
+                "dev-b",
+                "review",
+                None,
+                1_000,
+                r#"{"foreignLog":"true"}"#,
+                2_000,
+                None,
+                2,
+            ),
+            (
+                "外来日志晚于操作（伪造的未来时刻）：不派生",
+                "dev-b",
+                "review",
+                None,
+                3_000,
+                FOREIGN,
+                2_000,
+                None,
+                3,
+            ),
+            (
+                "外来日志远在未来：不派生",
+                "dev-b",
+                "review",
+                None,
+                i64::MAX,
+                FOREIGN,
+                2_000,
+                None,
+                3,
+            ),
+        ];
+        for (what, origin, kind, anki_id, at, extra, op_wall, want, _) in table {
+            assert_eq!(
+                derived_log_hlc(origin, kind, anki_id, at, extra, op_wall).as_deref(),
+                want,
+                "{what}：派生口径变了，改期望、记新修订号并升 CACHE_RULES"
+            );
+        }
+        // 不在日志排序键上的修订（各自由对应模块的测试钉口径）：(说明, 修订号)。
+        const ELSEWHERE: [(&str, i64); 1] = [(
+            "改名写入者的旧上下文只换到归回上界（class.rs 的 bounded_writer_rename_* 测试）",
+            4,
+        )];
+        let latest = table
+            .iter()
+            .map(|r| r.8)
+            .chain(ELSEWHERE.iter().map(|r| r.1))
+            .max()
+            .unwrap();
+        assert_eq!(
+            super::CACHE_RULES,
+            latest,
+            "CACHE_RULES 与派生口径对表的最新修订号不一致"
+        );
     }
 }

@@ -1,29 +1,33 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
-import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
+import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
-import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/net/app_http_image.dart';
 
 /// 任务卡的状态色调（M3E：下载中 primary、暂停中性、完成 tertiary、出错 error
 /// tonal；Apple 落到强调色 / 系统绿 / 系统红 / 次级灰）。
 enum DownloadTaskTone { active, paused, completed, error, neutral }
 
-/// 卡片标题下的一枚指标 chip（速度 / 剩余 / 大小 / 做种比……）。
+/// 任务行第二行里的一项指标（速度 / 剩余 / 大小 / 做种比……）。
 class DownloadTaskMetric {
   const DownloadTaskMetric({required this.label, this.icon, this.tooltip});
 
   final String label;
   final IconData? icon;
+
+  /// 指标的含义（读屏念「剩余时间 10s」，不只念一个裸数字）。
   final String? tooltip;
 }
 
@@ -96,12 +100,72 @@ Color downloadTaskToneColor(BuildContext context, DownloadTaskTone tone) {
   };
 }
 
-/// Shared compact summary and explicit disclosure for every download source.
+/// 任务行在所属分段组里的位置（M3E segmented list：组首尾大圆角、中间小圆角、
+/// 行间 2px 缝；Apple inset grouped 行间无缝）。
 ///
-/// M3E 形态（2026-10）：行首状态色块徽标、标题 + 状态摘要、指标 chip 行、
-/// 行尾主操作（圆形 tonal）+ 「⋯」菜单 + 展开箭头；进度条下载中走波浪、
-/// 暂停 / 出错是静止实线；展开详情用 spatial 弹簧撑开高度。来源只给了
-/// [leading] / [status] / [details] 的旧调用点照常工作（色调缺省为中性）。
+/// 由任务浏览器在每一行外面挂上（组头算第 0 格），[DownloadTaskCard] 据此取
+/// 外形；不在浏览器里（详情对话框、单独一张卡）时没有这一层，卡片按独立卡画。
+class DownloadTaskSegmentScope extends InheritedWidget {
+  const DownloadTaskSegmentScope({
+    required this.index,
+    required this.count,
+    required super.child,
+    super.key,
+  });
+
+  final int index;
+  final int count;
+
+  static DownloadTaskSegmentScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<DownloadTaskSegmentScope>();
+
+  @override
+  bool updateShouldNotify(DownloadTaskSegmentScope oldWidget) =>
+      index != oldWidget.index || count != oldWidget.count;
+}
+
+/// 任务行 / 组头行首的小海报（2:3）。没有封面或加载失败时退回 [fallback]。
+class DownloadTaskCoverThumb extends StatelessWidget {
+  const DownloadTaskCoverThumb({
+    required this.url,
+    required this.fallback,
+    this.width = 32,
+    super.key,
+  });
+
+  final String? url;
+  final Widget fallback;
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    final String value = url?.trim() ?? '';
+    if (value.isEmpty) return fallback;
+    final double height = width * 1.5;
+    return ClipRRect(
+      borderRadius: FushiM3eShape.smallRadius,
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: ColoredBox(
+          color: FushiDesignTokens.of(context).surfaces.group,
+          child: PortraitCoverImage(
+            image: AppCachedHttpImage(value),
+            errorBuilder: (_) => Center(child: fallback),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Shared compact row and explicit disclosure for every download source.
+///
+/// 拼贴改版的紧凑形态（2026-11）：一行 56–72 高——行首小海报（没有封面时是
+/// 状态色块徽标）、标题 + 方式 / 来源标签、一行 meta（状态 · 进度 · 指标 · 副标题，
+/// 单行省略）与贴底细进度条；行尾主操作（圆形 tonal）+「⋯」菜单 + 展开箭头。
+/// 展开详情用 spatial 弹簧撑开高度。在任务浏览器里由 [DownloadTaskSegmentScope]
+/// 给出分段外形，与组头拼成一组 M3E 分段列表。
 class DownloadTaskCard extends StatefulWidget {
   const DownloadTaskCard({
     required this.taskId,
@@ -118,6 +182,7 @@ class DownloadTaskCard extends StatefulWidget {
     this.method,
     this.externalSource = false,
     this.summary,
+    this.coverUrl,
     super.key,
   });
 
@@ -144,6 +209,9 @@ class DownloadTaskCard extends StatefulWidget {
 
   /// 折叠时也显示的摘要（进度条下方），如转录任务的阶段轨；null = 不画。
   final Widget? summary;
+
+  /// 作品海报（远端 URL）；给了就以小海报代替行首状态徽标。
+  final String? coverUrl;
 
   @override
   State<DownloadTaskCard> createState() => _DownloadTaskCardState();
@@ -179,7 +247,7 @@ class _DownloadTaskCardState extends State<DownloadTaskCard> {
 
   Widget _buildBadge(BuildContext context, DownloadTaskTone tone) {
     final Widget icon =
-        widget.leading ?? FushiIcon(FushiIcons.downloading, size: 22);
+        widget.leading ?? FushiIcon(FushiIcons.downloading, size: 20);
     final FushiCardColors? colors = fushiCardToneColors(
       context,
       downloadTaskCardTone(tone),
@@ -191,59 +259,116 @@ class _DownloadTaskCardState extends State<DownloadTaskCard> {
     return AnimatedContainer(
       duration: motion.effectsDefault.duration,
       curve: motion.effectsDefault.curve,
-      width: 40,
-      height: 40,
+      width: 36,
+      height: 36,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: container,
         // 完成 = 圆（M3E 形状变化表达「已到终点」），其余是方圆角色块。
-        borderRadius: BorderRadius.circular(
-          tone == DownloadTaskTone.completed ? 20 : FushiM3eShape.small,
-        ),
+        borderRadius: tone == DownloadTaskTone.completed
+            ? const BorderRadius.all(Radius.circular(18))
+            : FushiM3eShape.smallRadius,
       ),
       child: IconTheme.merge(
-        data: IconThemeData(color: onContainer, size: 22),
+        data: IconThemeData(color: onContainer, size: 20),
         child: icon,
       ),
     );
   }
 
-  Widget _buildProgress(
-    BuildContext context,
-    double progress,
-    DownloadTaskTone tone,
-  ) {
-    final Color color = downloadTaskToneColor(context, tone);
-    // 暂停 / 出错 / 完成是「静止」的进度：M3E 波浪停下变实线；Apple 与墨水屏
-    // 本来就是实线。
-    final bool flat =
-        tone == DownloadTaskTone.paused || tone == DownloadTaskTone.error;
-    if (flat && !isGlassDesign(context) && !isEinkTheme(context)) {
-      return FushiWavyLinearProgress(
-        value: progress,
-        color: color,
-        trackColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-        waving: false,
-      );
-    }
-    return FushiLinearProgressIndicator(value: progress, color: color);
+  Widget _buildLeading(BuildContext context, DownloadTaskTone tone) {
+    final Widget badge = _buildBadge(context, tone);
+    if (widget.coverUrl?.trim().isNotEmpty != true) return badge;
+    final Color toneColor = downloadTaskToneColor(context, tone);
+    final Color ring = isGlassDesign(context)
+        ? appleColorsOf(context).secondaryGroupedBackground
+        : Theme.of(context).colorScheme.surfaceContainerLow;
+    // 小海报右下角一枚状态色点：色块徽标让位给海报后，状态色仍一眼可辨。
+    return Stack(
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        DownloadTaskCoverThumb(url: widget.coverUrl, fallback: badge),
+        PositionedDirectional(
+          end: -3,
+          bottom: -3,
+          child: AnimatedContainer(
+            duration: context.fushiMotion.effectsDefault.duration,
+            curve: context.fushiMotion.effectsDefault.curve,
+            width: 12,
+            height: 12,
+            decoration: ShapeDecoration(
+              color: toneColor,
+              shape: CircleBorder(side: BorderSide(color: ring, width: 2)),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
-  Widget _buildMetrics(BuildContext context) {
+  /// 第二行：状态（色调字）· 进度 · 指标（带小图标）· 副标题，单行省略。
+  Widget _buildMeta(
+    BuildContext context,
+    DownloadTaskTone tone,
+    double? progress,
+  ) {
     final ThemeData theme = Theme.of(context);
-    final TextStyle style = context.fushiType.labelMedium.tabular.copyWith(
-      color: theme.colorScheme.onSurfaceVariant,
+    final TextStyle base = context.fushiType.labelMedium.tabular.copyWith(
+      color: isGlassDesign(context)
+          ? appleColorsOf(context).secondaryLabel
+          : theme.colorScheme.onSurfaceVariant,
     );
+    final Color toneColor = downloadTaskToneColor(context, tone);
+    const String dot = '  ·  ';
+    final List<InlineSpan> spans = <InlineSpan>[
+      TextSpan(
+        text: widget.status,
+        style: base.copyWith(color: toneColor, fontWeight: FontWeight.w700),
+      ),
+      if (progress != null) TextSpan(text: '$dot${(progress * 100).round()}%'),
+      for (final DownloadTaskMetric metric in widget.metrics) ...<InlineSpan>[
+        const TextSpan(text: dot),
+        if (metric.icon != null)
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Padding(
+              padding: const EdgeInsetsDirectional.only(end: 3),
+              child: FushiIcon(metric.icon, size: 13, color: base.color),
+            ),
+          ),
+        TextSpan(
+          text: metric.label,
+          semanticsLabel: metric.tooltip == null
+              ? null
+              : '${metric.tooltip} ${metric.label}',
+        ),
+      ],
+      if (widget.subtitle?.trim().isNotEmpty ?? false)
+        TextSpan(text: '$dot${widget.subtitle!.trim()}'),
+    ];
+    return Text.rich(
+      TextSpan(style: base, children: spans),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+  }
+
+  Widget _buildTitle(BuildContext context) {
     final DownloadTransferMethod? method = widget.method;
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      crossAxisAlignment: WrapCrossAlignment.center,
+    final Widget title = Text(
+      widget.title,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: context.fushiType.titleSmallEmphasized,
+    );
+    if (method == null) return title;
+    // 方式 / 来源标签紧跟标题（所有者 2026-10-09：每条下载都要明显标出外部
+    // 来源）；标题先让位省略，标签不被挤掉。
+    return Row(
       children: <Widget>[
-        if (method != null)
-          DownloadSourceTags(method: method, external: widget.externalSource),
-        for (final DownloadTaskMetric metric in widget.metrics)
-          _MetricChip(metric: metric, style: style),
+        Flexible(child: title),
+        const SizedBox(width: 8),
+        DownloadSourceTags(method: method, external: widget.externalSource),
       ],
     );
   }
@@ -260,7 +385,7 @@ class _DownloadTaskCardState extends State<DownloadTaskCard> {
     }
   }
 
-  Widget? _buildTrailing(BuildContext context) {
+  Widget _buildTrailing(BuildContext context) {
     final DownloadTaskQuickAction? quick = widget.quickAction;
     final List<Widget> children = <Widget>[
       if (quick != null)
@@ -298,7 +423,7 @@ class _DownloadTaskCardState extends State<DownloadTaskCard> {
         ),
       ),
     ];
-    return Row(mainAxisSize: MainAxisSize.min, spacing: 4, children: children);
+    return Row(mainAxisSize: MainAxisSize.min, spacing: 2, children: children);
   }
 
   @override
@@ -308,12 +433,19 @@ class _DownloadTaskCardState extends State<DownloadTaskCard> {
     final double? progress = widget.progress?.clamp(0, 1).toDouble();
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final FushiMotionScheme motion = context.fushiMotion;
-    final Duration expandDuration = motion.spatialDefault.duration;
+    final DownloadTaskSegmentScope? segment = DownloadTaskSegmentScope.maybeOf(
+      context,
+    );
+    final BorderRadius radius = segment == null
+        ? (isGlassDesign(context)
+              ? fushiGroupedItemRadius(context, 0, 1)
+              : FushiM3eShape.cardRadius)
+        : fushiGroupedItemRadius(context, segment.index, segment.count);
     final Widget disclosure = _expanded
         ? Padding(
             padding: EdgeInsets.fromLTRB(
               tokens.spacing.card,
-              0,
+              tokens.spacing.gap / 2,
               tokens.spacing.card,
               tokens.spacing.card,
             ),
@@ -323,28 +455,54 @@ class _DownloadTaskCardState extends State<DownloadTaskCard> {
             ),
           )
         : const SizedBox(width: double.infinity);
+    final Widget? summary = widget.summary;
     return FushiCard(
       padding: EdgeInsets.zero,
+      borderRadius: radius,
+      grouped: segment != null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          FushiListItem(
-            key: ValueKey<String>('download-task-toggle-${widget.taskId}'),
-            onTap: _toggle,
-            leading: _buildBadge(context, tone),
-            title: Text(widget.title),
-            titleMaxLines: 2,
-            subtitleMaxLines: 2,
-            subtitle: Text(
-              <String>[
-                widget.status,
-                if (progress != null) '${(progress * 100).round()}%',
-                if (widget.subtitle?.isNotEmpty ?? false) widget.subtitle!,
-              ].join(' · '),
+          FushiSegmentTileScope(
+            borderRadius: _expanded
+                ? BorderRadius.only(
+                    topLeft: radius.topLeft,
+                    topRight: radius.topRight,
+                  )
+                : radius,
+            child: FushiListItem(
+              key: ValueKey<String>('download-task-toggle-${widget.taskId}'),
+              onTap: _toggle,
+              minHeight: 56,
+              padding: EdgeInsetsDirectional.fromSTEB(
+                tokens.spacing.rowHorizontal - 4,
+                8,
+                tokens.spacing.rowHorizontal - 8,
+                8,
+              ),
+              leading: _buildLeading(context, tone),
+              title: _buildTitle(context),
+              subtitleMaxLines: 1,
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  _buildMeta(context, tone, progress),
+                  if (progress != null && progress < 1)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: FushiLinearProgressIndicator(
+                        value: progress,
+                        color: downloadTaskToneColor(context, tone),
+                        minHeight: 3,
+                      ),
+                    ),
+                ],
+              ),
+              trailing: _buildTrailing(context),
             ),
-            trailing: _buildTrailing(context),
           ),
-          if (widget.metrics.isNotEmpty || widget.method != null)
+          if (summary != null)
             Padding(
               padding: EdgeInsets.fromLTRB(
                 tokens.spacing.card,
@@ -352,82 +510,18 @@ class _DownloadTaskCardState extends State<DownloadTaskCard> {
                 tokens.spacing.card,
                 tokens.spacing.gap,
               ),
-              child: _buildMetrics(context),
+              child: summary,
             ),
-          if (progress != null && progress < 1)
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                tokens.spacing.card,
-                0,
-                tokens.spacing.card,
-                tokens.spacing.gap + 4,
-              ),
-              child: _buildProgress(context, progress, tone),
-            ),
-          if (widget.summary != null)
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                tokens.spacing.card,
-                0,
-                tokens.spacing.card,
-                tokens.spacing.gap,
-              ),
-              child: widget.summary,
-            ),
-          // 展开详情：spatial 弹簧撑开 / 收起高度（墨水屏与减弱动态效果下瞬时）。
-          // 降级时 duration 为零，直接换子树、不经 AnimatedSize：零时长下
-          // RenderAnimatedSize 在自己的 performLayout 里 forward() 会同步走完
-          // 动画并 markNeedsLayout 自己（"mutated in its own performLayout"）。
-          if (expandDuration == Duration.zero)
-            disclosure
-          else
-            AnimatedSize(
-              duration: expandDuration,
-              curve: motion.spatialDefault.curve,
-              alignment: Alignment.topCenter,
-              child: disclosure,
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MetricChip extends StatelessWidget {
-  const _MetricChip({required this.metric, required this.style});
-
-  final DownloadTaskMetric metric;
-  final TextStyle style;
-
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    final bool glass = isGlassDesign(context);
-    final Widget chip = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: glass ? appleColorsOf(context).fill : cs.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(FushiM3eShape.small),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          if (metric.icon != null) ...<Widget>[
-            FushiIcon(metric.icon, size: 14, color: style.color),
-            const SizedBox(width: 4),
-          ],
-          Flexible(
-            child: Text(
-              metric.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: style,
-            ),
+          // 展开详情：spatial 弹簧撑开 / 收起高度（墨水屏与减弱动态效果下瞬时，
+          // 由 FushiAnimatedSize 处理零时长）。
+          FushiAnimatedSize(
+            duration: motion.spatialDefault.duration,
+            curve: motion.spatialDefault.curve,
+            alignment: Alignment.topCenter,
+            child: disclosure,
           ),
         ],
       ),
     );
-    final String? tooltip = metric.tooltip;
-    return tooltip == null ? chip : FushiTooltip(message: tooltip, child: chip);
   }
 }

@@ -13,26 +13,29 @@ import 'package:test/test.dart';
 void main() {
   String read(String path) => File(path).readAsStringSync();
 
-  test('发现页统一封面卡走 ShelfCoverFrame + ShelfCardMeta，不再压角标', () {
+  // 2026-11-16 拼贴改版二次定版：发现页媒体块与视频库「系列」同一个组件
+  // （FushiCoverBlock：竖海报斜放 + 横版剧照 + logo 代替标题），封面材质由
+  // 色块自己画，不再经 ShelfCoverFrame（用户「就该和视频媒体库的系列一样」）。
+  test('发现页媒体块走视频库系列同款拼贴色块，不再压角标', () {
     final String src = read(
       'lib/src/pages/implementations/discovery/discovery_layout.dart',
     );
     expect(
       src,
-      contains('ShelfCoverFrame(child: cover)'),
-      reason: 'DiscoveryCoverCard 的封面必须交给 ShelfCoverFrame 画材质',
+      contains('FushiCoverBlock('),
+      reason: 'DiscoveryCoverCard / 首块必须交给拼贴色块画（与库页系列块同款）',
     );
-    expect(src, contains('ShelfCardMeta('), reason: '标题 / 副行与库页同款');
+    expect(
+      src,
+      contains('backdrop: backdropImage == null'),
+      reason: '有横版剧照时按系列块摆法铺在尾侧，竖海报完整斜放',
+    );
+    expect(src, contains('logo: logo,'), reason: '有 logo 时代替标题文字');
     expect(src, contains('shelfCoverCard('), reason: '卡壳透明、无状态层（库页同款）');
     expect(
       src,
       isNot(contains('List<Widget> badges')),
       reason: '封面上不压任何角标：评分 / 语言并进副行',
-    );
-    expect(
-      src,
-      contains('ShelfCardMeta.heightFor('),
-      reason: '网格 / 横滑行行高与新卡文字块同一口径，否则溢出或留空',
     );
     expect(
       src,
@@ -63,8 +66,8 @@ void main() {
     );
     expect(
       layout,
-      contains('ShelfCoverFrame('),
-      reason: '在线源复用的 DiscoveryCoverCard 必须画材质',
+      contains('FushiCoverBlock('),
+      reason: '在线源复用的 DiscoveryCoverCard 必须是拼贴色块',
     );
   });
 

@@ -93,7 +93,8 @@ class SrsFieldAiSheet extends StatefulWidget {
   final String current;
   final SrsFieldAiRunner run;
 
-  /// 「已保存的提示词」的存取实现；null = 应用偏好（测试注入内存实现）。
+  /// 「已保存的提示词」的存取实现（生产 = 应用偏好仓库，测试注入内存实现）；
+  /// null = 不显示该按钮。
   final AiSavedPromptStore? promptStore;
 
   @override
@@ -187,12 +188,13 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
               onSubmitted: (_) => unawaited(_generate()),
             ),
           ),
-          AiSavedPromptButton(
-            scene: AiPromptScene.srsField,
-            controller: _instruction,
-            enabled: !_busy,
-            store: widget.promptStore,
-          ),
+          if (widget.promptStore case final AiSavedPromptStore store)
+            AiSavedPromptButton(
+              scene: AiPromptScene.srsField,
+              controller: _instruction,
+              enabled: !_busy,
+              storeOf: () => store,
+            ),
         ],
       ),
       Row(

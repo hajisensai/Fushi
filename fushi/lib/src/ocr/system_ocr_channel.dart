@@ -145,6 +145,19 @@ abstract interface class SystemOcrPlatform {
   });
 }
 
+/// 平台能力的可选扩展：直接识别一整块**不透明** RGBA 像素（`width * height * 4` 字节，
+/// 行优先紧排），不经 PNG / JPEG 编码与平台解码（视频暂停 OCR 的播放器截帧）。语义同
+/// [SystemOcrPlatform.recognize]：[tiles] 是这块像素坐标里的切片，回传坐标也是这块像素的。
+abstract interface class SystemOcrPixelPlatform implements SystemOcrPlatform {
+  Future<SystemOcrPageResult> recognizePixels(
+    Uint8List rgba, {
+    required int width,
+    required int height,
+    required String language,
+    List<Rect> tiles = const <Rect>[],
+  });
+}
+
 /// 系统 OCR 模型的就绪状态（BUG-2906）。
 ///
 /// 只有 Android 会出现「未就绪」：ML Kit 模型由 Google Play 服务保管，安装时的
@@ -347,7 +360,8 @@ abstract interface class SystemOcrModelSetup {
 }
 
 /// 生产实现：走平台通道。
-class MethodChannelSystemOcr implements SystemOcrPlatform, SystemOcrModelSetup {
+class MethodChannelSystemOcr
+    implements SystemOcrPixelPlatform, SystemOcrModelSetup {
   const MethodChannelSystemOcr({
     MethodChannel? channel,
     this.screenText = false,
@@ -378,21 +392,54 @@ class MethodChannelSystemOcr implements SystemOcrPlatform, SystemOcrModelSetup {
     Uint8List imageBytes, {
     required String language,
     List<Rect> tiles = const <Rect>[],
-  }) async {
+  }) => _invokeRecognize(<String, Object?>{
+    'bytes': imageBytes,
+    'language': language,
+    ..._tilesArgument(tiles),
+  });
+
+  /// 原生侧收 `pixels`（RGBA）+ `width` / `height` 时跳过解码，直接把像素交给识别器
+  /// （Windows SoftwareBitmap / Android Bitmap / Apple CGImage）。
+  @override
+  Future<SystemOcrPageResult> recognizePixels(
+    Uint8List rgba, {
+    required int width,
+    required int height,
+    required String language,
+    List<Rect> tiles = const <Rect>[],
+  }) {
+    if (width <= 0 || height <= 0 || rgba.length != width * height * 4) {
+      throw ArgumentError(
+        'recognizePixels needs width*height*4 bytes, got ${rgba.length} for '
+        '${width}x$height',
+      );
+    }
+    return _invokeRecognize(<String, Object?>{
+      'pixels': rgba,
+      'width': width,
+      'height': height,
+      'language': language,
+      ..._tilesArgument(tiles),
+    });
+  }
+
+  Map<String, Object?> _tilesArgument(List<Rect> tiles) => <String, Object?>{
+    if (screenText) 'purpose': kSystemOcrScreenPurpose,
+    if (tiles.isNotEmpty)
+      'tiles': <List<double>>[
+        for (final Rect tile in tiles)
+          <double>[tile.left, tile.top, tile.right, tile.bottom],
+      ],
+  };
+
+  Future<SystemOcrPageResult> _invokeRecognize(
+    Map<String, Object?> arguments,
+  ) async {
     final Map<Object?, Object?>? raw;
     try {
       raw = await _channel.invokeMapMethod<Object?, Object?>(
         'recognize',
-        <String, Object?>{
-          'bytes': imageBytes,
-          'language': language,
-          if (screenText) 'purpose': kSystemOcrScreenPurpose,
-          if (tiles.isNotEmpty)
-            'tiles': <List<double>>[
-              for (final Rect tile in tiles)
-                <double>[tile.left, tile.top, tile.right, tile.bottom],
-            ],
-        },
+        arguments,
       );
     } on PlatformException catch (error) {
       // 模型没就绪（unbundled ML Kit 的模型由 Google Play 服务保管，可能还在下、

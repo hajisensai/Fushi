@@ -1357,23 +1357,61 @@ body:not(.fushi-srs-freq-aggregate) .fc-back:has(.fc-meta-row--freq) .fc-reading
   mask-image: none !important;
 }
 
+/* 「展开全文」：横跨释义整宽的一条纯文字行（无底色、无胶囊），整条都可点；
+   命中区至少 48px（同时满足 Apple 44pt / MD3 48dp）。原生 <button>：Tab / 手柄焦点可达，
+   Enter / 空格触发。按下 / 悬停只给整条淡淡的强调色高亮。 */
 .fc-clamp-toggle {
-  align-self: flex-start;
-  min-height: var(--fc-tap);
-  margin-top: -6px;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: max(var(--fc-tap), 48px);
+  margin: -6px 0 0;
   padding: 0 16px;
   border: none;
-  border-radius: 999px;
-  background: var(--fc-secondary-container);
-  color: var(--fc-on-secondary-container);
+  border-radius: var(--fc-radius-small);
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  color: var(--fc-accent);
   font-family: var(--fc-font-ui);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 140ms ease, color 140ms ease;
 }
 
 .fc-clamp-toggle::before {
   content: var(--fc-label-show-more);
+}
+
+/* 向下展开的小箭头 */
+.fc-clamp-toggle::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin-top: -4px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+}
+
+@media (hover: hover) {
+  .fc-clamp-toggle:hover {
+    background: color-mix(in srgb, var(--fc-accent) 8%, transparent);
+  }
+}
+
+.fc-clamp-toggle:active {
+  background: color-mix(in srgb, var(--fc-accent) 14%, transparent);
+}
+
+.fc-clamp-toggle:focus-visible {
+  outline: 2px solid var(--fc-accent);
+  outline-offset: -2px;
 }
 
 .fc-clamp-toggle[hidden],

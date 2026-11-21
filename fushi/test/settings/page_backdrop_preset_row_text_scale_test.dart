@@ -6,6 +6,7 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_page_backdrop.dart';
+import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -75,4 +76,57 @@ void main() {
       expect(find.text(t.page_backdrop_preset_confetti), findsOneWidget);
     });
   }
+
+  testWidgets('样式选项里没有「角落形状」，默认选中柔光晕染', (WidgetTester tester) async {
+    final AppModel model = AppModel(testPlatformServices());
+    final SettingsCustomItem item = presetItem();
+    await tester.pumpWidget(
+      ProviderScope(
+        child: TranslationProvider(
+          child: MaterialApp(
+            home: Scaffold(
+              body: Consumer(
+                builder: (BuildContext context, WidgetRef ref, Widget? child) {
+                  final SettingsContext settingsContext = SettingsContext(
+                    context: context,
+                    appModel: model,
+                    ref: ref,
+                    readerSource: ReaderFushiSource.instance,
+                    refresh: () {},
+                  );
+                  return SingleChildScrollView(
+                    child: item.builder(settingsContext),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    Finder tile(String label) => find.byWidgetPredicate(
+      (Widget w) => w is Semantics && w.properties.label == label,
+    );
+    expect(find.text('Corner shapes'), findsNothing);
+    expect(tile('Corner shapes'), findsNothing);
+    // 第一格不再是角落形状：选项按枚举顺序排，纯色打头。
+    expect(PageBackdropPreset.values.first, PageBackdropPreset.plain);
+    expect(tile(t.page_backdrop_preset_plain), findsOneWidget);
+    final Semantics mesh = tester.widget<Semantics>(
+      tile(t.page_backdrop_preset_mesh),
+    );
+    expect(mesh.properties.selected, isTrue);
+    // 只有柔光晕染一格是选中态。
+    expect(
+      find.byWidgetPredicate(
+        (Widget w) =>
+            w is Semantics &&
+            w.properties.button == true &&
+            w.properties.selected == true,
+      ),
+      findsOneWidget,
+    );
+  });
 }

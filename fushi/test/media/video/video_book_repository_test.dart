@@ -7,6 +7,12 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
+    show blurayAnglePath;
+import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
+    show dvdTitlePath;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
+    show videoSubtitleJobId, videoSubtitleJobsRootUnder;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show isPickerImportCopyPath;
@@ -830,7 +836,7 @@ void main() {
     try {
       await expectLater(
         repo.updateCover('video/cover-gate', '/must-not-be-written.jpg'),
-        throwsA(isA<StateError>()),
+        throwsA(isA<VideoScrapeMaintenanceActiveError>()),
       );
     } finally {
       lease.release();
@@ -1072,6 +1078,80 @@ void main() {
 
       expect(File(p.join(dir.path, 'ep01.ja.srt')).existsSync(), isFalse);
       expect(File(p.join(dir.path, 'ep02.ja.srt')).existsSync(), isFalse);
+    });
+  });
+
+  group('原盘行删除回收任务根 disc_out 里的生成字幕', () {
+    late EnginePaths previousPaths;
+    late Directory root;
+
+    setUp(() async {
+      previousPaths = enginePaths;
+      root = await Directory.systemTemp.createTemp('fushi_disc_out_');
+      enginePaths = FixedEnginePaths(
+        documents: Directory(p.join(root.path, 'docs')),
+        support: Directory(p.join(root.path, 'support')),
+        temp: Directory(p.join(root.path, 'tmp')),
+      );
+    });
+
+    tearDown(() async {
+      enginePaths = previousPaths;
+      await root.delete(recursive: true);
+    });
+
+    Directory outDir(String member) => Directory(
+      p.join(
+        videoSubtitleJobsRootUnder(
+          Directory(p.join(root.path, 'support')),
+        ).path,
+        'disc_out',
+        videoSubtitleJobId(member),
+      ),
+    );
+
+    Directory seedOut(String member) {
+      final Directory dir = outDir(member)..createSync(recursive: true);
+      File(p.join(dir.path, 'x.ja.srt')).writeAsStringSync('1');
+      return dir;
+    }
+
+    test('蓝光 title（含各角度）与 DVD title 的产物随行删掉；幸存行引用的成员保留', () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = VideoBookRepository(db);
+      final String disc = p.join(root.path, 'discs', 'Movie');
+      final String main = p.join(disc, 'BDMV', 'PLAYLIST', '00001.mpls');
+      final String extra = p.join(disc, 'BDMV', 'PLAYLIST', '00002.mpls');
+      final String dvd = dvdTitlePath(p.join(root.path, 'discs', 'Dvd'), 1);
+      final Directory mainOut = seedOut(main);
+      final Directory angleOut = seedOut(blurayAnglePath(main, 1));
+      final Directory extraOut = seedOut(extra);
+      final Directory dvdOut = seedOut(dvd);
+      for (final (String uid, String path) in <(String, String)>[
+        ('bd/main', main),
+        ('bd/extra', extra),
+        ('dvd/1', dvd),
+      ]) {
+        await repo.saveVideoBook(
+          VideoBooksCompanion(
+            bookUid: Value(uid),
+            title: Value(uid),
+            videoPath: Value(path),
+          ),
+        );
+      }
+
+      final int deleted = await repo.deleteVideoBooksAndReclaimAssets(<String>[
+        'bd/main',
+        'dvd/1',
+      ], compactDatabase: false);
+
+      expect(deleted, 2);
+      expect(mainOut.existsSync(), isFalse);
+      expect(angleOut.existsSync(), isFalse, reason: '多角度 title 每个角度一个目录');
+      expect(dvdOut.existsSync(), isFalse);
+      expect(extraOut.existsSync(), isTrue, reason: '幸存行的产物不动');
     });
   });
 

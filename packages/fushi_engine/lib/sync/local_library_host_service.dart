@@ -6,6 +6,7 @@ import 'package:fushi_engine/media/video/disc/disc_format.dart'
     show discRootForMemberPath;
 import 'package:fushi_engine/models/dictionary_directory.dart';
 import 'package:fushi_engine/models/local_audio_db_entry.dart';
+import 'package:fushi_engine/models/local_audio_content_id.dart';
 import 'package:fushi_engine/media/video/video_library_import.dart'
     show parseSubtitleCues;
 import 'package:fushi_engine/media/video/video_sidecar.dart'
@@ -53,6 +54,10 @@ import 'package:fushi_engine/sync/video_metadata_work_target.dart';
 import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
+import 'package:fushi_engine/media/video/video_local_files.dart'
+    show videoBookDiscTitlePath, videoBookEpisodePath;
+import 'package:fushi_engine/media/video/video_member_file.dart'
+    show hasLocalMediaFile;
 import 'package:fushi_engine/media/video/series_playback_prefs.dart'
     show
         effectiveSeriesAudioTrackId,
@@ -62,7 +67,11 @@ import 'package:fushi_engine/sync/online_novel_book.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart' show sanitizeTtuFilename;
 import 'package:fushi_engine/sync/online_manga_host_reader.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart'
-    show hasExportableMangaContent, kMangaPackageMarker, repackageMangaBook;
+    show
+        hasExportableMangaContent,
+        kMangaPackageMarker,
+        readExportableMangaPayload,
+        repackageMangaBook;
 import 'package:fushi_engine/sync/pdf_sync_package.dart'
     show hasExportablePdfContent, isPdfFile, pdfBookFilePath;
 import 'package:fushi_engine/stats/stat_facts.dart';
@@ -99,6 +108,7 @@ import 'package:fushi_engine/media/manga/manga_chapter_storage.dart'
         mangaChapterDigest,
         mangaChapterDirectoryByDigest,
         mangaChapterImagesDirectory,
+        mangaChapterJsonFile,
         readDownloadedChapterPayload;
 import 'package:fushi_engine/media/manga/manga_storage.dart' show MangaStorage;
 import 'package:fushi_engine/media/manga/mokuro_payload.dart'
@@ -157,6 +167,7 @@ abstract class _LocalLibraryHostBase
         VideoDanmakuKeyHost,
         VideoDiscShareHost,
         VideoClipExportHost,
+        VideoDiscTitleAudioHost,
         AudiobookDelayHost,
         AudiobookSubtitleHost,
         AudiobookContentRevisionHost,
@@ -188,7 +199,8 @@ abstract class _LocalLibraryHostBase
   Future<String?> Function(File epubFile)? get _importBookFromFile;
   Future<String?> Function(File pdfFile, String title)?
   get _importPdfBookFromFile;
-  Future<void> Function(EpubBookRow row)? get _cleanupBookOnDisk;
+  Future<void> Function(EpubBookRow row, String? pairedSrtUid)?
+  get _cleanupBookOnDisk;
   List<LocalAudioDbEntry> get _localAudioEntries;
   Directory? get _localAudioStagingDir;
   Future<void> Function(LocalAudioPackageContents)? get _onLocalAudioImported;
@@ -218,7 +230,7 @@ abstract class _LocalLibraryHostBase
 /// |---|---|---|
 /// | [importBookFromFile] | 把 .epub 导入书库的真实逻辑 | `EpubImporter.importFromPath` |
 /// | [importPdfBookFromFile] | 把对端推来的 PDF 原件导入书库（null = 本 host 收不了 PDF，能力位 `liveLibrary.pdfBooks=false`）| app：`PdfImporter.importFromPath`；无头服务端不传 |
-/// | [cleanupBookOnDisk] | deleteBook 时清理 DB 行以外的磁盘资源（Audiobook persist dir 等） | `ReaderFushiSource.instance.deleteBook` 磁盘部分 |
+/// | [cleanupBookOnDisk] | deleteBook 删行**成功后**清理 DB 行以外的资源（有声书 / 配对字幕书 persist dir、override 书名与封面）；配对字幕书 uid 由服务在删行前取好传入 | `ReaderFushiSource.instance.cleanupBookFilesForHostDelete`；无头服务端不传 |
 /// | [localAudioEntriesProvider] | 现读已注册的本地音频来源列表（T3.1 / BUG-2815；[localAudioEntries] 是旧的快照形态）| `() => AppModel.localAudioDbs` / 服务端 `LocalAudioLibraryStore.entries` |
 /// | [localAudioStagingDir] | importLocalAudio 解包用临时目录（T3.1）| `Directory.systemTemp` 或应用 temp |
 /// | [onLocalAudioImported] | 注册已解包的本地音频包（T3.1）| `AppModel.importSyncedLocalAudioDb` |
@@ -246,7 +258,8 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
     Future<void> Function(Future<void> Function() body)? runSyncStateExclusive,
     Future<String?> Function(File epubFile)? importBookFromFile,
     Future<String?> Function(File pdfFile, String title)? importPdfBookFromFile,
-    Future<void> Function(EpubBookRow row)? cleanupBookOnDisk,
+    Future<void> Function(EpubBookRow row, String? pairedSrtUid)?
+    cleanupBookOnDisk,
     List<LocalAudioDbEntry> localAudioEntries = const <LocalAudioDbEntry>[],
     List<LocalAudioDbEntry> Function()? localAudioEntriesProvider,
     Directory? localAudioStagingDir,
@@ -364,9 +377,11 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
   bool get acceptsPdfBooks => _importPdfBookFromFile != null;
 
   /// 书籍磁盘清理回调（可选；null 时只执行 DB 删除，跳过 AudiobookStorage/SrtBook 清理）。
-  /// 生产传 ReaderFushiSource 实例的磁盘清理部分。
+  /// 删行成功后才调；`pairedSrtUid` 是删行前取到的配对字幕书 uid（没有为 null）。
+  /// 生产传 `ReaderFushiSource.cleanupBookFilesForHostDelete`。
   @override
-  final Future<void> Function(EpubBookRow row)? _cleanupBookOnDisk;
+  final Future<void> Function(EpubBookRow row, String? pairedSrtUid)?
+  _cleanupBookOnDisk;
 
   // ── 本地音频（T3.1）──────────────────────────────────────────────────────
 

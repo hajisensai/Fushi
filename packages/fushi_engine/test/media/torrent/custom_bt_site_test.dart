@@ -337,6 +337,33 @@ void main() {
     });
   });
 
+  test('通用模板：本身是合法规则，照模板结构的页面能解析出行内磁链', () async {
+    final BtSiteParserRule rule = BtSiteParserRule.fromJson(
+      kBtSiteParserRuleTemplate,
+    );
+    expect(rule.searchPathFor('a b'), '/search?q=a+b');
+    final List<Uri> seen = <Uri>[];
+    final BtSiteProbeResult result = await probeBtSite(
+      'https://tracker.example',
+      parser: rule,
+      client: MockClient((http.Request request) async {
+        seen.add(request.url);
+        return http.Response(
+          '<table class="results"><tbody><tr>'
+          '<td class="title"><a href="/t/1">Show S01E01 1080p</a></td>'
+          '<td><a href="magnet:?xt=urn:btih:$_hash&amp;dn=Show">m</a></td>'
+          '<td class="size">1.2 GB</td><td class="seeders">10</td>'
+          '<td class="leechers">2</td></tr></tbody></table>',
+          200,
+          headers: <String, String>{'content-type': 'text/html'},
+        );
+      }),
+    );
+    expect(result.format, BtSiteFormat.custom);
+    expect(seen.single.path, '/search');
+    expect(seen.single.query, 'q=test');
+  });
+
   group('搜索与解析', () {
     test('搜索：cp1251 页面按规则解析；详情页取种子地址，带 Cookie 下载并校验', () async {
       final _Recorded rec = _Recorded();

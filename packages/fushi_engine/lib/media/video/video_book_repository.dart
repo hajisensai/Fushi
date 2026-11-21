@@ -1,3 +1,4 @@
+import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:drift/drift.dart'
@@ -7,12 +8,20 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/download/downloaded_collection_order.dart';
+import 'package:fushi_engine/media/video/video_content_fingerprint.dart'
+    show backfillVideoContentFingerprints;
 import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/scraper/collection_member_policy.dart'
     show multiMemberCollectionIdByVideoUid;
+import 'package:fushi_engine/media/video/disc/disc_format.dart'
+    show isDiscMemberPath;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_disc_outputs.dart'
+    show deleteVideoSubtitleDiscOutputs;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
+    show videoSubtitleJobsRootUnder;
 import 'package:fushi_engine/media/video/video_local_files.dart';
 import 'package:fushi_engine/media/video/video_path_migration.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
@@ -109,6 +118,16 @@ enum VideoReclaimPhase {
 typedef VideoReclaimProgressCallback =
     void Function(VideoReclaimPhase phase, int done, int total);
 
+/// [VideoBookRepository.collectionPlaybackSnapshot] 的结果：播放器剧集面板一次
+/// 取齐的合集行、有序视频集行、集级刮削（bookUid → 行）、合集刮削与合集图组。
+typedef CollectionPlaybackSnapshot = ({
+  MediaCollectionRow? collection,
+  List<VideoBookRow> episodes,
+  Map<String, VideoScrapeMetaRow> episodeMeta,
+  CollectionScrapeMetaRow? collectionMeta,
+  List<MediaImageRow> images,
+});
+
 typedef _DeletedVideoSnapshot = ({
   String bookUid,
   String? coverPath,
@@ -124,6 +143,26 @@ class VideoBookRepository {
   const VideoBookRepository(this._db);
 
   final FushiDatabase _db;
+
+  /// 本进程里那一次存量内容指纹补算（见 [backfillContentFingerprintsOncePerProcess]）。
+  static Future<int>? _contentFingerprintBackfill;
+
+  /// 给还没有内容指纹的本地视频补算一次（v165 搬家识别，见
+  /// `video_content_fingerprint.dart`）。指纹必须在文件搬走**之前**算好，所以视频书架
+  /// 一打开就在后台补：升级后的存量行、手动导入的行都靠它。每行只读 128 KiB；进程内
+  /// 只跑一次，之后新入库 / 搬家改指的行由来源扫描当场记、原地换文件由扫描复查。
+  /// 返回写入的行数；出错记日志并按 0 算（只是增强证据，不影响书架）。
+  Future<int> backfillContentFingerprintsOncePerProcess() =>
+      _contentFingerprintBackfill ??= backfillVideoContentFingerprints(_db)
+          .catchError((Object e, StackTrace stack) {
+            developer.log(
+              'video content fingerprint backfill failed',
+              name: 'VideoBookRepository',
+              error: e,
+              stackTrace: stack,
+            );
+            return 0;
+          });
 
   /// 写入/更新一本视频书。
   ///
@@ -461,6 +500,63 @@ class VideoBookRepository {
   Future<List<VideoBookRow>> getByBookUids(Iterable<String> bookUids) =>
       _db.getVideoBooksByBookUids(bookUids);
 
+  /// 播放器剧集面板（合集里的一集打开时）一次取齐的合集快照（video-5）。
+  ///
+  /// 旧路径在首帧前逐成员各查一次 `getByBookUid` + `episodeScrapeMeta`（24 集约 50
+  /// 次往返，全挡在 `_loadSingle` 之前）。这里语句数与集数无关：合集行 / 成员 /
+  /// 合集刮削 / 合集图组四条并发，成员视频行与集级刮削两条批量 `IN` 并发。
+  ///
+  /// [CollectionPlaybackSnapshot.episodes] 按成员 sortIndex 有序，已滤掉非视频成员
+  /// 与孤儿成员（集行已删）——与旧逐条路径的读取期过滤同口径。
+  Future<CollectionPlaybackSnapshot> collectionPlaybackSnapshot(
+    int collectionId,
+  ) async {
+    final (
+      MediaCollectionRow? collection,
+      List<MediaCollectionItemRow> members,
+      CollectionScrapeMetaRow? collectionMeta,
+      List<MediaImageRow> images,
+    ) = await (
+      _db.getMediaCollectionById(collectionId),
+      _db.getCollectionItems(collectionId),
+      _db.getCollectionScrapeMeta(collectionId),
+      _db.getMediaImagesForCollection(collectionId),
+    ).wait;
+    final List<String> videoKeys = <String>[
+      for (final MediaCollectionItemRow m in members)
+        if (m.mediaType == MediaKind.video.dbValue) m.entryKey,
+    ];
+    if (videoKeys.isEmpty) {
+      return (
+        collection: collection,
+        episodes: const <VideoBookRow>[],
+        episodeMeta: const <String, VideoScrapeMetaRow>{},
+        collectionMeta: collectionMeta,
+        images: images,
+      );
+    }
+    final (
+      List<VideoBookRow> rows,
+      Map<String, VideoScrapeMetaRow> metas,
+    ) = await (
+      _db.getVideoBooksByBookUids(videoKeys),
+      _db.getVideoScrapeMetaForBooks(videoKeys),
+    ).wait;
+    final Map<String, VideoBookRow> byUid = <String, VideoBookRow>{
+      for (final VideoBookRow r in rows) r.bookUid: r,
+    };
+    return (
+      collection: collection,
+      episodes: <VideoBookRow>[
+        for (final String key in videoKeys)
+          if (byUid[key] case final VideoBookRow r) r,
+      ],
+      episodeMeta: metas,
+      collectionMeta: collectionMeta,
+      images: images,
+    );
+  }
+
   /// 统一合集：某合集的成员引用行（按 sortIndex 有序）。播放器据此建播放列表兄弟集。
   Future<List<MediaCollectionItemRow>> getCollectionItems(int collectionId) =>
       _db.getCollectionItems(collectionId);
@@ -510,12 +606,22 @@ class VideoBookRepository {
   /// 视频库书架展示用列表：在 [listAll] 基础上自愈被数据根迁移遗弃的封面绝对路径
   /// （[_repairMovedCoverPaths]）。**只给展示层用**——删除 GC（[collectReferencedAssetPaths]）
   /// 与去重（[findByVideoPath]）走纯 [listAll]，不引入 path_provider 依赖与写副作用。
-  Future<List<VideoBookRow>> listForShelf() {
+  Future<List<VideoBookRow>> listForShelf() =>
+      _listForShelfFrom(_db.allVideoBooks);
+
+  /// [listForShelf] 的按 uid 版本（同样自愈封面路径），只取这几行：库页刮削增量
+  /// 刷新只换标题 / 封面变了的书架行，不为几行重列整库。不存在的 uid 不在结果里。
+  Future<List<VideoBookRow>> listForShelfByUids(Iterable<String> bookUids) =>
+      _listForShelfFrom(() => _db.getVideoBooksByBookUids(bookUids));
+
+  Future<List<VideoBookRow>> _listForShelfFrom(
+    Future<List<VideoBookRow>> Function() read,
+  ) {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
     // maintenance 活跃时仍允许纯读展示，但绝不在它结束后拿旧快照做路径自愈写回。
-    if (lease == null) return _db.allVideoBooks();
-    return _listForShelfUnlocked().whenComplete(lease.release);
+    if (lease == null) return read();
+    return _listForShelfUnlocked(read).whenComplete(lease.release);
   }
 
   /// 书架展示的**读**路径不持 [VideoCoverMutationGate]。
@@ -525,8 +631,10 @@ class VideoBookRepository {
   /// future 一旦被丢弃（页面销毁、widget 树拆除、测试 zone 结束），队列尾就永远
   /// 不完成，此后全进程的封面写入**全部死锁**。真正需要串行的只有下面
   /// [_repairMovedCoverPaths] 里那次极少发生的指针回写，锁就只加在那里。
-  Future<List<VideoBookRow>> _listForShelfUnlocked() async {
-    final List<VideoBookRow> rows = await _db.allVideoBooks();
+  Future<List<VideoBookRow>> _listForShelfUnlocked(
+    Future<List<VideoBookRow>> Function() read,
+  ) async {
+    final List<VideoBookRow> rows = await read();
     return _repairMovedCoverPaths(rows);
   }
 
@@ -1249,7 +1357,7 @@ class VideoBookRepository {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
     if (lease == null) {
-      return Future<void>.error(StateError('视频刮削资料正在清理'));
+      return Future<void>.error(VideoScrapeMaintenanceActiveError());
     }
     return VideoCoverMutationGate.runExclusive(
       () => _db.updateVideoBookCover(bookUid, coverPath),
@@ -1261,7 +1369,7 @@ class VideoBookRepository {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
     if (lease == null) {
-      return Future<void>.error(StateError('视频刮削资料正在清理'));
+      return Future<void>.error(VideoScrapeMaintenanceActiveError());
     }
     return VideoCoverMutationGate.runExclusive(
       () => _db.clearVideoBookCover(bookUid),
@@ -1393,7 +1501,7 @@ class VideoBookRepository {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
     if (lease == null) {
-      return Future<int>.error(StateError('视频刮削资料正在清理'));
+      return Future<int>.error(VideoScrapeMaintenanceActiveError());
     }
     return VideoCoverMutationGate.runExclusive(
       () => _deleteVideoBooksAndReclaimAssetsUnlocked(
@@ -1794,6 +1902,49 @@ class VideoBookRepository {
       }
       // 这一本做完才报，最后一本处理完进度才到满（35YfcYO-zR）。
       onProgress?.call(deleted.length + ++cacheDone);
+    }
+    // 与上面各步同一纪律：单独 best-effort，失败记日志、不翻转「行已删」。
+    try {
+      await _reclaimDiscSubtitleOutputs(deleted, others);
+    } catch (e, stack) {
+      engineLog.log('VideoBookRepository.discSubtitleOutputs', e, stack);
+    }
+  }
+
+  /// 原盘成员（蓝光 title / 分集、DVD title）生成过的字幕在任务根的 `disc_out` 里
+  /// （不在盘旁），删行之后没人引用就回收；同一成员仍在幸存行（本体或播放列表）里的
+  /// 保留。只有原盘行才有这些目录，普通视频的字幕在视频旁、随原件删除链走。
+  Future<void> _reclaimDiscSubtitleOutputs(
+    List<_DeletedVideoSnapshot> deleted,
+    List<VideoBookRow> others,
+  ) async {
+    final List<String> members = <String>[
+      for (final _DeletedVideoSnapshot snapshot in deleted)
+        for (final String path in <String>[
+          snapshot.videoPath,
+          ...playlistEntryPaths(snapshot.playlistJson),
+        ])
+          if (isDiscMemberPath(path)) path,
+    ];
+    if (members.isEmpty) return;
+    final Directory jobsRoot = videoSubtitleJobsRootUnder(
+      await enginePaths.supportRootDirectory(),
+    );
+    final List<(String, Object)> failures =
+        await deleteVideoSubtitleDiscOutputs(
+          jobsRoot: jobsRoot,
+          memberPaths: members,
+          keepMemberPaths: <String>{
+            for (final VideoBookRow row in others)
+              for (final String path in <String>[
+                row.videoPath,
+                ...playlistEntryPaths(row.playlistJson),
+              ])
+                if (isDiscMemberPath(path)) path,
+          },
+        );
+    for (final (String path, Object error) in failures) {
+      engineLog.log('VideoBookRepository.discSubtitleOutputs', '$path: $error');
     }
   }
 

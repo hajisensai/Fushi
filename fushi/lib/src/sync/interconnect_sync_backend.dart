@@ -17,6 +17,12 @@ import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
+    show parseBlurayAnglePath;
+import 'package:fushi_engine/media/video/dvd/dvd_angle.dart'
+    show parseDvdTitleAnglePath;
+import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
+    show isDvdTitlePath;
 import 'package:fushi_engine/sync/interconnect_dav_tree_listing.dart';
 import 'package:fushi_engine/sync/pdf_sync_package.dart'
     show interconnectHostAcceptsPdfBooks;
@@ -610,6 +616,7 @@ class InterconnectSyncBackend extends SyncBackend
     if (signature != _configSignature) {
       _configSignature = signature;
       _sessionResolved = false;
+      _resolveFlight = null;
       // BUG-1180：身份变了 = 远端清单缓存里的东西属于**上一个**对端，必须作废。
       // 监听者同步收到通知，所以本次 restoreAuth 返回时缓存已经是空的，紧随其后的
       // 那次 read() 必然重新向新对端取数。
@@ -704,10 +711,34 @@ class InterconnectSyncBackend extends SyncBackend
     requestTimeout: requestTimeout,
   );
 
+  /// 在途的那一轮选路（[_ensureResolved] 单飞）。配置身份变了（[_loadConfig]）、
+  /// 登出、关闭一次性会话时丢掉它，之后的调用方按新配置另起一轮。
+  Future<void>? _resolveFlight;
+
+  /// 会话没选路时，并发调用方共享同一轮选路（单飞）。
+  ///
+  /// 起播并行取流与开播位置（路线图 #3722 m3 gap-remote-4）后，两条请求会同时撞上
+  /// 「还没选路」：各跑一轮 [_resolveSession] 不只是探测做两遍——两轮选中的候选
+  /// 若不同（组内排序随谁先答而变），后完成的那轮会 `_ops?.close()` 掉前一轮刚交给
+  /// 调用方的连接句柄，在途请求被拒连、`onConnectivityError` 再把会话置脏。
+  /// 一轮结束（成功或失败）就清掉，下一次调用按 [_sessionResolved] 重新判断。
+  Future<void> _ensureResolved() {
+    if (_sessionResolved) return Future<void>.value();
+    final Future<void>? inFlight = _resolveFlight;
+    if (inFlight != null) return inFlight;
+    late final Future<void> flight;
+    flight = _resolveSession().whenComplete(() {
+      if (identical(_resolveFlight, flight)) _resolveFlight = null;
+    });
+    _resolveFlight = flight;
+    return flight;
+  }
+
   /// Probes the candidate addresses (in order) and settles the session on the
   /// first reachable one. Switching addresses rebuilds [_ops] and clears the
-  /// folder cache, whose paths embed the previous base URL.
-  Future<void> _ensureResolved() async {
+  /// folder cache, whose paths embed the previous base URL. 只经 [_ensureResolved]
+  /// 调用（单飞）。
+  Future<void> _resolveSession() async {
     if (_sessionResolved) return;
     if (!_hasAnyCredential) {
       throw SyncAuthError(
@@ -814,6 +845,7 @@ class InterconnectSyncBackend extends SyncBackend
     _candidates = const <FushiClientUrl>[];
     _token = null;
     _sessionResolved = false;
+    _resolveFlight = null;
     _activeCandidate = null;
     // 登出后配置身份归零，下次 restoreAuth 必然重探测（BUG-1183）。
     _configSignature = null;
@@ -834,6 +866,7 @@ class InterconnectSyncBackend extends SyncBackend
       _ops?.close();
       _ops = null;
       _sessionResolved = false;
+      _resolveFlight = null;
       return false;
     }
     // BUG-1559：已经探明可达的会话不得被重建成「候选[0]」。
@@ -863,6 +896,7 @@ class InterconnectSyncBackend extends SyncBackend
     _ops?.close();
     _ops = null;
     _sessionResolved = false;
+    _resolveFlight = null;
     _activeCandidate = null;
   }
 
@@ -923,6 +957,16 @@ class InterconnectSyncBackend extends SyncBackend
   Future<bool> hostAcceptsPdfBooks() async {
     await _ensureResolved();
     return interconnectHostAcceptsPdfBooks(await _readHostCapabilities());
+  }
+
+  /// 对端 host 的本地音频清单是否带内容身份（`liveLibrary.localAudioContentId`，
+  /// 拍板 pr3481）。老 host = false：只能按显示名匹配。能力每轮现问、不跨轮缓存
+  /// （同 [hostAcceptsPdfBooks]）。
+  Future<bool> hostReportsLocalAudioContentId() async {
+    await _ensureResolved();
+    return interconnectHostReportsLocalAudioContentId(
+      await _readHostCapabilities(),
+    );
   }
 
   /// `GET /api/capabilities` 的解码结果；老 host（404 / 405）返回 null。网络 / 鉴权
@@ -2441,16 +2485,17 @@ class InterconnectSyncBackend extends SyncBackend
   Future<List<RemoteLocalAudioInfo>> listRemoteLocalAudio() =>
       _listRemote('/api/library/localaudio', RemoteLocalAudioInfo.fromJson);
 
-  /// 从对端 host 下载 displayName 为 [displayName] 的本地音频库到 [dest] 文件。
+  /// 从对端 host 下载 [key] 指向的本地音频库到 [dest] 文件。[key] 用清单条目的
+  /// `RemoteLocalAudioInfo.key`：新 host 给了内容身份就是 contentId，旧 host 是
+  /// displayName。
   Future<void> getRemoteLocalAudio(
-    String displayName,
+    String key,
     File dest, {
     SyncTransferProgress? onProgress,
   }) async {
     await _ensureResolved();
     await downloadContentFile(
-      fileId:
-          '$_apiBase/api/library/localaudio/${Uri.encodeComponent(displayName)}',
+      fileId: '$_apiBase/api/library/localaudio/${Uri.encodeComponent(key)}',
       destination: dest,
       onProgress: onProgress,
     );
@@ -2865,12 +2910,19 @@ class InterconnectSyncBackend extends SyncBackend
   /// 只有 host 回了实际落盘后缀（响应头 [kSubtitleSuffixHeader]，新语义才有；
   /// 改名前的 host 只回旧名，按 [interconnectHeaderNameCandidates] 回退）才算
   /// [RemoteSubtitleDefaultUpload.applied]。网络 / 其余 HTTP 失败照常抛。
+  ///
+  /// [episodeIndex] > 0（host 播放列表第 N 集）带 `?episode=N`，host 落到那一集文件
+  /// 旁。要 host 声明 `liveLibrary.videoSubtitleDefaultEpisode`：老 host 不认 `episode`，
+  /// 会落到第 0 集旁、压掉第 0 集的默认字幕，所以不支持时同样不发请求。
   Future<RemoteSubtitleDefaultUpload> putRemoteVideoSubtitleAsDefault(
     String id,
     File file, {
     required String suffix,
+    int episodeIndex = 0,
   }) async {
-    if (!await hostSupportsVideoSubtitleDefault()) {
+    final Map<Object?, Object?> live = await _liveLibraryCapabilities();
+    if (live['videoSubtitleDefault'] != true ||
+        (episodeIndex > 0 && live['videoSubtitleDefaultEpisode'] != true)) {
       return RemoteSubtitleDefaultUpload.hostUnsupported;
     }
     final HttpClientResponse res = await _sendVideoSubtitle(
@@ -2878,6 +2930,7 @@ class InterconnectSyncBackend extends SyncBackend
       file,
       suffix: suffix,
       asDefault: true,
+      episodeIndex: episodeIndex,
     );
     String? placed;
     for (final String name in interconnectHeaderNameCandidates(
@@ -2905,11 +2958,13 @@ class InterconnectSyncBackend extends SyncBackend
     File file, {
     required String suffix,
     required bool asDefault,
+    int episodeIndex = 0,
   }) async {
     await _ensureResolved();
     final HttpClientRequest req = await _ops!.buildRequest(
       'PUT',
-      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/subtitle',
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/subtitle'
+          '${episodeIndex > 0 ? '?episode=$episodeIndex' : ''}',
     );
     final int length = await file.length();
     req.headers.set('Content-Type', 'application/octet-stream');
@@ -2927,17 +2982,22 @@ class InterconnectSyncBackend extends SyncBackend
     return await req.close();
   }
 
-  /// [hostSupportsVideoSubtitleDefault] 的缓存：按 host 基址分槽（后端是进程级单例，
+  /// [_liveLibraryCapabilities] 的缓存：按 host 基址分槽（后端是进程级单例，
   /// 换 host / 换链路就重探）。探测失败（网络 / 超时）不入缓存，下次再探。
   String? _subtitleDefaultCapabilityScope;
-  bool? _subtitleDefaultCapability;
+  Map<Object?, Object?>? _subtitleDefaultCapability;
 
   /// host 的 `/api/capabilities` 是否声明 `liveLibrary.videoSubtitleDefault == true`。
   /// 老 host 没有该字段（或整个端点 404）→ false。同一 host 基址只探一次。
-  Future<bool> hostSupportsVideoSubtitleDefault() async {
+  Future<bool> hostSupportsVideoSubtitleDefault() async =>
+      (await _liveLibraryCapabilities())['videoSubtitleDefault'] == true;
+
+  /// host `/api/capabilities` 的 `liveLibrary` 段（端点 404 / 没有该段 → 空表）。同一
+  /// host 基址只探一次。
+  Future<Map<Object?, Object?>> _liveLibraryCapabilities() async {
     await _ensureResolved();
     final String scope = _apiBase;
-    final bool? cached = _subtitleDefaultCapability;
+    final Map<Object?, Object?>? cached = _subtitleDefaultCapability;
     if (cached != null && _subtitleDefaultCapabilityScope == scope) {
       return cached;
     }
@@ -2946,18 +3006,18 @@ class InterconnectSyncBackend extends SyncBackend
       '$_apiBase/api/capabilities',
     );
     final HttpClientResponse res = await _sendBounded(req);
-    bool supported = false;
+    Map<Object?, Object?> live = const <Object?, Object?>{};
     if (res.statusCode == 404 || res.statusCode == 405) {
       await res.drain<void>();
     } else {
       _ops!.checkStatus(res.statusCode, 'GET /api/capabilities');
       final Object? decoded = jsonDecode(await _readBodyBounded(res));
-      final Object? live = decoded is Map ? decoded['liveLibrary'] : null;
-      supported = live is Map && live['videoSubtitleDefault'] == true;
+      final Object? section = decoded is Map ? decoded['liveLibrary'] : null;
+      if (section is Map) live = Map<Object?, Object?>.of(section);
     }
     _subtitleDefaultCapabilityScope = scope;
-    _subtitleDefaultCapability = supported;
-    return supported;
+    _subtitleDefaultCapability = live;
+    return live;
   }
 
   // ── 画质档（弱网可用）────────────────────────────────────────────────────
@@ -3395,16 +3455,23 @@ class InterconnectSyncBackend extends SyncBackend
   static const Duration _videoFingerprintTimeout = Duration(minutes: 5);
 
   /// GET `/api/library/videos/<id>/fingerprint`（拍板台 IFCPPprIpT）。404（老 host
-  /// 无此端点）→ null；新 host 担保不了字节（[kVideoFingerprintUnavailableStatus]）或
+  /// 无此端点）→ null；`wait: false` 时 host 回 [kVideoFingerprintPendingStatus]
+  /// （还没算好、已在后台开算，拍板台 left3657）→ null；老 host 不认 `wait=0`，照旧
+  /// 算完再答。新 host 担保不了字节（[kVideoFingerprintUnavailableStatus]）或
   /// 回的不是 64 位小写 hex → 抛 [RemoteVideoFingerprintUnavailable]，不把不可担保的
   /// 值写进卡片、也不让回跳当老 host 放行（BUG-4782）。
   @override
   Future<String?> fetchRemoteVideoFingerprint(
     String id, {
     int episodeIndex = 0,
+    bool wait = true,
   }) async {
     await _ensureResolved();
-    final String query = episodeIndex > 0 ? '?episode=$episodeIndex' : '';
+    final List<String> params = <String>[
+      if (episodeIndex > 0) 'episode=$episodeIndex',
+      if (!wait) '$kVideoFingerprintWaitQueryParam=0',
+    ];
+    final String query = params.isEmpty ? '' : '?${params.join('&')}';
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
       '$_apiBase/api/library/videos/${_encodeVideoId(id)}/fingerprint$query',
@@ -3413,7 +3480,8 @@ class InterconnectSyncBackend extends SyncBackend
       req,
       timeout: _videoFingerprintTimeout,
     );
-    if (res.statusCode == 404) {
+    if (res.statusCode == 404 ||
+        (!wait && res.statusCode == kVideoFingerprintPendingStatus)) {
       await res.drain<void>();
       return null;
     }
@@ -3567,12 +3635,22 @@ class InterconnectSyncBackend extends SyncBackend
   ///
   /// 老 host 无 `clipaudio` 端点 → 该子路径 GET 落 host 兜底 → 404 → [downloadContentFile]
   /// 抛可重试 `SyncBackendError`；调用方 catch 后回退直连 ffmpeg 抽取（Never break userspace）。
+  ///
+  /// [discTitle]（远端原盘会话）：[id] 那一行所在蓝光盘上的另一条 title（相对盘根，
+  /// `BDMV/PLAYLIST/<名>.mpls`），不与 [episodeIndex] 同给。要 host 声明
+  /// `liveLibrary.videoClipAudioDiscTitle`：老 host 不认 `discTitle`，会照 [id] 那一行裁出
+  /// 另一条 title 的音频，所以不支持时抛 [RemoteDiscTitleAudioUnsupported]、不发请求。
+  /// [discTitle] 是多角度 title 的角度成员路径（`00001.a2.mpls`）时还要 host 声明
+  /// `liveLibrary.videoClipAudioDiscTitleAngle`，否则同样抛、不发请求；DVD title
+  /// （`VIDEO_TS/TITLE_nn.dvdtitle`）要 `liveLibrary.videoClipAudioDiscTitleDvd`，它的角度
+  /// 成员路径（`TITLE_nn.aK.dvdtitle`）再要 `liveLibrary.videoClipAudioDiscTitleDvdAngle`。
   Future<void> getRemoteVideoAudioClip(
     String id,
     File dest, {
     required int startMs,
     required int endMs,
     int episodeIndex = 0,
+    String? discTitle,
     int? audioStreamIndex,
     int? audioStreamCount,
     int audioChannels = 1,
@@ -3580,10 +3658,25 @@ class InterconnectSyncBackend extends SyncBackend
     void Function(double progress)? onProgress,
   }) async {
     await _ensureResolved();
+    if (discTitle != null) {
+      if (episodeIndex > 0) {
+        throw ArgumentError('episodeIndex and discTitle are exclusive');
+      }
+      if (!await hostSupportsDiscTitleAudio() ||
+          (parseBlurayAnglePath(discTitle) != null &&
+              !await hostSupportsDiscTitleAngleAudio()) ||
+          (isDvdTitlePath(discTitle) &&
+              !await hostSupportsDiscTitleDvdAudio()) ||
+          (parseDvdTitleAnglePath(discTitle) != null &&
+              !await hostSupportsDiscTitleDvdAngleAudio())) {
+        throw const RemoteDiscTitleAudioUnsupported();
+      }
+    }
     final Map<String, String> query = <String, String>{
       'startMs': '$startMs',
       'endMs': '$endMs',
       if (episodeIndex > 0) 'episode': '$episodeIndex',
+      'discTitle': ?discTitle,
       if (audioStreamIndex != null) 'audioStreamIndex': '$audioStreamIndex',
       if (audioStreamCount != null) 'audioStreamCount': '$audioStreamCount',
       'ac': '$audioChannels',
@@ -3598,6 +3691,30 @@ class InterconnectSyncBackend extends SyncBackend
       onProgress: syncTransferFractionOnly(onProgress),
     );
   }
+
+  /// host 是否声明 `liveLibrary.videoClipAudioDiscTitle`（`clipaudio?discTitle=`，远端原盘
+  /// 会话按盘 + title 裁音频）。与默认字幕上传共用同一份按 host 缓存的能力表。
+  Future<bool> hostSupportsDiscTitleAudio() async =>
+      (await _liveLibraryCapabilities())[kVideoClipAudioDiscTitleCapability] ==
+      true;
+
+  /// host 是否声明 `liveLibrary.videoClipAudioDiscTitleDvd`（`clipaudio?discTitle=` 认
+  /// DVD title `VIDEO_TS/TITLE_nn.dvdtitle`，经 `dvdvideo` demuxer 按 title 裁）。
+  Future<bool> hostSupportsDiscTitleDvdAudio() async =>
+      (await _liveLibraryCapabilities())[kVideoClipAudioDiscTitleDvdCapability] ==
+      true;
+
+  /// host 是否声明 `liveLibrary.videoClipAudioDiscTitleAngle`（`clipaudio?discTitle=` 认
+  /// 多角度 title 的角度成员路径，按会话里正在播的角度裁）。
+  Future<bool> hostSupportsDiscTitleAngleAudio() async =>
+      (await _liveLibraryCapabilities())[kVideoClipAudioDiscTitleAngleCapability] ==
+      true;
+
+  /// host 是否声明 `liveLibrary.videoClipAudioDiscTitleDvdAngle`（`clipaudio?discTitle=`
+  /// 认 DVD 多角度 title 的角度成员路径 `TITLE_nn.aK.dvdtitle`，按会话里正在播的角度裁）。
+  Future<bool> hostSupportsDiscTitleDvdAngleAudio() async =>
+      (await _liveLibraryCapabilities())[kVideoClipAudioDiscTitleDvdAngleCapability] ==
+      true;
 
   String? _clipExportCapabilityScope;
   bool? _clipExportCapability;

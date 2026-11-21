@@ -2,6 +2,7 @@
 // 无图形字幕的视频按 VideoPauseOcrScope 识别（反馈 i5A0mu1-AT / BUG-3314）。
 import 'dart:typed_data';
 
+import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRgbaImage;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart'
@@ -53,10 +54,10 @@ class _Probe {
 
   int captures = 0;
 
-  Future<Uint8List?> capture() async {
+  Future<OcrRgbaImage?> capture() async {
     captures++;
     if (captures <= failFirst) return null;
-    return Uint8List.fromList(<int>[1, 2, 3]);
+    return OcrRgbaImage(rgba: Uint8List(4 * 4), width: 2, height: 2);
   }
 
   int recognitions = 0;
@@ -64,7 +65,7 @@ class _Probe {
   /// 识别抛「引擎不可用」（没配 OCR 引擎）。
   bool unavailable = false;
 
-  Future<GraphicSubtitleOcrFrame?> recognize(Uint8List _) async {
+  Future<GraphicSubtitleOcrFrame?> recognize(OcrRgbaImage _) async {
     recognitions++;
     if (unavailable) {
       throw const GraphicSubtitleOcrUnavailable(

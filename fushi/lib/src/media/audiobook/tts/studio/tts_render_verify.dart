@@ -10,6 +10,7 @@ import 'dart:math' as math;
 import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
+import 'package:fushi_engine/tts/tts_pronunciation.dart';
 
 /// 识别出的一小段文本及其在本章文件里的时刻。
 class TtsHeardToken {
@@ -135,18 +136,26 @@ class TtsVerifySentence {
 }
 
 /// 一章的校对：低于 [threshold] 的句标出来。
+///
+/// [heardRewrites] 是「识别后替换」规则（[TtsTextRuleKind.postRecognition]）：每句
+/// 听到的文本先按它改回原文写法再比对（规则可能跨识别 token，所以按句拼好之后再
+/// 替换）；标出来的 `heard` 也是替换后的文本。
 List<TtsRenderFlag> flagTtsChapterSentences({
   required List<TtsVerifySentence> sentences,
   required List<TtsHeardToken> heard,
   double threshold = kAsrSuggestedSimilarityThreshold,
+  List<TtsPronunciationRule> heardRewrites = const <TtsPronunciationRule>[],
 }) {
-  final List<String> texts = ttsHeardTextPerWindow(
-    heard,
-    <({int startMs, int endMs})>[
-      for (final TtsVerifySentence s in sentences)
-        (startMs: s.startMs, endMs: s.endMs),
-    ],
-  );
+  final List<String> texts = <String>[
+    for (final String text in ttsHeardTextPerWindow(
+      heard,
+      <({int startMs, int endMs})>[
+        for (final TtsVerifySentence s in sentences)
+          (startMs: s.startMs, endMs: s.endMs),
+      ],
+    ))
+      applyTtsPronunciation(text, heardRewrites),
+  ];
   final List<TtsRenderFlag> flags = <TtsRenderFlag>[];
   for (int i = 0; i < sentences.length; i++) {
     final double similarity = ttsSentenceSimilarity(

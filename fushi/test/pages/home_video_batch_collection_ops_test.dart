@@ -17,13 +17,13 @@ import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/series_scrape_seed.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/video_header_more.dart';
 
 /// 块2/3/4 视频库批量合集操作 widget 测试（真写穿内存 DB）：
 ///  - 多选态合集整选（封面卡整卡勾选 → 合集入选中集；成员卡收进详情页不在库页）；
@@ -142,7 +142,7 @@ void main() {
   }
 
   Future<void> enterSelectionMode(WidgetTester tester) async {
-    await tester.tap(find.byIcon(FushiIcons.checklist));
+    await tapVideoHeaderMoreEntry(tester, 'library_select_toggle');
     await tester.pumpAndSettle();
   }
 

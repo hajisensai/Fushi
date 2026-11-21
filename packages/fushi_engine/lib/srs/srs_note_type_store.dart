@@ -194,8 +194,11 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
 
   // ------------------------------------------------------------------ 新建 / 删除
 
+  /// 返回内核落下的规范 ID（回包 `entityWrites`，[writeEdits] 的 `onRecords`）。
   Future<String> _writeNewType(SrsNewNoteType nt) async {
+    String landed = nt.id;
     await writeEdits(
+      onRecords: (List<String> ids) => landed = ids.single,
       <SrsEditSpec>[
         SrsEditSpec(SrsEntityKind.noteType, nt.id, SrsFieldKeys.name, nt.name),
         for (final SrsFieldDef f in nt.fields)
@@ -239,7 +242,7 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
       ],
       records: <SrsEntityRecord>[nt.record],
     );
-    return nt.id;
+    return landed;
   }
 
   /// 新建一个基础笔记类型。

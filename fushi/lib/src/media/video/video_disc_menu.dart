@@ -1,5 +1,10 @@
 import 'dart:convert';
 
+import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
+    show blurayAnglePath, kBlurayMaxAngles;
+import 'package:fushi_engine/media/video/dvd/dvd_angle.dart'
+    show dvdTitleAnglePath, kDvdMaxAngles;
+
 /// Which navigation library produced a `disc-navigation-state` snapshot.
 enum VideoDiscType { bluray, dvd }
 
@@ -379,6 +384,31 @@ class VideoDiscResolvedTracks {
   final String? audioId;
   final String? subtitleId;
   final String? subtitleCodec;
+}
+
+/// The path extraction (FFmpeg, mining, the subtitle pipeline) reads for the
+/// bound title [playlistPath] while the player shows camera angle [angle]
+/// (the `disc-navigation-state` angle: zero-based for libbluray and libdvdnav
+/// alike — the mpv patch reports libdvdnav's 1-based angle minus one; -1 = not
+/// yet reported).
+///
+/// Angle 0 is the title itself. Blu-ray angles 1-8 become the angle member
+/// path (`00001.a2.mpls`, see `bluray_angle.dart`) whose multi-angle PlayItems
+/// read that angle's clips on the title's IN/OUT axis — what libbluray plays.
+/// DVD angles 1-8 become `TITLE_nn.a2.dvdtitle` (`dvd_angle.dart`), which the
+/// FFmpeg `dvdvideo` demuxer reads with `-angle <angle + 1>` — what libdvdnav
+/// plays. An unreported or out-of-range angle has no extraction path (null).
+String? discExtractionPathForAngle(
+  String playlistPath, {
+  required int angle,
+  required bool dvd,
+}) {
+  if (angle < 0 || angle >= (dvd ? kDvdMaxAngles : kBlurayMaxAngles)) {
+    return null;
+  }
+  return dvd
+      ? dvdTitleAnglePath(playlistPath, angle)
+      : blurayAnglePath(playlistPath, angle);
 }
 
 bool videoDiscTitleIdentityMatches(

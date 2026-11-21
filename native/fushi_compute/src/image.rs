@@ -27,6 +27,8 @@
 use crate::{guard, status};
 
 mod avif;
+mod composite;
+pub(crate) mod resample;
 
 /// 缩放插值，取值与 `package:image` 的 `Interpolation` 对应（不支持 cubic）。
 pub const INTERP_NEAREST: i32 = 0;
@@ -1706,7 +1708,7 @@ pub unsafe extern "C" fn ffc_image_fit_jpeg(
 
 /// [ffc_image_fit_jpeg] 的本体。
 fn fit_jpeg(data: &[u8], dst_w: u32, dst_h: u32, quality: u8) -> Result<Vec<u8>, i32> {
-    let (pixels, width, height, channels) = decode_opaque(data)?;
+    let (pixels, width, height, channels, icc) = decode_opaque(data)?;
     if dst_w > width || dst_h > height {
         return Err(status::INVALID_ARGUMENT);
     }
@@ -1716,7 +1718,137 @@ fn fit_jpeg(data: &[u8], dst_w: u32, dst_h: u32, quality: u8) -> Result<Vec<u8>,
     let mut resized = vec![0u8; dw * dh * ch];
     resize_into(&src, &mut resized, dw, dh, INTERP_AVERAGE);
     drop(pixels);
-    let color = if ch == 1 {
+    encode_fit_jpeg(&resized, dst_w, dst_h, ch, quality, icc.as_deref())
+}
+
+/// 漫画页图「画质缩放」：解码（转正）→ 可分离重采样（[resample::Filter]：0 面积平均 / 1 Lanczos3 /
+/// 2 Catmull-Rom，`flags` 位 0 = 文字感知的 Gamma 校正）→ JPEG（4:4:4，灰度源编单通道）。
+///
+/// 文字感知的 Gamma 校正（[FIT_HQ_TEXT_AWARE_GAMMA]）：`text_boxes` 里的 OCR 框（归一化
+/// `[x0, y0, x1, y1]` × `text_box_count`）内在 sRGB 编码值上重采样（细笔画不变淡），框外在线性光
+/// 里（网点明度准），羽化遮罩混合；没有框时整页 sRGB——实测整页线性光让文字框笔画对比度掉
+/// 10%～20%（`docs/specs/2026-11-20-manga-upscale-design.md` §2.1 / §3.1）。
+///
+/// 与 [ffc_image_fit_jpeg] 的区别：核按缩放比放宽（网点不出摩尔纹）、可在线性光里平均（网点不发闷），
+/// 并且**允许放大**（低清源显示得比原图大时，用比 WebView 双线性更锐的核预放大），放大倍数限
+/// [FIT_HQ_MAX_UPSCALE]、输出像素限 [FIT_HQ_MAX_PIXELS]，超出返回 [status::INVALID_ARGUMENT]。
+/// 带 alpha / 解不开返回 [status::BAD_INPUT]——调用方收到任何非 OK 都应原样交出源字节。
+///
+/// # Safety
+/// 指针按给定长度可读 / 可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_image_fit_jpeg_hq(
+    data: *const u8,
+    len: usize,
+    dst_w: u32,
+    dst_h: u32,
+    quality: u32,
+    filter: u32,
+    flags: u32,
+    text_boxes: *const f32,
+    text_box_count: usize,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        if data.is_null() || out_ptr.is_null() || out_len.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        if text_box_count > 0 && text_boxes.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        if text_box_count > FIT_HQ_MAX_TEXT_BOXES {
+            return status::INVALID_ARGUMENT;
+        }
+        let boxes: Vec<[f32; 4]> = if text_box_count == 0 {
+            Vec::new()
+        } else {
+            std::slice::from_raw_parts(text_boxes, text_box_count * 4)
+                .chunks_exact(4)
+                .map(|b| [b[0], b[1], b[2], b[3]])
+                .collect()
+        };
+        let Some(filter) = resample::Filter::from_code(filter) else {
+            return status::INVALID_ARGUMENT;
+        };
+        if !(1..=100).contains(&quality)
+            || dst_w == 0
+            || dst_h == 0
+            || dst_w > u16::MAX as u32
+            || dst_h > u16::MAX as u32
+            || flags & !FIT_HQ_TEXT_AWARE_GAMMA != 0
+        {
+            return status::INVALID_ARGUMENT;
+        }
+        let boxes: &[[f32; 4]] = if flags & FIT_HQ_TEXT_AWARE_GAMMA != 0 {
+            &boxes
+        } else {
+            &[]
+        };
+        match fit_jpeg_hq(slice(data, len), dst_w, dst_h, quality as u8, filter, boxes) {
+            Ok(jpeg) => {
+                crate::hand_over_bytes(jpeg, out_ptr, out_len);
+                status::OK
+            }
+            Err(code) => code,
+        }
+    })
+}
+
+/// [ffc_image_fit_jpeg_hq] 的 `flags` 位：文字感知的 Gamma 校正（OCR 框外线性光、框内 sRGB）。
+pub const FIT_HQ_TEXT_AWARE_GAMMA: u32 = 1;
+/// [ffc_image_fit_jpeg_hq] 一次最多接受的文字框数（一页 OCR 行框通常几十到两三百）。
+pub const FIT_HQ_MAX_TEXT_BOXES: usize = 4096;
+/// [ffc_image_fit_jpeg_hq] 每边最多放大的倍数。
+pub const FIT_HQ_MAX_UPSCALE: u32 = 4;
+/// [ffc_image_fit_jpeg_hq] 输出像素上限（约 8K×6K）。
+pub const FIT_HQ_MAX_PIXELS: u64 = 48_000_000;
+
+/// [ffc_image_fit_jpeg_hq] 的本体。
+fn fit_jpeg_hq(
+    data: &[u8],
+    dst_w: u32,
+    dst_h: u32,
+    quality: u8,
+    filter: resample::Filter,
+    text_boxes: &[[f32; 4]],
+) -> Result<Vec<u8>, i32> {
+    if dst_w as u64 * dst_h as u64 > FIT_HQ_MAX_PIXELS {
+        return Err(status::INVALID_ARGUMENT);
+    }
+    let (pixels, width, height, channels, icc) = decode_opaque(data)?;
+    if dst_w > width.saturating_mul(FIT_HQ_MAX_UPSCALE)
+        || dst_h > height.saturating_mul(FIT_HQ_MAX_UPSCALE)
+    {
+        return Err(status::INVALID_ARGUMENT);
+    }
+    let ch = channels as usize;
+    let resized = resample::resample_text_aware(
+        &pixels,
+        width as usize,
+        height as usize,
+        ch,
+        dst_w as usize,
+        dst_h as usize,
+        filter,
+        text_boxes,
+    );
+    drop(pixels);
+    encode_fit_jpeg(&resized, dst_w, dst_h, ch, quality, icc.as_deref())
+}
+
+/// [fit_jpeg] / [fit_jpeg_hq] 的出口：4:4:4 JPEG，灰度编单通道，并**带上源图的 ICC 配置文件**。
+/// 不带的话，嵌了配置文件的页（扫描卷常见的灰度 Dot Gain 配置）转码后会被 WebView 当成未标记的
+/// sRGB 显示：同一页 fit 前后明暗不一致（实测《14歳の恋》暗部 12 → 20）。
+pub(crate) fn encode_fit_jpeg(
+    pixels: &[u8],
+    width: u32,
+    height: u32,
+    channels: usize,
+    quality: u8,
+    icc: Option<&[u8]>,
+) -> Result<Vec<u8>, i32> {
+    let color = if channels == 1 {
         jpeg_encoder::ColorType::Luma
     } else {
         jpeg_encoder::ColorType::Rgb
@@ -1724,23 +1856,43 @@ fn fit_jpeg(data: &[u8], dst_w: u32, dst_h: u32, quality: u8) -> Result<Vec<u8>,
     let mut jpeg = Vec::new();
     let mut enc = jpeg_encoder::Encoder::new(&mut jpeg, quality);
     enc.set_sampling_factor(jpeg_encoder::SamplingFactor::F_1_1);
-    enc.encode(&resized, dst_w as u16, dst_h as u16, color)
+    if let Some(icc) = icc.filter(|icc| icc_matches_channels(icc, channels)) {
+        enc.add_icc_profile(icc).map_err(|_| status::BAD_INPUT)?;
+    }
+    enc.encode(pixels, width as u16, height as u16, color)
         .map_err(|_| status::BAD_INPUT)?;
     Ok(jpeg)
 }
 
-/// 解码成不透明的 1 通道（灰度）或 3 通道（RGB）uint8 像素，返回 `(像素, 宽, 高, 通道数)`；
-/// 带 alpha 的源返回 [status::BAD_INPUT]。
-fn decode_opaque(data: &[u8]) -> Result<(Vec<u8>, u32, u32, u32), i32> {
+/// 源图的 ICC 配置文件（没有 / 读不出为 `None`）。
+pub(crate) type IccProfile = Option<Vec<u8>>;
+
+/// 配置文件头的 data colour space（ICC.1 头部偏移 16 起 4 字节）与输出 JPEG 的通道数一致：
+/// 1 通道配 `GRAY`，3 通道配 `RGB `。解码会把 CMYK / YCCK 转成 RGB、把灰度源保持单通道，
+/// 源图的配置文件描述的却是原始色彩空间；色彩空间对不上的配置文件贴上去，WebView 要么忽略、
+/// 要么按错的空间解释，一律不贴（输出退回未标记，按 sRGB 显示）。
+fn icc_matches_channels(icc: &[u8], channels: usize) -> bool {
+    let expected: &[u8; 4] = match channels {
+        1 => b"GRAY",
+        3 => b"RGB ",
+        _ => return false,
+    };
+    icc.len() >= 128 && &icc[16..20] == expected
+}
+
+/// 解码成不透明的 1 通道（灰度）或 3 通道（RGB）uint8 像素，返回
+/// `(像素, 宽, 高, 通道数, ICC 配置文件)`；带 alpha 的源返回 [status::BAD_INPUT]。
+pub(crate) fn decode_opaque(data: &[u8]) -> Result<(Vec<u8>, u32, u32, u32, IccProfile), i32> {
     use image::ImageDecoder;
     if avif::is_avif(data) {
         let (pixels, width, height, channels) = avif::decode(data)?;
         if channels != 3 {
             return Err(status::BAD_INPUT);
         }
-        return Ok((pixels, width, height, 3));
+        return Ok((pixels, width, height, 3, None));
     }
     let (mut decoder, _) = open_decoder(data)?;
+    let icc = decoder.icc_profile().ok().flatten();
     let orientation = decoder
         .orientation()
         .unwrap_or(image::metadata::Orientation::NoTransforms);
@@ -1751,9 +1903,9 @@ fn decode_opaque(data: &[u8]) -> Result<(Vec<u8>, u32, u32, u32), i32> {
         return Err(status::BAD_INPUT);
     }
     if img.color().has_color() {
-        Ok((img.into_rgb8().into_raw(), width, height, 3))
+        Ok((img.into_rgb8().into_raw(), width, height, 3, icc))
     } else {
-        Ok((img.into_luma8().into_raw(), width, height, 1))
+        Ok((img.into_luma8().into_raw(), width, height, 1, icc))
     }
 }
 
@@ -2213,6 +2365,7 @@ fn ai_crop_one(
     padding: i64,
     max_side: i64,
     min_side: i64,
+    opaque: bool,
 ) -> Result<Option<Vec<u8>>, i32> {
     let edges = [b[0] * sx, b[1] * sy, b[2] * sx, b[3] * sy];
     if edges.iter().any(|v| !v.is_finite()) {
@@ -2257,7 +2410,66 @@ fn ai_crop_one(
     } else {
         (copy_view(&crop), cw, chh)
     };
+    if opaque && crop.ch == 4 {
+        // 不透明 RGBA（播放器截帧 / 字幕位图）：alpha 恒 255，编成 RGB PNG，与解码 RGB 页图
+        // 裁出的块同形。
+        return encode_png(&rgba_to_rgb(&pixels), ow as u32, oh as u32, 3).map(Some);
+    }
     encode_png(&pixels, ow as u32, oh as u32, crop.ch).map(Some)
+}
+
+/// 紧排 RGBA → 紧排 RGB（丢 alpha）。
+fn rgba_to_rgb(rgba: &[u8]) -> Vec<u8> {
+    let mut rgb = Vec::with_capacity(rgba.len() / 4 * 3);
+    for px in rgba.chunks_exact(4) {
+        rgb.extend_from_slice(&px[..3]);
+    }
+    rgb
+}
+
+/// 在整页视图 [page] 上裁出每个框并编码（[ffc_image_ai_crops] / [ffc_image_ai_crops_rgba]
+/// 共用），结果按每块 `[u32 len][len 字节]` 序列化（`len == u32::MAX` 表示裁不出）。
+#[allow(clippy::too_many_arguments)]
+fn ai_crops_of_page(
+    page: &View,
+    page_w: f64,
+    page_h: f64,
+    boxes: &[f64],
+    padding: i32,
+    max_side: i32,
+    min_side: i32,
+    opaque: bool,
+) -> Result<Vec<u8>, i32> {
+    let sx = if page_w > 0.0 {
+        page.w as f64 / page_w
+    } else {
+        1.0
+    };
+    let sy = if page_h > 0.0 {
+        page.h as f64 / page_h
+    } else {
+        1.0
+    };
+    let mut out = Vec::new();
+    for b in boxes.chunks_exact(4) {
+        match ai_crop_one(
+            page,
+            b,
+            sx,
+            sy,
+            padding as i64,
+            max_side as i64,
+            min_side as i64,
+            opaque,
+        )? {
+            Some(png) => {
+                out.extend_from_slice(&(png.len() as u32).to_ne_bytes());
+                out.extend_from_slice(&png);
+            }
+            None => out.extend_from_slice(&u32::MAX.to_ne_bytes()),
+        }
+    }
+    Ok(out)
 }
 
 /// 解码整页（按 EXIF 转正）并裁出每个框（[boxes] 每条 4 个 f64：ltrb，坐标系为
@@ -2302,39 +2514,133 @@ pub unsafe extern "C" fn ffc_image_ai_crops(
             Ok(v) => v,
             Err(code) => return code,
         };
-        let sx = if page_w > 0.0 {
-            d.width as f64 / page_w
-        } else {
-            1.0
-        };
-        let sy = if page_h > 0.0 {
-            d.height as f64 / page_h
-        } else {
-            1.0
+        let boxes = slice(boxes, box_count * 4);
+        match ai_crops_of_page(
+            &page, page_w, page_h, boxes, padding, max_side, min_side, false,
+        ) {
+            Ok(out) => {
+                crate::hand_over_bytes(out, out_ptr, out_len);
+                status::OK
+            }
+            Err(code) => code,
+        }
+    })
+}
+
+/// [ffc_image_ai_crops] 的原始像素版：输入是 `width × height` 的**不透明** RGBA（行跨度
+/// `stride` 字节，≥ `width * 4`），不经解码；裁出的块编成 RGB PNG（alpha 丢弃）。给已经拿到
+/// 像素的调用方（视频暂停 OCR 的播放器截帧、字幕位图）用，省掉整页 PNG 编码 + 解码。
+/// 尺寸 / 跨度不合法返回 [status::INVALID_ARGUMENT]，缓冲不够长返回
+/// [status::BUFFER_TOO_SMALL]，其余语义同 [ffc_image_ai_crops]。
+///
+/// # Safety
+/// 指针按给定长度可读 / 可写。
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn ffc_image_ai_crops_rgba(
+    rgba: *const u8,
+    len: usize,
+    width: u32,
+    height: u32,
+    stride: usize,
+    page_w: f64,
+    page_h: f64,
+    boxes: *const f64,
+    box_count: usize,
+    padding: i32,
+    max_side: i32,
+    min_side: i32,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        if rgba.is_null() || out_ptr.is_null() || out_len.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        if box_count > 0 && boxes.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        if max_side <= 0 || min_side <= 0 {
+            return status::INVALID_ARGUMENT;
+        }
+        let page = match View::new(slice(rgba, len), stride, 4, 0, 0, width, height) {
+            Ok(v) => v,
+            Err(code) => return code,
         };
         let boxes = slice(boxes, box_count * 4);
-        let mut out = Vec::new();
-        for b in boxes.chunks_exact(4) {
-            match ai_crop_one(
-                &page,
-                b,
-                sx,
-                sy,
-                padding as i64,
-                max_side as i64,
-                min_side as i64,
-            ) {
-                Ok(Some(png)) => {
-                    out.extend_from_slice(&(png.len() as u32).to_ne_bytes());
-                    out.extend_from_slice(&png);
-                }
-                Ok(None) => out.extend_from_slice(&u32::MAX.to_ne_bytes()),
-                Err(code) => return code,
+        match ai_crops_of_page(
+            &page, page_w, page_h, boxes, padding, max_side, min_side, true,
+        ) {
+            Ok(out) => {
+                crate::hand_over_bytes(out, out_ptr, out_len);
+                status::OK
             }
+            Err(code) => code,
         }
-        crate::hand_over_bytes(out, out_ptr, out_len);
-        status::OK
     })
+}
+
+/// 不透明 RGBA（`width × height`，行跨度 `stride`）→ 面积平均（[INTERP_AVERAGE]）缩到
+/// `dst_w × dst_h`（与源同尺寸则不缩）→ RGB JPEG（`quality` 1..=100，4:4:4，alpha 丢弃）。
+/// 给 Lens 送检的播放器截帧用：不经整帧 PNG 编码 / 解码。只做缩小：目标超过源尺寸返回
+/// [status::INVALID_ARGUMENT]。
+///
+/// # Safety
+/// 指针按给定长度可读 / 可写。
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn ffc_image_rgba_fit_jpeg(
+    rgba: *const u8,
+    len: usize,
+    width: u32,
+    height: u32,
+    stride: usize,
+    dst_w: u32,
+    dst_h: u32,
+    quality: u32,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        if rgba.is_null() || out_ptr.is_null() || out_len.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        if !(1..=100).contains(&quality)
+            || dst_w == 0
+            || dst_h == 0
+            || dst_w > width
+            || dst_h > height
+            || dst_w > u16::MAX as u32
+            || dst_h > u16::MAX as u32
+        {
+            return status::INVALID_ARGUMENT;
+        }
+        let src = match View::new(slice(rgba, len), stride, 4, 0, 0, width, height) {
+            Ok(v) => v,
+            Err(code) => return code,
+        };
+        match rgba_fit_jpeg(&src, dst_w as usize, dst_h as usize, quality as u8) {
+            Ok(jpeg) => {
+                crate::hand_over_bytes(jpeg, out_ptr, out_len);
+                status::OK
+            }
+            Err(code) => code,
+        }
+    })
+}
+
+/// [ffc_image_rgba_fit_jpeg] 的本体。
+fn rgba_fit_jpeg(src: &View, dw: usize, dh: usize, quality: u8) -> Result<Vec<u8>, i32> {
+    let rgba = if dw == src.w && dh == src.h {
+        copy_view(src)
+    } else {
+        let mut dst = vec![0u8; dw * dh * 4];
+        resize_into(src, &mut dst, dw, dh, INTERP_AVERAGE);
+        dst
+    };
+    let rgb = rgba_to_rgb(&rgba);
+    drop(rgba);
+    encode_fit_jpeg(&rgb, dw as u32, dh as u32, 3, quality, None)
 }
 
 // ---------------------------------------------------------------------------
@@ -2397,6 +2703,195 @@ pub unsafe extern "C" fn ffc_image_decode_png(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 不透明 RGBA 测试图（带行尾填充，模拟 mpv 的行跨度）。
+    fn opaque_rgba(w: usize, h: usize, pad: usize) -> (Vec<u8>, usize) {
+        let stride = w * 4 + pad;
+        let mut px = vec![0xEEu8; stride * h];
+        for y in 0..h {
+            for x in 0..w {
+                let o = y * stride + x * 4;
+                px[o] = (x * 7 + y * 3) as u8;
+                px[o + 1] = (x * 2 + y * 11) as u8;
+                px[o + 2] = (x * 5 + y) as u8;
+                px[o + 3] = 255;
+            }
+        }
+        (px, stride)
+    }
+
+    fn take_crops(out: &[u8]) -> Vec<Option<Vec<u8>>> {
+        let mut crops = Vec::new();
+        let mut o = 0;
+        while o < out.len() {
+            let n = u32::from_ne_bytes(out[o..o + 4].try_into().unwrap());
+            o += 4;
+            if n == u32::MAX {
+                crops.push(None);
+            } else {
+                crops.push(Some(out[o..o + n as usize].to_vec()));
+                o += n as usize;
+            }
+        }
+        crops
+    }
+
+    #[test]
+    fn ai_crops_rgba_matches_crops_of_the_decoded_rgb_page() {
+        let (w, h) = (90usize, 40usize);
+        let (px, stride) = opaque_rgba(w, h, 12);
+        let mut rgb = Vec::with_capacity(w * h * 3);
+        for y in 0..h {
+            for x in 0..w {
+                let o = y * stride + x * 4;
+                rgb.extend_from_slice(&px[o..o + 3]);
+            }
+        }
+        let png = encode(
+            image::DynamicImage::ImageRgb8(
+                image::RgbImage::from_raw(w as u32, h as u32, rgb).unwrap(),
+            ),
+            image::ImageFormat::Png,
+        );
+        let boxes = [
+            5.0, 4.0, 60.0, 30.0, 0.0, 0.0, 90.0, 40.0, 200.0, 200.0, 210.0, 210.0,
+        ];
+        let mut out_ptr: *mut u8 = std::ptr::null_mut();
+        let mut out_len = 0usize;
+        let decoded = unsafe {
+            assert_eq!(
+                ffc_image_ai_crops(
+                    png.as_ptr(),
+                    png.len(),
+                    0.0,
+                    0.0,
+                    boxes.as_ptr(),
+                    3,
+                    4,
+                    64,
+                    32,
+                    &mut out_ptr,
+                    &mut out_len,
+                ),
+                status::OK
+            );
+            let v = std::slice::from_raw_parts(out_ptr, out_len).to_vec();
+            crate::ffc_free_bytes(out_ptr, out_len);
+            v
+        };
+        let raw = unsafe {
+            assert_eq!(
+                ffc_image_ai_crops_rgba(
+                    px.as_ptr(),
+                    px.len(),
+                    w as u32,
+                    h as u32,
+                    stride,
+                    0.0,
+                    0.0,
+                    boxes.as_ptr(),
+                    3,
+                    4,
+                    64,
+                    32,
+                    &mut out_ptr,
+                    &mut out_len,
+                ),
+                status::OK
+            );
+            let v = std::slice::from_raw_parts(out_ptr, out_len).to_vec();
+            crate::ffc_free_bytes(out_ptr, out_len);
+            v
+        };
+        let a = take_crops(&decoded);
+        let b = take_crops(&raw);
+        assert_eq!(a.len(), 3);
+        assert_eq!(b.len(), 3);
+        assert!(a[2].is_none() && b[2].is_none());
+        for k in 0..2 {
+            let da = image::load_from_memory(a[k].as_ref().unwrap()).unwrap();
+            let db = image::load_from_memory(b[k].as_ref().unwrap()).unwrap();
+            assert_eq!(db.color(), image::ColorType::Rgb8);
+            assert_eq!(da.to_rgb8().as_raw(), db.to_rgb8().as_raw());
+        }
+    }
+
+    #[test]
+    fn ai_crops_rgba_rejects_short_buffers() {
+        let (px, stride) = opaque_rgba(8, 8, 0);
+        let boxes = [0.0, 0.0, 8.0, 8.0];
+        let mut out_ptr: *mut u8 = std::ptr::null_mut();
+        let mut out_len = 0usize;
+        let code = unsafe {
+            ffc_image_ai_crops_rgba(
+                px.as_ptr(),
+                px.len() - 1,
+                8,
+                8,
+                stride,
+                0.0,
+                0.0,
+                boxes.as_ptr(),
+                1,
+                4,
+                64,
+                32,
+                &mut out_ptr,
+                &mut out_len,
+            )
+        };
+        assert_eq!(code, status::BUFFER_TOO_SMALL);
+    }
+
+    #[test]
+    fn rgba_fit_jpeg_downscales_and_keeps_same_size() {
+        let (w, h) = (64usize, 36usize);
+        let (px, stride) = opaque_rgba(w, h, 8);
+        for (dw, dh) in [(32u32, 18u32), (64, 36)] {
+            let mut out_ptr: *mut u8 = std::ptr::null_mut();
+            let mut out_len = 0usize;
+            let jpeg = unsafe {
+                assert_eq!(
+                    ffc_image_rgba_fit_jpeg(
+                        px.as_ptr(),
+                        px.len(),
+                        w as u32,
+                        h as u32,
+                        stride,
+                        dw,
+                        dh,
+                        92,
+                        &mut out_ptr,
+                        &mut out_len,
+                    ),
+                    status::OK
+                );
+                let v = std::slice::from_raw_parts(out_ptr, out_len).to_vec();
+                crate::ffc_free_bytes(out_ptr, out_len);
+                v
+            };
+            let d = image::load_from_memory(&jpeg).unwrap();
+            assert_eq!((d.width(), d.height()), (dw, dh));
+            assert_eq!(d.color(), image::ColorType::Rgb8);
+        }
+        let mut out_ptr: *mut u8 = std::ptr::null_mut();
+        let mut out_len = 0usize;
+        let code = unsafe {
+            ffc_image_rgba_fit_jpeg(
+                px.as_ptr(),
+                px.len(),
+                w as u32,
+                h as u32,
+                stride,
+                65,
+                36,
+                92,
+                &mut out_ptr,
+                &mut out_len,
+            )
+        };
+        assert_eq!(code, status::INVALID_ARGUMENT);
+    }
 
     fn view(data: &[u8], w: u32, h: u32, ch: u32) -> View<'_> {
         View::new(data, (w * ch) as usize, ch, 0, 0, w, h).unwrap()
@@ -2489,6 +2984,219 @@ mod tests {
             fit_jpeg(b"not an image", 20, 20, 90),
             Err(status::BAD_INPUT)
         );
+    }
+
+    #[test]
+    fn fit_transcodes_keep_the_source_icc_profile() {
+        use image::ImageDecoder;
+        // 头部声明 GRAY 的任意字节当配置文件即可：只验证原样带到输出里（WebView 按它做色彩管理）。
+        let profile = fake_icc(b"GRAY");
+        let pixels: Vec<u8> = (0..200u32 * 300).map(|i| (i % 256) as u8).collect();
+        let mut src = Vec::new();
+        let mut enc = jpeg_encoder::Encoder::new(&mut src, 95);
+        enc.add_icc_profile(&profile).unwrap();
+        enc.encode(&pixels, 200, 300, jpeg_encoder::ColorType::Luma)
+            .unwrap();
+        let icc_of = |jpeg: &[u8]| {
+            image::codecs::jpeg::JpegDecoder::new(std::io::Cursor::new(jpeg))
+                .unwrap()
+                .icc_profile()
+                .unwrap()
+        };
+        assert_eq!(icc_of(&src).as_deref(), Some(&profile[..]));
+        let hq_down = fit_jpeg_hq(&src, 100, 150, 90, resample::Filter::Box, &[]).unwrap();
+        let hq_up = fit_jpeg_hq(
+            &src,
+            400,
+            600,
+            90,
+            resample::Filter::CatmullRom,
+            &[[0.1, 0.1, 0.4, 0.4]],
+        )
+        .unwrap();
+        let standard = fit_jpeg(&src, 100, 150, 90).unwrap();
+        for out in [hq_down, hq_up, standard] {
+            assert_eq!(icc_of(&out).as_deref(), Some(&profile[..]));
+        }
+        // 没有配置文件的源，输出也不凭空加。
+        let mut plain = Vec::new();
+        jpeg_encoder::Encoder::new(&mut plain, 95)
+            .encode(&pixels, 200, 300, jpeg_encoder::ColorType::Luma)
+            .unwrap();
+        let out = fit_jpeg_hq(&plain, 100, 150, 90, resample::Filter::Box, &[]).unwrap();
+        assert_eq!(icc_of(&out), None);
+    }
+
+    /// 600 字节的假 ICC 配置文件，头部 data colour space（偏移 16）为 [space]。
+    fn fake_icc(space: &[u8; 4]) -> Vec<u8> {
+        let mut profile: Vec<u8> = (0..600u32).map(|i| (i * 31 % 251) as u8).collect();
+        profile[16..20].copy_from_slice(space);
+        profile
+    }
+
+    #[test]
+    fn fit_transcodes_drop_an_icc_profile_of_another_colour_space() {
+        use image::ImageDecoder;
+        let icc_of = |jpeg: &[u8]| {
+            image::codecs::jpeg::JpegDecoder::new(std::io::Cursor::new(jpeg))
+                .unwrap()
+                .icc_profile()
+                .unwrap()
+        };
+        // CMYK 源：解码成 RGB 输出，CMYK 配置文件对不上 3 通道，不能贴。
+        let cmyk_profile = fake_icc(b"CMYK");
+        let cmyk: Vec<u8> = (0..200u32 * 300 * 4).map(|i| (i % 256) as u8).collect();
+        let mut src = Vec::new();
+        let mut enc = jpeg_encoder::Encoder::new(&mut src, 95);
+        enc.add_icc_profile(&cmyk_profile).unwrap();
+        enc.encode(&cmyk, 200, 300, jpeg_encoder::ColorType::Cmyk)
+            .unwrap();
+        assert_eq!(icc_of(&src).as_deref(), Some(&cmyk_profile[..]));
+        let hq = fit_jpeg_hq(&src, 100, 150, 90, resample::Filter::Box, &[]).unwrap();
+        let standard = fit_jpeg(&src, 100, 150, 90).unwrap();
+        for out in [hq, standard] {
+            assert_eq!(icc_of(&out), None);
+        }
+        // 灰度源配了 RGB 配置文件（声明与像素不符的坏文件）：输出单通道，同样不贴。
+        let rgb_profile = fake_icc(b"RGB ");
+        let gray: Vec<u8> = (0..200u32 * 300).map(|i| (i % 256) as u8).collect();
+        let mut src = Vec::new();
+        let mut enc = jpeg_encoder::Encoder::new(&mut src, 95);
+        enc.add_icc_profile(&rgb_profile).unwrap();
+        enc.encode(&gray, 200, 300, jpeg_encoder::ColorType::Luma)
+            .unwrap();
+        let out = fit_jpeg_hq(&src, 100, 150, 90, resample::Filter::Box, &[]).unwrap();
+        assert_eq!(icc_of(&out), None);
+        // RGB 源 + RGB 配置文件照常贴。
+        let rgb: Vec<u8> = (0..200u32 * 300 * 3).map(|i| (i * 7 % 256) as u8).collect();
+        let mut src = Vec::new();
+        let mut enc = jpeg_encoder::Encoder::new(&mut src, 95);
+        enc.add_icc_profile(&rgb_profile).unwrap();
+        enc.encode(&rgb, 200, 300, jpeg_encoder::ColorType::Rgb)
+            .unwrap();
+        let out = fit_jpeg(&src, 100, 150, 90).unwrap();
+        assert_eq!(icc_of(&out).as_deref(), Some(&rgb_profile[..]));
+    }
+
+    #[test]
+    fn fit_jpeg_hq_downscales_and_upscales_grayscale() {
+        let src = image::GrayImage::from_fn(300, 400, |x, y| {
+            image::Luma([((x * 7 + y * 3) % 256) as u8])
+        });
+        let png = encode(
+            image::DynamicImage::ImageLuma8(src),
+            image::ImageFormat::Png,
+        );
+        let text: &[[f32; 4]] = &[[0.1, 0.1, 0.4, 0.5]];
+        for (w, h, filter, boxes) in [
+            (150, 200, resample::Filter::Box, &[][..]),
+            (150, 200, resample::Filter::Box, text),
+            (600, 800, resample::Filter::CatmullRom, &[][..]),
+            (450, 600, resample::Filter::Lanczos3, text),
+        ] {
+            let jpeg = fit_jpeg_hq(&png, w, h, 92, filter, boxes).unwrap();
+            let out = image::load_from_memory_with_format(&jpeg, image::ImageFormat::Jpeg).unwrap();
+            assert_eq!((out.width(), out.height()), (w, h));
+            assert_eq!(out.color(), image::ColorType::L8);
+        }
+    }
+
+    #[test]
+    fn fit_jpeg_hq_bounds_upscale_and_refuses_alpha_and_garbage() {
+        let png = encode(
+            image::DynamicImage::ImageLuma8(image::GrayImage::new(40, 30)),
+            image::ImageFormat::Png,
+        );
+        assert!(fit_jpeg_hq(&png, 160, 120, 90, resample::Filter::CatmullRom, &[]).is_ok());
+        assert_eq!(
+            fit_jpeg_hq(&png, 161, 120, 90, resample::Filter::CatmullRom, &[]),
+            Err(status::INVALID_ARGUMENT)
+        );
+        let rgba = encode(
+            image::DynamicImage::ImageRgba8(image::RgbaImage::new(40, 40)),
+            image::ImageFormat::Png,
+        );
+        assert_eq!(
+            fit_jpeg_hq(&rgba, 20, 20, 90, resample::Filter::Box, &[]),
+            Err(status::BAD_INPUT)
+        );
+        assert_eq!(
+            fit_jpeg_hq(b"not an image", 20, 20, 90, resample::Filter::Box, &[]),
+            Err(status::BAD_INPUT)
+        );
+    }
+
+    #[test]
+    fn fit_jpeg_hq_ffi_rejects_unknown_filter_and_flags() {
+        let png = encode(
+            image::DynamicImage::ImageLuma8(image::GrayImage::new(40, 30)),
+            image::ImageFormat::Png,
+        );
+        let mut out_ptr: *mut u8 = std::ptr::null_mut();
+        let mut out_len: usize = 0;
+        let boxes: [f32; 8] = [0.1, 0.1, 0.5, 0.5, 0.6, 0.2, 0.9, 0.8];
+        let call = |filter: u32, flags: u32, out_ptr: &mut *mut u8, out_len: &mut usize| unsafe {
+            ffc_image_fit_jpeg_hq(
+                png.as_ptr(),
+                png.len(),
+                20,
+                15,
+                90,
+                filter,
+                flags,
+                boxes.as_ptr(),
+                2,
+                out_ptr,
+                out_len,
+            )
+        };
+        assert_eq!(
+            call(9, 0, &mut out_ptr, &mut out_len),
+            status::INVALID_ARGUMENT
+        );
+        assert_eq!(
+            call(0, 2, &mut out_ptr, &mut out_len),
+            status::INVALID_ARGUMENT
+        );
+        assert_eq!(
+            call(0, FIT_HQ_TEXT_AWARE_GAMMA, &mut out_ptr, &mut out_len),
+            status::OK
+        );
+        assert!(out_len > 0);
+        crate::ffc_free_bytes(out_ptr, out_len);
+        // 有框数却给空指针 / 框数超上限
+        let null_boxes = unsafe {
+            ffc_image_fit_jpeg_hq(
+                png.as_ptr(),
+                png.len(),
+                20,
+                15,
+                90,
+                0,
+                FIT_HQ_TEXT_AWARE_GAMMA,
+                std::ptr::null(),
+                1,
+                &mut out_ptr,
+                &mut out_len,
+            )
+        };
+        assert_eq!(null_boxes, status::NULL_ARGUMENT);
+        let too_many = unsafe {
+            ffc_image_fit_jpeg_hq(
+                png.as_ptr(),
+                png.len(),
+                20,
+                15,
+                90,
+                0,
+                FIT_HQ_TEXT_AWARE_GAMMA,
+                boxes.as_ptr(),
+                FIT_HQ_MAX_TEXT_BOXES + 1,
+                &mut out_ptr,
+                &mut out_len,
+            )
+        };
+        assert_eq!(too_many, status::INVALID_ARGUMENT);
     }
 
     #[test]

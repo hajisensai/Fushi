@@ -351,6 +351,74 @@ void main() {
     expect(bookSourceRelPath(libraryRoot.path, libraryRoot.path), '.');
   });
 
+  // 漫画首扫逐卷落盘此前每卷整份重写索引（N 卷 = N 次逐渐变大的 JSON，平方增长）。
+  // 逐条日志：每条一行，load 合并、save 并进快照并清空。
+  group('逐条日志（journal）', () {
+    test('只写日志不 save：重新 load 能读回认领 / 负向结果 / 签名，快照键不被重写', () async {
+      final BookSourceIndex index = BookSourceIndex.empty(sourceId)
+        ..put('base.cbz', 'uid-base');
+      await index.save(db);
+      final String? snapshot = await db.getPref(
+        bookSourceScanIndexPrefKey(sourceId),
+      );
+
+      index
+        ..put('a.cbz', 'uid-a')
+        ..putSignature('a.cbz', 'sig-a')
+        ..reject('dict.zip', 's:1|m:2');
+      await index.journal(db, 'a.cbz');
+      await index.journal(db, 'dict.zip');
+
+      expect(
+        await db.getPref(bookSourceScanIndexPrefKey(sourceId)),
+        snapshot,
+        reason: '逐条落盘不重写整份快照',
+      );
+      final BookSourceIndex loaded = await BookSourceIndex.load(db, sourceId);
+      expect(loaded.uidOf('base.cbz'), 'uid-base');
+      expect(loaded.uidOf('a.cbz'), 'uid-a');
+      expect(loaded.signatureOf('a.cbz'), 'sig-a');
+      expect(loaded.isRejected('dict.zip', 's:1|m:2'), isTrue);
+      expect(loaded.uidOf('dict.zip'), isNull);
+    });
+
+    test('save 把日志并进快照并清空日志；clear 连日志一起删', () async {
+      final BookSourceIndex index = BookSourceIndex.empty(sourceId)
+        ..put('a.cbz', 'uid-a');
+      await index.journal(db, 'a.cbz');
+      final String journalPrefix = bookSourceScanJournalPrefKeyPrefix(sourceId);
+      expect(await db.getPrefsByPrefix(journalPrefix), hasLength(1));
+
+      await index.save(db);
+      expect(await db.getPrefsByPrefix(journalPrefix), isEmpty);
+      expect(
+        (await BookSourceIndex.load(db, sourceId)).uidOf('a.cbz'),
+        'uid-a',
+      );
+
+      index.put('b.cbz', 'uid-b');
+      await index.journal(db, 'b.cbz');
+      await BookSourceIndex.clear(db, sourceId);
+      expect(await db.getPrefsByPrefix(journalPrefix), isEmpty);
+      expect((await BookSourceIndex.load(db, sourceId)).isEmpty, isTrue);
+    });
+
+    test('来源 1 的日志不串到来源 12（前缀以 ~ 收尾）', () async {
+      final BookSourceIndex one = BookSourceIndex.empty(1)..put('x.cbz', 'u1');
+      await one.journal(db, 'x.cbz');
+      final BookSourceIndex twelve = BookSourceIndex.empty(12)
+        ..put('y.cbz', 'u12');
+      await twelve.journal(db, 'y.cbz');
+
+      final BookSourceIndex loadedOne = await BookSourceIndex.load(db, 1);
+      expect(loadedOne.entries, <String, String>{'x.cbz': 'u1'});
+      await loadedOne.save(db);
+      expect((await BookSourceIndex.load(db, 12)).entries, <String, String>{
+        'y.cbz': 'u12',
+      }, reason: '来源 1 整份保存清日志时不能顺手删掉来源 12 的');
+    });
+  });
+
   group('负向结果表（不是本类媒体的源）', () {
     test('随索引落库读回；旧版只有 entries 的 JSON 读成空表', () async {
       final BookSourceIndex index = BookSourceIndex.empty(sourceId)

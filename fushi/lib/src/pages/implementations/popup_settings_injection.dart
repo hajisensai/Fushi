@@ -813,6 +813,8 @@ String buildPopupFetchedEntriesJs({
   required bool idle,
   required String afterEntriesJs,
 }) {
+  final String scheme = Uri.parse(url).scheme.toLowerCase();
+  final bool httpTransport = scheme == 'http' || scheme == 'https';
   return '''
     (function(){
       var token = $renderToken;
@@ -824,8 +826,18 @@ ${_popupEntriesMetaJs(result, pending: pending, idle: idle)}
       }
       fetch(${jsonEncode(url)}, { cache: 'no-store', credentials: 'omit' })
         .then(function(r){
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          return r.text();
+          // BUG-4956：iOS / macOS 的词条 URL 是自定义 scheme，WKURLSchemeHandler
+          // 交回的是非 HTTP 的 URLResponse，fetch 拿到的 status 恒为 0、ok 恒为
+          // false（正文照常送达）。非 HTTP 传输没有状态码，只能以「有没有正文」
+          // 判成败；http(s) 仍按状态码判。
+          var httpTransport = $httpTransport;
+          if (httpTransport ? !r.ok : r.status !== 0 && !r.ok) {
+            throw new Error('HTTP ' + r.status);
+          }
+          return r.text().then(function(text){
+            if (!httpTransport && !text) throw new Error('empty response');
+            return text;
+          });
         })
         .then(function(text){
           var entries;

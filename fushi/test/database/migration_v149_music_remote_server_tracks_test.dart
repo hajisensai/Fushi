@@ -60,7 +60,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 159);
+    expect(migrated.schemaVersion, 166);
     final MusicRemoteTrackRow old = (await migrated.getMusicRemoteTrack(
       'srv-old',
     ))!;
@@ -94,7 +94,7 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 159);
+    expect(probe.select('PRAGMA user_version').first.values.first, 166);
     expect(
       columnsOf(probe),
       containsAll(<String>['cover_ref', 'album_id', 'artist_refs']),

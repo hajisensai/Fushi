@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:fushi_engine/epub/epub_importer.dart' show EpubImporter;
@@ -35,6 +36,11 @@ class TextToEpub {
   }
 
   /// Reads [file], detects encoding, converts content to EPUB bytes.
+  ///
+  /// 解码留在调用方 isolate（平台字符集检测器只装配在主 isolate；超过 8 KB 的
+  /// 本地编码解码自己会进后台 isolate），切章 + XHTML 拼装 + ZIP 压缩这段与输入
+  /// 大小成正比的同步重活交给 [convertTextInBackground]，几 MB 的 TXT 导入时
+  /// UI isolate 不再整段卡住。
   static Future<Uint8List> convert({
     required File file,
     required String title,
@@ -42,13 +48,30 @@ class TextToEpub {
   }) async {
     final String content = await readTextWithEncoding(file);
     final String ext = file.path.split('.').last.toLowerCase();
-    return convertText(
+    return convertTextInBackground(
       content: content,
       title: title,
       author: author,
       extension: ext,
     );
   }
+
+  /// [convertText] 放到一次性后台 isolate 里跑。输出与 [convertText] 逐字节
+  /// 相同（同一个函数），产物经 `Isolate.exit` 交回、不再复制一遍。
+  static Future<Uint8List> convertTextInBackground({
+    required String content,
+    required String title,
+    String? author,
+    String extension = 'txt',
+  }) => Isolate.run<Uint8List>(
+    () => convertText(
+      content: content,
+      title: title,
+      author: author,
+      extension: extension,
+    ),
+    debugName: 'TextToEpub.convert',
+  );
 
   /// Converts in-memory [content] (already decoded, e.g. pasted from the
   /// clipboard) to EPUB bytes. [extension] picks the parser exactly like the

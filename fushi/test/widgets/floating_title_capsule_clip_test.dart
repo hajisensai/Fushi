@@ -42,35 +42,34 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets('BUG-2977 标题胶囊高 = kFushiPageChromeExtent 且完整落在顶栏内', (
+  // 2026-11-15 所有者「二级页还是胶囊」：FushiAppBar 的 M3E 分支改成二级页
+  // 现行页头的一行（返回裸图标 + 页头大字页名 + 平铺裸图标动作），不再装
+  // 标题胶囊 / 返回圆。BUG-2977 守的「标题不被工具栏裁掉」照旧守：页名完整
+  // 落在顶栏内、栏不裁。
+  testWidgets('BUG-2977 顶栏不再装标题胶囊 / 返回圆，页名完整落在顶栏内', (
     WidgetTester tester,
   ) async {
     await pumpBar(tester, const Text('搜索字幕'));
-    final Finder capsule = find.byType(FushiPageChromeTitle);
-    expect(capsule, findsOneWidget);
-    final Rect capsuleRect = tester.getRect(capsule);
+    expect(find.byType(FushiPageChromeTitle), findsNothing);
+    expect(find.byType(FushiPageChromeCircle), findsNothing);
+    final Rect titleRect = tester.getRect(find.text('搜索字幕'));
     final Rect barRect = tester.getRect(find.byType(AppBar));
-    expect(capsuleRect.height, moreOrLessEquals(_kScaledChromeExtent));
-    expect(capsuleRect.top, greaterThanOrEqualTo(barRect.top));
-    expect(capsuleRect.bottom, lessThanOrEqualTo(barRect.bottom));
-
-    final Finder circle = find.byType(FushiPageChromeCircle);
-    expect(circle, findsOneWidget);
-    final Rect circleRect = tester.getRect(circle);
-    expect(circleRect.width, moreOrLessEquals(_kScaledChromeExtent));
-    expect(circleRect.height, moreOrLessEquals(_kScaledChromeExtent));
-    expect(tester.getRect(circle).bottom, lessThanOrEqualTo(barRect.bottom));
+    expect(titleRect.top, greaterThanOrEqualTo(barRect.top));
+    expect(titleRect.bottom, lessThanOrEqualTo(barRect.bottom));
+    final Rect backRect = tester.getRect(find.byType(IconButton));
+    expect(backRect.bottom, lessThanOrEqualTo(barRect.bottom));
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('BUG-2977 调用方大行高 / 副标题都撑不高标题胶囊', (WidgetTester tester) async {
+  testWidgets('BUG-2977 调用方大行高撑不出顶栏；副标题胶囊本体仍定高', (WidgetTester tester) async {
     await pumpBar(
       tester,
       const Text('作品资料', style: TextStyle(fontSize: 22, height: 2.4)),
     );
+    expect(tester.takeException(), isNull);
     expect(
-      _screenHeight(tester, find.byType(FushiPageChromeTitle)),
-      moreOrLessEquals(_kScaledChromeExtent),
+      tester.getRect(find.text('作品资料')).bottom,
+      lessThanOrEqualTo(tester.getRect(find.byType(AppBar)).bottom + 0.5),
     );
 
     await tester.pumpWidget(
@@ -92,7 +91,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('BUG-2977 悬浮顶栏不再把工具栏裁在 toolbarHeight 里（投影不被切平）', (
+  testWidgets('BUG-2977 悬浮顶栏不再把工具栏裁在 toolbarHeight 里', (
     WidgetTester tester,
   ) async {
     await pumpBar(tester, const Text('自定义主题'));
@@ -159,7 +158,7 @@ void main() {
       }
     });
 
-    testWidgets('HBK-AUDIT-007 字体 ${scale}x：AppBar 槽位里标题胶囊不被裁', (
+    testWidgets('HBK-AUDIT-007 字体 ${scale}x：AppBar 页名封顶在栏内不溢出', (
       WidgetTester tester,
     ) async {
       tester.view.padding = const FakeViewPadding(top: 72);
@@ -187,14 +186,12 @@ void main() {
       );
       await tester.pump();
       expect(tester.takeException(), isNull);
-      final Rect capsuleRect = tester.getRect(
-        find.byType(FushiPageChromeTitle),
-      );
+      expect(find.byType(FushiPageChromeTitle), findsNothing);
+      final Rect titleRect = tester.getRect(find.text('AI 下视频'));
       final Rect barRect = tester.getRect(find.byType(AppBar));
-      expect(capsuleRect.height, moreOrLessEquals(_kScaledChromeExtent));
       // 安全区（状态栏）之下、栏底之上。
-      expect(capsuleRect.top, greaterThanOrEqualTo(barRect.top + 24));
-      expect(capsuleRect.bottom, lessThanOrEqualTo(barRect.bottom));
+      expect(titleRect.top, greaterThanOrEqualTo(barRect.top + 24));
+      expect(titleRect.bottom, lessThanOrEqualTo(barRect.bottom + 0.5));
     });
   }
 

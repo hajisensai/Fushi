@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart'
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart'
     show MissingPluginException, PlatformException;
-import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/media/import/external_storage_access.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -60,7 +60,7 @@ bool get canRelistPickedDirectoryInPlace =>
 /// 那里空无一物、也没有「使用此文件夹」按钮，用户一个目录都选不了（BUG-2646）。
 Future<String?> pickRealDirectoryPath({
   required BuildContext context,
-  required AppModel appModel,
+  required ExternalStorageAccess appModel,
   String? dialogTitle,
   String? initialDirectory,
 }) async {
@@ -78,8 +78,7 @@ Future<String?> pickRealDirectoryPath({
 
   // 安卓：先确保 MANAGE_EXTERNAL_STORAGE（全文件访问）已授权——下游 dart:io 读盘需要。
   await appModel.requestExternalStoragePermissions();
-  final bool granted = await appModel.platformServices.permission
-      .hasExternalStoragePermission();
+  final bool granted = await appModel.hasExternalStoragePermission();
   if (!granted) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -159,7 +158,7 @@ const String kImportStagingDirName = 'import_staging';
 /// 选择时由原生先删后建，不会越积越多。
 Future<PickedImportDirectory?> pickImportDirectory({
   required BuildContext context,
-  required AppModel appModel,
+  required ExternalStorageAccess appModel,
   required String stagingName,
   String? dialogTitle,
   String? initialDirectory,
@@ -220,7 +219,7 @@ Future<PickedImportDirectory?> pickImportDirectory({
 /// （任意文件，用于视频）。原生 SAF 选到的文件若带过滤集，则按扩展名在 Dart 端校验。
 Future<String?> pickRealFilePath({
   required BuildContext context,
-  required AppModel appModel,
+  required ExternalStorageAccess appModel,
   Set<String>? allowedExtensions,
 }) async {
   try {
@@ -282,7 +281,7 @@ class PickedFilePath {
 /// 出处的薄封装），差别只在返回类型。
 Future<PickedFilePath?> pickRealFilePathDetailed({
   required BuildContext context,
-  required AppModel appModel,
+  required ExternalStorageAccess appModel,
   Set<String>? allowedExtensions,
 }) async {
   // 桌面（Windows/macOS/Linux）：`pickFiles()` 返回真实路径、不复制。
@@ -298,8 +297,7 @@ Future<PickedFilePath?> pickRealFilePathDetailed({
 
   // 安卓：先尝试确保 MANAGE_EXTERNAL_STORAGE（全文件访问）已授权。
   await appModel.requestExternalStoragePermissions();
-  final bool granted = await appModel.platformServices.permission
-      .hasExternalStoragePermission();
+  final bool granted = await appModel.hasExternalStoragePermission();
   if (!granted) {
     // 降级逃生口：无全文件访问权限时回退 file_picker（仍复制到 cache 但可用）。
     // 这条路径是 cache 临时副本，出处必须如实标 false——调用方据此禁掉引用。
@@ -526,7 +524,7 @@ String _extensionOf(String nameOrPath) =>
 /// 这里省下的那一次空列表分配，换来的是四个调用点各自加一圈判空补丁——别改回去。
 Future<List<String>> pickRealFilePaths({
   required BuildContext context,
-  required AppModel appModel,
+  required ExternalStorageAccess appModel,
   Set<String>? allowedExtensions,
 }) async {
   if (defaultTargetPlatform == TargetPlatform.android) {

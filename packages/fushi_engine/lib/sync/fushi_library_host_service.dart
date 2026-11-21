@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/dandanplay_file_key.dart'
     show DandanplayFileKey;
+import 'package:fushi_engine/models/local_audio_content_id.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
@@ -89,6 +90,15 @@ const String kVideoFingerprintReasonNotFound = 'not_found';
 /// [kVideoFingerprintUnavailableStatus] 的 reason：文件读不了 / 算的期间被改写。
 const String kVideoFingerprintReasonUnreadable = 'unreadable';
 
+/// `/fingerprint` 的「不等」查询参数（拍板台 left3657）：带 `wait=0` 时 host 不当场
+/// 整文件哈希——已算过（内存 / 落盘缓存，含后台预热的）回 200 + 指纹；还没算过回
+/// [kVideoFingerprintPendingStatus] 并在后台开算。卡片回跳用它，不让用户干等几十秒。
+/// 老 host 不认这个参数，照旧当场算完再答（与改动前一致）。
+const String kVideoFingerprintWaitQueryParam = 'wait';
+
+/// `/fingerprint?wait=0` 时「还没算好、已在后台开算」的状态码（拍板台 left3657）。
+const int kVideoFingerprintPendingStatus = 202;
+
 // ── 改名前的旧 header 名（Hibiki → Fushi，2026-10）─────────────────────────────
 //
 // 互联两端可能跑不同版本：改名前的 client / host 只认 `X-Hibiki-*`。旧名照样**发**
@@ -160,21 +170,50 @@ SyncKeyDiff computeKeyUnionDiff({
 
 // ── 本地音频 ──────────────────────────────────────────────────────────────────
 
-/// host 实时本地音频来源的清单条目（键 = displayName）。
+/// host 实时本地音频来源的清单条目。
 ///
-/// [displayName] 是用户设置的显示名，用作跨设备 union-key（与 orchestrator
-/// `kSyncLocalAudioNamespace` 的资产名语义一致）。
+/// 跨设备身份是 [contentId]（库的内容指纹，拍板 pr3481）：同一份库在两端名字
+/// 不同也认作同一份，名字相同而内容不同则是两份。[displayName] 只用于展示，以及
+/// 对端是旧版本（清单里没有 `contentId`）时退回按名匹配。
+///
+/// 单项端点 `/api/library/localaudio/<key>` 的 key：新版本 host 先按 contentId
+/// 认、再按 displayName 认，旧版本 host 只认 displayName。
 class RemoteLocalAudioInfo {
-  const RemoteLocalAudioInfo({required this.displayName});
+  const RemoteLocalAudioInfo({required this.displayName, this.contentId});
 
   final String displayName;
+  final String? contentId;
+
+  /// 向这台 host 请求这份库时用的 key：清单里给了合格的 contentId 就用它（不受
+  /// 撞名影响），否则（旧 host）只能用 displayName。
+  String get key => isLocalAudioContentId(contentId) ? contentId! : displayName;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'displayName': displayName,
+    'contentId': ?contentId,
   };
 
-  static RemoteLocalAudioInfo fromJson(Map<String, Object?> json) =>
-      RemoteLocalAudioInfo(displayName: json['displayName']?.toString() ?? '');
+  static RemoteLocalAudioInfo fromJson(Map<String, Object?> json) {
+    final Object? id = json['contentId'];
+    return RemoteLocalAudioInfo(
+      displayName: json['displayName']?.toString() ?? '',
+      contentId: id is String && isLocalAudioContentId(id) ? id : null,
+    );
+  }
+}
+
+/// `/api/capabilities` 的 `liveLibrary` 里声明「本地音频清单带内容身份、单项端点
+/// 认 contentId」的能力位（拍板 pr3481）。老 host 无此位 → client 只能按显示名
+/// 匹配，并在同步报告里提示升级对端。
+const String kLiveLibraryLocalAudioContentIdCapability = 'localAudioContentId';
+
+/// [capabilities]（`GET /api/capabilities` 的解码结果，老 host 为 null）是否声明
+/// [kLiveLibraryLocalAudioContentIdCapability]。
+bool interconnectHostReportsLocalAudioContentId(Object? capabilities) {
+  if (capabilities is! Map) return false;
+  final Object? live = capabilities['liveLibrary'];
+  if (live is! Map) return false;
+  return live[kLiveLibraryLocalAudioContentIdCapability] == true;
 }
 
 /// 旧名兼容：本地音频 diff 已并入 [SyncKeyDiff]。
@@ -350,10 +389,15 @@ abstract interface class VideoSubtitleDefaultHost {
   /// 把 [subtitleFile]（格式 [format]：srt / ass / ssa / vtt）落成视频 [id] 的默认
   /// sidecar 并重解析 cue，返回实际落盘的后缀。未知视频 / 视频无本地文件抛
   /// [StateError]；[format] 不是字幕格式抛 [ArgumentError]。
+  ///
+  /// [episodeIndex]（播放列表下标，与 `?episode=` 同口径）> 0 时落到那一集文件旁
+  /// （capabilities 的 `liveLibrary.videoSubtitleDefaultEpisode`）；那一集不存在 /
+  /// 没有本地文件同样抛 [StateError]。
   Future<String> importDefaultVideoSubtitle(
     File subtitleFile, {
     required String id,
     required String format,
+    int episodeIndex = 0,
   });
 }
 
@@ -3438,23 +3482,24 @@ abstract class FushiLibraryHostService {
 
   // ── 本地音频 ───────────────────────────────────────────────────────────────
 
-  /// host 当前本地音频来源清单（从已注入的 localAudioEntries 取 displayName）。
+  /// host 当前本地音频来源清单（displayName + 内容身份 contentId）。
   Future<List<RemoteLocalAudioInfo>> listLocalAudio();
 
-  /// 即时把 displayName 为 [displayName] 的本地音频库打包成临时文件，返回该文件。
+  /// 即时把 [key] 指向的本地音频库打包成临时文件，返回该文件。[key] 先按内容
+  /// 身份 contentId 认、再按 displayName 认（旧版本客户端只会传 displayName）。
   /// 调用方负责删除返回的临时文件（及其父临时目录）。
-  /// [displayName] 含路径穿越字符时抛 [ArgumentError]；
+  /// [key] 含路径穿越字符时抛 [ArgumentError]；
   /// 找不到该来源或其 DB 文件不存在时抛 [StateError]。
-  Future<File> exportLocalAudio(String displayName);
+  Future<File> exportLocalAudio(String key);
 
   /// 把本地音频包文件导入 host（解包 + 注册回调）。
   /// 实现应调用 [onLocalAudioImported] 回调完成 native 注册；
   /// 回调为 null 时抛 [UnsupportedError]。
   Future<void> importLocalAudio(File packageFile);
 
-  /// 从 host 删除 displayName 为 [displayName] 的本地音频来源。
-  /// [displayName] 含路径穿越字符时抛 [ArgumentError]。
-  Future<void> deleteLocalAudio(String displayName);
+  /// 从 host 删除 [key] 指向的本地音频来源（同 [exportLocalAudio]：先按 contentId
+  /// 认、再按 displayName 认）。[key] 含路径穿越字符时抛 [ArgumentError]。
+  Future<void> deleteLocalAudio(String key);
 
   // ── 有声书包 ──────────────────────────────────────────────────────────────
 
@@ -3844,6 +3889,53 @@ abstract interface class VideoDiscShareHost {
 
 /// `/api/capabilities` 的 `liveLibrary` 里声明 [VideoClipExportHost] 的能力位。
 const String kVideoClipExportCapability = 'videoClipExport';
+
+/// `/api/capabilities` 的 `liveLibrary` 里声明 [VideoDiscTitleAudioHost] 的能力位：
+/// `clipaudio` 认 `?discTitle=`。老 host 无此字段 → client 不带 `discTitle` 请求（老 host
+/// 不认它，会照 `<id>` 那一行裁，拿回的是另一条 title 的音频）。
+const String kVideoClipAudioDiscTitleCapability = 'videoClipAudioDiscTitle';
+
+/// `/api/capabilities` 的 `liveLibrary` 里声明「`clipaudio?discTitle=` 认多角度 title 的
+/// 角度成员路径（`BDMV/PLAYLIST/00001.a2.mpls`，见 `bluray_angle.dart`）、按该角度裁」的
+/// 能力位。老 host 无此字段 → client 不发角度路径（老 host 认不出这个虚拟路径，只会 404）。
+const String kVideoClipAudioDiscTitleAngleCapability =
+    'videoClipAudioDiscTitleAngle';
+
+/// `/api/capabilities` 的 `liveLibrary` 里声明「`clipaudio?discTitle=` 认 DVD title
+/// （`VIDEO_TS/TITLE_nn.dvdtitle`，`<id>` 是同一张 DVD 上的行）、经 `dvdvideo` demuxer
+/// 按 title 裁」的能力位。老 host 无此字段 → client 不发 DVD title（老 host 判它读不到）。
+const String kVideoClipAudioDiscTitleDvdCapability =
+    'videoClipAudioDiscTitleDvd';
+
+/// `/api/capabilities` 的 `liveLibrary` 里声明「`clipaudio?discTitle=` 认 DVD 多角度 title
+/// 的角度成员路径（`VIDEO_TS/TITLE_nn.aK.dvdtitle`，见 `dvd_angle.dart`）、按该角度裁」的
+/// 能力位。只声明了 [kVideoClipAudioDiscTitleDvdCapability] 与
+/// [kVideoClipAudioDiscTitleAngleCapability] 的 host 认不出这种形态（只会 404）→ client
+/// 不发。
+const String kVideoClipAudioDiscTitleDvdAngleCapability =
+    'videoClipAudioDiscTitleDvdAngle';
+
+/// host 端「按（盘, title）裁音频」的**可选**能力（远端原盘会话：盘在 host 上，会话里
+/// 正在看的 title 可能是库里没有行的特典 / 菜单 title）。与 [VideoClipExportHost] 同范式：
+/// server 用 `is` 探测，不实现 → `clipaudio?discTitle=` 404、能力位
+/// [kVideoClipAudioDiscTitleCapability] 为 false。
+abstract interface class VideoDiscTitleAudioHost {
+  /// 在 host 本地裁出视频 [id] 那一行所在蓝光盘上 [discTitle]（相对盘根，
+  /// `BDMV/PLAYLIST/<名>.mpls`）那条 title 的 `[startMs, endMs)` 音频，返回落在**独立
+  /// 临时目录**里的 aac 文件（调用方读完负责删该目录）。视频未知 / 不是蓝光行 / title
+  /// 不合法或本机读不到 / 区间非法 / ffmpeg 失败 → null。其余参数同
+  /// [FushiLibraryHostService.clipVideoAudio]。
+  Future<File?> clipVideoDiscTitleAudio(
+    String id, {
+    required String discTitle,
+    required int startMs,
+    required int endMs,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    int audioChannels = 1,
+    String audioBitrate = '64k',
+  });
+}
 
 /// host 端「替 client 裁出视频片段原料」的**可选**能力（反馈 6nBmSBj_2W：互联远端
 /// 视频的片段导出）。

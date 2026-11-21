@@ -33,10 +33,28 @@ class BlurayClipRef {
     required this.clipId,
     required this.inTimeTicks,
     required this.outTimeTicks,
+    this.angleClipIds = const <String>[],
   });
 
-  /// `CLIPINF`/`STREAM` 下的五位片段号，如 `00001`。
+  /// `CLIPINF`/`STREAM` 下的五位片段号，如 `00001`。这是第 1 个角度（角度下标 0）的
+  /// 片段。
   final String clipId;
+
+  /// 多角度 PlayItem 其余角度（角度下标 1 起）的片段号，按 MPLS 里的顺序。非多角度
+  /// PlayItem 为空。各角度共用本 PlayItem 的 IN/OUT（规范要求多角度片段时间轴一致），
+  /// 所以换角度只换片段、不动时间轴。
+  final List<String> angleClipIds;
+
+  /// 这个 PlayItem 的角度数（至少 1）。
+  int get angleCount => angleClipIds.length + 1;
+
+  /// 角度下标 [angleIndex]（0 起，与 libbluray 的 angle 同口径）播放的片段号。超出本
+  /// PlayItem 角度数时回到第 1 个角度——libbluray `_fill_clip` 也是这样处理只有部分
+  /// PlayItem 带多角度的播放列表。
+  String clipIdForAngle(int angleIndex) =>
+      angleIndex > 0 && angleIndex <= angleClipIds.length
+      ? angleClipIds[angleIndex - 1]
+      : clipId;
 
   /// 该段在**片段自己的**时间轴上的起止（45kHz ticks）。
   ///
@@ -194,6 +212,15 @@ class BlurayPlaylist {
       .where((BlurayStream s) => s.kind == BlurayStreamKind.subtitle)
       .toList(growable: false);
 
+  /// 播放列表的角度数：各 PlayItem 角度数的最大值（无多角度时为 1）。
+  int get angleCount {
+    int count = 1;
+    for (final BlurayClipRef clip in clips) {
+      if (clip.angleCount > count) count = clip.angleCount;
+    }
+    return count;
+  }
+
   /// 片段号序列——用来判「两条播放列表是不是同一份内容」。
   List<String> get clipIds =>
       clips.map((BlurayClipRef c) => c.clipId).toList(growable: false);
@@ -288,10 +315,27 @@ BlurayClipRef? _parsePlayItem(
   final int inTime = view.getUint32(base + 12);
   final int outTime = view.getUint32(base + 16);
   if (outTime <= inTime) return null;
+  // 16 位标志位：11 位保留 | 1 位 is_multi_angle | 4 位 connection_condition。多角度
+  // 块紧跟固定头：1B number_of_angles | 1B 标志 | 其余每个角度 10B
+  // （5B clip_id | 4B codec_id | 1B stc_id）。第一个角度就是固定头里的片段。
+  final List<String> angleClipIds = <String>[];
+  final int flags = view.getUint16(base + 9);
+  if (((flags >> 4) & 0x1) == 1) {
+    int p = base + 32;
+    if (p + 2 > end) return null;
+    final int angles = bytes[p];
+    p += 2;
+    for (int a = 1; a < angles; a++) {
+      if (p + 10 > end) return null;
+      angleClipIds.add(String.fromCharCodes(bytes, p, p + 5));
+      p += 10;
+    }
+  }
   return BlurayClipRef(
     clipId: clipId,
     inTimeTicks: inTime,
     outTimeTicks: outTime,
+    angleClipIds: List<String>.unmodifiable(angleClipIds),
   );
 }
 

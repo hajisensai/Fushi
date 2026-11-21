@@ -15,26 +15,36 @@
 //! - **不收通道**：`read` 登记在 `CHANNEL_TRANSPARENT`（store/ffi.rs）。新设备收段途中读到的投影不全，与以前 Drift
 //!   读到的一样，收尾后一致。
 //! - 结果表的列名就是下面各函数里写的名字；Dart 侧的读法在 packages/fushi_engine/lib/srs/srs_reads.dart。
+#[cfg(test)]
 use rusqlite::Connection;
+#[cfg(test)]
 use rusqlite::types::Value as Sv;
+#[cfg(test)]
 use serde_json::{Value, json};
 
+#[cfg(test)]
 use super::bulk::{self, KIND_I64, KIND_OPT_I64, KIND_OPT_STR, KIND_STR};
+#[cfg(test)]
 use super::sync2::sql;
 
+#[cfg(test)]
 type Files = Vec<(String, Vec<u8>)>;
 
 /// 单表结果在 `files` 里的名字。
+#[cfg(test)]
 const TABLE: &str = "t";
 
 /// 一条查询：SQL 文本 + 按序号绑定的参数（`?1` 起）。
+#[cfg(test)]
 struct Sel {
     sql: String,
     args: Vec<Sv>,
 }
 
+#[cfg(test)]
 impl Sel {
     /// `?1` = profile uid。
+    #[cfg(test)]
     fn of(profile: &str) -> Sel {
         Sel {
             sql: String::new(),
@@ -42,6 +52,7 @@ impl Sel {
         }
     }
 
+    #[cfg(test)]
     fn lib() -> Sel {
         Sel {
             sql: String::new(),
@@ -50,24 +61,29 @@ impl Sel {
     }
 
     /// 绑一个参数，返回它的占位符（`?N`）。
+    #[cfg(test)]
     fn bind(&mut self, v: Sv) -> String {
         self.args.push(v);
         format!("?{}", self.args.len())
     }
 
+    #[cfg(test)]
     fn text(&mut self, s: &str) -> String {
         self.bind(Sv::Text(s.to_owned()))
     }
 
+    #[cfg(test)]
     fn int(&mut self, n: i64) -> String {
         self.bind(Sv::Integer(n))
     }
 
+    #[cfg(test)]
     fn push(&mut self, s: &str) {
         self.sql.push_str(s);
     }
 
     /// 追加 ` AND <col> IN (<ids>)`（[ids] 是 ID 文本的 JSON 数组）。
+    #[cfg(test)]
     fn and_id_in(&mut self, col: &str, ids: &Value) {
         let p = self.text(&ids.to_string());
         self.sql.push_str(&format!(
@@ -75,6 +91,7 @@ impl Sel {
         ));
     }
 
+    #[cfg(test)]
     fn params(&self) -> Vec<&dyn rusqlite::ToSql> {
         self.args
             .iter()
@@ -83,6 +100,7 @@ impl Sel {
     }
 
     /// 跑完编码成一张列式表。[cols]：(结果列名, 类型)，与 SELECT 的列一一对应。
+    #[cfg(test)]
     fn table(&self, c: &Connection, cols: &[(&str, u32)]) -> Result<Vec<u8>, String> {
         let names: Vec<&str> = cols.iter().map(|(n, _)| *n).collect();
         let kinds: Vec<u32> = cols.iter().map(|(_, k)| *k).collect();
@@ -91,6 +109,7 @@ impl Sel {
     }
 
     /// 只有一行一列整数的查询。
+    #[cfg(test)]
     fn scalar(&self, c: &Connection) -> Result<i64, String> {
         c.prepare_cached(&self.sql)
             .map_err(sql)?
@@ -99,27 +118,33 @@ impl Sel {
     }
 }
 
+#[cfg(test)]
 fn opt_str<'a>(req: &'a Value, k: &str) -> Option<&'a str> {
     req.get(k).and_then(Value::as_str)
 }
 
+#[cfg(test)]
 fn need_str<'a>(req: &'a Value, k: &str) -> Result<&'a str, String> {
     opt_str(req, k).ok_or_else(|| format!("read: missing {k}"))
 }
 
+#[cfg(test)]
 fn opt_int(req: &Value, k: &str) -> Option<i64> {
     req.get(k).and_then(Value::as_i64)
 }
 
+#[cfg(test)]
 fn need_int(req: &Value, k: &str) -> Result<i64, String> {
     opt_int(req, k).ok_or_else(|| format!("read: missing {k}"))
 }
 
+#[cfg(test)]
 fn flag(req: &Value, k: &str) -> bool {
     req.get(k) == Some(&Value::Bool(true))
 }
 
 /// 请求里的数组参数（没给 / null = None；给了却不是数组是调用方的 bug）。
+#[cfg(test)]
 fn list<'a>(req: &'a Value, k: &str) -> Result<Option<&'a Value>, String> {
     match req.get(k) {
         None | Some(Value::Null) => Ok(None),
@@ -128,11 +153,13 @@ fn list<'a>(req: &'a Value, k: &str) -> Result<Option<&'a Value>, String> {
     }
 }
 
+#[cfg(test)]
 fn need_list<'a>(req: &'a Value, k: &str) -> Result<&'a Value, String> {
     list(req, k)?.ok_or_else(|| format!("read: missing {k}"))
 }
 
 /// 按请求的 `fields` 从 [all] 里挑列（缺省全部）。
+#[cfg(test)]
 fn pick<'a>(
     all: &'a [(&'a str, u32)],
     req: &Value,
@@ -155,12 +182,14 @@ fn pick<'a>(
     }
 }
 
+#[cfg(test)]
 fn single(files: &mut Files, table: Vec<u8>) -> Value {
     files.push((TABLE.to_owned(), table));
     json!({})
 }
 
 /// `read`：本 profile 的一条只读查询（请求的 `q` 是查询名）。
+#[cfg(test)]
 pub(crate) fn run(
     c: &Connection,
     profile: &str,
@@ -199,6 +228,7 @@ pub(crate) fn run(
 }
 
 /// `read_lib`：不针对单个 profile 的只读查询。
+#[cfg(test)]
 pub(crate) fn run_lib(c: &Connection, req: &Value, files: &mut Files) -> Result<Value, String> {
     let q = need_str(req, "q")?;
     Ok(match q {
@@ -213,6 +243,7 @@ pub(crate) fn run_lib(c: &Connection, req: &Value, files: &mut Files) -> Result<
 
 /// `entities {kind?, ids?, bare?, ordered?}`：身份记录（`id`, `kind`, `payload_json`；`bare` = 只要 `id`）。
 /// `ids` 给了按 ID 取（不存在 / 不属于本 profile 的不出现）；`ordered` = 按 ID 升序。
+#[cfg(test)]
 fn entities(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> {
     let ids = list(req, "ids")?;
     let cols: &[(&str, u32)] = if flag(req, "bare") {
@@ -244,6 +275,7 @@ fn entities(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, Strin
 }
 
 /// `entity_count {kind?, limit?}`：身份记录条数（`limit` 给了最多数到它：只问「有没有」时传 1）。
+#[cfg(test)]
 fn entity_count(c: &Connection, profile: &str, req: &Value) -> Result<i64, String> {
     let mut q = Sel::of(profile);
     q.push("SELECT COUNT(*) FROM (SELECT 1 FROM srs_entities WHERE profile_uid = srs_id(?1)");
@@ -261,6 +293,7 @@ fn entity_count(c: &Connection, profile: &str, req: &Value) -> Result<i64, Strin
 
 /// `has_user_data {builtins}`：本 profile 有没有 `builtins`（内置实体的 ID）之外的数据——别的身份记录，或任何
 /// 修改记录 / 复习日志 / 不认识的事件。
+#[cfg(test)]
 fn has_user_data(c: &Connection, profile: &str, req: &Value) -> Result<bool, String> {
     let mut q = Sel::of(profile);
     let builtins = q.text(&need_list(req, "builtins")?.to_string());
@@ -276,6 +309,7 @@ fn has_user_data(c: &Connection, profile: &str, req: &Value) -> Result<bool, Str
 
 // ------------------------------------------------------------------ 修改记录
 
+#[cfg(test)]
 const EDIT_COLS: [(&str, u32); 3] = [("e", KIND_STR), ("j", KIND_STR), ("st", KIND_OPT_I64)];
 
 /// `edits {kind, ids, key? | prefix?}`：一组实体的修改记录原文（canonical JSON）+ 服务器时刻（`e` 实体 ID, `j`, `st`）。
@@ -285,6 +319,7 @@ const EDIT_COLS: [(&str, u32); 3] = [("e", KIND_STR), ("j", KIND_STR), ("st", KI
 /// 没给 `prefix` 时同一实体的记录按落库顺序（rowid）回来：物化按记录的先后建字段表，字段的顺序就是它（以前 Drift 那句
 /// 不带 profile 条件、走 `idx_srs_field_edits_entity (entity_kind, entity_id)`，顺序是这个索引的顺序）。归属条件写成
 /// `+f.profile_uid`，规划器仍走那个索引，`ORDER BY` 不另排序。
+#[cfg(test)]
 fn edits(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> {
     let mut q = Sel::of(profile);
     let kind = q.text(need_str(req, "kind")?);
@@ -318,6 +353,7 @@ fn edits(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> 
 ///
 /// 条件用部分覆盖索引 `idx_srs_field_edits_history_from` 的同一句 WHERE；`+entity_kind` 不让规划器改挑
 /// `(entity_kind, entity_id)` 索引去扫全部卡片修改记录（BUG-3543）。命中的只有前身链接那几行，再逐行核对归属。
+#[cfg(test)]
 fn successors(c: &Connection, profile: &str) -> Result<Vec<u8>, String> {
     let mut q = Sel::of(profile);
     q.push(&format!(
@@ -331,6 +367,7 @@ fn successors(c: &Connection, profile: &str) -> Result<Vec<u8>, String> {
 /// 字段类别的筛选条件（SQL 布尔表达式）。类别表的唯一真相在 Dart（packages/fushi_srs `srsFieldClassRules`）：
 /// 它把「要哪几类」换算成每种实体的字段键清单交过来，这里只拼成条件。[rules] 每项 `{kind, keep: [键…]}`（只要
 /// 这些键）或 `{kind, drop: [键…]}`（除这些键以外都要）。
+#[cfg(test)]
 fn class_filter(rules: &Value) -> Result<String, String> {
     let quote = |s: &str| format!("'{}'", s.replace('\'', "''"));
     let keys = |v: &Value| -> String {
@@ -376,6 +413,7 @@ fn class_filter(rules: &Value) -> Result<String, String> {
 /// 被支配的记录落库时就删了，所以一个字段键上还留着 ≥ 2 条的才可能有冲突：先 GROUP BY 挑出这些字段键（m），
 /// 再按完整索引键逐个取记录。CROSS JOIN 钉死连接顺序——写成普通 JOIN 时 SQLite 把 e 放外层、按 profile_uid 扫
 /// 本 profile 全部修改记录再去探 m，只筛一个实体也付整表的代价（BUG-3548 / BUG-3947）。
+#[cfg(test)]
 fn conflict_edits(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> {
     let tracked = class_filter(req.get("rules").ok_or("read: missing rules")?)?;
     let mut q = Sel::of(profile);
@@ -410,6 +448,7 @@ fn conflict_edits(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>,
 
 /// `style_candidates {after, limit}`：笔记字段（`f/` 键）的修改记录里原文带内联 `<style>` 块的，按 rowid 游标取下
 /// 一批（`rid`, `id`, `json`）。存量样式去重的取数步（Dart `compactStoredStyles`）。
+#[cfg(test)]
 fn style_candidates(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> {
     let mut q = Sel::of(profile);
     let (after, limit) = (
@@ -430,6 +469,7 @@ fn style_candidates(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8
 
 /// `source_note_candidates {needle}`：字段（`f/` 键）的修改记录原文里出现 `needle` 的笔记 ID（去重；只是候选，
 /// 调用方再解析确认）。
+#[cfg(test)]
 fn source_note_candidates(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> {
     let mut q = Sel::of(profile);
     let like = q.text(&format!("%{}%", need_str(req, "needle")?));
@@ -444,6 +484,7 @@ fn source_note_candidates(c: &Connection, profile: &str, req: &Value) -> Result<
 /// `lapis_backfill {pairs, to? | notes?}`：旧 Lapis 迁移的补迁候选（笔记 ID）——来源字段键（`pairs` 每项
 /// `[来源键, 目标键]`）上有非空文本、目标键上却没有任何记录的笔记。`to` = 当前类型是它的未删除笔记里找；
 /// `notes` = 只在这些笔记里找。
+#[cfg(test)]
 fn lapis_backfill(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> {
     const HIT: &str = "e.field_key IN (SELECT src FROM pairs) \
          AND json_type(e.json, '$.v') = 'text' \
@@ -487,6 +528,7 @@ fn lapis_backfill(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>,
 // ------------------------------------------------------------------ 复习日志与服务器时刻
 
 /// `logs {cards}`：一组卡的全部复习日志原文 + 服务器时刻（`id`, `card_id`, `json`, `st`）。
+#[cfg(test)]
 fn logs(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> {
     let mut q = Sel::of(profile);
     q.push(
@@ -508,6 +550,7 @@ fn logs(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> {
 
 /// `anki_logs_at {at}`：Anki 导入的复习日志里发生时刻（= Anki revlog id）落在 `at` 的那些，连同日志所在卡此刻的
 /// 笔记与可见性（卡没有缓存行时两列为空）。走 `idx_srs_review_logs_profile_kind_time`（BUG-4254）。
+#[cfg(test)]
 fn anki_logs_at(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> {
     let mut q = Sel::of(profile);
     let at = q.text(&need_list(req, "at")?.to_string());
@@ -536,6 +579,7 @@ fn anki_logs_at(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, S
 /// `native_logs_near {at, win}`：原生（非 Anki 导入）评分类日志里发生时刻落在 `at` 任一值 ±`win` 毫秒内的那些
 /// （`id`, `json`）。导入器给「没有卡可比」的 Anki revlog 判重用（BUG-4657）：同一次复习是否等价由卡片历史内核判，
 /// 这里只按落库列粗筛。`at` 作驱动表逐个探 `idx_srs_review_logs_profile_kind_time`，窗重叠时 DISTINCT 去重。
+#[cfg(test)]
 fn native_logs_near(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> {
     let mut q = Sel::of(profile);
     let at = q.text(&need_list(req, "at")?.to_string());
@@ -551,6 +595,7 @@ fn native_logs_near(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8
 }
 
 /// `today_reviews {from, to}`：有效复习投影里落在 `[from, to)` 的评分复习：`{n, ms, again}`。
+#[cfg(test)]
 fn today_reviews(c: &Connection, profile: &str, req: &Value) -> Result<Value, String> {
     let (from, to) = (need_int(req, "from")?, need_int(req, "to")?);
     c.prepare_cached(
@@ -570,14 +615,30 @@ fn today_reviews(c: &Connection, profile: &str, req: &Value) -> Result<Value, St
     .map_err(sql)
 }
 
+/// 「这条日志是在 Fushi 里做的复习」的 SQL 条件（`col` 是日志 ID 列）：从 Anki 导入的复习日志 ID 是
+/// `UUIDv5(卡, anki-revlog/<revlog id>)`（`gen4_ids/rules.rs` `imported_revlog`，Dart `SrsIds` 同规则），fushi-ext
+/// 跨 profile 导入的重映射同样是 v5（`remapped_log`）；本机作答写 UUIDv7（Dart `uuidV7`）。规范 UUID 在库里存 16 字节
+/// （`store/ids.rs` `pack`），版本号是第 7 个字节的高 4 位。
+pub(crate) fn native_log_sql(col: &str) -> String {
+    format!(
+        "NOT (typeof({col}) = 'blob' AND length({col}) = 16 AND hex(substr({col}, 7, 1)) LIKE '5%')"
+    )
+}
+
 /// `reviewed_decks {before}`：有效复习投影里在 `before` 之前评过分的卡**现在**所在的牌组（去重、升序）。Dart 拿它判
-/// 「每日上限单位」改缺省之前就在用的存量牌组（`srsLimitUnitLegacyDecks`）：那之前的复习按旧口径（卡片数）计过上限。
+/// 「每日上限单位」的存量牌组（`SrsDbStore.limitUnitLegacyDecks`，`before` = 本机第一次跑懂单位的版本的时刻）：那之前
+/// 的复习是旧版按卡片数计上限时做的。从 Anki 导入的复习（[native_log_sql]）没受过 Fushi 的上限，不算。
+#[cfg(test)]
 fn reviewed_decks(c: &Connection, profile: &str, req: &Value) -> Result<Vec<String>, String> {
     let before = need_int(req, "before")?;
     let mut stmt = c
-        .prepare_cached(
-            "SELECT DISTINCT srs_idt(k.deck_id) AS d FROM srs_stat_reviews s              JOIN srs_cards_cache k ON k.id = s.card_id AND k.profile_uid = s.profile_uid              WHERE s.profile_uid = srs_id(?1) AND s.rating IS NOT NULL AND s.occurred_at < ?2 ORDER BY d",
-        )
+        .prepare_cached(&format!(
+            "SELECT DISTINCT srs_idt(k.deck_id) AS d FROM srs_stat_reviews s \
+             JOIN srs_cards_cache k ON k.id = s.card_id AND k.profile_uid = s.profile_uid \
+             WHERE s.profile_uid = srs_id(?1) AND s.rating IS NOT NULL AND s.occurred_at < ?2 AND {} \
+             ORDER BY d",
+            native_log_sql("s.log_id")
+        ))
         .map_err(sql)?;
     let rows = stmt
         .query_map(rusqlite::params![profile, before], |r| {
@@ -590,6 +651,7 @@ fn reviewed_decks(c: &Connection, profile: &str, req: &Value) -> Result<Vec<Stri
 /// `review_grid {resetMs}`：评分复习按（统计日, 小时）聚合的时长（`day` 纪元起的天数, `hour`, `ms`, `last` 最后
 /// 一次的时刻），时长为 0 的格子不出。本地时刻按日志自己记下的 UTC 偏移算，统计日在 `resetMs`（「今日」重置整点
 /// 的毫秒数）翻日；SQLite 整数除法向零取整，时刻都在纪元之后。
+#[cfg(test)]
 fn review_grid(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> {
     const LOCAL: &str = "(occurred_at + utc_offset_min * 60000)";
     let mut q = Sel::of(profile);
@@ -613,6 +675,7 @@ fn review_grid(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, St
 }
 
 /// `server_times {ids?}`：事件的服务器时刻（`id`, `st`；没有时刻的不出现）。`ids` 没给 = 本 profile 的全部。
+#[cfg(test)]
 fn server_times(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> {
     let mut q = Sel::of(profile);
     match list(req, "ids")? {
@@ -642,6 +705,7 @@ fn server_times(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, S
 /// - `ordered`：按 ID 升序。
 ///
 /// 整个 profile 全部卡的读用 `card_columns`（同一份列表）。
+#[cfg(test)]
 fn cards(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> {
     let cols = pick(&bulk::CARD_COLUMNS, req, "cards")?;
     let (ids, of_notes) = (list(req, "ids")?, list(req, "notes")?);
@@ -688,6 +752,7 @@ fn cards(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> 
 }
 
 /// 笔记缓存的列（`notes` 默认交回全部）。
+#[cfg(test)]
 const NOTE_COLUMNS: [(&str, u32); 13] = [
     ("id", KIND_STR),
     ("note_type_id", KIND_STR),
@@ -709,6 +774,7 @@ const NOTE_COLUMNS: [(&str, u32); 13] = [
 /// - `ids`：按笔记 ID 筛；`typeId`：当前类型是它的；`termKey`：词条键等于它的；
 /// - `alive`：只要未删除的；`pending`：只要有待裁决的；
 /// - `order`：`created_asc` / `created_desc`；`limit`（+ `offset`）：只取这一段。
+#[cfg(test)]
 fn notes(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> {
     let cols = pick(&NOTE_COLUMNS, req, "notes")?;
     let ids = list(req, "ids")?;
@@ -750,6 +816,7 @@ fn notes(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> 
 
 /// `note_type_counts`：每个笔记类型的未删除笔记数（`t` 类型 ID, `c`；按笔记当前类型计，走
 /// `idx_srs_notes_cache_type`）。
+#[cfg(test)]
 fn note_type_counts(c: &Connection, profile: &str) -> Result<Vec<u8>, String> {
     let mut q = Sel::of(profile);
     q.push(
@@ -760,6 +827,7 @@ fn note_type_counts(c: &Connection, profile: &str) -> Result<Vec<u8>, String> {
 }
 
 /// `pending_notes`：待裁决笔记数（走部分索引 `idx_srs_notes_cache_pending`，不读回行）。
+#[cfg(test)]
 fn pending_notes(c: &Connection, profile: &str) -> Result<i64, String> {
     let mut q = Sel::of(profile);
     q.push(
@@ -772,6 +840,7 @@ fn pending_notes(c: &Connection, profile: &str) -> Result<i64, String> {
 /// `media_refs {deletedBefore? | deletedAfter?}`：笔记缓存里非空的媒体引用列（`refs`：一条笔记一行，换行分隔的
 /// 文件名）。`deletedBefore` = 删除时刻不晚于它的已删笔记（过了保留期的回收候选）；否则是未删除的笔记，
 /// `deletedAfter` 给了再加上删除时刻晚于它的已删笔记（保留期内的）。
+#[cfg(test)]
 fn media_refs(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> {
     let mut q = Sel::of(profile);
     q.push("SELECT media_refs FROM srs_notes_cache WHERE profile_uid = srs_id(?1) AND ");
@@ -793,6 +862,7 @@ fn media_refs(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, Str
 
 /// `term_status {terms}`：词条键在 `terms` 里的未删除笔记的可见卡（查词时标词状态用，热路径：走
 /// `idx_srs_notes_cache_term`）。
+#[cfg(test)]
 fn term_status(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> {
     let mut q = Sel::of(profile);
     let terms = q.text(&need_list(req, "terms")?.to_string());
@@ -822,6 +892,7 @@ fn term_status(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, St
 
 /// `dup_groups`：同类型、同词条键、同读音键的未删除笔记有两条以上的那些笔记（`id`, `t` 类型, `k` 词条键,
 /// `r` 读音键, `c` 创建时刻, `s` 排序字段, `reps` 名下各卡复习次数之和）。分组与排除标过「不是重复」的在 Dart。
+#[cfg(test)]
 fn dup_groups(c: &Connection, profile: &str) -> Result<Vec<u8>, String> {
     let mut q = Sel::of(profile);
     q.push(
@@ -854,6 +925,7 @@ fn dup_groups(c: &Connection, profile: &str) -> Result<Vec<u8>, String> {
 /// `events {parts?, ordered?}`：本 profile 的全部事件原文，四张表：`entities`（`id`, `kind`, `payload_json`）、
 /// `edits` / `logs` / `unknown`（各一列 `json`）。`parts` 限定要哪几张（缺省全部）；`ordered` = 各按 ID 升序
 /// （备份合并 / profile 并入要确定的顺序）。
+#[cfg(test)]
 fn events(c: &Connection, profile: &str, req: &Value, files: &mut Files) -> Result<Value, String> {
     let order = if flag(req, "ordered") {
         " ORDER BY id"
@@ -903,6 +975,7 @@ fn events(c: &Connection, profile: &str, req: &Value, files: &mut Files) -> Resu
 
 /// `events_present {ids, ops?}`：`ids` 里已在本 profile 名下的事件 ID（四张事件表；可能重复）。`ops` = 连同步
 /// v2 的操作索引一起看（被支配而不在投影里的修改记录、被清除内容的日志也算在）。
+#[cfg(test)]
 fn events_present(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> {
     let mut q = Sel::of(profile);
     let ids = q.text(&need_list(req, "ids")?.to_string());
@@ -933,6 +1006,7 @@ fn events_present(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>,
 
 /// `profile_merges`：记着、还没做完的 profile 并入标记（`key`, `value`；键 = 前缀 + 旧 uid，见
 /// store/profile_data.rs `MERGE_MARKER_PREFIX`）。
+#[cfg(test)]
 fn profile_merges(c: &Connection) -> Result<Vec<u8>, String> {
     let mut q = Sel::lib();
     let like = q.text(&format!("{}%", super::profile_data::MERGE_MARKER_PREFIX));
@@ -943,6 +1017,7 @@ fn profile_merges(c: &Connection) -> Result<Vec<u8>, String> {
 }
 
 /// `user_note_count`：整个库（全部 profile）的用户笔记数（内置行——profile / 牌组 / 笔记类型——不算用户数据）。
+#[cfg(test)]
 fn user_note_count(c: &Connection) -> Result<i64, String> {
     let mut q = Sel::lib();
     q.push("SELECT COUNT(*) FROM srs_entities WHERE kind = 'note'");
@@ -950,6 +1025,7 @@ fn user_note_count(c: &Connection) -> Result<i64, String> {
 }
 
 /// `entity_owners`：有身份记录的 profile uid（`uid`）。
+#[cfg(test)]
 fn entity_owners(c: &Connection) -> Result<Vec<u8>, String> {
     let mut q = Sel::lib();
     q.push("SELECT DISTINCT profile_uid FROM srs_entities");

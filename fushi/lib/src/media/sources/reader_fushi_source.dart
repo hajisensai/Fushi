@@ -7,8 +7,10 @@ import 'package:path/path.dart' as p;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/media/audiobook/srt_book_missing_audio.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/mining/after_mining_popup_action.dart';
+import 'package:fushi/src/media/sources/book_cover_file_resolver.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_media_source.dart';
 import 'package:fushi/src/media/sources/reader_pdf_source.dart';
@@ -20,6 +22,7 @@ import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
+import 'package:fushi_engine/media/item_scrape/item_scrape_store.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_theme_host.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart'
@@ -110,6 +113,15 @@ final srtBooksProvider = FutureProvider<List<SrtBook>>((ref) {
   ref.watch(_srtBookUidsProvider);
   final db = ref.watch(appProvider).database;
   return SrtBookRepository(db).listAll();
+});
+
+/// 书架字幕书卡「音频文件丢失」的断链 uid 集合：随 [srtBooksProvider] 每出一份
+/// 新列表异步探一次，卡片 build 只查集合，不再逐卡同步探盘（gap-novelmisc-2）。
+final srtBookMissingAudioUidsProvider = FutureProvider<Set<String>>((
+  ref,
+) async {
+  final List<SrtBook> books = await ref.watch(srtBooksProvider.future);
+  return SrtBookMissingAudio.probeMissingUids(books);
 });
 
 /// 每本书的「最后阅读时间」（`reader_positions.updatedAt` 毫秒，key=书稳定身份：
@@ -679,7 +691,9 @@ class ReaderFushiSource extends ReaderMediaSource {
 
   Future<List<MediaItem>> getBooksFromDb({required AppModel appModel}) async {
     final FushiDatabase db = appModel.database;
-    final List<EpubBookRow> books = await db.getAllEpubBooks();
+    // novel-9：瘦投影，每章字数在 SQLite 侧（后台 isolate）用 json_each 抽好，
+    // 不再整表读 chaptersJson / tocJson 再在 UI isolate 上逐本 jsonDecode。
+    final List<EpubBookShelfRow> books = await db.getEpubBookShelfRows();
     // 阅读位置一次整表取完（书 uid → 位置）。之前每本各查一次
     // `findByBookUid`：Drift 在单连接上串行执行，`Future.wait` 只能重叠 await、
     // 重叠不了 SQL，书架延迟仍随库大小线性增长（N 次往返 + N 次语句准备）。
@@ -697,7 +711,7 @@ class ReaderFushiSource extends ReaderMediaSource {
     // Future.wait preserves input order so the shelf ordering is unchanged.
     return Future.wait<MediaItem>(
       books.map(
-        (EpubBookRow book) => _bookToMediaItem(
+        (EpubBookShelfRow book) => _bookToMediaItem(
           book,
           book.uid.isEmpty ? null : positions[book.uid],
           chapterStates: book.uid.isEmpty
@@ -714,8 +728,11 @@ class ReaderFushiSource extends ReaderMediaSource {
   Future<MediaItem?> mediaItemForBookKey(String bookKey) async {
     final FushiDatabase? db = sharedDatabase;
     if (db == null) return null;
-    final EpubBookRow? book = await db.getEpubBook(bookKey);
-    if (book == null) return null;
+    final List<EpubBookShelfRow> rows = await db.getEpubBookShelfRows(
+      bookKey: bookKey,
+    );
+    if (rows.isEmpty) return null;
+    final EpubBookShelfRow book = rows.first;
     // v82：位置键 = 行 uid（空 uid 视同无阅读记录）。
     final ReaderPosition? pos = book.uid.isEmpty
         ? null
@@ -727,13 +744,13 @@ class ReaderFushiSource extends ReaderMediaSource {
     );
   }
 
-  /// Resolve a single [EpubBookRow] into a [MediaItem], probing its cover
+  /// Resolve a single [EpubBookShelfRow] into a [MediaItem], probing its cover
   /// concurrently with sibling books (HBK-AUDIT-128). [pos] is the book's
   /// reader position (already keyed by uid by the caller; null = never read).
   /// [chapterStates] is the book's `manga_chapter_states` (chapterKey → row);
   /// only online manga read it (BUG-4356).
   Future<MediaItem> _bookToMediaItem(
-    EpubBookRow book,
+    EpubBookShelfRow book,
     ReaderPosition? pos, {
     Map<String, MangaChapterStateRow> chapterStates =
         const <String, MangaChapterStateRow>{},
@@ -741,27 +758,7 @@ class ReaderFushiSource extends ReaderMediaSource {
     int position = 0;
     int duration = 1;
 
-    List<int> sectionChars = const <int>[];
-    if (book.chaptersJson.isNotEmpty) {
-      try {
-        final List<dynamic> chapters =
-            jsonDecode(book.chaptersJson) as List<dynamic>;
-        sectionChars = chapters
-            .map(
-              (dynamic c) =>
-                  ((c as Map<String, dynamic>)['characters'] as num?)
-                      ?.toInt() ??
-                  0,
-            )
-            .toList();
-      } catch (e, stack) {
-        ErrorLogService.instance.log(
-          'ReaderFushiSource.sectionChars',
-          e,
-          stack,
-        );
-      }
-    }
+    final List<int> sectionChars = book.sectionChars;
     final int totalChars = sectionChars.fold<int>(0, (a, b) => a + b);
 
     // 书架列书 format-agnostic（本方法列全部 EpubBooks 行），但打开路由按 `format`
@@ -928,7 +925,7 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// conventional fallback names concurrently (HBK-AUDIT-128), with a
   /// last-good fallback so transient probe misses don't blank the cover
   /// (BUG-513).
-  Future<String?> _resolveCoverUrl(EpubBookRow book) async {
+  Future<String?> _resolveCoverUrl(EpubBookShelfRow book) async {
     final List<String> candidates = coverCandidatePaths(
       extractDir: book.extractDir,
       coverPath: book.coverPath,
@@ -967,110 +964,59 @@ class ReaderFushiSource extends ReaderMediaSource {
     return null;
   }
 
-  /// Real-filesystem child lister for [resolveCaseInsensitive]. Returns the
-  /// child entity paths of [dir], or an empty list if it is missing/unreadable.
-  static List<String> _listDirEntries(String dir) {
-    final Directory d = Directory(dir);
-    if (!d.existsSync()) return const <String>[];
-    try {
-      return d
-          .listSync(followLinks: false)
-          .map((FileSystemEntity e) => e.path)
-          .toList();
-    } catch (_) {
-      return const <String>[];
-    }
-  }
-
   /// Case-insensitive on-disk resolution of a book cover (TODO-1319 / BUG-612).
-  ///
-  /// Walks each relative candidate in [relPaths] segment by segment under
-  /// [extractDir], matching each segment against the real directory entries
-  /// from [listDir] -- exact case first, then case-insensitively. Returns the
-  /// first candidate that fully resolves to an on-disk path, or null. This lets
-  /// a coverPath whose case was mangled by a case-insensitive host still find
-  /// the case-preserved extracted file on a case-sensitive device.
-  ///
-  /// Pure + injectable ([listDir]) so it is unit-testable with a mock
-  /// filesystem; the instance path wires in [_listDirEntries].
+  /// Implementation lives in the leaf `book_cover_file_resolver.dart` so
+  /// callers outside the reader (book art scraping) can share it without
+  /// pulling this whole source into their import graph.
   @visibleForTesting
   static String? resolveCaseInsensitive({
     required String extractDir,
     required List<String> relPaths,
     required List<String> Function(String dir) listDir,
-  }) {
-    for (final String rel in relPaths) {
-      if (rel.isEmpty || p.isAbsolute(rel)) continue;
-      final List<String> segs = p
-          .split(rel)
-          .where((String s) => s.isNotEmpty && s != '.' && s != '/')
-          .toList();
-      if (segs.isEmpty) continue;
-      String current = extractDir;
-      bool resolvedAll = true;
-      for (final String seg in segs) {
-        final List<String> children = listDir(current);
-        String? match;
-        for (final String child in children) {
-          if (p.basename(child) == seg) {
-            match = child;
-            break;
-          }
-        }
-        if (match == null) {
-          final String segLower = seg.toLowerCase();
-          for (final String child in children) {
-            if (p.basename(child).toLowerCase() == segLower) {
-              match = child;
-              break;
-            }
-          }
-        }
-        if (match == null) {
-          resolvedAll = false;
-          break;
-        }
-        current = match;
-      }
-      if (resolvedAll) return current;
-    }
-    return null;
-  }
+  }) => resolveBookCoverCaseInsensitive(
+    extractDir: extractDir,
+    relPaths: relPaths,
+    listDir: listDir,
+  );
 
-  /// Resolve a book cover to its on-disk **file path** (not a `file://` URL),
-  /// reusing the exact same case-insensitive resolution the library grid uses
-  /// (`_resolveCoverUrl`) so card mining and shelf display agree on which cover
-  /// file to use (TODO-1388 / BUG-703). The declared [coverPath] wins over the
-  /// conventional `cover.jpg/jpeg/png` fallbacks; each candidate is matched
-  /// exact-case-first then case-insensitively against the real extracted files,
-  /// so a coverPath whose case was mangled by a case-insensitive import host
-  /// (Windows/macOS `p.canonicalize` lower-casing, epub_parser _itemRelHref)
-  /// still finds the case-preserved file on a case-sensitive device
-  /// (Android/Linux). Returns null when no candidate resolves to a real file.
-  ///
-  /// Static + wiring the real [_listDirEntries] lister so mining (which only
-  /// had a naive `File(join(extractDir, coverHref)).existsSync()` probe --
-  /// blind to case, hence the missing cover on Android) shares one resolution
-  /// with the grid instead of drifting.
-  ///
-  /// Not `@visibleForTesting`: this is genuine production API consumed by both
-  /// the shelf grid (`_resolveCoverUrl`) and card mining (`mining.part.dart`).
+  /// Resolve a book cover to its on-disk file path; see
+  /// [resolveBookCoverFilePath]. Consumed by the shelf grid
+  /// (`_resolveCoverUrl`) and card mining (`mining.part.dart`).
   static String? resolveCoverFilePath({
     required String extractDir,
     String? coverPath,
+  }) => resolveBookCoverFilePath(extractDir: extractDir, coverPath: coverPath);
+
+  /// BUG-5043：手上只有书行（bookKey + 自带封面）的上屏面要显示的封面文件，与书架卡
+  /// （[getDisplayThumbnailFromMediaItem]）同一优先级——用户 override 封面 > 刮削
+  /// 卷封面（[scrapedThumbnailFile]）> 书自带封面（[resolveCoverFilePath]）。都没有
+  /// 返回 null。作品页等处只读 `row.coverPath` 会让刮削 / 用户改过的封面在书架上
+  /// 显示、点进去却还是原封面。override 与刮削层都只按 `hoshi://book/<bookKey>`
+  /// 身份存（与 format 无关），所以三种书都可由本源解析。
+  File? displayCoverFileForBook({
+    required AppModel appModel,
+    required String bookKey,
+    required String extractDir,
+    String? coverPath,
   }) {
-    final String? resolved = resolveCaseInsensitive(
+    if (bookKey.isNotEmpty) {
+      final MediaItem item = overrideTitleMediaItemForBookKey(bookKey);
+      final File? override = resolveOverrideThumbnailFile(
+        appModel: appModel,
+        item: item,
+      );
+      if (override != null) return override;
+      final File? scraped = scrapedThumbnailFile(
+        appModel: appModel,
+        item: item,
+      );
+      if (scraped != null) return scraped;
+    }
+    final String? own = resolveCoverFilePath(
       extractDir: extractDir,
-      relPaths: <String>[
-        if (coverPath != null && coverPath.isNotEmpty) coverPath,
-        'cover.jpg',
-        'cover.jpeg',
-        'cover.png',
-      ],
-      listDir: _listDirEntries,
+      coverPath: coverPath,
     );
-    if (resolved != null && File(resolved).existsSync()) return resolved;
-    return null;
+    return own == null ? null : File(own);
   }
 
   /// 删一本书（EPUB / PDF / 漫画 / 字幕书）攒下的统计：「同时删除统计数据」勾选的
@@ -1112,9 +1058,14 @@ class ReaderFushiSource extends ReaderMediaSource {
 
   /// Delete a book and all of its associated data.
   ///
-  /// Pass [appModel] to also clear the override thumbnail file (it is needed to
-  /// resolve the thumbnails directory); the override title preference is always
-  /// cleared regardless (HBK-AUDIT-040).
+  /// [appModel] 必填：override 封面文件住在 `appModel.thumbnailsDirectory` 下，
+  /// 文件名只由 `mediaIdentifier`（= bookKey = 净化后的书名）派生。以前它是可选参数，
+  /// 书架单删 / 批删等多数调用点没传，override 书名清了、封面文件却留在盘上，同名书
+  /// 重新导入后拿到同一个 bookKey，旧封面就「复活」。
+  /// [compactDatabase]（默认 true，单删行为不变）：删完跑一次
+  /// [compactAfterBookDeleteBestEffort]（整库 `VACUUM` + `wal_checkpoint(TRUNCATE)`）。
+  /// 一次删多本的调用方传 false，循环结束后在 `finally` 里自己调一次——否则 N 本
+  /// 就是 N 次整库重写。
   /// [scope] 控制删除传播：[DeleteScope.syncEverywhere] 记一条 sync 删除墓碑，供同步
   /// 时发布到远端标记、其他设备逐条确认后也删；[DeleteScope.keepLocalOnly]（默认）只删
   /// 本机不传播（消费远端删除标记时也走此值——删本地、绝不再回写墓碑造成循环）。备份防
@@ -1135,11 +1086,12 @@ class ReaderFushiSource extends ReaderMediaSource {
   Future<DeleteBookResult> deleteBook({
     required FushiDatabase db,
     required String bookKey,
-    AppModel? appModel,
+    required AppModel appModel,
     DeleteScope scope = DeleteScope.keepLocalOnly,
     bool deleteLocalFiles = false,
     bool deleteStatistics = false,
     bool keepDownloadedFiles = false,
+    bool compactDatabase = true,
   }) async {
     try {
       // 原件位置在 audiobooks / srt_books 行上，deleteEpubBook 的事务会把它们
@@ -1234,7 +1186,8 @@ class ReaderFushiSource extends ReaderMediaSource {
       // 删除传播（显式确认式）：仅当用户在删除弹窗选「同步删除」(syncEverywhere) 才记
       // 一条 sync 删除墓碑，供同步时发布到远端标记、其他设备逐条确认后也删。keepLocalOnly
       // （含消费远端删除标记的路径）不记，避免「删本地→回写墓碑→再传播」循环。host 服务
-      // 客户端删除走 _cleanupBookOnDisk 不经本方法。best-effort：记账失败不翻转删除结果。
+      // 客户端删除走 [cleanupBookFilesForHostDelete] 不经本方法。best-effort：记账失败不翻转删除结果，
+      // 但必须留痕——墓碑没写上意味着别的设备不会跟着删，用户以为「同步删除」生效了。
       if (deletedRows > 0 && scope == DeleteScope.syncEverywhere) {
         try {
           await db.writeSyncDeletionTombstone(
@@ -1243,8 +1196,12 @@ class ReaderFushiSource extends ReaderMediaSource {
             DateTime.now().millisecondsSinceEpoch,
             cloudFolderName: syncTombstoneCloudFolderName,
           );
-        } catch (_) {
-          // best-effort：删除墓碑记账失败不影响书已删。
+        } catch (e, stack) {
+          ErrorLogService.instance.log(
+            'ReaderFushiSource.deleteBook.syncTombstone',
+            e,
+            stack,
+          );
         }
       }
 
@@ -1267,6 +1224,9 @@ class ReaderFushiSource extends ReaderMediaSource {
         if (bookRow != null && !keepFiles) {
           await EpubStorage.deleteBookDir(bookRow.extractDir);
         }
+        // v155：条目附加图（横版背景 / logo）行已随 deleteEpubBook 同事务删，文件
+        // 在 [compactAfterBookDeleteBestEffort] 里按「不再被任何 item_images 行引用」
+        // 回收——那一步要列整个附加图目录，批删时每本跑一遍是 N 次全目录扫描。
         // 用户明确勾选后才删原始音频；两条记录可能指向同一批文件，第二次删到的
         // 已不存在，[deleteLocalFiles] 既不计入 removed 也不计入 failures。
         if (deleteLocalFiles) {
@@ -1288,27 +1248,6 @@ class ReaderFushiSource extends ReaderMediaSource {
             );
           }
         }
-
-        // HBK-AUDIT-040: these books are created with canDelete:false, so the
-        // generic AppModel.deleteMediaItem cleanup (clearOverrideValues) never
-        // runs for them. Clear the override title preference here, and the
-        // override thumbnail file when an AppModel is available, so renamed/
-        // recovered books do not leave orphaned override rows/files behind.
-        final MediaItem item = MediaItem(
-          mediaIdentifier: mediaIdentifierFor(bookKey),
-          title: '',
-          mediaTypeIdentifier: mediaType.uniqueKey,
-          mediaSourceIdentifier: uniqueKey,
-          position: 0,
-          duration: 1,
-          canDelete: false,
-          canEdit: true,
-        );
-        if (appModel != null) {
-          await clearOverrideValues(appModel: appModel, item: item);
-        } else {
-          await clearOverrideTitle(item);
-        }
       } catch (e, stack) {
         ErrorLogService.instance.log(
           'ReaderFushiSource.deleteBook.cleanup',
@@ -1321,21 +1260,23 @@ class ReaderFushiSource extends ReaderMediaSource {
         );
       }
 
+      // HBK-AUDIT-040: these books are created with canDelete:false, so the
+      // generic AppModel.deleteMediaItem cleanup (clearOverrideValues) never
+      // runs for them. Clear the override title preference AND the override
+      // thumbnail file here, so renamed/recovered books do not leave orphaned
+      // override rows/files behind (a same-title reimport reuses the bookKey).
+      // BUG-4979：独立于上面的磁盘尾活——解压目录被占用（Windows errno 32，见
+      // TODO-1359）等失败不能连带跳过这一步，否则同名重导照样带出旧封面。
+      await _clearBookOverridesLogged(
+        appModel: appModel,
+        bookKey: bookKey,
+        logSource: 'ReaderFushiSource.deleteBook.overrides',
+      );
+
       // BUG-276: 上面已删 DB 行 + 解压目录/有声书副本，但 SQLite 删除只把页放回
-      // freelist、不归还磁盘；WAL 也会继续增长。删一本书后 VACUUM 回收空间
-      // （否则用户「书都删了占用没降」）。VACUUM 必须在事务外，这里已在事务外；
-      // 失败不应让删除整体失败（行已删），只记日志。
-      try {
-        await db.customStatement('VACUUM');
-        await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
-      } catch (e, stack) {
-        ErrorLogService.instance.log(
-          'ReaderFushiSource.deleteBook.vacuum',
-          e,
-          stack,
-        );
-        debugPrint('[ReaderFushiSource] VACUUM after delete failed: $e');
-      }
+      // freelist、不归还磁盘；WAL 也会继续增长。删一本书后回收空间（否则用户「书都
+      // 删了占用没降」）。批量调用方传 compactDatabase:false、循环后自己回收一次。
+      if (compactDatabase) await compactAfterBookDeleteBestEffort(db);
       // 真删了 EPUB 行，或清理了按 bookKey 关联的 SRT 行/磁盘副本，才算删除成功。
       // 过了上面的早退守卫后两者至少有一个为真，这里如实回报删除结果。
       if (deletedRows > 0 || srt != null) {
@@ -1357,6 +1298,96 @@ class ReaderFushiSource extends ReaderMediaSource {
     }
   }
 
+  /// 清掉这本书的 override 书名偏好与 override 封面文件（封面文件名只由 bookKey
+  /// 派生，同名重导拿到同一个 bookKey，不清旧封面就「复活」，BUG-4979）。失败只记
+  /// 日志：DB 行是唯一真相源，删书结果不因这一步翻转。
+  Future<void> _clearBookOverridesLogged({
+    required AppModel appModel,
+    required String bookKey,
+    required String logSource,
+  }) async {
+    try {
+      final MediaItem item = MediaItem(
+        mediaIdentifier: mediaIdentifierFor(bookKey),
+        title: '',
+        mediaTypeIdentifier: mediaType.uniqueKey,
+        mediaSourceIdentifier: uniqueKey,
+        position: 0,
+        duration: 1,
+        canDelete: false,
+        canEdit: true,
+      );
+      await clearOverrideValues(appModel: appModel, item: item);
+    } catch (e, stack) {
+      ErrorLogService.instance.log(logSource, e, stack);
+    }
+  }
+
+  /// 互联 host 侧删书（对端发来 `DELETE /api/library/books/<title>`，走
+  /// `LocalLibraryHostService.deleteBook`）的「DB 行以外」清理，接在它的
+  /// `cleanupBookOnDisk` 上。
+  ///
+  /// host 删书不经 [deleteBook]：行、墓碑、解压目录由 host 服务自己处理，但有声书 /
+  /// 配对字幕书的持久目录和 override 书名 / 封面只有 app 知道放在哪。以前这个钩子在
+  /// app 里没接（#3722 c37 审查遗留，与 BUG-4979 同一根因）：对端删掉的书在 host 上
+  /// 留着几百 MB 的有声书副本，同名重导还带出旧封面。
+  ///
+  /// host 服务在删行**成功之后**才调（与 [deleteBook] 同序：DB 行是唯一真相源，删行
+  /// 失败时书还在，它的有声书副本与封面不能先没了）；配对字幕书的 uid 住在已被级联
+  /// 删掉的 srt_books 行上，由 host 服务删行前取好经 [pairedSrtUid] 传进来。与
+  /// [deleteBook] 的尾活同一纪律：磁盘目录被占用等失败只记日志；封面清理独立于前面
+  /// 的失败。行已删，这本书的条目附加图（横版背景 / logo）行也随事务删了，文件在
+  /// 这里按「不再被引用」回收（host 删书一次一本，与单删同样当场回收）。
+  Future<void> cleanupBookFilesForHostDelete({
+    required FushiDatabase db,
+    required AppModel appModel,
+    required EpubBookRow row,
+    required String? pairedSrtUid,
+  }) async {
+    try {
+      await AudiobookStorage.deletePersistDir(row.bookKey);
+      if (pairedSrtUid != null) {
+        await AudiobookStorage.deletePersistDir(pairedSrtUid);
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'ReaderFushiSource.hostDeleteBook.cleanup',
+        e,
+        stack,
+      );
+    }
+    await _clearBookOverridesLogged(
+      appModel: appModel,
+      bookKey: row.bookKey,
+      logSource: 'ReaderFushiSource.hostDeleteBook.overrides',
+    );
+    // 自己吞错记日志，不翻转删除结果。
+    await ItemScrapeStore(db).reclaimUnreferencedFiles();
+  }
+
+  /// 删书后的整批收尾：回收不再被引用的条目附加图文件，再回收数据库空间（整库
+  /// `VACUUM` + `PRAGMA wal_checkpoint(TRUNCATE)`）。
+  ///
+  /// [deleteBook] 默认每次删完调一次；一次删多本的调用方给每本传
+  /// `compactDatabase: false`，循环结束后在 `finally` 里调本函数一次——附加图回收
+  /// 要列整个 `item_images` 目录、VACUUM 要重写整库，都只该每批一次（#3722 c37
+  /// 遗留：附加图回收以前留在每本的尾活里）。VACUUM 必须在事务外。两步各自失败只记
+  /// 日志（附加图回收自己吞错记日志）、互不连带，也不翻转任何删除结果（行已删）。
+  static Future<void> compactAfterBookDeleteBestEffort(FushiDatabase db) async {
+    await ItemScrapeStore(db).reclaimUnreferencedFiles();
+    try {
+      await db.customStatement('VACUUM');
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'ReaderFushiSource.deleteBook.vacuum',
+        e,
+        stack,
+      );
+      debugPrint('[ReaderFushiSource] VACUUM after delete failed: $e');
+    }
+  }
+
   /// 删除书架上的一张**字幕书卡**（srt_books 行；书架卡 key `srt_<uid>`）。
   ///
   /// BUG-3101：配对了 EPUB 的字幕书（`bookKey` 非空）由 [deleteBook] 整本删——
@@ -1373,17 +1404,21 @@ class ReaderFushiSource extends ReaderMediaSource {
   Future<DeleteBookResult> deleteSrtShelfBook({
     required FushiDatabase db,
     required SrtBook book,
+    required AppModel appModel,
     DeleteScope scope = DeleteScope.keepLocalOnly,
     bool deleteLocalFiles = false,
     bool deleteStatistics = false,
+    bool compactDatabase = true,
   }) async {
     if (book.bookKey.isNotEmpty) {
       return deleteBook(
         db: db,
         bookKey: book.bookKey,
+        appModel: appModel,
         scope: scope,
         deleteLocalFiles: deleteLocalFiles,
         deleteStatistics: deleteStatistics,
+        compactDatabase: compactDatabase,
       );
     }
     try {

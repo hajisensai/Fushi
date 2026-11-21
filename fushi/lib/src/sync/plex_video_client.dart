@@ -40,6 +40,8 @@ import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi_engine/media/tracking/remote_anime_link.dart'
     show RemoteAnimeEpisode;
 import 'package:fushi_engine/media/video/media_server/plex/plex_api.dart';
+import 'package:fushi_engine/media/video/media_server/plex/plex_tv_auth.dart'
+    show PlexConnection, firstReachablePlexConnection;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show
         RemoteVideoEmbeddedSubtitleTrack,
@@ -174,6 +176,38 @@ class PlexServerConfig implements MediaServerConfig {
     );
   }
 
+  /// 当前连接请求失败（[error]）之后，在已存的全部连接里重新挑线路
+  /// （gap-remote-7）：连接地址只在登录时探测过一次，换了网络（出门 / 回家 /
+  /// 局域网地址变了）之后，存下的那条一直不通，直到用户手动切换。
+  ///
+  /// 只有 [isPlexTransportFailure]（请求没到达服务器）才探测——服务器答了话
+  /// （非 2xx、条目不存在）说明这条连接是通的，换线路无济于事。各条连接按登录时
+  /// 排好的优先级（局域网 → 公网 → relay）同时探测，取排名最靠前的可达那条
+  /// （[firstReachablePlexConnection]）。[probe] 必须**不带凭据**核对 `/identity`
+  /// 的 machineIdentifier 是 [machineIdentifier]（`probePlexConnection` →
+  /// `verifyPlexServerIdentity`，签名里就没有 token）：探测本身不向任何候选地址
+  /// 发 token；别的服务器占了旧局域网地址时核对不通过、不会被选成当前线路，之后
+  /// 带 token 的请求也就不会发过去。
+  ///
+  /// 返回切到新线路后的配置（只改 [activeServerUrl]，不存任何新凭据）；不是传输
+  /// 失败、全部不通、或最靠前的可达线路就是当前这条时返回 null（调用方原样
+  /// 照旧报错）。写回与清单缓存失效由调用方做（`rerouteMediaServerAfterFailure`），
+  /// 切换发生在建新客户端之前——已建的客户端不换地址。
+  Future<PlexServerConfig?> rerouteAfterFailure(
+    Object error, {
+    required Future<bool> Function(String uri) probe,
+  }) async {
+    if (!isPlexTransportFailure(error)) return null;
+    final String? reachable = await firstReachablePlexConnection(
+      <PlexConnection>[
+        for (final String url in connections) PlexConnection(uri: url),
+      ],
+      probe,
+    );
+    if (reachable == null || reachable == effectiveServerUrl) return null;
+    return withActiveRoute(reachable);
+  }
+
   PlexVideoClient buildClient({http.Client? httpClient}) => PlexVideoClient(
     api: PlexApi(
       serverUrl: effectiveServerUrl,
@@ -200,6 +234,7 @@ class PlexVideoClient
         RemoteVideoPlaybackSession,
         RemoteVideoCollectionIsWork,
         RemoteVideoTrackingEpisodeFetch,
+        RemoteVideoClientConnections,
         MediaServerBrowser {
   PlexVideoClient({
     required this.api,
@@ -837,13 +872,16 @@ class PlexVideoClient
     Future<void>? cancelSignal,
   }) async {
     final PlexPart part = _requirePart(await api.metadata(id), id);
-    await api.downloadToFile(
+    // 原文件（download=1），可续传：断点键是条目 id，暂停 / 断网后从 `.part`
+    // 接着拉，不再删掉半截从 0 重下（BUG-4912）。
+    await api.downloadResumable(
       api.partUrl(part.key, download: true),
       dest,
+      resumeKey: 'plex:$id',
+      cancelledError: () => const RemoteDownloadCancelled(),
       onProgress: onProgress,
       onBytes: onBytes,
       cancelSignal: cancelSignal,
-      cancelledError: () => const RemoteDownloadCancelled(),
     );
   }
 
@@ -1022,5 +1060,6 @@ class PlexVideoClient
     }
   }
 
+  @override
   void close() => api.close();
 }

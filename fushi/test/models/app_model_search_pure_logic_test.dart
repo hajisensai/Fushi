@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
@@ -213,7 +215,41 @@ void main() {
       expect(decodeDictTypeFromBlobHeader(<int>[]), null);
     });
 
-    test('flag != 0x01 -> null', () {
+    // 新格式：纯 freq / pitch / ipa 词典的记录是 type 3（预解析），前缀与 type 1 相同
+    // （meta_record.hpp）。新导入写进 blobs.bin，存量升级写进 blobs3.bin。
+    test('type 3 (pre-parsed meta) shares the prefix: freq/pitch/ipa', () {
+      expect(
+        decodeDictTypeFromBlobHeader(
+          blob(flag: 0x03, exprLen: 6, mode: 'freq'),
+        ),
+        DictionaryType.frequency,
+      );
+      expect(
+        decodeDictTypeFromBlobHeader(
+          blob(flag: 0x03, exprLen: 0, mode: 'pitch'),
+        ),
+        DictionaryType.pitch,
+      );
+      expect(
+        decodeDictTypeFromBlobHeader(blob(flag: 0x03, exprLen: 3, mode: 'ipa')),
+        DictionaryType.pitch,
+      );
+    });
+
+    test('type 1 ipa -> pitch', () {
+      expect(
+        decodeDictTypeFromBlobHeader(blob(exprLen: 3, mode: 'ipa')),
+        DictionaryType.pitch,
+      );
+    });
+
+    test('flag not a meta record type (0x01 / 0x03) -> null', () {
+      expect(
+        decodeDictTypeFromBlobHeader(
+          blob(flag: 0x02, exprLen: 0, mode: 'freq'),
+        ),
+        null,
+      );
       expect(
         decodeDictTypeFromBlobHeader(
           blob(flag: 0x00, exprLen: 0, mode: 'freq'),
@@ -257,6 +293,35 @@ void main() {
     test('mode starts exactly at EOF -> empty -> null', () {
       final b = <int>[0x01, 0x00, 0x00, 0x02];
       expect(decodeDictTypeFromBlobHeader(b), null);
+    });
+  });
+
+  group('dictRecordFileIn: which file holds the records', () {
+    late Directory dir;
+
+    setUp(() => dir = Directory.systemTemp.createTempSync('dict_records'));
+    tearDown(() => dir.deleteSync(recursive: true));
+
+    String nameOf(File? f) => f!.uri.pathSegments.last;
+
+    test('freshly imported / never upgraded: blobs.bin', () {
+      File('${dir.path}/blobs.bin').writeAsBytesSync(<int>[1]);
+      expect(nameOf(dictRecordFileIn(dir.path)), 'blobs.bin');
+    });
+
+    test('upgraded meta dictionary: only blobs3.bin left', () {
+      File('${dir.path}/blobs3.bin').writeAsBytesSync(<int>[3]);
+      expect(nameOf(dictRecordFileIn(dir.path)), 'blobs3.bin');
+    });
+
+    test('both present (old file not deletable yet): blobs.bin wins', () {
+      File('${dir.path}/blobs.bin').writeAsBytesSync(<int>[1]);
+      File('${dir.path}/blobs3.bin').writeAsBytesSync(<int>[3]);
+      expect(nameOf(dictRecordFileIn(dir.path)), 'blobs.bin');
+    });
+
+    test('neither: null', () {
+      expect(dictRecordFileIn(dir.path), isNull);
     });
   });
 

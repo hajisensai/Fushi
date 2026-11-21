@@ -39,6 +39,15 @@ abstract final class FushiM3eShape {
   /// 列表行按下 / 聚焦 / 选中时的形变目标（M3E corner-large）。
   static const double listActive = 16;
 
+  /// M3 extra-small（4）：填充式文本框只圆上两角（[textFieldRadius]）。
+  static const double extraSmall = 4;
+
+  /// M3 filled text field 容器形状：上两角 extra-small、下两角方（下沿是活动
+  /// 指示线）。
+  static const BorderRadius textFieldRadius = BorderRadius.vertical(
+    top: Radius.circular(extraSmall),
+  );
+
   static const BorderRadius containerLargeRadius = BorderRadius.all(
     Radius.circular(containerLarge),
   );

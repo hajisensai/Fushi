@@ -408,6 +408,8 @@
     var instantStep = parseFloat(theme['--fushi-instant-scroll-wheel-step']);
     window.__fushiPopupInstantScrollWheelStep =
       isFinite(instantStep) && instantStep > 0 ? instantStep : undefined;
+    // BUG-4935：弹窗显示偏好（自动展开行数、折叠、词频聚合、音调去重……）与页面弹窗同一解码点。
+    applyFushiPopupDisplayPrefs(theme);
     // 用户拖过尺寸（lookupUserResized）后，本会话内不再让主题下发的宽高盖掉用户的选择；
     // 拖拽结果经 popupSize 回写 app，下次会话由主题带回来。
     lookupThemeForBox = theme;

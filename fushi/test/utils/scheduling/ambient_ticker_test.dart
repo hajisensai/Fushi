@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/diagnostics/fushi_binding.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
 import 'package:fushi/src/utils/components/page_backdrop_layer.dart';
 import 'package:fushi/src/utils/scheduling/ambient_ticker.dart';
@@ -92,7 +95,11 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(AmbientTickers.scheduledFrameCallbackCount, 1);
+    expect(AmbientTickers.liveCount, 1);
+    expect(
+      binding.transientCallbackCount,
+      AmbientTickers.scheduledFrameCallbackCount,
+    );
     expect(idleAllowed(ambientAwareSchedulingStrategy), isTrue);
     expect(await idleRunsNow(tester), isTrue);
     await tester.pumpWidget(const SizedBox());
@@ -102,6 +109,76 @@ void main() {
     binding.schedulingStrategy = defaultSchedulingStrategy;
     FushiWidgetsFlutterBinding.ensureInitialized();
     expect(binding.schedulingStrategy, same(ambientAwareSchedulingStrategy));
+  });
+
+  // BUG-4893：「等空闲」只是往调度器里排一个 idle 任务，忙时怎么等由 binding 的
+  // FramePacedTaskScheduler 管（frame_paced_task_scheduler_test.dart）。测试 binding 没混入
+  // 它，这里只测不忙的情形。
+  testWidgets('waitForUiIdle：只有常驻装饰动画在跑时照常完成', (WidgetTester tester) async {
+    await tester.pumpWidget(const _Spinner(ambient: true));
+    expect(binding.transientCallbackCount, greaterThan(0));
+    bool done = false;
+    unawaited(waitForUiIdle().then((_) => done = true));
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(done, isTrue);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // BUG-4961：常驻装饰动画不按屏幕刷新率逐帧要帧，两次 tick 之间至少隔
+  // FushiMotion.ambientFrameInterval；改前每一帧都续排帧回调（1 ms 一步就是 1000 帧 / 秒）。
+  testWidgets('装饰 ticker 节流：一秒内约 1000 / ambientFrameInterval 次 tick', (
+    WidgetTester tester,
+  ) async {
+    final GlobalKey<_AmbientSpinnerState> key =
+        GlobalKey<_AmbientSpinnerState>();
+    await tester.pumpWidget(_AmbientSpinner(key: key));
+    int ticks = 0;
+    key.currentState!.addTickListener(() => ticks++);
+    for (int ms = 0; ms < 1000; ms++) {
+      await tester.pump(const Duration(milliseconds: 1));
+    }
+    final int cap = 1000 ~/ FushiMotion.ambientFrameInterval.inMilliseconds + 2;
+    // 改前每一帧都 tick：1 ms 一步就是 1000 次。
+    expect(ticks, lessThanOrEqualTo(cap));
+    expect(ticks, greaterThanOrEqualTo(cap ~/ 2), reason: '动画仍在走，不是停了');
+    // 节流等待期间不挂帧回调，扣「忙」时不会多扣。
+    expect(
+      binding.transientCallbackCount,
+      AmbientTickers.scheduledFrameCallbackCount,
+    );
+    await tester.pumpWidget(const SizedBox());
+    expect(AmbientTickers.liveCount, 0);
+  });
+
+  testWidgets('装饰 ticker 节流不改动画值：按真实经过时间推进', (WidgetTester tester) async {
+    final GlobalKey<_AmbientSpinnerState> key =
+        GlobalKey<_AmbientSpinnerState>();
+    await tester.pumpWidget(_AmbientSpinner(key: key));
+    for (int ms = 0; ms < 500; ms++) {
+      await tester.pump(const Duration(milliseconds: 1));
+    }
+    // 1 s 一圈的 repeat：最后一次 tick 落在最近一个节流间隔内。
+    expect(
+      key.currentState!.value,
+      closeTo(0.5, 2 * FushiMotion.ambientFrameInterval.inMilliseconds / 1000),
+    );
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('节流等待中被静音：不再要帧；取消静音立刻恢复', (WidgetTester tester) async {
+    Widget tree({required bool enabled}) =>
+        TickerMode(enabled: enabled, child: const _Spinner(ambient: true));
+    await tester.pumpWidget(tree(enabled: true));
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(AmbientTickers.scheduledFrameCallbackCount, 0, reason: '已进节流等待');
+    await tester.pumpWidget(tree(enabled: false));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(binding.transientCallbackCount, 0);
+    expect(tester.binding.hasScheduledFrame, isFalse);
+    await tester.pumpWidget(tree(enabled: true));
+    expect(AmbientTickers.scheduledFrameCallbackCount, 1, reason: '取消静音即排帧');
+    await tester.pumpWidget(const SizedBox());
+    expect(AmbientTickers.liveCount, 0);
   });
 }
 
@@ -116,7 +193,7 @@ class _Spinner extends StatelessWidget {
 }
 
 class _AmbientSpinner extends StatefulWidget {
-  const _AmbientSpinner();
+  const _AmbientSpinner({super.key});
 
   @override
   State<_AmbientSpinner> createState() => _AmbientSpinnerState();
@@ -135,6 +212,10 @@ class _AmbientSpinnerState extends State<_AmbientSpinner>
     vsync: this,
     duration: const Duration(seconds: 1),
   );
+
+  double get value => _c.value;
+
+  void addTickListener(VoidCallback listener) => _c.addListener(listener);
 
   @override
   void initState() {

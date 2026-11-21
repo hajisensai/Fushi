@@ -456,6 +456,7 @@ fn classify_block(
     content: &[u16],
     index: usize,
     title_seen: bool,
+    group_slot: bool,
     st: &mut State,
     title_blocks: &mut Vec<U16s>,
 ) {
@@ -528,8 +529,8 @@ fn classify_block(
     if is_noise_block(p, content, &tokens) {
         return;
     }
-    // ⑧ 发布组。
-    if index == 0 {
+    // ⑧ 发布组（`group_slot` 为假时首块不当发布组，见 [parse_name] 的第二趟）。
+    if index == 0 && group_slot {
         if st.release_group.is_none() {
             st.release_group = Some(content.to_vec());
         }
@@ -789,19 +790,32 @@ fn parse_title_text(p: &Patterns, raw: &[u16], st: &mut State, env: &ParseEnv) -
 }
 
 /// Dart `FilenameParser.parse`。
-pub fn parse_name(raw: &[u16], env: &ParseEnv) -> ParsedName {
-    let p = patterns();
-    let name = strip_extension(trim(raw), env);
-    let (blocks, outside) = extract_blocks(name);
+/// 一趟「分块 → 取标题」：返回（状态、标题、标题来源文本、取标题前的状态快照）。
+/// `group_slot` 为假时首块不占发布组位，按普通块分类（见 [parse_name]）。
+fn classify_and_title(
+    p: &Patterns,
+    blocks: &[Block],
+    outside: &U16s,
+    group_slot: bool,
+    env: &ParseEnv,
+) -> (State, U16s, U16s, State) {
     let mut st = State::default();
     let mut title_blocks: Vec<U16s> = Vec::new();
     for (i, b) in blocks.iter().enumerate() {
         let title_seen = has_title_chars(&b.outside_before) || !title_blocks.is_empty();
-        classify_block(p, &b.content, i, title_seen, &mut st, &mut title_blocks);
+        classify_block(
+            p,
+            &b.content,
+            i,
+            title_seen,
+            group_slot,
+            &mut st,
+            &mut title_blocks,
+        );
     }
     let mut title_source: U16s = outside.clone();
     let mut before_title = st.clone();
-    let mut title = parse_title_text(p, &outside, &mut st, env);
+    let mut title = parse_title_text(p, outside, &mut st, env);
     if title.is_empty() {
         for tb in &title_blocks {
             title_source = tb.clone();
@@ -812,6 +826,33 @@ pub fn parse_name(raw: &[u16], env: &ParseEnv) -> ParsedName {
             }
         }
     }
+    (st, title, title_source, before_title)
+}
+
+pub fn parse_name(raw: &[u16], env: &ParseEnv) -> ParsedName {
+    let p = patterns();
+    let name = strip_extension(trim(raw), env);
+    let (blocks, outside) = extract_blocks(name);
+    let first = classify_and_title(p, &blocks, &outside, true, env);
+    // 全方括号命名 `[K-ON!][04][BIG5][x264_aac][BDrip_720P]`：块外没有字，首块被
+    // 当成发布组，其后只剩集号 / 编码 / 字幕语言块，于是标题为空、集号也因「还没
+    // 见过标题」被丢掉。上层拿不到干净标题，只能拿整串原名去搜，换回一屏只共享
+    // `kon` 音节的模糊候选。此时改把首块当标题再分一趟——仅当这一趟真的认出了
+    // 集号才采用：`[标题][集号]` 结构成立；单独一个 `[VCB-Studio]` 目录名不会
+    // 因此被当成番名。集号必须来自标题之外的块（取标题前的快照里已有）：
+    // `[第01-12话]` 这类单块批量范围在第二趟只会被标题解析拆成「第01」+ 集 12，
+    // 不是 `[标题][集号]`，仍按第一趟。
+    let (st, title, title_source, mut before_title) =
+        if first.1.is_empty() && first.0.release_group.is_some() && first.0.episode.is_none() {
+            let second = classify_and_title(p, &blocks, &outside, false, env);
+            if !second.1.is_empty() && second.3.episode.is_some() {
+                second
+            } else {
+                first
+            }
+        } else {
+            first
+        };
     let mut title_with_trailing_year = None;
     if st.bare_year_taken && !before_title.bare_year_taken {
         before_title.keep_bare_year = true;
@@ -1150,6 +1191,46 @@ mod tests {
             Some("Lilith-Raws")
         );
         assert_eq!(r.resolution.as_ref().map(s).as_deref(), Some("1080p"));
+    }
+
+    /// 全方括号命名 `[标题][集号][...]`：块外无字时首块是标题，不是发布组。
+    /// 否则标题为空、集号丢失，上层只能拿整串原名去 AniDB 目录模糊搜，换回
+    /// `Kono Oto Tomare!` / `Kekkon Yubiwa Monogatari II` 这类噪声候选。
+    #[test]
+    fn all_bracket_title_then_episode() {
+        let cases: [(&str, &str, Option<i64>, Option<&str>); 6] = [
+            (
+                "[K-ON!][04][BIG5][x264_aac][BDrip_720P].mp4",
+                "K-ON!",
+                Some(4),
+                None,
+            ),
+            ("[Haruhi][01][BIG5].mp4", "Haruhi", Some(1), None),
+            // 有真正发布组 + 标题块的照旧：首块仍是发布组。
+            (
+                "[Nekomoe kissaten][Bocchi the Rock!][04][1080p][JPSC].mp4",
+                "Bocchi the Rock!",
+                Some(4),
+                Some("Nekomoe kissaten"),
+            ),
+            (
+                "[Sakura][Clannad][01][GB].mp4",
+                "Clannad",
+                Some(1),
+                Some("Sakura"),
+            ),
+            // 没有集号佐证时不把孤零零的发布组提成标题。
+            ("[VCB-Studio]", "", None, Some("VCB-Studio")),
+            // 单块批量范围：集号只能从这一块的标题解析里拆出来，不是 `[标题][集号]`，
+            // 不能变成标题「第01」+ 集 12（native_media_parse_vectors 语料里的形状）。
+            ("[第01-12话]", "", None, Some("第01-12话")),
+        ];
+        for (raw, title, episode, group) in cases {
+            let r = parse_name(&w(raw), &env());
+            assert_eq!(s(&r.title), title, "{raw}");
+            assert_eq!(r.episode, episode, "{raw}");
+            assert_eq!(r.release_group.as_ref().map(s).as_deref(), group, "{raw}");
+        }
     }
 
     /// kg41f2PGdC / BUG-3816 遗留：英文序数词 / 基数词季名。

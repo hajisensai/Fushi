@@ -6,8 +6,8 @@
 // - root.style.setProperty('height', screenBox.height + 'px', 'important'); （量尺高 important）
 // - if (target >= 0.99) return this.screens.length - 1;                    （restore 章末）
 // - index = this.screenIndexForRestoreProgress(this.initialProgress);       （fragment 失效回退）
-const fs = require('fs');
-const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const { readPayload, compileScript } = require('./reader_harness_support.js');
+const data = readPayload();
 function assert(value, message) {
   if (!value) throw new Error(message);
 }
@@ -34,7 +34,11 @@ const document = {
   createRange() { return {}; },
   createElement() { return elementDouble(); }
 };
-const proto = new Function('C', 'window', 'document', 'return (' + literal + ');')(C, window, document);
+const proto = compileScript(
+  ['C', 'window', 'document'],
+  'return (' + literal + ');',
+  'vn_measure_box_restore_progress_behavior_test-1.js',
+)(C, window, document);
 
 // ── CSSStyleDeclaration 替身：记录 setProperty 的优先级 ─────────────────────
 function styleDouble() {

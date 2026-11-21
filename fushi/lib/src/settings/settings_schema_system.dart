@@ -7,6 +7,7 @@ import 'package:fushi/src/pages/implementations/changelog_page.dart';
 import 'package:fushi/src/pages/implementations/crash_dump_page.dart';
 import 'package:fushi/src/pages/implementations/debug_log_page.dart';
 import 'package:fushi/src/pages/implementations/error_log_page.dart';
+import 'package:fushi/src/pages/implementations/free_software_statement_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
 import 'package:fushi/src/pages/implementations/shortcut_settings_page.dart';
@@ -57,6 +58,7 @@ import 'package:fushi/src/utils/misc/update_checker.dart';
 import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 
 /// 「首页入口」：首页模块关掉后，首页浮动工具栏上那四个入口的落脚处。
 ///
@@ -663,7 +665,7 @@ SettingsDestination buildSystemDestination() {
               n: CrashDumpLocator.listCurrentPlatformDumps().length,
             ),
             icon: Icons.bug_report_outlined,
-            visible: (_) => Platform.isWindows,
+            visible: (_) => hostPlatform.isWindows,
             builder: (_) => const CrashDumpPage(),
           ),
           // 用户 2026-11-16：「加一个状态检测，在 app 内看 CPU 占用、内存占用，检测卡顿」。
@@ -836,6 +838,15 @@ SettingsDestination buildSystemDestination() {
               ),
             ),
           ),
+          // 免费与开源声明：GPLv3、官方版本永久免费、付费了怎么办、官方渠道与条款链接。
+          SettingsNavigationItem(
+            id: 'system.free_software_statement',
+            title: t.settings_system_free_software_statement,
+            subtitle: t.settings_system_free_software_statement_hint,
+            icon: FushiIcons.verified,
+            onTap: (SettingsContext c) =>
+                pushSettingsPage(c, (_) => const FreeSoftwareStatementPage()),
+          ),
           // TMDB 署名 —— **合约义务，不是可选的致谢**。
           //
           // 视频封面/元数据刮削使用 TMDB API（内置 key，见 tmdb_default_key.dart），
@@ -863,6 +874,22 @@ SettingsDestination buildSystemDestination() {
             subtitle: t.about_tmdb_attribution,
             icon: FushiIcons.video,
             builder: _buildTmdbAttributionRow,
+          ),
+          // MangaBaka 署名：书 / 漫画的系列资料与每卷封面来自 MangaBaka（CC BY-NC-SA
+          // 4.0），许可要求可见署名并链接来源。展示 MangaBaka 图的地方（刮削弹窗、
+          // 合集刮削结果、书的编辑页）另有就地署名；这里是常驻的总署名。
+          SettingsActionItem(
+            id: 'system.mangabaka_attribution',
+            title: 'MangaBaka',
+            subtitle: t.about_mangabaka_attribution,
+            icon: FushiIcons.books,
+            cli: const SettingsCliAction.tap(),
+            onTap: (_) async {
+              await launchUrl(
+                Uri.parse('https://mangabaka.org/'),
+                mode: LaunchMode.externalApplication,
+              );
+            },
           ),
         ],
       ),

@@ -38,6 +38,7 @@ import 'package:fushi/src/models/dictionary_import_manager.dart';
 import 'package:fushi/src/dictionary/recommended_dictionary_installer.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart'
     show ActivityRelativeTime, ActivityRelativeUnit, activityRelativeTime;
+import 'package:fushi/src/pages/implementations/dictionary_import_surface.dart';
 import 'package:fushi/src/pages/implementations/dictionary_manager_panels.dart';
 import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
@@ -376,11 +377,16 @@ class DictionaryDialogPage extends BasePage {
   const DictionaryDialogPage({
     super.key,
     this.initialImportPaths = const <String>[],
+    this.initialAction,
   });
 
   /// Dictionary package paths to import as soon as the page is visible. CSS
   /// attachment paths may be included after at least one dictionary package.
   final List<String> initialImportPaths;
+
+  /// 页面一出现就跑的导入动作：查词主页「一本词典都没有」的导入面（IM23）点了
+  /// 方式块后推进本页，由本页唯一的那份实现执行（不在主页另抄一份导入流程）。
+  final DictionaryImportAction? initialAction;
 
   @override
   BasePageState createState() => _DictionaryDialogPageState();
@@ -484,6 +490,13 @@ class _DictionaryDialogPageState extends BasePageState {
       unawaited(_loadProfileName());
     });
     if (widget is DictionaryDialogPage) {
+      final DictionaryImportAction? action =
+          (widget as DictionaryDialogPage).initialAction;
+      if (action != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(runImportAction(action));
+        });
+      }
       final List<String> paths =
           (widget as DictionaryDialogPage).initialImportPaths;
       if (paths.isNotEmpty) {
@@ -922,6 +935,9 @@ class _DictionaryDialogPageState extends BasePageState {
       if (!cupertino) _buildActionBar(compact: compact),
       // 收进后台的下载/更新任务的回程入口（BUG-1499）；无任务时是零高度。
       _buildDownloadStatusRow(),
+      // 还停在旧磁盘格式的词典的升级入口（拍板台 pr3554：升级前先问；启动期点了
+      // 「以后再说」之后只剩这里）。没有待升级的、或有写任务在跑时是零高度。
+      _buildFormatUpgradeRow(),
       if (_hasAnyRows) _buildCategorySelector(),
       // 「来源」条：每台有目录的服务器一张卡片（状态 / 本数 / 用于查词 / 刷新），
       // 取代以前列表底部的按 host 提示。
@@ -1462,6 +1478,15 @@ class _DictionaryDialogPageState extends BasePageState {
 
     showAppDialog(context: context, builder: (context) => dialog);
   }
+
+  /// 导入面方式块（空态 / 主页带来的 [DictionaryDialogPage.initialAction]）的分发：
+  /// 三种方式各对应本页现有的一条流程。
+  Future<void> runImportAction(DictionaryImportAction action) =>
+      switch (action) {
+        DictionaryImportAction.files => _importDictionaryFiles(),
+        DictionaryImportAction.folder => _importDictionaryFolder(),
+        DictionaryImportAction.download => _showDownloadSelectionDialog(),
+      };
 
   Future<void> _importDictionaryFiles() async {
     if (Platform.isAndroid || Platform.isIOS) {
@@ -2006,7 +2031,12 @@ class _DictionaryDialogPageState extends BasePageState {
                   // 导入阶段 cancellable 为 false → 按钮置灰 + 说明为什么停不下来，
                   // 而不是给一个按了没反应的按钮（BUG-1499）。
                   onCancel: cancellable ? controller.requestCancel : null,
-                  cancelDisabledHint: t.dict_download_import_uncancellable,
+                  // message 每次变化都会重建到这里，读 phase 当前值即可。
+                  cancelDisabledHint:
+                      controller.phase.value ==
+                          DictionaryDownloadPhase.upgrading
+                      ? t.dict_upgrade_format_uncancellable
+                      : t.dict_download_import_uncancellable,
                   onHide: () => Navigator.of(ctx).pop(),
                 ),
           ),
@@ -2079,6 +2109,58 @@ class _DictionaryDialogPageState extends BasePageState {
           ),
         );
       },
+    );
+  }
+
+  /// 「N 本词典可以升级到新格式」+「升级」。点按钮本身就是同意（说明见启动期确认框），
+  /// 升级经 [AppModel.upgradeDictionaryFormatsNow]，进度走上面那条状态行。
+  Widget _buildFormatUpgradeRow() {
+    final DictionaryDownloadController controller =
+        appModel.dictionaryDownloadController;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return ValueListenableBuilder<int>(
+      valueListenable: appModel.dictFormatUpgradePending,
+      builder: (_, int pending, __) =>
+          ValueListenableBuilder<DictionaryDownloadPhase>(
+            valueListenable: controller.phase,
+            builder: (_, DictionaryDownloadPhase phase, __) {
+              final bool show =
+                  pending > 0 && phase == DictionaryDownloadPhase.idle;
+              return AnimatedSize(
+                duration: fushiMotionDuration(context, FushiMotion.medium),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: !show
+                    ? const SizedBox(width: double.infinity)
+                    : Padding(
+                        padding: EdgeInsets.only(
+                          bottom: tokens.spacing.gap + tokens.spacing.gap / 2,
+                        ),
+                        child: FushiCard(
+                          padding: EdgeInsets.zero,
+                          child: FushiListItem(
+                            minHeight: 44,
+                            leading: const FushiIcon(
+                              Icons.upgrade_rounded,
+                              size: 18,
+                            ),
+                            title: Text(
+                              t.dict_upgrade_format_banner(count: pending),
+                              style: textTheme.bodySmall,
+                            ),
+                            titleMaxLines: 2,
+                            trailing: FushiTextButton(
+                              onPressed: () => unawaited(
+                                appModel.upgradeDictionaryFormatsNow(),
+                              ),
+                              child: Text(t.dict_upgrade_format_prompt_confirm),
+                            ),
+                          ),
+                        ),
+                      ),
+              );
+            },
+          ),
     );
   }
 
@@ -2486,17 +2568,12 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   Widget buildEmptyMessage() {
-    final TargetPlatform platform = theme.platform;
-    // 一本词典都没有：说明支持的格式，把「导入」「下载推荐」两个入口直接放在
-    // 眼前；桌面再提示可以直接拖进窗口（TODO-059 的拖放导入）。
-    return DictionaryManagerEmptyState(
-      icon: DictionaryMediaType.instance.outlinedIcon,
-      onImport: _importDictionaryFiles,
-      onDownload: _showDownloadSelectionDialog,
-      showDropHint:
-          platform == TargetPlatform.windows ||
-          platform == TargetPlatform.linux ||
-          platform == TargetPlatform.macOS,
+    // 一本词典都没有：与库页导入面同一套引导首块 + 方式块（IM23，与查词主页空态
+    // 共用 [DictionaryImportEmptySurface]）。嵌在本页列表里，不自带滚动；整页
+    // 拖放已由外层 FushiFileDropTarget 接（不再装第二层）。
+    return Padding(
+      padding: EdgeInsets.only(top: FushiDesignTokens.of(context).spacing.gap),
+      child: DictionaryImportEmptySurface(onAction: runImportAction),
     );
   }
 

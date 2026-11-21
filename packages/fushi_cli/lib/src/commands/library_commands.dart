@@ -216,6 +216,16 @@ const List<CtlCommandGroup> libraryCommandGroups = <CtlCommandGroup>[
         configure: _configureResetProgress,
         build: _buildResetProgress,
       ),
+      CtlCommandSpec(
+        name: 'scrape-meta',
+        summary:
+            '书 / 漫画 / 有声书 / 游戏的刮削资料与横版背景：get 看、set 写（造测试数据 / '
+            '手动补资料）、clear 清',
+        usage: '<get|set|clear> <key>',
+        configure: _configureScrapeMeta,
+        build: _buildScrapeMeta,
+        render: _renderScrapeMeta,
+      ),
     ],
   ),
   ...shelfCommandGroups,
@@ -223,6 +233,140 @@ const List<CtlCommandGroup> libraryCommandGroups = <CtlCommandGroup>[
 ];
 
 const String _root = '/api/admin/library';
+
+// ── scrape-meta ────────────────────────────────────────────────────────
+
+void _configureScrapeMeta(ArgParser parser) => parser
+  ..addOption('summary', help: '简介')
+  ..addOption('title', help: '刮削到的条目标题（只记事实，不改书名）')
+  ..addOption('original-title', help: '原名')
+  ..addOption('date', help: '日期：YYYY / YYYY-MM / YYYY-MM-DD')
+  ..addOption('year', help: '年份（没有 --date 时）')
+  ..addOption('rating', help: '评分 0~10')
+  ..addOption('rating-count', help: '评分人数')
+  ..addOption('genres', help: '类型 / 标签，逗号分隔')
+  ..addOption('detail-url', help: '条目页 URL')
+  ..addOption('source', help: '来源名（默认 manual）')
+  ..addOption('subject-id', help: '源内条目 id')
+  ..addOption('backdrop', help: '横版背景图：本地路径或 http(s) URL')
+  ..addOption('logo', help: '标题 logo：本地路径或 http(s) URL')
+  ..addFlag('replace', negatable: false, help: '整行替换（默认只改给了的字段）')
+  ..addFlag('yes', negatable: false, help: 'clear 会删图片文件，确认请加 --yes');
+
+CtlRequestSpec _buildScrapeMeta(CtlCommandContext context) {
+  final String action = context.positional(0, 'get|set|clear').toLowerCase();
+  final String key = context.positional(1, 'key').trim();
+  if (!RegExp(r'^(book|srt|game):.+').hasMatch(key)) {
+    throw CtlUsageError('条目键要写成 book: / srt: / game:（见 library ls）：$key');
+  }
+  final String path = '${libraryItemPath(key)}/scrape-meta';
+  switch (action) {
+    case 'get':
+      return CtlRequestSpec.get(path);
+    case 'clear':
+      if (!context.flag('yes')) {
+        throw const CtlUsageError('clear 会删除背景 / logo 图片文件，确认请加 --yes');
+      }
+      return CtlRequestSpec.delete(path);
+    case 'set':
+      final Map<String, Object?> body = <String, Object?>{
+        for (final (String option, String field) in const <(String, String)>[
+          ('summary', 'summary'),
+          ('title', 'title'),
+          ('original-title', 'originalTitle'),
+          ('date', 'date'),
+          ('detail-url', 'detailUrl'),
+          ('source', 'source'),
+          ('subject-id', 'subjectId'),
+        ])
+          if (context.option(option) case final String value) field: value,
+        if (_scrapeNumber(context, 'year', integer: true) case final num v)
+          'year': v,
+        if (_scrapeNumber(context, 'rating') case final num v) 'rating': v,
+        if (_scrapeNumber(context, 'rating-count', integer: true)
+            case final num v)
+          'ratingCount': v,
+        if (context.option('genres') case final String genres)
+          'genres': <String>[
+            for (final String g in genres.split(RegExp(r'[,，、]')))
+              if (g.trim().isNotEmpty) g.trim(),
+          ],
+        ..._scrapeImage(context.option('backdrop'), 'backdrop'),
+        ..._scrapeImage(context.option('logo'), 'logo'),
+        if (context.flag('replace')) 'replace': true,
+      };
+      if (body.isEmpty) {
+        throw const CtlUsageError(
+          'set 至少要给一个字段（--summary / --rating / --backdrop …）',
+        );
+      }
+      return CtlRequestSpec.put(path, body: body);
+    default:
+      throw CtlUsageError('动作只能是 get / set / clear：$action');
+  }
+}
+
+num? _scrapeNumber(
+  CtlCommandContext context,
+  String option, {
+  bool integer = false,
+}) {
+  final String? raw = context.option(option);
+  if (raw == null) return null;
+  final num? value = integer ? int.tryParse(raw) : num.tryParse(raw);
+  if (value == null) {
+    throw CtlUsageError('--$option 要是${integer ? '整数' : '数字'}：$raw');
+  }
+  return value;
+}
+
+/// `--backdrop` / `--logo`：http(s) 走 `<kind>Url`（app 下载），其余当本地路径转绝对。
+Map<String, Object?> _scrapeImage(String? raw, String kind) {
+  if (raw == null || raw.trim().isEmpty) return const <String, Object?>{};
+  final Uri? uri = Uri.tryParse(raw);
+  final bool remote =
+      uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
+  return <String, Object?>{
+    if (remote) '${kind}Url': raw else '${kind}Path': ctlAbsolutePath(raw),
+  };
+}
+
+String _renderScrapeMeta(Object? data) {
+  if (data is! Map) return '完成';
+  if (data['cleared'] == true) {
+    return '${data['key']} 的刮削资料已清除（删了 ${data['files'] ?? 0} 个图片文件）';
+  }
+  final StringBuffer out = StringBuffer()
+    ..writeln('${data['key']}  [${data['mediaType']} ${data['entryKey']}]');
+  final Object? meta = data['meta'];
+  if (meta is Map) {
+    for (final (String label, String field) in const <(String, String)>[
+      ('来源', 'source'),
+      ('条目', 'subjectId'),
+      ('标题', 'title'),
+      ('原名', 'originalTitle'),
+      ('日期', 'airDate'),
+      ('评分', 'rating'),
+      ('评分人数', 'ratingCount'),
+      ('类型', 'tags'),
+      ('条目页', 'detailUrl'),
+      ('简介', 'summary'),
+    ]) {
+      final Object? value = meta[field];
+      if (value == null || (value is List && value.isEmpty)) continue;
+      out.writeln('$label：${value is List ? value.join(' / ') : value}');
+    }
+  } else {
+    out.writeln('（没有刮削资料）');
+  }
+  final Object? images = data['images'];
+  if (images is List) {
+    for (final Object? image in images) {
+      if (image is Map) out.writeln('${image['kind']}：${image['path']}');
+    }
+  }
+  return out.toString().trimRight();
+}
 
 /// `--kind` 的值域（与 app 侧 `LibraryCtlKind` 同名）。
 const List<String> kLibraryKinds = <String>[

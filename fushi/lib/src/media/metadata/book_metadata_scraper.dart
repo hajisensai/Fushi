@@ -6,7 +6,8 @@
 /// 刮削不使用 Bangumi。
 ///
 /// 源（[BookScrapeSource]）：Bangumi（中文书 / 轻小说 / 漫画条目最全，免 API key）、
-/// DLsite（同人 / 商业的音声 ASMR、漫画、小说；有声书最常见的来源），以及书目类四源
+/// DLsite（同人 / 商业的音声 ASMR、漫画、小说；有声书最常见的来源）、MangaBaka（漫画 /
+/// 轻小说系列，原图分辨率高、带每卷封面；数据 CC BY-NC-SA 4.0，展示处必须署名），以及书目类四源
 /// （协议层在 `fushi_engine/media/metadata/books/`）：AniList 轻小说（免 key，带横幅图）、
 /// openBD（只按 ISBN）、NDL Search（国立国会図書館，按书名 / ISBN）、楽天ブックス（要用户
 /// 自己的 applicationId + accessKey，设备本地）。接口按候选中间表示
@@ -17,18 +18,29 @@ import 'dart:convert';
 
 import 'package:fushi/src/media/metadata/bangumi_api_client.dart';
 import 'package:fushi/src/media/metadata/bangumi_cover_url.dart';
+import 'package:fushi_engine/media/metadata/book_art/bangumi_tankobon.dart'
+    show seriesFirst;
+import 'package:fushi_engine/media/metadata/book_art/book_art_plan.dart'
+    show pickMangaBakaVolumeImages;
 import 'package:fushi_engine/media/metadata/books/anilist_novels.dart';
 import 'package:fushi_engine/media/metadata/books/book_catalog.dart';
 import 'package:fushi_engine/media/metadata/books/ndl_search.dart';
 import 'package:fushi_engine/media/metadata/books/openbd.dart';
 import 'package:fushi_engine/media/metadata/books/rakuten_books.dart';
 import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart';
+import 'package:fushi_engine/media/metadata/mangabaka/mangabaka_client.dart';
+import 'package:fushi_engine/media/metadata/mangabaka/mangabaka_models.dart';
+import 'package:fushi_engine/utils/net/app_user_agent.dart';
 import 'package:http/http.dart' as http;
+
+/// 书刮削对外报的 UA（通用产品名，不带任何用户信息）。
+final String kBookScraperUserAgent = fushiUserAgent('book-scraper');
 
 /// 书族封面刮削源。
 enum BookScrapeSource {
   bangumi('Bangumi'),
   dlsite('DLsite'),
+  mangabaka('MangaBaka'),
   anilist('AniList'),
   openbd('openBD'),
   ndl('NDL'),
@@ -87,6 +99,11 @@ class BookScrapeCandidate {
     this.year,
     this.summary,
     this.isAdult = false,
+    this.date,
+    this.rating,
+    this.ratingCount,
+    this.tags = const <String>[],
+    this.backdropUrl,
     this.publisher,
     this.series,
     this.volume,
@@ -118,6 +135,7 @@ class BookScrapeCandidate {
       volume: r.volume,
       isbn: r.isbn,
       bannerUrl: r.bannerUrl,
+      backdropUrl: r.bannerUrl,
       coverHeaders: r.coverHeaders,
       pageUrl: r.pageUrl,
     );
@@ -147,8 +165,25 @@ class BookScrapeCandidate {
   /// 简介摘要（搜索端点提供时）。
   final String? summary;
 
-  /// 源侧明确标成人向（DLsite 年龄分级 / AniList isAdult）。
+  /// 源侧明确标成 NSFW（DLsite 年龄分级 / MangaBaka erotica、pornographic / AniList
+  /// isAdult / Bangumi nsfw）。界面上标「NSFW」；搜索结果是否显示它们跟随作品自己的
+  /// NSFW 标记（见 `BookMetadataScrapeFacade.searchDetailed`）。
   final bool isAdult;
+
+  /// 出版 / 发售日期原文（`YYYY-MM-DD`，可只到年或年月）；源没给为 null，此时
+  /// 落库退回 [year]。
+  final String? date;
+
+  /// 评分（已归一到 0~10）与评分人数。
+  final double? rating;
+  final int? ratingCount;
+
+  /// 类型 / 标签名（按源侧热度降序）。
+  final List<String> tags;
+
+  /// 无字横版图 URL（书目源的 AniList `bannerImage`，见 [fromCatalog]）；Bangumi /
+  /// DLsite 不提供，恒为 null。写回时落成条目的横版背景（`item_images` backdrop）。
+  final String? backdropUrl;
 
   /// 出版社（openBD / NDL / 楽天）。
   final String? publisher;
@@ -162,14 +197,14 @@ class BookScrapeCandidate {
   /// ISBN-13（openBD / NDL / 楽天）。
   final String? isbn;
 
-  /// 横幅 / 背景图（AniList `bannerImage`）。只在候选里带出（CLI / AI 可见），书族
-  /// 目前没有存横幅的位置，写回不落它。
+  /// 横幅 / 背景图（AniList `bannerImage`）原值，候选里照样带出（CLI / AI 可见）；写回落库
+  /// 走 [backdropUrl]（书目源映射时取同一张）。
   final String? bannerUrl;
 
   /// 取封面必须带的请求头（NDL 缩略图要 Referer）；预览与下载都要带上。
   final Map<String, String>? coverHeaders;
 
-  /// 源给出的详情页（书目源）；null 时按源规则拼。
+  /// 源给出的详情页（书目源 / MangaBaka `canonical_url`）；null 时按源规则拼。
   final String? pageUrl;
 
   /// 条目详情页 URL（「查看条目」用）。
@@ -180,6 +215,7 @@ class BookScrapeCandidate {
         BookScrapeSource.dlsite =>
           DlsiteWorkId.tryParse(subjectId)?.pageUrl ??
               'https://www.dlsite.com/maniax/work/=/product_id/$subjectId.html',
+        BookScrapeSource.mangabaka => 'https://mangabaka.org/manga/$subjectId',
         BookScrapeSource.anilist => 'https://anilist.co/manga/$subjectId',
         BookScrapeSource.openbd => 'https://www.hanmoto.com/bd/isbn/$subjectId',
         BookScrapeSource.ndl =>
@@ -197,17 +233,27 @@ class BookMetadataScraper {
   BookMetadataScraper({
     http.Client? client,
     DlsiteClient? dlsiteClient,
+    MangaBakaClient? mangaBakaClient,
     BookCatalogHttp? catalogHttp,
     this.rakuten,
-  }) : _api = BangumiApiClient(client: client, userAgent: _userAgent),
+  }) : _api = BangumiApiClient(
+         client: client,
+         userAgent: kBookScraperUserAgent,
+       ),
        _dlsite = dlsiteClient ?? DlsiteClient(client: client),
        _ownsDlsite = dlsiteClient == null,
+       _mangaBaka =
+           mangaBakaClient ??
+           MangaBakaClient(client: client, userAgent: kBookScraperUserAgent),
+       _ownsMangaBaka = mangaBakaClient == null,
        _catalog = catalogHttp ?? BookCatalogHttp(client: client),
        _ownsCatalog = catalogHttp == null;
 
   final BangumiApiClient _api;
   final DlsiteClient _dlsite;
   final bool _ownsDlsite;
+  final MangaBakaClient _mangaBaka;
+  final bool _ownsMangaBaka;
   final BookCatalogHttp _catalog;
   final bool _ownsCatalog;
 
@@ -216,9 +262,6 @@ class BookMetadataScraper {
 
   /// 楽天凭据是否齐全（源选择器据此显示 / 隐藏楽天）。
   bool get rakutenAvailable => rakuten?.isComplete ?? false;
-
-  static const String _userAgent =
-      'fushi-reader/book-scraper (https://github.com/hajisensai)';
 
   /// 按 [keyword] 搜书籍条目，返回带封面的候选（最多 [limit] 条）。
   ///
@@ -337,13 +380,17 @@ class BookMetadataScraper {
     return work == null ? null : mapDlsiteWork(work);
   }
 
-  /// AniList 按名搜轻小说（format NOVEL）。
+  /// AniList 按名搜轻小说（format NOVEL）。[includeNsfw] 为 false 时服务端就排除
+  /// isAdult 条目，一页名额不被它们占掉。
   Future<List<BookScrapeCandidate>> searchAniList(
     String keyword, {
     int limit = 10,
+    bool includeNsfw = false,
   }) => _catalogList(
     BookScrapeSource.anilist,
-    () => AniListNovelClient(_catalog).search(keyword, limit: limit),
+    () => AniListNovelClient(
+      _catalog,
+    ).search(keyword, limit: limit, includeAdult: includeNsfw),
   );
 
   /// openBD 按 ISBN 查（输入里找不到 ISBN → 空表）。
@@ -392,8 +439,13 @@ class BookMetadataScraper {
         BookScrapeSource.openbd => await OpenBdClient(_catalog).fetchByIsbn(id),
         BookScrapeSource.ndl => await NdlSearchClient(_catalog).fetchByIsbn(id),
         BookScrapeSource.rakuten => await _rakutenClient().fetchByIsbn(id),
-        BookScrapeSource.bangumi || BookScrapeSource.dlsite =>
-          throw ArgumentError.value(source, 'source', 'not a catalog source'),
+        BookScrapeSource.bangumi ||
+        BookScrapeSource.dlsite ||
+        BookScrapeSource.mangabaka => throw ArgumentError.value(
+          source,
+          'source',
+          'not a catalog source',
+        ),
       };
     } on BookCatalogException catch (e) {
       throw BookScrapeException(
@@ -435,12 +487,151 @@ class BookMetadataScraper {
     ];
   }
 
+  /// 搜 MangaBaka 系列（漫画 / 轻小说）。候选封面是系列主封面原图；每卷封面见
+  /// [fetchMangaBakaVolumeCovers]。失败抛 [BookScrapeException]。
+  Future<List<BookScrapeCandidate>> searchMangaBaka(
+    String keyword, {
+    int limit = 10,
+  }) async {
+    final List<MangaBakaSeries> found;
+    try {
+      found = await _mangaBaka.searchSeries(keyword, limit: limit);
+    } on MangaBakaException catch (e) {
+      throw BookScrapeException(
+        'MangaBaka search ${e.message}',
+        statusCode: e.statusCode,
+      );
+    }
+    return <BookScrapeCandidate>[
+      for (final MangaBakaSeries s in found) ?mapMangaBakaSeries(s),
+    ];
+  }
+
+  /// 按 MangaBaka 系列 id 直取（`merged` 的跟到存活系列）。不存在 / 无封面 → null。
+  Future<BookScrapeCandidate?> fetchMangaBakaById(String id) async {
+    final int? seriesId = int.tryParse(id.trim());
+    if (seriesId == null) return null;
+    try {
+      MangaBakaSeries? series = await _mangaBaka.fetchSeries(seriesId);
+      for (int hop = 0; hop < 3 && series != null && series.isMerged; hop++) {
+        series = await _mangaBaka.fetchSeries(series.mergedWith!);
+      }
+      return series == null ? null : mapMangaBakaSeries(series);
+    } on MangaBakaException catch (e) {
+      throw BookScrapeException(
+        'MangaBaka series ${e.message}',
+        statusCode: e.statusCode,
+      );
+    }
+  }
+
+  /// MangaBaka 系列 [seriesId] 的日文版每卷封面（每卷一张：常规版、安全分级优先，再比
+  /// 面积），按卷号升序。失败抛 [BookScrapeException]。
+  Future<List<BookVolumeCover>> fetchMangaBakaVolumeCovers(
+    String seriesId,
+  ) async {
+    final int? id = int.tryParse(seriesId.trim());
+    if (id == null) return const <BookVolumeCover>[];
+    final List<MangaBakaImage> images;
+    try {
+      images = await _mangaBaka.fetchSeriesImages(
+        id,
+        type: 'volume',
+        language: 'ja',
+      );
+    } on MangaBakaException catch (e) {
+      throw BookScrapeException(
+        'MangaBaka images ${e.message}',
+        statusCode: e.statusCode,
+      );
+    }
+    final List<BookVolumeCover> out = <BookVolumeCover>[
+      for (final MapEntry<num, MangaBakaImage> e in pickMangaBakaVolumeImages(
+        images,
+      ).entries)
+        BookVolumeCover(
+          volume: e.key,
+          label: e.value.index,
+          url: e.value.raw.url,
+          width: e.value.raw.width,
+          height: e.value.raw.height,
+          thumbnailUrl: e.value.thumbnailUrl,
+        ),
+    ];
+    out.sort(
+      (BookVolumeCover a, BookVolumeCover b) => a.volume.compareTo(b.volume),
+    );
+    return out;
+  }
+
   /// 关闭内部 client（若为默认自建）。
   void close() {
     _api.close();
     if (_ownsDlsite) _dlsite.close();
+    if (_ownsMangaBaka) _mangaBaka.close();
     if (_ownsCatalog) _catalog.close();
   }
+}
+
+/// 一卷封面（MangaBaka 每卷封面网格用）。
+class BookVolumeCover {
+  const BookVolumeCover({
+    required this.volume,
+    required this.label,
+    required this.url,
+    this.width,
+    this.height,
+    this.thumbnailUrl,
+  });
+
+  final num volume;
+
+  /// 源站缩略图（网格预览用）；没有时预览退回 [url]。
+  final String? thumbnailUrl;
+
+  /// 源站原样的卷序（`"28.5"`）。
+  final String label;
+  final String url;
+  final int? width;
+  final int? height;
+}
+
+/// 把 MangaBaka 系列映射为书族候选；没有主封面返回 null。
+BookScrapeCandidate? mapMangaBakaSeries(MangaBakaSeries series) {
+  final String? cover = series.cover?.url;
+  if (cover == null) return null;
+  final List<String> creators = <String>[
+    ...series.authors,
+    for (final String a in series.artists)
+      if (!series.authors.contains(a)) a,
+  ];
+  return BookScrapeCandidate(
+    subjectId: '${series.id}',
+    title: series.displayTitle,
+    coverUrl: cover,
+    source: BookScrapeSource.mangabaka,
+    originalTitle: series.title != series.displayTitle ? series.title : null,
+    author: creators.isEmpty ? null : creators.join(', '),
+    isAdult: series.isAdult,
+    pageUrl: series.canonicalUrl,
+  );
+}
+
+/// 用户贴的 MangaBaka 系列页 URL（`mangabaka.org/manga/<id>/…`）或纯数字 → 系列 id；
+/// 其余 null。
+String? parseMangaBakaSeriesId(String input) {
+  final String trimmed = input.trim();
+  if (RegExp(r'^\d+$').hasMatch(trimmed)) return trimmed;
+  final Uri? uri = Uri.tryParse(
+    trimmed.contains('://') ? trimmed : 'https://$trimmed',
+  );
+  if (uri == null) return null;
+  final String host = uri.host.toLowerCase().replaceFirst('www.', '');
+  if (host != 'mangabaka.org' && host != 'mangabaka.dev') return null;
+  for (final String segment in uri.pathSegments) {
+    if (RegExp(r'^\d+$').hasMatch(segment)) return segment;
+  }
+  return null;
 }
 
 /// 把 DLsite 作品映射为书族候选；无封面返回 null。作者位取作者 > 剧本 > 社团。
@@ -457,8 +648,19 @@ BookScrapeCandidate? mapDlsiteWork(DlsiteWork work) {
     year: work.releaseDate?.year,
     summary: work.description,
     isAdult: work.ageCategory?.isAdult ?? false,
+    date: _isoDate(work.releaseDate),
+    // DLsite 评分是 0~5 星，归一到 0~10 与其它源同尺度。
+    rating: work.rating?.average == null ? null : work.rating!.average! * 2,
+    ratingCount: work.rating?.count,
+    tags: work.genres,
   );
 }
+
+String? _isoDate(DateTime? d) => d == null
+    ? null
+    : '${d.year.toString().padLeft(4, '0')}-'
+          '${d.month.toString().padLeft(2, '0')}-'
+          '${d.day.toString().padLeft(2, '0')}';
 
 /// 纯函数：把 Bangumi `/v0/subjects/{id}` **详情**响应体解析为单个候选（id 直连
 /// 改绑映射路径用）。详情响应的 images/name/name_cn/date/summary 字段形态与搜索
@@ -494,7 +696,12 @@ List<BookScrapeCandidate> parseBookSearchResponse(String body) {
     return const <BookScrapeCandidate>[];
   }
   final List<BookScrapeCandidate> out = <BookScrapeCandidate>[];
-  for (final Object? item in data) {
+  // 系列条目（`series: true`）排前：否则搜「涼宮ハルヒ」会先给单卷条目，选它只拿到
+  // 一卷的封面（行为变化：候选顺序与旧版不同，组内仍保持源站顺序）。
+  for (final Object? item in seriesFirst<Object?>(
+    data,
+    (Object? i) => i is Map && i['series'] == true,
+  )) {
     if (item is! Map<String, Object?>) continue;
     final BookScrapeCandidate? candidate = mapBookSubject(item);
     if (candidate != null) out.add(candidate);
@@ -523,7 +730,36 @@ BookScrapeCandidate? mapBookSubject(Map<String, Object?> subject) {
     originalTitle: originalTitle,
     year: _yearFromDate(_nonEmptyString(subject['date'])),
     summary: _nonEmptyString(subject['summary']),
+    date: _nonEmptyString(subject['date']),
+    rating: _bangumiScore(subject['rating']),
+    ratingCount: _bangumiRatingTotal(subject['rating']),
+    tags: _bangumiTagNames(subject['tags']),
+    isAdult: subject['nsfw'] == true,
   );
+}
+
+double? _bangumiScore(Object? rating) {
+  if (rating is! Map<String, Object?>) return null;
+  final Object? score = rating['score'];
+  return score is num && score > 0 ? score.toDouble() : null;
+}
+
+int? _bangumiRatingTotal(Object? rating) {
+  if (rating is! Map<String, Object?>) return null;
+  final Object? total = rating['total'];
+  return total is num && total > 0 ? total.toInt() : null;
+}
+
+/// Bangumi `tags: [{name, count}]`（已按热度降序）→ 前 10 个名字。
+List<String> _bangumiTagNames(Object? tags) {
+  if (tags is! List<Object?>) return const <String>[];
+  return <String>[
+    for (final Object? tag in tags)
+      if (tag is Map<String, Object?> &&
+          tag['name'] is String &&
+          (tag['name']! as String).trim().isNotEmpty)
+        (tag['name']! as String).trim(),
+  ].take(10).toList(growable: false);
 }
 
 /// 从 `YYYY-MM-DD` 取年份，非法返回 null。

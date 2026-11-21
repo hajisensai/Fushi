@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/components/fushi_logo_title.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/utils/misc/dashboard_server_continue.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
@@ -39,6 +40,8 @@ import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
 import 'package:fushi/src/utils/components/shelf_cover_material.dart'
     show ShelfCardMeta, ShelfMaterialSurface;
 import 'package:fushi/src/utils/components/cover_badge.dart' show CoverBadge;
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/stat_contribution_heatmap.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
@@ -50,7 +53,8 @@ import 'package:fushi/src/pages/implementations/stat_shared.dart'
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
     show FushiShellTheme, ShellContentLayout;
-import 'package:flutter/rendering.dart' show RenderParagraph;
+import 'package:flutter/rendering.dart'
+    show RenderClipPath, RenderClipRRect, RenderClipRect, RenderParagraph;
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -226,9 +230,21 @@ void main() {
     // 必然已关。机器忙（CI 四路并发）时固定 200 ms 不够。只看指向真实文件的图：
     // 探测未决时的占位图（kPendingCoverImage）按设计永不完成，不能拿缓存总数判。
     final ImageCache cache = PaintingBinding.instance.imageCache;
-    Future<bool> fileImagePending() async {
+    // 艺术字（[FushiLogoTitle]）先经 ImageStream 量宽高比、量出来才建 [Image]：
+    // 这段读取期间树上没有 Image，只看 Image 会漏掉它的文件句柄。
+    Iterable<ImageProvider<Object>> providers() sync* {
       for (final Image image in tester.widgetList<Image>(find.byType(Image))) {
-        final ImageProvider<Object> provider = image.image;
+        yield image.image;
+      }
+      for (final FushiLogoTitle title in tester.widgetList<FushiLogoTitle>(
+        find.byType(FushiLogoTitle),
+      )) {
+        yield title.logo;
+      }
+    }
+
+    Future<bool> fileImagePending() async {
+      for (final ImageProvider<Object> provider in providers()) {
         final ImageProvider<Object> inner = provider is ResizeImage
             ? provider.imageProvider
             : provider;
@@ -330,8 +346,10 @@ void main() {
   /// 书侧装配（「继续」区的书来自 provider，测试直接喂 MediaItem）。
   Widget buildAppWithBooks(
     List<MediaItem> books,
-    Map<String, int> lastReadAt,
-  ) => ProviderScope(
+    Map<String, int> lastReadAt, {
+    void Function(int collectionId, {required bool manga})?
+    openBookCollectionOverride,
+  }) => ProviderScope(
     overrides: <Override>[
       platformServicesProvider.overrideWithValue(platformServices),
       ankiRepositoryProvider.overrideWithValue(ankiRepository),
@@ -342,7 +360,10 @@ void main() {
       child: MaterialApp(
         theme: shellTheme(),
         home: Scaffold(
-          body: HomeDashboardPage(videoRepo: VideoBookRepository(db)),
+          body: HomeDashboardPage(
+            videoRepo: VideoBookRepository(db),
+            openBookCollectionOverride: openBookCollectionOverride,
+          ),
         ),
       ),
     ),
@@ -731,8 +752,8 @@ void main() {
     for (int i = 1; i <= 6; i++) {
       await db.insertEpubBook(
         EpubBooksCompanion.insert(
-          bookKey: '新书$i',
-          title: '新书$i',
+          bookKey: '新书${_seriesFreeSuffix(i)}',
+          title: '新书${_seriesFreeSuffix(i)}',
           epubPath: '/abs/$i.epub',
           extractDir: '/abs/$i',
           chapterCount: 1,
@@ -742,7 +763,13 @@ void main() {
           localAddedAt: Value<int?>(now - (10 - i) * 1000),
         ),
       );
-      books.add(readingBook('新书$i', '新书$i', position: 0));
+      books.add(
+        readingBook(
+          '新书${_seriesFreeSuffix(i)}',
+          '新书${_seriesFreeSuffix(i)}',
+          position: 0,
+        ),
+      );
     }
     await tester.pumpWidget(buildAppWithBooks(books, const <String, int>{}));
     await pumpDashboard(tester);
@@ -751,8 +778,248 @@ void main() {
     expect(
       recentRows(tester).map((({String title, String subtitle}) r) => r.title),
       // 默认 4×2 放得下 6 条以上（连续尺寸：格子越大列得越多，不再固定 4 条）。
-      <String>['新书6', '新书5', '新书4', '新书3', '新书2', '新书1'],
+      <String>['新书F', '新书E', '新书D', '新书C', '新书B', '新书A'],
     );
+  });
+
+  // BUG-4861：色块外观「最近添加」的半高色块外面曾包一层 ClipRect，把块的投影
+  // 齐格子边切成直角矩形（左上角 / 右缘能看到一条直边）。块到格子之间不许有
+  // 任何裁切层，投影要伸进格间距（与「继续」的半高块同口径）。
+  testWidgets('色块「最近添加」：半高色块到格子之间没有裁切层，投影不被切成直角矩形（BUG-4861）', (
+    WidgetTester tester,
+  ) async {
+    dashboardLayout = ShellContentLayout.collage;
+    useSize(tester, const Size(1280, 900));
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final List<MediaItem> books = <MediaItem>[];
+    for (int i = 1; i <= 6; i++) {
+      final String key = '新书${_seriesFreeSuffix(i)}';
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: key,
+          title: key,
+          epubPath: '/abs/$i.epub',
+          extractDir: '/abs/$i',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: now - (10 - i) * 1000,
+          localAddedAt: Value<int?>(now - (10 - i) * 1000),
+        ),
+      );
+      books.add(readingBook(key, key, position: 0));
+    }
+    await tester.pumpWidget(buildAppWithBooks(books, const <String, int>{}));
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    final RenderObject tile = tester.renderObject(
+      find.byKey(homeWidgetTileKey(HomeWidgetKind.recentlyAdded)),
+    );
+    final Finder blocks = find.byWidgetPredicate(
+      (Widget w) =>
+          w.key is ValueKey<String> &&
+          (w.key! as ValueKey<String>).value.startsWith('home-recent-block/'),
+    );
+    expect(blocks, findsAtLeastNWidgets(2));
+    for (final Element block in blocks.evaluate()) {
+      final List<String> clips = <String>[];
+      RenderObject? node = block.renderObject?.parent;
+      while (node != null && !identical(node, tile)) {
+        if (node is RenderClipRect ||
+            node is RenderClipRRect ||
+            node is RenderClipPath) {
+          clips.add(node.runtimeType.toString());
+        }
+        node = node.parent;
+      }
+      expect(node, same(tile), reason: '色块应在「最近添加」格子里');
+      expect(clips, isEmpty, reason: '${block.widget.key} 外面有裁切层');
+    }
+  });
+
+  // 用户 11-20：色块上已经印着作品名，悬停再弹一个同名 tooltip「太丑了」。
+  // 带可见标题的首页色块（「继续」「最近添加」），从格子到块、块里面都不许有
+  // tooltip；读屏标题仍在块的语义里。
+  testWidgets('色块「继续」/「最近添加」：卡面已印标题，祖先与后代都没有 tooltip，语义仍带标题', (
+    WidgetTester tester,
+  ) async {
+    dashboardLayout = ShellContentLayout.collage;
+    useSize(tester, const Size(1280, 900));
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final List<MediaItem> books = <MediaItem>[];
+    for (int i = 1; i <= 6; i++) {
+      final String key = '新书${_seriesFreeSuffix(i)}';
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: key,
+          title: key,
+          epubPath: '/abs/$i.epub',
+          extractDir: '/abs/$i',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: now - (10 - i) * 1000,
+          localAddedAt: Value<int?>(now - (10 - i) * 1000),
+        ),
+      );
+      books.add(readingBook(key, key, position: 0));
+    }
+    await tester.pumpWidget(buildAppWithBooks(books, const <String, int>{}));
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    final SemanticsHandle semantics = tester.ensureSemantics();
+    final Finder blocks = find.byWidgetPredicate(
+      (Widget w) =>
+          w.key is ValueKey<String> &&
+          ((w.key! as ValueKey<String>).value.startsWith(
+                'home-recent-block/',
+              ) ||
+              (w.key! as ValueKey<String>).value.startsWith(
+                'home-continue-block/',
+              )),
+    );
+    expect(blocks, findsAtLeastNWidgets(2));
+    bool isTooltip(Widget w) => w is Tooltip || w is FushiTooltip;
+    for (final Element block in blocks.evaluate()) {
+      final Finder self = find.byElementPredicate((Element e) => e == block);
+      final List<String> titles = find
+          .descendant(of: self, matching: find.byType(Text))
+          .evaluate()
+          .map((Element e) => (e.widget as Text).data ?? '')
+          .where((String s) => s.startsWith('新书'))
+          .toList();
+      expect(titles, isNotEmpty, reason: '${block.widget.key} 卡面上没有标题');
+      expect(
+        find.descendant(of: self, matching: find.byWidgetPredicate(isTooltip)),
+        findsNothing,
+        reason: '${block.widget.key} 里面还有 tooltip',
+      );
+      final List<String> above = <String>[];
+      block.visitAncestorElements((Element e) {
+        if (e.widget.key is ValueKey<String> &&
+            (e.widget.key! as ValueKey<String>).value.startsWith(
+              'home-widget',
+            )) {
+          return false;
+        }
+        if (isTooltip(e.widget)) above.add(e.widget.runtimeType.toString());
+        return true;
+      });
+      expect(above, isEmpty, reason: '${block.widget.key} 外面包了 tooltip');
+      expect(
+        find.descendant(
+          of: self,
+          matching: find.bySemanticsLabel(RegExp(RegExp.escape(titles.first))),
+        ),
+        findsWidgets,
+        reason: '${block.widget.key} 的语义里没有标题',
+      );
+    }
+    semantics.dispose();
+  });
+
+  // 11-20 反馈 #11：首页「继续」色块对刮削过的作品画艺术字（与视频库系列卡同一个
+  // fushiSeriesCoverBlock，元数据只为画出来的条目单查）。
+  testWidgets('色块「继续」：合集刮削到 logo 时色块画 logo（反馈 #11）', (
+    WidgetTester tester,
+  ) async {
+    dashboardLayout = ShellContentLayout.collage;
+    useSize(tester, const Size(1280, 900));
+    final File logo = File('${storeDir.path}/logo.png')
+      ..writeAsBytesSync(_kLandscapePng);
+    final int cid = await seedCollectionTwoEpisodes(
+      e1: const VideoBooksCompanion(
+        bookUid: Value('e1'),
+        title: Value('S01E01'),
+        videoPath: Value('/abs/e1.mp4'),
+        lastPositionMs: Value(60000),
+      ),
+      e2: const VideoBooksCompanion(
+        bookUid: Value('e2'),
+        title: Value('S01E02'),
+        videoPath: Value('/abs/e2.mp4'),
+      ),
+    );
+    await db.replaceMediaImagesForCollection(cid, <MediaImagesCompanion>[
+      MediaImagesCompanion.insert(
+        collectionId: Value<int?>(cid),
+        kind: MediaImageKind.logo.dbValue,
+        path: logo.path,
+      ),
+    ]);
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    final Finder block = find.byKey(
+      const ValueKey<String>('home-continue-block/0'),
+    );
+    expect(block, findsOneWidget);
+    final Finder logoTitle = find.descendant(
+      of: block,
+      matching: find.byType(FushiLogoTitle),
+    );
+    // 元数据是画到时后台单查（DB + 文件存在性），给真实事件循环几跳。
+    for (int i = 0; i < 20 && logoTitle.evaluate().isEmpty; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pump();
+    }
+    await settleCoverProbes(tester);
+    expect(tester.takeException(), isNull);
+    expect(logoTitle, findsOneWidget);
+  });
+
+  // 设计稿 H8：「最近添加」里同一合集新加的几卷合成一张卡，点开进合集详情页
+  // （而不是只打开其中一卷）；不在合集里、仅按书名系列键归的组仍打开卷号最小的
+  // 一卷（[recentBookGroupTarget] 纯函数测试）。
+  testWidgets('双栏「最近添加」：同合集的系列合并卡点开 = 进该合集', (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int cid = await db.createMediaCollection('某轻小说');
+    final List<MediaItem> books = <MediaItem>[];
+    for (int i = 1; i <= 3; i++) {
+      final String key = '某轻小说 $i';
+      final String uid = await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: key,
+          title: key,
+          epubPath: '/abs/v$i.epub',
+          extractDir: '/abs/v$i',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: now - (10 - i) * 1000,
+          localAddedAt: Value<int?>(now - (10 - i) * 1000),
+        ),
+      );
+      await db.addToCollection(cid, MediaKind.epub, uid);
+      books.add(readingBook(key, key, position: 0));
+    }
+    final List<(int, bool)> opened = <(int, bool)>[];
+    await tester.pumpWidget(
+      buildAppWithBooks(
+        books,
+        const <String, int>{},
+        openBookCollectionOverride: (int id, {required bool manga}) =>
+            opened.add((id, manga)),
+      ),
+    );
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    final List<({String title, String subtitle})> recent = recentRows(tester);
+    expect(recent, hasLength(1), reason: '同合集三卷合成一张');
+    expect(
+      recent.single.subtitle,
+      contains(t.home_widget_recent_volume_count(n: 3)),
+    );
+    // 直接调条目小行的点按回调（不用坐标点击）。
+    tester
+        .widget<InkWell>(
+          find.byKey(const ValueKey<String>('home-recent-item/0')),
+        )
+        .onTap!();
+    await tester.pump();
+    expect(opened, <(int, bool)>[(cid, false)]);
   });
 
   testWidgets('双栏「最近添加」按本机拥有时刻排：刚从对端下载的旧书 / 旧视频排最前，'
@@ -765,8 +1032,8 @@ void main() {
     for (int i = 1; i <= 4; i++) {
       await db.insertEpubBook(
         EpubBooksCompanion.insert(
-          bookKey: '本地$i',
-          title: '本地$i',
+          bookKey: '本地${_seriesFreeSuffix(i)}',
+          title: '本地${_seriesFreeSuffix(i)}',
           epubPath: '/abs/local$i.epub',
           extractDir: '/abs/local$i',
           chapterCount: 1,
@@ -775,7 +1042,13 @@ void main() {
           localAddedAt: Value<int?>(now - (10 - i) * 1000),
         ),
       );
-      books.add(readingBook('本地$i', '本地$i', position: 0));
+      books.add(
+        readingBook(
+          '本地${_seriesFreeSuffix(i)}',
+          '本地${_seriesFreeSuffix(i)}',
+          position: 0,
+        ),
+      );
     }
     // 刚从互联对端下载：importedAt 沿用对端多年前的入库时刻（BUG-3452 /
     // BUG-2463），本机拥有时刻是刚才——与生产落地路径一样经写入单点补齐。
@@ -811,7 +1084,7 @@ void main() {
       '对端旧书',
       '对端旧视频',
     }, reason: '按 importedAt 排它们会沉到最后');
-    expect(titles.skip(2), <String>['本地4', '本地3', '本地2', '本地1']);
+    expect(titles.skip(2), <String>['本地D', '本地C', '本地B', '本地A']);
   });
 
   testWidgets('「最近添加」不在窄网格默认模板里；窄网格「继续」2×2 只放主卡，2×3 才挂横滑行', (
@@ -2496,7 +2769,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('色块「今日」宽格设了目标：目标进度与今日时长同一行都显示（时长不被目标挤掉）', (
+  testWidgets('色块「今日」宽格设了目标：目标与今日时长同一行都显示（时长不被目标挤掉）', (
     WidgetTester tester,
   ) async {
     dashboardLayout = ShellContentLayout.collage;
@@ -2510,7 +2783,15 @@ void main() {
     expect(tester.takeException(), isNull);
     final Finder goal = find.descendant(
       of: find.byKey(studyCardKey),
-      matching: find.text(t.stat_goal_progress(read: 800, goal: 1000)),
+      // 副行只写目标（设计稿 11-20 #12：不再重复大字已写的今日字数）。
+      matching: find.text(t.home_today_goal_target(goal: '1000')),
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(studyCardKey),
+        matching: find.text(t.stat_goal_progress(read: 800, goal: 1000)),
+      ),
+      findsNothing,
     );
     final Finder time = find.descendant(
       of: find.byKey(const ValueKey<String>('home-today-time')),
@@ -2898,6 +3179,116 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  group('BUG-4895 · 首页不在用户眼前时不在后台重载', () {
+    /// 播放页 / 阅读器压上来、转场走完：首页所在路由被完全盖住。
+    Future<NavigatorState> coverWithOpaquePage(WidgetTester tester) async {
+      final NavigatorState navigator = tester.state<NavigatorState>(
+        find.byType(Navigator),
+      );
+      unawaited(
+        navigator.push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(body: Text('player')),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('player'), findsOneWidget);
+      return navigator;
+    }
+
+    /// 播放中的一次写库（断点每秒写 video_books、学习时钟每分钟写 study_segments）：
+    /// 这里用今天再多 500 字代表——同一张表集、同一条失效通道，且首页上有数字可断言。
+    Future<void> writeMoreStudyToday() => seedLegacyReading(
+      title: '播放中记下的字数',
+      dateKey: FushiTimeFormat.dayKey(DateTime.now()),
+      charsRead: 500,
+      timeMs: 60000,
+    );
+
+    testWidgets('被播放页盖住时到达的统计写入只记一笔；播放页弹走后补做一次重载', (WidgetTester tester) async {
+      useSize(tester, const Size(1280, 900));
+      final HomeTab tabBefore = homeShellTabNotifier.value;
+      addTearDown(() => homeShellTabNotifier.value = tabBefore);
+      homeShellTabNotifier.value = HomeTab.home;
+      await seedSampleData();
+      await tester.pumpWidget(buildApp());
+      await pumpDashboard(tester);
+      expect(find.text(formatStatChars(800)), findsOneWidget);
+
+      final NavigatorState navigator = await coverWithOpaquePage(tester);
+      // 播放中断点每秒一笔：连着写几次，每次都等过 400 ms 防抖。
+      for (int i = 0; i < 3; i++) {
+        await writeMoreStudyToday();
+        await pumpDashboard(tester);
+        await pumpDashboard(tester);
+      }
+      expect(
+        find.text(formatStatChars(800), skipOffstage: false),
+        findsOneWidget,
+        reason: '被盖住期间不重查聚合、不整页 setState，首页还是盖住前的数据',
+      );
+      expect(
+        find.text(formatStatChars(1300), skipOffstage: false),
+        findsNothing,
+      );
+
+      navigator.pop();
+      await tester.pump();
+      await pumpDashboard(tester);
+      await pumpDashboard(tester);
+      await pumpDashboard(tester);
+      expect(
+        find.text(formatStatChars(1300)),
+        findsOneWidget,
+        reason: '回到首页时补做被推迟的重载',
+      );
+      expect(find.text(formatStatChars(800)), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('上面只是对话框（首页还看得见）时照常重载', (WidgetTester tester) async {
+      useSize(tester, const Size(1280, 900));
+      final HomeTab tabBefore = homeShellTabNotifier.value;
+      addTearDown(() => homeShellTabNotifier.value = tabBefore);
+      homeShellTabNotifier.value = HomeTab.home;
+      await seedSampleData();
+      await tester.pumpWidget(buildApp());
+      await pumpDashboard(tester);
+      expect(find.text(formatStatChars(800)), findsOneWidget);
+
+      final NavigatorState navigator = tester.state<NavigatorState>(
+        find.byType(Navigator),
+      );
+      unawaited(
+        showDialog<void>(
+          context: tester.element(find.byType(HomeDashboardPage)),
+          builder: (_) => const Dialog(child: Text('dialog')),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('dialog'), findsOneWidget);
+
+      await writeMoreStudyToday();
+      await pumpDashboard(tester);
+      await pumpDashboard(tester);
+      await pumpDashboard(tester);
+      expect(
+        find.text(formatStatChars(1300)),
+        findsOneWidget,
+        reason: '对话框不盖住首页，数据变了要当场更新',
+      );
+
+      navigator.pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(tester.takeException(), isNull);
+    });
+  });
+
   testWidgets('浮动工具栏：Tab 可达五颗动作按钮（焦点可遍历）', (WidgetTester tester) async {
     useSize(tester, const Size(1280, 900));
     await seedSampleData();
@@ -3160,8 +3551,8 @@ void main() {
     for (int i = 1; i <= 16; i++) {
       await db.insertEpubBook(
         EpubBooksCompanion.insert(
-          bookKey: '新书$i',
-          title: '新书$i',
+          bookKey: '新书${_seriesFreeSuffix(i)}',
+          title: '新书${_seriesFreeSuffix(i)}',
           epubPath: '/abs/$i.epub',
           extractDir: '/abs/$i',
           chapterCount: 1,
@@ -3170,7 +3561,13 @@ void main() {
           localAddedAt: Value<int?>(now - i * 1000),
         ),
       );
-      books.add(readingBook('新书$i', '新书$i', position: 0));
+      books.add(
+        readingBook(
+          '新书${_seriesFreeSuffix(i)}',
+          '新书${_seriesFreeSuffix(i)}',
+          position: 0,
+        ),
+      );
     }
     int count(String prefix) {
       int n = 0;
@@ -3269,3 +3666,8 @@ class _NetMountFile implements File {
     throw StateError('unexpected File.${invocation.memberName} on $path');
   }
 }
+
+/// 测试书名的后缀 A、B、C…：「最近添加」把同一系列新加的几卷合成一张卡（拼贴设计稿
+/// H8，按 `parseBookSeriesKey` 认卷号），书名尾巴是数字（「新书1」「新书2」）会被认成
+/// 同一系列的不同卷而合并；只测排序 / 条数的用例用字母后缀，每本各成一张。
+String _seriesFreeSuffix(int i) => String.fromCharCode(0x40 + i);

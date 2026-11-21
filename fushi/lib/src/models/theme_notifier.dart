@@ -7,7 +7,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:cupertino_ui/cupertino_ui.dart'
-    show CupertinoPageTransitionsBuilder, CupertinoRouteTransitionMixin;
+    show CupertinoRouteTransitionMixin;
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/home_tab.dart';
@@ -19,6 +19,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
 import 'package:fushi/src/utils/adaptive/predictive_back_page_transitions.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
+import 'package:fushi/src/utils/adaptive/vetoed_back_swipe.dart';
 import 'package:fushi/src/utils/components/accent_logo_image.dart'
     show appLogoFollowsAccent;
 import 'package:fushi/src/utils/components/mascot_glow.dart'
@@ -583,7 +584,8 @@ class EinkCupertinoPageTransitionsBuilder extends PageTransitionsBuilder {
       context,
       dragging ? animation : kAlwaysCompleteAnimation,
       dragging ? secondaryAnimation : kAlwaysDismissedAnimation,
-      child,
+      // 页面 `PopScope` 否决返回时侧滑转成 maybePop（墨水屏下不做阻尼位移）。
+      VetoedBackSwipe(route: route, child: child),
     );
   }
 }
@@ -865,6 +867,16 @@ class ThemeNotifier extends ChangeNotifier {
       _customThemeIdGenerator = live._customThemeIdGenerator,
       _readOnlyView = true {
     _prefs.addAll(prefs);
+    // 库页布局出厂值是设备本地键、不在配置快照里：没选过布局的配置按这台设备的
+    // 出厂值读，与 live 一致。
+    final String? layoutInstallDefault =
+        live._prefs[ShellLayoutInstallDefault.prefKey];
+    if (layoutInstallDefault != null) {
+      _prefs.putIfAbsent(
+        ShellLayoutInstallDefault.prefKey,
+        () => layoutInstallDefault,
+      );
+    }
     _systemPalette = live._systemPalette;
     _systemPaletteIdentity = live._systemPaletteIdentity;
     _systemAccentColor = live._systemAccentColor;
@@ -1155,7 +1167,7 @@ class ThemeNotifier extends ChangeNotifier {
   /// 改任何一项背景设置都会重读，所以这里**不碰文件系统**：没核对过的路径先按存在
   /// 发布（图片层自带 errorBuilder，读不到只是空白一帧），由
   /// [_verifyPageBackdropImages] 在 [refreshPageBackdropSeeds] 里异步核对，核出
-  /// 不存在（换了设备 / 文件被删）再重发布、回落到角落形状。导入时自己复制的文件
+  /// 不存在（换了设备 / 文件被删）再重发布、回落到默认样式。导入时自己复制的文件
   /// 直接记为存在。
   final Map<String, bool> _pageBackdropImagePresence = <String, bool>{};
 
@@ -1504,7 +1516,7 @@ class ThemeNotifier extends ChangeNotifier {
         ? cache.seeds.map(Color.new).toList(growable: false)
         : const <Color>[];
     if (pageBackdropAccentSeed != before) _onAppIconSeedChanged();
-    // 异步核对图片还在不在；不在会重发布快照（回落角落形状），取色随之作废。
+    // 异步核对图片还在不在；不在会重发布快照（回落默认样式），取色随之作废。
     await _verifyPageBackdropImages();
     if (generation != _pageBackdropSeedGeneration) return;
     if (currentPath() != path) {
@@ -1667,6 +1679,11 @@ class ThemeNotifier extends ChangeNotifier {
         _persistHiddenDesignSystemMigration(migration, notifyOnReload: true),
       );
     }
+    final String? layoutInstallDefault = _settleShellLayoutInstallDefault();
+    if (layoutInstallDefault != null) {
+      // 与 design_system 迁移同一边界：载入是同步的，落盘自带错误处理。
+      unawaited(_persistShellLayoutInstallDefault(layoutInstallDefault));
+    }
   }
 
   Future<void> refreshFromDb() async {
@@ -1686,7 +1703,52 @@ class ThemeNotifier extends ChangeNotifier {
         notifyOnReload: false,
       );
     }
+    final String? layoutInstallDefault = _settleShellLayoutInstallDefault();
+    if (layoutInstallDefault != null) {
+      await _persistShellLayoutInstallDefault(layoutInstallDefault);
+    }
     notifyListeners();
+  }
+
+  /// G1 新旧 UI 选择：本安装的库页布局出厂值还没判定过时，按偏好里的老用户信号
+  /// 判一次（[ShellLayoutInstallDefault.settle]），先写进内存缓存，返回要落盘的
+  /// 编码值；已判定过返回 null（幂等）。
+  ///
+  /// 老用户信号与 `PreferencesRepository.settleSrsMiningTargetInstallDefault` 同一
+  /// 判据：首页首帧写的 `first_time_setup` / 新手引导写的 `onboarding_completed`
+  /// 已落过盘。本方法在 `AppModel.initialise()` 载入主题偏好时跑，先于首页首帧，
+  /// 全新安装此时两者都不存在。
+  String? _settleShellLayoutInstallDefault() {
+    if (ShellLayoutInstallDefault.fromPref(_shellLayoutInstallDefaultRaw) !=
+        null) {
+      return null;
+    }
+    final bool existingInstall =
+        _prefs.containsKey('first_time_setup') ||
+        _prefs.containsKey('onboarding_completed');
+    final String layoutRaw =
+        _get('shell_content_layout', defaultValue: '') as String;
+    final ShellLayoutInstallDefault settled = ShellLayoutInstallDefault.settle(
+      existingInstall: existingInstall,
+      layoutChosen: layoutRaw.isNotEmpty,
+    );
+    final String encoded = PrefCodec.encode(settled.prefValue);
+    _prefs[ShellLayoutInstallDefault.prefKey] = encoded;
+    return encoded;
+  }
+
+  Future<void> _persistShellLayoutInstallDefault(String encoded) async {
+    try {
+      await _db.setPref(ShellLayoutInstallDefault.prefKey, encoded);
+    } catch (error, stackTrace) {
+      // 内存里的判定已生效，本次运行行为正确；没落盘的话下次启动按当时的偏好
+      // 重判（老用户信号到那时已在，新安装会被判成升级——所以记进错误日志）。
+      ErrorLogService.instance.log(
+        'ThemeNotifier.persistShellLayoutInstallDefault',
+        error,
+        stackTrace,
+      );
+    }
   }
 
   Future<void> _persistHiddenDesignSystemMigration(
@@ -2087,8 +2149,25 @@ class ThemeNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
+  String? get _shellLayoutInstallDefaultRaw {
+    final String? raw = _prefs[ShellLayoutInstallDefault.prefKey];
+    if (raw == null) return null;
+    return PrefCodec.decode(raw, '');
+  }
+
+  /// 本安装的库页布局出厂判定；还没判定过（只读视图拿不到 live 的值时）按新安装算。
+  ShellLayoutInstallDefault get shellLayoutInstallDefault =>
+      ShellLayoutInstallDefault.fromPref(_shellLayoutInstallDefaultRaw) ??
+      ShellLayoutInstallDefault.fresh;
+
+  /// 没选过库页布局时生效的布局（新安装拼贴、升级上来的老用户封面网格），也是
+  /// 设置页「恢复默认」的目标。
+  ShellContentLayout get shellContentLayoutDefault =>
+      shellLayoutInstallDefault.layout;
+
   ShellContentLayout get shellContentLayout => ShellContentLayout.fromPref(
     _get('shell_content_layout', defaultValue: '') as String,
+    fallback: shellContentLayoutDefault,
   );
 
   /// 显式选过库页布局（落库值非空，含已删的 `blocks`）；false = 跟着
@@ -2096,9 +2175,44 @@ class ThemeNotifier extends ChangeNotifier {
   bool get shellContentLayoutChosen =>
       (_get('shell_content_layout', defaultValue: '') as String).isNotEmpty;
 
+  /// 显式选库页布局（设置页 / 新手引导 / 选择框）。选过就等于回答了「选一种库页
+  /// 布局」，待弹的选择框一并记成已处理——否则墨水屏期间留着的待处理状态会在
+  /// 用户已经在设置里选过之后再弹一次。
   Future<void> setShellContentLayout(ShellContentLayout value) async {
     await _set('shell_content_layout', value.prefValue);
+    await _markShellLayoutChoiceHandled();
     notifyListeners();
+  }
+
+  /// 首页是否还要弹「选一种库页布局」（升级上来、从没选过布局的老用户，弹一次）。
+  bool get shellLayoutChoicePending =>
+      !_readOnlyView && shellLayoutInstallDefault.choicePending;
+
+  /// 处理「选一种库页布局」：[chosen] 非 null = 点了「用这个」，写入所选布局；
+  /// null = 「稍后再说」，布局保持出厂值（封面网格）。两种都把弹窗记成已处理，
+  /// 之后不再弹。
+  Future<void> resolveShellLayoutChoice(ShellContentLayout? chosen) async {
+    _ensureWritable('resolveShellLayoutChoice');
+    if (chosen != null) {
+      await setShellContentLayout(chosen);
+      return;
+    }
+    await _markShellLayoutChoiceHandled();
+    notifyListeners();
+  }
+
+  /// 待弹的选择框记成已处理（出厂值仍是封面网格）；不在待处理状态时什么都不做。
+  Future<void> _markShellLayoutChoiceHandled() async {
+    if (!shellLayoutInstallDefault.choicePending) return;
+    final String encoded = PrefCodec.encode(
+      ShellLayoutInstallDefault.upgrade.prefValue,
+    );
+    _publishPreferenceWrite(
+      ShellLayoutInstallDefault.prefKey,
+      encoded,
+      ++_preferenceWriteRevision,
+    );
+    await _db.setPref(ShellLayoutInstallDefault.prefKey, encoded);
   }
 
   /// 落库的色块摆放；没选过为 null（跟着布局走）。
@@ -2112,7 +2226,7 @@ class ThemeNotifier extends ChangeNotifier {
     return null;
   }
 
-  /// 生效的色块摆放：没选过时拼贴 = 散落、规整色块 = 规整。
+  /// 生效的色块摆放：没选过时一律规整（[ShellBlockArrangement.defaultFor]）。
   ShellBlockArrangement get shellBlockArrangement =>
       _shellBlockArrangementPref ??
       ShellBlockArrangement.defaultFor(shellContentLayout);
@@ -3196,10 +3310,10 @@ ThemeData buildFushiThemeData({
                 FushiPredictiveBackPageTransitionsBuilder(),
               ),
               TargetPlatform.iOS: FushiBackdropPageTransitionsBuilder(
-                CupertinoPageTransitionsBuilder(),
+                FushiNativeCupertinoPageTransitionsBuilder(),
               ),
               TargetPlatform.macOS: FushiBackdropPageTransitionsBuilder(
-                CupertinoPageTransitionsBuilder(),
+                FushiNativeCupertinoPageTransitionsBuilder(),
               ),
               // 桌面：原地淡入、不位移（2026-10 动效重做）。Zoom 的整窗缩放位移
               // 随窗口尺寸线性增长，大屏上很重，见该 builder 类注释。

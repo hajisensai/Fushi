@@ -20,6 +20,7 @@ import 'dart:io';
 
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/engine_notifier.dart';
+import 'package:fushi_engine/tts/tts_provider.dart' show kTtsMaxConcurrency;
 import 'package:path/path.dart' as p;
 
 /// 任务 [jobId] 的工作目录（制作流程与队列共用这一个口径）。
@@ -27,6 +28,45 @@ Directory ttsRenderJobWorkDir(Directory workRoot, String jobId) =>
     Directory(p.join(workRoot.path, jobId));
 
 enum TtsRenderJobStatus { queued, running, done, failed, cancelled }
+
+/// 任务来源：小说整本（EPUB 正文 → 按章 m4a）或漫画一卷（演出稿 → 每句一段音频 +
+/// 成品清单，见 `manga_audio_renderer.dart`）。清单里缺省 = [book]（旧任务）。
+enum TtsRenderJobKind { book, manga }
+
+/// 补回一句未配音的台词（漫画按 `lineId` = `p<页>b<块…>`；小说可按行键）。
+/// 三种补法可以叠用：换重试候选里的下一个声音、手动指定声音、手动填写要念的文字。
+class TtsRenderLineRequest {
+  const TtsRenderLineRequest({
+    required this.lineId,
+    this.voice,
+    this.say,
+    this.nextRetryVoice = false,
+  });
+
+  final String lineId;
+  final String? voice;
+  final String? say;
+  final bool nextRetryVoice;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'id': lineId,
+    if (voice != null) 'v': voice,
+    if (say != null) 'say': say,
+    if (nextRetryVoice) 'next': true,
+  };
+
+  static TtsRenderLineRequest? fromJson(Object? raw) {
+    if (raw is! Map || raw['id'] is! String) return null;
+    final Object? v = raw['v'];
+    final Object? say = raw['say'];
+    return TtsRenderLineRequest(
+      lineId: raw['id'] as String,
+      voice: v is String && v.isNotEmpty ? v : null,
+      say: say is String ? say : null,
+      nextRetryVoice: raw['next'] == true,
+    );
+  }
+}
 
 enum TtsRenderJobPhase {
   planning,
@@ -67,6 +107,21 @@ class TtsRenderFlag {
   }
 }
 
+/// 在线声音被限流（HTTP 429）时整本书制作怎么办。
+enum TtsRateLimitAction {
+  /// 按服务端 `Retry-After` 退避后接着做（没给就指数退避）。
+  waitRetry,
+
+  /// 停下整个任务（已合成的句子留在缓存里，重试时从停下处接着做）。
+  pause,
+}
+
+/// 制作参数「同时请求数」可选的档位（在线声音）。
+const List<int> kTtsRenderOnlineConcurrencyChoices = <int>[1, 2, 4];
+
+/// 制作参数「每句间隔」的上限（毫秒）。
+const int kTtsRenderMaxSentenceGapMs = 2000;
+
 class TtsRenderJob {
   TtsRenderJob({
     required this.id,
@@ -77,9 +132,14 @@ class TtsRenderJob {
     required this.verify,
     required this.createdAt,
     required this.updatedAt,
+    this.kind = TtsRenderJobKind.book,
+    this.lineRequests = const <TtsRenderLineRequest>[],
     this.regenerate = const <int>[],
     this.pausePreset = 'standard',
     this.normalizeLoudness = true,
+    this.onlineConcurrency,
+    this.sentenceGapMs = 0,
+    this.rateLimitAction = TtsRateLimitAction.waitRetry,
     this.status = TtsRenderJobStatus.queued,
     this.phase,
     this.done = 0,
@@ -96,6 +156,11 @@ class TtsRenderJob {
   /// 用哪份声音预设（运行时按 id 取，凭据不进任务清单）。
   final String presetId;
 
+  final TtsRenderJobKind kind;
+
+  /// 非空 = 这是一次「补回」：只重合成这些句子（漫画），不跑整卷。
+  final List<TtsRenderLineRequest> lineRequests;
+
   /// 要制作的章节下标（EPUB spine）。空 = 全书。
   final List<int> sections;
 
@@ -111,8 +176,22 @@ class TtsRenderJob {
   /// 编码时做响度归一化（ffmpeg 有 loudnorm 时；没有就如实记 [loudnessSkipped]）。
   final bool normalizeLoudness;
 
+  /// 在线声音同时发几个请求；null = 用声音预设自己的并发（`ttsEffectiveConcurrency`）。
+  /// 只作用于在线引擎（本机 / 系统声音的并发由显卡与进程决定，不受它影响）。
+  final int? onlineConcurrency;
+
+  /// 在线声音每个请求之后等多久再发下一个（毫秒；命中缓存的句子不等）。
+  final int sentenceGapMs;
+
+  /// 在线声音被限流时怎么办。
+  final TtsRateLimitAction rateLimitAction;
+
   /// 要求了响度归一化但本机 ffmpeg 不支持而跳过（UI 提示，不算失败）。
   bool loudnessSkipped = false;
+
+  /// 合成失败、成品里先放了占位静音的句数（记在这本书的未配音账本里，可以补回）。
+  /// 不算任务失败。
+  int unvoiced = 0;
 
   final int createdAt;
   int updatedAt;
@@ -142,12 +221,22 @@ class TtsRenderJob {
     'bookKey': bookKey,
     'title': title,
     'presetId': presetId,
+    if (kind != TtsRenderJobKind.book) 'kind': kind.name,
+    if (lineRequests.isNotEmpty)
+      'lines': <Object?>[
+        for (final TtsRenderLineRequest r in lineRequests) r.toJson(),
+      ],
     'sections': sections,
     'verify': verify,
     'regenerate': regenerate,
     'pause': pausePreset,
     'loudnorm': normalizeLoudness,
+    'onlineConcurrency': ?onlineConcurrency,
+    if (sentenceGapMs > 0) 'gapMs': sentenceGapMs,
+    if (rateLimitAction != TtsRateLimitAction.waitRetry)
+      'onRateLimit': rateLimitAction.name,
     'loudnessSkipped': loudnessSkipped,
+    if (unvoiced > 0) 'unvoiced': unvoiced,
     'createdAt': createdAt,
     'updatedAt': updatedAt,
     'status': status.name,
@@ -174,36 +263,66 @@ class TtsRenderJob {
 
     final Object? phase = json['phase'];
     final Object? flags = json['flags'];
+    final Object? lines = json['lines'];
     return TtsRenderJob(
-      id: json['id']! as String,
-      bookKey: json['bookKey']! as String,
-      title: (json['title'] as String?) ?? '',
-      presetId: (json['presetId'] as String?) ?? '',
-      sections: ints(json['sections']),
-      verify: json['verify'] == true,
-      regenerate: ints(json['regenerate']),
-      pausePreset: (json['pause'] as String?) ?? 'standard',
-      normalizeLoudness: json['loudnorm'] != false,
-      createdAt: (json['createdAt'] as int?) ?? 0,
-      updatedAt: (json['updatedAt'] as int?) ?? 0,
-      status: byName(
-        TtsRenderJobStatus.values,
-        json['status'],
-        TtsRenderJobStatus.failed,
-      ),
-      phase: phase == null
-          ? null
-          : byName(TtsRenderJobPhase.values, phase, TtsRenderJobPhase.planning),
-      done: (json['done'] as int?) ?? 0,
-      total: (json['total'] as int?) ?? 0,
-      error: json['error'] as String?,
-      flags: <TtsRenderFlag>[
-        if (flags is List)
-          for (final Object? f in flags)
-            if (TtsRenderFlag.fromJson(f) case final TtsRenderFlag flag) flag,
-      ],
-      verified: json['verified'] == true,
-    )..loudnessSkipped = json['loudnessSkipped'] == true;
+        id: json['id']! as String,
+        bookKey: json['bookKey']! as String,
+        title: (json['title'] as String?) ?? '',
+        presetId: (json['presetId'] as String?) ?? '',
+        kind: byName(
+          TtsRenderJobKind.values,
+          json['kind'],
+          TtsRenderJobKind.book,
+        ),
+        lineRequests: <TtsRenderLineRequest>[
+          if (lines is List)
+            for (final Object? l in lines)
+              if (TtsRenderLineRequest.fromJson(l)
+                  case final TtsRenderLineRequest r)
+                r,
+        ],
+        sections: ints(json['sections']),
+        verify: json['verify'] == true,
+        regenerate: ints(json['regenerate']),
+        pausePreset: (json['pause'] as String?) ?? 'standard',
+        normalizeLoudness: json['loudnorm'] != false,
+        onlineConcurrency: json['onlineConcurrency'] is int
+            ? (json['onlineConcurrency']! as int).clamp(1, kTtsMaxConcurrency)
+            : null,
+        sentenceGapMs: json['gapMs'] is int
+            ? (json['gapMs']! as int).clamp(0, kTtsRenderMaxSentenceGapMs)
+            : 0,
+        rateLimitAction: byName(
+          TtsRateLimitAction.values,
+          json['onRateLimit'],
+          TtsRateLimitAction.waitRetry,
+        ),
+        createdAt: (json['createdAt'] as int?) ?? 0,
+        updatedAt: (json['updatedAt'] as int?) ?? 0,
+        status: byName(
+          TtsRenderJobStatus.values,
+          json['status'],
+          TtsRenderJobStatus.failed,
+        ),
+        phase: phase == null
+            ? null
+            : byName(
+                TtsRenderJobPhase.values,
+                phase,
+                TtsRenderJobPhase.planning,
+              ),
+        done: (json['done'] as int?) ?? 0,
+        total: (json['total'] as int?) ?? 0,
+        error: json['error'] as String?,
+        flags: <TtsRenderFlag>[
+          if (flags is List)
+            for (final Object? f in flags)
+              if (TtsRenderFlag.fromJson(f) case final TtsRenderFlag flag) flag,
+        ],
+        verified: json['verified'] == true,
+      )
+      ..loudnessSkipped = json['loudnessSkipped'] == true
+      ..unvoiced = json['unvoiced'] is int ? json['unvoiced']! as int : 0;
   }
 }
 
@@ -367,11 +486,16 @@ class TtsRenderQueue extends EngineChangeNotifier {
     required String bookKey,
     required String title,
     required String presetId,
+    TtsRenderJobKind kind = TtsRenderJobKind.book,
+    List<TtsRenderLineRequest> lineRequests = const <TtsRenderLineRequest>[],
     List<int> sections = const <int>[],
     bool verify = false,
     List<int> regenerate = const <int>[],
     String pausePreset = 'standard',
     bool normalizeLoudness = true,
+    int? onlineConcurrency,
+    int sentenceGapMs = 0,
+    TtsRateLimitAction rateLimitAction = TtsRateLimitAction.waitRetry,
   }) async {
     await load();
     for (final TtsRenderJob job in _jobs) {
@@ -383,11 +507,16 @@ class TtsRenderQueue extends EngineChangeNotifier {
       bookKey: bookKey,
       title: title,
       presetId: presetId,
+      kind: kind,
+      lineRequests: List<TtsRenderLineRequest>.unmodifiable(lineRequests),
       sections: List<int>.unmodifiable(sections),
       verify: verify,
       regenerate: List<int>.unmodifiable(regenerate),
       pausePreset: pausePreset,
       normalizeLoudness: normalizeLoudness,
+      onlineConcurrency: onlineConcurrency,
+      sentenceGapMs: sentenceGapMs.clamp(0, kTtsRenderMaxSentenceGapMs),
+      rateLimitAction: rateLimitAction,
       createdAt: now,
       updatedAt: now,
     );
@@ -481,6 +610,7 @@ class TtsRenderQueue extends EngineChangeNotifier {
       ..done = 0
       ..total = 0
       ..error = null
+      ..unvoiced = 0
       ..updatedAt = _now().millisecondsSinceEpoch;
     await _persist();
     notifyListeners();
