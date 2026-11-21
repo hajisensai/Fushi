@@ -416,5 +416,58 @@ void main() {
       expect(videoDirContent('EP02 (2).mkv'), 'new');
       expect(videoDirContent('EP03.srt'), 'lone');
     });
+
+    // 复审 HBK-AUDIT-019：只看「同名」不够——配对按 stem 不分扩展名，旧视频换了容器
+    // （EP01.mp4）或字幕带语言标记（EP01.ja.srt）时名字都不撞，配对照样交叉。
+    test('stem 相同、扩展名不同的旧视频带着自己的字幕时，新组整组改名', () async {
+      await ImportInbox.ensureKindFolders(inbox);
+      touch(p.join(inbox.path, 'Video', 'EP01.mp4')).writeAsStringSync('old');
+      touch(
+        p.join(inbox.path, 'Video', 'EP01.ja.srt'),
+      ).writeAsStringSync('old-ja');
+      touch(p.join(inbox.path, 'EP01.mkv')).writeAsStringSync('new');
+      touch(p.join(inbox.path, 'EP01.srt')).writeAsStringSync('new-srt');
+
+      expect(await adoptAll(), isEmpty);
+      expect(videoDirContent('EP01 (2).mkv'), 'new');
+      expect(videoDirContent('EP01 (2).srt'), 'new-srt');
+      expect(
+        File(p.join(inbox.path, 'Video', 'EP01.mkv')).existsSync(),
+        isFalse,
+        reason: '新视频落在 EP01 上会按 .ja.srt 优先配走旧视频的字幕',
+      );
+      expect(videoDirContent('EP01.ja.srt'), 'old-ja');
+    });
+
+    test('新字幕会配上 stem 相同的旧视频（扩展名不同）时，新组整组改名', () async {
+      await ImportInbox.ensureKindFolders(inbox);
+      touch(p.join(inbox.path, 'Video', 'EP01.mp4')).writeAsStringSync('old');
+      touch(p.join(inbox.path, 'EP01.mkv')).writeAsStringSync('new');
+      touch(p.join(inbox.path, 'EP01.ja.ass')).writeAsStringSync('new-ja');
+
+      expect(await adoptAll(), isEmpty);
+      expect(videoDirContent('EP01 (2).mkv'), 'new');
+      expect(videoDirContent('EP01 (2).ja.ass'), 'new-ja');
+      expect(
+        File(p.join(inbox.path, 'Video', 'EP01.ja.ass')).existsSync(),
+        isFalse,
+        reason: '旧视频不能配上新字幕',
+      );
+    });
+
+    test('只有字幕的组接上已有视频、视频接上孤立字幕：不改名', () async {
+      await ImportInbox.ensureKindFolders(inbox);
+      touch(p.join(inbox.path, 'Video', 'EP01.mkv')).writeAsStringSync('old');
+      touch(
+        p.join(inbox.path, 'Video', 'EP02.srt'),
+      ).writeAsStringSync('orphan');
+      touch(p.join(inbox.path, 'EP01.ja.srt')).writeAsStringSync('add-sub');
+      touch(p.join(inbox.path, 'EP02.mkv')).writeAsStringSync('new');
+
+      expect(await adoptAll(), isEmpty);
+      expect(videoDirContent('EP01.ja.srt'), 'add-sub');
+      expect(videoDirContent('EP02.mkv'), 'new');
+      expect(videoDirContent('EP02.srt'), 'orphan');
+    });
   });
 }
