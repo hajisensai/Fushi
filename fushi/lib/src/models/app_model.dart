@@ -146,6 +146,7 @@ import 'package:fushi/src/utils/components/section_tab_order.dart'
         PrefsSectionTabOrderStore,
         SectionTabOrderStore,
         sectionTabOrderAppFallback;
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -4228,7 +4229,7 @@ class AppModel
     if (context == null || !context.mounted) return false;
     final bool accepted = await showFushiConfirmDialog(
       context: context,
-      icon: Icons.upgrade_rounded,
+      icon: FushiIcons.upgrade,
       title: t.dict_upgrade_format_prompt_title,
       message: t.dict_upgrade_format_prompt_body(count: pendingCount),
       confirmLabel: t.dict_upgrade_format_prompt_confirm,
