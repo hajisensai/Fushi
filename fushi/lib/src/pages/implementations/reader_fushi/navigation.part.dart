@@ -44,34 +44,39 @@ extension _ReaderNavigation on _ReaderFushiPageState {
         debugPrint(
           '[ReaderFushi] content ready timeout — forcing overlay removal',
         );
-        _rebuild(() {
-          _readerContentReady = true;
-          _hasEverLoaded = true;
-        });
-        // BUG-868：兜底超时是「JS 侧 fushiReader 迟迟不回 onRestoreComplete」时的最终解锁，
-        // 光翻 _readerContentReady 不够——_restoreInFlight / _isNavigatingToChapter /
-        // _restoreCompleter 仍悬空，_paginationInFlight（chrome.part.dart）恒真：遮罩摘掉、
-        // 书看似打开，但翻页永久被守卫吞掉、进度不再保存。这里连同解开导航态：三份中止
-        // 变体已收敛进 _failNavigation（清 _isNavigatingToChapter + _restoreInFlight 并
-        // complete(false)+清空 completer，让等待方立即返回而非各等各的 10s 超时）。
-        _failNavigation();
-        // BUG-2424：兜底超时也算内容就绪 —— 积压的翻页意图必须在这里也放行，否则
-        // 一次 JS 卡死会把用户此后拨的所有滚轮永久压在队列里。
-        unawaited(_replayPendingPageTurn());
-        // BUG-467：兜底超时路径同样补下 chrome insets（_hasEverLoaded 刚翻 true）。
-        _reapplyChromeInsetsAfterFirstLoad();
-        // TODO-700 T3：兜底超时路径也确定性落焦（门控见 helper）。
-        _focusOwnership.reclaim(FocusReclaimCause.contentReady);
-        // BUG-1052：兜底超时也要起阅读计时。计时器原本只在 [_onRestoreComplete]
-        // 里建/启，而这条路径正是「JS 迟迟不回 onRestoreComplete」——遮罩已摘、书能
-        // 读，却一秒都不记时长（字数照常累计 ⇒ 速度又爆表）。
-        _ensureStudyClock();
-        FushiToast.show(
-          msg: t.reader_content_timeout,
-          severity: ToastSeverity.warning,
-        );
+        _abortStalledRestore(message: t.reader_content_timeout);
       },
     );
+  }
+
+  /// 内容就绪等不来时的统一收尾：8 秒兜底超时（[_startContentReadyTimeout]）与 JS
+  /// 失败回执（[_acceptRestoreFailed]，gap-readerjs1-2）共用。摘遮罩、解开导航态、
+  /// 放行积压翻页、补 chrome insets、落焦、起阅读计时，并按来由提示用户（[message]：
+  /// 超时说「加载超时」，JS 明确回报失败说「恢复失败」——两种原因不混用一句文案）。
+  void _abortStalledRestore({required String message}) {
+    _rebuild(() {
+      _readerContentReady = true;
+      _hasEverLoaded = true;
+    });
+    // BUG-868：兜底超时是「JS 侧 fushiReader 迟迟不回 onRestoreComplete」时的最终解锁，
+    // 光翻 _readerContentReady 不够——_restoreInFlight / _isNavigatingToChapter /
+    // _restoreCompleter 仍悬空，_paginationInFlight（chrome.part.dart）恒真：遮罩摘掉、
+    // 书看似打开，但翻页永久被守卫吞掉、进度不再保存。这里连同解开导航态：三份中止
+    // 变体已收敛进 _failNavigation（清 _isNavigatingToChapter + _restoreInFlight 并
+    // complete(false)+清空 completer，让等待方立即返回而非各等各的 10s 超时）。
+    _failNavigation();
+    // BUG-2424：兜底超时也算内容就绪 —— 积压的翻页意图必须在这里也放行，否则
+    // 一次 JS 卡死会把用户此后拨的所有滚轮永久压在队列里。
+    unawaited(_replayPendingPageTurn());
+    // BUG-467：兜底超时路径同样补下 chrome insets（_hasEverLoaded 刚翻 true）。
+    _reapplyChromeInsetsAfterFirstLoad();
+    // TODO-700 T3：兜底超时路径也确定性落焦（门控见 helper）。
+    _focusOwnership.reclaim(FocusReclaimCause.contentReady);
+    // BUG-1052：兜底超时也要起阅读计时。计时器原本只在 [_onRestoreComplete]
+    // 里建/启，而这条路径正是「JS 迟迟不回 onRestoreComplete」——遮罩已摘、书能
+    // 读，却一秒都不记时长（字数照常累计 ⇒ 速度又爆表）。
+    _ensureStudyClock();
+    FushiToast.show(msg: message, severity: ToastSeverity.warning);
   }
 
   /// BUG-438 / TODO-889：内容真正就绪（或不再需要兜底）时清掉超时 timer + 绝对 deadline，
@@ -101,6 +106,32 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     }
     ReaderChapterPerfTrace.noteJs(perfSnapshot);
     _onRestoreComplete();
+  }
+
+  /// gap-readerjs1-2：JS 引擎初始化 / 初次恢复链同步抛出时发来的失败回执
+  /// （`notifyRestoreFailed`）。代际判据与 [_acceptRestoreComplete] 相同：晚到的旧文档
+  /// 回执不能中止当前导航。当前代的失败不再等 8 秒兜底，立刻走同一条收尾。
+  void _acceptRestoreFailed({
+    required int reportedGeneration,
+    required String reason,
+  }) {
+    if (!mounted ||
+        !isCurrentReaderRestoreCompletion(
+          reportedGeneration: reportedGeneration,
+          currentGeneration: _navigateGeneration,
+          expectedGeneration: _restoreExpectedGeneration,
+        )) {
+      debugPrint(
+        '[ReaderFushi] stale onRestoreFailed: '
+        'reported=$reportedGeneration expected=$_restoreExpectedGeneration '
+        'current=$_navigateGeneration',
+      );
+      return;
+    }
+    debugPrint('[ReaderFushi] onRestoreFailed: $reason');
+    _clearContentReadyTimeout();
+    if (_readerContentReady) return;
+    _abortStalledRestore(message: t.reader_content_restore_failed);
   }
 
   void _onRestoreComplete() {
@@ -501,7 +532,8 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     _restoreCompleter = Completer<bool>();
     // TODO-perf（跨章·图片）：所有导航都经过这里，故这是「阅读方向」的唯一采样点。
     // 同章重恢复（换字号/重排版/保不动点）不改方向——方向属于「读到哪儿去了」，
-    // 不属于重排版。方向只喂给插图预热（见 _prefetchAdjacentChapterImages）。
+    // 不属于重排版。方向只喂给两路预热（插图 _prefetchAdjacentChapterImages、章节 HTML
+    // _htmlPrefetchTarget，novel-17f）。
     if (chapter != _currentChapter) {
       _chapterAdvanceDirection = chapter > _currentChapter ? 1 : -1;
     }

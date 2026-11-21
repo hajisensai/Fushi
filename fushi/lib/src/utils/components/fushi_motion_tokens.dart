@@ -484,6 +484,11 @@ abstract final class FushiMotion {
   /// 环境动效（吉祥物光晕）：有后台任务在跑时的单程时长，比 [ambientBreath] 快一倍。
   static const Duration ambientBreathBusy = Duration(milliseconds: 1400);
 
+  /// 环境动效（ambient ticker）两次 tick 之间的最小间隔：加上等下一个 vsync，实际约
+  /// 30 fps。环境动效慢到几十秒一个来回、光晕呼吸每步透明度变化不到 2/255，采样变稀
+  /// 看不出差别，却省下高刷屏上绝大多数整窗合成（BUG-4961）。
+  static const Duration ambientFrameInterval = Duration(milliseconds: 25);
+
   /// 环境动效（[ambientDrift] 往返）的曲线：两端速度为零，掉头处无顿挫。
   static const Curve ambient = _AmbientSine();
 

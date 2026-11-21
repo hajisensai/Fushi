@@ -1,0 +1,11 @@
+## BUG-4969 · 从对端下书：EPUB 落地后进度看不到、卡片换位，后台任务里也看不到
+- **报告**：2026-11-20（用户：「出现一本书在转圈，然后 epub 下完了进度条没了，其他地方又跳出有声书的一个占位很怪异，然后原来的书也在转圈然后连进度都看不到」；同理漫画）
+- **真实性**：✅ 真 bug（沿代码路径定位，6dd38cb92db）：
+  - 进度丢失：整书任务只有一条 0..1（正文前半 / 有声书后半，`reader_history/remote.part.dart` 旧 `_runRemoteBookDownload` 的 `progress * 0.5`）。正文一落地，占位卡就被藏掉（`_onRemoteBookLanded`），本地卡的遮罩写死成 `progress: null`（`reader_fushi_history_page.dart` 旧 `_audiobookDownloadingOverlay`），只剩一个不带数字的转圈。
+  - 空窗与丢失：从落地到「有声书下载中」的标记之间还要回填进度、改名、标签，这段时间本地卡没有遮罩；标记存在书架页 State（旧 `_downloadingAudiobookKeys`）上，页面重建就丢。
+  - 换位一（落地瞬间）：占位卡被藏和折叠映射重载同时发生，本地卡先拿过期映射（入库时刻 0、不在合集）出现在别处，映射回来再跳回原位。
+  - 换位二（有声书完成瞬间）：SRT 有声书卡顶替 EPUB 卡（BUG-728），排序用有声书包自带的入库时刻而不是书的，卡挪到别处，看起来像凭空冒出一张「有声书卡」。
+  - 后台任务：首页后台任务环（`home_page.dart` `_backgroundTasks`）没接 `InterconnectDownloadManager`，离开书架就看不到下载走到哪一步。
+- **[x] ① 已修复** — `InterconnectDownloadTask` 加阶段（`InterconnectDownloadStage` 正文 → 导入 → 有声书）与落地书键（`landedBookKey`），进度改为当前阶段的；书架本地卡按任务上的落地书键接着画同一条任务的遮罩（环下写阶段名，带百分比）；落地交接改为映射重载完成后同一帧换卡；配对 EPUB 的 SRT 卡按书的入库时刻排；有声书失败写在书自己的卡副行；互联下载接进首页后台任务环（`sync/interconnect_download_background_tasks.dart`）。漫画整卷包走同一条任务（正文 → 导入）。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/interconnect_download_stages_test.dart`（阶段 / 落地书键 / 后台任务映射）、`fushi/test/pages/reader_remote_download_followups_test.dart` ⑥（真书列表下落地后同卡接着画「有声书」遮罩、失败写在原卡、不另起卡）、`fushi/test/pages/reader_remote_interconnect_test.dart` BUG-990 用例改断言阶段名。
+- **备注**：未做真机两端联调（需要配对对端）。设计图里的「封面右下耳机角标」没有做：库页定版规则是封面上不压角标，改为沿用封面居中的下载遮罩、环下写阶段名。自动同步 sweep 补拉有声书时不经下载管理器、书架无进度，且与手动下载不互斥（同一包可能被拉两次），未在本条处理。

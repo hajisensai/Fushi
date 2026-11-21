@@ -64,20 +64,27 @@ List<CtlRoute> buildBookMetadataCtlRoutes(OpContext context) {
       if (source.isbnOnly && findIsbnIn(query) == null) {
         throw CtlFailure.badRequest('${source.label} 只能按 ISBN 查：$query');
       }
+      // NSFW 候选默认不回（与弹窗对没标 NSFW 的书同一口径），`nsfw=true` 才带上。
+      final bool includeNsfw = call.optBool('nsfw') ?? false;
       final BookMetadataScrapeFacade facade = bookMetadataFacadeFactory(
         rakuten: requireSourceUsable(source),
       );
       try {
-        final List<BookScrapeCandidate> found = await _scrape(
-          () => facade.search(source: source, query: query),
+        final BookScrapeSearchResult found = await _scrape(
+          () => facade.searchDetailed(
+            source: source,
+            query: query,
+            includeNsfw: includeNsfw,
+          ),
         );
         return <String, Object?>{
           'source': source.name,
           'query': query,
           'candidates': <Map<String, Object?>>[
-            for (final BookScrapeCandidate c in found)
+            for (final BookScrapeCandidate c in found.candidates)
               bookScrapeCandidateJson(c),
           ],
+          if (found.hiddenNsfw > 0) 'hiddenNsfw': found.hiddenNsfw,
         };
       } finally {
         facade.close();

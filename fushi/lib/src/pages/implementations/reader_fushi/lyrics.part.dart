@@ -274,7 +274,20 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     }
   }
 
+  /// 装载（重装）歌词文档。七个调用点全是放飞（`unawaited`）：设置热更、进入歌词
+  /// 模式、WebView 重建、换窗口……所以错误必须在这里收口——生成文档或
+  /// `loadData` 抛错（WebView 正在销毁、换文档）时记进错误日志，不让它变成未处理
+  /// 的异步错误。文档没装上时歌词层保持透明（[_lyricsPageReady] 为 false），用户
+  /// 照常能退出歌词模式，下一次触发会重装。
   Future<void> _loadLyricsPage() async {
+    try {
+      await _loadLyricsPageUnguarded();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderFushi.loadLyricsPage', e, stack);
+    }
+  }
+
+  Future<void> _loadLyricsPageUnguarded() async {
     final InAppWebViewController? lyricsController = _lyricsController;
     if (lyricsController == null || _audiobookController == null) return;
     final int loadGeneration = ++_lyricsLoadGeneration;
@@ -565,7 +578,15 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     final InAppWebViewController? controller = _controller;
     if (controller == null || !_readerContentReady || cue == null) return;
     _reanchorClearedAt = DateTime.now();
-    AudiobookBridge.highlight(controller, cue: cue, reveal: true);
+    // 放飞的高亮必须接住错误：WebView 正在销毁 / 换文档时 evaluateJavascript 会抛，
+    // 裸调就是一条未处理的异步错误（BUG-4811 的第四处，c04 没收的那一处）。
+    unawaited(
+      AudiobookBridge.highlight(
+        controller,
+        cue: cue,
+        reveal: true,
+      ).catchError(AudiobookBridge.logHighlightError),
+    );
     _scheduleReanchorSettleProgressRefresh();
   }
 
@@ -754,15 +775,10 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   }
 
   LyricsPlayerData _lyricsPlayerData(AudiobookPlayerController ctrl) {
-    ImageProvider? cover;
-    final String? extractDir = _extractDir;
-    if (extractDir != null) {
-      final String? path = ReaderFushiSource.resolveCoverFilePath(
-        extractDir: extractDir,
-        coverPath: _book?.coverHref,
-      );
-      if (path != null) cover = FileImage(File(path));
-    }
+    final String? coverPath = _bookCoverFilePath;
+    final ImageProvider? cover = coverPath == null
+        ? null
+        : FileImage(File(coverPath));
     return LyricsPlayerData(
       title: _book?.title ?? '',
       cover: cover,

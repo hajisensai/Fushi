@@ -98,6 +98,7 @@ class LnReaderInstalledPlugin {
     required this.pinned,
     required this.sortOrder,
     required this.installedAt,
+    this.mergeLineBreaks = false,
   });
 
   factory LnReaderInstalledPlugin.fromRepo(
@@ -138,6 +139,7 @@ class LnReaderInstalledPlugin {
       pinned: raw['pinned'] == true,
       sortOrder: number('sortOrder'),
       installedAt: number('installedAt'),
+      mergeLineBreaks: raw['mergeLineBreaks'] == true,
     );
   }
 
@@ -154,6 +156,10 @@ class LnReaderInstalledPlugin {
   final int sortOrder;
   final int installedAt;
 
+  /// 源级开关「合并段内换行」（拍板台 zCkIxtnwcV，默认关）：取章节正文时把
+  /// 句中折行接回去，见 `mergeLnReaderSoftLineBreaks`。只影响开启后取的章节。
+  final bool mergeLineBreaks;
+
   Map<String, Object?> toJson() => <String, Object?>{
     'id': id,
     'name': name,
@@ -167,6 +173,7 @@ class LnReaderInstalledPlugin {
     'pinned': pinned,
     'sortOrder': sortOrder,
     'installedAt': installedAt,
+    'mergeLineBreaks': mergeLineBreaks,
   };
 
   LnReaderInstalledPlugin copyWith({
@@ -174,6 +181,7 @@ class LnReaderInstalledPlugin {
     bool? enabled,
     bool? pinned,
     int? sortOrder,
+    bool? mergeLineBreaks,
   }) => LnReaderInstalledPlugin(
     id: id,
     name: metadata?.name ?? name,
@@ -187,6 +195,7 @@ class LnReaderInstalledPlugin {
     pinned: pinned ?? this.pinned,
     sortOrder: sortOrder ?? this.sortOrder,
     installedAt: installedAt,
+    mergeLineBreaks: mergeLineBreaks ?? this.mergeLineBreaks,
   );
 }
 

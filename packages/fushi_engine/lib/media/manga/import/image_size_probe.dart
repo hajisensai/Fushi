@@ -65,6 +65,50 @@ import 'package:image/image.dart' as img;
   return (width: width, height: height);
 }
 
+/// 只凭文件**前缀** [prefix] 就能下定论时返回宽高（与对整个文件调
+/// [probeOrientedImageSize] 的结果逐值相同），下不了定论返回 null，调用方再读全量。
+///
+/// 只收两种格式（manga-29c，导入时逐页探尺寸不必把每页整张读进内存）：
+/// - PNG：IHDR 在固定偏移，前缀够 24 字节就是定论；
+/// - JPEG：要求 marker 链在前缀内走到 SOS——SOF 与所有可能带 EXIF 方向的 APP 段
+///   都在 SOS 之前，走到了就与整文件探测同一结论；没走到（超大 ICC / 缩略图把头部
+///   撑过前缀）返回 null。
+///
+/// 其它格式一律 null：WebP 的 EXIF chunk 可以在像素数据之后，前缀读不到方向会把
+/// 宽高静默读反；交给 image 解码器的格式在截断输入上的行为也不作保证。
+({int width, int height})? probeImageSizeFromPrefix(Uint8List prefix) {
+  final ({int width, int height})? png = _pngSize(prefix);
+  if (png != null) return png;
+  if (!_jpegHeadersWithin(prefix)) return null;
+  return _jpegOrientedSize(prefix);
+}
+
+/// [bytes] 是 JPEG，且 marker 链在 [bytes] 之内完整走到了 SOS（像素段开始）。
+bool _jpegHeadersWithin(Uint8List bytes) {
+  if (bytes.length < 4 || bytes[0] != 0xFF || bytes[1] != 0xD8) return false;
+  int i = 2;
+  while (i + 3 < bytes.length) {
+    if (bytes[i] != 0xFF) return false;
+    final int marker = bytes[i + 1];
+    if (marker == 0xFF) {
+      i += 1;
+      continue;
+    }
+    if (marker == 0xD8 ||
+        marker == 0x01 ||
+        (marker >= 0xD0 && marker <= 0xD7)) {
+      i += 2;
+      continue;
+    }
+    if (marker == 0xDA) return true;
+    if (marker == 0xD9) return false;
+    final int segmentLength = (bytes[i + 2] << 8) | bytes[i + 3];
+    if (segmentLength < 2) return false;
+    i = i + 2 + segmentLength;
+  }
+  return false;
+}
+
 /// WebP `EXIF` chunk（RIFF 容器）里 IFD0 的 Orientation。缺失 / 不是 WebP /
 /// 解析不出一律返回 1（未旋转）。只扫 chunk 头，不碰像素。
 int webpExifOrientation(Uint8List bytes) {

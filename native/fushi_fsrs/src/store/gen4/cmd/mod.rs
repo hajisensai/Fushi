@@ -11,10 +11,14 @@
 //! - [stats]：复习统计 `stats_report` / `stats_recall` / `stats_rows`（协议 3 `store/stats.rs`，同一份聚合）。
 //! - [center]：冲突中心与时间线的只读命令 `conflicts` / `checkpoints` / `undo_check`（G7-4e）。
 //! - [profile]：按集合的 `binding_get` / `profile_footprint`（G7-4e）。
+//! - [identity]：身份命令 `identity` / `binding_set` / `collection_*` / `canonical_ids` / `key_evidence` / `divergence`
+//!   （G9-4；存储层是 `store/gen4/identity.rs` 与 `truth.rs`）。
 //! - [study]：出卡与牌组计数 `study`（协议 3 `store/study.rs`，同一份排队规则；常驻会话与索引的取舍见那里的文件头）。
 //! - [preview]：评分预览 `preview`（协议 3 `sync2_preview`，同一份重放与回包；G7-4f）。
 //! - [training]：逐卡重放与训练集的直读命令——C 直出入口 `ffsrs_store_history_states` / `_stat_projection` /
 //!   `_optimizer_items` / `_calibration_items` / `_rwkv_rows` / `_rwkv_log_tail` 的新代版（同一份投影与输出布局；G7-4f）。
+//! - [media_gc]：媒体回收 `media_gc_queue` / `media_gc_collect` / `media_live_refs`（协议 3 `store/media_gc.rs`，同一份
+//!   逐名规则；待回收集合在本机状态行里，存活引用读缓存层；S1b）。
 //!
 //! 分发器命令与新代实现的逐条对照（哪条已有、归谁、S1 怎么接）见 `docs/specs/2026-11-15-srs-gen4-handoff.md`
 //! 「分发器命令对照表」。
@@ -49,16 +53,31 @@ use crate::sync2::id::Key;
 use crate::sync2::op::EntKind;
 use crate::sync2::vv::OpId;
 
+pub mod backup;
 pub mod browse;
 pub mod center;
 pub mod columns;
+pub mod fushisrs;
 pub mod history;
+pub mod identity;
 pub mod lineage;
+// 媒体同步（G8-7b）：见 [media_sync] 文件头。
+pub mod media_gc;
+pub mod media_sync;
 pub mod preview;
 pub mod profile;
+pub mod profile_data;
 pub mod reads;
 pub mod stats;
 pub mod study;
+// 同步一轮（G8-7）：见 [sync] 文件头。
+pub mod sync;
+// 旧根接手与承袭上传（G8-7b）：见 [sync_oldroot] 文件头。
+pub mod sync_oldroot;
+// 转发（G8-7b）：见 [sync_relay] 文件头。
+pub mod sync_relay;
+// 重切件的停放（第六波）：见 [sync_park] 文件头。
+pub mod sync_park;
 pub mod training;
 pub mod views;
 // 写命令的新代实现（规划 §2.1 G7-3b），同样还没接分发器：见 [writes] 文件头。
@@ -68,17 +87,45 @@ pub mod writes_local;
 pub mod writes_restore;
 
 #[cfg(test)]
+mod backup_tests;
+#[cfg(test)]
 mod browse_tests;
 #[cfg(test)]
 mod center_tests;
 #[cfg(test)]
+pub(crate) mod dispatch_tests;
+#[cfg(test)]
+mod fushisrs_tests;
+#[cfg(test)]
+mod id_reply_tests;
+#[cfg(test)]
+mod identity_tests;
+#[cfg(test)]
+mod purge_scrub_tests;
+#[cfg(test)]
+mod refresh_tests;
+#[cfg(test)]
 mod study_tests;
+#[cfg(test)]
+mod sync_complete_tests;
+#[cfg(test)]
+mod sync_heritage_trust_tests;
+#[cfg(test)]
+mod sync_park_tests;
+#[cfg(test)]
+mod sync_relay_tests;
+#[cfg(test)]
+mod sync_tests;
+#[cfg(test)]
+mod sync_trust_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
-mod tests_class;
+pub(in crate::store::gen4) mod tests_class;
 #[cfg(test)]
 mod training_tests;
+#[cfg(test)]
+mod views_tests;
 #[cfg(test)]
 mod writes_tests;
 
@@ -130,17 +177,32 @@ pub(super) fn ref_of(text: &str) -> Ref {
 
 /// 请求里的一组 ID（JSON 字符串数组）归一成规范 ID：去重，保持第一次出现的顺序。不是字符串的元素是调用方的 bug。
 pub(super) fn canon_ids(ix: &Index<'_, '_>, ids: &Value) -> Result<Vec<Ref>, String> {
+    Ok(canon_ids_echo(ix, ids)?.0)
+}
+
+/// [canon_ids]，外加请求 ID 与它的规范 ID 不同的那几项 `{请求 ID: 规范 ID}`（G9-7）：按实体出行的读（`entities` /
+/// `edits`）行里写规范 ID，调用方按自己给的 ID 预建了槽（Dart `_prefetchEdits` / `_prefetchEntities`），拿这张表在
+/// 同一次回包里对回去，不另发 `canonical_ids`。请求都是规范 ID 时表是空的。
+pub(super) fn canon_ids_echo(
+    ix: &Index<'_, '_>,
+    ids: &Value,
+) -> Result<(Vec<Ref>, serde_json::Map<String, Value>), String> {
     let xs = ids.as_array().ok_or("gen4 read: ids must be an array")?;
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::with_capacity(xs.len());
+    let mut echo = serde_json::Map::new();
     for x in xs {
         let s = x.as_str().ok_or("gen4 read: ids must be strings")?;
         let c = ix.canonical(&ref_of(s))?;
+        let text = c.text();
+        if text != s {
+            echo.insert(s.to_owned(), Value::String(text));
+        }
         if seen.insert(c.clone()) {
             out.push(c);
         }
     }
-    Ok(out)
+    Ok((out, echo))
 }
 
 /// 集合 [col] 的默认牌组（规范 ID）：缓存配置给了就用它（归一后，与缓存层同一个），否则是规范规则的内置默认牌组。
@@ -330,6 +392,19 @@ pub(super) fn edit_rows(
     c: &Ref,
     profile: &str,
 ) -> Result<Vec<(String, String, Option<i64>)>, String> {
+    edit_rows_with(t, ix, kind, c, profile, true)
+}
+
+/// [edit_rows]；[tags] = false 时不拼笔记的合成 `tags` 行（调用方只要字段键时省掉 [tags_line] 的那几次查询，浏览
+/// `browse.rs` `edits_with`），别的行一样。
+pub(super) fn edit_rows_with(
+    t: &Truth<'_>,
+    ix: &mut Index<'_, '_>,
+    kind: EntKind,
+    c: &Ref,
+    profile: &str,
+    tags: bool,
+) -> Result<Vec<(String, String, Option<i64>)>, String> {
     let (lines, _) = ix.class_lines(kind, c)?;
     let mut rows: Vec<(String, String, Option<i64>)> = Vec::with_capacity(lines.len() + 1);
     for (json, st) in lines {
@@ -343,7 +418,7 @@ pub(super) fn edit_rows(
         }
         rows.push((f, json, st));
     }
-    if kind == EntKind::Note {
+    if kind == EntKind::Note && tags {
         if let Some(json) = tags_line(t, ix, c, profile)? {
             rows.push(("tags".to_owned(), json, None));
         }

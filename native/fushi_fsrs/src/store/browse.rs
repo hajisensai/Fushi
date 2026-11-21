@@ -24,8 +24,10 @@
 
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
+#[cfg(test)]
 use std::sync::MutexGuard;
 
+#[cfg(test)]
 use rusqlite::{Connection, params_from_iter, types::Value as Sql};
 use serde_json::{Value, json};
 
@@ -34,6 +36,7 @@ use crate::registers::{self, StoredEdit};
 use crate::search::{self, Corpus, DUE_NONE, Needs};
 use crate::store::SrsCore;
 use crate::store::queue::{Dirty, LEARN_AHEAD_MS};
+#[cfg(test)]
 use crate::store::sync2::sql;
 
 const DAY_MS: i64 = 86_400_000;
@@ -184,6 +187,7 @@ impl Card {
     }
 }
 
+#[cfg(test)]
 const CARD_COLUMNS: &str = "srs_idt(id), srs_idt(note_id), srs_idt(template_id), cloze_ord, srs_idt(deck_id), suspended, buried_until_day, flag, queue, \
      due_day, due_at, scheduled_days, reps, lapses, stability, difficulty, last_reviewed_at, anki_id";
 
@@ -262,6 +266,7 @@ impl Note {
     }
 }
 
+#[cfg(test)]
 const NOTE_COLUMNS: &str = "srs_idt(id), srs_idt(note_type_id), created_at, sort_field, tags_json, pending_decision, anki_id, dupe_norm";
 
 pub(crate) fn note_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<Note> {
@@ -1431,6 +1436,7 @@ pub(crate) struct Session {
 
 /// 按笔记读修改记录（[notes] = None：本 profile 全部笔记；[keys] 非空 = 只读这几个原样的字段键），每条笔记的记录
 /// 交给 [sink] 一次（按笔记 id 排；没有记录的笔记不调用）。
+#[cfg(test)]
 fn read_edits(
     c: &Connection,
     profile: &str,
@@ -1552,13 +1558,16 @@ pub(crate) trait Source {
 }
 
 /// 协议 3 的读法：profile 的缓存表（`srs_notes_cache` / `srs_cards_cache` / `srs_stat_reviews`）与修改记录。
+#[cfg(test)]
 pub(crate) struct P3<'a> {
     pub(crate) c: &'a Connection,
     pub(crate) profile: &'a str,
 }
 
+#[cfg(test)]
 impl P3<'_> {
     /// `id IN (srs_id(?2), …)`：[chunk] 一块的占位符。
+    #[cfg(test)]
     fn in_list(chunk: usize) -> String {
         (2..chunk + 2)
             .map(|i| format!("srs_id(?{i})"))
@@ -1567,6 +1576,7 @@ impl P3<'_> {
     }
 }
 
+#[cfg(test)]
 impl Source for P3<'_> {
     fn notes(
         &self,
@@ -3116,6 +3126,7 @@ fn search_error(e: search::SearchError) -> Value {
 
 impl Sessions {
     /// 丢掉全部会话（持有者登记留着），下次查询整份重建。
+    #[cfg(test)]
     pub(crate) fn drop_live(&mut self) {
         self.live.clear();
     }
@@ -3255,6 +3266,7 @@ pub(crate) fn dupes(src: &dyn Source, req: &Value) -> Result<Value, String> {
 impl SrsCore {
     /// 浏览会话表的锁。建 / 增量更新到一半 panic（锁被毒化）时会话停在半截：丢掉全部会话（持有者登记留着），下次查询
     /// 整份重建——同建 / 更新出错时丢会话（BUG-4297）。
+    #[cfg(test)]
     fn browse_sessions(&self) -> MutexGuard<'_, Sessions> {
         self.browse.lock().unwrap_or_else(|poisoned| {
             let mut b = poisoned.into_inner();
@@ -3266,6 +3278,7 @@ impl SrsCore {
 
     /// 浏览命令（ffi.rs 的 v2 分发器转来）：`browse_query` / `browse_rows` / `browse_ids` / `browse_targets` /
     /// `browse_close`，以及 AnkiConnect 兼容层的 `anki_find` / `anki_dupes` / `anki_tags`（同一个会话）。读快照（写连接上事务里则在 SAVEPOINT 里，看得见未提交的行）。
+    #[cfg(test)]
     pub(crate) fn browse(
         &self,
         op: &str,

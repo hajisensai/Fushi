@@ -139,6 +139,9 @@ class MangaReaderPreferences {
     this.autoScrollSpeed = 40,
     this.readerHideThreshold = 13,
     this.einkMode = false,
+    this.enhancedScaling = true,
+    this.gammaCorrectScaling = true,
+    this.aiUpscale = 'off',
     this.lookupOnHover = false,
     this.bubbleZoom = true,
     this.bubbleZoomHover = 'dwell',
@@ -223,6 +226,20 @@ class MangaReaderPreferences {
   final int autoScrollSpeed;
   final int readerHideThreshold;
   final bool einkMode;
+
+  /// 画质缩放（默认开）：页图由原生内核按显示尺寸重采样（缩小面积平均、放大三次），
+  /// 低清源预放大，不交 WebView 双线性 / mipmap（见 `manga_page_fit.dart`）。
+  final bool enhancedScaling;
+
+  /// 画质缩放的文字感知 Gamma 校正（默认开，只在 [enhancedScaling] 开着时起作用）：OCR 文字框
+  /// 之外在线性光里平均（网点明度更准），框内仍在 sRGB 里平均（细笔画不变淡）；没有 OCR 数据的
+  /// 页整页 sRGB（实测见 `manga_page_fit.dart`）。
+  final bool gammaCorrectScaling;
+
+  /// 低清页 AI 超分：`off` / `light` / `high`（默认关）。只在页图显示得比原图大时才做；轻量档框外
+  /// ArtCNN、框内 Catmull-Rom，高质量档 waifu2x swin_unet（只在 Windows DirectML 加速包上跑——
+  /// CoreML 建不了 swin 会话、CPU 太慢，引擎 `tier_supported` 判不支持时按轻量档做）。见 `manga_upscale_controller.dart` 与设计文档 §4。
+  final String aiUpscale;
   final bool lookupOnHover;
 
   /// 气泡原位放大（方案 A）：把 OCR 气泡在原位置放大成浮层，浮层里照常查词。
@@ -304,6 +321,9 @@ class MangaReaderPreferences {
     'autoScrollSpeed': autoScrollSpeed,
     'readerHideThreshold': readerHideThreshold,
     'einkMode': einkMode,
+    'enhancedScaling': enhancedScaling,
+    'gammaCorrectScaling': gammaCorrectScaling,
+    'aiUpscale': aiUpscale,
     'lookupOnHover': lookupOnHover,
     'bubbleZoom': bubbleZoom,
     'bubbleZoomHover': bubbleZoomHover,
@@ -417,6 +437,9 @@ class MangaReaderPreferences {
       autoScrollSpeed: number('autoScrollSpeed', 40, 5, 200),
       readerHideThreshold: number('readerHideThreshold', 13, 0, 100),
       einkMode: flag('einkMode', false),
+      enhancedScaling: flag('enhancedScaling', true),
+      gammaCorrectScaling: flag('gammaCorrectScaling', true),
+      aiUpscale: text('aiUpscale', 'off', <String>{'off', 'light', 'high'}),
       lookupOnHover: flag('lookupOnHover', false),
       bubbleZoom: flag('bubbleZoom', true),
       bubbleZoomHover: text('bubbleZoomHover', 'dwell', <String>{

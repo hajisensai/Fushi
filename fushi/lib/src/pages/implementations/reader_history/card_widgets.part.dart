@@ -118,8 +118,12 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
 
     Widget interactiveCard = ContextMenuTrigger(
       // 桌面端鼠标右键打开与长按相同的书籍上下文菜单（PC 用户惯例），多选态压制不变。
-      // 哪个鼠标键唤出由绑定表决定（默认右键），不再硬绑次按钮。
-      onInvoke: contextMenuInvoker(_selectionMode ? null : onLongPress),
+      // 哪个鼠标键唤出由绑定表决定（默认右键），不再硬绑次按钮。多选态下参与勾选
+      // 的卡右键弹针对选中集的批量菜单（#3803）；不参与勾选的卡（slot == null）
+      // 右键让位，不弹与它无关的批量菜单。
+      onInvoke: contextMenuInvoker(
+        _selectionMode ? (slot == null ? null : _showBatchMenu) : onLongPress,
+      ),
       child: Padding(
         key: cardKey,
         padding: EdgeInsets.all(
@@ -346,9 +350,23 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
     bool audiobook = false,
     HealthKind health = HealthKind.notApplicable,
     bool updateAvailable = false,
+    bool audiobookDownloadFailed = false,
   }) {
     final String status = _readProgressLabel(fraction, completed: completed);
     final bool done = completed || fraction >= 1;
+    // 从对端下这本书时正文落地了、有声书包没下成：失败写在这本书自己的卡上（书照常
+    // 可读，补拉入口在书卡菜单）。本机已经有有声书（例如之后由同步补齐）时不再提示。
+    if (audiobookDownloadFailed && !audiobook) {
+      return _ShelfMetaSpec(
+        key: _kAudiobookDownloadFailedMetaKey,
+        status: '${t.shelf_card_meta_audiobook_download_failed} · $status',
+        icon: FushiIcons.error,
+        tone: ShelfMetaTone.error,
+        progress: fraction,
+        completed: done,
+        tooltip: t.remote_book_audiobook_download_failed,
+      );
+    }
     if (!audiobook) {
       return _ShelfMetaSpec(
         status: status,
@@ -400,6 +418,11 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
     }
   }
 }
+
+/// 「有声书下载失败」副行的 key（widget 测试定位用）。
+const ValueKey<String> _kAudiobookDownloadFailedMetaKey = ValueKey<String>(
+  'shelf_meta_audiobook_download_failed',
+);
 
 /// 「对端有更新」副行的 key（widget 测试定位用）。
 const ValueKey<String> _kAudiobookUpdateMetaKey = ValueKey<String>(

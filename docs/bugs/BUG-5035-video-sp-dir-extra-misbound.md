@@ -1,0 +1,6 @@
+## BUG-5035 · 视频来源里 SP / SPs 目录下的特典被当成独立作品刮削，按标题「SP」误绑到无关剧集
+- **报告**：2026-11-20（用户：应用内反馈 gtpgyff3l7，Windows 3.4.0-debug.29190）
+- **真实性**：✅ 真 bug。电影目录 `[DBD-Raws][摄影机不要停！][正片+特典映像]…/SP/[DBD-Raws][One Cut of the Dead][SP][01..04]….mkv`：本地特典分类器 `classifyLocalVideoExtra` 的目录词表（`packages/fushi_engine/lib/media/video/metadata/video_local_extra_classifier.dart:24-43`）认 `Extras` / `特典` / `PV` 等，却不认发布组 BDRip 最常用的 `SP` / `SPs`；下载整理器的特典目录词表（`video_download_organizer.dart` `_extraDirectoryNames`）早就收了 `sp` / `sps`，两边口径不一。于是来源扫描归组（`source_library_scanner.dart` 按 `classifyLocalVideoExtra(...) == null` 过滤）与刮削计划（`video_source_work_planner.dart` `videoBookJoinsScrapePlan`）都把这 4 个文件当正片，归成一部以解析标题「SP」为名的剧集，自动补刮按「SP」搜 TMDB TV，误绑到《SP 警視庁警備部警護課第四係》（tmdb:7008）。
+- **[x] ① 已修复** — 分类器目录词表补 `sp` / `sps`（整段目录名匹配，判成 `extra`），与下载整理器同口径；扫描归组、刮削计划、元数据索引器挂特典三处共用这一个判据，一起生效。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/metadata/video_sp_extra_dir_test.dart`：分类器对 `SP` / `SPs` 目录判 extra、作品名带 SP 字样 / 文件名 `[SP]` 标签不误判；真计划器（内存库）对反馈原样路径只出电影一个作品单元。
+- **备注**：同一条反馈的另两项——「仅导入这一次」导入的视频在临时来源行删除后 `source_id` 置空、从此进不了自动补刮 / 右键重刮 / ctl 刮削，以及扫描期补刮持有临时来源写 `video_sidecar_artifacts` 报 FK 787——修法要先定「一次性导入的视频以什么身份参与刮削」（转挂常驻虚拟来源 / 计划器支持无来源视频 / 一次性导入扫完内联刮完再删行），属于方向取舍，交拍板，不在本条修。已知边界：用户把扫描根本身设成名为 `SP` / `SPs` 的目录时，其下视频全部判成特典（与 `Extras` 等既有目录词同一行为）。

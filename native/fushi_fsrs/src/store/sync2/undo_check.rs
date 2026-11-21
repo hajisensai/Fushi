@@ -12,16 +12,23 @@
 //!
 //! 评分 / 重置 / 改期这类日志的撤销不走这里（`sched` 的 undo，sched_local.rs：只认最后一条有效日志）。
 
+#[cfg(test)]
 use rusqlite::{Connection, params};
+#[cfg(test)]
 use serde_json::{Value, json};
 
+#[cfg(test)]
 use super::{load_op, parse_device, sql};
+#[cfg(test)]
 use crate::registers::{UndoTarget, undo_verdict};
 use crate::store::SrsCore;
+#[cfg(test)]
 use crate::sync2::op::{Body, EntKind};
+#[cfg(test)]
 use crate::sync2::vv::OpId;
 
 /// 一项的裁决：(能不能撤, 现值)。
+#[cfg(test)]
 fn check_item(conn: &Connection, profile: &str, it: &Value) -> Result<(bool, Value), String> {
     let kind = it["k"]
         .as_str()
@@ -66,12 +73,17 @@ fn check_item(conn: &Connection, profile: &str, it: &Value) -> Result<(bool, Val
         seq: *s,
         value: v,
     });
-    undo_verdict(&items, key, target.as_ref(), it.get("v"))
+    // 修改记录的上下文是写入者维护的完整 DVV：「见没见过」按行上下文判。
+    undo_verdict(&items, key, target.as_ref(), it.get("v"), &mut |x, o| {
+        Ok(x.ctx_contains(o.writer, o.seq))
+    })
 }
 
+#[cfg(test)]
 type LiveRow = (String, Option<i64>, Option<crate::registers::EditCols>);
 
 /// 投影里这个字段键现存的修改记录（读法同 mod.rs `land_edit`：`jslim` + 列）。
+#[cfg(test)]
 fn live_rows(
     conn: &Connection,
     kind: EntKind,
@@ -93,6 +105,7 @@ fn live_rows(
     .map_err(sql)
 }
 
+#[cfg(test)]
 fn current_value(
     conn: &Connection,
     kind: EntKind,
@@ -111,6 +124,7 @@ impl SrsCore {
     /// 编辑类撤销的校验（文件头）。[req] `{"items":[{"k","e","f","w"?,"s"?,"v"?}]}`：`w`/`s` 是那次写入的 dot
     /// （设备 ID 文本、序号；`apply` 交回的 `edits`），`v` 是那次写下的值（只在没有 dot 的旧载荷上用来按值比）。
     /// 返回 `{"r":[{"ok":bool,"cur":<现值>}]}`，与输入同序。只读。
+    #[cfg(test)]
     pub fn sync2_undo_check(&self, profile: &str, req: &Value) -> Result<Value, String> {
         let items = req["items"].as_array().ok_or("undo_check: missing items")?;
         self.read_visible(|c| {

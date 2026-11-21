@@ -13,11 +13,11 @@ runs:
   steps:
     # Toolchain pin matches native-web-core-gate.yml / names.sh P2P_RUST.
     - name: Set up Rust (fushi_web_core, linux-x64)
-      uses: dtolnay/rust-toolchain@master
+      uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
       with:
         toolchain: '1.95.0'
     - name: Cache Rust build (fushi_web_core, linux-x64)
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         workspaces: native/fushi_web_core -> target
         key: fushi-web-core-linux-x64

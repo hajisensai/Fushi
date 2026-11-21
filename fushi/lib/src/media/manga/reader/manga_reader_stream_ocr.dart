@@ -124,6 +124,12 @@ Future<MangaStreamOcrSetup> _prepareEngine(
             relativeUrl: relativeUrl,
             language: lensLanguage,
           ),
+          recognizePixels: (OcrRgbaImage image, String url) =>
+              lens.recognizePagePixels(
+                image,
+                relativeUrl: url,
+                language: lensLanguage,
+              ),
         ),
       );
     case MangaOcrEngineId.systemOcr:
@@ -137,6 +143,12 @@ Future<MangaStreamOcrSetup> _prepareEngine(
             relativeUrl: relativeUrl,
             language: lensLanguage,
           ),
+          recognizePixels: (OcrRgbaImage image, String url) =>
+              system.recognizePagePixels(
+                image,
+                relativeUrl: url,
+                language: lensLanguage,
+              ),
         ),
       );
     case MangaOcrEngineId.externalMokuro:
@@ -233,6 +245,24 @@ class LocalMangaStreamPageRecognizer
     ).images.single;
   }
 
+  /// 内存像素走同一个常驻页会话（[MangaOcrPagePixelsSession]）：同一条整页管线，
+  /// 不读文件、不解码、不写逐页缓存。
+  @override
+  Future<MokuroImage> recognizePixels(
+    OcrRgbaImage image, {
+    required String url,
+  }) async {
+    if (_closed) throw StateError('stream OCR recognizer is closed');
+    final MangaOcrPageSession session = await (_session ??= _service
+        .openPageSession(imageDirPath: imageDirPath));
+    if (session is! MangaOcrPagePixelsSession) {
+      throw StateError('page session cannot recognize in-memory pages');
+    }
+    final OcrPageResult result = await (session as MangaOcrPagePixelsSession)
+        .ocrPagePixels(image);
+    return mokuroImageFromOcrPage(result, url: url);
+  }
+
   @override
   Future<void> close() async {
     if (_closed) return;
@@ -255,16 +285,28 @@ class LocalMangaStreamPageRecognizer
   }
 }
 
-/// Lens / 系统 OCR：读出页图字节直接识别，没有常驻资源。
+/// Lens / 系统 OCR：读出页图字节（或直接拿内存像素）识别，没有常驻资源。
 class BytesMangaStreamPageRecognizer implements MangaStreamPageRecognizer {
-  BytesMangaStreamPageRecognizer(this._recognize);
+  BytesMangaStreamPageRecognizer(
+    this._recognize, {
+    required Future<MokuroImage> Function(OcrRgbaImage image, String url)
+    recognizePixels,
+  }) : _recognizePixels = recognizePixels;
 
   final Future<MokuroImage> Function(Uint8List bytes, String relativeUrl)
   _recognize;
+  final Future<MokuroImage> Function(OcrRgbaImage image, String url)
+  _recognizePixels;
 
   @override
   Future<MokuroImage> recognize(File pageFile) async =>
       _recognize(await pageFile.readAsBytes(), p.basename(pageFile.path));
+
+  @override
+  Future<MokuroImage> recognizePixels(
+    OcrRgbaImage image, {
+    required String url,
+  }) => _recognizePixels(image, url);
 
   @override
   Future<void> close() async {}

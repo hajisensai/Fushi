@@ -11,6 +11,11 @@ class WebMineQueueStore {
 
   final FushiDatabase db;
 
+  /// 失败行 `error` 列里「Anki 里已有这张卡」的固定标记（网页档重放与本地暂存写入都写它）。
+  /// [requeueFailed]（「全部重试」）据此跳过这类行：重排只会再撞一次重复、再失败一次，
+  /// 自动 / 批量重试会无限重跑同一张。用户删了 Anki 里那张卡之后可以单行 [requeueRow]。
+  static const String duplicateError = 'duplicate';
+
   Future<int> enqueue({
     required String bookUid,
     required String videoKey,
@@ -60,11 +65,7 @@ class WebMineQueueStore {
   /// `href != ''` 排掉本地视频「看完再制卡」的暂存行（`VideoMineQueue.stage` 写空
   /// `href`）：它们共用这张表，但媒体早已备好、不靠重放，后台重放调度认领不了。
   /// 这条过滤只属于本查询——[pending] 是两边共用的，不能带上。
-  ///
-  /// 这是后台调度的入口（首页起来后就开始问），所以旧版本留下的完成行也在这里收一次
-  /// （[sweepLegacyDone]，每个库只做一遍）。
   Future<List<String>> pendingBookUids() async {
-    await sweepLegacyDone();
     final Expression<int> firstId = db.webMineQueue.id.min();
     final List<TypedResult> rows =
         await (db.selectOnly(db.webMineQueue)
@@ -79,6 +80,20 @@ class WebMineQueueStore {
     return <String>[
       for (final TypedResult row in rows) row.read(db.webMineQueue.bookUid)!,
     ];
+  }
+
+  /// [bookUid] 写入 / 重放失败的行，按入队顺序（列表展示与重试）。
+  Future<List<WebMineQueueRow>> failed(String bookUid) {
+    return (db.select(db.webMineQueue)
+          ..where(
+            ($WebMineQueueTable t) =>
+                t.bookUid.equals(bookUid) &
+                t.status.equals(WebMineQueueStatus.failed),
+          )
+          ..orderBy(<OrderingTerm Function($WebMineQueueTable)>[
+            ($WebMineQueueTable t) => OrderingTerm.asc(t.id),
+          ]))
+        .get();
   }
 
   /// [bookUid] 的待办条数。`COUNT(*)`，不读行（每次入队、每轮结束都要问一次）。
@@ -131,10 +146,11 @@ class WebMineQueueStore {
         .go();
   }
 
-  /// [deleteDone] 的「每个库只做一遍」版本，挂在两条队列各自的入口上：网页档的后台
-  /// 调度（[pendingBookUids]）与本地视频播放页的角标（`VideoMineQueue.openCount`）。
-  /// 现在的代码不再产生 `done` 行，扫过一次之后表里就不会再有，不必每次都扫全表。
-  /// 删失败（库正在关）不记「已扫」，下次入口再来。
+  /// [deleteDone] 的「每个库只做一遍」版本，app 启动时由首页首帧调一次（`HomePage`）。
+  /// 读方法（[pendingBookUids]、`VideoMineQueue.openCount`）不带这个删除副作用（#3722
+  /// c15 遗留：以前挂在这两个读入口里，非 Windows 且不再打开本地视频播放页的用户旧
+  /// done 行永远留着）。现在的代码不再产生 `done` 行，扫过一次之后表里就不会再有，
+  /// 不必每次都扫全表。删失败（库正在关）不记「已扫」，下次启动再来。
   Future<void> sweepLegacyDone() async {
     if (_legacyDoneSwept[db] ?? false) return;
     await deleteDone();
@@ -157,12 +173,29 @@ class WebMineQueueStore {
     );
   }
 
-  /// 失败行重新排队（用户点「重试失败项」）。
+  /// 这一行这次**确定没送到**（后端不可达，见 `isUndeliveredMineFailure`）：仍是待办，
+  /// 只把原因记下来给列表显示。下一次写入（含离开播放页时的自动写入）照常再试——
+  /// 它不是失败，重发也不会造出重复卡。
+  Future<void> markUndelivered(int id, String error) {
+    return (db.update(
+      db.webMineQueue,
+    )..where(($WebMineQueueTable t) => t.id.equals(id))).write(
+      WebMineQueueCompanion(
+        status: const Value<String>(WebMineQueueStatus.pending),
+        error: Value<String?>(error),
+      ),
+    );
+  }
+
+  /// [bookUid] 的失败行重新排队（用户点「全部重试」/「全部写入」），返回排回几行。
+  ///
+  /// 重复卡（`error` = [duplicateError]）不排：Anki 里已经有了，重排只会再失败一次。
   Future<int> requeueFailed(String bookUid) {
     return (db.update(db.webMineQueue)..where(
           ($WebMineQueueTable t) =>
               t.bookUid.equals(bookUid) &
-              t.status.equals(WebMineQueueStatus.failed),
+              t.status.equals(WebMineQueueStatus.failed) &
+              (t.error.isNull() | t.error.equals(duplicateError).not()),
         ))
         .write(
           const WebMineQueueCompanion(
@@ -170,6 +203,23 @@ class WebMineQueueStore {
             error: Value<String?>(null),
           ),
         );
+  }
+
+  /// 单行重试：失败行 [id] 排回待办（重复卡也可以——用户点的是这一行，多半已在 Anki 里删了
+  /// 那张）。行不是失败态（已被别处写完 / 删掉 / 本来就在待办）时什么都不做，返回 false。
+  Future<bool> requeueRow(int id) async {
+    final int n =
+        await (db.update(db.webMineQueue)..where(
+              ($WebMineQueueTable t) =>
+                  t.id.equals(id) & t.status.equals(WebMineQueueStatus.failed),
+            ))
+            .write(
+              const WebMineQueueCompanion(
+                status: Value<String>(WebMineQueueStatus.pending),
+                error: Value<String?>(null),
+              ),
+            );
+    return n > 0;
   }
 
   Future<int> remove(int id) => (db.delete(

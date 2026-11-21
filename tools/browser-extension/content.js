@@ -523,6 +523,25 @@ try {
   });
 } catch (_) {}
 
+// YouTube 自动字幕分句整合（反馈 97pds8EODm，storage.subtitleMergeAsrSentences，默认关）：
+// 只读开关、转给 subtitle-providers.js 的 fushiSetAsrSentenceMerge，那里持有原始行 cue、
+// 负责重算 store 并通知面板；切换实时生效，不重新取轨。
+try {
+  const fushiApplyAsrMergePref = (s) => {
+    if (typeof window.fushiSetAsrSentenceMerge === 'function') {
+      window.fushiSetAsrSentenceMerge(!!s && s.subtitleMergeAsrSentences === true);
+    }
+  };
+  const fushiAsrMergePrefPromise = chrome.storage.local.get(['subtitleMergeAsrSentences'], fushiApplyAsrMergePref);
+  if (fushiAsrMergePrefPromise && typeof fushiAsrMergePrefPromise.then === 'function') {
+    fushiAsrMergePrefPromise.then(fushiApplyAsrMergePref, () => {});
+  }
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes || !changes.subtitleMergeAsrSentences) return;
+    fushiApplyAsrMergePref({ subtitleMergeAsrSentences: changes.subtitleMergeAsrSentences.newValue });
+  });
+} catch (_) {}
+
 // 「按住 Shift 悬停查词」总开关（storage.shiftHoverLookup，默认开）。Shift 在不少站点/输入场景
 // 另有用途（选区扩展、站点快捷键），用户可以关掉这条入口，只留点击 / 悬浮字幕自动查词等
 // 其余入口。只认显式 false；storage.onChanged 实时生效。
@@ -3624,12 +3643,10 @@ function fushiApplyTheme(c, theme, applyBox) {
     const step = parseFloat(theme['--fushi-instant-scroll-wheel-step']);
     window.__fushiPopupInstantScrollWheelStep = (isFinite(step) && step > 0) ? step : undefined;
   }
-  // BUG-2397：「音调去重」随 theme 下发（app deduplicatePitchAccents）→ 设同名全局供
-  // popup.js 的 createPitchSection 去重分支读（content/popup 同隔离世界共享 window）。
-  // 扩展侧此前**从未有人给它赋值**，恒 undefined = falsy，于是无论用户在 app 里怎么设，
-  // 浏览器弹窗的音调去重永远是关的（同一个词的同一个调型被每本词典各画一行）。
-  // 缺该 key = 旧 app，保持关闭，与相邻两条同法。
-  window.deduplicatePitchAccents = theme['--fushi-dedup-pitch'] === '1';
+  // BUG-2397 / BUG-4935：弹窗显示偏好（音调去重、词频聚合、自动展开行数、折叠开关与逐本
+  // 折叠 / 展开名单……）随 theme 下发 → 落到 popup.js 读的同名全局（content/popup 同隔离世界
+  // 共享 window）。解码收口在 vendor/dict-media.js，侧边栏 / 嵌套层走同一个函数。
+  applyFushiPopupDisplayPrefs(theme);
   // 玻璃只在扩展风格 = 液态玻璃时上（与 app 设计系统选什么无关）；app 开墨水屏时随 theme 下发
   // --fushi-glass: '0'，两种风格都保持不透明；缺该 key（旧 app）按风格走。减少透明度 /
   // 不支持 backdrop-filter 的回落由 content.css 自己的 @media / @supports 负责。

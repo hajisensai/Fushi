@@ -4,7 +4,7 @@
 //! ```text
 //! timeline := "FMLT" | u32 version (= TIMELINE_WIRE_VERSION)
 //!           | str source | str format | i64 offsetMs | opt_str language
-//!           | u8 timingQuality | u8 flags(bit0 isUserEdited, bit1 hasEffects)
+//!           | u8 timingQuality | u8 flags(bit0 isUserEdited, bit1 hasEffects, bit2 rubyDropped)
 //!           | opt_str title | opt_str artist
 //!           | u32 agentCount | (str id | str name | u8 kind)*agentCount
 //!           | u32 lineCount | line*lineCount
@@ -21,6 +21,8 @@
 use super::model::*;
 
 /// 线格式版本。改字段必须升它，并同步 Dart 解码器与 [super::PARSER_VERSION]。
+/// `flags` 里新增位不升：旧解码器忽略未知位，布局不变；升版本会让 `timeline_cache` 里用户
+/// 编辑过的时间轴整体解不开。
 pub const TIMELINE_WIRE_VERSION: u32 = 1;
 pub const MAGIC: &[u8; 4] = b"FMLT";
 
@@ -121,7 +123,9 @@ pub fn encode(t: &Timeline) -> Vec<u8> {
     w.i64(t.meta.offset_ms);
     w.opt_str(t.meta.language.as_deref());
     w.u8(t.timing_quality.to_u8());
-    w.u8((t.meta.is_user_edited as u8) | ((t.meta.has_effects as u8) << 1));
+    w.u8((t.meta.is_user_edited as u8)
+        | ((t.meta.has_effects as u8) << 1)
+        | ((t.meta.ruby_dropped as u8) << 2));
     w.opt_str(t.meta.title.as_deref());
     w.opt_str(t.meta.artist.as_deref());
     w.u32(t.agents.len() as u32);
@@ -175,6 +179,7 @@ pub fn decode(data: &[u8]) -> Option<Timeline> {
     let flags = r.u8()?;
     t.meta.is_user_edited = flags & 1 != 0;
     t.meta.has_effects = flags & 2 != 0;
+    t.meta.ruby_dropped = flags & 4 != 0;
     t.meta.title = r.opt_str()?;
     t.meta.artist = r.opt_str()?;
     let agents = r.u32()? as usize;
@@ -239,6 +244,7 @@ mod tests {
         t.meta.source = "sidecar".into();
         t.meta.language = Some("ja".into());
         t.meta.has_effects = true;
+        t.meta.ruby_dropped = true;
         let a = t.agent_index("v1", AgentKind::Person);
         let mut l = Line::whole("漢字", 10, 20);
         l.agent = Some(a);

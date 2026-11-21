@@ -802,6 +802,72 @@ void main() {
       );
       expect(out.join('\n'), contains('settle'));
     });
+
+    repoTest('同一仓库的两个工作区先后 new、都没提交 → 取到不同的号（本机预留计数）', () async {
+      final worker = makeRemoteFixture(pushPeerBeforeClone: true);
+      bug.bugRepoRoot = worker.path;
+      await runBug(() => bug.cmdNew(<String>['first', '标题']));
+      expect(exists(worker, 'docs/bugs/BUG-004-first.md'), isTrue);
+
+      // 邻居工作区从同一个提交出发，看不见 worker 里没提交的 BUG-004。
+      final sibling = Directory('${worker.parent.path}/wt-reserve');
+      git(worker, <String>[
+        'worktree',
+        'add',
+        '--detach',
+        sibling.path,
+        'HEAD',
+      ]);
+      bug.bugRepoRoot = sibling.path;
+      await runBug(() => bug.cmdNew(<String>['second', '标题']));
+
+      expect(
+        exists(sibling, 'docs/bugs/BUG-005-second.md'),
+        isTrue,
+        reason: '两个工作区共用 .git/ 里的预留计数，004 已被预留，邻居必须取 005',
+      );
+      expect(exists(sibling, 'docs/bugs/BUG-004-second.md'), isFalse);
+      expect(warn, isEmpty, reason: '预留计数读写不该有警告，实际：$warn');
+    });
+
+    // 必须是多进程：生产里每次 `bug.dart new` 都是独立进程，互斥靠的是跨进程文件锁。
+    // 同进程的 isolate 测不出这个语义——POSIX 的 fcntl 记录锁归进程所有，同一进程里
+    // 另一个 fd 再加锁不会阻塞（Linux CI 上 8 个 isolate 取到 [4, 5, 6, 4, 4, 7, 5, 4]）。
+    repoTest('并行抢号：同时起 8 个 bug.dart new 进程，取到的号互不相同', () async {
+      final worker = makeRemoteFixture(pushPeerBeforeClone: true);
+      bug.bugRepoRoot = worker.path;
+      final String script = File('../tool/bug.dart').absolute.path;
+
+      final List<ProcessResult> results = await Future.wait(
+        <Future<ProcessResult>>[
+          for (var i = 0; i < 8; i++)
+            Process.run(
+              'dart',
+              <String>[script, 'new', 'race-$i', 'title'],
+              workingDirectory: worker.path,
+              // runInShell：Windows 上 PATH 里的 dart 可能是 Flutter SDK 的 dart.bat，
+              // CreateProcess 起不了 .bat。不写平台判断：dist_test 的静态扫描见到
+              // 平台判断会把整个文件钉到 Windows，而这条测试最要在 POSIX 上跑。
+              runInShell: true,
+            ),
+        ],
+      );
+      for (final ProcessResult r in results) {
+        expect(r.exitCode, 0, reason: '${r.stdout}${r.stderr}');
+      }
+
+      final RegExp name = RegExp(r'^BUG-(\d+)-race-\d+\.md$');
+      final List<int> numbers =
+          Directory('${worker.path}/docs/bugs')
+              .listSync()
+              .map((FileSystemEntity e) => e.uri.pathSegments.last)
+              .map(name.firstMatch)
+              .whereType<RegExpMatch>()
+              .map((RegExpMatch m) => int.parse(m.group(1)!))
+              .toList()
+            ..sort();
+      expect(numbers, <int>[4, 5, 6, 7, 8, 9, 10, 11]);
+    });
   });
 
   group('bug.dart settle：合并时收口撞号', () {

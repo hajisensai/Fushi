@@ -26,6 +26,7 @@ import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_synthesis_scheduler.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
+import 'package:fushi_engine/tts/tts_pronunciation.dart';
 
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
@@ -286,7 +287,8 @@ class TtsReadAlong extends ChangeNotifier {
       maxLength: castInUse == null
           ? voice.descriptor.capabilities.maxInputLength
           : kStudioSentenceMaxLength,
-      pronunciation: tts.pronunciation.load(),
+      pronunciation: tts.textRules.load(TtsTextRuleKind.pronunciation),
+      preSynthesis: tts.textRules.load(TtsTextRuleKind.preSynthesis),
     );
     final Map<String, TtsResolvedVoice> slotVoices = castInUse == null
         ? const <String, TtsResolvedVoice>{}

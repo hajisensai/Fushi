@@ -361,6 +361,7 @@ class SubtitleSearchPanel extends StatefulWidget {
   const SubtitleSearchPanel({
     required this.onDownloaded,
     this.onSubtitleSaved,
+    this.onDownloadingChanged,
     this.onCancel,
     this.showTitle = true,
     required this.initialQuery,
@@ -398,6 +399,11 @@ class SubtitleSearchPanel extends StatefulWidget {
   /// 的几条也成了没人登记的孤儿文件。null = 宿主没有「关页时带回」的出口，部分失败
   /// 仍走 [onDownloaded]（旧行为）。
   final void Function(String path)? onSubtitleSaved;
+
+  /// 下载（单条或多选批量）开始 / 结束时回调。宿主据此锁住会把本面板移出树的操作
+  /// ——全屏工作台的「本集 / 整个合集」作用域开关：面板一被换下就 dispose，在途的
+  /// 下载按「页面已关」静默放弃，勾着的其余几条也不再下。
+  final ValueChanged<bool>? onDownloadingChanged;
 
   /// 「取消」按钮回调；null = 不渲染取消按钮（宿主自己有返回入口，如 AppBar）。
   final VoidCallback? onCancel;
@@ -496,6 +502,17 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
 
   bool _searching = false;
   bool _searched = false;
+
+  /// 有下载（单条 / 多选批量）在途。期间不许发起新一轮检索：重搜会清空候选与勾选，
+  /// 批量还在按旧勾选往下跑，进度落在看不见的行上，部分失败后「失败的仍勾着可重试」
+  /// 也随之丢失。
+  bool _downloading = false;
+
+  void _setDownloading(bool value) {
+    if (_downloading == value) return;
+    if (mounted) setState(() => _downloading = value);
+    widget.onDownloadingChanged?.call(value);
+  }
 
   /// 每发起一轮检索（搜索 / 点系列）递增（BUG-4799）。一轮检索里每个 await 之后都
   /// 要过 [_isCurrentSearch]：被更新的一轮顶掉的旧检索不得再写任何状态——否则先
@@ -670,6 +687,9 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
       : t.video_subtitle_sources_all_disabled;
 
   Future<void> _search() async {
+    // 下载途中不重搜（见 [_downloading]）；按钮已置灰，这里挡回车 / 候选标题 chip /
+    // 「显示全部集」等不经按钮的入口。
+    if (_downloading) return;
     final String apiKey = _apiKeyCtrl.text.trim();
     final String query = _queryCtrl.text.trim();
     // 门槛是「有没有可用的字幕来源」，不是「有没有 Jimaku key」：只配了
@@ -845,7 +865,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   /// 用户点某个系列 chip：以该系列 id 重搜 Jimaku（不再重跑 AniList，保留已展示的候选
   /// 系列列表）。query/episode 从当前输入框读取，与首搜一致。
   Future<void> _selectSeries(AniListMedia media) async {
-    if (_selectedSeriesId == media.id || _searching) return;
+    if (_selectedSeriesId == media.id || _searching || _downloading) return;
     final String apiKey = _apiKeyCtrl.text.trim();
     // 与 [_search] 同一个代次：点系列也是「发起一轮检索」，同样在提交时刻分配。
     // 上面已挡掉 [_searching]，此刻没有在途的一轮会被这次递增顶掉。
@@ -1111,6 +1131,16 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   /// 失败原因汇总到错误提示里、每条原因进错误日志；一条都没成功时不回调，避免调用方
   /// 拿着空列表去「应用第一条」。部分失败见 [SubtitleSearchPanel.onSubtitleSaved]。
   Future<void> _downloadSelected() async {
+    if (_downloading || _selectedCandidates.isEmpty) return;
+    _setDownloading(true);
+    try {
+      await _downloadSelectedRun();
+    } finally {
+      _setDownloading(false);
+    }
+  }
+
+  Future<void> _downloadSelectedRun() async {
     final VideoSubtitleRegistry? registry = await widget.subtitleRegistry
         ?.call();
     if (!mounted || registry == null || _selectedCandidates.isEmpty) return;
@@ -1196,6 +1226,16 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   }
 
   Future<void> _downloadSource(VideoSubtitleCandidate source) async {
+    if (_downloading) return;
+    _setDownloading(true);
+    try {
+      await _downloadSourceRun(source);
+    } finally {
+      _setDownloading(false);
+    }
+  }
+
+  Future<void> _downloadSourceRun(VideoSubtitleCandidate source) async {
     final VideoSubtitleRegistry? registry = await widget.subtitleRegistry
         ?.call();
     if (registry == null) return;
@@ -1335,7 +1375,9 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
-            onTap: _searching ? null : () => _selectSeries(media),
+            onTap: _searching || _downloading
+                ? null
+                : () => _selectSeries(media),
           ),
       ],
     );
@@ -1388,7 +1430,9 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
                   label: Text(titles[i]),
                   selected: current == titles[i],
                   onSelected: (_) {
-                    if (current == titles[i] || _searching) return;
+                    if (current == titles[i] || _searching || _downloading) {
+                      return;
+                    }
                     _queryCtrl.text = titles[i];
                     unawaited(_search());
                   },
@@ -1587,7 +1631,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
         actions: <Widget>[
           if (onRetry != null)
             FushiTextButton(
-              onPressed: _searching ? null : onRetry,
+              onPressed: _searching || _downloading ? null : onRetry,
               child: Text(t.retry),
             ),
         ],
@@ -1846,7 +1890,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
                 child: Text(t.dialog_cancel),
               ),
             FushiFilledButton.icon(
-              onPressed: _searching ? null : _search,
+              onPressed: _searching || _downloading ? null : _search,
               icon: const FushiIcon(FushiIcons.search),
               label: Text(t.video_jimaku_search),
             ),

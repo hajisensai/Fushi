@@ -67,7 +67,8 @@ try {
                 $capabilities.sourceFactory -eq $true -and
                 $capabilities.preferenceCallbacks -eq $true -and
                 $capabilities.imageProxy -eq $true -and
-                $capabilities.sourceUrls -eq $true
+                $capabilities.sourceUrls -eq $true -and
+                $capabilities.apkByDigest -eq $true
             ) {
                 break
             }
@@ -81,7 +82,8 @@ try {
         $capabilities.sourceFactory -ne $true -or
         $capabilities.preferenceCallbacks -ne $true -or
         $capabilities.imageProxy -ne $true -or
-        $capabilities.sourceUrls -ne $true
+        $capabilities.sourceUrls -ne $true -or
+        $capabilities.apkByDigest -ne $true
     ) {
         throw "M-Extension-Server did not expose the required bridge capability."
     }
@@ -94,6 +96,7 @@ try {
         @{ Method = "POST"; Path = "/source-image" },
         @{ Method = "POST"; Path = "/source-data/clear" },
         @{ Method = "GET"; Path = "/image/not-registered" },
+        @{ Method = "PUT"; Path = "/apk/not-registered" },
         @{ Method = "POST"; Path = "/stop" }
     )) {
         $response = Invoke-WebRequest `

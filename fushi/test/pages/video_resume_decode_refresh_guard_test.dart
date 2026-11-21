@@ -193,10 +193,14 @@ void main() {
         isFalse,
         reason: '刷新只是把播放头 seek 回原地，不该带用户 seek 的副作用（BUG-1863）',
       );
+      // 「当前位置」现读 libmpv `time-pos`，不用可能陈旧的事件缓存（c32 video-36d；
+      // 行为测试在 test/media/video/video_player_controller_handles_test.dart）。
       expect(
-        body.contains('player.seek(player.state.position)'),
+        body.contains('await player.seek(target)') &&
+            body.contains('_livePlaybackPosition(player)') &&
+            body.contains("_getMpvProperty('time-pos')"),
         isTrue,
-        reason: '刷新必须 seek 到当前位置本身（BUG-1863）',
+        reason: '刷新必须 seek 到当前位置本身（BUG-1863），且位置现读 time-pos',
       );
     });
 

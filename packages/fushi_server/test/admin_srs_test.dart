@@ -103,6 +103,25 @@ void main() {
     expect((st['ankiConnect'] as Map)['listening'], isFalse);
   });
 
+  test(
+    '换代迁移端点（G10-3）：没有协议 3 库时状态 ready、开始回 not_needed、叫停回 not_running',
+    () async {
+      var (int code, Map<String, dynamic> st) = await call(
+        'GET',
+        'srs/migration',
+      );
+      expect(code, 200, reason: '$st');
+      expect((st['generation'] as Map)['state'], 'ready');
+      expect((st['generation'] as Map)['advice'], isA<String>());
+      (code, st) = await call('GET', 'srs');
+      expect((st['generation'] as Map)['state'], 'ready');
+      (code, st) = await call('POST', 'srs/migration/start');
+      expect((code, st['reason']), (409, 'srs_migration_not_needed'));
+      (code, st) = await call('POST', 'srs/migration/cancel');
+      expect((code, st['reason']), (409, 'srs_migration_not_running'));
+    },
+  );
+
   test('加 / 设默认 / 去掉 profile：即时生效并写回配置文件', () async {
     var (int code, Map<String, dynamic> st) = await call(
       'PUT',
@@ -214,6 +233,46 @@ void main() {
       400,
     );
   });
+
+  test(
+    'profile 名字：profileNames 整份替换、写回配置文件；空串 = 不起名；超长 / 控制字符 / 坏 uid 400',
+    () async {
+      var (int code, Map<String, dynamic> st) = await call(
+        'PUT',
+        'srs',
+        <String, Object?>{
+          'addProfiles': <String>[kJa, kZh],
+          'profileNames': <String, String>{kJa: ' 日本語 ', kZh: ''},
+        },
+      );
+      expect(code, 200, reason: '$st');
+      expect((st['config'] as Map)['profileNames'], <String, String>{
+        kJa: '日本語',
+      });
+      expect(
+        (await ServerConfig.load(configFile)).srs.profileNames,
+        <String, String>{kJa: '日本語'},
+        reason: '写回配置文件',
+      );
+
+      for (final Object? bad in <Object?>[
+        <String, String>{kJa: 'x' * 101},
+        <String, String>{kJa: 'a\nb'},
+        <String, String>{'not-a-uid': 'X'},
+        <String>['x'],
+      ]) {
+        (code, st) = await call('PUT', 'srs', <String, Object?>{
+          'profileNames': bad,
+        });
+        expect(code, 400, reason: '$bad');
+      }
+      expect(
+        (await ServerConfig.load(configFile)).srs.profileNames,
+        <String, String>{kJa: '日本語'},
+        reason: '被拒的请求不改配置',
+      );
+    },
+  );
 
   test('参数不对：400；默认那份不在列表里：400', () async {
     expect(

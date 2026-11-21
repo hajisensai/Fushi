@@ -138,8 +138,10 @@ void main() {
       );
       expect(
         b,
-        contains('resolvedStartMs = resolveEpisodeStart('),
-        reason: 'load 必须先按 start intent 和 duration 决定真实起播点',
+        contains('resolvedStartMs = resolveVideoStart('),
+        reason:
+            'load 必须先按 start intent、续播开关和 duration 决定真实起播点'
+            '（resolveVideoStart = 续播门 + resolveEpisodeStart）',
       );
       expect(
         b,
@@ -486,16 +488,17 @@ void main() {
         // `network-timeout` 必须在 loadfile 的第一个请求发出前生效）。这张表按
         // 源码里的真实顺序排，顺序错了 `indexOf(next, sendAt + 1)` 会返回 -1。
         'await applyNetworkCachePropertiesToPlayer(player, sourceUri);',
+        // #3722 video-19：与片源无关的 mpv 配置 / 音量 / 倍速也排在 open 之前。
+        // BUG-2691：实参包了一层 _mpvConfigForCurrentSource(...)，锚点用调用头。
+        'await applyMpvConfigToPlayer(',
+        'await player.setVolume(initialVolume);',
+        'await player.setRate(initialSpeed);',
         // BUG-528：open 现随 Media(httpHeaders:) 多行下发，锚点用唯一的 `await player.open(`。
         'await player.open(',
         'await player.setSubtitleTrack(SubtitleTrack.no());',
         // 字幕抑制（多行调用）：用其首行锚定。
         'buildSubtitleSuppressionProperties(),',
         'await applyShadersToPlayer(player, _shaderPaths);',
-        // BUG-2691：实参包了一层 _mpvConfigForCurrentSource(...)，锚点用调用头。
-        'await applyMpvConfigToPlayer(',
-        'await player.setVolume(initialVolume);',
-        'await player.setRate(initialSpeed);',
       ];
       for (int i = 0; i < sends.length; i++) {
         final int sendAt = b.indexOf(sends[i]);
@@ -565,56 +568,61 @@ void main() {
       'lib/src/pages/implementations/video_fushi_page.dart',
     );
 
-    test('initState locks landscape on entering the video page', () {
-      final RegExpMatch? body = RegExp(
-        r'void initState\(\) \{(.*?)\n  \}',
-        dotAll: true,
-      ).firstMatch(page);
-      expect(body, isNotNull, reason: 'initState method body not found');
-      expect(
-        body!.group(1),
-        contains('_lockLandscapeForVideo()'),
-        reason: 'initState must lock landscape on entering the page',
-      );
-    });
+    test(
+      'initState locks the orientation policy on entering the video page',
+      () {
+        final RegExpMatch? body = RegExp(
+          r'void initState\(\) \{(.*?)\n  \}',
+          dotAll: true,
+        ).firstMatch(page);
+        expect(body, isNotNull, reason: 'initState method body not found');
+        expect(
+          body!.group(1),
+          contains('_applyVideoOrientationLock()'),
+          reason: 'initState must lock the orientation on entering the page',
+        );
+      },
+    );
 
-    test('the lock method is mobile-gated and locks only landscape', () {
-      final RegExpMatch? body = RegExp(
-        r'Future<void> _lockLandscapeForVideo\(\) async \{(.*?)\n  \}',
-        dotAll: true,
-      ).firstMatch(page);
-      expect(
-        body,
-        isNotNull,
-        reason: '_lockLandscapeForVideo method body not found',
-      );
-      final String b = body!.group(1)!;
-      expect(
-        b,
-        contains('if (!isMobilePlatform) return;'),
-        reason: 'must be mobile-gated (desktop no-op)',
-      );
-      expect(
-        b,
-        contains('setPreferredOrientations'),
-        reason: 'must lock via SystemChrome.setPreferredOrientations',
-      );
-      expect(
-        b,
-        contains('DeviceOrientation.landscapeLeft'),
-        reason: 'landscape lock must include landscapeLeft',
-      );
-      expect(
-        b,
-        contains('DeviceOrientation.landscapeRight'),
-        reason: 'landscape lock must include landscapeRight',
-      );
-      expect(
-        b.contains('DeviceOrientation.portraitUp'),
-        isFalse,
-        reason: 'landscape lock must not re-allow portrait',
-      );
-    });
+    // 拍板台 P9AS-fvjJh：方向不再写死横屏，改由纯 Dart 策略给方向集（默认横屏，
+    // 设置可改按视频比例 / 跟随旋转，转屏按钮随时切换）。病根（BUG-221）是空列表放开
+    // 全部方向，所以守卫钉的是「唯一出口 + 永不空列表 + 已释放显示态的页不再改方向」，
+    // 方向集本身由 video_orientation_policy_test.dart 单测。
+    test(
+      'the lock method is mobile-gated and uses the single orientation policy',
+      () {
+        final RegExpMatch? body = RegExp(
+          r'Future<void> _applyVideoOrientationLock\(\) async \{(.*?)\n  \}',
+          dotAll: true,
+        ).firstMatch(page);
+        expect(
+          body,
+          isNotNull,
+          reason: '_applyVideoOrientationLock method body not found',
+        );
+        final String b = body!.group(1)!;
+        expect(
+          b,
+          contains('if (!isMobilePlatform) return;'),
+          reason: 'must be mobile-gated (desktop no-op)',
+        );
+        expect(
+          b,
+          contains('if (!VideoDisplayClaim.owns(this)) return;'),
+          reason: 'a page that released display ownership must not relock',
+        );
+        expect(
+          b,
+          contains('videoDeviceOrientationsFor(_videoOrientationLock)'),
+          reason: 'orientation set must come from the single policy',
+        );
+        expect(
+          b.contains('<DeviceOrientation>[]'),
+          isFalse,
+          reason: 'never release all orientations (BUG-221)',
+        );
+      },
+    );
 
     test('initState claims display ownership before the three (BUG-2105)', () {
       final RegExpMatch? body = RegExp(
@@ -634,7 +642,7 @@ void main() {
       // macOS 交通灯已不在此列：改用自绘 MD3 顶栏后它们是启动即永久隐藏，
       // 视频页不再认领、也不再还原（见 macos_video_trafficlight_hide_guard_test）。
       for (final String action in <String>[
-        '_lockLandscapeForVideo()',
+        '_applyVideoOrientationLock()',
         '_registerSystemBarsVisibilityCallback()',
       ]) {
         final int at = b.indexOf(action);

@@ -95,6 +95,27 @@ const String kReaderRubyMetricsJs = r'''
     }
     return null;
   }
+  // BUG-4936（反馈 HXZ2hLIoCi）：上面的拉力是按「注音边框盒底 = 基字内容区顶 − margin-block-end」算的
+  // （WebKit 26 起成立：BUG-2472 的负 margin-block-start 只抵消流中高度、不动位置）。
+  // WebKit 18（iOS 18.2 / Playwright WebKit 18.2 实测）把 margin-block-start 也算进
+  // 注音位置：−2em 让注音整整朝基字挪 2em，注音落进基字。所以这里量真实位置：
+  // 注音朝基字那一边离基字内容区的距离（重叠为负）减去它当前的 margin-block-end，
+  // 就是引擎在 margin-block-end 之外附加的位移；折成注音字号倍数后从拉力里扣回来
+  // （WebKit 26 / 27 上 ≈ 0，行为不变）。量不出（坐标 / 计算值缺失、注音不在上方或
+  // 右侧）就按 0 处理。位移只可能来自那条 −2em，所以夹在 [−2, 0]。
+  function engineShift(p, vertical, rcs, tcs, rfs) {
+    try {
+      var pos = rcs.getPropertyValue('ruby-position') ||
+          rcs.getPropertyValue('-webkit-ruby-position') || '';
+      if (/under|after|inter-character/.test(pos)) return 0;
+      var end = parseFloat(tcs.getPropertyValue('margin-block-end'));
+      var rt = p.rtRect, base = p.baseRect;
+      var gap = vertical ? rt.left - base.right : base.top - rt.bottom;
+      var shift = (gap - end) / rfs;
+      if (!isFinite(shift)) return 0;
+      return Math.max(-2, Math.min(0, shift));
+    } catch (e) { return 0; }
+  }
   function measure() {
     scheduled = false;
     var root = document.documentElement;
@@ -139,7 +160,7 @@ const String kReaderRubyMetricsJs = r'''
     }
     var pull = (baseExtra + rtExtra) / rfs;
     if (!isFinite(pull)) return;
-    pull = Math.max(0, Math.min(1.5, pull));
+    pull = Math.max(0, Math.min(1.5, pull)) + engineShift(p, vertical, rcs, tcs, rfs);
     root.style.setProperty('--fushi-ruby-pull', pull.toFixed(3));
     pending = false;
   }

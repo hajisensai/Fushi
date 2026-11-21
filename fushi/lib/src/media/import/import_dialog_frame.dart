@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_block_color_scope.dart'
+    show FushiBlockColorScope;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
@@ -113,6 +115,9 @@ ThemeData? importToneThemeOrNull(BuildContext context, ImportTone? tone) {
   if (tone == null || isGlassDesign(context) || isEinkTheme(context)) {
     return null;
   }
+  // 从带色组件弹出（子树已是那块的局部配色，见 FushiBlockColorScope）：承接
+  // 来源组件的配色，不再按模块色另换一套。
+  if (FushiBlockColorScope.maybeColorsOf(context)?.hue != null) return null;
   return importDialogTheme(context, tone);
 }
 

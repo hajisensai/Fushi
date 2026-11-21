@@ -203,9 +203,12 @@ class _FushiFocusTargetState extends State<FushiFocusTarget> {
   /// TODO-1113 P3: carries focus to this target on a mouse press. Mouse-only so
   /// touch input on a desktop touchscreen keeps plain-tap behaviour; activation
   /// is left entirely to the child's own tap handling to avoid double firing.
+  ///
+  /// 不 reveal：指针按得到的目标就在屏幕上，reveal 只会把页面滚走（右键唤菜单时
+  /// 库页下滚、浮动顶栏收起，反馈 1120 #i10）。
   void _handleMousePointerDown(PointerDownEvent event) {
     if (event.kind != PointerDeviceKind.mouse) return;
-    _controller?.requestById(widget.id);
+    _controller?.requestById(widget.id, reveal: false);
   }
 
   void _register({bool repairBeforeNextFrame = false}) {

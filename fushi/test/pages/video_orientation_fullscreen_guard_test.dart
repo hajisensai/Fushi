@@ -6,7 +6,8 @@ import 'video_fushi_page_source_corpus.dart';
 ///
 /// 三个子问题同一病根: media_kit 全屏退出回调泄漏, 移动端弹回竖屏。
 /// 子1: 自定义 _enterVideoNativeFullscreen / _exitVideoNativeFullscreen 替换 media_kit
-///      默认回调 -- 移动端只 landscapeLeft/Right + 沉浸隐栏, 永不空列表; 桌面转调
+///      默认回调 -- 移动端按方向策略锁 (拍板台 P9AS-fvjJh 起竖屏播放回归, 默认仍横屏,
+///      方向集唯一出口 videoDeviceOrientationsFor) + 沉浸隐栏, 永不空列表; 桌面转调
 ///      media_kit 默认 (保留 全屏=OS窗口真全屏, 桌面不碰设备方向)。窗口侧 Video 与
 ///      自建全屏路由 Video 都接这俩回调。
 /// 子2: _handleVideoPointerUp 双击按平台分流 -- 移动端双击 = playOrPause, 桌面保留全屏。
@@ -91,7 +92,7 @@ void main() {
       );
     });
 
-    test('移动端进/退全屏只锁两个横屏, 永不空列表', () {
+    test('移动端进/退全屏按方向策略锁, 永不空列表', () {
       for (final String sig in <String>[
         'Future<void> _enterVideoNativeFullscreen() async {',
         'Future<void> _exitVideoNativeFullscreen() async {',
@@ -112,16 +113,18 @@ void main() {
           isFalse,
           reason: '$sig 不得用空列表放开全部方向 (病根: 退全屏弹回竖屏)',
         );
+        // 拍板台 P9AS-fvjJh 起竖屏播放回归（默认仍横屏），方向集不再写死在回调里，
+        // 而是与进页同一出口取方向策略——回调不得自己另写一份方向集。
         expect(
-          body.contains('DeviceOrientation.landscapeLeft') &&
-              body.contains('DeviceOrientation.landscapeRight'),
+          body.contains('videoDeviceOrientationsFor(_videoOrientationLock)'),
           isTrue,
-          reason: '$sig 移动端分支必须只允许两个横屏',
+          reason: '$sig 移动端分支必须取同一份方向策略 (与进页一致)',
         );
         expect(
-          body.contains('DeviceOrientation.portraitUp'),
+          body.contains('DeviceOrientation.landscapeLeft') ||
+              body.contains('DeviceOrientation.portraitUp'),
           isFalse,
-          reason: '$sig 不得允许竖屏 (删竖屏模式)',
+          reason: '$sig 不得另写一份方向集',
         );
         expect(
           body.contains('DeviceOrientation.portraitDown'),

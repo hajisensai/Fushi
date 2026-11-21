@@ -65,7 +65,8 @@
 
 **磁盘格式 v2（`.fushidicts_2`，fork 首个版本阶梯）：**
 - `import_yomitan` 产出 `.fushidicts_2`；`write_simple_dict`（MDX/StarDict/DSL）仍产 `.fushidicts_1`。
-- 读侧 `dict_format_version()`（query.cpp）：`.fushidicts_2`→2，`.fushidicts_1`/`.hoshidicts_1`（改名前存量，冻结只读）→1，无 marker→不加载。
+- 读侧 `dict_format_version()`（query.cpp，委托 `util/dict_marker.hpp` 单一真相源）：`.fushidicts_3`→文件体记的记录布局版本（"2" / "1"，其余→不加载），`.fushidicts_2`→2，`.fushidicts_1`/`.hoshidicts_1`（改名前存量，冻结只读）→1，无 marker→不加载。
+- **`.fushidicts_3`（key.index 索引，拍板台 pr3554）**：索引写成 key.index（不再有 hash.table / bloom.filter）的词典一律写 `.fushidicts_3`，文件体是记录布局版本；装不进 key.index 退回旧式索引的仍写 `.fushidicts_2` / `.fushidicts_1`。存量升级（`upgrade.cpp`）提交 key.index 后先写新标记、落盘目录项，再删旧标记。旧引擎读 v3 盘＝整目录不加载（降级要重导，不会静默查不到词）。宿主每次启动只调 `fushidicts_tidy_dictionary`（只检查 + 清理，旧式词典不改写、报待升级），用户同意后才调 `fushidicts_upgrade_dictionary`。
 - v2 增量：① kanji 记录尾部追加 stats 段 `[u8 count]([u8 klen][k][u16 vlen][v])*`（radical/strokes 之外全保留，JLPT/grade 等；S0 契约注释在 importer.cpp）；② term 记录尾部追加 `[i32 score]`（Yomitan 排序信号，多记录合并取 max）；③ term glossary 可能用训练字典压缩，`dict.zstd` 存在才挂 DDict（训练样本不足时不写，退普通压缩）。
 - 兼容矩阵：新引擎读 v1 老盘**完全不变**；旧引擎读 v2 盘＝整目录不加载（降级后新导入词典不可见，不毁数据，重导可救）。kanji meanings / meta 记录恒普通 zstd 帧，不吃训练字典。
 - FFI：`FfiKanjiResult` 追加 `stat_keys/stat_values/stat_count`（native+Dart 同 commit 镜像，照 918744d transcriptions 先例双层 malloc/free）；其余 ABI 零变化。

@@ -52,6 +52,7 @@ namespace fs = std::filesystem;
 
 // 真实导出符号（fushidicts_ffi.cpp 编进本测试）。
 extern "C" int32_t fushidicts_upgrade_dictionary(const char* dict_dir, int32_t allow_meta_rewrite);
+extern "C" int32_t fushidicts_tidy_dictionary(const char* dict_dir);
 using fushidicts::UpgradeResult;
 
 namespace {
@@ -411,6 +412,23 @@ void test_equivalence(const std::string& root, Deinflector& deinflector) {
       expect(uses_key_index(dir), "opens with key.index: " + dir);
     }
   }
+  // 完成标记（拍板台 pr3554）：旧式索引留旧名字（旧引擎照读）；key.index 一律
+  // .fushidicts_3、旧名字一个不留（旧引擎不认、整目录不加载），文件体是记录布局版本——
+  // simple dict 是 v1 记录，其余 v2。
+  for (const std::string& dir : legacy.all()) {
+    expect(!exists(dir + "/.fushidicts_3"), "legacy import has no .fushidicts_3: " + dir);
+    expect(exists(dir + "/.fushidicts_2") || exists(dir + "/.fushidicts_1"), "legacy import keeps a legacy marker: " + dir);
+  }
+  for (const DictSet* set : {&upgraded, &index_only, &fresh}) {
+    for (const std::string& dir : set->all()) {
+      expect(exists(dir + "/.fushidicts_3"), ".fushidicts_3 present: " + dir);
+      expect(!exists(dir + "/.fushidicts_2") && !exists(dir + "/.fushidicts_1") && !exists(dir + "/.hoshidicts_1"),
+             "no legacy marker beside key.index: " + dir);
+      const std::string want_body = dir == set->simple ? "1" : "2";
+      expect(read_file(dir + "/.fushidicts_3") == want_body, ".fushidicts_3 body = " + want_body + ": " + dir);
+    }
+  }
+
   // meta 重写只发生在纯 type 1 的 freq / pitch / ipa 词典上。
   for (const std::string& dir : {upgraded.freq, upgraded.pitch, upgraded.ipa}) {
     expect(exists(dir + "/blobs3.bin") && !exists(dir + "/blobs.bin"), "meta dict rewritten into blobs3.bin: " + dir);
@@ -943,7 +961,7 @@ void test_raw_index(const std::string& root) {
 // ── 5. 并发升级 ───────────────────────────────────────────────────────────────
 
 std::string marker_of(const std::string& dir) {
-  for (const char* name : {"/.fushidicts_2", "/.fushidicts_1", "/.hoshidicts_1"}) {
+  for (const char* name : {"/.fushidicts_3", "/.fushidicts_2", "/.fushidicts_1", "/.hoshidicts_1"}) {
     if (fs::exists(dir + name)) return dir + name;
   }
   return {};
@@ -1022,6 +1040,79 @@ void test_concurrency(const std::string& root, Deinflector& deinflector) {
   }
 }
 
+
+// ── 6. 完成标记与「先问再升级」（拍板台 pr3554） ─────────────────────────────
+
+void test_markers(const std::string& root, Deinflector& deinflector) {
+  const DictSet legacy = import_set(root + "/mk_ref", true);
+  if (!legacy.ok()) return;
+  const std::string want = snapshot_of(legacy, deinflector, false);
+
+  // (a) 只检查（convert = false / fushidicts_tidy_dictionary）：旧式词典报「待升级」，
+  //     一个字节都不写——不建 key.index、不删 hash.table、不换标记。
+  {
+    const DictSet set = import_set(root + "/mk_tidy", true);
+    if (!set.ok()) return;
+    for (const std::string& dir : set.all()) {
+      const std::string marker = exists(dir + "/.fushidicts_2") ? "/.fushidicts_2" : "/.fushidicts_1";
+      const auto table_time = mtime(dir + "/hash.table");
+      expect_result(fushidicts::upgrade_dictionary(dir, true, /*convert=*/false), UpgradeResult::Pending,
+                    "tidy legacy: " + dir);
+      expect_result(static_cast<UpgradeResult>(fushidicts_tidy_dictionary(dir.c_str())), UpgradeResult::Pending,
+                    "tidy legacy (C ABI): " + dir);
+      expect(!exists(dir + "/key.index") && exists(dir + "/hash.table") && exists(dir + "/bloom.filter") &&
+                 mtime(dir + "/hash.table") == table_time,
+             "tidy writes nothing: " + dir);
+      expect(exists(dir + marker) && !exists(dir + "/.fushidicts_3"), "tidy keeps the legacy marker: " + dir);
+    }
+    expect_same(want, snapshot_of(set, deinflector, false), "tidy: still the same results");
+    expect_result(static_cast<UpgradeResult>(fushidicts_tidy_dictionary((root + "/mk_missing").c_str())),
+                  UpgradeResult::Failed, "tidy: missing directory");
+  }
+
+  // (b) 升级前的开发版状态（key.index 已在、标记仍是旧名字）：只检查那一遍就把标记换成
+  //     .fushidicts_3，记录布局版本照旧名字（v2 → "2"、v1 / .hoshidicts_1 → "1"）。
+  {
+    const DictSet set = import_set(root + "/mk_swap", false);
+    if (!set.ok()) return;
+    for (const std::string& dir : set.all()) {
+      const std::string body = read_file(dir + "/.fushidicts_3");
+      fs::remove(dir + "/.fushidicts_3");
+      const std::string old_name = dir == set.simple ? "/.hoshidicts_1" : "/.fushidicts_2";
+      write_text(dir + old_name, "");
+      expect_result(static_cast<UpgradeResult>(fushidicts_tidy_dictionary(dir.c_str())), UpgradeResult::UpToDate,
+                    "swap: tidy " + dir);
+      expect(exists(dir + "/.fushidicts_3") && !exists(dir + old_name), "swap: marker replaced: " + dir);
+      expect(read_file(dir + "/.fushidicts_3") == body, "swap: record version kept: " + dir);
+    }
+    expect_same(want, snapshot_of(set, deinflector, false), "swap: same results after the marker swap");
+  }
+
+  // (c) v1 存量（.hoshidicts_1）升级：换成文件体 "1" 的 .fushidicts_3，v1 记录照 v1 读。
+  {
+    const DictSet set = import_set(root + "/mk_v1", true);
+    if (!set.ok()) return;
+    fs::rename(set.simple + "/.fushidicts_1", set.simple + "/.hoshidicts_1");
+    expect_result(fushidicts::upgrade_dictionary(set.simple, true), UpgradeResult::Upgraded, "v1: upgrade");
+    expect(read_file(set.simple + "/.fushidicts_3") == "1", "v1: .fushidicts_3 body = 1");
+    expect(!exists(set.simple + "/.hoshidicts_1"), "v1: legacy marker removed");
+    for (const std::string& dir : set.all()) {
+      if (dir != set.simple) fushidicts::upgrade_dictionary(dir, true);
+    }
+    expect_same(want, snapshot_of(set, deinflector, false), "v1: same results after upgrade");
+  }
+
+  // (d) 不认识的 .fushidicts_3 文件体（未来格式）：不加载，而不是按错的布局读记录。
+  {
+    const DictSet set = import_set(root + "/mk_future", false);
+    if (!set.ok()) return;
+    write_text(set.term + "/.fushidicts_3", "9");
+    DictionaryQuery q;
+    q.add_term_dict(set.term);
+    expect(q.query("猫").empty(), "unknown .fushidicts_3 body: not loaded");
+  }
+}
+
 int main(int argc, char** argv) {
   if (argc < 2) {
     std::fprintf(stderr, "usage: %s <ja.json>\n", argv[0]);
@@ -1044,6 +1135,7 @@ int main(int argc, char** argv) {
   test_robustness(root, deinflector);
   test_raw_index(root);
   test_concurrency(root, deinflector);
+  test_markers(root, deinflector);
 
   if (g_fail == 0) std::printf("PASS dict_upgrade_test\n");
   return g_fail == 0 ? 0 : 1;

@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
+import '../../tool/test_flow/heavy_budget.dart';
 import '../../tool/test_flow/heavy_history.dart';
 
 HeavyHistoryEntry _entry({
@@ -142,5 +143,164 @@ void main() {
       report.split('\n').where((String l) => l.contains('elsewhere')),
       hasLength(2),
     );
+    expect(report, isNot(contains('caller was gone')));
+    // Lines before 2026-11-20 say no worktree: no per-worktree section.
+    expect(report, isNot(contains('queued most for')));
+  });
+
+  // 2026-11-20: runs whose caller was gone used to be admitted and die with
+  // -1073741502; they now end with kHeavyCallerGoneExit.
+  test('runs whose caller was gone are counted apart', () {
+    final String report = renderHeavyStats(<HeavyHistoryEntry>[
+      _entry(queued: 60, ran: 20),
+      _entry(queued: 7000, ran: 0, exitCode: kHeavyCallerGoneExit),
+      _entry(queued: 200, ran: 0, exitCode: kHeavyCallerGoneExit),
+    ], days: 7);
+    expect(
+      report,
+      contains(
+        '2 run(s) cancelled because their caller was gone '
+        '(exit $kHeavyCallerGoneExit), 2h00m queued by them',
+      ),
+    );
+    expect(report, contains('1 run(s) in the last 7 day(s)'));
+    expect(report, contains('60s queued in all'));
+  });
+
+  test('a run killed because its caller was gone books nothing', () {
+    final DateTime now = DateTime.utc(2026, 11, 20, 12);
+    List<HeavyHistoryEntry> runs(int exitCode) => <HeavyHistoryEntry>[
+      for (int i = 0; i < kHeavyMeasuredMinSamples; i++)
+        HeavyHistoryEntry(
+          at: now.subtract(Duration(hours: i + 1)),
+          kind: 'test',
+          label: 'flutter test',
+          where: HeavyRanWhere.here,
+          queued: Duration.zero,
+          ran: const Duration(seconds: 60),
+          exitCode: exitCode,
+          bookMb: 4096,
+          staticMb: 4096,
+          peakMb: 1000,
+        ),
+    ];
+    int? book(int exitCode) => heavyMeasuredBookMb(
+      runs(exitCode),
+      kind: 'test',
+      staticMb: 4096,
+      capMb: 12288,
+      now: now,
+    );
+    expect(book(1), isNotNull);
+    expect(book(kHeavyCallerGoneExit), isNull);
+  });
+
+  test('worktree and tool survive the file; older lines have neither', () {
+    appendHeavyHistory(
+      dir,
+      HeavyHistoryEntry(
+        at: DateTime.utc(2026, 11, 20, 8),
+        kind: 'test',
+        label: 'dist_test local worker r1',
+        where: HeavyRanWhere.here,
+        queued: const Duration(seconds: 12),
+        ran: const Duration(seconds: 900),
+        exitCode: 0,
+        bookMb: 12288,
+        cwd: 'D:/wt/a',
+        via: kHeavyViaDistLocal,
+      ),
+    );
+    // A line as heavy.dart wrote it before 2026-11-20.
+    File('${dir.path}/$kHeavyHistoryFile').writeAsStringSync(
+      '{"at":"2026-11-17T10:00:00.000Z","kind":"build","label":"flutter '
+      'build","where":"here","queuedS":5,"ranS":60,"exit":0,"bookMb":16384}\n',
+      mode: FileMode.append,
+    );
+
+    final List<HeavyHistoryEntry> read = readHeavyHistory(dir);
+    expect(read, hasLength(2));
+    expect(read[0].cwd, 'D:/wt/a');
+    expect(read[0].via, kHeavyViaDistLocal);
+    expect(read[1].cwd, isNull);
+    expect(read[1].via, isNull);
+    expect(read[1].bookMb, 16384);
+    expect(
+      read[1].toJson().keys,
+      isNot(anyOf(contains('cwd'), contains('via'))),
+    );
+  });
+
+  test('a tool that took the lease itself books like heavy.dart', () {
+    final HeavyHistoryEntry test = heavyHolderEntry(
+      via: kHeavyViaFlutterTestFailures,
+      need: heavyNeedFor(HeavyKind.test),
+      label: 'flutter_test_failures -> out',
+      cwd: 'D:/wt/a',
+      queued: const Duration(seconds: 30),
+      ran: const Duration(seconds: 400),
+      exitCode: 1,
+      peakMb: 7000,
+      at: DateTime.utc(2026, 11, 20),
+    );
+    expect(test.kind, 'test');
+    expect(test.where, HeavyRanWhere.here);
+    expect(test.bookMb, heavyNeedFor(HeavyKind.test).bookedMb);
+    // A measured kind: its booking is its class, as heavy.dart writes it.
+    expect(test.staticMb, heavyNeedFor(HeavyKind.test).bookedMb);
+    expect(test.queued, const Duration(seconds: 30));
+    expect(test.ran, const Duration(seconds: 400));
+    expect(test.exitCode, 1);
+    expect(test.peakMb, 7000);
+    expect(test.cwd, 'D:/wt/a');
+    expect(test.via, kHeavyViaFlutterTestFailures);
+
+    final HeavyHistoryEntry build = heavyHolderEntry(
+      via: kHeavyViaPrePush,
+      need: heavyNeedFor(HeavyKind.build),
+      label: 'pre-push build',
+      cwd: null,
+      queued: Duration.zero,
+      ran: const Duration(seconds: 1),
+      exitCode: 0,
+    );
+    expect(build.staticMb, isNull);
+    expect(build.peakMb, isNull);
+  });
+
+  test('the report: tools apart from heavy.dart runs, then worktrees', () {
+    HeavyHistoryEntry run({required int queued, String? cwd, String? via}) =>
+        HeavyHistoryEntry(
+          at: DateTime.utc(2026, 11, 20, 12),
+          kind: 'test',
+          label: 'x',
+          where: HeavyRanWhere.here,
+          queued: Duration(seconds: queued),
+          ran: const Duration(seconds: 10),
+          exitCode: 0,
+          cwd: cwd,
+          via: via,
+        );
+    final String report = renderHeavyStats(<HeavyHistoryEntry>[
+      run(queued: 100, cwd: 'D:/wt/a'),
+      run(queued: 50, cwd: 'D:/wt/b', via: kHeavyViaDistLocal),
+      run(queued: 400, cwd: 'D:/wt/b', via: kHeavyViaDistLocal),
+      run(queued: 7), // before 2026-11-20: no worktree
+    ], days: 7);
+    final List<String> lines = report.split('\n');
+    expect(
+      lines.firstWhere((String l) => l.contains('(dist-local)')),
+      contains('   2  '),
+    );
+    expect(
+      lines.firstWhere((String l) => l.contains(' here ') && !l.contains('(')),
+      contains('   2  '),
+    );
+    expect(report, contains('queued most for (of 2 worktree(s) on record):'));
+    final int b = lines.indexWhere((String l) => l.endsWith('D:/wt/b'));
+    final int a = lines.indexWhere((String l) => l.endsWith('D:/wt/a'));
+    expect(b, greaterThan(0));
+    expect(a, greaterThan(b), reason: 'most queued first');
+    expect(lines[b], contains('7m30s in    2 run(s)'));
   });
 }

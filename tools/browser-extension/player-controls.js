@@ -6,7 +6,8 @@
 //
 // 三条不变式：
 //  · **不新增任何状态**。每一项都写既有的 chrome.storage.local 键（subtitleOverlayEnabled /
-//    subtitleReplaceNative / subtitleOverlayAllTracks / subtitleOverlayBackground / subtitleStyle）
+//    subtitleReplaceNative / subtitleMergeAsrSentences / subtitleOverlayAllTracks / subtitleOverlayBackground /
+//    subtitleStyle）
 //    或调既有执行端（content.js 的 fushiToggleSubtitleHiding、subtitle-panel.js 的
 //    fushiSubtitleShortcut）。options 页、工具栏弹窗、本菜单三处看到的永远是同一个值，
 //    因为三处都只经 storage.onChanged 回读。覆盖层总开关的写法与工具栏弹窗逐字同构
@@ -28,6 +29,7 @@
   var SETTING_KEY = 'playerControls';
   var PANEL_GATE_KEY = 'netflixSubtitlePanel';
   var BTN_ID = 'fushi-player-btn';
+  var FS_BTN_ID = 'fushi-player-fs-btn';
   var MENU_ID = 'fushi-player-controls';
   var MENU_GAP = 8;     // 菜单与按钮之间的间隙（px）
   var VIEWPORT_PAD = 8; // 菜单离视口边缘的最小留白（px）
@@ -89,9 +91,22 @@
     var items = [];
     items.push({ id: 'overlay', kind: 'switch', on: overlayOn, label: tr('ap_hp_overlay_toggle_label'), icon: 'subtitles' });
     items.push({ id: 'replaceNative', kind: 'switch', on: !!s.replaceNative, disabled: !overlayOn, label: tr('opt_subtitleReplaceNative_title'), icon: 'closed_caption' });
+    // 自动字幕分句整合只对 YouTube 自动字幕有意义（别的站没有 ASR 滚动行），只在 YouTube 出现；
+    // 它改的是轨本身（侧边栏 / 查词 / 制卡也用），不随覆盖层置灰。
+    if (s.asrMergeAvailable) {
+      items.push({ id: 'mergeAsr', kind: 'switch', on: !!s.mergeAsr, label: tr('opt_subtitleMergeAsrSentences_title'), icon: 'text_fields' });
+    }
     items.push({ id: 'allTracks', kind: 'switch', on: !!s.allTracks, disabled: !overlayOn, label: tr('opt_subtitleOverlayAllTracks_title'), icon: 'layers' });
     items.push({ id: 'background', kind: 'switch', on: s.background !== false, disabled: !overlayOn, label: tr('opt_subtitleOverlayBackground_title'), icon: 'format_color_fill' });
     items.push({ id: 'hidden', kind: 'switch', on: !!s.hidden, label: tr('opt_subtitleHidden_title'), icon: 'visibility_off' });
+    // 伪全屏（仅 App 内浏览器的页面脚本提供 window.fushiPageFullscreen；真浏览器里不出现这一项）。
+    if (s.fullscreenAvailable) {
+      items.push({
+        id: 'fullscreen', kind: 'action',
+        label: tr(s.fullscreenActive ? 'pc_fullscreen_exit' : 'pc_fullscreen_enter'),
+        icon: s.fullscreenActive ? 'fullscreen_exit' : 'fullscreen',
+      });
+    }
     // 字幕遮布（subtitle-mask.js，状态与执行端都在那里；这里只读与转发）：盖住画面里的硬字幕，
     // 与 Fushi 字幕覆盖层无关（覆盖层关着也能遮），所以不随总开关置灰。
     items.push({ id: 'mask', kind: 'switch', on: !!s.maskOn, label: tr('opt_subtitleMask_title'), icon: 'layers' });
@@ -287,6 +302,7 @@
     prefs: {
       subtitleOverlayEnabled: true,
       subtitleReplaceNative: false,
+      subtitleMergeAsrSentences: false,
       subtitleOverlayAllTracks: false,
       subtitleOverlayBackground: true,
       subtitleHidden: false,
@@ -301,6 +317,7 @@
     hoverVideo: false,
   };
   var btnEl = null;
+  var fsBtnEl = null;
   var menuEl = null;
   var mainPageEl = null;
   var stylePageEl = null;
@@ -428,6 +445,7 @@
       layout.group.classList.add(NETFLIX_CONTROLS_CLASS);
       if (layout.title) layout.title.classList.add(NETFLIX_TITLE_CLASS);
     }
+    removeFsButton();
     if (btnEl.classList.contains('is-floating')) {
       btnEl.classList.remove('is-floating');
       clearFloatingPosition();
@@ -461,6 +479,67 @@
     var keys = ['keydown', 'keyup', 'keypress'];
     for (var j = 0; j < keys.length; j++) {
       el.addEventListener(keys[j], function (e) { e.stopPropagation(); }, false);
+    }
+  }
+
+  // App 内浏览器的页面脚本在主世界暴露 window.fushiPageFullscreen.toggle(videoEl)；缺席（真 Chrome 扩展）回 null。
+  function pageFullscreen() {
+    try {
+      var api = window.fushiPageFullscreen;
+      return api && typeof api.toggle === 'function' ? api : null;
+    } catch (_) { return null; }
+  }
+
+  function toggleFullscreen() {
+    var api = pageFullscreen();
+    if (!api) return;
+    try { api.toggle(videoEl()); } catch (_) { /* no-op */ }
+  }
+
+  function paintFsButton() {
+    if (!fsBtnEl) return;
+    var active = !!document.fullscreenElement;
+    var label = tr(active ? 'pc_fullscreen_exit' : 'pc_fullscreen_enter');
+    fsBtnEl.title = label;
+    fsBtnEl.setAttribute('aria-label', label);
+    var ic = iconEl(active ? 'fullscreen_exit' : 'fullscreen', 24);
+    fsBtnEl.textContent = '';
+    if (ic) fsBtnEl.appendChild(ic);
+  }
+
+  function makeFsButton() {
+    var b = document.createElement('button');
+    b.id = FS_BTN_ID;
+    b.type = 'button';
+    b.className = 'fushi-pc-fs-btn';
+    stamp(b);
+    sealEvents(b);
+    b.addEventListener('click', function () { toggleFullscreen(); });
+    return b;
+  }
+
+  function removeFsButton() {
+    if (fsBtnEl && fsBtnEl.parentNode) fsBtnEl.parentNode.removeChild(fsBtnEl);
+    fsBtnEl = null;
+  }
+
+  // 全屏钮只存在于通用悬浮态且页面脚本可用时；位置在品牌按钮左侧，与它同显同隐。
+  function placeFsButton(x, y, v, visible) {
+    if (!pageFullscreen() || !btnEl || !btnEl.parentNode) return removeFsButton();
+    if (!fsBtnEl) { fsBtnEl = makeFsButton(); paintFsButton(); }
+    if (fsBtnEl.parentNode !== btnEl.parentNode) btnEl.parentNode.appendChild(fsBtnEl);
+    fsBtnEl.dataset.visible = visible ? '1' : '';
+    if (!visible) return;
+    var fx = x - FLOAT_BTN_SIZE - 8;
+    var VA = window.fushiVideoAnchor;
+    var placed = false;
+    if (VA && typeof VA.placeAt === 'function') {
+      try { VA.placeAt(fsBtnEl, fx, y, v); placed = true; } catch (_) { placed = false; }
+    }
+    if (!placed) {
+      var o = fixedOriginOf(fsBtnEl);
+      fsBtnEl.style.left = Math.round((fx - o.x) / o.sx) + 'px';
+      fsBtnEl.style.top = Math.round((y - o.y) / o.sy) + 'px';
     }
   }
 
@@ -525,6 +604,7 @@
       if (!netflix) netflixOverflow = null;
     }
     btnEl.classList.toggle('is-floating', generic);
+    if (!generic) removeFsButton();
     if (generic) {
       var parent = floatingHost();
       if (parent && btnEl.parentNode !== parent) parent.appendChild(btnEl);
@@ -614,6 +694,7 @@
       }
       if (x < left + FLOAT_BTN_INSET || y < top + FLOAT_BTN_INSET) {
         btnEl.dataset.visible = '';
+        if (fsBtnEl) fsBtnEl.dataset.visible = '';
         return;
       }
     }
@@ -627,7 +708,9 @@
       btnEl.style.left = Math.round((x - o.x) / o.sx) + 'px';
       btnEl.style.top = Math.round((y - o.y) / o.sy) + 'px';
     }
-    btnEl.dataset.visible = (st.open || st.hoverVideo) ? '1' : '';
+    var shown = !!(st.open || st.hoverVideo);
+    btnEl.dataset.visible = shown ? '1' : '';
+    placeFsButton(x, y, v, shown);
   }
 
   function teardown() {
@@ -635,6 +718,7 @@
     netflixOverflow = null;
     unwatchFloating();
     closeMenu();
+    removeFsButton();
     if (btnEl && btnEl.parentNode) btnEl.parentNode.removeChild(btnEl);
     btnEl = null;
   }
@@ -673,9 +757,13 @@
     var items = menuModel(Object.assign({
       overlayOn: overlayEffective(),
       replaceNative: !!st.prefs.subtitleReplaceNative,
+      asrMergeAvailable: site === 'youtube',
+      mergeAsr: !!st.prefs.subtitleMergeAsrSentences,
       allTracks: !!st.prefs.subtitleOverlayAllTracks,
       background: st.prefs.subtitleOverlayBackground !== false,
       hidden: !!st.prefs.subtitleHidden,
+      fullscreenAvailable: !!pageFullscreen(),
+      fullscreenActive: !!document.fullscreenElement,
       hasTrack: hasTrack(),
       externalTrack: hasExternalTrack(),
       study: st.prefs.studyTrackVideo !== false,
@@ -759,6 +847,7 @@
       else if (item.id === 'track') showPage('tracks');
       else if (item.id === 'list') runShortcut('toggle-panel');
       else if (item.id === 'maskEdit') editMask();
+      else if (item.id === 'fullscreen') { closeMenu(); toggleFullscreen(); }
       else if (item.id === 'autoAlign') autoAlign();
       else if (item.id === 'settings') openOptions();
     }
@@ -1146,6 +1235,7 @@
       return;
     }
     if (id === 'replaceNative') return writePrefs({ subtitleReplaceNative: !st.prefs.subtitleReplaceNative });
+    if (id === 'mergeAsr') return writePrefs({ subtitleMergeAsrSentences: !st.prefs.subtitleMergeAsrSentences });
     if (id === 'allTracks') return writePrefs({ subtitleOverlayAllTracks: !st.prefs.subtitleOverlayAllTracks });
     if (id === 'background') return writePrefs({ subtitleOverlayBackground: st.prefs.subtitleOverlayBackground === false });
     if (id === 'study') return writePrefs({ studyTrackVideo: st.prefs.studyTrackVideo === false });
@@ -1242,7 +1332,8 @@
   // ────────────────────────────── 装载与同步 ──────────────────────────────
 
   var PREF_KEYS = [
-    SETTING_KEY, PANEL_GATE_KEY, 'subtitleOverlayEnabled', 'subtitleReplaceNative', 'subtitleOverlayAllTracks',
+    SETTING_KEY, PANEL_GATE_KEY, 'subtitleOverlayEnabled', 'subtitleReplaceNative', 'subtitleMergeAsrSentences',
+    'subtitleOverlayAllTracks',
     'subtitleOverlayBackground', 'subtitleHidden', 'subtitleStyle', 'studyTrackVideo',
     // 字幕遮布的值归 subtitle-mask.js；这里订阅它只为菜单开着时重绘开关态。
     'subtitleMask',
@@ -1254,6 +1345,7 @@
     st.gate = s[PANEL_GATE_KEY] === true;
     st.prefs.subtitleOverlayEnabled = readBool(s, 'subtitleOverlayEnabled', true);
     st.prefs.subtitleReplaceNative = readBool(s, 'subtitleReplaceNative', false);
+    st.prefs.subtitleMergeAsrSentences = readBool(s, 'subtitleMergeAsrSentences', false);
     st.prefs.subtitleOverlayAllTracks = readBool(s, 'subtitleOverlayAllTracks', false);
     st.prefs.subtitleOverlayBackground = readBool(s, 'subtitleOverlayBackground', true);
     st.prefs.subtitleHidden = readBool(s, 'subtitleHidden', false);
@@ -1296,6 +1388,7 @@
     s[PANEL_GATE_KEY] = st.gate;
     s.subtitleOverlayEnabled = st.prefs.subtitleOverlayEnabled;
     s.subtitleReplaceNative = st.prefs.subtitleReplaceNative;
+    s.subtitleMergeAsrSentences = st.prefs.subtitleMergeAsrSentences;
     s.subtitleOverlayAllTracks = st.prefs.subtitleOverlayAllTracks;
     s.subtitleOverlayBackground = st.prefs.subtitleOverlayBackground;
     s.subtitleHidden = st.prefs.subtitleHidden;
@@ -1387,10 +1480,17 @@
     try {
       window.fushiI18n.onChange(function () {
         paintButton();
+        paintFsButton();
         if (st.open) { renderMain(); if (st.page === 'style') renderStylePage(); }
       });
     } catch (_) { /* no-op */ }
   }
+
+  // 伪全屏进/退会派发 fullscreenchange：刷新悬浮钮的图标与文案，菜单开着就重画那一行。
+  document.addEventListener('fullscreenchange', function () {
+    paintFsButton();
+    rerenderIfOpen();
+  }, true);
 
   return api;
 });

@@ -206,6 +206,11 @@ class FeedbackFlagChips extends StatelessWidget {
 String feedbackTime(int ms) =>
     FushiTimeFormat.dateHourMinute(DateTime.fromMillisecondsSinceEpoch(ms));
 
+/// 上传额度重置时刻（[FeedbackService.uploadQuotaResetAt]，UTC 零点）按本机时区显示：带日期，
+/// 东八区看到的是「次日 08:00」这类，不会和今天的同一钟点混淆。
+String feedbackQuotaResetTime(DateTime at) =>
+    FushiTimeFormat.dateHourMinute(at.toLocal());
+
 /// 状态徽标：未结案用强调色，已解决用成功色，其余中性。
 class FeedbackStatusBadge extends StatelessWidget {
   const FeedbackStatusBadge(this.status, {super.key});

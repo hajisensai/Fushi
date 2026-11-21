@@ -157,6 +157,7 @@ class _LnReaderNovelDetailPageState
         _position = position;
         _loading = false;
       });
+      if (shelfBook != null) await _refreshShelfDetails(novel);
     } on Object catch (error, stack) {
       ErrorLogService.instance.log(
         'LnReaderNovelDetailPage.load',
@@ -171,19 +172,33 @@ class _LnReaderNovelDetailPageState
     }
   }
 
-  /// 这部作品已在书架上时，用书里存着的章节列表（上次同步到的目录）先渲染。
-  /// 不在书架 / 描述符读不出章节就什么都不做，照旧等源站。
+  /// 源站详情回来后把头部信息记进书架书的描述符，下次进页的旧目录阶段就能
+  /// 画出完整头部。只是缓存：写失败记日志，不影响已经在屏上的源站详情。
+  Future<void> _refreshShelfDetails(LnReaderNovel novel) async {
+    try {
+      await _onlineLibrary().refreshDetails(widget.plugin.id, novel);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'LnReaderNovelDetailPage.refreshShelfDetails',
+        error,
+        stack,
+      );
+    }
+  }
+
+  /// 这部作品已在书架上时，用书里存着的章节列表（上次同步到的目录）与头部信息
+  /// （简介 / 作者 / 状态 / 类型标签）先渲染，源站详情回来时头部高度不变、章节
+  /// 列表不下移。不在书架 / 描述符读不出章节就什么都不做，照旧等源站。
   Future<void> _showShelfCatalog() async {
     final EpubBookRow? shelfBook = await _onlineLibrary().findBook(
       widget.plugin.id,
       widget.item.path,
     );
+    final LnReaderOnlineBookDescriptor? descriptor =
+        LnReaderOnlineBookDescriptor.tryParse(shelfBook?.sourceMetadata);
     final List<LnReaderChapter> chapters =
-        LnReaderOnlineBookDescriptor.tryParse(
-          shelfBook?.sourceMetadata,
-        )?.chapters ??
-        const <LnReaderChapter>[];
-    if (shelfBook == null || chapters.isEmpty) return;
+        descriptor?.chapters ?? const <LnReaderChapter>[];
+    if (shelfBook == null || descriptor == null || chapters.isEmpty) return;
     final ReaderPosition? position = await _readPosition(shelfBook);
     if (!mounted || _novel != null) return;
     setState(() {
@@ -192,6 +207,10 @@ class _LnReaderNovelDetailPageState
         name: widget.item.name.isNotEmpty ? widget.item.name : shelfBook.title,
         path: widget.item.path,
         cover: widget.item.cover,
+        summary: descriptor.details.summary,
+        author: descriptor.details.author,
+        status: descriptor.details.status,
+        genres: descriptor.details.genres,
         chapters: chapters,
         totalPages: 1,
       );
@@ -368,6 +387,7 @@ class _LnReaderNovelDetailPageState
           .deleteBook(
             db: appModel.database,
             bookKey: book.bookKey,
+            appModel: appModel,
             scope: decision.scope,
           );
       if (!mounted) return;

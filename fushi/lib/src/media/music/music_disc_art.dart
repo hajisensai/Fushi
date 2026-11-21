@@ -15,6 +15,7 @@ library;
 import 'dart:io';
 import 'dart:isolate';
 
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:path/path.dart' as p;
 
 /// 认作盘面图的图片扩展名（小写，带点）。
@@ -293,6 +294,24 @@ class MusicDiscArtIndex {
   static final MusicDiscArtIndex instance = MusicDiscArtIndex._();
 
   final Map<String, MusicDiscArtHit?> _byRoot = <String, MusicDiscArtHit?>{};
+
+  /// 曲库当前的盘面图（专辑 uid → 图路径）：曲库页每次读完快照、[resolve] 出结果后
+  /// 发布到这里（[publish]），是这份映射的唯一持有处。曲库网格、推荐页「最近播放」、
+  /// 「继续收听」都读它：没有盘面图的专辑不在里面，就不画唱片（不造假唱片）。
+  final ValueNotifier<Map<String, String>> albums =
+      ValueNotifier<Map<String, String>>(const <String, String>{});
+
+  /// 发布新的盘面图映射；内容没变不通知。
+  void publish(Map<String, String> found) {
+    final Map<String, String> current = albums.value;
+    if (current.length == found.length &&
+        found.entries.every(
+          (MapEntry<String, String> e) => current[e.key] == e.value,
+        )) {
+      return;
+    }
+    albums.value = Map<String, String>.unmodifiable(found);
+  }
 
   /// 缓存代数：[invalidate] 加一。进行中的 [resolve] 若在它之前起扫，扫完的结果
   /// 是重扫前的目录状态，不写回缓存（否则会把旧结果塞回刚清空的缓存）。

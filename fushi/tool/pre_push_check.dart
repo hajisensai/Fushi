@@ -67,6 +67,7 @@ import 'dart:io';
 import 'test_flow/flutter_sdk_executables.dart';
 import 'test_flow/flutter_test_failure_filter.dart';
 import 'test_flow/heavy_budget.dart';
+import 'test_flow/heavy_history.dart';
 import 'test_flow/heavy_lease.dart';
 import 'test_flow/pre_push_selection.dart';
 import 'tests_for_changes.dart'
@@ -119,11 +120,13 @@ class _Leases {
     if (_refused) {
       return (false, 'not run: an earlier step was not admitted');
     }
+    final HeavyNeed need = heavyNeedFor(kind);
+    final String label = 'pre-push $what';
     final HeavyLease lease;
     try {
       lease = await acquireHeavyLease(
-        need: heavyNeedFor(kind),
-        label: 'pre-push $what',
+        need: need,
+        label: label,
         worktreeRoot: root,
         waitMax: waitMax,
         log: (String l) => stdout.writeln('   $l'),
@@ -143,11 +146,33 @@ class _Leases {
     if (lease.waited.inSeconds >= 30) {
       notes.add('$what waited ${lease.waited.inMinutes} min for the machine');
     }
+    final Stopwatch held = Stopwatch()..start();
+    // A step that throws counts as failed in the history line.
+    int exitCode = 1;
     try {
-      return await body();
+      final (bool, String) result = await body();
+      exitCode = result.$1 ? 0 : 1;
+      return result;
     } finally {
       lease.release();
       final int? peak = job?.peakMb();
+      // A holder of the machine-wide queue like a heavy.dart run: one
+      // history line (heavy.dart --stats / --replay); none without a slot.
+      if (lease.slot != null) {
+        appendHeavyHistory(
+          heavyStateDir(),
+          heavyHolderEntry(
+            via: kHeavyViaPrePush,
+            need: need,
+            label: label,
+            cwd: root,
+            queued: lease.waited,
+            ran: held.elapsed,
+            exitCode: exitCode,
+            peakMb: peak,
+          ),
+        );
+      }
       final int? cap = job?.capMb;
       if (peak != null && cap != null && heavyCapHit(peak, cap)) {
         notes.add(

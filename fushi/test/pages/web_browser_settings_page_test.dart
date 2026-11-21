@@ -154,6 +154,54 @@ void main() {
     expect(item.value(c), isTrue);
   });
 
+  testWidgets('网页全屏两个开关：默认开、读写设备本地偏好；自动转横屏只在手机显示', (WidgetTester tester) async {
+    final AppModel appModel = await pumpPage(
+      tester,
+      size: const Size(1280, 900),
+    );
+    SettingsSwitchItem item(String id) => buildWebBrowserSection().items
+        .whereType<SettingsSwitchItem>()
+        .singleWhere((SettingsSwitchItem i) => i.id == id);
+    final SettingsContext c = SettingsContext(
+      context: tester.element(find.byType(WebBrowserSettingsPage)),
+      appModel: appModel,
+      ref: tester.element(find.byType(WebBrowserSettingsPage)) as WidgetRef,
+      readerSource: ReaderFushiSource.instance,
+      refresh: () {},
+    );
+
+    final SettingsSwitchItem takeover = item(
+      'system.web_browser_fullscreen_takeover',
+    );
+    expect(takeover.visible, isNull, reason: '五端都接管');
+    expect(takeover.value(c), isTrue);
+    await takeover.onChanged(c, false);
+    expect(
+      appModel.prefsRepo.getPref(kWebBrowserFullscreenTakeoverPref),
+      isFalse,
+    );
+    expect(takeover.value(c), isFalse);
+
+    final SettingsSwitchItem rotate = item(
+      'system.web_browser_fullscreen_auto_rotate',
+    );
+    expect(rotate.visible!(c), isMobilePlatform);
+    expect(rotate.value(c), isTrue);
+    await rotate.onChanged(c, false);
+    expect(
+      appModel.prefsRepo.getPref(kWebBrowserFullscreenAutoRotatePref),
+      isFalse,
+    );
+    expect(
+      kWebBrowserDeviceLocalPrefKeys,
+      containsAll(<String>[
+        kWebBrowserFullscreenTakeoverPref,
+        kWebBrowserFullscreenAutoRotatePref,
+      ]),
+      reason: '设备本地，不进备份 / 同步',
+    );
+  });
+
   testWidgets('改扩展设置：写穿扩展存储并发出变更（打开着的标签页据此收到 onChanged）', (
     WidgetTester tester,
   ) async {

@@ -152,6 +152,40 @@ BackupService _backupServiceFor(AppModel appModel) => BackupService(
   srsStorage: appModel.srsStorageForBackup,
 );
 
+/// ctl 备份导出的类别里去掉「要先升级才能导出」的（[BackupContentSummary.needsUpgrade]，目前只有复习：本机只有协议 3
+/// 的复习库、还没迁移成新代时打不开，整份导出会失败）。
+///
+/// - [categories] 为 null（`all`）或 [named] 为 false（缺省类别）：从要导出的类别里拿掉它们，记进 `skipped`，其余照常；
+/// - [named]（调用方显式点名了类别）且点名了要先升级的类别：抛 [CtlFailure.rejected]，不出半份包、也不悄悄少一类。
+///
+/// 只在要导出的类别里有复习时才调 [summarize]（`needsUpgrade` 只会是复习，别的类别不必为它整机数一遍）。
+@visibleForTesting
+Future<({Set<BackupCategory>? categories, Set<BackupCategory> skipped})>
+dropBackupCategoriesNeedingUpgrade({
+  required Set<BackupCategory>? categories,
+  required bool named,
+  required Future<BackupContentSummary> Function() summarize,
+}) async {
+  final Set<BackupCategory> requested =
+      categories ?? BackupCategory.values.toSet();
+  if (!requested.contains(BackupCategory.srs)) {
+    return (categories: categories, skipped: const <BackupCategory>{});
+  }
+  final Set<BackupCategory> blocked = (await summarize()).needsUpgrade
+      .intersection(requested);
+  if (blocked.isEmpty) {
+    return (categories: categories, skipped: const <BackupCategory>{});
+  }
+  if (named) {
+    throw CtlFailure.rejected(
+      '这些类别要先在 app 里升级才能备份：'
+      '${blocked.map((BackupCategory c) => c.name).join(', ')}'
+      '（本机复习库还是旧格式）；不点名它们可以照常备份其余类别',
+    );
+  }
+  return (categories: requested.difference(blocked), skipped: blocked);
+}
+
 Future<Map<String, Object?>> _backupFileToWire(File file) async {
   final BackupMeta? meta = await BackupRestoreService.validateBackup(file.path);
   return <String, Object?>{
@@ -258,7 +292,15 @@ List<CtlRoute> _backupRoutes(
       final VideoBookRow? row = await videos.getByBookUid(key);
       if (row == null) throw CtlFailure.notFound('没有这个视频：$key');
     }
-    final Set<BackupCategory>? finalCategories = categories;
+    // 本机复习库还没升级成新代时（打不开、数不了），缺省 / all 的导出跳过复习、其余照常，与设置页导出框一致；
+    // 显式点名 srs 才明确报错（G7-5b 复核）。
+    final ({Set<BackupCategory>? categories, Set<BackupCategory> skipped})
+    resolved = await dropBackupCategoriesNeedingUpgrade(
+      categories: categories,
+      named: explicit != null,
+      summarize: service.summarizeLiveContent,
+    );
+    final Set<BackupCategory>? finalCategories = resolved.categories;
     final bool wait = call.optBool('wait') ?? true;
     appModel.beginBackupExport();
     Future<Map<String, Object?>> export() async {
@@ -293,6 +335,11 @@ List<CtlRoute> _backupRoutes(
             : <String>[for (final BackupCategory c in finalCategories) c.name],
         if (bookKeys.isNotEmpty) 'books': bookKeys.toList(),
         if (videoKeys.isNotEmpty) 'videos': videoKeys.toList(),
+        if (resolved.skipped.isNotEmpty)
+          'skippedCategories': <Map<String, Object?>>[
+            for (final BackupCategory c in resolved.skipped)
+              <String, Object?>{'category': c.name, 'reason': 'needsUpgrade'},
+          ],
         'skippedDictionaries': skippedDictionaries,
         ...backupMetaToWire(meta),
       };

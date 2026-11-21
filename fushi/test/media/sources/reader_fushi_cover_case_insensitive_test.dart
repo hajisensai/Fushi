@@ -79,6 +79,33 @@ void main() {
       );
       expect(r, isNull);
     });
+
+    test('一次调用内同一目录只列一次 (novel-9)', () {
+      final Map<String, int> calls = <String, int>{};
+      List<String> countingListDir(String d) {
+        calls[d] = (calls[d] ?? 0) + 1;
+        return listDir(d);
+      }
+
+      // 书架对无封面书的真实候选：声明封面 + cover.jpg/jpeg/png 三个兜底，
+      // 全部落空时每个候选都要从 extractDir 起走。
+      final String? r = ReaderFushiSource.resolveCaseInsensitive(
+        extractDir: '/x/Book',
+        relPaths: <String>[
+          'oebps/images/missing.jpg',
+          'Cover.jpeg',
+          'cover.png',
+          'oebps/images/none.png',
+        ],
+        listDir: countingListDir,
+      );
+      expect(r, isNull);
+      expect(calls, <String, int>{
+        '/x/Book': 1,
+        '/x/Book/OEBPS/Images': 1,
+        '/x/Book/OEBPS': 1,
+      });
+    });
   });
 
   group('书架封面 case-insensitive 兜底真实解析链 (BUG-612 端到端)', () {

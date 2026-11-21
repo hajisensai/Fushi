@@ -158,8 +158,10 @@ pub fn parse(text: &str, flavor: Flavor, duration_ms: Option<i64>) -> Timeline {
     if let Some(lang) = krc_lang {
         apply_krc_language(&mut t, &lang);
     }
-    if let Some(kana) = qrc_kana {
-        super::qrc::apply_kana(&mut t, &kana);
+    if let Some(kana) = qrc_kana.filter(|k| !k.trim().is_empty()) {
+        // 对不上就整首不挂（逐行降级要先定义注音轨的「行」，见 [super::qrc::apply_kana]），
+        // 但要留标记让界面说一句，别让用户以为来源本来就没注音。
+        t.meta.ruby_dropped = !super::qrc::apply_kana(&mut t, &kana);
     }
     t.finalize(duration_ms);
     t
@@ -366,6 +368,7 @@ mod tests {
                 ("け", None)
             ]
         );
+        assert!(!t.meta.ruby_dropped);
         // 只认 QRC：别的格式里的同名标签不当注音轨。
         let y = "[kana:1よる]
 [1000,1000](1000,300,0)夜(1300,700,0)に";
@@ -374,6 +377,22 @@ mod tests {
                 .ruby
                 .is_none()
         );
+    }
+
+    #[test]
+    fn mismatched_qrc_kana_track_is_flagged_not_attached() {
+        // 注音轨只给了一段，正文有两段汉字：整首不挂，但标记 ruby_dropped 让界面提示。
+        let q = "[kana:1よる]
+[1000,1000]夜(1000,300)に(1300,200)駆(1500,200)け(1700,300)";
+        let t = parse(q, Flavor::Qrc, None);
+        assert!(t.meta.ruby_dropped);
+        assert!(t.lines[0].syllables.iter().all(|s| s.ruby.is_none()));
+        // 没有注音轨 / 空注音轨：不是「对不上」，不标记。
+        let plain = "[1000,1000]夜(1000,300)に(1300,200)";
+        assert!(!parse(plain, Flavor::Qrc, None).meta.ruby_dropped);
+        let empty = "[kana:]
+[1000,1000]夜(1000,300)に(1300,200)";
+        assert!(!parse(empty, Flavor::Qrc, None).meta.ruby_dropped);
     }
 
     #[test]

@@ -31,6 +31,7 @@
 #include "json/meta_record.hpp"
 #include "json/yomitan_parser.hpp"
 #include "memory/memory.hpp"
+#include "util/dict_marker.hpp"
 #include "util/fs_utf8.hpp"
 #include "util/redirect_glossary.hpp"
 #include "util/term_rules_flag.hpp"
@@ -392,21 +393,15 @@ namespace {
 //
 // 故读侧同时接受两个名字（新名优先）。这是「读旧数据的迁移代码」，不追改用户
 // 磁盘上的存量文件——重命名用户数据既不可逆，也会让回退到旧版的用户反过来坏掉。
-// marker 同时承担「导入已完成」与「格式版本」两个语义（对齐上游的版本阶梯）：
-//   v2: .fushidicts_2 —— kanji 记录带 stats 追加段 + term glossary 可能使用
-//       dict.zstd 训练字典（本批引入，fork 首个版本升级）。
-//   v1: .fushidicts_1（当前 v1 写入端 write_simple_dict 仍产出）/
-//       .hoshidicts_1（改名前的存量，冻结，只读不写）。
-// 返回 0 = 无 marker（导入未完成/损坏），词典不加载。
+// marker 同时承担「导入已完成」与「格式版本」两个语义，版本阶梯与各名字的含义见
+// util/dict_marker.hpp（单一真相源）。返回记录布局版本：
+//   2: .fushidicts_3（文件体 "2"，key.index 索引）/ .fushidicts_2 —— kanji 记录带 stats
+//      追加段 + term glossary 可能使用 dict.zstd 训练字典。
+//   1: .fushidicts_3（文件体 "1"）/ .fushidicts_1（当前 v1 写入端 write_simple_dict
+//      退回旧式索引时仍产出）/ .hoshidicts_1（改名前的存量，冻结，只读不写）。
+// 返回 0 = 无 marker（导入未完成/损坏）或 .fushidicts_3 文件体不认识，词典不加载。
 int dict_format_version(const std::string& path) {
-  if (std::filesystem::is_regular_file(fushi::fs_path(path + "/.fushidicts_2"))) {
-    return 2;
-  }
-  if (std::filesystem::is_regular_file(fushi::fs_path(path + "/.fushidicts_1")) ||
-      std::filesystem::is_regular_file(fushi::fs_path(path + "/.hoshidicts_1"))) {
-    return 1;
-  }
-  return 0;
+  return fushidicts::dict_marker::record_version(path);
 }
 
 // 存量词典（term_rules.flag 缺失/失效）一次性扫描：任何 term 记录的 rules 非空即

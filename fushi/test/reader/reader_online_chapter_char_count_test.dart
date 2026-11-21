@@ -1,10 +1,19 @@
+import 'dart:convert';
+
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/novel/online/lnreader_online_book.dart'
+    show lnReaderPendingChapterBody;
 import 'package:fushi/src/media/novel/online/online_novel_chapter_loader.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show
         OnlineChapterCharCountAdoption,
         absoluteCharOffsetOf,
-        charCountsWithLoadedOnlineChapter;
+        charCountsWithLoadedOnlineChapter,
+        countChapterCharsWithPending,
+        persistRecomputedChapterCharCounts;
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
 
 import '../helpers/source_guard.dart';
@@ -400,6 +409,133 @@ void main() {
         open.indexOf('_onlineCharCountAdoption.clear();'),
         inInclusiveRange(release, open.indexOf('_onlineChapterLoader =\n')),
       );
+    });
+  });
+  // 第一波 c01 遗留（c40 收）：字数口径升级后首次开在线书，后台整本重算读盘时
+  // 某章还是占位页；随后后台预取把那一章正文取回、把正文字数写进书行；重算
+  // 落定后的写回再拿占位页字数整列盖回去，口径标记已是当前、那一章也不再是占位
+  // 页，书行从此停在占位页字数。
+  group('后台整本重算写回书行', () {
+    late FushiDatabase db;
+
+    setUp(() async {
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'b',
+          title: 'b',
+          epubPath: 'b.epub',
+          extractDir: '/b',
+          chapterCount: 3,
+          chaptersJson: jsonEncode(<Object?>[
+            for (int i = 0; i < 3; i++)
+              <String, Object?>{
+                'id': 'c$i',
+                'characters': 12,
+                'charCaliber': 1,
+              },
+          ]),
+          importedAt: 0,
+        ),
+      );
+    });
+
+    tearDown(() => db.close());
+
+    Future<List<Map<String, Object?>>> entries() async =>
+        <Map<String, Object?>>[
+          for (final Object? e
+              in jsonDecode((await db.getEpubBook('b'))!.chaptersJson)
+                  as List<Object?>)
+            e! as Map<String, Object?>,
+        ];
+
+    test('重算读到占位页的章：保留书行里的值，只打口径标记', () async {
+      // 预取已把第 1 章的正文字数写进书行。
+      final List<Map<String, Object?>> before = await entries();
+      before[1]['characters'] = 5000;
+      await db.updateEpubBookChaptersJson('b', jsonEncode(before));
+
+      await persistRecomputedChapterCharCounts(
+        database: db,
+        bookKey: 'b',
+        counts: <int>[700, 9, 9],
+        keepStored: <bool>[false, true, true],
+      );
+      final List<Map<String, Object?>> after = await entries();
+      expect(after.map((Map<String, Object?> e) => e['characters']), <int>[
+        700,
+        5000,
+        12,
+      ]);
+      expect(
+        after.map((Map<String, Object?> e) => e['charCaliber']).toSet(),
+        <Object?>{kChapterCharCountCaliber},
+      );
+      expect(after.first['id'], 'c0', reason: '条目其余字段原样保留');
+    });
+
+    test('写回与加载器的字数写入交错：读改写在事务里，不把中途写进来的正文字数盖掉', () async {
+      final List<Map<String, Object?>> loaderView = await entries();
+      loaderView[1]['characters'] = 5000;
+      final Future<void> persisting = persistRecomputedChapterCharCounts(
+        database: db,
+        bookKey: 'b',
+        counts: <int>[700, 9, 9],
+        keepStored: <bool>[false, true, true],
+      );
+      // 加载器的写入紧跟在写回读行之后排队、早于写回写行：不在事务里时写回读到的
+      // 是旧行（占位页字数），随后整列写回把 5000 盖掉。
+      final Future<void> loaderWrite = db.updateEpubBookChaptersJson(
+        'b',
+        jsonEncode(loaderView),
+      );
+      await Future.wait(<Future<void>>[persisting, loaderWrite]);
+
+      final List<Map<String, Object?>> after = await entries();
+      expect(after[1]['characters'], 5000);
+    });
+
+    test('章数对不上（换过书 / 脏数据）不写', () async {
+      await persistRecomputedChapterCharCounts(
+        database: db,
+        bookKey: 'b',
+        counts: <int>[1, 2],
+        keepStored: <bool>[false, false],
+      );
+      expect(
+        (await entries()).map((Map<String, Object?> e) => e['characters']),
+        <int>[12, 12, 12],
+      );
+    });
+
+    test('重算同时标出哪些章读到的是占位页', () {
+      String xhtml(String body) =>
+          '<html><body><section>\n$body\n</section></body></html>';
+      final EpubBook book = EpubBook(
+        title: 'b',
+        chapters: <EpubChapter>[
+          EpubChapter(
+            id: '0',
+            href: '0',
+            mediaType: 'application/xhtml+xml',
+            html: xhtml('<p>本文です。とても長い本文。</p>'),
+          ),
+          EpubChapter(
+            id: '1',
+            href: '1',
+            mediaType: 'application/xhtml+xml',
+            html: xhtml(lnReaderPendingChapterBody('読み込み中')),
+          ),
+        ],
+      );
+      final ({List<int> counts, List<bool> pending}) result =
+          countChapterCharsWithPending(book);
+      expect(result.pending, <bool>[false, true]);
+      expect(result.counts, <int>[
+        book.chapterCharacterCount(0),
+        book.chapterCharacterCount(1),
+      ]);
     });
   });
 }

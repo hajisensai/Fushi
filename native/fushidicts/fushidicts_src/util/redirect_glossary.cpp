@@ -12,6 +12,7 @@
 
 #include "../hash/dict_index.hpp"
 #include "../memory/memory.hpp"
+#include "dict_marker.hpp"
 #include "fs_utf8.hpp"
 
 namespace fushi::redirect_glossary {
@@ -97,10 +98,10 @@ std::optional<bool> scan_dict_dir(const std::string& dict_dir) {
   hash::dict_index index;
   if (!index.open(dict_dir)) return std::nullopt;
 
-  // v2（.fushidicts_2）词典的 term glossary 可能用 dict.zstd 训练字典压缩；与
-  // DictionaryQuery::add_dict 同样的挂载条件。
+  // v2 记录（.fushidicts_2 / 文件体 "2" 的 .fushidicts_3）词典的 term glossary 可能用
+  // dict.zstd 训练字典压缩；与 DictionaryQuery::add_dict 同样的挂载条件。
   std::unique_ptr<ZSTD_DDict, decltype(&ZSTD_freeDDict)> ddict(nullptr, ZSTD_freeDDict);
-  if (std::filesystem::is_regular_file(fushi::fs_path(dict_dir + "/.fushidicts_2"))) {
+  if (fushidicts::dict_marker::record_version(dict_dir) >= 2) {
     std::ifstream f(fushi::fs_path(dict_dir + "/dict.zstd"), std::ios::binary);
     if (f) {
       const std::string blob((std::istreambuf_iterator<char>(f)), {});

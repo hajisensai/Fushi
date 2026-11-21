@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data' show BytesBuilder, Uint8List;
 
 import 'package:crypto/crypto.dart' show sha256;
+import 'package:external_path/external_path.dart';
 import 'package:flutter/services.dart' show AssetManifest, ByteData, rootBundle;
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/startup/test_environment.dart';
@@ -127,7 +128,7 @@ const String _kLegacyExtensionDirName = 'hibiki-browser-extension';
 
 /// 把随 app 打包的扩展文件解压到 `<appSupport>/fushi-browser-extension/`，返回该目录
 /// 绝对路径（供用户在浏览器「加载已解压的扩展程序」时粘贴）。每次调用覆盖写入，保证与
-/// app 内置版本一致（升级即刷新）。仅桌面有意义。
+/// app 内置版本一致（升级即刷新）。父目录见 [browserExtensionSupportRoot]。
 ///
 /// 旧目录（[_kLegacyExtensionDirName]）已存在时一并覆盖写入，保证老用户浏览器里那份
 /// 跟着更新，不因改名停更。
@@ -180,15 +181,31 @@ Future<void> _extractExtensionTo(
   }
 }
 
-/// 扩展解压的父目录：平台 app-support 根（**不跟数据根**——浏览器按绝对路径记住
-/// 扩展，搬家会让已加载的扩展失效），但隔离测试根（`FUSHI_TEST_ROOT`）下落进测试根。
-/// 曾经直接取平台目录：Mac 上 debug 包与用户正式版同 bundle id，集成测试一启动就把
-/// 用户真实的扩展目录删掉重写，`fushi-defaults.js` 换成测试实例的 token。
+/// 扩展解压的父目录：桌面是平台 app-support 根（**不跟数据根**——浏览器按绝对路径
+/// 记住扩展，搬家会让已加载的扩展失效），但隔离测试根（`FUSHI_TEST_ROOT`）下落进
+/// 测试根。曾经直接取平台目录：Mac 上 debug 包与用户正式版同 bundle id，集成测试
+/// 一启动就把用户真实的扩展目录删掉重写，`fushi-defaults.js` 换成测试实例的 token。
+///
+/// 安卓是公共 `Download/Fushi/`：浏览器（Vivaldi）的「加载已解压的扩展程序」走系统
+/// 文件夹选择器，只看得到共享存储，app 私有目录选不到（安装流程见
+/// module_id.dart 的 `BrowserExtensionInstallFlow.android`）。写入前由安装助手确保全文件访问权限。
 Future<Directory> browserExtensionSupportRoot({
   Map<String, String>? environment,
-}) async =>
-    fushiTestDirectory('app-support', environment: environment) ??
-    await getApplicationSupportDirectory();
+}) async {
+  final Directory? testRoot = fushiTestDirectory(
+    'app-support',
+    environment: environment,
+  );
+  if (testRoot != null) return testRoot;
+  if (Platform.isAndroid) {
+    final String downloads =
+        await ExternalPath.getExternalStoragePublicDirectory(
+          ExternalPath.DIRECTORY_DOWNLOAD,
+        );
+    return Directory(p.join(downloads, 'Fushi'));
+  }
+  return getApplicationSupportDirectory();
+}
 
 Future<Directory> _extensionDestDir() async {
   final Directory support = await browserExtensionSupportRoot();

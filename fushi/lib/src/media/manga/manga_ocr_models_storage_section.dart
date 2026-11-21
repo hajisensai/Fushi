@@ -8,6 +8,7 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_local_model_labels.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_model_downloads.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi_engine/ocr/manga_ocr_custom_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -33,8 +34,13 @@ class MangaOcrModelsStorageSection extends ConsumerStatefulWidget {
   const MangaOcrModelsStorageSection({
     required this.serviceFor,
     this.models,
+    this.customModelSlot,
     super.key,
   });
+
+  /// The user-imported slot (what is imported decides whether its row offers
+  /// anything); null = the real one.
+  final MangaOcrCustomModelSlot? customModelSlot;
 
   /// 取某个模型的服务（真实现 `createMangaOcrService(localModel: model)`）。
   final MangaOcrService Function(MangaOcrLocalModel model) serviceFor;
@@ -53,6 +59,9 @@ class _ModelRow {
   final MangaOcrLocalModel model;
   final MangaOcrService service;
   MangaOcrModelStatus? status;
+
+  /// Custom slot only: what is imported (null = nothing).
+  MangaOcrCustomModelInfo? customInfo;
   bool loading = true;
   bool deleting = false;
   bool wasDownloading = false;
@@ -98,14 +107,25 @@ class _MangaOcrModelsStorageSectionState
 
   Future<void> _loadStatus(_ModelRow row) async {
     MangaOcrModelStatus? status;
+    MangaOcrCustomModelInfo? customInfo;
     try {
       status = await row.service.modelStatus();
     } catch (_) {
       status = null;
     }
+    if (row.model.isUserImported) {
+      try {
+        customInfo =
+            await (widget.customModelSlot ?? MangaOcrCustomModelStore())
+                .readInfo();
+      } catch (_) {
+        customInfo = null;
+      }
+    }
     if (!mounted) return;
     setState(() {
       row.status = status;
+      row.customInfo = customInfo;
       row.loading = false;
     });
   }
@@ -155,6 +175,16 @@ class _MangaOcrModelsStorageSectionState
           t.manga_ocr_download_total_progress(
             done: FushiByteFormat.bytes(progress.receivedBytes),
             total: FushiByteFormat.bytes(status.totalBytes),
+          ),
+        );
+      }
+    } else if (status != null && _customSlotEmpty(row)) {
+      // Nothing to download here: the model is added on the OCR settings card.
+      parts.add(t.manga_ocr_custom_model_empty_title);
+      if (status.hasAnyFiles) {
+        parts.add(
+          t.manga_ocr_model_disk_usage(
+            size: FushiByteFormat.bytes(status.diskBytes),
           ),
         );
       }
@@ -217,6 +247,9 @@ class _MangaOcrModelsStorageSectionState
       label: Text(t.manga_ocr_delete),
     );
     if (status.allReady) return delete;
+    if (_customSlotEmpty(row)) {
+      return status.hasAnyFiles ? delete : const SizedBox.shrink();
+    }
     return Wrap(
       spacing: 8,
       runSpacing: 4,
@@ -237,6 +270,12 @@ class _MangaOcrModelsStorageSectionState
       ],
     );
   }
+
+  /// The user-imported slot with nothing imported: its only downloadable files
+  /// are the shared detectors, which cannot run on their own, so the row offers
+  /// no download.
+  static bool _customSlotEmpty(_ModelRow row) =>
+      row.model.isUserImported && row.customInfo == null;
 
   Widget _row(_ModelRow row) {
     final MangaOcrModelDownloadProgress? progress = _downloads.progressOf(

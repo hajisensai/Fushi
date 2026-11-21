@@ -6,16 +6,20 @@
 ///   [musicAudioCdSupported]）· 网络共享（新入口，直接开网络来源表单）；
 /// - 常驻来源（本地 / 网络文件夹 + Fushi 互联块）从「来源 › 本地文件夹」对话框搬到
 ///   这一页；对话框（`showMusicSourcesDialog`）保留，作为第二个入口；
-/// - 音乐没有拖放（库页不收文件），spec 不给 onDrop：不装落点、不画虚线（IM2）。
+/// - 拖放（拍板台 left3568）：spec 的 onDrop 就是曲库页的整页落点处理（IM2，不另写
+///   分发）——目录登记成音乐来源，曲目文件（纯音频 + MV 视频容器）导入曲库。
 library;
 
 import 'dart:async' show unawaited;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart' show SourceLibraryKind;
-import 'package:fushi_engine/media/media_extensions.dart' show kAudioExtensions;
+import 'package:fushi_engine/media/media_extensions.dart'
+    show kAudioExtensions, kVideoExtensions;
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart'
+    show FileDropCallback;
 import 'package:fushi/src/media/import/import_choice_dialog.dart';
 import 'package:fushi/src/media/import/import_collage_page.dart';
 import 'package:fushi/src/media/import/import_surface_spec.dart';
@@ -42,6 +46,7 @@ ImportSurfaceSpec musicImportSurfaceSpec({
   required Future<void> Function() onAddNetworkSource,
   required bool audioCdSupported,
   bool enabled = true,
+  FileDropCallback? onDrop,
 }) {
   final String mediaKind = SourceLibraryKind.music.dbValue;
   return ImportSurfaceSpec(
@@ -113,11 +118,17 @@ ImportSurfaceSpec musicImportSurfaceSpec({
         title: t.nav_music,
         labels: importFormatLabels(<Iterable<String>>[kAudioExtensions]),
       ),
+      // 音乐来源里的视频容器作为 MV 进曲库（只放音轨、可在视频播放页看画面）。
+      ImportFormatGroup(
+        title: t.music_track_mv_badge,
+        labels: importFormatLabels(<Iterable<String>>[kVideoExtensions]),
+      ),
       ImportFormatGroup(
         title: t.music_import_group_disc,
         labels: importFormatLabels(<Iterable<String>>[kMusicDiscImportFormats]),
       ),
     ],
+    onDrop: onDrop,
   );
 }
 
@@ -133,6 +144,7 @@ class MusicImportView extends StatelessWidget {
     required this.onReadCd,
     required this.audioCdSupported,
     this.onLibraryChanged,
+    this.onDrop,
     this.busy = false,
     super.key,
   });
@@ -149,6 +161,9 @@ class MusicImportView extends StatelessWidget {
 
   /// 来源扫描收尾（曲库页借此让盘面图索引失效并重读）。
   final VoidCallback? onLibraryChanged;
+
+  /// 曲库页的整页落点处理（null = 不收拖放）。
+  final FileDropCallback? onDrop;
 
   /// 曲库页正在扫描 / 导入：方式块与「添加来源」暂不可点。
   final bool busy;
@@ -194,6 +209,7 @@ class MusicImportView extends StatelessWidget {
           sourcesKey.currentState?.addNetworkSource(),
       audioCdSupported: audioCdSupported,
       enabled: !busy,
+      onDrop: onDrop,
     );
     return ImportCollagePage(
       spec: spec,

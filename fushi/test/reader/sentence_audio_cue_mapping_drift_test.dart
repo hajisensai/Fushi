@@ -8,6 +8,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
+import 'package:fushi/src/reader/reader_sentence_audio_relocation_script.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 /// BUG-060：高亮坐标改由实时 DOM 权威定位。验证搜索逻辑三不变量：
@@ -23,6 +24,16 @@ List<int> _resolve(
   cues: cues,
   window: window,
 );
+
+/// 三种 view mode 共用的重定位算法函数体（`kSentenceAudioRelocationJs` 的 resolveSpans）。
+String _relocationBody() {
+  const String src = kSentenceAudioRelocationJs;
+  final int fnStart = src.indexOf('var WINDOW = ');
+  expect(fnStart, greaterThanOrEqualTo(0));
+  final int fnEnd = src.indexOf('return {', fnStart);
+  expect(fnEnd, greaterThan(fnStart));
+  return src.substring(fnStart, fnEnd);
+}
 
 List<(int, int)> _resolveSpans(
   String fullNorm,
@@ -162,6 +173,20 @@ void main() {
       expect(out[2], (7, 3));
     });
 
+    test('整条装在前一句尾部的重复片段不算延续：前句不被裁，本句落到真实位置', () {
+      // 「𠀀猫がいる」之后紧跟的下一句也是「猫がいる」（真实在 10）。前句尾部的
+      // 「猫がいる」起点 2 落在延续窗 [cursor-OVERLAP, cursor+ADJACENT] 里，但它整条
+      // 都在前句区间内（2 + 4 <= 6），认它会把前句裁成 2 个字、本句高亮落进前句。
+      const String full = '𠀀猫がいるabcd猫がいる';
+      final List<(int, int)> out =
+          _resolveSpans(full, const <SentenceAudioCueHint>[
+            SentenceAudioCueHint(needle: '𠀀猫がいる', hint: 0, length: 6),
+            SentenceAudioCueHint(needle: '猫がいる', hint: 10, length: 4),
+          ]);
+      expect(out[0], (0, 6), reason: '前句不被裁');
+      expect(out[1], (10, 4), reason: '本句按 hint 落到真实位置');
+    });
+
     test('回落不污染游标：连续两条不可命中后，真实可命中句仍命中', () {
       const String full = 'あいうえおかきくけこさしすせそたちつてと';
       final out = _resolve(full, const <SentenceAudioCueHint>[
@@ -179,9 +204,12 @@ void main() {
   // （文本就近 + 单调 + 窗口 + 回落），任一支柱被回归删掉就回到「死偏移累积漂移」。
   group('JS sentenceAudioHighlight anchoring wiring guard (BUG-060)', () {
     test('JS 用 cue 原文在实时 DOM 就近重定位（非死偏移逐字计数）', () {
-      final String src = File(
-        'lib/src/reader/reader_pagination_scripts.dart',
-      ).readAsStringSync();
+      // 建全文 / needle 在分页 shell，搜索算法在三种 view mode 共用的重定位模块。
+      final String src =
+          File(
+            'lib/src/reader/reader_pagination_scripts.dart',
+          ).readAsStringSync() +
+          kSentenceAudioRelocationJs;
 
       // 运行时按 DOM 文本建归一化反查表。
       expect(
@@ -223,21 +251,7 @@ void main() {
     // 单调游标 cursor（否则不可命中 cue 的猜测会越过后面可命中 cue 的真实位置，
     // 重新引入逐句累积漂移）。游标只允许在 DOM 真命中分支（best>=0）前进。
     test('JS 回落分支不推进单调游标 cursor（BUG-282）', () {
-      final String src = File(
-        'lib/src/reader/reader_pagination_scripts.dart',
-      ).readAsStringSync();
-
-      // 锁定 collectSasayakiCueRanges 函数体。
-      final int fnStart = src.indexOf(
-        'collectSentenceAudioCueRanges: function',
-      );
-      expect(fnStart, greaterThanOrEqualTo(0));
-      final int fnEnd = src.indexOf(
-        'applySentenceAudioCues: function',
-        fnStart,
-      );
-      expect(fnEnd, greaterThan(fnStart));
-      final String fnBody = src.substring(fnStart, fnEnd);
+      final String fnBody = _relocationBody();
 
       // 命中分支必须推进游标（best>=0 时 cursor = best + normLen）。
       expect(
@@ -257,17 +271,7 @@ void main() {
     });
 
     test('JS 延续优先 + 回吃前句尾巴（BUG-2204），常量与 Dart 影子同值', () {
-      final String src = File(
-        'lib/src/reader/reader_pagination_scripts.dart',
-      ).readAsStringSync();
-      final int fnStart = src.indexOf(
-        'collectSentenceAudioCueRanges: function',
-      );
-      final int fnEnd = src.indexOf(
-        'applySentenceAudioCues: function',
-        fnStart,
-      );
-      final String fnBody = src.substring(fnStart, fnEnd);
+      final String fnBody = _relocationBody();
       expect(
         fnBody,
         contains(

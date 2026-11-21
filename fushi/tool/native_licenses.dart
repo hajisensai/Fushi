@@ -11,8 +11,11 @@
 //   * `native/*/Cargo.lock`（自动发现：新加一个 Rust 原生模块，重跑即覆盖，无需改本工具）；
 //   * `native/third_party_licenses/manifest.json`：
 //     - `rust`：目标平台 / 预备步骤配置，以及 `licenseTexts`（crates.io 包内没有许可文件的
-//       crate，登记从上游对应提交取来的原文；没登记的退到 SPDX 标准文本并在产物
-//       `pendingUpstreamLicense` 与运行输出里列出）；
+//       crate，登记从上游对应提交取来的原文；没登记的退到 SPDX 标准文本、缺版权行，记进产物
+//       `pendingUpstreamLicense`，本工具以非零退出、守卫判红——这一栏必须为空）。
+//       上游确实没有许可文件 / 版权行的 crate 也要登记：`texts: []`（或只放上游那份不带
+//       版权行的原文并 `appendSpdx: true`），`upstream` 写查证的仓库 / 提交，`note` 写依据
+//       （查过哪些路径与历史、为什么没有版权行可抄）——这就是显式豁免表；
 //     - `cxx`：本仓 native 模块编进去的 C/C++ 库手写清单；
 //     - `prebuilt`：pub 包下载 / 打包进 app 的预编译原生库（libmpv 及其依赖、onnxruntime、
 //       sqlite3、pdfium 等）——Flutter `LicenseRegistry` 只收 pub 包自己的 LICENSE，不含这些；
@@ -432,8 +435,8 @@ Future<void> main(List<String> args) async {
     'generatedBy': 'fushi/tool/native_licenses.dart',
     'regenerate': kNativeLicenseRegenerateCommand,
     'inputs': computeNativeLicenseInputs(repoRoot),
-    // 包内没有许可文件、清单 rust.licenseTexts 也还没登记上游原文的 crate：
-    // 目前只附 SPDX 标准文本（缺版权行）。补法见清单的 `$comment`。
+    // 包内没有许可文件、清单 rust.licenseTexts 也还没登记的 crate：只附了 SPDX 标准文本
+    // （缺版权行）。守卫断言这一栏为空；补法见文件头 `licenseTexts` 一段。
     'pendingUpstreamLicense': (pendingUpstream..sort()),
     'licenses': <Map<String, dynamic>>[
       for (final String h in hashes)
@@ -474,13 +477,22 @@ Future<void> main(List<String> args) async {
     'pub 包预编译库条目 ${count('prebuilt:')} 个、去重后许可文本 ${hashes.length} 份。',
   );
   if (pendingUpstream.isNotEmpty) {
-    stdout.writeln(
-      '注意：${pendingUpstream.length} 个 crate 包内没有许可文件、只附了 SPDX 标准文本'
-      '（缺版权行）。从上游对应提交取原文放进 native/third_party_licenses/texts/crates/，'
-      '再登记到清单 rust.licenseTexts：\n  ${pendingUpstream.join('\n  ')}',
-    );
+    // 产物照常写出（便于对照），但以非零退出：守卫
+    // `native_license_registry_guard_test.dart` 断言 pendingUpstreamLicense 为空。
+    stderr.writeln(nativeLicensePendingFixHint(pendingUpstream));
+    exitCode = 1;
   }
 }
+
+/// pendingUpstreamLicense 非空时的修法提示（生成器与守卫共用同一段话）。
+String nativeLicensePendingFixHint(List<String> pending) =>
+    '${pending.length} 个 crate 包内没有许可文件、清单 rust.licenseTexts 也没登记，'
+    '只附了 SPDX 标准文本（缺版权行）：\n  ${pending.join('\n  ')}\n'
+    '修法：从 crate 的 .cargo_vcs_info.json 指向的上游提交取许可原文，放进 '
+    'native/third_party_licenses/texts/crates/<owner>-<repo>-<sha8>/ 并登记到清单 '
+    'rust.licenseTexts；上游确实没有许可文件 / 版权行的，登记 texts: []（或不带版权行的'
+    '上游原文 + appendSpdx: true），upstream 写查证的仓库 / 提交，note 写依据。'
+    '改完重跑 $kNativeLicenseRegenerateCommand';
 
 /// 某些 native crate 依赖构建时才检出的源码（例如 fushi_anki_sync 的 `.anki-src`）。
 /// 清单里写 `prepare: {ifMissing, command}`，缺目录时先执行 command（在 crate 目录下）。

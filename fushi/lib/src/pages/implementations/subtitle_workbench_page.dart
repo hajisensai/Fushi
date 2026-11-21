@@ -308,6 +308,11 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
   bool get _canSwitchScope =>
       widget.episode != null && widget.collection != null;
 
+  /// 「本集」面板有下载在途（[SubtitleSearchPanel.onDownloadingChanged]）。期间锁住作用域
+  /// 开关：换到「整个合集」会把本集面板移出树，在途的下载按「页面已关」静默放弃（不
+  /// 落盘），勾着的其余几条也不再下，用户看不到任何提示。
+  bool _episodeDownloading = false;
+
   Widget _buildEpisodePanel() {
     final SubtitleEpisodeSearchSpec spec = widget.episode!;
     final SubtitleWorkbenchHost host = widget.host;
@@ -330,6 +335,9 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
           host.setPreferredLanguage(spec.seriesKey, lang),
       onDownloaded: (List<String> paths) => Navigator.of(context).pop(paths),
       onSubtitleSaved: widget.onEpisodeSubtitleSaved,
+      onDownloadingChanged: (bool downloading) {
+        if (mounted) setState(() => _episodeDownloading = downloading);
+      },
     );
   }
 
@@ -406,9 +414,16 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
                     ),
                   ])
                 FushiIconButton(
+                  key: ValueKey<String>(
+                    'subtitle-workbench-scope-${scope.name}',
+                  ),
                   icon: icon,
-                  tooltip: tip,
+                  // 锁住时 tooltip 说明原因：只置灰的话用户不知道为什么切不过去。
+                  tooltip: _episodeDownloading && _scope != scope
+                      ? t.video_subtitle_scope_locked_downloading
+                      : tip,
                   selected: _scope == scope,
+                  enabled: !_episodeDownloading || _scope == scope,
                   onTap: () => setState(() => _scope = scope),
                 ),
             ],

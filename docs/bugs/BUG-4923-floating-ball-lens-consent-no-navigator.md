@@ -1,0 +1,6 @@
+## BUG-4923 · 悬浮球截屏识字的 Google Lens 同意框弹不出来（context 之上没有 Navigator）
+- **报告**：2026-11-20（用户：应用内反馈 zkQylCmcKq，Android 29065）
+- **真实性**：✅ 真 bug。反馈日志 `FlutterError: Navigator operation requested with a context that does not include a Navigator`（`showAppDialog <- ensureGoogleLensDisclosure <- AppFloatingBallHost.askLensConsent`）。根因：`AppFloatingBallHost` 挂在 `MaterialApp.builder` 的 `Stack` 里，与 `Navigator`（`child!`）平级（`fushi/lib/main.dart:3434`），宿主自己的 `context` 之上没有 Navigator；Android 截屏 OCR 问引擎时（`fushi/lib/src/floating_ball/app_floating_ball_host.dart:1188` 旧代码）与桌面截屏识字（`:1274` 旧代码）却拿这个 `context` 调 `askLensConsent` → `showFushiConfirmDialog` → `Navigator.of(rootNavigator: true)`，抛异常，同意框永远弹不出来，Lens 截屏识字用不了。同文件其它弹窗都走 `_navigatorContext`（navigatorKey 的 context），只有这两处漏了。
+- **[x] ① 已修复** — 两处改用 `_navigatorContext`（navigatorKey 的 context）弹同意框，拿不到导航器时不弹（`app_floating_ball_host.dart:1188`、`:1277`）。
+- **[x] ② 已加自动化测试** — `fushi/test/floating_ball/app_floating_ball_host_test.dart`：假 target 记录传进来的 context 能否找到根 Navigator，Android「截屏识字单独选了 Lens 但没同意上传」与桌面「Lens 还没同意上传」两条断言 `[true]`；在旧代码上实测两条都红（`Actual: [false]`）。
+- **备注**：同一条反馈的另一症状「Android 应用内查词原文只显示被截断的一行」不在本条范围（分诊认为与 BUG-4707 的查词串取法有关、涉及显示取舍），本条未核实、未改动。

@@ -292,12 +292,13 @@ void main() {
       );
       expect(
         pageSrc,
-        contains('_subtitleStyle.secondaryBottomPadding'),
+        // 字幕 overlay 经 ValueListenableBuilder 订阅样式（video-36f），读的是 builder 的 style。
+        contains('style.secondaryBottomPadding'),
         reason: '传给 overlay 的必须是 style 里的真值，不能钉常量或恒 null',
       );
       expect(
         pageSrc,
-        contains('bottomPadding: _subtitleStyle.bottomPadding'),
+        contains('bottomPadding: style.bottomPadding'),
         reason: '主字幕基线接线同时保持不变（相邻功能不被带坏）',
       );
     });

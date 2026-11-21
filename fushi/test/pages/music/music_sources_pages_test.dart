@@ -28,6 +28,7 @@ import 'package:fushi_engine/media/music/server/subsonic_server_config.dart';
 import 'package:fushi_music/fushi_music.dart' show MusicPluginManager;
 import 'package:material_ui/material_ui.dart';
 
+import '../../helpers/cover_block_title_finder.dart';
 import '../../helpers/test_platform_services.dart';
 
 /// 假服务器：记 [listAlbums] 调了几次，专辑名带 serverId 以区分数据源。
@@ -356,7 +357,7 @@ void main() {
       ),
     );
     await _settle(tester);
-    expect(find.text('Album apple-music:jp'), findsOneWidget);
+    expect(findCoverBlockTitle('Album apple-music:jp'), findsOneWidget);
     expect(jp.listAlbumsCalls, 1);
 
     final _FakeBrowser us = _FakeBrowser('apple-music:us');
@@ -371,8 +372,8 @@ void main() {
     );
     await _settle(tester);
     expect(us.listAlbumsCalls, 1);
-    expect(find.text('Album apple-music:us'), findsOneWidget);
-    expect(find.text('Album apple-music:jp'), findsNothing);
+    expect(findCoverBlockTitle('Album apple-music:us'), findsOneWidget);
+    expect(findCoverBlockTitle('Album apple-music:jp'), findsNothing);
 
     // 同一 serverId、新浏览器实例（连接配置变了）也按新实例重新取。
     final _FakeBrowser us2 = _FakeBrowser('apple-music:us');
@@ -441,7 +442,7 @@ void main() {
     );
     await _settle(tester);
     // 「全部」里这台服务器一排专辑，「查看全部」切到它。
-    expect(find.text('Album subsonic-1'), findsOneWidget);
+    expect(findCoverBlockTitle('Album subsonic-1'), findsOneWidget);
     await tester.tap(
       find.byKey(const ValueKey<String>('music-recommend-view-all-subsonic-1')),
     );
@@ -453,8 +454,12 @@ void main() {
       ),
       isTrue,
     );
-    expect(find.text('Album subsonic-1'), findsOneWidget);
-    await tester.tap(find.text('Album subsonic-1'));
+    expect(findCoverBlockTitle('Album subsonic-1'), findsOneWidget);
+    await tester.tap(
+      findCoverBlockTitle('Album subsonic-1'),
+      // 装盒大字在 IgnorePointer 里，点到的是它下面的卡片本身。
+      warnIfMissed: false,
+    );
     await _settle(tester);
     expect(find.text('First'), findsOneWidget);
     expect(find.text('Second'), findsOneWidget);

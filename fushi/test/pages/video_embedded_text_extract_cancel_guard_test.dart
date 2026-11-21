@@ -48,12 +48,18 @@ void main() {
         r'loadSubtitleCueResult\(\s*source,\s*videoPath,\s*bookUid,\s*cancel: _embeddedSubtitleExtractCancelFor\(videoPath\)',
       ).allMatches(subtitlePart).length;
       expect(switches, 2, reason: '主字幕与副字幕两条选择路径');
+      // 恢复路径两处解析都经载入链 helper；helper 的内嵌分支带取消信号（外挂档
+      // 只读一个文件，无需取消）。
       final String restore = _bodyOf(page, '  _restorePersistedSubtitle({');
+      expect('_loadCuesForSourceInLoad('.allMatches(restore).length, 2);
+      expect(restore, isNot(contains('loadCuesForSource(')));
+      final String inLoad = _bodyOf(
+        page,
+        '  Future<List<AudioCue>> _loadCuesForSourceInLoad(',
+      );
       expect(
-        'cancel: _embeddedSubtitleExtractCancelFor(videoPath)'
-            .allMatches(restore)
-            .length,
-        2,
+        inLoad,
+        contains('cancel: _embeddedSubtitleExtractCancelFor(videoPath)'),
       );
     });
 

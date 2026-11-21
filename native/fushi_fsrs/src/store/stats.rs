@@ -15,6 +15,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+#[cfg(test)]
 use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
@@ -32,6 +33,12 @@ pub const MATURE_DAYS: i64 = 21;
 
 /// RWKV「接近目标线」的余量（`SrsRwkvNow.nearMargin`）。
 const NEAR_MARGIN: f64 = 0.05;
+
+/// RWKV「停在这里的话」最多看几个将来时刻（Dart `SrsRwkvHorizon`：1 小时后、3 小时后、下一个翻日时刻）。
+pub(crate) const RWKV_AHEAD: usize = 3;
+
+/// RWKV 此刻回忆率直方图的格数（每格 5%，`SrsRwkvNow.recallBins`）。
+const RWKV_RECALL_BINS: usize = 20;
 
 /// 复习分类（`srs_stat_reviews.kind`，Dart `SrsStatReviewKind` 的下标）。
 pub const KINDS: usize = 6;
@@ -119,8 +126,12 @@ struct Rev {
 
 /// 一份原料（某 profile、某一版数据）。
 pub(crate) struct Snapshot {
+    // 缓存命中判据（[SrsCore::stats_snapshot]，协议 3 的原料缓存）：换代后只在测试构建里编（G7-6），新代每条命令现读。
+    #[cfg(test)]
     profile: String,
+    #[cfg(test)]
     key: String,
+    #[cfg(test)]
     gen: u64,
     cards: Vec<Card>,
     extra: Vec<String>,
@@ -158,6 +169,7 @@ fn opt_real(v: ValueRef<'_>) -> Option<f64> {
 impl Snapshot {
     /// 在一个只读快照里读原料：可见卡（`hidden = 0`，`added_at` = 笔记缓存的创建时刻，没有笔记缓存行时用卡片行上
     /// 记的）、出处字典、有效复习投影（按时刻升序）。
+    #[cfg(test)]
     pub(crate) fn load(c: &Connection, profile: &str) -> Result<Snapshot, String> {
         Snapshot::load_with(
             c,
@@ -169,7 +181,6 @@ impl Snapshot {
             "SELECT card_id, occurred_at, utc_offset_min, rating, kind, duration_ms, prev_due_day, maturity_delta \
              FROM srs_stat_reviews WHERE profile_uid = srs_id(?1) ORDER BY occurred_at",
             &profile,
-            profile,
         )
     }
 
@@ -181,7 +192,6 @@ impl Snapshot {
         cards: &str,
         reviews: &str,
         owner: &dyn rusqlite::ToSql,
-        profile: &str,
     ) -> Result<Snapshot, String> {
         let mut stmt = c.prepare_cached(cards).map_err(sql)?;
         let mut it = stmt.query([owner]).map_err(sql)?;
@@ -255,8 +265,11 @@ impl Snapshot {
             });
         }
         Ok(Snapshot {
-            profile: profile.to_owned(),
+            #[cfg(test)]
+            profile: String::new(),
+            #[cfg(test)]
             key: String::new(),
+            #[cfg(test)]
             gen: 0,
             cards,
             extra,
@@ -274,6 +287,8 @@ impl Snapshot {
 /// [SrsCore] 上的统计缓存：最近一份原料 + 写连接上「改过统计原料」的代数。
 #[derive(Default)]
 pub(crate) struct StatsCache {
+    /// 原料缓存：只有协议 3 的统计读命令用，换代后只在测试构建里编（G7-6）；生产构建只剩写入代数。
+    #[cfg(test)]
     snapshot: Mutex<Option<Arc<Snapshot>>>,
     /// 写连接上的触发器（queue.rs `srs_study_touch`：卡片缓存 / 日志 / 笔记缓存 / 笔记修改记录）每记一次 +1，事务
     /// 结束（[StatsCache::settle]）时若期间记过再 +1：读原料前取代数，取到的与缓存上的不同就重读。
@@ -300,12 +315,14 @@ impl StatsCache {
 }
 
 impl SrsCore {
+    #[cfg(test)]
     fn stats_cache(&self) -> &StatsCache {
         &self.study_hub.stats
     }
 
     /// [profile] 的原料：缓存上的那份与 [key]（Dart `SrsDbStore.statsFingerprint`）和写入代数都相同就直接用，否则在
     /// 一个只读快照里重读。代数在开快照之前取：读的途中有写入，下次一定重读。
+    #[cfg(test)]
     pub(crate) fn stats_snapshot(&self, profile: &str, key: &str) -> Result<Arc<Snapshot>, String> {
         let cache = self.stats_cache();
         let gen = cache.gen.load(Ordering::SeqCst);
@@ -319,6 +336,7 @@ impl SrsCore {
             }
         }
         let mut snap = self.read_visible(|c| Snapshot::load(c, profile))?;
+        snap.profile = profile.to_owned();
         snap.key = key.to_owned();
         snap.gen = gen;
         let snap = Arc::new(snap);
@@ -327,6 +345,7 @@ impl SrsCore {
     }
 
     /// 丢掉缓存的原料（profile 切走 / 清除后不再留着它的数据）。
+    #[cfg(test)]
     pub(crate) fn stats_release(&self) {
         *self
             .stats_cache()
@@ -336,6 +355,7 @@ impl SrsCore {
     }
 
     /// `stats_report`：一个范围 + 一个牌组子集的全部聚合值（见 [report]）。
+    #[cfg(test)]
     pub(crate) fn stats_report(&self, profile: &str, req: &Value) -> Result<Value, String> {
         let snap = self.stats_snapshot(
             profile,
@@ -347,6 +367,7 @@ impl SrsCore {
     /// `stats_recall`：RWKV-Instant 排队的复习卡（请求里 `recallDecks` / `recallFallback` 认定的牌组里、复习队列的
     /// 可见卡），按卡片行序：`{cards: [[卡, 笔记, 牌组, 最后一条日志 | null]…]}`。Dart 拿去问 RWKV 此刻的回忆率，再随
     /// `stats_report` 的 `recall` 交回来。
+    #[cfg(test)]
     pub(crate) fn stats_recall(&self, profile: &str, req: &Value) -> Result<Value, String> {
         let snap = self.stats_snapshot(
             profile,
@@ -357,6 +378,7 @@ impl SrsCore {
 
     /// `stats_rows`：归一化之后逐卡 / 逐条的统计视图（与删除前 Dart `SrsStatCard` / `SrsStatReview` /
     /// `SrsStatMaturityEvent` 同一组字段）。只给回归向量（srs_stats_vectors_test）核对归一化本身用；界面不读。
+    #[cfg(test)]
     pub(crate) fn stats_rows(&self, profile: &str, req: &Value) -> Result<Value, String> {
         let snap = self.stats_snapshot(
             profile,
@@ -471,8 +493,15 @@ struct Ctx {
     fallback_desired: f64,
     recall_decks: HashSet<String>,
     recall_fallback: bool,
-    /// RWKV 此刻回忆率（卡 → R，非有限值 = None）；None = RWKV 不可用：没有按回忆率排队的卡。
-    recall: Option<HashMap<String, Option<f64>>>,
+    /// RWKV 回忆率（卡 → 此刻与将来几个时刻的 R）；None = RWKV 不可用：没有按回忆率排队的卡。
+    recall: Option<HashMap<String, Recall>>,
+}
+
+/// 一张 RWKV 排队卡的回忆率：此刻 + `recall.ahead` 给的将来时刻（非有限值 / 没给 = None）。
+#[derive(Clone, Copy, Default)]
+struct Recall {
+    now: Option<f64>,
+    ahead: [Option<f64>; RWKV_AHEAD],
 }
 
 impl Ctx {
@@ -525,14 +554,31 @@ impl Ctx {
                 .map(str::to_owned)
                 .collect()
         };
+        // `recall.ahead`（可选）：将来时刻的 R，每个时刻一个与 `ids` 按位置对齐的数组。
         let recall = req.get("recall").and_then(Value::as_object).map(|m| {
             let ids = m.get("ids").and_then(Value::as_array);
             let rs = m.get("r").and_then(Value::as_array);
+            let ahead: Vec<&Vec<Value>> = m
+                .get("ahead")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_array)
+                .take(RWKV_AHEAD)
+                .collect();
+            let finite = |v: Option<&Value>| v.and_then(Value::as_f64).filter(|x| x.is_finite());
             let mut out = HashMap::new();
             if let (Some(ids), Some(rs)) = (ids, rs) {
-                for (id, r) in ids.iter().zip(rs) {
+                for (i, (id, r)) in ids.iter().zip(rs).enumerate() {
                     if let Some(id) = id.as_str() {
-                        out.insert(id.to_owned(), r.as_f64().filter(|x| x.is_finite()));
+                        let mut rec = Recall {
+                            now: finite(Some(r)),
+                            ..Recall::default()
+                        };
+                        for (k, at) in ahead.iter().enumerate() {
+                            rec.ahead[k] = finite(at.get(i));
+                        }
+                        out.insert(id.to_owned(), rec);
                     }
                 }
             }
@@ -608,6 +654,8 @@ struct Derived {
     buried: bool,
     by_recall: bool,
     r: Option<f64>,
+    /// RWKV 排队卡在将来几个时刻的 R（[Recall::ahead]）；别的卡全是 None。
+    r_ahead: [Option<f64>; RWKV_AHEAD],
     added_day: i64,
     desired: f64,
 }
@@ -655,10 +703,16 @@ impl View {
                     && state != State::New
                     && c.queue == "review"
                     && ctx.recall_deck(&c.deck);
-                let r = if by_recall {
+                let recall = if by_recall {
                     ctx.recall
                         .as_ref()
-                        .and_then(|m| m.get(&c.id).copied().flatten())
+                        .and_then(|m| m.get(&c.id).copied())
+                        .unwrap_or_default()
+                } else {
+                    Recall::default()
+                };
+                let r = if by_recall {
+                    recall.now
                 } else {
                     ctx.retrievability(c, state)
                 };
@@ -667,6 +721,7 @@ impl View {
                     buried: c.buried_until.is_some_and(|b| b > ctx.today),
                     by_recall,
                     r,
+                    r_ahead: recall.ahead,
                     added_day: ctx.day.index(c.added_at),
                     desired: ctx.desired_of(&c.deck),
                 }
@@ -1085,6 +1140,9 @@ fn aggregate(
     // RWKV 此刻 / 有没有按到期日排队的卡。
     let mut recall_ids: HashSet<usize> = HashSet::new();
     let (mut r_due, mut r_near, mut due_date) = (0i64, 0i64, false);
+    // 停在这里的话：此刻还在目标线上、到第 k 个将来时刻已掉到线下的张数；有没有哪张卡带了将来时刻的 R。
+    let (mut r_ahead, mut any_ahead) = ([0i64; RWKV_AHEAD], false);
+    let mut r_bins = [0i64; RWKV_RECALL_BINS];
     for &i in &v.cards {
         let (c, dv) = v.card(s, i);
         if !c.fushi || c.suspended {
@@ -1094,10 +1152,22 @@ fn aggregate(
             by_recall += 1;
             recall_ids.insert(i);
             if let Some(r) = dv.r.filter(|r| r.is_finite()) {
+                r_bins[((r.clamp(0.0, 1.0) * RWKV_RECALL_BINS as f64) as usize)
+                    .min(RWKV_RECALL_BINS - 1)] += 1;
                 if r <= dv.desired {
                     r_due += 1;
-                } else if r <= dv.desired + NEAR_MARGIN {
-                    r_near += 1;
+                } else {
+                    if r <= dv.desired + NEAR_MARGIN {
+                        r_near += 1;
+                    }
+                    for (k, later) in dv.r_ahead.iter().enumerate() {
+                        if let Some(later) = later.filter(|x| x.is_finite()) {
+                            any_ahead = true;
+                            if later <= dv.desired {
+                                r_ahead[k] += 1;
+                            }
+                        }
+                    }
                 }
             }
             continue;
@@ -1138,7 +1208,18 @@ fn aggregate(
             .iter()
             .filter(|r| r.day > today - 30 && r.day <= today && recall_ids.contains(&r.card))
             .count();
-        json!([recall_ids.len(), r_due, r_near, reviewed as f64 / 30.0])
+        json!([
+            recall_ids.len(),
+            r_due,
+            r_near,
+            reviewed as f64 / 30.0,
+            if any_ahead {
+                json!(r_ahead)
+            } else {
+                Value::Null
+            },
+            r_bins
+        ])
     };
     let (future_unit, future_spans) = buckets(today, today + n as i64 - 1);
     let future_buckets: Vec<Value> = future_spans

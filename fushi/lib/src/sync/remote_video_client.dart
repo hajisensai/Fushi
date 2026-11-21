@@ -283,6 +283,30 @@ abstract interface class RemoteVideoPlaybackStop {
   Future<void> stopRemoteVideoPlayback(String id, int positionMs);
 }
 
+/// 「持有要释放的连接」的可选能力（BUG-5012）：http 客户端、来源直链解析器（AList
+/// 登录态、SFTP 的 SSH 连接）。
+///
+/// 播放页只关**自己现建**的客户端（流媒体书 / 媒体服务器入库条目），经
+/// `RemoteClientTeardown` 等退出收尾（断点落库、停止上报）用完再关；调用方传进来的
+/// 客户端（互联 host、库页的媒体服务器浏览器）归调用方，播放页不碰。
+abstract interface class RemoteVideoClientConnections {
+  /// 释放这只客户端持有的连接；之后不得再用它发请求。
+  void close();
+}
+
+/// 「只摘会话、停转码，不上报停止」的可选能力（BUG-5020）。
+///
+/// 卡片片段回看（BUG-3490）不得改服务器进度，所以 [RemoteVideoPlaybackStop] 在回看中
+/// 一律不发；可 Jellyfin / Emby 的转码 ffmpeg 只在客户端显式停（`DELETE
+/// /Videos/ActiveEncodings`）时才收，回看那一程协商出来的转码会话于是在服务器上空转到
+/// 它自己的超时。本能力只做 Stop 里「释放服务端资源」的那一半：摘下 [id] 最早一条未
+/// 结束的会话登记、停掉它的转码，不发 `/Sessions/Playing/Stopped`（那一步会判已看、
+/// 写断点）。回看闸门（`SourceReviewRemoteReportGate.stop`）在回看分支调它。
+abstract interface class RemoteVideoPlaybackDetach {
+  /// 丢掉视频 [id] 最早一条未结束的播放会话，并释放它在服务端占着的转码。
+  Future<void> detachRemoteVideoPlayback(String id);
+}
+
 /// 「播放页不再用这次播放的流」的可选能力（BUG-4461）：来源借此释放这次播放在服务端
 /// 占着的资源（互联 host 的流票与它们的转码）。
 ///
@@ -405,12 +429,17 @@ abstract interface class RemoteVideoQualityLimit {
 /// Emby / Plex / 在线源没有这一能力。
 abstract interface class RemoteVideoFingerprintSource {
   /// 视频 [id] 第 [episodeIndex] 集（与 `remoteVideoStreamUrls` 同一下标）的 64 位小写
-  /// hex 指纹。只有 host 不支持这一能力（老 host 没有端点）才返回 null——调用方据此
-  /// 按 bookUid 身份放行。host 有端点却担保不了这份字节（条目 / 文件不在、读不了、
+  /// hex 指纹。host 不支持这一能力（老 host 没有端点）返回 null——调用方据此按
+  /// bookUid 身份放行。host 有端点却担保不了这份字节（条目 / 文件不在、读不了、
   /// 回的值不合法）抛 [RemoteVideoFingerprintUnavailable]（BUG-4782）；网络失败抛错。
+  ///
+  /// [wait] 为 false（卡片回跳，拍板台 left3657）时不让 host 当场整文件哈希：host
+  /// 还没算过（后台预热没轮到）也返回 null、按 bookUid 放行，host 同时在后台开算，
+  /// 下次回跳就能核验。制卡要把真指纹写进卡片，用默认的 `wait: true`。
   Future<String?> fetchRemoteVideoFingerprint(
     String id, {
     int episodeIndex = 0,
+    bool wait = true,
   });
 }
 

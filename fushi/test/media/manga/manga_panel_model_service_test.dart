@@ -81,6 +81,132 @@ void main() {
       expect((await mangaPanelModelFile()).existsSync(), isFalse);
     }, timeout: const Timeout(Duration(seconds: 30)));
 
+    // 路线图 #3722 c12 遗留：设置页、高级制卡、制卡对话框三个入口共用一个 `.part`，
+    // 旧实现每调一次各起一次下载，往同一个暂存文件交错写。
+    test('a second caller joins the running download instead of starting '
+        'another', () async {
+      int requests = 0;
+      server.listen((HttpRequest request) async {
+        requests++;
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..bufferOutput = false
+          ..add(List<int>.filled(4096, 7));
+        await request.response.flush();
+        held.add(request.response);
+      });
+      final List<int> firstProgress = <int>[];
+      final Completer<void> firstChunk = Completer<void>();
+      Object? firstError;
+      final Future<void> first =
+          downloadMangaPanelModel(
+                clientFactory: () => _LoopbackClient(server.port),
+                stallTimeout: const Duration(milliseconds: 500),
+              )
+              .forEach((int received) {
+                firstProgress.add(received);
+                if (!firstChunk.isCompleted) firstChunk.complete();
+              })
+              .catchError((Object e) => firstError = e);
+      await firstChunk.future;
+
+      final List<int> secondProgress = <int>[];
+      Object? secondError;
+      await downloadMangaPanelModel(
+        clientFactory: () => _LoopbackClient(server.port),
+      ).forEach(secondProgress.add).catchError((Object e) => secondError = e);
+      await first;
+
+      expect(requests, 1, reason: 'only one GET for both callers');
+      expect(secondProgress, isNotEmpty, reason: 'joins with current progress');
+      expect(secondProgress.first, firstProgress.last);
+      expect(firstError, isA<TimeoutException>());
+      expect(secondError, isA<TimeoutException>());
+      expect((await partFile()).existsSync(), isFalse);
+    }, timeout: const Timeout(Duration(seconds: 30)));
+
+    // 取消只在下载体产出下一块时生效：卡在等数据的旧下载要到超时才走到 finally 删
+    // `.part`。取消后马上再点下载，新那次不能在旧那次清理完之前就开写同一个 `.part`
+    // （否则旧那次的清理删掉新那次正在写的暂存文件）。
+    test('a download started right after a cancel waits for the cancelled '
+        'one to clean up its .part', () async {
+      final File part = await partFile();
+      final List<bool> partExistedAtRequest = <bool>[];
+      server.listen((HttpRequest request) async {
+        partExistedAtRequest.add(part.existsSync());
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..bufferOutput = false
+          ..add(List<int>.filled(4096, 7));
+        await request.response.flush();
+        held.add(request.response);
+      });
+      final Completer<void> firstChunk = Completer<void>();
+      final StreamSubscription<int> first =
+          downloadMangaPanelModel(
+            clientFactory: () => _LoopbackClient(server.port),
+            stallTimeout: const Duration(milliseconds: 500),
+          ).listen((int _) {
+            if (!firstChunk.isCompleted) firstChunk.complete();
+          }, onError: (Object _) {});
+      await firstChunk.future;
+      expect(part.existsSync(), isTrue, reason: 'the first one is writing');
+      final Future<void> cancelled = first.cancel().catchError((Object _) {});
+
+      Object? secondError;
+      await downloadMangaPanelModel(
+        clientFactory: () => _LoopbackClient(server.port),
+        stallTimeout: const Duration(milliseconds: 300),
+      ).forEach((int _) {}).catchError((Object e) => secondError = e);
+      await cancelled;
+
+      expect(partExistedAtRequest, <bool>[false, false]);
+      expect(secondError, isA<TimeoutException>());
+      expect(part.existsSync(), isFalse);
+    }, timeout: const Timeout(Duration(seconds: 30)));
+
+    // 拍板台 design-nmv-fyi-tail ⑤：取消时强关旧连接。以前卡在等数据的下载体要等到下一块
+    // 或一个停顿超时（生产 30 秒）才退出，取消后马上重下的那次一直排在它后面。
+    test('cancelling a stalled download force-closes its connection and '
+        'finishes cleanup right away, not after the stall timeout', () async {
+      final File part = await partFile();
+      server.listen((HttpRequest request) async {
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..bufferOutput = false
+          ..add(List<int>.filled(4096, 7));
+        await request.response.flush();
+        held.add(request.response);
+      });
+      late _LoopbackClient client;
+      final Completer<void> firstChunk = Completer<void>();
+      final StreamSubscription<int> download =
+          downloadMangaPanelModel(
+            clientFactory: () => client = _LoopbackClient(server.port),
+            stallTimeout: const Duration(seconds: 20),
+          ).listen((int _) {
+            if (!firstChunk.isCompleted) firstChunk.complete();
+          }, onError: (Object _) {});
+      await firstChunk.future;
+      expect(part.existsSync(), isTrue);
+
+      final Stopwatch watch = Stopwatch()..start();
+      await download.cancel().catchError((Object _) {});
+      watch.stop();
+
+      expect(client.closed, isTrue);
+      expect(
+        part.existsSync(),
+        isFalse,
+        reason: 'cleanup ran before cancel returned',
+      );
+      expect(
+        watch.elapsed,
+        lessThan(const Duration(seconds: 5)),
+        reason: 'cancel must not wait for the 20 s stall timeout',
+      );
+    }, timeout: const Timeout(Duration(seconds: 30)));
+
     test('a body that fails validation leaves no .part', () async {
       server.listen((HttpRequest request) async {
         request.response

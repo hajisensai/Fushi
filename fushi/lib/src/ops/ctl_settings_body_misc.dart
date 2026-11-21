@@ -7,6 +7,7 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/utils/misc/app_icon_apply.dart';
 import 'package:fushi/src/utils/misc/app_icon_preferences.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 
 /// 应用图标页（`MiscellaneousSettingsPage`，「外观 › 应用图标」，正文是图标网格
 /// 走 body 逃生口）在控制通道上的条目。
@@ -78,7 +79,7 @@ Future<Object?> _setCustomIcon(
   final bool ok = await applyCustomAppIcon(path);
   if (!ok) {
     throw StateError(
-      Platform.isAndroid ? t.icon_shortcut_unsupported : '系统拒绝设置窗口图标',
+      hostPlatform.isAndroid ? t.icon_shortcut_unsupported : '系统拒绝设置窗口图标',
     );
   }
   final AppIconSelection current = currentAppIconSelection.value;
@@ -86,6 +87,6 @@ Future<Object?> _setCustomIcon(
     'ok': true,
     'preset': current.presetKey,
     'customPath': current.customPath,
-    if (Platform.isAndroid) 'note': t.icon_shortcut_created,
+    if (hostPlatform.isAndroid) 'note': t.icon_shortcut_created,
   };
 }
