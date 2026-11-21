@@ -815,7 +815,9 @@ class EmbeddedTorrentSession {
   /// 应用会话级设置（端口/DHT/LSD/UPnP/NAT-PMP/加密/匿名/活跃数/上传槽）。
   /// [encPolicy] 0=首选 1=强制 2=禁用；[listenPort]/[maxUploadSlots] <=0 不动。
   /// [activeDownloads]/[activeSeeds] 每次都写全值：>0 原值、0 = libtorrent 默认
-  /// （从任意旧值热切回默认也生效，HBK-AUDIT-020）、<0 = 不限。1 成功 0 失败。
+  /// （从任意旧值热切回默认也生效，HBK-AUDIT-020）、<0 = 不限。两者是**状态**
+  /// 不是增量、没有「不动」档，故为 required：只想切别的项的调用方也必须传
+  /// 当前名额，否则缺省值 0 会把用户名额静默冲回默认。1 成功 0 失败。
   bool applySessionSettings({
     int listenPort = 0,
     bool enableDht = true,
@@ -824,8 +826,8 @@ class EmbeddedTorrentSession {
     bool enableNatpmp = true,
     int encPolicy = 0,
     bool anonymousMode = false,
-    int activeDownloads = 0,
-    int activeSeeds = 0,
+    required int activeDownloads,
+    required int activeSeeds,
     int maxUploadSlots = 0,
   }) {
     if (isClosed) return false;

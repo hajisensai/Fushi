@@ -674,7 +674,11 @@ class EmbeddedTorrentHost {
   }
 
   /// 按当前任务与做种策略协调 DHT/LSD/UPnP/NAT-PMP。仅目标状态变化时走一次
-  /// FFI；这个调用不会动端口、队列上限或上传槽位，因此不会覆盖关上传策略。
+  /// FFI；这个调用不会动端口或上传槽位，因此不会覆盖关上传策略。
+  ///
+  /// 活跃名额必须原样带上当前配置：native 每次都写名额全值（0 = libtorrent
+  /// 默认），漏传就会在每次 add / resume 唤醒时把「不限 / 自定义」静默冲回
+  /// 默认 3/5（HBK-AUDIT-020 修复的反面）。
   bool reconcileNetworkDiscoveryState() {
     try {
       final _NetworkDiscoveryState desired = _desiredNetworkDiscoveryState();
@@ -686,6 +690,10 @@ class EmbeddedTorrentHost {
         enableNatpmp: desired.natpmp,
         encPolicy: _sessionConfig.encryptionMode,
         anonymousMode: _sessionConfig.anonymousMode,
+        activeDownloads: libtorrentActiveLimitArg(
+          _sessionConfig.maxActiveDownloads,
+        ),
+        activeSeeds: libtorrentActiveLimitArg(_sessionConfig.maxActiveSeeds),
       );
       if (applied) {
         _appliedNetworkDiscovery = desired;
