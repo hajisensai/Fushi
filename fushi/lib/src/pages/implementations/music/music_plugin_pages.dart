@@ -1296,15 +1296,13 @@ class _PluginCoverBlockCard extends ConsumerWidget {
     if (target == null) return const SizedBox.shrink();
     return musicWithContextMenu(
       musicPluginEntityMenu(context, ref, manifest, item),
-      // 与曲库专辑同一个色块组件：在线插件没有盘面图来源，宽块走 W 原型的无盘
-      // 专辑海报版式。
+      // 与曲库专辑同一个色块组件（在线插件没有盘面图来源，不画唱片）。
       MusicCollectionBlock(
         size: size,
         title: target.title,
         subtitle: target.subtitle,
         coverPath: target.cover,
         onTap: () => unawaited(_push(context, target.page)),
-        albumPoster: true,
       ),
     );
   }
@@ -3055,7 +3053,6 @@ class _RecentPlaysState extends ConsumerState<_RecentPlays> {
         subtitle: e.subtitle,
         coverPath: e.cover,
         onTap: e.onTap,
-        albumPoster: true,
         disc: e.discArt == null ? null : musicDiscArtImage(e.discArt!),
       );
 

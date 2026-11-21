@@ -32,6 +32,8 @@ import 'package:fushi/src/media/selection/selection_gestures.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_disc_actions.dart';
+import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
+    show openMusicPlayerPage;
 import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dart'
     show musicAddLocalTracksToPlaylist;
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
@@ -360,6 +362,19 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
     for (final MusicTrackRow t in tracks) musicPlayItemOf(t, album: album),
   ];
 
+  /// 「播放全部 / 随机播放」：从头放整张并直接进播放页（返回回到专辑页）。
+  void _playAll(MusicPlayerEngine engine, {bool shuffle = false}) {
+    unawaited(
+      engine.playQueue(
+        _items(),
+        context: MusicQueueContext.album,
+        shuffle: shuffle,
+        source: _source,
+      ),
+    );
+    openMusicPlayerPage(context);
+  }
+
   @override
   Widget build(BuildContext context) => MusicViewStyleBuilder(
     kind: MusicViewKind.tracks,
@@ -398,15 +413,7 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
         child: FushiFilledButton.icon(
           size: FushiButtonSize.m,
           key: const ValueKey<String>('music_album_play'),
-          onPressed: tracks.isEmpty
-              ? null
-              : () => unawaited(
-                  engine.playQueue(
-                    _items(),
-                    context: MusicQueueContext.album,
-                    source: _source,
-                  ),
-                ),
+          onPressed: tracks.isEmpty ? null : () => _playAll(engine),
           icon: const FushiIcon(FushiIcons.play),
           label: Text(t.music_play_all),
         ),
@@ -417,15 +424,8 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
           key: const ValueKey<String>('music_album_shuffle'),
           onPressed: tracks.isEmpty
               ? null
-              : () => unawaited(
-                  engine.playQueue(
-                    _items(),
-                    context: MusicQueueContext.album,
-                    shuffle: true,
-                    source: _source,
-                  ),
-                ),
-          icon: const FushiIcon(FushiIcons.repeat),
+              : () => _playAll(engine, shuffle: true),
+          icon: const FushiIcon(FushiIcons.shuffle),
           label: Text(t.music_shuffle_play),
         ),
       ),
