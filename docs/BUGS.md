@@ -105,6 +105,8 @@
 |---|:--:|:--:|---|
 | [BUG-5096](bugs/BUG-5096-srs-media-prep-ignores-budget.md) | ✅ | ✅ | SRS 媒体准备阶段不守发段前预算，复习记录段被挡 |
 > 共 4412 条。点号进各自文件。
+| [BUG-5120](bugs/BUG-5120-kavita-evict-rescans-shelf-per-victim.md) | ✅ | ✅ | Kavita 缓存淘汰每删一本扫两遍书架、逐本查用户数据表（O(M·N) 查询） |
+| [BUG-5119](bugs/BUG-5119-kavita-evict-drops-custom-cover.md) | ✅ | ✅ | Kavita 缓存自动淘汰 / 一键清理把用户自定义的封面与书名一起删掉 |
 > 共 4414 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
