@@ -116,6 +116,15 @@ abstract class TtsProviderDescriptor {
     return problems;
   }
 
+  /// 用户在 [paramKey] 的选择列表里选中 [option]（`null` = 清空）时，连同 [paramKey]
+  /// 一起写进预设的其他参数；值为 `null` 表示删掉该键。用来把合成要用、但只有服务端
+  /// 知道的属性（克隆声音的参考文字稿 / 参考语言）快照进预设，让 [audioIdentity]
+  /// 看得到它们。默认不写。
+  Map<String, String?> paramsForPickedOption(
+    String paramKey,
+    TtsVoice? option,
+  ) => const <String, String?>{};
+
   /// 进缓存键的音色身份：引擎 id + 影响声音的参数 + 预设版本。
   Map<String, Object?> audioIdentity(
     TtsVoicePreset preset,
