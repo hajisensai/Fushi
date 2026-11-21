@@ -51,7 +51,7 @@ void main() {
     downgradeTo166();
     final FushiDatabase db = FushiDatabase.atFile(path, isMainProcess: false);
     addTearDown(db.close);
-    expect(db.schemaVersion, 167);
+    expect(db.schemaVersion, 168);
     final FavoriteSentenceRepository repo = FavoriteSentenceRepository(db);
     final FavoriteSentence before = (await repo.getAll()).single;
     expect(before.color, 'green');
@@ -75,6 +75,6 @@ void main() {
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
     expect(columns(probe), contains('color_updated_at_us'));
-    expect(probe.select('PRAGMA user_version').first.values.first, 167);
+    expect(probe.select('PRAGMA user_version').first.values.first, 168);
   });
 }

@@ -47,7 +47,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 167);
+    expect(migrated.schemaVersion, 168);
     await migrated.upsertMusicResumePoint(
       't1',
       positionMs: 1000,
@@ -79,7 +79,7 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 167);
+    expect(probe.select('PRAGMA user_version').first.values.first, 168);
     expect(hasTable(probe), isTrue);
   });
 
@@ -110,7 +110,7 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 167);
+    expect(probe.select('PRAGMA user_version').first.values.first, 168);
   });
 
   test('listMusicResumePoints 按块查，超过 SQLite 变量上限也能一次拿齐', () async {
