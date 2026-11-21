@@ -2267,6 +2267,8 @@ void main() {
     String loosePath(String name) => '${Directory.systemTemp.path}/$name';
 
     test('临时行存活期间不立项；行删掉后归无来源范围照常补刮', () async {
+      // 生产库开着外键（删来源时 video_books.source_id 靠 FK setNull 归 NULL）。
+      await db.customStatement('PRAGMA foreign_keys = ON');
       final int temp = await addOneShotSource(loosePath('once'));
       await addVideo(
         'once-movie',
