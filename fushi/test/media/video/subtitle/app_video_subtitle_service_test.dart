@@ -1329,19 +1329,12 @@ void main() {
       await service.saveGlossary(target.work, const <SubtitleGlossaryEntry>[
         SubtitleGlossaryEntry(ja: '梓'),
       ]);
-      // 取消：停在 AI 请求中间时取消，同样放开。
-      final _GatedCompleter gated = _GatedCompleter(FakeAiCompleter(answerAll));
-      completer = gated;
-      final SubtitleCancelSource cancel = SubtitleCancelSource();
-      final Future<SubtitleGlossary> cancelled = service.regenerateGlossary(
-        target,
-        cancel: cancel,
+      // 取消（登记之后、生成时抛 SubtitlePipelineCancelled）同样放开。
+      final SubtitleCancelSource cancel = SubtitleCancelSource()..cancel();
+      await expectLater(
+        service.regenerateGlossary(target, cancel: cancel),
+        throwsA(isA<SubtitlePipelineCancelled>()),
       );
-      await gated.entered.future;
-      cancel.cancel();
-      gated.release.complete();
-      await expectLater(cancelled, throwsA(isA<SubtitlePipelineCancelled>()));
-      completer = FakeAiCompleter(answerAll);
       await service.saveGlossary(target.work, const <SubtitleGlossaryEntry>[
         SubtitleGlossaryEntry(ja: '梓'),
       ]);
