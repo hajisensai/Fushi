@@ -118,9 +118,15 @@ test('long-command log template names logs and exit lines by a unique tag', () =
     if (runs.length === 0 && waits.length === 0) continue;
     withTemplate.push(file.replace(/\.md$/, ''));
     for (const span of [...runs, ...waits]) {
+      // Any spelling of the marker (`echo exit=$?`, `'exit='$?`, `grep -q "^exit="`) must carry
+      // the tag, otherwise the run never writes what the waiter greps for (or vice versa).
+      const untagged = [...span.matchAll(/exit=/g)].filter((m) => !span.slice(0, m.index).endsWith('<标签> '));
+      assert.equal(untagged.length, 0, `${file}: exit marker without the run tag: ${span}`);
       const echoes = [...span.matchAll(/\becho\s+"([^"]*)"/g)].map((m) => m[1]);
+      if (runs.includes(span)) assert.ok(echoes.length > 0, `${file}: run template must echo the tagged exit line: ${span}`);
       for (const e of echoes) assert.equal(e, '<标签> exit=$?', `${file}: ${span}`);
       const greps = [...span.matchAll(/\bgrep\s+-q\s+'([^']*)'\s+(\S+?);/g)];
+      if (waits.includes(span)) assert.ok(greps.length > 0, `${file}: wait template must grep the tagged log: ${span}`);
       for (const [, pattern, target] of greps) {
         assert.equal(pattern, '^<标签> exit=', `${file}: ${span}`);
         assert.equal(target, LOG, `${file}: ${span}`);
