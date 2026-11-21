@@ -503,7 +503,11 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
           readSpeed: () => _tts.store.speed,
           writeSpeed: _tts.store.setSpeed,
         );
-        c.addListener(_onControllerChanged);
+        _watch = MangaReadAloudSessionWatch(
+          c,
+          onActiveChanged: _rebuild,
+          onFinished: _onFinished,
+        );
         controller = c;
       } else {
         await c.replaceRig(rig);
@@ -521,28 +525,17 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
     }
   }
 
-  MangaReadAloudState? _lastState;
-  bool _lastActive = false;
+  /// 会话起止 → 重建（播放条 / 工具栏切换、按钮激活态），章末 → 提示。
+  MangaReadAloudSessionWatch? _watch;
 
-  void _onControllerChanged() {
-    final MangaReadAloudController? c = controller;
-    if (c == null || !_s.mounted) return;
-    final MangaReadAloudState state = c.state;
-    if (state != _lastState && state == MangaReadAloudState.finished) {
-      // 读到章末不自动进下一章：停下并提示。
-      FushiToast.show(
-        msg: c.finish == MangaReadAloudFinish.noText
-            ? t.manga_read_aloud_no_text
-            : t.manga_read_aloud_chapter_end,
-      );
-    }
-    // 底栏那一行在「播放条 / 工具栏」之间切换、工具栏按钮的激活态都以
-    // [MangaReadAloudController.isActive] 为准（[active]），所以按它的翻转重建；
-    // 只看 idle 会漏掉「读到章末 → finished」，播放条就停在底栏不退。
-    final bool rebuild = c.isActive != _lastActive;
-    _lastState = state;
-    _lastActive = c.isActive;
-    if (rebuild) _rebuild();
+  void _onFinished(MangaReadAloudFinish? finish) {
+    if (!_s.mounted) return;
+    // 读到章末不自动进下一章：停下并提示。
+    FushiToast.show(
+      msg: finish == MangaReadAloudFinish.noText
+          ? t.manga_read_aloud_no_text
+          : t.manga_read_aloud_chapter_end,
+    );
   }
 
   void stop() {
@@ -603,8 +596,9 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
     final MangaReadAloudController? c = controller;
     controller = null;
     _failWaiters(MangaPageTextUnavailableReason.cancelled);
+    _watch?.dispose();
+    _watch = null;
     if (c == null) return;
-    c.removeListener(_onControllerChanged);
     c.dispose();
   }
 }
