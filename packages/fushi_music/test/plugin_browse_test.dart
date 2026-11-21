@@ -67,6 +67,8 @@ module.exports = {
     }
     if (a.op === 'list') {
       if (a.query.sort === 'boom') throw new Error('炸了');
+      // 第 0 页只有解析不了的条目（宿主丢掉后是空页），插件说还有下一页。
+      if (a.query.sort === 'gap' && a.page === 0) return { items: [{ title: '缺 id' }], hasMore: true };
       const items = [];
       for (let i = 0; i < a.pageSize; i++) {
         items.push({ id: `p${a.page}-${i}`, title: 'W', tags: [{ facet: 'tag', id: '12', name: '低语' }],
@@ -77,6 +79,7 @@ module.exports = {
       return { items, hasMore: a.page < 1, total: 99, echo: a.query };
     }
     if (a.op === 'catalog') {
+      if (a.query === 'gap') return { items: [{ name: '缺 id' }], hasMore: true };
       return {
         items: [
           { id: '12', name: '低语', count: 30 },
@@ -182,6 +185,74 @@ void main() {
       throwsA(isA<MusicPluginException>()),
     );
     await m.dispose();
+  });
+
+  test('HBK-AUDIT-026：空页（坏条目丢光）不改插件的 hasMore，下一页照常取得到', () async {
+    final (MusicPluginManager m, MusicPluginSource src) = await install();
+    const MusicPluginBrowseQuery q = MusicPluginBrowseQuery(sort: 'gap');
+    final MusicPluginBrowseResult p0 = await src.browseList(q, pageSize: 2);
+    expect(p0.items, isEmpty);
+    expect(p0.hasMore, isTrue, reason: '空页不等于到头，续页只认插件的 hasMore');
+    final MusicPluginBrowseResult p1 = await src.browseList(
+      q,
+      page: 1,
+      pageSize: 2,
+    );
+    expect((p1.items.first as MusicPluginAlbum).id, 'p1-0');
+    final MusicPluginPage<MusicPluginCatalogEntry> c = await src.browseCatalog(
+      'tag',
+      query: 'gap',
+    );
+    expect(c.items, isEmpty);
+    expect(c.hasMore, isTrue);
+    await m.dispose();
+  });
+
+  group('MusicPluginPager（HBK-AUDIT-026）', () {
+    MusicPluginPager<String> pager() =>
+        MusicPluginPager<String>((String s) => s);
+
+    test('空页尊重 hasMore：页号前进、暂停自动续载，resume 后接着取', () {
+      final MusicPluginPager<String> p = pager();
+      expect(p.canAutoLoad, isTrue);
+      expect(p.accept(<String>['a', 'b'], hasMore: true), <String>['a', 'b']);
+      expect(p.stalled, isFalse);
+      expect(p.accept(<String>[], hasMore: true), isEmpty);
+      expect(p.nextPage, 2);
+      expect(p.hasMore, isTrue, reason: '空页不是到头');
+      expect(p.stalled, isTrue, reason: '无进展：不自动续，等用户点加载更多');
+      expect(p.canAutoLoad, isFalse);
+      p.resume();
+      expect(p.canAutoLoad, isTrue);
+      expect(p.accept(<String>['c'], hasMore: false), <String>['c']);
+      expect(p.hasMore, isFalse);
+      expect(p.stalled, isFalse);
+    });
+
+    test('跨页重复条目只追加一次；整页都是旧条目算无进展', () {
+      final MusicPluginPager<String> p = pager();
+      p.accept(<String>['a', 'b'], hasMore: true);
+      expect(p.accept(<String>['b', 'c'], hasMore: true), <String>['c']);
+      expect(p.stalled, isFalse);
+      expect(p.accept(<String>['c', 'a'], hasMore: true), isEmpty);
+      expect(p.stalled, isTrue);
+      expect(p.hasMore, isTrue);
+    });
+
+    test('同一页内容重复（插件忽略页号）则停', () {
+      final MusicPluginPager<String> p = pager();
+      p.accept(<String>['a', 'b'], hasMore: true);
+      expect(p.accept(<String>['a', 'b'], hasMore: true), isEmpty);
+      expect(p.hasMore, isFalse);
+      expect(p.canAutoLoad, isFalse);
+    });
+
+    test('插件说没有下一页就停，即使这页有新条目', () {
+      final MusicPluginPager<String> p = pager();
+      p.accept(<String>['a'], hasMore: false);
+      expect(p.hasMore, isFalse);
+      expect(p.stalled, isFalse);
+    });
   });
 
   test('query：增删条件、开关、单选不改原对象，toJson / fromJson 往返', () {

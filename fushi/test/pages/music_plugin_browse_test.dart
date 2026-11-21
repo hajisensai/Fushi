@@ -65,6 +65,12 @@ class _Log {
 
   /// 第 1 页（0 起）先失败这么多次再成功。
   int failPage1 = 1;
+
+  /// 这些页回空页（插件过滤 / 宿主丢掉坏条目后的合法结果），hasMore 照常。
+  Set<int> emptyPages = <int>{};
+
+  /// 最后一页的页号（之前的页 hasMore = true）。
+  int lastPage = 1;
 }
 
 class _Source extends MusicPluginSource {
@@ -115,14 +121,15 @@ class _Source extends MusicPluginSource {
     return MusicPluginBrowseResult(
       kind: MusicPluginHomeKind.albums,
       items: <Object>[
-        for (int i = 0; i < 3; i++)
-          MusicPluginAlbum(
-            id: 'p$page-$i',
-            title: 'Work $page-$i',
-            tags: const <MusicPluginTag>[_whisper],
-          ),
+        if (!log.emptyPages.contains(page))
+          for (int i = 0; i < 3; i++)
+            MusicPluginAlbum(
+              id: 'p$page-$i',
+              title: 'Work $page-$i',
+              tags: const <MusicPluginTag>[_whisper],
+            ),
       ],
-      hasMore: page == 0,
+      hasMore: page < log.lastPage,
     );
   }
 
@@ -339,6 +346,66 @@ void main() {
       app.manager.log.lists.map(((MusicPluginBrowseQuery, int) e) => e.$2),
       <int>[0, 1, 1],
     );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  List<int> pagesAsked() => app.manager.log.lists
+      .map(((MusicPluginBrowseQuery, int) e) => e.$2)
+      .toList();
+
+  final Finder loadMore = find.byKey(
+    const ValueKey<String>('music-plugin-browse-load-more'),
+  );
+
+  testWidgets('HBK-AUDIT-026：首页是空页但插件说还有下一页，给「加载更多」并取得到后续结果', (
+    WidgetTester tester,
+  ) async {
+    app.manager.log
+      ..failPage1 = 0
+      ..emptyPages = <int>{0};
+    await pump(
+      tester,
+      MusicPluginBrowseListPage(
+        manifest: _manifest(),
+        initialQuery: const MusicPluginBrowseQuery(
+          filters: <MusicPluginTag>[_whisper],
+        ),
+      ),
+    );
+    expect(pagesAsked(), <int>[0], reason: '空页后不自动续（无进展保护）');
+    expect(loadMore, findsOneWidget, reason: '空页不等于到头');
+    await tester.tap(loadMore);
+    await tester.pumpAndSettle();
+    expect(work('p1-0'), findsOneWidget);
+    expect(loadMore, findsNothing);
+    expect(pagesAsked(), <int>[0, 1]);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('HBK-AUDIT-026：中间夹一页空页，列表底部给「加载更多」，接着取下一页', (
+    WidgetTester tester,
+  ) async {
+    app.manager.log
+      ..failPage1 = 0
+      ..emptyPages = <int>{1}
+      ..lastPage = 2;
+    await pump(
+      tester,
+      MusicPluginBrowseListPage(
+        manifest: _manifest(),
+        initialQuery: const MusicPluginBrowseQuery(
+          filters: <MusicPluginTag>[_whisper],
+        ),
+      ),
+    );
+    expect(work('p0-0'), findsOneWidget);
+    expect(pagesAsked(), <int>[0, 1]);
+    expect(loadMore, findsOneWidget);
+    await tester.tap(loadMore);
+    await tester.pumpAndSettle();
+    expect(work('p2-0'), findsOneWidget);
+    expect(work('p0-0'), findsOneWidget, reason: '已有结果保留');
+    expect(pagesAsked(), <int>[0, 1, 2]);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 

@@ -3,7 +3,8 @@ part of 'music_plugin_pages.dart';
 // 插件原生浏览（能力 `browse`，docs/specs/2026-10-28-music-plugins.md §4 / §5）：
 // - 可点标签（[MusicPluginTagChips]）：作品行显示前几个，专辑详情显示全部；点了进带这个条件的列表；
 // - 带条件的作品列表（[MusicPluginBrowseListPage]）：顶部是当前条件（可移除 / 追加）、开关、
-//   单选筛选与排序，按插件的 hasMore 续载，下一批失败保留已有结果并给重试；列表页留在路由栈里，
+//   单选筛选与排序，按插件的 hasMore 续载（空页不当到头，见 [MusicPluginPager]），下一批失败
+//   保留已有结果并给重试；列表页留在路由栈里，
 //   从作品详情返回时条件、排序与滚动位置原样都在；
 // - 分类目录（[MusicPluginCatalogPage]）：标签 / 声优 / 社团……用户打开时才分页取；
 // - 音源推荐页顶部的浏览入口（[MusicPluginBrowseBar]）：全部作品 + 各分类目录。
@@ -52,13 +53,41 @@ Future<void> openMusicPluginTag(
   query: MusicPluginBrowseQuery(filters: <MusicPluginTag>[tag]),
 );
 
-/// 分页列表底部：加载中转圈，下一批失败时一行「重试」（已有结果保留）。
+/// 「加载更多」：上一页没带来新条目（[MusicPluginPager.stalled]）时由用户显式续页。
+Widget _browseLoadMoreButton(VoidCallback onLoadMore, String keyPrefix) =>
+    FushiPressScale(
+      child: FushiOutlinedButton.icon(
+        key: ValueKey<String>('$keyPrefix-load-more'),
+        onPressed: onLoadMore,
+        icon: const FushiIcon(FushiIcons.expandMore),
+        label: Text(t.music_plugin_browse_load_more),
+      ),
+    );
+
+/// 列表为空时的占位；插件说还有下一页（空页不等于到头）时附「加载更多」。
+Widget _browseEmpty(
+  BuildContext context, {
+  required String message,
+  required MusicPluginPager<Object?> pager,
+  required VoidCallback onLoadMore,
+  required String keyPrefix,
+}) => Center(
+  child: FushiPlaceholderMessage(
+    icon: FushiIcons.searchOff,
+    message: message,
+    action: pager.hasMore ? _browseLoadMoreButton(onLoadMore, keyPrefix) : null,
+  ),
+);
+
+/// 分页列表底部：加载中转圈，下一批失败时一行「重试」（已有结果保留）；上一页没带来新条目
+/// 但插件说还有下一页时给「加载更多」（不自动续，插件一直回空页也不会无限请求）。
 Widget? _browseFooter(
   BuildContext context, {
   required bool loading,
-  required bool hasMore,
+  required MusicPluginPager<Object?> pager,
   required Object? error,
   required VoidCallback onRetry,
+  required VoidCallback onLoadMore,
   required String keyPrefix,
 }) {
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -92,7 +121,13 @@ Widget? _browseFooter(
       ),
     );
   }
-  if (loading || hasMore) {
+  if (!loading && pager.stalled) {
+    return Padding(
+      padding: EdgeInsets.all(tokens.spacing.gap),
+      child: Center(child: _browseLoadMoreButton(onLoadMore, keyPrefix)),
+    );
+  }
+  if (loading || pager.hasMore) {
     return Padding(
       padding: EdgeInsets.all(tokens.spacing.gap),
       child: const FushiLinearProgressIndicator(),
@@ -100,6 +135,14 @@ Widget? _browseFooter(
   }
   return null;
 }
+
+/// 作品列表条目的身份（同一列表内唯一，跨页去重用）。
+String _browseItemKey(Object item) => switch (item) {
+  MusicPluginTrack t => 't:${t.id}',
+  MusicPluginPlaylist p => 'p:${p.id}',
+  MusicPluginAlbum a => 'a:${a.id}',
+  _ => 'o:${identityHashCode(item)}',
+};
 
 /// 滚到离底部不远、或首屏内容不够一屏时取下一批（下一批失败后不自动重试，等用户点重试）。
 bool _nearEnd(Notification n) {
@@ -221,8 +264,7 @@ class _MusicPluginBrowseListPageState
   MusicPluginBrowseSchema _schema = const MusicPluginBrowseSchema();
   final List<Object> _items = <Object>[];
   MusicPluginHomeKind _kind = MusicPluginHomeKind.albums;
-  int _page = 0;
-  bool _hasMore = false;
+  MusicPluginPager<Object> _pager = MusicPluginPager<Object>(_browseItemKey);
   bool _loading = false;
   Object? _error;
 
@@ -260,16 +302,17 @@ class _MusicPluginBrowseListPageState
       _query = q;
       _queryRevision++;
       _items.clear();
-      _page = 0;
-      _hasMore = false;
+      _pager = MusicPluginPager<Object>(_browseItemKey);
       _error = null;
       _loading = false;
     });
     unawaited(_loadMore());
   }
 
-  Future<void> _loadMore() async {
-    if (_loading) return;
+  /// 取下一页；[resume] 为用户点了「加载更多」（解除无进展暂停）。
+  Future<void> _loadMore({bool resume = false}) async {
+    if (_loading || !_pager.hasMore) return;
+    if (resume) _pager.resume();
     final int gen = _generation;
     setState(() {
       _loading = true;
@@ -278,16 +321,19 @@ class _MusicPluginBrowseListPageState
     try {
       final MusicPluginBrowseResult r = await _source.browseList(
         _query,
-        page: _page,
+        page: _pager.nextPage,
         pageSize: _pageSize,
       );
       if (!mounted || gen != _generation) return;
       setState(() {
-        if (_page == 0) _kind = r.kind;
-        // 续页的种类与首页不同（插件 bug）时丢掉这一批，不混排。
-        if (r.kind == _kind) _items.addAll(r.items);
-        _page++;
-        _hasMore = r.hasMore;
+        if (!_pager.started) _kind = r.kind;
+        // 续页的种类与首页不同（插件 bug）时丢掉这一批，不混排（这一页算没有进展）。
+        _items.addAll(
+          _pager.accept(
+            r.kind == _kind ? r.items : const <Object>[],
+            hasMore: r.hasMore,
+          ),
+        );
       });
     } on Object catch (e) {
       if (mounted && gen == _generation) setState(() => _error = e);
@@ -297,7 +343,7 @@ class _MusicPluginBrowseListPageState
   }
 
   void _maybeLoadMore(Notification n) {
-    if (_hasMore && !_loading && _error == null && _nearEnd(n)) {
+    if (_pager.canAutoLoad && !_loading && _error == null && _nearEnd(n)) {
       unawaited(_loadMore());
     }
   }
@@ -480,14 +526,15 @@ class _MusicPluginBrowseListPageState
         musicPluginErrorText(_error!),
         () => unawaited(_loadMore()),
       );
-    } else if (_items.isEmpty && (_loading || _page == 0)) {
+    } else if (_items.isEmpty && (_loading || !_pager.started)) {
       results = const FushiLoadingView();
     } else if (_items.isEmpty) {
-      results = Center(
-        child: FushiPlaceholderMessage(
-          icon: FushiIcons.searchOff,
-          message: t.music_plugin_browse_empty,
-        ),
+      results = _browseEmpty(
+        context,
+        message: t.music_plugin_browse_empty,
+        pager: _pager,
+        onLoadMore: () => unawaited(_loadMore(resume: true)),
+        keyPrefix: 'music-plugin-browse',
       );
     } else {
       final bool covers = _kind != MusicPluginHomeKind.tracks;
@@ -532,9 +579,10 @@ class _MusicPluginBrowseListPageState
           footer: _browseFooter(
             context,
             loading: _loading,
-            hasMore: _hasMore,
+            pager: _pager,
             error: _error,
             onRetry: () => unawaited(_loadMore()),
+            onLoadMore: () => unawaited(_loadMore(resume: true)),
             keyPrefix: 'music-plugin-browse',
           ),
         ),
@@ -608,8 +656,7 @@ class _MusicPluginCatalogPageState
   final FocusNode _focus = FocusNode();
   String _filter = '';
   final List<MusicPluginCatalogEntry> _items = <MusicPluginCatalogEntry>[];
-  int _page = 0;
-  bool _hasMore = false;
+  MusicPluginPager<MusicPluginCatalogEntry> _pager = _catalogPager();
   bool _loading = false;
   Object? _error;
   int _generation = 0;
@@ -632,16 +679,22 @@ class _MusicPluginCatalogPageState
     setState(() {
       _filter = filter;
       _items.clear();
-      _page = 0;
-      _hasMore = false;
+      _pager = _catalogPager();
       _error = null;
       _loading = false;
     });
     unawaited(_loadMore());
   }
 
-  Future<void> _loadMore() async {
-    if (_loading) return;
+  static MusicPluginPager<MusicPluginCatalogEntry> _catalogPager() =>
+      MusicPluginPager<MusicPluginCatalogEntry>(
+        (MusicPluginCatalogEntry e) => e.tag.id,
+      );
+
+  /// 取下一页；[resume] 为用户点了「加载更多」（解除无进展暂停）。
+  Future<void> _loadMore({bool resume = false}) async {
+    if (_loading || !_pager.hasMore) return;
+    if (resume) _pager.resume();
     final int gen = _generation;
     setState(() {
       _loading = true;
@@ -655,20 +708,11 @@ class _MusicPluginCatalogPageState
           .browseCatalog(
             widget.facet.id,
             query: _filter,
-            page: _page,
+            page: _pager.nextPage,
             pageSize: _pageSize,
           );
       if (!mounted || gen != _generation) return;
-      setState(() {
-        final Set<String> have = <String>{
-          for (final MusicPluginCatalogEntry e in _items) e.tag.id,
-        };
-        _items.addAll(
-          p.items.where((MusicPluginCatalogEntry e) => have.add(e.tag.id)),
-        );
-        _page++;
-        _hasMore = p.hasMore;
-      });
+      setState(() => _items.addAll(_pager.accept(p.items, hasMore: p.hasMore)));
     } on Object catch (e) {
       if (mounted && gen == _generation) setState(() => _error = e);
     } finally {
@@ -708,27 +752,32 @@ class _MusicPluginCatalogPageState
         musicPluginErrorText(_error!),
         () => unawaited(_loadMore()),
       );
-    } else if (_items.isEmpty && (_loading || _page == 0)) {
+    } else if (_items.isEmpty && (_loading || !_pager.started)) {
       body = const FushiLoadingView();
     } else if (_items.isEmpty) {
-      body = Center(
-        child: FushiPlaceholderMessage(
-          icon: FushiIcons.searchOff,
-          message: t.music_server_search_empty,
-        ),
+      body = _browseEmpty(
+        context,
+        message: t.music_server_search_empty,
+        pager: _pager,
+        onLoadMore: () => unawaited(_loadMore(resume: true)),
+        keyPrefix: 'music-plugin-catalog',
       );
     } else {
       final Widget? footer = _browseFooter(
         context,
         loading: _loading,
-        hasMore: _hasMore,
+        pager: _pager,
         error: _error,
         onRetry: () => unawaited(_loadMore()),
+        onLoadMore: () => unawaited(_loadMore(resume: true)),
         keyPrefix: 'music-plugin-catalog',
       );
       body = NotificationListener<Notification>(
         onNotification: (Notification n) {
-          if (_hasMore && !_loading && _error == null && _nearEnd(n)) {
+          if (_pager.canAutoLoad &&
+              !_loading &&
+              _error == null &&
+              _nearEnd(n)) {
             unawaited(_loadMore());
           }
           return false;

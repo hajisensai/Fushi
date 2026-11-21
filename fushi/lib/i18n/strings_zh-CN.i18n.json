@@ -7354,6 +7354,7 @@
   "music_plugin_browse_catalog_hint": "在目录里搜索",
   "music_plugin_browse_empty": "没有符合这些条件的作品",
   "music_plugin_browse_label_value": "$label：$value",
+  "music_plugin_browse_load_more": "加载更多",
   "music_plugin_browse_load_more_failed": "下一批没加载出来",
   "music_plugin_browse_remove_filter": "移除「${name}」",
   "music_plugin_description_less": "收起",

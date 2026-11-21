@@ -7354,6 +7354,7 @@
   "music_plugin_browse_catalog_hint": "Search this list",
   "music_plugin_browse_empty": "No works match these conditions",
   "music_plugin_browse_label_value": "$label: $value",
+  "music_plugin_browse_load_more": "Load more",
   "music_plugin_browse_load_more_failed": "Couldn't load more",
   "music_plugin_browse_remove_filter": "Remove ${name}",
   "music_plugin_description_less": "Show less",

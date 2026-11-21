@@ -529,7 +529,8 @@ class MusicPluginSource {
           cover,
         ),
       },
-      hasMore: r['hasMore'] == true && items.isNotEmpty,
+      // 续页只认插件的 hasMore：空页（插件过滤 / 宿主丢掉坏条目）不等于到头，见 MusicPluginPager。
+      hasMore: r['hasMore'] == true,
       total: _countOf(r['total']),
     );
   }
@@ -576,7 +577,7 @@ class MusicPluginSource {
     }
     return MusicPluginPage<MusicPluginCatalogEntry>(
       items: entries,
-      hasMore: r['hasMore'] == true && entries.isNotEmpty,
+      hasMore: r['hasMore'] == true,
       total: _countOf(r['total']),
     );
   }
