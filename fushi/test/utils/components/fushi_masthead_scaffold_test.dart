@@ -132,6 +132,51 @@ void main() {
     expect(tester.getRect(find.text(title)).right, lessThanOrEqualTo(380));
   });
 
+  // 裸图标行行高固定 48，装不下两行：长专辑名 / 曲名必须仍是收起态字号一行、
+  // 末尾省略，不能折成两行画到行外、压住正文顶部的大标题。
+  testWidgets('titleInBody 裸图标行：长页名一行省略，不折两行、不超出行高', (
+    WidgetTester tester,
+  ) async {
+    const String title =
+        'Symphony No. 9 in D minor Op. 125 Choral Complete Recording';
+    tester.view.physicalSize = const Size(380, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(useMaterial3: true),
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topCenter,
+            child: FushiMastheadHeader(
+              title: title,
+              progress: 1,
+              titleInBody: true,
+              onBack: () {},
+              actions: <Widget>[
+                FushiIconButtonControl(
+                  tooltip: 'More',
+                  onPressed: () {},
+                  icon: const FushiIcon(FushiIcons.search),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final RenderParagraph paragraph = tester.renderObject(find.text(title));
+    expect(paragraph.maxLines, 1);
+    expect(paragraph.didExceedMaxLines, isTrue);
+    final Rect header = tester.getRect(find.byType(FushiMastheadHeader));
+    final Rect text = tester.getRect(find.text(title));
+    expect(header.height, kFushiMastheadBareRowExtent);
+    expect(text.height, lessThanOrEqualTo(kFushiMastheadBareRowExtent));
+    expect(text.top, greaterThanOrEqualTo(header.top));
+    expect(text.bottom, lessThanOrEqualTo(header.bottom));
+  });
+
   testWidgets('titleInBody：页名在主滚动越过 titleRevealOffset 后才淡入', (
     WidgetTester tester,
   ) async {

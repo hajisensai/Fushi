@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4234 条。点号进各自文件。
+> 共 4384 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4906](bugs/BUG-4906-masthead-title-ellipsis-phone.md) | ✅ | ✅ | masthead-title-ellipsis-phone |
-> 共 4383 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-5062](bugs/BUG-5062-masthead-title-ellipsis-phone.md) | ✅ | ✅ | masthead-title-ellipsis-phone |
 | [BUG-5056](bugs/BUG-5056-srs4-migration-nested-merge-verdict.md) | ✅ | ✅ | 复习库升级（gen4 迁移）在嵌套并入过的库上核对失败、整体撤回 |
 | [BUG-5054](bugs/BUG-5054-pitch-hl-pattern-not-drawn.md) | ✅ | ✅ | 音调词典 H/L 模式串只显示成文本、不画高低线，且与同型数字位分成两行 |
 | [BUG-5053](bugs/BUG-5053-mihon-page-request-id-collision.md) | ✅ | ✅ | Mihon 取图请求号拿 identityHashCode 拼，两个活页引用撞号时互相顶掉 / 取消错页 |

@@ -22,6 +22,8 @@ class FushiPageTitleMetrics {
     required this.compact,
     required this.titleFontSize,
     required this.collapsedTitleFontSize,
+    required this.twoLineMinTitleFontSize,
+    required this.twoLineMaxTitleFontSize,
     required this.switchFontSize,
     required this.collapsedSwitchFontSize,
     required this.badgeExtent,
@@ -45,6 +47,8 @@ class FushiPageTitleMetrics {
     compact: true,
     titleFontSize: 46,
     collapsedTitleFontSize: 28,
+    twoLineMinTitleFontSize: 22,
+    twoLineMaxTitleFontSize: 34,
     switchFontSize: 19,
     collapsedSwitchFontSize: 15,
     badgeExtent: 22,
@@ -68,6 +72,8 @@ class FushiPageTitleMetrics {
     compact: false,
     titleFontSize: 84,
     collapsedTitleFontSize: 36,
+    twoLineMinTitleFontSize: 28,
+    twoLineMaxTitleFontSize: 56,
     switchFontSize: 30,
     collapsedSwitchFontSize: 18,
     badgeExtent: 44,
@@ -107,6 +113,12 @@ class FushiPageTitleMetrics {
   /// 页名字号：展开态 / 收起态（滚动收缩在绘制层按比例缩放）。
   final double titleFontSize;
   final double collapsedTitleFontSize;
+
+  /// 二级页头（`FushiMastheadHeader`）页名缩到收起态字号仍一行放不下时，折成
+  /// 两行（词不拆开）的字号范围：在这两档之间取放得下的最大字号，最小档仍放
+  /// 不下才第二行末省略（`fushiMastheadTitleFit`，BUG-5062）。
+  final double twoLineMinTitleFontSize;
+  final double twoLineMaxTitleFontSize;
 
   /// 页名字重 / 字距（em）/ 行高。
   static const FontWeight titleWeight = FontWeight.w900;
