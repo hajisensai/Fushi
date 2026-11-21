@@ -66,7 +66,7 @@ import 'package:fushi/src/media/video/web_mine_queue_dialog.dart';
 import 'package:fushi/src/media/video/web_mine_return_state.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
-    show MinePopupResult;
+    show DictionaryPopupRealmKeyWebView, MinePopupResult;
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show MiningMediaCompression;
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -2394,7 +2394,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     if (index <= 0 &&
         _popup.entries.isNotEmpty &&
         _popup.entries.first.isWarmSlot) {
-      _popup.entries.first.webViewKey.currentState?.clearSelection();
+      _popup.entries.first.webViewKey.webViewState?.clearSelection();
     }
     setState(() => _popup.dismissAt(index));
     if (!_popup.hasVisiblePopup) {

@@ -65,7 +65,10 @@ import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
-    show DictionaryPopupWebViewState, MinePopupResult;
+    show
+        DictionaryPopupRealmKeyWebView,
+        DictionaryPopupWebViewState,
+        MinePopupResult;
 import 'package:fushi/src/shortcuts/input_binding.dart' show InputBinding;
 import 'package:fushi/src/shortcuts/shortcut_action.dart' show ShortcutAction;
 import 'package:fushi/src/sync/texthooker_service.dart';
@@ -1797,7 +1800,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     if (!_ownsVisiblePopup) return;
     final int index = _topVisiblePopupIndex;
     final DictionaryPopupWebViewState? popup =
-        _popup.entries[index].webViewKey.currentState;
+        _popup.entries[index].webViewKey.webViewState;
     if (popup == null) return;
     unawaited(popup.mineFirstVisibleEntry());
   }
