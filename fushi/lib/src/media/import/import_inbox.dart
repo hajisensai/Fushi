@@ -28,6 +28,10 @@
 /// 分类子目录由页面决定（与 `addLocalFolderAsSource` 「媒体种类由当前页面决定，不从文件
 /// 内容猜」同一纪律）：书页导 `Books`、视频页导 `Video`、漫画页导 `Manga`。视频页不认的
 /// 文件原样留在收件箱，用户看得见没被收走。
+///
+/// **iTunes 文件共享**（拍板台 kmfCiXlIU_）：iTunes 只看得见 Documents 最外层、进不了
+/// 分类子目录。根上本页认的散文件不静默收走，点导入时列出来让用户确认，确认后先移进本页
+/// 的分类子目录再走上面的流程（[ImportInbox.pendingRootFiles] / [ImportInbox.adoptRootFiles]）。
 library;
 
 import 'dart:io';
@@ -82,6 +86,12 @@ class ImportInbox {
   /// 视频是 `Video` 而不是 `Videos`：iOS 的 APFS 默认不分大小写，`Videos` 与书库白名单
   /// 里的旧扁平布局目录 `videos`（`AppPaths.fushiOwnedDocumentsEntries`）是**同一个**目录。
   /// 收件箱子目录名与白名单大小写无关地互不相交，由测试钉死。
+  ///
+  /// 没有 `Games`（拍板台 kmfCiXlIU_ 问过）：iOS 上游戏模块只是串流接收端
+  /// （`GamesModuleForm.streamClient`，游戏装在配对的 Windows 主机上、远程启动后串流），
+  /// 本机没有任何游戏导入管线，游戏来源也只认 Windows exe；建一个 `Games` 文件夹只会
+  /// 让用户把文件放进一个永远导入不了的地方。音乐也不单列：视频页的 `Video` 收纯音频并
+  /// 交给音乐库（见 [acceptsFile]）。
   static const Map<String, String> kindFolderNames = <String, String>{
     'book': 'Books',
     'video': 'Video',
@@ -224,6 +234,68 @@ class ImportInbox {
       (FileSystemEntity a, FileSystemEntity b) => a.path.compareTo(b.path),
     );
     return out;
+  }
+
+  /// 收件箱**根**（Documents 最外层）里 [mediaKind] 认的散文件，按路径排序。
+  ///
+  /// 只为 iTunes 文件共享（拍板台 kmfCiXlIU_）：Windows / 旧 macOS 的 iTunes「文件共享」
+  /// 只列出 Documents 最外层，进不了 `Books` / `Video` / `Manga` 子文件夹，只用 iTunes
+  /// 的用户只能把文件丢在根上。这里**只列不收**：根上的文件属于哪一类仍由用户当前所在的
+  /// 页面决定，且要用户在导入时确认后才由 [adoptRootFiles] 移进本页的分类子目录——不把
+  /// 根当成常驻的导入目录静默扫走（根上还可能有别的 app 文件，且 `.srt` / `.pdf` /
+  /// 音频这类扩展名几个页面都认，静默收走必然有页面收错）。
+  ///
+  /// 只收文件不收目录：根上的目录是分类子目录、旧版书库白名单项或用户自建的文件夹，
+  /// 它们的归属没法凭名字判断；用「文件」App 的用户本来就能把目录放进分类子目录。
+  static Future<List<File>> pendingRootFiles({
+    required Directory inbox,
+    required String mediaKind,
+  }) async {
+    if (folderNameFor(mediaKind) == null) return const <File>[];
+    if (!await inbox.exists()) return const <File>[];
+    final List<File> out = <File>[
+      await for (final FileSystemEntity e in inbox.list(followLinks: false))
+        if (e is File && shouldTake(mediaKind, e)) e,
+    ];
+    out.sort((File a, File b) => a.path.compareTo(b.path));
+    return out;
+  }
+
+  /// 把用户确认过的根上散文件 [files]（取自 [pendingRootFiles]）移进 [mediaKind] 的分类
+  /// 子目录，之后走该页面原有的收件箱导入。返回移不动的条目（`名字: 原因`），它们留在
+  /// 根上。分类子目录里已有同名文件时改名为 `名字 (2).扩展名`，不覆盖用户已放进去的文件。
+  static Future<List<String>> adoptRootFiles({
+    required Directory inbox,
+    required String mediaKind,
+    required List<File> files,
+  }) async {
+    final Directory? kindDir = kindFolder(inbox, mediaKind);
+    if (kindDir == null || files.isEmpty) return const <String>[];
+    await kindDir.create(recursive: true);
+    final List<String> failures = <String>[];
+    for (final File file in files) {
+      final String name = p.basename(file.path);
+      try {
+        await _moveFile(file, await _freeFilePath(kindDir, name));
+      } on FileSystemException catch (e) {
+        failures.add('$name: $e');
+      }
+    }
+    return failures;
+  }
+
+  /// [dir] 下不与已有条目重名的 [name]：重名时在扩展名前追加 ` (2)`、` (3)`…
+  static Future<String> _freeFilePath(Directory dir, String name) async {
+    String candidate = p.join(dir.path, name);
+    final String stem = p.basenameWithoutExtension(name);
+    final String ext = p.extension(name);
+    int n = 2;
+    while (await FileSystemEntity.type(candidate, followLinks: false) !=
+        FileSystemEntityType.notFound) {
+      candidate = p.join(dir.path, '$stem ($n)$ext');
+      n++;
+    }
+    return candidate;
   }
 
   /// 批次目录名：本地时间到秒，同一秒内重复收时追加序号，保证不与已有批次合并

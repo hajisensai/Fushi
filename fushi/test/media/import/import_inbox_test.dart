@@ -263,4 +263,81 @@ void main() {
       <String>['vol1.cbz'],
     );
   });
+
+  // 拍板台 kmfCiXlIU_：iTunes 文件共享只看得见 Documents 最外层。
+  group('收件箱根上的散文件（iTunes）', () {
+    test('没有 Games 收件箱：iOS 游戏模块只是串流接收端，本机无游戏导入', () {
+      expect(ImportInbox.folderNameFor('game'), isNull);
+      expect(
+        ImportInbox.kindFolderNames.keys,
+        unorderedEquals(<String>['book', 'video', 'manga']),
+      );
+    });
+
+    test('pendingRootFiles 只列本页认的根上文件，不碰目录 / 隐藏项 / 分类子目录', () async {
+      await ImportInbox.ensureKindFolders(inbox);
+      touch(p.join(inbox.path, 'Pokemon EP01.mkv'));
+      touch(p.join(inbox.path, 'Pokemon EP01.srt'));
+      touch(p.join(inbox.path, 'novel.epub'));
+      touch(p.join(inbox.path, '.DS_Store'));
+      touch(p.join(inbox.path, 'Season 2', 'EP01.mkv'));
+      touch(p.join(inbox.path, 'Video', 'EP02.mkv'));
+
+      List<String> names(List<File> files) => <String>[
+        for (final File f in files) p.basename(f.path),
+      ];
+      expect(
+        names(
+          await ImportInbox.pendingRootFiles(inbox: inbox, mediaKind: 'video'),
+        ),
+        <String>['Pokemon EP01.mkv', 'Pokemon EP01.srt'],
+      );
+      expect(
+        names(
+          await ImportInbox.pendingRootFiles(inbox: inbox, mediaKind: 'book'),
+        ),
+        <String>['Pokemon EP01.srt', 'novel.epub'],
+        reason: '字幕几个页面都认：归属由当前页面 + 用户确认决定，不靠扩展名猜',
+      );
+      expect(
+        await ImportInbox.pendingRootFiles(inbox: inbox, mediaKind: 'game'),
+        isEmpty,
+      );
+    });
+
+    test('adoptRootFiles 移进本页分类子目录，重名不覆盖', () async {
+      await ImportInbox.ensureKindFolders(inbox);
+      touch(p.join(inbox.path, 'Video', 'EP01.mkv')).writeAsStringSync('old');
+      touch(p.join(inbox.path, 'EP01.mkv')).writeAsStringSync('new');
+      touch(p.join(inbox.path, 'EP02.mkv'));
+
+      final List<File> root = await ImportInbox.pendingRootFiles(
+        inbox: inbox,
+        mediaKind: 'video',
+      );
+      final List<String> failures = await ImportInbox.adoptRootFiles(
+        inbox: inbox,
+        mediaKind: 'video',
+        files: root,
+      );
+
+      expect(failures, isEmpty);
+      final String video = p.join(inbox.path, 'Video');
+      expect(File(p.join(video, 'EP01.mkv')).readAsStringSync(), 'old');
+      expect(File(p.join(video, 'EP01 (2).mkv')).readAsStringSync(), 'new');
+      expect(File(p.join(video, 'EP02.mkv')).existsSync(), isTrue);
+      expect(
+        await ImportInbox.pendingRootFiles(inbox: inbox, mediaKind: 'video'),
+        isEmpty,
+      );
+      expect(
+        (await ImportInbox.pendingEntries(
+          inbox: inbox,
+          mediaKind: 'video',
+        )).map((FileSystemEntity e) => p.basename(e.path)),
+        <String>['EP01 (2).mkv', 'EP01.mkv', 'EP02.mkv'],
+        reason: '移进分类子目录后与「文件」App 放进去的文件同路导入',
+      );
+    });
+  });
 }
