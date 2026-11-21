@@ -22,6 +22,9 @@ class FushiPageTitleMetrics {
     required this.compact,
     required this.titleFontSize,
     required this.collapsedTitleFontSize,
+    required this.twoLineMinTitleFontSize,
+    required this.twoLineMaxTitleFontSize,
+    required this.sectionTitle,
     required this.switchFontSize,
     required this.collapsedSwitchFontSize,
     required this.badgeExtent,
@@ -45,6 +48,17 @@ class FushiPageTitleMetrics {
     compact: true,
     titleFontSize: 46,
     collapsedTitleFontSize: 28,
+    twoLineMinTitleFontSize: 22,
+    twoLineMaxTitleFontSize: 34,
+    sectionTitle: FushiPageTitleScale(
+      fontSize: 34,
+      collapsedFontSize: 24,
+      twoLineMinFontSize: 20,
+      twoLineMaxFontSize: 26,
+      weight: FontWeight.w700,
+      letterSpacingEm: -0.02,
+      lineHeight: 1.05,
+    ),
     switchFontSize: 19,
     collapsedSwitchFontSize: 15,
     badgeExtent: 22,
@@ -68,6 +82,17 @@ class FushiPageTitleMetrics {
     compact: false,
     titleFontSize: 84,
     collapsedTitleFontSize: 36,
+    twoLineMinTitleFontSize: 28,
+    twoLineMaxTitleFontSize: 56,
+    sectionTitle: FushiPageTitleScale(
+      fontSize: 52,
+      collapsedFontSize: 30,
+      twoLineMinFontSize: 24,
+      twoLineMaxFontSize: 36,
+      weight: FontWeight.w700,
+      letterSpacingEm: -0.02,
+      lineHeight: 1.05,
+    ),
     switchFontSize: 30,
     collapsedSwitchFontSize: 18,
     badgeExtent: 44,
@@ -108,10 +133,35 @@ class FushiPageTitleMetrics {
   final double titleFontSize;
   final double collapsedTitleFontSize;
 
+  /// 二级页头（`FushiMastheadHeader`）页名缩到收起态字号仍一行放不下时，折成
+  /// 两行（词不拆开）的字号范围：在这两档之间取放得下的最大字号，最小档仍放
+  /// 不下才第二行末省略（`fushiMastheadTitleFit`，BUG-5062）。
+  final double twoLineMinTitleFontSize;
+  final double twoLineMaxTitleFontSize;
+
   /// 页名字重 / 字距（em）/ 行高。
   static const FontWeight titleWeight = FontWeight.w900;
   static const double titleLetterSpacingEm = -0.045;
   static const double titleLineHeight = 0.98;
+
+  /// [FushiPageTitleTier.section] 档的页名字阶（设置分类页这类满屏小字行的
+  /// 二级页）。两行字号范围按 [FushiPageTitleTier.page] 档同一比例取：最小档
+  /// ≈ 收起态 × 0.8，最大档落在收起态与展开态之间。
+  final FushiPageTitleScale sectionTitle;
+
+  /// [tier] 档的页名字阶（字号 / 收起态 / 两行范围 / 字重 / 字距 / 行高）。
+  FushiPageTitleScale titleScale(FushiPageTitleTier tier) => switch (tier) {
+    FushiPageTitleTier.page => FushiPageTitleScale(
+      fontSize: titleFontSize,
+      collapsedFontSize: collapsedTitleFontSize,
+      twoLineMinFontSize: twoLineMinTitleFontSize,
+      twoLineMaxFontSize: twoLineMaxTitleFontSize,
+      weight: titleWeight,
+      letterSpacingEm: titleLetterSpacingEm,
+      lineHeight: titleLineHeight,
+    ),
+    FushiPageTitleTier.section => sectionTitle,
+  };
 
   /// 一级切换（「媒体库 / 在线」）字号：副段，比页名小一档、未选项变淡；
   /// 页名不跟着缩。
@@ -215,14 +265,11 @@ class FushiPageTitleMetrics {
   double actionLiftAt(double p) => _lerp(actionLift, collapsedActionLift, p);
 
   /// 页名大字的字阶（颜色由调用方给）。
-  TextStyle titleStyle(TextStyle base, {required Color color}) => base.copyWith(
-    fontSize: titleFontSize,
-    fontWeight: titleWeight,
-    letterSpacing: titleLetterSpacingEm * titleFontSize,
-    height: titleLineHeight,
-    leadingDistribution: TextLeadingDistribution.even,
-    color: color,
-  );
+  TextStyle titleStyle(
+    TextStyle base, {
+    required Color color,
+    FushiPageTitleTier tier = FushiPageTitleTier.page,
+  }) => titleScale(tier).style(base, color: color);
 
   /// 一级切换大字的字阶；[fontSize] 覆盖字号（标题形态的选中 / 未选项）。
   TextStyle switchStyle(
@@ -243,6 +290,56 @@ class FushiPageTitleMetrics {
 }
 
 const double _kFitEpsilon = 0.5;
+
+/// 页名字阶档位。
+enum FushiPageTitleTier {
+  /// 库页 / 模块页的页名（书架规格，11-20 #18）。
+  page,
+
+  /// 设置分类页这类「一页里很多行小字」的二级页：书架规格的页名比正文大四倍、
+  /// 字重跳三档，像另一个 app 贴在上面（2026-11-20 用户截图「设置的字看着
+  /// 怪」）。降一档、字重 700，仍是页面里最大的字，但与行文字同一家族。
+  section,
+}
+
+/// 一档页名字阶（[FushiPageTitleMetrics.titleScale]）。
+@immutable
+class FushiPageTitleScale {
+  const FushiPageTitleScale({
+    required this.fontSize,
+    required this.collapsedFontSize,
+    required this.twoLineMinFontSize,
+    required this.twoLineMaxFontSize,
+    required this.weight,
+    required this.letterSpacingEm,
+    required this.lineHeight,
+  });
+
+  /// 展开态 / 收起态字号（滚动收缩在绘制层按比例缩放）。
+  final double fontSize;
+  final double collapsedFontSize;
+
+  /// 二级页头页名折两行时的字号范围（见
+  /// [FushiPageTitleMetrics.twoLineMinTitleFontSize]）。
+  final double twoLineMinFontSize;
+  final double twoLineMaxFontSize;
+
+  final FontWeight weight;
+
+  /// 字距（em）与行高。
+  final double letterSpacingEm;
+  final double lineHeight;
+
+  /// 这一档的页名字样（颜色由调用方给）。
+  TextStyle style(TextStyle base, {required Color color}) => base.copyWith(
+    fontSize: fontSize,
+    fontWeight: weight,
+    letterSpacing: letterSpacingEm * fontSize,
+    height: lineHeight,
+    leadingDistribution: TextLeadingDistribution.even,
+    color: color,
+  );
+}
 
 /// 标题在给定宽里的排法：字号缩放（≥ [FushiPageTitleMetrics.minTitleScale]）与
 /// 是否允许按词换行。
