@@ -454,18 +454,13 @@ pub(super) fn edit_rows_with(
     profile: &str,
     tags: bool,
 ) -> Result<Vec<(String, String, Option<i64>)>, String> {
-    let (lines, _) = ix.class_lines(kind, c)?;
+    let (lines, _) = ix.class_lines_keyed(kind, c)?;
     let mut rows: Vec<(String, String, Option<i64>)> = Vec::with_capacity(lines.len() + 1);
-    for (json, st) in lines {
-        let json = with_profile(&json, profile);
-        let f = serde_json::from_str::<Value>(&json)
-            .ok()
-            .and_then(|v| v.get("f").and_then(Value::as_str).map(str::to_owned))
-            .unwrap_or_default();
+    for (f, json, st) in lines {
         if kind == EntKind::Note && f == "tags" {
             continue;
         }
-        rows.push((f, json, st));
+        rows.push((f, with_profile(&json, profile), st));
     }
     if kind == EntKind::Note && tags {
         if let Some(json) = tags_line(t, ix, c, profile)? {
