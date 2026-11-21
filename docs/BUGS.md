@@ -56,6 +56,7 @@
 | [BUG-5075](bugs/BUG-5075-tts-render-queue-test-windows-teardown.md) | 🚧 | 🚧 | Windows 上 tts_text_rules_and_rate_limit_test 的 tearDown 删临时目录报 errno 145（目录非空） |
 | [BUG-5069](bugs/BUG-5069-txt-oversized-single-paragraph.md) | ✅ | ✅ | TXT 超长段落绕过分章上限 |
 | [BUG-5067](bugs/BUG-5067-ios-flutter-logs-enospc-abort.md) | ✅ | ✅ | ios-flutter-logs-enospc-abort |
+| [BUG-5069](bugs/BUG-5069-srs-mining-generation-blocked-message.md) | ✅ | ✅ | 复习库在换代途中时制卡只报「Fushi review is not available.」，不提示去升级 |
 | [BUG-5064](bugs/BUG-5064-dict-history-entries-object-rows.md) | 🚧 | 🚧 | 查词历史 entries 存成对象的坏行每次启动重复报错不清理 |
 | [BUG-5063](bugs/BUG-5063-srs-gen4-migration-stats-logid-mismatch.md) | 🚧 | 🚧 | gen4 迁移对拍：4.7 GB 库第 7/10 步后 stats 两侧 log_id 集合不一致回滚 |
 | [BUG-5062](bugs/BUG-5062-masthead-title-ellipsis-phone.md) | ✅ | ✅ | masthead-title-ellipsis-phone |

@@ -24,6 +24,7 @@ import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/profile/work_profile_anki_settings_store.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
+import 'package:fushi/src/srs/srs_generation_kind.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -880,6 +881,8 @@ void showSrsBackgroundMineOutcome(String expression, MineOutcome outcome) {
     status: described.success || outcome.result == MineResult.duplicate
         ? described.status
         : MineToastStatus.failed,
+    // BUG-5069：复习库要升级时带「打开复习」。
+    action: mineFailureToastAction(outcome),
   );
 }
 
@@ -917,7 +920,7 @@ String repositionSnapshotFolderFor(BaseAnkiRepository repo) {
   }
 }
 
-/// 当前 profile 的 SRS 制卡器（store / 媒体目录打不开时为 null，并留痕）。
+/// 当前 profile 的 SRS 制卡器（store / 媒体目录打不开时为 null，并留痕；库在换代途中原样抛出代际异常）。
 /// [followWorkSession] 见 [_withSrsMining]。
 Future<SrsMiner?> _readSrsMiner(
   Ref ref, {
@@ -954,6 +957,9 @@ Future<SrsMiner?> _readSrsMiner(
           : app.hostSrsMiningDestination,
     );
   } catch (e, stack) {
+    // 库在换代途中不是「打不开」：原样交给 [SrsMiningAnkiRepository]，制卡失败据它提示去复习页完成升级
+    // （BUG-5069，[SrsMinerResolver] 的契约）。
+    if (isSrsGenerationBlocked(e)) rethrow;
     ErrorLogService.instance.log('ankiRepositoryProvider.srsMiner', e, stack);
     return null;
   }
