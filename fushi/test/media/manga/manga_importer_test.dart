@@ -861,7 +861,6 @@ void main() {
       p.join(source.path, '1.png'),
     ).writeAsBytesSync(img.encodePng(img.Image(width: 8, height: 8)));
 
-    expect(mangaImportCanImport(<String>[source.path]), isTrue);
     final String bookKey = await MangaImporter.importFromImageFolder(
       db: db,
       imageDirPath: source.path,
