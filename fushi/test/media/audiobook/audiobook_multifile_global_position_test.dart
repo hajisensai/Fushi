@@ -325,7 +325,11 @@ void main() {
       );
       await c.pause();
       expect(c.currentFilePosition.fileIndex, 1);
-      expect(c.globalPosition.inMilliseconds, 70000);
+      // 播放期间 just_audio 按墙钟外推几十毫秒。
+      expect(
+        c.globalPosition.inMilliseconds,
+        inInclusiveRange(70000, 70999),
+      );
       expect(c.totalDuration.inMilliseconds, 110000);
       await c.disposeAndRelease();
     });
