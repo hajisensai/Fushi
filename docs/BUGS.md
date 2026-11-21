@@ -53,6 +53,11 @@
 | [BUG-5107](bugs/BUG-5107-tts-silence-not-at-shared-entry.md) | ✅ | ✅ | 纯标点句判定只接了部分合成入口：漫画配音 / Galgame 朗读 / 试听仍把「……」「！」送引擎 |
 | [BUG-5090](bugs/BUG-5090-video-scrape-sourceless-scope-issue-blank-title.md) | ✅ | ✅ | video-scrape-sourceless-scope-issue-blank-title |
 | [BUG-5101](bugs/BUG-5101-sync-peer-gap-capability-reads.md) | ✅ | ✅ | 互联对端缺能力判定每轮多读能力表、逐条墓碑重复记错、降级同步被说成没同步 |
+> 共 4412 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5121](bugs/BUG-5121-stall-test-preemption-noise.md) | ✅ | ✅ | stall-test-preemption-noise |
 | [BUG-5088](bugs/BUG-5088-readintosync-blocks-gc-safepoint.md) | ✅ | ✅ | readintosync-blocks-gc-safepoint |
 | [BUG-5087](bugs/BUG-5087-sync-video-sweep-tests-teardown-temp-locked.md) | ✅ | ✅ | sync-video-sweep-tests-teardown-temp-locked |
 | [BUG-5086](bugs/BUG-5086-dist-test-verdict-coverage-shared-log.md) | ✅ | ✅ | 「dist 请求 7 个测试文件只跑 2 个仍判 PASSED」是并发代理共用日志名读串了；dist_test 判绿改为逐个核对请求的 suite |
