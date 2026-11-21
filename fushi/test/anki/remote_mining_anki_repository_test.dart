@@ -8,6 +8,8 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart'
     show isUndeliveredMineFailure;
 import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 import 'package:fushi/src/sync/fushi_remote_mining_client.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
@@ -356,6 +358,37 @@ void main() {
         contains(AnkiErrorCode.connectionRefused),
       );
       expect(outcome.error.toString(), contains('Connection refused'));
+    });
+
+    test('主机上复习库在换代途中（BUG-5069）：分类成「那台设备上的复习要先升级」，不说成 Anki', () async {
+      const String hostReason = 'Fushi review data needs a one-time upgrade.';
+      final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+        local: _FakeLocal(),
+        client: _FakeSender(<String, dynamic>{
+          'result': 'error',
+          'message': hostReason,
+          'errorCode': AnkiErrorCode.srsNeedsMigration,
+        }),
+        fileByteLoader: (String p) async => null,
+        dictMediaLoader: (String d, String p) => null,
+      );
+
+      final MineOutcome outcome = await repo.mineEntry(
+        rawPayloadJson: '{}',
+        context: const AnkiMiningContext(sentence: ''),
+      );
+
+      expect(outcome.result, MineResult.error);
+      expect(outcome.errorCode, AnkiErrorCode.pairedDeviceReviewBlocked);
+      expect(outcome.errorDetail, hostReason);
+      expect(
+        outcome.error.toString(),
+        contains(AnkiErrorCode.srsNeedsMigration),
+      );
+      expect(
+        mineFailureMessage(outcome),
+        t.anki_error_paired_device_review_blocked(reason: hostReason),
+      );
     });
 
     test('不可达提示说明失败结果和恢复路径，不暴露内部术语', () async {

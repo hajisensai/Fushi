@@ -2991,12 +2991,15 @@ class GalHookTextOverlayController extends ChangeNotifier {
       msg: described.message,
       status: described.status,
       // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
-      action: minedCardUndoToastAction(
-        repo,
-        outcome,
-        expression: fields['expression'],
-        overwrite: updateNoteId != null,
-      ),
+      action:
+          minedCardUndoToastAction(
+            repo,
+            outcome,
+            expression: fields['expression'],
+            overwrite: updateNoteId != null,
+          ) ??
+          // BUG-5069：复习库要升级时带「打开复习」。
+          mineFailureToastAction(outcome),
     );
     // BUG-1908：失败时把 describeMineOutcome 算出的**同一句**本地化文案回给浮窗。
     // 成功不带（浮窗靠 ➕→✓ 翻转表达成功，不需要多一条提示）。

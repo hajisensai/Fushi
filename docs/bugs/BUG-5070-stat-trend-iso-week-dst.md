@@ -1,0 +1,6 @@
+## BUG-5070 · 统计趋势按周聚合在有夏令时的时区把相邻两周并成一桶、周号少一
+- **报告**：2026-11-21（外部 PR #3980 @samutw 的审查提示：「`stat_trends` `isoWeekKey` now uses UTC dates, which also fixes the ISO-week test failure already present on develop」；作者在 UTC-5 的夏令时时区，develop 上 `stat_trends_test` 的 `2026-06-15 → 2026-W25` 红）
+- **真实性**：✅ 真 bug。根因 `fushi/lib/src/pages/implementations/stat_trends.dart:63`（修复前）：`isoWeekKey` 用本地午夜 `DateTime(y, m, d)` 与 `DateTime(isoYear, 1, 1)`，再拿 `thursday.difference(firstThursday).inDays ~/ 7` 算周号。两个周四相差恰好 7k 天，但开始夏令时后的日期与 1 月 1 日之间少一个小时，`inDays` 向下取整成 7k−1，周号少一。后果：夏令时期间每周的周号都少一（6 月显示 W24），**开始夏令时的那周与下一周得到同一个键**，`aggregateTrend` 的周粒度把两周的字数 / 时长并进一个桶（阅读 / 视频统计「趋势」按周）。中国等无夏令时时区与 UTC 的 CI 机器上不复现。
+- **[x] ① 已修复** — `isoWeekKey` 改用 `DateTime.utc` 日历日（与 `stats/stat_range.dart` 的 `utcDay` 同一做法），代码摘自 #3980（@samutw），作者署名保留。
+- **[x] ② 已增加自动化测试** — `fushi/test/pages/stat_trends_test.dart`：`every day 2000-2040 matches an integer-only ISO week reference`（纯整数日历参照逐日对照，在夏令时时区跑旧代码会红）、`weeks around DST starts stay separate buckets`（美国 2026-03-08 / 欧洲 2026-03-29 前后两周必须是两个桶）、`isoWeekKey never builds a local DateTime`（源码层钉死只许 `DateTime.utc`：CI 多是 UTC，前两条在那里测不出回退；对 develop 旧代码匹配 2 处 → 红）。
+- **备注**：#3980 本身还把趋势周桶改成跟「一周从星期几开始」走（功能待拍板），与本修复不冲突：那边周一起时仍用 `isoWeekKey` 出标签。

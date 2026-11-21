@@ -27,6 +27,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/srs/srs_gen4_migration_controller.dart';
+import 'package:fushi/src/srs/srs_generation_kind.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -37,58 +38,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 
-/// 页面按哪一种状态出内容（由打开错误 + 是否主进程决定）。
-enum SrsGenerationKind {
-  /// 主进程、要迁移：迁移面板。
-  migrate,
-
-  /// 主进程、上次迁移没完成：迁移面板（「重新升级」）。
-  retryFailed,
-
-  /// 非主进程、要迁移 / 上次没完成：去主窗口。
-  openMainWindow,
-
-  /// 别的窗口 / 进程在迁移。
-  migratingElsewhere,
-
-  /// 只剩封存旧库。
-  sealedOldOnly,
-
-  /// 旁边有没迁移的协议 3 旧库（-6）。
-  legacyUnmigrated,
-
-  /// 协议 1 的数据还在主库里。
-  legacyMainDatabase,
-
-  /// 已经可以用了（状态在页面挂着时变了）：只给重试。
-  ready,
-}
-
-/// [error] 在本进程（[isMainProcess]）里该出哪一种内容。
-SrsGenerationKind srsGenerationKindOf(
-  Object error, {
-  required bool isMainProcess,
-}) {
-  return switch (error) {
-    SrsLegacyMainDatabasePending() => SrsGenerationKind.legacyMainDatabase,
-    SrsStoreMigrating() => SrsGenerationKind.migratingElsewhere,
-    SrsStoreLegacyUnmigrated() => SrsGenerationKind.legacyUnmigrated,
-    SrsStoreNotMigrated(:final SrsGenState state) => switch (state) {
-      SrsGenState.needsMigration =>
-        isMainProcess
-            ? SrsGenerationKind.migrate
-            : SrsGenerationKind.openMainWindow,
-      SrsGenState.migrationFailed =>
-        isMainProcess
-            ? SrsGenerationKind.retryFailed
-            : SrsGenerationKind.openMainWindow,
-      SrsGenState.migratingElsewhere => SrsGenerationKind.migratingElsewhere,
-      SrsGenState.sealedOldOnly => SrsGenerationKind.sealedOldOnly,
-      SrsGenState.ready => SrsGenerationKind.ready,
-    },
-    _ => SrsGenerationKind.ready,
-  };
-}
+export 'package:fushi/src/srs/srs_generation_kind.dart';
 
 /// 迁移步骤的显示名。
 String srsGen4StepLabel(SrsGen4MigrationStep step) => switch (step) {

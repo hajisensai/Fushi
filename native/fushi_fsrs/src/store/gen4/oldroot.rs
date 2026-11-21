@@ -275,6 +275,20 @@ impl Truth<'_> {
     }
 
     /// 忘掉位置 [loc] 名下累计的段结论（这一轮核对完了，或位置被移除）。
+    /// 集合 [col] 在**全部**位置上的旧根段结论（并入改绑换了根：旧目录 `v3/` 上的结论不适用于新目录，`identity.rs`
+    /// `join_into`）。
+    pub(crate) fn oldroot_forget_all(&self, col: i64) -> Result<(), String> {
+        let (lo, hi) = (format!("gen4_oldrun/{col}/"), format!("gen4_oldrun/{col}0"));
+        self.write(|| {
+            self.conn()
+                .prepare_cached(OLDRUN_DROP_SQL)
+                .map_err(sql)?
+                .execute(params![lo, hi])
+                .map_err(sql)
+                .map(|_| ())
+        })
+    }
+
     pub(crate) fn oldroot_forget_run(&self, col: i64, loc: &str) -> Result<(), String> {
         let (lo, hi) = run_range(col, loc);
         self.write(|| {
