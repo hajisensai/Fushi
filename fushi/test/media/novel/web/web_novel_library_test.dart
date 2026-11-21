@@ -762,6 +762,10 @@ void main() {
     );
     // 别的写方（如浏览器并章的整本重建）正持着这本书的提交锁。
     final Completer<void> held = Completer<void>();
+    // 断言失败时也要放锁：锁是进程级的，不放会卡住后面用同一 bookKey 的用例。
+    addTearDown(() {
+      if (!held.isCompleted) held.complete();
+    });
     final Future<void> holder = webNovelBookCommits.run(
       bookKey,
       () => held.future,
