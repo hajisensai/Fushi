@@ -12,6 +12,7 @@ library;
 
 import 'dart:io';
 
+import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -202,7 +203,6 @@ void main() {
         _memDb(),
         backend,
       ).syncTagsLiveForTest(report, backend);
-      await LocaleSettings.setLocale(AppLocale.en);
       final String s = summarizeSyncReport(report);
       expect(s, contains(t.sync_now_peer_outdated(count: 1)));
     });
