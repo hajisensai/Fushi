@@ -22,6 +22,7 @@ import 'package:fushi/src/mining/galgame_play_tracker.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/gal_hook_tick_clock.dart';
 import 'package:fushi/src/mining/gal_mining_settings.dart';
+import 'package:fushi/src/mining/gal_ocr_line_source.dart';
 import 'package:fushi/src/mining/knife_text_websocket.dart';
 import 'package:fushi/src/mining/gal_voice_resource_name.dart';
 import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_attach_probe.dart';
@@ -541,6 +542,8 @@ class GalHookSessionState {
     this.knifeTextServiceIniPath,
     this.knifeTextServiceIniWritten = false,
     this.knifeTextServiceIniWriteFailed = false,
+    this.ocrRegion,
+    this.ocrIssue = GalOcrSourceIssue.none,
   });
 
   final GalHookSessionPhase phase;
@@ -607,6 +610,15 @@ class GalHookSessionState {
   /// 本局写 [knifeTextServiceIniPath] 失败过（UI 改为提示手动添加那一行）。
   final bool knifeTextServiceIniWriteFailed;
 
+  /// 非空 = 本局是 OCR 游戏模式（[GalHookSessionController.startOcrCapture]）：台词来自
+  /// 定时截窗 + OCR，不注入游戏进程。值是台词框在客户区里的归一化位置。
+  final GalOcrRegion? ocrRegion;
+
+  /// OCR 泵的健康状况（截不到窗口 / 识别器不可用…），UI 据此提示。非 OCR 模式恒为 none。
+  final GalOcrSourceIssue ocrIssue;
+
+  bool get isOcrMode => ocrRegion != null;
+
   bool get isActive =>
       phase != GalHookSessionPhase.idle && phase != GalHookSessionPhase.error;
   bool get hasText => textSignalReceived;
@@ -649,6 +661,9 @@ class GalHookSessionState {
     bool clearKnifeTextServiceIniPath = false,
     bool? knifeTextServiceIniWritten,
     bool? knifeTextServiceIniWriteFailed,
+    GalOcrRegion? ocrRegion,
+    bool clearOcrRegion = false,
+    GalOcrSourceIssue? ocrIssue,
   }) {
     return GalHookSessionState(
       phase: phase ?? this.phase,
@@ -711,9 +726,27 @@ class GalHookSessionState {
           ? false
           : knifeTextServiceIniWriteFailed ??
                 this.knifeTextServiceIniWriteFailed,
+      ocrRegion: clearOcrRegion ? null : ocrRegion ?? this.ocrRegion,
+      // 泵的健康状况只属于 OCR 会话：模式一结束就复位，不把上一局的「截不到窗口」带走。
+      ocrIssue: clearOcrRegion
+          ? GalOcrSourceIssue.none
+          : ocrIssue ?? this.ocrIssue,
     );
   }
 }
+
+/// 新建 OCR 台词流的泵（测试注入假泵，避免碰 window_capture channel 与 FFI）。
+typedef GalOcrLineSourceFactory =
+    GalOcrLineSource Function({
+      required int hwnd,
+      required GalOcrRegion region,
+      required GalOcrRecognize recognize,
+      required void Function(String text) onLine,
+      required void Function(GalOcrSourceIssue issue, Object? detail) onIssue,
+    });
+
+/// OCR 游戏模式产出的 texthooker 行的 `sourceLabel`。
+const String kGalScreenOcrLineSourceLabel = 'screen_ocr';
 
 /// 引擎 hook 失败后的重试退避表。
 ///
@@ -816,6 +849,7 @@ class GalHookSessionController extends ChangeNotifier {
     TexthookerService? textService,
     GalEngineSourceFactory? engineSourceFactory,
     GalLoopbackSourceFactory? loopbackSourceFactory,
+    GalOcrLineSourceFactory? ocrSourceFactory,
     GalTargetWow64Probe? targetWow64Probe,
     GalTargetImagePathProbe? targetImagePathProbe,
     GalExe32BitProbe? exe32BitProbe,
@@ -905,6 +939,7 @@ class GalHookSessionController extends ChangeNotifier {
        _engineSourceFactory = engineSourceFactory ?? _defaultEngineFactory,
        _loopbackSourceFactory =
            loopbackSourceFactory ?? LoopbackGalAudioSource.new,
+       _ocrSourceFactory = ocrSourceFactory ?? _defaultOcrSourceFactory,
        _targetWow64Probe =
            targetWow64Probe ?? EngineHookGalAudioSource.targetIsWow64,
        _targetImagePathProbe = targetImagePathProbe ?? _defaultTargetImagePath,
@@ -1004,6 +1039,24 @@ class GalHookSessionController extends ChangeNotifier {
       LinkedHashSet<String>();
   Future<void> _tyranoDomVoiceQueue = Future<void>.value();
   final GalLoopbackSourceFactory _loopbackSourceFactory;
+  final GalOcrLineSourceFactory _ocrSourceFactory;
+
+  /// OCR 游戏模式的泵（[startOcrCapture]）；生命周期挂在会话上，[_stopSourcesInternal] 收。
+  GalOcrLineSource? _ocrSource;
+
+  static GalOcrLineSource _defaultOcrSourceFactory({
+    required int hwnd,
+    required GalOcrRegion region,
+    required GalOcrRecognize recognize,
+    required void Function(String text) onLine,
+    required void Function(GalOcrSourceIssue issue, Object? detail) onIssue,
+  }) => GalOcrLineSource(
+    hwnd: hwnd,
+    region: region,
+    recognize: recognize,
+    onLine: onLine,
+    onIssue: onIssue,
+  );
   final GalTargetWow64Probe _targetWow64Probe;
   final GalTargetImagePathProbe _targetImagePathProbe;
   final GalExe32BitProbe _exe32BitProbe;
@@ -2368,6 +2421,169 @@ class GalHookSessionController extends ChangeNotifier {
       identity: identity,
     );
     await _attachHooksToProcess(generation, pid: window.pid);
+  }
+
+  /// OCR 游戏模式：对 [window] 定时截窗、只识别 [region] 里的台词（spec
+  /// `docs/specs/2026-11-22-game-ocr-line-stream-design.md`，拍板台 v5GSgDau9u / BUG-5083）。
+  ///
+  /// 与 [startAttachedCapture] 共用会话身份 / 计时 / 游戏退出监视，但**不探位数、不找
+  /// helper、不注入、不连 Tyrano DOM**——给 Hook 进不去（联网游戏防作弊、模拟器、未适配引擎）
+  /// 的游戏用。音频直接走系统回录（受音频降级策略约束），那是本模式设计内的音频来源，
+  /// 不是降级，所以阶段是 waitingSignals → 第一句 OCR 行到达转 running，而不是 degraded。
+  /// OCR 行以 [TexthookerLineSource.screenOcr] 进台词流，之后的字数统计、逐句回录冻结、
+  /// 制卡都走既有的外部行路径（[_onTextBufferChanged]）。
+  Future<void> startOcrCapture(
+    ExternalWindowInfo window, {
+    required GalOcrRegion region,
+    required GalOcrRecognize recognize,
+  }) async {
+    final int generation = ++_operationGeneration;
+    await _stopSources();
+    await _stopPlayTracker();
+    if (!_isWindows || generation != _operationGeneration) return;
+    _selectedTextThreadKey = null;
+    _selectedNativeTextThreadId = null;
+    _selectedTextThreadFaceId = 0;
+    _selectedThreadClaimedKeys.clear();
+    _setState(
+      _state.copyWith(
+        phase: GalHookSessionPhase.resolving,
+        externalWindowMode: true,
+        boundWindow: window,
+        gamePid: window.pid,
+        sessionStartedAt: _now(),
+        clearLaunchExe: true,
+        clearLastError: true,
+        clearFallbackReason: true,
+        textSignalReceived: false,
+        clearKnifeTextServiceIniPath: true,
+        ocrRegion: region,
+        ocrIssue: GalOcrSourceIssue.none,
+      ),
+    );
+    _record(
+      GalHookEventSeverity.info,
+      'ocr',
+      'ocr.session_starting',
+      'Starting screen OCR capture (no injection)',
+      details: <String, Object?>{
+        'hwnd': window.hwnd,
+        'pid': window.pid,
+        'region': region.toJson(),
+      },
+    );
+    final GalHookSessionIdentity identity = await _resolveSessionIdentity(
+      pid: window.pid,
+      fallbackTitle: window.title,
+    );
+    if (generation != _operationGeneration) return;
+    _beginGameSession(identity, attachedExecutable: identity.executablePath);
+    _startPlayTracker(
+      generation: generation,
+      identity: identity,
+      mainPid: window.pid,
+    );
+    _startGameExitWatch(
+      generation: generation,
+      pid: window.pid,
+      identity: identity,
+    );
+    await _activateOcrAudio(generation);
+    if (generation != _operationGeneration) return;
+    final GalOcrLineSource source = _ocrSourceFactory(
+      hwnd: window.hwnd,
+      region: region,
+      recognize: recognize,
+      onLine: (String text) {
+        if (generation == _operationGeneration) _onOcrLine(text);
+      },
+      onIssue: (GalOcrSourceIssue issue, Object? detail) {
+        if (generation == _operationGeneration) _onOcrIssue(issue, detail);
+      },
+    );
+    _ocrSource = source;
+    source.start();
+  }
+
+  /// 会话中换识别区域（「调整识别区域」）。不是 OCR 模式时无动作。
+  void setOcrRegion(GalOcrRegion region) {
+    final GalOcrLineSource? source = _ocrSource;
+    if (source == null || !_state.isOcrMode) return;
+    source.setRegion(region);
+    _setState(_state.copyWith(ocrRegion: region));
+    _record(
+      GalHookEventSeverity.info,
+      'ocr',
+      'ocr.region_changed',
+      'Screen OCR region changed',
+      details: <String, Object?>{'region': region.toJson()},
+    );
+  }
+
+  /// OCR 模式的音频：系统回录（策略禁止时只有文本）。不走 [_activateLoopback]——那条是
+  /// 「引擎 hook 失败后的降级」，会把阶段置成 degraded 并记降级原因。
+  Future<void> _activateOcrAudio(int generation) async {
+    final (LoopbackGalAudioSource, PcmFormat)? started =
+        await _startLoopbackIfAllowed(
+          sessionGeneration: generation,
+          policyRevision: _audioFallbackPolicyRevision,
+        );
+    if (generation != _operationGeneration) {
+      await started?.$1.stop();
+      return;
+    }
+    _audioSource = started?.$1;
+    _engineSource = null;
+    _setState(
+      _state.copyWith(
+        phase: _state.textSignalReceived
+            ? GalHookSessionPhase.running
+            : GalHookSessionPhase.waitingSignals,
+        audioBackend: started == null
+            ? GalHookAudioBackend.none
+            : GalHookAudioBackend.systemLoopback,
+        audioFormat: started?.$2,
+        clearAudioFormat: started == null,
+      ),
+    );
+    _record(
+      started == null
+          ? GalHookEventSeverity.info
+          : GalHookEventSeverity.success,
+      'audio',
+      started == null ? 'ocr.audio_none' : 'ocr.audio_loopback',
+      started == null
+          ? 'Screen OCR session runs text-only (system loopback unavailable or disabled)'
+          : 'Screen OCR session records sentence audio from system loopback',
+    );
+  }
+
+  void _onOcrLine(String text) {
+    // 之后的一切（textSignal、字数、逐句回录冻结、制卡）走 [_onTextBufferChanged] 的外部行路径。
+    _textService.appendLine(
+      text,
+      source: TexthookerLineSource.screenOcr,
+      sourceLabel: kGalScreenOcrLineSourceLabel,
+    );
+  }
+
+  void _onOcrIssue(GalOcrSourceIssue issue, Object? detail) {
+    _setState(_state.copyWith(ocrIssue: issue));
+    _record(
+      issue == GalOcrSourceIssue.none
+          ? GalHookEventSeverity.success
+          : issue == GalOcrSourceIssue.recognizerUnavailable
+          ? GalHookEventSeverity.error
+          : GalHookEventSeverity.warning,
+      'ocr',
+      'ocr.${issue.name}',
+      issue == GalOcrSourceIssue.none
+          ? 'Screen OCR recovered'
+          : 'Screen OCR issue: ${issue.name}',
+      details: <String, Object?>{
+        if (detail != null) 'detail': detail.toString(),
+      },
+    );
   }
 
   /// 会话的游戏身份确立后、注入开始前的**唯一**入口（launch 与 attach 共用）。
@@ -6413,6 +6629,13 @@ class GalHookSessionController extends ChangeNotifier {
   Future<void> _stopSourcesInternal() async {
     // DOM 源跟会话走：停源 / 换游戏 / 游戏退出（stopCapture）都在这里收。
     await _stopTyranoDom();
+    // OCR 泵同理：任何新会话（launch / attach / OCR）与停止监听都先经过这里。
+    final GalOcrLineSource? ocr = _ocrSource;
+    _ocrSource = null;
+    if (ocr != null) {
+      await ocr.stop();
+      _setState(_state.copyWith(clearOcrRegion: true));
+    }
     // 补录窗口挂在会话音源上，会话停就必须先收束（丢弃取音）：否则临时 loopback
     // 源泄漏，超时回调还会往已结束的会话行里写状态。
     await finishLineRecapture(discard: true);

@@ -401,6 +401,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'gal_mining_clip_format',
   'gal_mining_image_mode',
   'gal_mining_still_format',
+  // String（JSON：客户区归一化 left/top/width/height）：OCR 游戏模式上次框选的台词区域
+  // （gal_ocr_line_source.dart 的 GalOcrRegion）。
+  'gal_ocr_region',
   'galgame_library',
   'galgame_library_view',
   // bool：第三方游戏资源站下载前的风险说明勾了「不再提示」（download_notice.dart）。
