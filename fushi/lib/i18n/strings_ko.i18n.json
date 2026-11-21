@@ -13007,6 +13007,8 @@
   "video_setting_av_delay_hint_short": "+ = later, − = earlier",
   "video_setting_av_delay_reset": "Reset to 0",
   "video_setting_av_delay_tap_to_type": "Tap to type a value",
+  "video_setting_background_play": "Keep playing audio in background",
+  "video_setting_background_play_hint": "Sound keeps playing after you leave the app or lock the screen; the picture comes back when you return",
   "video_setting_brightness_swipe_gesture": "스와이프로 밝기 조절",
   "video_setting_brightness_swipe_gesture_hint": "비디오 왼쪽 절반에서 위/아래로 스와이프하면 화면 밝기가 바뀝니다. 끄면 시스템 밝기 슬라이더를 사용합니다",
   "video_setting_clip_export_video_bitrate": "클립 내보내기 비디오 비트레이트",

@@ -1039,6 +1039,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_asbplayer_config',
   'video_auto_play_next',
   'video_auto_scrape',
+  // bool（默认 false，拍板台 42UUu_kcwD）：手机 / 平板切出 app 或锁屏后视频的声音
+  // 继续播（画面轨 `vid=no` 挂起、回前台恢复）；关着 = 进后台即暂停、回来续播
+  // （BUG-2544）。桌面最小化本来就不暂停，不读这个键。
+  'video_background_play',
   'video_black_flicker_notice_suppressed',
   'video_control_customization',
   'video_custom_action_bindings',

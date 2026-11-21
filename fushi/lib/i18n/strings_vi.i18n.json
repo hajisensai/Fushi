@@ -13007,6 +13007,8 @@
   "video_setting_av_delay_hint_short": "+ = later, − = earlier",
   "video_setting_av_delay_reset": "Reset to 0",
   "video_setting_av_delay_tap_to_type": "Tap to type a value",
+  "video_setting_background_play": "Keep playing audio in background",
+  "video_setting_background_play_hint": "Sound keeps playing after you leave the app or lock the screen; the picture comes back when you return",
   "video_setting_brightness_swipe_gesture": "Vuốt để chỉnh độ sáng",
   "video_setting_brightness_swipe_gesture_hint": "Vuốt lên/xuống ở nửa trái video để đổi độ sáng màn hình. Tắt để dùng thanh trượt độ sáng của hệ thống",
   "video_setting_clip_export_video_bitrate": "Bitrate video khi xuất clip",

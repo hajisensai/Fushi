@@ -13007,6 +13007,8 @@
   "video_setting_av_delay_hint_short": "正数延后，负数提前",
   "video_setting_av_delay_reset": "归零",
   "video_setting_av_delay_tap_to_type": "点按直接输入",
+  "video_setting_background_play": "后台继续播放声音",
+  "video_setting_background_play_hint": "切出 app 或锁屏后声音继续播放，回来时画面恢复",
   "video_setting_brightness_swipe_gesture": "竖滑调节亮度",
   "video_setting_brightness_swipe_gesture_hint": "在画面左半边上下滑动调节屏幕亮度；关闭后改用系统亮度条",
   "video_setting_clip_export_video_bitrate": "片段导出视频码率",

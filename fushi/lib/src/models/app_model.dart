@@ -7235,6 +7235,12 @@ class AppModel
   Future<void> setVideoPortraitSubtitleList(bool value) =>
       prefsRepo.setVideoPortraitSubtitleList(value);
 
+  /// 手机 / 平板切出 app 或锁屏后视频声音继续播，默认关（拍板台 42UUu_kcwD）。
+  bool get videoBackgroundPlay => prefsRepo.videoBackgroundPlay;
+
+  Future<void> setVideoBackgroundPlay(bool value) =>
+      prefsRepo.setVideoBackgroundPlay(value);
+
   /// 记住每部作品上次手动转到的方向，默认关。
   bool get videoRememberOrientation => prefsRepo.videoRememberOrientation;
 
