@@ -11,6 +11,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
     show VideoMetadataLookup;
 import 'package:fushi_engine/media/video/metadata/video_metadata_wire.dart';
+import 'package:fushi_engine/media/video/stream_video_sync.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
@@ -2846,6 +2847,48 @@ class InterconnectSyncBackend extends SyncBackend
     final HttpClientResponse res = await req.close();
     await res.drain<void>();
     _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id');
+  }
+
+  /// host 是否声明能收流媒体书注册（`liveLibrary.streamVideos`，拍板台 Z2OhxAjKVv）。
+  ///
+  /// 推之前必须先问：老 host 没有 `.../streamentry` 路由，带后缀的 PUT 会落进它的
+  /// 「裸 id 上传视频」分支，把 JSON 请求体当视频文件入库。同一 host 基址只探一次。
+  Future<bool> hostAcceptsStreamVideos() async =>
+      (await _liveLibraryCapabilities())[kLiveLibraryStreamVideosCapability] ==
+      true;
+
+  /// 在对端 host 视频库注册一本流媒体书（只有标题 + URL + 重开规格，不传字节）。
+  ///
+  /// [presentSinceAt] 是本机开始拥有这一行的时刻，host 的删除墓碑闸门据此判断这份
+  /// 是删除之前就有的（409 → [StreamVideoPushResult.vetoed]），还是删后重新加入的。
+  /// 其余非 2xx 照常抛。调用方须先确认 [hostAcceptsStreamVideos]。
+  Future<StreamVideoPushResult> putRemoteStreamVideo(
+    String id,
+    StreamVideoRegistration entry, {
+    int? presentSinceAt,
+  }) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'PUT',
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}/'
+          '$kStreamVideoEntryPathSuffix',
+    );
+    req.headers.set('Content-Type', 'application/json; charset=utf-8');
+    _setPresentSinceHeader(req.headers, presentSinceAt);
+    req.add(utf8.encode(jsonEncode(entry.toJson())));
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == 409) {
+      await res.drain<void>();
+      return StreamVideoPushResult.vetoed;
+    }
+    _ops!.checkStatus(
+      res.statusCode,
+      'PUT /api/library/videos/$id/$kStreamVideoEntryPathSuffix',
+    );
+    final Object? decoded = jsonDecode(await _readBodyBounded(res));
+    return decoded is Map && decoded['created'] == true
+        ? StreamVideoPushResult.created
+        : StreamVideoPushResult.existed;
   }
 
   /// 通知对端 host 删除 bookUid 为 [id] 的视频（远端视频卡长按删除 / 「从所有设备

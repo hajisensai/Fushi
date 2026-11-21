@@ -54,6 +54,7 @@ import 'package:fushi_engine/sync/video_metadata_work_target.dart';
 import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
+import 'package:fushi_engine/media/video/stream_video_sync.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show videoBookDiscTitlePath, videoBookEpisodePath;
 import 'package:fushi_engine/media/video/video_member_file.dart'
@@ -179,7 +180,8 @@ abstract class _LocalLibraryHostBase
         VideoMetadataHost,
         VideoMetadataOrderingHost,
         TagSyncHost,
-        MediaLinkSyncHost {
+        MediaLinkSyncHost,
+        StreamVideoSyncHost {
   FushiDatabase get _db;
   Directory get _dictionaryResourceRoot;
   SyncAssetPackageService get _packages;

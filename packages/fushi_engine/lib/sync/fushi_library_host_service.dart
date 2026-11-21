@@ -5,6 +5,7 @@ import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/dandanplay_file_key.dart'
     show DandanplayFileKey;
 import 'package:fushi_engine/models/local_audio_content_id.dart';
+import 'package:fushi_engine/media/video/stream_video_sync.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
@@ -2870,6 +2871,7 @@ class RemoteVideoInfo {
     this.importedAt,
     this.fileName,
     this.peerPlayable = true,
+    this.stream,
   });
 
   final String id;
@@ -2887,6 +2889,13 @@ class RemoteVideoInfo {
   /// wire：只在 false 时写 `peerPlayable: false`；缺省 = true，旧 host（不带该键）
   /// 与改动前逐字节同行为；旧 client 不认识该键，按旧行为照常列出。
   final bool peerPlayable;
+
+  /// 流媒体书（「粘贴 URL 导入」/ 网页视频站，[isSyncableStreamVideo]）的重开信息：
+  /// URL + 重开规格 + host 拥有时刻。client 据此在本机落一本同 uid 的流媒体书，行两端
+  /// 都有之后进度 / 播放偏好 sweep 照常接管（拍板台 Z2OhxAjKVv）。其余条目恒 null。
+  ///
+  /// wire：`stream: {url, spec?, addedAt?}`，只在非 null 时写；旧 client 不认识该键。
+  final RemoteStreamVideoEntry? stream;
 
   /// host 视频文件的**文件名**（只取 basename，绝不带目录——目录结构仍留在 host）。
   ///
@@ -3056,6 +3065,7 @@ class RemoteVideoInfo {
     importedAt: importedAt,
     fileName: fileName,
     peerPlayable: peerPlayable,
+    stream: stream,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -3103,6 +3113,7 @@ class RemoteVideoInfo {
     if (collection != null) 'collection': collection!.toJson(),
     if (_isNonEmpty(fileName)) 'fileName': fileName,
     if (!peerPlayable) 'peerPlayable': false,
+    if (stream != null) kRemoteStreamVideoWireKey: stream!.toJson(),
   };
 
   RemoteVideoInfo copyWith({
@@ -3161,6 +3172,7 @@ class RemoteVideoInfo {
     importedAt: importedAt,
     fileName: fileName,
     peerPlayable: peerPlayable,
+    stream: stream,
   );
 
   static RemoteVideoInfo fromJson(Map<String, Object?> json) {
@@ -3209,6 +3221,7 @@ class RemoteVideoInfo {
       collection: RemoteCollectionMembership.fromJson(json['collection']),
       fileName: _jsonString(json['fileName']),
       peerPlayable: json['peerPlayable'] != false,
+      stream: RemoteStreamVideoEntry.tryParse(json[kRemoteStreamVideoWireKey]),
     );
   }
 }
@@ -3795,6 +3808,22 @@ abstract interface class MediaLinkSyncHost {
 
   /// 把 client 上报的清单按 LWW 并入 host DB，返回并入后的 host 清单。
   Future<MediaLinkManifest> mergeMediaLinkManifest(MediaLinkManifest incoming);
+}
+
+/// host 端「收下对端注册的流媒体书」的**可选**能力（拍板台 Z2OhxAjKVv，
+/// `stream_video_sync.dart`）。
+///
+/// 与 [MediaLinkSyncHost] 同范式：server 用 `is` 探测，不实现 →
+/// `PUT /api/library/videos/<id>/streamentry` 404，能力位
+/// `liveLibrary.streamVideos=false`。client **先看能力位再推**：老 host 没有这条
+/// 路由，带后缀的 PUT 会落进「裸 id 上传视频」分支，把请求体当视频文件入库。
+abstract interface class StreamVideoSyncHost {
+  /// 在 host 视频库落一本 uid 为 [id] 的流媒体书（不传任何视频字节）。
+  ///
+  /// host 已有同 uid 的行时不改它（host 自己的标题 / 封面 / 进度是真相），返回
+  /// false；新建返回 true。[id] / URL 不满足 [isSyncableStreamVideo] 抛
+  /// [ArgumentError]（端点回 400）。
+  Future<bool> registerStreamVideo(String id, StreamVideoRegistration entry);
 }
 
 /// host 端「视频刮削元数据」的**可选**能力（`docs/specs/2026-09-12-interconnect-scrape-metadata.md`）。

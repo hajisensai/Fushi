@@ -659,6 +659,10 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // 互联作品图谱同步（`/api/library/media-links`）。老 host 无此字段 / false
         // → client 跳过作品图谱维度。
         'mediaLinks': _libraryService is MediaLinkSyncHost,
+        // 流媒体书注册（`PUT /api/library/videos/<id>/streamentry`，拍板台
+        // Z2OhxAjKVv）。老 host 无此字段 → client 不推（见该端点注释）。
+        kLiveLibraryStreamVideosCapability:
+            _libraryService is StreamVideoSyncHost,
         // 弱网实时转码（`/streamurl?maxHeight=&maxBitrate=`）。老 host 无此字段 →
         // client 不显示画质档，行为与从前一致。字段随用户开关与本机 ffmpeg 可用性
         // 实时变化，不是启动时的快照；最终真相仍是 `/streamurl` 回的 `transcoded`。
