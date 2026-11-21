@@ -84,6 +84,7 @@ import 'package:fushi/src/media/manga/reader/manga_reader_auto_ocr.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_bar.dart';
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_controller.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/media/manga/reader/manga_lookup_pause.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_mining.dart';
@@ -7640,60 +7641,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                       ),
                     ),
                   ),
-                  // 漫画朗读播放卡：跟界面一起显隐（用户 2026-11-20：隐藏界面时
-                  // 卡片不该还挡在画面上；音频照常播，暂停 / 上下句用快捷键或唤出
-                  // 界面），显示时让到底部 chrome 上方。
-                  if (_readAloud.controller
-                      case final MangaReadAloudController readAloud)
-                    Positioned(
-                      left: kMangaChromeEdgeInset,
-                      right: kMangaChromeEdgeInset,
-                      bottom:
-                          MediaQuery.paddingOf(context).bottom +
-                          (_chromeVisible && _chromeActionsEnabled
-                              ? kMangaChromeBottomBarHeight
-                              : kMangaChromeBottomGap),
-                      child: ListenableBuilder(
-                        listenable: readAloud,
-                        builder: (BuildContext context, Widget? _) =>
-                            MangaChromeReveal(
-                              fromTop: false,
-                              visible: readAloud.isActive && _chromeVisible,
-                              child: Center(
-                                child: MangaReadAloudBar(
-                                  controller: readAloud,
-                                  keyHints: _readAloudKeyHints,
-                                  onVoice: () =>
-                                      unawaited(_readAloud.switchVoice()),
-                                ),
-                              ),
-                            ),
-                      ),
-                    ),
-                  // 漫画有声（成品音频）播放卡：同上，跟界面一起显隐。
-                  if (_readAloud.audio
-                      case final MangaAudioPlaybackDriver audio)
-                    Positioned(
-                      left: kMangaChromeEdgeInset,
-                      right: kMangaChromeEdgeInset,
-                      bottom:
-                          MediaQuery.paddingOf(context).bottom +
-                          (_chromeVisible && _chromeActionsEnabled
-                              ? kMangaChromeBottomBarHeight
-                              : kMangaChromeBottomGap),
-                      child: MangaChromeReveal(
-                        fromTop: false,
-                        visible: _chromeVisible,
-                        child: Center(
-                          child: MangaAudioPlaybackBar(
-                            key: ValueKey<MangaAudioPlaybackDriver>(audio),
-                            driver: audio,
-                            keyHints: _readAloudKeyHints,
-                            onStop: _readAloud.stopAudio,
-                          ),
-                        ),
-                      ),
-                    ),
                   // 隐藏界面时角落常驻页码：全出血阅读下唯一的进度可见性。
                   if (!_chromeVisible &&
                       _chromeContentReady &&
@@ -7934,24 +7881,83 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           jumpMarks: _mangaJumpMarks(),
         ),
       ),
-      toolbar: MangaReaderToolbar(
-        groups: plan.toolbar,
-        // FAB = 本页主操作：识别框开关（查词的入口）。开 = 圆角方、关 = 圆，按
-        // M3E 弹簧形状变形；与快捷键 / 悬浮球同一执行体。Apple 无 FAB，开关
-        // 在工具栏里（[_ocrBoxesToggleAction]）。
-        fab: isGlassDesign(context)
-            ? null
-            : KeyedSubtree(
-                key: const ValueKey<String>('manga_ocr_boxes_toggle'),
-                child: FushiToolbarFab(
-                  icon: _ocrBoxesIcon,
-                  tooltip: t.manga_ocr_boxes_toggle,
-                  rounded: _showOcrBoxes,
-                  morphing: true,
-                  onPressed: () => unawaited(_toggleOcrBoxes()),
-                ),
-              ),
-      ),
+      toolbar:
+          _buildPlaybackBar(plan) ??
+          MangaReaderToolbar(
+            groups: plan.toolbar,
+            // FAB = 本页主操作：识别框开关（查词的入口）。开 = 圆角方、关 = 圆，按
+            // M3E 弹簧形状变形；与快捷键 / 悬浮球同一执行体。Apple 无 FAB，开关
+            // 在工具栏里（[_ocrBoxesToggleAction]）。
+            fab: isGlassDesign(context)
+                ? null
+                : KeyedSubtree(
+                    key: const ValueKey<String>('manga_ocr_boxes_toggle'),
+                    child: FushiToolbarFab(
+                      icon: _ocrBoxesIcon,
+                      tooltip: t.manga_ocr_boxes_toggle,
+                      rounded: _showOcrBoxes,
+                      morphing: true,
+                      onPressed: () => unawaited(_toggleOcrBoxes()),
+                    ),
+                  ),
+          ),
+    );
+  }
+
+  /// 朗读 / 有声播放期间替换底栏工具栏那一行的播放条（与小说阅读器的有声书播放条
+  /// 同一思路，用户 2026-11-21）；没在播放时为 null（照常画工具栏）。
+  ///
+  /// 播放条与工具栏同高、坐在同一个槽里，所以固定态正文让位高度不变、悬浮态照旧浮在
+  /// 页图上并跟着底栏一起收起——画面不会因为开始播放被挤上去，也不会在收起界面后
+  /// 还留一块浮层。底栏原有按钮并进播放条中段（[_playbackBarMiddle]）。
+  Widget? _buildPlaybackBar(MangaChromePlan plan) {
+    final MangaAudioPlaybackDriver? audio = _readAloud.audio;
+    if (audio != null) {
+      return MangaAudioPlaybackBar(
+        key: ValueKey<MangaAudioPlaybackDriver>(audio),
+        driver: audio,
+        keyHints: _readAloudKeyHints,
+        onStop: _readAloud.stopAudio,
+        middle: _playbackBarMiddle(plan),
+      );
+    }
+    final MangaReadAloudController? readAloud = _readAloud.controller;
+    if (readAloud != null && readAloud.isActive) {
+      return MangaReadAloudBar(
+        key: ValueKey<MangaReadAloudController>(readAloud),
+        controller: readAloud,
+        keyHints: _readAloudKeyHints,
+        onVoice: () => unawaited(_readAloud.switchVoice()),
+        middle: _playbackBarMiddle(plan),
+      );
+    }
+    return null;
+  }
+
+  /// 播放条中段：底栏工具栏原有的按钮（同一份动作表、同一执行体），MD3 下再补上
+  /// 识别框开关（平时是工具栏旁的 FAB；Apple 下它本来就在动作表里）。
+  Widget? _playbackBarMiddle(MangaChromePlan plan) {
+    final List<MangaChromeAction> actions = <MangaChromeAction>[
+      for (final List<MangaChromeAction> g in plan.toolbar) ...g,
+      if (!isGlassDesign(context) && _chromeActionsEnabled)
+        _ocrBoxesToggleAction(),
+    ];
+    if (actions.isEmpty) return null;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        for (final MangaChromeAction a in actions)
+          FushiIconButton(
+            key: a.key,
+            icon: a.icon,
+            tooltip: a.label,
+            padTouchTarget: true,
+            busy: a.busy,
+            selected: a.active && !a.busy,
+            enabled: a.onPressed != null,
+            onTap: a.onPressed,
+          ),
+      ],
     );
   }
 
