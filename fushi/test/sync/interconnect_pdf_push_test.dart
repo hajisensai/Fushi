@@ -241,7 +241,7 @@ void main() {
     expect(pdfImports, isEmpty, reason: 'host 清单的 hasPdfContent 必须算「远端已有」');
   });
 
-  test('host 收不了 PDF（无头服务端 / 老 host）：PDF 留在本机、不报错，EPUB 照推', () async {
+  test('host 收不了 PDF（无头服务端）：PDF 留在本机、报告里说明一次，EPUB 照推', () async {
     await startHost(acceptsPdf: false);
     final FushiDatabase localDb = _memDb();
     addTearDown(localDb.close);
@@ -258,7 +258,14 @@ void main() {
 
     final SyncRunReport report = await runClient(localDb);
 
-    expect(report.errors, isEmpty, reason: '${report.errors}');
+    // 拍板 other-sync-peer-version-errors：PDF 没推过去要看得见。host 声明了
+    // `pdfBooks: false`（认识这项能力、只是收不了）→ 记「对端不支持」，不叫用户升级。
+    expect(
+      report.peerGaps.map((SyncPeerGap g) => (g.dimension, g.outdated)),
+      <(SyncPeerGapDimension, bool)>[(SyncPeerGapDimension.pdfBooks, false)],
+      reason: '${report.errors}',
+    );
+    expect(report.errors, <String>[report.peerGaps.single.message]);
     expect(await hostDb.getEpubBook('LocalOnlyPdf'), isNull);
     expect(await hostDb.getEpubBook('PlainEpub'), isNotNull);
   });

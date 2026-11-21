@@ -209,6 +209,35 @@ void main() {
     expect(await result, <String>{'b'});
   });
 
+  testWidgets('多选模板 maxSelected：选满后其余项点不动，取消一项后恢复', (
+    WidgetTester tester,
+  ) async {
+    final BuildContext context = await pumpHost(tester);
+    final Future<Set<String>?> result = showFushiMultiChoiceDialog<String>(
+      context: context,
+      title: '多选',
+      initial: const <String>{'a', 'b'},
+      maxSelected: 2,
+      confirmLabel: 'OK',
+      cancelLabel: 'NO',
+      options: const <FushiChoiceOption<String>>[
+        FushiChoiceOption<String>(value: 'a', label: 'A'),
+        FushiChoiceOption<String>(value: 'b', label: 'B'),
+        FushiChoiceOption<String>(value: 'c', label: 'C'),
+      ],
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('C'));
+    await tester.pump();
+    await tester.tap(find.text('A'));
+    await tester.pump();
+    await tester.tap(find.text('C'));
+    await tester.pump();
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    expect(await result, <String>{'b', 'c'});
+  });
+
   testWidgets('进度模板：handle.close 关闭对话框并完成 done', (WidgetTester tester) async {
     final BuildContext context = await pumpHost(tester);
     final FushiProgressDialogHandle handle = showFushiProgressDialog(

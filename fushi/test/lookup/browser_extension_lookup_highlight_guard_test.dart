@@ -298,9 +298,13 @@ void main() {
             greaterThanOrEqualTo(0),
             reason: '${content.path} 缺 mousemove 监听器',
           );
+          // 截到监听器自身的收尾 `\n});\n`，不用固定字符窗口：扫描延迟（反馈 L4Vhk0hOjM）
+          // 在监听器里加了一段计时分支，就把末尾这次调用挤出了旧的 900 字窗口（同
+          // topLevelFunctionBody 注释里 PR #804 的假红）。
+          final int mmEnd = src.indexOf('\n});\n', mmIdx);
           final String mmBody = src.substring(
             mmIdx,
-            (mmIdx + 900).clamp(0, src.length),
+            mmEnd < 0 ? src.length : mmEnd,
           );
           expect(
             RegExp(

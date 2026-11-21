@@ -185,6 +185,12 @@ uint8Pixels(img.Image image) {
 Uint8List? encodeImageAsJpeg(Uint8List bytes, {required int quality}) =>
     FushiComputeImage.instance.toJpeg(bytes, quality: quality);
 
+/// 编码图片字节 → PNG 字节（无损，按 EXIF / TIFF 方向转正；灰度源出 8 位灰度 PNG，16 位
+/// 截成 8 位，多页 TIFF 只取首页），解码与编码都在原生内核。坏字节返回 null。同步、整页
+/// 几十到几百毫秒，调用方放后台 isolate。
+Uint8List? encodeImageAsPng(Uint8List bytes) =>
+    FushiComputeImage.instance.toPng(bytes);
+
 /// 原生 PNG 解码，像素布局同 `img.decodePng`（灰度 1 通道 / 灰度 + alpha 2 通道 / RGB / RGBA，
 /// 调色板展开，不转方向）；不是 PNG 或解不开返回 null。16 位与 1/2/4 位灰度一律给 8 位。
 img.Image? decodePngNative(Uint8List bytes) {

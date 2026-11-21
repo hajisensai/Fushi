@@ -70,7 +70,9 @@ class DatabaseSidecarArtifactStore implements SidecarArtifactHashStore {
   });
 
   final FushiDatabase database;
-  final int sourceId;
+
+  /// 记账行的来源；null = 无来源本机视频（见 `persistedScrapeSourceId`）。
+  final int? sourceId;
   final int runId;
   final Map<String, VideoSidecarArtifactContext> _contexts =
       <String, VideoSidecarArtifactContext>{};

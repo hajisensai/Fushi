@@ -242,6 +242,67 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
     );
   }
 
+  /// 排序字段（Anki 的 sort field）：浏览页放大显示的主字段、「排序字段」排序列按的字段。默认第一个字段。
+  Future<void> _pickSortField(SrsNoteTypeView type) async {
+    final String? current = type.effectiveSortFieldId;
+    final String? id = await showFushiChoiceDialog<String>(
+      context: context,
+      title: t.srs_note_types_sort_field,
+      message: t.srs_note_types_sort_field_hint,
+      icon: FushiIcons.sort,
+      selected: current,
+      options: <FushiChoiceOption<String>>[
+        for (final SrsFieldDef f in type.fields)
+          FushiChoiceOption<String>(value: f.id, label: _fieldTitle(f)),
+      ],
+    );
+    if (id == null || id == current) return;
+    // 选回第一个字段 = 清掉显式设置（以后调字段顺序时跟着新的第一个字段走，与 Anki 默认一致）。
+    final bool first = id == type.fields.firstOrNull?.id;
+    _run(
+      'SrsNoteTypeEditor.sortField',
+      (SrsDbStore s) => s.setSortField(type.id, first ? null : id),
+    );
+  }
+
+  /// 浏览预览的副字段：主字段下面小字显示的字段，最多 [srsBrowseFieldsMax] 个；一个都不勾 = 自动
+  /// （排序字段之外按字段顺序的前两个非空字段）。
+  Future<void> _pickBrowseFields(SrsNoteTypeView type) async {
+    final Set<String>? picked = await showFushiMultiChoiceDialog<String>(
+      context: context,
+      title: t.srs_note_types_browse_fields,
+      message: t.srs_note_types_browse_fields_hint(n: srsBrowseFieldsMax),
+      initial: <String>{...?type.browseFieldIds},
+      maxSelected: srsBrowseFieldsMax,
+      options: <FushiChoiceOption<String>>[
+        for (final SrsFieldDef f in type.fields)
+          if (f.id != type.effectiveSortFieldId)
+            FushiChoiceOption<String>(value: f.id, label: _fieldTitle(f)),
+      ],
+    );
+    if (picked == null) return;
+    final List<String>? next = picked.isEmpty
+        ? null
+        : <String>[
+            for (final SrsFieldDef f in type.fields)
+              if (picked.contains(f.id)) f.id,
+          ];
+    if (_sameIds(next, type.browseFieldIds)) return;
+    _run(
+      'SrsNoteTypeEditor.browseFields',
+      (SrsDbStore s) => s.setBrowseFields(type.id, next),
+    );
+  }
+
+  static bool _sameIds(List<String>? a, List<String>? b) {
+    if (a == null || b == null) return a == b;
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
   // ------------------------------------------------------------------ 字段
 
   String? _validateField(
@@ -770,6 +831,13 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
     final SrsFieldDef? freq = type.fields
         .where((SrsFieldDef f) => f.id == type.effectiveFreqFieldId)
         .firstOrNull;
+    final SrsFieldDef? sort = type.fieldById(type.effectiveSortFieldId ?? '');
+    final List<SrsFieldDef>? browse = type.browseFieldIds == null
+        ? null
+        : <SrsFieldDef>[
+            for (final String id in type.browseFieldIds!)
+              if (type.fieldById(id) case final SrsFieldDef f) f,
+          ];
     return FushiCard(
       key: const ValueKey<String>('srs-note-type-overview'),
       padding: EdgeInsets.zero,
@@ -847,6 +915,37 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
                       onPressed: () => srsRunLogged(
                         'SrsNoteTypeEditor.freqField',
                         () => _pickFreqField(type),
+                      ),
+                    ),
+                    FushiActionChip(
+                      key: const ValueKey<String>('srs-note-type-sort-row'),
+                      icon: FushiIcons.sort,
+                      label: t.srs_note_types_sort_chip(
+                        name: sort == null
+                            ? t.srs_note_types_term_field_none
+                            : srsFieldDisplayName(sort),
+                      ),
+                      onPressed: () => srsRunLogged(
+                        'SrsNoteTypeEditor.sortField',
+                        () => _pickSortField(type),
+                      ),
+                    ),
+                    FushiActionChip(
+                      key: const ValueKey<String>('srs-note-type-browse-row'),
+                      icon: FushiIcons.sort,
+                      label: t.srs_note_types_browse_chip(
+                        names: switch (browse) {
+                          null => t.srs_note_types_browse_fields_auto,
+                          [] => t.srs_note_types_term_field_none,
+                          final List<SrsFieldDef> fs =>
+                            fs
+                                .map(srsFieldDisplayName)
+                                .join(t.srs_note_types_browse_fields_separator),
+                        },
+                      ),
+                      onPressed: () => srsRunLogged(
+                        'SrsNoteTypeEditor.browseFields',
+                        () => _pickBrowseFields(type),
                       ),
                     ),
                   ],

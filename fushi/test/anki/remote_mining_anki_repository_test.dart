@@ -360,7 +360,7 @@ void main() {
       expect(outcome.error.toString(), contains('Connection refused'));
     });
 
-    test('主机上复习库在换代途中（BUG-5069）：分类成「那台设备上的复习要先升级」，不说成 Anki', () async {
+    test('主机上复习库在换代途中（BUG-5085）：分类成「那台设备上的复习要先升级」，不说成 Anki', () async {
       const String hostReason = 'Fushi review data needs a one-time upgrade.';
       final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
         local: _FakeLocal(),

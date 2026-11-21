@@ -191,7 +191,8 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
 - **PDF books over interconnect (receiving)**: the server does not wire
   `importPdfBookFromFile` (PDF import needs pdfrx for the page count and cover), so it
   advertises `liveLibrary.pdfBooks=false` and clients keep their PDF books local instead of
-  pushing them. The server still lists and serves any PDF already in its library
+  pushing them; the client's sync report says so once per round ("the peer does not
+  support this", not "update"). The server still lists and serves any PDF already in its library
   (`hasPdfContent`, BUG-4381).
 - **Subtitles (what is still app-only)**: downloads source subtitles and
   `POST /api/library/videos/<id>/subtitle/backfill` works on the server (one provider

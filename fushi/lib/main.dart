@@ -876,7 +876,7 @@ void main([List<String> args = const <String>[]]) {
       // 写入后同样刷新牌组列表 / 首页复习条的计数。
       appModel.srsCardsAddedNotifier = () =>
           container.read(srsRevisionProvider.notifier).state++;
-      // BUG-5069：复习库要升级时制卡失败提示上的「打开复习」：与小组件「复习」入口同一条路（切到复习 tab、
+      // BUG-5085：复习库要升级时制卡失败提示上的「打开复习」：与小组件「复习」入口同一条路（切到复习 tab、
       // 退回首页层级，编辑页的 PopScope 照常拦未保存改动）。复习 tab 本身就是升级 / 说明页。
       mineFailureOpenReview = () {
         if (!appModel.moduleVisibility.isEnabled(ModuleId.srs)) return;

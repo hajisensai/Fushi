@@ -652,6 +652,9 @@ String srsFieldKeyLabel(SrsEntityKind kind, String key) => switch (key) {
   SrsFieldKeys.noteType => t.srs_note_type,
   SrsFieldKeys.css => t.srs_note_types_styling,
   SrsFieldKeys.termField => t.srs_note_types_term_field,
+  SrsFieldKeys.freqField => t.srs_note_types_freq_field,
+  SrsFieldKeys.sortField => t.srs_note_types_sort_field,
+  SrsFieldKeys.browseFields => t.srs_note_types_browse_fields,
   _ => key,
 };
 

@@ -7,8 +7,9 @@ extension _SyncOrchestratorTags on SyncOrchestrator {
   /// 本机清单未被 host 覆盖（[tagManifestCovers]）才 POST → host 同一内核并入。
   ///
   /// 按名 LWW 与应用顺序无关、重放幂等，不需要合集那样的因果基线；中途失败下轮
-  /// 原样重来即可。老 host 无端点（GET 404 → null）计入 report.errors（同合集：
-  /// 静默跳过会让用户只看见「标签没同步」却没有任何线索），其余维度照常。
+  /// 原样重来即可。老 host 无端点（GET 404 → null）经 [_notePeerGapLive] 记一条
+  /// 「对端版本过旧」（同合集：静默跳过会让用户只看见「标签没同步」却没有任何
+  /// 线索），其余维度照常。
   Future<void> _syncTagsLive(
     SyncRunReport report,
     InterconnectSyncBackend backend,
@@ -16,10 +17,7 @@ extension _SyncOrchestratorTags on SyncOrchestrator {
     try {
       final TagManifest? remote = await backend.getRemoteTagManifest();
       if (remote == null) {
-        report.errors.add(
-          'tags live sync: host has no tags endpoint '
-          '(older app version) — update the host app to sync tags',
-        );
+        await _notePeerGapLive(report, backend, SyncPeerGapDimension.tags);
         return;
       }
       late final TagManifest local;
