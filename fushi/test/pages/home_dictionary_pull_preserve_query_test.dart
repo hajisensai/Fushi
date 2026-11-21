@@ -205,9 +205,10 @@ void main() {
     expect(buildStart, greaterThan(clearFromPullStart));
     final String clearFromPull = src.substring(clearFromPullStart, buildStart);
     // TODO-931：常驻热槽使 entries 永不空，pull-clear 判据改用 hasVisiblePopup（隐藏热槽不算）。
+    // 共用查词宿主（design-shared-lookup-webview）：只看本页自己的会话。
     expect(
       clearFromPull,
-      contains('_popup.hasVisiblePopup || _popup.isSearchingUi'),
+      contains('_hasVisiblePopup || (_ownsPopup && _popup.isSearchingUi)'),
     );
     expect(clearFromPull, contains('_clearSearch();'));
 

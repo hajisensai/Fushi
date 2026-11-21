@@ -633,7 +633,16 @@ class GlobalLookupController {
             ),
         // galgame 台词朗读（反馈 N8qzDdzIvD）：台词浮窗「朗读」按钮的同一个方法。
         ShortcutAction.globalExternalGalgameSpeakLine: speakGalgameLine,
+        // galgame 台词浮窗显隐（反馈 fMicnouU6V）。
+        ShortcutAction.globalExternalGalgameOverlayToggle: toggleGalgameOverlay,
       };
+
+  /// [ShortcutAction.globalExternalGalgameOverlayToggle] 的执行体：显示 / 隐藏
+  /// galgame 台词浮窗。落到 [GalHookTextOverlayController.toggleVisibility]——浮窗
+  /// 「关闭」按钮与文本钩子页「显示 Hook 浮窗」各自调的同一对方法，热键与按钮行为
+  /// 一致。没在 Hook 游戏（浮窗没启动）时首行直接返回，按热键静默无动作。
+  Future<void> toggleGalgameOverlay() =>
+      GalHookTextOverlayController.instance.toggleVisibility();
 
   /// [ShortcutAction.globalExternalGalgameSpeakLine] 的执行体：朗读 / 停止当前显示
   /// 的 galgame 台词。直接调台词浮窗「朗读」按钮（`onSpeakLine`）接的
@@ -849,7 +858,8 @@ class GlobalLookupController {
         ShortcutAction.globalExternalFloatingLyricToggle =>
           FloatingLyricChannel.supported,
         // 台词浮窗（与它的 TTS）只在 Windows 有：别的平台注册了也没有执行对象。
-        ShortcutAction.globalExternalGalgameSpeakLine =>
+        ShortcutAction.globalExternalGalgameSpeakLine ||
+        ShortcutAction.globalExternalGalgameOverlayToggle =>
           GalHookTextOverlayController.isSupported,
         _ => true,
       };
