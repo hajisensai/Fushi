@@ -424,7 +424,8 @@ class MangaAudioReviewView extends StatelessWidget {
   /// 本卷正在标注：只能看，不能改。
   final bool locked;
 
-  /// 正在存上一次改动：改说话人 / 确认 / 新角色暂不可点，存完自动跳下一句。
+  /// 正在存上一次改动：改说话人 / 确认暂不可点，存完自动跳下一句（「新角色」由页面
+  /// 状态里的同一把闸挡住）。
   final bool saving;
 
   bool get _readOnly => locked || saving;
@@ -571,7 +572,7 @@ class MangaAudioReviewView extends StatelessWidget {
                 key: const ValueKey<String>('$keyPrefix-new-speaker'),
                 icon: FushiIcons.personAdd,
                 label: t.audiobook_studio_cast_new_speaker,
-                onPressed: saving ? null : onNewSpeaker,
+                onPressed: onNewSpeaker,
               ),
           ],
         ),

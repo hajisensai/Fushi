@@ -244,7 +244,6 @@ void main() {
       expect(find.byKey(const ValueKey<String>('$_p-locked')), findsNothing);
       await _tap(tester, find.byKey(const ValueKey<String>('$_p-speaker-爱音')));
       await _tap(tester, find.byKey(const ValueKey<String>('$_p-confirm')));
-      await _tap(tester, find.byKey(const ValueKey<String>('$_p-new-speaker')));
       await tester.pump(const Duration(milliseconds: 500));
       expect(calls, isEmpty);
     });
