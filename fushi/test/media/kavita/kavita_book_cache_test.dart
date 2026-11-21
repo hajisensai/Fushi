@@ -434,12 +434,16 @@ void main() {
       final KavitaCacheCleanup result = await service(
         cacheLimit: 2,
       ).trimCache();
+      final ({int selects, int shelfScans}) cost = (
+        selects: counter.selects,
+        shelfScans: counter.shelfScans,
+      );
       expect(result.removed, cached - 2);
       expect(
         await service().cachedBookKeys(),
         unorderedEquals(<String>['C${cached - 1}', 'C$cached']),
       );
-      return (selects: counter.selects, shelfScans: counter.shelfScans);
+      return cost;
     }
 
     test('one shelf snapshot per trim; per-victim work is constant', () async {
@@ -449,10 +453,11 @@ void main() {
       print('HBK-AUDIT-041 trim cost: 10 books $small, 40 books $large');
       expect(large.shelfScans, 1, reason: '整个淘汰只扫一次书架');
       expect(small.shelfScans, 1);
-      // 多淘汰 30 本，查询增量必须与「多删的本数」线性相称（每本只复核自己），
-      // 而不是 O(M·N)。
+      // 多淘汰 30 本，查询增量必须与「多删的本数」线性相称（每本只复核自己：推进度
+      // 前读位置、锁内重读行与位置、6 张用户数据表、删书桩），而不是 O(M·N)——旧实现
+      // 每本要把整个书架连同每本的位置与 6 张表各查两遍。
       final double perVictim = (large.selects - small.selects) / 30;
-      expect(perVictim, lessThanOrEqualTo(12), reason: '每多淘汰一本的查询数是常数');
+      expect(perVictim, lessThanOrEqualTo(16), reason: '每多淘汰一本的查询数是常数');
     });
   });
 
