@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/epub/book_css_repository.dart';
 import 'package:fushi_engine/media/video/video_member_file.dart';
+import 'package:fushi_engine/media/video/stream_video_sync.dart';
+import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
@@ -83,6 +85,7 @@ part 'sync_orchestrator/video_metadata.part.dart';
 part 'sync_orchestrator/tombstones.part.dart';
 part 'sync_orchestrator/books.part.dart';
 part 'sync_orchestrator/videos.part.dart';
+part 'sync_orchestrator/stream_videos.part.dart';
 part 'sync_orchestrator/audiobooks.part.dart';
 part 'sync_orchestrator/dictionaries.part.dart';
 part 'sync_orchestrator/local_audio.part.dart';
@@ -403,6 +406,14 @@ class SyncRunReport {
   /// >0 时合集详情页 / 视频卡的简介、评分、分集名会变，计入 [needsLocalLibraryRefresh]。
   int videoMetadataUpdated = 0;
 
+  /// 本轮从互联 host 落到本机的流媒体书（「粘贴 URL 导入」/ 网页视频站，拍板台
+  /// Z2OhxAjKVv）。视频库多出新行，计入 [needsLocalLibraryRefresh]。
+  int streamVideosPulled = 0;
+
+  /// 本轮注册到互联 host 的流媒体书（只推元数据，不传字节；export-only，不计入
+  /// [needsLocalLibraryRefresh]）。
+  int streamVideosPushed = 0;
+
   /// Host-owned external-service preferences imported over the authenticated
   /// interconnect channel. These require an AppModel preference-cache refresh
   /// even though no media row was imported.
@@ -522,6 +533,7 @@ class SyncRunReport {
       collectionsUpdated > 0 ||
       tagsUpdated > 0 ||
       videoMetadataUpdated > 0 ||
+      streamVideosPulled > 0 ||
       serviceConfigsImported > 0 ||
       sourcesShared > 0 ||
       settingsImported > 0;
@@ -551,6 +563,8 @@ class SyncRunReport {
     tagsUpdated += other.tagsUpdated;
     mediaLinksUpdated += other.mediaLinksUpdated;
     videoMetadataUpdated += other.videoMetadataUpdated;
+    streamVideosPulled += other.streamVideosPulled;
+    streamVideosPushed += other.streamVideosPushed;
     serviceConfigsImported += other.serviceConfigsImported;
     sourcesShared += other.sourcesShared;
     sourceShareSignerChanged.addAll(other.sourceShareSignerChanged);
