@@ -1107,20 +1107,27 @@ void main() {
       visible: true,
     );
 
-    openSession();
-    await tester.pump();
-    expect(armed(), isTrue, reason: '本页可见、栈归本页、有可见弹窗');
+    // 真实弹窗层要完整初始化的 AppModel 才能建，这里只验热键门：每次开会话、读门、
+    // 清栈都在两帧之间做完，不让带着 texthooker 弹窗层的浮层真的建出来。
+    void expectArmed(bool expected, String reason) {
+      openSession();
+      expect(armed(), expected, reason: reason);
+      shared.controller.clear();
+    }
+
+    expectArmed(true, '本页可见、栈归本页、有可见弹窗');
 
     // 切到别的 tab：弹窗随 tab 藏起（Offstage），Ctrl+Enter 不能对看不见的弹窗制卡。
     visible.value = false;
     await tester.pump();
-    expect(armed(), isFalse, reason: 'tab 藏起时热键不得作用于看不见的弹窗');
+    expectArmed(false, 'tab 藏起时热键不得作用于看不见的弹窗');
 
     visible.value = true;
     await tester.pump();
-    expect(armed(), isTrue);
+    expectArmed(true, '切回可见后恢复');
 
-    // 查词 tab 真正查词接管了栈：那是别人的会话，本页的热键不能碰。
+    // 查词 tab 真正查词接管了栈：那是别人的会话，本页的热键不能碰（浮层此时由替身
+    // 出空层，可以照常走帧）。
     final _OtherLookupOwner dict = _OtherLookupOwner();
     shared.attach(dict);
     shared.setOwnerVisible(dict, true);
