@@ -281,6 +281,9 @@ pub struct G4Core {
     _live: Live,
 }
 
+/// Primary 开库时补建闭包检查点没做成的原因（`srs_meta`；补成了删掉）。只作诊断记录：开库不因它失败，下一次写命令的收尾照样补建。
+pub(crate) const CLOSURE_BACKFILL_ERROR_KEY: &str = "gen4_closure_backfill_error";
+
 /// Primary 开库时补建检查点之前建的闭包行（[super::derive::closure_steps_missing] 先问一句，有才开写事务）：每个
 /// 集合一次 [Index::backfill_closure_steps](super::derive::Index::backfill_closure_steps)，同一个事务。返回补了几台。
 fn backfill_closure_steps(
@@ -353,8 +356,24 @@ impl G4Core {
                 // 检查点之前建的旧闭包行（`derive.rs` `CLOSURE_STEP`：检查点上线前迁移的库）补上检查点，否则在第一次写命令
                 // 的收尾补建之前，每次排队都要把承袭设备的旧戳从头解一遍（真库 1.7 s）。只补闭包行、整份闭包不变：不推进
                 // 写入代数、不碰缓存层，装学习会话触发器之前做（它只记卡 / 日志 / 卡的寄存器，本来也看不见）。补不成（出错、
-                // 整份闭包与日志对不上）整笔回滚、不挡开库：下一次写命令的收尾照样补建，错在那时报给那条命令。
-                let _ = backfill_closure_steps(&opened.conn, &cfg_memo);
+                // 整份闭包与日志对不上）整笔回滚、不挡开库：下一次写命令的收尾照样补建；没补成的原因记进
+                // [CLOSURE_BACKFILL_ERROR_KEY]（与 `scrub` / `retained` 同一做法，记不下 = 库写不了，报回去），补成了删掉。
+                match backfill_closure_steps(&opened.conn, &cfg_memo) {
+                    Ok(_) => opened
+                        .conn
+                        .execute(
+                            "DELETE FROM srs_meta WHERE key = ?1",
+                            [CLOSURE_BACKFILL_ERROR_KEY],
+                        )
+                        .map_err(sql)?,
+                    Err(e) => opened
+                        .conn
+                        .execute(
+                            "INSERT INTO srs_meta (key, value) VALUES (?1, ?2)                              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                            [CLOSURE_BACKFILL_ERROR_KEY, e.as_str()],
+                        )
+                        .map_err(sql)?,
+                };
                 super::cmd::study::install_touch(&study, &opened.conn)?;
                 Some(opened.conn)
             }

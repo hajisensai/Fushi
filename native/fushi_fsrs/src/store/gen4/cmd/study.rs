@@ -100,7 +100,7 @@ use crate::projection::Day;
 use crate::store::gen4::derive::{Index, Ref};
 use crate::store::gen4::schema::sql;
 use crate::store::gen4::truth::Truth;
-use crate::store::queue::{Dirty, Feed, LogState, StudyHub};
+use crate::store::queue::{Dirty, Feed, LogState, StudyHub, TOUCH_ALL};
 use crate::store::study::{self, CardIx, Tables};
 use crate::sync2::op::EntKind;
 
@@ -287,7 +287,14 @@ pub(crate) fn install_touch(hub: &Arc<StudyHub>, c: &Connection) -> Result<(), S
         let id = match ctx.get_raw(2) {
             rusqlite::types::ValueRef::Null => String::new(),
             _ if matches!(kind, ALIAS_IN | ALIAS_OUT) => String::new(),
-            v => Ref::column_result(v).map(|r| r.text()).unwrap_or_default(),
+            v => match Ref::column_result(v) {
+                Ok(r) => r.text(),
+                // 解不出这行的 ID：记不了单张，记整份重建（宁多不漏），不记空 ID 把这张卡的脏标记丢掉。
+                Err(_) => {
+                    h.touch_study(TOUCH_ALL, col.to_string(), String::new());
+                    return Ok(0i64);
+                }
+            },
         };
         match kind {
             ALIAS_IN | ALIAS_OUT => {
