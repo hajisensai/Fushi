@@ -7151,6 +7151,7 @@
   "music_dlsite_field_release": "发售日",
   "music_dlsite_field_scenario": "剧本",
   "music_dlsite_field_voice_actors": "声优",
+  "music_dlsite_field_wishlists": "收藏数",
   "music_dlsite_field_work_id": "作品编号",
   "music_dlsite_field_work_type": "作品类型",
   "music_dlsite_library_done": "已为 $count 张专辑取到 DLsite 资料",

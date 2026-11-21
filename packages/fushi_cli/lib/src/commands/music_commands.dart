@@ -409,6 +409,7 @@ String renderMusicAlbumDlsite(Object? data) {
   line('评分', data['rating']);
   line('评分人数', data['ratingCount']);
   line('销量', data['downloads']);
+  line('收藏数', data['wishlists']);
   line('标签', data['tags']);
   line('页面', data['pageUrl']);
   return out.toString().trimRight();

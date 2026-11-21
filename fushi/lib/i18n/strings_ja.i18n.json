@@ -7151,6 +7151,7 @@
   "music_dlsite_field_release": "Release date",
   "music_dlsite_field_scenario": "Scenario",
   "music_dlsite_field_voice_actors": "Voice actors",
+  "music_dlsite_field_wishlists": "Wishlisted",
   "music_dlsite_field_work_id": "Work number",
   "music_dlsite_field_work_type": "Work type",
   "music_dlsite_library_done": "Fetched DLsite info for $count albums",

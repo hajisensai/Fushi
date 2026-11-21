@@ -283,7 +283,12 @@ class DlsiteWork {
 
 /// 评分（ajax 端点）。
 class DlsiteRating {
-  const DlsiteRating({this.average, this.count, this.downloads});
+  const DlsiteRating({
+    this.average,
+    this.count,
+    this.downloads,
+    this.wishlists,
+  });
 
   /// 平均分，满分 5（`rate_average_2dp`）。
   final double? average;
@@ -293,6 +298,9 @@ class DlsiteRating {
 
   /// 销量（下载数）。
   final int? downloads;
+
+  /// 收藏数（加入愿望单的人数，`wishlist_count`）。
+  final int? wishlists;
 
   /// 归一到 0-10（与 galgame 评分列同口径）。
   double? get scoreOutOfTen => average == null ? null : average! * 2;
@@ -402,8 +410,19 @@ DlsiteRating? parseDlsiteRatingJson(String body, DlsiteWorkId id) {
       _double(entry['rate_average_2dp']) ?? _double(entry['rate_average']);
   final int? count = _asInt(entry['rate_count']);
   final int? downloads = _asInt(entry['dl_count']);
-  if (average == null && count == null && downloads == null) return null;
-  return DlsiteRating(average: average, count: count, downloads: downloads);
+  final int? wishlists = _asInt(entry['wishlist_count']);
+  if (average == null &&
+      count == null &&
+      downloads == null &&
+      wishlists == null) {
+    return null;
+  }
+  return DlsiteRating(
+    average: average,
+    count: count,
+    downloads: downloads,
+    wishlists: wishlists,
+  );
 }
 
 /// 解析 suggest 端点。

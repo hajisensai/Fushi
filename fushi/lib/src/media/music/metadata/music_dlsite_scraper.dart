@@ -334,6 +334,7 @@ Map<String, Object?> musicDlsiteInfoJson(MusicDlsiteAlbumInfo info) {
       'rating': w.rating?.average,
       'ratingCount': w.rating?.count,
       'downloads': w.rating?.downloads,
+      'wishlists': w.rating?.wishlists,
       'coverUrl': w.coverUrl,
     },
   };

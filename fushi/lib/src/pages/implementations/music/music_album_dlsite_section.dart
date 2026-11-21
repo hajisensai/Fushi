@@ -17,6 +17,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_section_title.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -221,8 +222,7 @@ String musicDlsiteAgeLabel(DlsiteAgeCategory age) => switch (age) {
 };
 
 /// 资料行（标签 → 值）：作品编号、社团、声优、作者 / 剧本 / 插画 / 音乐、作品类型、
-/// 发售日、评分（人数；DLsite 五星均分已归一到 10 分制，与全应用评分同一口径）、销量、
-/// 年龄分级。空字段不占行。纯函数，测试钉死。
+/// 发售日、评分（DLsite 五星均分 · 人数）、销量、收藏数、年龄分级。空字段不占行。纯函数，测试钉死。
 List<(String, String)> musicDlsiteFacts(DlsiteWorkId id, DlsiteWork? work) {
   String join(List<String> names) => names.join(' / ');
   final List<(String, String)> out = <(String, String)>[
@@ -267,15 +267,19 @@ List<(String, String)> musicDlsiteFacts(DlsiteWorkId id, DlsiteWork? work) {
       t.music_dlsite_field_rating,
       count != null && count > 0
           ? t.music_dlsite_rating_value(
-              rating: avg.toStringAsFixed(1),
+              rating: '★ ${avg.toStringAsFixed(2)}',
               count: count,
             )
-          : avg.toStringAsFixed(1),
+          : '★ ${avg.toStringAsFixed(2)}',
     ));
   }
   final int? downloads = rating?.downloads;
   if (downloads != null && downloads > 0) {
     out.add((t.music_dlsite_field_downloads, '$downloads'));
+  }
+  final int? wishlists = rating?.wishlists;
+  if (wishlists != null && wishlists > 0) {
+    out.add((t.music_dlsite_field_wishlists, '$wishlists'));
   }
   final DlsiteAgeCategory? age = work.ageCategory;
   if (age != null) {

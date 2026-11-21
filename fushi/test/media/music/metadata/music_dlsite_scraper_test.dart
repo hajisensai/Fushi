@@ -45,6 +45,7 @@ String _rating(String workno) => jsonEncode(<String, Object?>{
     'rate_average_2dp': 4.5,
     'rate_count': 120,
     'dl_count': 3000,
+    'wishlist_count': 777,
   },
 });
 
@@ -239,6 +240,8 @@ void main() {
     expect(values, contains('耳恋なか / そよかぜみらい'));
     expect(values, contains('2024-05-01'));
     expect(values, contains('3000'));
+    expect(values, contains('777'), reason: '收藏数');
+    expect(values, contains('★ 4.50 · 120 ratings'));
     expect(values.any((String v) => v.contains('120')), isTrue);
     expect(musicDlsiteFacts(info.id, null).length, 1, reason: '没资料只出编号');
   });

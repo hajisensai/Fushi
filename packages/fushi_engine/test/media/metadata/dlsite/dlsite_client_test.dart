@@ -167,6 +167,7 @@ void main() {
     expect(rating.scoreOutOfTen, closeTo(9.74, 1e-9));
     expect(rating.count, greaterThan(0));
     expect(rating.downloads, greaterThan(0));
+    expect(rating.wishlists, 2230);
     expect(
       parseDlsiteRatingJson('[]', DlsiteWorkId.tryParse('RJ01014447')!),
       isNull,
