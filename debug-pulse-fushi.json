@@ -1,12 +1,48 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-21T14:38:34Z",
+ "generatedAt": "2026-11-21T14:44:56Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "cbdc2a45edcc279f0d2ea3f3f8bfd2ab3ede0bd1",
   "seq": 30656
  },
  "builds": [
+  {
+   "seq": 30654,
+   "version": "3.4.0",
+   "sha": "9f782cbde9ec0af9ce231dbf0665f3c8b156450b",
+   "unknown": false,
+   "publishedAt": "2026-11-21T14:44:44Z",
+   "testflight": false,
+   "baseSeq": 30650,
+   "prs": [
+    4038
+   ],
+   "direct": [
+    {
+     "sha": "854b707f792c2bf8b39eebc2c3f5a89e0d7b2344",
+     "subject": "chore(bugs): settle BUG number collisions on c68133e6a"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44910863176"
+    },
+    "macos": {
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44910863176"
+    },
+    "ios": {
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44910863176"
+    }
+   }
+  },
   {
    "seq": 30650,
    "version": "3.4.0",
@@ -135,7 +171,7 @@
    "unknown": false,
    "publishedAt": "2026-11-21T09:36:27Z",
    "testflight": false,
-   "baseSeq": 30416,
+   "baseSeq": 29224,
    "prs": [
     3989,
     3844,
@@ -149,46 +185,7 @@
     3753,
     3987,
     3982,
-    3988
-   ],
-   "direct": [
-    {
-     "sha": "62a2ac1320ef486e5e37fc5911db952bf2ed692c",
-     "subject": "fix(develop-red): 扩展取主题不再碰未就绪的 dictRepo；iOS umbrella 锁文件与原生许可汇编跟上 fushi_compute 的 ort 依赖"
-    },
-    {
-     "sha": "1d0c585a12a383d85df7dd4a7fa6076580806b43",
-     "subject": "docs(bugs): 集成后重建 BUGS.md 索引"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44885059633"
-    },
-    "macos": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44885059633"
-    },
-    "ios": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44885059633"
-    }
-   }
-  },
-  {
-   "seq": 30416,
-   "version": "3.4.0",
-   "sha": "2ddafb44b41ef4afdabd4497b6e91fde97bc0316",
-   "unknown": false,
-   "publishedAt": "2026-11-21T07:02:16Z",
-   "testflight": false,
-   "baseSeq": 29224,
-   "prs": [
+    3988,
     3985,
     3951,
     3979,
@@ -399,6 +396,14 @@
    ],
    "direct": [
     {
+     "sha": "62a2ac1320ef486e5e37fc5911db952bf2ed692c",
+     "subject": "fix(develop-red): 扩展取主题不再碰未就绪的 dictRepo；iOS umbrella 锁文件与原生许可汇编跟上 fushi_compute 的 ort 依赖"
+    },
+    {
+     "sha": "1d0c585a12a383d85df7dd4a7fa6076580806b43",
+     "subject": "docs(bugs): 集成后重建 BUGS.md 索引"
+    },
+    {
      "sha": "6a3a8131a86dac4acd42ce85d6954fdd7102d01b",
      "subject": "Merge remote-tracking branch 'origin/develop' into claude/review-merge-fix-fc0e29"
     },
@@ -514,15 +519,15 @@
     },
     "windows": {
      "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44870572665"
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44885059633"
     },
     "macos": {
      "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44870572665"
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44885059633"
     },
     "ios": {
      "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44870572665"
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44885059633"
     }
    }
   }
@@ -531,15 +536,9 @@
   "headSha": "cbdc2a45edcc279f0d2ea3f3f8bfd2ab3ede0bd1",
   "headSeq": 30656,
   "prs": [
-   4040,
-   4038
+   4040
   ],
-  "direct": [
-   {
-    "sha": "854b707f792c2bf8b39eebc2c3f5a89e0d7b2344",
-    "subject": "chore(bugs): settle BUG number collisions on c68133e6a"
-   }
-  ],
+  "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
