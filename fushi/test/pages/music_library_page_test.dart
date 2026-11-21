@@ -128,6 +128,33 @@ MusicPluginManager _noPlugins() => MusicPluginManager(
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('装了推荐插件也不把默认分区抢成推荐；推荐来源没了才回曲库', () {
+    expect(
+      musicLibrarySectionAfterSourcesChanged(
+        current: MusicLibrarySection.albums,
+        lastLibrary: MusicLibrarySection.albums,
+        hasRecommend: true,
+      ),
+      MusicLibrarySection.albums,
+    );
+    expect(
+      musicLibrarySectionAfterSourcesChanged(
+        current: MusicLibrarySection.recommend,
+        lastLibrary: MusicLibrarySection.songs,
+        hasRecommend: true,
+      ),
+      MusicLibrarySection.recommend,
+    );
+    expect(
+      musicLibrarySectionAfterSourcesChanged(
+        current: MusicLibrarySection.recommend,
+        lastLibrary: MusicLibrarySection.songs,
+        hasRecommend: false,
+      ),
+      MusicLibrarySection.songs,
+    );
+  });
+
   testWidgets('五个分区；专辑网格 → 歌曲 → 作品空态', (WidgetTester tester) async {
     // 顶栏与其它库页同一套浮动 chrome：动作组至少占半行，窄窗时页签在胶囊里
     // 横滑。给一个桌面宽度，五个页签都在可视区内直接点。

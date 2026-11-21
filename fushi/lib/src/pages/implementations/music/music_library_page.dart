@@ -146,6 +146,17 @@ LibrarySectionGroup musicLibrarySectionGroupOf(MusicLibrarySection s) =>
     ? LibrarySectionGroup.online
     : LibrarySectionGroup.library;
 
+/// 在线来源重读后音乐页停在哪个分区。打开音乐页恒落在曲库（与书 / 漫画 / 视频 /
+/// 游戏库一致，用户 2026-11-21 拍板）：装了带推荐的插件也不把默认页抢成推荐，推荐
+/// 只在用户点「推荐」时进入；推荐来源没了，停在推荐页的回到 [lastLibrary]。纯函数。
+MusicLibrarySection musicLibrarySectionAfterSourcesChanged({
+  required MusicLibrarySection current,
+  required MusicLibrarySection lastLibrary,
+  required bool hasRecommend,
+}) => !hasRecommend && current == MusicLibrarySection.recommend
+    ? lastLibrary
+    : current;
+
 String musicLibrarySectionLabel(MusicLibrarySection s) => switch (s) {
   MusicLibrarySection.recommend => t.music_section_recommend,
   MusicLibrarySection.albums => t.music_section_albums,
@@ -292,8 +303,6 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   final GlobalKey<MediaSourcesViewState> _sourcesKey =
       GlobalKey<MediaSourcesViewState>();
 
-  /// 用户是否自己点过分区：没点过时，推荐页出现即默认落在推荐页。
-  bool _sectionTouched = false;
   MusicLibrarySnapshot? _snapshot;
 
   /// 显式 opt-in 混排进曲库的服务器专辑（服务器曲库 P5）。与本地快照分开取：服务器慢或
@@ -877,7 +886,6 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     if (v != _section || _importOpen) _chrome.resetToTop();
     // 点任一分区页签都离开导入视图。
     _importOpen = false;
-    _sectionTouched = true;
     _section = v;
     if (musicLibrarySectionGroupOf(v) == LibrarySectionGroup.library) {
       _lastLibrarySection = v;
@@ -1325,11 +1333,11 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
         for (final MusicOrderedSource o in ordered)
           if (o.source case final MusicPluginOnlineSource p) p.manifest,
       ];
-      if (_hasRecommend && !_sectionTouched) {
-        _section = MusicLibrarySection.recommend;
-      } else if (!_hasRecommend && _section == MusicLibrarySection.recommend) {
-        _section = MusicLibrarySection.albums;
-      }
+      _section = musicLibrarySectionAfterSourcesChanged(
+        current: _section,
+        lastLibrary: _lastLibrarySection,
+        hasRecommend: _hasRecommend,
+      );
     });
     _publishSearchInputs();
   }

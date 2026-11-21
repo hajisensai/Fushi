@@ -42,6 +42,8 @@ import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
         musicBrowseScaffold,
         musicDetailHeroGap;
 import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellContentLayoutOf;
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart'
     show MusicItemMenu, MusicMenuAction;
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
@@ -793,6 +795,7 @@ class _AlbumDiscListState extends ConsumerState<_AlbumDiscList> {
       // 一碟十几首、排在外层列表里：盒子版色块（一次建完），与库页同一套几何。
       // 外层列表已整块错峰进场，格子不再各自进场。
       return FushiCoverBlocks(
+        layout: shellContentLayoutOf(context),
         staggerEntrance: false,
         itemCount: tracks.length,
         itemBuilder: (BuildContext context, int i, FushiCoverBlockSize size) =>
