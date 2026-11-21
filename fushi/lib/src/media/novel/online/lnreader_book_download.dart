@@ -46,7 +46,8 @@ typedef LnReaderDownloadProgress = void Function(int done, int total);
 /// 入库后就是一本普通 EPUB：阅读器、查词、制卡、统计、同步全部复用，不另起一套
 /// 「在线书」数据模型。章节按顺序逐章抓（网文站普遍限流，并发只会换来 429）。
 /// 任何一章失败整次中止并报出是哪一章——**不静默跳章**，缺章的书比没有书更糟。
-/// 插图单张失败只丢那一张图（正文完整优先）。
+/// 插图单张失败只缺那一张图（正文完整优先）：正文里留缺图占位（带引用页与插件
+/// id），阅读器打开时提示并补取（`LnReaderDownloadedBookImages`）。
 class LnReaderBookDownload {
   LnReaderBookDownload({
     required this.manager,
@@ -189,15 +190,14 @@ class LnReaderBookDownload {
   /// 插件头、Cloudflare 放行 cookie）。Referer 传章节页地址而不是站点首页——
   /// 防盗链按引用页判，章节页更准。
   ///
-  /// [markMissingImages]：没取到的图换成占位标记（[replaceLnReaderImageWithMissingMarker]，
-  /// 在线书用，阅读器据此提示并补取）；false（下载成 EPUB）时直接摘掉 `<img>`。
+  /// 没取到的图换成占位标记（[replaceLnReaderImageWithMissingMarker]，带上引用页
+  /// 与插件 id）：在线书与下载成的 EPUB 都一样，阅读器据此提示并补取。
   Future<LnReaderEpubChapter> fetchChapter({
     required HttpClient client,
     required LnReaderInstalledPlugin plugin,
     required LnReaderPluginInfo info,
     required LnReaderChapter chapter,
     required String imagePrefix,
-    bool markMissingImages = false,
   }) async {
     final LnReaderRuntime runtime = manager.runtime;
     final String html = await runtime.chapter(plugin.id, chapter.path);
@@ -232,13 +232,13 @@ class LnReaderBookDownload {
         },
       );
       if (fetched == null) {
-        body = markMissingImages
-            ? replaceLnReaderImageWithMissingMarker(
-                body,
-                fileName: image.fileName,
-                url: image.url,
-              )
-            : removeLnReaderImageReference(body, image.fileName);
+        body = replaceLnReaderImageWithMissingMarker(
+          body,
+          fileName: image.fileName,
+          url: image.url,
+          referer: baseUrl,
+          pluginId: plugin.id,
+        );
       } else {
         images.add(fetched);
       }
@@ -395,15 +395,6 @@ String lnReaderSafeFileName(String title) {
 /// 插件用来占位的「无封面」图：不值得下载进 EPUB。
 bool isLnReaderPlaceholderCover(String url) =>
     url.contains('coverNotAvailable');
-
-/// 下载失败的插图：把引用它的 `<img>` 从 XHTML 里摘掉，免得 EPUB 里留断链。
-String removeLnReaderImageReference(String xhtml, String fileName) {
-  final String escaped = RegExp.escape(fileName);
-  return xhtml.replaceAll(
-    RegExp('<img\\b[^>]*\\ssrc="$escaped"[^>]*/?>', caseSensitive: false),
-    '',
-  );
-}
 
 /// 简介里常见的 HTML 片段 → 纯文本（EPUB `dc:description` 与详情页用）。
 String stripLnReaderHtml(String html) => html

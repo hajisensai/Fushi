@@ -1664,6 +1664,69 @@ pub unsafe extern "C" fn ffc_image_to_jpeg(
     })
 }
 
+/// 解码（转正 EXIF / TIFF 方向标签）后**无损**编码成 PNG：导入阶段把阅读器 WebView 显示不了的
+/// 页图格式（TIFF——archive.org 老扫描的主流格式）落盘成 PNG。
+///
+/// 保留色彩类型以免体积白涨：灰度（含 1 位黑白扫描）→ 8 位灰度 PNG，灰度 + alpha → `La8`，
+/// 彩色 → `Rgb8` / `Rgba8`；16 位 / 浮点一律截成 8 位（WebView 与 OCR 都只按 8 位用）。多页
+/// TIFF 只取首页（`image` crate 只解第一个 IFD）。
+fn transcode_png(data: &[u8]) -> Result<Vec<u8>, i32> {
+    use image::{ColorType, ExtendedColorType, ImageDecoder, ImageEncoder};
+    if avif::is_avif(data) {
+        let d = decode_image(data, true)?;
+        return encode_png(&d.pixels, d.width, d.height, d.channels as usize);
+    }
+    let (mut decoder, _) = open_decoder(data)?;
+    let orientation = decoder
+        .orientation()
+        .unwrap_or(image::metadata::Orientation::NoTransforms);
+    let mut img = image::DynamicImage::from_decoder(decoder).map_err(|_| status::BAD_INPUT)?;
+    img.apply_orientation(orientation);
+    let (w, h) = (img.width(), img.height());
+    if w == 0 || h == 0 {
+        return Err(status::BAD_INPUT);
+    }
+    let (pixels, color) = match img.color() {
+        ColorType::L8 | ColorType::L16 => (img.into_luma8().into_raw(), ExtendedColorType::L8),
+        ColorType::La8 | ColorType::La16 => {
+            (img.into_luma_alpha8().into_raw(), ExtendedColorType::La8)
+        }
+        c if c.has_alpha() => (img.into_rgba8().into_raw(), ExtendedColorType::Rgba8),
+        _ => (img.into_rgb8().into_raw(), ExtendedColorType::Rgb8),
+    };
+    let mut out = Vec::new();
+    image::codecs::png::PngEncoder::new(&mut out)
+        .write_image(&pixels, w, h, color)
+        .map_err(|_| status::BAD_INPUT)?;
+    Ok(out)
+}
+
+/// [transcode_png] 的 C ABI：PNG 字节经 `out_ptr` / `out_len` 交出（[crate::ffc_free_bytes] 释放）。
+/// 认不出 / 解不开返回 [status::BAD_INPUT]。
+///
+/// # Safety
+/// 指针按给定长度可读 / 可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_image_to_png(
+    data: *const u8,
+    len: usize,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        if data.is_null() || out_ptr.is_null() || out_len.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        match transcode_png(slice(data, len)) {
+            Ok(png) => {
+                crate::hand_over_bytes(png, out_ptr, out_len);
+                status::OK
+            }
+            Err(code) => code,
+        }
+    })
+}
+
 /// 漫画页图按显示尺寸降采样：解码（转正 EXIF 方向 / HEIF 显示变换）→ 面积平均
 /// （[INTERP_AVERAGE]）缩到 `dst_w × dst_h` → JPEG（`quality` 1..=100，4:4:4）。灰度源编单通道
 /// JPEG（漫画扫描多是灰度，体积与解码成本都只有 RGB 的约 1/3）。
@@ -2938,6 +3001,42 @@ mod tests {
         let mut out = std::io::Cursor::new(Vec::new());
         img.write_to(&mut out, format).unwrap();
         out.into_inner()
+    }
+
+    #[test]
+    fn transcode_png_keeps_grayscale_tiff_single_channel_and_lossless() {
+        let src =
+            image::GrayImage::from_fn(37, 53, |x, y| image::Luma([((x * 7 + y) % 256) as u8]));
+        let tiff = encode(
+            image::DynamicImage::ImageLuma8(src.clone()),
+            image::ImageFormat::Tiff,
+        );
+        let png = transcode_png(&tiff).unwrap();
+        let out = image::load_from_memory_with_format(&png, image::ImageFormat::Png).unwrap();
+        assert_eq!(out.color(), image::ColorType::L8);
+        assert_eq!(out.into_luma8().into_raw(), src.into_raw());
+    }
+
+    #[test]
+    fn transcode_png_keeps_colour_tiff_pixels() {
+        let src =
+            image::RgbImage::from_fn(20, 10, |x, y| image::Rgb([x as u8 * 9, y as u8 * 20, 77]));
+        let tiff = encode(
+            image::DynamicImage::ImageRgb8(src.clone()),
+            image::ImageFormat::Tiff,
+        );
+        let png = transcode_png(&tiff).unwrap();
+        let out = image::load_from_memory_with_format(&png, image::ImageFormat::Png).unwrap();
+        assert_eq!(out.color(), image::ColorType::Rgb8);
+        assert_eq!(out.into_rgb8().into_raw(), src.into_raw());
+    }
+
+    #[test]
+    fn transcode_png_rejects_garbage() {
+        assert_eq!(
+            transcode_png(b"not an image at all"),
+            Err(status::BAD_INPUT)
+        );
     }
 
     #[test]

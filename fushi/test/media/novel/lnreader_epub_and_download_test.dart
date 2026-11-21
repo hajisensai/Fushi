@@ -132,14 +132,7 @@ void main() {
     );
   });
 
-  test('失败插图的引用从 XHTML 摘掉；简介 HTML 转纯文本', () {
-    expect(
-      removeLnReaderImageReference(
-        '<p>a<img src="images/c1-0.jpg" alt=""/>b</p>',
-        'images/c1-0.jpg',
-      ),
-      '<p>ab</p>',
-    );
+  test('简介 HTML 转纯文本', () {
     expect(stripLnReaderHtml('一行<br>二行&amp;<p>三</p>'), '一行\n二行&三');
   });
 

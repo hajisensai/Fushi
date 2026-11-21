@@ -36,6 +36,7 @@ import 'package:fushi_engine/media/video/metadata/anidb_video_metadata_provider.
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ignored_works.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_sweep_ledger.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
@@ -102,10 +103,7 @@ Future<List<VideoPendingScrapeWork>> planScrapeWorksForCollection(
     ))
       if (item.mediaType == MediaKind.video.dbValue) item.entryKey,
   };
-  final List<SourceLibraryRow> sources =
-      (await database.getMediaSourcesByKind('video'))
-          .where((SourceLibraryRow source) => source.transport == 'local')
-          .toList(growable: false);
+  final List<SourceLibraryRow> sources = await localVideoScrapeScopes(database);
   final List<VideoPendingScrapeWork> memberWorks = <VideoPendingScrapeWork>[];
   for (final SourceLibraryRow source in sources) {
     final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
@@ -142,9 +140,11 @@ Future<VideoPendingScrapeWork?> planScrapeWorkForVideoBook(
   String bookUid,
 ) async {
   final VideoBookRow? book = await database.getVideoBookByBookUid(bookUid);
-  final int? sourceId = book?.sourceId;
-  if (book == null || sourceId == null) return null;
-  final SourceLibraryRow? source = await database.getMediaSourceById(sourceId);
+  if (book == null) return null;
+  final int? sourceId = book.sourceId;
+  final SourceLibraryRow? source = sourceId == null
+      ? sourcelessLocalVideoScrapeScope
+      : await database.getMediaSourceById(sourceId);
   if (source == null || !videoBookHasScrapePlan(book, source)) return null;
   for (final VideoSourceScrapeWork work in await VideoSourceWorkPlanner(
     database,
@@ -156,21 +156,28 @@ Future<VideoPendingScrapeWork?> planScrapeWorkForVideoBook(
   return null;
 }
 
-/// [book] 在它所属来源 [source] 的刮削计划里有没有作品单元、且能被协调器真的刮
-/// （BUG-2737）：来源是本机扫描根（远端流 / 互联来源没有本机计划，协调器也只刮
-/// `transport == 'local'`），且计划器会为这个来源、这个视频出单元（非目录分组
-/// 模式、非特典）。
+/// [book] 在它所属范围的刮削计划里有没有作品单元、且能被协调器真的刮
+/// （BUG-2737）：范围是本机视频来源（远端流 / 互联来源没有本机计划，协调器也只刮
+/// `transport == 'local'`；「仅此一次」导入的临时行不立项），或 `sourceId` 为 NULL
+/// 的本机视频所在的无来源范围（拍板台 gtpgyff3l7-oneshot-scrape 方案 b）；且计划器
+/// 会为这个范围、这个视频出单元（非目录分组模式、非特典）。
+///
+/// [source] 是 [book] 所属来源的行；`book.sourceId` 为 NULL 时不看它（调用方可传
+/// null），按无来源范围判。
 ///
 /// 纯函数、不跑计划器：库页「重新刮削」入口用它决定画不画，
 /// [planScrapeWorkForVideoBook] 用它提前返回——两处同口径，入口不会画出点了
-/// 必然扑空的按钮（手动导入的视频没有 `sourceId`、互联远端下载落在应用目录里，
-/// 都在这里被挡掉）。
-bool videoBookHasScrapePlan(VideoBookRow book, SourceLibraryRow? source) =>
-    source != null &&
-    book.sourceId == source.id &&
-    source.transport == 'local' &&
-    videoSourcePlansScrapeWorks(source) &&
-    videoBookJoinsScrapePlan(book);
+/// 必然扑空的按钮（远端流 / 媒体服务器视频没有本机文件，在这里被挡掉）。
+bool videoBookHasScrapePlan(VideoBookRow book, SourceLibraryRow? source) {
+  final SourceLibraryRow? scope = book.sourceId == null
+      ? sourcelessLocalVideoScrapeScope
+      : source;
+  return scope != null &&
+      isVideoScrapeScope(scope) &&
+      videoBookInScrapeScope(book, scope) &&
+      videoSourcePlansScrapeWorks(scope) &&
+      videoBookJoinsScrapePlan(book);
+}
 
 /// 自动补刮调度器。生命周期跟随 HomePage 的刮削 controller。
 class VideoLibraryScrapeSweep {
@@ -383,7 +390,7 @@ class VideoLibraryScrapeSweep {
     final Map<int, Map<String, VideoScrapePendingNote>> bySource =
         <int, Map<String, VideoScrapePendingNote>>{};
     for (final VideoPendingScrapeWork entry in pending) {
-      bySource[entry.source.id] ??= await _pendingNotesOf(entry.source.id);
+      bySource[entry.source.id] ??= await _pendingNotesOf(entry.source);
     }
     return <VideoPendingScrapeWork>[
       for (final VideoPendingScrapeWork entry in pending)
@@ -396,11 +403,11 @@ class VideoLibraryScrapeSweep {
   }
 
   Future<Map<String, VideoScrapePendingNote>> _pendingNotesOf(
-    int sourceId,
+    SourceLibraryRow scope,
   ) async {
     final List<VideoSourceScrapeRunRow> runs = await _database
         .getUnresolvedVideoSourceScrapeRuns(
-          sourceId: sourceId,
+          sourceId: persistedScrapeSourceId(scope),
           limit: _pendingNoteRunLookback,
         );
     return latestVideoScrapePendingNotes(<Iterable<String>>[
@@ -723,10 +730,10 @@ class VideoLibraryScrapeSweep {
     await sweepAndListPending();
   }
 
-  Future<List<SourceLibraryRow>> _localVideoSources() async =>
-      (await _database.getMediaSourcesByKind('video'))
-          .where((SourceLibraryRow source) => source.transport == 'local')
-          .toList(growable: false);
+  /// 本机全部可刮削范围（来源 + 无来源本机视频；「仅此一次」导入的临时行不在内，
+  /// 见 [localVideoScrapeScopes]）。
+  Future<List<SourceLibraryRow>> _localVideoSources() =>
+      localVideoScrapeScopes(_database);
 
   Future<Set<String>> _downloadConfirmedKeys(
     List<VideoPendingScrapeWork> pending,

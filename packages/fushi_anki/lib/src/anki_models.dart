@@ -2019,13 +2019,13 @@ class AnkiErrorCode {
   /// 主机已经收到请求，所以它**不是**「确定没送到」，不进待发队列。
   static const String pairedDeviceMineFailed = 'ANKI_PAIRED_DEVICE_MINE_FAILED';
 
-  /// BUG-5069：互联远端制卡送到了已配对设备，但那台设备上的 **Fushi 复习**库在换代途中（主机回包的
+  /// BUG-5085：互联远端制卡送到了已配对设备，但那台设备上的 **Fushi 复习**库在换代途中（主机回包的
   /// `errorCode` 是下面四个 `srs*` 之一），卡没写进去。与 [pairedDeviceMineFailed] 分开：那条的文案说的是
   /// 「那台设备上的 Anki」，这里卡要去的是复习，要在那台设备上完成升级。主机已收到请求，不进待发队列。
   static const String pairedDeviceReviewBlocked =
       'ANKI_PAIRED_DEVICE_REVIEW_BLOCKED';
 
-  /// BUG-5069：挖词目标是 Fushi 复习，但复习库在换代途中、此刻不收卡（打开时内核报
+  /// BUG-5085：挖词目标是 Fushi 复习，但复习库在换代途中、此刻不收卡（打开时内核报
   /// `SrsStoreOpenBlocked` / 主库还留着协议 1 的数据）。四类按「用户下一步」分：
   ///
   /// - `srsNeedsMigration`：要做一次升级（去复习页「开始升级」，非主进程去主窗口）；
@@ -2090,7 +2090,7 @@ class AnkiErrorCode {
   static const String syncClientUnavailable = 'ANKI_SYNC_UNAVAILABLE';
 }
 
-/// [code] 是不是「复习库在换代途中」一类（[AnkiErrorCode.srsNeedsMigration] 等四个，BUG-5069）。与具体词条无关，
+/// [code] 是不是「复习库在换代途中」一类（[AnkiErrorCode.srsNeedsMigration] 等四个，BUG-5085）。与具体词条无关，
 /// 批量制卡同样应整批中止。
 bool isSrsGenerationErrorCode(String? code) =>
     code == AnkiErrorCode.srsNeedsMigration ||

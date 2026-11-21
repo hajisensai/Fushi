@@ -881,7 +881,7 @@ void showSrsBackgroundMineOutcome(String expression, MineOutcome outcome) {
     status: described.success || outcome.result == MineResult.duplicate
         ? described.status
         : MineToastStatus.failed,
-    // BUG-5069：复习库要升级时带「打开复习」。
+    // BUG-5085：复习库要升级时带「打开复习」。
     action: mineFailureToastAction(outcome),
   );
 }
@@ -958,7 +958,7 @@ Future<SrsMiner?> _readSrsMiner(
     );
   } catch (e, stack) {
     // 库在换代途中不是「打不开」：原样交给 [SrsMiningAnkiRepository]，制卡失败据它提示去复习页完成升级
-    // （BUG-5069，[SrsMinerResolver] 的契约）。
+    // （BUG-5085，[SrsMinerResolver] 的契约）。
     if (isSrsGenerationBlocked(e)) rethrow;
     ErrorLogService.instance.log('ankiRepositoryProvider.srsMiner', e, stack);
     return null;

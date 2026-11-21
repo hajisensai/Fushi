@@ -5791,7 +5791,7 @@ class SrsDbStore implements SrsSync2Host {
   Future<List<SrsNoteCacheRow>> notesPendingDecision() =>
       noteRows(const <String, Object?>{'pending': true});
 
-  /// 一批卡 / 笔记的人读名：笔记缓存的 `sort_field`（第一个字段去标签、去首尾空白，与浏览页的排序字段同口径；
+  /// 一批卡 / 笔记的人读名：笔记缓存的 `sort_field`（笔记类型的排序字段——缺省第一个字段——去标签、去首尾空白，与浏览页的排序字段同口径；
   /// 卡片按所属笔记）。固定至多两条批量读（卡 → 笔记 ID、笔记 → 排序字段），不随条数增长。
   ///
   /// 冲突中心以前逐条 `cardDetail` / `note`（每条三次读 + 一次字段寄存器物化）：6950 条冲突的库上一次整页

@@ -12,9 +12,11 @@ import 'package:archive/archive.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/novel/online/lnreader_missing_images.dart';
 import 'package:fushi/src/media/novel/online/lnreader_online_book.dart'
     show kLnReaderPendingChapterAttribute, lnReaderOnlineChapterFile;
 import 'package:fushi/src/media/novel/online/online_novel_chapter_loader.dart';
+import 'package:fushi/src/media/novel/online/online_novel_missing_images.dart';
 import 'package:fushi/src/media/novel/web/web_novel_library.dart';
 import 'package:fushi/src/media/novel/web/web_novel_page_fetcher.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -549,7 +551,7 @@ void main() {
     expect((await db.getEpubBook(bookKey))!.sourceMetadata, row.sourceMetadata);
   });
 
-  test('正文图：取到的换成书内文件名，取不到的删掉引用', () async {
+  test('正文图：取到的换成书内文件名，取不到的留缺图占位（原图地址 + 引用页）', () async {
     final WebNovelLibrary lib = library(
       fetchImage: (Uri url, {required Uri referer}) async {
         expect(referer.toString(), 'https://a.example/book/1/2.html');
@@ -576,6 +578,92 @@ void main() {
     expect(content.images.single.fileName, startsWith('images/w'));
     expect(content.xhtml, contains('src="${content.images.single.fileName}"'));
     expect(content.xhtml, isNot(contains(kWebArticleImagePlaceholderPrefix)));
+    final LnReaderMissingImage missing = parseLnReaderMissingImages(
+      content.xhtml,
+    ).single;
+    expect(missing.url, 'https://a.example/img/missing.png');
+    expect(missing.referer, 'https://a.example/book/1/2.html');
+    expect(missing.fileName, webNovelImageKey(missing.url));
+    expect(missing.tries, 1);
+  });
+
+  test('阅读器补取网页小说书的缺图：只重取图不重取页；补到后按格式定文件名、换回 <img>', () async {
+    bool imageOk = false;
+    final List<String> referers = <String>[];
+    final WebNovelLibrary lib = library(
+      fetchImage: (Uri url, {required Uri referer}) async {
+        referers.add(referer.toString());
+        return imageOk ? _png : null;
+      },
+    );
+    final String bookKey = await readPage(
+      lib,
+      'syosetu_n9669bk_1.html',
+      ch1Url,
+    );
+    final EpubBookRow row = (await db.getEpubBook(bookKey))!;
+    // 第 1 章里放两张没取到的图：一张带引用页（新占位），一张没有（兜底用章节页）。
+    final File file = lnReaderOnlineChapterFile(row.extractDir, 0);
+    const String withReferer = 'https://img.example/a.png';
+    const String withoutReferer = 'https://img.example/b.png';
+    final String markers =
+        lnReaderMissingImageMarker(
+          LnReaderMissingImage(
+            fileName: webNovelImageKey(withReferer),
+            url: withReferer,
+            alt: '',
+            tries: 1,
+            referer: 'https://ref.example/page',
+          ),
+        ) +
+        lnReaderMissingImageMarker(
+          LnReaderMissingImage(
+            fileName: webNovelImageKey(withoutReferer),
+            url: withoutReferer,
+            alt: '',
+            tries: 1,
+          ),
+        );
+    file.writeAsStringSync(
+      file.readAsStringSync().replaceFirst('</section>', '$markers</section>'),
+    );
+    final _FakeFetcher fetcher = _FakeFetcher(<String, WebNovelFetchedPage>{});
+    final WebNovelChapterLoader loader = WebNovelChapterLoader(
+      database: db,
+      library: lib,
+      fetcher: fetcher,
+      bookKey: bookKey,
+      extractDir: row.extractDir,
+      pendingText: pending,
+      nextChapterTitle: nextTitle,
+    );
+    expect((await loader.missingImages(0)).count, 2);
+    // 末尾「下一章」占位页：不算缺图。
+    expect((await loader.missingImages(1)).count, 0);
+
+    final OnlineNovelMissingImagesRetry failed = await loader
+        .retryMissingImages(0, automatic: true);
+    expect(failed.recovered, 0);
+    expect(failed.remaining, 2);
+    expect(referers, <String>['https://ref.example/page', ch1Url]);
+    expect(
+      parseLnReaderMissingImages(
+        file.readAsStringSync(),
+      ).map((LnReaderMissingImage image) => image.tries),
+      <int>[2, 2],
+    );
+
+    imageOk = true;
+    final OnlineNovelMissingImagesRetry recovered = await loader
+        .retryMissingImages(0, automatic: false);
+    expect(recovered.recovered, 2);
+    expect(recovered.remaining, 0);
+    final String xhtml = file.readAsStringSync();
+    final String name = webNovelImageFileName(withReferer, 'image/png');
+    expect(xhtml, contains('src="$name"'));
+    expect(xhtml, isNot(contains(kLnReaderMissingImageAttribute)));
+    expect(File(p.join(row.extractDir, 'OEBPS', name)).readAsBytesSync(), _png);
+    expect(fetcher.requested, isEmpty);
   });
 
   test('只有网页小说书才有取章加载器（普通书 / LNReader 书为 null）', () async {

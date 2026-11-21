@@ -1253,7 +1253,7 @@ void main() {
       }
     });
 
-    test('复习库在换代途中（BUG-5069）：链上制卡回带分类码的失败，不吞成「复习不可用」', () async {
+    test('复习库在换代途中（BUG-5085）：链上制卡回带分类码的失败，不吞成「复习不可用」', () async {
       final ProviderContainer c = ProviderContainer(
         overrides: <Override>[
           platformServicesProvider.overrideWithValue(testPlatformServices()),

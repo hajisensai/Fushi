@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:fushi_engine/tts/cast/cast_line_voicing.dart'
+    show estimatePlaceholderMs;
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_retry.dart';
@@ -122,6 +124,26 @@ void main() {
     expect(cache.isPinned(s.keyOf(0)), isTrue);
     expect(await s.ensure(0), same(audio));
     expect(provider.calls, <String>['t0']);
+  });
+
+  test('punctuation-only sentence is never sent to the engine: it plays as '
+      'a cached silence', () async {
+    final TtsSynthesisScheduler s = TtsSynthesisScheduler(
+      provider: provider,
+      cache: cache,
+      texts: const <String>['「！」', 't1'],
+      audioIdentity: const <String, Object?>{'provider': 'fake', 'revision': 0},
+      lookahead: 0,
+      retryPolicy: TtsRetryPolicy.none,
+    );
+    schedulers.add(s);
+    final TtsCachedAudio silent = await s.ensure(0);
+    expect(silent.format, TtsAudioFormat.wav);
+    expect(silent.durationMs, estimatePlaceholderMs('「！」'));
+    expect(File(silent.path).existsSync(), isTrue);
+    expect(provider.calls, isEmpty);
+    await s.ensure(1);
+    expect(provider.calls, <String>['t1']);
   });
 
   test(
