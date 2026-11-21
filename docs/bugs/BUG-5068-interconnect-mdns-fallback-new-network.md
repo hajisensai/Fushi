@@ -1,0 +1,14 @@
+## BUG-5068 · 电脑改连手机热点后手机连不上已配对的互联主机（只拨旧地址，从不在局域网上重新找它）
+- **报告**：2026-11-21（应用内反馈 MDzxg3SNQc：「电脑连手机热点用不了 fushi 互联」，提示主机未开启互联服务；Android 客户端日志）
+- **真实性**：✅ 真 bug。日志里手机只拨存量地址 `https://192.168.31.36:38765`（家里路由器网段）、`172.19.83.237`（PC 的 WSL / Hyper-V 虚拟网卡）、Teredo IPv6，全部超时 / 无路由，随后 `InterconnectSyncBackend._ensureResolved`（`fushi/lib/src/sync/interconnect_sync_backend.dart:729`）→ `resolveReachableFushiCandidate`（同文件 `:103`）抛 `No reachable Fushi server address`。PC 在热点网段的新地址从没进过候选：
+  - 已配对 host 的候选只来自持久化地址列表。选路 `rankInterconnectCandidatesDetailed` → `_rankGroup`（`fushi/lib/src/sync/interconnect_peer_addresses.dart`，修复前直连竞速失败后直接 `_raceP2p`）只对存量 URL 选路；`resolveInterconnectPeerConnections`（同文件 `:136`）等全部消费方同源。
+  - 学新地址（`InterconnectAddressLearner`）要先经某条存量地址连上 host 取 `/api/host/addresses`——换网后鸡生蛋。
+  - 局域网 mDNS 发现（`fushi/lib/src/sync/lan_discovery_service.dart`）只在设置页配对 UI 用（`sync_settings_schema/interconnect.part.dart:2127`），不参与已配对 host 的重新定位；mDNS TXT `id` 恰是 host 的 hostId（`fushi_server_controller.dart:841` 注释：与 `/api/ping` 回报同一值），本可直接按它找回这台 host。
+  - 另：全员 https 钉扎的单地址组修复前从不探测（`_rankGroup` 早退），唯一旧地址失效时连「全不通」都判不出来。
+- **[x] ① 已修复** — 选路层统一兜底（所有消费方共用 `_rankGroup`）：
+  - `_rankGroup` 在存量直连地址全不通后、建 P2P 隧道前调 `_raceRelocated`：向装配的 `InterconnectLanRelocator` 要这台 hostId 此刻在局域网上公布的地址，只取 https，带本组钉扎的证书指纹 + 期望 hostId 经 `raceInterconnectHostAddresses`（默认 `defaultInterconnectAddressProbe`：钉扎握手 + ping 回报 hostId）核对；胜者是 `_credentialSafe` 的 learned 行，交给 sink 落库。TXT 无鉴权，身份全靠钉扎指纹（冒名者给不出同一张证书）。组里没有钉扎指纹（明文 host）或钉扎指纹互相不一致时不重新定位；组里没有直连地址（只有 `p2p://`）时也不浏览。
+  - 落库走纯函数 `mergeRelocatedInterconnectAddress`（守地址归属闸：URL 已在列表里不论归谁一律不动、组已被删不加、组内钉扎指纹必须相同、token 取组里此刻那一份），插入位置与地址学习共用 `_insertIntoHostGroup`；之后照常由 `InterconnectAddressLearner` 以新地址为锚点刷新整组地址集。
+  - 装了重新定位时，全员 https 钉扎的单条直连地址组也探测一次（活着时只多一个 ping），否则判不出失效。
+  - app 侧 `fushi/lib/src/sync/interconnect_lan_relocation.dart`：`InterconnectLanRelocator` 用 `LanDiscoveryService` 做限时（2.5 s，要找的 host 全出现即提前结束）浏览，并发请求合进一轮，结果 30 s 内对所有 hostId 复用（浏览不到也不在窗口内反复等）；浏览期间登记进 `FushiSyncServerController` 的退出清理集合（TODO-036）。`main.dart` 启动时 `installInterconnectLanRelocation` 装配。
+- **[x] ② 已增加自动化测试** — `fushi/test/sync/interconnect_peer_addresses_test.dart`「局域网重新定位（BUG-5068）」组：存量全失效 + mDNS 给出新地址能选中、用本组指纹与 hostId 核对、学到（hostId / token / 指纹 / learned）；应答方 hostId 不符不选不学；存量还通不浏览；单条 https 组照样重新定位；明文 host 不重新定位、mDNS 给的明文地址不用；`mergeRelocatedInterconnectAddress` 归属闸四种情形。「真 host 端到端」组：真 TLS host + 真钉扎 ping，存量地址全死 → 重新定位地址选中并落库；hostId 不符 / 证书不符 → 不选不落库。`fushi/test/sync/interconnect_lan_relocation_test.dart`：按 TXT id 取 https 地址且浏览完停掉 browser、明文 host 不给、窗口内复用与并发合并、IPv6 加方括号。
+- **备注**：真机复测（PC 连手机热点）未做。日志未能证实的次要可能：Windows 把新热点网络判为「公用」，防火墙只放行专用网络入站时 PC 端端口在热点网段上仍不可达（仓库没有管理防火墙规则的代码）；那种情况下 mDNS 能找到地址但 ping 不通，选路照常落到 P2P。

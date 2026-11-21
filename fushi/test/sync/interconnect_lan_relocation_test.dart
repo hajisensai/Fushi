@@ -51,7 +51,7 @@ void main() {
 
   test('按 TXT id 找到 hostId 那台 host 的 https 地址，浏览完即停', () async {
     final r = build(<BonsoirService>[
-      resolved(id: 'OTHER', host: '192.0.2.9'),
+      resolved(id: 'OTHER', host: '192.0.2.9', name: 'Other PC'),
       resolved(id: 'H'),
     ]);
     expect(await r.relocator.urlsFor('H'), <String>['https://192.0.2.7:38765']);
@@ -69,7 +69,7 @@ void main() {
     DateTime clock = DateTime(2026, 11, 21);
     final r = build(<BonsoirService>[
       resolved(id: 'H'),
-      resolved(id: 'G', host: '192.0.2.8'),
+      resolved(id: 'G', host: '192.0.2.8', name: 'Laptop'),
     ], now: () => clock);
     final List<List<String>> both = await Future.wait(<Future<List<String>>>[
       r.relocator.urlsFor('H'),
