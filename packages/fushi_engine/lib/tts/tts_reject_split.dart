@@ -200,8 +200,8 @@ Future<_TtsPieceAudio> _synthesizePiece(
   bool usable(int cut) =>
       cut >= minPiece &&
       n - cut >= minPiece &&
-      _speakable.hasMatch(trimmed.substring(0, cut)) &&
-      _speakable.hasMatch(trimmed.substring(cut));
+      !ttsTextIsSilent(trimmed.substring(0, cut)) &&
+      !ttsTextIsSilent(trimmed.substring(cut));
 
   int? best(Iterable<int> cuts) {
     int? chosen;
@@ -244,7 +244,6 @@ Future<_TtsPieceAudio> _synthesizePiece(
   return (head: head, tail: tail);
 }
 
-final RegExp _speakable = RegExp(r'[\p{L}\p{N}]', unicode: true);
 final RegExp _sentenceEnds = RegExp(r'[。．！？!?…‥]');
 final RegExp _pauses = RegExp(r'[、，,；;：:]');
 final RegExp _softBreaks = RegExp(r'[」』）)】〉》\s　]');
