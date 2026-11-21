@@ -561,6 +561,8 @@ class FtSessionStatus {
     required this.upnpEnabled,
     required this.natpmpEnabled,
     required this.pexEnabled,
+    this.uploadGates,
+    this.offlineResumeFrozen,
     required this.downRate,
     required this.upRate,
     required this.portMappings,
@@ -575,6 +577,11 @@ class FtSessionStatus {
   final bool upnpEnabled;
   final bool natpmpEnabled;
   final bool pexEnabled;
+
+  /// 诊断（HBK-AUDIT-030）：上传闸登记表项数（应恒等于种子数）与因数据离线
+  /// 而冻结 resume 的种子数。老 DLL 为 null。
+  final int? uploadGates;
+  final int? offlineResumeFrozen;
 
   /// 会话级全局速率（字节/秒，含协议开销；-1 = 未知）。
   final int downRate;
@@ -591,6 +598,8 @@ class FtSessionStatus {
       upnpEnabled: json['upnp_enabled'] == true,
       natpmpEnabled: json['natpmp_enabled'] == true,
       pexEnabled: json['pex_enabled'] == true,
+      uploadGates: (json['upload_gates'] as num?)?.toInt(),
+      offlineResumeFrozen: (json['offline_resume_frozen'] as num?)?.toInt(),
       downRate: (json['down_rate'] as num?)?.toInt() ?? -1,
       upRate: (json['up_rate'] as num?)?.toInt() ?? -1,
       portMappings: mappings is List
@@ -878,8 +887,9 @@ class EmbeddedTorrentSession {
   /// 底层库是否支持单种子停上传（[setTorrentUploadBlocked]）。老 DLL 为 false。
   bool get supportsTorrentUploadBlock => _b.hasTorrentUploadBlock;
 
-  /// 单种子停止上传、继续下载（fRmEhU4XIK）。[blocked] true = 上传限到
-  /// libtorrent 下限 1 B/s，false = 清除单种子上传限速。库不支持返回 false。
+  /// 单种子停止上传、继续下载（fRmEhU4XIK）。[blocked] true = 桥内上传闸
+  /// 只拦 piece payload（BUG-5071：不再用 1 B/s 限速，那会连握手 / request
+  /// 一起饿死下载），false = 解除。库不支持返回 false。
   bool setTorrentUploadBlocked(String infoHash, {required bool blocked}) {
     if (isClosed || !_b.hasTorrentUploadBlock) return false;
     final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
