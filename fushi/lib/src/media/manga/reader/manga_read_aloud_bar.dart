@@ -44,6 +44,7 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 播放控制的键盘快捷键显示名（`K` / `J` / `L`），由阅读器按快捷键注册表填；触屏
 /// 平台与没绑键时为 null（提示里不括注）。
@@ -532,11 +533,15 @@ class _MangaPlayBar extends StatelessWidget {
                     flex: 3,
                     child: Align(
                       alignment: AlignmentDirectional.centerEnd,
-                      child: SingleChildScrollView(
-                        key: const ValueKey<String>('manga_play_bar_middle'),
-                        scrollDirection: Axis.horizontal,
-                        reverse: true,
-                        child: middleWidget,
+                      // 桌面默认 dragDevices 不含鼠标：不包这层，按钮放不下时
+                      // 鼠标拖不动中段。
+                      child: HorizontalDragScrollable(
+                        child: SingleChildScrollView(
+                          key: const ValueKey<String>('manga_play_bar_middle'),
+                          scrollDirection: Axis.horizontal,
+                          reverse: true,
+                          child: middleWidget,
+                        ),
                       ),
                     ),
                   )

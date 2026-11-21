@@ -522,6 +522,7 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
   }
 
   MangaReadAloudState? _lastState;
+  bool _lastActive = false;
 
   void _onControllerChanged() {
     final MangaReadAloudController? c = controller;
@@ -535,11 +536,12 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
             : t.manga_read_aloud_chapter_end,
       );
     }
-    final bool rebuild =
-        (state == MangaReadAloudState.idle) !=
-        (_lastState == MangaReadAloudState.idle);
+    // 底栏那一行在「播放条 / 工具栏」之间切换、工具栏按钮的激活态都以
+    // [MangaReadAloudController.isActive] 为准（[active]），所以按它的翻转重建；
+    // 只看 idle 会漏掉「读到章末 → finished」，播放条就停在底栏不退。
+    final bool rebuild = c.isActive != _lastActive;
     _lastState = state;
-    // 工具栏按钮的激活态跟着会话起止变。
+    _lastActive = c.isActive;
     if (rebuild) _rebuild();
   }
 
