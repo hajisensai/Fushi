@@ -2423,6 +2423,8 @@
   "db_cannot_open_title": "数据位置不可用",
   "db_downgrade_message": "此数据库由更新版本的 Fushi 创建（schema v$dbVersion）。当前应用版本过旧（v$appVersion）。已阻止打开以保护你的数据。请更新应用后重试。",
   "db_downgrade_title": "请更新 Fushi",
+  "db_insufficient_space_message": "设备存储空间已满，Fushi 无法打开数据库。你的数据没有被删除，请不要清除应用数据或恢复备份。腾出一些空间后点「重试」。",
+  "db_insufficient_space_title": "存储空间已满",
   "db_legacy_schema_message": "此数据库来自旧版 Hibiki 或早期版本（数据结构低于 v75），当前版本已无法直接升级它。你的数据没有被改动。迁移步骤：在当前版本上覆盖安装 Fushi v$version（仍带完整升级路径的桥接版本，数据目录会保留），打开一次完成数据升级，再更新到当前版本。Android 系统不允许在新版本上直接安装旧版本，而卸载 Fushi 会同时删除这份数据，卸载前请先备份。下载：$url",
   "db_legacy_schema_release_open": "打开 Fushi v$version 下载页",
   "db_legacy_schema_title": "旧数据需要先升级",

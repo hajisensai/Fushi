@@ -2423,6 +2423,8 @@
   "db_cannot_open_title": "データ保存場所を利用できません",
   "db_downgrade_message": "このデータベースは新しいバージョンの Fushi（スキーマ v$dbVersion）で作成されています。現在のアプリ（v$appVersion）は古すぎます。データ保護のため、開くのを中止しました。アプリを更新してから再試行してください。",
   "db_downgrade_title": "Fushi を更新してください",
+  "db_insufficient_space_message": "Your device is out of storage space, so Fushi could not open its database. Your data has not been deleted - do not clear app data or restore a backup. Free up some space, then tap Retry.",
+  "db_insufficient_space_title": "Storage full",
   "db_legacy_schema_message": "このデータベースは旧 Hibiki アプリまたは初期バージョン（データ構造 v75 未満）のもので、このバージョンでは直接アップグレードできません。データは変更されていません。移行手順：Fushi v$version（完全なアップグレード経路を含むブリッジ版。データフォルダーは保持されます）をこのバージョンの上から上書きインストールし、一度起動してデータをアップグレードしてから、最新バージョンに更新してください。Android では新しいバージョンの上に古いバージョンをインストールできず、Fushi をアンインストールするとこのデータも削除されるため、アンインストール前にバックアップしてください。ダウンロード：$url",
   "db_legacy_schema_release_open": "Fushi v$version のダウンロードページを開く",
   "db_legacy_schema_title": "Old data needs an upgrade first",

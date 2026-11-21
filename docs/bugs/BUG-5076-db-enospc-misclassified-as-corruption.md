@@ -1,6 +1,13 @@
 ## BUG-5076 · 磁盘写满时 sqlite malformed(11) 被归到「数据库损坏」专屏，引导用户恢复备份 / 清数据
 - **报告**：2026-11-21（反馈 AwX7bUtymI 分诊 / PR #3990 修复时发现）
-- **真实性**：⏳ 待查。设备存储写满（ENOSPC）时 sqlite 报 malformed(11)，app 把它归到「数据库损坏」专屏，提示用户恢复备份 / 清空数据，而没有提示存储空间不足——可能把用户引向清数据、造成数据损失。
-- **[ ] ① 未修复** — 打开 / 写入数据库失败时先区分磁盘空间不足（errno 28 / SQLITE_FULL / 可用空间探测），给「存储空间不足，请清理后重试」的专门提示，不进损坏恢复流程。
-- **[ ] ② 未加自动化测试** — 模拟 SQLITE_FULL / ENOSPC 的打开失败，断言走空间不足提示而非损坏专屏。
-- **备注**：
+- **真实性**：✅ 真 bug。反馈日志（iPad16,2 / iOS 26.6.2 / 3.3.0-debug.28434）：满屏 `OS Error: No space left on device, errno = 28`，01:26:36 与 01:26:44 两次开库都是 `FushiDatabaseUnrecoverableException … It is likely corrupt and must be restored from a backup or cleared. Cause: SqliteException(11) … database disk image is malformed`，`Causing statement: PRAGMA journal_mode=WAL`。根因两处：
+  1. **分类只看 sqlite 结果码**：`packages/fushi_core/lib/src/database/database.dart` 的 `_throwUnlessRecoverableSidecarError` / Layer 1 / `_TypedOpenErrorInterceptor` 见 CORRUPT(11) 就构造 kind=corrupt（旧默认值），`fushi/lib/main.dart` 专屏据此显示「数据库已损坏，可恢复备份或清除应用数据」。卷写满时 sqlite 报的 IOERR / CORRUPT 分不出「真坏」与「写不进去」，判据缺了「卷本身满没满」这一维；`SQLITE_FULL`(13) 也没有任何分类，原样落进通用错误屏。
+  2. **恢复阶梯在写满的卷上会删数据**：WAL 库开库要扩 `-shm`（unix VFS 逐页写 1 字节，ENOSPC 时报 `SQLITE_IOERR_SHMSIZE`，属侧车类错误），于是进阶梯；Layer 1 检查点同样写不进去 → Layer 2 `_rebuildSidecar` 先做快照，快照复制因 ENOSPC 失败却只记 debugPrint「non-fatal」，随后照删 `-wal` / `-shm`——`-wal` 是已提交、未检查点事务的唯一副本。
+- **malformed 为何在磁盘满时出现（推测，未在真机复现）**：日志里阶梯的 `fushiDebugPrint` 不进错误日志，无法确认此前是否跑过 Layer 2。最可能的链路是上一条根因 2：之前某次检查点在卷将满时写了一部分主库页后失败（SQLite 设计上靠 `-wal` 兜住，读者仍读 WAL 版本），再被 Layer 2 无备份删掉 `-wal`，主库只剩半新半旧的页 → 此后每次开库的 `PRAGMA journal_mode=WAL` 读第 1 页 / schema 即 CORRUPT。另一可能是 iOS 文件系统在写满时的其它写失败；两者都说明「写满时报的 malformed」不能当作「该清数据」的依据。
+- **[x] ① 已修复** —
+  - 判据写在一处：`database.dart` 新增 `classifyFushiDatabaseOpenFailure`（空间不足优先：`SQLITE_FULL`、带 ENOSPC 的 `FileSystemException`、或库目录卷探测写不进 1 MiB → `insufficientSpace`；文件不存在 → `cannotOpen`；其余 `corrupt`），开库路径所有终态（Layer 0 / 1 / 2 / 3、:popup 退让、drift 后台连接拦截）都经 `_terminalOpenFailure` 构造。卷探测在新文件 `packages/fushi_core/lib/src/database/db_disk_space.dart`（`dbVolumeIsOutOfSpace`：在库目录真写 `kDbOpenMinFreeBytes` 字节，OS 报 ENOSPC(28) / Windows 112、39 才算满；只在开库失败路径跑一次）。
+  - 卷写满时不进恢复阶梯：`_throwUnlessRecoverableSidecarError` 在侧车类错误时先探测卷，满了直接终态，什么都不删。`SQLITE_FULL` 与 CORRUPT 一起归为「不进阶梯的终态」（`_isTerminalOpenError`）。
+  - `_rebuildSidecar` 快照改为删侧车的前提：任一快照失败就清掉本次半截快照、抛终态，`-wal` / `-shm` / 主库原样不动。
+  - UI：`FushiDatabaseFailureKind.insufficientSpace` 显「存储空间已满」专屏（i18n `db_insufficient_space_title` / `_message`：数据没被删，不要清数据 / 恢复备份，腾空间后点重试），带「重试」按钮（`retryInitialise` 会重新开库、按同一判据重分类：空间够了但库真坏了才落到「已损坏」）。
+- **[x] ② 已加自动化测试** — `fushi/test/database/db_failure_kind_insufficient_space_test.dart`（真实开库路径 + `debugDbVolumeOutOfSpaceForTesting` 模拟卷写满）：卷满 + malformed(11) → `insufficientSpace` 且主库字节不变、无快照；卷有空间时同样损坏仍是 `corrupt`；卷满 + 侧车类错误（`-wal` 被目录占住）→ `insufficientSpace` 且 `-wal` 未删；`SQLITE_FULL` / ENOSPC 异常直接判空间、权限错误不判空间；真实探测在有空间目录不误报、不留探测文件。`db_open_recovery_guard_test.dart` 源码守卫改认 `_terminalOpenFailure`。
+- **备注**：真机磁盘写满未复现（无法在测试机上安全写满 iOS / Android 存储），malformed 的产生链路为推测；判据不依赖该推测成立——卷满时一律给空间引导、不删任何东西。另见 BUG-5067（同一反馈的 flutter_logs 写满闪退）。

@@ -2423,6 +2423,8 @@
   "db_cannot_open_title": "Emplacement des données indisponible",
   "db_downgrade_message": "Cette base de données a été créée par une version plus récente de Fushi (schéma v$dbVersion). Votre application actuelle est trop ancienne (v$appVersion). L'ouverture a été bloquée pour protéger vos données. Veuillez mettre l'application à jour et réessayer.",
   "db_downgrade_title": "Mettez Fushi à jour",
+  "db_insufficient_space_message": "Your device is out of storage space, so Fushi could not open its database. Your data has not been deleted - do not clear app data or restore a backup. Free up some space, then tap Retry.",
+  "db_insufficient_space_title": "Storage full",
   "db_legacy_schema_message": "This database comes from the old Hibiki app or an early version (data schema older than v75), which this version can no longer upgrade directly. Your data has not been changed. To migrate: install Fushi v$version over this version (the bridge release that still contains the full upgrade path; your data folder is kept), open it once to upgrade the data, then update to the current version. On Android an older version cannot be installed over a newer one, and uninstalling Fushi also deletes this data, so back it up before uninstalling. Download: $url",
   "db_legacy_schema_release_open": "Open the Fushi v$version download page",
   "db_legacy_schema_title": "Old data needs an upgrade first",

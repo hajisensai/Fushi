@@ -93,7 +93,15 @@ void main() {
           'app layer needs a recognisable terminal type so Retry stops '
           'looping (no new infinite loop)',
     );
-    expect(src.contains('throw FushiDatabaseUnrecoverableException'), isTrue);
+    // BUG-5076：终态异常一律经 `_terminalOpenFailure` 构造（kind 由唯一判据
+    // `classifyFushiDatabaseOpenFailure` 定），不再在各层手写构造。
+    expect(src.contains('throw _terminalOpenFailure('), isTrue);
+    expect(
+      RegExp(
+        r'_terminalOpenFailure\([\s\S]{0,200}FushiDatabaseUnrecoverableException\(',
+      ).hasMatch(src),
+      isTrue,
+    );
   });
 
   test('the :popup process is gated out of sidecar deletion (D3)', () {
