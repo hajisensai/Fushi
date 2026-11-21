@@ -104,6 +104,12 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5096](bugs/BUG-5096-srs-media-prep-ignores-budget.md) | ✅ | ✅ | SRS 媒体准备阶段不守发段前预算，复习记录段被挡 |
+> 共 4412 条。点号进各自文件。
+> 共 4414 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5091](bugs/BUG-5091-video-organize-concurrent-move-overwrite.md) | ✅ | ✅ | 两次独立发起的视频整理 / 搬动落到同一目标时后一个 rename 静默覆盖先搬过去的视频；撤销不核对文件身份 |
 | [BUG-5088](bugs/BUG-5088-readintosync-blocks-gc-safepoint.md) | ✅ | ✅ | readintosync-blocks-gc-safepoint |
 | [BUG-5087](bugs/BUG-5087-sync-video-sweep-tests-teardown-temp-locked.md) | ✅ | ✅ | sync-video-sweep-tests-teardown-temp-locked |
 | [BUG-5086](bugs/BUG-5086-dist-test-verdict-coverage-shared-log.md) | ✅ | ✅ | 「dist 请求 7 个测试文件只跑 2 个仍判 PASSED」是并发代理共用日志名读串了；dist_test 判绿改为逐个核对请求的 suite |
