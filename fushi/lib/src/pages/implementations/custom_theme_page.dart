@@ -1050,6 +1050,12 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     final double card = tokens.spacing.card;
     final bool lowLight = _accentLowContrast(Brightness.light);
     final bool lowDark = _accentLowContrast(Brightness.dark);
+    final String? overrideNote = switch (appModel.activeAccentOverrideSource) {
+      ThemeAccentOverrideSource.pageBackdrop =>
+        t.theme_accent_override_page_backdrop,
+      ThemeAccentOverrideSource.appIcon => t.theme_accent_override_app_icon,
+      null => null,
+    };
     return <Widget>[
       // ── hero：名称 + 导入 / 分享 / 更多 + 预览明暗 ──
       _buildHeaderCard(),
@@ -1120,6 +1126,13 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       ),
       // TODO-072：视频字幕颜色不在此页配置，只放一行说明。
       _buildNoteRow(t.video_subtitle_color_note),
+      // 背景图 / 图标取色正在覆盖主题时，「应用」会关掉那个取色开关（与主题选择色卡
+      // 同一入口）：在按钮上方说明，用户才知道应用后取色为什么没了。
+      if (overrideNote != null)
+        KeyedSubtree(
+          key: const ValueKey<String>('custom-theme-accent-override-note'),
+          child: _buildNoteRow(overrideNote),
+        ),
       SizedBox(height: card),
       FushiFilledButton.icon(
         key: const ValueKey<String>('custom-theme-apply'),
@@ -1202,7 +1215,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     final CustomThemeEntry entry = _buildEntry();
     await appModel.upsertCustomTheme(entry);
     await appModel.selectCustomTheme(entry.id);
-    await appModel.setAppThemeKey('custom-theme:${entry.id}');
+    // 「应用」= 用户明确要这个主题：与主题选择色卡同一入口，先关掉背景图 / 图标取色覆盖。
+    await appModel.pickAppThemeKey('custom-theme:${entry.id}');
     if (!mounted) return;
     navigator.pop();
   }

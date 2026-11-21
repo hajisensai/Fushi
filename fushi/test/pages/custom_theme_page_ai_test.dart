@@ -48,6 +48,12 @@ class _RecordingAppModel extends AppModel {
   Future<void> setAppThemeKey(String key) async {}
 
   @override
+  Future<void> pickAppThemeKey(String key) async {}
+
+  @override
+  ThemeAccentOverrideSource? get activeAccentOverrideSource => null;
+
+  @override
   Future<void> setAudioHighlightColor(Color? color) async {
     audioHighlightWrites.add(color);
   }

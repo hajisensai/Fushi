@@ -224,9 +224,16 @@ void main() {
         reason: 'apply must persist into the list model',
       );
       expect(page.contains('appModel.selectCustomTheme(entry.id)'), isTrue);
+      // 「应用」= 用户选这个主题：走用户选主题的唯一入口 pickAppThemeKey（先关掉
+      // 正在生效的取色覆盖），维护者在拍板台 pr3775 拍板接受这一行为。
+      expect(
+        page.contains(r"appModel.pickAppThemeKey('custom-theme:${entry.id}')"),
+        isTrue,
+      );
       expect(
         page.contains(r"appModel.setAppThemeKey('custom-theme:${entry.id}')"),
-        isTrue,
+        isFalse,
+        reason: 'apply must not bypass the user pick entry',
       );
     });
 
