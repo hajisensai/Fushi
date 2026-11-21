@@ -2892,7 +2892,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         FushiDatabaseFailureKind.cannotOpen => Icons.folder_off_outlined,
         FushiDatabaseFailureKind.insufficientSpace =>
           Icons.sd_card_alert_outlined,
-        FushiDatabaseFailureKind.corrupt => Icons.broken_image_outlined,
+        FushiDatabaseFailureKind.corrupt => FushiIcons.brokenImage,
       };
       final String title = switch (kind) {
         FushiDatabaseFailureKind.cannotOpen => t.db_cannot_open_title,
@@ -2952,7 +2952,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                     if (kind == FushiDatabaseFailureKind.insufficientSpace) ...[
                       const SizedBox(height: 20),
                       FushiFilledButton.icon(
-                        icon: const FushiIcon(Icons.refresh, size: 18),
+                        icon: const FushiIcon(FushiIcons.refresh, size: 18),
                         label: Text(t.retry),
                         onPressed: () => appModel.retryInitialise(),
                       ),
@@ -3023,7 +3023,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       alignment: WrapAlignment.center,
                       children: [
                         FushiFilledButton.icon(
-                          icon: const FushiIcon(Icons.refresh, size: 18),
+                          icon: const FushiIcon(FushiIcons.refresh, size: 18),
                           label: Text(t.retry),
                           onPressed: () => appModel.retryInitialise(),
                         ),
@@ -3090,7 +3090,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       alignment: WrapAlignment.center,
                       children: [
                         FushiFilledButton.icon(
-                          icon: const FushiIcon(Icons.refresh, size: 18),
+                          icon: const FushiIcon(FushiIcons.refresh, size: 18),
                           label: Text(t.retry),
                           onPressed: () => appModel.retryInitialise(),
                         ),

@@ -799,11 +799,8 @@ class _PagePreview extends StatelessWidget {
                     TweenAnimationBuilder<double>(
                       key: ValueKey<String>(highlight.join('.')),
                       tween: Tween<double>(begin: 0, end: 1),
-                      duration: fushiMotionDuration(
-                        context,
-                        FushiMotion.medium,
-                      ),
-                      curve: Curves.easeOutCubic,
+                      duration: context.fushiMotion.effectsDefault.duration,
+                      curve: context.fushiMotion.effectsDefault.curve,
                       builder: (BuildContext context, double t, _) =>
                           CustomPaint(
                             key: const ValueKey<String>(

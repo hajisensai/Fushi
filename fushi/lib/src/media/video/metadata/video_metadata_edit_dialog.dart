@@ -147,57 +147,52 @@ class _VideoWorkManualEditDialogState extends State<VideoWorkManualEditDialog> {
       title: Text(t.video_work_edit_metadata),
       content: SizedBox(
         width: 480,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Text(
-                t.video_work_edit_metadata_hint,
-                style: context.fushiType.bodyMedium.copyWith(
-                  color: cs.onSurfaceVariant,
-                ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(
+              t.video_work_edit_metadata_hint,
+              style: context.fushiType.bodyMedium.copyWith(
+                color: cs.onSurfaceVariant,
               ),
-              _field(
-                field: VideoMetadataLockableField.title,
-                controller: _title,
-              ),
-              _field(
-                field: VideoMetadataLockableField.originalTitle,
-                controller: _originalTitle,
-              ),
-              _field(
-                field: VideoMetadataLockableField.year,
-                controller: _year,
-                keyboardType: TextInputType.number,
-                inputFormatters: <TextInputFormatter>[
-                  FilteringTextInputFormatter.digitsOnly,
-                  LengthLimitingTextInputFormatter(4),
-                ],
-              ),
-              _field(
-                field: VideoMetadataLockableField.overview,
-                controller: _overview,
-                maxLines: 8,
-                minLines: 3,
-                keyboardType: TextInputType.multiline,
-              ),
-              _field(
-                field: VideoMetadataLockableField.tagline,
-                controller: _tagline,
-              ),
-              _field(
-                field: VideoMetadataLockableField.genres,
-                controller: _genres,
-                helperText: t.video_work_edit_terms_hint,
-              ),
-              _field(
-                field: VideoMetadataLockableField.studios,
-                controller: _studios,
-                helperText: t.video_work_edit_terms_hint,
-              ),
-            ],
-          ),
+            ),
+            _field(field: VideoMetadataLockableField.title, controller: _title),
+            _field(
+              field: VideoMetadataLockableField.originalTitle,
+              controller: _originalTitle,
+            ),
+            _field(
+              field: VideoMetadataLockableField.year,
+              controller: _year,
+              keyboardType: TextInputType.number,
+              inputFormatters: <TextInputFormatter>[
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(4),
+              ],
+            ),
+            _field(
+              field: VideoMetadataLockableField.overview,
+              controller: _overview,
+              maxLines: 8,
+              minLines: 3,
+              keyboardType: TextInputType.multiline,
+            ),
+            _field(
+              field: VideoMetadataLockableField.tagline,
+              controller: _tagline,
+            ),
+            _field(
+              field: VideoMetadataLockableField.genres,
+              controller: _genres,
+              helperText: t.video_work_edit_terms_hint,
+            ),
+            _field(
+              field: VideoMetadataLockableField.studios,
+              controller: _studios,
+              helperText: t.video_work_edit_terms_hint,
+            ),
+          ],
         ),
       ),
       actions: <Widget>[

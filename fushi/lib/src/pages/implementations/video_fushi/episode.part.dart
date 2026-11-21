@@ -79,7 +79,7 @@ extension _VideoEpisode on _VideoFushiPageState {
     )) {
       return;
     }
-    _showOsd(t.video_media_server_route_switched, icon: Icons.swap_horiz);
+    _showOsd(t.video_media_server_route_switched, icon: FushiIcons.swap);
   }
 
   /// 「播完」的收尾：上报停止，满足条件时进自动连播倒计时。
@@ -413,6 +413,11 @@ extension _VideoEpisode on _VideoFushiPageState {
     _switchEpisode(index, intent: EpisodeStartIntent.listSelect);
   }
 
+  /// 选集面板（横屏轨道与竖屏「选集」页签同一个 [VideoEpisodePanel]）的字号：
+  /// 面板默认字号乘视频页自管的界面缩放（media_kit 控制层不吃全局「界面大小」，
+  /// 见 [_videoUiScale]）。两种版式共用这一处，不各写一份数字。
+  double get _episodePanelFontSize => 14 * _videoUiScale;
+
   /// 把内部集表示 [_PlaylistEpisodeRef] 解析成面板要的 [VideoEpisodeEntry]。
   ///
   /// 封面来源判断**不在这里手写分支**——统一走 [resolveMediaCoverImage]：本地集给
@@ -576,7 +581,7 @@ extension _VideoEpisode on _VideoFushiPageState {
                       title: t.video_episode_list,
                       emptyHint: t.video_episode_list_empty,
                       seasonLabelOf: _episodeSeasonLabel,
-                      fontSize: 14 * _videoUiScale,
+                      fontSize: _episodePanelFontSize,
                       visible: visible,
                     ),
                   ),

@@ -582,7 +582,7 @@ SettingsDestination buildSystemDestination() {
             id: 'system.network_github_mirrors',
             title: t.network_github_mirrors_label,
             subtitle: t.network_github_mirrors_hint,
-            icon: Icons.alt_route_outlined,
+            icon: FushiIcons.cloudDownload,
             defaultValue: true,
             value: (SettingsContext c) => c.appModel.gitHubMirrorsEnabled,
             onChanged: (SettingsContext c, bool value) async {
