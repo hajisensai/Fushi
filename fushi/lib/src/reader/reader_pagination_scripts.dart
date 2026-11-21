@@ -1322,7 +1322,35 @@ window.__fushiInstallShell = function(C) {
       runningSum += this.countChars(node.textContent);
       if (runningSum > targetCharCount) { targetNode = node; break; }
     }
-    return targetNode;
+    if (!targetNode) return null;
+    // BUG-5015：落点只能取**画出来了**的文本。计数口径（与 calculateProgress / 度量的
+    // totalChars 同源）含没有排版盒的文本节点（正文里的 <script> / <style>、书自带
+    // display:none 的元素），目标字落在这种节点上时它没有任何矩形：分页 getRect 退回
+    // 全零的包围盒，锚 = 0 + 当前滚动量，落点变成「调用前停在哪页」的函数（竖排
+    // contentStart > gap 时每落一次还再退一页）；连续的 scrollIntoView 对它是空操作。
+    // 进度把这段字算在下一个画出来的节点之前（progressStops 只给有矩形的节点立桩），
+    // 所以往后取第一个画出来的节点；后面全都没画出来时取前面最近的一个。
+    node = targetNode;
+    do {
+      if (this.countChars(node.textContent) > 0 && this.renderedTextStartRect(node)) return node;
+    } while (node = walker.nextNode());
+    walker.currentNode = targetNode;
+    while (node = walker.previousNode()) {
+      if (this.countChars(node.textContent) > 0 && this.renderedTextStartRect(node)) return node;
+    }
+    return null;
+  },
+  // 文本节点第一个画出来的片段（宽高都 > 0）的 client rect；节点没有排版盒（祖先
+  // display:none、<script> / <style> 正文）或只剩塌缩空白时返回 null。与
+  // buildPaginationMetrics 给 progressStops 立桩的「节点首片段」同口径。
+  renderedTextStartRect: function(node) {
+    var range = document.createRange();
+    range.selectNodeContents(node);
+    var rects = range.getClientRects();
+    for (var i = 0; i < rects.length; i++) {
+      if (rects[i].width > 0 && rects[i].height > 0) return rects[i];
+    }
+    return null;
   },
   scrollToProgressPaged: function(context, progress) {
     if (context.pageSize <= 0 || progress <= 0) {
@@ -1334,11 +1362,10 @@ window.__fushiInstallShell = function(C) {
       return;
     }
     var targetNode = this.findNodeAtProgress(progress);
-    if (targetNode) {
-      var range = document.createRange();
-      range.setStart(targetNode, 0);
-      range.setEnd(targetNode, Math.min(1, targetNode.length));
-      var rect = this.getRect(range);
+    // BUG-5015：锚取节点第一个画出来的片段，不经 getRect 的包围盒兜底——那个兜底对
+    // 没有排版盒的文本给全零矩形，锚就退化成当前滚动量。
+    var rect = targetNode ? this.renderedTextStartRect(targetNode) : null;
+    if (rect) {
       var scroll = this.getPagePosition(context);
       var anchor = this.turnSpan(context.axis, rect).start + scroll;
       this.setPagePosition(context, this.alignToPage(context, anchor));

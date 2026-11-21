@@ -50,6 +50,8 @@ void main() {
     try {
       raw.execute('DROP INDEX IF EXISTS idx_study_segments_profile_date');
       raw.execute('DROP INDEX IF EXISTS idx_galgame_sessions_profile_date');
+      // v167 的单媒体索引含 profile_id 列，v104 形态里不存在，先删掉才能删列。
+      raw.execute('DROP INDEX IF EXISTS idx_study_segments_profile_media');
       raw.execute('ALTER TABLE study_segments DROP COLUMN profile_id');
       raw.execute('ALTER TABLE galgame_sessions DROP COLUMN profile_id');
       raw.execute('DROP TABLE study_segment_tombstones');
@@ -103,7 +105,7 @@ void main() {
           .read<int>('user_version'),
       upgraded.schemaVersion,
     );
-    expect(upgraded.schemaVersion, 166);
+    expect(upgraded.schemaVersion, 168);
 
     // 激活 Profile 认领全部旧历史（Never break userspace：升级前后它看到的一样）。
     expect(await upgraded.resolveActiveProfileId(), seed.activeId);

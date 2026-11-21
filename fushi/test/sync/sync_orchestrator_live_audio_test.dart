@@ -1829,8 +1829,9 @@ void main() {
 class _OldPeerBackend extends InterconnectSyncBackend {
   _OldPeerBackend() : super.withProbe((String u, String t) async => true);
 
+  /// 老 host 没有 `/api/capabilities`（404 → null）。
   @override
-  Future<bool> hostReportsLocalAudioContentId() async => false;
+  Future<Object?> readHostCapabilities() async => null;
 }
 
 /// 写一个 Yomitan 本地音频库（entries + android），每个 [words] 一行。

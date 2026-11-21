@@ -3965,7 +3965,10 @@ void FlutterWindow::RegisterWindowCaptureChannel() {
 }
 
 // galgame 一键制卡 A 阶段 — audio_loopback channel（仅 Windows）。start 打开 WASAPI
-// loopback 采集进环形缓冲（同步握手拿格式）；grabRecent 拉最近 N 毫秒 PCM；stop 释放。
+// loopback 采集进环形缓冲（同步握手拿格式），回包带租约 lease；grabRecent{lease, backMs}
+// 拉最近 N 毫秒 PCM；stop{lease} 只交回这张租约（同一路的最后一张交回才真停——galgame
+// 会话与常驻的跨应用语音缓存共用系统混音那一路）。pinSnapshot{lease, backMs} /
+// saveSnapshot{id, path} 是跨应用语音缓存的「查词那一刻钉住、制卡时才落盘」。
 // start 带 {userDataFolder, silent} 时改走进程树模式（网页视频制卡队列：只录该 WebView2
 // 环境的声音，silent 时不从扬声器出声）；restoreDucked{userDataFolder} 是崩溃残留兜底。
 // 采集/环形缓冲逻辑在 AudioLoopbackCapture 单例（见 audio_loopback_capture.cpp）。native
@@ -4016,11 +4019,25 @@ void FlutterWindow::RegisterAudioLoopbackChannel() {
           }
           return options;
         };
+        // 租约（start 回包的 lease）：stop / grabRecent / pinSnapshot 都按它找到自己那一路。
+        auto read_int64 = [&call](const char* key) -> int64_t {
+          const auto* args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          if (args == nullptr) {
+            return 0;
+          }
+          const auto it = args->find(flutter::EncodableValue(key));
+          if (it == args->end()) {
+            return 0;
+          }
+          return it->second.TryGetLongValue().value_or(0);
+        };
         if (method == "start") {
           fushi::LoopbackError error = fushi::LoopbackError::kNone;
+          uint64_t lease = 0;
           const fushi::LoopbackFormat f =
               fushi::AudioLoopbackCapture::Instance().Start(read_options(),
-                                                            &error);
+                                                            &lease, &error);
           if (!f.ok) {
             const char* code = "start_failed";
             switch (error) {
@@ -4044,7 +4061,10 @@ void FlutterWindow::RegisterAudioLoopbackChannel() {
                  flutter::EncodableValue(std::string(code))}}));
             return;
           }
-          result->Success(flutter::EncodableValue(format_map(f)));
+          flutter::EncodableMap started = format_map(f);
+          started[flutter::EncodableValue("lease")] =
+              flutter::EncodableValue(static_cast<int64_t>(lease));
+          result->Success(flutter::EncodableValue(std::move(started)));
           return;
         }
         if (method == "restoreDucked") {
@@ -4060,24 +4080,63 @@ void FlutterWindow::RegisterAudioLoopbackChannel() {
           return;
         }
         if (method == "stop") {
-          fushi::AudioLoopbackCapture::Instance().Stop();
+          // 只交回自己那张租约；别的使用方还在用这一路时不停（未知租约无操作）。
+          fushi::AudioLoopbackCapture::Instance().Release(
+              static_cast<uint64_t>(read_int64("lease")));
           result->Success();
           return;
         }
-        if (method == "grabRecent") {
-          const auto* args =
-              std::get_if<flutter::EncodableMap>(call.arguments());
-          int back_ms = 0;
-          if (args != nullptr) {
-            const auto it = args->find(flutter::EncodableValue("backMs"));
+        if (method == "pinSnapshot") {
+          bool stopped = false;
+          const uint64_t id = fushi::AudioLoopbackCapture::Instance().PinSnapshot(
+              static_cast<uint64_t>(read_int64("lease")),
+              static_cast<int>(read_int64("backMs")), &stopped);
+          if (id == 0) {
+            // code=stopped：租约那一路的采集线程已退出，持有方应重新 start 同一来源。
+            result->Success(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("error"),
+                 flutter::EncodableValue(std::string(
+                     stopped ? "capture stopped" : "no audio buffered"))},
+                {flutter::EncodableValue("code"),
+                 flutter::EncodableValue(
+                     std::string(stopped ? "stopped" : "empty"))}}));
+            return;
+          }
+          result->Success(flutter::EncodableValue(flutter::EncodableMap{
+              {flutter::EncodableValue("id"),
+               flutter::EncodableValue(static_cast<int64_t>(id))}}));
+          return;
+        }
+        if (method == "saveSnapshot") {
+          std::string path;
+          if (const auto* args =
+                  std::get_if<flutter::EncodableMap>(call.arguments())) {
+            const auto it = args->find(flutter::EncodableValue("path"));
             if (it != args->end()) {
-              back_ms = static_cast<int>(
-                  it->second.TryGetLongValue().value_or(0));
+              if (const auto* s = std::get_if<std::string>(&it->second)) {
+                path = *s;
+              }
             }
           }
+          const fushi::LoopbackFormat f =
+              fushi::AudioLoopbackCapture::Instance().SaveSnapshot(
+                  static_cast<uint64_t>(read_int64("id")),
+                  Utf8ToWideString(path));
+          if (!f.ok) {
+            result->Success(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("error"),
+                 flutter::EncodableValue(std::string("snapshot unavailable"))}}));
+            return;
+          }
+          result->Success(flutter::EncodableValue(format_map(f)));
+          return;
+        }
+        if (method == "grabRecent") {
           std::vector<uint8_t> pcm;
           const fushi::LoopbackFormat f =
-              fushi::AudioLoopbackCapture::Instance().GrabRecent(back_ms, pcm);
+              fushi::AudioLoopbackCapture::Instance().GrabRecent(
+                  static_cast<uint64_t>(read_int64("lease")),
+                  static_cast<int>(read_int64("backMs")), pcm);
           if (!f.ok || pcm.empty()) {
             result->Success(flutter::EncodableValue(flutter::EncodableMap{
                 {flutter::EncodableValue("error"),

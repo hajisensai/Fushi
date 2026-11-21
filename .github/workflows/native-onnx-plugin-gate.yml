@@ -1,0 +1,61 @@
+# vendored flutter_onnxruntime Windows 插件的原生行为测试门（BUG-5129 / HBK-AUDIT-015）。
+#
+# `third_party/flutter_onnxruntime/windows/test/async_dispatch_teardown_test.cc` 用真
+# `src/async_dispatch.cc` 测插件析构收尾契约（WorkQueue / DelayedTask 的 Shutdown、
+# 析构时 GPU 队列里在途的 CUDA 关会话任务、析构时正在触发的空闲释放定时器）。
+# Windows 侧 CI 只有 `flutter build windows` 间接**编译**这个插件，从不执行它的线程
+# 收尾逻辑；Dart 源码守卫 `fushi/test/onnx/cuda_idle_release_guard_test.dart` 只钉
+# 真实 Impl 析构里的调用顺序。本 job 补上运行时那一半，几分钟出结论。
+#
+# 第二步用 `/DFUSHI_TEARDOWN_LEGACY`（修前的纯隐式成员析构）编同一份测试，**必须红**：
+# 它确认测试仍能抓到原始缺陷，防止测试被改成永远绿（零断言伪装成通过）。
+name: native-onnx-plugin-gate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ['main', 'develop']
+    paths:
+      - 'third_party/flutter_onnxruntime/windows/src/async_dispatch.*'
+      - 'third_party/flutter_onnxruntime/windows/test/**'
+      - '.github/workflows/native-onnx-plugin-gate.yml'
+
+# 全程只读：不产出制品、不碰任何 release/tag/发布通道。
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  teardown-msvc:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Build + run teardown test (MSVC x64)
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) { throw 'MSVC x64 toolset not found' }
+          $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          $src = Join-Path $env:GITHUB_WORKSPACE 'third_party\flutter_onnxruntime\windows'
+          $out = Join-Path $env:RUNNER_TEMP 'onnx-teardown'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          Set-Location $out
+          $common = "/nologo /std:c++17 /EHsc /utf-8 /W4 /WX /I`"$src\src`" `"$src\test\async_dispatch_teardown_test.cc`" `"$src\src\async_dispatch.cc`" user32.lib"
+          cmd /c "`"$vcvars`" >nul && cl $common /Fe:fixed.exe"
+          if ($LASTEXITCODE -ne 0) { throw "compile (fixed) failed ($LASTEXITCODE)" }
+          cmd /c "`"$vcvars`" >nul && cl $common /DFUSHI_TEARDOWN_LEGACY /Fe:legacy.exe"
+          if ($LASTEXITCODE -ne 0) { throw "compile (legacy) failed ($LASTEXITCODE)" }
+
+          & .\fixed.exe
+          if ($LASTEXITCODE -ne 0) { throw "teardown test failed ($LASTEXITCODE)" }
+
+          # 修前的析构顺序必须仍被抓到（exit 1 = 有断言失败）；其它退出码（崩溃等）也判红。
+          & .\legacy.exe
+          if ($LASTEXITCODE -ne 1) { throw "legacy build expected exit 1 (defect detected), got $LASTEXITCODE" }
+          Write-Host 'legacy build red as expected: the test still detects the pre-fix teardown order'

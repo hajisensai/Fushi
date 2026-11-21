@@ -321,10 +321,13 @@ void main() {
       void serveVersioned(
         String path,
         List<int> bytes,
-        String Function() etag,
+        String? Function() etag,
       ) {
         server.routes[path] = (HttpRequest request) async {
-          request.response.headers.set(HttpHeaders.etagHeader, etag());
+          final String? tag = etag();
+          if (tag != null) {
+            request.response.headers.set(HttpHeaders.etagHeader, tag);
+          }
           final String? range = request.headers.value(HttpHeaders.rangeHeader);
           if (range == 'bytes=0-0') {
             request.response.statusCode = HttpStatus.partialContent;
@@ -510,6 +513,38 @@ void main() {
         expect(fullGets('/v.m4s'), 1);
 
         etag = '"v2"';
+        serve('/a.m4a', <int>[2, 2, 2]);
+        await downloader(ffmpeg).downloadWithExternalAudio(
+          url: server.url('/v.m4s'),
+          audioUrls: <String>[server.url('/a.m4a')],
+          headers: const <String, String>{},
+          dest: dest,
+        );
+        expect(fullGets('/v.m4s'), 2);
+        expect(await dest.readAsBytes(), <int>[9]);
+      });
+
+      // BUG-5117 / HBK-AUDIT-033：总长相同不是版本身份。
+      test('继续时画面流被等长替换、服务器不给 ETag：只有总长相同不复用，整段重下', () async {
+        serveVersioned('/v.m4s', List<int>.filled(4000, 1), () => null);
+        serveForbidden('/a.m4a');
+        final File dest = File(p.join(tmp.path, 'out', 'ep.mkv'));
+        final _FakeFfmpeg ffmpeg = _FakeFfmpeg.succeeding(<int>[
+          9,
+        ], videoHasAudio: false);
+        await expectLater(
+          downloader(ffmpeg).downloadWithExternalAudio(
+            url: server.url('/v.m4s'),
+            audioUrls: <String>[server.url('/a.m4a')],
+            headers: const <String, String>{},
+            dest: dest,
+          ),
+          throwsA(isA<HttpException>()),
+        );
+        expect(fullGets('/v.m4s'), 1);
+
+        final List<int> replaced = List<int>.filled(4000, 7);
+        serveVersioned('/v.m4s', replaced, () => null);
         serve('/a.m4a', <int>[2, 2, 2]);
         await downloader(ffmpeg).downloadWithExternalAudio(
           url: server.url('/v.m4s'),
@@ -1048,13 +1083,15 @@ void main() {
       const int half = 150000;
 
       /// 第一趟：服务器发完前一半就不动了，客户端收到一半时暂停。
-      Future<File> pauseHalfway() async {
+      Future<File> pauseHalfway({String? etag = '"v1"'}) async {
         final Completer<void> release = Completer<void>();
         addTearDown(() {
           if (!release.isCompleted) release.complete();
         });
         server.routes['/video.mp4'] = (HttpRequest request) async {
-          request.response.headers.set(HttpHeaders.etagHeader, '"v1"');
+          if (etag != null) {
+            request.response.headers.set(HttpHeaders.etagHeader, etag);
+          }
           request.response.contentLength = body.length;
           request.response.add(Uint8List.sublistView(body, 0, half));
           await request.response.flush();
@@ -1138,6 +1175,44 @@ void main() {
           'bytes=$half-',
           null,
         ]);
+      });
+
+      // BUG-5117 / HBK-AUDIT-033：等长替换、没有强验证器时不得续传拼片。
+      test('without ETag / Last-Modified an equal-length replacement is not '
+          'resumed and is downloaded from zero', () async {
+        final File dest = await pauseHalfway(etag: null);
+        final Uint8List replaced = Uint8List.fromList(
+          List<int>.generate(body.length, (int i) => (i * 5 + 2) & 0xff),
+        );
+        server.routes['/video.mp4'] = _rangeFile(replaced, honorIfRange: false);
+        await downloader(_FakeFfmpeg.failing()).download(
+          url: server.url('/video.mp4'),
+          headers: const <String, String>{},
+          dest: dest,
+        );
+        expect(server.requests.map((_Req r) => r.range), <String?>[null]);
+        expect(await dest.readAsBytes(), replaced);
+      });
+
+      test('a 206 that drops the If-Range ETag and only keeps the same total '
+          'is abandoned and restarted from zero', () async {
+        final File dest = await pauseHalfway();
+        final Uint8List replaced = Uint8List.fromList(
+          List<int>.generate(body.length, (int i) => (i * 5 + 2) & 0xff),
+        );
+        // 等长替换、无视 If-Range、206 不带 ETag：只剩相同总长，不构成证据。
+        server.routes['/video.mp4'] = _rangeFile(replaced, honorIfRange: false);
+        await downloader(_FakeFfmpeg.failing()).download(
+          url: server.url('/video.mp4'),
+          headers: const <String, String>{},
+          dest: dest,
+        );
+        expect(server.requests.map((_Req r) => r.range), <String?>[
+          'bytes=$half-',
+          null,
+        ]);
+        expect(server.requests.first.ifRange, '"v1"');
+        expect(await dest.readAsBytes(), replaced);
       });
 
       test('a part without a validator sidecar is not resumed', () async {

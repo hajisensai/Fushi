@@ -449,6 +449,35 @@ void main() {
     expect(await videoOrganizeUndoStillApplies(undoPlan), isFalse);
   });
 
+  // HBK-AUDIT-031：撤销载荷落库（JSON）后仍带每个文件的身份；搬过去的位置
+  // 换成了别的文件时，不能把那个文件当成当初搬走的视频搬回原名。
+  test('撤销载荷带文件身份：同名位置换成别的文件，撤销判为已被处理且不动它', () async {
+    final Map<Object?, Object?> result =
+        await call(
+              'POST',
+              '$kVideoOrganizeCtlRoot/files/:uid/move',
+              params: <String, String>{'uid': 'ep2'},
+              body: <String, Object?>{'name': 'Renamed'},
+            )
+            as Map<Object?, Object?>;
+    final VideoFilenameOrganizePlan undoPlan = videoOrganizePlanFromJson(
+      jsonDecode(jsonEncode(takeVideoOrganizeUndo(result['undoToken']))),
+    )!;
+    final String moved = p.join(root.path, 'Show/Season 00/Renamed.mkv');
+    await File(moved).rename(p.join(root.path, 'elsewhere.mkv'));
+    await File(moved).writeAsString('an unrelated file');
+    expect(await videoOrganizeUndoStillApplies(undoPlan), isFalse);
+    final ({int reverted, List<String> errors}) outcome =
+        await revertVideoOrganize(service, undoPlan);
+    expect(outcome.reverted, 0);
+    expect(outcome.errors, isNotEmpty);
+    expect(await File(moved).readAsString(), 'an unrelated file');
+    expect(
+      File(p.join(root.path, 'Show/Season 00/Show - S00E01.mkv')).existsSync(),
+      isFalse,
+    );
+  });
+
   group('摆放审计与拆并作品', () {
     late int season0;
 

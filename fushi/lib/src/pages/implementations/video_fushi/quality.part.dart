@@ -431,42 +431,38 @@ extension _VideoQuality on _VideoFushiPageState {
     _adaptiveQualitySwitching = true;
     try {
       final int posMs = _controller?.resumePositionMs ?? 0;
+      final int generation = _remotePlaybackGeneration;
       // 写入 → 重载 → 失败回滚（BUG-4460）：取流 / 起播没立起来时，共享的
       // `adaptiveQualityIndex` 回到原档，页面重试与下一次同 scope 起播不会沿用
       // 一个没起来的档。只覆盖取流 / 起播阶段；起播之后播放器异步暴露的失败
       // （转码分段出错）走页面既有的播放失败路径。
-      final bool ok = await runAdaptiveQualitySwitch(
-        read: () => client.adaptiveQualityIndex,
-        write: (int? index) => client.adaptiveQualityIndex = index,
-        targetIndex: decision.targetIndex,
-        reload: () async {
-          // 重载 = 丢掉旧档的流：同步释放（BUG-4461），不等它再取新档。
-          _releaseRemotePlayback(
-            info: _effectiveRemoteInfo,
-            client: _effectiveRemoteClient,
-            generation: _remotePlaybackGeneration,
+      final AdaptiveQualitySwitchOutcome outcome =
+          await runAdaptiveQualitySwitch(
+            read: () => client.adaptiveQualityIndex,
+            write: (int? index) => client.adaptiveQualityIndex = index,
+            targetIndex: decision.targetIndex,
+            reload: () async {
+              // 重载 = 丢掉旧档的流（同步释放，BUG-4461）→ 停止上报 → 回到原位置
+              // 重新取流；整程绑定采样时的播放会话（HBK-AUDIT-005）。页面还在而
+              // 重载没收尾 = 被换集 / 重试接管：共享档归接管的那一程，不回滚。
+              final bool reloaded = await _reloadRemoteEpisodeInSession(
+                generation: generation,
+                positionMs: posMs,
+              );
+              if (!reloaded) {
+                return mounted
+                    ? AdaptiveQualitySwitchOutcome.superseded
+                    : AdaptiveQualitySwitchOutcome.failed;
+              }
+              // `_loadRemoteEpisode` 的失败只落在 `_failed`（自适应只在播放中采样，
+              // 进来时它是 false）。
+              return _failed
+                  ? AdaptiveQualitySwitchOutcome.failed
+                  : AdaptiveQualitySwitchOutcome.applied;
+            },
           );
-          await _reportRemotePlaybackStopped(
-            info: _effectiveRemoteInfo,
-            client: _effectiveRemoteClient,
-            positionMs: posMs,
-            generation: _remotePlaybackGeneration,
-          );
-          if (!mounted) return false;
-          await _loadRemoteEpisode(
-            _currentEpisode < 0 ? 0 : _currentEpisode,
-            // 与手动换档同理：必须是 explicitCue，否则 near-end 判据会把「快看完时
-            // 换档」直接归零回片头。
-            startIntent: EpisodeStartIntent.explicitCue,
-            initialPositionMsOverride: posMs,
-          );
-          // `_loadRemoteEpisode` 的失败只落在 `_failed`（自适应只在播放中采样，
-          // 进来时它是 false）。
-          return mounted && !_failed;
-        },
-      );
       if (!mounted) return;
-      if (!ok) {
+      if (outcome != AdaptiveQualitySwitchOutcome.applied) {
         // 没换成：不报「已自动调整」，观察窗从头来，别拿失败前的拍再判一次。
         _adaptiveQuality.reset();
         return;
@@ -520,6 +516,7 @@ extension _VideoQuality on _VideoFushiPageState {
       return;
     }
     final int posMs = _controller?.resumePositionMs ?? 0;
+    final int generation = _remotePlaybackGeneration;
     _hideVideoSidePanel();
     await _writeQualityPresetIndex(server, target);
     if (!mounted) return;
@@ -533,24 +530,13 @@ extension _VideoQuality on _VideoFushiPageState {
         server.adaptiveQualityIndex = null;
       }
     }
-    _releaseRemotePlayback(
-      info: _effectiveRemoteInfo,
-      client: _effectiveRemoteClient,
-      generation: _remotePlaybackGeneration,
-    );
-    await _reportRemotePlaybackStopped(
-      info: _effectiveRemoteInfo,
-      client: _effectiveRemoteClient,
+    // 写偏好期间换了集：偏好已落，新集起播自己读它；不再拿本集位置重载（HBK-AUDIT-005）。
+    if (!await _reloadRemoteEpisodeInSession(
+      generation: generation,
       positionMs: posMs,
-      generation: _remotePlaybackGeneration,
-    );
-    if (!mounted) return;
-    await _loadRemoteEpisode(
-      _currentEpisode < 0 ? 0 : _currentEpisode,
-      startIntent: EpisodeStartIntent.explicitCue,
-      initialPositionMsOverride: posMs,
-    );
-    if (!mounted) return;
+    )) {
+      return;
+    }
     _showOsd(
       t.video_quality_switched(label: _mediaServerQualityLabel(server, target)),
       icon: Icons.high_quality,
@@ -588,29 +574,18 @@ extension _VideoQuality on _VideoFushiPageState {
       return;
     }
     final int posMs = _controller?.resumePositionMs ?? 0;
+    final int generation = _remotePlaybackGeneration;
     final String label = variants[index].label;
     _hideVideoSidePanel();
     client.streamVariantIndex = index;
     // 媒体服务器换版本 = 换一个文件：先报停旧会话（与换档同口径，服务器据此结束
     // 旧版本的转码）；扩展线路没有会话能力，这一步是空操作。
-    _releaseRemotePlayback(
-      info: _effectiveRemoteInfo,
-      client: _effectiveRemoteClient,
-      generation: _remotePlaybackGeneration,
-    );
-    await _reportRemotePlaybackStopped(
-      info: _effectiveRemoteInfo,
-      client: _effectiveRemoteClient,
+    if (!await _reloadRemoteEpisodeInSession(
+      generation: generation,
       positionMs: posMs,
-      generation: _remotePlaybackGeneration,
-    );
-    if (!mounted) return;
-    await _loadRemoteEpisode(
-      _currentEpisode < 0 ? 0 : _currentEpisode,
-      startIntent: EpisodeStartIntent.explicitCue,
-      initialPositionMsOverride: posMs,
-    );
-    if (!mounted) return;
+    )) {
+      return;
+    }
     _showOsd(t.video_quality_switched(label: label), icon: Icons.high_quality);
   }
 

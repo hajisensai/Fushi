@@ -797,6 +797,8 @@ class _VideoSubtitleGenerateSheetState
             t.video_subtitle_ai_no_local_episodes,
           AppVideoSubtitleStartProblem.nothingToRerun =>
             t.video_subtitle_ai_nothing_to_rerun,
+          AppVideoSubtitleStartProblem.glossaryRegenerating =>
+            t.video_subtitle_ai_glossary_regenerating,
         };
       });
     }

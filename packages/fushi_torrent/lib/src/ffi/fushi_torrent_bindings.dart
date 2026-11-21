@@ -251,8 +251,8 @@ class FushiTorrentBindings {
       >();
 
   /// 单种子「停止上传、继续下载」（fRmEhU4XIK：分享率下载途中达标也停上传）。
-  /// blocked 非 0 = 该种子上传限到 libtorrent 可表达的下限 1 B/s（0/-1 在
-  /// libtorrent 里都是「不限」）；0 = 清除单种子上传限速。1 成功 0 失败。
+  /// blocked 非 0 = 桥内上传闸只拦 piece payload（BUG-5071：不再用 1 B/s
+  /// 限速，那会连握手 / request 一起饿死下载）；0 = 解除。1 成功 0 失败。
   /// 调用前必须先看 [hasTorrentUploadBlock]（旧 DLL 无此符号）。
   int ht_set_torrent_upload_blocked(
     ffi.Pointer<ffi.Void> session,

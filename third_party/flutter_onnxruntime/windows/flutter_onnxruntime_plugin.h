@@ -53,6 +53,9 @@ private:
   void HandleRegisterCudaRuntime(const flutter::MethodCall<flutter::EncodableValue> &method_call,
                                  std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
+  void HandleReleaseCudaRuntime(const flutter::MethodCall<flutter::EncodableValue> &method_call,
+                                std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+
   void HandleRunInference(const flutter::MethodCall<flutter::EncodableValue> &method_call,
                           std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 

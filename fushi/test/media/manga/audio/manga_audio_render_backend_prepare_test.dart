@@ -325,6 +325,25 @@ void main() {
     await b.dispose();
   });
 
+  test('纯标点句段（「……」「！」）不进批：逐句合成时由合成入口写静音', () async {
+    final AppMangaRenderBackend b = backend();
+    await prepare(b, <MangaRenderItem>[
+      _synth(_narr.id, <String>['！']),
+      _synth(_spoken.id, <String>['……']),
+    ]);
+    expect(worker.jobs, isEmpty, reason: '全是纯标点：不起 worker 任务');
+
+    await prepare(b, <MangaRenderItem>[
+      _synth(_narr.id, <String>['……', 'うん', '♪']),
+    ]);
+    expect(worker.jobs, hasLength(1));
+    expect(
+      worker.jobs.single.items.map((IrodoriBatchItem i) => i.text).toList(),
+      <String>['うん'],
+    );
+    await b.dispose();
+  });
+
   test('已在缓存里的句段不再下发；全命中时不起 worker 任务', () async {
     final AppMangaRenderBackend first = backend();
     await prepare(first, <MangaRenderItem>[

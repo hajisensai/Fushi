@@ -28,6 +28,7 @@ export const KNOWN_CAPABILITIES = [
   'radio',
   'artistSimilar',
   'collect',
+  'browse',
 ];
 
 export const KNOWN_PERMISSIONS = ['network', 'storage', 'credentials', 'webAuth', 'insecureHttp'];

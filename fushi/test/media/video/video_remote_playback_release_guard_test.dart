@@ -47,18 +47,26 @@ void main() {
   });
 
   test('自然播完只上报停止、不释放流', () {
-    final String b = body(episode, 'void _handlePlaybackCompleted(');
-    expect(b, contains('_reportRemotePlaybackStopped('));
-    expect(b, isNot(contains('_releaseRemotePlayback(')));
-    expect(b, isNot(contains('releaseRemoteVideoPlayback(')));
+    // #4007 起 EOF 入口先分流断流换线路，真正「播完」的收尾在
+    // [_finishPlaybackCompleted]：入口与收尾都不许释放流。
+    final String entry = body(episode, 'void _handlePlaybackCompleted(');
+    expect(entry, contains('_finishPlaybackCompleted('));
+    final String finish = body(episode, 'void _finishPlaybackCompleted(');
+    expect(finish, contains('_reportRemotePlaybackStopped('));
+    for (final String b in <String>[entry, finish]) {
+      expect(b, isNot(contains('_releaseRemotePlayback(')));
+      expect(b, isNot(contains('releaseRemoteVideoPlayback(')));
+    }
   });
 
+  // 换档 / 换线路 / 断流换线路走 [_reloadRemoteEpisodeInSession] →
+  // `reloadRemoteEpisodeInSession`（释放 → 停止上报 → 取流的次序与会话复核由
+  // remote_session_reload_test.dart 行为测试覆盖，HBK-AUDIT-005）；这里核换集与
+  // 页面 helper 本身。
   for (final (String name, String source, String signature)
       in <(String, String, String)>[
         ('换集', episode, 'Future<void> _switchEpisode('),
-        ('自适应换档', quality, 'Future<void> _applyAdaptiveQuality('),
-        ('手动换档', quality, 'Future<void> _switchMediaServerQuality('),
-        ('换线路', quality, 'Future<void> _switchStreamVariant('),
+        ('同会话重载', page, 'Future<bool> _reloadRemoteEpisodeInSession('),
       ]) {
     test('$name：在停止上报与重新取流之前释放旧流', () {
       final String b = body(source, signature);

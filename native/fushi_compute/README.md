@@ -20,7 +20,7 @@ Fushi 的 Rust 计算内核：CPU 密集操作（哈希 / 图像 / 文本匹配 
 
 | 符号 | 作用 |
 |---|---|
-| `ffc_abi_version() -> i32` | ABI 版本（当前 1）；Dart 侧不一致即抛加载异常 |
+| `ffc_abi_version() -> i32` | ABI 版本（当前 3）；Dart 侧不一致即抛加载异常 |
 | `ffc_free_bytes(u8*, usize)` | 释放本库分配并交给调用方的缓冲区 |
 | `ffc_hash_ed2k_new() -> ctx*` | 新建 AniDB ED2K 上下文（panic 时 NULL） |
 | `ffc_hash_ed2k_update(ctx*, const u8*, usize) -> i32` | 追加字节 |
@@ -160,6 +160,17 @@ isolate，整页一次跨 FFI。处理失败返回 null，不可回退上传原�
 
 回归覆盖原生像素合成、EXIF、透明度与参数校验，Dart FFI 生命周期，以及 Flutter 横竖排、缩放坐标、
 倾斜块范围与最终上传 JPEG 的实际像素。
+
+## 图像域：视频截帧 BGRA → RGBA 裁块（HBK-AUDIT-008）
+
+`ffc_image_bgra_to_rgba8_inplace(buf, len, stride, w, h)` 就地把带行跨度的 BGRA 行（mpv
+`screenshot-raw` 的 `bgr0`，第四字节未定义；每行从第 0 字节起取 `w` 像素）换成从 `buf[0]` 起行紧排的不透明 RGBA8888。智能遮布
+每次抽样的裁块与暂停 OCR 的整帧都走它：Dart 入口 `FushiComputeImage.bgraToRgba8` 在 media_kit
+补丁的截帧 isolate 上把矩形覆盖的那段行一次拷进暂存区、就地调用、按需前置字节头拷回 Dart 堆
+（只用一块暂存区：截帧 isolate 每次新建，多一块缓冲就多一轮缺页）；
+`fushi/lib/src/media/video/raw_video_frame.dart` 只算裁剪矩形与头。原先的 Dart 逐像素循环已删。
+逐字节对照（多种 stride / 矩形，含原生缓冲视图）见 `packages/fushi_compute/test/image_bgra_to_rgba_test.dart`，
+耗时对比用 `packages/fushi_compute/benchmark/bgra_to_rgba_bench.dart`。
 
 ## 字体域
 

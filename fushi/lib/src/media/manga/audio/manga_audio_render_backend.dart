@@ -437,6 +437,8 @@ class AppMangaRenderBackend implements MangaRenderBackend {
         }
         if (!v.isVoicePack) continue;
         for (final String segment in segments) {
+          // 纯标点片段不送引擎：逐句合成时由 ttsSynthesizeSplittingOnReject 写静音。
+          if (ttsTextIsSilent(segment)) continue;
           final TtsDirection direction = v.directionFor(segment, seed);
           final String key = v.cacheKey(segment, direction);
           if (batch.containsKey(key) || await _cache.lookup(key) != null) {

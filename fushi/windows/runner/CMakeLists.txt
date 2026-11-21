@@ -614,6 +614,21 @@ add_custom_target(fushi_windows_window_recorder_ring_gate
 )
 add_dependencies(${BINARY_NAME} fushi_windows_window_recorder_ring_gate)
 
+# 拍板 design-cross-app-audio-desktop：系统混音 loopback 由 galgame 会话与常驻的跨应用
+# 语音缓存共用，起停按租约计数——任何一方停都不能把另一方的环停掉。
+add_executable(fushi_windows_audio_loopback_leases_test
+  "tests/audio_loopback_leases_test.cpp"
+)
+apply_standard_settings(fushi_windows_audio_loopback_leases_test)
+target_compile_definitions(fushi_windows_audio_loopback_leases_test PRIVATE
+  "NOMINMAX")
+add_custom_target(fushi_windows_audio_loopback_leases_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_audio_loopback_leases_test>"
+  DEPENDS fushi_windows_audio_loopback_leases_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_audio_loopback_leases_gate)
+
 # Capture replies are published by a worker and drained on the UI thread. Keep
 # the completion/teardown contract executable without linking the full runner.
 add_executable(fushi_windows_capture_reply_test

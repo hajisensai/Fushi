@@ -1,0 +1,15 @@
+## BUG-5123 · cli-ui-only-ops-gaps
+- **报告**：2026-11-22（拍板台 PGpPujl99g，维护者：「全部都补齐 cli，cli 不是要支持所有功能吗，应该支持就得支持」）
+- **真实性**：✅ 真缺口。操作目录（`fushi/lib/src/ops/`）只覆盖已写路由的动作；界面里还有一批导入 / 导出 / 选文件流程没有 ctl 路由，`fushi_cli` / AI 助手 / MCP 都做不了。首个实例：漫画卡「导入漫画有声」只有 `pickAndImportMangaAudio`（`fushi/lib/src/media/manga/audio/manga_audio_import_flow.dart:37`）选文件入口，没有路由。已有守卫（`ctl_cli_route_coverage_guard_test` 路由↔CLI、`op_catalog_ratchet_guard_test` 路由↔描述、`ctl_ui_action_facade_coverage_guard_test` 已登记门面）都只管「已经有路由的」，管不到「根本没路由的界面流程」。
+- **[ ] ① 部分修复** — 本批（分支 `claude/fix-dec-pgppujl99g`）：
+  - 漫画有声成品导入：`POST /api/admin/tts/manga/:key/import` + `tts.manga.import` + `fushi_cli tts import <key> <manifest.json> [--yes]`；校验抽成 `checkMangaAudioManifest` 与界面共用；已有成品要 `confirm` 才替换；撤销按登记指纹放回前态。
+  - 结构保证：新守卫 `fushi/test/ops/ctl_ui_flow_cli_coverage_guard_test.dart` 扫 `lib/`（`ops/` 以外）所有公开 `Future<…> pickAnd*/import*/export*(`，名字没在 `lib/src/ops/` 出现就必须登记 `covered:` / `ui-only:` / `internal:` / `pending cli-ui-only-ops-gaps:` 之一，新流程不接路由也不登记就红。
+- **剩余（守卫里 `pending cli-ui-only-ops-gaps` 的条目，每接一个删一条）**：
+  - 音乐：`importMusicFiles`（导入音频文件）、碟片 `pickAndAddMusicDiscs` / `pickAndAddMusicDiscImages` / `importChapters` / `importMusicDiscChapters`、`pickAndInstallMusicPlugin`（歌词 / 元数据插件）、`exportBesideAudio`（歌词导出）、`importAudioCdIfPresent`（音频 CD）。另：音乐路由只有读、刮削、来源、播放遥控，**歌单增删改 / 加歌、歌词搜索与编辑**也没有路由（不是 import/export 命名，守卫扫不到，在此登记）。
+  - 视频：`importIptvChannels`（IPTV 播放列表）、`pickAndApplyVideoFrameCover`（取帧当封面）、`importNow`（动画下载计划立即导入）。
+  - 有声书 / TTS：`exportTranscribedSrt`（转录结果导出 SRT）、`exportTtsAudiobookM4b`（TTS 有声书导出 M4B）。
+  - Galgame：`exportTo`（Hook 码配置导出）、`exportWindowRecording`（窗口录制导出）。
+  - SRS / 其它：`importMinedSentencesIntoSrs`（制卡历史导入 SRS）、`importRecoveryCode`（排行榜恢复码，凭据只经 stdin）、`importPageBackdropImage` / `importPageBackdropModuleImage`（页面背景图，设置项缺 CLI 入口）、`importSyncedBookFile`（阅读历史云端列表下载单本）。
+  - 盘点的局限：守卫按命名扫「搬进 / 搬出」类流程；不叫 import/export/pickAnd 的纯界面写操作（如上面的歌单编辑）要靠按域逐页盘点，每补一个域顺手盘一遍该域页面并补进这里。
+- **[x] ② 已加自动化测试** — `fushi/test/ops/ctl_tts_routes_test.dart`（导入的 400 / 422 各原因 / 409 需确认 / 替换 / 撤销逐级放回 / 生成中 409）、`packages/fushi_cli/test/commands/tts_commands_test.dart`（import 命令）、`fushi/test/ops/ctl_ui_flow_cli_coverage_guard_test.dart`（缺口守卫）。
+- **备注**：撤销导入时 `ensureAudiobook` 清掉的 sync 删除墓碑不恢复（导入即「重新拥有」，与界面导入一致）。

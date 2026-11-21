@@ -15,10 +15,19 @@ part of '../video_fushi_page.dart';
 /// domain) keeps calling the extracted `_episodeOverlayPanel` through shared private
 /// scope.
 extension _VideoEpisode on _VideoFushiPageState {
-  void _handlePlaybackCompleted() {
+  void _handlePlaybackCompleted() => _handlePlaybackEnded(
+    positionMs: _controller?.positionMs,
+    durationMs: _controller?.durationMs,
+  );
+
+  /// 播放器报 EOF（[_handlePlaybackCompleted]）：[positionMs] / [durationMs] 是 EOF
+  /// 那一刻的位置与时长。
+  void _handlePlaybackEnded({
+    required int? positionMs,
+    required int? durationMs,
+  }) {
     if (_controller?.isBlurayNavigationSession == true) return;
     if (_sourceReviewActive) return;
-    final int? positionMs = _controller?.positionMs;
     // 媒体服务器的流在播放途中断了（EOF 远在片尾之前）：先问一次线路故障转移器，
     // 换到另一条可达线路就按当前位置重新取流接着播；换不了才按「播完」处理
     // （拍板台 design-media-server-failover-transport）。
@@ -27,7 +36,7 @@ extension _VideoEpisode on _VideoFushiPageState {
         !_streamRouteFailoverInFlight &&
         isInterruptedStreamEnd(
           positionMs: positionMs,
-          durationMs: _controller?.durationMs,
+          durationMs: durationMs,
         )) {
       unawaited(
         _recoverInterruptedStream(
@@ -42,8 +51,9 @@ extension _VideoEpisode on _VideoFushiPageState {
 
   /// 流断了之后换线路重载（[_handlePlaybackCompleted]）：[client] 改走新线路成功时
   /// 与换档同一条路收尾旧会话、按 [positionMs] 重新取流（取流地址带新 host），弹
-  /// OSD；没有别的可达线路 / 当前线路其实还通时按「播完」处理。等待期间用户换了集
-  /// （播放代际变了）或退出页面就什么都不做。
+  /// OSD；没有别的可达线路 / 当前线路其实还通时按「播完」处理。整程绑定发起时的
+  /// 播放会话（[_reloadRemoteEpisodeInSession]）：问线路、停止上报、重新取流任一
+  /// 等待期间用户换了集（播放代际变了）或退出页面，就什么都不做（HBK-AUDIT-005）。
   Future<void> _recoverInterruptedStream(
     RemoteVideoRouteFailover client,
     int positionMs,
@@ -63,24 +73,12 @@ extension _VideoEpisode on _VideoFushiPageState {
       _finishPlaybackCompleted(positionMs);
       return;
     }
-    _releaseRemotePlayback(
-      info: _effectiveRemoteInfo,
-      client: _effectiveRemoteClient,
-      generation: _remotePlaybackGeneration,
-    );
-    await _reportRemotePlaybackStopped(
-      info: _effectiveRemoteInfo,
-      client: _effectiveRemoteClient,
+    if (!await _reloadRemoteEpisodeInSession(
+      generation: generation,
       positionMs: positionMs,
-      generation: _remotePlaybackGeneration,
-    );
-    if (!mounted) return;
-    await _loadRemoteEpisode(
-      _currentEpisode < 0 ? 0 : _currentEpisode,
-      startIntent: EpisodeStartIntent.explicitCue,
-      initialPositionMsOverride: positionMs,
-    );
-    if (!mounted) return;
+    )) {
+      return;
+    }
     _showOsd(t.video_media_server_route_switched, icon: Icons.swap_horiz);
   }
 

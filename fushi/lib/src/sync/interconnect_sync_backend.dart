@@ -228,6 +228,30 @@ enum RemoteSubtitleDefaultUpload {
   hostUnsupported,
 }
 
+/// [InterconnectSyncBackend.getRemoteServiceConfig] 的结果。
+sealed class RemoteServiceConfigPull {
+  const RemoteServiceConfigPull();
+}
+
+/// 拉到了 host 的服务配置快照。
+final class RemoteServiceConfigReceived extends RemoteServiceConfigPull {
+  const RemoteServiceConfigReceived(this.snapshot);
+
+  final InterconnectServiceConfigSnapshot snapshot;
+}
+
+/// 明文会话：host 只在 pinned HTTPS 上给服务配置（API key 不降级到明文，BUG-1311），
+/// 请求没有发出。本地已知、与对端版本无关。
+final class RemoteServiceConfigPlaintextSession
+    extends RemoteServiceConfigPull {
+  const RemoteServiceConfigPlaintextSession();
+}
+
+/// host 回 404：老 host 没有该端点，或 host 关掉了该能力（由能力位区分）。
+final class RemoteServiceConfigEndpointMissing extends RemoteServiceConfigPull {
+  const RemoteServiceConfigEndpointMissing();
+}
+
 class InterconnectSyncBackend extends SyncBackend
     with
         SyncFolderCache,
@@ -965,27 +989,18 @@ class InterconnectSyncBackend extends SyncBackend
     }
   }
 
-  /// 对端 host 对 `liveLibrary.<key>` 能力位的声明状态（[liveLibraryCapabilityState]）。
+  /// 对端 host 的 `GET /api/capabilities` 原样解码结果；老 host（无该端点，404 / 405）
+  /// 返回 null。网络 / 鉴权失败照常抛给调用方记错误。
   ///
-  /// 用途两类：PDF 书（`liveLibrary.pdfBooks`，反馈 Jq1_ujHa4t）必须显式协商——老 host
-  /// 会把 PDF 当 EPUB 导入、必然失败，无头服务端没有 PDF 引擎；以及同步维度在 host
-  /// 上走不通时区分「对端版本过旧」与「对端不支持」（拍板
-  /// other-sync-peer-version-errors）。能力每轮现问、不跨轮缓存（同一地址上的 host
-  /// 可能被换成老版本 / 服务端）。老 host（无 capabilities 端点）= undeclared；网络 /
-  /// 鉴权失败照常抛给调用方记错误。
-  Future<LiveLibraryCapabilityState> liveLibraryCapability(String key) async {
+  /// 本方法**每调一次就发一次请求**，不在 backend 上缓存：同一地址上的 host 可能被
+  /// 换成老版本 / 服务端，能力要每轮现问。同一轮里的复用由调用方按轮持有（同步编排器
+  /// 把一轮的读取挂在该轮的 `SyncRunReport` 上，各维度共用一次读取，见
+  /// `peer_gaps.part.dart`）。解析用纯函数：`liveLibraryCapabilityState`（能力位三态，
+  /// PDF 书 / 对端缺能力判定，拍板 other-sync-peer-version-errors）、
+  /// `interconnectHostReportsLocalAudioContentId`（本地音频内容身份，拍板 pr3481）。
+  Future<Object?> readHostCapabilities() async {
     await _ensureResolved();
-    return liveLibraryCapabilityState(await _readHostCapabilities(), key);
-  }
-
-  /// 对端 host 的本地音频清单是否带内容身份（`liveLibrary.localAudioContentId`，
-  /// 拍板 pr3481）。老 host = false：只能按显示名匹配。能力每轮现问、不跨轮缓存
-  /// （同 [liveLibraryCapability]）。
-  Future<bool> hostReportsLocalAudioContentId() async {
-    await _ensureResolved();
-    return interconnectHostReportsLocalAudioContentId(
-      await _readHostCapabilities(),
-    );
+    return _readHostCapabilities();
   }
 
   /// `GET /api/capabilities` 的解码结果；老 host（404 / 405）返回 null。网络 / 鉴权
@@ -1363,10 +1378,13 @@ class InterconnectSyncBackend extends SyncBackend
   }
 
   /// Pulls the host-owned service configuration over the pinned HTTPS session.
-  /// Old hosts return 404 and are treated as not supporting the capability.
   /// HTTP/shared-token sessions are rejected by the server rather than silently
   /// downgrading API keys to plaintext transport.
-  Future<InterconnectServiceConfigSnapshot?> getRemoteServiceConfig() async {
+  ///
+  /// 拉不到快照的两种原因分开返回（[RemoteServiceConfigPull]）：明文会话是**本地已知**
+  /// 的「这条链路上 host 按设计不给」，调用方不该再去问能力表；端点 404 才可能是对端
+  /// 版本过旧（或 host 关了该能力），要不要报由调用方按能力位判。
+  Future<RemoteServiceConfigPull> getRemoteServiceConfig() async {
     await _ensureResolved();
     // 明文会话上这个端点**必然**是 403（host 侧 `HTTPS required for service
     // config`），因为 API key 不允许降级到明文传输——这是有意的拒绝，不是故障。
@@ -1375,10 +1393,11 @@ class InterconnectSyncBackend extends SyncBackend
     // `SyncAuthError: Authentication failed`，把「同步完成」永久挂上「N 项失败」，
     // 并且把用户引去反复重配 token——而 token 根本没问题（BUG-1311）。
     //
-    // 答案本地就已知，别问。返回 null 与「旧 host 404」「host 关掉了该能力 404」
-    // 归一到同一条「对端不提供此能力」语义，和 host 自己在 /api/capabilities 上
-    // 广播的 `serviceConfig: _securityContext != null && ...` 逐字一致。
-    if (Uri.tryParse(_apiBase)?.scheme != 'https') return null;
+    // 答案本地就已知，别问——连能力表也不必问：host 在 /api/capabilities 上广播的
+    // `serviceConfig: _securityContext != null && ...` 在明文链路上同样是 false。
+    if (Uri.tryParse(_apiBase)?.scheme != 'https') {
+      return const RemoteServiceConfigPlaintextSession();
+    }
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
       '$_apiBase/api/interconnect/service-config',
@@ -1386,7 +1405,7 @@ class InterconnectSyncBackend extends SyncBackend
     final HttpClientResponse res = await _sendBounded(req);
     if (res.statusCode == 404) {
       await res.drain<void>();
-      return null;
+      return const RemoteServiceConfigEndpointMissing();
     }
     if (res.statusCode >= 400) {
       // BUG-1323：host 对这个端点的拒绝是**有理由的**（明文 → `HTTPS required for
@@ -1404,8 +1423,10 @@ class InterconnectSyncBackend extends SyncBackend
     if (decoded is! Map) {
       throw const FormatException('Invalid service config response');
     }
-    return InterconnectServiceConfigSnapshot.fromJson(
-      decoded.cast<String, Object?>(),
+    return RemoteServiceConfigReceived(
+      InterconnectServiceConfigSnapshot.fromJson(
+        decoded.cast<String, Object?>(),
+      ),
     );
   }
 
@@ -2550,18 +2571,19 @@ class InterconnectSyncBackend extends SyncBackend
     );
   }
 
-  /// 通知对端 host 删除 displayName 为 [displayName] 的本地音频来源。
-  Future<void> deleteRemoteLocalAudio(String displayName) async {
+  /// 通知对端 host 删除内容身份为 [contentId] 的本地音频来源（HBK-AUDIT-022：
+  /// 删除只认内容身份，host 不按显示名删）。
+  Future<void> deleteRemoteLocalAudio(String contentId) async {
     await _ensureResolved();
     final HttpClientRequest req = await _ops!.buildRequest(
       'DELETE',
-      '$_apiBase/api/library/localaudio/${Uri.encodeComponent(displayName)}',
+      '$_apiBase/api/library/localaudio/${Uri.encodeComponent(contentId)}',
     );
     final HttpClientResponse res = await _sendBounded(req);
     await res.drain<void>();
     _ops!.checkStatus(
       res.statusCode,
-      'DELETE /api/library/localaudio/$displayName',
+      'DELETE /api/library/localaudio/$contentId',
     );
     remoteLibraryMutationRevision.value++;
   }

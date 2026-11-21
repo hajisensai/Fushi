@@ -23,8 +23,9 @@ mixin _LocalLibraryHostLocalAudio
     ];
   }
 
-  /// [key] 指向的已登记库：先按内容身份认（新版本客户端传 contentId，不受撞名
-  /// 影响），再按 displayName 认（旧版本客户端、删除墓碑都传 displayName）。
+  /// [key] 指向的已登记库（只用于导出这种只读操作）：先按内容身份认（新版本
+  /// 客户端传 contentId，不受撞名影响），再按 displayName 认（旧版本客户端）。
+  /// 删除不走这里，只认内容身份（[deleteLocalAudio]）。
   Future<LocalAudioDbEntry?> _localAudioEntryFor(String key) async {
     final List<LocalAudioDbEntry> entries = _localAudioEntries;
     if (isLocalAudioContentId(key)) {
@@ -100,22 +101,21 @@ mixin _LocalLibraryHostLocalAudio
     });
   }
 
-  /// 从 host 删除 [key]（contentId 或 displayName）指向的本地音频来源。
+  /// 从 host 删除内容身份为 [key] 的本地音频来源（HBK-AUDIT-022）。
   ///
-  /// 注：本地音频来源的注册信息存于 Preferences（不在 Drift DB），删除需经
-  /// [_removeLocalAudioEntry] 回调（按 displayName 删），生产由 AppModel 注入。
-  /// 回调为 null 或找不到该库时静默跳过（幂等）。
-  /// [key] 含路径穿越字符时抛 [ArgumentError]。
+  /// 只认内容身份：同一份库在各端可以叫不同的名字，按显示名删会落到这台 host 上
+  /// 恰好同名的另一份库、原目标反而留下。[key] 不是合格身份（旧版本客户端按名发来
+  /// 的删除）时无法确认要删哪一份，不删（幂等返回）。
+  ///
+  /// 注：本地音频来源的注册信息存于 Preferences（不在 Drift DB），删除经
+  /// [_removeLocalAudioEntry] 回调（按内容身份删），生产由 AppModel / 服务端注入。
+  /// 回调为 null 时静默跳过（幂等）。[key] 含路径穿越字符时抛 [ArgumentError]。
   @override
   Future<void> deleteLocalAudio(String key) async {
     _assertSafeName(key);
     final Future<void> Function(String)? remover = _removeLocalAudioEntry;
     if (remover == null) return; // 回调未注入：静默跳过（幂等）
-    final LocalAudioDbEntry? entry = await _localAudioEntryFor(key);
-    // contentId 认不出（这台 host 没有这份库）就没有可删的；displayName 认不出时
-    // 仍把原 key 交给回调，保持旧语义（回调自己按名幂等）。
-    if (entry == null && isLocalAudioContentId(key)) return;
-    final String name = entry?.displayName ?? key;
-    await _runExclusive(() => remover(name));
+    if (!isLocalAudioContentId(key)) return;
+    await _runExclusive(() => remover(key));
   }
 }

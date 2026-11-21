@@ -3,8 +3,11 @@
 所有需要维护者拍板的事项（外部 PR 的取舍、PR 评论 / review 里的方向建议、issue、应用内反馈、审查发现里要人定的、设计取舍），**一律写进拍板台**，不在对话里长篇列清单、不另做清单页面。
 
 - 网页：<https://rank.fushi.moe/dev/decisions>，开发者处理台（`/dev`）顶栏的「拍板」。开发者账户邮箱验证码登录，只有 `role = dev` 的账户能进。
-- 代理读写：`services/leaderboard/scripts/decisions.mjs`（本机 wrangler 直连线上 D1，与 `feedback.mjs` 同一套 Cloudflare 凭据）。命令在 `services/leaderboard/` 下执行，`node scripts/decisions.mjs` 不带参数打印用法。新 worktree 没有 `node_modules`（`setup_worktree.ps1` 不装 npm 依赖），首次使用前先在 `services/leaderboard/` 下跑一次 `npm ci` 装上 wrangler；缺了脚本会直接报「缺 wrangler：先 npm ci」。
-- 代码：`services/leaderboard/src/decisions.js`（SQL、校验、页面）、`src/decisions_client.js`（网页的无刷新提交 / 撤销 / 快捷键 / 自动同步），迁移 `0020_decisions.sql`，测试 `test/decisions.test.js`。
+- 代理读写：`services/leaderboard/scripts/decisions.mjs`，两种后端、命令完全一样：
+  - **HTTP（没有 Cloudflare 凭据的开发者用这个）**：开发者登录处理台，在顶栏「密钥」（<https://rank.fushi.moe/dev/keys>）给自己签发个人密钥（明文只显示一次，每人最多 5 把，可单把吊销；账户被撤开发者后全部失效），在代理那台机器上设环境变量 `FUSHI_DECISIONS_TOKEN=fdk_…`，脚本就走 HTTPS 调 `/v1/decisions/**`。密钥只能读写拍板台，碰不到反馈和账户数据（回包按字段白名单：反馈类事项不带关联反馈的标题 / 正文 / 附件，不带账户 id；没写 `original` 的反馈原文在 HTTP 模式下看不到，要看走 wrangler 或网页）。HTTP 模式的 `add` 不收迁移字段 `verdict` / `notes`。
+  - **wrangler**（没设密钥，或带 `--wrangler` / `--local`）：本机 wrangler 直连线上 D1，与 `feedback.mjs` 同一套 Cloudflare 凭据。
+- 命令在 `services/leaderboard/` 下执行，`node scripts/decisions.mjs` 不带参数打印用法。新 worktree 没有 `node_modules`（`setup_worktree.ps1` 不装 npm 依赖），首次使用前先在 `services/leaderboard/` 下跑一次 `npm ci` 装上 wrangler；缺了脚本会直接报「缺 wrangler：先 npm ci」。
+- 代码：`services/leaderboard/src/decisions.js`（SQL、校验、页面）、`src/decisions_client.js`（网页的无刷新提交 / 撤销 / 快捷键 / 自动同步），`src/decisions_api.js`（个人密钥与 `/v1/decisions/**` JSON API），迁移 `0020_decisions.sql` / `0024_decision_api_keys.sql`，测试 `test/decisions.test.js` / `test/decisions_api.test.js`。
 
 ## 维护者的七个决定
 

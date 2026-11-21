@@ -48,4 +48,38 @@ void main() {
     expect(FfcUpscaleEventKind.fromCode(5), FfcUpscaleEventKind.modelsFailed);
     expect(FfcUpscaleEventKind.fromCode(99), isNull);
   });
+
+  // configure 交出配置代际（HBK-AUDIT-006：modelsFailed 的 token 就是失败那一代）：同配置不换代，
+  // 换配置加一。不需要 ORT（模型在工作线程里才加载）。
+  test('configure hands out the engine generation', () {
+    ({int status, int generation}) light() => engine.configure(
+      tier: FfcUpscaleTier.light,
+      backend: FfcUpscaleBackend.cpu,
+      insideModel: null,
+      outsideModel: 'binding_test_light.onnx',
+    );
+    final ({int status, int generation}) first = light();
+    expect(first.status, FfcStatus.ok);
+    expect(first.generation, greaterThan(0));
+    expect(light().generation, first.generation);
+    final ({int status, int generation}) other = engine.configure(
+      tier: FfcUpscaleTier.light,
+      backend: FfcUpscaleBackend.cpu,
+      insideModel: null,
+      outsideModel: 'binding_test_other.onnx',
+    );
+    expect(other.status, FfcStatus.ok);
+    expect(other.generation, first.generation + 1);
+    expect(
+      engine
+          .configure(
+            tier: FfcUpscaleTier.high,
+            backend: FfcUpscaleBackend.cpu,
+            insideModel: 'a.onnx',
+            outsideModel: 'b.onnx',
+          )
+          .status,
+      FfcUpscaleStatus.unsupported,
+    );
+  });
 }

@@ -207,7 +207,12 @@ class RemoteLocalAudioInfo {
 /// `/api/capabilities` 的 `liveLibrary` 里声明「本地音频清单带内容身份、单项端点
 /// 认 contentId」的能力位（拍板 pr3481）。老 host 无此位 → client 只能按显示名
 /// 匹配，并在同步报告里提示升级对端。
-const String kLiveLibraryLocalAudioContentIdCapability = 'localAudioContentId';
+///
+/// 位名带版本：身份算法从 `la1-`（不读音频 BLOB，HBK-AUDIT-001）换成 `la2-` 后，
+/// 只发 `la1-` 的 host 仍声明旧位 `localAudioContentId`，但它的身份本端不认——
+/// 必须按「对端版本过旧」报出来，而不是当成已支持、静默退回按名匹配。
+const String kLiveLibraryLocalAudioContentIdCapability =
+    'localAudioContentIdV2';
 
 /// [capabilities]（`GET /api/capabilities` 的解码结果，老 host 为 null）是否声明
 /// [kLiveLibraryLocalAudioContentIdCapability]。
@@ -3546,8 +3551,10 @@ abstract class FushiLibraryHostService {
   /// 回调为 null 时抛 [UnsupportedError]。
   Future<void> importLocalAudio(File packageFile);
 
-  /// 从 host 删除 [key] 指向的本地音频来源（同 [exportLocalAudio]：先按 contentId
-  /// 认、再按 displayName 认）。[key] 含路径穿越字符时抛 [ArgumentError]。
+  /// 从 host 删除内容身份为 [key] 的本地音频来源（HBK-AUDIT-022）。**只认
+  /// contentId**：显示名在各端可以不同，同名的可能是另一份库，按名删会删错——
+  /// [key] 不是合格内容身份时不删任何东西（幂等返回）。[key] 含路径穿越字符时抛
+  /// [ArgumentError]。
   Future<void> deleteLocalAudio(String key);
 
   // ── 有声书包 ──────────────────────────────────────────────────────────────
