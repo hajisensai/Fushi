@@ -6963,6 +6963,7 @@
   "models_ocr_summary": "漫畫與圖形字幕共用：識別引擎、本機模型與 LLM 糾錯",
   "models_section_files": "模型檔案",
   "models_tts_card_fallback_section": "Card audio fallback",
+  "models_tts_fallback_nothing_to_read": "This entry has nothing to read aloud",
   "models_tts_fallback_off": "Don't use TTS",
   "models_tts_fallback_online_notice": "The word is sent to this online service",
   "models_tts_fallback_speed": "兜底發音倍速",

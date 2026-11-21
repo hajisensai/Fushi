@@ -6963,6 +6963,7 @@
   "models_ocr_summary": "漫画与图形字幕共用：识别引擎、本机模型下载与 LLM 纠错",
   "models_section_files": "模型文件",
   "models_tts_card_fallback_section": "发音兜底",
+  "models_tts_fallback_nothing_to_read": "这个词条没有可朗读的内容",
   "models_tts_fallback_off": "不使用 TTS 兜底",
   "models_tts_fallback_online_notice": "词条文本会发送给该在线服务",
   "models_tts_fallback_speed": "兜底发音倍速",
