@@ -758,7 +758,7 @@ class _PagePreview extends StatelessWidget {
         pageImage ?? (pageFile == null ? null : FileImage(pageFile!));
     if (img == null || img.size.isEmpty) return const SizedBox.shrink();
     final Widget placeholder = ColoredBox(
-      color: theme.colorScheme.surfaceContainerHighest,
+      color: FushiDesignTokens.of(context).surfaces.group,
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
