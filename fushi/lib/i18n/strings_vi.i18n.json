@@ -13012,6 +13012,7 @@
   "video_scrape_pending_cause_provider_unavailable": "Metadata source unavailable",
   "video_scrape_pending_record_missing": "No reason in recent scrape runs",
   "video_scrape_rating_votes": "$count đánh giá",
+  "video_scrape_scope_sourceless": "Local videos without a source",
   "video_scrape_tmdb_key_empty": "Lưu khóa API TMDB, sau đó nhấn Tìm kiếm. Kết quả từ các nguồn khác không hiển thị ở đây.",
   "video_scrape_tmdb_key_hint": "Nhập khóa API TMDB",
   "video_scrape_tmdb_key_required": "TMDB yêu cầu khóa API",

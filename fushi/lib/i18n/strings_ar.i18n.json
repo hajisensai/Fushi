@@ -13012,6 +13012,7 @@
   "video_scrape_pending_cause_provider_unavailable": "Metadata source unavailable",
   "video_scrape_pending_record_missing": "No reason in recent scrape runs",
   "video_scrape_rating_votes": "$count تقييم",
+  "video_scrape_scope_sourceless": "Local videos without a source",
   "video_scrape_tmdb_key_empty": "احفظ مفتاح TMDB API، ثم اضغط بحث. نتائج المصادر الأخرى لا تظهر هنا.",
   "video_scrape_tmdb_key_hint": "أدخل مفتاح TMDB API",
   "video_scrape_tmdb_key_required": "TMDB يتطلب مفتاح API",

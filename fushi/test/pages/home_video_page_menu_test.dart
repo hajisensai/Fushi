@@ -946,10 +946,6 @@ void main() {
     // 这些视频在计划器里拿不到作品单元，画出来点了必然只剩「不在计划里」。
     final Map<String, Future<String> Function()> unplannable =
         <String, Future<String> Function()>{
-          '手动导入（没有 sourceId）': () async {
-            await seedTaggedVideo();
-            return 'video/1';
-          },
           '流媒体（URL，无来源）': () async {
             await db.upsertVideoBook(
               const VideoBooksCompanion(
@@ -1002,9 +998,22 @@ void main() {
       });
     });
 
-    testWidgets('菜单打开后来源被删：点重刮给可见提示，不静默', (WidgetTester tester) async {
-      // 入口已与计划器同口径，「不在计划里」只剩竞态：菜单画出来之后来源被删
-      // （FK setNull 把视频的 sourceId 清掉），点下去计划器已经给不出单元。
+    // 拍板台 gtpgyff3l7-oneshot-scrape 方案 b：没有来源的本机视频（「仅此一次」导入
+    // 扫完删掉临时行、手动导入）与来源视频走同一条刮削链，入口照画。
+    testWidgets('无来源的本机视频（仅此一次导入 / 手动导入）画重刮入口', (WidgetTester tester) async {
+      await seedTaggedVideo();
+      await tester.pumpWidget(buildApp(scrapeTaskController: scrapeController));
+      await tester.pumpAndSettle();
+
+      await openCardMenu(tester, videoCard('video/1'));
+
+      expect(find.text(t.collection_rescrape), findsOneWidget);
+    });
+
+    testWidgets('菜单打开后来源改成目录分组：点重刮给可见提示，不静默', (WidgetTester tester) async {
+      // 入口已与计划器同口径，「不在计划里」只剩竞态：菜单画出来之后来源被改成
+      // 目录分组模式，点下去计划器已经给不出单元。（来源被删不再是这种竞态：视频
+      // 归无来源范围，仍能刮。）
       final int sourceId = await seedVideoSource();
       await seedSourcedVideo('video/liz', sourceId: sourceId);
       FushiToast.navigatorKey = toastNavigatorKey;
@@ -1016,7 +1025,11 @@ void main() {
       await openCardMenu(tester, videoCard('video/liz'));
       final Finder entry = find.text(t.collection_rescrape);
       expect(entry, findsOneWidget);
-      await db.deleteMediaSource(sourceId);
+      await (db.update(
+        db.mediaSources,
+      )..where(($MediaSourcesTable s) => s.id.equals(sourceId))).write(
+        const MediaSourcesCompanion(videoGroupingMode: Value('folder')),
+      );
       await tester.ensureVisible(entry);
       await tester.tap(entry);
       await tester.pumpAndSettle();

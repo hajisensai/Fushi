@@ -13012,6 +13012,7 @@
   "video_scrape_pending_cause_provider_unavailable": "Metadata source unavailable",
   "video_scrape_pending_record_missing": "No reason in recent scrape runs",
   "video_scrape_rating_votes": "$count beoordelingen",
+  "video_scrape_scope_sourceless": "Local videos without a source",
   "video_scrape_tmdb_key_empty": "Sla een TMDB API-sleutel op en druk op Zoeken. Resultaten van andere bronnen worden hier niet getoond.",
   "video_scrape_tmdb_key_hint": "TMDB API-sleutel invoeren",
   "video_scrape_tmdb_key_required": "TMDB vereist een API-sleutel",

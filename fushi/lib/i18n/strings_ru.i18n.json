@@ -13012,6 +13012,7 @@
   "video_scrape_pending_cause_provider_unavailable": "Metadata source unavailable",
   "video_scrape_pending_record_missing": "No reason in recent scrape runs",
   "video_scrape_rating_votes": "$count оценок",
+  "video_scrape_scope_sourceless": "Local videos without a source",
   "video_scrape_tmdb_key_empty": "Сохраните ключ API TMDB, затем нажмите «Поиск». Результаты из других источников здесь не отображаются.",
   "video_scrape_tmdb_key_hint": "Введите ключ API TMDB",
   "video_scrape_tmdb_key_required": "Для TMDB требуется ключ API",

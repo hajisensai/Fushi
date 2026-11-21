@@ -13012,6 +13012,7 @@
   "video_scrape_pending_cause_provider_unavailable": "资料源不可用",
   "video_scrape_pending_record_missing": "近期刮削记录里没有原因",
   "video_scrape_rating_votes": "$count 人评分",
+  "video_scrape_scope_sourceless": "无来源的本机视频",
   "video_scrape_tmdb_key_empty": "先保存 TMDB API Key，再点“搜索”。这里不会混入其他来源的结果。",
   "video_scrape_tmdb_key_hint": "输入 TMDB API Key",
   "video_scrape_tmdb_key_required": "TMDB 需要 API Key",

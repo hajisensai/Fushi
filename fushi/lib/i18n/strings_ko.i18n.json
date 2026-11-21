@@ -13012,6 +13012,7 @@
   "video_scrape_pending_cause_provider_unavailable": "Metadata source unavailable",
   "video_scrape_pending_record_missing": "No reason in recent scrape runs",
   "video_scrape_rating_votes": "평가 $count개",
+  "video_scrape_scope_sourceless": "Local videos without a source",
   "video_scrape_tmdb_key_empty": "TMDB API 키를 저장한 후 검색을 누르세요. 다른 소스의 결과는 여기에 표시되지 않습니다.",
   "video_scrape_tmdb_key_hint": "TMDB API 키 입력",
   "video_scrape_tmdb_key_required": "TMDB에는 API 키가 필요합니다",
