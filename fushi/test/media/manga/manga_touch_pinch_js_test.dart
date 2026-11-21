@@ -1,3 +1,8 @@
+// 起真 headless Chrome：带 chrome 标签，dist_test 只派给声明了 chrome 能力的 worker
+// （浏览器装了不等于能跑——无图形会话的 SSH worker 上 Chrome 会段错误退出）。
+@Tags(<String>['chrome'])
+library;
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';

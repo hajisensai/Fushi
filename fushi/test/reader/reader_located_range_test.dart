@@ -77,6 +77,8 @@ $cases
       }
     },
     skip: chrome == null ? 'Chromium required; set CHROME_EXECUTABLE' : false,
+    // 起真 headless Chrome：dist_test 只派给声明了 chrome 能力的 worker。
+    tags: <String>['chrome'],
     // 同目录其它真 Chrome 套件同口径（并行起多个 Chrome 时默认 30s 不够）。
     timeout: const Timeout(Duration(seconds: 90)),
   );
