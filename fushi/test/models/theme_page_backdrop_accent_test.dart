@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
+import 'package:fushi/src/utils/misc/app_icon_preferences.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_color_utilities/material_color_utilities.dart';
 import 'package:material_ui/material_ui.dart';
@@ -153,12 +154,80 @@ void main() {
     expect(notifier.followPageBackdropAccent, isTrue);
   });
 
-  test('非主题选择入口写主题键（同步 / 恢复 / 操作目录）不关取色', () async {
+  test('setAppThemeKey 只换键（删除自定义主题后的回落等非用户选择）：不关取色', () async {
     notifier = build();
     await notifier.importPageBackdropImage(source('a.png'), portrait: false);
     await notifier.setAppThemeKey('m3-blue');
     expect(notifier.followPageBackdropAccent, isTrue);
     expect(notifier.pageBackdropAccentSeed, const Color(green));
+  });
+
+  test('点色卡：关取色与换主题同一次通知、监听者从不看到「取色已关、主题未换」的中间态', () async {
+    notifier = build();
+    await notifier.importPageBackdropImage(source('a.png'), portrait: false);
+    final Color blue = ThemeNotifier.buildPresetColorScheme(
+      ThemeNotifier.themePresets['m3-blue']!,
+      Brightness.light,
+    ).primary;
+    final List<Color> seen = <Color>[];
+    void listener() => seen.add(primary());
+    notifier.addListener(listener);
+
+    await notifier.pickAppThemeKey('m3-blue');
+    notifier.removeListener(listener);
+
+    expect(seen, <Color>[blue]);
+  });
+
+  test('背景图取色与图标取色同时生效：点色卡两个都关，不会落到图标取色上', () async {
+    final Future<int?> Function(String) originalIconExtractor =
+        ThemeNotifier.appIconSeedExtractor;
+    addTearDown(() {
+      ThemeNotifier.appIconSeedExtractor = originalIconExtractor;
+      currentAppIconSelection.value = const AppIconSelection(
+        presetKey: 'default',
+      );
+    });
+    final File icon = source('icon.png');
+    ThemeNotifier.appIconSeedExtractor = (String _) async => red;
+    currentAppIconSelection.value = AppIconSelection(
+      presetKey: customIconKey,
+      customPath: icon.path,
+    );
+    notifier = build();
+    await notifier.setFollowAppIconAccent(true);
+    await notifier.importPageBackdropImage(source('a.png'), portrait: false);
+    expect(notifier.appIconAccentSeed, const Color(red));
+    expect(
+      notifier.activeAccentOverrideSource,
+      ThemeAccentOverrideSource.pageBackdrop,
+    );
+
+    await notifier.pickAppThemeKey('m3-blue');
+
+    expect(notifier.followPageBackdropAccent, isFalse);
+    expect(notifier.followAppIconAccent, isFalse);
+    expect(notifier.activeAccentOverrideSource, isNull);
+    expect(
+      primary(),
+      ThemeNotifier.buildPresetColorScheme(
+        ThemeNotifier.themePresets['m3-blue']!,
+        Brightness.light,
+      ).primary,
+    );
+  });
+
+  test('点色卡落库：开关与主题键同一批写进偏好库，重载后仍是所选主题', () async {
+    notifier = build();
+    await notifier.importPageBackdropImage(source('a.png'), portrait: false);
+    await notifier.pickAppThemeKey('m3-blue');
+
+    final Map<String, String> stored = await database.getAllPrefs();
+    expect(stored['app_theme_key'], PrefCodec.encode('m3-blue'));
+    expect(
+      stored[kPageBackdropFollowImageAccentPrefKey],
+      PrefCodec.encode(false),
+    );
   });
 
   test('切回形状预设：取色不再生效，换回自定义又恢复', () async {

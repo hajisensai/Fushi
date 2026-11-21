@@ -8,7 +8,6 @@ import 'package:fushi/src/models/theme_notifier.dart'
     show
         CustomThemeEntry,
         ThemeAccentOverrideSource,
-        ThemeNotifier,
         ThemePreset,
         kCustomThemeDefaultSeed;
 import 'package:fushi/src/profile/profile_view_model.dart';
@@ -316,181 +315,188 @@ Widget buildLanguageSelector(SettingsContext settingsContext) {
 
 Widget buildThemeSelector(SettingsContext settingsContext) {
   final AppModel appModel = settingsContext.appModel;
-  final Color systemColor =
-      appModel.systemPrimaryColor ?? const Color(0xFF1F4959);
-  final FushiDesignTokens tokens = FushiDesignTokens.of(
-    settingsContext.context,
-  );
-  // BUG-1894: 行尾「编辑」按钮的目标只能是**当前活跃的自定义主题**。解析一次放在
-  // 这里，既给按钮的 onTap 用，也给它的 enabled 门用——两者必须读同一个值，否则
-  // 又会长出「按钮亮着但没有目标」的状态。
-  final String? activeCustomThemeId = appModel.activeCustomThemeEntry?.id;
-  // 2026-10 M3E：预设只决定种子色、不决定明暗——所有色卡按**当前**明暗（含
-  // 「纯黑深色背景」）预览，与选中后真实生效的配色同源。
-  final Brightness brightness = appModel.isDarkMode
-      ? Brightness.dark
-      : Brightness.light;
-  final bool pureBlack = appModel.pureBlackDark;
-  // 背景图取色 / 图标取色正在覆盖所选主题时，点色卡原本毫无可见反应。副标题说明
-  // 配色来自哪里；点任一色卡走 [ThemeNotifier.pickAppThemeKey]，先关掉覆盖再切主题。
-  final ThemeNotifier themeNotifier = appModel.themeNotifier;
-  final ThemeAccentOverrideSource? overrideSource =
-      themeNotifier.activeAccentOverrideSource;
-  Future<void> pickTheme(String key) async {
-    await themeNotifier.pickAppThemeKey(key);
-    notifyReaderSettingsChanged(settingsContext);
-    settingsContext.refresh();
-  }
+  // 整行跟着 AppModel（转发 ThemeNotifier 的每次通知）重建：背景图取色是异步取完才
+  // 生效的，副标题的来源提示、色卡选中态都要随它即时更新，不能停在构建那一刻。
+  return ListenableBuilder(
+    listenable: appModel,
+    builder: (BuildContext context, Widget? _) {
+      final Color systemColor =
+          appModel.systemPrimaryColor ?? const Color(0xFF1F4959);
+      final FushiDesignTokens tokens = FushiDesignTokens.of(
+        settingsContext.context,
+      );
+      // BUG-1894: 行尾「编辑」按钮的目标只能是**当前活跃的自定义主题**。解析一次放在
+      // 这里，既给按钮的 onTap 用，也给它的 enabled 门用——两者必须读同一个值，否则
+      // 又会长出「按钮亮着但没有目标」的状态。
+      final String? activeCustomThemeId = appModel.activeCustomThemeEntry?.id;
+      // 2026-10 M3E：预设只决定种子色、不决定明暗——所有色卡按**当前**明暗（含
+      // 「纯黑深色背景」）预览，与选中后真实生效的配色同源。
+      final Brightness brightness = appModel.isDarkMode
+          ? Brightness.dark
+          : Brightness.light;
+      final bool pureBlack = appModel.pureBlackDark;
+      // 背景图取色 / 图标取色正在覆盖所选主题时，点色卡原本毫无可见反应。副标题说明
+      // 配色来自哪里；点任一色卡走用户选主题的唯一入口 [AppModel.pickAppThemeKey]，
+      // 先关掉覆盖再切主题。
+      final ThemeAccentOverrideSource? overrideSource =
+          appModel.activeAccentOverrideSource;
+      Future<void> pickTheme(String key) async {
+        await appModel.pickAppThemeKey(key);
+        notifyReaderSettingsChanged(settingsContext);
+        settingsContext.refresh();
+      }
 
-  return AdaptiveSettingsRow(
-    title: t.reader_theme,
-    // TODO-928: 提示自定义主题「点击切换 · 长按编辑」的发现性文案。
-    subtitle: switch (overrideSource) {
-      ThemeAccentOverrideSource.pageBackdrop =>
-        t.theme_accent_override_page_backdrop,
-      ThemeAccentOverrideSource.appIcon => t.theme_accent_override_app_icon,
-      null => t.custom_theme_long_press_hint,
+      return AdaptiveSettingsRow(
+        title: t.reader_theme,
+        // TODO-928: 提示自定义主题「点击切换 · 长按编辑」的发现性文案。
+        subtitle: switch (overrideSource) {
+          ThemeAccentOverrideSource.pageBackdrop =>
+            t.theme_accent_override_page_backdrop,
+          ThemeAccentOverrideSource.appIcon => t.theme_accent_override_app_icon,
+          null => t.custom_theme_long_press_hint,
+        },
+        icon: Icons.color_lens_outlined,
+        controlBelow: true,
+        trailing: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final double cellWidth = themePresetCellWidth(
+              constraints.maxWidth,
+              tokens.spacing.gap,
+            );
+            return Wrap(
+              spacing: tokens.spacing.gap,
+              runSpacing: tokens.spacing.gap,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: <Widget>[
+                // 跟随系统取色（Material You 动态色）。
+                FushiThemePresetCard(
+                  cellWidth: cellWidth,
+                  key: const ValueKey<String>('theme-preset-system-theme'),
+                  seed: systemColor,
+                  scheme: buildFushiColorScheme(
+                    seedColor: systemColor,
+                    brightness: brightness,
+                    pureBlack: pureBlack,
+                  ),
+                  label: AppModel.themeLabel('system-theme'),
+                  overlay: FushiIcons.ai,
+                  selected: appModel.appThemeKey == 'system-theme',
+                  onTap: () => pickTheme('system-theme'),
+                ),
+                // M3 经典种子预设（基线紫 + Google 经典色板 + 中性灰）。
+                ...AppModel.themePresets.entries.map((
+                  MapEntry<String, ThemePreset> entry,
+                ) {
+                  return FushiThemePresetCard(
+                    cellWidth: cellWidth,
+                    key: ValueKey<String>('theme-preset-${entry.key}'),
+                    seed: entry.value.seed,
+                    scheme: AppModel.buildPresetColorScheme(
+                      entry.value,
+                      brightness,
+                      pureBlack: pureBlack,
+                    ),
+                    label: AppModel.themeLabel(entry.key),
+                    selected: appModel.appThemeKey == entry.key,
+                    onTap: () => pickTheme(entry.key),
+                  );
+                }),
+                // TODO-930 M1: 每个自定义主题一张卡。单击=切换到该主题
+                // （写 app_theme_key=custom-theme:<id>），长按=进编辑页编辑该主题。
+                // 预览读各 entry 的种子+角色色 + 当前真实全局明暗（自定义主题跟随
+                // 全局明暗，custom_theme_dark 已停写、不是真值）。
+                ...appModel.customThemes.asMap().entries.map((
+                  MapEntry<int, CustomThemeEntry> indexed,
+                ) {
+                  final CustomThemeEntry e = indexed.value;
+                  final String key = 'custom-theme:${e.id}';
+                  final Color seed = e.followSystemAccent
+                      ? (appModel.systemPrimaryColor ??
+                            Color(e.primaryColor ?? e.seed))
+                      : Color(e.primaryColor ?? e.seed);
+                  return FushiThemePresetCard(
+                    cellWidth: cellWidth,
+                    key: ValueKey<String>('theme-preset-$key'),
+                    seed: seed,
+                    scheme: appModel.buildCustomThemeColorScheme(e, brightness),
+                    label: e.name.trim().isNotEmpty
+                        ? e.name.trim()
+                        : t.custom_theme_default_name(n: indexed.key + 1),
+                    // 选中 = 当前 app_theme_key 指向这个 entry（精确 custom-theme:<id>，
+                    // 或裸 custom-theme 解析到的当前活跃 entry）。
+                    selected:
+                        appModel.appThemeKey == key ||
+                        (appModel.appThemeKey == 'custom-theme' &&
+                            appModel.activeCustomThemeEntry?.id == e.id),
+                    onTap: () => pickTheme(key),
+                    onLongPress: () async {
+                      await pushSettingsPage(
+                        settingsContext,
+                        (_) => CustomThemePage(themeId: e.id),
+                      );
+                      notifyReaderSettingsChanged(settingsContext);
+                    },
+                  );
+                }),
+                // TODO-930 M1: 末尾「+新建」卡。打开一个空草稿编辑页（种子取品牌默认色，
+                // 沿用 928），用户点「应用」才写进列表。焦点/手柄用户单击（Enter / A）
+                // 即可新建，无需长按。
+                // BUG-1841：进编辑页前不得 upsert——否则只是点开看看也会多出一个主题。
+                FushiThemePresetCard(
+                  cellWidth: cellWidth,
+                  key: const ValueKey<String>('theme-preset-new-custom'),
+                  seed: const Color(kCustomThemeDefaultSeed),
+                  scheme: buildFushiColorScheme(
+                    seedColor: const Color(kCustomThemeDefaultSeed),
+                    brightness: brightness,
+                    pureBlack: pureBlack,
+                  ),
+                  label: t.custom_theme,
+                  overlay: Icons.add,
+                  selected: false,
+                  onTap: () async {
+                    await pushSettingsPage(
+                      settingsContext,
+                      (_) => const CustomThemePage(),
+                    );
+                    notifyReaderSettingsChanged(settingsContext);
+                  },
+                ),
+                // TODO-930 M1: 焦点/手柄没有长按，故保留一个焦点可达的「编辑」按钮，编辑
+                // 当前活跃的自定义主题（先切到某个自定义 swatch，再用此按钮编辑它）。
+                // BUG-1894: 当前不在自定义主题上时**没有可编辑的对象**，按钮禁用。它以前
+                // 回落到打开空草稿编辑页，与左邻「+」卡片逐字节等价——同一行里两个按钮做
+                // 同一件事，其中挂着「编辑」图标的那个却在新建，和 tooltip 自相矛盾。修法
+                // 是承认这个空状态而不是给它编个目标：enabled=false 会同时置灰图标、把
+                // InkWell.onTap 置 null、并让 FushiFocusTarget(enabled: false) 把按钮摘出
+                // 焦点/手柄遍历，于是新建入口唯一收敛在「+」卡片上。
+                // Material 祖先：Cupertino 渲染器下没有 Material，FushiIconButton 的
+                // InkWell 需要 Material 祖先；各 swatch 自带 Material，独立按钮要自己补。
+                Material(
+                  type: MaterialType.transparency,
+                  child: FushiIconButton(
+                    icon: Icons.edit_outlined,
+                    tooltip: t.edit_custom_theme,
+                    enabled: activeCustomThemeId != null,
+                    constraints: BoxConstraints.tightFor(
+                      width: _swatchSize,
+                      height: _swatchSize,
+                    ),
+                    onTap: () async {
+                      await pushSettingsPage(
+                        settingsContext,
+                        (_) => CustomThemePage(themeId: activeCustomThemeId),
+                      );
+                      notifyReaderSettingsChanged(settingsContext);
+                    },
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      );
     },
-    icon: Icons.color_lens_outlined,
-    controlBelow: true,
-    trailing: LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final double cellWidth = themePresetCellWidth(
-          constraints.maxWidth,
-          tokens.spacing.gap,
-        );
-        return Wrap(
-          spacing: tokens.spacing.gap,
-          runSpacing: tokens.spacing.gap,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: <Widget>[
-            // 跟随系统取色（Material You 动态色）。
-            FushiThemePresetCard(
-              cellWidth: cellWidth,
-              key: const ValueKey<String>('theme-preset-system-theme'),
-              seed: systemColor,
-              scheme: buildFushiColorScheme(
-                seedColor: systemColor,
-                brightness: brightness,
-                pureBlack: pureBlack,
-              ),
-              label: AppModel.themeLabel('system-theme'),
-              overlay: FushiIcons.ai,
-              selected: appModel.appThemeKey == 'system-theme',
-              onTap: () => pickTheme('system-theme'),
-            ),
-            // M3 经典种子预设（基线紫 + Google 经典色板 + 中性灰）。
-            ...AppModel.themePresets.entries.map((
-              MapEntry<String, ThemePreset> entry,
-            ) {
-              return FushiThemePresetCard(
-                cellWidth: cellWidth,
-                key: ValueKey<String>('theme-preset-${entry.key}'),
-                seed: entry.value.seed,
-                scheme: AppModel.buildPresetColorScheme(
-                  entry.value,
-                  brightness,
-                  pureBlack: pureBlack,
-                ),
-                label: AppModel.themeLabel(entry.key),
-                selected: appModel.appThemeKey == entry.key,
-                onTap: () => pickTheme(entry.key),
-              );
-            }),
-            // TODO-930 M1: 每个自定义主题一张卡。单击=切换到该主题
-            // （写 app_theme_key=custom-theme:<id>），长按=进编辑页编辑该主题。
-            // 预览读各 entry 的种子+角色色 + 当前真实全局明暗（自定义主题跟随
-            // 全局明暗，custom_theme_dark 已停写、不是真值）。
-            ...appModel.customThemes.asMap().entries.map((
-              MapEntry<int, CustomThemeEntry> indexed,
-            ) {
-              final CustomThemeEntry e = indexed.value;
-              final String key = 'custom-theme:${e.id}';
-              final Color seed = e.followSystemAccent
-                  ? (appModel.systemPrimaryColor ??
-                        Color(e.primaryColor ?? e.seed))
-                  : Color(e.primaryColor ?? e.seed);
-              return FushiThemePresetCard(
-                cellWidth: cellWidth,
-                key: ValueKey<String>('theme-preset-$key'),
-                seed: seed,
-                scheme: appModel.buildCustomThemeColorScheme(e, brightness),
-                label: e.name.trim().isNotEmpty
-                    ? e.name.trim()
-                    : t.custom_theme_default_name(n: indexed.key + 1),
-                // 选中 = 当前 app_theme_key 指向这个 entry（精确 custom-theme:<id>，
-                // 或裸 custom-theme 解析到的当前活跃 entry）。
-                selected:
-                    appModel.appThemeKey == key ||
-                    (appModel.appThemeKey == 'custom-theme' &&
-                        appModel.activeCustomThemeEntry?.id == e.id),
-                onTap: () => pickTheme(key),
-                onLongPress: () async {
-                  await pushSettingsPage(
-                    settingsContext,
-                    (_) => CustomThemePage(themeId: e.id),
-                  );
-                  notifyReaderSettingsChanged(settingsContext);
-                },
-              );
-            }),
-            // TODO-930 M1: 末尾「+新建」卡。打开一个空草稿编辑页（种子取品牌默认色，
-            // 沿用 928），用户点「应用」才写进列表。焦点/手柄用户单击（Enter / A）
-            // 即可新建，无需长按。
-            // BUG-1841：进编辑页前不得 upsert——否则只是点开看看也会多出一个主题。
-            FushiThemePresetCard(
-              cellWidth: cellWidth,
-              key: const ValueKey<String>('theme-preset-new-custom'),
-              seed: const Color(kCustomThemeDefaultSeed),
-              scheme: buildFushiColorScheme(
-                seedColor: const Color(kCustomThemeDefaultSeed),
-                brightness: brightness,
-                pureBlack: pureBlack,
-              ),
-              label: t.custom_theme,
-              overlay: Icons.add,
-              selected: false,
-              onTap: () async {
-                await pushSettingsPage(
-                  settingsContext,
-                  (_) => const CustomThemePage(),
-                );
-                notifyReaderSettingsChanged(settingsContext);
-              },
-            ),
-            // TODO-930 M1: 焦点/手柄没有长按，故保留一个焦点可达的「编辑」按钮，编辑
-            // 当前活跃的自定义主题（先切到某个自定义 swatch，再用此按钮编辑它）。
-            // BUG-1894: 当前不在自定义主题上时**没有可编辑的对象**，按钮禁用。它以前
-            // 回落到打开空草稿编辑页，与左邻「+」卡片逐字节等价——同一行里两个按钮做
-            // 同一件事，其中挂着「编辑」图标的那个却在新建，和 tooltip 自相矛盾。修法
-            // 是承认这个空状态而不是给它编个目标：enabled=false 会同时置灰图标、把
-            // InkWell.onTap 置 null、并让 FushiFocusTarget(enabled: false) 把按钮摘出
-            // 焦点/手柄遍历，于是新建入口唯一收敛在「+」卡片上。
-            // Material 祖先：Cupertino 渲染器下没有 Material，FushiIconButton 的
-            // InkWell 需要 Material 祖先；各 swatch 自带 Material，独立按钮要自己补。
-            Material(
-              type: MaterialType.transparency,
-              child: FushiIconButton(
-                icon: Icons.edit_outlined,
-                tooltip: t.edit_custom_theme,
-                enabled: activeCustomThemeId != null,
-                constraints: BoxConstraints.tightFor(
-                  width: _swatchSize,
-                  height: _swatchSize,
-                ),
-                onTap: () async {
-                  await pushSettingsPage(
-                    settingsContext,
-                    (_) => CustomThemePage(themeId: activeCustomThemeId),
-                  );
-                  notifyReaderSettingsChanged(settingsContext);
-                },
-              ),
-            ),
-          ],
-        );
-      },
-    ),
   );
 }
 

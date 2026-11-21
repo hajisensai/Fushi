@@ -140,6 +140,30 @@ void main() {
       expect(currentAppIconSelection.value.usesCustomFile, isTrue);
     });
 
+    test('图标取色：点色卡关开关并与主题键同批落库', () async {
+      final File icon = writeIcon('a.png', <int>[1, 2, 3]);
+      seedsByPath[icon.path] = 0xFF2E7D32;
+      currentAppIconSelection.value = AppIconSelection(
+        presetKey: customIconKey,
+        customPath: icon.path,
+      );
+      notifier = build(const <String, String>{});
+      await notifier.setFollowAppIconAccent(true);
+      final Map<String, String> stored = await database.getAllPrefs();
+      expect(
+        stored[ThemeNotifier.followAppIconPrefKey],
+        PrefCodec.encode(true),
+      );
+
+      await notifier.pickAppThemeKey('m3-blue');
+
+      expect(notifier.followAppIconAccent, isFalse);
+      expect(
+        (await database.getAllPrefs())[ThemeNotifier.followAppIconPrefKey],
+        PrefCodec.encode(false),
+      );
+    });
+
     test('开着时换自定义图标：即时重取色', () async {
       final File first = writeIcon('a.png', <int>[1, 2, 3]);
       final File second = writeIcon('b.png', <int>[4, 5, 6, 7]);
