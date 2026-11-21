@@ -11158,14 +11158,19 @@ class AppModel
   ///
   /// 普通远端查词、游戏串流与视频遥控查词共用这一份：用户在词典管理里对这台 host 做的
   /// 隐藏与排序在三条路径上一致生效（拍板台 pr3602：尊重接收端的选择）。
+  ///
+  /// 词典仓库未就绪（启动早期、重建窗口）且没给 [profileView] 时返回 null：本端此刻
+  /// 说不出选择，请求按旧版形状发、host 用自己的配置。不能去碰 late 的 [dictRepo]——
+  /// 那会让整次远端查词抛 LateInitializationError（遥控 / 串流查词直接失败），与
+  /// [lookupViewDictionaries] 同一条就绪门。
   RemoteLookupDictionaryConfig? remoteLookupDictionaryConfigFor(
     FushiClientUrl candidate, {
     ProfileSettingsView? profileView,
   }) {
     final String hostId = remoteDictionaryHostIdOf(candidate);
-    return profileView != null
-        ? profileView.filtersForHost(hostId)
-        : dictRepo.filtersForHost(hostId);
+    if (profileView != null) return profileView.filtersForHost(hostId);
+    if (!_dictionaryRepoReady) return null;
+    return dictRepo.filtersForHost(hostId);
   }
 
   Future<DictionarySearchResult?> _searchRemoteDictionary({
