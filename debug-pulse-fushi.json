@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-21T00:34:31Z",
+ "generatedAt": "2026-11-21T01:18:57Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "6a3a8131a86dac4acd42ce85d6954fdd7102d01b",
@@ -12,7 +12,7 @@
    "version": "3.4.0",
    "sha": "1f24907329152192e0dcdcec69fca8287cd63dd0",
    "unknown": false,
-   "publishedAt": "2026-11-21T00:33:58Z",
+   "publishedAt": "2026-11-21T01:18:47Z",
    "testflight": true,
    "baseSeq": 29224,
    "prs": [
@@ -125,8 +125,7 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44782863326"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
@@ -197,37 +196,6 @@
     },
     "ios": {
      "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 29190,
-   "version": "3.4.0",
-   "sha": "6dd38cb92db8a3daffbbfefe5fccfa77fdfe966a",
-   "unknown": false,
-   "publishedAt": "2026-11-19T13:21:47Z",
-   "testflight": false,
-   "baseSeq": 29116,
-   "prs": [
-    3681
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44526296839"
-    },
-    "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44526296839"
-    },
-    "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44526296839"
     }
    }
   }
@@ -512,15 +480,6 @@
    "labels": [
     "merge-approved"
    ]
-  },
-  "3681": {
-   "number": 3681,
-   "title": "漫画 / 小说有声整合：合并 #3665–#3670 并接通批量合成、OCR 签名、用词替换表、系列档案串行写入与漫画按系列跑",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-19T12:41:48Z",
-   "additions": 37409,
-   "deletions": 737,
-   "labels": []
   },
   "3751": {
    "number": 3751,
