@@ -364,6 +364,19 @@ class ReaderSettings {
   Future<void> setAudioHighlightTextColor(int v) =>
       _set<int>('audio_highlight_text_color', v);
 
+  /// 新收藏句的颜色（反馈 fMicnouU6V）：五色之一（`kFavoriteHighlightColors` 的键），
+  /// 收藏时写进 `FavoriteSentence.color`；已收藏的句子各自保留原色。
+  String get favoriteHighlightColor => normalizeFavoriteHighlightColor(
+    _get<String>(
+      kFavoriteHighlightColorPrefKey,
+      kDefaultFavoriteHighlightColor,
+    ),
+  );
+  Future<void> setFavoriteHighlightColor(String v) => _set<String>(
+    kFavoriteHighlightColorPrefKey,
+    normalizeFavoriteHighlightColor(v),
+  );
+
   /// 一类高亮的笔触配置：`<前缀>_style` / `_thickness` / `_opacity` / `_cover_ruby` /
   /// `_roughness` / `_animate` / `_underline_form` / `_underline_offset` 八个键，前缀见
   /// [HighlightKind.prefPrefix]（收藏
