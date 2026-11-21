@@ -5393,7 +5393,7 @@
     "en": "Manga › Display and zoom",
     "zh-CN": "漫画 › 显示与缩放"
    },
-   "default": "{\"wide\":{\"version\":1,\"slots\":{\"top\":[\"ocrCancel\",\"fullscreen\",\"bookmarks\",\"settings\",\"ocrVolume\",\"statistics\",\"studyTimer\",\"backToStart\",\"ocrRerun\",\"hideChrome\"],\"toolbar\":[\"chapters\",\"pageGrid\",\"readingMode\",\"spreadPreference\",\"direction\",\"quickSettings\",\"readAloud\",\"ocrBoxes\"],\"overflow\":[]}},\"compact\":{\"version\":1,\"slots\":{\"top\":[\"ocrCancel\",\"fullscreen\",\"bookmarks\",\"settings\",\"ocrVolume\",\"statistics\",\"studyTimer\",\"backToStart\",\"ocrRerun\",\"hideChrome\"],\"toolbar\":[\"chapters\",\"pageGrid\",\"readingMode\",\"spreadPreference\",\"direction\",\"quickSettings\",\"readAloud\",\"ocrBoxes\"],\"overflow\":[]}}}",
+   "default": "{\"wide\":{\"version\":1,\"slots\":{\"top\":[\"ocrCancel\",\"fullscreen\",\"bookmarks\",\"settings\",\"ocrVolume\",\"statistics\",\"studyTimer\",\"textStrip\",\"backToStart\",\"ocrRerun\",\"hideChrome\"],\"toolbar\":[\"chapters\",\"pageGrid\",\"readingMode\",\"spreadPreference\",\"direction\",\"quickSettings\",\"readAloud\",\"ocrBoxes\"],\"overflow\":[]}},\"compact\":{\"version\":1,\"slots\":{\"top\":[\"ocrCancel\",\"fullscreen\",\"bookmarks\",\"settings\",\"ocrVolume\",\"statistics\",\"studyTimer\",\"textStrip\",\"backToStart\",\"ocrRerun\",\"hideChrome\"],\"toolbar\":[\"chapters\",\"pageGrid\",\"readingMode\",\"spreadPreference\",\"direction\",\"quickSettings\",\"readAloud\",\"ocrBoxes\"],\"overflow\":[]}}}",
    "help": "{\"wide\": <布局 JSON，含 slots>, \"compact\": <布局 JSON>}（config get 的输出可改后原样写回）"
   },
   {
