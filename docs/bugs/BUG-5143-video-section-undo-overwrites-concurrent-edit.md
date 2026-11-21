@@ -1,0 +1,6 @@
+## BUG-5143 · video-section-undo-overwrites-concurrent-edit
+- **报告**：2026-11-22（Codex 2026-11-21 PR 审查 HBK-AUDIT-029，PR #4035）
+- **真实性**：✅ 真 bug。`restoreVideoCollectionSections`（PR #4035 head c78469ef71 `fushi/lib/src/ops/ctl_video_organize_routes.dart:306`）在事务外先 `getVideoCollectionSectionOverrides` 读当前分栏，进事务后按这份旧快照判断「是否仍是本次写下的值」再覆盖；读与写之间控制通道 / 分栏对话框 / 另一进程提交的新分栏会被无声盖回旧值。同文件 `restoreVideoEpisodePin`（`:241` 起，develop 上已有）是同一模式：事务外读当前季集指定、比较，事务内写回。`POST sections` 的撤销快照（`:677`）也在写入事务外读。
+- **[x] ① 已修复** — 新增条件写 `FushiDatabase.compareAndSetVideoCollectionSectionOverride`（`packages/fushi_core/lib/src/database/database_video_domain.part.dart:860`）：比较与写入是同一条 SQL（`UPDATE/DELETE ... WHERE section_key = expected`，expected 为空时 `INSERT ... WHERE EXISTS(video_books) ON CONFLICT DO NOTHING`），跨连接 / 跨进程也不会盖掉别处的新值；`restoreVideoCollectionSections`（`ctl_video_organize_routes.dart:302`）改为逐文件条件写，不再事务外先读。`restoreVideoEpisodePin`（`:248`）把读当前指定、比较、写回放进同一事务；`POST sections` 的快照与写入放进同一事务（`:680`）。
+- **[x] ② 已加自动化测试** — `fushi/test/ops/ctl_video_organize_routes_test.dart`：用 drift `QueryInterceptor`（`_RaceGate`）把竞争写精确插到撤销「读当前值之后 / 写回之前」：分栏撤销断言新值 `s2` 保留且报 superseded；季集撤销断言同进程另一任务提交的 S0E1 保留；另有条件写四种组合与文件行已删的单测。变异实测：把路由文件换回修前版本，两条 HBK-AUDIT-029 用例变红。
+- **备注**：`pinEpisode` 自身（`POST files/:uid/episode`）的撤销快照仍在其写入事务外读取，属同类但不在本审计条目内，未改。

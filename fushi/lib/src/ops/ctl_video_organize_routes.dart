@@ -246,11 +246,11 @@ Future<bool> restoreVideoEpisodePin(
   // 读当前指定、比较、写回同一个事务（HBK-AUDIT-029）：事务外先读再写时，两步
   // 之间别处提交的新指定会被这份旧快照无声盖掉。
   final bool applies = await db.transaction(() async {
-    final VideoEpisodeBindingOverrideRow? now = await db
+    final VideoEpisodeBindingOverrideRow? pinned = await db
         .getVideoEpisodeBindingOverride(bookUid);
-    final (int, int)? current = now == null
+    final (int, int)? current = pinned == null
         ? null
-        : (now.seasonNumber, now.episodeNumber);
+        : (pinned.seasonNumber, pinned.episodeNumber);
     if (current != written) return false;
     final (int, int)? previous = _pairOf(before['override']);
     if (previous == null) {
