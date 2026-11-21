@@ -38,7 +38,7 @@ import 'package:fushi_engine/srs/srs_miner.dart';
 /// 打开 SRS 制卡所需的 store + 媒体目录（模块关着 / 打开失败时为 null）。
 ///
 /// 库在换代途中（要迁移 / 别的窗口在迁移 / 上次迁移失败 / 有没迁移的旧库，[isSrsGenerationBlocked]）时**不吞成
-/// null**，原样抛出那个异常：制卡要据它告诉用户去复习页完成升级，而不是笼统的「复习不可用」（BUG-5069）。
+/// null**，原样抛出那个异常：制卡要据它告诉用户去复习页完成升级，而不是笼统的「复习不可用」（BUG-5085）。
 typedef SrsMinerResolver = Future<SrsMiner?> Function();
 
 /// 打开一条 SRS 笔记的编辑页（导航器不可用时返回 false）。

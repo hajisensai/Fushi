@@ -875,6 +875,43 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       );
     }
 
+    // PUT /api/library/videos/<id>/streamentry — client→host 注册一本流媒体书（拍板台
+    // Z2OhxAjKVv）：只有标题 + URL + 重开规格，不传字节。必须排在下面「裸 id 上传」
+    // 之前；client 先看能力位 `liveLibrary.streamVideos` 再推（老 host 没有这一段，
+    // 请求会落进裸 id 分支被当视频文件导入）。删除墓碑闸门与视频上传同一把。
+    final String? streamEntryId = _extractVideoId(
+      reqPath,
+      kStreamVideoEntryPathSuffix,
+    );
+    if (streamEntryId != null) {
+      if (svc is! StreamVideoSyncHost) {
+        return shelf.Response.notFound('Stream video sync not supported');
+      }
+      if (method != 'PUT') return shelf.Response(405);
+      if (await _peerPushVetoed(
+        request,
+        kinds: const <SyncTombstoneKind>[SyncTombstoneKind.video],
+        itemKey: streamEntryId,
+      )) {
+        return _peerPushVetoedResponse(request);
+      }
+      final StreamVideoRegistration entry;
+      try {
+        entry = StreamVideoRegistration.fromJson(
+          jsonDecode(await readBoundedBodyString(request)),
+        );
+      } on FormatException catch (e) {
+        return shelf.Response(400, body: e.message);
+      }
+      try {
+        final bool created = await (svc as StreamVideoSyncHost)
+            .registerStreamVideo(streamEntryId, entry);
+        return jsonResponse(<String, Object?>{'created': created});
+      } on ArgumentError catch (e) {
+        return shelf.Response(400, body: '${e.message}');
+      }
+    }
+
     // PUT /api/library/videos/<id> — client→host 上传本地视频文件并注册进 host 视频库
     // （syncVideoFiles 开关驱动的 live push）。走到此处的 PUT 必是「裸 id 无 suffix」：
     // 所有带 suffix 的端点（cover/streamurl/stream/subtitle/position）已在上方消化（非

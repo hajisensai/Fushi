@@ -110,14 +110,12 @@ import 'package:fushi/src/media/video/video_subtitle_restore_plan.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
-import 'package:fushi/src/media/video/media_server/media_server_config.dart'
-    show MediaServerConfig;
+import 'package:fushi/src/media/video/media_server/media_server_route_failover.dart'
+    show isInterruptedStreamEnd;
+import 'package:fushi_engine/media/video/media_server/media_server_route_failover.dart'
+    show MediaServerStreamInterrupted;
 import 'package:fushi/src/media/video/media_server/media_server_library.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/src/sync/plex_settings_widget.dart'
-    show rerouteMediaServerAfterFailure;
-import 'package:fushi/src/sync/remote_library_cache.dart'
-    show RemoteLibraryCache, remoteLibraryCacheProvider;
 import 'package:fushi_engine/media/video/media_server_video_path.dart';
 import 'package:fushi_engine/media/video/video_source_fingerprint.dart';
 import 'package:fushi/src/media/video/danmaku_manual_match_panel.dart';
@@ -1187,6 +1185,19 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     required bool isPlaying,
     required bool hasNativePlayer,
   }) => isPlaying && hasNativePlayer;
+
+  /// 拍板台 42UUu_kcwD：[shouldPauseForBackground] 成立（正在播、真播放器）之后，
+  /// 是「后台继续放声音」（只挂起视频轨）还是照 BUG-2544 暂停。
+  ///
+  /// [backgroundPlayEnabled]：视频设置「后台继续播放声音」（默认关）。
+  /// [isMobile]：只有手机 / 平板会走到真后台的 `paused`；桌面最小化本来就不暂停，
+  /// 这里显式要求移动端，免得哪天桌面也收到 `paused` 时被这个开关改了行为。
+  /// 纯函数，供单测直接验证。
+  @visibleForTesting
+  static bool shouldKeepAudioInBackground({
+    required bool backgroundPlayEnabled,
+    required bool isMobile,
+  }) => backgroundPlayEnabled && isMobile;
 
   /// BUG-2544：回前台（`resumed`）时是否把播放续上。
   ///
@@ -3666,6 +3677,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   bool _autoAdvanceInFlight = false;
 
+  /// 流断了之后正在问线路故障转移器（[_recoverInterruptedStream]）：期间再来的
+  /// EOF 不重复问。
+  bool _streamRouteFailoverInFlight = false;
+
   /// 本地换集（pushReplacement / 接管全屏路由）在飞标志，见 [_switchEpisode]。
   bool _localEpisodeSwitchInFlight = false;
   String? _lastPrewarmedEpisodePath;
@@ -4324,6 +4339,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         _watchTracker?.start();
         _studyClockGate.setUnfocused(false);
         _studyClockGate.setLifecycleStopped(false);
+        // 拍板台 42UUu_kcwD：后台继续放声音时挂起的视频轨先还原，**排在解码链刷新
+        // 之前**——刷新是原地 seek，轨还关着时 seek 重建不了画面。未挂起时 no-op。
+        unawaited(_controller?.resumeVideoAfterBackground());
         // BUG-1863：从真后台回来先把视频解码链重建一次（详见
         // [VideoPlayerController.shouldRefreshDecodeOnResume] 的判据与机制说明）。
         _refreshDecodeAfterResumeIfNeeded();
@@ -4383,6 +4401,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       isPlaying: controller.isPlaying,
       hasNativePlayer: controller.hasNativePlayer,
     )) {
+      return;
+    }
+    // 拍板台 42UUu_kcwD：开着「后台继续播放声音」时不暂停，只挂起视频轨（`vid=no`，
+    // 理由见 [VideoPlayerController.suspendVideoForBackground]），回前台在
+    // `resumed` 分支还原。不置 [_pausedForBackground]：没停过，回来也就不必续播。
+    if (VideoFushiPage.shouldKeepAudioInBackground(
+      backgroundPlayEnabled: appModel.videoBackgroundPlay,
+      isMobile: isMobilePlatform,
+    )) {
+      unawaited(controller.suspendVideoForBackground());
       return;
     }
     _pausedForBackground = true;
@@ -4781,10 +4809,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // （流地址带令牌、换线路就变，不落库），合集里同一部剧的入库行作连播成员。
       if (isMediaServerVideoPath(row.videoPath)) {
         _setLoadingPhase(_VideoLoadPhase.connecting);
-        // 换线路要失效清单缓存：provider 在 await 之前取（跨 async gap 不碰 ref）。
-        final RemoteLibraryCache remoteCache = ref.read(
-          remoteLibraryCacheProvider,
-        );
+        // 当前线路不通时由客户端的请求漏斗自动换线路（MediaServerRouteFailover），
+        // 这里不用管。
         final SyncRepository syncRepo = SyncRepository(appModel.database);
         try {
           final ({
@@ -4799,13 +4825,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             repository: widget.repo,
             loadConfigs: syncRepo.getMediaServers,
             playlistCollectionId: widget.playlistCollectionId,
-            rerouteAfterFailure: (MediaServerConfig config, Object error) =>
-                rerouteMediaServerAfterFailure(
-                  config,
-                  error,
-                  repo: syncRepo,
-                  cache: remoteCache,
-                ),
           );
           if (!mounted) {
             // 页面在协商途中已关：这只现建的客户端没人会再用（BUG-5012）。

@@ -1652,14 +1652,17 @@ mixin _FushiDbVideoDomain
 
   /// 某来源最近的、留下了待确认或失败作品的运行（新 → 旧）。只有这种运行带
   /// 挂起原因标记；全部成功的运行（如逐个导入时的单作品刮削）不占回看窗口。
+  /// [sourceId] 为 null 取无来源本机视频那条刮削范围的运行（`source_id IS NULL`）。
   Future<List<VideoSourceScrapeRunRow>> getUnresolvedVideoSourceScrapeRuns({
-    required int sourceId,
+    required int? sourceId,
     int limit = 20,
   }) =>
       (select(videoSourceScrapeRuns)
             ..where(
               ($VideoSourceScrapeRunsTable t) =>
-                  t.sourceId.equals(sourceId) &
+                  (sourceId == null
+                      ? t.sourceId.isNull()
+                      : t.sourceId.equals(sourceId)) &
                   (t.pendingConfirmations.isBiggerThanValue(0) |
                       t.failedWorks.isBiggerThanValue(0)),
             )

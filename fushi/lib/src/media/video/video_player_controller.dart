@@ -1697,6 +1697,76 @@ class VideoPlayerController extends ChangeNotifier
     await player.seek(target);
   }
 
+  /// 拍板台 42UUu_kcwD：「后台继续播放声音」进后台时挂起的视频轨。null = 没挂起。
+  /// 持有挂起时所在的 load（[_loadToken]）与当时的 `vid` 值，回前台据此还原。
+  ({int loadToken, String vid})? _backgroundVideoSuspend;
+
+  /// 视频轨当前是否因后台播放被挂起（供页面与测试读）。
+  bool get videoSuspendedForBackground => _backgroundVideoSuspend != null;
+
+  /// 拍板台 42UUu_kcwD：进后台继续放声音时把视频轨关掉（`vid=no`），只留音轨。
+  ///
+  /// 为什么不是「照常播、只是看不见」：
+  ///  - iOS 不许 app 进后台后再向 GPU 提交 OpenGL ES 命令（违者被系统杀掉），而
+  ///    media_kit 的 iOS 纹理每帧都在 worker 线程上 GL 渲染。原生侧另有一道闸
+  ///    （vendored `VideoOutput.swift` 的 `gpuSuspended`），这里关轨让 libmpv 压根
+  ///    不再出帧，不靠那道闸兜每一帧；
+  ///  - 没人消费帧时 libmpv 的 `vo_libmpv` 每帧要等约 200 ms 超时才放弃，画面链
+  ///    卡着会拖累 A/V 同步；关轨后解码器也一并停了，省电。
+  ///
+  /// `vid` 取 Dart 侧缓存的当前视频轨（同步，不多等一次属性往返——进后台这一刻
+  /// 越早关轨越好）。本就没有视频轨（`no`）时只记下挂起、不改属性，回前台也不动。
+  /// 未 load / 非 libmpv 后端时 no-op。
+  Future<void> suspendVideoForBackground() async {
+    final Player? player = _player;
+    if (player == null || _webBackend || _backgroundVideoSuspend != null) {
+      return;
+    }
+    final dynamic native = player.platform;
+    if (native == null) return;
+    final String vid = player.state.track.video.id;
+    _backgroundVideoSuspend = (loadToken: _loadToken, vid: vid);
+    if (vid == 'no') return;
+    await native.setProperty('vid', 'no');
+  }
+
+  /// 拍板台 42UUu_kcwD：回前台把 [suspendVideoForBackground] 关掉的视频轨还原。
+  ///
+  /// 挂起标记**无条件先清**：判据不成立只是这一轮不还原，不能攒到下一次。后台
+  /// 期间换了片（合集自动连播）时挂起前的轨号属于上一部，改回 `auto` 让 libmpv 给
+  /// 新片自己挑轨。未挂起 / 未 load 时 no-op。
+  Future<void> resumeVideoAfterBackground() async {
+    final ({int loadToken, String vid})? suspended = _backgroundVideoSuspend;
+    _backgroundVideoSuspend = null;
+    if (suspended == null) return;
+    final Player? player = _player;
+    if (player == null) return;
+    final dynamic native = player.platform;
+    if (native == null) return;
+    final String? target = backgroundVideoRestoreTarget(
+      suspendedVid: suspended.vid,
+      sameLoad: _isCurrentLoad(player, suspended.loadToken),
+    );
+    if (target == null) return;
+    await native.setProperty('vid', target);
+  }
+
+  /// 拍板台 42UUu_kcwD：回前台时视频轨该还原成什么（纯函数，供单测直接验证）。
+  ///
+  /// - 挂起时本就没有视频轨（`no`）且仍是同一部 → null（不动）；
+  /// - 同一部 → 挂起前的轨号（用户手选过的轨不被换掉）；
+  /// - 后台期间换了片 → `auto`（旧轨号对新片没有意义，且 `vid=no` 可能已被
+  ///   带进新片）。
+  @visibleForTesting
+  static String? backgroundVideoRestoreTarget({
+    required String suspendedVid,
+    required bool sameLoad,
+  }) {
+    if (!sameLoad) return 'auto';
+    if (suspendedVid == 'no') return null;
+    return suspendedVid;
+  }
+
   /// libmpv 此刻的播放位置（`time-pos`，秒）。读不到（非 libmpv 后端 / 尚无位置 /
   /// 非法值）时退回事件缓存的 `player.state.position`。
   Future<Duration> _livePlaybackPosition(Player player) async {

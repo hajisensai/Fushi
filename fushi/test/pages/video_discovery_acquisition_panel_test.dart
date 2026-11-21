@@ -31,8 +31,16 @@ class _FakeBackend implements VideoAcquisitionChannelBackend {
   final List<Completer<VideoAcquisitionLookup>> calls =
       <Completer<VideoAcquisitionLookup>>[];
 
+  /// 每次 lookup 收到的中途进度回调（与 [calls] 同下标）。
+  final List<VideoAcquisitionProgress?> progress =
+      <VideoAcquisitionProgress?>[];
+
   @override
-  Future<VideoAcquisitionLookup> lookup(VideoMediaReference reference) {
+  Future<VideoAcquisitionLookup> lookup(
+    VideoMediaReference reference, {
+    VideoAcquisitionProgress? onProgress,
+  }) {
+    progress.add(onProgress);
     final Completer<VideoAcquisitionLookup> completer =
         Completer<VideoAcquisitionLookup>();
     calls.add(completer);
@@ -223,6 +231,100 @@ void main() {
     expect(_key('video-acquisition-group-library'), findsNothing);
     expect(_key('video-acquisition-group-onlineSource'), findsNothing);
     expect(_key('video-acquisition-group-mediaServer'), findsNothing);
+  });
+
+  testWidgets('在线源按来源逐个出结果：部分结果 + 仍在搜索的来源数，最后一个来源回来后收起', (
+    WidgetTester tester,
+  ) async {
+    _tallView(tester);
+    final _FakeBackend online = _FakeBackend(
+      VideoAcquisitionChannel.onlineSource,
+    );
+    await tester.pumpWidget(
+      _harness(
+        VideoDiscoveryDetailPage(
+          item: _item(),
+          actions: VideoDiscoveryActions(
+            acquisitionChannels: (_) => <VideoAcquisitionChannelBackend>[
+              online,
+            ],
+          ),
+        ),
+      ),
+    );
+    await _settle(tester);
+    expect(_key('video-acquisition-onlineSource-loading'), findsOneWidget);
+    expect(_key('video-acquisition-onlineSource-searching'), findsOneWidget);
+
+    online.progress.single!(
+      const VideoAcquisitionLookup.hits(<VideoAcquisitionHit>[
+        VideoAcquisitionHit(id: 'fast-1', title: 'Star Ring', subtitle: 'Fast'),
+      ], pendingSourceCount: 2),
+    );
+    await _settle(tester);
+    // 换状态的那一帧才起 AnimatedSwitcher 的淡出，再推一段让旧骨架摘掉。
+    await _settle(tester);
+    expect(_key('video-acquisition-onlineSource-hit-fast-1'), findsOneWidget);
+    expect(_key('video-acquisition-onlineSource-loading'), findsNothing);
+    expect(
+      find.text(t.video_acquisition_sources_pending(count: 2)),
+      findsOneWidget,
+    );
+    expect(
+      _key('video-acquisition-onlineSource-searching'),
+      findsOneWidget,
+      reason: '仍有来源未返回，组标题旁的转圈保留',
+    );
+
+    online.calls.single.complete(
+      const VideoAcquisitionLookup.hits(<VideoAcquisitionHit>[
+        VideoAcquisitionHit(id: 'fast-1', title: 'Star Ring', subtitle: 'Fast'),
+        VideoAcquisitionHit(id: 'slow-1', title: 'Star Ring 2', subtitle: 'S'),
+      ], failedSourceCount: 1),
+    );
+    await _settle(tester);
+    expect(_key('video-acquisition-onlineSource-hit-fast-1'), findsOneWidget);
+    expect(_key('video-acquisition-onlineSource-hit-slow-1'), findsOneWidget);
+    expect(_key('video-acquisition-onlineSource-pending'), findsNothing);
+    expect(_key('video-acquisition-onlineSource-searching'), findsNothing);
+    expect(
+      _key('video-acquisition-onlineSource-partial-failure'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('同一渠道里重复 id 的命中只列一行（行按 id 定 key，不能撞键）', (
+    WidgetTester tester,
+  ) async {
+    _tallView(tester);
+    final _FakeBackend online = _FakeBackend(
+      VideoAcquisitionChannel.onlineSource,
+    );
+    await tester.pumpWidget(
+      _harness(
+        VideoDiscoveryDetailPage(
+          item: _item(),
+          actions: VideoDiscoveryActions(
+            acquisitionChannels: (_) => <VideoAcquisitionChannelBackend>[
+              online,
+            ],
+          ),
+        ),
+      ),
+    );
+    await _settle(tester);
+    online.calls.single.complete(
+      const VideoAcquisitionLookup.hits(<VideoAcquisitionHit>[
+        VideoAcquisitionHit(id: 'dup', title: 'A'),
+        VideoAcquisitionHit(id: 'dup', title: 'B'),
+      ]),
+    );
+    await _settle(tester);
+    await _settle(tester);
+    expect(tester.takeException(), isNull);
+    expect(_key('video-acquisition-onlineSource-hit-dup'), findsOneWidget);
+    expect(find.text('A'), findsOneWidget);
+    expect(find.text('B'), findsNothing);
   });
 
   testWidgets('没接获取面板时 hero「搜索资源」照旧直进 BT 搜索', (WidgetTester tester) async {

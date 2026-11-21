@@ -11,6 +11,7 @@ import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ignored_works.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_sweep_ledger.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
@@ -206,6 +207,34 @@ void main() {
       title: Value<String>(title ?? uid),
       videoPath: Value<String>(path),
       sourceId: Value<int?>(sourceId),
+    ),
+  );
+
+  /// 「导入文件夹（仅此一次）」的临时来源行（configJson 带 oneShot 标记）。
+  Future<int> addOneShotSource(String root) => db.insertMediaSource(
+    MediaSourcesCompanion.insert(
+      label: root,
+      mediaKind: 'video',
+      rootPath: root,
+      createdAt: 1,
+      configJson: Value<String?>(
+        encodeSourceConfig(<String, Object?>{kSourceConfigOneShotKey: true}),
+      ),
+    ),
+  );
+
+  /// 没有来源的视频（手动导入 / 临时行删掉后）。
+  Future<void> addLooseVideo(
+    String uid,
+    String path, {
+    String? title,
+    String? groupingMode,
+  }) => db.upsertVideoBook(
+    VideoBooksCompanion(
+      bookUid: Value<String>(uid),
+      title: Value<String>(title ?? uid),
+      videoPath: Value<String>(path),
+      videoGroupingMode: Value<String?>(groupingMode),
     ),
   );
 
@@ -2187,12 +2216,19 @@ void main() {
       await addVideo('ost', 'D:/series/OST/01 - One more tea.flac', series);
       await addVideo('in-folder', 'D:/folder/Movie.mkv', folder);
       await addVideo('remote', 'remote://lib/Movie.mkv', remote);
-      await db.upsertVideoBook(
-        const VideoBooksCompanion(
-          bookUid: Value<String>('manual'),
-          title: Value<String>('manual'),
-          videoPath: Value<String>('C:/Users/me/Videos/Movie.mkv'),
-        ),
+      final int oneShot = await addOneShotSource('D:/once');
+      await addVideo('one-shot', 'D:/once/Movie.mkv', oneShot);
+      // 无来源本机视频（拍板台 gtpgyff3l7-oneshot-scrape 方案 b）：路径用临时目录，
+      // 各平台都是绝对路径。
+      await addLooseVideo(
+        'manual',
+        '${Directory.systemTemp.path}/Liz (2018).mkv',
+      );
+      await addLooseVideo('loose-url', 'https://example.com/live/ep1.m3u8');
+      await addLooseVideo(
+        'loose-folder',
+        '${Directory.systemTemp.path}/Folder/Movie.mkv',
+        groupingMode: 'folder',
       );
 
       final Map<String, bool> expected = <String, bool>{
@@ -2201,7 +2237,10 @@ void main() {
         'ost': false,
         'in-folder': false,
         'remote': false,
-        'manual': false,
+        'one-shot': false,
+        'manual': true,
+        'loose-url': false,
+        'loose-folder': false,
       };
       for (final MapEntry<String, bool> entry in expected.entries) {
         final VideoBookRow book = (await db.getVideoBookByBookUid(entry.key))!;
@@ -2219,6 +2258,106 @@ void main() {
           reason: '${entry.key}：计划器定位与入口判据必须一致',
         );
       }
+    });
+  });
+  // 拍板台 gtpgyff3l7-oneshot-scrape（方案 b）：「仅此一次」导入扫完删掉临时来源行，
+  // 视频的 sourceId 归 NULL。修前它们永远进不了自动补刮 / 右键重刮 / ctl 刮削；
+  // 扫描期间补刮又会对临时行立项，行删掉后写 sidecar 记账报 FK 787。
+  group('「仅此一次」导入的视频与无来源本机视频', () {
+    String loosePath(String name) => '${Directory.systemTemp.path}/$name';
+
+    test('临时行存活期间不立项；行删掉后归无来源范围照常补刮', () async {
+      // 生产库开着外键（删来源时 video_books.source_id 靠 FK setNull 归 NULL）。
+      await db.customStatement('PRAGMA foreign_keys = ON');
+      final int temp = await addOneShotSource(loosePath('once'));
+      await addVideo(
+        'once-movie',
+        loosePath('once/Liz and the Blue Bird (2018).mkv'),
+        temp,
+        title: 'Liz and the Blue Bird',
+      );
+
+      expect(await sweep().pendingWorks(), isEmpty, reason: '临时行随时会被删，不立项');
+      await sweep().sweepOnce();
+      expect(runner.sourceIds, isEmpty);
+
+      await db.deleteMediaSource(temp);
+      expect((await db.getVideoBookByBookUid('once-movie'))!.sourceId, isNull);
+
+      final List<VideoPendingScrapeWork> pending = await sweep().pendingWorks();
+      expect(
+        pending.map((VideoPendingScrapeWork e) => e.work.stableKey),
+        <String>['book:once-movie'],
+      );
+      expect(isSourcelessVideoScrapeScope(pending.single.source), isTrue);
+
+      await sweep().sweepOnce();
+      expect(runner.sourceIds, <int>[kSourcelessLocalVideoScrapeScopeId]);
+      expect(runner.plannedTitles.single, <String>['Liz and the Blue Bird']);
+      expect(runner.runScopes.single, 'sweep');
+    });
+
+    test('右键重刮 / 合集重刮能定位到无来源视频的作品单元', () async {
+      await addLooseVideo('loose-movie', loosePath('Movie (2024).mkv'));
+      for (final String uid in <String>['loose-e1', 'loose-e2']) {
+        await addLooseVideo(uid, loosePath('Show/Show S01E0${uid[7]}.mkv'));
+      }
+      final int collectionId = await db.createMediaCollection('Show');
+      await db.addToCollection(collectionId, MediaKind.video, 'loose-e1');
+      await db.addToCollection(collectionId, MediaKind.video, 'loose-e2');
+
+      final VideoPendingScrapeWork? movie = await planScrapeWorkForVideoBook(
+        db,
+        'loose-movie',
+      );
+      expect(movie?.work.stableKey, 'book:loose-movie');
+      expect(isSourcelessVideoScrapeScope(movie!.source), isTrue);
+
+      final List<VideoPendingScrapeWork> show =
+          await planScrapeWorksForCollection(db, collectionId);
+      expect(show.map((VideoPendingScrapeWork e) => e.work.stableKey), <String>[
+        'collection:$collectionId',
+      ]);
+      expect(show.single.work.members, hasLength(2));
+    });
+
+    test('无来源范围只收本机文件：URL 视频、目录分组导入、有来源的视频都不在内', () async {
+      final int sourceId = await addSource('D:/A');
+      await addVideo('sourced', 'D:/A/Sourced Movie (2020).mkv', sourceId);
+      await addLooseVideo('loose', loosePath('Loose Movie (2021).mkv'));
+      await addLooseVideo('url', 'https://example.com/Movie.mkv');
+      await addLooseVideo(
+        'folder',
+        loosePath('Folder/Movie (2022).mkv'),
+        groupingMode: 'folder',
+      );
+
+      final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
+        db,
+      ).plan(sourcelessLocalVideoScrapeScope);
+
+      expect(works.map((VideoSourceScrapeWork w) => w.stableKey), <String>[
+        'book:loose',
+      ]);
+    });
+
+    test('挂起原因按无来源范围读 source_id 为 NULL 的运行', () async {
+      await addLooseVideo('loose', loosePath('Loose Movie (2021).mkv'));
+      await db.insertVideoSourceScrapeRun(
+        VideoSourceScrapeRunsCompanion.insert(
+          scope: 'sweep',
+          status: 'completed',
+          startedAt: 1,
+          updatedAt: 1,
+          pendingConfirmations: const Value<int>(1),
+        ),
+      );
+
+      expect(
+        await db.getUnresolvedVideoSourceScrapeRuns(sourceId: null),
+        hasLength(1),
+      );
+      expect(await db.getUnresolvedVideoSourceScrapeRuns(sourceId: 1), isEmpty);
     });
   });
 }
