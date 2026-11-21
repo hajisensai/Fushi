@@ -116,7 +116,7 @@ class TextToEpub {
   // 块之间 > 块内的换行（`<br/>`，切点处的换行并入块边界、不留在块首）> 行内
   // 子节点之间 > 文本内的字素簇之间。超长块按原标签重新包成若干块，标签始终成对，
   // 每章都是良构 XHTML。旧实现只在 `<p` 前切，单换行 / 无换行的 TXT、Markdown
-  // 以及只有一个巨大块的 HTML 都会整本落进一章（BUG-4845）。
+  // 以及只有一个巨大块的 HTML 都会整本落进一章（BUG-5057）。
 
   static List<String> _splitIntoChapters(String content, String ext) {
     final List<_BodyNode> blocks;
