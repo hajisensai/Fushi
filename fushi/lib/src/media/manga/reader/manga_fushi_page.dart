@@ -138,6 +138,8 @@ import 'package:fushi/src/media/manga/manga_json_writeback.dart'
     show parseMangaJsonOffUi;
 import 'package:fushi/src/media/manga/reader/manga_page_fit.dart';
 import 'package:fushi/src/media/manga/reader/manga_panel_prewarm.dart';
+import 'package:fushi/src/media/manga/reader/manga_upscale_controller.dart';
+import 'package:fushi_compute/fushi_compute.dart' show FfcUpscaleTier;
 import 'package:fushi/src/media/manga/reader/manga_page_thumbnail_prefetcher.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_quick_settings_sheet.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_study_stats.dart';
@@ -242,6 +244,7 @@ part 'manga_fushi/controller_lookup.part.dart';
 part 'manga_fushi/kavita.part.dart';
 part 'manga_fushi/page_curl.part.dart';
 part 'manga_fushi/read_aloud.part.dart';
+part 'manga_fushi/upscale.part.dart';
 
 /// Manga reader implementation owned by the standalone manga module.
 ///
@@ -1087,6 +1090,7 @@ class MangaFushiPage extends BaseSourcePage {
     bool useCustomScheme = false,
     int? version,
     String? scope,
+    String? upscaleTag,
   }) {
     final String normalized = mangaImageRelativePath(relativeUrl);
     final String encoded = normalized
@@ -1097,6 +1101,10 @@ class MangaFushiPage extends BaseSourcePage {
     final List<String> params = <String>[
       if (scope != null) 's=${Uri.encodeQueryComponent(scope)}',
       if (version != null) 'v=$version',
+      // 低清页 AI 超分结果的标签（manga_upscale_controller.dart 的 mangaUpscaleTag）：拦截器按它
+      // 从超分缓存取图；气泡放大层读 `data-src`，跟着拿到同一张。
+      if (upscaleTag != null)
+        '$kMangaUpscaleQueryParam=${Uri.encodeQueryComponent(upscaleTag)}',
     ];
     final String query = params.isEmpty ? '' : '?${params.join('&')}';
     return '$scheme://$kMangaHost/img/$encoded$query';
@@ -1616,6 +1624,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 当前页会话的卷作用域（[MangaFushiPage.mangaPageScope]），随 [_imagesDir] 定。
   String? _pageScope;
 
+  /// 低清页 AI 超分（偏好 `aiUpscale` 开着、本地章才有）。状态在 Rust 引擎里，这里只是命令入口。
+  MangaUpscaleController? _upscale;
+
   /// 窗口文档加载的所有权闸门：generation 与 ready 锁只能经它读写，迟到的旧回调
   /// 不能解开新窗口的锁（BUG-1170），页面销毁时在飞加载被显式放弃（BUG-1171）。
   final MangaWindowLoadGate _windowGate = MangaWindowLoadGate();
@@ -2091,6 +2102,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   @override
   void dispose() {
     _pageFitter.dispose();
+    _upscale?.dispose();
+    _upscale = null;
     _menuDismiss.detach();
     _readAloud.dispose();
     // 反馈 kEFPY4cuKZ：离开这部作品 = 撤掉它的作品级配置覆盖层。
@@ -2686,6 +2699,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _pageSession = localPageSession;
     _pageSessionGeneration = ++_pageSessionGenerationCounter;
     _pageScope = MangaFushiPage.mangaPageScope(imagesDir);
+    _syncUpscale(force: true);
     _localPageIndices = <String, int>{
       for (int index = 0; index < relativePagePaths.length; index++)
         _localPageKey(relativePagePaths[index]): index,
@@ -3360,6 +3374,35 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         MangaPageBytes? page;
         Future<Uint8List> loadSource() async =>
             (page ??= await pageSession.page(pageIndex)).bytes;
+        // 低清页 AI 超分：URL 带 `sr=` 且结果还在缓存里就以超分图为源（要 `fit=` 的照常按显示宽度
+        // 缩放）；结果被淘汰了退回原图并不让 WebView 缓存，重新排队。
+        final String? srTag = url.queryParameters[kMangaUpscaleQueryParam];
+        final String? srPath = srTag == null
+            ? null
+            : _upscaleCachedPath(pageIndex, srTag);
+        if (srPath != null) {
+          final Uint8List? srBytes = await _readUpscaled(srPath);
+          if (srBytes != null) {
+            final Uint8List? srFitted = await _fitPageBytes(
+              '$_pageSessionGeneration|$pageIndex|$kMangaUpscaleQueryParam=$srTag',
+              fitWidth,
+              () async => srBytes,
+              quality: mangaFitQualityOf(url),
+              pageIndex: pageIndex,
+            );
+            return WebResourceResponse(
+              contentType: 'image/jpeg',
+              statusCode: 200,
+              reasonPhrase: 'OK',
+              headers: <String, String>{
+                'Access-Control-Allow-Origin': '*',
+                'Cache-Control': 'private, max-age=3600',
+              },
+              data: srFitted ?? srBytes,
+            );
+          }
+        }
+        _noteUpscaleDemand(pageIndex, fitWidth, loadSource);
         final Uint8List? fitted = await _fitPageBytes(
           '$_pageSessionGeneration|$pageIndex',
           fitWidth,
@@ -3375,7 +3418,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           reasonPhrase: 'OK',
           headers: <String, String>{
             'Access-Control-Allow-Origin': '*',
-            'Cache-Control': 'private, max-age=3600',
+            'Cache-Control': srTag == null
+                ? 'private, max-age=3600'
+                : 'no-store',
           },
           data: fitted ?? await loadSource(),
         );
@@ -3425,6 +3470,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       },
       data: fitted ?? await File(filePath).readAsBytes(),
     );
+  }
+
+  /// 读超分结果文件；读的瞬间被 LRU 淘汰了返回 null（调用方退回原图）。
+  Future<Uint8List?> _readUpscaled(String path) async {
+    try {
+      return await File(path).readAsBytes();
+    } on FileSystemException {
+      return null;
+    }
   }
 
   /// 页图在 [fitWidth] 档的降采样 JPEG（BUG-4704）；URL 没要、不值得缩、或转码
@@ -3555,6 +3609,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           useCustomScheme: webViewUsesCustomSchemeTransport,
           version: _pageSessionGeneration,
           scope: _pageScope,
+          upscaleTag: _upscaleTagIfCached(page),
         ),
       );
       final int spreadIndex = MangaFushiPage.spreadIndexForPage(_spreads, page);
@@ -5378,6 +5433,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           'window.__mangaReplaceOcr($pageIndex, ${jsonEncode(boxes)}, '
           '${jsonEncode(textBoxSig)});',
     );
+    _upscaleAfterOcrChange(pageIndex);
   }
 
   Future<void> _finishWholeVolumeOcr(MangaOcrBackgroundEvent event) async {
@@ -6191,6 +6247,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _currentPage = page;
     _pageNotifier.value = page;
     _noteVisiblePages();
+    _upscaleAround(page);
     unawaited(_maybePrefetchNextChapter());
     // 600ms debounce：连续翻页/滚动只落最后一次。
     _progressDebounce?.cancel();
@@ -6856,6 +6913,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       prefs.volumeKeys,
       invertDirection: prefs.invertVolumeKeys,
     );
+    _syncUpscale();
     try {
       // 保持亮屏同理：没有本书覆盖时回到全局「保持屏幕常亮」（openMedia 的口径）。
       await setScreenWakelock(

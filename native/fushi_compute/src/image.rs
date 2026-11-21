@@ -28,7 +28,7 @@ use crate::{guard, status};
 
 mod avif;
 mod composite;
-mod resample;
+pub(crate) mod resample;
 
 /// 缩放插值，取值与 `package:image` 的 `Interpolation` 对应（不支持 cubic）。
 pub const INTERP_NEAREST: i32 = 0;
@@ -1840,7 +1840,7 @@ fn fit_jpeg_hq(
 /// [fit_jpeg] / [fit_jpeg_hq] 的出口：4:4:4 JPEG，灰度编单通道，并**带上源图的 ICC 配置文件**。
 /// 不带的话，嵌了配置文件的页（扫描卷常见的灰度 Dot Gain 配置）转码后会被 WebView 当成未标记的
 /// sRGB 显示：同一页 fit 前后明暗不一致（实测《14歳の恋》暗部 12 → 20）。
-fn encode_fit_jpeg(
+pub(crate) fn encode_fit_jpeg(
     pixels: &[u8],
     width: u32,
     height: u32,
@@ -1865,7 +1865,7 @@ fn encode_fit_jpeg(
 }
 
 /// 源图的 ICC 配置文件（没有 / 读不出为 `None`）。
-type IccProfile = Option<Vec<u8>>;
+pub(crate) type IccProfile = Option<Vec<u8>>;
 
 /// 配置文件头的 data colour space（ICC.1 头部偏移 16 起 4 字节）与输出 JPEG 的通道数一致：
 /// 1 通道配 `GRAY`，3 通道配 `RGB `。解码会把 CMYK / YCCK 转成 RGB、把灰度源保持单通道，
@@ -1882,7 +1882,7 @@ fn icc_matches_channels(icc: &[u8], channels: usize) -> bool {
 
 /// 解码成不透明的 1 通道（灰度）或 3 通道（RGB）uint8 像素，返回
 /// `(像素, 宽, 高, 通道数, ICC 配置文件)`；带 alpha 的源返回 [status::BAD_INPUT]。
-fn decode_opaque(data: &[u8]) -> Result<(Vec<u8>, u32, u32, u32, IccProfile), i32> {
+pub(crate) fn decode_opaque(data: &[u8]) -> Result<(Vec<u8>, u32, u32, u32, IccProfile), i32> {
     use image::ImageDecoder;
     if avif::is_avif(data) {
         let (pixels, width, height, channels) = avif::decode(data)?;

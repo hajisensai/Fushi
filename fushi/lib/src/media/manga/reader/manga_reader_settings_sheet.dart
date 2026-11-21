@@ -262,6 +262,12 @@ List<MangaReaderPreferenceDescriptor> mangaReaderPreferenceDescriptors(
     title: t.manga_reader_gamma_correct_scaling,
   ),
   MangaReaderPreferenceDescriptor(
+    key: 'aiUpscale',
+    kind: MangaReaderPreferenceKind.choice,
+    title: t.manga_reader_ai_upscale,
+    choices: const <String>['off', 'light', 'high'],
+  ),
+  MangaReaderPreferenceDescriptor(
     key: 'customColorFilter',
     kind: MangaReaderPreferenceKind.toggle,
     title: t.manga_reader_custom_color_filter,
@@ -687,6 +693,11 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     },
     'quickZoomTarget' =>
       value == 'fit_width' ? t.manga_scale_fit_width : t.manga_scale_fit_height,
+    'aiUpscale' => switch (value) {
+      'light' => t.manga_reader_ai_upscale_light,
+      'high' => t.manga_reader_ai_upscale_high,
+      _ => t.manga_reader_ai_upscale_off,
+    },
     'tapZones' => switch (value) {
       'edge' => t.manga_reader_tap_edge,
       'disabled' => t.manga_reader_tap_disabled,
@@ -747,6 +758,7 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     'grayscale' => FushiIcons.filter,
     'enhancedScaling' => FushiIcons.highQuality,
     'gammaCorrectScaling' => FushiIcons.brightnessAuto,
+    'aiUpscale' => FushiIcons.highQuality,
     'brightness' => FushiIcons.lightMode,
     'contrast' => FushiIcons.brightnessAuto,
     'saturation' => FushiIcons.appearance,
@@ -974,6 +986,7 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
       'grayscale',
       'enhancedScaling',
       'gammaCorrectScaling',
+      'aiUpscale',
       'brightness',
       'contrast',
       'saturation',
@@ -1084,7 +1097,7 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
       ),
       (
         () => t.manga_reader_group_image_quality,
-        <String>['enhancedScaling', 'gammaCorrectScaling'],
+        <String>['enhancedScaling', 'gammaCorrectScaling', 'aiUpscale'],
       ),
     ],
     _ => <(String Function(), List<String>)>[

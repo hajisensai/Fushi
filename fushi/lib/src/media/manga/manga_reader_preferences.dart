@@ -131,6 +131,7 @@ class MangaReaderPreferences {
     this.einkMode = false,
     this.enhancedScaling = true,
     this.gammaCorrectScaling = true,
+    this.aiUpscale = 'off',
     this.lookupOnHover = false,
     this.showOcrBoxes = false,
     this.invertColors = false,
@@ -220,6 +221,11 @@ class MangaReaderPreferences {
   /// 之外在线性光里平均（网点明度更准），框内仍在 sRGB 里平均（细笔画不变淡）；没有 OCR 数据的
   /// 页整页 sRGB（实测见 `manga_page_fit.dart`）。
   final bool gammaCorrectScaling;
+
+  /// 低清页 AI 超分：`off` / `light` / `high`（默认关）。只在页图显示得比原图大时才做；轻量档框外
+  /// ArtCNN、框内 Catmull-Rom，高质量档 waifu2x swin_unet（需要 GPU：Windows DirectML 加速包 /
+  /// Apple CoreML，没有时按轻量档做）。见 `manga_upscale_controller.dart` 与设计文档 §4。
+  final String aiUpscale;
   final bool lookupOnHover;
   final bool showOcrBoxes;
   final bool invertColors;
@@ -289,6 +295,7 @@ class MangaReaderPreferences {
     'einkMode': einkMode,
     'enhancedScaling': enhancedScaling,
     'gammaCorrectScaling': gammaCorrectScaling,
+    'aiUpscale': aiUpscale,
     'lookupOnHover': lookupOnHover,
     'showOcrBoxes': showOcrBoxes,
     'invertColors': invertColors,
@@ -400,6 +407,7 @@ class MangaReaderPreferences {
       einkMode: flag('einkMode', false),
       enhancedScaling: flag('enhancedScaling', true),
       gammaCorrectScaling: flag('gammaCorrectScaling', true),
+      aiUpscale: text('aiUpscale', 'off', <String>{'off', 'light', 'high'}),
       lookupOnHover: flag('lookupOnHover', false),
       showOcrBoxes: flag('showOcrBoxes', false),
       invertColors: flag('invertColors', false),
