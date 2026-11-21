@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-21T15:41:56Z",
+ "generatedAt": "2026-11-21T17:45:10Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "cbdc2a45edcc279f0d2ea3f3f8bfd2ab3ede0bd1",
-  "seq": 30656
+  "sha": "8b8e6acd2801fd48718ccc716f82ee779f9c0b7c",
+  "seq": 30680
  },
  "builds": [
   {
@@ -529,7 +529,45 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "8b8e6acd2801fd48718ccc716f82ee779f9c0b7c",
+  "headSeq": 30680,
+  "prs": [
+   4036,
+   4029,
+   4028,
+   4025
+  ],
+  "direct": [
+   {
+    "sha": "8b8e6acd2801fd48718ccc716f82ee779f9c0b7c",
+    "subject": "docs(bugs): 合并 #4025/#4028/#4029/#4036 后重建 BUGS 索引"
+   },
+   {
+    "sha": "cb4417351b17f2077d3b1f92e6a38f93c47860dd",
+    "subject": "test(dictionary): 停驻 realm 守卫跟上共用弹窗宿主（委托给 SharedLookupPopupOwner 时逐个查渲染方）"
+   }
+  ],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44931340738"
+   },
+   "windows": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44931340750"
+   },
+   "macos": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44931340750"
+   },
+   "ios": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44931340750"
+   }
+  }
+ },
  "prs": {
   "3448": {
    "number": 3448,
@@ -2845,6 +2883,15 @@
    "deletions": 61,
    "labels": []
   },
+  "4025": {
+   "number": 4025,
+   "title": "feat(video-acquisition): 获取途径的在线源 / 媒体服务器按来源逐个出结果",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T17:40:33Z",
+   "additions": 480,
+   "deletions": 63,
+   "labels": []
+  },
   "4026": {
    "number": 4026,
    "title": "fix: 修 develop 上 4 条既有红（术语、图标棘轮、import 大环、fsrs gate 超时）",
@@ -2852,6 +2899,33 @@
    "mergedAt": "2026-11-21T11:46:45Z",
    "additions": 490,
    "deletions": 360,
+   "labels": []
+  },
+  "4028": {
+   "number": 4028,
+   "title": "feat: galgame 台词浮窗显隐热键 + 收藏句颜色可选（拍板台 fMicnouU6V）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T17:40:33Z",
+   "additions": 418,
+   "deletions": 50,
+   "labels": []
+  },
+  "4029": {
+   "number": 4029,
+   "title": "feat(词典管理): 内容语言改成标签 + 筛选，不再按语言分组排序（拍板台 zBzX4B7037）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T17:40:33Z",
+   "additions": 841,
+   "deletions": 1313,
+   "labels": []
+  },
+  "4036": {
+   "number": 4036,
+   "title": "feat(lookup): 游戏 tab 与查词 tab 共用一个查词弹窗栈与预热 WebView",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T17:40:33Z",
+   "additions": 1148,
+   "deletions": 396,
    "labels": []
   },
   "4037": {
