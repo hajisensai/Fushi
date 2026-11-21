@@ -528,7 +528,7 @@ Future<FushiClientUrl?> _raceRelocated(
   required InterconnectAddressProbe probe,
   required Duration grace,
 }) async {
-  final InterconnectLanRelocator? relocator = _lanRelocator;
+  final InterconnectLanAddressLookup? relocator = _lanRelocator;
   if (relocator == null) return null;
   // 「存量直连地址全部探不通」才轮到这里：组里一条直连地址都没有（只有 `p2p://`）
   // 时不是换网，不为它多等一轮局域网浏览。
@@ -598,19 +598,20 @@ FushiClientUrl? _relocationBase(List<FushiClientUrl> group) {
 
 /// 按 hostId 在局域网上找这台 host 此刻公布的地址（`https://<ip>:<port>`），限时
 /// 返回。app 侧用 mDNS 浏览实现（`interconnect_lan_relocation.dart`）。
-typedef InterconnectLanRelocator = Future<List<String>> Function(String hostId);
+typedef InterconnectLanAddressLookup =
+    Future<List<String>> Function(String hostId);
 
 /// 重新定位并核对通过的地址（learned 行，带本组 hostId / token / 指纹）交给它落库。
 typedef InterconnectRelocatedAddressSink =
     Future<void> Function(FushiClientUrl verified);
 
-InterconnectLanRelocator? _lanRelocator;
+InterconnectLanAddressLookup? _lanRelocator;
 InterconnectRelocatedAddressSink? _relocatedSink;
 
 /// 局域网重新定位装配点（BUG-5068）：已配对 host 换了网段（电脑改连手机热点）后，
 /// 存量地址全失效、而学新地址又要先连上它——没有这一步就是死结。传 null 撤掉。
 void setInterconnectLanRelocation({
-  InterconnectLanRelocator? relocator,
+  InterconnectLanAddressLookup? relocator,
   InterconnectRelocatedAddressSink? sink,
 }) {
   _lanRelocator = relocator;

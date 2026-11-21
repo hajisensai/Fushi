@@ -907,7 +907,7 @@ void main([List<String> args = const <String>[]]) {
           ownDeviceId: relocationRepo.getOrCreateDeviceId,
           onBrowseStart: appModel.syncServerController.registerDiscovery,
           onBrowseEnd: appModel.syncServerController.unregisterDiscovery,
-        ),
+        ).urlsFor,
       );
       // BUG-4242：上一个进程上传途中被杀（iOS 挂起 / 内存压力）时，混淆临时目录
       // （与原文件同尺寸，有声书数百 MB）不会经 finally 删掉。启动时认领本进程的

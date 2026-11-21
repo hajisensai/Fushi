@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/sync/interconnect_lan_relocation.dart';
 import 'package:fushi/src/sync/interconnect_p2p_app.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -1021,15 +1022,11 @@ void main() {
           fingerprintSha256: fingerprint,
         ),
       ]);
-      setInterconnectLanRelocation(
-        relocator: (String hostId) async =>
+      // 走 app 启动时的同一个装配（真 sink：经仓库串行写链落库）。
+      installInterconnectLanRelocation(
+        repo,
+        (String hostId) async =>
             hostId == 'HOST-1' ? <String>[live] : <String>[],
-        sink: (FushiClientUrl v) async {
-          await repo.updateFushiClientUrls(
-            (List<FushiClientUrl> before) =>
-                mergeRelocatedInterconnectAddress(before, v),
-          );
-        },
       );
       addTearDown(setInterconnectLanRelocation);
 
@@ -1050,14 +1047,9 @@ void main() {
     test('重新定位到的地址 hostId 或证书对不上：不选、不落库', () async {
       await startHost(tls: true);
       final String live = 'https://127.0.0.1:${server.port}';
-      setInterconnectLanRelocation(
-        relocator: (String hostId) async => <String>[live],
-        sink: (FushiClientUrl v) async {
-          await repo.updateFushiClientUrls(
-            (List<FushiClientUrl> before) =>
-                mergeRelocatedInterconnectAddress(before, v),
-          );
-        },
+      installInterconnectLanRelocation(
+        repo,
+        (String hostId) async => <String>[live],
       );
       addTearDown(setInterconnectLanRelocation);
 
