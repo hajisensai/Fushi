@@ -23,7 +23,7 @@ from typing import Iterator
 
 HERE: Path = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from symdb import default_db_path  # noqa: E402
+from symdb import INCOMPLETE_KEY, Index, default_db_path  # noqa: E402
 
 DART: str = os.environ.get('FUSHI_DART', 'D:/flutter_sdk/flutter_3.47.6/bin/cache/dart-sdk/bin/dart.exe')
 RUST_ANALYZER: str = os.environ.get('FUSHI_RUST_ANALYZER', os.path.expanduser('~/.cargo/bin/rust-analyzer'))
@@ -229,17 +229,22 @@ def index_rust_crate(repo: Path, crate: Path, loader: Loader, seen: set[tuple[st
             loader.add_refs(rows)
 
 
-def index_rust(repo: Path, loader: Loader) -> None:
+def index_rust(repo: Path, loader: Loader) -> list[str]:
+    """逐个 crate 建 Rust 索引，返回 lsif 失败、没收进来的 crate 目录（相对仓库根，posix 分隔）。"""
     seen: set[tuple[str, int, str]] = set()
+    failed: list[str] = []
     for cargo in sorted((repo / 'native').glob('*/Cargo.toml')):
         t0: float = time.time()
         before: int = loader.syms
         try:
             index_rust_crate(repo, cargo.parent, loader, seen)
         except subprocess.CalledProcessError as e:
-            print(f'  rust {cargo.parent.name}: rust-analyzer lsif 失败（{e.returncode}），跳过', file=sys.stderr)
+            rel: str = cargo.parent.relative_to(repo).as_posix()
+            print(f'  rust {cargo.parent.name}: rust-analyzer lsif 失败（{e.returncode}），记为未完成', file=sys.stderr)
+            failed.append(rel)
             continue
         print(f'  rust {cargo.parent.name}: +{loader.syms - before} symbols, {time.time() - t0:.0f}s', file=sys.stderr)
+    return failed
 
 
 def build(repo: Path, db: Path, skip_dart: bool, skip_rust: bool) -> None:
@@ -253,19 +258,22 @@ def build(repo: Path, db: Path, skip_dart: bool, skip_rust: bool) -> None:
     if not skip_dart:
         index_dart(repo, loader)
         print(f'dart done: {loader.syms} symbols, {loader.refs} refs, {time.time() - t0:.0f}s', file=sys.stderr)
-    if not skip_rust:
-        index_rust(repo, loader)
+    incomplete: list[str] = [] if skip_rust else index_rust(repo, loader)
     con.executescript(INDEXES)
     meta: dict[str, str] = {
         'base_sha': git(repo, 'rev-parse', 'HEAD'),
         'built_at': time.strftime('%Y-%m-%dT%H:%M:%S%z'),
         'langs': ','.join(l for l, s in (('dart', skip_dart), ('rust', skip_rust)) if not s),
+        # 没收全的目录：查询端把其下文件整体当改动处理（实时搜索），is_current 视为未完成、下次调度重建
+        INCOMPLETE_KEY: ','.join(incomplete),
     }
     con.executemany('INSERT INTO meta VALUES (?, ?)', list(meta.items()))
     con.commit()
     con.close()
     os.replace(tmp, db)
     print(f'symindex: {loader.syms} symbols, {loader.refs} refs, {len(loader.files)} files, {time.time() - t0:.0f}s -> {db}', file=sys.stderr)
+    if incomplete:
+        raise SystemExit(f'symindex: 未完成，以下 crate 未收录（已记入索引，查询时改走实时搜索）：{", ".join(incomplete)}')
 
 
 def main() -> None:
@@ -289,15 +297,14 @@ def main() -> None:
 
 
 def is_current(db: Path, head: str) -> bool:
-    """索引存在且 base_sha 等于 head。"""
+    """索引存在、base_sha 等于 head，且没有未收全的目录（否则下次调度要重建）。"""
     if not db.exists():
         return False
-    con: sqlite3.Connection = sqlite3.connect(f'file:{db.as_posix()}?mode=ro', uri=True)
+    ix: Index = Index(db)
     try:
-        row = con.execute("SELECT value FROM meta WHERE key = 'base_sha'").fetchone()
+        return ix.meta('base_sha') == head and not ix.incomplete_dirs()
     finally:
-        con.close()
-    return bool(row) and row[0] == head
+        ix.close()
 
 
 if __name__ == '__main__':

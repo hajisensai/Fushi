@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import os
 import sqlite3
 import subprocess
 import sys
@@ -14,7 +15,7 @@ from pathlib import Path
 HERE: Path = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import build  # noqa: E402
-from symdb import Index, changed_files, live_grep, split_fresh  # noqa: E402
+from symdb import Index, changed_files, files_under, live_grep, split_fresh  # noqa: E402
 
 
 def sh(repo: Path, *args: str) -> str:
@@ -61,6 +62,47 @@ class ChangedFilesTest(unittest.TestCase):
         self.assertEqual([(f, l) for f, l, _ in hits], [('b.dart', 1), ('b.dart', 4)])
 
 
+class ChineseChangedFilesTest(unittest.TestCase):
+    """HBK-AUDIT-017：中文路径必须按原始路径进改动集合（git 默认 core.quotePath 会把它转义成 "\\344..."）。"""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo: Path = Path(self.tmp.name)
+        sh(self.repo, 'init', '-q')
+        sh(self.repo, 'config', 'user.email', 't@example.com')
+        sh(self.repo, 'config', 'user.name', 't')
+        (self.repo / '中文').mkdir()
+        (self.repo / '中文' / '甲.dart').write_text('class Jia {}\n', encoding='utf-8')
+        (self.repo / '中文' / '乙.dart').write_text('class Yi {}\n', encoding='utf-8')
+        (self.repo / '删除.rs').write_text('fn gone() {}\n', encoding='utf-8')
+        (self.repo / '暂存.dart').write_text('class Zan {}\n', encoding='utf-8')
+        (self.repo / 'a.dart').write_text('class A {}\n', encoding='utf-8')
+        sh(self.repo, 'add', '.')
+        sh(self.repo, 'commit', '-q', '-m', 'base')
+        self.base: str = sh(self.repo, 'rev-parse', 'HEAD')
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def test_cjk_tracked_untracked_deleted_and_staged(self) -> None:
+        (self.repo / '中文' / '甲.dart').write_text('class Jia { void neuName() {} }\n', encoding='utf-8')
+        (self.repo / '删除.rs').unlink()
+        (self.repo / '暂存.dart').write_text('class Zan2 {}\n', encoding='utf-8')
+        sh(self.repo, 'add', '暂存.dart')
+        (self.repo / '中文' / '新文件.dart').write_text('class Xin {}\n', encoding='utf-8')
+        self.assertEqual(changed_files(self.repo, self.base), {'中文/甲.dart', '删除.rs', '暂存.dart', '中文/新文件.dart'})
+
+    def test_cjk_committed_change_drops_index_rows_and_live_grep_finds_new_identifier(self) -> None:
+        (self.repo / '中文' / '乙.dart').write_text('class Yi {}\nvoid freshIdent() {}\n', encoding='utf-8')
+        sh(self.repo, 'commit', '-q', '-am', 'later')
+        changed = changed_files(self.repo, self.base)
+        self.assertEqual(changed, {'中文/乙.dart'})
+        fresh, stale = split_fresh(['中文/乙.dart', 'a.dart'], changed)
+        self.assertEqual((fresh, stale), (['a.dart'], ['中文/乙.dart']))
+        hits = live_grep(self.repo, 'freshIdent', sorted(changed))
+        self.assertEqual([(f, l) for f, l, _ in hits], [('中文/乙.dart', 2)])
+
+
 class RustHoverTest(unittest.TestCase):
     def test_function_with_module_container(self) -> None:
         hover = '```rust\nfushi_fsrs::anki_import_rules\n```\n\n```rust\npub fn anki_source_hlc(origin: &str) -> Option<String>\n```'
@@ -94,6 +136,61 @@ class QueryTest(unittest.TestCase):
             self.assertEqual([(h.file, h.line) for h in ix.refs(sid)], [('b.dart', 1), ('b.dart', 2)])
             self.assertEqual(ix.meta('base_sha'), 'x')
             self.assertEqual([s.file for s in ix.find('fo', 1)], ['a.dart'])
+            ix.close()
+
+
+class RustFailureTest(unittest.TestCase):
+    """HBK-AUDIT-018：某个 crate 的 rust-analyzer lsif 失败时，索引不得声称对这个提交已是最新。"""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo: Path = Path(self.tmp.name) / 'repo'
+        self.repo.mkdir()
+        sh(self.repo, 'init', '-q')
+        sh(self.repo, 'config', 'user.email', 't@example.com')
+        sh(self.repo, 'config', 'user.name', 't')
+        crate: Path = self.repo / 'native' / 'fushi_x'
+        (crate / 'src').mkdir(parents=True)
+        (crate / 'Cargo.toml').write_text('[package]\nname = "fushi_x"\n', encoding='utf-8')
+        (crate / 'src' / 'lib.rs').write_text('pub fn only_in_rust() {}\n', encoding='utf-8')
+        sh(self.repo, 'add', '.')
+        sh(self.repo, 'commit', '-q', '-m', 'base')
+        self.head: str = sh(self.repo, 'rev-parse', 'HEAD')
+        self.db: Path = Path(self.tmp.name) / 'index.sqlite'
+        self.saved: str = build.RUST_ANALYZER
+        # 用 python 冒充 rust-analyzer：`python lsif <crate>` 打不开脚本 lsif，退出码 2，等同 lsif 子进程失败
+        build.RUST_ANALYZER = sys.executable
+
+    def tearDown(self) -> None:
+        build.RUST_ANALYZER = self.saved
+        self.tmp.cleanup()
+
+    def test_failed_crate_is_recorded_and_index_is_not_current(self) -> None:
+        with self.assertRaises(SystemExit) as cm:
+            build.build(self.repo, self.db, skip_dart=True, skip_rust=False)
+        self.assertNotEqual(cm.exception.code, 0)
+        self.assertFalse(build.is_current(self.db, self.head))
+        ix = Index(self.db)
+        try:
+            self.assertEqual(ix.meta('base_sha'), self.head)
+            self.assertEqual(ix.incomplete_dirs(), ['native/fushi_x'])
+        finally:
+            ix.close()
+        # 查询端把没收全的 crate 整体当改动文件：索引结果不当真，改走实时搜索
+        self.assertEqual(files_under(self.repo, ['native/fushi_x']), {'native/fushi_x/Cargo.toml', 'native/fushi_x/src/lib.rs'})
+        env: dict[str, str] = {**os.environ, 'FUSHI_SYMINDEX_DB': str(self.db)}
+        out: str = subprocess.run([sys.executable, str(HERE / 'sym.py'), 'def', 'only_in_rust'], cwd=self.repo, env=env,
+                                  capture_output=True, text=True, encoding='utf-8', check=True).stdout
+        self.assertIn('索引未收全：native/fushi_x', out)
+        self.assertIn('native/fushi_x/src/lib.rs:1  pub fn only_in_rust() {}', out)
+
+    def test_complete_build_is_current(self) -> None:
+        build.build(self.repo, self.db, skip_dart=True, skip_rust=True)
+        self.assertTrue(build.is_current(self.db, self.head))
+        ix = Index(self.db)
+        try:
+            self.assertEqual(ix.incomplete_dirs(), [])
+        finally:
             ix.close()
 
 

@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 CODE_EXT: tuple[str, ...] = ('.dart', '.rs')
+# meta 键：构建时没收全的目录（逗号分隔，相对仓库根），见 HBK-AUDIT-018
+INCOMPLETE_KEY: str = 'incomplete_dirs'
 
 
 def default_db_path() -> Path:
@@ -40,17 +42,37 @@ def git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(['git', '-C', str(repo), *args], capture_output=True, text=True, encoding='utf-8', errors='replace')
 
 
+def git_paths(repo: Path, *args: str) -> list[str] | None:
+    """跑一条输出文件清单的 git 命令（调用方须带 -z），按 NUL 切出原始路径；失败返回 None。
+
+    不能按行读：默认 core.quotePath 会把非 ASCII 路径（中文文件名）转义成 "\\344\\270\\255..."，
+    与索引里存的实际路径对不上（HBK-AUDIT-017）。-z 输出原样字节，也不受文件名里的换行 / 引号影响。
+    """
+    r = git(repo, *args)
+    if r.returncode != 0:
+        return None
+    return [p for p in r.stdout.split('\0') if p]
+
+
 def changed_files(repo: Path, base: str) -> set[str] | None:
-    """当前 worktree（含未提交、未跟踪）相对 base 改过的文件；base 不可用时返回 None（整体降级）。"""
+    """当前 worktree（含未提交、未跟踪、删除）相对 base 改过的文件；base 不可用或 git 失败时返回 None（整体降级）。"""
     if git(repo, 'cat-file', '-e', f'{base}^{{commit}}').returncode != 0:
         return None
-    diff = git(repo, 'diff', '--name-only', '--no-renames', base)
-    if diff.returncode != 0:
+    diff: list[str] | None = git_paths(repo, 'diff', '--name-only', '-z', '--no-renames', base)
+    untracked: list[str] | None = git_paths(repo, 'ls-files', '-z', '-o', '--exclude-standard')
+    if diff is None or untracked is None:
         return None
-    untracked = git(repo, 'ls-files', '-o', '--exclude-standard')
-    out: set[str] = {l.strip() for l in diff.stdout.splitlines() if l.strip()}
-    out |= {l.strip() for l in untracked.stdout.splitlines() if l.strip()}
-    return out
+    return set(diff) | set(untracked)
+
+
+def files_under(repo: Path, dirs: list[str]) -> set[str]:
+    """当前 worktree 里 dirs 下的全部文件（跟踪 + 未跟踪），用于把索引没收全的目录整体当改动处理。"""
+    if not dirs:
+        return set()
+    out: list[str] | None = git_paths(repo, 'ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', *dirs)
+    if out is None:
+        raise RuntimeError(f'git ls-files 失败：{dirs}')
+    return set(out)
 
 
 def split_fresh(paths: list[str], changed: set[str]) -> tuple[list[str], list[str]]:
@@ -86,6 +108,11 @@ class Index:
     def meta(self, key: str) -> str | None:
         row = self.con.execute('SELECT value FROM meta WHERE key = ?', (key,)).fetchone()
         return row[0] if row else None
+
+    def incomplete_dirs(self) -> list[str]:
+        """构建时失败、没收进索引的目录（如 lsif 失败的 crate）；旧索引没有这个键视为无。"""
+        v: str | None = self.meta(INCOMPLETE_KEY)
+        return [d for d in v.split(',') if d] if v else []
 
     def _syms(self, where: str, args: tuple, limit: int = -1) -> list[Sym]:
         q: str = ('SELECT s.id, s.name, s.kind, s.container, f.path, s.line, s.lang FROM sym s JOIN file f ON f.id = s.file '

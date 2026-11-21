@@ -18,7 +18,7 @@ from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from symdb import Hit, Index, Sym, changed_files, default_db_path, live_grep, split_fresh  # noqa: E402
+from symdb import Hit, Index, Sym, changed_files, default_db_path, files_under, live_grep, split_fresh  # noqa: E402
 
 
 def repo_root() -> Path:
@@ -30,7 +30,7 @@ def repo_root() -> Path:
 
 def fallback_grep(repo: Path, name: str, why: str, limit: int) -> None:
     print(f'[降级] {why}，改用 git grep（未经语义解析）')
-    r = subprocess.run(['git', '-C', str(repo), 'grep', '-n', '-w', '-I', name, '--', '*.dart', '*.rs'],
+    r = subprocess.run(['git', '-C', str(repo), '-c', 'core.quotePath=false', 'grep', '-n', '-w', '-I', name, '--', '*.dart', '*.rs'],
                        capture_output=True, text=True, encoding='utf-8', errors='replace')
     lines: list[str] = r.stdout.splitlines()
     for l in lines[:limit]:
@@ -80,6 +80,11 @@ def main() -> None:
         fallback_grep(repo, a.name, f'索引 base {base[:10]} 在本仓找不到', a.limit)
         return
     print(f'# 索引 base {base[:10]}（{ix.meta("built_at")}），本 worktree 相对它改了 {len(changed)} 个文件')
+    incomplete: list[str] = ix.incomplete_dirs()
+    if incomplete:
+        # 构建时没收全的目录（lsif 失败的 crate）：其下文件一律按改动处理，索引结果不当真、改走实时搜索
+        changed |= files_under(repo, incomplete)
+        print(f'# 索引未收全：{", ".join(incomplete)}，其下文件改走 [live] 实时搜索')
 
     if a.cmd == 'find':
         for s in ix.find(a.name, a.limit):
