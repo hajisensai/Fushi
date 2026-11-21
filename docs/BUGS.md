@@ -33,6 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 4407 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5081](bugs/BUG-5081-video-fullscreen-blank.md) | ✅ | ✅ | video-fullscreen-blank |
 > 共 4409 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |

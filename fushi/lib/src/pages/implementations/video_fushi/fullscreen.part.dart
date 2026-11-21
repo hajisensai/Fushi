@@ -347,6 +347,8 @@ extension _VideoFullscreen on _VideoFushiPageState {
                                         ),
                                         child: fullscreenVideo,
                                       ),
+                                      // 窗口侧仍挂着、画面 GlobalKey 归它；这里不带。
+                                      surfaceKey: null,
                                     );
                                   },
                                 ),
