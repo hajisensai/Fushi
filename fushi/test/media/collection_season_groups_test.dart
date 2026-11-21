@@ -1,8 +1,9 @@
 import 'package:test/test.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart';
 
-/// 合集内分季：分组键派生 / 多组判定 / 分节 / tab 展示序 / 按季重排 纯函数契约。
-/// 分组是**文件名的纯函数、不落库**（曾试过 schema 列的方案已撤销）。
+/// 合集内分季：分组键派生 / 多组判定 / 分节 / tab 展示序 / 按季重排 / 手动分栏
+/// 叠加 纯函数契约。默认分组是文件名的纯函数；手动分栏与手动季集指定按优先级叠在
+/// 派生键之上（拍板台 iR6ccUys9H）。
 void main() {
   group('collectionSeasonGroupKey', () {
     test('有集号无季号 → 视作第 1 季（与排序 null 视作 1 同口径）', () {
@@ -14,6 +15,16 @@ void main() {
     test('无集号 → PV/特典组', () {
       expect(
         collectionSeasonGroupKey(season: 1, episode: null),
+        kCollectionExtrasGroupKey,
+      );
+    });
+    test('第 0 季（特别篇）→ PV/特典组，不单开「第 0 季」', () {
+      expect(
+        collectionSeasonGroupKey(season: 0, episode: 3),
+        kCollectionExtrasGroupKey,
+      );
+      expect(
+        collectionGroupKeyForFilename('Show/Season 00/Show - S00E01.mkv'),
         kCollectionExtrasGroupKey,
       );
     });
@@ -238,6 +249,61 @@ void main() {
       expect(regroup.keyOf['Show S01E01.mkv'], 's1');
       expect(regroup.keyOf['Show S02E01.mkv'], 's2');
       expect(regroup.keyOf['Show PV Special.mkv'], kCollectionExtrasGroupKey);
+    });
+  });
+
+  group('isValidCollectionSectionKey', () {
+    test('只收 extras 与规范形 s<N>（N ≥ 1）', () {
+      expect(isValidCollectionSectionKey('extras'), isTrue);
+      expect(isValidCollectionSectionKey('s1'), isTrue);
+      expect(isValidCollectionSectionKey('s12'), isTrue);
+      for (final String bad in <String>['s0', 's01', 's-1', 's', 'S1', '']) {
+        expect(isValidCollectionSectionKey(bad), isFalse, reason: bad);
+      }
+    });
+  });
+
+  group('resolveCollectionSection', () {
+    test('手动分栏 > 手动季集指定 > 文件名', () {
+      final CollectionSectionResolution manual = resolveCollectionSection(
+        derivedKey: 's1',
+        manualKey: 'extras',
+        pinnedSeason: 2,
+      );
+      expect(manual.groupKey, 'extras');
+      expect(manual.source, CollectionSectionSource.manual);
+      expect(manual.derivedKey, 's1');
+
+      final CollectionSectionResolution pinned = resolveCollectionSection(
+        derivedKey: 's1',
+        pinnedSeason: 2,
+      );
+      expect(pinned.groupKey, 's2');
+      expect(pinned.source, CollectionSectionSource.pinnedEpisode);
+
+      final CollectionSectionResolution derived = resolveCollectionSection(
+        derivedKey: 's1',
+      );
+      expect(derived.groupKey, 's1');
+      expect(derived.source, CollectionSectionSource.filename);
+    });
+
+    test('手动季集指定到第 0 季（特别篇）→ PV·特典栏', () {
+      final CollectionSectionResolution r = resolveCollectionSection(
+        derivedKey: 's1',
+        pinnedSeason: 0,
+      );
+      expect(r.groupKey, kCollectionExtrasGroupKey);
+      expect(r.source, CollectionSectionSource.pinnedEpisode);
+    });
+
+    test('形状不对的手动分栏当作没有指定', () {
+      final CollectionSectionResolution r = resolveCollectionSection(
+        derivedKey: 's2',
+        manualKey: 's0',
+      );
+      expect(r.groupKey, 's2');
+      expect(r.source, CollectionSectionSource.filename);
     });
   });
 }

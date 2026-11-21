@@ -786,4 +786,50 @@ void main() {
       );
     });
   });
+
+  group('合集分栏（拍板台 iR6ccUys9H）', () {
+    test('sections <workId> → GET works/:id/sections；id 格式不对报用法错', () {
+      final CtlRequestSpec spec = _build('sections', <String>['collection:7']);
+      expect(spec.method, 'GET');
+      expect(spec.path, '/api/admin/video/works/collection%3A7/sections');
+      expect(() => _build('sections', <String>['7']), _usageError());
+    });
+
+    test('section --season / --extras / --auto 三选一', () {
+      final CtlRequestSpec season = _build('section', <String>[
+        'video/a',
+        'video/b',
+        '--season',
+        '2',
+      ]);
+      expect(season.method, 'POST');
+      expect(season.path, '/api/admin/video/sections');
+      expect(season.body, <String, Object?>{
+        'items': <String>['video/a', 'video/b'],
+        'section': 'season',
+        'season': 2,
+      });
+      expect(
+        _build('section', <String>['video/a', '--extras']).body,
+        <String, Object?>{
+          'items': <String>['video/a'],
+          'section': 'extras',
+        },
+      );
+      expect(
+        _build('section', <String>['video/a', '--auto']).body!['section'],
+        'auto',
+      );
+      expect(() => _build('section', <String>['video/a']), _usageError());
+      expect(
+        () => _build('section', <String>['video/a', '--extras', '--auto']),
+        _usageError(),
+      );
+      expect(
+        () => _build('section', <String>['video/a', '--season', '0']),
+        _usageError(),
+      );
+      expect(() => _build('section', <String>['--extras']), _usageError());
+    });
+  });
 }

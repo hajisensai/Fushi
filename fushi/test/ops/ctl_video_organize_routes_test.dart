@@ -269,6 +269,187 @@ void main() {
     expect(await db.getVideoEpisodeBindingOverride('ep2'), isNull);
   });
 
+  group('合集分栏（拍板台 iR6ccUys9H）', () {
+    late int season0Id;
+
+    setUp(() async {
+      // 一集短篇：文件名带集号 01（被文件名推进第 1 季），刮削认成特别篇 S00E02。
+      await addVideo('short1', 'Show/Shorts/Show Petit 01.mkv');
+      await db.addToCollection(collectionId, MediaKind.video, 'short1');
+      season0Id = (await db.getVideoMetadataSeasons(
+        workId,
+      )).singleWhere((VideoMetadataSeasonRow s) => s.seasonNumber == 0).id;
+      await addEpisode(season0Id, 2, bookUid: 'short1');
+    });
+
+    Future<Map<Object?, Object?>> sections() async =>
+        await call(
+              'GET',
+              '$kVideoOrganizeCtlRoot/works/:id/sections',
+              params: <String, String>{'id': 'collection:$collectionId'},
+            )
+            as Map<Object?, Object?>;
+
+    Map<String, List<Object?>> sectionFiles(
+      Map<Object?, Object?> data,
+    ) => <String, List<Object?>>{
+      for (final Map<Object?, Object?> s
+          in (data['sections']! as List<Object?>).cast<Map<Object?, Object?>>())
+        s['key']! as String: s['files']! as List<Object?>,
+    };
+
+    Map<Object?, Object?> fileOf(Map<Object?, Object?> data, String uid) =>
+        (data['files']! as List<Object?>)
+            .cast<Map<Object?, Object?>>()
+            .singleWhere((Map<Object?, Object?> f) => f['uid'] == uid);
+
+    Future<Map<Object?, Object?>> setSection(Map<String, Object?> body) async =>
+        await call('POST', '$kVideoOrganizeCtlRoot/sections', body: body)
+            as Map<Object?, Object?>;
+
+    test('查询：与详情页同一分栏；第 0 季文件归 PV·特典；报出可疑点', () async {
+      final Map<Object?, Object?> data = await sections();
+      expect(data['tabs'], isTrue);
+      expect(sectionFiles(data), <String, List<Object?>>{
+        's1': <Object?>['ep1', 'short1'],
+        'extras': <Object?>['ep2'],
+      });
+      expect(fileOf(data, 'short1')['source'], 'filename');
+      expect(fileOf(data, 'short1')['boundTo'], <String>['S00E02']);
+      expect(fileOf(data, 'short1')['path'], 'Show/Shorts/Show Petit 01.mkv');
+      final List<Map<Object?, Object?>> warnings =
+          (data['warnings']! as List<Object?>).cast<Map<Object?, Object?>>();
+      expect(
+        warnings.map((Map<Object?, Object?> w) => w['kind']),
+        containsAll(<String>['bound_to_special', 'duplicate_episode_number']),
+      );
+      expect(
+        warnings.singleWhere(
+          (Map<Object?, Object?> w) => w['kind'] == 'duplicate_episode_number',
+        )['uids'],
+        <Object?>['ep1', 'short1'],
+      );
+    });
+
+    test('钉到 PV·特典：分栏立刻变；撤销回到执行前', () async {
+      final Map<Object?, Object?> result = await setSection(<String, Object?>{
+        'items': <String>['short1'],
+        'section': 'extras',
+      });
+      expect(result['applied'], 'extras');
+      expect((result['items']! as List<Object?>).single, <String, Object?>{
+        'uid': 'short1',
+        'section': 'extras',
+        'source': 'manual',
+      });
+      final Map<Object?, Object?> after = await sections();
+      expect(sectionFiles(after), <String, List<Object?>>{
+        's1': <Object?>['ep1'],
+        'extras': <Object?>['ep2', 'short1'],
+      });
+      expect(fileOf(after, 'short1')['derivedSection'], 's1');
+      expect(after['warnings'], isEmpty);
+
+      // 撤销载荷过一遍 JSON（与持久化后再撤销同一形态）。
+      final Map<String, Object?> payload =
+          jsonDecode(jsonEncode(result)) as Map<String, Object?>;
+      final ({int reverted, int superseded}) undo =
+          await restoreVideoCollectionSections(
+            db,
+            applied: payload['applied'],
+            previous: payload['previous'],
+          );
+      expect(undo, (reverted: 1, superseded: 0));
+      expect(
+        await db.getVideoCollectionSectionOverrides(<String>['short1']),
+        isEmpty,
+      );
+      expect(sectionFiles(await sections())['s1'], <Object?>['ep1', 'short1']);
+    });
+
+    test('钉到第 2 季 / 改回自动；之后又被改过的撤销保留现状', () async {
+      final Map<Object?, Object?> result = await setSection(<String, Object?>{
+        'items': <String>['short1', 'ep1'],
+        'section': 'season',
+        'season': 2,
+      });
+      expect(
+        await db.getVideoCollectionSectionOverrides(<String>['short1', 'ep1']),
+        <String, String>{'short1': 's2', 'ep1': 's2'},
+      );
+      await db.setVideoCollectionSectionOverrides(<String>['ep1'], 'extras');
+      final ({int reverted, int superseded}) undo =
+          await restoreVideoCollectionSections(
+            db,
+            applied: result['applied'],
+            previous: result['previous'],
+          );
+      expect(undo, (reverted: 1, superseded: 1));
+      expect(
+        await db.getVideoCollectionSectionOverrides(<String>['short1', 'ep1']),
+        <String, String>{'ep1': 'extras'},
+      );
+
+      await setSection(<String, Object?>{
+        'items': <String>['ep1'],
+        'section': 'auto',
+      });
+      expect(fileOf(await sections(), 'ep1')['section'], 's1');
+    });
+
+    test('手动指定到第 0 季：分栏跟着进 PV·特典（修前只看文件名）', () async {
+      await call(
+        'POST',
+        '$kVideoOrganizeCtlRoot/files/:uid/episode',
+        params: <String, String>{'uid': 'short1'},
+        body: <String, Object?>{'season': 0, 'episode': 2},
+      );
+      final Map<Object?, Object?> data = await sections();
+      expect(fileOf(data, 'short1')['section'], 'extras');
+      expect(fileOf(data, 'short1')['source'], 'pinnedEpisode');
+    });
+
+    test('参数不对 400、未知视频 404，都不写库', () async {
+      for (final Map<String, Object?> body in <Map<String, Object?>>[
+        <String, Object?>{
+          'items': <String>['short1'],
+          'section': 'season',
+        },
+        <String, Object?>{
+          'items': <String>['short1'],
+          'section': 'season',
+          'season': 0,
+        },
+        <String, Object?>{
+          'items': <String>['short1'],
+          'section': 'bogus',
+        },
+        <String, Object?>{'items': <String>[], 'section': 'extras'},
+      ]) {
+        await expectLater(
+          setSection(body),
+          throwsA(
+            isA<CtlFailure>().having((CtlFailure f) => f.status, 'status', 400),
+          ),
+          reason: '$body',
+        );
+      }
+      await expectLater(
+        setSection(<String, Object?>{
+          'items': <String>['short1', 'nope'],
+          'section': 'extras',
+        }),
+        throwsA(
+          isA<CtlFailure>().having((CtlFailure f) => f.status, 'status', 404),
+        ),
+      );
+      expect(
+        await db.getVideoCollectionSectionOverrides(<String>['short1']),
+        isEmpty,
+      );
+    });
+  });
+
   test('改完季集再整理：磁盘按新季集改名并归目录，字幕跟着走；撤销搬回', () async {
     await call(
       'POST',

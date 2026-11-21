@@ -27,8 +27,14 @@ const String kCollectionExtrasGroupKey = 'extras';
 
 /// 由解析出的季/集派生分组键：有集号 → `s<季号>`（无季号视作第 1 季，与
 /// 排序规则 `_compareEpisodes` 的「null 视作 1」同口径）；无集号 → PV/特典组。
+///
+/// 第 0 季（`S00E01`、`Season 00/`）是特别篇，归 PV/特典组，不单开一个「第 0 季」
+/// tab——与手动季集指定到第 0 季（[resolveCollectionSection]）同一口径（拍板台
+/// iR6ccUys9H）。
 String collectionSeasonGroupKey({int? season, int? episode}) =>
-    episode == null ? kCollectionExtrasGroupKey : 's${season ?? 1}';
+    episode == null || season == 0
+    ? kCollectionExtrasGroupKey
+    : 's${season ?? 1}';
 
 /// 从视频文件路径/文件名派生分组键（导入落库与「按季分组」动作同源；解析引擎
 /// 与刮削/排序同一个 [parseVideoPath]）。
