@@ -213,7 +213,7 @@ class AggregateSyncService {
       for (final AssetEntry e in peerEntries) e.name,
     });
     // 折叠 + 写回增量判定在所有者里做，合并结果留在那边，只回「要不要写回」。
-    // 残余（BUG-5149）：对端快照仍是各云后端 getJsonAsset 在调用方解码出的 JSON，
+    // 残余（BUG-5159）：对端快照仍是各云后端 getJsonAsset 在调用方解码出的 JSON，
     // 这里整份拷进所有者。
     final bool applyNeeded = await owner.run(
       _planCloudCommand(
@@ -255,7 +255,7 @@ class AggregateSyncService {
       return false;
     }
 
-    // 真要上传时才把上行 JSON 取回调用方（残余，BUG-5149：SyncAssetStore 只收 JSON）。
+    // 真要上传时才把上行 JSON 取回调用方（残余，BUG-5159：SyncAssetStore 只收 JSON）。
     final Map<String, Object?> payload = await owner.run(
       _cloudOutgoingPayloadCommand(),
     );

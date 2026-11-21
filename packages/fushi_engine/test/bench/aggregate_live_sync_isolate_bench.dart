@@ -18,7 +18,12 @@
 //   client 一轮  最大停顿 61 ms，>20 ms 停顿总和 522 ms，墙钟 3731 ms
 //   host GET     最大停顿 36 ms，>20 ms 停顿总和  89 ms，墙钟  446 ms
 //   host PUT     最大停顿 51 ms，>20 ms 停顿总和 268 ms，墙钟 1687 ms
-// 修后（后台所有者，本文件现在量的路径）见 docs/bugs 里 BUG-5149 的记录。
+// 修后（后台所有者 AggregateSyncOwner，本文件现在量的路径），同机同数据：
+//   client 一轮  最大停顿 24 ms，>20 ms 停顿总和  88 ms，墙钟 3609 ms
+//   host GET     最大停顿 21 ms，>20 ms 停顿总和  21 ms，墙钟  460 ms
+//   host PUT     最大停顿 24 ms，>20 ms 停顿总和  45 ms，墙钟 1592 ms
+// （20 ms 上下已是这台 Windows 机 1 ms 定时器的噪声底；墙钟基本不变，省下的是调用方
+// 的占用。）
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
