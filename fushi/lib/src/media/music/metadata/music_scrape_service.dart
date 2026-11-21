@@ -22,6 +22,7 @@ import 'package:fushi/src/media/links/theme_song/theme_song_detector.dart'
         ThemeSongAudioDecoder,
         ThemeSongDecodeException;
 import 'package:fushi/src/media/music/acoustid_secret.dart';
+import 'package:fushi/src/media/music/metadata/music_dlsite_scraper.dart';
 import 'package:fushi/src/media/music/music_remote_media.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -159,10 +160,14 @@ class MusicLibraryScrapeReport {
   int failed = 0;
   final Map<String, int> byMethod = <String, int>{};
 
+  /// 专辑级 DLsite 资料（音声 / ASMR 专辑按作品编号取）。
+  MusicDlsiteLibraryReport dlsite = MusicDlsiteLibraryReport();
+
   @override
   String toString() =>
       'MusicLibraryScrapeReport(total: $total, matched: $matched, '
-      'unmatched: $unmatched, failed: $failed, byMethod: $byMethod)';
+      'unmatched: $unmatched, failed: $failed, byMethod: $byMethod, '
+      'dlsite: ${dlsite.toJson()})';
 }
 
 /// 识别结论 → `music_scrape_meta` 行（纯函数，测试钉死）。
@@ -300,13 +305,24 @@ class MusicScrapeService {
     MusicAcoustidFingerprinter? fingerprinter,
     Future<Directory> Function()? coverDirectory,
     int Function()? clock,
+    MusicDlsiteScraper? dlsite,
   }) : _database = database,
        _acoustidApiKey = acoustidApiKey,
        _vgmdbEnabled = vgmdbEnabled,
        _scraperFactory = scraperFactory ?? defaultMusicScraper,
        _fingerprinter = fingerprinter ?? defaultMusicAcoustidFingerprinter(),
        _coverDirectory = coverDirectory ?? AppPaths.musicCoversDirectory,
-       _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
+       _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch),
+       dlsite =
+           dlsite ??
+           MusicDlsiteScraper(
+             database: database,
+             coverDirectory: coverDirectory,
+             clock: clock,
+           );
+
+  /// 专辑级 DLsite 资料（专辑页 DLsite 区块、整库识别的第一段）。
+  final MusicDlsiteScraper dlsite;
 
   final FushiDatabase? Function() _database;
   final String Function() _acoustidApiKey;
@@ -463,6 +479,9 @@ class MusicScrapeService {
   }
 
   /// 识别曲库里没有结论（或结论版本旧）的全部曲目。串行、遵守 1 req/s。
+  ///
+  /// 先跑专辑级 DLsite 资料（认得出作品编号、还没取过的专辑；编号是精确键，几秒
+  /// 就完），再逐首识别。
   Future<MusicLibraryScrapeReport> scrapeLibrary({
     void Function(int done, int total)? onProgress,
     bool Function()? cancelled,
@@ -470,6 +489,7 @@ class MusicScrapeService {
     final MusicLibraryScrapeReport report = MusicLibraryScrapeReport();
     final FushiDatabase? db = _database();
     if (db == null) return report;
+    report.dlsite = await dlsite.scrapeLibrary(cancelled: cancelled);
     final List<MusicTrackRow> todo = await db.listMusicTracksNeedingScrape(
       olderThanVersion: kMusicScraperVersion,
     );

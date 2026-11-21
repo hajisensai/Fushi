@@ -27,6 +27,13 @@ const List<CtlCommandGroup> musicCommandGroups = <CtlCommandGroup>[
         render: _renderAlbum,
       ),
       CtlCommandSpec(
+        name: 'album-dlsite',
+        summary: '取 / 刷新音声专辑的 DLsite 资料（按专辑名 / 文件夹里的 RJ 编号）',
+        usage: '<albumUid>',
+        build: _buildAlbumDlsite,
+        render: renderMusicAlbumDlsite,
+      ),
+      CtlCommandSpec(
         name: 'artists',
         summary: '列出 / 搜索艺人',
         usage: '[关键词...]',
@@ -178,6 +185,10 @@ CtlRequestSpec _buildAlbums(CtlCommandContext c) =>
 
 CtlRequestSpec _buildAlbum(CtlCommandContext c) =>
     CtlRequestSpec.get('$_root/albums/${_enc(c.positional(0, 'albumUid'))}');
+
+CtlRequestSpec _buildAlbumDlsite(CtlCommandContext c) => CtlRequestSpec.post(
+  '$_root/albums/${_enc(c.positional(0, 'albumUid'))}/dlsite',
+);
 
 CtlRequestSpec _buildArtists(CtlCommandContext c) =>
     CtlRequestSpec.get('$_root/artists', query: _listQuery(c));
@@ -372,6 +383,35 @@ String _renderAlbum(Object? data) {
       '${data['artist'] != null ? ' · ${data['artist']}' : ''}'
       '${data['date'] != null ? ' · ${data['date']}' : ''}\n'
       '${_trackTable(tracks)}';
+}
+
+/// `album-dlsite` 的输出：编号、状态与资料行。
+String renderMusicAlbumDlsite(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  String names(Object? v) => v is List ? v.join(' / ') : '';
+  final StringBuffer out = StringBuffer()
+    ..writeln('${data['workId']} · ${data['status']}');
+  void line(String label, Object? value) {
+    final String text = value is List ? names(value) : '${value ?? ''}';
+    if (text.isNotEmpty) out.writeln('$label：$text');
+  }
+
+  line('标题', data['title']);
+  line('社团', data['circle']);
+  line('声优', data['voiceActors']);
+  line('作者', data['authors']);
+  line('剧本', data['scenarioWriters']);
+  line('插画', data['illustrators']);
+  line('音乐', data['musicians']);
+  line('类型', data['workType']);
+  line('发售日', data['releaseDate']);
+  line('分级', data['ageCategory']);
+  line('评分', data['rating']);
+  line('评分人数', data['ratingCount']);
+  line('销量', data['downloads']);
+  line('标签', data['tags']);
+  line('页面', data['pageUrl']);
+  return out.toString().trimRight();
 }
 
 String _trackTable(Object? tracks) => renderCtlTable(

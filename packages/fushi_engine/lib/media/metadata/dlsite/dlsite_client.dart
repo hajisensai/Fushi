@@ -490,25 +490,31 @@ class DlsiteClient {
     DlsiteWorkId id, {
     bool withRating = false,
   }) async {
-    final Uri uri =
-        Uri.parse('$baseUrl/${id.site.pathSegment}/api/=/product.json').replace(
-          queryParameters: <String, String>{
-            'workno': id.value,
-            'locale': locale,
-          },
-        );
-    final DlsiteWork? work = parseDlsiteProductJson(await _get(uri), id);
+    final DlsiteWork? work = parseDlsiteProductJson(
+      await fetchProductBody(id),
+      id,
+    );
     if (work == null || !withRating) return work;
     return work.withRating(await fetchRating(id));
   }
 
   /// 抓评分 / 销量。查无此作返回 null。
-  Future<DlsiteRating?> fetchRating(DlsiteWorkId id) async {
-    final Uri uri = Uri.parse(
+  Future<DlsiteRating?> fetchRating(DlsiteWorkId id) async =>
+      parseDlsiteRatingJson(await fetchRatingBody(id), id);
+
+  /// product.json 的原始响应体（调用方要落原始快照时用，解析交 [parseDlsiteProductJson]）。
+  Future<String> fetchProductBody(DlsiteWorkId id) => _get(
+    Uri.parse('$baseUrl/${id.site.pathSegment}/api/=/product.json').replace(
+      queryParameters: <String, String>{'workno': id.value, 'locale': locale},
+    ),
+  );
+
+  /// 评分端点的原始响应体（解析交 [parseDlsiteRatingJson]）。
+  Future<String> fetchRatingBody(DlsiteWorkId id) => _get(
+    Uri.parse(
       '$baseUrl/${id.site.pathSegment}/product/info/ajax',
-    ).replace(queryParameters: <String, String>{'product_id': id.value});
-    return parseDlsiteRatingJson(await _get(uri), id);
-  }
+    ).replace(queryParameters: <String, String>{'product_id': id.value}),
+  );
 
   /// 按名搜作品。[categories] 非空时只留这些大类（如 galgame 只要 [DlsiteWorkCategory.game]）。
   /// 输入本身就是作品编号时直接返回该编号的候选（标题取详情）。
