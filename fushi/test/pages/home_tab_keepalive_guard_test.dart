@@ -121,7 +121,7 @@ void main() {
     expect(deps, isNonNegative);
     final String depsBody = dictSrc.substring(
       deps,
-      dictSrc.indexOf('void _schedulePopupOverlayRebuild()', deps),
+      dictSrc.indexOf('void deactivate()', deps),
     );
     expect(
       depsBody.contains('SectionVisibility.of(context)') &&
