@@ -35,7 +35,7 @@
 //! - **Secondary**（查词弹窗等辅助进程，只读）：不建库、不迁移、不建表；没有新代库就按锁的状态报
 //!   [OpenError::Migrating] / [OpenError::NotMigrated]。打开的连接 `query_only`，写不进去。
 
-use std::fs::{File, OpenOptions, TryLockError};
+use std::fs::{File, OpenOptions};
 use std::path::Path;
 
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
@@ -65,7 +65,8 @@ pub const MIGRATED_FROM_KEY: &str = "migrated_from";
 /// 水位就对不上，不封（那几笔写入没进新代）。
 pub const MIGRATED_LOG_KEY: &str = "migrated_log";
 
-/// 换代锁：`srs.gen.lock` 上的跨进程独占文件锁（`File::try_lock`：Unix 上是 `flock`，Windows 上是 `LockFileEx`）。
+/// 换代锁：`srs.gen.lock` 上的跨进程独占文件锁（Unix / Android 直接调 `flock`，避免 Rust 标准库
+/// `File::try_lock` 在 Android 上返回 `try_lock() not supported`；Windows 用 `File::try_lock` / `LockFileEx`）。
 /// 句柄在就持有，drop 即释放；进程死掉时由操作系统释放。同一进程里另开一个句柄也拿不到。
 #[derive(Debug)]
 pub struct GenLock {
@@ -83,11 +84,44 @@ impl GenLock {
             .truncate(false)
             .open(&path)
             .map_err(|e| format!("gen4 lock: open {}: {e}", path.display()))?;
-        match file.try_lock() {
-            Ok(()) => Ok(Some(GenLock { _file: file })),
-            Err(TryLockError::WouldBlock) => Ok(None),
-            Err(TryLockError::Error(e)) => Err(format!("gen4 lock: lock {}: {e}", path.display())),
+        match try_lock_exclusive(&file) {
+            Ok(true) => Ok(Some(GenLock { _file: file })),
+            Ok(false) => Ok(None),
+            Err(e) => Err(format!("gen4 lock: lock {}: {e}", path.display())),
         }
+    }
+}
+
+/// 非阻塞独占锁：拿到 = `Ok(true)`，已被别的句柄持有 = `Ok(false)`。
+#[cfg(unix)]
+fn try_lock_exclusive(file: &File) -> std::io::Result<bool> {
+    use std::io::ErrorKind;
+    use std::os::fd::AsRawFd;
+
+    let fd = file.as_raw_fd();
+    loop {
+        // SAFETY: fd 来自有效打开的 File 句柄，本调用期间未被关闭；flock 仅操作内核文件锁。
+        if unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+            return Ok(true);
+        }
+        let err = std::io::Error::last_os_error();
+        match err.kind() {
+            ErrorKind::Interrupted => continue,
+            ErrorKind::WouldBlock => return Ok(false),
+            _ => return Err(err),
+        }
+    }
+}
+
+/// 非阻塞独占锁：拿到 = `Ok(true)`，已被别的句柄持有 = `Ok(false)`。
+#[cfg(not(unix))]
+fn try_lock_exclusive(file: &File) -> std::io::Result<bool> {
+    use std::fs::TryLockError;
+
+    match file.try_lock() {
+        Ok(()) => Ok(true),
+        Err(TryLockError::WouldBlock) => Ok(false),
+        Err(TryLockError::Error(e)) => Err(e),
     }
 }
 
@@ -608,6 +642,61 @@ mod tests {
         let _ = std::io::Read::read_to_string(&mut out, &mut rest);
         assert!(child.wait().unwrap().success(), "{rest}");
         assert!(GenLock::try_acquire(&dir.0).unwrap().is_some());
+    }
+
+    /// BUG-5065：Rust 标准库只在 linux / apple / BSD 等目标上用 `flock` 实现 `File::try_lock` / `lock` /
+    /// `lock_shared`，`target_os = "android"` 落到「not supported」桩上，换代锁在 Android 上一次都拿不到、
+    /// 复习库整个打不开。Android 的 CI 只编译不跑测试，所以这里守住源码：Unix（含 Android）走 `libc::flock`，
+    /// 标准库的文件锁只允许出现在 `#[cfg(not(unix))]` 那一支里。
+    #[test]
+    fn unix_lock_never_goes_through_std_file_locking() {
+        let src = include_str!("files.rs").replace("\r\n", "\n");
+        let prod = &src[..src.find("\n#[cfg(test)]\nmod tests").expect("tests marker")];
+        let unix_at = prod
+            .find("#[cfg(unix)]\nfn try_lock_exclusive")
+            .expect("unix branch");
+        let unix_end = unix_at + prod[unix_at..].find("\n}\n").expect("unix fn end");
+        assert!(
+            prod[unix_at..unix_end].contains("libc::flock("),
+            "the unix branch must call libc::flock directly"
+        );
+        let other_at = prod
+            .find("#[cfg(not(unix))]\nfn try_lock_exclusive")
+            .expect("non-unix branch");
+        let other_end = other_at + prod[other_at..].find("\n}\n").expect("non-unix fn end");
+        let rest = format!("{}{}", &prod[..other_at], &prod[other_end..]);
+        for banned in [
+            ".try_lock(",
+            ".lock(",
+            ".lock_shared(",
+            ".try_lock_shared(",
+            "TryLockError",
+        ] {
+            assert!(
+                !rest.contains(banned),
+                "std file locking `{banned}` outside the cfg(not(unix)) branch is unsupported on Android"
+            );
+        }
+    }
+
+    /// Unix 那一支就是 `flock`：另开一个描述符直接 `flock` 会被挡住，锁放掉后能拿到。Linux / macOS 跑的就是
+    /// Android 上那段代码（同一个 `cfg(unix)` 分支）。
+    #[cfg(unix)]
+    #[test]
+    fn unix_lock_is_a_real_flock() {
+        use std::os::fd::AsRawFd;
+
+        let dir = tempdir::new("genlock-flock");
+        let lock = GenLock::try_acquire(&dir.0).unwrap().expect("first");
+        let other = File::open(dir.0.join(GEN_LOCK_FILE)).unwrap();
+        let try_raw = |f: &File| -> bool {
+            // SAFETY: f 是本测试里打开且仍存活的文件；flock 只动内核文件锁。
+            unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) == 0 }
+        };
+        assert!(!try_raw(&other), "a raw flock must see the GenLock");
+        drop(lock);
+        assert!(try_raw(&other), "released GenLock must free the flock");
+        assert!(GenLock::try_acquire(&dir.0).unwrap().is_none());
     }
 
     #[test]

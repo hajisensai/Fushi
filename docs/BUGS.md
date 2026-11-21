@@ -45,6 +45,7 @@
 |---|:--:|:--:|---|
 | [BUG-5073](bugs/BUG-5073-stat-day-reset-hour-profile-switch.md) | ✅ | ✅ | 切 Profile 后统计日界仍按旧 Profile 的值直到重启 |
 | [BUG-5070](bugs/BUG-5070-stat-trend-iso-week-dst.md) | ✅ | ✅ | 统计趋势按周聚合在有夏令时的时区把相邻两周并成一桶、周号少一 |
+| [BUG-5065](bugs/BUG-5065-android-gen4-lock-unsupported.md) | ✅ | ✅ | Android 上 gen4 换代锁永远拿不到，复习库打不开（`try_lock() not supported`） |
 > 共 4393 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
