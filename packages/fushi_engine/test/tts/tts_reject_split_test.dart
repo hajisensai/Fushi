@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:fushi_engine/tts/cast/cast_line_voicing.dart'
+    show estimatePlaceholderMs;
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_audio_probe.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
@@ -123,6 +125,47 @@ void main() {
   });
 
   group('ttsSynthesizeSplittingOnReject', () {
+    test('纯标点 / 符号句不送引擎：写一段占位长度的静音 WAV', () async {
+      // 真实引擎对这类句子直接 400；假引擎全拒，送了就会失败。
+      final _RejectingProvider provider = _RejectingProvider((_) => true);
+      for (final String text in <String>['……', '！', '「……！？」', '♪', '❤️']) {
+        final TtsResult result = await ttsSynthesizeSplittingOnReject(
+          provider,
+          text,
+          outputPath: out(),
+          cancel: TtsCancelToken(),
+        );
+        expect(result.format, TtsAudioFormat.wav, reason: text);
+        final Uint8List bytes = await File(out()).readAsBytes();
+        expect(sniffTtsAudioFormat(bytes), TtsAudioFormat.wav, reason: text);
+        expect(
+          probeTtsAudioDurationMs(bytes, TtsAudioFormat.wav),
+          estimatePlaceholderMs(text),
+          reason: text,
+        );
+      }
+      expect(provider.calls, isEmpty);
+    });
+
+    test('纯标点句已取消时照常以取消结束', () async {
+      final TtsCancelToken cancel = TtsCancelToken()..cancel();
+      await expectLater(
+        ttsSynthesizeSplittingOnReject(
+          _RejectingProvider((_) => false),
+          '！',
+          outputPath: out(),
+          cancel: cancel,
+        ),
+        throwsA(
+          isA<TtsFailure>().having(
+            (TtsFailure f) => f.code,
+            'code',
+            TtsFailureCode.cancelled,
+          ),
+        ),
+      );
+    });
+
     test('不被拒时只发一次原句', () async {
       final _RejectingProvider provider = _RejectingProvider((_) => false);
       await ttsSynthesizeSplittingOnReject(

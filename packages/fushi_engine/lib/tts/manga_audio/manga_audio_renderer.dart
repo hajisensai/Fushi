@@ -26,6 +26,7 @@ import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render_plan.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
+import 'package:fushi_engine/tts/tts_silence.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 
 /// 一句出不了声的原因（[code] 进未配音账本，界面按它出文案）。
@@ -389,13 +390,24 @@ class MangaAudioRenderer {
   }
 
   /// 按计划出一句音频到 [fileName]（先写 `.part` 再改名）。
+  ///
+  /// 整句都是纯标点的气泡（「……」「！」，[ttsTextIsSilent]）没有要念的内容：出一段
+  /// 按字数估长的停顿（与小说整书制作同一口径），算配好了、不进未配音账本；文件是
+  /// WAV，扩展名随之换成 `.wav`。只有部分片段纯标点时照常合成，那几段由合成入口
+  /// （`ttsSynthesizeSplittingOnReject`）写成静音、在句中留出停顿。
   Future<({String file, int durationMs})> _produce(
     MangaRenderItem item,
     String fileName,
     TtsRenderCancelToken cancel,
   ) async {
     cancel.throwIfCancelled();
-    final File target = File(_pathOf(fileName));
+    final bool pause = switch (item.source) {
+      MangaRenderSynth(:final List<String> segments) =>
+        segments.isNotEmpty && segments.every(ttsTextIsSilent),
+      MangaRenderClip() => false,
+    };
+    final String file = pause ? p.setExtension(fileName, '.wav') : fileName;
+    final File target = File(_pathOf(file));
     final File part = File('${target.path}.part');
     if (await part.exists()) await part.delete();
     final int ms;
@@ -407,13 +419,18 @@ class MangaAudioRenderer {
           :final List<String> segments,
         ):
           if (segments.isEmpty) throw const MangaLineFailure('empty_text');
-          ms = await backend.synthesizeLine(
-            voice: voice,
-            seed: seed,
-            segments: segments,
-            outputPath: part.path,
-            cancel: cancel,
-          );
+          ms = pause
+              ? await backend.writeSilence(
+                  ms: estimatePlaceholderMs(item.text),
+                  outputPath: part.path,
+                )
+              : await backend.synthesizeLine(
+                  voice: voice,
+                  seed: seed,
+                  segments: segments,
+                  outputPath: part.path,
+                  cancel: cancel,
+                );
         case MangaRenderClip(:final MangaAudiobookClip clip):
           ms = await backend.cutClip(
             clip: clip,
@@ -429,7 +446,7 @@ class MangaAudioRenderer {
     } finally {
       if (await part.exists()) await part.delete();
     }
-    return (file: fileName, durationMs: ms);
+    return (file: file, durationMs: ms);
   }
 
   static Future<void> _publish(File part, File target) async {

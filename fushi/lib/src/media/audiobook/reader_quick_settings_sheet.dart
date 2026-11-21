@@ -26,6 +26,9 @@ import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
 import 'package:fushi/src/reader/reader_audiobook_panel.dart';
 import 'package:fushi/src/reader/reader_page_spread.dart';
 import 'package:fushi/src/reader/lyrics_cue_search.dart';
+import 'package:fushi/src/reader/favorite_highlight_color_dot.dart';
+import 'package:fushi/src/reader/highlight_stroke_preview.dart';
+import 'package:fushi/src/reader/highlight_stroke_style.dart';
 import 'package:fushi/src/reader/reader_bookmark_logic.dart';
 import 'package:fushi/src/reader/reader_navigation_widgets.dart';
 import 'package:fushi/src/reader/reader_panel_kit.dart';
@@ -48,6 +51,7 @@ import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -118,6 +122,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.favoriteSentences = const [],
     this.favoritePositionLabel,
     this.onDeleteFavorite,
+    this.onRecolorFavorite,
     this.onJumpToFavorite,
     this.onPlayFavorite,
     this.bookmarks = const <Bookmark>[],
@@ -205,6 +210,11 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   /// 进度。返回 null 时该行不显示位置（账本未就绪 / 无 sectionIndex）。
   final String? Function(FavoriteSentence fav)? favoritePositionLabel;
   final Future<void> Function(FavoriteSentence fav)? onDeleteFavorite;
+
+  /// 给已收藏的句子改色（BUG-5081）：[color] 是收藏五色之一。页面负责落库（带颜色
+  /// 时钟，同步按它取新）并给正文重新上色；为空时收藏行不出「改颜色」。
+  final Future<void> Function(FavoriteSentence fav, String color)?
+  onRecolorFavorite;
   final Future<void> Function(FavoriteSentence fav)? onJumpToFavorite;
   final Future<void> Function(FavoriteSentence fav)? onPlayFavorite;
 
@@ -518,6 +528,31 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       <FavoriteSentence, Timer>{};
 
   static const Duration _favoriteUndoWindow = Duration(seconds: 5);
+
+  /// 正在改色的收藏行（行尾动作换成五个色点）；同一时刻只展开一行。
+  String? _recoloringFavoriteId;
+
+  void _toggleFavoriteRecolor(FavoriteSentence fav) {
+    setState(() {
+      _recoloringFavoriteId = _recoloringFavoriteId == fav.id ? null : fav.id;
+    });
+  }
+
+  /// 选了新颜色：本地镜像立即换色（色条跟着变），收起色点，再交页面落库与重绘正文。
+  Future<void> _recolorFavorite(FavoriteSentence fav, String color) async {
+    setState(() {
+      _recoloringFavoriteId = null;
+      if (fav.color != color) {
+        final int i = _favorites.indexOf(fav);
+        if (i >= 0) {
+          _favorites = List<FavoriteSentence>.of(_favorites)
+            ..[i] = fav.withColor(color, DateTime.now());
+        }
+      }
+    });
+    if (fav.color == color) return;
+    await widget.onRecolorFavorite?.call(fav, color);
+  }
 
   void _markFavoriteDeleted(FavoriteSentence fav) {
     if (_pendingFavoriteDeletes.containsKey(fav)) return;
@@ -3160,6 +3195,12 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       // 失败（章字符账本未就绪）时不追加、只显示原元信息。
       metaLabel: _favoriteMetaLabel(favorite, fmt),
       color: _highlightColor(favorite.color),
+      recoloring: _recoloringFavoriteId == favorite.id,
+      onToggleRecolor: widget.onRecolorFavorite == null
+          ? null
+          : () => _toggleFavoriteRecolor(favorite),
+      onPickColor: (String color) =>
+          unawaited(_recolorFavorite(favorite, color)),
       onPlay: widget.onPlayFavorite == null
           ? null
           : () async => widget.onPlayFavorite?.call(favorite),
@@ -3382,6 +3423,9 @@ class _InBookFavoriteRow extends StatelessWidget {
     required this.color,
     required this.onCopy,
     required this.onDelete,
+    required this.onPickColor,
+    this.recoloring = false,
+    this.onToggleRecolor,
     this.onPlay,
     this.onJump,
   });
@@ -3393,6 +3437,50 @@ class _InBookFavoriteRow extends StatelessWidget {
   final VoidCallback? onJump;
   final VoidCallback onCopy;
   final VoidCallback onDelete;
+
+  /// 行尾是否正展开五个色点（改颜色）。
+  final bool recoloring;
+
+  /// 「改颜色」按钮：展开 / 收起色点。null = 不提供改色。
+  final VoidCallback? onToggleRecolor;
+  final ValueChanged<String> onPickColor;
+
+  static String _colorLabel(String name) => switch (name) {
+    'green' => t.reader_favorite_color_green,
+    'blue' => t.reader_favorite_color_blue,
+    'pink' => t.reader_favorite_color_pink,
+    'purple' => t.reader_favorite_color_purple,
+    _ => t.reader_favorite_color_yellow,
+  };
+
+  /// 改色态：五个色点（当前色描边）+ 收起。
+  Widget _colorPicker() {
+    final String current = normalizeFavoriteHighlightColor(favorite.color);
+    return Row(
+      key: ValueKey<String>('in_book_favorite_colors_${favorite.id}'),
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        for (final MapEntry<String, Color> e
+            in kFavoriteHighlightColors.entries)
+          FavoriteHighlightColorDot(
+            key: ValueKey<String>(
+              'in_book_favorite_color_${favorite.id}_${e.key}',
+            ),
+            color: e.value,
+            selected: e.key == current,
+            semanticLabel: _colorLabel(e.key),
+            focusIdPrefix: 'reader-favorite-color',
+            onTap: () => onPickColor(e.key),
+          ),
+        _InBookIconButton(
+          materialIcon: FushiIcons.close,
+          cupertinoIcon: CupertinoIcons.xmark,
+          tooltip: t.cancel,
+          onPressed: onToggleRecolor!,
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -3407,6 +3495,37 @@ class _InBookFavoriteRow extends StatelessWidget {
       onTap: onJump,
       focusIdPrefix: 'reader-favorite',
       actions: <Widget>[
+        // 改色态与常规动作互换，淡入淡出 + 尺寸过渡（时长取 FushiMotion）。
+        FushiAnimatedSize(
+          duration: fushiMotionDuration(context, FushiMotion.short),
+          curve: FushiMotion.enter,
+          child: AnimatedSwitcher(
+            duration: fushiMotionDuration(context, FushiMotion.short),
+            switchInCurve: FushiMotion.enter,
+            switchOutCurve: FushiMotion.exit,
+            child: recoloring && onToggleRecolor != null
+                ? _colorPicker()
+                : _actions(tokens),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _actions(FushiDesignTokens tokens) {
+    return Row(
+      key: ValueKey<String>('in_book_favorite_actions_${favorite.id}'),
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (onToggleRecolor != null) ...[
+          _InBookIconButton(
+            materialIcon: FushiIcons.appearance,
+            cupertinoIcon: CupertinoIcons.paintbrush,
+            tooltip: t.reader_favorite_recolor,
+            onPressed: onToggleRecolor!,
+          ),
+          SizedBox(width: tokens.spacing.gap),
+        ],
         if (onPlay != null) ...[
           _InBookIconButton(
             materialIcon: FushiIcons.volumeUp,

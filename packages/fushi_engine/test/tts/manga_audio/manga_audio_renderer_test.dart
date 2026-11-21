@@ -345,6 +345,51 @@ void main() {
       expect(backend.synthCalls, isEmpty);
     });
 
+    test('纯标点气泡（「……」「！」）出一段停顿：不送引擎、不算未配音，重跑沿用', () async {
+      final List<List<MokuroBlock>> pages = <List<MokuroBlock>>[
+        <MokuroBlock>[_block('……'), _block('！'), _block('……はい')],
+      ];
+      final MangaAudioScript script = MangaAudioScript(
+        lines: <MangaScriptLine>[
+          _line(0, <int>[0]),
+          _line(0, <int>[1]),
+          _line(0, <int>[2]),
+        ],
+      );
+      final CastVoicingLedger ledger = CastVoicingLedger();
+      Future<MangaRenderOutcome> go(MangaRenderManifest? previous) =>
+          renderer.render(
+            script: script,
+            pageBlocks: pages,
+            defaultVoice: 'reading',
+            previous: previous,
+            ledger: ledger,
+            onProgress: (int done, int total) {},
+            cancel: TtsRenderCancelToken(),
+          );
+
+      final MangaRenderOutcome out = await go(null);
+      // 只有带可念文字的那句进引擎。
+      expect(backend.synthCalls, <String>['reading|0|……はい']);
+      expect(out.placeholders, isEmpty);
+      expect(ledger.entries, isEmpty);
+      final MangaRenderedLine dots = out.manifest.lines[0];
+      expect(dots.placeholder, isFalse);
+      expect(dots.file, 'p0b0.wav');
+      expect(dots.durationMs, estimatePlaceholderMs('……'));
+      expect(
+        File(p.join(renderer.directory.path, dots.file)).readAsStringSync(),
+        'silence ${estimatePlaceholderMs('……')}',
+      );
+      expect(out.manifest.lines[1].file, 'p0b1.wav');
+      expect(out.manifest.lines[2].file, 'p0b2.m4a');
+
+      final MangaRenderOutcome again = await go(out.manifest);
+      expect(again.reused, 3);
+      expect(again.produced, 0);
+      expect(backend.synthCalls, hasLength(1));
+    });
+
     test('重跑：没变的句子沿用；改了文字的重录；占位句再试一次，成功后出账', () async {
       backend.failVoices.add('bad');
       final CastVoicingLedger ledger = CastVoicingLedger();

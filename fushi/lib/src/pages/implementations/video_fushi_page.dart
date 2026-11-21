@@ -1390,6 +1390,13 @@ abstract class VideoFushiTestHooks {
 
   /// 走与剧集面板 / 上下集同一条远端换集路径（[_loadRemoteEpisode]）载入第 [index] 集。
   Future<void> debugLoadRemoteEpisode(int index);
+
+  /// 走与播放器 EOF 回调同一条路径（[_handlePlaybackCompleted]）处理一次播完，
+  /// EOF 时的位置 / 时长由测试给（测试环境没有真实播放器）。
+  void debugHandlePlaybackEnded({
+    required int positionMs,
+    required int durationMs,
+  });
   bool get debugVideoFocusAttached;
   bool get debugVideoSurfaceHoldsFocus;
   VideoDiscNavigationState? get debugDiscNavigationState;
@@ -2099,6 +2106,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   Future<void> debugLoadRemoteEpisode(int index) =>
       _loadRemoteEpisode(index, startIntent: EpisodeStartIntent.listSelect);
+
+  @override
+  void debugHandlePlaybackEnded({
+    required int positionMs,
+    required int durationMs,
+  }) => _handlePlaybackEnded(positionMs: positionMs, durationMs: durationMs);
 
   @override
   VideoDiscNavigationState? get debugDiscNavigationState =>

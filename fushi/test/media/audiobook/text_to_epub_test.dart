@@ -387,6 +387,8 @@ void main() {
   // （UI）isolate 上同步跑，几 MB 的 TXT 导入时界面卡住。自校准：先量同样的
   // 输入在本 isolate 同步转换的耗时 D，再断言经 convert 入口时本 isolate 最长的
   // 一段卡顿不到 D 的一半，且产物（除 OPF 里的生成时间戳）与同步转换相同。
+  // 两边都取 kEventLoopStallSamples 次里的最小值滤掉并发负载下的抢占噪声；
+  // convert 每次都重新读文件、重新转换，没有缓存。
   test('convert does the heavy assembly off the calling isolate', () async {
     final StringBuffer text = StringBuffer();
     for (int i = 0; i < 60000; i++) {
@@ -399,7 +401,7 @@ void main() {
       ..writeAsStringSync(content);
 
     late Uint8List syncBytes;
-    final Duration syncCost = measureSync(() {
+    final Duration syncCost = measureMinSync(kEventLoopStallSamples, () {
       syncBytes = TextToEpub.convertText(content: content, title: '大きい本');
     });
     expect(
@@ -408,17 +410,18 @@ void main() {
       reason: '输入要大到同步转换有可测的耗时，否则断言没有区分力',
     );
 
-    final ({Uint8List result, Duration maxStall}) measured =
-        await measureEventLoopStall(
-          () => TextToEpub.convert(file: file, title: '大きい本'),
-        );
+    final ({List<Uint8List> results, Duration minStall, List<Duration> stalls})
+    measured = await measureMinEventLoopStall(
+      kEventLoopStallSamples,
+      (int run) => TextToEpub.convert(file: file, title: '大きい本'),
+    );
     expect(
-      measured.maxStall,
+      measured.minStall,
       lessThan(syncCost ~/ 2),
-      reason: 'sync=$syncCost stall=${measured.maxStall}',
+      reason: 'sync=$syncCost stalls=${measured.stalls}',
     );
     // OPF 里带生成时间戳，其余条目（各章正文、目录）必须与同步转换一致。
-    final EpubZipReader background = EpubZipReader(measured.result);
+    final EpubZipReader background = EpubZipReader(measured.results.last);
     final EpubZipReader reference = EpubZipReader(syncBytes);
     expect(background.names, reference.names);
     expect(background.names.length, greaterThan(10));

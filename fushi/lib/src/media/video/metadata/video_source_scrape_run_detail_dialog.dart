@@ -146,9 +146,10 @@ class _VideoSourceScrapeRunDetailDialogState
       ),
       for (int i = 0; i < issues.length; i++)
         _TimelineNode(
-          key: ValueKey<String>(
-            'video-source-run-issue-${issues[i].$1.workTitle}',
-          ),
+          // 按 issue 实例取 key（解码一次后实例稳定）：同一 run 里多条范围级问题
+          // 的 workTitle 相同（无来源范围都是空串），同一作品也可能既有警告又有
+          // 错误，按 workTitle 取 key 会撞出重复 key。
+          key: ObjectKey(issues[i].$1),
           dotColor: issues[i].$2 ? cs.error : cs.tertiary,
           isFirst: false,
           isLast: i == issues.length - 1,
@@ -323,7 +324,7 @@ class _VideoSourceScrapeRunDetailDialogState
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        issue.workTitle,
+                        videoScrapeIssueTitle(issue),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: type.titleSmallEmphasized.copyWith(
@@ -344,7 +345,9 @@ class _VideoSourceScrapeRunDetailDialogState
               ],
             ),
           ),
-          if (_canBindManually)
+          // 范围级问题（范围不可刮 / 整批不可用 / 整批异常）不对应任何作品，
+          // 没有可手动指定的对象；它的 workTitle 是来源 label，拿去搜只会找不到作品。
+          if (_canBindManually && !issue.isScopeLevel)
             Padding(
               padding: const EdgeInsetsDirectional.only(start: 4),
               child: busy

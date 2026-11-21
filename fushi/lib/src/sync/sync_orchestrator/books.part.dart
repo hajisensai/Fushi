@@ -112,7 +112,8 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
         File? upload;
         if (format == BookFormat.pdf) {
           final LiveLibraryCapabilityState pdfState = hostPdfState ??=
-              await backend.liveLibraryCapability(
+              liveLibraryCapabilityState(
+                await _roundHostCapabilities(report, backend),
                 kLiveLibraryPdfBooksCapability,
               );
           if (pdfState != LiveLibraryCapabilityState.supported) {

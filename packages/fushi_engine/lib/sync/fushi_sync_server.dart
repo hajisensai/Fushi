@@ -551,10 +551,13 @@ class FushiSyncServer {
     @visibleForTesting BlurayClipRelayPool? blurayClipRelays,
     @visibleForTesting
     Duration videoFingerprintWarmDelay = const Duration(minutes: 1),
+    @visibleForTesting VideoSourceFingerprint? videoFingerprints,
   }) : assert(listenScope == null || !allowLan, 'listenScope 与 allowLan 只给一个'),
        syncDataDir = p.join(syncDataDir, 'sync-data'),
        _blurayClipRelays = blurayClipRelays ?? BlurayClipRelayPool(),
        _videoFingerprintWarmDelay = videoFingerprintWarmDelay,
+       _videoFingerprints =
+           videoFingerprints ?? VideoSourceFingerprint.instance,
        _videoFingerprintStore = VideoFingerprintStore(
          File(p.join(syncDataDir, 'video_fingerprints.json')),
        ),
@@ -655,8 +658,12 @@ class FushiSyncServer {
   final PrefStore? _prefs;
 
   /// 视频指纹落盘缓存（拍板台 left3657）。放在 sync-data（WebDAV 根）的**上一级**，
-  /// 不经 WebDAV 暴露给对端；起服务时挂到 [VideoSourceFingerprint.instance]。
+  /// 不经 WebDAV 暴露给对端；起服务时挂到 [_videoFingerprints]。
   final VideoFingerprintStore _videoFingerprintStore;
+
+  /// `/fingerprint` 端点与后台预热共用的指纹计算（默认进程单例
+  /// [VideoSourceFingerprint.instance]，与本地制卡同一份在途去重与内存缓存）。
+  final VideoSourceFingerprint _videoFingerprints;
 
   /// 起服务后多久开始后台预热视频指纹（避开启动高峰）。
   final Duration _videoFingerprintWarmDelay;
@@ -664,6 +671,15 @@ class FushiSyncServer {
 
   /// 后台低优先级预热视频指纹；host 不提供媒体库时为 null。
   VideoFingerprintWarmer? _videoFingerprintWarmer;
+
+  /// `/fingerprint` 端点发起、还没收尾的指纹计算（含 `wait=0` 转后台算的）。[stop]
+  /// 等它们结束：每一个都开着视频文件、算完还写落盘缓存（BUG-5078 / BUG-5087）。
+  final Set<Future<void>> _videoFingerprintWork = <Future<void>>{};
+
+  /// 停机收尾已开始（或还没起服务）：`/fingerprint` 端点不再开新的指纹计算。停机时
+  /// 被 `close(force: true)` 留下的在途 handler 可能在 [stop] 排空登记之后才解析完文件，
+  /// 没有这道闸它会在 [stop] 返回后再开视频文件（BUG-5078 / BUG-5087）。
+  bool _videoFingerprintsClosed = true;
   final DateTime Function() _now;
 
   /// 单词音频 token（TTL 5 分钟 + BUG-908(a) 上限 128）与查词/制卡端点的 handler
@@ -1229,7 +1245,7 @@ class FushiSyncServer {
     await _screenOcr?.dispose();
     await _hostJobs?.disposeAll();
     await _assistant?.dispose();
-    _stopVideoFingerprintWarmup();
+    await _stopVideoFingerprintWarmup();
   }
 
   /// gzip 压缩 JSON/XML 文本响应（`Accept-Encoding: gzip` 内容协商）。

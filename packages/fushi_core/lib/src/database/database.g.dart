@@ -15042,6 +15042,17 @@ class $FavoriteSentencesTable extends FavoriteSentences
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _colorUpdatedAtUsMeta = const VerificationMeta(
+    'colorUpdatedAtUs',
+  );
+  @override
+  late final GeneratedColumn<int> colorUpdatedAtUs = GeneratedColumn<int>(
+    'color_updated_at_us',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _sourceMeta = const VerificationMeta('source');
   @override
   late final GeneratedColumn<String> source = GeneratedColumn<String>(
@@ -15097,6 +15108,7 @@ class $FavoriteSentencesTable extends FavoriteSentences
     normCharOffset,
     normCharLength,
     color,
+    colorUpdatedAtUs,
     source,
     dateKey,
     expression,
@@ -15192,6 +15204,15 @@ class $FavoriteSentencesTable extends FavoriteSentences
         color.isAcceptableOrUnknown(data['color']!, _colorMeta),
       );
     }
+    if (data.containsKey('color_updated_at_us')) {
+      context.handle(
+        _colorUpdatedAtUsMeta,
+        colorUpdatedAtUs.isAcceptableOrUnknown(
+          data['color_updated_at_us']!,
+          _colorUpdatedAtUsMeta,
+        ),
+      );
+    }
     if (data.containsKey('source')) {
       context.handle(
         _sourceMeta,
@@ -15265,6 +15286,10 @@ class $FavoriteSentencesTable extends FavoriteSentences
         DriftSqlType.string,
         data['${effectivePrefix}color'],
       ),
+      colorUpdatedAtUs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}color_updated_at_us'],
+      ),
       source: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}source'],
@@ -15305,6 +15330,12 @@ class FavoriteSentenceRow extends DataClass
   final int? normCharOffset;
   final int? normCharLength;
   final String? color;
+
+  /// [color] 最后一次被用户改的时刻（微秒，v167，BUG-5081）：同步 / 备份合并按内容键
+  /// 去重时，颜色取这个时钟较新的一侧（LWW）；NULL = 收藏后没改过色，时钟按
+  /// [createdAtUs] 算。没有它，同一条收藏两端 createdAt 相同、合并各留本机行，改色
+  /// 永远传不到别的设备。
+  final int? colorUpdatedAtUs;
   final String source;
   final String? dateKey;
   final String? expression;
@@ -15320,6 +15351,7 @@ class FavoriteSentenceRow extends DataClass
     this.normCharOffset,
     this.normCharLength,
     this.color,
+    this.colorUpdatedAtUs,
     required this.source,
     this.dateKey,
     this.expression,
@@ -15349,6 +15381,9 @@ class FavoriteSentenceRow extends DataClass
     }
     if (!nullToAbsent || color != null) {
       map['color'] = Variable<String>(color);
+    }
+    if (!nullToAbsent || colorUpdatedAtUs != null) {
+      map['color_updated_at_us'] = Variable<int>(colorUpdatedAtUs);
     }
     map['source'] = Variable<String>(source);
     if (!nullToAbsent || dateKey != null) {
@@ -15387,6 +15422,9 @@ class FavoriteSentenceRow extends DataClass
       color: color == null && nullToAbsent
           ? const Value.absent()
           : Value(color),
+      colorUpdatedAtUs: colorUpdatedAtUs == null && nullToAbsent
+          ? const Value.absent()
+          : Value(colorUpdatedAtUs),
       source: Value(source),
       dateKey: dateKey == null && nullToAbsent
           ? const Value.absent()
@@ -15416,6 +15454,7 @@ class FavoriteSentenceRow extends DataClass
       normCharOffset: serializer.fromJson<int?>(json['normCharOffset']),
       normCharLength: serializer.fromJson<int?>(json['normCharLength']),
       color: serializer.fromJson<String?>(json['color']),
+      colorUpdatedAtUs: serializer.fromJson<int?>(json['colorUpdatedAtUs']),
       source: serializer.fromJson<String>(json['source']),
       dateKey: serializer.fromJson<String?>(json['dateKey']),
       expression: serializer.fromJson<String?>(json['expression']),
@@ -15436,6 +15475,7 @@ class FavoriteSentenceRow extends DataClass
       'normCharOffset': serializer.toJson<int?>(normCharOffset),
       'normCharLength': serializer.toJson<int?>(normCharLength),
       'color': serializer.toJson<String?>(color),
+      'colorUpdatedAtUs': serializer.toJson<int?>(colorUpdatedAtUs),
       'source': serializer.toJson<String>(source),
       'dateKey': serializer.toJson<String?>(dateKey),
       'expression': serializer.toJson<String?>(expression),
@@ -15454,6 +15494,7 @@ class FavoriteSentenceRow extends DataClass
     Value<int?> normCharOffset = const Value.absent(),
     Value<int?> normCharLength = const Value.absent(),
     Value<String?> color = const Value.absent(),
+    Value<int?> colorUpdatedAtUs = const Value.absent(),
     String? source,
     Value<String?> dateKey = const Value.absent(),
     Value<String?> expression = const Value.absent(),
@@ -15473,6 +15514,9 @@ class FavoriteSentenceRow extends DataClass
         ? normCharLength.value
         : this.normCharLength,
     color: color.present ? color.value : this.color,
+    colorUpdatedAtUs: colorUpdatedAtUs.present
+        ? colorUpdatedAtUs.value
+        : this.colorUpdatedAtUs,
     source: source ?? this.source,
     dateKey: dateKey.present ? dateKey.value : this.dateKey,
     expression: expression.present ? expression.value : this.expression,
@@ -15500,6 +15544,9 @@ class FavoriteSentenceRow extends DataClass
           ? data.normCharLength.value
           : this.normCharLength,
       color: data.color.present ? data.color.value : this.color,
+      colorUpdatedAtUs: data.colorUpdatedAtUs.present
+          ? data.colorUpdatedAtUs.value
+          : this.colorUpdatedAtUs,
       source: data.source.present ? data.source.value : this.source,
       dateKey: data.dateKey.present ? data.dateKey.value : this.dateKey,
       expression: data.expression.present
@@ -15522,6 +15569,7 @@ class FavoriteSentenceRow extends DataClass
           ..write('normCharOffset: $normCharOffset, ')
           ..write('normCharLength: $normCharLength, ')
           ..write('color: $color, ')
+          ..write('colorUpdatedAtUs: $colorUpdatedAtUs, ')
           ..write('source: $source, ')
           ..write('dateKey: $dateKey, ')
           ..write('expression: $expression, ')
@@ -15542,6 +15590,7 @@ class FavoriteSentenceRow extends DataClass
     normCharOffset,
     normCharLength,
     color,
+    colorUpdatedAtUs,
     source,
     dateKey,
     expression,
@@ -15561,6 +15610,7 @@ class FavoriteSentenceRow extends DataClass
           other.normCharOffset == this.normCharOffset &&
           other.normCharLength == this.normCharLength &&
           other.color == this.color &&
+          other.colorUpdatedAtUs == this.colorUpdatedAtUs &&
           other.source == this.source &&
           other.dateKey == this.dateKey &&
           other.expression == this.expression &&
@@ -15578,6 +15628,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
   final Value<int?> normCharOffset;
   final Value<int?> normCharLength;
   final Value<String?> color;
+  final Value<int?> colorUpdatedAtUs;
   final Value<String> source;
   final Value<String?> dateKey;
   final Value<String?> expression;
@@ -15594,6 +15645,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
     this.normCharOffset = const Value.absent(),
     this.normCharLength = const Value.absent(),
     this.color = const Value.absent(),
+    this.colorUpdatedAtUs = const Value.absent(),
     this.source = const Value.absent(),
     this.dateKey = const Value.absent(),
     this.expression = const Value.absent(),
@@ -15611,6 +15663,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
     this.normCharOffset = const Value.absent(),
     this.normCharLength = const Value.absent(),
     this.color = const Value.absent(),
+    this.colorUpdatedAtUs = const Value.absent(),
     this.source = const Value.absent(),
     this.dateKey = const Value.absent(),
     this.expression = const Value.absent(),
@@ -15630,6 +15683,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
     Expression<int>? normCharOffset,
     Expression<int>? normCharLength,
     Expression<String>? color,
+    Expression<int>? colorUpdatedAtUs,
     Expression<String>? source,
     Expression<String>? dateKey,
     Expression<String>? expression,
@@ -15647,6 +15701,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
       if (normCharOffset != null) 'norm_char_offset': normCharOffset,
       if (normCharLength != null) 'norm_char_length': normCharLength,
       if (color != null) 'color': color,
+      if (colorUpdatedAtUs != null) 'color_updated_at_us': colorUpdatedAtUs,
       if (source != null) 'source': source,
       if (dateKey != null) 'date_key': dateKey,
       if (expression != null) 'expression': expression,
@@ -15666,6 +15721,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
     Value<int?>? normCharOffset,
     Value<int?>? normCharLength,
     Value<String?>? color,
+    Value<int?>? colorUpdatedAtUs,
     Value<String>? source,
     Value<String?>? dateKey,
     Value<String?>? expression,
@@ -15683,6 +15739,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
       normCharOffset: normCharOffset ?? this.normCharOffset,
       normCharLength: normCharLength ?? this.normCharLength,
       color: color ?? this.color,
+      colorUpdatedAtUs: colorUpdatedAtUs ?? this.colorUpdatedAtUs,
       source: source ?? this.source,
       dateKey: dateKey ?? this.dateKey,
       expression: expression ?? this.expression,
@@ -15724,6 +15781,9 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
     if (color.present) {
       map['color'] = Variable<String>(color.value);
     }
+    if (colorUpdatedAtUs.present) {
+      map['color_updated_at_us'] = Variable<int>(colorUpdatedAtUs.value);
+    }
     if (source.present) {
       map['source'] = Variable<String>(source.value);
     }
@@ -15755,6 +15815,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
           ..write('normCharOffset: $normCharOffset, ')
           ..write('normCharLength: $normCharLength, ')
           ..write('color: $color, ')
+          ..write('colorUpdatedAtUs: $colorUpdatedAtUs, ')
           ..write('source: $source, ')
           ..write('dateKey: $dateKey, ')
           ..write('expression: $expression, ')
@@ -96419,6 +96480,7 @@ typedef $$FavoriteSentencesTableCreateCompanionBuilder =
       Value<int?> normCharOffset,
       Value<int?> normCharLength,
       Value<String?> color,
+      Value<int?> colorUpdatedAtUs,
       Value<String> source,
       Value<String?> dateKey,
       Value<String?> expression,
@@ -96437,6 +96499,7 @@ typedef $$FavoriteSentencesTableUpdateCompanionBuilder =
       Value<int?> normCharOffset,
       Value<int?> normCharLength,
       Value<String?> color,
+      Value<int?> colorUpdatedAtUs,
       Value<String> source,
       Value<String?> dateKey,
       Value<String?> expression,
@@ -96500,6 +96563,11 @@ class $$FavoriteSentencesTableFilterComposer
 
   ColumnFilters<String> get color => $composableBuilder(
     column: $table.color,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get colorUpdatedAtUs => $composableBuilder(
+    column: $table.colorUpdatedAtUs,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -96583,6 +96651,11 @@ class $$FavoriteSentencesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get colorUpdatedAtUs => $composableBuilder(
+    column: $table.colorUpdatedAtUs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get source => $composableBuilder(
     column: $table.source,
     builder: (column) => ColumnOrderings(column),
@@ -96653,6 +96726,11 @@ class $$FavoriteSentencesTableAnnotationComposer
   GeneratedColumn<String> get color =>
       $composableBuilder(column: $table.color, builder: (column) => column);
 
+  GeneratedColumn<int> get colorUpdatedAtUs => $composableBuilder(
+    column: $table.colorUpdatedAtUs,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get source =>
       $composableBuilder(column: $table.source, builder: (column) => column);
 
@@ -96718,6 +96796,7 @@ class $$FavoriteSentencesTableTableManager
                 Value<int?> normCharOffset = const Value.absent(),
                 Value<int?> normCharLength = const Value.absent(),
                 Value<String?> color = const Value.absent(),
+                Value<int?> colorUpdatedAtUs = const Value.absent(),
                 Value<String> source = const Value.absent(),
                 Value<String?> dateKey = const Value.absent(),
                 Value<String?> expression = const Value.absent(),
@@ -96734,6 +96813,7 @@ class $$FavoriteSentencesTableTableManager
                 normCharOffset: normCharOffset,
                 normCharLength: normCharLength,
                 color: color,
+                colorUpdatedAtUs: colorUpdatedAtUs,
                 source: source,
                 dateKey: dateKey,
                 expression: expression,
@@ -96752,6 +96832,7 @@ class $$FavoriteSentencesTableTableManager
                 Value<int?> normCharOffset = const Value.absent(),
                 Value<int?> normCharLength = const Value.absent(),
                 Value<String?> color = const Value.absent(),
+                Value<int?> colorUpdatedAtUs = const Value.absent(),
                 Value<String> source = const Value.absent(),
                 Value<String?> dateKey = const Value.absent(),
                 Value<String?> expression = const Value.absent(),
@@ -96768,6 +96849,7 @@ class $$FavoriteSentencesTableTableManager
                 normCharOffset: normCharOffset,
                 normCharLength: normCharLength,
                 color: color,
+                colorUpdatedAtUs: colorUpdatedAtUs,
                 source: source,
                 dateKey: dateKey,
                 expression: expression,
