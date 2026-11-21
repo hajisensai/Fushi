@@ -19,6 +19,7 @@ import 'book_format.dart';
 import 'collection_order.dart';
 import 'collection_organize.dart';
 import 'collection_book_identity.dart';
+import 'db_disk_space.dart';
 import 'db_schema_version.dart';
 import 'epub_book_meta.dart';
 import 'media_kind.dart';
@@ -191,7 +192,43 @@ enum FushiDatabaseFailureKind {
   /// 根本打不开：父目录不存在、无权限、只读介质、盘断链。
   /// **磁盘上什么都没坏**，让用户去清空数据是有害的误导。
   cannotOpen,
+
+  /// BUG-5076：库所在卷写满了（`SQLITE_FULL` / ENOSPC，或卷探测写不进去）。此时 sqlite
+  /// 报的 IOERR / CORRUPT 都可能只是「写不进去」的表象，分不出真坏还是假坏——唯一正确
+  /// 的引导是「先腾空间再重试」；让用户恢复备份 / 清空数据会把可能完好的数据删掉。
+  insufficientSpace,
 }
+
+/// BUG-5076：开库终态失败的**唯一**分类判据（Layer 0 探测、恢复阶梯各层、drift 后台
+/// 连接的开库拦截都只调这一处）。顺序有意义：
+///  1. 空间不足优先——`SQLITE_FULL`(13)、带 ENOSPC 的文件系统异常（如侧车快照复制
+///     失败），或库目录所在卷探测写不进去（[dbVolumeIsOutOfSpace]）。卷写满时 sqlite
+///     报的 IOERR / CORRUPT 都不可信，不能据此判「损坏」；
+///  2. 文件不存在 → [FushiDatabaseFailureKind.cannotOpen]（sqlite 在父目录可写时会自己
+///     建库，走到终态还不存在只能是路径本身打不开，BUG-1899）；
+///  3. 其余才是 [FushiDatabaseFailureKind.corrupt]。
+FushiDatabaseFailureKind classifyFushiDatabaseOpenFailure(
+  Object cause, {
+  required String dbPath,
+}) {
+  if (_isSqliteFullError(cause) ||
+      isOutOfSpaceError(cause) ||
+      dbVolumeIsOutOfSpace(p.dirname(dbPath))) {
+    return FushiDatabaseFailureKind.insufficientSpace;
+  }
+  if (!File(dbPath).existsSync()) return FushiDatabaseFailureKind.cannotOpen;
+  return FushiDatabaseFailureKind.corrupt;
+}
+
+/// 按 [classifyFushiDatabaseOpenFailure] 定 kind 的终态异常；开库路径上所有终态都经它构造。
+FushiDatabaseUnrecoverableException _terminalOpenFailure(
+  Object cause,
+  String dbPath,
+) => FushiDatabaseUnrecoverableException(
+  dbPath: dbPath,
+  cause: cause,
+  kind: classifyFushiDatabaseOpenFailure(cause, dbPath: dbPath),
+);
 
 class FushiDatabaseUnrecoverableException implements Exception {
   /// Absolute path of the database file that could not be recovered.
@@ -221,6 +258,11 @@ class FushiDatabaseUnrecoverableException implements Exception {
           'could not be opened and does not exist on disk — the folder is '
           'missing, unwritable, or on a disconnected/read-only volume. '
           'Nothing is corrupt; check the data location. Cause: $cause',
+    FushiDatabaseFailureKind.insufficientSpace =>
+      'FushiDatabaseUnrecoverableException: the database file at "$dbPath" '
+          'could not be opened because the storage volume is full. The data '
+          'was not deleted; free up space and retry. Do not clear app data. '
+          'Cause: $cause',
   };
 }
 
@@ -237,6 +279,7 @@ class FushiDatabaseUnrecoverableException implements Exception {
 /// is NOT mistaken for a sidecar problem (it falls through to unrecoverable).
 const int _kSqliteIoErr = 10; // SQLITE_IOERR
 const int _kSqliteCorrupt = 11; // SQLITE_CORRUPT
+const int _kSqliteFull = 13; // SQLITE_FULL
 const int _kSqliteCantOpen = 14; // SQLITE_CANTOPEN
 const int _kSqliteNotADb = 26; // SQLITE_NOTADB
 
@@ -264,6 +307,16 @@ bool _isSidecarOpenError(Object e) {
 bool _isMainDbCorruptError(Object e) =>
     e is sqlite3.SqliteException &&
     (e.extendedResultCode & 0xFF) == _kSqliteCorrupt;
+
+/// BUG-5076：`SQLITE_FULL`(13)「database or disk is full」。
+bool _isSqliteFullError(Object e) =>
+    e is sqlite3.SqliteException &&
+    (e.extendedResultCode & 0xFF) == _kSqliteFull;
+
+/// 开库时**不进恢复阶梯、直接终态**的错误：主库损坏（CORRUPT，BUG-4509）与卷写满
+/// （FULL，BUG-5076）。恢复阶梯对两者都无事可做，且在写满的卷上跑阶梯是有害的。
+bool _isTerminalOpenError(Object e) =>
+    _isMainDbCorruptError(e) || _isSqliteFullError(e);
 
 /// The 16-byte magic header every SQLite database file starts with
 /// ("SQLite format 3\u0000"). See https://www.sqlite.org/fileformat.html .
@@ -370,39 +423,36 @@ QueryExecutor _createBackgroundExecutor(File dbFile) =>
 /// 连接撞上侧车错误」。生产代码从不设置它。
 void Function(String dbPath)? debugAfterOpenProbeForTesting;
 
+/// 仅供测试：替换 Layer 2 快照的文件复制（BUG-5076）。测试里无法真把卷写满，用它让
+/// 快照复制像 ENOSPC 那样写了半截后失败，验证「快照失败 → 清半截快照、不删侧车」。
+/// 生产代码从不设置它。
+Future<void> Function(File src, String destPath)?
+debugSidecarSnapshotCopyForTesting;
+
 /// 开库错误分流（Layer 0 与 drift 后台连接共用一套判据）：
 ///  - 主库自身损坏（CORRUPT）→ 终态，不进恢复阶梯、不碰任何文件（见
 ///    [_isMainDbCorruptError]）；
 ///  - 不是侧车类错误 → 恢复阶梯无事可做，原样抛出；
 ///  - 侧车类错误但主库文件头不合法 → 主库坏了 / 根本打不开，终态，绝不删侧车；
-///  - 其余（侧车类且主库头完好）正常返回，由调用方进恢复阶梯。
+///  - 侧车类错误但库所在卷已写满 → 终态（BUG-5076），不进阶梯：写满时扩 `-shm` 报的
+///    IOERR 不是侧车坏了，阶梯的检查点写不进去、快照复制不了，删掉的 `-wal` 却是已提交
+///    事务的唯一副本；
+///  - 其余（侧车类且主库头完好、卷有空间）正常返回，由调用方进恢复阶梯。
+/// 终态的 kind 一律由 [classifyFushiDatabaseOpenFailure] 定。
 void _throwUnlessRecoverableSidecarError(
   Object e,
   StackTrace stack,
   String path,
 ) {
-  if (_isMainDbCorruptError(e)) {
-    throw FushiDatabaseUnrecoverableException(dbPath: path, cause: e);
-  }
+  if (_isTerminalOpenError(e)) throw _terminalOpenFailure(e, path);
   if (!_isSidecarOpenError(e)) Error.throwWithStackTrace(e, stack);
   // The error class is ambiguous (a corrupt MAIN db can also raise
   // CANTOPEN/NOTADB): only recover if the main db's header is a valid SQLite
   // file. Otherwise it is a corrupt/missing main db → terminal, do NOT delete
-  // any sidecar.
-  if (!_mainDbHeaderIsValid(path)) {
-    // BUG-1899：这里必须分清两件事。sqlite 的 open 在父目录存在时会**自己创建**
-    // 缺失的 db 文件，所以走到这一步还「文件不存在」，只可能是连创建都失败了 ——
-    // 目录不存在 / 无权限 / 只读介质 / 盘断链。那不是「损坏」，把它说成损坏会把
-    // 用户引去清空数据（用户报告：自定义数据安装位置后启动即「Database damaged」，
-    // 实际只是 `<dataRoot>/support` 这个空目录没被创建）。
-    // 文件确实在但头不是 SQLite magic → 才是真的坏了。
-    throw FushiDatabaseUnrecoverableException(
-      dbPath: path,
-      cause: e,
-      kind: File(path).existsSync()
-          ? FushiDatabaseFailureKind.corrupt
-          : FushiDatabaseFailureKind.cannotOpen,
-    );
+  // any sidecar. BUG-1899：文件不存在（连创建都失败）是路径问题不是损坏——这一分辨
+  // 与 BUG-5076 的空间判据一起收在 [classifyFushiDatabaseOpenFailure]。
+  if (!_mainDbHeaderIsValid(path) || dbVolumeIsOutOfSpace(p.dirname(path))) {
+    throw _terminalOpenFailure(e, path);
   }
 }
 
@@ -435,9 +485,7 @@ Future<QueryExecutor> _recoverSidecarAndReopen(
     );
     return _createBackgroundExecutor(dbFile);
   } catch (e, stack) {
-    if (_isMainDbCorruptError(e)) {
-      throw FushiDatabaseUnrecoverableException(dbPath: path, cause: e);
-    }
+    if (_isTerminalOpenError(e)) throw _terminalOpenFailure(e, path);
     if (!_isSidecarOpenError(e)) rethrow;
     fushiDebugPrint('[fushi-db] Layer 1 still failing on "$path": $e\n$stack');
   }
@@ -446,11 +494,10 @@ Future<QueryExecutor> _recoverSidecarAndReopen(
   //    connection (sidecar too poisoned). Only the MAIN process is allowed to
   //    delete; the :popup process backs off so the two never race.
   if (!allowSidecarDelete) {
-    throw FushiDatabaseUnrecoverableException(
-      dbPath: path,
-      cause:
-          'sidecar open error in a non-main (:popup) process; backing off '
-          'so the main process performs sidecar recovery first',
+    throw _terminalOpenFailure(
+      'sidecar open error in a non-main (:popup) process; backing off '
+      'so the main process performs sidecar recovery first',
+      path,
     );
   }
   await _rebuildSidecar(dbFile);
@@ -464,7 +511,7 @@ Future<QueryExecutor> _recoverSidecarAndReopen(
     fushiDebugPrint(
       '[fushi-db] Layer 2 rebuild failed, DB unrecoverable: $e\n$stack',
     );
-    throw FushiDatabaseUnrecoverableException(dbPath: path, cause: e);
+    throw _terminalOpenFailure(e, path);
   }
 }
 
@@ -605,22 +652,46 @@ Future<void> _rebuildSidecar(File dbFile) async {
   final File shm = File('$path-shm');
 
   // Snapshot the main DB + sidecars before deleting anything (D1: 数据安全兜底).
+  //
+  // BUG-5076：快照是删侧车的**前提**，不是可选项。`-wal` 里是已提交、未检查点的事务
+  // 的唯一副本；此前快照失败只记一行 debugPrint 就照删，卷写满（快照恰恰因 ENOSPC
+  // 失败）时等于无备份删掉最后的写入。现在任一快照失败就清掉本次已写的半截快照、
+  // 以终态异常停下，侧车与主库原样不动。
   final String stamp = DateTime.now().millisecondsSinceEpoch.toString();
+  final List<File> written = <File>[];
   Future<void> snapshot(File src, String suffix) async {
-    if (await src.exists()) {
-      try {
-        await src.copy('$path.corrupt-bak-$stamp$suffix');
-      } catch (e) {
-        fushiDebugPrint(
-          '[fushi-db] snapshot of "${src.path}" failed (non-fatal): $e',
-        );
-      }
+    if (!await src.exists()) return;
+    final File dest = File('$path.corrupt-bak-$stamp$suffix');
+    written.add(dest);
+    final Future<void> Function(File src, String destPath)? copyOverride =
+        debugSidecarSnapshotCopyForTesting;
+    if (copyOverride != null) {
+      await copyOverride(src, dest.path);
+    } else {
+      await src.copy(dest.path);
     }
   }
 
-  await snapshot(dbFile, '.db');
-  await snapshot(wal, '.db-wal');
-  await snapshot(shm, '.db-shm');
+  try {
+    await snapshot(dbFile, '.db');
+    await snapshot(wal, '.db-wal');
+    await snapshot(shm, '.db-shm');
+  } on FileSystemException catch (e) {
+    for (final File f in written) {
+      try {
+        if (await f.exists()) await f.delete();
+      } on FileSystemException catch (cleanupError) {
+        fushiDebugPrint(
+          '[fushi-db] could not remove partial snapshot "${f.path}": '
+          '$cleanupError',
+        );
+      }
+    }
+    fushiDebugPrint(
+      '[fushi-db] Layer 2 aborted: snapshot failed, sidecars NOT deleted: $e',
+    );
+    throw _terminalOpenFailure(e, path);
+  }
 
   // Delete ONLY the sidecar PATHS; the main .db is left byte-for-byte intact.
   // Handles either a normal sidecar file OR a stray directory occupying the
@@ -892,9 +963,9 @@ class _TypedOpenErrorInterceptor extends QueryInterceptor {
           cause is FushiDatabaseUnrecoverableException) {
         Error.throwWithStackTrace(cause, causeStack);
       }
-      if (_isMainDbCorruptError(cause)) {
+      if (_isTerminalOpenError(cause)) {
         Error.throwWithStackTrace(
-          FushiDatabaseUnrecoverableException(dbPath: dbPath, cause: cause),
+          _terminalOpenFailure(cause, dbPath),
           causeStack,
         );
       }
