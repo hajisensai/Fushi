@@ -60,14 +60,16 @@ double? computeCph(int chars, int ms, {int minMs = kMinCphSampleMs}) {
 String isoWeekKey(String dateKey) {
   final parsed = parseStatDateKey(dateKey);
   if (parsed == null) return dateKey;
-  final DateTime date = DateTime(parsed.year, parsed.month, parsed.day);
+  // 用 UTC 日历日算：本地时间跨夏令时的那周 `difference().inDays` 会少一天（23 小时
+  // 向下取整），把 6 月的日期算进上一周（stat_trends_test 在有夏令时的时区里红）。
+  final DateTime date = DateTime.utc(parsed.year, parsed.month, parsed.day);
   // ISO weekday：周一=1 ... 周日=7。
   final int weekday = date.weekday;
   // 把日期挪到本周的周四（ISO 周年由周四所在年份决定）。
   final DateTime thursday = date.add(Duration(days: 4 - weekday));
   final int isoYear = thursday.year;
   // 该 ISO 周年第一个周四所在的 ISO 第 1 周。
-  final DateTime jan1 = DateTime(isoYear, 1, 1);
+  final DateTime jan1 = DateTime.utc(isoYear, 1, 1);
   final DateTime firstThursday = jan1.add(
     Duration(days: (4 - jan1.weekday + 7) % 7),
   );

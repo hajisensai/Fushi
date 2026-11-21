@@ -87,6 +87,7 @@ void main() {
       'openbd',
       'ndl',
       'rakuten',
+      'itunes',
     ]);
     for (final String source in <String>[
       'anilist',

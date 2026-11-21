@@ -1,6 +1,7 @@
 //! 各位置媒体「在不在」（设计 §4.5、D18；实现拆分 G8-3）：本机缓存 `media_at` 的读写、媒体清单（[crate::gen4::manifest]）
-//! 的收与发、协议 3 `sync2_media_at` 的播种。**没有调用方**：同步一轮（G8-7）接线前，协议 3 的 `media_known` /
-//! `media_record` 照旧。
+//! 的收与发、协议 3 `sync2_media_at` 的播种。已接分发器：`cmd/media_sync.rs` 的 `media_known` / `media_record` / 清单
+//! 命令，迁移播种（[seed_legacy]），移除位置（`cmd/sync.rs` `location_forget` → [forget]）与并入改绑（`identity.rs`
+//! `join_into` → [forget_all]）。
 //!
 //! # 模型
 //!
@@ -35,7 +36,9 @@
 //!   合并出的新文件代号比被合并者都大，所以先合并后删旧的写法不会让读者漏掉内容。
 //! - [ingest] 返回 [IngestError::UnknownDevice] / [IngestError::Untrusted] 时不记这个代号：等 head 带来公钥、或用户
 //!   信任了这台设备，下一轮自然收进来。
-//! - 改绑定 / 换根时调 [forget] 从头对账（设计 §5.1：位置进度换了根就从头来）。
+//! - 改绑定 / 换根时调 [forget] 从头对账（设计 §5.1：位置进度换了根就从头来）：移除位置忘这一个位置（[forget]，
+//!   `location_forget`）；并入改绑（集合目录换了，`loc_key` 不带目录，旧目录上的「在不在」套到新目录上就是错的）忘
+//!   这个集合在全部位置上的（[forget_all]）。「空集合可换绑」丢掉整个集合号，本来就不留。
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -945,6 +948,29 @@ pub fn forget(t: &Truth<'_>, col: i64, location: &str) -> Result<usize, String> 
             .execute(params![col, location])
             .map_err(sql)?;
         Ok(doomed.len())
+    })
+}
+
+/// 丢掉集合 [col] 在**全部**位置上的「在不在」缓存与进度（并入改绑：集合的位置目录换了，`loc_key` 里没有目录，
+/// 旧目录的事实不能当成新目录的）。与 [forget] 同口径：本机代号预留（`media_gen`）不丢。返回删掉的 `media_at` 行数。
+pub fn forget_all(t: &Truth<'_>, col: i64) -> Result<usize, String> {
+    t.tx(|t| {
+        let c = t.conn();
+        let n = c
+            .prepare_cached("DELETE FROM media_at WHERE col = ?1")
+            .map_err(sql)?
+            .execute([col])
+            .map_err(sql)?;
+        for q in [
+            "DELETE FROM media_listed WHERE col = ?1",
+            "DELETE FROM media_seen WHERE col = ?1",
+        ] {
+            c.prepare_cached(q)
+                .map_err(sql)?
+                .execute([col])
+                .map_err(sql)?;
+        }
+        Ok(n)
     })
 }
 

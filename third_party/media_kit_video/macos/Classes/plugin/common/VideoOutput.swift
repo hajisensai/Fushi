@@ -36,6 +36,21 @@ public class VideoOutput: NSObject {
   private var currentSize: CGSize = CGSize.zero
   private var disposed: Bool = false
 
+  #if os(iOS)
+    // Fushi (decision 42UUu_kcwD, video background audio): iOS kills an app that
+    // submits OpenGL ES work after it entered the background
+    // (gpus_ReturnNotPermittedKillClient), but this class renders on the worker
+    // thread whenever libmpv signals a new frame. All GL work is therefore
+    // suspended while the app is in the background and resumed (plus one redraw)
+    // when it returns. `gpuLock` only wraps the GL calls themselves, never the
+    // `DispatchQueue.main.sync` hops, so the main thread taking it in the
+    // notification handler just waits for the in-flight frame and cannot
+    // deadlock.
+    private let gpuLock = NSLock()
+    private var gpuSuspended: Bool = false  // guarded by gpuLock
+    private var lifecycleObservers: [NSObjectProtocol] = []
+  #endif
+
   init(
     handle: Int64,
     configuration: VideoOutputConfiguration,
@@ -54,17 +69,78 @@ public class VideoOutput: NSObject {
 
     super.init()
 
+    #if os(iOS)
+      observeApplicationLifecycle()
+    #endif
+
     worker.enqueue {
       self._init()
     }
   }
 
   deinit {
+    #if os(iOS)
+      for observer in lifecycleObservers {
+        NotificationCenter.default.removeObserver(observer)
+      }
+    #endif
+
     worker.cancel()
 
     disposed = true
     disposeTextureId()
   }
+
+  #if os(iOS)
+    private func observeApplicationLifecycle() {
+      if Thread.isMainThread {
+        gpuSuspended = UIApplication.shared.applicationState == .background
+      }
+      let center = NotificationCenter.default
+      // queue: nil -> delivered synchronously on the posting (main) thread, i.e.
+      // inside applicationDidEnterBackground, before the app may be suspended.
+      lifecycleObservers.append(
+        center.addObserver(
+          forName: UIApplication.didEnterBackgroundNotification,
+          object: nil,
+          queue: nil
+        ) { [weak self] _ in
+          guard let that = self else { return }
+          that.gpuLock.lock()
+          that.gpuSuspended = true
+          that.gpuLock.unlock()
+        }
+      )
+      lifecycleObservers.append(
+        center.addObserver(
+          forName: UIApplication.willEnterForegroundNotification,
+          object: nil,
+          queue: nil
+        ) { [weak self] _ in
+          guard let that = self else { return }
+          that.gpuLock.lock()
+          that.gpuSuspended = false
+          that.gpuLock.unlock()
+          // Frames skipped in the background left the texture stale.
+          that.updateCallback()
+        }
+      )
+    }
+
+    /// Returns false (and holds no lock) while the app is in the background.
+    private func beginGpuWork() -> Bool {
+      gpuLock.lock()
+      if gpuSuspended {
+        gpuLock.unlock()
+        return false
+      }
+      return true
+    }
+
+    private func endGpuWork() {
+      gpuLock.unlock()
+    }
+  #endif
 
   public func setSize(width: Int64?, height: Int64?) {
     worker.enqueue {
@@ -155,9 +231,17 @@ public class VideoOutput: NSObject {
     }
 
     if currentSize != size {
+      #if os(iOS)
+        if !beginGpuWork() {
+          return
+        }
+      #endif
       currentSize = size
 
       texture.resize(size)
+      #if os(iOS)
+        endGpuWork()
+      #endif
       DispatchQueue.main.sync { [weak self] in
         guard let that = self else { return }
         // textureUpdateCallback must run on the main thread
@@ -169,7 +253,15 @@ public class VideoOutput: NSObject {
       return
     }
 
+    #if os(iOS)
+      if !beginGpuWork() {
+        return
+      }
+    #endif
     texture.render(size)
+    #if os(iOS)
+      endGpuWork()
+    #endif
     DispatchQueue.main.sync { [weak self] in
       guard let that = self else { return }
       // Textures must be marked as available from the main thread

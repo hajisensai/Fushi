@@ -1023,6 +1023,14 @@ class _Importer {
       }
     }
 
+    // 排序字段（Anki `sortf`）：来源指定了第一个以外的字段、且本机从没设过（没有这个键的记录）时取来源的；本机设过
+    // （含清回第一个字段）一律保留。第三方牌组常把编号之类放在第一个字段、把单词设成排序字段，浏览页靠它显示对。
+    if (src.sortFieldOrd > 0 &&
+        src.sortFieldOrd < fieldIds.length &&
+        view.edits[SrsFieldKeys.sortField] == null) {
+      edits[SrsFieldKeys.sortField] = fieldIds[src.sortFieldOrd];
+    }
+
     if (update) {
       if (view.name != src.name) edits[SrsFieldKeys.name] = src.name;
       final String css = await _withMedia(src.css, includeStatic: true);

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/misc/update_checker.dart';
+import 'package:fushi/src/utils/net/github_mirrors.dart';
 
 void main() {
   group('updateCheckUrls (候选 URL 列表，纯函数)', () {
@@ -172,6 +173,27 @@ void main() {
         'https://github.com/hajisensai/Fushi/releases/download/v2.1.1/a.apk';
     const String legacyRepo =
         'https://github.com/hajisensai/hibiki/releases/download/v1/a.apk';
+
+    test('关掉 GitHub 加速镜像：候选只剩官网 R2 与直连，所选镜像算「没用上」', () {
+      addTearDown(() => gitHubMirrorsEnabledReader = () => true);
+      final String mirrorSource = updateDownloadSourceForProxy(
+        kGitHubMirrorPrefixes.first,
+      );
+      gitHubMirrorsEnabledReader = () => false;
+      expect(updateCheckProxyPrefixes, isEmpty);
+      expect(updateCheckUrls(official), <String>[official]);
+      final UpdateDownloadPlan plan = resolveUpdateDownloadPlan(
+        official,
+        preference: mirrorSource,
+      );
+      expect(plan.candidates, <String>[
+        officialR2UrlForUpdateAsset(official)!,
+        official,
+      ]);
+      expect(plan.candidates.where(isGitHubMirrorUrl), isEmpty);
+      expect(plan.pinnedUrl, isNull);
+      expect(plan.preferenceUnavailable, isTrue);
+    });
 
     test('自动：不钉候选，也不算「没用上所选来源」', () {
       final UpdateDownloadPlan plan = resolveUpdateDownloadPlan(
