@@ -126,14 +126,15 @@ class MangaCardImagePlan {
 /// * 有打码（`mosaic`，与 crop 同属对话框里的那一页）：整页也要走裁切通道（裁 0..1）
 ///   才能把码打上；页码对不上时**不要卡图**——打码位置是那一页的，退回整页就把用户
 ///   想遮住的东西原样送进了卡片。没有 crop 却有打码（不该出现的组合）同样不要卡图。
-/// * 没有 crop：[cropToPanelByDefault] 开、非条漫、知道是哪一页 → 交给页面裁到所在
+/// * 没有 crop：[cropToPanelByDefault] 开、制卡页不是条漫长条（[stripPage]，按页面
+///   形状判、不按阅读模式判）、知道是哪一页 → 交给页面裁到所在
 ///   分镜（模型是否可用由页面在执行时判定，不可用即整页）；否则整页。
 ///   没有模型时**绝不**按文本外扩去裁：自动裁错比不裁更糟。
 MangaCardImagePlan resolveMangaCardImagePlan({
   required MiningRequestOverrides? overrides,
   required int? miningPageIndex,
   required bool cropToPanelByDefault,
-  required bool webtoon,
+  required bool stripPage,
 }) {
   if (overrides?.omitImage ?? false) {
     return const MangaCardImagePlan(MangaCardImageKind.omit);
@@ -164,7 +165,7 @@ MangaCardImagePlan resolveMangaCardImagePlan({
       mosaic: mosaic,
     );
   }
-  if (cropToPanelByDefault && !webtoon && miningPageIndex != null) {
+  if (cropToPanelByDefault && !stripPage && miningPageIndex != null) {
     return const MangaCardImagePlan(MangaCardImageKind.autoPanel);
   }
   return const MangaCardImagePlan(MangaCardImageKind.wholePage);
