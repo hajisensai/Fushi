@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_music/fushi_music.dart';
 
+import 'package:fushi/src/utils/components/fushi_generated_cover.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
@@ -89,7 +90,12 @@ class MusicCover extends StatelessWidget {
     this.embeddedFromPath,
     this.size,
     this.borderRadius,
+    this.title,
   });
+
+  /// 没有封面（或封面读不出）时按它生成封面（[FushiGeneratedCover]，设计稿 M2：
+  /// 不放空 ♪ 方块）；null = 音符占位（不知道标题的小缩略图）。
+  final String? title;
 
   /// 目录封面 / 缓存封面文件；服务器曲库的封面是 `http(s)://` 地址（服务器侧缩放）。
   final String? coverPath;
@@ -106,16 +112,19 @@ class MusicCover extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final Widget placeholder = ColoredBox(
-      color: scheme.secondaryContainer,
-      child: Center(
-        child: FushiIcon(
-          FushiIcons.music,
-          color: scheme.onSecondaryContainer,
-          size: size == null ? 40 : size! * 0.4,
-        ),
-      ),
-    );
+    final String? generatedTitle = title;
+    final Widget placeholder = generatedTitle != null
+        ? FushiGeneratedCover(title: generatedTitle)
+        : ColoredBox(
+            color: scheme.secondaryContainer,
+            child: Center(
+              child: FushiIcon(
+                FushiIcons.music,
+                color: scheme.onSecondaryContainer,
+                size: size == null ? 40 : size! * 0.4,
+              ),
+            ),
+          );
     final String? file = coverPath;
     Widget child;
     if (file != null &&
@@ -171,6 +180,14 @@ class MusicCover extends StatelessWidget {
   }
 }
 
+/// 专辑盘面扫描图（[MusicDiscArtIndex] 认出的本地文件）画进唱片色块
+/// （[FushiCoverBlock.disc]）的图：按 512 宽解码、铺满圆形裁切。
+Widget musicDiscArtImage(String path) => Image(
+  image: ResizeImage.resizeIfNeeded(512, null, FileImage(File(path))),
+  fit: BoxFit.cover,
+  excludeFromSemantics: true,
+);
+
 /// [MusicCover] 同一套来源规则下的封面 provider（取色用，[size] 同显示尺寸）：
 /// `http(s)://` 走 [AppHttpImage]，本地文件走 [FileImage]；内嵌封面 / 没有封面
 /// 返回 null。
@@ -187,4 +204,41 @@ ImageProvider? musicCoverImageProvider(String? coverPath, {double size = 64}) {
   }
   if (!File(file).existsSync()) return null;
   return ResizeImage.resizeIfNeeded(width, null, FileImage(File(file)));
+}
+
+/// 专辑有没有封面来源（目录 / 缓存封面文件，或曲目内嵌封面）。没有时色块不放
+/// [MusicCover]，交给色块画生成封面（与块底同一色相，设计稿 M2）。
+bool musicHasCoverSource(String? coverPath, String? embeddedFromPath) =>
+    (coverPath != null && coverPath.isNotEmpty) || embeddedFromPath != null;
+
+/// 取色图源，与 [MusicCover] 同一条来源链：目录 / 缓存封面文件
+/// （[musicCoverImageProvider]）优先；没有时取曲目内嵌封面——字节来自
+/// [MusicEmbeddedCoverCache]（与 [MusicCover] 显示的同一份缓存，同一音频路径恒
+/// 返回同一份字节，故 [MemoryImage] 作取色缓存的 key 稳定）。都没有才给 null
+/// （中性色）。
+class MusicCoverTintSource extends StatelessWidget {
+  const MusicCoverTintSource({
+    required this.coverPath,
+    required this.embeddedFromPath,
+    required this.builder,
+    super.key,
+  });
+
+  final String? coverPath;
+  final String? embeddedFromPath;
+  final Widget Function(BuildContext context, ImageProvider? tint) builder;
+
+  @override
+  Widget build(BuildContext context) {
+    final ImageProvider? file = musicCoverImageProvider(coverPath, size: 128);
+    final String? embedded = embeddedFromPath;
+    if (file != null || embedded == null) return builder(context, file);
+    return FutureBuilder<Uint8List?>(
+      future: MusicEmbeddedCoverCache.instance.load(embedded),
+      builder: (BuildContext context, AsyncSnapshot<Uint8List?> snap) {
+        final Uint8List? bytes = snap.data;
+        return builder(context, bytes == null ? null : MemoryImage(bytes));
+      },
+    );
+  }
 }

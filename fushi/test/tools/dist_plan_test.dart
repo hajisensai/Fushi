@@ -557,6 +557,7 @@ void main() {
         '--target-platform=android-arm64,android-x64',
       ]);
       expect(apk.runsOn(DistPlatform.macos), isTrue);
+      expect(apk.runsOn(DistPlatform.linux), isTrue);
       final DistBuild? win = distBuildOf(<String>[
         'flutter',
         'build',
@@ -565,6 +566,7 @@ void main() {
       expect(win!.request, <String>['flutter', 'windows']);
       expect(win.runsOn(DistPlatform.windows), isTrue);
       expect(win.runsOn(DistPlatform.macos), isFalse);
+      expect(win.runsOn(DistPlatform.linux), isFalse);
       expect(
         distBuildOf(<String>[
           'flutter',
@@ -620,6 +622,62 @@ void main() {
       ]) {
         expect(distBuildOf(c), isNull, reason: c.join(' '));
       }
+    });
+  });
+
+  group('distWantedWhilePreparing: who dist_test still waits for', () {
+    bool wanted({
+      bool claimLost = false,
+      bool batchesInFlight = false,
+      bool workLeftForIt = true,
+      bool localPeer = false,
+      bool othersAtIt = true,
+      bool anyResults = false,
+    }) => distWantedWhilePreparing(
+      claimLost: claimLost,
+      batchesInFlight: batchesInFlight,
+      workLeftForIt: workLeftForIt,
+      localPeer: localPeer,
+      othersAtIt: othersAtIt,
+      anyResults: anyResults,
+    );
+
+    test('any worker: wanted while something it may run is left', () {
+      expect(wanted(), isTrue);
+      expect(wanted(workLeftForIt: false), isFalse);
+      // A batch in flight may still requeue suites for it.
+      expect(wanted(workLeftForIt: false, batchesInFlight: true), isTrue);
+      // The caller's machine took the run: nobody is wanted any more.
+      expect(wanted(claimLost: true), isFalse);
+    });
+
+    test('a remote worker is waited for whatever the others do', () {
+      expect(wanted(othersAtIt: false), isTrue);
+    });
+
+    test('this machine waits for a heavy slot while another machine is at '
+        'it, and leaves the queue once none is', () {
+      // 2026-11-20: wight-win alone could run a Windows suite and hung in its
+      // push; this machine (Windows, idle) must take the suite meanwhile.
+      expect(wanted(localPeer: true, othersAtIt: true), isTrue);
+      // Every other machine busy / unreachable / done: heavy.dart queues
+      // here and keeps asking them, better than a dist_test that waits.
+      expect(wanted(localPeer: true, othersAtIt: false), isFalse);
+      expect(
+        wanted(localPeer: true, othersAtIt: true, workLeftForIt: false),
+        isFalse,
+      );
+      // Something already ran: the run will not decline, so leaving the
+      // queue would only lose this machine its place for what is left.
+      expect(
+        wanted(localPeer: true, othersAtIt: false, anyResults: true),
+        isTrue,
+      );
+    });
+
+    test('the --no-local flag is dist_test\'s own option', () {
+      expect(kDistNoLocalFlag, startsWith('--'));
+      expect(kDistNoLocalFlag, isNot(contains('=')));
     });
   });
 }

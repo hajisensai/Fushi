@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -8,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -22,6 +24,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/test_platform_services.dart';
 import '../helpers/fake_image_bytes.dart';
+import '../helpers/shell_layout.dart';
 
 /// TODO-820：互联下载对端视频后必须建 VideoBooks 行，否则下载好的文件躺磁盘但视频
 /// 列表（唯一数据源是 VideoBooks 行）根本看不到。这里在真实下载路径上断言「下载完
@@ -70,6 +73,9 @@ void main() {
     // `test/storage/app_paths_fakeasync_prefs_channel_test.dart`）。
     // 同目录 20+ 个 `home_video_*` / `galgame_*` widget 测试早已是这个约定，本文件漏了。
     SharedPreferences.setMockInitialValues(<String, Object>{});
+    // 封面锁是进程级静态量，上一条用例 fake zone 里没跑完的持锁者不会再被推进；
+    // 契约见 VideoCoverMutationGate.debugResetForTesting。
+    VideoCoverMutationGate.debugResetForTesting();
     LocaleSettings.setLocale(AppLocale.en);
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
@@ -94,6 +100,7 @@ void main() {
     overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         home: Scaffold(
           body: HomeVideoPage(
             repo: repo,
@@ -109,18 +116,24 @@ void main() {
     ),
   );
 
-  /// 触发下载并等到整条下载链在本 runAsync zone 内彻底排干为止。下载注册关键路径有真实
-  /// 文件 IO（下载写盘、字幕读盘、封面抽帧跑 ffmpeg 子进程），fake async 在 widget 测试里
-  /// 必须经 [WidgetTester.runAsync] 才会真正完成；不用 pumpAndSettle（会等 ffmpeg 进程静止
-  /// 而超时）。
+  /// 触发下载并等到整条下载链彻底排干为止。下载登记关键路径有真实文件 IO（下载写盘、
+  /// 字幕读盘、封面落盘 / ffmpeg 抽帧），fake async 在 widget 测试里必须经
+  /// [WidgetTester.runAsync] 才会真正完成；不用 pumpAndSettle（会等 ffmpeg 进程静止而超时）。
   ///
-  /// 完成信号取 [InterconnectDownloadManager] 任务的**终态**而非「DB 行出现 + 固定多等几拍」：
-  /// [InterconnectDownloadManager.startVideoDownload] 在标 completed 前 await 了整链（下载 →
-  /// onComplete 建行 + 字幕 + ffmpeg 封面抽帧），故任务到达 completed/failed = 全部真实异步
-  /// 已排干，无 pending ffmpeg future 泄漏到下个测试（旧实现靠 `i > 6` 固定迭代数瞎猜排干
-  /// 时机）。等待用 [Stopwatch] 墙钟兜底（高分辨率、不受 Windows ~15.6ms 定时器粒度影响，
-  /// 早退保持快路径）——旧实现固定 200 次 20ms 迭代在满负载多 isolate 争用下会被批量 timer
-  /// 饿死（isolate 长时间被抢占后 200 个到期定时器瞬间连发、下载续体尚未调度就退出）而误红。
+  /// 完成信号 = [InterconnectDownloadManager] 任务到达**终态**且 [VideoCoverMutationGate]
+  /// 空闲：startVideoDownload 在标 completed 前 await 了整条登记链（建行 + 字幕 + 封面），
+  /// 锁空闲说明没有封面写入者留在锁里泄漏到下一条用例。
+  ///
+  /// 等待循环**交替**推进两个 zone：`runAsync` 一小片让真实 IO 与登记链（点击发生在
+  /// runAsync 里，登记链跑在真实 zone）往前走，随后 `pump` 推进 fake zone 的假时钟与
+  /// 微任务。后者不可省——页面自己的后台封面任务（视频 uid 流触发的
+  /// `_maybeBackfillCovers`、进页的 `runMemberCoverCleanup`）挂在 fake zone，会抢到进程级
+  /// [VideoCoverMutationGate] 后停在下一个假微任务 / 假定时器上；只在 runAsync 里空转
+  /// 时它永远不放锁，登记链的封面步骤排在后面直到墙钟上限（Linux CI 上 31～32 秒、
+  /// coverPath 为 null 的间歇红就是这个；由「fake 区后台任务持封面锁时」那条用例钉住）。
+  ///
+  /// 墙钟上限到点**直接判失败**并带出任务状态与封面锁持有者调用栈，不静默往下走到
+  /// 后面的断言上去（那样只会看到一个与根因无关的 `coverPath == null`）。
   Future<void> tapDownloadAwaitRow(WidgetTester tester) async {
     final InterconnectDownloadManager manager = ProviderScope.containerOf(
       tester.element(find.byType(HomeVideoPage)),
@@ -135,18 +148,25 @@ void main() {
       find.byKey(const ValueKey<String>('remote_video_card_remote-clip')),
     );
     await tester.pumpAndSettle();
-    await tester.runAsync(() async {
-      await tester.tap(find.text(t.remote_video_download));
-      final Stopwatch sw = Stopwatch()..start();
-      while (sw.elapsed < const Duration(seconds: 30)) {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-        final InterconnectDownloadTask? task = manager.tasks['remote-clip'];
-        if (task != null && task.status != InterconnectDownloadStatus.running) {
-          return;
-        }
+    await tester.runAsync(() => tester.tap(find.text(t.remote_video_download)));
+    final Stopwatch sw = Stopwatch()..start();
+    while (true) {
+      final InterconnectDownloadTask? task = manager.tasks['remote-clip'];
+      final bool taskDone =
+          task != null && task.status != InterconnectDownloadStatus.running;
+      if (taskDone && VideoCoverMutationGate.debugIsIdle) return;
+      if (sw.elapsed >= const Duration(seconds: 30)) {
+        fail(
+          '下载登记链 30 秒内未排干：'
+          'task=${task == null ? '(未建)' : '${task.status} error=${task.error}'}；'
+          '封面锁 ${VideoCoverMutationGate.debugDescribeState()}',
+        );
       }
-    });
-    await tester.pump();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump(const Duration(milliseconds: 10));
+    }
   }
 
   testWidgets('下载对端视频后建出 VideoBooks 行（bookUid=video.id，videoPath=落地路径）', (
@@ -299,6 +319,51 @@ void main() {
       'http://x/videos/remote-clip/cover',
     }, reason: 'host 有 coverUrl 时先拉 host 封面');
     expect(row.coverPath, isNotNull);
+    expect(File(row.coverPath!).readAsBytesSync(), fakeJpegBytes(fill: 0xE0));
+  });
+
+  // 上一条在 Linux CI 上的间歇红（coverPath 为 null、用例卡满 30 秒）：页面自己的后台
+  // 封面任务（视频 uid 流触发的 `_maybeBackfillCovers`、进页的 `runMemberCoverCleanup`）
+  // 跑在 testWidgets 的 fake-async zone，而下载登记链跑在 runAsync 的真实 zone。两者争
+  // 进程级 [VideoCoverMutationGate]：fake 区持锁者的续体只在 pump（推进假时钟 / 抽干假
+  // 微任务）时才走，等待循环若只在 runAsync 里空转，登记链就排在锁后面直到墙钟上限。
+  // 这里在 fake 区确定性地造一个「要推进假时钟才会放锁」的持锁者，钉住等待循环必须
+  // 一边给真实 IO 时间、一边 pump fake 区，否则登记永远拿不到锁。
+  testWidgets('fake 区后台任务持封面锁时，下载登记仍拿到 host 封面', (WidgetTester tester) async {
+    final _FakeCoverRemoteVideoClient client = _FakeCoverRemoteVideoClient(
+      videos: <RemoteVideoInfo>[
+        const RemoteVideoInfo(
+          id: 'remote-clip',
+          title: 'Remote Clip',
+          coverUrl: 'http://x/videos/remote-clip/cover',
+        ),
+      ],
+      coverBytes: fakeJpegBytes(fill: 0xE0),
+    );
+    await tester.pumpWidget(buildApp(client: client));
+    await tester.pumpAndSettle();
+
+    // 持锁者跨过「点下载」：要等下载任务出现（登记链已起跑）才放锁，而它轮询用的是
+    // fake 区定时器——与真实的回填 / 清理一样，只有 pump 推进假时钟它才会往下走。
+    final InterconnectDownloadManager manager = ProviderScope.containerOf(
+      tester.element(find.byType(HomeVideoPage)),
+    ).read(interconnectDownloadManagerProvider);
+    bool holderReleased = false;
+    unawaited(
+      VideoCoverMutationGate.runExclusive(() async {
+        while (manager.tasks['remote-clip'] == null) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        holderReleased = true;
+      }),
+    );
+
+    await tapDownloadAwaitRow(tester);
+
+    expect(holderReleased, isTrue);
+    final VideoBookRow? row = await repo.getByBookUid('remote-clip');
+    expect(row, isNotNull);
+    expect(row!.coverPath, isNotNull);
     expect(File(row.coverPath!).readAsBytesSync(), fakeJpegBytes(fill: 0xE0));
   });
 }

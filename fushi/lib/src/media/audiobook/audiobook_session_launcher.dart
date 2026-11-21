@@ -1,11 +1,17 @@
-import 'dart:convert';
+export 'package:fushi/src/media/audiobook/audiobook_session_start_request.dart';
+
 import 'dart:io';
 
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
+import 'package:fushi/src/media/audiobook/audiobook_session_start_request.dart';
 import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_session.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart'
+    show kMangaAlignmentFormat;
 
 /// 从 bookKey 解析出启动 [AudiobookSession] 所需的全部材料（音频文件 / 初值 / persist
 /// 回调 / 书元数据），供 reader 页与书架长按入口共用，消除「解析音频文件 + 装 persist」
@@ -44,9 +50,12 @@ class AudiobookSessionLauncher {
   /// 会话来源的唯一裁决点：Audiobook 行（有可播放音频）优先，否则 SrtBook 行（有可
   /// 播放音频），都没有 = 无有声书。
   Future<_SessionSource?> _pickSource(String bookKey) async {
-    final AudiobookRow? abRow = await _db.getAudiobookByBookKey(bookKey);
-    if (abRow != null) {
-      final Audiobook audiobook = _audiobookFromRow(abRow);
+    // 行 → 模型只走仓库的那一份映射（gap-novelmisc-7：这里曾各抄一份、漏了
+    // importedAt / language / 健康度等列）。
+    final Audiobook? audiobook = await AudiobookRepository(
+      _db,
+    ).findByBookKey(bookKey);
+    if (audiobook != null) {
       final List<File> audioFiles = await _resolveAudioFiles(
         audioPaths: audiobook.audioPaths,
         audioRoot: audiobook.audioRoot,
@@ -59,9 +68,10 @@ class AudiobookSessionLauncher {
         );
       }
     }
-    final SrtBookRow? srtRow = await _db.getSrtBookByBookKey(bookKey);
-    if (srtRow == null) return null;
-    final SrtBook srtBook = _srtBookFromRow(srtRow);
+    final SrtBook? srtBook = await SrtBookRepository(
+      _db,
+    ).findByBookKey(bookKey);
+    if (srtBook == null) return null;
     final List<File> audioFiles = await _resolveAudioFiles(
       audioPaths: srtBook.audioPaths,
       audioRoot: srtBook.audioRoot,
@@ -110,6 +120,23 @@ class AudiobookSessionLauncher {
     List<File> audioFiles,
     String bookKey,
   ) async {
+    // 漫画有声成品：播放列表要按清单时间表插入静音、进度口径要换算，与阅读器起播
+    // 同一条路径（manga_audio_session.dart）。清单读不出来就当没有可播放的有声书。
+    if (audiobook.alignmentFormat == kMangaAlignmentFormat) {
+      final MangaAudioRegistration? manga = await loadMangaAudio(_db, bookKey);
+      if (manga == null) return null;
+      final (String title, String? author, String? coverPath, BookFormat _) =
+          await _bookMeta(bookKey);
+      return resolveMangaAudioSessionRequest(
+        _db,
+        registration: manga,
+        title:
+            ReaderFushiSource.instance.overrideTitleForBookKey(bookKey) ??
+            title,
+        author: author,
+        coverPath: coverPath,
+      );
+    }
     final AudiobookRepository repo = AudiobookRepository(_db);
     final SessionPrefs prefs = await _readPrefs(repo, bookKey);
     final SessionPersistCallbacks persist = _persistFor(repo, bookKey);
@@ -283,37 +310,6 @@ class AudiobookSessionLauncher {
     audioPaths: audioPaths,
     audioRoot: audioRoot,
   );
-
-  Audiobook _audiobookFromRow(AudiobookRow row) {
-    final Audiobook ab = Audiobook()
-      ..id = row.id
-      ..bookKey = row.bookKey
-      ..audioRoot = row.audioRoot
-      ..alignmentFormat = row.alignmentFormat
-      ..alignmentPath = row.alignmentPath;
-    if (row.audioPathsJson != null) {
-      ab.audioPaths = (jsonDecode(row.audioPathsJson!) as List<dynamic>)
-          .cast<String>();
-    }
-    return ab;
-  }
-
-  SrtBook _srtBookFromRow(SrtBookRow row) {
-    final SrtBook book = SrtBook()
-      ..id = row.id
-      ..uid = row.uid
-      ..title = row.title
-      ..author = row.author
-      ..audioRoot = row.audioRoot
-      ..srtPath = row.srtPath
-      ..coverPath = row.coverPath
-      ..bookKey = row.bookKey;
-    if (row.audioPathsJson != null) {
-      book.audioPaths = (jsonDecode(row.audioPathsJson!) as List<dynamic>)
-          .cast<String>();
-    }
-    return book;
-  }
 }
 
 /// 一本书的会话启动材料聚合。
@@ -336,31 +332,4 @@ class _SessionSource {
 
   /// 非空 = 音频在服务器上流式播放，[audioFiles] 是占位文件。
   final AudiobookRemotePlayback? remote;
-}
-
-class AudiobookSessionStartRequest {
-  const AudiobookSessionStartRequest({
-    required this.info,
-    required this.audioFiles,
-    required this.prefs,
-    required this.persist,
-    this.cues = const <AudioCue>[],
-    this.remote,
-  });
-
-  final SessionBookInfo info;
-  final List<File> audioFiles;
-  final SessionPrefs prefs;
-  final SessionPersistCallbacks persist;
-
-  /// 非空 = 远端（流式）书：[audioFiles] 是占位文件，播放与制卡取音频走它。起会话时
-  /// 原样传给 `AudiobookSession.start(remote:)`。
-  final AudiobookRemotePlayback? remote;
-
-  bool get isSrtBookSource => info.isSrtBookSource;
-
-  /// 全书对齐 cue（扁平，无章节上下文）。供后台听书 [AudiobookSession.start] 在无
-  /// reader 时灌进控制器，让 currentCue 在 load 后即可解析（悬浮窗有字）。reader 在场
-  /// 时 reader 仍会按章节重新 setChapterCues，覆盖此扁平列表，行为不变。
-  final List<AudioCue> cues;
 }

@@ -1,7 +1,10 @@
 import 'dart:async';
 
+import 'package:fushi/src/pages/implementations/discovery/discovery_logo.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/components/fushi_cover_block.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/video/airing_calendar_loader.dart';
 import 'package:fushi/src/media/video/airing_discovery_mapping.dart';
@@ -11,7 +14,6 @@ import 'package:fushi/src/pages/implementations/airing_calendar_page.dart';
 import 'package:fushi/src/pages/implementations/discovery/discovery_layout.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
-import 'package:fushi/src/utils/components/fushi_horizontal_edge_fade.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
@@ -26,7 +28,6 @@ import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_section_title.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
-import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 
 /// 发现页「今日放送」小模块（2026-10-20，用户：「放送日历藏太深了可以作为一个
@@ -133,8 +134,9 @@ class _AiringTodayShelfState extends State<AiringTodayShelf> {
     if (mounted) unawaited(_load());
   }
 
-  /// 小卡宽度：手机 112、平板 / 桌面 128（竖版 2:3）。
-  double _itemWidth(double maxWidth) => maxWidth < 600 ? 112 : 128;
+  /// 块宽：与库页拼贴横滑条同一规则（桌面 300，窄窗约七成行宽）。
+  double _itemWidth(double maxWidth) =>
+      FushiCoverBlockStrip.rowTileWidth(maxWidth);
 
   @override
   Widget build(BuildContext context) {
@@ -187,13 +189,12 @@ class _AiringTodayShelfState extends State<AiringTodayShelf> {
             label: t.download_airing_calendar_title,
             child: FushiSectionTitle(
               t.download_airing_calendar_today_title,
-              // 底部不再留 gap：卡片条顶上的悬停留白（[discoveryShelfLiftHeadroom]）
-              // 就是行头与卡片之间的距离。
+              // 与 [DiscoveryShelf] 的行头同距（横滑件的悬停余量向外扩，不占行距）。
               padding: EdgeInsets.fromLTRB(
                 tokens.spacing.page,
                 tokens.spacing.section,
                 tokens.spacing.page,
-                0,
+                tokens.spacing.gap,
               ),
               trailing: DiscoveryViewAllButton(
                 key: const ValueKey<String>(
@@ -251,6 +252,9 @@ class _AiringTodayShelfState extends State<AiringTodayShelf> {
   }
 
   /// 横滑卡片条（骨架与真卡同几何：数据到达时原地替换，不顶动下方内容）。
+  /// 与 [DiscoveryShelf] 同一个横滑件 [FushiCoverBlockStrip]：视口向四周外扩出
+  /// 色块悬停时封面转出 / 放大与投影的余量（自写的条按旧小卡算留白，换成色块后
+  /// 悬停的封面被切掉一截，用户 2026-11-16「显示不全」）。
   Widget _buildStrip(
     FushiDesignTokens tokens,
     double itemWidth, {
@@ -262,49 +266,49 @@ class _AiringTodayShelfState extends State<AiringTodayShelf> {
       context,
       width: itemWidth,
     );
-    // 悬停抬升放大的卡与加深的投影要有地方画：视口上下各留一份留白。
-    final double headroom = discoveryShelfLiftHeadroom(cardHeight);
-    final double height = cardHeight + headroom * 2;
-    final EdgeInsets padding = EdgeInsets.symmetric(
-      horizontal: tokens.spacing.page,
-      vertical: headroom,
-    );
-    Widget separator(BuildContext context, int index) =>
-        SizedBox(width: tokens.spacing.card);
-    Widget sized(BuildContext context, int index) =>
-        SizedBox(width: itemWidth, child: itemBuilder(context, index));
-    if (!scrollable) {
-      // 骨架不可滚、不可聚焦：只占形状。
-      return SizedBox(
-        height: height,
-        child: ListView.separated(
-          primary: false,
-          physics: const NeverScrollableScrollPhysics(),
-          padding: padding,
-          scrollDirection: Axis.horizontal,
-          itemCount: itemCount,
-          separatorBuilder: separator,
-          itemBuilder: sized,
-        ),
-      );
-    }
-    return SizedBox(
-      height: height,
-      child: FushiHorizontalEdgeFade(
-        child: HorizontalDragScrollable(
-          child: ListView.separated(
+    final double spacing = tokens.spacing.card;
+    final Widget strip = scrollable
+        ? KeyedSubtree(
             key: const PageStorageKey<String>(
               'video-discovery-airing-today-strip',
             ),
-            primary: false,
-            padding: padding,
-            scrollDirection: Axis.horizontal,
-            itemCount: itemCount,
-            separatorBuilder: separator,
-            itemBuilder: sized,
-          ),
-        ),
-      ),
+            child: FushiCoverBlockStrip(
+              leadingHero: false,
+              rowSize: FushiCoverBlockSize.regular,
+              spacing: spacing,
+              tileWidth: itemWidth,
+              tileHeight: cardHeight,
+              itemCount: itemCount,
+              itemBuilder:
+                  (BuildContext context, int index, FushiCoverBlockSize _) =>
+                      itemBuilder(context, index),
+            ),
+          )
+        // 骨架不可滚、不可聚焦：只占形状。
+        : SizedBox(
+            height: cardHeight,
+            child: ClipRect(
+              child: OverflowBox(
+                alignment: AlignmentDirectional.topStart,
+                maxWidth: double.infinity,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    for (int i = 0; i < itemCount; i++) ...<Widget>[
+                      if (i > 0) SizedBox(width: spacing),
+                      SizedBox(
+                        width: itemWidth,
+                        child: itemBuilder(context, i),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          );
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+      child: strip,
     );
   }
 
@@ -316,6 +320,7 @@ class _AiringTodayShelfState extends State<AiringTodayShelf> {
       episode: episode.episode,
     );
     final String url = episode.media.coverUrl?.trim() ?? '';
+    final String banner = episode.media.bannerUrl?.trim() ?? '';
     final String stableId = '${episode.mediaId}-${episode.episode}';
     return DiscoveryCoverCard(
       key: ValueKey<String>('video-discovery-airing-today-$stableId'),
@@ -323,6 +328,14 @@ class _AiringTodayShelfState extends State<AiringTodayShelf> {
       title: episode.media.displayTitle,
       subtitle: '$time · $episodeLabel',
       onTap: () => unawaited(_openEpisode(episode)),
+      // AniList 横幅当剧照：与视频库系列块同摆法（剧照铺尾侧、海报斜放起始侧）。
+      // 艺术字：AniList 不带 logo，按需经详情端口取 TMDB 的（与视频库系列块
+      // 一样都有艺术字；取不到回落标题文字）。
+      logoFuture: discoveryLogoFor(
+        discoveryItemFromAiringEpisode(episode),
+        widget.actions.loadDetails,
+      ),
+      backdrop: banner.isEmpty ? null : AppCachedHttpImage(banner),
       cover: DiscoveryImageCover(
         image: url.isEmpty ? null : AppCachedHttpImage(url),
         placeholderIcon: FushiIcons.video,

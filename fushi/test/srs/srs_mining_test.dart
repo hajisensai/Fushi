@@ -753,6 +753,26 @@ void main() {
       expect(after.field(fid('Sentence')), before.field(fid('Sentence')));
     });
 
+    test('覆写：「覆写哪些字段」一个都没勾（拍板 lt2wobUYfE）→ 拒绝，笔记不动', () async {
+      final int handle = await mine('雪', 'ゆき');
+      final SrsNoteView before = await noteOf('雪', 'ゆき');
+      final String typeName = (await repo.overwriteNoteTypeName(handle))!;
+      inner.settings = inner.settings.withOverwriteFields(
+        typeName,
+        const <String>[],
+      );
+      final MineOutcome out = await repo.updateMinedNote(
+        noteId: handle,
+        rawPayloadJson: _payload('雪', 'ゆき'),
+        context: const AnkiMiningContext(sentence: '雪が積もる。'),
+      );
+      expect(out.result, MineResult.error);
+      expect(out.errorCode, AnkiErrorCode.overwriteNoFieldsSelected);
+      final SrsNoteView after = (await store.note(before.id))!;
+      expect(after.field(fid('Sentence')), before.field(fid('Sentence')));
+      expect(inner.ankiCalls, 0);
+    });
+
     test('覆写：原笔记已删 → 明确失败', () async {
       final int handle = await mine('雪', 'ゆき');
       await store.deleteNote((await noteOf('雪', 'ゆき')).id);
@@ -1231,6 +1251,36 @@ void main() {
         ).read(ankiRepositoryProvider);
         expect(repo, isNot(isA<SrsMiningAnkiRepository>()));
       }
+    });
+
+    test('复习库在换代途中（BUG-5085）：链上制卡回带分类码的失败，不吞成「复习不可用」', () async {
+      final ProviderContainer c = ProviderContainer(
+        overrides: <Override>[
+          platformServicesProvider.overrideWithValue(testPlatformServices()),
+          appProvider.overrideWith(
+            (Ref ref) => _TargetAppModel(SrsMiningTarget.srs),
+          ),
+          srsModuleEnabledProvider.overrideWithValue(true),
+          srsStoreProvider.overrideWith(
+            (Ref ref) async => throw const SrsStoreNotMigrated(
+              'not migrated',
+              SrsGenState.needsMigration,
+            ),
+          ),
+        ],
+      );
+      addTearDown(c.dispose);
+      final BaseAnkiRepository repo = c.read(ankiRepositoryProvider);
+      expect(repo, isA<SrsMiningAnkiRepository>());
+      final MineOutcome out = await repo.mineEntry(
+        rawPayloadJson: _payload('雪', 'ゆき'),
+        context: const AnkiMiningContext(sentence: ''),
+      );
+      expect(out.result, MineResult.error);
+      expect(out.errorCode, AnkiErrorCode.srsNeedsMigration);
+      expect(out.error, isA<SrsStoreNotMigrated>());
+      // 查词时的查重探测照旧回「不重复」。
+      expect(await repo.isDuplicate('雪', 'ゆき'), isFalse);
     });
 
     test('模块开着、目标仍是 Anki：也不包', () {

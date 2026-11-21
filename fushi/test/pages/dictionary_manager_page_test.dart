@@ -4,8 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/dictionary_repository.dart'
+    show RemoteDictionary;
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
+import 'package:fushi/src/pages/implementations/dictionary_import_surface.dart';
 import 'package:fushi/src/pages/implementations/dictionary_manager_panels.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -43,6 +46,10 @@ class _FakeAppModel extends AppModel {
   @override
   List<Dictionary> get pitchDictionaries => _ofType(DictionaryType.pitch);
 
+  // 没配服务器：服务器托管词典为空（真 AppModel 的 dictRepo 在这里没初始化）。
+  @override
+  List<RemoteDictionary> get remoteDictionaries => const <RemoteDictionary>[];
+
   @override
   Map<String, DictionaryFormat> get dictionaryFormats =>
       <String, DictionaryFormat>{'yomichan': YomichanFormat.instance};
@@ -71,6 +78,10 @@ class _FakeAppModel extends AppModel {
       if (hidden) 'ja',
     ];
   }
+
+  // 没配服务器：没有同名目录行可镜像（真 AppModel 走 dictRepo，这里未初始化）。
+  @override
+  Future<void> setCatalogRowsHiddenNamed(String name, bool hidden) async {}
 
   @override
   Future<void> setDictionaryCollapseState(
@@ -102,7 +113,10 @@ class _FakeAppModel extends AppModel {
   }
 
   @override
-  Future<void> updateDictionaryOrder(List<Dictionary> newDictionaries) async {
+  Future<void> updateDictionaryOrder(
+    List<Dictionary> newDictionaries, {
+    String? moved,
+  }) async {
     orderWrites++;
     for (final Dictionary updated in newDictionaries) {
       store.firstWhere((Dictionary d) => d.name == updated.name).order =
@@ -464,15 +478,21 @@ void main() {
       dictionaries: <Dictionary>[],
       platform: TargetPlatform.android,
     );
-    expect(find.byType(DictionaryManagerEmptyState), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey<String>('dict-empty-import')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey<String>('dict-empty-download')),
-      findsOneWidget,
-    );
+    // IM23：与库页导入面同一套引导首块 + 方式块（导入词典 / 导入文件夹词典 /
+    // 下载推荐词典）。文件夹词典的门是 `!Platform.isIOS`（宿主测试机不是 iOS）。
+    expect(find.byType(DictionaryImportEmptySurface), findsOneWidget);
+    expect(find.text(t.dictionaries_menu_empty), findsOneWidget);
+    for (final String id in <String>[
+      'dict-import-files',
+      'dict-import-folder',
+      'dict-download',
+    ]) {
+      expect(
+        find.byKey(ValueKey<String>('import-method-$id')),
+        findsOneWidget,
+        reason: id,
+      );
+    }
     expect(tester.takeException(), isNull);
   });
   // ── 移到第几位 ─────────────────────────────────────────────────────────
@@ -627,6 +647,10 @@ void main() {
     );
     expect(moveButton().enabled, isFalse);
 
+    // PR #3515 后行高 / 页头变高，1280×800 下第六行落在左列视口之外（被批量栏
+    // 上沿裁掉，tap 命中不到）：先把它滚进视口再点。
+    await tester.ensureVisible(find.text('Dict 6'));
+    await _settle(tester);
     await tester.tap(find.text('Dict 6'));
     await _settle(tester);
     expect(moveButton().enabled, isTrue);

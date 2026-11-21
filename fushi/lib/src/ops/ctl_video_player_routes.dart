@@ -407,12 +407,15 @@ class _VideoPlayerCtl {
     final VideoMineCommitSummary summary = await queue.commitAll(
       bookUid: bookUid,
       repo: repo,
+      retryFailed: true,
     );
     await _refreshPage(bookUid);
     return <String, Object?>{
       'bookUid': bookUid,
       'succeeded': summary.succeeded,
       'failed': summary.failed,
+      // 后端不可达、仍留作待办的张数（下次写入自动再试）。
+      'undelivered': summary.undelivered,
       if (summary.firstError != null) 'firstError': summary.firstError,
       // 写入的卡带回的提示（如「保存到」被主机退回默认，BUG-4287）。
       'notice': ?summary.notice,

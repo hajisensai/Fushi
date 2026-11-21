@@ -8,6 +8,7 @@ import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart'
     show VideoSourceScrapeWork;
 import 'package:fushi_core/fushi_core.dart';
@@ -248,14 +249,24 @@ class VideoSourceScrapeConfirmation {
     required this.localWorkTitle,
     required List<VideoSourceScrapeConfirmationCandidate> candidates,
     this.aiSuggestion,
+    this.strictMatches = false,
+    this.workStableKey,
   }) : candidates = List<VideoSourceScrapeConfirmationCandidate>.unmodifiable(
          candidates,
        );
+
+  /// 候选都通过了严格匹配门、只是不止一条（见
+  /// `VideoMetadataResolution.strictMatches`）；false = 只是可能的候选。
+  final bool strictMatches;
 
   final int sourceId;
   final String sourceLabel;
   final String localWorkTitle;
   final List<VideoSourceScrapeConfirmationCandidate> candidates;
+
+  /// 待确认作品单元的键（`book:<uid>` / `collection:<id>`，与计划器 `stableKey`
+  /// 同一把）。回答前据此抓认领撤销快照；不经协调器构造的确认项可以没有。
+  final String? workStableKey;
 
   /// AI 的倾向（置信度没到自动采用门槛才会走到人工确认）；null = 没问 AI 或
   /// AI 没有倾向。只作提示，选哪条仍由用户决定。
@@ -542,10 +553,7 @@ class VideoSourceScrapeTaskController extends EngineChangeNotifier {
     bool interactive = false,
     bool allowProtectedOverwrite = false,
   }) => _start(
-    sources.where(
-      (SourceLibraryRow source) =>
-          source.mediaKind == 'video' && source.transport == 'local',
-    ),
+    sources.where(isVideoScrapeScope),
     interactive: interactive,
     allowProtectedOverwrite: allowProtectedOverwrite,
   );
@@ -556,10 +564,7 @@ class VideoSourceScrapeTaskController extends EngineChangeNotifier {
   Future<SourceScrapeReport> scrapeWorkSubsets(
     Map<SourceLibraryRow, List<VideoSourceScrapeWork>> worksBySource,
   ) => _start(
-    worksBySource.keys.where(
-      (SourceLibraryRow source) =>
-          source.mediaKind == 'video' && source.transport == 'local',
-    ),
+    worksBySource.keys.where(isVideoScrapeScope),
     interactive: false,
     allowProtectedOverwrite: false,
     plannedWorksBySource: <int, List<VideoSourceScrapeWork>>{
@@ -702,7 +707,7 @@ class VideoSourceScrapeTaskController extends EngineChangeNotifier {
         VideoScrapeOperationGate.tryEnterOperation();
     if (lease == null) {
       // 资料清理期间整条队列都跑不了，逐条报错比让它们无限期挂着诚实。
-      _failQueuedManualRequests(StateError('视频刮削资料正在清理'));
+      _failQueuedManualRequests(VideoScrapeMaintenanceActiveError());
       return;
     }
     final VideoSourceScrapeManualRequest request = _manualQueue.removeAt(0);
@@ -789,9 +794,29 @@ class VideoSourceScrapeTaskController extends EngineChangeNotifier {
     if (_active != null || _scanningSourceId != null) {
       throw StateError('已有视频来源扫描或刮削任务正在运行');
     }
+    final Future<T>? started = tryRunSourceScan(sourceId, operation);
+    if (started == null) throw VideoScrapeMaintenanceActiveError();
+    return started;
+  }
+
+  /// [runSourceScan] 的非抛出版：门被占（已有扫描 / 刮削在跑、刮削资料正在清理、
+  /// 控制器已释放）时**不启动**、返回 null，由调用方决定改天再来。来源自动扫描
+  /// 用它——自动任务撞上用户手动的刮削 / 清理是常态，不是错误。
+  Future<T>? tryRunSourceScan<T>(int sourceId, Future<T> Function() operation) {
+    if (_disposed || _active != null || _scanningSourceId != null) {
+      return null;
+    }
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
-    if (lease == null) throw StateError('视频刮削资料正在清理');
+    if (lease == null) return null;
+    return _runSourceScanHolding(sourceId, lease, operation);
+  }
+
+  Future<T> _runSourceScanHolding<T>(
+    int sourceId,
+    VideoScrapeOperationLease lease,
+    Future<T> Function() operation,
+  ) async {
     _scanningSourceId = sourceId;
     notifyListeners();
     try {
@@ -804,6 +829,22 @@ class VideoSourceScrapeTaskController extends EngineChangeNotifier {
     }
   }
 
+  /// 现在发起 [scrapeSource] / [scrapeAllSources] 会不会被同步挡回：会则返回 [_start]
+  /// 将以之失败的那个错误，不会（能开始，或会接到正在跑的批次上）返回 null。
+  ///
+  /// 手动发起的入口在发起前同步调一次，挡回时只出一条「为什么没开始」的提示，而不是
+  /// 先报「已在后台开始」再报失败（拍板台 design-nmv-fyi-tail ②）。与随后的发起之间
+  /// 没有 await 时结论与 [_start] 一致：控制器状态与刮削门都只在本 isolate 内同步变化。
+  Object? startBlocker() {
+    if (_disposed) return StateError('视频来源任务控制器已释放');
+    if (_active != null) return null;
+    if (_scanningSourceId != null) return VideoSourceScanInProgressError();
+    if (VideoScrapeOperationGate.isMaintenanceActive) {
+      return VideoScrapeMaintenanceActiveError();
+    }
+    return null;
+  }
+
   Future<SourceScrapeReport> _start(
     Iterable<SourceLibraryRow> sourceIterable, {
     required bool interactive,
@@ -811,21 +852,19 @@ class VideoSourceScrapeTaskController extends EngineChangeNotifier {
     Map<int, List<VideoSourceScrapeWork>>? plannedWorksBySource,
     String runScope = 'source',
   }) {
-    if (_disposed) {
-      return Future<SourceScrapeReport>.error(StateError('视频来源任务控制器已释放'));
-    }
     final Future<SourceScrapeReport>? running = _active;
-    if (running != null) return running;
-    if (_scanningSourceId != null) {
-      return Future<SourceScrapeReport>.error(StateError('视频来源扫描尚未完成'));
-    }
+    if (running != null && !_disposed) return running;
+    final Object? blocker = startBlocker();
+    if (blocker != null) return Future<SourceScrapeReport>.error(blocker);
     final List<SourceLibraryRow> sources = sourceIterable.toList(
       growable: false,
     );
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
     if (lease == null) {
-      return Future<SourceScrapeReport>.error(StateError('视频刮削资料正在清理'));
+      return Future<SourceScrapeReport>.error(
+        VideoScrapeMaintenanceActiveError(),
+      );
     }
     final VideoSourceScrapeCancellationToken token =
         VideoSourceScrapeCancellationToken(

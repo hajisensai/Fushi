@@ -66,6 +66,9 @@ void main() {
 ///
 /// 这是**下限**不是全集：换更多扩展只会让清单变长，所以补充样本时只该往里加。
 const List<String> _hostAbiReferences = <String>[
+  // extension-lib 1.3+ 的宿主 API，上游住在 Mihon app 模块（不在 source-api），
+  // Android 宿主自己声明（样本：keiyoushi MangaDex 拼 User-Agent；BUG-4738）。
+  'eu.kanade.tachiyomi.AppInfo',
   // extensions-lib / source-api（宿主按固定 Mihon commit 编入）
   'eu.kanade.tachiyomi.network.NetworkHelper',
   'eu.kanade.tachiyomi.network.OkHttpExtensionsKt',

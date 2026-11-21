@@ -42,6 +42,7 @@ import 'package:fushi_srs/fushi_srs.dart'
 import 'package:material_ui/material_ui.dart';
 
 import 'srs_test_support.dart';
+import 'support/srs_write_settle.dart';
 
 /// 每个测试一个可拨的时钟：笔记的新建时间确定、互不相同（默认排序按它）。
 SrsTestClock _clock = SrsTestClock();
@@ -75,12 +76,7 @@ Future<String> _add(
 }
 
 Future<void> _settle(WidgetTester tester, {int rounds = 12}) async {
-  for (int i = 0; i < rounds; i++) {
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 5)),
-    );
-    await tester.pump(const Duration(milliseconds: 60));
-  }
+  await srsSettle(tester, minRounds: rounds);
 }
 
 /// 选列偏好存在内存里的 AppModel（测试没有装配 prefs）。
@@ -302,15 +298,23 @@ void main() {
         find.byKey(const ValueKey<String>('srs_browse_batch')).first,
       );
       await _settle(tester, rounds: 4);
-      await tester.tap(find.text(t.srs_browse_toggle_suspend).last);
-      await _settle(tester);
+      await srsUntilWritten(
+        tester,
+        () => tester.tap(find.text(t.srs_browse_toggle_suspend).last),
+        until: () => srsToolbarItemEnabled(
+          tester,
+          const ValueKey<String>('srs_browse_undo'),
+        ),
+      );
       final List<SrsCardCacheRow> after = await _cards(tester, store);
       expect(after.where((SrsCardCacheRow c) => c.suspended), hasLength(2));
 
-      await tester.tap(
-        find.byKey(const ValueKey<String>('srs_browse_undo')).first,
+      await srsUntilWritten(
+        tester,
+        () => tester.tap(
+          find.byKey(const ValueKey<String>('srs_browse_undo')).first,
+        ),
       );
-      await _settle(tester);
       final List<SrsCardCacheRow> undone = await _cards(tester, store);
       expect(undone.where((SrsCardCacheRow c) => c.suspended), isEmpty);
       await _unmount(tester);
@@ -338,13 +342,16 @@ void main() {
         size: const Size(1100, 900),
         page: const SrsDeckListPage(),
       );
-      await tester.tap(
-        find.descendant(
-          of: find.byKey(ValueKey<String>('srs-deck-$jp')),
-          matching: find.text('JP'),
-        ),
-        buttons: kSecondaryButton,
+      // 复习主页的色块头部（PR #3397）比旧头部高：牌组行可能排在首屏底边外，
+      // 像用户一样先滚进视口再右键。
+      // 排在视口外的行算 offstage，滚之前按 skipOffstage: false 找。
+      final Finder jpRow = find.descendant(
+        of: find.byKey(ValueKey<String>('srs-deck-$jp'), skipOffstage: false),
+        matching: find.text('JP', skipOffstage: false),
       );
+      await tester.ensureVisible(jpRow);
+      await _settle(tester);
+      await tester.tap(jpRow, buttons: kSecondaryButton);
       await _settle(tester, rounds: 4);
       expect(find.text(t.srs_deck_browse_cards), findsOneWidget);
       // Apple 菜单按 value / child 重建菜单项（不保留 key），按文案点。
@@ -369,6 +376,8 @@ void main() {
         size: const Size(412, 915),
         page: const SrsDeckListPage(),
       );
+      await tester.ensureVisible(find.text('Default', skipOffstage: false));
+      await _settle(tester);
       await tester.longPress(find.text('Default'));
       await _settle(tester, rounds: 4);
       expect(find.text(t.srs_deck_browse_cards), findsOneWidget);
@@ -454,8 +463,14 @@ void main() {
     await _settle(tester, rounds: 4);
     await tester.tap(find.text(t.srs_card_flag).last);
     await _settle(tester, rounds: 4);
-    await tester.tap(find.text(t.srs_flag_blue).last);
-    await _settle(tester);
+    await srsUntilWritten(
+      tester,
+      () => tester.tap(find.text(t.srs_flag_blue).last),
+      until: () => srsToolbarItemEnabled(
+        tester,
+        const ValueKey<String>('srs_browse_undo'),
+      ),
+    );
     expect(
       (await _cards(tester, store)).every((SrsCardCacheRow c) => c.flag == 4),
       isTrue,
@@ -474,8 +489,10 @@ void main() {
     await _settle(tester, rounds: 4);
     await tester.tap(find.text(t.srs_browse_delete_notes).last);
     await _settle(tester, rounds: 4);
-    await tester.tap(find.text(t.srs_note_delete).last);
-    await _settle(tester);
+    await srsUntilWritten(
+      tester,
+      () => tester.tap(find.text(t.srs_note_delete).last),
+    );
     expect((await tester.runAsync(store.listNotes))!, isEmpty);
     await _unmount(tester);
   });
@@ -708,9 +725,18 @@ void main() {
     );
     expect(field, findsOneWidget);
     // 字段编辑器是富文本：存进去的是 HTML（空格会变 &nbsp;），这里用不带空格的值。
-    await tester.enterText(field, 'consume');
-    await tester.pump(const Duration(milliseconds: 900));
-    await _settle(tester);
+    // 停笔 800 ms 后自动存：推过这段假时间触发保存，再等它落库。
+    await srsUntilWritten(
+      tester,
+      () async {
+        await tester.enterText(field, 'consume');
+        await tester.pump(const Duration(milliseconds: 900));
+      },
+      until: () => srsToolbarItemEnabled(
+        tester,
+        const ValueKey<String>('srs_browse_undo'),
+      ),
+    );
     final SrsNoteView? saved = await tester.runAsync<SrsNoteView?>(
       () => store.note(noteId),
     );
@@ -720,10 +746,12 @@ void main() {
     );
 
     // 编辑框持焦时 Ctrl+Z 归文本框：点撤销按钮。
-    await tester.tap(
-      find.byKey(const ValueKey<String>('srs_browse_undo')).first,
+    await srsUntilWritten(
+      tester,
+      () => tester.tap(
+        find.byKey(const ValueKey<String>('srs_browse_undo')).first,
+      ),
     );
-    await _settle(tester);
     final SrsNoteView? undone = await tester.runAsync<SrsNoteView?>(
       () => store.note(noteId),
     );
@@ -840,11 +868,12 @@ void main() {
     await tester.pump();
 
     // 失焦：改完标签不按回车，焦点离开输入框。
-    await tester.enterText(tagsBox(), 'alpha beta');
-    await tester.pump();
-    FocusManager.instance.primaryFocus?.unfocus();
-    await tester.pump();
-    await _settle(tester);
+    await srsUntilWritten(tester, () async {
+      await tester.enterText(tagsBox(), 'alpha beta');
+      await tester.pump();
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pump();
+    });
     final Map<String, List<String>> afterBlur = await tagsByNote();
     final String edited = afterBlur[a]!.isNotEmpty ? a : b;
     final String other = edited == a ? b : a;
@@ -854,8 +883,10 @@ void main() {
     // 换卡：改完标签直接点另一行，检查器换笔记前落库。
     await tester.enterText(tagsBox(), 'alpha beta gamma');
     await tester.pump();
-    await tester.tap(_row(other == a ? '食べる' : '飲む'));
-    await _settle(tester);
+    await srsUntilWritten(
+      tester,
+      () => tester.tap(_row(other == a ? '食べる' : '飲む')),
+    );
     final Map<String, List<String>> afterSwitch = await tagsByNote();
     expect(
       afterSwitch[edited],
@@ -916,9 +947,17 @@ void main() {
       tester.widget<EditableText>(editor()).controller.text,
       '<b>to eat</b>',
     );
-    await tester.enterText(editor(), 'to consume');
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    await _settle(tester);
+    await srsUntilWritten(
+      tester,
+      () async {
+        await tester.enterText(editor(), 'to consume');
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+      },
+      until: () => srsToolbarItemEnabled(
+        tester,
+        const ValueKey<String>('srs_browse_undo'),
+      ),
+    );
     final SrsNoteView? saved = await tester.runAsync<SrsNoteView?>(
       () => store.note(eat),
     );
@@ -933,10 +972,12 @@ void main() {
     expect(editor(), findsNothing);
 
     // 改字段进撤销栈。
-    await tester.tap(
-      find.byKey(const ValueKey<String>('srs_browse_undo')).first,
+    await srsUntilWritten(
+      tester,
+      () => tester.tap(
+        find.byKey(const ValueKey<String>('srs_browse_undo')).first,
+      ),
     );
-    await _settle(tester);
     final SrsNoteView? undone = await tester.runAsync<SrsNoteView?>(
       () => store.note(eat),
     );
@@ -1029,8 +1070,10 @@ void main() {
     );
     expect(tester.widget<EditableText>(editor()).controller.text, '');
     await tester.enterText(editor(), 'n5  grammar n5');
-    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-    await _settle(tester);
+    await srsUntilWritten(
+      tester,
+      () => tester.sendKeyEvent(LogicalKeyboardKey.tab),
+    );
     final SrsNoteView? saved = await tester.runAsync<SrsNoteView?>(
       () => store.note(eat),
     );

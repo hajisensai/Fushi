@@ -1,11 +1,37 @@
+import 'dart:io';
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart'
     show CollectionMemberVisibility, pickTargetCollectionForMembers;
+import 'package:fushi/src/media/collections/collection_art_scrape.dart';
 import 'package:fushi/src/media/collections/collection_ai_order.dart'
     show CollectionAiClientFactory;
 import 'package:fushi/src/media/collections/collection_detail_hero.dart';
+import 'package:fushi/src/media/collections/collection_drag.dart'
+    show LibraryDragReorderScope, LibraryReorderCell;
+import 'package:fushi/src/media/collections/collection_tag_row.dart';
+import 'package:fushi/src/media/detail/media_detail_kit.dart';
+import 'package:fushi/src/media/detail/media_poster_detail.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show
+        ShellClip,
+        ShellContentLayout,
+        shellContentLayoutOf,
+        shellRedesignActive;
+import 'package:fushi/src/utils/components/fushi_series_cover_block.dart';
+import 'package:fushi/src/utils/cover_image.dart' show resizedFileImage;
+import 'package:fushi/src/utils/components/fushi_cover_block.dart'
+    show
+        FushiCoverBlockScope,
+        FushiCoverBlockSize,
+        fushiCoverBlockRadius,
+        fushiCoverImageOf;
+import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'
+    show SliverFushiCoverBlocks, kFushiCoverBlockTargetWidthSingle;
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi/src/media/collections/collection_member_view.dart';
 import 'package:fushi/src/media/tags/tag_chips.dart';
@@ -30,7 +56,7 @@ import 'package:fushi/src/pages/implementations/collection_detail_shared.dart';
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
     show DialogListAction, MediaItemDialogFrame, showMediaItemActions;
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
-    show shelfBookCellAspectRatio;
+    show ShelfCoverFrame, ShelfGridCellInset, shelfBookCellAspectRatio;
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -54,6 +80,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/pages/implementations/library_view_options.dart'
+    show libraryGridSizeClassOf;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
@@ -86,13 +114,22 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
     this.onDeleteMembersMedia,
     this.deleteMembersStatisticsSubtitle,
     this.memberInfoOf,
+    this.memberHasRichMetadata,
+    this.collectionSeriesFallback,
     this.memberInfoRefresh,
     this.onSetMembersCompleted,
     this.isMemberVisible,
     this.collectionAiSettings,
+    this.memberCoverOf,
+    this.memberNsfwOf,
     this.aiClientFactory,
+    this.artScrape,
     super.key,
   });
+
+  /// 书 / 漫画合集的「获取各卷封面与横幅」「清除已获取的封面」。null = 不提供
+  /// （游戏库等）；合集里没有本地书或「在线服务」模块关着时也不出现。
+  final CollectionArtScrape? artScrape;
 
   final FushiDatabase database;
   final MediaCollectionRow collection;
@@ -159,6 +196,28 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
   /// 不提供：hero 不画进度、没有阅读状态筛选与「阅读时间」排序、没有标记读完。
   final CollectionMemberInfoResolver? memberInfoOf;
 
+  /// 成员是否刮削过（有单本刮削资料或横版海报）；null = 认不出的成员。给了它时
+  /// **窄屏**色块成员墙分两段：刮削过的在上段画色块，其余在下段画普通封面网格
+  /// （与书架库墙同一规则，2026-11-16 用户拍板方案 A）。不给 = 不分段。
+  final bool? Function(String mediaType, String entryKey)?
+  memberHasRichMetadata;
+
+  /// 合集自己没有刮削资料 / 背景图时，头部系列横幅借用的成员资料（书架：最前
+  /// 那卷的单本刮削资料与横版海报）；null = 不借，头部保持原样。
+  final ({FushiSeriesMeta meta, String? summary})? Function()?
+  collectionSeriesFallback;
+
+  /// 头部封面扇形 / 取色用的成员纯封面，[memberInfoOf] 没给封面时的后备。给游戏
+  /// 这类没有阅读进度（不传 [memberInfoOf]，否则会冒出读完筛选 / 标记读完）但有
+  /// 封面的成员用；null = 只认 [memberInfoOf] 的封面。
+  final Widget? Function(String mediaType, String entryKey)? memberCoverOf;
+
+  /// 头部成员封面（扇形 / 大封面）逐张判定 NSFW 用的宿主（拍板台 w04vrhUAaX）。
+  /// null = 按成员行 [MediaNsfwTarget.collectionMember]；游戏要并入自己的成人向
+  /// 标记，由调用方给。成员卡自己的封面由 [memberCardBuilder] 的卡壳负责。
+  final MediaNsfwTarget? Function(String mediaType, String entryKey)?
+  memberNsfwOf;
+
   /// [memberInfoOf] 背后的数据（最后阅读时刻 / 进度 / 读完）变了的通知。详情页是压在
   /// 阅读器之下的独立路由，不会因调用方的 provider 变化而重建；不订阅这条，读完一本
   /// 回到详情页，「继续阅读」与 hero 进度仍停在进页时的快照（4h4uGUck4k）。
@@ -203,6 +262,13 @@ class _MediaCollectionGridDetailPageState
 
   /// 成员身份键 → 所挂标签 id（标签筛选用）。
   Map<String, Set<int>> _memberTagIds = const <String, Set<int>>{};
+
+  /// 合集的刮削资料（[CollectionScrapeMeta] 行）与附加图组里 position 最小且
+  /// 文件还在的横版背景图 / 艺术字路径（[_reload] 里一并取好、存在性探好，build
+  /// 零 IO）。有其一时合集信息块换成系列海报 hero（[_buildSeriesHero]）。
+  CollectionScrapeMetaRow? _scrapeMeta;
+  String? _backdropPath;
+  String? _logoPath;
 
   /// 全部标签（筛选面板取名 / 色）与合集自身的标签（hero）。
   List<BookTagRow> _allTags = const <BookTagRow>[];
@@ -289,6 +355,19 @@ class _MediaCollectionGridDetailPageState
     final List<BookTagRow> collectionTags = await db.getTagsForCollection(
       widget.collection.id,
     );
+    final CollectionScrapeMetaRow? scrapeMeta = await db
+        .getCollectionScrapeMeta(widget.collection.id);
+    final List<MediaImageRow> images = await db.getMediaImagesForCollection(
+      widget.collection.id,
+    );
+    final String? backdropPath = await _firstExistingImage(
+      images,
+      MediaImageKind.backdrop,
+    );
+    final String? logoPath = await _firstExistingImage(
+      images,
+      MediaImageKind.logo,
+    );
     CollectionMemberSort? savedSort;
     if (!_sortPrefLoaded) {
       final String? raw = await db.getPref(
@@ -315,6 +394,9 @@ class _MediaCollectionGridDetailPageState
       _memberTagIds = tagIds;
       _allTags = allTags;
       _collectionTags = collectionTags;
+      _scrapeMeta = scrapeMeta;
+      _backdropPath = backdropPath;
+      _logoPath = logoPath;
       _loading = false;
       _selected.retainWhere(
         (String key) => rows.any(
@@ -322,6 +404,27 @@ class _MediaCollectionGridDetailPageState
         ),
       );
     });
+  }
+
+  /// [images] 里 [kind] 种类、position 最小且文件还在的那张的路径；没有为 null。
+  static Future<String?> _firstExistingImage(
+    List<MediaImageRow> images,
+    MediaImageKind kind,
+  ) async {
+    final List<MediaImageRow> rows =
+        images
+            .where(
+              (MediaImageRow r) => r.kind == kind.dbValue && r.path.isNotEmpty,
+            )
+            .toList()
+          ..sort(
+            (MediaImageRow a, MediaImageRow b) =>
+                a.position.compareTo(b.position),
+          );
+    for (final MediaImageRow row in rows) {
+      if (await File(row.path).exists()) return row.path;
+    }
+    return null;
   }
 
   /// 切换排序方式并记进本合集的排序偏好（下次打开沿用）。
@@ -734,6 +837,18 @@ class _MediaCollectionGridDetailPageState
               tooltip: t.collection_detail_save_order,
               onTap: () => _saveViewOrder(arranged),
             ),
+          if (_artScrapeAvailable) ...<Widget>[
+            FushiIconButton(
+              icon: FushiIcons.imageSearch,
+              tooltip: t.collection_art_scrape_action,
+              onTap: _scrapeArt,
+            ),
+            FushiIconButton(
+              icon: FushiIcons.deleteSweep,
+              tooltip: t.collection_art_scrape_clear,
+              onTap: _clearArt,
+            ),
+          ],
           FushiIconButton(
             icon: FushiIcons.delete,
             tooltip: t.delete_collection,
@@ -745,6 +860,21 @@ class _MediaCollectionGridDetailPageState
       ).items,
     );
   }
+
+  /// 色块语言是否生效：库页布局不是封面网格。
+  bool _blockStyleFor(List<CollectionMemberEntry> entries) =>
+      shellContentLayoutOf(context) != ShellContentLayout.grid;
+
+  /// 窄屏（compact 档）色块成员墙按元数据分两段（与书架库墙同一规则，2026-11-16
+  /// 用户拍板方案 A）：刮削过的成员在上段画色块，其余在下段画普通封面网格。
+  /// 没给 [MediaCollectionGridDetailPage.memberHasRichMetadata] 时不分段。
+  bool get _splitsByMetadata =>
+      widget.memberHasRichMetadata != null &&
+      libraryGridSizeClassOf(context) == WindowSizeClass.compact;
+
+  bool _memberIsRich(CollectionMemberEntry e) =>
+      widget.memberHasRichMetadata?.call(e.row.mediaType, e.row.entryKey) ??
+      false;
 
   @override
   Widget build(BuildContext context) {
@@ -786,6 +916,78 @@ class _MediaCollectionGridDetailPageState
         _tagFilter.isNotEmpty ||
         _statusFilter != null;
 
+    final bool redesign = shellRedesignActive(context);
+    Widget withPopScope(Widget child) => PopScope(
+      canPop: !_selecting && !_reordering,
+      onPopInvokedWithResult: (bool didPop, Object? _) {
+        if (didPop) return;
+        if (_reordering) {
+          _endReorder();
+        } else if (_selecting) {
+          _endSelection();
+        }
+      },
+      child: child,
+    );
+    List<Widget> overlays() => <Widget>[
+      _buildSelectionBar(arranged),
+      LibraryReorderBar.overlay(
+        context: context,
+        visible: _reordering,
+        onDone: _endReorder,
+      ),
+    ];
+    final Widget? placeholder = _loading
+        ? Center(child: adaptiveIndicator(context: context))
+        : entries.isEmpty
+        ? _EmptyCollection(onBack: () => Navigator.of(context).maybePop())
+        : null;
+
+    if (redesign) {
+      // 重设计外壳：与视频 / 漫画系列详情同一套海报面板（封面取色整页底 + 斜放
+      // 海报 + 大标题 + 信息胶囊 + 继续 + 动作栏），不挂 AppBar：返回键与合集
+      // 管理动作（重命名 / 存为手动顺序 / 删除）是 [MediaPosterDetailChrome] 的
+      // 裸图标页头（桌面画进窗口标题行）。正文铺到窗口底，多选 / 排序浮动栏
+      // 单独让开底部安全区。墨水屏走下面的原版式。
+      // 色块风格（库页布局为拼贴 / 规整色块）：页面保持 app 底色，与库页色块墙
+      // 同一观感——封面色只在左栏合集块与各成员色块上；封面网格布局整页取色。
+      final bool blockStyle = _blockStyleFor(entries);
+      final Widget chrome = MediaPosterDetailChrome(
+        actions: _headerActions(arranged),
+        child: placeholder != null
+            ? Builder(
+                builder: (BuildContext context) => ColoredBox(
+                  color: Theme.of(context).colorScheme.surface,
+                  child: SafeArea(child: placeholder),
+                ),
+              )
+            : withPopScope(
+                Stack(
+                  children: <Widget>[
+                    Positioned.fill(
+                      child: _buildScroll(entries, arranged, cards, filtered),
+                    ),
+                    Positioned.fill(
+                      child: SafeArea(
+                        top: false,
+                        child: Stack(children: overlays()),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+      );
+      return Scaffold(
+        body: blockStyle
+            ? chrome
+            : MediaPosterDetailTheme(
+                image: _heroCoverImage(entries),
+                fallbackKey: _name,
+                child: chrome,
+              ),
+      );
+    }
+
     return Scaffold(
       // BUG-1186：折叠判据取这条 AppBar 的局部约束宽，不是整窗宽。
       appBar: PreferredSize(
@@ -796,34 +998,127 @@ class _MediaCollectionGridDetailPageState
         ),
       ),
       body: SafeArea(
-        child: _loading
-            ? Center(child: adaptiveIndicator(context: context))
-            : entries.isEmpty
-            ? _EmptyCollection(onBack: () => Navigator.of(context).maybePop())
-            : PopScope(
-                canPop: !_selecting && !_reordering,
-                onPopInvokedWithResult: (bool didPop, Object? _) {
-                  if (didPop) return;
-                  if (_reordering) {
-                    _endReorder();
-                  } else if (_selecting) {
-                    _endSelection();
-                  }
-                },
-                child: Stack(
-                  children: <Widget>[
-                    _buildScroll(entries, arranged, cards, filtered),
-                    _buildSelectionBar(arranged),
-                    LibraryReorderBar.overlay(
-                      context: context,
-                      visible: _reordering,
-                      onDone: _endReorder,
-                    ),
-                  ],
-                ),
+        child:
+            placeholder ??
+            withPopScope(
+              Stack(
+                children: <Widget>[
+                  _buildScroll(entries, arranged, cards, filtered),
+                  ...overlays(),
+                ],
               ),
+            ),
       ),
     );
+  }
+
+  /// 重设计外壳页头右侧的合集管理动作（与原 AppBar 同一组、同一 tooltip 与回调）：
+  /// 裸图标，不装胶囊底。「编辑标签」只在 hero 一处（见 [_buildAppBar]）。
+  List<Widget> _headerActions(List<CollectionMemberEntry> arranged) {
+    return <Widget>[
+      FushiIconButtonControl(
+        key: const ValueKey<String>('collection_detail_rename'),
+        tooltip: t.rename_collection,
+        icon: const FushiIcon(FushiIcons.rename),
+        onPressed: renameDetailCollection,
+      ),
+      if (_sort != CollectionMemberSort.manual)
+        FushiIconButtonControl(
+          key: const ValueKey<String>('collection_detail_header_save_order'),
+          tooltip: t.collection_detail_save_order,
+          icon: const FushiIcon(FushiIcons.download),
+          onPressed: () => _saveViewOrder(arranged),
+        ),
+      if (_artScrapeAvailable) ...<Widget>[
+        FushiIconButtonControl(
+          key: const ValueKey<String>('collection_detail_art_scrape'),
+          tooltip: t.collection_art_scrape_action,
+          icon: const FushiIcon(FushiIcons.imageSearch),
+          onPressed: _scrapeArt,
+        ),
+        FushiIconButtonControl(
+          key: const ValueKey<String>('collection_detail_art_clear'),
+          tooltip: t.collection_art_scrape_clear,
+          icon: const FushiIcon(FushiIcons.deleteSweep),
+          onPressed: _clearArt,
+        ),
+      ],
+      FushiIconButtonControl(
+        key: const ValueKey<String>('collection_detail_delete'),
+        tooltip: t.delete_collection,
+        icon: const FushiIcon(FushiIcons.delete),
+        onPressed: _delete,
+      ),
+    ];
+  }
+
+  bool get _artScrapeAvailable {
+    final CollectionArtScrape? art = widget.artScrape;
+    return art != null && art.enabled && CollectionArtScrape.appliesTo(_rows);
+  }
+
+  void _afterArtChanged() {
+    widget.onChanged();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _scrapeArt() => widget.artScrape!.scrape(
+    context,
+    collectionId: widget.collection.id,
+    onChanged: _afterArtChanged,
+  );
+
+  Future<void> _clearArt() => widget.artScrape!.clear(
+    context,
+    collectionId: widget.collection.id,
+    onChanged: _afterArtChanged,
+  );
+
+  /// 海报 / 面板取色用的封面：「继续」会打开的那本（与旧 hero 叠层的前排同一
+  /// 判据），没有就按合集序第一本有封面的；都没有为 null（面板按合集名折色相）。
+  Widget? _heroCover(List<CollectionMemberEntry> entries) {
+    final CollectionMemberEntry? current = pickContinueMember(entries);
+    if (_coverOf(current) case final Widget cover) return cover;
+    for (final CollectionMemberEntry e in entries) {
+      if (_coverOf(e) case final Widget cover) return cover;
+    }
+    return null;
+  }
+
+  /// 成员纯封面：[MediaCollectionGridDetailPage.memberInfoOf] 的封面优先，其次
+  /// [MediaCollectionGridDetailPage.memberCoverOf]。
+  Widget? _coverOf(CollectionMemberEntry? e) {
+    if (e == null) return null;
+    return e.info?.cover ??
+        widget.memberCoverOf?.call(e.row.mediaType, e.row.entryKey);
+  }
+
+  /// [_coverOf] 再按该成员判定 NSFW 包一层模糊（头部封面用；取色 / 宽高比仍用
+  /// [_coverOf] 的原图源，只用于配色、不显示原图）。
+  Widget? _displayCoverOf(CollectionMemberEntry? e) {
+    final Widget? cover = _coverOf(e);
+    if (e == null || cover == null) return cover;
+    final String mediaType = e.row.mediaType;
+    final String entryKey = e.row.entryKey;
+    final MediaNsfwTarget? target = widget.memberNsfwOf != null
+        ? widget.memberNsfwOf!(mediaType, entryKey)
+        : MediaNsfwTarget.collectionMember(mediaType, entryKey);
+    return MediaNsfwCover(target: target, child: cover);
+  }
+
+  /// [_heroCover] 那一本，按它判定 NSFW 后的显示版本。
+  Widget? _heroDisplayCover(List<CollectionMemberEntry> entries) {
+    final CollectionMemberEntry? current = pickContinueMember(entries);
+    if (_coverOf(current) != null) return _displayCoverOf(current);
+    for (final CollectionMemberEntry e in entries) {
+      if (_coverOf(e) != null) return _displayCoverOf(e);
+    }
+    return null;
+  }
+
+  ImageProvider? _heroCoverImage(List<CollectionMemberEntry> entries) {
+    final Widget? cover = _heroCover(entries);
+    return cover == null ? null : fushiCoverImageOf(cover);
   }
 
   Widget _buildScroll(
@@ -833,20 +1128,45 @@ class _MediaCollectionGridDetailPageState
     bool filtered,
   ) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool redesign = shellRedesignActive(context);
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool wide = constraints.maxWidth >= 840;
-        final double hPad = wide ? tokens.spacing.card * 1.5 : 12;
+        // 重设计外壳宽屏：左右两栏——左栏是合集信息（大封面 / 名称 / 统计 /
+        // 标签，紧凑海报 hero，[_buildPosterHero]），右栏是工具条 + 成员网格，两栏
+        // 顶端对齐、整页一起滚。窄屏（与海报面板同一宽窄判据）仍是头部在上。
+        final bool twoPane =
+            redesign &&
+            MediaPosterDetailLayout.isWide(context, constraints.maxWidth);
+        // 库页布局为拼贴 / 规整色块时整页换色块语言：左栏是封面取色的合集块，
+        // 成员排库页同款单本色块（[_buildBlockGrid]）；封面网格布局保持两栏 +
+        // 封面网格（2026-11-13 用户：「和封面网格要做区分」）。
+        final bool blockStyle = redesign && _blockStyleFor(entries);
+        // 色块成员墙只在网格视图、非排序模式（排序模式仍是拖排封面网格）。
+        final bool blockGrid =
+            blockStyle &&
+            _viewMode == CollectionMemberViewMode.grid &&
+            !_reordering;
+        // 海报面板：左右页边与 hero / 漫画作品页的区块同一条竖线。
+        final double hPad = redesign
+            ? (twoPane ? tokens.spacing.section : tokens.spacing.page)
+            : (wide ? tokens.spacing.card * 1.5 : 12);
+        final double sideWidth = twoPane
+            ? (constraints.maxWidth * 0.24).clamp(300.0, 380.0)
+            : 0;
+        final double gutter = twoPane ? tokens.spacing.section * 1.5 : 0;
+        // 成员区（工具条 / 网格 / 列表）自己的左右页边：两栏时由外层统一留。
+        final double sPad = twoPane ? 0 : hPad;
         final ({int finished, int counted, double? progress}) summary =
             summarizeCollectionMembers(entries);
         // 封面前排 = 正在读的那本（看到第五本就显示第五本），其余按合集序垫在
         // 后面当叠层。
         final CollectionMemberEntry? current = pickContinueMember(entries);
         final List<Widget> covers = <Widget>[
-          if (current?.info?.cover case final Widget cover) cover,
+          if (_displayCoverOf(current) case final Widget cover) cover,
           for (final CollectionMemberEntry e in entries)
             if (!identical(e, current))
-              if (e.info?.cover case final Widget cover) cover,
+              if (_displayCoverOf(e) case final Widget cover) cover,
         ];
         // 任何排序下都可拖：拖一次即把当前显示顺序连同这次移动存为手动序
         // （[_onReorder]）。此前只在「手动」下才进拖排网格，而默认排序是卷号，
@@ -857,8 +1177,12 @@ class _MediaCollectionGridDetailPageState
             (!filtered &&
                 !_selecting &&
                 _viewMode == CollectionMemberViewMode.grid);
+        // 成员一律排封面网格（书 / 漫画竖封面为主、书名两行 + 进度条，与书架
+        // 同一套卡），不再排横向小色块：色块里封面只占一角、背后还压着被裁
+        // 一半的水印字，成员看不清（2026-11-12 用户「很丑重新设计」）。
 
-        // hero 叠层封面与成员卡同一套条目材质：按成员主类型（数量最多的那类）选。
+        // 旧 hero 卡（墨水屏）：叠层封面与成员卡同一套条目材质，按成员主类型
+        // （数量最多的那类）选。
         final ShelfCoverMaterial? heroMaterial = _dominantCoverMaterial(_rows);
         final Widget heroCard = CollectionDetailHeroCard(
           name: _name,
@@ -882,12 +1206,19 @@ class _MediaCollectionGridDetailPageState
             ? heroCard
             : ShelfCoverMaterialScope(material: heroMaterial, child: heroCard);
 
-        final double available = constraints.maxWidth - hPad * 2;
-        final double targetWidth = readerShelfGridExtentForLayout(
-          mediaWidth: MediaQuery.sizeOf(context).width,
-          contentWidth: available,
-        );
+        final double available =
+            constraints.maxWidth - hPad * 2 - sideWidth - gutter;
         const double spacing = 12;
+        // 重设计外壳：宽屏右栏目标列宽 200（180～220 间按栏宽两端对齐铺满），
+        // 窄屏排两到三列；墨水屏照旧跟书架网格同一档。
+        final double targetWidth = !redesign
+            ? readerShelfGridExtentForLayout(
+                mediaWidth: MediaQuery.sizeOf(context).width,
+                contentWidth: available,
+              )
+            : twoPane
+            ? 200
+            : math.max(110.0, (available - spacing * 2) / 3);
         final ({int columns, double cardWidth}) layout = unifiedShelfCardLayout(
           availableWidth: available > 0 ? available : targetWidth,
           targetWidth: targetWidth,
@@ -898,12 +1229,7 @@ class _MediaCollectionGridDetailPageState
         // （[shelfBookCellAspectRatio]，封面区恒为书封比例；成员卡自带标准内边距，
         // 本页不包 [ShelfGridCellInset]）——固定卡槽比例在格宽偏离设计值时封面
         // 两侧会露出材质衬底。
-        final bool gameDomain =
-            _rows.isNotEmpty &&
-            _rows.every(
-              (MediaCollectionItemRow r) =>
-                  r.mediaType == MediaKind.game.dbValue,
-            );
+        final bool gameDomain = _isGameDomain();
         final double memberAspect = gameDomain
             ? layout.cardWidth /
                   (layout.cardWidth / kShelfGameCaseAspectRatio +
@@ -915,17 +1241,19 @@ class _MediaCollectionGridDetailPageState
               );
 
         final List<Widget> slivers = <Widget>[
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(hPad, tokens.spacing.gap, hPad, 0),
-            sliver: SliverToBoxAdapter(
-              child: FushiStaggeredEntrance(index: 0, child: hero),
+          if (!redesign)
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(hPad, tokens.spacing.gap, hPad, 0),
+              sliver: SliverToBoxAdapter(
+                child: FushiStaggeredEntrance(index: 0, child: hero),
+              ),
             ),
-          ),
           SliverPadding(
             padding: EdgeInsets.fromLTRB(
-              hPad,
-              tokens.spacing.card,
-              hPad,
+              sPad,
+              // 两栏时工具条顶端与左栏封面顶端对齐；头部在上时隔一档卡片间距。
+              twoPane ? 0 : tokens.spacing.card,
+              sPad,
               tokens.spacing.gap,
             ),
             sliver: SliverToBoxAdapter(
@@ -936,7 +1264,7 @@ class _MediaCollectionGridDetailPageState
             ),
           ),
           SliverPadding(
-            padding: EdgeInsets.symmetric(horizontal: hPad),
+            padding: EdgeInsets.symmetric(horizontal: sPad),
             sliver: SliverToBoxAdapter(child: _buildFilterPanel(entries)),
           ),
         ];
@@ -960,10 +1288,60 @@ class _MediaCollectionGridDetailPageState
               ),
             ),
           );
+        } else if (blockGrid && _splitsByMetadata) {
+          final List<CollectionMemberEntry> rich = <CollectionMemberEntry>[
+            for (final CollectionMemberEntry e in arranged)
+              if (_memberIsRich(e)) e,
+          ];
+          final List<CollectionMemberEntry> rest = <CollectionMemberEntry>[
+            for (final CollectionMemberEntry e in arranged)
+              if (!_memberIsRich(e)) e,
+          ];
+          // 分段时两段各是全序的子集，直拖重排关掉（排序模式仍可拖排全序）。
+          if (rich.isNotEmpty) {
+            slivers.add(
+              _buildBlockGrid(
+                hPad: sPad,
+                bleed: hPad,
+                arranged: rich,
+                cards: cards,
+                dragReorderable: false,
+              ),
+            );
+          }
+          if (rich.isNotEmpty && rest.isNotEmpty) {
+            slivers.add(
+              SliverToBoxAdapter(
+                child: SizedBox(height: tokens.spacing.section),
+              ),
+            );
+          }
+          if (rest.isNotEmpty) {
+            slivers.add(
+              _buildPlainGrid(
+                hPad: sPad,
+                arranged: rest,
+                cards: cards,
+                columns: layout.columns,
+                aspect: memberAspect,
+                spacing: spacing,
+              ),
+            );
+          }
+        } else if (blockGrid) {
+          slivers.add(
+            _buildBlockGrid(
+              hPad: sPad,
+              bleed: hPad,
+              arranged: arranged,
+              cards: cards,
+              dragReorderable: !filtered && !_selecting,
+            ),
+          );
         } else if (_viewMode == CollectionMemberViewMode.list && !canReorder) {
           slivers.add(
             SliverPadding(
-              padding: EdgeInsets.symmetric(horizontal: hPad),
+              padding: EdgeInsets.symmetric(horizontal: sPad),
               sliver: SliverList.builder(
                 itemCount: arranged.length,
                 itemBuilder: (BuildContext context, int i) =>
@@ -991,7 +1369,7 @@ class _MediaCollectionGridDetailPageState
           // 其内部 InkWell 的 long-press 与网格触摸手势争用竞技场。
           slivers.add(
             SliverPadding(
-              padding: EdgeInsets.symmetric(horizontal: hPad),
+              padding: EdgeInsets.symmetric(horizontal: sPad),
               sliver: SliverToBoxAdapter(
                 child: FushiReorderableGrid(
                   itemCount: arranged.length,
@@ -1025,44 +1403,78 @@ class _MediaCollectionGridDetailPageState
           );
         } else {
           slivers.add(
-            SliverPadding(
-              padding: EdgeInsets.symmetric(horizontal: hPad),
-              sliver: SliverGrid.builder(
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: layout.columns,
-                  childAspectRatio: memberAspect,
-                  crossAxisSpacing: spacing,
-                  mainAxisSpacing: spacing,
-                ),
-                itemCount: arranged.length,
-                itemBuilder: (BuildContext context, int i) {
-                  final CollectionMemberEntry e = arranged[i];
-                  return FushiStaggeredEntrance(
-                    index: i,
-                    child: _MemberGridTile(
-                      key: ValueKey<String>('member-tile-${e.key}'),
-                      selecting: _selecting,
-                      selected: _selected.contains(e.key),
-                      onTap: () => _activate(e),
-                      onLongPress: () => _toggleSelected(e),
-                      longPressOpensMenu: !_selecting,
-                      onMenu: (Offset p) => _showMemberMenu(e.row, p),
-                      child: cards[e.key]!,
-                    ),
-                  );
-                },
-              ),
+            _buildPlainGrid(
+              hPad: sPad,
+              arranged: arranged,
+              cards: cards,
+              columns: layout.columns,
+              aspect: memberAspect,
+              spacing: spacing,
             ),
           );
         }
         // 底部留白：多选浮动栏出现时不压住末行。
-        slivers.add(
-          SliverToBoxAdapter(
-            child: SizedBox(
-              height: _selecting || _reordering ? 120 : tokens.spacing.card * 2,
+        final double bottomGap = _selecting || _reordering
+            ? 120
+            : tokens.spacing.card * 2;
+        if (twoPane) {
+          final double top =
+              MediaQuery.paddingOf(context).top + tokens.spacing.gap;
+          // 2026-10 动效：左栏各块与工具条 / 成员错峰进场。
+          return FushiEntranceScope(
+            child: MediaPosterDetailLayout(
+              controller: _scroll,
+              bottomPadding: bottomGap,
+              slivers: <Widget>[
+                SliverPadding(
+                  padding: EdgeInsetsDirectional.fromSTEB(hPad, top, hPad, 0),
+                  sliver: SliverCrossAxisGroup(
+                    slivers: <Widget>[
+                      SliverConstrainedCrossAxis(
+                        maxExtent: sideWidth,
+                        sliver: SliverToBoxAdapter(
+                          // 左栏充当 hero：滚出页头下沿后页头才淡入合集名。
+                          child: MediaPosterHeroExtent(
+                            leading: top,
+                            child: _buildPosterHero(
+                              entries: entries,
+                              summary: summary,
+                              side: true,
+                            ),
+                          ),
+                        ),
+                      ),
+                      SliverConstrainedCrossAxis(
+                        maxExtent: gutter,
+                        sliver: const SliverToBoxAdapter(),
+                      ),
+                      SliverCrossAxisExpanded(
+                        flex: 1,
+                        sliver: SliverMainAxisGroup(slivers: slivers),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ),
-        );
+          );
+        }
+        if (redesign) {
+          // 2026-10 动效：头部 / 工具条 / 成员错峰进场（头部内部各块自带错峰）。
+          return FushiEntranceScope(
+            child: MediaPosterDetailLayout(
+              controller: _scroll,
+              bottomPadding: bottomGap,
+              header: _buildPosterHero(
+                entries: entries,
+                summary: summary,
+                side: false,
+              ),
+              slivers: slivers,
+            ),
+          );
+        }
+        slivers.add(SliverToBoxAdapter(child: SizedBox(height: bottomGap)));
         // 2026-10 动效：hero / 工具条 / 成员错峰进场。
         return FushiEntranceScope(
           child: CustomScrollView(controller: _scroll, slivers: slivers),
@@ -1070,6 +1482,233 @@ class _MediaCollectionGridDetailPageState
       },
     );
   }
+
+  /// 合集 hero（重设计外壳）：与漫画作品页 / 书详情 / 视频系列同一个海报 hero
+  /// （[MediaPosterDetailHero]，2026-11-16 所有者「合集样式都改成这种」）——背景带
+  /// 在上（合集自己 / 借最前那卷的横版海报，没有就封面重模糊垫底）、封面斜放压过
+  /// 背景带下沿、艺术字；「合集」小标签、合集名、「共 N 项 · 已读完 x/y」，再下是
+  /// 类型 / 评分 / 年份胶囊、可展开简介，动作行是同尺寸图标钮（「编辑标签」，放
+  /// 不下收进「⋯」），已挂标签 chip 在页脚。封面是「正在读」那本（没有就合集序
+  /// 第一本有封面的）；游戏套卡盒材质。卷数已在统计行里，不重复成胶囊；改名 /
+  /// 下载 / 删除留在页头裸图标。宽屏左栏（[side]）走紧凑版式
+  /// （[MediaPosterDetailHero.compact]）并按栏裁圆角。不放继续入口（2026-11-12
+  /// 用户「合集右上角那些去掉」）。
+  Widget _buildPosterHero({
+    required List<CollectionMemberEntry> entries,
+    required ({int finished, int counted, double? progress}) summary,
+    required bool side,
+  }) {
+    final Widget? cover = _heroCover(entries);
+    final String stats = <String>[
+      t.collection_detail_member_count(n: entries.length),
+      if (widget.memberInfoOf != null)
+        t.collection_detail_finished_count(
+          done: summary.finished,
+          total: entries.length,
+        ),
+    ].join(' · ');
+    final ({FushiSeriesMeta meta, String? summary})? series =
+        _collectionSeries();
+    final FushiSeriesMeta? meta = series?.meta;
+    final bool gameCase = _isGameDomain();
+    // 游戏卡盒不按封面图比例量（卡盒比例固定），其余按封面真实比例显示全。
+    final ImageProvider? coverImage = cover == null
+        ? null
+        : fushiCoverImageOf(cover);
+    // 显示用按该成员判定 NSFW 包一层模糊；取色 / 宽高比仍用原图源。
+    final Widget posterContent =
+        _heroDisplayCover(entries) ??
+        const MediaDetailCoverPlaceholder(icon: FushiIcons.collection);
+    final double? rating = meta?.rating;
+    final int? year = meta?.year;
+    final Widget hero = MediaPosterDetailHero(
+      key: const ValueKey<String>('collection_detail_series_hero'),
+      compact: side,
+      kicker: t.collection_detail_kicker,
+      title: _name,
+      originalTitle: stats,
+      originalTitleKey: const ValueKey<String>('collection_detail_hero_meta'),
+      poster: SizedBox.expand(
+        key: const ValueKey<String>('collection_detail_header_cover'),
+        child: gameCase
+            ? ShelfCoverMaterialScope(
+                material: ShelfCoverMaterial.gameCase,
+                child: ShelfCoverFrame(child: posterContent),
+              )
+            : posterContent,
+      ),
+      posterImage: gameCase ? null : coverImage,
+      backdrop: meta?.backdrop,
+      backdropFallback: coverImage,
+      logo: meta?.logo,
+      logoSemanticsName: _name,
+      pills: <MediaDetailChip>[
+        if (rating != null)
+          MediaDetailChip(
+            '★ ${rating.toStringAsFixed(1)}',
+            tone: MediaDetailChipTone.primary,
+            key: const ValueKey<String>('collection_detail_series_rating'),
+          ),
+        if (year != null) MediaDetailChip('$year', icon: FushiIcons.calendar),
+        for (final String genre in meta?.genres ?? const <String>[])
+          MediaDetailChip(genre),
+      ],
+      summary: series?.summary,
+      summaryKey: const ValueKey<String>('collection_detail_scrape_summary'),
+      selectableSummary: false,
+      more: MediaDetailMoreButton(
+        buttonKey: const ValueKey<String>('collection_detail_more'),
+        items: <MediaDetailMenuItem>[
+          MediaDetailMenuItem(
+            key: const ValueKey<String>('collection_detail_edit_tags'),
+            icon: FushiIcons.tag,
+            label: t.collection_detail_edit_tags,
+            onSelected: _editCollectionTags,
+          ),
+        ],
+      ),
+      footer: _collectionTags.isEmpty
+          ? null
+          : CollectionTagRow(
+              key: const ValueKey<String>('collection_detail_tag_row'),
+              tags: _collectionTags,
+              onEditTags: _editCollectionTags,
+              showEditButton: false,
+            ),
+    );
+    return KeyedSubtree(
+      key: const ValueKey<String>('collection_detail_poster_hero'),
+      child: side
+          ? ShellClip(radius: FushiM3eShape.containerLargeRadius, child: hero)
+          : hero,
+    );
+  }
+
+  /// 合集的系列资料：合集自己有刮削资料 / 背景图就用自己的，否则借最前那卷（继续
+  /// 会打开的那本）的刮削资料与横版海报；都没有为 null（头部保持原样）。只读
+  /// [_reload] 预取的字段，零 IO。
+  ({FushiSeriesMeta meta, String? summary})? _collectionSeries() {
+    final String? backdropPath = _backdropPath;
+    final String? logoPath = _logoPath;
+    final FushiSeriesMeta? own = collectionSeriesMeta(
+      scrape: _scrapeMeta,
+      backdrop: backdropPath == null
+          ? null
+          : resizedFileImage(File(backdropPath)),
+      logo: logoPath == null ? null : resizedFileImage(File(logoPath)),
+      countLabel: null,
+    );
+    if (own != null) {
+      final String? summary = _scrapeMeta?.summary?.trim();
+      return (
+        meta: own,
+        summary: summary == null || summary.isEmpty ? null : summary,
+      );
+    }
+    final ({FushiSeriesMeta meta, String? summary})? borrowed = widget
+        .collectionSeriesFallback
+        ?.call();
+    if (borrowed == null) return null;
+    final String? summary = borrowed.summary?.trim();
+    return (
+      meta: borrowed.meta,
+      summary: summary == null || summary.isEmpty ? null : summary,
+    );
+  }
+
+  /// 色块成员墙（库页布局为拼贴 / 规整色块）：与书架库墙单本书同一套色块与
+  /// 尺寸规则（[SliverFushiCoverBlocks] 等尺寸规整块、目标宽
+  /// [kFushiCoverBlockTargetWidthSingle]、两端对齐）。每格是同一个
+  /// [_MemberGridTile]（轻点打开 / 长按菜单 / 右键 / 多选勾选），卡片包
+  /// [FushiCoverBlockScope] 由调用方的成员卡自己换成色块视觉；桌面直拖重排经
+  /// [LibraryDragReorderScope]，与库页色块布局同一套。
+  Widget _buildBlockGrid({
+    required double hPad,
+    required double bleed,
+    required List<CollectionMemberEntry> arranged,
+    required Map<String, Widget> cards,
+    required bool dragReorderable,
+  }) {
+    return SliverPadding(
+      padding: EdgeInsets.symmetric(horizontal: hPad),
+      sliver: LibraryDragReorderScope(
+        enabled: dragReorderable,
+        onReorder: (int from, int to) => _onReorder(arranged, from, to),
+        child: SliverFushiCoverBlocks(
+          itemCount: arranged.length,
+          targetWidth: kFushiCoverBlockTargetWidthSingle,
+          // 悬停放大越进页边距：色块左右与工具条 / 搜索框同一条竖线，不再缩进。
+          hoverBleed: bleed,
+          itemBuilder: (BuildContext context, int i, FushiCoverBlockSize size) {
+            final CollectionMemberEntry e = arranged[i];
+            return LibraryReorderCell(
+              index: i,
+              child: _MemberGridTile(
+                key: ValueKey<String>('member-tile-${e.key}'),
+                block: size,
+                selecting: _selecting,
+                selected: _selected.contains(e.key),
+                onTap: () => _activate(e),
+                onLongPress: () => _toggleSelected(e),
+                longPressOpensMenu: !_selecting,
+                onMenu: (Offset p) => _showMemberMenu(e.row, p),
+                child: FushiCoverBlockScope(
+                  size: size,
+                  child: ShelfGridCellInset(inset: 0, child: cards[e.key]!),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  /// 普通封面网格成员墙（封面网格布局，或窄屏分段的下段）。
+  Widget _buildPlainGrid({
+    required double hPad,
+    required List<CollectionMemberEntry> arranged,
+    required Map<String, Widget> cards,
+    required int columns,
+    required double aspect,
+    required double spacing,
+  }) {
+    return SliverPadding(
+      padding: EdgeInsets.symmetric(horizontal: hPad),
+      sliver: SliverGrid.builder(
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: columns,
+          childAspectRatio: aspect,
+          crossAxisSpacing: spacing,
+          mainAxisSpacing: spacing,
+        ),
+        itemCount: arranged.length,
+        itemBuilder: (BuildContext context, int i) {
+          final CollectionMemberEntry e = arranged[i];
+          return FushiStaggeredEntrance(
+            index: i,
+            child: _MemberGridTile(
+              key: ValueKey<String>('member-tile-${e.key}'),
+              selecting: _selecting,
+              selected: _selected.contains(e.key),
+              onTap: () => _activate(e),
+              onLongPress: () => _toggleSelected(e),
+              longPressOpensMenu: !_selecting,
+              onMenu: (Offset p) => _showMemberMenu(e.row, p),
+              child: cards[e.key]!,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// 成员全是游戏（卡盒竖长 1:1.6）。
+  bool _isGameDomain() =>
+      _rows.isNotEmpty &&
+      _rows.every(
+        (MediaCollectionItemRow r) => r.mediaType == MediaKind.game.dbValue,
+      );
 
   void _activate(CollectionMemberEntry entry) {
     if (_selecting) {
@@ -1586,6 +2225,7 @@ class _MemberGridTile extends StatelessWidget {
     required this.onLongPress,
     required this.longPressOpensMenu,
     required this.onMenu,
+    this.block,
     super.key,
   });
 
@@ -1597,17 +2237,42 @@ class _MemberGridTile extends StatelessWidget {
   final bool longPressOpensMenu;
   final ValueChanged<Offset> onMenu;
 
+  /// 非 null = 封面色块格（[FushiCoverBlockSize]）：选中罩 / 墨水波纹按色块圆角
+  /// 画，悬停是整块抬升（[FushiHoverLift]，卡片本体被 IgnorePointer 屏蔽，色块
+  /// 自己的悬停收不到指针），不垫灰底板。
+  final FushiCoverBlockSize? block;
+
   @override
   Widget build(BuildContext context) {
+    final FushiCoverBlockSize? block = this.block;
+    if (block == null) return _buildTile(context, null);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints c) => FushiHoverLift(
+        enabled: !selecting,
+        scale: 1.02,
+        builder: (BuildContext context, bool _) => _buildTile(
+          context,
+          BorderRadius.all(
+            Radius.circular(fushiCoverBlockRadius(block, c.maxHeight)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// [blockRadius] 非 null = 色块格（见 [block]）。
+  Widget _buildTile(BuildContext context, BorderRadius? blockRadius) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final bool material = _hasCoverMaterial(context, child);
+    final bool material =
+        blockRadius != null || _hasCoverMaterial(context, child);
+    final BorderRadius radius = blockRadius ?? tokens.radii.cardRadius;
     return ContextMenuTrigger(
       onInvoke: (Offset p) => runWithContextMenuAnchor(p, () => onMenu(p)),
       child: Material(
         type: MaterialType.transparency,
         child: InkWell(
-          borderRadius: tokens.radii.cardRadius,
+          borderRadius: radius,
           // 材质卡的悬停 / 按压反馈是卡片自己的抬升 + 扫光，不再垫灰底板。
           overlayColor: material
               ? const WidgetStatePropertyAll<Color>(Colors.transparent)
@@ -1626,7 +2291,10 @@ class _MemberGridTile extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: <Widget>[
-                _HoverableMemberCard(child: child),
+                _HoverableMemberCard(
+                  hoverOverlay: blockRadius == null,
+                  child: child,
+                ),
                 if (selecting) ...<Widget>[
                   Positioned.fill(
                     child: IgnorePointer(
@@ -1636,7 +2304,7 @@ class _MemberGridTile extends StatelessWidget {
                           FushiMotion.short,
                         ),
                         decoration: BoxDecoration(
-                          borderRadius: tokens.radii.cardRadius,
+                          borderRadius: radius,
                           color: selected
                               ? scheme.primary.withValues(alpha: 0.18)
                               : Colors.transparent,
@@ -1941,9 +2609,12 @@ class _EmptyCollection extends StatelessWidget {
 /// 接触阴影 / 3D 倾斜视差（反馈 bsbJ4OVa8o：此前只代收悬停位，倾斜层拿不到指针
 /// 位置，合集里的书卡永远是平的）。触摸/手柄路径零变化。
 class _HoverableMemberCard extends StatelessWidget {
-  const _HoverableMemberCard({required this.child});
+  const _HoverableMemberCard({required this.child, this.hoverOverlay = true});
 
   final Widget child;
+
+  /// false = 不画悬停灰罩（色块格的悬停是外层整块抬升）。
+  final bool hoverOverlay;
 
   @override
   Widget build(BuildContext context) {
@@ -1956,7 +2627,7 @@ class _HoverableMemberCard extends StatelessWidget {
         fit: StackFit.expand,
         children: <Widget>[
           IgnorePointer(child: child),
-          if (hovering && !material)
+          if (hovering && hoverOverlay && !material)
             Positioned.fill(
               child: IgnorePointer(
                 child: DecoratedBox(

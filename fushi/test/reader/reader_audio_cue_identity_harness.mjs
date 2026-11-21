@@ -1,14 +1,14 @@
 // Executes generated production reader/selection objects against Chrome Range,
 // Selection and wrapper DOM; only the Flutter bridge is replaced by a recorder.
-import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
+import { readPayload } from './reader_harness_support.js';
 
+const scripts = readPayload();
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
-const scripts = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const driver = await launchChromeDriver();
 let count = 0;
 try {

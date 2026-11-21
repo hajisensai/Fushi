@@ -32,10 +32,31 @@ const Set<String> kImageExtensionsBase = <String>{
 /// 正文在 WebView 里显示，尺寸 / OCR / 裁图走原生内核，封面 / 缩略图走 app 侧的
 /// 原生解码 ImageProvider，所以漫画能收；视频海报、游戏封面等还直接交给 Flutter
 /// codec 的消费方不能收。
+///
+/// 另含 [kMangaImportTranscodedPageExtensions]（TIFF）：导入时一律转成 PNG 落盘，
+/// 书目录里不会出现，阅读器与封面不用认它；整卷 OCR 扫用户目录时走原生解码。
 const Set<String> kMangaPageImageExtensions = <String>{
   ...kImageExtensionsBase,
   '.avif',
+  ...kMangaImportTranscodedPageExtensions,
 };
+
+/// 导入时转码成 PNG（无损，`ffc_image_to_png`）再落盘的漫画页图扩展名。
+///
+/// TIFF 是 archive.org 老扫描的主流格式（反馈 Wn0wo9OTVe），但五端 WebView（阅读器
+/// 正文）与 Flutter codec（封面 / 缩略图）都不认它；导入阶段转一次，阅读器、封面、
+/// 互联供图、导出全都只见 PNG，不用各自加 TIFF 分支。多页 TIFF 只取首页。
+const Set<String> kMangaImportTranscodedPageExtensions = <String>{
+  '.tif',
+  '.tiff',
+};
+
+/// 页图扩展名 [extension]（小写、含点）入库后落盘用的扩展名：
+/// [kMangaImportTranscodedPageExtensions] 内的换成 `.png`，其余原样。
+String mangaStoredPageExtension(String extension) =>
+    kMangaImportTranscodedPageExtensions.contains(extension.toLowerCase())
+    ? '.png'
+    : extension;
 
 /// 视频文件扩展名：导入 / 文件夹扫描 / torrent 选片 / 刮削剥扩展名共用一份
 /// （G10 第一步——此前刮削端 `FilenameParser` 另手写一张只有 9 项的小表，
@@ -113,8 +134,32 @@ const Set<String> kAudioExtensions = <String>{
 ///
 /// 远端 URL 带查询串时取路径段的扩展名。
 bool isAudioOnlyMediaPath(String path) {
+  final String? ext = _mediaExtensionOf(path);
+  return ext != null && kAudioExtensions.contains(ext);
+}
+
+/// 纯函数：[path] 是否是视频容器（[kVideoExtensions]，大小写不敏感，不碰文件系统；
+/// 远端 URL 取路径段）。与 [isAudioOnlyMediaPath] 同一套取扩展名规则。
+///
+/// 音乐库用它认「这首是本地 MV」（拍板台 jeNKF9u0WJ：音乐来源里的视频容器进曲库，
+/// 曲库里只放音轨、标「MV」，看画面交给视频播放页）。`.mp4` 按视频算：它首先是视频容器。
+bool isVideoMediaPath(String path) {
+  final String? ext = _mediaExtensionOf(path);
+  return ext != null && kVideoExtensions.contains(ext);
+}
+
+/// 纯函数：[path] 是不是音乐库收的曲目文件——纯音频（[isAudioOnlyMediaPath]）或 MV
+/// 视频容器（[isVideoMediaPath]），与音乐来源扫描器（`native/fushi_music` 的
+/// `is_track_extension`）同一口径。只给音乐页自己的入口（拖放、「添加音频文件」）与视频库
+/// 「加入收听」（用户明确要收进曲库）用；
+/// 视频侧交给音乐库的入口（视频页拖放、存量迁移）仍只收纯音频，免得视频被分流进曲库。
+bool isMusicLibraryMediaPath(String path) =>
+    isAudioOnlyMediaPath(path) || isVideoMediaPath(path);
+
+/// 小写、带点的扩展名；没有扩展名（或只有前导点的隐藏文件名）为 null。
+String? _mediaExtensionOf(String path) {
   final String trimmed = path.trim();
-  if (trimmed.isEmpty) return false;
+  if (trimmed.isEmpty) return null;
   final Uri? uri = Uri.tryParse(trimmed);
   final String candidate =
       uri != null && (uri.scheme == 'http' || uri.scheme == 'https')
@@ -123,8 +168,8 @@ bool isAudioOnlyMediaPath(String path) {
   final int slash = candidate.lastIndexOf(RegExp(r'[\\/]'));
   final String name = candidate.substring(slash + 1);
   final int dot = name.lastIndexOf('.');
-  if (dot <= 0) return false;
-  return kAudioExtensions.contains(name.substring(dot).toLowerCase());
+  if (dot <= 0) return null;
+  return name.substring(dot).toLowerCase();
 }
 
 /// 播放列表清单扩展名（扩展 M3U）：**文本清单，不是媒体流本体**。app 侧对它的

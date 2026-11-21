@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart' show md5;
+import 'package:fushi_compute/fushi_compute.dart';
 import 'package:meta/meta.dart';
 
 /// A registered AniDB client identity and the user's website credentials.
@@ -10,6 +13,7 @@ class AnidbUdpConfig {
   const AnidbUdpConfig({
     required this.username,
     required this.password,
+    required this.apiKey,
     required this.clientName,
     required this.clientVersion,
     this.host = 'api.anidb.net',
@@ -20,6 +24,11 @@ class AnidbUdpConfig {
     this.timeout = const Duration(seconds: 30),
   });
   final String username, password, clientName, host;
+
+  /// AniDB 个人资料里自设的 UDP API Key（Profile → Settings → Account）。
+  /// 只用来和服务端给的 salt 派生 ENCRYPT 会话密钥，**从不上线**；AUTH 及之后
+  /// 的报文全部 AES 加密，没有它就不登录（不回退明文）。
+  final String apiKey;
   final int clientVersion, port, localPort;
   final Duration timeout;
   bool get isAvailable =>
@@ -27,6 +36,7 @@ class AnidbUdpConfig {
       clientVersion > 0 &&
       RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(username) &&
       password.isNotEmpty &&
+      apiKey.isNotEmpty &&
       host.isNotEmpty &&
       port > 0 &&
       port <= 65535 &&
@@ -53,6 +63,10 @@ enum AnidbUdpFailure {
   network,
   malformedResponse,
   closed,
+
+  /// ENCRYPT 握手失败：账号没在 AniDB 设 UDP API Key（309），或本地填的 Key
+  /// 与 AniDB 上的不一致（服务端回包解不开）。
+  encryption,
 }
 
 class AnidbUdpException implements Exception {
@@ -280,8 +294,51 @@ class AnidbEpisodeInfo {
   final String englishTitle, romajiTitle, kanjiTitle;
 }
 
+/// AniDB UDP `ENCRYPT type=1` 会话密码：key = MD5(UDP API Key + salt)，
+/// AES-128-ECB + PKCS#7。AES 走 Rust 胖核心（`ffc_crypto_aes128_ecb_*`）。
+/// 协议：https://wiki.anidb.net/UDP_API_Definition#ENCRYPT:_Start_Encrypted_Session
+final class AnidbUdpCipher {
+  AnidbUdpCipher._(this._key);
+
+  factory AnidbUdpCipher.derive(String apiKey, String salt) => AnidbUdpCipher._(
+    Uint8List.fromList(md5.convert(utf8.encode('$apiKey$salt')).bytes),
+  );
+
+  final Uint8List _key;
+
+  Uint8List encrypt(String text) {
+    final List<int> plain = utf8.encode(text);
+    final int pad = 16 - plain.length % 16;
+    final Uint8List out = Uint8List(plain.length + pad)
+      ..setAll(0, plain)
+      ..fillRange(plain.length, plain.length + pad, pad);
+    FushiComputeCrypto.instance.aes128EcbEncryptInPlace(_key, out);
+    return out;
+  }
+
+  /// 解不开（长度不是 16 的倍数、填充不合法、不是 UTF-8）时返回 null。
+  String? decrypt(List<int> data) {
+    if (data.isEmpty || data.length % 16 != 0) return null;
+    final Uint8List buffer = Uint8List.fromList(data);
+    FushiComputeCrypto.instance.aes128EcbDecryptInPlace(_key, buffer);
+    final int pad = buffer.last;
+    if (pad < 1 || pad > 16) return null;
+    for (int i = buffer.length - pad; i < buffer.length; i++) {
+      if (buffer[i] != pad) return null;
+    }
+    try {
+      return utf8.decode(Uint8List.sublistView(buffer, 0, buffer.length - pad));
+    } on FormatException {
+      return null;
+    }
+  }
+}
+
 /// Request/response transport; implementations must discard other peers/tags.
+/// [cipher] 非空时收发报文都按 ENCRYPT 会话加解密；[exchange] / [send] 的
+/// 参数与返回值始终是明文。
 abstract interface class AnidbUdpTransport {
+  set cipher(AnidbUdpCipher? value);
   Future<String> exchange(String packet, String tag, Duration timeout);
   Future<void> send(String packet);
   void cancelPending();
@@ -316,6 +373,9 @@ class AnidbUdpFileClient {
   Timer? _idleTimer;
   AnidbUdpTransport? _transport;
   String? _session;
+
+  /// 当前 ENCRYPT 会话密码；会话结束（LOGOUT / 失效 / 重新登录）即作废。
+  AnidbUdpCipher? _cipher;
   AnidbUdpException? _terminalFailure;
   bool _closed = false;
   Future<void>? _closing;
@@ -387,6 +447,8 @@ class AnidbUdpFileClient {
           await _request('LOGOUT', {'s': session}, responseRequired: false);
         } on AnidbUdpException {
           // 尽力而为；会话在服务端 35 分钟后也会自己过期。
+        } finally {
+          _cipher = null;
         }
       });
     });
@@ -638,12 +700,16 @@ class AnidbUdpFileClient {
       // 第一轮登录超时不进退避：Shoko `LoginWithFallbacks` 对登录超时先
       // `ForceReconnection`（重建 socket）再登一次，本地端口状态坏掉时这一步
       // 才是真正的修复。
+      // ENCRYPT 属于登录的一部分，同一套首轮超时处理。
+      await _startEncryption(backoffOnTimeout: false);
       auth = await _request('AUTH', values, backoffOnTimeout: false);
     } on AnidbUdpException catch (error) {
       if (error.reason != AnidbUdpFailure.timeout) rethrow;
       final AnidbUdpTransport? stale = _transport;
       _transport = null;
       await stale?.close();
+      // 新 socket 上重新协商加密，旧 salt 不复用。
+      await _startEncryption();
       auth = await _request('AUTH', values);
     }
     if (auth.code != 200 && auth.code != 201) _fail(auth.code);
@@ -655,6 +721,24 @@ class AnidbUdpFileClient {
     }
     _session = sessionMatch[1]!;
     clientUpdateAvailable = auth.code == 201;
+  }
+
+  /// `ENCRYPT user=…&type=1` 明文发出，回 `209 {salt} ENCRYPTION ENABLED`；
+  /// 之后（从 AUTH 起）收发全部加密。密码与会话 key 因此不再明文过网。
+  Future<void> _startEncryption({bool backoffOnTimeout = true}) async {
+    _cipher = null;
+    final _Reply reply = await _request('ENCRYPT', <String, String>{
+      'user': config.username,
+      'type': '1',
+    }, backoffOnTimeout: backoffOnTimeout);
+    if (reply.code != 209) _fail(reply.code);
+    final RegExpMatch? salt = RegExp(
+      r'^(\S+) ENCRYPTION ENABLED$',
+    ).firstMatch(reply.message);
+    if (salt == null) {
+      throw const AnidbUdpException(AnidbUdpFailure.malformedResponse);
+    }
+    _cipher = AnidbUdpCipher.derive(config.apiKey, salt[1]!);
   }
 
   /// Shoko parity for a silent server (`AniDBUDPConnectionHandler.SendInternal`
@@ -743,6 +827,12 @@ class AnidbUdpFileClient {
         );
       } on AnidbUdpException catch (error) {
         if (error.reason == AnidbUdpFailure.network) _session = null;
+        if (error.reason == AnidbUdpFailure.encryption) {
+          // 回包解不开 = 本地 Key 与 AniDB 上的不一致，换配置前不再重试。
+          _session = null;
+          _cipher = null;
+          _terminalFailure = error;
+        }
         rethrow;
       } on TimeoutException {
         // Same tag on purpose: a late reply to the first datagram still
@@ -764,7 +854,7 @@ class AnidbUdpFileClient {
     String tag, {
     required bool responseRequired,
   }) async {
-    _transport ??= await _factory(config);
+    (_transport ??= await _factory(config)).cipher = _cipher;
     if (_closed && command != 'LOGOUT') {
       throw const AnidbUdpException(AnidbUdpFailure.closed);
     }
@@ -811,7 +901,8 @@ class AnidbUdpFileClient {
 
   Never _fail(int code) {
     final AnidbUdpFailure reason = switch (code) {
-      500 => AnidbUdpFailure.authentication,
+      500 || 394 => AnidbUdpFailure.authentication,
+      309 => AnidbUdpFailure.encryption,
       503 => AnidbUdpFailure.clientOutdated,
       504 => AnidbUdpFailure.clientBanned,
       555 => AnidbUdpFailure.banned,
@@ -832,7 +923,12 @@ class AnidbUdpFileClient {
         _block(reason, _serverBackoff);
       }
     }
-    if (code == 500 || code == 503 || code == 504 || code == 555) {
+    if (code == 500 ||
+        code == 394 ||
+        code == 309 ||
+        code == 503 ||
+        code == 504 ||
+        code == 555) {
       // Stop a queued scan from repeatedly authenticating bad credentials.
       // A new client after changing configuration may try again.
       _terminalFailure = AnidbUdpException(reason, code: code);
@@ -858,6 +954,7 @@ class AnidbUdpFileClient {
         // Best-effort logout; never keep the local socket open after failure.
       } finally {
         _session = null;
+        _cipher = null;
         await _transport?.close();
         _transport = null;
       }
@@ -912,6 +1009,9 @@ class AnidbDatagramTransport implements AnidbUdpTransport {
   StreamSubscription<RawSocketEvent>? _subscription;
   Completer<String>? _pending;
   String? _expectedTag;
+
+  @override
+  AnidbUdpCipher? cipher;
   // Completed by the next [RawSocketEvent.write] after a would-block send.
   Completer<void>? _writable;
   static final Map<int, Future<void>> _closingByPort = {};
@@ -1007,19 +1107,41 @@ class AnidbDatagramTransport implements AnidbUdpTransport {
       }
       final Completer<String>? pending = _pending;
       if (pending == null || pending.isCompleted) continue;
-      String text;
-      try {
-        text = utf8.decode(received.data);
-      } on FormatException {
+      final AnidbUdpCipher? active = cipher;
+      final String? text = _readDatagram(active, received.data);
+      if (text == null) {
+        // 来自 AniDB 的包既解不开也不是明文：Key 不一致，等下去只会超时。
+        if (active != null) {
+          pending.completeError(
+            const AnidbUdpException(AnidbUdpFailure.encryption),
+          );
+        }
         continue;
       }
-      if (!text.startsWith('$_expectedTag ') &&
-          !RegExp(r'^6\d\d ').hasMatch(text)) {
-        continue;
-      }
+      // 认得出但 tag 不是当前请求的：前一个请求超时后才到的旧回包，丢掉接着等。
+      if (!_answers(text)) continue;
       pending.complete(text);
     }
   }
+
+  /// 把一个 AniDB 数据报还原成文本；两种方式都认不出时返回 null。
+  ///
+  /// 能用会话密钥解开的就是这把 Key 加密的回包，**不再**按明文重读——否则
+  /// 迟到的旧 tag 回包（密文不是合法 UTF-8）会被误判成 Key 不一致而让客户端
+  /// 永久停用。解不开才按明文认：加密会话里服务端在解密前就出错时（6xx、会话
+  /// 被踢）仍回明文。
+  static String? _readDatagram(AnidbUdpCipher? active, Uint8List data) {
+    final String? decrypted = active?.decrypt(data);
+    if (decrypted != null) return decrypted;
+    try {
+      return utf8.decode(data);
+    } on FormatException {
+      return null;
+    }
+  }
+
+  bool _answers(String text) =>
+      text.startsWith('$_expectedTag ') || RegExp(r'^6\d\d ').hasMatch(text);
 
   @override
   Future<String> exchange(String packet, String tag, Duration timeout) async {
@@ -1050,7 +1172,7 @@ class AnidbDatagramTransport implements AnidbUdpTransport {
   Future<void> send(String packet) => _sendDatagram(packet);
 
   Future<void> _sendDatagram(String packet) async {
-    final List<int> bytes = utf8.encode(packet);
+    final List<int> bytes = cipher?.encrypt(packet) ?? utf8.encode(packet);
     while (true) {
       final int sent = _socket.send(bytes, _remote, _port);
       if (sent == bytes.length) return;

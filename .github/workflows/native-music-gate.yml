@@ -1,0 +1,60 @@
+# 音乐胖核心原生库（native/fushi_music，Rust：曲库扫描 / 标签 / CUE / 歌词解析 / 在线音源插件）
+# 的 **PR 阶段门**。
+#
+# ── 补的是哪个缺口（与 native-compute-gate.yml 的 rust-tests job 同一形态）─────────────
+#   build_windows_dll.ps1 / build_linux_so.sh / build_macos_dylib.sh / iOS 伞形库
+#       -> build-multiplatform.yml 与 .github/actions/test-native-linux 只**编** .so / dylib 并跑
+#          verify_abi.sh 核对导出符号，不跑任何测试。
+#   src/ 下各模块的单元测试（KRC / QRC 解密与解压上限、`[kana:]` 注音轨、TTML、合并……）与
+#   tests/ 的集成测试（lyrics.rs 的格式 golden、scan.rs / remote.rs 的曲库扫描 golden）
+#       -> 以前没有任何 job 跑，只在开发者本机跑过。本 workflow 的 rust-tests job 补这一条
+#          （ubuntu 上 `cargo test --release --locked`，默认特性含 plugin 运行时）。
+#   tests/fixtures 整棵（音频样本、CUE 原始编码、scan / 歌词 golden）由 native/fushi_music/tests/.gitattributes
+#   按二进制入库（不做行尾转换），checkout 后与本机逐字节一致。
+#
+# ── 它**不**负责什么 ──────────────────────────────────────────────────────────────
+#   * 不重复跑上面的各端构建；不碰发布路径（全程只读，不上传产物、不建 tag）。
+#
+# ── 退出码纪律 ────────────────────────────────────────────────────────────────────
+# `shell: bash` + `set -euo pipefail`，无 `continue-on-error`；缓存未命中只会变慢。
+name: native-music-gate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ['main', 'develop']
+    paths:
+      - 'native/fushi_music/**'
+      # #[path] 编进 fushi_music 的 crate 外源码（native/fushi_music/external_sources.txt）。
+      - 'native/fushi_compute/src/legacy_text.rs'
+      - '.github/workflows/native-music-gate.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  rust-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      # 工具链钉法与 native-compute-gate.yml / native-fsrs-gate.yml 一致（Rust 1.95.0）。
+      - name: Set up Rust (fushi_music)
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
+        with:
+          toolchain: '1.95.0'
+      - name: Cache Rust build (fushi_music tests)
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: native/fushi_music -> target
+          key: fushi-music-tests
+      - name: cargo test --release (fushi_music)
+        shell: bash
+        working-directory: native/fushi_music
+        run: |
+          set -euo pipefail
+          cargo test --release --locked

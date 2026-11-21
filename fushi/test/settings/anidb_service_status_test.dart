@@ -80,6 +80,12 @@ void main() {
     final SettingsContext settingsContext = await pumpContext(tester);
     final SettingsNavigationItem row = aniDbRow();
 
+    // 默认开（UDP 已加密）：没填账号时是「未配置」而不是「已关闭」。
+    expect(
+      row.resolveSubtitle(settingsContext),
+      t.settings_service_not_configured,
+    );
+    await prefs.setPref(kVideoAniDbHashEnabledPref, false);
     expect(row.resolveSubtitle(settingsContext), t.settings_service_disabled);
 
     await prefs.setPref(kVideoAniDbHashEnabledPref, true);
@@ -90,6 +96,7 @@ void main() {
 
     await prefs.setPref(kVideoAniDbUsernamePref, 'tester');
     await prefs.setPref(kVideoAniDbPasswordPref, 'password');
+    await prefs.setPref(kVideoAniDbUdpApiKeyPref, 'udp-key');
     expect(
       row.resolveSubtitle(settingsContext),
       t.settings_service_configured,
@@ -105,6 +112,7 @@ void main() {
     await prefs.setPref(kVideoAniDbHashEnabledPref, true);
     await prefs.setPref(kVideoAniDbUsernamePref, 'tester');
     await prefs.setPref(kVideoAniDbPasswordPref, 'password');
+    await prefs.setPref(kVideoAniDbUdpApiKeyPref, 'udp-key');
     await prefs.setPref(kVideoMetadataAniDbClientNamePref, 'customapp');
 
     expect(
@@ -117,11 +125,8 @@ void main() {
     expect(row.resolveSubtitle(settingsContext), t.settings_service_configured);
   });
 
-  // BUG-2623：AniDB HTTP 资料接口与 UDP 是两条登记。随包身份只登记了 UDP，
-  // 设置页要让用户看出 anime XML 资料链此时不会请求；自定义客户端则同时用于两边。
-  testWidgets('HTTP 资料接口行：随包 → 未登记；自定义客户端 → 可用（显示客户端）', (
-    WidgetTester tester,
-  ) async {
+  // BUG-2623：HTTP 使用独立登记的随包身份；自定义客户端仍同时用于两边。
+  testWidgets('HTTP 资料接口行：随包与完整自定义客户端均显示对应身份', (WidgetTester tester) async {
     final SettingsContext settingsContext = await pumpContext(tester);
     final SettingsStatusItem httpRow =
         aniDbRow().child!().sections
@@ -135,10 +140,11 @@ void main() {
     await prefs.setPref(kVideoAniDbHashEnabledPref, true);
     await prefs.setPref(kVideoAniDbUsernamePref, 'tester');
     await prefs.setPref(kVideoAniDbPasswordPref, 'password');
+    await prefs.setPref(kVideoAniDbUdpApiKeyPref, 'udp-key');
     expect(
       httpRow.resolveSubtitle(settingsContext),
-      t.video_anidb_http_api_unregistered,
-      reason: '随包 fushiplayer 只登记了 UDP，哪怕哈希识别已配齐',
+      t.video_anidb_http_api_available(client: 'fushiplayerhttp', version: '1'),
+      reason: '随包 HTTP 身份独立登记，不取 UDP 客户端名',
     );
 
     await prefs.setPref(kVideoMetadataAniDbClientNamePref, 'customapp');

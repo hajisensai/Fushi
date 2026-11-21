@@ -19,6 +19,16 @@ enum VideoSubtitleMaskStyle {
   solid,
 }
 
+/// 遮布怎么定位。
+enum VideoSubtitleMaskMode {
+  /// 手动（默认、旧偏好缺字段时）：[VideoSubtitleMaskConfig.rect] 就是遮布位置，常显。
+  manual,
+
+  /// 智能：[VideoSubtitleMaskConfig.rect] 是搜索区域；播放中抽帧跑本机 OCR，只在
+  /// 区域里有字时盖住那几行（`smart_subtitle_mask_sampler.dart`）。
+  smart,
+}
+
 /// 遮布最小边长（画面比例），防止缩成看不见、抓不住的一条线。
 const double kVideoSubtitleMaskMinFraction = 0.03;
 
@@ -30,6 +40,7 @@ class VideoSubtitleMaskConfig {
     this.rect = kDefaultRect,
     this.style = VideoSubtitleMaskStyle.blur,
     this.strength = 0.85,
+    this.mode = VideoSubtitleMaskMode.manual,
   });
 
   /// 默认摆在画面底部居中、约一行硬字幕高——中文内嵌字幕最常见的位置。
@@ -44,16 +55,20 @@ class VideoSubtitleMaskConfig {
   /// 0..1：模糊时映射成模糊半径，纯色时就是不透明度。
   final double strength;
 
+  final VideoSubtitleMaskMode mode;
+
   VideoSubtitleMaskConfig copyWith({
     bool? enabled,
     Rect? rect,
     VideoSubtitleMaskStyle? style,
     double? strength,
+    VideoSubtitleMaskMode? mode,
   }) => VideoSubtitleMaskConfig(
     enabled: enabled ?? this.enabled,
     rect: rect == null ? this.rect : clampVideoSubtitleMaskRect(rect),
     style: style ?? this.style,
     strength: (strength ?? this.strength).clamp(0.0, 1.0),
+    mode: mode ?? this.mode,
   );
 
   String toJson() => jsonEncode(<String, Object>{
@@ -64,6 +79,7 @@ class VideoSubtitleMaskConfig {
     'h': rect.height,
     'style': style.name,
     'strength': strength,
+    'mode': mode.name,
   });
 
   /// 解析偏好；缺字段 / 坏值逐项回落默认，整串坏掉回落整份默认。
@@ -81,6 +97,7 @@ class VideoSubtitleMaskConfig {
 
       const Rect d = kDefaultRect;
       final Object? styleName = decoded['style'];
+      final Object? modeName = decoded['mode'];
       return VideoSubtitleMaskConfig(
         enabled: decoded['enabled'] == true,
         rect: clampVideoSubtitleMaskRect(
@@ -96,6 +113,10 @@ class VideoSubtitleMaskConfig {
           orElse: () => VideoSubtitleMaskStyle.blur,
         ),
         strength: readNum('strength', 0.85).clamp(0.0, 1.0),
+        mode: VideoSubtitleMaskMode.values.firstWhere(
+          (VideoSubtitleMaskMode m) => m.name == modeName,
+          orElse: () => VideoSubtitleMaskMode.manual,
+        ),
       );
     } on FormatException {
       return const VideoSubtitleMaskConfig();
@@ -108,10 +129,11 @@ class VideoSubtitleMaskConfig {
       other.enabled == enabled &&
       other.rect == rect &&
       other.style == style &&
-      other.strength == strength;
+      other.strength == strength &&
+      other.mode == mode;
 
   @override
-  int get hashCode => Object.hash(enabled, rect, style, strength);
+  int get hashCode => Object.hash(enabled, rect, style, strength, mode);
 }
 
 /// 把比例矩形钳进画面：尺寸不小于 [kVideoSubtitleMaskMinFraction]、不大于整幅，

@@ -111,7 +111,7 @@
   var favoriteKeys = Object.create(null);
   var favoriteVideo = false;
   var favoriteRev = -1;
-  var currentIndex = -1;
+  var currentIndices = [];
   var scrollIndex = -1;
   var stateSignature = '';
   var autoScroll = true;
@@ -194,8 +194,26 @@
     var mod = fushiNormalizeScanModifier(modifier);
     return !!(event && mod !== 'none' && event.key === FUSHI_SCAN_MODIFIER_KEYS[mod]);
   }
+  // 悬停扫描延迟（反馈 L4Vhk0hOjM）：与 content.js 同一个 storage.scanDelay，只在 none 模式生效；
+  // 下面两个函数是 content.js 同名函数的副本，shift-hover.test.js 交叉比对。
+  var scanDelayMs = 0;
+  var scanDelayTimer = null;
+  var FUSHI_SCAN_DELAY_MAX_MS = 2000;
+  function fushiNormalizeScanDelay(value) {
+    if (typeof value !== 'number' || !isFinite(value)) return 0;
+    var ms = Math.round(value);
+    return ms <= 0 ? 0 : Math.min(FUSHI_SCAN_DELAY_MAX_MS, ms);
+  }
+  function fushiEffectiveScanDelay(modifier, delay) {
+    return fushiNormalizeScanModifier(modifier) === 'none' ? fushiNormalizeScanDelay(delay) : 0;
+  }
+  function cancelScanDelay() {
+    if (scanDelayTimer === null) return;
+    clearTimeout(scanDelayTimer);
+    scanDelayTimer = null;
+  }
   try {
-    chrome.storage.local.get(['shiftHoverLookup', 'scanModifier'], function (saved) {
+    chrome.storage.local.get(['shiftHoverLookup', 'scanModifier', 'scanDelay'], function (saved) {
       try { if (chrome.runtime.lastError) return; } catch (_) { return; }
       if (saved && typeof saved.shiftHoverLookup === 'boolean') {
         shiftHoverLookup = saved.shiftHoverLookup;
@@ -203,11 +221,16 @@
       if (saved && typeof saved.scanModifier === 'string') {
         scanModifier = fushiNormalizeScanModifier(saved.scanModifier);
       }
+      if (saved && Object.prototype.hasOwnProperty.call(saved, 'scanDelay')) {
+        scanDelayMs = fushiNormalizeScanDelay(saved.scanDelay);
+      }
     });
     chrome.storage.onChanged.addListener(function (changes, area) {
       if (area !== 'local' || !changes) return;
       if (changes.shiftHoverLookup) shiftHoverLookup = changes.shiftHoverLookup.newValue !== false;
       if (changes.scanModifier) scanModifier = fushiNormalizeScanModifier(changes.scanModifier.newValue);
+      if (changes.scanDelay) scanDelayMs = fushiNormalizeScanDelay(changes.scanDelay.newValue);
+      if (changes.scanModifier || changes.scanDelay) cancelScanDelay();
     });
   } catch (_) { /* storage 不可用：按默认（开、Shift）走 */ }
   // 复杂词的 popupJson 可超过 2 MB，解析后的对象树通常还会膨胀数倍。只按“48 个词”
@@ -408,6 +431,8 @@
     var instantStep = parseFloat(theme['--fushi-instant-scroll-wheel-step']);
     window.__fushiPopupInstantScrollWheelStep =
       isFinite(instantStep) && instantStep > 0 ? instantStep : undefined;
+    // BUG-4935：弹窗显示偏好（自动展开行数、折叠、词频聚合、音调去重……）与页面弹窗同一解码点。
+    applyFushiPopupDisplayPrefs(theme);
     // 用户拖过尺寸（lookupUserResized）后，本会话内不再让主题下发的宽高盖掉用户的选择；
     // 拖拽结果经 popupSize 回写 app，下次会话由主题带回来。
     lookupThemeForBox = theme;
@@ -924,6 +949,11 @@
             toast('✓ ' + tr(response.duplicate ? 'mine_already_queued' : 'mine_queued'));
             return true;
           }
+          // 页面收到了但写盘失败：如实说「入队失败」，别冒充页面不可用。
+          if (response && response.reason === 'persist-failed') {
+            toast('✗ ' + tr('mine_enqueue_failed'));
+            return false;
+          }
           toast('✗ ' + tr('mine_failed_page_unavailable'));
           return false;
         });
@@ -982,13 +1012,25 @@
     return h + ':' + (m < 10 ? '0' + m : m) + ':' + ss;
   }
 
-  function cueIndexAt(items, timeMs) {
-    var lo = 0, hi = items.length - 1, answer = -1;
+  // 此刻全部有效 cue（startMs <= t < endMs）的下标，升序。轨允许时间重叠（BUG-4719：ASS 两位
+  // 说话人同时开口），高亮要覆盖每一条；items 只按 startMs 排序、endMs 无序，从最后一条已开始的
+  // cue 往前扫。
+  function activeCueIndices(items, timeMs) {
+    var lo = 0, hi = items.length - 1, last = -1;
     while (lo <= hi) {
       var mid = (lo + hi) >> 1;
-      if (items[mid].startMs <= timeMs) { answer = mid; lo = mid + 1; } else { hi = mid - 1; }
+      if (items[mid].startMs <= timeMs) { last = mid; lo = mid + 1; } else { hi = mid - 1; }
     }
-    return answer >= 0 && timeMs < items[answer].endMs ? answer : -1;
+    var out = [];
+    for (var i = last; i >= 0; i--) {
+      if (timeMs < items[i].endMs) out.push(i);
+    }
+    return out.reverse();
+  }
+  // 单句口径：有效 cue 里起点最晚的那条，没有返回 -1。
+  function cueIndexAt(items, timeMs) {
+    var active = activeCueIndices(items, timeMs);
+    return active.length ? active[active.length - 1] : -1;
   }
 
   function metadataSignature(state) {
@@ -1009,19 +1051,38 @@
     // 指纹还必须含 pending：懒加载轨从「（选中加载）」变成「（N）」时，
     // 只有它在变（lang/label/signature 都原样）——漏了就永远停在旧标签上。
     var sig = (state.activeLang || '') + '\u0003' + tracks.map(function (t) {
-      return [t.lang, t.label, t.length, t.signature, t.pending ? 1 : 0].join('\u0001');
+      return [t.lang, t.label, t.length, t.signature, t.pending ? 1 : 0, t.failed ? 1 : 0].join('\u0001');
     }).join('\u0002');
     if (sig !== trackSig) {
       trackSig = sig;
       trackEl.textContent = '';
+      function trackText(track) {
+        return track.label + (track.failed ? tr('sp_track_failed_suffix')
+          : track.pending ? tr('sp_track_pending_suffix') : '（' + track.length + '）');
+      }
+      // 反馈 0RgCNJFQmJ：活动轨取失败时它本来就是选中值，下拉里再点同一项浏览器不发 change，
+      // 「重新选择可重试」就落空。失败的活动轨改由一个隐藏、禁用的占位项承担显示（文字照旧是
+      // 「xx（加载失败）」），select 的值不再等于这条轨——用户在下拉里选它就是一次真正的 change。
+      var failedActive = null;
+      tracks.forEach(function (track) {
+        if (track.failed && track.lang === state.activeLang) failedActive = track;
+      });
+      if (failedActive) {
+        var placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.disabled = true;
+        placeholder.hidden = true;
+        placeholder.textContent = trackText(failedActive);
+        trackEl.appendChild(placeholder);
+      }
       tracks.forEach(function (track) {
         var option = document.createElement('option');
         option.value = track.lang;
-        option.textContent = track.label + (track.pending ? tr('sp_track_pending_suffix') : '（' + track.length + '）');
+        option.textContent = trackText(track);
         trackEl.appendChild(option);
       });
       trackEl.hidden = tracks.length === 0;
-      trackEl.value = state.activeLang || '';
+      trackEl.value = failedActive ? '' : (state.activeLang || '');
       offsetEl.hidden = tracks.length === 0;
     }
     // 正在手填时不打断（state 每秒刷新一次）。
@@ -1031,7 +1092,7 @@
   function renderCues() {
     listEl.textContent = '';
     rows = [];
-    currentIndex = -1;
+    currentIndices = [];
     scrollIndex = -1;
     if (!cues.length) {
       var empty = document.createElement('div');
@@ -1081,12 +1142,21 @@
         lastPointer = {
           x: event.clientX, y: event.clientY, cue: cue, index: index, textEl: text,
         };
-        if (shiftHoverLookup && fushiScanModifierHeld(event, scanModifier)) schedulePointerLookup(lastPointer);
+        cancelScanDelay();
+        if (!shiftHoverLookup || !fushiScanModifierHeld(event, scanModifier)) return;
+        // none 模式的扫描延迟：指针停稳到点才扫这次的坐标，期间再动就重新计时。
+        var delay = fushiEffectiveScanDelay(scanModifier, scanDelayMs);
+        if (delay <= 0) { schedulePointerLookup(lastPointer); return; }
+        var pending = lastPointer;
+        scanDelayTimer = setTimeout(function () {
+          scanDelayTimer = null;
+          schedulePointerLookup(pending);
+        }, delay);
       }
       text.addEventListener('pointerenter', rememberPointer, { passive: true });
       text.addEventListener('pointermove', rememberPointer, { passive: true });
       text.addEventListener('pointerleave', function () {
-        if (lastPointer && lastPointer.textEl === text) lastPointer = null;
+        if (lastPointer && lastPointer.textEl === text) { lastPointer = null; cancelScanDelay(); }
       });
       row.addEventListener('click', function (event) {
         if (event.shiftKey) return;
@@ -1197,11 +1267,13 @@
   function updateCurrent(timeMs) {
     // 初始取轨可能先于播放状态到达，不能把尚未知的时间当作 0 消耗首次定位。
     if (!cues.length || typeof timeMs !== 'number' || !Number.isFinite(timeMs)) return;
-    var next = cueIndexAt(cues, timeMs);
-    if (next !== currentIndex) {
-      if (rows[currentIndex]) rows[currentIndex].classList.remove('is-current');
-      currentIndex = next;
-      if (rows[currentIndex]) rows[currentIndex].classList.add('is-current');
+    var next = activeCueIndices(cues, timeMs);
+    if (next.join(',') !== currentIndices.join(',')) {
+      currentIndices.forEach(function (i) {
+        if (rows[i] && next.indexOf(i) < 0) rows[i].classList.remove('is-current');
+      });
+      next.forEach(function (i) { if (rows[i]) rows[i].classList.add('is-current'); });
+      currentIndices = next;
     }
     var nearest = nearestCueIndex(cues, timeMs);
     if (autoScroll && nearest !== scrollIndex && rows[nearest]) {
@@ -1271,6 +1343,7 @@
   }
 
   trackEl.addEventListener('change', async function () {
+    if (!trackEl.value) return; // 失败轨的占位项（禁用）不是可选的轨
     var state = await sendToTab({ type: 'fushiSubtitleSidePanelSelectTrack', lang: trackEl.value });
     if (state && state.ok) {
       stateSignature = metadataSignature(state);

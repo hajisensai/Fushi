@@ -121,6 +121,9 @@ class WebBrowserExtensionHostFeature extends WebBrowserFeature {
   /// 侧栏开在哪个标签页上（null = 关）。
   String? _panelTabId;
 
+  /// 侧栏是被全屏分屏自动拉开的（离开分屏时收回；用户自己开的不动）。
+  bool _panelOpenedBySplit = false;
+
   static String _newSecret() {
     final Random r = Random.secure();
     return base64UrlEncode(List<int>.generate(24, (_) => r.nextInt(256)));
@@ -257,14 +260,27 @@ class WebBrowserExtensionHostFeature extends WebBrowserFeature {
     );
   }
 
+  @override
+  void onFullscreenSplitChanged(WebBrowserTab tab, {required bool split}) {
+    if (split) {
+      if (_panelTabId == tab.id) return;
+      openSidePanel(tab);
+      _panelOpenedBySplit = true;
+    } else if (_panelOpenedBySplit && _panelTabId == tab.id) {
+      closeSidePanel();
+    }
+  }
+
   /// 打开 / 关闭字幕侧栏。
   void openSidePanel(WebBrowserTab tab) {
+    _panelOpenedBySplit = false;
     if (_panelTabId == tab.id) return;
     _panelTabId = tab.id;
     _changed.notify();
   }
 
   void closeSidePanel() {
+    _panelOpenedBySplit = false;
     if (_panelTabId == null) return;
     _panelTabId = null;
     _changed.notify();

@@ -156,20 +156,28 @@ String referenceTrackLabel(EmbeddedSubtitleTrack track) {
   return '#${track.streamIndex}$lang$title';
 }
 
-/// 读出视频每条可当参考的内嵌文本轨的开始时刻。抽取走现有的整片一次 demux + 缓存。
+/// 读出视频每条可当参考的内嵌文本轨的开始时刻。
+///
+/// 抽取**整体只做一次**（[extractEmbeddedSubtitleTrackFiles]：单趟 demux 全部文本轨进
+/// 缓存），再逐条读缓存。不逐轨触发抽取：抽取失败时那样做会让每条候选轨各读一遍整个
+/// 容器（BUG-4838）。
 Future<List<SubtitleReferenceTrack>> loadEmbeddedReferenceTracks(
   String videoPath,
 ) async {
   final List<SubtitleReferenceTrack> out = <SubtitleReferenceTrack>[];
   final EmbeddedSubtitleTrackProbeResult probe =
       await probeEmbeddedSubtitleTracks(videoPath);
-  for (final EmbeddedSubtitleTrack track in probe.tracks) {
-    if (!isCandidateReferenceTrack(track)) continue;
-    final File? file = await extractEmbeddedSubtitleTrackFile(
-      videoPath: videoPath,
-      streamIndex: track.streamIndex,
-      codec: track.codec,
-    );
+  final List<EmbeddedSubtitleTrack> candidates = <EmbeddedSubtitleTrack>[
+    for (final EmbeddedSubtitleTrack track in probe.tracks)
+      if (isCandidateReferenceTrack(track)) track,
+  ];
+  if (candidates.isEmpty) return out;
+  final Map<int, File> files = await extractEmbeddedSubtitleTrackFiles(
+    videoPath: videoPath,
+    tracks: candidates,
+  );
+  for (final EmbeddedSubtitleTrack track in candidates) {
+    final File? file = files[track.streamIndex];
     if (file == null) continue;
     final Uint8List trackBytes = await file.readAsBytes();
     out.add(

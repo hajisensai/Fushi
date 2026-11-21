@@ -28,7 +28,7 @@ void main() {
     expect(shell, contains('t.library_view_import'));
     expect(shell, contains('Offstage('));
     expect(shell, contains('HomeVideoPage('));
-    expect(shell, contains('MediaSourcesPage('));
+    expect(shell, contains('VideoImportPage('));
   });
 
   test('主页只组装首屏继续观看（含下一集）、已更新未看和最近添加，系列与原始视频分流', () {
@@ -56,7 +56,14 @@ void main() {
     expect(page, contains('VideoLibrarySection.home'));
     expect(page, contains('VideoLibrarySection.series'));
     expect(page, contains('VideoLibrarySection.allVideos'));
-    expect(page, contains('video_source_scrape_tasks_open'));
+    // 后台任务入口（设计稿 #video V2）：只在有任务时由页头挂出专用按钮。
+    expect(page, contains('VideoBackgroundTasksButton('));
+    expect(
+      File(
+        'lib/src/pages/implementations/video_library_header_actions.dart',
+      ).readAsStringSync(),
+      contains('video_source_scrape_tasks_open'),
+    );
     expect(page, contains('_AllVideosLayout.grid'));
     expect(page, contains('_AllVideosLayout.list'));
     expect(page, contains('_buildAllVideoListRow('));
@@ -70,10 +77,22 @@ void main() {
       page.indexOf('Widget _buildVideoWallSliver('),
       page.indexOf('Widget _buildAllVideoGridSliver('),
     );
+    // PR #3397 起格子按色块尺寸档构造（`build(orientation, block)`）：封面网格
+    // 布局传 null，色块布局（拼贴 / 规整）经 [_buildVideoBlockSliver] 传入朝向。
+    // 两条路径都必须钉死竖版。
+    final String flatWall = wallSliver.replaceAll(RegExp(r'\s+'), ' ');
     expect(
-      wallSliver,
-      contains('.build(VideoCardOrientation.portrait)'),
-      reason: '系列墙必须使用竖版刮削封面，不能再被分集截图探测成横卡',
+      flatWall,
+      contains('.build(VideoCardOrientation.portrait, null)'),
+      reason: '系列墙（封面网格）必须使用竖版刮削封面，不能再被分集截图探测成横卡',
+    );
+    expect(
+      flatWall,
+      contains(
+        '_buildVideoBlockSliver( cells, padding, layout, '
+        'VideoCardOrientation.portrait,',
+      ),
+      reason: '系列墙（色块布局）同样必须以竖版建格',
     );
     expect(
       page,
@@ -83,7 +102,14 @@ void main() {
     expect(page, contains('video_home_continue_episode_number'));
     expect(page, contains('video_home_remaining_minutes'));
     expect(page, contains('_videoRowCardTextBlock'));
-    expect(page, contains('getAllVideoMetadataExtras()'));
+    // 刮削展示映射（含本地特典）收在 [VideoLibraryScrapeMaps]，整表与增量刷新共用。
+    expect(page, contains('VideoLibraryScrapeMaps.load('));
+    expect(
+      File(
+        'lib/src/media/video/video_library_scrape_maps.dart',
+      ).readAsStringSync(),
+      contains('getAllVideoMetadataExtras()'),
+    );
     expect(
       page,
       contains('_localExtraBookUids.contains(b.bookUid)'),

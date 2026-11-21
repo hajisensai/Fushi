@@ -4,7 +4,9 @@ import 'dart:typed_data';
 
 import 'package:test/test.dart';
 
-/// 反馈 HsUdOMa5eq：应用图标各平台的深色 / 着色 / 主题变体守卫。
+/// 反馈 HsUdOMa5eq 加的应用图标外观变体守卫；决定 zd158djAtD（维护者
+/// 2026-11-16「取消那个变色吧」）之后，深色外观一律与浅色是同一枚图标——
+/// 系统切深色模式时图标不变色；着色 / 主题图标（用户主动开的模式）保留。
 ///
 /// 资源由 `tool/app_icon/gen_app_icon_variants.py` 生成；这里只扫描已提交的
 /// 资源与工程引用，防止有人用 Xcode「All Sizes」或 flutter_launcher_icons 重生成
@@ -88,8 +90,14 @@ void main() {
     }
     // App Store 主图标不得带 alpha。
     expect(<int>[0, 2], contains(any.colorType), reason: 'Any 图标不得带 alpha');
-    // 深色变体要透明底，系统才能铺自己的深色底。
-    expect(<int>[4, 6], contains(dark.colorType), reason: 'Dark 图标应带 alpha');
+    // 决定 zd158djAtD：深色外观 = 浅色主图标原样。必须不透明（透明底会被系统铺
+    // 深色底），且与 Any 逐字节相同（不写 dark 条目系统可能自动派生深色版）。
+    expect(<int>[0, 2], contains(dark.colorType), reason: 'Dark 图标不得带 alpha');
+    expect(
+      File('$iosSet/${byAppearance['dark']!['filename']}').readAsBytesSync(),
+      File('$iosSet/${byAppearance[null]!['filename']}').readAsBytesSync(),
+      reason: 'Dark 图标须与 Any 主图标逐字节相同（图标不随深色模式变色）',
+    );
     // 着色变体：不透明灰度。
     expect(tinted.colorType, 0, reason: 'Tinted 图标应为不透明灰度');
 
@@ -105,22 +113,26 @@ void main() {
     }
   });
 
-  test('macOS 26+ 用 Icon Composer AppIcon.icon 提供深色外观，旧系统仍有 appiconset', () {
+  test('macOS 26+ Icon Composer AppIcon.icon 深色外观沿用浅色填充，旧系统仍有 appiconset', () {
     const String iconDir = 'macos/Runner/AppIcon.icon';
     final Map<String, dynamic> icon =
         jsonDecode(read('$iconDir/icon.json')) as Map<String, dynamic>;
     final List<Map<String, dynamic>> fills =
         (icon['fill-specializations'] as List<dynamic>)
             .cast<Map<String, dynamic>>();
+    final Map<String, dynamic>? lightFill = fills
+        .where((Map<String, dynamic> f) => !f.containsKey('appearance'))
+        .firstOrNull;
+    final Map<String, dynamic>? darkFill = fills
+        .where((Map<String, dynamic> f) => f['appearance'] == 'dark')
+        .firstOrNull;
+    expect(lightFill, isNotNull, reason: 'icon.json 缺默认（浅色）填充');
+    // 决定 zd158djAtD：必须显式写 dark（不写时系统会派生深色底），且值与浅色相同。
+    expect(darkFill, isNotNull, reason: 'icon.json 缺 dark 外观填充');
     expect(
-      fills.any((Map<String, dynamic> f) => f['appearance'] == 'dark'),
-      isTrue,
-      reason: 'icon.json 缺深色外观填充',
-    );
-    expect(
-      fills.any((Map<String, dynamic> f) => !f.containsKey('appearance')),
-      isTrue,
-      reason: 'icon.json 缺默认（浅色）填充',
+      darkFill!['value'],
+      lightFill!['value'],
+      reason: 'dark 外观填充须与浅色相同（图标不随深色模式变色）',
     );
     int layerCount = 0;
     for (final dynamic g in icon['groups'] as List<dynamic>) {
@@ -174,7 +186,7 @@ void main() {
     );
   });
 
-  test('Android 自适应图标带主题图标单色层与深色模式背景', () {
+  test('Android 自适应图标带主题图标单色层，背景色不随深色模式变化', () {
     final Directory adaptiveDir = Directory(
       'android/app/src/main/res/mipmap-anydpi-v26',
     );
@@ -196,15 +208,33 @@ void main() {
     expect(mono, contains('android:viewportHeight="108"'));
     expect(mono, contains('android:pathData="M'));
 
-    final String nightColors = read(
-      'android/app/src/main/res/values-night/colors.xml',
-    );
-    final Map<String, String> nightByName = <String, String>{};
-    for (final RegExpMatch m in RegExp(
+    final RegExp colorRe = RegExp(
       r'<color\s+name="([^"]+)"\s*>\s*#([0-9A-Fa-f]{6,8})\s*</color>',
-    ).allMatches(nightColors)) {
-      nightByName[m.group(1)!] = m.group(2)!;
-    }
+    );
+    Map<String, String> colorsIn(String xml) => <String, String>{
+      for (final RegExpMatch m in colorRe.allMatches(xml))
+        m.group(1)!: m.group(2)!,
+    };
+    final Map<String, String> baseColors = colorsIn(
+      read('android/app/src/main/res/values/colors.xml'),
+    );
+    // 决定 zd158djAtD：任何带资源限定符的 values-*（night、night-v31、v31 …）都不得
+    // 覆盖启动器背景色，深浅色共用 values/ 里的那一枚。
+    final List<File> qualifiedValueFiles = Directory('android/app/src/main/res')
+        .listSync()
+        .whereType<Directory>()
+        .where(
+          (Directory d) => d.uri.pathSegments
+              .where((String s) => s.isNotEmpty)
+              .last
+              .startsWith('values-'),
+        )
+        .expand(
+          (Directory d) => d.listSync().whereType<File>().where(
+            (File f) => f.path.endsWith('.xml'),
+          ),
+        )
+        .toList();
 
     final RegExp bgRefRe = RegExp(
       r'<background\s+android:drawable="@color/([^"]+)"',
@@ -222,20 +252,23 @@ void main() {
       final RegExpMatch? bg = bgRefRe.firstMatch(xml);
       if (bg == null) continue;
       final String colorName = bg.group(1)!;
-      final String? hex = nightByName[colorName];
+      final String? hex = baseColors[colorName];
       expect(
         hex,
         isNotNull,
-        reason: '$name 的背景 @color/$colorName 在 values-night 未定义深色值',
+        reason: '$name 的背景 @color/$colorName 在 values/colors.xml 未定义',
       );
-      // 深色背景同样必须不透明（TODO-1269）且确实是深色。
-      expect(hex!.length, 6, reason: '深色背景须为不透明 #RRGGBB');
-      final int r = int.parse(hex.substring(0, 2), radix: 16);
-      final int g = int.parse(hex.substring(2, 4), radix: 16);
-      final int b = int.parse(hex.substring(4, 6), radix: 16);
-      final double luma = (299 * r + 587 * g + 114 * b) / 1000;
-      expect(luma, lessThan(96), reason: '$colorName 深色值 #$hex 不够深');
-      expect(r + g + b, greaterThan(0), reason: '纯黑背景会与 TODO-1269 症状混淆');
+      // 背景必须不透明（TODO-1269：透明底会被多数启动器渲染成纯黑）。
+      expect(hex!.length, 6, reason: '启动器背景须为不透明 #RRGGBB');
+      for (final File q in qualifiedValueFiles) {
+        expect(
+          colorsIn(q.readAsStringSync()).containsKey(colorName),
+          isFalse,
+          reason:
+              '${q.path} 覆盖了启动器背景 @color/$colorName，'
+              '图标会随深色模式变色（决定 zd158djAtD 已取消）',
+        );
+      }
     }
   });
 }

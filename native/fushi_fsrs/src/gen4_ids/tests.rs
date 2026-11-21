@@ -100,6 +100,11 @@ fn rule_table_matches_the_frozen_dart_vectors() {
                 id(&c["id"]),
                 "{c}"
             ),
+            "deleted_anki_card" => assert_eq!(
+                rules::deleted_anki_card(&id(&a["defaultDeck"]), int(a, "ankiCardId")),
+                id(&c["id"]),
+                "{c}"
+            ),
             "imported_revlog" => assert_eq!(
                 rules::imported_revlog(&id(&a["card"]), int(a, "ankiRevlogId")),
                 id(&c["id"]),
@@ -156,6 +161,7 @@ fn rule_table_matches_the_frozen_dart_vectors() {
         "deck",
         "deck_alternate",
         "builtin_default_deck",
+        "deleted_anki_card",
         "field",
         "template",
         "field_by_name",
@@ -1033,6 +1039,7 @@ fn writer(name: &str, stream: i64, seqs: std::ops::RangeInclusive<u64>) -> Write
                 counter: 0,
             })
             .collect(),
+        raw: Vec::new(),
     }
 }
 
@@ -1041,7 +1048,32 @@ fn bare_writer(name: &str) -> WriterEv {
     WriterEv {
         name: name.to_owned(),
         dots: Vec::new(),
+        raw: Vec::new(),
     }
+}
+
+/// 归回的写入者记证据撑得住的范围（BUG-5056）：`upto` = 与最初写入者同 seq 同记录的最大 seq，`own` = 原名在 `upto`
+/// 以上的记录，HLC 解不开的也算（它们不当「同一条」的证据，但原名在那一号上确有记录，换名时要照样盖住）。
+#[test]
+fn a_resolved_writer_records_its_proven_bound() {
+    let m = merged_name(U1, "abcDEF#1");
+    let mut ev = evidence(&[U1]);
+    let mut mine = writer(&m, 1, 1..=5);
+    // seq 6、7 是原名自己的（另一个 stream，与最初写入者不同）；seq 9 的 HLC 解不开。
+    mine.dots.extend(writer(&m, 2, 6..=7).dots);
+    mine.raw = vec![3, 9];
+    ev.writers = vec![writer("abcDEF#1", 1, 1..=5), mine];
+    let a = resolve(&ev, &Limits::default());
+    assert_eq!(a.canonical_writer(&m), "abcDEF#1");
+    assert_eq!(
+        a.writer_bound(&m),
+        Some(&crate::gen4_ids::alias::WriterBound {
+            upto: 5,
+            own: vec![6, 7, 9],
+        })
+    );
+    // 最初写入者自己没有范围。
+    assert_eq!(a.writer_bound("abcDEF#1"), None);
 }
 
 /// 旧并入改名的写入者：哈希验上、且与最初的写入者有同 seq 的同一条记录才归过去。

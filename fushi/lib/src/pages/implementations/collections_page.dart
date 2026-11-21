@@ -53,8 +53,28 @@ import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/pages/shared/library_section_tabs.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
+import 'package:fushi/src/utils/components/library_section_tab.dart';
 
 enum _CollectionType { sentence, mined, word }
+
+/// 类型筛选页签的取值：[LibrarySectionTabs] 要非空值，「全部」= 不按类型筛
+/// （[type] 为 null）。顺序即页签顺序。
+enum _CollectionTypeTab {
+  all(null),
+  word(_CollectionType.word),
+  sentence(_CollectionType.sentence),
+  mined(_CollectionType.mined);
+
+  const _CollectionTypeTab(this.type);
+
+  final _CollectionType? type;
+
+  static _CollectionTypeTab of(_CollectionType? type) =>
+      values.firstWhere((_CollectionTypeTab tab) => tab.type == type);
+}
 
 /// 分组视图的一行（阶段 3，统计中心大改造：收藏夹按「合集 → 媒体」两级分节）。
 enum CollectionGroupRowKind { collectionHeader, mediaHeader, item }
@@ -1778,6 +1798,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   @override
   Widget build(BuildContext context) {
     return FushiPageScaffold(
+      masthead: true,
       title: t.collections,
       actions: <Widget>[
         // TODO-829: 仅当存在收藏句条目时显示「导出/分享」。
@@ -2067,6 +2088,29 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   }
 
   Widget _buildTypeFilterBar() {
+    // 重设计外壳（页头大字）：页名下一行与库页二级页签同一组件——
+    // [LibrarySectionTabs] 在页头下方一行（`FushiMastheadScope` secondary）里
+    // 画成连体按钮组，焦点 / 方向键切换 / Semantics 同库页。墨水屏照旧 chip 行。
+    if (shellRedesignActive(context)) {
+      return LibrarySectionTabs<_CollectionTypeTab>(
+        tabs: <LibrarySectionTab<_CollectionTypeTab>>[
+          for (final _CollectionTypeTab tab in _CollectionTypeTab.values)
+            LibrarySectionTab<_CollectionTypeTab>(
+              value: tab,
+              label: switch (tab) {
+                _CollectionTypeTab.all => t.collection_filter_all,
+                _CollectionTypeTab.word => t.collection_word,
+                _CollectionTypeTab.sentence => t.collection_sentence,
+                _CollectionTypeTab.mined => t.collection_mined,
+              },
+            ),
+        ],
+        selected: _CollectionTypeTab.of(_typeFilter),
+        onChanged: (_CollectionTypeTab tab) =>
+            setState(() => _typeFilter = tab.type),
+        focusIdPrefix: 'collections-type-tab',
+      );
+    }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     Widget chip(_CollectionType? type, String label) => Padding(
       padding: EdgeInsets.only(right: tokens.spacing.gap / 2),

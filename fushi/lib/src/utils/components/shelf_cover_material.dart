@@ -697,6 +697,35 @@ double shelfFanMaxDegrees({
   return theta.clamp(0.0, kShelfFanMaxDegrees).toDouble();
 }
 
+/// 海报 / 专辑碟盒式叠层（[ShelfCoverPile]）每往后一层往右上错开的步长。
+const double kShelfCoverPileStackStep = 4;
+
+/// [material] 下 [ShelfCoverPile] 是碟盒式叠层（海报 / 专辑）而非扇形（书 / 卡盒）。
+bool shelfCoverPileStacks(ShelfCoverMaterial material) =>
+    material == ShelfCoverMaterial.glossyPoster ||
+    material == ShelfCoverMaterial.glossyAlbum;
+
+/// [ShelfCoverPile] 在 [material] 下最多画最前那本后面的几本。
+int shelfCoverPileMaxBehind(ShelfCoverMaterial material) =>
+    shelfCoverPileStacks(material) ? 2 : 3;
+
+/// 要让 [ShelfCoverPile] 里每本封面恰好是 [item] 大小，外层盒子该给多大：扇形
+/// 每本与单本同大、铺满整盒（盒 = 单本，转开的边角画在盒外）；叠层后面每多一层
+/// 往右上让 [kShelfCoverPileStackStep]。[behindCount] = 最前那本后面的本数（按
+/// [shelfCoverPileMaxBehind] 截断）。调用方按封面真实比例定 [item]，封面图就
+/// 不会被 fitHeight 从两侧裁掉。
+Size shelfCoverPileExtent({
+  required ShelfCoverMaterial material,
+  required Size item,
+  required int behindCount,
+}) {
+  if (!shelfCoverPileStacks(material)) return item;
+  final double grow =
+      kShelfCoverPileStackStep *
+      behindCount.clamp(0, shelfCoverPileMaxBehind(material));
+  return Size(item.width + grow, item.height + grow);
+}
+
 /// 多本排列（系列 / 多季 / 多作）：[covers] 首个是最前面那本，其后依次往后。
 ///
 /// - 书 / 卡盒 = 扇形：最多 4 本，绕底边中点转开，悬停时再转开一点并整体抬
@@ -733,11 +762,9 @@ class ShelfCoverPile extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool lifted = FushiHoverLift.liftedOf(context);
     final Duration duration = fushiMotionDuration(context, FushiMotion.long);
-    final bool stack =
-        material == ShelfCoverMaterial.glossyPoster ||
-        material == ShelfCoverMaterial.glossyAlbum;
+    final bool stack = shelfCoverPileStacks(material);
     final List<Widget> back = behind
-        .take(stack ? 2 : 3)
+        .take(shelfCoverPileMaxBehind(material))
         .toList(growable: false);
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints c) {
@@ -746,7 +773,7 @@ class ShelfCoverPile extends StatelessWidget {
         // 扇形的每一本都与单本同大、铺满整格（2026-10-25 用户「单本书和合集
         // 大小不协调」：此前合集整体缩到 88–92%，比旁边的单本小一圈）；后面
         // 几本藏在最前那本身后，只靠转开露出边角。海报叠层仍按错开步长让位。
-        final double step = stack ? 4 : 0;
+        final double step = stack ? kShelfCoverPileStackStep : 0;
         final double itemW = stack ? w - step * back.length : w;
         final double itemH = stack ? h - step * back.length : h;
         Widget surface(Widget child, {double dim = 0, List<Widget>? overlay}) =>
@@ -944,7 +971,7 @@ class ShelfCardMeta extends StatelessWidget {
   }
 
   static const double _kProgressHeight = 4;
-  static const double _kProgressGap = 5;
+  static const double _kProgressGap = 4;
 
   /// 副行高度：副行文字一行，与尾部角标（原盘 / 规格 [CoverBadge]：角标字行高 + 内边距，比副行文字高）取大。
   /// 布局与 [heightFor] 共用这一个值：以前只按文字算，带角标的卡片溢出几像素——单行标题时被标题下面空着的
@@ -1028,6 +1055,10 @@ class ShelfCardMeta extends StatelessWidget {
               child: LayoutBuilder(
                 builder: (BuildContext context, BoxConstraints constraints) =>
                     Row(
+                      // 副行行高按角标留（比副行文字高）：文字贴底排，紧挨下面
+                      // 的进度条，不悬在行中间与进度条隔一道缝（合集详情反馈
+                      //「70% 和进度条之间空隙太大」）。
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: <Widget>[
                         if (leadingIcon != null) ...<Widget>[
                           FushiIcon(
@@ -1113,6 +1144,11 @@ class ShelfMetaTags extends StatelessWidget {
   final List<ShelfMetaTag> tags;
   final int maxVisible;
 
+  /// 标签 chip 的圆角：小圆角矩形，与状态 / 规格那类全圆胶囊在外形上分开——
+  /// 用户自己打的「读完」标签不再被读成观看状态（2026-11-16 群反馈「标签和状态
+  /// 共用一行，有点丑」）。
+  static const double radius = 6;
+
   @override
   Widget build(BuildContext context) {
     if (tags.isEmpty) return const SizedBox.shrink();
@@ -1120,15 +1156,58 @@ class ShelfMetaTags extends StatelessWidget {
     final ColorScheme cs = theme.colorScheme;
     final bool eink = isEinkTheme(context);
     final bool apple = isGlassDesign(context) && !eink;
-    final Color muted = apple
-        ? appleColorsOf(context).secondaryLabel
-        : cs.onSurfaceVariant;
+    // 文字跟随所在面的前景色（拼贴色块里是块的 onContainer），不再一律用全局
+    // 灰：灰字压在取色色块上和块配色不搭。
+    final Color foreground =
+        DefaultTextStyle.of(context).style.color ??
+        (apple ? appleColorsOf(context).secondaryLabel : cs.onSurfaceVariant);
     final TextStyle style = ShelfCardMeta._subStyle(
       theme,
-    ).copyWith(color: muted);
+    ).copyWith(color: foreground, fontWeight: FontWeight.w600, height: 1.2);
     final List<ShelfMetaTag> visible = tags.take(maxVisible).toList();
     final int overflow = tags.length - visible.length;
     final String names = tags.map((ShelfMetaTag tag) => tag.label).join(' · ');
+    Widget chip(String label, Color? tint) {
+      final Color base = tint ?? foreground;
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          color: eink
+              ? null
+              : base.withValues(alpha: tint == null ? 0.10 : 0.20),
+          border: eink ? Border.all(color: cs.onSurface) : null,
+          borderRadius: const BorderRadius.all(Radius.circular(radius)),
+        ),
+        child: Padding(
+          padding: const EdgeInsetsDirectional.fromSTEB(6, 2, 7, 2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (tint != null && !eink) ...<Widget>[
+                SizedBox.square(
+                  dimension: 6,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: tint,
+                      borderRadius: const BorderRadius.all(Radius.circular(2)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+              ],
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: style,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return FushiTooltip(
       message: names,
       child: Semantics(
@@ -1138,32 +1217,11 @@ class ShelfMetaTags extends StatelessWidget {
             padding: const EdgeInsetsDirectional.only(start: 6),
             child: Row(
               mainAxisSize: MainAxisSize.min,
+              spacing: 4,
               children: <Widget>[
-                for (final (int i, ShelfMetaTag tag) in visible.indexed) ...[
-                  if (i > 0) const SizedBox(width: 6),
-                  SizedBox.square(
-                    dimension: 7,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: eink ? cs.onSurface : (tag.color ?? muted),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 3),
-                  Flexible(
-                    child: Text(
-                      tag.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: style,
-                    ),
-                  ),
-                ],
-                if (overflow > 0) ...[
-                  const SizedBox(width: 4),
-                  Text('+$overflow', style: style),
-                ],
+                for (final ShelfMetaTag tag in visible)
+                  Flexible(child: chip(tag.label, tag.color)),
+                if (overflow > 0) chip('+$overflow', null),
               ],
             ),
           ),

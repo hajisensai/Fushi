@@ -10,6 +10,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -54,6 +55,23 @@ const String _kFloatingBallSceneButtons =
     '各场景的勾选互不影响 / 勾选了但页面此刻没提供的专属按钮跳过';
 
 const Map<String, String> kCoveredElsewhere = <String, String>{
+  // 外壳样式（PR #3397）：生效点是外壳侧栏 / 库页 / 色块墙 / 主题层表面形状，
+  // harness 设置页里没有外壳与库页。偏好 → 应用主题 [FushiShellTheme] 扩展由
+  // 专项单测咬住，各消费方只读这一份扩展。
+  // 拼贴打磨（设计稿 G1）起「侧栏样式 / 库页布局 / 色块排法」三行改成带预览卡的
+  // 自绘行（SettingsCustomItem → AdaptiveSettingsRow，不再是分段行），焦点遍历
+  // （_focusedSettingsRow）不识别它们、不会再产出这三个 id；登记留作证据指针，
+  // 偏好写穿与生效仍由下面的专项单测咬住；行布局（紧凑选择块、无溢出、焦点选中）
+  // 由 test/settings/shell_style_preview_layout_test.dart 咬住。原先的整块组合
+  // 预览行 appearance.shell_preview 已删（所有者反馈太占位置）。
+  'appearance/Sidebar style':
+      'test/settings/shell_style_settings_effect_test.dart（切色脊 → 主题扩展跟着变）',
+  'appearance/Library layout':
+      'test/settings/shell_style_settings_effect_test.dart（切封面网格 → 主题扩展跟着变）',
+  'appearance/Block arrangement':
+      'test/settings/shell_style_settings_effect_test.dart（选交错 → 主题扩展带上所选值）',
+  'appearance/Smooth corners':
+      'test/settings/shell_style_settings_effect_test.dart（关平滑圆角 → 主题扩展跟着变）',
   // 桌面小组件隐私（仅 Android）：生效点是推给原生侧的快照 `privacy` 字段与 Glance
   // 小组件渲染，harness 设置页里没有小组件。偏好 → 快照字段由快照单测咬住，原生侧
   // 隐藏标题 / 释义 / Profile 名见 docs/agent/android-widgets.md（设备验证）。
@@ -81,6 +99,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/web_browser/tab_view/web_browser_tab_view_logic_test.dart（forceDark 进 WebView 设置）',
   'webBrowser/Open desktop sites by default':
       'test/pages/fushi_web_browser_shell_test.dart（新标签页默认桌面版）',
+  'webBrowser/Fushi handles video full screen':
+      'test/web_browser/web_browser_fullscreen_test.dart（页内全屏脚本：接管 → 伪全屏；'
+      '不接管 → 不改全屏 API）+ test/pages/web_browser_settings_page_test.dart（偏好写穿）',
   'webBrowser/Restore tabs from last time':
       'test/web_browser/web_browser_tabs_controller_test.dart（关闭会话持久化时不读不写）+ '
       'test/pages/fushi_web_browser_shell_test.dart（恢复上次的标签页）',
@@ -120,6 +141,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // music_lyrics_service_test 咬住。
   'music/Online lyrics (LRCLIB)':
       'test/media/music/lyrics/music_lyrics_service_test.dart',
+  // 歌词来源列表里的 LRCLIB 启停（与歌词插件同一份有序列表）：生效点是 MusicLyricsService
+  // 解析时问不问 LRCLIB，harness 没有在播的曲目。停用后不问 LRCLIB 由
+  // music_lyrics_service_plugins_test 咬住，开关写入来源列表偏好由 music_lyrics_providers_test 咬住。
+  'music/LRCLIB':
+      'test/media/music/lyrics/music_lyrics_service_plugins_test.dart + test/pages/music/music_lyrics_providers_test.dart',
   // 查词时暂停：生效点在歌词页查词回调（musicLyricsShouldPauseForLookup）与桌面歌词
   // 点词（MusicLookupPause，music_lookup_pause_test，BUG-4198），harness 设置页两者
   // 都没有；判据由 music_lyrics_page_logic_test 咬住。
@@ -135,6 +161,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'services/Storefront': 'test/media/music/server/music_server_test.dart',
   'music/Pause while looking up words':
       'test/media/music/lyrics/music_lyrics_page_logic_test.dart',
+  // 模糊非当前行：生效点是歌词页 / MV 页里 KaraokeLyricsView 的非焦点行 ImageFilter.blur，
+  // harness 设置页没有在播的曲目与歌词视图。偏好 → 歌词页 appearance.blurInactive 即时
+  // 生效由 music_lyrics_page_test 咬住，blurInactive 开 / 关下非当前行有无模糊层由
+  // karaoke_lyrics_view_test 咬住。
+  'music/Blur surrounding lines': 'test/pages/music_lyrics_page_test.dart',
   // 服务器曲库的码率上限：生效点是播放服务器曲目时向服务器要的流（直出 / 转码），harness
   // 里没有服务器。设置值 → musicServerBitrateLimit → streamFor 的直出 / 转码与信号路径源
   // 属性由 music_server_test 咬住。
@@ -197,6 +228,22 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 设置页 harness 里没有展开的悬浮球。行为由 floating_ball_labels_test 咬住。
   'floatingBall/Show button labels':
       'test/floating_ball/floating_ball_labels_test.dart',
+  // 「跳转记录」顶栏图标开关（小说 / 漫画 / 视频三页共用，页面现读 jumpHistoryToolbar）：
+  // 生效点在阅读 / 播放页顶栏，harness 设置页里没有这些页。行为由三页各自的专项测试咬住。
+  'floatingBall/Jump history':
+      'test/utils/jump_history_controls_test.dart + '
+      'test/media/video/video_jump_history_test.dart + '
+      'test/media/manga/reader/manga_jump_history_chrome_test.dart',
+  // 视频「续播」（关 / 仅长视频 / 全部）：生效点是打开剧集时的起点，harness 里没有播放页。
+  // 判据 resolveVideoStart 由 video_resume_test 咬住，播放页读偏好走它由静态守卫咬住。
+  'video/Resume playback':
+      'test/media/video/video_resume_test.dart + '
+      'test/media/video/video_lifecycle_static_test.dart（播放页起点认 resolveVideoStart）',
+  // 视频「下一集顺序」（顺序 / 随机）：生效点是自动连播选下一集，harness 里没有播放页。
+  // 选集判据由 video_playlist_order_test 咬住，连播接线由静态守卫咬住。
+  'video/Next episode order':
+      'test/media/video/video_playlist_order_test.dart + '
+      'test/pages/video_playlist_auto_advance_guard_static_test.dart',
   // 吉祥物图标换色开关：生效点是全局 appLogoFollowsAccent 与 AccentLogoImage
   // 的着色——harness 设置页里没有 logo 渲染面，渲染输入无变化。行为由
   // theme_app_icon_link_test（发布到全局开关）与 accent_logo_image_test 咬住。
@@ -207,6 +254,15 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // theme_app_icon_link_test（发布到全局开关）与 mascot_glow_test（光晕层）咬住。
   'appearance/Mascot glow':
       'test/models/theme_app_icon_link_test.dart + test/utils/components/mascot_glow_test.dart',
+  // NSFW 两个开关（拍板台 w04vrhUAaX）：生效点是库页 / 继续卡的封面框（模糊）与
+  // 制卡时的卡图（模糊副本）——harness 设置页里既没有库页封面也不制卡。封面框读
+  // ShelfCoverNsfw 打模糊、制卡图片开关关 / 开的行为由 media_nsfw_test 咬住。
+  'appearance/Blur NSFW covers': 'test/media/nsfw/media_nsfw_test.dart',
+  'appearance/Blur card images too': 'test/media/nsfw/media_nsfw_test.dart',
+  // 墨水屏每 N 页全刷：生效点是小说三种 view mode 与漫画阅读器的翻页计数和全刷画布，
+  // harness 设置页里没有阅读器。间隔值 → 每 N 次翻页触发一次、0 = 关、阅读器接线由
+  // eink_full_refresh_test 咬住。
+  'appearance/E-ink full refresh': 'test/reader/eink_full_refresh_test.dart',
   // 词典统一 M3E 配色：生效点在查词弹窗 WebView 里的 popup.js / popup.css，
   // harness 没有 WebView。注入接线、默认值与 CSS 层由
   // popup_dict_unified_style_test 咬住。
@@ -386,6 +442,15 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 默认受「加来源分类标签」门控 disabled，harness 驱动不动属预期。
   'cardCreation/Nest title tags under the category tag':
       '../packages/fushi_anki/test/note_tags_nested_title_test.dart',
+  // 连续收听提醒的间隔档位：默认受「连续收听提醒」开关门控 disabled，harness 驱动不动属
+  // 预期；生效点（档位改了对正在进行的这一轮立即生效、档位外存值归档）由单测守。
+  'general/Remind after': 'test/media/listening_reminder_test.dart',
+  // 连续收听提醒开关本身：生效点是全局收听计时器（开 = 播放中按档位计时到点提醒，
+  // 关 = 停计时清计数），harness 设置页里没有在播的播放器。开 / 关对计时器的效果由
+  // listening_reminder_test 咬住，开关经 enableListeningReminder 接到 AppModel 由
+  // listening_reminder_app_test 咬住。
+  'general/Listening break reminder':
+      'test/media/listening_reminder_test.dart + test/media/listening_reminder_app_test.dart',
   // 句子音频来源：生效点在制卡 ffmpeg 抽音参数（中置声道 pan 滤镜 / 音轨选择）。
   'cardCreation/Sentence audio source':
       'test/mining/sentence_audio_source_test.dart',
@@ -652,6 +717,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/video/video_subtitle_mask_test.dart（关闭不画 / 开启按内容区落位）',
   'video/Mask look':
       'test/media/video/video_subtitle_mask_test.dart（模糊 / 纯色两种外观各出各的层）',
+  // 遮布定位方式（手动 / 智能）：同样写 video_subtitle_mask JSON 偏好（mode 字段），
+  // 生效点是遮布层是否建采样器 + 识别器（要真播放器抽帧），harness 无适用探针。
+  'video/Positioning':
+      'test/media/video/smart_subtitle_mask_test.dart（偏好 mode 字段往返 / 旧偏好'
+      '缺省手动；遮布层只在开启 + 智能模式时建识别器，切回手动即拆）',
   'video/Mask strength':
       'test/media/video/video_subtitle_mask_test.dart（强度 → 纯色不透明度）',
   'video/Tap picture to show subtitles':
@@ -918,14 +988,19 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/dictionary/popup_instant_scroll_step_guard_test.dart',
   'lookup/Instant scroll touch step':
       'test/dictionary/popup_instant_scroll_step_guard_test.dart',
-  // TODO-108: 底部固定弹窗开关——生效点在纯函数 dockedPopupRect 与 base_source_page/dictionary_page_mixin 的路由分流（非 reader CSS / 主题树），
-  // 无 reader/appearance 探针；由专项纯函数 + widget 测试覆盖。
-  'lookup/Bottom-docked popup':
+  // TODO-108 / BUG-4713: 底部停靠开关——每个媒体模块一条独立开关 + 非模块宿主一条。
+  // 生效点在纯函数 dockedPopupRect 与 base_source_page/dictionary_page_mixin 的路由分流
+  // （非 reader CSS / 主题树），无 reader/appearance 探针；由专项纯函数 + widget 测试覆盖。
+  'lookup/Dock in novels':
+      'test/models/popup_bottom_docked_per_module_test.dart + test/settings/popup_bottom_docked_switch_test.dart',
+  'lookup/Dock in manga':
+      'test/models/popup_bottom_docked_per_module_test.dart + test/settings/popup_bottom_docked_switch_test.dart',
+  'lookup/Dock in videos':
+      'test/models/popup_bottom_docked_per_module_test.dart + test/settings/popup_bottom_docked_switch_test.dart',
+  'lookup/Dock in games':
+      'test/models/popup_bottom_docked_per_module_test.dart + test/settings/popup_bottom_docked_switch_test.dart',
+  'lookup/Dock elsewhere (dictionary search, floating popups)':
       'test/pages/dictionary_popup_layer_test.dart + test/settings/popup_bottom_docked_switch_test.dart',
-  // 「只在小说中底部停靠」：总开关关着时出现的小说专属入口，写的是同一组停靠键
-  // （总开关 + 四个模块细分），生效点同上；只翻小说有效值的语义由专项测试咬住。
-  'lookup/Dock only in novels':
-      'test/settings/reader_lookup_popup_size_settings_test.dart',
   // AI 按句意挑词条的自动开关：生效点在 BaseSourcePage 查词完成后的 AI 重排（不进
   // reader CSS / 主题树），由 widget 测试覆盖开 / 关 / 未指派提供商不发请求三种。
   'lookup/Pick meaning from context with AI':
@@ -961,11 +1036,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 没有在线视频播放器可探；判定、队列落卡、弹窗与引擎暂存契约都在专项测试里。
   'cardCreation/Online video mining':
       'test/media/video/mpv_cache_snapshot_test.dart + test/mining/video_mine_queue_test.dart + test/mining/immersion_mining_cached_snapshot_test.dart',
-  // 挖词目标（Anki / Fushi 复习 / 两者，复习模块开着才出现）：写 prefsRepo
-  // （changed=true），生效点是 ankiRepositoryProvider 最外层的 SrsMiningAnkiRepository
+  // 「保存到」（挖词目标，Anki / Fushi 复习，制卡页「卡片去向」的分段行）：写 prefsRepo；
+  // 复习模块关着时切到 Fushi 复习先弹确认框（harness 取消它，按没有变化判）。生效点是 ankiRepositoryProvider 最外层的 SrsMiningAnkiRepository
   // ——制卡时卡片落进复习库还是 Anki。harness 里没有复习库可探；三种目标的落卡、
   // 判重、合并规则与「模块关着时链上没有这一层」由专项测试咬死。
-  'cardCreation/Mining target': 'test/srs/srs_mining_test.dart',
+  'cardCreation/Save to': 'test/srs/srs_mining_test.dart',
   'cardCreation/Audio padding before sentence':
       'test/settings/mining_audio_padding_guard_test.dart',
   'cardCreation/Audio padding after sentence':
@@ -1071,10 +1146,21 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Close popup when scrolling':
       'test/pages/lookup_dismiss_barrier_test.dart + '
       'test/reader/reader_popup_scroll_dismiss_wiring_test.dart',
-  // 用户建议 q16Apecgbg：「制卡后关闭查词弹窗」（默认关）。与上面两项同一条
-  // MediaSource 偏好通道，harness 里观测不到写穿；生效点是制卡回调落地后的关栈
-  // （closePopupAfterAcceptedMine），由专项行为测试 + 两条车道接线守卫覆盖。
-  'lookup/Close lookup popup after creating a card':
+  // 拍板台 8ldy3d8XFA：「制卡后行为」按模块单选（取代 q16Apecgbg 的全局开关）。与上面
+  // 两项同一条 MediaSource 偏好通道，harness 里观测不到写穿；生效点是制卡回调落地后的
+  // 关栈 + 是否续播（closePopupAfterAcceptedMine），由专项行为测试、按模块解析的纯
+  // 函数测试与两条车道接线守卫覆盖。模块行随模块开关可见，harness 里不一定都出现。
+  'lookup/After creating a card in novels':
+      'test/pages/close_popup_after_mining_test.dart',
+  'lookup/After creating a card in manga':
+      'test/pages/close_popup_after_mining_test.dart',
+  'lookup/After creating a card in videos':
+      'test/pages/close_popup_after_mining_test.dart',
+  'lookup/After creating a card in music':
+      'test/pages/close_popup_after_mining_test.dart',
+  'lookup/After creating a card in games':
+      'test/pages/close_popup_after_mining_test.dart',
+  'lookup/After creating a card in lookup and elsewhere':
       'test/pages/close_popup_after_mining_test.dart',
   // TODO-861②：「扫描非日文文字」查词开关（PreferencesRepository.scanNonJapaneseText，
   // 默认 true）。焦点遍历能切到并写穿 DB（changed=true），但生效点在注入 JS 的
@@ -1309,6 +1395,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // harness 里可达——全部登记（含反吸血二级开关，超集登记无害）。
   'downloads/Enable upload / seeding':
       'test/media/torrent/torrent_upload_policy_test.dart',
+  // 「下载引擎」分段行（内置引擎 / 外接 qBittorrent / 互联设备）：写
+  // QbConnectionConfig.backend（changed=true），生效点是下载后端的装配
+  // （resolveBackend → 哪个引擎接任务），widget 树里没有可探的渲染输入；平台门控与
+  // 后端规约由专项测试咬住。
+  'downloads/Download engine':
+      'test/pages/torrent_settings_android_backend_gating_test.dart + test/media/torrent/anime_download_config_backend_test.dart',
   // 「自动为新任务添加订阅 tracker」：生效点是 addTorrent 之后**多打一次**
   // `/api/v2/torrents/addTrackers`（qB 后端）／把 tracker 追加进 magnet（内置引擎），
   // 都在 widget 树之外。torrent_backend_test 咬住的是真行为而不只是编解码：开关为真时
@@ -1505,7 +1597,6 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/pages/video_hover_leave_resume_test.dart',
   'lookup/Aggregate word frequencies': 'DEVICE: popup.js frequency aggregation',
   'lookup/Auto search': 'WIDGET-TODO: HomeDictionaryPage debounce gate',
-  'lookup/Remote dictionary lookup': 'INTEGRATION: remote host lookup',
   // 「允许连接」三态：偏好 → AppModel.fushiApiAccessPolicy（seed 测试）→ 服务端监听地址与
   // 逐请求放行判定（access 测试用本机局域网地址真连，非本机无密钥 403 / 白名单外 403 /
   // 仅本机连 TCP 都建不起来）。harness 里不起真实非回环连接，观测不到。
@@ -1732,6 +1823,16 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // service-config 同步：开关是请求前的进场门（关 = 连请求都不发），且是设备本地键。
   'interconnect/Sync service configuration from host':
       'test/sync/interconnect_service_config_test.dart',
+  // 互联「来源共享」（拍板台 wOMR4_Er7s）：client 开关关 = 一个请求都不发；host 开关在
+  // HTTP 端点 /api/interconnect/source-share 里按请求现读（关着 403 disabled）。harness
+  // 里没有起 TLS server 与已配对 peer，探不到；由专项测试咬住。
+  'interconnect/Receive shared sources':
+      'test/sync/interconnect_source_share_test.dart',
+  'interconnect/Share sources with my devices':
+      'test/sync/interconnect_source_share_test.dart',
+  // client「也接收插件」（默认关）：关着时插件整类跳过（专项测试咬住）。
+  'interconnect/Also receive plugins':
+      'test/sync/interconnect_source_share_test.dart',
   // 开服开关：持久化的是「想开服」的意图（绑定失败也保留），启动失败映射成
   // FushiServerStartError 而不是把开关卡在「已开启」。
   'interconnect/Enable sync server':
@@ -1749,13 +1850,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'interconnect/Allow remote connections over a P2P tunnel':
       'test/sync/interconnect_p2p_tunnel_test.dart + '
       'INTEGRATION: 跨 NAT 真机打洞',
-  // 远端查词：与 lookup 分类共享同一份 item 定义。⚠️ 门本身
-  // （AppModel._searchRemoteDictionary 开头的 remoteLookupEnabled 短路）没有守卫，
-  // 仍是设备 backlog；下面两个文件只覆盖偏好往返与开关打开后的客户端链路。
-  'interconnect/Remote dictionary lookup':
-      'INTEGRATION: remote host lookup（门本身仍无守卫）+ '
-      'test/models/preferences_repository_test.dart + '
-      'test/sync/fushi_remote_lookup_client_test.dart',
+  // 远端查词的全局开关已删除（2026-11-09 并入每台 host 的「用这台服务器查词典」，
+  // 查词 › 词典服务器只剩导航行，不在本覆盖面内）。总闸派生见
+  // test/models/app_model_remote_local_merge_test.dart，一次性迁移见
+  // test/models/remote_lookup_host_switch_migration_test.dart。
   // 显示远端条目：与 syncBackup/Show remote entries 是同一份 item 定义、同一个消费点。
   'interconnect/Show remote entries':
       'test/pages/home_video_remote_mixed_grid_test.dart + test/pages/reader_remote_mixed_grid_test.dart',
@@ -1800,6 +1898,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 新入库的）。
   'ai/Organize with AI after import':
       'test/media/collections/library_organize_runner_test.dart',
+  // AI 库管家自动路径（默认开）：生效点是去抖后的自动路径每次现读开关与各步 AI
+  // 指派（harness 里没有导入、操作上下文与 AI 提供商）。专项测试咬住默认开、没指派
+  // 任何 AI 不调度、开着时接管旧自动整理的触发点，编排逻辑由引擎测试覆盖。
+  'ai/Curate the library automatically':
+      'test/ops/ctl_library_curate_routes_test.dart',
   // 允许已配对设备使用 AI 助手：生效点是互联 host 的 /api/assistant agent 门（harness
   // 里没有互联服务器）。专项测试咬住「关着 → disabled、不建模型」与控制通道写不进去。
   "interconnect/Use this device's AI assistant":
@@ -1974,7 +2077,7 @@ void main() {
       // 「外观 › 页面背景」的强度 / 缓慢漂移不改配色，消费点是路由层背景
       // （LibraryShapeBackdrop → PageBackdropLayer）。harness 把设置页垫在真实的
       // LibraryShapeBackdrop 上，探针读**挂载出来的那一层**画了什么：各形状的
-      // 填充色（强度改不透明度）与是否在跑漂移动画（AnimatedBuilder 只在动画
+      // 填充色 / 柔光晕染的渐变色（强度改不透明度）与是否在跑漂移动画（AnimatedBuilder 只在动画
       // 控制器存在时出现）。设置页里的预设缩略图也是 PageBackdropLayer，按
       // [settingsPageKey] 排除，只看路由层那一份。
       final GlobalKey settingsPageKey = GlobalKey(debugLabel: 'settings-page');
@@ -2000,8 +2103,16 @@ void main() {
             .descendant(of: layer, matching: find.byType(DecoratedBox))
             .evaluate()
             .map((Element e) => (e.widget as DecoratedBox).decoration)
-            .whereType<ShapeDecoration>()
-            .map((ShapeDecoration d) => '${d.color}')
+            .map(
+              (Decoration d) => switch (d) {
+                // 形状类预设：形状填充色（强度改不透明度）。
+                ShapeDecoration(:final Color? color) => '$color',
+                // 柔光晕染（默认预设）：径向渐变色斑，强度改渐变各档不透明度。
+                BoxDecoration(:final Gradient gradient) => '${gradient.colors}',
+                _ => null,
+              },
+            )
+            .whereType<String>()
             .toList();
         final bool drifting = find
             .descendant(of: layer, matching: find.byType(AnimatedBuilder))
@@ -2037,6 +2148,15 @@ void main() {
         ProviderScope(
           overrides: <Override>[
             appProvider.overrideWith((Ref ref) => appModel),
+            // 拼贴打磨（PR #3515）起外观页的外壳样式预览 `ref.watch`
+            // fushiBooksProvider 取书封（shell_style_preview.dart），它连带订阅
+            // drift `.watch()` 的 StreamProvider。测试结束卸载树时 drift
+            // `StreamQueryStore.markAsClosed` 排一个零延时 timer，紧接着的
+            // pending-timer 校验必红并挂到 10 分钟超时（同 home_dashboard_page_test
+            // 的 bookStreamOverrides）。harness 设置页不测书封，打桩成空书架。
+            fushiBooksProvider.overrideWith(
+              (ref, language) async => const <MediaItem>[],
+            ),
             platformServicesProvider.overrideWithValue(platformServices),
             // 网页广告拦截的状态在 Rust 核心里、落在数据目录下；本 harness 的 AppModel 没走
             // initialise()（没有数据目录），给它一个临时目录，下载一律离线失败（不联网）。
@@ -2402,6 +2522,16 @@ _FocusedRow? _focusedSettingsRow() {
   return found;
 }
 
+/// 当前在树里的路由（页面 + 对话框 / 菜单）个数：每个 [ModalRoute] 建一个
+/// `_ModalScope`。驱动后变多 = 弹出了模态框。
+int _modalScopeCount() => find
+    .byWidgetPredicate(
+      (Widget w) => w.runtimeType.toString().startsWith('_ModalScope<'),
+      skipOffstage: false,
+    )
+    .evaluate()
+    .length;
+
 Future<ItemVerdict> _verifyFocusedNode({
   required WidgetTester tester,
   required FocusDriver driver,
@@ -2421,6 +2551,7 @@ Future<ItemVerdict> _verifyFocusedNode({
   // 覆盖结论就会变成「几十条从没见过的新项」，而磁盘上什么都没少覆盖。所以驱动完立刻
   // 把渲染语言复位，让身份键在整轮里恒是同一种语言；语言 pref 本身由全局还原兜底。
   final AppLocale localeBefore = LocaleSettings.currentLocale;
+  final int routesBefore = _modalScopeCount();
 
   if (row.kind == _RowKind.switchRow) {
     await driver.activate();
@@ -2464,6 +2595,17 @@ Future<ItemVerdict> _verifyFocusedNode({
         before: before,
       );
     }
+  }
+  // 有的选项切过去要先确认（制卡页「保存到」切到 Fushi 复习而复习模块关着时，
+  // 弹「开启 Fushi 复习」确认框）。驱动后等收尾动画走完（下拉 / 菜单的退场），
+  // 还多出来的路由就是驱动弹出的模态框：取消它（设置不变，按没有变化判），
+  // 否则它挡住后面所有行，整轮焦点都卡在框里。
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 500));
+  if (_modalScopeCount() > routesBefore) {
+    await tester.state<NavigatorState>(find.byType(Navigator).first).maybePop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
   }
   if (LocaleSettings.currentLocale != localeBefore) {
     LocaleSettings.setLocale(localeBefore);

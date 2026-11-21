@@ -12,7 +12,7 @@ part of '../video_fushi_page.dart';
 ///
 /// 探测（[_detectHlsVariantsForLoad]）在常规载入后异步 fetch master 内容判定；仅网络
 /// `.m3u8`/`.m3u` 直链才 fetch（避开 YouTube/googlevideo 单次 token URL），best-effort：
-/// 失败/超时/非 master 都静默降级为「无画质菜单」，绝不影响播放。
+/// 失败/超时/非 master 都降级为「无画质菜单」，绝不影响播放；失败只落 error_log，不提示。
 extension _VideoQuality on _VideoFushiPageState {
   /// 载入后探测当前流是否为 HLS master（多档画质），填充画质菜单状态。
   ///
@@ -31,27 +31,31 @@ extension _VideoQuality on _VideoFushiPageState {
     if (mediaUri == null || !_looksLikeM3u8Url(mediaUri)) return;
     final Uri? uri = Uri.tryParse(mediaUri);
     if (uri == null || !(uri.isScheme('http') || uri.isScheme('https'))) return;
+    final List<HlsVariant> variants;
     try {
-      final Map<String, String> headers = _streamHttpHeaderFields;
-      final http.Response resp = await http
-          .get(uri, headers: headers.isEmpty ? null : headers)
-          .timeout(const Duration(seconds: 8));
-      if (resp.statusCode != 200) return;
-      final String content = resp.body;
-      if (!isHlsMasterPlaylist(content)) return;
-      final List<HlsVariant> variants = sortedHlsVariantsByQualityDesc(
-        parseM3u8Master(content: content, baseUrl: mediaUri),
+      // 走应用代理出口（BUG-4805）：与播放内核同一条出站路径。
+      variants = await fetchHlsMasterVariants(
+        uri,
+        headers: _streamHttpHeaderFields,
       );
-      if (variants.isEmpty) return;
-      if (seq != _hlsDetectSeq || !mounted) return; // 探测期间换片：丢弃。
-      _rebuild(() {
-        _hlsMasterUri = mediaUri;
-        _hlsVariants = variants;
-        _selectedHlsVariantIndex = -1; // 默认自动（master ABR）。
-      });
-    } catch (_) {
-      // best-effort：网络失败 / 超时 / 解析异常 → 无画质菜单，不影响播放。
+    } on Object catch (error) {
+      // best-effort：网络失败 / 超时 / 非 200 → 无画质菜单，不影响播放、不提示用户；
+      // 但要留痕，否则「画质菜单没出来」无从排查。只记 host 与异常类型——URL 的
+      // query 里常带播放 token，异常正文（ClientException）会把整条 URL 带出来。
+      ErrorLogService.instance.log(
+        'VideoFushi.hlsQualityProbe',
+        'HLS quality probe failed for ${uri.host}: '
+            '${error is HlsMasterProbeStatusException ? error : error.runtimeType}',
+      );
+      return;
     }
+    if (variants.isEmpty) return;
+    if (seq != _hlsDetectSeq || !mounted) return; // 探测期间换片：丢弃。
+    _rebuild(() {
+      _hlsMasterUri = mediaUri;
+      _hlsVariants = variants;
+      _selectedHlsVariantIndex = -1; // 默认自动（master ABR）。
+    });
   }
 
   /// URI 路径是否以 `.m3u8` / `.m3u` 结尾（忽略 query）。只对这类直链探测 HLS，避开
@@ -152,8 +156,9 @@ extension _VideoQuality on _VideoFushiPageState {
     return _isYoutubeStream ? t.video_quality_auto : null;
   }
 
-  /// 打开画质侧栏（右键菜单 / 设置面板共用入口）。YouTube 流首次点开即**懒解析**各档
-  /// （一次 getManifest；侧栏解析中显 spinner），避免每次开视频都预解析多档拖慢起播。
+  /// 打开画质侧栏（右键菜单 / 设置面板共用入口）。YouTube 流的各档优先用起播时同一份
+  /// manifest 算好的（挂在客户端上）；没有才首次点开时**懒解析**（一次 getManifest；
+  /// 侧栏解析中显 spinner），不为画质菜单额外预解析拖慢起播。
   void _showQualityMenu({VideoControlSlot? sourceSlot}) {
     if (_isYoutubeStream &&
         !_youtubeVariantsResolved &&
@@ -171,14 +176,17 @@ extension _VideoQuality on _VideoFushiPageState {
   /// bump [_episodeLoadSeq]。故 await 后除 `mounted` 外**必须重校验 seq**——否则 A 集迟到
   /// 的解析结果会覆盖 B 集状态，B 的画质菜单显 A 的档、切档播 A 的流（换集状态泄漏）。
   Future<void> _ensureYoutubeVariantsLoaded() async {
-    final String? watch = _currentYoutubeWatchUrl;
-    if (watch == null) return;
+    final RemoteVideoClient? client = _effectiveRemoteClient;
+    if (client is! UrlStreamVideoClient || _currentYoutubeWatchUrl == null) {
+      return;
+    }
     if (_youtubeVariantsResolved || _youtubeVariantsLoading) return;
     final int seq = _episodeLoadSeq;
     _rebuild(() => _youtubeVariantsLoading = true);
     try {
-      final YoutubeVariantSet set = await resolveYoutubeVideoVariants(
-        watch,
+      // 起播那次 getManifest 已算好的各档挂在客户端上：直接用，不再重取 manifest
+      // （gap-remote-10）；没有（持久缓存命中起播的）才现取一次。
+      final YoutubeVariantSet set = await client.youtubeQualityVariants(
         playbackTargetHeight: appModel.youtubeQualityTargetHeightOrNull,
       );
       // 换集：丢弃迟到结果（新集已复位状态、bump seq），绝不覆盖新集画质态。

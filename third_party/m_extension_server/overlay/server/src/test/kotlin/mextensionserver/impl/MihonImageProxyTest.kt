@@ -25,7 +25,7 @@ import kotlin.test.assertTrue
 
 class MihonImageProxyTest {
     @Test
-    fun `consumes network image body before the observable cancels its call`() {
+    fun `hands back a live network response whose body outlives the call setup`() {
         val expected = ByteArray(256 * 1024) { (it % 251).toByte() }
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/image") { exchange ->
@@ -49,9 +49,10 @@ class MihonImageProxyTest {
             val page = Page(0, imageUrl = "http://127.0.0.1:${server.address.port}/image")
             val proxyUrl = requireNotNull(MihonImageProxy.register(source, page))
             val token = URI(proxyUrl).path.substringAfterLast('/')
-            val image = requireNotNull(MihonImageProxy.fetch(token))
-            assertEquals("image/jpeg", image.contentType)
-            assertContentEquals(expected, image.bytes)
+            requireNotNull(MihonImageProxy.open(token)).use { response ->
+                assertEquals("image/jpeg", response.body.contentType().toString())
+                assertContentEquals(expected, response.body.bytes())
+            }
         } finally {
             server.stop(0)
             networkClient.connectionPool.evictAll()
@@ -73,12 +74,12 @@ class MihonImageProxyTest {
 
         val proxyUrl = requireNotNull(MihonImageProxy.register(source, page))
         val token = URI(proxyUrl).path.substringAfterLast('/')
-        val image = requireNotNull(MihonImageProxy.fetch(token))
-
-        assertTrue(proxyUrl.startsWith("http://127.0.0.1:39641/image/"))
-        assertEquals(fragment, source.seenFragment)
-        assertEquals("image/jpeg", image.contentType)
-        assertContentEquals(source.imageBytes, image.bytes)
+        requireNotNull(MihonImageProxy.open(token)).use { response ->
+            assertTrue(proxyUrl.startsWith("http://127.0.0.1:39641/image/"))
+            assertEquals(fragment, source.seenFragment)
+            assertEquals("image/jpeg", response.body.contentType().toString())
+            assertContentEquals(source.imageBytes, response.body.bytes())
+        }
     }
 
     @Test
@@ -89,7 +90,7 @@ class MihonImageProxyTest {
 
         val proxyUrl = requireNotNull(MihonImageProxy.register(source, page))
         val token = URI(proxyUrl).path.substringAfterLast('/')
-        MihonImageProxy.fetch(token)
+        MihonImageProxy.open(token)?.close()
 
         assertEquals(1, source.imageUrlFetches)
         assertEquals(source.resolvedImageUrl, page.imageUrl)
@@ -103,7 +104,7 @@ class MihonImageProxyTest {
 
         val proxyUrl = requireNotNull(MihonImageProxy.register(source, page))
         val token = URI(proxyUrl).path.substringAfterLast('/')
-        MihonImageProxy.fetch(token)
+        MihonImageProxy.open(token)?.close()
 
         assertEquals(1, source.imageUrlFetches)
         assertEquals(source.resolvedImageUrl, page.imageUrl)

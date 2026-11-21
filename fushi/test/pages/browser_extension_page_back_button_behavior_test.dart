@@ -59,7 +59,12 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(find.byIcon(Icons.arrow_back), findsOneWidget);
+    // 页头大字外壳的返回键是 FushiIcons.back（Apple 下换 CupertinoIcons 字形），
+    // 按「返回」tooltip 认，不绑字形。
+    expect(
+      find.byTooltip(const DefaultMaterialLocalizations().backButtonTooltip),
+      findsOneWidget,
+    );
 
     // 收尾：卸载页面，让页内 Timer.periodic 在 dispose 里被 cancel。
     await tester.pumpWidget(const SizedBox.shrink());

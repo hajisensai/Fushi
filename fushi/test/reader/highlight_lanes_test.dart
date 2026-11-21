@@ -2,7 +2,6 @@
 library;
 
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart'
@@ -13,6 +12,8 @@ import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi_core/fushi_core.dart';
+
+import '../helpers/node_runtime.dart';
 
 /// 高亮条一律一个字高（用户 2026-10-15「所有字体都要一个字高」）。
 ///
@@ -129,7 +130,7 @@ void main() {
   test(
     'every highlight is a 1em lane: current sentence, lookup, favourite, search',
     () async {
-      final String? nodeExe = _resolveNode();
+      final String? nodeExe = resolveNodeExecutable();
       if (nodeExe == null) {
         markTestSkipped('node not found on PATH; skipping JS execution');
         return;
@@ -184,47 +185,27 @@ void main() {
           }
         }
       }
-      final Directory temp = Directory.systemTemp.createTempSync(
-        'highlight-lanes-',
+      final Map<String, Object> payload = <String, Object>{
+        'pages': pages,
+        'backdropPages': backdropPages,
+        'rangePages': rangePages,
+      };
+      final NodeHarnessResult run = await runNodeHarness(
+        nodeExe,
+        'test/reader/highlight_lanes_harness.mjs',
+        payload,
+        timeout: const Duration(seconds: 100),
       );
-      try {
-        final File payload = File('${temp.path}/pages.json')
-          ..writeAsStringSync(
-            jsonEncode(<String, Object>{
-              'pages': pages,
-              'backdropPages': backdropPages,
-              'rangePages': rangePages,
-            }),
-          );
-        final Process process = await Process.start(nodeExe, <String>[
-          'test/reader/highlight_lanes_harness.mjs',
-          payload.path,
-        ]);
-        final Future<String> stdout = process.stdout
-            .transform(utf8.decoder)
-            .join();
-        final Future<String> stderr = process.stderr
-            .transform(utf8.decoder)
-            .join();
-        final int exitCode = await process.exitCode.timeout(
-          const Duration(seconds: 100),
-          onTimeout: () {
-            process.kill(ProcessSignal.sigkill);
-            return -1;
-          },
-        );
-        final String out = await stdout;
-        if (exitCode == 77) {
-          markTestSkipped('Chrome unavailable: $out');
-          return;
-        }
-        expect(exitCode, 0, reason: '$out\n${await stderr}');
-        expect(out, contains('PASS 12 lane pages'));
-        expect(out, contains('6 book-background pages'));
-        expect(out, contains('12 range-mode pages'));
-      } finally {
-        temp.deleteSync(recursive: true);
+      final int exitCode = run.exitCode;
+      final String out = run.stdout;
+      if (exitCode == 77) {
+        markTestSkipped('Chrome unavailable: $out');
+        return;
       }
+      expect(exitCode, 0, reason: '$out\n${run.stderr}');
+      expect(out, contains('PASS 12 lane pages'));
+      expect(out, contains('6 book-background pages'));
+      expect(out, contains('12 range-mode pages'));
     },
     timeout: const Timeout(Duration(seconds: 150)),
   );
@@ -283,19 +264,4 @@ void main() {
       );
     },
   );
-}
-
-String? _resolveNode() {
-  final List<String> candidates = Platform.isWindows
-      ? <String>['node.exe', 'node']
-      : <String>['node'];
-  for (final String name in candidates) {
-    try {
-      final ProcessResult probe = Process.runSync(name, <String>['--version']);
-      if (probe.exitCode == 0) return name;
-    } on ProcessException {
-      // Try the next executable name.
-    }
-  }
-  return null;
 }

@@ -67,6 +67,42 @@ class SubtitleAutoAlignResult {
       'confidence: ${confidence.toStringAsFixed(3)}, status: $status)';
 }
 
+/// 跑一次自动对轴：[loadAudioEnergy] 取逐帧音频能量（抽本地音轨 / 远端拉音轨，可能
+/// 要几十秒），再与 [cues] 栅格化后互相关（[correlate]，默认
+/// [bestOffsetMsByCrossCorrelation]）。
+///
+/// 返回 null = 结果已作废：取能量的 await 期间 [isCurrent] 变假（原地换集、换了字幕源、
+/// 换了控制器），算出来的平移量属于开始时那一集 / 那份字幕，不能写到现在的视频上。
+/// 调用方拿到非 null 结果后不再 await 就写延迟，开始时的身份即写入时的身份。
+/// [loadAudioEnergy] 返回空列表按 [SubtitleAutoAlignResult.noData] 处理。
+Future<SubtitleAutoAlignResult?> runSubtitleAutoAlign({
+  required List<AudioCue> cues,
+  required int durationMs,
+  required Future<List<double>> Function() loadAudioEnergy,
+  required bool Function() isCurrent,
+  int binMs = kSubtitleAutoAlignBinMs,
+  SubtitleAutoAlignResult Function(
+    List<double> audioActivity,
+    List<double> cueActivity,
+  )?
+  correlate,
+}) async {
+  final List<double> rawRms = await loadAudioEnergy();
+  if (!isCurrent()) return null;
+  final List<double> audioActivity = normalizeAudioEnergyEnvelope(rawRms);
+  final List<double> cueActivity = buildCueActivityEnvelope(
+    cues,
+    durationMs,
+    binMs: binMs,
+  );
+  if (correlate != null) return correlate(audioActivity, cueActivity);
+  return bestOffsetMsByCrossCorrelation(
+    audioActivity,
+    cueActivity,
+    binMs: binMs,
+  );
+}
+
 /// 默认时间栅格步长（毫秒）。100ms 兼顾分辨率与计算量：±15s 的搜索窗 → 300 个偏移
 /// 步，序列长度按视频时长 / 100ms（一部 2h 电影约 72000 格），互相关 O(N·shifts)
 /// 仍可接受。

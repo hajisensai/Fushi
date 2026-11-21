@@ -41,6 +41,33 @@ void main() {
     );
   });
 
+  // 拍板台 jeNKF9u0WJ：音乐来源里的本地 MV 进曲库。曲库收的视频容器 = kVideoExtensions
+  // 去掉 mp4（mp4 已在 AUDIO_EXTENSIONS）；两表一漂移，视频库认、曲库不认的格式在音乐
+  // 来源里静默消失，曲库里「是不是 MV」的判据（isVideoMediaPath）也会与扫描器对不上。
+  test('Rust VIDEO_EXTENSIONS == kVideoExtensions minus mp4', () {
+    final String src = File(
+      '../native/fushi_music/src/tags.rs',
+    ).readAsStringSync();
+    final RegExpMatch? table = RegExp(
+      r'pub const VIDEO_EXTENSIONS: &\[&str\] = &\[([^\]]*)\];',
+    ).firstMatch(src);
+    expect(table, isNotNull, reason: 'tags.rs 里找不到 VIDEO_EXTENSIONS 表');
+    final List<String> rust = <String>[
+      for (final RegExpMatch m in RegExp(
+        r'"([a-z0-9]+)"',
+      ).allMatches(table!.group(1)!))
+        m.group(1)!,
+    ];
+    expect(rust.toSet().length, rust.length, reason: 'Rust 表有重复项');
+    expect(
+      <String>{for (final String e in rust) '.$e', '.mp4'},
+      equals(kVideoExtensions),
+      reason:
+          '视频容器扩展名漂移：tags.rs 的 VIDEO_EXTENSIONS（加上 mp4）必须等于 '
+          'media_extensions.dart 的 kVideoExtensions',
+    );
+  });
+
   test('kAudioExtensions stays disjoint from kVideoExtensions', () {
     expect(kAudioExtensions.intersection(kVideoExtensions), isEmpty);
   });

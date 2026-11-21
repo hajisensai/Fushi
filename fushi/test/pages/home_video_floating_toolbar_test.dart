@@ -17,8 +17,6 @@ import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
-import 'package:fushi/src/pages/shared/library_section_tabs.dart';
-import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
@@ -28,6 +26,8 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/masthead_tabs.dart';
+import '../helpers/shell_layout.dart';
 
 class _NoopScrapeRunner implements VideoSourceScrapeRunner {
   @override
@@ -118,6 +118,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         home: Scaffold(
           body: VideoLibraryShell(
             repository: VideoBookRepository(db),
@@ -143,7 +144,7 @@ void main() {
   testWidgets('多选：悬浮动作组切成「已选 N · 退出」，底部批量栏浮起；退出后换回', (
     WidgetTester tester,
   ) async {
-    // 刷新按钮只在桌面平台出现（触屏下拉即入口，反馈 #7m1x-R3yOn）。
+    // 刷新只在桌面平台出现（触屏下拉即入口，反馈 #7m1x-R3yOn）。
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     tester.view.physicalSize = const Size(1600, 1000);
     tester.view.devicePixelRatio = 1;
@@ -151,20 +152,38 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    final FushiSectionTabBar<VideoLibrarySection> strip = tester.widget(
-      find.byType(FushiSectionTabBar<VideoLibrarySection>).first,
-    );
-    strip.onChanged!(VideoLibrarySection.allVideos);
+    // 页头大字顶栏（PR #3397）：全部视频在媒体库组的二级页签里。
+    readMastheadTabs<VideoLibrarySection>(
+      tester,
+      mastheadSecondaryTabs<VideoLibrarySection>(),
+    ).onChanged(VideoLibrarySection.allVideos);
     await tester.pumpAndSettle();
 
+    // 设计稿 #video V2：页头只留搜索 / 筛选与排序 / 后台任务 / 添加，低频动作
+    // （刷新、选择、管理标签…）收进「⋯」。
     expect(
-      inPill(find.byKey(const ValueKey<String>('video-library-refresh'))),
+      inPill(find.byKey(const ValueKey<String>('video-library-more'))),
       findsOneWidget,
-      reason: '视频库页头的刷新等动作由浮动工具栏的悬浮动作组画出',
+      reason: '视频库页头的「⋯」由浮动工具栏的悬浮动作组画出',
+    );
+    expect(
+      find.byKey(const ValueKey<String>('video-library-refresh')),
+      findsNothing,
+      reason: '刷新空闲时住在「⋯」里，不占页头按钮',
     );
     expect(find.byType(BatchActionBar), findsNothing);
 
-    await tester.tap(find.byIcon(FushiIcons.checklist));
+    await tester.tap(
+      inPill(find.byKey(const ValueKey<String>('video-library-more'))),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('video-library-refresh-menu')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('library_select_toggle')),
+    );
     await tester.pumpAndSettle();
 
     expect(
@@ -173,7 +192,7 @@ void main() {
       reason: '多选态是浮动工具栏的上下文切换',
     );
     expect(
-      inPill(find.byKey(const ValueKey<String>('video-library-refresh'))),
+      inPill(find.byKey(const ValueKey<String>('video-library-more'))),
       findsNothing,
     );
     expect(inPill(find.text(t.batch_selected_count(n: 0))), findsOneWidget);
@@ -185,7 +204,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(BatchActionBar), findsNothing, reason: '批量栏沉下去后卸掉');
     expect(
-      inPill(find.byKey(const ValueKey<String>('video-library-refresh'))),
+      inPill(find.byKey(const ValueKey<String>('video-library-more'))),
       findsOneWidget,
     );
     debugDefaultTargetPlatformOverride = null; // 须在用例体内复位：不变量先于 tearDown 校验
@@ -199,15 +218,23 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    final FushiSectionTabBar<VideoLibrarySection> strip = tester.widget(
-      find.byType(FushiSectionTabBar<VideoLibrarySection>).first,
-    );
-    strip.onChanged!(VideoLibrarySection.allVideos);
+    // 页头大字顶栏（PR #3397）：全部视频在媒体库组的二级页签里。
+    readMastheadTabs<VideoLibrarySection>(
+      tester,
+      mastheadSecondaryTabs<VideoLibrarySection>(),
+    ).onChanged(VideoLibrarySection.allVideos);
     await tester.pumpAndSettle();
 
     expect(
       find.byKey(const ValueKey<String>('video-library-refresh')),
       findsNothing,
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('video-library-more')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('video-library-refresh-menu')),
+      findsNothing,
+      reason: '触屏下拉即刷新入口，「⋯」里也不重复',
     );
     debugDefaultTargetPlatformOverride = null;
   });

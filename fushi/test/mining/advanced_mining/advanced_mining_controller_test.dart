@@ -528,4 +528,155 @@ void main() {
       expect(c.previewing, isFalse);
     });
   });
+
+  // 反馈 66LR2RsYcl：区间条端点可拖、Shift / Ctrl 换步长。约束与换档都在控制器 /
+  // 纯函数一处，按钮、方向键、拖动三条路径共用。
+  group('端点拖动与修饰键步长', () {
+    const int start0 = FakeAdvancedMiningHost.sentenceStartMs;
+    // 默认 3 句：区间 = [start0, start0 + 3000]。
+
+    test('setAudioEdgeDelta 设绝对偏移；live（describe: false）不问宿主', () async {
+      final AdvancedMiningController c = await loaded(
+        AdvancedMiningController(host.videoPage()),
+      );
+      final int before = host.describeCalls.length;
+      c.setAudioEdgeDelta(start: true, deltaMs: 300, describe: false);
+      c.setAudioEdgeDelta(start: true, deltaMs: 420, describe: false);
+      await pumpEventQueue();
+      expect(host.describeCalls.length, before, reason: '拖动途中不逐帧问宿主');
+      expect(c.audioStartDeltaMs, 420);
+      expect(c.audioWindow!.startMs, start0 + 420, reason: '乐观更新跟手');
+      await c.refreshAudioWindow();
+      expect(host.describeCalls.last, <int>[420, 0]);
+      expect(c.buildOverrides().audioStartDeltaMs, 420);
+    });
+
+    test('起点拖过终点：夹到「终点 - 最短时长」，区间不倒挂', () async {
+      final AdvancedMiningController c = await loaded(
+        AdvancedMiningController(host.videoPage()),
+      );
+      c.setAudioEdgeDelta(start: true, deltaMs: 99999);
+      await pumpEventQueue();
+      expect(c.audioStartDeltaMs, 3000 - kAdvancedMiningAudioMinDurationMs);
+      expect(c.audioWindow!.durationMs, kAdvancedMiningAudioMinDurationMs);
+    });
+
+    test('终点拖过起点 / 按钮一路往前：同样夹到最短时长', () async {
+      final AdvancedMiningController c = await loaded(
+        AdvancedMiningController(host.videoPage()),
+      );
+      for (int i = 0; i < 20; i++) {
+        c.nudgeAudioEdge(start: false, deltaMs: -250);
+      }
+      await pumpEventQueue();
+      expect(c.audioEndDeltaMs, -(3000 - kAdvancedMiningAudioMinDurationMs));
+      expect(c.audioWindow!.endMs - c.audioWindow!.startMs, 100);
+      // 夹住后往回挪立刻生效（不用先「还清」被夹掉的部分）。
+      c.nudgeAudioEdge(start: false, deltaMs: 250);
+      expect(c.audioEndDeltaMs, -(3000 - 100) + 250);
+    });
+
+    test('按钮发出的 describe 未回来就开拖：旧结果作废，起点仍夹在终点之前', () async {
+      final AdvancedMiningController c = await loaded(
+        AdvancedMiningController(host.videoPage()),
+      );
+      // 点一下「起点 +250」：发出 describe(250, 0)，宿主卡住不回。
+      host.describeGate = Completer<void>();
+      c.nudgeAudioEdge(start: true, deltaMs: 250);
+      expect(host.describeCalls.last, <int>[250, 0]);
+      // 宿主还没回就抓起点开拖，一路拖过终点。
+      c.setAudioEdgeDelta(start: true, deltaMs: 1500, describe: false);
+      // 在途的旧请求此时才回来：不能把乐观区间换回按 250 算的窗口。
+      host.describeGate!.complete();
+      host.describeGate = null;
+      await pumpEventQueue();
+      expect(c.audioWindow!.startMs, start0 + 1500, reason: '旧 describe 作废');
+      c.setAudioEdgeDelta(start: true, deltaMs: 99999, describe: false);
+      expect(c.audioStartDeltaMs, 3000 - kAdvancedMiningAudioMinDurationMs);
+      await c.refreshAudioWindow();
+      expect(c.audioWindow!.durationMs, kAdvancedMiningAudioMinDurationMs);
+    });
+
+    test('读屏增减读数按同一套约束夹过', () {
+      const AdvancedMiningAudioWindow w = AdvancedMiningAudioWindow(
+        startMs: 100,
+        endMs: 300,
+      );
+      expect(advancedMiningSteppedEdgeMs(window: w, start: true, stepMs: 250), (
+        increased: 300 - kAdvancedMiningAudioMinDurationMs,
+        decreased: 0,
+      ));
+      expect(
+        advancedMiningSteppedEdgeMs(window: w, start: false, stepMs: 250),
+        (increased: 550, decreased: 100 + kAdvancedMiningAudioMinDurationMs),
+      );
+    });
+
+    test('起点不早于 0', () async {
+      final AdvancedMiningController c = await loaded(
+        AdvancedMiningController(host.videoPage()),
+      );
+      c.setAudioEdgeDelta(start: true, deltaMs: -start0 - 5000);
+      await pumpEventQueue();
+      expect(c.audioStartDeltaMs, -start0);
+      expect(c.audioWindow!.startMs, 0);
+    });
+
+    test('锁定时不动', () async {
+      final AdvancedMiningController c = await loaded(
+        AdvancedMiningController(host.videoPage()),
+      );
+      c.startEdit(SentenceContextSlot.prev, 0, c.prev[0]);
+      expect(c.locked, isTrue);
+      c.setAudioEdgeDelta(start: false, deltaMs: 500);
+      expect(c.audioEndDeltaMs, 0);
+    });
+
+    test('步长换档：Shift ×10、Ctrl ÷5（不低于最小单位）、同时按以细调为准', () {
+      expect(
+        advancedMiningStepScaleFor(shift: false, control: false),
+        AdvancedMiningStepScale.normal,
+      );
+      expect(
+        advancedMiningStepScaleFor(shift: true, control: false),
+        AdvancedMiningStepScale.coarse,
+      );
+      expect(
+        advancedMiningStepScaleFor(shift: false, control: true),
+        AdvancedMiningStepScale.fine,
+      );
+      expect(
+        advancedMiningStepScaleFor(shift: true, control: true),
+        AdvancedMiningStepScale.fine,
+      );
+      int s(int base, AdvancedMiningStepScale k, [int min = 10]) =>
+          scaleAdvancedMiningStepMs(base, k, minMs: min);
+      expect(s(250, AdvancedMiningStepScale.normal), 250);
+      expect(s(250, AdvancedMiningStepScale.coarse), 2500);
+      expect(s(250, AdvancedMiningStepScale.fine), 50);
+      expect(s(50, AdvancedMiningStepScale.fine), 10);
+      expect(s(42, AdvancedMiningStepScale.fine, 42), 42, reason: '逐帧细调低不过一帧');
+    });
+
+    test('逐帧挪动也吃修饰键：Shift 一次 10 帧，Ctrl 仍是 1 帧', () async {
+      final AdvancedMiningController c = await loaded(
+        AdvancedMiningController(host.videoPage()),
+      );
+      c.nudgeVideoEdge(
+        first: true,
+        forward: true,
+        scale: AdvancedMiningStepScale.coarse,
+      );
+      c.nudgeVideoEdge(
+        first: false,
+        forward: false,
+        scale: AdvancedMiningStepScale.fine,
+      );
+      expect(c.audioStartDeltaMs, 420);
+      expect(c.audioEndDeltaMs, -42);
+      c.selectVideoImageMode(VideoMiningImageMode.currentFrame);
+      c.nudgeStillFrame(forward: true, scale: AdvancedMiningStepScale.coarse);
+      expect(c.buildOverrides().coverFrameAtMs, 725000 + 420);
+    });
+  });
 }

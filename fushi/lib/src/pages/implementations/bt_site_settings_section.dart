@@ -4,6 +4,10 @@
 /// （`bt_site_probe.dart`），那是内部字段：**界面上不出现任何站名或接口格式**，
 /// 探测失败也只给中性提示（所有者 2026-10 拍板，规避风险，不是疏漏）。
 ///
+/// 自动识别不了的站点（论坛式私有站等）可以在对话框里粘贴一份解析规则
+/// （`bt_site_parser_rule.dart`），需要登录的再填 Cookie；有规则就不自动识别，改为
+/// 按规则验证（所有者 2026-11 拍板：支持用户导入解析，而不是逐站内置）。
+///
 /// 列表行只显示名称（没起名就是主机名），从不显示完整地址——地址里可能带站点
 /// passkey。地址只在编辑对话框的输入框里出现。
 ///
@@ -14,6 +18,7 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -23,10 +28,14 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
@@ -36,6 +45,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/media/torrent/bt_site_config.dart';
+import 'package:fushi_engine/media/torrent/bt_site_parser_rule.dart';
 import 'package:fushi_engine/media/torrent/bt_site_probe.dart';
 
 /// BT 站设置的读写口。
@@ -44,10 +54,13 @@ abstract interface class BtSiteSettingsStore {
 
   Future<void> save(List<BtSiteConfig> sites);
 
-  /// 自动识别站点；失败抛 [BtSiteProbeException]（或底层异常）。
+  /// 自动识别站点；给了 [parser] 则按规则验证（[cookie] 随请求发送）。失败抛
+  /// [BtSiteProbeException]（或底层异常）。
   Future<BtSiteProbeResult> detect(
     String url, {
     required bool allowInsecureHttp,
+    BtSiteParserRule? parser,
+    String cookie = '',
   });
 
   /// 用站点生效的第一个视频域搜一次，返回条数；没有视频域时 null。
@@ -69,7 +82,14 @@ class AppBtSiteSettingsStore implements BtSiteSettingsStore {
   Future<BtSiteProbeResult> detect(
     String url, {
     required bool allowInsecureHttp,
-  }) => appModel.detectBtSite(url, allowInsecureHttp: allowInsecureHttp);
+    BtSiteParserRule? parser,
+    String cookie = '',
+  }) => appModel.detectBtSite(
+    url,
+    allowInsecureHttp: allowInsecureHttp,
+    parser: parser,
+    cookie: cookie,
+  );
 
   @override
   Future<int?> testSearch(BtSiteConfig site) => appModel.testBtSiteSearch(site);
@@ -92,8 +112,11 @@ String btSiteProbeErrorMessage(Object error) {
     return switch (error.error) {
       BtSiteProbeError.invalidUrl => t.bt_site_url_invalid_error,
       BtSiteProbeError.insecureHttp => t.bt_site_url_insecure_error,
-      BtSiteProbeError.unrecognized => t.bt_site_detect_failed_error,
+      BtSiteProbeError.unrecognized => t.bt_site_detect_unrecognized_error,
       BtSiteProbeError.timedOut => t.bt_site_detect_timeout_error,
+      BtSiteProbeError.ruleRequestFailed => t.bt_site_rule_request_failed_error,
+      BtSiteProbeError.ruleMatchedNothing =>
+        t.bt_site_rule_matched_nothing_error,
     };
   }
   if (error is TimeoutException) return t.bt_site_detect_timeout_error;
@@ -216,6 +239,8 @@ class _BtSiteSettingsSectionState extends ConsumerState<BtSiteSettingsSection> {
       final BtSiteProbeResult probe = await store.detect(
         site.baseUrl.toString(),
         allowInsecureHttp: site.allowInsecureHttp,
+        parser: site.parser,
+        cookie: site.cookie,
       );
       final BtSiteConfig next = probe.applyTo(
         id: site.id,
@@ -223,6 +248,7 @@ class _BtSiteSettingsSectionState extends ConsumerState<BtSiteSettingsSection> {
         domains: site.domains,
         enabled: site.enabled,
         allowInsecureHttp: site.allowInsecureHttp,
+        cookie: site.cookie,
       );
       if (!mounted) return;
       final bool saved = await _save(<BtSiteConfig>[
@@ -461,8 +487,9 @@ class _BtSiteSettingsSectionState extends ConsumerState<BtSiteSettingsSection> {
   }
 }
 
-/// 添加 / 编辑一个 BT 站。点保存时按需探测（新增、改了地址、改了明文 HTTP），
-/// 探测成功才返回配置；只改名称 / 域 / 启用不探测。返回 null = 取消。
+/// 添加 / 编辑一个 BT 站。点保存时按需探测（新增、改了地址、改了明文 HTTP、
+/// 改了解析规则或 Cookie），探测成功才返回配置；只改名称 / 域 / 启用不探测。
+/// 返回 null = 取消。
 class BtSiteEditDialog extends StatefulWidget {
   const BtSiteEditDialog({super.key, required this.store, this.initial});
 
@@ -485,6 +512,15 @@ class _BtSiteEditDialogState extends State<BtSiteEditDialog> {
   late Set<BtSiteDomain> _domains = <BtSiteDomain>{...?widget.initial?.domains};
   late bool _enabled = widget.initial?.enabled ?? true;
   late bool _allowInsecureHttp = widget.initial?.allowInsecureHttp ?? false;
+  late final TextEditingController _parser = TextEditingController(
+    text: widget.initial?.parser?.toPrettyJson() ?? '',
+  );
+  late final TextEditingController _cookie = TextEditingController(
+    text: widget.initial?.cookie ?? '',
+  );
+
+  /// 解析规则区展开：已有规则的站点默认展开；识别失败时自动展开。
+  late bool _parserExpanded = widget.initial?.parser != null;
 
   bool _detecting = false;
   String? _error;
@@ -497,14 +533,20 @@ class _BtSiteEditDialogState extends State<BtSiteEditDialog> {
   void initState() {
     super.initState();
     _url.addListener(_onUrlChanged);
+    _parser.addListener(_onUrlChanged);
+    _cookie.addListener(_onUrlChanged);
   }
 
   @override
   void dispose() {
     _generation++;
     _url.removeListener(_onUrlChanged);
+    _parser.removeListener(_onUrlChanged);
+    _cookie.removeListener(_onUrlChanged);
     _url.dispose();
     _name.dispose();
+    _parser.dispose();
+    _cookie.dispose();
     super.dispose();
   }
 
@@ -519,7 +561,15 @@ class _BtSiteEditDialogState extends State<BtSiteEditDialog> {
     final BtSiteConfig? initial = widget.initial;
     if (initial == null) return true;
     return _url.text.trim() != initial.baseUrl.toString() ||
-        _allowInsecureHttp != initial.allowInsecureHttp;
+        _allowInsecureHttp != initial.allowInsecureHttp ||
+        _parser.text.trim() != (initial.parser?.toPrettyJson() ?? '') ||
+        _cookie.text.trim() != initial.cookie;
+  }
+
+  /// 读解析规则输入框：空 = 不用规则；畸形抛 [FormatException]。
+  BtSiteParserRule? _readParser() {
+    final String text = _parser.text.trim();
+    return text.isEmpty ? null : BtSiteParserRule.fromJson(text);
   }
 
   Future<void> _submit() async {
@@ -536,6 +586,17 @@ class _BtSiteEditDialogState extends State<BtSiteEditDialog> {
       ).pop(initial.copyWith(name: name, domains: _domains, enabled: _enabled));
       return;
     }
+    final BtSiteParserRule? parser;
+    try {
+      parser = _readParser();
+    } on FormatException catch (error) {
+      setState(() {
+        _parserExpanded = true;
+        _error = t.bt_site_parser_invalid_error(reason: error.message);
+      });
+      return;
+    }
+    final String cookie = parser == null ? '' : _cookie.text.trim();
     final int generation = ++_generation;
     setState(() {
       _detecting = true;
@@ -545,6 +606,8 @@ class _BtSiteEditDialogState extends State<BtSiteEditDialog> {
       final BtSiteProbeResult result = await widget.store.detect(
         _url.text.trim(),
         allowInsecureHttp: _allowInsecureHttp,
+        parser: parser,
+        cookie: cookie,
       );
       if (!mounted || generation != _generation) return;
       Navigator.of(context).pop(
@@ -554,6 +617,7 @@ class _BtSiteEditDialogState extends State<BtSiteEditDialog> {
           domains: _domains,
           enabled: _enabled,
           allowInsecureHttp: _allowInsecureHttp,
+          cookie: cookie,
         ),
       );
     } on Object catch (error) {
@@ -561,8 +625,120 @@ class _BtSiteEditDialogState extends State<BtSiteEditDialog> {
       setState(() {
         _detecting = false;
         _error = btSiteProbeErrorMessage(error);
+        // 认不出的站：打开解析规则区，让下一步可做的事就在眼前。
+        if (error is BtSiteProbeException &&
+            error.error == BtSiteProbeError.unrecognized) {
+          _parserExpanded = true;
+        }
       });
     }
+  }
+
+  /// 打开「怎么写解析规则」；规则框为空时允许一键填入通用模板（不覆盖已写的规则）。
+  Future<void> _showParserHelp() async {
+    final bool canUseTemplate = _parser.text.trim().isEmpty;
+    final bool? useTemplate = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext context) =>
+          BtSiteParserHelpDialog(canUseTemplate: canUseTemplate),
+    );
+    if (useTemplate != true || !mounted || _parser.text.trim().isNotEmpty) {
+      return;
+    }
+    _parser.text = kBtSiteParserRuleTemplate;
+  }
+
+  /// 「解析规则」折叠区：规则 JSON（粘贴导入）+ 登录 Cookie。
+  Widget _parserSection(ThemeData theme) {
+    final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FushiPressScale(
+            enabled: !_detecting,
+            child: FushiTextButton.icon(
+              key: const ValueKey<String>('bt-site-dialog-parser-toggle'),
+              onPressed: _detecting
+                  ? null
+                  : () => setState(() => _parserExpanded = !_parserExpanded),
+              icon: AnimatedRotation(
+                turns: _parserExpanded ? 0.5 : 0,
+                duration: duration,
+                curve: FushiMotion.standard,
+                child: const FushiIcon(FushiIcons.expandMore, size: 18),
+              ),
+              label: Text(t.bt_site_parser_label),
+            ),
+          ),
+        ),
+        FushiAnimatedSize(
+          duration: duration,
+          curve: FushiMotion.standard,
+          alignment: Alignment.topCenter,
+          child: !_parserExpanded
+              ? const SizedBox(width: double.infinity)
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    const SizedBox(height: 4),
+                    FushiTextFieldControl(
+                      key: const ValueKey<String>('bt-site-dialog-parser'),
+                      controller: _parser,
+                      enabled: !_detecting,
+                      minLines: 3,
+                      maxLines: 10,
+                      keyboardType: TextInputType.multiline,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontFamily: 'monospace',
+                      ),
+                      decoration: InputDecoration(
+                        labelText: t.bt_site_parser_label,
+                        hintText: t.bt_site_parser_hint,
+                        alignLabelWithHint: true,
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: FushiPressScale(
+                        enabled: !_detecting,
+                        child: FushiTextButton.icon(
+                          key: const ValueKey<String>(
+                            'bt-site-dialog-parser-help',
+                          ),
+                          onPressed: _detecting
+                              ? null
+                              : () => unawaited(_showParserHelp()),
+                          icon: const FushiIcon(FushiIcons.help, size: 18),
+                          label: Text(t.bt_site_parser_help_action),
+                        ),
+                      ),
+                    ),
+                    if (_parser.text.trim().isNotEmpty) ...<Widget>[
+                      const SizedBox(height: 12),
+                      FushiTextFieldControl(
+                        key: const ValueKey<String>('bt-site-dialog-cookie'),
+                        controller: _cookie,
+                        enabled: !_detecting,
+                        obscureText: true,
+                        autocorrect: false,
+                        enableSuggestions: false,
+                        decoration: InputDecoration(
+                          labelText: t.bt_site_cookie_label,
+                          hintText: t.bt_site_cookie_hint,
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+        ),
+      ],
+    );
   }
 
   @override
@@ -666,6 +842,7 @@ class _BtSiteEditDialogState extends State<BtSiteEditDialog> {
                       _error = null;
                     }),
             ),
+          _parserSection(theme),
           if (_detecting)
             Padding(
               padding: const EdgeInsets.only(top: 8),
@@ -707,6 +884,118 @@ class _BtSiteEditDialogState extends State<BtSiteEditDialog> {
               ? null
               : () => unawaited(_submit()),
         ),
+      ],
+    );
+  }
+}
+
+/// 「怎么写解析规则」：通用写法说明 + 通用模板（[kBtSiteParserRuleTemplate]）。
+///
+/// 只讲通用写法、不给逐站示例（所有者 2026-11 拍板：站点改版就失效，维护不起）。
+/// 返回 true = 用户要把模板填进规则框（仅 [canUseTemplate] 时提供该按钮）。
+class BtSiteParserHelpDialog extends StatefulWidget {
+  const BtSiteParserHelpDialog({super.key, required this.canUseTemplate});
+
+  /// 规则框为空时才给「填入模板」，避免覆盖已写的规则。
+  final bool canUseTemplate;
+
+  @override
+  State<BtSiteParserHelpDialog> createState() => _BtSiteParserHelpDialogState();
+}
+
+class _BtSiteParserHelpDialogState extends State<BtSiteParserHelpDialog> {
+  bool _copied = false;
+
+  Future<void> _copyTemplate() async {
+    await Clipboard.setData(
+      const ClipboardData(text: kBtSiteParserRuleTemplate),
+    );
+    if (!mounted) return;
+    setState(() => _copied = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final List<String> paragraphs = <String>[
+      t.bt_site_parser_help_intro,
+      t.bt_site_parser_help_search,
+      t.bt_site_parser_help_rows,
+      t.bt_site_parser_help_fields,
+      t.bt_site_parser_help_detail,
+      t.bt_site_parser_help_extra,
+      t.bt_site_parser_help_cookie,
+    ];
+    final List<Widget> children = <Widget>[
+      for (final String text in paragraphs)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Text(text, style: theme.textTheme.bodyMedium),
+        ),
+      Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              t.bt_site_parser_template_label,
+              style: theme.textTheme.labelLarge,
+            ),
+          ),
+          FushiPressScale(
+            child: FushiTextButton.icon(
+              key: const ValueKey<String>('bt-site-parser-help-copy'),
+              onPressed: () => unawaited(_copyTemplate()),
+              icon: FushiIcon(
+                _copied ? FushiIcons.check : FushiIcons.copy,
+                size: 18,
+              ),
+              label: Text(_copied ? t.copied : t.copy),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 4),
+      DecoratedBox(
+        decoration: BoxDecoration(
+          color: FushiDesignTokens.of(context).surfaces.search,
+          borderRadius: FushiM3eShape.smallRadius,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: SelectableText(
+            kBtSiteParserRuleTemplate,
+            key: const ValueKey<String>('bt-site-parser-help-template'),
+            style: theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+          ),
+        ),
+      ),
+    ];
+    return FushiAlertDialog(
+      icon: const FushiDialogHeroIcon(icon: FushiIcons.help),
+      title: Text(t.bt_site_parser_help_title),
+      scrollable: true,
+      content: FushiEntranceScope(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            for (int i = 0; i < children.length; i++)
+              FushiStaggeredEntrance(index: i, child: children[i]),
+          ],
+        ),
+      ),
+      actions: <Widget>[
+        FushiDialogAction(
+          key: const ValueKey<String>('bt-site-parser-help-close'),
+          label: t.dialog_close,
+          onPressed: () => Navigator.of(context).pop(false),
+        ),
+        if (widget.canUseTemplate)
+          FushiDialogAction(
+            key: const ValueKey<String>('bt-site-parser-help-use-template'),
+            label: t.bt_site_parser_template_use_action,
+            kind: FushiDialogActionKind.primary,
+            onPressed: () => Navigator.of(context).pop(true),
+          ),
       ],
     );
   }

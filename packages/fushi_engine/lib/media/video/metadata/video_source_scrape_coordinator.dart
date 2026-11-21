@@ -1,6 +1,9 @@
 /// 视频来源规范刮削协调器：按作品识别、抓取、写 v77/兼容投影并安全导出 NFO/图片。
 library;
 
+export 'package:fushi_engine/media/video/disc/disc_release_set.dart'
+    show stripDiscVolumeMarker;
+
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
@@ -9,6 +12,18 @@ import 'package:drift/drift.dart' show Value;
 import 'package:http/http.dart' as http;
 import 'package:fushi_engine/media/collections/collection_cover.dart'
     show applyScrapedCollectionCover;
+import 'package:fushi_engine/media/video/bluray/bluray_disc.dart'
+    show blurayPlaylistLooksEpisodic, kBlurayMaxPlaylistBytes;
+import 'package:fushi_engine/media/video/bluray/bluray_playlist.dart'
+    show BlurayPlaylist, parseBlurayPlaylist;
+import 'package:fushi_engine/media/video/bluray/bluray_episode.dart'
+    show isBlurayEpisodePath;
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
+    show isBlurayPlaylistPath;
+import 'package:fushi_engine/media/video/disc/disc_format.dart'
+    show discRootForMemberPath;
+import 'package:fushi_engine/media/video/disc/disc_release_set.dart'
+    show isGenericDiscDirectoryName, stripDiscVolumeMarker;
 import 'package:fushi_engine/media/video/metadata/anidb_file_identity_store.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_hash_identity_service.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_udp_file_client.dart';
@@ -46,6 +61,7 @@ import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart' show AiChatFailure;
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/video/metadata/anidb_title_catalog.dart';
@@ -522,7 +538,7 @@ class VideoSourceScrapeCoordinator
   }) async {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
-    if (lease == null) throw StateError('视频刮削资料正在清理');
+    if (lease == null) throw VideoScrapeMaintenanceActiveError();
     try {
       return await _rewriteSidecarsUnlocked(
         workId,
@@ -550,9 +566,9 @@ class VideoSourceScrapeCoordinator
     }
     SourceLibraryRow? source;
     VideoSourceScrapeWork? localWork;
-    for (final SourceLibraryRow candidate
-        in await database.getMediaSourcesByKind('video')) {
-      if (candidate.transport != 'local') continue;
+    for (final SourceLibraryRow candidate in await localVideoScrapeScopes(
+      database,
+    )) {
       for (final VideoSourceScrapeWork work in await VideoSourceWorkPlanner(
         database,
       ).plan(candidate)) {
@@ -570,7 +586,7 @@ class VideoSourceScrapeCoordinator
       if (localWork != null) break;
     }
     if (source == null || localWork == null) {
-      throw StateError('作品 $workId 不属于任何已登记的本地视频来源');
+      throw StateError('作品 $workId 不属于任何本机视频来源，也不是无来源本机视频');
     }
     final int sourceId = source.id;
     final Map<int, int> seasonIds = <int, int>{};
@@ -599,7 +615,7 @@ class VideoSourceScrapeCoordinator
     final int startedAt = DateTime.now().millisecondsSinceEpoch;
     final int runId = await database.insertVideoSourceScrapeRun(
       VideoSourceScrapeRunsCompanion.insert(
-        sourceId: Value<int?>(sourceId),
+        sourceId: Value<int?>(persistedScrapeSourceId(source)),
         scope: 'sidecar',
         status: 'running',
         provider: Value<String?>(metadata.provider.name),
@@ -608,10 +624,10 @@ class VideoSourceScrapeCoordinator
         updatedAt: startedAt,
       ),
     );
-    final List<String> knownSourcePaths = (await database.allVideoBooks())
-        .where((VideoBookRow book) => book.sourceId == sourceId)
-        .map((VideoBookRow book) => book.videoPath)
-        .toList(growable: false);
+    final List<String> knownSourcePaths = videoScrapeKnownPathsFor(
+      source,
+      await database.allVideoBooks(),
+    );
     try {
       final _SidecarOutcome outcome = await _writeSidecars(
         source: source,
@@ -680,7 +696,7 @@ class VideoSourceScrapeCoordinator
     );
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
-    if (lease == null) throw StateError('视频刮削资料正在清理');
+    if (lease == null) throw VideoScrapeMaintenanceActiveError();
     try {
       return await _scrapeSourceUnlocked(
         source,
@@ -796,7 +812,9 @@ class VideoSourceScrapeCoordinator
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
     if (lease == null) {
-      return Future<SourceScrapeReport>.error(StateError('视频刮削资料正在清理'));
+      return Future<SourceScrapeReport>.error(
+        VideoScrapeMaintenanceActiveError(),
+      );
     }
     return _scrapeSourceUnlocked(
       source,
@@ -826,7 +844,10 @@ class VideoSourceScrapeCoordinator
     // 但每个来源仍独立执行安全 sidecar 落盘；下次用户重刮会创建新 context。
     final VideoSourceScrapeBatchContext effectiveBatch =
         batchContext ?? VideoSourceScrapeBatchContext();
-    if (source.mediaKind != 'video' || source.transport != 'local') {
+    // 只刮本机视频来源与无来源本机视频；「仅此一次」导入的临时行扫完即删，对它
+    // 立项的批次会在行删掉后写 sidecar 记账撞外键（FK 787），它的视频在行删掉后
+    // 归无来源范围刮（[isVideoScrapeScope]）。
+    if (!isVideoScrapeScope(source)) {
       return SourceScrapeReport(
         sourceIds: <int>[source.id],
         warnings: <SourceScrapeIssue>[
@@ -862,7 +883,7 @@ class VideoSourceScrapeCoordinator
     final int startedAt = DateTime.now().millisecondsSinceEpoch;
     final int runId = await database.insertVideoSourceScrapeRun(
       VideoSourceScrapeRunsCompanion.insert(
-        sourceId: Value<int?>(source.id),
+        sourceId: Value<int?>(persistedScrapeSourceId(source)),
         scope: runScope,
         status: 'running',
         provider: Value<String?>(settings.provider.name),
@@ -915,10 +936,10 @@ class VideoSourceScrapeCoordinator
         }
         downloadEvidence[entry.key] = entry.value;
       }
-      final List<String> knownSourcePaths = (await database.allVideoBooks())
-          .where((VideoBookRow row) => row.sourceId == source.id)
-          .map((VideoBookRow row) => row.videoPath)
-          .toList(growable: false);
+      final List<String> knownSourcePaths = videoScrapeKnownPathsFor(
+        source,
+        await database.allVideoBooks(),
+      );
       await _publish(
         runId,
         onProgress,
@@ -1391,13 +1412,33 @@ class VideoSourceScrapeCoordinator
         : _looksEpisodic(localWork, parsed)
         ? VideoMetadataMediaKind.tv
         : VideoMetadataMediaKind.movie;
+    _MediaKindSource kindSource = _mediaKindSource(
+      localWork,
+      parsed,
+      hasIdentityEvidence: kindEvidence != null,
+    );
+    // 单标题蓝光盘：文件名是播放列表号（`00001.mpls`），按它解出来的「集号」不是
+    // 形态证据。看播放列表本身——串着几段时长相近的正片就是剧集盘（只有「全部
+    // 播放」、没有逐集播放列表），否则是电影盘（BUG-4695）。
+    if (!localWork.isEpisodic && kindEvidence == null) {
+      final VideoMetadataMediaKind? discKind = await _blurayTitleKind(
+        localWork.members.single.videoPath,
+      );
+      if (discKind != null) {
+        kind = discKind;
+        kindSource = _MediaKindSource.discStructure;
+      }
+    }
     VideoMetadataWork? nfo =
         await VideoNfoReader(
           generatedArtifactChecker: DatabaseSidecarGeneratedArtifactChecker(
             database,
           ),
         ).readForPaths(
-          sourceRoot: source.rootPath,
+          sourceRoot: videoScrapeRootFor(source, <String>[
+            for (final VideoBookRow member in localWork.members)
+              member.videoPath,
+          ]),
           fallbackTitle: localWork.title,
           videoPaths: <String>[
             for (final VideoBookRow member in localWork.members)
@@ -1678,16 +1719,25 @@ class VideoSourceScrapeCoordinator
     ];
     // 离线标题索引阶段（A2）：没有任何已知身份时，先拿标题去 AniDB 标题包做
     // 唯一精确命中，再经 Fribb 换成链上两家的 id。命中后按 id 直拉，不发搜索。
-    final AnimeOfflineIdentity? offline =
-        hashDecidesIdentity && hashLookup == null && !hashMappingAmbiguous
-        ? await _identifyOffline(
-            searchTitles,
-            kind,
-            warnings,
-            localWork,
-            primaryProvider: selectedProvider,
-          )
-        : null;
+    AnimeOfflineIdentity? offline;
+    if (hashDecidesIdentity && hashLookup == null && !hashMappingAmbiguous) {
+      final _OfflineIdentification? identified = await _identifyOffline(
+        searchTitles,
+        kind,
+        warnings,
+        localWork,
+        primaryProvider: selectedProvider,
+        // `片名 - S00E01.mkv` 这类单文件只凭文件名里的序号猜成剧集，而标题在
+        // AniDB 只对得上一部电影：序号是弱证据，标题唯一精确命中是强证据
+        // （BUG-4696）。反方向不成立：电影关键词 / 没有集号都是电影证据，标题
+        // 只对上 TV 本体时改成剧集会把剧场版绑到 TV 上（BUG-2828）。
+        adoptOtherKindAsMovie: kindSource == _MediaKindSource.fileNameEpisode,
+      );
+      if (identified != null) {
+        offline = identified.identity;
+        kind = identified.kind;
+      }
+    }
     final List<VideoMetadataLookup> offlineLookups = <VideoMetadataLookup>[
       if (offline != null)
         for (final VideoMetadataProviderKind providerKind in chain)
@@ -1885,6 +1935,8 @@ class VideoSourceScrapeCoordinator
             localWorkTitle: localWork.title,
             candidates: options,
             aiSuggestion: ai.suggestion,
+            strictMatches: resolution.strictMatches,
+            workStableKey: localWork.stableKey,
           ),
         );
       }
@@ -1973,10 +2025,12 @@ class VideoSourceScrapeCoordinator
     final Map<String, int> identifierOffsets = _identifierEpisodeOffsets(
       localWork,
     );
-    Map<String, (int, int)> episodeOverrides = _identifierEpisodeOverrides(
-      localWork,
-      identifierOffsets,
-    );
+    // 按集展开 / 跨盘的原盘作品：集号就是成员在盘合集里的顺序（盘序 × 盘内集序），
+    // 成员文件名（`00001.p03.mpls`）不携带集号。识别词偏移照旧可以再盖上去。
+    Map<String, (int, int)> episodeOverrides = <String, (int, int)>{
+      ...discOrdinalEpisodeOverrides(localWork),
+      ..._identifierEpisodeOverrides(localWork, identifierOffsets),
+    };
     // 多季一张卡（设计稿 B）：MAL 一个 id 只是一季。本地合集含多季（季目录 /
     // 绝对集号）时，用 Fribb 同一 TMDB 剧的季条目序列把各季映射到各自 MAL id
     // 逐季抓分集，绝对集号经 anime-relations 重定向；卡片仍是这一个合集。
@@ -2599,7 +2653,7 @@ class VideoSourceScrapeCoordinator
             database,
           ),
         ).readForPaths(
-          sourceRoot: source.rootPath,
+          sourceRoot: videoScrapeRootFor(source, <String>[member.videoPath]),
           fallbackTitle: work.title,
           videoPaths: <String>[member.videoPath],
         );
@@ -2890,12 +2944,15 @@ class VideoSourceScrapeCoordinator
 
   /// 离线标题索引阶段：唯一精确命中才返回身份；歧义 / 查无 / 不可用都只记一条
   /// 说明并返回 null，让在线链继续，绝不因离线数据拉不到而判整条失败。
-  Future<AnimeOfflineIdentity?> _identifyOffline(
+  /// [adoptOtherKindAsMovie]：按剧集查、标题只唯一命中一部电影时，以电影身份
+  /// 返回（形态跟着改成电影）；只有调用方的剧集形态仅凭文件名序号时才可打开。
+  Future<_OfflineIdentification?> _identifyOffline(
     List<String> titles,
     VideoMetadataMediaKind kind,
     List<SourceScrapeIssue> warnings,
     VideoSourceScrapeWork work, {
     required VideoMetadataProviderKind primaryProvider,
+    required bool adoptOtherKindAsMovie,
   }) async {
     final AnimeOfflineIdentityResolver? resolver = offlineIdentityResolver;
     if (resolver == null) return null;
@@ -2905,22 +2962,36 @@ class VideoSourceScrapeCoordinator
     );
     switch (resolution.status) {
       case AnimeOfflineIdentityStatus.matched:
-        final AnimeOfflineIdentity identity = resolution.identity!;
-        // AniDB 主源：离线索引命中的 aid 本身就是主源身份，不要求映射表有 MAL/TMDB。
-        if (!identity.hasOnlineIdentity &&
-            !_providerChain(
-              primaryProvider,
-            ).contains(VideoMetadataProviderKind.anidb)) {
-          warnings.add(
-            SourceScrapeIssue(
-              workTitle: work.title,
-              message:
-                  '离线标题索引命中 AniDB ${identity.anidbId}（${identity.matchedTitle}），但跨站映射表里没有它的 MAL/TMDB id；继续在线标题搜索。',
-            ),
+        final AnimeOfflineIdentity? identity = _usableOfflineIdentity(
+          resolution.identity!,
+          warnings,
+          work,
+          primaryProvider: primaryProvider,
+        );
+        return identity == null ? null : (identity: identity, kind: kind);
+      case AnimeOfflineIdentityStatus.onlyOtherKind:
+        final AnimeOfflineIdentity? other = resolution.otherKindIdentity;
+        if (adoptOtherKindAsMovie &&
+            kind == VideoMetadataMediaKind.tv &&
+            other != null &&
+            other.isMovie) {
+          final AnimeOfflineIdentity? identity = _usableOfflineIdentity(
+            other,
+            warnings,
+            work,
+            primaryProvider: primaryProvider,
           );
-          return null;
+          return identity == null
+              ? null
+              : (identity: identity, kind: VideoMetadataMediaKind.movie);
         }
-        return identity;
+        warnings.add(
+          SourceScrapeIssue(
+            workTitle: work.title,
+            message: '离线标题索引只命中另一种形态的条目，不自动改形态（${resolution.reason}）；继续在线标题搜索。',
+          ),
+        );
+        return null;
       case AnimeOfflineIdentityStatus.ambiguous:
         warnings.add(
           SourceScrapeIssue(
@@ -2940,6 +3011,44 @@ class VideoSourceScrapeCoordinator
       case AnimeOfflineIdentityStatus.notFound:
         return null;
     }
+  }
+
+  /// 离线命中能否直接当身份用：AniDB 主源下 aid 本身就是主源身份，不要求映射表
+  /// 有 MAL/TMDB；其他主源缺跨站 id 时记一条说明并返回 null。
+  AnimeOfflineIdentity? _usableOfflineIdentity(
+    AnimeOfflineIdentity identity,
+    List<SourceScrapeIssue> warnings,
+    VideoSourceScrapeWork work, {
+    required VideoMetadataProviderKind primaryProvider,
+  }) {
+    if (identity.hasOnlineIdentity ||
+        _providerChain(
+          primaryProvider,
+        ).contains(VideoMetadataProviderKind.anidb)) {
+      return identity;
+    }
+    warnings.add(
+      SourceScrapeIssue(
+        workTitle: work.title,
+        message:
+            '离线标题索引命中 AniDB ${identity.anidbId}（${identity.matchedTitle}），但跨站映射表里没有它的 MAL/TMDB id；继续在线标题搜索。',
+      ),
+    );
+    return null;
+  }
+
+  /// 单元形态的来源（蓝光盘结构由调用方看过播放列表后另行覆盖）。只有
+  /// [_MediaKindSource.fileNameEpisode] 是可被离线标题命中推翻的弱证据。
+  _MediaKindSource _mediaKindSource(
+    VideoSourceScrapeWork work,
+    VideoNameInfo parsed, {
+    required bool hasIdentityEvidence,
+  }) {
+    if (work.isEpisodic) return _MediaKindSource.episodicWork;
+    if (hasIdentityEvidence) return _MediaKindSource.identityEvidence;
+    if (parsed.isMovieHint) return _MediaKindSource.movieKeyword;
+    if (parsed.episode != null) return _MediaKindSource.fileNameEpisode;
+    return _MediaKindSource.noEpisodeDefault;
   }
 
   /// 多季一张卡（设计稿 B）。MAL 一个 id = 一季；本地合集出现「非首季的季号」或
@@ -4138,6 +4247,9 @@ class VideoSourceScrapeCoordinator
     if (result.error case final AnidbUdpException error) {
       return switch (error.reason) {
         AnidbUdpFailure.authentication => 'AniDB 登录失败，请检查用户名和密码。',
+        AnidbUdpFailure.encryption =>
+          'AniDB 加密登录失败：请在 AniDB 个人资料里设置 UDP API Key，'
+              '并在 设置 → 在线服务 → AniDB 填入同一个 Key。',
         AnidbUdpFailure.unavailable ||
         AnidbUdpFailure.clientOutdated ||
         AnidbUdpFailure.clientBanned => 'AniDB 客户端不可用，请核对注册的客户端名称与版本。',
@@ -4695,12 +4807,22 @@ class VideoSourceScrapeCoordinator
     }
     final List<SourceScrapeIssue> warnings = <SourceScrapeIssue>[];
     final List<SourceScrapeIssue> errors = <SourceScrapeIssue>[];
+    final List<String> memberPaths = <String>[
+      for (final VideoBookRow member in localWork.members) member.videoPath,
+    ];
+    final String sidecarRoot = videoScrapeRootFor(source, memberPaths);
+    // 无来源范围补齐成员所在作品目录的磁盘实况，否则专属目录判定缺前提。
+    final List<String> knownWorkPaths = await videoScrapeKnownPathsForWork(
+      source,
+      knownSourcePaths,
+      memberPaths,
+    );
     final VideoSidecarLayout layout;
     if (metadata.kind == VideoMetadataMediaKind.movie) {
       layout = VideoSidecarTargetResolver.resolveMovie(
-        sourceRoot: source.rootPath,
+        sourceRoot: sidecarRoot,
         videoPath: localWork.members.single.videoPath,
-        knownSourceVideoPaths: knownSourcePaths,
+        knownSourceVideoPaths: knownWorkPaths,
       );
     } else {
       final List<VideoEpisodePath> members = <VideoEpisodePath>[];
@@ -4725,9 +4847,9 @@ class VideoSourceScrapeCoordinator
         );
       }
       layout = VideoSidecarTargetResolver.resolveTv(
-        sourceRoot: source.rootPath,
+        sourceRoot: sidecarRoot,
         members: members,
-        knownSourceVideoPaths: knownSourcePaths,
+        knownSourceVideoPaths: knownWorkPaths,
       );
     }
     warnings.addAll(<SourceScrapeIssue>[
@@ -4737,11 +4859,11 @@ class VideoSourceScrapeCoordinator
 
     final DatabaseSidecarArtifactStore artifacts = DatabaseSidecarArtifactStore(
       database: database,
-      sourceId: source.id,
+      sourceId: persistedScrapeSourceId(source),
       runId: runId,
     );
     final VideoSidecarWriter writer = VideoSidecarWriter(
-      sourceRoot: source.rootPath,
+      sourceRoot: sidecarRoot,
       artifactStore: artifacts,
     );
     final Map<String, _PlannedArtifact> planned = <String, _PlannedArtifact>{};
@@ -5138,6 +5260,30 @@ class VideoSourceScrapeCoordinator
       }
     }
     return null;
+  }
+
+  /// 蓝光盘标题 [videoPath] 的作品形态：读这条播放列表，串着几集就是剧集，否则
+  /// 电影。不是蓝光标题、或播放列表读不出来 → null（调用方沿用按文件名的判断）。
+  static Future<VideoMetadataMediaKind?> _blurayTitleKind(
+    String videoPath,
+  ) async {
+    if (!isBlurayPlaylistPath(videoPath)) return null;
+    // 按集展开出来的分集成员本身就是「剧集盘的一集」。
+    if (isBlurayEpisodePath(videoPath)) return VideoMetadataMediaKind.tv;
+    try {
+      final File file = File(videoPath);
+      if (await file.length() > kBlurayMaxPlaylistBytes) return null;
+      final BlurayPlaylist? playlist = parseBlurayPlaylist(
+        await file.readAsBytes(),
+        id: p.basenameWithoutExtension(videoPath),
+      );
+      if (playlist == null) return null;
+      return blurayPlaylistLooksEpisodic(playlist)
+          ? VideoMetadataMediaKind.tv
+          : VideoMetadataMediaKind.movie;
+    } on FileSystemException {
+      return null;
+    }
   }
 
   /// 当前可用的 AI 能力键；本趟已失败过时也视为不可用（见 [_aiIdentityFailedRunId]）。
@@ -5708,11 +5854,29 @@ List<String> videoScrapeTitleCandidates({
   required String parsedSeries,
   required String videoPath,
 }) {
-  final List<String> fileDerived = <String>[workTitle, parsedSeries];
-  final List<String> directoryDerived = <String>[
-    _pathSegmentFromEnd(videoPath, 1),
-    _pathSegmentFromEnd(videoPath, 2),
-  ];
+  final List<String> fileDerived;
+  final List<String> directoryDerived;
+  final String? discDirectory = _discReleaseDirectoryName(videoPath);
+  if (discDirectory != null) {
+    // 原盘标题（BUG-4695）：成员是 `<盘根>/BDMV/PLAYLIST/00001.mpls` /
+    // `<盘根>/VIDEO_TS/TITLE_01.dvdtitle`。文件名是播放列表号，父 / 祖父目录是
+    // `PLAYLIST` / `BDMV`——照散装文件的取法，拿去搜的是这两个词，换回一屏无关候选。
+    // 能当标题的只有盘名（标题名去掉 ` - NN` 序号，再去掉「上巻 / Disc 1」这类
+    // 卷标）和盘根往上第一层不是 `Disc 1` / `BD` 的发布目录名。
+    final String discTitle = stripDiscTitleOrdinal(workTitle);
+    final String withoutVolume = stripDiscVolumeMarker(discTitle);
+    fileDerived = <String>[withoutVolume, discTitle];
+    directoryDerived = <String>[
+      stripDiscVolumeMarker(_unwrapTitleBrackets(discDirectory)),
+      discDirectory,
+    ];
+  } else {
+    fileDerived = <String>[workTitle, parsedSeries];
+    directoryDerived = <String>[
+      _pathSegmentFromEnd(videoPath, 1),
+      _pathSegmentFromEnd(videoPath, 2),
+    ];
+  }
   final List<String> rawValues = <String>[
     for (final String value in fileDerived)
       if (!isEpisodeLabelTitle(value)) value,
@@ -5735,6 +5899,84 @@ List<String> videoScrapeTitleCandidates({
       if (value.trim().isNotEmpty && seen.add(value.trim().toLowerCase()))
         value.trim(),
   ];
+}
+
+/// 按集展开 / 跨盘的原盘剧集作品的集号：`bookUid → (1, 成员序号)`。
+///
+/// 只有「全部播放」的剧集盘按 PlayItem 切成各集后，成员路径是 `00001.p03.mpls`——
+/// 文件名里的数字是播放列表号与 PlayItem 序号，不是集号；同一发布的第二张盘更要接着
+/// 第一张数下去（下巻的第 1 集是全剧第 7 集）。计划器已经把盘合集的成员按合集内顺序
+/// 排好（入库时按盘序 × 盘内集序写进合集），这里照这个顺序编号。
+///
+/// 只作用于「含分集成员、或成员跨多张盘」的盘作品；单张逐集播放列表的盘维持按文件名
+/// 解析的旧行为。不是这种作品返回空表。
+Map<String, (int, int)> discOrdinalEpisodeOverrides(
+  VideoSourceScrapeWork work,
+) {
+  if (!work.isEpisodic) return const <String, (int, int)>{};
+  final Set<String> roots = <String>{};
+  bool anyEpisode = false;
+  for (final VideoBookRow member in work.members) {
+    final String? root = discRootForMemberPath(member.videoPath);
+    if (root == null) return const <String, (int, int)>{};
+    roots.add(root.toLowerCase());
+    anyEpisode = anyEpisode || isBlurayEpisodePath(member.videoPath);
+  }
+  if (!anyEpisode && roots.length < 2) return const <String, (int, int)>{};
+  return <String, (int, int)>{
+    for (int i = 0; i < work.members.length; i++)
+      work.members[i].bookUid: (1, i + 1),
+  };
+}
+
+/// 原盘标题名尾部的序号：多标题盘的 `<盘名> - 02`、特典的 `<盘名> - 00008`。
+final RegExp _discTitleOrdinal = RegExp(r'\s+-\s+\d{2,5}$');
+
+/// 去掉原盘标题名尾部的 ` - NN` 序号，得到盘名。
+String stripDiscTitleOrdinal(String title) =>
+    title.trim().replaceFirst(_discTitleOrdinal, '').trim();
+
+/// 去掉整个名字外面包着的一对书名号 / 引号（`『特別編 …』` → `特別編 …`）。
+String _unwrapTitleBrackets(String name) {
+  final String trimmed = name.trim();
+  if (trimmed.length < 3) return trimmed;
+  const Map<String, String> pairs = <String, String>{'『': '』', '「': '」'};
+  final String? close = pairs[trimmed[0]];
+  if (close == null || !trimmed.endsWith(close)) return trimmed;
+  return trimmed.substring(1, trimmed.length - 1).trim();
+}
+
+/// [videoPath] 是原盘标题时，返回盘根往上第一层带作品名的目录名（最多再往上找两层，
+/// 跳过 `Disc 1` / `BD` 这类目录）；不是原盘标题返回 null，是原盘但找不到返回空串。
+///
+/// 与 [_pathSegmentFromEnd] 同理只做文本切分，两种分隔符都认，不经 `package:path`。
+String? _discReleaseDirectoryName(String videoPath) {
+  final List<String> segments = videoPath
+      .split(RegExp(r'[\\/]+'))
+      .where((String segment) => segment.isNotEmpty && segment != '.')
+      .toList();
+  if (segments.length < 3) return null;
+  final String file = segments.last.toLowerCase();
+  final String container = segments[segments.length - 2];
+  final int discRootIndex;
+  if (file.endsWith('.mpls') &&
+      container == 'PLAYLIST' &&
+      segments[segments.length - 3] == 'BDMV') {
+    discRootIndex = segments.length - 4;
+  } else if (file.endsWith('.dvdtitle') && container == 'VIDEO_TS') {
+    discRootIndex = segments.length - 3;
+  } else {
+    return null;
+  }
+  for (
+    int index = discRootIndex;
+    index >= 0 && index >= discRootIndex - 2;
+    index--
+  ) {
+    final String name = segments[index].trim();
+    if (!isGenericDiscDirectoryName(name)) return name;
+  }
+  return '';
 }
 
 /// 取路径倒数第 [n] 层目录名（n = 1 是直接父目录）；取不到回空串。
@@ -6114,3 +6356,30 @@ class VideoScrapedWorkNotice {
   /// 刮出来的规范元数据（含 ids / seasons / episodes / runtimeMinutes）。
   final VideoMetadataWork metadata;
 }
+
+/// 单元形态从哪来；决定离线标题命中能不能改形态。
+enum _MediaKindSource {
+  /// 多文件剧集单元。
+  episodicWork,
+
+  /// 已确认身份 / 下载任务记下的形态。
+  identityEvidence,
+
+  /// 看过播放列表结构的蓝光盘。
+  discStructure,
+
+  /// 文件名带剧场版 / Movie 等电影关键词。
+  movieKeyword,
+
+  /// 单文件、文件名没有集号，默认按电影。
+  noEpisodeDefault,
+
+  /// 单文件、只凭文件名里的集号猜成剧集。
+  fileNameEpisode,
+}
+
+/// 离线标题索引阶段的结论：身份连同它对应的形态。
+typedef _OfflineIdentification = ({
+  AnimeOfflineIdentity identity,
+  VideoMetadataMediaKind kind,
+});

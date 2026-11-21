@@ -80,22 +80,36 @@ String? dictionaryLanguageGroupOf(Dictionary dictionary) =>
 /// 排在前面，升级后那一组就在前面；「未标注语言」组固定放最后。组内保持分区顺序。
 List<DictionaryLanguageGroup> groupDictionariesByLanguage(
   List<Dictionary> section,
+) => <DictionaryLanguageGroup>[
+  for (final (String?, List<Dictionary>) group in groupByLanguageOf<Dictionary>(
+    section,
+    dictionaryLanguageGroupOf,
+  ))
+    DictionaryLanguageGroup(language: group.$1, dictionaries: group.$2),
+];
+
+/// [groupDictionariesByLanguage] 的分组规则本身，对任意行类型：[languageOf] 给出
+/// 一行的规范化语言标签（null = 「未标注语言」）。组序按首次出现、「未标注语言」
+/// 组放最后、组内保持传入顺序。词典管理页把本机词典与服务器托管词典混排在同一个
+/// 分区里（服务器行按 host 报的 `sourceLanguage`），混排分区的写回也用这一份规则。
+List<(String?, List<T>)> groupByLanguageOf<T>(
+  List<T> section,
+  String? Function(T row) languageOf,
 ) {
-  final Map<String, List<Dictionary>> labelled = <String, List<Dictionary>>{};
-  final List<Dictionary> unlabelled = <Dictionary>[];
-  for (final Dictionary dictionary in section) {
-    final String? language = dictionaryLanguageGroupOf(dictionary);
+  final Map<String, List<T>> labelled = <String, List<T>>{};
+  final List<T> unlabelled = <T>[];
+  for (final T row in section) {
+    final String? language = languageOf(row);
     if (language == null) {
-      unlabelled.add(dictionary);
+      unlabelled.add(row);
     } else {
-      labelled.putIfAbsent(language, () => <Dictionary>[]).add(dictionary);
+      labelled.putIfAbsent(language, () => <T>[]).add(row);
     }
   }
-  return <DictionaryLanguageGroup>[
-    for (final MapEntry<String, List<Dictionary>> entry in labelled.entries)
-      DictionaryLanguageGroup(language: entry.key, dictionaries: entry.value),
-    if (unlabelled.isNotEmpty)
-      DictionaryLanguageGroup(language: null, dictionaries: unlabelled),
+  return <(String?, List<T>)>[
+    for (final MapEntry<String, List<T>> entry in labelled.entries)
+      (entry.key, entry.value),
+    if (unlabelled.isNotEmpty) (null, unlabelled),
   ];
 }
 
@@ -104,12 +118,19 @@ List<DictionaryLanguageGroup> groupDictionariesByLanguage(
 /// 这就是管理页从上到下画出来的顺序。写回分区时一律按它重编号，显示顺序与
 /// 真实查词顺序才是同一条（见文件头）。
 List<Dictionary> concatenateLanguageGroups(List<Dictionary> section) =>
-    <Dictionary>[
-      for (final DictionaryLanguageGroup group in groupDictionariesByLanguage(
-        section,
-      ))
-        ...group.dictionaries,
-    ];
+    concatenateLanguageGroupsOf<Dictionary>(section, dictionaryLanguageGroupOf);
+
+/// [concatenateLanguageGroups] 对任意行类型（分组规则见 [groupByLanguageOf]）。
+List<T> concatenateLanguageGroupsOf<T>(
+  List<T> section,
+  String? Function(T row) languageOf,
+) => <T>[
+  for (final (String?, List<T>) group in groupByLanguageOf<T>(
+    section,
+    languageOf,
+  ))
+    ...group.$2,
+];
 
 /// 组内重排后的新分区顺序：[reorderedGroup] 是某一组的新顺序；返回整个分区的
 /// 规范顺序（[concatenateLanguageGroups]），其中该组换成新顺序，其它组的组内

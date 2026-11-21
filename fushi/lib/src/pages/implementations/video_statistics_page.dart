@@ -24,7 +24,6 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
-import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 视频统计页：与阅读统计（[ReadingStatisticsPage]）位置对等、形态一致，但数据
@@ -180,11 +179,13 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       final db = appModelNoUpdate.database;
       // v92：观看事实只走统一事实面（legacy `video_watch_statistics` 日行 +
       // `study_segments` 段，由 loadStatFacts 归一），本页不再直接读表。
-      // activityLimit 0：统计页不需要活动流行。
+      // activityLimit 0：统计页不需要活动流行。只读观看域（m5：书 / 游戏的段与
+      // legacy 表本页一行不用）；计数面不收窄，「总览 = 各域之和」照旧成立。
       final StatFacts facts = await loadStatFacts(
         db,
         activityLimit: 0,
         includeCounters: true,
+        scope: const StatFactsScope.domain(kActivityMediaVideo),
       );
       final List<StatFact> stats = facts.dailyVideos.toList();
       _videoFacts = stats;
@@ -256,18 +257,10 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       _favoritedSentenceEvents = counterFacts
           .favoriteSentenceEvents(source: StatSourceKind.video)
           .toList();
-      // 视频来源收藏语句（source==video）。BUG-893 的读取端回退此前只修了阅读侧：
+      // 视频来源收藏语句（video / web）。BUG-893 的读取端回退此前只修了阅读侧：
       // 本页旧判据是 `dateKey != null`，写入端补 dateKey 之前存下的视频收藏一条不
       // 计——现在与阅读侧同一个判据（[StatCounterFacts.favoriteSentenceEvents]），
-      // 顺带让总览的跨域和恒等于两个域 tab 之和。
-      final List<FavoriteSentence> videoFavSentences = counterFacts
-          .favoriteSentences
-          .where(
-            (FavoriteSentence s) =>
-                s.source == kFavoriteSentenceSourceVideo ||
-                s.source == kFavoriteSentenceSourceWeb,
-          )
-          .toList();
+      // 顺带让总览的跨域和恒等于两个域 tab 之和。有没有数据也只看这一份事件。
       // counters 也算有数据（review4-6）：只在视频域查过词（无观看/收藏/制卡）
       // 时，查词分桶明明有数却显示空状态。
       _hasData =
@@ -276,7 +269,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
           favs.isNotEmpty ||
           counterFacts.minedEvents(source: StatSourceKind.video).isNotEmpty ||
           counters.isNotEmpty ||
-          videoFavSentences.isNotEmpty;
+          _favoritedSentenceEvents.isNotEmpty;
       _loadHourlyData(facts);
       _computeRangeVideos();
     } catch (e, stack) {
@@ -316,7 +309,11 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       contentBuilder: _buildContent,
     );
     if (widget.embedded) return buildEmbeddedStatTab(context, body);
-    return FushiPageScaffold(title: t.video_statistics, body: body);
+    return FushiPageScaffold(
+      masthead: true,
+      title: t.video_statistics,
+      body: body,
+    );
   }
 
   /// 骨架与总览 / 阅读 / 游戏 tab 同一套（2026-10 统计中心重设计，

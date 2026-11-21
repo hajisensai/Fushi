@@ -24,6 +24,8 @@ const Map<String, Set<String>> _allowSameAsEnglish = <String, Set<String>>{
   'pt-BR': <String>{'leaderboard_title'},
   // 法语「$n sessions」「Collections」与英文同形（收藏夹入口 2026-10-14 移到首页）。
   'fr': <String>{'home_session_count', 'collections'},
+  // 意大利语界面通用借词「Home」（大字页头 2026-11 改用 nav_home 作首页标题）。
+  'it': <String>{'nav_home'},
 };
 
 /// 所有语言都与英文同形的 key（专名 / 缩写），不逐语言列。
@@ -36,6 +38,12 @@ const List<String> _sources = <String>[
   'lib/src/pages/implementations/home_dashboard_page.dart',
   'lib/src/pages/implementations/home_dashboard_widgets.dart',
   'lib/src/pages/implementations/home_srs_panel.dart',
+  // 2026-11-15 首页小组件网格：格子内容、编辑态、添加面板。
+  'lib/src/pages/implementations/home_dashboard_widget_cells.part.dart',
+  'lib/src/pages/implementations/home_widget_add_sheet.dart',
+  'lib/src/pages/implementations/home_widget_frame.dart',
+  'lib/src/pages/implementations/home_widget_grid.dart',
+  'lib/src/pages/implementations/home_widget_size_picker.dart',
   'lib/src/pages/implementations/updates_dashboard_banner.dart',
 ];
 

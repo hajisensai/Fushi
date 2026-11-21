@@ -527,7 +527,6 @@ class _Fixture {
     ];
     final SrsStorage srsStorage = await openTestSrsStorage();
     final SrsDbStore store = await SrsDbStore.open(
-      db: srsStorage.db,
       core: srsStorage.core,
       profileUid: kProfile,
       deviceId: 'dev',
@@ -709,7 +708,7 @@ void main() {
     expect(config.algorithm.memoryAlgorithm, SrsAlgorithm.fsrs7);
   });
 
-  test('deleteRetired 删掉退役权重（大模型、SM40、SM56）与标记，留下当前权重', () async {
+  test('deleteRetired 删掉退役权重（大模型、SM40、SM56、sm72e25）与标记，留下当前权重', () async {
     final Directory dir = Directory.systemTemp.createTempSync('rwkv_models');
     addTearDown(() => dir.deleteSync(recursive: true));
     final SrsRwkvModels models = SrsRwkvModels(dir: dir);
@@ -723,6 +722,8 @@ void main() {
     // 2026-11-07 换成 sm72e25：SM56 的权重与（中断时残留的）发布包也要清掉。
     expect(kSrsRwkvRetiredWeightsNames, contains('sm56_weights.int8.bin'));
     expect(kSrsRwkvRetiredWeightsNames, contains('sm56-package.zip'));
+    // 2026-11-15 换成 Instant-Only 的 sm98：sm72e25 的权重也要清掉。
+    expect(kSrsRwkvRetiredWeightsNames, contains('sm72e25_weights.int8.bin'));
     expect(
       kSrsRwkvRetiredWeightsNames,
       isNot(contains(kSrsRwkvSmallWeightsName)),
@@ -1128,10 +1129,16 @@ void main() {
       await service.start();
       await _settled(service);
       expect(backend.resets, 1);
-      // 删掉最早的一条评分日志（如恢复备份改写了历史），再答一题：新行数与行数差对不上。
+      // 删掉最早的一条评分日志（如恢复备份改写了历史），再答一题：新行数与行数差对不上。新代里 RWKV 的指纹、回放与
+      // 尾巴都沿派生层的日志索引 `log_ix` 与本机落库序 `log_seq`（内核 `cmd/training.rs`），没有「只删一条日志」的
+      // 公开命令（彻底清除连卡一起删，改的不只是日志），所以走测试专用原始通道，按派生层一条日志操作出索引时的写法
+      // （`derive.rs`：`log_ix` 与 `log_seq` 同删）删掉落库序最早的那条：效果与协议 3 删日志表最早一行相同。
       f.store.core.debugExecRaw(
-        'DELETE FROM srs_review_logs WHERE rowid = '
-        '(SELECT MIN(rowid) FROM srs_review_logs)',
+        'DELETE FROM log_ix WHERE k = '
+        '(SELECT k FROM log_seq WHERE n = (SELECT MIN(n) FROM log_seq))',
+      );
+      f.store.core.debugExecRaw(
+        'DELETE FROM log_seq WHERE n = (SELECT MIN(n) FROM log_seq)',
       );
       await f.store.reloadLocal();
       final List<SrsRwkvPhase> phases = <SrsRwkvPhase>[];
@@ -2010,6 +2017,63 @@ void main() {
       await service.refresh();
       f.advance(1000);
       expect(await f.reviewCount(), 2);
+    });
+
+    test('每天最少复习数按单位记：次数下同一张卡多答一次多扣一次；分钟下没到时长把高于目标的卡全交给内核补上，到了一张也不补', () async {
+      f.advance(kDay);
+      for (int i = 0; i < 6; i++) {
+        backend.setR(cards[i], 0.9 - i * 0.01);
+      }
+      await f.store.editFields(
+        SrsEntityKind.deck,
+        f.store.defaultDeckId,
+        <String, Object?>{
+          SrsFieldKeys.deckRwkvQueue: const SrsRwkvQueueSettings(
+            minReviewsPerDay: 3,
+            repeatMinReviews: 0,
+            repeatMinSeconds: 0,
+          ).toValue(),
+        },
+      );
+      expect(
+        (await f.store.deckTree())[f.store.defaultDeckId]!.limitUnit,
+        SrsLimitUnit.reviews,
+        reason: '没写过单位 = 作答次数',
+      );
+      expect(await f.reviewCount(), 3);
+      // R 最低的 cards[5] 答两次（各 40 秒）：次数下用掉 2 次，只再补 1 张。
+      for (int k = 0; k < 2; k++) {
+        await f.store.answer(cards[5], 3, durationMs: 40000);
+        await service.refresh();
+        f.advance(1000);
+        backend.setR(cards[5], 0.95);
+      }
+      expect(await f.reviewCount(), 1);
+      // 卡片数下只算 1 张：再补 2 张。
+      await f.store.editFields(
+        SrsEntityKind.deck,
+        f.store.defaultDeckId,
+        <String, Object?>{SrsFieldKeys.deckLimitUnit: SrsLimitUnit.cards.wire},
+      );
+      expect(await f.reviewCount(), 2);
+      // 分钟下：今天复习 80 秒 < 3 分钟 → 高于目标的 8 张（含今天答过、间隔守卫已过的那张）全部补上，不按 3 张截。
+      await f.store.editFields(
+        SrsEntityKind.deck,
+        f.store.defaultDeckId,
+        <String, Object?>{
+          SrsFieldKeys.deckLimitUnit: SrsLimitUnit.minutes.wire,
+        },
+      );
+      expect(await f.reviewCount(), cards.length);
+      // 再答两次到 160 秒仍不满 3 分钟；第三次 200 秒满了：一张也不补。
+      for (final int i in <int>[4, 3, 2]) {
+        expect(await f.reviewCount(), greaterThan(0));
+        await f.store.answer(cards[i], 3, durationMs: 40000);
+        await service.refresh();
+        f.advance(1000);
+        backend.setR(cards[i], 0.95);
+      }
+      expect(await f.reviewCount(), 0);
     });
 
     test(

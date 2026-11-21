@@ -4,6 +4,7 @@ import 'package:test/test.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart'
     show VideoSourceScrapeWork;
@@ -18,6 +19,7 @@ void main() {
     recursive: true,
     videoGroupingMode: 'series',
     isPrivate: false,
+    autoScan: false,
     configJson: null,
     mediaCount: 0,
     lastScannedAt: null,
@@ -139,6 +141,49 @@ void main() {
     runner.release();
     await scrape;
     expect(controller.isBusy, isFalse);
+  });
+
+  // 拍板台 design-nmv-fyi-tail ②：首页手动刮削发起前同步判定，挡回时只出一条提示。
+  // startBlocker 的结论必须与随后 scrapeSource 的结局一致（同为挡回、同一种错误）。
+  test('startBlocker 与 scrapeSource 的同步结局一致：清理中 / 扫描中 / 空闲 / 已有批次', () async {
+    final _BlockingRunner runner = _BlockingRunner();
+    final VideoSourceScrapeTaskController controller =
+        VideoSourceScrapeTaskController(runner);
+    addTearDown(controller.dispose);
+
+    final VideoScrapeOperationLease maintenance =
+        VideoScrapeOperationGate.tryEnterMaintenance()!;
+    expect(VideoScrapeOperationGate.isMaintenanceActive, isTrue);
+    expect(controller.startBlocker(), isA<VideoScrapeMaintenanceActiveError>());
+    await expectLater(
+      controller.scrapeSource(source(1)),
+      throwsA(isA<VideoScrapeMaintenanceActiveError>()),
+    );
+    maintenance.release();
+    expect(VideoScrapeOperationGate.isMaintenanceActive, isFalse);
+
+    final Completer<void> scanGate = Completer<void>();
+    final Future<void> scan = controller.runSourceScan<void>(
+      1,
+      () => scanGate.future,
+    );
+    expect(controller.startBlocker(), isA<VideoSourceScanInProgressError>());
+    await expectLater(
+      controller.scrapeSource(source(1)),
+      throwsA(isA<VideoSourceScanInProgressError>()),
+    );
+    scanGate.complete();
+    await scan;
+
+    expect(controller.startBlocker(), isNull);
+    final Future<SourceScrapeReport> scrape = controller.scrapeSource(
+      source(1),
+    );
+    // 已有批次在跑：再发起是接到它上面，不算挡回。
+    expect(controller.startBlocker(), isNull);
+    expect(identical(controller.scrapeSource(source(2)), scrape), isTrue);
+    runner.release();
+    await scrape;
   });
 
   test('全部来源向每次来源刮削传递同一个批次上下文', () async {

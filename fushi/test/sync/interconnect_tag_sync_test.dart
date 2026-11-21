@@ -358,6 +358,69 @@ void main() {
     });
   });
 
+  group('作品 NSFW 标记（拍板台 w04vrhUAaX）', () {
+    test('TagManifestEntry JSON：nsfw 往返；缺省不出键；与 privacy 互不串', () {
+      const TagManifestEntry both = TagManifestEntry(
+        kind: 'video',
+        key: 'v',
+        nsfw: (nsfwAt: 10, clearedAt: 20),
+      );
+      final TagManifestEntry back = TagManifestEntry.fromJson(both.toJson());
+      expect(back.nsfw, (nsfwAt: 10, clearedAt: 20));
+      expect(back.privacy, isNull);
+      expect(both.toJson()['nsfw'], <String, int>{'set': 10, 'cleared': 20});
+
+      const TagManifestEntry none = TagManifestEntry(kind: 'video', key: 'v');
+      expect(none.toJson().containsKey('nsfw'), isFalse);
+      expect(TagManifestEntry.fromJson(none.toJson()).nsfw, isNull);
+    });
+
+    test('只有 NSFW 标记的视频 / 字幕书也进清单；到对端后生效，取消也传回', () async {
+      final FushiDatabase a = memDb();
+      final FushiDatabase b = memDb();
+      await seedVideo(a, 'ep1');
+      await seedVideo(b, 'ep1');
+      await seedSrt(a, 'srt1');
+      await seedSrt(b, 'srt1');
+      await a.setMediaNsfw(TagHostKind.video, 'ep1', true, at: 1000);
+      await a.setMediaNsfw(TagHostKind.srt, 'srt1', true, at: 1000);
+
+      await syncPair(b, a);
+      expect(await b.isMediaNsfw(TagHostKind.video, 'ep1'), isTrue);
+      expect(await b.isMediaNsfw(TagHostKind.srt, 'srt1'), isTrue);
+      expect(
+        await b.isMediaPrivate(TagHostKind.video, 'ep1'),
+        isFalse,
+        reason: 'NSFW 不蕴含私密',
+      );
+
+      await b.setMediaNsfw(TagHostKind.video, 'ep1', false, at: 2000);
+      await syncPair(a, b);
+      expect(await a.isMediaNsfw(TagHostKind.video, 'ep1'), isFalse);
+      expect(await a.isMediaNsfw(TagHostKind.srt, 'srt1'), isTrue);
+    });
+
+    test('tagManifestCovers：本机 NSFW 戳比远端新 → false，合并后 → true', () async {
+      final FushiDatabase local = memDb();
+      final FushiDatabase remote = memDb();
+      await seedBook(local, 'novel');
+      await seedBook(remote, 'novel');
+      await local.setMediaNsfw(TagHostKind.epub, 'novel', true, at: 3000);
+
+      final TagManifest localManifest = await loadLocalTagManifest(local);
+      expect(
+        tagManifestCovers(await loadLocalTagManifest(remote), localManifest),
+        isFalse,
+      );
+      await applyTagManifest(remote, localManifest);
+      expect(
+        tagManifestCovers(await loadLocalTagManifest(remote), localManifest),
+        isTrue,
+      );
+      expect(await remote.isMediaNsfw(TagHostKind.epub, 'novel'), isTrue);
+    });
+  });
+
   group('游戏跨设备身份', () {
     test('两台电脑各自入库的同一款游戏（id 不同）按 VNDB id 对号，标签双向一致', () async {
       final FushiDatabase host = memDb();

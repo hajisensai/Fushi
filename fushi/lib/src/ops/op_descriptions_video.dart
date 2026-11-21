@@ -1,10 +1,17 @@
 import 'dart:io';
 
 import 'package:fushi_cli/fushi_cli.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
+    show VideoSourceScrapeConfirmation, VideoSourceScrapeTaskController;
+import 'package:fushi_engine/media/video/metadata/video_work_claim_snapshot.dart';
+import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/ops/ctl_video_support.dart'
+    show CtlVideoWorkId, ctlVideoConfirmationId;
 import 'package:fushi/src/ops/op_describe_kit.dart';
+import 'package:fushi/src/ops/op_descriptions_video_organize.dart';
 import 'package:fushi/src/ops/op_task_status.dart';
 import 'package:fushi/src/ops/op_descriptions_library.dart'
     show OpUndoScope, opScopedSnapshotUndo, opUndoDisplay;
@@ -16,8 +23,11 @@ import 'package:fushi/src/ops/op_descriptions_library.dart'
 ///   新写的那份 sidecar（路由不覆盖已有同名字幕；`alreadyHasSubtitle` 什么都没写，撤销
 ///   不动任何文件；文件早于本次执行或之后被改过都报 superseded）；
 /// - 播放器音量 / 音轨 / 主副字幕（都会持久化）= 执行前快照，撤销写回；
-/// - 资源入队 = 取消那个下载任务；专名表整表替换 = 写回旧表。
-/// 刮削认领 / 指定身份没有「解除身份、退回待确认」的路由，标 irreversible（见回报）。
+/// - 资源入队 = 取消那个下载任务；专名表整表替换 = 写回旧表；
+/// - 刮削认领（`video.scrape.confirm` 选候选 / 指定身份、`video.work.identify`）=
+///   执行前抓作品单元的整块快照（[captureVideoWorkClaimSnapshot]，清单见该文件头），
+///   撤销时恢复到认领前，认领前没有身份的作品回到待确认队列；认领后身份 / 资料 /
+///   标题 / 封面 / sidecar 被手动改过报 superseded。跳过（skip）什么也不写，撤销即完成。
 List<OpDescription> describeVideoOps(OpDescribeKit kit) {
   final OpAvailability Function() video = kit.whenModule(ModuleId.video);
   final OpAvailability Function() discovery = kit.all(
@@ -34,6 +44,7 @@ List<OpDescription> describeVideoOps(OpDescribeKit kit) {
       ]);
   return <OpDescription>[
     ..._describeScrapeOps(kit, video),
+    ...describeVideoOrganizeOps(kit, video),
     ..._describeDiscoveryOps(kit, discovery, downloads),
     ..._describePlayerOps(kit, video),
     ..._describeSubtitleOps(kit, video),
@@ -79,7 +90,8 @@ List<OpDescription> _describeScrapeOps(
     method: 'GET',
     pattern: '$_video/works',
     summary:
-        'List video works of local video sources with their scraped identity '
+        'List video works of local video sources (plus local videos without a '
+        'source, reported with sourceId null) with their scraped identity '
         '(provider:id), or with pending=true the works waiting for confirmation '
         'and why.',
     availability: video,
@@ -123,8 +135,10 @@ List<OpDescription> _describeScrapeOps(
     pattern: '$_video/works/:id/identify',
     summary:
         'Set a work\'s metadata identity (provider + external id) and re-scrape '
-        'it (overwrites title, artwork and episode metadata).',
-    risk: OpRisk.irreversible,
+        'it (overwrites title, artwork and episode metadata). Undo restores '
+        'the previous identity and metadata (an unidentified work goes back to '
+        'the pending list).',
+    risk: OpRisk.write,
     availability: video,
     params: const <OpParam>[
       _workIdParam,
@@ -151,6 +165,17 @@ List<OpDescription> _describeScrapeOps(
             'false = return immediately after queuing (default waits).',
       ),
     ],
+    undo: _claimUndo(
+      kit,
+      unitKeyOf: (CtlCall call) async =>
+          CtlVideoWorkId.parse(call.params['id']!).stableKey,
+      claimedOf: (Object? result) {
+        final Map<String, Object?> identity = _map(_map(result)['identity']);
+        return identity['provider'] == null || identity['externalId'] == null
+            ? null
+            : '${identity['provider']}:${identity['externalId']}';
+      },
+    ),
   ),
   OpDescription(
     id: 'video.scrape.status',
@@ -205,6 +230,21 @@ List<OpDescription> _describeScrapeOps(
     availability: video,
   ),
   OpDescription(
+    id: 'video.relation.refresh',
+    method: 'POST',
+    pattern: '$_video/relations/refresh',
+    summary:
+        'Fill in missing series relations (prequel / sequel) for already '
+        'scraped works. Only touches series relations, never other work '
+        'metadata; the only network use is one TMDB collection request per '
+        'collection whose scraped movie snapshots lack the member list (none '
+        'once filled). Returns counts: tmdb {missing, refreshed, requests, '
+        'failed} (absent without a TMDB key), works, worksWithRelations, rows, '
+        'bound.',
+    risk: OpRisk.irreversible,
+    availability: video,
+  ),
+  OpDescription(
     id: 'video.scrape.confirmation',
     method: 'GET',
     pattern: '$_video/scrape/confirmation',
@@ -230,8 +270,9 @@ List<OpDescription> _describeScrapeOps(
     summary:
         'Answer the pending scrape confirmation: pick a candidate, give an '
         'explicit identity, or skip (work goes to the pending list). Writes the '
-        'chosen identity and metadata.',
-    risk: OpRisk.irreversible,
+        'chosen identity and metadata; undo restores the work to before the '
+        'answer (back to the pending list if it had no identity).',
+    risk: OpRisk.write,
     availability: video,
     params: const <OpParam>[
       OpParam.string(
@@ -262,8 +303,135 @@ List<OpDescription> _describeScrapeOps(
             'answering a different item).',
       ),
     ],
+    undo: _claimUndo(
+      kit,
+      skip: (CtlCall call) =>
+          '${call.body['action']}'.trim().toLowerCase() == 'skip',
+      unitKeyOf: (CtlCall call) async {
+        final VideoSourceScrapeConfirmation? pending = _pendingConfirmation(
+          kit,
+        );
+        // 没有待确认项：路由自己会回 409，这里不抓快照。
+        if (pending == null) return null;
+        final String? key = pending.workStableKey;
+        if (key == null) {
+          throw const CtlFailure.conflict('待确认项没有作品键，抓不了撤销快照');
+        }
+        return key;
+      },
+      confirmationIdOf: () {
+        final VideoSourceScrapeConfirmation? pending = _pendingConfirmation(
+          kit,
+        );
+        return pending == null ? null : ctlVideoConfirmationId(pending);
+      },
+      claimedOf: (Object? result) =>
+          _map(_map(result)['picked'])['identity'] as String?,
+    ),
   ),
 ];
+
+VideoSourceScrapeConfirmation? _pendingConfirmation(OpDescribeKit kit) => kit
+    .context
+    .appModel
+    .videoScrapeRuntime
+    ?.currentController
+    ?.pendingConfirmation;
+
+/// 认领撤销备份目录（`<thumbnails>/undo_backups/video_claim/`，与书封面撤销备份同一
+/// 落点，30 天清理）。
+Directory _claimBackupDirectory(OpDescribeKit kit) => Directory(
+  p.join(
+    kit.context.appModel.thumbnailsDirectory.path,
+    'undo_backups',
+    'video_claim',
+  ),
+);
+
+/// 认领撤销：执行前抓 [unitKeyOf] 单元的快照（[skip] 为真时不抓——跳过不写库），
+/// 撤销时按 [claimedOf] 给出的认领身份判 superseded 后整块恢复。
+/// [confirmationIdOf]：抓快照那一刻的待确认项 id；与路由实际回答的那一项（结果里的
+/// `id`）不符时快照不是这次回答的作品，撤销报失败、不动库。
+OpUndo _claimUndo(
+  OpDescribeKit kit, {
+  bool Function(CtlCall call)? skip,
+  required Future<String?> Function(CtlCall call) unitKeyOf,
+  String? Function()? confirmationIdOf,
+  required String? Function(Object? result) claimedOf,
+}) => opCustomUndo(
+  capture: (CtlCall call) async {
+    if (skip?.call(call) == true) return <String, Object?>{'skip': true};
+    final String? unitKey = await unitKeyOf(call);
+    if (unitKey == null) return const <String, Object?>{};
+    final String? confirmationId = confirmationIdOf?.call();
+    final VideoWorkClaimSnapshot snapshot;
+    try {
+      snapshot = await captureVideoWorkClaimSnapshot(
+        kit.context.appModel.database,
+        unitKey,
+        backupDirectory: _claimBackupDirectory(kit),
+      );
+    } on FormatException catch (e) {
+      throw CtlFailure.badRequest(e.message);
+    }
+    return <String, Object?>{
+      'snapshot': snapshot.toJson(),
+      'confirmationId': ?confirmationId,
+    };
+  },
+  payloadOf: (CtlCall call, Map<String, Object?> before, Object? result) {
+    if (before['skip'] == true || before['snapshot'] == null) {
+      return <String, Object?>{'skip': true};
+    }
+    final Object? answeredId = _map(result)['id'];
+    return <String, Object?>{
+      'snapshot': before['snapshot'],
+      'claimed': claimedOf(result),
+      if (before['confirmationId'] != null &&
+          answeredId != null &&
+          before['confirmationId'] != answeredId)
+        'mismatch': true,
+    };
+  },
+  describe: (Map<String, Object?> payload) => payload['skip'] == true
+      ? null
+      : opUndoDisplay(<String, Object?>{
+          'work': _map(payload['snapshot'])['unitKey'],
+          'identity': payload['claimed'],
+        }),
+  revert: (Map<String, Object?> payload) async {
+    if (payload['skip'] == true) return const OpUndoOutcome.done();
+    final VideoWorkClaimSnapshot snapshot;
+    try {
+      snapshot = VideoWorkClaimSnapshot.fromJson(payload['snapshot']);
+    } on FormatException catch (e) {
+      return OpUndoOutcome.failed('撤销载荷损坏：${e.message}');
+    }
+    if (payload['mismatch'] == true) {
+      return const OpUndoOutcome.failed('撤销快照与实际回答的不是同一个待确认作品，未改动');
+    }
+    final VideoSourceScrapeTaskController? controller =
+        kit.context.appModel.videoScrapeRuntime?.currentController;
+    final VideoWorkClaimRevertResult result = await revertVideoWorkClaim(
+      kit.context.appModel.database,
+      snapshot,
+      claimedIdentity: payload['claimed'] as String?,
+      stagingParent: _claimBackupDirectory(kit),
+      isScrapeBusy: controller?.isBusy ?? false,
+    );
+    switch (result.status) {
+      case VideoWorkClaimRevertStatus.restored:
+        return const OpUndoOutcome.done();
+      case VideoWorkClaimRevertStatus.nothingToRevert:
+        await discardVideoWorkClaimBackups(snapshot);
+        return const OpUndoOutcome.done();
+      case VideoWorkClaimRevertStatus.superseded:
+        return OpUndoOutcome.superseded(result.message);
+      case VideoWorkClaimRevertStatus.failed:
+        return OpUndoOutcome.failed(result.message ?? 'failed');
+    }
+  },
+);
 
 // ─────────────────────────────────────────────────────────────────────────
 // 发现 / 资源 / 入队
@@ -738,7 +906,10 @@ List<OpDescription> _describePlayerOps(
     id: 'video.mine-queue.commit',
     method: 'POST',
     pattern: '$_video/mine-queue/commit',
-    summary: 'Write all queued cards of a video to Anki.',
+    summary:
+        'Write all queued cards of a video to Anki. Cards that could not be '
+        'delivered (Anki unreachable) stay pending and are counted in '
+        '"undelivered".',
     risk: OpRisk.irreversible,
     availability: video,
     params: const <OpParam>[

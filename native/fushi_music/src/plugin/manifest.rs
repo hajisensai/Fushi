@@ -730,7 +730,10 @@ mod tests {
         j["tracking"]["subjectUrl"] = serde_json::json!("https://example.org/subject/{id}");
         let m = parse(&j).unwrap();
         let s = serde_json::to_value(&m).unwrap();
-        assert_eq!(s["tracking"]["subjectUrl"], "https://example.org/subject/{id}");
+        assert_eq!(
+            s["tracking"]["subjectUrl"],
+            "https://example.org/subject/{id}"
+        );
         j["tracking"]["subjectUrl"] = serde_json::json!("https://www.example.org/{kind}/{id}");
         assert!(parse(&j).is_ok());
         // 不带 subjectUrl 时序列化里也没有。
@@ -746,8 +749,14 @@ mod tests {
         assert_eq!(s["tracking"]["subjectUrl"], per_kind);
 
         for (kinds, modes) in [
-            (serde_json::json!(["anime", "game"]), serde_json::json!(["episode"])),
-            (serde_json::json!(["anime"]), serde_json::json!(["episode", "status"])),
+            (
+                serde_json::json!(["anime", "game"]),
+                serde_json::json!(["episode"]),
+            ),
+            (
+                serde_json::json!(["anime"]),
+                serde_json::json!(["episode", "status"]),
+            ),
         ] {
             let mut j = tracking_base();
             j["tracking"]["kinds"] = kinds;

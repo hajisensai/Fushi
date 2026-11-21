@@ -24,9 +24,9 @@ void main() {
       contains('Intent.ACTION_DELETE'),
       reason: 'requestUninstall no longer uses ACTION_DELETE; update guard',
     );
-    final String manifest = File(
-      manifestPath,
-    ).readAsStringSync().replaceAll(RegExp(r'<!--[\s\S]*?-->'), '');
+    final String manifest = maskHtmlComments(
+      File(manifestPath).readAsStringSync(),
+    );
     expect(
       manifest,
       contains(

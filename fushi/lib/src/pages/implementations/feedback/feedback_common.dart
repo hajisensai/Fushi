@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/feedback/feedback_entry_gate.dart';
+import 'package:fushi/src/feedback/feedback_files.dart';
 import 'package:fushi/src/feedback/feedback_fix_progress.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/feedback/feedback_store.dart';
@@ -131,6 +132,18 @@ String? feedbackVideoErrorText(Object error) => switch (error) {
   _ => null,
 };
 
+/// 样本文件传不上去的原因（[feedbackFileProblem]）给用户看的完整一句。
+String feedbackFileProblemText(String name, FeedbackFileProblem problem) =>
+    switch (problem) {
+      FeedbackFileProblem.unsupportedType =>
+        t.feedback_compose_file_unsupported(name: name),
+      FeedbackFileProblem.empty => t.feedback_compose_file_empty(name: name),
+      FeedbackFileProblem.tooLarge => t.feedback_compose_file_too_large(
+        name: name,
+        max: FushiByteFormat.bytes(FeedbackLimits.fileMaxBytes),
+      ),
+    };
+
 /// 显示用户文字前剥掉伪装字符（双向控制符 / 零宽字符，emoji 的 ZWJ 保留）。服务端
 /// 提交时已剥过，这里是纵深防御：旧数据或绕过服务端的内容也不会在处理台里「看到的和
 /// 实际的不一样」。
@@ -192,6 +205,11 @@ class FeedbackFlagChips extends StatelessWidget {
 
 String feedbackTime(int ms) =>
     FushiTimeFormat.dateHourMinute(DateTime.fromMillisecondsSinceEpoch(ms));
+
+/// 上传额度重置时刻（[FeedbackService.uploadQuotaResetAt]，UTC 零点）按本机时区显示：带日期，
+/// 东八区看到的是「次日 08:00」这类，不会和今天的同一钟点混淆。
+String feedbackQuotaResetTime(DateTime at) =>
+    FushiTimeFormat.dateHourMinute(at.toLocal());
 
 /// 状态徽标：未结案用强调色，已解决用成功色，其余中性。
 class FeedbackStatusBadge extends StatelessWidget {

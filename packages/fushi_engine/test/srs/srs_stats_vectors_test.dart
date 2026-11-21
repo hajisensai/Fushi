@@ -31,6 +31,7 @@ import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart';
 import 'support/srs_stats_rows.dart';
+import 'support/srs_migrated_ids.dart';
 import 'support/srs_test_storage.dart';
 
 const String kStatsVecProfile = '01928c3e-0000-7000-8000-0000000000c3';
@@ -38,14 +39,22 @@ const String kStatsVecProfile = '01928c3e-0000-7000-8000-0000000000c3';
 final String _fixtures = '${Directory.current.path}/test/srs/fixtures'
     .replaceAll('\\', '/');
 
-/// 确定性假打分器：R 只取决于卡 ID 与它最后一条日志是否存在。
+/// 确定性假打分器：R 只取决于卡 ID 与它最后一条日志是否存在。卡 ID 按期望值生成时的旧 ID 算（[legacyOf]：迁移后的
+/// 规范 ID → 冻结库里的旧 ID，见 support/srs_migrated_ids.dart）。
 final class _FakeRwkv implements SrsRwkvScheduling {
+  _FakeRwkv([this.legacyOf = const <String, String>{}]);
+
+  final Map<String, String> legacyOf;
+
   @override
   bool get ready => true;
 
   List<double> _scores(List<SrsRwkvCandidate> cards) => <double>[
     for (final SrsRwkvCandidate c in cards)
-      ((c.id.codeUnits.fold<int>(0, (int a, int b) => a + b) +
+      (((legacyOf[c.id] ?? c.id).codeUnits.fold<int>(
+                    0,
+                    (int a, int b) => a + b,
+                  ) +
                   (c.lastLogId == null ? 0 : 7)) %
               97) /
           100.0,
@@ -212,6 +221,8 @@ void main() {
     int t = 0;
     final File db = File('$_fixtures/srs_stats_vectors.db.gz');
     final SrsDbStore s;
+    // 期望值里的旧（带盐）ID → 迁移后的规范 ID（重新生成时为空：库与期望值同一口径）。
+    Map<String, String> ids = const <String, String>{};
     if (write && !built) {
       built = true;
       s = await _build(() => t, (int v) => t = v);
@@ -221,19 +232,15 @@ void main() {
       db.writeAsBytesSync(gzip.encode(File(snap).readAsBytesSync()));
       tmp.deleteSync(recursive: true);
     } else {
-      final Directory dir = Directory.systemTemp.createTempSync('srs_vec_');
-      addTearDown(() {
-        try {
-          dir.deleteSync(recursive: true);
-        } on FileSystemException {
-          // 句柄晚释放。
-        }
-      });
-      final String path = p.join(dir.path, 'srs.db');
-      File(path).writeAsBytesSync(gzip.decode(db.readAsBytesSync()));
-      final TestSrs srs = await openTestSrsAt(path);
+      // 冻结库是协议 3 的 srs.db：放进新库目录当封存旧库、走一遍换代迁移（用户升级的同一条路）再开新代库，
+      // 新代的读命令对同一组向量。这份库出自 V12 的表并进来之前的开发版本（协议 3 schema.rs V14 那段注释），标着
+      // schema 13 却缺 `sync2_replay_pending` 等表，迁移的补完步骤（协议 3 `replay_pending`）会报缺表；夹具里的
+      // schema 标记因此改成 9，让协议 3 开库把 V10 起的步骤（全都可重放）补一遍，数据一行没动。
+      final TestSrs srs = await openMigratedTestSrs(
+        gzip.decode(db.readAsBytesSync()),
+        prefix: 'srs_vec_',
+      );
       s = await SrsDbStore.open(
-        db: srs.db,
         core: srs.core,
         profileUid: kStatsVecProfile,
         deviceId: 'v',
@@ -246,8 +253,9 @@ void main() {
         fallbackRolloverHour: () => 4,
         localOffsetMin: () => 540,
       );
+      ids = await srsMigratedIds(s, expected[name]);
     }
-    if (rwkv) s.rwkv = _FakeRwkv();
+    if (rwkv) s.rwkv = _FakeRwkv(srsLegacyOf(ids));
     final int now = DateTime.utc(2026, 10, 6, 9).millisecondsSinceEpoch;
     t = now;
     final SrsStatsLoad load = await loadSrsStats(s, nowMs: now);
@@ -308,10 +316,20 @@ void main() {
       final Map<String, Object?> got =
           (jsonDecode(jsonEncode(produced[name])) as Map)
               .cast<String, Object?>();
-      final Map<String, Object?> want = (expected[name]! as Map)
-          .cast<String, Object?>();
+      // 期望值换成规范 ID 后按新 ID 重排（卡按 ID 排、牌组里的卡 ID 排序），与 [produced] 同一个顺序。
+      final Map<String, Object?> want =
+          (srsWithIds(expected[name], ids)! as Map).cast<String, Object?>();
       final List<Object?> gotCards = got['cards']! as List<Object?>;
-      final List<Object?> wantCards = want['cards']! as List<Object?>;
+      final List<Object?> wantCards = (want['cards']! as List<Object?>)
+        ..sort(
+          (Object? x, Object? y) => ((x! as List<Object?>)[0]! as String)
+              .compareTo((y! as List<Object?>)[0]! as String),
+        );
+      for (final Object? d in want['decks']! as List<Object?>) {
+        ((d! as List<Object?>)[1]! as List<Object?>).sort(
+          (Object? x, Object? y) => (x! as String).compareTo(y! as String),
+        );
+      }
       expect(gotCards.length, wantCards.length, reason: '$name cards');
       int fsrsR = 0;
       for (int k = 0; k < gotCards.length; k++) {

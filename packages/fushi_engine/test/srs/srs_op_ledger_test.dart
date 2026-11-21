@@ -91,22 +91,4 @@ void main() {
     }
     expect(SrsOpLedger.takeSummary(), contains('; +2]'));
   });
-
-  test('SQL 归名：动词 + 首个表，不带参数', () {
-    expect(
-      srsSqlLedgerName(
-        '  SELECT e.entity_kind AS k FROM (SELECT 1 FROM srs_field_edits) m',
-      ),
-      'sql:SELECT srs_field_edits',
-    );
-    expect(
-      srsSqlLedgerName('UPDATE srs_field_edits SET jslim = ? WHERE rowid = ?'),
-      'sql:UPDATE srs_field_edits',
-    );
-    expect(
-      srsSqlLedgerName('INSERT INTO "srs_event_local" (a) VALUES (?)'),
-      'sql:INSERT srs_event_local',
-    );
-    expect(srsSqlLedgerName('PRAGMA user_version'), 'sql:PRAGMA');
-  });
 }

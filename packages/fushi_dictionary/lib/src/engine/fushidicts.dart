@@ -233,6 +233,36 @@ class FushiDicts {
   static set nativeLibraryPath(String? path) =>
       FushidictsFfiBindings.libraryPathOverride = path;
 
+  /// 联合过滤器的缓存目录（null = 不落盘，每次装载后在内存里现建）。
+  ///
+  /// 联合过滤器是原生引擎的派生索引：把全部词典的键并进一份分块 Bloom，一次查库读
+  /// 一条缓存行就知道「这个键可能在哪几本词典里」，不必逐本探测。它不改查词结果、
+  /// 不改词典目录，文件丢了 / 词典集合变了就自动重建，所以放缓存目录即可（**不要**
+  /// 放进词典资源目录：那里的子目录会被当成词典盘点）。宿主在首次装载词典前设好；
+  /// 之后才设也只是这一轮用内存版。
+  static String? unionFilterCacheDirectory;
+
+  /// 装完一套词典后让原生引擎在它自己的后台线程里备好联合过滤器。立刻返回；建好之前
+  /// 查词照走各词典自己的过滤器，结果相同。引擎销毁时原生侧会叫停并收回那条线程。
+  void _prepareUnionFilter() {
+    final Pointer<Void>? handle = _handle;
+    if (handle == null) return;
+    final Pointer<Utf8> dir = (unionFilterCacheDirectory ?? '').toNativeUtf8(
+      allocator: calloc,
+    );
+    try {
+      _bindings!.prepareUnionFilter(handle, dir, 0);
+    } finally {
+      calloc.free(dir);
+    }
+  }
+
+  /// 联合过滤器是否已就绪（给测试 / 诊断观测；查词不需要等它）。
+  bool get unionFilterReady {
+    final Pointer<Void>? handle = _handle;
+    return handle != null && _bindings!.unionFilterState(handle) == 2;
+  }
+
   static FushiDicts get instance {
     _applyPendingIfAny();
     assert(_instance != null, 'FushiDicts.initialize() must be called first');
@@ -335,6 +365,7 @@ class FushiDicts {
       h.addFreqDict(p);
       h.addPitchDict(p);
     }
+    h._prepareUnionFilter();
     _instance = h;
     _loadedDictCount = paths.length;
     _rebuildStylesCache();
@@ -345,31 +376,42 @@ class FushiDicts {
   /// 只在「必须马上生效」时用：删词典目录前后（[releaseAllMappings] / BUG-1756，
   /// 文件映射不释放就删不掉文件），以及测试。**写元数据的路径请用 [scheduleTyped]**
   /// ——那条路是逐本触发的，就地重建会把总代价推成 O(N²)。
+  ///
+  /// [termLanguages]：term 词典路径 → 词头语言（BCP-47，见 [termDictLanguagesOf]）。
+  /// 语言是**装载时**交给引擎的属性——标了语言的词典只接受本语言变形表还原出来的
+  /// 词形（英语词典不再被阿尔巴尼亚语的规则查到 Our → O）；查词调用本身不带语言，
+  /// 所以改了某本词典的语言要重新装载（元数据写入本来就会重排期）。不在表里的词典
+  /// 当未标注，行为与此前一致。
   static void initializeTyped({
     List<String> termPaths = const [],
     List<String> freqPaths = const [],
     List<String> pitchPaths = const [],
     List<String> kanjiPaths = const [],
+    Map<String, String> termLanguages = const <String, String>{},
   }) {
     _pending = null;
-    _applyTyped(termPaths, freqPaths, pitchPaths, kanjiPaths);
+    _applyTyped(termPaths, freqPaths, pitchPaths, kanjiPaths, termLanguages);
   }
 
   /// 排期一次引擎重建：只记下目标集合，真正装载推迟到下一次要用引擎时
   /// （[instance] / [dictionaryStyles] / [loadPendingNow]）。见 [_pending]。
   ///
   /// 连续排期只保留最后一次——中间那些集合从来没被任何人观察到，装了也是白装。
+  ///
+  /// [termLanguages] 见 [initializeTyped]。
   static void scheduleTyped({
     List<String> termPaths = const [],
     List<String> freqPaths = const [],
     List<String> pitchPaths = const [],
     List<String> kanjiPaths = const [],
+    Map<String, String> termLanguages = const <String, String>{},
   }) {
     _pending = _PendingDicts(
       termPaths: termPaths,
       freqPaths: freqPaths,
       pitchPaths: pitchPaths,
       kanjiPaths: kanjiPaths,
+      termLanguages: termLanguages,
     );
     _generation++;
   }
@@ -454,11 +496,17 @@ class FushiDicts {
 
       // 让出期间意图变了：丢掉这份成果（连同它持有的文件映射），别把已经过时的
       // 集合盖回引擎上。新意图会由它自己的结算路径装载。
-      if (!await loadAll(pending.termPaths, shadow.addTermDict)) return;
+      if (!await loadAll(
+        pending.termPaths,
+        (String p) => shadow.addTermDict(p, language: pending.termLanguages[p]),
+      )) {
+        return;
+      }
       if (!await loadAll(pending.freqPaths, shadow.addFreqDict)) return;
       if (!await loadAll(pending.pitchPaths, shadow.addPitchDict)) return;
       if (!await loadAll(pending.kanjiPaths, shadow.addKanjiDict)) return;
 
+      shadow._prepareUnionFilter();
       _instance?.dispose();
       _instance = shadow;
       handedOver = true;
@@ -498,6 +546,7 @@ class FushiDicts {
       pending.freqPaths,
       pending.pitchPaths,
       pending.kanjiPaths,
+      pending.termLanguages,
     );
   }
 
@@ -505,8 +554,9 @@ class FushiDicts {
     List<String> termPaths,
     List<String> freqPaths,
     List<String> pitchPaths,
-    List<String> kanjiPaths,
-  ) {
+    List<String> kanjiPaths, [
+    Map<String, String> termLanguages = const <String, String>{},
+  ]) {
     // 同步装载同样算一次新意图：进行中的 [loadPendingAsync] 会据此作废自己的成果，
     // 不把过时集合盖回来。
     _generation++;
@@ -514,7 +564,7 @@ class FushiDicts {
     final h = FushiDicts();
     h._loadCachedTransforms();
     for (final p in termPaths) {
-      h.addTermDict(p);
+      h.addTermDict(p, language: termLanguages[p]);
     }
     for (final p in freqPaths) {
       h.addFreqDict(p);
@@ -525,6 +575,7 @@ class FushiDicts {
     for (final p in kanjiPaths) {
       h.addKanjiDict(p);
     }
+    h._prepareUnionFilter();
     _instance = h;
     _loadedDictCount =
         termPaths.length +
@@ -565,9 +616,9 @@ class FushiDicts {
 
   /// 释放**全部**已加载词典的文件映射，把引擎重置成空但可用的实例。
   ///
-  /// 为什么需要这个：词典加载时，native 侧把每本词典的 `hash.table` /
-  /// `bloom.filter` / `blobs.bin` / `media.bin` / `media.idx` 全部
-  /// `MapViewOfFile` 常驻映射（`fushidicts_src/query.cpp` 的 `add_dict` →
+  /// 为什么需要这个：词典加载时，native 侧把每本词典的索引（`key.index`，旧式词典是
+  /// `hash.table` + `bloom.filter`）、记录文件（`blobs.bin` / 升级过的 `blobs3.bin`）、
+  /// `media.bin` / `media.idx` 全部 `MapViewOfFile` 常驻映射（`fushidicts_src/query.cpp` 的 `add_dict` →
   /// `memory/memory.cpp` 的 `map_rd`）。Windows 上只要那份 view 还活着，
   /// `DeleteFileW` 一律失败（ERROR_USER_MAPPED_FILE 1224），删词典目录必抛
   /// [FileSystemException]。故**删任何词典目录之前必须先调这里**（BUG-1756）。
@@ -745,13 +796,23 @@ class FushiDicts {
     }
   }
 
-  void addTermDict(String path) {
+  /// [language]：这本词典词头的语言（BCP-47），null / 空 = 未标注。
+  void addTermDict(String path, {String? language}) {
     _termDictionaryPaths.add(path);
+    final String tag = language?.trim() ?? '';
     final p = path.toNativeUtf8(allocator: calloc);
+    final Pointer<Utf8> l = tag.isEmpty
+        ? nullptr
+        : tag.toNativeUtf8(allocator: calloc);
     try {
-      _bindings!.addTermDict(_handle!, p);
+      if (l == nullptr) {
+        _bindings!.addTermDict(_handle!, p);
+      } else {
+        _bindings!.addTermDictWithLanguage(_handle!, p, l);
+      }
     } finally {
       calloc.free(p);
+      if (l != nullptr) calloc.free(l);
     }
   }
 
@@ -788,7 +849,8 @@ class FushiDicts {
   /// failure. Used to route mixed dictionaries into both buckets and to
   /// self-heal already-imported dictionaries that detect_type mislabeled.
   ///
-  /// Static (handle-free): only reads blobs.bin/hash.table on disk, so it can
+  /// Static (handle-free): only reads the dictionary's index and record files on
+  /// disk (whichever layout the native side finds), so it can
   /// run during type migration before any query handle exists.
   static int probeDictContent(String dir) {
     _bindings ??= FushidictsFfiBindings();
@@ -809,7 +871,7 @@ class FushiDicts {
   /// 逐本在后台 isolate 跑（单本整本扫描最多约 1 s，绝不上 UI isolate）。已有有效
   /// 标记的词典由原生侧直接读标记返回（不重扫）。
   ///
-  /// 与删 / 覆盖词典串行（Windows 上扫描期间映射着 blobs.bin，删不掉）：
+  /// 与删 / 覆盖词典串行（Windows 上扫描期间映射着索引与记录文件，删不掉）：
   /// * 每本扫描都登记进后台借用账本，[withMappingsReleased] / [whenBackgroundBorrowsSettled]
   ///   会等在跑的那一本结束；
   /// * 处于 [withMappingsReleased] 作用域内时不再开始新的一本，本轮剩下的标为
@@ -853,6 +915,112 @@ class FushiDicts {
     final Pointer<Utf8> p = dir.toNativeUtf8(allocator: calloc);
     try {
       return ensure(p);
+    } finally {
+      calloc.free(p);
+    }
+  }
+
+  /// 把存量词典原地升级到当前磁盘格式（原生 `fushidicts_upgrade_dictionary`，语义见
+  /// `native/fushidicts/fushidicts_include/fushidicts/upgrade.hpp`）。
+  ///
+  /// 原生侧只创建新文件再改名提交、不碰已有文件，所以引擎正装着这本词典时也能调；
+  /// 新格式在**下一次装载**时才生效，本函数不重载引擎。旧文件被映射着（Windows）删不
+  /// 掉时留到引擎释放之后的下一次调用（返回 [FushiDictUpgradeOutcome.upToDate] 的
+  /// 那一支）再清。文件布局全是原生侧的事，Dart 只看返回码。
+  ///
+  /// 串行化与 [ensureRedirectFlags] 完全同一套：逐本在后台 isolate 跑（大词典单本可达
+  /// 秒级），每本登记进后台借用账本（[withMappingsReleased] 会等在跑的那一本）；处于
+  /// 映射释放作用域内时不再开始新的一本，剩下的进 [FushiDictUpgradeReport.deferred]；
+  /// 开始前目录已不存在的跳过（不进结果、不回调进度）。
+  ///
+  /// [onProgress] 每本跑完回调一次：`done` 是这本在 [dictDirs] 里的序号 + 1（跳过的
+  /// 目录照样占位，所以 `done / total` 单调、最后一本落在 total），`total` 恒为
+  /// `dictDirs.length`。
+  ///
+  /// 随包原生库没有这个导出时抛 [UnsupportedError]。
+  static Future<FushiDictUpgradeReport> upgradeDictionaryFormats(
+    List<String> dictDirs, {
+    FushiDictUpgradeProgress? onProgress,
+  }) {
+    if (lookupUpgradeDictionary() == null) {
+      throw UnsupportedError(
+        'fushidicts_upgrade_dictionary is not available in this build',
+      );
+    }
+    return _runPerDictionary(dictDirs, _upgradeDictionaryIn, onProgress);
+  }
+
+  /// 只检查 + 清理（原生 `fushidicts_tidy_dictionary`）：已是新格式的词典顺带清掉遗留
+  /// 旧文件、把完成标记换成新名字（[FushiDictUpgradeOutcome.upToDate]）；旧式词典**一个
+  /// 字节都不写**，报 [FushiDictUpgradeOutcome.pending]，由宿主征得用户同意后再交给
+  /// [upgradeDictionaryFormats]（拍板台 pr3554：升级会整本改写用户词典目录，先提示）。
+  ///
+  /// 串行化、作用域 deferred、进度回调口径与 [upgradeDictionaryFormats] 完全相同。
+  /// 随包原生库没有这个导出时抛 [UnsupportedError]。
+  static Future<FushiDictUpgradeReport> tidyDictionaryFormats(
+    List<String> dictDirs, {
+    FushiDictUpgradeProgress? onProgress,
+  }) {
+    if (lookupTidyDictionary() == null) {
+      throw UnsupportedError(
+        'fushidicts_tidy_dictionary is not available in this build',
+      );
+    }
+    return _runPerDictionary(dictDirs, _tidyDictionaryIn, onProgress);
+  }
+
+  /// [upgradeDictionaryFormats] / [tidyDictionaryFormats] 的公共循环：逐本在后台 isolate
+  /// 跑 [entry]，登记进后台借用账本。
+  static Future<FushiDictUpgradeReport> _runPerDictionary(
+    List<String> dictDirs,
+    int Function(String? libraryPath, String dir) entry,
+    FushiDictUpgradeProgress? onProgress,
+  ) async {
+    final String? libraryPath = FushidictsFfiBindings.libraryPathOverride;
+    final Map<String, FushiDictUpgradeOutcome> results =
+        <String, FushiDictUpgradeOutcome>{};
+    final List<String> deferred = <String>[];
+    for (int i = 0; i < dictDirs.length; i++) {
+      final String dir = dictDirs[i];
+      if (!await Directory(dir).exists()) continue;
+      // 同 ensureRedirectFlags：作用域检查与登记账本之间不能隔 await。
+      if (_mappingHolds > 0) {
+        deferred.addAll(dictDirs.sublist(i));
+        break;
+      }
+      final int code = await _backgroundBorrows.track(
+        Isolate.run(
+          () => entry(libraryPath, dir),
+          debugName: kDictUpgradeIsolateName,
+        ),
+      );
+      final FushiDictUpgradeOutcome outcome = FushiDictUpgradeOutcome.fromCode(
+        code,
+      );
+      results[dir] = outcome;
+      onProgress?.call(i + 1, dictDirs.length, dir, outcome);
+    }
+    return FushiDictUpgradeReport(results: results, deferred: deferred);
+  }
+
+  static int _upgradeDictionaryIn(String? libraryPath, String dir) {
+    FushidictsFfiBindings.libraryPathOverride = libraryPath;
+    final UpgradeDictionaryDart upgrade = lookupUpgradeDictionary()!;
+    final Pointer<Utf8> p = dir.toNativeUtf8(allocator: calloc);
+    try {
+      // allow_meta_rewrite = 1：纯 freq / pitch / ipa 词典顺带预解析记录。
+      return upgrade(p, 1);
+    } finally {
+      calloc.free(p);
+    }
+  }
+
+  static int _tidyDictionaryIn(String? libraryPath, String dir) {
+    FushidictsFfiBindings.libraryPathOverride = libraryPath;
+    final TidyDictionaryDart tidy = lookupTidyDictionary()!;
+    final Pointer<Utf8> p = dir.toNativeUtf8(allocator: calloc);
+    try {
+      return tidy(p);
     } finally {
       calloc.free(p);
     }
@@ -920,10 +1088,26 @@ class FushiDicts {
   }
 
   // ── query ───────────────────────────────────────────────────────
-  List<FushiTermResult> query(String expression) {
+  List<FushiTermResult> query(String expression) =>
+      _queryWith(_bindings!.query, expression);
+
+  /// 只要词频的 [query]：同一批 (expression, reading) 词条、同样的 rules 与
+  /// frequencies，但 glossaries 与 pitches 恒为空——原生不富化音调、不解压释义。
+  ///
+  /// 给「拿一个词形去查它的词频」的调用方用（Anki 卡组按词频重排，几千张卡各查一次）。
+  /// 释义解压加上把它拷过 FFI 是 [query] 的大头（真实词典集上平均每个词约 370 KB），
+  /// 这些调用方一个字也不读；实测单次约 0.33 ms → 0.03 ms。
+  List<FushiTermResult> queryFrequencies(String expression) =>
+      _queryWith(_bindings!.queryFrequencies, expression);
+
+  List<FushiTermResult> _queryWith(
+    FfiQueryResult Function(Pointer<Void> handle, Pointer<Utf8> expression)
+    nativeQuery,
+    String expression,
+  ) {
     final ep = expression.toNativeUtf8(allocator: calloc);
     try {
-      final r = _bindings!.query(_handle!, ep);
+      final r = nativeQuery(_handle!, ep);
       final rPtr = calloc<FfiQueryResult>();
       rPtr.ref = r;
       try {
@@ -987,6 +1171,11 @@ class FushiDicts {
   // 词典命中繁體查询；一字多候选全展开、由词典认真词，原形结果照常在、同长度时排在
   // 前面。引擎语言无关，由调用方判定（AppModel.lookupChineseSimpToTradFor）；默认
   // false，日语等其它语言的查询一字不变。参数名沿用历史的 SimpToTrad。
+  //
+  // [excludedDictionaries]：本次查词当作没装这些词典（按词典名精确匹配）。引擎在并入
+  // 结果之前就摘掉它们的释义、频率与音调，所以不占 [maxResults] 名额、也不影响排序
+  // （见 lookup.hpp 的 LookupOptions::excluded_dictionaries）。服务端常驻全部词典、按
+  // 请求的启用集合查词用。默认空集 = 行为逐字不变。
   List<FushiLookupResult> lookup(
     String text, {
     int maxResults = defaultMaxResults,
@@ -996,6 +1185,7 @@ class FushiDicts {
     String? primaryReading,
     bool chineseSimpToTrad = false,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    Set<String> excludedDictionaries = const <String>{},
   }) => _lookupWith(
     _bindings!,
     _handle!,
@@ -1007,6 +1197,7 @@ class FushiDicts {
     primaryReading: primaryReading,
     chineseSimpToTrad: chineseSimpToTrad,
     rubySpans: rubySpans,
+    excludedDictionaries: excludedDictionaries,
   );
 
   /// 同步路径（[lookup]）与后台查词共用的一次原生 lookup（同一份封送与转换）。
@@ -1021,6 +1212,7 @@ class FushiDicts {
     String? primaryReading,
     bool chineseSimpToTrad = false,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    Set<String> excludedDictionaries = const <String>{},
   }) {
     final bool useOptions =
         frequencyDictionary != null ||
@@ -1043,8 +1235,35 @@ class FushiDicts {
       rb.asTypedListOutOfLine(ruby.bounds.length).setAll(0, ruby.bounds);
     }
     final int flags = chineseSimpToTrad ? _lookupFlagChineseSimpToTrad : 0;
+    // 排除词典：一次 FFI 整批带过去（NUL 结尾 UTF-8 串的指针数组）。空串跳过。
+    final List<String> excluded = <String>[
+      for (final String name in excludedDictionaries)
+        if (name.isNotEmpty) name,
+    ];
+    final Pointer<Pointer<Utf8>> ex = excluded.isEmpty
+        ? nullptr
+        : calloc<Pointer<Utf8>>(excluded.length);
+    for (int i = 0; i < excluded.length; i++) {
+      ex[i] = excluded[i].toNativeUtf8(allocator: calloc);
+    }
     try {
-      final r = rubyCount > 0
+      final r = excluded.isNotEmpty
+          ? bindings.lookupWithExclusions(
+              handle,
+              tp,
+              maxResults,
+              scanLength,
+              fd,
+              frequencyOrder.index,
+              pr,
+              flags,
+              rb,
+              rr,
+              rubyCount,
+              ex,
+              excluded.length,
+            )
+          : rubyCount > 0
           ? bindings.lookupWithRuby(
               handle,
               tp,
@@ -1118,6 +1337,12 @@ class FushiDicts {
       if (rubyCount > 0) {
         calloc.free(rr);
         calloc.free(rb);
+      }
+      if (excluded.isNotEmpty) {
+        for (int i = 0; i < excluded.length; i++) {
+          calloc.free(ex[i]);
+        }
+        calloc.free(ex);
       }
     }
   }
@@ -1453,6 +1678,85 @@ class FushiRedirectFlagReport {
   ];
 }
 
+/// [FushiDicts.upgradeDictionaryFormats] 的后台 isolate debugName。
+const String kDictUpgradeIsolateName = 'fushi-dict-format-upgrade';
+
+/// 单本词典原地升级 / 检查的结果（原生 `fushidicts::UpgradeResult` 的五个值）。
+enum FushiDictUpgradeOutcome {
+  /// -1：读不了 / 写不了；词典原样可用（旧格式照常查词），下次再试。
+  failed(-1),
+
+  /// 0：已是最新（顺带清理了遗留的旧文件）。
+  upToDate(0),
+
+  /// 1：本次写出了新格式；下一次装载生效。
+  upgraded(1),
+
+  /// 2：新格式装不下这本词典，保持旧式、照常可用。
+  notApplicable(2),
+
+  /// 3：只检查（[FushiDicts.tidyDictionaryFormats]）时：旧式词典待升级，本次什么都没写。
+  pending(3);
+
+  const FushiDictUpgradeOutcome(this.code);
+
+  /// 原生返回码。
+  final int code;
+
+  /// 原生返回码 → 枚举；不认识的码按 [failed] 处理（词典照样按旧格式可用）。
+  static FushiDictUpgradeOutcome fromCode(int code) {
+    for (final FushiDictUpgradeOutcome o in values) {
+      if (o.code == code) return o;
+    }
+    return failed;
+  }
+}
+
+/// [FushiDicts.upgradeDictionaryFormats] 的逐本进度回调。
+typedef FushiDictUpgradeProgress =
+    void Function(
+      int done,
+      int total,
+      String dictDir,
+      FushiDictUpgradeOutcome outcome,
+    );
+
+/// [FushiDicts.upgradeDictionaryFormats] 的结果。
+class FushiDictUpgradeReport {
+  const FushiDictUpgradeReport({required this.results, required this.deferred});
+
+  /// 目录 → 结果（不存在而跳过的目录不在里面）。
+  final Map<String, FushiDictUpgradeOutcome> results;
+
+  /// 因进入「映射保持释放」作用域（删 / 覆盖词典）而本轮没做的目录。
+  final List<String> deferred;
+
+  List<String> _where(FushiDictUpgradeOutcome outcome) => <String>[
+    for (final MapEntry<String, FushiDictUpgradeOutcome> e in results.entries)
+      if (e.value == outcome) e.key,
+  ];
+
+  /// 本轮升级过的目录（要重载引擎才用得上新格式）。
+  List<String> get upgraded => _where(FushiDictUpgradeOutcome.upgraded);
+
+  /// 已是最新的目录。
+  List<String> get upToDate => _where(FushiDictUpgradeOutcome.upToDate);
+
+  /// 升级失败的目录（词典原样可用）。
+  List<String> get failed => _where(FushiDictUpgradeOutcome.failed);
+
+  /// 不适用、保持旧式的目录。
+  List<String> get notApplicable =>
+      _where(FushiDictUpgradeOutcome.notApplicable);
+
+  /// 待升级（只检查时报的）目录。
+  List<String> get pending => _where(FushiDictUpgradeOutcome.pending);
+
+  /// 是否有任何一本升级过。
+  bool get anyUpgraded =>
+      results.values.contains(FushiDictUpgradeOutcome.upgraded);
+}
+
 /// [FushiDicts.scheduleTyped] 排下的待装载词典集合（不可变快照）。
 ///
 /// 分四桶而不是一张扁平表：装载时每桶走不同的 native 入口（term/freq/pitch/kanji
@@ -1463,8 +1767,11 @@ class _PendingDicts {
     required this.freqPaths,
     required this.pitchPaths,
     required this.kanjiPaths,
+    this.termLanguages = const <String, String>{},
   });
 
+  /// term 词典路径 → 词头语言，见 [FushiDicts.initializeTyped]。
+  final Map<String, String> termLanguages;
   final List<String> termPaths;
   final List<String> freqPaths;
   final List<String> pitchPaths;

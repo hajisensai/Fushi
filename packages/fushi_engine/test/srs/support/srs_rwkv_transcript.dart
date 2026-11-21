@@ -20,6 +20,7 @@
 //
 // 规范形：卡的数字 id → `c<创建序号>`（没登记过的 `x<首次出现序号>`）；撤销日志标签 → `t<首次出现序号>`；
 // 分数表版本 → `v<该卡的第几个版本>`；毫秒时刻 → 相对用例起始时钟的偏移；路径 → 文件名。
+// 日志游标 → 库内第几条落库的日志（新代落库序减去 2^40，见 [SrsRwkvTranscript.cursor]；夹具冻结时是协议 3 的 rowid）。
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -35,6 +36,9 @@ import 'package:test/test.dart';
 
 const String kSrsRwkvTranscriptFixture =
     'test/srs/fixtures/srs_rwkv_orchestration.json';
+
+/// 新代日志落库序的起点（内核 `store/gen4/derive.rs` `SEQ_BASE` = 2^40）：第一条日志的游标是它 + 1。
+const int kSrsGen4LogSeqBase = 1 << 40;
 
 /// 一条用例的记录。
 class SrsRwkvTranscript {
@@ -92,6 +96,21 @@ class SrsRwkvTranscript {
       () => <int, String>{},
     );
     return seen.putIfAbsent(value, () => 'v${seen.length}');
+  }
+
+  /// 日志游标（`since` / `rebaseSince` / `maxRowId`，含快照元数据里的）→ 库内序号：新代的落库序从
+  /// [kSrsGen4LogSeqBase] + 1 起（内核 `derive.rs` `SEQ_BASE`），记成减去它之后的值，与夹具冻结时协议 3 的 rowid
+  /// 同口径（两边都是这个库里第几条落库的日志）。0 / null（还没有游标、空尾巴）原样。非零游标没落在新代号段里
+  /// = 游标又和协议 3 的 rowid 空间撞上（换代前的检查点会被新库接受），直接判失败。
+  Object? cursor(int? value) {
+    if (value == null || value == 0) return value;
+    if (value <= kSrsGen4LogSeqBase) {
+      fail(
+        'log cursor $value is not in the gen4 range (> $kSrsGen4LogSeqBase): '
+        'it collides with protocol 3 rowids',
+      );
+    }
+    return value - kSrsGen4LogSeqBase;
   }
 
   /// 毫秒时刻 → 相对偏移；哨兵值按名字记。
@@ -171,7 +190,7 @@ class SrsRwkvTranscript {
         <Object?>[
           p.basename(f.path),
           if (f.path.endsWith('.json'))
-            _tryJson(f.readAsStringSync())
+            _snapshotMeta(_tryJson(f.readAsStringSync()))
           else
             _snapshotCards(f),
         ],
@@ -184,6 +203,17 @@ class SrsRwkvTranscript {
     } on FormatException {
       return text;
     }
+  }
+
+  /// 快照元数据（`{v, count, maxRowId, lastAt}`）里的游标按 [cursor] 记；别的内容原样。
+  Object? _snapshotMeta(Object? decoded) {
+    if (decoded is Map<String, Object?> && decoded['maxRowId'] is int) {
+      return <String, Object?>{
+        ...decoded,
+        'maxRowId': cursor(decoded['maxRowId']! as int),
+      };
+    }
+    return decoded;
   }
 
   /// 替身后端的快照 = 已回放的卡（数字 id 的 JSON 数组）；别的内容（测试写坏的文件）原样记。
@@ -234,6 +264,8 @@ class SrsRwkvRecordingStore implements SrsDbStore {
   @override
   String get contentFingerprint => _inner.contentFingerprint;
   @override
+  String get landedFingerprint => _inner.landedFingerprint;
+  @override
   Future<String> changeFingerprint() async {
     await _delay();
     return _inner.changeFingerprint();
@@ -275,13 +307,13 @@ class SrsRwkvRecordingStore implements SrsDbStore {
     _log.add(<Object?>[
       'tail',
       <String, Object?>{
-        'since': since,
+        'since': _t.cursor(since),
         'withRows': withRows,
         'incremental': incremental,
       },
       <String, Object?>{
         'count': t.count,
-        'maxRowId': t.maxRowId,
+        'maxRowId': _t.cursor(t.maxRowId),
         'newRows': t.newRows,
         'logs': <Object?>[
           for (final SrsRwkvTailLog l in t.logs)
@@ -340,13 +372,13 @@ class SrsRwkvRecordingStore implements SrsDbStore {
       'replay',
       <String, Object?>{
         'cards': cardIds.length,
-        'since': since,
-        'rebaseSince': rebaseSince,
+        'since': _t.cursor(since),
+        'rebaseSince': _t.cursor(rebaseSince),
         'rowsFrom': _t.time(rowsFrom),
       },
       <String, Object?>{
         'count': r.count,
-        'maxRowId': r.maxRowId,
+        'maxRowId': _t.cursor(r.maxRowId),
         'lastAt': _t.time(r.lastAt),
         'rows': _t.rowList(r.rows),
         'ats': <Object?>[for (final int at in r.ats) _t.time(at)],

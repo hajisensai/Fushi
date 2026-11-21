@@ -43,12 +43,7 @@ int trackingSyncExitCode(MediaTrackingSyncResult r) {
 }
 
 class TrackingModule extends CliModule {
-  const TrackingModule({
-    this.out,
-    this.err,
-    this.env,
-    this.apiFactory,
-  });
+  const TrackingModule({this.out, this.err, this.env, this.apiFactory});
 
   final StringSink? out;
   final StringSink? err;

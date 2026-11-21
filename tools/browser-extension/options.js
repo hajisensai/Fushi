@@ -38,6 +38,8 @@ const settingDefaults = Object.freeze({
   studyTrackVideo: true,
   // 用扩展预取的整集轨自绘整句字幕并藏掉站点原生字幕（默认关：改变站点观感的行为要用户点头）。
   subtitleReplaceNative: false,
+  // YouTube 自动字幕按标点 / 停顿合成整句（默认关：日语 ASR 常无标点，断句是启发式，用户点头再开）。
+  subtitleMergeAsrSentences: false,
   // 隐藏字幕是实际显示状态；Shift+H 是否接管由独立快捷键开关控制。
   subtitleHidden: false,
   // 触屏查词：点按默认开（手机端没有 Shift 悬停，点按是主入口），长按默认关
@@ -84,6 +86,7 @@ const toggleIds = Object.freeze({
   subtitleOverlayBackground: 'subtitleOverlayBackground',
   studyTrackVideo: 'studyTrackVideo',
   subtitleReplaceNative: 'subtitleReplaceNative',
+  subtitleMergeAsrSentences: 'subtitleMergeAsrSentences',
   subtitleHidden: 'subtitleHidden',
   touchLookupTap: 'touchLookupTap',
   touchLookupHold: 'touchLookupHold',
@@ -266,6 +269,7 @@ async function loadSettings() {
   }
   await loadPopupSize(saved);
   await loadPopupFontSize();
+  await loadScanDelay();
   await loadShortcutKeys();
 }
 
@@ -454,6 +458,48 @@ async function loadPopupFontSize() {
   const store = await chrome.storage.local.get([POPUP_FONT_KEY]);
   fillPopupFontSize(store[POPUP_FONT_KEY]);
   on('popupFontSize', 'change', submitPopupFontSize);
+}
+
+// ── 悬停扫描延迟（反馈 L4Vhk0hOjM，content.js / side-panel.js fushiNormalizeScanDelay 读）──
+// storage.scanDelay：毫秒整数 0–2000，缺省 0（立即查）。只在查词按键为 none 时生效，
+// 按键模式下输入框置灰（值保留，切回 none 即恢复）。
+const SCAN_DELAY_MAX_MS = 2000;
+function normalizeScanDelay(value) {
+  if (typeof value !== 'number' || !isFinite(value)) return 0;
+  const ms = Math.round(value);
+  return ms <= 0 ? 0 : Math.min(SCAN_DELAY_MAX_MS, ms);
+}
+
+function fillScanDelay(value) {
+  const input = $('scanDelay');
+  if (!input || document.activeElement === input) return;
+  input.value = String(normalizeScanDelay(value));
+}
+
+function syncScanDelayEnabled() {
+  const input = $('scanDelay');
+  const modifier = $('scanModifier');
+  if (!input) return;
+  input.disabled = !!modifier && modifier.value !== 'none';
+}
+
+async function submitScanDelay() {
+  const input = $('scanDelay');
+  if (!input) return;
+  const raw = String(input.value || '').trim();
+  const n = raw ? Number(raw) : 0;
+  const ms = normalizeScanDelay(isFinite(n) ? n : 0);
+  input.value = String(ms);
+  await chrome.storage.local.set({ scanDelay: ms });
+  toast(tr('opt_toast_scan_delay_saved', { ms }));
+}
+
+async function loadScanDelay() {
+  const store = await chrome.storage.local.get(['scanDelay']);
+  fillScanDelay(store.scanDelay);
+  syncScanDelayEnabled();
+  on('scanDelay', 'change', submitScanDelay);
+  on('scanModifier', 'change', syncScanDelayEnabled);
 }
 
 on('connectionForm', 'submit', async (event) => {
@@ -678,6 +724,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
   if (changes.popupSizeFromApp) fillPopupSizeInputs(changes.popupSizeFromApp.newValue);
   if (changes[POPUP_FONT_KEY]) fillPopupFontSize(changes[POPUP_FONT_KEY].newValue);
+  if (changes.scanDelay) fillScanDelay(changes.scanDelay.newValue);
+  if (changes.scanModifier) syncScanDelayEnabled();
   if (changes[SHORTCUT_KEYS_SETTING]) {
     const v = changes[SHORTCUT_KEYS_SETTING].newValue;
     shortcutCustom = v && typeof v === 'object' ? Object.assign({}, v) : {};

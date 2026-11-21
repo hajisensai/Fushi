@@ -20,7 +20,12 @@
 //! | 有，链指纹相同，一边完整、一边是空洞 / 副本记录（或空洞对副本记录） | **本机的不动**（[Put::Kept]）。本机的槽只由本机自己应用 Purge / Dedup 推进（[Truth::advance_purge] / [Truth::advance_dedup]） |
 //! | 有，链指纹相同，同秩而内容不同，来的 T 版本更高 | 换成来的（[Put::Replaced]） |
 //! | 同上，来的 T 版本更低 | 本机的不动（[Put::Kept]） |
-//! | 同上，T 版本相同 | 异常：报错、不落库 |
+//! | 同上，T 版本相同 | 异常：不落库，[Put::Conflict] |
+//!
+//! 「异常」是来的数据与本机已有的自相矛盾（上传者的转译与本机的不是同一套、或段被改过），不是本机库坏了，所以是一个
+//! 结果而不是错误：什么都没写、会话不毒化，调用方决定怎么办——迁移灌入（`import.rs`）当错误整批停下，收段（`receive.rs`）
+//! 记一笔、跳过这个槽、接着收别的段。待投递与分叉的另一支上同样的矛盾（同号同链指纹、同 T 版本、内容不同；待投递的
+//! 槽说了两个不同的前一环）也是 [Put::Conflict]。
 //!
 //! 分叉时谁在日志里只看链指纹，不看谁先到：同一批槽不管按什么顺序收，日志与 `op_forks` 都一样（派生层只读日志，
 //! 所以派生结果也一样）。选择是逐个操作号做的——转译之后没有办法重算协议 3 的链，槽与槽之间「同一支」的关系只剩
@@ -46,33 +51,60 @@
 //! [Truth] 在内存里缓存设备下标、名字表、每条日志的末尾。所有写入必须在事务里（[Truth::tx]，或调用方自己开的事务）；
 //! 事务回滚后缓存可能领先于库，必须 [Truth::reset]（[Truth::tx] 出错时自动做）。一次写入报错后，这个会话在 reset 之前
 //! 拒绝再写。
+//!
+//! **每个最外层事务开头都 reset**（规划缺口 G-1）：同一个库文件可能有别的连接（另一个进程、查词弹窗的只读连接、
+//! 同进程的另一个会话）在两个事务之间写过，上一个事务留下的缓存（日志末尾、链值、设备下标）就不再可信。[Truth::tx]
+//! 在最外层（连接处于自动提交）时先 reset 再开事务，所以「读到的缓存」总是这个事务的快照里的。调用方自己开最外层
+//! 事务（`BEGIN …`）时，开完必须先调 [Truth::reset] 再用这个会话。新代下只有主进程写（D10），辅助进程的只读会话
+//! 同样经 [Truth::tx] 读（它在只读连接上也是一个读事务）。
+//!
+//! 这条约定有检测：会话记下缓存所对应的 `PRAGMA data_version`（reset 之后、缓存第一次从库里填之前记——不管这一读
+//! 在不在事务里，见 `Truth::ensure_snapshot`），每次写入前比一次。别的连接在这之后提交过（值变了）= 调用方自己开了事务却没 reset，写入报错、不落库（不
+//! 毒化会话：reset 之后照常）。同一个连接自己的提交不改这个值；拿着写事务时别人提交不了，所以事务内不会误报。
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
+use super::derive::Ref;
 use super::pack::{self, F_RAW3, F_STAMP, Names, tv_bits, tv_of};
-use super::schema::{in_tx, k_dev, k_range, k_seq, opk, sql};
+use super::schema::{in_tx, in_write_tx, k_dev, k_range, k_seq, opk, sql};
+use crate::gen4::head::PrevIdentity;
 use crate::gen4::heritage::{Alias, Fp, HeritageSlot, Raw3, SlotBody, fingerprint};
 use crate::gen4::name::{read_name, write_name};
 use crate::gen4::op::{
     Body4, Edit4, KIND_EDIT, KIND_JOIN, KIND_SALTS, Op4, chain_next4, native_allowed,
+    payload_within_cap, purge_targets_v1, purge_unseen_by,
 };
+use crate::gen4::recut::Stub;
 use crate::gen4::stamp::HeritageStamp;
 use crate::gen4::translate::{Joined, applied_body, dedup_slot, join_slots};
 use crate::sync2::codec::{Reader, Writer};
-use crate::sync2::hlc::Hlc;
+use crate::sync2::hlc::{Clock, Hlc};
 use crate::sync2::id::Id;
+use crate::sync2::keys::DeviceKey;
 use crate::sync2::op as v3;
 use crate::sync2::segment::{CHAIN_ZERO, Chain};
 use crate::sync2::vv::{OpId, Vv};
+
+/// 本机身份（`self_`）与换身份（G8-6）。
+mod own;
+pub use own::Rotated;
+/// 首见设备的信任判定（BUG-4306）。
+mod trust;
+pub(crate) use own::{NativeStep, fork_key};
+pub use trust::FirstSeen;
 
 /// `devs.kind`：原生日志。
 pub const DEV_NATIVE: i64 = 0;
 /// `devs.kind`：承袭日志。
 pub const DEV_HERITAGE: i64 = 1;
+
+/// 一台设备的待投递槽数（[Truth::pending_count]）：`op_pending` 主键区间上的计数。
+pub(crate) const PENDING_COUNT_SQL: &str =
+    "SELECT COUNT(*) FROM op_pending WHERE k BETWEEN ?1 AND ?2";
 
 /// `op_alias.flags` / `op_voids.flags`：这个槽现在的样子是本机自己应用 Purge / Dedup 推进出来的（不是收来的）。
 const A_LOCAL: i64 = 1;
@@ -102,6 +134,8 @@ pub enum Put {
     Fork,
     /// 前面还缺：进了待投递。
     Pending,
+    /// 来的与本机已有的自相矛盾（文件头落库规则表最后一行），什么都没写。
+    Conflict,
 }
 
 /// 设备信任状态：待本机确认。
@@ -191,6 +225,148 @@ pub struct DevInfo {
     pub last: u64,
 }
 
+/// 一台设备的公钥与本机记下的信息（`peers` 表）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Peer {
+    pub device: Id,
+    /// Ed25519 公钥。
+    pub public: [u8; 32],
+    /// 设备名（None = 不知道 / 不改）。
+    pub name: Option<String>,
+    /// 扩展信息（JSON 文本；None = 不知道 / 不改）。
+    pub ext: Option<String>,
+    /// 见过的最新 head 代号。
+    pub head_gen: Option<i64>,
+    /// 第一次见到它的时刻（毫秒）。
+    pub first_seen: Option<i64>,
+}
+
+/// 本机在一个集合里的身份（`self_` 表；设计 §3.3）。原生写入者（`native.rs`）从这里取设备 ID 与时钟；换身份
+/// （G8-6，`truth/own.rs` 的 [Truth::rotate_identity]）整行换掉。本机身份只有这一个类型、这一组读写
+/// （[Truth::self_identity] / [Truth::create_self] / [Truth::set_self_hlc] / 换身份）。
+///
+/// `Debug` 不打印签名钥匙种子（日志、断言失败信息里不能出现私钥）。
+#[derive(Clone, PartialEq, Eq)]
+pub struct SelfId {
+    pub device: Id,
+    /// 签名钥匙种子（Ed25519）。换身份沿用同一把（§3.3）。
+    pub sk: [u8; 32],
+    /// 本机时钟发出过 / 吸收过的最大 HLC（`device` 恒为本机）。存成文本 `<wall>:<logical>`（[hlc_text]），只收规范形。
+    pub hlc: Hlc,
+    /// 换身份之前的上一个身份冻结在哪（没换过 = None）。由换身份（G8-6）写，形状与 head 的 `prev` 相同；见
+    /// [prev_cols] 的存储口径（`seq` 可以是 0：上一个身份一条操作都没留下）。
+    pub prev: Option<PrevIdentity>,
+    /// 这一行（这个身份）建立的时刻（毫秒）。
+    pub created: i64,
+}
+
+impl std::fmt::Debug for SelfId {
+    /// 不打印钥匙种子。
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SelfId")
+            .field("device", &self.device)
+            .field("hlc", &self.hlc)
+            .field("prev", &self.prev)
+            .field("created", &self.created)
+            .finish_non_exhaustive()
+    }
+}
+
+impl SelfId {
+    /// 签名钥匙。
+    pub fn key(&self) -> DeviceKey {
+        DeviceKey::from_seed(&self.sk)
+    }
+
+    /// 本机公钥。
+    pub fn public(&self) -> [u8; 32] {
+        self.key().public()
+    }
+
+    /// 本机时钟（下一次 `tick` 发出的时刻严格大于 [SelfId::hlc]）。
+    pub fn clock(&self) -> Clock {
+        Clock {
+            device: self.device,
+            last: Hlc {
+                device: self.device,
+                ..self.hlc
+            },
+        }
+    }
+}
+
+/// `self_.prev_device` / `prev_seq` / `prev_chain` 的存储形（[SelfId::prev]）：没换过 = 三列全空；换过 = 三列全有，
+/// `prev_seq` ≥ 0（0 = 上一个身份冻结在链的起点、一条操作都没留下，这时 `prev_chain` 必须是 [CHAIN_ZERO]，与 head 的
+/// `prev` 同一口径：head 收 `seq = 0`）。写（换身份）与读（[Truth::self_identity]）都经这一对函数。
+pub(crate) fn prev_cols(
+    prev: Option<&PrevIdentity>,
+) -> (Option<Vec<u8>>, Option<i64>, Option<Vec<u8>>) {
+    match prev {
+        None => (None, None, None),
+        Some(p) => (
+            Some(p.device.0.to_vec()),
+            Some(p.seq as i64),
+            Some(p.chain.to_vec()),
+        ),
+    }
+}
+
+/// [prev_cols] 的逆；只收它写得出的形状（只存了一部分、负的 seq、seq 0 却不是链起点）。
+fn prev_from_cols(
+    col: i64,
+    device: Option<Vec<u8>>,
+    seq: Option<i64>,
+    chain: Option<Vec<u8>>,
+) -> Result<Option<PrevIdentity>, String> {
+    let torn = || format!("gen4 store: collection {col} has a torn prev identity");
+    match (device, seq, chain) {
+        (None, None, None) => Ok(None),
+        (Some(d), Some(s), Some(c)) if s >= 0 => {
+            let chain = chain_of(&c)?;
+            if s == 0 && chain != CHAIN_ZERO {
+                return Err(torn());
+            }
+            Ok(Some(PrevIdentity {
+                device: id_of(&d)?,
+                seq: s as u64,
+                chain,
+            }))
+        }
+        _ => Err(torn()),
+    }
+}
+
+/// [SelfId::hlc] 的存储文本：`<wall>:<logical>`。
+pub fn hlc_text(hlc: &Hlc) -> String {
+    format!("{}:{}", hlc.wall, hlc.logical)
+}
+
+/// [hlc_text] 的逆。只收它写得出的形（再写一遍逐字节相同），别的一律报错——时钟读错会让本机发出比已发过的更小的
+/// HLC，不能「尽量解析」。
+pub fn hlc_parse(text: &str, device: Id) -> Result<Hlc, String> {
+    let bad = || format!("gen4 store: bad hlc text {text:?}");
+    let (w, l) = text.split_once(':').ok_or_else(bad)?;
+    let hlc = Hlc {
+        wall: w.parse().map_err(|_| bad())?,
+        logical: l.parse().map_err(|_| bad())?,
+        device,
+    };
+    if hlc_text(&hlc) != text {
+        return Err(bad());
+    }
+    Ok(hlc)
+}
+
+/// [Truth::set_peer] 的结果。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PeerPut {
+    Inserted,
+    Updated,
+    Same,
+    /// 已经记过另一个公钥：没写。
+    KeyMismatch,
+}
+
 /// profile ↔ 集合的绑定（设计 §5.1）。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Binding {
@@ -203,6 +379,65 @@ pub struct Binding {
     /// 盐集合（这个集合里出现过的旧 uid）。它是派生值：= 本机信任的作者写的带盐操作（Salts、Join）的盐之并（设计
     /// §5.1）。这一列只是那个并的缓存，由派生层写（`alias.rs` 的 `settle_salts`，[Truth::set_salts]）。
     pub salts: BTreeSet<String>,
+}
+
+/// 绑定状态的阶段（设计 §5.1、D28；协议 3 `store/binding.rs` 的 `provisional` / `settled`）。存在 `collections.state`。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum BindStage {
+    /// 暂定：想先加入已有集合但没赶上，照常写入、之后由并入兜底。
+    Provisional,
+    /// 已定：已经在某个位置上跑完关联，之后在别的位置上看到别的集合只交给用户选。
+    Settled,
+}
+
+impl BindStage {
+    /// `collections.state` 里的值。
+    pub fn code(self) -> i64 {
+        match self {
+            BindStage::Provisional => 1,
+            BindStage::Settled => 2,
+        }
+    }
+
+    pub fn of_code(code: i64) -> Option<BindStage> {
+        match code {
+            1 => Some(BindStage::Provisional),
+            2 => Some(BindStage::Settled),
+            _ => None,
+        }
+    }
+
+    /// 协议 3 线上 / 命令回包里的文本（`binding_get` / `binding_set` 的形状不变，规划 §1.6）。
+    pub fn text(self) -> &'static str {
+        match self {
+            BindStage::Provisional => "provisional",
+            BindStage::Settled => "settled",
+        }
+    }
+
+    pub fn of_text(text: &str) -> Option<BindStage> {
+        match text {
+            "provisional" => Some(BindStage::Provisional),
+            "settled" => Some(BindStage::Settled),
+            _ => None,
+        }
+    }
+}
+
+/// 一个集合的绑定状态（`collections.state / via / at`）：阶段、在哪定下 / 想在哪加入（位置的 directoryKey 或
+/// `backup`）、写下的时刻（毫秒）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BindState {
+    pub stage: BindStage,
+    pub via: String,
+    pub at: i64,
+}
+
+impl BindState {
+    /// 协议 3 `binding_get` 回包里 `binding` 那一项的形状：`{state, via, at}`。
+    pub fn json(&self) -> serde_json::Value {
+        serde_json::json!({"state": self.stage.text(), "via": self.via, "at": self.at})
+    }
 }
 
 #[derive(Clone)]
@@ -219,6 +454,8 @@ struct DevRow {
 #[derive(Default)]
 struct State {
     poisoned: bool,
+    /// 缓存对应的 `PRAGMA data_version`（文件头「会话与事务」）。没记 = None。
+    data_version: Option<i64>,
     dev_ix: HashMap<(i64, Id), i64>,
     devs: HashMap<i64, DevRow>,
     writer_ix: HashMap<String, u64>,
@@ -234,6 +471,10 @@ pub struct Truth<'c> {
     conn: &'c Connection,
     st: RefCell<State>,
     no_deps: Arc<Vv>,
+    /// 这个会话里有操作落成了空洞（[Truth::advance_purge]）：提交之后要做字节层收尾（`scrub.rs`）。
+    voided: Cell<bool>,
+    /// 库句柄的缓存配置记忆（`cache.rs` [super::cache::CfgMemo]，`kernel.rs` `G4Core::truth` 给）。没有 = 每次现算。
+    cfg_memo: Option<Arc<super::cache::CfgMemo>>,
 }
 
 struct N<'a, 'c>(&'a Truth<'c>);
@@ -362,27 +603,38 @@ impl VoidRun {
 }
 
 /// 没应用的槽（待投递 / 分叉的另一支）同一个 `(操作号, 链指纹)` 来了第二份：该把存着的换成什么（不用换 = None）。
-fn merge_parked(
-    have: Option<(HeritageSlot, u32)>,
-    slot: &HeritageSlot,
-    tv: u32,
-) -> Result<Option<(HeritageSlot, u32)>, String> {
+/// [merge_parked] 的结论。
+enum Merged {
+    /// 已有的不用改。
+    Keep,
+    /// 存这一份。
+    Store(HeritageSlot, u32),
+    /// 同一个 T 版本转出了两份不同的：矛盾（[Put::Conflict]）。
+    Conflict,
+}
+
+fn merge_parked(have: Option<(HeritageSlot, u32)>, slot: &HeritageSlot, tv: u32) -> Merged {
     let Some((have, have_tv)) = have else {
-        return Ok(Some((slot.clone(), tv)));
+        return Merged::Store(slot.clone(), tv);
     };
     if have == *slot {
-        return Ok((tv > have_tv).then_some((have, tv)));
+        return if tv > have_tv {
+            Merged::Store(have, tv)
+        } else {
+            Merged::Keep
+        };
     }
     if tv != have_tv {
-        return Ok((tv > have_tv).then(|| (slot.clone(), tv)));
+        return if tv > have_tv {
+            Merged::Store(slot.clone(), tv)
+        } else {
+            Merged::Keep
+        };
     }
     match join_slots(&have, slot) {
-        Joined::One(s) if s == have => Ok(None),
-        Joined::One(s) => Ok(Some((s, tv))),
-        Joined::Fork | Joined::Conflict => Err(format!(
-            "gen4 store: two different slots for {}:{} from the same translator version",
-            slot.id.device, slot.id.seq
-        )),
+        Joined::One(s) if s == have => Merged::Keep,
+        Joined::One(s) => Merged::Store(s, tv),
+        Joined::Fork | Joined::Conflict => Merged::Conflict,
     }
 }
 
@@ -393,11 +645,48 @@ impl<'c> Truth<'c> {
             conn,
             st: RefCell::new(State::default()),
             no_deps: Arc::new(Vv::new()),
+            voided: Cell::new(false),
+            cfg_memo: None,
         }
+    }
+
+    /// [Truth::new]，缓存配置的解析结果跨命令记在 [memo] 里（`cache.rs` [super::cache::CfgMemo]）。
+    pub fn with_cfg_memo(conn: &'c Connection, memo: Arc<super::cache::CfgMemo>) -> Truth<'c> {
+        Truth {
+            cfg_memo: Some(memo),
+            ..Truth::new(conn)
+        }
+    }
+
+    pub(super) fn cfg_memo(&self) -> Option<&super::cache::CfgMemo> {
+        self.cfg_memo.as_deref()
     }
 
     pub fn conn(&self) -> &'c Connection {
         self.conn
+    }
+
+    /// 取走「这个会话里有操作落成了空洞」（[Truth::advance_purge]）：写命令提交之后据此做字节层收尾（`scrub.rs`）。
+    pub(crate) fn take_voided(&self) -> bool {
+        self.voided.replace(false)
+    }
+
+    fn data_version(&self) -> Result<i64, String> {
+        self.conn
+            .prepare_cached("PRAGMA data_version")
+            .and_then(|mut s| s.query_row([], |r| r.get(0)))
+            .map_err(sql)
+    }
+
+    /// 缓存从空状态第一次查库之前调：还没记 `data_version` 就先记下（文件头「会话与事务」）。凡是从库里读、再把结果
+    /// 放进 `st` 的入口都在查库之前走这里，所以记下的版本不晚于缓存里任何一项的来源。在事务外调时，记下的这一读与
+    /// 随后的查询是两个隐式事务，中间别人提交了只会让之后的写入误报（拒绝、reset 后重来），不会漏报。
+    fn ensure_snapshot(&self) -> Result<(), String> {
+        if self.st.borrow().data_version.is_none() {
+            let dv = self.data_version()?;
+            self.st.borrow_mut().data_version = Some(dv);
+        }
+        Ok(())
     }
 
     /// 丢掉内存里的缓存（事务回滚之后必须调）。
@@ -405,16 +694,53 @@ impl<'c> Truth<'c> {
         *self.st.borrow_mut() = State::default();
     }
 
-    /// 在一个事务里跑 [f]；出错整笔回滚并 [Truth::reset]。可以嵌套。
+    /// 在一个事务里跑 [f]；出错整笔回滚并 [Truth::reset]。可以嵌套。最外层的那一次开头先 [Truth::reset]（文件头
+    /// 「会话与事务」：别的连接可能在上一个事务之后写过）。
     pub fn tx<T>(&self, f: impl FnOnce(&Truth<'c>) -> Result<T, String>) -> Result<T, String> {
-        let r = in_tx(self.conn, |_| f(self));
+        let outer = self.conn.is_autocommit();
+        if outer {
+            self.reset();
+        }
+        let r = in_tx(self.conn, |_| {
+            let v = f(self)?;
+            if outer {
+                // 放在 f 之后：f 里的读已经开出了事务快照，记下的就是这个事务的版本；放在前面会让这一读先开出读
+                // 快照，f 的第一笔写就得从读升级成写（别人刚提交过会 BUSY_SNAPSHOT）。f 填过缓存或写过的话已经记了。
+                self.ensure_snapshot()?;
+            }
+            Ok(v)
+        });
         if r.is_err() {
             self.reset();
         }
         r
     }
 
-    fn write<T>(&self, f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+    /// [Truth::tx]，但最外层时一开始就拿写锁（`BEGIN IMMEDIATE`，经忙等排队）：给「先读一大片、再写」又可能与别的
+    /// 连接并发的一次性大事务用（导入）。延迟事务读完再升级成写时，别的连接在这之间提交过就是 `SQLITE_BUSY_SNAPSHOT`，
+    /// 忙等救不了，整笔失败。已在事务里时就是 [Truth::tx]（嵌套的保存点；拿锁的口径由最外层的调用方定）。
+    pub fn tx_immediate<T>(
+        &self,
+        f: impl FnOnce(&Truth<'c>) -> Result<T, String>,
+    ) -> Result<T, String> {
+        if !self.conn.is_autocommit() {
+            return self.tx(f);
+        }
+        self.reset();
+        let r = in_write_tx(self.conn, |_| {
+            let v = f(self)?;
+            self.ensure_snapshot()?;
+            Ok(v)
+        });
+        if r.is_err() {
+            self.reset();
+        }
+        r
+    }
+
+    /// 一次写入的守卫：会话没被毒化、在事务里、缓存与库同一个版本；[f] 报错就毒化会话。新代的其余本机状态表
+    /// （`sync_state.rs`）、收段（`receive.rs`）写库也经这里，口径与真相层相同。
+    pub(super) fn write<T>(&self, f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
         if self.st.borrow().poisoned {
             return Err(
                 "gen4 store: an earlier write failed; roll back and reset first".to_owned(),
@@ -422,6 +748,15 @@ impl<'c> Truth<'c> {
         }
         if self.conn.is_autocommit() {
             return Err("gen4 store: write outside a transaction".to_owned());
+        }
+        self.ensure_snapshot()?;
+        let seen = self.st.borrow().data_version;
+        if seen != Some(self.data_version()?) {
+            return Err(
+                "gen4 store: another connection committed since this session's cache was \
+                 filled (a transaction opened without Truth::reset); reset first"
+                    .to_owned(),
+            );
         }
         let r = f();
         if r.is_err() {
@@ -476,6 +811,26 @@ impl<'c> Truth<'c> {
         self.binding_where("col", &col)
     }
 
+    /// 绑着集合标识 [collection] 的本机集合（没有 = None）。
+    pub fn binding_of_collection(&self, collection: &Id) -> Result<Option<Binding>, String> {
+        self.binding_where("collection", &collection.0.as_slice())
+    }
+
+    /// 位置目录名是 [dir] 的本机 profile（按 uid 排）。一个集合只绑一个 profile，但目录名不唯一（并入后两个本机
+    /// 集合可能指向同一个目录），所以回列表。`collections` 一台设备只有几行，全表扫（不加索引、不升 SCHEMA）。
+    pub fn profiles_of_dir(&self, dir: &str) -> Result<Vec<String>, String> {
+        let mut st = self
+            .conn
+            .prepare_cached(
+                "SELECT profile_uid FROM collections WHERE dir = ?1 ORDER BY profile_uid",
+            )
+            .map_err(sql)?;
+        let rows = st
+            .query_map([dir], |r| r.get::<_, String>(0))
+            .map_err(sql)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(sql)
+    }
+
     /// 把 profile 绑到一个集合上，返回本机集合号。同一个 profile 再绑同一个集合是幂等的；一个 profile 只能绑一个集合，
     /// 一个集合只能绑一个 profile（设计 §5.1：同机两个 profile 不能绑定同一个集合）。改绑定是身份接线（G9）的事。
     pub fn bind(&self, profile: &str, collection: &Id, dir: &str) -> Result<i64, String> {
@@ -525,6 +880,92 @@ impl<'c> Truth<'c> {
         })
     }
 
+    /// 集合 [col] 的绑定状态（没写过 = None）。`state` 列里认不出的值当作没有记录（协议 3 `binding.rs` 的 `parse`
+    /// 同口径：坏值不让读失败）。
+    pub fn binding_state(&self, col: i64) -> Result<Option<BindState>, String> {
+        let row = self
+            .conn
+            .prepare_cached("SELECT state, via, at FROM collections WHERE col = ?1")
+            .map_err(sql)?
+            .query_row([col], |r| {
+                Ok((
+                    r.get::<_, Option<i64>>(0)?,
+                    r.get::<_, Option<String>>(1)?,
+                    r.get::<_, Option<i64>>(2)?,
+                ))
+            })
+            .optional()
+            .map_err(sql)?;
+        let Some((state, via, at)) = row else {
+            return Err(format!("gen4 store: no collection {col}"));
+        };
+        Ok(state.and_then(BindStage::of_code).map(|stage| BindState {
+            stage,
+            via: via.unwrap_or_default(),
+            at: at.unwrap_or(0),
+        }))
+    }
+
+    /// 写集合 [col] 的绑定状态，返回写完之后的状态（同 [Truth::binding_state]）。语义照搬协议 3 的 `binding_set`
+    /// （`store/binding.rs` 文件头）：**只进不退**——已经 `settled` 时什么都不改（第一次定下的位置为准）；`provisional`
+    /// 可以升成 `settled`；再写 `provisional` 只换 `via` / `at`。只动本机，不随同步传。
+    pub fn settle_binding(
+        &self,
+        col: i64,
+        stage: BindStage,
+        via: &str,
+        at: i64,
+    ) -> Result<BindState, String> {
+        self.write(|| {
+            if let Some(cur) = self.binding_state(col)? {
+                if cur.stage == BindStage::Settled {
+                    return Ok(cur);
+                }
+            }
+            self.conn
+                .prepare_cached(
+                    "UPDATE collections SET state = ?2, via = ?3, at = ?4 WHERE col = ?1",
+                )
+                .map_err(sql)?
+                .execute(params![col, stage.code(), via, at])
+                .map_err(sql)?;
+            Ok(BindState {
+                stage,
+                via: via.to_owned(),
+                at,
+            })
+        })
+    }
+
+    /// 把本机集合 [col] 改绑到另一个集合标识与位置目录名上（设计 §5.4 第 2 条：集合号、操作、本机状态都不动，只换
+    /// 「这批操作现在属于哪个集合」）。**只给并入用**（`identity.rs`）：改绑必须与写进日志的那条 `Join` 同一个事务，
+    /// 单独改绑会让别的设备无从跟随。目标集合已经绑在本机别的 profile 上时报错（设计 §5.1）。
+    pub(super) fn rebind(&self, col: i64, collection: &Id, dir: &str) -> Result<(), String> {
+        self.write(|| {
+            if dir.is_empty() {
+                return Err("gen4 store: empty location directory".to_owned());
+            }
+            if let Some(b) = self.binding_where("collection", &collection.0.as_slice())? {
+                if b.col != col {
+                    return Err(format!(
+                        "gen4 store: collection {collection} is already bound to profile {}",
+                        b.profile
+                    ));
+                }
+            }
+            let n = self
+                .conn
+                .prepare_cached("UPDATE collections SET collection = ?2, dir = ?3 WHERE col = ?1")
+                .map_err(sql)?
+                .execute(params![col, collection.0.as_slice(), dir])
+                .map_err(sql)?;
+            if n != 1 {
+                return Err(format!("gen4 store: no collection {col}"));
+            }
+            Ok(())
+        })
+    }
+
     // ------------------------------------------------------------ 设备
 
     fn cache_dev(&self, dev: i64, row: DevRow) {
@@ -537,6 +978,7 @@ impl<'c> Truth<'c> {
         if let Some(&d) = self.st.borrow().dev_ix.get(&(col, *id)) {
             return Ok(Some(d));
         }
+        self.ensure_snapshot()?;
         let row = self
             .conn
             .prepare_cached("SELECT dev, kind, src, tail FROM devs WHERE col = ?1 AND id = ?2")
@@ -603,6 +1045,7 @@ impl<'c> Truth<'c> {
         if let Some(r) = self.st.borrow().devs.get(&dev) {
             return Ok(r.clone());
         }
+        self.ensure_snapshot()?;
         let (col, id, kind, src, tail) = self
             .conn
             .prepare_cached("SELECT col, id, kind, src, tail FROM devs WHERE dev = ?1")
@@ -679,6 +1122,7 @@ impl<'c> Truth<'c> {
         if let Some(n) = self.dev_row(dev)?.last {
             return Ok(n);
         }
+        self.ensure_snapshot()?;
         let (lo, hi) = k_range(dev);
         let mut n = 0u64;
         for q in [
@@ -749,6 +1193,7 @@ impl<'c> Truth<'c> {
         if let Some(&i) = self.st.borrow().writer_ix.get(name) {
             return Ok(i);
         }
+        self.ensure_snapshot()?;
         let mut w = Writer::new();
         write_name(&mut w, name);
         let bytes = w.into_vec();
@@ -784,6 +1229,7 @@ impl<'c> Truth<'c> {
         if let Some(n) = self.st.borrow().writer_name.get(&id) {
             return Ok(n.clone());
         }
+        self.ensure_snapshot()?;
         let bytes: Vec<u8> = self
             .conn
             .prepare_cached("SELECT name FROM writers WHERE id = ?1")
@@ -812,6 +1258,7 @@ impl<'c> Truth<'c> {
         if let Some(&i) = self.st.borrow().snap_ix.get(&key) {
             return Ok(i);
         }
+        self.ensure_snapshot()?;
         let found: Option<i64> = self
             .conn
             .prepare_cached("SELECT id FROM snapshots WHERE body = ?1")
@@ -844,6 +1291,7 @@ impl<'c> Truth<'c> {
         if let Some(b) = self.st.borrow().snap_body.get(&id) {
             return Ok(b.clone());
         }
+        self.ensure_snapshot()?;
         let body: String = self
             .conn
             .prepare_cached("SELECT body FROM snapshots WHERE id = ?1")
@@ -881,6 +1329,7 @@ impl<'c> Truth<'c> {
         if let Some(&i) = self.st.borrow().deps_ix.get(&bytes) {
             return Ok(i);
         }
+        self.ensure_snapshot()?;
         let found: Option<i64> = self
             .conn
             .prepare_cached("SELECT id FROM op_deps WHERE bytes = ?1")
@@ -914,6 +1363,7 @@ impl<'c> Truth<'c> {
         if let Some(v) = self.st.borrow().deps_vv.get(&id) {
             return Ok(v.clone());
         }
+        self.ensure_snapshot()?;
         let bytes: Vec<u8> = self
             .conn
             .prepare_cached("SELECT bytes FROM op_deps WHERE id = ?1")
@@ -1047,6 +1497,46 @@ impl<'c> Truth<'c> {
         })
     }
 
+    /// 设备 [device] 的日志在 `first..=last` 里已经落成空洞（已清除）的 seq 区间，按 seq 升序、各自截到这个范围里。
+    /// 本机没有这台设备 = 空。转发缓存据此拒收带着已清除内容的作者段（`cmd/sync_relay.rs` `keep`）。
+    pub fn voids_within(
+        &self,
+        col: i64,
+        device: &Id,
+        first: u64,
+        last: u64,
+    ) -> Result<Vec<(u64, u64)>, String> {
+        if first == 0 || last < first {
+            return Ok(Vec::new());
+        }
+        let Some(dev) = self.dev_find(col, device)? else {
+            return Ok(Vec::new());
+        };
+        let mut out = Vec::new();
+        if let Some(run) = self.run_at_or_before(dev, first)? {
+            if run.end() >= first {
+                out.push((first, run.end().min(last)));
+            }
+        }
+        if first < last {
+            let mut stmt = self
+                .conn
+                .prepare_cached("SELECT k, n FROM op_voids WHERE k BETWEEN ?1 AND ?2 ORDER BY k")
+                .map_err(sql)?;
+            let rows = stmt
+                .query_map(params![opk(dev, first + 1)?, opk(dev, last)?], |r| {
+                    Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)? as u64))
+                })
+                .map_err(sql)?;
+            for row in rows {
+                let (k, n) = row.map_err(sql)?;
+                let s = k_seq(k);
+                out.push((s, (s + n - 1).min(last)));
+            }
+        }
+        Ok(out)
+    }
+
     /// 起点不晚于 [seq] 的最后一个空洞区间（不一定盖得到 [seq]）。
     fn run_at_or_before(&self, dev: i64, seq: u64) -> Result<Option<VoidRun>, String> {
         let (lo, _) = k_range(dev);
@@ -1108,6 +1598,12 @@ impl<'c> Truth<'c> {
             Some(dev) => opk(dev, id.seq).map(Some),
             None => Ok(None),
         }
+    }
+
+    /// 操作号 → 主键；本机没见过这台设备就先给它一个下标（`devs.kind` 空：只被点过名，还没见过它的日志）。收段把
+    /// 还接不上的原生操作放进等待缓冲（`op_wait`）时用。
+    pub(super) fn key_for(&self, col: i64, id: &OpId) -> Result<i64, String> {
+        self.write(|| opk(self.dev(col, &id.device)?, id.seq))
     }
 
     /// 主键 → 操作号。
@@ -1222,6 +1718,294 @@ impl<'c> Truth<'c> {
         })
     }
 
+    // ------------------------------------------------------------ 本机状态：设备公钥
+
+    /// 一台设备的公钥（Ed25519，32 字节）。没见过 = None。验签、导出、迁移灌入共用（规划缺口 G-11）。
+    pub fn device_key(&self, col: i64, device: &Id) -> Result<Option<[u8; 32]>, String> {
+        let row: Option<Vec<u8>> = self
+            .conn
+            .prepare_cached("SELECT public FROM peers WHERE col = ?1 AND device = ?2")
+            .map_err(sql)?
+            .query_row(params![col, &device.0[..]], |r| r.get(0))
+            .optional()
+            .map_err(sql)?;
+        match row {
+            None => Ok(None),
+            Some(b) => b
+                .try_into()
+                .map(Some)
+                .map_err(|_| format!("gen4 store: bad public key for device {device}")),
+        }
+    }
+
+    /// 一台设备的整行。
+    pub fn peer(&self, col: i64, device: &Id) -> Result<Option<Peer>, String> {
+        self.conn
+            .prepare_cached(
+                "SELECT public, name, ext, head_gen, first_seen FROM peers WHERE col = ?1 AND device = ?2",
+            )
+            .map_err(sql)?
+            .query_row(params![col, &device.0[..]], |r| {
+                Ok((
+                    r.get::<_, Vec<u8>>(0)?,
+                    r.get::<_, Option<String>>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                    r.get::<_, Option<i64>>(3)?,
+                    r.get::<_, Option<i64>>(4)?,
+                ))
+            })
+            .optional()
+            .map_err(sql)?
+            .map(|(public, name, ext, head_gen, first_seen)| {
+                Ok(Peer {
+                    device: *device,
+                    public: public
+                        .try_into()
+                        .map_err(|_| format!("gen4 store: bad public key for device {device}"))?,
+                    name,
+                    ext,
+                    head_gen,
+                    first_seen,
+                })
+            })
+            .transpose()
+    }
+
+    /// 记下一台设备（迁移灌入 `sync2_devices`、收到它的 head）。公钥先到先得（协议 3 `trust_head` 的口径）：已经记过
+    /// 另一个公钥 = [PeerPut::KeyMismatch]，什么都不写，由调用方当作冒名处理。同一个公钥：`name` / `ext` 给了就换，
+    /// `head_gen` 只升不降，`first_seen` 留第一次的。
+    pub fn set_peer(&self, col: i64, peer: &Peer) -> Result<PeerPut, String> {
+        self.write(|| {
+            let Some(cur) = self.peer(col, &peer.device)? else {
+                self.conn
+                    .prepare_cached(
+                        "INSERT INTO peers (col, device, public, name, ext, head_gen, first_seen) \
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    )
+                    .map_err(sql)?
+                    .execute(params![
+                        col,
+                        &peer.device.0[..],
+                        &peer.public[..],
+                        peer.name,
+                        peer.ext,
+                        peer.head_gen,
+                        peer.first_seen
+                    ])
+                    .map_err(sql)?;
+                return Ok(PeerPut::Inserted);
+            };
+            if cur.public != peer.public {
+                return Ok(PeerPut::KeyMismatch);
+            }
+            let next = Peer {
+                device: peer.device,
+                public: peer.public,
+                name: peer.name.clone().or(cur.name.clone()),
+                ext: peer.ext.clone().or(cur.ext.clone()),
+                head_gen: match (cur.head_gen, peer.head_gen) {
+                    (Some(a), Some(b)) => Some(a.max(b)),
+                    (a, b) => a.or(b),
+                },
+                first_seen: cur.first_seen.or(peer.first_seen),
+            };
+            if next == cur {
+                return Ok(PeerPut::Same);
+            }
+            self.conn
+                .prepare_cached(
+                    "UPDATE peers SET name = ?3, ext = ?4, head_gen = ?5, first_seen = ?6 \
+                     WHERE col = ?1 AND device = ?2",
+                )
+                .map_err(sql)?
+                .execute(params![
+                    col,
+                    &peer.device.0[..],
+                    next.name,
+                    next.ext,
+                    next.head_gen,
+                    next.first_seen
+                ])
+                .map_err(sql)?;
+            Ok(PeerPut::Updated)
+        })
+    }
+
+    // ------------------------------------------------------------ 本机状态：本机身份
+
+    /// 本机在集合 [col] 里的身份（还没建 = None）。
+    pub fn self_identity(&self, col: i64) -> Result<Option<SelfId>, String> {
+        let row = self
+            .conn
+            .prepare_cached(
+                "SELECT device, sk, hlc, prev_device, prev_seq, prev_chain, created FROM self_ WHERE col = ?1",
+            )
+            .map_err(sql)?
+            .query_row([col], |r| {
+                Ok((
+                    r.get::<_, Vec<u8>>(0)?,
+                    r.get::<_, Vec<u8>>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, Option<Vec<u8>>>(3)?,
+                    r.get::<_, Option<i64>>(4)?,
+                    r.get::<_, Option<Vec<u8>>>(5)?,
+                    r.get::<_, i64>(6)?,
+                ))
+            })
+            .optional()
+            .map_err(sql)?;
+        let Some((device, sk, hlc, pd, ps, pc, created)) = row else {
+            return Ok(None);
+        };
+        let device = id_of(&device)?;
+        let prev = prev_from_cols(col, pd, ps, pc)?;
+        Ok(Some(SelfId {
+            device,
+            sk: sk
+                .try_into()
+                .map_err(|_| format!("gen4 store: bad signing key seed for collection {col}"))?,
+            hlc: hlc_parse(&hlc, device)?,
+            prev,
+            created,
+        }))
+    }
+
+    /// 给集合 [col] 建本机身份：设备 [device]、签名钥匙种子 [sk]，时钟从零起；同时把本机公钥记进 `peers`（验自己的段、
+    /// 导出都按公钥表查，与别的设备同一条路）。返回建没建：已有逐项相同（设备、钥匙、[prev]）的身份 = `false`（迁移
+    /// 续做幂等）；已有另一个身份 = 报错（换身份是 G8-6 的 `rotate_identity`，不走这里）。
+    ///
+    /// [prev] = 这个身份接替的上一个身份冻结在哪（设计 §3.3：迁移时是协议 3 的旧设备 ID、它日志的末尾 seq 与该处的
+    /// 完整链值；全新安装 = None）。存储口径同 [prev_cols]：`seq` 可以是 0，这时链值必须是 [CHAIN_ZERO]；不能是新身份
+    /// 自己。给了 [prev] 时同一把钥匙的公钥也记到旧设备名下（读者核对 `prev` 用，与换身份同口径）；旧设备已经记过
+    /// 另一个公钥 = 报错。
+    ///
+    /// 新身份必须是这个集合里没出现过日志的设备：同一个设备 ID 已有日志（承袭日志、或别人的原生日志）时接着写会让两条
+    /// 日志撞号，报错。
+    pub fn create_self(
+        &self,
+        col: i64,
+        device: &Id,
+        sk: &[u8; 32],
+        prev: Option<&PrevIdentity>,
+        now: i64,
+    ) -> Result<bool, String> {
+        self.write(|| {
+            if self.binding(col)?.is_none() {
+                return Err(format!("gen4 store: no collection {col}"));
+            }
+            if let Some(p) = prev {
+                if p.device == *device {
+                    return Err(format!(
+                        "gen4 store: device {device} cannot be its own previous identity"
+                    ));
+                }
+                if p.seq == 0 && p.chain != CHAIN_ZERO {
+                    return Err(format!(
+                        "gen4 store: previous identity {} at seq 0 must sit at the chain start",
+                        p.device
+                    ));
+                }
+                if p.seq > i64::MAX as u64 {
+                    return Err(format!(
+                        "gen4 store: previous identity {} has a bad seq {}",
+                        p.device, p.seq
+                    ));
+                }
+            }
+            if let Some(cur) = self.self_identity(col)? {
+                if cur.device == *device && cur.sk == *sk && cur.prev.as_ref() == prev {
+                    return Ok(false);
+                }
+                return Err(format!(
+                    "gen4 store: collection {col} already has local identity {}",
+                    cur.device
+                ));
+            }
+            if self.last_of(col, device)? > 0 {
+                return Err(format!(
+                    "gen4 store: device {device} already has a log in collection {col}"
+                ));
+            }
+            let public = DeviceKey::from_seed(sk).public();
+            self.own_peer(col, device, public, now)?;
+            if let Some(p) = prev {
+                self.own_peer(col, &p.device, public, now)?;
+            }
+            let zero = Hlc {
+                wall: 0,
+                logical: 0,
+                device: *device,
+            };
+            let (pd, ps, pc) = prev_cols(prev);
+            self.conn
+                .prepare_cached(
+                    "INSERT INTO self_ (col, device, sk, hlc, prev_device, prev_seq, prev_chain, created) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                )
+                .map_err(sql)?
+                .execute(params![
+                    col,
+                    &device.0[..],
+                    &sk[..],
+                    hlc_text(&zero),
+                    pd,
+                    ps,
+                    pc,
+                    now
+                ])
+                .map_err(sql)?;
+            Ok(true)
+        })
+    }
+
+    /// 把本机的公钥记到 [device] 名下（新建的身份；换身份时的新身份与冻结的旧身份）。验自己的段、导出都按公钥表查，
+    /// 与别的设备同一条路。已经记过另一个公钥 = 报错。
+    fn own_peer(&self, col: i64, device: &Id, public: [u8; 32], now: i64) -> Result<(), String> {
+        let peer = Peer {
+            device: *device,
+            public,
+            name: None,
+            ext: None,
+            head_gen: None,
+            first_seen: Some(now),
+        };
+        if self.set_peer(col, &peer)? == PeerPut::KeyMismatch {
+            return Err(format!(
+                "gen4 store: device {device} is already known with another public key"
+            ));
+        }
+        Ok(())
+    }
+
+    /// 记下本机时钟发出过的最大 HLC（原生写入者每写一条调一次，与那条操作同一个事务）。只升不降：比已记的小或相等
+    /// 是调用方的 bug（会发出重复 / 倒退的 HLC），报错。
+    pub(crate) fn set_self_hlc(&self, col: i64, hlc: &Hlc) -> Result<(), String> {
+        self.write(|| {
+            let cur = self
+                .self_identity(col)?
+                .ok_or_else(|| format!("gen4 store: collection {col} has no local identity"))?;
+            if hlc.device != cur.device {
+                return Err(format!(
+                    "gen4 store: hlc of {} is not the local identity {}",
+                    hlc.device, cur.device
+                ));
+            }
+            if *hlc <= cur.hlc {
+                return Err(format!(
+                    "gen4 store: local clock would go back ({} after {})",
+                    hlc_text(hlc),
+                    hlc_text(&cur.hlc)
+                ));
+            }
+            self.conn
+                .prepare_cached("UPDATE self_ SET hlc = ?2 WHERE col = ?1")
+                .map_err(sql)?
+                .execute(params![col, hlc_text(hlc)])
+                .map_err(sql)?;
+            Ok(())
+        })
+    }
+
     // ------------------------------------------------------------ 本机状态：设备信任
 
     /// 一台设备的信任状态：[TRUST_PENDING] / [TRUST_REJECTED]；可信 = None。
@@ -1230,6 +2014,16 @@ impl<'c> Truth<'c> {
             .prepare_cached("SELECT state FROM trust WHERE col = ?1 AND device = ?2")
             .map_err(sql)?
             .query_row(params![col, &device.0[..]], |r| r.get(0))
+            .optional()
+            .map_err(sql)
+    }
+
+    /// 一台设备的信任记录：(状态, 第一次记下的时刻 `since`)；可信 = None。同步页设备行的 `trust` / `trustSince` 用。
+    pub fn trust_entry(&self, col: i64, device: &Id) -> Result<Option<(i64, i64)>, String> {
+        self.conn
+            .prepare_cached("SELECT state, since FROM trust WHERE col = ?1 AND device = ?2")
+            .map_err(sql)?
+            .query_row(params![col, &device.0[..]], |r| Ok((r.get(0)?, r.get(1)?)))
             .optional()
             .map_err(sql)
     }
@@ -1295,15 +2089,33 @@ impl<'c> Truth<'c> {
         col: i64,
         device: &Id,
         upto: u64,
+        f: impl FnMut(u64, &HeritageStamp) -> Result<(), String>,
+    ) -> Result<(), String> {
+        self.for_each_stamp_in(col, device, 1, upto, f)
+    }
+
+    /// [Truth::for_each_stamp] 只走 seq 在 `[from, upto]` 里的那一段（按主键区间，不碰段外的行）：派生层从旧闭包的
+    /// 检查点接着并（`derive.rs` [CLOSURE_STEP](super::derive::CLOSURE_STEP)）。
+    pub(crate) fn for_each_stamp_in(
+        &self,
+        col: i64,
+        device: &Id,
+        from: u64,
+        upto: u64,
         mut f: impl FnMut(u64, &HeritageStamp) -> Result<(), String>,
     ) -> Result<(), String> {
         let Some(dev) = self.dev_find(col, device)? else {
             return Ok(());
         };
-        if upto == 0 {
+        let from = from.max(1);
+        if upto < from {
             return Ok(());
         }
-        let (lo, top) = k_range(dev);
+        let (_, top) = k_range(dev);
+        if from > k_seq(top) {
+            return Ok(());
+        }
+        let lo = opk(dev, from)?;
         let hi = if upto >= k_seq(top) {
             top
         } else {
@@ -1350,14 +2162,31 @@ impl<'c> Truth<'c> {
         col: i64,
         device: &Id,
         from: u64,
+        f: impl FnMut(Entry) -> Result<(), String>,
+    ) -> Result<(), String> {
+        self.for_range(col, device, from, u64::MAX, f)
+    }
+
+    /// 按 seq 升序走一台设备日志里 `[from, to]` 这一段。[f] 里不要改正在走的这条日志。
+    pub fn for_range(
+        &self,
+        col: i64,
+        device: &Id,
+        from: u64,
+        to: u64,
         mut f: impl FnMut(Entry) -> Result<(), String>,
     ) -> Result<(), String> {
         let Some(dev) = self.dev_find(col, device)? else {
             return Ok(());
         };
         let from = from.max(1);
+        if to < from {
+            return Ok(());
+        }
         let lo = opk(dev, from)?;
-        let (_, hi) = k_range(dev);
+        let (_, all) = k_range(dev);
+        let to = to.min(k_seq(all));
+        let hi = opk(dev, to)?;
         // 起点在 [from] 之前、但盖到它的空洞区间也要走到。
         let run_lo = match self.run_at_or_before(dev, from)? {
             Some(run) if from <= run.end() => run.k,
@@ -1409,7 +2238,7 @@ impl<'c> Truth<'c> {
             } else {
                 let run = v.take().expect("peeked row");
                 v = voids.next().transpose().map_err(sql)?;
-                for seq in k_seq(run.k).max(from)..=run.end() {
+                for seq in k_seq(run.k).max(from)..=run.end().min(to) {
                     f(self.void_entry(&run, seq)?)?;
                 }
             }
@@ -1538,6 +2367,11 @@ impl<'c> Truth<'c> {
     }
 
     /// 写一个空洞区间，并与两侧同样标志的相邻区间合并。
+    ///
+    /// 原生日志的区间只记区间末的链值；别的设备的原生日志合并时，被合进区间内部的那几处区间末链值（左邻的末尾、本区间的末尾）记成链值
+    /// 记号（`log_marks`），不随合并丢掉：清除只拿走内容，链值是公开的、算得出的事实，转发要按作者的切点重切段
+    /// （`sync_state.rs` [Truth::recut_from_log]，交接 §33），切点可能正落在一次跨段的清除里面。[Truth::chain_known]
+    /// 在空洞内部先查这些记号。承袭日志（`fps`）不记：那里的记号是切承袭段的切点。
     fn insert_void_run(
         &self,
         dev: i64,
@@ -1554,9 +2388,17 @@ impl<'c> Truth<'c> {
         let mergeable = |run: &VoidRun, fps: &Option<Vec<u8>>| {
             run.flags == flags && run.fps.is_some() == fps.is_some()
         };
+        // 只给别的设备的原生日志记：本机自己的段由本机按新的切点重签（`cmd/sync.rs`），用不着旧切点的链值；这样只
+        // 动本机自己日志的清除（导出 / 导入往返）不多出导出流带不走的记号。
+        let foreign = fps.is_none() && !self.is_self_dev(dev)?;
         if first > 1 {
             if let Some(left) = self.run_at_or_before(dev, first - 1)? {
                 if left.end() + 1 == first && mergeable(&left, &fps) {
+                    if foreign {
+                        if let Some(c) = &left.chain {
+                            self.put_mark(dev, left.end(), &chain_of(c)?)?;
+                        }
+                    }
                     self.delete_run(left.k)?;
                     k = left.k;
                     len += left.n;
@@ -1580,6 +2422,11 @@ impl<'c> Truth<'c> {
                 .map_err(sql)?;
             if let Some(right) = right {
                 if mergeable(&right, &fps) {
+                    if foreign {
+                        if let Some(c) = &chain {
+                            self.put_mark(dev, first + n - 1, &chain_of(c)?)?;
+                        }
+                    }
                     self.delete_run(right.k)?;
                     len += right.n;
                     fps = match (fps, right.fps) {
@@ -1601,6 +2448,14 @@ impl<'c> Truth<'c> {
             .execute(params![k, len as i64, flags, fps, chain])
             .map_err(sql)?;
         Ok(())
+    }
+
+    /// 设备下标 [dev] 是不是它所在集合的本机当前身份。
+    fn is_self_dev(&self, dev: i64) -> Result<bool, String> {
+        let row = self.dev_row(dev)?;
+        Ok(self
+            .self_identity(row.col)?
+            .is_some_and(|me| me.device == row.id))
     }
 
     fn delete_run(&self, k: i64) -> Result<(), String> {
@@ -1703,7 +2558,8 @@ impl<'c> Truth<'c> {
         self.with_dev(dev, |d| d.parked = None)
     }
 
-    fn put_fork(&self, dev: i64, slot: &HeritageSlot, tv: u32) -> Result<(), String> {
+    /// 记成分叉的另一支。与已存的同号同链指纹的那份矛盾 = false，什么都没写。
+    fn put_fork(&self, dev: i64, slot: &HeritageSlot, tv: u32) -> Result<bool, String> {
         let k = opk(dev, slot.id.seq)?;
         let have = self
             .conn
@@ -1718,16 +2574,20 @@ impl<'c> Truth<'c> {
             Some((t, bytes)) => Some((slot_of(&bytes)?, t as u32)),
             None => None,
         };
-        if let Some((s, t)) = merge_parked(have, slot, tv)? {
-            self.conn
-                .prepare_cached(
-                    "INSERT OR REPLACE INTO op_forks (k, fp, tv, slot) VALUES (?1, ?2, ?3, ?4)",
-                )
-                .map_err(sql)?
-                .execute(params![k, s.fp.to_vec(), t, s.encode()])
-                .map_err(sql)?;
+        match merge_parked(have, slot, tv) {
+            Merged::Keep => Ok(true),
+            Merged::Conflict => Ok(false),
+            Merged::Store(s, t) => {
+                self.conn
+                    .prepare_cached(
+                        "INSERT OR REPLACE INTO op_forks (k, fp, tv, slot) VALUES (?1, ?2, ?3, ?4)",
+                    )
+                    .map_err(sql)?
+                    .execute(params![k, s.fp.to_vec(), t, s.encode()])
+                    .map_err(sql)?;
+                Ok(true)
+            }
         }
-        Ok(())
     }
 
     /// 一个操作号上见过的所有链指纹里，字节序最小的那个槽在日志里（文件头）：`op_forks` 里有比日志里那条更小的，
@@ -1866,7 +2726,9 @@ impl<'c> Truth<'c> {
             .ok_or("gen4 store: heritage log holds a native entry")?;
         match join_slots(&have_slot, slot) {
             Joined::Fork => {
-                self.put_fork(dev, slot, tv)?;
+                if !self.put_fork(dev, slot, tv)? {
+                    return Ok(Put::Conflict);
+                }
                 Ok(if self.rebalance(col, dev, seq)? {
                     Put::Replaced
                 } else {
@@ -1887,10 +2749,7 @@ impl<'c> Truth<'c> {
                 Ok(Put::Replaced)
             }
             Joined::Conflict if tv < have.tv => Ok(Put::Kept),
-            Joined::Conflict => Err(format!(
-                "gen4 store: two different slots for {}:{seq} from translator version {tv}",
-                slot.id.device
-            )),
+            Joined::Conflict => Ok(Put::Conflict),
         }
     }
 
@@ -1961,14 +2820,16 @@ impl<'c> Truth<'c> {
             let have_prev = have_prev.as_deref().map(fp_of).transpose()?;
             if let (Some(a), Some(b)) = (have_prev, prev_fp) {
                 if a != b {
-                    return Err(format!(
-                        "gen4 store: pending {}:{} names two different predecessors",
-                        slot.id.device, slot.id.seq
-                    ));
+                    // 说它接在两个不同的槽后面：矛盾，不落。
+                    return Ok(Put::Conflict);
                 }
             }
             let prev = prev_fp.or(have_prev);
-            let merged = merge_parked(have, slot, tv)?;
+            let merged = match merge_parked(have, slot, tv) {
+                Merged::Conflict => return Ok(Put::Conflict),
+                Merged::Keep => None,
+                Merged::Store(s, t) => Some((s, t)),
+            };
             if merged.is_some() || prev != have_prev {
                 let (s, t) = match merged {
                     Some(m) => m,
@@ -2072,6 +2933,23 @@ impl<'c> Truth<'c> {
     /// 待投递的槽（按操作号、链指纹升序）。
     pub fn pending(&self, col: i64) -> Result<Vec<Parked>, String> {
         self.parked(col, "op_pending", "p.prev_fp")
+    }
+
+    /// 待投递的槽数：按设备主键区间数（[PENDING_COUNT_SQL]），不读、不解槽。收段每片收尾都报它，不能每片把整张
+    /// `op_pending` 解一遍。
+    pub fn pending_count(&self, col: i64) -> Result<u64, String> {
+        let mut n = 0u64;
+        for d in self.devices(col)? {
+            let (lo, hi) = k_range(d.dev);
+            let c: i64 = self
+                .conn
+                .prepare_cached(PENDING_COUNT_SQL)
+                .map_err(sql)?
+                .query_row(params![lo, hi], |r| r.get(0))
+                .map_err(sql)?;
+            n += c as u64;
+        }
+        Ok(n)
     }
 
     /// 分叉的另一支（链指纹与本机日志里同号的槽不同的槽）。
@@ -2181,13 +3059,57 @@ impl<'c> Truth<'c> {
                     )?;
                 }
                 None => {
+                    // 别的设备的操作：挖空之前记下剔除记录（作者签名覆盖的那部分 + 清掉它的 Purge），本机以后转发这一段
+                    // 时重切要它（`sync_state.rs` `recut_from_log`，`gen4/recut.rs`）。找不到管得到它的生效 Purge（直接
+                    // 调本函数的测试与工具）就不记：这一段本机重切不出来，转发退回「缺」。
+                    if let Some(op) = e.op() {
+                        if !self.is_self_dev(dev)? {
+                            if let Some(p) = self.purge_covering(col, op)? {
+                                self.put_stub(col, &Stub::of(op, p))?;
+                            }
+                        }
+                    }
                     let chain = self.chain_at_dev(dev, target.seq)?;
                     self.delete_at(dev, target.seq)?;
                     self.insert_void_run(dev, target.seq, 1, None, Some(chain), A_LOCAL)?;
                 }
             }
+            // 转发（`cmd/sync_relay.rs`，G8-7b）手里这条内容的副本：本机缓存的作者段换成本机签的重切件、已转发到各位置
+            // 的件改成待删（由重切件同名重写或删掉；`sync_state.rs` [Truth::relay_purged]），同一个事务。
+            self.relay_purged(col, &target.device, target.seq)?;
+            // 字节层：原文还在空闲空间与 WAL 旧帧里，提交之后要收尾（`scrub.rs`）。同一个事务里记下欠着的收尾。
+            super::scrub::mark_due(self.conn)?;
+            self.voided.set(true);
             Ok(true)
         })
+    }
+
+    /// 本机生效的、管得到 [op] 的 Purge（操作号最小的那条）：目标在 [op] 的清除目标里（`gen4/op.rs`
+    /// `purge_targets_v1`）、[op] 的作者写它时没见过、本机执行它（`purge_ix.state = 1`：落库了、作者受信）。派生层
+    /// 判「已清除」用的是同一组条件（`weigh.rs`「彻底清除」），所以本机执行清除时（`Index::execute_purges` 之后）总找得到。
+    fn purge_covering(&self, col: i64, op: &Op4) -> Result<Option<OpId>, String> {
+        let mut best: Option<OpId> = None;
+        for (kind, key) in purge_targets_v1(op) {
+            let ks: Vec<i64> = {
+                let mut stmt = self
+                    .conn
+                    .prepare_cached(
+                        "SELECT k FROM purge_ix WHERE col = ?1 AND ekind = ?2 AND ent = ?3 AND state = 1",
+                    )
+                    .map_err(sql)?;
+                let rows = stmt
+                    .query_map(params![col, kind as i64, Ref::of(&key)], |r| r.get(0))
+                    .map_err(sql)?;
+                rows.collect::<rusqlite::Result<_>>().map_err(sql)?
+            };
+            for k in ks {
+                let p = self.id_of_key(k)?;
+                if purge_unseen_by(op, &p) && best.is_none_or(|b| p < b) {
+                    best = Some(p);
+                }
+            }
+        }
+        Ok(best)
     }
 
     /// 本机执行了一条 Dedup、其中一对说 [target] 是 [of] 的副本：完整内容 → 副本记录（`gen4::translate::dedup_slot`
@@ -2239,6 +3161,8 @@ impl<'c> Truth<'c> {
     /// 段里声明的链值比。
     pub fn append_native(&self, col: i64, op: &Op4) -> Result<Chain, String> {
         self.write(|| {
+            // 太大的一条先给看得懂的报错（本机写入与导入都经这里；整笔回滚，什么都不落）。
+            payload_within_cap(op).map_err(|m| format!("gen4 store: {m}; nothing was saved"))?;
             native_allowed(op)
                 .map_err(|m| format!("gen4 store: {}:{} {m}", op.id.device, op.id.seq))?;
             if op.hlc.device != op.id.device || op.deps.get(&op.id.device) != 0 {
@@ -2287,6 +3211,41 @@ impl<'c> Truth<'c> {
         })
     }
 
+    /// 原生日志空洞区间内部的一个链值记号（`.fushisrs` 流第 2 版导入，第五波；导出流见 `store/gen4/export.rs`）：[seq]
+    /// 必须落在 [device] 原生日志里一个空洞区间的内部（不是区间末，那里的链值就是区间自己的），已有记号的不重记，返回
+    /// 记没记。本机自己的日志不记（同 [Truth::insert_void_run]：本机的段按新切点重签，用不着旧切点的链值）。
+    ///
+    /// 记号与区间末的链值一样只能信来源（清除之后没有内容可以重算它），信任面与空洞的 `chain_after` 相同。
+    pub fn land_void_mark(
+        &self,
+        col: i64,
+        device: &Id,
+        seq: u64,
+        chain: &Chain,
+    ) -> Result<bool, String> {
+        self.write(|| {
+            let dev = self
+                .dev_find(col, device)?
+                .ok_or_else(|| format!("gen4 store: no device {device}"))?;
+            if self.dev_row(dev)?.kind != Some(DEV_NATIVE) {
+                return Err(format!("gen4 store: {device} has no native log"));
+            }
+            let inside = self
+                .run_at_or_before(dev, seq)?
+                .is_some_and(|r| r.fps.is_none() && k_seq(r.k) <= seq && r.end() > seq);
+            if !inside {
+                return Err(format!(
+                    "gen4 store: {device}:{seq} is not inside a void run of the native log"
+                ));
+            }
+            if self.is_self_dev(dev)? || self.mark_at(dev, seq)?.is_some() {
+                return Ok(false);
+            }
+            self.put_mark(dev, seq, chain)?;
+            Ok(true)
+        })
+    }
+
     /// 原生日志在 [seq] 处的链值（0 = 链的起点）。空洞区间里只有区间末有链值。
     pub fn chain_at(&self, col: i64, device: &Id, seq: u64) -> Result<Chain, String> {
         if seq == 0 {
@@ -2296,6 +3255,39 @@ impl<'c> Truth<'c> {
             .dev_find(col, device)?
             .ok_or_else(|| format!("gen4 store: no device {device}"))?;
         self.chain_at_dev(dev, seq)
+    }
+
+    /// 链值记号正好记在 [seq] 上的那个。
+    fn mark_at(&self, dev: i64, seq: u64) -> Result<Option<Chain>, String> {
+        self.conn
+            .prepare_cached("SELECT chain FROM log_marks WHERE dev = ?1 AND seq = ?2")
+            .map_err(sql)?
+            .query_row(params![dev, seq as i64], |r| r.get::<_, Vec<u8>>(0))
+            .optional()
+            .map_err(sql)?
+            .map(|c| chain_of(&c))
+            .transpose()
+    }
+
+    /// 原生日志在 [seq] 处可比的链值：[seq] 落在本机空洞区间内部（不是区间末）、又没有合并时留下的记号 = None，那里
+    /// 没有链值；其余同
+    /// [Truth::chain_at]（不在日志里、不是原生日志等照样报错，不当成「比不了」）。
+    pub fn chain_known(&self, col: i64, device: &Id, seq: u64) -> Result<Option<Chain>, String> {
+        if seq == 0 {
+            return Ok(Some(CHAIN_ZERO));
+        }
+        let dev = self
+            .dev_find(col, device)?
+            .ok_or_else(|| format!("gen4 store: no device {device}"))?;
+        if self.dev_row(dev)?.kind == Some(DEV_NATIVE) && seq <= self.last(dev)? {
+            if let Some(run) = self.run_at_or_before(dev, seq)? {
+                if run.end() > seq {
+                    // 空洞内部：合并区间时记下的区间末链值（[Truth::insert_void_run]）还在就有。
+                    return self.mark_at(dev, seq);
+                }
+            }
+        }
+        self.chain_at_dev(dev, seq).map(Some)
     }
 
     fn chain_at_dev(&self, dev: i64, seq: u64) -> Result<Chain, String> {
@@ -2544,9 +3536,8 @@ pub(crate) mod tests {
             put(&t, col, x, 2).unwrap();
         }
         let other = other_edit(&s[0], "\"other\"");
-        // 同一个 T 版本：异常，不落库。
-        let e = put(&t, col, &other, 2).unwrap_err();
-        assert!(e.contains("two different slots"), "{e}");
+        // 同一个 T 版本：异常，不落库（结果不是错误，会话照常能写）。
+        assert_eq!(put(&t, col, &other, 2), Ok(Put::Conflict));
         assert_eq!(
             t.entry(col, &s[0].id).unwrap().unwrap().slot().unwrap(),
             s[0]
@@ -2810,6 +3801,38 @@ pub(crate) mod tests {
         assert_eq!(count(&conn, "op_voids"), 1);
     }
 
+    /// [Truth::voids_within]（转发缓存拒收、不为转发拉原文、从日志重切都靠它，交接 §33）：区间各自截到查询范围；
+    /// 查询范围的起点落在一个更早开始的空洞区间里（前导分支）、或正是被清除的段首，都要报出来。
+    #[test]
+    fn voids_within_reports_runs_cut_to_the_range_including_a_leading_one() {
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = bound(&t);
+        for seq in 1..=7u64 {
+            let slot = HeritageSlot::op(
+                [seq as u8; 8],
+                op_of(id(OLD), seq, &Body4::Edit(native_edit())),
+            );
+            put(&t, col, &slot, 1).unwrap();
+        }
+        for seq in [1, 3, 4] {
+            assert_eq!(t.tx(|t| t.advance_purge(col, &oid(seq))), Ok(true));
+        }
+        let w = |a: u64, b: u64| t.voids_within(col, &id(OLD), a, b).unwrap();
+        assert_eq!(w(1, 7), vec![(1, 1), (3, 4)]);
+        assert_eq!(w(1, 1), vec![(1, 1)], "the segment's first op purged");
+        assert_eq!(w(2, 7), vec![(3, 4)]);
+        assert_eq!(w(4, 7), vec![(4, 4)], "a run that began before the range");
+        assert_eq!(w(4, 4), vec![(4, 4)]);
+        assert_eq!(w(5, 7), Vec::<(u64, u64)>::new());
+        assert_eq!(w(2, 2), Vec::<(u64, u64)>::new());
+        assert_eq!(
+            t.voids_within(col, &id(0x77), 1, 7).unwrap(),
+            Vec::<(u64, u64)>::new(),
+            "an unknown device"
+        );
+    }
+
     #[test]
     fn pending_slots_wait_for_their_prefix_and_are_confirmed_by_fingerprint() {
         let conn = open_in_memory().unwrap();
@@ -2841,9 +3864,8 @@ pub(crate) mod tests {
             (ready.slot.clone(), ready.prev_fp),
             (s[2].clone(), Some(s[1].fp))
         );
-        // 说它接在另一个槽后面：矛盾，报错。
-        let e = pend(&s[2], Some([9; 8])).unwrap_err();
-        assert!(e.contains("two different predecessors"), "{e}");
+        // 说它接在另一个槽后面：矛盾，不落。
+        assert_eq!(pend(&s[2], Some([9; 8])), Ok(Put::Conflict));
         assert_eq!(put(&t, col, &ready.slot, ready.tv), Ok(Put::Inserted));
         // 3 落库的同时它的待投递行确认掉了；4 接着可以投。
         assert_eq!(t.pending(col).unwrap().len(), 2);
@@ -3128,5 +4150,234 @@ pub(crate) mod tests {
             }
             prop_assert_eq!(t.audit(col).unwrap(), want.len() as u64);
         }
+    }
+
+    #[test]
+    fn a_peer_key_is_first_come_and_the_rest_merges() {
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = bound(&t);
+        let dev = id(0x71);
+        assert_eq!(t.device_key(col, &dev), Ok(None));
+        let first = Peer {
+            device: dev,
+            public: [7; 32],
+            name: Some("phone".to_owned()),
+            ext: None,
+            head_gen: Some(3),
+            first_seen: Some(100),
+        };
+        assert_eq!(t.tx(|t| t.set_peer(col, &first)), Ok(PeerPut::Inserted));
+        assert_eq!(t.device_key(col, &dev), Ok(Some([7; 32])));
+        assert_eq!(t.tx(|t| t.set_peer(col, &first)), Ok(PeerPut::Same));
+        // 换公钥：拒绝、什么都不写。
+        let impostor = Peer {
+            public: [8; 32],
+            name: Some("evil".to_owned()),
+            ..first.clone()
+        };
+        assert_eq!(
+            t.tx(|t| t.set_peer(col, &impostor)),
+            Ok(PeerPut::KeyMismatch)
+        );
+        assert_eq!(t.peer(col, &dev).unwrap(), Some(first.clone()));
+        // 同一个公钥：名字换、扩展补上、代号只升不降、第一次见到的时刻不变。
+        let later = Peer {
+            name: None,
+            ext: Some("{\"os\":\"ios\"}".to_owned()),
+            head_gen: Some(2),
+            first_seen: Some(900),
+            ..first.clone()
+        };
+        assert_eq!(t.tx(|t| t.set_peer(col, &later)), Ok(PeerPut::Updated));
+        let got = t.peer(col, &dev).unwrap().unwrap();
+        assert_eq!(
+            (
+                got.name.as_deref(),
+                got.ext.as_deref(),
+                got.head_gen,
+                got.first_seen
+            ),
+            (Some("phone"), Some("{\"os\":\"ios\"}"), Some(3), Some(100))
+        );
+        // 别的集合里看不到；事务外写报错。
+        assert_eq!(t.device_key(col + 1, &dev), Ok(None));
+        assert!(
+            t.set_peer(col, &first)
+                .unwrap_err()
+                .contains("outside a transaction")
+        );
+    }
+
+    /// 缺口 G-1：同一个库文件上两个连接各有一个会话。B 在读过之后、A 又接着写了几条——B 的下一个事务必须看到 A
+    /// 写的末尾与链值，而不是自己缓存里的旧值。
+    #[test]
+    fn every_outer_transaction_starts_from_what_other_connections_wrote() {
+        let dir = crate::store::sync2::tests::tempdir::new("gen4-two-conns");
+        let path = dir.0.join("srs4.db");
+        let ca = crate::store::gen4::schema::open(&path).unwrap();
+        let cb = crate::store::gen4::schema::open(&path).unwrap();
+        let a = Truth::new(&ca);
+        let b = Truth::new(&cb);
+        let col = bound(&a);
+        let dev = native(1, "\"x\"").id.device;
+        a.tx(|t| {
+            for seq in 1..=3 {
+                t.append_native(col, &native(seq, "\"a\""))?;
+            }
+            Ok(())
+        })
+        .unwrap();
+        // B 读过：缓存里是末尾 3。
+        assert_eq!(b.tx(|t| t.last_of(col, &dev)), Ok(3));
+        a.tx(|t| {
+            for seq in 4..=5 {
+                t.append_native(col, &native(seq, "\"a\""))?;
+            }
+            Ok(())
+        })
+        .unwrap();
+        // B 的下一个事务第一次就接在 5 后面，链值接在 A 写的链上。
+        let six = native(6, "\"b\"");
+        let want = chain_next4(&a.tx(|t| t.chain_at(col, &dev, 5)).unwrap(), &six);
+        assert_eq!(b.tx(|t| t.append_native(col, &six)), Ok(want));
+        // A 那边同理：看到 B 写的第 6 条。
+        assert_eq!(a.tx(|t| t.last_of(col, &dev)), Ok(6));
+        assert_eq!(a.tx(|t| t.audit(col)), Ok(6));
+        // 嵌套的事务不 reset：同一个外层事务里的缓存照用。
+        b.tx(|t| {
+            let seven = native(7, "\"b\"");
+            t.append_native(col, &seven)?;
+            t.tx(|t| t.append_native(col, &native(8, "\"b\"")))?;
+            assert_eq!(t.last_of(col, &dev)?, 8);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    /// 调用方自己 `BEGIN` 而没 reset：别的连接在缓存之后提交过，写入被 data_version 检测拦下、不落库、会话不毒化；
+    /// reset 之后照常。
+    #[test]
+    fn a_caller_opened_transaction_without_reset_is_caught_on_write() {
+        let dir = crate::store::sync2::tests::tempdir::new("gen4-dv-guard");
+        let path = dir.0.join("srs4.db");
+        let ca = crate::store::gen4::schema::open(&path).unwrap();
+        let cb = crate::store::gen4::schema::open(&path).unwrap();
+        let a = Truth::new(&ca);
+        let b = Truth::new(&cb);
+        let col = bound(&a);
+        let dev = native(1, "\"x\"").id.device;
+        a.tx(|t| t.append_native(col, &native(1, "\"a\"")).map(|_| ()))
+            .unwrap();
+        assert_eq!(b.tx(|t| t.last_of(col, &dev)), Ok(1));
+        a.tx(|t| t.append_native(col, &native(2, "\"a\"")).map(|_| ()))
+            .unwrap();
+        // B 的缓存还停在末尾 1；自己开事务不 reset 就写。
+        cb.execute_batch("BEGIN IMMEDIATE").unwrap();
+        let e = b.append_native(col, &native(3, "\"b\"")).unwrap_err();
+        assert!(e.contains("reset first"), "{e}");
+        b.reset();
+        b.append_native(col, &native(3, "\"b\"")).unwrap();
+        cb.execute_batch("COMMIT").unwrap();
+        assert_eq!(a.tx(|t| t.audit(col)), Ok(3));
+        // 同一个连接自己的提交不算：B 接着自己开事务写，不 reset 也不报。
+        cb.execute_batch("BEGIN IMMEDIATE").unwrap();
+        b.append_native(col, &native(4, "\"b\"")).unwrap();
+        cb.execute_batch("COMMIT").unwrap();
+    }
+
+    /// 缓存是在事务**外**填的（`last_of` 不经 [Truth::tx]）：一样记下 data_version。别的连接之后提交过，调用方自己
+    /// `BEGIN` 不 reset 就写，被拦下、不落库。
+    #[test]
+    fn a_cache_filled_outside_a_transaction_is_also_guarded() {
+        let dir = crate::store::sync2::tests::tempdir::new("gen4-dv-guard-autocommit");
+        let path = dir.0.join("srs4.db");
+        let ca = crate::store::gen4::schema::open(&path).unwrap();
+        let cb = crate::store::gen4::schema::open(&path).unwrap();
+        let a = Truth::new(&ca);
+        let b = Truth::new(&cb);
+        let col = bound(&a);
+        let dev = native(1, "\"x\"").id.device;
+        a.tx(|t| t.append_native(col, &native(1, "\"a\"")).map(|_| ()))
+            .unwrap();
+        // B 在自动提交状态下读：缓存里是设备下标与末尾 1。
+        assert!(cb.is_autocommit());
+        assert_eq!(b.last_of(col, &dev), Ok(1));
+        a.tx(|t| t.append_native(col, &native(2, "\"a\"")).map(|_| ()))
+            .unwrap();
+        cb.execute_batch("BEGIN IMMEDIATE").unwrap();
+        let e = b.append_native(col, &native(2, "\"b\"")).unwrap_err();
+        assert!(e.contains("reset first"), "{e}");
+        assert!(!e.contains("  "), "{e}");
+        cb.execute_batch("ROLLBACK").unwrap();
+        assert_eq!(a.tx(|t| t.audit(col)), Ok(2));
+        assert_eq!(a.tx(|t| t.last_of(col, &dev)), Ok(2));
+    }
+
+    /// 子进程那一半：环境变量给了库路径才动作。在自己的连接上经 [Truth::tx] 追加原生操作 `FROM..=TO`，然后退出。
+    #[test]
+    fn truth_child_process_half() {
+        let Ok(path) = std::env::var("FUSHI_TRUTH_CHILD_DB") else {
+            return;
+        };
+        let seq = |k: &str| -> u64 { std::env::var(k).unwrap().parse().unwrap() };
+        let (from, to) = (seq("FUSHI_TRUTH_CHILD_FROM"), seq("FUSHI_TRUTH_CHILD_TO"));
+        let conn = crate::store::gen4::schema::open(std::path::Path::new(&path)).unwrap();
+        let t = Truth::new(&conn);
+        let col = t
+            .tx(|t| Ok(t.binding_of(P)?.expect("bound by the parent").col))
+            .unwrap();
+        t.tx(|t| {
+            for s in from..=to {
+                t.append_native(col, &native(s, "\"child\""))?;
+            }
+            Ok(())
+        })
+        .unwrap();
+        println!("TRUTH_CHILD appended {from}..={to}");
+    }
+
+    /// 缺口 G-1 的跨进程版：本进程的会话读过（缓存里是末尾 3 与它的链值），另一个进程经 [Truth::tx] 接着写了 4..=6
+    /// 后退出。同一个会话的下一个 [Truth::tx] 追加第 7 条，必须接在子进程写的末尾和链值之后。
+    #[test]
+    fn every_outer_transaction_starts_from_what_another_process_wrote() {
+        let dir = crate::store::sync2::tests::tempdir::new("gen4-two-procs");
+        let path = dir.0.join("srs4.db");
+        let conn = crate::store::gen4::schema::open(&path).unwrap();
+        let t = Truth::new(&conn);
+        let col = bound(&t);
+        let dev = native(1, "\"x\"").id.device;
+        t.tx(|t| {
+            for s in 1..=3 {
+                t.append_native(col, &native(s, "\"parent\""))?;
+            }
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(t.tx(|t| t.last_of(col, &dev)), Ok(3));
+        t.tx(|t| t.chain_at(col, &dev, 3)).unwrap();
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "store::gen4::truth::tests::truth_child_process_half",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("FUSHI_TRUTH_CHILD_DB", &path)
+            .env("FUSHI_TRUTH_CHILD_FROM", "4")
+            .env("FUSHI_TRUTH_CHILD_TO", "6")
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success(), "{stdout}");
+        assert!(stdout.contains("TRUTH_CHILD appended 4..=6"), "{stdout}");
+        // 期望值从另一个新开的连接上算，不经这个会话。
+        let other = crate::store::gen4::schema::open(&path).unwrap();
+        let fresh = Truth::new(&other);
+        assert_eq!(fresh.tx(|t| t.last_of(col, &dev)), Ok(6));
+        let seven = native(7, "\"parent\"");
+        let want = chain_next4(&fresh.tx(|t| t.chain_at(col, &dev, 6)).unwrap(), &seven);
+        assert_eq!(t.tx(|t| t.append_native(col, &seven)), Ok(want));
+        assert_eq!(fresh.tx(|t| t.audit(col)), Ok(7));
     }
 }

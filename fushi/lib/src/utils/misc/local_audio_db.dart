@@ -317,8 +317,10 @@ class LocalAudioDb {
       "'${identifier.replaceAll("'", "''")}'";
 
   /// Looks up the `(file, source)` for [expression] in [dbPath], preferring an
-  /// exact [reading] match and falling back to any entry for the expression
-  /// (mirrors the native handler). Returns null on miss or error.
+  /// exact [reading] match (rows without a reading — e.g. forvo — also count,
+  /// ranked after exact ones) and falling back to any entry for the expression
+  /// only when nothing matched (mirrors the native handler). Returns null on
+  /// miss or error.
   ///
   /// [order] = 启用子来源的优先级序（首=最高）。非空时：只在这些来源里选，按
   /// 优先级取第一个命中的；全被过滤掉返回 null。空时保持原「首个命中」行为
@@ -374,12 +376,26 @@ class LocalAudioDb {
       db.execute('PRAGMA busy_timeout = 3000');
       // 只要首条且 order 为空走快路径（LIMIT 1）；否则取全部候选行再按序挑。
       final String limit = order.isEmpty && firstOnly ? ' LIMIT 1' : '';
-      ResultSet rows = db.select(
-        'SELECT file, source FROM entries '
-        'WHERE expression = ? AND reading = ?$limit',
-        <Object?>[expression, reading],
-      );
-      if (rows.isEmpty) {
+      // 「读音命中」= 读音相同 **或该行没有读音**（与 Yomitan 本地音频服务器同一
+      // 语义）。local-audio-yomichan 的库里 forvo 行 reading 全是 NULL（Forvo 不给
+      // 读音）；旧写法 `reading = ?` 让 nhk16 / jpod 只要有一行精确命中，forvo 就
+      // 整体出局、回落也不触发（反馈 Dd9HikrfRx：日语词永远出不了 Forvo）。
+      // 精确读音行排在无读音行前，同级按库内顺序（rowid）。Android 原生
+      // `TtsChannelHandler` 用逐字相同的 SQL（守卫逐字比对）。
+      // 读音为空（如制卡增强取自卡片字段为空）时不按读音过滤，直接走下面「只按
+      // 词形」——与上游 reading 为 None 的分支一致；否则只剩 NULL 读音行会把
+      // nhk16 / jpod 等全部挤掉。
+      ResultSet? rows = reading.isEmpty
+          ? null
+          : db.select(
+              'SELECT file, source FROM entries '
+              'WHERE expression = ? AND (reading = ? OR reading IS NULL) '
+              'ORDER BY reading IS NULL, rowid$limit',
+              <Object?>[expression, reading],
+            );
+      // 只有一行都没命中（连无读音行都没有）才回落到「只按词形」——读音不符的行
+      // 总比没有强，但不能抢在可用行之前。
+      if (rows == null || rows.isEmpty) {
         rows = db.select(
           'SELECT file, source FROM entries WHERE expression = ?$limit',
           <Object?>[expression],

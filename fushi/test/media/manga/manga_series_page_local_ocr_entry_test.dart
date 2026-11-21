@@ -223,6 +223,9 @@ Future<void> _openSeries(WidgetTester tester, _Fixture f) async {
         .evaluate()
         .isNotEmpty,
   );
+  // 推完路由转场：海报 hero 的动作栏排在标题旁（宽窗靠右），转场没走完时整页
+  // 还横移着，右侧的「⋯」落在窗外点不到。
+  await tester.pump(const Duration(seconds: 1));
 }
 
 void main() {

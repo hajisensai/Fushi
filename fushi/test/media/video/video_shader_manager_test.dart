@@ -290,10 +290,10 @@ void main() {
     setUp(() => dir = Directory.systemTemp.createTempSync('shader_resolve_'));
     tearDown(() => dir.deleteSync(recursive: true));
 
-    test('只解析存在的文件，保持启用顺序', () {
+    test('只解析存在的文件，保持启用顺序', () async {
       File(p.join(dir.path, 'a.glsl')).writeAsStringSync('//');
       File(p.join(dir.path, 'b.hook')).writeAsStringSync('//');
-      final List<String> paths = resolveShaderPathsIn(dir, <String>[
+      final List<String> paths = await resolveShaderPathsIn(dir, <String>[
         'b.hook',
         'missing.glsl',
         'a.glsl',
@@ -304,8 +304,8 @@ void main() {
       ]);
     });
 
-    test('全部不存在 → 空', () {
-      expect(resolveShaderPathsIn(dir, <String>['x.glsl']), isEmpty);
+    test('全部不存在 → 空', () async {
+      expect(await resolveShaderPathsIn(dir, <String>['x.glsl']), isEmpty);
     });
   });
 

@@ -84,6 +84,112 @@ void main() {
     expect(second.requests, 0);
   });
 
+  // BUG-4815：共用的 manga_ocr_out/manga.json 可能是别的引擎写的（系统 OCR /
+  // 本地模型）。「只补缺页」从那里收页会把别家的结果署成 google_lens。
+  test('只补缺页不收别的引擎写的整卷产物：每页都由 Lens 自己识别', () async {
+    final List<MangaOcrPageFile> pages = enumerateMangaPages(root);
+    final File shared = File(
+      p.join(root.path, kMangaOcrOutDirName, kMangaOcrOutputFileName),
+    );
+    shared.parent.createSync(recursive: true);
+    shared.writeAsStringSync(
+      jsonEncode(
+        mangaPayloadToJson(
+          MokuroPayload(
+            images: <MokuroImage>[
+              for (final MangaOcrPageFile page in pages)
+                MokuroImage(
+                  url: page.relativeUrl,
+                  size: const MokuroSize(100, 200),
+                  blocks: const <MokuroBlock>[
+                    MokuroBlock(
+                      rectangle: MokuroRect.fromLTWH(1, 2, 3, 4),
+                      isVertical: true,
+                      fontSize: 10,
+                      zIndex: 0,
+                      lines: <String>['別エンジン'],
+                    ),
+                  ],
+                ),
+            ],
+            ocr: const MangaOcrMetadata(
+              engine: 'system_ocr',
+              engineSignature: 'system_ocr_v2_ja',
+              schemaVersion: 1,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final _FakeTransport transport = _FakeTransport(makeGoogleLensFixture());
+    final List<MangaOcrVolumeEvent> events =
+        await GoogleLensMangaOcrService(transport: transport)
+            .ocrFolder(
+              imageDirPath: root.path,
+              onlyMissing: true,
+              language: 'ja',
+            )
+            .toList();
+
+    expect(transport.requests, 2, reason: '别的引擎的页不算 Lens 已识别');
+    final MokuroPayload payload = parseMangaJson(
+      File(events.last.mangaJsonPath!).readAsStringSync(),
+    );
+    expect(payload.ocr?.engine, 'google_lens');
+    for (final MokuroImage image in payload.images) {
+      expect(image.blocks.single.lines.single, '日本');
+    }
+  });
+
+  test('只补缺页仍然复用 Lens 自己的逐页缓存', () async {
+    final List<MangaOcrPageFile> pages = enumerateMangaPages(root);
+    final GoogleLensPageCache cache = GoogleLensPageCache(
+      Directory(
+        p.join(
+          root.path,
+          kMangaOcrOutDirName,
+          kMangaOcrPagesCacheDirName,
+          googleLensEngineSignature('ja'),
+        ),
+      ),
+    );
+    await cache.write(
+      0,
+      pages[0],
+      MokuroImage(
+        url: pages[0].relativeUrl,
+        size: const MokuroSize(101, 200),
+        blocks: const <MokuroBlock>[
+          MokuroBlock(
+            rectangle: MokuroRect.fromLTWH(1, 2, 3, 4),
+            isVertical: false,
+            fontSize: 10,
+            zIndex: 0,
+            lines: <String>['キャッシュ'],
+          ),
+        ],
+      ),
+    );
+
+    final _FakeTransport transport = _FakeTransport(makeGoogleLensFixture());
+    final List<MangaOcrVolumeEvent> events =
+        await GoogleLensMangaOcrService(transport: transport)
+            .ocrFolder(
+              imageDirPath: root.path,
+              onlyMissing: true,
+              language: 'ja',
+            )
+            .toList();
+
+    expect(transport.requests, 1, reason: '已缓存的那页不再发请求');
+    final MokuroPayload payload = parseMangaJson(
+      File(events.last.mangaJsonPath!).readAsStringSync(),
+    );
+    expect(payload.images[0].blocks.single.lines.single, 'キャッシュ');
+    expect(payload.images[1].blocks.single.lines.single, '日本');
+  });
+
   test(
     'legacy cache is unflipped and restored in visual reading order',
     () async {

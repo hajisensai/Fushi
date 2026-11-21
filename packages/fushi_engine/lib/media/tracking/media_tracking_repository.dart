@@ -342,8 +342,7 @@ final class MediaServerLibraryCoverage {
 
   /// `video|<uid>` / `video_collection|<id>` -> server keys, the season
   /// (`remote_series`) first when there is one.
-  final Map<String, List<({TrackingMediaType type, String key})>>
-  _byLibraryKey;
+  final Map<String, List<({TrackingMediaType type, String key})>> _byLibraryKey;
 
   /// The server keys that track library [mediaType] + [mediaKey]; empty for
   /// anything that is not a media server row (or not known yet).
@@ -621,15 +620,14 @@ class MediaTrackingRepository {
         ? (String entryKey) => entryKey
         : await _bookKeyOfMember();
     if (collectionIds.isNotEmpty) {
-      final List<MediaCollectionItemRow> members =
-          await (_db.select(
-                _db.mediaCollectionItems,
-              )..where((t) => t.collectionId.isIn(collectionIds)))
-              .get();
+      final List<MediaCollectionItemRow> members = await (_db.select(
+        _db.mediaCollectionItems,
+      )..where((t) => t.collectionId.isIn(collectionIds))).get();
       for (final MediaCollectionItemRow member in members) {
         final String collection = member.collectionId.toString();
         if (member.mediaType == MediaKind.video.dbValue) {
-          if (videoCollections.contains(collection)) videos.add(member.entryKey);
+          if (videoCollections.contains(collection))
+            videos.add(member.entryKey);
         } else if (member.mediaType != MediaKind.game.dbValue &&
             bookCollections.contains(collection)) {
           books.add(bookKeyOf(member.entryKey));
@@ -649,13 +647,13 @@ class MediaTrackingRepository {
 
   /// The do-not-track list, newest first.
   Future<List<MediaTrackingIgnoredRow>> listIgnored() =>
-      (_db.select(_db.mediaTrackingIgnored)..orderBy(
-            <OrderClauseGenerator<$MediaTrackingIgnoredTable>>[
-              (t) =>
-                  OrderingTerm(expression: t.createdAt, mode: OrderingMode.desc),
-              (t) => OrderingTerm(expression: t.id, mode: OrderingMode.desc),
-            ],
-          ))
+      (_db.select(
+            _db.mediaTrackingIgnored,
+          )..orderBy(<OrderClauseGenerator<$MediaTrackingIgnoredTable>>[
+            (t) =>
+                OrderingTerm(expression: t.createdAt, mode: OrderingMode.desc),
+            (t) => OrderingTerm(expression: t.id, mode: OrderingMode.desc),
+          ]))
           .get();
 
   /// Puts [mediaType] + [mediaKey] on the do-not-track list (already there:
@@ -754,11 +752,10 @@ class MediaTrackingRepository {
         row.id: row,
     };
     final List<MediaCollectionItemRow> members =
-        await (_db.select(_db.mediaCollectionItems)..orderBy(
-              <OrderClauseGenerator<$MediaCollectionItemsTable>>[
+        await (_db.select(_db.mediaCollectionItems)
+              ..orderBy(<OrderClauseGenerator<$MediaCollectionItemsTable>>[
                 (t) => OrderingTerm(expression: t.collectionId),
-              ],
-            ))
+              ]))
             .get();
     final Map<String, TrackingSeriesRef> byItem = <String, TrackingSeriesRef>{};
     final String Function(String) bookKeyOf = await _bookKeyOfMember();
@@ -795,7 +792,8 @@ class MediaTrackingRepository {
         title: entry.value.name,
       );
     }
-    for (final MediaTrackingRemoteEpisodeRow row in await listRemoteEpisodes()) {
+    for (final MediaTrackingRemoteEpisodeRow row
+        in await listRemoteEpisodes()) {
       if (row.isMovie || row.groupKey == row.mediaKey) continue;
       byItem.putIfAbsent(
         '${TrackingMediaType.remoteVideo.value}|${row.mediaKey}',
@@ -825,9 +823,7 @@ class MediaTrackingRepository {
           seasonNumber: Value<int?>(episode.seasonNumber),
           episodeNumber: episode.episodeNumber,
           isMovie: Value<bool>(episode.isMovie),
-          serverName: Value<String>(
-            remoteServerShownName(episode.serverName),
-          ),
+          serverName: Value<String>(remoteServerShownName(episode.serverName)),
           watchedAt: DateTime.now().millisecondsSinceEpoch,
         );
     return _db
@@ -843,12 +839,12 @@ class MediaTrackingRepository {
 
   /// Every remembered media server episode, newest first.
   Future<List<MediaTrackingRemoteEpisodeRow>> listRemoteEpisodes() =>
-      (_db.select(_db.mediaTrackingRemoteEpisodes)..orderBy(
-            <OrderClauseGenerator<$MediaTrackingRemoteEpisodesTable>>[
-              (t) =>
-                  OrderingTerm(expression: t.watchedAt, mode: OrderingMode.desc),
-            ],
-          ))
+      (_db.select(
+            _db.mediaTrackingRemoteEpisodes,
+          )..orderBy(<OrderClauseGenerator<$MediaTrackingRemoteEpisodesTable>>[
+            (t) =>
+                OrderingTerm(expression: t.watchedAt, mode: OrderingMode.desc),
+          ]))
           .get();
 
   /// The remembered episodes one link of [groupKey] covers.
@@ -1067,7 +1063,8 @@ class MediaTrackingRepository {
     // link covers it), a movie on its own.
     final Map<String, List<MediaTrackingRemoteEpisodeRow>> remoteGroups =
         <String, List<MediaTrackingRemoteEpisodeRow>>{};
-    for (final MediaTrackingRemoteEpisodeRow row in await listRemoteEpisodes()) {
+    for (final MediaTrackingRemoteEpisodeRow row
+        in await listRemoteEpisodes()) {
       if (isMapped(TrackingMediaType.remoteVideo, row.mediaKey)) continue;
       remoteGroups
           .putIfAbsent(row.groupKey, () => <MediaTrackingRemoteEpisodeRow>[])
@@ -1083,15 +1080,16 @@ class MediaTrackingRepository {
         '${r.type}|${r.key}',
     };
     final Set<String> partlyLinkedSeasons = <String>{
-      for (final MediaTrackingRemoteEpisodeRow row in await listRemoteEpisodes())
+      for (final MediaTrackingRemoteEpisodeRow row
+          in await listRemoteEpisodes())
         if (isMapped(TrackingMediaType.remoteVideo, row.mediaKey) &&
             row.groupKey != row.mediaKey)
           row.groupKey,
     };
     final List<List<MediaTrackingRemoteEpisodeRow>> remoteEntries =
         <List<MediaTrackingRemoteEpisodeRow>>[
-          for (final MapEntry<String, List<MediaTrackingRemoteEpisodeRow>>
-              group in remoteGroups.entries)
+          for (final MapEntry<String, List<MediaTrackingRemoteEpisodeRow>> group
+              in remoteGroups.entries)
             if (partlyLinkedSeasons.contains(group.key))
               for (final MediaTrackingRemoteEpisodeRow row in group.value)
                 <MediaTrackingRemoteEpisodeRow>[row]
@@ -1540,7 +1538,8 @@ class MediaTrackingRepository {
       }
     }
 
-    for (final MediaTrackingRemoteEpisodeRow row in await listRemoteEpisodes()) {
+    for (final MediaTrackingRemoteEpisodeRow row
+        in await listRemoteEpisodes()) {
       final String uid = remoteAnimeItemId(row.mediaKey);
       if (!serverVideos.contains(uid)) continue;
       final String videoKey = '${TrackingMediaType.video.value}|$uid';
@@ -1700,11 +1699,9 @@ class MediaTrackingRepository {
   /// automatic linking leaves them to the user there.
   Future<List<({String provider, String type, String key})>>
   linksRemovedByUser() async {
-    final List<MediaTrackingSuggestionRow> rows =
-        await (_db.select(_db.mediaTrackingSuggestions)..where(
-              (t) => t.dismissedAt.isNotNull() & t.score.equals(0),
-            ))
-            .get();
+    final List<MediaTrackingSuggestionRow> rows = await (_db.select(
+      _db.mediaTrackingSuggestions,
+    )..where((t) => t.dismissedAt.isNotNull() & t.score.equals(0))).get();
     return <({String provider, String type, String key})>[
       for (final MediaTrackingSuggestionRow row in rows)
         (provider: row.provider, type: row.mediaType, key: row.mediaKey),
@@ -1753,12 +1750,13 @@ class MediaTrackingRepository {
   /// Hides a suggestion for good (it stays stored, so the same match is not
   /// suggested again).
   Future<void> dismissSuggestion(int id) =>
-      (_db.update(_db.mediaTrackingSuggestions)..where((t) => t.id.equals(id)))
-          .write(
-            MediaTrackingSuggestionsCompanion(
-              dismissedAt: Value<int?>(DateTime.now().millisecondsSinceEpoch),
-            ),
-          );
+      (_db.update(
+        _db.mediaTrackingSuggestions,
+      )..where((t) => t.id.equals(id))).write(
+        MediaTrackingSuggestionsCompanion(
+          dismissedAt: Value<int?>(DateTime.now().millisecondsSinceEpoch),
+        ),
+      );
 
   /// Suggestions for one item, best first; dismissed ones only when asked.
   Future<List<MediaTrackingSuggestionRow>> loadSuggestions({
@@ -2423,10 +2421,11 @@ class MediaTrackingRepository {
   Future<void> holdQueued(Iterable<int> mappingIds, int untilMs) async {
     final List<int> ids = mappingIds.toList(growable: false);
     if (ids.isEmpty) return;
-    await (_db.update(_db.mediaTrackingOutbox)..where(
-          (t) => t.mappingId.isIn(ids) & t.attemptCount.equals(0),
-        ))
-        .write(MediaTrackingOutboxCompanion(nextAttemptAt: Value<int>(untilMs)));
+    await (_db.update(
+      _db.mediaTrackingOutbox,
+    )..where((t) => t.mappingId.isIn(ids) & t.attemptCount.equals(0))).write(
+      MediaTrackingOutboxCompanion(nextAttemptAt: Value<int>(untilMs)),
+    );
   }
 
   /// Ends the hold ([holdQueued]) of [mappingIds] (null = every held row):
@@ -2442,7 +2441,9 @@ class MediaTrackingRepository {
                   ? const Constant<bool>(true)
                   : t.mappingId.isIn(ids)),
         ))
-        .write(const MediaTrackingOutboxCompanion(nextAttemptAt: Value<int>(0)));
+        .write(
+          const MediaTrackingOutboxCompanion(nextAttemptAt: Value<int>(0)),
+        );
   }
 
   /// [mapping]'s last send ([MediaTrackingMappingRow.sentProgress]) already

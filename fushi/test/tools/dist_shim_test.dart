@@ -274,8 +274,14 @@ void main() {
       'tool/dist_test/$name',
       ...args,
     ]);
+    // 这些用例脚本都在读 stdin 之前就拒绝退出；进程先退时写 stdin 撞 EPIPE
+    // （Linux CI 偶发 `Broken pipe, errno = 32`），那与被测的拒绝无关，吞掉。
     p.stdin.write(stdin);
-    await p.stdin.close();
+    try {
+      await p.stdin.close();
+    } on SocketException {
+      // 管道已被退出的脚本关掉。
+    }
     final Future<String> out = p.stdout
         .transform(const SystemEncoding().decoder)
         .join();
@@ -323,6 +329,62 @@ void main() {
         expect(r.exitCode, 2, reason: '${bad.join(' ')}\n${r.stderr}');
       }
     },
+  );
+
+  test(
+    'worker_run.sh gives each batch its own TMPDIR and removes it',
+    () async {
+      // flutter test leaves ~1 GB flutter_tools.* per run and suites leak
+      // temp dirs; on a worker account's system TMPDIR that reached 30 GB.
+      final Directory co = Directory('${home.path}/co');
+      Directory('${co.path}/fushi/tool/dist_test').createSync(recursive: true);
+      Directory('${co.path}/fushi/test').createSync(recursive: true);
+      File('${co.path}/fushi/test/a_test.dart').writeAsStringSync('');
+      File(
+        'tool/dist_test/worker_run.sh',
+      ).copySync('${co.path}/fushi/tool/dist_test/worker_run.sh');
+      final Directory state = Directory('${co.path}/.git/fushi-dist')
+        ..createSync(recursive: true);
+      // Left by a batch killed before its cleanup ran.
+      final Directory stale = Directory('${state.path}/tmp-1')
+        ..createSync(recursive: true);
+      File('${stale.path}/leak').writeAsStringSync('x');
+      // A stand-in flutter that records where it was told to put temp files
+      // and leaks into it, as the real tool does.
+      final Directory bin = Directory('${co.path}/bin')..createSync();
+      File('${bin.path}/flutter').writeAsStringSync(
+        '#!/usr/bin/env bash\n'
+        'echo "\$TMPDIR" > "\$TMPDIR/../seen"\n'
+        'mkdir "\$TMPDIR/flutter_tools.leak"\n',
+      );
+      if (!Platform.isWindows) {
+        Process.runSync('chmod', <String>['+x', '${bin.path}/flutter']);
+      }
+      final Process p = await Process.start(bash, <String>[
+        '-c',
+        r'b=$1; command -v cygpath > /dev/null && b=$(cygpath -u "$b"); '
+            r'PATH="$b:$PATH" exec bash "$0" 0',
+        '${co.path}/fushi/tool/dist_test/worker_run.sh'.replaceAll(r'\', '/'),
+        bin.path.replaceAll(r'\', '/'),
+      ]);
+      p.stdin.write('test/a_test.dart\n');
+      await p.stdin.close();
+      final Future<String> err = p.stderr
+          .transform(const SystemEncoding().decoder)
+          .join();
+      await p.stdout.drain<void>();
+      final int code = await p.exitCode;
+      expect(code, 0, reason: await err);
+
+      final String seen = File('${state.path}/seen').readAsStringSync().trim();
+      expect(seen, matches(RegExp(r'/\.git/fushi-dist/tmp-\d+$')));
+      expect(
+        state.listSync().where((FileSystemEntity e) => e.path.contains('tmp-')),
+        isEmpty,
+        reason: 'the batch and the stale temp roots must both be gone',
+      );
+    },
+    timeout: const Timeout(Duration(seconds: 60)),
   );
 
   test(

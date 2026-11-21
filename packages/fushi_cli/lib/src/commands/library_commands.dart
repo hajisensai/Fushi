@@ -97,6 +97,76 @@ const List<CtlCommandGroup> libraryCommandGroups = <CtlCommandGroup>[
         render: _renderOrganizeUndo,
       ),
       CtlCommandSpec(
+        name: 'organize-proposals',
+        summary: '列出 AI 整理产出的待确认建议（合并 / 改名你自己的合集）',
+        configure: _configureOrganizeProposals,
+        build: _buildOrganizeProposals,
+        render: _renderOrganizeProposals,
+      ),
+      CtlCommandSpec(
+        name: 'organize-accept',
+        summary: '接受一条待确认建议：以你的身份合并 / 改名合集（不进整理撤销）',
+        usage: '<建议 id>',
+        build: _buildOrganizeAccept,
+        render: _renderOrganizeResolve,
+      ),
+      CtlCommandSpec(
+        name: 'organize-reject',
+        summary: '拒绝一条待确认建议（同样的建议以后不再提）',
+        usage: '<建议 id>',
+        build: _buildOrganizeReject,
+        render: _renderOrganizeResolve,
+      ),
+      CtlCommandSpec(
+        name: 'curate',
+        summary:
+            'AI 库管家：整库跑一趟（合集归属 → 认身份 → 作品关系 → 作品层；直接改库，可用 curate-undo 整趟撤销）',
+        configure: _configureCurate,
+        build: _buildCurate,
+        render: _renderCurate,
+      ),
+      CtlCommandSpec(
+        name: 'curate-status',
+        summary: 'AI 库管家是否在跑、跑到哪一步、上一趟的结论',
+        build: _buildCurateStatus,
+        render: _renderCurateStatus,
+      ),
+      CtlCommandSpec(
+        name: 'curate-runs',
+        summary: '列出本机最近的 AI 库管家运行记录与各步结论',
+        configure: _configureCurateRuns,
+        build: _buildCurateRuns,
+        render: _renderCurateRuns,
+      ),
+      CtlCommandSpec(
+        name: 'curate-undo',
+        summary: '整趟撤销一次 AI 库管家运行（之后被你改过的部分保留）',
+        usage: '<运行 id>',
+        build: _buildCurateUndo,
+        render: _renderCurateUndo,
+      ),
+      CtlCommandSpec(
+        name: 'curate-links',
+        summary: '对几个条目做一次作品关系推断（库管家 ④ 步本身；可在 AI 操作记录里撤销）',
+        usage: '<kind:key>...',
+        configure: _configureCurateLinks,
+        build: _buildCurateLinks,
+        render: _renderCurateLinks,
+      ),
+      CtlCommandSpec(
+        name: 'curate-music',
+        summary: '全库推断音乐专辑 / 曲目属于哪部动画或游戏（库管家 ④ 步的音乐部分）',
+        configure: _configureCurateMusic,
+        build: _buildCurateMusic,
+        render: _renderCurateLinks,
+      ),
+      CtlCommandSpec(
+        name: 'curate-pending',
+        summary: '列出 AI 库管家留给你处理的事（合集建议、没认出的作品、要确认的操作）',
+        build: _buildCuratePending,
+        render: _renderCuratePending,
+      ),
+      CtlCommandSpec(
         name: 'source-add',
         summary: '把本机目录登记成来源库并扫描',
         usage: '<目录>',
@@ -146,6 +216,16 @@ const List<CtlCommandGroup> libraryCommandGroups = <CtlCommandGroup>[
         configure: _configureResetProgress,
         build: _buildResetProgress,
       ),
+      CtlCommandSpec(
+        name: 'scrape-meta',
+        summary:
+            '书 / 漫画 / 有声书 / 游戏的刮削资料与横版背景：get 看、set 写（造测试数据 / '
+            '手动补资料）、clear 清',
+        usage: '<get|set|clear> <key>',
+        configure: _configureScrapeMeta,
+        build: _buildScrapeMeta,
+        render: _renderScrapeMeta,
+      ),
     ],
   ),
   ...shelfCommandGroups,
@@ -153,6 +233,140 @@ const List<CtlCommandGroup> libraryCommandGroups = <CtlCommandGroup>[
 ];
 
 const String _root = '/api/admin/library';
+
+// ── scrape-meta ────────────────────────────────────────────────────────
+
+void _configureScrapeMeta(ArgParser parser) => parser
+  ..addOption('summary', help: '简介')
+  ..addOption('title', help: '刮削到的条目标题（只记事实，不改书名）')
+  ..addOption('original-title', help: '原名')
+  ..addOption('date', help: '日期：YYYY / YYYY-MM / YYYY-MM-DD')
+  ..addOption('year', help: '年份（没有 --date 时）')
+  ..addOption('rating', help: '评分 0~10')
+  ..addOption('rating-count', help: '评分人数')
+  ..addOption('genres', help: '类型 / 标签，逗号分隔')
+  ..addOption('detail-url', help: '条目页 URL')
+  ..addOption('source', help: '来源名（默认 manual）')
+  ..addOption('subject-id', help: '源内条目 id')
+  ..addOption('backdrop', help: '横版背景图：本地路径或 http(s) URL')
+  ..addOption('logo', help: '标题 logo：本地路径或 http(s) URL')
+  ..addFlag('replace', negatable: false, help: '整行替换（默认只改给了的字段）')
+  ..addFlag('yes', negatable: false, help: 'clear 会删图片文件，确认请加 --yes');
+
+CtlRequestSpec _buildScrapeMeta(CtlCommandContext context) {
+  final String action = context.positional(0, 'get|set|clear').toLowerCase();
+  final String key = context.positional(1, 'key').trim();
+  if (!RegExp(r'^(book|srt|game):.+').hasMatch(key)) {
+    throw CtlUsageError('条目键要写成 book: / srt: / game:（见 library ls）：$key');
+  }
+  final String path = '${libraryItemPath(key)}/scrape-meta';
+  switch (action) {
+    case 'get':
+      return CtlRequestSpec.get(path);
+    case 'clear':
+      if (!context.flag('yes')) {
+        throw const CtlUsageError('clear 会删除背景 / logo 图片文件，确认请加 --yes');
+      }
+      return CtlRequestSpec.delete(path);
+    case 'set':
+      final Map<String, Object?> body = <String, Object?>{
+        for (final (String option, String field) in const <(String, String)>[
+          ('summary', 'summary'),
+          ('title', 'title'),
+          ('original-title', 'originalTitle'),
+          ('date', 'date'),
+          ('detail-url', 'detailUrl'),
+          ('source', 'source'),
+          ('subject-id', 'subjectId'),
+        ])
+          if (context.option(option) case final String value) field: value,
+        if (_scrapeNumber(context, 'year', integer: true) case final num v)
+          'year': v,
+        if (_scrapeNumber(context, 'rating') case final num v) 'rating': v,
+        if (_scrapeNumber(context, 'rating-count', integer: true)
+            case final num v)
+          'ratingCount': v,
+        if (context.option('genres') case final String genres)
+          'genres': <String>[
+            for (final String g in genres.split(RegExp(r'[,，、]')))
+              if (g.trim().isNotEmpty) g.trim(),
+          ],
+        ..._scrapeImage(context.option('backdrop'), 'backdrop'),
+        ..._scrapeImage(context.option('logo'), 'logo'),
+        if (context.flag('replace')) 'replace': true,
+      };
+      if (body.isEmpty) {
+        throw const CtlUsageError(
+          'set 至少要给一个字段（--summary / --rating / --backdrop …）',
+        );
+      }
+      return CtlRequestSpec.put(path, body: body);
+    default:
+      throw CtlUsageError('动作只能是 get / set / clear：$action');
+  }
+}
+
+num? _scrapeNumber(
+  CtlCommandContext context,
+  String option, {
+  bool integer = false,
+}) {
+  final String? raw = context.option(option);
+  if (raw == null) return null;
+  final num? value = integer ? int.tryParse(raw) : num.tryParse(raw);
+  if (value == null) {
+    throw CtlUsageError('--$option 要是${integer ? '整数' : '数字'}：$raw');
+  }
+  return value;
+}
+
+/// `--backdrop` / `--logo`：http(s) 走 `<kind>Url`（app 下载），其余当本地路径转绝对。
+Map<String, Object?> _scrapeImage(String? raw, String kind) {
+  if (raw == null || raw.trim().isEmpty) return const <String, Object?>{};
+  final Uri? uri = Uri.tryParse(raw);
+  final bool remote =
+      uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
+  return <String, Object?>{
+    if (remote) '${kind}Url': raw else '${kind}Path': ctlAbsolutePath(raw),
+  };
+}
+
+String _renderScrapeMeta(Object? data) {
+  if (data is! Map) return '完成';
+  if (data['cleared'] == true) {
+    return '${data['key']} 的刮削资料已清除（删了 ${data['files'] ?? 0} 个图片文件）';
+  }
+  final StringBuffer out = StringBuffer()
+    ..writeln('${data['key']}  [${data['mediaType']} ${data['entryKey']}]');
+  final Object? meta = data['meta'];
+  if (meta is Map) {
+    for (final (String label, String field) in const <(String, String)>[
+      ('来源', 'source'),
+      ('条目', 'subjectId'),
+      ('标题', 'title'),
+      ('原名', 'originalTitle'),
+      ('日期', 'airDate'),
+      ('评分', 'rating'),
+      ('评分人数', 'ratingCount'),
+      ('类型', 'tags'),
+      ('条目页', 'detailUrl'),
+      ('简介', 'summary'),
+    ]) {
+      final Object? value = meta[field];
+      if (value == null || (value is List && value.isEmpty)) continue;
+      out.writeln('$label：${value is List ? value.join(' / ') : value}');
+    }
+  } else {
+    out.writeln('（没有刮削资料）');
+  }
+  final Object? images = data['images'];
+  if (images is List) {
+    for (final Object? image in images) {
+      if (image is Map) out.writeln('${image['kind']}：${image['path']}');
+    }
+  }
+  return out.toString().trimRight();
+}
 
 /// `--kind` 的值域（与 app 侧 `LibraryCtlKind` 同名）。
 const List<String> kLibraryKinds = <String>[
@@ -476,7 +690,8 @@ String _renderOrganize(Object? data) {
   if (data is! Map) return '$data';
   final String error = data['error'] == null ? '' : '（${data['error']}）';
   return '整理记录 #${data['runId']} · ${data['status']}$error · '
-      '${data['changes']} 处改动 · ${data['requests']} 次请求';
+      '${data['changes']} 处改动 · ${data['requests']} 次请求'
+      '${(data['proposals'] as num? ?? 0) > 0 ? ' · ${data['proposals']} 条待确认建议（organize-proposals）' : ''}';
 }
 
 void _configureOrganizeHistory(ArgParser parser) {
@@ -526,6 +741,51 @@ CtlRequestSpec _buildOrganizeUndo(CtlCommandContext context) {
 
 String _renderOrganizeUndo(Object? data) =>
     data is Map ? '已撤销 ${data['undone']} 处' : '$data';
+
+void _configureOrganizeProposals(ArgParser parser) {
+  parser.addFlag('all', negatable: false, help: '连已接受 / 已拒绝 / 已失效的一起列');
+}
+
+CtlRequestSpec _buildOrganizeProposals(CtlCommandContext context) =>
+    CtlRequestSpec.get(
+      '$_organizeRoot/proposals',
+      query: <String, String>{if (context.flag('all')) 'all': 'true'},
+    );
+
+String _renderOrganizeProposals(Object? data) {
+  final Object? list = data is Map ? data['proposals'] : null;
+  if (list is! List || list.isEmpty) return '没有待确认的建议';
+  final StringBuffer out = StringBuffer();
+  for (final Object? p in list) {
+    if (p is! Map) continue;
+    final String what = p['kind'] == 'rename'
+        ? '改名「${p['collection']}」→「${p['newName']}」'
+        : '把 ${((p['sources'] as List?) ?? const <Object?>[]).map((Object? s) => '「$s」').join('、')} '
+              '并进「${p['collection']}」';
+    out.writeln(
+      '#${p['id']} ${p['state']} · $what · ${p['confidence']}'
+      '${p['reason'] == null ? '' : '（${p['reason']}）'}',
+    );
+  }
+  return out.toString().trimRight();
+}
+
+CtlRequestSpec _buildOrganizeResolve(CtlCommandContext context, String verb) {
+  final String raw = context.positional(0, '建议 id');
+  if (!RegExp(r'^[1-9]\d*$').hasMatch(raw)) {
+    throw CtlUsageError('建议 id 必须是正整数：$raw');
+  }
+  return CtlRequestSpec.post('$_organizeRoot/proposals/$raw/$verb');
+}
+
+CtlRequestSpec _buildOrganizeAccept(CtlCommandContext context) =>
+    _buildOrganizeResolve(context, 'accept');
+
+CtlRequestSpec _buildOrganizeReject(CtlCommandContext context) =>
+    _buildOrganizeResolve(context, 'reject');
+
+String _renderOrganizeResolve(Object? data) =>
+    data is Map ? '建议 #${data['id']}：${data['state']}' : '$data';
 
 CtlRequestSpec _buildScan(CtlCommandContext context) {
   final String? kind = context.option('kind');
@@ -686,4 +946,209 @@ CtlRequestSpec _buildResetProgress(CtlCommandContext context) {
       'stats': context.option('stats') ?? 'keep',
     },
   );
+}
+
+// ── AI 库管家（app 侧路由见 ctl_library_curate_routes.dart）─────────────────
+
+const String _curateRoot = '/api/admin/library/curate';
+
+void _configureCurate(ArgParser parser) {
+  parser
+    ..addFlag('full', negatable: false, help: '忽略水位，整个库都过一遍（默认只看上一趟之后的新条目）')
+    ..addFlag(
+      'estimate',
+      negatable: false,
+      help: '只估算这一趟要处理多少条目、大约发多少次 AI 请求，不执行',
+    )
+    ..addFlag(
+      'no-wait',
+      negatable: false,
+      help: '后台开跑立即返回运行 id（用 curate-status 看进度）',
+    )
+    ..addFlag(
+      'yes',
+      negatable: false,
+      help:
+          '同意把标题、作者或品牌、年份、卷数 / 集数和视频文件夹名发给 AI 提供商'
+          '（可能计费）；界面里同意过就不必加',
+    );
+}
+
+CtlRequestSpec _buildCurate(CtlCommandContext context) {
+  if (context.flag('estimate')) {
+    return CtlRequestSpec.get(
+      '$_curateRoot/estimate',
+      query: <String, String>{if (context.flag('full')) 'full': 'true'},
+    );
+  }
+  return CtlRequestSpec.post(
+    _curateRoot,
+    body: <String, Object?>{
+      if (context.flag('full')) 'full': true,
+      if (context.flag('no-wait')) 'wait': false,
+      if (context.flag('yes')) 'yes': true,
+    },
+  );
+}
+
+String _renderCurateStage(Object? s) {
+  if (s is! Map) return '$s';
+  final String extra = <String>[
+    if ((s['changes'] as num? ?? 0) > 0) '${s['changes']} 处改动',
+    if ((s['pending'] as num? ?? 0) > 0) '${s['pending']} 条待确认',
+    if ((s['requests'] as num? ?? 0) > 0) '${s['requests']} 次请求',
+    if (s['error'] != null) '${s['error']}',
+  ].join(' · ');
+  return '    ${s['stage']}：${s['status']}${extra.isEmpty ? '' : '（$extra）'}';
+}
+
+String _renderCurateRun(Map<Object?, Object?> run) {
+  final StringBuffer out = StringBuffer(
+    '运行 #${run['id']} · ${run['trigger']} · ${run['status']}'
+    '${run['undoneAt'] == null ? '' : ' · 已撤销'} · '
+    '${run['changes']} 处改动 · ${run['pending']} 条待确认 · '
+    '${run['requests']} 次请求',
+  );
+  for (final Object? s in (run['stages'] as List?) ?? const <Object?>[]) {
+    out.write('\n${_renderCurateStage(s)}');
+  }
+  return out.toString();
+}
+
+String _renderCurate(Object? data) {
+  if (data is! Map) return '$data';
+  if (data.containsKey('stages') && data.containsKey('items')) {
+    // --estimate
+    final StringBuffer out = StringBuffer(
+      '估算：${data['items']} 个条目 · 约 ${data['requests']} 次 AI 请求'
+      '${data['full'] == true ? '（全量）' : ''}',
+    );
+    for (final Object? s in (data['stages'] as List?) ?? const <Object?>[]) {
+      if (s is! Map) continue;
+      out.write('\n    ${s['stage']}：${s['items']} 个 · 约 ${s['requests']} 次');
+    }
+    return out.toString();
+  }
+  if (data['status'] == 'running' && !data.containsKey('stages')) {
+    return '已在后台开跑：运行 #${data['runId']}（curate-status 看进度）';
+  }
+  return _renderCurateRun(data);
+}
+
+String _renderCurateStatus(Object? data) {
+  if (data is! Map) return '$data';
+  final String auto = data['auto'] == true ? '自动路径：开' : '自动路径：关';
+  final Object? run = data['run'];
+  if (data['running'] == true && run is Map) {
+    return '正在跑：${data['stage'] ?? ''}（$auto）\n${_renderCurateRun(run)}';
+  }
+  final Object? last = data['last'];
+  if (last is Map) return '空闲（$auto）。上一趟：\n${_renderCurateRun(last)}';
+  return '空闲（$auto），还没跑过';
+}
+
+void _configureCurateRuns(ArgParser parser) {
+  parser.addOption('limit', help: '最多列几趟（默认 20）');
+}
+
+CtlRequestSpec _buildCurateRuns(CtlCommandContext context) {
+  final int? limit = context.intOption('limit');
+  return CtlRequestSpec.get(
+    '$_curateRoot/runs',
+    query: <String, String>{if (limit != null) 'limit': '$limit'},
+  );
+}
+
+String _renderCurateRuns(Object? data) {
+  final Object? runs = data is Map ? data['runs'] : null;
+  if (runs is! List || runs.isEmpty) return '还没跑过库管家';
+  return <String>[
+    for (final Object? r in runs)
+      if (r is Map) _renderCurateRun(r),
+  ].join('\n');
+}
+
+CtlRequestSpec _buildCurateUndo(CtlCommandContext context) {
+  final String raw = context.positional(0, '运行 id');
+  if (!RegExp(r'^[1-9]\d*$').hasMatch(raw)) {
+    throw CtlUsageError('运行 id 必须是正整数：$raw');
+  }
+  return CtlRequestSpec.post('$_curateRoot/runs/$raw/undo');
+}
+
+String _renderCurateUndo(Object? data) {
+  if (data is! Map) return '$data';
+  final num superseded = data['superseded'] as num? ?? 0;
+  final num failed = data['failed'] as num? ?? 0;
+  return '已撤销 ${data['undone']} 处'
+      '${superseded > 0 ? ' · $superseded 处之后被改过、保留' : ''}'
+      '${failed > 0 ? ' · $failed 处撤销失败' : ''}';
+}
+
+String _renderCuratePending(Object? data) {
+  if (data is! Map) return '$data';
+  final List<Object?> proposals =
+      (data['organizeProposals'] as List?) ?? const <Object?>[];
+  final List<Object?> items = (data['items'] as List?) ?? const <Object?>[];
+  if (proposals.isEmpty && items.isEmpty) return '没有待处理的事';
+  final StringBuffer out = StringBuffer();
+  if (proposals.isNotEmpty) {
+    out.writeln(
+      '合集建议 ${proposals.length} 条'
+      '（organize-proposals / organize-accept / organize-reject）',
+    );
+  }
+  for (final Object? i in items) {
+    if (i is! Map) continue;
+    out.writeln(
+      '#${i['runId']} ${i['stage']} · ${i['kind']} · ${i['title']}'
+      '${i['reason'] == null ? '' : '（${i['reason']}）'}',
+    );
+  }
+  return out.toString().trimRight();
+}
+
+CtlRequestSpec _buildCurateStatus(CtlCommandContext context) =>
+    CtlRequestSpec.get('$_curateRoot/status');
+
+CtlRequestSpec _buildCuratePending(CtlCommandContext context) =>
+    CtlRequestSpec.get('$_curateRoot/pending');
+
+void _configureCurateLinks(ArgParser parser) {
+  parser.addFlag('auto', negatable: false, help: '按自动路径门槛（只落高置信，其余写建议）；默认手动门槛');
+}
+
+CtlRequestSpec _buildCurateLinks(CtlCommandContext context) {
+  final List<String> items = context.rest;
+  if (items.isEmpty) throw const CtlUsageError('至少给一个条目（<kind>:<key>）');
+  return CtlRequestSpec.post(
+    '$_curateRoot/links/infer',
+    body: <String, Object?>{
+      'items': items,
+      if (context.flag('auto')) 'trigger': 'auto',
+    },
+  );
+}
+
+void _configureCurateMusic(ArgParser parser) {
+  parser
+    ..addFlag('auto', negatable: false, help: '按自动路径门槛（只落高置信，其余写建议）；默认手动门槛')
+    ..addFlag('no-ai', negatable: false, help: '不问 AI，只落声纹命中 / 本地标题规则');
+}
+
+CtlRequestSpec _buildCurateMusic(CtlCommandContext context) =>
+    CtlRequestSpec.post(
+      '$_curateRoot/links/music',
+      body: <String, Object?>{
+        if (context.flag('auto')) 'trigger': 'auto',
+        if (context.flag('no-ai')) 'useAi': false,
+      },
+    );
+
+String _renderCurateLinks(Object? data) {
+  if (data is! Map) return '$data';
+  final List<Object?> failed = (data['failed'] as List?) ?? const <Object?>[];
+  return '生效 ${data['applied']} 条 · 建议 ${data['suggested']} 条 · '
+      '${data['requests']} 次 AI 请求'
+      '${failed.isEmpty ? '' : ' · 失败：${failed.join('、')}'}';
 }

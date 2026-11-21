@@ -4,8 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
-import 'package:fushi/src/pages/shared/library_section_tabs.dart';
 import 'package:material_ui/material_ui.dart';
+
+import '../helpers/masthead_tabs.dart';
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
@@ -72,11 +73,13 @@ void main() {
       importButton().onTap!();
       await tester.pumpAndSettle();
     }
-    final Finder strips = find.byType(FushiSectionTabBar<MediaLibraryViewKind>);
+    // 页头大字顶栏（PR #3397）：一级切换在前、组内二级页签在后，两者的
+    // onChanged 是壳的同一个切换入口。
+    final Finder primary = mastheadPrimaryTabs<MediaLibraryViewKind>();
+    final Finder secondary = mastheadSecondaryTabs<MediaLibraryViewKind>();
+    final Finder strips = primary.evaluate().isNotEmpty ? primary : secondary;
     if (strips.evaluate().isNotEmpty) {
-      tester
-          .widget<FushiSectionTabBar<MediaLibraryViewKind>>(strips.first)
-          .onChanged!(kind);
+      readMastheadTabs<MediaLibraryViewKind>(tester, strips).onChanged(kind);
     }
     await tester.pumpAndSettle();
   }

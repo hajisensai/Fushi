@@ -115,6 +115,11 @@ class InterconnectPostTransport {
   /// changing fallback or 401 semantics. Callers may surface the last rejection
   /// if no later candidate succeeds. Response text is never passed through.
   /// [bodyFor] 按候选改写请求体（制卡带每台主机各自的「保存到」，§4.8）；返回 null 用 [body]。
+  /// [candidateFilter] 在「已启用」之外再筛一道候选（远端词典查词只发给开着
+  /// [FushiClientUrl.lookupEnabled] 的 host）。null = 不筛，与升级前逐字一致。
+  /// 每个真正发出请求的候选的传输层结局一律经 [reportInterconnectCandidateReached] /
+  /// [reportInterconnectCandidateUnreachable] 上报——这是互联可达性的唯一上报点，
+  /// 词典服务器在线状态（BUG-4692）也只从那里听。
   Future<InterconnectPostOutcome> post({
     required String path,
     required Map<String, dynamic> body,
@@ -122,6 +127,88 @@ class InterconnectPostTransport {
     required String authErrorMessage,
     FushiClientUrl? onlyCandidate,
     Map<String, dynamic>? Function(FushiClientUrl candidate)? bodyFor,
+    bool Function(FushiClientUrl candidate)? candidateFilter,
+    void Function(int statusCode, Map<String, dynamic>? json)?
+    onRejectedResponse,
+  }) async {
+    final _InterconnectExchange exchange = await _exchange(
+      path: path,
+      timeout: timeout,
+      authErrorMessage: authErrorMessage,
+      onlyCandidate: onlyCandidate,
+      candidateFilter: candidateFilter,
+      onRejectedResponse: onRejectedResponse,
+      acceptsJson: (Object? decoded) => decoded is Map<String, dynamic>,
+      send:
+          (
+            http.Client client,
+            Uri uri,
+            Map<String, String> headers,
+            FushiClientUrl candidate,
+          ) => client.post(
+            uri,
+            headers: <String, String>{
+              ...headers,
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode(bodyFor?.call(candidate) ?? body),
+          ),
+    );
+    return (
+      json: exchange.json as Map<String, dynamic>?,
+      allUnreachable: exchange.allUnreachable,
+      mayHaveDelivered: exchange.mayHaveDelivered,
+      candidate: exchange.candidate,
+    );
+  }
+
+  /// 只读 GET 版 [post]：同一套候选筛选 / 选路 / 鉴权 / 钉扎 / 401 / 不可达语义，
+  /// 响应体可以是任意 JSON 值（清单端点回数组）。服务器词典目录刷新
+  /// （`/api/library/dictionaries`，用 [candidateFilter] 限定到某一台 host）用它，
+  /// 不再为一个 GET 另抄一份传输层。
+  Future<InterconnectGetOutcome> getJson({
+    required String path,
+    required Duration timeout,
+    required String authErrorMessage,
+    bool Function(FushiClientUrl candidate)? candidateFilter,
+  }) async {
+    final _InterconnectExchange exchange = await _exchange(
+      path: path,
+      timeout: timeout,
+      authErrorMessage: authErrorMessage,
+      candidateFilter: candidateFilter,
+      acceptsJson: (Object? decoded) => decoded != null,
+      send:
+          (
+            http.Client client,
+            Uri uri,
+            Map<String, String> headers,
+            FushiClientUrl candidate,
+          ) => client.get(uri, headers: headers),
+    );
+    return (
+      json: exchange.json,
+      allUnreachable: exchange.allUnreachable,
+      candidate: exchange.candidate,
+    );
+  }
+
+  /// [post] / [getJson] 共用的候选循环（语义见 [post] 的文档）。[send] 只管发出这一次
+  /// 请求；[acceptsJson] 判解码后的响应体算不算可用结果（不可用 = 换下一个候选）。
+  Future<_InterconnectExchange> _exchange({
+    required String path,
+    required Duration timeout,
+    required String authErrorMessage,
+    required bool Function(Object? decoded) acceptsJson,
+    required Future<http.Response> Function(
+      http.Client client,
+      Uri uri,
+      Map<String, String> headers,
+      FushiClientUrl candidate,
+    )
+    send,
+    FushiClientUrl? onlyCandidate,
+    bool Function(FushiClientUrl candidate)? candidateFilter,
     void Function(int statusCode, Map<String, dynamic>? json)?
     onRejectedResponse,
   }) async {
@@ -132,6 +219,9 @@ class InterconnectPostTransport {
         await interconnectRankedCandidates(
           _repo,
           onlyCandidate: onlyCandidate,
+          member: candidateFilter == null
+              ? null
+              : (FushiClientUrl row, String? _) => candidateFilter(row),
           probe: _probe,
         );
     if (ranked.members.isEmpty) {
@@ -152,6 +242,8 @@ class InterconnectPostTransport {
     bool anyResponse = false;
     // 请求发出后等应答超时：对端可能已经处理了这次请求。
     bool anyTimedOut = false;
+    // 对端回了话、而且这句话不排除它执行过这次请求（404 / 405 = 没有这个端点 / 端点没接线，什么都没做，不算）。
+    bool anyMayHaveExecuted = false;
     // BUG-1550：某台对端拒了我的凭据不该株连其余对端；记下来，全部试完还没结果才抛。
     SyncAuthError? authError;
     for (final FushiClientUrl candidate in candidates) {
@@ -170,17 +262,10 @@ class InterconnectPostTransport {
           : _httpClient;
       attempted = true;
       try {
-        final http.Response response = await client
-            .post(
-              uri,
-              headers: <String, String>{
-                'Authorization':
-                    'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
-                'Content-Type': 'application/json',
-              },
-              body: jsonEncode(bodyFor?.call(candidate) ?? body),
-            )
-            .timeout(timeout);
+        final http.Response response = await send(client, uri, <String, String>{
+          'Authorization':
+              'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+        }, candidate).timeout(timeout);
         // 拿到任何 HTTP 响应（含 401/404/405/非 2xx/坏 JSON 体）都算「可达」；
         // 传输层失败（连接拒绝/超时/DNS）根本走不到这一行，落在 catch 里。
         anyResponse = true;
@@ -197,14 +282,19 @@ class InterconnectPostTransport {
           continue;
         }
         if (response.statusCode < 200 || response.statusCode >= 300) {
+          // 404 / 405：旧版 host 没有这个端点，或这台主机此刻没接这条路由（例如服务端制卡没有任何可写的落点时
+          // `/api/mine/forward` 回 404 `Mining off`，读请求体之前就回了）——请求没被执行，不是「可能已送达」。
+          if (response.statusCode != 404 && response.statusCode != 405) {
+            anyMayHaveExecuted = true;
+          }
           onRejectedResponse?.call(
             response.statusCode,
             _responseObject(response),
           );
           continue;
         }
-        final Map<String, dynamic>? decoded = _responseObject(response);
-        if (decoded != null) {
+        final Object? decoded = _responseJson(response);
+        if (acceptsJson(decoded)) {
           return (
             json: decoded,
             allUnreachable: false,
@@ -212,6 +302,7 @@ class InterconnectPostTransport {
             candidate: candidate.copyWith(token: token),
           );
         }
+        anyMayHaveExecuted = true;
         onRejectedResponse?.call(response.statusCode, null);
       } on TimeoutException {
         anyTimedOut = true;
@@ -236,7 +327,7 @@ class InterconnectPostTransport {
     return (
       json: null,
       allUnreachable: !anyResponse && (attempted || ranked.withheld > 0),
-      mayHaveDelivered: anyResponse || anyTimedOut,
+      mayHaveDelivered: anyMayHaveExecuted || anyTimedOut,
       candidate: null,
     );
   }
@@ -358,9 +449,14 @@ class InterconnectPostTransport {
 }
 
 Map<String, dynamic>? _responseObject(http.Response response) {
+  final Object? decoded = _responseJson(response);
+  return decoded is Map<String, dynamic> ? decoded : null;
+}
+
+/// 响应体按 JSON 解码；不是合法 JSON 返回 null。
+Object? _responseJson(http.Response response) {
   try {
-    final Object? decoded = jsonDecode(response.body);
-    return decoded is Map<String, dynamic> ? decoded : null;
+    return jsonDecode(response.body);
   } on FormatException {
     return null;
   }
@@ -368,10 +464,26 @@ Map<String, dynamic>? _responseObject(http.Response response) {
 
 /// [InterconnectPostTransport.post] 的结局：`json` 为拿到并解析成功的响应体；
 /// `allUnreachable` 的语义见 [InterconnectPostTransport.post] 的文档。
-/// [mayHaveDelivered]：至少一个候选拿到了响应，或请求发出后等应答超时——对端
-/// 可能已经执行了这次请求。只有它为 false 时，失败才是「确定没送到」，可以放心重发。
+/// [mayHaveDelivered]：至少一个候选回了不排除执行过的响应（2xx、或 404 / 405 以外的非 2xx），或请求发出后等应答
+/// 超时——对端可能已经执行了这次请求。只有它为 false 时，失败才是「确定没送到」，可以放心重发。401 之后会抛
+/// [SyncAuthError]，不经这个字段；404 / 405 是「没有这个端点 / 没接线」，对端什么都没做，不算。
 typedef InterconnectPostOutcome = ({
   Map<String, dynamic>? json,
+  bool allUnreachable,
+  bool mayHaveDelivered,
+  FushiClientUrl? candidate,
+});
+
+/// [InterconnectPostTransport.getJson] 的结局：`json` 为第一个可用响应体（任意 JSON
+/// 值），`allUnreachable` / `candidate` 同 [InterconnectPostOutcome]。
+typedef InterconnectGetOutcome = ({
+  Object? json,
+  bool allUnreachable,
+  FushiClientUrl? candidate,
+});
+
+typedef _InterconnectExchange = ({
+  Object? json,
   bool allUnreachable,
   bool mayHaveDelivered,
   FushiClientUrl? candidate,

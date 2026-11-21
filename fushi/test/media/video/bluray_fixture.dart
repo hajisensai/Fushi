@@ -13,6 +13,7 @@ class FixturePlayItem {
     required this.inTimeTicks,
     required this.outTimeTicks,
     this.angleCount = 1,
+    this.angleClipIds = const <String>[],
     this.codecId = 'M2TS',
   });
 
@@ -25,6 +26,15 @@ class FixturePlayItem {
 
   /// >1 时写出多角度块，用来验证解析器跳过它之后仍能找到 STN table。
   final int angleCount;
+
+  /// 第 2 个角度起各角度的片段号；给了就按它写多角度块（角度数取两者较大者），
+  /// 没给的角度写占位片段号 `9999<n>`。
+  final List<String> angleClipIds;
+
+  /// 实际写进多角度块的角度数。
+  int get effectiveAngleCount => angleClipIds.length + 1 > angleCount
+      ? angleClipIds.length + 1
+      : angleCount;
 }
 
 /// STN table 里的一条流。
@@ -133,7 +143,7 @@ Uint8List _buildPlayItem(FixturePlayItem item, List<FixtureStream> streams) {
   body.add(Uint8List.fromList(item.clipId.codeUnits));
   body.add(Uint8List.fromList(item.codecId.codeUnits));
   // 11 位保留 | 1 位 is_multi_angle | 4 位 connection_condition
-  final int multiAngle = item.angleCount > 1 ? 1 : 0;
+  final int multiAngle = item.effectiveAngleCount > 1 ? 1 : 0;
   body.add(_u16((multiAngle << 4) | 0x1));
   body.addByte(0); // ref_to_STC_id
   body.add(_u32(item.inTimeTicks));
@@ -143,10 +153,13 @@ Uint8List _buildPlayItem(FixturePlayItem item, List<FixtureStream> streams) {
   body.addByte(0); // still_mode
   body.add(_u16(0)); // still_time
   if (multiAngle == 1) {
-    body.addByte(item.angleCount);
+    body.addByte(item.effectiveAngleCount);
     body.addByte(0); // flags
-    for (int a = 1; a < item.angleCount; a++) {
-      body.add(Uint8List.fromList('9999${a % 10}'.codeUnits));
+    for (int a = 1; a < item.effectiveAngleCount; a++) {
+      final String clip = a <= item.angleClipIds.length
+          ? item.angleClipIds[a - 1]
+          : '9999${a % 10}';
+      body.add(Uint8List.fromList(clip.codeUnits));
       body.add(Uint8List.fromList('M2TS'.codeUnits));
       body.addByte(0);
     }

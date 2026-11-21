@@ -59,14 +59,16 @@ bool webVideoShowsPlayer({
 bool webVideoLeavesPlayer(String url) =>
     url.isNotEmpty && !webVideoIsWatchPage(url);
 
-/// 网页档设置面板的分组：着色器 / mpv / 弹幕都作用在 libmpv 或本地文件上，去掉。
+/// 网页档设置面板的分组：mpv / 弹幕都作用在 libmpv 或本地文件上，去掉。「画质增强」页签
+/// 保留——着色器同样不生效，但整页消失会被当成「画质增强按钮没了」（拍板 kp-No6loQi），
+/// 改由面板在网页档把这一页画成说明态（为什么不生效 + 切到内置网页播放器档的入口，
+/// [VideoQuickSettingsSheet.webBackend]）。
 @visibleForTesting
 List<settings_dest.VideoGroup> videoWebBackendSettingsGroups(
   List<settings_dest.VideoGroup> groups,
 ) => <settings_dest.VideoGroup>[
   for (final settings_dest.VideoGroup g in groups)
-    if (g != settings_dest.VideoGroup.shaders &&
-        g != settings_dest.VideoGroup.mpv &&
+    if (g != settings_dest.VideoGroup.mpv &&
         g != settings_dest.VideoGroup.danmaku)
       g,
 ];
@@ -96,7 +98,7 @@ extension _VideoWebSource on _VideoFushiPageState {
         return;
       }
       _webUnderlayHeld = true;
-      // 站点画面从透明像素处透出来：本页的路由层页底（底色 + 角落形状）必须让开，
+      // 站点画面从透明像素处透出来：本页的路由层页底（底色 + 背景装饰）必须让开，
       // 否则网页被整个盖住、看着像「加载不出来」。
       // （initState 里同步调起本方法，路由只能在 await 之后取。）
       final Route<Object?>? route = context.mounted
@@ -163,13 +165,12 @@ extension _VideoWebSource on _VideoFushiPageState {
     _customActionBindingsNotifier.value = appModel.videoCustomActionBindings;
     _videoFitMode = appModel.videoFitMode;
     // 浏览器共享的站点设置（广告拦截 / 网页深色 / 网站设置）：与 app 内浏览器同一个服务、同一份
-    // 偏好，见 `web_video_browser_settings.dart`。引擎在后台按需同步（浏览器页打开时同法）。
+    // 偏好，见 `web_video_browser_settings.dart`。与浏览器标签页同法：建 WebView 前先等缓存
+    // 引擎进内存（本地反序列化，不等网络），否则首页子资源请求与 documentStart 取的
+    // cosmetic 都落在空引擎上；联网刷新过期列表留在后台。
     final WebAdblockService adblock = ref.read(webAdblockServiceProvider);
-    unawaited(
-      adblock.ensureLoaded().catchError((Object e, StackTrace s) {
-        ErrorLogService.instance.log('VideoFushi.web.adblockLoad', e, s);
-      }),
-    );
+    await warmWebVideoAdblock(adblock, logTag: 'VideoFushi.web.adblockLoad');
+    if (!mounted) return;
     final WebVideoSession session = WebVideoSession(
       bookUid: _activeBookUid,
       pageUrl: row.videoPath,
@@ -243,6 +244,7 @@ extension _VideoWebSource on _VideoFushiPageState {
       _pendingController = null;
       _title = row.title;
       _failed = false;
+      _failureHealsOnOpen = false;
       _failReason = null;
       _failTorrentVideo = null;
       _currentVideoPath = null;
@@ -298,18 +300,23 @@ extension _VideoWebSource on _VideoFushiPageState {
       muted: state.muted,
       buffering: state.buffering,
     );
-    final bool videoChanged = state.videoKey != _webVideoKey;
+    final bool videoChanged = state.videoKey != _webTrackSel.videoKey;
     if (videoChanged) {
+      final bool generatedWasActive =
+          _webTrackSel.activeKey != null &&
+          _webTrackSel.activeKey ==
+              webVideoGeneratedTrackKey(_webTrackSel.videoKey);
       // 站内换了视频：新视频的播放头不能写进上一集的进度，先断开，播放器档再按地址重绑。
       _controller?.rebindWebBook(null);
-      _webVideoKey = state.videoKey;
-      _webActiveTrackKey = null;
-      _webPinnedTrackKey = null;
-      _webPendingTrackKey = null;
+      _webTrackSel.beginVideo(state.videoKey);
       _webFailedTrackKeys.clear();
       // 上一集选的图片字幕轨不跟到新视频（新文档的 glue 也已按宿主开关藏起站点字幕）。
       _setWebSiteImageTrackShown(false);
       _reselectWebTrack();
+      // 仍是已落书的这一集（站点只是换了视频 key）：生成字幕按新 key 重挂，原来选着就接着选。
+      if (webVideoEpisodeUrl(state.href) == _webBoundEpisodeUrl) {
+        _installWebGeneratedTrack(select: generatedWasActive);
+      }
     }
     if (!listEquals(state.siteTracks, _webSiteTracks) ||
         state.siteTrackCurrent != _webSiteTrackCurrent) {
@@ -356,6 +363,7 @@ extension _VideoWebSource on _VideoFushiPageState {
     if (url == _webBoundEpisodeUrl) {
       controller.rebindWebBook(_activeBookUid);
       unawaited(_refreshWebEpisodeBook(state, url));
+      unawaited(_restoreWebGeneratedSubtitle());
       return;
     }
     if (url == _webBindingEpisodeUrl) return;
@@ -400,8 +408,7 @@ extension _VideoWebSource on _VideoFushiPageState {
       _delayMs = bound.delayMs;
       _secondaryDelayMs = bound.secondaryDelayMs;
       _favoritedVideoSentences.clear();
-      _webTracks.clear();
-      _webActiveTrackKey = null;
+      _webTrackSel.clearTracks();
     });
     session.bookUid = bound.bookUid;
     controller.setDelayMs(_delayMs);
@@ -419,6 +426,7 @@ extension _VideoWebSource on _VideoFushiPageState {
         ? null
         : _webNetflixMeta[boundWatchId];
     if (boundMeta != null) unawaited(_linkWebSeries(boundMeta));
+    unawaited(_restoreWebGeneratedSubtitle());
   }
 
   /// 把库里这部剧已落书的各集收进它的 playlist 合集（GBDddvjDsj / BUG-4024：继续观看 /
@@ -519,9 +527,9 @@ extension _VideoWebSource on _VideoFushiPageState {
 
   void _onWebTrack(WebVideoTrack track) {
     if (!mounted) return;
-    _webTracks[track.key] = track;
+    _webTrackSel.tracks[track.key] = track;
     if (track.cues.isNotEmpty) _webFailedTrackKeys.remove(track.key);
-    _reselectWebTrack();
+    _reselectWebTrack(updatedKey: track.key);
     // live 轨长了：待采整轨的失败判据可能成立了。
     if (track.isLive) _checkWebPendingTrackCapture();
   }
@@ -531,16 +539,20 @@ extension _VideoWebSource on _VideoFushiPageState {
     if (!mounted) return;
     _rebuild(() {
       _webFailedTrackKeys.add(key);
-      if (_webPendingTrackKey == key) _webPendingTrackKey = null;
+      if (_webTrackSel.pendingKey == key) _webTrackSel.pendingKey = null;
     });
   }
 
   int _webLiveCueCount() =>
-      _webTracks['$_webVideoKey|$kWebVideoLiveTrackLang']?.cues.length ?? 0;
+      _webTrackSel
+          .tracks['${_webTrackSel.videoKey}|$kWebVideoLiveTrackLang']
+          ?.cues
+          .length ??
+      0;
 
   /// 待采整轨的确定失败判据（[webVideoPendingTrackCaptureFailed]）。
   void _checkWebPendingTrackCapture() {
-    final String? pending = _webPendingTrackKey;
+    final String? pending = _webTrackSel.pendingKey;
     if (pending == null) return;
     final int tilde = pending.indexOf('~');
     final String requestedId = tilde >= 0 ? pending.substring(tilde + 1) : '';
@@ -560,49 +572,37 @@ extension _VideoWebSource on _VideoFushiPageState {
   }
 
   /// 轨集 / 当前视频变化后重选当前轨并灌进 controller（同轨更新也要灌：live 轨边看边长）。
-  /// 选择规则与内置网页播放器同一份 [chooseWebVideoTrackKey]（内容语言偏好 > 整轨 > live）。
-  void _reselectWebTrack() {
+  /// 选择与重灌判据和内置网页播放器同一份 [WebVideoTrackSelection.reselect]。
+  void _reselectWebTrack({String? updatedKey}) {
     final VideoPlayerController? controller = _controller;
     if (controller == null || !controller.isWebBackend) return;
-    final String? pending = _webPendingTrackKey;
-    if (pending != null && (_webTracks[pending]?.cues.isNotEmpty ?? false)) {
-      // 显式请求的那条采到了：钉住它。
-      _webPendingTrackKey = null;
-      _webPinnedTrackKey = pending;
-    }
-    final String? next = _webSubtitlesOff
-        ? null
-        : chooseWebVideoTrackKey(
-            tracks: _webTracks.values,
-            videoKey: _webVideoKey,
-            preferredLanguage: _webPreferredSubtitleLanguage,
-            pinned: _webPinnedTrackKey,
-          );
-    final bool changed = next != _webActiveTrackKey;
-    _webActiveTrackKey = next;
-    final WebVideoTrack? track = next == null ? null : _webTracks[next];
-    controller.setCues(track?.cues ?? const <AudioCue>[]);
+    final WebVideoTrackReselect r = _webTrackSel.reselect(
+      updatedKey: updatedKey,
+      preferredLanguage: _webPreferredSubtitleLanguage,
+    );
+    if (!r.reload) return;
+    controller.setCues(r.cues);
     final int? pos = controller.positionMs;
     if (pos != null) controller.updateCueForPosition(pos);
-    if (changed) _rebuild(() {});
+    if (r.changed) _rebuild(() {});
   }
 
-  /// 默认字幕语言：这本书自己的语言，没有就走与自动下字幕同一条偏好链（字幕工作台默认语言
-  /// > 默认内容语言）。stream 书的 language 多半是空的，只看它就会落到「第一条轨」= 随机语言。
-  String? get _webPreferredSubtitleLanguage => resolveSubtitleDownloadLanguage(
-    explicitSubtitlePreference: appModel.jimakuDefaultLanguage,
-    videoContentLanguage: _bookRow?.language,
-    globalDefaultContentLanguage: appModel.defaultContentLanguage,
-  );
+  /// 默认字幕语言（与内置网页播放器同一条偏好链，[webVideoPreferredSubtitleLanguage]）。
+  String? get _webPreferredSubtitleLanguage =>
+      webVideoPreferredSubtitleLanguage(
+        subtitleWorkbenchLanguage: appModel.jimakuDefaultLanguage,
+        bookLanguage: _bookRow?.language,
+        defaultContentLanguage: appModel.defaultContentLanguage,
+      );
 
   /// 加载 [track] 的整轨：站点播放器轨（Netflix）让播放器切过去，它随即下载那条字幕文件、bridge
   /// 截下整轨；按需加载的占位轨（YouTube 等，[WebVideoSiteTrack.isLazy]）让站点桥去取。整轨到了由
-  /// [_reselectWebTrack] 选中并钉住（[_webPendingTrackKey]）。
+  /// [_reselectWebTrack] 选中并钉住（[_webTrackSel.pendingKey]）。
   void _requestWebSiteTrack(WebVideoSiteTrack track, {bool byUser = false}) {
     final WebVideoSession? session = _webSession;
     if (session == null) return;
     if (byUser) _webSubtitleUserChosen = true;
-    _webSubtitlesOff = false;
+    _webTrackSel.subtitlesOff = false;
     if (track.isLazy) {
       _requestWebLazyTrack(session, track);
       return;
@@ -614,28 +614,28 @@ extension _VideoWebSource on _VideoFushiPageState {
     );
     if (track.imageBased) {
       // 图片字幕截不到文字：不进 Fushi 叠层，让站点自己画（不可查词）。
-      _webPendingTrackKey = null;
-      _webPinnedTrackKey = null;
-      _webActiveTrackKey = null;
+      _webTrackSel.pendingKey = null;
+      _webTrackSel.pinnedKey = null;
+      _webTrackSel.activeKey = null;
       _setWebSiteImageTrackShown(true);
       _reselectWebTrack();
       _rebuild(() {});
       return;
     }
     _setWebSiteImageTrackShown(false);
-    _markWebTrackRequested(track.storeKey(_webVideoKey));
+    _markWebTrackRequested(track.storeKey(_webTrackSel.videoKey));
   }
 
-  /// 记下显式请求的整轨：早已采到就直接钉住，否则等它到（[_webPendingTrackKey]）。
+  /// 记下显式请求的整轨：早已采到就直接钉住，否则等它到（[_webTrackSel.pendingKey]）。
   void _markWebTrackRequested(String key) {
     _webFailedTrackKeys.remove(key);
     _webPendingLiveCueCount = _webLiveCueCount();
-    if (_webTracks[key]?.cues.isNotEmpty ?? false) {
+    if (_webTrackSel.tracks[key]?.cues.isNotEmpty ?? false) {
       // 早已采到（Netflix 选回之前看过的轨不会重新下载）：直接选中。
-      _webPendingTrackKey = null;
-      _webPinnedTrackKey = key;
+      _webTrackSel.pendingKey = null;
+      _webTrackSel.pinnedKey = key;
     } else {
-      _webPendingTrackKey = key;
+      _webTrackSel.pendingKey = key;
     }
     _reselectWebTrack();
     _rebuild(() {});
@@ -647,9 +647,9 @@ extension _VideoWebSource on _VideoFushiPageState {
   /// 这条整轨（换了视频 / 清单过期），同样是确定的失败。
   void _requestWebLazyTrack(WebVideoSession session, WebVideoSiteTrack track) {
     _setWebSiteImageTrackShown(false);
-    final String key = track.storeKey(_webVideoKey);
+    final String key = track.storeKey(_webTrackSel.videoKey);
     _markWebTrackRequested(key);
-    if (_webPendingTrackKey != key) return; // 早已采到
+    if (_webTrackSel.pendingKey != key) return; // 早已采到
     unawaited(
       session
           .evaluate(
@@ -657,8 +657,8 @@ extension _VideoWebSource on _VideoFushiPageState {
           )
           .then((Object? result) {
             if (!mounted || result == 'requested') return;
-            if (_webPendingTrackKey == key &&
-                !(_webTracks[key]?.cues.isNotEmpty ?? false)) {
+            if (_webTrackSel.pendingKey == key &&
+                !(_webTrackSel.tracks[key]?.cues.isNotEmpty ?? false)) {
               ErrorLogService.instance.log(
                 'VideoFushi.web',
                 'lazy subtitle track not requestable ($result): $key',
@@ -679,20 +679,23 @@ extension _VideoWebSource on _VideoFushiPageState {
   /// （Netflix 按账号习惯默认开英文）。用户在面板里亲手选过 / 关掉字幕后不再干预。没有首选
   /// 语言的轨时：站点字幕关着、也没采到任何整轨，就开第一条文字轨（否则无字可查）。
   void _maybeRequestDefaultSiteTrack() {
-    if (_webSubtitlesOff ||
+    if (_webTrackSel.subtitlesOff ||
         _webSubtitleUserChosen ||
         _webSiteTracks.isEmpty ||
-        _webSiteTrackAutoVideoKey == _webVideoKey) {
+        _webSiteTrackAutoVideoKey == _webTrackSel.videoKey ||
+        // 这一集生成的字幕已选上（重进时读回的登记）：不再替用户换成站点轨。
+        _webTrackSel.pinnedKey ==
+            webVideoGeneratedTrackKey(_webTrackSel.videoKey)) {
       return;
     }
-    _webSiteTrackAutoVideoKey = _webVideoKey;
+    _webSiteTrackAutoVideoKey = _webTrackSel.videoKey;
     final WebVideoSiteTrack? preferred = pickWebVideoSiteTrackForLanguage(
       _webSiteTracks,
       _webPreferredSubtitleLanguage,
     );
     if (preferred != null) {
       if (preferred.id != _webSiteTrackCurrent ||
-          _webActiveTrackKey != preferred.storeKey(_webVideoKey)) {
+          _webTrackSel.activeKey != preferred.storeKey(_webTrackSel.videoKey)) {
         _requestWebSiteTrack(preferred);
       }
       return;
@@ -907,13 +910,16 @@ extension _VideoWebSource on _VideoFushiPageState {
     };
     return <WebVideoSiteTrack>[
       for (final WebVideoSiteTrack track in _webSiteTracks)
-        if (!loaded.contains(track.storeKey(_webVideoKey))) track,
+        if (!loaded.contains(track.storeKey(_webTrackSel.videoKey))) track,
     ];
   }
 
   /// 已采到的整轨在面板里的名字：站点显示名（「English [CC]」）优先，live 轨用固定文案。
   String _webTrackLabel(WebVideoTrack track) {
     if (track.isLive) return t.web_video_track_live;
+    if (track.lang == kWebVideoGeneratedTrackLang) {
+      return t.web_video_track_generated;
+    }
     if (track.siteTrackId.isNotEmpty) {
       for (final WebVideoSiteTrack site in _webSiteTracks) {
         if (site.id == track.siteTrackId && site.name.isNotEmpty) {
@@ -926,43 +932,52 @@ extension _VideoWebSource on _VideoFushiPageState {
 
   String _webSiteTrackStatus(WebVideoSiteTrack track) {
     if (track.imageBased) return t.web_video_track_image;
-    final String key = track.storeKey(_webVideoKey);
+    final String key = track.storeKey(_webTrackSel.videoKey);
     if (_webFailedTrackKeys.contains(key)) return t.web_video_track_failed;
-    if (_webPendingTrackKey == key) return t.web_video_track_loading;
+    if (_webTrackSel.pendingKey == key) return t.web_video_track_loading;
     return t.web_video_track_site;
   }
 
   /// 当前视频可选的站点字幕轨（有 cue 的才列）。
-  List<WebVideoTrack> _currentWebTracks() => <WebVideoTrack>[
-    for (final WebVideoTrack track in _webTracks.values)
-      if (track.videoKey == _webVideoKey && track.cues.isNotEmpty) track,
-  ];
+  List<WebVideoTrack> _currentWebTracks() => _webTrackSel.currentTracks;
 
   void _selectWebTrack(String? key) {
     _webSubtitleUserChosen = true;
-    _webSubtitlesOff = key == null;
-    _webPendingTrackKey = null;
+    _webTrackSel.choose(key);
     _setWebSiteImageTrackShown(false);
-    _webPinnedTrackKey = key;
-    _webActiveTrackKey = key;
     _reselectWebTrack();
     _rebuild(() {});
   }
 
-  /// 设置面板「字幕」分类顶部的轨列表（网页档）：关闭 + 站点每条轨。导入文件 / 自动获取 /
+  /// 设置面板「字幕」分类顶部的轨列表（网页档）：字幕工作台（生成字幕、对照表、跳转、拆分）
+  /// + 关闭 + 每条轨（站点轨、下载 / 拆分出的本机轨、这一集生成的字幕）。导入文件 / 自动获取 /
   /// 转录 / 对轴这些行都要本地媒体，网页档不列。
   Widget _buildWebSubtitleTrackRows(BuildContext context) {
     final Color? selectedFg = videoPanelSelectedForeground(context);
     final List<WebVideoTrack> tracks = _currentWebTracks();
     final List<WebVideoSiteTrack> siteTracks = _unloadedWebSiteTracks();
+    final VideoPlayerController? controller = _controller;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
+        // 字幕工作台：与本机 / 远端字幕菜单同一个入口（生成字幕是工作台里的一项工具，
+        // 内嵌生成面板先从页面取媒体地址拉整集音频，见 [_webSubtitleStudioPanel]）。
+        if (controller != null &&
+            _subtitleStudioAvailable(controller)) ...<Widget>[
+          FushiListTileControl(
+            key: const ValueKey<String>('video-web-subtitle-studio'),
+            leading: const FushiIcon(FushiIcons.transcribe),
+            title: Text(t.video_subtitle_studio_title),
+            subtitle: Text(t.video_subtitle_studio_entry_hint),
+            onTap: () => unawaited(_openSubtitleStudio(controller)),
+          ),
+          const FushiDividerControl(height: 1),
+        ],
         FushiListTileControl(
           key: const ValueKey<String>('video-web-subtitle-off'),
           leading: const FushiIcon(FushiIcons.subtitlesOff),
           title: Text(t.video_subtitle_off),
-          selected: _webActiveTrackKey == null,
+          selected: _webTrackSel.activeKey == null,
           selectedColor: selectedFg,
           onTap: () => _selectWebTrack(null),
         ),
@@ -978,7 +993,7 @@ extension _VideoWebSource on _VideoFushiPageState {
             key: ValueKey<String>('video-web-subtitle-${track.key}'),
             leading: const FushiIcon(FushiIcons.subtitles),
             title: Text(_webTrackLabel(track)),
-            selected: track.key == _webActiveTrackKey,
+            selected: track.key == _webTrackSel.activeKey,
             selectedColor: selectedFg,
             onTap: () => _selectWebTrack(track.key),
           ),
@@ -994,6 +1009,354 @@ extension _VideoWebSource on _VideoFushiPageState {
           ),
       ],
     );
+  }
+
+  /// 把本机字幕文件 [path]（手机下载的在线字幕、工作台拆分出的日语字幕）作为一条轨并进
+  /// 当前视频的站点轨并选中。网页轨的显示名取 lang（[_webTrackLabel]）：本机档用文件名。
+  void _selectWebLocalSubtitleTrack(String path, List<AudioCue> cues) {
+    final String name = p.basename(path);
+    final String key = '${_webTrackSel.videoKey}|download:$name';
+    _webTrackSel.tracks[key] = WebVideoTrack(
+      key: key,
+      videoKey: _webTrackSel.videoKey,
+      lang: name,
+      cues: cues,
+    );
+    _selectWebTrack(key);
+  }
+
+  // ── 字幕生成（完整管线）────────────────────────────────────────────────────
+  //
+  // 网页档没有本机媒体：从页面取媒体地址（web_video_subtitle_media.dart：YouTube 现取
+  // audio-only 流；其它站点用 <video> 直链或页面为这个视频请求过的 HLS / DASH 清单，带页面
+  // 同一身份的 UA / Referer / Cookie），把整集音频拉成本机副本（与在线流同一个
+  // [appVideoStreamSubtitleAudioStager]），再走 [AppVideoSubtitleService.resolveStream]。
+  // 产物登记在这一集的书上（`video_books.subtitleSource`），作为一条可选轨并进站点轨。
+
+  /// 网页档这一集能不能跑字幕生成管线（[webVideoSubtitlePipelineAvailable]）。EME 加密流
+  /// （Netflix）客观拉不出音频，入口不出现；媒体地址拿不拿得到开拉时问页面。
+  bool get _canRunWebSubtitlePipeline => webVideoSubtitlePipelineAvailable(
+    webMode: _webMode,
+    playerMode: _webPlayerMode,
+    episodeBound: _webSubtitleEpisodeUrl != null,
+    encrypted: _webSession?.lastState?.encrypted ?? false,
+    asrSupported: isAsrSupported,
+  );
+
+  /// 已落成书的这一集的规范地址；站点入口还没播起任何一集时为 null。
+  String? get _webSubtitleEpisodeUrl {
+    final String? url = _webBoundEpisodeUrl;
+    if (!_webMode || url == null || isWebVideoSiteBookUid(_activeBookUid)) {
+      return null;
+    }
+    return url;
+  }
+
+  /// 网页档这一集整集音频副本的身份：键（来源 `web` + 这一集的地址 + 站点音轨，见
+  /// [videoStreamSubtitleAudioKey]）、标题（副本 / 导出字幕的文件名用）与这一集的书。
+  ({String key, String title, String bookUid})? _webWholeAudioIdentity() {
+    final String? url = _webSubtitleEpisodeUrl;
+    if (url == null) return null;
+    final String audioTrack =
+        _webSession?.lastState?.siteAudioTrackCurrent ?? '';
+    return (
+      key: videoStreamSubtitleAudioKey(
+        sourceId: 'web',
+        videoId: url,
+        episode: 0,
+        audioTrack: audioTrack.isEmpty ? '-' : audioTrack,
+      ),
+      title: _bookRow?.title ?? _title ?? url,
+      bookUid: _activeBookUid,
+    );
+  }
+
+  /// 页面媒体地址的 Referer / YouTube 视频 id 用的观看页地址：快照里对过主机的地址，没有就用
+  /// 这一集的规范地址。
+  String _webSubtitlePageUrl(WebVideoSession session) {
+    final String href = session.lastState?.href ?? '';
+    return href.isNotEmpty ? href : (_webBoundEpisodeUrl ?? session.pageUrl);
+  }
+
+  /// 拿不到媒体的原因（给用户看）。
+  String _webSubtitleMediaBlockMessage(WebVideoSubtitleMediaBlock reason) =>
+      switch (reason) {
+        WebVideoSubtitleMediaBlock.noVideo =>
+          t.web_video_subtitle_media_no_video,
+        WebVideoSubtitleMediaBlock.encrypted =>
+          t.web_video_subtitle_media_encrypted,
+        WebVideoSubtitleMediaBlock.noMediaAddress =>
+          t.web_video_subtitle_media_no_address,
+      };
+
+  /// 开拉前现取输入（[prepareWebVideoSubtitleAudio]）；拿不到媒体时以说明原因的
+  /// [VideoStreamSubtitleAudioUnavailable] 结束（进度对话框 / 内嵌面板照常显示原因）。
+  Future<VideoStreamSubtitleAudioInput> _prepareWebWholeAudio(
+    WebVideoSession session,
+  ) async {
+    try {
+      return await prepareWebVideoSubtitleAudio(
+        probe: () => session.evaluate('window.__fushiWebVideo.mediaSource()'),
+        pageUrl: _webSubtitlePageUrl(session),
+        cookieHeader: session.cookieHeaderFor,
+      );
+    } on WebVideoSubtitleMediaBlocked catch (e) {
+      throw VideoStreamSubtitleAudioUnavailable(
+        _webSubtitleMediaBlockMessage(e.reason),
+      );
+    }
+  }
+
+  /// AI 校对参考画面的视频地址（[webVideoSubtitleFrameInput]）；YouTube / 拿不到媒体为 null。
+  Future<({String url, Map<String, String> headers})?> _webSubtitleFrameInput(
+    WebVideoSession session,
+  ) => webVideoSubtitleFrameInput(
+    probe: () => session.evaluate('window.__fushiWebVideo.mediaSource()'),
+    pageUrl: _webSubtitlePageUrl(session),
+    cookieHeader: session.cookieHeaderFor,
+  );
+
+  /// 开拉这一集的整集音频（同一集已在拉就接上那一次）；不在可生成的这一集时 null。
+  VideoStreamSubtitleAudioStaging? _startWebWholeAudio() {
+    final VideoPlayerController? controller = _controller;
+    final WebVideoSession? session = _webSession;
+    final ({String key, String title, String bookUid})? id =
+        _webWholeAudioIdentity();
+    if (controller == null || session == null || id == null) return null;
+    return appVideoStreamSubtitleAudioStager.start(
+      key: id.key,
+      title: id.title,
+      durationMs: controller.durationMs ?? 0,
+      prepare: () => _prepareWebWholeAudio(session),
+    );
+  }
+
+  /// 这一集的管线目标：[audio] 是整集音频副本，产物落 app 字幕目录、登记成这一集的书的
+  /// 字幕（页面关了也生效，重进时读回，见 [_restoreWebGeneratedSubtitle]），参考画面从页面
+  /// 给的视频地址抽。副本已被清掉时 null。
+  Future<AppVideoSubtitleTarget?> _webSubtitleTarget(File audio) async {
+    final WebVideoSession? session = _webSession;
+    final ({String key, String title, String bookUid})? id =
+        _webWholeAudioIdentity();
+    if (session == null || id == null) return null;
+    final ({String url, Map<String, String> headers})? frame =
+        await _webSubtitleFrameInput(session);
+    final VideoBookRepository repo = widget.repo;
+    final String bookUid = id.bookUid;
+    final String? language = _bookRow?.language;
+    try {
+      return await appVideoSubtitleService(appModel).resolveStream(
+        audioPath: audio.path,
+        title: id.title,
+        key: id.key,
+        exportDir: videoStreamSubtitleExportDirUnder(
+          await AppPaths.videoSubtitlesDirectory(),
+        ),
+        contentLanguage: language == null || language.isEmpty ? null : language,
+        remember: (String subtitlePath) =>
+            repo.updateSubtitleSource(bookUid, subtitlePath),
+        frameSource: frame == null
+            ? null
+            : videoStreamSubtitleFrameSource(
+                headers: frame.headers,
+                input: () async => frame.url,
+              ),
+      );
+    } on AppVideoSubtitleTargetNotFound {
+      return null;
+    }
+  }
+
+  /// 「生成字幕」（工作台里那一行按钮）：先把整集音频拉到本机（进度对话框，可取消），再打开
+  /// 与本机视频同一个管线面板；任务结束后把产物作为一条轨选中。
+  Future<void> _openWebSubtitlePipeline(
+    VideoPlayerController controller,
+  ) async {
+    final ({String key, String title, String bookUid})? id =
+        _webWholeAudioIdentity();
+    if (id == null) return;
+    bool isCurrent() =>
+        mounted &&
+        identical(_controller, controller) &&
+        _webWholeAudioIdentity()?.key == id.key;
+    final File? audio = await _stageWholeAudioWithDialog(
+      key: id.key,
+      title: id.title,
+      start: _startWebWholeAudio,
+      logTag: 'video.webSubtitleAudio',
+    );
+    if (audio == null || !isCurrent()) return;
+    final AppVideoSubtitleTarget? target = await _webSubtitleTarget(audio);
+    if (target == null || !isCurrent() || !context.mounted) return;
+    await showVideoSubtitleGenerateSheet(
+      context: context,
+      service: appVideoSubtitleService(appModel),
+      target: target,
+      prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
+      openAiSettings: pushAiSettingsPage,
+      onJobStarted: (AppVideoSubtitleJob job) => unawaited(
+        _applyWebPipelineSubtitleWhenDone(
+          controller,
+          job,
+          audio.path,
+          id.bookUid,
+        ),
+      ),
+      // 播放器里正显示的站点字幕交给 AI 校对当参考（按副本路径对上这一集）。
+      pinnedEvidence: _playerSubtitleEvidence(controller, audio.path),
+    );
+  }
+
+  /// 工作台内嵌的网页档生成面板：先拉整集音频（[VideoStreamSubtitleAudioPanel]，有进度、可
+  /// 取消、拿不到媒体时说明原因；已拉好 / 正在拉时直接接上），拉好后原地换成本机管线面板。
+  /// 换了集 / 播放器重建之后不再开拉、不再出面板。
+  WidgetBuilder? _webSubtitleStudioPanel(VideoPlayerController controller) {
+    final ({String key, String title, String bookUid})? id =
+        _webWholeAudioIdentity();
+    if (id == null) return null;
+    bool isCurrent() =>
+        mounted &&
+        identical(_controller, controller) &&
+        _webWholeAudioIdentity()?.key == id.key;
+    final AppVideoSubtitleService service = appVideoSubtitleService(appModel);
+    return (BuildContext context) => VideoStreamSubtitleAudioPanel(
+      existing: () => appVideoStreamSubtitleAudioStager.existing(
+        key: id.key,
+        title: id.title,
+      ),
+      inflight: () => appVideoStreamSubtitleAudioStager.inflight(id.key),
+      start: () => isCurrent() ? _startWebWholeAudio() : null,
+      onFailed: (Object error, StackTrace stack) =>
+          ErrorLogService.instance.log('video.webSubtitleAudio', error, stack),
+      ready: (File audio) async {
+        if (!isCurrent()) return null;
+        final AppVideoSubtitleTarget? target = await _webSubtitleTarget(audio);
+        if (target == null || !isCurrent()) return null;
+        final Map<String, List<SubtitleEvidenceTrack>> pinnedEvidence =
+            _playerSubtitleEvidence(controller, audio.path);
+        return (BuildContext context) => VideoSubtitleGenerateSheet(
+          embedded: true,
+          service: service,
+          target: target,
+          prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
+          openAiSettings: pushAiSettingsPage,
+          onJobStarted: (AppVideoSubtitleJob job) => unawaited(
+            _applyWebPipelineSubtitleWhenDone(
+              controller,
+              job,
+              audio.path,
+              id.bookUid,
+            ),
+          ),
+          pinnedEvidence: pinnedEvidence,
+        );
+      },
+    );
+  }
+
+  /// 管线结束后：页面还停在同一个播放器、同一集（[bookUid]）就把产物作为生成字幕轨装上并
+  /// 选中（产物已由落点登记到书上，页面关了 / 换了集也照样在重进时读回）；跳过了就说明原因。
+  Future<void> _applyWebPipelineSubtitleWhenDone(
+    VideoPlayerController controller,
+    AppVideoSubtitleJob job,
+    String audioPath,
+    String bookUid,
+  ) async {
+    await job.done;
+    bool isCurrent() =>
+        mounted &&
+        identical(_controller, controller) &&
+        _activeBookUid == bookUid;
+    if (!isCurrent() || job.status != AppVideoSubtitleJobStatus.succeeded) {
+      return;
+    }
+    final VideoSubtitleEpisodeResult? result = job.result?.episodes
+        .firstWhereOrNull(
+          (VideoSubtitleEpisodeResult r) => p.equals(r.videoPath, audioPath),
+        );
+    if (result == null) return;
+    final String? output = result.outputPath;
+    if (!result.exported || output == null) {
+      _showOsd(
+        videoSubtitleEpisodeStatusLabel(result, language: job.options.language),
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    final List<AudioCue> cues = await _loadExternalSubtitleCues(
+      output,
+      bookUid,
+    );
+    if (!isCurrent()) return;
+    if (cues.isEmpty) {
+      _showOsd(
+        t.video_subtitle_load_failed(label: p.basename(output)),
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    _webGeneratedSubtitle = (bookUid: bookUid, path: output, cues: cues);
+    _webGeneratedCheckedBookUid = bookUid;
+    _webSubtitleUserChosen = true;
+    _installWebGeneratedTrack(select: true);
+    _showOsd(t.video_subtitle_switched(label: t.web_video_track_generated));
+  }
+
+  /// 重进 / 换到某一集时读回这一集的书登记的生成字幕（`subtitleSource`，由管线落点写）：
+  /// 文件还在就作为生成字幕轨装上；用户这次会话里还没亲手选过轨时直接选中。每集只读一次。
+  Future<void> _restoreWebGeneratedSubtitle() async {
+    final String bookUid = _activeBookUid;
+    if (_webSubtitleEpisodeUrl == null ||
+        _webGeneratedCheckedBookUid == bookUid) {
+      return;
+    }
+    _webGeneratedCheckedBookUid = bookUid;
+    final VideoBookRow? row = await appModel.database.getVideoBookByBookUid(
+      bookUid,
+    );
+    final String? source = row?.subtitleSource;
+    if (source == null ||
+        !isExternalSubtitleFilePathForMenu(source) ||
+        !await File(source).exists()) {
+      return;
+    }
+    final List<AudioCue> cues = await _loadExternalSubtitleCues(
+      source,
+      bookUid,
+    );
+    if (!mounted || _activeBookUid != bookUid || cues.isEmpty) return;
+    _webGeneratedSubtitle = (bookUid: bookUid, path: source, cues: cues);
+    _installWebGeneratedTrack(
+      select: !_webSubtitleUserChosen && !_webTrackSel.subtitlesOff,
+    );
+  }
+
+  /// 把这一集的生成字幕（[_webGeneratedSubtitle]）挂到当前视频 key 下（不是这一集的、还没有
+  /// 视频 key 时不挂）；[select] 时钉住它（撤掉还在途的站点轨请求，免得后到的站点轨抢走）。
+  void _installWebGeneratedTrack({required bool select}) {
+    final ({String bookUid, String path, List<AudioCue> cues})? generated =
+        _webGeneratedSubtitle;
+    if (generated == null ||
+        generated.bookUid != _activeBookUid ||
+        _webTrackSel.videoKey.isEmpty) {
+      return;
+    }
+    final String key = webVideoGeneratedTrackKey(_webTrackSel.videoKey);
+    _webTrackSel.tracks[key] = WebVideoTrack(
+      key: key,
+      videoKey: _webTrackSel.videoKey,
+      lang: kWebVideoGeneratedTrackLang,
+      cues: generated.cues,
+      languageCode: webVideoGeneratedSubtitleLanguage(generated.path),
+    );
+    if (select) {
+      _webTrackSel.subtitlesOff = false;
+      _webTrackSel.pendingKey = null;
+      _setWebSiteImageTrackShown(false);
+      _webTrackSel.pinnedKey = key;
+    }
+    _reselectWebTrack();
+    _rebuild(() {});
   }
 
   /// 网页档里按住 Shift 悬停在站点文字上：顶层查词窗口在光标处弹出（它是独立的置顶窗口，
@@ -1065,7 +1428,7 @@ extension _VideoWebSource on _VideoFushiPageState {
   /// 的全屏就是窗口全屏——把认领来的原生全屏原样收作 [_webWindowFullscreen]，不再压路由，按钮、
   /// Esc 与退页都按网页档的全屏收口。
   void _adoptHandedOverFullscreenForWeb() {
-    _didInitialFullscreen = true;
+    _initialFullscreen.settle();
     if (!_ownsHandedOverNativeFullscreen) return;
     _ownsHandedOverNativeFullscreen = false;
     _rebuild(() => _webWindowFullscreen = true);
@@ -1219,10 +1582,33 @@ extension _VideoWebSource on _VideoFushiPageState {
     final String sentence = fieldSentence.isEmpty
         ? cue.text.trim()
         : fieldSentence;
-    // YouTube 与浏览器扩展同一条路（[FushiRemoteMiningService.mineImmersion] 的 YouTube 分支）：
-    // 按视频 id + 字幕时间窗从真实视频流裁画面与音频，点下就在后台制卡——不进队列、不回放，
-    // 也就没有「回放时没全屏 / 外放声音 / 字幕换了语言」这些问题。
-    final String? youtubeId = youtubeVideoIdOrNull(href);
+    // 入队要的身份在点下这一刻冻结：YouTube 直裁失败退回入队时已过了几秒，用户可能换了集。
+    final String bookUid = _activeBookUid;
+    final String videoKey = _webTrackSel.videoKey;
+    Future<void> enqueue() async {
+      await _webMineQueue.enqueue(
+        bookUid: bookUid,
+        videoKey: videoKey,
+        href: href,
+        cueStartMs: cue.startMs,
+        cueEndMs: cue.endMs,
+        sentence: sentence,
+        cueSentence: cue.text,
+        fields: fields,
+      );
+      await _refreshStagedMineCount();
+      if (mounted) {
+        _showOsd(
+          t.web_video_mine_queued(count: _stagedMineCount.value),
+          icon: FushiIcons.checklist,
+        );
+      }
+    }
+
+    // YouTube 与浏览器扩展同一条路（[mineWebVideoCueDirectOrQueue]）：按视频 id + 字幕时间窗从
+    // 真实视频流裁画面与音频，点下就在后台制卡——不回放，也就没有「回放时没全屏 / 外放声音 /
+    // 字幕换了语言」这些问题；裁不出来才退回队列。
+    final String? youtubeId = webVideoDirectMineVideoId(href);
     if (youtubeId != null) {
       _trackBackgroundMine(
         _mineWebYoutubeCue(
@@ -1235,41 +1621,43 @@ extension _VideoWebSource on _VideoFushiPageState {
             clipStartMs: cue.startMs,
             clipEndMs: cue.endMs,
           ),
+          enqueue,
         ),
       );
       _showOsd(t.web_video_mine_background, icon: FushiIcons.checklist);
       return const MinePopupResult.queued();
     }
-    await _webMineQueue.enqueue(
-      bookUid: _activeBookUid,
-      videoKey: _webVideoKey,
-      href: href,
-      cueStartMs: cue.startMs,
-      cueEndMs: cue.endMs,
-      sentence: sentence,
-      cueSentence: cue.text,
-      fields: fields,
-    );
-    await _refreshStagedMineCount();
-    if (mounted) {
-      _showOsd(
-        t.web_video_mine_queued(count: _stagedMineCount.value),
-        icon: FushiIcons.checklist,
-      );
-    }
+    await enqueue();
     // 卡还没真落地：弹窗画「已加入」✓、不回查 Anki（TODO-448）。空回执会被弹窗当成失败
     // （「导出卡片失败」），用户再点一次就重复入队。
     return const MinePopupResult.queued();
   }
 
-  /// YouTube 后台制卡的结局只剩 OSD 能告诉用户（弹窗早已画了「已加入」）；失败抛出，由
-  /// [_trackBackgroundMine] 报错并记日志。
-  Future<void> _mineWebYoutubeCue(ImmersionMinePayload payload) async {
-    final RemoteMineResult res = await appModel
-        .createRemoteMiningService()
-        .mineImmersion(payload);
+  /// YouTube 后台制卡的结局只剩 OSD 能告诉用户（弹窗早已画了「已加入」）。直裁拿不到媒体退回
+  /// 制卡队列（[enqueue] 自己报「已入队」）；与取媒体无关的失败（Anki 未配置 / 落卡失败等）
+  /// 或连入队也失败则抛出，由 [_trackBackgroundMine] 报错并记日志。
+  Future<void> _mineWebYoutubeCue(
+    ImmersionMinePayload payload,
+    Future<void> Function() enqueue,
+  ) async {
+    // 统计用发起时冻结的库与归属：直裁要等流解析 + 裁剪，落卡时可能已经换集 / 离页。
+    final FushiDatabase mineDb = appModel.database;
+    final ({String bookKey, String title}) statIdentity = _studyStatsIdentity;
+    final RemoteMineResult? res = await mineWebVideoCueDirectOrQueue(
+      mineDirect: () =>
+          appModel.createRemoteMiningService().mineImmersion(payload),
+      enqueue: enqueue,
+      onFallback: (String reason) => ErrorLogService.instance.log(
+        'VideoFushi.web',
+        'YouTube direct mine failed, queued for replay: $reason',
+      ),
+    );
+    if (res == null) return;
     switch (res.result) {
       case 'success':
+        // 新制成功计入视频统计：与本页其它制卡（[_recordVideoMineStat]）、内置网页
+        // 播放器页的直裁、队列重放落卡同一笔账——改走直裁不该让 YouTube 的卡不再计数。
+        unawaited(_recordVideoMineStat(mineDb, statIdentity));
         _showMineOsd(
           t.card_exported(deck: res.deckName ?? ''),
           MineToastStatus.added,
@@ -1279,6 +1667,32 @@ extension _VideoWebSource on _VideoFushiPageState {
       default:
         throw StateError(res.message ?? res.detail ?? res.result);
     }
+  }
+
+  /// 「画质增强」说明态里的「切换到内置网页播放器」：记住宿主档偏好（与内置网页播放器页的
+  /// 宿主档菜单同一个键），同一本书原地换成内置网页播放器页（它有自己的超分，见
+  /// `web_video_shaders.dart`），集 / 轨 / 位置一并带过去。站点入口（[VideoFushiPage.webSite]）
+  /// 没有库里的书、内置档读不到，不给这个入口。
+  Future<void> _switchWebToBuiltinHosting() async {
+    final WebVideoPlaybackState? state = _webSession?.lastState;
+    await appModel.prefsRepo.setPref(
+      kWebVideoHostingPrefKey,
+      WebVideoHosting.builtin.name,
+    );
+    await _controller?.flushPosition();
+    if (!context.mounted) return;
+    await Navigator.of(context).pushReplacement(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => WebVideoFushiPage.neutralized(
+          bookUid: _activeBookUid,
+          repo: widget.repo,
+          hosting: WebVideoHosting.builtin,
+          mineReturnState: state == null ? null : WebMineReturnState.of(state),
+          returnToBrowser: widget.webBackToBrowser,
+        ),
+      ),
+    );
   }
 
   /// 跑制卡队列：同一本书原地换成内置网页播放器（可捕获的 1080p 档），画面一就绪就自动
@@ -1347,6 +1761,14 @@ extension _VideoWebSource on _VideoFushiPageState {
     }
     final int? seek = plan.seekMs;
     if (seek != null && controller != null) unawaited(controller.seekMs(seek));
+    switch (plan.setPlaying) {
+      case true:
+        if (controller != null) unawaited(controller.play());
+      case false:
+        if (controller != null) unawaited(controller.pause());
+      case null:
+        break;
+    }
   }
 
   /// 空闲判定：用户在播放器档里暂停了、队列非空、整机 2 分钟没输入 → 交接到内置档。

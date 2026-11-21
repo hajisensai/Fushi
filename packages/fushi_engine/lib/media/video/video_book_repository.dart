@@ -1,3 +1,4 @@
+import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:drift/drift.dart'
@@ -7,12 +8,20 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/download/downloaded_collection_order.dart';
+import 'package:fushi_engine/media/video/video_content_fingerprint.dart'
+    show backfillVideoContentFingerprints;
 import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/scraper/collection_member_policy.dart'
     show multiMemberCollectionIdByVideoUid;
+import 'package:fushi_engine/media/video/disc/disc_format.dart'
+    show isDiscMemberPath;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_disc_outputs.dart'
+    show deleteVideoSubtitleDiscOutputs;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
+    show videoSubtitleJobsRootUnder;
 import 'package:fushi_engine/media/video/video_local_files.dart';
 import 'package:fushi_engine/media/video/video_path_migration.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
@@ -91,6 +100,34 @@ class VideoBooksDeleteException implements Exception {
 }
 
 /// 被删行删前的快照：行一删，封面/字幕/附加图路径就再也推导不出来。
+/// 删行之后尾活的阶段（见 [VideoReclaimProgressCallback]，35YfcYO-zR）。
+enum VideoReclaimPhase {
+  /// 逐本回收：app 副本、内嵌字幕缓存，勾了「同时删除本地文件」（或有选择器
+  /// 导入副本）时再加 sidecar 字幕扫描与原件删除。`done` / `total` 有意义。
+  reclaiming,
+
+  /// 整库压缩（`wal_checkpoint`，空闲页够多时整库 `VACUUM`）：耗时按整库大小
+  /// 走，与删了几条无关，不可细分，进度条应切回不定态。
+  compacting,
+}
+
+/// 删除后尾活的进度：[VideoReclaimPhase.reclaiming] 时是已完成步数 / 总步数
+/// （单调不减，最后一步做完才到 `total`），[VideoReclaimPhase.compacting] 时两数
+/// 无意义（见 [VideoBookRepository.deleteVideoBooksAndReclaimAssets] 的
+/// `onReclaimProgress`）。
+typedef VideoReclaimProgressCallback =
+    void Function(VideoReclaimPhase phase, int done, int total);
+
+/// [VideoBookRepository.collectionPlaybackSnapshot] 的结果：播放器剧集面板一次
+/// 取齐的合集行、有序视频集行、集级刮削（bookUid → 行）、合集刮削与合集图组。
+typedef CollectionPlaybackSnapshot = ({
+  MediaCollectionRow? collection,
+  List<VideoBookRow> episodes,
+  Map<String, VideoScrapeMetaRow> episodeMeta,
+  CollectionScrapeMetaRow? collectionMeta,
+  List<MediaImageRow> images,
+});
+
 typedef _DeletedVideoSnapshot = ({
   String bookUid,
   String? coverPath,
@@ -106,6 +143,26 @@ class VideoBookRepository {
   const VideoBookRepository(this._db);
 
   final FushiDatabase _db;
+
+  /// 本进程里那一次存量内容指纹补算（见 [backfillContentFingerprintsOncePerProcess]）。
+  static Future<int>? _contentFingerprintBackfill;
+
+  /// 给还没有内容指纹的本地视频补算一次（v165 搬家识别，见
+  /// `video_content_fingerprint.dart`）。指纹必须在文件搬走**之前**算好，所以视频书架
+  /// 一打开就在后台补：升级后的存量行、手动导入的行都靠它。每行只读 128 KiB；进程内
+  /// 只跑一次，之后新入库 / 搬家改指的行由来源扫描当场记、原地换文件由扫描复查。
+  /// 返回写入的行数；出错记日志并按 0 算（只是增强证据，不影响书架）。
+  Future<int> backfillContentFingerprintsOncePerProcess() =>
+      _contentFingerprintBackfill ??= backfillVideoContentFingerprints(_db)
+          .catchError((Object e, StackTrace stack) {
+            developer.log(
+              'video content fingerprint backfill failed',
+              name: 'VideoBookRepository',
+              error: e,
+              stackTrace: stack,
+            );
+            return 0;
+          });
 
   /// 写入/更新一本视频书。
   ///
@@ -438,6 +495,68 @@ class VideoBookRepository {
   Future<VideoBookRow?> getByBookUid(String bookUid) =>
       _db.getVideoBookByBookUid(bookUid);
 
+  /// 按一批 bookUid 取行（不存在的不在结果里，顺序不保证）。批量操作别逐条
+  /// [getByBookUid]（BUG-4748：上万条 = 上万次查询）。
+  Future<List<VideoBookRow>> getByBookUids(Iterable<String> bookUids) =>
+      _db.getVideoBooksByBookUids(bookUids);
+
+  /// 播放器剧集面板（合集里的一集打开时）一次取齐的合集快照（video-5）。
+  ///
+  /// 旧路径在首帧前逐成员各查一次 `getByBookUid` + `episodeScrapeMeta`（24 集约 50
+  /// 次往返，全挡在 `_loadSingle` 之前）。这里语句数与集数无关：合集行 / 成员 /
+  /// 合集刮削 / 合集图组四条并发，成员视频行与集级刮削两条批量 `IN` 并发。
+  ///
+  /// [CollectionPlaybackSnapshot.episodes] 按成员 sortIndex 有序，已滤掉非视频成员
+  /// 与孤儿成员（集行已删）——与旧逐条路径的读取期过滤同口径。
+  Future<CollectionPlaybackSnapshot> collectionPlaybackSnapshot(
+    int collectionId,
+  ) async {
+    final (
+      MediaCollectionRow? collection,
+      List<MediaCollectionItemRow> members,
+      CollectionScrapeMetaRow? collectionMeta,
+      List<MediaImageRow> images,
+    ) = await (
+      _db.getMediaCollectionById(collectionId),
+      _db.getCollectionItems(collectionId),
+      _db.getCollectionScrapeMeta(collectionId),
+      _db.getMediaImagesForCollection(collectionId),
+    ).wait;
+    final List<String> videoKeys = <String>[
+      for (final MediaCollectionItemRow m in members)
+        if (m.mediaType == MediaKind.video.dbValue) m.entryKey,
+    ];
+    if (videoKeys.isEmpty) {
+      return (
+        collection: collection,
+        episodes: const <VideoBookRow>[],
+        episodeMeta: const <String, VideoScrapeMetaRow>{},
+        collectionMeta: collectionMeta,
+        images: images,
+      );
+    }
+    final (
+      List<VideoBookRow> rows,
+      Map<String, VideoScrapeMetaRow> metas,
+    ) = await (
+      _db.getVideoBooksByBookUids(videoKeys),
+      _db.getVideoScrapeMetaForBooks(videoKeys),
+    ).wait;
+    final Map<String, VideoBookRow> byUid = <String, VideoBookRow>{
+      for (final VideoBookRow r in rows) r.bookUid: r,
+    };
+    return (
+      collection: collection,
+      episodes: <VideoBookRow>[
+        for (final String key in videoKeys)
+          if (byUid[key] case final VideoBookRow r) r,
+      ],
+      episodeMeta: metas,
+      collectionMeta: collectionMeta,
+      images: images,
+    );
+  }
+
   /// 统一合集：某合集的成员引用行（按 sortIndex 有序）。播放器据此建播放列表兄弟集。
   Future<List<MediaCollectionItemRow>> getCollectionItems(int collectionId) =>
       _db.getCollectionItems(collectionId);
@@ -487,12 +606,22 @@ class VideoBookRepository {
   /// 视频库书架展示用列表：在 [listAll] 基础上自愈被数据根迁移遗弃的封面绝对路径
   /// （[_repairMovedCoverPaths]）。**只给展示层用**——删除 GC（[collectReferencedAssetPaths]）
   /// 与去重（[findByVideoPath]）走纯 [listAll]，不引入 path_provider 依赖与写副作用。
-  Future<List<VideoBookRow>> listForShelf() {
+  Future<List<VideoBookRow>> listForShelf() =>
+      _listForShelfFrom(_db.allVideoBooks);
+
+  /// [listForShelf] 的按 uid 版本（同样自愈封面路径），只取这几行：库页刮削增量
+  /// 刷新只换标题 / 封面变了的书架行，不为几行重列整库。不存在的 uid 不在结果里。
+  Future<List<VideoBookRow>> listForShelfByUids(Iterable<String> bookUids) =>
+      _listForShelfFrom(() => _db.getVideoBooksByBookUids(bookUids));
+
+  Future<List<VideoBookRow>> _listForShelfFrom(
+    Future<List<VideoBookRow>> Function() read,
+  ) {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
     // maintenance 活跃时仍允许纯读展示，但绝不在它结束后拿旧快照做路径自愈写回。
-    if (lease == null) return _db.allVideoBooks();
-    return _listForShelfUnlocked().whenComplete(lease.release);
+    if (lease == null) return read();
+    return _listForShelfUnlocked(read).whenComplete(lease.release);
   }
 
   /// 书架展示的**读**路径不持 [VideoCoverMutationGate]。
@@ -502,8 +631,10 @@ class VideoBookRepository {
   /// future 一旦被丢弃（页面销毁、widget 树拆除、测试 zone 结束），队列尾就永远
   /// 不完成，此后全进程的封面写入**全部死锁**。真正需要串行的只有下面
   /// [_repairMovedCoverPaths] 里那次极少发生的指针回写，锁就只加在那里。
-  Future<List<VideoBookRow>> _listForShelfUnlocked() async {
-    final List<VideoBookRow> rows = await _db.allVideoBooks();
+  Future<List<VideoBookRow>> _listForShelfUnlocked(
+    Future<List<VideoBookRow>> Function() read,
+  ) async {
+    final List<VideoBookRow> rows = await read();
     return _repairMovedCoverPaths(rows);
   }
 
@@ -527,21 +658,50 @@ class VideoBookRepository {
     if (rows.isEmpty) return rows;
     // 封面目录列一次成集合：绝大多数封面都在 coversDir 下（自动抽帧 / 刮削落地），
     // 存在性查集合即可，不再对每一行 `existsSync`——这条读路径每次库页刷新、每次
-    // 回填成功都走，几千个视频就是几千次同步 stat 在 UI isolate 上。目录外的
-    // 手选封面仍逐个 stat（少数）。目录解析失败（无 path_provider 的测试宿主）
-    // 退回逐行 stat，行为与从前一字不差。
+    // 回填成功都走，几千个视频就是几千次同步 stat 在 UI isolate 上。
+    //
+    // 目录外的封面（刮削把媒体目录里的 sidecar 海报路径写进 cover_path，常在
+    // 网络盘上）也不逐行 stat：自愈的成立条件是「原路径不存在 **且** coversDir
+    // 里有同名文件」，后一半查集合即可——没有同名文件就不可能自愈，原路径在不在
+    // 都不用问。只有同名文件确实存在的少数行才去问原路径，且走 async
+    // [File.exists]，不在 UI isolate 上同步等网络盘。
+    //
+    // 目录解析失败（无 path_provider 的测试宿主）退回逐行问文件系统，判定结果
+    // 与从前一致，只是改成 async。
     final _CoverDirSnapshot? snapshot = await _CoverDirSnapshot.take();
     Directory? coversDir = snapshot?.dir;
     final List<VideoBookRow> out = <VideoBookRow>[];
     for (final VideoBookRow row in rows) {
       final String? cover = row.coverPath;
-      if (cover == null || cover.isEmpty || _coverExists(cover, snapshot)) {
+      if (cover == null || cover.isEmpty) {
         out.add(row);
         continue;
       }
-      coversDir ??= await VideoStorage.coversDir();
-      final String candidate = p.join(coversDir.path, p.basename(cover));
-      if (candidate != cover && _coverExists(candidate, snapshot)) {
+      final bool candidateExists;
+      final String candidate;
+      if (snapshot != null) {
+        candidate = p.join(snapshot.dir.path, p.basename(cover));
+        candidateExists =
+            candidate != cover && snapshot.names.contains(p.basename(cover));
+        // 目录内的封面：在集合里就是存在；不在集合里时 candidate 就是它自己
+        // （或同一文件的另一种写法），candidateExists 必为 false。
+        if (!candidateExists ||
+            (snapshot.contains(cover) ?? await File(cover).exists())) {
+          out.add(row);
+          continue;
+        }
+      } else {
+        // 没有目录快照可查，只能逐行问文件系统——也走 async，不在 UI isolate
+        // 上同步 stat。
+        if (await File(cover).exists()) {
+          out.add(row);
+          continue;
+        }
+        coversDir ??= await VideoStorage.coversDir();
+        candidate = p.join(coversDir.path, p.basename(cover));
+        candidateExists = candidate != cover && await File(candidate).exists();
+      }
+      if (candidateExists) {
         // 只有这一次指针回写需要与其他封面写入串行。锁内必须按 bookUid 重读当前
         // cover_path：这批 rows 是进锁前的快照，期间用户可能刚手选了封面，拿旧快照
         // 覆盖等于把手选结果抹掉（正是 gate 当初要防的那个竞态）。
@@ -1197,7 +1357,7 @@ class VideoBookRepository {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
     if (lease == null) {
-      return Future<void>.error(StateError('视频刮削资料正在清理'));
+      return Future<void>.error(VideoScrapeMaintenanceActiveError());
     }
     return VideoCoverMutationGate.runExclusive(
       () => _db.updateVideoBookCover(bookUid, coverPath),
@@ -1209,7 +1369,7 @@ class VideoBookRepository {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
     if (lease == null) {
-      return Future<void>.error(StateError('视频刮削资料正在清理'));
+      return Future<void>.error(VideoScrapeMaintenanceActiveError());
     }
     return VideoCoverMutationGate.runExclusive(
       () => _db.clearVideoBookCover(bookUid),
@@ -1265,18 +1425,17 @@ class VideoBookRepository {
 
   /// 删除传播（显式确认式）：仅当用户选「同步删除」才记 sync 删除墓碑，供同步发布
   /// 到远端标记、其他设备逐条确认后也删。best-effort：记账失败不影响视频已删。
+  /// 一批键一个 batch（BUG-4748：原来逐条独立提交，上万条要上万次 fsync）。
   Future<void> _writeVideoDeletionTombstones(Iterable<String> bookUids) async {
-    final int now = DateTime.now().millisecondsSinceEpoch;
-    for (final String bookUid in bookUids) {
-      try {
-        await _db.writeSyncDeletionTombstone(
-          SyncTombstoneKind.video.dbValue,
-          bookUid,
-          now,
-        );
-      } catch (_) {
-        // best-effort：记账失败不影响视频已删。
-      }
+    try {
+      await _db.writeSyncDeletionTombstones(
+        SyncTombstoneKind.video.dbValue,
+        bookUids,
+        DateTime.now().millisecondsSinceEpoch,
+      );
+    } catch (e, stack) {
+      // best-effort：记账失败不影响视频已删。
+      engineLog.log('VideoBookRepository.writeDeletionTombstones', e, stack);
     }
   }
 
@@ -1320,6 +1479,12 @@ class VideoBookRepository {
   /// 文件标 skip），删之后才做记录对账。本仓库层不认识下载管线（管线依赖仓库，
   /// 反过来会成环），所以这两步都由 `video_library_delete.dart` 在上层接线。
   ///
+  /// [onReclaimProgress]：行删掉之后的尾活进度，给大批量删除的进度条用（BUG-4748 /
+  /// 35YfcYO-zR）。逐本回收每本两步（app 副本、内嵌字幕缓存）；要删原件 / 选择器
+  /// 副本时再加每本两步（sidecar 字幕扫描、原件删除，按实际条数折算）——所以
+  /// `total` 是删除条数的 2 或 4 倍，最后一个文件删完才报满。之后若要压缩数据库，
+  /// 再报一次 [VideoReclaimPhase.compacting]。
+  ///
   /// [keepLocalFiles]：调用方确认已转交给别的库的原始文件，与幸存行引用的文件同等
   /// 进删除护栏（含 iOS 选择器副本的强制回收）。
   Future<int> deleteVideoBooksAndReclaimAssets(
@@ -1331,11 +1496,12 @@ class VideoBookRepository {
     LocalVideoFileDeleteHooks? localFileHooks,
     Future<void> Function()? afterDeleteBeforeReclaim,
     Iterable<String> keepLocalFiles = const <String>[],
+    VideoReclaimProgressCallback? onReclaimProgress,
   }) {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
     if (lease == null) {
-      return Future<int>.error(StateError('视频刮削资料正在清理'));
+      return Future<int>.error(VideoScrapeMaintenanceActiveError());
     }
     return VideoCoverMutationGate.runExclusive(
       () => _deleteVideoBooksAndReclaimAssetsUnlocked(
@@ -1347,6 +1513,7 @@ class VideoBookRepository {
         localFileHooks: localFileHooks,
         afterDeleteBeforeReclaim: afterDeleteBeforeReclaim,
         keepLocalFiles: keepLocalFiles,
+        onReclaimProgress: onReclaimProgress,
       ),
     ).whenComplete(lease.release);
   }
@@ -1360,6 +1527,7 @@ class VideoBookRepository {
     required LocalVideoFileDeleteHooks? localFileHooks,
     required Future<void> Function()? afterDeleteBeforeReclaim,
     required Iterable<String> keepLocalFiles,
+    required VideoReclaimProgressCallback? onReclaimProgress,
   }) async {
     final List<String> uids = bookUids.toSet().toList(growable: false);
     // v68：附加图行随删行 FK cascade 消失，路径必须删行**前**快照（与 coverPath
@@ -1437,17 +1605,32 @@ class VideoBookRepository {
       final List<VideoBookRow> survivors = deleted.isEmpty
           ? const <VideoBookRow>[]
           : await listAll();
-      if (deleted.isNotEmpty) {
-        await _reclaimDeletedVideoBooksAssetsUnlocked(deleted, survivors);
-      }
       // 选择器导入副本（iOS 容器 `tmp/` 里 app 拷出来的整份视频，BUG-2863）是 app
       // 自有资产：没勾「同时删除本地文件」也要回收，只是候选限定在副本目录之内，
-      // 用户自己的原件仍然只听勾选框的。
+      // 用户自己的原件仍然只听勾选框的。只是几个目录路径，提到回收之前取，好让
+      // 进度总数一开始就把原件删除算进去。
       final List<String> importCopyDirs = deleteLocalFiles || deleted.isEmpty
           ? const <String>[]
           : await _pickerImportCopyDirsBestEffort();
-      if (deleted.isNotEmpty &&
-          (deleteLocalFiles || importCopyDirs.isNotEmpty)) {
+      final bool deletesLocalFiles =
+          deleted.isNotEmpty && (deleteLocalFiles || importCopyDirs.isNotEmpty);
+      // 进度单位：每本两步回收；要删原件时再加每本两步（sidecar 扫描、原件删除），
+      // 这两段的实际条数（视频数 / 候选数）按比例折算进各自 deleted.length 步，
+      // 保证进度单调、最后一个文件删完才到 100%（35YfcYO-zR）。
+      final int n = deleted.length;
+      final int reclaimSteps = n * 2;
+      final int total = reclaimSteps + (deletesLocalFiles ? n * 2 : 0);
+      void report(int done) =>
+          onReclaimProgress?.call(VideoReclaimPhase.reclaiming, done, total);
+      int scaled(int done, int count) => count <= 0 ? n : (n * done) ~/ count;
+      if (deleted.isNotEmpty) {
+        await _reclaimDeletedVideoBooksAssetsUnlocked(
+          deleted,
+          survivors,
+          onProgress: onReclaimProgress == null ? null : report,
+        );
+      }
+      if (deletesLocalFiles) {
         bool selected(String path) =>
             deleteLocalFiles || isPickerImportCopyPath(path, importCopyDirs);
         // 原件删除排在 app 副本回收之后、compact 之前：行早已消失，这里是尾活；
@@ -1479,11 +1662,17 @@ class VideoBookRepository {
           ...videoCandidates,
           for (final String path in await localVideoSidecarSubtitleCandidates(
             videoCandidates,
+            onVideoDone: onReclaimProgress == null
+                ? null
+                : (int done) => report(
+                    reclaimSteps + scaled(done, videoCandidates.length),
+                  ),
           ))
             if (selected(path) &&
                 !stillReferenced.contains(platformPathKey(path)))
               path,
         ];
+        report(reclaimSteps + n);
         if (candidates.isNotEmpty) {
           // 先让引用方放手，再销毁实体：还在做种的文件必须先在下载后端标 skip，
           // 否则文件一消失，libtorrent / qB 下一次校验就把整个种子停掉。
@@ -1491,20 +1680,28 @@ class VideoBookRepository {
             'beforeDelete',
             () => localFileHooks?.beforeDelete?.call(candidates),
           );
-          final LocalFileDeleteReport report = await deleteLocalVideoFiles(
-            candidates: candidates,
-            stillReferenced: stillReferenced,
-          );
-          for (final LocalFileDeleteFailure failure in report.failures) {
+          final LocalFileDeleteReport deleteReport =
+              await deleteLocalVideoFiles(
+                candidates: candidates,
+                stillReferenced: stillReferenced,
+                onCandidateDone: onReclaimProgress == null
+                    ? null
+                    : (int done) => report(
+                        reclaimSteps + n + scaled(done, candidates.length),
+                      ),
+              );
+          for (final LocalFileDeleteFailure failure in deleteReport.failures) {
             engineLog.log('VideoLocalFileDelete', failure);
           }
           await _runLocalFileHook(
             'afterDelete',
-            () => localFileHooks?.afterDelete?.call(report),
+            () => localFileHooks?.afterDelete?.call(deleteReport),
           );
         }
+        report(total);
       }
       if (compactDatabase && deleted.isNotEmpty) {
+        onReclaimProgress?.call(VideoReclaimPhase.compacting, total, total);
         await compactAfterVideoDeleteBestEffort();
       }
     }
@@ -1612,10 +1809,14 @@ class VideoBookRepository {
   ///
   /// 语义不变：仍被幸存行引用的封面/字幕/附加图/内嵌字幕缓存一律保留。每一步
   /// 单独 best-effort，一步失败不拦后续步骤、不翻转「行已删」。
+  ///
+  /// [onProgress] 入参是已完成步数，共 `2 * deleted.length` 步（app 副本、内嵌
+  /// 字幕缓存各一本一步），每步做完才报。
   Future<void> _reclaimDeletedVideoBooksAssetsUnlocked(
     List<_DeletedVideoSnapshot> deleted,
-    List<VideoBookRow> survivors,
-  ) async {
+    List<VideoBookRow> survivors, {
+    void Function(int done)? onProgress,
+  }) async {
     if (deleted.isEmpty) return;
     final Set<String> deletedUids = <String>{
       for (final _DeletedVideoSnapshot snapshot in deleted) snapshot.bookUid,
@@ -1626,21 +1827,27 @@ class VideoBookRepository {
     ];
     final ({Set<String> covers, Set<String> subtitles}) refs =
         referencedAssetPathsOf(others);
-    for (final _DeletedVideoSnapshot snapshot in deleted) {
-      try {
-        await VideoStorage.deleteBookAssets(
-          deletedCoverPath: snapshot.coverPath,
-          deletedSubtitlePath: snapshot.subtitlePath,
-          deletedSecondarySubtitlePath: snapshot.secondarySubtitlePath,
-          stillReferencedCoverPaths: refs.covers,
-          stillReferencedSubtitlePaths: refs.subtitles,
-        );
-      } catch (e, stack) {
-        fushiDebugPrint(
-          'VideoBookRepository: video asset cleanup failed: $e\n$stack',
-        );
-      }
+    try {
+      // 护栏集合只规范化一次（BUG-4748：原来每本各算一遍 = O(删除数 × 幸存数)）。
+      await VideoStorage.deleteBooksAssets(
+        books: <DeletedVideoAssetPaths>[
+          for (final _DeletedVideoSnapshot snapshot in deleted)
+            (
+              coverPath: snapshot.coverPath,
+              subtitlePath: snapshot.subtitlePath,
+              secondarySubtitlePath: snapshot.secondarySubtitlePath,
+            ),
+        ],
+        stillReferencedCoverPaths: refs.covers,
+        stillReferencedSubtitlePaths: refs.subtitles,
+        onBookDone: onProgress,
+      );
+    } catch (e, stack) {
+      fushiDebugPrint(
+        'VideoBookRepository: video asset cleanup failed: $e\n$stack',
+      );
     }
+    onProgress?.call(deleted.length);
     // v68：附加图文件（video_covers/images/，行已 cascade 删除）。护栏：仍被
     // 幸存行引用的路径保留（同名共享理论上不存在——文件名按 bookUid 派生——
     // 但护栏与封面/字幕同纪律，宁可漏删）。
@@ -1677,20 +1884,67 @@ class VideoBookRepository {
     final Set<String> survivingVideoPaths = <String>{
       for (final VideoBookRow row in others) normalizeVideoPath(row.videoPath),
     };
+    int cacheDone = 0;
     for (final _DeletedVideoSnapshot snapshot in deleted) {
       final String videoPath = snapshot.videoPath;
-      if (videoPath.isNotEmpty &&
-          survivingVideoPaths.contains(normalizeVideoPath(videoPath))) {
-        continue;
+      final bool stillUsed =
+          videoPath.isNotEmpty &&
+          survivingVideoPaths.contains(normalizeVideoPath(videoPath));
+      if (!stillUsed) {
+        try {
+          await VideoStorage.deleteEmbeddedSubtitleCacheForVideoPath(videoPath);
+        } catch (e, stack) {
+          fushiDebugPrint(
+            'VideoBookRepository: embedded subtitle cache cleanup failed: '
+            '$e\n$stack',
+          );
+        }
       }
-      try {
-        await VideoStorage.deleteEmbeddedSubtitleCacheForVideoPath(videoPath);
-      } catch (e, stack) {
-        fushiDebugPrint(
-          'VideoBookRepository: embedded subtitle cache cleanup failed: '
-          '$e\n$stack',
+      // 这一本做完才报，最后一本处理完进度才到满（35YfcYO-zR）。
+      onProgress?.call(deleted.length + ++cacheDone);
+    }
+    // 与上面各步同一纪律：单独 best-effort，失败记日志、不翻转「行已删」。
+    try {
+      await _reclaimDiscSubtitleOutputs(deleted, others);
+    } catch (e, stack) {
+      engineLog.log('VideoBookRepository.discSubtitleOutputs', e, stack);
+    }
+  }
+
+  /// 原盘成员（蓝光 title / 分集、DVD title）生成过的字幕在任务根的 `disc_out` 里
+  /// （不在盘旁），删行之后没人引用就回收；同一成员仍在幸存行（本体或播放列表）里的
+  /// 保留。只有原盘行才有这些目录，普通视频的字幕在视频旁、随原件删除链走。
+  Future<void> _reclaimDiscSubtitleOutputs(
+    List<_DeletedVideoSnapshot> deleted,
+    List<VideoBookRow> others,
+  ) async {
+    final List<String> members = <String>[
+      for (final _DeletedVideoSnapshot snapshot in deleted)
+        for (final String path in <String>[
+          snapshot.videoPath,
+          ...playlistEntryPaths(snapshot.playlistJson),
+        ])
+          if (isDiscMemberPath(path)) path,
+    ];
+    if (members.isEmpty) return;
+    final Directory jobsRoot = videoSubtitleJobsRootUnder(
+      await enginePaths.supportRootDirectory(),
+    );
+    final List<(String, Object)> failures =
+        await deleteVideoSubtitleDiscOutputs(
+          jobsRoot: jobsRoot,
+          memberPaths: members,
+          keepMemberPaths: <String>{
+            for (final VideoBookRow row in others)
+              for (final String path in <String>[
+                row.videoPath,
+                ...playlistEntryPaths(row.playlistJson),
+              ])
+                if (isDiscMemberPath(path)) path,
+          },
         );
-      }
+    for (final (String path, Object error) in failures) {
+      engineLog.log('VideoBookRepository.discSubtitleOutputs', '$path: $error');
     }
   }
 
@@ -1795,20 +2049,31 @@ class VideoBookRepository {
   /// 同文件 bookUid，避免派生 `video/ext/<sha1>` 第二身份重复插行（TODO-903）。
   ///
   /// [excludeBookUid] 非 null 时跳过该 book 自己（与其余方法一致）。
+  ///
+  /// 循环里对多个路径逐个判重的调用方改用 [videoPathIndex]：这里每次调用都整表
+  /// 读一遍。
   Future<VideoBookRow?> findByVideoPath(
     String videoPath, {
     String? excludeBookUid,
   }) async {
     if (videoPath.isEmpty) return null;
+    final String target = normalizeVideoPath(videoPath);
     final List<VideoBookRow> all = await listAll();
     for (final VideoBookRow row in all) {
       if (excludeBookUid != null && row.bookUid == excludeBookUid) continue;
-      if (normalizeVideoPath(row.videoPath) == normalizeVideoPath(videoPath)) {
-        return row;
-      }
+      if (normalizeVideoPath(row.videoPath) == target) return row;
     }
     return null;
   }
+
+  /// 整表读一次，建「归一路径 → 行」的查表，给要对一批路径判重 / 反查的调用方
+  /// 用（逐个 [findByVideoPath] 是 N 次整表读 + N×M 次归一）。口径与
+  /// [findByVideoPath] 相同：两侧都归一、同一路径多行时取表序第一条。
+  ///
+  /// 是调用那一刻的快照：调用方在循环里自己新建了行的，要用
+  /// [VideoPathIndex.add] 补进去。
+  Future<VideoPathIndex> videoPathIndex() async =>
+      VideoPathIndex(await listAll());
 
   Future<bool> isDuplicateVideoPath(
     String videoPath, {
@@ -1848,11 +2113,29 @@ class VideoBookRepository {
   });
 }
 
+/// [VideoBookRepository.videoPathIndex] 的结果：归一路径 → 视频行。
+class VideoPathIndex {
+  VideoPathIndex(Iterable<VideoBookRow> rows) {
+    rows.forEach(add);
+  }
+
+  final Map<String, VideoBookRow> _byPath = <String, VideoBookRow>{};
+
+  /// 同一归一路径已有行时保留先到的那条（与 [VideoBookRepository.findByVideoPath]
+  /// 「表序第一条」一致）。
+  void add(VideoBookRow row) =>
+      _byPath.putIfAbsent(normalizeVideoPath(row.videoPath), () => row);
+
+  /// 空路径不匹配任何行。
+  VideoBookRow? find(String videoPath) =>
+      videoPath.isEmpty ? null : _byPath[normalizeVideoPath(videoPath)];
+}
+
 /// [VideoStorage.coversDir] 的一次性快照：目录下的文件名集合。
 ///
-/// 给 `_repairMovedCoverPaths` 判断封面存在性用——目录内的封面查集合、零系统
-/// 调用；目录解析失败（测试宿主没有 path_provider）时 [take] 返回 null，调用方退回
-/// 逐个 stat。
+/// 给 `_repairMovedCoverPaths` 判断封面存在性用——目录内的封面、以及「目录里
+/// 有没有同名文件」都查集合、零系统调用；目录解析失败（测试宿主没有
+/// path_provider）时 [take] 返回 null，调用方退回逐个 stat。
 class _CoverDirSnapshot {
   const _CoverDirSnapshot(this.dir, this.names);
 
@@ -1888,12 +2171,9 @@ class _CoverDirSnapshot {
     return _CoverDirSnapshot(dir, names);
   }
 
-  /// [path] 在本目录下时按集合判；否则 null（调用方 stat）。
+  /// [path] 在本目录下时按集合判；否则 null（调用方自己判原路径）。
   bool? contains(String path) {
     if (!p.equals(p.dirname(path), dir.path)) return null;
     return names.contains(p.basename(path));
   }
 }
-
-bool _coverExists(String path, _CoverDirSnapshot? snapshot) =>
-    snapshot?.contains(path) ?? File(path).existsSync();

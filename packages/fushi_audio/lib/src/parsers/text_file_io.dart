@@ -1,11 +1,15 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
+
+import 'package:fushi_compute/fushi_compute.dart' show LegacyTextDecoder;
 
 /// 文本字节流的 Unicode 家族编码。由 BOM 或（无 BOM 时）字节分布启发式判定。
 ///
 /// 只覆盖 Unicode 家族——Shift-JIS / CP932 / GBK / Big5 / EUC-JP 等传统多字节
-/// 编码无法靠 BOM 或简单字节分布可靠区分，交给 [tryPlatformCharsetDecode]。
+/// 编码无法靠 BOM 或简单字节分布可靠区分，交给 [tryPlatformCharsetDecode] 与
+/// [decodeLegacyText]。
 enum UnicodeTextEncoding {
   /// UTF-8，带 `EF BB BF` BOM。
   utf8Bom(bomLength: 3),
@@ -203,36 +207,23 @@ String? decodeUnicodeText(Uint8List bytes) {
   }
 }
 
-/// 平台字符集检测的解码函数签名：把 [bytes] 识别成传统多字节编码
-/// （Shift-JIS / CP932 / GBK / Big5 / EUC-JP …）并解成字符串；识别不了返回 null。
+/// 平台字符集检测的解码函数签名：把 [bytes] 识别成传统编码
+/// （Shift-JIS / CP932 / GBK / Big5 / EUC-JP / EUC-KR / Windows-125x …）并解成字符串；
+/// 识别不了返回 null。
 typedef PlatformCharsetDecoder = Future<String?> Function(Uint8List bytes);
 
 /// 平台字符集检测装配点（与 `fushiDebugPrint` 同范式）。
 ///
-/// 本文件是纯 Dart（被无头服务端 `dart compile exe` 消费），不能直接引
-/// `flutter_charset_detector` method-channel 插件。插件实现在
-/// `platform_charset_detector.dart`（只由全 barrel `fushi_audio.dart` 导出），
-/// Flutter app 在 `main()` 里调 `installPlatformCharsetDetector()` 写入这里。
+/// 本文件是纯 Dart（被无头服务端消费），不能直接引 `flutter_charset_detector`
+/// method-channel 插件。插件实现在 app 的 `platform_charset_detector.dart`，
+/// Flutter app 启动时调 `installPlatformCharsetDetector()` 写入这里。
 ///
-/// null = 未装配（服务端 / 纯 Dart 测试）→ [tryPlatformCharsetDecode] 返回 null，
-/// 与从前插件在桌面端抛 `MissingPluginException` 的降级路径**行为一致**。
+/// 插件只有 android / ios 实现（1.0.2 的 `flutter.plugin.platforms` 仅这两项），
+/// 移动端让它先判；桌面三端、无头服务端、纯 Dart 测试都不装配——这些环境直接落到
+/// [decodeLegacyText]（覆盖面相当：中日编码、韩文 EUC-KR、Windows-125x 等单字节编码）。
 PlatformCharsetDecoder? platformCharsetDecoder;
 
 /// 调用已装配的平台字符集检测解码 [bytes]；未装配或本平台不可用时返回 null。
-///
-/// 兼容层说明（按仓库规则记录原因、影响范围与清理条件）：
-/// - **为什么无法根治**：`flutter_charset_detector` 1.0.2 只提供 android / ios
-///   联邦实现（其 pubspec 的 `flutter.plugin.platforms` 仅这两项），
-///   Windows / macOS / Linux 落回 `MethodChannelCharsetDetector`，
-///   `invokeMethod` 必然抛 `MissingPluginException`（该容错在
-///   `platform_charset_detector.dart` 里）。这是**上游依赖的平台覆盖缺口**，
-///   不是本仓能修的调用错误。
-/// - **影响范围**：桌面三端与无头服务端读取 Shift-JIS / CP932 / GBK / Big5 /
-///   EUC-JP 等传统多字节编码的字幕、弹幕、m3u8、纯文本书时，无法做字符集自动
-///   识别，只能降级到宽松 UTF-8（少数字符变 U+FFFD）。Unicode 家族（含本函数
-///   上游的 UTF-8 / UTF-16 / UTF-32 判定）不受影响。
-/// - **清理条件**：换成纯 Dart 的字符集检测实现后，把它直接写成
-///   [platformCharsetDecoder] 的默认值，删掉 null 分支。
 Future<String?> tryPlatformCharsetDecode(Uint8List bytes) async {
   final PlatformCharsetDecoder? decoder = platformCharsetDecoder;
   if (decoder == null) {
@@ -241,13 +232,44 @@ Future<String?> tryPlatformCharsetDecode(Uint8List bytes) async {
   return decoder(bytes);
 }
 
+/// [decodeLegacyText] 在调用方 isolate 里同步解码的输入上限（字节）。
+///
+/// 原生解码四个候选编码各解一遍并逐字符计分（chardetng 另过一遍），实测（Windows x64 release）约
+/// 55～95 ms / MB：8 KB ≈ 0.5～0.6 ms，16 KB 的 Shift_JIS 已到 1.3 ms。超过这个
+/// 上限的输入（绝大多数字幕文件）放后台 isolate，不占 UI isolate。
+const int kLegacyDecodeInlineMaxBytes = 8 * 1024;
+
+String? _decodeLegacyTextSync(Uint8List bytes) =>
+    LegacyTextDecoder.decodeDocument(bytes)?.text;
+
+/// 把 [bytes] 当成一整份非 Unicode 旧编码（Shift_JIS / CP932、GBK、EUC-JP、Big5、
+/// 韩文 EUC-KR / CP949、Windows-1251 / 1252 / 1256 / 874 等单字节编码）的文本判编码并
+/// 解码；判不出返回 null。
+///
+/// 实现在 Rust 计算内核（`native/fushi_compute/src/document_charset.rs`：chardetng 认
+/// EUC-KR 与单字节编码，中日编码交给 `legacy_text.rs`，与曲库 ID3 乱码修复、漫画 zip
+/// 条目名同一套判据），五端与无头服务端同一份。原生库是硬依赖：缺库时抛
+/// `FushiComputeUnavailableError`，不静默降级。
+///
+/// 判不出（返回 null）的情形：全 ASCII；基本是 UTF-8、只坏了少数几处；证据太少
+/// （不到 8 个高位字节）或没有编码能在容错口径内解开。开头的 UTF-8 BOM 不算正文。
+Future<String?> decodeLegacyText(Uint8List bytes) {
+  if (bytes.length <= kLegacyDecodeInlineMaxBytes) {
+    return Future<String?>.value(_decodeLegacyTextSync(bytes));
+  }
+  return Isolate.run(() => _decodeLegacyTextSync(bytes));
+}
+
 /// 解码文本字节，自动识别编码。**永远返回字符串，不会因编码问题抛异常**。
 ///
 /// 分级策略：
 /// 1. [decodeUnicodeText]——纯 Dart，覆盖 UTF-8（含 BOM）/ UTF-16 LE·BE
 ///    （含无 BOM）/ UTF-32 LE·BE。BOM 在此处**统一剥除**。
-/// 2. [tryPlatformCharsetDecode]——移动端插件识别 Shift-JIS / CP932 / EUC-JP 等。
-/// 3. `utf8.decode(allowMalformed: true)`——最后兜底。宁可少数字符变 U+FFFD，
+/// 2. [tryPlatformCharsetDecode]——只在装了平台插件且它认得出时生效（移动端）。
+/// 3. [decodeLegacyText]——Rust 计算内核识别 Shift_JIS / CP932 / GBK / EUC-JP /
+///    Big5 / EUC-KR 与单字节编码。桌面三端与无头服务端的非 Unicode 文本靠这一级
+///    （BUG-4798）。
+/// 4. `utf8.decode(allowMalformed: true)`——最后兜底。宁可坏字节变 U+FFFD，
 ///    也不能让整个字幕/弹幕/播放列表加载失败（BUG-1490）。
 Future<String> decodeTextBytes(Uint8List bytes) async {
   final String? unicode = decodeUnicodeText(bytes);
@@ -258,6 +280,10 @@ Future<String> decodeTextBytes(Uint8List bytes) async {
   if (detected != null) {
     // 原生检测器对 UTF-16/UTF-8 也可能返回带 BOM 的串，统一剥掉。
     return stripLeadingBom(detected);
+  }
+  final String? legacy = await decodeLegacyText(bytes);
+  if (legacy != null) {
+    return legacy;
   }
   return utf8.decode(bytes, allowMalformed: true);
 }

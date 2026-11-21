@@ -391,7 +391,7 @@ final class VideoRemotePlaybackBinding {
 final class VideoRemoteHost implements VideoRemoteService {
   VideoRemoteHost({
     required FavoriteSentenceRepository Function() favorites,
-    Stream<String?> Function()? favoriteChanges,
+    Stream<void> Function()? favoriteChanges,
     VideoRemoteLibrary? library,
     DateTime Function()? now,
   }) : _favorites = favorites,
@@ -405,8 +405,8 @@ final class VideoRemoteHost implements VideoRemoteService {
     );
   }
   final FavoriteSentenceRepository Function() _favorites;
-  final Stream<String?> Function()? _favoriteChanges;
-  StreamSubscription<String?>? _favoriteSubscription;
+  final Stream<void> Function()? _favoriteChanges;
+  StreamSubscription<void>? _favoriteSubscription;
   final VideoRemoteLibrary? _library;
   final DateTime Function() _now;
   late final VideoRemoteSessionCore _core;
@@ -605,7 +605,7 @@ final class VideoRemoteHost implements VideoRemoteService {
   ) async {
     if (operation == 'snapshot') {
       await _core.acquire(peerId);
-      _favoriteSubscription ??= _favoriteChanges?.call().listen((String? _) {
+      _favoriteSubscription ??= _favoriteChanges?.call().listen((void _) {
         _favoriteVersion++;
         final Future<void> Function()? changed = _binding?.favoritesChanged;
         if (changed != null) {

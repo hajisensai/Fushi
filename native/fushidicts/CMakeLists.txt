@@ -74,10 +74,15 @@ add_subdirectory(fushidicts_external/utf8proc EXCLUDE_FROM_ALL)
 add_library(fushidicts STATIC
     fushidicts_src/hash/hash.cpp
     fushidicts_src/hash/bloom.cpp
+    fushidicts_src/hash/union_filter.cpp
+    fushidicts_src/hash/key_index.cpp
+    fushidicts_src/hash/dict_index.cpp
     fushidicts_src/importer.cpp
     fushidicts_src/memory/memory.cpp
     fushidicts_src/zip/zip.cpp
     fushidicts_src/json/yomitan_parser.cpp
+    fushidicts_src/json/meta_record.cpp
+    fushidicts_src/upgrade.cpp
     fushidicts_src/mdx/mdx_reader.cpp
     fushidicts_src/stardict/stardict_reader.cpp
     fushidicts_src/text_processor/text_processor.cpp

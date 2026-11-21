@@ -27,6 +27,8 @@ Fushi 的 Rust 计算内核：CPU 密集操作（哈希 / 图像 / 文本匹配 
 | `ffc_hash_ed2k_finish(ctx*, u8 out[32], i32* has_alt) -> i32` | `out[0..16]` 红变体；`*has_alt=1` 时 `out[16..32]` 为蓝变体（长度恰为 9728000 的非零整数倍） |
 | `ffc_hash_ed2k_free(ctx*)` | 释放（NULL 无操作） |
 | `ffc_hash_sha256_new / _update / _finish(ctx*, u8 out[32]) / _free` | SHA-256，同上形态 |
+| `ffc_hash_sha256_file(const u8* path, usize, u8 out[32], u64* out_len) -> i32` | 整文件 SHA-256，读盘也在 Rust（路径 UTF-8）；打不开 / 读失败回 `-5`（IO_ERROR）。Dart 以非叶调用，不挡 GC 安全点（BUG-5088） |
+| `ffc_hash_crc32_file(const u8* path, usize, u32* out, u64* out_len) -> i32` | 整文件 CRC-32，同上 |
 | `ffc_hash_crc32(u32 crc, const u8*, usize) -> u32` | CRC-32（zip / IEEE），在上一段结果上续算，首段传 0 |
 | `ffc_hash_uuid_v5_batch(const u8* ns[16n], const u8* names, const u64* offsets[n+1], usize n, u8* out[16n]) -> i32` | 批量 RFC 9562 UUIDv5（SHA-1）；名字是打包的 UTF-8（第 i 个 = `names[offsets[i]..offsets[i+1]]`） |
 | `ffc_hash_hash53_batch(const u8* data, const u64* offsets[n+1], usize n, u64* out[n]) -> i32` | 批量 53 位确定性正整数（SHA-256 前 7 字节大端取低 53 位，0 记作 1） |
@@ -144,6 +146,20 @@ galgame helper / hook 相关（Windows 专属规则域，另开任务）。
 | epub_builder `_crc32` | 同上 400 MiB | 3,470 ms | 80 ms | 43× |
 | 内存 SHA-256 | 64 MiB | 1,173 ms | 43 ms | 27× |
 | 整文件 SHA-256（异步读，UI isolate 可用） | 256 MiB | 4,829 ms | 408 ms | 11.8× |
+
+## 图像域：漫画上传副本的文字覆盖
+
+`src/image/composite.rs` 的 `ffc_image_composite_rgba_jpeg` 接收编码原图与整页 straight RGBA
+覆盖层，解码并转正 EXIF、将透明源合白底、按面积平均缩小，再一次合成并编码 4:4:4 JPEG。
+输出宽高各为 1..1280，不能放大源图；输入只读，Rust 返回缓冲按通用 `ffc_free_bytes` 释放。
+
+Dart 入口为 `FushiComputeImage.compositeRgbaJpeg`，符号首次调用时绑定；缺符号仍是硬依赖错误。
+应用层 `manga_audio_substitution_image.dart` 用系统字体为命中替换表的 OCR 块排字，生成整页透明覆盖层；
+传 `ImageByteFormat.rawStraightRgba`，不能用预乘 alpha 的 `rawRgba`。解码、缩放、合成、编码放后台
+isolate，整页一次跨 FFI。处理失败返回 null，不可回退上传原图；本地页图与 OCR 文件不改写。
+
+回归覆盖原生像素合成、EXIF、透明度与参数校验，Dart FFI 生命周期，以及 Flutter 横竖排、缩放坐标、
+倾斜块范围与最终上传 JPEG 的实际像素。
 
 ## 字体域
 
@@ -457,6 +473,7 @@ Unicode 版本也比 Dart VM 的表新——Rust 1.96 下有 465 个码点 Dart 
 |---|---|---|
 | `ffc_crypto_aacs_open / _decrypt_units / _close` | AACS 1 内容解密：求单元密钥 + CBC + 0x47 校验 + 清 CPI + 多 key 轮换重试，一次处理一批 6144 字节单元；遇坏即停，失败码分三类：-20 标为未加密却不是合法 TS（全零单元落这里，数据坏）、-21 哪个 key 都解不开且还没解开过加密单元（key 不符或首单元坏，分不清）、-23 哪个 key 都解不开但此前已解开过加密单元 / 单元含整扇区全零（数据坏，不是 key） | `fushi_engine/.../aacs_content_decoder.dart`（relay 每 32 单元一次） |
 | `ffc_crypto_aes128_ecb_decrypt` | unit key 表解密 | 同上 `fromVolumeUniqueKey` |
+| `ffc_crypto_aes128_ecb_encrypt` | AES-128 ECB 加密（不填充） | AniDB UDP `ENCRYPT` 会话（`anidb_udp_file_client.dart` 的 `AnidbUdpCipher`） |
 | `ffc_crypto_aes_cbc_pkcs7_decrypt` | AES-128/192/256-CBC + PKCS7，原地 | HLS 分片（`anime_episode_downloader.dart`）、comico 根 URL |
 | `ffc_crypto_aes_cbc_encrypt` | AES-CBC 加密（不填充） | 只给测试造密文 |
 | `ffc_crypto_sync_obfuscate_file / _deobfuscate_file(src, src_len, dst, dst_len)` | 云同步「防扫盘」混淆：文件 → 文件整段在 Rust 里流式读（1 MiB 块）、XOR、写（目标创建或截断）；还原时无魔数则原样复制。keystream = SHA-256("hibiki")、魔数 `HBKOBF 01 00`，**永远不能改**，云端旧文件靠它解开；读写失败返回 -30 | `fushi/lib/src/sync/sync_obfuscator.dart` `obfuscateFile` / `deobfuscateFile`（`Isolate.run`）← `ObfuscatingSyncBackend` 上传 / 下载临时文件。内存里的字节（封面、Range 流播）留 Dart，见下 |

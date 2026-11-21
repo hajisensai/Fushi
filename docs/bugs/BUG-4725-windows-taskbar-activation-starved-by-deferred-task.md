@@ -1,0 +1,11 @@
+## BUG-4725 · 任何真实常驻动画 + idle 任务让调度器零延迟空转，任务栏点 Fushi 唤不到前台（BUG-4387 复发）
+- **报告**：2026-11-16（所有者本机，安装版 3.3.0-debug.27417——已含 BUG-4387 修复 `b31e719cb3`：「Fushi 一直在屏幕后面」，点任务栏图标不上前台；界面照常出帧，「发现新版本」弹窗开着）
+- **真实性**：✅ 真 bug，现场实测：
+  - 主窗 `FLUTTER_RUNNER_WIN32_WINDOW` 可见、未最小化、在屏内，只是 Z 序被压在下面。任务栏点图标后前台变成 NULL、之后一直 NULL；外部进程对主窗 `SetForegroundWindow` 返回 1，但 `SetWinEventHook` 收不到任何 `EVENT_SYSTEM_FOREGROUND`，`GetGUIThreadInfo` 里 Fushi UI 线程 `hwndActive` 始终为空——系统把前台交给了 Fushi 的输入队列，Fushi 线程却从没处理那条激活事件。同一时刻对 Explorer 窗口做同样操作立即生效（对照）。
+  - UI 线程对 `SendMessageTimeout(WM_NULL)` 秒回、`IsHungAppWindow`=0（不是挂死），3 s 内吃 1.55 s CPU；cdb 非侵入式栈采样 6/6 全在 `DispatchMessageWorker → flutter_windows 任务窗口 → Dart`，一次都没回到 `GetMessage` 等待。查词窗内的 WebView2 子窗口线程都空闲在 `MsgWaitForMultipleObjectsEx`，排除跨进程输入队列合并。
+  - 根因：Flutter `SchedulerBinding.handleEventLoopCallback`（flutter 3.47.6 `packages/flutter/lib/src/scheduler/binding.dart:521-559`）在 `schedulingStrategy` 推迟队首任务时仍 `return true`，`_runTasks`（`:505`）随即 `Timer.run` 零延迟重排。只要有真实动画一直挂着帧回调，一个 `Priority.idle` 任务（`fushi/lib/main.dart:784` 首次内存采样、`:936` WebView 预热）就让调度器无限空转，每圈一条 posted 消息；`GetMessage` 先取 posted 消息，鼠标键盘与窗口激活这类输入事件永远排不上。BUG-4387 只把主页背景动画登记成常驻装饰（`AmbientTickerProviderStateMixin`），任何别的常驻动画（转圈、repeat 的 ticker）仍然触发同一条空转——症状一样，只是这次表现为「唤不到前台」。
+- **[x] ① 已修复** — 新增 `fushi/lib/src/utils/scheduling/frame_paced_task_scheduler.dart`：`FramePacedTaskScheduler` mixin 包一层调度策略记下「本圈推迟」，`handleEventLoopCallback` 看到推迟就 `return false` 停掉框架的零延迟重排，挂 post-frame 回调在下一帧之后重新驱动任务循环；判定何时可跑仍由 `ambientAwareSchedulingStrategy` 决定。`FushiWidgetsFlutterBinding` 混入它（`fushi/lib/src/diagnostics/fushi_binding.dart`）。推迟期间每帧最多重查一次，不再依赖「把每个常驻动画都登记成装饰」。
+- **[x] ② 已加自动化测试** — `fushi/test/utils/scheduling/frame_paced_task_scheduler_test.dart`：测试 binding 混入同一 mixin，真实 repeat 动画 + idle 任务 10 帧内任务循环调用 ≤ 11 次、动画停后下一帧放行；多任务推迟后全部执行；无动画时当场执行；策略 save/restore 不自我包裹；生产 binding 混入了该 mixin。变异：测试 binding 去掉 mixin 后核心用例在 FakeAsync 里空转挂死（600 s 被杀，exit 124）；带 mixin 11 个测试（含 `ambient_ticker_test.dart`）105 s 全绿。
+- **备注**：
+  - 没有 release Dart 符号，没能点名本机这次是哪个真实动画挂着帧回调；修复不依赖它是谁。
+  - 修复后需在 Windows 安装版复测原始路径：有转圈 / 常驻动画时点任务栏图标能上前台、鼠标键盘有响应。本机正在运行的 27417 实例需重启或升级才会生效。

@@ -1,0 +1,8 @@
+## BUG-4837 · 并发导入同名书，后一次把前一次的书目录换掉再删掉，留下指向空目录的行
+- **报告**：2026-11-17（用户：小说 / 漫画 / 视频优化清单 novel-13，代码复核确认）
+- **真实性**：✅ 真 bug（代码路径确认 + 单测复现；实际发生频率未实测）。根因（行号按修复前的 upstream/develop @ 8d58da51da9，均在 `packages/fushi_engine/lib/epub/epub_importer.dart`）：
+  - `:127-133` 判重用 `getEpubBookMetas()` 的快照，`:150-161` 目录归属（`liveExtractDirs`）用同一份快照；`:443-447` 目标目录存在且快照里没有活行指向它，就按孤儿处理（`:457-477` 改名 `.bak` → 搬入 → 删 `.bak`）；`:172-183` 才插行。从取快照到插行之间没有任何串行化，而导入入口有二十来处（导入对话框、来源扫描、同步下载、ctl 路由、Kavita、发现源……）。
+  - 时序：A 取快照（无 T）→ A 把目录搬到 `T` → B 取快照（A 还没插行，仍无 T）→ B 看到目录 `T` 存在且「无主」，把 A 的目录换成自己的 → A 插行成功 → B 插行主键冲突（`packages/fushi_core/lib/src/database/database_content_misc.part.dart` 的普通 insert）→ B 的 catch（`:204-214`）`insertedKey == null`，直接删 `T`。结果 A 的行指向一个不存在的目录。A、B 顺序换一下结果相同。
+- **[x] ① 已修复** — 新增进程内静态互斥 `EpubStorage.withBookPlacementLock`（`packages/fushi_engine/lib/epub/epub_storage.dart`）与唯一编排 `EpubImporter.placeUnderResolvedTitle`：同名定夺（含 `DuplicatePolicy.ask` 的弹窗）在锁外；锁内**重取**快照，定下的书名键若已被占就放锁、按同一策略重新定夺，没被占才「挪目录 → 插行」一次做完。`_persistParsed` 改走它；就地重建（`rebuildExtractedInPlace`）的落位、孤儿目录重新登记（`registerExtractedBook` / `MangaImporter.registerExistingBookDir`）的插行也持同一把锁。锁不跨用户对话框——没人点的弹窗不会卡住后台扫描和同步下载。app 与 `fushi_server` 是两个进程、各自一个库与数据根，进程内锁足够。
+- **[x] ② 已加自动化测试** — `fushi/test/epub/epub_import_dir_ownership_test.dart`「BUG-4837 并发导入同名书」四条：suffix 策略两本都入库、各占各的目录、内容不串；skip 策略一本入库、另一本抛 `DuplicateImportCancelledException`、赢家目录原封不动；ask 弹窗开着时另一本书照常导入完成；锁串行且前一个抛异常也放锁。真实导入器（isolate 解析）+ 真实文件系统 + 内存 SQLite。
+- **备注**：`fushi/lib/src/pdf/pdf_importer.dart:82`（PDF 导入）是同样的「存在即复用书目录 + 失败无条件删」结构，不在本轮文件范围内，没改；它与 EPUB / 漫画导入并发撞同名时仍有这个窗口。

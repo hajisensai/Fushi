@@ -79,7 +79,12 @@ void main() {
       'AdaptiveSettingsSegmentedRow',
       'AdaptiveSettingsSliderRow',
     ],
-    'lib/src/settings/settings_home_page.dart': <String>['FushiPageHeader'],
+    // 宽屏全平台同壳后不再画「返回 + 设置」外壳页头（FushiPageHeader）：窄屏
+    // 页头走共享的页头大字 / 浮动折叠页头，宽屏由右窗格分类页头承担。
+    'lib/src/settings/settings_home_page.dart': <String>[
+      'FushiStaticMasthead',
+      'SettingsFloatingHeader',
+    ],
     'lib/src/utils/components/fushi_list_tile.dart': <String>['FushiListItem'],
     'lib/src/utils/components/fushi_text_selection_controls.dart': <String>[
       // 选区工具条是浮层（MD3 浮层面 / Apple 玻璃胶囊），不是内容卡片。
@@ -133,15 +138,18 @@ void main() {
       'FushiCard',
       'FushiDialogFrame',
     ],
+    // 2026-11 导入对话框第二版：文件选择是外层拼贴的缩小版色块
+    // （ImportPickBlock 主选择 / ImportPickTile 次要选择，import_dialog_blocks）。
     'lib/src/media/audiobook/book_import_dialog.dart': <String>[
       'AdaptiveSettingsSection',
       'AdaptiveSettingsSwitchRow',
-      'FushiFilePickerRow',
+      'ImportPickBlock',
+      'ImportPickTile',
       'FushiTextField',
     ],
     'lib/src/media/audiobook/audiobook_import_dialog.dart': <String>[
       'AdaptiveSettingsSection',
-      'FushiFilePickerRow',
+      'ImportPickBlock',
     ],
     // 2026-10-25 库页定版：书卡封面不再压标签 chip / 类型角标，信息进共享
     // 文字块 ShelfCardMeta（标签以「#名字」接在副行里）。
@@ -294,21 +302,26 @@ void main() {
       'adaptiveDialogAction',
     ],
     'lib/src/pages/implementations/games_library_page.dart': <String>[
-      'showAppDialog<GalgamePlayStatus>(',
-      'showAppDialog<String>(',
       // 筛选面板 2026-10-14 收进库页共用的 showLibraryFilterPanel（其窄窗形态
       // 仍是 adaptiveModalSheet + FushiModalSheetFrame，见下一条）。
       'showLibraryFilterPanel(',
+      'AdaptiveSettingsSwitchRow',
+      // 合集横排行长按/右键有统一合集上下文菜单。
+      'showCollectionContextDialog(',
+      // 卡菜单收进与游戏首页共用的 galgame_item_menu.dart（见下一条）。
+      'showGalgameItemActionsMenu(',
+    ],
+    // 游戏卡菜单执行体（游戏库 / 游戏首页共用）：游玩状态框、重命名框走共享
+    // 对话框骨架；「刮削元数据」直开统一弹窗；「移除」先过统一销毁确认框。
+    'lib/src/pages/implementations/games/galgame_item_menu.dart': <String>[
+      'showAppDialog<GalgamePlayStatus>(',
+      'showAppDialog<String>(',
       'FushiDialogFrame',
       'FushiModalSheetFrame',
       'FushiTextField',
       'adaptiveDialogAction',
-      'AdaptiveSettingsSwitchRow',
-      // 卡菜单「刮削元数据」直开统一弹窗；「移除」先过统一销毁确认框；
-      // 合集横排行长按/右键有统一合集上下文菜单。
       'showGalgameScrapeDialog(',
       'FushiDestructiveConfirmDialog(',
-      'showCollectionContextDialog(',
     ],
     // 库页筛选面板（游戏库 / 视频库共用）：窄窗 / Apple 走共享弹层骨架。
     'lib/src/pages/implementations/library_filter_panel.dart': <String>[
@@ -614,10 +627,16 @@ void main() {
       'lib/src/pages/implementations/games_library_page.dart': <String>[
         'showDialog<',
         'AlertDialog(',
-        // 游玩状态选择框已收口设计系统骨架（FushiListItem 行），不再裸 SimpleDialog。
         'SimpleDialog(',
         'showModalBottomSheet<',
         'SwitchListTile(',
+      ],
+      'lib/src/pages/implementations/games/galgame_item_menu.dart': <String>[
+        'showDialog<',
+        'AlertDialog(',
+        // 游玩状态选择框已收口设计系统骨架（FushiListItem 行），不再裸 SimpleDialog。
+        'SimpleDialog(',
+        'showModalBottomSheet<',
       ],
       'lib/src/pages/implementations/texthooker_page.dart': <String>[
         'showDialog<',
@@ -892,14 +911,6 @@ class AnotherPopupPart {
           'Android / Win32 window via FloatingLyricChannel.show (content data, '
           'renders no Flutter widgets) — same reviewed exception as '
           'audiobook_session.',
-      'lib/src/media/audiobook/now_listening_mini_bar.dart':
-          'Now-listening media mini-bar: surface role + book-cover thumbnail '
-          'radius are media-subsystem content chrome (same category as the '
-          'allowlisted reader-shelf book covers / media_item_dialog cover '
-          'hero), driven off the active ColorScheme. M3E redesign: the '
-          'Material branch is a floating capsule sharing the floating '
-          'toolbar pill decoration (surfaceContainer, full radius); only the '
-          'e-ink strip (surfaceContainerHighest) and the cover radius remain.',
       // 悬浮字幕 M3E 改造：app 级 / reader 级两个样式构造点收敛到同一个纯函数
       // buildFloatingLyricStyle，它从 AppModel / reader 搬出的正是同一类 payload。
       'lib/src/media/audiobook/floating_lyric_style.dart':
@@ -963,6 +974,16 @@ class AnotherPopupPart {
           'text + timestamp rows as video-subsystem content; row/timestamp '
           'font size scales with appUiScale, not ordinary page chrome '
           '(same content rationale as the allowlisted subtitle overlay).',
+      'lib/src/media/video/video_portrait_layout.dart':
+          'Portrait study layout (decision P9AS-fvjJh): fontSize: is the '
+          'current subtitle cue itself, passed in from the user subtitle '
+          'font size scaled with appUiScale -- the same reviewed content '
+          'exception as video_subtitle_jump_panel / subtitle_transcript_text.',
+      'lib/src/pages/implementations/video_fushi/portrait.part.dart':
+          'Portrait study layout wiring (decision P9AS-fvjJh): the only '
+          'fontSize: values are the current cue and episode rows scaled with '
+          '_videoUiScale, handed to the allowlisted video content panels -- '
+          'same content rationale as the sibling episode.part.dart.',
       'lib/src/media/video/video_chapter_panel.dart':
           'Chapter list panel (TODO-424) renders chapter index + title + start '
           'timestamp rows as video-subsystem content; row font size scales '
@@ -1146,6 +1167,14 @@ class AnotherPopupPart {
       // `MokuroBlock.fontSize` 与 mokuro_payload / manga_ocr_folder_job 里被
       // 豁免的是同一个数据字段（气泡文字尺寸，落盘给 overlay 用），文件本身
       // 零 UI。属既有 reviewed 豁免类跟随新生产者，不是放宽判据。
+      // #3717 用词替换的上传页图：按 OCR 块的 MokuroBlock.fontSize（乘页图缩放）
+      // 把替换文字用 dart:ui Paragraph 重绘进发给 AI 的 JPEG 副本。字号来自 OCR
+      // 几何、画在漫画页像素上，是内容而不是界面排版；文件零 Widget。与上面
+      // manga.json 生产者同一 fontSize 数据字段的消费端。
+      'lib/src/media/manga/audio/manga_audio_substitution_image.dart':
+          'Repaints substituted text onto the manga page JPEG sent to the AI, '
+          'sized from the OCR block MokuroBlock.fontSize scaled to the page '
+          'image; page-pixel content, no Flutter widget typography.',
       'lib/src/media/manga/ocr/google_lens_ocr_service.dart':
           'Writes the MokuroBlock.fontSize data field for Lens-produced '
           'manga.json blocks; pure data layer, no UI typography.',
@@ -1273,8 +1302,69 @@ class AnotherPopupPart {
       'lib/src/pages/shared/library_section_tabs.dart':
           kSharedComponentImplementation,
       'lib/src/utils/misc/fushi_toast.dart': kSharedComponentImplementation,
+      // PR #3397 外壳改版（M3E 色块 + 页头大字）的共享积木本体：库页封面色块、
+      // 「继续」色块、海报色块、页头大字（页名字阶 / 连体页签）、溢出标题、海报
+      // 详情外壳（按封面取色派生整套 surfaceContainer 色阶 + 海报面板圆角）。
+      // 页面经它们出图、不再各自拍板，与 fushi_material_components 同一「共享
+      // 原语本身」类；字号由页头 / 色块的固定版式比例算出（设计稿定值），
+      // FushiTypeRoles 没有对应字阶。
+      'lib/src/media/detail/media_poster_detail.dart':
+          kSharedComponentImplementation,
+      // 带色卡片的局部配色（色块子树 / 从色块弹出的弹层）：按块配色派生整套
+      // surfaceContainer 色阶，海报详情外壳也走这一份。
+      'lib/src/utils/components/fushi_block_color_scope.dart':
+          kSharedComponentImplementation,
+      'lib/src/pages/implementations/music/music_detail_chrome.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_continue_blocks.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_cover_block.dart':
+          kSharedComponentImplementation,
+      // 导入拼贴（导入稿 v2）：引导首块 / 方式块 / 格式气泡、常驻来源色块与拖动
+      // 重排落点框——六个模块导入视图共用的积木本体，圆角按色块边长取。
+      'lib/src/media/import/import_collage_blocks.dart':
+          kSharedComponentImplementation,
+      'lib/src/media/import/import_source_blocks.dart':
+          kSharedComponentImplementation,
+      // 拼贴打磨（设计稿 G2 / M2）：装盒大字（字号按盒子二分求出）与无封面时按
+      // 标题生成的封面（字号随封面边长缩放）——色块 / 海报水印共用的积木本体。
+      'lib/src/utils/components/fushi_fit_title.dart':
+          kSharedComponentImplementation,
+      // 同判据的真文字版（条目标题要进语义树 / 被找到）：字号同样由盒子求出。
+      'lib/src/utils/components/fushi_fit_text.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_generated_cover.dart':
+          kSharedComponentImplementation,
+      // 拼贴打磨（设计稿 G3 / H2）：游戏库与首页拼贴的积木本体——游戏时长大字
+      // （字号随色块高度）、横版背景 / 进度条 / 状态胶囊的圆角按色块边长取、
+      // 时长色块底色取容器色阶；首页统计块的大数字同理随块高缩放。
+      'lib/src/pages/implementations/games/galgame_home_blocks.dart':
+          kSharedComponentImplementation,
+      'lib/src/pages/implementations/home_collage_widgets.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_page_masthead.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_page_title_metrics.dart':
+          'Module-page masthead title spec (11-20 #18): the single source the '
+          'shared masthead components read their title / switch sizes from; '
+          'pages never set a title font size themselves.',
+      'lib/src/utils/components/fushi_poster_block.dart':
+          kSharedComponentImplementation,
       // 2) 页面 / 功能模块里逐条审过的内容类例外（封面美术、预览、播放器浮层、
       //    Apple 分支的 HIG 尺寸——FushiTypeRoles 暂无 Apple 字阶）。
+      'lib/src/settings/shell_style_preview.dart':
+          'Shell style preview draws a scaled mock of the library page (rail, '
+          'masthead, cover blocks / grid tiles) with the current theme so the '
+          'user can compare sidebar styles and library layouts; radii, surface '
+          'tones scale with the preview box and '
+          'are preview content, not page chrome — same reviewed exception '
+          'class as lookup_popup_size_preview.',
+      'lib/src/pages/implementations/music/music_cd_detail.dart':
+          'CD detail hero (design M3): kicker / title / version headings and '
+          'the disc label are sized by the fixed hero layout ratios of the '
+          'collage design (phone 28 / desktop 44 title, 26 disc numeral); '
+          'FushiTypeRoles has no matching steps — same reviewed exception '
+          'class as music_detail_chrome.',
       'lib/src/lookup/lookup_popup_size_preview.dart':
           'Popup size preview draws a scaled mock screen (frame fill, fake text '
           'lines, popup rectangle) so the user can see where the lookup popup '
@@ -1394,10 +1484,10 @@ class AnotherPopupPart {
         'surfaceContainerHigh',
         'fontSize:',
       },
-      'lib/src/media/audiobook/now_listening_mini_bar.dart': <String>{
-        'BorderRadius.circular(',
-      },
       'lib/src/media/video/video_clip_subtitle_image.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/media/manga/audio/manga_audio_substitution_image.dart': <String>{
         'fontSize:',
       },
       'lib/src/media/manga/ocr/google_lens_ocr_service.dart': <String>{
@@ -1628,6 +1718,62 @@ class AnotherPopupPart {
         'fontSize:',
       },
       'lib/src/utils/components/fushi_tag.dart': <String>{'fontSize:'},
+      'lib/src/media/detail/media_poster_detail.dart': <String>{
+        'BorderRadius.circular(',
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_block_color_scope.dart': <String>{
+        'surfaceContainerLow',
+        'surfaceContainerLowest',
+        'surfaceContainerHigh',
+        'surfaceContainerHighest',
+      },
+      'lib/src/pages/implementations/music/music_detail_chrome.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_fit_title.dart': <String>{'fontSize:'},
+      'lib/src/utils/components/fushi_fit_text.dart': <String>{'fontSize:'},
+      'lib/src/utils/components/fushi_generated_cover.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/pages/implementations/games/galgame_home_blocks.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerHigh',
+        'fontSize:',
+      },
+      'lib/src/pages/implementations/home_collage_widgets.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/settings/shell_style_preview.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerLow',
+        'surfaceContainerLowest',
+        'surfaceContainerHigh',
+        'surfaceContainerHighest',
+      },
+      'lib/src/pages/implementations/music/music_cd_detail.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_continue_blocks.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_cover_block.dart': <String>{
+        'BorderRadius.circular(',
+        'fontSize:',
+      },
+      'lib/src/media/import/import_collage_blocks.dart': <String>{
+        'surfaceContainerHighest',
+      },
+      'lib/src/media/import/import_source_blocks.dart': <String>{
+        'BorderRadius.circular(',
+      },
+      'lib/src/utils/components/fushi_page_masthead.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_page_title_metrics.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_poster_block.dart': <String>{'fontSize:'},
       'lib/src/utils/components/glass/fushi_glass_bars.dart': <String>{
         'BorderRadius.circular(',
         'fontSize:',
@@ -1657,6 +1803,10 @@ class AnotherPopupPart {
         'fontSize:',
         'SwitchListTile(',
         'CheckboxListTile(',
+      },
+      'lib/src/media/video/video_portrait_layout.dart': <String>{'fontSize:'},
+      'lib/src/pages/implementations/video_fushi/portrait.part.dart': <String>{
+        'fontSize:',
       },
       'lib/src/pages/shared/library_section_tabs.dart': <String>{'fontSize:'},
       'lib/src/utils/misc/fushi_toast.dart': <String>{'fontSize:'},
@@ -2240,8 +2390,15 @@ class AnotherPopupPart {
     expect(frame, contains('kSettingsSegmentInnerRadius'));
     expect(frame, contains('apple ? 0 : kSettingsSegmentGap'));
     expect(frame, contains('FushiFilledButton.tonalIcon('));
-    // E：设置组收进子菜单。
-    expect(frame, contains('_ContextSubmenuRow('));
+    // E（2026-11-20 #4b 统一骨架）：右键菜单与手机底部面板共用 _ItemMenuPanel，
+    // 低频项收进「更多 ›」二级菜单（_ItemSubmenuRow），右键里浮出、面板里下钻。
+    expect(frame, contains('_ItemMenuPanel('));
+    final String menu = File(
+      'lib/src/pages/implementations/media_item_context_menu.part.dart',
+    ).readAsStringSync();
+    expect(menu, contains('class _ItemSubmenuRow'));
+    expect(menu, contains('FushiStaggeredEntrance('));
+    expect(menu, contains('FushiPressScale('));
     // 动效：错峰进场 + 按压缩放。
     expect(frame, contains('FushiEntranceScope('));
     expect(frame, contains('FushiStaggeredEntrance('));
@@ -2601,8 +2758,10 @@ class AnotherPopupPart {
           _nextWidgetAfter(source, startToken),
         );
 
-        expect(section, contains('FushiFilePickerRow('));
-        expect(section, contains('FushiIconButton('));
+        // 2026-11 导入对话框第二版：每个文件选择都是共享拼贴色块（主选择
+        // ImportPickBlock / 次要选择 ImportPickTile），块内动作钮走
+        // ImportBlockIconButton（下方断言它委托 FushiIconButton）。
+        expect(section, matches(RegExp(r'ImportPick(Block|Tile)\(')));
         // 原写法先把 FushiIconButton 换名再做裸子串匹配 —— 那是白名单，白名单
         // 永远漏：仓内还有 `_RepeatIconButton(` / `_InBookIconButton(` /
         // `_CompactSearchIconButton(` 没登记，用上任何一个就假红；反向也漏，裸子串
@@ -2618,6 +2777,19 @@ class AnotherPopupPart {
         expect(section, isNot(contains('size: 20')));
       }
     }
+  });
+
+  test('import dialog block buttons delegate to shared M3E icon button', () {
+    final String blocks = File(
+      'lib/src/media/import/import_dialog_blocks.dart',
+    ).readAsStringSync();
+    final String button = _sectionSource(
+      blocks,
+      'class ImportBlockIconButton',
+      '/// glyph 槽',
+    );
+    expect(button, contains('FushiIconButton('));
+    expect(containsIdentifierCall(button, 'IconButton'), isFalse);
   });
 
   test('audiobook import progress chrome uses shared M3E tokens', () {
@@ -2656,12 +2828,15 @@ class AnotherPopupPart {
       isNot(contains('Theme.of(context).colorScheme.primary')),
     );
 
+    // 书籍导入框已改成导入拼贴积木（2026-11 导入对话框统一）：块间距统一走
+    // 共享节奏 [importDialogRhythm]（import_dialog_blocks），不再逐处取 tokens.spacing。
+    expect(bookImportFlow, contains('importDialogRhythm'));
+    expect(audiobookImportFlow, contains('FushiDesignTokens.of(context)'));
+    expect(audiobookImportFlow, contains('tokens.spacing'));
     for (final String section in <String>[
       bookImportFlow,
       audiobookImportFlow,
     ]) {
-      expect(section, contains('FushiDesignTokens.of(context)'));
-      expect(section, contains('tokens.spacing'));
       // M3E：导入中进度收敛成共享 ImportProgressCard（下方钉住它的排版走
       // context.fushiType），flow 不再自己拼 metadata 文本行。
       expect(section, contains('ImportProgressCard('));

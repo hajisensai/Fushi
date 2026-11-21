@@ -608,19 +608,18 @@ class TrackingActivityRow extends StatelessWidget {
 }
 
 /// Why an unlinked item waits for the user, in words.
-String trackingUnlinkedDetailLabel(TrackingUnlinkedDetail? detail) =>
-    switch (detail) {
-      TrackingUnlinkedDetail.multiSeason =>
-        t.media_tracking_multi_season_reason,
-      TrackingUnlinkedDetail.suggestions => t.media_tracking_reason_suggestions,
-      TrackingUnlinkedDetail.serverNoMatch =>
-        t.media_tracking_reason_server_no_match,
-      TrackingUnlinkedDetail.notScraped => t.media_tracking_reason_not_scraped,
-      TrackingUnlinkedDetail.removedByUser =>
-        t.media_tracking_reason_removed_by_you,
-      TrackingUnlinkedDetail.noMatch ||
-      null => t.media_tracking_reason_no_match,
-    };
+String trackingUnlinkedDetailLabel(
+  TrackingUnlinkedDetail? detail,
+) => switch (detail) {
+  TrackingUnlinkedDetail.multiSeason => t.media_tracking_multi_season_reason,
+  TrackingUnlinkedDetail.suggestions => t.media_tracking_reason_suggestions,
+  TrackingUnlinkedDetail.serverNoMatch =>
+    t.media_tracking_reason_server_no_match,
+  TrackingUnlinkedDetail.notScraped => t.media_tracking_reason_not_scraped,
+  TrackingUnlinkedDetail.removedByUser =>
+    t.media_tracking_reason_removed_by_you,
+  TrackingUnlinkedDetail.noMatch || null => t.media_tracking_reason_no_match,
+};
 
 /// A row's title: the cleaned title, and under it the raw local name in a
 /// smaller line when that differs (whole name in a tooltip and for screen

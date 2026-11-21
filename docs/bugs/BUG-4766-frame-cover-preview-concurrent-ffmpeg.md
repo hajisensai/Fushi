@@ -1,0 +1,6 @@
+## BUG-4766 · 挑帧封面弹窗连点微调会并发起多个 ffmpeg 抽帧
+- **报告**：2026-11-17（用户：PR #3612 审查遗留项「挑帧弹窗连点 ±10 秒时 ffmpeg 抽帧请求不排队，只在结果回来时按 seq 丢弃」）
+- **真实性**：✅ 真 bug。根因 `fushi/lib/src/media/video/cover_ui/video_frame_cover_picker.dart:302-314`（修前行号）`_VideoFrameCoverPickerDialogState._requestPreview` 每次点微调 / 松开滑块都 `++_requestSeq` 并立刻 `await widget.grabPreview`，不看是否已有请求在途，过期判断只在结果回来后做（`:314`）。生产 `grabPreview` 走 `extractVideoFrameViaFfmpeg`（`packages/fushi_engine/lib/utils/misc/desktop_audio_clipper.dart`，经 `resolveFfmpegBackend().run`，引擎层无全局串行），连点 N 次就是 N 路 ffmpeg 同时解码；Android 上是 app 进程内的 ffmpeg-kit，4K / HEVC 片源的内存与 CPU 压力直接落在 app 进程里，而中间 N-1 个结果最后全被丢掉。
+- **[x] ① 已修复** — `video_frame_cover_picker.dart:311` 起 `_requestPreview` 改为单飞 + 只留最新：`_grabInFlight` 在途时新的选择只写进 `_pendingMs` 并返回（转圈 / 确认键禁用照常）；在途请求回来后若 `_pendingMs` 有值且不同于本次位置，本次结果作废、改取它（中间值全部丢弃）；与在途位置相同则直接用本次结果。同一时刻最多一个 ffmpeg 抽帧。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/cover_ui/video_frame_cover_picker_test.dart`「one grab in flight; rapid seeks collapse to the last position」（首张预览在途时连点 5 次 −10 秒：不起新请求、在途数峰值 1、在途结果回来后只补取最后的 10s、过期结果不放行确认）与「seeking back to the in-flight position reuses its result」。把实现换回修前版本时这两条红（本地实测 `-2`），修后绿。
+- **备注**：并发解码对 Android 内存的影响是推测，没在真机上复现 OOM；真机未复测（修复是纯 Dart 状态机，widget 测试覆盖了在途计数）。

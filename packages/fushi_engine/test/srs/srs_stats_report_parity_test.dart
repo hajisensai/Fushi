@@ -19,9 +19,9 @@ import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_engine/srs/srs_stats.dart';
 import 'package:fushi_engine/srs/srs_stats_loader.dart';
 import 'package:fushi_srs/fushi_srs.dart';
-import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
+import 'support/srs_migrated_ids.dart';
 import 'support/srs_test_storage.dart';
 
 const String _profile = '01928c3e-0000-7000-8000-0000000000c3';
@@ -29,14 +29,22 @@ const String _profile = '01928c3e-0000-7000-8000-0000000000c3';
 final String _fixtures = '${Directory.current.path}/test/srs/fixtures'
     .replaceAll('\\', '/');
 
-/// 确定性假打分器（同 srs_stats_vectors_test）：R 只取决于卡 ID 与它最后一条日志是否存在。
+/// 确定性假打分器（同 srs_stats_vectors_test）：R 只取决于卡 ID 与它最后一条日志是否存在。卡 ID 按期望值生成时的旧 ID
+/// 算（[legacyOf]：迁移后的规范 ID → 冻结库里的旧 ID，见 support/srs_migrated_ids.dart）。
 final class _FakeRwkv implements SrsRwkvScheduling {
+  _FakeRwkv(this.legacyOf);
+
+  final Map<String, String> legacyOf;
+
   @override
   bool get ready => true;
 
   List<double> _scores(List<SrsRwkvCandidate> cards) => <double>[
     for (final SrsRwkvCandidate c in cards)
-      ((c.id.codeUnits.fold<int>(0, (int a, int b) => a + b) +
+      (((legacyOf[c.id] ?? c.id).codeUnits.fold<int>(
+                    0,
+                    (int a, int b) => a + b,
+                  ) +
                   (c.lastLogId == null ? 0 : 7)) %
               97) /
           100.0,
@@ -60,6 +68,19 @@ final class _FakeRwkv implements SrsRwkvScheduling {
   @override
   Future<void> onCardsPurged(List<String> cardIds) async {}
 }
+
+/// [want] 的深层匹配器：浮点数按相对 1e-12 比，其余逐值相同。冻结库迁移进新代后卡 ID 换成了规范 ID，内核按卡 ID 序
+/// 累加的均值 / 合计（目标保留率均值、未来负荷……）求和顺序跟着变，只差最后一位（实测 4.159955977448237 对
+/// 4.159955977448238、0.81 对 0.8100000000000002）；别的聚合值、计数、分桶照旧逐值比。
+Object? _closeTree(Object? want) => switch (want) {
+  final double d => closeTo(d, 1e-12 * (d.abs() < 1 ? 1 : d.abs())),
+  final Map<Object?, Object?> m => <Object?, Object?>{
+    for (final MapEntry<Object?, Object?> e in m.entries)
+      e.key: _closeTree(e.value),
+  },
+  final List<Object?> l => <Object?>[for (final Object? x in l) _closeTree(x)],
+  _ => want,
+};
 
 /// 「此刻」：最后一天评分刚答完（今天有复习、学习卡几分钟后到期、明天有到期）；数据所在的那天；一年多以后。
 final List<int> _nows = <int>[
@@ -240,21 +261,12 @@ void main() {
     final FsrsEngine? engine = FfiFsrsEngine.tryCreate();
     expect(engine, isNotNull, reason: 'native fushi_fsrs (FUSHI_FSRS_LIB)');
     int t = _nows.first;
-    final Directory dir = Directory.systemTemp.createTempSync('srs_rep_');
-    addTearDown(() {
-      try {
-        dir.deleteSync(recursive: true);
-      } on FileSystemException {
-        // 句柄晚释放。
-      }
-    });
-    final String path = p.join(dir.path, 'srs.db');
-    File(path).writeAsBytesSync(
+    // 冻结库是协议 3 的 srs.db：经换代迁移（用户升级的同一条路）再开新代库。
+    final TestSrs srs = await openMigratedTestSrs(
       gzip.decode(File('$_fixtures/srs_stats_vectors.db.gz').readAsBytesSync()),
+      prefix: 'srs_rep_',
     );
-    final TestSrs srs = await openTestSrsAt(path);
     final SrsDbStore s = await SrsDbStore.open(
-      db: srs.db,
       core: srs.core,
       profileUid: _profile,
       deviceId: 'v',
@@ -267,7 +279,17 @@ void main() {
       fallbackRolloverHour: () => 4,
       localOffsetMin: () => 540,
     );
-    if (rwkv) s.rwkv = _FakeRwkv();
+    // 冻结库里的旧（带盐）ID → 迁移后的规范 ID：期望值里的（按牌组分的今日计数以牌组 ID 为键），与每张卡的旧 ID（在
+    // 同一份库的统计向量 srs_stats_vectors.json 里，假打分器要）。重新生成时库与期望值同一口径，不换。
+    final Map<String, String> ids = write
+        ? const <String, String>{}
+        : await srsMigratedIds(s, <Object?>[
+            expected[name],
+            jsonDecode(
+              File('$_fixtures/srs_stats_vectors.json').readAsStringSync(),
+            ),
+          ]);
+    if (rwkv) s.rwkv = _FakeRwkv(srsLegacyOf(ids));
     final Map<String, Object?> out = <String, Object?>{};
     for (final int now in _nows) {
       t = now;
@@ -296,13 +318,13 @@ void main() {
     }
     produced[name] = out;
     if (!write) {
-      final Map<String, Object?> want = (expected[name]! as Map)
-          .cast<String, Object?>();
+      final Map<String, Object?> want =
+          (srsWithIds(expected[name], ids)! as Map).cast<String, Object?>();
       final Map<String, Object?> got = (jsonDecode(jsonEncode(out)) as Map)
           .cast<String, Object?>();
       expect(got.keys.toSet(), want.keys.toSet(), reason: name);
       for (final String k in want.keys) {
-        expect(got[k], want[k], reason: '$name $k');
+        expect(got[k], _closeTree(want[k]), reason: '$name $k');
       }
     }
   }

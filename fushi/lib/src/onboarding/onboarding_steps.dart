@@ -9,7 +9,7 @@ import 'package:fushi_engine/srs/srs_mining_target.dart';
 
 /// 功能选择步骤里可勾选的项，分两类：
 ///
-/// - **功能模块**（[ModuleId] 中除首页外的 11 个）：勾选状态在离开功能选择步骤时写进
+/// - **功能模块**（[onboardingFeatureOfModule] 映射到方格的那些 [ModuleId]）：勾选状态在离开功能选择步骤时写进
 ///   `module_*_enabled` 偏好，未勾选的模块整套入口都不再露出（底栏/侧栏 tab、
 ///   设置一级分类、快捷键分区、首页聚合；设置 → 外观 → 功能模块 可随时改回）。
 ///   模块本身**不产生**引导步骤，但它是本模块名下配置步骤的总闸：模块都不要了，
@@ -29,6 +29,9 @@ enum OnboardingFeature {
 
   /// 视频库页（模块）。
   video,
+
+  /// 音乐库页（模块）：曲库 / 专辑 / 播放 / 歌词。
+  music,
 
   /// galgame 游戏库页（模块，仅 Windows 提供勾选）。
   games,
@@ -99,8 +102,7 @@ OnboardingFeature? onboardingFeatureOfModule(ModuleId module) =>
       ModuleId.books => OnboardingFeature.books,
       ModuleId.manga => OnboardingFeature.manga,
       ModuleId.video => OnboardingFeature.video,
-      // 音乐（2026-10 新模块）向导暂不出方格：默认开，关在 设置 → 外观 → 功能模块。
-      ModuleId.music => null,
+      ModuleId.music => OnboardingFeature.music,
       ModuleId.games => OnboardingFeature.games,
       ModuleId.browse => OnboardingFeature.browse,
       ModuleId.lookup => OnboardingFeature.lookup,
@@ -309,7 +311,7 @@ enum OnboardingStepId {
   backup,
   interconnect,
 
-  /// 浏览器扩展安装引导（仅桌面）。
+  /// 浏览器扩展安装引导（桌面与安卓，见 browserExtensionInstallFlowOn）。
   browserExtension,
 
   /// 自定义字体配置（仅 [OnboardingFeature.fonts] 被勾选时）。
@@ -335,7 +337,7 @@ enum OnboardingStepId {
 /// 恒以 [OnboardingStepId.welcome]、[OnboardingStepId.features] 开头，
 /// [OnboardingStepId.finish] 固定收尾；中间配置步骤按固定顺序（资源准备 → 复习方式 / Anki →
 /// 备份 → 互联 → 扩展 → 字体）出现：能力步骤（含字体）只保留被勾选的，
-/// 浏览器扩展安装引导步骤 = [browserExtensionAvailable]（桌面平台）**且**扩展
+/// 浏览器扩展安装引导步骤 = [browserExtensionAvailable]（桌面与安卓）**且**扩展
 /// 模块被勾选。模块勾选自身不产生步骤。
 ///
 /// **模块是本模块名下配置步骤的总闸**（用户拍板的「关一个模块 = 关掉它的全部

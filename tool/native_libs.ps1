@@ -8,7 +8,7 @@
     powershell -ExecutionPolicy Bypass -File tool/native_libs.ps1
 
   每个 crate 按顺序：
-    1) 本地 prebuilt/<平台>/ 旁的戳记（<产物>.source：native/<crate> 的 git 树哈希 + 产物大小 + mtime）
+    1) 本地 prebuilt/<平台>/ 旁的戳记（<产物>.source：native/<crate> 的源码内容键 + 产物大小 + mtime）
        与 HEAD 一致 → 跳过；
     2) 兄弟 worktree（含主 checkout）里有戳记一致的产物 → 拷过来（秒级，免 cargo）；
     3) 否则跑 native/<crate>/build_* 编译，编完写戳记（此时才需要 cargo）。
@@ -20,14 +20,39 @@
   各的戳记，复用规则相同。
 
   新增一个 app / 测试硬依赖的 crate：往 $NativeTestCrates 加一行；它必须自带
-  build_{windows_dll.ps1,linux_so.sh,macos_dylib.sh}、产物落 prebuilt/<平台>/，且不依赖
-  native/<crate> 目录以外的源码（戳记只哈希这个目录）。
+  build_{windows_dll.ps1,linux_so.sh,macos_dylib.sh}、产物落 prebuilt/<平台>/。戳记哈希
+  native/<crate> 目录；经 `#[path = ...]` 编入的目录外源码必须列进
+  native/<crate>/external_sources.txt（一行一个，相对仓库根），它们的 blob 并进戳记
+  （与 tool/native_source_key.sh 同一算法；守卫 native_external_sources_stamp_guard_test）。
+
+  -Android：改为备 Android 出包硬依赖的 .so（fushi_compute / fushi_rwkv / fushi_music / fushi_corpus /
+  fushi_web_core，`fushi/android/app/build.gradle` 的 checkFushi*Native 查的那五个），落在
+  native/<crate>/prebuilt/android/<abi>/。新 worktree 不带它们，bootstrap 也不编（多数 worktree 从不出
+  Android 包，五个 crate × 三个 ABI 的 release 交叉编译要几十分钟）；需要时由 gradle 的
+  ensureFushiAndroidNative 任务自动调用本模式，也可手动跑：
+    powershell -ExecutionPolicy Bypass -File tool/native_libs.ps1 -Android [-Abis arm64-v8a,armeabi-v7a,x86_64]
+  顺序同上，多一级本机缓存（worktree 每天被清理，兄弟里常常没有）：
+    1) 本地戳记一致 → 跳过；
+    2) 本机缓存 <LOCALAPPDATA>/fushi-native-cache（FUSHI_NATIVE_CACHE 可改）里有这棵源码树编出的产物 → 拷过来；
+    3) 兄弟 worktree 里有戳记一致的产物 → 拷过来；
+    4) 否则跑 native/<crate>/build_android_so.ps1 编（要 cargo-ndk 与 NDK），编完写戳记并存进本机缓存。
+  所以同一份 native/<crate> 源码在一台机器上只编一次。
 
 .PARAMETER GitBash
   Linux / macOS 跑 build_*.sh 用的 bash（Windows 走 .ps1，用不到）。
+
+.PARAMETER Android
+  备 Android 的 .so 而不是主机平台的库。
+
+.PARAMETER Abis
+  -Android 时要备的 ABI，默认三个（与 split-per-abi 发布包一致）。
 #>
 [CmdletBinding()]
-param([string]$GitBash = 'bash')
+param(
+    [string]$GitBash = 'bash',
+    [switch]$Android,
+    [string[]]$Abis = @('arm64-v8a', 'armeabi-v7a', 'x86_64')
+)
 
 $ErrorActionPreference = "Stop"
 try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
@@ -41,6 +66,13 @@ $NativeTestCrates = @('fushi_compute', 'fushi_fsrs', 'fushi_web_core', 'fushi_rw
 # FUSHI_FSRS_ID_AUDIT_VARIANT=1（.sh），一次调用把两份都编出来。
 $NativeIdAuditCrates = @('fushi_fsrs')
 $NativeIdAuditDir = 'id_audit'
+
+# 测试用的库要带的 cargo feature（经 FUSHI_FSRS_FEATURES 交给 build_* 脚本）：fushi_fsrs 的 `raw_sql` 是测试专用的原始
+# SQL 通道（native/fushi_fsrs/Cargo.toml），fushi_engine / fushi 的测试靠它直接改库造场景。feature 记进戳记（树哈希后接
+# `+<features>`）：不带它编出的旧产物不会被当成这棵树的、也不会被兄弟 worktree 拷走。
+# 注意：这里备的库同时是本机 `flutter run` / 本机 `flutter build` 随包的那一份，所以本机自己编的 app 带原始通道；
+# CI 出的发布包不带（verify_abi.sh / build_windows_dll.ps1 核对）。
+$NativeTestFeatures = @{ 'fushi_fsrs' = 'raw_sql' }
 
 function Get-NativeHostLayout {
     [OutputType([hashtable])]
@@ -56,8 +88,11 @@ function Get-NativeHostLayout {
     return @{ Dir = 'linux-x64'; Prefix = 'lib'; Ext = '.so'; Script = 'build_linux_so.sh' }
 }
 
-# native/<crate> 在 HEAD 的 git 树哈希；该目录有未提交改动（含未跟踪文件，不含 target/ prebuilt/
-# 这些 ignored）时返回 $null —— 产物对应的源码说不清，不写戳记、不复用。
+# native/<crate> 的源码内容键：HEAD 的 git 树哈希；有 external_sources.txt 时把列出的
+# crate 外源码在 HEAD 的 blob 一起并成一个 git blob 对象 id（与 tool/native_source_key.sh
+# 逐字节同一算法：「tree <树>」与每个「<路径> <blob>」各占一行，整段交给 `git hash-object --stdin`）。
+# 该目录或列出的外部源码有未提交改动（含未跟踪文件，不含 target/ prebuilt/ 这些 ignored）时
+# 返回 $null —— 产物对应的源码说不清，不写戳记、不复用。
 function Get-NativeSourceTree {
     [OutputType([string])]
     param([string]$RepoRoot, [string]$Crate)
@@ -65,15 +100,58 @@ function Get-NativeSourceTree {
     # PS 5.1 + ErrorActionPreference=Stop 下原生命令写 stderr 会变成终止性错误，
     # 拿不到树哈希只意味着「不复用、照常编」，所以整段兜住。
     try {
-        $dirty = (& git -C $RepoRoot status --porcelain --untracked-files=all -- "native/$Crate" | Out-String).Trim()
+        $extra = @()
+        $listPath = Join-Path $RepoRoot "native/$Crate/external_sources.txt"
+        if (Test-Path -LiteralPath $listPath) {
+            # 读工作区这份（UTF-8，注释是中文）而不是 `git show` 的输出：PS 5.1 按控制台代码页
+            # 解原生命令输出，中文注释会把换行一起吃掉。下面的 status 检查覆盖 native/$Crate，
+            # 这份文件有未提交改动时整段返回 $null，所以它与 HEAD 一致。
+            $extra = @([IO.File]::ReadAllLines($listPath, [Text.Encoding]::UTF8) |
+                ForEach-Object { $_.Trim() } |
+                Where-Object { $_ -and -not $_.StartsWith('#') })
+        }
+        $dirty = (& git -C $RepoRoot status --porcelain --untracked-files=all -- "native/$Crate" @extra | Out-String).Trim()
         if ($dirty) { return $null }
         $tree = (& git -C $RepoRoot rev-parse "HEAD:native/$Crate" | Out-String).Trim()
         if ($LASTEXITCODE -ne 0 -or -not $tree) { return $null }
-        return $tree
+        if ($extra.Count -eq 0) { return $tree }
+        $lines = @("tree $tree")
+        foreach ($src in $extra) {
+            $blob = (& git -C $RepoRoot rev-parse "HEAD:$src" | Out-String).Trim()
+            if ($LASTEXITCODE -ne 0 -or -not $blob) { return $null }
+            $lines += "$src $blob"
+        }
+        # git blob 对象 id = SHA-1("blob <长度>\0" + 内容)，即 `git hash-object --stdin`。
+        $body = [Text.Encoding]::UTF8.GetBytes(($lines -join "`n") + "`n")
+        $header = [Text.Encoding]::ASCII.GetBytes("blob $($body.Length)")
+        $bytes = New-Object byte[] ($header.Length + 1 + $body.Length)
+        [Array]::Copy($header, 0, $bytes, 0, $header.Length)
+        [Array]::Copy($body, 0, $bytes, $header.Length + 1, $body.Length)
+        $sha1 = [Security.Cryptography.SHA1]::Create()
+        try {
+            return (($sha1.ComputeHash($bytes) | ForEach-Object { $_.ToString('x2') }) -join '')
+        }
+        finally {
+            $sha1.Dispose()
+        }
     }
     catch {
         return $null
     }
+}
+
+# 戳记文件的位置：主机平台的库是 <产物>.source；Android 的 .so 所在目录（prebuilt/android/）整个是 gradle 的
+# jniLibs 源目录，放在里面的任何文件都会被 merge<Variant>JniLibFolders 收进去（2026-11-20 实测 .source 出现在
+# merged_jni_libs 里），所以戳记放到旁边的 prebuilt/android-stamps/<abi>/。
+function Get-NativeStampPath {
+    [OutputType([string])]
+    param([string]$Lib)
+
+    $norm = $Lib -replace '\\', '/'
+    if ($norm -match '/prebuilt/android/') {
+        return (($norm -replace '/prebuilt/android/', '/prebuilt/android-stamps/') + '.source')
+    }
+    return "$Lib.source"
 }
 
 # 戳记 = <产物>.source（JSON：tree / length / mtimeUtcTicks）。大小与 mtime 也要对上：有人手动
@@ -82,7 +160,7 @@ function Test-NativeStamp {
     [OutputType([bool])]
     param([string]$Lib, [string]$Tree)
 
-    $stamp = "$Lib.source"
+    $stamp = Get-NativeStampPath -Lib $Lib
     if (-not $Tree -or -not (Test-Path -LiteralPath $Lib) -or -not (Test-Path -LiteralPath $stamp)) {
         return $false
     }
@@ -101,7 +179,8 @@ function Write-NativeStamp {
     [OutputType([void])]
     param([string]$Lib, [string]$Tree)
 
-    $stamp = "$Lib.source"
+    $stamp = Get-NativeStampPath -Lib $Lib
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $stamp) | Out-Null
     if (-not $Tree) {
         if (Test-Path -LiteralPath $stamp) { Remove-Item -LiteralPath $stamp -Force }
         return
@@ -163,17 +242,37 @@ function Invoke-NativeCrateBuild {
     $previousWrapper = $env:RUSTC_WRAPPER
     if (-not $previousWrapper) {
         $sccache = Get-Command sccache -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        # 缓存是可选的加速，不能变成硬依赖。2026-11-20 本机实测：cargo 拉起的 sccache 客户端间歇性报
+        # 「Server startup failed: A Windows port exclusion is blocking use of the configured port …
+        # os error 10013」并退 2，cargo 连 `rustc -vV` 都跑不了，整个备库失败；同一条命令隔一会儿又
+        # 正常（6 次里 6 次过）。当时服务其实在监听（netstat 可见）：客户端没连上就自己再起一个，绑
+        # 已被独占的端口得到 10013，那句「port exclusion」是 sccache 对这个错误码的猜测，端口并不在
+        # 系统排除范围里。客户端为什么会连不上没查清（多个会话同时编译时出现）。所以这里：先把服务
+        # 起好并确认它应答，起不来就不挂；挂了之后构建失败，再不挂缓存编一次（见下面的 try）。
+        $sccacheUp = $false
         if ($sccache) {
+            $null = & cmd /c "`"$($sccache.Source)`" --start-server >nul 2>&1"
+            $null = & cmd /c "`"$($sccache.Source)`" --show-stats >nul 2>&1"
+            $sccacheUp = ($LASTEXITCODE -eq 0)
+        }
+        if ($sccacheUp) {
             $env:RUSTC_WRAPPER = $sccache.Source
             Write-Host "  rustc 编译缓存：sccache ($($sccache.Source))" -ForegroundColor DarkGray
+        }
+        elseif ($sccache) {
+            Write-Host "  sccache 的服务起不来（sccache --show-stats 失败），这次不用缓存、照常编。" -ForegroundColor DarkYellow
         }
         else {
             Write-Host "  未装 sccache：依赖每个 worktree 都要从零编。装上（winget install Mozilla.sccache）后自动跨 worktree 共用缓存。" -ForegroundColor DarkYellow
         }
     }
-    Write-Host "Building native/$Crate (cargo: $($cargo.Source))..." -ForegroundColor Cyan
+    # 两份库（普通 / id_audit）都带 $NativeTestFeatures 的 feature：构建脚本把 FUSHI_FSRS_FEATURES 并进审计那份。
+    $features = $NativeTestFeatures[$Crate]
+    $previousFeatures = $env:FUSHI_FSRS_FEATURES
+    if ($features) { $env:FUSHI_FSRS_FEATURES = $features }
+    Write-Host "Building native/$Crate (cargo: $($cargo.Source))$(if ($features) { " features $features" })..." -ForegroundColor Cyan
     $previousVariant = $env:FUSHI_FSRS_ID_AUDIT_VARIANT
-    try {
+    $runBuild = {
         if ($Layout.Script.EndsWith('.ps1')) {
             if ($IdAudit) { & $script -IdAudit } else { & $script }
             return
@@ -182,8 +281,23 @@ function Invoke-NativeCrateBuild {
         & $GitBash $script
         if ($LASTEXITCODE -ne 0) { throw "native/$Crate/$($Layout.Script) failed (exit $LASTEXITCODE)." }
     }
+    try {
+        # 本函数自己挂上的 sccache 才有「不挂再编一次」：调用方设的 RUSTC_WRAPPER 是调用方的选择，
+        # 没挂缓存时失败就是失败。真正的编译错误第二次照样失败，只多花一次增量构建的时间。
+        $ownWrapper = (-not $previousWrapper) -and $env:RUSTC_WRAPPER
+        try {
+            & $runBuild
+        }
+        catch {
+            if (-not $ownWrapper) { throw }
+            Write-Host "  挂着 sccache 的构建失败（$($_.Exception.Message)）；不挂缓存再编一次，以分清是缓存还是代码的问题。" -ForegroundColor DarkYellow
+            $env:RUSTC_WRAPPER = $null
+            & $runBuild
+        }
+    }
     finally {
         $env:RUSTC_WRAPPER = $previousWrapper
+        $env:FUSHI_FSRS_FEATURES = $previousFeatures
         $env:FUSHI_FSRS_ID_AUDIT_VARIANT = $previousVariant
     }
 }
@@ -199,6 +313,7 @@ function Install-NativeTestCrate {
     $relLibs = @("native/$Crate/prebuilt/$($layout.Dir)/$name")
     if ($idAudit) { $relLibs += "native/$Crate/prebuilt/$($layout.Dir)/$NativeIdAuditDir/$name" }
     $tree = Get-NativeSourceTree -RepoRoot $RepoRoot -Crate $Crate
+    if ($tree -and $NativeTestFeatures[$Crate]) { $tree = "$tree+$($NativeTestFeatures[$Crate])" }
 
     $missing = @($relLibs | Where-Object { -not (Test-NativeStamp -Lib (Join-Path $RepoRoot $_) -Tree $tree) })
     if ($missing.Count -eq 0) {
@@ -235,6 +350,136 @@ function Install-NativeTestCrate {
         Write-NativeStamp -Lib $lib -Tree $tree
     }
     Write-Host ("OK native/$Crate 编译完成（{0:N0} 秒）。" -f $sw.Elapsed.TotalSeconds) -ForegroundColor Green
+}
+
+# --- Android 出包硬依赖的 .so（-Android） ------------------------------------------------------
+
+# fushi/android/app/build.gradle 的 checkFushi{Compute,Rwkv,Music,Corpus,WebCore}Native 查的五个 crate
+# （与 fushi/tool/dist_test/worker_build.sh 远端备的同一组）。
+$NativeAndroidCrates = @('fushi_compute', 'fushi_rwkv', 'fushi_music', 'fushi_corpus', 'fushi_web_core')
+# 本机缓存里每个产物保留最近用过的几棵源码树。
+$NativeCacheKeepTrees = 4
+
+function Get-NativeCacheRoot {
+    [OutputType([string])]
+    param()
+
+    if ($env:FUSHI_NATIVE_CACHE) { return $env:FUSHI_NATIVE_CACHE }
+    if ($env:LOCALAPPDATA) { return (Join-Path $env:LOCALAPPDATA 'fushi-native-cache') }
+    return (Join-Path $HOME '.cache/fushi-native-cache')
+}
+
+# 缓存位置：<根>/<产物相对路径的目录>/<源码树哈希>/<文件名>。路径里的树哈希就是戳记：只有干净的
+# 源码树编出的产物才存进来（Save-NativeToCache 的调用方保证），所以不另写 .source。
+function Get-NativeCachePath {
+    [OutputType([string])]
+    param([string]$RelLib, [string]$Tree)
+
+    $dir = Split-Path -Parent $RelLib
+    $name = Split-Path -Leaf $RelLib
+    return (Join-Path (Join-Path (Join-Path (Get-NativeCacheRoot) $dir) $Tree) $name)
+}
+
+function Copy-NativeFromCache {
+    [OutputType([bool])]
+    param([string]$RelLib, [string]$Lib, [string]$Tree)
+
+    $src = Get-NativeCachePath -RelLib $RelLib -Tree $Tree
+    if (-not (Test-Path -LiteralPath $src) -or (Get-Item -LiteralPath $src).Length -le 0) { return $false }
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Lib) | Out-Null
+    $tmp = "$Lib.seeding"
+    Copy-Item -LiteralPath $src -Destination $tmp -Force
+    Move-Item -LiteralPath $tmp -Destination $Lib -Force
+    # 记一次「用过」：清理按目录的最后写入时间留最近的几棵树。
+    (Get-Item -LiteralPath (Split-Path -Parent $src)).LastWriteTimeUtc = [DateTime]::UtcNow
+    return $true
+}
+
+function Save-NativeToCache {
+    [OutputType([void])]
+    param([string]$RelLib, [string]$Lib, [string]$Tree)
+
+    $dst = Get-NativeCachePath -RelLib $RelLib -Tree $Tree
+    $treeDir = Split-Path -Parent $dst
+    New-Item -ItemType Directory -Force -Path $treeDir | Out-Null
+    # 先写临时名再改名：别的 worktree 不会拷到写了一半的库。
+    $tmp = "$dst.$PID.tmp"
+    Copy-Item -LiteralPath $Lib -Destination $tmp -Force
+    Move-Item -LiteralPath $tmp -Destination $dst -Force
+    $old = @(Get-ChildItem -LiteralPath (Split-Path -Parent $treeDir) -Directory |
+            Sort-Object LastWriteTimeUtc -Descending | Select-Object -Skip $NativeCacheKeepTrees)
+    foreach ($d in $old) {
+        try { Remove-Item -LiteralPath $d.FullName -Recurse -Force -ErrorAction Stop } catch { }
+    }
+}
+
+function Install-NativeAndroidCrate {
+    [OutputType([void])]
+    param([string]$RepoRoot, [string]$Crate, [string[]]$Abis)
+
+    $relLibs = @($Abis | ForEach-Object { "native/$Crate/prebuilt/android/$_/lib$Crate.so" })
+    $tree = Get-NativeSourceTree -RepoRoot $RepoRoot -Crate $Crate
+    $missing = @($relLibs | Where-Object { -not (Test-NativeStamp -Lib (Join-Path $RepoRoot $_) -Tree $tree) })
+    if ($missing.Count -eq 0) {
+        Write-Host "OK native/$Crate (android) 已是 HEAD 源码编出的产物，跳过。" -ForegroundColor DarkGray
+        return
+    }
+    if ($tree) {
+        $from = @()
+        $stillMissing = @()
+        foreach ($rel in $missing) {
+            $lib = Join-Path $RepoRoot $rel
+            if (Copy-NativeFromCache -RelLib $rel -Lib $lib -Tree $tree) {
+                Write-NativeStamp -Lib $lib -Tree $tree
+                $from += '本机缓存'
+                continue
+            }
+            $src = Copy-NativeFromSibling -RepoRoot $RepoRoot -Crate $Crate -RelLib $rel -Lib $lib -Tree $tree
+            if ($src) {
+                Write-NativeStamp -Lib $lib -Tree $tree
+                Save-NativeToCache -RelLib $rel -Lib $lib -Tree $tree
+                $from += $src
+            }
+            else {
+                $stillMissing += $rel
+            }
+        }
+        if ($stillMissing.Count -eq 0) {
+            $where = (@($from | Select-Object -Unique)) -join '、'
+            Write-Host "OK native/$Crate (android) 复用 $where 的同源码产物（树 $($tree.Substring(0, 10))），未编译。" -ForegroundColor Green
+            return
+        }
+    }
+    else {
+        Write-Host "native/$Crate 有未提交改动，按当前工作区源码编译（不进缓存）。" -ForegroundColor Yellow
+    }
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+        throw "native/$Crate 的 Android .so 没有现成产物；非 Windows 主机请直接跑 bash native/$Crate/build_android_so.sh <ndk-root> $($Abis -join ' ')。"
+    }
+    $cargo = Get-Command cargo -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $cargo) {
+        throw "找不到 cargo：native/$Crate 的 Android .so 在本机缓存与兄弟 worktree 里都没有同源码的现成产物，必须编（Rust + cargo-ndk + NDK，见 docs/agent/build.md）。"
+    }
+    Write-Host "Building native/$Crate for Android ($($Abis -join ', '))..." -ForegroundColor Cyan
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    # 一次调用编齐全部 ABI：依赖只解析一遍，产物齐不齐由下面逐个核对。
+    & (Join-Path (Join-Path $RepoRoot "native/$Crate") 'build_android_so.ps1') -Abis $Abis
+    foreach ($rel in $relLibs) {
+        $lib = Join-Path $RepoRoot $rel
+        if (-not (Test-Path -LiteralPath $lib)) { throw "native/$Crate 构建后缺少产物 $lib" }
+        Write-NativeStamp -Lib $lib -Tree $tree
+        if ($tree) { Save-NativeToCache -RelLib $rel -Lib $lib -Tree $tree }
+    }
+    Write-Host ("OK native/$Crate (android) 编译完成（{0:N0} 秒）。" -f $sw.Elapsed.TotalSeconds) -ForegroundColor Green
+}
+
+if ($Android) {
+    # `powershell -File ... -Abis a,b` 把整串当成一个元素传进来，这里统一拆开。
+    $Abis = @($Abis | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    foreach ($crate in $NativeAndroidCrates) {
+        Install-NativeAndroidCrate -RepoRoot $root -Crate $crate -Abis $Abis
+    }
+    return
 }
 
 foreach ($crate in $NativeTestCrates) {

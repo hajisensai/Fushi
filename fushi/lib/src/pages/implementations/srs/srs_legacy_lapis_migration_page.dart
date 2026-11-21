@@ -35,6 +35,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 /// 打开「迁移旧 Lapis 到新模板」页；页面关掉后返回。需要 [context] 在 [ProviderScope] 之下。
 ///
@@ -148,7 +149,10 @@ class _SrsLegacyLapisMigrationPageState
       FushiToast.show(msg: done, severity: ToastSeverity.success);
     } catch (e, stack) {
       ErrorLogService.instance.log(where, e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -255,6 +259,7 @@ class _SrsLegacyLapisMigrationPageState
     final bool apple = isGlassDesign(context);
     return FushiPageScaffold(
       title: t.srs_lapis_migration_title,
+      masthead: true,
       header: apple ? null : _buildTopBar(context),
       body: Builder(builder: _buildBody),
     );

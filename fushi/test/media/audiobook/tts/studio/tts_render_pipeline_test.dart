@@ -237,18 +237,65 @@ void main() {
       final TtsChapterManifest? back = TtsChapterManifest.decode(m.encode());
       expect(back, isNotNull);
       expect(back!.durationsMs, <int>[10, 20, 10]);
+      const List<int> presetGaps = <int>[800, 150, 150, 2000];
       bool matches(
         int section,
         List<String> keys, {
         String pause = 'standard',
         bool loudnorm = true,
-      }) => back.matches(section, keys, pausePreset: pause, loudnorm: loudnorm);
+        List<int> gaps = presetGaps,
+      }) => back.matches(
+        section,
+        keys,
+        pausePreset: pause,
+        loudnorm: loudnorm,
+        gapsMs: gaps,
+        legacyGapsMs: presetGaps,
+      );
       expect(matches(3, <String>['a', 'b', 'a']), isTrue);
       expect(matches(3, <String>['b', 'a', 'a']), isFalse);
       expect(matches(4, <String>['a', 'b', 'a']), isFalse);
       // 换停顿预设 / 响度开关都要重编码。
       expect(matches(3, <String>['a', 'b', 'a'], pause: 'literary'), isFalse);
       expect(matches(3, <String>['a', 'b', 'a'], loudnorm: false), isFalse);
+      // 旧 sidecar 没记停顿：按只看预设的停顿认；演出稿改了停顿就重编码。
+      expect(
+        matches(3, <String>['a', 'b', 'a'], gaps: <int>[800, 450, 300, 2000]),
+        isFalse,
+      );
+    });
+
+    test('记下的停顿往返；停顿变了（演出稿改了类型 / 一拍）就重编码', () {
+      const TtsChapterManifest m = TtsChapterManifest(
+        section: 0,
+        keys: <String>['a', 'b'],
+        durationsMs: <int>[10, 20],
+        pausePreset: 'standard',
+        loudnorm: false,
+        gapsMs: <int>[800, 900, 2000],
+      );
+      final TtsChapterManifest back = TtsChapterManifest.decode(m.encode())!;
+      expect(back.gapsMs, <int>[800, 900, 2000]);
+      bool matches(List<int> gaps) => back.matches(
+        0,
+        const <String>['a', 'b'],
+        pausePreset: 'standard',
+        loudnorm: false,
+        gapsMs: gaps,
+        // 记了停顿的 sidecar 不看只按预设算的那份。
+        legacyGapsMs: const <int>[800, 150, 2000],
+      );
+      expect(matches(const <int>[800, 900, 2000]), isTrue);
+      expect(matches(const <int>[800, 150, 2000]), isFalse);
+      expect(matches(const <int>[800, 1100, 2000]), isFalse);
+      // 停顿个数与句数对不上的坏 sidecar 当作没编码过。
+      expect(
+        TtsChapterManifest.decode(
+          '{"v":2,"section":0,"keys":["a"],"durationsMs":[1],'
+          '"pause":"standard","loudnorm":false,"gaps":[1]}',
+        ),
+        isNull,
+      );
     });
 
     test('损坏 / 长度不一致 / 旧版本 → null', () {

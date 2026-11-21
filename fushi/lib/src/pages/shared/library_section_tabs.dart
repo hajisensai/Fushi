@@ -21,11 +21,15 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingToolbarSurface;
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
+    show
+        FushiMastheadRole,
+        FushiMastheadSegmentedTabs,
+        FushiMastheadSwitch,
+        fushiMastheadRoleOf;
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/src/models/app_model.dart' show AppModel, appProvider;
 import 'package:fushi/src/utils/components/library_section_tab.dart';
 import 'package:fushi/src/utils/components/section_tab_order.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
@@ -138,6 +142,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
     this.overflowMenu = true,
     this.floating = false,
     this.orderKey,
+    this.selectedIsCurrent = true,
     super.key,
   }) : controller = null;
 
@@ -160,7 +165,8 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
     super.key,
   }) : selected = null,
        onChanged = null,
-       orderKey = null;
+       orderKey = null,
+       selectedIsCurrent = true;
 
   final List<LibrarySectionTab<T>> tabs;
 
@@ -194,6 +200,16 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
   /// 仅 [LibrarySectionTabs.controlled] 形态；自持形态下为 null。
   final TabController? controller;
 
+  /// false = [selected] 只是视觉锚点，不是宿主此刻所在的视图：宿主停在一个不属于
+  /// 任何页签的视图上（库页壳停在导入页时高亮「我的」组），于是点中 / 方向键落到
+  /// 这个高亮页签也必须照常回调 [onChanged]——否则它看着是选中的、却点不回去
+  /// （BUG-4706）。默认 true：高亮项就是当前视图，重复点击不回调。
+  ///
+  /// 各画法都认它：页头大字（一级 / 二级）、焦点外壳与 Apple 非页头大字形态的
+  /// 分段控件（[FushiSegmentedButton.notifyReselect]）按它放行；MD3
+  /// [FushiSectionTabBar] 的 TabBar 点击本就逐次回调。
+  final bool selectedIsCurrent;
+
   /// focusId 前缀（如 `game-library-tab`），焦点停靠点 id 为 `<prefix>-sections`。
   final String focusIdPrefix;
 
@@ -215,6 +231,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
       onChanged: onSelect,
       focusIdPrefix: focusIdPrefix,
       focusId: FushiFocusId('$focusIdPrefix-sections'),
+      selectedIsCurrent: selectedIsCurrent,
       child: child,
     );
   }
@@ -226,27 +243,62 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
   ) {
     final T selectedValue = selected as T;
     final ValueChanged<T> onSelect = onChanged!;
+    final Widget? masthead = _mastheadBody(
+      context,
+      shownTabs,
+      selectedValue,
+      onSelect,
+    );
     return _focusShell(
       tabs: shownTabs,
       selectedValue: selectedValue,
       onSelect: onSelect,
-      child: isGlassDesign(context)
-          ? _AppleSectionSegments<T>(
-              tabs: shownTabs,
-              selected: selectedValue,
-              onChanged: onSelect,
-              fill: fill && !floating,
-            )
-          : FushiSectionTabBar<T>(
-              tabs: shownTabs,
-              selected: selectedValue,
-              onChanged: onSelect,
-              secondary: secondary,
-              fill: fill,
-              overflowMenu: overflowMenu,
-              floating: floating,
-            ),
+      child:
+          masthead ??
+          (isGlassDesign(context)
+              ? _AppleSectionSegments<T>(
+                  tabs: shownTabs,
+                  selected: selectedValue,
+                  onChanged: onSelect,
+                  fill: fill && !floating,
+                  selectedIsCurrent: selectedIsCurrent,
+                )
+              : FushiSectionTabBar<T>(
+                  tabs: shownTabs,
+                  selected: selectedValue,
+                  onChanged: onSelect,
+                  secondary: secondary,
+                  fill: fill,
+                  overflowMenu: overflowMenu,
+                  floating: floating,
+                )),
     );
+  }
+
+  /// 库页「页头大字」顶栏（[FushiMastheadScope]，重设计外壳生效时）里的画法：
+  /// 大字行的一级切换写成大字、二级行是连体按钮组。不在页头大字顶栏里时为
+  /// null，调用方照原样画。焦点外壳（[_focusShell]）不变。
+  Widget? _mastheadBody(
+    BuildContext context,
+    List<LibrarySectionTab<T>> shownTabs,
+    T selectedValue,
+    ValueChanged<T> onSelect,
+  ) {
+    return switch (fushiMastheadRoleOf(context)) {
+      FushiMastheadRole.primary => FushiMastheadSwitch<T>(
+        tabs: shownTabs,
+        selected: selectedValue,
+        onChanged: onSelect,
+        selectedIsCurrent: selectedIsCurrent,
+      ),
+      FushiMastheadRole.secondary => FushiMastheadSegmentedTabs<T>(
+        tabs: shownTabs,
+        selected: selectedValue,
+        onChanged: onSelect,
+        selectedIsCurrent: selectedIsCurrent,
+      ),
+      null => null,
+    };
   }
 
   @override
@@ -278,21 +330,24 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
           tabs: tabs,
           selectedValue: tabs[index].value,
           onSelect: select,
-          child: isGlassDesign(context)
-              ? _AppleSectionSegments<T>(
-                  tabs: tabs,
-                  selected: tabs[index].value,
-                  onChanged: select,
-                  fill: fill && !floating,
-                )
-              : FushiSectionTabBar<T>.controlled(
-                  tabs: tabs,
-                  controller: host,
-                  secondary: secondary,
-                  fill: fill,
-                  overflowMenu: overflowMenu,
-                  floating: floating,
-                ),
+          child:
+              _mastheadBody(context, tabs, tabs[index].value, select) ??
+              (isGlassDesign(context)
+                  ? _AppleSectionSegments<T>(
+                      tabs: tabs,
+                      selected: tabs[index].value,
+                      onChanged: select,
+                      fill: fill && !floating,
+                      selectedIsCurrent: selectedIsCurrent,
+                    )
+                  : FushiSectionTabBar<T>.controlled(
+                      tabs: tabs,
+                      controller: host,
+                      secondary: secondary,
+                      fill: fill,
+                      overflowMenu: overflowMenu,
+                      floating: floating,
+                    )),
         );
       },
     );
@@ -425,12 +480,16 @@ class _AppleSectionSegments<T extends Object> extends StatelessWidget {
     required this.selected,
     required this.onChanged,
     required this.fill,
+    required this.selectedIsCurrent,
   });
 
   final List<LibrarySectionTab<T>> tabs;
   final T selected;
   final ValueChanged<T> onChanged;
   final bool fill;
+
+  /// 见 [LibrarySectionTabs.selectedIsCurrent]。
+  final bool selectedIsCurrent;
 
   /// 等宽段的格宽：最宽文案 + 两侧 14（同 [FushiSegmentedButton] 的口径）。
   double _cellWidth(BuildContext context) {
@@ -501,6 +560,7 @@ class _AppleSectionSegments<T extends Object> extends StatelessWidget {
       onSelectionChanged: (Set<T> values) {
         if (values.isNotEmpty) onChanged(values.first);
       },
+      notifyReselect: !selectedIsCurrent,
       expandedInsets: expand ? EdgeInsets.zero : null,
     );
   }
@@ -1777,23 +1837,11 @@ class _CompactSecondaryTabsFrame extends StatelessWidget {
   }
 }
 
-/// 当前上下文可用的顺序存储：显式 [SectionTabOrderScope] 优先；否则有
-/// ProviderScope 且偏好已装载时走偏好；都没有（启动早期 / 裸组件）返回 null，
-/// 页签按宿主顺序显示、不提供排序入口。
+/// 当前上下文可用的顺序存储：显式 [SectionTabOrderScope] 优先；否则走应用级
+/// 回落 [sectionTabOrderAppFallback]（有 ProviderScope 且偏好已装载时读写偏好）；
+/// 都没有（启动早期 / 裸组件）返回 null，页签按宿主顺序显示、不提供排序入口。
 SectionTabOrderStore? resolveSectionTabOrderStore(BuildContext context) {
   final SectionTabOrderStore? scoped = SectionTabOrderScope.maybeOf(context);
   if (scoped != null) return scoped;
-  final bool hasScope =
-      context
-          .getElementForInheritedWidgetOfExactType<
-            UncontrolledProviderScope
-          >() !=
-      null;
-  if (!hasScope) return null;
-  final AppModel app = ProviderScope.containerOf(
-    context,
-    listen: false,
-  ).read(appProvider);
-  if (!app.isPreferencesReady) return null;
-  return PrefsSectionTabOrderStore(app.prefsRepo);
+  return sectionTabOrderAppFallback?.call(context);
 }

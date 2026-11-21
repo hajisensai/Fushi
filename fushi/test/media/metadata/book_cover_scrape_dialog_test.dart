@@ -8,6 +8,8 @@ import 'package:fushi/src/media/metadata/book_cover_scrape_dialog.dart';
 import 'package:fushi/src/media/metadata/book_metadata_scraper.dart';
 import 'package:fushi/src/media/metadata/transport_retry.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/media/metadata/books/book_catalog.dart'
+    show BookCatalogHttp;
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -46,6 +48,151 @@ void main() {
     expect(find.text('四叶妹妹！'), findsOneWidget);
     // 「使用」按钮存在。
     expect(find.text(t.book_scrape_use), findsOneWidget);
+  });
+
+  // 应用内反馈 T_KdsLEY9l：导入的歌曲（LRC 歌词）默认搜 iTunes，不再先去 Bangumi。
+  testWidgets('导入的歌曲：默认源 iTunes，自动搜索打到 iTunes 并渲染歌曲候选', (
+    WidgetTester tester,
+  ) async {
+    final List<Uri> requests = <Uri>[];
+    final MockClient client = MockClient((http.Request req) async {
+      requests.add(req.url);
+      return http.Response.bytes(
+        utf8.encode(
+          '{"resultCount":1,"results":[{"wrapperType":"track","kind":"song",'
+          '"trackId":1537460612,"trackName":"Lemon","artistName":"米津玄師",'
+          '"collectionName":"Lemon - Single",'
+          '"artworkUrl100":"https://i.test/a.jpg/100x100bb.jpg",'
+          '"releaseDate":"2018-02-12T12:00:00Z","primaryGenreName":"J-Pop"}]}',
+        ),
+        200,
+      );
+    });
+    await tester.pumpWidget(
+      wrap(
+        BookCoverScrapeDialog(
+          initialQuery: 'Lemon',
+          isSong: true,
+          scraperOverride: BookMetadataScraper(
+            client: client,
+            catalogHttp: BookCatalogHttp(client: client, throttle: false),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(requests.single.host, 'itunes.apple.com');
+    expect(find.text(BookScrapeSource.itunes.label), findsWidgets);
+    expect(find.text('Lemon'), findsWidgets);
+    expect(find.textContaining('米津玄師'), findsOneWidget);
+  });
+
+  // 拍板台 pr3497：NSFW 候选跟随书自己的 NSFW 标记，对所有源一视同仁。
+  const String nsfwMixedBody =
+      '{"data":[{"id":1,"name":"Yotsuba to!","name_cn":"四叶妹妹！",'
+      '"images":{"large":"https://i/l.jpg"},"date":"2003-08-10"},'
+      '{"id":2,"name":"Adult work","nsfw":true,'
+      '"images":{"large":"https://i/a.jpg"},"date":"2010-01-01"}]}';
+
+  testWidgets('书没标 NSFW：NSFW 候选藏起来并提示条数；「标为 NSFW」后显示且标 NSFW', (
+    WidgetTester tester,
+  ) async {
+    int marked = 0;
+    await tester.pumpWidget(
+      wrap(
+        BookCoverScrapeDialog(
+          initialQuery: '四叶',
+          scraperOverride: scraperReturning(nsfwMixedBody),
+          onMarkNsfw: () async => marked++,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('四叶妹妹！'), findsOneWidget);
+    expect(find.text('Adult work'), findsNothing);
+    expect(find.text(t.book_scrape_nsfw_hidden(count: 1)), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('book_scrape_nsfw_mark')),
+    );
+    await tester.pumpAndSettle();
+    expect(marked, 1);
+    expect(find.text('Adult work'), findsOneWidget);
+    expect(find.textContaining('NSFW'), findsWidgets);
+    expect(
+      find.byKey(const ValueKey<String>('book_scrape_nsfw_hidden')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('书已是 NSFW：直接显示 NSFW 候选，标「NSFW」而不是 R18', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      wrap(
+        BookCoverScrapeDialog(
+          initialQuery: '四叶',
+          scraperOverride: scraperReturning(nsfwMixedBody),
+          includeNsfw: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Adult work'), findsOneWidget);
+    expect(find.text('NSFW · 2010'), findsOneWidget);
+    expect(find.textContaining('R18'), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('book_scrape_nsfw_hidden')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('标 NSFW 失败：候选仍藏着，不重搜成显示', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      wrap(
+        BookCoverScrapeDialog(
+          initialQuery: '四叶',
+          scraperOverride: scraperReturning(nsfwMixedBody),
+          onMarkNsfw: () async => throw StateError('db locked'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('book_scrape_nsfw_mark')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Adult work'), findsNothing);
+    expect(find.text(t.book_scrape_nsfw_hidden(count: 1)), findsOneWidget);
+  });
+
+  testWidgets('楽天没填凭据：提示只在选中楽天时出现，且不发请求', (WidgetTester tester) async {
+    final List<Uri> requests = <Uri>[];
+    final BookMetadataScraper scraper = BookMetadataScraper(
+      client: MockClient((http.Request req) async {
+        requests.add(req.url);
+        return http.Response.bytes(
+          utf8.encode('{"data":[]}'),
+          200,
+          headers: const <String, String>{'content-type': 'application/json'},
+        );
+      }),
+    );
+    await tester.pumpWidget(
+      wrap(BookCoverScrapeDialog(initialQuery: '四叶', scraperOverride: scraper)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(t.book_scrape_rakuten_unavailable), findsNothing);
+    final int before = requests.length;
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('book_scrape_source_picker')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(BookScrapeSource.rakuten.label).last);
+    await tester.pumpAndSettle();
+    expect(find.text(t.book_scrape_rakuten_unavailable), findsOneWidget);
+    expect(requests.length, before);
   });
 
   testWidgets('空结果显示空状态文案', (WidgetTester tester) async {
@@ -226,5 +373,79 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('MangaBaka 源：署名可见；「使用」进卷封面网格，本地卷号那一卷排最前', (
+    WidgetTester tester,
+  ) async {
+    final BookMetadataScraper scraper = BookMetadataScraper(
+      client: MockClient((http.Request req) async {
+        final String body;
+        if (req.url.host == 'api.mangabaka.org' &&
+            req.url.path == '/v1/series/search') {
+          body =
+              '{"data":[{"id":100,"state":"active","title":"Test Manga",'
+              '"native_title":"テスト漫画","authors":["Taro"],"type":"manga",'
+              '"content_rating":"safe","cover":{"raw":{"url":'
+              '"https://images.mangabaka.dev/c","width":1200,"height":1800}}}],'
+              '"pagination":{"next":null}}';
+        } else if (req.url.path == '/v1/series/100/images') {
+          String image(String index) =>
+              '{"id":$index,"index":"$index","index_numeric":$index,'
+              '"type":"volume","language":"ja","note":null,'
+              '"content_rating":"safe","image":{"raw":{"url":'
+              '"https://images.mangabaka.dev/v$index","width":1200,'
+              '"height":1800}}}';
+          body =
+              '{"data":[${image('1')},${image('2')}],'
+              '"pagination":{"next":null}}';
+        } else {
+          body = '{"data":[]}';
+        }
+        return http.Response.bytes(
+          utf8.encode(body),
+          200,
+          headers: const <String, String>{'content-type': 'application/json'},
+        );
+      }),
+    );
+    await tester.pumpWidget(
+      wrap(
+        BookCoverScrapeDialog(
+          initialQuery: 'テスト漫画',
+          volume: 2,
+          scraperOverride: scraper,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final Finder attribution = find.byKey(
+      const ValueKey<String>('book_scrape_mangabaka_attribution'),
+    );
+    expect(attribution, findsNothing);
+
+    // 源是下拉（七个源分段放不下）：先展开，再点 MangaBaka 那一项。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('book_scrape_source_picker')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('MangaBaka').last);
+    await tester.pumpAndSettle();
+    expect(find.text('テスト漫画'), findsWidgets);
+    expect(attribution, findsOneWidget);
+
+    await tester.tap(find.text(t.book_scrape_use));
+    await tester.pumpAndSettle();
+    final Finder v1 = find.byKey(
+      const ValueKey<String>('book_scrape_volume_1'),
+    );
+    final Finder v2 = find.byKey(
+      const ValueKey<String>('book_scrape_volume_2'),
+    );
+    expect(v1, findsOneWidget);
+    expect(v2, findsOneWidget);
+    // 预选的第 2 卷排在第 1 卷前面。
+    expect(tester.getTopLeft(v2).dx, lessThan(tester.getTopLeft(v1).dx));
+    expect(attribution, findsOneWidget);
   });
 }

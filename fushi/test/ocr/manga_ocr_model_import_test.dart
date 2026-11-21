@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:archive/archive_io.dart';
 import 'package:test/test.dart';
 import 'package:fushi/src/ocr/manga_ocr_model_import.dart';
+import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:path/path.dart' as p;
 
@@ -279,6 +280,42 @@ void main() {
     expect(matchMangaOcrModelFile('x.bin', manifest, sizeBytes: 300), isNull);
     // 没给尺寸：只认名字。
     expect(matchMangaOcrModelFile('inference.onnx', manifest), isNull);
+  });
+
+  test('真实 CTC 清单：Kellenok v0.3 的 HF 原名按字节数落到带版本的落盘名', () {
+    const List<MangaOcrModelFile> ctc = kMangaCtcOcrModelManifest;
+    expect(
+      matchMangaOcrModelFile(
+        'manga_rec.onnx',
+        ctc,
+        sizeBytes: 21334702,
+      )?.fileName,
+      kMangaCtcRecFileName,
+    );
+    expect(
+      matchMangaOcrModelFile(
+        'ppocrv6_dict.txt',
+        ctc,
+        sizeBytes: 76327,
+      )?.fileName,
+      kMangaCtcRecDictFileName,
+    );
+    // v0.2 的文件（旧落盘名 / HF 原名，21,167,540 B）不属于这份清单。
+    for (final String name in <String>[
+      'kellenok_manga_rec_v0.2.onnx',
+      'manga_rec_v0.2.onnx',
+    ]) {
+      expect(
+        matchMangaOcrModelFile(name, ctc, sizeBytes: 21167540),
+        isNull,
+        reason: name,
+      );
+    }
+    // 按字节数认身份的前提：清单里没有两个文件同尺寸。
+    final Set<int> sizes = <int>{
+      for (final MangaOcrModelFile file in ctc) file.expectedBytes,
+    };
+    expect(sizes, hasLength(ctc.length));
   });
 
   test('basename 匹配大小写不敏感', () {

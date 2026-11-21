@@ -26,6 +26,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/anki/card_source_origin.dart'
     show cardSourceLinkOfFields;
 import 'package:fushi/src/anki/card_source_router.dart' show openCardSource;
+import 'package:fushi/src/focus/focus_activation.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_card_tile.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_preview.dart';
@@ -37,6 +38,8 @@ import 'package:fushi/src/srs/srs_fushi_card_fields.dart' show srsPlainText;
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_sound_tag.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -58,6 +61,7 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 /// 检查器的页签。
 enum SrsBrowseInspectorTab { preview, edit, history }
@@ -158,6 +162,12 @@ class _SrsBrowseInspectorState extends ConsumerState<SrsBrowseInspector> {
   SrsCardDetail? _detail;
   int _seq = 0;
 
+  /// 编辑页签发起了、还没写完（含排队中）的写入数（[_write]）；不为 0 时读回来的重读一律丢弃。
+  int _writesInFlight = 0;
+
+  /// 写入队尾：下一次写入等它完成才开写（[_write]），永远不以错误完成。
+  Future<void> _writeTail = Future<void>.value();
+
   /// 读这张卡失败（复习库打开失败原样抛出、或读的途中出错）：编辑 / 历史页签显示错误态 + 重试，不停在转圈。
   Object? _loadError;
 
@@ -185,7 +195,7 @@ class _SrsBrowseInspectorState extends ConsumerState<SrsBrowseInspector> {
       detail = await store.cardDetail(widget.row.cardId);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsBrowseInspector.load', e, stack);
-      if (mounted && seq == _seq) {
+      if (_landable(seq)) {
         setState(() {
           _loadError = e;
           // 换了行：上一张卡的内容不能留在这一行的页签里，改显示错误态（同一张卡重读失败则照旧显示）。
@@ -194,18 +204,54 @@ class _SrsBrowseInspectorState extends ConsumerState<SrsBrowseInspector> {
       }
       return;
     }
-    if (!mounted || seq != _seq) return;
+    if (!_landable(seq)) return;
     setState(() {
       _detail = detail;
       _loadError = null;
     });
   }
 
+  /// 第 [seq] 次读的结果能不能落地：还挂着、是最新一次读、且此刻没有写入在途（见 [_write]）。
+  bool _landable(int seq) => mounted && seq == _seq && _writesInFlight == 0;
+
   void _retryLoad() {
     retrySrsStoreOpen(ref);
     setState(() => _loadError = null);
     unawaited(_load());
   }
+
+  /// 编辑页签的一次写入（改字段 / 改标签）：按发起顺序排队一次只写一个，写入从发起到写完都算在途。
+  ///
+  /// - 排队：同一字段先后两次停笔保存（W1 还没落库就发起 W2）若并发跑，W2 的条件写计划读的是 W1 落库前的值，
+  ///   W1 一落库 W2 就算冲突不写——后发的值丢了，界面又被读回的 W1 换回去。排队后后发的值一定最后落库。
+  /// - 在途期间读回来的重读一律丢弃（[_landable]）：写入途中库里只有前几次写入的值，编辑页签自己保存的回声只认
+  ///   最近一次落库的值，认不出更早一次的，会当成「别处改了」把刚存的格子换回旧值、编辑器整块重建（输入框失焦、
+  ///   刚打的字被换掉）。不管重读是写入前还是写入途中发出的（W1 落库引起的 revision 重读赶在 W2 落库之前读库），
+  ///   都只看它读回来那一刻还有没有写入在途。
+  /// - 最后一次写入结束时统一补读一次：这一次在所有写入落库之后才读，也让被丢弃的重读不把检查器停在旧数据上。
+  Future<void> _write(Future<void> Function() write) async {
+    final Future<void> previous = _writeTail;
+    final Completer<void> done = Completer<void>();
+    _writeTail = done.future;
+    _writesInFlight++;
+    try {
+      await previous;
+      await write();
+    } finally {
+      done.complete();
+      _writesInFlight--;
+      if (mounted && _writesInFlight == 0) unawaited(_load());
+    }
+  }
+
+  Future<void> _saveField(String noteId, String fieldName, String value) =>
+      _write(() => widget.onSaveField(noteId, fieldName, value));
+
+  Future<void> _saveTags(
+    String noteId,
+    List<String> before,
+    List<String> after,
+  ) => _write(() => widget.onSaveTags(noteId, before, after));
 
   /// 编辑 / 历史页签在还没读到这张卡时的占位：读失败给错误态，否则转圈。
   Widget _pending() {
@@ -242,8 +288,8 @@ class _SrsBrowseInspectorState extends ConsumerState<SrsBrowseInspector> {
                   'srs-browse-inspector-edit-${detail.note.id}',
                 ),
                 detail: detail,
-                onSaveField: widget.onSaveField,
-                onSaveTags: widget.onSaveTags,
+                onSaveField: _saveField,
+                onSaveTags: _saveTags,
                 onOpenEditor: widget.onOpenEditor,
               ),
       SrsBrowseInspectorTab.history =>
@@ -602,7 +648,10 @@ class _EditTabState extends State<_EditTab> {
       if (mounted) setState(() => _justSaved = true);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsBrowse.inlineEdit', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     }
   }
 
@@ -618,7 +667,10 @@ class _EditTabState extends State<_EditTab> {
       ErrorLogService.instance.log('SrsBrowse.inlineTags', e, stack);
       // 没写进去：仍算未保存，下次失焦 / 回车再写。
       if (_sameTags(_savedTags, after)) _savedTags = before;
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     }
   }
 
@@ -1236,6 +1288,10 @@ class _SrsBrowseDetailPageState extends ConsumerState<SrsBrowseDetailPage> {
     final KeyEventResult? lookup = _lookupCtl.guardKey(event);
     if (lookup != null) return lookup;
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    // 焦点在页签 / 上一张下一张这类可激活子控件上：确认键归它，不当「翻面」吞掉。
+    if (focusedDescendantClaimsActivation(node, event.logicalKey)) {
+      return KeyEventResult.ignored;
+    }
     if (FocusManager.instance.primaryFocus?.context
             ?.findAncestorStateOfType<EditableTextState>() !=
         null) {
@@ -1290,7 +1346,8 @@ class _SrsBrowseDetailPageState extends ConsumerState<SrsBrowseDetailPage> {
       child: FushiPageScaffold(
         title: title,
         subtitle: position,
-        actions: apple
+        masthead: true,
+        actions: apple || shellRedesignActive(context)
             ? <Widget>[
                 for (final FushiToolbarItem i in nav)
                   FushiIconButton(

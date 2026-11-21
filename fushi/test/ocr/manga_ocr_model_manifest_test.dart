@@ -48,7 +48,8 @@ void main() {
 
   group('CTC 清单里的 PP-OCRv6 文件', () {
     // 2026-10 删除 Baberu 时一并删了只有它引用的 kPpOcrLineModelManifest；
-    // PP-OCRv6 det / 字典仍由逐列 CTC 清单下载，revision 钉死的约束照旧。
+    // PP-OCRv6 det 仍由逐列 CTC 清单下载，revision 钉死的约束照旧；它的
+    // `inference.yml` 字典在 2026-11 换 Kellenok rec v0.3（自带字典）后退出清单。
     final List<MangaOcrModelFile> pp = <MangaOcrModelFile>[
       for (final MangaOcrModelFile m in kMangaCtcOcrModelManifest)
         if (m.fileName == kPpOcrDetFileName ||
@@ -57,7 +58,9 @@ void main() {
     ];
 
     test('PP-OCRv6 文件钉 HF revision sha，不用可变的 main', () {
-      expect(pp, hasLength(2));
+      expect(pp.map((MangaOcrModelFile m) => m.fileName), <String>[
+        kPpOcrDetFileName,
+      ]);
       for (final MangaOcrModelFile m in pp) {
         expect(m.url, isNot(contains('/resolve/main/')), reason: m.url);
         expect(

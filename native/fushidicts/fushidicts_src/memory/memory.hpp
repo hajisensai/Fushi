@@ -8,6 +8,8 @@
 #include <string>
 #include <system_error>
 
+#include "../util/prefetch.hpp"
+
 namespace memory {
 struct mapped_file {
   uint8_t* data = nullptr;
@@ -105,6 +107,14 @@ class blob_file {
     return view(offset, whole_ ? SIZE_MAX : kWindowStepBytes);
   }
 
+  // Hint that the bytes at [offset] are about to be read. Whole-file mode only:
+  // a windowed view may have to map a window first, which is not a hint.
+  void prefetch(uint64_t offset) const {
+    if (whole_ && offset < size_) {
+      FUSHI_PREFETCH(whole_->data + offset);
+    }
+  }
+
  private:
   friend std::shared_ptr<const blob_file> open_blob_file(const std::string& path);
   blob_span view_windowed(uint64_t offset, size_t n) const;
@@ -176,6 +186,11 @@ class file_reader {
 // the result is empty and [last_error] reports why.
 mapped_file map_rw(const std::string& path, size_t file_size);
 void unmap(mapped_file mapping);
+// unmap without flushing dirty pages first. For derived files whose loader
+// verifies a checksum (so a torn write is rejected, not trusted) and for
+// abandoned writes about to be deleted: the synchronous flush in [unmap] is
+// tens of MB of blocking disk IO that buys nothing there.
+void unmap_unflushed(mapped_file mapping);
 
 // errno-style code (ENOSPC, EACCES, ...) of the most recent failed map_rw on
 // this thread; 0 when it succeeded. Windows error codes are folded onto the
@@ -188,6 +203,36 @@ int last_error();
 struct map_error : std::system_error {
   explicit map_error(const std::string& what)
       : std::system_error(last_error() != 0 ? last_error() : EIO, std::generic_category(), what) {}
+};
+
+// 把 [path] 的内容真正写到存储介质上再返回：Windows FlushFileBuffers、Apple
+// F_FULLFSYNC（fsync 在那里只到驱动器缓存）、其余 fsync。[unmap] 的刷脏页只把数据交给
+// 系统缓存（Windows 的 FlushViewOfFile 不等磁盘、Apple 的 msync 同理），「改名即提交、
+// 提交后删旧文件」的写入方在改名前要调它。false = 没能落盘。
+bool sync_file(const std::string& path);
+// 把 [dir] 的目录项（刚做的改名 / 新建）落盘。POSIX 上刷目录（口径同 sync_file）；
+// Windows 没有对应操作（NTFS 的元数据日志保证改名先于其后的删除），恒真。
+bool sync_directory(const std::string& dir);
+// 尽力删除一个文件，false = 没删掉（不存在 / 仍被别的句柄独占打开）。Windows 上用 POSIX
+// 语义删除：文件仍被映射也能摘掉名字，已有的映射照常可读（同 POSIX unlink），两个工具链
+// （MSVC / llvm-mingw）行为一致。
+bool remove_file(const std::string& path);
+
+// 对一个**已存在**的文件加独占锁，持有到析构。跨进程生效，同进程里各自构造的两把也
+// 互斥（POSIX flock 按打开文件描述、Windows LockFileEx 按句柄）。构造时阻塞等到拿到；
+// 文件打不开时 held() 为假。锁的是文件末尾之外的一个字节（Windows 的范围锁是强制的，
+// 不能挡住读这个文件的人），不改文件内容，也不妨碍它被删除。
+class file_lock {
+ public:
+  explicit file_lock(const std::string& path);
+  ~file_lock();
+  file_lock(const file_lock&) = delete;
+  file_lock& operator=(const file_lock&) = delete;
+  bool held() const { return held_; }
+
+ private:
+  intptr_t handle_ = -1;
+  bool held_ = false;
 };
 
 }

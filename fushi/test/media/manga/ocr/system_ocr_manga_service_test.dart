@@ -20,7 +20,7 @@ import 'package:path/path.dart' as p;
 ///    否则那种失败在真机上看起来和「这页真没字」一模一样，没人查得出来。
 /// 2. **整卷编排**——当前页优先、逐页落盘、缓存复用。这层与识别质量无关，
 ///    四个平台共用，因此值得用 fake platform 钉死。
-class _FakePlatform implements SystemOcrPlatform {
+class _FakePlatform implements SystemOcrPixelPlatform {
   _FakePlatform({
     this.available = true,
     Map<String, List<SystemOcrTextLine>>? byPage,
@@ -50,11 +50,44 @@ class _FakePlatform implements SystemOcrPlatform {
       imageHeight: 1600,
     );
   }
+
+  @override
+  Future<SystemOcrPageResult> recognizePixels(
+    Uint8List rgba, {
+    required int width,
+    required int height,
+    required String language,
+    List<Rect> tiles = const <Rect>[],
+  }) => throw UnimplementedError();
+}
+
+/// 同时实现模型配置面的平台（Android ML Kit），modelStatus 回固定状态。
+class _ModelStatusPlatform extends _FakePlatform
+    implements SystemOcrModelSetup {
+  _ModelStatusPlatform(this.status);
+
+  final SystemOcrModelStatus status;
+  final List<String> languages = <String>[];
+
+  @override
+  Future<SystemOcrModelReport> modelStatus(String language) async {
+    languages.add(language);
+    return SystemOcrModelReport(status);
+  }
+
+  @override
+  Future<void> installModel(String language) async {}
+
+  @override
+  Future<bool> resolvePlayServices() async => false;
+
+  @override
+  Future<void> openPlayServicesSettings() async {}
 }
 
 /// 模拟支持切片的平台（iOS 26 / macOS 26 的 Vision）：记下收到的切片，回放
 /// 预置的逐片行。
-class _TiledFakePlatform implements SystemOcrPlatform {
+class _TiledFakePlatform implements SystemOcrPixelPlatform {
   _TiledFakePlatform(this.lines);
 
   final List<SystemOcrTextLine> lines;
@@ -74,6 +107,26 @@ class _TiledFakePlatform implements SystemOcrPlatform {
       lines: lines,
       imageWidth: 1000,
       imageHeight: 1600,
+    );
+  }
+
+  /// 收到的像素请求（尺寸 + 字节数）。
+  final List<(int, int, int)> pixelRequests = <(int, int, int)>[];
+
+  @override
+  Future<SystemOcrPageResult> recognizePixels(
+    Uint8List rgba, {
+    required int width,
+    required int height,
+    required String language,
+    List<Rect> tiles = const <Rect>[],
+  }) async {
+    pixelRequests.add((width, height, rgba.length));
+    requestTiles.add(tiles);
+    return SystemOcrPageResult(
+      lines: lines,
+      imageWidth: width,
+      imageHeight: height,
     );
   }
 }
@@ -389,6 +442,16 @@ void main() {
       expect((jpeg.width, jpeg.height), (24, 40));
     });
 
+    test('TIFF 无损转成 PNG（Android ImageDecoder 不认 TIFF）', () async {
+      final Uint8List tiff = Uint8List.fromList(
+        img.encodeTiff(img.Image(width: 12, height: 30)),
+      );
+      final Uint8List out = await systemOcrDecodableBytes(tiff);
+      expect(out.sublist(0, 4), <int>[0x89, 0x50, 0x4e, 0x47]);
+      final img.Image png = img.decodePng(out)!;
+      expect((png.width, png.height), (12, 30));
+    });
+
     test('非 AVIF 原样透传（同一对象，不重编码）', () async {
       final Uint8List png = Uint8List.fromList(
         img.encodePng(img.Image(width: 8, height: 4)),
@@ -475,6 +538,28 @@ void main() {
       expect(block.isVertical, isTrue);
       expect(block.rectangle.top, closeTo(273.5, 0.01));
       expect(block.rectangle.bottom, closeTo(646.0, 0.01));
+    });
+
+    test('内存像素（视频暂停帧）直接交平台：按像素尺寸切片，跨切线两截照样拼回', () async {
+      final _TiledFakePlatform platform = _TiledFakePlatform(_kSplitColumn);
+      final MokuroImage page = await SystemOcrMangaService(platform: platform)
+          .recognizePagePixels(
+            OcrRgbaImage(
+              rgba: Uint8List(1000 * 1600 * 4),
+              width: 1000,
+              height: 1600,
+            ),
+            relativeUrl: 'frame_0',
+            language: 'ja',
+          );
+
+      expect(platform.pixelRequests, <(int, int, int)>[
+        (1000, 1600, 1000 * 1600 * 4),
+      ]);
+      expect(platform.requestTiles.single, hasLength(3));
+      expect(page.url, 'frame_0');
+      expect((page.size.width, page.size.height), (1000.0, 1600.0));
+      expect(page.blocks.single.lines, <String>['繰り返しているというの！？']);
     });
 
     test('签名换代：切片前的旧缓存（Apple 上只认出一成不到的字）不再命中', () {
@@ -674,6 +759,12 @@ void main() {
       final int beforeCancel = interrupted.requestSizes.length;
       expect(beforeCancel, greaterThan(0));
       expect(beforeCancel, lessThan(3), reason: '取消要真的止住后面的页');
+      // BUG-4815：取消不落整卷产物。半卷的 manga_ocr_out/manga.json 是一份「空页
+      // 占位 + system_ocr 署名」的假整卷，后来的引擎会把它当成已有结果。
+      final File output = File(
+        p.join(dir.path, kMangaOcrOutDirName, kMangaOcrOutputFileName),
+      );
+      expect(output.existsSync(), isFalse, reason: '取消后不得写出半卷整卷产物');
 
       final _FakePlatform resumed = platformWithText();
       await SystemOcrMangaService(
@@ -683,13 +774,16 @@ void main() {
       // 两次加起来正好识别三页：取消掉的那部分成果留在 per-page 缓存里，
       // 重跑只补没跑过的，没有一页被白识别两次。
       expect(beforeCancel + resumed.requestSizes.length, 3);
-      final File output = File(
-        p.join(dir.path, kMangaOcrOutDirName, kMangaOcrOutputFileName),
-      );
       expect(output.existsSync(), isTrue);
       final Map<String, Object?> decoded =
           jsonDecode(output.readAsStringSync()) as Map<String, Object?>;
       expect(decoded['pages'], isA<List<Object?>>());
+      // 完整跑完的产物每一页都是真识别结果，没有空占位页。
+      final MokuroPayload payload = parseMangaJson(output.readAsStringSync());
+      expect(payload.images, hasLength(3));
+      for (final MokuroImage image in payload.images) {
+        expect(image.blocks, isNotEmpty);
+      }
     });
 
     test('空图片目录报错，而不是产出一份空 manga.json', () async {
@@ -717,6 +811,63 @@ void main() {
       expect(
         await SystemOcrMangaService(platform: _FakePlatform()).isAvailable(),
         isTrue,
+      );
+    });
+
+    test('BUG-4705：modelStatus 透传平台的模型 / Play 服务状态，按语言查', () async {
+      final _ModelStatusPlatform platform = _ModelStatusPlatform(
+        SystemOcrModelStatus.playServicesMissing,
+      );
+      expect(
+        await SystemOcrMangaService(
+          platform: platform,
+        ).modelStatus(language: 'zh'),
+        SystemOcrModelStatus.playServicesMissing,
+      );
+      expect(platform.languages, <String>['zh']);
+    });
+
+    test('BUG-4705：没有模型概念的平台（只实现识别）恒答 ready', () async {
+      expect(
+        await SystemOcrMangaService(
+          platform: _FakePlatform(),
+        ).modelStatus(language: 'ja'),
+        SystemOcrModelStatus.ready,
+      );
+    });
+
+    test('BUG-4705：model_unavailable 只在系统 OCR 引擎上算「缺模型 / Play 服务」', () {
+      const SystemOcrUnavailableException modelUnavailable =
+          SystemOcrUnavailableException(kSystemOcrModelUnavailableReason);
+      expect(
+        isSystemOcrModelUnavailableFailure(
+          MangaOcrEngineId.systemOcr,
+          modelUnavailable,
+        ),
+        isTrue,
+      );
+      expect(
+        isSystemOcrModelUnavailableFailure(
+          MangaOcrEngineId.localOnnx,
+          modelUnavailable,
+        ),
+        isFalse,
+      );
+      expect(
+        isSystemOcrModelUnavailableFailure(
+          MangaOcrEngineId.systemOcr,
+          const SystemOcrUnavailableException(
+            kSystemOcrLanguageUnavailableReason,
+          ),
+        ),
+        isFalse,
+      );
+      expect(
+        isSystemOcrModelUnavailableFailure(
+          MangaOcrEngineId.systemOcr,
+          StateError('x'),
+        ),
+        isFalse,
       );
     });
   });

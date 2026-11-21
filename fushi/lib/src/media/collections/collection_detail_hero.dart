@@ -134,30 +134,11 @@ class CollectionDetailHeroCard extends StatelessWidget {
     final List<Widget> details = <Widget>[
       if (progress != null) ...<Widget>[
         SizedBox(height: tokens.spacing.gap * 1.5),
-        _HeroProgress(value: progress!, compact: !wide),
+        CollectionDetailHeroProgress(value: progress!, compact: !wide),
       ],
       if (tags.isNotEmpty || onEditTags != null) ...<Widget>[
         SizedBox(height: tokens.spacing.gap * 1.5),
-        Wrap(
-          spacing: tokens.spacing.gap,
-          runSpacing: tokens.spacing.gap,
-          children: <Widget>[
-            for (final BookTagRow tag in tags)
-              FushiTagToggleChip(
-                label: tag.name,
-                color: Color(tag.colorValue),
-                state: TagCheckState.all,
-                onTap: onEditTags,
-              ),
-            if (onEditTags != null)
-              _HeroActionChip(
-                key: const ValueKey<String>('collection_detail_edit_tags'),
-                icon: FushiIcons.tag,
-                label: t.collection_detail_edit_tags,
-                onTap: onEditTags!,
-              ),
-          ],
-        ),
+        CollectionDetailHeroTags(tags: tags, onEditTags: onEditTags),
       ],
     ];
 
@@ -221,9 +202,53 @@ class CollectionDetailHeroCard extends StatelessWidget {
 Color collectionHeroBackground(ColorScheme scheme) =>
     fushiHeroBlockColor(scheme);
 
+/// 合集标签 chip（点按 = 编辑标签）+「编辑标签」小动作 chip。旧 hero 卡与重设计
+/// 外壳的海报 hero（合集详情页）共用；key `collection_detail_edit_tags` 不变。
+class CollectionDetailHeroTags extends StatelessWidget {
+  const CollectionDetailHeroTags({
+    required this.tags,
+    required this.onEditTags,
+    super.key,
+  });
+
+  final List<BookTagRow> tags;
+  final VoidCallback? onEditTags;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final VoidCallback? onEditTags = this.onEditTags;
+    return Wrap(
+      spacing: tokens.spacing.gap,
+      runSpacing: tokens.spacing.gap,
+      children: <Widget>[
+        for (final BookTagRow tag in tags)
+          FushiTagToggleChip(
+            label: tag.name,
+            color: Color(tag.colorValue),
+            state: TagCheckState.all,
+            onTap: onEditTags,
+          ),
+        if (onEditTags != null)
+          _HeroActionChip(
+            key: const ValueKey<String>('collection_detail_edit_tags'),
+            icon: FushiIcons.tag,
+            label: t.collection_detail_edit_tags,
+            onTap: onEditTags,
+          ),
+      ],
+    );
+  }
+}
+
 /// 整体进度：「整体进度」小标题 + Display 级百分比 + 波浪进度条（Apple 细线条）。
-class _HeroProgress extends StatelessWidget {
-  const _HeroProgress({required this.value, this.compact = false});
+/// 旧 hero 卡与海报 hero 共用；key `collection_detail_hero_percent` 不变。
+class CollectionDetailHeroProgress extends StatelessWidget {
+  const CollectionDetailHeroProgress({
+    required this.value,
+    this.compact = false,
+    super.key,
+  });
 
   final double value;
 

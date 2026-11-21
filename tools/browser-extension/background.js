@@ -569,6 +569,57 @@ function rememberAppTheme(theme) {
 // POST /api/extension/study（与 popup-size 同一鉴权）。app 没开 / 旧 app 无此端点时退避
 // 15s 再试，避免每秒一次白打；样本本身是幂等状态快照，丢几条不影响口径。
 let studyBackoffUntil = 0;
+
+// 标签页 → 这页此刻正在统计的网页视频 {mediaKey, title}（反馈 PtsjrnVmH9）。同一标签页里的
+// 查词 / 制卡请求带上它（请求体 `study`），app 把这次查词 / 制卡记到该视频名下，统计中心
+// 的观看页才有网页视频的查词 / 制卡数。按标签页而不是按「最近一条样本」认：两个标签页同时
+// 开着视频时，在哪页查的就记哪页；页内查词弹窗 / 嵌套弹窗是扩展 iframe，sender.tab 仍是
+// 这一页。ended 样本（换视频 / 关字幕 / 关页）与标签页关闭即删。标题在该视频第一条样本时
+// 冻结（app 侧统计段的标题同样取第一条），document.title 中途变了不让计数分叉成两行。
+// 只放内存：会话进行中样本每 1～5 秒一条，SW 不会被回收；万一重启，下一条样本即补回。
+const studyTabSessions = new Map();
+
+/**
+ * 按样本更新标签页的统计身份。
+ * @param {object|undefined} sender chrome.runtime 消息的 sender
+ * @param {object} sample study-tracker.js 的样本
+ */
+function noteStudySample(sender, sample) {
+  const tabId = sender && sender.tab && Number.isInteger(sender.tab.id) ? sender.tab.id : null;
+  if (tabId == null || !sample || typeof sample.mediaKey !== 'string' || !sample.mediaKey) return;
+  if (sample.ended === true) {
+    const cur = studyTabSessions.get(tabId);
+    if (cur && cur.mediaKey === sample.mediaKey) studyTabSessions.delete(tabId);
+    return;
+  }
+  const cur = studyTabSessions.get(tabId);
+  if (cur && cur.mediaKey === sample.mediaKey) return;
+  studyTabSessions.set(tabId, {
+    mediaKey: sample.mediaKey,
+    title: typeof sample.title === 'string' ? sample.title : '',
+  });
+}
+
+/**
+ * 查词 / 制卡请求要带的统计身份：消息里显式带的（批量队列项入队时冻结的）优先，否则取发
+ * 消息的标签页此刻正在统计的视频；都没有 = null（不带字段，app 不归属）。
+ * @param {object|undefined} sender
+ * @param {object|undefined} explicit
+ * @returns {{mediaKey: string, title: string}|null}
+ */
+function studyIdentityFor(sender, explicit) {
+  if (explicit && typeof explicit.mediaKey === 'string' && explicit.mediaKey) {
+    return { mediaKey: explicit.mediaKey, title: typeof explicit.title === 'string' ? explicit.title : '' };
+  }
+  const tabId = sender && sender.tab && Number.isInteger(sender.tab.id) ? sender.tab.id : null;
+  if (tabId == null) return null;
+  return studyTabSessions.get(tabId) || null;
+}
+
+try {
+  chrome.tabs.onRemoved.addListener((tabId) => { studyTabSessions.delete(tabId); });
+} catch (_) {}
+
 async function forwardStudySample(sample) {
   if (!sample || typeof sample !== 'object') return { ok: false, error: 'no sample' };
   if (Date.now() < studyBackoffUntil) return { ok: false, error: 'backoff' };
@@ -827,14 +878,38 @@ if (chrome.tabs && chrome.tabs.onUpdated) {
 // Fushi 转 GIF+句子音频。点扩展图标启动（需 activeTab 手势 + 关硬件加速才非黑），跨集自动切换。
 let captureActive = false;
 
+// 同一扩展只允许一个 offscreen 文档：录制与单词发音（反馈 8KlXeA-A0f）共用这一份，声明两种
+// 用途。并发调用（查词连点 ♪ / 发音撞上起录）共享同一次在途 createDocument，否则第二次
+// create 会抛「Only a single offscreen document may be created」。
+let offscreenCreating = null;
+
 async function ensureOffscreen() {
   const has = await chrome.offscreen.hasDocument?.();
   if (has) return;
-  await chrome.offscreen.createDocument({
-    url: 'offscreen.html',
-    reasons: ['USER_MEDIA'],
-    justification: 'Record the streaming tab to build Anki GIF cards (TODO-1000).',
-  });
+  if (!offscreenCreating) {
+    offscreenCreating = chrome.offscreen.createDocument({
+      url: 'offscreen.html',
+      reasons: ['USER_MEDIA', 'AUDIO_PLAYBACK'],
+      justification: 'Record the streaming tab to build Anki GIF cards (TODO-1000), '
+        + 'and play dictionary word audio outside the page CSP.',
+    }).finally(() => { offscreenCreating = null; });
+  }
+  await offscreenCreating;
+}
+
+// 反馈 8KlXeA-A0f：页面层查词弹窗的单词发音交 offscreen 文档播（页面里的 <audio> 吃页面
+// CSP 的 media-src，X 等站点会拦掉 sync server 的音频端点）。浏览器没有 offscreen API
+// （部分移动端 Chromium）或播放失败 → {ok:false}，content 侧回落页面内 <audio>。
+async function playWordAudioOffscreen(url, volume) {
+  try {
+    await ensureOffscreen();
+    const resp = await chrome.runtime.sendMessage({
+      target: 'offscreen', type: 'playWordAudio', url, volume,
+    });
+    return { ok: !!(resp && resp.ok === true), error: resp && resp.error ? String(resp.error) : undefined };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  }
 }
 
 // 徽标反馈：录制中在扩展图标上打红点，让用户**看得见**正在录（否则不知道录没录 → 制卡无音频
@@ -931,6 +1006,11 @@ async function fushiMineYoutubeItem(q) {
         fields: q.fields, sentence: q.sentence || '',
         youtubeVideoId: q.youtubeId,
         clipStartMs: q.startV, clipEndMs: q.endV,
+        // 入队那一刻冻结的统计身份（content.js fushiEnqueue）：批量生成时不在视频页，
+        // 只能靠它把成功的卡记到那条视频名下（反馈 PtsjrnVmH9）。旧队列项没有就不带。
+        ...(q.study && typeof q.study.mediaKey === 'string' && q.study.mediaKey
+          ? { study: { mediaKey: q.study.mediaKey, title: typeof q.study.title === 'string' ? q.study.title : '' } }
+          : {}),
       }),
     }));
     return { ok: r.ok, status: r.status, data: r.ok ? await r.json() : null };
@@ -1375,7 +1455,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     selectFushiProfile(msg.profile).then(sendResponse, (e) => sendResponse({ ok: false, error: String(e && e.message || e) }));
     return true;
   }
+  if (msg && msg.type === 'playWordAudio') {
+    playWordAudioOffscreen(msg.url, msg.volume).then(sendResponse);
+    return true;
+  }
   if (msg && msg.type === 'studySample') {
+    noteStudySample(_sender, msg.sample);
     forwardStudySample(msg.sample).then(sendResponse, () => sendResponse({ ok: false }));
     return true;
   }
@@ -1540,6 +1625,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const lookupId = lookupTrace.id;
         const maximumTerms = lookupTrace.maximumTerms;
         const colorScheme = await extensionColorScheme();
+        const study = studyIdentityFor(_sender, null);
         lookupTrace.phase = 'fetch-headers';
         const fetchStartedAt = performance.now();
         // 查词 fetch 必须有上限：app 侧一旦长阻塞（词典重载/磁盘 stall），无超时的 await 会让
@@ -1566,6 +1652,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             // 原文自带振假名 `[{s,e,r}]`（以 term 为坐标系）：app 让引擎把读音吻合的同长度
             // 候选排前面。只在非空时带（旧 app 忽略该字段）。
             ...(Array.isArray(msg.ruby) && msg.ruby.length ? { ruby: msg.ruby } : {}),
+            // 本标签页正在统计的网页视频：有结果的查词记到它名下（反馈 PtsjrnVmH9；旧 app 忽略）。
+            ...(study ? { study } : {}),
           }),
         }));
         const headersAt = performance.now();
@@ -1818,6 +1906,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const clipSourceKind = (msg.clipSourceKind === 'bilibili-pgc' && !pgcPlayurlBody)
           ? null
           : msg.clipSourceKind;
+        const mineStudy = studyIdentityFor(_sender, msg.study);
         const r = await fushiRequest(({ base, token, profileId }) => fetch(base + '/api/mine', {
           method: 'POST',
           headers: profileHeaders({ 'Content-Type': 'application/json', Authorization: authHeader(token) }, profileId),
@@ -1834,6 +1923,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             ...(typeof msg.clipSourcePart === 'number'
               ? { clipSourcePart: msg.clipSourcePart } : {}),
             ...(msg.documentTitle ? { documentTitle: msg.documentTitle } : {}),
+            // 成功的卡记到这条网页视频名下（反馈 PtsjrnVmH9；旧 app 忽略）。
+            ...(mineStudy ? { study: mineStudy } : {}),
           }),
         }));
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
@@ -1939,6 +2030,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         }));
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
       } else if (msg.type === 'mineClip') {
+        const clipStudy = studyIdentityFor(_sender, msg.study);
         // Netflix 回放录到的整段 webm → 服务端整段裁 [0,时长] 转 GIF+音频（无偏移运算）。
         // BUG-676（TODO-1361 ③）：带上剧名 documentTitle（服务端映射到 Anki {document-title} 视频名
         // 字段）；不发时服务端回落字面「Netflix」。空串不发（保持旧行为 → 回落 Netflix）。
@@ -1963,6 +2055,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
               ? { clipStartMs: msg.clipStartMs, clipEndMs: msg.clipEndMs } : {}),
             ...(typeof msg.mineAtMs === 'number' ? { mineAtMs: msg.mineAtMs } : {}),
             ...(msg.documentTitle ? { documentTitle: msg.documentTitle } : {}),
+            ...(clipStudy ? { study: clipStudy } : {}),
           }),
         }));
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });

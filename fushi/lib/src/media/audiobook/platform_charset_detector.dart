@@ -1,7 +1,7 @@
+import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/services.dart'
-    show MissingPluginException, PlatformException;
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_charset_detector/flutter_charset_detector.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
@@ -9,16 +9,20 @@ import 'package:fushi_audio/fushi_audio.dart';
 /// 的实现。住在 app 而不是 `fushi_audio`：`fushi_audio` 已不依赖 Flutter SDK
 /// （无头服务端直接消费它），插件实现经 [platformCharsetDecoder] 装配点注入。
 ///
-/// 插件在本平台不可用（桌面三端无联邦实现 → [MissingPluginException]；测试替身
-/// / 未来新平台 → [UnimplementedError]）或原生侧识别失败（[PlatformException]）
-/// 时返回 null，由 `decodeTextBytes` 降级到宽松 UTF-8——与拆分前逐字节一致。
+/// 插件只有 android / ios 实现（`flutter.plugin.platforms` 仅这两项），所以
+/// [installPlatformCharsetDetector] 只在这两端装配；桌面三端不装，非 Unicode
+/// 字节直接交给 Rust 计算内核的旧编码识别（`decodeLegacyText`：中日编码、韩文
+/// EUC-KR、Windows-125x 等，五端同一份），仍判不出才降级到宽松 UTF-8。
+///
+/// 平台接口未被任何实现覆盖（测试替身，[UnimplementedError]）或原生侧识别失败
+/// （[PlatformException]）时返回 null，`decodeTextBytes` 接着走同一条 Rust 路径。
+///
+/// 移动端保留插件并让它先判（沿用既有行为）；它判不出时 Rust 那一级照样能认韩文
+/// EUC-KR、Windows-125x 等编码，不会再被解成汉字乱码。
 Future<String?> pluginCharsetDecode(Uint8List bytes) async {
   try {
     final DecodingResult result = await CharsetDetector.autoDecode(bytes);
     return result.string;
-  } on MissingPluginException {
-    // 桌面三端：插件无本平台实现。
-    return null;
   } on UnimplementedError {
     // 平台接口未被任何实现覆盖（测试替身 / 未来新平台）。
     return null;
@@ -28,8 +32,13 @@ Future<String?> pluginCharsetDecode(Uint8List bytes) async {
   }
 }
 
-/// 把插件实现写入 [platformCharsetDecoder] 装配点。Flutter app 在 `main()`
-/// 里调一次；测试里若要走 `CharsetDetectorPlatform.instance` 替身，也先调它。
+/// 在插件有实现的平台（android / ios）把插件实现写入 [platformCharsetDecoder]
+/// 装配点；其余平台清空装配点（桌面三端没有插件实现，装了每次调用都只会吃一个
+/// `MissingPluginException`）。Flutter app 在 `main()` 里调一次。测试要走
+/// `CharsetDetectorPlatform.instance` 替身时直接把 [pluginCharsetDecode] 写进
+/// 装配点。
 void installPlatformCharsetDetector() {
-  platformCharsetDecoder = pluginCharsetDecode;
+  platformCharsetDecoder = Platform.isAndroid || Platform.isIOS
+      ? pluginCharsetDecode
+      : null;
 }

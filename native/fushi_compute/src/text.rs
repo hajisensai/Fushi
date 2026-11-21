@@ -1162,12 +1162,268 @@ pub unsafe extern "C" fn ffc_text_align_positions(
     })
 }
 
+// ── 本地多字节编码探测（ZIP 条目名等）────────────────────────────────────────────
+
+/// [ffc_text_legacy_decode] 输出里的编码代号（Dart 侧 `LegacyTextEncoding` 同序）。
+fn legacy_encoding_code(enc: &'static encoding_rs::Encoding) -> u32 {
+    if enc == encoding_rs::SHIFT_JIS {
+        1
+    } else if enc == encoding_rs::GBK {
+        2
+    } else if enc == encoding_rs::EUC_JP {
+        3
+    } else {
+        4 // Big5：legacy_text 的候选只有这四种。
+    }
+}
+
+/// 一批**同源**原始字节串（同一个 zip 里没带 UTF-8 标志的条目名）整批判本地编码并解码
+/// （判据见 [crate::legacy_text]）。第 `i` 个输入是 `bytes[offsets[i]..offsets[i + 1]]`。
+///
+/// 判不出（全 ASCII、像真 Latin-1、没有候选能零错误解开）时返回 OK 且 `*out_ptr` = NULL、
+/// `*out_len` = 0，调用方保持原样。判出时输出（Rust 分配，[crate::ffc_free_bytes] 释放），
+/// 小端：`u32 编码代号`（1 Shift_JIS / 2 GBK / 3 EUC-JP / 4 Big5）、`count + 1` 个 `u32`
+/// UTF-8 偏移、UTF-8 字节（第 `i` 项是 `utf8[off[i]..off[i + 1]]`，与输入同序）。
+///
+/// # Safety
+/// `count > 0` 时 `offsets` 指向 `count + 1` 个 `u32`、`bytes` 至少 `offsets[count]` 字节可读；
+/// `out_ptr` / `out_len` 可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_text_legacy_decode(
+    bytes: *const u8,
+    offsets: *const u32,
+    count: usize,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    if out_ptr.is_null() || out_len.is_null() {
+        return status::NULL_ARGUMENT;
+    }
+    *out_ptr = std::ptr::null_mut();
+    *out_len = 0;
+    if count == 0 {
+        return status::OK;
+    }
+    if offsets.is_null() {
+        return status::NULL_ARGUMENT;
+    }
+    guard(|| {
+        let off = std::slice::from_raw_parts(offsets, count + 1);
+        let total = off[count] as usize;
+        let all: &[u8] = if total == 0 {
+            &[]
+        } else if bytes.is_null() {
+            return status::NULL_ARGUMENT;
+        } else {
+            std::slice::from_raw_parts(bytes, total)
+        };
+        let mut items: Vec<&[u8]> = Vec::with_capacity(count);
+        for k in 0..count {
+            let (a, b) = (off[k] as usize, off[k + 1] as usize);
+            if a > b || b > total {
+                return status::INVALID_ARGUMENT;
+            }
+            items.push(&all[a..b]);
+        }
+        let Some((enc, decoded)) = crate::legacy_text::decode_batch(&items) else {
+            return status::OK;
+        };
+        let utf8_len: usize = decoded.iter().map(String::len).sum();
+        let mut out = Vec::with_capacity(4 + 4 * (count + 1) + utf8_len);
+        out.extend_from_slice(&legacy_encoding_code(enc).to_le_bytes());
+        let mut cursor = 0u32;
+        out.extend_from_slice(&cursor.to_le_bytes());
+        for s in &decoded {
+            cursor += s.len() as u32;
+            out.extend_from_slice(&cursor.to_le_bytes());
+        }
+        for s in &decoded {
+            out.extend_from_slice(s.as_bytes());
+        }
+        crate::hand_over_bytes(out, out_ptr, out_len);
+        status::OK
+    })
+}
+
+/// **整份文档**（一个字幕 / 歌词 / 播放列表 / 纯文本文件的全部字节）判编码并解码
+/// （[crate::document_charset::decode_document]：chardetng 认 EUC-KR / 单字节编码，中日编码
+/// 交给 [crate::legacy_text::decode_document]，与 [ffc_text_legacy_decode] 同一套候选与计分）。
+///
+/// 判不出（全 ASCII、基本是 UTF-8、没有编码能在容错口径内解开）时返回 OK 且
+/// `*out_ptr` = NULL、`*out_len` = 0。判出时输出（Rust 分配，[crate::ffc_free_bytes] 释放）：
+/// 小端 `u32 名字长度`、编码的 WHATWG 名（ASCII，如 `Shift_JIS` / `EUC-KR` / `windows-1251`），
+/// 再接解码结果的 UTF-8 字节。
+///
+/// 耗时与输入等长（chardetng 过一遍 + 候选各解一遍）：几十 KB 以上的输入由调用方放后台
+/// isolate。
+///
+/// # Safety
+/// `len > 0` 时 `bytes` 至少 `len` 字节可读；`out_ptr` / `out_len` 可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_text_decode_document(
+    bytes: *const u8,
+    len: usize,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    if out_ptr.is_null() || out_len.is_null() {
+        return status::NULL_ARGUMENT;
+    }
+    *out_ptr = std::ptr::null_mut();
+    *out_len = 0;
+    if len == 0 {
+        return status::OK;
+    }
+    if bytes.is_null() {
+        return status::NULL_ARGUMENT;
+    }
+    guard(|| {
+        let input = std::slice::from_raw_parts(bytes, len);
+        let Some((enc, text)) = crate::document_charset::decode_document(input) else {
+            return status::OK;
+        };
+        let name = enc.name().as_bytes();
+        let mut out = Vec::with_capacity(4 + name.len() + text.len());
+        out.extend_from_slice(&(name.len() as u32).to_le_bytes());
+        out.extend_from_slice(name);
+        out.extend_from_slice(text.as_bytes());
+        crate::hand_over_bytes(out, out_ptr, out_len);
+        status::OK
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn u(s: &str) -> Vec<u16> {
         s.encode_utf16().collect()
+    }
+
+    /// 走一遍 C ABI：返回 (编码代号, 解码结果)；判不出时 None。
+    fn legacy_decode_ffi(names: &[Vec<u8>]) -> Option<(u32, Vec<String>)> {
+        let mut bytes: Vec<u8> = Vec::new();
+        let mut offsets: Vec<u32> = vec![0];
+        for n in names {
+            bytes.extend_from_slice(n);
+            offsets.push(bytes.len() as u32);
+        }
+        let mut ptr: *mut u8 = std::ptr::null_mut();
+        let mut len: usize = 0;
+        let rc = unsafe {
+            ffc_text_legacy_decode(
+                bytes.as_ptr(),
+                offsets.as_ptr(),
+                names.len(),
+                &mut ptr,
+                &mut len,
+            )
+        };
+        assert_eq!(rc, status::OK);
+        if ptr.is_null() {
+            assert_eq!(len, 0);
+            return None;
+        }
+        let out = unsafe { std::slice::from_raw_parts(ptr, len) }.to_vec();
+        crate::ffc_free_bytes(ptr, len);
+        let word = |i: usize| u32::from_le_bytes(out[i * 4..i * 4 + 4].try_into().unwrap());
+        let code = word(0);
+        let base = 4 * (names.len() + 2);
+        let decoded = (0..names.len())
+            .map(|k| {
+                let (a, b) = (word(1 + k) as usize, word(2 + k) as usize);
+                String::from_utf8(out[base + a..base + b].to_vec()).unwrap()
+            })
+            .collect();
+        Some((code, decoded))
+    }
+
+    #[test]
+    fn legacy_decode_shift_jis_zip_names_through_c_abi() {
+        let names: Vec<Vec<u8>> = ["ポスター/表紙.jpg", "ポスター/002.jpg", "cover.png"]
+            .iter()
+            .map(|s| encoding_rs::SHIFT_JIS.encode(s).0.into_owned())
+            .collect();
+        let (code, out) = legacy_decode_ffi(&names).expect("detected");
+        assert_eq!(code, 1);
+        assert_eq!(
+            out,
+            vec!["ポスター/表紙.jpg", "ポスター/002.jpg", "cover.png"]
+        );
+    }
+
+    #[test]
+    fn legacy_decode_reports_nothing_for_ascii_and_bad_offsets() {
+        assert!(legacy_decode_ffi(&[b"001.jpg".to_vec()]).is_none());
+        assert!(legacy_decode_ffi(&[]).is_none());
+        let bytes = [b'a'];
+        let mut ptr: *mut u8 = std::ptr::null_mut();
+        let mut len: usize = 0;
+        // 偏移不单调（中间项越过末项）被拒，不读越界。
+        let reversed: [u32; 3] = [0, 1, 0];
+        let rc = unsafe {
+            ffc_text_legacy_decode(bytes.as_ptr(), reversed.as_ptr(), 2, &mut ptr, &mut len)
+        };
+        assert_eq!(rc, status::INVALID_ARGUMENT);
+        assert!(ptr.is_null());
+    }
+
+    /// 走一遍整份文档的 C ABI：返回 (编码名, 解码结果)；判不出时 None。
+    fn legacy_decode_document_ffi(bytes: &[u8]) -> Option<(String, String)> {
+        let mut ptr: *mut u8 = std::ptr::null_mut();
+        let mut len: usize = 0;
+        let rc =
+            unsafe { ffc_text_decode_document(bytes.as_ptr(), bytes.len(), &mut ptr, &mut len) };
+        assert_eq!(rc, status::OK);
+        if ptr.is_null() {
+            assert_eq!(len, 0);
+            return None;
+        }
+        let out = unsafe { std::slice::from_raw_parts(ptr, len) }.to_vec();
+        crate::ffc_free_bytes(ptr, len);
+        let name_len = u32::from_le_bytes(out[..4].try_into().unwrap()) as usize;
+        let name = String::from_utf8(out[4..4 + name_len].to_vec()).unwrap();
+        Some((
+            name,
+            String::from_utf8(out[4 + name_len..].to_vec()).unwrap(),
+        ))
+    }
+
+    #[test]
+    fn legacy_decode_document_through_c_abi() {
+        let ja = "1\r\n00:00:01,000 --> 00:00:02,500\r\nおはよう、今日はいい天気ですね。\r\n";
+        let sjis = encoding_rs::SHIFT_JIS.encode(ja).0.into_owned();
+        assert_eq!(
+            legacy_decode_document_ffi(&sjis),
+            Some(("Shift_JIS".to_owned(), ja.to_owned()))
+        );
+        let zh = "1\r\n00:00:01,000 --> 00:00:02,500\r\n早上好，今天天气真不错。\r\n";
+        let gbk = encoding_rs::GBK.encode(zh).0.into_owned();
+        assert_eq!(
+            legacy_decode_document_ffi(&gbk),
+            Some(("GBK".to_owned(), zh.to_owned()))
+        );
+        let ko = "1\r\n00:00:01,000 --> 00:00:02,500\r\n안녕하세요, 오늘은 날씨가 정말 좋네요.\r\n";
+        let euc_kr = encoding_rs::EUC_KR.encode(ko).0.into_owned();
+        assert_eq!(
+            legacy_decode_document_ffi(&euc_kr),
+            Some(("EUC-KR".to_owned(), ko.to_owned()))
+        );
+
+        // 判不出：空、全 ASCII、本来就是 UTF-8。
+        assert!(legacy_decode_document_ffi(b"").is_none());
+        assert!(legacy_decode_document_ffi(b"WEBVTT\n\n00:01.000 --> 00:02.000\nhi\n").is_none());
+        assert!(legacy_decode_document_ffi(zh.as_bytes()).is_none());
+
+        // 空指针：输出指针必查；`len > 0` 时输入指针必查。
+        let mut ptr: *mut u8 = std::ptr::null_mut();
+        let mut len: usize = 0;
+        let rc = unsafe { ffc_text_decode_document(std::ptr::null(), 4, &mut ptr, &mut len) };
+        assert_eq!(rc, status::NULL_ARGUMENT);
+        let rc = unsafe {
+            ffc_text_decode_document(sjis.as_ptr(), sjis.len(), std::ptr::null_mut(), &mut len)
+        };
+        assert_eq!(rc, status::NULL_ARGUMENT);
     }
 
     #[test]

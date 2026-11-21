@@ -4,6 +4,7 @@ import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/pages/implementations/web_browser/pages/web_browser_page_common.dart';
+import 'package:fushi/src/utils/components/fushi_form_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/web_browser/web_browser_sites.dart';
@@ -50,22 +51,22 @@ class _WebBrowserSearchEnginesPageState
       : t.web_browser_search_engine_template_invalid;
 
   Future<void> _edit([WebBrowserCustomSearchEngine? existing]) async {
-    final List<String>? values = await showWebBrowserFormDialog(
+    final List<String>? values = await showFushiFormDialog(
       context: context,
       title: existing == null
           ? t.web_browser_search_engine_add
           : t.web_browser_search_engine_edit,
       icon: FushiIcons.search,
-      fields: <WebBrowserFormField>[
-        WebBrowserFormField(label: t.name, initialValue: existing?.name ?? ''),
-        WebBrowserFormField(
+      fields: <FushiFormField>[
+        FushiFormField(label: t.name, initialValue: existing?.name ?? ''),
+        FushiFormField(
           label: t.web_browser_search_engine_template,
           initialValue: existing?.searchTemplate ?? '',
           hintText: 'https://example.com/search?q=%s',
           keyboardType: TextInputType.url,
           validator: _templateError,
         ),
-        WebBrowserFormField(
+        FushiFormField(
           label: t.web_browser_search_engine_suggest_template,
           initialValue: existing?.suggestTemplate ?? '',
           optional: true,
@@ -121,6 +122,7 @@ class _WebBrowserSearchEnginesPageState
   Widget build(BuildContext context) {
     return FushiPageScaffold(
       title: t.web_browser_search_engine,
+      masthead: true,
       actions: <Widget>[
         FushiIconButton(
           key: const ValueKey<String>('web_browser_search_engine_add'),

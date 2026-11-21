@@ -126,7 +126,7 @@ void main() {
     await repo.setFushiClientToken(kToken);
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    await prefs.setRemoteLookupEnabled(true);
+    // 远端查词总闸由各配对 host 的「用这台服务器查词典」派生（默认开），不再有全局开关。
     // 本机词典仓库为空（瘦客户端）：查词必须走远端优先那条链才有结果。
     final DictionaryRepository dictRepo = DictionaryRepository(db);
     await dictRepo.loadFromDb();

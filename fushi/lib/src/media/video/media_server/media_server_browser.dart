@@ -112,7 +112,11 @@ abstract interface class MediaServerBrowser implements RemoteCoverFetcher {
   /// 单条目详情（Jellyfin `/Users/{uid}/Items/{id}`，含简介 / 类型 / 评分）。
   /// 失败抛出；调用方拿着清单里的那条 best-effort 回退即可（与
   /// `RemoteVideoDetailFetch.remoteVideoDetail` 同款口径）。
-  Future<MediaServerItem> itemDetail(String itemId);
+  ///
+  /// [forLaunch]：只有从媒体库重开条目的入口（`buildMediaServerLaunch`）传 true。
+  /// 那一次紧跟着就是取流，所以连失败也留给取流直接抛（不再等第二轮超时）；别处
+  /// 取详情的失败不影响随后的起播。
+  Future<MediaServerItem> itemDetail(String itemId, {bool forLaunch = false});
 
   /// 条目封面 URL（带尺寸上限；服务器侧缩放，客户端不再解原图）。无图返回 null。
   /// [kind] 缺省主图；横版背景 / logo 由页面按需要求（分别按
@@ -378,8 +382,9 @@ class MediaServerItem {
 
   /// 集所属剧的竖版海报所在条目 id（Jellyfin / Emby `SeriesId` +
   /// `SeriesPrimaryImageTag`，Plex `grandparentThumb`）；只在服务器确实报了剧海报时
-  /// 非 null。集自己的 Primary 是 16:9 截图，列表 / 继续观看 / 首页要「剧封面」时用
-  /// [coverItem]，不要直接拿集去取图。
+  /// 非 null。集自己的 Primary 是 16:9 截图：竖槽（条目卡 / 首页海报位）要「剧封面」
+  /// 时用 [coverItem]，不要直接拿集去取图；横槽（服务器首页「继续观看」16:9 卡）反过来
+  /// 集截图优先、剧海报垫底，见 `mediaServerContinueImages`。
   final String? seriesCoverItemId;
   final String? overview;
   final double? communityRating;

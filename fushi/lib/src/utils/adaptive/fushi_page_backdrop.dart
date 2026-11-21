@@ -42,6 +42,17 @@ class FushiPageBackdrop extends StatefulWidget {
           ?.active ??
       false;
 
+  /// [context] 所在页底下画的是用户选的**自定义图片**（不是形状 / 纯色）。
+  ///
+  /// 图片明暗、花纹不可控：直接压在图上的小字（侧栏导航、分组标题）对比度跟着
+  /// 图片忽高忽低，要自己垫一层底（2026-11-20 用户截图：设置侧栏的字糊在樱花
+  /// 壁纸上）。形状预设是低对比的大色块，不需要。
+  static bool imageOf(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<_FushiPageBackdropScope>()
+          ?.image ??
+      false;
+
   @override
   State<FushiPageBackdrop> createState() => _FushiPageBackdropState();
 }
@@ -134,6 +145,9 @@ class _FushiPageBackdropState extends State<FushiPageBackdrop> {
               : theme,
           child: _FushiPageBackdropScope(
             active: enabled || seeThrough,
+            image:
+                enabled &&
+                resolved.settings.effectivePreset == PageBackdropPreset.custom,
             child: widget.child,
           ),
         ),
@@ -143,22 +157,35 @@ class _FushiPageBackdropState extends State<FushiPageBackdrop> {
 }
 
 class _FushiPageBackdropScope extends InheritedWidget {
-  const _FushiPageBackdropScope({required this.active, required super.child});
+  const _FushiPageBackdropScope({
+    required this.active,
+    required this.image,
+    required super.child,
+  });
 
   final bool active;
+  final bool image;
 
   @override
   bool updateShouldNotify(_FushiPageBackdropScope oldWidget) =>
-      active != oldWidget.active;
+      active != oldWidget.active || image != oldWidget.image;
 }
 
 /// 整页底色：在画形状的 [FushiPageBackdrop] 里是透明（底色与形状由背景层画），
 /// 否则是设计 token 的页面底色。页面级 Scaffold / 整页 Material 的底色走这里，
 /// 不要直接写 `tokens.surfaces.page`。
 Color fushiPageBackgroundColor(BuildContext context) =>
-    FushiPageBackdrop.activeOf(context)
-    ? Colors.transparent
-    : FushiDesignTokens.of(context).surfaces.page;
+    fushiPageBackgroundColorOr(
+      context,
+      FushiDesignTokens.of(context).surfaces.page,
+    );
+
+/// [fushiPageBackgroundColor] 的自带底色版：整页底色不是 `surfaces.page` 的地方
+/// （Apple 设计的分组底 `groupedBackground`、玻璃外壳内容区的实色底）用它——
+/// 背景层在画（用户的背景图片）时一律透明，否则 [opaque]。直接画 [opaque] 会把
+/// 背景图片整片盖住（Apple 下选了图首页 / 设置页仍是白底）。
+Color fushiPageBackgroundColorOr(BuildContext context, Color opaque) =>
+    FushiPageBackdrop.activeOf(context) ? Colors.transparent : opaque;
 
 /// 整页必须透明的路由（不画底色、不画形状）。
 final ValueNotifier<Set<Route<Object?>>> _transparentPageRoutes =
@@ -167,7 +194,7 @@ final ValueNotifier<Set<Route<Object?>>> _transparentPageRoutes =
 /// 让 [route] 的 [FushiPageBackdrop] 整个让开（[transparent] = true）或恢复。
 ///
 /// 给底层合成用（`underlay_composition.dart`：窗口宿主档的 WebView2 子窗口垫在 Flutter
-/// 下面、从透明像素处透出来）：这一页的底色和角落形状一旦画出来，就把网页整个盖住——
+/// 下面、从透明像素处透出来）：这一页的底色和背景装饰一旦画出来，就把网页整个盖住——
 /// 2026-10-26 用户截图「加载不出来」，Netflix 登录页只剩一片底色和三块形状。只让开持有
 /// 底层合成的那一页，盖在它上面的其它页照旧不透明。
 ///
@@ -233,7 +260,7 @@ Color fushiOpaquePageColor(BuildContext context) {
 
 /// 去掉 [theme] 页面转场里垫的 [FushiPageBackdrop]：每个平台的
 /// [FushiBackdropPageTransitionsBuilder] 还原成它包着的内层 builder，转场动效 / 返回
-/// 手势不变，只是路由不再垫页面底色和角落形状。
+/// 手势不变，只是路由不再垫页面底色和背景装饰。
 ///
 /// 给盖在别的 app 上的透明浮窗用（app 外查词 `popup_main`、悬浮词典
 /// `floating_dict_main`）：这类窗口没有「页」，卡片以外必须透出背后的 app。

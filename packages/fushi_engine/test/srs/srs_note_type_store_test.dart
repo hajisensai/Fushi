@@ -688,10 +688,9 @@ void main() {
           // 继承历史随排程一起导入；导入默认（对齐 Anki）不带排程。
           options: const SrsAnkiImportOptions(withScheduling: true),
         );
-        final String otherNote = SrsIds.note(
+        final String otherNote = SrsKernelIds(
           kProfile2,
-          (await a.note(note))!.guid,
-        );
+        ).note((await a.note(note))!.guid);
         final SrsNoteTypeView otherType = (await other.noteTypes()).firstWhere(
           (SrsNoteTypeView x) => x.name == 'Mine',
         );

@@ -90,6 +90,8 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
     void Function(BookTagRow tag)? onTagDropped,
     MediaRef? dragMediaRef,
     String? dragLabel,
+    // 可标 NSFW 的本地宿主（远端条目为 null）：封面按「模糊 NSFW 封面」打模糊。
+    MediaNsfwTarget? nsfw,
   }) {
     final bool selected =
         selectionKey != null && _selectedKeys.contains(selectionKey);
@@ -116,8 +118,12 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
 
     Widget interactiveCard = ContextMenuTrigger(
       // 桌面端鼠标右键打开与长按相同的书籍上下文菜单（PC 用户惯例），多选态压制不变。
-      // 哪个鼠标键唤出由绑定表决定（默认右键），不再硬绑次按钮。
-      onInvoke: contextMenuInvoker(_selectionMode ? null : onLongPress),
+      // 哪个鼠标键唤出由绑定表决定（默认右键），不再硬绑次按钮。多选态下参与勾选
+      // 的卡右键弹针对选中集的批量菜单（#3803）；不参与勾选的卡（slot == null）
+      // 右键让位，不弹与它无关的批量菜单。
+      onInvoke: contextMenuInvoker(
+        _selectionMode ? (slot == null ? null : _showBatchMenu) : onLongPress,
+      ),
       child: Padding(
         key: cardKey,
         padding: EdgeInsets.all(
@@ -146,7 +152,7 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
               child: ShelfCoverSelection(
                 selectionMode: _selectionMode && selectionKey != null,
                 selected: selected,
-                child: child,
+                child: MediaNsfwCoverScope(target: nsfw, child: child),
               ),
             ),
           ),
@@ -213,12 +219,20 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
   /// 远端 ☁、下载状态、标签、进度条一律进封面下的副行（[meta] + [tags]）。封面上
   /// 只剩多选勾选圈 / 选中罩（共享 [ShelfCoverFrame] 画）和导入 / 下载中的居中
   /// 加载遮罩（[loadingOverlay]，BUG-990 / 远端下载进行中）。
+  ///
+  /// [byline]（作者）与 [continuesOnTap]（点卡 = 接着读，色块拼贴首块据此画
+  /// 「继续」按钮外观）只在封面色块卡上用；原网格卡的文字块不变。[series]
+  /// 非 null（单本有刮削资料 / 横版背景图）时色块换系列色块：[cover] 当竖版
+  /// 海报斜放、背景图铺尾侧、概览 / chip 来自刮削资料。
   Widget _bookCardLayout({
     required String title,
     required Widget cover,
     required _ShelfMetaSpec meta,
     List<BookTagRow> tags = const <BookTagRow>[],
     Widget? loadingOverlay,
+    String? byline,
+    bool continuesOnTap = false,
+    FushiSeriesMeta? series,
   }) {
     final Widget metaBlock = ShelfCardMeta(
       title: title,
@@ -230,6 +244,46 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
       trailing: tags.isEmpty ? null : ShelfMetaTags(tags: _shelfMetaTags(tags)),
     );
     final String? tooltip = meta.tooltip;
+    // 库页布局为拼贴 / 规整色块时，格子包了 [FushiCoverBlockScope]：同一份信息
+    // 换成封面色块卡（[_shelfCoverBlock]），卡壳与交互不变。scope 在格子里、
+    // 不在页面 context 上，所以经 Builder 在卡内读。
+    return Builder(
+      builder: (BuildContext cellContext) {
+        final FushiCoverBlockSize? block = FushiCoverBlockScope.maybeOf(
+          cellContext,
+        );
+        if (block != null) {
+          return _shelfCoverBlock(
+            size: block,
+            title: title,
+            covers: <Widget>[cover],
+            meta: meta,
+            tags: tags,
+            coverOverlay: loadingOverlay,
+            byline: byline,
+            continuesOnTap: continuesOnTap,
+            series: series,
+          );
+        }
+        return _bookCardGridLayout(
+          cover: cover,
+          metaBlock: metaBlock,
+          meta: meta,
+          tooltip: tooltip,
+          loadingOverlay: loadingOverlay,
+        );
+      },
+    );
+  }
+
+  /// 原封面网格的书卡：封面 + 封面下 [ShelfCardMeta]。
+  Widget _bookCardGridLayout({
+    required Widget cover,
+    required Widget metaBlock,
+    required _ShelfMetaSpec meta,
+    required String? tooltip,
+    required Widget? loadingOverlay,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -296,9 +350,23 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
     bool audiobook = false,
     HealthKind health = HealthKind.notApplicable,
     bool updateAvailable = false,
+    bool audiobookDownloadFailed = false,
   }) {
     final String status = _readProgressLabel(fraction, completed: completed);
     final bool done = completed || fraction >= 1;
+    // 从对端下这本书时正文落地了、有声书包没下成：失败写在这本书自己的卡上（书照常
+    // 可读，补拉入口在书卡菜单）。本机已经有有声书（例如之后由同步补齐）时不再提示。
+    if (audiobookDownloadFailed && !audiobook) {
+      return _ShelfMetaSpec(
+        key: _kAudiobookDownloadFailedMetaKey,
+        status: '${t.shelf_card_meta_audiobook_download_failed} · $status',
+        icon: FushiIcons.error,
+        tone: ShelfMetaTone.error,
+        progress: fraction,
+        completed: done,
+        tooltip: t.remote_book_audiobook_download_failed,
+      );
+    }
     if (!audiobook) {
       return _ShelfMetaSpec(
         status: status,
@@ -350,6 +418,11 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
     }
   }
 }
+
+/// 「有声书下载失败」副行的 key（widget 测试定位用）。
+const ValueKey<String> _kAudiobookDownloadFailedMetaKey = ValueKey<String>(
+  'shelf_meta_audiobook_download_failed',
+);
 
 /// 「对端有更新」副行的 key（widget 测试定位用）。
 const ValueKey<String> _kAudiobookUpdateMetaKey = ValueKey<String>(

@@ -232,6 +232,109 @@ void main() {
       expect(probed, 1);
     });
 
+    test('BUG-4953：上次进程之后装了新版本（iOS 更新时被系统结束）按更新处理、不报闪退', () {
+      // 反馈 QL5TsHwY78：27417 启动、进 resumed 后被 TestFlight 装新版结束，下次启动是
+      // 27714；平台不留原因、没有 MetricKit 负载，旧判定按「停在前台时没了」弹了闪退报告。
+      SessionMarker(markerFile(), pid: 69768, version: '3.3.0-debug.27417')
+        ..start(nowMs: 1000)
+        ..recordLifecycle('resumed', nowMs: 1094);
+      final PreviousSession prev = SessionMarker(
+        markerFile(),
+        pid: 70000,
+        version: '3.3.0-debug.27714',
+      ).start(nowMs: 100000)!;
+
+      final ExitReportEntry updated = describeUncleanPreviousSession(
+        prev,
+        currentVersion: '3.3.0-debug.27714',
+      )!;
+      expect(updated.kind, PreviousExitKind.appUpdated);
+      expect(updated.severe, isFalse);
+      expect(updated.text, contains('3.3.0-debug.27714'));
+      final PreviousExitVerdict verdict = classifyPreviousExit(
+        <ExitReportEntry>[updated],
+        version: prev.version,
+        nowMs: 100000,
+      )!;
+      expect(verdict.kind, PreviousExitKind.appUpdated);
+      expect(verdict.worthReporting, isFalse);
+
+      // 真有崩溃证据（MetricKit / .ips）时照常按崩溃上报。
+      expect(
+        classifyPreviousExit(
+          <ExitReportEntry>[
+            updated,
+            const ExitReportEntry(
+              kIosCrashDiagnosticSource,
+              'signal=11',
+              severe: true,
+              kind: PreviousExitKind.crash,
+            ),
+          ],
+          version: prev.version,
+          nowMs: 100000,
+        )!.worthReporting,
+        isTrue,
+      );
+
+      // 同版本、或任一侧版本未知（没注入 FUSHI_BUILD_VERSION）：仍是疑似闪退。
+      for (final String? current in <String?>[
+        '3.3.0-debug.27417',
+        null,
+        '',
+        kUnknownSessionVersion,
+      ]) {
+        const PreviousSession same = PreviousSession(
+          pid: 1,
+          startedAt: 1,
+          version: '3.3.0-debug.27417',
+          lifecycle: 'resumed',
+          lifecycleAt: 2,
+          clean: false,
+        );
+        expect(
+          describeUncleanPreviousSession(same, currentVersion: current)!.kind,
+          PreviousExitKind.unexpected,
+          reason: 'current=$current',
+        );
+      }
+      expect(
+        describeUncleanPreviousSession(
+          const PreviousSession(
+            pid: 1,
+            startedAt: 1,
+            version: kUnknownSessionVersion,
+            lifecycle: 'resumed',
+            lifecycleAt: 2,
+            clean: false,
+          ),
+          currentVersion: '3.3.0-debug.27714',
+        )!.kind,
+        PreviousExitKind.unexpected,
+      );
+    });
+
+    test('BUG-4953：iOS 收集链路把版本变了的未正常退出判成更新', () async {
+      SessionMarker(markerFile(), pid: 69768, version: '3.3.0-debug.27417')
+        ..start(nowMs: 1000)
+        ..recordLifecycle('resumed', nowMs: 1094);
+      final List<ExitReportEntry> entries = await PreviousExitLog.collect(
+        appDir: tmp,
+        version: '3.3.0-debug.27714',
+        isAndroid: false,
+        isWindows: false,
+        isMacOS: false,
+        isIOS: true,
+      );
+      final PreviousExitVerdict verdict = classifyPreviousExit(
+        entries,
+        version: '3.3.0-debug.27417',
+        nowMs: 100000,
+      )!;
+      expect(verdict.kind, PreviousExitKind.appUpdated);
+      expect(verdict.worthReporting, isFalse);
+    });
+
     test('停在后台没了只算诊断；正常退出 / detached 不报', () {
       final SessionMarker a = SessionMarker(markerFile(), pid: 1, version: 'v')
         ..start(nowMs: 1);
@@ -413,6 +516,9 @@ void main() {
     Future<PreviousExitVerdict?> verdictFor({
       required String lifecycle,
       required List<Map<String, Object?>> reasons,
+      bool clean = false,
+      List<Map<String, Object?>> trims = const <Map<String, Object?>>[],
+      List<Map<String, Object?>> uiEvents = const <Map<String, Object?>>[],
     }) async {
       File('${tmp.path}/session_marker.json').writeAsStringSync(
         jsonEncode(<String, Object?>{
@@ -421,7 +527,7 @@ void main() {
           'version': '3.3.0-debug.23025',
           'lifecycle': lifecycle,
           'lifecycleAt': 4000,
-          'clean': false,
+          'clean': clean,
           'initialised': true,
         }),
       );
@@ -431,6 +537,8 @@ void main() {
             (MethodCall call) async => <String, Object?>{
               'sdk': 34,
               'reasons': reasons,
+              'trims': trims,
+              'uiEvents': uiEvents,
             },
           );
       addTearDown(
@@ -560,6 +668,149 @@ void main() {
       expect(v.worthReporting, isTrue);
     });
 
+    Map<String, Object?> trim(int pid, int level, int timestamp) =>
+        <String, Object?>{'level': level, 'timestamp': timestamp, 'pid': pid};
+    Map<String, Object?> ui(
+      int pid, {
+      required bool visible,
+      required int at,
+    }) => <String, Object?>{'visible': visible, 'timestamp': at, 'pid': pid};
+
+    // BUG-4744（反馈 gTrf6djABo）：pid 19272 前台服务（125）时被 LOW_MEMORY 杀，会话标记
+    // 是别的进程的（已 clean），对不上；同一 pid 死前 28 分钟已收到 TRIM_MEMORY_BACKGROUND。
+    // 旧判定只看标记 → 对不上按前台 → 弹「低内存闪退」报告。
+    test(
+      'importance=125 + LOW_MEMORY + 标记对不上 + 同 pid 已 trim BACKGROUND → 后台回收',
+      () async {
+        final PreviousExitVerdict? v = await verdictFor(
+          lifecycle: 'detached',
+          clean: true,
+          reasons: <Map<String, Object?>>[
+            record(pid: 19272, importance: 125, reason: 'LOW_MEMORY'),
+          ],
+          trims: <Map<String, Object?>>[trim(19272, 40, 3000)],
+        );
+        expect(v!.kind, PreviousExitKind.memoryKill);
+        expect(v.foreground, isFalse);
+        expect(v.worthReporting, isFalse);
+        expect(v.summary, contains('uiAtDeath=hidden'));
+      },
+    );
+
+    test('trim 之后界面又可见（原生可见性切换更晚）→ 前台内存回收，照样上报', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'detached',
+        clean: true,
+        reasons: <Map<String, Object?>>[
+          record(pid: 19272, importance: 125, reason: 'LOW_MEMORY'),
+        ],
+        trims: <Map<String, Object?>>[trim(19272, 40, 3000)],
+        uiEvents: <Map<String, Object?>>[ui(19272, visible: true, at: 4000)],
+      );
+      expect(v!.kind, PreviousExitKind.memoryKill);
+      expect(v.foreground, isTrue);
+      expect(v.worthReporting, isTrue);
+      expect(v.summary, contains('uiAtDeath=visible'));
+      expect(v.summary, contains('界面可见性切换'));
+    });
+
+    test('超长 trace 摘要被截断时 uiAtDeath 标签仍在条目里', () {
+      final Map<String, Object?> r = record(
+        pid: 19272,
+        importance: 125,
+        reason: 'CRASH_NATIVE',
+      )..['trace'] = 'x' * (kExitSummaryMaxChars * 2);
+      final List<ExitReportEntry> entries = formatAndroidExitReports(
+        <Object?, Object?>{
+          'reasons': <Object?>[r],
+          'uiEvents': <Object?>[ui(19272, visible: false, at: 4000)],
+        },
+      );
+      final ExitReportEntry entry = entries.firstWhere(
+        (ExitReportEntry e) => e.source == kAndroidExitInfoSource,
+      );
+      expect(entry.text.length, lessThanOrEqualTo(kExitSummaryMaxChars + 64));
+      expect(entry.text, contains('uiAtDeath=hidden'));
+    });
+
+    test('原生说界面已隐藏，压过停在 resumed 的会话标记（125）', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'resumed',
+        reasons: <Map<String, Object?>>[
+          record(pid: 19104, importance: 125, reason: 'SIGNALED'),
+        ],
+        uiEvents: <Map<String, Object?>>[
+          ui(19104, visible: true, at: 1500),
+          ui(19104, visible: false, at: 4500),
+        ],
+      );
+      expect(v!.kind, PreviousExitKind.backgroundReclaim);
+      expect(v.worthReporting, isFalse);
+      expect(v.summary, contains('androidUiAtDeath=hidden'));
+    });
+
+    test('importance=100 是硬事实：原生说隐藏也照样算前台', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'detached',
+        clean: true,
+        reasons: <Map<String, Object?>>[
+          record(pid: 19272, importance: 100, reason: 'LOW_MEMORY'),
+        ],
+        trims: <Map<String, Object?>>[trim(19272, 40, 3000)],
+      );
+      expect(v!.foreground, isTrue);
+      expect(v.worthReporting, isTrue);
+    });
+
+    test('COMPLETE（与 onLowMemory 同值）/ RUNNING_* 不算界面已隐藏，回落到按前台', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'detached',
+        clean: true,
+        reasons: <Map<String, Object?>>[
+          record(pid: 19272, importance: 125, reason: 'LOW_MEMORY'),
+        ],
+        trims: <Map<String, Object?>>[
+          trim(19272, 80, 3000),
+          trim(19272, 15, 3500),
+        ],
+      );
+      expect(v!.foreground, isTrue);
+      expect(v.worthReporting, isTrue);
+    });
+
+    test('androidUiVisibleAtDeath：只认同 pid、死前、起始之后的证据，取最晚一条', () {
+      final Map<Object?, Object?> payload = <Object?, Object?>{
+        'trims': <Object?>[
+          trim(19272, 20, 3000),
+          trim(777, 40, 4500),
+          trim(19272, 40, 6000),
+        ],
+        'uiEvents': <Object?>[
+          ui(19272, visible: true, at: 500),
+          ui(19272, visible: true, at: 4000),
+          ui(777, visible: false, at: 4800),
+        ],
+      };
+      expect(
+        androidUiVisibleAtDeath(payload, pid: 19272, deathMs: 5000),
+        isTrue,
+      );
+      expect(
+        androidUiVisibleAtDeath(payload, pid: 19272, deathMs: 3500),
+        isFalse,
+      );
+      expect(
+        androidUiVisibleAtDeath(
+          payload,
+          pid: 19272,
+          deathMs: 2000,
+          sinceMs: 1000,
+        ),
+        isNull,
+      );
+      expect(androidUiVisibleAtDeath(payload, pid: 1, deathMs: 9000), isNull);
+    });
+
     // BUG-4323（反馈 DyamYE6bPL）：用户撤销运行时权限，系统以 PERMISSION_CHANGE 结束进程
     // （importance=100、标记停在 resumed）。旧 androidExitKind 没有这个分支 → null → 回落到
     // 标记推断「停在前台时没了，疑似闪退」→ 弹闪退报告。
@@ -666,6 +917,46 @@ void main() {
       expect(v.worthReporting, isFalse);
     });
 
+    // BUG-4964（反馈 5wMNgObn0U）：三星 SM-S9180 启动约 2.7 s 后，系统 / 安全组件按 uid 把
+    // Fushi 当恶意软件杀掉：同一 pid 的 ApplicationExitInfo 是 OTHER importance=100
+    // +「[KILL UID] malware」。旧实现 OTHER 只认 appop 变更 / 厂商停应用 → null → 回落标记
+    // 推断「停在前台时没了，疑似闪退」→ 弹闪退报告。
+    test(
+      'OTHER +「[KILL UID] malware」+ importance=100 + 标记停在 resumed → 安全组件结束，不弹闪退报告',
+      () async {
+        final PreviousExitVerdict? v = await verdictFor(
+          lifecycle: 'resumed',
+          reasons: <Map<String, Object?>>[
+            record(
+              pid: 19104,
+              importance: 100,
+              description: '[KILL UID] malware',
+            ),
+          ],
+        );
+        expect(v, isNotNull);
+        expect(v!.kind, PreviousExitKind.securityKilled);
+        expect(v.worthReporting, isFalse);
+        expect(v.summary, contains('[KILL UID] malware'));
+      },
+    );
+
+    test('「[KILL UID] malware」不压过真崩溃：同一启动另有 CRASH 记录时照样上报', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'resumed',
+        reasons: <Map<String, Object?>>[
+          record(
+            pid: 19104,
+            importance: 100,
+            description: '[KILL UID] malware',
+          ),
+          record(pid: 19104, importance: 100, reason: 'CRASH'),
+        ],
+      );
+      expect(v!.kind, PreviousExitKind.crash);
+      expect(v.worthReporting, isTrue);
+    });
+
     test('o-stop 不压过真崩溃：同一启动另有 CRASH 记录时照样上报', () async {
       final PreviousExitVerdict? v = await verdictFor(
         lifecycle: 'resumed',
@@ -675,6 +966,152 @@ void main() {
             importance: 100,
             description: '[UNKNOWN] stop app.fushi.reader due to o-stop(40)',
           ),
+          record(pid: 18800, importance: 100, reason: 'CRASH', timestamp: 4500),
+        ],
+      );
+      expect(v!.kind, PreviousExitKind.crash);
+      expect(v.worthReporting, isTrue);
+    });
+
+    // BUG-4757（反馈 Z9FwhY9377）：小米 Android 13 熄屏后，MIUI 耗电检查以 OTHER +
+    // 「ScreenOffCPUCheckKill over … used … threshold …」杀进程（importance=125 前台服务）。
+    // 旧 androidExitKind 只认 OPlus o-stop → null → 回落标记推断；标记停在 inactive /
+    // launching（无界面引擎收不到生命周期）时就判成「停在前台时没了，疑似闪退」。
+    const String screenOffCpuKill =
+        'ScreenOffCPUCheckKill over +25m0s475ms used +45m1s910ms '
+        '(180.07031%) threshold 6.0';
+
+    test(
+      'OTHER + MIUI ScreenOffCPUCheckKill + importance=125 + 标记停在 inactive → 厂商停止，不弹闪退报告',
+      () async {
+        final PreviousExitVerdict? v = await verdictFor(
+          lifecycle: 'inactive',
+          reasons: <Map<String, Object?>>[
+            record(pid: 19104, importance: 125, description: screenOffCpuKill),
+          ],
+        );
+        expect(v, isNotNull);
+        expect(v!.kind, PreviousExitKind.vendorStopped);
+        expect(v.worthReporting, isFalse);
+        expect(v.summary, contains('ScreenOffCPUCheckKill'));
+      },
+    );
+
+    test(
+      'OTHER + MIUI ScreenOffCPUCheckKill + 标记停在 paused → 厂商停止（不是「多半是系统回收」）',
+      () async {
+        final PreviousExitVerdict? v = await verdictFor(
+          lifecycle: 'paused',
+          reasons: <Map<String, Object?>>[
+            record(pid: 19104, importance: 125, description: screenOffCpuKill),
+          ],
+        );
+        expect(v!.kind, PreviousExitKind.vendorStopped);
+        expect(v.worthReporting, isFalse);
+      },
+    );
+
+    test('MIUI ScreenOffCPUCheckKill 记录走 log（耗电问题不藏进诊断段），o-stop 不走', () {
+      final List<ExitReportEntry> entries = formatAndroidExitReports(
+        <Object?, Object?>{
+          'reasons': <Map<String, Object?>>[
+            record(pid: 19104, importance: 125, description: screenOffCpuKill),
+            record(
+              pid: 18800,
+              importance: 100,
+              description: '[UNKNOWN] stop app.fushi.reader due to o-stop(40)',
+            ),
+          ],
+        },
+      );
+      expect(entries, hasLength(2));
+      expect(entries[0].kind, PreviousExitKind.vendorStopped);
+      expect(entries[0].severe, isTrue);
+      expect(entries[1].kind, PreviousExitKind.vendorStopped);
+      expect(entries[1].severe, isFalse);
+    });
+
+    test('ScreenOffCPUCheckKill 不压过真崩溃：同一启动另有 CRASH 记录时照样上报', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'resumed',
+        reasons: <Map<String, Object?>>[
+          record(pid: 19104, importance: 125, description: screenOffCpuKill),
+          record(pid: 18800, importance: 100, reason: 'CRASH', timestamp: 4500),
+        ],
+      );
+      expect(v!.kind, PreviousExitKind.crash);
+      expect(v.worthReporting, isTrue);
+    });
+
+    // 反馈 lN8b_hBgKD（小米 HyperOS，SDK 36）：用户在最近任务里划掉 app，MIUI / HyperOS
+    // 框架以 OTHER +「SwipeUpClean」结束进程；死时在跑前台服务（importance=125）。旧实现
+    // OTHER 不认这段描述 → null → 回落标记推断，界面还在前台时报「停在前台时没了，疑似闪退」。
+    for (final String lifecycle in <String>['resumed', 'inactive', 'paused']) {
+      for (final String description in <String>[
+        'SwipeUpClean',
+        '[UNKNOWN] SwipeUpClean',
+      ]) {
+        test(
+          'OTHER +「$description」+ importance=125 + 标记停在 $lifecycle → 厂商停止，不弹闪退报告',
+          () async {
+            final PreviousExitVerdict? v = await verdictFor(
+              lifecycle: lifecycle,
+              reasons: <Map<String, Object?>>[
+                record(pid: 19104, importance: 125, description: description),
+              ],
+            );
+            expect(v, isNotNull);
+            expect(v!.kind, PreviousExitKind.vendorStopped);
+            expect(v.worthReporting, isFalse);
+            expect(v.summary, contains('SwipeUpClean'));
+          },
+        );
+      }
+    }
+
+    // 反馈 PojVLNyNtZ（Xiaomi 22041219G，SDK 34）：MIUI / HyperOS 一键清理以 OTHER +
+    //「OneKeyClean」结束进程；死时在跑前台服务（importance=125）。旧实现 OTHER 不认这段描述
+    // → null → 回落标记推断，报「停在前台时没了，疑似闪退」。
+    for (final String lifecycle in <String>['resumed', 'inactive', 'paused']) {
+      for (final String description in <String>[
+        'OneKeyClean',
+        '[UNKNOWN] OneKeyClean',
+      ]) {
+        test(
+          'OTHER +「$description」+ importance=125 + 标记停在 $lifecycle → 厂商停止，不弹闪退报告',
+          () async {
+            final PreviousExitVerdict? v = await verdictFor(
+              lifecycle: lifecycle,
+              reasons: <Map<String, Object?>>[
+                record(pid: 23415, importance: 125, description: description),
+              ],
+            );
+            expect(v, isNotNull);
+            expect(v!.kind, PreviousExitKind.vendorStopped);
+            expect(v.worthReporting, isFalse);
+            expect(v.summary, contains('OneKeyClean'));
+          },
+        );
+      }
+    }
+
+    test('OneKeyClean 不压过真崩溃：同一启动另有 CRASH 记录时照样上报', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'resumed',
+        reasons: <Map<String, Object?>>[
+          record(pid: 23415, importance: 125, description: 'OneKeyClean'),
+          record(pid: 18800, importance: 100, reason: 'CRASH', timestamp: 4500),
+        ],
+      );
+      expect(v!.kind, PreviousExitKind.crash);
+      expect(v.worthReporting, isTrue);
+    });
+
+    test('SwipeUpClean 不压过真崩溃：同一启动另有 CRASH 记录时照样上报', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'resumed',
+        reasons: <Map<String, Object?>>[
+          record(pid: 19104, importance: 125, description: 'SwipeUpClean'),
           record(pid: 18800, importance: 100, reason: 'CRASH', timestamp: 4500),
         ],
       );
@@ -794,6 +1231,75 @@ void main() {
       );
     });
 
+    test('androidExitKind / androidExitSevere：安全组件「malware」整串锚定、只看 OTHER', () {
+      for (final String d in <String>[
+        '[KILL UID] malware',
+        'malware',
+        '  [KILL UID] malware  ',
+      ]) {
+        expect(
+          androidExitKind('OTHER', description: d),
+          PreviousExitKind.securityKilled,
+          reason: d,
+        );
+        expect(androidExitSevere('OTHER', description: d), isTrue, reason: d);
+      }
+      for (final String d in <String>[
+        '[KILL UID] Malware',
+        '[KILL UID] malware detected in plugin',
+        'not malware',
+        '[KILL UID] malwareX',
+      ]) {
+        expect(androidExitKind('OTHER', description: d), isNull, reason: d);
+        expect(androidExitSevere('OTHER', description: d), isFalse, reason: d);
+      }
+      // 只有 OTHER 看这段描述：崩溃原因码不改判。
+      expect(
+        androidExitKind('CRASH', description: '[KILL UID] malware'),
+        PreviousExitKind.crash,
+      );
+    });
+
+    test(
+      'androidExitKind / androidExitSevere：MIUI ScreenOffCPUCheckKill 只认开头锚定的标记词',
+      () {
+        for (final String d in <String>[
+          'ScreenOffCPUCheckKill over +25m0s475ms used +45m1s910ms (180.07031%) threshold 6.0',
+          '[UNKNOWN] ScreenOffCPUCheckKill over +5m used +1m (20.0%) threshold 6.0',
+          'ScreenOffCPUCheckKill',
+        ]) {
+          expect(
+            androidExitKind('OTHER', description: d),
+            PreviousExitKind.vendorStopped,
+            reason: d,
+          );
+          expect(androidExitSevere('OTHER', description: d), isTrue, reason: d);
+        }
+        for (final String d in <String>[
+          'crash: ScreenOffCPUCheckKill over +5m',
+          'ScreenOffCPUCheckKillX over +5m',
+          'screenoffcpucheckkill over +5m',
+        ]) {
+          expect(androidExitKind('OTHER', description: d), isNull, reason: d);
+          expect(
+            androidExitSevere('OTHER', description: d),
+            isFalse,
+            reason: d,
+          );
+        }
+        // 只有 OTHER 看描述：真崩溃带这段文字照旧是崩溃；SIGNALED 照旧交给会话标记。
+        const String d = 'ScreenOffCPUCheckKill over +5m used +1m';
+        expect(
+          androidExitKind('CRASH', description: d),
+          PreviousExitKind.crash,
+        );
+        expect(androidExitKind('SIGNALED', description: d), isNull);
+        expect(androidExitSevere('USER_REQUESTED', description: d), isFalse);
+        expect(androidExitSevere('CRASH'), isTrue);
+        expect(androidExitSevere('OTHER'), isFalse);
+      },
+    );
+
     test(
       'androidExitKind：OTHER 只认锚定的 OPlus「stop <包名> due to o-stop(<码>)」形态',
       () {
@@ -848,6 +1354,65 @@ void main() {
       },
     );
 
+    test('androidExitKind：OTHER 只认锚定的 MIUI / HyperOS「OneKeyClean」形态', () {
+      expect(
+        androidExitKind('OTHER', description: 'OneKeyClean'),
+        PreviousExitKind.vendorStopped,
+      );
+      expect(
+        androidExitKind('OTHER', description: ' [UNKNOWN] OneKeyClean '),
+        PreviousExitKind.vendorStopped,
+      );
+      for (final String description in <String>[
+        'OneKeyCleanX',
+        'crash after OneKeyClean',
+        'onekeyclean',
+        '[unknown] OneKeyClean',
+      ]) {
+        expect(
+          androidExitKind('OTHER', description: description),
+          isNull,
+          reason: description,
+        );
+      }
+      expect(
+        androidExitKind('CRASH', description: 'OneKeyClean'),
+        PreviousExitKind.crash,
+      );
+      expect(androidExitKind('SIGNALED', description: 'OneKeyClean'), isNull);
+    });
+
+    test('androidExitKind：OTHER 只认锚定的 MIUI / HyperOS「SwipeUpClean」形态', () {
+      expect(
+        androidExitKind('OTHER', description: 'SwipeUpClean'),
+        PreviousExitKind.vendorStopped,
+      );
+      expect(
+        androidExitKind('OTHER', description: ' [UNKNOWN] SwipeUpClean '),
+        PreviousExitKind.vendorStopped,
+      );
+      // 前后缀不锚定 / 大小写不同 / 别的清理名不认。
+      for (final String description in <String>[
+        'SwipeUpCleanX',
+        'crash after SwipeUpClean',
+        'swipeupclean',
+        '[unknown] SwipeUpClean',
+        'SwipeUpOneKeyClean',
+      ]) {
+        expect(
+          androidExitKind('OTHER', description: description),
+          isNull,
+          reason: description,
+        );
+      }
+      // 只有 OTHER 看描述：真崩溃 / 不说明问题的原因码带这段文字也不改判。
+      expect(
+        androidExitKind('CRASH', description: 'SwipeUpClean'),
+        PreviousExitKind.crash,
+      );
+      expect(androidExitKind('SIGNALED', description: 'SwipeUpClean'), isNull);
+    });
+
     test('androidExitKind：OTHER 只认锚定的 AOSP「[KILL UID] <OP> changed」形态', () {
       expect(
         androidExitKind('PERMISSION_CHANGE'),
@@ -880,7 +1445,7 @@ void main() {
         isNull,
       );
       expect(androidExitKind('OTHER'), isNull);
-      expect(androidExitKind('OTHER', description: 'OneKeyClean'), isNull);
+      expect(androidExitKind('OTHER', description: 'OneKey Clean'), isNull);
       // 前后缀不锚定的变体不认（避免厂商文本里夹着这段被误判）。
       expect(
         androidExitKind(
@@ -929,6 +1494,47 @@ void main() {
       expect(
         androidDiedInForeground(null, sessionSaysForeground: null),
         isTrue,
+      );
+      // 原生界面可见性证据压过标记；两头的硬事实不受它影响。
+      expect(
+        androidDiedInForeground(
+          125,
+          sessionSaysForeground: true,
+          uiVisible: false,
+        ),
+        isFalse,
+      );
+      expect(
+        androidDiedInForeground(
+          125,
+          sessionSaysForeground: null,
+          uiVisible: false,
+        ),
+        isFalse,
+      );
+      expect(
+        androidDiedInForeground(
+          125,
+          sessionSaysForeground: false,
+          uiVisible: true,
+        ),
+        isTrue,
+      );
+      expect(
+        androidDiedInForeground(
+          100,
+          sessionSaysForeground: null,
+          uiVisible: false,
+        ),
+        isTrue,
+      );
+      expect(
+        androidDiedInForeground(
+          400,
+          sessionSaysForeground: null,
+          uiVisible: true,
+        ),
+        isFalse,
       );
     });
 
@@ -1675,5 +2281,123 @@ void main() {
     expect(log, contains('reason=LOW_MEMORY'));
     expect(log, contains('onTrimMemory: UI_HIDDEN'));
     await ErrorLogService.instance.flush();
+  });
+
+  // 拍板台 left3525：活动面包屑（ASR 转录、复习同步）只说明「死的时候在做什么」，严重级
+  // 跟同一次启动的会话判定走。修前一律 severe：后台转录时被系统回收也记一条严重错误。
+  group('活动面包屑的严重级跟上次会话的前后台判定走', () {
+    const String detail =
+        'model=kotoba-v2 variant=fp16 profile=mixedAudio need=2100MB '
+        'headroom=900MB rss=1500MB';
+
+    void writeMarker(String lifecycle, {bool clean = false}) {
+      File('${tmp.path}/session_marker.json').writeAsStringSync(
+        jsonEncode(<String, Object?>{
+          'pid': 4242,
+          'startedAt': 1000,
+          'version': 'v',
+          'lifecycle': lifecycle,
+          'lifecycleAt': 4000,
+          'clean': clean,
+          'initialised': true,
+        }),
+      );
+    }
+
+    void writeBreadcrumb() => File(
+      '${tmp.path}/activity_asr_transcribe.breadcrumb',
+    ).writeAsStringSync('[2026-11-17T07:00:00.000] $detail');
+
+    Future<ExitReportEntry> crumbEntry({
+      bool isAndroid = false,
+      MethodChannel? androidChannel,
+    }) async {
+      final List<ExitReportEntry> entries = await PreviousExitLog.collect(
+        appDir: tmp,
+        version: 'v',
+        isAndroid: isAndroid,
+        isWindows: false,
+        isMacOS: false,
+        isIOS: false,
+        androidChannel: androidChannel,
+        nowMs: 9000,
+      );
+      expect(
+        File('${tmp.path}/activity_asr_transcribe.breadcrumb').existsSync(),
+        isFalse,
+      );
+      return entries.singleWhere(
+        (ExitReportEntry e) => e.source == kActivityCrashRecoveredSource,
+      );
+    }
+
+    test('停在后台时没了（系统回收）：只作诊断，内容照留', () async {
+      writeMarker('paused');
+      writeBreadcrumb();
+      final ExitReportEntry e = await crumbEntry();
+      expect(e.severe, isFalse);
+      expect(e.foreground, isFalse);
+      expect(e.kind, isNull);
+      expect(e.text, contains('asr_transcribe'));
+      expect(e.text, contains('need=2100MB'));
+      expect(e.text, contains('headroom=900MB'));
+      expect(e.text, contains('backgroundReclaim'));
+    });
+
+    test('停在前台时没了：仍按严重记', () async {
+      writeMarker('resumed');
+      writeBreadcrumb();
+      final ExitReportEntry e = await crumbEntry();
+      expect(e.severe, isTrue);
+      expect(e.foreground, isTrue);
+      expect(e.text, contains('need=2100MB'));
+    });
+
+    test('上次会话标了 clean：只作诊断', () async {
+      writeMarker('resumed', clean: true);
+      writeBreadcrumb();
+      final ExitReportEntry e = await crumbEntry();
+      expect(e.severe, isFalse);
+    });
+
+    test('没有上次会话标记：前后台未知，按严重记', () async {
+      writeBreadcrumb();
+      final ExitReportEntry e = await crumbEntry();
+      expect(e.severe, isTrue);
+    });
+
+    test('Android 同一 pid 死时 importance=400 压过标记的前台推断：只作诊断', () async {
+      const MethodChannel channel = MethodChannel('test/process_exit_crumb');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            channel,
+            (MethodCall call) async => <String, Object?>{
+              'sdk': 34,
+              'reasons': <Object?>[
+                <String, Object?>{
+                  'reason': 'OTHER',
+                  'status': 0,
+                  'importance': 400,
+                  'pid': 4242,
+                  'timestamp': 5000,
+                  'description': '[UNKNOWN] unspecified',
+                  'processName': 'app.fushi.reader',
+                },
+              ],
+            },
+          );
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+      writeMarker('inactive');
+      writeBreadcrumb();
+      final ExitReportEntry e = await crumbEntry(
+        isAndroid: true,
+        androidChannel: channel,
+      );
+      expect(e.severe, isFalse);
+      expect(e.foreground, isFalse);
+    });
   });
 }

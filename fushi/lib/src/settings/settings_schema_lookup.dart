@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/local_audio_display_name.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_settings_dialog_page.dart';
@@ -22,7 +23,10 @@ import 'package:fushi/src/lookup/popup_ui_scale.dart';
 import 'package:fushi/src/lookup/lookup_ime_channel.dart';
 import 'package:fushi/src/lookup/selection_capture_ffi.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/mining/after_mining_popup_action.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/module_registry.dart'
+    show isSettingsDestinationVisible;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show FontTarget;
 import 'package:fushi/src/settings/audio_sources_cli.dart'
@@ -33,6 +37,10 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/sync/interconnect_dictionary_lookup_section.dart'
+    show remoteDictionaryServersSummary;
+import 'package:fushi/src/sync/sync_settings_schema.dart'
+    show openInterconnectPairingPage;
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -41,13 +49,100 @@ import 'package:fushi/src/utils/components/content_language_picker.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
-import 'package:path/path.dart' as p;
 import 'package:fushi/src/lookup/hover_lookup_modifier.dart';
 
 void _showSettingsSnackBar(SettingsContext settingsContext, String message) {
   final BuildContext ctx = settingsContext.context;
   if (!ctx.mounted) return;
   ScaffoldMessenger.of(ctx).showSnackBar(FushiSnackBar(content: Text(message)));
+}
+
+/// 「制卡后行为」在单个模块里的单选（拍板台 8ldy3d8XFA，见 [AfterMiningPopupAction]）。
+/// 小说那行进书内快捷设置，视频那行进播放器快捷设置；查词那行兜住所有不属于其余
+/// 模块的查词宿主，恒显示。制卡模块关掉时整组隐藏（没有制卡就没有「制卡后」）。
+SettingsSegmentedItem<AfterMiningPopupAction> _afterMiningPopupItem(
+  ModuleId module,
+) {
+  // 图标取各模块底栏 tab 的同一真值（homeNavItemFor）。
+  final ({String id, String title, IconData icon}) identity = switch (module) {
+    ModuleId.books => (
+      id: 'books',
+      title: t.lookup_after_mining_books,
+      icon: homeNavItemFor(HomeTab.books).icon,
+    ),
+    ModuleId.manga => (
+      id: 'manga',
+      title: t.lookup_after_mining_manga,
+      icon: homeNavItemFor(HomeTab.manga).icon,
+    ),
+    ModuleId.video => (
+      id: 'video',
+      title: t.lookup_after_mining_video,
+      icon: homeNavItemFor(HomeTab.video).icon,
+    ),
+    ModuleId.music => (
+      id: 'music',
+      title: t.lookup_after_mining_music,
+      icon: homeNavItemFor(HomeTab.music).icon,
+    ),
+    ModuleId.games => (
+      id: 'games',
+      title: t.lookup_after_mining_games,
+      icon: homeNavItemFor(HomeTab.games).icon,
+    ),
+    ModuleId.lookup => (
+      id: 'lookup',
+      title: t.lookup_after_mining_lookup,
+      icon: homeNavItemFor(HomeTab.dictionaries).icon,
+    ),
+    _ => throw StateError('$module 没有「制卡后行为」那一行'),
+  };
+  final List<AfterMiningPopupAction> actions = afterMiningPopupOptions(module);
+  return SettingsSegmentedItem<AfterMiningPopupAction>(
+    id: 'lookup.after_mining_popup.${identity.id}',
+    title: identity.title,
+    subtitle: afterMiningPopupModuleHasPlayback(module)
+        ? t.lookup_after_mining_hint_playback
+        : t.lookup_after_mining_hint,
+    icon: identity.icon,
+    dropdown: true,
+    reader: module == ModuleId.books
+        ? const ReaderPlacement(group: ReaderGroup.lookup, order: 25)
+        : null,
+    video: module == ModuleId.video
+        ? const VideoPlacement(group: VideoGroup.controls, order: 40)
+        : null,
+    visible: (SettingsContext settingsContext) {
+      final ModuleVisibility modules =
+          settingsContext.appModel.moduleVisibility;
+      return modules.isEnabled(ModuleId.cardCreation) &&
+          (module == ModuleId.lookup || modules.isEnabled(module));
+    },
+    options: <SettingsSegmentOption<AfterMiningPopupAction>>[
+      for (final AfterMiningPopupAction action in actions)
+        SettingsSegmentOption<AfterMiningPopupAction>(
+          value: action,
+          label: switch (action) {
+            AfterMiningPopupAction.keepOpen => t.lookup_after_mining_keep_open,
+            AfterMiningPopupAction.close => t.lookup_after_mining_close,
+            AfterMiningPopupAction.closeAndResume =>
+              t.lookup_after_mining_close_resume,
+          },
+        ),
+    ],
+    selected: (SettingsContext settingsContext) =>
+        settingsContext.readerSource.afterMiningPopupAction(module),
+    onChanged:
+        (SettingsContext settingsContext, AfterMiningPopupAction value) async {
+          await settingsContext.readerSource.setAfterMiningPopupAction(
+            module,
+            value,
+          );
+          notifyReaderSettingsChanged(settingsContext);
+        },
+    defaultValueBuilder: (SettingsContext settingsContext) =>
+        settingsContext.readerSource.afterMiningPopupDefaultFor(module),
+  );
 }
 
 /// 「底部停靠」在单个媒体模块里是否启用的子开关（[AppModel.popupBottomDockedIn]）。
@@ -75,14 +170,16 @@ SettingsSwitchItem _popupBottomDockedModuleSwitch(ModuleId module) {
   return SettingsSwitchItem(
     id: 'lookup.popup_bottom_docked.${module.name}',
     title: identity.title,
+    // 停靠是什么只在第一条（小说）上说一次；小说这一条同时投影进书内快捷设置，
+    // 那里只有它一条。
+    subtitle: module == ModuleId.books ? t.popup_bottom_docked_hint : null,
     icon: identity.icon,
-    // 小说这一条同时投影进书内快捷设置：总开关开着时它就是「小说里停不停靠」的
-    // 真值；总开关关着时由 [_popupBottomDockedBooksOnlySwitch] 顶替同一位置。
     reader: module == ModuleId.books
-        ? const ReaderPlacement(group: ReaderGroup.lookup, order: 4)
+        ? const ReaderPlacement(group: ReaderGroup.lookup, order: 3)
         : null,
+    // 每个模块一个独立开关，始终可见（BUG-4713：不再挂在总开关之下）；模块在本
+    // 平台不存在或被用户在功能模块里关掉时不出——判据走 [AppModel.moduleVisibility]。
     visible: (SettingsContext settingsContext) =>
-        settingsContext.appModel.popupBottomDocked &&
         settingsContext.appModel.moduleVisibility.isEnabled(module),
     value: (SettingsContext settingsContext) =>
         settingsContext.appModel.popupBottomDockedIn(module),
@@ -90,51 +187,7 @@ SettingsSwitchItem _popupBottomDockedModuleSwitch(ModuleId module) {
       await settingsContext.appModel.setPopupBottomDockedIn(module, value);
       settingsContext.refresh();
     },
-    defaultValue: true,
-  );
-}
-
-/// 打开「只在小说里底部停靠」：总开关关着（= 任何模块都不停靠）时，要让小说
-/// 停靠又不能顺手把漫画 / 视频 / 游戏也一起停靠——细分开关默认 ON，光开总开关
-/// 会让它们全部翻转。所以先把其余模块的细分开关显式写成 OFF（保持它们此刻
-/// 「不停靠」的有效值），再开小说与总开关。只改小说的有效值，其余模块一个不变。
-Future<void> enablePopupBottomDockedOnlyInBooks(AppModel appModel) async {
-  for (final ModuleId module
-      in PreferencesRepository.kPopupBottomDockedModules) {
-    if (module == ModuleId.books) continue;
-    await appModel.setPopupBottomDockedIn(module, false);
-  }
-  await appModel.setPopupBottomDockedIn(ModuleId.books, true);
-  await appModel.setPopupBottomDocked(true);
-}
-
-/// 总开关关着时，给小说一个「只在小说里停靠」的入口（书内快捷设置里查词弹窗的
-/// 位置偏好）。总开关一开它就让位给 [_popupBottomDockedModuleSwitch] 的小说那条，
-/// 两条永远只出一条，且出现的那条的值就是小说里的有效停靠状态。
-SettingsSwitchItem _popupBottomDockedBooksOnlySwitch() {
-  return SettingsSwitchItem(
-    id: 'lookup.popup_bottom_docked_books_only',
-    title: t.popup_bottom_docked_books_only,
-    subtitle: t.popup_bottom_docked_books_only_hint,
-    icon: Icons.vertical_align_bottom_outlined,
-    reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 3),
-    visible: (SettingsContext settingsContext) =>
-        !settingsContext.appModel.popupBottomDocked &&
-        settingsContext.appModel.moduleVisibility.isEnabled(ModuleId.books),
-    // 只在总开关关着时可见，此时小说的有效值恒为 false。
-    value: (SettingsContext settingsContext) =>
-        settingsContext.appModel.popupBottomDockedFor(ModuleId.books),
-    onChanged: (SettingsContext settingsContext, bool value) async {
-      if (value) {
-        await enablePopupBottomDockedOnlyInBooks(settingsContext.appModel);
-      } else {
-        await settingsContext.appModel.setPopupBottomDockedIn(
-          ModuleId.books,
-          false,
-        );
-      }
-      settingsContext.refresh();
-    },
+    defaultValue: false,
   );
 }
 
@@ -145,7 +198,7 @@ SettingsDestination _buildLookupPopupDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.lookup,
     title: t.settings_lookup_popup_title,
-    icon: Icons.picture_in_picture_alt_outlined,
+    icon: FushiIcons.pictureInPicture,
     sections: <SettingsSection>[
       SettingsSection(
         id: 'lookup.section.popup_size',
@@ -281,10 +334,14 @@ SettingsDestination _buildLookupPopupDestination() {
         presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.settings_lookup_section_popup_position,
         items: <SettingsItem>[
+          // 底部停靠按模块各自勾选：不是所有场景都要停靠（例如只在视频里固定弹窗）。
+          for (final ModuleId module
+              in PreferencesRepository.kPopupBottomDockedModules)
+            _popupBottomDockedModuleSwitch(module),
+          // 不属于四个媒体模块的宿主（查词页 / 外部弹窗 / 悬浮歌词）。
           SettingsSwitchItem(
             id: 'lookup.popup_bottom_docked',
-            title: t.popup_bottom_docked,
-            subtitle: t.popup_bottom_docked_hint,
+            title: t.popup_bottom_docked_other,
             icon: Icons.vertical_align_bottom_outlined,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.popupBottomDocked,
@@ -294,13 +351,6 @@ SettingsDestination _buildLookupPopupDestination() {
             },
             defaultValue: false,
           ),
-          // 底部停靠按模块细分：不是所有场景都要停靠（例如只在视频里固定弹窗）。
-          // 总开关打开后才出现；模块在本平台不存在（iOS 无游戏模块）或被用户在
-          // 功能模块里关掉时不出——判据走 [AppModel.moduleVisibility] 唯一合成。
-          for (final ModuleId module
-              in PreferencesRepository.kPopupBottomDockedModules)
-            _popupBottomDockedModuleSwitch(module),
-          _popupBottomDockedBooksOnlySwitch(),
         ],
       ),
       SettingsSection(
@@ -466,24 +516,10 @@ SettingsDestination _buildLookupPopupDestination() {
             },
             defaultValue: true,
           ),
-          // 用户建议 q16Apecgbg（2026-10-13）：制卡后查词弹窗直接消失，不再挡住正文。
-          // 默认关 = 制卡后弹窗照旧留着（既有行为）。
-          SettingsSwitchItem(
-            id: 'reading_controls.close_popup_after_mining',
-            title: t.lookup_popup_close_after_mining,
-            subtitle: t.lookup_popup_close_after_mining_hint,
-            icon: Icons.playlist_add_check_outlined,
-            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 25),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.closePopupAfterMining,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.readerSource.setClosePopupAfterMining(
-                value,
-              );
-              notifyReaderSettingsChanged(settingsContext);
-            },
-            defaultValue: false,
-          ),
+          // 拍板台 8ldy3d8XFA（取代用户建议 q16Apecgbg 的全局开关）：「制卡后行为」
+          // 按模块各一行。阅读那行进阅读器面板，视频那行进视频面板。
+          for (final ModuleId module in kAfterMiningPopupModules)
+            _afterMiningPopupItem(module),
         ],
       ),
     ],
@@ -1134,7 +1170,7 @@ SettingsDestination buildLookupDestination() {
             id: 'lookup.popup.open',
             title: t.settings_lookup_popup_title,
             subtitle: t.settings_lookup_popup_summary,
-            icon: Icons.picture_in_picture_alt_outlined,
+            icon: FushiIcons.pictureInPicture,
             child: _buildLookupPopupDestination,
           ),
         ],
@@ -1416,7 +1452,7 @@ Future<void> showAudioSourcesManagerDialog({
     }
     final LocalAudioDbEntry entry = await appModel.importLocalAudioDbFile(
       picked.path,
-      displayName: p.basename(picked.path),
+      displayName: await suggestLocalAudioDisplayName(picked.path),
       reference: reference && canReference,
     );
     return AudioSourceConfig.localAudio(
@@ -1466,20 +1502,33 @@ Future<void> showAudioSourcesManagerDialog({
   );
 }
 
-/// 远端词典查询开关。查词分类与 Fushi 互联分类共享同一份定义：本地查不到时向已配置
-/// 的 Fushi 互联对端查询，逻辑上属互联。id 沿用 `lookup.` 前缀（非持久化 key）。
+/// 「词典服务器」：远端词典查词由每台已配对服务器自己的「用这台服务器查词典」开关
+/// 决定（用户拍板 2026-11-09 删掉了重复的全局「远程查词」开关，总闸是派生值
+/// `AppModel.remoteLookupEnabled`）。这里只剩一行指路：副标题报在用的服务器，点进
+/// 「互联 › 配对与设备」去拨开关（[openInterconnectPairingPage]）。
+///
+/// id 沿用 `lookup.remote_lookup`（非持久化 key）：互联分类「相关设置」那行靠它定位
+/// 到本行。导航行不进控制通道的设置索引（`ctl_settings_routes` 只收值 / 动作 /
+/// 状态行），本行本来也没有值可读写。互联模块被关掉时互联分类整条不渲染，本行随之
+/// 隐藏（点进去的页会立刻退回）。
 SettingsItem buildRemoteDictionaryLookupItem() {
-  return SettingsSwitchItem(
+  return SettingsNavigationItem(
     id: 'lookup.remote_lookup',
-    title: t.remote_dict_lookup,
-    subtitle: t.remote_dict_lookup_hint,
+    title: t.lookup_dictionary_servers,
+    subtitleBuilder: (SettingsContext settingsContext) =>
+        remoteDictionaryServersSummary(
+          settingsContext.appModel.pairedFushiClientUrls,
+        ),
     icon: Icons.hub_outlined,
-    value: (SettingsContext settingsContext) =>
-        settingsContext.appModel.remoteLookupEnabled,
-    onChanged: (SettingsContext settingsContext, bool value) async {
-      await settingsContext.appModel.setRemoteLookupEnabled(value);
+    showIcon: true,
+    visible: (SettingsContext settingsContext) => isSettingsDestinationVisible(
+      SettingsDestinationId.interconnect,
+      settingsContext.appModel.moduleVisibility,
+    ),
+    onTap: (SettingsContext settingsContext) async {
+      await openInterconnectPairingPage(settingsContext);
+      await settingsContext.appModel.refreshPairedFushiClientUrls();
       settingsContext.refresh();
     },
-    defaultValue: false,
   );
 }

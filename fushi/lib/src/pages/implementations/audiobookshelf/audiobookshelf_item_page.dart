@@ -11,6 +11,12 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/detail/media_detail_kit.dart';
+import 'package:fushi/src/media/detail/media_poster_detail.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart'
+    show fushiPageBackgroundColor;
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/audiobook/remote/audiobookshelf_stream_service.dart';
@@ -367,8 +373,33 @@ class _AudiobookshelfItemPageState
     if (mounted) unawaited(_loadProgress());
   }
 
+  /// 封面图片源：海报面板取色、海报、背景带共用同一个 provider 实例（同一条解码
+  /// 流）；条目 id 进页就有，不等详情加载完。
+  late final ImageProvider _cover = AppCachedHttpImage(
+    widget.api.coverUri(widget.item.id, width: 400).toString(),
+    cacheKey: 'abs:${widget.api.serverUrl}:${widget.item.id}',
+  );
+
   @override
   Widget build(BuildContext context) {
+    if (shellRedesignActive(context)) {
+      // 重设计外壳：海报面板版式（与漫画 / 视频作品详情同一套，见
+      // media_poster_detail.dart）。返回键是 [MediaPosterDetailChrome] 的裸图标
+      // 页头；加载 / 失败态也在同一外壳里，顶栏不在加载完成时跳一下。墨水屏走
+      // 下面的原版式。
+      return Scaffold(
+        backgroundColor: fushiPageBackgroundColor(context),
+        body: MediaPosterDetailTheme(
+          image: _cover,
+          fallbackKey: widget.item.title,
+          child: MediaPosterDetailChrome(
+            title: widget.item.title,
+            ownPrimaryScroll: true,
+            child: Builder(builder: _buildBody),
+          ),
+        ),
+      );
+    }
     return FushiPageScaffold(
       title: widget.item.title,
       subtitle: widget.item.authorName,
@@ -426,6 +457,39 @@ class _AudiobookshelfItemPageState
     final bool hasAudio = detail.isPodcast
         ? episodes.isNotEmpty
         : detail.tracks.isNotEmpty;
+
+    if (shellRedesignActive(context)) {
+      return FushiEntranceScope(
+        child: MediaPosterDetailLayout(
+          bottomPadding: tokens.spacing.page,
+          header: _posterHero(detail, hasAudio: hasAudio),
+          slivers: <Widget>[
+            if (!hasAudio)
+              SliverPadding(
+                padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+                sliver: SliverToBoxAdapter(
+                  child: FushiStaggeredEntrance(
+                    index: 1,
+                    child: FushiPlaceholderMessage(
+                      icon: FushiIcons.books,
+                      message: t.audiobookshelf_item_no_audio,
+                    ),
+                  ),
+                ),
+              )
+            else if (detail.isPodcast) ...<Widget>[
+              SliverPadding(
+                padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+                sliver: SliverToBoxAdapter(
+                  child: FushiSectionTitle(t.audiobookshelf_item_episodes),
+                ),
+              ),
+              _episodeSliver(context, detail, episodes),
+            ],
+          ],
+        ),
+      );
+    }
 
     return FushiEntranceScope(
       child: CustomScrollView(
@@ -519,49 +583,130 @@ class _AudiobookshelfItemPageState
             ),
           ),
           if (detail.isPodcast && episodes.isNotEmpty)
-            SliverPadding(
-              padding: EdgeInsets.fromLTRB(
-                tokens.spacing.page,
-                0,
-                tokens.spacing.page,
-                tokens.spacing.section,
-              ),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  fushiStaggeredItemBuilder((BuildContext context, int index) {
-                    final AudiobookshelfEpisode episode = episodes[index];
-                    return Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 760),
-                        child: _EpisodeRow(
-                          index: index,
-                          count: episodes.length,
-                          episode: episode,
-                          progress: _progressOf(episode.id),
-                          enabled: !_busy,
-                          onTap: () => _stream(detail, episode: episode),
-                          onMenu: () =>
-                              unawaited(_showEpisodeMenu(episodes, index)),
-                          // 单集下载从菜单触发；没有任务时不占位。
-                          downloadStatus: userConfiguredServersAvailable
-                              ? _downloadStatus(
-                                  episode,
-                                  idle: (BuildContext context) =>
-                                      const SizedBox.shrink(),
-                                )
-                              : null,
-                        ),
-                      ),
-                    );
-                  }),
-                  childCount: episodes.length,
-                ),
-              ),
-            )
+            _episodeSliver(context, detail, episodes)
           else
             SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.section)),
         ],
       ),
+    );
+  }
+
+  /// 播客单集列表（两种版式共用）。
+  Widget _episodeSliver(
+    BuildContext context,
+    AudiobookshelfItemDetail detail,
+    List<AudiobookshelfEpisode> episodes,
+  ) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return SliverPadding(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        0,
+        tokens.spacing.page,
+        tokens.spacing.section,
+      ),
+      sliver: SliverList(
+        delegate: SliverChildBuilderDelegate(
+          fushiStaggeredItemBuilder((BuildContext context, int index) {
+            final AudiobookshelfEpisode episode = episodes[index];
+            return Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 760),
+                child: _EpisodeRow(
+                  index: index,
+                  count: episodes.length,
+                  episode: episode,
+                  progress: _progressOf(episode.id),
+                  enabled: !_busy,
+                  onTap: () => _stream(detail, episode: episode),
+                  onMenu: () => unawaited(_showEpisodeMenu(episodes, index)),
+                  // 单集下载从菜单触发；没有任务时不占位。
+                  downloadStatus: userConfiguredServersAvailable
+                      ? _downloadStatus(
+                          episode,
+                          idle: (BuildContext context) =>
+                              const SizedBox.shrink(),
+                        )
+                      : null,
+                ),
+              ),
+            );
+          }),
+          childCount: episodes.length,
+        ),
+      ),
+    );
+  }
+
+  /// 海报面板 hero（重设计外壳）：数据与 [_Header] + 原有声书按钮区同源（同一个
+  /// 封面 / 作者 / 旁白 / 系列 / 收听进度，同一组「流式播放 / 下载 / 标记已听完」），
+  /// 只换视觉。Audiobookshelf 没有横版背景图，背景带拿封面重模糊垫底。播客与没有
+  /// 音频的条目没有条目级动作（单集在下面的列表里），主按钮位留空。
+  Widget _posterHero(
+    AudiobookshelfItemDetail detail, {
+    required bool hasAudio,
+  }) {
+    final AudiobookshelfItem item = detail.item;
+    final bool bookActions = hasAudio && !detail.isPodcast;
+    final AudiobookshelfMediaProgress? progress = _progressOf(null);
+    final bool finished = progress?.isFinished ?? false;
+    final String progressText = finished
+        ? t.audiobookshelf_marked_finished
+        : progress == null
+        ? ''
+        : audiobookshelfProgressPercent(progress);
+    final String cardSubtitle = audiobookshelfCardSubtitle(item);
+    return MediaPosterDetailHero(
+      title: item.title,
+      originalTitle: item.authorName,
+      poster: SizedBox.expand(
+        child: PortraitCoverImage(
+          image: _cover,
+          errorBuilder: (_) =>
+              const ShelfCoverPlaceholder(icon: FushiIcons.brokenImage),
+        ),
+      ),
+      posterImage: _cover,
+      backdropFallback: _cover,
+      pills: <MediaDetailChip>[
+        if (bookActions && progressText.isNotEmpty)
+          MediaDetailChip(progressText, tone: MediaDetailChipTone.primary),
+        if (item.narratorName case final String narrator
+            when narrator.isNotEmpty)
+          MediaDetailChip(
+            t.discovery_audiobookshelf_item_narrated_by(name: narrator),
+            icon: FushiIcons.person,
+          ),
+        if (item.seriesName case final String series when series.isNotEmpty)
+          MediaDetailChip(series),
+        if (cardSubtitle.isNotEmpty) MediaDetailChip(cardSubtitle),
+      ],
+      primaryAction: bookActions
+          ? MediaDetailPrimaryButton(
+              icon: FushiIcons.play,
+              label: t.audiobookshelf_item_stream,
+              onPressed: _busy ? null : () => unawaited(_stream(detail)),
+            )
+          : null,
+      secondaryActions: <Widget>[
+        if (bookActions && userConfiguredServersAvailable)
+          _downloadStatus(
+            null,
+            idle: (BuildContext context) => MediaDetailSecondaryButton(
+              icon: FushiIcons.download,
+              label: t.audiobookshelf_item_download,
+              onPressed: _download,
+            ),
+          ),
+        if (bookActions)
+          MediaDetailSecondaryButton(
+            icon: finished ? FushiIcons.visibilityOff : FushiIcons.check,
+            label: finished
+                ? t.audiobookshelf_mark_unfinished
+                : t.audiobookshelf_mark_finished,
+            onPressed: () => _mark(<String?>[null], finished: !finished),
+          ),
+      ],
     );
   }
 }

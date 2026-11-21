@@ -17,6 +17,7 @@ import 'package:fushi_engine/srs/srs_ctl_routes.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_duplicate_notes.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
+import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'support/srs_test_storage.dart';
@@ -97,12 +98,8 @@ class _Env {
 
   static Future<_Env> open() async {
     final SrsStorage st = await openTestSrsStorage();
-    Future<SrsDbStore> store(String uid) => SrsDbStore.open(
-      db: st.db,
-      core: st.core,
-      profileUid: uid,
-      deviceId: 'dev',
-    );
+    Future<SrsDbStore> store(String uid) =>
+        SrsDbStore.open(core: st.core, profileUid: uid, deviceId: 'dev');
     return _Env(await store(kJa), await store(kZh));
   }
 }
@@ -511,11 +508,8 @@ void main() {
       final String dupA = await _addNote(env.ja, '雪');
       final String dupB = await _addNote(env.ja, '雪');
       final String zh = await _addNote(env.zh, '鱼', sentence: 'old');
-      Future<Object?> edits() async =>
-          (await env.ja.db
-                  .customSelect('SELECT COUNT(*) AS c FROM srs_field_edits')
-                  .getSingle())
-              .data['c'];
+      // 本机操作日志条数（内核 `status` 的 `ops`）：一条都不该多。
+      Future<Object?> edits() async => (await env.ja.sync2Status())['ops'];
       final Object? editsBefore = await edits();
 
       Future<Object?> asZh(String path, Map<String, Object?> body) => _call(
@@ -634,6 +628,8 @@ void main() {
       expect(
         <String>[for (final FushiOp op in catalog.ops) op.id],
         <String>[
+          'server.srs.retained.status',
+          'server.srs.retained.delete',
           'server.srs.decks.list',
           'server.srs.notes.search',
           'server.srs.note.get',
@@ -663,7 +659,10 @@ void main() {
           case OpRisk.write:
             expect(op.undo, isNotNull, reason: op.id);
           case OpRisk.irreversible:
-            expect(op.id, 'server.srs.conflict.held.keep');
+            expect(<String>{
+              'server.srs.conflict.held.keep',
+              'server.srs.retained.delete',
+            }, contains(op.id));
             expect(op.spec.gateParams.map((OpParam p) => p.name), <String>[
               'confirm',
             ]);
@@ -898,4 +897,108 @@ void main() {
       expect(changed, 2);
     });
   });
+
+  // 旧版本保留副本（D32）：目录与执行端由宿主给；查看状态原样转出；删除要表态，没表态不碰执行端；宿主没有目录回 422。
+  group('路由：旧版本保留副本', () {
+    SrsCtlHost hostWith(_FakeRetained fake, {String? dir = 'D:/lib'}) =>
+        SrsCtlHost(
+          open: (String? _) async => throw const CtlFailure.rejected('no'),
+          changed: (SrsCtlTarget _) {},
+          libraryDir: () => dir,
+          retainedCopy: fake,
+        );
+
+    test('状态原样转出；删除没表态 400、不碰执行端；表态后删', () async {
+      final _FakeRetained fake = _FakeRetained();
+      final List<CtlRoute> routes = srsCtlRoutes(hostWith(fake));
+      expect(
+        _map(await _call(routes, 'GET', '$kSrsCtlRoot/retained')),
+        <String, Object?>{
+          'copy': 'sealed',
+          'bytes': 42,
+          'migratedAtMs': 1,
+          'firstSyncAtMs': null,
+          'dueAtMs': 2,
+          'due': false,
+          'error': null,
+        },
+      );
+      expect(fake.stateDirs, <String>['D:/lib']);
+      await expectLater(
+        _call(routes, 'POST', '$kSrsCtlRoot/retained/delete'),
+        _failure(400),
+      );
+      expect(fake.deleted, isEmpty);
+      expect(
+        _map(
+          await _call(
+            routes,
+            'POST',
+            '$kSrsCtlRoot/retained/delete',
+            <String, Object?>{'confirm': true},
+          ),
+        ),
+        <String, Object?>{'deleted': true, 'freedBytes': 42, 'reason': null},
+      );
+      expect(fake.deleted, <String>['D:/lib']);
+    });
+
+    test('宿主没有库目录：422，不碰执行端', () async {
+      final _FakeRetained fake = _FakeRetained();
+      final List<CtlRoute> routes = srsCtlRoutes(hostWith(fake, dir: null));
+      await expectLater(
+        _call(routes, 'GET', '$kSrsCtlRoot/retained'),
+        _failure(422),
+      );
+      await expectLater(
+        _call(routes, 'POST', '$kSrsCtlRoot/retained/delete', <String, Object?>{
+          'confirm': true,
+        }),
+        _failure(422),
+      );
+      expect(fake.stateDirs, isEmpty);
+      expect(fake.deleted, isEmpty);
+    });
+
+    test('内核核对不过：409，原因原样带回', () async {
+      final _FakeRetained fake = _FakeRetained()
+        ..refuse = 'srs4.db failed its integrity check';
+      final List<CtlRoute> routes = srsCtlRoutes(hostWith(fake));
+      await expectLater(
+        _call(routes, 'POST', '$kSrsCtlRoot/retained/delete', <String, Object?>{
+          'confirm': true,
+        }),
+        throwsA(
+          isA<CtlFailure>()
+              .having((CtlFailure f) => f.status, 'status', 409)
+              .having((CtlFailure f) => f.message, 'message', fake.refuse),
+        ),
+      );
+    });
+  });
+}
+
+class _FakeRetained implements SrsRetainedCopyBackend {
+  final List<String> stateDirs = <String>[];
+  final List<String> deleted = <String>[];
+  String? refuse;
+
+  @override
+  Future<SrsRetainedCopyState> state(String dir, {required int nowMs}) async {
+    stateDirs.add(dir);
+    return const SrsRetainedCopyState(
+      kind: SrsRetainedCopyKind.sealed,
+      bytes: 42,
+      migratedAtMs: 1,
+      dueAtMs: 2,
+    );
+  }
+
+  @override
+  Future<SrsRetainedCopyDeletion> delete(String dir) async {
+    final String? why = refuse;
+    if (why != null) throw SrsCoreException(-1, why);
+    deleted.add(dir);
+    return const SrsRetainedCopyDeletion(deleted: true, freedBytes: 42);
+  }
 }

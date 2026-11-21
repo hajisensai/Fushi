@@ -479,10 +479,9 @@ void main() {
       '../native/galgame_hook/hook/adapters/unity_adapter.inc',
     ).readAsStringSync();
     final int functionStart = source.indexOf('void PublishUnityText(');
-    final int functionEnd = source.indexOf(
-      '\n}\n\nvoid RecordUnityTmpText',
-      functionStart,
-    );
+    // 函数体到第一个顶格的 `}` 为止，不绑后面紧跟的是哪个函数（#3357 起
+    // PublishUnityText 之后是 RecordUnityTextChars，旧锚点 RecordUnityTmpText 失效）。
+    final int functionEnd = source.indexOf('\n}\n', functionStart);
     expect(functionStart, greaterThanOrEqualTo(0));
     expect(functionEnd, greaterThan(functionStart));
     final String body = source.substring(functionStart, functionEnd);

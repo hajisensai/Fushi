@@ -4,25 +4,59 @@
 //! 传输本身（列目录 / 读写文件）在 Dart（fushi_engine 的存储位置适配层），这里只吃字节、吐字节：
 //! 一轮同步个位数次 FFI（发件、写 head、看 head、收段）。
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::BTreeSet;
+#[cfg(test)]
+use std::collections::{BTreeMap, VecDeque};
+#[cfg(test)]
 use std::sync::Arc;
 
-use rusqlite::{Connection, OptionalExtension, params};
+#[cfg(test)]
+use rusqlite::OptionalExtension;
+use rusqlite::{Connection, params};
 use serde_json::{Value, json};
 
-use super::{
-    Local, Touched, applied_vv, in_savepoint, insert_op, load_op, observe_remote, project,
-    replay_cards, replay_touched, sql,
-};
+#[cfg(test)]
+use super::Local;
+#[cfg(test)]
+use super::applied_vv;
+#[cfg(test)]
+use super::load_op;
+#[cfg(test)]
+use super::project;
+#[cfg(test)]
+use super::replay_touched;
+use super::{Touched, in_savepoint, replay_cards, sql};
+#[cfg(test)]
+use super::{insert_op, observe_remote};
 use crate::store::SrsCore;
+#[cfg(test)]
 use crate::sync2::codec::{Reader, ZstdWindow};
-use crate::sync2::hlc::{Hlc, MAX_AHEAD_MS};
+#[cfg(test)]
+use crate::sync2::hlc::Hlc;
+#[cfg(test)]
+use crate::sync2::hlc::MAX_AHEAD_MS;
+#[cfg(test)]
 use crate::sync2::id::Id;
+#[cfg(test)]
 use crate::sync2::keys::CollectionKey;
-use crate::sync2::op::{Body, Op};
-use crate::sync2::segment::{self, CHAIN_ZERO, Chain, Head, chain_next};
-use crate::sync2::vv::{OpId, Vv};
+#[cfg(test)]
+use crate::sync2::op::Body;
+#[cfg(test)]
+use crate::sync2::op::Op;
+#[cfg(test)]
+use crate::sync2::segment::CHAIN_ZERO;
+#[cfg(test)]
+use crate::sync2::segment::Head;
+#[cfg(test)]
+use crate::sync2::segment::chain_next;
+#[cfg(test)]
+use crate::sync2::segment::{self, Chain};
+#[cfg(test)]
+use crate::sync2::vv::OpId;
+#[cfg(test)]
+use crate::sync2::vv::Vv;
 
+#[cfg(test)]
 fn chain_at(
     conn: &Connection,
     profile: &str,
@@ -46,6 +80,7 @@ fn chain_at(
 }
 
 //// 本机 seq 闭区间 [first, last] 的操作逐条喂进切段器（不把整段攒在内存里）。
+#[cfg(test)]
 fn split_seq_range(
     conn: &Connection,
     local: &Local,
@@ -70,6 +105,7 @@ fn split_seq_range(
 }
 
 /// 本机的切段点 `(first, last, 压缩后体积估计；0 = 未知)`，按 seq 升序。
+#[cfg(test)]
 fn segments_of(conn: &Connection, local: &Local) -> Result<Vec<(u64, u64, u64)>, String> {
     conn.prepare_cached("SELECT first, last, bytes FROM sync2_segments WHERE profile_uid = srs_id(?1) AND device = ?2 ORDER BY first")
         .map_err(sql)?
@@ -82,6 +118,7 @@ fn segments_of(conn: &Connection, local: &Local) -> Result<Vec<(u64, u64, u64)>,
 }
 
 /// 本设备的切段点：还没切的本机操作按体积目标切成新段（切点一旦定下就不变，各位置拿到的是同样的段）。
+#[cfg(test)]
 fn cut_segments(conn: &Connection, local: &Local) -> Result<Vec<(u64, u64)>, String> {
     let last_cut: u64 = conn
         .query_row(
@@ -114,10 +151,14 @@ fn cut_segments(conn: &Connection, local: &Local) -> Result<Vec<(u64, u64)>, Str
 /// 登记成「要重传」（[sync2_rewrites]），旧段登记成「待删」（[sync2_obsolete]）；待删的旧文件什么时候删由
 /// [SrsCore::sync2_obsolete] 定（[HEAD_KEEP_GENS]），归档位置由 Dart 侧跳过删除。还没传过的位置直接拿
 /// 合并后的段。升级前切的老段体积未知（0），先补算再分层。
+#[cfg(test)]
 const COMPACT_FANOUT: usize = 4;
+#[cfg(test)]
 const COMPACT_BASE: u64 = 16 * 1024;
+#[cfg(test)]
 const COMPACT_FULL: u64 = segment::SEGMENT_TARGET_BYTES / 2;
 
+#[cfg(test)]
 fn compact_tier(bytes: u64) -> u32 {
     let mut t = 0;
     let mut floor = COMPACT_BASE;
@@ -129,12 +170,14 @@ fn compact_tier(bytes: u64) -> u32 {
 }
 
 /// 一组相邻的段（seq 首尾相接）与它们的体积之和。
+#[cfg(test)]
 pub(super) struct CompactGroup {
     pub(super) segs: Vec<(u64, u64)>,
     bytes: u64,
 }
 
 /// 只看体积定出要合并的组（每组 ≥ 2 个相邻段），不读操作。
+#[cfg(test)]
 pub(super) fn compaction_plan(segs: &[(u64, u64, u64)]) -> Vec<CompactGroup> {
     fn flush(stack: &mut Vec<CompactGroup>, merges: &mut Vec<CompactGroup>) {
         merges.extend(stack.drain(..).filter(|g| g.segs.len() > 1));
@@ -179,6 +222,7 @@ pub(super) fn compaction_plan(segs: &[(u64, u64, u64)]) -> Vec<CompactGroup> {
     merges
 }
 
+#[cfg(test)]
 fn compact_segments(conn: &Connection, local: &Local) -> Result<(), String> {
     let mut segs = segments_of(conn, local)?;
     // 升级前切的老段：补算体积（一次性；之后的段切的时候就记下了）。
@@ -262,9 +306,11 @@ fn compact_segments(conn: &Connection, local: &Local) -> Result<(), String> {
 /// **这是「位置上哪些旧文件可以删」唯一的一处策略**：旧 head 的清单与旧小段的清单都由 [SrsCore::sync2_obsolete] 按它
 /// 给出，Dart 只列目录、删文件、回执（srs_sync2_round.dart），不持有任何保留代数。旧版本（2026-11 之前）的 Dart 自己
 /// 按 `gen < 当前 - 2` 删旧 head，与这里是同一条数值规则。
+#[cfg(test)]
 pub(crate) const HEAD_KEEP_GENS: u64 = 2;
 
 /// 位置上最新的本机 head 代号是 [newest] 时：代号低于返回值的本机 head 该删。
+#[cfg(test)]
 pub(crate) fn head_retire_below(newest: u64) -> u64 {
     newest.saturating_sub(HEAD_KEEP_GENS)
 }
@@ -272,9 +318,11 @@ pub(crate) fn head_retire_below(newest: u64) -> u64 {
 /// 旧小段在第一份不再引用它的 head 写出之后至少再留多久（审查 S-5）：给已经读到旧 head、正在下载它引用的段的读者，
 /// 以及列目录最终一致（Google Drive 可能几分钟里仍列出已删的旧 head）留余量。读者真的扑空也不丢数据：那台设备这一轮
 /// 跳过（§6.1：head 指向的段暂时读不到 → 下一轮再来），下一轮读到的新 head 引用的是合并后的段，同样的操作、同样的链值。
+#[cfg(test)]
 pub(crate) const OBSOLETE_GRACE_MS: i64 = 24 * 60 * 60 * 1000;
 
 /// 待删表（`sync2_obsolete`）里旧 head 行的 `last`：旧小段行的 `last` 是段的末 seq（≥ 1），0 只用来标 head 行。
+#[cfg(test)]
 const OBSOLETE_HEAD_ROW: i64 = 0;
 
 /// 写出代号 [gen] 的 head 时：给这个位置上还没定代号的待删旧小段记下 `since_gen` / `since_at`。
@@ -287,6 +335,7 @@ const OBSOLETE_HEAD_ROW: i64 = 0;
 /// 于是「该删」对两种行是同一个条件 `since_gen <= head_retire_below(最新代号)`：对 head 行就是 [HEAD_KEEP_GENS] 的保留
 /// 规则本身；对旧小段是从它推出来的「可能引用它的 head 按规则全都该删了」——旧小段多留几代不另立常量。按规则该删不等
 /// 于已经删掉：旧小段还要等那些 head **确认删掉**（[pending_deletes]）。
+#[cfg(test)]
 fn stamp_obsolete(
     conn: &Connection,
     local: &Local,
@@ -305,6 +354,7 @@ fn stamp_obsolete(
 
 /// [SrsCore::sync2_obsolete] 的回复。
 #[derive(Debug, Default, PartialEq, Eq)]
+#[cfg(test)]
 pub struct Obsolete {
     /// 此刻该删的文件（位置上的相对路径）。
     pub delete: Vec<String>,
@@ -337,6 +387,7 @@ pub struct Obsolete {
 ///
 /// 两段式（集成审查【中】）：这里只给清单、**不**从待删表移除，Dart 删成功后发 `obsolete_ack`
 /// （[SrsCore::sync2_obsolete_ack]）才移除；没 ack 的下一轮照样再给（删除对已不在的文件幂等）。
+#[cfg(test)]
 fn pending_deletes(
     conn: &Connection,
     local: &Local,
@@ -415,6 +466,7 @@ fn pending_deletes(
     })
 }
 
+#[cfg(test)]
 fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
@@ -422,6 +474,7 @@ fn hex(b: &[u8]) -> String {
 /// 校验一份 head 的设备公钥：认识的设备必须是同一把钥匙（防注入，设计 §9）；第一次见到的设备记下公钥。
 /// 本机库非空时第一次见到的设备记成待确认（trust.rs）：它的普通操作照收，删除与彻底清除扣到本机确认之后。
 /// 返回 false = 拒绝这份 head。
+#[cfg(test)]
 fn trust_head(
     conn: &Connection,
     profile: &str,
@@ -457,6 +510,7 @@ fn trust_head(
     }
 }
 
+#[cfg(test)]
 fn record_head(conn: &Connection, profile: &str, h: &Head) -> Result<(), String> {
     let n = conn.execute(
         "UPDATE sync2_devices SET head_gen = ?3, head_seq = ?4, head_at = ?5, ack = ?6, digest = ?7, name = ?8 \
@@ -476,6 +530,7 @@ fn record_head(conn: &Connection, profile: &str, h: &Head) -> Result<(), String>
 }
 
 /// 一台设备的 head 是否已记下（[record_head] 这一次是空操作）。
+#[cfg(test)]
 fn head_recorded(c: &Connection, profile: &str, h: &Head) -> Result<bool, String> {
     let gen: Option<i64> = c
         .prepare_cached(
@@ -489,6 +544,7 @@ fn head_recorded(c: &Connection, profile: &str, h: &Head) -> Result<bool, String
 }
 
 /// 这台设备在 `seq` 闭区间 [a, b] 的操作是否全在因果缓冲里（按主键区间数，不把整台设备的缓冲读进内存，审查 S-6）。
+#[cfg(test)]
 fn pending_covers(
     c: &Connection,
     profile: &str,
@@ -505,10 +561,12 @@ fn pending_covers(
 }
 
 /// 收段会话里找到、还没换身份的本机分叉点（审查 S-12）：`<本机身份>:<seq>`。收尾换身份时删；身份变了就作废。
+#[cfg(test)]
 fn fork_key(profile: &str) -> String {
     format!("sync2_fork_at/{profile}")
 }
 
+#[cfg(test)]
 pub(crate) fn recorded_fork(
     c: &Connection,
     profile: &str,
@@ -528,6 +586,7 @@ pub(crate) fn recorded_fork(
     }))
 }
 
+#[cfg(test)]
 fn record_fork(c: &Connection, profile: &str, device: &Id, k: u64) -> Result<(), String> {
     c.execute(
         "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -537,6 +596,7 @@ fn record_fork(c: &Connection, profile: &str, device: &Id, k: u64) -> Result<(),
     Ok(())
 }
 
+#[cfg(test)]
 fn clear_fork(c: &Connection, profile: &str) -> Result<(), String> {
     c.execute("DELETE FROM srs_meta WHERE key = ?1", [fork_key(profile)])
         .map_err(sql)?;
@@ -546,6 +606,7 @@ fn clear_fork(c: &Connection, profile: &str) -> Result<(), String> {
 /// 本机身份分叉时要拉的本机身份的段（审查 S-12）：head 里的段按 seq 升序，前面与本机链值相同的是共同前缀（链值是
 /// 哈希链，一旦分开就不会再相同，可以二分）。只拉第一处不同的前一段起（段名里的链值只有 4 字节，多拉一段让收段时
 /// 逐条比完整链值兜住标签碰撞）。
+#[cfg(test)]
 fn own_fork_files(
     c: &Connection,
     profile: &str,
@@ -581,6 +642,7 @@ fn own_fork_files(
 
 /// 看 head（[SrsCore::sync2_plan_at]）。[write] 为假时 [c] 是读连接：要记东西就返回 None（调用方进写锁重来）。
 /// [settled]：第一次见到某台设备时兜底做完的收段通道（trust.rs `note_new_device`）落进投影的变化；只读时用不到。
+#[cfg(test)]
 fn plan(
     c: &Connection,
     profile: &str,
@@ -711,6 +773,8 @@ fn plan(
 }
 
 /// 一条等着投递的远端操作：本轮刚收的（已解码），或在缓冲表里的（内存里只有链值，轮到它才从表里读出解码）。
+// 换代后（G7-6）收段会话 / 逐条投递只在测试构建里编（协议 3 的对拍语料与迁移夹具），生产构建不构造它。
+#[cfg(test)]
 struct Held {
     op: Option<Op>,
     chain: Chain,
@@ -719,11 +783,14 @@ struct Held {
 }
 
 /// 一条操作在投递队列里占的内存估计（与切段 / 收段分块同口径）。
+#[cfg(test)]
 fn held_bytes(op: &Op) -> usize {
     op.payload.len() + 24
 }
 
+#[cfg(test)]
 impl Held {
+    #[cfg(test)]
     fn op(&mut self, c: &Connection, profile: &str, device: &Id, seq: u64) -> Result<&Op, String> {
         if self.op.is_none() {
             let raw: Vec<u8> = c
@@ -739,13 +806,14 @@ impl Held {
 
 /// 投递队列里没进缓冲表的操作（本轮刚收、还投不上）在内存里最多攒这么多字节，超了就写进缓冲表、内存里只留链值。
 /// 新设备先收到某台设备、它依赖的另一台设备的段还没到（或在同一批后面）时，等着的操作可以是整个积压。
-#[cfg(any(not(test), srs_probe))]
+#[cfg(all(test, srs_probe))]
 const DELIVERY_HELD_BYTES: usize = 16 * 1024 * 1024;
 /// 测试里压到很小：全部端到端用例都会反复走「写进缓冲表、轮到时再读出」这条路，结果必须与全在内存里一样。
 /// 冷启动探针（bootstrap_probe.rs，`--cfg srs_probe` 构建）用生产值。
 #[cfg(all(test, not(srs_probe)))]
 const DELIVERY_HELD_BYTES: usize = 2 * 1024;
 
+#[cfg(test)]
 fn mark_fork(c: &Connection, profile: &str, device: &Id) -> Result<(), String> {
     c.prepare_cached(
         "UPDATE sync2_devices SET warning = 'fork' WHERE profile_uid = srs_id(?1) AND device = ?2",
@@ -757,6 +825,7 @@ fn mark_fork(c: &Connection, profile: &str, device: &Id) -> Result<(), String> {
 }
 
 /// 删一行缓冲；返回删掉的行数。
+#[cfg(test)]
 fn unstore(c: &Connection, profile: &str, device: &Id, seq: u64) -> Result<i64, String> {
     let n = c
         .prepare_cached(
@@ -770,7 +839,7 @@ fn unstore(c: &Connection, profile: &str, device: &Id, seq: u64) -> Result<i64, 
 
 /// 投递队列每台设备在内存里最多留多少条缓冲表的行（见 [Delivery] 的分窗）：队首只用 seq 最小的几条，一窗投完再读
 /// 下一窗。每条在内存里约两百字节，一台设备一窗约 1 MB。
-#[cfg(any(not(test), srs_probe))]
+#[cfg(all(test, srs_probe))]
 pub(crate) const DELIVERY_WINDOW: usize = 4096;
 /// 测试里压到很小：全部端到端用例都会反复走「一窗投完、读下一窗」「截窗后再读回」，结果必须与整表在内存里一样。
 /// 冷启动探针用生产值（同上）。
@@ -797,6 +866,8 @@ pub(crate) const DELIVERY_WINDOW: usize = 3;
 /// 不变式：对每台设备，缓冲表里 seq ≤ `loaded[设备]`（缺省 = 全部）的行都在队列里；队列里 seq 更大的只会是本轮刚收、
 /// 还没写进缓冲表的（或已写进、留着正文免得再读的）。队首超出这条线之前先读下一窗，缓冲表里同一 (设备, seq) 的
 /// 以表里为准（与原先「缓冲表全读进来、INSERT OR IGNORE」相同）。
+// 换代后（G7-6）收段会话 / 逐条投递只在测试构建里编（协议 3 的对拍语料与迁移夹具），生产构建不构造它。
+#[cfg(test)]
 struct Delivery {
     vv: Vv,
     queues: BTreeMap<Id, BTreeMap<u64, Held>>,
@@ -830,8 +901,10 @@ pub(crate) fn bump_delivery_epoch() {
     DELIVERY_EPOCH.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 }
 
+#[cfg(test)]
 impl Delivery {
     /// 等着的操作条数（缓冲表 + 本轮刚收、还没写进去的）= 这一片收尾后缓冲表的行数（不再每片 COUNT(*)）。
+    #[cfg(test)]
     fn pending(&self) -> i64 {
         self.stored_rows
             + self
@@ -850,6 +923,7 @@ impl Delivery {
 
     /// 收段会话的下一片接着用上一片的队列（审查 S-6：以前每片整表读一遍缓冲表）。别处投递过就重新载入；设备进度
     /// 每片从表里重读（只有设备数那么多行），本机写入推进的本机分量也就跟上了。
+    #[cfg(test)]
     fn resume(cached: Option<Delivery>, c: &Connection, profile: &str) -> Result<Delivery, String> {
         match cached {
             Some(mut d) if d.epoch == DELIVERY_EPOCH.load(std::sync::atomic::Ordering::SeqCst) => {
@@ -863,6 +937,7 @@ impl Delivery {
 
     /// 缓冲表此刻只读有哪些设备与行数：各设备的 (seq, 链值) 轮到它的队首时才按窗读（[Delivery::refill]），操作正文
     /// 轮到它投递时才按主键读出（[Held::op]），缓冲表再大也不整张进内存。
+    #[cfg(test)]
     fn load(c: &Connection, profile: &str) -> Result<Delivery, String> {
         let vv = applied_vv(c, profile)?;
         let mut queues: BTreeMap<Id, BTreeMap<u64, Held>> = BTreeMap::new();
@@ -899,6 +974,7 @@ impl Delivery {
         })
     }
 
+    #[cfg(test)]
     fn push(&mut self, incoming: impl IntoIterator<Item = (Op, Chain)>) {
         for (op, chain) in incoming {
             if self.forked.contains(&op.id.device) {
@@ -923,6 +999,7 @@ impl Delivery {
 
     /// 投完能投的（预算用完就停在这里，[budget] 记下截停）；还在等的操作超过 [DELIVERY_HELD_BYTES] 就写进
     /// 缓冲表、内存里只留链值。
+    #[cfg(test)]
     fn drain(
         &mut self,
         c: &Connection,
@@ -938,6 +1015,7 @@ impl Delivery {
         Ok(())
     }
 
+    #[cfg(test)]
     fn spill(&mut self, c: &Connection, profile: &str) -> Result<(), String> {
         for (device, q) in self.queues.iter_mut() {
             for (seq, held) in q.iter_mut() {
@@ -955,6 +1033,7 @@ impl Delivery {
 
     /// 队列项都已在缓冲表里之后（[Delivery::spill] / [Delivery::checkpoint]）：每台设备只留最前面 [DELIVERY_WINDOW]
     /// 条，其余丢掉、`loaded` 退到留下的最后一条（它们在表里，轮到时 [Delivery::refill] 再读）。
+    #[cfg(test)]
     fn trim(&mut self) {
         for (device, q) in self.queues.iter_mut() {
             if q.len() <= DELIVERY_WINDOW {
@@ -978,6 +1057,7 @@ impl Delivery {
 
     /// 读 [device] 缓冲表里 `loaded` 之后的下一窗（至多 [DELIVERY_WINDOW] 条）进队列。表里的以表为准：队列里同一
     /// seq 的本轮刚收项链值相同就留着正文（同一链值 = 同一条操作），不同就换成表里的。
+    #[cfg(test)]
     fn refill(
         c: &Connection,
         profile: &str,
@@ -1039,6 +1119,7 @@ impl Delivery {
         Ok(())
     }
 
+    #[cfg(test)]
     fn deliver_ready(
         &mut self,
         c: &Connection,
@@ -1164,6 +1245,7 @@ impl Delivery {
     }
 
     /// 设备进度一次写；没投上的写进缓冲；按应用了的远端操作推进并持久化本机 HLC。返回应用条数。
+    #[cfg(test)]
     fn finish(mut self, c: &Connection, profile: &str, now: i64) -> Result<usize, String> {
         let n = self.checkpoint(c, profile, now)?;
         bump_delivery_epoch();
@@ -1172,6 +1254,7 @@ impl Delivery {
 
     /// 一片收尾（[finish] 的落库部分，队列留着给下一片）：设备进度、没投上的写进缓冲、本机 HLC。返回这一片应用的
     /// 条数并清零；之后队列里每一条都已在缓冲表里（`stored`）。
+    #[cfg(test)]
     fn checkpoint(&mut self, c: &Connection, profile: &str, now: i64) -> Result<usize, String> {
         if let Some(ch) = self.channel.as_mut() {
             ch.checkpoint(c, profile)?;
@@ -1203,6 +1286,7 @@ impl Delivery {
 }
 
 /// 写进缓冲表；返回新增的行数（同一 (设备, seq) 已在表里 = 0，以表里的为准）。
+#[cfg(test)]
 fn store_pending(
     c: &Connection,
     profile: &str,
@@ -1234,7 +1318,9 @@ pub struct CommitBudget<'a> {
     floor: usize,
     /// 这一片被预算截停过（还有没处理完的）。
     stopped: bool,
-    /// 默认片长（[CommitBudget::slice]）：新设备的收段会话可以拉长它（[CommitBudget::stretch]）。
+    /// 默认片长（[CommitBudget::slice]）：新设备的收段会话可以拉长它（[CommitBudget::stretch]）。收段会话换代后只在
+    /// 测试构建里编（G7-6）。
+    #[cfg(test)]
     stretchable: bool,
 }
 
@@ -1252,6 +1338,7 @@ pub struct YieldSignal {
 }
 
 impl YieldSignal {
+    #[cfg(test)]
     pub(crate) fn request(&self) {
         self.requested
             .store(true, std::sync::atomic::Ordering::Relaxed);
@@ -1299,6 +1386,7 @@ const COMMIT_SLICE_MIN_OPS: usize = 64;
 /// WAL、检查点越频繁：真实全量数据（68 万条）150 ms 一片 521 s、1 s 一片 458 s，检查点 177 s → 82 s
 /// （docs/specs/2026-11-03-srs-sync2-bulk-bootstrap.md §8）。新设备上本机还没复习过，没人等写锁；真有写入排队，
 /// 让出请求照样在做满 [COMMIT_SLICE_MIN_OPS] 条后收片。
+#[cfg(test)]
 const BOOTSTRAP_SLICE: std::time::Duration = std::time::Duration::from_millis(1000);
 
 impl<'a> CommitBudget<'a> {
@@ -1310,6 +1398,7 @@ impl<'a> CommitBudget<'a> {
             yield_to: None,
             floor: 0,
             stopped: false,
+            #[cfg(test)]
             stretchable: false,
         }
     }
@@ -1317,12 +1406,14 @@ impl<'a> CommitBudget<'a> {
     /// 一片：最长 [COMMIT_SLICE]，[yield_to] 有人等（[YieldSignal::wanted]）就提前收。
     pub fn slice(yield_to: &'a YieldSignal) -> CommitBudget<'a> {
         CommitBudget {
+            #[cfg(test)]
             stretchable: true,
             ..CommitBudget::slice_within(yield_to, COMMIT_SLICE)
         }
     }
 
     /// 默认片（[CommitBudget::slice]）的时间上限改成 [max]（从开片算起）；另给了时间或条数的片不动。
+    #[cfg(test)]
     pub(crate) fn stretch(&mut self, max: std::time::Duration) {
         if self.stretchable {
             self.deadline = self.deadline.map(|d| d - COMMIT_SLICE + max);
@@ -1337,6 +1428,7 @@ impl<'a> CommitBudget<'a> {
             yield_to: Some(yield_to),
             floor: COMMIT_SLICE_MIN_OPS,
             stopped: false,
+            #[cfg(test)]
             stretchable: false,
         }
     }
@@ -1351,6 +1443,7 @@ impl<'a> CommitBudget<'a> {
             yield_to: None,
             floor: COMMIT_SLICE_MIN_OPS,
             stopped: false,
+            #[cfg(test)]
             stretchable: false,
         }
     }
@@ -1363,6 +1456,7 @@ impl<'a> CommitBudget<'a> {
             yield_to: None,
             floor: 0,
             stopped: false,
+            #[cfg(test)]
             stretchable: false,
         }
     }
@@ -1397,6 +1491,8 @@ impl<'a> CommitBudget<'a> {
 
 /// 分批收段会话（[SrsCore::sync2_ingest_begin]）：开会话时的本机身份、跨批累积的分叉点，以及锁外预处理好、
 /// 等投递的那一批（[SrsCore::sync2_ingest_prepare] 放进来，[SrsCore::sync2_ingest_commit] 一片一片投完才取走）。
+// 换代后（G7-6）收段会话 / 逐条投递只在测试构建里编（协议 3 的对拍语料与迁移夹具），生产构建不构造它。
+#[cfg(test)]
 pub(crate) struct IngestSession {
     profile: String,
     device: Id,
@@ -1410,8 +1506,10 @@ pub(crate) struct IngestSession {
     channel: bool,
 }
 
+#[cfg(test)]
 impl IngestSession {
     /// 这个会话收的是不是 [profile] 的段。
+    #[cfg(test)]
     fn belongs_to(&self, profile: &str) -> bool {
         self.profile == profile
     }
@@ -1433,6 +1531,7 @@ impl IngestSession {
 ///
 /// 收段会话按它决定片长：没复习过的设备（刚装、正在第一次追上，或只当同步目标）没人等写锁，片拉长（[BOOTSTRAP_SLICE]）；
 /// 复习过就按默认片长，排队的作答等得短。判据跟着本机的操作走，第一次追赶被打断、下次接着收时仍算新设备。
+#[cfg(test)]
 fn studied_here(c: &Connection, profile: &str, device: &Id) -> Result<bool, String> {
     c.prepare_cached("SELECT 1 FROM sync2_ops WHERE profile_uid = srs_id(?1) AND device = ?2 AND kind = ?3 LIMIT 1")
         .map_err(sql)?
@@ -1444,6 +1543,8 @@ fn studied_here(c: &Connection, profile: &str, device: &Id) -> Result<bool, Stri
 
 /// 分批收段的阶段（[SrsCore] `ingest`）。写连接放回时留不留页缓存由它推出（不是 [IngestPhase::Idle] 就留），
 /// 所以页缓存的寿命与会话（含会话里预处理好的段）一致；一律经 [SrsCore::set_ingest_phase] 转换。
+// 换代后（G7-6）收段会话 / 逐条投递只在测试构建里编（协议 3 的对拍语料与迁移夹具），生产构建没有收段阶段。
+#[cfg(test)]
 pub(crate) enum IngestPhase {
     /// 没有收段会话。
     Idle,
@@ -1454,8 +1555,10 @@ pub(crate) enum IngestPhase {
     Draining(String),
 }
 
+#[cfg(test)]
 impl IngestPhase {
     /// 开着的会话。
+    #[cfg(test)]
     pub(crate) fn session(&self) -> Option<&IngestSession> {
         match self {
             IngestPhase::Open(s) => Some(s),
@@ -1463,6 +1566,7 @@ impl IngestPhase {
         }
     }
 
+    #[cfg(test)]
     fn session_mut(&mut self) -> Option<&mut IngestSession> {
         match self {
             IngestPhase::Open(s) => Some(s),
@@ -1471,6 +1575,7 @@ impl IngestPhase {
     }
 
     /// 这个阶段是不是 [profile] 的（会话开着或收尾中）。
+    #[cfg(test)]
     pub(crate) fn belongs_to(&self, profile: &str) -> bool {
         match self {
             IngestPhase::Idle => false,
@@ -1483,7 +1588,7 @@ impl IngestPhase {
 /// 一批段在锁外预处理时保留的已解码操作上限（解压后字节，按 [held_bytes] 同一口径估）。超出的段照样验签、
 /// 重算链，只是不留操作，投递时在锁内重开再流式解一遍。一批的字节预算按压缩后体积算，正文重复度高时解开能大
 /// 两个数量级；有了这条，预处理的内存峰值与收段原先一样不随一批的解压后体积增长。
-#[cfg(any(not(test), srs_probe))]
+#[cfg(all(test, srs_probe))]
 const PREPARED_RAW_BUDGET: u64 = 2 * segment::SEGMENT_MAX_RAW_BYTES;
 /// 测试里压到很小：端到端用例的后几段都走「投递时重开流式解」（含切片截在段中间、下一片跳过已处理前缀），
 /// 结果必须与留在内存里一样。冷启动探针用生产值（同上）。
@@ -1491,6 +1596,8 @@ const PREPARED_RAW_BUDGET: u64 = 2 * segment::SEGMENT_MAX_RAW_BYTES;
 const PREPARED_RAW_BUDGET: u64 = 4 * 1024;
 
 /// 一个段在锁外预处理的结论。
+// 换代后（G7-6）收段会话 / 逐条投递只在测试构建里编（协议 3 的对拍语料与迁移夹具），生产构建不构造它。
+#[cfg(test)]
 enum Outcome {
     /// 预处理时这台设备没有登记公钥。
     Unknown,
@@ -1507,6 +1614,8 @@ enum Outcome {
     Later,
 }
 
+// 换代后（G7-6）收段会话 / 逐条投递只在测试构建里编（协议 3 的对拍语料与迁移夹具），生产构建不构造它。
+#[cfg(test)]
 struct PreparedSegment {
     header: segment::SegmentHeader,
     /// 在 [PreparedIngest::segments] 里的下标。
@@ -1520,6 +1629,8 @@ struct PreparedSegment {
 
 /// 锁外预处理好的一批段（[prepare_ingest] → [PreparedIngest::verify] → 锁内 [deliver_prepared]）：解压、解密、
 /// 验签、重算链这些纯 CPU 的活都在这里做完，锁内只剩比链、因果投递、落库与重放。
+// 换代后（G7-6）收段会话 / 逐条投递只在测试构建里编（协议 3 的对拍语料与迁移夹具），生产构建不构造它。
+#[cfg(test)]
 pub(crate) struct PreparedIngest<'a> {
     profile: String,
     /// 预处理时的本机身份；锁内对不上（身份换过）就按当时的身份整批重做。
@@ -1538,6 +1649,7 @@ pub(crate) struct PreparedIngest<'a> {
 }
 
 /// 预处理的读库部分：读段头、排序、查各设备公钥（[c] 用读连接即可，查完就放）。
+#[cfg(test)]
 fn prepare_ingest<'a>(
     c: &Connection,
     profile: &str,
@@ -1584,6 +1696,7 @@ fn prepare_ingest<'a>(
 }
 
 /// 一台设备登记的公钥（没登记 / 格式不对 = None）。
+#[cfg(test)]
 fn device_public(c: &Connection, profile: &str, device: &Id) -> Result<Option<[u8; 32]>, String> {
     let public: Option<Vec<u8>> = c
         .query_row(
@@ -1598,6 +1711,7 @@ fn device_public(c: &Connection, profile: &str, device: &Id) -> Result<Option<[u
 }
 
 /// 验一段：签名 → 解密 → 解压 → 解码 → 重算链。[budget] 是还能留的已解码字节，留下的从里面扣。
+#[cfg(test)]
 fn verify_segment(
     bytes: &[u8],
     header: &segment::SegmentHeader,
@@ -1634,8 +1748,10 @@ fn verify_segment(
     )
 }
 
+#[cfg(test)]
 impl PreparedIngest<'_> {
     /// 预处理的纯计算部分（不碰库、不持任何锁）：逐段验签、解密、解压、重算链。
+    #[cfg(test)]
     fn verify(&mut self) {
         let ck = self.key.map(CollectionKey);
         let mut budget = PREPARED_RAW_BUDGET;
@@ -1653,6 +1769,7 @@ impl PreparedIngest<'_> {
 
 /// 预处理之后本机身份（公钥 / 集合）变了：还没投完的段（从 [PreparedIngest::next] 起，截在中间的那段整段重来——
 /// 已投的操作再来一遍只比链、不重复应用）按当时的身份在锁内重新预处理（[c] 已持写锁）。
+#[cfg(test)]
 fn reprepare_under_lock(
     c: &Connection,
     profile: &str,
@@ -1683,6 +1800,7 @@ fn reprepare_under_lock(
 ///
 /// 逐段投（[Delivery]），同时在内存里的只有预处理留下的操作与等依赖的操作。
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 fn deliver_prepared(
     c: &Connection,
     profile: &str,
@@ -1858,9 +1976,12 @@ fn deliver_prepared(
 
 /// 一次投递的块（条数 / 解压后字节，先到者为准）：新切的段本来就不超过 [segment::SEGMENT_MAX_RAW_BYTES]，
 /// 这两条只在读旧版本切出的超大段 / 导入文件时起作用。
+#[cfg(test)]
 const DELIVERY_CHUNK_OPS: usize = 16_384;
+#[cfg(test)]
 const DELIVERY_CHUNK_RAW: usize = 4 * 1024 * 1024;
 /// 收段按片投递时的块：块小，片被截停时已取进队列、没投上、要写进缓冲表的操作就少。
+#[cfg(test)]
 const INGEST_CHUNK_OPS: usize = 64;
 
 /// 收段命令的返回。[replayed] = 这一次重放改写了日志的卡（一次收完时当场重放；分批会话里各片只记进待重放集合，
@@ -2150,6 +2271,7 @@ pub(crate) fn cache_is_pending(c: &Connection, profile: &str) -> Result<bool, St
 
 // 本机身份分叉（设计 §7.3）：换新身份，把旧身份 seq > [keep] 的本机操作撤出投影、以新身份重签发
 /// （内容不变），旧身份冻结在 [keep]（之后它的远端操作按普通设备收）。
+#[cfg(test)]
 pub(crate) fn rotate(
     conn: &Connection,
     profile: &str,
@@ -2273,9 +2395,11 @@ pub(crate) fn rotate(
 /// head 里只有 ack（本机应用到哪）/ 状态摘要变了时最多推迟多久才写（审查 S-8）。以前每收一批别人的操作，ack 一变
 /// 就写 head → 唤醒对端 → 对端收了本机的 head、它的 ack 变了又写 head 回唤醒，复习时两台设备互相空转。ack 只用于显示
 /// 对端进度；10 分钟与摘要的重算间隔（Dart `kSrsSync2DigestInterval`）相同。
+#[cfg(test)]
 pub const ACK_ONLY_HEAD_MS: i64 = 10 * 60 * 1000;
 
 /// [SrsCore::sync2_head_if_changed] 的结果。
+#[cfg(test)]
 pub enum HeadWrite {
     /// 写了新 head：`(相对路径, 字节, 代号)`。位置上该删的旧文件在 head 传上去之后另取（[SrsCore::sync2_obsolete]）。
     Written {
@@ -2297,14 +2421,17 @@ pub enum HeadWrite {
 /// 重来（反馈 XDV7Mzc2gw / kB2ltk0u9F / U37Aku3oeL：同一台小米 43 万条操作反复补传、日志里有 OOM）。按批产出
 /// 后，发件全过程的峰值只与本常量（+ 一段的解码操作）有关、与积压总量无关；单段上限 4 MiB
 /// （[segment::SEGMENT_TARGET_BYTES]），所以一批至少两段满段。
+#[cfg(test)]
 pub const OUTBOX_BATCH_BYTES: u64 = 8 * 1024 * 1024;
 
 /// 一批发件的段数上限：小段（老版本切的 64 KB 段、合并前的尾段、清除改写的重传）体积小但每个都是一次 PUT，
 /// 只按字节限的话一批可能是上千个文件、一次中断要重传上千个请求。64 段与收段一批的在途数同量级，水位每
 /// 64 个请求至少前进一次。
+#[cfg(test)]
 pub const OUTBOX_BATCH_SEGMENTS: usize = 64;
 
 /// [SrsCore::sync2_outbox] 的一批。
+#[cfg(test)]
 pub struct OutboxBatch {
     /// 段文件（相对路径 → 字节），按 seq 升序。
     pub files: Vec<(String, Vec<u8>)>,
@@ -2319,6 +2446,7 @@ pub struct OutboxBatch {
 /// 去掉 [location] 上已经不是任何当前切段起点的重传登记：它们的区间被再次合并进了别的段，合并时已按水位给新段登记
 /// 重传（[compact_segments]）或在水位之上照常发件。不清掉的话这种登记永远等不到确认，head 永远写不出
 /// （[SrsCore::sync2_head_if_changed] 有重传未完就不写）。
+#[cfg(test)]
 fn prune_stale_rewrites(c: &Connection, local: &Local, location: &str) -> Result<(), String> {
     c.prepare_cached(
         "DELETE FROM sync2_rewrites WHERE profile_uid = srs_id(?1) AND location = ?2 AND first NOT IN \
@@ -2331,6 +2459,7 @@ fn prune_stale_rewrites(c: &Connection, local: &Local, location: &str) -> Result
 }
 
 /// [location] 上已确认上传到的水位：本机 seq ≤ 它的段都已在该位置上（head 写出时、或每批确认时前进）。
+#[cfg(test)]
 fn uploaded_of(c: &Connection, profile: &str, location: &str) -> Result<u64, String> {
     Ok(c.query_row(
         "SELECT uploaded FROM sync2_locations WHERE profile_uid = srs_id(?1) AND location = ?2",
@@ -2348,6 +2477,7 @@ impl SrsCore {
     /// 开了加密时的集合密钥。调用方上传完这一批后调 [Self::sync2_outbox_ack] 持久化水位，`more` 为真就再取下一批：
     /// 中途断网 / 被杀只丢在途这一批，下一轮从水位接着发，不整份重来。分批对读者透明——读者只看 head，head
     /// 仍在全部段传完后才写（§6.1）。
+    #[cfg(test)]
     pub fn sync2_outbox(
         &self,
         profile: &str,
@@ -2361,6 +2491,7 @@ impl SrsCore {
 
     /// [Self::sync2_outbox]，[archive] = 归档位置（只写不删）：副本收敛（dedup.rs）换成骨架的段不在这里同名重写——归档
     /// 留着当初传上去的原文。彻底清除的重写照做（清除就是要连归档里的内容一起清掉）。
+    #[cfg(test)]
     pub fn sync2_outbox_to(
         &self,
         profile: &str,
@@ -2454,6 +2585,7 @@ impl SrsCore {
     /// 的本机段不在里面的，登记成「要重传」，这一轮发件照当前切法补传（同名、同内容；读者照常验签验链）。位置上的段
     /// 被误删、上传静默丢失、或旧版本写 head 时引用了从没传上去的合并段（见 [Self::sync2_head_if_changed]），都由作者
     /// 在下一轮自己补上，不靠读者无限期「下一轮再来」。列目录最终一致时可能多传几个已在的段，同名覆盖无害。返回登记数。
+    #[cfg(test)]
     pub fn sync2_audit_own(
         &self,
         profile: &str,
@@ -2491,6 +2623,7 @@ impl SrsCore {
     /// 水位推进到「水位之后首尾相接、全部已确认」的最后一段（水位的含义不变：seq ≤ 它的本机段都在该位置上）。
     /// 返回 `(这一批的段是否仍是当前切法, 新水位)`；前者为假 = 发件与确认之间段被合并改切过（只会是别的位置的
     /// 发件并发跑了合并），没对上的段不算数、下一批照当前切法重发。
+    #[cfg(test)]
     pub fn sync2_outbox_ack(
         &self,
         profile: &str,
@@ -2534,6 +2667,7 @@ impl SrsCore {
     }
 
     /// 写 head（段都传完之后）：[upto] = 已传到该位置的最大 seq。返回 `(相对路径, 字节, gen)`。
+    #[cfg(test)]
     pub fn sync2_head(
         &self,
         profile: &str,
@@ -2556,6 +2690,7 @@ impl SrsCore {
     /// 连着 Windows host 时复习同步一轮接一轮不停）。没变就不写，空转在下一轮停下。到了期限照写一次：别的设备
     /// 显示的「最后在线」（`seenAt`）与校时靠它刷新。上次写出的 head 文件此刻还在不在位置上由调用方核对，不在就
     /// 不带 [skip_unchanged_ms] 再调一次（上一轮写 head 之前断网 / 被别的设备清掉）。
+    #[cfg(test)]
     pub fn sync2_head_if_changed(
         &self,
         profile: &str,
@@ -2724,6 +2859,7 @@ impl SrsCore {
     /// - 旧小段要等可能引用它的旧 head 都确认删掉才给（[pending_deletes]）：**段的删除永远不早于最后一份引用它的 head
     ///   被删**。被这份清单里的旧 head 拦住的旧小段用 [Obsolete::again] 告诉调用方：清单全部删成并回执后，把删掉的
     ///   文件从 [present] 里去掉再问一次（同一轮），旧小段就与以前在同一轮删掉。
+    #[cfg(test)]
     pub fn sync2_obsolete(
         &self,
         profile: &str,
@@ -2784,6 +2920,7 @@ impl SrsCore {
 
     /// 确认 [location] 上这些文件（[Self::sync2_obsolete] / `sync2_relay_ack` 给的待删清单里的相对路径）已经删掉（或在
     /// 归档位置上按策略不删）：从待删记录里移除。没被确认的下一轮照样再给。返回移除的记录数。
+    #[cfg(test)]
     pub fn sync2_obsolete_ack(
         &self,
         profile: &str,
@@ -2811,12 +2948,14 @@ impl SrsCore {
 
     /// 看 head：[heads] 是位置上各设备最新的 head 文件字节。返回要拉的段
     /// `{"fetch":[{"device","files":[相对路径]}], "fork": bool, "rejected":[设备], "devices":[...] }`。
+    #[cfg(test)]
     pub fn sync2_plan(&self, profile: &str, heads: &[Vec<u8>]) -> Result<Value, String> {
         self.sync2_plan_at(profile, heads, None)
     }
 
     /// 同 [Self::sync2_plan]，[location] 给出时（这些 head 所在位置的进度身份，与发件同一个）还记下这个位置上有
     /// 谁的哪些段：别的位置缺、只在这里有最新 head 的设备的段也列进要拉的（只为转发，relay.rs）。
+    #[cfg(test)]
     pub fn sync2_plan_at(
         &self,
         profile: &str,
@@ -2837,7 +2976,7 @@ impl SrsCore {
         }
         in_savepoint(&w, |c| {
             Ok(plan(c, profile, heads, location, true, &mut |t| {
-                self.note_settled(profile, t)
+                self.refresh_slice(profile, t)
             })?
             .expect("writable plan always answers"))
         })
@@ -2845,6 +2984,7 @@ impl SrsCore {
 
     /// [Self::sync2_plan_at] 的只读一半：只在读连接（已提交快照）上算；要往库里记东西（第一次见的设备、更新的 head、
     /// 这个位置上的 head 变了）时返回 None，调用方进写锁再调 [Self::sync2_plan_at]。
+    #[cfg(test)]
     pub fn sync2_plan_read_only(
         &self,
         profile: &str,
@@ -2862,6 +3002,7 @@ impl SrsCore {
     /// 一次收完；同一轮要分几批收（字节预算）时用 [SrsCore::sync2_ingest_begin] / [SrsCore::sync2_ingest_batch] /
     /// [SrsCore::sync2_ingest_finish]，分叉判定与换身份和把全部批次拼成一次调用这里相同。解码与验签在写锁外
     /// （[SrsCore::sync2_ingest_prepare]），写锁里只投递。
+    #[cfg(test)]
     pub fn sync2_ingest(
         &self,
         profile: &str,
@@ -2878,6 +3019,7 @@ impl SrsCore {
     }
 
     /// 收段的锁外一半：读连接上取本机身份与各设备公钥（查完就放），再不持任何锁地验签、解密、解压、重算链。
+    #[cfg(test)]
     pub(crate) fn prepare_unlocked<'a>(
         &self,
         profile: &str,
@@ -2909,14 +3051,28 @@ impl SrsCore {
     /// 为什么要会话：本机身份的段（数据目录被复制、另一个安装在用同一身份）只用来比链找分叉点，分叉点是**全部**
     /// 这类段里第一处不同的最小值；换身份（[rotate]）又要在**全部**远端操作都投递之后做（重签发的因果上下文按
     /// 那时已应用的版本向量截断）。两者都要看全一轮，所以分叉点跨批累积在这里（状态归内核），换身份推到收尾。
+    ///
+    /// 会话期间这个 profile 的 RWKV 刷新推进攒着（store/refresh.rs），[SrsCore::sync2_ingest_end] 时并成一次；从进来
+    /// 那一刻就攒（下面先做完上一次没收完的通道片），开不成就当场放掉。
+    #[cfg(test)]
     pub fn sync2_ingest_begin(&self, profile: &str) -> Result<Value, String> {
+        self.refresh_hold(profile);
+        let out = self.ingest_begin_held(profile);
+        if out.is_err() {
+            self.refresh_release(profile);
+        }
+        out
+    }
+
+    #[cfg(test)]
+    fn ingest_begin_held(&self, profile: &str) -> Result<Value, String> {
         let w = self.writer()?;
         let local = Local::load(&w, profile)?.ok_or("sync2 not initialised for this profile")?;
         // 之前被打断的会话已经找到的分叉点接着用（审查 S-12：plan 不再让 Dart 重下本机身份的段）。
         let fork_at = recorded_fork(&w, profile, &local.device)?;
         let bootstrap = !studied_here(&w, profile, &local.device)?;
         // 新设备第一次同步走收段通道（先追加后折叠，channel.rs）；上一次的收尾做到一半就先按片做完（各片自己提交）。
-        let channel = super::channel::begin(&w, profile, &mut |t| self.note_settled(profile, t))?;
+        let channel = super::channel::begin(&w, profile, &mut |t| self.refresh_slice(profile, t))?;
         if channel {
             self.note_channel_live();
         } else {
@@ -2939,7 +3095,9 @@ impl SrsCore {
     /// 放掉 [profile] 的收段会话 / 收尾阶段（不是它的不动）：Dart 一轮中途收手、抓段或某一步出错时发
     /// （`ingest_end`，srs_sync2_round.dart 的 finally），删 profile 时也调。会话里预处理好的段与留着的页缓存随之
     /// 放掉；各片已提交时记下的待重放 / 待刷新还在库里，下一轮 `plan` 报 `finishPending` 再收。收尾已收完时是空操作。
+    #[cfg(test)]
     pub fn sync2_ingest_end(&self, profile: &str) -> Result<Value, String> {
+        self.refresh_release(profile);
         let mut phase = self.ingest_phase()?;
         if phase.belongs_to(profile) {
             self.set_ingest_phase(&mut phase, IngestPhase::Idle);
@@ -2948,6 +3106,7 @@ impl SrsCore {
     }
 
     /// 收尾的重放 / 缓存都收完了（分发器的最后一块）：[profile] 的收尾阶段转回 [IngestPhase::Idle]。其间开了新会话的不动。
+    #[cfg(test)]
     pub(crate) fn sync2_ingest_drained(&self, profile: &str) -> Result<(), String> {
         let mut phase = self.ingest_phase()?;
         if matches!(&*phase, IngestPhase::Draining(p) if p == profile) {
@@ -2957,6 +3116,7 @@ impl SrsCore {
     }
 
     /// 会话里收一批（[SrsCore::sync2_ingest_prepare] + 不切片的 [SrsCore::sync2_ingest_commit] 连着做）。
+    #[cfg(test)]
     pub fn sync2_ingest_batch(
         &self,
         profile: &str,
@@ -2973,6 +3133,7 @@ impl SrsCore {
     /// 出错作废会话（与 [SrsCore::sync2_ingest_commit] 出错相同）。
     ///
     /// [segments] 按所有权交进来、由会话持有到投递（不复制，审查 S-9）。
+    #[cfg(test)]
     pub fn sync2_ingest_prepare(
         &self,
         profile: &str,
@@ -3004,6 +3165,7 @@ impl SrsCore {
     }
 
     /// 当前收段会话的本机身份（没有 [profile] 的会话报错）。
+    #[cfg(test)]
     fn session_device(&self, profile: &str) -> Result<Id, String> {
         match self.ingest_phase()?.session() {
             Some(s) if s.profile == profile => Ok(s.device),
@@ -3016,6 +3178,7 @@ impl SrsCore {
     /// 写锁里只剩比链、因果投递、落库、重放；预处理之后某台设备的公钥变了，那一段按当时的公钥在锁内重验。
     /// 返回 `more` 为真 = 这一片被截停，剩下的留在会话里，再调一次接着投（两次之间别的写入可以插进来）。
     /// 会话期间本机身份变了（别处换过身份）就作废会话并报错：之后的本机段已不能按同一身份比链。
+    #[cfg(test)]
     pub fn sync2_ingest_commit(
         &self,
         profile: &str,
@@ -3029,6 +3192,7 @@ impl SrsCore {
     /// 事务**里写下（修订号按这一片落库的变化推进，见 [persist_local_state]；带不带 [anchor] 都写）。收段不再套 Drift 事务
     /// （集成审查【中高】）：这一片由内核自己提交，提交成功才推进会话内存（`prepared` / `delivery`），所以不会有
     /// 「内层 SAVEPOINT 释放、会话已推进，外层事务却回滚」的不一致；本机状态行也随同一次提交落盘或一起不落。
+    #[cfg(test)]
     pub fn sync2_ingest_commit_persisting(
         &self,
         profile: &str,
@@ -3042,6 +3206,7 @@ impl SrsCore {
 
     /// 同 [Self::sync2_ingest_commit_persisting]；给了缓存配置 [cache]（分发器）就在这一片的同一笔事务里把本机已有
     /// 缓存行的笔记 / 卡当场刷新，返回写过的缓存行（新实体推迟到收尾，见 [defer_cache_refresh]）。
+    #[cfg(test)]
     pub(crate) fn sync2_ingest_commit_cached(
         &self,
         profile: &str,
@@ -3059,6 +3224,7 @@ impl SrsCore {
     /// 有别的写入在等写锁：正在投的那一片（[SrsCore::sync2_ingest_commit]）尽快收。不拿任何连接锁，从等锁的
     /// 那一侧（Dart 的写入排队：同一个副本对象的写入排在收段那一步后面，还没到内核）直接调。已经到内核来等写锁的
     /// 不用它：取写锁时自己记进等待者计数（[YieldSignal]）。
+    #[cfg(test)]
     pub fn sync2_ingest_yield(&self) {
         self.ingest_yield.request();
     }
@@ -3068,6 +3234,7 @@ impl SrsCore {
         &self.ingest_yield
     }
 
+    #[cfg(test)]
     fn ingest_commit_slice(
         &self,
         profile: &str,
@@ -3170,12 +3337,14 @@ impl SrsCore {
     /// 收尾：会话里累积出分叉点就换身份（与一次收完时同一个分叉点、同样在全部投递之后），再把各片记下的待重放
     /// 卡一次重放完（审查 S-4）。返回与 [SrsCore::sync2_ingest] 同形（`applied` 为 0：操作都在各批里投递过了）。
     /// 会话期间本机身份变了：不换。
+    #[cfg(test)]
     pub fn sync2_ingest_finish(&self, profile: &str, now: i64) -> Result<String, String> {
         self.sync2_ingest_finish_within(profile, now, CommitBudget::unlimited())
     }
 
     /// 同 [Self::sync2_ingest_finish]，重放按 [budget] 切片：返回 `more` 为真 = 待重放集合还没放完，调用方放开
     /// 写锁后用 [Self::sync2_replay_pending] 接着放（会话已在这一次收掉）。
+    #[cfg(test)]
     pub fn sync2_ingest_finish_within(
         &self,
         profile: &str,
@@ -3186,6 +3355,7 @@ impl SrsCore {
     }
 
     /// 同 [Self::sync2_ingest_finish_within]，[anchor] 同 [Self::sync2_ingest_commit_persisting]。
+    #[cfg(test)]
     pub fn sync2_ingest_finish_persisting(
         &self,
         profile: &str,
@@ -3300,6 +3470,7 @@ impl SrsCore {
 
     /// 主动换身份（导入 `.fushisrs` / 从手动导出恢复 / 拷数据目录后，设计 §7.3 预防）：本机现有操作都保留在
     /// 旧身份下（冻结），之后用新身份写。
+    #[cfg(test)]
     pub fn sync2_rotate(&self, profile: &str, now: i64) -> Result<Value, String> {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
@@ -3313,6 +3484,7 @@ impl SrsCore {
 
     /// 摘要的各桶（只列非空桶，读连接）：`{"vv": .., "buckets": [[桶号, 值, 行数], ..]}`。两台设备根不同时对比它，
     /// 不一致的桶 = 不一致的 ID 范围（[super::digest::bucket_of]）。
+    #[cfg(test)]
     pub fn sync2_digest_buckets(&self, profile: &str) -> Result<Value, String> {
         let r = self.reader()?;
         r.execute_batch("BEGIN").map_err(sql)?;
@@ -3332,6 +3504,7 @@ impl SrsCore {
     }
 
     /// 算并记下状态摘要（设计 §4.5；写 head 时带上）。返回 `{"digest", "vv"}`。
+    #[cfg(test)]
     pub fn sync2_digest(&self, profile: &str) -> Result<Value, String> {
         self.sync2_digest_due(profile, 0, None)
     }
@@ -3339,6 +3512,7 @@ impl SrsCore {
     /// 算并记下状态摘要（写进 head，§4.5）。桶表由触发器增量维护（digest.rs），这里只读 4096 个桶求根；给了
     /// [min_interval_ms]：版本向量没变、或离上次算不到这个间隔，就不算（返回 `{"skipped": true}`；摘要变化只在
     /// head 里推迟发布，见 transport.rs `ACK_ONLY_HEAD_MS`）。
+    #[cfg(test)]
     pub fn sync2_digest_due(
         &self,
         profile: &str,
@@ -3403,6 +3577,7 @@ impl SrsCore {
     }
 
     /// 同步状态（设计 §10.6）：本机身份、每台设备的进度 / 落后条数 / 最后见到 / 摘要是否一致、缓冲条数。
+    #[cfg(test)]
     pub fn sync2_status(&self, profile: &str) -> Result<Value, String> {
         let r = self.reader()?;
         let local = Local::load(&r, profile)?;
@@ -3507,6 +3682,7 @@ impl SrsCore {
     }
 }
 
+#[cfg(test)]
 fn hex_id(b: &[u8]) -> String {
     <[u8; 16]>::try_from(b)
         .map(|a| Id(a).text())
@@ -3515,10 +3691,12 @@ fn hex_id(b: &[u8]) -> String {
 
 /// `.fushisrs`（设计 §10.4）：一个集合的全部操作（每台设备从 seq 1 起的完整前缀 + 每条的链值）与各设备公钥，
 /// zstd 压缩。媒体由 Dart 侧另打进同一个包。
+#[cfg(test)]
 const EXPORT_MAGIC: &[u8; 8] = b"FSRS2EXP";
 
 /// 导出的明文按需生成：zstd 压缩器每读一块，就从库里按 seq 读出、编码下一批操作。明文不整份攒在内存里，
 /// 内存是一个压缩块 + 一条操作。读库出错时记下、对压缩器报流结束，调用方压缩完再检查 [Self::error]。
+#[cfg(test)]
 struct ExportSource<'c> {
     c: &'c Connection,
     profile: &'c str,
@@ -3531,8 +3709,10 @@ struct ExportSource<'c> {
     error: Option<String>,
 }
 
+#[cfg(test)]
 impl ExportSource<'_> {
     /// 补下一段明文；导完了返回 false。
+    #[cfg(test)]
     fn refill(&mut self) -> Result<bool, String> {
         self.buf.clear();
         self.pos = 0;
@@ -3575,6 +3755,7 @@ impl ExportSource<'_> {
     }
 }
 
+#[cfg(test)]
 impl std::io::Read for ExportSource<'_> {
     fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
         if self.error.is_some() {
@@ -3598,6 +3779,7 @@ impl std::io::Read for ExportSource<'_> {
 }
 
 /// `.fushisrs` 的一项（按出现顺序）：一台设备的抬头，接着是它从 seq 1 起的 `count` 条操作。
+#[cfg(test)]
 enum ExportItem {
     Device {
         device: Id,
@@ -3608,6 +3790,7 @@ enum ExportItem {
 }
 
 /// 流式读 `.fushisrs` 的操作部分（[ZstdWindow]），顺手校验每台设备的操作是从 1 起连续的。
+#[cfg(test)]
 struct ExportReader<'s> {
     window: ZstdWindow<'s>,
     collection: Id,
@@ -3616,7 +3799,9 @@ struct ExportReader<'s> {
     cur: Option<(Id, u64, u64)>,
 }
 
+#[cfg(test)]
 impl<'s> ExportReader<'s> {
+    #[cfg(test)]
     fn open(bytes: &'s [u8]) -> Result<ExportReader<'s>, String> {
         let mut window = ZstdWindow::new(bytes).map_err(|e| e.to_string())?;
         if window
@@ -3639,6 +3824,7 @@ impl<'s> ExportReader<'s> {
         })
     }
 
+    #[cfg(test)]
     fn next_item(&mut self) -> Result<Option<ExportItem>, String> {
         if let Some((device, next, top)) = self.cur.as_mut() {
             if *next <= *top {
@@ -3674,6 +3860,7 @@ impl<'s> ExportReader<'s> {
 impl SrsCore {
     /// 手动导出：全部操作（含已清除内容的骨架）+ 各设备公钥。明文边生成边压缩（[ExportSource]），内存只有
     /// 压缩后的结果与一个块，不再先攒一份整份明文。
+    #[cfg(test)]
     pub fn sync2_export(&self, profile: &str) -> Result<Vec<u8>, String> {
         let w = self.writer()?;
         in_savepoint(&w, |c| {
@@ -3724,6 +3911,7 @@ impl SrsCore {
     /// 流式读两遍：第一遍校验整个包（格式、每台设备的 seq 连续）并找本机身份的共同前缀，什么都不改；第二遍
     /// 按块投递（[Delivery]，等依赖的超预算就落缓冲表）。包再大，内存也只有一个读窗口与一块操作——以前是整份
     /// 明文、全部操作、再拷一份待投递三份同时在内存。
+    #[cfg(test)]
     pub fn sync2_import(&self, profile: &str, bytes: &[u8], now: i64) -> Result<String, String> {
         let w = self.writer()?;
         // 会话外投递：新设备收段通道没做完就先按片做完（channel.rs `settle`；分发器已在取写锁前收过通道，这里通常
@@ -3735,6 +3923,7 @@ impl SrsCore {
 
 /// [SrsCore::sync2_import] 的本体：在调用方的写连接、调用方开的 SAVEPOINT 里并入（不自己取锁、不收通道——调用方在开
 /// SAVEPOINT 之前收，见 [SrsCore::settle_channel_on]）。
+#[cfg(test)]
 pub(crate) fn import_on(
     c: &Connection,
     profile: &str,
@@ -3992,7 +4181,8 @@ mod budget_tests {
 }
 
 /// [SrsCore::sync2_ingest] 的写锁内一半：在调用方的写连接、调用方开的 SAVEPOINT 里投递预处理好的段（不自己取锁、不收
-/// 通道）。`retire` 用它在同一个 SAVEPOINT 里紧接着投一遍缓冲（store/ffi.rs `local_write`）。
+/// 通道）。`retire` 用它在同一个 SAVEPOINT 里紧接着投一遍缓冲（store/legacy3 `local_write`）。
+#[cfg(test)]
 pub(crate) fn ingest_on(
     c: &Connection,
     profile: &str,

@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 fn model(small: bool) -> Model {
     let (filename, expected) = if small {
-        ("sm72e25_weights.int8.bin", SMALL_MODEL_INT8_SHA256)
+        ("sm98_weights.int8.bin", SMALL_MODEL_INT8_SHA256)
     } else {
         ("RWKV_trained_on_5000_10000.bin", MODEL_SHA256)
     };

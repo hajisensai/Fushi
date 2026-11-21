@@ -15,7 +15,7 @@ import '../helpers/source_guard.dart';
 /// - macOS Runner 构建阶段 `bundle_fushi_rwkv.sh`：缺库 `exit 1`；
 /// - iOS：伞形静态库 `native/fushi_ios_umbrella` 依赖 fushi_rwkv，Runner 在编译前跑
 ///   `check_fushi_rwkv.sh`（伞形库缺失或不导出 `frwkv_abi_version` 时失败）；
-/// - Android：`checkFushiRwkvNative` 挂在 `preBuild` 上，缺 ABI 抛 GradleException；
+/// - Android：`checkFushiRwkvNative` 挂在 `merge<Variant>JniLibFolders`（打包 .so 的任务）上，缺 ABI 抛 GradleException；
 /// - 本地新 worktree：`tool/bootstrap.ps1`（经 `tool/native_libs.ps1` 的 `$NativeTestCrates`）/
 ///   `bootstrap.sh` 编它；
 /// - CI：凡是用 `setup-fushi-compute` 的 job 也用 `setup-fushi-rwkv`（同样的输入），其余
@@ -146,7 +146,7 @@ void main() {
     expect(script, contains('exit 1'));
   });
 
-  test('Android：checkFushiRwkvNative 挂在 preBuild 上并在缺库时抛错', () {
+  test('Android：checkFushiRwkvNative 挂在打包 .so 的任务上并在缺库时抛错', () {
     final String gradle = maskComments(read('android/app/build.gradle'));
     expect(
       gradle,
@@ -156,11 +156,13 @@ void main() {
     );
     expect(gradle, contains('tasks.register("checkFushiRwkvNative")'));
     expect(gradle, contains('libfushi_rwkv.so'));
-    final int preBuild = gradle.indexOf('if (task.name == "preBuild") {');
-    expect(preBuild, greaterThanOrEqualTo(0));
+    final int hook = gradle.indexOf(
+      'if (task.name.startsWith("merge") && task.name.endsWith("JniLibFolders")) {',
+    );
+    expect(hook, greaterThanOrEqualTo(0));
     expect(
-      gradle.indexOf('task.dependsOn(checkFushiRwkvNative)', preBuild),
-      greaterThan(preBuild),
+      gradle.indexOf('task.dependsOn(checkFushiRwkvNative)', hook),
+      greaterThan(hook),
     );
     final int check = gradle.indexOf('tasks.register("checkFushiRwkvNative")');
     expect(
@@ -272,7 +274,9 @@ void main() {
           } else {
             expect(
               body.contains('FUSHI_RWKV_LIB') ||
-                  body.contains('native/fushi_rwkv/build_'),
+                  body.contains('native/fushi_rwkv/build_') ||
+                  // Linux 服务端包：编译命令在 build_linux_bundle.sh 里。
+                  body.contains('build_linux_bundle.sh rust fushi_rwkv'),
               isTrue,
               reason:
                   '$id 编了 fushi_compute（FUSHI_COMPUTE_LIB），却没编 fushi_rwkv：'
@@ -310,9 +314,10 @@ void main() {
         'bash native/fushi_rwkv/verify_abi.sh fushi/build/ios/iphoneos/Runner.app/Runner nm',
         'bash native/fushi_rwkv/verify_abi.sh "\$runner" nm',
       ],
+      // Linux 服务端包的构建命令只在 build_linux_bundle.sh 写一次（release-server.yml
+      // 与 Docker 共用）：workflow 调它编 fushi_rwkv，脚本把 .so 放进 bundle。
       'release-server.yml': <String>[
-        'native/fushi_rwkv/build_linux_so.sh',
-        'cp native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so build/fushi_server_linux/bundle/lib/',
+        'packages/fushi_server/tool/build_linux_bundle.sh rust fushi_rwkv',
         'native/fushi_rwkv/build_windows_dll.ps1',
         'Copy-Item native/fushi_rwkv/prebuilt/windows-x64/fushi_rwkv.dll \$lib -Force',
       ],
@@ -325,6 +330,25 @@ void main() {
         }
       });
     }
+
+    test('build_linux_bundle.sh 编 fushi_rwkv 并放进 bundle/lib', () {
+      final String text = read(
+        '../packages/fushi_server/tool/build_linux_bundle.sh',
+      );
+      expect(
+        text,
+        contains('RUST_CRATES=(fushi_p2p fushi_fsrs fushi_compute fushi_rwkv)'),
+      );
+      expect(text, contains('bash "native/\$crate/build_linux_so.sh"'));
+      expect(
+        text,
+        contains(
+          'cp native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so '
+          '"\$BUNDLE/lib/"',
+        ),
+      );
+      expect(text, contains('lib/libfushi_rwkv.so'), reason: 'verify 清单');
+    });
   });
 }
 

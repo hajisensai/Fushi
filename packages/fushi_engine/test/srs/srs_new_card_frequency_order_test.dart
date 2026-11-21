@@ -159,10 +159,11 @@ void main() {
     expect((await s.cardRow(card))!.freqRank, 50);
   });
 
-  test('老库（缓存修订号 5、freq_rank 为空）打开时补齐名次', () async {
+  // 协议 3 的「老库（缓存修订号 5）打开时补齐名次」改成整层重建：新代没有 `cacheRev`，派生层是真相的纯函数。
+  // 先经原始通道清掉 `cards.freq_rank`（老库没有名次的形态），重建必须按词频字段算回来。
+  test('名次列被清掉后整层重建算回', () async {
     final SrsStorage st = await openTestSrsStorage();
     Future<SrsDbStore> openOn() => SrsDbStore.open(
-      db: st.db,
       core: st.core,
       profileUid: kFreqProfile,
       deviceId: 'dev',
@@ -172,9 +173,10 @@ void main() {
       ('雪', '300'),
       ('上手', '100'),
     ]);
-    st.core.debugExecRaw('UPDATE srs_cards_cache SET freq_rank = NULL');
-    st.core.debugExecRaw(
-      "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 5)",
+    await expectRebuildRestores(
+      s,
+      'cards',
+      'UPDATE cards SET freq_rank = NULL',
     );
 
     final SrsDbStore reopened = await openOn();

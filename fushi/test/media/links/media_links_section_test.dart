@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart';
 import 'package:fushi/src/media/links/media_links_section.dart';
+import 'package:fushi/src/media/links/work_graph_store.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -23,6 +24,8 @@ void main() {
 
   setUp(() async {
     LocaleSettings.setLocale(AppLocale.zhCn);
+    // 作品图缓存的去抖计时器在测试里立即到点（不留悬空计时器）。
+    WorkGraphStore.debounce = Duration.zero;
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     animeId = await db.createMediaCollection('某动画');
     await db.insertEpubBook(
@@ -38,7 +41,10 @@ void main() {
     );
   });
 
-  tearDown(() => db.close());
+  tearDown(() async {
+    WorkGraphStore.debounce = const Duration(milliseconds: 400);
+    await db.close();
+  });
 
   Widget buildApp({void Function(MediaLinkEntry)? onOpen}) =>
       TranslationProvider(

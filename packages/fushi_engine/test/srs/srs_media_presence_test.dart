@@ -73,7 +73,6 @@ void main() {
   Future<SrsDbStore> device(String id) async {
     final SrsStorage st = await openTestSrsStorage();
     return SrsDbStore.open(
-      db: st.db,
       core: st.core,
       profileUid: kProfile,
       deviceId: id,
@@ -114,6 +113,18 @@ void main() {
     );
   }
 
+  /// 在 [on] 上确认 [peer]（K2 首见信任：[on] 库已非空时第一次见到的设备是待确认，它的媒体清单不收——
+  /// `gen4/media.rs` 的 `IngestError::Untrusted`，「它说的在可能是要让别人别传」）。同一用户的两台设备，用户在设备页确认。
+  Future<void> trust(SrsDbStore on, SrsDbStore peer) async {
+    final String id =
+        (await peer.sync2Command(<String, Object?>{
+              'op': 'identity',
+              'now': 0,
+            })).map['device']!
+            as String;
+    await on.sync2Trust(id, trust: true);
+  }
+
   test('位置只完整列举一次；别的设备经日志得知内容，不再列目录', () async {
     final _CountingLocation loc = _CountingLocation();
     final SrsDbStore a = await device('a');
@@ -123,7 +134,7 @@ void main() {
     File(p.join(mediaA.path, 'cat.png')).writeAsBytesSync(<int>[1, 2, 3]);
     File(p.join(mediaA.path, 'dog.png')).writeAsBytesSync(<int>[4]);
     await note(a, '猫', '<img src="cat.png"><img src="dog.png">');
-    await srsSyncPeers(<SrsDbStore>[a, b], loc.inner);
+    await srsSyncPeers(<SrsDbStore>[a, b], loc.inner, locationId: kLocation);
 
     final SrsMediaSyncReport first = await media(a, loc, mediaA);
     expect(first.listedRemote, isTrue, reason: '日志里没有任何设备列举过这个位置');
@@ -131,7 +142,7 @@ void main() {
     expect(loc.mediaLists, 1);
 
     // A 的 MediaAt 操作随下一轮同步到 B。
-    await srsSyncPeers(<SrsDbStore>[a, b], loc.inner);
+    await srsSyncPeers(<SrsDbStore>[a, b], loc.inner, locationId: kLocation);
     final SrsMediaSyncReport rb = await media(b, loc, mediaB);
     expect(rb.listedRemote, isFalse);
     expect(rb.downloaded, 2);
@@ -157,9 +168,11 @@ void main() {
     final Directory mediaC = mediaDir('c');
     File(p.join(mediaA.path, 'cat.png')).writeAsBytesSync(<int>[7]);
     await note(a, '猫', '<img src="cat.png">');
-    await srsSyncPeers(<SrsDbStore>[a, c], loc.inner);
+    await srsSyncPeers(<SrsDbStore>[a, c], loc.inner, locationId: kLocation);
     await media(a, loc, mediaA);
-    await srsSyncPeers(<SrsDbStore>[a, c], loc.inner);
+    await srsSyncPeers(<SrsDbStore>[a, c], loc.inner, locationId: kLocation);
+    // A 有笔记之后才第一次见到 C：C 在 A 上待确认，要等用户确认，C 记下的「不在」才进 A。
+    await trust(a, c);
 
     loc.inner.files.remove(
       srsMediaContentPath(kSrsMediaFolder, srsMediaSha256(<int>[7])),
@@ -172,9 +185,9 @@ void main() {
       reason: 'A 还没收到 C 记下的「不在」',
     );
 
-    await srsSyncPeers(<SrsDbStore>[c, a], loc.inner);
+    await srsSyncPeers(<SrsDbStore>[c, a], loc.inner, locationId: kLocation);
     expect((await media(a, loc, mediaA)).uploaded, 1);
-    await srsSyncPeers(<SrsDbStore>[a, c], loc.inner);
+    await srsSyncPeers(<SrsDbStore>[a, c], loc.inner, locationId: kLocation);
     expect((await media(c, loc, mediaC)).downloaded, 1);
     expect(loc.mediaLists, 1);
   });

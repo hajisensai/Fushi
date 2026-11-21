@@ -4,7 +4,7 @@
 // - 词状态成批查询与逐个查询同结果；
 // - 模板编辑器保存合成一次写入；
 // - 只取 id / 计数的查询与旧口径同结果。
-import 'package:drift/drift.dart' show Variable, driftRuntimeOptions;
+import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -39,24 +39,22 @@ void main() {
         srsLapisFieldId(kProfile, 'ExpressionReading'): reading,
       };
 
-  /// 把这些笔记的缓存行做个记号：之后还在 = 缓存没被重算。
+  /// 把这些笔记的缓存行做个记号：之后还在 = 缓存没被重算。没有公开写命令能改派生层，这里走测试专用的原始通道改新代
+  /// 派生表 `notes`（native/fushi_fsrs/src/store/gen4/cache.rs；ID 列存 16 字节键 = UUID 的字节，按十六进制比）。
   Future<void> tamper(SrsDbStore s, Iterable<String> noteIds) async {
     for (final String id in noteIds) {
       s.core.debugExecRaw(
-        "UPDATE srs_notes_cache SET sort_field = 'TAMPERED' WHERE id = srs_id(?)",
-        <Object>[id],
+        "UPDATE notes SET sort_field = 'TAMPERED' WHERE lower(hex(id)) = ?",
+        <Object>[id.replaceAll('-', '').toLowerCase()],
       );
     }
   }
 
   Future<Set<String>> tampered(SrsDbStore s) async => <String>{
-    for (final r
-        in await s.db
-            .customSelect(
-              "SELECT id FROM srs_notes_cache WHERE sort_field = 'TAMPERED'",
-            )
-            .get())
-      r.read<String>('id'),
+    for (final Map<String, Object?> r in s.core.debugSelectRaw(
+      "SELECT lower(hex(id)) AS h FROM notes WHERE sort_field = 'TAMPERED'",
+    ))
+      _uuidOfHex(r['h']! as String),
   };
 
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -315,6 +313,8 @@ void main() {
       final SrsNoteTypeView v = (await a.noteType(nt))!;
       final SrsTemplateDef tpl = v.templates.single;
       final int before = a.revision;
+      Future<int> ops() async => (await a.sync2Status())['ops']! as int;
+      final int opsBefore = await ops();
       expect(
         await a.saveTemplateEdits(
           nt,
@@ -330,7 +330,9 @@ void main() {
         ),
         isTrue,
       );
-      expect(a.revision - before, 3, reason: '模板、CSS、一个字段说明');
+      // 新代的修订号按内核口径推进（不再等于写下的修改记录条数），写了几条看操作日志条数（内核 `status` 的 `ops`）。
+      expect(a.revision, greaterThan(before));
+      expect(await ops() - opsBefore, 3, reason: '模板、CSS、一个字段说明');
       final SrsNoteTypeView after = (await a.noteType(nt))!;
       expect(after.templates.single.front, '${tpl.front}!');
       expect(after.css, '.x{}');
@@ -361,25 +363,17 @@ void main() {
           ),
       ];
       await a.deleteNote(notes[1]);
-      expect(await a.noteIdsOfType(a.lapisNoteTypeId), <String>[
-        notes[0],
-        notes[2],
-      ]);
+      // 新代的笔记派生表没有 rowid（主键 (集合, ID)），按规范 ID 序出（协议 3 是落库序）：ID 是规范小写 UUID，
+      // 文本序 = 字节序。
+      final List<String> live = <String>[notes[0], notes[2]]..sort();
+      expect(await a.noteIdsOfType(a.lapisNoteTypeId), live);
       expect(await a.noteIdsOfType(a.lapisNoteTypeId, limit: 1), <String>[
-        notes[0],
+        live.first,
       ]);
       expect((await a.noteCountsByType())[a.lapisNoteTypeId], 2);
       final List<String> visible = <String>[
-        for (final r
-            in await a.db
-                .customSelect(
-                  'SELECT id FROM srs_cards_cache WHERE deck_id = ? AND hidden = 0',
-                  variables: <Variable<Object>>[
-                    Variable<String>(a.defaultDeckId, srsIdType),
-                  ],
-                )
-                .get())
-          r.read<String>('id'),
+        for (final SrsCardCacheRow c in await a.allCardRows())
+          if (c.deckId == a.defaultDeckId && !c.hidden) c.id,
       ];
       expect(visible, hasLength(2));
       expect(
@@ -389,3 +383,8 @@ void main() {
     });
   });
 }
+
+/// 32 位十六进制 → 8-4-4-4-12 的 UUID 文本。
+String _uuidOfHex(String h) =>
+    '${h.substring(0, 8)}-${h.substring(8, 12)}-${h.substring(12, 16)}-'
+    '${h.substring(16, 20)}-${h.substring(20)}';

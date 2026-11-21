@@ -306,9 +306,19 @@ void main() {
     });
 
     test('刷新进度必须走 stableProgressInvocation，避免恢复/重锚瞬态 0 落库', () {
+      // _refreshProgress 经共用取样口 `_takeStableProgressSnapshot` 采样；走不走
+      // stable gate 看的是取样口里发给 WebView 的那段脚本。
+      expect(
+        containsCodeLine(
+          methodBody(src, 'Future<void> _refreshProgress() async'),
+          'await _takeStableProgressSnapshot(',
+        ),
+        isTrue,
+        reason: '_refreshProgress 必须经共用取样口采样',
+      );
       final String body = methodBody(
         src,
-        'Future<void> _refreshProgress() async',
+        'Future<Object?> _takeStableProgressSnapshot(String errorSource) async',
       );
       expect(
         containsCodeLine(

@@ -20,6 +20,7 @@ import 'package:fushi_engine/media/torrent/torrent_network_diagnosis.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_page.dart';
 import 'package:fushi/src/media/torrent/torrent_network_issue_banner.dart';
 import 'package:fushi/src/media/downloads/manga_download_tasks_section.dart';
+import 'package:fushi/src/pages/implementations/discovery_manage_sources_action.dart';
 import 'package:fushi/src/pages/implementations/interconnect_download_tasks_section.dart';
 import 'package:fushi/src/pages/implementations/remote_download_tasks_section.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
@@ -40,8 +41,6 @@ import 'package:fushi/src/pages/implementations/video_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart';
 import 'package:fushi/src/pages/implementations/video_download_subscriptions_panel.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
-import 'package:fushi/src/settings/settings_detail_page.dart';
-import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart';
@@ -52,12 +51,17 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
         FushiFloatingChromeInset,
         FushiFloatingChromeInsetPadding,
         FushiFloatingChromeOverlay,
-        FushiFloatingChromeScope;
+        FushiFloatingChromeScope,
+        kFushiFloatingChromeGap;
+import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
+    show FushiMastheadRole, FushiMastheadScope;
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
     show fushiNotificationFromVisibleSubtree;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
@@ -69,6 +73,8 @@ import 'package:fushi/src/utils/components/library_section_tab.dart';
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi_core/fushi_core.dart'
     show VideoDownloadJobFileRow, VideoDownloadJobRow;
 
@@ -418,6 +424,12 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
       onChanged: _selectOnlineDomain,
       focusIdPrefix: 'browse-${tab.name}-domain',
       onEdgeOverscroll: (int delta) => _handOffFrom(tab, delta),
+      // 页头大字形态：「来源 / 扩展」与内容域同一行（域在左、来源 / 扩展分段在
+      // 右），不再是两排小胶囊上下堆叠（2026-11-16 拼贴改版）。非页头大字形态
+      // （墨水屏）仍在顶栏右上角。
+      trailing: shellRedesignActive(context)
+          ? _buildOnlineSectionSegmented()
+          : null,
       // 在线来源面的主滚动视图自己把头部高度加成顶部 sliver（内容滚到头部底下）。
       pageHandlesInset: true,
       pageBuilder: (OnlineSourcesDomain domain) => Stack(
@@ -589,11 +601,25 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
   ///
   /// 以本页自己的路由为界弹掉上面压着的路由（全源搜索页、详情页），与压了几层
   /// 无关——与库页壳 `MediaLibraryShell` 的「回到壳」同一口径。
-  VoidCallback? _mangaSourcesAction() {
+  VoidCallback? _mangaSourcesAction() =>
+      _onlineSourcesAction(OnlineSourcesDomain.manga);
+
+  /// 书 / 游戏发现页（[MediaDiscoveryPage]）「⋯ › 管理来源」与无来源引导块的
+  /// 去处：「设置 › 在线服务」。这两域的来源是内置发现源（启停在「发现来源」）
+  /// 与用户自配的 OPDS / BT 站 / Audiobookshelf，全在这一分类里——不是「在线源」
+  /// 页签里的 LNReader / Mihon 扩展。「在线服务」模块关掉时为 null。
+  VoidCallback? _discoverySourcesAction() => discoveryManageSourcesAction(
+    context: context,
+    appModel: ref.read(appProvider),
+  );
+
+  /// 「回到本页并切到『在线源 › [domain]』」。该域此刻不可见时为 null（不给
+  /// 点了没反应的入口）。
+  VoidCallback? _onlineSourcesAction(OnlineSourcesDomain domain) {
     final List<OnlineSourcesDomain> domains = visibleOnlineSourcesDomains(
       ref.read(appProvider).moduleVisibility,
     );
-    if (!domains.contains(OnlineSourcesDomain.manga)) return null;
+    if (!domains.contains(domain)) return null;
     return () {
       final ModalRoute<Object?>? route = ModalRoute.of(context);
       if (route != null && !route.isCurrent) {
@@ -603,7 +629,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
       }
       final int index = _controllerTabs.indexOf(BrowseTab.sources);
       if (index < 0) return;
-      setState(() => _onlineDomain = OnlineSourcesDomain.manga);
+      setState(() => _onlineDomain = domain);
       _tabController?.animateTo(index);
     };
   }
@@ -616,6 +642,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
             DiscoveryMediaKind.audiobook,
           ],
           onAiAcquire: _aiAcquireAction(domain),
+          onManageSources: _discoverySourcesAction(),
         ),
         _DownloadsResourceDomain.manga => MangaDiscoveryPage(
           embedded: true,
@@ -625,6 +652,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
         _DownloadsResourceDomain.games => MediaDiscoveryPage(
           kinds: const <DiscoveryMediaKind>[DiscoveryMediaKind.game],
           onAiAcquire: _aiAcquireAction(domain),
+          onManageSources: _discoverySourcesAction(),
         ),
         _DownloadsResourceDomain.video => _buildVideoResourceTab(),
       };
@@ -697,9 +725,16 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
       // 各域发现页把自己的搜索 / 筛选行叠进浮动工具区、主滚动视图自己让位
       // （内容在胶囊背后可见，不再被整块控件区底色盖住）。
       pageHandlesInset: true,
-      pageBuilder: (_DownloadsResourceDomain domain) => KeyedSubtree(
-        key: ValueKey<String>('downloads-resource-${domain.name}'),
-        child: _buildResourceDomain(domain),
+      // 各域发现页的动作（AI 找资源 / ⋯）登记进本页浮动顶栏右侧的动作组
+      // （[_actionsSlot]，与库页外壳同一机制）：顶栏只留动作，搜索框是各域内容
+      // 第一行；切域时由各页按可见性替换（拼贴改版设计稿第 2 节，最多两层分段）。
+      pageBuilder: (_DownloadsResourceDomain domain) => FushiShellTitleScope(
+        title: FushiShellTitleScope.maybeTitleOf(context) ?? '',
+        actionsSlot: _actionsSlot,
+        child: KeyedSubtree(
+          key: ValueKey<String>('downloads-resource-${domain.name}'),
+          child: _buildResourceDomain(domain),
+        ),
       ),
     );
   }
@@ -755,7 +790,35 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
   ///
   /// 页头动作只在「下载」页签出现（「添加任务」+ 下载设置）：它们不是来源 / 扩展 /
   /// 发现的动作。动作登记进本页自己的 [_actionsSlot]，由按钮组胶囊画出。
-  /// 在线源顶栏右上角的「来源 / 扩展」胶囊切换（与一级页签同一种浮动胶囊）。
+  /// 页头大字形态下「来源 / 扩展」的切换：设计系统单选分段（MD3 胶囊 / Apple
+  /// 分段），排在内容域那一行的右端（[_BrowseSwipeSections.trailing]）。
+  Widget _buildOnlineSectionSegmented() {
+    return KeyedSubtree(
+      key: const ValueKey<String>('browse-online-section-picker'),
+      child: IntrinsicWidth(
+        child: adaptiveSegmentedButton<OnlineSourcesSection>(
+          context: context,
+          segments: <ButtonSegment<OnlineSourcesSection>>[
+            ButtonSegment<OnlineSourcesSection>(
+              value: OnlineSourcesSection.sources,
+              label: Text(t.library_view_sources),
+            ),
+            ButtonSegment<OnlineSourcesSection>(
+              value: OnlineSourcesSection.extensions,
+              label: Text(t.media_import_segment_extensions),
+            ),
+          ],
+          selected: <OnlineSourcesSection>{_onlineSection},
+          onSelectionChanged: (Set<OnlineSourcesSection> next) {
+            if (next.isNotEmpty) _selectOnlineSection(next.first);
+          },
+        ),
+      ),
+    );
+  }
+
+  /// 在线源顶栏右上角的「来源 / 扩展」胶囊切换（与一级页签同一种浮动胶囊）；
+  /// 只用于非页头大字形态（墨水屏）。
   Widget _buildOnlineSectionSwitch() {
     return LibrarySectionTabs<OnlineSourcesSection>(
       key: const ValueKey<String>('browse-online-section-picker'),
@@ -783,6 +846,8 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     // 不在首页外壳里（没有外壳大标题）时，工具栏行顶上留一点呼吸位。
     final bool shellTitle = FushiShellTitleScope.maybeTitleOf(context) != null;
     final double page = FushiDesignTokens.of(context).spacing.page;
+    // 重设计外壳：这一行画成页头大字（根 overlay 的 `masthead: true`）。
+    final bool masthead = shellRedesignActive(context);
     return AnimatedBuilder(
       animation: controller,
       builder: (BuildContext context, Widget? child) {
@@ -836,7 +901,9 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
                 ),
           // 在线源的「来源 / 扩展」切换放在顶栏右上角的胶囊里（2026-10-30
           // 用户），二级行只留内容域（小说 / 漫画 / 视频），一行一条下划线。
-          trailing: current == BrowseTab.sources
+          // 页头大字形态下「来源 / 扩展」与内容域并成同一行（域选择在左、分段在
+          // 右，见 [_buildOnlineTab]），不再在大字行下面单独堆一排胶囊。
+          trailing: current == BrowseTab.sources && !masthead
               ? _buildOnlineSectionSwitch()
               : null,
           tabs: child!,
@@ -1121,9 +1188,12 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
           child: FushiFloatingChromeScope(
             controller: _chrome,
             child: FushiFloatingChromeOverlay(
-              chrome: isCupertinoPlatform(context)
-                  ? const SizedBox.shrink()
-                  : _buildHeader(controller, tabs),
+              // 重设计外壳下一级页签行画成页头大字（`fushi_page_masthead.dart`）：
+              // 页名 + 徽标 + 一级切换大字；各页签的内容域二级行仍由
+              // [_BrowseSwipeSections] 叠在下面。两套设计系统（MD3 / Apple 玻璃）
+              // 都画，与库页外壳（[MediaLibraryShell]）同一份顶栏。
+              masthead: true,
+              chrome: _buildHeader(controller, tabs),
               child: NotificationListener<ScrollNotification>(
                 onNotification: _onScroll,
                 // 只在选中页签变化时重建（controller 的 notifyListeners 只在下标
@@ -1309,10 +1379,21 @@ class _BrowseSwipeSectionsState<T extends Object>
     // 二级页签行叠在页面上、与一级页签行同一份显隐（[FushiFloatingChromeOverlay]
     // 读同一个作用域），收放不改页面视口。
     final Widget? trailing = widget.trailing;
+    // 重设计外壳（一级行是页头大字）：内容域页签与库页大字行下面那排同一种
+    // 连体按钮组（[FushiMastheadSegmentedTabs]），贴合内容宽靠左，不再是铺满
+    // 整行的下划线页签。
+    final bool masthead = shellRedesignActive(context);
+    final Widget picker = LibrarySectionTabs<T>.controlled(
+      key: widget.pickerKey,
+      tabs: widget.tabs,
+      controller: controller,
+      focusIdPrefix: widget.focusIdPrefix,
+      secondary: true,
+    );
     return FushiFloatingChromeOverlay(
       // 与库页二级同一形态（2026-10-30 方案 B）：下划线页签贴着一级顶栏，
-      // 不再隔 8。
-      nestedGap: 0,
+      // 不再隔 8；连体按钮组是独立的一排按钮，照常隔开。
+      nestedGap: masthead ? kFushiFloatingChromeGap : 0,
       opaqueChrome: true,
       chrome: !(showTabs || trailing != null)
           ? const SizedBox.shrink()
@@ -1321,22 +1402,44 @@ class _BrowseSwipeSectionsState<T extends Object>
               padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
               child: Row(
                 children: <Widget>[
-                  if (showTabs)
+                  if (showTabs && masthead && trailing != null)
+                    // 有尾随控件（在线源的「来源 / 扩展」分段）：域选择占满剩余
+                    // 宽度、靠左，摆不下时在自己的宽度里横滑；分段贴右端。不用
+                    // Flexible + Spacer——两者平分剩余宽，手机上域选择被压一半。
+                    Expanded(
+                      child: Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: FushiMastheadScope(
+                          role: FushiMastheadRole.secondary,
+                          child: picker,
+                        ),
+                      ),
+                    )
+                  else if (showTabs && masthead)
+                    // 摆不下时按钮组在自己的宽度里横滑。
+                    Flexible(
+                      child: FushiMastheadScope(
+                        role: FushiMastheadRole.secondary,
+                        child: picker,
+                      ),
+                    )
+                  else if (showTabs)
                     Expanded(
                       // 二级内容域：M3 secondary 下划线页签（无底色、36 高），
                       // 摆不下时横滑。
                       flex: widget.tabs.length,
-                      child: LibrarySectionTabs<T>.controlled(
-                        key: widget.pickerKey,
-                        tabs: widget.tabs,
-                        controller: controller,
-                        focusIdPrefix: widget.focusIdPrefix,
-                        secondary: true,
-                      ),
+                      child: picker,
                     ),
                   // 下划线页签要有限宽才能铺满 / 横滑：尾部的来源 / 扩展页签按
                   // 段数（2）分宽，没有内容域页签时占满整行。
-                  if (trailing != null) Expanded(flex: 2, child: trailing),
+                  if (trailing != null && masthead) ...<Widget>[
+                    if (showTabs)
+                      SizedBox(width: tokens.spacing.gap)
+                    else
+                      const Spacer(),
+                    trailing,
+                  ] else if (trailing != null)
+                    Expanded(flex: 2, child: trailing),
                 ],
               ),
             ),
@@ -1433,6 +1536,7 @@ class BrowseDownloadSettingsPage extends ConsumerWidget {
             tokens.spacing.page + MediaQuery.paddingOf(context).bottom,
           ),
           children: <Widget>[
+            const DownloadLocationSection(),
             const TorrentSettingsSection(),
             // 索引器 / 字幕来源 / 发现来源已迁到设置 → 在线服务（第三方凭据一个家）；
             // 下载设置页留一条跳转，番剧下载对话框「去设置」落到这里仍能一步到达。

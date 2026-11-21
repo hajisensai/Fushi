@@ -118,14 +118,12 @@ void main() {
 
   test('download save root picker starts from the current folder', () {
     final String src = File(
-      'lib/src/pages/implementations/torrent_settings_section.dart',
+      'lib/src/pages/implementations/download_location_section.dart',
     ).readAsStringSync();
-    final int start = src.indexOf('Future<void> _changeDownloadFolder()');
+    final int start = src.indexOf('Future<void> _change(');
     expect(start, isNonNegative);
-    final String body = src.substring(
-      start,
-      src.indexOf('Future<', start + 10),
-    );
+    final String body = src.substring(start, src.indexOf('\n  }\n', start));
+    expect(body, contains('pickRealDirectoryPath('));
     expect(body, contains('initialDirectory:'));
   });
 }

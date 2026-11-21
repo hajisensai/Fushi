@@ -8,6 +8,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptiveIndicator;
+import 'package:fushi/src/utils/components/fushi_compact_landscape.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -308,7 +309,8 @@ class FushiDialogRoute<T> extends DialogRoute<T> {
 const double kFushiSheetWideBreakpoint = 600;
 
 /// 窗口高度低于此（横屏手机）时，宽屏浮动面板把竖向留白收紧，给内容多留高度。
-const double kFushiSheetShortWindowHeight = 500;
+/// 与横屏矮窗口判定（[kFushiCompactLandscapeMaxHeight]）同一阈值。
+const double kFushiSheetShortWindowHeight = kFushiCompactLandscapeMaxHeight;
 
 /// 窄屏两档高度：半屏档占屏高比例。
 const double kFushiSheetHalfFraction = 0.55;
@@ -436,7 +438,8 @@ class _FushiM3eSheetBodyState extends State<FushiM3eSheetBody> {
   }
 }
 
-/// M3E 宽屏弹层：居中浮动面板（圆角 28、最宽 640、最高 86% 屏高），
+/// M3E 宽屏弹层：居中浮动面板（圆角 28、最宽 640、最高 86% 屏高；横屏矮窗口放宽到
+/// [fushiCompactLandscapeMaxWidth] / 整屏减留白，拍板台 MANKlxTTpV），
 /// surfaceContainerLow 底（毛玻璃档换玻璃表面）；内容外包 [FushiDialogScope]。
 class FushiM3eFloatingSheet extends StatelessWidget {
   const FushiM3eFloatingSheet({
@@ -496,8 +499,10 @@ class FushiM3eFloatingSheet extends StatelessWidget {
             child: ConstrainedBox(
               constraints: BoxConstraints(
                 minWidth: math.min(480, media.size.width - 48),
-                maxWidth: 640,
-                maxHeight: media.size.height * 0.86,
+                maxWidth: fushiCompactLandscapeMaxWidth(media.size, 640),
+                maxHeight:
+                    media.size.height *
+                    fushiCompactLandscapeHeightFraction(media.size, 0.86),
               ),
               child: surface,
             ),
@@ -1195,7 +1200,7 @@ Widget _choiceTitle(BuildContext context, String title, IconData? icon) {
 }
 
 /// 标准多选对话框：勾选若干项后按确认。返回 null = 取消；否则返回选中集合。
-/// [minSelected] 未达到时确认键置灰。
+/// [minSelected] 未达到时确认键置灰；[maxSelected] 选满后其余未选项置灰（取消勾选后恢复）。
 Future<Set<T>?> showFushiMultiChoiceDialog<T>({
   required BuildContext context,
   required String title,
@@ -1205,6 +1210,7 @@ Future<Set<T>?> showFushiMultiChoiceDialog<T>({
   String? confirmLabel,
   String? cancelLabel,
   int minSelected = 0,
+  int? maxSelected,
 }) {
   return showAppDialog<Set<T>>(
     context: context,
@@ -1216,6 +1222,7 @@ Future<Set<T>?> showFushiMultiChoiceDialog<T>({
       confirmLabel: confirmLabel,
       cancelLabel: cancelLabel,
       minSelected: minSelected,
+      maxSelected: maxSelected,
     ),
   );
 }
@@ -1229,6 +1236,7 @@ class _FushiMultiChoiceDialog<T> extends StatefulWidget {
     required this.confirmLabel,
     required this.cancelLabel,
     required this.minSelected,
+    required this.maxSelected,
   });
 
   final String title;
@@ -1238,6 +1246,7 @@ class _FushiMultiChoiceDialog<T> extends StatefulWidget {
   final String? confirmLabel;
   final String? cancelLabel;
   final int minSelected;
+  final int? maxSelected;
 
   @override
   State<_FushiMultiChoiceDialog<T>> createState() =>
@@ -1251,6 +1260,8 @@ class _FushiMultiChoiceDialogState<T>
   @override
   Widget build(BuildContext context) {
     final bool canSubmit = _selected.length >= widget.minSelected;
+    final int? max = widget.maxSelected;
+    final bool full = max != null && _selected.length >= max;
     return FushiAlertDialog(
       title: Text(widget.title),
       contentPadding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
@@ -1271,7 +1282,8 @@ class _FushiMultiChoiceDialogState<T>
               icon: option.icon,
               selected: _selected.contains(option.value),
               multiSelect: true,
-              onTap: option.enabled
+              onTap:
+                  option.enabled && (!full || _selected.contains(option.value))
                   ? () => setState(() {
                       if (!_selected.remove(option.value)) {
                         _selected.add(option.value);

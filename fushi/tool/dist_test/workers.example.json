@@ -22,6 +22,15 @@
       "capabilities": ["itest"]
     },
     {
+      "name": "self-linux",
+      "kind": "ssh-trusted",
+      "host": "fushi@192.168.1.42",
+      "os": "linux",
+      "slots": 1,
+      "path": ["$HOME/flutter/bin", "$HOME/.cargo/bin"],
+      "capabilities": ["ffmpeg"]
+    },
+    {
       "name": "friend-win",
       "kind": "ssh-shim",
       "host": "fushitest@friend-win.example-tailnet.ts.net",

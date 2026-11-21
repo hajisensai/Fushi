@@ -27,8 +27,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_key_rotation.dart';
+import 'package:fushi_engine/ai/ai_model_pricing.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_relay.dart';
+import 'package:fushi_engine/ai/ai_upstream_model.dart';
 import 'package:fushi/src/ai/ai_interconnect_relay.dart' show aiRelayFailureFor;
 import 'package:fushi/src/sync/interconnect_host_client.dart'
     show InterconnectHostError;
@@ -1552,6 +1554,115 @@ void main() {
         'o4-mini',
       );
     });
+
+    testWidgets('候选选择器：显示上游模型名，选中即带入上游给的收图能力与单价', (WidgetTester tester) async {
+      await prefs.setAiProviders(<AiProviderConfig>[
+        _config(id: 'p1', model: 'old-model').copyWith(
+          acceptsImages: true,
+          pricing: const AiModelPricing(
+            inputPerMillion: 9,
+            outputPerMillion: 9,
+            cacheReadPerMillion: 9,
+            currency: 'CNY',
+          ),
+        ),
+      ]);
+      tester.view.physicalSize = const Size(900, 4000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[
+            appProvider.overrideWith((Ref ref) => appModel),
+          ],
+          child: MaterialApp(
+            theme: ThemeData(useMaterial3: true),
+            home: Scaffold(
+              body: SizedBox(
+                width: 640,
+                child: SingleChildScrollView(
+                  child: AiProviderSettingsSection(
+                    clientFactory: () => AiChatClient(
+                      client: MockClient((http.Request request) async {
+                        return http.Response(
+                          jsonEncode(<String, Object?>{
+                            'data': <Object?>[
+                              <String, Object?>{
+                                'id': 'deepseek/deepseek-chat',
+                                'name': 'DeepSeek V3',
+                                'architecture': <String, Object?>{
+                                  'input_modalities': <Object?>['text'],
+                                },
+                                'pricing': <String, Object?>{
+                                  'prompt': '0.0000001',
+                                  'completion': '0.00000032',
+                                },
+                              },
+                              <String, Object?>{'id': 'plain-model'},
+                            ],
+                          }),
+                          200,
+                          headers: <String, String>{
+                            'content-type': 'application/json',
+                          },
+                        );
+                      }),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await openEditor(tester, 'p1');
+
+      String fieldText(String key) => tester
+          .widget<TextField>(
+            glassUnwrap<TextField>(
+              find.descendant(
+                of: find.byKey(ValueKey<String>(key)),
+                matching: find.byType(TextField),
+              ),
+            ),
+          )
+          .controller!
+          .text;
+
+      // 上游给了显示名就显示名字，存的仍是 id。
+      await tapKey(tester, 'ai-provider-0-model-picker');
+      expect(find.text('DeepSeek V3'), findsOneWidget);
+      await tester.tap(find.text('DeepSeek V3').last);
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+
+      final AiProviderConfig saved = prefs.aiProviders.single;
+      expect(saved.model, 'deepseek/deepseek-chat');
+      // 上游明说不收图：旧模型留下的「能收图」必须跟着改掉。
+      expect(saved.acceptsImages, isFalse);
+      // 单价整组换成新模型的（缓存读没给 = 清空，不留旧模型的 9）。
+      expect(saved.pricing.inputPerMillion, 0.1);
+      expect(saved.pricing.outputPerMillion, 0.32);
+      expect(saved.pricing.cacheReadPerMillion, isNull);
+      expect(saved.pricing.currency, 'USD');
+      // 用户正看着的输入框当场变成新值（同 BUG-2618 的口径）。
+      expect(fieldText('ai-provider-0-model'), 'deepseek/deepseek-chat');
+      expect(fieldText('ai-provider-0-price-input'), '0.1');
+      expect(fieldText('ai-provider-0-price-output'), '0.32');
+      expect(fieldText('ai-provider-0-price-cache-read'), '');
+      expect(fieldText('ai-provider-0-price-currency'), 'USD');
+
+      // 上游什么都没说的模型：只换模型名，收图开关与单价不动。
+      await tapKey(tester, 'ai-provider-0-model-picker');
+      await tester.tap(find.text('plain-model').last);
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      final AiProviderConfig plain = prefs.aiProviders.single;
+      expect(plain.model, 'plain-model');
+      expect(plain.acceptsImages, isFalse);
+      expect(plain.pricing.inputPerMillion, 0.1);
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -1716,14 +1827,14 @@ void main() {
             <String, Object?>{'id': 'aaa'},
           ],
         });
-        final List<String> models = await client.listModels(
+        final List<AiUpstreamModel> models = await client.listModels(
           _config(baseUrl: base, protocol: protocol),
         );
         client.close();
         expect(captured.method, 'GET');
         expect(captured.url.path, expectedPath);
         // Gemini 回的 `models/` 前缀要剥掉，结果按名排序。
-        expect(models, <String>['aaa', 'zzz']);
+        expect(models.map((AiUpstreamModel m) => m.id), <String>['aaa', 'zzz']);
       }
     });
 

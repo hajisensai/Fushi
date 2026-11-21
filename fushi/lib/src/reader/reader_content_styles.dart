@@ -332,7 +332,9 @@ html::after {
   /// 所以由 `reader_ruby_metrics_script.dart` 在页面里量真实 ruby，把两截空白折成注音
   /// 字号的倍数写进 `--fushi-ruby-pull`，这里再多压 0.1em（注音 em 盒压进基字 em 盒
   /// 0.1em——假名墨迹不满 em 盒，视觉上正好紧贴；Hiragino 下与旧 `-0.2em` 相差 < 0.1px）。
-  /// 变量缺省 0.1 即旧值，脚本没跑到之前行为不变。`--fushi-ruby-snap` 是给脚本的开关，
+  /// 变量缺省 0.1 即旧值，脚本没跑到之前行为不变。BUG-4936：WebKit 18（iOS 18）把上面的
+  /// 负 `margin-block-start` 也算进注音位置（整挪 2em、压进基字），度量脚本量注音实际
+  /// 位置把这截扣回去，那里写出的拉力可以是负的。`--fushi-ruby-snap` 是给脚本的开关，
   /// 只在这里（Apple 端）打出。
   static String _webKitRubyAnnotationCss() => switch (defaultTargetPlatform) {
     TargetPlatform.iOS || TargetPlatform.macOS || TargetPlatform.linux =>

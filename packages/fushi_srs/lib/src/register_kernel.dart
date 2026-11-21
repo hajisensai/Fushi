@@ -334,6 +334,14 @@ SrsNoteTypeView _noteTypeView(SrsEntitySource s, Map<String, Object?> r) {
     termFieldId: v['tf'] as String?,
     freqFieldId: v['qf'] as String?,
     effectiveFreqFieldId: v['qe'] as String?,
+    sortFieldId: v['sf'] as String?,
+    effectiveSortFieldId: v['se'] as String?,
+    browseFieldIds: switch (v['bf']) {
+      final List<Object?> ids => <String>[
+        for (final Object? id in ids) id! as String,
+      ],
+      _ => null,
+    },
     deletedAt: v['da'] as int?,
     builtinKey: v['bk'] as String?,
     edits: _edits(r, s.edits),
@@ -373,6 +381,8 @@ SrsDeckView _deckView(SrsEntitySource s, Map<String, Object?> r) {
     ownParams: v['own'] == true,
     newPerDay: v['np']! as int,
     reviewsPerDay: v['rp']! as int,
+    limitUnit: SrsLimitUnit.fromWire(v['lu'] as String?),
+    limitUnitSet: v['lu'] is String,
     learnSteps: _steps(v['ls'], SrsDeckView.defaultLearnSteps),
     relearnSteps: _steps(v['rs'], SrsDeckView.defaultRelearnSteps),
     learnStepsSet: v['ls'] is List,

@@ -107,12 +107,13 @@ void main() {
   // 2026-10-25 库页改版：封面不再画角标，集数挪到封面下的元信息行（ShelfCardMeta）。
   test('remote card meta line shows the episode count when isPlaylist', () {
     final String code = compactCode(homeSrc);
+    // 实参尾逗号随 dart format 折行与否出现 / 消失，不作为守卫前提。
     expect(
-      code.contains(
-        'if(video.isPlaylist)video.currentEpisode>0||video.positionMs>0'
-        '?t.video_home_continue_episode_number(n:video.currentEpisode+1,)'
-        ':t.video_playlist_episodes(count:video.episodes.length,)',
-      ),
+      RegExp(
+        r'if\(video\.isPlaylist\)video\.currentEpisode>0\|\|video\.positionMs>0'
+        r'\?t\.video_home_continue_episode_number\(n:video\.currentEpisode\+1,?\)'
+        r':t\.video_playlist_episodes\(count:video\.episodes\.length,?\)',
+      ).hasMatch(code),
       isTrue,
       reason:
           'remote playlist card must show the episode count in its meta line',

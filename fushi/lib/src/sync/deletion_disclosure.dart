@@ -97,6 +97,25 @@ class DeletionDisclosure {
     );
   }
 
+  /// 勾选「保留已下载章节」（在线漫画）后的披露：书目录那一条（[deletedEntry]，
+  /// 即 `delete_disclosure_book_extracted`）从「会被删除」挪成「会被保留」里的
+  /// [keptEntry]。幂等；与另外两种翻面可任意顺序叠加（它们原样带走两张列表）。
+  DeletionDisclosure withDownloadedFilesKept({
+    required String deletedEntry,
+    required String keptEntry,
+  }) {
+    if (!willDelete.contains(deletedEntry)) return this;
+    return DeletionDisclosure(
+      willDelete: <String>[
+        for (final String item in willDelete)
+          if (item != deletedEntry) item,
+      ],
+      willKeep: <String>[keptEntry, ...willKeep],
+      localFiles: localFiles,
+      statisticsEntry: statisticsEntry,
+    );
+  }
+
   /// 勾选「同时删除统计数据」后的披露：[statisticsEntry] 从「会被保留」挪进「会被
   /// 删除」。幂等，且与 [withLocalFilesDeleted] 可任意顺序叠加。
   DeletionDisclosure withStatisticsDeleted() {

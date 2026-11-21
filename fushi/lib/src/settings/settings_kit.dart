@@ -427,7 +427,7 @@ SettingsResetSpec? settingsResetSpecFor(
   }
   if (item is SettingsSegmentedItem) {
     final SettingsSegmentedItem<Object> segmented = item;
-    final Object? defaultValue = segmented.defaultValue;
+    final Object? defaultValue = segmented.defaultValueFor(context);
     if (defaultValue == null) return null;
     final Object current = segmented.selected(context);
     String format(Object value) {
@@ -442,7 +442,13 @@ SettingsResetSpec? settingsResetSpecFor(
       currentLabel: format(current),
       defaultLabel: format(defaultValue),
       reset: () async {
-        await segmented.dispatchChange(context, defaultValue);
+        final Future<void> Function(SettingsContext)? resetToDefault =
+            segmented.resetToDefault;
+        if (resetToDefault != null) {
+          await resetToDefault(context);
+        } else {
+          await segmented.dispatchChange(context, defaultValue);
+        }
         context.refresh();
       },
     );

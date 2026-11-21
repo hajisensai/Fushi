@@ -1,0 +1,14 @@
+## BUG-4846 · 查词模块关闭时 galgame 查词不弹卡、应用外悬浮球缺截屏识字/应用外查词
+- **报告**：2026-11-17（用户反馈，Windows 3.3.0 正式版；另一位用户诊断日志 `gal-overlay: attachedReady=false lookupSurfaceActive=false ... status=disabled/null`）
+- **真实性**：✅ 真 bug。现象：galgame 游戏内查词 / 应用外查词点了不出卡；设置 → 悬浮球 →「应用外」按钮组里没有「截屏识字」「应用外查词」。该用户侧栏无「查词」——查词模块（`ModuleId.lookup`）关着（首启向导选「只看媒体」或手动关掉）。
+  - 设计承诺：查词模块**只关查词页入口、查词能力全留**（用户拍板，`fushi/lib/src/models/module_registry.dart:94`；`onboarding_steps.dart:42`、`ctl_dictionary_routes.dart:32`、`op_descriptions_dictionary.dart:20` 同述）。
+  - 根因：全局查词覆盖窗（查词卡 WebView2 surface + app 外热键 / 鼠标侧键 / 手柄触发）这块共享基础设施被挂在查词**页**模块上——`fushi/lib/src/lookup/global_lookup_controller.dart:427`（修前 `startIfLookupModuleEnabled`：`if (!appModel.moduleVisibility.isEnabled(ModuleId.lookup)) return;`），由 `fushi/lib/main.dart:1012` 的 `followLookupModule` 调用。模块关着覆盖窗整个不启动，于是 games 模块里的 galgame 查词（`gal_ingame_lookup_controller.dart` / `gal_hook_text_overlay_controller.dart` → `GlobalLookupController.lookupText`，`_started == false` 直接返回 false）无卡可弹。
+  - 同一错误前提的派生：`fushi/lib/src/floating_ball/floating_ball_config.dart:305`（修前）应用外球 `popupLookup` / `screenOcr` 按 `lookupModuleEnabled && globalLookupSupported` 隐藏；`fushi/lib/src/models/module_registry.dart:181`（修前）`ShortcutScope.globalExternal => ModuleId.lookup`，把 app 外取词热键（连同与查词无关的有声书全局热键）跟查词页一起关掉、快捷键设置页也藏起该分区。该映射只有代码注释里的 agent 推理（「模块关掉时不该还能装系统钩子」），没有所有者拍板记录，且与上面的拍板直接矛盾。
+- **[x] ① 已修复** — 覆盖窗与查词页模块解耦，判据只剩平台能力，且只在 `GlobalLookupController.start`（`isSupported` / `osHotKeysSupported`）写一次：
+  - 删 `followLookupModule` / `startIfLookupModuleEnabled` / 模块监听；新增 `fushi/lib/src/lookup/desktop_lookup_startup.dart` 的 `startDesktopLookupSurfaces`，桌面启动链无条件 `start` 覆盖窗，galgame 台词浮窗仍随 games 模块。
+  - `FloatingBallGlobalAction.availableIn`：桌面应用外球 `popupLookup` / `screenOcr` 只看 `globalLookupSupported`；「查词」（打开查词页）是页面入口，仍随查词模块。
+  - `moduleOfShortcutScope(globalExternal) => null`：app 外热键分区恒可编辑、热键恒装。
+  - 同步更新 `docs/specs/2026-09-30-desktop-system-floating-ball.md`。
+- **[x] ② 已加自动化测试** — `fushi/test/lookup/global_lookup_module_independence_test.dart`（新，替换 `global_lookup_follow_module_test.dart`）：查词模块关、games 开时 `startDesktopLookupSurfaces` 照样起覆盖窗（`isAvailable` 且 `prepare` 一次），模块开关来回切不重复建窗、不停。改：`test/floating_ball/floating_ball_test.dart`（模块关时桌面应用外球仍有 `popupLookup` / `screenOcr`）、`test/floating_ball/app_floating_ball_host_test.dart`（模块关时下发 `popup_lookup` / `clipboard` / `screen_ocr`）、`test/models/module_registry_test.dart`（`globalExternal` 恒在）、`test/lookup/global_hotkey_backend_wiring_test.dart`（模块关时 `start` 照装热键）。
+- **备注**：行为变化——关掉查词页的用户升级后会装上默认 app 外取词热键（Windows / Linux Ctrl+Alt+D，macOS Ctrl+⌥D），可在快捷键设置页「全局（应用外）」分区改键或清空。
+  - 后续（拍板台 pr3605，维护者 2026-11-17「热键应该单独有个东西开关」）：该分区顶部加「启用应用外快捷键」总开关（pref `app_external_hotkeys_enabled`，默认开），关掉后 OS 热键后端、鼠标侧键 RawInput 监听、手柄触发全部撤掉、不留系统钩子，覆盖窗不受影响（`GlobalLookupController.applyAppExternalTriggersEnabled`；测试 `fushi/test/lookup/global_external_triggers_toggle_test.dart`）。未在 Windows 真机 + 真 galgame 上复测原始失败路径。

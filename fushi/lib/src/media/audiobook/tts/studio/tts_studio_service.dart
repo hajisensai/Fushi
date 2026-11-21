@@ -11,17 +11,18 @@ import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
+import 'package:fushi_engine/tts/tts_pronunciation.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_runner.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
-import 'package:fushi/src/models/app_model.dart';
 
 TtsRenderQueue? _queue;
 
 /// 全应用唯一的制作队列（首次取用时从清单恢复并开始处理）。
-TtsRenderQueue ttsRenderQueueFor(AppModel appModel) {
+TtsRenderQueue ttsRenderQueueFor(AudioProductionHost appModel) {
   final TtsRenderQueue? existing = _queue;
   if (existing != null) return existing;
   final TtsRenderQueue queue = TtsRenderQueue(
@@ -37,11 +38,11 @@ TtsRenderQueue ttsRenderQueueFor(AppModel appModel) {
 }
 
 /// 制作任务的工作目录根（每个任务一个子目录，放按章编码的成品与校对产物）。
-Directory ttsRenderWorkRoot(AppModel appModel) =>
+Directory ttsRenderWorkRoot(AudioProductionHost appModel) =>
     Directory(p.join(appModel.databaseDirectory.path, 'tts_render'));
 
 /// 每本书的选角表（多声优配音）：`<db>/tts_cast/`。
-TtsCastStore ttsCastStoreFor(AppModel appModel) => TtsCastStore(
+TtsCastStore ttsCastStoreFor(AudioProductionHost appModel) => TtsCastStore(
   Directory(p.join(appModel.databaseDirectory.path, 'tts_cast')),
 );
 
@@ -71,5 +72,6 @@ Future<TtsBookPlan> buildStudioPlan(EpubBook book, TtsServices tts) =>
     buildTtsBookPlan(
       book,
       maxLength: kStudioSentenceMaxLength,
-      pronunciation: tts.pronunciation.load(),
+      pronunciation: tts.textRules.load(TtsTextRuleKind.pronunciation),
+      preSynthesis: tts.textRules.load(TtsTextRuleKind.preSynthesis),
     );

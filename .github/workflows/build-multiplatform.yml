@@ -62,6 +62,8 @@ on:
       - '.github/actions/setup-fushi-compute/**'
       - '.github/actions/setup-fushi-rwkv/**'
       - '.github/scripts/verify_torrent_abi.sh'
+      - '.github/scripts/check_glibc_baseline.sh'
+      - '.github/scripts/fetch_onnxruntime_nuget.py'
       - 'pubspec.yaml'
       - 'pubspec.lock'
       # 这份清单只是整条 workflow 的粗门；PR 上每个 job 开不开由 changes job 按实际改动
@@ -132,7 +134,7 @@ jobs:
     steps:
       - name: Check out the PR merge commit and its base parent
         if: github.event_name == 'pull_request'
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 2
           filter: blob:none
@@ -168,7 +170,7 @@ jobs:
           windows_only='^(fushi/windows/|packages/(flutter_inappwebview_windows|gamepads_windows)/|packages/[^/]+/windows/|native/(fushi_torrent|galgame_hook|fushi_anki_sync)/|packages/fushi_torrent/|third_party/([^/]+/windows/|[^/]*windows[^/]*/|libplacebo-win/|m_extension_server/|jogamp/)|tool/mihon/|tool/engine_overlay\.ps1$|tools/(build_magpie_slim|bundle_7za)\.ps1$|\.github/actions/(setup-fushi-anki-sync|flutter-engine-overlay)/)'
           macos_only='^(fushi/(macos|apple)/|packages/[^/]+/(macos|darwin)/|native/(fushi_anki_sync|fushi_torrent)/|packages/fushi_torrent/|\.github/scripts/verify_torrent_abi\.sh$|third_party/([^/]+/(macos|darwin)/|[^/]*macos[^/]*/|m_extension_server/|jogamp/)|tool/mihon/|\.github/actions/setup-fushi-anki-sync/)'
           ios_only='^(fushi/(ios|apple)/|native/fushi_ios_umbrella/|packages/[^/]+/(ios|darwin)/|third_party/([^/]+/(ios|darwin)/|[^/]*ios[^/]*/))'
-          server_only='^(pubspec\.(yaml|lock)$|ci/|packages/(fushi_server|fushi_engine|fushi_core|fushi_anki|fushi_audio|fushi_dictionary|fushi_platform|fushi_torrent|fushi_p2p|fushi_srs|fushi_compute|fushi_rwkv)/|native/(fushi_torrent|fushi_p2p|fushi_fsrs|fushi_compute|fushi_rwkv|fushi_anki_sync|fushidicts)/|fushi/assets/transforms/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(native-artifact-store|native-store-names|pdfium-hook-cache|setup-fushi-anki-sync)/|\.github/scripts/verify_torrent_abi\.sh$)'
+          server_only='^(pubspec\.(yaml|lock)$|ci/|packages/(fushi_server|fushi_engine|fushi_core|fushi_anki|fushi_audio|fushi_dictionary|fushi_platform|fushi_torrent|fushi_p2p|fushi_srs|fushi_compute|fushi_rwkv)/|native/(fushi_torrent|fushi_p2p|fushi_fsrs|fushi_compute|fushi_rwkv|fushi_anki_sync|fushidicts)/|fushi/assets/transforms/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(native-artifact-store|native-store-names|pdfium-hook-cache|setup-fushi-anki-sync)/|\.github/scripts/verify_torrent_abi\.sh$|\.github/scripts/check_glibc_baseline\.sh$|\.github/scripts/fetch_onnxruntime_nuget\.py$)'
 
           # route <output> <正则变量名...>：清单里任一路径命中这些正则之一即开。
           route() {
@@ -251,17 +253,17 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && !inputs.nightly
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
       - name: Fetch vendored binaries
         uses: ./.github/actions/fetch-vendored-binaries
         with:
           groups: android
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: 'zulu'
           java-version: '17'
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: '3.50.0'
           cache: true
@@ -293,7 +295,7 @@ jobs:
       # fushi/test/build/workflow_cache_quota_guard_test.dart。
       # 只读（2026-09-30）：只有 release.yml 的 push 写 Gradle 缓存，见 workflow_cache_quota_guard_test。
       - name: Cache Gradle caches
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/.gradle/caches/modules-2
@@ -363,8 +365,21 @@ jobs:
         uses: ./.github/actions/setup-fushi-corpus
         with:
           android-abis: x86_64
+      # SRS 排程内核 fushi_fsrs 同为 app 硬依赖：AppModel 初始化建 SRS 存储时 SrsCoreBindings.load
+      # 找不到 libfushi_fsrs.so 就整轮 init 失败、首页永不就绪（appSmoke 在 x86_64 模拟器上红在
+      # 这里）。产物落 native/fushi_fsrs/prebuilt/android/x86_64/，由 build.gradle 的 jniLibs
+      # copy-if-present 随包。Rust / x86_64-linux-android target / cargo-ndk 已由上面的
+      # setup-fushi-compute 按同一钉版装好，这里只编；冷编约 1 min，不进持久库（同 release.yml 口径）。
+      - name: Build fushi_fsrs (Android x86_64)
+        shell: bash
+        run: |
+          set -euo pipefail
+          toolchain="$(sed -n 's/^P2P_RUST=//p' .github/actions/native-store-names/names.sh)"
+          RUSTUP_TOOLCHAIN="$toolchain" bash native/fushi_fsrs/build_android_so.sh "$ANDROID_NDK_LATEST_HOME" x86_64
+          so=native/fushi_fsrs/prebuilt/android/x86_64/libfushi_fsrs.so
+          test -f "$so" || { echo "::error::missing $so"; exit 1; }
       - name: Run Android comprehensive automation contract
-        uses: reactivecircus/android-emulator-runner@v2
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 35
           arch: x86_64
@@ -375,7 +390,7 @@ jobs:
       # .json + screenshots) so a failure is debuggable without re-running.
       - name: Upload comprehensive test report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: android-comprehensive-report
           path: .codex-test/comprehensive/
@@ -407,11 +422,18 @@ jobs:
   # 持久库基建 / 本文件 / 依赖锁 / ci 补丁）；push / 手动 dispatch 照旧整轮。
   # job 级 CC/CXX 与 native-cache-warm.yml 的 linux job 逐字一致：它们进了持久库名字的
   # 哈希，PR 读的三份件（torrent / p2p / anki-sync debug）由那边在 develop 上预存。
+  #
+  # runner 钉 ubuntu-22.04（glibc 2.35）而不是 latest（BUG-4843）：bundle 里除 glibc 全是
+  # 静态链 / 随包的，构建机的 glibc 就是产物的最低要求。ubuntu-latest 换到 26.04 后
+  # libfushi_compute.so 要 GLIBC_2.43、torrent / fushidicts 要 GLIBC_2.38，README 写的
+  # glibc ≥ 2.35 落空（Debian 13 上 serve 直接起不来）。与 release-server.yml linux job 同一
+  # 镜像；上传前 .github/scripts/check_glibc_baseline.sh 对整个 bundle 的每个 ELF 核一遍。
+  # 换镜像会让持久库与 vcpkg 缓存整轮 miss，torrent 冷编约 40 分钟，所以超时给 90。
   linux-server:
     needs: changes
     if: needs.changes.outputs.server == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
     permissions:
       contents: read
       # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
@@ -420,7 +442,7 @@ jobs:
       CC: gcc-14
       CXX: g++-14
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       # 原生产物持久库的名字（.github/actions/native-artifact-store）：唯一算法在
       # .github/actions/native-store-names/names.sh（已提交树的 blob 哈希 + runner 镜像 +
       # 工具链钉版，含本 job 的 CC/CXX）。PR 用的这几份件（p2p .so / anki-sync debug /
@@ -433,13 +455,16 @@ jobs:
           platform: linux
       # 只剩服务端原生库要的工具：vcpkg（cmake + ninja + pkg-config）按 job 级 CC/CXX
       # 用 gcc-14 编静态 torrent bridge；fushidicts 的 .so 也用同一套 gcc-14 / cmake / ninja。apt 清单与 native-cache-warm.yml linux job 一致。
+      # ubuntu-22.04 系统源只到 gcc-12，gcc-14 从 ubuntu-toolchain-r/test PPA 装（同
+      # release-server.yml）；libstdc++ / libgcc 都静态链进产物，目标机不需要这个 PPA。
       - name: Install Linux build deps
         run: |
+          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
           sudo apt-get update
           sudo apt-get install -y \
             ninja-build cmake pkg-config \
             gcc-14 g++-14 libstdc++-14-dev
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: '3.50.0'
           cache: true
@@ -475,12 +500,12 @@ jobs:
           path: native/fushi_p2p/prebuilt/linux-x64
       - name: Set up Rust (fushi_p2p)
         if: steps.p2p_store.outputs.hit != 'true'
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
       - name: Cache Rust build (fushi_p2p)
         if: steps.p2p_store.outputs.hit != 'true'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_p2p -> target
           key: fushi-p2p-linux-x64
@@ -497,11 +522,11 @@ jobs:
       # SRS 排程内核（fsrs-rs）Linux .so：服务端按 bin/../lib/libfushi_fsrs.so 定位。
       # 冷编约 1 min，不进持久库；构建失败即 job 失败（同 fushi_p2p 口径）。
       - name: Set up Rust (fushi_fsrs)
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
       - name: Cache Rust build (fushi_fsrs)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_fsrs -> target
           key: fushi-fsrs-linux-x64
@@ -514,11 +539,11 @@ jobs:
       # 计算内核（哈希 / 图像 / 文本）Linux .so：服务端按 bin/../lib/libfushi_compute.so 定位。
       # 不进持久库；构建失败即 job 失败（同 fushi_fsrs 口径）。
       - name: Set up Rust (fushi_compute)
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
       - name: Cache Rust build (fushi_compute)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_compute -> target
           key: fushi-compute-linux-x64
@@ -533,7 +558,7 @@ jobs:
       # RWKV-Instant 排程推理 Linux .so（硬依赖，AGPL-3.0-or-later）：服务端按
       # bin/../lib/libfushi_rwkv.so 定位（经 fushi_srs → fushi_engine）。同 fushi_compute 口径。
       - name: Cache Rust build (fushi_rwkv)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_rwkv -> target
           key: fushi-rwkv-linux-x64
@@ -621,7 +646,7 @@ jobs:
           echo "image=$image" >> "$GITHUB_OUTPUT"
       - name: Cache vcpkg source distfiles (libtorrent linux)
         if: steps.torrent_store.outputs.hit != 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ${{ runner.temp }}/vcpkg-downloads
@@ -631,7 +656,7 @@ jobs:
             ${{ runner.os }}-vcpkg-downloads-libtorrent-linux-v1-
       - name: Cache vcpkg binary archives (libtorrent linux)
         if: steps.torrent_store.outputs.hit != 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/vcpkg/archives
           # 末段 = vcpkg.json / overlay ports / triplets 的哈希：改钉版自动换 key，不再靠手动
@@ -775,11 +800,10 @@ jobs:
         run: |
           set -euo pipefail
           ORT_VERSION=1.22.0
-          curl -fsSL --retry 3 -o "$RUNNER_TEMP/ort.tgz" \
-            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"
-          tar -xzf "$RUNNER_TEMP/ort.tgz" -C "$RUNNER_TEMP"
-          cp -a "$RUNNER_TEMP/onnxruntime-linux-x64-${ORT_VERSION}/lib/"libonnxruntime.so* \
-            build/fushi_server_linux/bundle/lib/
+          # github.com/microsoft/onnxruntime（仓库与全部 release）自 2026-11-17 起 404，
+          # 改从 NuGet 官方包 Microsoft.ML.OnnxRuntime 取，nupkg 与 .so 均钉 sha256。
+          python3 .github/scripts/fetch_onnxruntime_nuget.py "$ORT_VERSION" linux-x64 \
+            build/fushi_server_linux/bundle/lib
           ls -la build/fushi_server_linux/bundle/lib
       # (d) 词典引擎 libfushidicts_ffi.so：服务端按 `<exe>/../lib/libfushidicts_ffi.so` 定位
       #     （dictionary_host.dart 的 resolveFushiDictsLibraryPath）。脚本用 job 级 CC/CXX
@@ -905,8 +929,13 @@ jobs:
             || { echo "::error::lookup of 食べた did not deinflect to 食べる (transforms not bundled?)"; echo "$lookup"; cat "$cfg/serve.log"; exit 1; }
           kill $pid; wait $pid || true
           cat "$cfg/serve.log"
+      # README 声明的 glibc 基线（BUG-4843）：bundle 里每个 ELF 的最大 GLIBC_ 符号版本都不得
+      # 超过它，超了就判红，不上传一个在声明支持的发行版上起不来的包。
+      - name: Verify glibc baseline of bundled ELFs
+        shell: bash
+        run: bash .github/scripts/check_glibc_baseline.sh build/fushi_server_linux/bundle
       - name: Upload fushi_server (Linux)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fushi_server-linux-x64
           path: build/fushi_server_linux/bundle/
@@ -925,7 +954,7 @@ jobs:
       # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
       actions: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
       - name: Fetch vendored binaries
         uses: ./.github/actions/fetch-vendored-binaries
@@ -939,7 +968,7 @@ jobs:
         uses: ./.github/actions/native-store-names
         with:
           platform: macos
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: '3.50.0'
           cache: true
@@ -967,7 +996,7 @@ jobs:
       # Pods dirs. Keyed on Podfile.lock/pubspec.lock; CocoaPods re-installs on a
       # mismatch and a miss just re-downloads.
       - name: Cache CocoaPods
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/Library/Caches/CocoaPods
@@ -1000,13 +1029,13 @@ jobs:
           path: native/fushi_p2p/prebuilt/macos
       - name: Set up Rust (fushi_p2p, macOS targets)
         if: steps.p2p_store.outputs.hit != 'true'
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: aarch64-apple-darwin
       - name: Cache Rust build (fushi_p2p)
         if: steps.p2p_store.outputs.hit != 'true'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_p2p -> target
           key: fushi-p2p-macos
@@ -1023,12 +1052,12 @@ jobs:
       # SRS 排程内核（fsrs-rs）dylib：Runner 的「Bundle fushi_fsrs dylib」构建阶段
       # （fushi/macos/bundle_fushi_fsrs.sh）copy-if-present 进 Contents/Frameworks。只编 arm64。
       - name: Set up Rust (fushi_fsrs, macOS targets)
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: aarch64-apple-darwin
       - name: Cache Rust build (fushi_fsrs)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_fsrs -> target
           key: fushi-fsrs-macos
@@ -1041,12 +1070,12 @@ jobs:
       # 网页内容核心（fushi_web_core，硬依赖）dylib：Runner 的「Bundle fushi_web_core dylib」构建阶段
       # （fushi/macos/bundle_fushi_web_core.sh）拷进 Contents/Frameworks（Release 缺库构建失败）。只编 arm64。
       - name: Set up Rust (fushi_web_core, macOS targets)
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: aarch64-apple-darwin
       - name: Cache Rust build (fushi_web_core)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_web_core -> target
           key: fushi-web-core-macos
@@ -1059,12 +1088,12 @@ jobs:
       # 计算内核（哈希 / 图像 / 文本）dylib：Runner 的「Bundle fushi_compute dylib」构建阶段
       # （fushi/macos/bundle_fushi_compute.sh）copy-if-present 进 Contents/Frameworks。只编 arm64。
       - name: Set up Rust (fushi_compute, macOS targets)
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: aarch64-apple-darwin
       - name: Cache Rust build (fushi_compute)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_compute -> target
           key: fushi-compute-macos
@@ -1079,7 +1108,7 @@ jobs:
       # RWKV-Instant 排程推理 arm64 dylib（硬依赖）：Runner 的「Bundle fushi_rwkv dylib」构建阶段
       # （fushi/macos/bundle_fushi_rwkv.sh）拷进 Contents/Frameworks，缺库时整个构建失败。
       - name: Cache Rust build (fushi_rwkv)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_rwkv -> target
           key: fushi-rwkv-macos
@@ -1134,7 +1163,7 @@ jobs:
           echo "image=$image" >> "$GITHUB_OUTPUT"
       - name: Cache vcpkg source distfiles (libtorrent macos)
         if: steps.torrent_store.outputs.hit != 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ${{ runner.temp }}/vcpkg-downloads
@@ -1144,7 +1173,7 @@ jobs:
             ${{ runner.os }}-vcpkg-downloads-libtorrent-macos-v1-
       - name: Cache vcpkg binary archives (libtorrent macos)
         if: steps.torrent_store.outputs.hit != 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/vcpkg/archives
           key: ${{ runner.os }}-vcpkg-libtorrent-osx-fushi-v1-${{ steps.vcpkg_cache_id_macos.outputs.image }}-${{ hashFiles('native/fushi_torrent/vcpkg.json', 'native/fushi_torrent/vcpkg-ports/**', 'native/fushi_torrent/vcpkg-triplets/**') }}
@@ -1178,7 +1207,7 @@ jobs:
       # key 与 release-desktop.yml macos job 逐字一致。
       - name: Restore pinned Mihon desktop runtimes
         id: mihon_runtime_cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ runner.temp }}/mihon-runtime
           key: ${{ runner.os }}-${{ runner.arch }}-mihon-runtime-v1-${{ hashFiles('third_party/m_extension_server/**', 'third_party/jogamp/**', 'tool/mihon/**') }}
@@ -1536,7 +1565,7 @@ jobs:
       # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
       actions: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
       - name: Fetch vendored binaries
         uses: ./.github/actions/fetch-vendored-binaries
@@ -1549,7 +1578,7 @@ jobs:
         uses: ./.github/actions/native-store-names
         with:
           platform: ios
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: '3.50.0'
           cache: true
@@ -1572,7 +1601,7 @@ jobs:
       # Pods dirs. Keyed on Podfile.lock/pubspec.lock; CocoaPods re-installs on a
       # mismatch and a miss just re-downloads.
       - name: Cache CocoaPods
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/Library/Caches/CocoaPods
@@ -1622,13 +1651,13 @@ jobs:
           path: native/fushi_ios_umbrella/prebuilt/ios
       - name: Set up Rust (fushi_ios_umbrella, iOS device target)
         if: steps.ios_native_store.outputs.hit != 'true'
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: aarch64-apple-ios
       - name: Cache Rust build (fushi_ios_umbrella)
         if: steps.ios_native_store.outputs.hit != 'true'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_ios_umbrella -> target
           key: fushi-ios-umbrella
@@ -1682,7 +1711,7 @@ jobs:
       # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
       actions: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
       - name: Fetch vendored binaries
         uses: ./.github/actions/fetch-vendored-binaries
@@ -1692,7 +1721,7 @@ jobs:
       # 解包就要 125 s，与直接下官方 zip 同量级，却常驻占掉 10 GB 配额的 18%，把 vcpkg /
       # helper 这类真正省时间的原生产物缓存挤出 LRU。Linux（15 s）/ macOS（27 s）解包快，
       # SDK 缓存照留。release-desktop.yml 的 windows job 同一取舍。
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: '3.50.0'
           cache: false
@@ -1784,7 +1813,7 @@ jobs:
       # 后的树）以免条目撑到 GB 级；重新解压是纯本地操作，不碰网络。
       - name: Cache vcpkg source distfiles (libtorrent)
         if: steps.torrent_store.outputs.hit != 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ${{ runner.temp }}\vcpkg-downloads
@@ -1794,7 +1823,7 @@ jobs:
             ${{ runner.os }}-vcpkg-downloads-libtorrent-v1-
       - name: Cache vcpkg binary archives (libtorrent)
         if: steps.torrent_store.outputs.hit != 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~\AppData\Local\vcpkg\archives
           # v2 -> v3：manifest 钉版换掉了 libtorrent/boost/openssl 的 ABI hash，旧条目
@@ -1865,13 +1894,13 @@ jobs:
           path: native\fushi_p2p\prebuilt\windows-x64
       - name: Set up Rust (fushi_p2p)
         if: steps.p2p_store.outputs.hit != 'true'
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: x86_64-pc-windows-msvc
       - name: Cache Rust build (fushi_p2p)
         if: steps.p2p_store.outputs.hit != 'true'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_p2p -> target
           key: fushi-p2p-windows-x64
@@ -1907,12 +1936,12 @@ jobs:
       # SRS 排程内核（fsrs-rs）Windows DLL：产物落 native/fushi_fsrs/prebuilt/windows-x64/，
       # 供下面 flutter build windows 的 copy-if-present 随包；构建失败即 job 失败。
       - name: Set up Rust (fushi_fsrs)
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: x86_64-pc-windows-msvc
       - name: Cache Rust build (fushi_fsrs)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_fsrs -> target
           key: fushi-fsrs-windows-x64
@@ -1939,12 +1968,12 @@ jobs:
       # native/fushi_web_core/prebuilt/windows-x64/，供下面 flutter build windows 随包（硬依赖）；
       # 构建失败即 job 失败。
       - name: Set up Rust (fushi_web_core)
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: x86_64-pc-windows-msvc
       - name: Cache Rust build (fushi_web_core)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_web_core -> target
           key: fushi-web-core-windows-x64
@@ -1968,12 +1997,12 @@ jobs:
       # 计算内核（哈希 / 图像 / 文本）Windows DLL：产物落 native/fushi_compute/prebuilt/windows-x64/，
       # 供下面 flutter build windows 的 copy-if-present 随包；构建失败即 job 失败。
       - name: Set up Rust (fushi_compute)
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: x86_64-pc-windows-msvc
       - name: Cache Rust build (fushi_compute)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_compute -> target
           key: fushi-compute-windows-x64
@@ -2002,7 +2031,7 @@ jobs:
       # RWKV-Instant 排程推理 Windows DLL（硬依赖）：产物落 native/fushi_rwkv/prebuilt/windows-x64/，
       # fushi/windows/CMakeLists.txt 缺库即 FATAL_ERROR；构建失败即 job 失败。
       - name: Cache Rust build (fushi_rwkv)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_rwkv -> target
           key: fushi-rwkv-windows-x64

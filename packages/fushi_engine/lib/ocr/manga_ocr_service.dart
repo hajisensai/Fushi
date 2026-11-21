@@ -37,6 +37,13 @@ abstract class MangaOcrService {
   /// 的实现（远端 / 外部 CLI）可以忽略它；按序处理的实现必须在逐页事件里如实
   /// 给出 [MangaOcrVolumeEvent.pageIndex]——完成计数不再等于页号 + 1。
   /// 产物 manga.json 的内容与页序与起点无关。
+  ///
+  /// 取消订阅的 Future（`StreamSubscription.cancel()` 的返回值）**在执行体真正
+  /// 停下之后才完成**：本地实现是整卷 isolate 已关掉推理会话并退出。取消请求
+  /// 本身在页边界生效，当前页还要跑完，所以这个 Future 可能晚几秒；它是「这份
+  /// 模型内存已经放掉、可以再起一个任务」的唯一信号（BUG-4800）。不想被它拖住
+  /// 的调用方（界面上的取消按钮）不要 await，只在决定何时再起任务的地方等。
+  /// 没有可等的执行体的实现（在途的一次 HTTP / 平台调用）立即完成。
   Stream<MangaOcrVolumeEvent> ocrFolder({
     required String imageDirPath,
     String? volumeTitle,
@@ -93,6 +100,18 @@ abstract interface class MangaOcrFocusableService {
   });
 }
 
+/// 能报出「整卷任务此刻会用的引擎签名」的服务（本地 ONNX）。
+///
+/// 签名是逐页缓存子目录名、也写进产物 manga.json 的 `ocr.engine_signature`，按已
+/// 安装模型与识别选项解析（BUG-1173）。互联 host 用它给按页图内容键控的结果缓存
+/// 分区（`MangaOcrContentCache`）：签名不同的结果绝不互相顶替。报不出签名的服务
+/// （远端 / 外部 CLI / 测试替身）不实现本接口，host 对它们不做内容去重。
+abstract interface class MangaOcrEngineSignatureSource {
+  /// 与 [MangaOcrService.ocrFolder] 此刻起跑时用的签名同源；模型没装齐时也照常
+  /// 返回（按当前清单算），能不能跑由 `modelStatus` 判。
+  Future<String> resolveEngineSignature();
+}
+
 /// 可选的页级能力（阅读器「边看边 OCR」）：只填逐页原子缓存，绝不把半卷结果
 /// 发布成 manga.json。
 ///
@@ -138,6 +157,15 @@ abstract interface class MangaOcrPageSession {
   Future<void> close();
 }
 
+/// 页会话的可选能力：识别一整页已在内存里的像素（视频暂停 OCR 的播放器截帧），与
+/// [MangaOcrPageSession.ocrPage] 同一条漫画整页管线（检测器 → 阅读顺序 → 识别 → 补检），
+/// 但不读页图文件、不解码、不落逐页缓存：结果直接交回。
+abstract interface class MangaOcrPagePixelsSession {
+  /// 识别 [image]，返回整页结果（坐标是 [image] 的像素坐标）。会话关闭 / 建会话失败
+  /// 时抛错（与 ocrPage 同语义）；以 `textImagesOnly` 打开的会话上以 [StateError] 失败。
+  Future<OcrPageResult> ocrPagePixels(OcrRgbaImage image);
+}
+
 /// 页会话的可选能力：直接识别一张已裁好的文字图（字幕位图），跳过漫画检测器、补检、
 /// PNG 落盘与逐页缓存。整图当一个块交 RoutingOcrRecognizer（宽≥高 → PP 行检测 + 逐行识别；
 /// 竖排占多数 → 块识别器）。
@@ -163,10 +191,16 @@ class MangaOcrModelStatus {
     required this.diskBytes,
     required this.totalBytes,
     this.obtainedBytes = 0,
+    this.supersededReady = false,
   });
 
+  /// 当前一代模型的检测 / 识别文件是否齐全（决定设置页还要不要下载）。
   final bool detectorReady;
   final bool recognizerReady;
+
+  /// 当前一代没下齐，但磁盘上有齐全的上一代模型：识别照常能跑（见 [canRun]），
+  /// 设置页仍按「未下齐」给出下载入口。
+  final bool supersededReady;
 
   /// 模型目录的**真实递归占用**字节数。
   ///
@@ -190,7 +224,11 @@ class MangaOcrModelStatus {
   /// Range 续传，再点就是接着下。能力早就在，缺的只是把它说出来。
   final int obtainedBytes;
 
+  /// 当前一代是否下齐。「还要不要下载」看它；「能不能识别」看 [canRun]。
   bool get allReady => detectorReady && recognizerReady;
+
+  /// 本地 OCR 现在能不能跑：当前一代齐全，或上一代齐全（替它读）。
+  bool get canRun => allReady || supersededReady;
 
   /// 是否存在可续传的半成品（决定按钮显示「下载」还是「继续下载」）。
   bool get hasResumableDownload => !allReady && obtainedBytes > 0;

@@ -1,0 +1,6 @@
+## BUG-4717 · 漫画双页跨页右键「复制 / 保存 / 分享图片」「设为封面」作用于当前跨页主页而不是右键落点那一页
+- **报告**：2026-11-16（应用内反馈 NfaXdQeLyD，维护者：「我点击左边的图片复制，出来的是右边的图片」）
+- **真实性**：✅ 真 bug。JS 右键（`manga_overlay_html.dart` 的 pointerup button 2 → `_ocrHitPayload(..., _mangaPageIndexAt(...))`）已把落点页号 `page` 回传给 `onMangaContextMenu`，同一份 payload 的 `page` 也已用于 OCR 文本复制；但 Dart 侧 `fushi/lib/src/media/manga/reader/manga_fushi_page.dart` 的 `_showReaderContextMenu` 里图片项走 `_runCurrentMangaPageImageAction`（修复前 :6772）、「设为封面」走 `_setCurrentMangaPageAsCover`（修复前 :6784），两者都取 `_currentMangaPageFile()`（:6665，即 `_currentPageImagePath` / `_currentPage`，当前跨页的主页）。RTL 双页跨页时主页在右，右键左页复制出来的是右页。与长按路径 `_onMangaPageLongPress` 「作用于那一页而不是当前跨页」的设计意图矛盾。
+- **[x] ① 已修复** — 新增 `MangaFushiPage.mangaHitPageIndex`（manga_fushi_page.dart:989）把 payload 的落点页号解析成整卷 0-based 页（没落在页上 / 越界为 null）；右键菜单按它取图：`_runMangaPageImageAction(action, pageIndex)`（:6784）与 `_setMangaPageAsCover(pageIndex)`（:6799）都改走 `_mangaPageFileAt(pageIndex)`，与长按面板同一口径；落点不在页上时菜单不列图片项与「设为封面」，不回落当前页。`_ocrCopyTextsAt` 同用该解析。
+- **[x] ② 已加自动化测试** — `fushi/test/media/manga/manga_hit_page_index_test.dart`（落点页号解析：跨页左页、double 页号、null / 缺字段 / 越界）；`fushi/test/media/manga/manga_image_actions_unified_guard_test.dart`（右键图片动作与设为封面按落点页取图、不读 `_currentMangaPageFile`、无落点页不列图片项）。
+- **备注**：WebView 内真实右键未在设备上复测（本轮不做真机验证）；JS 侧右键 payload 带 `page` 已由 `manga_page_long_press_js_test.dart` 覆盖。

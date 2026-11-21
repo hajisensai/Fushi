@@ -92,6 +92,9 @@ extension _ReaderSeamlessChapters on _ReaderFushiPageState {
     unawaited(_flushReadingStats());
     // 与 [_beginNavigation] 同一个采样点：离开那章的当前单元在离开这一刻结算。
     _readLedger.leave();
+    // 在线书：阅读中途挂邻章时取回的字数（多半就是正要进的这一章）此刻才能换
+    // ——上一章的单元刚结算完（BUG-4809）。
+    _applyDeferredOnlineChapterCharCounts();
     _audiobookController?.noteManualReaderNavigation();
     final int generation = _advanceNavigationGeneration();
     _chapterAdvanceDirection = to > from ? 1 : -1;
@@ -99,6 +102,7 @@ extension _ReaderSeamlessChapters on _ReaderFushiPageState {
     _preciseLocateQueue.clear();
     _pageTurnQueue.clear();
     _currentChapter = to;
+    _onlineMissingImages?.show(to);
     _initialProgress = 0.0;
     _initialCharOffset = -1;
     _initialCharOffsetEnd = -1;
@@ -160,7 +164,8 @@ extension _ReaderSeamlessChapters on _ReaderFushiPageState {
     _ensureStudyClock();
     unawaited(_refreshProgress());
     _startProgressPoll();
-    _prefetchAdjacentChapter(to + _chapterAdvanceDirection);
+    final int? prefetchTarget = _htmlPrefetchTarget(to);
+    if (prefetchTarget != null) _prefetchAdjacentChapter(prefetchTarget);
     _prefetchAdjacentChapterImages(to + _chapterAdvanceDirection);
   }
 }

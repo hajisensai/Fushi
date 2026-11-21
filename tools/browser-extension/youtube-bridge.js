@@ -62,27 +62,99 @@
   // …12 条齐全，唯独没有英语。现在改成**按需加载**：整份清单（只有标签）立刻发给隔离世界
   // 进列表；只急取 EAGER_TRACKS 条（排优先级后的头一条 = 当前音轨默认字幕轨）让覆盖层/
   // 替代原生立即可用；其余等隔离世界发 {__fushiStream:'fetchTrack'}（用户在列表里选中）再取。
-  // 优先级：① 当前音轨默认字幕轨（defaultCaptionTrackIndex / isDefault）② 语言码与当前
-  // 音轨语言一致 ③ 人工轨（kind !== 'asr'）④ 其余按原顺序。
+  // 优先级：① 当前音轨默认字幕轨 ② 语言码与当前音轨语言一致（人工轨先于 ASR 轨）
+  // ③ 人工轨（kind !== 'asr'）④ 其余按原顺序。
+  //
+  // 反馈 0RgCNJFQmJ / GitHub #3401：「默认」与「音轨语言」以前只从 getAudioTrack() 返回的
+  // 播放器内部对象上按字段名读（defaultCaptionTrackIndex / languageCode）。那是 YouTube 压缩
+  // 过的运行时类实例，字段名随播放器版本被混淆，读出来全空 → ① ② 同时失效，排序退化成
+  // 「原始顺序里的第一条人工轨」，急取并挂上的就是阿拉伯语 / 俄语 / 韩语这类无关翻译轨。
+  // 现在两项信号都从结构稳定的数据推（captionHints）：运行时字段仍认（有就用），但不再是
+  // 唯一来源。
   var EAGER_TRACKS = 1;
   var pendingTracks = new Map(); // videoKey → Map(label → track)，供按需取
   var lazyInFlight = new Set();
-  function prioritizeCaptionTracks(tracks, audioTrack) {
-    if (!Array.isArray(tracks)) return [];
-    var defIdx = audioTrack && typeof audioTrack.defaultCaptionTrackIndex === 'number'
-      ? audioTrack.defaultCaptionTrackIndex : -1;
-    var audioLang = '';
+
+  function langBase(code) {
+    return String(code || '').toLowerCase().split(/[-_]/)[0];
+  }
+  function isAsrTrack(track) {
+    return !!track && track.kind === 'asr';
+  }
+
+  // 排序要的两项信号：
+  //   defaultTrack —— 音轨的默认字幕轨（{languageCode, asr, vssId}），没有 = null；
+  //   audioLang    —— 音轨的语言（基础语言码，`en` / `ja`），推不出 = ''。
+  // 注意 b) 取的是服务端的**默认音轨**（defaultAudioTrackIndex），不是用户在播放器里切到的
+  // 当前音轨：当前音轨的索引只在被混淆的运行时对象上，读不到。所以 a) 的运行时字段读得到时
+  // 优先（defaultIndex 先于 defaultTrack 命中）；自动配音视频里切了音轨又读不到运行时字段时，
+  // b) 给的是原声音轨的默认轨。
+  // 来源按可靠度依次：
+  //   a) 运行时音轨对象的明文字段（未被混淆的播放器版本上仍有效）；
+  //   b) 播放器响应 captions.playerCaptionsTracklistRenderer（服务端 JSON，字段名是协议的
+  //      一部分，不会被前端压缩混淆）：audioTracks[defaultAudioTrackIndex] 的
+  //      defaultCaptionTrackIndex（hasDefaultTrack !== false 时）给默认轨，其
+  //      captionTrackIndices 圈出本音轨的轨；
+  //   c) 自动字幕（ASR）只为音轨的口语语言生成：本音轨范围里 ASR 轨只有一种语言时，它就是
+  //      音轨语言。范围取不到（无 renderer）就看整份轨清单。
+  function captionHints(tracks, audioTrack, renderer) {
+    var hints = { defaultTrack: null, defaultIndex: -1, audioLang: '' };
     try {
-      var raw = audioTrack && (audioTrack.languageCode || audioTrack.language || '');
-      audioLang = String(raw || '').toLowerCase().split(/[-_]/)[0];
-    } catch (_) { audioLang = ''; }
+      if (audioTrack && typeof audioTrack.defaultCaptionTrackIndex === 'number') {
+        hints.defaultIndex = audioTrack.defaultCaptionTrackIndex;
+      }
+      hints.audioLang = langBase(audioTrack && (audioTrack.languageCode || audioTrack.language));
+    } catch (_) {}
+    var scope = tracks;
+    try {
+      var all = renderer && Array.isArray(renderer.captionTracks) ? renderer.captionTracks : null;
+      var audioTracks = renderer && Array.isArray(renderer.audioTracks) ? renderer.audioTracks : [];
+      var audioIdx = typeof renderer.defaultAudioTrackIndex === 'number' ? renderer.defaultAudioTrackIndex : 0;
+      var current = audioTracks[audioIdx] || audioTracks[0] || null;
+      if (all && current) {
+        if (current.hasDefaultTrack !== false && typeof current.defaultCaptionTrackIndex === 'number') {
+          var def = all[current.defaultCaptionTrackIndex];
+          if (def && def.languageCode) {
+            hints.defaultTrack = { languageCode: String(def.languageCode), asr: isAsrTrack(def), vssId: String(def.vssId || '') };
+          }
+        }
+        if (Array.isArray(current.captionTrackIndices) && current.captionTrackIndices.length) {
+          scope = current.captionTrackIndices.map(function (i) { return all[i]; }).filter(Boolean);
+        } else {
+          scope = all;
+        }
+      } else if (all) {
+        scope = all;
+      }
+    } catch (_) {}
+    if (!hints.audioLang) {
+      var asrLangs = new Set();
+      (Array.isArray(scope) ? scope : []).forEach(function (t) {
+        if (isAsrTrack(t) && t.languageCode) asrLangs.add(langBase(t.languageCode));
+      });
+      if (asrLangs.size === 1) hints.audioLang = Array.from(asrLangs)[0];
+    }
+    return hints;
+  }
+
+  function matchesDefault(track, i, hints) {
+    if (i === hints.defaultIndex || track.isDefault === true) return true;
+    var def = hints.defaultTrack;
+    if (!def) return false;
+    if (def.vssId && track.vssId) return String(track.vssId) === def.vssId;
+    return String(track.languageCode || '') === def.languageCode && isAsrTrack(track) === def.asr;
+  }
+
+  function prioritizeCaptionTracks(tracks, audioTrack, renderer) {
+    if (!Array.isArray(tracks)) return [];
+    var hints = captionHints(tracks, audioTrack, renderer);
     function rank(track, i) {
       if (!track) return 9;
-      if (i === defIdx || track.isDefault === true) return 0;
-      var lang = String(track.languageCode || '').toLowerCase().split(/[-_]/)[0];
-      if (audioLang && lang === audioLang) return 1;
-      if (track.kind !== 'asr') return 2;
-      return 3;
+      if (matchesDefault(track, i, hints)) return 0;
+      var sameLang = !!hints.audioLang && langBase(track.languageCode) === hints.audioLang;
+      if (sameLang) return isAsrTrack(track) ? 2 : 1;
+      if (!isAsrTrack(track)) return 3;
+      return 4;
     }
     return tracks
       .map(function (t, i) { return { t: t, i: i, r: rank(t, i) }; })
@@ -90,40 +162,68 @@
       .map(function (e) { return e.t; });
   }
 
-  function runtimeAudioTrack() {
+  function captionRenderer(response) {
+    var renderer = response && response.captions && response.captions.playerCaptionsTracklistRenderer;
+    return renderer && typeof renderer === 'object' ? renderer : null;
+  }
+
+  // 当前视频的播放器响应（服务端 JSON，键名不混淆）。SPA 换视频后 ytInitialPlayerResponse 仍是
+  // 首屏那个视频的，所以按 videoDetails.videoId 核对；对不上的不用。
+  function currentPlayerResponse(id) {
+    var candidates = [];
     try {
       var player = document.querySelector('#movie_player');
-      return player && player.getAudioTrack ? player.getAudioTrack() : null;
-    } catch (_) { return null; }
+      if (player && typeof player.getPlayerResponse === 'function') candidates.push(player.getPlayerResponse());
+    } catch (_) {}
+    try { candidates.push(window.ytInitialPlayerResponse); } catch (_) {}
+    for (var i = 0; i < candidates.length; i++) {
+      var r = candidates[i];
+      if (r && r.videoDetails && r.videoDetails.videoId === id) return r;
+    }
+    return null;
   }
+
+  // 三路取轨都回 {tracks, audioTrack, renderer}：排序信号跟着轨的来源走（运行时音轨对象的
+  // defaultCaptionTrackIndex 只对它自己的 captionTracks 有效，不能拿去索引 Android 响应的轨）。
+  var NO_SOURCE = { tracks: [], audioTrack: null, renderer: null };
 
   function runtimeTracks(id) {
     try {
       var player = document.querySelector('#movie_player');
       var data = player && player.getVideoData && player.getVideoData();
-      if (data && data.video_id && data.video_id !== id) return [];
+      if (data && data.video_id && data.video_id !== id) return NO_SOURCE;
       var audioTrack = player && player.getAudioTrack && player.getAudioTrack();
-      return audioTrack && Array.isArray(audioTrack.captionTracks) ? audioTrack.captionTracks : [];
-    } catch (_) { return []; }
+      if (!audioTrack || !Array.isArray(audioTrack.captionTracks)) return NO_SOURCE;
+      return {
+        tracks: audioTrack.captionTracks,
+        audioTrack: audioTrack,
+        renderer: captionRenderer(currentPlayerResponse(id)),
+      };
+    } catch (_) { return NO_SOURCE; }
   }
 
-  function responseTracks() {
+  // 第三路兜底：页面里的播放器响应。与排序信号同一条「残留响应不用」规则——SPA 换片后
+  // ytInitialPlayerResponse / ytplayer.config 仍是首屏那个视频的，整份轨清单（baseUrl 里 v= 是
+  // 旧视频）不能当成当前视频发布，所以同样按 videoDetails.videoId 核对。
+  function responseTracks(id) {
     try {
-      var response = window.ytInitialPlayerResponse;
+      var response = currentPlayerResponse(id);
       if (!response && window.ytplayer && window.ytplayer.config && window.ytplayer.config.args) {
-        response = window.ytplayer.config.args.player_response;
-        if (typeof response === 'string') response = JSON.parse(response);
+        var legacy = window.ytplayer.config.args.player_response;
+        if (typeof legacy === 'string') legacy = JSON.parse(legacy);
+        if (legacy && legacy.videoDetails && legacy.videoDetails.videoId === id) response = legacy;
       }
-      var renderer = response && response.captions && response.captions.playerCaptionsTracklistRenderer;
-      return renderer && Array.isArray(renderer.captionTracks) ? renderer.captionTracks : [];
-    } catch (_) { return []; }
+      var renderer = captionRenderer(response);
+      if (!renderer || !Array.isArray(renderer.captionTracks)) return NO_SOURCE;
+      return { tracks: renderer.captionTracks, audioTrack: null, renderer: renderer };
+    } catch (_) { return NO_SOURCE; }
   }
 
   async function androidTracks(id) {
     try {
-      if (!window.ytcfg || typeof window.ytcfg.get !== 'function') return [];
+      if (!window.ytcfg || typeof window.ytcfg.get !== 'function') return NO_SOURCE;
       var key = window.ytcfg.get('INNERTUBE_API_KEY');
-      if (!key) return [];
+      if (!key) return NO_SOURCE;
       var response = await fetch('/youtubei/v1/player?key=' + encodeURIComponent(key), {
         method: 'POST',
         credentials: 'same-origin',
@@ -136,14 +236,17 @@
           videoId: id,
         }),
       });
-      if (!response.ok) return [];
-      var payload = await response.json();
-      var renderer = payload && payload.captions && payload.captions.playerCaptionsTracklistRenderer;
-      return renderer && Array.isArray(renderer.captionTracks) ? renderer.captionTracks : [];
-    } catch (_) { return []; }
+      if (!response.ok) return NO_SOURCE;
+      var renderer = captionRenderer(await response.json());
+      if (!renderer || !Array.isArray(renderer.captionTracks)) return NO_SOURCE;
+      return { tracks: renderer.captionTracks, audioTrack: null, renderer: renderer };
+    } catch (_) { return NO_SOURCE; }
   }
 
-  function parseJson3(payload) {
+  // keepWords（只给自动字幕）：每行再带上词级时间 words = [{offsetMs, text}]（json3 segs 的
+  // tOffsetMs，相对行起点），隔离世界的分句整合（subtitle-adapters.js fushiMergeAsrSentenceCues，
+  // 设置 subtitleMergeAsrSentences）靠它把句号落在行中间的句子按词切开、按词间停顿断句。
+  function parseJson3(payload, keepWords) {
     var events = payload && Array.isArray(payload.events) ? payload.events : [];
     var cues = [];
     for (var i = 0; i < events.length; i++) {
@@ -159,7 +262,13 @@
         duration = next && Number.isFinite(Number(next.tStartMs))
           ? Math.max(1, Number(next.tStartMs) - start) : 1500;
       }
-      cues.push({ startMs: start, endMs: start + duration, text: value });
+      var cue = { startMs: start, endMs: start + duration, text: value };
+      if (keepWords && event.segs.length > 1) {
+        cue.words = event.segs.map(function (segment) {
+          return { offsetMs: Number(segment && segment.tOffsetMs) || 0, text: segment && segment.utf8 || '' };
+        }).filter(function (word) { return word.text; });
+      }
+      cues.push(cue);
     }
     return cues;
   }
@@ -215,7 +324,7 @@
     try {
       var jsonResponse = await fetch(url.toString(), { credentials: 'include' });
       if (!jsonResponse.ok) return [];
-      return finishTrackCues(track, parseJson3(await jsonResponse.json()));
+      return finishTrackCues(track, parseJson3(await jsonResponse.json(), isAsrTrack(track)));
     } catch (_) { return []; }
   }
 
@@ -229,8 +338,8 @@
     }
   }
 
-  async function fetchAndPublish(id, rawTracks) {
-    var tracks = prioritizeCaptionTracks(rawTracks, runtimeAudioTrack());
+  async function fetchAndPublish(id, source) {
+    var tracks = prioritizeCaptionTracks(source.tracks, source.audioTrack, source.renderer);
     var byLabel = new Map();
     var seen = new Set();
     for (var i = 0; i < tracks.length; i++) {
@@ -307,6 +416,8 @@
       format: 'cues',
       cues: cues,
     };
+    // 自动字幕标记：隔离世界据此把这条轨登记进分句整合（cue 带 words 词级时间）。
+    if (isAsrTrack(track)) message.asr = true;
     cacheMessage(message.videoKey + '|' + message.lang, message);
     try { window.postMessage(message, '/'); } catch (_) {}
   }
@@ -322,15 +433,15 @@
     }
     fetchingFor = id;
     try {
-      var tracks = runtimeTracks(id);
-      var applied = tracks.length ? await fetchAndPublish(id, tracks) : 0;
+      var source = runtimeTracks(id);
+      var applied = source.tracks.length ? await fetchAndPublish(id, source) : 0;
       if (!applied) {
-        tracks = await androidTracks(id);
-        applied = tracks.length ? await fetchAndPublish(id, tracks) : 0;
+        source = await androidTracks(id);
+        applied = source.tracks.length ? await fetchAndPublish(id, source) : 0;
       }
       if (!applied) {
-        tracks = responseTracks();
-        applied = tracks.length ? await fetchAndPublish(id, tracks) : 0;
+        source = responseTracks(id);
+        applied = source.tracks.length ? await fetchAndPublish(id, source) : 0;
       }
       if (applied) { if (backoff.id === id) resetBackoff(); }
       else noteAcquireFailure(id);

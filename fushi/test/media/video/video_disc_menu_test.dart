@@ -596,6 +596,48 @@ void main() {
       },
     );
 
+    // 只有盘拒绝菜单调用（MPV_ERROR_COMMAND）才算「没有菜单这一级」；暂时性状态与
+    // 桥接错误不能被读成这张盘没有菜单（否则正片里按返回会整盘退出）。
+    test('only the disc refusing a menu call counts as a refusal', () async {
+      Object? refused;
+      try {
+        await runCheckedVideoDiscCommand(
+          _Native(_Mpv(kMpvErrorCommand)),
+          videoDiscNavigationCommand('menu'),
+        );
+      } catch (error) {
+        refused = error;
+      }
+      expect(refused, isNotNull);
+      expect(isVideoDiscMenuCallRefusal(refused!), isTrue);
+
+      Object? bridge;
+      try {
+        // media_kit 桥接拿不到整数结果时记为 -1：不是盘的回答。
+        await runCheckedVideoDiscCommand(
+          _Native(_Mpv(-1)),
+          videoDiscNavigationCommand('menu'),
+        );
+      } catch (error) {
+        bridge = error;
+      }
+      expect(bridge, isNotNull);
+      expect(isVideoDiscMenuCallRefusal(bridge!), isFalse);
+
+      for (final String code in <String>[
+        'navigation-initializing',
+        'navigation-not-active',
+        'command-failed:-4',
+      ]) {
+        expect(
+          isVideoDiscMenuCallRefusal(VideoDiscMenuException(code)),
+          isFalse,
+          reason: code,
+        );
+      }
+      expect(isVideoDiscMenuCallRefusal(StateError('x')), isFalse);
+    });
+
     test('keyboard and top/popup actions retain upstream semantics', () {
       for (final String action in <String>[
         'up',
@@ -921,5 +963,51 @@ void main() {
         }
       },
     );
+  });
+
+  group('extraction path follows the playing angle', () {
+    const String title = '/d/Disc/BDMV/PLAYLIST/00001.mpls';
+
+    test('Blu-ray angle 0 extracts the title itself', () {
+      expect(discExtractionPathForAngle(title, angle: 0, dvd: false), title);
+    });
+
+    test('Blu-ray angles 1-8 extract the angle member path', () {
+      expect(
+        discExtractionPathForAngle(title, angle: 1, dvd: false),
+        '/d/Disc/BDMV/PLAYLIST/00001.a2.mpls',
+      );
+      expect(
+        discExtractionPathForAngle(title, angle: 8, dvd: false),
+        '/d/Disc/BDMV/PLAYLIST/00001.a9.mpls',
+      );
+    });
+
+    test('unreported or impossible Blu-ray angles have no extraction path', () {
+      expect(discExtractionPathForAngle(title, angle: -1, dvd: false), isNull);
+      expect(discExtractionPathForAngle(title, angle: 9, dvd: false), isNull);
+    });
+
+    test(
+      'DVD angle 0 extracts the title, angles 1-8 its angle member path',
+      () {
+        const String dvd = '/d/Disc/VIDEO_TS/TITLE_01.dvdtitle';
+        expect(discExtractionPathForAngle(dvd, angle: 0, dvd: true), dvd);
+        expect(
+          discExtractionPathForAngle(dvd, angle: 1, dvd: true),
+          '/d/Disc/VIDEO_TS/TITLE_01.a2.dvdtitle',
+        );
+        expect(
+          discExtractionPathForAngle(dvd, angle: 8, dvd: true),
+          '/d/Disc/VIDEO_TS/TITLE_01.a9.dvdtitle',
+        );
+      },
+    );
+
+    test('unreported or impossible DVD angles have no extraction path', () {
+      const String dvd = '/d/Disc/VIDEO_TS/TITLE_01.dvdtitle';
+      expect(discExtractionPathForAngle(dvd, angle: -1, dvd: true), isNull);
+      expect(discExtractionPathForAngle(dvd, angle: 9, dvd: true), isNull);
+    });
   });
 }

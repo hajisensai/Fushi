@@ -292,12 +292,21 @@ class CtlVideoSubtitleHandlers {
       }
     }
     final AppVideoSubtitleService svc = service();
-    final SubtitleGlossary saved = await svc.saveGlossary(
-      target.work,
-      entries,
-      previous: await svc.loadGlossary(target.work, language: language),
-      language: language,
-    );
+    final SubtitleGlossary saved;
+    try {
+      saved = await svc.saveGlossary(
+        target.work,
+        entries,
+        previous: await svc.loadGlossary(target.work, language: language),
+        language: language,
+      );
+    } on AppVideoSubtitleStartRefused catch (refused) {
+      // 同作品的生成任务还没过专名表阶段，现在存会被它盖掉。
+      throw CtlFailure.conflict(
+        '生成任务 ${refused.activeJob?.mirror.id} 还在生成这张专名表，'
+        '等它进入校对阶段后再保存（video job <id> 看进度）',
+      );
+    }
     return _glossaryJson(target, saved, language);
   }
 }

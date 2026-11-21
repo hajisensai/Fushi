@@ -659,16 +659,6 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   static String? sanitizeTitleTag(String? title) =>
       AnkiNoteComposer.sanitizeTitleTag(title);
   @protected
-  static bool shouldYieldSelectionText({
-    required AnkiMiningPayload payload,
-    required String? noteTypeName,
-    required Map<String, String> fieldMappings,
-  }) => AnkiNoteComposer.shouldYieldSelectionText(
-    payload: payload,
-    noteTypeName: noteTypeName,
-    fieldMappings: fieldMappings,
-  );
-  @protected
   static Map<String, String> fieldsForOverwrite({
     required Iterable<String> existingFieldNames,
     required Map<String, String> rendered,
@@ -689,6 +679,10 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
     Map<String, String> toWrite, {
     required Set<String>? onlyFields,
   }) {
+    final MineOutcome? none = rejectNoOverwriteFieldsSelectedOutcome(
+      onlyFields,
+    );
+    if (none != null) return none;
     if (toWrite.values.any((String v) => v.trim().isNotEmpty)) return null;
     if (onlyFields == null) {
       return MineOutcome.failure(

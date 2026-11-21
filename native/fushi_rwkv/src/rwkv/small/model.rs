@@ -1,9 +1,9 @@
 // Copyright: Fushi contributors
 // License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
 //
-//! Fushi: the small RWKV network ("w64"; bundled weights sm72e25, the
-//! leak-free SM72 cool-down from epoch 25; same architecture as sm40v2 and
-//! sm56) and its batched replay / query engine.
+//! Fushi: the small RWKV network ("w64" and its one-card-layer "w64-c1";
+//! default weights the Instant-Only sm98, same architecture as sm40v2, sm56
+//! and sm72e25) and its batched replay / query engine.
 //!
 //! The executable spec is the package's NumPy reference
 //! (`reference/small_model_recurrent.py`, `RecurrentModel.step`) and
@@ -37,8 +37,8 @@ const FC: usize = 128;
 pub(super) const STREAMS: usize = 5;
 /// `zero_features`: the card-state input (scaled revlog type) is ignored.
 const ZERO_FEATURE: usize = 22;
-/// Leak-free input rule of the SM72 releases (sm72e25 is the bundled small
-/// model): the missing note / deck / preset flags are always 0. In the
+/// Leak-free input rule of the SM72 and later releases (sm98, sm101): the
+/// missing note / deck / preset flags are always 0. In the
 /// training export they marked cards deleted before the export, i.e. future
 /// information live Anki never has, and SM72 was trained and scored with them
 /// zeroed. A live input without an identity keeps its placeholder entity.
@@ -578,8 +578,10 @@ struct Layer {
 }
 
 /// The heads of one row. `p_logits` always; the curve head only on request
-/// (replay / R queries read the instant head; scheduling reads the curve of a
-/// what-if answer, INTEGRATION.md §9.2).
+/// (replay / R queries read the instant head). Fushi's small weights are
+/// Instant-Only: their curve head was never trained, so `curve` is computed
+/// only for the reference parity tests (`run_prepared_rows`) and never
+/// schedules anything.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SmallHeads {
     pub p_logits: [f32; 4],

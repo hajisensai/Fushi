@@ -120,7 +120,9 @@ List<CtlRoute> buildDictionaryCtlRoutes(OpContext context) {
         if (target.type == DictionaryType.kanji) {
           await model.updateKanjiSectionOrder(reordered);
         } else {
-          await model.updateDictionaryOrder(reordered);
+          // position 只数本机词典（`fushi_cli dict ls` 列的就是它们）；同分区的服务器
+          // 词典由仓库一起重编号，守在没挪动的本机词典旁边（moved = 这一本）。
+          await model.updateDictionaryOrder(reordered, moved: target.name);
         }
       }
       if (kanjiEnabled != null) {

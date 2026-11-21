@@ -3,8 +3,8 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/collections/collection_detail_layout.dart'
-    show CollectionEpisodeCard;
+import 'package:fushi/src/media/detail/media_poster_detail.dart'
+    show MediaPosterEpisodeTile;
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_library.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_detail_view.dart';
@@ -110,7 +110,8 @@ void main() {
     );
     await settleUntil(tester, () => addButton().evaluate().isNotEmpty);
 
-    expect(find.byType(CollectionEpisodeCard), findsNWidgets(2));
+    // 重设计外壳（非墨水屏默认）下集卡是海报详情的 [MediaPosterEpisodeTile]。
+    expect(find.byType(MediaPosterEpisodeTile), findsNWidgets(2));
     expect(
       find.byKey(const ValueKey<String>('media-server-episode-ep1')),
       findsOneWidget,

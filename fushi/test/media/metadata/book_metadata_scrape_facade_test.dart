@@ -67,6 +67,147 @@ void main() {
     });
   });
 
+  group('NSFW 候选跟随作品 NSFW 标记（拍板台 pr3497）', () {
+    BookMetadataScrapeFacade mixed() => BookMetadataScrapeFacade(
+      scraper: offlineScraper(
+        subjects: <String, Map<String, Object?>>{
+          '12': <String, Object?>{
+            ...bangumiSubject('12', 'Adult work'),
+            'nsfw': true,
+          },
+        },
+        searchHits: <Map<String, Object?>>[
+          bangumiSubject('11', 'Plain'),
+          <String, Object?>{
+            ...bangumiSubject('12', 'Adult work'),
+            'nsfw': true,
+          },
+        ],
+      ),
+    );
+
+    test('默认藏 NSFW 候选并报条数；includeNsfw 全回', () async {
+      final BookScrapeSearchResult hidden = await mixed().searchDetailed(
+        source: BookScrapeSource.bangumi,
+        query: 'x',
+      );
+      expect(
+        <String>[
+          for (final BookScrapeCandidate c in hidden.candidates) c.subjectId,
+        ],
+        <String>['11'],
+      );
+      expect(hidden.hiddenNsfw, 1);
+
+      final BookScrapeSearchResult all = await mixed().searchDetailed(
+        source: BookScrapeSource.bangumi,
+        query: 'x',
+        includeNsfw: true,
+      );
+      expect(all.candidates, hasLength(2));
+      expect(all.candidates.last.isAdult, isTrue);
+      expect(all.hiddenNsfw, 0);
+    });
+
+    test('贴 id 直取到的 NSFW 条目同样跟随规则', () async {
+      final BookScrapeSearchResult got = await mixed().searchDetailed(
+        source: BookScrapeSource.bangumi,
+        query: 'https://bgm.tv/subject/12',
+      );
+      expect(got.candidates, isEmpty);
+      expect(got.hiddenNsfw, 1);
+    });
+
+    test('isNsfwHost：书自己标了 / 在 NSFW 合集里才算；认不出的书不算', () async {
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      addTearDown(db.close);
+      const BookNsfwHost host = (kind: TagHostKind.epub, entryKey: 'nsfw-book');
+      expect(await BookMetadataScrapeFacade.isNsfwHost(db, host), isFalse);
+      expect(await BookMetadataScrapeFacade.isNsfwHost(db, null), isFalse);
+      await db.setMediaNsfw(TagHostKind.epub, 'nsfw-book', true);
+      expect(await BookMetadataScrapeFacade.isNsfwHost(db, host), isTrue);
+    });
+  });
+
+  group('isSongForItem（导入的歌曲默认 iTunes）', () {
+    late FushiDatabase db;
+
+    setUp(() => db = FushiDatabase.forTesting(NativeDatabase.memory()));
+    tearDown(() => db.close());
+
+    MediaItem itemFor(String identifier) => MediaItem(
+      mediaIdentifier: identifier,
+      title: 'Lemon',
+      mediaTypeIdentifier: 'reader',
+      mediaSourceIdentifier: 'reader_fushi',
+      position: 0,
+      duration: 0,
+      canDelete: true,
+      canEdit: true,
+    );
+
+    Future<void> srtBook(String uid, String srtPath) => db.upsertSrtBook(
+      SrtBooksCompanion.insert(
+        uid: uid,
+        title: 'Lemon',
+        srtPath: srtPath,
+        importedAt: 0,
+      ),
+    );
+
+    test('字幕书：字幕文件是 .lrc 才算歌曲（大小写不敏感）', () async {
+      await srtBook('song', 'C:/music/Lemon.LRC');
+      await srtBook('drama', 'C:/books/drama.srt');
+      expect(
+        await BookMetadataScrapeFacade.isSongForItem(
+          db,
+          itemFor(ReaderFushiSource.mediaIdentifierForSrtUid('song')),
+        ),
+        isTrue,
+      );
+      expect(
+        await BookMetadataScrapeFacade.isSongForItem(
+          db,
+          itemFor(ReaderFushiSource.mediaIdentifierForSrtUid('drama')),
+        ),
+        isFalse,
+      );
+      expect(
+        await BookMetadataScrapeFacade.isSongForItem(
+          db,
+          itemFor(ReaderFushiSource.mediaIdentifierForSrtUid('missing')),
+        ),
+        isFalse,
+      );
+    });
+
+    test('EPUB 有声书：对齐格式 lrc 算歌曲；smil / 没挂有声书不算', () async {
+      await db.upsertAudiobook(
+        AudiobooksCompanion.insert(
+          bookKey: 'epub-song',
+          alignmentFormat: 'lrc',
+          alignmentPath: 'C:/a/song.lrc',
+        ),
+      );
+      await db.upsertAudiobook(
+        AudiobooksCompanion.insert(
+          bookKey: 'epub-novel',
+          alignmentFormat: 'smil',
+          alignmentPath: 'C:/a/novel.smil',
+        ),
+      );
+      Future<bool> isSong(String key) => BookMetadataScrapeFacade.isSongForItem(
+        db,
+        itemFor(ReaderFushiSource.mediaIdentifierFor(key)),
+      );
+      expect(await isSong('epub-song'), isTrue);
+      expect(await isSong('epub-novel'), isFalse);
+      expect(await isSong('epub-plain'), isFalse);
+    });
+  });
+
   group('applyToBook / restore', () {
     late FushiDatabase db;
     late Directory thumbs;
@@ -126,6 +267,48 @@ void main() {
         original.coverSha,
       );
       expect(File(backup).existsSync(), isFalse);
+    });
+
+    test('旧封面（修改时间早于保留期）的备份按建立时刻算保留期，下次清理不删', () async {
+      final MediaItem item = await book('facade-old-cover');
+      final BookMetadataScrapeFacade facade = BookMetadataScrapeFacade();
+      await facade.applyToBook(appModel: model, item: item, cover: image(7));
+      // 这张封面已经用了 40 天：复制出来的备份会沿用这个修改时间。
+      ReaderFushiSource.instance
+          .resolveOverrideThumbnailFile(appModel: model, item: item)!
+          .setLastModifiedSync(
+            DateTime.now().subtract(const Duration(days: 40)),
+          );
+      final BookMetadataApplyResult result = await facade.applyToBook(
+        appModel: model,
+        item: item,
+        cover: image(8),
+        keepBackup: true,
+      );
+      final File backup = File(result.before.coverBackupPath!);
+      expect(
+        backup.lastModifiedSync().isAfter(
+          DateTime.now().subtract(BookMetadataScrapeFacade.backupRetention),
+        ),
+        isTrue,
+      );
+
+      // 另一本书再留一次备份 → 触发清理；上一份备份必须还在，撤销才做得成。
+      final MediaItem other = await book('facade-old-cover-2');
+      await facade.applyToBook(appModel: model, item: other, cover: image(9));
+      await facade.applyToBook(
+        appModel: model,
+        item: other,
+        cover: image(10),
+        keepBackup: true,
+      );
+      expect(backup.existsSync(), isTrue);
+      await facade.restore(
+        appModel: model,
+        item: item,
+        snapshot: result.before,
+        fields: result.applied,
+      );
     });
 
     test('执行前没有 override 封面：不留备份，restore 清除', () async {

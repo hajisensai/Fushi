@@ -11,6 +11,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:http/http.dart' as http;
 
+import 'package:fushi_engine/media/collections/collection_season_groups.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
@@ -39,6 +40,24 @@ List<String> workbenchPathsToApply({
       !(episodePaths?.contains(collectionPathForCurrent) ?? false))
     collectionPathForCurrent,
 ];
+
+/// 工作台关闭时「本集」作用域要带回播放页的字幕路径（BUG-4802）。
+///
+/// [explicit] 是面板下载完成后主动关页带回的那批（用户最后一次显式选择，排前面）；
+/// [savedWhileOpen] 是多选下载期间逐条落盘、但没随关页带回的那些——部分失败后面板
+/// 留着显示原因，用户之后自己点返回；或批量途中直接离开。两样都没有返回 null
+/// （= 用户直接返回，什么也没下）。纯函数。
+List<String>? workbenchEpisodePaths({
+  required List<String>? explicit,
+  required List<String> savedWhileOpen,
+}) {
+  final List<String> paths = <String>[
+    ...?explicit,
+    for (final String path in savedWhileOpen)
+      if (!(explicit?.contains(path) ?? false)) path,
+  ];
+  return paths.isEmpty ? null : paths;
+}
 
 /// BUG-4496：把「整个合集」批量的逐集持久化回调路由到播放页。
 ///
@@ -117,6 +136,7 @@ class SubtitleCollectionSpec {
   const SubtitleCollectionSpec({
     required this.collection,
     required this.members,
+    this.initialSeason,
   });
 
   final MediaCollectionRow collection;
@@ -124,9 +144,18 @@ class SubtitleCollectionSpec {
   /// 合集里**有序**的视频成员。
   final List<VideoBookRow> members;
 
+  /// 多季合集打开时优先选中的季号；null = 第一季。入口按
+  /// [subtitleCollectionSeasonOfMember]（与面板分季同口径）算，不各自另解文件名。
+  final int? initialSeason;
+
   /// 语言记忆键（合集名小写 trim，与批量对话框约定一致）。
   String get seriesKey => collection.name.trim().toLowerCase();
 }
+
+/// 合集成员所在季的季号，与面板分季（[subtitleCollectionSeasonKeyOf]）同口径：没写
+/// 季号的集算第 1 季，PV·特典为 null。入口据此算 [SubtitleCollectionSpec.initialSeason]。
+int? subtitleCollectionSeasonOfMember(VideoBookRow member) =>
+    seasonNumberOfGroupKey(subtitleCollectionSeasonKeyOf(member));
 
 /// 工作台依赖的宿主能力（全部可注入，便于 widget 测试不碰 AppModel）。
 abstract interface class SubtitleWorkbenchHost {
@@ -203,6 +232,7 @@ class SubtitleWorkbenchPage extends StatefulWidget {
     this.collection,
     this.initialScope = SubtitleWorkbenchScope.episode,
     this.onCollectionSubtitlePersisted,
+    this.onEpisodeSubtitleSaved,
     super.key,
   }) : assert(episode != null || collection != null);
 
@@ -225,8 +255,13 @@ class SubtitleWorkbenchPage extends StatefulWidget {
   final void Function(String bookUid, String path)?
   onCollectionSubtitlePersisted;
 
+  /// 「本集」多选下载每落盘一条就回调（见 [SubtitleSearchPanel.onSubtitleSaved]）。
+  /// [open] 用它收下「已落盘但面板没主动关页」的路径，关页时一并返回（BUG-4802）。
+  final void Function(String path)? onEpisodeSubtitleSaved;
+
   /// 推整页路由。返回「本集」作用域下载落盘的**全部**字幕绝对路径，按用户勾选
-  /// 顺序（用户直接返回为 null）。
+  /// 顺序（用户直接返回且什么也没下为 null）。多选下载部分失败后用户自己点返回、
+  /// 或批量途中离开时，已落盘的那几条同样在返回值里（[workbenchEpisodePaths]）。
   ///
   /// 多选下载完成后由调用方「全部登记进字幕轨列表、只应用第一条」——单值返回
   /// 表达不了这件事，所以这里是 List。
@@ -241,19 +276,30 @@ class SubtitleWorkbenchPage extends StatefulWidget {
     SubtitleCollectionSpec? collection,
     SubtitleWorkbenchScope initialScope = SubtitleWorkbenchScope.episode,
     void Function(String bookUid, String path)? onCollectionSubtitlePersisted,
-  }) {
-    return Navigator.of(context, rootNavigator: true).push<List<String>>(
-      MaterialPageRoute<List<String>>(
-        fullscreenDialog: true,
-        builder: (_) => SubtitleWorkbenchPage(
-          host: host,
-          saveDirectory: saveDirectory,
-          episode: episode,
-          collection: collection,
-          initialScope: initialScope,
-          onCollectionSubtitlePersisted: onCollectionSubtitlePersisted,
-        ),
-      ),
+  }) async {
+    // 收在路由外面：页头返回 / 系统返回 / 侧滑哪条路关页都拿得到，不必拦截 pop。
+    // 能拿到的是「pop 那一刻之前」落盘的；pop 之后面板不再落盘（它看的是路由是否
+    // 仍活动，见 `_SubtitleSearchPanelState._pageClosed`），所以这里读走之后不会
+    // 再有新路径进来。
+    final List<String> savedWhileOpen = <String>[];
+    final List<String>? explicit =
+        await Navigator.of(context, rootNavigator: true).push<List<String>>(
+          MaterialPageRoute<List<String>>(
+            fullscreenDialog: true,
+            builder: (_) => SubtitleWorkbenchPage(
+              host: host,
+              saveDirectory: saveDirectory,
+              episode: episode,
+              collection: collection,
+              initialScope: initialScope,
+              onCollectionSubtitlePersisted: onCollectionSubtitlePersisted,
+              onEpisodeSubtitleSaved: savedWhileOpen.add,
+            ),
+          ),
+        );
+    return workbenchEpisodePaths(
+      explicit: explicit,
+      savedWhileOpen: savedWhileOpen,
     );
   }
 
@@ -272,6 +318,11 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
 
   bool get _canSwitchScope =>
       widget.episode != null && widget.collection != null;
+
+  /// 「本集」面板有下载在途（[SubtitleSearchPanel.onDownloadingChanged]）。期间锁住作用域
+  /// 开关：换到「整个合集」会把本集面板移出树，在途的下载按「页面已关」静默放弃（不
+  /// 落盘），勾着的其余几条也不再下，用户看不到任何提示。
+  bool _episodeDownloading = false;
 
   Widget _buildEpisodePanel() {
     final SubtitleEpisodeSearchSpec spec = widget.episode!;
@@ -294,6 +345,10 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
       onPreferredLanguageChanged: (String lang) =>
           host.setPreferredLanguage(spec.seriesKey, lang),
       onDownloaded: (List<String> paths) => Navigator.of(context).pop(paths),
+      onSubtitleSaved: widget.onEpisodeSubtitleSaved,
+      onDownloadingChanged: (bool downloading) {
+        if (mounted) setState(() => _episodeDownloading = downloading);
+      },
     );
   }
 
@@ -318,6 +373,7 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
       onRemoteSubtitlePersist: host.persistRemoteSubtitle,
       onSubtitlePersisted: widget.onCollectionSubtitlePersisted,
       subtitleAligner: host.subtitleAligner,
+      initialSeason: spec.initialSeason,
     );
   }
 
@@ -370,9 +426,16 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
                     ),
                   ])
                 FushiIconButton(
+                  key: ValueKey<String>(
+                    'subtitle-workbench-scope-${scope.name}',
+                  ),
                   icon: icon,
-                  tooltip: tip,
+                  // 锁住时 tooltip 说明原因：只置灰的话用户不知道为什么切不过去。
+                  tooltip: _episodeDownloading && _scope != scope
+                      ? t.video_subtitle_scope_locked_downloading
+                      : tip,
                   selected: _scope == scope,
+                  enabled: !_episodeDownloading || _scope == scope,
                   onTap: () => setState(() => _scope = scope),
                 ),
             ],

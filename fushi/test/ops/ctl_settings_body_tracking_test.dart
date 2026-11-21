@@ -513,13 +513,17 @@ void main() {
     );
     final List<Map<String, Object?>> unlinked =
         (record['unlinked']! as List<Object?>).cast<Map<String, Object?>>();
-    expect(
-      unlinked.map((Map<String, Object?> u) => u['kind']),
-      <String>['video', 'live_action', 'anime', 'game'],
-    );
-    expect(
-      unlinked.map((Map<String, Object?> u) => u['siteKind']),
-      <String>['anime', 'anime', 'anime', 'game'],
-    );
+    expect(unlinked.map((Map<String, Object?> u) => u['kind']), <String>[
+      'video',
+      'live_action',
+      'anime',
+      'game',
+    ]);
+    expect(unlinked.map((Map<String, Object?> u) => u['siteKind']), <String>[
+      'anime',
+      'anime',
+      'anime',
+      'game',
+    ]);
   });
 }

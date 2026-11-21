@@ -1109,7 +1109,10 @@ List<OpDescription> _aiOps(OpDescribeKit kit) => <OpDescription>[
       _providerRef,
       OpParam.boolean(
         'models',
-        description: 'List available models instead of a chat ping.',
+        description:
+            'List available models instead of a chat ping. `details` carries '
+            'what the upstream reports per model (display name, image input, '
+            'price per million tokens in USD); missing fields are omitted.',
       ),
     ],
   ),
@@ -1327,7 +1330,10 @@ List<OpDescription> _modelOps(OpDescribeKit kit) => <OpDescription>[
         'variant',
         description: 'gpt-sovits package variant (default by GPU).',
       ),
-      OpParam.string('model', description: 'irodori model: small / mf.'),
+      OpParam.string(
+        'model',
+        description: 'irodori model: small / mf / large.',
+      ),
       OpParam.string(
         'backend',
         description: 'irodori torch backend (default by GPU).',

@@ -6,8 +6,9 @@ extension _SyncOrchestratorVideoMetadata on SyncOrchestrator {
   /// 拉 host 全部作品刮削元数据并落本地（[applyRemoteVideoMetadata]）。
   ///
   /// 放在合集同步**之后**：合集级作品按自然键解析本地合集行，行得先由合集清单
-  /// 同步建出来。老 host 无端点（404 → null）静默跳过——它不像合集那样是用户明
-  /// 确期待的双向数据，不往 errors 里塞噪音。单条 apply 失败记日志、不中断。
+  /// 同步建出来。老 host 无端点（404 → null）跳过，并经 [_notePeerGapLive] 记一条
+  /// 「对端版本过旧」（拍板 other-sync-peer-version-errors：静默跳过会让用户以为
+  /// 简介 / 评分 / 分集名已经同步）。单条 apply 失败记日志、不中断。
   Future<void> _syncVideoMetadataLive(
     SyncRunReport report,
     InterconnectSyncBackend backend,
@@ -19,7 +20,15 @@ extension _SyncOrchestratorVideoMetadata on SyncOrchestrator {
       final int since = await repo.getVideoMetadataSyncSinceMs(_scope);
       final List<VideoMetadataWorkEntry>? entries = await backend
           .getRemoteVideoMetadata(since: since > 0 ? since : null);
-      if (entries == null || entries.isEmpty) return;
+      if (entries == null) {
+        await _notePeerGapLive(
+          report,
+          backend,
+          SyncPeerGapDimension.videoMetadata,
+        );
+        return;
+      }
+      if (entries.isEmpty) return;
       final RemoteVideoMetadataApplyResult result =
           await applyRemoteVideoMetadata(
             _db,

@@ -5,6 +5,47 @@ import 'package:fushi/src/media/video/video_controls_density.dart';
 /// 「小窗模式 / 按窗口大小缩控件」的判据真相源。页面只读本文件的结论，
 /// 所以阈值与取舍在这里钉死一次即可，不必去 widget 树里翻。
 void main() {
+  group('videoInitialMiniSurface：新挂载的视频页以哪个表面起步', () {
+    test('BUG-4804：已在系统画中画里 → 新页直接以 pictureInPicture 起步', () {
+      // 本地换集是 pushReplacement 的新页；PiP 里自动连播到下一集时系统窗口没动，
+      // 新页收不到「进入」事件，起步值错了就一直错到用户退出 PiP。
+      final VideoMiniSurface surface = videoInitialMiniSurface(
+        desktopMiniWindowClaimed: false,
+        pictureInPictureActive: true,
+      );
+      expect(surface, VideoMiniSurface.pictureInPicture);
+      expect(surface.systemOwnsChrome, isTrue);
+      // 起步表面决定密度档：PiP 档在画面里一个 chrome 都不画（宽度再大也一样）。
+      final VideoControlsDensitySpec spec = resolveVideoControlsDensity(
+        playerSize: const Size(1280, 720),
+        surface: surface,
+      );
+      expect(spec.showTopBar, isFalse);
+      expect(spec.showSeekBar, isFalse);
+      expect(spec.showCenterTransport, isFalse);
+    });
+
+    test('桌面接过了上一集的小窗 → desktopMiniWindow', () {
+      expect(
+        videoInitialMiniSurface(
+          desktopMiniWindowClaimed: true,
+          pictureInPictureActive: false,
+        ),
+        VideoMiniSurface.desktopMiniWindow,
+      );
+    });
+
+    test('两边都没有小窗 → none（常规起播不受影响）', () {
+      expect(
+        videoInitialMiniSurface(
+          desktopMiniWindowClaimed: false,
+          pictureInPictureActive: false,
+        ),
+        VideoMiniSurface.none,
+      );
+    });
+  });
+
   VideoControlsDensitySpec resolve(
     double width, {
     VideoMiniSurface surface = VideoMiniSurface.none,

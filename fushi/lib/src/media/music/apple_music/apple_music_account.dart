@@ -150,11 +150,15 @@ class AppleMusicAccount extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 资料库请求用的 token 对。
-  Future<AppleMusicUserCredentials> userCredentials() async {
+  /// 资料库请求用的 token 对；[refresh] 为真时让桥绕过缓存重新取（服务器拒了旧 token 时）。
+  Future<AppleMusicUserCredentials> userCredentials({
+    bool refresh = false,
+  }) async {
     final AppleMusicBridge? b = bridge;
     if (b == null || !connected) throw const AppleMusicNotSignedInException();
-    final AppleMusicUserCredentials? c = await b.userCredentials();
+    final AppleMusicUserCredentials? c = await b.userCredentials(
+      refresh: refresh,
+    );
     if (c == null) throw const AppleMusicNotSignedInException();
     return c;
   }

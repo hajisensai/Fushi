@@ -28,6 +28,9 @@ class _FakeLookup
   RemoteAudioLookup? audioResult;
   String? lastAudioExpression;
   String? lastAudioReading;
+
+  /// true = 查不到任何词条（两条查词路径都回 null）。
+  bool noMatch = false;
   @override
   Future<DictionarySearchResult?> searchDictionary({
     required String term,
@@ -36,6 +39,7 @@ class _FakeLookup
   }) async {
     fullLookupCount++;
     lastTerm = term;
+    if (noMatch) return null;
     final DictionarySearchResult r = DictionarySearchResult(searchTerm: term);
     r.popupJson = '{"html":"<b>$term</b>"}';
     return r;
@@ -49,6 +53,7 @@ class _FakeLookup
   }) async {
     popupLookupCount++;
     lastTerm = term;
+    if (noMatch) return null;
     return RemoteDictionaryPopupLookup(
       popupJson: '{"html":"<b>$term</b>"}',
       bestLength: 0,
@@ -69,13 +74,16 @@ class _FakeLookup
 class _FakeMining implements FushiRemoteMiningService {
   Map<String, String>? plainFields;
   ImmersionMinePayload? immersionPayload;
+
+  /// 纯文本制卡的结局（默认新卡落成）。
+  String plainResult = 'success';
   @override
   Future<RemoteMineResult> mineEntry({
     required Map<String, String> fields,
     required String sentence,
   }) async {
     plainFields = fields;
-    return const RemoteMineResult(result: 'success');
+    return RemoteMineResult(result: plainResult);
   }
 
   @override
@@ -207,6 +215,7 @@ void main() {
       String Function()? appLocaleProvider,
       void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
       void Function(BrowserVideoSample sample)? onExtensionStudy,
+      BrowserVideoStudyActivitySink? onExtensionStudyActivity,
       ExtensionFavoriteHandler? onExtensionFavorite,
       ExtensionVideoFavoriteHandler? onExtensionVideoFavorite,
     }) async {
@@ -223,6 +232,7 @@ void main() {
         appLocaleProvider: appLocaleProvider,
         onExtensionPopupSize: onExtensionPopupSize,
         onExtensionStudy: onExtensionStudy,
+        onExtensionStudyActivity: onExtensionStudyActivity,
         onExtensionFavorite: onExtensionFavorite,
         onExtensionVideoFavorite: onExtensionVideoFavorite,
         apiKey: apiKey,
@@ -472,6 +482,107 @@ void main() {
       expect((await _json(resp))['result'], 'success');
       expect(mining.plainFields, isNotNull);
       expect(mining.immersionPayload, isNull);
+    });
+
+    // 反馈 PtsjrnVmH9：扩展在统计中的网页视频页上查词 / 制卡，请求体带 `study`
+    // （该标签页正在统计的视频）→ 有结果的查词、新卡落成各回调一次 sink；没带 / 不合
+    // 契约 / 查不到 / 重复卡都不回调，请求本身照常。
+    group('PtsjrnVmH9 扩展查词 / 制卡归属网页视频', () {
+      late List<(String, String, BrowserVideoStudyActivity)> got;
+
+      Future<void> startWithSink() async {
+        got = <(String, String, BrowserVideoStudyActivity)>[];
+        await startServer(
+          apiKey: 'k123',
+          onExtensionStudyActivity:
+              (
+                BrowserVideoStudyIdentity id,
+                BrowserVideoStudyActivity activity,
+              ) => got.add((id.mediaKey, id.title, activity)),
+        );
+      }
+
+      const Map<String, dynamic> study = <String, dynamic>{
+        'mediaKey': 'web:yt-abc',
+        'title': '動画A',
+      };
+
+      test('有结果的查词带 study → 记一次 lookup', () async {
+        await startWithSink();
+        final HttpClientResponse resp = await _post(
+          server.port,
+          '/api/lookup/dictionary',
+          <String, dynamic>{'term': '走る', 'popupOnly': true, 'study': study},
+          auth: _basic('k123'),
+        );
+        expect(resp.statusCode, 200);
+        expect((await _json(resp))['popupJson'], contains('走る'));
+        expect(got, <(String, String, BrowserVideoStudyActivity)>[
+          ('web:yt-abc', '動画A', BrowserVideoStudyActivity.lookup),
+        ]);
+      });
+
+      test('不带 study / study 不合契约 / 查不到 → 不记', () async {
+        await startWithSink();
+        for (final Map<String, dynamic> body in <Map<String, dynamic>>[
+          <String, dynamic>{'term': '走る'},
+          <String, dynamic>{
+            'term': '走る',
+            'study': <String, dynamic>{'mediaKey': ''},
+          },
+          <String, dynamic>{'term': '走る', 'study': 'web:yt-abc'},
+        ]) {
+          final HttpClientResponse resp = await _post(
+            server.port,
+            '/api/lookup/dictionary',
+            body,
+            auth: _basic('k123'),
+          );
+          expect(resp.statusCode, 200);
+          await _json(resp);
+        }
+        lookup.noMatch = true;
+        final HttpClientResponse miss = await _post(
+          server.port,
+          '/api/lookup/dictionary',
+          <String, dynamic>{'term': 'zzz', 'study': study},
+          auth: _basic('k123'),
+        );
+        expect(miss.statusCode, 200);
+        expect((await _json(miss))['popupJson'], isNull);
+        expect(got, isEmpty);
+      });
+
+      test('新卡落成带 study → 记一次 mine；重复卡不记', () async {
+        await startWithSink();
+        final HttpClientResponse ok = await _post(
+          server.port,
+          '/api/mine',
+          <String, dynamic>{
+            'fields': <String, String>{'expression': '本'},
+            'sentence': '本を読む。',
+            'study': study,
+          },
+          auth: _basic('k123'),
+        );
+        expect((await _json(ok))['result'], 'success');
+        expect(got, <(String, String, BrowserVideoStudyActivity)>[
+          ('web:yt-abc', '動画A', BrowserVideoStudyActivity.mine),
+        ]);
+        mining.plainResult = 'duplicate';
+        final HttpClientResponse dup = await _post(
+          server.port,
+          '/api/mine',
+          <String, dynamic>{
+            'fields': <String, String>{'expression': '本'},
+            'sentence': '本を読む。',
+            'study': study,
+          },
+          auth: _basic('k123'),
+        );
+        expect((await _json(dup))['result'], 'duplicate');
+        expect(got, hasLength(1));
+      });
     });
 
     // BUG-2189：扩展入队时冻进 fields.audio 的是本机签发的 5 分钟短命 token URL；Netflix /

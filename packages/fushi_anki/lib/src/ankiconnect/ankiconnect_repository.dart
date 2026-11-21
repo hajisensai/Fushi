@@ -751,6 +751,14 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           'overwrite a card of a different note type.',
         );
       }
+      // 拍板 lt2wobUYfE：一个字段都没勾就不渲染、不写，直接拒绝。
+      final Set<String>? onlyFields = settings.overwriteFieldsFor(
+        existing.modelName ?? targetModel,
+      );
+      final MineOutcome? noneSelected = rejectNoOverwriteFieldsSelectedOutcome(
+        onlyFields,
+      );
+      if (noneSelected != null) return noneSelected;
       final Map<String, String> existingFields = existing.fields;
       if (context.sourceLink != null ||
           settings.fieldMappings.values.any(
@@ -785,9 +793,6 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         keepEmpty: true,
       );
       final RenderedMinedFields rendered = prepared.rendered;
-      final Set<String>? onlyFields = settings.overwriteFieldsFor(
-        existing.modelName ?? targetModel,
-      );
       final Map<String, String> toWrite = BaseAnkiRepository.fieldsForOverwrite(
         existingFieldNames: existingFields.keys,
         rendered: rendered.fields,
@@ -1329,18 +1334,17 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     String modelName,
   ) async {
     final service = await _getService();
-    final List<String> existing = await service.getModelNames();
-    if (!existing.contains(modelName)) return null;
-    final List<String> fields = await service.getModelFields(modelName);
-    final List<AnkiCardTemplate> templates = await service.modelTemplates(
+    // 一次 `multi` 往返（原先是四次）：落卡前的同步片段探测
+    // （[rendersSynchronizedClip]）每张卡都走这里。
+    final AnkiConnectModelDefinition? model = await service.readModelDefinition(
       modelName,
     );
-    final String css = await service.modelStyling(modelName);
+    if (model == null) return null;
     return AnkiNoteTypeDefinition(
       name: modelName,
-      fields: fields,
-      templates: templates,
-      css: css,
+      fields: model.fields,
+      templates: model.templates,
+      css: model.css,
     );
   }
 

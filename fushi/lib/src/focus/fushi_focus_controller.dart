@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/scheduler.dart' show SchedulerPhase;
 import 'package:fushi/src/focus/focus_geometry.dart';
 import 'package:fushi/src/focus/main_window_focus_gate.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
@@ -351,7 +352,13 @@ class FushiFocusController extends ChangeNotifier {
     return entry;
   }
 
-  bool requestById(FushiFocusId id) {
+  /// 把焦点落到登记为 [id] 的目标上。
+  ///
+  /// [reveal] 默认 true：键盘 / 手柄 / 程序化定位把光标送到一个可能在屏外的目标，
+  /// 视口要跟过去。**鼠标按下**带焦点（[FushiFocusTarget] 的 click-to-focus）必须
+  /// 传 false：指针按得到它，它就在屏幕上；此时再 reveal（居中对齐）只会把页面
+  /// 滚走——反馈 1120 #i10：右键合集卡，页面跟着下滚、库页浮动顶栏随之收起。
+  bool requestById(FushiFocusId id, {bool reveal = true}) {
     final FushiFocusTargetEntry? entry = _entries[id];
     if (entry == null || !_entryCanFocus(entry)) return false;
     return _focusCandidate(
@@ -360,16 +367,17 @@ class FushiFocusController extends ChangeNotifier {
         context: entry.context,
         entry: entry,
       ),
+      reveal: reveal,
     );
   }
 
-  /// 显式输入（方向键 / 手柄 / 鼠标点选）把焦点落到 [candidate]：无条件 reveal，
-  /// 这次输入本身就是可见焦点光标。
-  bool _focusCandidate(_FocusCandidate candidate) {
+  /// 显式输入（方向键 / 手柄）把焦点落到 [candidate]：默认无条件 reveal，这次输入
+  /// 本身就是可见焦点光标。鼠标点选经 [requestById] 传 `reveal: false`。
+  bool _focusCandidate(_FocusCandidate candidate, {bool reveal = true}) {
     candidate.node.requestFocus();
     final FushiFocusId? id = candidate.entry?.id;
     _activeId = id;
-    _scheduleReveal(candidate.context, candidate.node);
+    if (reveal) _scheduleReveal(candidate.context, candidate.node);
     if (id != null) notifyListeners();
     return true;
   }
@@ -569,6 +577,22 @@ class FushiFocusController extends ChangeNotifier {
       _repairDeferredWhileBackgrounded = true;
       return;
     }
+    // 先让框架把已排队的焦点请求落地，再判断主焦点（BUG-4690）。
+    //
+    // 框架的焦点变更（含 autofocus）不是即时生效的：`requestFocus` /
+    // `FocusScopeNode.autofocus` 只记账，由 [FocusManager] 排的微任务统一应用；
+    // 而 autofocus 只在其 scope 的 `focusedChild` 仍为空时才生效。EditableText
+    // 的 autofocus 还要再晚一步，在帧后回调里才排队。被动修复若赶在这之前跑，
+    // 看到的 primaryFocus 仍是下层路由刚失去「当前」身份的按钮 → 判不可用 →
+    // 替新路由选了阅读顺序第一个目标并写进 scope 的 focusedChild → 新路由显式
+    // 声明的 autofocus 被框架当成「scope 已有焦点」丢弃。真机：键盘回车打开改名
+    // 对话框，焦点落在输入框的屏幕键盘按钮上，必须先按 Tab 才能打字。
+    // 显式焦点请求永远优先于被动修复：被动修复只修「应用完所有挂起请求之后」
+    // 仍然无主的焦点。构建期不能调（框架断言），那时也不会走到这里。
+    if (WidgetsBinding.instance.schedulerPhase !=
+        SchedulerPhase.persistentCallbacks) {
+      FocusManager.instance.applyFocusChangesIfNeeded();
+    }
     final FocusNode? primary = FocusManager.instance.primaryFocus;
     if (_isUsablePrimary(primary)) {
       _handleFocusChange();
@@ -650,7 +674,10 @@ class FushiFocusController extends ChangeNotifier {
     _repairScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _repairScheduled = false;
-      ensureFocus();
+      // 不在帧后回调里同步修复：同一帧后续的帧后回调可能还要排焦点请求
+      // （EditableText 的 autofocus 就在这里排队）。挪到微任务里，等本帧所有
+      // 帧后回调跑完，[ensureFocus] 开头再把挂起请求一并应用后才判断（BUG-4690）。
+      scheduleRepairBeforeNextFrame();
     });
   }
 

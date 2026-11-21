@@ -22,11 +22,7 @@
 /// 也不碰**，重复执行不再写任何东西（幂等）。
 library;
 
-import 'dart:convert';
-
-import 'package:drift/drift.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
-import 'package:fushi_core/fushi_core.dart' show srsIdType;
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:meta/meta.dart' show visibleForTesting;
 
@@ -567,15 +563,10 @@ class SrsLapisBackfillPreview {
 extension SrsLegacyLapisMigrationOps on SrsDbStore {
   /// 全部笔记类型，**含已删除的**（补迁要认迁移前所属、后来被删掉的类型的字段）。
   Future<List<SrsNoteTypeView>> _allNoteTypesWithDeleted() async {
-    final List<String> ids =
-        (await (db.select(db.srsEntities)..where(
-                  (t) =>
-                      t.profileUid.equals(profileUid) &
-                      t.kind.equals(SrsEntityKind.noteType.wire),
-                ))
-                .get())
-            .map((r) => r.id)
-            .toList();
+    final List<String> ids = (await readTable('entities', <String, Object?>{
+      'kind': SrsEntityKind.noteType.wire,
+      'bare': true,
+    })).strings('id').toList();
     return <SrsNoteTypeView>[
       for (final SrsNoteTypeView? v in (await noteTypesById(ids)).values)
         if (v != null) v,
@@ -987,70 +978,22 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
     if (pairs.isEmpty || (noteIds != null && noteIds.isEmpty)) {
       return <String>{};
     }
-    // pairs 物化成临时表；`e.field_key IN (SELECT src FROM pairs)` 让 SQLite 建临时索引 + 布隆
-    // 过滤，逐条修改记录 O(1) 判「是不是旧 Lapis 字段」，命中的才去配 pairs、探目标字段。CROSS JOIN
-    // 钉住连接顺序（笔记 → 它的修改记录 → pairs）：不钉时规划器会把 pairs 放进最内层、对每条修改
-    // 记录扫一遍全部 pairs，1 万条笔记慢 15 倍（实测 530ms vs 35ms）。
-    const String pairsCte =
-        'WITH pairs(src, dst) AS MATERIALIZED ('
-        "SELECT json_extract(value, '\$[0]'), json_extract(value, '\$[1]') "
-        'FROM json_each(?)) ';
-    const String hit =
-        'e.field_key IN (SELECT src FROM pairs) '
-        "AND json_type(e.json, '\$.v') = 'text' "
-        "AND trim(json_extract(e.json, '\$.v')) <> '' "
-        'AND NOT EXISTS (SELECT 1 FROM srs_field_edits d '
-        "WHERE d.entity_kind = 'note' AND d.entity_id = e.entity_id "
-        'AND d.field_key = p.dst)';
-    final List<QueryRow> rows = noteIds == null
-        ? await db
-              .customSelect(
-                '${pairsCte}SELECT DISTINCT n.id AS id FROM srs_notes_cache n '
-                "CROSS JOIN srs_field_edits e ON e.entity_kind = 'note' "
-                'AND e.entity_id = n.id '
-                'CROSS JOIN pairs p ON p.src = e.field_key '
-                'WHERE n.profile_uid = ? AND n.note_type_id = ? '
-                'AND n.deleted_at IS NULL AND $hit',
-                variables: <Variable<Object>>[
-                  Variable<String>(jsonEncode(pairs)),
-                  Variable<String>(profileUid, srsIdType),
-                  Variable<String>(to.id, srsIdType),
-                ],
-              )
-              .get()
-        : await db
-              .customSelect(
-                '${pairsCte}SELECT DISTINCT e.entity_id AS id '
-                'FROM json_each(?) ids '
-                "CROSS JOIN srs_field_edits e ON e.entity_kind = 'note' "
-                'AND e.entity_id = srs_id(ids.value) '
-                'CROSS JOIN pairs p ON p.src = e.field_key '
-                'WHERE $hit',
-                variables: <Variable<Object>>[
-                  Variable<String>(jsonEncode(pairs)),
-                  Variable<String>(jsonEncode(noteIds.toSet().toList())),
-                ],
-              )
-              .get();
-    return <String>{for (final QueryRow r in rows) r.read<String>('id')};
+    // 候选在内核里用一句 SQL 找（`lapis_backfill`，native/fushi_fsrs/src/store/reads.rs）：pairs 物化成临时表、
+    // CROSS JOIN 钉住连接顺序（不钉时 1 万条笔记慢 15 倍，实测 530ms vs 35ms）。
+    return (await readTable('lapis_backfill', <String, Object?>{
+      'pairs': pairs,
+      if (noteIds == null) 'to': to.id else 'notes': noteIds.toSet().toList(),
+    })).strings('id').toList().toSet();
   }
 
   /// 迁移页入口的角标：可迁移的旧 Lapis 笔记数 + 需要补迁的笔记数。可迁移数按笔记缓存的当前
   /// 类型在 SQL 里分组计数（不读回笔记 ID）；补迁数见 [previewLapisBackfill]（只物化候选）。
   Future<({int migratable, int backfill})> legacyLapisPendingCounts() async {
+    final SrsColumns counts = await readNoteTypeCounts();
+    final SrsStringColumn countType = counts.strings('t');
+    final SrsIntColumn countN = counts.ints('c');
     final Map<String, int> countByType = <String, int>{
-      for (final QueryRow r
-          in await db
-              .customSelect(
-                'SELECT note_type_id AS t, COUNT(*) AS c FROM srs_notes_cache '
-                'WHERE profile_uid = ? AND deleted_at IS NULL '
-                'GROUP BY note_type_id',
-                variables: <Variable<Object>>[
-                  Variable<String>(profileUid, srsIdType),
-                ],
-              )
-              .get())
-        r.read<String>('t'): r.read<int>('c'),
+      for (int i = 0; i < counts.rows; i++) countType[i]: countN[i],
     };
     int migratable = 0;
     for (final SrsNoteTypeView t in await noteTypes()) {

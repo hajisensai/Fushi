@@ -162,6 +162,7 @@ class _SrsEditHistoryPageState extends ConsumerState<SrsEditHistoryPage> {
     final bool apple = isGlassDesign(context);
     return FushiPageScaffold(
       title: t.srs_note_history,
+      masthead: true,
       header: apple ? null : _buildTopBar(context),
       body: Builder(builder: _buildBody),
     );

@@ -25,6 +25,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
 
 import '../helpers/test_platform_services.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import '../helpers/shell_layout.dart';
 
 /// 游戏库页工具条守卫（契约 §4.1）：搜索命中、排序切换、状态筛选三条真实用户路径。
 ///
@@ -115,6 +116,7 @@ void main() {
         overrides: <Override>[appProvider.overrideWith((_) => appModel)],
         child: TranslationProvider(
           child: MaterialApp(
+            theme: gridShellTheme(),
             navigatorKey: navKey,
             // 嵌入模式照游戏 tab 外壳（home_game_page）搭：页面不自带 Scaffold，
             // 页头动作（含 🔍 与「管理合集」）登记进外壳的动作槽，由外壳的浮动
@@ -291,6 +293,9 @@ void main() {
     navKey.currentState!.pop();
     await tester.pumpAndSettle();
     expect(cardTitle('贝塔物语'), findsNothing);
+    // 设计稿「游戏 · 库」GA9：「管理合集」收进页头恒外露的「⋯」。
+    await tester.tap(find.byKey(const ValueKey<String>('games-library-more')));
+    await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(const ValueKey<String>('library_collection_manage')),
     );

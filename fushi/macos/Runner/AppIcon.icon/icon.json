@@ -7,7 +7,9 @@
     },
     {
       "appearance": "dark",
-      "value": "system-dark"
+      "value": {
+        "solid": "display-p3:0.89920,0.88680,0.95828,1.00000"
+      }
     }
   ],
   "groups": [

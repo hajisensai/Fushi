@@ -135,7 +135,12 @@ class _FushiTreeRevealState extends State<FushiTreeReveal>
               final double factor = math.max(0, v);
               if (factor == 0 && hidden) return const SizedBox.shrink();
               final double enter = (1 - v).clamp(-0.5, 1.0);
+              // 只在高度动画途中裁切：展开静止后不裁，行内的悬停放大（牌组色块里的
+              // FushiHoverLift）才不会被切成平边。只换 clipBehavior、不增删这一层，
+              // 子树不重挂。
+              final bool settled = (v - 1).abs() < 1e-3;
               return ClipRect(
+                clipBehavior: settled ? Clip.none : Clip.hardEdge,
                 child: Align(
                   alignment: AlignmentDirectional.topStart,
                   heightFactor: factor,

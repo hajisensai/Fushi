@@ -39,13 +39,12 @@ extension _ReaderMining on _ReaderFushiPageState {
     // 无封面（书架却因 case-insensitive 兜底正常显示）。复用书架同一个兜底
     // (ReaderFushiSource.resolveCoverFilePath) 命中真实文件，让制卡与显示一致。
     // 「高级制卡」选了不要图片：书封就是阅读器卡片唯一的图，整个跳过。
-    String? coverPath;
-    if (_extractDir != null && !(overrides?.omitImage ?? false)) {
-      coverPath = ReaderFushiSource.resolveCoverFilePath(
-        extractDir: _extractDir!,
-        coverPath: _book?.coverHref,
-      );
-    }
+    // BUG-5045：封面与书架字幕书 / 有声书卡同源（[_bookCoverFilePath]）——字幕 + 音频
+    // 导入的乐曲正文 EPUB 没有 cover-image，封面只在配对 srt_books.cover_path，
+    // 以前只看 EPUB，Lapis 的 Picture 一律空。
+    String? coverPath = (overrides?.omitImage ?? false)
+        ? null
+        : _bookCoverFilePath;
 
     // TODO-644 / BUG-357：在第一个 await（句子音频裁剪，可让出事件循环数百 ms）之前，
     // 把所有「制卡上下文要用」的共享可变成员快照成局部 final。否则在 await 悬挂期间，
@@ -61,7 +60,9 @@ extension _ReaderMining on _ReaderFushiPageState {
     // 同一条快照纪律：制卡位置读的是 _cachedSentenceRange / _lastProgressCharOffset，
     // 两个都会被 await 悬挂期间的第二次查词（或一次翻页）改写，必须在这里定格。
     final int? snapshotCharPosition = _miningCharPosition();
-    final ({int offset, int length})? sourceRange = _miningSpanRange();
+    // 来源回看锚点走学习单位口径（与回看的 charAnchor / 落点句标记 / 校验同一把尺子），
+    // 不是 _miningSpanRange() 的音频匹配坐标——两套计数不同，混用会让回看高亮整体错位。
+    final ({int offset, int length})? sourceRange = _miningStudySpan();
     // 写进卡片的句子音频区间：草稿上下文合并 + 本次起止偏移。CardSourceLink 记的区间
     // 与下面裁音频用的区间必须是**同一个值**（回放跳转与卡上音频对得上），对话框试听
     // 也经同一个 [_miningSentenceAudioClip]（BUG-2196 ②：听到什么就压出什么）。
@@ -246,6 +247,14 @@ extension _ReaderMining on _ReaderFushiPageState {
     final String? displayDocumentTitle = _book == null
         ? null
         : displayTitleForBook(bookKey: widget.bookKey, rawTitle: _book!.title);
+    // NSFW 书 +「制卡图片也模糊」：书封换成模糊副本（失败则不带图，绝不退回原图）。
+    coverPath = await resolveNsfwCardImagePath(
+      db: appModel.database,
+      path: coverPath,
+      blurCardImages: appModel.prefsRepo.blurNsfwCardImages,
+      kind: TagHostKind.epub,
+      entryKey: widget.bookKey,
+    );
     final AnkiMiningContext miningContext = AnkiMiningContext(
       sourceLink: sourceLink,
       sentence: sentence,
@@ -279,6 +288,13 @@ extension _ReaderMining on _ReaderFushiPageState {
     return (context: miningContext, cleanup: cleanupSentenceAudioTempDir);
   }
 
+  /// 本次制卡在本章的学习单位范围（句级优先、退到选区），卡片来源链接、制卡历史与
+  /// 制卡位置共用这一个口径，见 [readerSourceStudySpan]。
+  ({int offset, int length})? _miningStudySpan() => readerSourceStudySpan(
+    sentence: _cachedSentenceRange,
+    selection: _cachedSelectionRange,
+  );
+
   /// 制卡所在的**全书绝对学习字数位置**（`countStudyChars` 口径，与状态行「已读字数」
   /// 和 `study_segments.chars` 同一根数轴，所以卡片上的数字和用户看到的进度对得上）；
   /// 取不到锚点时返回 `null`。
@@ -295,14 +311,7 @@ extension _ReaderMining on _ReaderFushiPageState {
   /// **绝不退化成 0**：那会把一整批卡片假标成「书首第 0 字」，比不写更坏——用户看不出
   /// 这些数字是编的。
   int? _miningCharPosition() {
-    final ({int offset, int length})? sentenceRange =
-        _cachedSentenceRange ??
-        (_cachedSelectionRange != null
-            ? (
-                offset: _cachedSelectionRange!.offset,
-                length: _cachedSelectionRange!.length,
-              )
-            : null);
+    final ({int offset, int length})? sentenceRange = _miningStudySpan();
     final int absolute = absoluteCharOffsetOf(
       chapterCumulativeChars: _chapterCumulativeChars,
       chapterCharCounts: _chapterCharCounts,
@@ -578,14 +587,7 @@ extension _ReaderMining on _ReaderFushiPageState {
     try {
       final int section =
           context.sourceLink?.chapterIndex ?? _favoriteSectionIndex;
-      final sentenceRange =
-          _cachedSentenceRange ??
-          (_cachedSelectionRange != null
-              ? (
-                  offset: _cachedSelectionRange!.offset,
-                  length: _cachedSelectionRange!.length,
-                )
-              : null);
+      final ({int offset, int length})? sentenceRange = _miningStudySpan();
       await appModel.database.addMinedSentence(
         source: kStatSourceBook,
         dateKey: statTodayKey(),
@@ -658,11 +660,15 @@ extension _ReaderMining on _ReaderFushiPageState {
       return null;
     }
 
-    // BUG-405：复用 AudiobookBridge.buildSasayakiPayload，与 playback 桥接路径共用
+    // BUG-405：与 playback 桥接路径（AudiobookBridge.buildSentenceAudioPayload）共用
     // 同一份必含 cue 原文 text 的 payload 契约 —— JS collectSasayakiCueRanges 靠
     // cue.text 在实时 DOM 就近重定位高亮（BUG-060/300），缺 text 会落空。
+    // 取本章 payload 走挂在整书 cue 列表上的派生索引：整书只解码一次，不再每装一章
+    // 把全书 cue 逐条解码再按章过滤；索引随 _cachedAllCues 那个列表对象一起失效。
     final List<Map<String, dynamic>> payload =
-        AudiobookBridge.buildSentenceAudioPayload(allCues, _currentChapter);
+        AudiobookBridge.sentenceAudioCueIndexFor(
+          allCues,
+        ).payloadFor(_currentChapter);
     // BUG-366/TODO-630 诊断：sasayaki 书最终送进 WebView 的 payload 条数。
     // payloadLen=0 表示当前章无命中 cue（applySasayakiCues 不会被调用）。
     debugPrint(

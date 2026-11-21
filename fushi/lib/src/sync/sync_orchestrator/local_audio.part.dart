@@ -6,9 +6,15 @@ part of '../sync_orchestrator.dart';
 extension _SyncOrchestratorLocalAudio on SyncOrchestrator {
   /// 互联本地音频 live 同步（Phase 3 T3.4）。
   ///
-  /// 直打对端 `/api/library/localaudio` 端点，按 `displayName` union：
-  /// - toPull：远端有 ∧ 本端无 → `getRemoteLocalAudio` 下载包 → `onLocalAudioImported` 注册；
-  /// - toPush：本端有 ∧ 远端无 → `exportLocalAudioPackage` 打包 → `putRemoteLocalAudio` 上传。
+  /// 直打对端 `/api/library/localaudio` 端点，按**内容身份**做 union（拍板
+  /// pr3481，见 `local_audio_content_id.dart`）：
+  /// - toPull：远端有 ∧ 本端没有同一份库 → `getRemoteLocalAudio` 下载包 → `onLocalAudioImported` 注册；
+  /// - toPush：本端有 ∧ 远端没有同一份库 → `exportLocalAudioPackage` 打包 → `putRemoteLocalAudio` 上传。
+  ///
+  /// 「同一份库」两端都有 contentId 时只比 contentId——显示名不同（`android.db` /
+  /// 按子来源起的名 / 推荐包的 Japanese audio）也不再互拉一份 GB 级库；对端是旧
+  /// 版本、清单里没有 contentId 时退回按 displayName 比，并在报告里记一条，提示
+  /// 升级对端（新旧版本混用的同步问题要看得见，不静默降级）。
   ///
   /// [direction] 裁剪要做哪一半（显式上传 / 下载动作用；[SyncAssetDirection.both]
   /// 保留完整 union 语义）。只由 [syncLocalAudioSources] 分派调用，不再随 [run] 跑。
@@ -24,27 +30,55 @@ extension _SyncOrchestratorLocalAudio on SyncOrchestrator {
     // 落点，见 AppModel.localAudioDbsOnThisDevice）。从另一台设备导入的配置方案会
     // 带来同名但文件不在本机的引用（BUG-3702）：把它算作「本端有」，远端那份就永远
     // 不会被拉下来，这条源也就永远修不好。拉下来后由 onLocalAudioImported 原位改指。
-    final Set<String> localNames = <String>{
-      for (final LocalAudioDbEntry d in localAudioEntries)
-        if (File(d.path).existsSync()) d.displayName,
-    };
-    final Set<String> remoteNames = <String>{
-      for (final RemoteLocalAudioInfo r in remoteEntries) r.displayName,
-    };
-
-    final SyncKeyDiff diff = computeKeyUnionDiff(
-      localKeys: localNames,
-      remoteKeys: remoteNames,
+    final List<({LocalAudioDbEntry entry, String? contentId})> locals =
+        <({LocalAudioDbEntry entry, String? contentId})>[
+          for (final LocalAudioDbEntry d in localAudioEntries)
+            if (File(d.path).existsSync())
+              (entry: d, contentId: await resolveLocalAudioContentId(d)),
+        ];
+    bool same(
+      ({LocalAudioDbEntry entry, String? contentId}) l,
+      RemoteLocalAudioInfo r,
+    ) => isSameLocalAudioLibrary(
+      nameA: l.entry.displayName,
+      contentIdA: l.contentId,
+      nameB: r.displayName,
+      contentIdB: r.contentId,
     );
 
+    // 对端是旧版本（capabilities 没声明内容身份）：只能按显示名匹配，同一份库
+    // 改过名就会再传一次。两边都有库时才记——这时匹配结果才受影响。
+    if (remoteEntries.isNotEmpty &&
+        locals.isNotEmpty &&
+        !await backend.hostReportsLocalAudioContentId()) {
+      report.notePeerGap(
+        SyncPeerGapDimension.localAudioIdentity,
+        outdated: true,
+      );
+    }
+
     // 方向裁剪在循环之外（同 [_syncDictionariesLive]）：total 即本次真实工作量。
-    final List<String> pulls = <String>[if (direction.pulls) ...diff.toPull];
-    final List<String> pushes = <String>[if (direction.pushes) ...diff.toPush];
+    final List<RemoteLocalAudioInfo> pulls = <RemoteLocalAudioInfo>[
+      if (direction.pulls)
+        for (final RemoteLocalAudioInfo r in remoteEntries)
+          if (!locals.any(
+            (({LocalAudioDbEntry entry, String? contentId}) l) => same(l, r),
+          ))
+            r,
+    ];
+    final List<({LocalAudioDbEntry entry, String? contentId})> pushes =
+        <({LocalAudioDbEntry entry, String? contentId})>[
+          if (direction.pushes)
+            for (final ({LocalAudioDbEntry entry, String? contentId}) l
+                in locals)
+              if (!remoteEntries.any((RemoteLocalAudioInfo r) => same(l, r))) l,
+        ];
     final int total = pulls.length + pushes.length;
     int index = 0;
 
     // ── Pull：远端独有 → 下载并注册 ────────────────────────────────────────
-    for (final String name in pulls) {
+    for (final RemoteLocalAudioInfo remote in pulls) {
+      final String name = remote.displayName;
       // 安全检查点：上一项已完整落地，这一项还没开始。
       _checkpoint();
       _emit(
@@ -56,9 +90,13 @@ extension _SyncOrchestratorLocalAudio on SyncOrchestrator {
       File? tmp;
       File? stagingDb;
       try {
-        tmp = resumableTmpFile('localaudio', name, _localAudioAssetSuffix);
+        tmp = resumableTmpFile(
+          'localaudio',
+          remote.key,
+          _localAudioAssetSuffix,
+        );
         await backend.getRemoteLocalAudio(
-          name,
+          remote.key,
           tmp,
           onProgress: (double f, [int? b]) => _emit(
             SyncPhase.localAudio,
@@ -86,7 +124,9 @@ extension _SyncOrchestratorLocalAudio on SyncOrchestrator {
     }
 
     // ── Push：本端独有 → 打包并上传 ─────────────────────────────────────────
-    for (final String name in pushes) {
+    for (final ({LocalAudioDbEntry entry, String? contentId}) local in pushes) {
+      final LocalAudioDbEntry entry = local.entry;
+      final String name = entry.displayName;
       // 安全检查点：上一项已完整落地，这一项还没开始。
       _checkpoint();
       _emit(
@@ -97,13 +137,7 @@ extension _SyncOrchestratorLocalAudio on SyncOrchestrator {
       );
       File? tmp;
       try {
-        final LocalAudioDbEntry? entry = localAudioEntries
-            .cast<LocalAudioDbEntry?>()
-            .firstWhere(
-              (LocalAudioDbEntry? d) => d!.displayName == name,
-              orElse: () => null,
-            );
-        if (entry == null || !File(entry.path).existsSync()) {
+        if (!File(entry.path).existsSync()) {
           report.errors.add(
             'live push local audio "$name": DB file missing or not found',
           );
@@ -117,6 +151,7 @@ extension _SyncOrchestratorLocalAudio on SyncOrchestrator {
           sources: entry.sources,
           dbFile: File(entry.path),
           outputFile: tmp,
+          contentId: local.contentId,
         );
         await backend.putRemoteLocalAudio(
           name,

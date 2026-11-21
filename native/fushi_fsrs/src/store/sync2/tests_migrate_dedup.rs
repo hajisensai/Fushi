@@ -8,13 +8,16 @@ use super::tests::{Bucket, DAY, Device, P, legacy_library, projection};
 
 const T0: i64 = 1_700_000_000_000;
 
+/// [legacy_extra] 那条本机独有笔记的 ID（UUID：协议 3 的缓存重建拿它算卡片 ID，对拍装置要比到缓存层）。
+const N9: &str = "0193a1b2-0000-7000-8000-00000000c009";
+
 /// 只在这台设备的旧库里有的三条：一条笔记身份记录、同一个旧写入者接着写的一条修改记录、一条旧复习日志。
 fn legacy_extra(d: &Device) {
     let deck = super::config::default_deck_id(P);
     let w = d.core.writer().unwrap();
     w.execute(
-        "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (srs_id(?1), srs_id(?2), 'note', '{\"createdAt\":9}', 9)",
-        rusqlite::params!["N9", P],
+        "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (srs_id(?1), srs_id(?2), 'note', json_object('createdAt', 9, 'guid', ?1, 'noteTypeId', 'NT'), 9)",
+        rusqlite::params![N9, P],
     )
     .unwrap();
     let e3 = crate::registers::edit_id("old", 3);
@@ -115,8 +118,8 @@ fn ops_received_between_migration_batches_are_not_wrapped_again() {
         .writer()
         .unwrap()
         .execute(
-            "UPDATE srs_entities SET created_at = 0 WHERE id = srs_id('N9')",
-            [],
+            "UPDATE srs_entities SET created_at = 0 WHERE id = srs_id(?1)",
+            [N9],
         )
         .unwrap();
     let mut bucket = Bucket::default();

@@ -1211,4 +1211,33 @@ void main() {
       }
     });
   });
+
+  group('点名落点（customTargets）的合法性', () {
+    String? reason({List<String>? dir, String? stem}) =>
+        invalidVideoCustomTargetReason(
+          VideoFilenameCustomTarget(directorySegments: dir, stem: stem),
+        );
+
+    test('目录与文件名至少给一个', () {
+      expect(reason(), isNotNull);
+      expect(reason(stem: 'Movie (2016)'), isNull);
+      expect(reason(dir: <String>['Movie (2016)']), isNull);
+      // 空目录段表 = 库根本身。
+      expect(reason(dir: const <String>[]), isNull);
+    });
+
+    test('越出库根的段、路径分隔符与非法字符一律拒绝，不替调用方换字符', () {
+      expect(reason(dir: <String>['..', 'x']), isNotNull);
+      expect(reason(dir: <String>['.']), isNotNull);
+      expect(reason(dir: <String>['']), isNotNull);
+      expect(reason(dir: <String>['a/b']), isNotNull);
+      expect(reason(dir: <String>[r'a']), isNotNull);
+      expect(reason(stem: 'Re:Zero'), isNotNull);
+      expect(reason(stem: 'name.'), isNotNull);
+      expect(reason(stem: ' name'), isNotNull);
+      expect(reason(stem: 'CON'), isNotNull);
+      // 全角替身是合法文件名。
+      expect(reason(stem: 'Re：Zero'), isNull);
+    });
+  });
 }

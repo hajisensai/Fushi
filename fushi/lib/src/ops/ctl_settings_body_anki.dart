@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:fushi/src/anki/anki_deck_reposition.dart';
 import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
 import 'package:fushi/src/anki/anki_settings_actions.dart';
+import 'package:fushi/src/anki/anki_video_template_error_text.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankiconnect_port_repair.dart'
     show AnkiConnectPortWriteStatus;
@@ -27,6 +28,7 @@ import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_cli/fushi_cli.dart' show CtlFailure;
 import 'package:fushi_dictionary/fushi_dictionary.dart' show FrequencyAggregate;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show
@@ -36,6 +38,7 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart'
         VideoMiningImageMode;
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
     show kMiningPadMaxMs;
+import 'package:fushi/src/platform/host_platform.dart';
 
 /// Anki 设置页（`SettingsDestination.body` 逃生口，正文自绘 widget）在控制通道上的条目。
 ///
@@ -61,7 +64,8 @@ AnkiViewModel _vm(SettingsContext c) =>
 AnkiSettings _cfg(SettingsContext c) =>
     c.ref.read(ankiViewModelProvider).settings;
 
-bool _isDesktop() => Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+bool _isDesktop() =>
+    hostPlatform.isWindows || hostPlatform.isMacOS || hostPlatform.isLinux;
 
 /// 全部 Anki 设置页条目，按页面面板分页。
 List<CtlBodyPage> buildCtlAnkiBodyPages() => <CtlBodyPage>[
@@ -204,7 +208,7 @@ CtlBodyPage _connectionPage() => CtlBodyPage(
       id: 'connect_addon_install',
       title: t.anki_connect_addon_install,
       subtitle: t.anki_connect_addon_install_hint,
-      visible: (SettingsContext _) => Platform.isWindows,
+      visible: (SettingsContext _) => hostPlatform.isWindows,
       cli: SettingsCliAction(run: _installAddon),
     ),
     SettingsSwitchItem(
@@ -230,7 +234,7 @@ CtlBodyPage _connectionPage() => CtlBodyPage(
       id: 'desktop_executable_detect',
       title: t.anki_desktop_executable_detect,
       visible: (SettingsContext _) =>
-          AnkiDesktopLauncher.isSupported && Platform.isWindows,
+          AnkiDesktopLauncher.isSupported && hostPlatform.isWindows,
       cli: SettingsCliAction(run: _detectExecutable),
     ),
     _action(
@@ -417,7 +421,7 @@ CtlBodyPage _deckPage() => CtlBodyPage(
       id: 'backup_import',
       title: t.anki_backup_import,
       subtitle: t.anki_backup_import_hint(count: 0),
-      visible: (SettingsContext _) => Platform.isIOS,
+      visible: (SettingsContext _) => hostPlatform.isIOS,
       cli: const SettingsCliAction.unsupported(
         '仅 iOS（AnkiMobile 查重账本）有这一项；控制通道只存在于桌面端',
       ),
@@ -740,7 +744,7 @@ CtlBodyPage _mediaPage() {
       _choice<VideoMiningImageMode>(
         id: 'gal_mining_image_mode',
         title: t.gal_mining_image_mode,
-        visible: (SettingsContext _) => Platform.isWindows,
+        visible: (SettingsContext _) => hostPlatform.isWindows,
         options: <SettingsSegmentOption<VideoMiningImageMode>>[
           SettingsSegmentOption<VideoMiningImageMode>(
             value: VideoMiningImageMode.gif,
@@ -771,7 +775,7 @@ CtlBodyPage _mediaPage() {
       _clipFormatChoice(
         id: 'gal_mining_clip_format',
         title: t.gal_mining_clip_format,
-        visible: (SettingsContext _) => Platform.isWindows,
+        visible: (SettingsContext _) => hostPlatform.isWindows,
         read: (SettingsContext c) => c.appModel.galMiningClipFormat,
         write: (SettingsContext c, MiningClipFormat v) =>
             c.appModel.setGalMiningClipFormat(v),
@@ -779,7 +783,7 @@ CtlBodyPage _mediaPage() {
       _animatedFormatChoice(
         id: 'gal_mining_animated_format',
         title: t.gal_mining_animated_format,
-        visible: (SettingsContext _) => Platform.isWindows,
+        visible: (SettingsContext _) => hostPlatform.isWindows,
         read: (SettingsContext c) => c.appModel.galMiningAnimatedFormat,
         write: (SettingsContext c, MiningAnimatedFormat v) =>
             c.appModel.setGalMiningAnimatedFormat(v),
@@ -787,7 +791,7 @@ CtlBodyPage _mediaPage() {
       _stillFormatChoice(
         id: 'gal_mining_still_format',
         title: t.gal_mining_still_format,
-        visible: (SettingsContext _) => Platform.isWindows,
+        visible: (SettingsContext _) => hostPlatform.isWindows,
         read: (SettingsContext c) => c.appModel.galMiningStillFormat,
         write: (SettingsContext c, MiningStillFormat v) =>
             c.appModel.setGalMiningStillFormat(v),
@@ -796,7 +800,7 @@ CtlBodyPage _mediaPage() {
         id: 'gal_mining_audio_mode',
         title: t.gal_mining_audio_mode,
         subtitle: t.gal_mining_audio_mode_hint,
-        visible: (SettingsContext _) => Platform.isWindows,
+        visible: (SettingsContext _) => hostPlatform.isWindows,
         options: <SettingsSegmentOption<GalMiningAudioMode>>[
           for (final GalMiningAudioMode mode in GalMiningAudioMode.values)
             SettingsSegmentOption<GalMiningAudioMode>(
@@ -812,7 +816,7 @@ CtlBodyPage _mediaPage() {
         id: _id('gal_mining_audio_seconds'),
         title: t.gal_mining_audio_seconds,
         subtitle: t.gal_mining_audio_seconds_hint,
-        visible: (SettingsContext _) => Platform.isWindows,
+        visible: (SettingsContext _) => hostPlatform.isWindows,
         min: kGalMiningAudioSecondsMin.toDouble(),
         max: kGalMiningAudioSecondsMax.toDouble(),
         divisions: kGalMiningAudioSecondsMax - kGalMiningAudioSecondsMin,
@@ -1737,6 +1741,23 @@ Future<Object?> _dedupRun(SettingsContext c, Map<String, String> args) async {
 
 // 视频模板 ────────────────────────────────────────────────────────────────────
 
+/// 视频模板服务按错误码拒绝（[AnkiVideoTemplateException]）时，回给 ctl / AI 通道的
+/// 失败：409 + 当前界面语言的整句文案；只有「字段名不合法」是调用方参数的问题，回 400。
+///
+/// 服务以前抛的是带中文句子的 `StateError` / `ArgumentError`，由 `guardSettingsCliInput`
+/// 映射成 409 / 400；改成带码异常后那层认不出它，不在这里接就会落成 500 internal 和
+/// 一个码名，AI 会把「先去映射句子音频」这类可纠正的前置条件当成内部故障。
+Future<T> guardCtlAnkiVideoTemplate<T>(Future<T> Function() body) async {
+  try {
+    return await body();
+  } on AnkiVideoTemplateException catch (e) {
+    final String message = describeAnkiVideoTemplateError(e);
+    throw e.code == AnkiVideoTemplateErrorCode.invalidField
+        ? CtlFailure.badRequest(message)
+        : CtlFailure.conflict(message);
+  }
+}
+
 Future<(AnkiNoteTypeDefinition, AnkiNoteType)> _readVideoTemplateTarget(
   SettingsContext c,
 ) async {
@@ -1754,6 +1775,11 @@ Future<(AnkiNoteTypeDefinition, AnkiNoteType)> _readVideoTemplateTarget(
 }
 
 Future<Object?> _videoTemplateApply(
+  SettingsContext c,
+  Map<String, String> args,
+) => guardCtlAnkiVideoTemplate(() => _videoTemplateApplyBody(c, args));
+
+Future<Object?> _videoTemplateApplyBody(
   SettingsContext c,
   Map<String, String> args,
 ) async {
@@ -1800,7 +1826,9 @@ Future<Object?> _videoTemplateApply(
 Future<Object?> _videoTemplateRestore(
   SettingsContext c,
   Map<String, String> args,
-) async {
+) => guardCtlAnkiVideoTemplate(() => _videoTemplateRestoreBody(c));
+
+Future<Object?> _videoTemplateRestoreBody(SettingsContext c) async {
   final (AnkiNoteTypeDefinition definition, AnkiNoteType _) =
       await _readVideoTemplateTarget(c);
   final AnkiViewModel vm = _vm(c);

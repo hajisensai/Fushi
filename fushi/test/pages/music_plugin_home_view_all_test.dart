@@ -342,6 +342,11 @@ void main() {
             )
             .first,
       );
+      // 栏目进视口时还在错峰入场（FushiStaggeredEntrance 下移着），等入场走完、
+      // 再把按钮整个滚进视口才点得到。
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(viewAll(_albumSectionId));
+      await tester.pumpAndSettle();
       await tester.tap(viewAll(_albumSectionId));
       await tester.pumpAndSettle();
 

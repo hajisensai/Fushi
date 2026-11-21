@@ -28,15 +28,75 @@ void main() {
   setUp(() {
     sink = _RecordingSink();
     exits = <int>[];
-    coordinator = AppExitCoordinator(marker: sink, exitProcess: exits.add);
+    coordinator = AppExitCoordinator(
+      marker: sink,
+      exitProcess: exits.add,
+      quiesceNativeCallbacks: () => sink.events.add('quiesce'),
+    );
   });
 
   test('begin 同步写意图（调用返回前已落盘），只认第一次', () {
     expect(coordinator.begin('windowClose'), isTrue);
-    expect(sink.events, <String>['requested:windowClose']);
+    expect(sink.events, <String>['quiesce', 'requested:windowClose']);
     expect(coordinator.begin('exitApp'), isFalse);
     expect(coordinator.exitReason, 'windowClose');
-    expect(sink.events, hasLength(1));
+    expect(sink.events, hasLength(2));
+  });
+
+  // H6Vou-6uYX：macOS 上退出链跑到一半再来一次退出请求，会经 NSApp terminate 让
+  // Flutter 引擎先拆 isolate、释放 media_kit 的回调跳板，libmpv 核心线程随后回调
+  // 进已释放地址。所以摘回调必须在 begin 里同步做完，排在第一个 await 之前，而
+  // 不是退出链里某个可能跑不到的步骤。
+  test('H6Vou-6uYX：begin 在第一个 await 之前就摘掉 libmpv 回调', () async {
+    final Completer<void> stuck = Completer<void>();
+    Future<void> chain() async {
+      coordinator.begin('windowClose');
+      await coordinator.runStep('exit flush', () => stuck.future);
+    }
+
+    final Future<void> running = chain();
+    expect(sink.events.first, 'quiesce');
+    expect(sink.events.where((String e) => e == 'quiesce'), hasLength(1));
+    stuck.complete();
+    await running;
+  });
+
+  test('H6Vou-6uYX：不经 begin 直接 terminate / terminateVia 也先摘回调', () async {
+    coordinator.terminate('exitWatchdog');
+    expect(sink.events, <String>[
+      'quiesce',
+      'requested:exitWatchdog',
+      'clean:exitWatchdog',
+    ]);
+
+    sink.events.clear();
+    final AppExitCoordinator mobile = AppExitCoordinator(
+      marker: sink,
+      exitProcess: exits.add,
+      quiesceNativeCallbacks: () => sink.events.add('quiesce'),
+    );
+    await mobile.terminateVia('exitApp', () async {
+      sink.events.add('kill');
+    });
+    expect(sink.events, <String>[
+      'quiesce',
+      'requested:exitApp',
+      'clean:exitApp',
+      'kill',
+    ]);
+  });
+
+  test('H6Vou-6uYX：摘回调抛异常也不阻止退出（意图照样落盘、照样 exit）', () {
+    final AppExitCoordinator throwing = AppExitCoordinator(
+      marker: sink,
+      exitProcess: exits.add,
+      quiesceNativeCallbacks: () => throw StateError('mpv gone'),
+    );
+    expect(throwing.begin('windowClose'), isTrue);
+    expect(throwing.exitReason, 'windowClose');
+    throwing.terminate('windowClose');
+    expect(sink.events, <String>['requested:windowClose', 'clean:windowClose']);
+    expect(exits, <int>[0]);
   });
 
   test('意图先于退出链里第一个 await 落盘', () async {
@@ -48,7 +108,11 @@ void main() {
 
     final Future<void> running = chain();
     // 链卡在第一步（如同被安装器强杀前的那一刻）：意图与阶段都已落盘。
-    expect(sink.events, <String>['requested:windowClose', 'stage:exit flush']);
+    expect(sink.events, <String>[
+      'quiesce',
+      'requested:windowClose',
+      'stage:exit flush',
+    ]);
     stuck.complete();
     await running;
   });
@@ -73,7 +137,11 @@ void main() {
 
   test('terminate：先补意图、再标 clean、最后 exit', () {
     coordinator.terminate('exitApp');
-    expect(sink.events, <String>['requested:exitApp', 'clean:exitApp']);
+    expect(sink.events, <String>[
+      'quiesce',
+      'requested:exitApp',
+      'clean:exitApp',
+    ]);
     expect(exits, <int>[0]);
 
     // 进程级单例在测试里会被多次 terminate（假 exit 不真结束）：clean 每次都要写，
@@ -85,6 +153,7 @@ void main() {
       sink.events.where((String e) => e.startsWith('requested')),
       hasLength(1),
     );
+    expect(sink.events.where((String e) => e == 'quiesce'), hasLength(1));
     expect(injected, <int>[3], reason: 'exitWith 透传更新交接的测试缝');
   });
 
@@ -93,7 +162,7 @@ void main() {
     await coordinator.terminateVia('exitApp', () async {
       order.addAll(sink.events);
     });
-    expect(order, <String>['requested:exitApp', 'clean:exitApp']);
+    expect(order, <String>['quiesce', 'requested:exitApp', 'clean:exitApp']);
   });
 
   test('看门狗时长 = 串行阶段预算之和 + 余量，并行阶段取最长', () {

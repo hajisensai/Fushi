@@ -63,6 +63,7 @@ void main() {
     for (final String id in <String>[
       // Playback
       'video.playback.auto_play_next',
+      'video.playback.playlist_order',
       'video.playback.immersive_mode',
       'video.playback.picture_fit',
       'video.playback.double_tap',

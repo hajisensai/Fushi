@@ -162,23 +162,36 @@ void main() {
 
     // 书架落点要先离线程判「这个 .zip 是不是图片包」，故签名是 Future<void>；
     // 同步解包留在 drop 栈上会把 UI 线程卡死（见 image_archive_probe.dart）。
+    // 分发本体在 routeReaderShelfDrop（与书 / 漫画导入视图共用，IM2），书架只把
+    // 书卡登记表的命中测试交进去。
     final String shelfDrop = functionBody(
       shelf,
       'Future<void> _handleShelfDrop(',
-      'Future<bool?> _openBookImportPrefilled(',
+      'routeReaderShelfDrop(',
     );
     expect(shelfDrop.contains('Offset globalPosition'), isTrue);
     expect(
-      shelfDrop.contains('_cardDropRegistry.hitTest(globalPosition)'),
+      shelf.contains('hitTestCard: _cardDropRegistry.hitTest,'),
       isTrue,
+      reason: 'shelf drops must hit-test book cards with the raw position',
     );
+    final String router = File(
+      'lib/src/media/drag_drop/reader_shelf_drop_router.dart',
+    ).readAsStringSync();
+    final String routerBody = functionBody(
+      router,
+      'Future<void> routeReaderShelfDrop({',
+      'class _ReaderShelfDropActions',
+    );
+    expect(routerBody.contains('hitTestCard?.call(globalPosition)'), isTrue);
+    expect(routerBody.contains('probeDroppedImageArchives('), isTrue);
     expect(
-      shelfDrop.contains('localToGlobal('),
+      routerBody.contains('localToGlobal('),
       isFalse,
       reason: 'DropDoneDetails.globalPosition must not be converted again',
     );
     expect(
-      shelfDrop.contains('DropIntent.unsupportedSurface'),
+      routerBody.contains('DropIntent.unsupportedSurface'),
       isTrue,
       reason: 'recognized files on the wrong surface need visible feedback',
     );

@@ -82,6 +82,15 @@ class VideoStorage {
   static Future<Directory> imagesDir() async =>
       Directory(p.join((await coversDir()).path, imagesDirName));
 
+  /// 单本书 / 漫画 / 字幕书 / 游戏的附加图（item_images，v155）子目录名。同
+  /// [imagesDirName] 的理由放子目录（[gcOrphanCovers] 非递归，子目录整体免疫）；
+  /// 本目录只归 item_images 所有，回收按「不被任何 item_images 行引用」扫。
+  static const String itemImagesDirName = 'items';
+
+  /// 单条目附加图目录绝对路径（不创建）。见 [itemImagesDirName]。
+  static Future<Directory> itemImagesDir() async =>
+      Directory(p.join((await coversDir()).path, itemImagesDirName));
+
   /// 回收一批附加图文件（media_images 行已随归属 cascade 删除后调用）。
   ///
   /// 纪律与 [deleteBookAssets] 逐字一致：只删**非空 + 落在 [ownedDir] 内 + 不在
@@ -149,31 +158,62 @@ class VideoStorage {
     String? deletedSecondarySubtitlePath,
     Directory? coversDirectory,
     Directory? subtitlesDirectory,
+  }) => deleteBooksAssets(
+    books: <DeletedVideoAssetPaths>[
+      (
+        coverPath: deletedCoverPath,
+        subtitlePath: deletedSubtitlePath,
+        secondarySubtitlePath: deletedSecondarySubtitlePath,
+      ),
+    ],
+    stillReferencedCoverPaths: stillReferencedCoverPaths,
+    stillReferencedSubtitlePaths: stillReferencedSubtitlePaths,
+    coversDirectory: coversDirectory,
+    subtitlesDirectory: subtitlesDirectory,
+  );
+
+  /// [deleteBookAssets] 的批量形态（BUG-4748）：护栏集合只规范化一次、两个 app
+  /// 目录只解析一次，再逐本回收。原来每本被删视频各把**全部**幸存引用路径
+  /// canonicalize 三遍——大库删一大批是 O(删除数 × 幸存数)。逐本语义不变：只删
+  /// 非空 + 落在对应 app 目录内 + 不被幸存行引用的文件。
+  ///
+  /// [onBookDone] 每回收完一本回调一次（入参是已完成本数），给删除进度用。
+  /// 单本失败只跳过该本，不中断其余。返回实际删除的文件数。
+  static Future<int> deleteBooksAssets({
+    required List<DeletedVideoAssetPaths> books,
+    required Iterable<String> stillReferencedCoverPaths,
+    required Iterable<String> stillReferencedSubtitlePaths,
+    Directory? coversDirectory,
+    Directory? subtitlesDirectory,
+    void Function(int done)? onBookDone,
   }) async {
-    final Directory covers = coversDirectory ?? await coversDir();
-    final Directory subtitles = subtitlesDirectory ?? await subtitlesDir();
+    if (books.isEmpty) return 0;
+    final _OwnedAssetGuard covers = _OwnedAssetGuard(
+      coversDirectory ?? await coversDir(),
+      stillReferencedCoverPaths,
+    );
+    final _OwnedAssetGuard subtitles = _OwnedAssetGuard(
+      subtitlesDirectory ?? await subtitlesDir(),
+      stillReferencedSubtitlePaths,
+    );
     int removed = 0;
-    if (await _deleteOwnedAsset(
-      candidate: deletedCoverPath,
-      ownedDir: covers,
-      stillReferenced: stillReferencedCoverPaths,
-    )) {
-      removed++;
-    }
-    // 主 + 副两条字幕指针都要回收：双字幕（TODO-857）各自可以是一份独立的导入
-    // 副本，只回收主的会把副字幕副本永久留在 `video_subtitles/` 里变成孤儿。
-    // 两者指向同一个文件时第二次 `exists()` 即 false，不会重复计数。
-    for (final String? subtitle in <String?>[
-      deletedSubtitlePath,
-      deletedSecondarySubtitlePath,
-    ]) {
-      if (await _deleteOwnedAsset(
-        candidate: subtitle,
-        ownedDir: subtitles,
-        stillReferenced: stillReferencedSubtitlePaths,
-      )) {
-        removed++;
+    int done = 0;
+    for (final DeletedVideoAssetPaths book in books) {
+      try {
+        if (await covers.delete(book.coverPath)) removed++;
+        // 主 + 副两条字幕指针都要回收：双字幕（TODO-857）各自可以是一份独立的
+        // 导入副本，只回收主的会把副字幕副本永久留在 `video_subtitles/` 里变成
+        // 孤儿。两者指向同一个文件时第二次 `exists()` 即 false，不会重复计数。
+        for (final String? subtitle in <String?>[
+          book.subtitlePath,
+          book.secondarySubtitlePath,
+        ]) {
+          if (await subtitles.delete(subtitle)) removed++;
+        }
+      } catch (_) {
+        // 单本回收失败不拦其余（与逐本调用时调用方的 try/catch 同一纪律）。
       }
+      onBookDone?.call(++done);
     }
     return removed;
   }
@@ -204,32 +244,7 @@ class VideoStorage {
     required String? candidate,
     required Directory ownedDir,
     required Iterable<String> stillReferenced,
-  }) async {
-    if (candidate == null || candidate.isEmpty) return false;
-    final String canon = p.canonicalize(candidate);
-    if (!_isInside(canon, p.canonicalize(ownedDir.path))) return false;
-    final Set<String> keep = <String>{
-      for (final String path in stillReferenced)
-        if (path.isNotEmpty) p.canonicalize(path),
-    };
-    if (keep.contains(canon)) return false;
-    final File file = File(candidate);
-    if (!await file.exists()) return false;
-    for (int attempt = 0; attempt < 6; attempt++) {
-      try {
-        await _evictImageCacheForFile(file);
-        await file.delete();
-        return true;
-      } catch (_) {
-        if (attempt == 5) {
-          // 删除失败（被占用/权限）不应抛断删除流程：跳过，下次再清。
-          return false;
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 40));
-      }
-    }
-    return false;
-  }
+  }) => _OwnedAssetGuard(ownedDir, stillReferenced).delete(candidate);
 
   static Future<void> _evictImageCacheForFile(File file) async {
     try {
@@ -290,5 +305,48 @@ class VideoStorage {
       }
     }
     return removed;
+  }
+}
+
+/// 一本被删视频删前记下的 app 副本指针（[VideoStorage.deleteBooksAssets] 入参）。
+typedef DeletedVideoAssetPaths = ({
+  String? coverPath,
+  String? subtitlePath,
+  String? secondarySubtitlePath,
+});
+
+/// 一个 app 拥有目录 + 规范化后的保留集：护栏只算一次，逐个候选复用。
+class _OwnedAssetGuard {
+  _OwnedAssetGuard(Directory ownedDir, Iterable<String> stillReferenced)
+    : _dirCanon = p.canonicalize(ownedDir.path),
+      _keep = <String>{
+        for (final String path in stillReferenced)
+          if (path.isNotEmpty) p.canonicalize(path),
+      };
+
+  final String _dirCanon;
+  final Set<String> _keep;
+
+  Future<bool> delete(String? candidate) async {
+    if (candidate == null || candidate.isEmpty) return false;
+    final String canon = p.canonicalize(candidate);
+    if (!VideoStorage._isInside(canon, _dirCanon)) return false;
+    if (_keep.contains(canon)) return false;
+    final File file = File(candidate);
+    if (!await file.exists()) return false;
+    for (int attempt = 0; attempt < 6; attempt++) {
+      try {
+        await VideoStorage._evictImageCacheForFile(file);
+        await file.delete();
+        return true;
+      } catch (_) {
+        if (attempt == 5) {
+          // 删除失败（被占用/权限）不应抛断删除流程：跳过，下次再清。
+          return false;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+      }
+    }
+    return false;
   }
 }

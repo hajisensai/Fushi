@@ -48,7 +48,18 @@ void main() {
   String bodyOf(String name) {
     final int sig = src.indexOf(name);
     expect(sig, greaterThanOrEqualTo(0), reason: '$name not found');
-    final int open = src.indexOf('{', sig);
+    // 函数体的 `{` 在参数表的 `)` 之后找：命名参数自己也有一对 `{}`。
+    int paren = 0;
+    int close = -1;
+    for (int i = src.indexOf('(', sig); i >= 0 && i < src.length; i++) {
+      if (src[i] == '(') paren++;
+      if (src[i] == ')' && --paren == 0) {
+        close = i;
+        break;
+      }
+    }
+    expect(close, greaterThanOrEqualTo(0), reason: 'no ) after $name');
+    final int open = src.indexOf('{', close);
     expect(open, greaterThanOrEqualTo(0), reason: 'no { after $name');
     int depth = 0;
     for (int i = open; i < src.length; i++) {
@@ -97,7 +108,7 @@ void main() {
   test('A2: async rebuild schedules unconditionally, then settles the load', () {
     // 异步重建拆成两段（BUG-4510）：_scheduleDictPathsAsync 负责探测 + 排期，
     // _rebuildDictPathsCacheAsync 先 await 排期再装载。
-    final String schedule = bodyOf('Future<void> _scheduleDictPathsAsync(');
+    final String schedule = bodyOf('Future<bool> _scheduleDictPathsAsync(');
     expect(
       schedule.contains('FushiDicts.scheduleTyped') ||
           schedule.contains('FushiDicts.initializeTyped'),
@@ -220,7 +231,7 @@ void main() {
       're-query (BUG-355)', () {
     final String body = bodyOf('Future<void> updateDictionaryOrder(');
     expect(
-      body.contains('dictRepo.updateDictionaryOrder('),
+      body.contains('dictRepo.reorderDictionarySection('),
       isTrue,
       reason:
           'must still delegate the persistence/cache/engine work to the repo.',

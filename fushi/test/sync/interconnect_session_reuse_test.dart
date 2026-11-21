@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
@@ -308,5 +310,53 @@ void main() {
     await backend.restoreAuth(repo);
     await backend.authenticate(repo: repo);
     expect(probes, 2, reason: '登出抹掉会话身份，重新配上同样的地址也要重探一次');
+  });
+  test('未选路时并发调用共享同一轮选路（单飞，gap-remote-4 并行起播）', () async {
+    int probes = 0;
+    final Completer<bool> gate = Completer<bool>();
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe((
+      String url,
+      String token,
+    ) {
+      probes++;
+      return gate.future;
+    });
+    expect(await backend.restoreAuth(repo), isTrue);
+
+    // 取流与开播位置同时撞上「还没选路」。
+    final Future<void> a = backend.ensureResolved();
+    final Future<void> b = backend.ensureResolved();
+    await pumpEventQueue();
+    gate.complete(true);
+    await Future.wait(<Future<void>>[a, b]);
+    expect(probes, 1, reason: '两轮选路会让后完成的那轮关掉前一轮交出去的连接句柄');
+
+    // 已选路：直接返回，不再探。
+    await backend.ensureResolved();
+    expect(probes, 1);
+  });
+
+  test('单飞那轮失败后不残留：并发方都收到错误，下一次调用重新选路', () async {
+    int probes = 0;
+    bool reachable = false;
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe((
+      String url,
+      String token,
+    ) async {
+      probes++;
+      await pumpEventQueue();
+      return reachable;
+    });
+    expect(await backend.restoreAuth(repo), isTrue);
+
+    final Future<void> a = backend.ensureResolved();
+    final Future<void> b = backend.ensureResolved();
+    await expectLater(a, throwsA(anything));
+    await expectLater(b, throwsA(anything));
+    final int failedProbes = probes;
+
+    reachable = true;
+    await backend.ensureResolved();
+    expect(probes, greaterThan(failedProbes), reason: '失败的那轮必须清掉，不能被下一次调用复用');
   });
 }

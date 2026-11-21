@@ -11,6 +11,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_compact_landscape.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_menu_presence.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
@@ -69,11 +70,88 @@ const BoxConstraints _kMd3DialogConstraints = BoxConstraints(
   maxWidth: 560,
 );
 
+/// 对话框里滚动条离面板右缘的内缩（逻辑像素）。
+const double kFushiDialogScrollbarCrossInset = 8;
+
+/// MD3 对话框的默认圆角（M3 规范 extra-large = 28）。
+const double _kMd3DialogCornerRadius = 28;
+
+/// 对话框面板内的滚动条内缩：右缘让出 [kFushiDialogScrollbarCrossInset]，首尾各让出
+/// 面板圆角半径，拇指与轨道不再贴着、压过圆角（11-20 反馈 #7：声音选择弹窗的滚动条
+/// 贴在圆角外缘一直画到底边）。只改子树的 `ScrollbarThemeData` 两个边距，外观其余
+/// 照旧走全局主题；面板内所有自动包上的 / 显式的 [FushiScrollbar] 一并受益。
+class FushiDialogScrollbarInset extends StatelessWidget {
+  const FushiDialogScrollbarInset({
+    super.key,
+    required this.cornerRadius,
+    required this.child,
+  });
+
+  /// 面板圆角半径；≤ 0（全屏）时不内缩首尾。
+  final double cornerRadius;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final ScrollbarThemeData base = ScrollbarTheme.of(context);
+    return ScrollbarTheme(
+      data: base.copyWith(
+        crossAxisMargin: kFushiDialogScrollbarCrossInset,
+        mainAxisMargin: math.max(0, cornerRadius),
+      ),
+      child: child,
+    );
+  }
+}
+
+/// MD3 对话框面板的圆角半径：调用方 shape > 主题 shape > 规范 28。只认圆角矩形族
+/// （其它形状取规范值）。
+double _md3DialogCornerRadius(BuildContext context, ShapeBorder? shape) {
+  final ShapeBorder? effective = shape ?? DialogTheme.of(context).shape;
+  final BorderRadiusGeometry? radius = switch (effective) {
+    RoundedRectangleBorder(:final BorderRadiusGeometry borderRadius) =>
+      borderRadius,
+    RoundedSuperellipseBorder(:final BorderRadiusGeometry borderRadius) =>
+      borderRadius,
+    ContinuousRectangleBorder(:final BorderRadiusGeometry borderRadius) =>
+      borderRadius,
+    _ => null,
+  };
+  if (radius == null) return _kMd3DialogCornerRadius;
+  final BorderRadius resolved = radius.resolve(Directionality.maybeOf(context));
+  return math.max(resolved.topRight.x, resolved.bottomRight.x);
+}
+
 /// 与 Material [Dialog] 相同的默认外边距。
 const EdgeInsets _kDialogInsetPadding = EdgeInsets.symmetric(
   horizontal: 40,
   vertical: 24,
 );
+
+/// 对话框外边距的单一解析：调用方 > 主题 > Material 默认，横屏矮窗口再经
+/// [fushiCompactLandscapeInset] 收紧（拍板台 MANKlxTTpV：横屏手机上下 24+24 的
+/// 留白吃掉 ~12% 的屏高）。MD3 与 Apple 外壳共用。
+EdgeInsets _resolveDialogInset(BuildContext context, EdgeInsets? insetPadding) {
+  return fushiCompactLandscapeInset(
+    MediaQuery.sizeOf(context),
+    insetPadding ??
+        DialogTheme.of(context).insetPadding ??
+        _kDialogInsetPadding,
+  );
+}
+
+/// MD3 对话框默认约束（[_kMd3DialogConstraints]），横屏矮窗口放宽宽度上限
+/// （[fushiCompactLandscapeConstraints]）；调用方显式给的约束照用。
+BoxConstraints _resolveMd3DialogConstraints(
+  BuildContext context,
+  BoxConstraints? constraints,
+) {
+  return constraints ??
+      fushiCompactLandscapeConstraints(
+        MediaQuery.sizeOf(context),
+        _kMd3DialogConstraints,
+      );
+}
 
 /// 浮层面板（对话框 / 菜单 / 提示条）的玻璃参数。液态档沿用库 Messages
 /// 演示里 `_kMenuGlass` 的 iOS 26 实测值（深色 #262626 @50%、浅色白 @15%、
@@ -261,6 +339,10 @@ class FushiAppleDialogPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final Widget child = FushiDialogScrollbarInset(
+      cornerRadius: radius,
+      child: this.child,
+    );
     final bool dark =
         Theme.of(context).colorScheme.brightness == Brightness.dark;
     final Color? explicitTint = tint != null && tint!.a > 0 ? tint : null;
@@ -356,6 +438,7 @@ class _FushiGlassDialogShell extends StatelessWidget {
     this.insetAnimationDuration = const Duration(milliseconds: 100),
     this.insetAnimationCurve = Curves.decelerate,
     this.fullscreen = false,
+    this.widenInCompactLandscape = true,
   });
 
   final Widget child;
@@ -371,6 +454,10 @@ class _FushiGlassDialogShell extends StatelessWidget {
   final Curve insetAnimationCurve;
   final bool fullscreen;
 
+  /// 横屏矮窗口是否放宽 [defaultConstraints] 的宽度上限。iOS 纯文字 alert 宽度
+  /// 固定（不随窗口伸缩），传 false。
+  final bool widenInCompactLandscape;
+
   @override
   Widget build(BuildContext context) {
     final DialogThemeData dialogTheme = DialogTheme.of(context);
@@ -385,7 +472,15 @@ class _FushiGlassDialogShell extends StatelessWidget {
     }
     final EdgeInsets effectivePadding =
         MediaQuery.viewInsetsOf(context) +
-        (insetPadding ?? dialogTheme.insetPadding ?? _kDialogInsetPadding);
+        _resolveDialogInset(context, insetPadding);
+    final BoxConstraints effectiveConstraints =
+        constraints ??
+        (widenInCompactLandscape
+            ? fushiCompactLandscapeConstraints(
+                MediaQuery.sizeOf(context),
+                defaultConstraints,
+              )
+            : defaultConstraints);
     return Semantics(
       role: semanticsRole,
       child: AnimatedPadding(
@@ -401,7 +496,7 @@ class _FushiGlassDialogShell extends StatelessWidget {
           child: Align(
             alignment: alignment ?? dialogTheme.alignment ?? Alignment.center,
             child: ConstrainedBox(
-              constraints: constraints ?? defaultConstraints,
+              constraints: effectiveConstraints,
               child: surface,
             ),
           ),
@@ -622,71 +717,75 @@ class FushiAlertDialog extends StatelessWidget {
     if (!isGlassDesign(context) &&
         _adaptive &&
         useCupertinoAdaptiveControls(context)) {
-      return AlertDialog.adaptive(
-        icon: _md3HeroIcon(),
-        iconPadding: iconPadding,
-        iconColor: iconColor,
-        title: title,
-        titlePadding: titlePadding,
-        titleTextStyle: titleTextStyle,
-        content: _scrollableContent(),
-        contentPadding: contentPadding,
-        contentTextStyle: contentTextStyle,
-        actions: actions,
-        actionsPadding: actionsPadding,
-        actionsAlignment: actionsAlignment,
-        actionsOverflowAlignment: actionsOverflowAlignment,
-        actionsOverflowDirection: actionsOverflowDirection,
-        actionsOverflowButtonSpacing: actionsOverflowButtonSpacing,
-        buttonPadding: buttonPadding,
-        backgroundColor: backgroundColor,
-        elevation: elevation,
-        shadowColor: shadowColor,
-        surfaceTintColor: surfaceTintColor,
-        semanticLabel: semanticLabel,
-        insetPadding:
-            insetPadding ??
-            const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
-        clipBehavior: clipBehavior,
-        shape: shape,
-        alignment: alignment,
-        constraints: constraints ?? _kMd3DialogConstraints,
-        scrollable: scrollable ?? false,
-        scrollController: scrollController,
-        actionScrollController: actionScrollController,
-        insetAnimationDuration: insetAnimationDuration,
-        insetAnimationCurve: insetAnimationCurve,
+      return FushiDialogScrollbarInset(
+        cornerRadius: _md3DialogCornerRadius(context, shape),
+        child: AlertDialog.adaptive(
+          icon: _md3HeroIcon(),
+          iconPadding: iconPadding,
+          iconColor: iconColor,
+          title: title,
+          titlePadding: titlePadding,
+          titleTextStyle: titleTextStyle,
+          content: _scrollableContent(),
+          contentPadding: contentPadding,
+          contentTextStyle: contentTextStyle,
+          actions: actions,
+          actionsPadding: actionsPadding,
+          actionsAlignment: actionsAlignment,
+          actionsOverflowAlignment: actionsOverflowAlignment,
+          actionsOverflowDirection: actionsOverflowDirection,
+          actionsOverflowButtonSpacing: actionsOverflowButtonSpacing,
+          buttonPadding: buttonPadding,
+          backgroundColor: backgroundColor,
+          elevation: elevation,
+          shadowColor: shadowColor,
+          surfaceTintColor: surfaceTintColor,
+          semanticLabel: semanticLabel,
+          insetPadding: _resolveDialogInset(context, insetPadding),
+          clipBehavior: clipBehavior,
+          shape: shape,
+          alignment: alignment,
+          constraints: _resolveMd3DialogConstraints(context, constraints),
+          scrollable: scrollable ?? false,
+          scrollController: scrollController,
+          actionScrollController: actionScrollController,
+          insetAnimationDuration: insetAnimationDuration,
+          insetAnimationCurve: insetAnimationCurve,
+        ),
       );
     }
     if (!isGlassDesign(context)) {
-      return AlertDialog(
-        icon: _md3HeroIcon(),
-        iconPadding: iconPadding,
-        iconColor: iconColor,
-        title: title,
-        titlePadding: titlePadding,
-        titleTextStyle: titleTextStyle,
-        content: _scrollableContent(),
-        contentPadding: contentPadding,
-        contentTextStyle: contentTextStyle,
-        actions: actions,
-        actionsPadding: actionsPadding,
-        actionsAlignment: actionsAlignment,
-        actionsOverflowAlignment: actionsOverflowAlignment,
-        actionsOverflowDirection: actionsOverflowDirection,
-        actionsOverflowButtonSpacing: actionsOverflowButtonSpacing,
-        buttonPadding: buttonPadding,
-        backgroundColor: backgroundColor,
-        elevation: elevation,
-        shadowColor: shadowColor,
-        surfaceTintColor: surfaceTintColor,
-        semanticLabel: semanticLabel,
-        insetPadding: insetPadding,
-        clipBehavior: clipBehavior,
-        shape: shape,
-        alignment: alignment,
-        constraints: constraints ?? _kMd3DialogConstraints,
-        scrollable: scrollable ?? false,
+      return FushiDialogScrollbarInset(
+        cornerRadius: _md3DialogCornerRadius(context, shape),
+        child: AlertDialog(
+          icon: _md3HeroIcon(),
+          iconPadding: iconPadding,
+          iconColor: iconColor,
+          title: title,
+          titlePadding: titlePadding,
+          titleTextStyle: titleTextStyle,
+          content: _scrollableContent(),
+          contentPadding: contentPadding,
+          contentTextStyle: contentTextStyle,
+          actions: actions,
+          actionsPadding: actionsPadding,
+          actionsAlignment: actionsAlignment,
+          actionsOverflowAlignment: actionsOverflowAlignment,
+          actionsOverflowDirection: actionsOverflowDirection,
+          actionsOverflowButtonSpacing: actionsOverflowButtonSpacing,
+          buttonPadding: buttonPadding,
+          backgroundColor: backgroundColor,
+          elevation: elevation,
+          shadowColor: shadowColor,
+          surfaceTintColor: surfaceTintColor,
+          semanticLabel: semanticLabel,
+          insetPadding: _resolveDialogInset(context, insetPadding),
+          clipBehavior: clipBehavior,
+          shape: shape,
+          alignment: alignment,
+          constraints: _resolveMd3DialogConstraints(context, constraints),
+          scrollable: scrollable ?? false,
+        ),
       );
     }
     return _buildGlass(context);
@@ -862,6 +961,7 @@ class FushiAlertDialog extends StatelessWidget {
         minWidth: _kGlassAlertMinWidth,
         maxWidth: _kGlassAlertMaxWidth,
       ),
+      widenInCompactLandscape: false,
       clipBehavior: clipBehavior,
       semanticsRole: SemanticsRole.alertDialog,
       child: _assemble(head, contentWidget, actionsWidget),
@@ -997,23 +1097,26 @@ class FushiSimpleDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!isGlassDesign(context)) {
-      return SimpleDialog(
-        title: title,
-        titlePadding: titlePadding,
-        titleTextStyle: titleTextStyle,
-        contentPadding: contentPadding,
-        contentTextStyle: contentTextStyle,
-        backgroundColor: backgroundColor,
-        elevation: elevation,
-        shadowColor: shadowColor,
-        surfaceTintColor: surfaceTintColor,
-        semanticLabel: semanticLabel,
-        insetPadding: insetPadding,
-        clipBehavior: clipBehavior,
-        shape: shape,
-        alignment: alignment,
-        constraints: constraints ?? _kMd3DialogConstraints,
-        children: children,
+      return FushiDialogScrollbarInset(
+        cornerRadius: _md3DialogCornerRadius(context, shape),
+        child: SimpleDialog(
+          title: title,
+          titlePadding: titlePadding,
+          titleTextStyle: titleTextStyle,
+          contentPadding: contentPadding,
+          contentTextStyle: contentTextStyle,
+          backgroundColor: backgroundColor,
+          elevation: elevation,
+          shadowColor: shadowColor,
+          surfaceTintColor: surfaceTintColor,
+          semanticLabel: semanticLabel,
+          insetPadding: _resolveDialogInset(context, insetPadding),
+          clipBehavior: clipBehavior,
+          shape: shape,
+          alignment: alignment,
+          constraints: _resolveMd3DialogConstraints(context, constraints),
+          children: children,
+        ),
       );
     }
     // macOS 26 sheet 形态的选择列表：标题靠左，下面是菜单式选项行。默认
@@ -1207,20 +1310,23 @@ class FushiDialog extends StatelessWidget {
           child: child,
         );
       }
-      return Dialog(
-        backgroundColor: backgroundColor,
-        elevation: elevation,
-        shadowColor: shadowColor,
-        surfaceTintColor: surfaceTintColor,
-        insetAnimationDuration: insetAnimationDuration,
-        insetAnimationCurve: insetAnimationCurve,
-        insetPadding: insetPadding,
-        clipBehavior: clipBehavior,
-        shape: shape,
-        alignment: alignment,
-        semanticsRole: semanticsRole,
-        constraints: constraints,
-        child: child,
+      return FushiDialogScrollbarInset(
+        cornerRadius: _md3DialogCornerRadius(context, shape),
+        child: Dialog(
+          backgroundColor: backgroundColor,
+          elevation: elevation,
+          shadowColor: shadowColor,
+          surfaceTintColor: surfaceTintColor,
+          insetAnimationDuration: insetAnimationDuration,
+          insetAnimationCurve: insetAnimationCurve,
+          insetPadding: _resolveDialogInset(context, insetPadding),
+          clipBehavior: clipBehavior,
+          shape: shape,
+          alignment: alignment,
+          semanticsRole: semanticsRole,
+          constraints: constraints,
+          child: child,
+        ),
       );
     }
     return _FushiGlassDialogShell(
@@ -3514,51 +3620,60 @@ class _FushiDropdownMenuState<T> extends State<FushiDropdownMenu<T>> {
       // 下拉自己的输入框，它的横向滚动对页面也没有意义，一并截下。
       // 带标题时装饰整份由 [_md3LabelledDecoration] 给（label / hint / helper /
       // error 都在里面）；DropdownMenu 断言 decorationBuilder 与这四个参数互斥。
+      // 2026-11 M3E：表单式下拉（没有调用方给的 inputDecorationTheme，即不是
+      // 工具条行内档）不带标题也走 M3 填充式装饰；行内档保持原样。
       final DropdownMenuDecorationBuilder? decorationBuilder =
           widget.decorationBuilder ??
-          (widget.label == null ? null : _md3LabelledDecoration);
+          (widget.label == null && widget.inputDecorationTheme != null
+              ? null
+              : _md3LabelledDecoration);
       final bool ownDecoration =
           widget.decorationBuilder == null && decorationBuilder != null;
-      final Widget dropdown = DropdownMenu<T>(
+      // 活动指示线按焦点 / 悬停 / 错误以 FushiMotion 补间（FushiFieldIndicatorHost）。
+      final Widget dropdown = FushiFieldIndicatorHost(
         enabled: widget.enabled,
-        width: widget.width,
-        menuHeight: widget.menuHeight,
-        leadingIcon: widget.leadingIcon,
-        trailingIcon: widget.trailingIcon,
-        showTrailingIcon: widget.showTrailingIcon,
-        trailingIconFocusNode: widget.trailingIconFocusNode,
-        label: ownDecoration ? null : widget.label,
-        hintText: ownDecoration ? null : widget.hintText,
-        helperText: ownDecoration ? null : widget.helperText,
-        errorText: ownDecoration ? null : widget.errorText,
-        selectedTrailingIcon: widget.selectedTrailingIcon,
-        enableFilter: widget.enableFilter,
-        enableSearch: widget.enableSearch,
-        keyboardType: widget.keyboardType,
-        textStyle: widget.textStyle,
-        textAlign: widget.textAlign,
-        inputDecorationTheme: widget.inputDecorationTheme,
-        decorationBuilder: decorationBuilder,
-        menuStyle: widget.menuStyle,
-        controller: widget.controller,
-        initialSelection: widget.initialSelection,
-        onSelected: widget.onSelected,
-        focusNode: widget.focusNode,
-        requestFocusOnTap: widget.requestFocusOnTap,
-        selectOnly: widget.selectOnly,
-        expandedInsets: widget.expandedInsets,
-        filterCallback: widget.filterCallback,
-        searchCallback: widget.searchCallback,
-        alignmentOffset: widget.alignmentOffset,
-        dropdownMenuEntries: widget.dropdownMenuEntries,
-        inputFormatters: widget.inputFormatters,
-        closeBehavior: widget.closeBehavior,
-        maxLines: widget.maxLines,
-        textInputAction: widget.textInputAction,
-        cursorHeight: widget.cursorHeight,
-        restorationId: widget.restorationId,
-        menuController: widget.menuController,
-        scrollPadding: widget.scrollPadding,
+        error: widget.errorText != null,
+        builder: (BuildContext context) => DropdownMenu<T>(
+          enabled: widget.enabled,
+          width: widget.width,
+          menuHeight: widget.menuHeight,
+          leadingIcon: widget.leadingIcon,
+          trailingIcon: widget.trailingIcon,
+          showTrailingIcon: widget.showTrailingIcon,
+          trailingIconFocusNode: widget.trailingIconFocusNode,
+          label: ownDecoration ? null : widget.label,
+          hintText: ownDecoration ? null : widget.hintText,
+          helperText: ownDecoration ? null : widget.helperText,
+          errorText: ownDecoration ? null : widget.errorText,
+          selectedTrailingIcon: widget.selectedTrailingIcon,
+          enableFilter: widget.enableFilter,
+          enableSearch: widget.enableSearch,
+          keyboardType: widget.keyboardType,
+          textStyle: widget.textStyle,
+          textAlign: widget.textAlign,
+          inputDecorationTheme: widget.inputDecorationTheme,
+          decorationBuilder: decorationBuilder,
+          menuStyle: widget.menuStyle,
+          controller: widget.controller,
+          initialSelection: widget.initialSelection,
+          onSelected: widget.onSelected,
+          focusNode: widget.focusNode,
+          requestFocusOnTap: widget.requestFocusOnTap,
+          selectOnly: widget.selectOnly,
+          expandedInsets: widget.expandedInsets,
+          filterCallback: widget.filterCallback,
+          searchCallback: widget.searchCallback,
+          alignmentOffset: widget.alignmentOffset,
+          dropdownMenuEntries: widget.dropdownMenuEntries,
+          inputFormatters: widget.inputFormatters,
+          closeBehavior: widget.closeBehavior,
+          maxLines: widget.maxLines,
+          textInputAction: widget.textInputAction,
+          cursorHeight: widget.cursorHeight,
+          restorationId: widget.restorationId,
+          menuController: widget.menuController,
+          scrollPadding: widget.scrollPadding,
+        ),
       );
       return MenuOverlayScrollBoundary(child: dropdown);
     }
@@ -3952,42 +4067,50 @@ class FushiDropdownButtonFormField<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!isGlassDesign(context)) {
-      return DropdownButtonFormField<T>(
-        items: items,
-        selectedItemBuilder: selectedItemBuilder,
-        initialValue: _initial,
-        hint: hint,
-        disabledHint: disabledHint,
-        onChanged: onChanged,
-        onTap: onTap,
-        elevation: elevation,
-        style: style,
-        icon: icon,
-        iconDisabledColor: iconDisabledColor,
-        iconEnabledColor: iconEnabledColor,
-        iconSize: iconSize,
-        isDense: isDense,
-        isExpanded: isExpanded,
-        itemHeight: itemHeight,
-        focusColor: focusColor,
-        focusNode: focusNode,
-        autofocus: autofocus,
-        dropdownColor: dropdownColor ?? Theme.of(context).popupMenuTheme.color,
-        decoration: fushiMd3FieldDecoration(context, decoration),
-        onSaved: onSaved,
-        validator: validator,
-        errorBuilder: errorBuilder,
-        forceErrorText: forceErrorText,
-        autovalidateMode: autovalidateMode,
-        menuMaxHeight: menuMaxHeight,
-        enableFeedback: enableFeedback,
-        alignment: alignment,
-        borderRadius:
-            borderRadius ?? const BorderRadius.all(Radius.circular(12)),
-        padding: padding,
-        barrierDismissible: barrierDismissible,
-        mouseCursor: mouseCursor,
-        dropdownMenuItemMouseCursor: dropdownMenuItemMouseCursor,
+      return FushiFieldIndicatorHost(
+        enabled: onChanged != null,
+        error:
+            forceErrorText != null ||
+            decoration?.errorText != null ||
+            decoration?.error != null,
+        builder: (BuildContext context) => DropdownButtonFormField<T>(
+          items: items,
+          selectedItemBuilder: selectedItemBuilder,
+          initialValue: _initial,
+          hint: hint,
+          disabledHint: disabledHint,
+          onChanged: onChanged,
+          onTap: onTap,
+          elevation: elevation,
+          style: style,
+          icon: icon,
+          iconDisabledColor: iconDisabledColor,
+          iconEnabledColor: iconEnabledColor,
+          iconSize: iconSize,
+          isDense: isDense,
+          isExpanded: isExpanded,
+          itemHeight: itemHeight,
+          focusColor: focusColor,
+          focusNode: focusNode,
+          autofocus: autofocus,
+          dropdownColor:
+              dropdownColor ?? Theme.of(context).popupMenuTheme.color,
+          decoration: fushiMd3FieldDecoration(context, decoration),
+          onSaved: onSaved,
+          validator: validator,
+          errorBuilder: errorBuilder,
+          forceErrorText: forceErrorText,
+          autovalidateMode: autovalidateMode,
+          menuMaxHeight: menuMaxHeight,
+          enableFeedback: enableFeedback,
+          alignment: alignment,
+          borderRadius:
+              borderRadius ?? const BorderRadius.all(Radius.circular(12)),
+          padding: padding,
+          barrierDismissible: barrierDismissible,
+          mouseCursor: mouseCursor,
+          dropdownMenuItemMouseCursor: dropdownMenuItemMouseCursor,
+        ),
       );
     }
     final ThemeData theme = Theme.of(context);

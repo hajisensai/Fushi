@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/utils/components/fushi_continue_card_row.dart';
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -49,6 +50,9 @@ void main() {
       extensions: <ThemeExtension<dynamic>>[
         FushiEinkTheme(eink),
         FushiGlassTheme(FushiGlassMaterial.off, glassDesign: glass),
+        // 取色并列卡是封面网格布局下的皮；色块布局下整排换成一行色块横滑
+        // （fushi_continue_spotlight_test 末尾的用例）。
+        const FushiShellTheme(contentLayout: ShellContentLayout.grid),
       ],
     ),
     home: MediaQuery(
@@ -209,6 +213,11 @@ void main() {
       await pump(
         tester,
         MaterialApp(
+          theme: ThemeData(
+            extensions: const <ThemeExtension<dynamic>>[
+              FushiShellTheme(contentLayout: ShellContentLayout.grid),
+            ],
+          ),
           home: Scaffold(
             body: Align(
               alignment: Alignment.topLeft,
@@ -305,6 +314,11 @@ void main() {
       addTearDown(tester.view.reset);
       await tester.pumpWidget(
         MaterialApp(
+          theme: ThemeData(
+            extensions: const <ThemeExtension<dynamic>>[
+              FushiShellTheme(contentLayout: ShellContentLayout.grid),
+            ],
+          ),
           home: Scaffold(
             body: Align(
               alignment: Alignment.topLeft,

@@ -4,13 +4,17 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:fushi/src/sync/interconnect_post_transport.dart';
+import 'package:fushi/src/sync/remote_dictionary_reachability.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi_engine/dictionary/dictionary_media_types.dart'
     show kRemoteDictionaryMediaMaxBytes, safeDictionaryMediaPath;
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
     show
+        RemoteLookupDictionaryConfig,
         kRemoteLookupChineseScriptVariantsField,
+        kRemoteLookupDictionariesField,
+        kRemoteLookupDictionaryConfigAppliedField,
         kRemoteLookupLanguageField,
         kRemoteLookupRubyField;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -35,14 +39,6 @@ class RemoteLookupUnreachableError implements Exception {
   String toString() => 'RemoteLookupUnreachableError: $message';
 }
 
-/// 远端**词典**查询在「全部配对候选传输层不可达」后的失败冷却窗（BUG-1302）。
-///
-/// 与音频源的 `kRemoteAudioFailureCooldown`（45s，`word_audio_resolver.dart`）同
-/// 量级同语义：设备被证实死了之后，冷却窗内不再重复付「3s × 候选数」的连接超时。
-/// 设备活着时行为完全不变——冷却只由 [RemoteLookupUnreachableError] 触发，
-/// 「可达但无结果」不进冷却。
-const Duration kRemoteDictionaryFailureCooldown = Duration(seconds: 45);
-
 const Duration kRemoteAudioMaterializedCacheTtl = Duration(days: 7);
 const int kRemoteAudioMaterializedCacheMaxBytes = 64 * 1024 * 1024;
 
@@ -56,6 +52,7 @@ class FushiRemoteLookupClient {
     Duration timeout = const Duration(seconds: 3),
     Duration audioTransferTimeout = kInterconnectAssetTransferTimeout,
     bool trackDictionaryStyles = false,
+    bool Function(String hostId)? skipDictionaryHost,
   }) : _transport = InterconnectPostTransport(
          repo: repo,
          httpClient: httpClient,
@@ -65,6 +62,7 @@ class FushiRemoteLookupClient {
        _timeout = timeout,
        _audioTransferTimeout = audioTransferTimeout,
        _trackDictionaryStyles = trackDictionaryStyles,
+       _skipDictionaryHost = skipDictionaryHost,
        _pinnedAudioCacheDirectoryProvider =
            pinnedAudioCacheDirectoryProvider ??
            _defaultPinnedAudioCacheDirectory;
@@ -72,10 +70,24 @@ class FushiRemoteLookupClient {
   /// 候选轮询 / 鉴权 / 指纹钉扎 / socket 回收统一由 [InterconnectPostTransport]
   /// 承担——本类只管端点、超时与响应体的语义解析。
   final InterconnectPostTransport _transport;
+
+  /// 绑定会话（游戏串流 / 视频遥控）的那台 host：被查的内容在它上面播放，查词必须由它
+  /// 回答。这类客户端不做「词典来源」选择，所以 [FushiClientUrl.lookupEnabled] 与
+  /// [_skipDictionaryHost] 对它不适用（BUG-4962）。
   final FushiClientUrl? _onlyCandidate;
 
   /// RPC 往返预算：量的是「对端还活着吗」。
+  ///
+  /// 3s 保持不变（BUG-4692 复核过）：它包住的是整个查词往返（host 上的查词本身 +
+  /// 回包，走 Tailscale / 公网时单程就几百 ms），缩短会把慢而活着的 host 误判成死的，
+  /// 造成远端结果时有时无。离线的代价不靠缩短它来降，而是靠可达性追踪只付一次：判死
+  /// 之后查词直接跳过（[_skipDictionaryHost]），恢复由后台探测发现。
   final Duration _timeout;
+
+  /// 词典端点要跳过的 host（[remoteDictionaryHostIdOf] 口径）：可达性追踪判为不可达的
+  /// host 不再发请求（BUG-4692）。全部跳过 = 没有候选 = 「无结果」（返回 null），不抛
+  /// [RemoteLookupUnreachableError]——那只留给真正试过且全失败的那一次。
+  final bool Function(String hostId)? _skipDictionaryHost;
 
   /// 音频资产整包下载预算：量的是字节传输，与 [_timeout] 不同量纲（BUG-1811 续）。
   final Duration _audioTransferTimeout;
@@ -101,6 +113,16 @@ class FushiRemoteLookupClient {
   /// [hostDictionaryStyles] 对应的 host 指纹。
   String? get dictionaryStylesRevision => _dictionaryStylesRevision;
 
+  /// 每台 host（[remoteDictionaryHostIdOf]）最近一次**带了词典选择**的查词回执：
+  /// true = host 按请求方的选择查了（回包 `dictionaryConfigApplied: true`）；
+  /// false = host 收到了选择却没套用（老 host 不认这个字段）——UI 据此提示
+  /// 「这台服务器还不支持按配置选词典」。没发过选择的 host 不在表里。
+  final Map<String, bool> _dictionaryConfigAppliedByHost = <String, bool>{};
+
+  /// [_dictionaryConfigAppliedByHost] 的只读视图。
+  Map<String, bool> get dictionaryConfigAppliedByHost =>
+      Map<String, bool>.unmodifiable(_dictionaryConfigAppliedByHost);
+
   static Future<Directory> _defaultPinnedAudioCacheDirectory() async {
     final Directory supportRoot = await AppPaths.supportRootDirectory();
     return Directory(p.join(supportRoot.path, 'remote_lookup_audio_cache'));
@@ -125,6 +147,12 @@ class FushiRemoteLookupClient {
   ///
   /// [rubySpans]：原文自带振假名（以 [term] 为坐标系）。非空才发 `ruby` 字段，host 让引擎
   /// 把读音吻合的同长度候选排前面；空时请求体与旧版逐字相同（旧 host 本就忽略该字段）。
+  ///
+  /// [dictionaryConfigFor]：按候选（即按 host）给出本端生效配置对这台 host 的词典选择
+  /// （`DictionaryRepository.filtersForHost`）。返回非 null 才发 `dictionaries` 字段，
+  /// host 把它当这次请求的唯一真相；null / 不传时请求体与旧版逐字相同。普通查词只发给
+  /// 开着 [FushiClientUrl.lookupEnabled] 的地址；绑定会话（游戏串流 / 视频遥控）发给
+  /// 那台 host，词典选择同样按本端设置（拍板台 pr3602）。
   Future<DictionarySearchResult?> searchDictionary({
     required String term,
     required bool wildcards,
@@ -132,26 +160,56 @@ class FushiRemoteLookupClient {
     String? language,
     bool? chineseScriptVariants,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    RemoteLookupDictionaryConfig? Function(FushiClientUrl candidate)?
+    dictionaryConfigFor,
   }) async {
     final String? lookupLanguage = (language == null || language.trim().isEmpty)
         ? null
         : language.trim();
+    final Map<String, dynamic> body = <String, dynamic>{
+      'term': term,
+      'wildcards': wildcards,
+      'maximumTerms': maximumTerms,
+      if (lookupLanguage != null) kRemoteLookupLanguageField: lookupLanguage,
+      if (chineseScriptVariants != null)
+        kRemoteLookupChineseScriptVariantsField: chineseScriptVariants,
+      if (rubySpans.isNotEmpty)
+        kRemoteLookupRubyField: FushiRubySpan.listToWire(rubySpans),
+      // 空串 ≠ 任何 host 指纹 ⇒ 首查必拿到整表。
+      if (_trackDictionaryStyles)
+        'stylesRevision': _dictionaryStylesRevision ?? '',
+    };
+    // 每台 host 各自的选择：同一 host 的多条地址算出同一份，只算一次。
+    final Map<String, RemoteLookupDictionaryConfig?> configByHost =
+        <String, RemoteLookupDictionaryConfig?>{};
+    RemoteLookupDictionaryConfig? configFor(FushiClientUrl candidate) =>
+        configByHost.putIfAbsent(
+          remoteDictionaryHostIdOf(candidate),
+          () => dictionaryConfigFor!(candidate),
+        );
     final InterconnectPostOutcome outcome = await _postLookup(
       path: '/api/lookup/dictionary',
-      body: <String, dynamic>{
-        'term': term,
-        'wildcards': wildcards,
-        'maximumTerms': maximumTerms,
-        if (lookupLanguage != null) kRemoteLookupLanguageField: lookupLanguage,
-        if (chineseScriptVariants != null)
-          kRemoteLookupChineseScriptVariantsField: chineseScriptVariants,
-        if (rubySpans.isNotEmpty)
-          kRemoteLookupRubyField: FushiRubySpan.listToWire(rubySpans),
-        // 空串 ≠ 任何 host 指纹 ⇒ 首查必拿到整表。
-        if (_trackDictionaryStyles)
-          'stylesRevision': _dictionaryStylesRevision ?? '',
-      },
+      body: body,
+      bodyFor: dictionaryConfigFor == null
+          ? null
+          : (FushiClientUrl candidate) {
+              final RemoteLookupDictionaryConfig? config = configFor(candidate);
+              return config == null
+                  ? null
+                  : <String, dynamic>{
+                      ...body,
+                      kRemoteLookupDictionariesField: config.toJson(),
+                    };
+            },
     );
+    final FushiClientUrl? winner = outcome.candidate;
+    if (winner != null && outcome.json != null) {
+      final String hostId = remoteDictionaryHostIdOf(winner);
+      if (configByHost[hostId] != null) {
+        _dictionaryConfigAppliedByHost[hostId] =
+            outcome.json![kRemoteLookupDictionaryConfigAppliedField] == true;
+      }
+    }
     if (outcome.allUnreachable) {
       throw RemoteLookupUnreachableError(
         'all enabled paired candidates failed at the transport layer '
@@ -255,6 +313,7 @@ class FushiRemoteLookupClient {
     final InterconnectPostOutcome outcome = await _postLookup(
       path: '/api/lookup/audio',
       body: <String, dynamic>{'expression': expression, 'reading': reading},
+      dictionaryLookup: false,
     );
     if (outcome.allUnreachable) {
       throw RemoteLookupUnreachableError(
@@ -379,17 +438,52 @@ class FushiRemoteLookupClient {
     return RemoteDictionaryMedia(bytes: bytes, contentType: contentType);
   }
 
+  /// 后台再探测一台判死的词典 host（[remoteDictionaryHostIdOf] 口径）：用 [_timeout]
+  /// 的预算 GET 一次目录清单（[kRemoteDictionaryCatalogPath]，与主进程目录服务的探测
+  /// 同一个端点），只看传输层结局——结局由传输层经全局上报点
+  /// （`reportInterconnectCandidateReached` / `Unreachable`）记进可达性追踪；回包内容不用。给没有目录服务的进程（`:popup` / 悬浮词典 engine）挂到
+  /// [RemoteDictionaryReachability.probe]，查词路径本身因此从不在已知死掉的 host 上等。
+  /// 凭据被拒（401）照样记成可达（对端活着），异常交给追踪器记日志。
+  Future<void> probeDictionaryHost(String hostId) async {
+    await _transport.getJson(
+      path: kRemoteDictionaryCatalogPath,
+      timeout: _timeout,
+      authErrorMessage: 'Fushi server rejected dictionary catalog token',
+      candidateFilter: (FushiClientUrl candidate) =>
+          candidate.isDictionaryLookupCandidate &&
+          remoteDictionaryHostIdOf(candidate) == hostId,
+    );
+  }
+
+  /// [dictionaryLookup]：词典端点（查词 / 词典样式 / 词典媒体）只发给开着
+  /// [FushiClientUrl.lookupEnabled] 的地址——关掉「用这台服务器查词典」的 host 既不该
+  /// 回答查词，样式与外字也不该从它那儿取。音频端点不受这个开关影响。
+  ///
+  /// 词典端点还按共享可达性追踪跳过已知不可达的 host（BUG-4692）；音频端点不跳（它有
+  /// 自己的失败冷却）。每个候选的传输层结局由传输层经全局上报点记进可达性追踪。
+  ///
+  /// 两道筛都是「从已配对 host 里挑词典来源」的语义；绑定会话（[_onlyCandidate]）
+  /// 没有来源可挑，只筛它会让那台 host 关掉开关后串流 / 遥控查词一律无结果（BUG-4962）。
   Future<InterconnectPostOutcome> _postLookup({
     required String path,
     required Map<String, dynamic> body,
     Duration? timeout,
-  }) {
+    bool dictionaryLookup = true,
+    Map<String, dynamic>? Function(FushiClientUrl candidate)? bodyFor,
+  }) async {
+    final bool Function(String hostId)? skip = _skipDictionaryHost;
     return _transport.post(
       path: path,
       body: body,
       timeout: timeout ?? _timeout,
       authErrorMessage: 'Fushi server rejected remote lookup token',
       onlyCandidate: _onlyCandidate,
+      bodyFor: bodyFor,
+      candidateFilter: dictionaryLookup && _onlyCandidate == null
+          ? (FushiClientUrl candidate) =>
+                candidate.lookupEnabled &&
+                !(skip?.call(remoteDictionaryHostIdOf(candidate)) ?? false)
+          : null,
     );
   }
 }

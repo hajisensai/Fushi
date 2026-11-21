@@ -26,8 +26,9 @@ void main() {
       ];
 
   // 每个宿主都必须保留的最小接线令牌：开启把手 + 四个回调 + 缩放折算 + 落库真值。
+  // 把手开关单独判：mixin 宿主在「宿主强制停靠」（视频页竖屏查词卡，
+  // 拍板台 P9AS-fvjJh）时由宿主管尺寸、不出把手，其余时候照常开。
   const List<String> requiredTokens = <String>[
-    'showResizeGrip: true',
     'onResizeStart:',
     'onResizeUpdate:',
     'onResizeEnd:',
@@ -43,6 +44,12 @@ void main() {
       final File file = File(host.path);
       expect(file.existsSync(), isTrue, reason: '宿主文件应存在：${host.path}');
       final String src = file.readAsStringSync();
+      expect(
+        src.contains('showResizeGrip: true') ||
+            src.contains('showResizeGrip: !lookupHostForcesBottomDock'),
+        isTrue,
+        reason: '${host.name} 必须开启弹窗拖拽把手（仅宿主强制停靠时可关）',
+      );
       for (final String token in requiredTokens) {
         expect(
           src.contains(token),

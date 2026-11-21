@@ -1492,7 +1492,16 @@ class MediaDetailSectionHeader extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 /// 条目（章节 / 分集）的下载状态。
-enum MediaDetailDownloadState { none, queued, downloading, downloaded, failed }
+enum MediaDetailDownloadState {
+  none,
+  queued,
+  downloading,
+
+  /// 用户暂停：半成品留着，恢复后续跑（漫画章节任务）。
+  paused,
+  downloaded,
+  failed,
+}
 
 /// 行尾状态位里的一枚额外状态图标（例如漫画章「已识别文字」）。
 ///
@@ -1748,6 +1757,17 @@ class MediaDetailItemRow extends StatelessWidget {
           _labelled(
             t.media_detail_status_download_queued,
             FushiIcon(FushiIcons.pending, size: 20, color: cs.onSurfaceVariant),
+          ),
+        ],
+        MediaDetailDownloadState.paused => <Widget>[
+          _labelled(
+            t.media_detail_status_download_paused,
+            FushiIcon(
+              FushiIcons.pause,
+              key: const ValueKey<String>('media-detail-item-download-paused'),
+              size: 20,
+              color: cs.onSurfaceVariant,
+            ),
           ),
         ],
         MediaDetailDownloadState.downloading => <Widget>[
@@ -2362,8 +2382,19 @@ class _MediaDetailFabHostState extends State<_MediaDetailFabHost> {
     _scheduleEvaluate();
   }
 
+  bool _evaluateScheduled = false;
+
+  /// 测量一律排到帧尾：滚动 / 视口尺寸通知可能在布局阶段派发（如输入框
+  /// [RenderEditable] 布局时内部视口发的 applyNewDimensions → ScrollStart），
+  /// 此时读锚点 size / localToGlobal 会撞 `sizeAccessAllowed` 断言；同一帧内
+  /// 多次通知只测一次。
   void _scheduleEvaluate() {
-    WidgetsBinding.instance.addPostFrameCallback((_) => _evaluate());
+    if (_evaluateScheduled) return;
+    _evaluateScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _evaluateScheduled = false;
+      _evaluate();
+    });
   }
 
   /// 主按钮下边缘是否已在顶栏线以上。找不到主按钮（页面没给主操作）时恒显示。
@@ -2385,12 +2416,12 @@ class _MediaDetailFabHostState extends State<_MediaDetailFabHost> {
   }
 
   bool _onScroll(ScrollNotification notification) {
-    if (notification.metrics.axis == Axis.vertical) _evaluate();
+    if (notification.metrics.axis == Axis.vertical) _scheduleEvaluate();
     return false;
   }
 
   bool _onMetrics(ScrollMetricsNotification notification) {
-    if (notification.metrics.axis == Axis.vertical) _evaluate();
+    if (notification.metrics.axis == Axis.vertical) _scheduleEvaluate();
     return false;
   }
 
@@ -2435,6 +2466,29 @@ class _MediaDetailFabHostState extends State<_MediaDetailFabHost> {
       ],
     );
   }
+}
+
+/// 单列悬浮按钮宿主的公开入口：自带滚动视图、不经 [MediaDetailLayout] 的详情版式
+/// （海报面板版式 `MediaPosterDetailLayout`）用它挂同一个「继续 / 开始」悬浮按钮，
+/// 显隐判据与 [MediaDetailLayout] 单列时完全相同——hero 主按钮
+/// （[MediaDetailActionBar] 的 primary）滚进 [topInset] 线以上才出现。
+class MediaDetailFabHost extends StatelessWidget {
+  const MediaDetailFabHost({
+    required this.fab,
+    required this.topInset,
+    required this.child,
+    super.key,
+  });
+
+  final Widget fab;
+
+  /// 浮动顶栏 + 状态栏占掉的高度。
+  final double topInset;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) =>
+      _MediaDetailFabHost(fab: fab, topInset: topInset, child: child);
 }
 
 /// [MediaDetailLayout.fab] 占掉的正文底部留白（56 高的悬浮按钮 + 上下间距）。

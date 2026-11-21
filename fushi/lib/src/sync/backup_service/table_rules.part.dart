@@ -229,12 +229,18 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'collection_scrape_meta': BackupTableRule.rowLevel(
     '随 media_collections FK cascade',
   ),
+  // v162：起点也可以是单视频（散装电影），随 video_books 一起裁剪。
   'collection_relations': BackupTableRule.rowLevel(
-    '随 media_collections FK cascade',
+    '随 media_collections / video_books FK cascade',
   ),
   'media_images': BackupTableRule.rowLevel(
     '随 media_collections / video_books FK cascade',
   ),
+  // v155：单本书 / 字幕书 / 游戏的刮削资料与附加图——与 collection_scrape_meta /
+  // media_images 同族的可重建缓存，宿主是逻辑外键（同 media_privacy_flags），
+  // 被裁剪内容的行按宿主收敛。
+  'item_scrape_meta': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
+  'item_images': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
   'media_collection_items': BackupTableRule.rowLevel(
     '_stripOrphanUserDataTables',
   ),
@@ -244,6 +250,8 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   // v122 作品级私密标记：与 tag_assignments 同一套宿主逻辑外键，被裁剪内容的标记
   // 一并收敛掉。
   'media_privacy_flags': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
+  // v156 作品级 NSFW 标记：同上。
+  'media_nsfw_flags': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
   'book_tags': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
   'book_tag_membership_tombstones': BackupTableRule.rowLevel(
     '_stripOrphanUserDataTables',
@@ -302,6 +310,10 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   }),
   'favorite_words': BackupTableRule.follows(<BackupCategory>{
     BackupCategory.statistics,
+  }),
+  // v166：收藏句（原偏好 `favorite_sentences`，BUG-816 起归「书籍」类别）。
+  'favorite_sentences': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.books,
   }),
   'activity_events': BackupTableRule.follows(<BackupCategory>{
     BackupCategory.statistics,
@@ -391,6 +403,10 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'music_disc_sources': BackupTableRule.deviceLocal(),
   // v131：OP / ED 声纹比对的按集缓存，设备本地（见 _deviceLocalTables）。
   'video_theme_song_spans': BackupTableRule.deviceLocal(),
+  // v163：作品图谱 AI 裁决缓存，设备本地（见 _deviceLocalTables）。
+  'media_link_ai_verdicts': BackupTableRule.deviceLocal(),
+  // v165：视频内容指纹缓存，设备本地（见 _deviceLocalTables）。
+  'video_content_fingerprints': BackupTableRule.deviceLocal(),
   // v135：游戏 VNDB 配音表缓存，设备本地（见 _deviceLocalTables）。
   'game_voice_casts': BackupTableRule.deviceLocal(),
   // v133：音乐刮削三表（识别结论 / 原始快照 / 字段锁），键含本机路径派生的 track_uid、
@@ -401,6 +417,8 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   // v145：曲目 uid 别名，设备本地（见 _deviceLocalTables）。
   'music_track_uid_aliases': BackupTableRule.deviceLocal(),
   'remote_audio_bindings': BackupTableRule.deviceLocal(),
+  // v153：服务器托管词典的本机目录行，键是本机配对的 hostId（见 _deviceLocalTables）。
+  'remote_dictionary_metadata': BackupTableRule.deviceLocal(),
 };
 
 /// 守卫测试用：各段专门剥离逻辑点名的表清单，用来核对与 [backupTableRules]

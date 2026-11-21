@@ -83,6 +83,10 @@ class SourceFileEntry {
   );
 }
 
+/// 列目录进度回调：开始列 [dirPath] 时调用，[filesSoFar] 为此前累计找到的文件数。
+typedef SourceListingProgressCallback =
+    void Function(String dirPath, int filesSoFar);
+
 /// 来源库文件系统抽象：把「列目录 / 找 sidecar / 读文本 / 拉到本地」统一成
 /// 一套契约，使扫描器与具体传输（本地磁盘 vs 网络盘）解耦。
 ///
@@ -169,7 +173,20 @@ Future<Uint8List> takeSourceByteSpan(
 /// 复用 sidecar_finder 的扫描语义（[listSiblingNames] 返回同目录所有文件
 /// basename，由调用方喂 `selectSidecarNames`），不重复造 sidecar 匹配规则。
 class LocalSourceFileSystem implements SourceFileSystem {
-  const LocalSourceFileSystem();
+  const LocalSourceFileSystem({
+    this.onUnreadableDirectory,
+    this.onDirectoryListed,
+  });
+
+  /// 递归列目录时某个**子目录**读不了（没权限的系统目录、正被卸载的挂载点）就回调
+  /// 一次并跳过它，其余目录照常列完。扫描器用它把跳过的目录记进部分失败汇总。
+  /// 根目录读不了不走这里——那是整次扫描读不了，照常抛。
+  final void Function(String dirPath, FileSystemException error)?
+  onUnreadableDirectory;
+
+  /// 递归列目录时每开始列一个目录回调一次（[filesSoFar] = 此前累计找到的文件数），
+  /// 扫描器用它在来源页显示列目录进度（拍板台 design-nmv-scan-progress）。
+  final SourceListingProgressCallback? onDirectoryListed;
 
   @override
   bool get isLocal => true;
@@ -191,32 +208,54 @@ class LocalSourceFileSystem implements SourceFileSystem {
       );
     }
     final List<SourceFileEntry> entries = <SourceFileEntry>[];
-    await for (final FileSystemEntity e in dir.list(
-      recursive: recursive,
-      followLinks: false,
-    )) {
-      if (e is File) {
-        // 本地传输不 stat 每个文件取大小：扫描链路（扫描器 / 规划器）不读
-        // sizeBytes，远端传输由列目录响应顺带给出零成本；而递归枚举一棵几万
-        // 文件的漫画/视频树时每文件一次 `length()` 是几万次额外系统调用。唯一
-        // 要大小的消费方是低频的刮削诊断导出器，它自己按需 stat。
-        entries.add(
-          SourceFileEntry(
-            name: p.basename(e.path),
-            path: e.path,
-            isDirectory: false,
-          ),
-        );
-      } else if (e is Directory && !recursive) {
-        // 递归模式只回文件（供扫描器直接消费），非递归才单列子目录。
-        entries.add(
-          SourceFileEntry(
-            name: p.basename(e.path),
-            path: e.path,
-            isDirectory: true,
-          ),
-        );
+    // 按层列，不用 `dir.list(recursive: true)`：递归流里任何一个子目录出错（Windows
+    // 盘根下的 `System Volume Information` 拒绝访问）都是一个 error 事件，`await for`
+    // 收到就整条取消并抛出，整次扫描 0 入库。按层列才能做到「子目录读不了跳过它、
+    // 根读不了才算扫描失败」，与游戏来源扫描器同一口径。
+    List<String> level = <String>[dirPath];
+    bool isRoot = true;
+    while (level.isNotEmpty) {
+      final List<String> next = <String>[];
+      for (final String current in level) {
+        onDirectoryListed?.call(current, entries.length);
+        try {
+          await for (final FileSystemEntity e in Directory(
+            current,
+          ).list(followLinks: false)) {
+            if (e is File) {
+              // 本地传输不 stat 每个文件取大小：扫描链路（扫描器 / 规划器）不读
+              // sizeBytes，远端传输由列目录响应顺带给出零成本；而递归枚举一棵几万
+              // 文件的漫画/视频树时每文件一次 `length()` 是几万次额外系统调用。唯一
+              // 要大小的消费方是低频的刮削诊断导出器，它自己按需 stat。
+              entries.add(
+                SourceFileEntry(
+                  name: p.basename(e.path),
+                  path: e.path,
+                  isDirectory: false,
+                ),
+              );
+            } else if (e is Directory) {
+              if (recursive) {
+                next.add(e.path);
+              } else {
+                // 递归模式只回文件（供扫描器直接消费），非递归才单列子目录。
+                entries.add(
+                  SourceFileEntry(
+                    name: p.basename(e.path),
+                    path: e.path,
+                    isDirectory: true,
+                  ),
+                );
+              }
+            }
+          }
+        } on FileSystemException catch (error) {
+          if (isRoot) rethrow;
+          onUnreadableDirectory?.call(current, error);
+        }
       }
+      isRoot = false;
+      level = next;
     }
     // 文件系统枚举顺序不是稳定输入（NTFS 按名字、ext4 是目录哈希序），
     // 而这份清单一路流到 planScanFromFileList 的 books/videos/mangas 分类列表，
@@ -309,9 +348,12 @@ class NetworkSourceConfig {
 /// [close]。SFTP/FTP 远端路径统一用正斜杠拼接（[_joinRemote]），WebDAV 直接以完整
 /// URL（PROPFIND 返回的 href）作路径，二者都与本地平台分隔符无关。
 class NetworkSourceFileSystem implements SourceFileSystem, SourceByteReader {
-  NetworkSourceFileSystem(this.config);
+  NetworkSourceFileSystem(this.config, {this.onDirectoryListed});
 
   final NetworkSourceConfig config;
+
+  /// 同 [LocalSourceFileSystem.onDirectoryListed]：每开始列一个远端目录回调一次。
+  final SourceListingProgressCallback? onDirectoryListed;
 
   // SFTP 连接状态。
   SSHClient? _ssh;
@@ -425,6 +467,7 @@ class NetworkSourceFileSystem implements SourceFileSystem, SourceByteReader {
     final List<SourceFileEntry> result = <SourceFileEntry>[];
 
     Future<void> walk(String dir) async {
+      onDirectoryListed?.call(dir, result.length);
       final List<SftpName> entries = await sftp.listdir(dir);
       for (final SftpName e in entries) {
         if (e.filename == '.' || e.filename == '..') {
@@ -572,6 +615,7 @@ class NetworkSourceFileSystem implements SourceFileSystem, SourceByteReader {
     final List<SourceFileEntry> result = <SourceFileEntry>[];
 
     Future<void> walk(String dir) async {
+      onDirectoryListed?.call(dir, result.length);
       // dir 恒绝对路径：changeDirectory 用绝对路径消除 cwd 漂移。
       await ftp.changeDirectory(dir);
       final List<FTPEntry> entries = await ftp.listDirectoryContent();
@@ -674,6 +718,7 @@ class NetworkSourceFileSystem implements SourceFileSystem, SourceByteReader {
     final List<SourceFileEntry> result = <SourceFileEntry>[];
 
     Future<void> walk(String dirUrl) async {
+      onDirectoryListed?.call(dirUrl, result.length);
       final String dir = _ensureTrailingSlash(dirUrl);
       final List<DavEntry> children = await dav.propfindChildren(dir);
       final String dirKey = _stripTrailingSlash(dir);
@@ -818,6 +863,7 @@ class NetworkSourceFileSystem implements SourceFileSystem, SourceByteReader {
     final List<SourceFileEntry> result = <SourceFileEntry>[];
 
     Future<void> walk(String path) async {
+      onDirectoryListed?.call(path, result.length);
       final List<AListEntry> children = await api.listAll(path);
       for (final AListEntry e in children) {
         if (e.name.isEmpty) continue;

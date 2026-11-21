@@ -9,9 +9,12 @@ import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 
 import 'package:fushi/src/media/novel/online/lnreader_epub_assembler.dart';
 import 'package:fushi/src/media/novel/online/lnreader_fetch_bridge.dart';
+import 'package:fushi/src/media/novel/online/lnreader_line_breaks.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
+import 'package:fushi/src/media/novel/online/lnreader_missing_images.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_runtime.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 用户中途取消下载。
 class LnReaderDownloadCancelled implements Exception {
@@ -43,7 +46,8 @@ typedef LnReaderDownloadProgress = void Function(int done, int total);
 /// 入库后就是一本普通 EPUB：阅读器、查词、制卡、统计、同步全部复用，不另起一套
 /// 「在线书」数据模型。章节按顺序逐章抓（网文站普遍限流，并发只会换来 429）。
 /// 任何一章失败整次中止并报出是哪一章——**不静默跳章**，缺章的书比没有书更糟。
-/// 插图单张失败只丢那一张图（正文完整优先）。
+/// 插图单张失败只缺那一张图（正文完整优先）：正文里留缺图占位（带引用页与插件
+/// id），阅读器打开时提示并补取（`LnReaderDownloadedBookImages`）。
 class LnReaderBookDownload {
   LnReaderBookDownload({
     required this.manager,
@@ -178,8 +182,16 @@ class LnReaderBookDownload {
   }
 
   /// 抓一章：插件取正文 → 规整成 XHTML 片段 → 逐张下插图（图片落在
-  /// `$imagePrefix<n>.<ext>`）。插图单张失败只丢那一张（正文完整优先）；正文取
-  /// 不到直接抛，由调用方决定是中止整次下载还是只报这一章。
+  /// `$imagePrefix<n>.<ext>`）。插图单张失败只丢那一张（正文完整优先），丢了几张、
+  /// 第一张为什么丢写进错误日志；正文取不到直接抛，由调用方决定是中止整次下载
+  /// 还是只报这一章。
+  ///
+  /// 插图与封面走同一套请求头（[lnReaderImageHeaders]：浏览器 UA、`Accept`、
+  /// 插件头、Cloudflare 放行 cookie）。Referer 传章节页地址而不是站点首页——
+  /// 防盗链按引用页判，章节页更准。
+  ///
+  /// 没取到的图换成占位标记（[replaceLnReaderImageWithMissingMarker]，带上引用页
+  /// 与插件 id）：在线书与下载成的 EPUB 都一样，阅读器据此提示并补取。
   Future<LnReaderEpubChapter> fetchChapter({
     required HttpClient client,
     required LnReaderInstalledPlugin plugin,
@@ -200,28 +212,68 @@ class LnReaderBookDownload {
       imagePrefix: imagePrefix,
     );
     final List<LnReaderEpubImage> images = <LnReaderEpubImage>[];
-    String body = xhtml.xhtml;
+    // 源级开关「合并段内换行」（拍板台 zCkIxtnwcV）：在宿主清洗之后、落盘之前
+    // 接回句中折行；插件（上游 LNReader 仓库）不改。
+    String body = plugin.mergeLineBreaks
+        ? mergeLnReaderSoftLineBreaks(xhtml.xhtml)
+        : xhtml.xhtml;
+    int dropped = 0;
+    String? firstFailure;
     for (final ({String url, String fileName}) image in xhtml.images) {
-      final LnReaderEpubImage? fetched = await _fetchImage(
-        client,
-        image.url,
+      final LnReaderEpubImage? fetched = await fetchChapterImage(
+        client: client,
+        info: info,
+        referer: baseUrl,
+        url: image.url,
         fileName: image.fileName,
-        headers: <String, String>{
-          ...info.imageHeaders,
-          if (!info.imageHeaders.keys.any(
-            (String key) => key.toLowerCase() == 'referer',
-          ))
-            'Referer': baseUrl,
+        onFailure: (String reason) {
+          dropped++;
+          firstFailure ??= reason;
         },
       );
       if (fetched == null) {
-        body = removeLnReaderImageReference(body, image.fileName);
+        body = replaceLnReaderImageWithMissingMarker(
+          body,
+          fileName: image.fileName,
+          url: image.url,
+          referer: baseUrl,
+          pluginId: plugin.id,
+        );
       } else {
         images.add(fetched);
       }
     }
+    if (dropped > 0) {
+      ErrorLogService.instance.log(
+        'LnReaderBookDownload.imagesDropped',
+        '${plugin.id} ${chapter.path}: dropped $dropped of '
+            '${xhtml.images.length} images (first: $firstFailure)',
+      );
+    }
     return (title: chapter.name, xhtmlBody: body, images: images);
   }
+
+  /// 下一张章节插图（与 [fetchChapter] 同一套请求头，[referer] 传章节页地址）；
+  /// 取不到返回 null，原因交给 [onFailure]。阅读器补取缺图也走这里。
+  Future<LnReaderEpubImage?> fetchChapterImage({
+    required HttpClient client,
+    required LnReaderPluginInfo info,
+    required String referer,
+    required String url,
+    required String fileName,
+    void Function(String reason)? onFailure,
+  }) => _fetchImage(
+    client,
+    url,
+    fileName: fileName,
+    headersFor: (Uri uri) => lnReaderImageHeaders(
+      uri: uri,
+      referer: referer,
+      pluginHeaders: _epubImageHeaders(info.imageHeaders),
+      cloudflare: manager.cloudflare,
+    ),
+    onFailure: onFailure,
+  );
 
   /// 下封面；插件占位图 / 取不到返回 null（书照样生成，只是没封面）。
   Future<LnReaderEpubImage?> fetchCover({
@@ -239,21 +291,45 @@ class LnReaderBookDownload {
       coverUrl,
       fileName: 'cover',
       // 与书架外的封面网格同一套头：防盗链图床只认浏览器 UA + 站点 Referer。
-      headers: lnReaderImageHeaders(
+      headersFor: (Uri uri) => lnReaderImageHeaders(
         uri: uri,
         referer: plugin.site,
-        pluginHeaders: info.imageHeaders,
+        pluginHeaders: _epubImageHeaders(info.imageHeaders),
         cloudflare: manager.cloudflare,
       ),
     );
   }
 
+  /// 进 EPUB 的图只声明 [sniffLnReaderImageMediaType] 认得的格式。
+  ///
+  /// [lnReaderImageHeaders] 默认的 `Accept` 带 `image/avif`（给 app 里直接显示的
+  /// 封面网格用）；按 `Accept` 协商格式的图床（Cloudflare Images、imgix
+  /// `auto=format`、wsrv.nl 一类）看到它就回 AVIF，而嗅探不认 AVIF，整张图会被
+  /// 当成「不是图片」丢掉。插件自己写了 `Accept` 的以插件为准。
+  static const String epubImageAccept =
+      'image/webp,image/apng,image/png,image/jpeg,image/gif,*/*;q=0.8';
+
+  static Map<String, String> _epubImageHeaders(
+    Map<String, String> pluginHeaders,
+  ) => <String, String>{'Accept': epubImageAccept, ...pluginHeaders};
+
+  /// 下一张图；取不到返回 null，原因（不含地址里的查询串）交给 [onFailure]。
+  ///
+  /// [headersFor] 按**每一跳**的地址出请求头：Cloudflare 放行 cookie 是按主机取
+  /// 的，重定向到别的主机时不能把上一跳的 cookie 带过去。
   Future<LnReaderEpubImage?> _fetchImage(
     HttpClient client,
     String url, {
     required String fileName,
-    required Map<String, String> headers,
+    required Map<String, String> Function(Uri uri) headersFor,
+    void Function(String reason)? onFailure,
   }) async {
+    String host = '';
+    LnReaderEpubImage? fail(String reason) {
+      onFailure?.call(host.isEmpty ? reason : '$host: $reason');
+      return null;
+    }
+
     try {
       // 重定向手动跟：HttpClient 自动跟随时只有首跳过名字判据，一个 302 指向
       // 127.0.0.1 就能打到本机（审查 B1）。每一跳重新过判据；连接层另有
@@ -261,49 +337,46 @@ class LnReaderBookDownload {
       Uri uri = Uri.parse(url);
       late HttpClientResponse response;
       for (int hop = 0; ; hop++) {
+        host = uri.host;
         if ((uri.scheme != 'http' && uri.scheme != 'https') ||
             isBlockedHost(uri.host)) {
-          return null;
+          return fail('blocked address');
         }
         final HttpClientRequest request = await client
             .getUrl(uri)
             .timeout(const Duration(seconds: 30));
         request.followRedirects = false;
-        request.headers.set(
-          HttpHeaders.userAgentHeader,
-          LnReaderFetchBridge.defaultUserAgent,
-        );
-        headers.forEach(request.headers.set);
+        headersFor(uri).forEach(request.headers.set);
         response = await request.close().timeout(const Duration(seconds: 30));
         final String? location = response.headers.value(
           HttpHeaders.locationHeader,
         );
         if (!response.isRedirect || location == null) break;
         await response.drain<void>();
-        if (hop >= 5) return null;
+        if (hop >= 5) return fail('too many redirects');
         uri = uri.resolve(location);
       }
       if (response.statusCode != HttpStatus.ok) {
         await response.drain<void>();
-        return null;
+        return fail('HTTP ${response.statusCode}');
       }
       final BytesBuilder buffer = BytesBuilder(copy: false);
       await for (final List<int> chunk in response.timeout(
         const Duration(seconds: 60),
       )) {
         buffer.add(chunk);
-        if (buffer.length > 20 * 1024 * 1024) return null;
+        if (buffer.length > 20 * 1024 * 1024) return fail('larger than 20 MB');
       }
       final Uint8List bytes = buffer.takeBytes();
       final String? mediaType = sniffLnReaderImageMediaType(bytes);
-      if (mediaType == null) return null;
+      if (mediaType == null) return fail('not an image');
       // 封面的文件名要带扩展名（部分阅读器按扩展名判类型）。
       final String name = fileName == 'cover'
           ? 'cover.${mediaType.split('/').last.replaceAll('jpeg', 'jpg')}'
           : fileName;
       return (fileName: name, bytes: bytes, mediaType: mediaType);
-    } on Object {
-      return null;
+    } on Object catch (error) {
+      return fail(error.runtimeType.toString());
     }
   }
 }
@@ -322,15 +395,6 @@ String lnReaderSafeFileName(String title) {
 /// 插件用来占位的「无封面」图：不值得下载进 EPUB。
 bool isLnReaderPlaceholderCover(String url) =>
     url.contains('coverNotAvailable');
-
-/// 下载失败的插图：把引用它的 `<img>` 从 XHTML 里摘掉，免得 EPUB 里留断链。
-String removeLnReaderImageReference(String xhtml, String fileName) {
-  final String escaped = RegExp.escape(fileName);
-  return xhtml.replaceAll(
-    RegExp('<img\\b[^>]*\\ssrc="$escaped"[^>]*/?>', caseSensitive: false),
-    '',
-  );
-}
 
 /// 简介里常见的 HTML 片段 → 纯文本（EPUB `dc:description` 与详情页用）。
 String stripLnReaderHtml(String html) => html

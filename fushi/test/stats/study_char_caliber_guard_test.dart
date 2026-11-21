@@ -136,6 +136,9 @@ void main() {
         // 作品图谱 L5 人物同名建议：归一化后的名字短于 2 个码点不出建议键（单字名
         // 撞名太多），是匹配判据不是学习计数。
         'packages/fushi_engine/lib/media/people/person_identity.dart': 1,
+        // 媒体追踪书目关联：书名方括号里的人名长度上限（≤24 码点才当作者名），
+        // 与繁简折叠时「折叠结果恰好是单个码点」的判断，是匹配判据不是学习计数。
+        'packages/fushi_engine/lib/media/tracking/book_tracking_link.dart': 2,
         // 视频字幕 AI 校对（spec 2026-10-19）：S4 片假名名字编辑距离 1 的长度比较
         // （与基准 consistency.py 的 len() 同口径），是匹配判据不是学习计数。
         'packages/fushi_engine/lib/media/video/subtitle/asr_proofread/subtitle_consistency_pass.dart':
@@ -178,6 +181,13 @@ void main() {
         // 游戏串流手柄查词模式：当前行与命中词的字素数是查词光标的移动边界、跳过
         // 命中词的步长与命中高亮范围（_moveLookupCaret / lookupHighlight），是导航不是记账。
         'lib/src/pages/implementations/game_stream_page.dart': 2,
+        // 无封面时按标题生成的封面：首字母的字素数决定排版字号（一字 / 两字），
+        // 是排版不是记账。
+        'lib/src/utils/components/fushi_generated_cover.dart': 1,
+        // 书店系列注记（`<系列名> (文库名)`）判据：尖括号内少于 2 个码点不当系列名，
+        // 是解析校验不是记账。
+        'packages/fushi_engine/lib/media/collections/store_series_annotation.dart':
+            1,
         // 玻璃输入框的字数计数器（maxLength 显示），是表单 UI 不是记账。
         'lib/src/utils/components/glass/fushi_glass_inputs.dart': 1,
         // 源文本条是否被查词高亮完整覆盖：字素坐标范围比较，不写学习统计。
@@ -292,9 +302,13 @@ void main() {
     '$paginationPath|countCharsBeforeViewportPaged: function(': <String>[
       'fushiStudyUnits',
     ],
-    // 分页 shell（2512）与连续 shell（3080）各一份，两份都自己数。
+    // 分页 shell 转发给 _charOffsetAtPoint（下一条已钉；页首 / 页尾两个 caret 探点共用
+    // 同一份「节点基址 + 节点内学习单位累加」）；连续 shell 自己数。
     '$paginationPath|getFirstVisibleCharOffset: function() {': <String>[
+      '_charOffsetAtPoint',
       'fushiStudyUnits',
+    ],
+    '$paginationPath|_charOffsetAtPoint: function(': <String>[
       'fushiStudyUnits',
     ],
     // 分页版自己数；连续版转发给 collapsedRangeAtCharOffset（下一条已钉）。

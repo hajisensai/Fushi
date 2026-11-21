@@ -117,6 +117,7 @@ class _WebBrowserSiteSettingsPageState
     final List<String> origins = _sites.keys.toList();
     return FushiPageScaffold(
       title: t.web_browser_site_settings_title,
+      masthead: true,
       actions: <Widget>[
         FushiIconButton(
           key: const ValueKey<String>('web_browser_site_settings_clear_all'),

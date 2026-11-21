@@ -4,7 +4,7 @@ import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart'
-    show BrowserVideoSample;
+    show BrowserVideoSample, BrowserVideoStudyActivitySink;
 import 'package:fushi/src/sync/extension_font_api.dart';
 import 'package:fushi/src/sync/extension_profile_api.dart';
 import 'package:fushi/src/sync/fushi_api_access_policy.dart';
@@ -30,6 +30,7 @@ class FushiApiServerManager {
     RemotePopupDictionaryCss Function()? popupDictionaryCssProvider,
     void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
     void Function(BrowserVideoSample sample)? onExtensionStudy,
+    BrowserVideoStudyActivitySink? onExtensionStudyActivity,
     ExtensionFavoriteHandler? onExtensionFavorite,
     void Function()? onExtensionSeen,
     void Function(String build, String? version)? onExtensionReport,
@@ -52,6 +53,7 @@ class FushiApiServerManager {
        _popupDictionaryCssProvider = popupDictionaryCssProvider,
        _onExtensionPopupSize = onExtensionPopupSize,
        _onExtensionStudy = onExtensionStudy,
+       _onExtensionStudyActivity = onExtensionStudyActivity,
        _onExtensionFavorite = onExtensionFavorite,
        _onExtensionSeen = onExtensionSeen,
        _onExtensionReport = onExtensionReport,
@@ -84,6 +86,8 @@ class FushiApiServerManager {
   final void Function(double maxWidth, double maxHeight)? _onExtensionPopupSize;
   // 扩展视频沉浸时间样本的 sink，透传给 [FushiApiServer]（app 侧进学习统计）。
   final void Function(BrowserVideoSample sample)? _onExtensionStudy;
+  // 扩展查词 / 制卡归属网页视频的 sink，透传给 [FushiApiServer]（反馈 PtsjrnVmH9）。
+  final BrowserVideoStudyActivitySink? _onExtensionStudyActivity;
   final ExtensionFavoriteHandler? _onExtensionFavorite;
   // 浏览器扩展连接探活回调，透传给 [FushiApiServer]（app 侧记录 last-seen）。
   final void Function()? _onExtensionSeen;
@@ -142,6 +146,7 @@ class FushiApiServerManager {
       popupDictionaryCssProvider: _popupDictionaryCssProvider,
       onExtensionPopupSize: _onExtensionPopupSize,
       onExtensionStudy: _onExtensionStudy,
+      onExtensionStudyActivity: _onExtensionStudyActivity,
       onExtensionFavorite: _onExtensionFavorite,
       onExtensionSeen: _onExtensionSeen,
       onExtensionReport: _onExtensionReport,

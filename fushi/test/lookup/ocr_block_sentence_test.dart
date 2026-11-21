@@ -90,4 +90,39 @@ void main() {
     expect(ocrBlockSentenceAt('あいう', -1), isNull);
     expect(ocrBlockSentenceAt('あいう', 3), isNull);
   });
+
+  group('ocrBlockContinuationAfterLine (BUG-4707)', () {
+    test(
+      'CJK: the following lines are joined directly, line breaks dropped',
+      () {
+        const String block = '今日は良い天\n気ですね。\n散歩に行こう。';
+        expect(
+          ocrBlockContinuationAfterLine(block, lineEnd: block.indexOf('\n')),
+          '気ですね。散歩に行こう。',
+        );
+      },
+    );
+
+    test('Latin: a word wrapped at the line end resumes with one space', () {
+      const String block = 'I like the\nweather today';
+      expect(
+        ocrBlockContinuationAfterLine(block, lineEnd: block.indexOf('\n')),
+        ' weather today',
+      );
+    });
+
+    test('the last line of the block has no continuation', () {
+      const String block = '今日は\n良い天気';
+      expect(ocrBlockContinuationAfterLine(block, lineEnd: block.length), '');
+      expect(ocrBlockContinuationAfterLine(block, lineEnd: 0), '');
+    });
+
+    test('the continuation is capped and never splits a surrogate pair', () {
+      const String block = 'あ\n𠮷𠮷𠮷';
+      expect(
+        ocrBlockContinuationAfterLine(block, lineEnd: 1, maxLength: 3),
+        '𠮷',
+      );
+    });
+  });
 }

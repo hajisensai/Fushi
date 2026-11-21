@@ -14,18 +14,15 @@ void main() {
       'lib/src/pages/implementations/games_library_page.dart',
     ).readAsStringSync();
     final String sources = File(
-      'lib/src/pages/implementations/media_sources_page.dart',
+      'lib/src/pages/implementations/video_import_page.dart',
     ).readAsStringSync();
 
     expect(video, isNot(contains('Future<void> _openCoverMatch(')));
     expect(video, isNot(contains('Future<void> _scrapeAllVideos(')));
     expect(video, isNot(contains('tooltip: t.scrape_all')));
-    expect(sources, contains("widget.mediaKind == 'video'"));
+    // 导入稿 IM18：整库刮削登记进视频导入视图的浮动顶栏（Apple 收进 ⋯）。
     expect(sources, contains('tooltip: t.scrape_all'));
-    expect(
-      sources.indexOf('tooltip: t.media_source_add'),
-      lessThan(sources.indexOf('tooltip: t.scrape_all')),
-    );
+    expect(sources, contains('label: t.scrape_all'));
 
     // 用户定案 2026-10-14：书和漫画不需要「全部刮削」（只有视频和 galgame 需要），
     // 书架页头的批量入口连同实现一起删；单本封面刮削（卡片菜单）保留。
@@ -33,7 +30,11 @@ void main() {
     expect(books, isNot(contains('Future<void> _scrapeAllBooks(')));
     expect(books, isNot(contains('t.scrape_all')));
 
-    expect(games, contains('Future<void> _scrapeGame('));
+    // 单卡「刮削元数据」随卡菜单收进游戏库 / 游戏首页共用的 galgame_item_menu.dart。
+    final String gameMenu = File(
+      'lib/src/pages/implementations/games/galgame_item_menu.dart',
+    ).readAsStringSync();
+    expect(gameMenu, contains('showGalgameScrapeDialog('));
     expect(games, contains('Future<void> _scrapeAllGames('));
     expect(games, contains('tooltip: t.scrape_all'));
   });
@@ -88,6 +89,12 @@ void main() {
     expect(apply, isNot(contains('clearOverrideImage: true')));
     // 游戏批量刮削走共享纯函数判据，恒不覆盖已有封面（书 / 漫画已无批量刮削）。
     expect(games, contains('uniqueExactScrapeTitleMatch<SourceCandidate>'));
+    // 唯一性按源判：跨源同名是同一部作品，不能被当成歧义（行为测试见
+    // test/mining/galgame_batch_scrape_match_test.dart）。
+    expect(
+      games,
+      contains('sourceOf: (SourceCandidate candidate) => candidate.source'),
+    );
     expect(games, contains('replaceExistingCover: false'));
   });
 }

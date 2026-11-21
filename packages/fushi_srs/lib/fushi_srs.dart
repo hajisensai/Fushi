@@ -25,6 +25,7 @@ export 'src/history_kernel.dart'
         srsImportEquivalentAny;
 export 'src/hlc.dart';
 export 'src/ids.dart';
+export 'src/kernel_ids.dart';
 export 'src/new_card_budget.dart';
 export 'src/note_type_ops.dart';
 export 'src/ordering.dart';
@@ -35,6 +36,8 @@ export 'src/search/anki_search.dart';
 export 'src/source_ref.dart';
 export 'src/store/srs_columns.dart';
 export 'src/store/srs_core.dart';
+export 'src/store/srs_gen4_migration.dart';
+export 'src/store/srs_retained_copy.dart';
 export 'src/store/srs_rows.dart';
 export 'src/style_dedup.dart';
 export 'src/term_status.dart';

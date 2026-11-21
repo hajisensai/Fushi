@@ -12,8 +12,10 @@ import 'video_fushi_page_source_corpus.dart';
 ///    `_videoSheetOpen` 门控。音量/倍速改为底栏紧凑锚点浮层（TODO-438），靠单个
 ///    `_videoControlPopover` ValueNotifier 互斥，不走 modal sheet / `_videoSheetOpen`，
 ///    也不允许 hover 改宽或布局位移。
-/// 2. **音轨恢复轮询**：`_restoreAudioTrack` 必须有界轮询等待 audioTracks 填充，
-///    不能单次固定延时后一锤子匹配（列表此刻常仍空 → 音轨「退出重进丢失」）。
+/// 2. **音轨恢复等待**：`_restoreAudioTrack` 必须等 audioTracks 填充出目标轨再切，
+///    不能单次固定延时后一锤子匹配（列表此刻常仍空 → 音轨「退出重进丢失」），也不能
+///    用有界轮询在几秒后静默放弃（大 REMUX / 慢盘音轨晚出，c32 video-12）。等待本身是
+///    控制器的事件驱动方法，行为测试在 `video_player_controller_handles_test.dart`。
 void main() {
   final String src = readVideoFushiSource();
 
@@ -176,22 +178,26 @@ void main() {
     });
   });
 
-  group('音轨恢复轮询（退出重进保留音轨）', () {
-    test('_restoreAudioTrack 用有界轮询而非单次固定延时', () {
+  group('音轨恢复等待（退出重进保留音轨）', () {
+    test('_restoreAudioTrack 走控制器的事件驱动等待，不轮询、不固定延时', () {
       final RegExpMatch? body = RegExp(
         r'Future<void> _restoreAudioTrack\([^)]*\) async \{(.*?)\n  \}',
         dotAll: true,
       ).firstMatch(src);
       expect(body, isNotNull, reason: '找不到 _restoreAudioTrack 方法体');
       final String b = body!.group(1)!;
-      expect(b.contains('for ('), isTrue, reason: '应轮询重试等待 audioTracks 填充');
-      expect(b.contains('controller.audioTracks'), isTrue);
+      expect(
+        b.contains('controller.waitForAudioTrack('),
+        isTrue,
+        reason: '应等控制器报告目标音轨出现（换片 / 卸载 / 用户选轨为终止条件）',
+      );
       expect(b.contains('selectAudioTrack'), isTrue);
-      // 不应是「只等一次 300ms 就匹配」的旧单次形态。
-      final bool singleShot300 = RegExp(
-        r'await Future<void>\.delayed\(const Duration\(milliseconds: 300\)\);\s*\n\s*if \(!mounted',
-      ).hasMatch(b);
-      expect(singleShot300, isFalse, reason: '旧的单次 300ms 后一锤子匹配会错过未填充的音轨列表');
+      expect(
+        b.contains('Future<void>.delayed'),
+        isFalse,
+        reason: '固定延时 / 有界轮询会在音轨晚出时静默放弃',
+      );
+      expect(b.contains('for ('), isFalse, reason: '不应再轮询 audioTracks');
     });
   });
 }

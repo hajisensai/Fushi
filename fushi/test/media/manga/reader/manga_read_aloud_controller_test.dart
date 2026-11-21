@@ -119,7 +119,7 @@ class _Host implements MangaReadAloudHost {
   final Map<int, Completer<MangaPageTextResult>> gates =
       <int, Completer<MangaPageTextResult>>{};
   final List<int> ensureCalls = <int>[];
-  final List<(int, int)> shown = <(int, int)>[];
+  final List<(int, List<int>)> shown = <(int, List<int>)>[];
   int clears = 0;
   int activity = 0;
   int visible = 0;
@@ -146,8 +146,8 @@ class _Host implements MangaReadAloudHost {
   }
 
   @override
-  Future<void> show(int pageIndex, int group) async {
-    shown.add((pageIndex, group));
+  Future<void> show(int pageIndex, List<int> blocks) async {
+    shown.add((pageIndex, blocks));
     if (!isSameSpread(pageIndex, visible)) {
       visible = pageIndex - pageIndex % 2;
       onPageChanged?.call(visible);
@@ -281,7 +281,7 @@ void main() {
     await _waitFor(() => c.state == MangaReadAloudState.finished);
 
     expect(playedTexts(all), <String>['あ。', 'い。', 'う。']);
-    expect(host.shown.map(((int, int) s) => s.$1), <int>[0, 0, 2]);
+    expect(host.shown.map(((int, List<int>) s) => s.$1), <int>[0, 0, 2]);
     expect(player.played.map(((String, double) p) => p.$2), <double>[
       1.5,
       1.5,
@@ -405,6 +405,26 @@ void main() {
     c.resume();
     await _waitFor(() => player.played.length == 2 && player.playing);
     expect(playedTexts(all), <String>['あ。', 'あ。']);
+    c.stop();
+  });
+
+  test('查后从被查那句句首续读；对不上任何句子时同继续（BUG-4909）', () async {
+    final _Host host = threePages();
+    final MangaReadAloudController c = controllerFor(host);
+    c.start(fromPage: 0);
+    await _waitFor(() => player.playing);
+    c.pause();
+    await _settle();
+    // 查的是第 0 页第二句（块 1）。
+    c.resumeFromSentence(0, <int>[1]);
+    await _waitFor(() => player.played.length == 2 && player.playing);
+    expect(playedTexts(all), <String>['あ。', 'い。']);
+    c.pause();
+    await _settle();
+    // 块对不上：从当前句（い）开头重读。
+    c.resumeFromSentence(0, <int>[9]);
+    await _waitFor(() => player.played.length == 3 && player.playing);
+    expect(playedTexts(all), <String>['あ。', 'い。', 'い。']);
     c.stop();
   });
 

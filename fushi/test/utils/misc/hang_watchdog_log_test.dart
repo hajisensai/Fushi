@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/feedback/feedback_gal_lookup_log.dart';
 import 'package:fushi/src/utils/misc/hang_watchdog_log.dart';
 
 /// BUG-2588：主线程停泵看门狗记录的 Dart 侧折入。
@@ -102,12 +103,56 @@ void main() {
         contains(r'L"\\hang_watchdog.log"'),
         reason: '日志文件名必须与 HangWatchdogLog._relativePath 硬钉一致',
       );
+      // 反馈 JjjCk58rPZ：IsHungAppWindow 自带 5 s 门槛，13.7 s 的卡顿落在旧的
+      // 「5 s + 10 s」门槛下没留下 dump；改为 Post 心跳 + 主窗应答计时。
       expect(
         src,
-        contains('IsHungAppWindow('),
-        reason: '停泵判据用系统 IsHungAppWindow，不自造跨线程 SendMessage',
+        isNot(contains('IsHungAppWindow(')),
+        reason: 'IsHungAppWindow 量不到 5 s 以内的卡顿，不能再当判据',
+      );
+      expect(
+        src,
+        contains('PostMessageW(g_main_window, heartbeat'),
+        reason: '心跳用 Post（同一时刻只有一条在途），不用会堆积的 SendMessage',
+      );
+      expect(
+        src,
+        contains('QueryUnbiasedInterruptTime('),
+        reason: '计时不含系统睡眠，合盖唤醒不误报',
+      );
+      expect(
+        src,
+        contains('NativeGlog("main-thread stall: ms='),
+        reason: '恢复时把卡顿时长写进 hibiki_glookup.log',
+      );
+      expect(
+        src,
+        contains('PruneOldHangDumps()'),
+        reason: 'hang dump 数量有上限，不能把磁盘塞满',
       );
       expect(src, contains('IsDebuggerPresent()'), reason: '调试器断点不是卡死，必须跳过');
+    });
+
+    test('主窗窗口过程最先应答心跳', () {
+      final String src = File(
+        'windows/runner/flutter_window.cpp',
+      ).readAsStringSync();
+      final int handler = src.indexOf('FlutterWindow::MessageHandler(HWND');
+      final int ack = src.indexOf(
+        '::fushi::HandleHangWatchdogHeartbeat(message, wparam)',
+        handler,
+      );
+      final int firstOther = src.indexOf('if (message == WM_TIMER', handler);
+      expect(handler, greaterThan(0));
+      expect(ack, greaterThan(handler), reason: '心跳没人应答会被当成卡死');
+      expect(ack, lessThan(firstOther), reason: '要在其它分支之前处理');
+    });
+
+    test('卡顿行在反馈日志白名单里', () {
+      expect(kFeedbackGalLookupLogPrefixes, contains('main-thread stall:'));
+      const String raw =
+          '2026-11-07T16:16:01  [native] main-thread stall: ms=13687 dumped=1';
+      expect(galLookupDiagnosticLines(raw), hasLength(1));
     });
 
     test('CMake 已把 hang_watchdog.cpp 编进 runner', () {

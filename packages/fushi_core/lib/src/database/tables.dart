@@ -95,6 +95,11 @@ class AudioCues extends Table {
   IntColumn get startMs => integer()();
   IntColumn get endMs => integer()();
   IntColumn get audioFileIndex => integer()();
+
+  /// v160：转录产物的逐 token 发射时间（`{"t":[token...],"o":[相对 startMs 的毫秒...]}`），
+  /// 与本行 cue **重切 / 后处理之后**的边界同步；非转录字幕 / 存量行为 NULL。
+  /// 编解码只在 `AudioCue.fromRow` / `toCompanion`（fushi_audio）。
+  TextColumn get tokenTimingJson => text().nullable()();
 }
 
 // ── srt_books ───────────────────────────────────────────────────────
@@ -379,6 +384,68 @@ class DictionaryMetadata extends Table {
 
   @override
   Set<Column> get primaryKey => {name};
+}
+
+// ── remote_dictionary_metadata ──────────────────────────────────────
+/// v153：已配对 `fushi_server`（或当 host 的 Fushi）上**托管的词典**在本机的目录行，
+/// 让每个配置（Profile）不下载也能选用服务器上的词典（设计：
+/// `.worktrees/coordination/briefs/server-dictionaries.md`）。
+///
+/// 与 [DictionaryMetadata] 同形但**刻意分表**：`dictionary_metadata` 的行存在性就是
+/// 「这本词典装在本机」（BUG-1994），服务器词典插进去会被当成已安装、被引擎去 load
+/// 一个不存在的目录。这里的行只代表「这台 host 上有这本」。
+///
+/// 两组列的写者不同：
+/// * 目录列（[type] / [formatKey] / [revision] / [displayName] / [sourceLanguage] /
+///   [lastSeenAt] / [missingSince]）只由目录刷新（`RemoteDictionaryCatalogService`
+///   拉 `/api/library/dictionaries` 后对账）写；
+/// * 配置列（[order] / [hidden]）属于激活配置，和 `dictionary_metadata.order` /
+///   `hiddenLanguagesJson` 同一套快照 / 应用（`remote_dictionary_meta` 类别）。目录
+///   刷新的 upsert 冲突时**不碰**它们。
+///
+/// 身份 = ([hostId], [name])：[name] 是 host 上的真名（冻结主键，查词请求的
+/// `dictionaries` 名单按它点名），[hostId] 是配对时记下的 host 稳定 id（老条目没有
+/// hostId 时用地址 origin 充当）。设备本地：hostId 只在本机的配对里有意义，不进备份。
+@DataClassName('RemoteDictionaryMetaRow')
+class RemoteDictionaryMetadata extends Table {
+  TextColumn get hostId => text()();
+  TextColumn get name => text()();
+
+  /// 与 `dictionary_metadata.type` 同值域（`term` / `frequency` / `pitch` / `kanji`）。
+  TextColumn get type => text().withDefault(const Constant('term'))();
+
+  /// host 报的导入格式（如 `yomichan`）；老 host 不报为 null。
+  TextColumn get formatKey => text().nullable()();
+
+  /// 词典包版本（Yomitan `index.json` 的 `revision`）；host 不报为 null。
+  TextColumn get revision => text().nullable()();
+
+  /// host 上用户起的显示名；没改过为 null。
+  TextColumn get displayName => text().nullable()();
+
+  /// 词头语言（BCP-47，host 侧 `languageOverride` 优先，其次 index.json）；未知为 null。
+  TextColumn get sourceLanguage => text().nullable()();
+
+  /// 最近一次在 host 目录里看见它的时刻（ms）。
+  IntColumn get lastSeenAt => integer()();
+
+  /// 从 host 目录里消失的时刻（ms）；null = 上次刷新时还在。行不删：配置的顺序 / 开关
+  /// 留着，词典回来时原样生效。
+  IntColumn get missingSince => integer().nullable()();
+
+  /// 配置拥有：与本机词典混排的管理页顺序（与 `dictionary_metadata.order` 同一数轴）。
+  IntColumn get order => integer()();
+
+  /// 配置拥有：这个配置是否关掉了它（新出现的词典默认启用）。
+  BoolColumn get hidden => boolean().withDefault(const Constant(false))();
+
+  /// v154：本机给这本服务器词典起的显示名（词典管理页详情里改名）；null = 用 host 的
+  /// [displayName] / [name]。**设备本地**：既不归配置（不进 `remote_dictionary_meta`
+  /// 快照），也不由目录刷新写（upsert 冲突时不碰），不导出。
+  TextColumn get localDisplayName => text().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {hostId, name};
 }
 
 // ── dictionary_history ──────────────────────────────────────────────
@@ -957,6 +1024,37 @@ class FavoriteWords extends Table {
   ];
 }
 
+// ── favorite_sentences（v166）───────────────────────────────────────
+/// 收藏句（阅读器 / 有声书 / 视频 / 游戏 / 漫画 / 音乐 / 网页视频共用，按 [source]
+/// 区分）。v166 之前存在偏好 `favorite_sentences` 的一整段 JSON 里，每次读都要在
+/// 主 isolate 解码整段（实测大库 425 KB、27.6 ms，拍板台 design-nmv-stats-main-isolate）。
+/// 模型与跨设备内容身份见 `FavoriteSentence` / `FavoriteSentenceRepository.itemKeyOf`
+/// （正文 + 出处 + 章节 + 锚点；[id] 只是本机身份）。同步 wire
+/// （`AggregateSnapshot.favoriteSentences`）仍是原 JSON 形状，字节不变。
+@DataClassName('FavoriteSentenceRow')
+class FavoriteSentences extends Table {
+  TextColumn get id => text()();
+  TextColumn get sentence => text()();
+  TextColumn get bookTitle => text().withDefault(const Constant(''))();
+  TextColumn get chapterLabel => text().nullable()();
+
+  /// 收藏时刻（`DateTime.microsecondsSinceEpoch`）：wire 上的 ISO 串精确到微秒，
+  /// 存微秒才能原样写回。
+  IntColumn get createdAtUs => integer()();
+  TextColumn get bookKey => text().nullable()();
+  IntColumn get sectionIndex => integer().nullable()();
+  IntColumn get normCharOffset => integer().nullable()();
+  IntColumn get normCharLength => integer().nullable()();
+  TextColumn get color => text().nullable()();
+  TextColumn get source => text().withDefault(const Constant('book'))();
+  TextColumn get dateKey => text().nullable()();
+  TextColumn get expression => text().nullable()();
+  TextColumn get reading => text().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 // ── mining_statistics ───────────────────────────────────────────────
 /// 制卡计数：卡片本体落在 Anki（外部），这里只按 dateKey + sourceType 记成功制卡
 /// 次数，供阅读/视频统计页展示。与时长/字数统计表同构（按日期累加）。
@@ -1129,6 +1227,13 @@ class MediaSources extends Table {
   /// **会同步**的作品级 `media_privacy_flags` 承载私密（有意为之，理由见
   /// `deleteMediaSource`）。
   BoolColumn get isPrivate => boolean().withDefault(const Constant(false))();
+
+  /// 自动扫描（schema v157，拍板台 C_8oheua0H / ICOLa6LZLU / enSm2GOuFA）：true =
+  /// app 启动与回到前台时，这个来源按节流间隔自动重扫一次（调度见 fushi
+  /// `source_auto_scan.dart`），扫完照手动「重新扫描」的收尾走（视频来源串联
+  /// 「扫描后自动刮削」）。设备本地配置（来源只存在于本机，不进互联同步）；
+  /// 默认 false，存量来源 false。
+  BoolColumn get autoScan => boolean().withDefault(const Constant(false))();
 
   /// 列表排序权重（同 [BookTags].sortOrder 范式）。
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
@@ -1363,6 +1468,12 @@ class MediaCollectionItems extends Table {
 
   /// 合集内序：playlist 的播放顺序 / collection 的展示顺序。
   IntColumn get sortIndex => integer().withDefault(const Constant(0))();
+
+  /// v159：用户亲手放进这个合集（手动加入 / 撤销 AI 的移出）。为 true 时自动路径
+  /// （AI 整理）不得把它移出——「用户否决过移出」记在成员行上、随合集清单同步，
+  /// 换一台设备也成立。单调：自动入口只在新插入时写 false，不把 true 改回 false；
+  /// 跨端合并取或。见 AI 库管家设计稿 §7。
+  BoolColumn get pinnedByUser => boolean().withDefault(const Constant(false))();
 
   /// 复合主键：同一合集内一条目一行（允许跨合集重复）。
   @override
@@ -1784,14 +1895,27 @@ class VideoScrapeMeta extends Table {
 // 与 [CollectionScrapeMeta] 同族：可重建的刮削缓存（删了重刮即回填），删除合集
 // FK cascade 连带清边；目标合集被删则 setNull 退回纯刮削态（刮削事实还在，只是
 // 本地绑定失效——这正是「目标两态」的语义，不需要墓碑）。
+//
+// v162：起点与已绑定目标都可以是**单视频**（挂在单个视频上的作品，散装电影）。
+// 起点合集 / 单视频二选一（CHECK，同 [MediaImages] 的单一归属），删视频 cascade
+// 清边；已绑定目标合集 / 单视频至多一个，目标视频被删 setNull 退回纯刮削态。
+// 存量行（起点都是合集）按列名原样拷贝，新两列为 NULL。
 @DataClassName('CollectionRelationRow')
 class CollectionRelations extends Table {
   IntColumn get id => integer().autoIncrement()();
 
-  /// 边的起点：本地合集。删合集 cascade 清边。
-  IntColumn get collectionId => integer().references(
+  /// 边的起点：本地合集（与 [bookUid] 二选一）。删合集 cascade 清边。
+  IntColumn get collectionId => integer().nullable().references(
     MediaCollections,
     #id,
+    onDelete: KeyAction.cascade,
+  )();
+
+  /// 边的起点：单视频（v162，与 [collectionId] 二选一；挂在单个视频上的作品，
+  /// 散装电影）。删视频 cascade 清边。
+  TextColumn get bookUid => text().nullable().references(
+    VideoBooks,
+    #bookUid,
     onDelete: KeyAction.cascade,
   )();
 
@@ -1811,6 +1935,14 @@ class CollectionRelations extends Table {
     onDelete: KeyAction.setNull,
   )();
 
+  /// 已绑定态（v162）：目标在本地库中是单视频（散装电影）时的 bookUid，与
+  /// [targetCollectionId] 至多一个非空。目标视频被删自动 setNull 退回纯刮削态。
+  TextColumn get targetBookUid => text().nullable().references(
+    VideoBooks,
+    #bookUid,
+    onDelete: KeyAction.setNull,
+  )();
+
   /// 目标条目来源（`ScrapeSource.name`：bangumi / tmdb）。
   TextColumn get source => text()();
 
@@ -1826,10 +1958,19 @@ class CollectionRelations extends Table {
   /// 目标封面本地路径（抓取层下载落地后回填）。
   TextColumn get coverPath => text().nullable()();
 
-  /// 同一合集下同一源内条目只此一边（重复刮削按此去重）。
+  /// 起点合集 / 单视频恰好一个；已绑定目标合集 / 单视频至多一个。
+  @override
+  List<String> get customConstraints => <String>[
+    'CHECK ((collection_id IS NULL) != (book_uid IS NULL))',
+    'CHECK (target_collection_id IS NULL OR target_book_uid IS NULL)',
+  ];
+
+  /// 同一起点下同一源内条目只此一边（重复刮削按此去重）。两条唯一键分别覆盖两种
+  /// 起点——SQLite 的 UNIQUE 对 NULL 不判等，各自只约束自己那种起点的行。
   @override
   List<Set<Column>> get uniqueKeys => [
     {collectionId, source, subjectId},
+    {bookUid, source, subjectId},
   ];
 }
 
@@ -1895,6 +2036,106 @@ class MediaImages extends Table {
     {collectionId, kind, position},
     {bookUid, kind, position},
   ];
+}
+
+// ── item_scrape_meta / item_images（单本书 / 漫画 / 字幕书 / 游戏的刮削资料，v161）──
+// 2026-11-16 所有者：「都接上啊横屏海报都得用」——所有刮削过的条目都要走共享系列
+// 色块（竖版海报斜放 + 无字横版背景图 + 概览 / chip），单本书 / 单本漫画 / 单个游戏
+// 也不例外。此前只有视频（[VideoScrapeMeta] / [MediaImages] 的 bookUid 归属，FK 指向
+// VideoBooks）和合集（[CollectionScrapeMeta] / [MediaImages] 的 collectionId 归属）
+// 有刮削宿主，单本书 / 漫画 / 游戏无处可放。
+//
+// 为什么是新表而不是扩 [MediaImages] / [VideoScrapeMeta]：那两张的归属是**真外键**
+// （删宿主 FK cascade），且 media_images 有「collectionId / bookUid 恰好一个」的
+// CHECK——SQLite 改 CHECK 要整表重建，再加第三种文本归属会把「真外键 + cascade」
+// 的不变量变成「部分行有外键、部分行靠应用清理」。书 / 字幕书 / 游戏三类宿主分在
+// 三张表（epub_books.uid / srt_books.uid / galgames.id），本来就挂不了单一外键。
+//
+// 键与 [MediaCollectionItems] 同一套**逻辑外键**（`MediaKind.dbValue` +
+// entryKey：epub=EpubBooks.uid（漫画 / PDF 同为 EpubBooks 行）/ srt=SrtBooks.uid /
+// game=Galgames.id）：书架 / 游戏库手里本来就有这组身份（合集成员、拖卡 MediaRef
+// 都用它），批量预取后按同一键查，零换算。video 不进本表（视频有自己的规范刮削
+// 宿主），写入口拒收。
+//
+// 与 [CollectionScrapeMeta] 同族：可重建的刮削缓存（删了重刮即回填），空表 = 全部
+// 未刮削（旧库升级后行为与旧版一致）。宿主删除没有 DB cascade——删书 / 删字幕书 /
+// 删游戏的路径在同一事务里显式清行（与 shelf_entries / 合集成员同一处），图片文件
+// 由删除路径按「落在 item_images 目录内」的护栏回收。
+@DataClassName('ItemScrapeMetaRow')
+class ItemScrapeMeta extends Table {
+  /// 宿主种类（`MediaKind.dbValue`：epub / srt / game）。
+  TextColumn get mediaType => text()();
+
+  /// 宿主稳定身份（同 [MediaCollectionItems.entryKey] 口径）。
+  TextColumn get entryKey => text()();
+
+  /// 来源：书籍刮削源名（`BookScrapeSource.name`：bangumi / dlsite / …）、游戏
+  /// 元数据源 key（bgm / vndb / dlsite），脚本 / 手动写入为 `manual`。
+  TextColumn get source => text()();
+
+  /// 源内条目 id；手动写入为 null。
+  TextColumn get subjectId => text().nullable()();
+
+  /// 条目主标题（中文优先）；只记事实，不回写书名（显示名覆盖另有存储）。
+  TextColumn get title => text().nullable()();
+
+  /// 原名；与 [title] 相同或缺失时为 null。
+  TextColumn get originalTitle => text().nullable()();
+
+  /// 简介（含换行）。
+  TextColumn get summary => text().nullable()();
+
+  /// 出版 / 发行日期 `YYYY-MM-DD`，允许只到年或年月（与 [CollectionScrapeMeta]
+  /// 同规矩：不凭空补月日）。
+  TextColumn get airDate => text().nullable()();
+
+  /// 评分（0~10）与评分人数。
+  RealColumn get rating => real().nullable()();
+  IntColumn get ratingCount => integer().nullable()();
+
+  /// 标签 JSON 数组：`[{"name":"日常","count":1234}]`（按热度降序；与
+  /// [CollectionScrapeMeta.tagsJson] 同形，展示层共用一个解析函数）。
+  TextColumn get tagsJson => text().nullable()();
+
+  /// 条目详情页 URL，供「查看条目」跳转。
+  TextColumn get detailUrl => text().nullable()();
+
+  /// 本行写入毫秒戳。
+  IntColumn get scrapedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {mediaType, entryKey};
+}
+
+/// 单本书 / 漫画 / 字幕书 / 游戏的附加图（横版背景 backdrop / 标题 logo），与
+/// [ItemScrapeMeta] 同一逻辑外键。语义对齐 [MediaImages]（`kind` =
+/// `MediaImageKind.dbValue`，只有 backdrop 允许 position>0），只是归属换成
+/// (mediaType, entryKey)。不进本表的：主封面（书的 override 封面 / 游戏
+/// `galgames.cover_path` 照旧）。文件落 `<documents>/video_covers/items/`
+/// （`VideoStorage.itemImagesDir`，与合集 / 单视频附加图同一目录族：数据根迁移、
+/// 存储占用统计照常覆盖，gcOrphanCovers 不扫子目录）。
+@DataClassName('ItemImageRow')
+class ItemImages extends Table {
+  /// 宿主种类（`MediaKind.dbValue`），同 [ItemScrapeMeta.mediaType]。
+  TextColumn get mediaType => text()();
+
+  /// 宿主稳定身份，同 [ItemScrapeMeta.entryKey]。
+  TextColumn get entryKey => text()();
+
+  /// 图种类（`MediaImageKind.dbValue`：backdrop / logo / title_card）。
+  TextColumn get kind => text()();
+
+  /// 同宿主同种类内的排序位（仅 backdrop 允许 >0）。
+  IntColumn get position => integer().withDefault(const Constant(0))();
+
+  /// 本地文件绝对路径。
+  TextColumn get path => text()();
+
+  /// 来源远程 URL（重下 / 诊断用；本地文件写入为 null）。
+  TextColumn get sourceUrl => text().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {mediaType, entryKey, kind, position};
 }
 
 // ── video_metadata_works（v77：视频规范作品资料）─────────────────────
@@ -3596,9 +3837,14 @@ abstract final class MangaDownloadJobStatus {
   static const String done = 'done';
   static const String failed = 'failed';
   static const String cancelled = 'cancelled';
+
+  /// 用户暂停：已落地的页 / `.part` 原样保留，worker 不领取；恢复回 `queued`
+  /// 后从磁盘现状续跑（与 `cancelled` 不同，取消会删半成品）。跨进程重启保持。
+  static const String paused = 'paused';
 }
 
-/// 漫画章节 / mokuro 卷的下载任务队列（schema v103，device-local）。
+/// 漫画章节 / mokuro 卷的下载任务队列（schema v103，device-local；v155 状态值域加
+/// `paused`）。
 ///
 /// 设计稿 `docs/specs/2026-09-12-manga-download-first-design.md` §2.2。
 /// 在线漫画改成「先下载再读」后，每个待下载的章（或 mokuro.moe 卷）在这里占
@@ -3662,7 +3908,7 @@ class MangaDownloadJobs extends Table {
         "AND runtime != '')",
     "CHECK (kind IN ('chapter', 'mokuro_volume'))",
     "CHECK (status IN ('queued', 'running', 'done', 'failed', "
-        "'cancelled'))",
+        "'cancelled', 'paused'))",
     'CHECK (pages_done >= 0 AND pages_total >= 0 '
         'AND pages_done <= pages_total)',
     'CHECK (attempt_count >= 0)',
@@ -3846,6 +4092,35 @@ class MediaPrivacyFlags extends Table {
   IntColumn get privateAt => integer().nullable()();
 
   /// 最近一次取消私密的毫秒戳；NULL = 从没取消过。
+  IntColumn get clearedAt => integer().nullable()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{mediaKind, entryKey};
+}
+
+// ── media_nsfw_flags（v156：作品级「NSFW」标记）────────────────────────
+/// 用户手动把一部作品标成 NSFW（拍板台 w04vrhUAaX：所有媒体都能标是否 NSFW）：
+/// 「模糊 NSFW 封面」开着时库页 / 继续卡等封面消费端把它的封面打模糊，「制卡图片
+/// 也模糊」开着时从它制的卡用模糊后的封面 / 页图。
+///
+/// 与 [MediaPrivacyFlags] 同形、同一套逻辑外键（[mediaKind] = `TagHostKind.dbValue`，
+/// [entryKey]：epub=bookKey / srt=uid / video=bookUid / collection=合集 id 字符串），
+/// 跨端也搭互联标签同步清单（条目上的可选 `nsfw` 字段）。两件事刻意分表：私密管
+/// 出站（排行榜 / Bangumi），NSFW 管显示，两者互不蕴含。游戏不落这张表——游戏早有
+/// 自己的成人向标记（`GalgameCustomData.nsfw` / 刮削 `metadata.nsfw`）。
+///
+/// 一行两只时钟（LWW）：[nsfwAt] = 最近一次标 NSFW，[clearedAt] = 最近一次取消；
+/// NSFW ⇔ nsfwAt 非空且（clearedAt 为空或 nsfwAt > clearedAt），相等取消胜。取消
+/// 不删行（理由同 [MediaPrivacyFlags]）。宿主删除不级联。
+@DataClassName('MediaNsfwFlagRow')
+class MediaNsfwFlags extends Table {
+  TextColumn get mediaKind => text()();
+  TextColumn get entryKey => text()();
+
+  /// 最近一次标 NSFW 的毫秒戳；NULL = 从没标过。
+  IntColumn get nsfwAt => integer().nullable()();
+
+  /// 最近一次取消 NSFW 的毫秒戳；NULL = 从没取消过。
   IntColumn get clearedAt => integer().nullable()();
 
   @override
@@ -4120,8 +4395,15 @@ class MediaLinks extends Table {
   /// 推断置信度 0..1；手动连接为 NULL。
   RealColumn get confidence => real().nullable()();
 
+  /// `confirmed_by == 'user'` 的镜像（存量持久化名冻结：备份合并、旧版同步对端还在
+  /// 读写它）。由 DB 写入口与 [confirmedBy] 一起维护，调用方不单独写。
   BoolColumn get isUserConfirmed =>
       boolean().withDefault(const Constant(false))();
+
+  /// v159：谁让这条连接生效（`MediaLinkConfirmer`）：`user` = 用户手动连接 / 确认；
+  /// `ai` = AI 按门槛直接生效（可撤销，用户确认后升为 `user`）；NULL = 建议。
+  /// 非空即「已生效」，`user` 压过 `ai`。见 AI 库管家设计稿 §5.3。
+  TextColumn get confirmedBy => text().nullable()();
 
   /// 推断理由（AI 的「为什么认为是同一作品」、确定性判据的证据摘要）。
   TextColumn get reason => text().nullable()();

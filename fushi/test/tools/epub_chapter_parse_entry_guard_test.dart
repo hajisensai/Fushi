@@ -30,6 +30,10 @@ const Map<String, String> kAllowedRawHtmlParseFiles = <String, String>{
   '../packages/fushi_engine/lib/media/torrent/nyaa_client.dart':
       'nyaa 种子站返回的是真正的 HTML5 页面（text/html），不是 EPUB 章节 XHTML；'
       '自闭合 raw-text 标签在那里既不合法也不会出现，走归一化只会平添开销。',
+  '../packages/fushi_engine/lib/media/torrent/custom_bt_site.dart':
+      '用户自定义 BT 站（导入的解析规则）抓的是站点返回的真 HTML5 页面（搜索结果页、详情页，'
+      'text/html，可能是 cp1251 等编码解码后的文本），与 nyaa_client 同类，不是 EPUB 章节 XHTML；'
+      '与 XHTML 自闭合语义无关，走归一化只会平添开销。',
   '../packages/fushi_anki/lib/src/anki_glossary_css.dart':
       '制卡释义 HTML（popup.js 导出的 `.yomitan-glossary` 片段，BUG-3224）不是 EPUB '
       '章节 XHTML：只用解析结果做 CSS 选择器命中判断，最终输出仍是原字符串，'

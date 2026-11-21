@@ -1,0 +1,8 @@
+## BUG-4954 · 探测开库过了、drift 后台连接撞上侧车 I/O 错误时不走恢复阶梯，启动落进通用错误屏
+- **报告**：2026-11-21（应用内反馈 yi6dRmhbVQ，macOS 3.3.0 启动崩溃报告）
+- **真实性**：✅ 真 bug。用户日志：`AppModel.sandboxRelocation` / `AppModel.initialise` 报 `SqliteException(2570)`（`SQLITE_IOERR_DELETE`），语句 `PRAGMA journal_mode=WAL`，栈落在 drift 后台 isolate 的 `Sqlite3Delegate._initializeDatabase → _openWithRecovery.applyPragmas`，经 `_TypedOpenErrorInterceptor.ensureOpen` 回到 `getPref`。即 Layer 0 的探测连接已成功开库，错误出在之后 drift 后台连接**第二次**开库时。
+  - 根因：`packages/fushi_core/lib/src/database/database.dart`（修前 :325-334）`_openWithRecovery` 的恢复阶梯只包住 Layer 0 探测连接，探测关掉后直接 `return NativeDatabase.createInBackground(dbFile, setup: applyPragmas)`；后台连接在首个查询时再跑一遍同样的 PRAGMA，撞上的侧车类错误（IOERR / CANTOPEN / NOTADB）没有任何恢复，`_TypedOpenErrorInterceptor`（修前 :703-735）只翻译 CORRUPT，于是以裸 `SqliteException` 落进 app 层通用初始化错误屏。drift 远端客户端还会缓存失败的 open future（`_RemoteQueryExecutor.ensureOpen` 的 `_serverIsOpen ??=`），这条连接此后每条查询都报同一个错。
+  - 为什么 FS 拒绝 unlink（IOERR_DELETE 的系统层成因）日志里没有证据，不可控；本修复处理的是「后台连接的侧车错误绕过恢复阶梯」这一代码缺陷。
+- **[x] ① 已修复** — 新增 `_RecoveringOpenExecutor`（database.dart:492 起）包住 drift 后台连接：开库失败且是侧车类错误时，用与 Layer 0 共用的判据 `_throwUnlessRecoverableSidecarError` 分流（CORRUPT / 主库头不合法 → 终态），关掉失败连接，跑与 Layer 0 同一份 Layer 1–3 阶梯（抽成 `_recoverSidecarAndReopen`），换上新后台连接再开一次；阶梯只跑一遍、并发 ensureOpen 共用同一次恢复。PRAGMA 抽成顶层 `_applyOpenPragmas`，探测与后台 `setup` 共用。
+- **[x] ② 已加自动化测试** — `fushi/test/database/db_background_open_sidecar_recovery_test.dart`：经 `debugAfterOpenProbeForTesting` 在探测之后、后台开库之前毒化 `-wal`，真实复现「探测过、后台连接撞侧车错误」；主进程断言查询成功、数据不丢、恢复后连接可写、先拍快照再删侧车；弹窗进程断言抛 `FushiDatabaseUnrecoverableException` 且不删侧车。
+- **备注**：未在 macOS 真机复现 IOERR_DELETE 本身（无法人为制造该系统错误）；测试用跨平台的 `-wal` 目录毒化走同一条代码路径。

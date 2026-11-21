@@ -12,6 +12,10 @@ import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/live_transcode.dart';
+import 'package:fushi_engine/media/video/stream_video_sync.dart';
+import 'package:fushi_engine/media/video/video_fingerprint_store.dart';
+import 'package:fushi_engine/media/video/video_fingerprint_warmer.dart';
+import 'package:fushi_engine/media/video/video_source_fingerprint.dart';
 import 'package:fushi_engine/sync/ai_relay_routes.dart';
 import 'package:fushi_engine/sync/bluray_clip_relay_pool.dart';
 import 'package:fushi_engine/sync/disc_share_routes.dart';
@@ -49,6 +53,8 @@ import 'package:fushi_engine/leaderboard/leaderboard_device_link.dart';
 import 'package:fushi_engine/sync/interconnect_leaderboard_link.dart';
 import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
+import 'package:fushi_engine/sync/interconnect_plugin_relay.dart';
+import 'package:fushi_engine/sync/interconnect_source_share.dart';
 import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
 import 'package:fushi_engine/sync/fushi_screen_ocr_host.dart';
@@ -64,6 +70,10 @@ import 'package:fushi_engine/sync/interconnect_dav_tree_listing.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
+import 'package:fushi_engine/media/torrent/remote_torrent_wire.dart'
+    show kTorrentEngineCapability, kTorrentEngineRoutePrefix;
+import 'package:fushi_engine/sync/torrent_engine/host_torrent_engine.dart';
+import 'package:fushi_engine/sync/torrent_engine/host_torrent_engine_routes.dart';
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
@@ -73,6 +83,7 @@ import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
 import 'package:fushi_engine/sync/remote_lookup_routes.dart';
 import 'package:fushi_engine/sync/remote_mining_target.dart';
+import 'package:fushi_engine/srs/srs_remote_generation.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_engine/srs/srs_remote_store_routes.dart';
 import 'package:fushi_engine/sync/srs_change_feed.dart';
@@ -96,6 +107,8 @@ part 'fushi_sync_server/sync_state.part.dart';
 part 'fushi_sync_server/webdav.part.dart';
 part 'fushi_sync_server/game_stream.part.dart';
 part 'fushi_sync_server/leaderboard_link.part.dart';
+part 'fushi_sync_server/source_share.part.dart';
+part 'fushi_sync_server/plugin_relay.part.dart';
 part 'fushi_sync_server/host_update.part.dart';
 
 /// Embedded WebDAV-style server used for device-to-device LAN sync.
@@ -523,6 +536,7 @@ class FushiSyncServer {
     HostJobManager? hostJobs,
     HostSubscriptionHost? subscriptions,
     HostDownloadHost? downloads,
+    HostTorrentEngine? torrentEngine,
     HostAssistantProvider? assistant,
     SecurityContext? securityContext,
     String? hostFingerprint,
@@ -535,9 +549,15 @@ class FushiSyncServer {
     FushiRemoteGameStreamService? gameStreamService,
     VideoRemoteService? videoRemoteService,
     @visibleForTesting BlurayClipRelayPool? blurayClipRelays,
+    @visibleForTesting
+    Duration videoFingerprintWarmDelay = const Duration(minutes: 1),
   }) : assert(listenScope == null || !allowLan, 'listenScope 与 allowLan 只给一个'),
        syncDataDir = p.join(syncDataDir, 'sync-data'),
        _blurayClipRelays = blurayClipRelays ?? BlurayClipRelayPool(),
+       _videoFingerprintWarmDelay = videoFingerprintWarmDelay,
+       _videoFingerprintStore = VideoFingerprintStore(
+         File(p.join(syncDataDir, 'video_fingerprints.json')),
+       ),
        _requestedPort = port,
        _token = token,
        _listenScope =
@@ -556,6 +576,7 @@ class FushiSyncServer {
        _screenOcr = screenOcr,
        _hostJobs = hostJobs,
        _downloads = downloads,
+       _torrentEngine = torrentEngine,
        _assistant = assistant == null ? null : HostAssistantSessions(assistant),
        _subscriptions = subscriptions,
        _dictionaryMediaProvider = dictionaryMediaProvider,
@@ -600,6 +621,10 @@ class FushiSyncServer {
   /// 代下载（设计 §3.3）。null = host 不提供，`/api/downloads` 404、能力位无 `downloads`。
   final HostDownloadHost? _downloads;
 
+  /// 把本机 BT 引擎借给已配对设备当下载后端。null = host 不提供，
+  /// `/api/torrent-engine` 404、能力位无 `torrentEngine`。
+  final HostTorrentEngine? _torrentEngine;
+
   /// AI 助手会话（手机把一句话交给电脑的 AI 去办）。null = host 不提供，
   /// `/api/assistant` 404、能力位无 `assistant`。
   final HostAssistantSessions? _assistant;
@@ -628,6 +653,17 @@ class FushiSyncServer {
   /// 偏好读侧（互联 host 的实时转码开关）。null = 调用方没接线（老调用方、单测），
   /// 按默认值走，行为与从前一致。
   final PrefStore? _prefs;
+
+  /// 视频指纹落盘缓存（拍板台 left3657）。放在 sync-data（WebDAV 根）的**上一级**，
+  /// 不经 WebDAV 暴露给对端；起服务时挂到 [VideoSourceFingerprint.instance]。
+  final VideoFingerprintStore _videoFingerprintStore;
+
+  /// 起服务后多久开始后台预热视频指纹（避开启动高峰）。
+  final Duration _videoFingerprintWarmDelay;
+  Timer? _videoFingerprintWarmStart;
+
+  /// 后台低优先级预热视频指纹；host 不提供媒体库时为 null。
+  VideoFingerprintWarmer? _videoFingerprintWarmer;
   final DateTime Function() _now;
 
   /// 单词音频 token（TTL 5 分钟 + BUG-908(a) 上限 128）与查词/制卡端点的 handler
@@ -646,6 +682,19 @@ class FushiSyncServer {
 
   final Map<String, _VideoStreamToken> _videoStreamTokens =
       <String, _VideoStreamToken>{};
+
+  /// 转码 HLS 分段的小 LRU（video-34），键含签发分段的流 token + 段号；token 作废
+  /// （释放流票 / TTL / 上限淘汰 / 吊销）时连同它的段一起清掉。
+  final TranscodeSegmentCache _transcodeSegments = TranscodeSegmentCache();
+
+  /// 在途的 host 预取（转码 HLS 的「下一段」），按签发它的流 token 分组；预取结束
+  /// （成功 / 失败 / 取消）即移出。seek 走远时作废没人等的旧预取，释放流票时连同
+  /// 已被前台请求合流的一起取消。
+  final Map<String, List<_TranscodePrefetch>> _transcodePrefetches =
+      <String, List<_TranscodePrefetch>>{};
+
+  /// 在途预取的完成信号（测试等它们收尾用）。
+  final Set<Future<void>> _transcodePrefetchRuns = <Future<void>>{};
 
   /// 源文件平均码率（bps）的探测缓存，键 = 路径 + 大小 + 修改时间（文件被替换即
   /// 失效）。`/streamurl` 下发给 client 的「自动」档判据用，ffprobe 每个文件只跑一次。
@@ -791,8 +840,22 @@ class FushiSyncServer {
   /// 端点 404、`/api/capabilities` 不声明，行为同升级前。
   InterconnectLeaderboardLinkHost? leaderboardLinkHost;
 
+  /// 互联「来源共享」的 host 侧（`interconnect_source_share.dart`）：把用户自配的服务器
+  /// 来源与已装插件共享给「我的设备」。null（无头服务端 / 单测）→ 端点 404、能力位不声明。
+  InterconnectSourceShareHost? sourceShareHost;
+
+  /// 互联「插件中继」的 host 侧（`interconnect_plugin_relay.dart`）：替没有插件运行时的
+  /// 「我的设备」代跑本机的音乐 / 歌词插件并转发媒体。null（无头服务端 / 单测 / 本机没有插件
+  /// 运行时）→ 端点 404、能力位不声明。
+  InterconnectPluginRelayHost? pluginRelayHost;
+
+  /// 插件中继的流票（进程内，不持久化：重启后 client 起播时重新解析一张）。
+  final InterconnectPluginRelayTickets _pluginRelayTickets =
+      InterconnectPluginRelayTickets();
+
   /// 远程复习库（docs/specs/2026-11-01-srs-remote-review-design.md）：每个请求现取，复习模块关着时回 null →
-  /// `/api/srs/remote/*` 404、`/api/capabilities` 不声明 [kSrsRemoteStoreCapability]。
+  /// 端点 503 `unavailable`（V2）/ 404（V1）、`/api/capabilities` 不声明 [kSrsRemoteStoreCapabilityV2] /
+  /// [kSrsRemoteStoreCapability]。开着时两个都声明：V2 是真端点，V1 只是拒绝桩（D31，srs_remote_generation.dart）。
   SrsRemoteStoreService? Function()? srsRemoteStoreProvider;
 
   /// 「互联主机」AI 提供商的主机侧（反馈 M8KvhMTHVS，`ai/ai_relay.dart`）：已配对设备把
@@ -982,6 +1045,7 @@ class FushiSyncServer {
     final shelf.Handler handler = _buildHandler();
     try {
       _server = await _bindListener(handler);
+      _startVideoFingerprintWarmup();
     } on SocketException catch (e) {
       if (isAddressInUseError(e)) {
         throw SyncServerPortInUseException(_requestedPort);
@@ -1156,11 +1220,16 @@ class FushiSyncServer {
     await _blurayClipRelays.closeAll();
     _discShares.clear();
     _exportCache.dispose();
+    for (final String stream in _transcodePrefetches.keys.toList()) {
+      _cancelTranscodePrefetches(stream, (_TranscodePrefetch _) => true);
+    }
+    _transcodeSegments.clear();
     // 漫画 P3：host 停机时中止在跑的 OCR 任务（页边界停，断点缓存保留）。
     await _mangaOcrJobs?.disposeAll();
     await _screenOcr?.dispose();
     await _hostJobs?.disposeAll();
     await _assistant?.dispose();
+    _stopVideoFingerprintWarmup();
   }
 
   /// gzip 压缩 JSON/XML 文本响应（`Accept-Encoding: gzip` 内容协商）。
@@ -1310,9 +1379,22 @@ class FushiSyncServer {
       return jsonResponse(<String, dynamic>{'joined': joined()});
     }
     // 远程复习库：已配对设备不下载卡组，直接在本机的复习库上复习。鉴权走上方 middleware。
-    if (reqPath.startsWith(kSrsRemoteStorePathPrefix)) {
+    if (isSrsRemoteStorePath(reqPath)) {
       final SrsRemoteStoreService? review = srsRemoteStoreProvider?.call();
-      if (review == null) return shelf.Response.notFound('SRS review off');
+      if (review == null) {
+        // V2 端点回机读码：新客户端据「404 而没有机读码」判断对端是不认 V2 的旧主机，复习关着不能混进去。
+        return reqPath.startsWith(kSrsRemoteStoreV2PathPrefix)
+            ? shelf.Response(
+                503,
+                body: jsonEncode(<String, dynamic>{
+                  'error': SrsRemoteStoreError.unavailable,
+                }),
+                headers: const <String, String>{
+                  'Content-Type': 'application/json',
+                },
+              )
+            : shelf.Response.notFound('SRS review off');
+      }
       return handleSrsRemoteStoreRequest(review, request, method, reqPath);
     }
     if (reqPath.startsWith(kAiRelayPathPrefix)) {
@@ -1347,7 +1429,10 @@ class FushiSyncServer {
       if (_leaderboardLinkAvailable) {
         capabilities[kInterconnectLeaderboardLinkCapability] = true;
       }
-      if (srsRemoteStore) capabilities[kSrsRemoteStoreCapability] = true;
+      if (srsRemoteStore) {
+        capabilities[kSrsRemoteStoreCapabilityV2] = true;
+        capabilities[kSrsRemoteStoreCapability] = true;
+      }
       if (screenOcr) capabilities[kScreenOcrCapability] = true;
       if (aiRelay) capabilities[kAiRelayCapability] = true;
       return jsonResponse(capabilities);
@@ -1384,6 +1469,30 @@ class FushiSyncServer {
         return shelf.Response.notFound('Host downloads off');
       }
       return handleHostDownloadRequest(downloads, request, method, reqPath);
+    }
+    if (reqPath == kTorrentEngineRoutePrefix ||
+        reqPath.startsWith('$kTorrentEngineRoutePrefix/')) {
+      final HostTorrentEngine? engine = _torrentEngine;
+      if (engine == null) {
+        return shelf.Response.notFound('Host torrent engine off');
+      }
+      // 操纵 host 的下载引擎与磁盘：只认已配对设备自己的凭据，共享 token / legacy
+      // 行都不行（与 AI 中继、视频遥控同一道门）。
+      final String? authorization = request.headers['authorization'];
+      if (!await _validatePeerAuth(authorization)) {
+        return shelf.Response(
+          403,
+          body: '{"error":"paired_peer_required"}',
+          headers: <String, String>{'content-type': 'application/json'},
+        );
+      }
+      return handleHostTorrentEngineRequest(
+        engine,
+        request,
+        method,
+        reqPath,
+        owner: _credentialFingerprint(_basicPassword(authorization!)!),
+      );
     }
     if (reqPath == '/api/assistant' || reqPath.startsWith('/api/assistant/')) {
       final HostAssistantSessions? assistant = _assistant;
@@ -1479,6 +1588,14 @@ class FushiSyncServer {
     }
     if (reqPath == '/api/interconnect/service-config') {
       return _handleInterconnectServiceConfig(request, method);
+    }
+    if (reqPath == kInterconnectSourceSharePath ||
+        reqPath == kInterconnectSourceSharePackagePath) {
+      return _handleInterconnectSourceShare(request, method, reqPath);
+    }
+    if (reqPath == kInterconnectPluginRelayPath ||
+        reqPath.startsWith('$kInterconnectPluginRelayPath/')) {
+      return _handleInterconnectPluginRelay(request, method, reqPath);
     }
     if (reqPath == kInterconnectProfilePath) {
       return _handleInterconnectProfile(request, method);
@@ -1665,6 +1782,22 @@ class FushiSyncServer {
   /// BUG-1568 测试钩子：当前驻留的视频流 token 数（验证签发侧 cap 逐出行为）。
   @visibleForTesting
   int get videoStreamTokenCount => _videoStreamTokens.length;
+
+  /// video-34 测试钩子：当前缓存的转码分段数（验证 token 作废时段随之清掉）。
+  @visibleForTesting
+  int get cachedTranscodeSegmentCount => _transcodeSegments.length;
+
+  /// 测试钩子：当前在途的 host 预取数。
+  @visibleForTesting
+  int get pendingTranscodePrefetchCount => _transcodePrefetches.values.fold(
+    0,
+    (int sum, List<_TranscodePrefetch> l) => sum + l.length,
+  );
+
+  /// 测试钩子：等此刻在途的 host 预取全部收尾（成功 / 失败 / 取消都算）。
+  @visibleForTesting
+  Future<void> transcodePrefetchesSettled() =>
+      Future.wait<void>(_transcodePrefetchRuns.toList());
 
   /// BUG-908(a) 测试钩子：当前驻留的音频 token 数（验证 cap 逐出行为）。
   @visibleForTesting

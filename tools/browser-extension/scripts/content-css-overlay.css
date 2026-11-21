@@ -1056,7 +1056,7 @@
    目标元素写 inline !important（站点后到样式/内联尺寸都压得住），关抽屉精确还原。 */
 
 /* ───────────────────────── 播放器内嵌字幕控制（player-controls.js） ─────────────────────────
-   #fushi-player-btn 插在站点自己的控制栏里（YouTube .ytp-right-controls / Netflix 控件行），
+   #fushi-player-btn 可插在 YouTube 或 Netflix 的控制栏里，
    所以它落在**站点的样式作用域**下：站点给 button 设的 font / padding / border / background /
    transform 都会砸到它身上。因此这里逐项显式归零，而不是指望继承——`all: unset` 不用，
    那会连焦点轮廓这些可访问性默认一起抹掉。
@@ -1110,6 +1110,28 @@
     outline-offset: -2px;
 }
 
+.fushi-netflix-inline-controls {
+    flex-wrap: nowrap !important;
+    flex-shrink: 0 !important;
+    min-width: max-content !important;
+}
+
+.fushi-netflix-inline-title {
+    flex-shrink: 1 !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+}
+
+:is(.fushi-netflix-inline-title, .fushi-netflix-inline-title [data-uia="video-title"]) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.fushi-netflix-inline-controls > #fushi-player-btn {
+    flex-shrink: 0;
+}
+
 #fushi-player-btn .fushi-pc-btn-icon {
     display: block;
     width: 22px;
@@ -1144,7 +1166,11 @@
 /* 通用站点（没有已知控制栏锚点）：按钮自己浮在画面右上角（右下角会压住站点的进度条/音量/全屏），鼠标离开视频即淡出——
    常驻一颗不透明按钮压在画面上，比没有按钮更烦人。M3E：primary-container 圆角方钮（FAB 形）+
    level3 投影，出现时弹簧放大，按下时圆角收紧。边长与 player-controls.js FLOAT_BTN_SIZE 同值。 */
-#fushi-player-btn.is-floating {
+#fushi-player-btn.is-floating,
+#fushi-player-fs-btn {
+    display: grid;
+    place-items: center;
+    padding: 0;
     position: fixed;
     z-index: 2147483639;
     width: 48px;
@@ -1159,18 +1185,22 @@
     pointer-events: none;
 }
 
-#fushi-player-btn.is-floating[data-visible="1"] {
+#fushi-player-btn.is-floating[data-visible="1"],
+#fushi-player-fs-btn[data-visible="1"] {
     opacity: 1;
     scale: 1;
     pointer-events: auto;
 }
 
 #fushi-player-btn.is-floating:hover,
-#fushi-player-btn.is-floating:focus-visible {
+#fushi-player-btn.is-floating:focus-visible,
+#fushi-player-fs-btn:hover,
+#fushi-player-fs-btn:focus-visible {
     background: color-mix(in oklch, var(--md-sys-color-on-primary-container) var(--md-sys-state-hover-opacity), var(--md-sys-color-primary-container));
 }
 
-#fushi-player-btn.is-floating:active {
+#fushi-player-btn.is-floating:active,
+#fushi-player-fs-btn:active {
     border-radius: var(--md-sys-shape-corner-medium);
 }
 
@@ -1180,7 +1210,8 @@
 }
 
 /* 液态玻璃：旧的半透明深色圆钮。 */
-#fushi-player-btn.is-floating[data-style="glass"] {
+#fushi-player-btn.is-floating[data-style="glass"],
+#fushi-player-fs-btn[data-style="glass"] {
     border-radius: 999px;
     color: var(--fushi-on-scrim);
     background: var(--fushi-scrim);
@@ -1188,7 +1219,8 @@
     scale: 1;
 }
 
-#fushi-player-btn.is-floating[data-style="glass"][data-visible="1"] {
+#fushi-player-btn.is-floating[data-style="glass"][data-visible="1"],
+#fushi-player-fs-btn[data-style="glass"][data-visible="1"] {
     opacity: 0.92;
 }
 
@@ -1198,6 +1230,10 @@
 
 #fushi-player-btn.is-floating[data-style="glass"][data-on="1"] .fushi-pc-btn-state {
     color: var(--fushi-primary);
+}
+
+#fushi-player-fs-btn svg {
+    color: inherit;
 }
 
 #fushi-player-controls {
@@ -1791,7 +1827,8 @@
         translate: none;
     }
 
-    #fushi-player-btn.is-floating {
+    #fushi-player-btn.is-floating,
+    #fushi-player-fs-btn {
         scale: 1;
     }
 }

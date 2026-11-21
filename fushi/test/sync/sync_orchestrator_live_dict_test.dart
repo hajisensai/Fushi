@@ -314,6 +314,51 @@ void main() {
       expect(local.map((DictionaryMetaRow d) => d.name), contains('明镜'));
     });
 
+    // 审查发现：整轮同步的拉取照搬包里 host 自己的 order / 开关，单本「下载到本机」
+    // 却按目录行接替——两条路径现在都在 _pullLiveDictionary 里接替。
+    test('pull：本机这份接替目录行的位置与开关（同「下载到本机」）', () async {
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      final Directory localDictRoot = Directory(
+        p.join(work.path, 'local_dicts_place'),
+      )..createSync();
+      await _seedDictionary(localDb, localDictRoot, 'JMdict');
+      final Directory tmp = Directory(p.join(work.path, 'tmp_place'))
+        ..createSync();
+      final InterconnectSyncBackend backend = await _buildClientBackend(
+        base: serverBase,
+        token: token,
+      );
+      // 本机管理页上「明镜」是一条服务器行：排第 7、关着。host 包里是 order 0、开着。
+      await localDb.upsertRemoteDictionaryCatalog(
+        RemoteDictionaryMetadataCompanion(
+          hostId: Value<String>(await backend.connectedHostIdentity()),
+          name: const Value<String>('明镜'),
+          type: const Value<String>('term'),
+          lastSeenAt: const Value<int>(1),
+          order: const Value<int>(7),
+          hidden: const Value<bool>(true),
+        ),
+      );
+
+      final SyncRunReport report = SyncRunReport();
+      await _orchestrator(
+        localDb,
+        backend,
+        localDictRoot,
+        tmp,
+      ).syncDictionaries(report, direction: SyncAssetDirection.both);
+
+      expect(report.errors, isEmpty, reason: '${report.errors}');
+      expect(report.dictionariesImported, 1);
+      final DictionaryMetaRow pulled =
+          (await localDb.getAllDictionaryMetadata()).firstWhere(
+            (DictionaryMetaRow d) => d.name == '明镜',
+          );
+      expect(pulled.order, 7, reason: '接替目录行的位置，不照搬 host 的 0');
+      expect(pulled.hiddenLanguagesJson, '["ja"]', reason: '接替目录行的开关');
+    });
+
     test('push：host 无 JMdict，运行后 host DB 含 JMdict', () async {
       // 本地：有 JMdict，无「明镜」
       final FushiDatabase localDb = _memDb();

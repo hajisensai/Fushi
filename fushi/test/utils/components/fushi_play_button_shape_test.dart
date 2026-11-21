@@ -177,14 +177,21 @@ void main() {
     ).readAsStringSync();
     expect(bar, contains('fushiPlayButtonBorder()'));
     expect(bar, contains('playButton: true'));
+    // 首页「正在听书」条与音乐条共用 FushiNowPlayingBar，播放键是共享的
+    // FushiExpressivePlayButton（内部取 fushiPlayButtonBorder）。
     final String mini = File(
       'lib/src/media/audiobook/now_listening_mini_bar.dart',
     ).readAsStringSync();
-    expect(mini, contains('fushiPlayButtonBorder()'));
+    expect(mini, contains('FushiNowPlayingBar('));
+    final String nowPlaying = File(
+      'lib/src/utils/components/fushi_now_playing_bar.dart',
+    ).readAsStringSync();
+    expect(nowPlaying, contains('FushiExpressivePlayButton('));
     // 播放键多边形只在 fushi_m3e_player.dart 定义一次。
     for (final String path in <String>[
       'lib/src/media/audiobook/audiobook_play_bar.dart',
       'lib/src/media/audiobook/now_listening_mini_bar.dart',
+      'lib/src/utils/components/fushi_now_playing_bar.dart',
       'lib/src/media/video/video_m3e_chrome.dart',
       'lib/src/utils/components/fushi_floating_toolbar.dart',
     ]) {

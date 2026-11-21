@@ -1,51 +1,74 @@
 import 'dart:io';
 
-import 'package:test/test.dart';
+import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
+/// 进度快照的取样与「JS 往返之后这份快照还作不作数」的闸只有一份：
+/// `_takeStableProgressSnapshot`。两个入口（`_refreshProgress` 实时采样、
+/// `_syncPositionFromWebViewProgress` 退出 / 切后台实时读）都只经它取样。
+///
+/// 原先两个入口各抄一套六条件闸，本守卫按方法名在两个方法体里各找一遍——只补一处
+/// 的回归能被抓到，但判据本身仍是两份。现在钉的是：
+/// 1. 共用函数里判据齐全、位置对（取样前记身份，取样后、返回前判）；
+/// 2. 两个入口都经它取样，且自己不再直接向 WebView 要 `stableProgressInvocation`
+///    （否则就又多出一条没有闸的路）；
+/// 3. 两个入口在拿到 `null` 时先 return，之后才解析 / 写任何状态。
 void main() {
   final String source = File(
     'lib/src/pages/implementations/reader_fushi/navigation.part.dart',
   ).readAsStringSync();
 
-  for (final String method in <String>[
-    '_refreshProgress',
-    '_syncPositionFromWebViewProgress',
-  ]) {
-    test('$method rejects a snapshot completed after navigation or reload', () {
-      final int start = source.indexOf('Future<void> $method() async {');
-      expect(start, isNonNegative);
-      final int parse = source.indexOf(
-        'parseReaderStableProgressDetails(result)',
-        start,
-      );
-      expect(parse, greaterThan(start));
-      final String beforeParse = source.substring(start, parse);
-      final int request = beforeParse.indexOf(
-        'await controller.evaluateJavascript(',
-      );
+  const String takeSignature =
+      'Future<Object?> _takeStableProgressSnapshot(String errorSource) async {';
+
+  group('_takeStableProgressSnapshot：唯一取样口', () {
+    final String code = maskComments(methodBody(source, takeSignature));
+    final int request = code.indexOf('await controller.evaluateJavascript(');
+
+    test('向 WebView 要的是 stableProgressInvocation，且只要一次', () {
       expect(request, isNonNegative);
       expect(
-        beforeParse.indexOf('final int chapter = _currentChapter;'),
-        inInclusiveRange(0, request - 1),
+        'x$code'.split('evaluateJavascript(').length - 1,
+        1,
+        reason: '一次取样对应一次闸；多一次 eval 就多一段没被闸住的往返',
       );
       expect(
-        beforeParse.indexOf('final int generation = _navigateGeneration;'),
-        inInclusiveRange(0, request - 1),
+        code.substring(request),
+        contains('ReaderPaginationScripts.stableProgressInvocation()'),
       );
+    });
+
+    test('取样之前记下 controller / 代际 / 章号', () {
+      final String before = code.substring(0, request);
       expect(
-        beforeParse.indexOf(
-          'final InAppWebViewController controller = _controller!;',
-        ),
-        inInclusiveRange(0, request - 1),
+        before,
+        contains('final InAppWebViewController? controller = _controller;'),
       );
-      // These must be checked after the async request, before any parsing,
-      // fallback UI, restore anchor, ledger or persistence writes.
-      final String afterRequest = beforeParse.substring(request);
-      // controller 那条钉不变式而不是写法：`_controller != controller` 后来改成
-      // `!identical(controller, _controller)`（同一判据、更严——还排除了被重写的
-      // `==`），字面量守卫当场变红而接线一点没断。
+      expect(before, contains('final int generation = _navigateGeneration;'));
+      expect(before, contains('final int chapter = _currentChapter;'));
+    });
+
+    test('evaluateJavascript 有错误边界，fail-open 且按调用方给的 source 记日志', () {
+      final int tryIdx = code.indexOf('try {');
+      final int catchIdx = code.indexOf('} catch (e, stack) {');
+      expect(tryIdx, isNonNegative);
+      expect(request, greaterThan(tryIdx));
+      expect(catchIdx, greaterThan(request));
       expect(
-        afterRequest,
+        compactCode(code),
+        contains('ErrorLogService.instance.log(errorSource,e,stack);'),
+        reason: '报废 controller 上的 eval 会抛：不得变成未捕获异步错误，也不得吞成静默',
+      );
+    });
+
+    test('取样之后、返回结果之前把过期快照丢掉', () {
+      final int returnResult = code.lastIndexOf('return result;');
+      expect(returnResult, greaterThan(request));
+      final String gate = code.substring(request, returnResult);
+      // controller 那条钉不变式而不是写法：`!=` 与 `identical` 判的是同一件事。
+      expect(
+        gate,
         anyOf(
           contains('_controller != controller'),
           matches(RegExp(r'identical\(\s*controller\s*,\s*_controller\s*\)')),
@@ -53,13 +76,13 @@ void main() {
         ),
         reason: '必须比较 controller 与 _controller（换了 WebView 的快照要丢掉）',
       );
-      // 同理，这两对也只钉「被比较过」——`!=` 两侧顺序被翻过（语义完全相同）。
+      // 这两对只钉「被比较过」——`!=` 两侧顺序无关。
       for (final List<String> pair in <List<String>>[
         <String>['_navigateGeneration', 'generation'],
         <String>['_currentChapter', 'chapter'],
       ]) {
         expect(
-          afterRequest,
+          gate,
           matches(
             RegExp(
               '(${pair[0]}\\s*!=\\s*${pair[1]}'
@@ -72,22 +95,117 @@ void main() {
       for (final String condition in <String>[
         '!mounted',
         '_restoreInFlight',
-        // 2026-10-04 歌词覆盖层：歌词不再换掉正文文档，正文快照不再按歌词态丢弃。
-        // BUG-2399 起加入这道闸：内容还没就绪时晚到的快照同样不得写进恢复锚。
-        // 两个入口（_refreshProgress / _syncPositionFromWebViewProgress）都要有，
-        // 只补一处等于漏的那条路照样能污染恢复锚。
-        '_readerContentReady',
+        // BUG-2399：内容还没就绪时晚到的快照同样不得写进恢复锚。
+        '!_readerContentReady',
       ]) {
-        expect(afterRequest, contains(condition));
+        expect(gate, contains(condition));
       }
-      // 立即早退：闸的条件列表收尾之后必须紧跟 return，中间不许夹任何写操作。
-      // 原来钉的是含具体缩进的整段字面量，往闸里加一条判据就红——而不变式
-      //（判完即 return）一点没变。改成钉结构。
+      // 闸判完必须立刻交回 null，中间不许夹任何写操作。
       expect(
-        afterRequest,
-        matches(RegExp(r'\)\s*\{\s*return;\s*\}')),
-        reason: '闸判完必须立刻 return，不能先写恢复锚/账本再判',
+        gate,
+        matches(RegExp(r'\)\s*\{\s*return null;\s*\}\s*$')),
+        reason: '闸与 `return result;` 之间不得有别的语句',
       );
     });
+
+    test('自己不写任何进度 / 恢复锚 / 账本状态', () {
+      for (final String write in <String>[
+        '_lastProgressSection',
+        '_lastProgressValue',
+        '_lastProgressCharOffset',
+        '_adoptLiveProgressAsRestoreAnchor',
+        '_readLedger',
+        '_persistPosition',
+        '_debouncedSavePosition',
+      ]) {
+        expect(
+          containsIdentifier(code, write),
+          isFalse,
+          reason: '取样口只取样；$write 属于调用方',
+        );
+      }
+    });
+  });
+
+  for (final String method in <String>[
+    '_refreshProgress',
+    '_syncPositionFromWebViewProgress',
+  ]) {
+    test('$method 只经 _takeStableProgressSnapshot 取样，null 先早退', () {
+      final String code = maskComments(
+        methodBody(source, 'Future<void> $method() async {'),
+      );
+      final int take = code.indexOf('await _takeStableProgressSnapshot(');
+      expect(take, isNonNegative, reason: '$method 必须经共用取样口');
+      expect(
+        containsIdentifierCall(code, 'evaluateJavascript'),
+        isFalse,
+        reason: '$method 不得再自己向 WebView 取样——那条路没有闸',
+      );
+      expect(
+        containsIdentifier(code, 'stableProgressInvocation'),
+        isFalse,
+        reason: '同上',
+      );
+      final int parse = code.indexOf(
+        'parseReaderStableProgressDetails(result)',
+      );
+      expect(parse, greaterThan(take));
+      // 取样之后、解析之前：null（被闸丢弃 / eval 失败 / JS 早退）必须先 return，
+      // 之间不得出现任何进度 / 恢复锚 / 账本写入。
+      final String between = code.substring(take, parse);
+      expect(
+        between,
+        matches(RegExp(r'if \(result == null\) \{\s*return;\s*\}')),
+        reason: '拿到 null 必须立刻 return',
+      );
+      for (final String write in <String>[
+        '_lastProgressSection',
+        '_lastProgressValue',
+        '_lastProgressCharOffset',
+        '_adoptLiveProgressAsRestoreAnchor',
+        '_readLedger',
+        '_applyImagePageProgressFallback',
+      ]) {
+        expect(
+          containsIdentifier(between, write),
+          isFalse,
+          reason: '$write 不得出现在早退之前',
+        );
+      }
+    });
   }
+
+  test('入口前置条件各归各：歌词闸只属于 _refreshProgress', () {
+    final String refresh = methodBody(
+      source,
+      'Future<void> _refreshProgress() async {',
+    );
+    expect(
+      containsCodeLine(
+        refresh,
+        'if (_controller == null || _restoreInFlight || _lyricsMode) return;',
+      ),
+      isTrue,
+    );
+    final String refreshCode = maskComments(refresh);
+    // 取样在飞期间进了歌词模式：晚到的正文快照不得 arrive。
+    expect(
+      refreshCode.indexOf(
+        'if (_lyricsMode) return;',
+        refreshCode.indexOf('await _takeStableProgressSnapshot('),
+      ),
+      isNonNegative,
+    );
+    final String sync = methodBody(
+      source,
+      'Future<void> _syncPositionFromWebViewProgress() async {',
+    );
+    expect(
+      compactCode(maskComments(sync)),
+      contains(
+        'if(_controller==null||!_readerContentReady||_restoreInFlight){return;}',
+      ),
+    );
+  });
 }

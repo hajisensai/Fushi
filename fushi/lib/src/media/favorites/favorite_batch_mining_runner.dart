@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/favorites/favorite_batch_mining_plan.dart';
 import 'package:fushi/src/media/favorites/favorite_mining_item.dart';
+import 'package:fushi/src/media/nsfw/nsfw_card_image.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -323,6 +324,14 @@ class FavoriteBatchMiningRunner {
           extractDir: book.extractDir,
           coverPath: book.coverPath,
         );
+        // NSFW 书 +「制卡图片也模糊」：与阅读器制卡同一出口（失败则不带图）。
+        coverPath = await resolveNsfwCardImagePath(
+          db: appModel.database,
+          path: coverPath,
+          blurCardImages: appModel.prefsRepo.blurNsfwCardImages,
+          kind: TagHostKind.epub,
+          entryKey: bookKey,
+        );
       }
     }
     // 卡片上给人看的标题过显示门面（与阅读器 `displayTitleForBook` 同口径）；统计
@@ -411,8 +420,11 @@ class FavoriteBatchMiningRunner {
             message: described.message,
           ),
           // 字段映射整体为空 / 首字段为空是配置问题，后面每一条都会同样失败：
-          // 与 notConfigured 同待遇整批中止，只报一次（反馈 AGLC0BuaKB）。
-          abortBatch: isFieldMappingConfigError(outcome.errorCode),
+          // 与 notConfigured 同待遇整批中止，只报一次（反馈 AGLC0BuaKB）。复习库在换代途中
+          // （BUG-5085）同理：升级完成前每一条都写不进去。
+          abortBatch:
+              isFieldMappingConfigError(outcome.errorCode) ||
+              isSrsGenerationErrorCode(outcome.errorCode),
         );
     }
   }

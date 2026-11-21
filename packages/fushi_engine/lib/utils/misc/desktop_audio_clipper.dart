@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:fushi_engine/media/cover_file_writer.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/ffmpeg_hdr_tone_map.dart';
+import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
     show kYoutubeStreamReplayUserAgent;
 import 'package:fushi_engine/media/video/video_clip_exporter.dart'
@@ -1365,11 +1367,15 @@ List<String> buildFfmpegFrameArgs({
   // BUG-2192：网飞录屏片段裁掉播放器黑边——crop 段排在 scale 之前（先裁后缩，缩放
   // 目标宽度指的是裁后画面）。null / 空 = 不裁。
   String? cropFilter,
+  // HDR10 / HLG 源映射到 SDR（[kFfmpegHdrToSdrScaleFilter]），排在缩放之后（小图上做
+  // 色彩管理更省）。只由 IO 层按 [ffmpegShouldToneMapToSdr] 置 true，SDR 源逐字不变。
+  bool toneMapToSdr = false,
 }) {
   final double seek = atSeconds < 0 ? 0.0 : atSeconds;
   final String vfChain = <String>[
     if (cropFilter != null && cropFilter.isNotEmpty) cropFilter,
     if (scaleWidth != null && scaleWidth > 0) 'scale=$scaleWidth:-2',
+    if (toneMapToSdr) kFfmpegHdrToSdrScaleFilter,
   ].join(',');
   return <String>[
     '-y',
@@ -1431,6 +1437,14 @@ Future<String?> extractVideoFrameViaFfmpeg({
   final File staged = File(stagedCoverPath(outputPath));
   try {
     staged.parent.createSync(recursive: true);
+    final bool toneMapToSdr = await ffmpegShouldToneMapToSdr(
+      inputPath,
+      inputArgs: buildFfmpegRemoteInputArgs(
+        inputPath,
+        tlsPinSha256: tlsPinSha256,
+        httpHeaders: httpHeaders,
+      ),
+    );
     final FfmpegRunResult result = await _runFfmpeg(
       buildFfmpegFrameArgs(
         inputPath: inputPath,
@@ -1441,6 +1455,7 @@ Future<String?> extractVideoFrameViaFfmpeg({
         httpHeaders: httpHeaders,
         scaleWidth: scaleWidth,
         cropFilter: cropFilter,
+        toneMapToSdr: toneMapToSdr,
       ),
       const Duration(seconds: 30),
     );
@@ -1570,6 +1585,9 @@ List<String> buildFfmpegClipAnimatedArgs({
   // 反馈 ZxyIMK-C5V：true = 动图只播放一次（见 [animatedLoopArgs]）。纯函数不读全局
   // 偏好，由 IO 层（[extractClipGifViaFfmpeg]）按 [miningAnimatedPlayOnceReader] 传值。
   bool playOnce = false,
+  // HDR10 / HLG 源映射到 SDR，见 [buildFfmpegFrameArgs] 的同名参数。排在缩放之后、
+  // GIF 调色板之前（调色板要按映射后的颜色取）。
+  bool toneMapToSdr = false,
 }) {
   final double startSeconds = (startMs < 0 ? 0 : startMs) / 1000.0;
   final int rawDur = endMs - startMs;
@@ -1584,6 +1602,7 @@ List<String> buildFfmpegClipAnimatedArgs({
   if (cropFilter != null && cropFilter.isNotEmpty) pre.write('$cropFilter,');
   if (fps > 0) pre.write('fps=$fps,');
   if (width > 0) pre.write('scale=$width:-2:flags=lanczos,');
+  if (toneMapToSdr) pre.write('$kFfmpegHdrToSdrScaleFilter,');
 
   // GIF 走 filter_complex（palettegen 需要分流），webp/avif 单链走 -vf。两者不能混用
   // 同一个开关：filter_complex 里写不出裸 `-vf` 的等价链而不引入多余的 split。
@@ -1746,6 +1765,14 @@ Future<String?> extractClipGifViaFfmpeg({
   final File output = File(outputPath);
   try {
     output.parent.createSync(recursive: true);
+    final bool toneMapToSdr = await ffmpegShouldToneMapToSdr(
+      inputPath,
+      inputArgs: buildFfmpegRemoteInputArgs(
+        inputPath,
+        tlsPinSha256: tlsPinSha256,
+        httpHeaders: httpHeaders,
+      ),
+    );
     final FfmpegRunResult result = await _runFfmpeg(
       buildFfmpegClipAnimatedArgs(
         format: format,
@@ -1759,6 +1786,7 @@ Future<String?> extractClipGifViaFfmpeg({
         httpHeaders: httpHeaders,
         cropFilter: cropFilter,
         playOnce: playOnce ?? resolveMiningAnimatedPlayOnce(),
+        toneMapToSdr: toneMapToSdr,
       ),
       const Duration(seconds: 120),
     );
@@ -1881,6 +1909,14 @@ Future<String?> extractEmbeddedSubtitleViaFfmpeg({
 /// read **once** for every track at once (the read dominates wall-clock), so
 /// extracting 8 tracks costs the same as extracting one — switching among tracks
 /// no longer re-reads the file each time (BUG-104).
+///
+/// 末尾再挂一个不落盘的 `-f null` 伴随输出（`-c copy`）：抽取按进度判活
+/// （[FfmpegWatchedRunner]，BUG-4838），只映射稀疏的字幕流时 `-progress` 的已处理时间
+/// 只在字幕包处跳一下，长段无对白就几分钟不动，会被误判卡死；拷贝视频包让进度跟着
+/// 文件读取位置连续推进。与图形字幕抽轨（`buildGraphicSubtitleExtractArgs`）同一做法，
+/// 额外开销只是内存里搬一次包。映射 = 第一条视频（可选，`?`：纯字幕容器 `.mks` 没有
+/// 视频流）+ 全部字幕流（`0:s`，只拷贝不解码）：一个输出里所有映射都落空时 ffmpeg 直接
+/// 报「没有任何流」整条命令失败，带上字幕流保证伴随输出永远有流。
 List<String> buildFfmpegMultiSubtitleArgs({
   required String inputPath,
   required Map<int, String> outputs,
@@ -1890,31 +1926,74 @@ List<String> buildFfmpegMultiSubtitleArgs({
   for (final int idx in indices) {
     args.addAll(<String>['-map', '0:s:$idx', outputs[idx]!]);
   }
+  if (indices.isNotEmpty) {
+    args.addAll(<String>[
+      '-map',
+      '0:v:0?',
+      '-map',
+      '0:s',
+      '-c',
+      'copy',
+      '-f',
+      'null',
+      '-',
+    ]);
+  }
   return args;
 }
 
-/// Demuxes ALL requested embedded subtitle tracks of [inputPath] in one ffmpeg
-/// pass (see [buildFfmpegMultiSubtitleArgs]). Returns the subset of [outputs]
-/// actually written (file exists and non-empty); a partially-failed batch (one
-/// corrupt track) still yields the tracks that succeeded rather than dropping
-/// everything. When the single pass produces fewer tracks than requested — the
-/// worst case being an output-open `AVERROR(EINVAL)` (exit -22) that a single
-/// un-encodable track triggers, aborting the batch before ANY track is written —
-/// each still-missing track is re-demuxed on its own so one poison track only
-/// loses itself instead of poisoning every good track in the container.
+/// 文本内封字幕整轨抽取的卡死判据：ffmpeg 报告的已处理媒体时间连续这么久不推进
+/// 才算卡死（BUG-4838，沿用 BUG-3102 的观察式运行）。
 ///
-/// [timeout] bounds a hung demux. Unlike single-clip encodes, the read time of a
-/// big interleaved container grows with its size, so callers pass a size-scaled
-/// timeout (see `subtitleExtractTimeoutForBytes`). Never throws for the caller:
-/// missing input / absent ffmpeg / error all yield an empty map (no-subtitle
-/// fallback, not a crash).
+/// 不是总时长：抽取要把整个容器顺序读一遍，耗时 = 文件大小 ÷ 读盘吞吐；慢盘 / NAS /
+/// 与 libmpv 播放抢 IO 时合法地跑几分钟，只要一直在推进就不该被杀。旧实现的
+/// 「60 s + 8 s/GB」总预算隐含 ≥125 MB/s，在 30 MB/s 的盘上把 1 GB 的 mkv 读到一半杀掉，
+/// 已读部分全部作废。
+const Duration kEmbeddedSubtitleExtractStallTimeout = Duration(seconds: 90);
+
+/// 只给**不支持观察式运行**的后端（测试替身等）兜底的总时长；桌面 CLI 与移动端
+/// ffmpeg-kit 都实现 [FfmpegWatchedRunner]，生产路径不吃这个预算。
+const Duration kEmbeddedSubtitleExtractFallbackTimeout = Duration(seconds: 180);
+
+/// 一次内封文本字幕抽取没能拿到全部轨的**原因**（[EmbeddedSubtitleExtractResult.failure]）。
+enum EmbeddedSubtitleExtractFailure {
+  /// 输入视频不存在 / 读不到。
+  inputMissing,
+
+  /// 找不到可用的 ffmpeg（`ProcessException`）。
+  ffmpegUnavailable,
+
+  /// ffmpeg 读视频文件卡住：已处理媒体时间在卡死判据内没有推进（或不支持观察式运行的
+  /// 后端到了兜底总时长）。已写出的半截输出一律删掉。
+  stalled,
+
+  /// 调用方取消（离开播放页 / 换集）。已写出的半截输出一律删掉。
+  cancelled,
+
+  /// ffmpeg 跑完但失败（非 0 退出：坏轨、本机 ffmpeg 解不了的编码等）。
+  failed,
+}
+
+/// [extractEmbeddedSubtitlesViaFfmpeg] 的结果：真正落盘的轨 + 单趟没拿全时的原因。
+@immutable
+class EmbeddedSubtitleExtractResult {
+  const EmbeddedSubtitleExtractResult({required this.written, this.failure});
+
+  /// 真正写出（存在且非空）的轨：相对序号 → 输出路径。
+  final Map<int, String> written;
+
+  /// 单趟抽取的失败原因；单趟成功（退出码 0）为 null。逐轨回退救回了部分轨时仍保留
+  /// 单趟的原因（调用方按「自己要的那条轨在不在」判断成败）。
+  final EmbeddedSubtitleExtractFailure? failure;
+}
+
 /// Suffix of the negative-cache sentinel written next to an embedded-subtitle
 /// output when a track is rejected DEFINITIVELY (ffmpeg ran and returned a
-/// non-zero, non-timeout exit — a codec the bundled build can't decode). Lets
-/// callers skip re-reading the whole container for that track on later passes.
-/// Deliberately NOT written on timeouts (`returnCode == null`), which are
-/// transient (IO contention on a huge interleaved container, BUG-104) and must
-/// stay retryable. Lives beside the cache file, whose directory is keyed by the
+/// non-zero exit — a codec the bundled build can't decode). Lets callers skip
+/// re-reading the whole container for that track on later passes.
+/// Deliberately NOT written when the run stalled or was cancelled
+/// (`returnCode == null`): those say nothing about the track and must stay
+/// retryable. Lives beside the cache file, whose directory is keyed by the
 /// video's size+mtime, so replacing the file in place re-attempts extraction.
 /// BUG-863.
 const String kUnsupportedEmbeddedSubtitleSentinelSuffix = '.unsupported';
@@ -1936,24 +2015,107 @@ Map<int, String> _collectWrittenSubtitles(Map<int, String> outputs) {
   return written;
 }
 
-Future<Map<int, String>> extractEmbeddedSubtitlesViaFfmpeg({
+/// 删掉 [outputs] 里的全部输出文件。被强杀（卡死 / 取消）的进程留下的文件可能是
+/// **非空的半截**，留着会被缓存当成完整轨读出来、少掉后半段 cue。
+void _deleteSubtitleOutputs(Iterable<String> outputs) {
+  for (final String out in outputs) {
+    final File f = File(out);
+    if (!f.existsSync()) continue;
+    try {
+      f.deleteSync();
+    } catch (_) {}
+  }
+}
+
+/// `returnCode == null`（被强杀）的结果是哪一种：观察式运行写进 output 的取消标记
+/// （[kFfmpegCancelledMarker]）→ 取消，其余（卡死标记 / 兜底后端超时）→ 卡死。
+EmbeddedSubtitleExtractFailure _abortedRunFailure(FfmpegRunResult result) =>
+    result.output.startsWith(kFfmpegCancelledMarker)
+    ? EmbeddedSubtitleExtractFailure.cancelled
+    : EmbeddedSubtitleExtractFailure.stalled;
+
+/// 跑一趟抽字幕的 ffmpeg：后端支持观察式运行时按进度判活（[stallTimeout]），[cancel]
+/// 完成即强杀；否则（测试替身）退回 [FfmpegBackend.run] + [fallbackTimeout]。
+Future<FfmpegRunResult> _runSubtitleExtractPass(
+  FfmpegBackend backend,
+  List<String> args, {
+  required Duration stallTimeout,
+  required Duration fallbackTimeout,
+  Future<void>? cancel,
+}) => switch (backend) {
+  final FfmpegWatchedRunner watched => watched.runWatched(
+    args,
+    FfmpegWatch(stallTimeout: stallTimeout, cancel: cancel),
+  ),
+  final FfmpegBackend plain => plain.run(args, fallbackTimeout),
+};
+
+/// Demuxes ALL requested embedded subtitle tracks of [inputPath] in one ffmpeg
+/// pass (see [buildFfmpegMultiSubtitleArgs]). The result's
+/// [EmbeddedSubtitleExtractResult.written] is the subset of [outputs] actually
+/// written (file exists and non-empty); a partially-failed batch (one corrupt
+/// track) still yields the tracks that succeeded rather than dropping
+/// everything. When the single pass produces fewer tracks than requested — the
+/// worst case being an output-open `AVERROR(EINVAL)` (exit -22) that a single
+/// un-encodable track triggers, aborting the batch before ANY track is written —
+/// each still-missing track is re-demuxed on its own so one poison track only
+/// loses itself instead of poisoning every good track in the container.
+///
+/// 判活按进度而不是总时长（BUG-4838）：后端支持观察式运行（[FfmpegWatchedRunner]）时，
+/// 已处理媒体时间连续 [stallTimeout] 不推进才判卡死；[cancel] 完成即强杀。卡死 / 取消时
+/// 删掉全部输出（含半截文件），不做逐轨回退（每条回退都要再读一遍整个容器，会把一次
+/// 卡死放大成 N 次），也不写负缓存。[backend] 缺省为 [resolveFfmpegBackend]；不支持
+/// 观察式运行的后端（测试替身）退回 [FfmpegBackend.run] + [fallbackTimeout]。
+///
+/// Never throws for the caller: missing input / absent ffmpeg / error all yield
+/// an empty `written` with the matching [EmbeddedSubtitleExtractFailure].
+Future<EmbeddedSubtitleExtractResult> extractEmbeddedSubtitlesViaFfmpeg({
   required String inputPath,
   required Map<int, String> outputs,
-  Duration timeout = const Duration(seconds: 180),
+  Future<void>? cancel,
+  FfmpegBackend? backend,
+  Duration stallTimeout = kEmbeddedSubtitleExtractStallTimeout,
+  Duration fallbackTimeout = kEmbeddedSubtitleExtractFallbackTimeout,
 }) async {
-  if (outputs.isEmpty) return const <int, String>{};
+  if (outputs.isEmpty) {
+    return const EmbeddedSubtitleExtractResult(written: <int, String>{});
+  }
   // 输入是用户库里的视频（常在网络盘上）：async 判存在，互联 host 的内封字幕端点在
   // app 主 isolate 上走到这里，同步 stat 会冻结全部端点与 UI（BUG-3756）。输出落在
   // 系统临时目录的缓存里（本地盘），沿用同步写法。
-  if (!await File(inputPath).exists()) return const <int, String>{};
+  if (!await File(inputPath).exists()) {
+    return const EmbeddedSubtitleExtractResult(
+      written: <int, String>{},
+      failure: EmbeddedSubtitleExtractFailure.inputMissing,
+    );
+  }
   try {
     for (final String out in outputs.values) {
       File(out).parent.createSync(recursive: true);
     }
-    final FfmpegRunResult result = await _runFfmpeg(
-      buildFfmpegMultiSubtitleArgs(inputPath: inputPath, outputs: outputs),
-      timeout,
-    );
+    final FfmpegBackend runner = backend ?? resolveFfmpegBackend();
+    Future<FfmpegRunResult> runPass(Map<int, String> pass) =>
+        _runSubtitleExtractPass(
+          runner,
+          buildFfmpegMultiSubtitleArgs(inputPath: inputPath, outputs: pass),
+          stallTimeout: stallTimeout,
+          fallbackTimeout: fallbackTimeout,
+          cancel: cancel,
+        );
+
+    final FfmpegRunResult result = await runPass(outputs);
+    if (result.returnCode == null) {
+      // 卡死 / 取消：被强杀的进程可能留下非空的半截文件，全部删掉。
+      _deleteSubtitleOutputs(outputs.values);
+      final EmbeddedSubtitleExtractFailure failure = _abortedRunFailure(result);
+      if (failure != EmbeddedSubtitleExtractFailure.cancelled) {
+        _reportFfmpegFailure('extractEmbeddedSubtitlesViaFfmpeg', result, null);
+      }
+      return EmbeddedSubtitleExtractResult(
+        written: const <int, String>{},
+        failure: failure,
+      );
+    }
     // Filter by what actually landed, dropping empty stubs.
     final Map<int, String> written = _collectWrittenSubtitles(outputs);
 
@@ -1969,24 +2131,20 @@ Future<Map<int, String>> extractEmbeddedSubtitlesViaFfmpeg({
     // track, retry the missing ones ONE AT A TIME: a bad track then fails in
     // isolation (fast, at binding — no full container read) while every good
     // track still lands. The batch stays the fast path for the common all-good
-    // case; this only runs on failure.
-    // Gated on a non-null batch returnCode: a timed-out batch (returnCode ==
-    // null) means the demux itself is too slow (IO contention, BUG-104), so
-    // per-track retries would just multiply that one timeout into N. The
-    // poison-track case this fallback targets always returns a real exit code
-    // (-22), fast — so the guard costs nothing there.
-    if (result.returnCode != null && written.length < outputs.length) {
+    // case; this only runs on failure. A stalled / cancelled batch already
+    // returned above: per-track retries would multiply that one full read into N.
+    if (written.length < outputs.length) {
       for (final MapEntry<int, String> entry in outputs.entries) {
         if (written.containsKey(entry.key)) continue;
-        final FfmpegRunResult single = await _runFfmpeg(
-          buildFfmpegSubtitleArgs(
-            inputPath: inputPath,
-            streamIndex: entry.key,
-            outputPath: entry.value,
-          ),
-          timeout,
-        );
+        final FfmpegRunResult single = await runPass(<int, String>{
+          entry.key: entry.value,
+        });
         final File f = File(entry.value);
+        if (single.returnCode == null) {
+          // 逐轨回退本身卡死 / 被取消：这一条作废，剩下的也不再起（同上，不放大）。
+          _deleteSubtitleOutputs(<String>[entry.value]);
+          break;
+        }
         if (single.returnCode == 0 && f.existsSync() && f.lengthSync() > 0) {
           written[entry.key] = entry.value;
           continue;
@@ -1996,12 +2154,10 @@ Future<Map<int, String>> extractEmbeddedSubtitlesViaFfmpeg({
             f.deleteSync();
           } catch (_) {}
         }
-        // Definitive rejection (ran, non-zero, non-timeout → the codec is
-        // undecodable by this build): negatively cache so future passes skip
-        // this track instead of re-reading the container and re-logging. A
-        // timeout (returnCode null) is transient and stays retryable.
-        final int? rc = single.returnCode;
-        if (rc != null && rc != 0) {
+        // Definitive rejection (ran, non-zero → the codec is undecodable by
+        // this build): negatively cache so future passes skip this track
+        // instead of re-reading the container and re-logging.
+        if (single.returnCode != 0) {
           try {
             File(
               '${entry.value}$kUnsupportedEmbeddedSubtitleSentinelSuffix',
@@ -2016,13 +2172,24 @@ Future<Map<int, String>> extractEmbeddedSubtitlesViaFfmpeg({
     if (written.isEmpty) {
       _reportFfmpegFailure('extractEmbeddedSubtitlesViaFfmpeg', result, null);
     }
-    return written;
+    return EmbeddedSubtitleExtractResult(
+      written: written,
+      failure: result.returnCode == 0
+          ? null
+          : EmbeddedSubtitleExtractFailure.failed,
+    );
   } on ProcessException catch (e, stack) {
     engineLog.log('extractEmbeddedSubtitlesViaFfmpeg', e, stack);
-    return const <int, String>{};
+    return const EmbeddedSubtitleExtractResult(
+      written: <int, String>{},
+      failure: EmbeddedSubtitleExtractFailure.ffmpegUnavailable,
+    );
   } catch (e, stack) {
     engineLog.log('extractEmbeddedSubtitlesViaFfmpeg', e, stack);
-    return const <int, String>{};
+    return const EmbeddedSubtitleExtractResult(
+      written: <int, String>{},
+      failure: EmbeddedSubtitleExtractFailure.failed,
+    );
   }
 }
 

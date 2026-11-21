@@ -153,6 +153,29 @@ fn carry(body: v3::Body) -> Option<Body4> {
     })
 }
 
+/// 本机命令层拼出的协议 3 操作体 → 原生日志能收的协议 4 操作体（G7-3a；命令层的新代实现 G7-3b 用）。逐字段照搬
+/// （同 [carry]），但只收**本机新写**的形：带旧戳的修改、带旧 HLC / 旧服务器时刻的日志是承袭来的数据，Dedup 只属于
+/// 承袭日志，MediaAt（种类 12 退役）、骨架、副本、不认识的种类协议 4 没有——一律报错，不悄悄丢字段。
+// 第一段没有生产调用方（G7-3b 是第一个），测试钉住它的行为。
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn native_body4(body: v3::Body) -> Result<Body4, String> {
+    match &body {
+        v3::Body::Edit(e) if e.legacy.is_some() => {
+            return Err("gen4 native: an edit with a legacy stamp is heritage data".to_owned());
+        }
+        v3::Body::Log(l) if l.legacy_hlc.is_some() || l.legacy_server_time.is_some() => {
+            return Err(
+                "gen4 native: a log with a legacy hlc / server time is heritage data".to_owned(),
+            );
+        }
+        v3::Body::Dedup { .. } => {
+            return Err("gen4 native: dedup belongs to heritage logs only".to_owned());
+        }
+        _ => {}
+    }
+    carry(body).ok_or_else(|| "gen4 native: this body kind does not exist in protocol 4".to_owned())
+}
+
 /// 一条未清除的旧操作为什么成了原样件。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RawReason {
@@ -509,7 +532,7 @@ pub(crate) mod tests {
         }
     }
 
-    fn log3() -> LogBody {
+    pub(crate) fn log3() -> LogBody {
         LogBody {
             id: Key::Uuid(id(0x21)),
             card: Key::Uuid(id(0x22)),
@@ -954,6 +977,7 @@ pub(crate) mod tests {
                 source: id(0x5c),
                 device: id(OLD),
                 uploader: id(0xa1),
+                author_key: None,
                 t_version: T_VERSION,
                 prev_chain: [0x11; 32],
                 last_chain,
@@ -1011,6 +1035,7 @@ pub(crate) mod tests {
             source: id(0x5c),
             device: id(OLD),
             uploader: id(0xa1),
+            author_key: None,
             t_version: T_VERSION,
             prev_chain: CHAIN_ZERO,
             last_chain: *cs.last().unwrap(),

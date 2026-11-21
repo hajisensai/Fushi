@@ -163,6 +163,7 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
   @override
   Widget build(BuildContext context) {
     return FushiPageScaffold(
+      masthead: true,
       title: t.manga_global_search_title,
       headerBottom: Padding(
         padding: const EdgeInsets.only(top: 8),

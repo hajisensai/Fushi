@@ -162,28 +162,9 @@ def requireReleaseKeystore = {
     }
 }
 
-// 网页内容核心（native/fushi_web_core：广告拦截 + 漫画章末广告页识别）是硬依赖：Dart 侧没有
-// 「缺库判不可用」的分支，Release 包缺 .so 在运行时就是 FushiWebCoreLibraryMissing。按 Flutter
-// 传进来的 target-platform 逐 ABI 核对 prebuilt 在不在（build_android_so.* 产出），缺就拒绝出包。
-def requireWebCoreSo = {
-    def abiOf = ['android-arm': 'armeabi-v7a', 'android-arm64': 'arm64-v8a', 'android-x64': 'x86_64']
-    def platforms = (project.findProperty('target-platform') ?: 'android-arm,android-arm64,android-x64').toString().split(',')
-    platforms.each { platform ->
-        def abi = abiOf[platform.trim()]
-        if (abi == null) {
-            return
-        }
-        def so = file("../../../native/fushi_web_core/prebuilt/android/${abi}/libfushi_web_core.so")
-        if (!so.exists()) {
-            throw new GradleException("Missing required native library ${so}. Run native/fushi_web_core/build_android_so.{sh,ps1} for ${abi} before building a release APK.")
-        }
-    }
-}
-
 gradle.taskGraph.whenReady { taskGraph ->
     if (taskGraph.allTasks.any { it.name.toLowerCase().contains("release") }) {
         requireReleaseKeystore()
-        requireWebCoreSo()
     }
 }
 
@@ -221,7 +202,7 @@ android {
         main.jniLibs.srcDirs += '../../../native/fushi_fsrs/prebuilt/android'
         // 网页内容核心（fushi_web_core，硬依赖）：native/fushi_web_core/build_android_so.*
         // 产出 prebuilt/android/<abi>/libfushi_web_core.so；Release 构建缺它直接失败
-        // （见上面的 requireWebCoreSo），Debug 构建不挡、运行时用到时如实报错。
+        // （见下面的 checkFushiWebCoreNative），Debug 构建不挡、运行时用到时如实报错。
         main.jniLibs.srcDirs += '../../../native/fushi_web_core/prebuilt/android'
         // 计算内核（哈希 / 图像 / 文本，**硬依赖**）：native/fushi_compute/build_android_so.*
         // 产出 prebuilt/android/<abi>/libfushi_compute.so 随包；本次要出的任一 ABI 缺库时
@@ -552,6 +533,65 @@ def checkFushiCorpusNative = tasks.register("checkFushiCorpusNative") {
     }
 }
 
+// 网页内容核心 fushi_web_core（广告拦截 + 漫画章末广告页识别）是硬依赖：Dart 侧没有「缺库判不可用」
+// 的分支，Release 包缺 .so 在运行时就是 FushiWebCoreLibraryMissing。判据同上，但只挂 Release 的
+// merge*JniLibFolders（Debug 不挡）。以前在 gradle.taskGraph.whenReady 里查：那时任何任务都还没跑，
+// ensureFushiAndroidNative 来不及备库，新 worktree 本机出 Release 包必然死在这里。
+def fushiWebCoreAndroidDir = file('../../../native/fushi_web_core/prebuilt/android')
+def checkFushiWebCoreNative = tasks.register("checkFushiWebCoreNative") {
+    doLast {
+        String platforms = (project.findProperty('target-platform') ?: 'android-arm,android-arm64,android-x64').toString()
+        List<String> abis = platforms.split(',').collect { it.trim() }.findAll { !it.isEmpty() }
+            .collect { fushiComputeAbiOfPlatform[it] ?: it }
+        List<String> missing = abis.findAll { abi ->
+            !new File(fushiWebCoreAndroidDir, "${abi}/libfushi_web_core.so").isFile()
+        }
+        if (!missing.isEmpty()) {
+            throw new GradleException(
+                "fushi_web_core is a required native dependency of release builds, but libfushi_web_core.so is missing for ABI(s) " +
+                "${missing.join(', ')} under ${fushiWebCoreAndroidDir}. Build it first: " +
+                "native/fushi_web_core/build_android_so.ps1 -Abis ${abis.join(',')} (Windows) or " +
+                "bash native/fushi_web_core/build_android_so.sh <ndk-root> ${abis.join(' ')} " +
+                "(needs Rust + cargo-ndk; see docs/agent/build.md).")
+        }
+    }
+}
+
+// 出包前先让 .so 与当前源码对上，再由上面五个 check 判定：Windows 开发机上每次都调
+// tool/native_libs.ps1 -Android，由它按源码树戳记决定（同源码 → 几秒跳过；源码变了 / 缺库 →
+// 本机缓存 → 兄弟 worktree → cargo-ndk 现编，同一份 native/<crate> 源码一台机器只编一次）。
+// 不能只在缺库时才调：.so 在但源码已变（合进了改 native/<crate> 的提交）时，check 只看文件在不在，
+// 旧库会被静默打进包（2026-11-21 合 #3951 时 fushi_compute 就是这样）。
+// 非 Windows 主机（CI 在出包前自己编好）不代劳，缺库仍由 check 报错说明怎么编。
+def fushiAndroidNativeCrates = ['fushi_compute', 'fushi_rwkv', 'fushi_music', 'fushi_corpus', 'fushi_web_core']
+def ensureFushiAndroidNative = tasks.register("ensureFushiAndroidNative") {
+    doLast {
+        if (!System.getProperty('os.name').toLowerCase().contains('windows')) {
+            return
+        }
+        String platforms = (project.findProperty('target-platform') ?: 'android-arm,android-arm64,android-x64').toString()
+        List<String> abis = platforms.split(',').collect { it.trim() }.findAll { !it.isEmpty() }
+            .collect { fushiComputeAbiOfPlatform[it] ?: it }
+        File script = file('../../../tool/native_libs.ps1')
+        logger.lifecycle("Matching the Android native libraries (${fushiAndroidNativeCrates.join(', ')}) to the source: ${script} -Android -Abis ${abis.join(',')}")
+        ProcessBuilder pb = new ProcessBuilder(
+            'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script.absolutePath,
+            '-Android', '-Abis', abis.join(','))
+        pb.redirectErrorStream(true)
+        Process p = pb.start()
+        p.inputStream.eachLine('UTF-8') { String line -> logger.lifecycle(line) }
+        if (p.waitFor() != 0) {
+            throw new GradleException(
+                "tool/native_libs.ps1 -Android failed (exit ${p.exitValue()}); the Android native libraries " +
+                "could not be prepared (needs Rust + cargo-ndk + the NDK; see docs/agent/build.md).")
+        }
+    }
+}
+[checkFushiComputeNative, checkFushiRwkvNative, checkFushiMusicNative, checkFushiCorpusNative,
+ checkFushiWebCoreNative].each { check ->
+    check.configure { dependsOn(ensureFushiAndroidNative) }
+}
+
 // AGP 对 minSdk ≥ 24 的包不签 v1（见 signingConfigs.release 注释），而 HarmonyOS 4.x 安装器
 // 要 JAR 签名。packageRelease 产出已签 v2+v3 的 APK 后，用 build-tools 的 apksigner 显式
 // `--v1-signing-enabled true` 原地重签（apksigner 显式开关不按 minSdk 推断），Flutter 随后才把
@@ -600,10 +640,19 @@ tasks.configureEach { task ->
         task.dependsOn(prepareMihonSourceApi)
         task.dependsOn(prepareAniyomiSourceApi)
     }
-    if (task.name == "preBuild") {
+    // 硬依赖检查挂在「把 .so 收进包」的任务上（merge<Variant>JniLibFolders：每个出
+    // APK / AAB 的变体都必经），不挂 preBuild：preBuild 连 JVM 单测
+    // （:app:testDebugUnitTest）和纯编译任务也拦，而这些任务根本不打包 .so。
+    // 2026-11-15～11-20 本机 24 次 testDebugUnitTest 有 22 次失败，找回输出的里面
+    // 8 次死在这四个检查上（开发机 worktree 没有 Android 预编译库）。缺库仍然出
+    // 不了任何包：实测 :app:mergeDebugJniLibFolders 缺库即失败。
+    if (task.name.startsWith("merge") && task.name.endsWith("JniLibFolders")) {
         task.dependsOn(checkFushiComputeNative)
         task.dependsOn(checkFushiRwkvNative)
         task.dependsOn(checkFushiMusicNative)
         task.dependsOn(checkFushiCorpusNative)
+        if (task.name.contains("Release")) {
+            task.dependsOn(checkFushiWebCoreNative)
+        }
     }
 }

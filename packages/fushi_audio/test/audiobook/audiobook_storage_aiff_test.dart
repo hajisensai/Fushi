@@ -70,10 +70,25 @@ void main() {
         expect(p.equals(p.dirname(path), dir.path), isTrue);
         expect(File(path).existsSync(), isTrue);
       }
-      expect(calls, <(String, String)>[
-        (aiff.path, got[0]),
-        (aif.path, got[1]),
-      ]);
+      // 转码器写的是暂存目录里的同名文件（BUG-4810：新文件全部就绪后才落到正式
+      // 名字），所以这里比源路径与落点的文件名。
+      expect(
+        <(String, String)>[
+          for (final (String src, String dest) in calls)
+            (src, p.basename(dest)),
+        ],
+        <(String, String)>[
+          (aiff.path, p.basename(got[0])),
+          (aif.path, p.basename(got[1])),
+        ],
+      );
+      for (final (String _, String dest) in calls) {
+        expect(
+          p.basename(p.dirname(dest)),
+          AudiobookStorage.incomingDirName,
+          reason: '转码产物先进暂存目录，不直接写进持久目录',
+        );
+      }
       expect(File(got[2]).readAsStringSync(), 'FORM-AIFF-03.mp3');
       expect(
         dir.listSync().map((FileSystemEntity e) => p.extension(e.path)),

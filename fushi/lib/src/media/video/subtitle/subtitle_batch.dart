@@ -33,6 +33,7 @@ class SubtitleBatchTarget {
     required this.videoPath,
     required this.sortIndex,
     required this.isStream,
+    this.season,
   });
 
   /// 视频稳定身份（本地 = VideoBooks.bookUid，远端 = RemoteVideoInfo.id）。
@@ -49,6 +50,9 @@ class SubtitleBatchTarget {
 
   /// 是否流媒体（videoPath 为 http/https）。决定持久化落 DB 还是 prefs。
   final bool isStream;
+
+  /// 可选显式季号（1-based）；为 null 时从路径 / 标题解析。
+  final int? season;
 }
 
 /// 一集在批量下载里的状态。
@@ -67,16 +71,36 @@ enum SubtitleBatchStatus {
 
   /// 下载/落盘失败。
   failed,
+
+  /// 用户中途停止了批量，这一集还没开始就被跳过（没有下载、没有落盘）。
+  skipped,
+}
+
+/// [SubtitleBatchStatus.failed] 是在哪一步失败的。三步对用户是三件不同的事：没下下来
+/// （换来源 / 等等再试）、下下来了但写不进本地（磁盘满 / 无权限）、写好了但没能设为
+/// 这一集的字幕（数据库 / 宿主登记失败）——后两种说成「下载失败」会让用户去换来源。
+enum SubtitleBatchFailureStage {
+  /// 下载（含从整季包里拆）失败或拿到空内容。
+  download,
+
+  /// 下载到了，对时间轴 / 写盘失败。
+  write,
+
+  /// 已落盘，调用方的持久化回调（设为这一集的字幕）抛错。
+  persist,
 }
 
 /// 一集的批量结果（可变：随处理推进更新 [status] 等）。
 class SubtitleBatchItem {
-  SubtitleBatchItem({required this.target, required this.episode});
+  SubtitleBatchItem({required this.target, required this.episode, this.season});
 
   final SubtitleBatchTarget target;
 
   /// 用于匹配的集号（[resolveSubtitleBatchEpisode]）。
   final int episode;
+
+  /// 用于匹配的季号（[resolveSubtitleBatchSeason]）；未知或单季不限时为 null。
+  final int? season;
 
   SubtitleBatchStatus status = SubtitleBatchStatus.pending;
 
@@ -86,8 +110,18 @@ class SubtitleBatchItem {
   /// 选中字幕的语言代码（`ja`/`zh`/...；来源没给且认不出为 null）。
   String? language;
 
-  /// 失败/无匹配时的简短原因（UI 副标题）。
+  /// 失败/无匹配时的简短原因（诊断用的英文短句，不直接给用户看）。
   String? message;
+
+  /// 失败/无匹配背后的**异常对象**（没有异常时为 null）。
+  ///
+  /// [message] 是 `'$e'` 字符串，分不出 401（key 过期）/ 429（限流）/ 404（文件
+  /// 下架）；面板要把它喂给 `describeSubtitleFailure` 才能说出用户能据以行动的原因，
+  /// 所以对象本身得留着。
+  Object? error;
+
+  /// [SubtitleBatchStatus.failed] 时失败在哪一步；其余状态为 null。
+  SubtitleBatchFailureStage? failureStage;
 }
 
 /// 解析该集用于匹配的真实集号：优先从视频路径文件名 / 标题解析（`第N話` / `E01` /
@@ -103,6 +137,91 @@ int resolveSubtitleBatchEpisode(SubtitleBatchTarget target) {
   final int? fromTitle = parseVideoFilename(target.title).episode;
   if (fromTitle != null) return fromTitle;
   return target.sortIndex + 1;
+}
+
+/// 解析该集用于匹配的季号：优先显式 [SubtitleBatchTarget.season] → 完整视频路径
+/// （含父目录 `Show/Season 2/01.mkv`）→ 标题；认不出为 null。纯函数，便于单测。
+int? resolveSubtitleBatchSeason(SubtitleBatchTarget target) {
+  final int? explicit = target.season;
+  if (explicit != null && explicit > 0) return explicit;
+  final int? fromPath = parseVideoPath(target.videoPath).season;
+  if (fromPath != null && fromPath > 0) return fromPath;
+  final int? fromTitle = parseVideoFilename(target.title).season;
+  if (fromTitle != null && fromTitle > 0) return fromTitle;
+  return null;
+}
+
+int? _seasonFromSubtitleFileName(String fileName) {
+  String stem = p.basename(fileName.trim());
+  if (stem.isEmpty) return null;
+  final int dot = stem.lastIndexOf('.');
+  if (dot > 0) {
+    final String ext = stem.substring(dot + 1).toLowerCase();
+    if (const <String>{
+      'srt',
+      'ass',
+      'ssa',
+      'vtt',
+      'zip',
+      'rar',
+      '7z',
+    }.contains(ext)) {
+      stem = stem.substring(0, dot);
+    }
+  }
+  final int dot2 = stem.lastIndexOf('.');
+  if (dot2 > 0) {
+    final String tail = stem.substring(dot2 + 1);
+    if (detectSubtitleLanguage('_.$tail.srt') != null) {
+      stem = stem.substring(0, dot2);
+    }
+  }
+  final int? season = parseVideoFilename(stem).season;
+  return season != null && season > 0 ? season : null;
+}
+
+/// 从字幕候选取出它的季号：优先来源声明的 [VideoSubtitleCandidate.season]，
+/// 否则从文件名解析（`S02E01` 等）；认不出为 null。纯函数。
+int? subtitleCandidateSeason(VideoSubtitleCandidate candidate) {
+  final int? declared = candidate.season;
+  if (declared != null && declared > 0) return declared;
+  return _seasonFromSubtitleFileName(candidate.fileName);
+}
+
+bool _matchesSeason(
+  int? candidateSeason, {
+  required int? season,
+  required bool allowUnseasoned,
+}) {
+  if (season == null) return allowUnseasoned;
+  if (candidateSeason == season) return true;
+  return candidateSeason == null && allowUnseasoned;
+}
+
+/// 按目标季号过滤字幕候选。纯函数。
+///
+/// - [season] 为 null：保留全部（[allowUnseasoned] 为 false 时仅当无法容忍未知季号
+///   才返回空）。
+/// - [season] 非 null：保留属于该季的候选；季号未知的候选仅在 [allowUnseasoned]
+///   为 true（单季场景）时保留，多季混跑时拒绝，防止第一季未标季号的字幕静默套用到
+///   其它季。
+List<VideoSubtitleCandidate> filterSubtitleCandidatesForSeason(
+  List<VideoSubtitleCandidate> candidates, {
+  required int? season,
+  bool allowUnseasoned = true,
+}) {
+  if (season == null) {
+    return allowUnseasoned ? candidates : const <VideoSubtitleCandidate>[];
+  }
+  return <VideoSubtitleCandidate>[
+    for (final VideoSubtitleCandidate c in candidates)
+      if (_matchesSeason(
+        subtitleCandidateSeason(c),
+        season: season,
+        allowUnseasoned: allowUnseasoned,
+      ))
+        c,
+  ];
 }
 
 /// 前缀最多保留多少字符的 bookUid 原文：加上 8 位摘要与分隔符后仍远短于文件名上限。
@@ -167,32 +286,85 @@ class _ArchivePackSplitter {
              (VideoSubtitleCandidate a, VideoSubtitleCandidate b) =>
                  compareCandidatesByLanguagePreference(a, b, preferredLanguage),
            ),
-       _hasUnsupported = candidates.any(
-         (VideoSubtitleCandidate c) =>
-             c.archiveFormat != null && !c.archiveFormat!.isSupported,
-       );
+       _unsupportedPacks = <VideoSubtitleCandidate>[
+         for (final VideoSubtitleCandidate c in candidates)
+           if (c.archiveFormat != null && !c.archiveFormat!.isSupported) c,
+       ];
 
   final VideoSubtitleRegistry registry;
   final String? preferredLanguage;
   final List<VideoSubtitleCandidate> _packs;
-  final bool _hasUnsupported;
+  final List<VideoSubtitleCandidate> _unsupportedPacks;
   final Map<String, Future<VideoSubtitleDownload?>> _downloads =
       <String, Future<VideoSubtitleDownload?>>{};
-  Object? _lastError;
 
-  /// 本集没从任何包里拆出文件时的原因（没有包可试时为 null，交回单文件判据）。
-  String? get failureReason {
-    if (_lastError != null) return 'archive: $_lastError';
-    if (_packs.isNotEmpty) return 'season pack has no file for this episode';
-    if (_hasUnsupported) return 'season pack format is not supported';
+  /// 下载失败的包（identityKey → 异常）。包的下载结果整批只取一次，不重试。
+  final Map<String, Object> _errors = <String, Object>{};
+
+  static bool _packMayServeSeason(int? packSeason, int? targetSeason) =>
+      targetSeason == null || packSeason == null || packSeason == targetSeason;
+
+  List<VideoSubtitleCandidate> _packsForSeason(int? season) =>
+      <VideoSubtitleCandidate>[
+        for (final VideoSubtitleCandidate pack in _packs)
+          if (_packMayServeSeason(subtitleCandidateSeason(pack), season)) pack,
+      ];
+
+  /// 对 [season] 可试的包中是否有下载失败。
+  bool hasFailureFor(int? season) {
+    for (final VideoSubtitleCandidate pack in _packsForSeason(season)) {
+      if (_errors.containsKey(pack.identityKey)) return true;
+    }
+    return false;
+  }
+
+  /// 对 [season] **每一个**可试的包都没下下来时，首选包的那次异常；否则 null。
+  ///
+  /// 只在一集没从任何包里拆出文件之后读（那时所有包都已试过）。只要有一个包下成功，
+  /// 这一集没配上的原因就是「包里没有这一集」，不是别的包的下载失败——把后者挂到
+  /// 这一集上，行文案会说成「连不上来源」。
+  Object? allPacksFailedErrorFor(int? season) {
+    final List<VideoSubtitleCandidate> applicable = _packsForSeason(season);
+    if (applicable.isEmpty) return null;
+    for (final VideoSubtitleCandidate pack in applicable) {
+      if (!_errors.containsKey(pack.identityKey)) return null;
+    }
+    return _errors[applicable.first.identityKey];
+  }
+
+  /// 本集没从任何包里拆出文件时的原因（没有对 [season] 可试的包时为 null，交回单文件判据）。
+  String? failureReasonFor(int? season) {
+    final List<VideoSubtitleCandidate> applicable = _packsForSeason(season);
+    Object? lastError;
+    for (final VideoSubtitleCandidate pack in applicable) {
+      final Object? err = _errors[pack.identityKey];
+      if (err != null) lastError = err;
+    }
+    if (lastError != null) return 'archive: $lastError';
+    if (applicable.isNotEmpty) {
+      return 'season pack has no file for this episode';
+    }
+    if (_unsupportedPacks.any(
+      (VideoSubtitleCandidate pack) =>
+          _packMayServeSeason(subtitleCandidateSeason(pack), season),
+    )) {
+      return 'season pack format is not supported';
+    }
     return null;
   }
 
-  Future<VideoSubtitleDownload?> subtitleFor(
+  Future<({VideoSubtitleDownload? download, bool seasonMismatch})> subtitleFor(
     int episode, {
+    int? season,
     required bool soleTarget,
+    bool allowUnseasoned = true,
   }) async {
-    for (final VideoSubtitleCandidate pack in _packs) {
+    bool sawSeasonMismatch = _packs.any(
+      (VideoSubtitleCandidate pack) =>
+          !_packMayServeSeason(subtitleCandidateSeason(pack), season),
+    );
+    for (final VideoSubtitleCandidate pack in _packsForSeason(season)) {
+      final int? packSeason = subtitleCandidateSeason(pack);
       final VideoSubtitleDownload? download =
           await (_downloads[pack.identityKey] ??= _download(pack));
       if (download == null) continue;
@@ -223,35 +395,87 @@ class _ArchivePackSplitter {
             if (rankA != rankB) return rankA.compareTo(rankB);
             return a.fileName.toLowerCase().compareTo(b.fileName.toLowerCase());
           });
-      // 多目标时只认集号精确命中：一个文件发给 N 集等于静默装错。
-      ArchivedSubtitle? picked;
+      // 多目标时只认集号精确命中；按季隔离且优先季号精确命中的文件。
+      ArchivedSubtitle? exactSeason;
+      ArchivedSubtitle? fallbackUnseasoned;
       for (final ArchivedSubtitle entry in entries) {
-        if (parseSubtitleEpisode(entry.fileName) == episode) {
-          picked = entry;
+        if (parseSubtitleEpisode(entry.fileName) != episode) continue;
+        final int? entrySeason = _seasonFromSubtitleFileName(entry.fileName);
+        if (season != null && entrySeason != null && entrySeason != season) {
+          sawSeasonMismatch = true;
+          continue;
+        }
+        if (season != null &&
+            entrySeason == null &&
+            !allowUnseasoned &&
+            packSeason != season) {
+          sawSeasonMismatch = true;
+          continue;
+        }
+        if (season != null && entrySeason == season) {
+          exactSeason ??= entry;
           break;
         }
+        fallbackUnseasoned ??= entry;
+        if (season == null) break;
       }
+      ArchivedSubtitle? picked = exactSeason ?? fallbackUnseasoned;
       if (picked == null && soleTarget && entries.length == 1) {
-        picked = entries.single;
+        final ArchivedSubtitle only = entries.single;
+        final int? entrySeason = _seasonFromSubtitleFileName(only.fileName);
+        final bool conflict =
+            season != null && entrySeason != null && entrySeason != season;
+        final bool ambiguous =
+            season != null &&
+            entrySeason == null &&
+            !allowUnseasoned &&
+            packSeason != season;
+        if (conflict || ambiguous) {
+          sawSeasonMismatch = true;
+        } else {
+          picked = only;
+        }
       }
       if (picked == null) continue;
-      return VideoSubtitleDownload(
-        bytes: picked.bytes,
-        fileName: picked.fileName,
-        language: languageOf(picked),
+      return (
+        download: VideoSubtitleDownload(
+          bytes: picked.bytes,
+          fileName: picked.fileName,
+          language: languageOf(picked),
+        ),
+        seasonMismatch: sawSeasonMismatch,
       );
     }
-    return null;
+    return (download: null, seasonMismatch: sawSeasonMismatch);
   }
 
   Future<VideoSubtitleDownload?> _download(VideoSubtitleCandidate pack) async {
     try {
       return await registry.download(pack);
     } on Object catch (error) {
-      _lastError = error;
+      _errors[pack.identityKey] = error;
       return null;
     }
   }
+}
+
+/// [results] 里带异常的集，按异常对象 `identical` 去重、各留最先出现的那一集。
+///
+/// 一个整季包下载失败会让它覆盖的每一集都带上**同一个**异常对象（包只下一次）；
+/// 记日志时逐集各记一条，12 集的季就是 12 条一模一样的报错。
+List<SubtitleBatchItem> subtitleBatchDistinctFailures(
+  List<SubtitleBatchItem> results,
+) {
+  final List<SubtitleBatchItem> distinct = <SubtitleBatchItem>[];
+  for (final SubtitleBatchItem item in results) {
+    final Object? error = item.error;
+    if (error == null) continue;
+    if (distinct.any((SubtitleBatchItem d) => identical(d.error, error))) {
+      continue;
+    }
+    distinct.add(item);
+  }
+  return distinct;
 }
 
 /// 每集处理完（下载落盘后，含 noMatch/failed）的回调；调用方据此持久化 + 刷新 UI。
@@ -270,6 +494,14 @@ typedef SubtitleBatchItemCallback =
 /// 但判不出）。这些版本不再重探——「判不出」也是结论。
 ///
 /// 尽力而为：单集失败/无匹配不中断整批（记该集状态后继续）。返回全部集的结果。
+/// [onItemDone] 抛错（调用方的持久化失败）同样只算**这一集**失败：状态改记
+/// [SubtitleBatchStatus.failed]、异常留在 [SubtitleBatchItem.error]，已落盘的
+/// [SubtitleBatchItem.subtitlePath] 保留，后面的集照常处理。
+///
+/// [isCancelled]：每集**开始前**问一次；返回 true 后不再开始新的一集，正在下载 /
+/// 对齐 / 落盘的那一集照常做完（不留半个字幕文件），其余集记
+/// [SubtitleBatchStatus.skipped] 并逐集回调 [onItemDone]（不回调 [onItemStart]）。
+/// 只有用户显式点「停止」才取消——关掉工作台不取消（BUG-4496）。
 Future<List<SubtitleBatchItem>> runSubtitleBatch({
   required VideoSubtitleRegistry registry,
   required List<VideoSubtitleCandidate> candidates,
@@ -283,6 +515,7 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
   download,
   Map<String, SubtitleContentLanguage?> probedVersionLanguages =
       const <String, SubtitleContentLanguage?>{},
+  bool Function()? isCancelled,
 }) async {
   final List<SubtitleBatchItem> results = <SubtitleBatchItem>[];
   final Directory dir = Directory(saveDirectory);
@@ -291,6 +524,38 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
     for (final SubtitleBatchTarget target in targets)
       resolveSubtitleBatchEpisode(target),
   ];
+  final List<int?> rawSeasons = <int?>[
+    for (final SubtitleBatchTarget target in targets)
+      resolveSubtitleBatchSeason(target),
+  ];
+  final Set<int> knownSeasons = <int>{
+    for (final int? s in rawSeasons)
+      if (s != null) s,
+  };
+  final bool hasUnseasonedTarget = rawSeasons.any((int? s) => s == null);
+  final bool hasMultipleTargetSeasons =
+      knownSeasons.length >= 2 ||
+      (hasUnseasonedTarget && knownSeasons.any((int s) => s >= 2));
+  final List<int?> targetSeasons = <int?>[
+    for (final int? s in rawSeasons) hasMultipleTargetSeasons ? (s ?? 1) : s,
+  ];
+  final bool allowUnseasoned = !hasMultipleTargetSeasons;
+
+  bool matchesTargetForProbe(VideoSubtitleCandidate c) {
+    final int? candSeason = subtitleCandidateSeason(c);
+    for (int i = 0; i < targets.length; i++) {
+      if (!_matchesSeason(
+        candSeason,
+        season: targetSeasons[i],
+        allowUnseasoned: allowUnseasoned,
+      )) {
+        continue;
+      }
+      if (c.episode == null || c.episode == episodes[i]) return true;
+    }
+    return false;
+  }
+
   // 同一候选只下一次：语言探测下过的代表文件，被选中时直接复用。
   final Map<String, Future<VideoSubtitleDownload>> localDownloads =
       <String, Future<VideoSubtitleDownload>>{};
@@ -312,7 +577,8 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
             (VideoSubtitleCandidate c) =>
                 !c.isArchivePack &&
                 registry.allowsFreeProbeDownload(c) &&
-                !probedVersionLanguages.containsKey(subtitleVersionKeyOf(c)),
+                !probedVersionLanguages.containsKey(subtitleVersionKeyOf(c)) &&
+                matchesTargetForProbe(c),
           ),
           targetEpisodes: episodes,
           versionOf: subtitleVersionKeyOf,
@@ -330,19 +596,36 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
     return probed == null ? null : coarseLanguageCode(probed);
   }
 
-  // 整批共用一个版本（缺集由次选版本补），而不是逐集各挑各的——否则同一季会
-  // `.ass` / `.srt`、不同发布组混排。
-  final SubtitleEpisodeIndex<VideoSubtitleCandidate> index =
-      SubtitleEpisodeIndex.fromCandidates(
-        candidates,
-        preferredLanguage: preferredLanguage,
-      ).preferConsistentVersion(
-        targetEpisodes: episodes,
-        versionOf: subtitleVersionKeyOf,
-        languageRankOf: (VideoSubtitleCandidate c) =>
-            jimakuLanguageRank(languageOf(c), preferred: preferredLanguage),
-        fileNameOf: (VideoSubtitleCandidate c) => c.fileName,
-      );
+  // 整批按季各建一份索引，每季共用一个版本（缺集由次选版本补），而不是逐集各挑各的、
+  // 更不让一季的字幕跨季套到别的季。
+  final Map<int?, List<int>> episodesBySeason = <int?, List<int>>{};
+  for (int i = 0; i < targets.length; i++) {
+    episodesBySeason
+        .putIfAbsent(targetSeasons[i], () => <int>[])
+        .add(episodes[i]);
+  }
+  final Map<int?, SubtitleEpisodeIndex<VideoSubtitleCandidate>> indexBySeason =
+      <int?, SubtitleEpisodeIndex<VideoSubtitleCandidate>>{
+        for (final MapEntry<int?, List<int>> entry in episodesBySeason.entries)
+          entry.key:
+              SubtitleEpisodeIndex.fromCandidates(
+                filterSubtitleCandidatesForSeason(
+                  candidates,
+                  season: entry.key,
+                  allowUnseasoned: allowUnseasoned,
+                ),
+                preferredLanguage: preferredLanguage,
+              ).preferConsistentVersion(
+                targetEpisodes: entry.value,
+                versionOf: subtitleVersionKeyOf,
+                languageRankOf: (VideoSubtitleCandidate c) =>
+                    jimakuLanguageRank(
+                      languageOf(c),
+                      preferred: preferredLanguage,
+                    ),
+                fileNameOf: (VideoSubtitleCandidate c) => c.fileName,
+              ),
+      };
   final _ArchivePackSplitter packs = _ArchivePackSplitter(
     registry: registry,
     candidates: candidates,
@@ -350,13 +633,24 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
   );
   for (int i = 0; i < targets.length; i++) {
     final SubtitleBatchTarget target = targets[i];
+    final int? targetSeason = targetSeasons[i];
     final SubtitleBatchItem item = SubtitleBatchItem(
       target: target,
       episode: episodes[i],
+      season: targetSeason,
     );
+    if (isCancelled?.call() ?? false) {
+      item.status = SubtitleBatchStatus.skipped;
+      if (onItemDone != null) await onItemDone(item);
+      results.add(item);
+      continue;
+    }
     item.status = SubtitleBatchStatus.downloading;
     if (onItemStart != null) await onItemStart(item);
+    SubtitleBatchFailureStage stage = SubtitleBatchFailureStage.download;
     try {
+      final SubtitleEpisodeIndex<VideoSubtitleCandidate> index =
+          indexBySeason[targetSeason]!;
       final SubtitleEpisodeMatch<VideoSubtitleCandidate> match =
           chooseSubtitleForEpisode(
             index,
@@ -364,22 +658,47 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
             soleTarget: soleTarget,
           );
       final VideoSubtitleCandidate? best = match.file;
-      // 没有单集文件时，从整季压缩包里按集号拆（整包只下一次）。
-      final VideoSubtitleDownload? fromPack = best == null
-          ? await packs.subtitleFor(item.episode, soleTarget: soleTarget)
-          : null;
+      // 没有单集文件时，从整季压缩包里按季+集号拆（整包只下一次）。
+      final ({VideoSubtitleDownload? download, bool seasonMismatch})
+      packResult = best == null
+          ? await packs.subtitleFor(
+              item.episode,
+              season: targetSeason,
+              soleTarget: soleTarget,
+              allowUnseasoned: allowUnseasoned,
+            )
+          : (download: null, seasonMismatch: false);
+      final VideoSubtitleDownload? fromPack = packResult.download;
       if (best == null && fromPack == null) {
         item.status = SubtitleBatchStatus.noMatch;
+        final bool excludedBySeason =
+            packResult.seasonMismatch ||
+            candidates.any(
+              (VideoSubtitleCandidate c) =>
+                  !c.isArchivePack &&
+                  c.episode == item.episode &&
+                  !_matchesSeason(
+                    subtitleCandidateSeason(c),
+                    season: targetSeason,
+                    allowUnseasoned: allowUnseasoned,
+                  ),
+            );
+        final String? packFailure = packs.failureReasonFor(targetSeason);
         // 「为什么没配上」对用户是三件不同的事（改来源 / 等字幕 / 无能为力），
         // 别全压成一句「无匹配」。
-        item.message = packs.failureReason ?? match.failureReason;
+        item.message = excludedBySeason && !packs.hasFailureFor(targetSeason)
+            ? 'subtitle season does not match target season'
+            : (packFailure ?? match.failureReason);
+        item.error = packs.allPacksFailedErrorFor(targetSeason);
       } else {
         final VideoSubtitleDownload fetched =
             fromPack ?? await fetchCandidate(best!);
         if (fetched.bytes.isEmpty) {
           item.status = SubtitleBatchStatus.failed;
+          item.failureStage = SubtitleBatchFailureStage.download;
           item.message = 'download';
         } else {
+          stage = SubtitleBatchFailureStage.write;
           if (!dir.existsSync()) dir.createSync(recursive: true);
           final String dest = p.join(
             dir.path,
@@ -400,11 +719,22 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
           item.status = SubtitleBatchStatus.done;
         }
       }
-    } catch (e) {
+    } on Object catch (e) {
       item.status = SubtitleBatchStatus.failed;
+      item.failureStage = stage;
       item.message = '$e';
+      item.error = e;
     }
-    if (onItemDone != null) await onItemDone(item);
+    if (onItemDone != null) {
+      try {
+        await onItemDone(item);
+      } on Object catch (e) {
+        item.status = SubtitleBatchStatus.failed;
+        item.failureStage = SubtitleBatchFailureStage.persist;
+        item.message = '$e';
+        item.error = e;
+      }
+    }
     results.add(item);
   }
   return results;

@@ -388,6 +388,129 @@ function parseBilibiliJson(text) {
   return out;
 }
 
+// ── YouTube 自动字幕（ASR）分句整合（反馈 97pds8EODm，扩展设置 subtitleMergeAsrSentences）──
+// ASR 轨是「滚动行」：一行 cue 按屏幕宽度切，不按句子切，一句话常被拆成两三行碎片，
+// 查词 / 制卡只拿到半句、句子音频也只录半句。这里把行碎片按句子重切：
+//   ① 句末标点（。．.！!？?…）后断句——行内也断：桥给了词级时间（json3 segs 的 tOffsetMs），
+//      「love. You know」这种句号落在行中间的，按「You」的起点切开；
+//   ② 词与词之间停顿够长就断句（日语 ASR 常常一个标点都没有，停顿是主要信号）；
+//   ③ 封顶：合并后超过 FUSHI_ASR_MAX_SENTENCE_MS 或字数上限，就在**行边界**断开——没有
+//      标点也没有停顿时，最坏退化成原来的按行显示，绝不会在行中间乱切；
+//   ④ 「[音楽]」「[Music]」这类整行括注单独成句，不并进台词。
+// 没有词级时间的轨（本地 server 兜底路径、单词行）整行当一个词：只按标点与封顶合并。
+// 输出与输入同一契约 [{startMs,endMs,text}]，按起点升序、两两不重叠。
+const FUSHI_ASR_SENTENCE_END = /[。．.！!？?…‥][\s"'”’」』）)\]】]*$/;
+const FUSHI_ASR_NOTE_RE = /^[[［(（【][^\]］)）】]*[\]］)）】]$/;
+const FUSHI_ASR_CJK_RE = /[　-ヿ㐀-䶿一-鿿豈-﫿＀-￯]/;
+const FUSHI_ASR_PAUSE_MS = 1200; // 相邻两词**起点**间隔（含前一个词本身的时长）
+const FUSHI_ASR_GAP_MS = 600; // 前一段已结束到下一段开始的真空白
+const FUSHI_ASR_MAX_SENTENCE_MS = 12000;
+const FUSHI_ASR_MAX_SENTENCE_CHARS_CJK = 60;
+const FUSHI_ASR_MAX_SENTENCE_CHARS = 180;
+
+/**
+ * 拼两段 ASR 文本：任一侧贴边是中日文字符就直接相连，否则补一个空格（英文等按词空格）。
+ * @param {string} a
+ * @param {string} b
+ * @returns {string}
+ */
+function fushiJoinAsrText(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  if (FUSHI_ASR_CJK_RE.test(a[a.length - 1]) || FUSHI_ASR_CJK_RE.test(b[0])) return a + b;
+  return a + ' ' + b;
+}
+
+/**
+ * @param {string} text
+ * @returns {number} 不计空白的字数
+ */
+function fushiAsrCharCount(text) {
+  return String(text || '').replace(/\s+/g, '').length;
+}
+
+/**
+ * 一行 ASR cue 拆成词元。words = [{offsetMs, text}]（相对行起点，桥从 json3 segs 取）；
+ * 词拼起来与行文本对不上、或不足两个词时整行当一个词元（不信任对不上的词级数据）。
+ * @param {{startMs:number,endMs:number,text:string,words?:Array<{offsetMs:number,text:string}>}} cue
+ * @returns {Array<{startMs:number,endMs:number,text:string,timed:boolean,lineStart:boolean,lineEndMs:number,lineChars:number}>}
+ */
+function fushiAsrLineTokens(cue) {
+  const text = String(cue.text || '').replace(/\s+/g, ' ').trim();
+  const lineEndMs = cue.endMs;
+  const lineChars = fushiAsrCharCount(text);
+  const whole = [{
+    startMs: cue.startMs, endMs: cue.endMs, text: text, timed: false,
+    lineStart: true, lineEndMs: lineEndMs, lineChars: lineChars,
+  }];
+  const words = Array.isArray(cue.words) ? cue.words.filter((w) =>
+    w && typeof w.text === 'string' && w.text && Number.isFinite(w.offsetMs)) : [];
+  if (words.length < 2) return whole;
+  if (words.map((w) => w.text).join('').replace(/\s+/g, ' ').trim() !== text) return whole;
+  const tokens = [];
+  let prevStart = cue.startMs;
+  for (let i = 0; i < words.length; i++) {
+    // 词起点单调、夹在行内：坏数据（倒序 / 越界的 tOffsetMs）不能造出倒走的时间轴。
+    const startMs = Math.min(cue.endMs, Math.max(prevStart, cue.startMs + Math.max(0, words[i].offsetMs)));
+    prevStart = startMs;
+    tokens.push({
+      startMs: startMs, endMs: cue.endMs, text: words[i].text, timed: true,
+      lineStart: i === 0, lineEndMs: lineEndMs, lineChars: lineChars,
+    });
+  }
+  for (let i = 0; i < tokens.length - 1; i++) tokens[i].endMs = tokens[i + 1].startMs;
+  return tokens;
+}
+
+/**
+ * 把 YouTube 自动字幕的行碎片按句子重切（规则见上方注释）。
+ * @param {Array<{startMs:number,endMs:number,text:string,words?:Array<{offsetMs:number,text:string}>}>} cues
+ * @returns {Array<{startMs:number,endMs:number,text:string}>}
+ */
+function fushiMergeAsrSentenceCues(cues) {
+  if (!Array.isArray(cues)) return [];
+  const lines = cues.filter((c) => c && Number.isFinite(c.startMs) && Number.isFinite(c.endMs) &&
+    String(c.text || '').trim()).slice().sort((a, b) => a.startMs - b.startMs);
+  const out = [];
+  let cur = null;
+  let prev = null;
+  const flush = () => {
+    if (!cur) return;
+    const text = cur.text.replace(/\s+/g, ' ').trim();
+    if (text) out.push({ startMs: cur.startMs, endMs: Math.max(cur.startMs, cur.endMs), text: text });
+    cur = null;
+  };
+  for (const line of lines) {
+    const tokens = fushiAsrLineTokens(line);
+    for (const tok of tokens) {
+      const note = tokens.length === 1 && FUSHI_ASR_NOTE_RE.test(tok.text);
+      if (cur && prev) {
+        const paused = (prev.timed && tok.timed && tok.startMs - prev.startMs >= FUSHI_ASR_PAUSE_MS) ||
+          tok.startMs - prev.endMs >= FUSHI_ASR_GAP_MS;
+        let capped = false;
+        if (tok.lineStart) {
+          const cap = FUSHI_ASR_CJK_RE.test(cur.text + tok.text)
+            ? FUSHI_ASR_MAX_SENTENCE_CHARS_CJK : FUSHI_ASR_MAX_SENTENCE_CHARS;
+          capped = tok.lineEndMs - cur.startMs > FUSHI_ASR_MAX_SENTENCE_MS ||
+            fushiAsrCharCount(cur.text) + tok.lineChars > cap;
+        }
+        if (note || paused || capped) flush();
+      }
+      if (!cur) {
+        cur = { startMs: tok.startMs, endMs: tok.endMs, text: tok.text.trim() };
+      } else {
+        // 跨行按中日 / 西文规则补空格；行内词元自带前导空格（json3 的 " no"），原样相连。
+        cur.text = tok.lineStart ? fushiJoinAsrText(cur.text.trim(), tok.text.trim()) : cur.text + tok.text;
+        cur.endMs = tok.endMs;
+      }
+      prev = tok;
+      if (note || FUSHI_ASR_SENTENCE_END.test(tok.text.trim())) flush();
+    }
+  }
+  flush();
+  return out;
+}
+
 // ── 整轨优先仲裁的共享纯函数（TODO-1219 收口）──
 // 面板（subtitle-panel.js）与制卡链路（content.js）共用同一份判据：整集拦截轨是主路径，
 // DOM 实时采样（`|live` 伪轨）只在没有整轨时兜底。此前二分查找只存在于面板
@@ -404,15 +527,19 @@ function parseBilibiliJson(text) {
  */
 function findCueIndexAt(cues, timeMs) {
   if (!Array.isArray(cues) || !cues.length || typeof timeMs !== 'number') return -1;
+  // 轨允许时间重叠（BUG-4719）：取此刻有效的 cue 里起点最晚的那条；它已结束而起点更早的长句
+  // 还在时回落到长句。endMs 无序，所以从最后一条已开始的 cue 往前扫。
   let lo = 0;
   let hi = cues.length - 1;
-  let ans = -1;
+  let last = -1;
   while (lo <= hi) {
     const mid = (lo + hi) >> 1;
-    if (cues[mid].startMs <= timeMs) { ans = mid; lo = mid + 1; } else { hi = mid - 1; }
+    if (cues[mid].startMs <= timeMs) { last = mid; lo = mid + 1; } else { hi = mid - 1; }
   }
-  if (ans < 0) return -1;
-  return timeMs < cues[ans].endMs ? ans : -1;
+  for (let i = last; i >= 0; i--) {
+    if (timeMs < cues[i].endMs) return i;
+  }
+  return -1;
 }
 
 /**
@@ -567,5 +694,6 @@ if (typeof module !== 'undefined' && module.exports) {
     netflixDocumentTitle,
     findCueIndexAt,
     pickPrimaryCueTrack,
+    fushiMergeAsrSentenceCues,
   };
 }

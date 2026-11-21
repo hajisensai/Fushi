@@ -27,20 +27,10 @@ import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi/src/updates/install_attestation.dart';
 import 'package:fushi/src/updates/usage_heartbeat_device.dart';
+import 'package:fushi/src/updates/usage_heartbeat_platform.dart';
 import 'package:fushi_engine/leaderboard/install_identity.dart';
 
-/// 发心跳的平台（与服务端 `PING_PLATFORMS` 一致）。
-const Set<String> kUsageHeartbeatPlatforms = <String>{
-  'android',
-  'windows',
-  'macos',
-  'linux',
-};
-
-/// **纯函数**：[operatingSystem]（`Platform.operatingSystem` 口径）在心跳里的平台键；
-/// iOS 与其它平台返回 null（不发心跳、反馈也不带安装 id）。
-String? usageHeartbeatPlatformFor(String operatingSystem) =>
-    kUsageHeartbeatPlatforms.contains(operatingSystem) ? operatingSystem : null;
+export 'package:fushi/src/updates/usage_heartbeat_platform.dart';
 
 /// 本机是否参与安装统计（只看平台，不看开关）。
 bool platformSendsUsageHeartbeat() =>

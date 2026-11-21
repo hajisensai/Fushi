@@ -19,6 +19,8 @@ class FakeFsrsEngine implements FsrsEngine {
   @override
   String get fsrsRev => 'fake';
   @override
+  bool isKnownFsrsRev(String rev) => rev == fsrsRev;
+  @override
   List<double> defaultParams(SrsAlgorithm a) =>
       List<double>.filled(a.paramCount, 1);
   @override
@@ -49,16 +51,16 @@ class FakeFsrsEngine implements FsrsEngine {
   }) => const SrsEvaluation(logLoss: 0.3, rmseBins: 0.1);
 }
 
-/// 打开一个内存数据库上的 SrsDbStore。
+/// 打开一个内存数据库上的 SrsDbStore。[storage]：开在已有的库上（同库多份 profile）；缺省新开一个。
 Future<SrsDbStore> openTestStore({
   required String profileUid,
   required String deviceId,
   required int Function() now,
   int Function()? localOffsetMin,
+  SrsStorage? storage,
 }) async {
-  final SrsStorage srsStorage = await openTestSrsStorage();
+  final SrsStorage srsStorage = storage ?? await openTestSrsStorage();
   return SrsDbStore.open(
-    db: srsStorage.db,
     core: srsStorage.core,
     profileUid: profileUid,
     deviceId: deviceId,

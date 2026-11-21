@@ -70,6 +70,24 @@ void main() {
       );
       expect(s!.tracks.single.length, 12);
     });
+
+    // 反馈 0RgCNJFQmJ：懒加载轨取失败由页面标 failed，侧栏据此显示「加载失败」而非永远「选中加载」。
+    test('轨状态带 failed', () {
+      final WebBrowserSubtitlePanelState? s = parseWebBrowserSubtitlePanelState(
+        <String, Object?>{
+          'ok': true,
+          'tracks': <Object?>[
+            <String, Object?>{'lang': 'ja', 'pending': true, 'failed': true},
+            <String, Object?>{'lang': 'en', 'pending': true},
+          ],
+        },
+      );
+      expect(s!.tracks.map((WebBrowserSubtitleTrack t) => t.failed), <bool>[
+        true,
+        false,
+      ]);
+      expect(en['sp_track_failed_suffix'], isNotEmpty);
+    });
   });
 
   group('侧栏', () {
@@ -190,6 +208,51 @@ void main() {
       await tester.tap(key('web-browser-subtitle-panel-offset-reset'));
       await tester.pump();
       expect(page.offsetMs, 0);
+      expect(tester.takeException(), isNull);
+    });
+
+    // 反馈 0RgCNJFQmJ / 审查 #3487：失败的活动轨重选一次就是重试，不能按「没换轨」吞掉。
+    testWidgets('失败的活动轨在选轨对话框里重选 → 发 SelectTrack；正常活动轨重选不发', (
+      WidgetTester tester,
+    ) async {
+      page.tracks
+        ..clear()
+        ..add(<String, Object?>{
+          'lang': 'ja',
+          'label': 'Japanese',
+          'length': 0,
+          'signature': '0',
+          'pending': true,
+          'failed': true,
+        });
+      await pump(tester);
+      final String failedLabel = 'Japanese${en['sp_track_failed_suffix']}';
+      expect(find.text(failedLabel), findsOneWidget);
+
+      Iterable<Map<String, Object?>> selects() => page.received.where(
+        (Map<String, Object?> m) =>
+            m['type'] == 'fushiSubtitleSidePanelSelectTrack',
+      );
+
+      await tester.tap(key('web-browser-subtitle-panel-track'));
+      await tester.pumpAndSettle();
+      // 页面收到重选后清掉失败、重取到 cue：SelectTrack 的回包即新状态。
+      page.tracks.single
+        ..['failed'] = false
+        ..['pending'] = false
+        ..['length'] = 2;
+      await tester.tap(find.text(failedLabel).last);
+      await tester.pumpAndSettle();
+      expect(selects().map((Map<String, Object?> m) => m['lang']), <Object?>[
+        'ja',
+      ]);
+      expect(find.text('Japanese（2）'), findsOneWidget);
+
+      await tester.tap(key('web-browser-subtitle-panel-track'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Japanese（2）').last);
+      await tester.pumpAndSettle();
+      expect(selects(), hasLength(1), reason: '正常活动轨重选是无操作');
       expect(tester.takeException(), isNull);
     });
 
@@ -419,6 +482,8 @@ class _FakePage {
         return _state(true);
       case 'fushiSubtitleSidePanelSeek':
         return <String, Object?>{'ok': true};
+      case 'fushiSubtitleSidePanelSelectTrack':
+        return _state(true);
     }
     return null;
   }

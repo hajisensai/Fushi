@@ -10,7 +10,8 @@
 #          cargo-ndk 三个 ABI + ELF 架构 + ffsrs_* 符号核对。
 #   lib.rs 自己的单元测试（defaults 个数、参数个数校验、可提取度批量、zstd 往返……）与同步 v2 的
 #   收敛 / 确定性测试
-#       -> 本 workflow 的 rust-tests job（linux x86_64 / aarch64、macOS arm64、Windows 四格 `cargo test --release`）。
+#       -> 本 workflow 的 rust-tests job（linux x86_64 / aarch64、macOS arm64、Windows 四格，`tool/rust_test.sh`
+#          用 `quick` profile 编、分进程跑，见下文「为什么不用 cargo test --release」）。
 #
 # ── 它**不**负责什么 ──────────────────────────────────────────────────────────────
 #   * 不重复跑上面四端；不碰发布路径（全程只读，不上传产物、不建 tag）。
@@ -27,6 +28,19 @@ on:
       - 'native/fushi_fsrs/**'
       - 'packages/fushi_srs/lib/src/ffi/**'
       - '.github/workflows/native-fsrs-gate.yml'
+      - '.cargo/config.toml'
+      - 'tool/rust_test.sh'
+  # develop 上也跑：PR 只能读到**自己 ref 与 base 分支**存的 Actions 缓存，此前本门只在 PR 上跑，
+  # base 分支从来没有缓存，2026-11-16～21 抽查的每一格都是「No cache found」冷编。develop 跑一次
+  # 就给之后所有 PR 种下依赖缓存（rust-cache 按前缀回退，Cargo.lock 变了也能复用大部分依赖）。
+  push:
+    branches: ['develop']
+    paths:
+      - 'native/fushi_fsrs/**'
+      - 'packages/fushi_srs/lib/src/ffi/**'
+      - '.github/workflows/native-fsrs-gate.yml'
+      - '.cargo/config.toml'
+      - 'tool/rust_test.sh'
 
 permissions:
   contents: read
@@ -40,20 +54,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       # 工具链钉法与 native-p2p-gate.yml 一致（Rust 1.95.0、cargo-ndk 4.1.2）。
       - name: Set up Rust (fushi_fsrs, Android targets)
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: '1.95.0'
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
       - name: Cache Rust build (fushi_fsrs)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_fsrs -> target
           key: fushi-fsrs-android
       - name: Install cargo-ndk
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
         with:
           tool: cargo-ndk@4.1.2
       - name: Build fushi_fsrs Android .so (arm64-v8a, armeabi-v7a, x86_64)
@@ -79,12 +93,30 @@ jobs:
             bash native/fushi_fsrs/verify_abi.sh "$so" "$nm_bin"
           done
 
+  # ── 为什么不用 cargo test --release（2026-11-21）────────────────────────────────
+  # 自 2026-11-16 起四格都贴着 30 分钟、Windows / macOS / linux-x86_64 轮流超时被取消（例：run 44889710032，
+  # Windows 编 19m49s、1522 个测试跑到第 1249 个到点；linux-x86_64 编 9m12s + 测 7m26s，再带 id_audit 重编
+  # 8m38s 后到点；run 44776682436 macOS 光编就 24m34s）。三个根因叠加：
+  #   1. `[profile.release]` 是出包配置（fat LTO + codegen-units = 1）：6.8 万行的 fushi_fsrs 单线程整体优化，
+  #      `cargo test` 还把 cdylib / staticlib 也各做一遍；id_audit 一格换 feature 又全做一遍。
+  #   2. 缓存从未命中（见上面 push 触发的注释）。
+  #   3. 测试数 5 天里 1127 → 1523，Windows 纯跑测试 581s → 774s；`cargo test` 的线程在一个进程里共用
+  #      SQLite 内存统计的全局锁，不随核数伸缩（实测见 tool/rust_test.sh 文件头）。
+  # 现在用 `tool/rust_test.sh`：`quick` profile（仓库根 .cargo/config.toml，继承 release 的 opt-level / 各包
+  # opt-level 覆盖 / panic / 不开 debug-assertions 与 overflow-checks，**测试运行语义与 --release 相同**，只是
+  # 不做 LTO、256 个 codegen unit 并行编），`--tests` 只编测试可执行文件，再按 3/4 核数分进程跑；脚本只在
+  # 每个进程都过、且报告的测试数等于选中数时才退出 0。本地实测冷编 15 分钟 → 2.5～5.5 分钟、全量测试快一倍
+  # （docs/agent/build.md「Rust 本地开发循环」）。LTO / 单 codegen unit 的出包形态仍由 build-multiplatform.yml
+  # 的四端真编译（Windows / Linux 还跑 packages/fushi_srs 的真 FFI 测试）与 android job 覆盖。FSRS 的确定性
+  # 不受影响：Rust 不开 fast-math，LTO / 分 codegen unit 不改浮点结果，fsrs_det 用的是纯 Rust libm。
+  # 文档测试（doctest）不跑：此前 `cargo test --release` 的 doctest 段就是 0 个。
+  #
   # 复习同步 v2 的确定性门（docs/specs/2026-10-25-srs-sync-v2-design.md §4.5、计划 P8）：各设备必须逐比特
   # 算出同样的调度，否则两台设备在同一版本向量下摘要不同。`sync2::fsrs_det` 的固定向量哈希测试在每个平台上
   # 跑一遍——任一平台哈希不一致即红。FSRS 只用纯 Rust 的 libm（不走平台 libm），Android / iOS 与这里的
   # linux-aarch64 / macos-arm64 同一套 aarch64 浮点路径，所以这四格覆盖五个出包平台的算术。
   rust-tests:
-    name: cargo test --release (${{ matrix.name }})
+    name: cargo test (${{ matrix.name }})
     strategy:
       fail-fast: false
       matrix:
@@ -100,28 +132,26 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - name: Set up Rust (fushi_fsrs)
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: '1.95.0'
       - name: Cache Rust build (fushi_fsrs tests)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_fsrs -> target
           key: fushi-fsrs-tests-${{ matrix.name }}
-      - name: cargo test --release (fushi_fsrs)
+      - name: cargo test (fushi_fsrs, quick profile, multi-process)
         shell: bash
-        working-directory: native/fushi_fsrs
         run: |
           set -euo pipefail
-          cargo test --release --locked
+          bash tool/rust_test.sh fushi_fsrs
       # `id_audit` 打开的是桥入口（exec / select / batch / read_session）上的审计分支，默认构建里那几行
-      # 不编译；在一格上带 feature 编一遍跑一遍，免得它烂掉没人知道。
-      - name: cargo test --release --features id_audit (fushi_fsrs)
+      # 不编译；在一格上带 feature 编一遍跑一遍，免得它烂掉没人知道。依赖产物与上一步共用，只重编本 crate。
+      - name: cargo test --features id_audit (fushi_fsrs, quick profile, multi-process)
         if: matrix.name == 'linux-x86_64'
         shell: bash
-        working-directory: native/fushi_fsrs
         run: |
           set -euo pipefail
-          cargo test --release --locked --features id_audit
+          bash tool/rust_test.sh fushi_fsrs --features id_audit

@@ -6,6 +6,8 @@ import 'package:fushi_dictionary/fushi_dictionary.dart'
     show DictionarySearchResult, FushiRubySpan, shiftRubySpans;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart'
+    show CrossAppAudioSnapshot;
 import 'package:fushi/src/lookup/lookup_ime_binding.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart'
     show
@@ -51,6 +53,7 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
     this.sourceBlock,
     this.sourceBlockOffset = -1,
     this.cardImage,
+    this.miningAudio,
     this.anchorRect,
     this.subtitleWindowRect,
     this.closeInApp,
@@ -81,6 +84,10 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
   /// 反馈 Gz7z6Y6Mbr：截屏识字这次点字的卡图来源（定格帧文件 + 文本块），制卡时裁成
   /// 卡图（[DictionaryPageMixin.miningCardImage]）。其它入口为 null。
   final ScreenOcrCardImage? cardImage;
+
+  /// 跨应用语音挖掘（拍板 oqk37s3QFL）：这次查词那一刻落下的最近一段其他 app 声音
+  /// （宿主在收到新词时就发起，不拖慢查词）。没开「缓存其他应用的声音」时结果为 null。
+  final Future<CrossAppAudioSnapshot?>? miningAudio;
 
   /// TODO-872：app 外悬浮字幕条点字传来的「被查字屏幕矩形」（逻辑像素，与本全屏查词
   /// 窗同坐标系）。非空 → 卡片贴被查字旁定位（[computeFloatingLyricPopupRect]）；为 null
@@ -180,6 +187,17 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   @override
   ScreenOcrCardImage? get miningCardImage => widget.cardImage;
 
+  /// 截屏识字的定格帧文件只活到下一次截屏（原生写新帧时清旧帧）：一收到来源就读进
+  /// 内存（[ScreenOcrCardImage.readBytes] 留住第一次读到的字节），用户看完词再点
+  /// 「+」/ 高级制卡时又截过屏，这张卡也照样带图。
+  void _preloadCardImage() {
+    final ScreenOcrCardImage? source = widget.cardImage;
+    if (source != null) unawaited(source.readBytes());
+  }
+
+  @override
+  Future<CrossAppAudioSnapshot?>? get miningAudioSnapshot => widget.miningAudio;
+
   @override
   ThemeData get mixinTheme => Theme.of(context);
 
@@ -194,6 +212,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   @override
   void initState() {
     super.initState();
+    _preloadCardImage();
     _searchController = TextEditingController(text: widget.searchTerm);
     _imeBinding.attach(focusNode: _searchFocusNode);
     // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
@@ -231,18 +250,45 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   /// 块与行对不上 / 截不出（无标点的超长块）时回落为整行。
   static String _sentenceAtLineUnit(PopupDictionaryPage page, int unitInLine) {
     final String line = page.searchTerm;
-    final String? block = page.sourceBlock;
-    final int offset = page.sourceBlockOffset;
-    if (block != null &&
-        offset >= 0 &&
-        unitInLine >= 0 &&
-        unitInLine < line.length &&
-        offset + line.length <= block.length &&
-        block.substring(offset, offset + line.length) == line) {
-      final String? sentence = ocrBlockSentenceAt(block, offset + unitInLine);
+    final String? block = _sourceBlockOf(page);
+    if (block != null && unitInLine >= 0 && unitInLine < line.length) {
+      final String? sentence = ocrBlockSentenceAt(
+        block,
+        page.sourceBlockOffset + unitInLine,
+      );
       if (sentence != null) return sentence;
     }
     return line.trim();
+  }
+
+  /// [PopupDictionaryPage.sourceBlock] 在 [PopupDictionaryPage.sourceBlockOffset] 处
+  /// 确实是这一行时返回块全文，对不上（或没有块）返回 null——绝不按错位的偏移截句 /
+  /// 拼续文。
+  static String? _sourceBlockOf(PopupDictionaryPage page) {
+    final String line = page.searchTerm;
+    final String? block = page.sourceBlock;
+    final int offset = page.sourceBlockOffset;
+    if (block == null ||
+        offset < 0 ||
+        offset + line.length > block.length ||
+        block.substring(offset, offset + line.length) != line) {
+      return null;
+    }
+    return block;
+  }
+
+  /// BUG-4707：源文本条是被点的那一行，查词串却要跨过 OCR 折行——词被折到下一行时
+  /// 只扫到行尾会把它截断。返回块里接在这行后面的续文（没有块 / 块对不上时为空串），
+  /// 首查与条上点字都把它接在行内后缀后面。
+  static String _blockContinuationOf(PopupDictionaryPage page) {
+    final String? block = _sourceBlockOf(page);
+    if (block == null) return '';
+    // 行内后缀出自 sourceLookupSuffixAt（取的是 trim 后的行），续文要不要补空格
+    // 得按去掉行尾空白后的末字判断，否则 'I like the ' 会拼成 'theweather'。
+    return ocrBlockContinuationAfterLine(
+      block,
+      lineEnd: page.sourceBlockOffset + page.searchTerm.trimRight().length,
+    );
   }
 
   /// 宿主推来的这一次查词：整串入口直接查整串；带被点字下标的整行入口（BUG-2899）
@@ -275,20 +321,18 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       _pushSearch(text, Rect.zero, reuseWarmSlot: true);
       return;
     }
-    _sourceLineQuery = scan.suffix.trim();
-    _headwordQuery = scan.suffix.trim();
+    final String query = scan.suffix + _blockContinuationOf(widget);
+    _sourceLineQuery = query.trim();
+    _headwordQuery = query.trim();
     final String line = text.trim();
     _searchController.text = line;
     _searchController.selection = TextSelection.collapsed(offset: line.length);
     setState(() => _sourceLookupText = line);
     _pushSearch(
-      scan.suffix,
+      query,
       Rect.zero,
       reuseWarmSlot: true,
-      scan: SourceLookupScan.fromSuffix(
-        suffix: scan.suffix,
-        charIndex: scan.start,
-      ),
+      scan: SourceLookupScan.fromSuffix(suffix: query, charIndex: scan.start),
     );
   }
 
@@ -304,6 +348,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   @override
   void didUpdateWidget(PopupDictionaryPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.cardImage, widget.cardImage)) _preloadCardImage();
     // TODO-951 症状C：宿主常驻本页、每次新 ProcessText 改 searchTerm/searchGeneration。
     // 复用常驻热槽原地查新词（reuseWarmSlot:true），不重建整页 → 不闪。term 与
     // generation 任一变化都重查（同词连续查词靠 generation 触发）。
@@ -426,7 +471,11 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   /// 源文本条点字 = 扫描查词：复用常驻热槽原地换结果（TODO-951 症状C），条上的整句与
   /// 搜索框里的整句都留着，只有高亮跨度跟着挪。条上是外部入口那一行时，这次查询串
   /// 记作「出自这一行」（BUG-2900 制卡句子的判据）。
-  Future<void> _lookupFromSourceStrip(String query, Rect rect, int charIndex) {
+  Future<void> _lookupFromSourceStrip(String suffix, Rect rect, int charIndex) {
+    // 条上是外部入口那一行时，后缀同样接上块里的后续行（BUG-4707）。
+    final String query = _sourceSentence.isEmpty
+        ? suffix
+        : suffix + _blockContinuationOf(widget);
     if (_sourceSentence.isNotEmpty && widget.sourceBlock != null) {
       // BUG-3487：条上点的是同一行的别的字，它可能落在块里的另一句。
       final String line = widget.searchTerm;

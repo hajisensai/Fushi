@@ -21,6 +21,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'srs_test_support.dart';
+import 'support/srs_write_settle.dart';
 
 Future<SrsDbStore> _openStore(WidgetTester tester) async {
   final (FushiDatabase db, SrsDbStore store) = (await tester.runAsync(
@@ -35,12 +36,7 @@ Future<T> _db<T>(WidgetTester tester, Future<T> Function() body) async =>
 
 /// 让真异步（drift）与帧都推进。
 Future<void> _settle(WidgetTester tester, {int rounds = 16}) async {
-  for (int i = 0; i < rounds; i++) {
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 5)),
-    );
-    await tester.pump(const Duration(milliseconds: 60));
-  }
+  await srsSettle(tester, minRounds: rounds);
 }
 
 Future<void> _pumpPage(
@@ -148,8 +144,15 @@ void main() {
       await _settle(tester, rounds: 4);
       await tester.tap(migrate);
       await _settle(tester);
-      await tester.tap(find.text(t.srs_lapis_migration_migrate).last);
-      await _settle(tester);
+      // 页面先发修订号、再重读（几条内核读命令往返）：等重读把页面换成「没有可迁移的」。
+      final Finder nothing = find.byKey(
+        const ValueKey<String>('srs-lapis-migration-nothing'),
+      );
+      await srsUntilWritten(
+        tester,
+        () => tester.tap(find.text(t.srs_lapis_migration_migrate).last),
+        until: () => nothing.evaluate().isNotEmpty,
+      );
 
       final SrsNoteView after = (await _db(tester, () => store.note(note)))!;
       expect(after.noteTypeId, store.fushiCardNoteTypeId);
@@ -217,8 +220,10 @@ void main() {
         ),
         findsOneWidget,
       );
-      await tester.tap(find.text(t.srs_lapis_migration_migrate).last);
-      await _settle(tester);
+      await srsUntilWritten(
+        tester,
+        () => tester.tap(find.text(t.srs_lapis_migration_migrate).last),
+      );
 
       final SrsNoteView after = (await _db(tester, () => store.note(note)))!;
       expect(after.noteTypeId, store.fushiCardNoteTypeId);
@@ -282,8 +287,12 @@ void main() {
       await _settle(tester, rounds: 4);
       await tester.tap(apply);
       await _settle(tester);
-      await tester.tap(find.text(t.srs_lapis_migration_backfill_action).last);
-      await _settle(tester);
+      // 页面先发修订号、再重读：等重读后补迁入口消失。
+      await srsUntilWritten(
+        tester,
+        () => tester.tap(find.text(t.srs_lapis_migration_backfill_action).last),
+        until: () => apply.evaluate().isEmpty,
+      );
       expect(
         (await _db(
           tester,

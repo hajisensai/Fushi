@@ -1214,93 +1214,95 @@ void main() {
     },
   );
 
-  // BUG-009 R2：Windows 桌面把外观切到 iOS(Cupertino) 后，设置标签曾退化成
-  // 「3 图标 rail + 嵌入 Cupertino 设置」三栏混排、无返回出口、详情溢出。修复后
-  // cupertino 桌面复用 Material 全屏外壳：宽屏二栏 + 顶部返回箭头出口，不溢出。
-  testWidgets(
-    'BUG-009 R2: cupertino desktop embedded settings expose a back-arrow exit '
-    'and do not overflow',
-    (WidgetTester tester) async {
-      // 默认选中分类改为「外观」后，首屏详情会渲染读 prefsRepo 的开关行
-      //（反转导航栏/启动词典 tab），故 harness 需要 prefs-backed AppModel
-      //（轻量 _RendererTestAppModel 无 prefsRepo 会空指针）。
-      final FushiDatabase db = _testDb();
-      addTearDown(db.close);
-      final AppModel appModel = await _prefsBackedAppModel(db);
-      await tester.pumpWidget(
-        _harness(
-          // 复现用户场景：Windows 主机 + 外观强制 iOS(Cupertino) 覆盖。
-          platform: TargetPlatform.windows,
-          designSystemTheme: const FushiDesignSystemTheme(
-            FushiDesignSystem.cupertino,
-          ),
-          appModel: appModel,
-          builder: (SettingsContext _) =>
-              SettingsHomePage(embedded: true, onBack: () {}),
+  // 宽屏设置全平台同壳（用户 2026-11-17）：设置是常驻主导航旁的普通 tab，宽屏
+  // 只有「分类列表 + 详情」二栏，不再有「返回箭头 + 『设置』大标题」的二级页头。
+  // 平板 / Linux（无自绘桌面顶栏）曾走「隐藏 rail + 页头返回」的全屏设置。
+  // Cupertino 一支同时咬住 BUG-009 R2 的不溢出。
+  for (final (String label, TargetPlatform platform, FushiDesignSystem system)
+      in <(String, TargetPlatform, FushiDesignSystem)>[
+        (
+          'M3E Android tablet',
+          TargetPlatform.android,
+          FushiDesignSystem.material,
         ),
-      );
-      await tester.pump();
-
-      expect(
-        tester.takeException(),
-        isNull,
-        reason: 'cupertino 桌面嵌入设置不得 RenderFlex 溢出（BUG-009）',
-      );
-      // 退化态完全没有出口；修复后必须有返回箭头（由统一嵌入页头提供）。
-      expect(
-        find.byIcon(Icons.arrow_back),
-        findsOneWidget,
-        reason: 'cupertino 桌面全屏设置必须提供返回箭头出口（BUG-009 R2）',
-      );
-    },
-  );
-
-  // BUG-3039：底部导航直达的根设置页没有返回出口，标题上方不能空一整行。
-  // 2026-10 settings kit：窄屏页头换成 M3E 浮动页头（返回 + 标题胶囊，随滚动
-  // 收缩）。根页标题直接在页头一行里、无返回钮；带返回出口的设置在同一行左侧
-  // 出返回钮。
-  for (final bool root in <bool>[true, false]) {
+        ('Cupertino iPad', TargetPlatform.iOS, FushiDesignSystem.cupertino),
+      ]) {
     testWidgets(
-      'M3E narrow settings home: floating header ${root ? 'without' : 'with'} '
-      'a back button',
+      'wide embedded settings ($label): two panes only, no back arrow or '
+      '"Settings" page header',
       (WidgetTester tester) async {
-        await tester.binding.setSurfaceSize(const Size(400, 800));
+        await tester.binding.setSurfaceSize(const Size(1280, 800));
         addTearDown(() => tester.binding.setSurfaceSize(null));
         final FushiDatabase db = _testDb();
         addTearDown(db.close);
         final AppModel appModel = await _prefsBackedAppModel(db);
         await tester.pumpWidget(
           _harness(
-            platform: TargetPlatform.android,
+            platform: platform,
+            designSystemTheme: FushiDesignSystemTheme(system),
             appModel: appModel,
             builder: (SettingsContext _) =>
-                SettingsHomePage(onBack: root ? null : () {}),
+                const SettingsHomePage(embedded: true),
           ),
         );
         await tester.pump();
 
         expect(
-          find.byKey(const ValueKey<String>('settings_home_header')),
-          findsOneWidget,
+          tester.takeException(),
+          isNull,
+          reason: '宽屏嵌入设置不得 RenderFlex 溢出（BUG-009）',
         );
-        final Finder title = find.text(t.settings);
-        expect(title, findsWidgets);
+        expect(find.byTooltip(t.back), findsNothing);
         expect(
-          tester.getTopLeft(title.first).dy,
-          lessThan(kToolbarHeight),
-          reason: '标题就在页头这一行，上方没有空行',
+          find.byKey(const ValueKey<String>('settings_home_masthead')),
+          findsNothing,
         );
-        // 浮动页头的返回钮走语义图标 FushiIcons.back（765b65f 页头图标迁移）。
-        expect(
-          find.descendant(
-            of: find.byKey(const ValueKey<String>('settings_home_header')),
-            matching: find.byIcon(FushiIcons.back),
-          ),
-          root ? findsNothing : findsOneWidget,
-        );
+        expect(find.byType(FushiPageHeader), findsNothing);
       },
     );
   }
+
+  // BUG-3039：底部导航直达的根设置页没有返回出口，标题上方不能空一整行。
+  // 2026-10 settings kit：窄屏页头换成 M3E 浮动页头（返回 + 标题胶囊，随滚动
+  // 收缩）。根页标题直接在页头一行里、无返回钮。
+  testWidgets(
+    'M3E narrow settings home: floating header without a back button',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(400, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
+      final AppModel appModel = await _prefsBackedAppModel(db);
+      await tester.pumpWidget(
+        _harness(
+          platform: TargetPlatform.android,
+          appModel: appModel,
+          builder: (SettingsContext _) => const SettingsHomePage(),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey<String>('settings_home_header')),
+        findsOneWidget,
+      );
+      final Finder title = find.text(t.settings);
+      expect(title, findsWidgets);
+      expect(
+        tester.getTopLeft(title.first).dy,
+        lessThan(kToolbarHeight),
+        reason: '标题就在页头这一行，上方没有空行',
+      );
+      // 浮动页头的返回钮走语义图标 FushiIcons.back（765b65f 页头图标迁移）。
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('settings_home_header')),
+          matching: find.byIcon(FushiIcons.back),
+        ),
+        findsNothing,
+      );
+    },
+  );
 
   // 宽屏设置在**第一帧**就已经选中并渲染了 destinations.first（= 通用）的详情
   // 面板：settings_home_page.dart 在 _selectedDestinationId 为 null 时无条件落到
@@ -1328,7 +1330,7 @@ void main() {
           appModel: appModel,
           builder: (SettingsContext settingsContext) {
             captured = settingsContext;
-            return SettingsHomePage(embedded: true, onBack: () {});
+            return const SettingsHomePage(embedded: true);
           },
         ),
       );

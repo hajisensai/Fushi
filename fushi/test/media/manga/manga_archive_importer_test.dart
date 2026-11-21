@@ -94,7 +94,7 @@ void main() {
           ),
         ]),
       );
-      final Set<String> stagingBefore = _mangaStagingDirs();
+      final Set<String> stagingBefore = _mangaStagingDirs(app);
       final int rssBefore = ProcessInfo.currentRss;
       final int peakBefore = ProcessInfo.maxRss;
 
@@ -117,7 +117,7 @@ void main() {
             '$peakBefore) while rejecting the bomb',
       );
       expect(
-        _mangaStagingDirs().difference(stagingBefore),
+        _mangaStagingDirs(app).difference(stagingBefore),
         isEmpty,
         reason: '中止后 staging（含写了一半的页）必须删掉',
       );
@@ -205,7 +205,7 @@ void main() {
           ),
         ]),
       );
-      final Set<String> stagingBefore = _mangaStagingDirs();
+      final Set<String> stagingBefore = _mangaStagingDirs(app);
 
       await expectLater(
         MangaArchiveImporter.importArchive(
@@ -223,7 +223,7 @@ void main() {
           ),
         ),
       );
-      expect(_mangaStagingDirs().difference(stagingBefore), isEmpty);
+      expect(_mangaStagingDirs(app).difference(stagingBefore), isEmpty);
       expect(await db.getAllEpubBooks(), isEmpty);
     });
 
@@ -326,6 +326,258 @@ void main() {
           reason: '$name must be written byte-for-byte',
         );
       }
+    });
+  });
+
+  group('zip containers written by real-world archivers', () {
+    test('names without the UTF-8 flag (Shift_JIS) still probe and import, '
+        'in natural order', () async {
+      // Windows 日文环境的压缩工具把文件名按 Shift_JIS 写、且不置通用位 11。
+      // archive 3.6.1 读本地头文件名走 InputFileStream.readString，严格 UTF-8 解码
+      // 直接抛 FormatException，整个包打不开：导入框里表现为「不支持的文件格式 .zip」。
+      // 「第1話/」= 91 E6 31 98 62 2F。
+      const List<int> folder = <int>[0x91, 0xE6, 0x31, 0x98, 0x62, 0x2F];
+      final Uint8List narrow = Uint8List.fromList(
+        img.encodePng(img.Image(width: 30, height: 60)),
+      );
+      final Uint8List wide = Uint8List.fromList(
+        img.encodePng(img.Image(width: 50, height: 70)),
+      );
+      final String path = p.join(root.path, 'sjis.zip');
+      File(path).writeAsBytesSync(
+        _buildZip(<_ZipSpec>[
+          _ZipSpec(<int>[...folder, ...ascii.encode('10.png')], wide),
+          _ZipSpec(<int>[...folder, ...ascii.encode('2.png')], narrow),
+        ]),
+      );
+
+      expect(MangaArchiveImporter.looksLikeImageArchive(path), isTrue);
+      final String key = await MangaArchiveImporter.importArchive(
+        db: db,
+        archivePath: path,
+      );
+      final MokuroPayload payload = await _readImportedPayload(db, key);
+      expect(
+        payload.images
+            .map((MokuroImage i) => (i.size.width, i.size.height))
+            .toList(),
+        <(double, double)>[(30, 60), (50, 70)],
+        reason: '2.png before 10.png inside the Shift_JIS folder',
+      );
+    });
+
+    test(
+      'names without the UTF-8 flag are decoded with their real legacy '
+      'encoding (0x5C / 0x7C trail bytes stay inside the character)',
+      () async {
+        // design-zip-cp932-names：逐字节名里「表」「ソ」的尾字节 0x5C 被当成 `\` 多切一级目录，
+        // 「ポ」的尾字节 0x7C 变成 Windows 不许出现在文件名里的 `|`（整本写盘失败）。
+        // 「第1話/」= 91 E6 31 98 62 2F；「ポ」= 83 7C；「表紙/」= 95 5C 8E 86 2F；「ソ」= 83 5C。
+        const List<int> episode = <int>[0x91, 0xE6, 0x31, 0x98, 0x62, 0x2F];
+        const List<int> po = <int>[0x83, 0x7C];
+        const List<int> cover = <int>[0x95, 0x5C, 0x8E, 0x86, 0x2F];
+        const List<int> so = <int>[0x83, 0x5C];
+        Uint8List page(int width) => Uint8List.fromList(
+          img.encodePng(img.Image(width: width, height: 60)),
+        );
+        final String path = p.join(root.path, 'sjis_trail_bytes.zip');
+        File(path).writeAsBytesSync(
+          _buildZip(<_ZipSpec>[
+            _ZipSpec(<int>[
+              ...cover,
+              ...so,
+              ...ascii.encode('1.png'),
+            ], page(10)),
+            _ZipSpec(<int>[
+              ...episode,
+              ...po,
+              ...ascii.encode('10.png'),
+            ], page(30)),
+            _ZipSpec(<int>[
+              ...episode,
+              ...po,
+              ...ascii.encode('2.png'),
+            ], page(20)),
+          ]),
+        );
+
+        final String key = await MangaArchiveImporter.importArchive(
+          db: db,
+          archivePath: path,
+        );
+        final MokuroPayload payload = await _readImportedPayload(db, key);
+        // 页图拷进书目录的 `images/` 下，保留包内子目录结构。
+        expect(payload.images.map((MokuroImage i) => i.url).toList(), <String>[
+          'images/第1話/ポ2.png',
+          'images/第1話/ポ10.png',
+          'images/表紙/ソ1.png',
+        ]);
+        expect(
+          payload.images.map((MokuroImage i) => i.size.width).toList(),
+          <double>[20, 30, 10],
+        );
+      },
+    );
+
+    test(
+      'UTF-8 names without the UTF-8 flag (macOS Archive Utility) keep their '
+      'names and Mokuro OCR',
+      () async {
+        // macOS「压缩」按 UTF-8 写名字、却不置通用位 11。archive 本来就按 UTF-8 解对了；
+        // 本地编码判据没有排除 UTF-8 的维度，这些名字若送去重解会被判成 Shift_JIS
+        // 解成「隨ｬ1蟾ｻ/001.png」这类乱码，清单 img_path 对不上，整本导入失败。
+        Uint8List page(int width) => Uint8List.fromList(
+          img.encodePng(img.Image(width: width, height: 80)),
+        );
+        final String path = p.join(root.path, 'mac.cbz');
+        File(path).writeAsBytesSync(
+          _buildZip(<_ZipSpec>[
+            _ZipSpec(
+              utf8.encode('ポスター.mokuro'),
+              Uint8List.fromList(
+                utf8.encode(_mokuroJson('第1巻/001.png', 'マック', width: 40)),
+              ),
+              utf8Flag: false,
+            ),
+            _ZipSpec(utf8.encode('第1巻/001.png'), page(40), utf8Flag: false),
+          ]),
+        );
+
+        expect(MangaArchiveImporter.looksLikeImageArchive(path), isTrue);
+        final String key = await MangaArchiveImporter.importArchive(
+          db: db,
+          archivePath: path,
+        );
+        final MokuroPayload payload = await _readImportedPayload(db, key);
+        expect(payload.images, hasLength(1));
+        // 页图拷进书目录的 `images/` 下，保留包内子目录结构。
+        expect(payload.images.single.url, 'images/第1巻/001.png');
+        expect(payload.images.single.size.width, 40);
+        expect(payload.images.single.blocks.single.lines, <String>['マック']);
+      },
+    );
+
+    test(
+      'ZIP64 records with 8-byte data descriptors import byte-for-byte',
+      () async {
+        // 超过 4 GiB 的包（或流式写出的包）用 ZIP64：中央目录大小 / 偏移是 0xFFFFFFFF，
+        // 真值在 ZIP64 extra 与 ZIP64 EOCD 里；数据描述符（通用位 3）的大小字段是
+        // 8 字节。archive 3.6.1 把描述符按 4 字节读、覆盖 ArchiveFile.size（读成 0），
+        // 流式解压随即报「expands beyond its declared 0 bytes」。中央目录才是权威。
+        // 这里用小条目把同一种记录形状写出来，不必真造 4 GiB。
+        final Uint8List first = Uint8List.fromList(
+          img.encodePng(img.Image(width: 40, height: 80)),
+        );
+        final Uint8List second = Uint8List.fromList(
+          img.encodePng(img.Image(width: 64, height: 32)),
+        );
+        final String path = p.join(root.path, 'zip64.cbz');
+        File(path).writeAsBytesSync(
+          _buildZip(<_ZipSpec>[
+            _ZipSpec(utf8.encode('001.png'), first, deflate: true),
+            _ZipSpec(utf8.encode('002.png'), second),
+          ], zip64: true),
+        );
+
+        expect(MangaArchiveImporter.looksLikeImageArchive(path), isTrue);
+        final String key = await MangaArchiveImporter.importArchive(
+          db: db,
+          archivePath: path,
+        );
+        final EpubBookRow row = (await db.getEpubBook(key))!;
+        expect(
+          File(p.join(row.extractDir, 'images', '001.png')).readAsBytesSync(),
+          first,
+        );
+        expect(
+          File(p.join(row.extractDir, 'images', '002.png')).readAsBytesSync(),
+          second,
+        );
+      },
+    );
+
+    test('the expanded-size budget scales with the archive, not a fixed '
+        '2 GiB', () {
+      // 此前总量上限是与包大小无关的 2 GiB：解出超过 2 GiB 的正常漫画包一律
+      // 「Manga archive is too large」。页图进 zip 压不动，预算按包体积 × 8 推。
+      const int gib = 1024 * 1024 * 1024;
+      expect(mangaArchiveExpandedBudget(50 * 1024 * 1024), 2 * gib);
+      expect(mangaArchiveExpandedBudget(3 * gib), 24 * gib);
+      expect(
+        const MangaArchiveExtractionLimits().totalBudgetFor(5 * gib),
+        40 * gib,
+      );
+      expect(
+        const MangaArchiveExtractionLimits(
+          maxTotalBytes: 1024,
+        ).totalBudgetFor(5 * gib),
+        1024,
+      );
+    });
+
+    test('the derived budget is measured from the archive file size', () async {
+      // 预算按「包文件体积 × 倍数」推：体积必须取文件长度，而不是
+      // `InputFileStream.length`（读完中央目录后的**剩余**字节，只有几十字节）。
+      // 下限压到 1 字节、倍数 1：3 张 STORE 页（解出≈包体积）恰好放得下；
+      // 若体积量错，预算只剩几十字节，这里就会报 too large。
+      final Uint8List page = Uint8List.fromList(<int>[
+        ...img.encodePng(img.Image(width: 20, height: 30)),
+        ...Uint8List(400 * 1024),
+      ]);
+      final List<_RawZipEntry> entries = <_RawZipEntry>[
+        for (int i = 1; i <= 3; i++)
+          _RawZipEntry(
+            '00$i.png',
+            page,
+            method: 0,
+            declaredSize: page.length,
+            crc: getCrc32(page),
+          ),
+      ];
+      final String path = p.join(root.path, 'ratio.cbz');
+      File(path).writeAsBytesSync(_buildRawZip(entries));
+      const MangaArchiveExtractionLimits tight = MangaArchiveExtractionLimits(
+        minTotalBytes: 1,
+        maxExpansionRatio: 1,
+      );
+
+      final String key = await MangaArchiveImporter.importArchive(
+        db: db,
+        archivePath: path,
+        limits: tight,
+      );
+      expect((await db.getEpubBook(key))!.chapterCount, 3);
+    });
+
+    test('a tiny archive declaring more than its budget is still rejected '
+        'before anything is extracted', () async {
+      // 按比例放宽后炸弹防线仍在：几百字节的包诚实声明 9 × 255 MiB（> 2 GiB 底），
+      // 预检就拒，不解任何条目。
+      final List<_RawZipEntry> entries = <_RawZipEntry>[
+        for (int i = 1; i <= 9; i++)
+          _RawZipEntry(
+            '00$i.png',
+            Uint8List.fromList(<int>[3, 0]),
+            declaredSize: 255 * 1024 * 1024,
+            crc: 0,
+          ),
+      ];
+      final String path = p.join(root.path, 'declared_bomb.cbz');
+      File(path).writeAsBytesSync(_buildRawZip(entries));
+      final Set<String> stagingBefore = _mangaStagingDirs(app);
+
+      await expectLater(
+        MangaArchiveImporter.importArchive(db: db, archivePath: path),
+        throwsA(
+          isA<MangaImportException>().having(
+            (MangaImportException e) => e.message,
+            'message',
+            contains('Manga archive is too large'),
+          ),
+        ),
+      );
+      expect(_mangaStagingDirs(app).difference(stagingBefore), isEmpty);
+      expect(await db.getAllEpubBooks(), isEmpty);
     });
   });
 
@@ -757,13 +1009,24 @@ String _writeArchive(
   return path;
 }
 
-/// 系统临时目录里导入器的 staging 目录名（`fushi_manga_archive_*`）。
-Set<String> _mangaStagingDirs() => Directory.systemTemp
-    .listSync(followLinks: false)
-    .whereType<Directory>()
-    .map((Directory dir) => p.basename(dir.path))
-    .where((String name) => name.startsWith('fushi_manga_archive_'))
-    .toSet();
+/// 导入器留下的 staging 目录名。BUG-4840 起 staging 是书库根（[app] 下的
+/// `fushi_books`）里的 `.tmp-*`；系统临时目录里的旧名 `fushi_manga_archive_*` 一并
+/// 盯着——哪天有人把 staging 挪回去，残留也照样被抓到。
+Set<String> _mangaStagingDirs(Directory app) {
+  final Directory booksRoot = Directory(p.join(app.path, 'fushi_books'));
+  return <String>{
+    if (booksRoot.existsSync())
+      for (final Directory dir
+          in booksRoot.listSync(followLinks: false).whereType<Directory>())
+        if (p.basename(dir.path).startsWith(EpubStorage.kStagingDirPrefix))
+          dir.path,
+    for (final Directory dir
+        in Directory.systemTemp
+            .listSync(followLinks: false)
+            .whereType<Directory>())
+      if (p.basename(dir.path).startsWith('fushi_manga_archive_')) dir.path,
+  };
+}
 
 /// raw deflate（zip method 8 的数据格式）。
 Uint8List _deflate(List<int> bytes) =>
@@ -966,4 +1229,141 @@ String _writeImageEpub(
   final String path = p.join(root.path, 'book.epub');
   File(path).writeAsBytesSync(ZipEncoder().encode(archive)!);
   return path;
+}
+
+/// [_buildZip] 的一个条目：[name] 是**原始字节**（可以不是 UTF-8，此时不置通用位
+/// 11），[data] 是解压后的内容。[utf8Flag] 给了就按它置 / 不置通用位 11（macOS「压缩」
+/// 写 UTF-8 名字却不置标志），否则名字是合法 UTF-8 才置。
+class _ZipSpec {
+  _ZipSpec(this.name, this.data, {this.deflate = false, this.utf8Flag});
+
+  final List<int> name;
+  final Uint8List data;
+  final bool deflate;
+  final bool? utf8Flag;
+}
+
+/// 按真实压缩工具的记录形状拼 zip。
+///
+/// - 名字是合法 UTF-8 才置通用位 11（与 Info-ZIP / 7-Zip 一致），否则按原字节写；
+/// - [zip64]：每个条目带数据描述符（通用位 3、8 字节大小）、本地头与中央目录的
+///   大小 / 偏移写 0xFFFFFFFF 并把真值放进 ZIP64 extra，末尾写 ZIP64 EOCD + 定位器，
+///   普通 EOCD 的字段全部打满——超过 4 GiB 的包就是这个形状。
+Uint8List _buildZip(List<_ZipSpec> entries, {bool zip64 = false}) {
+  final BytesBuilder out = BytesBuilder(copy: false);
+  Uint8List u16(int v) =>
+      (ByteData(2)..setUint16(0, v, Endian.little)).buffer.asUint8List();
+  Uint8List u32(int v) =>
+      (ByteData(4)..setUint32(0, v, Endian.little)).buffer.asUint8List();
+  Uint8List u64(int v) =>
+      (ByteData(8)..setUint64(0, v, Endian.little)).buffer.asUint8List();
+  bool isUtf8(List<int> bytes) {
+    try {
+      utf8.decode(bytes);
+      return true;
+    } on FormatException {
+      return false;
+    }
+  }
+
+  final List<({int offset, int crc, int flags, Uint8List stored})> written =
+      <({int offset, int crc, int flags, Uint8List stored})>[];
+  for (final _ZipSpec entry in entries) {
+    final Uint8List stored = entry.deflate ? _deflate(entry.data) : entry.data;
+    final int crc = getCrc32(entry.data);
+    final int flags =
+        ((entry.utf8Flag ?? isUtf8(entry.name)) ? 0x0800 : 0) |
+        (zip64 ? 0x08 : 0);
+    written.add((offset: out.length, crc: crc, flags: flags, stored: stored));
+    out
+      ..add(u32(0x04034b50))
+      ..add(u16(zip64 ? 45 : 20))
+      ..add(u16(flags))
+      ..add(u16(entry.deflate ? 8 : 0))
+      ..add(u16(0))
+      ..add(u16(0x21))
+      ..add(u32(zip64 ? 0 : crc))
+      ..add(u32(zip64 ? 0xFFFFFFFF : stored.length))
+      ..add(u32(zip64 ? 0xFFFFFFFF : entry.data.length))
+      ..add(u16(entry.name.length))
+      ..add(u16(zip64 ? 20 : 0))
+      ..add(entry.name);
+    if (zip64) {
+      out
+        ..add(u16(0x0001))
+        ..add(u16(16))
+        ..add(u64(entry.data.length))
+        ..add(u64(stored.length));
+    }
+    out.add(stored);
+    if (zip64) {
+      out
+        ..add(u32(0x08074b50))
+        ..add(u32(crc))
+        ..add(u64(stored.length))
+        ..add(u64(entry.data.length));
+    }
+  }
+
+  final int directoryOffset = out.length;
+  for (int i = 0; i < entries.length; i++) {
+    final _ZipSpec entry = entries[i];
+    final ({int offset, int crc, int flags, Uint8List stored}) w = written[i];
+    out
+      ..add(u32(0x02014b50))
+      ..add(u16(zip64 ? 45 : 20))
+      ..add(u16(zip64 ? 45 : 20))
+      ..add(u16(w.flags))
+      ..add(u16(entry.deflate ? 8 : 0))
+      ..add(u16(0))
+      ..add(u16(0x21))
+      ..add(u32(w.crc))
+      ..add(u32(zip64 ? 0xFFFFFFFF : w.stored.length))
+      ..add(u32(zip64 ? 0xFFFFFFFF : entry.data.length))
+      ..add(u16(entry.name.length))
+      ..add(u16(zip64 ? 28 : 0))
+      ..add(u16(0))
+      ..add(u16(0))
+      ..add(u16(0))
+      ..add(u32(0))
+      ..add(u32(zip64 ? 0xFFFFFFFF : w.offset))
+      ..add(entry.name);
+    if (zip64) {
+      out
+        ..add(u16(0x0001))
+        ..add(u16(24))
+        ..add(u64(entry.data.length))
+        ..add(u64(w.stored.length))
+        ..add(u64(w.offset));
+    }
+  }
+  final int directorySize = out.length - directoryOffset;
+  if (zip64) {
+    final int zip64EocdOffset = out.length;
+    out
+      ..add(u32(0x06064b50))
+      ..add(u64(44))
+      ..add(u16(45))
+      ..add(u16(45))
+      ..add(u32(0))
+      ..add(u32(0))
+      ..add(u64(entries.length))
+      ..add(u64(entries.length))
+      ..add(u64(directorySize))
+      ..add(u64(directoryOffset))
+      ..add(u32(0x07064b50))
+      ..add(u32(0))
+      ..add(u64(zip64EocdOffset))
+      ..add(u32(1));
+  }
+  out
+    ..add(u32(0x06054b50))
+    ..add(u16(0))
+    ..add(u16(0))
+    ..add(u16(zip64 ? 0xFFFF : entries.length))
+    ..add(u16(zip64 ? 0xFFFF : entries.length))
+    ..add(u32(zip64 ? 0xFFFFFFFF : directorySize))
+    ..add(u32(zip64 ? 0xFFFFFFFF : directoryOffset))
+    ..add(u16(0));
+  return out.takeBytes();
 }

@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -7,6 +6,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
+
+import '../helpers/node_runtime.dart';
 
 /// BUG-2905：VN 模式同一段落被切成两屏。
 ///
@@ -53,26 +54,16 @@ void main() {
     }
   });
 
-  test('VN 切屏切点遵守禁则（node 行为级）', () {
+  test('VN 切屏切点遵守禁则（node 行为级）', () async {
     final String shell = ReaderVisualNovelScripts.vnShellScript();
-    final Directory temp = Directory.systemTemp.createTempSync(
-      'fushi-bug2888-vn-js-',
-    );
-    final File payload = File('${temp.path}/payload.json')
-      ..writeAsStringSync(jsonEncode(<String, String>{'shell': shell}));
+    final Map<String, String> payload = <String, String>{'shell': shell};
     final File runner = File('test/reader/vn_split_kinsoku_behavior_test.js');
     expect(runner.existsSync(), isTrue);
-    late final ProcessResult result;
-    try {
-      result = Process.runSync(
-        'node',
-        <String>[runner.path, payload.path],
-        stdoutEncoding: utf8,
-        stderrEncoding: utf8,
-      );
-    } finally {
-      temp.deleteSync(recursive: true);
-    }
+    final NodeHarnessResult result = await runNodeHarness(
+      'node',
+      runner.path,
+      payload,
+    );
     expect(
       result.exitCode,
       0,

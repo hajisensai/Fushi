@@ -502,8 +502,8 @@ void main() {
     expect(detail, contains('t.options_delete'));
     expect(detail, contains('onPressed: onDelete'));
     // 排序按钮（无障碍 / 手柄路径）也在详情里。
-    expect(detail, contains('Icons.keyboard_arrow_up'));
-    expect(detail, contains('Icons.keyboard_arrow_down'));
+    expect(detail, contains('FushiIcons.expandLess'));
+    expect(detail, contains('FushiIcons.expandMore'));
 
     expect(source, contains('showDictionaryDeleteDialog(dictionary)'));
     expect(source, contains('unawaited(showDictionaryDeleteDialog(current))'));

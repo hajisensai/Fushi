@@ -419,8 +419,8 @@ void main() {
     expect(mediaA, mediaB);
 
     // 同一张卡在两边的排程与日志完全相同（ID 只由来源决定）。
-    final String n1 = SrsIds.note(fx.kProfile, 'g1');
-    final String nt = SrsIds.noteType(fx.kProfile, fx.kBasic);
+    final String n1 = SrsKernelIds(fx.kProfile).note('g1');
+    final String nt = SrsKernelIds(fx.kProfile).noteType(fx.kBasic);
     final String c11 = SrsIds.card(n1, SrsIds.template(nt, 333), 0);
     final SrsCardCacheRow ra = (await sa.cardRow(c11))!;
     final SrsCardCacheRow rb = (await sb.cardRow(c11))!;

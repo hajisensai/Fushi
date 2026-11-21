@@ -3,7 +3,8 @@
 /// 只取 OPF 包文档里的**元数据**，不猜正文 CSS：
 /// * `<spine page-progression-direction="rtl|ltr">`（EPUB 2/3 通用的翻页方向）；
 /// * `primary-writing-mode`（EPUB 3.0 `<meta property>` / Kindle 式
-///   `<meta name content>`，值如 `vertical-rl` / `horizontal-lr` / `horizontal-rl`）。
+///   `<meta name content>`，值如 `vertical-rl` / `horizontal-lr` / `horizontal-rl`）；
+/// * 两项都没写时退到 `dc:language`：只横排书写的语言推横排（反馈 EwmiUOMTS-）。
 ///
 /// 值域与阅读器设置一致：[BookOriginalLayout.writingMode] 只会是 `vertical-rl` /
 /// `horizontal-tb`，[BookOriginalLayout.spreadDirection] 只会是 `rtl` / `ltr`；书没
@@ -34,6 +35,11 @@ class BookOriginalLayout {
   ///   横排文字（它们的 rtl 翻页对应的是横排正文）。
   /// * 翻页方向优先取 [pageProgressionDirection]，没有时由 [primaryWritingMode] 推
   ///   （`vertical-rl` / `horizontal-rl` → rtl，`horizontal-lr` → ltr）。
+  /// * 两项方向元数据都没写时由 `dc:language` 推（反馈 EwmiUOMTS-：英文书什么都
+  ///   不声明，落回全局竖排后拉丁字母整行侧躺）：[language] 是只横排书写的文字
+  ///   （不是中日韩 / 蒙古文这类可竖排的语言）→ 横排，翻页方向按该文字的书写方向
+  ///   （阿拉伯 / 希伯来文 rtl，其余 ltr）。可竖排语言、未声明语言或认不出的取值
+  ///   不推，照旧回落全局设置。
   static BookOriginalLayout resolve({
     String? pageProgressionDirection,
     String? primaryWritingMode,
@@ -54,6 +60,8 @@ class BookOriginalLayout {
         writingMode = _isRtlScriptLanguage(language)
             ? 'horizontal-tb'
             : 'vertical-rl';
+      } else if (_isHorizontalOnlyLanguage(language)) {
+        writingMode = 'horizontal-tb';
       }
     }
 
@@ -63,6 +71,8 @@ class BookOriginalLayout {
         spreadDirection = 'rtl';
       } else if (pwm == 'horizontal-lr') {
         spreadDirection = 'ltr';
+      } else if (pwm.isEmpty && _isHorizontalOnlyLanguage(language)) {
+        spreadDirection = _isRtlScriptLanguage(language) ? 'rtl' : 'ltr';
       }
     }
 
@@ -96,10 +106,64 @@ class BookOriginalLayout {
   };
 
   static bool _isRtlScriptLanguage(String? language) {
+    final String? primary = _primaryLanguageSubtag(language);
+    return primary != null && _rtlScriptLanguages.contains(primary);
+  }
+
+  /// 可以竖排书写的语言（BCP 47 / ISO 639-2 主子标签）：中日韩各语种、汉文、
+  /// 蒙古文，以及用假名书写的阿伊努语 / 琉球语。这些书没声明方向时**不推**，
+  /// 竖排还是横排交给全局设置。
+  static const Set<String> _verticalCapableLanguages = <String>{
+    'ain',
+    'cdo',
+    'chi',
+    'cjy',
+    'cmn',
+    'cpx',
+    'czh',
+    'gan',
+    'hak',
+    'hsn',
+    'ja',
+    'jpn',
+    'ko',
+    'kor',
+    'lzh',
+    'mn',
+    'mnp',
+    'mon',
+    'nan',
+    'ryu',
+    'wuu',
+    'yue',
+    'zh',
+    'zho',
+  };
+
+  /// 不代表具体语言的特殊码：未定 / 多语种 / 无语言内容 / 未编码。
+  static const Set<String> _nonLanguageCodes = <String>{
+    'mis',
+    'mul',
+    'und',
+    'zxx',
+  };
+
+  /// [language] 是否明确是只横排书写的语言：主子标签是合法的 2～3 位字母码、
+  /// 不是特殊码、也不在 [_verticalCapableLanguages] 里。`Japanese` 这类写成语言
+  /// 名的非标准取值认不出，视同未声明。
+  static bool _isHorizontalOnlyLanguage(String? language) {
+    final String? primary = _primaryLanguageSubtag(language);
+    return primary != null &&
+        !_nonLanguageCodes.contains(primary) &&
+        !_verticalCapableLanguages.contains(primary);
+  }
+
+  /// BCP 47 主子标签（小写）；空值或不是 2～3 位字母时为 null。
+  static String? _primaryLanguageSubtag(String? language) {
     final String tag = (language ?? '').trim().toLowerCase();
-    if (tag.isEmpty) return false;
+    if (tag.isEmpty) return null;
     final String primary = tag.split(RegExp('[-_]')).first;
-    return _rtlScriptLanguages.contains(primary);
+    return RegExp(r'^[a-z]{2,3}$').hasMatch(primary) ? primary : null;
   }
 
   @override

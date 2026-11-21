@@ -4,6 +4,27 @@
 ///
 /// 参数（三选一的输入 + 选项）：
 /// - `videoId`：host 库里的视频（`video_books.book_uid`，经注入的 [resolveVideoPath]）；
+///   `episode`（整数，默认 0）：这一行播放列表的第几集（下标同播放端点的
+///   `?episode=`），只能和 `videoId` 一起给。capability 的 `acceptsEpisode` 声明
+///   认这个参数——老 host 不认，会静默跑第 0 集，提交方必须先看这个位；
+///   `discTitle`（相对盘根的 `BDMV/PLAYLIST/<名>.mpls`）：`videoId` 那一行所在蓝光盘上
+///   的另一条 title（库里没有行的原盘 title，远端原盘会话用），经注入的
+///   [resolveDiscTitlePath] 定位，不能与 `episode` 同给。capability 的
+///   `acceptsDiscTitle` 声明认这个参数——老 host 不认，会静默跑 `videoId` 那一行；
+///   `discTitle` 也可以是多角度 title 的角度成员路径（`BDMV/PLAYLIST/00001.a2.mpls`，
+///   `bluray_angle.dart`），按该角度的片段抽取。capability 的 `acceptsDiscTitleAngle`
+///   声明认它——老 host 读不到这个虚拟路径，会报找不到这条 title；DVD title
+///   （`VIDEO_TS/TITLE_nn.dvdtitle`）要 `acceptsDiscTitleDvd`，它的角度成员路径
+///   （`VIDEO_TS/TITLE_nn.aK.dvdtitle`，`dvd_angle.dart`）再要 `acceptsDiscTitleDvdAngle`；
+///   `audioTrack`（非负整数）：识别 `videoId`（那一集 / 那条 title）的第几条音轨——0 起的
+///   音轨序号（ffmpeg `0:a:N`），与提交方播放器的当前音轨同口径（远端播放直传的就是
+///   host 这份文件）；只能和 `videoId` 一起给，可与 `episode` / `discTitle` 组合。不给按
+///   识别语言挑。capability 的 `acceptsAudioTrack` 声明认它——老 host 不认，会静默按
+///   语言挑（降级，不是错结果）；
+///   `skipExisting`（bool，默认 false）：`videoId` 那一集旁已有 `<视频名>.<后缀>.srt`
+///   时不识别、记 `skippedExistingSubtitle`（与 `collectionId` 整季同一判据）。提交方
+///   逐集提交远端合集时带它：列表里的 `subtitleFileName` 只报 host 学习语言那一条，
+///   别的语言有没有字幕只有 host 自己看得到。老 host 不认，照常生成（不是错结果）；
 /// - `collectionId`：整季——合集的全部视频成员按成员顺序排队，已有
 ///   `<视频名>.<后缀>.srt` 的集跳过；
 /// - 都不给：用上传的输入（`input` 指名一个，否则全部上传的视频文件；可带 `title`
@@ -13,7 +34,9 @@
 ///   退回不校对。
 /// - `segmenter`：`auto` / `moss` / `window`（默认 auto）；`mossBackend`：`auto` /
 ///   `cuda` / `vulkan` / `cpu`（默认 auto）；`regenerateGlossary`（bool）；
-///   `language`：`ja` / `zh`（默认 `ja`，[VideoSubtitleLanguage.tag]）；
+///   `language`：`ja` / `zh`（默认 `ja`，[VideoSubtitleLanguage.tag]；capability 的
+///   `languages` 列出认的取值——老 host 不校验未知参数，收到 `language` 会静默按日语跑，
+///   提交方必须先看这个位）；
 ///   `suffix`（默认取 `language`）。
 /// - `frames`（bool，默认 false）：画面参考——AI 校对每批附上 host 上这个视频对应
 ///   时刻的画面（spec `2026-11-11-video-subtitle-ai-reference`）。只在 host 的校对
@@ -58,6 +81,8 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_work_co
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
+import 'package:fushi_engine/media/video/video_member_file.dart'
+    show hasLocalMediaFile;
 import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
 import 'package:path/path.dart' as p;
 
@@ -102,6 +127,9 @@ String videoSubtitleSpentSuffix(SubtitleAiUsageTally? usage) => usage == null
 class VideoSubtitleJobParams {
   const VideoSubtitleJobParams({
     this.videoId,
+    this.episode = 0,
+    this.discTitle,
+    this.audioTrack,
     this.collectionId,
     this.input,
     this.title,
@@ -111,6 +139,7 @@ class VideoSubtitleJobParams {
     this.regenerateGlossary = false,
     this.language = VideoSubtitleLanguage.japanese,
     this.frames = false,
+    this.skipExisting = false,
     String? suffix,
   }) : _suffix = suffix;
 
@@ -158,6 +187,54 @@ class VideoSubtitleJobParams {
         '$kVideoSubtitleJobKind: give videoId or collectionId, not both',
       );
     }
+    final Object? episodeRaw = params['episode'];
+    final int episode;
+    if (episodeRaw == null || '$episodeRaw'.trim().isEmpty) {
+      episode = 0;
+    } else {
+      final int? parsed = episodeRaw is int
+          ? episodeRaw
+          : int.tryParse('$episodeRaw'.trim());
+      if (parsed == null || parsed < 0) {
+        throw const FormatException(
+          '$kVideoSubtitleJobKind: episode must be a non-negative integer',
+        );
+      }
+      episode = parsed;
+    }
+    if (episode > 0 && videoId == null) {
+      throw const FormatException(
+        '$kVideoSubtitleJobKind: episode only applies to videoId',
+      );
+    }
+    final String? discTitle = text('discTitle');
+    if (discTitle != null && videoId == null) {
+      throw const FormatException(
+        '$kVideoSubtitleJobKind: discTitle only applies to videoId',
+      );
+    }
+    if (discTitle != null && episode > 0) {
+      throw const FormatException(
+        '$kVideoSubtitleJobKind: give episode or discTitle, not both',
+      );
+    }
+    final Object? audioTrackRaw = params['audioTrack'];
+    int? audioTrack;
+    if (audioTrackRaw != null && '$audioTrackRaw'.trim().isNotEmpty) {
+      audioTrack = audioTrackRaw is int
+          ? audioTrackRaw
+          : int.tryParse('$audioTrackRaw'.trim());
+      if (audioTrack == null || audioTrack < 0) {
+        throw const FormatException(
+          '$kVideoSubtitleJobKind: audioTrack must be a non-negative integer',
+        );
+      }
+      if (videoId == null) {
+        throw const FormatException(
+          '$kVideoSubtitleJobKind: audioTrack only applies to videoId',
+        );
+      }
+    }
     final String? languageText = text('language');
     final VideoSubtitleLanguage language = languageText == null
         ? VideoSubtitleLanguage.japanese
@@ -172,6 +249,9 @@ class VideoSubtitleJobParams {
     }
     return VideoSubtitleJobParams(
       videoId: videoId,
+      episode: episode,
+      discTitle: discTitle,
+      audioTrack: audioTrack,
       collectionId: collectionId,
       input: text('input'),
       title: text('title'),
@@ -189,11 +269,23 @@ class VideoSubtitleJobParams {
       regenerateGlossary: flag('regenerateGlossary', false),
       language: language,
       frames: flag('frames', false),
+      skipExisting: flag('skipExisting', false),
       suffix: suffix,
     );
   }
 
   final String? videoId;
+
+  /// [videoId] 那一行播放列表的集下标（0 = 主视频 / 单视频）。
+  final int episode;
+
+  /// [videoId] 那一行所在蓝光盘上的另一条 title（相对盘根，`BDMV/PLAYLIST/<名>.mpls`）；
+  /// null = 就是 [videoId] 那一行。
+  final String? discTitle;
+
+  /// 识别 [videoId] 那一集 / 那条 title 的第几条音轨（0 起的音轨序号，ffmpeg `0:a:N`，
+  /// 即提交方播放器的当前音轨）；null = 按识别语言挑。
+  final int? audioTrack;
   final int? collectionId;
   final String? input;
   final String? title;
@@ -205,6 +297,9 @@ class VideoSubtitleJobParams {
 
   /// 画面参考（见文件头的 `frames`）。
   final bool frames;
+
+  /// `videoId` 那一集已有目标字幕时跳过（见文件头的 `skipExisting`）。
+  final bool skipExisting;
   final String? _suffix;
 
   /// 输出后缀；没给时取 [language] 的标签。
@@ -237,10 +332,12 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
     required this.pipelineJobsRoot,
     this.database,
     this.resolveVideoPath,
+    this.resolveDiscTitlePath,
     this.aiSettings,
     AiChatClient Function()? chatClientFactory,
     this.mossStatus,
     this.probeDurationMs,
+    this.resolveAudioStream,
     SubtitleFrameSource? frameSource,
     Duration mossStatusCacheTtl = const Duration(minutes: 1),
     DateTime Function()? clock,
@@ -262,8 +359,15 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
   /// 与 collectionId（专名表退回任务目录旁的 JSON 文件）。
   final FushiDatabase Function()? database;
 
-  /// `videoId` → 本机视频文件路径；null = 不支持 videoId。
-  final Future<String?> Function(String videoId)? resolveVideoPath;
+  /// (`videoId`, 集下标) → 本机视频文件路径（那一集不存在 / 没有本地文件 → null）；
+  /// null = 不支持 videoId。
+  final Future<String?> Function(String videoId, {int episodeIndex})?
+  resolveVideoPath;
+
+  /// (`videoId`, `discTitle`) → `videoId` 那一行所在原盘（蓝光 / DVD）上那条 title 的
+  /// 成员路径（不是原盘行 / title 不合法 / 本机读不到 → null）；null = 不认 `discTitle`。
+  final Future<String?> Function(String videoId, String discTitle)?
+  resolveDiscTitlePath;
 
   /// host 的 AI 指派（每次现取）；null = 不支持 AI 校对。
   final AiSettingsSource Function()? aiSettings;
@@ -279,6 +383,10 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
 
   /// 视频时长探测（null = ffprobe）；测试注入。
   final Future<int?> Function(String videoPath)? probeDurationMs;
+
+  /// `audioTrack`（0 起的音轨序号）→ 识别的流序号（null = ffprobe 探测后按
+  /// [resolveVideoSubtitleAudioStream] 换算）；测试注入。
+  final VideoSubtitleAudioStreamResolver? resolveAudioStream;
   (DateTime, MossProvisionStatus)? _mossStatusCache;
 
   @override
@@ -327,6 +435,38 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
     return <String, Object?>{
       'supported': true,
       'acceptsVideoId': resolveVideoPath != null,
+      // 认 `episode`（播放列表第 N 集）。老 host 没有这个位，收到 `episode` 会照第
+      // 0 集跑：提交方据此决定第 N 集能不能交给这台 host。
+      'acceptsEpisode': resolveVideoPath != null,
+      // 认 `discTitle`（同一张蓝光盘上库里没有行的 title）。老 host 没有这个位，收到
+      // `discTitle` 会照 `videoId` 那一行跑：提交方据此决定远端原盘的 title 能不能交给它。
+      'acceptsDiscTitle':
+          resolveVideoPath != null && resolveDiscTitlePath != null,
+      // `discTitle` 认多角度 title 的角度成员路径（`00001.a2.mpls`）：蓝光成员的存在性与
+      // 抽取都经 `bluray_angle.dart` 按角度读。老 host 没有这个位，提交方不发角度路径。
+      'acceptsDiscTitleAngle':
+          resolveVideoPath != null && resolveDiscTitlePath != null,
+      // `discTitle` 认 DVD title（`VIDEO_TS/TITLE_nn.dvdtitle`，`videoId` 是同一张 DVD 上
+      // 的行）：DVD title 经 `DvdFfmpegBackend` 按 title 读、`hasLocalMediaFile` 认它。老
+      // host 两样都不认（只会报找不到），提交方不发 DVD title。
+      'acceptsDiscTitleDvd':
+          resolveVideoPath != null && resolveDiscTitlePath != null,
+      // `discTitle` 认 DVD 多角度 title 的角度成员路径（`VIDEO_TS/TITLE_nn.aK.dvdtitle`，
+      // `dvd_angle.dart`）：定位保留角度、`DvdFfmpegBackend` 按 `-angle` 读。只有
+      // `acceptsDiscTitleDvd` + `acceptsDiscTitleAngle` 的 host 不认这种形态（只会报找
+      // 不到），提交方不发。
+      'acceptsDiscTitleDvdAngle':
+          resolveVideoPath != null && resolveDiscTitlePath != null,
+      // 认 `audioTrack`（识别提交方播放器当前的音轨）。老 host 没有这个位，收到会静默按
+      // 识别语言挑：提交方据此不带它、并告诉用户将按语言选轨。
+      'acceptsAudioTrack': resolveVideoPath != null,
+      // 认 `language` 的取值（[VideoSubtitleLanguage.tag]）。没有这个位的 host 要么根本
+      // 不认 `language`（会静默按日语跑），要么认但没声明：提交方一律只给它日语任务、
+      // 不显示语言选择。
+      'languages': <String>[
+        for (final VideoSubtitleLanguage l in VideoSubtitleLanguage.values)
+          l.tag,
+      ],
       'acceptsCollectionId': database != null,
       'proofreadAvailable': proofreadProvider() != null,
       // 校对提供商开了图片输入：`frames=true` 才真的会带画面。
@@ -355,6 +495,11 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
     if (parsed.videoId != null && resolveVideoPath == null) {
       throw const FormatException(
         '$kVideoSubtitleJobKind: videoId not supported on this host',
+      );
+    }
+    if (parsed.discTitle != null && resolveDiscTitlePath == null) {
+      throw const FormatException(
+        '$kVideoSubtitleJobKind: discTitle not supported on this host',
       );
     }
     if (parsed.collectionId != null && database == null) {
@@ -450,6 +595,7 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
         // 上传的视频在任务输入目录里：字幕直接写进产物目录；库视频写在视频旁。
         exportDir: target.uploaded ? ctx.outputsDir : null,
         probeDurationMs: probeDurationMs,
+        resolveAudioStream: resolveAudioStream,
         // 歌词补齐要 AI 认歌 / 对齐：没开 AI 不装。
         lyricsFinder: ai == null
             ? null
@@ -467,6 +613,11 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
             '${pr.stage.name}: ${pr.message}'
             '${pr.videoPath == null ? '' : ' (${p.basename(pr.videoPath!)})'}',
           ),
+          // 提交方播放器当前的音轨（只有 `videoId` 目标会带）→ 管线识别那条轨。
+          audioTracks: <String, int>{
+            if (params.audioTrack case final int track)
+              for (final String video in target.videos) video: track,
+          },
         );
       } on SubtitlePipelineCancelled {
         throw const HostJobCancelledException();
@@ -591,22 +742,46 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
         : SubtitleWorkContextLoader(db);
     final String? videoId = params.videoId;
     if (videoId != null) {
-      final Future<String?> Function(String)? resolve = resolveVideoPath;
+      final Future<String?> Function(String, {int episodeIndex})? resolve =
+          resolveVideoPath;
       if (resolve == null) {
         throw const FormatException(
           '$kVideoSubtitleJobKind: videoId not supported on this host',
         );
       }
-      final String? path = await resolve(videoId);
-      if (path == null) {
-        throw FormatException(
-          '$kVideoSubtitleJobKind: unknown videoId $videoId',
+      final String? discTitle = params.discTitle;
+      final Future<String?> Function(String, String)? resolveDisc =
+          resolveDiscTitlePath;
+      if (discTitle != null && resolveDisc == null) {
+        throw const FormatException(
+          '$kVideoSubtitleJobKind: discTitle not supported on this host',
         );
       }
+      final String? path = discTitle != null
+          ? await resolveDisc!(videoId, discTitle)
+          : await resolve(videoId, episodeIndex: params.episode);
+      if (path == null) {
+        throw FormatException(
+          discTitle != null
+              ? '$kVideoSubtitleJobKind: unknown videoId $videoId '
+                    'disc title $discTitle'
+              : params.episode == 0
+              ? '$kVideoSubtitleJobKind: unknown videoId $videoId'
+              : '$kVideoSubtitleJobKind: unknown videoId $videoId '
+                    'episode ${params.episode}',
+        );
+      }
+      // 播放列表各集、同一张盘上的各条 title 共用这一行的作品上下文与专名表（同一部
+      // 作品）。
       final SubtitleWorkContext work =
           await loader?.forBook(videoId) ??
           _fallbackWork(path, params.title, useFolder: true);
-      return _Target(videos: <String>[path], work: work);
+      // 管线的 wholeSeason 只决定「已有目标字幕的集跳过」（skipExisting 同义）。
+      return _Target(
+        videos: <String>[path],
+        work: work,
+        wholeSeason: params.skipExisting,
+      );
     }
     final int? collectionId = params.collectionId;
     if (collectionId != null) {
@@ -624,8 +799,10 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
         );
       }
       final List<String> videos = <String>[
+        // 蓝光分集是虚拟路径（背后是整卷 `.mpls`）：按「本机能不能读到媒体」判，
+        // 不按「路径本身是不是文件」（video_member_file.dart 第 2 种问法）。
         for (final String v in await loader.collectionVideoPaths(collectionId))
-          if (File(v).existsSync()) v,
+          if (await hasLocalMediaFile(v)) v,
       ];
       return _Target(videos: videos, work: work, wholeSeason: true);
     }
@@ -674,7 +851,7 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
     String? title, {
     required bool useFolder,
   }) {
-    final String folder = p.dirname(videoPath);
+    final String folder = subtitleWorkFolderOf(videoPath);
     final String name =
         title ??
         (useFolder

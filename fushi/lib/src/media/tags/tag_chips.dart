@@ -51,6 +51,15 @@ Color fushiTagTonalColor(BuildContext context, Color color) {
   );
 }
 
+/// 压在页头 / 吸顶面上的未选中 chip 底（设计稿 V3）：亮色白 60%、暗色前景色 12%，
+/// 透出下面的页头底色，不叠容器色。
+Color fushiTagOverlayColor(BuildContext context) {
+  final ColorScheme scheme = Theme.of(context).colorScheme;
+  return scheme.brightness == Brightness.dark
+      ? scheme.onSurface.withValues(alpha: 0.12)
+      : Colors.white.withValues(alpha: 0.6);
+}
+
 /// M3E 标签 filter chip（见库注释）。
 class FushiTagToggleChip extends StatefulWidget {
   const FushiTagToggleChip({
@@ -65,6 +74,7 @@ class FushiTagToggleChip extends StatefulWidget {
     this.tooltip,
     this.autofocus = false,
     this.focusNode,
+    this.overlay = false,
   });
 
   final String label;
@@ -81,6 +91,12 @@ class FushiTagToggleChip extends StatefulWidget {
   final String? tooltip;
   final bool autofocus;
   final FocusNode? focusNode;
+
+  /// 压在页头 / 吸顶面上的标签条（库页标签段，设计稿 V3）：未选中态改用半透明
+  /// 底（亮色白 60%、暗色前景色 12%，[fushiTagOverlayColor]），不再叠容器色——
+  /// 在任何封面取色的页头上都与页头同色调。只影响 [TagCheckState.none] 的填充；
+  /// 墨水屏照旧实心。
+  final bool overlay;
 
   @override
   State<FushiTagToggleChip> createState() => _FushiTagToggleChipState();
@@ -149,7 +165,11 @@ class _FushiTagToggleChipState extends State<FushiTagToggleChip>
                 scheme.surfaceContainerLow,
               ),
       TagCheckState.none =>
-        eink ? scheme.surface : fushiTagTonalColor(context, widget.color),
+        eink
+            ? scheme.surface
+            : widget.overlay
+            ? fushiTagOverlayColor(context)
+            : fushiTagTonalColor(context, widget.color),
     };
     final Color foreground = switch (state) {
       TagCheckState.all =>

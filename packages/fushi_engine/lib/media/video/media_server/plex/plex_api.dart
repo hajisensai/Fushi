@@ -29,6 +29,8 @@ import 'package:fushi_engine/media/metadata/credential_redaction.dart'
     show redactCredentialsInText;
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
     show kMediaServerClientProduct;
+import 'package:fushi_engine/media/video/media_server/media_server_resumable_download.dart';
+import 'package:fushi_engine/media/video/media_server/media_server_route_failover.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 
@@ -87,6 +89,64 @@ class PlexApiException implements Exception {
   @override
   String toString() => 'PlexApiException($statusCode, $path)';
 }
+
+/// 请求没到达服务器（连不上 / 连接中途断开：`http.ClientException`，含底层
+/// `SocketException`）。与 [PlexApiException]（服务器答了非 2xx）分开，调用方据此
+/// 判断「换一条连接也许能通」（`PlexServerConfig.rerouteAfterFailure`）。
+/// [toString] 与之前抛的 `Exception(message)` 逐字相同（播放页错误文案不变）。
+class PlexTransportException implements Exception {
+  const PlexTransportException(this.message);
+
+  /// 已脱敏的底层错误描述。
+  final String message;
+
+  @override
+  String toString() => 'Exception: $message';
+}
+
+/// [serverUrl] 可达且确实是 [machineIdentifier] 那台服务器：无凭据请求
+/// `/identity` 比对（[PlexApi.identity] 不带 token，这里构造的 [PlexApi] 也
+/// 不持有 token）。登录时挑线路、请求失败后自动换线路、CLI 选连接都走这一处：
+/// 核对通过之前，带 token 的请求一律不发往该地址。
+///
+/// [client] 归本函数所有（结束时关闭）。连不上 / 超时 / 答非 2xx / 非 JSON 都
+/// 原样抛出，由调用方当作「这条不可用」；[machineIdentifier] 为空恒为 false。
+/// 核对与之后的请求之间对面换了机器（TOCTOU）不在防护范围内。
+Future<bool> verifyPlexServerIdentity(
+  String serverUrl,
+  String machineIdentifier,
+  PlexClientInfo clientInfo, {
+  Duration? timeout,
+  http.Client? client,
+}) async {
+  if (machineIdentifier.isEmpty) {
+    client?.close();
+    return false;
+  }
+  final PlexApi api = PlexApi(
+    serverUrl: serverUrl,
+    token: '',
+    clientInfo: clientInfo,
+    client: client,
+  );
+  try {
+    final Future<String> id = api.identity();
+    return (timeout == null ? await id : await id.timeout(timeout)) ==
+        machineIdentifier;
+  } finally {
+    api.close();
+  }
+}
+
+/// [error] 是不是「这条连接不通」类失败：[PlexTransportException]、请求超时
+/// （[PlexApi.kRequestTimeout] 的 [TimeoutException]）、裸 [SocketException]，或播放
+/// 途中流断了（[MediaServerStreamInterrupted]，换不换由探测定）。
+/// 服务器答了话（[PlexApiException]、解析失败、条目不存在）都不算。
+bool isPlexTransportFailure(Object error) =>
+    error is PlexTransportException ||
+    error is TimeoutException ||
+    error is SocketException ||
+    error is MediaServerStreamInterrupted;
 
 /// 一个媒体库（`/library/sections` 的 `Directory`）。
 class PlexSection {
@@ -311,17 +371,33 @@ class PlexMetadataPage {
   final int rawCount;
 }
 
-/// PMS 的 HTTP 封装。一个实例 = 一台服务器的一条连接地址 + 一个 token。
+/// PMS 的 HTTP 封装。一个实例 = 一台服务器的当前连接地址 + 一个 token。
+///
+/// [onRouteFailure] 非空时，带 token 的请求在传输失败后问它换线路，换成功就把
+/// [serverUrl] 改成新地址、重试这一次请求（[MediaServerRouteState.run]）；之后现拼的
+/// 播放 / 封面 / 字幕 URL 都带新地址。[identity] 不带 token、正是换线路时核对身份
+/// 用的，它不走换线路。
 class PlexApi {
   PlexApi({
-    required this.serverUrl,
+    required String serverUrl,
     required this.token,
     required this.clientInfo,
     http.Client? client,
-  }) : _client = client ?? createAppHttpIoClient();
+    MediaServerRouteFailoverHook? onRouteFailure,
+  }) : _route = MediaServerRouteState(serverUrl, hook: onRouteFailure),
+       _client = client ?? createAppHttpIoClient();
 
-  /// 归一化后的服务器根 URL（含 scheme、无尾斜杠）。
-  final String serverUrl;
+  final MediaServerRouteState _route;
+
+  /// 归一化后的服务器根 URL（含 scheme、无尾斜杠）：当前线路，换线路后随之改变。
+  String get serverUrl => _route.baseUrl;
+
+  /// 当前线路以 [error] 失败（如播放途中流断了）后主动问一次换线路；换成功返回 true，
+  /// 之后的请求与现拼的 URL 都走新线路。
+  Future<bool> failoverRoute(Object error) => _route.failover(error);
+
+  Future<T> _withFailover<T>(Future<T> Function() attempt) =>
+      _route.run(attempt, isTransportFailure: isPlexTransportFailure);
 
   /// 访问这台服务器的 token（分享给本账号的服务器与账号 token 不同，取
   /// plex.tv resources 里该服务器自己的 `accessToken`）。
@@ -331,6 +407,9 @@ class PlexApi {
 
   /// 单个小请求的响应超时（与 JellyfinApi 同口径）。
   static const Duration kRequestTimeout = Duration(seconds: 15);
+
+  /// 下载正文两个数据块之间的最长空闲（与 JellyfinApi 同口径）。
+  static const Duration kDownloadIdleTimeout = Duration(seconds: 45);
 
   /// 进度上报等写操作走库插件标识（PMS 约定值）。
   static const String kLibraryIdentifier = 'com.plexapp.plugins.library';
@@ -358,9 +437,14 @@ class PlexApi {
     return url;
   }
 
-  Map<String, String> get headers => <String, String>{
+  /// 不带凭据的请求头（Accept + `X-Plex-*` 客户端身份头）：[identity] 用它。
+  Map<String, String> get anonymousHeaders => <String, String>{
     'Accept': 'application/json',
     ...clientInfo.headers,
+  };
+
+  Map<String, String> get headers => <String, String>{
+    ...anonymousHeaders,
     'X-Plex-Token': token,
   };
 
@@ -376,14 +460,25 @@ class PlexApi {
   String withToken(String path, [Map<String, String>? query]) =>
       uri(path, <String, String>{...?query, kTokenParam: token}).toString();
 
+  /// [authenticated] 为 false 时不带 `X-Plex-Token`（只有 [identity] 这么用）。
   Future<http.Response> _send(
     String method,
     String path, [
     Map<String, String>? query,
-  ]) async {
+    bool authenticated = true,
+  ]) => authenticated
+      ? _withFailover(() => _sendOnce(method, path, query, true))
+      : _sendOnce(method, path, query, false);
+
+  Future<http.Response> _sendOnce(
+    String method,
+    String path,
+    Map<String, String>? query,
+    bool authenticated,
+  ) async {
     try {
       final http.Request req = http.Request(method, uri(path, query));
-      req.headers.addAll(headers);
+      req.headers.addAll(authenticated ? headers : anonymousHeaders);
       final http.StreamedResponse streamed = await _client
           .send(req)
           .timeout(kRequestTimeout);
@@ -396,7 +491,7 @@ class PlexApi {
       return res;
     } on http.ClientException catch (e) {
       // 凭据脱敏在异常构造侧（见 credential_redaction.dart 文件头）。
-      throw Exception(redactCredentialsInText(e.toString()));
+      throw PlexTransportException(redactCredentialsInText(e.toString()));
     }
   }
 
@@ -409,9 +504,16 @@ class PlexApi {
     return parseContainer(jsonDecode(utf8.decode(res.bodyBytes)));
   }
 
-  /// 服务器身份（`/identity`，需要 token 的服务器也放行）：返回 machineIdentifier。
+  /// 服务器身份（`/identity`）：返回 machineIdentifier。**不带 token**——这一步
+  /// 正是用来确认对面是哪台服务器的，确认之前不能把凭据交出去
+  /// （[verifyPlexServerIdentity]）。PMS 的 `/identity` 不要求认证：官方 API
+  /// 文档 https://developer.plex.tv/pms/ 「Get PMS identity」标 Authorizations:
+  /// None；社区 OpenAPI 规范 lukasparke/plex-api-spec 同样记为 `Auth: none`。
   Future<String> identity() async {
-    final Map<String, Object?> c = await getContainer('/identity');
+    final http.Response res = await _send('GET', '/identity', null, false);
+    final Map<String, Object?> c = parseContainer(
+      jsonDecode(utf8.decode(res.bodyBytes)),
+    );
     return _str(c['machineIdentifier']) ?? '';
   }
 
@@ -590,8 +692,11 @@ class PlexApi {
     'url': imagePath,
   });
 
-  /// 拉取字节（封面）。
-  Future<Uint8List> fetchBytes(String url) async {
+  /// 拉取字节（封面）。[url] 是换线路之前拼的（带旧地址）时改走当前线路。
+  Future<Uint8List> fetchBytes(String url) =>
+      _withFailover(() => _fetchBytesOnce(_route.rebase(url)));
+
+  Future<Uint8List> _fetchBytesOnce(String url) async {
     try {
       final http.Response res = await _client
           .get(Uri.parse(url), headers: headers)
@@ -601,12 +706,16 @@ class PlexApi {
       }
       return res.bodyBytes;
     } on http.ClientException catch (e) {
-      throw Exception(redactCredentialsInText(e.toString()));
+      throw PlexTransportException(redactCredentialsInText(e.toString()));
     }
   }
 
-  /// 流式下载到 [dest]（整片 / 字幕）。[cancelSignal] 完成后在下一个数据块到达时
-  /// 中止并抛 [cancelledError] 的返回值（缺省 [StateError]）；失败删半截文件。
+  /// 流式下载到 [dest]（字幕这类小文件；整片走可续传的 [downloadResumable]）。
+  /// [cancelSignal] 完成后在下一个数据块到达时中止并抛 [cancelledError] 的返回值
+  /// （缺省 [StateError]）；失败删半截文件。
+  ///
+  /// 正文流挂**空闲**超时 [idleTimeout]，不挂整体超时：PMS 回了响应头却不再送数据
+  /// 时到点抛 [TimeoutException]，而不是让起播永远停在「正在下载字幕」。
   Future<void> downloadToFile(
     String url,
     File dest, {
@@ -614,9 +723,32 @@ class PlexApi {
     void Function(int received, int? total)? onBytes,
     Future<void>? cancelSignal,
     Exception Function()? cancelledError,
-  }) async {
+    Duration idleTimeout = kDownloadIdleTimeout,
+  }) {
     bool cancelled = false;
     cancelSignal?.then((_) => cancelled = true, onError: (_) {});
+    return _withFailover(
+      () => _downloadToFileOnce(
+        _route.rebase(url),
+        dest,
+        onProgress: onProgress,
+        onBytes: onBytes,
+        isCancelled: () => cancelled,
+        cancelledError: cancelledError,
+        idleTimeout: idleTimeout,
+      ),
+    );
+  }
+
+  Future<void> _downloadToFileOnce(
+    String url,
+    File dest, {
+    required void Function(double progress)? onProgress,
+    required void Function(int received, int? total)? onBytes,
+    required bool Function() isCancelled,
+    required Exception Function()? cancelledError,
+    required Duration idleTimeout,
+  }) async {
     try {
       final http.Request req = http.Request('GET', Uri.parse(url));
       req.headers.addAll(headers);
@@ -631,8 +763,8 @@ class PlexApi {
       final IOSink sink = dest.openWrite();
       bool ok = false;
       try {
-        await for (final List<int> chunk in res.stream) {
-          if (cancelled) {
+        await for (final List<int> chunk in res.stream.timeout(idleTimeout)) {
+          if (isCancelled()) {
             final Exception? custom = cancelledError?.call();
             if (custom != null) throw custom;
             throw StateError('Plex download cancelled');
@@ -654,9 +786,38 @@ class PlexApi {
         }
       }
     } on http.ClientException catch (e) {
-      throw Exception(redactCredentialsInText(e.toString()));
+      throw PlexTransportException(redactCredentialsInText(e.toString()));
     }
   }
+
+  /// 整片下载：`.part` + Range 续传 + 空闲超时（[downloadMediaServerFileResumable]）。
+  ///
+  /// [resumeKey] 是断点身份（条目 id），不是 URL：URL 带 `X-Plex-Token`，侧车与错误
+  /// 文本都不落它。[cancelSignal] 完成即中止在途传输、抛 [cancelledError] 的返回值，
+  /// `.part` 留着供续传。只给原文件端点（`/library/parts/...?download=1`）。
+  Future<void> downloadResumable(
+    String url,
+    File dest, {
+    required String resumeKey,
+    required Exception Function() cancelledError,
+    void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
+    Duration stallTimeout = kDownloadIdleTimeout,
+  }) => downloadMediaServerFileResumable(
+    client: _client,
+    url: _route.rebase(url),
+    headers: headers,
+    resumeKey: resumeKey,
+    dest: dest,
+    statusError: (int code) => PlexApiException(code, Uri.parse(url).path),
+    cancelledError: cancelledError,
+    onProgress: onProgress,
+    onBytes: onBytes,
+    cancelSignal: cancelSignal,
+    firstByteTimeout: kRequestTimeout,
+    stallTimeout: stallTimeout,
+  );
 
   void close() => _client.close();
 

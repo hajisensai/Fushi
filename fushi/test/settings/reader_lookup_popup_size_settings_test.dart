@@ -18,7 +18,6 @@ import 'package:fushi/src/settings/glass_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
-import 'package:fushi/src/settings/settings_schema_lookup.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -127,14 +126,15 @@ void main() {
       final List<String> ids = items
           .map((SettingsItem i) => i.id)
           .toList(growable: false);
-      expect(ids.take(6).toList(), <String>[
+      expect(ids.take(5).toList(), <String>[
         'lookup.popup_max_width',
         'lookup.popup_max_height',
         'lookup.popup_size_preview',
-        'lookup.popup_bottom_docked_books_only',
         'lookup.popup_bottom_docked.books',
         'lookup.dictionary_font_size',
       ]);
+      // BUG-4713：「仅在小说中底部停靠」特例开关已删，书内只投影小说自己那条。
+      expect(ids, isNot(contains('lookup.popup_bottom_docked_books_only')));
       for (final String id in <String>[
         'lookup.scan_non_japanese',
         'lookup.collapse_dictionaries',
@@ -160,9 +160,8 @@ void main() {
         find.byKey(const ValueKey<String>('lookup_popup_size_preview')),
         findsOneWidget,
       );
-      // 小说专属停靠入口在总开关关着时出现，小说细分开关不出。
-      expect(_switchRow(t.popup_bottom_docked_books_only), findsOneWidget);
-      expect(_switchRow(t.popup_bottom_docked_books), findsNothing);
+      // 小说的停靠开关不依赖任何总开关，直接出现。
+      expect(_switchRow(t.popup_bottom_docked_books), findsOneWidget);
     });
 
     testWidgets(
@@ -241,8 +240,7 @@ void main() {
     );
 
     testWidgets(
-      '"Dock only in novels" flips only the novels value and hands over to '
-      'the per-module switch',
+      'the novels dock switch in quick settings flips only the novels value',
       (WidgetTester tester) async {
         final FushiDatabase db = _testDb();
         addTearDown(db.close);
@@ -253,13 +251,10 @@ void main() {
         await tester.pump(const Duration(milliseconds: 100));
 
         expect(appModel.popupBottomDocked, isFalse);
-        final AdaptiveSettingsSwitchRow row = tester
-            .widget<AdaptiveSettingsSwitchRow>(
-              _switchRow(t.popup_bottom_docked_books_only),
-            );
-        expect(row.value, isFalse);
+        final Finder books = _switchRow(t.popup_bottom_docked_books);
+        expect(tester.widget<AdaptiveSettingsSwitchRow>(books).value, isFalse);
 
-        row.onChanged!(true);
+        tester.widget<AdaptiveSettingsSwitchRow>(books).onChanged!(true);
         await tester.pump(const Duration(milliseconds: 100));
 
         expect(appModel.popupBottomDockedFor(ModuleId.books), isTrue);
@@ -274,12 +269,8 @@ void main() {
             reason: '$other 打开前不停靠，打开后也不能被连带停靠',
           );
         }
+        expect(appModel.popupBottomDockedFor(null), isFalse);
         expect(await db.getPref('popup_bottom_docked_books'), isNotNull);
-
-        // 总开关已开：本入口让位，小说细分开关接手且值为开。
-        expect(_switchRow(t.popup_bottom_docked_books_only), findsNothing);
-        final Finder books = _switchRow(t.popup_bottom_docked_books);
-        expect(books, findsOneWidget);
         expect(tester.widget<AdaptiveSettingsSwitchRow>(books).value, isTrue);
 
         tester.widget<AdaptiveSettingsSwitchRow>(books).onChanged!(false);
@@ -287,26 +278,6 @@ void main() {
         expect(appModel.popupBottomDockedFor(ModuleId.books), isFalse);
       },
     );
-
-    test('enablePopupBottomDockedOnlyInBooks keeps manually-docked modules '
-        'semantics: only books changes effective value', () async {
-      final FushiDatabase db = _testDb();
-      addTearDown(db.close);
-      final AppModel appModel = await _prefsBackedAppModel(db);
-      final Map<ModuleId, bool> before = <ModuleId, bool>{
-        for (final ModuleId m
-            in PreferencesRepository.kPopupBottomDockedModules)
-          m: appModel.popupBottomDockedFor(m),
-      };
-      await enablePopupBottomDockedOnlyInBooks(appModel);
-      for (final ModuleId m
-          in PreferencesRepository.kPopupBottomDockedModules) {
-        expect(
-          appModel.popupBottomDockedFor(m),
-          m == ModuleId.books ? isTrue : before[m],
-        );
-      }
-    });
   });
 
   testWidgets('Apple (glass) design renders the same lookup rows + preview', (
@@ -329,7 +300,7 @@ void main() {
       find.byKey(const ValueKey<String>('lookup_popup_size_preview')),
       findsOneWidget,
     );
-    expect(_switchRow(t.popup_bottom_docked_books_only), findsOneWidget);
+    expect(_switchRow(t.popup_bottom_docked_books), findsOneWidget);
   });
 
   group('popup geometry stays on-screen across the slider range', () {

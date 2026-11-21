@@ -13,6 +13,7 @@ import 'package:fushi/src/platform/desktop/desktop_device_info_service.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
 import 'package:fushi_engine/sync/fushi_screen_ocr_host.dart';
+import 'package:fushi_engine/sync/torrent_engine/host_torrent_engine.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -36,6 +37,8 @@ import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/interconnect_leaderboard_link.dart';
+import 'package:fushi_engine/sync/interconnect_plugin_relay.dart';
+import 'package:fushi_engine/sync/interconnect_source_share.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi/src/sync/lan_discovery_service.dart';
 import 'package:fushi/src/sync/interconnect_p2p_app.dart';
@@ -46,6 +49,7 @@ import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_root_migration.dart';
 import 'package:fushi/src/sync/sync_utils.dart' show kSyncRootFolderName;
+import 'package:fushi_engine/sync/interconnect_file_box_prune.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -111,11 +115,14 @@ class FushiSyncServerController extends ChangeNotifier {
     Future<HostJobManager> Function()? hostJobsFactory,
     HostDownloadHost Function()? downloadsFactory,
     HostSubscriptionHost Function()? subscriptionsFactory,
+    HostTorrentEngine Function()? torrentEngineFactory,
     HostAssistantProvider Function()? assistantFactory,
     VideoSubtitleBackfillRunner? videoSubtitleBackfill,
     GraphicSubtitleTrackExporter? graphicSubtitleTrackExporter,
     HostSelfUpdater Function()? hostSelfUpdater,
     InterconnectLeaderboardLinkHost Function()? leaderboardLinkHost,
+    InterconnectSourceShareHost Function()? sourceShareHost,
+    InterconnectPluginRelayHost? Function()? pluginRelayHost,
     SrsRemoteStoreService? Function()? srsRemoteStore,
     bool Function()? srsSync2Joined,
     PrefStore Function()? prefsStore,
@@ -138,6 +145,7 @@ class FushiSyncServerController extends ChangeNotifier {
        _hostJobsFactory = hostJobsFactory,
        _downloadsFactory = downloadsFactory,
        _subscriptionsFactory = subscriptionsFactory,
+       _torrentEngineFactory = torrentEngineFactory,
        _assistantFactory = assistantFactory,
        _videoSubtitleBackfill = videoSubtitleBackfill,
        _graphicSubtitleTrackExporter =
@@ -145,6 +153,8 @@ class FushiSyncServerController extends ChangeNotifier {
            exportGraphicSubtitleTrackForInterconnect,
        _hostSelfUpdater = hostSelfUpdater,
        _leaderboardLinkHost = leaderboardLinkHost,
+       _sourceShareHost = sourceShareHost,
+       _pluginRelayHost = pluginRelayHost,
        _srsRemoteStore = srsRemoteStore,
        _srsSync2Joined = srsSync2Joined,
        _prefsStore = prefsStore,
@@ -185,6 +195,10 @@ class FushiSyncServerController extends ChangeNotifier {
   final HostDownloadHost Function()? _downloadsFactory;
   final HostSubscriptionHost Function()? _subscriptionsFactory;
 
+  /// 把本机 BT 引擎借给已配对设备（`/api/torrent-engine`，对端「下载后端 =
+  /// 互联设备」）。
+  final HostTorrentEngine Function()? _torrentEngineFactory;
+
   /// AI 助手会话（`/api/assistant`：手机把一句话交给本机的 AI 去办）。
   final HostAssistantProvider Function()? _assistantFactory;
 
@@ -203,6 +217,14 @@ class FushiSyncServerController extends ChangeNotifier {
   /// 「跟随已配对设备自动登录 Fushi 账户」的 host 侧实现。null（headless/单测）=
   /// 不接线，`/api/interconnect/leaderboard-link` 404、能力位不声明。
   final InterconnectLeaderboardLinkHost Function()? _leaderboardLinkHost;
+
+  /// 互联「来源共享」的 host 侧（服务器来源 + 插件包发给「我的设备」）。null（headless/
+  /// 单测）= 不接线，端点 404、能力位不声明。
+  final InterconnectSourceShareHost Function()? _sourceShareHost;
+
+  /// 互联「插件中继」的 host 侧（替没有插件运行时的「我的设备」代跑本机插件）。null / 返回
+  /// null（headless / 单测 / 本机没有插件运行时）= 不接线，端点 404、能力位不声明。
+  final InterconnectPluginRelayHost? Function()? _pluginRelayHost;
 
   /// 远程复习库：按请求现取（复习模块关着时 null → 端点 404、不声明能力）。
   final SrsRemoteStoreService? Function()? _srsRemoteStore;
@@ -839,6 +861,7 @@ class FushiSyncServerController extends ChangeNotifier {
             hostJobs: hostJobs,
             downloads: _downloadsFactory?.call(),
             subscriptions: _subscriptionsFactory?.call(),
+            torrentEngine: _torrentEngineFactory?.call(),
             assistant: _assistantFactory?.call(),
             securityContext: securityContext,
             hostFingerprint: hostFingerprint,
@@ -885,6 +908,10 @@ class FushiSyncServerController extends ChangeNotifier {
           ..hostSelfUpdater = _hostSelfUpdater?.call()
           // 已配对设备跟随本机账户自动登录（开关在实现里按请求实时读）。
           ..leaderboardLinkHost = _leaderboardLinkHost?.call()
+          // 来源共享（开关与「我的设备」判据在实现里按请求实时读）。
+          ..sourceShareHost = _sourceShareHost?.call()
+          // 插件中继（开关与「我的设备」判据同来源共享，在实现里按请求实时读）。
+          ..pluginRelayHost = _pluginRelayHost?.call()
           // 远程复习库（docs/specs/2026-11-01-srs-remote-review-design.md）。
           ..srsRemoteStoreProvider = _srsRemoteStore
           // 复习同步 v2 的参与状态（BUG-4320）：没确认首次同步前本机不跑本机目录那一轮。
@@ -904,6 +931,10 @@ class FushiSyncServerController extends ChangeNotifier {
         st,
       ),
     );
+    // BUG-4991：清掉同步根下已无人读取的客户端文件箱书文件夹（旧版本客户端写下的
+    // epub / 有声书 / 进度 JSON，host 从不读回）。绑端口前跑，不和 WebDAV 写竞争；
+    // 自身吞错留痕，绝不挡启动。
+    await pruneDeadInterconnectFileBox(server.syncDataDir);
     await server.start();
     // BUG-1573：dispose 已经发生时，这台刚绑上的 host 已经没有拥有者了——继续往下
     // 写 `serverEnabled=true` 会打到一个可能已经关掉的 DB 上，广播也没人再拆。收干净
@@ -926,10 +957,14 @@ class FushiSyncServerController extends ChangeNotifier {
   /// 漫画 P3：按注入的 OCR 服务工厂构造远程 OCR 任务管理器；未注入返回 null
   /// （server 端点整体关闭）。上传页图落 `<syncDataDir>/manga_ocr_jobs`（TTL
   /// 自清理），每次 [start] 新建、server stop 时其内部 disposeAll。
+  ///
+  /// 新管理器的串行队列接在上一个管理器的执行体停下之后（`runAfter`）：stop 不等
+  /// 执行体停下就返回（BUG-4800），关了立刻再开时旧的整卷 isolate 可能还占着整套
+  /// 模型，新任务先起就是两套模型同时在内存。
   MangaOcrHostJobManager? _buildMangaOcrJobManager() {
     final MangaOcrService Function()? factory = _mangaOcrServiceFactory;
     if (factory == null) return null;
-    return MangaOcrHostJobManager(
+    final MangaOcrHostJobManager manager = MangaOcrHostJobManager(
       service: factory(),
       modelServices:
           _mangaOcrModelServicesFactory?.call() ??
@@ -937,8 +972,15 @@ class FushiSyncServerController extends ChangeNotifier {
       jobRoot: Directory(
         '${_syncDataDir()}${Platform.pathSeparator}manga_ocr_jobs',
       ),
+      runAfter: _lastMangaOcrJobs?.whenExecutorsStopped,
     );
+    _lastMangaOcrJobs = manager;
+    return manager;
   }
+
+  /// 最近一次 [_buildMangaOcrJobManager] 建的管理器（server 停了也留着引用）：
+  /// 下一个管理器的队列要等它取消掉的执行体停下。
+  MangaOcrHostJobManager? _lastMangaOcrJobs;
 
   /// 截屏识字 host：与远程漫画 OCR 同一个 OCR 服务工厂；未注入返回 null（端点 404）。
   ScreenOcrHost? _buildScreenOcrHost() {

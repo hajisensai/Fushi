@@ -50,6 +50,7 @@ String crashKindLabel(PreviousExitKind kind) => switch (kind) {
   PreviousExitKind.userStopped ||
   PreviousExitKind.vendorStopped ||
   PreviousExitKind.permissionChanged ||
+  PreviousExitKind.securityKilled ||
   PreviousExitKind.appUpdated ||
   PreviousExitKind.systemSessionEnd ||
   PreviousExitKind.exitInterrupted ||
@@ -305,6 +306,30 @@ Future<void> offerCrashReportAfterStartup({
       ),
     ),
   );
+}
+
+/// 上次进程被系统安全组件当成恶意软件结束（[PreviousExitKind.securityKilled]）时，首页
+/// 出来后给一条提示条：说明不是闪退、可以去 Play Protect / 设备安全设置里放行。这种退出
+/// 不进闪退报告（[PreviousExitKind.worthReporting] 为 false），不提示的话用户只看到 app
+/// 莫名其妙没了。判定只针对上一次进程，所以每次被杀只提示一次。返回是否弹出了提示。
+bool offerSecurityKillNoticeAfterStartup({
+  required BuildContext Function() context,
+  required PreviousExitVerdict? verdict,
+}) {
+  if (verdict?.kind != PreviousExitKind.securityKilled) return false;
+  final BuildContext ctx = context();
+  if (!ctx.mounted) return false;
+  final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(ctx);
+  if (messenger == null) return false;
+  messenger.showSnackBar(
+    FushiSnackBar(
+      key: const ValueKey<String>('security-kill-notice'),
+      persist: false,
+      duration: kCrashReportPromptDuration,
+      content: Text(t.feedback_crash_security_killed_notice),
+    ),
+  );
+  return true;
 }
 
 Future<void> _submitInBackground(

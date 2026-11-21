@@ -5,8 +5,41 @@
 library;
 
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
+
+/// 一张已在内存里的**不透明** RGBA 图（行优先、紧排，`width * height * 4` 字节，alpha
+/// 恒 255）：给已经拿到像素的调用方（视频暂停 OCR 的播放器截帧、字幕位图）直接交给 OCR
+/// 引擎，不经 PNG / JPEG 编码、落盘与再解码。
+class OcrRgbaImage {
+  /// 尺寸非正或 [rgba] 长度不等于 `width * height * 4` 时抛 [ArgumentError]。
+  OcrRgbaImage({
+    required this.rgba,
+    required this.width,
+    required this.height,
+  }) {
+    if (width <= 0 || height <= 0 || rgba.length != width * height * 4) {
+      throw ArgumentError(
+        'OcrRgbaImage needs width*height*4 bytes, got ${rgba.length} for '
+        '${width}x$height',
+      );
+    }
+  }
+
+  final Uint8List rgba;
+  final int width;
+  final int height;
+
+  /// 包成 `package:image` 的 4 通道图（零拷贝，共用 [rgba]）。
+  img.Image toImage() => img.Image.fromBytes(
+    width: width,
+    height: height,
+    bytes: rgba.buffer,
+    bytesOffset: rgba.offsetInBytes,
+    numChannels: 4,
+  );
+}
 
 /// 轴对齐矩形（原图像素坐标，left/top 含、right/bottom 不含语义不强求，
 /// 只要求 right >= left、bottom >= top）。

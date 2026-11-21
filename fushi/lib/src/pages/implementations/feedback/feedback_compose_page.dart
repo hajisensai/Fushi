@@ -3,7 +3,8 @@
 // 显式「粘贴图片」按钮、Android 输入法插入的图片）+
 // 附带日志与设备信息开关 + 已登录排行榜账户时「以 xx 身份提交」+ 可选 1 个视频（≤ 100 MB；
 // 默认原件上传，超限 / 格式不收时自动压缩并告知；也可选 1080p / 720p 档在本机转码，见
-// feedback_video.dart；显示压缩 / 上传进度）。
+// feedback_video.dart；显示压缩 / 上传进度）+ 最多 3 个样本文件（字幕 / 书 / 音视频原件 / 词典 /
+// md，原样上传，只有开发者能下载，见 feedback_files.dart；拍板台 PLFh2VXDcN）。
 // 成功后 `pop(FeedbackSubmitResult)`，失败就地显示原因（不靠 toast，用户要一直看得到）。
 //
 // 视频选完就在后台压缩（用户边写边压），换档位即取消在途压缩按新档位重压；表单在压缩期间
@@ -18,6 +19,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/feedback/feedback_draft_store.dart';
+import 'package:fushi/src/feedback/feedback_files.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/feedback/feedback_video.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
@@ -126,6 +128,10 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
   /// 视频压缩 / 上传进度（0..1；拿不到时长时为 null）。
   double? _videoFraction;
   bool _pickingVideo = false;
+
+  /// 选的样本文件（原件路径与大小，最多 [FeedbackLimits.files] 个）。同视频，不进草稿。
+  final List<({File file, int bytes})> _files = <({File file, int bytes})>[];
+  bool _pickingFiles = false;
 
   /// 视频档位（默认原件，只在本页有效，不进草稿）。
   FeedbackVideoMode _videoMode = FeedbackVideoMode.original;
@@ -585,6 +591,45 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
     }
   }
 
+  /// 选样本文件：本机先拦住服务端必然拒收的（类型 / 空文件 / 超限），第一个原因显示在表单
+  /// 错误行；能收的按剩余名额加进来（同一路径不重复加）。
+  Future<void> _pickFiles() async {
+    if (_pickingFiles) return;
+    _pickingFiles = true;
+    try {
+      final List<File> picked = await pickFeedbackFiles(context);
+      if (picked.isEmpty || !mounted) return;
+      final List<({File file, int bytes})> ok = <({File file, int bytes})>[];
+      String? problem;
+      for (final File f in picked) {
+        final int bytes = await f.length();
+        final FeedbackFileProblem? why = feedbackFileProblem(f.path, bytes);
+        if (why != null) {
+          problem ??= feedbackFileProblemText(p.basename(f.path), why);
+          continue;
+        }
+        ok.add((file: f, bytes: bytes));
+      }
+      if (!mounted) return;
+      setState(() {
+        for (final ({File file, int bytes}) f in ok) {
+          if (_files.length >= FeedbackLimits.files) break;
+          if (_files.any(
+            (({File file, int bytes}) x) => x.file.path == f.file.path,
+          )) {
+            continue;
+          }
+          _files.add(f);
+        }
+        _error = problem;
+      });
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log('feedback.pick_files', e, st);
+    } finally {
+      _pickingFiles = false;
+    }
+  }
+
   /// 桌面 Ctrl+V（macOS Cmd+V）：不论焦点在不在输入框都看一眼剪贴板，有图就收。
   /// 不吃掉按键——输入框里照常粘贴文字（剪贴板里只有图时那一步什么也不贴）。
   bool _onKey(KeyEvent event) {
@@ -744,6 +789,9 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
           linkAccount: _linkAccount,
           screenshots: List<Uint8List>.of(_shots),
           video: video,
+          files: <File>[
+            for (final ({File file, int bytes}) f in _files) f.file,
+          ],
           reopenOf: widget.reopenOf?.id,
           submissionKey: submissionKey,
         ),
@@ -904,6 +952,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
     FeedbackSubmitStage.sending => t.feedback_stage_sending,
     FeedbackSubmitStage.screenshots => t.feedback_stage_screenshots,
     FeedbackSubmitStage.logs => t.feedback_stage_logs,
+    FeedbackSubmitStage.files => t.feedback_stage_files,
     FeedbackSubmitStage.video => t.feedback_stage_video(percent: _percentText),
   };
 
@@ -1094,6 +1143,74 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
     ];
   }
 
+  /// 已选样本文件合计超过每天的样本文件上传额度（[FeedbackLimits.fileBytesPerDay]）。
+  bool get _filesOverDailyQuota =>
+      _files.fold<int>(
+        0,
+        (int sum, ({File file, int bytes}) f) => sum + f.bytes,
+      ) >
+      FeedbackLimits.fileBytesPerDay;
+
+  /// 样本文件区：说明 + 已选文件（文件名 · 大小 · ×）+ 「添加文件」（名额满了不显示）。
+  /// 正文发出之后（上传附件时）锁住。
+  List<Widget> _filesSection(FushiDesignTokens tokens) => <Widget>[
+    SizedBox(height: tokens.spacing.card),
+    Text(
+      t.feedback_compose_files_hint(
+        n: FeedbackLimits.files,
+        max: FushiByteFormat.bytes(FeedbackLimits.fileMaxBytes),
+      ),
+      key: const ValueKey<String>('feedback-files-hint'),
+      style: tokens.type.metadata,
+    ),
+    // 合计超过每 IP 每天的样本文件额度（服务端 fileBytesPerIpDay）：提交前就提醒，传不下的会
+    // 留在本机待重试，不是提交后才发现「附件没传上去」。
+    if (_filesOverDailyQuota) ...<Widget>[
+      SizedBox(height: tokens.spacing.gap),
+      FushiInlineNotice(
+        key: const ValueKey<String>('feedback-files-over-quota'),
+        severity: FushiNoticeSeverity.warning,
+        message: t.feedback_compose_files_over_quota(
+          max: FushiByteFormat.bytes(FeedbackLimits.fileBytesPerDay),
+        ),
+      ),
+    ],
+    SizedBox(height: tokens.spacing.gap),
+    for (final ({File file, int bytes}) f in _files) ...<Widget>[
+      FushiCard(
+        key: ValueKey<String>('feedback-file-${f.file.path}'),
+        margin: EdgeInsets.zero,
+        child: FushiListItem(
+          leading: const FushiIcon(FushiIcons.file),
+          title: Text(
+            p.basename(f.file.path),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text(FushiByteFormat.bytes(f.bytes)),
+          trailing: FushiIconButton(
+            key: ValueKey<String>('feedback-remove-file-${f.file.path}'),
+            icon: FushiIcons.close,
+            tooltip: t.feedback_compose_remove_file,
+            enabled: !_locked,
+            onTap: () => setState(() => _files.remove(f)),
+          ),
+        ),
+      ),
+      SizedBox(height: tokens.spacing.gap),
+    ],
+    if (_files.length < FeedbackLimits.files)
+      Align(
+        alignment: Alignment.centerLeft,
+        child: _AddTile(
+          key: const ValueKey<String>('feedback-add-files'),
+          icon: FushiIcons.file,
+          label: t.feedback_compose_add_files,
+          onTap: _locked ? null : () => unawaited(_pickFiles()),
+        ),
+      ),
+  ];
+
   /// 档位按钮的名字：原件翻译，720p / 1080p 不翻译。
   static String _videoModeLabel(FeedbackVideoMode mode) => switch (mode) {
     FeedbackVideoMode.original => t.feedback_compose_video_quality_original,
@@ -1251,6 +1368,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
               ],
             ),
             ..._videoSection(tokens),
+            ..._filesSection(tokens),
             SizedBox(height: tokens.spacing.card),
             FushiSwitchListTile(
               key: const ValueKey<String>('feedback-include-logs'),

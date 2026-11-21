@@ -331,6 +331,15 @@ mixin _LocalLibraryHostVideos
       importedAt: row.importedAt,
       fileName: fileName,
       peerPlayable: _hostServesVideoBytes(row.videoPath),
+      // 流媒体书带上重开信息，对端据此落同 uid 的行（拍板台 Z2OhxAjKVv）。
+      stream:
+          isSyncableStreamVideo(bookUid: row.bookUid, videoPath: row.videoPath)
+          ? RemoteStreamVideoEntry(
+              url: row.videoPath.trim(),
+              streamSpecJson: row.streamSpecJson,
+              addedAt: row.localAddedAt ?? row.importedAt,
+            )
+          : null,
     );
   }
 
@@ -372,8 +381,8 @@ mixin _LocalLibraryHostVideos
     ];
   }
 
-  /// 纯解析 `playlistJson` 为 [PlaylistEntry] 列表（坏 JSON 返回空）。host 端按集反查
-  /// 文件 path 用（[_resolveEpisodeVideoPath]）。
+  /// 纯解析 `playlistJson` 为 [PlaylistEntry] 列表（坏 JSON 返回空）。下标与
+  /// [videoBookEpisodePath]（按集反查文件）一致。
   List<PlaylistEntry> _parsePlaylistEntries(String? playlistJson) {
     if (playlistJson == null || playlistJson.isEmpty) {
       return const <PlaylistEntry>[];
@@ -394,20 +403,17 @@ mixin _LocalLibraryHostVideos
   ///
   /// **DB-only 安全契约**：path 永远来自 host 自己 `playlistJson` 解析，绝不接受外部
   /// 传入。[episodeIndex]<=0 或非播放列表时回退 `videoPath`（当前选中集 / 单视频）。
-  /// 越界 [episodeIndex] 返回 null（安全拒绝）。
+  /// 越界 [episodeIndex] 返回 null（安全拒绝）。判据是 [videoBookEpisodePath]，与
+  /// host 字幕任务按集取文件同一份。
   Future<String?> _resolveEpisodeVideoPath(String id, int episodeIndex) async {
     if (episodeIndex < 0) return null; // 非法下标安全拒绝。
     final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
     if (row == null) return null;
-    // 当前集 / 单视频（episodeIndex==0）：用 row.videoPath，等价旧行为。
-    if (episodeIndex == 0) {
-      return row.videoPath.isEmpty ? null : row.videoPath;
-    }
-    // 播放列表按集：DB 解析 playlistJson，越界安全拒绝。
-    final List<PlaylistEntry> entries = _parsePlaylistEntries(row.playlistJson);
-    if (episodeIndex >= entries.length) return null;
-    final String path = entries[episodeIndex].path;
-    return path.isEmpty ? null : path;
+    return videoBookEpisodePath(
+      videoPath: row.videoPath,
+      playlistJson: row.playlistJson,
+      episodeIndex: episodeIndex,
+    );
   }
 
   /// 按 [id]（即 `VideoBooks.bookUid`）反查真实视频文件。
@@ -555,12 +561,67 @@ mixin _LocalLibraryHostVideos
     if (endMs <= startMs) return null;
     final File? file = await resolveVideoFile(id, episodeIndex: episodeIndex);
     if (file == null) return null;
+    return _clipAudioFrom(
+      file.path,
+      startMs: startMs,
+      endMs: endMs,
+      audioStreamIndex: audioStreamIndex,
+      audioStreamCount: audioStreamCount,
+      audioChannels: audioChannels,
+      audioBitrate: audioBitrate,
+    );
+  }
+
+  /// 远端原盘会话：按（盘, title）裁音频（见 [VideoDiscTitleAudioHost]）。title 的成员
+  /// 路径只由 [id] 那一行自己的盘根拼出（[videoBookDiscTitlePath]），ffmpeg 经蓝光后端
+  /// 按播放列表读盘上的 m2ts，与 [clipVideoAudio] 对蓝光行同一条路。
+  @override
+  Future<File?> clipVideoDiscTitleAudio(
+    String id, {
+    required String discTitle,
+    required int startMs,
+    required int endMs,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    int audioChannels = 1,
+    String audioBitrate = '64k',
+  }) async {
+    if (endMs <= startMs) return null;
+    final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
+    if (row == null) return null;
+    final String? path = videoBookDiscTitlePath(
+      videoPath: row.videoPath,
+      discTitle: discTitle,
+    );
+    if (path == null || !await hasLocalMediaFile(path)) return null;
+    return _clipAudioFrom(
+      path,
+      startMs: startMs,
+      endMs: endMs,
+      audioStreamIndex: audioStreamIndex,
+      audioStreamCount: audioStreamCount,
+      audioChannels: audioChannels,
+      audioBitrate: audioBitrate,
+    );
+  }
+
+  /// 把本机媒体 [inputPath] 的 `[startMs, endMs)` 裁进独立临时目录（调用方读完删该
+  /// 目录）；失败清掉临时目录并返回 null。
+  Future<File?> _clipAudioFrom(
+    String inputPath, {
+    required int startMs,
+    required int endMs,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    required int audioChannels,
+    required String audioBitrate,
+  }) async {
     final Directory tmp = await Directory.systemTemp.createTemp(
       'fushi_clip_audio',
     );
     final String out = p.join(tmp.path, 'clip.aac');
     final String? result = await extractAudioSegmentViaFfmpeg(
-      inputPath: file.path,
+      inputPath: inputPath,
       startMs: startMs,
       endMs: endMs,
       outputPath: out,
@@ -971,7 +1032,7 @@ mixin _LocalLibraryHostVideos
     _assertSafeVideoId(id);
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
-    if (lease == null) throw StateError('视频刮削资料正在清理');
+    if (lease == null) throw VideoScrapeMaintenanceActiveError();
     try {
       await _runExclusive(
         () => VideoCoverMutationGate.runExclusive(() async {
@@ -1095,6 +1156,51 @@ mixin _LocalLibraryHostVideos
     }
   }
 
+  /// 收下对端注册的流媒体书（[StreamVideoSyncHost]，拍板台 Z2OhxAjKVv）。
+  ///
+  /// 只建行、不碰任何视频字节：URL + 重开规格 + 标题。host 已有同 uid 的行一律不动
+  /// （host 的标题 / 封面 / 进度是它自己的真相）。删除墓碑闸门在端点（409），这里
+  /// 不重复；新建的行经 `upsertVideoBook` 清掉同 uid 的旧墓碑——端点已确认这是删除
+  /// 之后的重新加入。YouTube 行随后尽力补一张缩略图封面，失败只是没封面。
+  @override
+  Future<bool> registerStreamVideo(
+    String id,
+    StreamVideoRegistration entry,
+  ) async {
+    if (!isSyncableStreamVideo(bookUid: id, videoPath: entry.url)) {
+      throw ArgumentError.value(id, 'id', 'not a syncable stream video');
+    }
+    bool created = false;
+    await _runExclusive(() async {
+      if (await _db.getVideoBookByBookUid(id) != null) return;
+      await _db.upsertVideoBook(
+        streamVideoRowCompanion(
+          bookUid: id,
+          title: entry.title,
+          url: entry.url,
+          streamSpecJson: entry.streamSpecJson,
+          importedAt: entry.importedAt,
+          nowMs: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      created = true;
+    });
+    if (created) {
+      try {
+        await backfillStreamVideoThumbnailCover(
+          _db,
+          bookUid: id,
+          url: entry.url,
+          coversDir: _videoCoversDirectory ?? await VideoStorage.coversDir(),
+        );
+      } catch (error, stack) {
+        // best-effort：封面失败不影响注册成功。
+        engineLog.log('sync.streamVideo.cover', error, stack);
+      }
+    }
+    return created;
+  }
+
   /// 接收 client 上传的视频外挂字幕并落到视频同目录（BUG-964，client→host live push）。
   ///
   /// 落盘名 = `<host 视频文件 stem><suffix>`，与 [resolveVideoSubtitle] 的同 stem
@@ -1126,8 +1232,12 @@ mixin _LocalLibraryHostVideos
     File subtitleFile, {
     required String id,
     required String format,
+    int episodeIndex = 0,
   }) async {
     _assertSafeVideoId(id);
+    if (episodeIndex < 0) {
+      throw ArgumentError.value(episodeIndex, 'episodeIndex', 'negative');
+    }
     final String? suffix = defaultSidecarSubtitleSuffix(
       format,
       langCode: _videoSubtitleLangCode,
@@ -1137,8 +1247,38 @@ mixin _LocalLibraryHostVideos
     }
     await _runExclusive(() async {
       final VideoBookRow row = await _videoRowWithLocalFile(id);
-      await _displaceSidecarsFor(row.videoPath, suffix);
-      await _placeVideoSubtitleSidecar(subtitleFile, row: row, suffix: suffix);
+      if (episodeIndex == 0) {
+        await _displaceSidecarsFor(row.videoPath, suffix);
+        await _placeVideoSubtitleSidecar(
+          subtitleFile,
+          row: row,
+          suffix: suffix,
+        );
+        return;
+      }
+      // 播放列表第 N 集：落到那一集文件旁。行上的 `subtitleSource` / cue 属于第 0 集
+      // （[resolveVideoSubtitle] 只对第 0 集读它），这里不碰；第 N 集的默认字幕由
+      // sidecar 优先级决定，让位规则与第 0 集相同。
+      final String? episodePath = videoBookEpisodePath(
+        videoPath: row.videoPath,
+        playlistJson: row.playlistJson,
+        episodeIndex: episodeIndex,
+      );
+      if (episodePath == null ||
+          lacksLocalMediaFile(episodePath) ||
+          await _existingFilePathAsync(episodePath) == null) {
+        throw StateError('video $id has no local episode $episodeIndex');
+      }
+      await _displaceSidecarsFor(episodePath, suffix);
+      await _moveFileInto(
+        subtitleFile,
+        File(
+          p.join(
+            p.dirname(episodePath),
+            '${p.basenameWithoutExtension(episodePath)}$suffix',
+          ),
+        ),
+      );
     });
     return suffix;
   }
@@ -1336,7 +1476,7 @@ mixin _LocalLibraryHostVideos
         .toLowerCase();
     List<AudioCue> cues = const <AudioCue>[];
     try {
-      cues = parseSubtitleCues(
+      cues = await parseSubtitleCues(
         content: await readTextWithEncoding(File(preferred)),
         format: ext,
         bookUid: id,

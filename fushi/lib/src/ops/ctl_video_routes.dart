@@ -40,6 +40,10 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_work_loader.dar
     show lookupOfWork;
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart'
     show kSelectableVideoMetadataProviders;
+import 'package:fushi_engine/media/video/metadata/video_collection_relation_sync.dart'
+    show TmdbCollectionPartsRefreshResult, productionAniDbXmlDirectory;
+import 'package:fushi_engine/media/video/metadata/video_series_relation_refresh.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 
@@ -49,6 +53,7 @@ import 'package:fushi/src/media/video/metadata/video_scrape_runtime.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/ops/ctl_video_organize_routes.dart';
 import 'package:fushi/src/ops/ctl_video_player_routes.dart';
 import 'package:fushi/src/ops/ctl_video_support.dart';
 import 'package:fushi/src/ops/ctl_video_subtitle_fetch_routes.dart';
@@ -76,6 +81,7 @@ List<CtlRoute> buildVideoCtlRoutes(OpContext context) {
     CtlRoute.get('/api/admin/video/scrape', ctl.scrapeStatus),
     CtlRoute.post('/api/admin/video/scrape', ctl.scrape),
     CtlRoute.post('/api/admin/video/scrape/cancel', ctl.cancelScrape),
+    CtlRoute.post('/api/admin/video/relations/refresh', ctl.refreshRelations),
     CtlRoute.get(
       '/api/admin/video/scrape/confirmation',
       ctl.pendingConfirmation,
@@ -84,6 +90,8 @@ List<CtlRoute> buildVideoCtlRoutes(OpContext context) {
       '/api/admin/video/scrape/confirmation',
       ctl.answerConfirmation,
     ),
+    // ── 整理（作品明细 / 手动季集 / 整理文件名 / 点名搬动） ───────────────────
+    ...buildVideoOrganizeCtlRoutes(context),
     // ── 发现 ──────────────────────────────────────────────────────────────
     CtlRoute.get('/api/admin/video/discovery/search', ctl.discover),
     CtlRoute.get(
@@ -148,6 +156,23 @@ List<VideoResourceLearningFit> rankVideoResourcesForLearning(
     ...fits.where(unfit),
   ];
 }
+
+/// `POST /api/admin/video/relations/refresh` 的响应体（没配 TMDB 时不带 `tmdb`）。
+Map<String, Object?> videoSeriesRelationRefreshJson(
+  VideoSeriesRelationRefreshResult r,
+) => <String, Object?>{
+  if (r.tmdb case final TmdbCollectionPartsRefreshResult t)
+    'tmdb': <String, Object?>{
+      'missing': t.missing,
+      'refreshed': t.refreshed,
+      'requests': t.requests,
+      'failed': t.failed,
+    },
+  'works': r.backfill.works,
+  'worksWithRelations': r.backfill.worksWithRelations,
+  'rows': r.backfill.rows,
+  'bound': r.backfill.bound,
+};
 
 typedef _ResourceEntry = ({
   VideoMediaReference media,
@@ -219,8 +244,8 @@ class _VideoCtl {
             await planScrapeWorkForVideoBook(_db, bookUid);
         if (planned == null) {
           throw CtlFailure.notFound(
-            '${id.stableKey} 不在任何本机视频来源的刮削计划里'
-            '（手动导入 / 远端下载的视频、目录分组来源或特典不参与刮削）',
+            '${id.stableKey} 不在任何本机视频的刮削计划里'
+            '（远端流 / 媒体服务器视频、目录分组导入或特典不参与刮削）',
           );
         }
         return planned;
@@ -242,10 +267,9 @@ class _VideoCtl {
 
   // ── 作品列表 ────────────────────────────────────────────────────────────
 
-  Future<List<SourceLibraryRow>> _localVideoSources() async =>
-      (await _db.getMediaSourcesByKind('video'))
-          .where((SourceLibraryRow s) => s.transport == 'local')
-          .toList(growable: false);
+  /// 本机视频来源 + 无来源本机视频（`sourceId` 为 null 的那条范围）。
+  Future<List<SourceLibraryRow>> _localVideoSources() =>
+      localVideoScrapeScopes(_db);
 
   Future<VideoMetadataWorkRow?> _workRow(VideoSourceScrapeWork work) =>
       work.collection == null
@@ -258,8 +282,9 @@ class _VideoCtl {
   ) => <String, Object?>{
     'id': work.stableKey,
     'title': work.title,
-    'sourceId': source.id,
-    'source': source.label,
+    // 无来源本机视频：sourceId / source 为 null。
+    'sourceId': persistedScrapeSourceId(source),
+    'source': isSourcelessVideoScrapeScope(source) ? null : source.label,
     'members': work.members.length,
   };
 
@@ -588,6 +613,24 @@ class _VideoCtl {
     }
     controller.cancel();
     return <String, Object?>{'cancelled': true};
+  }
+
+  /// `video relations`：补齐系列关系（库管家 ⑤ 作品层同一个
+  /// [refreshVideoSeriesRelations]）。旧 TMDB 电影快照缺合集成员表的按合集去重
+  /// 各请求一次写回快照，再跑不联网的存量补填；只补系列关系，不改作品资料。
+  /// 关系网 / 作品图缓存随 `collection_relations` 表变更失效，这里不另行通知。
+  Future<Object?> refreshRelations(CtlCall call) async {
+    _requireVideoModule();
+    final VideoSeriesRelationRefreshResult r =
+        await refreshVideoSeriesRelations(
+          _db,
+          config: videoDiscoveryScrapeConfig(
+            appModel.prefsRepo,
+            uiLocaleTag: appModel.appLocale.toLanguageTag(),
+          ),
+          aniDbXmlDirectory: productionAniDbXmlDirectory,
+        );
+    return videoSeriesRelationRefreshJson(r);
   }
 
   // ── 待确认（交互式批次里的歧义作品） ────────────────────────────────────

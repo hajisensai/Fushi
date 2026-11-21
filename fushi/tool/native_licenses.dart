@@ -11,8 +11,11 @@
 //   * `native/*/Cargo.lock`（自动发现：新加一个 Rust 原生模块，重跑即覆盖，无需改本工具）；
 //   * `native/third_party_licenses/manifest.json`：
 //     - `rust`：目标平台 / 预备步骤配置，以及 `licenseTexts`（crates.io 包内没有许可文件的
-//       crate，登记从上游对应提交取来的原文；没登记的退到 SPDX 标准文本并在产物
-//       `pendingUpstreamLicense` 与运行输出里列出）；
+//       crate，登记从上游对应提交取来的原文；没登记的退到 SPDX 标准文本、缺版权行，记进产物
+//       `pendingUpstreamLicense`，本工具以非零退出、守卫判红——这一栏必须为空）。
+//       上游确实没有许可文件 / 版权行的 crate 也要登记：`texts: []`（或只放上游那份不带
+//       版权行的原文并 `appendSpdx: true`），`upstream` 写查证的仓库 / 提交，`note` 写依据
+//       （查过哪些路径与历史、为什么没有版权行可抄）——这就是显式豁免表；
 //     - `cxx`：本仓 native 模块编进去的 C/C++ 库手写清单；
 //     - `prebuilt`：pub 包下载 / 打包进 app 的预编译原生库（libmpv 及其依赖、onnxruntime、
 //       sqlite3、pdfium 等）——Flutter `LicenseRegistry` 只收 pub 包自己的 LICENSE，不含这些；
@@ -432,8 +435,8 @@ Future<void> main(List<String> args) async {
     'generatedBy': 'fushi/tool/native_licenses.dart',
     'regenerate': kNativeLicenseRegenerateCommand,
     'inputs': computeNativeLicenseInputs(repoRoot),
-    // 包内没有许可文件、清单 rust.licenseTexts 也还没登记上游原文的 crate：
-    // 目前只附 SPDX 标准文本（缺版权行）。补法见清单的 `$comment`。
+    // 包内没有许可文件、清单 rust.licenseTexts 也还没登记的 crate：只附了 SPDX 标准文本
+    // （缺版权行）。守卫断言这一栏为空；补法见文件头 `licenseTexts` 一段。
     'pendingUpstreamLicense': (pendingUpstream..sort()),
     'licenses': <Map<String, dynamic>>[
       for (final String h in hashes)
@@ -474,13 +477,22 @@ Future<void> main(List<String> args) async {
     'pub 包预编译库条目 ${count('prebuilt:')} 个、去重后许可文本 ${hashes.length} 份。',
   );
   if (pendingUpstream.isNotEmpty) {
-    stdout.writeln(
-      '注意：${pendingUpstream.length} 个 crate 包内没有许可文件、只附了 SPDX 标准文本'
-      '（缺版权行）。从上游对应提交取原文放进 native/third_party_licenses/texts/crates/，'
-      '再登记到清单 rust.licenseTexts：\n  ${pendingUpstream.join('\n  ')}',
-    );
+    // 产物照常写出（便于对照），但以非零退出：守卫
+    // `native_license_registry_guard_test.dart` 断言 pendingUpstreamLicense 为空。
+    stderr.writeln(nativeLicensePendingFixHint(pendingUpstream));
+    exitCode = 1;
   }
 }
+
+/// pendingUpstreamLicense 非空时的修法提示（生成器与守卫共用同一段话）。
+String nativeLicensePendingFixHint(List<String> pending) =>
+    '${pending.length} 个 crate 包内没有许可文件、清单 rust.licenseTexts 也没登记，'
+    '只附了 SPDX 标准文本（缺版权行）：\n  ${pending.join('\n  ')}\n'
+    '修法：从 crate 的 .cargo_vcs_info.json 指向的上游提交取许可原文，放进 '
+    'native/third_party_licenses/texts/crates/<owner>-<repo>-<sha8>/ 并登记到清单 '
+    'rust.licenseTexts；上游确实没有许可文件 / 版权行的，登记 texts: []（或不带版权行的'
+    '上游原文 + appendSpdx: true），upstream 写查证的仓库 / 提交，note 写依据。'
+    '改完重跑 $kNativeLicenseRegenerateCommand';
 
 /// 某些 native crate 依赖构建时才检出的源码（例如 fushi_anki_sync 的 `.anki-src`）。
 /// 清单里写 `prepare: {ifMissing, command}`，缺目录时先执行 command（在 crate 目录下）。
@@ -524,7 +536,8 @@ List<File> _rustLicenseFiles(Map<String, dynamic> pkg) {
         ..._licenseFilesIn(Directory('${dir.path}/LICENSES'), any: true),
     ];
     final Map<String, File> unique = <String, File>{
-      for (final File f in found) _canon(f.path): f,
+      for (final File f in found)
+        if (registry) _canon(f.path): f else ..._resolvedEntry(f),
     };
     if (unique.isNotEmpty) {
       return unique.values.toList()
@@ -540,6 +553,113 @@ List<File> _rustLicenseFiles(Map<String, dynamic> pkg) {
     dir = parent;
   }
   return <File>[];
+}
+
+/// 非 registry 依赖的许可文件先过 [resolveNativeLicenseSymlink]，按解析后的真实路径去重。
+Map<String, File> _resolvedEntry(File f) {
+  final File resolved = resolveNativeLicenseSymlink(f);
+  return <String, File>{_canon(resolved.path): resolved};
+}
+
+/// 把 git 检出里的符号链接许可文件解析成它指向的真实文件。
+///
+/// cargo 的 git 依赖是一份 git 检出（例如 rust-url 子 crate 的 `LICENSE-MIT` 是指向
+/// `../LICENSE-MIT` 的符号链接，git 模式 `120000`）。检出时 `core.symlinks=false`
+/// （Windows 没有建链权限时 git / libgit2 的默认）会把链接写成**内容为目标路径的普通文本**，
+/// 直接读就把 `../LICENSE-MIT` 这行路径当成许可原文；能建链的环境读到的是真原文——
+/// 同一份 Cargo.lock 在不同机器上生成的产物就不一致。
+///
+/// 判据只认 git 索引里的模式 `120000`，不猜文件内容：是符号链接条目时，链接目标取自
+/// git 对象（与检出成真链接还是占位文本无关），相对链接所在目录解析，链式链接逐跳解析。
+/// 不在任何 git 检出里、或不是符号链接条目的文件原样返回（操作系统层面的真链接读时自然跟随）。
+/// 最近的 `.git` 不跟踪该文件（外层仓库）、目标越出检出根或不存在时抛 [StateError]，
+/// 不静默退回占位文本。
+File resolveNativeLicenseSymlink(File file) {
+  File current = file.absolute;
+  for (int hop = 0; hop < 16; hop++) {
+    final Directory? root = _gitCheckoutRoot(current.parent);
+    if (root == null) return current;
+    final String rel = _relativePath(root, current);
+    final ProcessResult ls = Process.runSync('git', <String>[
+      '--literal-pathspecs',
+      'ls-files',
+      '-s',
+      '--',
+      rel,
+    ], workingDirectory: root.path);
+    if (ls.exitCode != 0) {
+      throw StateError('git ls-files 失败（${root.path}，$rel）：${ls.stderr}');
+    }
+    final String entry = (ls.stdout as String).trim();
+    if (entry.isEmpty) {
+      // 最近的 `.git` 不跟踪这个文件：它是外层仓库（依赖本身是没有 `.git` 的拷贝 /
+      // 解压目录，或 CARGO_HOME 落在别的仓库里），判不出是不是链接，拒绝静默读原文。
+      throw StateError(
+        '${current.path} 不在最近的 git 检出 ${root.path} 的索引里，'
+        '无法判定是否为符号链接；依赖须是带 .git 的完整检出',
+      );
+    }
+    if (!entry.startsWith('120000 ')) return current;
+    final ProcessResult blob = Process.runSync('git', <String>[
+      '--literal-pathspecs',
+      'cat-file',
+      'blob',
+      ':$rel',
+    ], workingDirectory: root.path);
+    if (blob.exitCode != 0) {
+      throw StateError('git cat-file 失败（${root.path}，$rel）：${blob.stderr}');
+    }
+    final String target = (blob.stdout as String).trim();
+    final List<String> segments = <String>[
+      ..._splitPath(_relativePath(root, current.parent)),
+    ];
+    if (target.startsWith('/') || RegExp(r'^[A-Za-z]:').hasMatch(target)) {
+      throw StateError('${file.path} 是指向绝对路径 $target 的符号链接，拒绝解析');
+    }
+    for (final String s in _splitPath(target)) {
+      if (s == '.') continue;
+      if (s == '..') {
+        if (segments.isEmpty) {
+          throw StateError(
+            '${file.path} 的符号链接目标 $target 越出 git 检出根 ${root.path}',
+          );
+        }
+        segments.removeLast();
+      } else {
+        segments.add(s);
+      }
+    }
+    final File next = File(<String>[root.path, ...segments].join('/'));
+    if (!next.existsSync()) {
+      throw StateError('${file.path} 的符号链接目标 $target 不存在（${next.path}）');
+    }
+    current = next;
+  }
+  throw StateError('${file.path} 的符号链接层数过多');
+}
+
+/// 往上找含 `.git`（目录或 worktree / 子模块的 `.git` 文件）的目录。
+Directory? _gitCheckoutRoot(Directory start) {
+  Directory dir = start.absolute;
+  while (true) {
+    if (Directory('${dir.path}/.git').existsSync() ||
+        File('${dir.path}/.git').existsSync()) {
+      return dir;
+    }
+    final Directory parent = dir.parent;
+    if (parent.path == dir.path) return null;
+    dir = parent;
+  }
+}
+
+List<String> _splitPath(String path) =>
+    path.split(RegExp(r'[/\\]')).where((String s) => s.isNotEmpty).toList();
+
+/// [entity] 相对 [root] 的路径（`/` 分隔；同一目录时为空串）。
+String _relativePath(Directory root, FileSystemEntity entity) {
+  final List<String> base = _splitPath(root.absolute.path);
+  final List<String> full = _splitPath(entity.absolute.path);
+  return full.sublist(base.length).join('/');
 }
 
 List<File> _licenseFilesIn(Directory dir, {bool any = false}) => <File>[

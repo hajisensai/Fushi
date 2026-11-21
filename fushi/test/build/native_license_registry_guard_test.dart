@@ -72,6 +72,15 @@ void main() {
         isNot(anyOf(contains('<!doctype html'), contains('<html'))),
         reason: '$name 是网页不是许可原文；检查 native/third_party_licenses/ 里对应的来源文件',
       );
+      // BUG-4694：core.symlinks=false 的 git 检出把符号链接写成内容为目标路径的文本，
+      // 生成器若读了它，产物里就是「../LICENSE-MIT」这样一行相对路径。
+      expect(
+        RegExp(r'^\.\.?[/\\]\S+$').hasMatch(text.trim()),
+        isFalse,
+        reason:
+            '$name 只有一行相对路径（${text.trim()}），是 git 符号链接占位文本不是许可原文；'
+            '检查 resolveNativeLicenseSymlink 接线后重跑 $kNativeLicenseRegenerateCommand',
+      );
       expect(
         nativeLicenseFingerprint(text).substring(0, 16),
         name.substring(0, name.length - '.txt'.length),
@@ -128,7 +137,49 @@ void main() {
     }
   });
 
-  test('包内无许可文件的 crate：pendingUpstreamLicense 与条目一致（并列出待补原文的 crate）', () {
+  // BUG-4772：发布流程（release-desktop.yml → tools/bundle_7za.ps1）往 Windows 包里放的
+  // 7-Zip（7z.exe + 7z.dll，含 unRAR 派生代码）不是 pub 包带的，以前没进这份清单，开源许可页
+  // 里看不到它。钉住：脚本钉的版本必须有一条对应的 prebuilt 条目，并带上安装包里的 License.txt。
+  test('tools/bundle_7za.ps1 随包的 7-Zip 登记在 prebuilt 里且版本与脚本一致', () {
+    final String script = File('../tools/bundle_7za.ps1').readAsStringSync();
+    final RegExpMatch? pinned = RegExp(
+      r"^\$Version = '([^']+)'",
+      multiLine: true,
+    ).firstMatch(script);
+    expect(pinned, isNotNull, reason: 'tools/bundle_7za.ps1 里找不到 \$Version');
+    final Map<String, dynamic> manifest =
+        jsonDecode(File('../$kNativeLicenseManifestPath').readAsStringSync())
+            as Map<String, dynamic>;
+    final List<Map<String, dynamic>> entries = <Map<String, dynamic>>[
+      for (final dynamic raw in manifest['prebuilt'] as List<dynamic>)
+        if (((raw as Map<String, dynamic>)['component'] as String).contains(
+          'tools/bundle_7za.ps1',
+        ))
+          raw,
+    ];
+    expect(entries, hasLength(1), reason: '7-Zip 没有（或重复）登记在手写清单的 prebuilt 节');
+    final Map<String, dynamic> entry = entries.single;
+    expect(entry['version'], pinned!.group(1), reason: '清单版本与脚本钉的版本不一致');
+    expect(entry['platforms'], <String>['windows']);
+    expect(entry['license'] as String, contains('LGPL-2.1'));
+    expect(entry['license'] as String, contains('unRAR'));
+    final List<String> texts = (entry['texts'] as List<dynamic>).cast<String>();
+    final String licenseTxt = texts.firstWhere(
+      (String t) => t.endsWith('/License.txt'),
+      orElse: () => '',
+    );
+    expect(licenseTxt, isNotEmpty, reason: '缺 7-Zip 安装包里的 License.txt 原文');
+    expect(
+      File('../$licenseTxt').readAsStringSync(),
+      contains('unRAR license restriction'),
+    );
+  });
+
+  // 拍板 left3635（PR #3635 遗留）：新加的随包 crate 包内没有许可文件时，生成器以前只打印
+  // 提示、守卫不红，6 个 crate 就这样只附了 SPDX 标准正文、缺版权行。现在 pending 必须为空：
+  // 能补上游原文的补原文，上游确实没有版权声明的（rusty-chromaprint、selectors、seahash 等）
+  // 在清单 rust.licenseTexts 里显式登记并写明依据，见下一条。
+  test('包内无许可文件的 crate 都已登记上游原文或显式豁免（pendingUpstreamLicense 为空）', () {
     final Map<String, dynamic> index = readIndex();
     final List<String> pending =
         (index['pendingUpstreamLicense'] as List<dynamic>).cast<String>();
@@ -139,16 +190,35 @@ void main() {
           if ((raw as Map<String, dynamic>)['textSource'] == 'spdx-fallback')
             '${raw['name']}@${raw['version']}',
       ]..sort(),
+      reason:
+          'pendingUpstreamLicense 与 components 的 spdx-fallback 条目对不上（产物被手改了？）',
     );
-    // 不判红：这些 crate 仍附了 SPDX 标准文本，只是缺上游版权行。在输出里列出，提醒补原文
-    // （放进 native/third_party_licenses/texts/crates/ 并登记到清单 rust.licenseTexts）。
-    if (pending.isNotEmpty) {
-      // ignore: avoid_print
-      print(
-        '提示：${pending.length} 个 crate 包内没有许可文件、清单也未登记上游原文，'
-        '目前只附 SPDX 标准文本：\n  ${pending.join('\n  ')}',
-      );
-    }
+    expect(pending, isEmpty, reason: nativeLicensePendingFixHint(pending));
+  });
+
+  test('rust.licenseTexts 每条都写明上游出处；没有版权行可抄的豁免条目必须写依据', () {
+    final Map<String, dynamic> manifest =
+        jsonDecode(File('../$kNativeLicenseManifestPath').readAsStringSync())
+            as Map<String, dynamic>;
+    final Map<String, dynamic> licenseTexts =
+        ((manifest['rust'] as Map<String, dynamic>)['licenseTexts']
+            as Map<String, dynamic>?) ??
+        <String, dynamic>{};
+    final List<String> problems = <String>[];
+    licenseTexts.forEach((String crate, dynamic raw) {
+      final Map<String, dynamic> e = raw as Map<String, dynamic>;
+      String field(String k) => (e[k] is String) ? (e[k] as String).trim() : '';
+      final List<dynamic> texts = (e['texts'] as List<dynamic>?) ?? <dynamic>[];
+      if (field('upstream').isEmpty) {
+        problems.add('$crate 缺 upstream（查证许可的上游仓库 / 提交）');
+      }
+      // texts 为空 = 只附 SPDX 标准正文；appendSpdx = 上游文件不带正文。两种都没有现成的
+      // 版权行，是显式豁免，必须写清查过什么、为什么没有版权行可抄。
+      if ((texts.isEmpty || e['appendSpdx'] == true) && field('note').isEmpty) {
+        problems.add('$crate 是豁免条目（texts 为空或 appendSpdx），缺 note 写明依据');
+      }
+    });
+    expect(problems, isEmpty, reason: problems.join('\n'));
   });
 
   test('pubspec 登记了 assets/licenses/native/', () {

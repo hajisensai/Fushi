@@ -128,6 +128,44 @@ abstract interface class RemoteVideoStreamHeaders {
   Map<String, String> get httpHeaderFields;
 }
 
+/// 一集整集音频的可读地址（[RemoteVideoSubtitleAudioRefresh.freshSubtitleAudio]）。
+class RemoteVideoSubtitleAudio {
+  const RemoteVideoSubtitleAudio({
+    required this.url,
+    this.headers = const <String, String>{},
+    this.audioOnly = false,
+  });
+
+  /// 可交给 ffmpeg 读的地址（与播放同一条取流路径改写过的形式）。
+  final String url;
+
+  /// 读 [url] 要带的请求头（防盗链 Referer / User-Agent / Cookie 等）。
+  final Map<String, String> headers;
+
+  /// [url] 是纯音频流（YouTube audio-only / 扩展给的外挂音轨）：只有一条音轨，播放器
+  /// 的音轨下标不适用。false = 音视频同轨的流，按播放器当前音轨取。
+  final bool audioOnly;
+}
+
+/// 「拉整集音频之前现取一条新地址」的可选能力（字幕生成把在线流的整集音频拉到本机）。
+///
+/// 在线源的地址大多是短 TTL 的签名链接（Aniyomi hoster 几分钟就作废，BUG-2617；
+/// googlevideo 直链数小时；AList 临期 `raw_url`）。播放页起播时取到的那一条，到用户
+/// 点「生成字幕」时可能早已过期，拉整集音频又要持续好几分钟——所以开拉前由来源**现取**
+/// 一条，且**不改动播放会话**（不换当前流、不改播放用的请求头、不开新的转码会话）。
+///
+/// 媒体服务器（Jellyfin / Emby / Plex：地址带长期凭据，重取会另开转码会话）与云盘流
+/// （本机中继逐个 Range 现签）不实现本能力，直接读当前播放的地址。
+abstract interface class RemoteVideoSubtitleAudioRefresh {
+  /// 现取视频 [id] 当前所播那条流的整集音频地址。[currentAudioUrl] 是播放器当前正从
+  /// 外挂音轨放出声音时那条外挂音轨的原地址（没有为 null）：来源据此在新取到的候选里
+  /// 挑同一条音轨，而不是退回默认配音。
+  Future<RemoteVideoSubtitleAudio> freshSubtitleAudio(
+    String id, {
+    String? currentAudioUrl,
+  });
+}
+
 /// 「host 能回传图形字幕整轨」的可选能力（互联 host：它有原文件）。
 ///
 /// 图形字幕（PGS / VobSub / DVB）由 libmpv 自绘，播放页要每句的起止才能制卡锚句；
@@ -245,6 +283,42 @@ abstract interface class RemoteVideoPlaybackStop {
   Future<void> stopRemoteVideoPlayback(String id, int positionMs);
 }
 
+/// 「持有要释放的连接」的可选能力（BUG-5012）：http 客户端、来源直链解析器（AList
+/// 登录态、SFTP 的 SSH 连接）。
+///
+/// 播放页只关**自己现建**的客户端（流媒体书 / 媒体服务器入库条目），经
+/// `RemoteClientTeardown` 等退出收尾（断点落库、停止上报）用完再关；调用方传进来的
+/// 客户端（互联 host、库页的媒体服务器浏览器）归调用方，播放页不碰。
+abstract interface class RemoteVideoClientConnections {
+  /// 释放这只客户端持有的连接；之后不得再用它发请求。
+  void close();
+}
+
+/// 「当前线路断了，换一条接着用」的可选能力（媒体服务器：Plex / Jellyfin 家族，拍板台
+/// design-media-server-failover-transport）。
+///
+/// 元数据请求在传输失败时由协议层自己换线路重试，播放页不用管；这里给的是没有
+/// Dart 侧请求可失败的那种断线：播放器手里的流在播放途中断了。播放页以
+/// `MediaServerStreamInterrupted` 问一次，返回 true = 这只客户端已改走另一条可达
+/// 线路（之后现取的流地址带新 host），调用方按当前位置重新取流重载；false = 没有
+/// 别的可达线路、或当前线路其实还通（流断另有原因），照旧处理。
+abstract interface class RemoteVideoRouteFailover {
+  Future<bool> failoverRemoteVideoRoute(Object error);
+}
+
+/// 「只摘会话、停转码，不上报停止」的可选能力（BUG-5020）。
+///
+/// 卡片片段回看（BUG-3490）不得改服务器进度，所以 [RemoteVideoPlaybackStop] 在回看中
+/// 一律不发；可 Jellyfin / Emby 的转码 ffmpeg 只在客户端显式停（`DELETE
+/// /Videos/ActiveEncodings`）时才收，回看那一程协商出来的转码会话于是在服务器上空转到
+/// 它自己的超时。本能力只做 Stop 里「释放服务端资源」的那一半：摘下 [id] 最早一条未
+/// 结束的会话登记、停掉它的转码，不发 `/Sessions/Playing/Stopped`（那一步会判已看、
+/// 写断点）。回看闸门（`SourceReviewRemoteReportGate.stop`）在回看分支调它。
+abstract interface class RemoteVideoPlaybackDetach {
+  /// 丢掉视频 [id] 最早一条未结束的播放会话，并释放它在服务端占着的转码。
+  Future<void> detachRemoteVideoPlayback(String id);
+}
+
 /// 「播放页不再用这次播放的流」的可选能力（BUG-4461）：来源借此释放这次播放在服务端
 /// 占着的资源（互联 host 的流票与它们的转码）。
 ///
@@ -359,6 +433,40 @@ abstract interface class RemoteVideoQualityLimit {
   /// [kRemoteVideoQualityOriginal] = 原画（仅 [offersOriginalQuality] 的来源）。
   int get qualityPresetIndex;
   set qualityPresetIndex(int index);
+}
+
+/// 「卡片来源字节身份」的可选能力（拍板台 IFCPPprIpT）：远端视频的字节在 host 上，
+/// 本机没有文件可算指纹，由 host 对它要串流的同一个文件算全文件 SHA-256（与本地
+/// 制卡的 `VideoSourceFingerprint` 同一口径）。只有互联 host 有原文件可算；Jellyfin /
+/// Emby / Plex / 在线源没有这一能力。
+abstract interface class RemoteVideoFingerprintSource {
+  /// 视频 [id] 第 [episodeIndex] 集（与 `remoteVideoStreamUrls` 同一下标）的 64 位小写
+  /// hex 指纹。host 不支持这一能力（老 host 没有端点）返回 null——调用方据此按
+  /// bookUid 身份放行。host 有端点却担保不了这份字节（条目 / 文件不在、读不了、
+  /// 回的值不合法）抛 [RemoteVideoFingerprintUnavailable]（BUG-4782）；网络失败抛错。
+  ///
+  /// [wait] 为 false（卡片回跳，拍板台 left3657）时不让 host 当场整文件哈希：host
+  /// 还没算过（后台预热没轮到）也返回 null、按 bookUid 放行，host 同时在后台开算，
+  /// 下次回跳就能核验。制卡要把真指纹写进卡片，用默认的 `wait: true`。
+  Future<String?> fetchRemoteVideoFingerprint(
+    String id, {
+    int episodeIndex = 0,
+    bool wait = true,
+  });
+}
+
+/// host 支持字节指纹、但这一次担保不了视频字节（BUG-4782）。与「老 host 不支持」
+/// （null）不同：回跳必须当核验失败，不能按 bookUid 放行。
+final class RemoteVideoFingerprintUnavailable implements Exception {
+  const RemoteVideoFingerprintUnavailable(this.id, this.reason);
+
+  final String id;
+
+  /// host 回的 reason（`not_found` / `unreadable`），或 client 侧判的 `malformed`。
+  final String reason;
+
+  @override
+  String toString() => 'RemoteVideoFingerprintUnavailable: $id ($reason)';
 }
 
 /// [RemoteVideoQualityLimit.qualityPresetIndex] 的「自动」哨兵。

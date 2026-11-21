@@ -251,6 +251,9 @@ class FeedbackTicketStore {
 class FeedbackPendingStore {
   FeedbackPendingStore(this.supportRoot);
 
+  /// 不算槽位的旁注 / 半成品后缀（`.part` 是 [copyFile] 还没复制完的本体）。
+  static const Set<String> _sidecars = <String>{'.type', '.name', '.part'};
+
   final Directory supportRoot;
 
   Directory get _root =>
@@ -261,6 +264,14 @@ class FeedbackPendingStore {
 
   File _typeFile(String id, String slot) =>
       File('${_file(id, slot).path}.type');
+
+  /// 样本文件的原文件名旁注（`<槽位>.name`）。
+  File _nameFile(String id, String slot) =>
+      File('${_file(id, slot).path}.name');
+
+  /// [copyFile] 复制中的本体（`<槽位>.part`）。
+  File _partFile(String id, String slot) =>
+      File('${_file(id, slot).path}.part');
 
   Future<void> put(String id, String slot, List<int> bytes) async {
     final File f = _file(id, slot);
@@ -292,6 +303,112 @@ class FeedbackPendingStore {
     return f;
   }
 
+  /// 把用户选的样本文件**复制**进待传区（原件是用户自己的文件，不动它），并记下原文件名
+  /// （[nameOf]，上传时作 `X-Fushi-File-Name`）。
+  Future<File> copyFile(
+    String id,
+    String slot,
+    File source, {
+    required String name,
+  }) async {
+    final File f = _file(id, slot);
+    await f.parent.create(recursive: true);
+    if (f.existsSync()) await f.delete();
+    // 槽位本体最后一步才以正式名出现（先复制成 `<槽位>.part`，旁注写完再 rename）：[scan]
+    // 只认本体，本体在 = 原文件名旁注一定在。旧顺序（本体先落地、`.name` 最后写）在两步之间
+    // 崩溃 / 断电会留下一个没有原文件名的待传槽位，上传时服务端按扩展名永久拒收、被丢掉。
+    final File part = _partFile(id, slot);
+    try {
+      await source.copy(part.path);
+      await _typeFile(
+        id,
+        slot,
+      ).writeAsString('application/octet-stream', flush: true);
+      await _nameFile(id, slot).writeAsString(name, flush: true);
+      return await part.rename(f.path);
+    } on Object {
+      // 没走完：半成品与已写的旁注都不留（本体此前已删，旁注不属于任何槽位；异常照样抛给
+      // 调用方记日志）。
+      await _deleteInterrupted(id, slot);
+      rethrow;
+    }
+  }
+
+  /// 把 [from]（另一处数据根的待传区）里的一个槽位**整项**并进本待传区：本体连同 `.type` /
+  /// `.name` 旁注一起复制（[from] 那份不动，由调用方整目录删）。[from] 里没有这个槽位返回
+  /// false。
+  ///
+  /// 顺序同 [copyFile]：本体先复制成 `<槽位>.part`，旁注写完再 rename 成正式名，[scan] 看到
+  /// 本体时旁注一定已齐；中途失败 / 崩溃留下的半成品由 [_deleteInterrupted] /
+  /// [discardInterrupted] 清。[from] 没有的旁注在这边也删掉，不让旧旁注张冠李戴。
+  Future<bool> adoptSlot(
+    FeedbackPendingStore from,
+    String id,
+    String slot,
+  ) async {
+    final File source = from._file(id, slot);
+    if (!source.existsSync()) return false;
+    final File f = _file(id, slot);
+    await f.parent.create(recursive: true);
+    if (f.existsSync()) await f.delete();
+    final File part = _partFile(id, slot);
+    try {
+      await source.copy(part.path);
+      await _adoptSidecar(from._typeFile(id, slot), _typeFile(id, slot));
+      await _adoptSidecar(from._nameFile(id, slot), _nameFile(id, slot));
+      await part.rename(f.path);
+      return true;
+    } on Object {
+      await _deleteInterrupted(id, slot);
+      rethrow;
+    }
+  }
+
+  /// [adoptSlot] 的一条旁注：源有就复制过来，源没有就删掉目标上残留的。
+  static Future<void> _adoptSidecar(File source, File target) async {
+    if (source.existsSync()) {
+      await source.copy(target.path);
+    } else if (target.existsSync()) {
+      await target.delete();
+    }
+  }
+
+  /// 删掉一次没走完的 [copyFile] 留下的 `<槽位>.part`，以及本体不在时孤立的旁注。
+  Future<void> _deleteInterrupted(String id, String slot) async {
+    final File part = _partFile(id, slot);
+    if (part.existsSync()) await part.delete();
+    if (_file(id, slot).existsSync()) return;
+    final File type = _typeFile(id, slot);
+    if (type.existsSync()) await type.delete();
+    final File name = _nameFile(id, slot);
+    if (name.existsSync()) await name.delete();
+  }
+
+  /// 清掉上次进程在 [copyFile] 中途崩溃 / 断电留下的 `.part`（最多 100 MB 一个，不算槽位，
+  /// 否则只有「从本机移除」整条反馈才会被删）。只能在本进程还没有 [copyFile] 在跑时调：
+  /// [FeedbackService] 在 load 里、任何提交之前调用。
+  Future<void> discardInterrupted() async {
+    if (!_root.existsSync()) return;
+    for (final FileSystemEntity d in _root.listSync()) {
+      if (d is! Directory) continue;
+      for (final FileSystemEntity f in d.listSync()) {
+        if (f is! File || p.extension(f.path) != '.part') continue;
+        await _deleteInterrupted(
+          p.basename(d.path),
+          p.basenameWithoutExtension(f.path),
+        );
+      }
+    }
+  }
+
+  /// 待传样本文件的原文件名（没有旁注返回 null）。
+  Future<String?> nameOf(String id, String slot) async {
+    final File f = _nameFile(id, slot);
+    if (!f.existsSync()) return null;
+    final String name = (await f.readAsString()).trim();
+    return name.isEmpty ? null : name;
+  }
+
   Future<Uint8List?> read(String id, String slot) async {
     final File f = _file(id, slot);
     return f.existsSync() ? f.readAsBytes() : null;
@@ -316,6 +433,10 @@ class FeedbackPendingStore {
     if (f.existsSync()) await f.delete();
     final File type = _typeFile(id, slot);
     if (type.existsSync()) await type.delete();
+    final File name = _nameFile(id, slot);
+    if (name.existsSync()) await name.delete();
+    final File part = _partFile(id, slot);
+    if (part.existsSync()) await part.delete();
     final Directory dir = f.parent;
     if (!dir.existsSync() || dir.listSync().isNotEmpty) return;
     try {
@@ -332,7 +453,7 @@ class FeedbackPendingStore {
     if (dir.existsSync()) await dir.delete(recursive: true);
   }
 
-  /// 扫描磁盘：反馈 id → 待传槽位（`.type` 旁注不算槽位）。
+  /// 扫描磁盘：反馈 id → 待传槽位（`.type` / `.name` 旁注不算槽位）。
   Future<Map<String, Set<String>>> scan() async {
     final Map<String, Set<String>> out = <String, Set<String>>{};
     if (!_root.existsSync()) return out;
@@ -340,7 +461,8 @@ class FeedbackPendingStore {
       if (d is! Directory) continue;
       final Set<String> slots = <String>{
         for (final FileSystemEntity f in d.listSync())
-          if (f is File && p.extension(f.path) != '.type') p.basename(f.path),
+          if (f is File && !_sidecars.contains(p.extension(f.path)))
+            p.basename(f.path),
       };
       if (slots.isNotEmpty) out[p.basename(d.path)] = slots;
     }

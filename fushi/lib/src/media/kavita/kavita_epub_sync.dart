@@ -10,6 +10,8 @@
 /// 1. [attach] 在阅读器恢复位置**之前**调用：拉服务器进度 → 与本地阅读位置按
 ///    `resolveKavitaProgress` 决策 → 采用服务器（写本地位置，阅读器随后自然恢复到
 ///    那里）/ 推本地 / 冲突时询问 / 不动。拉取有短超时，离线直接放行，不卡开书；
+///    服务器不可达会被 [KavitaReachability] 记住（与漫画同步共用一份），之后开书不再
+///    等这次拉取（后台照发、只当探针），直到服务器对任何一个请求答上话；
 /// 2. 阅读中每次位置落库后调 [onPositionSaved]，由 `KavitaProgressSync` 防抖上报；
 /// 3. 关书时 [close]：限时 flush 再释放。
 ///
@@ -30,7 +32,9 @@ import 'package:fushi/src/media/kavita/kavita_book_binding.dart';
 import 'package:fushi/src/media/kavita/kavita_book_service.dart';
 import 'package:fushi/src/media/kavita/kavita_progress_resolver.dart';
 import 'package:fushi/src/media/kavita/kavita_progress_sync.dart';
+import 'package:fushi/src/media/kavita/kavita_reachability.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 两侧都动过时询问用户：返回 [KavitaSyncAction.adoptServer] /
 /// [KavitaSyncAction.pushLocal]，其它值（或抛错）按「保留本地、不推送」处理。
@@ -56,6 +60,9 @@ class KavitaEpubSyncSession {
   static const Duration kCloseFlushTimeout = Duration(seconds: 5);
 
   /// 为 [row] 建同步会话（含打开时的拉取与决策）；不适用返回 null。
+  ///
+  /// [reachability] 记着这台服务器不可达时不等拉取；缺省用进程级的
+  /// [KavitaReachability.session]（与漫画开章同一份：任一侧发现断开，另一侧也不再等）。
   static Future<KavitaEpubSyncSession?> attach({
     required FushiDatabase db,
     required EpubBookRow row,
@@ -64,6 +71,7 @@ class KavitaEpubSyncSession {
     KavitaConflictPrompt? promptConflict,
     void Function(int serverSections, int localSections)?
     onSectionCountMismatch,
+    KavitaReachability? reachability,
     Duration pullTimeout = kPullTimeout,
     Duration debounce = const Duration(seconds: 10),
     int Function()? nowMs,
@@ -84,26 +92,41 @@ class KavitaEpubSyncSession {
     final KavitaBookService store = KavitaBookService(db: db, nowMs: now);
     final int lastSection = row.chapterCount > 0 ? row.chapterCount - 1 : 0;
 
+    final KavitaReachability reach = reachability ?? KavitaReachability.session;
+    final String serverId = server.id;
     KavitaProgress? remote;
     KavitaChapterInfo? info;
-    try {
-      final List<Object?> results = await Future.wait<Object?>(
-        <Future<Object?>>[
-          api.getProgress(binding.chapterId),
-          // 页数只用来核对两侧的脊柱下标是否对得上；拿不到就当未知放行。
-          api
-              .getChapterInfo(binding.chapterId)
-              .then<Object?>(
-                (KavitaChapterInfo i) => i,
-                onError: (Object _) => null,
-              ),
-        ],
-      ).timeout(pullTimeout);
-      remote = results[0] as KavitaProgress?;
-      info = results[1] as KavitaChapterInfo?;
-    } on Object {
-      remote = null; // 离线 / 超时 / 服务器错误：放行，稍后首次推送前再校验。
-      info = null;
+    final Future<List<Object?>> pull = Future.wait<Object?>(<Future<Object?>>[
+      api.getProgress(binding.chapterId),
+      // 页数只用来核对两侧的脊柱下标是否对得上；拿不到就当未知放行。
+      api
+          .getChapterInfo(binding.chapterId)
+          .then<Object?>(
+            (KavitaChapterInfo i) => i,
+            onError: (Object _) => null,
+          ),
+    ]);
+    if (reach.isUnreachable(serverId, api, within: pullTimeout)) {
+      // 已知不可达：不等，按离线放行（首次推送前再校验）。请求照发、只当探针——
+      // 服务器答上来协议层的答话计数就动，标记随之失效。探针自己的失败不用处理。
+      unawaited(pull.then<void>((List<Object?> _) {}, onError: (Object _) {}));
+    } else {
+      try {
+        final List<Object?> results = await pull.timeout(pullTimeout);
+        remote = results[0] as KavitaProgress?;
+        info = results[1] as KavitaChapterInfo?;
+      } on Object catch (e, stack) {
+        remote = null; // 离线 / 超时 / 服务器错误：放行，稍后首次推送前再校验。
+        info = null;
+        reportKavitaSyncFailure(
+          source: 'KavitaEpubSync.pull',
+          error: e,
+          stack: stack,
+          reachability: reach,
+          serverId: serverId,
+          api: api,
+        );
+      }
     }
     // Kavita 的 pageNum 与本地 sectionIndex 都是脊柱下标，只有两侧章数一致才一一
     // 对应。不一致（Fushi 丢了非 HTML / 缺文件的脊柱项，或 Kavita 跳过了某些项）时
@@ -191,6 +214,14 @@ class KavitaEpubSyncSession {
               .catchError((Object _) {}),
         );
       },
+      onPushFailed: (Object error, StackTrace stack) => reportKavitaSyncFailure(
+        source: 'KavitaEpubSync.push',
+        error: error,
+        stack: stack,
+        reachability: reach,
+        serverId: serverId,
+        api: api,
+      ),
     );
     final KavitaEpubSyncSession session = KavitaEpubSyncSession._(
       sync: sync,
@@ -212,8 +243,11 @@ class KavitaEpubSyncSession {
   Future<void> close() async {
     try {
       await _sync.flush().timeout(kCloseFlushTimeout);
-    } on Object {
-      // 超时 / 离线：未推出的进度下次打开时由本地位置与服务器对账。
+    } on TimeoutException {
+      // 推送挂过了关书上限（服务器慢 / 不可达）：未推出的进度下次打开时由本地位置
+      // 与服务器对账。推送本身的失败由 onPushFailed 记账，这里不重复记。
+    } on Object catch (e, stack) {
+      ErrorLogService.instance.log('KavitaEpubSync.close', e, stack);
     } finally {
       _sync.dispose();
     }

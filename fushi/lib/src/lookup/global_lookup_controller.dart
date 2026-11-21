@@ -19,6 +19,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:fushi/src/anki/mine_failure_notice.dart';
 import 'package:fushi/src/lookup/overlay_auto_read.dart';
+import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/lookup/gal_lookup_latency_trace.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
@@ -36,7 +37,6 @@ import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/popup_settings_injection.dart'
     show
         PopupSettingsOptions,
@@ -207,6 +207,22 @@ class GlobalLookupController {
       _hiddenListeners.add(listener);
   void removeHiddenListener(VoidCallback listener) =>
       _hiddenListeners.remove(listener);
+
+  /// 宿主主动关掉桌面查词卡（拍板台 8ldy3d8XFA：网页视频窗口宿主档制卡后按「制卡后
+  /// 行为」关卡）。与卡内 `dismiss` 同一条路径：原生侧关窗后回报 overlayHidden，
+  /// [onHidden] / hidden 监听照常触发（续不续播由宿主在调用前处理暂停标记决定）。
+  /// 当前不是桌面路由（游戏内查词卡）或没有在场的查词时什么都不做。
+  void dismissDesktopLookup() {
+    final GlobalLookupRoute? route = _activeRoute;
+    if (route == null || route.source != 'desktop') return;
+    _nestedLookupGeneration++;
+    // 在这次查词的 route zone 里发：hide 带上它的 epoch，原生侧回报的 overlayHidden
+    // 才对得上这张卡（与卡内消息在 route zone 里派发同口径）。
+    unawaited(
+      GlobalLookupChannel.runWithRoute(route, () => GlobalLookupChannel.hide()),
+    );
+  }
+
   void Function(GlobalLookupRoute route)? onRoutedHidden;
   // KiriKiri 游戏内查词 — 卡片「内容已渲染、尺寸已定」的**唯一可靠**信号。
   //
@@ -391,38 +407,13 @@ class GlobalLookupController {
   // runner reports later lands in the SAME CSS scale the cards render in.
   double _workDpr = 0;
 
-  /// 让覆盖窗跟随查词模块：现在开着就起；会话中途才打开查词模块也沿同一条
-  /// [start] 补起（此前只在启动时判一次，中途打开模块要等下次启动，桌面悬浮球
-  /// 的「应用外查词」等入口在这段时间里点了什么都不发生）。[start] 自带
-  /// `_started` 闩，重复触发不会重复建窗。
-  ///
-  /// 关模块不停：沿用启动链「不切断进行中的任务」的取舍（见 main.dart），钩子
-  /// 要到下次启动才不再装。启动链在首帧后调用一次。
-  Future<void> followLookupModule(AppModel appModel) async {
-    appModel.addListener(() => unawaited(_startFromModuleChange(appModel)));
-    await startIfLookupModuleEnabled(appModel);
-  }
-
-  /// 查词模块开着、平台支持且覆盖窗还没起：起它。
-  Future<void> startIfLookupModuleEnabled(AppModel appModel) async {
-    // 先判闩再调 start：AppModel 通知很频繁，别每次都往 glog 里记一条 start。
-    if (!_startable || _started) return;
-    if (!appModel.moduleVisibility.isEnabled(ModuleId.lookup)) return;
-    await start(appModel: appModel);
-  }
-
-  /// [followLookupModule] 的监听路径：失败与启动链一样落盘，不静默。
-  Future<void> _startFromModuleChange(AppModel appModel) async {
-    try {
-      await startIfLookupModuleEnabled(appModel);
-    } catch (error, stack) {
-      glog('start (module enabled mid-session) FAILED: $error');
-      ErrorLogService.instance.log('global_lookup.start', error, stack);
-    }
-  }
-
   /// Wires the overlay assets + reverse handlers + the global trigger hotkey.
   /// Safe to call once after AppModel.initialise() on desktop.
+  ///
+  /// Not gated on the `ModuleId.lookup` module switch: the overlay is the
+  /// shared lookup-card surface (galgame in-game lookup, the desktop system
+  /// floating ball, app-outside hotkeys), and the lookup module only hides the
+  /// lookup page (BUG-4846). Platform capability is the sole gate, here.
   ///
   /// The overlay part needs [isSupported]; the app-outside triggers (OS
   /// hotkeys, gamepad route) only need [osHotKeysSupported] — on a Linux
@@ -453,9 +444,8 @@ class GlobalLookupController {
     // channels 注释）：手柄经 shortcuts 层的进程级登记处拿到入口，鼠标侧键在
     // native 侧按绑定注册 RawInput 监听（随覆盖窗的 native 通道，没有覆盖窗就没有）。
     // 两者都随注册表变更重推（_onRegistryChanged）。
-    GlobalExternalLookupRoute.set(
-      () => triggerSelectionLookup(source: 'gamepad'),
-    );
+    // 三条触发源都受「应用外快捷键」总开关管（[_appExternalTriggersEnabled]）。
+    _syncGamepadRoute();
     if (!isSupported) return;
     await _registerMouseTriggerFromRegistry();
 
@@ -634,7 +624,17 @@ class GlobalLookupController {
               'replaySentence',
               (AudiobookPlayerController c) => c.replayCurrentCue(),
             ),
+        // galgame 台词朗读（反馈 N8qzDdzIvD）：台词浮窗「朗读」按钮的同一个方法。
+        ShortcutAction.globalExternalGalgameSpeakLine: speakGalgameLine,
       };
+
+  /// [ShortcutAction.globalExternalGalgameSpeakLine] 的执行体：朗读 / 停止当前显示
+  /// 的 galgame 台词。直接调台词浮窗「朗读」按钮（`onSpeakLine`）接的
+  /// [GalHookTextOverlayController.speakCurrentLine]——按钮与热键同一条路径（朗读中
+  /// 再按即停、浮窗已启动但没有当前台词时提示），不另写一套 TTS 调度。台词浮窗
+  /// 没启动（没在 Hook 游戏）时 `speakCurrentLine` 首行直接返回，按热键静默无动作。
+  Future<void> speakGalgameLine() =>
+      GalHookTextOverlayController.instance.speakCurrentLine();
 
   /// 有声书全局热键的播放控制执行体：落到 app 级会话的控制器——悬浮字幕窗的
   /// 「上一句 / 播放暂停 / 下一句」按钮（`AudiobookSession._setupFloatingLyricHandlers`）
@@ -708,9 +708,51 @@ class GlobalLookupController {
   /// Non-fatal on failure (the backends log every failure visibly).
   Future<void> _registerHotKeysFromRegistry() async {
     if (_hotKeysReleased) return;
+    if (!_appExternalTriggersEnabled) {
+      // 总开关关：一个系统钩子都不留——不是 apply 空集，而是连后端一起拆掉
+      // （portal 上那是一条常驻的 GlobalShortcuts 会话），重新打开时再新建。
+      await _disposeHotKeyBackend();
+      return;
+    }
     final GlobalHotKeyBackend backend = _hotKeyBackend ??=
         _createHotKeyBackend();
     return backend.apply(_hotKeyRequests());
+  }
+
+  /// 「应用外快捷键」总开关（pref `app_external_hotkeys_enabled`，默认开；
+  /// 维护者拍板 pr3605：热键要有自己的开关，不挂在查词页模块上）。关掉时
+  /// OS 热键、鼠标侧键 RawInput 监听、手柄触发三条 app 外触发源全部撤掉；
+  /// 查词卡覆盖窗本身（galgame 点词、系统悬浮球要用）不受影响。
+  bool get _appExternalTriggersEnabled =>
+      _appModel?.appExternalHotkeysEnabled ?? true;
+
+  /// 设置页切换总开关后调用：按当前 pref 装上 / 撤掉全部 app 外触发源。
+  /// 未 start（移动端 / 平台不支持）时什么都不做。
+  Future<void> applyAppExternalTriggersEnabled() async {
+    if (!_started) return;
+    glog('externalTriggers: enabled=$_appExternalTriggersEnabled');
+    _syncGamepadRoute();
+    await _registerHotKeysFromRegistry();
+    if (isSupported) await _registerMouseTriggerFromRegistry();
+  }
+
+  /// 手柄触发入口随总开关登记 / 注销；注销后 [GlobalExternalLookupRoute.current]
+  /// 为 null，按钮沿原派发路径继续，不被吞掉。
+  void _syncGamepadRoute() {
+    GlobalExternalLookupRoute.set(
+      _appExternalTriggersEnabled
+          ? () => triggerSelectionLookup(source: 'gamepad')
+          : null,
+    );
+  }
+
+  Future<void> _disposeHotKeyBackend() async {
+    final GlobalHotKeyBackend? backend = _hotKeyBackend;
+    _hotKeyBackend = null;
+    await _hotKeyStatusSub?.cancel();
+    _hotKeyStatusSub = null;
+    hotKeyStatus.value = null;
+    await backend?.dispose();
   }
 
   GlobalHotKeyBackend _createHotKeyBackend() {
@@ -789,7 +831,8 @@ class GlobalLookupController {
 
   /// Screen OCR needs the overlay (freeze layer + lookup card); showing /
   /// hiding the audiobook floating subtitles needs a native floating-lyric
-  /// window (none on Linux, see [floatingLyricBackendAvailableOn]). The other
+  /// window (none on Linux, see [floatingLyricBackendAvailableOn]); reading the
+  /// galgame line aloud needs the galgame text overlay (Windows only). The other
   /// actions work without either ([triggerSelectionLookup] falls back to the
   /// main window, [openLookupPageInMainWindow] never needed it, the audiobook
   /// playback controls only drive the player).
@@ -798,6 +841,9 @@ class GlobalLookupController {
         ShortcutAction.globalExternalScreenOcr => isSupported,
         ShortcutAction.globalExternalFloatingLyricToggle =>
           FloatingLyricChannel.supported,
+        // 台词浮窗（与它的 TTS）只在 Windows 有：别的平台注册了也没有执行对象。
+        ShortcutAction.globalExternalGalgameSpeakLine =>
+          GalHookTextOverlayController.isSupported,
         _ => true,
       };
 
@@ -813,11 +859,7 @@ class GlobalLookupController {
   /// Exit chain: unregister the hotkeys / close the portal session.
   Future<void> releaseHotKeys() async {
     _hotKeysReleased = true;
-    final GlobalHotKeyBackend? backend = _hotKeyBackend;
-    _hotKeyBackend = null;
-    await _hotKeyStatusSub?.cancel();
-    _hotKeyStatusSub = null;
-    await backend?.dispose();
+    await _disposeHotKeyBackend();
   }
 
   /// 用户请求：一个键把 Fushi 主窗**唤到前台**并直接落在**查词页**上
@@ -869,7 +911,8 @@ class GlobalLookupController {
   Future<void> _registerMouseTriggerFromRegistry() async {
     final FushiShortcutRegistry? registry = _registry;
     int button = 0;
-    if (registry != null) {
+    // 总开关关：不留 RawInput 监听（button 0 = native 侧注销）。
+    if (registry != null && _appExternalTriggersEnabled) {
       final ShortcutBindingSet set = registry.bindingsFor(
         ShortcutAction.globalExternalLookup,
       );

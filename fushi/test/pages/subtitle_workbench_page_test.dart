@@ -12,7 +12,7 @@ import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sy
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
-import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -193,21 +193,26 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      tester.widget<FushiPageHeader>(find.byType(FushiPageHeader)).bottom,
+      tester
+          .widget<FushiMastheadHeader>(find.byType(FushiMastheadHeader))
+          .bottom,
       isNull,
     );
-    // 同行判据是**垂直中心重合**：挂在 bottom 上时两者也都在 AppBar 里，但差着
-    // 整整一行（56px），标题行右半边全空。
+    // 同行判据：开关的竖向中心落在页名的竖向范围内。挂在 bottom 上时两者也都
+    // 在页头里，但开关整个排在页名行下面（差着一整行），标题行右半边全空。
+    // 现行页头（页头大字）里页名与动作按底边对齐，页名比 48 的按钮矮一截，
+    // 不再要求两者中心重合。
     final Rect title = tester.getRect(
       find.descendant(
-        of: find.byType(FushiPageHeader),
+        of: find.byType(FushiMastheadHeader),
         matching: find.text(t.video_subtitle_workbench_title),
       ),
     );
     final Rect scope = tester.getRect(
       find.byKey(const ValueKey<String>('subtitle-workbench-scope')),
     );
-    expect((title.center.dy - scope.center.dy).abs(), lessThan(8));
+    expect(scope.center.dy, greaterThanOrEqualTo(title.top));
+    expect(scope.center.dy, lessThanOrEqualTo(title.bottom));
   });
 
   // 360x780 = 常见手机竖屏。1400x900 那条用例照不到这里：`AppBar.actions` 不给
@@ -249,13 +254,13 @@ void main() {
       expect(tester.takeException(), isNull, reason: '窄屏 AppBar 溢出（$locale）');
 
       // ② 开关和标题都还在同一行里，且开关没吃掉整条 AppBar。
-      final Rect appBar = tester.getRect(find.byType(FushiPageHeader));
+      final Rect appBar = tester.getRect(find.byType(FushiMastheadHeader));
       final Rect scope = tester.getRect(
         find.byKey(const ValueKey<String>('subtitle-workbench-scope')),
       );
       expect(scope.right, lessThanOrEqualTo(appBar.right));
       final Finder titleFinder = find.descendant(
-        of: find.byType(FushiPageHeader),
+        of: find.byType(FushiMastheadHeader),
         matching: find.text(t.video_subtitle_workbench_title),
       );
       final Rect title = tester.getRect(titleFinder);

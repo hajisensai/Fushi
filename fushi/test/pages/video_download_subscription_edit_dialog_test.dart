@@ -56,6 +56,7 @@ MediaSourceRow _source({required int id, required String label}) =>
     MediaSourceRow(
       videoGroupingMode: 'series',
       isPrivate: false,
+      autoScan: false,
       id: id,
       label: label,
       mediaKind: 'video',

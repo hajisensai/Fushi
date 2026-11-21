@@ -324,6 +324,9 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
   void _onHostPointer() => _syncTilt();
 
   void _trackPointer(Offset global) {
+    // 按下时的命中路径在抬手前一直有效：按住期间本卡被换掉（切布局、列表
+    // 重建）后，后续的移动事件仍会派到已卸载的监听上，[_tilt] 这时已释放。
+    if (!mounted) return;
     _pointer = global;
     _syncTilt();
   }
@@ -343,7 +346,7 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
   }
 
   void _onPointerEnd(PointerEvent e) {
-    if (e.kind == PointerDeviceKind.mouse || !_touching) return;
+    if (!mounted || e.kind == PointerDeviceKind.mouse || !_touching) return;
     _touching = false;
     _syncTilt();
   }

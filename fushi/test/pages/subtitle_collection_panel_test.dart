@@ -1,21 +1,29 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi_engine/media/collections/collection_season_groups.dart'
+    show CollectionSeasonSection;
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart'
+    show SubtitleArchiveFormat;
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart'
     show legacySubtitleVersionKeyOf, subtitleVersionKeyOf;
 import 'package:fushi/src/pages/implementations/subtitle_collection_panel.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show FushiGlassMaterial, FushiGlassTheme;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -28,6 +36,7 @@ class _Cand extends VideoSubtitleCandidate {
   _Cand(
     String name, {
     required String source,
+    int? season,
     int? episode,
     String language = 'ja',
   }) : super(
@@ -36,10 +45,41 @@ class _Cand extends VideoSubtitleCandidate {
          fileName: name,
          language: language,
          providerPriority: 1,
+         season: season,
          episode: episode,
          collectionId: source,
          collectionLabel: source,
        );
+}
+
+/// 整季 ZIP 包候选。
+class _PackCand extends VideoSubtitleCandidate {
+  _PackCand(String name, {required String source})
+    : super(
+        providerId: 'fake',
+        remoteId: '$source:$name',
+        fileName: name,
+        language: 'ja',
+        providerPriority: 1,
+        collectionId: source,
+        collectionLabel: source,
+        archiveFormat: SubtitleArchiveFormat.zip,
+      );
+}
+
+/// 整季 RAR 包候选（本仓解不开）。
+class _RarCand extends VideoSubtitleCandidate {
+  _RarCand(String name, {required String source})
+    : super(
+        providerId: 'fake',
+        remoteId: '$source:$name',
+        fileName: name,
+        language: 'ja',
+        providerPriority: 1,
+        collectionId: source,
+        collectionLabel: source,
+        archiveFormat: SubtitleArchiveFormat.rar,
+      );
 }
 
 typedef _Search =
@@ -47,10 +87,14 @@ typedef _Search =
       VideoSubtitleSearchRequest request,
     );
 
+typedef _Download =
+    Future<VideoSubtitleDownload> Function(VideoSubtitleCandidate candidate);
+
 class _FakeProvider implements VideoSubtitleProvider {
-  _FakeProvider(this.onSearch);
+  _FakeProvider(this.onSearch, {this.onDownload});
 
   final _Search onSearch;
+  final _Download? onDownload;
 
   @override
   String get id => 'fake';
@@ -66,7 +110,7 @@ class _FakeProvider implements VideoSubtitleProvider {
   ) => onSearch(request);
   @override
   Future<VideoSubtitleDownload> download(VideoSubtitleCandidate candidate) =>
-      throw UnimplementedError();
+      onDownload?.call(candidate) ?? (throw UnimplementedError());
 }
 
 void main() {
@@ -112,27 +156,35 @@ void main() {
     required MediaCollectionRow collection,
     required VideoBookRow member,
     required _Search onSearch,
+    _Download? onDownload,
+    List<VideoBookRow>? members,
+    int? initialSeason,
     Future<http.Client> Function()? httpClientFactory,
     bool withProvider = true,
+    ThemeData? theme,
   }) {
     final VideoSubtitleRegistry registry = VideoSubtitleRegistry(
       withProvider
-          ? <VideoSubtitleProvider>[_FakeProvider(onSearch)]
+          ? <VideoSubtitleProvider>[
+              _FakeProvider(onSearch, onDownload: onDownload),
+            ]
           : const <VideoSubtitleProvider>[],
     );
     return TranslationProvider(
       child: MaterialApp(
+        theme: theme,
         home: Scaffold(
           body: SubtitleCollectionPanel(
             database: db,
             collection: collection,
-            members: <VideoBookRow>[member],
+            members: members ?? <VideoBookRow>[member],
             subtitleRegistry: () async => registry,
             initialApiKey: 'test-key',
             onApiKeyChanged: (_) async {},
             saveDirectory: tempDir.path,
             onRemoteSubtitlePersist: (_, __) async {},
             httpClientFactory: httpClientFactory,
+            initialSeason: initialSeason,
           ),
         ),
       ),
@@ -360,6 +412,260 @@ void main() {
     );
   });
 
+  testWidgets('批量某集下载被拒：行副标题说出原因（key 被拒 + 状态码），不是一句「下载失败」', (
+    WidgetTester tester,
+  ) async {
+    // 默认 800×600 下成员列表在版本 / 设置区下面、还没被懒构建出来。
+    tester.view.physicalSize = const Size(1400, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final VideoBookRow member = await seedMember();
+    final MediaCollectionRow collection = await seedCollection(anilistId: 21);
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: member,
+        onSearch: (_) async =>
+            ProviderBatchResult<VideoSubtitleCandidate>.success(
+              <VideoSubtitleCandidate>[
+                _Cand('Show - 01.ja.srt', source: 'Source', episode: 1),
+              ],
+            ),
+        onDownload: (_) async => throw const ExternalProviderFailure(
+          providerId: 'fake',
+          operation: 'download',
+          kind: ExternalProviderFailureKind.unauthorized,
+          message: 'denied',
+          statusCode: 401,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(downloadButton());
+    await tester.pumpAndSettle();
+
+    final String reason = t.video_subtitle_error_with_code(
+      msg: t.video_subtitle_error_key_rejected(provider: 'fake'),
+      code: 401,
+    );
+    expect(
+      find.text(reason),
+      findsOneWidget,
+      reason: '401 / 429 / 文件下架在批量里曾经长得一样',
+    );
+    expect(find.text(t.video_jimaku_download_failed), findsNothing);
+  });
+
+  testWidgets('整季包没下下来：没配上的集说出原因（状态码），不是一句「找不到字幕」', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final VideoBookRow member = await seedMember();
+    // 两集：只有一集时未编号的包会被当成「唯一目标的单文件」直接下载，走不到
+    // 「从整季包里按集号拆」这条路。
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value<String>('video/show-02'),
+        title: Value<String>('Show - 02'),
+        videoPath: Value<String>('C:/video/Show - 02.mkv'),
+      ),
+    );
+    final VideoBookRow second = (await VideoBookRepository(
+      db,
+    ).getByBookUid('video/show-02'))!;
+    final MediaCollectionRow collection = await seedCollection(anilistId: 21);
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: member,
+        members: <VideoBookRow>[member, second],
+        onSearch: (_) async =>
+            ProviderBatchResult<VideoSubtitleCandidate>.success(
+              <VideoSubtitleCandidate>[
+                // 第 1 集有单集文件；第 2 集只能从整季包里拆。
+                _Cand('Show - 01.ja.srt', source: 'Source', episode: 1),
+                _PackCand('Show S1.zip', source: 'Source'),
+              ],
+            ),
+        onDownload: (_) async => throw const ExternalProviderFailure(
+          providerId: 'fake',
+          operation: 'download',
+          kind: ExternalProviderFailureKind.rateLimited,
+          message: 'slow down',
+          statusCode: 429,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(downloadButton());
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        t.video_subtitle_error_with_code(
+          msg: t.video_jimaku_no_results,
+          code: 429,
+        ),
+      ),
+      findsOneWidget,
+      reason: '「包被限流没下下来」与「来源里真的没有这一集」曾经长得一样',
+    );
+  });
+
+  testWidgets('批量跑起来后主按钮变「停止（1/2）」：点了之后手上那一集落盘，其余集标已跳过', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final VideoBookRow first = await seedMember();
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value<String>('video/show-02'),
+        title: Value<String>('Show - 02'),
+        videoPath: Value<String>('C:/video/Show - 02.mkv'),
+      ),
+    );
+    final VideoBookRow second = (await repo.getByBookUid('video/show-02'))!;
+    final MediaCollectionRow collection = await seedCollection(anilistId: 21);
+    final Completer<VideoSubtitleDownload> pendingDownload =
+        Completer<VideoSubtitleDownload>();
+    final List<String> downloaded = <String>[];
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: first,
+        members: <VideoBookRow>[first, second],
+        onSearch: (_) async =>
+            ProviderBatchResult<VideoSubtitleCandidate>.success(
+              <VideoSubtitleCandidate>[
+                _Cand('Show - 01.ja.srt', source: 'Source', episode: 1),
+                _Cand('Show - 02.ja.srt', source: 'Source', episode: 2),
+              ],
+            ),
+        onDownload: (VideoSubtitleCandidate c) {
+          downloaded.add(c.fileName);
+          return pendingDownload.future;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(downloadButton());
+    await tester.pump();
+    await tester.pump();
+
+    final Finder stopButton = find.byKey(
+      const ValueKey<String>('subtitle-collection-stop'),
+    );
+    expect(downloadButton(), findsNothing);
+    expect(
+      find.text(t.video_subtitle_batch_stop(current: 1, total: 2)),
+      findsOneWidget,
+    );
+    await tester.tap(stopButton);
+    await tester.pump();
+    expect(find.text(t.video_subtitle_batch_stopping), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(glassUnwrap<FilledButton>(stopButton))
+          .onPressed,
+      isNull,
+      reason: '停止中不能重复点',
+    );
+
+    // 手上那一集照常收尾、落盘。
+    pendingDownload.complete(
+      VideoSubtitleDownload(
+        bytes: utf8.encode('1\n00:00:01,000 --> 00:00:02,000\nx\n'),
+        fileName: 'Show - 01.ja.srt',
+        language: 'ja',
+      ),
+    );
+    // 落盘与解析 cue 是真文件 IO，在 runAsync 里让它们跑完。
+    for (int i = 0; i < 100 && stopButton.evaluate().isNotEmpty; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+
+    expect(downloaded, <String>['Show - 01.ja.srt'], reason: '第 2 集不再下载');
+    expect(find.text(t.video_subtitle_batch_skipped), findsOneWidget);
+    expect(
+      find.text(t.video_subtitle_batch_stopped(done: 1, total: 2)),
+      findsOneWidget,
+    );
+    expect(stopButton, findsNothing);
+    expect(downloadButton(), findsOneWidget);
+    expect(
+      (await repo.getByBookUid('video/show-01'))!.subtitleSource,
+      isNotNull,
+    );
+    expect((await repo.getByBookUid('video/show-02'))!.subtitleSource, isNull);
+  });
+
+  testWidgets('BUG-4799 批量途中在输入框回车不重搜：在跑的行状态与来源不被清掉', (
+    WidgetTester tester,
+  ) async {
+    final VideoBookRow member = await seedMember();
+    final MediaCollectionRow collection = await seedCollection(anilistId: 21);
+    int searches = 0;
+    final Completer<VideoSubtitleDownload> pendingDownload =
+        Completer<VideoSubtitleDownload>();
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: member,
+        onSearch: (_) async {
+          searches++;
+          return ProviderBatchResult<VideoSubtitleCandidate>.success(
+            <VideoSubtitleCandidate>[
+              _Cand('Show - 01.ja.srt', source: 'Source', episode: 1),
+            ],
+          );
+        },
+        onDownload: (_) => pendingDownload.future,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final int searchesBefore = searches;
+    await tester.tap(downloadButton());
+    await tester.pump();
+    await tester.pump();
+
+    // 批量在跑（下载挂起）。与「查找字幕」按钮同一道闸：回车不得发起新一轮。
+    final TextField queryField = tester.widget<TextField>(
+      find.byWidgetPredicate(
+        (Widget w) => w is TextField && w.controller?.text == 'Show',
+      ),
+    );
+    queryField.onSubmitted!('Show');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(searches, searchesBefore, reason: '批量途中回车重搜会清掉行状态、换掉来源');
+    expect(
+      find.byKey(const ValueKey<String>('subtitle-source-fake:Source')),
+      findsOneWidget,
+    );
+
+    pendingDownload.completeError(
+      const ExternalProviderFailure(
+        providerId: 'fake',
+        operation: 'download',
+        kind: ExternalProviderFailureKind.unavailable,
+        message: 'down',
+        statusCode: 503,
+      ),
+    );
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('快速切系列时迟到旧响应不覆盖新来源，DB 也保留最新系列', (WidgetTester tester) async {
     final VideoBookRow member = await seedMember();
     final MediaCollectionRow collection = await seedCollection();
@@ -521,6 +827,47 @@ void main() {
           selected: source,
           searching: false,
           running: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('canRunSubtitleCollectionBatch：只有能解开的整季包、没有单集文件的来源也能批量下载', () {
+      // 成员行对这种来源预览「将从整季包中拆出」，批量（runSubtitleBatch）也确实会拆；
+      // 修复前按钮只看单集索引，这里是灰的。
+      final SubtitleCollectionSource packOnly = groupSubtitleCollectionSources(
+        <VideoSubtitleCandidate>[_PackCand('season.zip', source: 'P')],
+      ).single;
+      expect(packOnly.index.isEmpty, isTrue);
+      expect(packOnly.unpackablePackFormat, SubtitleArchiveFormat.zip);
+      expect(
+        canRunSubtitleCollectionBatch(
+          selected: packOnly,
+          searching: false,
+          running: false,
+        ),
+        isTrue,
+      );
+      expect(
+        canRunSubtitleCollectionBatch(
+          selected: packOnly,
+          searching: false,
+          running: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('canRunSubtitleCollectionBatch：只有解不开的整季包（RAR）仍禁用', () {
+      final SubtitleCollectionSource rarOnly = groupSubtitleCollectionSources(
+        <VideoSubtitleCandidate>[_RarCand('season.rar', source: 'R')],
+      ).single;
+      expect(rarOnly.unsupportedPackFormat, SubtitleArchiveFormat.rar);
+      expect(
+        canRunSubtitleCollectionBatch(
+          selected: rarOnly,
+          searching: false,
+          running: false,
         ),
         isFalse,
       );
@@ -1119,5 +1466,597 @@ void main() {
       reason: '内容必须撑不满宿主，否则「按钮贴底」无从谈起',
     );
     expect(host.bottom - button.bottom, lessThan(24));
+  });
+
+  // 番剧匹配候选是**靠标题**区分的；同系列各季标题前缀相同，截成一行省略号后
+  // 两个 chip 显示成同一串，用户无从选系列（应用内反馈 rB3cuyTXBr）。
+  for (final (String design, ThemeData? theme) in <(String, ThemeData?)>[
+    ('MD3', null),
+    (
+      'Apple',
+      ThemeData(
+        extensions: const <ThemeExtension<dynamic>>[
+          FushiGlassTheme(FushiGlassMaterial.off, glassDesign: true),
+        ],
+      ),
+    ),
+  ]) {
+    testWidgets('$design：番剧匹配候选标题完整显示，同前缀的季能区分', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(480, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      const String season1 =
+          'Tensei shitara Slime Datta Ken: Coleus no Yume to Kanata no '
+          'Tomodachi';
+      const String season2 =
+          'Tensei shitara Slime Datta Ken: Coleus no Yume to Kanata no '
+          'Tomodachi 2nd Season';
+      final VideoBookRow member = await seedMember();
+      final MediaCollectionRow collection = await seedCollection();
+      await tester.pumpWidget(
+        wrap(
+          collection: collection,
+          member: member,
+          theme: theme,
+          httpClientFactory: () async => MockClient((
+            http.Request request,
+          ) async {
+            if (request.url.host != 'graphql.anilist.co') {
+              return http.Response('not found', 404);
+            }
+            return http.Response(
+              jsonEncode(<String, Object?>{
+                'data': <String, Object?>{
+                  'Page': <String, Object?>{
+                    'media': <Object?>[
+                      for (final (int id, String romaji)
+                          in const <(int, String)>[(1, season1), (2, season2)])
+                        <String, Object?>{
+                          'id': id,
+                          'title': <String, Object?>{'romaji': romaji},
+                        },
+                    ],
+                  },
+                },
+              }),
+              200,
+            );
+          }),
+          onSearch: (_) async =>
+              ProviderBatchResult<VideoSubtitleCandidate>.success(
+                const <VideoSubtitleCandidate>[],
+              ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      for (final String title in <String>[season1, season2]) {
+        final Finder label = find.text(title);
+        expect(label, findsOneWidget, reason: '候选 chip 必须渲染出来');
+        final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
+          label,
+        );
+        expect(
+          paragraph.didExceedMaxLines,
+          isFalse,
+          reason: '「$title」被截断：同前缀的季在界面上无法区分',
+        );
+        // 整段标题都在面板宽度内（换行而不是溢出到屏外）。
+        final Rect rect = tester.getRect(label);
+        expect(rect.right, lessThanOrEqualTo(480));
+      }
+    });
+  }
+
+  group('多季合集按季隔离获取字幕', () {
+    Future<VideoBookRow> upsertBook({
+      required String bookUid,
+      required String title,
+      required String videoPath,
+    }) async {
+      await db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: Value<String>(bookUid),
+          title: Value<String>(title),
+          videoPath: Value<String>(videoPath),
+        ),
+      );
+      return (await repo.getByBookUid(bookUid))!;
+    }
+
+    test('纯函数分季与初始季挑选：含季目录、单季返回 null、preferredSeason 优先', () async {
+      final VideoBookRow folderS2 = await upsertBook(
+        bookUid: 'video/dir-s2e01',
+        title: 'Show - 01',
+        videoPath: 'C:/video/Show/Season 2/01.mkv',
+      );
+      final VideoBookRow s1 = await upsertBook(
+        bookUid: 'video/s01e01',
+        title: 'Show S01E01',
+        videoPath: 'C:/video/Show S01E01.mkv',
+      );
+      final VideoBookRow pv = await upsertBook(
+        bookUid: 'video/pv',
+        title: 'Show PV',
+        videoPath: 'C:/video/Show PV.mkv',
+      );
+
+      final List<CollectionSeasonSection<VideoBookRow>> sections =
+          subtitleCollectionSeasonSections(<VideoBookRow>[folderS2, s1, pv]);
+      expect(
+        sections.map((CollectionSeasonSection<VideoBookRow> s) => s.groupKey),
+        <String>['s1', 's2', 'extras'],
+      );
+      expect(initialSubtitleCollectionSeasonKey(sections), 's1');
+      expect(
+        initialSubtitleCollectionSeasonKey(sections, preferredSeason: 2),
+        's2',
+      );
+      expect(
+        initialSubtitleCollectionSeasonKey(
+          subtitleCollectionSeasonSections(<VideoBookRow>[s1]),
+        ),
+        isNull,
+      );
+    });
+
+    testWidgets('多季合集逐季搜索与下载：预绑 S1 的 anilistId 也不把第 1 季字幕套到第 2 季', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(600, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final VideoBookRow s1e1 = await upsertBook(
+        bookUid: 'video/s01e01',
+        title: 'Show S01E01',
+        videoPath: 'C:/video/Show S01E01.mkv',
+      );
+      final VideoBookRow s1e2 = await upsertBook(
+        bookUid: 'video/s01e02',
+        title: 'Show S01E02',
+        videoPath: 'C:/video/Show S01E02.mkv',
+      );
+      final VideoBookRow s2e1 = await upsertBook(
+        bookUid: 'video/s02e01',
+        title: 'Show S02E01',
+        videoPath: 'C:/video/Show S02E01.mkv',
+      );
+      final VideoBookRow s2e2 = await upsertBook(
+        bookUid: 'video/s02e02',
+        title: 'Show S02E02',
+        videoPath: 'C:/video/Show S02E02.mkv',
+      );
+      final MediaCollectionRow seeded = await seedCollection(anilistId: 21355);
+      await db.updateMediaCollectionSubtitleReleaseGroup(seeded.id, 'pinned');
+      final MediaCollectionRow collection = (await db.getMediaCollectionById(
+        seeded.id,
+      ))!;
+
+      int anilistHits = 0;
+      Future<http.Client> anilistFactory() async => MockClient((
+        http.Request request,
+      ) async {
+        if (request.url.host == 'graphql.anilist.co') {
+          anilistHits++;
+          return http.Response(
+            jsonEncode(<String, Object?>{
+              'data': <String, Object?>{
+                'Page': <String, Object?>{
+                  'media': <Object?>[
+                    <String, Object?>{
+                      'id': 21355,
+                      'title': <String, Object?>{'romaji': 'Show'},
+                    },
+                    <String, Object?>{
+                      'id': 108632,
+                      'title': <String, Object?>{'romaji': 'Show 2nd Season'},
+                    },
+                  ],
+                },
+              },
+            }),
+            200,
+          );
+        }
+        return http.Response('not found', 404);
+      });
+
+      final List<VideoSubtitleSearchRequest> searchRequests =
+          <VideoSubtitleSearchRequest>[];
+      final List<String> downloadedFiles = <String>[];
+      await tester.pumpWidget(
+        wrap(
+          collection: collection,
+          member: s1e1,
+          members: <VideoBookRow>[s1e1, s1e2, s2e1, s2e2],
+          httpClientFactory: anilistFactory,
+          onSearch: (VideoSubtitleSearchRequest request) async {
+            searchRequests.add(request);
+            if (request.media?.anilistId == 108632) {
+              return ProviderBatchResult<VideoSubtitleCandidate>.success(
+                <VideoSubtitleCandidate>[
+                  _Cand('Show S02E01.ja.srt', source: 's2', episode: 1),
+                  _Cand('Show S02E02.ja.srt', source: 's2', episode: 2),
+                ],
+              );
+            }
+            return ProviderBatchResult<VideoSubtitleCandidate>.success(
+              <VideoSubtitleCandidate>[
+                _Cand('Show - 01.ja.srt', source: 's1', episode: 1),
+                _Cand('Show - 02.ja.srt', source: 's1', episode: 2),
+              ],
+            );
+          },
+          onDownload: (VideoSubtitleCandidate candidate) async {
+            downloadedFiles.add(candidate.fileName);
+            return VideoSubtitleDownload(
+              bytes: Uint8List.fromList(
+                utf8.encode(
+                  '1\n00:00:01,000 --> 00:00:02,000\n${candidate.fileName}\n',
+                ),
+              ),
+              fileName: candidate.fileName,
+              language: candidate.language,
+            );
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey<String>('subtitle-collection-season-s1')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('subtitle-collection-season-s2')),
+        findsOneWidget,
+      );
+      expect(find.text('Show S01E01'), findsOneWidget);
+      expect(find.text('Show S01E02'), findsOneWidget);
+      expect(find.text('Show S02E01'), findsNothing);
+      expect(find.text('Show S02E02'), findsNothing);
+      expect(anilistHits, 1);
+      expect(searchRequests.last.media?.anilistId, 21355);
+      expect(searchRequests.last.effectiveSeason, 1);
+
+      Future<void> runBatchDownload(int expectedDone) async {
+        await tester.tap(downloadButton());
+        final String doneBanner = t.video_jimaku_batch_done(
+          done: expectedDone,
+          total: expectedDone,
+        );
+        // 落盘与解析 cue 是真文件 IO，在 runAsync 里让它们跑完（FakeAsync 下
+        // 单独 pumpAndSettle 等不到盘 IO 回话且旋转指示器会一直调度帧）。
+        for (
+          int i = 0;
+          i < 50 && find.text(doneBanner).evaluate().isEmpty;
+          i++
+        ) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 20)),
+          );
+          await tester.pump();
+        }
+        await tester.pumpAndSettle();
+        expect(find.text(doneBanner), findsOneWidget);
+      }
+
+      await runBatchDownload(2);
+
+      expect(downloadedFiles, <String>['Show - 01.ja.srt', 'Show - 02.ja.srt']);
+      expect(
+        (await repo.getByBookUid(s1e1.bookUid))!.subtitleSource,
+        isNotNull,
+      );
+      expect(
+        (await repo.getByBookUid(s1e2.bookUid))!.subtitleSource,
+        isNotNull,
+      );
+      expect((await repo.getByBookUid(s2e1.bookUid))!.subtitleSource, isNull);
+      expect((await repo.getByBookUid(s2e2.bookUid))!.subtitleSource, isNull);
+
+      downloadedFiles.clear();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('subtitle-collection-season-s2')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(anilistHits, 1, reason: '同一查询词切换季应复用已有 AniList 候选，不重复打网络');
+      expect(searchRequests.last.media?.anilistId, 108632);
+      expect(searchRequests.last.effectiveSeason, 2);
+      expect(find.text('Show S02E01'), findsOneWidget);
+      expect(find.text('Show S02E02'), findsOneWidget);
+      expect(find.text('Show S01E01'), findsNothing);
+
+      await runBatchDownload(2);
+
+      expect(downloadedFiles, <String>[
+        'Show S02E01.ja.srt',
+        'Show S02E02.ja.srt',
+      ]);
+      final String s2e1Sub = (await repo.getByBookUid(
+        s2e1.bookUid,
+      ))!.subtitleSource!;
+      expect(s2e1Sub, contains('Show S02E01.ja.srt'));
+      expect(File(s2e1Sub).readAsStringSync(), contains('Show S02E01.ja.srt'));
+
+      final MediaCollectionRow after = (await db.getMediaCollectionById(
+        collection.id,
+      ))!;
+      expect(after.anilistId, 21355);
+      expect(after.subtitleReleaseGroup, 'pinned');
+    });
+
+    testWidgets('initialSeason 传入当前季：打开即定位到第 2 季并按第 2 季检索', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(600, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final VideoBookRow s1e1 = await upsertBook(
+        bookUid: 'video/s01e01',
+        title: 'Show S01E01',
+        videoPath: 'C:/video/Show S01E01.mkv',
+      );
+      final VideoBookRow s2e1 = await upsertBook(
+        bookUid: 'video/s02e01',
+        title: 'Show S02E01',
+        videoPath: 'C:/video/Show S02E01.mkv',
+      );
+      final MediaCollectionRow collection = await seedCollection();
+      final List<VideoSubtitleSearchRequest> requests =
+          <VideoSubtitleSearchRequest>[];
+      await tester.pumpWidget(
+        wrap(
+          collection: collection,
+          member: s1e1,
+          members: <VideoBookRow>[s1e1, s2e1],
+          initialSeason: 2,
+          httpClientFactory: () async =>
+              MockClient((http.Request request) async {
+                if (request.url.host == 'graphql.anilist.co') {
+                  return http.Response(
+                    jsonEncode(<String, Object?>{
+                      'data': <String, Object?>{
+                        'Page': <String, Object?>{
+                          'media': <Object?>[
+                            <String, Object?>{
+                              'id': 21355,
+                              'title': <String, Object?>{'romaji': 'Show'},
+                            },
+                            <String, Object?>{
+                              'id': 108632,
+                              'title': <String, Object?>{
+                                'romaji': 'Show 2nd Season',
+                              },
+                            },
+                          ],
+                        },
+                      },
+                    }),
+                    200,
+                  );
+                }
+                return http.Response('not found', 404);
+              }),
+          onSearch: (VideoSubtitleSearchRequest request) async {
+            requests.add(request);
+            return ProviderBatchResult<VideoSubtitleCandidate>.success(
+              <VideoSubtitleCandidate>[
+                _Cand('Show S02E01.ja.srt', source: 's2', episode: 1),
+              ],
+            );
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(requests.single.media?.anilistId, 108632);
+      expect(requests.single.effectiveSeason, 2);
+      expect(find.text('Show S02E01'), findsOneWidget);
+      expect(find.text('Show S01E01'), findsNothing);
+    });
+
+    testWidgets('单季含 PV·特典合集：第 1 季仍直走合集 anilistId，特典独立成节', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(600, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final VideoBookRow s1e1 = await upsertBook(
+        bookUid: 'video/s01e01',
+        title: 'Show S01E01',
+        videoPath: 'C:/video/Show S01E01.mkv',
+      );
+      final VideoBookRow pv = await upsertBook(
+        bookUid: 'video/pv',
+        title: 'Show PV',
+        videoPath: 'C:/video/Show PV.mkv',
+      );
+      final MediaCollectionRow collection = await seedCollection(
+        anilistId: 21355,
+      );
+      int anilistHits = 0;
+      final List<VideoSubtitleSearchRequest> requests =
+          <VideoSubtitleSearchRequest>[];
+      await tester.pumpWidget(
+        wrap(
+          collection: collection,
+          member: s1e1,
+          members: <VideoBookRow>[s1e1, pv],
+          httpClientFactory: () async => MockClient((_) async {
+            anilistHits++;
+            return http.Response('unexpected anilist call', 500);
+          }),
+          onSearch: (VideoSubtitleSearchRequest request) async {
+            requests.add(request);
+            return ProviderBatchResult<VideoSubtitleCandidate>.success(
+              <VideoSubtitleCandidate>[
+                _Cand('Show S01E01.ja.srt', source: 's1', episode: 1),
+              ],
+            );
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(anilistHits, 0);
+      expect(requests.single.media?.anilistId, 21355);
+      expect(
+        find.byKey(const ValueKey<String>('subtitle-collection-season-s1')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('subtitle-collection-season-extras')),
+        findsOneWidget,
+      );
+      expect(find.text('Show S01E01'), findsOneWidget);
+      expect(find.text('Show PV'), findsNothing);
+    });
+
+    testWidgets(
+      '单季 + PV、没绑 anilistId、合集名带 4th season：分节季号不当显式季号，按第四季检索并配上 S04 字幕',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(600, 1400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        // 文件名不带季号：分季规则把这两集归到推断出的 s1，PV 另成一节。
+        final VideoBookRow e1 = await upsertBook(
+          bookUid: 'video/rezero4-01',
+          title: 'Re Zero - 01',
+          videoPath: 'C:/video/Re Zero - 01.mkv',
+        );
+        final VideoBookRow e2 = await upsertBook(
+          bookUid: 'video/rezero4-02',
+          title: 'Re Zero - 02',
+          videoPath: 'C:/video/Re Zero - 02.mkv',
+        );
+        final VideoBookRow pv = await upsertBook(
+          bookUid: 'video/rezero4-pv',
+          title: 'Re Zero PV',
+          videoPath: 'C:/video/Re Zero PV.mkv',
+        );
+        final int collectionId = await db.createMediaCollection(
+          'Re Zero kara Hajimeru Isekai Seikatsu 4th Season',
+          collectionType: 'collection',
+        );
+        final MediaCollectionRow collection = (await db.getMediaCollectionById(
+          collectionId,
+        ))!;
+        // 相关度首条恒为第一季：只有合集名里的「4th Season」能把它挑到第四季。
+        Future<http.Client> factory() async => MockClient(
+          (http.Request request) async => http.Response(
+            jsonEncode(<String, Object?>{
+              'data': <String, Object?>{
+                'Page': <String, Object?>{
+                  'media': <Object?>[
+                    for (final (int id, String romaji) in const <(int, String)>[
+                      (21355, 'Re:Zero kara Hajimeru Isekai Seikatsu'),
+                      (
+                        108632,
+                        'Re:Zero kara Hajimeru Isekai Seikatsu 2nd Season',
+                      ),
+                      (
+                        189046,
+                        'Re:Zero kara Hajimeru Isekai Seikatsu 4th Season',
+                      ),
+                    ])
+                      <String, Object?>{
+                        'id': id,
+                        'title': <String, Object?>{'romaji': romaji},
+                      },
+                  ],
+                },
+              },
+            }),
+            200,
+          ),
+        );
+        final List<VideoSubtitleSearchRequest> requests =
+            <VideoSubtitleSearchRequest>[];
+        final List<String> downloadedFiles = <String>[];
+        await tester.pumpWidget(
+          wrap(
+            collection: collection,
+            member: e1,
+            members: <VideoBookRow>[e1, e2, pv],
+            httpClientFactory: factory,
+            onSearch: (VideoSubtitleSearchRequest request) async {
+              requests.add(request);
+              return ProviderBatchResult<VideoSubtitleCandidate>.success(
+                <VideoSubtitleCandidate>[
+                  _Cand('Re Zero S04E01.ja.srt', source: 's4', episode: 1),
+                  _Cand('Re Zero S04E02.ja.srt', source: 's4', episode: 2),
+                ],
+              );
+            },
+            onDownload: (VideoSubtitleCandidate candidate) async {
+              downloadedFiles.add(candidate.fileName);
+              return VideoSubtitleDownload(
+                bytes: Uint8List.fromList(
+                  utf8.encode(
+                    '1\n00:00:01,000 --> 00:00:02,000\n${candidate.fileName}\n',
+                  ),
+                ),
+                fileName: candidate.fileName,
+                language: candidate.language,
+              );
+            },
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(
+            const ValueKey<String>('subtitle-collection-season-extras'),
+          ),
+          findsOneWidget,
+        );
+        expect(requests, isNotEmpty);
+        expect(
+          requests.last.media?.anilistId,
+          189046,
+          reason: '推断出的 s1 不能压过合集名里的季度记号，否则挑中第一季条目',
+        );
+        expect(
+          requests.last.season,
+          isNull,
+          reason: '只有成员文件名里的显式季号才作为 season_number 发给来源',
+        );
+
+        await tester.tap(downloadButton());
+        final String doneBanner = t.video_jimaku_batch_done(done: 2, total: 2);
+        for (
+          int i = 0;
+          i < 50 && find.text(doneBanner).evaluate().isEmpty;
+          i++
+        ) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 20)),
+          );
+          await tester.pump();
+        }
+        await tester.pumpAndSettle();
+        expect(find.text(doneBanner), findsOneWidget);
+        expect(downloadedFiles, <String>[
+          'Re Zero S04E01.ja.srt',
+          'Re Zero S04E02.ja.srt',
+        ], reason: '文件名带 S04 的正确候选不能被推断出的第 1 季滤掉');
+        expect(
+          (await repo.getByBookUid(e1.bookUid))!.subtitleSource,
+          isNotNull,
+        );
+        expect(
+          (await repo.getByBookUid(e2.bookUid))!.subtitleSource,
+          isNotNull,
+        );
+      },
+    );
   });
 }

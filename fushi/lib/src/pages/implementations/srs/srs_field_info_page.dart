@@ -15,7 +15,9 @@ import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
+import 'package:fushi_engine/srs/srs_canonical_ids.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
@@ -37,6 +39,8 @@ import 'package:fushi/src/pages/implementations/srs/srs_visual_template_panel.da
 import 'package:fushi/src/srs/srs_field_catalog.dart';
 import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -56,6 +60,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 /// 高亮框（预览里框出本字段的内容）。只用内联样式：卡片 CSS 不认识它。
 String srsFieldHighlightHtml(String value) =>
@@ -111,6 +116,9 @@ class _SrsFieldInfoPageState extends ConsumerState<SrsFieldInfoPage> {
   String _saved = '';
 
   SrsDbStore? _store;
+
+  /// 制卡落点换成规范 ID 之后的样子（G9-6，载入时问一次）：字段映射按规范的 type.id 查。
+  SrsMiningDestination _mining = const SrsMiningDestination();
   SrsNoteTypeView? _type;
   SrsNoteView? _sample;
   Map<String, String> _sampleValues = const <String, String>{};
@@ -161,8 +169,14 @@ class _SrsFieldInfoPageState extends ConsumerState<SrsFieldInfoPage> {
       final Map<String, String> values = sample == null
           ? const <String, String>{}
           : await store.expandFields(sample.fields, dropMissing: true);
+      final SrsMiningDestination mining =
+          await srsCanonicalizeMiningDestination(
+            ref.read(appProvider).srsMiningDestination,
+            srsStoreCanonicalIds(store),
+          );
       if (!mounted) return;
       _store = store;
+      _mining = mining;
       _type = type;
       _sample = sample;
       _sampleValues = values;
@@ -201,7 +215,10 @@ class _SrsFieldInfoPageState extends ConsumerState<SrsFieldInfoPage> {
       );
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsFieldInfo.save', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -272,6 +289,7 @@ class _SrsFieldInfoPageState extends ConsumerState<SrsFieldInfoPage> {
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    final bool masthead = shellRedesignActive(context);
     final SrsFieldDef? field = _field;
     final String title = field == null
         ? t.srs_field_info_title
@@ -285,8 +303,9 @@ class _SrsFieldInfoPageState extends ConsumerState<SrsFieldInfoPage> {
       },
       child: FushiPageScaffold(
         title: title,
+        masthead: true,
         header: apple ? null : _buildTopBar(context, title),
-        actions: apple
+        actions: apple || masthead
             ? <Widget>[
                 FushiIconButton(
                   key: _saveItem.key,
@@ -536,13 +555,12 @@ class _SrsFieldInfoPageState extends ConsumerState<SrsFieldInfoPage> {
     SrsFieldDef field,
   ) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final AppModel app = ref.read(appProvider);
     final String slot =
         srsMiningFieldMappingsFor(
           type: type,
           builtinKey: type.builtinKey,
           profileUid: _store!.profileUid,
-          stored: app.srsMiningDestination.fieldMappingsByType[type.id],
+          stored: _mining.fieldMappingsByType[type.id],
         )[field.id] ??
         '';
     final List<String> used = <String>[

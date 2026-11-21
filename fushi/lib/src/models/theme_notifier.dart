@@ -7,7 +7,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:cupertino_ui/cupertino_ui.dart'
-    show CupertinoPageTransitionsBuilder, CupertinoRouteTransitionMixin;
+    show CupertinoRouteTransitionMixin;
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/home_tab.dart';
@@ -18,6 +18,8 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
 import 'package:fushi/src/utils/adaptive/predictive_back_page_transitions.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart';
+import 'package:fushi/src/utils/adaptive/vetoed_back_swipe.dart';
 import 'package:fushi/src/utils/components/accent_logo_image.dart'
     show appLogoFollowsAccent;
 import 'package:fushi/src/utils/components/mascot_glow.dart'
@@ -582,7 +584,8 @@ class EinkCupertinoPageTransitionsBuilder extends PageTransitionsBuilder {
       context,
       dragging ? animation : kAlwaysCompleteAnimation,
       dragging ? secondaryAnimation : kAlwaysDismissedAnimation,
-      child,
+      // 页面 `PopScope` 否决返回时侧滑转成 maybePop（墨水屏下不做阻尼位移）。
+      VetoedBackSwipe(route: route, child: child),
     );
   }
 }
@@ -594,6 +597,15 @@ class EinkCupertinoPageTransitionsBuilder extends PageTransitionsBuilder {
 /// app 与阅读器始终按当前明暗设置（亮 / 暗 / 跟随系统）从种子派生。旧预设带的
 /// 「纯黑」语义改为明暗旁的独立开关（[ThemeNotifier.pureBlackDark]）。
 typedef ThemePreset = ({Color seed, DynamicSchemeVariant variant});
+
+/// 覆盖所选主题配色的取色来源（见 [ThemeNotifier.activeAccentOverrideSource]）。
+enum ThemeAccentOverrideSource {
+  /// 「从图片取色」：自定义背景图的颜色。
+  pageBackdrop,
+
+  /// 「主题色跟随图标」：自定义 app 图标的颜色。
+  appIcon,
+}
 
 /// 2026-10 精简前的内置预设（已删）：只为存量 `app_theme_key` 的只读映射保留
 /// 种子与语义——[neutral] = 中性灰变体、[dark] = 当年选中时写入的明暗（仅在
@@ -864,6 +876,16 @@ class ThemeNotifier extends ChangeNotifier {
       _customThemeIdGenerator = live._customThemeIdGenerator,
       _readOnlyView = true {
     _prefs.addAll(prefs);
+    // 库页布局出厂值是设备本地键、不在配置快照里：没选过布局的配置按这台设备的
+    // 出厂值读，与 live 一致。
+    final String? layoutInstallDefault =
+        live._prefs[ShellLayoutInstallDefault.prefKey];
+    if (layoutInstallDefault != null) {
+      _prefs.putIfAbsent(
+        ShellLayoutInstallDefault.prefKey,
+        () => layoutInstallDefault,
+      );
+    }
     _systemPalette = live._systemPalette;
     _systemPaletteIdentity = live._systemPaletteIdentity;
     _systemAccentColor = live._systemAccentColor;
@@ -883,6 +905,10 @@ class ThemeNotifier extends ChangeNotifier {
     'design_system',
     'glass_material',
     'pure_black_dark',
+    'shell_rail_style',
+    'shell_content_layout',
+    'shell_block_arrangement',
+    'shell_smooth_corners',
     tintAppLogoPrefKey,
     mascotGlowPrefKey,
     followAppIconPrefKey,
@@ -1146,11 +1172,51 @@ class ThemeNotifier extends ChangeNotifier {
   /// 不改写主题偏好。
   Color? get _overrideAccentSeed => pageBackdropAccentSeed ?? appIconAccentSeed;
 
+  /// 当前是谁在覆盖主题配色（没有覆盖时为 null）。主题选择行 / 自定义主题编辑页据此
+  /// 提示「配色来自背景图 / 图标」——否则点色卡毫无反应、用户不知道为什么。与
+  /// [_overrideAccentSeed] 同优先级。
+  ThemeAccentOverrideSource? get activeAccentOverrideSource {
+    if (pageBackdropAccentSeed != null) {
+      return ThemeAccentOverrideSource.pageBackdrop;
+    }
+    if (appIconAccentSeed != null) return ThemeAccentOverrideSource.appIcon;
+    return null;
+  }
+
+  /// 用户选主题的唯一入口（设置页色卡、自定义主题编辑页「应用」、`config set
+  /// appearance.theme`、控制通道 `select=true`，都经 [AppModel.pickAppThemeKey]）：
+  /// 用户明确要这个主题，就关掉所有**正在生效**的取色覆盖，让所选主题真正显示。
+  /// 背景图 / 自定义图标本身保留，只是不再取色；没生效的开关不动；两个都生效时都关，
+  /// 否则关掉背景图取色后又落到图标取色上。
+  ///
+  /// 开关与主题键同一批落库、只通知一次：分步写会先按「关了取色、还没换主题」的
+  /// 中间态重建一帧（闪一下旧主题色）。
+  ///
+  /// [setAppThemeKey] 是另一种写法：只换键、不碰取色开关，只给「不是用户在选主题」
+  /// 的写入用（删掉当前自定义主题后指回剩余主题）。同步 / 恢复整份写偏好，取色开关
+  /// 随同一份快照一起到位，不经这两个入口。
+  Future<void> pickAppThemeKey(String key) async {
+    final bool releaseBackdrop = pageBackdropAccentSeed != null;
+    final bool releaseIcon = appIconAccentSeed != null;
+    await _setAppThemeKeyKeepingEffective(
+      key,
+      extraWrites: <String, String>{
+        if (releaseBackdrop)
+          kPageBackdropFollowImageAccentPrefKey: PrefCodec.encode(false),
+        if (releaseIcon) followAppIconPrefKey: PrefCodec.encode(false),
+      },
+    );
+    // 作废还在跑的图标取色（开关已关，晚到的结果不该再套上）。
+    if (releaseIcon) ++_appIconSeedGeneration;
+    notifyListeners();
+    _persistSplashColor();
+  }
+
   /// 背景图文件是否存在的核对结果（路径 → 存在）。快照发布在 UI isolate 上、每次
   /// 改任何一项背景设置都会重读，所以这里**不碰文件系统**：没核对过的路径先按存在
   /// 发布（图片层自带 errorBuilder，读不到只是空白一帧），由
   /// [_verifyPageBackdropImages] 在 [refreshPageBackdropSeeds] 里异步核对，核出
-  /// 不存在（换了设备 / 文件被删）再重发布、回落到角落形状。导入时自己复制的文件
+  /// 不存在（换了设备 / 文件被删）再重发布、回落到默认样式。导入时自己复制的文件
   /// 直接记为存在。
   final Map<String, bool> _pageBackdropImagePresence = <String, bool>{};
 
@@ -1499,7 +1565,7 @@ class ThemeNotifier extends ChangeNotifier {
         ? cache.seeds.map(Color.new).toList(growable: false)
         : const <Color>[];
     if (pageBackdropAccentSeed != before) _onAppIconSeedChanged();
-    // 异步核对图片还在不在；不在会重发布快照（回落角落形状），取色随之作废。
+    // 异步核对图片还在不在；不在会重发布快照（回落默认样式），取色随之作废。
     await _verifyPageBackdropImages();
     if (generation != _pageBackdropSeedGeneration) return;
     if (currentPath() != path) {
@@ -1662,6 +1728,11 @@ class ThemeNotifier extends ChangeNotifier {
         _persistHiddenDesignSystemMigration(migration, notifyOnReload: true),
       );
     }
+    final String? layoutInstallDefault = _settleShellLayoutInstallDefault();
+    if (layoutInstallDefault != null) {
+      // 与 design_system 迁移同一边界：载入是同步的，落盘自带错误处理。
+      unawaited(_persistShellLayoutInstallDefault(layoutInstallDefault));
+    }
   }
 
   Future<void> refreshFromDb() async {
@@ -1681,7 +1752,52 @@ class ThemeNotifier extends ChangeNotifier {
         notifyOnReload: false,
       );
     }
+    final String? layoutInstallDefault = _settleShellLayoutInstallDefault();
+    if (layoutInstallDefault != null) {
+      await _persistShellLayoutInstallDefault(layoutInstallDefault);
+    }
     notifyListeners();
+  }
+
+  /// G1 新旧 UI 选择：本安装的库页布局出厂值还没判定过时，按偏好里的老用户信号
+  /// 判一次（[ShellLayoutInstallDefault.settle]），先写进内存缓存，返回要落盘的
+  /// 编码值；已判定过返回 null（幂等）。
+  ///
+  /// 老用户信号与 `PreferencesRepository.settleSrsMiningTargetInstallDefault` 同一
+  /// 判据：首页首帧写的 `first_time_setup` / 新手引导写的 `onboarding_completed`
+  /// 已落过盘。本方法在 `AppModel.initialise()` 载入主题偏好时跑，先于首页首帧，
+  /// 全新安装此时两者都不存在。
+  String? _settleShellLayoutInstallDefault() {
+    if (ShellLayoutInstallDefault.fromPref(_shellLayoutInstallDefaultRaw) !=
+        null) {
+      return null;
+    }
+    final bool existingInstall =
+        _prefs.containsKey('first_time_setup') ||
+        _prefs.containsKey('onboarding_completed');
+    final String layoutRaw =
+        _get('shell_content_layout', defaultValue: '') as String;
+    final ShellLayoutInstallDefault settled = ShellLayoutInstallDefault.settle(
+      existingInstall: existingInstall,
+      layoutChosen: layoutRaw.isNotEmpty,
+    );
+    final String encoded = PrefCodec.encode(settled.prefValue);
+    _prefs[ShellLayoutInstallDefault.prefKey] = encoded;
+    return encoded;
+  }
+
+  Future<void> _persistShellLayoutInstallDefault(String encoded) async {
+    try {
+      await _db.setPref(ShellLayoutInstallDefault.prefKey, encoded);
+    } catch (error, stackTrace) {
+      // 内存里的判定已生效，本次运行行为正确；没落盘的话下次启动按当时的偏好
+      // 重判（老用户信号到那时已在，新安装会被判成升级——所以记进错误日志）。
+      ErrorLogService.instance.log(
+        'ThemeNotifier.persistShellLayoutInstallDefault',
+        error,
+        stackTrace,
+      );
+    }
   }
 
   Future<void> _persistHiddenDesignSystemMigration(
@@ -2061,6 +2177,121 @@ class ThemeNotifier extends ChangeNotifier {
 
   Future<void> setGlassMaterial(FushiGlassMaterial value) async {
     await _set('glass_material', value.name);
+    notifyListeners();
+  }
+
+  /// 外壳样式（侧栏样式 / 库页布局 / 平滑圆角），随 Profile 走，经
+  /// [FushiShellTheme] 扩展随主题下发。
+  FushiShellTheme get shellTheme => FushiShellTheme(
+    railStyle: shellRailStyle,
+    contentLayout: shellContentLayout,
+    blockArrangement: _shellBlockArrangementPref,
+    smoothCorners: shellSmoothCorners,
+  );
+
+  ShellRailStyle get shellRailStyle => ShellRailStyle.fromPref(
+    _get('shell_rail_style', defaultValue: '') as String,
+  );
+
+  Future<void> setShellRailStyle(ShellRailStyle value) async {
+    await _set('shell_rail_style', value.prefValue);
+    notifyListeners();
+  }
+
+  String? get _shellLayoutInstallDefaultRaw {
+    final String? raw = _prefs[ShellLayoutInstallDefault.prefKey];
+    if (raw == null) return null;
+    return PrefCodec.decode(raw, '');
+  }
+
+  /// 本安装的库页布局出厂判定；还没判定过（只读视图拿不到 live 的值时）按新安装算。
+  ShellLayoutInstallDefault get shellLayoutInstallDefault =>
+      ShellLayoutInstallDefault.fromPref(_shellLayoutInstallDefaultRaw) ??
+      ShellLayoutInstallDefault.fresh;
+
+  /// 没选过库页布局时生效的布局（新安装拼贴、升级上来的老用户封面网格），也是
+  /// 设置页「恢复默认」的目标。
+  ShellContentLayout get shellContentLayoutDefault =>
+      shellLayoutInstallDefault.layout;
+
+  ShellContentLayout get shellContentLayout => ShellContentLayout.fromPref(
+    _get('shell_content_layout', defaultValue: '') as String,
+    fallback: shellContentLayoutDefault,
+  );
+
+  /// 显式选库页布局（设置页 / 新手引导 / 选择框）。选过就等于回答了「选一种库页
+  /// 布局」，待弹的选择框一并记成已处理——否则墨水屏期间留着的待处理状态会在
+  /// 用户已经在设置里选过之后再弹一次。
+  Future<void> setShellContentLayout(ShellContentLayout value) async {
+    await _set('shell_content_layout', value.prefValue);
+    await _markShellLayoutChoiceHandled();
+    notifyListeners();
+  }
+
+  /// 首页是否还要弹「选一种库页布局」（升级上来、从没选过布局的老用户，弹一次）。
+  bool get shellLayoutChoicePending =>
+      !_readOnlyView && shellLayoutInstallDefault.choicePending;
+
+  /// 处理「选一种库页布局」：[chosen] 非 null = 点了「用这个」，写入所选布局；
+  /// null = 「稍后再说」，布局保持出厂值（封面网格）。两种都把弹窗记成已处理，
+  /// 之后不再弹。
+  Future<void> resolveShellLayoutChoice(ShellContentLayout? chosen) async {
+    _ensureWritable('resolveShellLayoutChoice');
+    if (chosen != null) {
+      await setShellContentLayout(chosen);
+      return;
+    }
+    await _markShellLayoutChoiceHandled();
+    notifyListeners();
+  }
+
+  /// 待弹的选择框记成已处理（出厂值仍是封面网格）；不在待处理状态时什么都不做。
+  Future<void> _markShellLayoutChoiceHandled() async {
+    if (!shellLayoutInstallDefault.choicePending) return;
+    final String encoded = PrefCodec.encode(
+      ShellLayoutInstallDefault.upgrade.prefValue,
+    );
+    _publishPreferenceWrite(
+      ShellLayoutInstallDefault.prefKey,
+      encoded,
+      ++_preferenceWriteRevision,
+    );
+    await _db.setPref(ShellLayoutInstallDefault.prefKey, encoded);
+  }
+
+  /// 落库的色块摆放；没选过为 null（跟着布局走）。
+  ShellBlockArrangement? get _shellBlockArrangementPref {
+    final String value =
+        _get('shell_block_arrangement', defaultValue: '') as String;
+    for (final ShellBlockArrangement arrangement
+        in ShellBlockArrangement.values) {
+      if (arrangement.prefValue == value) return arrangement;
+    }
+    return null;
+  }
+
+  /// 生效的色块摆放：没选过时一律规整（[ShellBlockArrangement.defaultFor]）。
+  ShellBlockArrangement get shellBlockArrangement =>
+      _shellBlockArrangementPref ??
+      ShellBlockArrangement.defaultFor(shellContentLayout);
+
+  Future<void> setShellBlockArrangement(ShellBlockArrangement value) async {
+    await _set('shell_block_arrangement', value.prefValue);
+    notifyListeners();
+  }
+
+  /// 恢复默认：清掉落库的摆放（写空串，[_shellBlockArrangementPref] 读回 null），
+  /// 回到「跟着布局走」，而不是把此刻布局下的默认值钉死。
+  Future<void> resetShellBlockArrangement() async {
+    await _set('shell_block_arrangement', '');
+    notifyListeners();
+  }
+
+  bool get shellSmoothCorners =>
+      _get('shell_smooth_corners', defaultValue: true) as bool;
+
+  Future<void> setShellSmoothCorners(bool value) async {
+    await _set('shell_smooth_corners', value);
     notifyListeners();
   }
 
@@ -2462,6 +2693,7 @@ class ThemeNotifier extends ChangeNotifier {
     designSystem: designSystemTheme,
     glass: glassMaterial,
     glassDesign: designSystem == 'glass',
+    shell: shellTheme,
     // 默认主题（系统取色）在玻璃设计系统下是单色：白底黑字 / 黑底白字。
     monochromeAccent: appThemeKey == 'system-theme',
     platform: defaultTargetPlatform,
@@ -2475,6 +2707,7 @@ class ThemeNotifier extends ChangeNotifier {
         designSystem: inputs.designSystem,
         glass: inputs.glass,
         glassDesign: inputs.glassDesign,
+        shell: inputs.shell,
         monochromeAccent: inputs.monochromeAccent,
       );
 
@@ -2737,6 +2970,8 @@ class ThemeNotifier extends ChangeNotifier {
   /// 切主题只换配色：**不改写 `brightness_mode`、不强制亮 / 暗**（2026-10-06 用户
   /// 「切换主题的时候如果我是深色就要继续保持深色」）。此前选 `system-theme` 会把
   /// 明暗写成 system、选预设会写成该预设自带的 light / dark。
+  ///
+  /// 只换键、不碰取色覆盖：用户选主题走 [pickAppThemeKey]，这里只给非用户选择的写入。
   Future<void> setAppThemeKey(String key) async {
     await _setAppThemeKeyKeepingEffective(key);
     notifyListeners();
@@ -2748,8 +2983,12 @@ class ThemeNotifier extends ChangeNotifier {
   /// 对旧「纯黑」预设的回退）按换键前的有效值补写成独立偏好，与新主题键同一批落库。
   /// 换掉主题键后那些兜底就读不到了：旧 black-theme 用户改个种子色纯黑消失、旧自定义深色
   /// 用户换预设变成跟随系统。已显式存过的键不动。
-  Future<void> _setAppThemeKeyKeepingEffective(String key) async {
-    final Map<String, String> writes = <String, String>{};
+  /// [extraWrites]（已编码）与主题键同一批落库（[pickAppThemeKey] 关取色开关用）。
+  Future<void> _setAppThemeKeyKeepingEffective(
+    String key, {
+    Map<String, String> extraWrites = const <String, String>{},
+  }) async {
+    final Map<String, String> writes = <String, String>{...extraWrites};
     if (_get('brightness_mode', defaultValue: '').isEmpty) {
       writes['brightness_mode'] = PrefCodec.encode(brightnessMode);
     }
@@ -2937,10 +3176,24 @@ ThemeData buildFushiThemeData({
   FushiGlassMaterial glass = FushiGlassMaterial.off,
   bool glassDesign = false,
   bool monochromeAccent = false,
+  FushiShellTheme shell = const FushiShellTheme(),
 }) {
   // 玻璃设计系统 = Apple 26 设计语言：表面 / 文字 / 描边换成 Apple 系统色，
   // 强调色取主题色相按 iOS 系统色重建（见 fushi_apple_palette.dart）。MD3 不受影响。
   final bool appleDesign = glassDesign && !eink;
+  // 平滑圆角（外壳设置）：主题层这些 Material 表面（菜单、对话框、卡片、
+  // 底部弹层、列表行、FAB）一起换成连续曲率圆角，全应用一次生效。墨水屏的
+  // 描边表面保持普通圆角。
+  final bool smoothCorners = shell.smoothCorners && !eink;
+  OutlinedBorder roundedShape(
+    BorderRadius radius, {
+    BorderSide side = BorderSide.none,
+  }) => smoothCorners
+      ? RoundedSuperellipseBorder(
+          borderRadius: radius * kShellSmoothRadiusScale,
+          side: side,
+        )
+      : RoundedRectangleBorder(borderRadius: radius, side: side);
   final ColorScheme cs = appleDesign
       ? appleColorScheme(scheme, monochrome: monochromeAccent)
       : scheme;
@@ -2982,8 +3235,8 @@ ThemeData buildFushiThemeData({
       EdgeInsets.all(6),
     ),
     shape: WidgetStatePropertyAll<OutlinedBorder>(
-      RoundedRectangleBorder(
-        borderRadius: FushiBorderRadius.menu,
+      roundedShape(
+        FushiBorderRadius.menu,
         side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
       ),
     ),
@@ -3080,15 +3333,33 @@ ThemeData buildFushiThemeData({
         // 系统返回键 / 手势照常 pop，也就不存在那套手势计数失配的口子。
         // 系统「减弱动态效果」下 FushiCupertinoPageTransitionsBuilder 退化成原地
         // 线性淡入（无推入视差），边缘侧滑返回仍装着（见该类注释）。
+        //
+        // 同样套 [FushiBackdropPageTransitionsBuilder]：用户自选的背景图片在 Apple
+        // 下也要画（设置页提示「自定义图片所有设计都显示」）。此前这一支没套，
+        // Apple 下整个 app 一页都不垫背景层，选了图也是白底。形状类预设在 Apple
+        // 下由 [LibraryShapeBackdrop.enabledFor] 判为不画，那时背景层不改底色、
+        // 不画装饰，与不套等价。
         : appleDesign
         ? const PageTransitionsTheme(
             builders: <TargetPlatform, PageTransitionsBuilder>{
-              TargetPlatform.android: FushiCupertinoPageTransitionsBuilder(),
-              TargetPlatform.iOS: FushiCupertinoPageTransitionsBuilder(),
-              TargetPlatform.macOS: FushiCupertinoPageTransitionsBuilder(),
-              TargetPlatform.windows: FushiCupertinoPageTransitionsBuilder(),
-              TargetPlatform.linux: FushiCupertinoPageTransitionsBuilder(),
-              TargetPlatform.fuchsia: FushiCupertinoPageTransitionsBuilder(),
+              TargetPlatform.android: FushiBackdropPageTransitionsBuilder(
+                FushiCupertinoPageTransitionsBuilder(),
+              ),
+              TargetPlatform.iOS: FushiBackdropPageTransitionsBuilder(
+                FushiCupertinoPageTransitionsBuilder(),
+              ),
+              TargetPlatform.macOS: FushiBackdropPageTransitionsBuilder(
+                FushiCupertinoPageTransitionsBuilder(),
+              ),
+              TargetPlatform.windows: FushiBackdropPageTransitionsBuilder(
+                FushiCupertinoPageTransitionsBuilder(),
+              ),
+              TargetPlatform.linux: FushiBackdropPageTransitionsBuilder(
+                FushiCupertinoPageTransitionsBuilder(),
+              ),
+              TargetPlatform.fuchsia: FushiBackdropPageTransitionsBuilder(
+                FushiCupertinoPageTransitionsBuilder(),
+              ),
             },
           )
         // Android 侧滑返回改走自带手势记账的转场：Flutter 自带实现把平台事件直接
@@ -3107,10 +3378,10 @@ ThemeData buildFushiThemeData({
                 FushiPredictiveBackPageTransitionsBuilder(),
               ),
               TargetPlatform.iOS: FushiBackdropPageTransitionsBuilder(
-                CupertinoPageTransitionsBuilder(),
+                FushiNativeCupertinoPageTransitionsBuilder(),
               ),
               TargetPlatform.macOS: FushiBackdropPageTransitionsBuilder(
-                CupertinoPageTransitionsBuilder(),
+                FushiNativeCupertinoPageTransitionsBuilder(),
               ),
               // 桌面：原地淡入、不位移（2026-10 动效重做）。Zoom 的整窗缩放位移
               // 随窗口尺寸线性增长，大屏上很重，见该 builder 类注释。
@@ -3144,6 +3415,7 @@ ThemeData buildFushiThemeData({
       FushiDesignSystemTheme(designSystem),
       FushiEinkTheme(eink),
       FushiGlassTheme(glass, glassDesign: glassDesign && !eink),
+      shell,
       if (appleColors != null) appleColors,
     ],
     // 玻璃下顶栏透明：透出外壳的系统窗口材质（Windows 11 Mica / macOS
@@ -3301,8 +3573,8 @@ ThemeData buildFushiThemeData({
     // MD3 弹出菜单：与 MenuAnchor 同一块面板（surfaceContainer、圆角 12、
     // elevation 3、无 tint、上下 6），14 号 onSurface 文字。
     popupMenuTheme: PopupMenuThemeData(
-      shape: RoundedRectangleBorder(
-        borderRadius: FushiBorderRadius.menu,
+      shape: roundedShape(
+        FushiBorderRadius.menu,
         side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
       ),
       color: glassMenuColor ?? cs.surfaceContainer,
@@ -3327,8 +3599,8 @@ ThemeData buildFushiThemeData({
     // showAppDialog 铺整屏模糊。Apple 设计系统的对话框不走 Material
     // 表面（fushi_glass_overlays.dart 自绘），文字样式留空交给它自己。
     dialogTheme: DialogThemeData(
-      shape: RoundedRectangleBorder(
-        borderRadius: FushiBorderRadius.dialog,
+      shape: roundedShape(
+        FushiBorderRadius.dialog,
         side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
       ),
       backgroundColor:
@@ -3370,9 +3642,7 @@ ThemeData buildFushiThemeData({
             contentPadding: const EdgeInsetsDirectional.symmetric(
               horizontal: 16,
             ),
-            shape: const RoundedRectangleBorder(
-              borderRadius: BorderRadius.all(Radius.circular(12)),
-            ),
+            shape: roundedShape(const BorderRadius.all(Radius.circular(12))),
             selectedColor: cs.onSecondaryContainer,
             selectedTileColor: cs.secondaryContainer,
           ),
@@ -3489,8 +3759,8 @@ ThemeData buildFushiThemeData({
       color:
           glassTint(cs.surfaceContainerLow, fushiGlassContainerOpacity) ??
           cs.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: const BorderRadius.all(Radius.circular(16)),
+      shape: roundedShape(
+        const BorderRadius.all(Radius.circular(16)),
         // E-ink: surfaceContainerLow == the page background, so cards need a
         // solid outline to keep their boundary readable in pure black/white.
         side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
@@ -3503,8 +3773,8 @@ ThemeData buildFushiThemeData({
     // 最宽 640（MD3 规范）。墨水屏补实描边、遮罩不透明度交回默认。
     bottomSheetTheme: BottomSheetThemeData(
       showDragHandle: true,
-      shape: RoundedRectangleBorder(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      shape: roundedShape(
+        const BorderRadius.vertical(top: Radius.circular(28)),
         side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
       ),
       dragHandleColor: cs.onSurfaceVariant.withValues(alpha: 0.4),
@@ -3535,8 +3805,8 @@ ThemeData buildFushiThemeData({
       foregroundColor: appleDesign ? cs.primary : cs.onPrimaryContainer,
       shape: appleDesign
           ? const StadiumBorder()
-          : RoundedRectangleBorder(
-              borderRadius: FushiBorderRadius.control,
+          : roundedShape(
+              FushiBorderRadius.control,
               // E-ink：primaryContainer == 页面底色、阴影又是透明的，FAB 只剩一枚
               // 悬空图标（首页后台刮削任务按钮）；描边把按钮体画回来。
               side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
@@ -3831,6 +4101,7 @@ class _ThemeDataInputs {
     required this.designSystem,
     required this.glass,
     required this.glassDesign,
+    required this.shell,
     required this.monochromeAccent,
     required this.platform,
   });
@@ -3841,6 +4112,7 @@ class _ThemeDataInputs {
   final FushiDesignSystem designSystem;
   final FushiGlassMaterial glass;
   final bool glassDesign;
+  final FushiShellTheme shell;
   final bool monochromeAccent;
   final TargetPlatform platform;
 
@@ -3853,6 +4125,7 @@ class _ThemeDataInputs {
       other.designSystem == designSystem &&
       other.glass == glass &&
       other.glassDesign == glassDesign &&
+      other.shell == shell &&
       other.monochromeAccent == monochromeAccent &&
       other.platform == platform;
 
@@ -3864,6 +4137,7 @@ class _ThemeDataInputs {
     designSystem,
     glass,
     glassDesign,
+    shell,
     monochromeAccent,
     platform,
   );

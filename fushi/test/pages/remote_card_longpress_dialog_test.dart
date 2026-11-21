@@ -24,6 +24,12 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show ShellContentLayout;
+import 'package:fushi/src/utils/components/fushi_cover_block.dart'
+    show FushiCoverBlock;
+
+import '../helpers/shell_layout.dart';
 
 // TODO-768 / BUG-416: long-press on a remote book/video card must open the
 // options dialog (like local cards) instead of downloading (book card) or doing
@@ -79,7 +85,10 @@ void main() {
     await db.close();
   });
 
-  Widget buildBookShelf(_FakeRemoteBookClient client) => ProviderScope(
+  Widget buildBookShelf(
+    _FakeRemoteBookClient client, {
+    ShellContentLayout layout = ShellContentLayout.grid,
+  }) => ProviderScope(
     overrides: <Override>[
       appProvider.overrideWith((ref) => appModel),
       fushiBooksProvider.overrideWith(
@@ -91,6 +100,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: shellLayoutTheme(layout),
         builder: (BuildContext context, Widget? child) =>
             child ?? const SizedBox.shrink(),
         home: Scaffold(
@@ -151,10 +161,14 @@ void main() {
     ], reason: 'short tap on a remote book card downloads it');
   });
 
-  Widget buildVideoTab(_FakeRemoteVideoClient client) => ProviderScope(
+  Widget buildVideoTab(
+    _FakeRemoteVideoClient client, {
+    ShellContentLayout layout = ShellContentLayout.grid,
+  }) => ProviderScope(
     overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: shellLayoutTheme(layout),
         home: Scaffold(
           body: HomeVideoPage(
             repo: VideoBookRepository(db),
@@ -198,6 +212,63 @@ void main() {
     },
   );
 
+  // 拼贴（产品默认布局）下远端占位卡换成封面色块，卡壳与手势不变：长按同样弹
+  // 选项面板、不下载 / 不播放。
+  testWidgets('collage layout: long-press remote book block opens the action '
+      'dialog instead of downloading (BUG-416)', (WidgetTester tester) async {
+    final _FakeRemoteBookClient client = _FakeRemoteBookClient(
+      coverPath: remoteCover.path,
+    );
+    await tester.pumpWidget(
+      buildBookShelf(client, layout: ShellContentLayout.collage),
+    );
+    await tester.pumpAndSettle();
+
+    final Finder card = find.byKey(
+      const ValueKey<String>('remote_book_card_Remote_Book'),
+    );
+    expect(
+      find.descendant(of: card, matching: find.byType(FushiCoverBlock)),
+      findsOneWidget,
+    );
+    await tester.longPress(card);
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.remote_book_info), findsOneWidget);
+    expect(client.downloadedTitles, isEmpty);
+    // 色块按封面取色（图片加载挂 10 秒超时）：走完超时再结束。
+    await tester.pump(const Duration(seconds: 11));
+  });
+
+  testWidgets('collage layout: long-press remote video block opens the action '
+      'dialog without starting playback (BUG-416)', (
+    WidgetTester tester,
+  ) async {
+    final _FakeRemoteVideoClient client = _FakeRemoteVideoClient(
+      coverPath: remoteCover.path,
+    );
+    await tester.pumpWidget(
+      buildVideoTab(client, layout: ShellContentLayout.collage),
+    );
+    await tester.pumpAndSettle();
+
+    final Finder card = find.byKey(
+      const ValueKey<String>('remote_video_card_remote_video-1'),
+    );
+    await tester.ensureVisible(card);
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: card, matching: find.byType(FushiCoverBlock)),
+      findsOneWidget,
+    );
+    await tester.longPress(card);
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.remote_video_info), findsOneWidget);
+    expect(find.byType(VideoFushiPage), findsNothing);
+    await tester.pump(const Duration(seconds: 11));
+  });
+
   test('remote book card onLongPress is bound to _showRemoteBookDialog '
       '(BUG-416 guard)', () {
     final String src = File(
@@ -231,7 +302,8 @@ void main() {
     expect(
       RegExp(
         r'onLongPress:\s*_selectionMode\s*\?\s*null\s*:\s*'
-        r'\(\)\s*=>\s*_showRemoteVideoDialog\(video\)',
+        // #3515 起多传 `selectable:`（合集里的远端卡不可单独勾选）。
+        r'\(\)\s*=>\s*_showRemoteVideoDialog\(\s*video\b',
       ).hasMatch(card),
       isTrue,
       reason:

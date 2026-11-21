@@ -533,10 +533,7 @@ void main() {
         srsStoreProvider.overrideWith((Ref ref) async => store),
       ],
     );
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 200)),
-    );
-    await tester.pump();
+    await srsSettle(tester);
 
     // Anki 专属：批量制卡、跨设备中转、Anki 配置 / 刷新 / Lapis、AnkiConnect 入口都不在。
     expect(
@@ -583,6 +580,12 @@ void main() {
     await tester.runAsync(
       () => appModel.setSrsMiningFieldMapping('nt-vocab', 'fw', ''),
     );
+    // 字段映射行读的是 srsMiningChoicesProvider 解析好的（归一成规范 ID 的）落点（G9-6），
+    // 正式 app 里偏好变更经 initialise 接上的 `prefsRepo.addListener(notifyListeners)` 让它重算；
+    // 这里的 wire() 不走 initialise、没接那条转发，所以照它的效果显式让 provider 重算。
+    ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    ).invalidate(srsMiningChoicesProvider);
     await pumpDestination(
       tester,
       SettingsDestinationId.cardCreation,
@@ -591,10 +594,7 @@ void main() {
         srsStoreProvider.overrideWith((Ref ref) async => store),
       ],
     );
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 200)),
-    );
-    await tester.pump();
+    await srsSettle(tester);
     expect(find.text(t.anki_field_not_mapped), findsOneWidget);
     expect(
       find.byKey(const ValueKey<String>('srs-mining-required-unmapped')),
@@ -606,8 +606,9 @@ void main() {
     final Finder strip = find.byKey(
       const ValueKey<String>('card-target-switch'),
     );
-    SrsMiningTarget selected(WidgetTester tester) =>
-        tester.widget<FushiSegmentedStrip<SrsMiningTarget>>(strip).selected;
+    SrsMiningTarget selected(WidgetTester tester) => tester
+        .widget<AdaptiveSettingsSegmentedRow<SrsMiningTarget>>(strip)
+        .selected;
     Finder segment(String label) =>
         find.descendant(of: strip, matching: find.text(label));
 
@@ -664,10 +665,7 @@ void main() {
           srsStoreProvider.overrideWith((Ref ref) async => store),
         ],
       );
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 200)),
-      );
-      await tester.pump();
+      await srsSettle(tester);
       expect(tester.takeException(), isNull);
       expect(selected(tester), SrsMiningTarget.srs);
       expect(

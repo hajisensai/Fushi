@@ -497,6 +497,11 @@ class _CtlModelState {
   }
 
   Future<Object?> _downloadOcr(MangaOcrLocalModel model) async {
+    if (model.isUserImported) {
+      // 自定义槽的识别器只能由用户在设置页挑文件导入；这里只下得到两份检测器，
+      // 单独下它们跑不起来。
+      throw const CtlFailure.unsupported('自定义 OCR 模型要在设置页由用户导入，不能下载');
+    }
     final MangaOcrService service = createMangaOcrService(localModel: model);
     final MangaOcrModelStatus status = await service.modelStatus();
     if (status.allReady) {
@@ -756,8 +761,9 @@ class _CtlModelState {
         'mf' ||
         'small-mf' ||
         'v4.1-small-mf' => IrodoriModelChoice.smallMeanFlow,
+        'large' || 'v4-large' => IrodoriModelChoice.large,
         _ => throw CtlFailure.badRequest(
-          '--model 只能是 small / mf，收到「$modelRaw」',
+          '--model 只能是 small / mf / large，收到「$modelRaw」',
         ),
       });
     }

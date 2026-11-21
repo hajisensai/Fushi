@@ -29,10 +29,10 @@ SHA-256 钉死的 nupkg**，所以探针里的字节和 app 构建产出的完�
 哈希以那个 CMakeLists 为准，下面的值是 2026-09-02 的快照。
 
 ```bash
-# 1) 取运行时（本机需要代理见 CLAUDE.local.md）
-curl -L --proxy http://127.0.0.1:34151 --ssl-no-revoke -o ort-dml.nupkg \
+# 1) 取运行时
+curl -L --ssl-no-revoke -o ort-dml.nupkg \
   https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.directml/1.22.0/microsoft.ml.onnxruntime.directml.1.22.0.nupkg
-curl -L --proxy http://127.0.0.1:34151 --ssl-no-revoke -o directml.nupkg \
+curl -L --ssl-no-revoke -o directml.nupkg \
   https://api.nuget.org/v3-flatcontainer/microsoft.ai.directml/1.15.4/microsoft.ai.directml.1.15.4.nupkg
 
 # 必须核对，否则测的不是 app 会用的那份字节
@@ -43,7 +43,7 @@ sha256sum ort-dml.nupkg directml.nupkg
 unzip -q ort-dml.nupkg -d ort && unzip -q directml.nupkg -d dml
 
 # 2) 取模型（清单见 fushi/lib/src/ocr/manga_ocr_model_manifest.dart）
-curl -L --proxy http://127.0.0.1:34151 --ssl-no-revoke -o detector-v4-s_int8.onnx \
+curl -L --ssl-no-revoke -o detector-v4-s_int8.onnx \
   https://huggingface.co/ogkalu/comic-text-and-bubble-detector/resolve/main/detector-v4-s_int8.onnx
 ```
 

@@ -199,14 +199,16 @@ void main() {
       expect(body.contains('getPrimaryCollectionIdByEntry()'), isFalse);
       expect(body.contains('getAllCollectionItems()'), isFalse);
       // 游戏库与追踪状态与其余读同批并发发出（此前排在整批之后串行），
-      // 且追踪状态只查一次。
+      // 且追踪状态只查一次（#3372 起追踪首页数据入口是 loadHomeSnapshot，
+      // 取代旧的 loadStatus）。
       final String batch = body.substring(
         body.indexOf('await Future.wait<Object?>('),
         body.indexOf(']);', body.indexOf('await Future.wait<Object?>(')),
       );
       expect(batch.contains('gamesF'), isTrue);
       expect(batch.contains('trackingF'), isTrue);
-      expect('loadStatus()'.allMatches(body).length, 1);
+      expect('loadHomeSnapshot()'.allMatches(body).length, 1);
+      expect(body.contains('loadStatus()'), isFalse);
       // 重建首帧用上一轮快照（首页不保活，切回首页不再每次挂骨架等整批）。
       expect(body.contains('_snapshots[db] = snapshot;'), isTrue);
     });

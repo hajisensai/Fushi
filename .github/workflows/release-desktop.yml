@@ -164,7 +164,7 @@ jobs:
       # scope 会被置 none，缺它 PR 元数据整批退回 #N 占位。
       pull-requests: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
       # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
@@ -191,7 +191,7 @@ jobs:
         shell: pwsh
         run: ./tool/check_release_policy.ps1
       # 只缓存 pub、不缓存 SDK：理由与实测见 build-multiplatform.yml windows job 同处注释。
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: '3.50.0'
           cache: false
@@ -496,7 +496,7 @@ jobs:
       # 合适了就把 key 里的 -v1 递增一次。
       - name: Cache vcpkg source distfiles (libtorrent)
         if: steps.torrent_store.outputs.hit != 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ${{ runner.temp }}\vcpkg-downloads
@@ -506,7 +506,7 @@ jobs:
             ${{ runner.os }}-vcpkg-downloads-libtorrent-v1-
       - name: Cache vcpkg binary archives (libtorrent)
         if: steps.torrent_store.outputs.hit != 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~\AppData\Local\vcpkg\archives
           # v2 -> v3：manifest 钉版换掉了 libtorrent/boost/openssl 的 ABI hash，旧条目
@@ -552,13 +552,13 @@ jobs:
           path: native\fushi_p2p\prebuilt\windows-x64
       - name: Set up Rust (fushi_p2p)
         if: steps.p2p_store.outputs.hit != 'true'
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: x86_64-pc-windows-msvc
       - name: Cache Rust build (fushi_p2p)
         if: steps.p2p_store.outputs.hit != 'true'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_p2p -> target
           key: fushi-p2p-windows-x64
@@ -582,12 +582,12 @@ jobs:
       # build-multiplatform.yml windows job 的 fushi_fsrs 同一口径），只靠 rust-cache；工具链
       # 版本与 fushi_p2p 同源。fushi_p2p 持久库命中时它的 Rust 安装被跳过，所以这里无条件装。
       - name: Set up Rust (fushi_fsrs)
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: x86_64-pc-windows-msvc
       - name: Cache Rust build (fushi_fsrs)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_fsrs -> target
           key: fushi-fsrs-windows-x64
@@ -602,12 +602,12 @@ jobs:
       # build-multiplatform.yml windows job 的 fushi_web_core 同一口径），只靠 rust-cache；工具链
       # 版本与 fushi_p2p 同源。fushi_p2p 持久库命中时它的 Rust 安装被跳过，所以这里无条件装。
       - name: Set up Rust (fushi_web_core)
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: x86_64-pc-windows-msvc
       - name: Cache Rust build (fushi_web_core)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_web_core -> target
           key: fushi-web-core-windows-x64
@@ -620,7 +620,7 @@ jobs:
       # 缺了 fushi/windows/CMakeLists.txt 在配置期就让构建失败；构建失败即 job 失败，出包后再核对。
       # 不进原生产物持久库，只靠 rust-cache；Rust 已由 fushi_fsrs 那组无条件装好。
       - name: Cache Rust build (fushi_compute)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_compute -> target
           key: fushi-compute-windows-x64
@@ -632,7 +632,7 @@ jobs:
       # RWKV-Instant 排程推理 DLL：**硬依赖**（AGPL-3.0-or-later），同 fushi_compute 口径——缺了
       # fushi/windows/CMakeLists.txt 配置期 FATAL_ERROR；出包后再核对。只靠 rust-cache。
       - name: Cache Rust build (fushi_rwkv)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_rwkv -> target
           key: fushi-rwkv-windows-x64
@@ -677,7 +677,7 @@ jobs:
       # 报错只在这两个文件里。artifact 而不是 echo，避免再被日志截断吃掉。
       - name: Upload Windows build logs on failure
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-release-build-logs
           path: |
@@ -885,6 +885,25 @@ jobs:
           mode: save
           name: ${{ steps.native_store.outputs.anki_sync_release }}
           path: native\fushi_anki_sync\target\release\fushi-anki-sync.exe
+      # 资源管理器封面缩略图（native/fushi_shell_thumbs，拍板台 WoAtPpuvwm）：fushi_shell_thumbs.dll
+      # （COM 处理器，fushi.iss 按用户注册，跑在 explorer.exe 里只转交路径）+
+      # fushi_shell_thumbs_host.exe（每张缩略图一次性的宿主进程，用随包的 7za\7z.dll / pdfium.dll）。
+      # 它们不是 app 进程的依赖，不进 CMake bundle，只在这里放进 Release 目录：排在签名步骤之前，
+      # `{#SourceDir}\*` 整目录收进安装包。Rust 已由上面 fushi_web_core 那组装好（p2p_rust 钉的版本）。
+      # 构建失败即 job 失败；最后按处理器的查找方式（只看自己所在目录）核对四个文件都在。
+      - name: Build and bundle fushi_shell_thumbs
+        shell: pwsh
+        run: |
+          $targetDir = Join-Path $PWD 'fushi\build\windows\x64\runner\Release'
+          powershell -ExecutionPolicy Bypass -File native/fushi_shell_thumbs/build_windows_dll.ps1 -InstallDirectory $targetDir
+          if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_shell_thumbs) failed" }
+          # 7-Zip 由上面 bundle_7za.ps1 放在 7za\ 子目录，pdfium.dll 由 CMake 放在 exe 同级。
+          foreach ($name in 'fushi_shell_thumbs.dll', 'fushi_shell_thumbs_host.exe', '7za\7z.dll', 'pdfium.dll') {
+            $p = Join-Path $targetDir $name
+            if (-not (Test-Path -LiteralPath $p -PathType Leaf)) {
+              throw "$p missing - the Explorer cover thumbnail handler needs it in the same directory"
+            }
+          }
       # fushi_cli（packages/fushi_cli）：桌面客户端命令行。fushi.exe 是 GUI 子系统，拿不到
       # stdout、退出码也不可靠，所以 CLI 是单独的控制台 exe，经本机控制通道驱动 app。
       # 纯 Dart、无原生资产，dart compile exe 直出；放 fushi.exe 同级（CLI 按同级目录
@@ -1096,7 +1115,7 @@ jobs:
       - name: Cache SimplySign Desktop installer
         if: steps.signcheck.outputs.have == 'true'
         id: ssdcache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ runner.temp }}\SimplySignDesktop.msi
           key: simplysign-desktop-9.4.4.92-64bit-en
@@ -1328,7 +1347,7 @@ jobs:
       # Release publishing, so Windows never waits on / is blocked by mac/iOS.
       - name: Upload Windows installer artifact
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: desktop-artifacts-windows
           path: |
@@ -1353,7 +1372,7 @@ jobs:
       # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
       actions: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
       # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
@@ -1369,7 +1388,7 @@ jobs:
         uses: ./.github/actions/native-store-names
         with:
           platform: macos
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: '3.50.0'
           cache: true
@@ -1585,7 +1604,7 @@ jobs:
       # invalidates it; CocoaPods re-installs on a mismatch, and a miss just
       # re-downloads.
       - name: Cache CocoaPods
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/Library/Caches/CocoaPods
@@ -1621,13 +1640,13 @@ jobs:
           path: native/fushi_p2p/prebuilt/macos
       - name: Set up Rust (fushi_p2p, macOS targets)
         if: steps.p2p_store.outputs.hit != 'true'
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: aarch64-apple-darwin
       - name: Cache Rust build (fushi_p2p)
         if: steps.p2p_store.outputs.hit != 'true'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_p2p -> target
           key: fushi-p2p-macos
@@ -1647,12 +1666,12 @@ jobs:
       # 出包后再核对。不进原生产物持久库（与 build-multiplatform.yml macos job 同一口径），
       # 工具链版本与 fushi_p2p 同源；p2p 持久库命中时它的 Rust 安装被跳过，所以这里无条件装。
       - name: Set up Rust (fushi_fsrs, macOS targets)
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: aarch64-apple-darwin
       - name: Cache Rust build (fushi_fsrs)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_fsrs -> target
           key: fushi-fsrs-macos
@@ -1668,12 +1687,12 @@ jobs:
       # 出包后再核对。不进原生产物持久库（与 build-multiplatform.yml macos job 同一口径），
       # 工具链版本与 fushi_p2p 同源；p2p 持久库命中时它的 Rust 安装被跳过，所以这里无条件装。
       - name: Set up Rust (fushi_web_core, macOS targets)
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: aarch64-apple-darwin
       - name: Cache Rust build (fushi_web_core)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_web_core -> target
           key: fushi-web-core-macos
@@ -1688,7 +1707,7 @@ jobs:
       # 那个阶段直接让 xcodebuild 失败；之后由下面的 Developer ID 签名循环随其它 Mach-O 一起签。
       # Rust 已由 fushi_fsrs 那组无条件装好（同一工具链、同一 target）。
       - name: Cache Rust build (fushi_compute)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_compute -> target
           key: fushi-compute-macos
@@ -1702,7 +1721,7 @@ jobs:
       # （fushi/macos/bundle_fushi_rwkv.sh）拷进 Contents/Frameworks，缺库时 xcodebuild 失败；
       # 之后随其它 Mach-O 一起走 Developer ID 签名循环。
       - name: Cache Rust build (fushi_rwkv)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_rwkv -> target
           key: fushi-rwkv-macos
@@ -1751,7 +1770,7 @@ jobs:
           echo "image=$image" >> "$GITHUB_OUTPUT"
       - name: Cache vcpkg source distfiles (libtorrent macos)
         if: steps.torrent_store.outputs.hit != 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ${{ runner.temp }}/vcpkg-downloads
@@ -1761,7 +1780,7 @@ jobs:
             ${{ runner.os }}-vcpkg-downloads-libtorrent-macos-v1-
       - name: Cache vcpkg binary archives (libtorrent macos)
         if: steps.torrent_store.outputs.hit != 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/vcpkg/archives
           key: ${{ runner.os }}-vcpkg-libtorrent-osx-fushi-v1-${{ steps.vcpkg_cache_id_macos.outputs.image }}-${{ hashFiles('native/fushi_torrent/vcpkg.json', 'native/fushi_torrent/vcpkg-ports/**', 'native/fushi_torrent/vcpkg-triplets/**') }}
@@ -1987,7 +2006,7 @@ jobs:
       # 缓存里是未签名原始输出；ad-hoc / Developer ID 签名都只作用于拷进 .app 的副本。
       - name: Restore pinned Mihon desktop runtimes
         id: mihon_runtime_cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ runner.temp }}/mihon-runtime
           key: ${{ runner.os }}-${{ runner.arch }}-mihon-runtime-v1-${{ hashFiles('third_party/m_extension_server/**', 'third_party/jogamp/**', 'tool/mihon/**') }}
@@ -2497,7 +2516,7 @@ jobs:
       # never blocks (or is blocked by) the other platforms.
       - name: Upload macOS app artifact
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: desktop-artifacts-macos
           path: |
@@ -2521,7 +2540,7 @@ jobs:
       # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
       actions: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - name: Resolve native artifact store names
         id: native_store
         uses: ./.github/actions/native-store-names
@@ -2577,7 +2596,7 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
       - name: Resolve desktop release channel
@@ -2890,7 +2909,7 @@ jobs:
           tar -C build/flatpak-out -cf build/flatpak-repo.tar repo
       - name: Upload Linux Flatpak artifact
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: desktop-artifacts-linux
           path: |
@@ -2898,7 +2917,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 30 || 14 }}
       - name: Upload Flatpak repo commit artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: flatpak-repo-linux
           path: build/flatpak-repo.tar
@@ -2921,7 +2940,7 @@ jobs:
     outputs:
       testflight: ${{ steps.signing.outputs.testflight }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
       # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
@@ -2936,7 +2955,7 @@ jobs:
         uses: ./.github/actions/native-store-names
         with:
           platform: ios
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: '3.50.0'
           cache: true
@@ -3147,7 +3166,7 @@ jobs:
       # invalidates it; CocoaPods re-installs on a mismatch, and a miss just
       # re-downloads.
       - name: Cache CocoaPods
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/Library/Caches/CocoaPods
@@ -3197,13 +3216,13 @@ jobs:
           path: native/fushi_ios_umbrella/prebuilt/ios
       - name: Set up Rust (fushi_ios_umbrella, iOS device target)
         if: steps.ios_native_store.outputs.hit != 'true'
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: aarch64-apple-ios
       - name: Cache Rust build (fushi_ios_umbrella)
         if: steps.ios_native_store.outputs.hit != 'true'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_ios_umbrella -> target
           key: fushi-ios-umbrella
@@ -3246,7 +3265,7 @@ jobs:
       - name: Upload iOS release dSYMs (no codesign)
         if: github.event.inputs.testflight_only != 'true'
         continue-on-error: true
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-dsyms-unsigned-${{ steps.channel.outputs.release_sequence }}
           path: fushi/build/ios/Release-iphoneos/*.dSYM
@@ -3257,7 +3276,7 @@ jobs:
       - name: Upload iOS release Dart symbols (no codesign)
         if: github.event.inputs.testflight_only != 'true'
         continue-on-error: true
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-dart-symbols-unsigned-${{ steps.channel.outputs.release_sequence }}
           path: fushi/build/ios/dart-symbols-unsigned
@@ -3317,7 +3336,7 @@ jobs:
       # never blocks (or is blocked by) the other platforms.
       - name: Upload iOS IPA artifact
         if: always() && github.event.inputs.testflight_only != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: desktop-artifacts-ios
           path: fushi/build/release-artifacts/fushi-*-ios.ipa
@@ -3548,6 +3567,16 @@ jobs:
             /usr/libexec/PlistBuddy -c 'Delete :com.apple.developer.kernel.extended-virtual-addressing' "$ENTITLEMENTS_FILE"
             echo "::warning title=Extended virtual addressing missing::The provisioning profile does not grant com.apple.developer.kernel.extended-virtual-addressing. Enable it on the App ID, regenerate the App Store profile and update IOS_PROVISIONING_PROFILE_BASE64 (BUG-4013)."
           fi
+          # BUG-4758：抬高 jetsam 内存额度。设备端 ASR 装载大模型时 footprint 冲到 ~2 GB，
+          # 默认额度下被 jetsam 杀；授予后 ASR 内存门槛按更高的额度放行原模型。
+          INCREASED_MEM="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.kernel.increased-memory-limit' "$PROFILE_PLIST" 2>/dev/null || true)"
+          if [ "$INCREASED_MEM" = "true" ]; then
+            WIRE_ENTITLEMENTS=1
+            echo "Increased memory limit entitlement enabled"
+          else
+            /usr/libexec/PlistBuddy -c 'Delete :com.apple.developer.kernel.increased-memory-limit' "$ENTITLEMENTS_FILE"
+            echo "::warning title=Increased memory limit missing::The provisioning profile does not grant com.apple.developer.kernel.increased-memory-limit. Enable Increased Memory Limit on the App ID, regenerate the App Store profile and update IOS_PROVISIONING_PROFILE_BASE64 (BUG-4758)."
+          fi
           # 主屏小组件 / Live Activity（FushiWidgets 扩展）的 App Group：主 app 描述文件带
           # group 才保留这项；扩展那份描述文件（app.fushi.reader.widgets）也逐项对照它的
           # entitlement（App Group 是扩展唯一的 entitlement，也是扩展能读快照的前提）。缺任何
@@ -3690,7 +3719,7 @@ jobs:
       - name: Upload signed iOS archive dSYMs
         if: steps.signing.outputs.testflight == 'true'
         continue-on-error: true
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-dsyms-testflight-${{ steps.channel.outputs.release_sequence }}
           path: fushi/build/ios/archive/Runner.xcarchive/dSYMs
@@ -3699,7 +3728,7 @@ jobs:
       - name: Upload signed iOS archive Dart symbols
         if: steps.signing.outputs.testflight == 'true'
         continue-on-error: true
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-dart-symbols-testflight-${{ steps.channel.outputs.release_sequence }}
           path: fushi/build/ios/dart-symbols-testflight
@@ -3713,7 +3742,7 @@ jobs:
       # `testflight` job 只认 testflight 输出，不会把它传出去。
       - name: Upload signed TestFlight IPA artifact
         if: steps.signing.outputs.signed == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-testflight-signed-ipa
           path: fushi/build/ios/ipa/*.ipa
@@ -3734,7 +3763,7 @@ jobs:
       contents: read
     steps:
       - name: Download signed TestFlight IPA
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: ios-testflight-signed-ipa
           path: fushi/build/ios/ipa
@@ -3800,7 +3829,7 @@ jobs:
       pages: write
       id-token: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
       - name: Validate unified release policy
@@ -4001,14 +4030,14 @@ jobs:
       # platform simply contributes no file (uploads use if-no-files-found:
       # ignore), so a broken mac/iOS build never blocks the Windows publish.
       - name: Download platform release artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           pattern: desktop-artifacts-*
           merge-multiple: true
           path: fushi/build/release-artifacts
       - name: Upload assets to GitHub Release event
         if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           tag_name: ${{ steps.channel.outputs.tag }}
           files: |
@@ -4129,7 +4158,7 @@ jobs:
           done
       - name: Publish desktop channel release
         if: steps.channel.outputs.publish_managed_release == 'true'
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           tag_name: ${{ steps.channel.outputs.publish_tag }}
           # Rolling debug: target the DEFAULT branch, not github.sha. GitHub rejects a
@@ -4285,7 +4314,7 @@ jobs:
       # Flatpak repository yet" until that branch's next build.
       - name: Download Flatpak repo commit
         if: needs.linux.result == 'success'
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: flatpak-repo-linux
           path: build
@@ -4317,12 +4346,12 @@ jobs:
           echo "publish=true" >> "$GITHUB_OUTPUT"
       - name: Upload Flatpak repository to Pages
         if: steps.flatpak_repo.outputs.publish == 'true'
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
           path: build/flatpak-site
       - name: Deploy Flatpak repository
         if: steps.flatpak_repo.outputs.publish == 'true'
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
       - name: Upload Linux Flatpak to the release
         if: steps.flatpak_repo.outputs.publish == 'true'
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4

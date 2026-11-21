@@ -15,9 +15,11 @@ import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_panel_kit.dart'
     show MangaPanelInfoButton;
 import 'package:fushi/src/ocr/manga_ocr_model_import.dart';
+import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRgbaImage;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
@@ -125,12 +127,26 @@ class _FakeImporter extends MangaOcrModelImporter {
 
 /// 系统 OCR 可用性桩：设置区据此决定「设备自带」那项灰不灰。
 class _FakeSystemOcr implements SystemOcrMangaRunner {
-  _FakeSystemOcr(this.available);
+  @override
+  Future<MokuroImage> recognizePagePixels(
+    OcrRgbaImage image, {
+    required String relativeUrl,
+    required String language,
+  }) => throw UnimplementedError();
+
+  _FakeSystemOcr(this.available, {this.status = SystemOcrModelStatus.ready});
 
   final bool available;
 
+  /// [modelStatus] 的回答（BUG-4705）。
+  final SystemOcrModelStatus status;
+
   @override
   Future<bool> isAvailable() async => available;
+
+  @override
+  Future<SystemOcrModelStatus> modelStatus({required String language}) async =>
+      status;
 
   @override
   Stream<MangaOcrVolumeEvent> ocrFolder({
@@ -148,6 +164,26 @@ class _FakeSystemOcr implements SystemOcrMangaRunner {
     required String relativeUrl,
     required String language,
   }) => throw UnimplementedError();
+}
+
+/// 系统 OCR 引导弹窗的平台口：Play 服务没装（ConnectionResult 1）。
+class _NoPlayServicesSetup implements SystemOcrModelSetup {
+  int statusCalls = 0;
+
+  @override
+  Future<SystemOcrModelReport> modelStatus(String language) async {
+    statusCalls++;
+    return const SystemOcrModelReport(SystemOcrModelStatus.playServicesMissing);
+  }
+
+  @override
+  Future<void> installModel(String language) async {}
+
+  @override
+  Future<bool> resolvePlayServices() async => false;
+
+  @override
+  Future<void> openPlayServicesSettings() async {}
 }
 
 /// 已配对服务端的假探测：报一张模型表（或离线时什么都不报）。
@@ -717,7 +753,7 @@ void main() {
     await tester.pump();
     events.add(
       const MangaOcrDownloadEvent(
-        fileName: 'kellenok_manga_rec_v0.2.onnx',
+        fileName: 'kellenok_manga_rec_v0.3.onnx',
         receivedBytes: 10,
         totalBytes: 100,
       ),
@@ -725,7 +761,7 @@ void main() {
     await tester.pump();
     expect(
       find.text(
-        t.manga_ocr_downloading_file(file: 'kellenok_manga_rec_v0.2.onnx'),
+        t.manga_ocr_downloading_file(file: 'kellenok_manga_rec_v0.3.onnx'),
       ),
       findsOneWidget,
     );
@@ -753,7 +789,7 @@ void main() {
         imported: <String>[],
         skipped: <String>[],
         rejected: <MangaOcrModelImportRejection>[],
-        stillMissing: <String>['ppocrv6_small_rec.yml'],
+        stillMissing: <String>['kellenok_manga_rec_v0.3_dict.txt'],
       ),
       beforeReturn: () => imported.future,
     );
@@ -1181,7 +1217,7 @@ void main() {
     );
     events.add(
       const MangaOcrDownloadEvent(
-        fileName: 'kellenok_manga_rec_v0.2.onnx',
+        fileName: 'kellenok_manga_rec_v0.3.onnx',
         receivedBytes: 5 * 1024 * 1024,
         totalBytes: 30 * 1024 * 1024,
       ),
@@ -1282,7 +1318,7 @@ void main() {
     });
     final _FakeImporter importer = _FakeImporter(
       const MangaOcrModelImportResult(
-        imported: <String>['ppocrv6_small_rec.yml'],
+        imported: <String>['kellenok_manga_rec_v0.3_dict.txt'],
         skipped: <String>[],
         rejected: <MangaOcrModelImportRejection>[],
         stillMissing: <String>[],
@@ -1317,8 +1353,8 @@ void main() {
     for (final String name in <String>[
       'detector-v4-s_int8.onnx',
       'ppocrv6_small_det.onnx',
-      'ppocrv6_small_rec.yml',
-      'kellenok_manga_rec_v0.2.onnx',
+      'kellenok_manga_rec_v0.3_dict.txt',
+      'kellenok_manga_rec_v0.3.onnx',
     ]) {
       expect(find.textContaining(name), findsOneWidget);
     }
@@ -1339,7 +1375,7 @@ void main() {
         imported: <String>[],
         skipped: <String>[],
         rejected: <MangaOcrModelImportRejection>[],
-        stillMissing: <String>['ppocrv6_small_rec.yml'],
+        stillMissing: <String>['kellenok_manga_rec_v0.3_dict.txt'],
       ),
     );
     final Directory tempDir = Directory.systemTemp.createTempSync(
@@ -1408,8 +1444,8 @@ void main() {
       for (final String name in <String>[
         'detector-v4-s_int8.onnx',
         'ppocrv6_small_det.onnx',
-        'ppocrv6_small_rec.yml',
-        'kellenok_manga_rec_v0.2.onnx',
+        'kellenok_manga_rec_v0.3_dict.txt',
+        'kellenok_manga_rec_v0.3.onnx',
       ]) {
         expect(find.textContaining(name), findsOneWidget);
       }
@@ -1486,6 +1522,61 @@ void main() {
     await tester.pumpAndSettle();
     expect(storedEngine, 'auto');
   });
+
+  // BUG-4705：没有 Play 服务的设备上选项保留，选中后立刻弹引导（说明原因、指向
+  // 本机模型），而不是等到开书识别失败才甩一句原始异常。
+  for (final (SystemOcrModelStatus status, bool guides)
+      in <(SystemOcrModelStatus, bool)>[
+        (SystemOcrModelStatus.playServicesMissing, true),
+        (SystemOcrModelStatus.playServicesUnavailable, true),
+        (SystemOcrModelStatus.ready, false),
+        (SystemOcrModelStatus.playServicesDisabled, false),
+      ]) {
+    testWidgets('设备自带 OCR：选中时 $status → ${guides ? '' : '不'}弹引导', (
+      WidgetTester tester,
+    ) async {
+      String storedEngine = 'auto';
+      final _NoPlayServicesSetup setup = _NoPlayServicesSetup();
+      await tester.pumpWidget(
+        wrap(
+          MangaOcrSettingsSection(
+            service: _FakeOcrService(ready: false),
+            mokuroPathGetter: () => '',
+            mokuroPathSetter: (String _) async {},
+            probeExternal: (String _) async => null,
+            enginePreferenceGetter: () => storedEngine,
+            enginePreferenceSetter: (String value) async =>
+                storedEngine = value,
+            systemOcrRunner: _FakeSystemOcr(true, status: status),
+            systemOcrSetup: setup,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await openEngineSheet(tester);
+      final Finder systemOption = find.byKey(
+        engineOptionKey(MangaOcrEnginePreference.systemOcr),
+      );
+      await tester.ensureVisible(systemOption);
+      await tester.pumpAndSettle();
+      await tester.tap(systemOption);
+      await tester.pumpAndSettle();
+
+      expect(storedEngine, MangaOcrEnginePreference.systemOcr.key);
+      expect(
+        find.text(t.ocr_system_model_title),
+        guides ? findsOneWidget : findsNothing,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('system_ocr_setup_local_alternative'),
+        ),
+        guides ? findsOneWidget : findsNothing,
+      );
+      expect(setup.statusCalls, guides ? 1 : 0);
+    });
+  }
 
   String hostLabel(MangaOcrLocalModel model) =>
       t.manga_ocr_engine_paired_host_model(model: localModelLabel(model));

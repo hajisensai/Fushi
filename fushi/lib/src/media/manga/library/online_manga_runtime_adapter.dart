@@ -1,8 +1,11 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/media/manga/library/online_manga_unavailable.dart';
 import 'package:fushi/src/media/manga/download/manga_download_sidecar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
@@ -11,82 +14,106 @@ import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_url.dart';
 import 'package:fushi/src/media/manga/mihon/quirks/comico_magazine_comic_quirk.dart';
-import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
-/// 一条在线漫画书架条目**不可用**的原因。
+// 不可用错误与 Cloudflare 判型定义在无 UI 依赖的文件里（全源搜索 runner 等非 widget
+// 层直接 import 那份）；这里转出，存量调用方不用改 import。
+export 'package:fushi/src/media/manga/library/online_manga_unavailable.dart';
+
+/// 页引用已随运行时进程失效（桌面 sidecar 重启，BUG-4917）。
 ///
-/// 分类而不是一句 message：作品页要据此决定给哪种出路——源被禁用要引导去
-/// 「来源」页启用，平台不支持要直说「这个源在本平台不可用」而不是让用户对着
-/// 「加载失败 + 重试」按钮反复重试一个永远不会成功的操作。
-enum OnlineMangaUnavailableReason {
-  /// 扩展/包已卸载或被停用。
-  sourceDisabled,
+/// 不是「这一页取失败」：同一章重新 [OnlineMangaRuntimeAdapter.resolveChapterPages]
+/// 换一份引用就能取。只由 [OnlineMangaRuntimeAdapter.fetchChapterPage] 抛，
+/// [OnlineMangaChapterPageRefs] 接住它重解析页表。
+class OnlineMangaPageRefExpired implements Exception {
+  const OnlineMangaPageRefExpired(this.message, {this.cause});
 
-  /// 该运行时在本平台根本不存在（如 iOS 上的 Mihon、已移除的 Aidoku）。
-  platformUnsupported,
-
-  /// 运行时在，但这次调用失败了（网络、站点抽风、Cloudflare）。
-  runtimeFailure,
-}
-
-class OnlineMangaUnavailable implements Exception {
-  const OnlineMangaUnavailable(
-    this.reason,
-    this.message, {
-    this.cause,
-    this.stage,
-    this.sourceLabel,
-  });
-
-  final OnlineMangaUnavailableReason reason;
   final String message;
   final Object? cause;
 
-  /// 断在哪一步：`details` / `chapters` / `pages` / `cover`。
-  ///
-  /// BUG-1767 的教训：三个阶段共用一个 catch，桥接层对它们返回的 code 可能完全
-  /// 一样，不记 stage 就分不出是拉详情、拉章节还是取页面失败。
-  final String? stage;
-
-  /// 出错时那个源的展示名，进诊断文本。
-  final String? sourceLabel;
-
-  /// 可复制诊断对话框用的全文。
-  ///
-  /// 必须带上运行时原生侧的堆栈（`MihonRuntimeException.diagnostics` 里的
-  /// `PlatformException.details`）——那几 KB 堆栈不进页面正文，但排障只能靠它。
-  String get diagnostics {
-    final Object? nested = cause;
-    final String detail = nested is MihonRuntimeException
-        ? nested.diagnostics
-        : (nested?.toString() ?? message);
-    return <String>[
-      'stage: ${stage ?? 'unknown'}',
-      if (sourceLabel != null) 'source: $sourceLabel',
-      'reason: ${reason.name}',
-      '',
-      detail,
-    ].join('\n');
-  }
-
-  /// 给用户看的一句话（toast / 错误视图正文）。
-  ///
-  /// [message] 多数是包装时的 `'$error'` 原串（`SocketException: Failed host
-  /// lookup ...`），原样保留给 [diagnostics] / 日志；展示一律走这里，经
-  /// [describeOnlineSourceError] 归一。[message] 不是 [cause] 的原串时说明
-  /// 包装方专门写了说明（如「对端还没下载这一章」），按文本归一而不是退回
-  /// [cause]。
-  String get userMessage {
-    final Object? nested = cause;
-    if (nested != null && message == '$nested') {
-      return describeOnlineSourceError(nested);
-    }
-    return describeOnlineSourceErrorText(message);
-  }
-
   @override
-  String toString() => 'OnlineMangaUnavailable($reason): $message';
+  String toString() => 'OnlineMangaPageRefExpired: $message';
+}
+
+/// 一章的页表，运行时重启后就地换新引用（BUG-4917）。
+///
+/// 在线直读会话（`OnlineMangaReaderSession`）按页序取页，页数与每页的身份串
+/// （面板 / OCR 缓存键）在开会话时就定了；这里只持有可以换的那部分——取页引用。
+/// 取页撞上 [OnlineMangaPageRefExpired] 时重解析一次页表：页数一致就整份换新、
+/// 用新引用再取这一页；页数变了说明源端章节已不是开会话时那一份，按失败处理
+/// （[OnlineMangaUnavailable]，之后的取页都直接报这个错，不再反复重解析）。
+/// 并发撞上失效的取页共用同一次重解析。
+class OnlineMangaChapterPageRefs {
+  OnlineMangaChapterPageRefs({
+    required this.adapter,
+    required this.entry,
+    required this.chapter,
+    required List<OnlineMangaPageRef> pages,
+  }) : _pages = List<OnlineMangaPageRef>.unmodifiable(pages);
+
+  final OnlineMangaRuntimeAdapter adapter;
+  final OnlineMangaLibraryEntry entry;
+  final OnlineMangaChapter chapter;
+
+  List<OnlineMangaPageRef> _pages;
+  Future<List<OnlineMangaPageRef>>? _reresolving;
+  OnlineMangaUnavailable? _mismatch;
+
+  /// 页数（开会话时定，之后不变）。
+  int get length => _pages.length;
+
+  /// 重解析后发现源端页数已变：这份页表再也取不到页，持有者（缓存页表的互联
+  /// host）要丢掉它，下次按新页数重开。
+  bool get pageCountChanged => _mismatch != null;
+
+  /// 当前有效的第 [index] 页引用（取消在飞请求要对得上当前引用）。
+  OnlineMangaPageRef operator [](int index) => _pages[index];
+
+  /// 取第 [index] 页字节；引用随运行时失效时重解析页表后再取一次。
+  Future<Uint8List> fetch(int index) async {
+    final List<OnlineMangaPageRef> used = _pages;
+    try {
+      return await adapter.fetchChapterPage(used[index]);
+    } on OnlineMangaPageRefExpired {
+      final List<OnlineMangaPageRef> fresh = await _refreshAfterExpiry(used);
+      return adapter.fetchChapterPage(fresh[index]);
+    }
+  }
+
+  Future<List<OnlineMangaPageRef>> _refreshAfterExpiry(
+    List<OnlineMangaPageRef> expired,
+  ) {
+    final OnlineMangaUnavailable? mismatch = _mismatch;
+    if (mismatch != null) {
+      return Future<List<OnlineMangaPageRef>>.error(mismatch);
+    }
+    // 别的取页已经换过新表：直接用新表，不再解析一次。
+    if (!identical(expired, _pages)) {
+      return Future<List<OnlineMangaPageRef>>.value(_pages);
+    }
+    return _reresolving ??= _reresolve().whenComplete(() {
+      _reresolving = null;
+    });
+  }
+
+  Future<List<OnlineMangaPageRef>> _reresolve() async {
+    final List<OnlineMangaPageRef> fresh = await adapter.resolveChapterPages(
+      entry: entry,
+      chapter: chapter,
+    );
+    if (fresh.length != _pages.length) {
+      final OnlineMangaUnavailable mismatch = OnlineMangaUnavailable(
+        OnlineMangaUnavailableReason.runtimeFailure,
+        'The chapter now has ${fresh.length} pages instead of '
+        '${_pages.length} after the runtime restarted',
+        stage: 'pages',
+      );
+      _mismatch = mismatch;
+      throw mismatch;
+    }
+    _pages = List<OnlineMangaPageRef>.unmodifiable(fresh);
+    return _pages;
+  }
 }
 
 /// 一次刷新拉回来的作品 + 章节。
@@ -248,6 +275,9 @@ abstract interface class OnlineMangaRuntimeAdapter {
   });
 
   /// 取一页字节。只接受本运行时自己在 [resolveChapterPages] 里造的引用。
+  ///
+  /// 引用随运行时进程失效（桌面 sidecar 重启）时抛 [OnlineMangaPageRefExpired]：
+  /// 长期持有页表的调用方经 [OnlineMangaChapterPageRefs] 取页，由它重解析换新引用。
   Future<Uint8List> fetchChapterPage(OnlineMangaPageRef page);
 
   /// 取封面字节（入库时落盘一份，之后书架离线可见）。
@@ -270,6 +300,48 @@ abstract interface class MangaOcrSidecarProvider {
 abstract interface class OnlineMangaPageCancellable {
   /// 尽力取消 [pages] 仍在飞的 [OnlineMangaRuntimeAdapter.fetchChapterPage]。
   Future<void> cancelChapterPages(Iterable<OnlineMangaPageRef> pages);
+}
+
+/// 能替不在作品页上的调用方（下载中心的失败任务行）解 Cloudflare 挑战的适配器。
+///
+/// 任务行只留下了失败的异常，没有作品页手上那个 manager；下载服务经这个能力从
+/// 适配器取解题用的运行时，按 [canSolveMihonCloudflare] 判要不要给「验证」。
+abstract interface class OnlineMangaChallengeSolver {
+  /// 解题用的运行时（Mihon 是 manager 的 runtime；不是 [ChallengeMihonRuntime]
+  /// 的就不给验证按钮）。
+  Object get challengeRuntime;
+}
+
+/// [error] 里有没有 [runtime] 能解的 Cloudflare 挑战。「验证」按钮显不显示的
+/// **唯一**判据：作品页、全源搜索、源浏览、封面失败与下载中心共用。
+bool canSolveMihonCloudflare({
+  required Object? runtime,
+  required Object? error,
+}) =>
+    runtime is ChallengeMihonRuntime && mihonCloudflareChallenge(error) != null;
+
+/// 用 [runtime] 解 [error] 里的挑战（弹验证页，总是由用户点按钮触发）。
+///
+/// true = 解完；false = 没有可解的挑战，或用户关掉了验证页
+/// （`CHALLENGE_CANCELLED`，不算失败）；其余失败照抛给调用方展示。
+Future<bool> solveMihonCloudflare({
+  required Object? runtime,
+  required Object? error,
+}) async {
+  final MihonCloudflareChallengeException? challenge = mihonCloudflareChallenge(
+    error,
+  );
+  if (runtime is! ChallengeMihonRuntime || challenge == null) return false;
+  try {
+    await runtime.solveCloudflare(
+      challenge.url,
+      userAgent: challenge.userAgent,
+    );
+  } on MihonRuntimeException catch (failure) {
+    if (failure.code == 'CHALLENGE_CANCELLED') return false;
+    rethrow;
+  }
+  return true;
 }
 
 /// 在 app 内登录源站所需的一切（[runtime] 交给 `mihonLoginTarget` 判能力）。
@@ -360,7 +432,8 @@ class MihonLibraryAdapter
         OnlineMangaLoginCapable,
         OnlineMangaWebUrlCapable,
         OnlineMangaLanguageScoped,
-        OnlineMangaPageCancellable {
+        OnlineMangaPageCancellable,
+        OnlineMangaChallengeSolver {
   const MihonLibraryAdapter(
     this.manager, {
     this.presetContext,
@@ -368,6 +441,9 @@ class MihonLibraryAdapter
   });
 
   final MihonManager manager;
+
+  @override
+  Object get challengeRuntime => manager.runtime;
 
   @override
   Future<String?> fetchChapterOcrSidecar({
@@ -396,8 +472,8 @@ class MihonLibraryAdapter
   ///
   /// 这不是优化，是正确性：`_sourceRow` 要求该源已在库里登记且启用，而**预览态**
   /// （`MihonPreviewTarget`，试用一个还没安装的扩展）根本没有库行——现解析必然抛
-  /// SOURCE_DISABLED。此外现解析还会走 `manager.initialise()`，把一次纯展示变成
-  /// 一趟可能很慢、甚至挂住的初始化。
+  /// SOURCE_DISABLED。此外现解析还要等 manager 的本地就绪段（读库），纯展示
+  /// 用不着。
   final MihonSourceContext? presetContext;
 
   @override
@@ -712,21 +788,26 @@ class MihonLibraryAdapter
       throw ArgumentError.value(page, 'page', 'not a Mihon page reference');
     }
     final MihonRuntime runtime = manager.runtime;
-    if (runtime is CancellableMihonRuntime) {
-      return (runtime as CancellableMihonRuntime).fetchImageRequest(
+    try {
+      if (runtime is CancellableMihonRuntime) {
+        return await (runtime as CancellableMihonRuntime).fetchImageRequest(
+          page.context.extension,
+          page.context.source,
+          page.page,
+          requestId: mihonPageRequestId(page),
+          preferences: page.context.preferences,
+        );
+      }
+      return await runtime.fetchImage(
         page.context.extension,
         page.context.source,
         page.page,
-        requestId: _pageRequestId(page),
         preferences: page.context.preferences,
       );
+    } on MihonRuntimeException catch (error) {
+      if (error.code != kMihonStalePageReferenceCode) rethrow;
+      throw OnlineMangaPageRefExpired(error.message, cause: error);
     }
-    return runtime.fetchImage(
-      page.context.extension,
-      page.context.source,
-      page.page,
-      preferences: page.context.preferences,
-    );
   }
 
   @override
@@ -735,15 +816,26 @@ class MihonLibraryAdapter
     if (runtime is! CancellableMihonRuntime) return;
     final List<String> requestIds = <String>[
       for (final OnlineMangaPageRef page in pages)
-        if (page is MihonMangaPageRef) _pageRequestId(page),
+        if (page is MihonMangaPageRef) mihonPageRequestId(page),
     ];
     if (requestIds.isEmpty) return;
     await (runtime as CancellableMihonRuntime).cancelImageRequests(requestIds);
   }
 
-  /// 同一个页引用对象 → 同一个运行时请求号（取消要对得上）。
-  static String _pageRequestId(MihonMangaPageRef page) =>
-      'download-${identityHashCode(page)}-${page.index}';
+  /// 同一个页引用对象 → 同一个运行时请求号（取消要对得上）；不同的页引用对象 →
+  /// 一定不同的请求号。
+  ///
+  /// 旧实现拿 `identityHashCode` 拼号：它不唯一，两个同页号的活引用撞上同一个号时，
+  /// 桌面运行时按请求号登记的取图客户端被后一个顶掉（前一个请求被直接关掉），
+  /// 取消也会取消错页。现在按引用对象发单调递增序号（[Expando] 随引用回收）。
+  @visibleForTesting
+  static String mihonPageRequestId(MihonMangaPageRef page) =>
+      _pageRequestIds[page] ??= 'page-${_nextPageRequestId++}-${page.index}';
+
+  static final Expando<String> _pageRequestIds = Expando<String>(
+    'mihonPageRequestId',
+  );
+  static int _nextPageRequestId = 0;
 
   @override
   Future<List<int>> fetchCover(
@@ -781,7 +873,10 @@ class MihonLibraryAdapter
     // `MihonRuntimeFactory.create` 成功后才会有 manager），它的存在就是能力证明；
     // 在这里再问一遍 `Platform` 只会把注入了 runtime 的用例在 Linux CI 上误判成
     // platformUnsupported（develop@4846ea1 的 mihon_language_scope_test 红）。
-    await manager.initialise();
+    // 只等本地就绪段：[MihonManager.contextForSource] 只用已装扩展与库里的源
+    // 偏好，不需要仓库目录。等完整 `initialise()` 会让冷启动后第一次开在线章
+    // 陪着等仓库索引 + 下载量的网络请求（仓库多 / 连不上时以分钟计）。
+    await manager.ensureLocalReady();
     final MangaOnlineSourceRow row = _sourceRow(entry);
     try {
       return await manager.contextForSource(row);

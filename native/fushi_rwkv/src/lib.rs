@@ -2,13 +2,14 @@
 // License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
 //
 //! Fushi RWKV 排程原生推理库：上游 RWKV 调度（kuma3-anki-core 的
-//! `rslib/src/rwkv`，AGPL-3.0-or-later）推理核心的薄封装 + 小模型（sm72e25）+ C ABI。
+//! `rslib/src/rwkv`，AGPL-3.0-or-later）推理核心的薄封装 + 小模型（Instant-Only sm98）+ C ABI。
 //!
 //! 设计：
 //! - 整段复习历史按时间顺序回放（[RwkvRuntime::replay]）进模型，维护 card / note / deck /
 //!   preset / global 五层循环状态；R（此刻回忆概率，即时头）用批量查询（[RwkvRuntime::query]）。
 //! - 作答时排程读**曲线头**（[RwkvRuntime::next_intervals]，`curve.rs`）：每个评分一次假设作答，
 //!   取这次作答之后的遗忘曲线第一次 ≤ 目标保留率的天数（上游 RWKV-Curve 的区间求解与 PAVA）。
+//!   只有曲线头训练过的大模型可用；Instant-Only 小模型返回 [RwkvError::Unsupported]。
 //!   不做 workload 模拟、不碰 SQLite。
 //! - 数值代码在 `src/rwkv/`，逐字搬自上游（见 UPSTREAM.md）；本文件只做输入校验、
 //!   线程数控制、快照封装与 C ABI，**不含任何数值计算**。
@@ -56,7 +57,8 @@ mod sched;
 pub use curve::{AnswerCurve, answer_intervals};
 pub use rwkv::small::{SmallHeads, SmallInference, SmallModel, SmallUndo};
 pub use rwkv::{
-    ReviewInput, RwkvInference, RwkvModel, RwkvStats, StatePrecision, forecast_query, predict_curve,
+    ReviewInput, RwkvInference, RwkvModel, RwkvStats, StatePrecision, forecast_query,
+    predict_curve, show_time_query,
 };
 pub use sched::{
     FrwkvSched, frwkv_sched_alloc, frwkv_sched_free, frwkv_sched_new, frwkv_sched_step,
@@ -83,6 +85,10 @@ mod snapshot_tests;
 /// 返回 None）由调用方从磁盘检查点或全量回放重来。
 pub const JOURNAL_MAX_BYTES: usize = 32 << 20;
 
+/// RWKV-Curve 用在曲线头没训练过的模型上时的错误文本（[ModelKind::has_trained_curve_head]）。
+const CURVE_HEAD_UNTRAINED: &str = "RWKV-Curve needs a trained curve head; this is an \
+    Instant-Only small model (its curve head was never trained, only R queries are valid)";
+
 /// 分数表的一项：查询时这张卡的「版本」（调用方给，例如最后一条有效日志的 hash）、查询行、
 /// 锚点（这张卡最后一条保留评分的时刻，毫秒；没有 = -1）与 R。查询行与锚点让
 /// [RwkvRuntime::scores_requery] 不必回到调用方读历史就能把整张表按新的「此刻」重算。
@@ -100,22 +106,41 @@ pub const UPSTREAM_REPO: &str = "https://github.com/Pedrubik2000/kuma3-anki-core
 pub const UPSTREAM_SHA: &str = "c639bcec696f2317f9bb9a736d433b9d6c0d9c56";
 /// 通用预训练权重（`RWKV_trained_on_5000_10000.bin`，11,082,637 字节）的 SHA-256。
 pub const MODEL_SHA256: &str = "749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec";
-/// 小模型 sm72e25（无泄漏 SM72、第 25 轮起降温）的来源：JSchoreels/anki 在此提交的
-/// `qt/aqt/rwkv_inference/sm72e25/` 与 `rslib/src/rwkv/testdata/sm72e25-vectors.json.gz`
-/// （该提交的 manifest.json 记的哈希与下面一致）。`fetch_model.*` 按这个提交钉 URL 下载。
-pub const SMALL_MODEL_SOURCE_SHA: &str = "986963d23e7ec9f22771c38998ef9042214c2b98";
+/// 小模型（2026-11-15 起是 Instant-Only 的 sm98，之前是两头的 sm72e25）的来源：JSchoreels/anki 在此
+/// 提交的 `qt/aqt/rwkv_inference/sm98/` 与 `rslib/src/rwkv/testdata/sm98-vectors.json.gz`（该提交的
+/// manifest.json 记的哈希与下面一致；上游 release `rwkv-family-2026-11-13` 说明与它逐字节相同）。
+/// 运行时权重首选 Fushi 自己的镜像 release（`hajisensai/Fushi` tag `rwkv-models`，内容寻址、永不
+/// 覆盖），这个提交的 raw URL 作备用；`fetch_model.*` 同此。
+pub const SMALL_MODEL_SOURCE_SHA: &str = "001440b03395f24ffc1714b18ad3d9d4d89d2067";
 /// `weights.int8.bin`（运行时用，436,391 字节）的 SHA-256。
 pub const SMALL_MODEL_INT8_SHA256: &str =
-    "ff626af2e974346ed282615d190500148b22cfe05cbfd081b1e70d5a1dfa3cd9";
+    "b2f335bd712b9d602150201de41ab5a0f0a4c291644705e2aa1ed2a1bf1592c3";
 /// `weights.f32.bin`（1,351,553 字节，测试对拍用）的 SHA-256。
 pub const SMALL_MODEL_F32_SHA256: &str =
-    "42b79e35ad78bf291817cb48979f48fd105b39fc43b6a5ca954938d3f25cf261";
-/// `architecture.json`（与 SM56 / SM72 的导出逐字节相同）的 SHA-256。
+    "a006dcc039d19142dc95d257d9c238fb93c7efa12b78e18ec6ae881ac9009a24";
+/// `architecture.json`（"w64"，与 SM56 / SM72 / SM92 的导出逐字节相同）的 SHA-256。
 pub const SMALL_MODEL_ARCHITECTURE_SHA256: &str =
     "9bd41f1189dc0113277d371223ce805612aaec07101804160fe86312eed15de3";
-/// 黄金向量 `sm72e25-vectors.json.gz`（两位用户各 500 行，NumPy 参考实现、无泄漏输入）的 SHA-256。
+/// 黄金向量 `sm98-vectors.json.gz`（两位用户各 500 行，NumPy 参考实现、无泄漏输入、show-time 查询行）
+/// 的 SHA-256。
 pub const SMALL_MODEL_VECTORS_SHA256: &str =
-    "db54656bc41a22a175d2b905304d45e6ae6b0bb4efd1af8dfce9185f40ee1a01";
+    "c7d8df407966fccd8f98227241816e114ce9ed1dfea799587e481c1d5926a453";
+/// 省内存的 Tiny Instant-Only 小模型 sm101（"w64-c1"：card / note 流各 1 层、deck 流 4 层，每卡状态比 sm98
+/// 小；即时头 LogLoss 0.27672，sm98 是 0.276191）。来源同 [SMALL_MODEL_SOURCE_SHA] 提交的
+/// `qt/aqt/rwkv_inference/sm101/` 与 `rslib/src/rwkv/testdata/sm101-vectors.json.gz`。架构由权重张量目录推出，
+/// 同一套小模型代码加载；快照按权重指纹区分，换模型即全量重放。
+/// `weights.int8.bin`（运行时用，409,483 字节）的 SHA-256。
+pub const TINY_MODEL_INT8_SHA256: &str =
+    "77703dd2f2a21a1bcadaedfed1cec93ee0fd6fd6d3c840be221e72b5e1c05066";
+/// sm101 `weights.f32.bin`（1,270,749 字节，测试对拍用）的 SHA-256。
+pub const TINY_MODEL_F32_SHA256: &str =
+    "2faacb5b913bcfbdc0e363532d533e3bcff6872c8358f1ef753ca87f9d2a60fd";
+/// sm101 `architecture.json`（"w64-c1"）的 SHA-256。
+pub const TINY_MODEL_ARCHITECTURE_SHA256: &str =
+    "49650457329d43ff7f3f04f68926e371d49060699142cfec9497cb759ac7a75f";
+/// sm101 黄金向量 `sm101-vectors.json.gz` 的 SHA-256。
+pub const TINY_MODEL_VECTORS_SHA256: &str =
+    "18de8ae77a1a40986dc432531116dfb009beae2385001ef425389a3ad7919a9e";
 
 // ---------------------------------------------------------------------------
 // Rust API
@@ -126,11 +151,24 @@ pub const SMALL_MODEL_VECTORS_SHA256: &str =
 pub enum ModelKind {
     /// 2,762,884 参数的上游模型（质量优先）。
     Large,
-    /// 331,511 参数的小模型（sm72e25；部署路径 295 个封存用户上 LogLoss 比 SM56 低 0.39%）。
+    /// 小模型（d_model 64 的 "w64" 家族；Fushi 用的是 Instant-Only 版 sm98，331,511 参数）。
     Small,
 }
 
 impl ModelKind {
+    /// 这个模型的曲线头（作答后的遗忘曲线 R(t)，RWKV-Curve 排程读它）是否训练过。
+    ///
+    /// 大模型是两头模型，曲线头可用。小模型：Fushi 只用 Instant-Only 版（sm98 / sm101，训练时
+    /// `curve_loss_weight 0.0`，manifest `use.heads = ["instant", "rating"]`），曲线头**从未训练**，
+    /// 输出的是无意义的数——[RwkvRuntime::next_intervals] / [RwkvRuntime::answer_curves] 对它返回
+    /// [RwkvError::Unsupported]，不给垃圾间隔。即时头（R 查询、回放预测）不受影响。
+    pub fn has_trained_curve_head(self) -> bool {
+        match self {
+            Self::Large => true,
+            Self::Small => false,
+        }
+    }
+
     /// 推荐的状态精度：大模型 int8（与 f32 的 LogLoss 差 < 0.01%），小模型 int4。
     pub fn default_precision(self) -> StatePrecision {
         match self {
@@ -236,11 +274,16 @@ impl Engine {
         }
     }
 
+    /// 只有曲线头训练过的模型才有（[ModelKind::has_trained_curve_head]）；小模型（Instant-Only）没有
+    /// 这条路径，调用方在 [RwkvRuntime::answer_curves] 已拒绝。
     fn answer_curves(&mut self, answer: &ReviewInput) -> io::Result<[AnswerCurve; 4]> {
-        Ok(match self {
-            Self::Large(inference) => inference.answer_curves(answer)?.map(AnswerCurve::Large),
-            Self::Small(inference) => inference.answer_curves(answer)?.map(AnswerCurve::Small),
-        })
+        match self {
+            Self::Large(inference) => Ok(inference.answer_curves(answer)?.map(AnswerCurve::Large)),
+            Self::Small(_) => Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                CURVE_HEAD_UNTRAINED,
+            )),
+        }
     }
 
     fn snapshot(&self) -> Vec<u8> {
@@ -434,7 +477,9 @@ impl RwkvRuntime {
     /// - `duration_millis`：`None` 或 ≥ 0；`card_type`：`None` 或 0..=5。
     ///
     /// `record_predictions = true` 时返回每条有评分行**作答前**的 R（下标为该行在
-    /// `reviews` 中的位置）；与上游 `warm_up_reviews` 完全一致。
+    /// `reviews` 中的位置）。大模型与上游 `warm_up_reviews` 完全一致（查询行用这条复习自己的
+    /// 作答间隔）；小模型的查询行按 INTEGRATION.md §6.10 用**出示时刻**的间隔
+    /// （`elapsed_seconds − duration / 1000`，见 [show_time_query]），即它训练时的输入。
     pub fn replay(
         &mut self,
         reviews: &[ReviewInput],
@@ -589,6 +634,7 @@ impl RwkvRuntime {
     /// （不保存），读那一行曲线头给出的遗忘曲线，间隔 = R 第一次 ≤ `target_retention` 的天数
     /// （向上取整，1..=`max_interval_days`；到上限仍高于目标给上限），评分顺序修正为不减。
     /// 返回天数与曲线在该天的 R。`answer` 的校验同 [Self::replay]（`ease` 被逐个替换）。
+    /// 只有曲线头训练过的模型（大模型）可用；Instant-Only 小模型 → [RwkvError::Unsupported]。
     pub fn next_intervals(
         &mut self,
         answer: &ReviewInput,
@@ -613,10 +659,15 @@ impl RwkvRuntime {
     }
 
     /// [Self::next_intervals] 用的四条遗忘曲线（Again..Easy 的假设作答，不保存）。测试 / 评测用。
+    /// 曲线头没训练过的模型（Instant-Only 小模型，[ModelKind::has_trained_curve_head]）→
+    /// [RwkvError::Unsupported]（C ABI `-6`）。
     #[doc(hidden)]
     pub fn answer_curves(&mut self, answer: &ReviewInput) -> Result<[AnswerCurve; 4], RwkvError> {
         if self.poisoned {
             return Err(RwkvError::Poisoned);
+        }
+        if !self.kind.has_trained_curve_head() {
+            return Err(RwkvError::Unsupported(CURVE_HEAD_UNTRAINED.into()));
         }
         let mut answer = answer.clone();
         answer.is_query = false;
@@ -1723,7 +1774,7 @@ pub unsafe extern "C" fn frwkv_runtime_scores_requery(
 /// 依次替换为 1..4；`duration` 通常未知、不置位），写 4 个天数到 `out_days`（Again / Hard /
 /// Good / Easy；该评分作答后的遗忘曲线第一次 ≤ 目标的天数），`out_retrievability` 可空，非空时
 /// 写 4 条曲线「在该日的 R」（到上限仍高于目标时是上限那天的 R）。什么都不保存。`answer` 不合法
-/// → [FRWKV_ERR_INPUT]。
+/// → [FRWKV_ERR_INPUT]；模型的曲线头没训练过（Instant-Only 小模型）→ [FRWKV_ERR_UNSUPPORTED]。
 ///
 /// # Safety
 /// `runtime`、`answer` 有效；`out_days` 可写 4 个 u32；`out_retrievability` 为空或可写 4 个 f32。

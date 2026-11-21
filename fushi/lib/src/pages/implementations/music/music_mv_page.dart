@@ -38,15 +38,19 @@ import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_lyrics_view.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/metadata/music_video_service.dart';
+import 'package:fushi/src/media/music/music_local_video.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart'
     show musicEdlUri;
 import 'package:fushi/src/media/music/plugin/music_online_mv_video_client.dart';
+import 'package:fushi/src/media/music/plugin/music_plugins.dart'
+    show MusicPluginStreamUnavailable;
 import 'package:fushi/src/media/music/music_output_backend.dart'
     show MusicPlayItem;
 import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart'
-    show resolvePlatformHwdec;
+    show resolvePlatformHwdec, setMpvPropertiesInOrder;
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
@@ -58,7 +62,12 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
+    show FushiIconButtonControl;
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -220,6 +229,70 @@ Future<void> openMusicOnlineMvPage({
   );
 }
 
+/// MV 曲目（[isMusicWatchableVideoTrack]，曲库里的视频容器）在视频播放页里看：ASS 特效
+/// 字幕、同名外挂字幕、暂停识别画面文字、查词制卡与视频库视频一致（拍板台 jeNKF9u0WJ）。
+/// - 本地 MV：首次观看按 app 外打开视频同一入口登记进视频库并标「MV」
+///   （[ensureMusicVideoInVideoLibrary]）；
+/// - 网络音乐来源的 MV（拍板台 left3568）：起播期按来源取流（[resolveMusicStreamVideo]），
+///   走在线 MV 同一条远端起播路径串流，不登记进视频库。
+/// 进入时暂停音乐播放引擎（同一首歌不该两路同时出声）。视频模块关掉时不登记、只提示
+/// ——否则 MV 会进一个用户看不见的库。
+Future<void> openMusicTrackVideo({
+  required BuildContext context,
+  required MusicTrackRow track,
+}) async {
+  final AppModel app = ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(appProvider);
+  if (!app.moduleVisibility.isEnabled(ModuleId.video)) {
+    FushiToast.show(msg: t.module_disabled_hint, severity: ToastSeverity.info);
+    return;
+  }
+  if (isMusicStreamVideoTrack(track)) {
+    await openMusicOnlineMvPage(
+      context: context,
+      key: '$kMusicStreamVideoKeyPrefix${track.trackUid}',
+      title: track.title,
+      artist: track.artistCredit,
+      source: MusicOnlineMv(
+        resolve: () => resolveMusicStreamVideo(track),
+        describeError: (Object e) => e is MusicPluginStreamUnavailable
+            ? e.message
+            : t.music_mv_open_failed,
+      ),
+    );
+    return;
+  }
+  if (!await File(track.path).exists()) {
+    FushiToast.show(msg: t.video_file_not_found, severity: ToastSeverity.error);
+    return;
+  }
+  final String bookUid;
+  try {
+    bookUid = await ensureMusicVideoInVideoLibrary(app.database, track.path);
+  } on Object catch (e, st) {
+    ErrorLogService.instance.log('openMusicTrackVideo', e, st);
+    FushiToast.show(msg: t.music_mv_open_failed, severity: ToastSeverity.error);
+    return;
+  }
+  unawaited(app.musicSession.engine.pause());
+  if (!context.mounted) return;
+  await Navigator.of(context).push<void>(
+    adaptivePageRoute<void>(
+      context: context,
+      builder: (_) => VideoFushiPage.neutralized(
+        bookUid: bookUid,
+        repo: VideoBookRepository(app.database),
+      ),
+    ),
+  );
+}
+
+/// 网络音乐来源 MV 在视频页里的播放身份前缀（接在 [kMusicOnlineMvVideoIdPrefix] 之后，
+/// 断点 / 观看统计按曲目 uid 记，与插件在线 MV 分开）。
+const String kMusicStreamVideoKeyPrefix = 'source:';
+
 /// 打开无视频的卡拉 OK 字幕页：有同名 `.cdg` 时画面走 CD+G，否则封面 / 纯色画布。
 Future<void> openMusicKaraokePage({
   required BuildContext context,
@@ -313,6 +386,40 @@ Future<String> _canvasFor({
     ),
   );
   return _writeCached(png, 'png');
+}
+
+/// 舞台页叠在画面下部的结构化逐字歌词：「模糊非当前行」偏好在这里订阅
+/// （`ref.watch` + `select`），页面开着时经 AI 操作 / 其他窗口改了也即时生效。
+class MusicKaraokeStageLyrics extends ConsumerWidget {
+  const MusicKaraokeStageLyrics({
+    super.key,
+    required this.timeline,
+    required this.clock,
+    required this.playing,
+    required this.offsetMs,
+    this.onSeek,
+  });
+
+  final LyricTimeline timeline;
+  final FushiPlaybackClock clock;
+  final bool playing;
+  final int offsetMs;
+  final ValueChanged<int>? onSeek;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bool blurInactive = ref.watch(
+      appProvider.select((AppModel m) => m.musicLyricsBlurInactive),
+    );
+    return KaraokeLyricsView(
+      timeline: timeline,
+      clock: clock,
+      playing: playing,
+      offsetMs: offsetMs,
+      onSeek: onSeek,
+      appearance: KaraokeLyricsAppearance(blurInactive: blurInactive),
+    );
+  }
 }
 
 class MusicKaraokeStagePage extends ConsumerStatefulWidget {
@@ -508,17 +615,14 @@ class _MusicKaraokeStagePageState extends ConsumerState<MusicKaraokeStagePage> {
         : startAt;
     final NativePlayer? native = _native;
     if (native != null) {
-      for (final MapEntry<String, String> e in musicKaraokeSubtitleProperties(
-        visible: _overlay == MusicKaraokeOverlay.original,
-      ).entries) {
-        await native.setProperty(e.key, e.value);
-      }
-      if (widget.picture == MusicKaraokePicture.cdg) {
-        for (final MapEntry<String, String> e
-            in musicKaraokeCdgProperties().entries) {
-          await native.setProperty(e.key, e.value);
-        }
-      }
+      // 全仓 mpv 属性批量下发的唯一实现：逐条保序，被拒的单条留痕后跳过（BUG-4911）。
+      await setMpvPropertiesInOrder(_player, <String, String>{
+        ...musicKaraokeSubtitleProperties(
+          visible: _overlay == MusicKaraokeOverlay.original,
+        ),
+        if (widget.picture == MusicKaraokePicture.cdg)
+          ...musicKaraokeCdgProperties(),
+      });
     }
     await _player.open(Media(src.video, httpHeaders: src.headers), play: false);
     if (native != null) {
@@ -643,48 +747,63 @@ class _MusicKaraokeStagePageState extends ConsumerState<MusicKaraokeStagePage> {
     );
     final bool showStructured =
         _overlay == MusicKaraokeOverlay.structured && lyrics != null;
-    return FushiPageScaffold(
-      title: widget.track.title,
-      header: Padding(
-        padding: EdgeInsets.fromLTRB(
-          tokens.spacing.page,
-          tokens.spacing.gap,
-          tokens.spacing.page,
-          tokens.spacing.gap,
-        ),
-        child: FushiFloatingTopBar(
-          title: widget.track.title,
-          adaptiveOverflow: true,
-          leading: <FushiToolbarItem>[
-            FushiToolbarItem(
-              icon: FushiIcons.back,
-              label: MaterialLocalizations.of(context).backButtonTooltip,
-              onPressed: () => unawaited(navigator.maybePop()),
-            ),
-          ],
-          actions: <List<FushiToolbarItem>>[
-            <FushiToolbarItem>[
-              FushiToolbarItem(
-                icon: _playing ? FushiIcons.pause : FushiIcons.play,
-                label: _playing ? t.pause : t.play,
-                onPressed: () => unawaited(_player.playOrPause()),
-              ),
-              if (_isMv) ...<FushiToolbarItem>[
-                FushiToolbarItem(
-                  icon: FushiIcons.remove,
-                  label: t.music_mv_offset_earlier,
-                  onPressed: () => unawaited(_nudge(-100)),
-                ),
-                FushiToolbarItem(
-                  icon: FushiIcons.add,
-                  label: t.music_mv_offset_later,
-                  onPressed: () => unawaited(_nudge(100)),
-                ),
-              ],
-            ],
-          ],
-        ),
+    final List<FushiToolbarItem> controls = <FushiToolbarItem>[
+      FushiToolbarItem(
+        icon: _playing ? FushiIcons.pause : FushiIcons.play,
+        label: _playing ? t.pause : t.play,
+        onPressed: () => unawaited(_player.playOrPause()),
       ),
+      if (_isMv) ...<FushiToolbarItem>[
+        FushiToolbarItem(
+          icon: FushiIcons.remove,
+          label: t.music_mv_offset_earlier,
+          onPressed: () => unawaited(_nudge(-100)),
+        ),
+        FushiToolbarItem(
+          icon: FushiIcons.add,
+          label: t.music_mv_offset_later,
+          onPressed: () => unawaited(_nudge(100)),
+        ),
+      ],
+    ];
+    // 重设计外壳（墨水屏除外）：页头大字——曲名 + 平铺的裸图标控制；墨水屏照旧
+    // 悬浮顶栏。
+    final bool masthead = shellRedesignActive(context);
+    return FushiPageScaffold(
+      masthead: true,
+      title: widget.track.title,
+      actions: masthead
+          ? <Widget>[
+              for (final FushiToolbarItem item in controls)
+                FushiIconButtonControl(
+                  icon: FushiIcon(item.icon),
+                  tooltip: item.label,
+                  onPressed: item.onPressed,
+                ),
+            ]
+          : const <Widget>[],
+      header: masthead
+          ? null
+          : Padding(
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.page,
+                tokens.spacing.gap,
+                tokens.spacing.page,
+                tokens.spacing.gap,
+              ),
+              child: FushiFloatingTopBar(
+                title: widget.track.title,
+                adaptiveOverflow: true,
+                leading: <FushiToolbarItem>[
+                  FushiToolbarItem(
+                    icon: FushiIcons.back,
+                    label: MaterialLocalizations.of(context).backButtonTooltip,
+                    onPressed: () => unawaited(navigator.maybePop()),
+                  ),
+                ],
+                actions: <List<FushiToolbarItem>>[controls],
+              ),
+            ),
       body: _failed
           ? Center(
               child: Text(
@@ -818,7 +937,7 @@ class _MusicKaraokeStagePageState extends ConsumerState<MusicKaraokeStagePage> {
             colors: <Color>[Color(0x00000000), Color(0xB0000000)],
           ),
         ),
-        child: KaraokeLyricsView(
+        child: MusicKaraokeStageLyrics(
           timeline: lyrics,
           clock: _StageLyricClock(_player, () => _mvOffsetMs),
           playing: _playing,

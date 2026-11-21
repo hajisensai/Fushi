@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:drift/drift.dart' show BooleanExpressionOperators, OrderingTerm;
+import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart'
+    show isUndeliveredMineFailure;
 import 'package:fushi/src/mining/web_mine_queue_store.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -35,7 +37,8 @@ class VideoMineQueue {
 
   /// 把引擎备好的一张卡暂存起来（`ImmersionMiningRequest.stageNote` 里调用）。
   ///
-  /// **必须在返回前拷走** [context] 里的媒体：引擎的临时文件名是固定的，下一张卡会覆盖。
+  /// **必须在返回前拷走** [context] 里的媒体：引擎把每张卡的媒体抽在它私有的临时目录里，
+  /// 本方法一返回那个目录就整个删掉（video-30）。
   /// 返回新行 id。
   Future<int> stage({
     required String bookUid,
@@ -58,11 +61,14 @@ class VideoMineQueue {
       final Directory dir = bundleDir(id);
       await dir.create(recursive: true);
       final String? cover = await _copyInto(dir, context.coverPath, 'cover');
-      final String? audio = await _copyInto(
-        dir,
-        context.sentenceAudioPath,
-        'audio',
-      );
+      // 音画同步片段把同一个文件既当画面又当句子音频（引擎里 `audioPath = coverPath`）。
+      // 那就只拷一份，两个名字指向它：写入时 context 的两条路径仍然相同，与即时制卡
+      // 交给仓库的形状一致，也不必把几 MB 的片段在盘上放两遍。
+      final String? audio =
+          cover != null &&
+              _samePath(context.coverPath, context.sentenceAudioPath)
+          ? cover
+          : await _copyInto(dir, context.sentenceAudioPath, 'audio');
       final VideoMineStagedMeta stored = meta.copyWith(
         coverFile: cover,
         audioFile: audio,
@@ -83,19 +89,15 @@ class VideoMineQueue {
   Future<List<WebMineQueueRow>> pending(String bookUid) =>
       _store.pending(bookUid);
 
+  /// 还留在列表里的张数（待写入 + 写入失败），角标用。只数不读行。
+  Future<int> openCount(String bookUid) => _store.openCount(bookUid);
+
   /// 写入失败的暂存卡（Anki 没开 / 重复 等），供列表展示与重试。
-  Future<List<WebMineQueueRow>> failed(String bookUid) async {
-    return (db.select(db.webMineQueue)
-          ..where(
-            ($WebMineQueueTable t) =>
-                t.bookUid.equals(bookUid) &
-                t.status.equals(WebMineQueueStatus.failed),
-          )
-          ..orderBy(<OrderingTerm Function($WebMineQueueTable)>[
-            ($WebMineQueueTable t) => OrderingTerm.asc(t.id),
-          ]))
-        .get();
-  }
+  Future<List<WebMineQueueRow>> failed(String bookUid) =>
+      _store.failed(bookUid);
+
+  /// 单行重试：失败行排回待写入（列表里那一行的「重试」）。见 [WebMineQueueStore.requeueRow]。
+  Future<bool> retry(int id) => _store.requeueRow(id);
 
   /// 删掉一张暂存卡（行 + 媒体）。
   Future<void> discard(int id) async {
@@ -106,11 +108,25 @@ class VideoMineQueue {
     } catch (_) {}
   }
 
-  /// 把 [bookUid] 下全部待写入（含之前失败的）暂存卡写进 Anki，按点击顺序串行。
+  /// 把 [bookUid] 下的暂存卡写进 Anki，按点击顺序串行。
+  ///
+  /// 失败分两类：
+  /// - **没送到**（后端不可达：Anki 没开、已配对设备都连不上…，判据
+  ///   [isUndeliveredMineFailure]）：行仍是待办，只记下原因，**这一轮就此停下**（后面
+  ///   每张都会一样连不上，逐张再试只是白等）。下次写入——包括离开播放页时的自动
+  ///   写入——照常再试，重发不会造出重复卡；
+  /// - **其余**（重复卡、字段映射错、暂存媒体没了、超时这类可能已经建了卡的）：标
+  ///   failed 留在列表里，原因写进行里。
+  ///
+  /// [retryFailed] 决定 failed 行要不要重新排进这一批，**由入口说了算**：
+  /// - 用户在待制卡列表里点「全部写入」（或经 `video mine-send`）= 明说要重试，传 `true`；
+  /// - 离开播放页时的自动写入传 `false`：failed 行重试只会每次退出都再报一次同样的
+  ///   失败（BUG-4813），它们等用户看到原因后自己重试或丢弃。没送到的行本来就是
+  ///   待办，不受这个参数影响。
   ///
   /// 每张：用暂存的媒体组 context → [BaseAnkiRepository.mineEntry] → 成功记统计与制卡
-  /// 历史、删暂存；失败标 failed 留着（下次可重试），原因写进行里。暂存媒体丢了的行
-  /// 同样标 failed——没有媒体就不建空壳卡（与引擎「无音频中止」同一纪律）。
+  /// 历史、删行与暂存。暂存媒体丢了的行标 failed——没有媒体就不建空壳卡（与引擎
+  /// 「无音频中止」同一纪律）。
   ///
   /// 同一 [bookUid] 的写入在进程内**串行**：列表弹窗的「全部写入」与退出页面时的
   /// 后台写入可能同时触发，两边若各自读到同一批 pending 行，就会把同一张卡写两遍，
@@ -120,6 +136,7 @@ class VideoMineQueue {
   Future<VideoMineCommitSummary> commitAll({
     required String bookUid,
     required BaseAnkiRepository repo,
+    required bool retryFailed,
     void Function(int done, int total)? onProgress,
     DateTime Function() now = DateTime.now,
   }) async {
@@ -131,6 +148,7 @@ class VideoMineQueue {
       return await _commitAllLocked(
         bookUid: bookUid,
         repo: repo,
+        retryFailed: retryFailed,
         onProgress: onProgress,
         now: now,
       );
@@ -150,40 +168,47 @@ class VideoMineQueue {
   Future<VideoMineCommitSummary> _commitAllLocked({
     required String bookUid,
     required BaseAnkiRepository repo,
+    required bool retryFailed,
     void Function(int done, int total)? onProgress,
     required DateTime Function() now,
   }) async {
-    await _store.requeueFailed(bookUid);
+    if (retryFailed) await _store.requeueFailed(bookUid);
     final List<WebMineQueueRow> rows = await _store.pending(bookUid);
     int succeeded = 0;
+    int undelivered = 0;
+    String? undeliveredError;
     final List<String> failures = <String>[];
     String? notice;
     for (int i = 0; i < rows.length; i++) {
       final WebMineQueueRow row = rows[i];
-      final (String? error, String? rowNotice) = await _commitOne(
-        row,
-        repo: repo,
-        now: now,
-      );
-      if (error == null) {
-        succeeded++;
-      } else {
-        failures.add(error);
+      final _CommitResult result = await _commitOne(row, repo: repo, now: now);
+      switch (result) {
+        case _Landed(notice: final String? rowNotice):
+          succeeded++;
+          notice ??= rowNotice;
+        case _Failed(:final String reason):
+          failures.add(reason);
+        case _Undelivered(:final String reason):
+          // 后端不可达：这张和后面的都还是待办，这一轮停下。
+          undelivered = rows.length - i;
+          undeliveredError = reason;
+          onProgress?.call(rows.length, rows.length);
       }
-      notice ??= rowNotice;
+      if (result is _Undelivered) break;
       onProgress?.call(i + 1, rows.length);
     }
     return VideoMineCommitSummary(
       succeeded: succeeded,
       failed: failures.length,
-      firstError: failures.isEmpty ? null : failures.first,
+      undelivered: undelivered,
+      firstError: failures.isEmpty ? undeliveredError : failures.first,
       notice: notice,
     );
   }
 
-  /// 写入一行；成功返回 `(null, 提示)`，失败返回 `(原因, null)`（行已标 failed）。
-  /// 提示是落地结果带回的 [MineOutcome.notice]（如「保存到」被主机退回默认）。
-  Future<(String?, String?)> _commitOne(
+  /// 写入一行（见 [_CommitResult]）：落地 / 失败（行已标 failed）/ 没送到（行仍是
+  /// 待办，原因已记下）。落地带回 [MineOutcome.notice]（如「保存到」被主机退回默认）。
+  Future<_CommitResult> _commitOne(
     WebMineQueueRow row, {
     required BaseAnkiRepository repo,
     required DateTime Function() now,
@@ -193,7 +218,7 @@ class VideoMineQueue {
     if (meta == null) {
       const String reason = 'staged media missing';
       await _store.markFailed(row.id, reason);
-      return (reason, null);
+      return const _Failed(reason);
     }
     final String? coverPath = meta.coverFile == null
         ? null
@@ -225,28 +250,33 @@ class VideoMineQueue {
     } catch (e) {
       final String reason = '$e';
       await _store.markFailed(row.id, reason);
-      return (reason, null);
+      return _Failed(reason);
     }
     // queued：卡已冻结进待发制卡队列（媒体已拷走），交接完成——与成功同样记账、
     // 出本暂存队列；当失败留着会让「重试」把同一张卡再入队一次。
     if (outcome.result != MineResult.success &&
         outcome.result != MineResult.queued) {
       final String reason = outcome.result == MineResult.duplicate
-          ? 'duplicate'
+          ? WebMineQueueStore.duplicateError
           : (outcome.errorDetail ?? outcome.result.name);
+      if (isUndeliveredMineFailure(outcome)) {
+        await _store.markUndelivered(row.id, reason);
+        return _Undelivered(reason);
+      }
       await _store.markFailed(row.id, reason);
-      return (reason, null);
+      return _Failed(reason);
     }
     await _recordLanded(meta, fields, row.sentence, outcome.noteId, now());
-    await _store.markDone(row.id, noteId: outcome.noteId);
+    // 写完即出表（行与暂存媒体一起）：完成行没有读取方，见 [WebMineQueueStore.markDone]。
+    await _store.markDone(row.id);
     try {
       if (dir.existsSync()) await dir.delete(recursive: true);
     } catch (_) {}
     final String? notice = outcome.notice;
-    return (null, notice == null || notice.isEmpty ? null : notice);
+    return _Landed(notice == null || notice.isEmpty ? null : notice);
   }
 
-  /// 与视频页即时制卡成功时同两笔账：制卡统计（按书）+ 制卡历史（可回跳）。best-effort。
+  /// 与视频页即时制卡成功时同两笔账：制卡统计（按书）+ 制卡历史（可回跳）。
   Future<void> _recordLanded(
     VideoMineStagedMeta meta,
     Map<String, String> fields,
@@ -254,31 +284,27 @@ class VideoMineQueue {
     int? noteId,
     DateTime at,
   ) async {
-    try {
-      await db.recordMiningEvent(
-        bookKey: meta.statBookKey,
-        title: meta.statTitle ?? '',
-        sourceType: kStatSourceVideo,
-        at: at,
-      );
-    } catch (_) {}
+    await recordVideoMineStat(
+      db,
+      bookKey: meta.statBookKey,
+      title: meta.statTitle ?? '',
+      at: at,
+    );
     if (!meta.recordHistory) return;
-    try {
-      await db.addMinedSentence(
-        source: kStatSourceVideo,
-        dateKey: meta.historyDateKey,
-        expression: fields['expression'] ?? '',
-        reading: fields['reading'] ?? '',
-        glossary: fields['glossary'] ?? '',
-        sentence: sentence,
-        documentTitle: meta.historyDocumentTitle,
-        bookKey: meta.historyBookKey,
-        sectionIndex: meta.historySectionIndex,
-        positionMs: meta.historyCueStartMs,
-        durationMs: meta.historyCueLengthMs,
-        noteId: noteId,
-      );
-    } catch (_) {}
+    await recordVideoMinedSentence(
+      db,
+      dateKey: meta.historyDateKey,
+      expression: fields['expression'] ?? '',
+      reading: fields['reading'] ?? '',
+      glossary: fields['glossary'] ?? '',
+      sentence: sentence,
+      documentTitle: meta.historyDocumentTitle,
+      bookKey: meta.historyBookKey,
+      sectionIndex: meta.historySectionIndex,
+      positionMs: meta.historyCueStartMs,
+      durationMs: meta.historyCueLengthMs,
+      noteId: noteId,
+    );
   }
 
   Future<VideoMineStagedMeta?> _readMeta(Directory dir) async {
@@ -299,6 +325,9 @@ class VideoMineQueue {
     }
   }
 
+  static bool _samePath(String? a, String? b) =>
+      a != null && b != null && p.equals(a, b);
+
   static Future<String?> _copyInto(
     Directory dir,
     String? source,
@@ -314,18 +343,108 @@ class VideoMineQueue {
   }
 }
 
+/// 视频制卡落进 Anki 之后的统计记账（按来源 + 按书），即时制卡与暂存队列写入共用。
+///
+/// 只吃 [FushiDatabase]，不经 `ref` / `context`：在线视频的卡可能在播放页销毁之后才在
+/// 后台落地。best-effort——卡已经进了 Anki，记账失败不能反过来把制卡报成失败，只留日志。
+Future<void> recordVideoMineStat(
+  FushiDatabase db, {
+  required String? bookKey,
+  required String title,
+  required DateTime at,
+}) async {
+  try {
+    await db.recordMiningEvent(
+      bookKey: bookKey,
+      title: title,
+      sourceType: kStatSourceVideo,
+      at: at,
+    );
+  } catch (e, st) {
+    debugPrint('[fushi-stats] video recordMiningEvent failed: $e\n$st');
+  }
+}
+
+/// 视频制卡的制卡历史行（收藏页据此回跳到那一句），与 [recordVideoMineStat] 同一纪律：
+/// 只吃 [FushiDatabase]、best-effort、失败留日志。
+Future<void> recordVideoMinedSentence(
+  FushiDatabase db, {
+  required String dateKey,
+  required String expression,
+  required String reading,
+  required String glossary,
+  required String sentence,
+  required String? documentTitle,
+  required String? bookKey,
+  required int? sectionIndex,
+  required int? positionMs,
+  required int? durationMs,
+  required int? noteId,
+}) async {
+  try {
+    await db.addMinedSentence(
+      source: kStatSourceVideo,
+      dateKey: dateKey,
+      expression: expression,
+      reading: reading,
+      glossary: glossary,
+      sentence: sentence,
+      documentTitle: documentTitle,
+      bookKey: bookKey,
+      sectionIndex: sectionIndex,
+      positionMs: positionMs,
+      durationMs: durationMs,
+      noteId: noteId,
+    );
+  } catch (e, st) {
+    debugPrint('[fushi-stats] video addMinedSentence failed: $e\n$st');
+  }
+}
+
+/// 一行暂存卡写入的结局。
+sealed class _CommitResult {
+  const _CommitResult();
+}
+
+/// 进了 Anki（或交给了待发制卡队列）。
+final class _Landed extends _CommitResult {
+  const _Landed(this.notice);
+  final String? notice;
+}
+
+/// 写入失败、行已标 failed。
+final class _Failed extends _CommitResult {
+  const _Failed(this.reason);
+  final String reason;
+}
+
+/// 确定没送到（后端不可达）、行仍是待办。
+final class _Undelivered extends _CommitResult {
+  const _Undelivered(this.reason);
+  final String reason;
+}
+
 /// 一批写入的结局（OSD 用）。
 class VideoMineCommitSummary {
   const VideoMineCommitSummary({
     required this.succeeded,
     required this.failed,
+    this.undelivered = 0,
     this.firstError,
     this.notice,
   });
 
   final int succeeded;
   final int failed;
+
+  /// 后端不可达、这一轮没送到而仍留作待办的张数（含因此没轮到的）；下次写入自动再试。
+  final int undelivered;
+
+  /// 第一条失败原因；没有失败时是没送到的原因。
   final String? firstError;
+
+  /// 这一轮实际碰过的行数（成功 + 失败 + 没送到）。
+  int get attempted => succeeded + failed + undelivered;
 
   /// 写入的卡随结果带回的第一条提示（[MineOutcome.notice]，如「保存到」被主机退回默认）。
   /// 批量写入没有逐张的结果提示，汇总提示必须带上它（BUG-4287）。

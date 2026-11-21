@@ -16,6 +16,7 @@
 #include <windows.h>
 #else
 #include <fcntl.h>
+#include <sys/file.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -683,6 +684,140 @@ void unmap(mapped_file mapping) {
 #else
   msync(mapping.data, mapping.size, MS_SYNC);
   munmap(mapping.data, mapping.size);
+#endif
+}
+
+void unmap_unflushed(mapped_file mapping) {
+  if (!mapping.data) {
+    return;
+  }
+
+#ifdef _WIN32
+  UnmapViewOfFile(mapping.data);
+#else
+  munmap(mapping.data, mapping.size);
+#endif
+}
+
+#ifndef _WIN32
+namespace {
+// 文件或目录：打开、刷到介质、关闭。
+bool sync_fd_of(const std::string& path) {
+  const int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
+  if (fd < 0) {
+    return false;
+  }
+#if defined(__APPLE__)
+  // fsync 在 Apple 平台只到驱动器缓存；F_FULLFSYNC 在不支持它的文件系统上失败，退回 fsync。
+  const bool ok = fcntl(fd, F_FULLFSYNC) == 0 || fsync(fd) == 0;
+#else
+  const bool ok = fsync(fd) == 0;
+#endif
+  close(fd);
+  return ok;
+}
+}  // namespace
+#endif
+
+bool sync_file(const std::string& path) {
+#ifdef _WIN32
+  const std::wstring wpath = to_wide(path);
+  HANDLE file = CreateFileW(wpath.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE) {
+    return false;
+  }
+  const bool ok = FlushFileBuffers(file) != 0;
+  CloseHandle(file);
+  return ok;
+#else
+  return sync_fd_of(path);
+#endif
+}
+
+bool sync_directory(const std::string& dir) {
+#ifdef _WIN32
+  (void)dir;
+  return true;
+#else
+  return sync_fd_of(dir);
+#endif
+}
+
+bool remove_file(const std::string& path) {
+#ifdef _WIN32
+  const std::wstring wpath = to_wide(path);
+  HANDLE file = CreateFileW(wpath.c_str(), DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                            OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+  if (file == INVALID_HANDLE_VALUE) {
+    return false;
+  }
+  // FileDispositionInfoEx（= 21）+ DELETE | POSIX_SEMANTICS（Windows 10 1809+）：名字立刻摘掉，
+  // 仍映射着它的视图照常可读——与 POSIX unlink 同语义，也是 MSVC STL std::filesystem::remove
+  // 的做法。自己调而不走 std::filesystem::remove：libc++（llvm-mingw）那边是 DeleteFileW，
+  // 文件还被映射就删不掉，同一份代码在两个工具链上行为不同。旧系统不认 Ex 再退回经典删除。
+  struct {
+    ULONG Flags;
+  } posix_info{0x1 /* DELETE */ | 0x2 /* POSIX_SEMANTICS */};
+  bool ok = SetFileInformationByHandle(file, static_cast<FILE_INFO_BY_HANDLE_CLASS>(21), &posix_info,
+                                       sizeof(posix_info)) != 0;
+  if (!ok) {
+    FILE_DISPOSITION_INFO classic{TRUE};
+    ok = SetFileInformationByHandle(file, FileDispositionInfo, &classic, sizeof(classic)) != 0;
+  }
+  CloseHandle(file);
+  return ok;
+#else
+  return ::unlink(path.c_str()) == 0;
+#endif
+}
+
+file_lock::file_lock(const std::string& path) {
+#ifdef _WIN32
+  const std::wstring wpath = to_wide(path);
+  HANDLE file = CreateFileW(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE) {
+    return;
+  }
+  // 没有 LOCKFILE_FAIL_IMMEDIATELY：同步句柄上阻塞到拿到为止。
+  OVERLAPPED range{};
+  range.Offset = 0;
+  range.OffsetHigh = 0x7FFFFFFF;
+  if (!LockFileEx(file, LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, &range)) {
+    CloseHandle(file);
+    return;
+  }
+  handle_ = reinterpret_cast<intptr_t>(file);
+  held_ = true;
+#else
+  const int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
+  if (fd < 0) {
+    return;
+  }
+  int rc;
+  do {
+    rc = flock(fd, LOCK_EX);
+  } while (rc != 0 && errno == EINTR);
+  if (rc != 0) {
+    close(fd);
+    return;
+  }
+  handle_ = fd;
+  held_ = true;
+#endif
+}
+
+file_lock::~file_lock() {
+  if (!held_) {
+    return;
+  }
+#ifdef _WIN32
+  // 关句柄即放锁。
+  CloseHandle(reinterpret_cast<HANDLE>(handle_));
+#else
+  flock(static_cast<int>(handle_), LOCK_UN);
+  close(static_cast<int>(handle_));
 #endif
 }
 }

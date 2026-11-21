@@ -40,7 +40,10 @@ else
 fi
 
 step "bootstrap (pub get, pub-cache patches, vendored binaries, required Rust libs)"
-bash tool/bootstrap.sh
+# FUSHI_RELEASE_NATIVE=1: build fushi_fsrs without its test-only raw SQL channel
+# (cargo feature raw_sql, which bootstrap.sh adds for dev / test libraries).
+FUSHI_RELEASE_NATIVE=1 bash tool/bootstrap.sh
+bash native/fushi_fsrs/verify_raw_sql.sh native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so absent
 
 step "flutter build linux --release"
 pubspec_version="$(sed -n 's/^version:[[:space:]]*\([^+[:space:]]*\).*/\1/p' fushi/pubspec.yaml)"

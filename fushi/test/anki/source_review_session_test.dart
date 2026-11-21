@@ -593,4 +593,153 @@ void main() {
     expect(repository.additions, 0);
     await tester.pumpWidget(const SizedBox());
   });
+
+  /// 反馈 m6TVBNxGa9：Android 横屏手机（792×363dp）上横幅固定「标题一行 + 按钮一行」，
+  /// 占掉约 1/5 画面高度。矮窗口（高 < 480dp，M3 compact height）必须并成单行。
+  Future<Rect> mountSized(
+    WidgetTester tester,
+    Size size, {
+    FakeViewPadding padding = FakeViewPadding.zero,
+  }) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = size;
+    tester.view.padding = padding;
+    tester.view.viewPadding = padding;
+    addTearDown(tester.view.reset);
+    final int previousReads = store.completedReads;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: <Widget>[
+              SourceReviewBanner(session: session, onReturn: () {}),
+              const Expanded(child: SizedBox.expand()),
+            ],
+          ),
+        ),
+      ),
+    );
+    await _until(tester, () => store.completedReads > previousReads);
+    return tester.getRect(find.byType(SourceReviewBanner));
+  }
+
+  testWidgets('short landscape window folds banner into one row', (
+    WidgetTester tester,
+  ) async {
+    const Size window = Size(792, 363);
+    final Rect banner = await mountSized(tester, window);
+    expect(banner.height, lessThanOrEqualTo(48));
+    // 阅读器按 reservedContentHeight 给横幅留槽位，必须与横幅实际高度同源。
+    expect(banner.height, SourceReviewBanner.reservedContentHeight(window));
+    final Rect title = tester.getRect(find.text(t.card_source_review_title));
+    final Rect back = tester.getRect(find.text(t.card_source_review_return));
+    expect(title.center.dy, moreOrLessEquals(back.center.dy, epsilon: 1));
+    expect(title.right, lessThanOrEqualTo(back.left));
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('tall window keeps title above the button row', (
+    WidgetTester tester,
+  ) async {
+    const Size window = Size(411, 891);
+    final Rect banner = await mountSized(tester, window);
+    final Rect title = tester.getRect(find.text(t.card_source_review_title));
+    final Rect back = tester.getRect(find.text(t.card_source_review_return));
+    expect(title.bottom, lessThanOrEqualTo(back.top));
+    expect(
+      banner.height,
+      lessThanOrEqualTo(SourceReviewBanner.reservedContentHeight(window)),
+    );
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  /// 单行布局里按钮条按内容取宽：有草稿时四颗按钮（继续草稿 / 丢弃草稿 / 返回 /
+  /// 继续）在放得下的矮宽窗口里必须全部摆出来，不能因为和标题平分宽度而被迫滚动、
+  /// 把后面的按钮藏起来。
+  testWidgets('compact banner with a draft lays out every button unscrolled', (
+    WidgetTester tester,
+  ) async {
+    await tester.runAsync(
+      () => store.saveMining(
+        link: _link,
+        rawPayloadJson: '{"expression":"saved"}',
+        context: const AnkiMiningContext(sentence: 'saved sentence'),
+      ),
+    );
+    final Rect banner = await mountSized(tester, const Size(1280, 400));
+    expect(session.hasDraft, isTrue);
+    final ScrollableState strip = tester.state<ScrollableState>(
+      find.descendant(
+        of: find.byType(SourceReviewBanner),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    expect(strip.position.maxScrollExtent, 0);
+    final Rect last = tester.getRect(find.text(t.card_source_review_continue));
+    expect(last.right, lessThanOrEqualTo(banner.right));
+    final Rect title = tester.getRect(find.text(t.card_source_review_title));
+    expect(
+      title.right,
+      lessThanOrEqualTo(
+        tester.getRect(find.text(t.card_source_review_draft_resume)).left,
+      ),
+    );
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  /// 横屏刘海：横幅自己的 SafeArea 让出左侧刘海与状态栏，底色从窗口左缘铺起。
+  /// 视频 / 漫画页外面不得再套一层 SafeArea（那会把刘海一侧让成空白条）。
+  testWidgets('banner background spans the notch side and pads its content', (
+    WidgetTester tester,
+  ) async {
+    final Rect banner = await mountSized(
+      tester,
+      const Size(792, 363),
+      padding: const FakeViewPadding(left: 40, top: 24),
+    );
+    final Rect material = tester.getRect(
+      find
+          .descendant(
+            of: find.byType(SourceReviewBanner),
+            matching: find.byType(Material),
+          )
+          .first,
+    );
+    expect(material.left, 0);
+    expect(material.top, 0);
+    expect(banner.height, 24 + SourceReviewBanner.compactContentHeight);
+    final Rect title = tester.getRect(find.text(t.card_source_review_title));
+    expect(title.left, greaterThanOrEqualTo(40));
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  test('pages host the banner without an extra SafeArea or fixed slot', () {
+    final String video = File(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    ).readAsStringSync();
+    final String manga = File(
+      'lib/src/media/manga/reader/manga_fushi_page.dart',
+    ).readAsStringSync();
+    final String reader = File(
+      'lib/src/pages/implementations/reader_fushi_page.dart',
+    ).readAsStringSync();
+    for (final MapEntry<String, String> page in <String, String>{
+      'video': video,
+      'manga': manga,
+    }.entries) {
+      final int at = page.value.indexOf('SourceReviewBanner(');
+      expect(at, greaterThanOrEqualTo(0), reason: page.key);
+      final String head = page.value.substring(at - 1500, at);
+      expect(
+        head.substring(head.lastIndexOf('if (_sourceReviewSession')),
+        isNot(contains('SafeArea(')),
+        reason: '${page.key}：外层 SafeArea 会把刘海一侧让成横幅底色外的空白条',
+      );
+    }
+    expect(
+      reader,
+      contains('SourceReviewBanner.reservedContentHeight('),
+      reason: '阅读器的横幅槽位高必须与横幅单行 / 两行判断同源',
+    );
+  });
 }

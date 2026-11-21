@@ -23,11 +23,12 @@ library;
 
 import 'dart:io';
 
-import 'package:drift/drift.dart' show QueryRow, Variable;
+import 'package:fushi_srs/fushi_srs.dart' show SrsColumns, SrsStringColumn;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart' show ProfileRow;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_data.dart';
+import 'package:fushi_engine/srs/srs_reads.dart' show srsReadLib;
 import 'package:fushi_engine/srs/srs_profile_merge.dart'
     show
         SrsPendingProfileMerge,
@@ -142,21 +143,17 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
   static Future<Set<String>> _mergingUids(SrsStorage storage) async {
     final Set<String> out = <String>{
       for (final SrsPendingProfileMerge m in await srsPendingProfileMerges(
-        storage.db,
+        storage.core,
       )) ...<String>[m.oldUid, m.newUid],
     };
-    for (final QueryRow r
-        in await storage.db
-            .customSelect(
-              'SELECT key FROM srs_meta WHERE key LIKE ?',
-              variables: <Variable<Object>>[
-                Variable<String>('$kSrsProfileMergeMarkerPrefix%'),
-              ],
-            )
-            .get()) {
-      out.add(
-        r.read<String>('key').substring(kSrsProfileMergeMarkerPrefix.length),
-      );
+    // 标记值读不懂的（[srsPendingProfileMerges] 跳过它）：旧 uid 照样算上。
+    final SrsColumns marks = (await srsReadLib(
+      storage.core,
+      'profile_merges',
+    )).table;
+    final SrsStringColumn keys = marks.strings('key');
+    for (int i = 0; i < marks.rows; i++) {
+      out.add(keys[i].substring(kSrsProfileMergeMarkerPrefix.length));
     }
     return out;
   }
@@ -205,6 +202,7 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
         mediaDir: mediaDir,
         impact: scan.impact,
         backupPath: null,
+        collection: null,
       );
     }
     final SrsDbStore store;
@@ -216,7 +214,6 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
       store = isActive
           ? active
           : await SrsDbStore.open(
-              db: storage.db,
               core: storage.core,
               profileUid: uid,
               deviceId: await _deps.deviceId(),
@@ -234,6 +231,9 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
       mediaDir: mediaDir,
       impact: scan.impact,
       backupPath: backup.path,
+      // 给用户看的规模、导出的备份都是这个集合的：删的时候让内核核对 profile 此刻还绑着它（确认之后改绑 / 并入过
+      // 就报错、什么都不删，G9-5 `profile_purge`）。
+      collection: store.sync2Collection,
     );
   }
 
@@ -307,6 +307,7 @@ class _SrsCleanup implements ProfileDeletionCleanup {
     required this.mediaDir,
     required this.impact,
     required this.backupPath,
+    required this.collection,
   });
 
   final SrsProfileCleanup owner;
@@ -319,12 +320,17 @@ class _SrsCleanup implements ProfileDeletionCleanup {
   @override
   final String? backupPath;
 
+  /// 准备时 profile 绑着的集合（用户确认删的就是它）；null = 库里没有它的行，不删库。
+  final String? collection;
+
   @override
   Future<void> run() async {
     final SrsStorage? s = storage;
     final SrsDbStore? target = store;
     if (s != null && target != null) {
-      await target.retire(() => srsPurgeProfileRows(s.core, uid));
+      await target.retire(
+        () => srsPurgeProfileRows(s.core, uid, collection: collection),
+      );
     }
     if (mediaDir.existsSync()) await mediaDir.delete(recursive: true);
     await owner._deleteRwkvSnapshots(uid);

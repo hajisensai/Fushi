@@ -5,6 +5,11 @@
 /// → start → 轮询（间隔递增有上限）→ 取回 manga.json 写到本地
 /// `<所选文件夹>/manga_ocr_out/manga.json`（图片本就在本地，不回传）。
 ///
+/// host 报了 `mangaOcr.contentDedup` 且注入了内容哈希缓存时，上传前先发整卷清单
+/// （页名 + 页图 SHA-256，`POST /api/ocr/job/<id>/manifest`）：host 按「引擎签名 + 页图
+/// 内容」已有识别结果的页不再上传，换设备 / 重导同一卷 / 改卷名都能命中。清单是可选
+/// 优化：发不出去（老 host、出错、断连）就照旧整卷上传。
+///
 /// 传输一律走共享 [InterconnectHostChannel]（按 host 选路、per-peer 凭据、钉扎闸、
 /// 整段超时、client 生命周期）：每次 [InterconnectMangaOcrClient.probe] 与每次
 /// [InterconnectMangaOcrClient.run] 各建自己的通道，用完即关，client 本身不持有任何
@@ -29,12 +34,19 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi_engine/sync/host_jobs/file_content_hash_cache.dart'
+    show
+        FileContentChangedWhileHashing,
+        FileContentFingerprint,
+        FileContentHashCache;
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
     show
         MangaOcrPageFile,
         enumerateMangaPages,
         kMangaOcrOutDirName,
         kMangaOcrOutputFileName;
+import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart'
+    show kMangaOcrSourceModifiedQuery;
 import 'package:fushi/src/sync/interconnect_host_channel.dart';
 import 'package:fushi/src/sync/interconnect_remote_job_poll.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -57,9 +69,14 @@ class MangaOcrRemoteCapability {
     required this.supported,
     required this.modelsReady,
     this.models = const <MangaOcrRemoteModel>[],
+    this.contentDedup = false,
   });
 
   final bool supported;
+
+  /// host 收内容清单、跳过它已识别过的页图（capabilities `contentDedup`）；老 host
+  /// 不报 = false，照旧整卷上传。
+  final bool contentDedup;
 
   /// 三态：`true` 已下载 / `false` 明确未下载 / `null` 对端没报这个字段。
   ///
@@ -87,6 +104,7 @@ class MangaOcrRemoteCapability {
       supported: supported,
       modelsReady: ready,
       models: models,
+      contentDedup: contentDedup,
     );
   }
 
@@ -120,6 +138,7 @@ class MangaOcrRemoteCapability {
       supported: raw['supported'] == true,
       modelsReady: modelsReady,
       models: models,
+      contentDedup: raw['contentDedup'] == true,
     );
   }
 }
@@ -250,7 +269,9 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
     String? Function()? preferredModel,
     Duration linkLossTolerance = kRemoteJobLinkLossTolerance,
     DateTime Function()? now,
+    FileContentHashCache? hashCache,
   }) : _repo = repo,
+       _hashCache = hashCache,
        _preferredModel = preferredModel,
        _plainClientFactory = plainClientFactory,
        _pinnedClientFactory = pinnedClientFactory,
@@ -278,6 +299,9 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
 
   /// 用户在引擎下拉里点名的服务端模型（null / 空 = 服务端默认）。每次 probe 现读。
   final String? Function()? _preferredModel;
+
+  /// 页图内容哈希（按 `(路径, 大小, 修改时刻)` 复用）；null = 不发内容清单。
+  final FileContentHashCache? _hashCache;
 
   InterconnectHostChannel _channelFor(
     InterconnectHostRef host,
@@ -421,21 +445,44 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
       jobId = id;
       if (await stopIfCancelled()) return null;
 
-      int nextIndex = 0;
-      int uploaded = 0;
+      // host 已识别过内容相同的页：不传（见文件头）。
+      final Set<String> known = target.capability.contentDedup
+          ? await _sendManifest(c, id, pages)
+          : const <String>{};
+      if (await stopIfCancelled()) return null;
+      final List<int> toUpload = <int>[
+        for (int i = 0; i < pages.length; i++)
+          if (!known.contains(pages[i].relativeUrl)) i,
+      ];
+
+      int nextSlot = 0;
+      int uploaded = pages.length - toUpload.length;
+      if (uploaded > 0 && !controller.isClosed && !cancelled) {
+        controller.add(
+          MangaOcrRemoteEvent.uploading(done: uploaded, total: pages.length),
+        );
+      }
       Future<void> worker() async {
         while (!cancelled) {
-          final int i = nextIndex;
-          if (i >= pages.length) return;
-          nextIndex += 1;
+          final int slot = nextSlot;
+          if (slot >= toUpload.length) return;
+          nextSlot += 1;
+          final int i = toUpload[slot];
           final MangaOcrPageFile page = pages[i];
           final Uint8List bytes = await page.file.readAsBytes();
+          // 源文件修改时间随页带过去：host 的逐页断点缓存按「页名 + 大小 + 修改
+          // 时间」认页，取消后重传同卷靠它命中已识别的页（BUG-4817）。
+          final DateTime modified = await page.file.lastModified();
           _expectJson(
             await _send(
               c,
               'PUT',
               '/api/ocr/job/$id/page/$i',
-              query: <String, String>{'name': page.relativeUrl},
+              query: <String, String>{
+                'name': page.relativeUrl,
+                kMangaOcrSourceModifiedQuery:
+                    '${modified.millisecondsSinceEpoch}',
+              },
               bytes: bytes,
               // 整页字节可重放：写出后断开也可以换同一台 host 的另一条地址重传。
               idempotent: true,
@@ -622,6 +669,65 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
       unawaited(cleanupRemote());
     };
     return controller.stream;
+  }
+
+  /// 发整卷内容清单，返回 host 已有识别结果、不必上传的页名。
+  ///
+  /// 清单按页序列出**每一页**（host 按它组装结果）；本机算不出哈希的页（读失败、
+  /// 哈希期间被改写）只带页名、照常上传。发清单是可选优化：host 不认（老版本）、
+  /// 报错、断连都当「一页都没有」照旧整卷上传——此时 host 上要么没记下清单，要么记下
+  /// 了但每页都会传上去，结果都完整。凭据被拒 / 任务没了 / 取消照常抛。
+  Future<Set<String>> _sendManifest(
+    InterconnectHostChannel c,
+    String id,
+    List<MangaOcrPageFile> pages,
+  ) async {
+    final FileContentHashCache? cache = _hashCache;
+    if (cache == null) return const <String>{};
+    final List<Map<String, Object?>> entries = <Map<String, Object?>>[];
+    for (final MangaOcrPageFile page in pages) {
+      String? sha256;
+      try {
+        final FileContentFingerprint fp = await cache.fingerprint(
+          page.file.path,
+        );
+        sha256 = fp.sha256;
+      } on FileContentChangedWhileHashing {
+        sha256 = null;
+      } on FileSystemException {
+        sha256 = null;
+      }
+      entries.add(<String, Object?>{
+        'name': page.relativeUrl,
+        if (sha256 != null) 'sha256': sha256,
+      });
+    }
+    final Map<String, dynamic> body;
+    try {
+      body = _expectJson(
+        await _send(
+          c,
+          'POST',
+          '/api/ocr/job/$id/manifest',
+          jsonBody: <String, Object?>{'pages': entries},
+          // 同一任务重发清单 host 整份替换：应答丢了可以换地址重发。
+          idempotent: true,
+        ),
+      );
+    } on MangaOcrRemoteException catch (e) {
+      if (e.code == 'auth' ||
+          e.code == 'unknown_job' ||
+          e.code == 'cancelled') {
+        rethrow;
+      }
+      return const <String>{};
+    }
+    final Object? known = body['known'];
+    if (known is! List) return const <String>{};
+    return <String>{
+      for (final Object? name in known)
+        if (name is String) name,
+    };
   }
 
   // ── 交换（传输走 [InterconnectHostChannel]） ─────────────────────────

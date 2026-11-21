@@ -57,10 +57,9 @@ class GlassSettingsRenderer implements SettingsRenderer {
   /// 宽屏侧栏宽。
   static const double sidebarWidth = 240;
 
-  /// 详情正文的水平内边距：桌面 28（macOS 详情窗格的留白）、触屏 16
-  /// （iOS inset grouped 卡片离屏幕边 16）。
+  /// 详情正文的水平内边距，见 [settingsGlassDetailHorizontalInset]。
   static double detailHorizontalInset(BuildContext context) =>
-      FushiAppleMetrics.of(context).desktop ? 28 : 16;
+      settingsGlassDetailHorizontalInset(context);
 
   static Route<void> _route(BuildContext context, WidgetBuilder builder) =>
       MaterialPageRoute<void>(builder: builder);
@@ -83,6 +82,7 @@ class GlassSettingsRenderer implements SettingsRenderer {
     // 分类列表的内边距按外层 context 算、不含页头让位：整体让开页头（Apple
     // 设计系统本就上下排，这里与 M3E 渲染器同一写法）。
     return FushiPageScaffold(
+      masthead: true,
       title: settingsContext.context.t.settings,
       body: SafeArea(bottom: false, child: list),
     );

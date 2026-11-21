@@ -97,10 +97,10 @@ asr.AsrIsolateBackend fushiAsrBackend() => asr.AsrIsolateBackend(
 
 /// 把 `fushi_asr_core` 的三个装配点接到本仓的实现上。
 ///
-/// 在 `main()` 里、`runApp` 之前调用一次。**不要**放进 `AppModel.initialise()`：
-/// 弹窗词典与悬浮词典是另外两个 Flutter entry point，走的是
-/// `initialiseForDictionaryPopup()`，不经 `initialise()`；装配放在 main 里，
-/// 哪个入口都不会漏。
+/// 经 `installEntryPointHostBindings()` 在每个 Dart entry point 的 `runApp` 之前
+/// 调用。**不要**放进 `AppModel.initialise()`：弹窗词典等 entry point 走的是
+/// `initialiseForDictionaryPopup()`，不经 `initialise()`；副 engine 也不跑
+/// `main()`，所以各入口自己调（BUG-4940）。
 ///
 /// 注意这三个装配点都是**根 isolate 的全局变量**，`Isolate.spawn` 出去的后台
 /// 转录 isolate 一个都带不过去（Dart 全局按 isolate 隔离）。后台那边的装配走
@@ -175,9 +175,10 @@ Future<void> saveAsrModelCatalog(AsrModelCatalog catalog) async {
 /// - 视频（动画 / 影视 / 带 BGM 的音源）必须传 mixedAudio：日语会换成 Parakeet
 ///   并走无 VAD 滑窗——2026-10-15 在 8 集动画上读音 CER 20.7% → 13.9%。
 ///
-/// 返回的是 [MemoryGatedAsrTranscriptionService]：Android 上 `start` 前先按设备
-/// 可用内存判模型跑不跑得动，跑不动抛 [AsrInsufficientMemoryException]（反馈
-/// jbTZ4GIEyU：低内存机转录被系统杀）。所有生产入口都经这里，门槛只此一处。
+/// 返回的是 [MemoryGatedAsrTranscriptionService]：Android / iOS 上 `start` 前先按
+/// 设备可用内存（Android `/proc`、iOS jetsam 额度）判模型跑不跑得动，跑不动抛
+/// [AsrInsufficientMemoryException]（反馈 jbTZ4GIEyU / EnDAyv9ouF：手机转录被系统
+/// 杀）。所有生产入口都经这里，门槛只此一处。
 asr.AsrTranscriptionService createAsrTranscriptionService({
   asr.AsrAudioProfile audioProfile = asr.AsrAudioProfile.cleanSpeech,
 }) => MemoryGatedAsrTranscriptionService(

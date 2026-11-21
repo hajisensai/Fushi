@@ -6,7 +6,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
+import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
+    show FushiMastheadTitle;
 import 'package:fushi_core/fushi_core.dart';
+import '../helpers/shell_layout.dart';
 
 /// 排序交互重设计层次 B1（spec 2026-07-12）：视频合集详情页就地排序。
 ///
@@ -83,6 +86,7 @@ void main() {
   Widget buildApp({ValueChanged<VideoBookRow>? onOpenEpisode}) =>
       TranslationProvider(
         child: MaterialApp(
+          theme: gridShellTheme(),
           home: MediaCollectionDetailPage(
             database: db,
             collection: MediaCollectionRow(
@@ -106,6 +110,23 @@ void main() {
         ),
       );
 
+  Finder a9Row() =>
+      find.byKey(const ValueKey<String>('collection-episode-row-video/a9'));
+
+  /// 把按住 [from] 的手势分 10 步挪到 [to] 的中心（[to] 拖动前的位置）。
+  Future<void> dragCenterOnto(
+    WidgetTester tester,
+    TestGesture gesture,
+    Finder from,
+    Finder to,
+  ) async {
+    final Offset delta = tester.getCenter(to) - tester.getCenter(from);
+    for (int step = 0; step < 10; step++) {
+      await gesture.moveBy(delta / 10);
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+  }
+
   testWidgets('默认展示沉浸式合集信息与展开的集列表，点集卡打开对应集', (WidgetTester tester) async {
     VideoBookRow? opened;
     await tester.pumpWidget(
@@ -113,7 +134,15 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('某番剧'), findsOneWidget);
+    // 海报 hero 大标题 + 页头折叠标题（[FushiMastheadTitle]，滚动后显现）。
+    expect(
+      find.descendant(
+        of: find.byType(FushiMastheadTitle),
+        matching: find.text('某番剧'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('某番剧'), findsNWidgets(2));
     final Finder a10Card = find.byKey(
       const ValueKey<String>('collection-episode-row-video/a10'),
     );
@@ -195,11 +224,9 @@ void main() {
       kind: PointerDeviceKind.mouse,
     );
     await tester.pump();
-    // 集卡高 128 + 间距 12：中心要落进第 3 个槽（Δy ≈ 2×140），拖 7×40=280。
-    for (int step = 0; step < 7; step++) {
-      await gesture.moveBy(const Offset(0, 40));
-      await tester.pump(const Duration(milliseconds: 16));
-    }
+    // 中心拖进末卡（第9话）的槽：按实测几何算位移，不写死集卡尺寸 / 排向
+    // （海报详情的集卡是横排格子，旧集卡是竖排列表）。
+    await dragCenterOnto(tester, gesture, betaRow, a9Row());
     await gesture.up();
     await tester.pumpAndSettle();
 
@@ -300,10 +327,7 @@ void main() {
         kind: PointerDeviceKind.mouse,
       );
       await tester.pump();
-      for (int step = 0; step < 7; step++) {
-        await gesture.moveBy(const Offset(0, 40));
-        await tester.pump(const Duration(milliseconds: 16));
-      }
+      await dragCenterOnto(tester, gesture, betaRow, a9Row());
       await gesture.up();
       await tester.pumpAndSettle();
 

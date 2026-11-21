@@ -10,6 +10,7 @@ import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
+import 'support/fake_rwkv.dart';
 
 /// BUG-4390：无头端经本机回环进来的配对请求（本机反代 / frp / cloudflared 的典型形态）
 /// 不算局域网。升级场景：存量配置 `lan_requires_pin: false` + 已写 `public_urls`，
@@ -36,6 +37,7 @@ void main() {
     final ServerPaths paths = ServerPaths(config.dataDir);
     await paths.ensureLayout();
     host = HeadlessHost(
+      srsRwkvHttpClient: noNetworkHttpClient,
       config: config,
       paths: paths,
       db: db,

@@ -1680,12 +1680,28 @@ void main() {
         _StandInSite('a', kinds: <TrackingKind>{TrackingKind.anime}),
       ]);
       await tester.runAsync(() async {
-        await link('a', 'c1', 'The Ramparts of Ice', TrackingKind.anime,
-            type: TrackingMediaType.videoCollection, subjectId: 55);
-        await link('a', 'v1', 'Ramparts S1E1', TrackingKind.anime,
-            subjectId: 55);
-        await link('a', 'v2', 'Ramparts S1E2', TrackingKind.anime,
-            subjectId: 55);
+        await link(
+          'a',
+          'c1',
+          'The Ramparts of Ice',
+          TrackingKind.anime,
+          type: TrackingMediaType.videoCollection,
+          subjectId: 55,
+        );
+        await link(
+          'a',
+          'v1',
+          'Ramparts S1E1',
+          TrackingKind.anime,
+          subjectId: 55,
+        );
+        await link(
+          'a',
+          'v2',
+          'Ramparts S1E2',
+          TrackingKind.anime,
+          subjectId: 55,
+        );
         await link('a', 'v3', 'Frieren 01', TrackingKind.anime);
       });
       await pumpApp(
@@ -1740,79 +1756,80 @@ void main() {
   // T1 F16: one click links; the current entry is marked; Undo restores the
   // previous link exactly.
   for (final bool apple in <bool>[false, true]) {
-    testWidgets('changing a link: the current entry is marked, one click '
-        'links, Undo puts the old link back (${apple ? 'Apple' : 'Material'})', (
-      WidgetTester tester,
-    ) async {
-      await open(tester, <TrackingProvider>[
-        _StandInSite(
-          'a',
-          kinds: <TrackingKind>{TrackingKind.anime},
-          results: const <TrackingSearchHit>[_frieren],
-        ),
-      ]);
-      await tester.runAsync(
-        () => link('a', 'v1', 'Frieren 01', TrackingKind.anime, subjectId: 7),
-      );
-      final MediaTrackingMappingRow before = (await tester.runAsync(
-        repository.listMappings,
-      ))!.single;
-      await pumpApp(
-        tester,
-        TrackingPage(
-          service: service,
-          database: db,
-          onOpenSettings: () {},
-          initialTab: TrackingPageTab.linked,
-        ),
-        apple: apple,
-      );
-      await tester.tap(
-        find.byKey(ValueKey<String>('tracking-linked-${before.id}')),
-      );
-      await settle(tester);
-      expect(find.byType(TrackingLinkDialog), findsOneWidget);
-      // The current entry is listed first (the search did not find it).
-      expect(
-        find.byKey(const ValueKey<String>('tracking-link-current')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const ValueKey<String>('tracking-link-result-7')),
-        findsOneWidget,
-      );
-      await tester.tap(
-        find.byKey(const ValueKey<String>('tracking-link-result-101')),
-      );
-      await settle(tester);
-      expect(find.byType(TrackingLinkDialog), findsNothing);
-      expect(
-        (await tester.runAsync(repository.listMappings))!.single.subjectId,
-        101,
-      );
-      expect(
-        find.textContaining(
-          t.media_tracking_link_linked_to(
-            entry: _frieren.name,
-            site: 'Site a',
+    testWidgets(
+      'changing a link: the current entry is marked, one click '
+      'links, Undo puts the old link back (${apple ? 'Apple' : 'Material'})',
+      (WidgetTester tester) async {
+        await open(tester, <TrackingProvider>[
+          _StandInSite(
+            'a',
+            kinds: <TrackingKind>{TrackingKind.anime},
+            results: const <TrackingSearchHit>[_frieren],
           ),
-        ),
-        findsOneWidget,
-      );
-      await tester.tap(find.text(t.undo));
-      await settle(tester);
-      final List<MediaTrackingMappingRow> after = (await tester.runAsync(
-        repository.listMappings,
-      ))!;
-      expect(after, <MediaTrackingMappingRow>[before]);
-      // T2 G2: the link waited for the Undo window, so nothing reached the
-      // site, and the message says so.
-      expect(
-        find.text(t.media_tracking_link_undone_nothing_sent(site: 'Site a')),
-        findsOneWidget,
-      );
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox.shrink());
-    });
+        ]);
+        await tester.runAsync(
+          () => link('a', 'v1', 'Frieren 01', TrackingKind.anime, subjectId: 7),
+        );
+        final MediaTrackingMappingRow before = (await tester.runAsync(
+          repository.listMappings,
+        ))!.single;
+        await pumpApp(
+          tester,
+          TrackingPage(
+            service: service,
+            database: db,
+            onOpenSettings: () {},
+            initialTab: TrackingPageTab.linked,
+          ),
+          apple: apple,
+        );
+        await tester.tap(
+          find.byKey(ValueKey<String>('tracking-linked-${before.id}')),
+        );
+        await settle(tester);
+        expect(find.byType(TrackingLinkDialog), findsOneWidget);
+        // The current entry is listed first (the search did not find it).
+        expect(
+          find.byKey(const ValueKey<String>('tracking-link-current')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('tracking-link-result-7')),
+          findsOneWidget,
+        );
+        await tester.tap(
+          find.byKey(const ValueKey<String>('tracking-link-result-101')),
+        );
+        await settle(tester);
+        expect(find.byType(TrackingLinkDialog), findsNothing);
+        expect(
+          (await tester.runAsync(repository.listMappings))!.single.subjectId,
+          101,
+        );
+        expect(
+          find.textContaining(
+            t.media_tracking_link_linked_to(
+              entry: _frieren.name,
+              site: 'Site a',
+            ),
+          ),
+          findsOneWidget,
+        );
+        await tester.tap(find.text(t.undo));
+        await settle(tester);
+        final List<MediaTrackingMappingRow> after = (await tester.runAsync(
+          repository.listMappings,
+        ))!;
+        expect(after, <MediaTrackingMappingRow>[before]);
+        // T2 G2: the link waited for the Undo window, so nothing reached the
+        // site, and the message says so.
+        expect(
+          find.text(t.media_tracking_link_undone_nothing_sent(site: 'Site a')),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
   }
 }

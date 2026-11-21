@@ -20,6 +20,7 @@ import 'package:fushi/src/media/tracking/page/tracking_row_facts.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptiveSegmentedButton;
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
@@ -695,12 +696,9 @@ class _TrackingLinkDialogState extends State<TrackingLinkDialog> {
           index: 0,
           count: 1,
           selected: true,
-          child: ListTile(
-            title: Text(
-              chosen.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
+          child: FushiListItem(
+            titleMaxLines: 2,
+            title: Text(chosen.title),
             subtitle: Text(_targetKindLabel(chosen)),
             trailing: FushiTextButton(
               key: const ValueKey<String>('tracking-link-local-change'),
@@ -760,12 +758,9 @@ class _TrackingLinkDialogState extends State<TrackingLinkDialog> {
                                   matches[i].key == chosen?.key &&
                                   matches[i].type == chosen?.type,
                               onTap: () => _select(matches[i], search: true),
-                              child: ListTile(
-                                title: Text(
-                                  matches[i].title,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                              child: FushiListItem(
+                                titleMaxLines: 2,
+                                title: Text(matches[i].title),
                                 subtitle: Text(_targetKindLabel(matches[i])),
                               ),
                             ),

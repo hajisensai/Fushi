@@ -159,6 +159,29 @@ const Set<String> kDragAudioExtensions = <String>{
 /// 文件，桌面拖放通道也不会把它当路径送进来。
 const Set<String> kDragTorrentExtensions = <String>{'torrent'};
 
+/// 插件包扩展名（不带点，小写）：`.fushiplug`（音乐 / 歌词 / 追踪插件同一种包格式，
+/// 种类写在包内 manifest 的 `kind`）。此前不在任何白名单里，拖进来落 unknown 后
+/// 一律静默（BUG-4712）。
+const Set<String> kDragPluginExtensions = <String>{'fushiplug'};
+
+/// 插件管理类落点认的插件包扩展名 = 安装按钮文件选择器的 `allowedExtensions`
+/// （音乐插件、追踪插件两处选择器都引用本常量）：`.fushiplug` + 未改名的 `.zip`。
+/// `.zip` 只在插件管理落点按插件包认——在书架 / 词典页它仍是图片包或词典包，所以
+/// 不进 [kDragPluginExtensions]、不进 [DroppedFiles.plugins]。
+const Set<String> kPluginPackageExtensions = <String>{
+  ...kDragPluginExtensions,
+  'zip',
+};
+
+/// 从拖入路径里挑出插件管理落点要装的插件包（[kPluginPackageExtensions]），保持拖入
+/// 顺序。URL 不是本地文件，不算。纯函数。
+List<String> pluginPackagePathsOf(List<String> paths) => <String>[
+  for (final String path in paths)
+    if (!isImportableDropUrl(path) &&
+        kPluginPackageExtensions.contains(_ext(path)))
+      path,
+];
+
 /// 拖入文件按扩展名分类的结果。一个路径可同时落入多个类（如 .mp4 既是视频又是音频），
 /// 由落点上下文（DropSurface）决定最终语义。
 class DroppedFiles {
@@ -177,6 +200,7 @@ class DroppedFiles {
     this.torrents = const <String>[],
     this.blurayDiscs = const <String>[],
     this.pureAudios = const <String>[],
+    this.plugins = const <String>[],
   });
 
   final List<String> books;
@@ -251,6 +275,10 @@ class DroppedFiles {
   /// 播放器放不了的格式只在这里。
   final List<String> pureAudios;
 
+  /// 插件包（`.fushiplug`，见 [kDragPluginExtensions]）。只有插件管理类落点会安装它
+  /// （`PluginPackageDropTarget`）；其余落点据 [hasAny] 给「本页不支持」提示，不再静默。
+  final List<String> plugins;
+
   /// 是否有任何可被本功能识别（非 unknown）的文件。
   bool get hasAny =>
       books.isNotEmpty ||
@@ -264,7 +292,8 @@ class DroppedFiles {
       mangas.isNotEmpty ||
       unsupportedMangas.isNotEmpty ||
       torrents.isNotEmpty ||
-      blurayDiscs.isNotEmpty;
+      blurayDiscs.isNotEmpty ||
+      plugins.isNotEmpty;
 }
 
 String _ext(String path) {
@@ -328,6 +357,7 @@ DroppedFiles classifyDroppedFiles(
   final List<String> unsupportedMangas = <String>[];
   final List<String> directories = <String>[];
   final List<String> torrents = <String>[];
+  final List<String> plugins = <String>[];
   final List<String> unknown = <String>[];
   final Set<String> blurayDiscs = <String>{};
 
@@ -405,6 +435,10 @@ DroppedFiles classifyDroppedFiles(
       torrents.add(path);
       matched = true;
     }
+    if (kDragPluginExtensions.contains(ext)) {
+      plugins.add(path);
+      matched = true;
+    }
     if (!matched) unknown.add(path);
   }
 
@@ -423,6 +457,7 @@ DroppedFiles classifyDroppedFiles(
     unknown: unknown,
     blurayDiscs: blurayDiscs.toList(),
     pureAudios: pureAudios,
+    plugins: plugins,
   );
 }
 

@@ -461,8 +461,12 @@ class AppleMusicWebBridge implements AppleMusicBridge {
     }
   }
 
+  /// MusicKit JS 只有存储里那一枚 user token、没有绕缓存的取法，[refresh] 不改变结果；
+  /// token 作废要靠用户断开后重新连接（`unauthorize` 清掉存储）。
   @override
-  Future<AppleMusicUserCredentials?> userCredentials() async {
+  Future<AppleMusicUserCredentials?> userCredentials({
+    bool refresh = false,
+  }) async {
     final Object? r = await _run(_kCredentialsJs);
     if (r is! Map) return null;
     final Object? dev = r['developerToken'];

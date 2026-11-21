@@ -32,8 +32,11 @@ import 'package:path/path.dart' as p;
 /// PyTorch 后端（官方 `pyproject.toml` 的三个互斥 extra）。
 enum IrodoriTorchBackend { cu128, rocm, cpu }
 
-/// 模型（都是官方 v4.1 Small；MF = MeanFlow，4 步采样，CPU 上快得多）。
-enum IrodoriModelChoice { small, smallMeanFlow }
+/// 模型：官方 v4.1 Small（MF = MeanFlow，4 步采样，CPU 上快得多）与 v4 Large。
+///
+/// [large] 是声音包（LoRA + 多段参考音频）的底模，约 13 GB，要大显存独显；漫画 / 小说
+/// 有声书的离线制作（批处理 worker，`irodori_batch_worker.dart`）只认它。
+enum IrodoriModelChoice { small, smallMeanFlow, large }
 
 /// 模型下载源。hf-mirror.com 只是国内镜像，从境外出口访问会 308 回 huggingface.co。
 enum IrodoriDownloadSource { huggingFace, hfMirror }
@@ -264,6 +267,32 @@ const IrodoriManifest kIrodoriManifest = IrodoriManifest(
         ),
         _kTokenizerJson,
         _kTokenizerConfig,
+      ],
+    ),
+    // 2026-11-17 按 HF API 树核对体积与 LFS sha256（tokenizer_config.json 不是 LFS
+    // 文件，摘要是本机已下好的同一 revision 文件算的）。
+    IrodoriModelChoice.large: IrodoriModelRepo(
+      repo: 'Aratako/Irodori-TTS-v4-Large',
+      revision: '2e0c55428ce97268a507f1feeb2478f8d9148e8b',
+      files: <IrodoriPinnedFile>[
+        IrodoriPinnedFile(
+          path: 'model.safetensors',
+          size: 13152893348,
+          sha256:
+              '0f3de3cdcb8cb82ac2d0089f2c051ab99e12eb7270625d06e3d1d303bad9e63c',
+        ),
+        IrodoriPinnedFile(
+          path: 'tokenizer/tokenizer.json',
+          size: 33384387,
+          sha256:
+              'f5b325224482ec441ec5fbe2a5ac08c3758e0f9605f6e54368e31f736fcfb01d',
+        ),
+        IrodoriPinnedFile(
+          path: 'tokenizer/tokenizer_config.json',
+          size: 802,
+          sha256:
+              '1007769ea58b3c60a23a2ec21d99625f3433a18913492b9a7ea525759e312713',
+        ),
       ],
     ),
   },

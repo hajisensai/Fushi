@@ -869,9 +869,9 @@ impl Corpus {
             Compiled::HasMedia(audio) => self.by_note(cand, |n| {
                 let text = self.joined(n);
                 if *audio {
-                    text.contains("[sound:")
+                    text.contains("[sound:") || has_tag(text, "audio")
                 } else {
-                    has_img_tag(text)
+                    has_tag(text, "img")
                 }
             }),
         })
@@ -1049,7 +1049,7 @@ pub enum Node {
     Src {
         v: String,
     },
-    /// `has:audio` / `has:image`：任一字段原文含 `[sound:` / `<img`。
+    /// `has:audio` / `has:image`：任一字段原文含 `[sound:` 或 `<audio` 标签 / `<img` 标签。
     Has {
         v: String,
     },
@@ -1130,7 +1130,7 @@ enum Compiled {
     IntProp(IntColumn, Cmp, i64),
     FloatProp(FloatColumn, Cmp, f64),
     IdIn(IntColumn, HashSet<i64>),
-    /// true = `[sound:`，false = `<img`。
+    /// true = `[sound:` 或 `<audio` 标签（制卡内嵌的单词 / 句子音频，BUG-4710），false = `<img`。
     HasMedia(bool),
 }
 
@@ -1381,10 +1381,10 @@ fn match_ci(html: &str, at: usize, pat: &str) -> Option<usize> {
     Some(at + end)
 }
 
-/// 有没有 `<img` 标签（不区分大小写；`img` 后面是空白、`>` 或 `/`）。
-pub(crate) fn has_img_tag(html: &str) -> bool {
+/// 有没有 `<name` 标签（不区分大小写；`name` 后面是空白、`>` 或 `/`）。
+pub(crate) fn has_tag(html: &str, name: &str) -> bool {
     let mut from = 0;
-    while let Some(e) = find_ci(html, from, "img") {
+    while let Some(e) = find_ci(html, from, name) {
         match html[e..].chars().next() {
             Some(c) if c.is_whitespace() || c == '>' || c == '/' => return true,
             None => return false,
@@ -1852,6 +1852,27 @@ mod tests {
         );
         assert_eq!(hits(&c, json!({"t":"has","v":"audio"})), [1, 0, 1]);
         assert_eq!(hits(&c, json!({"t":"has","v":"image"})), [0, 1, 0]);
+
+        // BUG-4710：WebM 内嵌片段制卡把单词 / 句子音频写成页内 `<audio src>`（没有 `[sound:]`），
+        // 也是音频；`<audiox>` 这类不是 audio 标签的不算。
+        let inline = corpus(
+            &[
+                (
+                    "B",
+                    &[(
+                        "TermAudio",
+                        "<button type=\"button\" class=\"replay-button\"></button>\
+                         <AUDIO class=\"fushi-word-audio\" src=\"w.mp3\"></audio>",
+                    )],
+                    &[],
+                ),
+                ("B", &[("F", "<audiox> audio")], &[]),
+                ("B", &[("F", "<audio\nsrc=s.ogg>")], &[]),
+            ],
+            &[(0, "D", "T"), (1, "D", "T"), (2, "D", "T")],
+        );
+        assert_eq!(hits(&inline, json!({"t":"has","v":"audio"})), [1, 0, 1]);
+        assert_eq!(hits(&inline, json!({"t":"has","v":"image"})), [0, 0, 0]);
         assert_eq!(
             Corpus::columns_used(&json!({"t":"prop","p":"r","op":"lt","v":0.9}).to_string())
                 .unwrap(),

@@ -26,6 +26,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'srs_test_support.dart';
+import 'support/srs_write_settle.dart';
 
 /// 外观偏好放内存里（不碰偏好层）。
 class _App extends SrsTestAppModel {
@@ -42,12 +43,7 @@ class _App extends SrsTestAppModel {
 }
 
 Future<void> _settle(WidgetTester tester, {int rounds = 14}) async {
-  for (int i = 0; i < rounds; i++) {
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 5)),
-    );
-    await tester.pump(const Duration(milliseconds: 60));
-  }
+  await srsSettle(tester, minRounds: rounds);
 }
 
 Future<void> _pump(
@@ -178,8 +174,14 @@ void main() {
         await tester.tap(restore);
         await _settle(tester, rounds: 6);
         // 确认框：确认按钮与入口同名，取后出现的那个。
-        await tester.tap(find.text(t.srs_note_types_builtin_restore).last);
-        await _settle(tester);
+        await srsUntilWritten(
+          tester,
+          () => tester.tap(find.text(t.srs_note_types_builtin_restore).last),
+          until: () => find
+              .byKey(const ValueKey<String>('srs-card-native-off'))
+              .evaluate()
+              .isEmpty,
+        );
 
         final SrsNoteTypeView? type = await tester.runAsync<SrsNoteTypeView?>(
           () => store.noteType(nt),
@@ -229,8 +231,11 @@ void main() {
       await tester.ensureVisible(restore);
       await tester.tap(restore);
       await _settle(tester, rounds: 6);
-      await tester.tap(find.text(t.srs_note_types_builtin_restore).last);
-      await _settle(tester);
+      await srsUntilWritten(
+        tester,
+        () => tester.tap(find.text(t.srs_note_types_builtin_restore).last),
+        until: () => restore.evaluate().isEmpty,
+      );
       final SrsNoteTypeView? type = await tester.runAsync<SrsNoteTypeView?>(
         () => store.noteType(nt),
       );

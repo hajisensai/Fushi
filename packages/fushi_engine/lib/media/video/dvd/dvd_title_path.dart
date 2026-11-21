@@ -19,6 +19,9 @@
 // 读的媒体字节**（`lacksLocalMediaFile` 为真），抽帧 / 哈希 / 上传一律跳过。
 //
 // 播放映射见 [dvdPlaybackUriForTitlePath]（原生 libdvdnav，mpv 的 `dvd://`）。
+//
+// 抽取按非第 1 个角度读时用角度成员路径 `TITLE_<nn>.a<k>.dvdtitle`（`dvd_angle.dart`）：
+// 本文件的盘根 / title 号反推与背后文件都认这种形态（角度不改变盘和 title）。
 
 import 'package:path/path.dart' as p;
 
@@ -53,11 +56,12 @@ String? dvdDiscRootForTitlePath(String titlePath) {
   return p.joinAll(parts.sublist(0, parts.length - 2));
 }
 
-/// 从 title 成员路径取 title 号（1 起）；形状不对返回 null。
+/// 从 title 成员路径取 title 号（1 起）；形状不对返回 null。角度成员路径
+/// （`TITLE_03.a2.dvdtitle`，`dvd_angle.dart`）取的是它那条 title 的号。
 int? dvdTitleNumberForPath(String titlePath) {
   if (!isDvdTitlePath(titlePath)) return null;
   final Match? match = RegExp(
-    r'^TITLE_(\d{2,3})$',
+    r'^TITLE_(\d{2,3})(?:\.a[2-9])?$',
   ).firstMatch(p.basenameWithoutExtension(titlePath));
   if (match == null) return null;
   final int value = int.parse(match.group(1)!);
@@ -77,7 +81,8 @@ String? dvdTitleBackingFilePath(String titlePath) {
 ///
 /// mpv 的 `dvd://` title 号从 0 起（`stream_dvdnav.c`：`dvdnav_title_play(…,
 /// track + 1)`），库里的 title 号从 1 起，所以减一；盘根是目录或 `.iso`，libdvdread
-/// 两种都直接吃。形状不对返回 null。
+/// 两种都直接吃。形状不对返回 null。角度成员路径映射到它那条 title（播放时的角度由
+/// 播放器自己切，角度成员路径只给抽取用）。
 String? dvdPlaybackUriForTitlePath(String titlePath) {
   final String? root = dvdDiscRootForTitlePath(titlePath);
   final int? number = dvdTitleNumberForPath(titlePath);

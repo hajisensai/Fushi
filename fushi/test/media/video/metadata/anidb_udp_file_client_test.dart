@@ -9,28 +9,46 @@ const String _hash = '0123456789abcdef0123456789abcdef';
 const AnidbUdpConfig _config = AnidbUdpConfig(
   username: 'test_user',
   password: 'a&b+=日本語',
+  apiKey: 'udp-key',
   clientName: 'testclient',
   clientVersion: 1,
 );
+const String _salt = 's4lt';
 // fid|aid|eid|other eps|deprecated|state|romaji|kanji|english|epno|ep|ep romaji|ep kanji
 const String _file =
     '100|200|300|||0|TV Series|Romaji|日本語|English|S01|Special|Tokubetsu|特別';
 
+/// In-memory transport. ENCRYPT handshakes are answered here (209 + [_salt])
+/// and kept out of [packets] so tests read the business traffic only;
+/// [encrypts] / [encryptedPackets] record the handshake and whether each
+/// business packet went out under a session cipher.
 class _Fake implements AnidbUdpTransport {
-  _Fake(this.respond);
+  _Fake(this.respond, {this.encryptReply});
   final String Function(String packet, String tag) respond;
+  final String Function(String tag)? encryptReply;
   final List<String> packets = [];
+  final List<String> encrypts = [];
+  final List<bool> encryptedPackets = [];
   bool closed = false;
+  @override
+  AnidbUdpCipher? cipher;
   @override
   void cancelPending() {}
   @override
   Future<void> send(String packet) async {
     packets.add(packet);
+    encryptedPackets.add(cipher != null);
   }
 
   @override
   Future<String> exchange(String packet, String tag, Duration timeout) async {
+    if (packet.startsWith('ENCRYPT ')) {
+      encrypts.add(packet);
+      expect(cipher, isNull, reason: 'ENCRYPT itself goes out in plaintext');
+      return encryptReply?.call(tag) ?? '$tag 209 $_salt ENCRYPTION ENABLED';
+    }
     packets.add(packet);
+    encryptedPackets.add(cipher != null);
     return respond(packet, tag);
   }
 
@@ -143,6 +161,9 @@ class _WouldBlockSocket extends Stream<RawSocketEvent>
 }
 
 String _normal(String packet, String tag) {
+  if (packet.startsWith('ENCRYPT ')) {
+    return '$tag 209 $_salt ENCRYPTION ENABLED';
+  }
   if (packet.startsWith('AUTH ')) return '$tag 200 Ab12 LOGIN ACCEPTED';
   if (packet.startsWith('LOGOUT ')) return '$tag 203 LOGGED OUT';
   return '$tag 220 FILE\n$_file';
@@ -154,6 +175,7 @@ void main() {
       config: const AnidbUdpConfig(
         username: '',
         password: '',
+        apiKey: '',
         clientName: '',
         clientVersion: 0,
       ),
@@ -502,10 +524,13 @@ void main() {
       final int localPort = reservation.port;
       reservation.close();
       final List<String> packets = [];
+      final List<List<int>> wire = [];
       final List<int> ports = [];
       final Completer<void> logoutSeen = Completer<void>();
       final Completer<void> unansweredFileSeen = Completer<void>();
       final _FixtureSender sender = _FixtureSender(server);
+      // AniDB side of the ENCRYPT session: same derivation, real AES (FFI).
+      AnidbUdpCipher? session;
       final StreamSubscription<RawSocketEvent> subscription = server.listen((
         event,
       ) {
@@ -514,10 +539,15 @@ void main() {
         while (true) {
           final Datagram? datagram = server.receive();
           if (datagram == null) break;
-          final String packet = utf8.decode(datagram.data);
+          wire.add(datagram.data);
+          final AnidbUdpCipher? active = session;
+          final String packet = active == null
+              ? utf8.decode(datagram.data)
+              : active.decrypt(datagram.data)!;
           packets.add(packet);
           ports.add(datagram.port);
           if (packet.startsWith('LOGOUT ')) {
+            session = null;
             if (!logoutSeen.isCompleted) logoutSeen.complete();
             continue; // No acknowledgement: close must still finish.
           }
@@ -532,8 +562,15 @@ void main() {
             datagram.address,
             datagram.port,
           );
+          final String reply = _normal(packet, tag);
+          if (packet.startsWith('ENCRYPT ')) {
+            // The 209 reply is still plaintext; encryption starts after it.
+            sender.send(utf8.encode(reply), datagram.address, datagram.port);
+            session = AnidbUdpCipher.derive(_config.apiKey, _salt);
+            continue;
+          }
           sender.send(
-            utf8.encode(_normal(packet, tag)),
+            active == null ? utf8.encode(reply) : active.encrypt(reply),
             datagram.address,
             datagram.port,
           );
@@ -543,6 +580,7 @@ void main() {
         config: AnidbUdpConfig(
           username: _config.username,
           password: _config.password,
+          apiKey: _config.apiKey,
           clientName: _config.clientName,
           clientVersion: 1,
           host: '127.0.0.1',
@@ -582,15 +620,31 @@ void main() {
         await logoutSeen.future.timeout(const Duration(seconds: 1));
         expect((await nextMatch)?.fileId, 100);
         expect(packets.map((p) => p.split(' ').first), [
+          'ENCRYPT',
           'AUTH',
           'FILE',
           'FILE',
           'LOGOUT',
+          'ENCRYPT',
           'AUTH',
           'FILE',
         ]);
         expect(ports.toSet(), {localPort});
-        expect(packets.first, contains('日本語'));
+        expect(packets.first, 'ENCRYPT user=test_user&type=1&tag=f1');
+        expect(packets[1], contains('日本語'));
+        // Only ENCRYPT crosses the wire in plaintext; the password never does.
+        final List<int> password = utf8.encode('a&amp;b+=日本語');
+        for (int i = 0; i < wire.length; i++) {
+          final String asText = latin1.decode(wire[i]);
+          expect(
+            asText.contains(latin1.decode(password)),
+            isFalse,
+            reason: 'datagram $i leaks the password',
+          );
+          if (!packets[i].startsWith('ENCRYPT ')) {
+            expect(wire[i].length % 16, 0, reason: 'datagram $i is AES');
+          }
+        }
         await sender.flushed;
       } finally {
         await client.close();
@@ -699,13 +753,22 @@ void main() {
       List<int> files, {
       bool Function()? silent,
       bool allSilent = false,
-    }) => _Fake((packet, tag) {
-      if (packet.startsWith('FILE ')) files.add(nowMs);
-      if (allSilent || packet.startsWith('FILE ')) {
-        if (silent?.call() ?? true) throw TimeoutException('lost');
-      }
-      return _normal(packet, tag);
-    });
+    }) => _Fake(
+      (packet, tag) {
+        if (packet.startsWith('FILE ')) files.add(nowMs);
+        if (allSilent || packet.startsWith('FILE ')) {
+          if (silent?.call() ?? true) throw TimeoutException('lost');
+        }
+        return _normal(packet, tag);
+      },
+      // 整条链路静默时 ENCRYPT 握手同样收不到应答。
+      encryptReply: allSilent
+          ? (tag) {
+              if (silent?.call() ?? true) throw TimeoutException('lost');
+              return _normal('ENCRYPT ', tag);
+            }
+          : null,
+    );
 
     test('two silent datagrams fail one file, then back off 30 s instead of '
         'banning for 90 min', () async {
@@ -831,7 +894,7 @@ void main() {
     test('rate limiter: 2 s per packet, 6 s once active for over 10 s, reset '
         'after 120 s idle (Shoko UDPRateLimiter)', () async {
       final AnidbUdpFileClient client = gated(_Fake(_normal));
-      // AUTH + 7 FILE：前 6 次等待 2 s（活跃 0→12 s），之后 6 s。
+      // ENCRYPT + AUTH + 7 FILE：前 6 次等待 2 s（活跃 0→12 s），之后 6 s。
       for (int i = 1; i <= 7; i++) {
         await client.lookup(size: i, ed2k: _hash);
       }
@@ -842,6 +905,7 @@ void main() {
         2000,
         2000,
         2000,
+        6000,
         6000,
       ]);
       // 空闲 130 s 后回到短间隔：本包不等，下一包等 2 s。
@@ -949,6 +1013,7 @@ void main() {
         config: const AnidbUdpConfig(
           username: 'test_user',
           password: '',
+          apiKey: 'udp-key',
           clientName: 'testclient',
           clientVersion: 1,
         ),
@@ -1168,4 +1233,223 @@ void main() {
       );
     },
   );
+
+  group('ENCRYPT session (UDP login is never plaintext)', () {
+    test(
+      'ENCRYPT precedes AUTH; AUTH and everything after are encrypted',
+      () async {
+        final _Fake fake = _Fake(_normal);
+        final AnidbUdpFileClient client = AnidbUdpFileClient(
+          config: _config,
+          transportFactory: (_) async => fake,
+        );
+        await client.lookup(size: 123, ed2k: _hash);
+        await client.close();
+        expect(fake.encrypts, ['ENCRYPT user=test_user&type=1&tag=f1']);
+        expect(fake.encrypts.single, isNot(contains('udp-key')));
+        expect(fake.packets.map((p) => p.split(' ').first), [
+          'AUTH',
+          'FILE',
+          'LOGOUT',
+        ]);
+        expect(fake.encryptedPackets, everyElement(isTrue));
+      },
+    );
+
+    test('a lost session re-negotiates ENCRYPT before the next AUTH', () async {
+      int auths = 0;
+      final _Fake fake = _Fake((packet, tag) {
+        if (packet.startsWith('AUTH ')) {
+          auths++;
+          return '$tag 200 Ses$auths LOGIN ACCEPTED';
+        }
+        if (packet.startsWith('FILE ') && packet.contains('s=Ses1')) {
+          return '$tag 506 INVALID SESSION';
+        }
+        return _normal(packet, tag);
+      });
+      final AnidbUdpFileClient client = AnidbUdpFileClient(
+        config: _config,
+        transportFactory: (_) async => fake,
+      );
+      expect((await client.lookup(size: 123, ed2k: _hash))?.fileId, 100);
+      await client.close();
+      expect(fake.encrypts, hasLength(2));
+      expect(auths, 2);
+    });
+
+    test(
+      '309 (no UDP API key on AniDB) is terminal and never sends AUTH',
+      () async {
+        final _Fake fake = _Fake(
+          _normal,
+          encryptReply: (tag) => '$tag 309 API PASSWORD NOT DEFINED',
+        );
+        final AnidbUdpFileClient client = AnidbUdpFileClient(
+          config: _config,
+          transportFactory: (_) async => fake,
+        );
+        final Matcher encryption = throwsA(
+          isA<AnidbUdpException>()
+              .having((e) => e.reason, 'reason', AnidbUdpFailure.encryption)
+              .having((e) => e.code, 'code', 309),
+        );
+        await expectLater(client.verifyLogin(), encryption);
+        await expectLater(client.lookup(size: 123, ed2k: _hash), encryption);
+        await client.close();
+        expect(fake.encrypts, hasLength(1), reason: 'terminal: no retry');
+        expect(fake.packets, isEmpty);
+      },
+    );
+
+    test('missing UDP API key is unavailable before any socket', () async {
+      final AnidbUdpFileClient client = AnidbUdpFileClient(
+        config: const AnidbUdpConfig(
+          username: 'test_user',
+          password: 'pw',
+          apiKey: '',
+          clientName: 'testclient',
+          clientVersion: 1,
+        ),
+        transportFactory: (_) async => throw StateError('must not connect'),
+      );
+      await expectLater(
+        client.verifyLogin(),
+        throwsA(
+          isA<AnidbUdpException>().having(
+            (e) => e.reason,
+            'reason',
+            AnidbUdpFailure.unavailable,
+          ),
+        ),
+      );
+      await client.close();
+    });
+
+    test('cipher round-trips UTF-8 and rejects foreign ciphertext', () {
+      final AnidbUdpCipher cipher = AnidbUdpCipher.derive('udp-key', _salt);
+      for (final String text in <String>['', 'AUTH 日本語', 'x' * 16, 'y' * 33]) {
+        final List<int> sealed = cipher.encrypt(text);
+        expect(sealed.length % 16, 0);
+        expect(sealed.length, greaterThan(utf8.encode(text).length));
+        expect(cipher.decrypt(sealed), text);
+      }
+      final AnidbUdpCipher other = AnidbUdpCipher.derive('wrong-key', _salt);
+      expect(
+        other.decrypt(cipher.encrypt('f1 200 Ab12 LOGIN ACCEPTED')),
+        isNull,
+      );
+      expect(cipher.decrypt(utf8.encode('f1 200 plain')), isNull);
+    });
+
+    test(
+      'undecryptable AniDB reply under a cipher fails fast as encryption',
+      () async {
+        final RawDatagramSocket server = await RawDatagramSocket.bind(
+          InternetAddress.loopbackIPv4,
+          0,
+        );
+        final _FixtureSender sender = _FixtureSender(server);
+        final AnidbUdpCipher wrong = AnidbUdpCipher.derive('wrong-key', _salt);
+        final StreamSubscription<RawSocketEvent> subscription = server.listen((
+          event,
+        ) {
+          if (sender.onEvent(event)) return;
+          if (event != RawSocketEvent.read) return;
+          while (true) {
+            final Datagram? datagram = server.receive();
+            if (datagram == null) break;
+            sender.send(
+              wrong.encrypt('t1 200 Ab12 LOGIN ACCEPTED'),
+              datagram.address,
+              datagram.port,
+            );
+          }
+        });
+        final AnidbUdpTransport transport = AnidbDatagramTransport.forSocket(
+          await RawDatagramSocket.bind(InternetAddress.loopbackIPv4, 0),
+          InternetAddress.loopbackIPv4,
+          server.port,
+        )..cipher = AnidbUdpCipher.derive('udp-key', _salt);
+        try {
+          await expectLater(
+            transport.exchange(
+              'AUTH user=u&tag=t1',
+              't1',
+              const Duration(seconds: 5),
+            ),
+            throwsA(
+              isA<AnidbUdpException>().having(
+                (e) => e.reason,
+                'reason',
+                AnidbUdpFailure.encryption,
+              ),
+            ),
+          );
+          await sender.flushed;
+        } finally {
+          await transport.close();
+          server.close();
+          await subscription.cancel();
+        }
+      },
+    );
+
+    test('a late reply to an earlier tag under the right key is skipped, not '
+        'mistaken for a key mismatch (pr3541)', () async {
+      final AnidbUdpCipher session = AnidbUdpCipher.derive('udp-key', _salt);
+      // The previous FILE timed out twice; AniDB answers it only now, sealed
+      // with the same session key, right before the current reply.
+      final List<int> stale = session.encrypt('t1 320 NO SUCH FILE');
+      // Precondition: ciphertext is not UTF-8, so a plaintext re-read of it
+      // would come back empty-handed (the old misclassification path).
+      expect(() => utf8.decode(stale), throwsFormatException);
+      final RawDatagramSocket server = await RawDatagramSocket.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      final _FixtureSender sender = _FixtureSender(server);
+      final StreamSubscription<RawSocketEvent> subscription = server.listen((
+        event,
+      ) {
+        if (sender.onEvent(event)) return;
+        if (event != RawSocketEvent.read) return;
+        while (true) {
+          final Datagram? datagram = server.receive();
+          if (datagram == null) break;
+          final String packet = session.decrypt(datagram.data)!;
+          final String tag = RegExp(r'&tag=(\w+)$').firstMatch(packet)![1]!;
+          sender.send(stale, datagram.address, datagram.port);
+          sender.send(
+            session.encrypt('$tag 220 FILE\n$_file'),
+            datagram.address,
+            datagram.port,
+          );
+        }
+      });
+      final AnidbUdpTransport transport = AnidbDatagramTransport.forSocket(
+        await RawDatagramSocket.bind(InternetAddress.loopbackIPv4, 0),
+        InternetAddress.loopbackIPv4,
+        server.port,
+      )..cipher = session;
+      try {
+        for (final String tag in <String>['t2', 't3']) {
+          expect(
+            await transport.exchange(
+              'FILE size=123&ed2k=$_hash&s=Ab12&tag=$tag',
+              tag,
+              const Duration(seconds: 5),
+            ),
+            '$tag 220 FILE\n$_file',
+            reason: 'the transport stays usable after skipping the stale reply',
+          );
+        }
+        await sender.flushed;
+      } finally {
+        await transport.close();
+        server.close();
+        await subscription.cancel();
+      }
+    });
+  });
 }

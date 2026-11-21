@@ -21,6 +21,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/series_scrape_seed.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/shell_layout.dart';
 
 /// 去碎片方案 A（spec 2026-07-12 分区拍板）+ 封面卡形态（用户拍板 2026-07-22）
 /// + TODO-2486 混排墙形态（用户拍板设计稿 2026-08-01）：
@@ -154,6 +155,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         // #792 分区化后「合集卡+散卡单一混排墙」（_buildLocalVideoSlivers）
         // 只在 series 分区渲染，钉住该分区。
         home: Scaffold(

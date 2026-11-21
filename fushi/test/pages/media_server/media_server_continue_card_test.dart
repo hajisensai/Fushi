@@ -16,6 +16,7 @@ import 'package:fushi/src/utils/components/cover_badge.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 
 import 'fake_media_server_browser.dart';
+import '../../helpers/shell_layout.dart';
 
 /// 「继续观看」横卡：视频是横屏的，这一行用 16:9 缩略图（集截图 / 剧横图逐张
 /// 回落），并写明还剩多少、看到哪，而不是 2:3 海报竖卡 + 一条 3px 细线。
@@ -62,7 +63,7 @@ void main() {
       ], reason: '集自身的 Backdrop 不参与：服务器给集报的背景通常就是剧的');
     });
 
-    test('集：服务器报了剧海报时剧 Primary 排第一，其余序列照旧', () {
+    test('集（IBfIfzXdp2 自适应）：16:9 横槽集截图优先，竖版剧海报只垫底', () {
       final _CoverFakeBrowser browser = _CoverFakeBrowser();
       const MediaServerItem episode = MediaServerItem(
         id: 'ep',
@@ -70,13 +71,38 @@ void main() {
         type: MediaServerItemType.episode,
         hasThumb: true,
         hasCover: true,
+        parentThumbItemId: 'series',
+        parentBackdropItemId: 'series',
         seriesCoverItemId: 'series',
       );
       expect(urlsOf(mediaServerContinueImages(browser, episode)), <String>[
-        'series|primary',
         'ep|thumb',
         'ep|primary',
+        'series|thumb',
+        'series|backdrop',
+        'series|primary',
       ]);
+      // 竖槽仍拿剧海报：coverItem 是剧条目。
+      expect(episode.coverItem.id, 'series');
+      expect(episode.coverItem.type, MediaServerItemType.series);
+    });
+
+    test('集没有任何横图：横槽落到剧海报，不落占位', () {
+      final _CoverFakeBrowser browser = _CoverFakeBrowser();
+      expect(
+        urlsOf(
+          mediaServerContinueImages(
+            browser,
+            const MediaServerItem(
+              id: 'ep',
+              name: 'Ep',
+              type: MediaServerItemType.episode,
+              seriesCoverItemId: 'series',
+            ),
+          ),
+        ),
+        <String>['series|primary'],
+      );
     });
 
     test('集没有任何自身图：直接落到剧的横图；没有上级 id 就不造请求', () {
@@ -329,6 +355,7 @@ void main() {
   group('缩略图回落', () {
     Widget harness(Widget child) => TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         home: Scaffold(
           body: Center(
             child: SizedBox(width: kMediaServerContinueCardWidth, child: child),
@@ -423,6 +450,7 @@ void main() {
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(
+          theme: gridShellTheme(),
           home: Scaffold(
             body: MediaServerHomeView(
               session: MediaServerSession(

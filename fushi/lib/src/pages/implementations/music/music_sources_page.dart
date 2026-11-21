@@ -24,9 +24,13 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_library_page.dart'
     show showMusicSourcesDialog;
 import 'package:fushi/src/pages/implementations/music/music_lyrics_providers.dart';
+import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart'
+    show MusicPluginDropTarget;
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart'
     show openMusicPluginManagement;
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_list.dart'
+    show MusicHiddenTracksPage;
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart'
     show buildMusicServersDestination;
@@ -57,10 +61,11 @@ Future<void> openMusicSourcesPage(BuildContext context) =>
       ),
     );
 
-/// 读齐本机全部在线来源（插件音源 + 服务器），未排序。合规门没过的平台没有插件。
+/// 读齐本机全部在线来源（插件音源 + 服务器），未排序。插件含本机装的与经互联中继的
+/// （[isMusicPluginSourcesUsable]）；两者都没有的平台没有插件。
 Future<List<MusicOnlineSource>> loadMusicOnlineSources(AppModel app) async {
   final List<MusicOnlineSource> out = <MusicOnlineSource>[];
-  if (isMusicPluginSourcesAvailable) {
+  if (isMusicPluginSourcesUsable) {
     for (final InstalledMusicPlugin p in await app.musicPluginManager.list()) {
       if (p.isMusicSource) out.add(MusicPluginOnlineSource(p.info!.manifest));
     }
@@ -128,10 +133,22 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
   /// initState 里取一次：await 之后页面可能已 dispose，不再经过 ref。
   late final AppModel _app = ref.read(appProvider);
 
+  /// 插件装 / 卸 / 启停都会改变「来源」列表：本页的拖放落点装上的插件要立刻出现。
+  StreamSubscription<void>? _pluginChanges;
+
   @override
   void initState() {
     super.initState();
+    _pluginChanges = _app.musicPluginManager.changes.listen(
+      (_) => unawaited(_load()),
+    );
     unawaited(_load());
+  }
+
+  @override
+  void dispose() {
+    unawaited(_pluginChanges?.cancel());
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -322,6 +339,26 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
               onTap: () => unawaited(showMusicSourcesDialog(context)),
             ),
           ),
+          // 从音乐库移除过的本地曲目（墓碑，拍板台 IDeN5PYaI7）：在这里恢复。
+          FushiStaggeredEntrance(
+            index: 1,
+            child: AdaptiveSettingsRow(
+              key: const ValueKey<String>('music-sources-hidden-tracks'),
+              icon: FushiIcons.visibilityOff,
+              showIcon: true,
+              title: t.music_hidden_tracks_title,
+              subtitle: t.music_hidden_tracks_hint,
+              trailing: const FushiIcon(FushiIcons.chevronRight, size: 20),
+              onTap: () => unawaited(
+                Navigator.of(context).push<void>(
+                  adaptivePageRoute<void>(
+                    context: context,
+                    builder: (_) => const MusicHiddenTracksPage(),
+                  ),
+                ),
+              ),
+            ),
+          ),
           Text(t.music_sources_online_hint, style: context.fushiType.bodySmall),
           if (rows == null)
             const FushiLinearProgressIndicator()
@@ -337,7 +374,7 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
                 final bool am = r.source.key == kAppleMusicSourceKey;
                 final bool on = _isOn(r);
                 return FushiStaggeredEntrance(
-                  index: i + 1,
+                  index: i + 2,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
@@ -445,8 +482,11 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
     return musicBrowseScaffold(
       context,
       title: t.music_sources_title,
-      body: Builder(
-        builder: (BuildContext context) => SingleChildScrollView(
+      // 两个分页（音源 / 歌词）都收 .fushiplug 拖放（BUG-4712）；歌词分页的
+      // [MusicLyricsProvidersBody] 自己不挂落点，免得同一次拖放装两遍。
+      body: (BuildContext context) => MusicPluginDropTarget(
+        manager: _app.musicPluginManager,
+        child: SingleChildScrollView(
           padding: musicBrowsePagePadding(context),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,

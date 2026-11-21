@@ -23,7 +23,8 @@ import 'package:fushi_web_core/fushi_web_core.dart';
 ///
 /// 原生库是硬依赖：缺库时第一次用到就抛 `FushiWebCoreLibraryMissing`（打包错误），没有
 /// 「判不可用」的降级分支。
-class WebAdblockService extends ChangeNotifier implements WebAdblockPolicy {
+class WebAdblockService extends ChangeNotifier
+    implements WebAdblockPolicy, WebAdblockWarmup {
   /// [dataDir] 是**惰性**取的：第一次真要用核心时才求值；返回 null = 数据目录还没就绪
   /// （AppModel 还没初始化完，例如只渲染设置页的测试宿主），此时 [snapshot] 是
   /// [AdblockSnapshot.notOpened]、命令抛 [StateError]，不打开核心。
@@ -56,6 +57,10 @@ class WebAdblockService extends ChangeNotifier implements WebAdblockPolicy {
   AdblockCore? _core;
   AdblockSnapshot? _snapshot;
   Future<void>? _inFlight;
+
+  /// 进行中的暖机（[ensureEngineWarm]）；[_warmed]：本服务已暖过（总开关重新打开时复位）。
+  Future<void>? _warming;
+  bool _warmed = false;
 
   /// 原生当前已启用的共享规则表（只是一个 identifier，规则在原生 / WebKit store 里）。
   String? _contentRuleListId;
@@ -97,27 +102,80 @@ class WebAdblockService extends ChangeNotifier implements WebAdblockPolicy {
   /// 总开关。打开时顺带发起一次同步。
   Future<void> setEnabled(bool enabled) async {
     _publish(_live.setEnabled(enabled));
-    if (enabled) await ensureLoaded();
+    if (enabled) {
+      // 启动时总开关关着的话暖机是空操作：重新打开要再暖一次。
+      _warmed = false;
+      await ensureLoaded();
+    }
   }
 
   /// 订阅 / 取消订阅一份列表，然后同步让引擎跟上。
   Future<void> setListEnabled(String id, bool enabled) async {
     _publish(_live.setListEnabled(id, enabled));
+    // 先暖机：联网同步不能排在暖机前面，否则此时打开的标签页要等这次联网。
+    await ensureEngineWarm();
+    if (_disposed) return;
     await _serialized(() => _sync(force: false));
   }
 
   /// 白名单原文。
   void setAllowlist(String raw) => _publish(_live.setAllowlist(raw));
 
-  /// 按需同步一次：Rust 判断要不要联网 / 重编（缓存新鲜且引擎已是最新时什么也不做）。
-  /// 并发调用共用一次。
+  /// 按需同步一次：先暖机（[ensureEngineWarm]，不联网），再由 Rust 判断要不要联网 / 重编
+  /// （缓存新鲜且引擎已是最新时什么也不做）。
+  @override
   Future<void> ensureLoaded() {
     if (_tryOpen() == null) return Future<void>.value();
-    return _serialized(() => _sync(force: false));
+    return ensureEngineWarm().then((_) {
+      // 暖机期间被 dispose：别在已关的服务上重开核心。
+      if (_disposed) return Future<void>.value();
+      return _serialized(() => _sync(force: false));
+    });
+  }
+
+  /// 不联网，把磁盘缓存对应的引擎装进内存；完成后逐请求拦截与 cosmetic 立即生效。
+  /// 无缓存（首装 / 全部取消订阅）时什么也不做，引擎等 [ensureLoaded] 联网后才有。
+  ///
+  /// 核心打开时引擎是空的：只靠 [ensureLoaded] 的话，过期列表联网刷新那几秒（每 4 天一次）
+  /// 里打开的页面整页不拦，documentStart 取 cosmetic 也只拿到空、之后不会再取。WebView
+  /// 创建前 await 这里（本地反序列化，不等网络）。
+  ///
+  /// 本服务生命周期内只暖一次（[setEnabled] 打开时重来）：暖过之后再调立即完成，**不排在**
+  /// 正在跑的联网同步后面；暖机进行中再调共用同一个 future。所有联网同步入口
+  /// （[ensureLoaded] / [setListEnabled] / [updateNow]）都先 await 这里，所以暖机本身也
+  /// 不会排到某次联网同步后面。
+  @override
+  Future<void> ensureEngineWarm() {
+    if (_tryOpen() == null) return Future<void>.value();
+    final Future<void>? pending = _warming;
+    if (pending != null) return pending;
+    if (_warmed) return Future<void>.value();
+    final Future<void> next = _serialized(_warm).whenComplete(() {
+      _warming = null;
+    });
+    _warming = next;
+    return next;
+  }
+
+  Future<void> _warm() async {
+    if (_disposed) return;
+    final AdblockCore core = _live;
+    final AdblockSnapshot s = await core.loadCachedInBackground();
+    _warmed = true;
+    try {
+      if (_mode == WebAdblockNetworkMode.contentBlockers && s.isActive) {
+        await _installContentRuleList(core);
+      }
+    } finally {
+      _publish(s);
+    }
   }
 
   /// 「立即更新」：强制联网核对全部订阅列表。返回是否至少有一份新取到或确认未变。
   Future<bool> updateNow() async {
+    // 同 [setListEnabled]：先暖机，再联网。
+    await ensureEngineWarm();
+    if (_disposed) return false;
     await _serialized(() => _sync(force: true));
     return snapshot.lastSyncOk ?? false;
   }

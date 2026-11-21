@@ -25,6 +25,8 @@ import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
 
+import 'support/fake_rwkv.dart';
+
 const String kJa = '01928c3e-0000-7000-8000-00000000a0a0';
 
 void main() {
@@ -59,6 +61,8 @@ void main() {
       prefs: prefs,
       identity: identity,
       p2pAvailable: () => false,
+      // 单元测试不碰外网：RWKV 权重下载一律当场失败（服务转「出错」）。
+      srsRwkvHttpClient: noNetworkHttpClient,
     );
     await host.start();
     ctx = AdminContext(
@@ -105,13 +109,9 @@ void main() {
   Future<SrsDbStore> phone(String deviceId) async {
     final Directory dir = Directory(p.join(tmp.path, 'phone_$deviceId'))
       ..createSync();
-    final SrsStorage storage = await SrsStorage.open(
-      path: SrsStorage.pathIn(dir.path),
-      inline: true,
-    );
+    final SrsStorage storage = await SrsStorage.open(directory: dir.path);
     addTearDown(storage.close);
     return SrsDbStore.open(
-      db: storage.db,
       core: storage.core,
       profileUid: kJa,
       deviceId: deviceId,
@@ -267,6 +267,27 @@ void main() {
         'trust': true,
       }),
       (404, 'device_unknown'),
+    );
+    // 设备 ID 来自管理员 / 对端，不可信：不是设备 ID 的串（路径、超长、空白）点名 profile 也只回不认识或坏正文，
+    // 不进内核写信任（G10-4）。
+    for (final String bogus in <String>['../$kJa', 'x' * 500]) {
+      expect(
+        await trust(<String, Object?>{
+          'device': bogus,
+          'trust': true,
+          'profile': kJa,
+        }),
+        (404, 'device_unknown'),
+        reason: bogus,
+      );
+    }
+    expect(
+      (await trust(<String, Object?>{
+        'device': '   ',
+        'trust': true,
+        'profile': kJa,
+      })).$1,
+      400,
     );
     expect(
       await trust(<String, Object?>{

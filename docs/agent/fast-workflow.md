@@ -14,7 +14,7 @@
 
 ## 三条军规
 
-1. **永不空等**：任何 >30 秒的命令（bootstrap / test / gradle / build）一律后台跑，等待期间推进别的步骤。
+1. **永不空等**：>30 秒的命令（bootstrap / test / gradle / build）在**有别的步骤可推进时**后台跑；主会话里预计 <2 分钟又无事可做的直接前台跑；子代理的等待切成不超过 4 分钟一片。原因是每次被唤醒都要重读整段上下文，见[等待与缓存](#等待与缓存)。
 2. **按难度分工**：琐碎活主代理直接干（派发开销 > 收益）；机械面拆给子代理并行；根因、数据结构、整合这些错了会返工的难点主代理亲自把关。绝不让两个代理重复做同一件事。
 3. **验证按爆炸半径分级**：分支上定向验证 + PR CI 兜底全量；本地**不跑**全量测试门（用户 2026-09-06 拍板，见 CLAUDE.md「验证」）。
 
@@ -71,7 +71,7 @@ S/A 级同理裁剪：S 级连 worktree bootstrap 都可 `-SkipBootstrap` 到底
     实测漏网：PR#764 收口弹窗复制入口，`test/dictionary/popup_touch_copy_actionmode_guard_test.dart`
     只被 `test/lookup` 的定向测试擦肩而过，红直接进了 develop（TODO-2745）。
 - **`flutter analyze` 全量在 push 前必跑一次，且只在最后跑一次**（含 test 目录）——CI 把 warning 当致命，省这一步只会在 CI 上浪费一轮；但它每次要 2–3 分钟（实测 125–171 s，不含排队）、一个 3.4–4 GB 的 analysis server，开发中改一处就全量跑一遍、批量合并时逐分支各跑一遍都是白烧（2026-10-25 用户拍板：开发中用 `dart analyze <改动文件>`，全量留到 push 前 / 集成结果上一次）。租约上 analyze 是轻量任务：不占测试槽位、不排队，只记 4.5 GB 内存预算（[heavy-lease.md](heavy-lease.md)）。
-- **分支 draft PR**：全量 analyze 绿即可 push（2026-10-02 起推送门只有 analyze；定向测试在开发中按需跑，不是推送前置条件）；守卫与全量 test 由 CI 兜底（真单测门是 **Build Release APK 的 Run unit tests**，不是 Build and Test）。声明「修好了」的真机复测门槛**不变**（[integration-testing.md](integration-testing.md)）。
+- **分支 draft PR**：全量 analyze 绿即可 push（2026-10-02 起推送门只有 analyze；定向测试在开发中按需跑，不是推送前置条件）；守卫与受影响的测试由 PR CI 的快门跑（`Build Android APK` 的 `build` + `affected-tests`，2026-11-18 起 PR 上默认不跑全量；全量在合并后的 `develop` 上由 **Build Release APK 的 Run unit tests** 跑，按需在分支上跑见 [build.md](build.md#pr-主门分层快门每推必跑全量按需--合并后跑2026-11-18)）。**推完就结束会话，不等 PR CI**；快门结论由合并任务在合并前读一次（[等待与缓存](#等待与缓存)）。声明「修好了」的真机复测门槛**不变**（[integration-testing.md](integration-testing.md)）。
 - **合入 `develop`**：integration owner 本地全量 analyze + 定向 test + 「目录枚举型守卫」整批；**不再本地跑全量 test**（用户 2026-09-06 拍板：`dart run tool/flutter_test_failures.dart` 全量 / 裸 `flutter test` 全量一律不跑，全量只由 PR CI 兜底）。真要跑全量 / 成片目录时走跨机分流 `dart tool/dist_test.dart --config=D:/fushi-dist/workers.local.json`（2026-10-27 用户拍板，见根 `CLAUDE.md`「验证」），不单机裸跑。别 `| tail` 吞退出码；重叠跑会互抢 `sqlite3.dll`，见下节。
 
 ## 并发伪红判别
@@ -200,6 +200,7 @@ Get-CimInstance Win32_Process |
 | `test/tools/tests_for_changes_guard_test.dart` | `test/` 全树 + 全仓路径索引 | 「按触发条件加跑」的推导规则本身：索引规模 + 逐树下界 + 声明 glob 有效 |
 | `test/torrent/download_http_client_proxy_test.dart` | `lib` + 4 个 `packages/*/lib` | 下载链路的 HttpClient 必须走统一代理装配 |
 | `test/utils/net/network_image_proxy_guard_test.dart` | `lib` 全树 | 远端图片必须走 `AppHttpImage`/`AppCachedHttpImage`，裸 provider 会绕过全应用代理装配（自带 `expectScanScale` 哨兵） |
+| `test/build/ui_idle_wait_guard_test.dart` | `lib` + `../packages/*/lib`（循环动画那条只扫 `lib`） | 禁调裸 `WidgetsFlutterBinding.ensureInitialized()`（所有入口用带 `FramePacedTaskScheduler` 的 binding，裸 binding 碰上常驻动画零延迟空转饿死 Windows 输入）；每个 `.repeat(` 循环动画必须表态：常驻装饰走 ambient ticker，其余写明跟着什么停（BUG-4387 / BUG-4725 / BUG-4893，两处 `expectScanScale`） |
 
 一条命令跑完，**当前基线 362 tests**（2026-09-03 反向枚举复核后实测，51 条 ~62 秒；上一基线 256 / 37 条）——比争论「这条该不该跑」便宜得多，所以**不要挑，整批跑**：
 
@@ -544,13 +545,50 @@ printf '%s\n' "$BODY"   # 先回显逐字确认，再喂给看板 / gh / git
 
 落地范式不变：干净 worktree ff → merge → 解 i18n → analyze → bump。提速点：
 
+- **PR CI 的红在这里收**：开发会话推完即停、不盯 CI（[等待与缓存](#等待与缓存)），所以合并前对每条 PR 跑一次 `gh pr checks <N>` 读现成结论（不 `--watch`）。快门红了就在合并任务里按根因修再合；还在跑的不等，合完看 `develop` 尖端。一次会话处理一批 PR，比每个开发会话各自被 CI 事件唤醒便宜。
+
 - 全量 test 在后台跑的**同时**，预解下一个 PR 的冲突和 i18n（流水线化，不是并行 merge）。
 - 多 PR 逐个 **rebase 叠加**，不做旧基底 merge——旧基底 merge 会静默删掉先落地 PR 的文件（并发合并竞态）。
 - 合并后核对以独立 `git diff --stat` 为准，不信子代理叙述。
+- **长期集成分支只在整批 PR 前合一次 `develop`**，与最后一批合流并成一步、只验证一次；中途不合、不量落后数、不在汇报里写落后数。两种例外与起因见 [rules-detail.md](rules-detail.md#集成分支不追-develop)。
+
+## 等待与缓存
+
+等待本身不花额度，花额度的是**等完之后那一轮要重读多少上下文**。2026-11-20 统计本机近 10 天 2435 份 fushi 会话记录（按 `message.id` 去重，成本按 input=1 / 缓存读 0.1 / 5 分钟写 1.25 / 1 小时写 2 / 输出 5 折算）：
+
+| 现象 | 实测 | 对策 |
+|---|---|---|
+| **子代理缓存只保 5 分钟**（主会话 1 小时），前台一等超过 5 分钟，下一轮整段上下文重写 | 1752 次失效、重写 1.97 亿 token，98% 紧跟在一次前台阻塞的 Bash 之后，间隔中位数 10.1 分钟 = `timeout 600000` 的上限；其中 `until … sleep` 等待循环 989 次、`heavy flutter test` 315 次 | 子代理前台 `timeout` 给 270000，等待切成不超过 4 分钟一片（[.claude/agents](../../.claude/agents) 的「省轮次」）；`tool/claude_hooks/subagent_wait_slice.mjs` 把子代理里超过 270 秒的前台 `timeout` 压到 270 秒（到点命令转后台、不被杀）。它是用户级 hook，不在仓库的 `.claude/settings.json` 里：每台机器跑一次 `node tool/claude_hooks/subagent_wait_slice.mjs --install`（拷到 `~/.claude/hooks/` 并注册，可重复跑），装完新开的会话才生效。切片在累计等待约 30 分钟以内都比失效一次便宜，按实测口径省掉这项额外成本的 74–78% |
+| 主会话被 PR 的 CI 事件唤醒 | 966 轮 / 1.35 亿，其中真改了代码的只有 17%；review 评论事件 564 轮里 465 轮只回一句话；另有后台 `wait-ci` 类等待 271 轮 / 0.57 亿 | **开发会话 push + 开 PR 后就结束**：不挂 `wait-ci` / `gh run watch` / `gh pr checks --watch`，不开 Auto-fix 与 PR 监视。PR CI 的结论由合并任务在合并前读一次（见「合并流水线」），红了在那里按根因修 |
+| 主会话被后台任务逐个唤醒 | 4670 轮 / 10.3 亿，平均每轮 6 次调用，每次都重读主上下文；10 分钟内连着 ≥3 次的唤醒串占全部唤醒的一半 | 同一批要后台跑的命令合成一条命令、一个日志，只被唤醒一次；≥3 个 Opus 类子任务走一个 Workflow；不带着还在跑的后台任务结束子代理（710 条「子代理在等自己的后台任务」通知，641 条主会话只回了一句话） |
+| 不到 2 分钟的命令也丢后台 | 351 个里 171 个发起后主会话什么都没做，只是把一条前台命令拆成了两轮 | 主会话里预计 <2 分钟、期间没有别的事可推进的命令**前台跑**（主会话缓存保 1 小时，前台等 10 分钟以内不会失效） |
+
+不要做的「优化」：把子代理缓存改成 1 小时（`subagentPromptCacheTtl`）。1 小时写入单价是 5 分钟的 1.6 倍，子代理 3.76 亿 token 的写入全部涨价约 2.8 亿，多于它能省掉的 2.27 亿。
+
+统计口径与脚本留在 PR 描述里；要复查就按上面的折算口径对 `~/.claude/projects/*fushi*/**/*.jsonl` 重算。
+
+## 失败的工具调用
+
+每次被拒或报错的调用也要把整段上下文重读一遍，还常常引出两三轮绕路。2026-11-21 复盘一个合并 / 修复会话（主会话加上 9 个 workflow 共 469 个代理，12,602 条 shell 命令，408 次失败调用，白读约 3900 万 token 缓存）：
+
+| 现象 | 实测 | 对策 |
+|---|---|---|
+| 子代理改主 checkout 下 `.worktrees/rev-NNNN` 的文件被拒（「is in the base repo checkout」） | 98 次，失败后再改用 Python 脚本写文件 | worktree 会话另建的 worktree 放仓库目录外 `../fushi-wt/<名>`（[rules-detail.md](rules-detail.md#worktree-初始化)） |
+| `isolation: 'worktree'` 的代理把 git 写进复合命令，被判「too complex」拒跑 | 122 次，连 `git diff --cached --check; echo check=$?` 都会被拒 | 含 `git` 的命令写成单条朴素命令，多步分几次调用（[.claude/agents](../../.claude/agents)） |
+| 租约 hook 把引号里的 `flutter build` / `gradlew`（grep 模式、JSON 说明文字）当成裸跑重活 | 回放 12,602 条命令：旧版拦 13 条，其中 10 条误判 | `tool/claude_hooks/require_heavy_lease.mjs` 改为认引号、跳过 heredoc 正文切分，回放只剩 3 条真裸跑 |
+| 输出太长被落盘后又被整份 Read 回来 | 26 次，86.6 万字符 | 落盘文件用 `grep -n` / `sed -n` 取需要的部分 |
+| 每个子代理第一轮都把 CLAUDE.md 各写一遍缓存 | 467 个代理第一轮共写 911 万 token（每个约 1.95 万），共享的只有工具 + 系统提示词约 2 万：CLAUDE.md 排在各自的任务文字之前，缓存断点在任务文字之后 | 代理定义设 `omitClaudeMd: true`，由 `tool/claude_hooks/sync_agent_claude_md.mjs` 把根 CLAUDE.md 原文生成进定义正文（即系统提示词），同类型代理共享缓存；`subagent_config.test.mjs` 守同步，`ci-config-gate` 在改 CLAUDE.md 时触发 |
+| 单个子代理连跑 1 小时以上，主会话的 1 小时缓存在等它时过期 | 主会话 2 次整段重写共 60.7 万 token（按 2 倍价），其中一次重写 32.7 万之后 1 分钟就压缩了上下文 | 一个子代理只做一件事，预计超过 45 分钟的拆成几段派 |
+
+另外两点：桌面端 usage report 里的 `Session` 只算主会话自己的调用，这次只占总成本约 5%，算额度要把 `<会话>/subagents/**` 一起算；缓存命中本身健康，扣掉新内容后，本该命中却没命中的只有 251 万 token。
 
 ## 空等浪费禁止清单
 
 - ❌ 前台跑 bootstrap / 全量 test / gradle 并盯着输出——一律后台，期间推进其它步骤。
+- ❌ 子代理里 `timeout 600000` 的前台命令、不带 `timeout 240` 的 `until … sleep` 等待——超过 5 分钟就整段上下文重写。
+- ❌ 开发会话推完 PR 后留下来等 CI、开 Auto-fix / PR 监视——交给合并任务。
+- ❌ 主会话把不到 2 分钟的命令丢后台然后干等通知；几条后台命令各发各的、各唤醒一次。
+- ❌ 集成分支每合完一批就顺手合一次 `develop` 再重跑全量；汇报里写「落后 develop N 个提交」——只在整批 PR 前合一次。
 - ❌ 同一疑点串行试三轮 grep——派一个搜索子代理一次扫完拿结论。
 - ❌ 测试跑完才开始写 bug 文档 / PR 描述。
 - ❌ 只为读几个文件就新建 worktree + full bootstrap——**只读/分析不需要 worktree**，直接在原工作区读。

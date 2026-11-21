@@ -8,6 +8,7 @@ import 'package:fushi/src/stats/study_cover_tracker.dart'
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_popup_origin.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -342,16 +343,48 @@ Future<T?> adaptiveModalSheet<T>({
   bool expandable = false,
   bool isDismissible = true,
   bool studyClockTransparent = false,
+  ThemeData? md3Theme,
+  bool? useRootNavigator,
 }) {
+  // [md3Theme]：MD3 弹层整体（面板底色 + 内容）换一套主题——导入流程里的弹层
+  // 跟随模块色系（见 importToneThemeOrNull）。只作用于下面的 Material 分支；
+  // Apple / 液态玻璃分支不受影响。
+  //
+  // [useRootNavigator]：null = 各形态原有的默认（Cupertino 弹层 / 桌面玻璃 sheet 在
+  // root navigator 上，Material 底部 sheet 与宽屏浮动 sheet 在最近的 navigator 上）。
+  // true = 一律开在 root navigator 上——调用方的 context 可能在一条 root 路由**下面**
+  // 的页面里（视频页开着整页的字幕工作台时起面板），开在最近的 navigator 上会被那条
+  // 整页路由挡住。
+  final ThemeData? sheetTheme = md3Theme;
+  // 弹层承接来源组件的配色（色块卡等，见 fushi_popup_origin.dart）：context 在
+  // 色块里时由主题捕获带进路由；经页面 State 转弹时按点按来源补包一层。
+  final FushiPopupOrigin? origin = fushiPopupOriginFor(context);
+  final WidgetBuilder sourceBuilder = builder;
+  builder = (BuildContext sheetContext) {
+    final Widget sheet = sourceBuilder(sheetContext);
+    return origin == null ? sheet : origin.wrap(sheet);
+  };
+  Widget themed(Widget child) =>
+      sheetTheme == null ? child : Theme(data: sheetTheme, child: child);
+  // showCupertinoModalPopup / showGeneralDialog 不捕获 InheritedTheme（Material
+  // 路由会）：这两条路径补上，色块里弹出的弹层才拿得到色块的局部主题。
+  CapturedThemes captureFor(bool rootNavigator) => InheritedTheme.capture(
+    from: context,
+    to: Navigator.of(context, rootNavigator: rootNavigator).context,
+  );
+
   final RouteSettings? routeSettings = studyClockRouteSettings(
     transparent: studyClockTransparent,
   );
   if (isCupertinoPlatform(context)) {
+    final CapturedThemes themes = captureFor(useRootNavigator ?? true);
     return showCupertinoModalPopup<T>(
       context: context,
+      useRootNavigator: useRootNavigator ?? true,
       barrierDismissible: isDismissible,
       routeSettings: routeSettings,
-      builder: builder,
+      builder: (BuildContext sheetContext) =>
+          themes.wrap(builder(sheetContext)),
     );
   }
   final bool noMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
@@ -368,8 +401,10 @@ Future<T?> adaptiveModalSheet<T>({
       // macOS 26 sheet：从窗口顶部正中垂下的实色面板（宽 480–640、圆角 18、
       // 大半径柔和阴影），不是底部抽屉。走 RawDialogRoute：Esc（DismissIntent）
       // 关闭、点遮罩关闭、独立焦点作用域、pop 返回值与底部弹层一致。
+      final CapturedThemes themes = captureFor(useRootNavigator ?? true);
       return showGeneralDialog<T>(
         context: context,
+        useRootNavigator: useRootNavigator ?? true,
         barrierDismissible: isDismissible,
         barrierLabel: MaterialLocalizations.of(
           context,
@@ -384,7 +419,7 @@ Future<T?> adaptiveModalSheet<T>({
               BuildContext sheetContext,
               Animation<double> animation,
               Animation<double> secondaryAnimation,
-            ) => _AppleDesktopSheet(child: builder(sheetContext)),
+            ) => themes.wrap(_AppleDesktopSheet(child: builder(sheetContext))),
         transitionBuilder:
             (
               BuildContext context,
@@ -417,6 +452,7 @@ Future<T?> adaptiveModalSheet<T>({
     // 45%），且自带路由，Esc / 焦点作用域 / isScrollControlled 语义都要重接。
     return showModalBottomSheet<T>(
       context: context,
+      useRootNavigator: useRootNavigator ?? false,
       routeSettings: routeSettings,
       isScrollControlled: isScrollControlled,
       useSafeArea: useSafeArea,
@@ -437,7 +473,10 @@ Future<T?> adaptiveModalSheet<T>({
   }
   final bool frosted = glassMaterialOf(context) != FushiGlassMaterial.off;
   if (MediaQuery.sizeOf(context).width >= kFushiSheetWideBreakpoint) {
-    final NavigatorState navigator = Navigator.of(context);
+    final NavigatorState navigator = Navigator.of(
+      context,
+      rootNavigator: useRootNavigator ?? false,
+    );
     return navigator.push<T>(
       FushiDialogRoute<T>(
         context: context,
@@ -447,9 +486,8 @@ Future<T?> adaptiveModalSheet<T>({
         traversalEdgeBehavior: TraversalEdgeBehavior.closedLoop,
         reduceMotion: noMotion || !fushiMotionEnabled(context),
         settings: routeSettings,
-        builder: (BuildContext sheetContext) => FushiM3eFloatingSheet(
-          frosted: frosted,
-          child: builder(sheetContext),
+        builder: (BuildContext sheetContext) => themed(
+          FushiM3eFloatingSheet(frosted: frosted, child: builder(sheetContext)),
         ),
       ),
     );
@@ -460,6 +498,7 @@ Future<T?> adaptiveModalSheet<T>({
     // 关掉它、在玻璃里按 M3 同一几何（48 高交互区 + 32x4 横条）自己画。
     return showModalBottomSheet<T>(
       context: context,
+      useRootNavigator: useRootNavigator ?? false,
       routeSettings: routeSettings,
       isScrollControlled: isScrollControlled,
       useSafeArea: useSafeArea,
@@ -469,32 +508,38 @@ Future<T?> adaptiveModalSheet<T>({
       sheetAnimationStyle: sheetMotion,
       isDismissible: isDismissible,
       enableDrag: isDismissible,
-      builder: (BuildContext sheetContext) => _GlassSheetBody(
-        showDragHandle: showDragHandle,
-        child: FushiM3eSheetBody(
-          showDragHandle: false,
-          expandable: false,
-          dragToDismiss: isDismissible,
-          child: builder(sheetContext),
+      builder: (BuildContext sheetContext) => themed(
+        _GlassSheetBody(
+          showDragHandle: showDragHandle,
+          child: FushiM3eSheetBody(
+            showDragHandle: false,
+            expandable: false,
+            dragToDismiss: isDismissible,
+            child: builder(sheetContext),
+          ),
         ),
       ),
     );
   }
   return showModalBottomSheet<T>(
     context: context,
+    useRootNavigator: useRootNavigator ?? false,
     routeSettings: routeSettings,
     isScrollControlled: isScrollControlled,
     useSafeArea: useSafeArea,
     // 拖动条由 [FushiM3eSheetBody] 自绘（同 M3 几何），两档高度要接它的手势。
     showDragHandle: false,
+    backgroundColor: sheetTheme?.colorScheme.surfaceContainerLow,
     sheetAnimationStyle: sheetMotion,
     isDismissible: isDismissible,
     enableDrag: isDismissible,
-    builder: (BuildContext sheetContext) => FushiM3eSheetBody(
-      showDragHandle: showDragHandle,
-      expandable: expandable,
-      dragToDismiss: isDismissible,
-      child: builder(sheetContext),
+    builder: (BuildContext sheetContext) => themed(
+      FushiM3eSheetBody(
+        showDragHandle: showDragHandle,
+        expandable: expandable,
+        dragToDismiss: isDismissible,
+        child: builder(sheetContext),
+      ),
     ),
   );
 }
@@ -777,9 +822,12 @@ Route<T> adaptivePageRoute<T>({
   RouteSettings? settings,
   bool fullscreenDialog = false,
 }) {
-  // Apple 设计系统全平台走 Cupertino 推入转场（主题层 pageTransitionsTheme 也已
-  // 全平台 Cupertino，这里直接给 CupertinoPageRoute，不经主题查表）。
-  if (isCupertinoPlatform(context) || isGlassDesign(context)) {
+  // Apple（玻璃）设计系统的 Cupertino 推入转场由主题层 pageTransitionsTheme 给
+  // （[FushiCupertinoPageTransitionsBuilder] 外套页面背景层），这里必须走
+  // MaterialPageRoute 查主题：CupertinoPageRoute 自己画转场、不读主题，推进来的
+  // 页就垫不上用户的背景图片（设置子页始终白底），也不认系统「减弱动态效果」。
+  // 只有隐藏的 [FushiDesignSystem.cupertino] 仍给原生 CupertinoPageRoute。
+  if (isCupertinoPlatform(context)) {
     return CupertinoPageRoute<T>(
       builder: builder,
       settings: settings,

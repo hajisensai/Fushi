@@ -4,13 +4,14 @@ part of '../local_library_host_service.dart';
 /// 方法逐字搬自 LocalLibraryHostService；字段经 _LocalLibraryHostBase 的抽象私有 getter 取用。
 mixin _LocalLibraryHostDictionaries
     on _LocalLibraryHostBase, _LocalLibraryHostShared {
-  /// host 当前实时词典清单（从 DictionaryMeta 表读）。
+  /// host 当前实时词典清单（从 DictionaryMeta 表读，目录字段见
+  /// [RemoteDictionaryInfo.fromMetadataRow]）。
   @override
   Future<List<RemoteDictionaryInfo>> listDictionaries() async {
     final List<DictionaryMetaRow> rows = await _db.getAllDictionaryMetadata();
     return <RemoteDictionaryInfo>[
       for (final DictionaryMetaRow r in rows)
-        RemoteDictionaryInfo(name: r.name, type: r.type),
+        RemoteDictionaryInfo.fromMetadataRow(r),
     ];
   }
 
@@ -40,7 +41,8 @@ mixin _LocalLibraryHostDictionaries
   @override
   Future<void> importDictionary(File packageFile) async {
     await _runExclusive(() async {
-      // 同名覆盖会往既有词典目录里写 blobs.bin / hash.table，而这些文件正被引擎
+      // 同名覆盖会往既有词典目录里写记录文件与索引（blobs.bin / key.index 等），
+      // 而这些文件正被引擎
       // MapViewOfFile 映射着 —— Windows 拒绝以写方式打开，覆盖导入直接失败
       // （BUG-1756）。收尾的 _refreshDictionaryCache 会把引擎重新加载回来。
       //

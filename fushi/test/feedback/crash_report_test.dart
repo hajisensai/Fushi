@@ -740,6 +740,69 @@ void main() {
     });
   });
 
+  group('安全组件按「恶意软件」结束（BUG-4964，反馈 5wMNgObn0U）', () {
+    Future<BuildContext> pumpHome(WidgetTester tester) async {
+      late BuildContext ctx;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (BuildContext c) {
+                ctx = c;
+                return const SizedBox.expand();
+              },
+            ),
+          ),
+        ),
+      );
+      return ctx;
+    }
+
+    testWidgets('不进闪退待报，首页出来后弹放行提示', (WidgetTester tester) async {
+      final PreviousExitVerdict v = _verdict(
+        kind: PreviousExitKind.securityKilled,
+      );
+      final CrashReporter r = CrashReporter()
+        ..attach(dir, enabled: true)
+        ..recordVerdict(v);
+      expect(r.pendingCount, 0);
+      expect(r.currentOffer(), isNull);
+      final BuildContext ctx = await pumpHome(tester);
+      expect(
+        offerSecurityKillNoticeAfterStartup(context: () => ctx, verdict: v),
+        isTrue,
+      );
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey<String>('security-kill-notice')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('crash-report-prompt')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('别的退出种类 / 没有判定时不弹', (WidgetTester tester) async {
+      final BuildContext ctx = await pumpHome(tester);
+      for (final PreviousExitVerdict? v in <PreviousExitVerdict?>[
+        null,
+        _verdict(kind: PreviousExitKind.unexpected),
+        _verdict(kind: PreviousExitKind.vendorStopped),
+      ]) {
+        expect(
+          offerSecurityKillNoticeAfterStartup(context: () => ctx, verdict: v),
+          isFalse,
+        );
+      }
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey<String>('security-kill-notice')),
+        findsNothing,
+      );
+    });
+  });
+
   testWidgets('提示卡片：发送失败显示重试 / 跳过，重试沿用上次的选择', (WidgetTester tester) async {
     final List<bool> sends = <bool>[];
     int skips = 0;

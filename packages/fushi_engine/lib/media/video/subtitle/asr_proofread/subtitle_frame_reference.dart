@@ -146,7 +146,20 @@ Future<List<SubtitleReferenceFrame>> loadSubtitleReferenceFrames(
 /// 生产取帧：ffmpeg 输入定位抽一帧，缩到 [kSubtitleReferenceFrameWidth] 宽的 JPEG。
 /// 没有本机媒体字节（网络流 / `.strm` / 文件不在）→ null：逐帧对网络源开连接定位太慢，
 /// 与证据收集「网络路径不 demux 整片」同一口径。
-Future<Uint8List?> ffmpegSubtitleFrameSource(String videoPath, int atMs) async {
+Future<Uint8List?> ffmpegSubtitleFrameSource(String videoPath, int atMs) =>
+    _ffmpegFrame(videoPath, atMs, scaleWidth: kSubtitleReferenceFrameWidth);
+
+/// 原分辨率取帧（读画面硬字幕用）：缩到 [kSubtitleReferenceFrameWidth] 时 1080p 片源的
+/// 字幕只剩二十来像素高，OCR 误读同形字（「島」→「鳥」）。其余同
+/// [ffmpegSubtitleFrameSource]。
+Future<Uint8List?> ffmpegSubtitleFullFrameSource(String videoPath, int atMs) =>
+    _ffmpegFrame(videoPath, atMs, scaleWidth: null);
+
+Future<Uint8List?> _ffmpegFrame(
+  String videoPath,
+  int atMs, {
+  required int? scaleWidth,
+}) async {
   if (isNetworkMediaPath(videoPath) || !await hasLocalMediaFile(videoPath)) {
     return null;
   }
@@ -158,7 +171,7 @@ Future<Uint8List?> ffmpegSubtitleFrameSource(String videoPath, int atMs) async {
       inputPath: videoPath,
       outputPath: p.join(tmp.path, 'frame.jpg'),
       atSeconds: atMs / 1000,
-      scaleWidth: kSubtitleReferenceFrameWidth,
+      scaleWidth: scaleWidth,
       // 取不到（定位落在片尾之后、没有视频流的纯音频）是预期内的结果，不算错误。
       diagnosticOnly: true,
     );

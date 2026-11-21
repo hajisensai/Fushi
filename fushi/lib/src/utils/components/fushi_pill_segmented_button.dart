@@ -138,12 +138,12 @@ class _FushiPillSegmentedButtonState<T> extends State<SegmentedButton<T>> {
         ),
         alignment: Alignment.center,
         decoration: ShapeDecoration(
-          color: on
-              ? fushiPillSegmentSelectedFill(cs, eink: eink)
-              : fushiPillSegmentSelectedFill(
-                  cs,
-                  eink: eink,
-                ).withValues(alpha: 0),
+          color: fushiPillSegmentFill(
+            cs,
+            selected: on,
+            enabled: enabled,
+            eink: eink,
+          ),
           shape: StadiumBorder(side: BorderSide.none),
         ),
         child: content,
@@ -213,6 +213,22 @@ class _FushiPillSegmentedButtonState<T> extends State<SegmentedButton<T>> {
 /// 实测）。墨水屏用 onSurface 实底（灰阶下也是最强对比）。
 Color fushiPillSegmentSelectedFill(ColorScheme cs, {bool eink = false}) =>
     eink ? cs.onSurface : cs.primary;
+
+/// 段的填充色：选中取 [fushiPillSegmentSelectedFill]；禁用的选中段按 M3 禁用态
+/// 取 onSurface 12%——与禁用文字色（onSurface 38%）配对。早先禁用时只把文字
+/// 换灰、底仍是 primary 实底，灰字压在强调色上读不出（库页「色块摆放」在封面
+/// 网格下置灰时的「规整」）。未选中段是同色透明（保留补间动画的起止色相）。
+Color fushiPillSegmentFill(
+  ColorScheme cs, {
+  required bool selected,
+  required bool enabled,
+  bool eink = false,
+}) {
+  final Color fill = enabled
+      ? fushiPillSegmentSelectedFill(cs, eink: eink)
+      : cs.onSurface.withValues(alpha: 0.12);
+  return selected ? fill : fill.withValues(alpha: 0);
+}
 
 /// 选中段的图标 / 文字色（与 [fushiPillSegmentSelectedFill] 配对的 on- 色）。
 Color fushiPillSegmentSelectedForeground(ColorScheme cs, {bool eink = false}) =>

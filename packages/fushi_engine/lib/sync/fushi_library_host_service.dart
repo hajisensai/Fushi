@@ -1,8 +1,11 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/dandanplay_file_key.dart'
     show DandanplayFileKey;
+import 'package:fushi_engine/models/local_audio_content_id.dart';
+import 'package:fushi_engine/media/video/stream_video_sync.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
@@ -77,6 +80,26 @@ const String kVideoSidecarSubtitleQueryParam = 'sidecar';
 /// 并接受 [kVideoSidecarSubtitleQueryParam]（[VideoSidecarSubtitleListHost]）。
 const String kVideoSidecarSubtitlesCapability = 'videoSidecarSubtitles';
 
+/// `/api/library/videos/<id>/fingerprint`：host 有这个端点、却担保不了这份字节时的
+/// 状态码（BUG-4782）。404 只留给「老 host 没有这个端点」，两者必须可区分。响应体
+/// `{"reason": <下面两个之一>}`。
+const int kVideoFingerprintUnavailableStatus = 409;
+
+/// [kVideoFingerprintUnavailableStatus] 的 reason：条目或这一集的文件在 host 上找不到。
+const String kVideoFingerprintReasonNotFound = 'not_found';
+
+/// [kVideoFingerprintUnavailableStatus] 的 reason：文件读不了 / 算的期间被改写。
+const String kVideoFingerprintReasonUnreadable = 'unreadable';
+
+/// `/fingerprint` 的「不等」查询参数（拍板台 left3657）：带 `wait=0` 时 host 不当场
+/// 整文件哈希——已算过（内存 / 落盘缓存，含后台预热的）回 200 + 指纹；还没算过回
+/// [kVideoFingerprintPendingStatus] 并在后台开算。卡片回跳用它，不让用户干等几十秒。
+/// 老 host 不认这个参数，照旧当场算完再答（与改动前一致）。
+const String kVideoFingerprintWaitQueryParam = 'wait';
+
+/// `/fingerprint?wait=0` 时「还没算好、已在后台开算」的状态码（拍板台 left3657）。
+const int kVideoFingerprintPendingStatus = 202;
+
 // ── 改名前的旧 header 名（Hibiki → Fushi，2026-10）─────────────────────────────
 //
 // 互联两端可能跑不同版本：改名前的 client / host 只认 `X-Hibiki-*`。旧名照样**发**
@@ -148,21 +171,85 @@ SyncKeyDiff computeKeyUnionDiff({
 
 // ── 本地音频 ──────────────────────────────────────────────────────────────────
 
-/// host 实时本地音频来源的清单条目（键 = displayName）。
+/// host 实时本地音频来源的清单条目。
 ///
-/// [displayName] 是用户设置的显示名，用作跨设备 union-key（与 orchestrator
-/// `kSyncLocalAudioNamespace` 的资产名语义一致）。
+/// 跨设备身份是 [contentId]（库的内容指纹，拍板 pr3481）：同一份库在两端名字
+/// 不同也认作同一份，名字相同而内容不同则是两份。[displayName] 只用于展示，以及
+/// 对端是旧版本（清单里没有 `contentId`）时退回按名匹配。
+///
+/// 单项端点 `/api/library/localaudio/<key>` 的 key：新版本 host 先按 contentId
+/// 认、再按 displayName 认，旧版本 host 只认 displayName。
 class RemoteLocalAudioInfo {
-  const RemoteLocalAudioInfo({required this.displayName});
+  const RemoteLocalAudioInfo({required this.displayName, this.contentId});
 
   final String displayName;
+  final String? contentId;
+
+  /// 向这台 host 请求这份库时用的 key：清单里给了合格的 contentId 就用它（不受
+  /// 撞名影响），否则（旧 host）只能用 displayName。
+  String get key => isLocalAudioContentId(contentId) ? contentId! : displayName;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'displayName': displayName,
+    'contentId': ?contentId,
   };
 
-  static RemoteLocalAudioInfo fromJson(Map<String, Object?> json) =>
-      RemoteLocalAudioInfo(displayName: json['displayName']?.toString() ?? '');
+  static RemoteLocalAudioInfo fromJson(Map<String, Object?> json) {
+    final Object? id = json['contentId'];
+    return RemoteLocalAudioInfo(
+      displayName: json['displayName']?.toString() ?? '',
+      contentId: id is String && isLocalAudioContentId(id) ? id : null,
+    );
+  }
+}
+
+/// `/api/capabilities` 的 `liveLibrary` 里声明「本地音频清单带内容身份、单项端点
+/// 认 contentId」的能力位（拍板 pr3481）。老 host 无此位 → client 只能按显示名
+/// 匹配，并在同步报告里提示升级对端。
+const String kLiveLibraryLocalAudioContentIdCapability = 'localAudioContentId';
+
+/// [capabilities]（`GET /api/capabilities` 的解码结果，老 host 为 null）是否声明
+/// [kLiveLibraryLocalAudioContentIdCapability]。
+bool interconnectHostReportsLocalAudioContentId(Object? capabilities) {
+  if (capabilities is! Map) return false;
+  final Object? live = capabilities['liveLibrary'];
+  if (live is! Map) return false;
+  return live[kLiveLibraryLocalAudioContentIdCapability] == true;
+}
+
+/// `liveLibrary` 里声明「host 列得出删除墓碑」（`GET /api/tombstones`，
+/// [DeletionTombstoneHost]）的能力位。没有这一位的 host 若对该端点回 404，就是
+/// 版本过旧（拍板 other-sync-peer-version-errors）。
+const String kLiveLibraryDeletionTombstonesCapability = 'deletionTombstones';
+
+/// `liveLibrary` 里声明「host 能删视频」（`DELETE /api/library/videos/<id>`，
+/// [VideoDeletionHost]）的能力位。语义同 [kLiveLibraryDeletionTombstonesCapability]。
+const String kLiveLibraryVideoDeletionCapability = 'videoDeletion';
+
+/// host 对 `liveLibrary` 里某一能力位的声明状态。
+///
+/// 同步维度在 host 上走不通（端点 404 / 能力位不是 true）时，靠它区分两种情形：
+/// - [undeclared]：host 根本不认识这一位（或连 `/api/capabilities` 都没有）——它的
+///   Fushi 比这个能力旧，升级对端就能同步；
+/// - [declaredOff]：host 认识这一位但说不支持（例如无头服务端没有 PDF 引擎）——升级
+///   解决不了，是那台设备的能力边界。
+enum LiveLibraryCapabilityState { supported, declaredOff, undeclared }
+
+/// 读 [capabilities]（`GET /api/capabilities` 的解码结果，老 host 为 null）里
+/// `liveLibrary.<key>` 的声明状态：`true` → supported；键在但不是 `true` →
+/// declaredOff；键 / `liveLibrary` 段 / 整个能力表缺失 → undeclared。
+LiveLibraryCapabilityState liveLibraryCapabilityState(
+  Object? capabilities,
+  String key,
+) {
+  if (capabilities is! Map) return LiveLibraryCapabilityState.undeclared;
+  final Object? live = capabilities['liveLibrary'];
+  if (live is! Map || !live.containsKey(key)) {
+    return LiveLibraryCapabilityState.undeclared;
+  }
+  return live[key] == true
+      ? LiveLibraryCapabilityState.supported
+      : LiveLibraryCapabilityState.declaredOff;
 }
 
 /// 旧名兼容：本地音频 diff 已并入 [SyncKeyDiff]。
@@ -338,10 +425,15 @@ abstract interface class VideoSubtitleDefaultHost {
   /// 把 [subtitleFile]（格式 [format]：srt / ass / ssa / vtt）落成视频 [id] 的默认
   /// sidecar 并重解析 cue，返回实际落盘的后缀。未知视频 / 视频无本地文件抛
   /// [StateError]；[format] 不是字幕格式抛 [ArgumentError]。
+  ///
+  /// [episodeIndex]（播放列表下标，与 `?episode=` 同口径）> 0 时落到那一集文件旁
+  /// （capabilities 的 `liveLibrary.videoSubtitleDefaultEpisode`）；那一集不存在 /
+  /// 没有本地文件同样抛 [StateError]。
   Future<String> importDefaultVideoSubtitle(
     File subtitleFile, {
     required String id,
     required String format,
+    int episodeIndex = 0,
   });
 }
 
@@ -507,21 +599,123 @@ SyncKeyDiff computeAudiobookSyncDiff({
 
 /// host 实时词典的清单条目（不含 contentHash：Phase 1 按名 union，与现有暂存
 /// 路径同语义，避免引入跨设备哈希一致性的新风险；overwrite-by-hash 列为 follow-up）。
+///
+/// [name] 是真名（`dictionary_metadata` 主键，冻结标识）。其余目录字段给客户端的
+/// 「服务端词典」目录用，全部可空：老 host 不发、值缺省时 [toJson] 不写该键，
+/// [fromJson] 对缺键 / 非字符串 / 空串一律当 null（旧客户端只读 name / type，不受影响）。
 class RemoteDictionaryInfo {
-  const RemoteDictionaryInfo({required this.name, required this.type});
+  const RemoteDictionaryInfo({
+    required this.name,
+    required this.type,
+    this.formatKey,
+    this.revision,
+    this.displayName,
+    this.sourceLanguage,
+    this.defaultEnabled,
+  });
   final String name;
   final String type;
+
+  /// 导入格式（`dictionary_metadata.formatKey`，如 `yomichan`）。
+  final String? formatKey;
+
+  /// 词典包版本（Yomitan `index.json` 的 `revision`，落在 metadataJson 里）。
+  final String? revision;
+
+  /// host 上用户起的显示名（`dictionary_metadata.displayName`）；没改过为 null。
+  final String? displayName;
+
+  /// 词头语言：host 上的 `languageOverride` 优先，其次 index.json 的 `sourceLanguage`
+  /// （与 `Dictionary.effectiveSourceLanguage` 同判据）；都没有为 null。
+  final String? sourceLanguage;
+
+  /// host 自己的默认开关（[isDictionaryHiddenByDefault] 取反）：客户端第一次见到这本
+  /// 词典时据此初始化配置的 `hidden`。老 host 不发 = null（客户端按启用处理）。
+  final bool? defaultEnabled;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'name': name,
     'type': type,
+    if (formatKey != null) 'formatKey': formatKey,
+    if (revision != null) 'revision': revision,
+    if (displayName != null) 'displayName': displayName,
+    if (sourceLanguage != null) 'sourceLanguage': sourceLanguage,
+    if (defaultEnabled != null) 'defaultEnabled': defaultEnabled,
   };
 
   static RemoteDictionaryInfo fromJson(Map<String, Object?> json) =>
       RemoteDictionaryInfo(
         name: json['name']?.toString() ?? '',
         type: json['type']?.toString() ?? '',
+        formatKey: _optionalString(json['formatKey']),
+        revision: _optionalString(json['revision']),
+        displayName: _optionalString(json['displayName']),
+        sourceLanguage: _optionalString(json['sourceLanguage']),
+        defaultEnabled: json['defaultEnabled'] is bool
+            ? json['defaultEnabled']! as bool
+            : null,
       );
+
+  /// 由一条 `dictionary_metadata` 行生成清单条目（app 当 host 与无头服务端同一份）：
+  /// `revision` / `sourceLanguage` 取 metadataJson（导入时由 index.json 落进去），
+  /// 词头语言 `languageOverride` 优先（`Dictionary.effectiveSourceLanguage` 同判据），
+  /// 显示名取 `displayName` 列；空串 / 纯空白当没有。metadataJson 畸形时这两项为 null。
+  /// `defaultEnabled` 按 [isDictionaryHiddenByDefault] 取反（host 一定发）。
+  factory RemoteDictionaryInfo.fromMetadataRow(DictionaryMetaRow row) {
+    Map<Object?, Object?> metadata = const <Object?, Object?>{};
+    try {
+      final Object? decoded = jsonDecode(row.metadataJson);
+      if (decoded is Map) metadata = decoded;
+    } on FormatException {
+      // 畸形 metadataJson：目录字段缺省，name / type 照发。
+    }
+    return RemoteDictionaryInfo(
+      name: row.name,
+      type: row.type,
+      formatKey: _optionalString(row.formatKey),
+      revision: _optionalString(metadata['revision']),
+      displayName: _optionalString(row.displayName),
+      sourceLanguage:
+          _optionalString(row.languageOverride) ??
+          _optionalString(metadata['sourceLanguage']),
+      defaultEnabled: !isDictionaryHiddenByDefault(row),
+    );
+  }
+
+  /// host 的「默认关掉」判据（app 当 host 与无头服务端同一份）：`hiddenLanguagesJson`
+  /// 含 `ja`（app 推送时写入的形状、服务端 admin API 的 `defaultEnabled` 写入同一口径）。
+  /// JSON 畸形 / 不是数组当没关。
+  static bool isDictionaryHiddenByDefault(DictionaryMetaRow row) {
+    try {
+      final Object? decoded = jsonDecode(row.hiddenLanguagesJson);
+      return decoded is List && decoded.any((Object? e) => '$e' == 'ja');
+    } on FormatException {
+      return false;
+    }
+  }
+
+  /// 把 [hiddenLanguagesJson] 改成「默认关 = [hidden]」：只增删 `ja` 这一项，其余语言
+  /// 原样保留（原顺序）。JSON 畸形 / 不是数组时按空表起算。
+  static String withHiddenByDefault(String hiddenLanguagesJson, bool hidden) {
+    List<String> languages = <String>[];
+    try {
+      final Object? decoded = jsonDecode(hiddenLanguagesJson);
+      if (decoded is List) {
+        languages = <String>[for (final Object? e in decoded) '$e'];
+      }
+    } on FormatException {
+      // 畸形：按空表起算。
+    }
+    languages.removeWhere((String e) => e == 'ja');
+    if (hidden) languages.add('ja');
+    return jsonEncode(languages);
+  }
+
+  static String? _optionalString(Object? raw) {
+    if (raw is! String) return null;
+    final String trimmed = raw.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
 }
 
 /// 旧名兼容：词典 diff 已并入 [SyncKeyDiff]。
@@ -2712,6 +2906,7 @@ class RemoteVideoInfo {
     this.importedAt,
     this.fileName,
     this.peerPlayable = true,
+    this.stream,
   });
 
   final String id;
@@ -2729,6 +2924,13 @@ class RemoteVideoInfo {
   /// wire：只在 false 时写 `peerPlayable: false`；缺省 = true，旧 host（不带该键）
   /// 与改动前逐字节同行为；旧 client 不认识该键，按旧行为照常列出。
   final bool peerPlayable;
+
+  /// 流媒体书（「粘贴 URL 导入」/ 网页视频站，[isSyncableStreamVideo]）的重开信息：
+  /// URL + 重开规格 + host 拥有时刻。client 据此在本机落一本同 uid 的流媒体书，行两端
+  /// 都有之后进度 / 播放偏好 sweep 照常接管（拍板台 Z2OhxAjKVv）。其余条目恒 null。
+  ///
+  /// wire：`stream: {url, spec?, addedAt?}`，只在非 null 时写；旧 client 不认识该键。
+  final RemoteStreamVideoEntry? stream;
 
   /// host 视频文件的**文件名**（只取 basename，绝不带目录——目录结构仍留在 host）。
   ///
@@ -2898,6 +3100,7 @@ class RemoteVideoInfo {
     importedAt: importedAt,
     fileName: fileName,
     peerPlayable: peerPlayable,
+    stream: stream,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -2945,6 +3148,7 @@ class RemoteVideoInfo {
     if (collection != null) 'collection': collection!.toJson(),
     if (_isNonEmpty(fileName)) 'fileName': fileName,
     if (!peerPlayable) 'peerPlayable': false,
+    if (stream != null) kRemoteStreamVideoWireKey: stream!.toJson(),
   };
 
   RemoteVideoInfo copyWith({
@@ -3003,6 +3207,7 @@ class RemoteVideoInfo {
     importedAt: importedAt,
     fileName: fileName,
     peerPlayable: peerPlayable,
+    stream: stream,
   );
 
   static RemoteVideoInfo fromJson(Map<String, Object?> json) {
@@ -3051,6 +3256,7 @@ class RemoteVideoInfo {
       collection: RemoteCollectionMembership.fromJson(json['collection']),
       fileName: _jsonString(json['fileName']),
       peerPlayable: json['peerPlayable'] != false,
+      stream: RemoteStreamVideoEntry.tryParse(json[kRemoteStreamVideoWireKey]),
     );
   }
 }
@@ -3324,23 +3530,24 @@ abstract class FushiLibraryHostService {
 
   // ── 本地音频 ───────────────────────────────────────────────────────────────
 
-  /// host 当前本地音频来源清单（从已注入的 localAudioEntries 取 displayName）。
+  /// host 当前本地音频来源清单（displayName + 内容身份 contentId）。
   Future<List<RemoteLocalAudioInfo>> listLocalAudio();
 
-  /// 即时把 displayName 为 [displayName] 的本地音频库打包成临时文件，返回该文件。
+  /// 即时把 [key] 指向的本地音频库打包成临时文件，返回该文件。[key] 先按内容
+  /// 身份 contentId 认、再按 displayName 认（旧版本客户端只会传 displayName）。
   /// 调用方负责删除返回的临时文件（及其父临时目录）。
-  /// [displayName] 含路径穿越字符时抛 [ArgumentError]；
+  /// [key] 含路径穿越字符时抛 [ArgumentError]；
   /// 找不到该来源或其 DB 文件不存在时抛 [StateError]。
-  Future<File> exportLocalAudio(String displayName);
+  Future<File> exportLocalAudio(String key);
 
   /// 把本地音频包文件导入 host（解包 + 注册回调）。
   /// 实现应调用 [onLocalAudioImported] 回调完成 native 注册；
   /// 回调为 null 时抛 [UnsupportedError]。
   Future<void> importLocalAudio(File packageFile);
 
-  /// 从 host 删除 displayName 为 [displayName] 的本地音频来源。
-  /// [displayName] 含路径穿越字符时抛 [ArgumentError]。
-  Future<void> deleteLocalAudio(String displayName);
+  /// 从 host 删除 [key] 指向的本地音频来源（同 [exportLocalAudio]：先按 contentId
+  /// 认、再按 displayName 认）。[key] 含路径穿越字符时抛 [ArgumentError]。
+  Future<void> deleteLocalAudio(String key);
 
   // ── 有声书包 ──────────────────────────────────────────────────────────────
 
@@ -3638,6 +3845,22 @@ abstract interface class MediaLinkSyncHost {
   Future<MediaLinkManifest> mergeMediaLinkManifest(MediaLinkManifest incoming);
 }
 
+/// host 端「收下对端注册的流媒体书」的**可选**能力（拍板台 Z2OhxAjKVv，
+/// `stream_video_sync.dart`）。
+///
+/// 与 [MediaLinkSyncHost] 同范式：server 用 `is` 探测，不实现 →
+/// `PUT /api/library/videos/<id>/streamentry` 404，能力位
+/// `liveLibrary.streamVideos=false`。client **先看能力位再推**：老 host 没有这条
+/// 路由，带后缀的 PUT 会落进「裸 id 上传视频」分支，把请求体当视频文件入库。
+abstract interface class StreamVideoSyncHost {
+  /// 在 host 视频库落一本 uid 为 [id] 的流媒体书（不传任何视频字节）。
+  ///
+  /// host 已有同 uid 的行时不改它（host 自己的标题 / 封面 / 进度是真相），返回
+  /// false；新建返回 true。[id] / URL 不满足 [isSyncableStreamVideo] 抛
+  /// [ArgumentError]（端点回 400）。
+  Future<bool> registerStreamVideo(String id, StreamVideoRegistration entry);
+}
+
 /// host 端「视频刮削元数据」的**可选**能力（`docs/specs/2026-09-12-interconnect-scrape-metadata.md`）。
 ///
 /// 与 [DeletionTombstoneHost] 同范式：主接口有十余个测试 fake 全量 implements，
@@ -3730,6 +3953,53 @@ abstract interface class VideoDiscShareHost {
 
 /// `/api/capabilities` 的 `liveLibrary` 里声明 [VideoClipExportHost] 的能力位。
 const String kVideoClipExportCapability = 'videoClipExport';
+
+/// `/api/capabilities` 的 `liveLibrary` 里声明 [VideoDiscTitleAudioHost] 的能力位：
+/// `clipaudio` 认 `?discTitle=`。老 host 无此字段 → client 不带 `discTitle` 请求（老 host
+/// 不认它，会照 `<id>` 那一行裁，拿回的是另一条 title 的音频）。
+const String kVideoClipAudioDiscTitleCapability = 'videoClipAudioDiscTitle';
+
+/// `/api/capabilities` 的 `liveLibrary` 里声明「`clipaudio?discTitle=` 认多角度 title 的
+/// 角度成员路径（`BDMV/PLAYLIST/00001.a2.mpls`，见 `bluray_angle.dart`）、按该角度裁」的
+/// 能力位。老 host 无此字段 → client 不发角度路径（老 host 认不出这个虚拟路径，只会 404）。
+const String kVideoClipAudioDiscTitleAngleCapability =
+    'videoClipAudioDiscTitleAngle';
+
+/// `/api/capabilities` 的 `liveLibrary` 里声明「`clipaudio?discTitle=` 认 DVD title
+/// （`VIDEO_TS/TITLE_nn.dvdtitle`，`<id>` 是同一张 DVD 上的行）、经 `dvdvideo` demuxer
+/// 按 title 裁」的能力位。老 host 无此字段 → client 不发 DVD title（老 host 判它读不到）。
+const String kVideoClipAudioDiscTitleDvdCapability =
+    'videoClipAudioDiscTitleDvd';
+
+/// `/api/capabilities` 的 `liveLibrary` 里声明「`clipaudio?discTitle=` 认 DVD 多角度 title
+/// 的角度成员路径（`VIDEO_TS/TITLE_nn.aK.dvdtitle`，见 `dvd_angle.dart`）、按该角度裁」的
+/// 能力位。只声明了 [kVideoClipAudioDiscTitleDvdCapability] 与
+/// [kVideoClipAudioDiscTitleAngleCapability] 的 host 认不出这种形态（只会 404）→ client
+/// 不发。
+const String kVideoClipAudioDiscTitleDvdAngleCapability =
+    'videoClipAudioDiscTitleDvdAngle';
+
+/// host 端「按（盘, title）裁音频」的**可选**能力（远端原盘会话：盘在 host 上，会话里
+/// 正在看的 title 可能是库里没有行的特典 / 菜单 title）。与 [VideoClipExportHost] 同范式：
+/// server 用 `is` 探测，不实现 → `clipaudio?discTitle=` 404、能力位
+/// [kVideoClipAudioDiscTitleCapability] 为 false。
+abstract interface class VideoDiscTitleAudioHost {
+  /// 在 host 本地裁出视频 [id] 那一行所在蓝光盘上 [discTitle]（相对盘根，
+  /// `BDMV/PLAYLIST/<名>.mpls`）那条 title 的 `[startMs, endMs)` 音频，返回落在**独立
+  /// 临时目录**里的 aac 文件（调用方读完负责删该目录）。视频未知 / 不是蓝光行 / title
+  /// 不合法或本机读不到 / 区间非法 / ffmpeg 失败 → null。其余参数同
+  /// [FushiLibraryHostService.clipVideoAudio]。
+  Future<File?> clipVideoDiscTitleAudio(
+    String id, {
+    required String discTitle,
+    required int startMs,
+    required int endMs,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    int audioChannels = 1,
+    String audioBitrate = '64k',
+  });
+}
 
 /// host 端「替 client 裁出视频片段原料」的**可选**能力（反馈 6nBmSBj_2W：互联远端
 /// 视频的片段导出）。

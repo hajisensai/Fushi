@@ -65,6 +65,17 @@ SystemOcrSetupPhase systemOcrSetupPhaseFor(SystemOcrModelStatus status) =>
         SystemOcrSetupPhase.playServicesUnavailable,
     };
 
+/// 这一阶段要不要指向本机模型（BUG-4705）：只在设备根本没有可用 Play 服务时——
+/// 与 [SystemOcrModelStatus.playServicesAbsent] 同一组状态。停用 / 版本旧 / 正在更新
+/// 都是点一下就能修好的，那时推替代方案反而把用户从一步之遥的修复上引开。
+bool systemOcrSetupPhaseOffersLocalModel(SystemOcrSetupPhase phase) =>
+    switch (phase) {
+      SystemOcrSetupPhase.playServicesMissing ||
+      SystemOcrSetupPhase.playServicesInvalid ||
+      SystemOcrSetupPhase.playServicesUnavailable => true,
+      _ => false,
+    };
+
 /// 弹窗里给反馈人截图用的诊断行：原始码 + 本机 / 需要的 Play 服务版本（BUG-4199）。
 String systemOcrPlayServicesDiagnosticsText(
   SystemOcrPlayServicesDiagnostics diagnostics,
@@ -193,6 +204,9 @@ class _SystemOcrSetupDialogState extends State<SystemOcrSetupDialog> {
         t.ocr_system_model_play_services_unavailable,
     };
     final SystemOcrPlayServicesDiagnostics? diagnostics = _playServices;
+    // 设备根本没有可用的 Play 服务时，系统 OCR 在这台设备上修不好（BUG-4705）：
+    // 不能只说「跑不了」，要给出能用的替代——不依赖 Play 服务的本机模型。
+    final bool offerLocalModel = systemOcrSetupPhaseOffersLocalModel(_phase);
     final Widget recheck = FushiFilledButton(
       key: const ValueKey<String>('system_ocr_setup_recheck'),
       onPressed: () => unawaited(_check()),
@@ -263,6 +277,14 @@ class _SystemOcrSetupDialogState extends State<SystemOcrSetupDialog> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           _StatusBlock(tone: tone, busy: busy, message: message),
+          if (offerLocalModel) ...<Widget>[
+            const SizedBox(height: 12),
+            Text(
+              t.ocr_system_model_local_alternative,
+              key: const ValueKey<String>('system_ocr_setup_local_alternative'),
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ],
           if (diagnostics != null) ...<Widget>[
             const SizedBox(height: 12),
             SelectableText(
@@ -326,38 +348,43 @@ class _StatusBlock extends StatelessWidget {
       _StatusTone.neutral => FushiIcons.info,
     };
     final FushiMotionScheme motion = context.fushiMotion;
+    final Widget block = AnimatedContainer(
+      duration: motion.effectsDefault.duration,
+      curve: motion.effectsDefault.curve,
+      padding: glass ? EdgeInsets.zero : const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: FushiM3eShape.cardRadius,
+      ),
+      child: Row(
+        children: <Widget>[
+          if (busy)
+            const SizedBox.square(
+              dimension: 24,
+              child: FushiCircularProgressIndicator(strokeWidth: 3),
+            )
+          else
+            FushiIcon(icon, size: 24, color: fg),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(
+              message,
+              key: const ValueKey<String>('system_ocr_setup_message'),
+              style: TextStyle(color: fg),
+            ),
+          ),
+        ],
+      ),
+    );
+    // 「减少动态效果」下时长为零：零时长的 AnimatedSize 在布局里换尺寸时会同步把
+    // 动画推到终点、在自己的 performLayout 里重新弄脏自己（断言 "RenderAnimatedSize
+    // was mutated in its own performLayout"）。没有动画就不套它。
+    if (motion.spatialDefault.duration == Duration.zero) return block;
     return AnimatedSize(
       duration: motion.spatialDefault.duration,
       curve: motion.spatialDefault.curve,
       alignment: Alignment.topCenter,
-      child: AnimatedContainer(
-        duration: motion.effectsDefault.duration,
-        curve: motion.effectsDefault.curve,
-        padding: glass ? EdgeInsets.zero : const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: FushiM3eShape.cardRadius,
-        ),
-        child: Row(
-          children: <Widget>[
-            if (busy)
-              const SizedBox.square(
-                dimension: 24,
-                child: FushiCircularProgressIndicator(strokeWidth: 3),
-              )
-            else
-              FushiIcon(icon, size: 24, color: fg),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                message,
-                key: const ValueKey<String>('system_ocr_setup_message'),
-                style: TextStyle(color: fg),
-              ),
-            ),
-          ],
-        ),
-      ),
+      child: block,
     );
   }
 }

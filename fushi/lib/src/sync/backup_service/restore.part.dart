@@ -1,5 +1,12 @@
 part of '../backup_service.dart';
 
+/// 覆盖前快照可达性判定（`BackupRestoreService._overwriteSnapshotReachability`）的
+/// 结果：与输入的书目录 / 视频路径按下标对齐。
+typedef _OverwriteSnapshotReachability = ({
+  List<bool> bookFiles,
+  List<bool> videos,
+});
+
 /// Row counts peeked from a backup's DB blob for the import "what's inside"
 /// manifest when the meta predates the corresponding count field.
 typedef _ContentRowCounts = ({
@@ -703,109 +710,12 @@ class BackupRestoreService {
   static String _quoteIdentifier(String value) =>
       '"${value.replaceAll('"', '""')}"';
 
-  /// 覆盖恢复里「复习勾了、配置档案没有来自备份」时的 SRS 归位（[BackupCategory.srs]
-  /// 对 `profiles` 的依赖）。
-  ///
-  /// 覆盖后的活库此时是：配置档案 = 本机的（bak 回灌）；备份的 SRS 挂在备份那边的 profile uid
-  /// 上——对不上本机档案就是孤儿。覆盖语义下本机原有的 SRS 换成备份的：删掉本机 srs.db 重开一份
-  /// 空的，再走与合并导入**同一个** SRS 专用步骤（[mergeSrsIntoLocal]：同 uid 并入 / 同名且无
-  /// 用户笔记未发布则采用 uid / 否则新建「（备份）」档案）。
-  /// - 新形态备份（zip 里有 [srsEntryName]）：事件从解出的 srs.db 副本（Rust 打开）读，档案从
-  ///   解出的备份主库读（ATTACH）。
-  /// - 老形态备份：覆盖进来的主库带着备份的老 SRS 表（孤儿），先删掉；事件与档案都从解出的备份
-  ///   主库副本读（ATTACH，迁到当前 schema 时老表仍在）。
-  /// 备份根本不带 SRS 时什么都不动（本机 srs.db 保留）。
-  ///
-  /// 两个文件分别提交：中途失败时本机 srs.db 可能只合并了一部分（见调用方注释）。媒体目录按
-  /// uid 分子目录，三条规则都保留备份的 uid，所以已恢复的 `srs_media/<uid>/` 直接对得上。
-  static Future<void> _reapplySrsViaProfileMerge({
-    required String dbDirectory,
-    required String zipPath,
-    required String dbEntryName,
-    required String? srsEntryName,
-  }) async {
-    final Directory tmp = await Directory.systemTemp.createTemp(
-      'fushi_srs_restore_',
-    );
-    final String srcPath = p.join(tmp.path, _dbName);
-    final String srcSrsPath = p.join(tmp.path, _srsDbName);
-    SrsStorage? srcSrs;
-    try {
-      if (srsEntryName == null &&
-          !legacySrsTablesInFile(p.join(dbDirectory, _dbName))) {
-        return;
-      }
-      await _extractEntriesStreaming(
-        zipPath: zipPath,
-        entries: <MapEntry<String, String>>[
-          MapEntry<String, String>(dbEntryName, srcPath),
-          if (srsEntryName != null)
-            MapEntry<String, String>(srsEntryName, srcSrsPath),
-        ],
-      );
-      // 迁到当前 schema，列与活库对齐（与合并导入同一约定）。
-      final FushiDatabase srcMigrate = FushiDatabase.atFile(srcPath);
-      try {
-        await srcMigrate.customStatement('PRAGMA user_version');
-      } finally {
-        await srcMigrate.close();
-      }
-      if (srsEntryName != null) {
-        srcSrs = await SrsStorage.open(path: srcSrsPath, inline: true);
-      }
-      final FushiDatabase db = FushiDatabase(dbDirectory);
-      try {
-        // 覆盖进来的老 SRS 表挂在备份的 uid 上（孤儿）：删掉，下面按档案重新归位。不删的话，
-        // 本机 srs.db 重开时的一次性搬迁会把它们原样搬进去。
-        await dropLegacySrsTables(db);
-        await _deleteSrsDbFiles(SrsStorage.pathIn(dbDirectory));
-        final SrsStorage local = await SrsStorage.open(
-          path: SrsStorage.pathIn(dbDirectory),
-          legacy: db,
-        );
-        try {
-          final String safeSrc = srcPath
-              .replaceAll(r'\', '/')
-              .replaceAll("'", "''");
-          await db.customStatement("ATTACH DATABASE '$safeSrc' AS srssrc");
-          try {
-            final SrsStorage? split = srcSrs;
-            await mergeSrsIntoLocal(
-              db: db,
-              localSrs: local,
-              source: split != null
-                  ? SrsBackupSource.split(
-                      profiles: db,
-                      profilesSchema: 'srssrc',
-                      srs: split.db,
-                    )
-                  : SrsBackupSource.attached(db, 'srssrc'),
-            );
-          } finally {
-            await db.customStatement('DETACH DATABASE srssrc');
-          }
-        } finally {
-          await local.close();
-        }
-        await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
-      } finally {
-        await db.close();
-      }
-    } finally {
-      await srcSrs?.close();
-      try {
-        await tmp.delete(recursive: true);
-      } catch (_) {
-        // Best-effort temp cleanup; a leftover temp dir is harmless.
-      }
-    }
-  }
-
   /// BUG-816: restores the content-registry preference rows from [bakPath] when
   /// the backup EXCLUDED their owning category, so an overwrite import of a
   /// books / fonts / localAudio-excluded backup never wipes this device's
   /// favorites / font registry / local-audio registry to empty. Mirror of
-  /// [_stripExcludedContentRegistry]. `audio_source_configs` is restored whole
+  /// the export strip ([_stripExcludedContentRegistry] + the `books` table rule
+  /// of `favorite_sentences`, v166). `audio_source_configs` is restored whole
   /// from bak (the device keeps its own audio setup when localAudio was
   /// excluded), which subsumes the export-side B-filter. No-op (logged) if bak
   /// is gone.
@@ -856,6 +766,22 @@ class BackupRestoreService {
           table: 'preferences',
           where: 'key IN ($inList)',
         );
+        // v166 起收藏句是表（偏好键只剩旧库）：整表换回本机的。
+        if (reapplyFavorites &&
+            await db!
+                .customSelect(
+                  'SELECT 1 FROM crbak.sqlite_master '
+                  "WHERE type = 'table' AND name = 'favorite_sentences'",
+                )
+                .get()
+                .then((List<QueryRow> r) => r.isNotEmpty)) {
+          await db!.customStatement('DELETE FROM favorite_sentences');
+          await _copyTableByColumnNames(
+            db!,
+            schema: 'crbak',
+            table: 'favorite_sentences',
+          );
+        }
       });
       await db.customStatement('DETACH DATABASE crbak');
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
@@ -881,45 +807,16 @@ class BackupRestoreService {
       archive.findFile(_dbName) ??
       archive.findFile(legacyHibikiDatabaseFileName);
 
-  /// 覆盖恢复里本机 srs.db 的处置（写进恢复 sidecar 的 `srs` 键，崩溃后启动时由
-  /// [recoverPendingRestore] 重放；两种都幂等）：
-  /// - [_srsPlanReplace]：新形态备份带 `srs.db`——事先解到 `srs.db` 旁的暂存文件，主库换好后
-  ///   换掉本机 srs.db（连同 -wal / -shm）。暂存文件已不在 = 已换过。
-  /// - [_srsPlanDropIfLegacy]：备份不带 `srs.db`；覆盖进来的主库若带着老形态 SRS 表，就删掉本机
-  ///   srs.db，下次打开走一次性搬迁把它们搬进来。主库里没有老表（备份不带 SRS / 已搬过）时不动。
-  static const String _srsPlanReplace = 'replace';
-  static const String _srsPlanDropIfLegacy = 'dropIfLegacy';
-
-  /// [_srsPlanReplace] 的暂存文件（与 srs.db 同目录，换文件是同盘 rename）。
+  /// 协议 3 时代（这一版之前）覆盖还原的暂存文件（`srs.db` 旁）：只在启动恢复里认旧 sidecar 时用
+  /// （[_recoverSrsRestorePlan]），这一版不再写它。
   static String _srsStagedPath(String dbDirectory) =>
-      '${SrsStorage.pathIn(dbDirectory)}.restore-new';
+      '${SrsStorage.legacyPathIn(dbDirectory)}.restore-new';
 
-  /// 删 srs.db 及其 -wal / -shm（-wal 先删：残留的 WAL 帧绝不能重放到换进来的库上）。
+  /// 删 [srsPath] 及其 -wal / -shm（-wal 先删）。只用于还原自己解出来的临时副本，绝不用于本机的复习库。
   static Future<void> _deleteSrsDbFiles(String srsPath) async {
     await _safeDelete('$srsPath-wal');
     await _safeDelete('$srsPath-shm');
     await _safeDelete(srsPath);
-  }
-
-  /// 执行 [plan]（见 [_srsPlanReplace] / [_srsPlanDropIfLegacy]）。调用方保证此刻没有任何
-  /// srs.db 连接（app 关库时已关 SRS 存储；启动恢复早于 SRS 打开）。
-  static Future<void> _applySrsOverwrite(
-    String dbDirectory,
-    String plan,
-  ) async {
-    final String srsPath = SrsStorage.pathIn(dbDirectory);
-    switch (plan) {
-      case _srsPlanReplace:
-        final File staged = File(_srsStagedPath(dbDirectory));
-        if (!staged.existsSync()) return;
-        await _deleteSrsDbFiles(srsPath);
-        await staged.rename(srsPath);
-      case _srsPlanDropIfLegacy:
-        if (!legacySrsTablesInFile(p.join(dbDirectory, _dbName))) return;
-        await _deleteSrsDbFiles(srsPath);
-      default:
-        throw FormatException('unknown srs restore plan: $plan');
-    }
   }
 
   /// 备份归档里主库的 schema 若低于 [kMinSupportedSchemaVersion]，抛
@@ -1160,8 +1057,6 @@ class BackupRestoreService {
       // [dbDirectory]）下，与 [SrsMediaStore.directoryFor] 同一规则，恢复后复习页直接
       // 读得到。
       final bool wantsSrs = wants(BackupCategory.srs);
-      // 新形态备份的 SRS 事件在 zip 的 `srs.db` 条目里；老形态在主库条目里。
-      final ArchiveFile? srsFile = archive.findFile(_srsDbName);
       final String? effSrsMediaRoot = wantsSrs
           ? SrsMediaStore.mediaRootFor(Directory(dbDirectory)).path
           : null;
@@ -1170,31 +1065,44 @@ class BackupRestoreService {
       final String bakPath = '$dbPath.pre-restore.bak';
       final currentDb = File(dbPath);
       final bool haveCurrent = currentDb.existsSync();
-      // SRS 行按 `profiles.uid` 归属。配置档案来自备份（全新安装，或勾了导入设置且
-      // 备份带着档案）时，SRS 表照原样随 DB 覆盖即可；否则本机档案被保留（bak 回灌），
-      // 备份里的 SRS 行 uid 对不上任何本机档案 = 孤儿，必须改走 SRS 专用合并（见
-      // [_reapplySrsViaProfileMerge]）。
+      // 复习按 profile 归属。配置档案来自备份（全新安装，或勾了导入设置且备份带着档案）时，复习数据落进备份里的那些
+      // profile；否则本机档案被保留（bak 回灌），复习数据按 uid / 名字对上本机档案（对不上的新建「（备份）」）。
       final bool srsProfilesFromBackup =
           !haveCurrent || (importSettings && !backupProfilesExcluded);
       bool deviceLocalTablesReapplied = !haveCurrent;
-      // 本机 srs.db 的处置（档案来自备份时随主库一起换；档案留本机时由 3d 按档案合并）。
-      // 复习未勾 = 本机 srs.db 原样保留（它是独立文件，不随主库覆盖丢失）。
-      final String? srsPlan = !wantsSrs || !srsProfilesFromBackup
-          ? null
-          : srsFile != null
-          ? _srsPlanReplace
-          : _srsPlanDropIfLegacy;
-      if (srsPlan == _srsPlanReplace) {
-        // 先解到暂存文件（不碰本机 srs.db）：sidecar 绝不能先于暂存文件宣告「要换」。
-        final String staged = _srsStagedPath(dbDirectory);
-        await _deleteSrsDbFiles(staged);
-        await _extractEntriesStreaming(
+      // 复习（G11-4，替换语义 = 空库加并入）：在任何破坏性动作之前把备份的复习数据落进暂存的新代库；本机复习库
+      // 状态不对 / 备份坏 / 落库失败都在这里抛，本机什么都没动。复习未勾 = 本机复习库原样保留。
+      Map<String, Object?>? srsPlan;
+      if (wantsSrs) {
+        final _SrsRestoreUnits? srsUnits = await _prepareSrsRestoreUnits(
           zipPath: zipPath,
-          entries: <MapEntry<String, String>>[
-            MapEntry<String, String>(srsFile!.name, staged),
-          ],
+          archive: archive,
+          dbFile: dbFile,
+          meta: meta,
           onBytes: reportBytes,
         );
+        if (srsUnits != null) {
+          try {
+            await _checkSrsLibraryRestorable(dbDirectory);
+            final List<SrsLocalProfile> finalProfiles = srsProfilesFromBackup
+                ? <SrsLocalProfile>[
+                    for (final SrsBackupProfile bp in srsUnits.profiles)
+                      (id: 0, name: bp.name, uid: bp.uid),
+                  ]
+                : await _currentProfiles(dbDirectory);
+            final List<Map<String, String>> pending = await _stageSrsRestore(
+              dbDirectory: dbDirectory,
+              units: srsUnits,
+              finalProfiles: finalProfiles,
+            );
+            srsPlan = _srsGen4PlanJson(
+              _srsRollbackName(DateTime.now()),
+              pending,
+            );
+          } finally {
+            await srsUnits.dispose();
+          }
+        }
       }
 
       // 1) Snapshot the current DB (crash safety) + record what to preserve.
@@ -1248,9 +1156,15 @@ class BackupRestoreService {
         onBytes: reportBytes,
       );
 
-      // 2a) 主库换好后立刻处置本机 srs.db（与主库同属「数据本体」；崩在这之后由启动恢复按
-      //     sidecar 的 `srs` 键重放）。
-      if (srsPlan != null) await _applySrsOverwrite(dbDirectory, srsPlan);
+      // 2a) 主库换好后立刻换上暂存的新代库（与主库同属「数据本体」；崩在这之后由启动恢复按
+      //     sidecar 的 `srs` 键重放）。本机原来的 `srs4.db` 改名留作回退，封存的 `srs.db` 不碰。
+      final Map<String, Object?>? srsPlanNow = srsPlan;
+      if (srsPlanNow != null) {
+        await _swapInStagedSrsLibrary(
+          dbDirectory,
+          srsPlanNow['rollback']! as String,
+        );
+      }
 
       if (effectiveHasDictionaries &&
           dictionaryReapplyPlan != null &&
@@ -1456,6 +1370,14 @@ class BackupRestoreService {
           newGameCoversRoot: effGameCoversRoot,
         );
       }
+      if (wants(BackupCategory.books)) {
+        await _restoreDownloadManga(
+          zipPath: zipPath,
+          archive: archive,
+          dbDirectory: dbDirectory,
+          onBytes: reportBytes,
+        );
+      }
 
       // 3c) Honour the per-category IMPORT selection for the DB-content
       //     categories the overwrite blob carries wholesale (TODO-1358). The
@@ -1515,25 +1437,24 @@ class BackupRestoreService {
         );
       }
 
-      // 3d) 复习勾了、但配置档案没有来自备份 → 备份的 SRS 行挂在本机不存在的 uid 上。
-      //     放在 3a 之后：设备本地表回灌会清空 SRS 本机状态，而合并要往发件箱里重新
-      //     排队；也放在 3 之后：合并要读本机设备 id（sync 配置此时已回到本机）。
-      if (wantsSrs && !srsProfilesFromBackup) {
-        await _reapplySrsViaProfileMerge(
-          dbDirectory: dbDirectory,
-          zipPath: zipPath,
-          dbEntryName: dbFile.name,
-          srsEntryName: srsFile?.name,
+      // 3d) 复习：插落库时新建的「（备份）」profile，删掉主库里老形态的 SRS 表（数据已在新代库里）。放在 3a 之后：
+      //     档案层回灌之后再插，不被回灌冲掉。
+      if (srsPlanNow != null) {
+        await _finishSrsRestoreInMainDb(
+          dbDirectory,
+          (srsPlanNow['profiles']! as List<Map<String, String>>),
         );
       }
 
-      // 4) Success: drop the sidecar and the pre-restore copy (no disk leak).
-      // A failed device-local replay is recoverable at the next startup, but
-      // only while BOTH artifacts survive. The replay transaction starts with
-      // a child-first wipe and is therefore safe to run again.
+      // 4) Success: drop the sidecar; the pre-restore copy is RETAINED as the
+      // pre-overwrite snapshot (BUG-4701: deleting it made an accidental
+      // overwrite unrecoverable). A failed device-local replay is recoverable
+      // at the next startup, but only while BOTH artifacts survive. The replay
+      // transaction starts with a child-first wipe and is therefore safe to
+      // run again.
       if (deviceLocalTablesReapplied) {
         await _safeDelete(sidecar.path);
-        await _safeDelete(bakPath);
+        await _retainOverwriteSnapshot(dbDirectory, bakPath);
       } else {
         debugPrint(
           'BackupRestoreService.restoreBackup: device-local tables were not '
@@ -1544,6 +1465,389 @@ class BackupRestoreService {
     } finally {
       await input.close();
     }
+  }
+
+  /// 覆盖导入成功后保留的「覆盖前」整库快照路径（BUG-4701）。
+  static String overwriteSnapshotPath(String dbDirectory) =>
+      p.join(dbDirectory, databasePreOverwriteSnapshotFileName);
+
+  /// 覆盖前快照的保留期（维护者 2026-11-16 拍板「加过期」）：整份旧主库和主库
+  /// 一样大，无期限留在支持目录里既占空间，也让「有意清空旧数据」的用户的旧书库、
+  /// 进度、统计静默留在盘上。30 天足够发现「覆盖导入是误操作」，过期后启动时删除
+  /// （[pruneExpiredOverwriteSnapshot]）。计时起点是 [_overwriteSnapshotCreatedName]
+  /// 记录的覆盖导入完成时刻，不是快照文件的修改时刻。
+  static const Duration overwriteSnapshotRetention = Duration(days: 30);
+
+  /// 「覆盖导入完成」提示的待显示标记（[_retainOverwriteSnapshot] 落、
+  /// [takeOverwriteSnapshotNotice] 消费）。不是快照形态，存储页的快照白名单不认它；
+  /// 名字里不含 `pre-overwrite`，不会被当成快照本体。
+  static const String _overwriteSnapshotNoticeName =
+      '$_dbName.overwrite-snapshot-notice';
+
+  /// 覆盖前快照的保留期起点记录：内容是覆盖导入完成时刻的 ISO-8601 UTC 字符串，
+  /// 是「快照留到哪天」的唯一真相（[pruneExpiredOverwriteSnapshot] 与
+  /// [previewOverwriteSnapshot] 都读它）。
+  ///
+  /// 不再用快照文件的修改时刻：改名保留的是旧主库最后一次写入的时刻，此前靠改名后
+  /// `setLastModified` 钉成「现在」，而钉失败时快照就带着旧主库的时刻，很久没写过库
+  /// 的用户下次启动快照就被当成过期删掉（误操作的覆盖导入本可找回的书库随之丢失）。
+  /// 与提示标记一样不是快照形态、名字不含 `pre-overwrite`。
+  static const String _overwriteSnapshotCreatedName =
+      '$_dbName.overwrite-snapshot-created';
+
+  /// 快照到期时刻（保留期起点 + [overwriteSnapshotRetention]）。
+  static DateTime overwriteSnapshotExpiresAt(DateTime createdAt) =>
+      createdAt.add(overwriteSnapshotRetention);
+
+  /// 读保留期起点记录；没有记录 / 内容读不出时返回 null。
+  static Future<DateTime?> _readOverwriteSnapshotCreatedAt(
+    String dbDirectory,
+  ) async {
+    final File record = File(
+      p.join(dbDirectory, _overwriteSnapshotCreatedName),
+    );
+    if (!record.existsSync()) return null;
+    try {
+      return DateTime.tryParse((await record.readAsString()).trim())?.toLocal();
+    } on FileSystemException catch (e) {
+      debugPrint(
+        'BackupRestoreService: unreadable overwrite snapshot record: $e',
+      );
+      return null;
+    }
+  }
+
+  /// 写保留期起点记录，返回是否写成。写不成只记日志：快照本身已保住，
+  /// 没有记录的快照在下次启动时由 [pruneExpiredOverwriteSnapshot] 从那一刻起计时
+  /// （只会让快照多留，不会让它提前被删）。
+  static Future<bool> _writeOverwriteSnapshotCreatedAt(
+    String dbDirectory,
+    DateTime createdAt,
+  ) async {
+    try {
+      await File(
+        p.join(dbDirectory, _overwriteSnapshotCreatedName),
+      ).writeAsString(createdAt.toUtc().toIso8601String(), flush: true);
+      return true;
+    } on FileSystemException catch (e, st) {
+      debugPrint(
+        'BackupRestoreService: writing overwrite snapshot record failed: '
+        '$e\n$st',
+      );
+      return false;
+    }
+  }
+
+  /// 覆盖导入成功收尾：`pre-restore.bak`（只在恢复流程进行中有意义，由
+  /// `sync-preserve.json` 持有）改名成 [overwriteSnapshotPath]，只留最近一份。
+  ///
+  /// 此前这里直接删掉 bak：覆盖导入一旦把书库换成了别的库（例如推荐包的空库），
+  /// 书库行、阅读进度、统计就再也找不回来。改名而不是原地保留：原名是「恢复进行中」
+  /// 的信号（存储页的所有权门控按它 + sidecar 判活），成功后的快照要换一个没有
+  /// 持有者、可随时删除的名字。改名失败只记日志并删掉 bak——导入本身已成功，丢掉
+  /// 的只是这次恢复机会，不能把成功的导入翻成失败。
+  ///
+  /// 改名成功后的两步各自独立：保留期起点记录（[_overwriteSnapshotCreatedName]）
+  /// 与下次进首页的提示标记（[takeOverwriteSnapshotNotice]）。任何一步失败都不影响
+  /// 另一步，也绝不回头删已经保住的快照。
+  static Future<void> _retainOverwriteSnapshot(
+    String dbDirectory,
+    String bakPath,
+  ) async {
+    final File bak = File(bakPath);
+    if (!bak.existsSync()) return;
+    final String target = overwriteSnapshotPath(dbDirectory);
+    // 上一份快照连同它的起点记录一起作废：新记录万一写不成，也不能让新快照
+    // 沿用上一份的（更早的）起点。
+    await _safeDelete(target);
+    await _safeDelete(p.join(dbDirectory, _overwriteSnapshotCreatedName));
+    try {
+      await bak.rename(target);
+    } on FileSystemException catch (e, st) {
+      debugPrint(
+        'BackupRestoreService._retainOverwriteSnapshot: renaming the '
+        'pre-restore bak failed: $e\n$st',
+      );
+      await _safeDelete(bakPath);
+      return;
+    }
+    await _writeOverwriteSnapshotCreatedAt(dbDirectory, DateTime.now());
+    try {
+      await File(
+        p.join(dbDirectory, _overwriteSnapshotNoticeName),
+      ).writeAsString('');
+    } on FileSystemException catch (e, st) {
+      debugPrint(
+        'BackupRestoreService._retainOverwriteSnapshot: writing the notice '
+        'marker failed: $e\n$st',
+      );
+    }
+  }
+
+  /// 启动时删掉过了保留期的覆盖前快照（连同未消费的提示标记与起点记录）。[now] 只给
+  /// 测试注入。返回是否删了快照。
+  ///
+  /// 快照在但没有起点记录（收尾时记录没写成，或快照来自引入记录之前的版本）时，
+  /// 从这一刻补记起点，不删：保留期只会被延长，不会让快照提前消失。快照不在时
+  /// 顺手清掉孤儿记录（存储页删快照时不认识它）。
+  static Future<bool> pruneExpiredOverwriteSnapshot(
+    String dbDirectory, {
+    DateTime? now,
+  }) async {
+    final DateTime current = now ?? DateTime.now();
+    final File snapshot = File(overwriteSnapshotPath(dbDirectory));
+    final String recordPath = p.join(
+      dbDirectory,
+      _overwriteSnapshotCreatedName,
+    );
+    if (!snapshot.existsSync()) {
+      await _safeDelete(recordPath);
+      return false;
+    }
+    final DateTime? createdAt = await _readOverwriteSnapshotCreatedAt(
+      dbDirectory,
+    );
+    if (createdAt == null) {
+      await _writeOverwriteSnapshotCreatedAt(dbDirectory, current);
+      return false;
+    }
+    if (current.isBefore(overwriteSnapshotExpiresAt(createdAt))) return false;
+    await _safeDelete(snapshot.path);
+    await _safeDelete(p.join(dbDirectory, _overwriteSnapshotNoticeName));
+    await _safeDelete(recordPath);
+    return true;
+  }
+
+  /// 消费「覆盖导入完成」提示标记：标记在、快照也在、且快照里确实有当前库缺的东西
+  /// （[previewOverwriteSnapshot] 的 `hasRestorableContent`）时返回预览，否则 null。
+  /// 标记无论如何都先删——提示只是告知，弹框期间杀进程也不该下次再弹。
+  ///
+  /// 「快照里没有当前库缺的东西」时不提示：例如全新安装导入推荐包，覆盖掉的是空库，
+  /// 告诉用户「旧书库已另存」只是噪音。
+  static Future<OverwriteSnapshotPreview?> takeOverwriteSnapshotNotice({
+    required String dbDirectory,
+    required FushiDatabase liveDb,
+  }) async {
+    final File marker = File(p.join(dbDirectory, _overwriteSnapshotNoticeName));
+    if (!marker.existsSync()) return null;
+    await _safeDelete(marker.path);
+    final OverwriteSnapshotPreview? preview = await previewOverwriteSnapshot(
+      dbDirectory: dbDirectory,
+      liveDb: liveDb,
+    );
+    if (preview == null || !preview.hasRestorableContent) return null;
+    return preview;
+  }
+
+  /// 「从覆盖导入前的快照恢复书库」只补缺合并的类别：书库行（书 / 有声书 / 视频）、
+  /// 阅读进度、统计。设置、词典、复习（SRS 不随覆盖导入丢失）不在内。
+  static const Set<BackupCategory> overwriteSnapshotCategories =
+      <BackupCategory>{
+        BackupCategory.books,
+        BackupCategory.audiobooks,
+        BackupCategory.videos,
+        BackupCategory.progress,
+        BackupCategory.statistics,
+      };
+
+  /// 预览覆盖前快照里「当前库没有」的书（不改任何库）。快照不存在返回 null。
+  ///
+  /// 快照先复制到预览临时文件并迁到当前 schema（与 [previewMergeRestore] 同一口径），
+  /// 快照本身一个字节不动。[liveDb] 是 app 正在用的连接（只读查询）。
+  static Future<OverwriteSnapshotPreview?> previewOverwriteSnapshot({
+    required String dbDirectory,
+    required FushiDatabase liveDb,
+  }) async {
+    final File snapshot = File(overwriteSnapshotPath(dbDirectory));
+    if (!snapshot.existsSync()) return null;
+    final FileStat stat = snapshot.statSync();
+    // 没有起点记录时按「现在」显示，与 [pruneExpiredOverwriteSnapshot] 补记同口径。
+    final DateTime createdAt =
+        await _readOverwriteSnapshotCreatedAt(dbDirectory) ?? DateTime.now();
+    final String srcPath = p.join(dbDirectory, _mergePreviewSrcName);
+    await _safeDelete(srcPath);
+    await _safeDelete('$srcPath-wal');
+    await _safeDelete('$srcPath-shm');
+    await snapshot.copy(srcPath);
+    final FushiDatabase src = FushiDatabase.atFile(srcPath);
+    try {
+      final Set<String> liveBookKeys = <String>{
+        for (final EpubBookMeta b in await liveDb.getEpubBookMetas()) b.bookKey,
+      };
+      final Set<String> tombstones = (await liveDb.getBookTombstoneKeys())
+          .toSet();
+      final List<EpubBookMeta> missing = <EpubBookMeta>[
+        for (final EpubBookMeta b in await src.getEpubBookMetas())
+          if (!liveBookKeys.contains(b.bookKey) &&
+              !tombstones.contains(b.bookKey))
+            b,
+      ];
+      final Set<String> liveVideoUids = <String>{
+        for (final VideoBookRow v in await liveDb.allVideoBooks()) v.bookUid,
+      };
+      final List<String> missingVideoPaths = <String>[
+        for (final VideoBookRow v in await src.allVideoBooks())
+          if (!liveVideoUids.contains(v.bookUid)) v.videoPath,
+      ];
+      final _OverwriteSnapshotReachability reachable =
+          await _overwriteSnapshotReachability(
+            extractDirs: <String>[
+              for (final EpubBookMeta b in missing) b.extractDir,
+            ],
+            videoPaths: missingVideoPaths,
+          );
+      return OverwriteSnapshotPreview(
+        path: snapshot.path,
+        sizeBytes: stat.size,
+        createdAt: createdAt,
+        missingBooks: <OverwriteSnapshotBook>[
+          for (int i = 0; i < missing.length; i++)
+            OverwriteSnapshotBook(
+              bookKey: missing[i].bookKey,
+              title: missing[i].title,
+              filesPresent: reachable.bookFiles[i],
+            ),
+        ],
+        missingVideoCount: reachable.videos.where((bool r) => r).length,
+      );
+    } finally {
+      await src.close();
+      await _safeDelete(srcPath);
+      await _safeDelete('$srcPath-wal');
+      await _safeDelete('$srcPath-shm');
+    }
+  }
+
+  /// 快照里的一条视频在本机还能不能放：网络流 / 在线源自包含；本地文件还在盘上。
+  /// 与合并引擎的「可达视频」同一判据，只是「随包文件」换成「盘上文件」。
+  static bool _overwriteSnapshotVideoReachable(String videoPath) =>
+      isNetworkOnlyVideoPath(videoPath) ||
+      videoPath.startsWith('$kAnimeSourceVideoPathScheme://') ||
+      videoPath.startsWith('$kSourceLibrarySftpScheme://') ||
+      videoMemberExistsSync(videoPath);
+
+  /// 快照里的一本书在本机还能不能打开：书目录（`extract_dir`）还在盘上。
+  /// 预览与合并同一判据，预览说「会补回 N 本」就补回 N 本。
+  static bool _overwriteSnapshotBookFilesPresent(String extractDir) =>
+      extractDir.isNotEmpty && Directory(extractDir).existsSync();
+
+  /// 对 [extractDirs] / [videoPaths] 逐条做 [_overwriteSnapshotBookFilesPresent] /
+  /// [_overwriteSnapshotVideoReachable]，结果与输入按下标对齐。
+  ///
+  /// 这些是同步的文件存在检查（`existsSync`），条数随书库规模走，视频在 SMB / UNC
+  /// 共享上时单次就可能阻塞数秒；预览在首页首帧（覆盖导入完成提示）与恢复书库页
+  /// 调用，跑在 UI isolate 上会卡住界面。整批交给后台 isolate，只传路径、回传布尔。
+  static Future<_OverwriteSnapshotReachability> _overwriteSnapshotReachability({
+    required List<String> extractDirs,
+    required List<String> videoPaths,
+  }) => Isolate.run<_OverwriteSnapshotReachability>(
+    () => (
+      bookFiles: <bool>[
+        for (final String dir in extractDirs)
+          _overwriteSnapshotBookFilesPresent(dir),
+      ],
+      videos: <bool>[
+        for (final String path in videoPaths)
+          _overwriteSnapshotVideoReachable(path),
+      ],
+    ),
+  );
+
+  /// 把覆盖前快照里的书库行、阅读进度、统计**只补缺**合并进当前库（BUG-4701）：
+  /// 当前库缺的行插入，已有的行一律不动（[BackupMergeEngine] 的 `fillMissingOnly`），
+  /// bookKey 原样。复用合并导入的整套引擎（快照副本先迁到当前 schema 再 ATTACH），
+  /// 同一个事务、同一套崩溃清理协议（merge sidecar + `pre-merge.bak`）。
+  ///
+  /// 书文件已不在盘上的书**不恢复**（维护者 2026-11-16「应该怎么做就怎么做」，
+  /// 与视频按可达性过滤同一原则）：插回来只是打不开的空壳，它的阅读进度也会挂在
+  /// 一个不存在的书身份上。这些书经 [BackupMergeEngine] 的 `excludedBookKeys`
+  /// 按删除墓碑同样处理（书库行、进度、有声书对齐都不落）；统计按书名记、是历史
+  /// 事实，照常补回。预览把它们单独列出来，提示用户重新导入。
+  ///
+  /// 调用方须先关掉 app 的数据库连接（与 [mergeRestoreBackup] 同一遮罩协议），
+  /// 完成后重启。快照文件保留不删（存储页可删），重复执行幂等。
+  static Future<void> mergeFromOverwriteSnapshot({
+    required String dbDirectory,
+  }) async {
+    final File snapshot = File(overwriteSnapshotPath(dbDirectory));
+    if (!snapshot.existsSync()) {
+      throw StateError('No pre-overwrite snapshot in $dbDirectory');
+    }
+    final String dbPath = p.join(dbDirectory, _dbName);
+    final String mergeSrcPath = p.join(dbDirectory, _mergeSrcName);
+    final String bakPath = '$dbPath.pre-merge.bak';
+    final File sidecar = File(p.join(dbDirectory, _mergeSidecar));
+
+    await _safeDelete(mergeSrcPath);
+    await _safeDelete('$mergeSrcPath-wal');
+    await _safeDelete('$mergeSrcPath-shm');
+    await snapshot.copy(mergeSrcPath);
+
+    // 迁到当前 schema（快照可能来自升级前的版本），顺带取出还能播放的本地视频
+    // 与书文件已不在盘上的书。
+    final Set<String> reachableVideos = <String>{};
+    final Set<String> booksWithoutFiles = <String>{};
+    final FushiDatabase srcMigrate = FushiDatabase.atFile(mergeSrcPath);
+    try {
+      final List<String> videoPaths = <String>[
+        for (final VideoBookRow v in await srcMigrate.allVideoBooks())
+          v.videoPath,
+      ];
+      final List<EpubBookMeta> books = await srcMigrate.getEpubBookMetas();
+      final _OverwriteSnapshotReachability reachable =
+          await _overwriteSnapshotReachability(
+            extractDirs: <String>[
+              for (final EpubBookMeta b in books) b.extractDir,
+            ],
+            videoPaths: videoPaths,
+          );
+      for (int i = 0; i < videoPaths.length; i++) {
+        if (reachable.videos[i]) reachableVideos.add(videoPaths[i]);
+      }
+      for (int i = 0; i < books.length; i++) {
+        if (!reachable.bookFiles[i]) booksWithoutFiles.add(books[i].bookKey);
+      }
+    } finally {
+      await srcMigrate.close();
+    }
+    await _safeDelete('$mergeSrcPath-wal');
+    await _safeDelete('$mergeSrcPath-shm');
+
+    final File currentDb = File(dbPath);
+    if (currentDb.existsSync()) await currentDb.copy(bakPath);
+    await sidecar.writeAsString(
+      jsonEncode(<String, dynamic>{'mode': 'merge', 'mergeSrc': mergeSrcPath}),
+    );
+
+    final FushiDatabase db = FushiDatabase(dbDirectory);
+    try {
+      final String safeSrc = mergeSrcPath
+          .replaceAll(r'\', '/')
+          .replaceAll("'", "''");
+      await db.customStatement("ATTACH DATABASE '$safeSrc' AS mergesrc");
+      try {
+        await BackupMergeEngine(
+          db,
+          carriedVideoSourcePaths: reachableVideos,
+          enabledCategoryNames: overwriteSnapshotCategories
+              .map((BackupCategory c) => c.name)
+              .toSet(),
+          fillMissingOnly: true,
+          excludedBookKeys: booksWithoutFiles,
+        ).merge();
+      } finally {
+        await db.customStatement('DETACH DATABASE mergesrc');
+      }
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      await db.close();
+    }
+
+    await _safeDelete(mergeSrcPath);
+    await _safeDelete('$mergeSrcPath-wal');
+    await _safeDelete('$mergeSrcPath-shm');
+    await _safeDelete(bakPath);
+    await _safeDelete(sidecar.path);
   }
 
   /// Sidecar file marking a pending MERGE import (TODO-888). The merge runs in
@@ -1568,7 +1872,11 @@ class BackupRestoreService {
   /// whole row merge is ONE [FushiDatabase.transaction] (rolled back on any
   /// failure) plus a `pre-merge.bak` snapshot for manual recovery, and a
   /// `mode:'merge'` sidecar so [recoverPendingRestore] cleans up temp files.
-  static Future<void> mergeRestoreBackup({
+  ///
+  /// 复习（G11-4）：主库合并提交之后，把备份的复习数据逐份落进本机新代库（[mergeSrsIntoLocal]）。并入另一个复习库、
+  /// 记下新的旧 profile 标识 / 设备公钥要用户确认：[srsConfirmed] 为假时这样的那一份不落、本机不动，回包里记成
+  /// [SrsBackupMergeAction.declined]。本机复习库状态不对时在动任何文件之前抛 [SrsRestoreBlockedException]。
+  static Future<List<SrsBackupMergeResult>> mergeRestoreBackup({
     required String dbDirectory,
     required String zipPath,
     Set<BackupCategory>? categories,
@@ -1581,6 +1889,7 @@ class BackupRestoreService {
     void Function(double progress)? onProgress,
     bool adoptSourcePreferences = false,
     bool mergePortableSettings = false,
+    bool srsConfirmed = false,
   }) async {
     // Per-category merge selection (import dialog, merge mode). null = merge
     // every category (legacy full merge). Gates BOTH the DB row merge (via the
@@ -1618,6 +1927,16 @@ class BackupRestoreService {
       );
 
       final BackupMeta? meta = _readBackupMeta(archive);
+      // 复习：清单坏 / 来自更新版本在动任何文件之前拒绝。本机复习库能不能接受合并要等知道备份里**真有**复习数据
+      // 之后才判（第 2b 步），与覆盖还原同一口径：只勾了「复习」、备份里却没有复习数据时不因本机没迁移而拒绝。
+      final bool mayCarrySrs =
+          wants(BackupCategory.srs) &&
+          !(meta?.excludedCategories.contains(BackupCategory.srs.name) ??
+              false);
+      if (mayCarrySrs) {
+        final ArchiveFile? m = archive.findFile(kSrsBackupManifestEntry);
+        if (m != null) SrsBackupBundleManifest.parse(m.content as List<int>);
+      }
 
       // 1) Extract the backup DB to a sibling temp file (NEVER overwrite the
       //    live DB). Drop any stale merge-src/-wal/-shm from a prior crash.
@@ -1625,16 +1944,10 @@ class BackupRestoreService {
       await _safeDelete('$mergeSrcPath-wal');
       await _safeDelete('$mergeSrcPath-shm');
       await _deleteSrsDbFiles(mergeSrcSrsPath);
-      // 新形态备份的 SRS 事件在 zip 的 `srs.db` 条目里：一并解出副本（只由 Rust 打开）。
-      final ArchiveFile? srsFile = wants(BackupCategory.srs)
-          ? archive.findFile(_srsDbName)
-          : null;
       await _extractEntriesStreaming(
         zipPath: zipPath,
         entries: <MapEntry<String, String>>[
           MapEntry<String, String>(dbFile.name, mergeSrcPath),
-          if (srsFile != null)
-            MapEntry<String, String>(srsFile.name, mergeSrcSrsPath),
         ],
         onBytes: reportBytes,
       );
@@ -1652,70 +1965,98 @@ class BackupRestoreService {
       await _safeDelete('$mergeSrcPath-wal');
       await _safeDelete('$mergeSrcPath-shm');
 
-      // 3) Snapshot the live DB for manual recovery + drop the crash-cleanup
-      //    sidecar BEFORE mutating the live DB.
-      final File currentDb = File(dbPath);
-      if (currentDb.existsSync()) {
-        await currentDb.copy(bakPath);
-      }
-      await sidecar.writeAsString(
-        jsonEncode(<String, dynamic>{
-          'mode': 'merge',
-          'mergeSrc': mergeSrcPath,
-        }),
-      );
-
-      // 备份带不带 SRS：新形态看 `srs.db` 条目，老形态看迁好的副本里有没有老 SRS 表。都不带时
-      // 不打开本机 srs.db（复习从没用过的设备不凭空建库）。
-      final bool mergeSrs =
-          wants(BackupCategory.srs) &&
-          (srsFile != null || legacySrsTablesInFile(mergeSrcPath));
-
-      // 4) Open the live DB, ATTACH the backup, run the whole row merge in one
-      //    transaction (rolled back on any failure -> DB unchanged).
-      final FushiDatabase db = FushiDatabase(dbDirectory);
-      SrsStorage? localSrs;
-      SrsStorage? sourceSrs;
+      // 2b) 复习：解出备份里的复习数据（新形态清单 / 协议 3 `srs.db` / 主库老表里有数据的 profile；都没有 = null，
+      //     不打开本机复习库），有才要求本机复习库能接受合并（[_checkSrsLibraryRestorable]）。都在快照 / 改主库之前：
+      //     失败时删掉刚解出的临时备份主库，本机什么都没动。
+      final _SrsRestoreUnits? srsUnits;
       try {
-        if (mergeSrs) {
-          // 调用方关库时已关 app 的 SRS 存储；这里自己开一份（主进程，带一次性搬迁）。
-          localSrs = await SrsStorage.open(
-            path: SrsStorage.pathIn(dbDirectory),
-            legacy: db,
-          );
-          if (srsFile != null) {
-            sourceSrs = await SrsStorage.open(
-              path: mergeSrcSrsPath,
-              inline: true,
-            );
+        srsUnits = mayCarrySrs
+            ? await _prepareSrsRestoreUnits(
+                zipPath: zipPath,
+                archive: archive,
+                dbFile: dbFile,
+                meta: meta,
+                backupDbPath: mergeSrcPath,
+                onBytes: reportBytes,
+              )
+            : null;
+        if (srsUnits != null) {
+          try {
+            await _checkSrsLibraryRestorable(dbDirectory);
+          } on Object {
+            await srsUnits.dispose();
+            rethrow;
           }
         }
-        final String safeSrc = mergeSrcPath
-            .replaceAll(r'\', '/')
-            .replaceAll("'", "''");
-        await db.customStatement("ATTACH DATABASE '$safeSrc' AS mergesrc");
-        try {
-          // TODO-1261: only import video rows whose file travelled (or streaming
-          // URLs) so a backup never lands a dead "empty video" shell. The carried
-          // set is the exact video files packed by export (meta.videoFiles keys).
-          await BackupMergeEngine(
-            db,
-            carriedVideoSourcePaths:
-                meta?.videoFiles.keys.toSet() ?? const <String>{},
-            enabledCategoryNames: enabledCategoryNames,
-            adoptSourcePreferences: adoptSourcePreferences,
-            mergePortableSettings: mergePortableSettings,
-            localSrs: localSrs,
-            sourceSrs: sourceSrs?.db,
-          ).merge();
-        } finally {
-          await db.customStatement('DETACH DATABASE mergesrc');
+      } on Object {
+        await _safeDelete(mergeSrcPath);
+        await _safeDelete('$mergeSrcPath-wal');
+        await _safeDelete('$mergeSrcPath-shm');
+        rethrow;
+      }
+
+      List<SrsBackupMergeResult> srsResults = const <SrsBackupMergeResult>[];
+      try {
+        // 3) Snapshot the live DB for manual recovery + drop the crash-cleanup
+        //    sidecar BEFORE mutating the live DB.
+        final File currentDb = File(dbPath);
+        if (currentDb.existsSync()) {
+          await currentDb.copy(bakPath);
         }
-        await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+        await sidecar.writeAsString(
+          jsonEncode(<String, dynamic>{
+            'mode': 'merge',
+            'mergeSrc': mergeSrcPath,
+          }),
+        );
+
+        // 4) Open the live DB, ATTACH the backup, run the whole row merge in one
+        //    transaction (rolled back on any failure -> DB unchanged).
+        final FushiDatabase db = FushiDatabase(dbDirectory);
+        try {
+          final String safeSrc = mergeSrcPath
+              .replaceAll(r'\', '/')
+              .replaceAll("'", "''");
+          await db.customStatement("ATTACH DATABASE '$safeSrc' AS mergesrc");
+          try {
+            // TODO-1261: only import video rows whose file travelled (or streaming
+            // URLs) so a backup never lands a dead "empty video" shell. The carried
+            // set is the exact video files packed by export (meta.videoFiles keys).
+            await BackupMergeEngine(
+              db,
+              carriedVideoSourcePaths:
+                  meta?.videoFiles.keys.toSet() ?? const <String>{},
+              enabledCategoryNames: enabledCategoryNames,
+              adoptSourcePreferences: adoptSourcePreferences,
+              mergePortableSettings: mergePortableSettings,
+            ).merge();
+          } finally {
+            await db.customStatement('DETACH DATABASE mergesrc');
+          }
+          await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+        } finally {
+          await db.close();
+        }
+
+        // 4b) 复习：主库提交之后逐份落进本机新代库（内核命令，各自一个写事务；幂等，中途失败重跑即收敛）。备份不带
+        //     复习数据时不打开本机复习库（复习从没用过的设备不凭空建库）。
+        if (srsUnits != null) {
+          final SrsCore core = await SrsCore.openInBackground(dbDirectory);
+          final FushiDatabase sdb = FushiDatabase(dbDirectory);
+          try {
+            srsResults = await mergeSrsIntoLocal(
+              db: sdb,
+              localSrs: core,
+              units: srsUnits.units,
+              confirmed: srsConfirmed,
+            );
+          } finally {
+            await sdb.close();
+            core.close();
+          }
+        }
       } finally {
-        await sourceSrs?.close();
-        await localSrs?.close();
-        await db.close();
+        await srsUnits?.dispose();
       }
 
       // 5) Restore content trees COPY-IF-ABSENT (never delete/replace existing
@@ -1815,6 +2156,14 @@ class BackupRestoreService {
           newGameCoversRoot: gameCoversRootDirectory,
         );
       }
+      if (wants(BackupCategory.books)) {
+        await _restoreDownloadManga(
+          zipPath: zipPath,
+          archive: archive,
+          dbDirectory: dbDirectory,
+          onBytes: reportBytes,
+        );
+      }
 
       // 7) Success: drop the merge-src temp, the bak, and the sidecar.
       await _safeDelete(mergeSrcPath);
@@ -1823,8 +2172,21 @@ class BackupRestoreService {
       await _deleteSrsDbFiles(mergeSrcSrsPath);
       await _safeDelete(bakPath);
       await _safeDelete(sidecar.path);
+      return srsResults;
     } finally {
       await input.close();
+    }
+  }
+
+  /// 本机主库此刻的 profile（覆盖还原在主库换掉之前读：档案留本机时复习数据按它们对上）。
+  static Future<List<SrsLocalProfile>> _currentProfiles(
+    String dbDirectory,
+  ) async {
+    final FushiDatabase db = FushiDatabase(dbDirectory);
+    try {
+      return await srsLocalProfilesOf(db);
+    } finally {
+      await db.close();
     }
   }
 
@@ -1912,6 +2274,48 @@ class BackupRestoreService {
     }
   }
 
+  /// 恢复在线漫画书目录（[_downloadMangaPrefix]）到**本机**当前下载根的 manga 域，
+  /// 再把行里指向源设备下载根的 `extractDir` 改成本机位置。
+  ///
+  /// 两种导入模式都用 copy-if-absent：下载根里可能有本机自己下的、备份里没有的
+  /// 漫画，整树替换会把它们删掉。行只在「原路径在本机不存在、本机下载根里有同
+  /// bookKey 目录」时改写——原路径有效（同一台机器恢复）一律不动。归档里没有这个
+  /// 前缀时零 IO 返回（旧备份 / 没有在线漫画）。
+  static Future<void> _restoreDownloadManga({
+    required String zipPath,
+    required Archive archive,
+    required String dbDirectory,
+    void Function(int deltaBytes)? onBytes,
+  }) async {
+    if (!archive.files.any(
+      (ArchiveFile f) => f.name.startsWith('$_downloadMangaPrefix/'),
+    )) {
+      return;
+    }
+    final String mangaRoot = (await DownloadRoot.current()).mangaRoot;
+    await _copyTreeIfAbsent(
+      zipPath,
+      archive,
+      _downloadMangaPrefix,
+      mangaRoot,
+      onBytes: onBytes,
+    );
+    final FushiDatabase db = FushiDatabase(dbDirectory);
+    try {
+      for (final EpubBookRow b in await db.getAllEpubBooks()) {
+        if (!DownloadLayout.isMangaBookDirectory(b.extractDir, b.bookKey)) {
+          continue;
+        }
+        if (Directory(b.extractDir).existsSync()) continue;
+        final String local = p.join(mangaRoot, b.bookKey);
+        if (!Directory(local).existsSync()) continue;
+        await db.updateEpubBookContentPaths(b.bookKey, extractDir: local);
+      }
+    } finally {
+      await db.close();
+    }
+  }
+
   /// Copies every file under `<prefix>/` in [archive] into [targetRootPath],
   /// SKIPPING any whose destination already exists (the merge-import invariant:
   /// never delete or overwrite the device's own content). Reuses the same path
@@ -1992,9 +2396,6 @@ class BackupRestoreService {
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
       shouldReapplyDeviceLocalTables =
           decoded['preserveDeviceLocalTables'] == true;
-      // 本机 srs.db 的处置（幂等；见 [_applySrsOverwrite]）。早于一切 SRS 打开。
-      final Object? srsPlan = decoded['srs'];
-      if (srsPlan is String) await _applySrsOverwrite(dbDirectory, srsPlan);
       if (decoded['mode'] == 'settings') {
         await _reapplySettingsLayer(dbDirectory);
       } else {
@@ -2018,6 +2419,9 @@ class BackupRestoreService {
         if (prefs.isNotEmpty) await _applyPreservedConfig(dbDirectory, prefs);
         await _clearInstallScopedPrefs(dbDirectory);
       }
+      // 复习库的处置（幂等；见 [_recoverSrsRestorePlan]）。早于一切复习库打开；放在档案层回灌之后，与内联路径
+      // 3d 同序（新建的「（备份）」profile 不被回灌冲掉）。
+      await _recoverSrsRestorePlan(dbDirectory, decoded['srs']);
       sidecarStateApplied = true;
     } on FormatException catch (e, st) {
       // A malformed marker cannot describe settings/prefs, but the independent
@@ -2055,7 +2459,7 @@ class BackupRestoreService {
       }
     }
     await _safeDelete(sidecar.path);
-    await _safeDelete(bakPath);
+    await _retainOverwriteSnapshot(dbDirectory, bakPath);
   }
 
   /// Restores the settings layer (preferences + profiles + bindings) from
@@ -2384,7 +2788,8 @@ class BackupRestoreService {
     void Function(int deltaBytes)? onBytes,
   }) async {
     final Directory targetRoot = Directory(dictionaryResourceDirectory);
-    // 引擎常驻映射着每本词典的 hash.table / blobs.bin（native map_rd）；Windows 上
+    // 引擎常驻映射着每本词典的索引与记录文件（key.index / blobs.bin 等，native
+    // map_rd）；Windows 上
     // 只要 view 还活着，删资源根一律 ERROR_USER_MAPPED_FILE，整个恢复流程就断在
     // 这一行（BUG-1756）。恢复流程收尾必定重启 app（backupImportRestart），故这里
     // 把引擎清空不需要再装回来。删 + 解压整段在映射释放的作用域里：作用域先等

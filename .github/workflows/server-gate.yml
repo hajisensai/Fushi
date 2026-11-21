@@ -41,6 +41,17 @@ on:
       - 'packages/fushi_srs/**'
       - 'native/fushi_fsrs/**'
       - '.github/workflows/server-gate.yml'
+      # WebUI 设计系统共享库：web_kit.g.dart 逐字内嵌这几个扩展文件，漂移守卫
+      # web_kit_sync_test 在本门里跑；只改扩展这几个文件的 PR 也得触发，否则漂移要到
+      # develop 才红。清单与 sync-mirrors.mjs 的 WEB_KIT_FILES 一致（同一测试守着）。
+      - 'tools/browser-extension/theme.css'
+      - 'tools/browser-extension/material.css'
+      - 'tools/browser-extension/material-color.js'
+      - 'tools/browser-extension/theme-palette.js'
+      - 'tools/browser-extension/theme.js'
+      - 'tools/browser-extension/icons.js'
+      - 'tools/browser-extension/glass-select.js'
+      - 'tools/browser-extension/scripts/sync-mirrors.mjs'
       - '.github/actions/pdfium-hook-cache/**'
       - '.github/actions/setup-fushi-compute/**'
       - '.github/actions/setup-fushi-rwkv/**'
@@ -60,6 +71,17 @@ on:
       - 'packages/fushi_srs/**'
       - 'native/fushi_fsrs/**'
       - '.github/workflows/server-gate.yml'
+      # WebUI 设计系统共享库：web_kit.g.dart 逐字内嵌这几个扩展文件，漂移守卫
+      # web_kit_sync_test 在本门里跑；只改扩展这几个文件的 PR 也得触发，否则漂移要到
+      # develop 才红。清单与 sync-mirrors.mjs 的 WEB_KIT_FILES 一致（同一测试守着）。
+      - 'tools/browser-extension/theme.css'
+      - 'tools/browser-extension/material.css'
+      - 'tools/browser-extension/material-color.js'
+      - 'tools/browser-extension/theme-palette.js'
+      - 'tools/browser-extension/theme.js'
+      - 'tools/browser-extension/icons.js'
+      - 'tools/browser-extension/glass-select.js'
+      - 'tools/browser-extension/scripts/sync-mirrors.mjs'
       - '.github/actions/pdfium-hook-cache/**'
       - '.github/actions/setup-fushi-compute/**'
       - '.github/actions/setup-fushi-rwkv/**'
@@ -77,8 +99,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v6
-      - uses: subosito/flutter-action@v2
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: '3.50.0'
           cache: true

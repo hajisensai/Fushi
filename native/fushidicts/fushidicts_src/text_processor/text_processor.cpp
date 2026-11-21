@@ -6,8 +6,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
-#include <map>
+#include <iterator>
 #include <span>
 #include <ranges>
 #include <string>
@@ -19,9 +18,11 @@
 #include "opencc_st_data.h"
 
 namespace {
+// 一个预处理器：[options] 种改写，process(text, 1..options) 各出一种。「不改写」
+// 不占编号——process() 里每个变体自己始终留在变体表里（Yomitan 的 option 0 / false）。
 struct TextProcessor {
-  std::vector<int> options;
-  std::function<std::u32string(const std::u32string&, int)> process;
+  int options;
+  std::u32string (*process)(const std::u32string&, int);
 };
 
 // https://github.com/yomidevs/yomitan/blob/81d17d877fb18c62ba826210bf6db2b7f4d4deed/ext/js/language/ja/japanese.js#L21
@@ -30,6 +31,9 @@ constexpr uint32_t KATAKANA_SMALL_KE = 0x30f6;
 constexpr uint32_t KANA_PROLONGED_SOUND_MARK = 0x30fc;
 constexpr uint32_t HIRAGANA_SMALL_TSU = 0x3063;
 constexpr uint32_t KATAKANA_SMALL_TSU = 0x30c3;
+
+// 上游 30ad52f / 3f0c2d9 / ad0be91：片假名中点（・）。半角 ･（U+FF65）经链首 NFKC 归一成它。
+constexpr char32_t KATAKANA_MIDDLE_DOT = 0x30fb;
 
 constexpr uint32_t HIRAGANA_CONVERSION_RANGE_START = 0x3041;
 constexpr uint32_t HIRAGANA_CONVERSION_RANGE_END = 0x3096;
@@ -93,9 +97,17 @@ char32_t get_prolonged_hiragana(char32_t prev) {
 
 bool is_in_range(uint32_t c, uint32_t range_start, uint32_t range_end) { return c >= range_start && c <= range_end; }
 
+// 上游 ad0be91 的字符类（片假名含半角区；中点 U+30FB 不算片假名）。
+bool is_hiragana(char32_t c) { return is_in_range(c, 0x3041, 0x309f); }
+
+bool is_katakana(char32_t c) { return is_in_range(c, 0x30a1, 0x30fa) || is_in_range(c, 0xff66, 0xff9f); }
+
+bool is_sokuon(char32_t c) { return c == HIRAGANA_SMALL_TSU || c == KATAKANA_SMALL_TSU; }
+
 // https://github.com/yomidevs/yomitan/blob/81d17d877fb18c62ba826210bf6db2b7f4d4deed/ext/js/language/ja/japanese.js#L472
 std::u32string hiragana_to_katakana(const std::u32string& text) {
   std::u32string result;
+  result.reserve(text.size());
   const uint32_t offset = (KATAKANA_CONVERSION_RANGE_START - HIRAGANA_CONVERSION_RANGE_START);
   for (char32_t c : text) {
     if (is_in_range(c, HIRAGANA_CONVERSION_RANGE_START, HIRAGANA_CONVERSION_RANGE_END)) {
@@ -109,6 +121,7 @@ std::u32string hiragana_to_katakana(const std::u32string& text) {
 // https://github.com/yomidevs/yomitan/blob/81d17d877fb18c62ba826210bf6db2b7f4d4deed/ext/js/language/ja/japanese.js#L441
 std::u32string katakana_to_hiragana(const std::u32string& text) {
   std::u32string result;
+  result.reserve(text.size());
   const uint32_t offset = (HIRAGANA_CONVERSION_RANGE_START - KATAKANA_CONVERSION_RANGE_START);
   for (char32_t c : text) {
     switch (c) {
@@ -262,10 +275,10 @@ std::u32string strip_precomposed(const std::u32string& text) {
 // （既分解、又预合成的词会得到各自变体）。
 std::vector<TextProcessor> get_diacritic_removal_processors() {
   return {
-      {.options = {0, 1}, .process = [](const std::u32string& text, int opt) -> std::u32string {
+      {.options = 1, .process = [](const std::u32string& text, int opt) -> std::u32string {
          return opt == 1 ? strip_combining(text) : text;
        }},
-      {.options = {0, 1}, .process = [](const std::u32string& text, int opt) -> std::u32string {
+      {.options = 1, .process = [](const std::u32string& text, int opt) -> std::u32string {
          return opt == 1 ? strip_precomposed(text) : text;
        }},
   };
@@ -306,7 +319,7 @@ std::vector<TextProcessor> get_english_processors() {
   return {
       // BUG-2056：撇号写法归一（见上）。放在 lowercase 之前或之后都一样——两个处理器
       // 互不依赖，变体扇出会把两种组合都算出来。
-      {.options = {0, 1, 2},
+      {.options = 2,
        .process =
            [](const std::u32string& text, int opt) -> std::u32string {
              switch (opt) {
@@ -319,7 +332,7 @@ std::vector<TextProcessor> get_english_processors() {
              }
            }},
       // lowercase
-      {.options = {0, 1}, .process = [](const std::u32string& text, int opt) -> std::u32string {
+      {.options = 1, .process = [](const std::u32string& text, int opt) -> std::u32string {
          if (opt == 1) {
            return to_lowercase(text);
          }
@@ -355,6 +368,7 @@ std::u32string nfkc(const std::u32string& text) {
 // 以全角字母数字收录的条目。
 std::u32string alphanumeric_to_fullwidth(const std::u32string& text) {
   std::u32string result;
+  result.reserve(text.size());
   for (char32_t c : text) {
     if (is_in_range(c, U'0', U'9')) {
       c = static_cast<char32_t>(c + (0xff10 - 0x30));
@@ -422,6 +436,7 @@ char32_t expand_mark(char32_t prev, char32_t mark) {
 // 上游 9dc93b6：迭代符展开（佐々木→佐佐木、こゝ→ここ）。
 std::u32string expand_iteration_marks(const std::u32string& text) {
   std::u32string result;
+  result.reserve(text.size());
   for (size_t i = 0; i < text.size(); ++i) {
     result += text[i];
     if (i + 1 < text.size()) {
@@ -440,6 +455,7 @@ std::u32string expand_iteration_marks(const std::u32string& text) {
 constexpr std::u32string_view KANJI_NUMBERS = U"〇一二三四五六七八九";
 std::u32string numbers_to_kanji(const std::u32string& text) {
   std::u32string result;
+  result.reserve(text.size());
   for (char32_t c : text) {
     if (is_in_range(c, 0xff10, 0xff19)) {
       result += KANJI_NUMBERS[c - 0xff10];
@@ -450,16 +466,67 @@ std::u32string numbers_to_kanji(const std::u32string& text) {
   return result;
 }
 
+// 上游 30ad52f + 3f0c2d9：删片假名中点（カルミナ・ブラーナ → カルミナブラーナ）。不少
+// 国语辞典把外来语人名 / 复合词收成不带点的写法。只删夹在两个字符之间的点：串首 / 串尾
+// 的点删了只会让同一个词条的匹配多吞一个「・」（扫描前缀「カルミナ・」命中カルミナ、
+// 高亮却连点一起）。上游 3f0c2d9 的代码只保留了串尾的点，这里按它提交说明的意图把串首
+// 的点也留下。
+std::u32string strip_middle_dots(const std::u32string& text) {
+  std::u32string result;
+  result.reserve(text.size());
+  for (size_t i = 0; i < text.size(); i++) {
+    if (text[i] != KATAKANA_MIDDLE_DOT || i == 0 || i + 1 == text.size()) {
+      result += text[i];
+    }
+  }
+  return result;
+}
+
+// 上游 ad0be91：原文以「平假名 + 片假名词」收尾时这个片假名词的长度（不含打头的长音
+// 符），否则 0。片假名词前面不是平假名（串首、汉字、标点）时同样是 0。
+size_t katakana_word_length(const std::u32string& text) {
+  size_t start = text.size();
+  while (start > 0 && (is_katakana(text[start - 1]) || text[start - 1] == KANA_PROLONGED_SOUND_MARK)) {
+    start--;
+  }
+  while (start < text.size() && text[start] == KANA_PROLONGED_SOUND_MARK) {
+    start++;
+  }
+  return start > 0 && start < text.size() && is_hiragana(text[start - 1]) ? text.size() - start : 0;
+}
+
+// 上游 ad0be91：[variant] 允许被变形改写的尾部码点数。从两串末尾对齐往前走，原文里遇到
+// 被删字符（っ / 中点）而变体同位置不是促音时停下——再往左的变体文本已经不是原文的样子
+// （中点删掉了、っっ 折叠了），不许变形跨过去。
+//
+// 与上游的差别：一路走完都没停下时返回 SIZE_MAX（不限制）。上游返回走过的长度，对与原文
+// 等长或更短的变体两者等价（改写量不会超过变体长度）；但 fork 有比原文**更长**的变体——
+// 韩语拆字（부드러운 4 个音节 → 10 个兼容字母），上游的写法会把它的改写量限在音节数，
+// ko.json 的长后缀规则就全被误杀。
+//
+// 前提：除删掉 っ / 中点、折叠 っっ 外，预处理不改变原文与变体尾部的码点对应。将来加入
+// 会改长度的处理（上游的单个っ删除、强调序列折叠等）时，尾部逐码点对齐失效，要重写本函数。
+size_t max_rewrite(const std::u32string& source, const std::u32string& variant) {
+  size_t length = 0;
+  for (size_t s = source.size(); s > 0 && length < variant.size(); s--, length++) {
+    const bool removable = is_sokuon(source[s - 1]) || source[s - 1] == KATAKANA_MIDDLE_DOT;
+    if (removable && !is_sokuon(variant[variant.size() - length - 1])) {
+      return length;
+    }
+  }
+  return SIZE_MAX;
+}
+
 // TODO: implement rest of preprocessors
 std::vector<TextProcessor> get_japanese_processors() {
   return {
       // 上游 1cb9b4b：NFKC 提到链首——半角片假名（ﾒｶﾞﾈ）须先归一成全宽才能被
       // 假名转换识别。仍满足「NFKC 在 english 的 to_lowercase 之前」（japanese 链先于
       // english 链）：全角 Ａ 先折成半角 A，再被 to_lowercase 小写成 a。
-      {.options = {0, 1},
+      {.options = 1,
        .process = [](const std::u32string& text, int opt) -> std::u32string { return opt == 1 ? nfkc(text) : text; }},
       // https://github.com/yomidevs/yomitan/blob/81d17d877fb18c62ba826210bf6db2b7f4d4deed/ext/js/language/ja/japanese-text-preprocessors.js#L66
-      {.options = {0, 1, 2},
+      {.options = 2,
        .process =
            [](const std::u32string& text, int opt) -> std::u32string {
              switch (opt) {
@@ -473,30 +540,34 @@ std::vector<TextProcessor> get_japanese_processors() {
            }},
       // 上游 aaf75c9：强调折叠在假名转换后、宽度处理前（对齐上游链序）。
       // full_collapse 模式故意不挂链（见 collapse_emphatic_sequences 注释，BUG-1777）。
-      {.options = {0, 1},
+      {.options = 1,
        .process =
            [](const std::u32string& text, int opt) -> std::u32string {
              return opt == 1 ? collapse_emphatic_sequences(text) : text;
            }},
-      {.options = {0, 1},
+      {.options = 1,
        .process =
            [](const std::u32string& text, int opt) -> std::u32string {
          return opt == 1 ? alphanumeric_to_fullwidth(text) : text;
        }},
       // 上游 e7dfdea：异体字标准化处理器（独立于 NFKC，顺序无关）。
-      {.options = {0, 1},
+      {.options = 1,
        .process =
            [](const std::u32string& text, int opt) -> std::u32string {
          return opt == 1 ? standardize_kanji(text) : text;
        }},
       // 上游 9dc93b6 / ee0384b：迭代符展开与全角数字转汉字，按上游链序收尾。
-      {.options = {0, 1},
+      {.options = 1,
        .process =
            [](const std::u32string& text, int opt) -> std::u32string {
          return opt == 1 ? expand_iteration_marks(text) : text;
        }},
-      {.options = {0, 1}, .process = [](const std::u32string& text, int opt) -> std::u32string {
+      {.options = 1, .process = [](const std::u32string& text, int opt) -> std::u32string {
          return opt == 1 ? numbers_to_kanji(text) : text;
+       }},
+      // 上游 30ad52f：删片假名中点，按上游链序挂在日语链尾。
+      {.options = 1, .process = [](const std::u32string& text, int opt) -> std::u32string {
+         return opt == 1 ? strip_middle_dots(text) : text;
        }}};
 }
 }  // namespace
@@ -705,7 +776,7 @@ std::vector<TextProcessor> get_korean_processors() {
   return {
       // 拆字（BUG-2148）。对不含谚文的文本是恒等变换，变体表按结果去重，
       // 所以日/英查询不会因为它多出任何一个变体。
-      {.options = {0, 1}, .process = [](const std::u32string& text, int opt) -> std::u32string {
+      {.options = 1, .process = [](const std::u32string& text, int opt) -> std::u32string {
          return opt == 1 ? text_processor::disassemble_hangul(text) : text;
        }}};
 }
@@ -789,42 +860,75 @@ std::vector<std::u32string> text_processor::traditional_to_simplified_variants(c
   return expand_script_variants(text, max_variants, simplified_candidates);
 }
 
+namespace {
+// 整条预处理链，进程内只拼一次（此前每次 process() 都重建这张表：十几个
+// std::function 加各自的 option 列表，一次查词要建十几遍）。
+const std::vector<TextProcessor>& all_processors() {
+  static const std::vector<TextProcessor> processors = [] {
+    std::vector<TextProcessor> all = get_japanese_processors();
+    auto append = [&all](std::vector<TextProcessor> more) {
+      all.insert(all.end(), std::make_move_iterator(more.begin()), std::make_move_iterator(more.end()));
+    };
+    append(get_english_processors());
+    append(get_diacritic_removal_processors());
+    // 韩语拆字**必须挂在链尾**，这是一条隐式但要命的顺序不变式：链首附近的 nfkc
+    // （get_japanese_processors 里那条）会把兼容字母兼容分解再规范合成回预合成音节，
+    // NFKC("ㅂㅜㄷㅡ") == "부드"。把 get_korean_processors 前移到 nfkc 之前，拆字会被
+    // 静默撤销、BUG-2148 原样复发，且端到端测试之外的任何单测都照绿。
+    // 守卫见 korean_hangul_lookup_test 的「链序」一组。
+    //
+    // 反向也靠这个顺序：NFD 形式的韩语（U+1100 组合字母块，macOS 文件名/字幕常见）
+    // disassemble_hangul 的早退范围认不出，靠链首 nfkc 先归一成预合成音节，韩语处理器
+    // 在链尾正好接住。
+    append(get_korean_processors());
+    return all;
+  }();
+  return processors;
+}
+
+using VariantList = std::vector<std::pair<std::u32string, int>>;
+
+// 按拼写升序排，同一拼写只留步数最少的一条。
+void normalize_variants(VariantList& variants) {
+  std::ranges::sort(variants, [](const auto& a, const auto& b) {
+    const int order = a.first.compare(b.first);
+    return order != 0 ? order < 0 : a.second < b.second;
+  });
+  const auto dup = std::ranges::unique(variants, {}, &VariantList::value_type::first);
+  variants.erase(dup.begin(), dup.end());
+}
+}  // namespace
+
 // https://github.com/yomidevs/yomitan/blob/81d17d877fb18c62ba826210bf6db2b7f4d4deed/ext/js/language/translator.js#L564
-std::vector<TextVariant> text_processor::process(const std::string& src, bool chinese_simp_to_trad) {
-  std::u32string text = utf8::utf8to32(src);
-  std::map<std::u32string, int> variants = {{text, 0}};
+std::vector<TextVariant> text_processor::process(const std::string& src, bool chinese_simp_to_trad,
+                                                 char32_t next_char) {
+  const std::u32string source = utf8::utf8to32(src);
+  // 上游 ad0be91：结尾落在片假名词中间（见头文件 [next_char]）——只认原文、不许还原。
+  const size_t katakana_word = katakana_word_length(source);
+  if (katakana_word > 0 && (is_katakana(next_char) || next_char == KANA_PROLONGED_SOUND_MARK)) {
+    return {TextVariant{.text = src, .steps = 0, .max_rewrite = 0}};
+  }
 
-  auto all_processors = get_japanese_processors();
-  auto en_processors = get_english_processors();
-  all_processors.insert(all_processors.end(), en_processors.begin(), en_processors.end());
-  auto dia_processors = get_diacritic_removal_processors();
-  all_processors.insert(all_processors.end(), dia_processors.begin(), dia_processors.end());
-  // 韩语拆字**必须挂在链尾**，这是一条隐式但要命的顺序不变式：链首附近的 nfkc
-  // （get_japanese_processors 里那条）会把兼容字母兼容分解再规范合成回预合成音节，
-  // NFKC("ㅂㅜㄷㅡ") == "부드"。把 get_korean_processors 前移到 nfkc 之前，拆字会被
-  // 静默撤销、BUG-2148 原样复发，且端到端测试之外的任何单测都照绿。
-  // 守卫见 korean_hangul_lookup_test 的「链序」一组。
-  //
-  // 反向也靠这个顺序：NFD 形式的韩语（U+1100 组合字母块，macOS 文件名/字幕常见）
-  // disassemble_hangul 的早退范围认不出，靠链首 nfkc 先归一成预合成音节，韩语处理器
-  // 在链尾正好接住。
-  auto ko_processors = get_korean_processors();
-  all_processors.insert(all_processors.end(), ko_processors.begin(), ko_processors.end());
-  for (const auto& processor : all_processors) {
-    std::map<std::u32string, int> next;
+  // 变体表：按拼写升序、同一拼写只留步数最少的一条。结果的顺序会一路带进
+  // lookup 的同长度取舍（先到先得，见 lookup.cpp merge_terms），所以这里的次序是
+  // 行为的一部分：码点字典序，与此前用 std::map<u32string, int> 时逐字节相同。
+  VariantList variants;
+  variants.emplace_back(source, 0);
 
-    for (const auto& [variant, steps] : variants) {
-      for (int option : processor.options) {
-        auto processed = processor.process(variant, option);
-        int new_steps = (processed == variant) ? steps : steps + 1;
-
-        auto [it, inserted] = next.try_emplace(processed, new_steps);
-        if (!inserted && new_steps < it->second) {
-          it->second = new_steps;
-        }
+  for (const TextProcessor& processor : all_processors()) {
+    // 「不改写」的产物就是 variants 里已有的那些（见 TextProcessor）；改写的产物与
+    // 原串相同时同理（步数不加、条目已在）。绝大多数查询串在绝大多数处理器上都是
+    // 这种情况，整轮不新增条目也就不必重排。
+    const std::size_t base = variants.size();
+    for (std::size_t i = 0; i < base; ++i) {
+      for (int option = 1; option <= processor.options; ++option) {
+        std::u32string processed = processor.process(variants[i].first, option);
+        if (processed == variants[i].first) continue;
+        const int steps = variants[i].second + 1;
+        variants.emplace_back(std::move(processed), steps);
       }
     }
-    variants = std::move(next);
+    if (variants.size() != base) normalize_variants(variants);
   }
 
   // 简繁双向只在调用方判定这次按中文处理时展开（引擎无语言路由，由 LookupOptions
@@ -834,19 +938,24 @@ std::vector<TextVariant> text_processor::process(const std::string& src, bool ch
   // 繁 → 简，按繁體建索引时简体查询（之间 → 之間）要靠简 → 繁（反馈 3FY6vTqwV-）；
   // 简繁混排的文本（头髮）各自朝一种字形收敛（頭髮 / 头发）。
   if (chinese_simp_to_trad) {
-    std::map<std::u32string, int> next = variants;
-    const auto add = [&next](std::u32string spelling, int steps) {
-      auto [it, inserted] = next.try_emplace(std::move(spelling), steps);
-      if (!inserted && steps < it->second) it->second = steps;
-    };
-    for (const auto& [variant, steps] : variants) {
-      for (auto& traditional : simplified_to_traditional_variants(variant)) add(std::move(traditional), steps + 1);
-      for (auto& simplified : traditional_to_simplified_variants(variant)) add(std::move(simplified), steps + 1);
+    const std::size_t base = variants.size();
+    for (std::size_t i = 0; i < base; ++i) {
+      const int steps = variants[i].second + 1;
+      for (auto& traditional : simplified_to_traditional_variants(variants[i].first)) {
+        variants.emplace_back(std::move(traditional), steps);
+      }
+      for (auto& simplified : traditional_to_simplified_variants(variants[i].first)) {
+        variants.emplace_back(std::move(simplified), steps);
+      }
     }
-    variants = std::move(next);
+    if (variants.size() != base) normalize_variants(variants);
   }
 
-  return variants |
-         std::views::transform([](const auto& v) { return TextVariant{utf8::utf32to8(v.first), v.second}; }) |
+  return variants | std::views::transform([&source, katakana_word](const auto& v) {
+           return TextVariant{.text = utf8::utf32to8(v.first),
+                              .steps = v.second,
+                              .min_rewrite = katakana_word,
+                              .max_rewrite = max_rewrite(source, v.first)};
+         }) |
          std::ranges::to<std::vector>();
 }

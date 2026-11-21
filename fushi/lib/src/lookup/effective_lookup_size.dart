@@ -159,10 +159,10 @@ LookupSize resolveExtensionPopupSize({
 }
 
 /// app 外独立查词窗（Android `popup_main` / 非 Android 的 in-app 查词对话框，即
-/// `PopupDictionaryPage`）里那张浮卡的高度占可用高度的上限比例。卡片之外是触发查词的
-/// 其它 app 画面，必须留出一截可见；这是屏幕比例上的天花板，用户的「最大高度」设置
+/// `PopupDictionaryPage`）里那张浮卡沿某一轴最多占可用空间的比例。卡片之外是触发查词
+/// 的其它 app 画面，必须留出一截可见；这是屏幕比例上的天花板，用户的「最大宽高」设置
 /// 在其下生效。
-const double kExternalPopupMaxHeightFraction = 0.72;
+const double kExternalPopupMaxCoverFraction = 0.72;
 
 /// app 外独立查词浮卡的外壳上界（逻辑像素）。
 ///
@@ -171,9 +171,22 @@ const double kExternalPopupMaxHeightFraction = 0.72;
 /// 668×1070 逻辑像素）上卡片因此近乎占满全屏，怎么调设置都不变。
 ///
 /// 现在宽、高都以 [maxSize]（`AppModel.overlayLookupEffectiveSize`，跟随 app 内 /
-/// 解锁后独立）为上限，再以可用空间封顶：宽不超过 [availableWidth]，高不超过
-/// [availableHeight] × [kExternalPopupMaxHeightFraction]。比例天花板与旧值相同，
-/// 所以任何屏幕上卡片都**不会比修复前更大**（手机竖屏 / 横屏不回归）。
+/// 解锁后独立）为上限，再以可用空间封顶：宽不超过 [availableWidth]。
+///
+/// 高的封顶按「至少有一个方向留出其它 app 画面」定（拍板台 MANKlxTTpV，维护者
+/// 2026-11-16「横屏以后很多空地方，但是就是不用」）：
+/// - 卡片宽度已经在横向留出至少 1 − [kExternalPopupMaxCoverFraction] 的画面（横屏
+///   手机：480 宽的卡片只占 ~900 宽屏的一半），竖向不必再留，高可用满
+///   [availableHeight]；
+/// - 否则（竖屏手机，卡片几乎满宽）竖向必须留：高不超过 [availableHeight] ×
+///   [kExternalPopupMaxCoverFraction]，与旧值相同，竖屏不回归。
+/// 旧规则在两种朝向都只按竖向比例封顶，横屏手机（扣系统栏后可用高 ~376dp）只剩
+/// ~270dp，左右却空着一半屏幕。
+///
+/// 判据刻意按「卡片占宽比例」而不是屏幕朝向：竖屏平板 / 桌面宽窗口里卡片若只占不到
+/// [kExternalPopupMaxCoverFraction] 的宽度，同样已经在横向露出其它 app，高度天花板也
+/// 放到满可用高。这种情况下默认最大高度（480）仍远低于可用高，卡片不会变大；只有用户
+/// 自己把「最大高度」调到超过可用高 × 0.72 时才按设置值更高——那是用户明确要的高度。
 ///
 /// [maxSize] 是基准逻辑像素，先乘 [uiScale]（界面大小 `AppModel.appUiScale`）再封顶，
 /// 与 app 内弹窗（base_source_page `popupMaxWidth`）、桌面覆盖窗（global_lookup_controller
@@ -186,8 +199,12 @@ LookupSize resolveExternalPopupCardBounds({
   required double uiScale,
 }) {
   final double width = _nonNegativeMin(availableWidth, maxSize.width * uiScale);
+  final bool revealsSideways =
+      width <= availableWidth * kExternalPopupMaxCoverFraction;
   final double height = _nonNegativeMin(
-    availableHeight * kExternalPopupMaxHeightFraction,
+    revealsSideways
+        ? availableHeight
+        : availableHeight * kExternalPopupMaxCoverFraction,
     maxSize.height * uiScale,
   );
   return LookupSize(width, height);

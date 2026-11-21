@@ -446,8 +446,8 @@ class ReaderSettings {
   static const bool defaultFollowBookLayout = true;
 
   /// 「跟随原书排版」：开着时，书本元数据（EPUB `page-progression-direction` /
-  /// `primary-writing-mode`）声明的排版方向与翻页方向优先于全局设置；书没声明的项
-  /// 照旧用全局设置。默认开。
+  /// `primary-writing-mode`，两项都没写时退到 `dc:language` 推只横排书写的语言）
+  /// 给出的排版方向与翻页方向优先于全局设置；推不出的项照旧用全局设置。默认开。
   bool get followBookLayout =>
       _get<bool>(followBookLayoutKey, defaultFollowBookLayout);
   Future<void> setFollowBookLayout(bool v) =>

@@ -24,9 +24,45 @@ export 'package:fushi_rwkv/fushi_rwkv.dart' show RwkvRows, RwkvScoreLookup;
 Directory srsRwkvModelsDir(Directory support) =>
     Directory(p.join(support.path, 'srs_rwkv', 'models'));
 
-/// RWKV 状态快照目录（`<support>/srs_rwkv/state`，每个 profile 一份主快照 + 至多两份检查点）。
-Directory srsRwkvStateDir(Directory support) =>
-    Directory(p.join(support.path, 'srs_rwkv', 'state'));
+/// RWKV 状态快照目录（每个 profile 一份主快照 + 至多两份检查点）。每档模型一个目录：默认的 Small 沿用
+/// `<support>/srs_rwkv/state`，Tiny 是 `state-tiny`——切换时新旧两个服务（旧的关闭时存快照、新的恢复 / 重放）
+/// 不写同一个文件，切回来也能直接恢复上次的快照。
+Directory srsRwkvStateDir(
+  Directory support, [
+  SrsRwkvModelSize size = SrsRwkvModelSize.small,
+]) => Directory(
+  p.join(support.path, 'srs_rwkv', switch (size) {
+    SrsRwkvModelSize.small => 'state',
+    SrsRwkvModelSize.tiny => 'state-tiny',
+  }),
+);
+
+/// 设备的 RWKV 模型档位设置文件（`<support>/srs_rwkv/model_size`，内容是 [SrsRwkvModelSize.persistedName]）。
+/// 放在 support 目录而不是 app 偏好里：app 与无头服务端（fushi_server）读同一个位置、同一套规则。
+File srsRwkvModelSizeFile(Directory support) =>
+    File(p.join(support.path, 'srs_rwkv', 'model_size'));
+
+/// 读档位；文件不存在 / 读不了 / 内容认不出时是默认的 [SrsRwkvModelSize.small]。
+SrsRwkvModelSize readSrsRwkvModelSize(Directory support) {
+  final File file = srsRwkvModelSizeFile(support);
+  try {
+    return SrsRwkvModelSize.fromPersisted(file.readAsStringSync());
+  } on FileSystemException {
+    return SrsRwkvModelSize.small;
+  }
+}
+
+/// 写档位（写临时文件再改名，不留半个文件）。生效要宿主重建 RWKV 服务（app 里 invalidate 档位 provider）。
+Future<void> writeSrsRwkvModelSize(
+  Directory support,
+  SrsRwkvModelSize size,
+) async {
+  final File file = srsRwkvModelSizeFile(support);
+  await file.parent.create(recursive: true);
+  final File tmp = File('${file.path}.tmp');
+  await tmp.writeAsString(size.persistedName, flush: true);
+  await tmp.rename(file.path);
+}
 
 /// 把 RWKV 排程服务挂到 [store] 上并返回它。对象本身很轻：后台 runtime、权重下载与全量回放只在
 /// [srsRwkvStartIfUsed]（库里有 RWKV 牌组）或第一次给 RWKV 牌组排队时启动。
@@ -34,7 +70,8 @@ Directory srsRwkvStateDir(Directory support) =>
 /// 宿主在关库 / 不再提供这份库之前 `await service.close()`（存快照、关后台 runtime）；关了的服务永远「没就绪」，
 /// 这之后的排队不出 RWKV 牌组的复习卡。
 ///
-/// [models] 缺省按 [support] 与 [createClient] 新建；[log] 收诊断消息；[threads] 0 = 全部核心。
+/// [models] 缺省按 [support] 的档位设置（[readSrsRwkvModelSize]）与 [createClient] 新建；快照目录跟着
+/// `models.size` 走（[srsRwkvStateDir]）。[log] 收诊断消息；[threads] 0 = 全部核心。
 /// [openBackend] 是测试接缝（把后台 runtime 换成替身），生产不传。
 SrsRwkvService srsAttachRwkv(
   SrsDbStore store, {
@@ -45,15 +82,17 @@ SrsRwkvService srsAttachRwkv(
   int threads = 0,
   Future<SrsRwkvBackend> Function(File weights)? openBackend,
 }) {
+  final SrsRwkvModels weights =
+      models ??
+      SrsRwkvModels(
+        dir: srsRwkvModelsDir(support),
+        size: readSrsRwkvModelSize(support),
+        createClient: createClient,
+      );
   final SrsRwkvService service = SrsRwkvService(
     store: store,
-    models:
-        models ??
-        SrsRwkvModels(
-          dir: srsRwkvModelsDir(support),
-          createClient: createClient,
-        ),
-    snapshotDir: srsRwkvStateDir(support),
+    models: weights,
+    snapshotDir: srsRwkvStateDir(support, weights.size),
     threads: threads,
     openBackend: openBackend,
     log: log,

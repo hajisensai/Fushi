@@ -6,6 +6,8 @@
 
 - 新建 worktree 后（无论 `EnterWorktree`、手动 `git worktree add` 还是其它工具创建），第一件事在该 worktree 里跑 `pwsh -File tool/setup_worktree.ps1`（Windows 用 `powershell -ExecutionPolicy Bypass -File tool/setup_worktree.ps1`）：它从主 checkout 把本地真值密钥（`google_oauth_secret.dart` / `log_upload_secret.dart` 等**所有 skip-worktree 文件**，清单动态读取无需硬编码）搬进来并在本 worktree 续上 `skip-worktree`（真值不显示 dirty、绝不会误提交），再调 `tool/bootstrap.ps1`（pub get + 打补丁）。**别再手动 cp 密钥桩或逐个配置**。只跑 `flutter analyze` / `flutter test` 时入库的占位/空值已够编译；真值仅在 worktree 里真机验证 Google Drive 登录 / 日志上传时才需要。只搬密钥不跑 bootstrap 用 `-SkipBootstrap`。
 
+- **worktree 会话另建的 worktree 放仓库目录外（2026-11-21）**：桌面端会话本身跑在 `.claude/worktrees/<名>` 里，harness 把它和它派出的子代理都隔离在这个 worktree，主 checkout 下其它任何路径（包括 `git worktree add .worktrees/rev-NNNN` 建出来的合并 / 审查 worktree）用 Edit / Write 一律拒写，提示「is in the base repo checkout」。实测一个合并会话的子代理因此失败 98 次，失败后再改用 Python 脚本写文件，每次又多两三轮。仓库目录之外的路径不受限（同日实测 `git worktree add ../fushi-wt/<名>` 后 Edit 与 `git -C` 都正常），注册在本仓的 worktree 照样被每小时的清理任务覆盖。子代理需要独立分支时也可以用 workflow 的 `isolation: 'worktree'` 让 harness 建，但那时它的 git 命令必须是单条朴素命令（见 [fast-workflow.md](fast-workflow.md#失败的工具调用)）。
+
 ## 工具栏默认展开
 
 - **工具栏 / 顶栏动作默认展开、空间不足才收起（用户 2026-10-06 拍板）**：顶栏、阅读器 / 播放器 / 库页的动作按钮默认全部平铺显示，**只有宽度放不下时**才按优先级把放不下的收进「⋯」溢出菜单（最常用的最后收）；不许固定写死成「收起 / 更多」菜单。一律复用 `FushiFloatingTopBar` 的 `adaptiveOverflow`（`fushi/lib/src/utils/components/fushi_floating_toolbar.dart`，测试 `fushi/test/widgets/fushi_floating_top_bar_adaptive_overflow_test.dart`），不另写测宽逻辑。**底部浮动工具栏 / 主导航底栏默认纯图标**：文字只进 tooltip 与无障碍语义（Semantics label 用原文案），命中区 ≥48dp，不画组间分隔线。出厂默认的「相机模式条」样式（`AdaptiveNavBarStyle.modeStrip`，2026-10-23 拍板设为默认）同样纯图标（2026-10-24 用户拍板去掉当前项名字）。**主导航的选中高亮一律是该目的地的 M3E 专属多边形**（底栏、各底栏样式与侧栏同一套，`fushi/lib/src/utils/adaptive/nav_shape.dart` 的 `NavMorphShape` / `navShapeOf`，用户 2026-10-24 拍板），不再画药丸。
@@ -21,6 +23,13 @@
 ## 合并 PR 看作者
 
 - **合并 PR 要看作者**：只有 `hajisensai`（仓库所有者）与 `W1ght` 的 PR 可以在常规审查后直接合并；**其他任何人的 PR 一律先问用户拿许可再合**，哪怕用户说过「全部合并」——那句话不覆盖后来新出现的第三方 PR。许可的可追溯形态是给 PR 打 `merge-approved` 标签。CI 侧有一条会变红的门 `.github/workflows/pr-merge-gate.yml`（白名单被守卫测试 `fushi/test/tools/pr_merge_gate_allowlist_guard_test.dart` 钉死）；它默认是建议性的——本仓刻意不设分支保护，因为日常大量直推 develop，加 required check 会把直推一起挡掉。要改白名单必须用户点头。
+
+## 集成分支不追 develop
+
+- **长期集成分支（多个 PR 先叠进它、最后整批进 `develop` 的那种）全程只合一次 `develop`**：在对 `develop` 开整批 PR 之前，和最后一批合流放在同一步里做，合完跑一次全量验证，这一次同时就是整批 PR 的推送门。分支从 `develop` 尖端建出来，开工时不需要再合。用 merge，不 rebase。
+- **中途不合、不量、不汇报**：不为了「别落后太多」去合 `develop`；不跑 `git fetch origin develop` + `git rev-list --count` 量落后数；进度汇报、wrap-up、任务清单里不写「落后 develop N 个提交」「还没同步」。落后的提交数不是需要动作的信息：冲突成本由双方改了哪些相同的文件决定，不由提交数决定，而这些冲突不管分几次合，每一处都只需要解一次。分几次合多出来的是每次合完都要重跑的全量验证，以及每次汇报引出的一轮问答。
+- **只有两种情况中途合一次，并在汇报里写明是哪一种**：① 下一批要用的代码只在 `develop` 上有（依赖的 PR 刚合进去）；② 集成分支上的红，根因的修复已经在 `develop` 上。除此之外等到最后。
+- 起因（2026-11-20）：SRS gen4 的集成分支 `pr/srs-gen4-switch` 按规划只该在推送前合一次（[规划 §3](../specs/2026-11-15-srs-gen4-g7-g11-plan.md)），实际第三波、第五波各合了一次最新 `develop`，第六波又排了一次，每次之后都重跑 Rust 全量与 Dart 定向测试；汇报里的落后数从 293 报到 345，用户看到的是一条没法据此做任何决定的数字。
 
 ## 外部 PR 与反馈只列决策
 
@@ -60,7 +69,7 @@
 
 ## 推送前只跑 analyze
 
-- **推送前只跑 analyze（2026-10-02 用户拍板，取代 09-30 的「推送前一条命令」）**：推 PR / 直推 develop 前唯一的本地门是在 `fushi/` 下跑全量 `dart tool/heavy.dart -- flutter analyze --no-pub`（与 CI 同版本 3.50.0，含 test 目录，CI 把 warning 当致命），过了就推；单测、源码扫描守卫与全量套件一律交给 PR / develop CI，红了按 CI 日志修。**全量 analyze 只在最后跑一次（2026-10-25 用户拍板）**：开发中改完一处不跑全量 analyze（要早看就 `dart analyze <改动文件>`）；一个分支只在 push 前跑一次；批量合并只在集成后的结果上跑一次，**不逐分支各跑一遍**——每次是 2–3 分钟加一个 3.4–4 GB 的 dart 进程，CI 本来就跑 analyze 且不在关键路径上。`tool/pre_push_check.dart`（analyze + 目录枚举守卫 + 按改动点名的守卫与测试）**不再是推送门**，也不要主动跑：完整模式一次 3–15 分钟、多会话并发时还要排本机租约，用户判断不值。工具保留，只在你自己想先在本地筛一遍守卫时用（`--quick` 只跑守卫类、`--list` 只看会跑什么）。**已知代价**：9/20–30 上游 36 个 PR 的 CI 红里有 18 个红在源码扫描守卫上、analyze 只抓得到 1 个——这类回归现在会到 PR CI 才暴露，推完要看 PR CI 结论，不能把「analyze 过了」说成「CI 会绿」。
+- **推送前只跑 analyze（2026-10-02 用户拍板，取代 09-30 的「推送前一条命令」）**：推 PR / 直推 develop 前唯一的本地门是在 `fushi/` 下跑全量 `dart tool/heavy.dart -- flutter analyze --no-pub`（与 CI 同版本 3.50.0，含 test 目录，CI 把 warning 当致命），过了就推；单测、源码扫描守卫与全量套件一律交给 PR / develop CI，红了按 CI 日志修。**全量 analyze 只在最后跑一次（2026-10-25 用户拍板）**：开发中改完一处不跑全量 analyze（要早看就 `dart analyze <改动文件>`）；一个分支只在 push 前跑一次；批量合并只在集成后的结果上跑一次，**不逐分支各跑一遍**——每次是 2–3 分钟加一个 3.4–4 GB 的 dart 进程，CI 本来就跑 analyze 且不在关键路径上。`tool/pre_push_check.dart`（analyze + 目录枚举守卫 + 按改动点名的守卫与测试）**不再是推送门**，也不要主动跑（2026-11-18 起它的选测就是 PR CI 的快门 `affected-tests`，PR 上默认不再跑全量，见 [build.md](build.md#pr-主门分层快门每推必跑全量按需--合并后跑2026-11-18)）：完整模式一次 3–15 分钟、多会话并发时还要排本机租约，用户判断不值。工具保留，只在你自己想先在本地筛一遍守卫时用（`--quick` 只跑守卫类、`--list` 只看会跑什么）。**已知代价**：9/20–30 上游 36 个 PR 的 CI 红里有 18 个红在源码扫描守卫上、analyze 只抓得到 1 个——这类回归现在会到 PR CI 才暴露，不能把「analyze 过了」说成「CI 会绿」。**PR CI 的结论由合并任务读（2026-11-20）**：开发会话推完即停，不留下来等 CI、不开 Auto-fix / PR 监视——近 10 天各会话被 CI 事件唤醒 966 轮，真改了代码的只有 17%，每次唤醒都要重读整段主上下文；合并任务在合并前对每条 PR 读一次现成结论，红了在那里按根因修（[fast-workflow.md](fast-workflow.md#等待与缓存)）。
 
 ## Dart/Flutter 改动的测试纪律
 

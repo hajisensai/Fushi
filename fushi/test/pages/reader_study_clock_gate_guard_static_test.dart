@@ -393,11 +393,10 @@ void main() {
           'if (_controller == null || _restoreInFlight || _lyricsMode) return;';
       final int gateIdx = body.indexOf(gate);
       expect(gateIdx, isNonNegative, reason: '重载在飞时瞬态 atEnd 会把本章剩余计入');
-      expect(
-        gateIdx,
-        lessThan(body.indexOf('evaluateJavascript')),
-        reason: '门必须在采样之前',
-      );
+      // 采样收在共用取样口 `_takeStableProgressSnapshot`（evaluateJavascript 在它里面）。
+      final int sampleIdx = body.indexOf('await _takeStableProgressSnapshot(');
+      expect(sampleIdx, isNonNegative, reason: '_refreshProgress 必须经共用取样口采样');
+      expect(gateIdx, lessThan(sampleIdx), reason: '门必须在采样之前');
     });
   });
 

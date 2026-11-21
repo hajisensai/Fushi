@@ -15,9 +15,7 @@
 /// - 逐张串行处理（网络来源不并发）；可取消，取消后不再处理后续，已写入的保留。
 library;
 
-import 'package:drift/drift.dart';
 import 'package:fushi_anki/fushi_anki_core.dart' show FushiCardFields;
-import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -60,6 +58,26 @@ class SrsWordAudioBackfillFields {
     required this.audioFieldId,
   });
 
+  /// [store] 那个 profile 的规范 ID（G9-6）：笔记 / 笔记类型视图里的 ID 是内核的规范 ID（不带盐），按 uid 加盐派生的
+  /// [SrsWordAudioBackfillFields.forProfile] 只是别名类成员，拿它比对一条也对不上。四个 ID 一条 `canonical_ids` 问齐。
+  static Future<SrsWordAudioBackfillFields> ofStore(SrsDbStore store) async {
+    final SrsWordAudioBackfillFields derived =
+        SrsWordAudioBackfillFields.forProfile(store.profileUid);
+    final List<String> c = await store.canonicalIds(<String>[
+      derived.noteTypeId,
+      derived.termFieldId,
+      derived.readingFieldId,
+      derived.audioFieldId,
+    ]);
+    return SrsWordAudioBackfillFields(
+      noteTypeId: c[0],
+      termFieldId: c[1],
+      readingFieldId: c[2],
+      audioFieldId: c[3],
+    );
+  }
+
+  /// 按 uid 加盐派生的 ID（别名类成员，不能拿来和内核读回的 ID 比；比对用 [ofStore]）。
   factory SrsWordAudioBackfillFields.forProfile(String profileUid) =>
       SrsWordAudioBackfillFields(
         noteTypeId: srsFushiCardNoteTypeId(profileUid),
@@ -128,42 +146,36 @@ Future<List<SrsWordAudioBackfillItem>> loadSrsWordAudioBackfillItems(
   String deckId,
 ) async {
   final SrsWordAudioBackfillFields fields =
-      SrsWordAudioBackfillFields.forProfile(store.profileUid);
+      await SrsWordAudioBackfillFields.ofStore(store);
   final SrsDeckTree tree = await store.deckTree();
   final List<String> decks = tree.subtree(deckId);
   if (decks.isEmpty) return const <SrsWordAudioBackfillItem>[];
-  final SrsDatabase db = store.db;
-
-  final $SrsCardsCacheTable c = db.srsCardsCache;
   final Set<String> noteIds = <String>{};
   for (final List<String> chunk in _chunks(decks)) {
-    final List<TypedResult> rows =
-        await (db.selectOnly(c, distinct: true)
-              ..addColumns(<Expression<Object>>[c.noteId])
-              ..where(
-                c.profileUid.equals(store.profileUid) & c.deckId.isIn(chunk),
-              ))
-            .get();
-    noteIds.addAll(rows.map((TypedResult r) => r.read(c.noteId)!));
+    noteIds.addAll(
+      (await store.cardColumnsWhere(
+        const <String>['note_id'],
+        <String, Object?>{'decks': chunk},
+      )).strings('note_id').toList(),
+    );
   }
   if (noteIds.isEmpty) return const <SrsWordAudioBackfillItem>[];
 
   // 笔记缓存先筛掉别的笔记类型 / 已删的：只物化 Fushi 卡片。
-  final $SrsNotesCacheTable n = db.srsNotesCache;
   final List<(String, int)> fushiNotes = <(String, int)>[];
   for (final List<String> chunk in _chunks(noteIds.toList())) {
-    final List<TypedResult> rows =
-        await (db.selectOnly(n)
-              ..addColumns(<Expression<Object>>[n.id, n.createdAt])
-              ..where(
-                n.profileUid.equals(store.profileUid) &
-                    n.id.isIn(chunk) &
-                    n.noteTypeId.equals(fields.noteTypeId) &
-                    n.deletedAt.isNull(),
-              ))
-            .get();
-    for (final TypedResult r in rows) {
-      fushiNotes.add((r.read(n.id)!, r.read(n.createdAt)!));
+    final SrsColumns rows = await store.noteColumns(
+      const <String>['id', 'created_at'],
+      <String, Object?>{
+        'ids': chunk,
+        'typeId': fields.noteTypeId,
+        'alive': true,
+      },
+    );
+    final SrsStringColumn id = rows.strings('id');
+    final SrsIntColumn created = rows.ints('created_at');
+    for (int i = 0; i < rows.rows; i++) {
+      fushiNotes.add((id[i], created[i]));
     }
   }
   fushiNotes.sort(

@@ -1,5 +1,5 @@
 // 服务端操作目录里的复习（SRS）操作（admin_ops.dart）：对真的 AdminApi + HeadlessHost
-// 跑——只读转发、立即同步要用户表态、制卡落点 / 牌组 / 翻日时刻可撤销（被手改过报
+// 跑——只读转发、立即同步要用户表态、制卡落点 / 牌组 / 翻日时刻 / RWKV 模型档位可撤销（被手改过报
 // superseded）、改一份的牌组不动别的、AnkiConnect 设置与选哪几份 profile 不进目录。
 import 'dart:convert';
 import 'dart:io';
@@ -8,6 +8,8 @@ import 'package:drift/native.dart';
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
+import 'package:fushi_engine/srs/srs_rwkv_attach.dart';
+import 'package:fushi_engine/srs/srs_rwkv_models.dart';
 import 'package:fushi_server/src/admin/admin_api.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/admin/admin_ops.dart';
@@ -35,6 +37,10 @@ const List<String> kSrsOps = <String>[
   'server.srs.mining-target.set',
   'server.srs.mining-deck.set',
   'server.srs.rollover-hour.set',
+  'server.srs.migration',
+  'server.srs.migration.start',
+  'server.srs.migration.cancel',
+  'server.srs.rwkv-model.set',
 ];
 
 void main() {
@@ -152,7 +158,7 @@ void main() {
         jsonDecode(jsonEncode(record.payload)) as Map<String, Object?>,
       )).status;
 
-  test('目录：七条复习操作、风险分级；选 profile / 默认 / AnkiConnect / 信任设备不进目录、不常驻', () {
+  test('目录：十一条复习操作、风险分级；选 profile / 默认 / AnkiConnect / 信任设备不进目录、不常驻', () {
     final OpCatalog catalog = invoker.catalog;
     for (final String id in kSrsOps) {
       expect(catalog[id], isNotNull, reason: id);
@@ -165,10 +171,15 @@ void main() {
       expect(op.spec.pattern, isNot(contains('devices/trust')), reason: op.id);
     }
     expect(catalog['server.srs.sync']!.risk, OpRisk.irreversible);
+    // 换代迁移（G10-3）：状态只读；开始 / 叫停没有撤销，要表态。
+    expect(catalog['server.srs.migration']!.risk, OpRisk.read);
+    expect(catalog['server.srs.migration.start']!.risk, OpRisk.irreversible);
+    expect(catalog['server.srs.migration.cancel']!.risk, OpRisk.irreversible);
     for (final String id in <String>[
       'server.srs.mining-target.set',
       'server.srs.mining-deck.set',
       'server.srs.rollover-hour.set',
+      'server.srs.rwkv-model.set',
     ]) {
       expect(catalog[id]!.risk, OpRisk.write, reason: id);
       expect(catalog[id]!.undo, isNotNull, reason: id);
@@ -441,6 +452,111 @@ void main() {
       OpUndoStatus.superseded,
     );
     expect(host.config.srs.rolloverHour, 5);
+  });
+
+  test('RWKV 模型档位（PR #3463 拍板「加手动档位」）：admin 配置里读得到；改 → 写设备设置文件、撤销写回；'
+      '认不出的值 → 400；被手改过 → superseded', () async {
+    Future<Object?> configured() async {
+      final shelf.Response r = await api.handle(
+        shelf.Request('GET', Uri.parse('http://localhost/api/admin/srs')),
+      );
+      final Map<String, Object?> body = asMap(
+        jsonDecode(await r.readAsString()),
+      );
+      return asMap(body['config'])['rwkvModel'];
+    }
+
+    final Directory support = host.paths.support;
+    expect(await configured(), 'small');
+    final OpUndoRecord rec = await runUndoable(
+      'server.srs.rwkv-model.set',
+      const <String, Object?>{'rwkvModel': 'tiny'},
+    );
+    expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.tiny);
+    expect(await configured(), 'tiny');
+    expect(await revert('server.srs.rwkv-model.set', rec), OpUndoStatus.done);
+    expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.small);
+
+    await expectLater(
+      run('server.srs.rwkv-model.set', const <String, Object?>{
+        'rwkvModel': 'huge',
+      }),
+      throwsA(
+        isA<CtlFailure>().having((CtlFailure f) => f.status, 'status', 400),
+      ),
+    );
+    expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.small);
+
+    final OpUndoRecord second = await runUndoable(
+      'server.srs.rwkv-model.set',
+      const <String, Object?>{'rwkvModel': 'tiny'},
+    );
+    // 管理员之后在 WebUI 里又改回 Small：撤销不覆盖它。
+    await adminPut(<String, Object?>{'rwkvModel': 'small'});
+    expect(
+      await revert('server.srs.rwkv-model.set', second),
+      OpUndoStatus.superseded,
+    );
+    expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.small);
+  });
+
+  Future<shelf.Response> rawPut(Map<String, Object?> body) => api.handle(
+    shelf.Request(
+      'PUT',
+      Uri.parse('http://localhost/api/admin/srs'),
+      body: jsonEncode(body),
+    ),
+  );
+
+  test(
+    'PUT 同时给 rwkvModel 与别的字段、档位文件写不进去：整次 500，config.yaml 与内存配置都不动',
+    () async {
+      final Directory support = host.paths.support;
+      final File configFile = File(p.join(tmp.path, 'fushi_server.yaml'));
+      final String configBefore = await configFile.readAsString();
+      final int hourBefore = host.config.srs.rolloverHour;
+      // 档位文件先写临时文件再改名：临时文件的位置被目录占了 = 写入失败（磁盘满 / 权限同一条路）。
+      await Directory(
+        '${srsRwkvModelSizeFile(support).path}.tmp',
+      ).create(recursive: true);
+
+      final shelf.Response r = await rawPut(<String, Object?>{
+        'rolloverHour': hourBefore == 7 ? 8 : 7,
+        'rwkvModel': 'tiny',
+      });
+      expect(r.statusCode, 500, reason: await r.readAsString());
+      expect(host.config.srs.rolloverHour, hourBefore);
+      expect(await configFile.readAsString(), configBefore);
+      expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.small);
+    },
+  );
+
+  test('PUT 带 rwkvModel 与别的字段、config.yaml 写不进去：档位文件写回原值，内存配置也不动', () async {
+    final Directory support = host.paths.support;
+    final File configFile = File(p.join(tmp.path, 'fushi_server.yaml'));
+    Future<Object?> rolloverHourNow() async {
+      final shelf.Response g = await api.handle(
+        shelf.Request('GET', Uri.parse('http://localhost/api/admin/srs')),
+      );
+      final Map<String, Object?> body = Map<String, Object?>.from(
+        jsonDecode(await g.readAsString()) as Map,
+      );
+      return Map<String, Object?>.from(body['config']! as Map)['rolloverHour'];
+    }
+
+    final Object? hourBefore = await rolloverHourNow();
+    // config.yaml 的位置被目录占了：写配置失败。
+    await configFile.delete();
+    await Directory(configFile.path).create();
+
+    final shelf.Response r = await rawPut(<String, Object?>{
+      'rolloverHour': hourBefore == 7 ? 8 : 7,
+      'rwkvModel': 'tiny',
+    });
+    expect(r.statusCode, 500, reason: await r.readAsString());
+    expect(readSrsRwkvModelSize(support), SrsRwkvModelSize.small);
+    // 写盘失败 = 这次改动没落地：admin 内存里的配置（GET 读的那份）不能先换成新的。
+    expect(await rolloverHourNow(), hourBefore);
   });
 
   test('ServerAgentToolbox：能搜到；写操作记进服务端库、撤销写回；同步没确认拒绝', () async {

@@ -6,7 +6,8 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart'
-    show MusicPlaylistDragHandle, formatMusicDuration;
+    show MusicNowPlayingTrack, MusicPlaylistDragHandle, formatMusicDuration;
+import 'package:fushi/src/pages/implementations/music/music_track_row_surface.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
@@ -21,6 +22,8 @@ class MusicPlaylistTrackRowData {
     required this.title,
     this.subtitle,
     this.durationMs,
+    this.trackUid,
+    this.coverPath,
   });
 
   /// 行身份（条目 id 派生；同一首放两次是两行）。
@@ -28,6 +31,13 @@ class MusicPlaylistTrackRowData {
   final String title;
   final String? subtitle;
   final int? durationMs;
+
+  /// 播放项身份（与排进引擎队列的 `MusicPlayItem.trackUid` 同一口径）：给了重设计
+  /// 外壳的行才能认出「正在播放」。
+  final String? trackUid;
+
+  /// 取色用的封面（重设计外壳悬停 / 焦点铺色）。
+  final String? coverPath;
 }
 
 /// 歌单曲目列：点一行播放；[onReorder] 非空时行尾有拖拽把手（只从把手起拖，整行仍可点、
@@ -49,6 +59,32 @@ class MusicPlaylistTrackColumn extends StatelessWidget {
   Widget _row(BuildContext context, int i) {
     final MusicPlaylistTrackRowData r = rows[i];
     final MusicItemMenu? menu = menuOf?.call(context, i);
+    if (musicTrackRowSurfaceActive(context)) {
+      return FushiStaggeredEntrance(
+        index: i,
+        child: musicWithContextMenu(
+          menu,
+          MusicNowPlayingTrack(
+            trackUid: r.trackUid,
+            builder: (BuildContext context, bool playing) =>
+                MusicTrackRowSurface(
+                  key: ValueKey<String>('music-playlist-row-${r.key}'),
+                  title: r.title,
+                  subtitle: r.subtitle,
+                  ordinal: '${i + 1}',
+                  coverPath: r.coverPath,
+                  durationText: formatMusicDuration(r.durationMs),
+                  playing: playing,
+                  onTap: () => onPlay(i),
+                  trailing: <Widget>[
+                    ?menu?.button(),
+                    if (onReorder != null) const MusicPlaylistDragHandle(),
+                  ],
+                ),
+          ),
+        ),
+      );
+    }
     return FushiStaggeredEntrance(
       index: i,
       child: musicWithContextMenu(

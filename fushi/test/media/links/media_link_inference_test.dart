@@ -114,25 +114,38 @@ void main() {
       reason: 'Titles match',
     );
 
+    MediaLinkVerdict verdict(double confidence, {bool related = true}) =>
+        MediaLinkVerdict(
+          related: related,
+          relation: MediaLinkRelation.sameWork,
+          fromIsOriginal: null,
+          confidence: confidence,
+          reason: 'ai says',
+        );
+
     test('无 AI：写成未确认建议；重复候选 / 已否决的对不再写', () async {
       final FushiDatabase db = memDb();
       final MediaLinkInferenceOutcome first = await applyMediaLinkCandidates(
         db: db,
         candidates: <MediaLinkCandidate>[candidate, candidate],
+        trigger: MediaLinkInferenceTrigger.manual,
       );
-      expect(first.proposed, 1);
+      expect(first.suggested, 1);
+      expect(first.applied, 0);
       final MediaLinkRow row = (await db.allMediaLinks()).single;
       expect(row.isUserConfirmed, isFalse);
+      expect(row.confirmedBy, isNull);
       expect(row.reason, 'Titles match');
       await db.removeMediaLink(mediaLinkIdOf(row));
       final MediaLinkInferenceOutcome again = await applyMediaLinkCandidates(
         db: db,
         candidates: <MediaLinkCandidate>[candidate],
+        trigger: MediaLinkInferenceTrigger.manual,
       );
-      expect(again.proposed, 0, reason: '否决墓碑挡住重复提议');
+      expect(again.written, 0, reason: '否决墓碑挡住重复提议');
     });
 
-    test('AI：不相关不写；相关按 AI 的关系 / 方向 / 置信度写成 source=ai 的建议', () async {
+    test('AI：不相关丢弃；相关按 AI 的关系 / 方向 / 置信度写，source=ai', () async {
       final FushiDatabase db = memDb();
       final MediaLinkCandidate other = MediaLinkCandidate(
         from: subject(MediaLinkKind.game, 'g2', <String>['Air']),
@@ -145,6 +158,7 @@ void main() {
       final MediaLinkInferenceOutcome out = await applyMediaLinkCandidates(
         db: db,
         candidates: <MediaLinkCandidate>[candidate, other],
+        trigger: MediaLinkInferenceTrigger.automatic,
         judge: _FixedJudge(<MediaLinkVerdict?>[
           const MediaLinkVerdict(
             related: true,
@@ -162,8 +176,8 @@ void main() {
           ),
         ]),
       );
-      expect(out.proposed, 1);
-      expect(out.rejectedByAi, 1);
+      expect(out.suggested, 1, reason: '自动路径 + AI 中置信：建议');
+      expect(out.discarded, 1);
       final MediaLinkRow row = (await db.allMediaLinks()).single;
       expect(row.source, MediaLinkSource.ai);
       expect(row.relation, 'adaptation');
@@ -173,49 +187,327 @@ void main() {
         reason: 'AI 说 to（动画）才是原作：方向翻转为 动画 → 游戏',
       );
       expect(row.confidence, 0.8);
-      expect(row.isUserConfirmed, isFalse, reason: 'AI 结论一律只作建议');
+      expect(row.confirmedBy, isNull);
       expect(row.reason, contains('Titles match'), reason: '保留确定性证据');
     });
 
-    test('自动确认只在 打开 + 共享 id 佐证 + AI 高置信 三者同时成立', () async {
-      final FushiDatabase db = memDb();
-      final MediaLinkCandidate withId = MediaLinkCandidate(
-        from: subject(MediaLinkKind.game, 'g9', <String>['X']),
-        to: subject(MediaLinkKind.videoCollection, '9', <String>['X']),
+    // AI 库管家设计稿 §5.2 的表：每一格一个用例。
+    final MediaLinkCandidate withId = MediaLinkCandidate(
+      from: subject(MediaLinkKind.game, 'g9', <String>['X']),
+      to: subject(MediaLinkKind.videoCollection, '9', <String>['X']),
+      relation: MediaLinkRelation.adaptation,
+      source: MediaLinkSource.wikidata,
+      confidence: 0.9,
+      reason: 'shared id',
+      idEvidence: true,
+    );
+    final MediaLinkCandidate malStrong = MediaLinkCandidate(
+      from: subject(MediaLinkKind.book, 'b1', <String>['Y']),
+      to: subject(MediaLinkKind.videoCollection, '10', <String>['Y']),
+      relation: MediaLinkRelation.adaptation,
+      source: MediaLinkSource.mal,
+      confidence: 0.6,
+      reason: 'MAL source, exact title',
+    );
+    final MediaLinkCandidate malWeak = MediaLinkCandidate(
+      from: subject(MediaLinkKind.book, 'b2', <String>['Y 1']),
+      to: subject(MediaLinkKind.videoCollection, '11', <String>['Y']),
+      relation: MediaLinkRelation.adaptation,
+      source: MediaLinkSource.mal,
+      confidence: 0.45,
+      reason: 'MAL source, contained title',
+    );
+
+    final List<
+      ({
+        String name,
+        MediaLinkCandidate c,
+        MediaLinkVerdict? v,
+        MediaLinkDisposition auto,
+        MediaLinkDisposition manual,
+      })
+    >
+    table =
+        <
+          ({
+            String name,
+            MediaLinkCandidate c,
+            MediaLinkVerdict? v,
+            MediaLinkDisposition auto,
+            MediaLinkDisposition manual,
+          })
+        >[
+          (
+            name: '共享外部 id（无 AI）',
+            c: withId,
+            v: null,
+            auto: MediaLinkDisposition.apply,
+            manual: MediaLinkDisposition.apply,
+          ),
+          (
+            name: '共享外部 id + AI 低置信',
+            c: withId,
+            v: verdict(0.3),
+            auto: MediaLinkDisposition.apply,
+            manual: MediaLinkDisposition.apply,
+          ),
+          (
+            name: 'MAL 原作 + 标题强匹配',
+            c: malStrong,
+            v: null,
+            auto: MediaLinkDisposition.apply,
+            manual: MediaLinkDisposition.apply,
+          ),
+          (
+            name: 'MAL 原作 + 标题只是包含（不算强匹配）',
+            c: malWeak,
+            v: null,
+            auto: MediaLinkDisposition.suggest,
+            manual: MediaLinkDisposition.suggest,
+          ),
+          (
+            name: '只有标题，AI 高置信',
+            c: candidate,
+            v: verdict(0.95),
+            auto: MediaLinkDisposition.apply,
+            manual: MediaLinkDisposition.apply,
+          ),
+          (
+            name: 'AI 中置信',
+            c: candidate,
+            v: verdict(0.7),
+            auto: MediaLinkDisposition.suggest,
+            manual: MediaLinkDisposition.apply,
+          ),
+          (
+            name: 'AI 低置信',
+            c: candidate,
+            v: verdict(0.4),
+            auto: MediaLinkDisposition.discard,
+            manual: MediaLinkDisposition.suggest,
+          ),
+          (
+            name: 'AI 判不相关（即便有共享 id）',
+            c: withId,
+            v: verdict(0.95, related: false),
+            auto: MediaLinkDisposition.discard,
+            manual: MediaLinkDisposition.discard,
+          ),
+        ];
+    for (final ({
+          String name,
+          MediaLinkCandidate c,
+          MediaLinkVerdict? v,
+          MediaLinkDisposition auto,
+          MediaLinkDisposition manual,
+        })
+        row
+        in table) {
+      for (final MediaLinkInferenceTrigger trigger
+          in MediaLinkInferenceTrigger.values) {
+        final MediaLinkDisposition expected =
+            trigger == MediaLinkInferenceTrigger.automatic
+            ? row.auto
+            : row.manual;
+        test('门槛：${row.name} · ${trigger.name} → ${expected.name}', () async {
+          expect(
+            mediaLinkDispositionOf(
+              original: row.c,
+              verdict: row.v,
+              trigger: trigger,
+            ),
+            expected,
+          );
+          final FushiDatabase db = memDb();
+          final MediaLinkInferenceOutcome out = await applyMediaLinkCandidates(
+            db: db,
+            candidates: <MediaLinkCandidate>[row.c],
+            trigger: trigger,
+            judge: row.v == null
+                ? null
+                : _FixedJudge(<MediaLinkVerdict?>[row.v]),
+          );
+          final List<MediaLinkRow> rows = await db.allMediaLinks();
+          switch (expected) {
+            case MediaLinkDisposition.apply:
+              expect(out.applied, 1);
+              expect(out.appliedWrites.single.previous, isNull);
+              expect(rows.single.confirmedBy, MediaLinkConfirmer.ai);
+              expect(rows.single.isUserConfirmed, isFalse);
+              expect(mediaLinkStateOf(rows.single), MediaLinkState.confirmed);
+              expect(
+                rows.single.updatedAt,
+                kMediaLinkAiBaseClock,
+                reason: 'AI 凭空新建不推进时钟',
+              );
+            case MediaLinkDisposition.suggest:
+              expect(out.suggested, 1);
+              expect(rows.single.confirmedBy, isNull);
+              expect(mediaLinkStateOf(rows.single), MediaLinkState.suggested);
+            case MediaLinkDisposition.discard:
+              expect(out.discarded, 1);
+              expect(rows, isEmpty);
+          }
+        });
+      }
+    }
+
+    test('§5.4 兜底一：两个外部 id 对不上的视频合集，same_work 不生效、降为建议', () async {
+      final MediaLinkCandidate clash = MediaLinkCandidate(
+        from: subject(
+          MediaLinkKind.videoCollection,
+          '1',
+          <String>['Z'],
+          ids: const <String, String>{'anidb': '100'},
+        ),
+        to: subject(
+          MediaLinkKind.videoCollection,
+          '2',
+          <String>['Z'],
+          ids: const <String, String>{'anidb': '200', 'mal': '7'},
+        ),
         relation: MediaLinkRelation.sameWork,
-        source: MediaLinkSource.vndb,
+        source: kMediaLinkTitleMatchSource,
+        confidence: 0.35,
+        reason: 'Titles match',
+      );
+      expect(mediaLinkExternalIdsConflict(clash), isTrue);
+      for (final MediaLinkInferenceTrigger trigger
+          in MediaLinkInferenceTrigger.values) {
+        final FushiDatabase db = memDb();
+        final MediaLinkInferenceOutcome out = await applyMediaLinkCandidates(
+          db: db,
+          candidates: <MediaLinkCandidate>[clash],
+          trigger: trigger,
+          judge: _FixedJudge(<MediaLinkVerdict?>[verdict(0.99)]),
+        );
+        expect(out.applied, 0, reason: trigger.name);
+        expect(out.suggested, 1, reason: trigger.name);
+      }
+      // 有一个来源的 id 相同 = 不冲突；非 same_work（改编等）之间 id 本来就不同，不管。
+      final MediaLinkCandidate same = MediaLinkCandidate(
+        from: clash.from,
+        to: subject(
+          MediaLinkKind.videoCollection,
+          '3',
+          <String>['Z'],
+          ids: const <String, String>{'anidb': '100'},
+        ),
+        relation: MediaLinkRelation.sameWork,
+        source: kMediaLinkTitleMatchSource,
+        confidence: 0.35,
+        reason: 'Titles match',
+      );
+      expect(mediaLinkExternalIdsConflict(same), isFalse);
+      expect(
+        mediaLinkExternalIdsConflict(
+          clash.copyWith(relation: MediaLinkRelation.adaptation),
+        ),
+        isFalse,
+      );
+    });
+
+    test('§5.4 兜底二：自动路径上把两部已成形的作品并成一部 → 降为建议；手动照常生效', () async {
+      ({Object id, int size})? workOf(MediaLinkEndpoint e) => switch (e.key) {
+        'g1' => (id: 'A', size: 3),
+        '5' => (id: 'B', size: 2),
+        _ => null,
+      };
+      final MediaLinkVerdict high = verdict(0.95);
+      final FushiDatabase autoDb = memDb();
+      final MediaLinkInferenceOutcome auto = await applyMediaLinkCandidates(
+        db: autoDb,
+        candidates: <MediaLinkCandidate>[candidate],
+        trigger: MediaLinkInferenceTrigger.automatic,
+        judge: _FixedJudge(<MediaLinkVerdict?>[high]),
+        workOf: workOf,
+      );
+      expect(auto.applied, 0);
+      expect(auto.suggested, 1);
+      final FushiDatabase manualDb = memDb();
+      final MediaLinkInferenceOutcome manual = await applyMediaLinkCandidates(
+        db: manualDb,
+        candidates: <MediaLinkCandidate>[candidate],
+        trigger: MediaLinkInferenceTrigger.manual,
+        judge: _FixedJudge(<MediaLinkVerdict?>[high]),
+        workOf: workOf,
+      );
+      expect(manual.applied, 1);
+      // 一边是单个条目：只是把它挂进作品，照常生效；不提供 workOf 跳过检查。
+      expect(
+        mediaLinkFusesWorks((id: 'A', size: 5), (id: 'C', size: 1)),
+        isFalse,
+      );
+      expect(
+        mediaLinkFusesWorks((id: 'A', size: 5), (id: 'A', size: 5)),
+        isFalse,
+      );
+      final FushiDatabase noWork = memDb();
+      expect(
+        (await applyMediaLinkCandidates(
+          db: noWork,
+          candidates: <MediaLinkCandidate>[candidate],
+          trigger: MediaLinkInferenceTrigger.automatic,
+          judge: _FixedJudge(<MediaLinkVerdict?>[high]),
+        )).applied,
+        1,
+      );
+    });
+
+    test('同一轮里先生效的连接计入分量：第二条把两部作品并起来时降为建议', () async {
+      final MediaLinkCandidate first = MediaLinkCandidate(
+        from: subject(MediaLinkKind.book, 'b1', <String>['W']),
+        to: subject(MediaLinkKind.book, 'b2', <String>['W']),
+        relation: MediaLinkRelation.sameWork,
+        source: MediaLinkSource.wikidata,
         confidence: 0.9,
-        reason: 'shared id',
+        reason: 'id',
         idEvidence: true,
       );
-      const MediaLinkVerdict high = MediaLinkVerdict(
-        related: true,
+      final MediaLinkCandidate second = MediaLinkCandidate(
+        from: subject(MediaLinkKind.book, 'b2', <String>['W']),
+        to: subject(MediaLinkKind.game, 'g7', <String>['W']),
         relation: MediaLinkRelation.sameWork,
-        fromIsOriginal: null,
-        confidence: 0.95,
-        reason: 'ok',
+        source: MediaLinkSource.wikidata,
+        confidence: 0.9,
+        reason: 'id',
+        idEvidence: true,
       );
-      final MediaLinkInferenceOutcome off = await applyMediaLinkCandidates(
+      // b1 / b2 各自单独；g7 已在一部两成员的作品里。
+      ({Object id, int size})? workOf(MediaLinkEndpoint e) => switch (e.key) {
+        'b1' => (id: 'P', size: 1),
+        'b2' => (id: 'Q', size: 1),
+        'g7' => (id: 'R', size: 2),
+        _ => null,
+      };
+      final FushiDatabase db = memDb();
+      final MediaLinkInferenceOutcome out = await applyMediaLinkCandidates(
         db: db,
-        candidates: <MediaLinkCandidate>[candidate],
-        judge: _FixedJudge(const <MediaLinkVerdict?>[high]),
-        autoConfirm: true,
+        candidates: <MediaLinkCandidate>[first, second],
+        trigger: MediaLinkInferenceTrigger.automatic,
+        workOf: workOf,
       );
-      expect(off.autoConfirmed, 0, reason: '只有标题佐证：不自动确认');
-      final MediaLinkInferenceOutcome on = await applyMediaLinkCandidates(
+      expect(out.applied, 1, reason: 'b1+b2 生效后成了两成员的作品');
+      expect(out.suggested, 1, reason: '再并 g7 的两成员作品：降为建议');
+    });
+
+    test('用户确认过 / 否决过的一对：AI 不碰', () async {
+      final FushiDatabase db = memDb();
+      await db.upsertManualMediaLink(
+        relation: MediaLinkRelation.adaptation,
+        from: withId.from.endpoint,
+        to: withId.to.endpoint,
+        at: 3,
+      );
+      final MediaLinkInferenceOutcome out = await applyMediaLinkCandidates(
         db: db,
         candidates: <MediaLinkCandidate>[withId],
-        judge: _FixedJudge(const <MediaLinkVerdict?>[high]),
-        autoConfirm: true,
+        trigger: MediaLinkInferenceTrigger.manual,
       );
-      expect(on.autoConfirmed, 1);
-      expect(
-        (await db.mediaLinksForEndpoint(
-          MediaLinkKind.game,
-          'g9',
-        )).single.isUserConfirmed,
-        isTrue,
-      );
+      expect(out.written, 0);
+      final MediaLinkRow row = (await db.allMediaLinks()).single;
+      expect(row.confirmedBy, MediaLinkConfirmer.user);
+      expect(row.source, MediaLinkSource.manual);
     });
   });
 
@@ -225,7 +517,7 @@ void main() {
         '```json\n${jsonEncode(<String, Object?>{
           'verdicts': <Object?>[
             <String, Object?>{'index': 1, 'related': true, 'relation': 'adaptation', 'original': 'b', 'confidence': 0.7, 'reason': 'r', 'id': 'v999'},
-            <String, Object?>{'index': 0, 'related': true, 'relation': 'sequel', 'confidence': 0.7},
+            <String, Object?>{'index': 0, 'related': true, 'relation': 'remake_of', 'confidence': 0.7},
             <String, Object?>{'index': 2, 'related': true, 'relation': 'same_work', 'confidence': 7},
             <String, Object?>{'index': 5, 'related': false, 'confidence': 0.5},
           ],
@@ -236,6 +528,33 @@ void main() {
       expect(v[1]!.relation, MediaLinkRelation.adaptation);
       expect(v[1]!.fromIsOriginal, isFalse);
       expect(v[2], isNull, reason: '置信度越界');
+      // 系列关系（续作 / 外传）是认得的关系：方向不明时不退成 same_work（见
+      // applyMediaLinkCandidates），这里只管解析。
+      final List<MediaLinkVerdict?> series = parseAiMediaLinkVerdicts(
+        jsonEncode(<String, Object?>{
+          'verdicts': <Object?>[
+            <String, Object?>{
+              'index': 0,
+              'related': true,
+              'relation': 'sequel',
+              'original': 'a',
+              'confidence': 0.8,
+            },
+            <String, Object?>{
+              'index': 1,
+              'related': true,
+              'relation': 'side_story',
+              'original': 'b',
+              'confidence': 0.8,
+            },
+          ],
+        }),
+        2,
+      );
+      expect(series[0]!.relation, MediaLinkRelation.sequel);
+      expect(series[0]!.fromIsOriginal, isTrue);
+      expect(series[1]!.relation, MediaLinkRelation.sideStory);
+      expect(series[1]!.fromIsOriginal, isFalse);
     });
 
     test('AiMediaLinkJudge 只发候选证据、按下标取结论', () async {
@@ -302,13 +621,21 @@ void main() {
           (messages.last! as Map<String, Object?>)['content']! as String;
       final Map<String, Object?> payload =
           jsonDecode(user) as Map<String, Object?>;
-      final Map<String, Object?> first =
-          (payload['candidates']! as List<Object?>).single!
-              as Map<String, Object?>;
-      expect((first['a']! as Map<String, Object?>)['ids'], <String, Object?>{
+      final List<Object?> items = payload['items']! as List<Object?>;
+      expect(items, hasLength(2));
+      expect((items.first! as Map<String, Object?>)['ids'], <String, Object?>{
         'vndb': 'v4',
       });
-      expect(first['evidence'], 'Titles match');
+      expect(payload['pairs'], <Object?>[
+        <String, Object?>{
+          'i': 0,
+          'a': 0,
+          'b': 1,
+          'src': kMediaLinkTitleMatchSource,
+          'guess': 'same_work',
+        },
+      ]);
+      expect(user, isNot(contains('Titles match')), reason: '证据句不再发');
     });
   });
 

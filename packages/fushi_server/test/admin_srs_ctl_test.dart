@@ -33,6 +33,8 @@ import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
 
+import 'support/fake_rwkv.dart';
+
 const String kJa = '01928c3e-0000-7000-8000-00000000a0a0';
 const String kZh = '01928c3e-0000-7000-8000-00000000b0b0';
 const String kToken = 'srs-ctl-token=';
@@ -87,6 +89,8 @@ void main() {
       prefs: prefs,
       identity: identity,
       p2pAvailable: () => false,
+      // 单元测试不碰外网：RWKV 权重下载一律当场失败（服务转「出错」）。
+      srsRwkvHttpClient: noNetworkHttpClient,
     );
     await host.start();
     final AdminContext ctx = AdminContext(
@@ -531,6 +535,8 @@ void main() {
 
   group('AI 操作目录', () {
     const List<String> kDataOps = <String>[
+      'server.srs.retained.status',
+      'server.srs.retained.delete',
       'server.srs.decks.list',
       'server.srs.notes.search',
       'server.srs.note.get',
@@ -575,7 +581,10 @@ void main() {
           case OpRisk.write:
             expect(op.undo, isNotNull, reason: op.id);
           case OpRisk.irreversible:
-            expect(op.id, 'server.srs.conflict.held.keep');
+            expect(<String>{
+              'server.srs.conflict.held.keep',
+              'server.srs.retained.delete',
+            }, contains(op.id));
             expect(op.spec.needsConfirmation, isTrue);
             expect(op.spec.gateParams.map((OpParam p) => p.name), <String>[
               kServerOpConfirmGate,

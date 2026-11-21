@@ -4,10 +4,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
-import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
+import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart'
+    show FushiMastheadHeader;
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/pages/shared/library_section_tabs.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart';
+
+import '../helpers/masthead_tabs.dart';
 
 Widget _app(
   Widget child, {
@@ -27,11 +29,16 @@ Widget _app(
   );
 }
 
+/// 经页头大字的页签切到「浏览」（PR #3397 外壳：一级切换 [FushiMastheadSwitch]，
+/// 只剩一组时由二级连体页签承担），走页签自己的 onChanged。
 Future<void> _selectBrowse(WidgetTester tester) async {
-  final FushiSectionTabBar<MediaLibraryViewKind> strip = tester.widget(
-    find.byType(FushiSectionTabBar<MediaLibraryViewKind>),
-  );
-  strip.onChanged!(MediaLibraryViewKind.browse);
+  final Finder primary = mastheadPrimaryTabs<MediaLibraryViewKind>();
+  readMastheadTabs<MediaLibraryViewKind>(
+    tester,
+    primary.evaluate().isNotEmpty
+        ? primary
+        : mastheadSecondaryTabs<MediaLibraryViewKind>(),
+  ).onChanged(MediaLibraryViewKind.browse);
   await tester.pumpAndSettle();
 }
 
@@ -79,27 +86,24 @@ void main() {
         reason: 'Scaled text must not overflow',
       );
 
-      final Finder title = find.byType(FushiPageChromeTitle);
-      expect(title, findsOneWidget);
-      final Rect capsule = tester.getRect(title);
-      // The capsule height is fixed (BUG-2977); when both scaled lines no
-      // longer fit, the subtitle is demoted to the title's tooltip instead of
-      // overflowing (b3e5d2d7531). Whatever is laid out must sit inside.
-      const String subtitle = 'Remote executor: living room';
-      final bool subtitleShown = find.text(subtitle).evaluate().isNotEmpty;
-      if (!subtitleShown) {
-        final Tooltip tooltip = tester.widget<Tooltip>(
-          find.descendant(of: title, matching: find.byType(Tooltip)),
-        );
-        expect(tooltip.message, subtitle);
-      }
+      // 2026-11-15 起二级页走现行页头：副标题画在页头大字下一行（单行省略），
+      // 缩放后页名与副标题都必须落在页头内、不溢出。
+      final Finder header = find.byType(FushiMastheadHeader);
+      expect(header, findsOneWidget);
+      final Rect box = tester.getRect(header);
       for (final String label in <String>[
         'Video acquisition',
-        if (subtitleShown) subtitle,
+        'Remote executor: living room',
       ]) {
-        final Rect line = tester.getRect(find.text(label));
-        expect(line.top, greaterThanOrEqualTo(capsule.top - 0.01));
-        expect(line.bottom, lessThanOrEqualTo(capsule.bottom + 0.01));
+        final Finder text = find.descendant(
+          of: header,
+          matching: find.text(label),
+        );
+        expect(text, findsOneWidget);
+        final Rect line = tester.getRect(text);
+        expect(line.top, greaterThanOrEqualTo(box.top - 0.01));
+        expect(line.bottom, lessThanOrEqualTo(box.bottom + 0.01));
+        expect(line.right, lessThanOrEqualTo(box.right + 0.01));
       }
     });
   }

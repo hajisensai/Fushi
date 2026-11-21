@@ -261,7 +261,7 @@ SettingsDestination buildServicesDestination() {
                       value: (SettingsContext settingsContext) =>
                           settingsContext.appModel.prefsRepo.getPref(
                                 kVideoAniDbHashEnabledPref,
-                                defaultValue: false,
+                                defaultValue: kVideoAniDbHashEnabledDefault,
                               )
                               as bool,
                       onChanged:
@@ -308,6 +308,27 @@ SettingsDestination buildServicesDestination() {
                               commitVideoMetadataRuntimePreference(
                                 settingsContext,
                                 kVideoAniDbPasswordPref,
+                                value,
+                                trimValue: false,
+                              ),
+                    ),
+                    SettingsTextItem(
+                      id: 'services.metadata.anidb_udp_api_key',
+                      title: t.video_anidb_udp_api_key,
+                      subtitle: t.video_anidb_udp_api_key_hint,
+                      icon: FushiIcons.lock,
+                      secret: true,
+                      value: (SettingsContext settingsContext) =>
+                          settingsContext.appModel.prefsRepo.getPref(
+                                kVideoAniDbUdpApiKeyPref,
+                                defaultValue: '',
+                              )
+                              as String,
+                      onChanged:
+                          (SettingsContext settingsContext, String value) =>
+                              commitVideoMetadataRuntimePreference(
+                                settingsContext,
+                                kVideoAniDbUdpApiKeyPref,
                                 value,
                                 trimValue: false,
                               ),
@@ -382,8 +403,8 @@ SettingsDestination buildServicesDestination() {
                             },
                       ),
                     ),
-                    // HTTP 资料接口与 UDP 是 AniDB 上两条登记（BUG-2623）：随包
-                    // 身份只登记了 UDP，让用户看得到 anime XML 资料链此时不会请求。
+                    // HTTP 资料接口与 UDP 是 AniDB 上两条登记（BUG-2623），
+                    // 状态行只按解析出的 HTTP 身份展示，不借用 UDP 身份。
                     SettingsStatusItem(
                       id: 'services.metadata.anidb_http_api',
                       title: t.video_anidb_http_api,
@@ -449,6 +470,55 @@ SettingsDestination buildServicesDestination() {
                                 kVideoScraperTmdbApiKeyPref,
                                 value,
                               ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          // 楽天ブックス书籍检索凭据（书籍「在线匹配封面」的可选源）。两项都填了楽天
+          // 才出现在源下拉里。凭据设备本地：不进备份 / 同步 / Profile（键登记见
+          // preference_keys.dart）。
+          SettingsNavigationItem(
+            id: 'services.metadata.rakuten_books',
+            title: '楽天ブックス',
+            subtitleBuilder: (SettingsContext c) =>
+                c.appModel.bookScrapeRakutenCredentials.isComplete
+                ? t.settings_service_configured
+                : t.settings_service_not_configured,
+            child: () => SettingsDestination(
+              id: SettingsDestinationId.services,
+              title: '楽天ブックス',
+              icon: FushiIcons.key,
+              sections: <SettingsSection>[
+                SettingsSection(
+                  id: 'services.rakuten_books.credentials',
+                  items: <SettingsItem>[
+                    SettingsTextItem(
+                      id: 'services.metadata.rakuten_application_id',
+                      title: t.book_scrape_rakuten_application_id,
+                      subtitle: t.book_scrape_rakuten_settings_hint,
+                      icon: FushiIcons.key,
+                      secret: true,
+                      value: (SettingsContext c) =>
+                          c.appModel.prefsRepo.bookScrapeRakutenApplicationId,
+                      onChanged: (SettingsContext c, String value) => c
+                          .appModel
+                          .prefsRepo
+                          .setBookScrapeRakutenApplicationId(value),
+                    ),
+                    SettingsTextItem(
+                      id: 'services.metadata.rakuten_access_key',
+                      title: t.book_scrape_rakuten_access_key,
+                      subtitle: t.book_scrape_rakuten_settings_hint,
+                      icon: FushiIcons.lock,
+                      secret: true,
+                      value: (SettingsContext c) =>
+                          c.appModel.prefsRepo.bookScrapeRakutenAccessKey,
+                      onChanged: (SettingsContext c, String value) => c
+                          .appModel
+                          .prefsRepo
+                          .setBookScrapeRakutenAccessKey(value),
                     ),
                   ],
                 ),

@@ -10,6 +10,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/media/drag_drop/drop_classification.dart'
+    show kPluginPackageExtensions;
+import 'package:fushi/src/media/drag_drop/plugin_package_drop_target.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart'
     show MusicLyricsSource;
@@ -43,6 +46,12 @@ String musicLyricsCandidateTitle(String source, String label) {
   return label;
 }
 
+/// 在线搜索候选（`MusicLyricsService.searchOnline`）出自哪个来源：LRCLIB 或歌词插件 id。
+String musicLyricsOnlineSourceName(String source) {
+  if (source == MusicLyricsSource.lrclib) return 'LRCLIB';
+  return MusicLyricsSource.lyricsPluginIdOf(source) ?? source;
+}
+
 /// 能力 → 用户看得懂的名字。
 String musicPluginCapabilityLabel(String capability) => switch (capability) {
   'search' => t.music_plugins_cap_search,
@@ -68,21 +77,40 @@ String musicPluginErrorText(Object error) => musicPluginErrorSummary(
   error is MusicPluginException ? error.message : '$error',
 );
 
-/// 选 `.fushiplug` 文件 → 校验并展示清单 / 权限 / 签名 → 用户确认后安装。
-/// 插件音源设置页与歌词来源页共用同一条安装流程。返回是否真的装上了。
+/// 选 `.fushiplug` 文件 → [installMusicPluginPackage]。插件音源设置页与歌词来源页
+/// 的安装按钮共用。返回是否真的装上了。
 Future<bool> pickAndInstallMusicPlugin(
   BuildContext context,
   MusicPluginManager manager,
 ) async {
   final FilePickerResult? picked = await pickFilesByExtensions(
     context: context,
-    allowedExtensions: const <String>['fushiplug', 'zip'],
+    allowedExtensions: kPluginPackageExtensions.toList(),
     withData: true,
   );
   final PlatformFile? file = picked?.files.firstOrNull;
   if (file == null) return false;
+  final Uint8List bytes;
   try {
-    final Uint8List bytes = file.bytes ?? await File(file.path!).readAsBytes();
+    bytes = file.bytes ?? await File(file.path!).readAsBytes();
+  } on Object catch (e) {
+    _showInstallFailed(e);
+    return false;
+  }
+  if (!context.mounted) return false;
+  return installMusicPluginPackage(context, manager, bytes);
+}
+
+/// 一个插件包的字节 → 校验并展示清单 / 权限 / 签名 → 用户确认后按确认时的摘要安装。
+/// 安装按钮（[pickAndInstallMusicPlugin]）与拖放落点（[MusicPluginDropTarget]）共用
+/// 这一条流程（BUG-4712：此前它焊死在文件选择器里，拖放没有入口可接）。返回是否真的
+/// 装上了。装上后由 [MusicPluginManager.changes] 通知各列表刷新。
+Future<bool> installMusicPluginPackage(
+  BuildContext context,
+  MusicPluginManager manager,
+  Uint8List bytes,
+) async {
+  try {
     final MusicPluginPackageInfo info = await manager.inspect(bytes);
     final bool signerChanged = await manager.signerChanged(info);
     if (!context.mounted) return false;
@@ -104,12 +132,36 @@ Future<bool> pickAndInstallMusicPlugin(
     );
     return true;
   } on Object catch (e) {
-    FushiToast.show(
-      msg: t.music_plugins_install_failed(error: musicPluginErrorText(e)),
-      severity: ToastSeverity.error,
-    );
+    _showInstallFailed(e);
     return false;
   }
+}
+
+void _showInstallFailed(Object error) => FushiToast.show(
+  msg: t.music_plugins_install_failed(error: musicPluginErrorText(error)),
+  severity: ToastSeverity.error,
+);
+
+/// 音乐 / 歌词插件的拖放落点：拖入 `.fushiplug` 走 [installMusicPluginPackage]。
+/// 挂在插件音源管理页、音乐来源页、设置里的歌词来源页的页面体上（每条路由只挂一层，
+/// 不嵌套——desktop_drop 是全局广播，嵌套会装两遍）。
+class MusicPluginDropTarget extends StatelessWidget {
+  const MusicPluginDropTarget({
+    super.key,
+    required this.manager,
+    required this.child,
+  });
+
+  final MusicPluginManager manager;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => PluginPackageDropTarget(
+    debugLabel: 'music-plugin',
+    install: (BuildContext context, Uint8List bytes) =>
+        installMusicPluginPackage(context, manager, bytes),
+    child: child,
+  );
 }
 
 class MusicPluginSettingsBody extends StatefulWidget {
@@ -124,17 +176,36 @@ class MusicPluginSettingsBody extends StatefulWidget {
 
 class _MusicPluginSettingsBodyState extends State<MusicPluginSettingsBody> {
   MusicPluginManager get _manager => widget.appModel.musicPluginManager;
-  late Future<List<InstalledMusicPlugin>> _plugins = _manager.list();
+  late Future<List<InstalledMusicPlugin>> _plugins = _manager.listInstalled();
   bool _busy = false;
 
-  void _reload() => setState(() {
-    _plugins = _manager.list();
-  });
+  /// 安装 / 卸载 / 启停一律经 [MusicPluginManager.changes] 刷新：安装可能来自本页的
+  /// 按钮，也可能来自页面上的拖放落点（[MusicPluginDropTarget]），列表不该只认其一。
+  StreamSubscription<void>? _changes;
+
+  @override
+  void initState() {
+    super.initState();
+    _changes = _manager.changes.listen((_) => _reload());
+  }
+
+  @override
+  void dispose() {
+    unawaited(_changes?.cancel());
+    super.dispose();
+  }
+
+  void _reload() {
+    if (!mounted) return;
+    setState(() {
+      _plugins = _manager.listInstalled();
+    });
+  }
 
   Future<void> _install() async {
     setState(() => _busy = true);
     try {
-      if (await pickAndInstallMusicPlugin(context, _manager)) _reload();
+      await pickAndInstallMusicPlugin(context, _manager);
     } finally {
       if (mounted) setState(() => _busy = false);
     }

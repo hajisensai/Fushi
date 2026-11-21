@@ -19,6 +19,7 @@ import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
 
 import 'command_harness.dart';
+import 'support/fake_rwkv.dart';
 
 void _write(String path, String content) {
   File(path)
@@ -391,6 +392,7 @@ void main() {
           db: db,
           identity: identity,
           host: HeadlessHost(
+            srsRwkvHttpClient: noNetworkHttpClient,
             config: config,
             paths: paths,
             db: db,

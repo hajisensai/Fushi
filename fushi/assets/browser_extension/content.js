@@ -523,6 +523,25 @@ try {
   });
 } catch (_) {}
 
+// YouTube 自动字幕分句整合（反馈 97pds8EODm，storage.subtitleMergeAsrSentences，默认关）：
+// 只读开关、转给 subtitle-providers.js 的 fushiSetAsrSentenceMerge，那里持有原始行 cue、
+// 负责重算 store 并通知面板；切换实时生效，不重新取轨。
+try {
+  const fushiApplyAsrMergePref = (s) => {
+    if (typeof window.fushiSetAsrSentenceMerge === 'function') {
+      window.fushiSetAsrSentenceMerge(!!s && s.subtitleMergeAsrSentences === true);
+    }
+  };
+  const fushiAsrMergePrefPromise = chrome.storage.local.get(['subtitleMergeAsrSentences'], fushiApplyAsrMergePref);
+  if (fushiAsrMergePrefPromise && typeof fushiAsrMergePrefPromise.then === 'function') {
+    fushiAsrMergePrefPromise.then(fushiApplyAsrMergePref, () => {});
+  }
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes || !changes.subtitleMergeAsrSentences) return;
+    fushiApplyAsrMergePref({ subtitleMergeAsrSentences: changes.subtitleMergeAsrSentences.newValue });
+  });
+} catch (_) {}
+
 // 「按住 Shift 悬停查词」总开关（storage.shiftHoverLookup，默认开）。Shift 在不少站点/输入场景
 // 另有用途（选区扩展、站点快捷键），用户可以关掉这条入口，只留点击 / 悬浮字幕自动查词等
 // 其余入口。只认显式 false；storage.onChanged 实时生效。
@@ -559,6 +578,27 @@ function fushiScanModifierKeyup(event, modifier) {
   const mod = fushiNormalizeScanModifier(modifier);
   return !!(event && mod !== 'none' && event.key === FUSHI_SCAN_MODIFIER_KEYS[mod]);
 }
+// 悬停扫描延迟（反馈 L4Vhk0hOjM，对齐 Yomitan 的 Scan delay）：storage.scanDelay，毫秒整数 0–2000，
+// 缺省 / 非法值 = 0（立即查，旧行为）。只在触发键为 none 时生效——按键模式下按住键本身就是明确手势，
+// 不再等；none 模式指针一划过就查太灵敏，指针停稳 scanDelay 毫秒不再动才扫，期间每次 mousemove
+// 重新计时并换成最新坐标。side-panel.js 字幕行悬停用同名函数副本，shift-hover.test.js 交叉比对。
+let fushiScanDelayMs = 0;
+let fushiScanDelayTimer = null;
+const FUSHI_SCAN_DELAY_MAX_MS = 2000;
+function fushiNormalizeScanDelay(value) {
+  if (typeof value !== 'number' || !isFinite(value)) return 0;
+  const ms = Math.round(value);
+  return ms <= 0 ? 0 : Math.min(FUSHI_SCAN_DELAY_MAX_MS, ms);
+}
+// 当前设置下悬停扫描要等多久：触发键不是 none 一律 0。
+function fushiEffectiveScanDelay(modifier, delay) {
+  return fushiNormalizeScanModifier(modifier) === 'none' ? fushiNormalizeScanDelay(delay) : 0;
+}
+function fushiCancelScanDelay() {
+  if (fushiScanDelayTimer === null) return;
+  try { clearTimeout(fushiScanDelayTimer); } catch (_) {}
+  fushiScanDelayTimer = null;
+}
 function fushiApplyShiftHoverLookupPref(saved) {
   if (saved && typeof saved.shiftHoverLookup === 'boolean') {
     fushiShiftHoverLookup = saved.shiftHoverLookup;
@@ -566,12 +606,15 @@ function fushiApplyShiftHoverLookupPref(saved) {
   if (saved && typeof saved.scanModifier === 'string') {
     fushiScanModifier = fushiNormalizeScanModifier(saved.scanModifier);
   }
+  if (saved && Object.prototype.hasOwnProperty.call(saved, 'scanDelay')) {
+    fushiScanDelayMs = fushiNormalizeScanDelay(saved.scanDelay);
+  }
 }
 // 弹窗内嵌套查词（vendor/popup.js，与 app 共用）经这个钩子认同一个触发键；app 内无此钩子时它退回 Shift。
 window.__fushiScanModifierHeld = (e) => fushiScanModifierHeld(e, fushiScanModifier);
 try {
   const fushiShiftPrefPromise = chrome.storage.local.get(
-    ['shiftHoverLookup', 'scanModifier'],
+    ['shiftHoverLookup', 'scanModifier', 'scanDelay'],
     fushiApplyShiftHoverLookupPref,
   );
   if (fushiShiftPrefPromise && typeof fushiShiftPrefPromise.then === 'function') {
@@ -581,6 +624,9 @@ try {
     if (area !== 'local' || !changes) return;
     if (changes.shiftHoverLookup) fushiShiftHoverLookup = changes.shiftHoverLookup.newValue !== false;
     if (changes.scanModifier) fushiScanModifier = fushiNormalizeScanModifier(changes.scanModifier.newValue);
+    if (changes.scanDelay) fushiScanDelayMs = fushiNormalizeScanDelay(changes.scanDelay.newValue);
+    // 换了触发键或延迟：按旧设置排着的那次扫描作废，下次 mousemove 按新设置走。
+    if (changes.scanModifier || changes.scanDelay) fushiCancelScanDelay();
   });
 } catch (_) {}
 
@@ -753,31 +799,62 @@ function fushiMaybeFetchYoutubeCaptions() {
 try { setInterval(fushiMaybeFetchYoutubeCaptions, 1500); } catch (_) {}
 
 // ── 制卡队列（持久化：chrome.storage.local，跨刷新/跨剧集/跨会话累积，随时点击生成）──
-// 内存镜像 fushiQueue 以 storage 为真相源；storage.onChanged 让多标签/重载后计数一致。
+// 内存镜像 fushiQueue 只供**读**（按钮「已在队列」、Netflix 回放挑本集项），storage.onChanged
+// 让多标签/重载后它跟上；**写**一律经 fushiQueueMutate 对 storage 现值读-改-写。
+//
+// 反馈 heMh1hn8n4（「网页制卡提示加入成功，统一生成时少了很多，十几条以后全丢」）：入队曾是
+// 「push 进镜像 → fire-and-forget 写整份镜像 → 按镜像长度报成功」。镜像会被迟到的 onChanged
+// 旧值拉回，下一次入队把旧镜像整份写回、冲掉前一条或别处（图标 popup / background）刚写的；
+// 写入被拒（配额、扩展更新后旧 content script 的 context invalidated）也照样报成功。
 let fushiQueue = [];
-function fushiQueueSave() {
-  try { chrome.storage.local.set({ fushiQueue: fushiQueue }); } catch (_) {}
+// 本标签内的队列写入严格串行：两次快速入队各自读到同一份旧队列再写，后写的会冲掉先写的。
+let fushiQueueWriteChain = Promise.resolve();
+/**
+ * 对 storage 里的 fushiQueue 做一次串行读-改-写。
+ * [mutate] 拿到 storage 现值，返回 `{ queue, result }`：queue 为数组则写回（await 落盘），
+ * 为 null 表示不写。返回的 Promise 只在写入真正成功后以 result 兑现；读/写失败（含扩展上下文
+ * 失效时的同步抛）一律 reject，交给调用方如实上报。
+ * @param {(fresh: object[]) => { queue: object[]|null, result: * }} mutate
+ * @returns {Promise<*>}
+ */
+function fushiQueueMutate(mutate) {
+  const run = fushiQueueWriteChain.then(async () => {
+    const got = await chrome.storage.local.get(['fushiQueue']);
+    const fresh = Array.isArray(got && got.fushiQueue) ? got.fushiQueue : [];
+    const r = mutate(fresh);
+    if (Array.isArray(r.queue)) {
+      await chrome.storage.local.set({ fushiQueue: r.queue });
+      fushiQueue = r.queue;
+    } else {
+      fushiQueue = fresh;
+    }
+    return r.result;
+  });
+  // 链只负责排队，不传播上一次的失败。
+  fushiQueueWriteChain = run.then(() => undefined, () => undefined);
+  return run;
 }
-// 移除已成功生成的项：storage 读-改-写（不改可能被 storage.onChanged 覆盖的内存镜像），跨标签安全。
+/** 扩展被更新/重载后，旧 content script 的 chrome.runtime.id 变成 undefined。 @returns {boolean} */
+function fushiExtensionContextAlive() {
+  try { return !!(chrome.runtime && chrome.runtime.id); } catch (_) { return false; }
+}
+// 移除已成功生成的项：storage 读-改-写，跨标签安全。
 // 生成过程中别的标签/别集入队都不会被这一步误删（只按 id 剔除本次成功的）。
 async function fushiRemoveQueued(okIds) {
   if (!okIds || !okIds.length) return;
   try {
-    const got = await chrome.storage.local.get(['fushiQueue']);
-    const fresh = Array.isArray(got.fushiQueue) ? got.fushiQueue : [];
-    const remaining = fresh.filter((q) => okIds.indexOf(q.id) < 0);
-    fushiQueue = remaining;
-    await chrome.storage.local.set({ fushiQueue: remaining });
+    await fushiQueueMutate((fresh) => ({
+      queue: fresh.filter((q) => okIds.indexOf(q.id) < 0), result: null,
+    }));
   } catch (_) {}
 }
 // 把一次失败记到队列项上（判据 mine-outcome.js fushiQueueAfterMineFailure，与 background 的
 // YouTube 批量同一份）：永久失败 / 反复失败的项进失败分组，不再参与下次生成（EMI05fe8RJ）。
 async function fushiRecordQueuedFailure(id, outcome) {
   try {
-    const got = await chrome.storage.local.get(['fushiQueue']);
-    const r = window.fushiQueueAfterMineFailure(got.fushiQueue, id, outcome);
-    fushiQueue = r.queue;
-    await chrome.storage.local.set({ fushiQueue: r.queue });
+    await fushiQueueMutate((fresh) => ({
+      queue: window.fushiQueueAfterMineFailure(fresh, id, outcome).queue, result: null,
+    }));
   } catch (_) {}
 }
 // 制卡结果分类：判据住在 mine-outcome.js（与 background 的 YouTube 批量制卡共用同一份），
@@ -1243,7 +1320,10 @@ window.fushiIsEntryQueued = function (fields) {
       item.cueStartV === ctx.window.startV;
   });
 };
-window.fushiEnqueue = function (fields, sentence) {
+// 返回 Promise：只有队列真的写进 chrome.storage.local 才兑现 ok:true（count = 落盘后的长度）；
+// 写不进去兑现 { ok:false, reason:'persist-failed' | 'context-invalidated' }。上下文在 await 之前
+// 同步取，保证记下的是点击那一刻的句子与时间。
+window.fushiEnqueue = async function (fields, sentence) {
   const ctx = window.fushiMineContext();
   const w = ctx.window;
   if (!w) return { ok: false, reason: 'no-cue' };
@@ -1252,6 +1332,12 @@ window.fushiEnqueue = function (fields, sentence) {
   const youtubeId = ctx.youtubeId;
   const netflixId = ctx.netflixId;
   const documentTitle = ctx.documentTitle;
+  // 统计身份在点击那一刻冻结：批量生成时早已离开这页（反馈 PtsjrnVmH9）。
+  let study = null;
+  try {
+    const tracker = window.fushiStudyTracker;
+    study = tracker && typeof tracker.identity === 'function' ? tracker.identity() : null;
+  } catch (_) { study = null; }
   // 边距与「立即出卡」那条路同源（`fushiClipWindowWithMargin`）——两条路裁的是同一句话，
   // 边距不同步就会出现「B 站点一下的卡开头被切、YouTube 批量的卡不切」。
   // 多句合一：裁切窗取上下文并集（首句起→末句止），句子用合成句；与 app 内
@@ -1272,17 +1358,30 @@ window.fushiEnqueue = function (fields, sentence) {
     youtubeId: youtubeId,
     netflixId: netflixId,
     documentTitle: documentTitle,
+    ...(study ? { study: study } : {}),
   };
   // TODO-1222：已在队列（同词同句同片）→ 不重复入队，返回 duplicate 让弹窗提示「已在队列中」。
+  // 判重同样以 storage 现值为准（镜像可能落后）。
   const key = fushiQueueKey(item);
-  if (fushiQueue.some((q) => fushiQueueKey(q) === key)) {
-    return { ok: true, count: fushiQueue.length, duplicate: true };
+  let res;
+  try {
+    res = await fushiQueueMutate((fresh) => {
+      if (fresh.some((q) => fushiQueueKey(q) === key)) {
+        return { queue: null, result: { ok: true, count: fresh.length, duplicate: true } };
+      }
+      const next = fresh.concat([item]);
+      return { queue: next, result: { ok: true, count: next.length } };
+    });
+  } catch (e) {
+    return {
+      ok: false,
+      reason: fushiExtensionContextAlive() ? 'persist-failed' : 'context-invalidated',
+      error: String((e && e.message) || e),
+    };
   }
-  fushiQueue.push(item);
-  fushiQueueSave();
-  // 一次性草稿：入队即归零（与 app 内制卡成功后 _miningDraft.clear() 同事件）。
-  fushiSentenceCtx = { prev: 0, next: 0 };
-  return { ok: true, count: fushiQueue.length };
+  // 一次性草稿：入队落盘才归零（与 app 内制卡成功后 _miningDraft.clear() 同事件）。
+  if (!res.duplicate) fushiSentenceCtx = { prev: 0, next: 0 };
+  return res;
 };
 // 跨标签/重载同步：storage 变了就刷新内存镜像 + 计数。
 try {
@@ -1492,6 +1591,8 @@ async function fushiRunNetflixBatch(introGate) {
                 clipStartMs: (typeof q.cueStartV === 'number' ? q.cueStartV : null),
                 clipEndMs: (typeof q.cueEndV === 'number' ? q.cueEndV : null),
                 mineAtMs: (typeof q.mineAtV === 'number' ? q.mineAtV : null),
+                // 入队时冻结的统计身份；旧队列项没有 → background 按本标签页正在统计的视频认。
+                ...(q.study ? { study: q.study } : {}),
                 documentTitle: q.documentTitle || (typeof netflixDocumentTitle === 'function' ? netflixDocumentTitle() : '') },
               (resp) => {
                 try { if (chrome.runtime.lastError) return resolve(null); } catch (_) { return resolve(null); }
@@ -2514,7 +2615,23 @@ function fushiSubtitleCaretAtPoint(x, y) {
 document.addEventListener('mousemove', (e) => {
   if (fushiNfBatchRunning) return; // 批量回放录制中：不查词、不自动暂停，免误触把当前句录制截断
   // 松开 Shift 复位，下次可重查同词；在途期间被吞的那次取词也随之作废（用户已不在扫词）。
-  if (!fushiScanModifierHeld(e, fushiScanModifier)) { fushiLastLookupKey = ''; fushiDeferShiftScan(null); return; }
+  if (!fushiScanModifierHeld(e, fushiScanModifier)) { fushiLastLookupKey = ''; fushiDeferShiftScan(null); fushiCancelScanDelay(); return; }
+  // 扫描延迟（反馈 L4Vhk0hOjM，仅 none 模式）：重新计时，停稳到点再按这次的坐标扫；0 = 立即扫。
+  const delay = fushiEffectiveScanDelay(fushiScanModifier, fushiScanDelayMs);
+  fushiCancelScanDelay();
+  if (delay > 0) {
+    const x = e.clientX;
+    const y = e.clientY;
+    const target = e.target;
+    const clearNativeSelection = e.buttons === 0;
+    fushiScanDelayTimer = setTimeout(() => {
+      fushiScanDelayTimer = null;
+      // 到点前指针已移出窗口：不替一个不在页面上的指针查词。
+      if (fushiPointerOutsideDocument || fushiNfBatchRunning) return;
+      fushiShiftHoverAt(x, y, target, clearNativeSelection, false);
+    }, delay);
+    return;
+  }
   fushiShiftHoverAt(e.clientX, e.clientY, e.target, e.buttons === 0, false);
 });
 // Shift 悬停的共同入口：mousemove（指针在动）与 keydown（指针静止时按下 Shift）都走这里。
@@ -2624,8 +2741,11 @@ function fushiShiftScanAt(x, y) {
   // 反馈 #RvwGCEtAsd：命中站点原生字幕时带上**被悬停那一行**的整轨精确窗。YouTube 滚动自动字幕
   // 屏上同时有上下两行，按播放时刻只能取到下面那行；不带窗，悬停上一行的词就会配上下一行的
   // 例句与片段。不在原生字幕里 / 整轨对不上该行 → null，制卡照旧按播放时刻取整轨。
-  const cueWindow = typeof fushiCaptionLineCueWindowAt === 'function'
-    ? fushiCaptionLineCueWindowAt(hit.node) : null;
+  // BUG-4719：命中扩展自绘覆盖层时同理——时间重叠的 cue 会多行同屏，带被悬停那一行的 cue 窗。
+  const overlayWindow = typeof window.fushiSubtitleOverlayCueWindowAt === 'function'
+    ? window.fushiSubtitleOverlayCueWindowAt(hit.node) : null;
+  const cueWindow = overlayWindow || (typeof fushiCaptionLineCueWindowAt === 'function'
+    ? fushiCaptionLineCueWindowAt(hit.node) : null);
   fushiSendLookup(term, fushiAnchorRect, cueWindow, false, hit, true, termRuby);
 }
 // ── canvas 阅读器抓图取词（canvas-ocr.js）────────────────────────────────────────────
@@ -2770,6 +2890,7 @@ window.addEventListener('mousemove', (e) => {
 try {
   document.documentElement.addEventListener('mouseleave', () => {
     fushiPointerOutsideDocument = true;
+    fushiCancelScanDelay();
     if (!fushiLookupOpenedByHover || !fushiHost) return;
     fushiPointerOverPopup = false;
     fushiScheduleHoverLeave();
@@ -3575,12 +3696,10 @@ function fushiApplyTheme(c, theme, applyBox) {
     const step = parseFloat(theme['--fushi-instant-scroll-wheel-step']);
     window.__fushiPopupInstantScrollWheelStep = (isFinite(step) && step > 0) ? step : undefined;
   }
-  // BUG-2397：「音调去重」随 theme 下发（app deduplicatePitchAccents）→ 设同名全局供
-  // popup.js 的 createPitchSection 去重分支读（content/popup 同隔离世界共享 window）。
-  // 扩展侧此前**从未有人给它赋值**，恒 undefined = falsy，于是无论用户在 app 里怎么设，
-  // 浏览器弹窗的音调去重永远是关的（同一个词的同一个调型被每本词典各画一行）。
-  // 缺该 key = 旧 app，保持关闭，与相邻两条同法。
-  window.deduplicatePitchAccents = theme['--fushi-dedup-pitch'] === '1';
+  // BUG-2397 / BUG-4935：弹窗显示偏好（音调去重、词频聚合、自动展开行数、折叠开关与逐本
+  // 折叠 / 展开名单……）随 theme 下发 → 落到 popup.js 读的同名全局（content/popup 同隔离世界
+  // 共享 window）。解码收口在 vendor/dict-media.js，侧边栏 / 嵌套层走同一个函数。
+  applyFushiPopupDisplayPrefs(theme);
   // 玻璃只在扩展风格 = 液态玻璃时上（与 app 设计系统选什么无关）；app 开墨水屏时随 theme 下发
   // --fushi-glass: '0'，两种风格都保持不透明；缺该 key（旧 app）按风格走。减少透明度 /
   // 不支持 backdrop-filter 的回落由 content.css 自己的 @media / @supports 负责。

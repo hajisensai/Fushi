@@ -1,6 +1,10 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
+import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart'
+    show FushiMastheadScaffold;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -9,6 +13,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/extension_catalog_controls.dart';
 import 'package:fushi/src/media/manga/extension_management_tile.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/media/manga/extension_store_list.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
@@ -540,24 +545,22 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
 
   /// 内嵌目录接在批量安装 / 一键更新后面的同排动作：扩展仓库 + 导入本地 APK。
   /// 独立页形态这两样在页头动作里，这里返回空。
-  List<Widget> _catalogTrailing(MihonManager manager) {
-    if (!widget.embedded) return const <Widget>[];
+  List<ExtensionCatalogAction> _catalogTrailing(MihonManager manager) {
+    if (!widget.embedded) return const <ExtensionCatalogAction>[];
     final VoidCallback? openStores = widget.onOpenStores;
-    return <Widget>[
+    return <ExtensionCatalogAction>[
       if (openStores != null)
-        FushiOutlinedButton.icon(
+        ExtensionCatalogAction(
           key: const ValueKey<String>('mihon_extension_open_stores'),
-          size: FushiButtonSize.s,
           onPressed: openStores,
-          icon: const FushiIcon(FushiIcons.hub),
-          label: Text(t.online_sources_stores_manage),
+          icon: FushiIcons.hub,
+          label: t.online_sources_stores_manage,
         ),
-      FushiFilledButton.tonalIcon(
+      ExtensionCatalogAction(
         key: const ValueKey<String>('mihon_extension_import_apk'),
-        size: FushiButtonSize.s,
         onPressed: manager.loading ? null : _importApk,
-        icon: const FushiIcon(FushiIcons.importFile),
-        label: Text(t.mihon_extension_import),
+        icon: FushiIcons.importFile,
+        label: t.mihon_extension_import,
       ),
     ];
   }
@@ -607,45 +610,58 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
         ),
       );
     }
+    final String title = switch (manager.kind) {
+      MihonMediaKind.manga => t.mihon_extensions_title,
+      MihonMediaKind.anime => t.video_extensions_title,
+    };
+    Widget content(double top) => Stack(
+      children: <Widget>[
+        CustomScrollView(
+          slivers: <Widget>[
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(16, top + 16, 16, 16),
+              sliver: FushiEntranceScope(
+                replayKey: (_language, _store, _minDownloads),
+                child: SliverMainAxisGroup(
+                  slivers: _buildContentSlivers(manager),
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (manager.loading)
+          const Positioned.fill(
+            child: ColoredBox(
+              color: Color(0x22000000),
+              child: FushiLoadingView(),
+            ),
+          ),
+      ],
+    );
+    // 重设计外壳（墨水屏除外）：独立路由进来时是二级页的页头大字（页名 + 平铺
+    // 动作，导航条在页名下一行），正文铺到页头底下、按顶部让位加内边距。
+    if (shellRedesignActive(context)) {
+      return FushiMastheadScaffold(
+        title: title,
+        actions: _actions(manager),
+        bottom: widget.navigation,
+        body: Builder(
+          builder: (BuildContext context) =>
+              content(MediaQuery.paddingOf(context).top),
+        ),
+      );
+    }
     return DesktopContentLayout(
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
           if (!isCupertinoPlatform(context))
             FushiPageHeader(
-              title: switch (manager.kind) {
-                MihonMediaKind.manga => t.mihon_extensions_title,
-                MihonMediaKind.anime => t.video_extensions_title,
-              },
+              title: title,
               bottom: widget.navigation,
               actions: _actions(manager),
             ),
-          Expanded(
-            child: Stack(
-              children: <Widget>[
-                CustomScrollView(
-                  slivers: <Widget>[
-                    SliverPadding(
-                      padding: const EdgeInsets.all(16),
-                      sliver: FushiEntranceScope(
-                        replayKey: (_language, _store, _minDownloads),
-                        child: SliverMainAxisGroup(
-                          slivers: _buildContentSlivers(manager),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                if (manager.loading)
-                  const Positioned.fill(
-                    child: ColoredBox(
-                      color: Color(0x22000000),
-                      child: FushiLoadingView(),
-                    ),
-                  ),
-              ],
-            ),
-          ),
+          Expanded(child: content(0)),
         ],
       ),
     );
@@ -796,12 +812,6 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       extensions: visibleAvailable,
       expanded: _storeExpanded,
     );
-    // 每个仓库（表头 + 展开的扩展行）读作一个分组：逐行算出组内位置。
-    final List<(int, int)> groupSlots = extensionGroupSlots(
-      groupedRows.map(
-        (MihonExtensionListRow row) => row is MihonStoreHeaderRow,
-      ),
-    );
     final Widget storesSliver = SliverList.builder(
       itemCount: manager.stores.length,
       itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int index) {
@@ -884,7 +894,8 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
             child: _buildFilters(manager, languages),
           ),
         )
-      else if (_catalogTrailing(manager) case final List<Widget> trailing
+      else if (_catalogTrailing(manager)
+          case final List<ExtensionCatalogAction> trailing
           when trailing.isNotEmpty)
         // 有仓库但目录一个扩展都没取到（刷新失败 / 仓库为空）：没有筛选区可挂，
         // 目录动作单独成行，「扩展仓库」「导入 APK」入口不丢。
@@ -895,21 +906,29 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
               spacing: 8,
               runSpacing: 8,
               crossAxisAlignment: WrapCrossAlignment.center,
-              children: trailing,
+              children: <Widget>[
+                for (final ExtensionCatalogAction action in trailing)
+                  FushiFilledButton.tonalIcon(
+                    key: action.key,
+                    size: FushiButtonSize.s,
+                    onPressed: action.onPressed,
+                    icon: FushiIcon(action.icon),
+                    label: Text(action.label),
+                  ),
+              ],
             ),
           ),
         ),
       const SliverToBoxAdapter(child: SizedBox(height: 8)),
-      SliverList.builder(
-        itemCount: groupedRows.length,
-        itemBuilder: fushiStaggeredItemBuilder((
-          BuildContext context,
-          int index,
-        ) {
+      ExtensionCatalogSliver(
+        isHeader: <bool>[
+          for (final MihonExtensionListRow row in groupedRows)
+            row is MihonStoreHeaderRow,
+        ],
+        itemBuilder: (BuildContext context, int index) {
           final MihonExtensionListRow entry = groupedRows[index];
           if (entry is MihonStoreHeaderRow) {
             return ExtensionStoreGroupHeader(
-              groupCount: groupSlots[index].$2,
               keyPrefix: 'mihon',
               indexUrl: entry.indexUrl,
               label: entry.label,
@@ -937,8 +956,6 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
             // 另一个扩展显示成「已展开全部源」，原来那个反而收了回去。
             // 身份就是 packageName（同文件 toggle 按钮的 key 已经这么用了）。
             key: ValueKey<String>(extension.packageName),
-            groupIndex: groupSlots[index].$1,
-            groupCount: groupSlots[index].$2,
             extension: extension,
             installed: row,
             busy: busy,
@@ -959,24 +976,20 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
                 : (bool value) =>
                       unawaited(manager.setExtensionEnabled(row, value)),
           );
-        }),
+        },
       ),
-      SliverList.builder(
-        itemCount: visibleLocalOnly.length,
-        itemBuilder: fushiStaggeredItemBuilder((
-          BuildContext context,
-          int index,
-        ) {
+      ExtensionCatalogSliver(
+        isHeader: List<bool>.filled(visibleLocalOnly.length, false),
+        itemBuilder: (BuildContext context, int index) {
           final MangaExtensionRow extension = visibleLocalOnly[index];
           return _InstalledExtensionTile(
-            groupIndex: index,
-            groupCount: visibleLocalOnly.length,
+            key: ValueKey<String>('mihon_local_${extension.packageName}'),
             extension: extension,
             onUninstall: () => unawaited(_uninstall(extension)),
             onEnabledChanged: (bool value) =>
                 unawaited(manager.setExtensionEnabled(extension, value)),
           );
-        }),
+        },
       ),
       // 搜索 / 筛选后一条都不剩：统一占位（M3E 色块图标 + 弹入），不是一行裸字。
       if (filtering && visibleAvailable.isEmpty && visibleLocalOnly.isEmpty)
@@ -1171,8 +1184,8 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
                 total: total,
                 name: name,
               ),
-        // 取消闸门由 [MihonManager.installMany] 在每条之间读——正在下载的那一条
-        // 会跑完，不会半途留下残骸。
+        // 取消闸门由 [MihonManager.installMany] 在每条之间读——正在安装的那一条
+        // 会装完；并发窗口里已开下的几条等落地后丢弃、不再安装，不留残骸。
         run: (onProgress, isCancelled) => manager.installMany(
           targets,
           trustSigner: !upgrade,
@@ -1215,17 +1228,14 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
           keyPrefix: 'mihon_extension',
           onBulkInstall: _bulkInstalling ? null : _bulkInstall,
           onUpdateAll: _bulkInstalling ? null : _updateAll,
-          trailing: _catalogTrailing(manager),
+          updateCount: mihonExtensionUpdates(
+            available: manager.available,
+            installed: manager.installed,
+          ).length,
+          extra: _catalogTrailing(manager),
         ),
         const SizedBox(height: 12),
         _buildSearchAndLanguageFilters(manager, languages),
-        const SizedBox(height: 8),
-        ExtensionMinDownloadsFilter(
-          keyPrefix: 'mihon_extension',
-          minDownloads: _minDownloads,
-          onMinDownloadsChanged: (int value) =>
-              setState(() => _minDownloads = value),
-        ),
       ],
     );
   }
@@ -1265,6 +1275,14 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
         _searchController.clear();
         setState(() => _searchQuery = '');
       },
+      extraFilters: <Widget>[
+        ExtensionMinDownloadsFilter(
+          keyPrefix: 'mihon_extension',
+          minDownloads: _minDownloads,
+          onMinDownloadsChanged: (int value) =>
+              setState(() => _minDownloads = value),
+        ),
+      ],
     );
   }
 }
@@ -1381,13 +1399,8 @@ class _AvailableExtensionTile extends StatefulWidget {
     required this.onPreview,
     required this.onUninstall,
     required this.onEnabledChanged,
-    this.groupIndex,
-    this.groupCount,
   });
 
-  /// 所属仓库分组里的位置（见 [MangaExtensionManagementTile.groupIndex]）。
-  final int? groupIndex;
-  final int? groupCount;
   final MihonAvailableExtension extension;
   final MangaExtensionRow? installed;
   final bool busy;
@@ -1405,12 +1418,12 @@ class _AvailableExtensionTile extends StatefulWidget {
 }
 
 class _AvailableExtensionTileState extends State<_AvailableExtensionTile> {
-  /// 「包含的源」默认只显示前 [_sourcePreviewCount] 条。
+  /// 「包含的源」收起时露出名字的前 [_sourcePreviewCount] 个。
   ///
   /// 截图里那一屏的主因就是这里：Akuma 一个扩展铺了 30 行
-  /// `Akuma (xx) — https://akuma.moe`，把整页撑成一条看不到头的列表。
-  /// FushiListItem 的 subtitleMaxLines 管不到它（那是 DefaultTextStyle.merge，
-  /// 对 Column 里每个 Text 各自生效）。
+  /// `Akuma (xx) — https://akuma.moe`，把整页撑成一条看不到头的列表。拼贴改版
+  /// （2026-11-16）起收起态只是一行「源名 · 源名 · 源名」（不带 URL），展开才逐行
+  /// 列出「名称 (语言) — 地址」。
   static const int _sourcePreviewCount = 3;
 
   bool _showAllSources = false;
@@ -1431,16 +1444,7 @@ class _AvailableExtensionTileState extends State<_AvailableExtensionTile> {
       available: extension,
       installed: installed,
     );
-    final ThemeData theme = Theme.of(context);
-    final FushiMotionScheme motion = context.fushiMotion;
-    final List<MihonAvailableSource> shownSources = _showAllSources
-        ? extension.sources
-        : extension.sources.take(_sourcePreviewCount).toList(growable: false);
-    final bool canToggleSources =
-        extension.sources.length > _sourcePreviewCount || _showAllSources;
     return MangaExtensionManagementTile(
-      groupIndex: widget.groupIndex,
-      groupCount: widget.groupCount,
       title: extension.name,
       iconUrl: extension.iconUrl,
       contentWarning: extension.contentWarning >= 3,
@@ -1460,20 +1464,17 @@ class _AvailableExtensionTileState extends State<_AvailableExtensionTile> {
           : update && installed != null
           ? widget.onUninstall
           : null,
-      secondaryStyle: !widget.showPreview && update && installed != null
-          ? ExtensionTileActionStyle.outlined
-          : ExtensionTileActionStyle.text,
-      // 安装 = filled 主操作；有更新 = tonal 强调；卸载 = outlined 次要。
+      secondaryStyle: ExtensionTileActionStyle.text,
+      // 一张卡至多一颗实心按钮：安装 / 更新 = filled（要做的事），卸载与预览
+      // 一律文字按钮（不再 outlined / tonal 混搭）。
       primaryLabel: installed == null
           ? t.mihon_extension_install
           : update
           ? t.mihon_extension_update
           : t.mihon_extension_uninstall,
-      primaryStyle: installed == null
+      primaryStyle: installed == null || update
           ? ExtensionTileActionStyle.filled
-          : update
-          ? ExtensionTileActionStyle.tonal
-          : ExtensionTileActionStyle.outlined,
+          : ExtensionTileActionStyle.text,
       onPrimary: installed == null || update
           ? widget.onInstall
           : widget.onUninstall,
@@ -1485,65 +1486,97 @@ class _AvailableExtensionTileState extends State<_AvailableExtensionTile> {
         'lib ${extension.libVersion}',
       ],
       downloadsLabel: extensionDownloadCountLabel(extension.downloadCount),
-      // 这一行的详情是可展开的「包含的源」清单。
+      // 这一行的详情是可展开的「包含的源」。
       subtitleMaxLines: 2,
-      details: extension.sources.isEmpty
-          ? null
-          : Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text(
-                    t.mihon_extension_sources_included,
-                    style: theme.textTheme.labelSmall,
-                  ),
-                  // 展开 / 收起走弹簧尺寸动画，不再一帧跳变把下面的行顶走。
-                  AnimatedSize(
-                    duration: motion.spatialDefault.duration,
-                    curve: motion.spatialDefault.curve,
-                    alignment: AlignmentDirectional.topStart,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        for (final MihonAvailableSource source in shownSources)
-                          Text(
-                            source.baseUrl.isEmpty
-                                ? '· ${source.name} (${source.language})'
-                                : '· ${source.name} (${source.language}) — '
-                                      '${source.baseUrl}',
-                            style: theme.textTheme.bodySmall,
-                          ),
-                      ],
-                    ),
-                  ),
-                  if (canToggleSources)
-                    FushiTextButton.icon(
-                      key: ValueKey<String>(
-                        'mihon-sources-toggle-${extension.packageName}',
+      details: extension.sources.isEmpty ? null : _sourcesDetails(context),
+    );
+  }
+
+  Widget _sourcesDetails(BuildContext context) {
+    final MihonAvailableExtension extension = widget.extension;
+    final ThemeData theme = Theme.of(context);
+    final FushiMotionScheme motion = context.fushiMotion;
+    final Color muted = theme.colorScheme.onSurfaceVariant;
+    final bool canToggle =
+        extension.sources.length > _sourcePreviewCount || _showAllSources;
+    final Widget body = _showAllSources
+        ? Column(
+            key: const ValueKey<String>('expanded'),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              for (final MihonAvailableSource source in extension.sources)
+                Text(
+                  source.baseUrl.isEmpty
+                      ? '· ${source.name} (${source.language})'
+                      : '· ${source.name} (${source.language}) — '
+                            '${source.baseUrl}',
+                  style: theme.textTheme.bodySmall,
+                ),
+            ],
+          )
+        : Text(
+            key: const ValueKey<String>('collapsed'),
+            extension.sources
+                .take(_sourcePreviewCount)
+                .map((MihonAvailableSource source) => source.name)
+                .join(' · '),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(color: muted),
+          );
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              FushiIcon(FushiIcons.hub, size: 14, color: muted),
+              const SizedBox(width: 4),
+              Text(
+                t.mihon_extension_sources_included,
+                style: theme.textTheme.labelSmall?.copyWith(color: muted),
+              ),
+              const SizedBox(width: 6),
+              // 收起态只露名字；展开 / 收起走弹簧尺寸动画，不一帧跳变把下面的
+              // 卡片顶走。
+              Expanded(child: _showAllSources ? const SizedBox.shrink() : body),
+            ],
+          ),
+          FushiAnimatedSize(
+            duration: motion.spatialDefault.duration,
+            curve: motion.spatialDefault.curve,
+            alignment: AlignmentDirectional.topStart,
+            child: _showAllSources
+                ? Padding(padding: const EdgeInsets.only(top: 4), child: body)
+                : const SizedBox(width: double.infinity),
+          ),
+          if (canToggle)
+            FushiTextButton.icon(
+              key: ValueKey<String>(
+                'mihon-sources-toggle-${extension.packageName}',
+              ),
+              size: FushiButtonSize.xs,
+              onPressed: () =>
+                  setState(() => _showAllSources = !_showAllSources),
+              icon: AnimatedRotation(
+                turns: _showAllSources ? 0.5 : 0,
+                duration: motion.spatialFast.duration,
+                curve: motion.spatialFast.curve,
+                child: const FushiIcon(FushiIcons.expandMore, size: 18),
+              ),
+              label: Text(
+                _showAllSources
+                    ? t.mihon_extension_sources_less
+                    : t.mihon_extension_sources_more(
+                        count: extension.sources.length,
                       ),
-                      size: FushiButtonSize.xs,
-                      onPressed: () =>
-                          setState(() => _showAllSources = !_showAllSources),
-                      icon: AnimatedRotation(
-                        turns: _showAllSources ? 0.5 : 0,
-                        duration: motion.spatialFast.duration,
-                        curve: motion.spatialFast.curve,
-                        child: const FushiIcon(FushiIcons.expandMore, size: 18),
-                      ),
-                      label: Text(
-                        _showAllSources
-                            ? t.mihon_extension_sources_less
-                            : t.mihon_extension_sources_more(
-                                count: extension.sources.length,
-                              ),
-                      ),
-                    ),
-                ],
               ),
             ),
+        ],
+      ),
     );
   }
 }
@@ -1591,21 +1624,15 @@ class _InstalledExtensionTile extends StatelessWidget {
     required this.extension,
     required this.onUninstall,
     required this.onEnabledChanged,
-    this.groupIndex,
-    this.groupCount,
+    super.key,
   });
 
-  /// 本地扩展段里的位置（见 [MangaExtensionManagementTile.groupIndex]）。
-  final int? groupIndex;
-  final int? groupCount;
   final MangaExtensionRow extension;
   final VoidCallback onUninstall;
   final ValueChanged<bool> onEnabledChanged;
 
   @override
   Widget build(BuildContext context) => MangaExtensionManagementTile(
-    groupIndex: groupIndex,
-    groupCount: groupCount,
     title: extension.name,
     metaChips: <String>[
       extension.language.toUpperCase(),
@@ -1615,7 +1642,7 @@ class _InstalledExtensionTile extends StatelessWidget {
     enabled: extension.enabled,
     onEnabledChanged: onEnabledChanged,
     primaryLabel: t.mihon_extension_uninstall,
-    primaryStyle: ExtensionTileActionStyle.outlined,
+    primaryStyle: ExtensionTileActionStyle.text,
     onPrimary: onUninstall,
   );
 }

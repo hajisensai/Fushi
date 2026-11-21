@@ -7,8 +7,11 @@ import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
+import 'package:fushi/src/utils/components/fushi_continue_blocks.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/fushi_logo_title.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -362,8 +365,54 @@ class FushiContinueEntry {
     this.colorSource,
     this.badge,
     this.semanticLabel,
+    this.blockArt,
+    this.blockCover,
+    this.blockDisc,
+    this.byline,
+    this.blockEyebrow,
     this.mark,
+    this.logo,
   });
+
+  /// 作品艺术字（刮削 logo）：剧照主卡（[FushiContinueStillCard]）里代替片名
+  /// 文字，尺寸走全站同一套 [FushiLogoTitle] 规则。只在剧照本身**不带片名**时
+  /// 给（调用方判定：无字背景 / 分集剧照）；剧照印着片名时为 null，原图的字
+  /// 就是标题，不叠第二份（设计稿 #3）。
+  final ImageProvider? logo;
+
+  /// 封面色块版式（[FushiContinueBlocks]）里的封面摆法；null = 按封面推断
+  /// （[blockArtResolved]）。横图剧照恒为 [FushiCoverBlockArt.landscape]。
+  final FushiCoverBlockArt? blockArt;
+
+  /// 封面色块里用的封面：裸图，不带框 / 材质（色块自己画卡面，[cover] 若自带
+  /// 卡盒框会叠两层）；null = [cover]。
+  final Widget? blockCover;
+
+  /// 封面色块里的唱片盘面图（音乐专辑真实的盘面扫描图，[FushiCoverBlock.disc]）：
+  /// 给了就是「封面 + 唱片」摆法；没有盘面图就别给（不造假唱片）。
+  final Widget? blockDisc;
+
+  /// 封面色块标题下的署名行（作者 / 「已看 N 集」）；null = [metaLines] 连起来。
+  final String? byline;
+
+  /// 封面色块拼贴首块（[FushiCoverBlockSize.hero]）的状态 chip（游戏「游玩中」）；
+  /// null = 区块名（「继续观看」）。「继续」横滑行是半高块，不画 chip。
+  final String? blockEyebrow;
+
+  /// 封面色块里的摆法：横图剧照铺在结束侧（不裁成竖条）；否则 [blockArt]，
+  /// 没给时按封面推断——方图 = 专辑、卡盒材质 = 游戏盒、海报材质 = 斜放海报，
+  /// 其余按书封。
+  FushiCoverBlockArt get blockArtResolved {
+    if (still) return FushiCoverBlockArt.landscape;
+    final FushiCoverBlockArt? art = blockArt;
+    if (art != null) return art;
+    if ((coverAspectRatio - 1).abs() < 0.05) return FushiCoverBlockArt.square;
+    return switch (material) {
+      ShelfCoverMaterial.gameCase => FushiCoverBlockArt.box,
+      ShelfCoverMaterial.glossyPoster => FushiCoverBlockArt.portrait,
+      _ => FushiCoverBlockArt.book,
+    };
+  }
 
   /// State mark on the cover (cover row); null = none.
   final FushiContinueMark? mark;
@@ -470,7 +519,12 @@ class FushiContinueEntry {
           colorSource: colorSource,
           badge: badge,
           semanticLabel: semanticLabel,
+          // 横图：色块里按剧照铺（[blockArtResolved] 认 [still]），封面用横槽那张；
+          // 竖图专用的裸封面 [blockCover] 不再适用。
+          byline: byline,
+          blockEyebrow: blockEyebrow,
           mark: mark,
+          logo: logo,
         );
 }
 
@@ -546,6 +600,11 @@ class _EntryAspectProbeState extends State<_EntryAspectProbe>
 ///
 /// 卡上不放按钮：点按 = 继续，长按 / 右键 = 条目菜单。主卡与每张封面都是独立
 /// 焦点站点，悬停抬升 + 光面材质（投影、扫光、倾斜、镜面高光）。
+///
+/// 重设计外壳 + 拼贴 / 规整色块布局（[FushiContinueBlocks.active]）下整段换成
+/// 封面色块横滑行（[FushiContinueBlocks]：主条目排行首，[side] 接在后面，一行
+/// 半高色块横向滑动，不分宽窄屏）——库页另一条「最近」行此时与色块重复，要按同一门控收起。上面的
+/// 主卡 / 封面行只在封面网格布局与墨水屏下用。
 class FushiContinueSpotlight extends StatelessWidget {
   const FushiContinueSpotlight({
     required this.main,
@@ -558,12 +617,25 @@ class FushiContinueSpotlight extends StatelessWidget {
     this.sideRowKey = const ValueKey<String>('fushi-continue-side-row'),
     this.staggerEntrance = true,
     this.sideBuilder,
+    this.blockLabel,
+    this.blockLeadingHero = false,
     super.key,
   });
 
+  /// 封面色块版式（[FushiContinueBlocks.active]）下的区块名（「继续观看」）：
+  /// 画成横滑行上方的分区标题；null = 不画。[blockLeadingHero] 时改作主块的
+  /// 状态 chip（主块自己就标明了是「继续」，不再另画标题）。
+  final String? blockLabel;
+
+  /// 封面色块版式下保留大封面主块（[FushiContinueBlocks.leadingHero]）：视频
+  /// 首页用；其余库页是纯一行横滑。
+  final bool blockLeadingHero;
+
   /// 自定义「其余条目」区（代替内置封面行）：宽屏并排时拿到主卡高度，窄屏挂在
   /// 主卡下面时拿到 null。视频首页用它把其余条目排成取色并列卡
-  /// （[FushiContinueCardRow]）。给了它就不看 [side]。
+  /// （[FushiContinueCardRow]）。给了它就不看 [side]——封面色块版式
+  /// （[FushiContinueBlocks.active]）除外：那里不用它、改排 [side]，所以给了它
+  /// 的调用方也应同时给 [side]。
   final Widget Function(double? height)? sideBuilder;
 
   final FushiContinueEntry main;
@@ -745,17 +817,32 @@ class FushiContinueSpotlight extends StatelessWidget {
   }
 
   Widget _stillMain(FushiContinueEntry main) {
-    final Widget card = _StillMainCard(entry: main);
+    final Widget card = FushiContinueStillCard(entry: main);
     return staggerEntrance
         ? FushiStaggeredEntrance(index: 0, child: card)
         : card;
   }
 
   @override
-  Widget build(BuildContext context) => FushiContinueOrientedEntry(
-    entry: main,
-    builder: (FushiContinueEntry m) => _layout(context, m),
-  );
+  Widget build(BuildContext context) {
+    // 重设计外壳 + 色块布局：整段换成一行封面色块横滑（主条目排行首），不再
+    // 分主卡 / 封面行；[sideBuilder] 是旧版式的并列卡，色块
+    // 版式下不用（调用方同时给 [side]）。
+    if (FushiContinueBlocks.active(context)) {
+      return FushiContinueBlocks(
+        groupKey: sideRowKey,
+        entries: <FushiContinueEntry>[main, ...side],
+        label: blockLabel,
+        showLabel: blockLabel != null && !blockLeadingHero,
+        leadingHero: blockLeadingHero,
+        staggerEntrance: staggerEntrance,
+      );
+    }
+    return FushiContinueOrientedEntry(
+      entry: main,
+      builder: (FushiContinueEntry m) => _layout(context, m),
+    );
+  }
 
   Widget _layout(BuildContext context, FushiContinueEntry main) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -850,8 +937,11 @@ class FushiContinueSpotlight extends StatelessWidget {
 }
 
 /// 剧照叠层主卡：眉标 / 片名 / 进度压在底部暗渐变上。
-class _StillMainCard extends StatelessWidget {
-  const _StillMainCard({required this.entry});
+/// 剧照叠层主卡：整张剧照按 16:9 完整铺满卡面，眉标 / 片名 / 进度压在底部暗
+/// 渐变上。视频首页色块版式的「继续观看」主卡也用它（2026-11-12 用户：「左边
+/// 大封面完整显示比例」）。
+class FushiContinueStillCard extends StatelessWidget {
+  const FushiContinueStillCard({required this.entry, super.key});
 
   final FushiContinueEntry entry;
 
@@ -872,6 +962,16 @@ class _StillMainCard extends StatelessWidget {
     final BorderRadius? radius = eink || apple
         ? null
         : FushiM3eShape.containerLargeRadius;
+    final Widget titleText = Text(
+      entry.title,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: (text.titleLarge ?? const TextStyle()).copyWith(
+        color: Colors.white,
+        fontWeight: FontWeight.w700,
+        height: 1.2,
+      ),
+    );
     return FushiHoverLift(
       enabled: entry.onOpen != null,
       scale: kFushiWideCardHoverLiftScale,
@@ -936,16 +1036,18 @@ class _StillMainCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                     ],
-                    Text(
-                      entry.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: (text.titleLarge ?? const TextStyle()).copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        height: 1.2,
-                      ),
-                    ),
+                    if (entry.logo case final ImageProvider logo when !eink)
+                      FushiLogoTitle(
+                        logo: logo,
+                        title: entry.title,
+                        maxHeight: fushiCoverBlockLogoMaxHeight(
+                          FushiCoverBlockSize.hero,
+                          compact: false,
+                        ),
+                        fallback: titleText,
+                      )
+                    else
+                      titleText,
                     if (v != null) ...<Widget>[
                       SizedBox(height: tokens.spacing.gap),
                       FushiLinearProgressIndicator(

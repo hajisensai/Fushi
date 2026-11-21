@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/models/home_tab.dart'
+    show HomeTab, homeShellTabNotifier;
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart'
     show LibrarySectionGroup;
@@ -39,6 +41,34 @@ enum GameSection {
 /// 浮窗可在主窗最小化时请求回到捕获工作台（写 [GameSection.monitor]）。
 final ValueNotifier<GameSection> gameSectionNotifier =
     ValueNotifier<GameSection>(GameSection.dashboard);
+
+/// 打开捕获工作台：切到顶层「游戏」页签的「捕获工作台」子区，并退回首页这一层
+/// 路由（从详情页等 pushed 页进来时不停在原页面上）。库页会话带、详情页 Hook 卡
+/// 与原生浮窗（`GalHookTextOverlayController.openWorkbench`）走同一对通知器。
+void openGameCaptureWorkbench(BuildContext context) {
+  homeShellTabNotifier.value = HomeTab.games;
+  gameSectionNotifier.value = GameSection.monitor;
+  Navigator.of(context).popUntil((Route<Object?> route) => route.isFirst);
+}
+
+/// 本机 Hook 会话此刻是否在跑 [exePath] / [gameId] 这个游戏：会话活动中，且活动
+/// 记账的游戏身份（库页启动时握着的 `galgames.id`）相同，或会话捕获的 exe（启动
+/// 会话的启动 exe / 附加会话的被附加 exe，
+/// [GalHookSessionController.currentCaptureExecutable]）与条目 exe 同路径（大小写
+/// / 分隔符不敏感）。
+bool galHookSessionRunsGame(
+  GalHookSessionController controller, {
+  required String gameId,
+  required String exePath,
+}) {
+  final GalHookSessionState state = controller.state;
+  if (!state.isActive) return false;
+  if (controller.activityGameKey == gameId) return true;
+  final String? exe = controller.currentCaptureExecutable;
+  if (exe == null || exe.isEmpty) return false;
+  String norm(String path) => path.replaceAll(r'\', '/').toLowerCase();
+  return norm(exe) == norm(exePath);
+}
 
 /// 捕获工作台对用户可宣称的阶段。helper/音频源已启动不等于已经能消费台词：
 /// 正文走引擎文本道的会话必须先选定文本线程，之后才可能产生与该线程台词绑定的
@@ -302,6 +332,9 @@ class GameSectionTabs extends StatelessWidget {
         ? GameSection.monitor
         : selected;
     final LibrarySectionGroup? group = gameSectionGroupOf(shown);
+    // 停在诊断时「工作台」的高亮只是视觉锚点（诊断不是页签），点它必须照常回到
+    // 捕获工作台（BUG-4706）。
+    final bool shownIsCurrent = shown == selected;
     if (secondary) {
       final List<GameSection> members = <GameSection>[
         for (final GameSection section in kGameSectionTabOrder)
@@ -319,6 +352,7 @@ class GameSectionTabs extends StatelessWidget {
             ),
         ],
         selected: shown,
+        selectedIsCurrent: shownIsCurrent,
         onChanged: select,
         focusIdPrefix: focusIdPrefix,
         secondary: true,
@@ -361,8 +395,10 @@ class GameSectionTabs extends StatelessWidget {
     if (tabs.length < 2) return const SizedBox.shrink();
     return LibrarySectionTabs<GameSection>(
       tabs: tabs,
-      // 停在导入页时高亮「我的游戏」组：导入管理的就是本地库。
+      // 停在导入页时高亮「我的游戏」组：导入管理的就是本地库。此时与停在诊断时
+      // 一样，高亮只是视觉锚点、不是当前视图，点它照常切回（BUG-4706）。
       selected: group == null ? tabs.first.value : shown,
+      selectedIsCurrent: group != null && shownIsCurrent,
       onChanged: select,
       focusIdPrefix: focusIdPrefix,
       floating: floating,

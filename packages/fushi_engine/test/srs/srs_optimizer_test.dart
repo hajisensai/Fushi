@@ -142,7 +142,6 @@ void main() {
         int t = DateTime.utc(2026, 1, 1, 12).millisecondsSinceEpoch;
         final SrsStorage srsStorage = await openTestSrsStorage();
         final SrsDbStore store = await SrsDbStore.open(
-          db: srsStorage.db,
           core: srsStorage.core,
           profileUid: kProfile,
           deviceId: 'dev',

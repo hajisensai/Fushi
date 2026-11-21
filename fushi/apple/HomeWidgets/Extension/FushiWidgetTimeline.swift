@@ -217,8 +217,10 @@ enum FushiPlatformImage {
 extension View {
   /// 统一底色；`.buttonStyle(.plain)` 让 `Link` 里的文字保持自己的正文 / 次要色（默认样式会把
   /// 整块染成链接强调色）。需要强调样式的按钮（接着听）自己设 `.borderedProminent`，内层优先。
+  /// 底色用系统背景 `.background`，与日历 / 提醒事项等原生小组件同一块面（BUG-4932）；
+  /// `.fill.*` 是给控件用的半透明填充（Xcode 模板默认值），深色模式下叠出一块偏灰的底。
   func fushiWidgetBackground() -> some View {
-    buttonStyle(.plain).containerBackground(.fill.tertiary, for: .widget)
+    buttonStyle(.plain).containerBackground(.background, for: .widget)
   }
 }
 

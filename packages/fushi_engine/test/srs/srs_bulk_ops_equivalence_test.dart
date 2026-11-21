@@ -5,7 +5,6 @@
 // 身份记录、修改记录（ID / dot / ctx / HLC / 值）、复习日志、发件箱与服务器时刻、本机状态
 // （写入者序号、因果上下文、时钟、修订号）、笔记 / 卡片缓存。另核对缓存与「由事件整体重建」一致。
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:fushi_core/fushi_core.dart';
@@ -28,12 +27,12 @@ Future<(BulkFixture, BulkFixture)> twins({int notes = kNotes}) async => (
 );
 
 Future<void> expectSame(BulkFixture bulk, BulkFixture ref) async {
-  final Map<String, List<String>> got = await dumpSrsState(bulk.db);
-  expectSameState(got, await dumpSrsState(ref.db));
+  final Map<String, List<String>> got = await dumpSrsState(bulk.store);
+  expectSameState(got, await dumpSrsState(ref.store));
   // 缓存是事件的纯函数：增量刷新的结果与整体重建相同。重建只生成「应有」的卡，增量刷新把
   // 不再应有的旧卡（换类型前的卡）留成隐藏行——两者等价，只比可见的卡。
   await bulk.store.rebuildCaches();
-  final Map<String, List<String>> rebuilt = await dumpSrsState(bulk.db);
+  final Map<String, List<String>> rebuilt = await dumpSrsState(bulk.store);
   List<String> visible(List<String> rows) => <String>[
     for (final String r in rows)
       if (r.split('|')[8] == '0') r,
@@ -54,6 +53,12 @@ Future<void> expectSame(BulkFixture bulk, BulkFixture ref) async {
 Future<List<String>> allCards(SrsDbStore s) async => <String>[
   for (final SrsCardCacheRow c in await s.allCardRows()) c.id,
 ];
+
+/// [decks] 里的卡，按规范 ID 序：新代的批量删牌组按规范 ID 排、游标记 ID（native/fushi_fsrs/src/store/gen4/cmd/
+/// writes_intent.rs `deck_delete`；协议 3 是缓存表的 rowid 序），逐张参照必须同序，修改记录的序号才逐条相同。
+/// ID 是规范小写 UUID：文本序 = 内核里 16 字节的字节序。
+Future<List<String>> cardsInDecksById(SrsDbStore s, List<String> decks) async =>
+    (await s.cardIdsInDecks(decks.toSet()))..sort();
 
 Future<List<String>> allNotes(SrsDbStore s) async => <String>[
   for (final SrsNoteCacheRow n in await s.listNotes(limit: 100000)) n.id,
@@ -76,16 +81,9 @@ void main() {
     final SrsDeckTree tree = await r.deckTree();
     final List<String> sub = tree.subtree(lang);
     final String target = tree.parentOf(lang) ?? r.defaultDeckId;
-    final List<SrsCardCacheRow> cards = await (r.db.select(
-      r.db.srsCardsCache,
-    )..where((c) => c.deckId.isIn(sub))).get();
-    for (final SrsCardCacheRow c in cards) {
-      await r.editField(
-        SrsEntityKind.card,
-        c.id,
-        SrsFieldKeys.cardDeck,
-        target,
-      );
+    final List<String> cards = await cardsInDecksById(r, sub);
+    for (final String c in cards) {
+      await r.editField(SrsEntityKind.card, c, SrsFieldKeys.cardDeck, target);
     }
     final (int nowMs, _) = r.now();
     for (final String id in sub) {
@@ -109,12 +107,10 @@ void main() {
     final String lang = await deckId(r, 'Lang');
     final SrsDeckTree tree = await r.deckTree();
     final List<String> sub = tree.subtree(lang);
-    for (final SrsCardCacheRow c in await (r.db.select(
-      r.db.srsCardsCache,
-    )..where((c) => c.deckId.isIn(sub))).get()) {
+    for (final String c in await cardsInDecksById(r, sub)) {
       await r.editField(
         SrsEntityKind.card,
-        c.id,
+        c,
         SrsFieldKeys.cardDeck,
         r.defaultDeckId,
       );
@@ -226,21 +222,11 @@ void main() {
     final SrsDeckTree tree = await r.deckTree();
     final SrsDayContext day = await r.dayContext();
     final int today = day.dayIndexOf(r.now().$1);
-    final Map<String, Object?> local =
-        (jsonDecode(
-                  (await r.db
-                          .customSelect('SELECT json FROM srs_local_state')
-                          .getSingle())
-                      .read<String>('json'),
-                )
-                as Map)
-            .cast<String, Object?>();
+    // 新代内核收本机来源的日志时按自己的时钟重打 HLC（旧版写入者时钟与本机状态行里的 `hlc` / `writerId` 不迁移，
+    // 设计 §2.4），这里给的 HLC 只是占位，两边落库的 HLC 都由内核按同一只时钟定。
     final SrsLogContext ctx = SrsLogContext(
       profileUid: r.profileUid,
-      nextHlc: legacyTicker(
-        local['writerId']! as String,
-        last: Hlc.decode(local['hlc']! as String),
-      ),
+      nextHlc: legacyTicker(r.sync2Device!),
       now: r.now,
       day: day,
     );
@@ -278,13 +264,10 @@ void main() {
     );
     // 立即重排：子树里的复习卡按 ID 序（内核的写出顺序）。
     final List<String> review = <String>[
-      for (final SrsCardCacheRow c
-          in await (r.db.select(r.db.srsCardsCache)..where(
-                (c) =>
-                    c.deckId.isIn(tree.subtree(lang)) &
-                    c.queue.equals(SrsQueue.review.wire),
-              ))
-              .get())
+      for (final SrsCardCacheRow c in await r.cardRowsWhere(<String, Object?>{
+        'decks': tree.subtree(lang),
+        'queue': SrsQueue.review.wire,
+      }))
         c.id,
     ]..sort();
     await appendLocalLogs(<SrsReviewLog>[
@@ -452,45 +435,48 @@ void main() {
   });
 
   group('同步', () {
-    /// 一组含批内重复、批内互相支配、同 ID 异内容的对端事件。
-    Future<List<SrsEvent>> trickyRemote() async {
+    // 协议 3 这里比「一批外来已盖戳事件成批应用 = 逐条应用」（批内重复、批内互相支配）。新代 `apply` 按设计拒绝外来
+    // 已盖戳的事件（对端数据只经集合并入 / 收段进来），同一个性质换到集合并入上：一次并入对端最终的集合，与分几次并入
+    // 它途中的样子（含重复并入同一份、后来的改名支配先前的）结果相同。
+    test('并入对端集合一次 = 分几次并入它的增量（含重复并入 / 支配）', () async {
       final BulkFixture src = await BulkFixture.open(
         notes: 12,
         deviceId: 'peer',
       );
-      final List<SrsEvent> base = await src.store.exportAll();
-      final LegacyEditWriter w = LegacyEditWriter('peer2#1');
-      final Hlc Function(int nowMs) tick = legacyTicker('peer2#1');
-      final String deck = await deckId(src.store, 'Lang');
-      SrsFieldEdit edit(String key, Object? value) => w.create(
-        profileUid: kBulkUid,
-        entityKind: SrsEntityKind.deck,
-        entityId: deck,
-        fieldKey: key,
-        value: value,
-        hlc: tick(kBulkNowMs),
-        timeSource: SrsTimeSource.wall,
-      );
-      final SrsFieldEdit a = edit(SrsFieldKeys.name, 'A');
-      final SrsFieldEdit b = edit(SrsFieldKeys.name, 'B'); // 支配 a
-      return <SrsEvent>[
-        ...base,
-        SrsEditEvent(b),
-        SrsEditEvent(a), // 被批内更早的 b 支配
-        SrsEditEvent(b), // 批内重复
-        base.first, // 重复的身份记录
-      ];
-    }
-
-    test('应用一批对端事件 = 逐条应用（含批内重复 / 支配）', () async {
-      final List<SrsEvent> events = await trickyRemote();
       final BulkFixture ref = await BulkFixture.open(notes: 0, deviceId: 'me');
       final BulkFixture bulk = await BulkFixture.open(notes: 0, deviceId: 'me');
-      for (final SrsEvent e in events) {
-        await ref.store.applyRemote(<SrsEvent>[e], serverTimeMs: 7);
-      }
-      await bulk.store.applyRemote(events, serverTimeMs: 7);
-      await expectSame(bulk, ref);
+      final String deck = await deckId(src.store, 'Lang');
+      await joinCollectionFrom(ref.store, src.store);
+      await src.store.editField(
+        SrsEntityKind.deck,
+        deck,
+        SrsFieldKeys.name,
+        'A',
+      );
+      await joinCollectionFrom(ref.store, src.store);
+      await src.store.editField(
+        SrsEntityKind.deck,
+        deck,
+        SrsFieldKeys.name,
+        'B', // 支配先前的 A
+      );
+      await joinCollectionFrom(ref.store, src.store);
+      await joinCollectionFrom(ref.store, src.store); // 重复并入同一份
+      await joinCollectionFrom(bulk.store, src.store);
+      expect(
+        (await bulk.store.deckTree()).decks.any(
+          (SrsDeckView d) => d.id == deck && d.name == 'B',
+        ),
+        isTrue,
+      );
+      // 每次 `.fushisrs` 导入先打一个还原点（`srsImportFushiSrs` → `sync2Checkpoint`，本机日志里一条操作）：ref 多导了
+      // 三次，本机日志长度（`ops` 那一行）按命令数本来就不同，其余逐维相同。
+      final Map<String, List<String>> got = await dumpSrsState(bulk.store)
+        ..remove('ops');
+      final Map<String, List<String>> want = await dumpSrsState(ref.store)
+        ..remove('ops');
+      expect(want['serverTimes'], isNotNull);
+      expectSameState(got, want);
     });
   });
 

@@ -34,6 +34,7 @@ import 'package:fushi_engine/srs/srs_note_batch_edit.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/focus/focus_activation.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_card_tile.dart';
@@ -50,6 +51,8 @@ import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -68,6 +71,7 @@ import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 /// 「更改笔记类型」的入口（由别的模块提供）：传入要改的笔记 ID。
 typedef SrsChangeNoteTypeFlow =
@@ -938,11 +942,13 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       .where((SrsNoteTypeView n) => n.name == row.noteTypeName)
       .firstOrNull;
 
-  /// 表格里一格对应的字段（正面 = 排序字段即第一个字段，字段摘要列 = 摘要来自的那个字段）；不是字段列 null。
+  /// 表格里一格对应的字段（正面 = 笔记类型的排序字段，字段摘要列 = 摘要来自的那个字段）；不是字段列 null。
   SrsFieldDef? _cellField(SrsBrowseRow row, SrsBrowseTableColumn column) {
     final SrsNoteTypeView? type = _typeOf(row);
     if (type == null || type.fields.isEmpty) return null;
-    if (column == SrsBrowseTableColumn.front) return type.fields.first;
+    if (column == SrsBrowseTableColumn.front) {
+      return type.fieldById(type.effectiveSortFieldId ?? '');
+    }
     final String? name = srsBrowsePreviewFieldName(row, column);
     if (name == null) return null;
     return type.fields.where((SrsFieldDef f) => f.name == name).firstOrNull;
@@ -965,7 +971,10 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       return note?.field(field.id);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsBrowse.loadCell', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
       return null;
     }
   }
@@ -986,7 +995,10 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       await _saveField(row.noteId, field.name, value);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsBrowse.cellEdit', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     }
   }
 
@@ -1359,7 +1371,10 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       opened = await readSrsStore(ref);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsBrowse.batch.openStore', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
       return;
     }
     if (opened == null || !mounted) return;
@@ -1582,7 +1597,10 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       await _refresh();
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsBrowse.batch.${action.name}', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1600,7 +1618,10 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       return await plan();
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsBrowse.plan.${action.name}', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
       return null;
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1668,6 +1689,11 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       return KeyEventResult.ignored;
     }
     final LogicalKeyboardKey key = event.logicalKey;
+    // 焦点在检查器页签 / 工具栏按钮这类可激活子控件上：确认键归它（应用级 Enter → 激活），
+    // 不当「翻面 / 打开详情」吞掉。
+    if (focusedDescendantClaimsActivation(node, key)) {
+      return KeyEventResult.ignored;
+    }
     final HardwareKeyboard kb = HardwareKeyboard.instance;
     final bool ctrl = kb.isControlPressed || kb.isMetaPressed;
     if (ctrl && key == LogicalKeyboardKey.keyF) {
@@ -1820,6 +1846,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    final bool masthead = shellRedesignActive(context);
     final bool wide =
         MediaQuery.sizeOf(context).width >= kSrsBrowseSplitMinWidth;
     final Widget controls = _buildControls(context, wide: wide);
@@ -1833,11 +1860,23 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       child: FushiPageScaffold(
         title: title,
         subtitle: apple ? _countText : null,
+        // 页头大字形态（重设计外壳）：视图切换与其余动作一起平铺成裸图标，放不下
+        // 从尾部收进「⋯」；搜索积木栏等控件留在正文顶部（同 MD3 浮动顶栏形态）。
+        masthead: true,
+        leading: masthead && _selecting
+            ? FushiIconButton(
+                key: const ValueKey<String>('srs_browse_clear_selection'),
+                icon: FushiIcons.close,
+                tooltip: t.srs_browse_select_none,
+                onTap: _clearSelection,
+              )
+            : null,
         header: apple ? null : _buildTopBar(context, wide: wide),
-        actions: apple
+        actions: apple || masthead
             ? <Widget>[
                 for (final FushiToolbarItem item in <FushiToolbarItem>[
                   ..._toolbarItems(),
+                  if (masthead) ..._layoutItems(wide),
                   ..._overflowItems(),
                 ])
                   FushiIconButton(
@@ -1850,7 +1889,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
                   ),
               ]
             : const <Widget>[],
-        headerBottom: apple
+        headerBottom: apple && !masthead
             ? Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1865,7 +1904,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
           builder: (BuildContext context) {
             final Widget main = _buildMain(
               context,
-              apple ? null : controls,
+              apple && !masthead ? null : controls,
               wide: wide,
             );
             if (!wide) return main;

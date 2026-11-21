@@ -201,5 +201,10 @@ void main() {
         .toList();
     expect(allIds, contains('reader-shelf-collection-$cid'));
     expect(allIds, contains('collection-detail-reader-shelf-book-$mediaId'));
+    // 重设计外壳的成员色块按封面取色（FushiCoverBlock → 进程级
+    // coverColorSchemeCache → extractImageProviderSeedArgb 给图片加载挂 10 秒超时）。
+    // 测试封面在 fakeAsync 里加载不完；这条取色请求属于进程级缓存、按设计不随页面
+    // 销毁，走完 10 秒（超时落 null），免得定时器挂到 widget 树销毁之后。
+    await tester.pump(const Duration(seconds: 11));
   });
 }

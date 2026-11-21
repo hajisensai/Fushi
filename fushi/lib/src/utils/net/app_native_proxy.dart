@@ -14,9 +14,22 @@ import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
     show mapEdlSources;
 import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:fushi/src/utils/net/hls_relay_normalizer.dart';
+import 'package:fushi/src/utils/net/loopback_relay_slot.dart';
 
-Future<AppNativeProxy>? _sharedProxy;
-Future<AppNativeProxy>? _challengeProxy;
+final LoopbackRelaySlot<AppNativeProxy> _sharedProxy =
+    LoopbackRelaySlot<AppNativeProxy>(
+      start: () => AppNativeProxy.start(),
+      log: _logRelaySlot,
+    );
+final LoopbackRelaySlot<AppNativeProxy> _challengeProxy =
+    LoopbackRelaySlot<AppNativeProxy>(
+      start: () => AppNativeProxy.start(publicTargetsOnly: true),
+      log: _logRelaySlot,
+    );
+
+void _logRelaySlot(String message) => appNativeProxyLogSink(
+  redactAppNativeProxySecrets('native proxy: $message'),
+);
 final Set<String> _nativeProxySecrets = <String>{};
 
 /// The whole reply to a successful CONNECT: status line and blank line only.
@@ -148,54 +161,21 @@ void Function(String message) appNativeProxyLogSink = debugPrint;
 /// forward proxy keeps redirects, HLS segments and later requests on that same
 /// policy. The random local credential is unrelated to upstream credentials.
 /// Keep this endpoint private: it authorizes access to the local relay.
-Future<AppNativeProxy> ensureAppNativeProxy() =>
-    _liveProxy(_sharedProxy, (Future<AppNativeProxy> started) {
-      _sharedProxy = started;
-    }, publicTargetsOnly: false);
+Future<AppNativeProxy> ensureAppNativeProxy() => _sharedProxy.acquire();
 
 Future<Uri> ensureAppNativeProxyEndpoint() async =>
     (await ensureAppNativeProxy()).endpoint;
 
 /// Challenge JavaScript must not reach local origin servers, including through
 /// service workers or WebSockets that skip WebView navigation callbacks.
-Future<AppNativeProxy> ensureAppChallengeProxy() =>
-    _liveProxy(_challengeProxy, (Future<AppNativeProxy> started) {
-      _challengeProxy = started;
-    }, publicTargetsOnly: true);
+Future<AppNativeProxy> ensureAppChallengeProxy() => _challengeProxy.acquire();
 
 Future<Uri> ensureAppChallengeProxyEndpoint() async =>
     (await ensureAppChallengeProxy()).endpoint;
 
-/// 缓存的中继**必须先验活再交出去**。
-///
-/// 这两个入口以前是 `??=`：一旦 Future 落定就是终身答案。两种情况因此变成
-/// 「一次坏、永久坏，只能重启 app」——① 监听 socket 被系统回收（iOS 把 app
-/// 挂起后就可能收走监听 socket，恢复后端口还在缓存里，native 客户端每次都撞
-/// connection refused）；② 首次 `bind` 失败，那个**已失败**的 Future 被永久
-/// 缓存，后面每次调用都重抛同一个旧异常，连重试的机会都没有（BUG-2381）。
-///
-/// 新 Future 在 await 之前就写回缓存，并发调用因此仍然只启一个中继。
-Future<AppNativeProxy> _liveProxy(
-  Future<AppNativeProxy>? cached,
-  void Function(Future<AppNativeProxy> started) store, {
-  required bool publicTargetsOnly,
-}) async {
-  if (cached != null) {
-    try {
-      final AppNativeProxy proxy = await cached;
-      if (proxy.isRunning) return proxy;
-    } on Object catch (error) {
-      appNativeProxyLogSink(
-        redactAppNativeProxySecrets('native proxy: restarting after $error'),
-      );
-    }
-  }
-  final Future<AppNativeProxy> started = AppNativeProxy.start(
-    publicTargetsOnly: publicTargetsOnly,
-  );
-  store(started);
-  return started;
-}
+// 缓存的中继先验活再交出去，见 [LoopbackRelaySlot]：BUG-2381 修了「失败的 Future
+// 缓存成终身答案」；`isRunning` 判不出 iOS 回收监听 socket，改为真连探测（BUG 见
+// 该文件头注释，反馈 TUA4_h7d6a）。
 
 /// 中继替 native 取上游时最近一次失败的原因，按 `host:port` 记，最多
 /// [_kRecentUpstreamFailureLimit] 个原点（最旧的先丢）；同一原点后来取成功就清掉。
@@ -268,7 +248,7 @@ Map<String, String> appNativeProxyEnvironment(Uri endpoint) => <String, String>{
   'no_proxy': '',
 };
 
-class AppNativeProxy {
+class AppNativeProxy implements LoopbackRelay {
   AppNativeProxy._(this._server, this._secret, this._publicTargetsOnly);
 
   final HttpServer _server;
@@ -290,8 +270,12 @@ class AppNativeProxy {
   final Map<String, HttpClient> _originClients = <String, HttpClient>{};
   bool _closed = false;
 
-  /// 监听 socket 还活着。为 false 时 [ensureAppNativeProxy] 会另起一个。
+  /// 没被关闭过。不代表监听 socket 还在 accept（见 [LoopbackRelay.isRunning]）。
+  @override
   bool get isRunning => !_closed;
+
+  @override
+  int get port => _server.port;
 
   Uri get endpoint => Uri(
     scheme: 'http',
@@ -331,6 +315,7 @@ class AppNativeProxy {
     return proxy;
   }
 
+  @override
   Future<void> close() async {
     _closed = true;
     for (final Socket socket in _sockets.toList()) {

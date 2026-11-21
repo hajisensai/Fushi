@@ -14,12 +14,17 @@ import 'dart:async';
 import 'dart:io';
 
 import 'dist_plan.dart';
+import 'heavy_history.dart' show kHeavyCallerGoneExit;
 import 'heavy_lease.dart';
 import 'heavy_offload.dart';
+import 'pid_alive.dart';
 
 /// How long a queued run waits between two attempts on the other machines.
 /// An attempt that finds every one busy costs a working-tree snapshot and an
-/// ssh `lock` per worker slot, so not much more often than this.
+/// ssh `lock` per worker slot, so not much more often than this. Since
+/// 2026-11-15 an attempt made while the run queues here stays in the
+/// workers' own queues for [kHeavyOffloadQueuedBusyRetries] rounds
+/// (heavy_offload.dart), so this is only the gap between two such waits.
 const Duration kHeavyOffloadAskEvery = Duration(minutes: 1);
 
 /// One run's claim: the side that creates [path] first runs it.
@@ -60,10 +65,41 @@ class HeavyOffloadClaim {
   }
 }
 
+/// Deletes the claim files of processes that no longer run: a heavy.dart
+/// that was killed never reached its own delete. Claims are named
+/// `<pid>-<n>.claim`; a live process's are left alone, so this is safe next
+/// to any number of runs asking at the same time. Returns how many went.
+///
+/// 2026-11-20: the directory held 362 files, none of them in use.
+int sweepDeadOffloadClaims(
+  Directory claims, {
+  bool Function(int pid) alive = pidAlive,
+}) {
+  if (!claims.existsSync()) return 0;
+  int swept = 0;
+  final Map<int, bool> known = <int, bool>{};
+  for (final FileSystemEntity e in claims.listSync(followLinks: false)) {
+    if (e is! File) continue;
+    final String name = e.uri.pathSegments.last;
+    final RegExpMatch? m = RegExp(r'^(\d+)-[^/\\]*\.claim$').firstMatch(name);
+    if (m == null) continue;
+    final int owner = int.parse(m.group(1)!);
+    if (owner == pid || (known[owner] ??= alive(owner))) continue;
+    try {
+      e.deleteSync();
+      swept++;
+    } on FileSystemException {
+      // Another run swept it first.
+    }
+  }
+  return swept;
+}
+
 /// What heavy.dart does after a dist_test attempt ended with [code].
 enum HeavyOffloadNext {
   /// That is the run's result: exit with it (green / red tests, analyze,
-  /// a green compile check, 124 / 130).
+  /// a green compile check, 124 / 130, and [kHeavyCallerGoneExit]: nobody
+  /// is left to run it for).
   done,
 
   /// Nobody took it but only because the other machines were busy
@@ -77,7 +113,9 @@ enum HeavyOffloadNext {
 }
 
 HeavyOffloadNext heavyOffloadNext(int code, HeavyOffloadKind kind) {
-  if (code == 124 || code == 130) return HeavyOffloadNext.done;
+  if (code == 124 || code == 130 || code == kHeavyCallerGoneExit) {
+    return HeavyOffloadNext.done;
+  }
   if (code == kDistOffloadBusy) return HeavyOffloadNext.askAgain;
   if (code == kDistOffloadDeclined) return HeavyOffloadNext.runHere;
   if (kind == HeavyOffloadKind.build && code != 0) {
@@ -134,6 +172,7 @@ class HeavyOffloadRival implements HeavyLeaseRival {
     _timer = null;
     if (_stopped || _here || _running != null) return;
     claims.createSync(recursive: true);
+    if (_asks == 0) sweepDeadOffloadClaims(claims);
     final HeavyOffloadClaim claim = HeavyOffloadClaim(
       '${claims.path}/$pid-${_seq++}.claim',
     )..delete(); // a dead process's leftover under a reused pid
@@ -150,7 +189,7 @@ class HeavyOffloadRival implements HeavyLeaseRival {
   void _ended(HeavyOffloadClaim claim, int code) {
     _running = null;
     // Taken there: the caller follows that attempt ([taken]); nothing more
-    // to ask.
+    // to ask. The file goes in [close], once nobody reads it any more.
     if (claim.takenByOther) return;
     if (!claim.mine) claim.delete();
     if (code == kDistOffloadBusy) {
@@ -185,13 +224,16 @@ class HeavyOffloadRival implements HeavyLeaseRival {
   /// No further attempts; completes when the one in flight (if any) ended.
   /// One that lost the claim to this machine backs out by itself
   /// (dist_test releases the remote checkout it locked).
+  ///
+  /// The claim file goes whoever took it: with the attempt ended, neither
+  /// side reads it again. (Until 2026-11-20 one taken there stayed for
+  /// good: 265 of the 358 files found then were those.)
   Future<void> close() async {
     _stopped = true;
     _timer?.cancel();
     _timer = null;
     await _running;
-    final HeavyOffloadClaim? c = _claim;
-    if (c != null && c.mine) c.delete();
+    _claim?.delete();
   }
 }
 
@@ -210,8 +252,9 @@ class DistOffloadTally {
   bool _lost = false;
 
   /// The caller's machine admitted the run first: asking any worker again
-  /// is pointless.
-  bool get lost => _lost;
+  /// is pointless. Seen at a worker's lock, or in the claim file itself
+  /// while a worker still waits in its queue for one.
+  bool get lost => _lost || (claim?.takenByOther ?? false);
 
   /// [worker] holds its remote checkout: false when the caller's machine
   /// admitted the run first (the worker must back out before pushing).

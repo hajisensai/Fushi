@@ -155,6 +155,7 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
             ],
           );
           return FushiPageScaffold(
+            masthead: true,
             title: t.stat_center_title,
             headerTitle: tabBar,
             body: body,
@@ -264,7 +265,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
         db,
         activityLimit: 0,
         includeCounters: true,
-        reviewsFrom: srs?.db,
+        reviewsFrom: srs?.core,
       );
       _daily = facts.daily;
       _byDay = sumStatDaysByKey(_daily);

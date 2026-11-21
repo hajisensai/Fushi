@@ -21,12 +21,15 @@ import 'package:fushi_asr_core/asr_core.dart' as asr show AsrAudioProfile;
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
+import 'package:fushi_engine/sync/interconnect_file_box_prune.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/interconnect_owner_devices.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart';
 import 'package:fushi_engine/srs/sync2/srs_host_directory.dart'
     show srsHostUploadedSegmentDevice;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_local_files.dart'
+    show videoBookDiscTitlePath, videoBookEpisodePath;
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show VideoSubtitleBackfillReport;
@@ -70,6 +73,7 @@ import 'package:fushi_server/src/dictionary_host.dart';
 import 'package:fushi_server/src/download_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
 import 'package:fushi_server/src/lan_advertiser.dart';
+import 'package:fushi_server/src/peer_torrent_engine.dart';
 import 'package:fushi_server/src/leaderboard_link_host.dart';
 import 'package:fushi_server/src/profile_hub.dart';
 import 'package:fushi_server/src/remote_mining_host.dart';
@@ -78,6 +82,8 @@ import 'package:fushi_server/src/server_ankiconnect.dart';
 import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
 import 'package:fushi_server/src/server_srs.dart';
+import 'package:fushi_srs/fushi_srs.dart'
+    show SrsGen4MigrationBackend, SrsNativeGen4MigrationBackend;
 import 'package:fushi_server/src/server_subtitle_backfill.dart';
 import 'package:fushi_server/src/server_subtitle_providers.dart';
 import 'package:fushi_server/src/video_scrape_host.dart';
@@ -157,8 +163,10 @@ class HeadlessHost {
     selfUpdaterFactory,
     VideoSubtitleRegistry Function()? subtitleRegistryFactory,
     HttpClient Function()? srsRwkvHttpClient,
+    SrsGen4MigrationBackend? srsMigration,
   }) : _config = config,
        _srsRwkvHttpClient = srsRwkvHttpClient,
+       _srsMigration = srsMigration,
        _injectedDictionaryHost = dictionaryHost,
        _selfUpdaterFactory =
            selfUpdaterFactory ?? ServerSelfUpdater.forRunningBundle,
@@ -196,6 +204,9 @@ class HeadlessHost {
 
   /// 复习库下载 RWKV 权重用的 HTTP 客户端（测试注入不碰网络的；null = 全局代理设置下的缺省客户端）。
   final HttpClient Function()? _srsRwkvHttpClient;
+
+  /// 复习库换代迁移的执行端（测试接缝：让整机备份等 admin 端点在「迁移进行中」下走真 [HeadlessHost]；null = 原生库）。
+  final SrsGen4MigrationBackend? _srsMigration;
   final ServerPaths paths;
   final FushiDatabase db;
   final ServerPrefs prefs;
@@ -274,6 +285,11 @@ class HeadlessHost {
 
   String? get hostFingerprint => _hostFingerprint;
 
+  /// 已落盘的证书是 BUG-4985 之前的旧格式（Chrome 拒收，WebUI 打不开）；
+  /// `fushi_server admin reset-tls` 重签。
+  bool get tlsCertificateChromeRejected => _tlsCertificateChromeRejected;
+  bool _tlsCertificateChromeRejected = false;
+
   /// 互联端口用的 TLS 上下文；admin 端口复用同一份自签证书。
   SecurityContext? get securityContext => _securityContext;
   bool get isRunning => _server != null;
@@ -339,6 +355,14 @@ class HeadlessHost {
   Future<void> start() async {
     if (_server != null) return;
     await paths.ensureLayout();
+    // 本地音频库补内容身份 + 收掉内容相同的重复登记（拍板 pr3481）。要在开始
+    // 接推送之前跑完：它读改写同一个登记偏好，与并发的导入交错会丢条目。只有
+    // 升级后第一次启动要扫库，身份写回登记后再启动就是纯读偏好。
+    try {
+      await localAudio.normalizeContentIdentities();
+    } catch (e, stack) {
+      engineLog.log('HeadlessHost.localAudioIdentity', e, stack);
+    }
     // 远程更新的启动收尾（还原中断的换包、删旧文件）不在这里：它必须先于开库，
     // 在 withServerRuntime 里做（server_update_recovery.dart）。
 
@@ -351,13 +375,18 @@ class HeadlessHost {
         ..useCertificateChainBytes(utf8.encode(tlsIdentity.certificatePem))
         ..usePrivateKeyBytes(utf8.encode(tlsIdentity.privateKeyPem));
       _hostFingerprint = tlsIdentity.fingerprintSha256;
+      _tlsCertificateChromeRejected =
+          FushiTlsIdentityStore.isChromeRejectedLegacyCertificate(
+            tlsIdentity.certificatePem,
+          );
     }
     _securityContext = securityContext;
 
     final MangaOcrServiceImpl ocrService = MangaOcrServiceImpl();
     _ocrService = ocrService;
+    // 用户导入的自定义槽是 app 独有（导入入口只在 app 设置页），服务端不列。
     _ocrModelServices = <String, MangaOcrServiceImpl>{
-      for (final MangaOcrLocalModel model in MangaOcrLocalModel.values)
+      for (final MangaOcrLocalModel model in MangaOcrLocalModel.builtInValues)
         if (MangaOcrLocalModel.forPlatform(model.key) == model)
           // 默认模型复用 [ocrService] 这一个实例（它就是按默认模型建的）。
           model.key: model == kDefaultMangaOcrLocalModel
@@ -401,6 +430,7 @@ class HeadlessHost {
           pipelineJobsRoot: videoSubtitleJobsRootUnder(paths.support),
           database: () => db,
           resolveVideoPath: _resolveVideoPath,
+          resolveDiscTitlePath: _resolveDiscTitlePath,
           aiSettings: () => ServerAiSettings(() => config.ai),
           mossStatus: (MossBackendPreference backend) =>
               mossProvisionStatus(backend: backend),
@@ -431,6 +461,8 @@ class HeadlessHost {
       // 字幕语言现读配置（WebUI 改完经 applyConfig 进来，下一个任务的字幕阶段生效）。
       subtitleLanguage: () => config.subtitleLanguage,
       subtitleRegistryFactory: _subtitleRegistryFactory,
+      // 远程任务的落盘白名单现读配置：`ctl settings set` 改完下一条命令即生效。
+      peerTorrentRoots: () => config.torrentPeerRoots,
     );
     await downloads.start();
     _downloads = downloads;
@@ -450,6 +482,7 @@ class HeadlessHost {
         ServerDictionaryHost(
           db: db,
           dictionaryResourceRoot: paths.dictionaryResources,
+          indexCacheDirectory: Directory(p.join(paths.temp.path, 'fushidicts')),
         );
     _dictionaries = dictionaries;
     if (!await dictionaries.start()) {
@@ -484,7 +517,9 @@ class HeadlessHost {
       config: () => config.srs,
       // 发出了新段：叫醒客户端 `/api/srs/changes` 长轮询（与 app 当 host 同）。
       onPublished: () => _server?.notifySrsChanged(),
+      deviceName: () => config.deviceName,
       rwkvHttpClient: _srsRwkvHttpClient,
+      migration: _srsMigration ?? const SrsNativeGen4MigrationBackend(),
     );
     _srs = srs;
     final ServerAnkiConnect ankiConnect = ServerAnkiConnect(
@@ -514,6 +549,8 @@ class HeadlessHost {
             ),
             hostJobs: jobs,
             downloads: downloads,
+            // 把本机 BT 引擎借给已配对设备当下载后端（桌面端「下载后端 = 互联设备」）。
+            torrentEngine: ServerPeerTorrentEngine(downloads),
             subscriptions: downloads.subscriptions,
             securityContext: securityContext,
             hostFingerprint: _hostFingerprint,
@@ -616,8 +653,12 @@ class HeadlessHost {
           ..aiRelaySettings = (() => ServerAiSettings(() => config.ai))
           // 复习库：远程复习按客户端点名的 profile 走；已配对设备写进来的复习数据叫醒对应那份同步。
           ..srsRemoteStoreProvider = (() => srs.remoteStore)
-          ..onClientWrite = srs.onClientWrite
+          ..onClientWrite = ((String path) =>
+              unawaited(srs.onClientWrite(path)))
           ..onClientUpload = _onClientUpload;
+    // BUG-4985：绑端口前清掉同步根下已无人读取的客户端文件箱书文件夹（与 app 当 host
+    // 同一个引擎函数；自身吞错留痕，不挡启动）。
+    await pruneDeadInterconnectFileBox(server.syncDataDir);
     try {
       await server.start();
     } catch (_) {
@@ -968,13 +1009,41 @@ class HeadlessHost {
         enabled: () => config.leaderboardLink,
       );
 
-  /// `asr` 任务的 `videoId` → host 库里的视频文件（分集 0）。
-  Future<String?> _resolveVideoPath(String videoId) async {
+  /// `asr` / `video_subtitle` 任务的 `videoId`（+ 播放列表集下标 [episodeIndex]）→
+  /// host 库里那一集的视频文件；按集取文件与播放端点同一判据（[videoBookEpisodePath]）。
+  Future<String?> _resolveVideoPath(
+    String videoId, {
+    int episodeIndex = 0,
+  }) async {
     final VideoBookRow? row = await VideoBookRepository(
       db,
     ).getByBookUid(videoId);
     if (row == null) return null;
-    return await hasLocalMediaFile(row.videoPath) ? row.videoPath : null;
+    final String? path = videoBookEpisodePath(
+      videoPath: row.videoPath,
+      playlistJson: row.playlistJson,
+      episodeIndex: episodeIndex,
+    );
+    if (path == null) return null;
+    return await hasLocalMediaFile(path) ? path : null;
+  }
+
+  /// host 库里那一行所在蓝光盘上的另一条 title（远端原盘会话里库中没有行的 title）；
+  /// 判据是 [videoBookDiscTitlePath]，与 app 当 host 同一份。
+  Future<String?> _resolveDiscTitlePath(
+    String videoId,
+    String discTitle,
+  ) async {
+    final VideoBookRow? row = await VideoBookRepository(
+      db,
+    ).getByBookUid(videoId);
+    if (row == null) return null;
+    final String? path = videoBookDiscTitlePath(
+      videoPath: row.videoPath,
+      discTitle: discTitle,
+    );
+    if (path == null) return null;
+    return await hasLocalMediaFile(path) ? path : null;
   }
 
   // ── 库服务 ────────────────────────────────────────────────────────────

@@ -7,6 +7,7 @@ import 'package:fushi_engine/media/video/disc/disc_format.dart'
 import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:fushi_engine/media/video/metadata/video_local_extra_classifier.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart';
 import 'package:fushi_engine/media/video/metadata/video_web_download_classifier.dart';
 import 'package:fushi_engine/media/video/scraper/collection_member_policy.dart'
     show multiMemberCollectionIdByVideoUid;
@@ -58,9 +59,14 @@ class VideoSourceScrapeWork {
 }
 
 /// [VideoSourceWorkPlanner.plan] 会不会为 [source] 产出作品单元：只有视频来源，
-/// 且不是目录分组模式（目录模式按导入目录组织，不按作品识别）。
+/// 且不是目录分组模式（目录模式按导入目录组织，不按作品识别），也不是「仅此一次」
+/// 导入的临时行（[isOneShotImportSource]：扫完即删，它的视频在行删掉后归无来源
+/// 范围刮削）。无来源范围（[sourcelessLocalVideoScrapeScope]）的目录模式按视频
+/// 自己记下的分组判（[videoBookInScrapeScope]）。
 bool videoSourcePlansScrapeWorks(SourceLibraryRow source) =>
-    source.mediaKind == 'video' && source.videoGroupingMode != 'folder';
+    source.mediaKind == 'video' &&
+    source.videoGroupingMode != 'folder' &&
+    !isOneShotImportSource(source);
 
 /// [VideoSourceWorkPlanner.plan] 会不会把 [book] 放进某个作品单元：NCOP/NCED/
 /// 预告/花絮仍是 VideoBook，但不是可独立识别的作品；纯音频（原声专辑曲目等）
@@ -72,20 +78,52 @@ bool videoBookJoinsScrapePlan(VideoBookRow book) =>
     classifyLocalVideoExtra(book.videoPath) == null &&
     !isYtDlpYoutubeDownloadPath(book.videoPath);
 
+/// [VideoSourceWorkPlanner.plan] 要读的三张整表的一次性快照。
+///
+/// 计划只按 `sourceId` 过滤、按合集归组，三张表与来源无关；一轮里要规划多个
+/// 来源的调用方（后台补刮的待确认清单）读一次、每个来源复用，而不是每个来源
+/// 各读三次整表。快照只在一轮计划内有效，不跨轮缓存。
+class VideoLibraryPlanSnapshot {
+  const VideoLibraryPlanSnapshot({
+    required this.books,
+    required this.collectionItems,
+    required this.collections,
+  });
+
+  final List<VideoBookRow> books;
+  final List<MediaCollectionItemRow> collectionItems;
+  final List<MediaCollectionRow> collections;
+
+  static Future<VideoLibraryPlanSnapshot> load(FushiDatabase database) async =>
+      VideoLibraryPlanSnapshot(
+        books: await database.allVideoBooks(),
+        collectionItems: await database.getAllCollectionItems(),
+        collections: await database.getAllMediaCollections(),
+      );
+}
+
 /// 从已入库的 `sourceId` 与合集成员关系生成按作品去重的刮削计划。
 class VideoSourceWorkPlanner {
   const VideoSourceWorkPlanner(this._database);
 
   final FushiDatabase _database;
 
-  Future<List<VideoSourceScrapeWork>> plan(SourceLibraryRow source) async {
+  /// [source] 也可以是无来源范围（[sourcelessLocalVideoScrapeScope]），此时规划
+  /// `sourceId` 为 NULL 的本机视频。
+  ///
+  /// [snapshot] 省略时自己读三张表（单来源调用方）；传入时不再读这三张表。
+  Future<List<VideoSourceScrapeWork>> plan(
+    SourceLibraryRow source, {
+    VideoLibraryPlanSnapshot? snapshot,
+  }) async {
     if (!videoSourcePlansScrapeWorks(source)) {
       return const <VideoSourceScrapeWork>[];
     }
 
-    final List<VideoBookRow> sourceBooks = (await _database.allVideoBooks())
-        .where((VideoBookRow row) => row.sourceId == source.id)
-        .toList();
+    final List<VideoBookRow> sourceBooks =
+        (snapshot?.books ?? await _database.allVideoBooks())
+            .where((VideoBookRow row) => videoBookInScrapeScope(row, source))
+            .toList();
     if (sourceBooks.isEmpty) return const <VideoSourceScrapeWork>[];
     // 蓝光盘的特典（正片集合之外、远短于正片的标题，以及没被选成标题的播放
     // 列表）：盘名就是片名，各自拿去识别只会把制作特辑认成整部电影。正片不在库时
@@ -94,11 +132,11 @@ class VideoSourceWorkPlanner {
       sourceBooks.map((VideoBookRow row) => row.videoPath),
     );
 
-    final List<MediaCollectionItemRow> allItems = await _database
-        .getAllCollectionItems();
+    final List<MediaCollectionItemRow> allItems =
+        snapshot?.collectionItems ?? await _database.getAllCollectionItems();
     final Map<int, MediaCollectionRow> collections = <int, MediaCollectionRow>{
       for (final MediaCollectionRow row
-          in await _database.getAllMediaCollections())
+          in snapshot?.collections ?? await _database.getAllMediaCollections())
         row.id: row,
     };
     // 目录合集是用户组织容器，切回作品模式后仍保留，但不能充当动画身份。
@@ -164,6 +202,25 @@ class VideoSourceWorkPlanner {
         );
         continue;
       }
+      if (!discWork &&
+          _membersAreDifferentWorks(entry.value) &&
+          !await _collectionHasIdentity(collection.id)) {
+        // 清单合集装的是几部不同的作品（「剧场版合集」「观看顺序」这类 m3u8：
+        // 成员各在自己的作品目录、集位撞车）。把整个合集当一部作品去认，只能
+        // 得到「候选都不像」的待确认；各成员各自识别才对得上（BUG-4696）。合集
+        // 本身不动，它仍是用户的播放清单。合集上已记着作品身份（用户确认 / 已
+        // 刮过）时那份身份优先，不按推断拆开绕过它。
+        for (final VideoBookRow book in entry.value) {
+          result.add(
+            VideoSourceScrapeWork(
+              source: source,
+              title: book.title,
+              members: <VideoBookRow>[book],
+            ),
+          );
+        }
+        continue;
+      }
       entry.value.sort((VideoBookRow a, VideoBookRow b) {
         if (discWork) {
           final int byIndex = (sortIndex[(entry.key, a.bookUid)] ?? 0)
@@ -190,5 +247,42 @@ class VideoSourceWorkPlanner {
       return a.stableKey.compareTo(b.stableKey);
     });
     return List<VideoSourceScrapeWork>.unmodifiable(result);
+  }
+
+  /// 合集是不是一份装着不同作品的清单（而不是一部作品的各集），只看结构证据，
+  /// 两条同时成立才算：
+  ///
+  /// - **集位冲突**：有两个成员解出同一个（季, 集）（[parseVideoPath]，季号回落
+  ///   父目录的季目录）。一部作品的集位不会重复；混装的剧场版个个都是 `S00E01`。
+  /// - **作品根目录两两不同**（[videoWorkRootDirectory]，剥掉纯季目录那层）：每个
+  ///   成员各在自己的作品目录里。有两个成员同根就不算——那种部分混装靠文件哈希
+  ///   按作品拆（`_splitByAnidbWork`），这里不猜归属。
+  ///
+  /// 不拿文件名解出的作品名文本当判据：`01.mkv`、`第01集.mp4`、`S01E01 - Pilot`、
+  /// `第01話 旅立ち` 这类「作品名只在目录上」的集文件，解出的「作品名」是集号或
+  /// 集标题，整部剧会两两不同。
+  static bool _membersAreDifferentWorks(List<VideoBookRow> members) {
+    if (members.length < 2) return false;
+    final Set<String> roots = <String>{};
+    final Set<(int, int)> slots = <(int, int)>{};
+    bool slotConflict = false;
+    for (final VideoBookRow member in members) {
+      if (!roots.add(videoWorkRootDirectory(member.videoPath))) return false;
+      final VideoNameInfo info = parseVideoPath(member.videoPath);
+      final int? episode = info.episode;
+      if (episode == null) continue;
+      if (!slots.add((info.season ?? 1, episode))) slotConflict = true;
+    }
+    return slotConflict;
+  }
+
+  /// 合集上是否已记着作品身份（用户确认过、或刮削写下的资料源 id）。
+  Future<bool> _collectionHasIdentity(int collectionId) async {
+    final VideoMetadataWorkRow? work = await _database
+        .getVideoMetadataWorkByCollection(collectionId);
+    if (work == null) return false;
+    return (await _database.getVideoMetadataProviderIdentities(
+      workId: work.id,
+    )).isNotEmpty;
   }
 }

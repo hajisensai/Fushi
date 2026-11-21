@@ -17,6 +17,15 @@
 //
 // Run through geometry_reanchor_roundtrip_behavior_test.dart.
 const assert = require('node:assert/strict');
+// The chapter text index shared by both shells asks a MutationObserver whether
+// the DOM changed since it was built. The installer resolves it as a global; this
+// model has no observer, so the stub reports "changed" on every read and the
+// index is rebuilt from the modeled walker each time.
+globalThis.MutationObserver = class {
+  observe() {}
+  disconnect() {}
+  takeRecords() { return [{}]; }
+};
 const WIDTH = 400;
 const HEIGHT = 824;
 const GAP = 22;

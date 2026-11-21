@@ -1,7 +1,6 @@
 ﻿# 构建 Windows x64 版 fushi_web_core.dll（Rust + Brave adblock-rust，无额外运行时依赖 DLL）。
 #
 # 前提：rustup target add x86_64-pc-windows-msvc（MSVC 工具链）。
-# 访问 crates.io 不稳时先设代理：$env:CARGO_HTTP_PROXY='http://127.0.0.1:34151'
 #
 # 用法：
 #   powershell -ExecutionPolicy Bypass -File native/fushi_web_core/build_windows_dll.ps1

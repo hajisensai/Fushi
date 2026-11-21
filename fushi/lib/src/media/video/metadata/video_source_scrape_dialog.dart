@@ -9,11 +9,13 @@ import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dar
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_issue_text.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_candidate_tile.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_error_text.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
@@ -62,6 +64,12 @@ typedef VideoPendingWorkIgnoreSetter =
       VideoPendingScrapeWork entry, {
       required bool ignored,
     });
+
+/// 刮削范围在界面上的名字：无来源本机视频没有来源行，显示固定文案。
+String videoScrapeScopeLabel(SourceLibraryRow source) =>
+    isSourcelessVideoScrapeScope(source)
+    ? t.video_scrape_scope_sourceless
+    : source.label;
 
 class _VideoSourceScrapeTaskPanel extends StatefulWidget {
   const _VideoSourceScrapeTaskPanel({
@@ -485,7 +493,12 @@ class _VideoSourceScrapeTaskPanelState
           : null,
       details: <Widget>[
         if (progress.sourceLabel case final String label)
-          Text(label, style: detailStyle),
+          Text(
+            progress.sourceId == kSourcelessLocalVideoScrapeScopeId
+                ? t.video_scrape_scope_sourceless
+                : label,
+            style: detailStyle,
+          ),
         if (progress.currentWorkTitle case final String title)
           Text(
             t.scrape_all_item(title: title),
@@ -591,7 +604,7 @@ class _VideoSourceScrapeTaskPanelState
               ),
               title: Text(entry.work.title),
               subtitle: Text(
-                '${entry.source.label}\n$reason',
+                '${videoScrapeScopeLabel(entry.source)}\n$reason',
                 key: ValueKey<String>(
                   'video-source-pending-reason-${entry.work.stableKey}',
                 ),
@@ -687,7 +700,7 @@ class _VideoSourceScrapeTaskPanelState
           iconSize: 20,
         ),
         title: Text(entry.work.title),
-        subtitle: Text(entry.source.label),
+        subtitle: Text(videoScrapeScopeLabel(entry.source)),
         trailing: FushiIconButtonControl(
           key: ValueKey<String>('video-source-ignored-restore-$key'),
           tooltip: t.video_source_scrape_pending_ignored_restore,
@@ -726,8 +739,9 @@ class _VideoSourceScrapeTaskPanelState
     VideoSourceScrapeManualRequest request,
   ) => switch (request.lookup) {
     final VideoMetadataLookup lookup =>
-      '${request.source.label} · ${lookup.provider.name.toUpperCase()} ${lookup.externalId}',
-    null => '${request.source.label} · ${t.video_source_scrape_ai_identify}',
+      '${videoScrapeScopeLabel(request.source)} · ${lookup.provider.name.toUpperCase()} ${lookup.externalId}',
+    null =>
+      '${videoScrapeScopeLabel(request.source)} · ${t.video_source_scrape_ai_identify}',
   };
 
   /// 「AI 识别」：对这一部重跑识别并强制重问 AI（歧义时在候选里挑、查无时
@@ -807,7 +821,8 @@ class _VideoSourceScrapeTaskPanelState
       unawaited(_reloadPendingWorks());
     } on Object catch (error) {
       if (!mounted) return;
-      setState(() => _pendingNotice = error.toString());
+      // 清理期间被刮削门挡回的是类型化错误，出本地化文案而不是 `Bad state: …`。
+      setState(() => _pendingNotice = videoScrapeErrorText(error));
     } finally {
       if (mounted) {
         setState(() => _bindingStableKeys.remove(entry.work.stableKey));
@@ -1042,7 +1057,9 @@ class _VideoSourceScrapeTaskPanelState
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    t.video_source_scrape_confirmation_hint,
+                    confirmation.strictMatches
+                        ? t.video_source_scrape_confirmation_hint
+                        : t.video_source_scrape_confirmation_review_hint,
                     style: type.bodySmall.copyWith(color: onCard),
                   ),
                 ],

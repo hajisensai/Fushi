@@ -17,6 +17,10 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show FushiPageHeader;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -87,11 +91,37 @@ class _MediaServerListViewState extends State<MediaServerListView> {
   /// 过渡层）。
   int _epoch = 0;
 
+  /// 当前这一轮取回的清单（还在取 / 取失败为 null）：页头大字动作组据它决定有没有
+  /// 「搜索所有服务器」（见 [_headerActions]）。
+  List<MediaServerEntry>? _loadedServers;
+
+  @override
+  void initState() {
+    super.initState();
+    _track(_future);
+  }
+
+  /// 清单回来后记下（只认当前这一轮的 future，旧一轮晚回来丢掉）。
+  void _track(Future<List<MediaServerEntry>> future) {
+    unawaited(
+      future.then<void>(
+        (List<MediaServerEntry> servers) {
+          if (!mounted || !identical(future, _future)) return;
+          setState(() => _loadedServers = servers);
+        },
+        // 错误由正文的 FutureBuilder 呈现，这里只是不记清单。
+        onError: (Object _) {},
+      ),
+    );
+  }
+
   void _reload() {
     setState(() {
       _epoch += 1;
+      _loadedServers = null;
       _future = widget.loadServers();
     });
+    _track(_future);
   }
 
   Widget _homeFor(MediaServerEntry entry) {
@@ -143,12 +173,81 @@ class _MediaServerListViewState extends State<MediaServerListView> {
     // 本视图是分区里的一级列表，就在库页分区页签下方：页头不再是悬浮胶囊
     // （2026-10-30 用户「底部就不该显示胶囊了」），只是一行平铺的小标题 +
     // 动作按钮。点进某台服务器才是带悬浮页头的二级页面（见 [_openServer]）。
+    final List<Widget> actions = _headerActions();
     return MediaServerPageFrame(
-      header: _PlainListHeader(
-        title: t.media_server_servers_title,
-        actions: <Widget>[
-          // 多台服务器时才有「搜索所有服务器」：与列表同一份清单（同一个 future），
-          // 清单回来后这里随之出现。
+      // 重设计外壳：库页顶栏已是页头大字（页名 + 分区页签），这里不再另起一行
+      // 小标题；动作经空页头登记进外壳的连体动作组（与本地库分区同一做法，
+      // [FushiPageHeader] 的外壳动作槽）。墨水屏照旧平铺小标题 + 动作。
+      header: shellRedesignActive(context)
+          ? FushiPageHeader.customTitle(
+              title: const SizedBox.shrink(),
+              actions: actions,
+            )
+          : _PlainListHeader(
+              title: t.media_server_servers_title,
+              actions: actions,
+            ),
+      // 页头叠在正文上：列表把让位加成顶部内边距，空态 / 错误整体让开。
+      body: _buildBody(),
+    );
+  }
+
+  /// 列表页的动作：搜索所有服务器（多台时）/ 刷新。
+  ///
+  /// 「搜索所有服务器」只在清单回来且多于一台时出现，与列表同一份清单（同一个
+  /// future）。重设计外壳下动作进外壳的连体动作组，每个动作是一枚按钮段：不能
+  /// 塞一个「可能画成空」的 FutureBuilder 进去（会留一枚空段），所以按已取回的
+  /// 清单（[_loadedServers]）直接决定有没有这一项。
+  List<Widget> _headerActions() {
+    final List<MediaServerEntry>? loaded = _loadedServers;
+    return <Widget>[
+      if (!shellRedesignActive(context))
+        FutureBuilder<List<MediaServerEntry>>(
+          future: _future,
+          builder:
+              (
+                BuildContext context,
+                AsyncSnapshot<List<MediaServerEntry>> snapshot,
+              ) {
+                final List<MediaServerEntry> servers =
+                    snapshot.data ?? const <MediaServerEntry>[];
+                if (servers.length < 2) return const SizedBox.shrink();
+                return _searchAllButton(servers);
+              },
+        )
+      else if (loaded != null && loaded.length > 1)
+        _searchAllButton(loaded),
+      FushiIconButton(
+        key: const ValueKey<String>('media-server-list-refresh'),
+        icon: FushiIcons.refresh,
+        tooltip: t.refresh,
+        focusId: const FushiFocusId('media-server-list-refresh'),
+        onTap: _reload,
+      ),
+    ];
+  }
+
+  Widget _searchAllButton(List<MediaServerEntry> servers) {
+    return FushiIconButton(
+      key: const ValueKey<String>('media-server-list-search-all'),
+      icon: FushiIcons.travelExplore,
+      tooltip: t.media_server_search_all,
+      focusId: const FushiFocusId('media-server-list-search-all'),
+      onTap: () => openMediaServerAggregateSearch(context, <MediaServerSession>[
+        for (final MediaServerEntry e in servers)
+          MediaServerSession(
+            browser: e.browser,
+            play: widget.play,
+            library: e.library,
+          ),
+      ]),
+    );
+  }
+
+  /// 正文：骨架 / 列表 / 空态 / 错误。
+  Widget _buildBody() {
+    return MediaServerBodyInset(
+      builder: (BuildContext context, double top) =>
           FutureBuilder<List<MediaServerEntry>>(
             future: _future,
             builder:
@@ -156,90 +255,46 @@ class _MediaServerListViewState extends State<MediaServerListView> {
                   BuildContext context,
                   AsyncSnapshot<List<MediaServerEntry>> snapshot,
                 ) {
-                  final List<MediaServerEntry> servers =
-                      snapshot.data ?? const <MediaServerEntry>[];
-                  if (servers.length < 2) return const SizedBox.shrink();
-                  return FushiIconButton(
-                    key: const ValueKey<String>('media-server-list-search-all'),
-                    icon: FushiIcons.travelExplore,
-                    tooltip: t.media_server_search_all,
-                    focusId: const FushiFocusId('media-server-list-search-all'),
-                    onTap: () => openMediaServerAggregateSearch(
-                      context,
-                      <MediaServerSession>[
-                        for (final MediaServerEntry e in servers)
-                          MediaServerSession(
-                            browser: e.browser,
-                            play: widget.play,
-                            library: e.library,
-                          ),
-                      ],
-                    ),
+                  // 三态之间交叉淡入（effects 弹簧，不过冲）：骨架 → 列表 / 空态 /
+                  // 错误不硬切。
+                  final FushiMotionScheme motion = context.fushiMotion;
+                  final Widget child;
+                  if (snapshot.connectionState != ConnectionState.done) {
+                    child = _buildSkeleton(top);
+                  } else if (snapshot.hasError) {
+                    child = Padding(
+                      key: ValueKey<String>('media-server-list-error-$_epoch'),
+                      padding: EdgeInsets.only(top: top),
+                      child: FushiPlaceholderMessage(
+                        icon: FushiIcons.cloudOff,
+                        tone: FushiPlaceholderTone.error,
+                        message: t.media_server_items_load_failed,
+                        detail: '${snapshot.error}',
+                        action: FushiFilledButton.icon(
+                          onPressed: _reload,
+                          icon: const FushiIcon(FushiIcons.refresh),
+                          label: Text(t.retry),
+                        ),
+                      ),
+                    );
+                  } else {
+                    final List<MediaServerEntry> servers =
+                        snapshot.data ?? const <MediaServerEntry>[];
+                    _servers = servers;
+                    if (servers.isEmpty) {
+                      child = _buildEmpty(top);
+                    } else {
+                      child = _buildList(servers, top);
+                    }
+                  }
+                  return AnimatedSwitcher(
+                    duration: motion.effectsDefault.duration,
+                    switchInCurve: motion.effectsDefault.curve,
+                    switchOutCurve: motion.effectsDefault.curve,
+                    child: child,
                   );
                 },
           ),
-          FushiIconButton(
-            key: const ValueKey<String>('media-server-list-refresh'),
-            icon: FushiIcons.refresh,
-            tooltip: t.refresh,
-            focusId: const FushiFocusId('media-server-list-refresh'),
-            onTap: _reload,
-          ),
-        ],
-      ),
-      // 页头叠在正文上：列表把让位加成顶部内边距，空态 / 错误整体让开。
-      body: MediaServerBodyInset(
-        builder: (BuildContext context, double top) =>
-            FutureBuilder<List<MediaServerEntry>>(
-              future: _future,
-              builder:
-                  (
-                    BuildContext context,
-                    AsyncSnapshot<List<MediaServerEntry>> snapshot,
-                  ) {
-                    // 三态之间交叉淡入（effects 弹簧，不过冲）：骨架 → 列表 / 空态 /
-                    // 错误不硬切。
-                    final FushiMotionScheme motion = context.fushiMotion;
-                    final Widget child;
-                    if (snapshot.connectionState != ConnectionState.done) {
-                      child = _buildSkeleton(top);
-                    } else if (snapshot.hasError) {
-                      child = Padding(
-                        key: ValueKey<String>(
-                          'media-server-list-error-$_epoch',
-                        ),
-                        padding: EdgeInsets.only(top: top),
-                        child: FushiPlaceholderMessage(
-                          icon: FushiIcons.cloudOff,
-                          tone: FushiPlaceholderTone.error,
-                          message: t.media_server_items_load_failed,
-                          detail: '${snapshot.error}',
-                          action: FushiFilledButton.icon(
-                            onPressed: _reload,
-                            icon: const FushiIcon(FushiIcons.refresh),
-                            label: Text(t.retry),
-                          ),
-                        ),
-                      );
-                    } else {
-                      final List<MediaServerEntry> servers =
-                          snapshot.data ?? const <MediaServerEntry>[];
-                      _servers = servers;
-                      if (servers.isEmpty) {
-                        child = _buildEmpty(top);
-                      } else {
-                        child = _buildList(servers, top);
-                      }
-                    }
-                    return AnimatedSwitcher(
-                      duration: motion.effectsDefault.duration,
-                      switchInCurve: motion.effectsDefault.curve,
-                      switchOutCurve: motion.effectsDefault.curve,
-                      child: child,
-                    );
-                  },
-            ),
-      ),
     );
   }
 

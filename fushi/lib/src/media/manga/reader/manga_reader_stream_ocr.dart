@@ -24,71 +24,14 @@ import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart'
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart'
     show SystemOcrMangaRunner;
+import 'package:fushi/src/media/manga/reader/manga_stream_ocr_types.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 
-/// 读者当前页之后还要预先识别几页（双页展开时第二页也在眼前）。
-const int kMangaStreamOcrLookahead = 2;
-
-/// 识别一张已落盘的直读页图。
-abstract interface class MangaStreamPageRecognizer {
-  Future<MokuroImage> recognize(File pageFile);
-
-  /// 释放常驻资源（本地 ONNX 的页会话 isolate）；幂等。
-  Future<void> close();
-}
-
-/// 识别器的可选能力：直接识别一张已裁好的文字图（字幕位图），不走漫画整页管线
-/// （检测器 / 补检 / PNG 落盘 / 逐页缓存）。可同时在途 [parallelism] 个请求。
-abstract interface class MangaStreamTextImageRecognizer {
-  int get parallelism;
-
-  /// [rgba] 为 [width]×[height]×4 字节的不透明 RGBA 像素。
-  Future<OcrRecognition> recognizeTextImage(
-    Uint8List rgba, {
-    required int width,
-    required int height,
-  });
-}
-
-/// 文字图识别并行开几个会话：每个会话一个 isolate、每会话 ORT 2 线程
-/// （`planOcrAcceleration`），按核数留出播放与界面的余量，最多 3 个。
-int defaultMangaStreamTextImageParallelism([int? processors]) =>
-    ((processors ?? Platform.numberOfProcessors) ~/ 4).clamp(1, 3);
-
-/// [prepareMangaStreamOcr] 的结局。
-sealed class MangaStreamOcrSetup {
-  const MangaStreamOcrSetup();
-}
-
-final class MangaStreamOcrReady extends MangaStreamOcrSetup {
-  const MangaStreamOcrReady(this.engine, this.recognizer, {this.ai});
-
-  final MangaOcrEngineId engine;
-  final MangaStreamPageRecognizer recognizer;
-
-  /// 设置里开了大模型识别时的第二段（[MangaStreamPageOcr.ai]）；null = 不经大模型。
-  final MangaStreamAiRefinement? ai;
-}
-
-/// 没有可用引擎（与整卷路径同一判据）。
-final class MangaStreamOcrNoEngine extends MangaStreamOcrSetup {
-  const MangaStreamOcrNoEngine();
-}
-
-/// 解析到 Google Lens，但用户没同意上传。
-final class MangaStreamOcrLensDeclined extends MangaStreamOcrSetup {
-  const MangaStreamOcrLensDeclined();
-}
-
-/// 解析到的引擎只会整卷跑（外部 mokuro CLI / 已配对主机）：直读章不识别，
-/// 下载后照常由整卷任务处理。
-final class MangaStreamOcrUnsupported extends MangaStreamOcrSetup {
-  const MangaStreamOcrUnsupported();
-}
+export 'package:fushi/src/media/manga/reader/manga_stream_ocr_types.dart';
 
 /// 为一个直读会话解析引擎并建好单页识别器。
 ///
@@ -103,8 +46,10 @@ Future<MangaStreamOcrSetup> prepareMangaStreamOcr({
   required Future<bool> Function() confirmLensUpload,
   MangaAiOcrContext? aiContext,
 }) async {
+  // 显式偏好只探那一个引擎；auto 要完整能力表，全探。
   final MangaOcrEngineAvailability availability = await probeMangaOcrEngines(
     engines,
+    only: mangaOcrProbeTargetFor(preference),
   );
   final MangaOcrEngineId? engine = resolveMangaOcrEngine(
     preference: preference,
@@ -179,6 +124,12 @@ Future<MangaStreamOcrSetup> _prepareEngine(
             relativeUrl: relativeUrl,
             language: lensLanguage,
           ),
+          recognizePixels: (OcrRgbaImage image, String url) =>
+              lens.recognizePagePixels(
+                image,
+                relativeUrl: url,
+                language: lensLanguage,
+              ),
         ),
       );
     case MangaOcrEngineId.systemOcr:
@@ -192,6 +143,12 @@ Future<MangaStreamOcrSetup> _prepareEngine(
             relativeUrl: relativeUrl,
             language: lensLanguage,
           ),
+          recognizePixels: (OcrRgbaImage image, String url) =>
+              system.recognizePagePixels(
+                image,
+                relativeUrl: url,
+                language: lensLanguage,
+              ),
         ),
       );
     case MangaOcrEngineId.externalMokuro:
@@ -288,6 +245,24 @@ class LocalMangaStreamPageRecognizer
     ).images.single;
   }
 
+  /// 内存像素走同一个常驻页会话（[MangaOcrPagePixelsSession]）：同一条整页管线，
+  /// 不读文件、不解码、不写逐页缓存。
+  @override
+  Future<MokuroImage> recognizePixels(
+    OcrRgbaImage image, {
+    required String url,
+  }) async {
+    if (_closed) throw StateError('stream OCR recognizer is closed');
+    final MangaOcrPageSession session = await (_session ??= _service
+        .openPageSession(imageDirPath: imageDirPath));
+    if (session is! MangaOcrPagePixelsSession) {
+      throw StateError('page session cannot recognize in-memory pages');
+    }
+    final OcrPageResult result = await (session as MangaOcrPagePixelsSession)
+        .ocrPagePixels(image);
+    return mokuroImageFromOcrPage(result, url: url);
+  }
+
   @override
   Future<void> close() async {
     if (_closed) return;
@@ -310,61 +285,28 @@ class LocalMangaStreamPageRecognizer
   }
 }
 
-/// 直读章的大模型第二段：本地结果已经交给读者之后，再把该页的块交给
-/// [MangaAiOcrRefiner] 重读。
-///
-/// 不套在识别器里：那样本地结果要等大模型全部批次（每批最长 90 秒、可重试错误
-/// 还会继续下一批）才交出，读者眼前这页长时间没有文字层，后面的页也一起排队。
-class MangaStreamAiRefinement {
-  MangaStreamAiRefinement({
-    required MangaAiOcrRefiner refiner,
-    MangaAiOcrCache? cache,
-  }) : _refiner = refiner,
-       _cache = cache;
-
-  final MangaAiOcrRefiner _refiner;
-  final MangaAiOcrCache? _cache;
-
-  /// 重读 [local]；没换成任何块（含失败、已取消）返回 null，读者保留本地结果。
-  Future<MokuroImage?> refine(MokuroImage local, File pageFile) async {
-    final Uint8List bytes = await pageFile.readAsBytes();
-    final ({MokuroImage page, MangaAiOcrPageStats stats}) result =
-        await _refiner.refinePage(local, bytes, cache: _cache);
-    return result.stats.replaced == 0 ? null : result.page;
-  }
-
-  /// 这个块要不要送大模型（按用户选的档位）。
-  bool wants(MokuroBlock block) => _refiner.wants(block);
-
-  /// 跨页批量重读一批已裁好的文字图（字幕整轨用）：与 [refine] 同一缓存、同一
-  /// 校验；返回与 [items] 等长的新文字（null = 不换）。可并发调用。
-  /// [nearby]：附近已读文字（前几条台词），只作消歧提示。
-  Future<List<String?>> refineCrops(
-    List<MangaAiOcrCropRequest> items, {
-    List<String> nearby = const <String>[],
-  }) => _refiner.refineCrops(items, cache: _cache, nearby: nearby);
-
-  /// 中止在途请求、释放常驻 HTTP 客户端，此后不再发请求。
-  void cancel() => _refiner.dispose();
-
-  /// 给用户看的重读来源：供应商名 · 模型（模型空则只有供应商名）。
-  String get providerLabel {
-    final String model = _refiner.provider.model.trim();
-    final String name = _refiner.provider.name.trim();
-    return model.isEmpty ? name : '$name · $model';
-  }
-}
-
-/// Lens / 系统 OCR：读出页图字节直接识别，没有常驻资源。
+/// Lens / 系统 OCR：读出页图字节（或直接拿内存像素）识别，没有常驻资源。
 class BytesMangaStreamPageRecognizer implements MangaStreamPageRecognizer {
-  BytesMangaStreamPageRecognizer(this._recognize);
+  BytesMangaStreamPageRecognizer(
+    this._recognize, {
+    required Future<MokuroImage> Function(OcrRgbaImage image, String url)
+    recognizePixels,
+  }) : _recognizePixels = recognizePixels;
 
   final Future<MokuroImage> Function(Uint8List bytes, String relativeUrl)
   _recognize;
+  final Future<MokuroImage> Function(OcrRgbaImage image, String url)
+  _recognizePixels;
 
   @override
   Future<MokuroImage> recognize(File pageFile) async =>
       _recognize(await pageFile.readAsBytes(), p.basename(pageFile.path));
+
+  @override
+  Future<MokuroImage> recognizePixels(
+    OcrRgbaImage image, {
+    required String url,
+  }) => _recognizePixels(image, url);
 
   @override
   Future<void> close() async {}

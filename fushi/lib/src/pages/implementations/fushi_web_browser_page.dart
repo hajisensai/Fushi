@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show FlutterView;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -28,12 +30,27 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingChromeInset;
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show
+        ShellContentLayout,
+        shellContentLayoutOf,
+        shellRedesignActive,
+        shellShape;
+import 'package:fushi/src/utils/components/fushi_cover_block.dart'
+    show FushiCoverBlockColors;
+import 'package:fushi/src/utils/components/fushi_poster_block.dart'
+    show FushiPosterBlock, FushiPosterText, fushiPosterColors, fushiPosterHue;
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
+    show shelfCoverCard;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -63,6 +80,7 @@ import 'package:fushi/src/web_browser/tab_view/web_browser_tab_view.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab_host.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tabs_controller.dart';
+import 'package:fushi/src/web_browser/web_browser_fullscreen.dart';
 import 'package:fushi/src/web_browser/web_browser_prefs.dart';
 import 'package:fushi/src/media/video/web_video_sites.dart'
     show webVideoSitesAvailable;
@@ -417,6 +435,11 @@ class _FushiWebBrowserHomePageState
     final double top =
         MediaQuery.paddingOf(context).top +
         FushiFloatingChromeInset.of(context);
+    // 重设计外壳（墨水屏除外）：分区标题换粗大字；布局偏好不是「封面网格」时
+    // 站点卡再换成色块卡（[_WebBrowserSiteBlock]），选了封面网格保留旧卡片。
+    final bool redesign = shellRedesignActive(context);
+    final bool blocks =
+        shellContentLayoutOf(context) != ShellContentLayout.grid;
     return CustomScrollView(
       key: const ValueKey<String>('web-browser-site-list'),
       slivers: <Widget>[
@@ -437,12 +460,20 @@ class _FushiWebBrowserHomePageState
                 Expanded(
                   child: Text(
                     t.web_browser_sites_title,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      color: isGlassDesign(context)
-                          ? appleColorsOf(context).secondaryLabel
-                          : theme.colorScheme.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    // 重设计外壳：分区标题与库页分区同一档粗大字（设计稿
+                    // `.secH b`）。
+                    style: redesign
+                        ? theme.textTheme.headlineSmall?.copyWith(
+                            color: theme.colorScheme.onSurface,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.5,
+                          )
+                        : theme.textTheme.titleSmall?.copyWith(
+                            color: isGlassDesign(context)
+                                ? appleColorsOf(context).secondaryLabel
+                                : theme.colorScheme.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
                   ),
                 ),
                 FushiTextButton.icon(
@@ -475,19 +506,32 @@ class _FushiWebBrowserHomePageState
               EdgeInsets.fromLTRB(page, 0, page, page),
             ),
             sliver: SliverGrid(
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 200,
-                mainAxisExtent: 116,
-                mainAxisSpacing: 12,
-                crossAxisSpacing: 12,
-              ),
+              gridDelegate: blocks
+                  ? const SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: _kSiteBlockMaxWidth,
+                      mainAxisExtent: _kSiteBlockHeight,
+                      mainAxisSpacing: _kSiteBlockSpacing,
+                      crossAxisSpacing: _kSiteBlockSpacing,
+                    )
+                  : const SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: 200,
+                      mainAxisExtent: 116,
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 12,
+                    ),
               delegate: SliverChildBuilderDelegate(
                 fushiStaggeredItemBuilder(
-                  (BuildContext context, int i) => _WebBrowserSiteTile(
-                    site: _sites[i],
-                    onOpen: () => unawaited(_openSite(_sites[i])),
-                    onActions: () => unawaited(_siteActions(_sites[i])),
-                  ),
+                  (BuildContext context, int i) => blocks
+                      ? _WebBrowserSiteBlock(
+                          site: _sites[i],
+                          onOpen: () => unawaited(_openSite(_sites[i])),
+                          onActions: () => unawaited(_siteActions(_sites[i])),
+                        )
+                      : _WebBrowserSiteTile(
+                          site: _sites[i],
+                          onOpen: () => unawaited(_openSite(_sites[i])),
+                          onActions: () => unawaited(_siteActions(_sites[i])),
+                        ),
                 ),
                 childCount: _sites.length,
               ),
@@ -501,6 +545,7 @@ class _FushiWebBrowserHomePageState
   Widget build(BuildContext context) {
     return FushiPageScaffold(
       title: t.web_browser_title,
+      masthead: false,
       // 作 hub 子页时页头由宿主画；独立挂载时 MD3 整条页头不画（见类注释），
       // Apple 走默认大标题。
       header: widget.hostedByHub || !isGlassDesign(context)
@@ -519,6 +564,178 @@ class _FushiWebBrowserHomePageState
 
 /// 站点卡片长按 / 右键菜单的动作。
 enum _SiteAction { togglePlayer, edit, remove }
+
+/// 站点色块卡（重设计外壳）的最大宽、高与间距：间距与库页规整色块同一档
+/// （`kFushiCoverBlockSpacing`）；块比库页矮——站点卡只有名字与地址。
+const double _kSiteBlockMaxWidth = 320;
+const double _kSiteBlockHeight = 168;
+const double _kSiteBlockSpacing = 14;
+const double _kSiteBlockRadius = 26;
+
+/// 站点名首字（大写）；站点名与域名都空时给占位字，不让 `characters.first`
+/// 在空串上抛 [StateError]。
+String _siteInitial(String name) {
+  final Characters chars = name.trim().characters;
+  return chars.isEmpty ? '?' : chars.first.toUpperCase();
+}
+
+/// 站点色块卡（重设计外壳，与设计稿浏览页 `.box.src` 同一套语言）：按站点域名
+/// 折叠色相（[fushiPosterHue]）取色的 [FushiPosterBlock]——与浏览 / 查词等页的
+/// 海报色块同一套配色、站点名大字水印（悬停横移、RTL 镜像）与悬停抬升；块里是
+/// 首字圆章 + 「交给 Fushi 播放」chip，底部是站点名大字与域名。点按 / 长按 /
+/// 右键 / 焦点沿用 [shelfCoverCard]；信息与 [_WebBrowserSiteTile] 完全相同，只换
+/// 视觉。
+class _WebBrowserSiteBlock extends StatelessWidget {
+  const _WebBrowserSiteBlock({
+    required this.site,
+    required this.onOpen,
+    required this.onActions,
+  });
+
+  final WebBrowserSite site;
+  final VoidCallback onOpen;
+  final VoidCallback onActions;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String trimmed = site.name.trim();
+    final String name = trimmed.isEmpty ? site.url.host : trimmed;
+    final String initial = _siteInitial(name);
+    final String? playerBadge = switch (webBrowserSitePlayerModeOf(site.url)) {
+      WebBrowserSitePlayerMode.always => t.web_browser_site_auto_play_on,
+      WebBrowserSitePlayerMode.autoPlayWatchPages when site.openInPlayer =>
+        t.web_browser_site_auto_play_on,
+      WebBrowserSitePlayerMode.toolbarShortcut when site.openInPlayer =>
+        t.web_browser_play_in_fushi,
+      _ => null,
+    };
+    final FushiCoverBlockColors colors = fushiPosterColors(
+      context,
+      fushiPosterHue(site.url.host),
+    );
+    final BorderRadius radius = BorderRadius.circular(_kSiteBlockRadius);
+    final TextStyle base = theme.textTheme.bodyMedium ?? const TextStyle();
+    return shelfCoverCard(
+      key: ValueKey<String>('web-browser-site-${site.url}'),
+      borderRadius: radius,
+      onTap: onOpen,
+      onLongPress: onActions,
+      onSecondaryTap: onActions,
+      child: Semantics(
+        label: name,
+        button: true,
+        excludeSemantics: true,
+        child: FushiPosterBlock(
+          watermark: name,
+          colors: colors,
+          watermarkFontSize: _kSiteBlockHeight * 0.62,
+          watermarkStart: -6,
+          radius: _kSiteBlockRadius,
+          padding: const EdgeInsetsDirectional.fromSTEB(18, 16, 16, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  // 首字圆章：不取网站 favicon（入口页不为几个字节去联网）。
+                  SizedBox.square(
+                    dimension: 44,
+                    child: DecoratedBox(
+                      decoration: ShapeDecoration(
+                        shape: shellShape(context, FushiM3eShape.smallRadius),
+                        color: colors.accent,
+                      ),
+                      child: Center(
+                        child: Text(
+                          initial,
+                          style: FushiPosterText.name
+                              .on(base)
+                              .copyWith(color: colors.container),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Spacer(),
+                  if (playerBadge != null)
+                    Flexible(
+                      flex: 4,
+                      child: FushiTooltip(
+                        message: playerBadge,
+                        child: DecoratedBox(
+                          key: ValueKey<String>(
+                            'web-browser-site-player-${site.url}',
+                          ),
+                          decoration: ShapeDecoration(
+                            shape: const StadiumBorder(),
+                            color: colors.onContainer.withValues(alpha: 0.12),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                FushiIcon(
+                                  FushiIcons.playCircle,
+                                  size: 14,
+                                  color: colors.onContainer,
+                                ),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    playerBadge,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: FushiPosterText.badge
+                                        .on(base)
+                                        .copyWith(color: colors.onContainer),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const Spacer(),
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: FushiPosterText.section
+                    .on(base)
+                    .copyWith(
+                      height: 1.1,
+                      letterSpacing: -0.4,
+                      color: colors.onContainer,
+                    ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                site.url.host,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: FushiPosterText.meta
+                    .on(base)
+                    .copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: colors.onContainer.withValues(alpha: 0.72),
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// 入口页与新标签页起始页共用的站点卡片。
 class _WebBrowserSiteTile extends StatelessWidget {
@@ -539,7 +756,7 @@ class _WebBrowserSiteTile extends StatelessWidget {
     final bool glass = isGlassDesign(context);
     final String trimmed = site.name.trim();
     final String name = trimmed.isEmpty ? site.url.host : trimmed;
-    final String initial = name.characters.first.toUpperCase();
+    final String initial = _siteInitial(name);
     final String? playerBadge = switch (webBrowserSitePlayerModeOf(site.url)) {
       WebBrowserSitePlayerMode.always => t.web_browser_site_auto_play_on,
       WebBrowserSitePlayerMode.autoPlayWatchPages when site.openInPlayer =>
@@ -761,6 +978,16 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
   Uri? _bookmarkCheckedFor;
   bool _systemUiHidden = false;
 
+  /// 网页全屏期间设的方向集（null = 没动过，见 [_applyFullscreenDisplay]）。
+  List<DeviceOrientation>? _fullscreenOrientations;
+
+  /// 前台标签页处在「竖拿横视频」全屏分屏（[webBrowserFullscreenSplit]）。
+  bool _fullscreenSplit = false;
+
+  /// 本页所在的视图（[didChangeDependencies] 里取；转屏回调 [didChangeMetrics] 读它的
+  /// 尺寸，回调里不能再拿 context 查祖先）。
+  FlutterView? _view;
+
   AppModel get _appModel => ref.read(appProvider);
 
   @override
@@ -832,6 +1059,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _view = View.maybeOf(context);
     final ModalRoute<Object?>? route = ModalRoute.of(context);
     _studyCoverWatch.attach(route);
     _playbackCoverWatch.attach(route);
@@ -886,6 +1114,11 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     if (_systemUiHidden) {
       unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
     }
+    if (_fullscreenOrientations != null) {
+      unawaited(
+        SystemChrome.setPreferredOrientations(kWebBrowserIdleOrientations),
+      );
+    }
     _watched?.removeListener(_onActiveTabChanged);
     _tabs.removeListener(_onTabsChanged);
     _store.removeListener(_onStoreChanged);
@@ -899,6 +1132,9 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     _addressFocus.dispose();
     super.dispose();
   }
+
+  @override
+  void didChangeMetrics() => _syncFullscreenSplit();
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -920,7 +1156,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     _watched = active;
     active?.addListener(_onActiveTabChanged);
     _collapse = const WebBrowserCollapseState();
-    _applySystemUi(active?.fullscreen ?? false);
+    _applyFullscreenDisplay(active);
     _refreshBookmark();
   }
 
@@ -932,7 +1168,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
   void _onActiveTabChanged() {
     final WebBrowserTab? tab = _watched;
     if (tab == null) return;
-    _applySystemUi(tab.fullscreen);
+    _applyFullscreenDisplay(tab);
     if (tab.url != _bookmarkCheckedFor) _refreshBookmark();
     _rebuild();
   }
@@ -952,6 +1188,52 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
         if ((b != null) != _bookmarked) setState(() => _bookmarked = b != null);
       }, onError: (Object _) {}),
     );
+  }
+
+  /// 前台页的网页全屏态 → 系统栏、手机方向锁、分屏。方向只在手机上锁：横视频
+  /// 转横屏、竖视频转竖屏（[webBrowserFullscreenOrientations]）；退出全屏还原成
+  /// [kWebBrowserIdleOrientations]，从没锁过就不碰（别的页可能在管方向）。
+  void _applyFullscreenDisplay(WebBrowserTab? tab) {
+    final bool fullscreen = tab?.fullscreen ?? false;
+    _applySystemUi(fullscreen);
+    if (isMobilePlatform) {
+      final List<DeviceOrientation> next = webBrowserFullscreenOrientations(
+        fullscreen: fullscreen,
+        fit: tab?.fullscreenFit ?? WebBrowserFullscreenFit.unknown,
+        autoRotate: webBrowserFullscreenAutoRotate(_prefs),
+      );
+      final List<DeviceOrientation>? applied = _fullscreenOrientations;
+      if (fullscreen ? !listEquals(applied, next) : applied != null) {
+        _fullscreenOrientations = fullscreen ? next : null;
+        unawaited(SystemChrome.setPreferredOrientations(next));
+      }
+    }
+    _syncFullscreenSplit();
+  }
+
+  /// 分屏判据随前台页全屏态与视口方向变（转屏走 [didChangeMetrics]）；变了通知功能
+  /// 插件（字幕侧栏自动拉开 / 收回）并重排。
+  void _syncFullscreenSplit() {
+    if (!mounted) return;
+    final WebBrowserTab? tab = _tabs.activeTab;
+    final Size? size = _view?.physicalSize;
+    final bool split =
+        tab != null &&
+        size != null &&
+        webBrowserFullscreenSplit(
+          fullscreen: tab.fullscreen,
+          fit: tab.fullscreenFit,
+          width: size.width,
+          height: size.height,
+        );
+    if (split == _fullscreenSplit) return;
+    _fullscreenSplit = split;
+    if (tab != null) {
+      for (final WebBrowserFeature f in _features) {
+        f.onFullscreenSplitChanged(tab, split: split);
+      }
+    }
+    _rebuild();
   }
 
   void _applySystemUi(bool fullscreen) {
@@ -2200,7 +2482,9 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     Widget pages,
   ) {
     Widget? panel;
-    if (active != null && !active.fullscreen) {
+    // 全屏看视频时不出侧栏，「竖拿横视频」分屏除外（视频贴顶、下面给字幕列表）。
+    final bool split = _fullscreenSplit;
+    if (active != null && (!active.fullscreen || split)) {
       for (final WebBrowserFeature f in _features) {
         panel = f.sidePanel(context, active);
         if (panel != null) break;
@@ -2208,7 +2492,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     }
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints box) {
-        final bool wide = box.maxWidth >= 720;
+        final bool wide = !split && box.maxWidth >= 720;
         // 拖动中逐帧跟手，不走开合动画。
         final Duration d = _sidePanelWidthDrag != null
             ? Duration.zero
@@ -2222,8 +2506,21 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
                           : kWebBrowserSidePanelDefaultWidth))
                   .clamp(kWebBrowserSidePanelMinWidth, maxPanelWidth)
             : box.maxWidth;
-        final double panelHeight = wide ? box.maxHeight : box.maxHeight * 0.45;
+        // 分屏：上面留出视频（16:9 按宽铺满，避开刘海）的高度，其余全给侧栏，
+        // 网页被推挤而不是被盖住，伪全屏的视频随之缩进上半区。
+        final double splitTop = split ? MediaQuery.paddingOf(context).top : 0;
+        final double panelHeight = wide
+            ? box.maxHeight
+            : split
+            ? box.maxHeight -
+                  splitTop -
+                  webBrowserFullscreenSplitVideoHeight(
+                    width: box.maxWidth,
+                    height: box.maxHeight,
+                  )
+            : box.maxHeight * 0.45;
         final bool open = panel != null;
+        final bool push = split && open;
         return Stack(
           fit: StackFit.expand,
           children: <Widget>[
@@ -2232,6 +2529,8 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
               curve: FushiMotion.standard,
               padding: EdgeInsetsDirectional.only(
                 end: wide && open ? panelWidth : 0,
+                top: push ? splitTop : 0,
+                bottom: push ? panelHeight : 0,
               ),
               child: pages,
             ),

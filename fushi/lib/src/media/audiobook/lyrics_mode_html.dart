@@ -325,20 +325,23 @@ class LyricsModeHtml {
     // 主轴方向的「45vh/45vw 居中余量 + 用户边距」。横排=上下(vh)，竖排=左右(vw)。
     // 注意竖排 vertical-rl 视觉「先读」在右，但 padding 仍按物理 left/right 写，
     // 由 writing-mode 决定读序，无需翻 padding 值。
-    final double padTop = vertical ? marginTop : 45 + marginTop;
-    final double padBottom = vertical ? marginBottom : 45 + marginBottom;
+    // 横排的上下余量交给主题锚点：上 anchorY·100vh、下 (1-anchorY)·100vh；无主题时
+    // var 回落 45vh（旧的居中余量）。
+    final String padTopCss = vertical
+        ? '${marginTop}vh'
+        : 'calc(var(--ly-pad-top, 45vh) + ${marginTop}vh)';
+    final String padBottomCss = vertical
+        ? '${marginBottom}vh'
+        : 'calc(var(--ly-pad-bottom, 45vh) + ${marginBottom}vh)';
     final double padLeft = vertical
         ? 45 + marginLeft
         : (marginLeft > 0 ? marginLeft : 2.5);
     final double padRight = vertical
         ? 45 + marginRight
         : (marginRight > 0 ? marginRight : 2.5);
-    final String containerPaddingCss = vertical
-        ? 'padding: ${padTop}vh ${padRight}vw ${padBottom}vh ${padLeft}vw;'
-        // 主题的锚点（当前行落在视口 anchorY 处）决定上下余量：上 anchorY·100vh、
-        // 下 (1-anchorY)·100vh；无主题时 var 回落 45vh（旧的居中余量）。
-        : 'padding: calc(var(--ly-pad-top, 45vh) + ${marginTop}vh) ${marginLeft > 0 ? marginLeft : 2.5}vw '
-              'calc(var(--ly-pad-bottom, 45vh) + ${marginBottom}vh) ${marginRight > 0 ? marginRight : 2.5}vw;';
+    // CSS 四值简写顺序是「上 右 下 左」：第 2 位右边距、第 4 位左边距，横竖排同一口径。
+    final String containerPaddingCss =
+        'padding: $padTopCss ${padRight}vw $padBottomCss ${padLeft}vw;';
     // 竖排专属的 .cue 几何，只在竖排时输出（横排文档逐字节不变）。选择器刻意不写成
     // 裸 `.cue`：__lyricsUpdateStyle 按 selectorText 逐条改写规则，裸 `.cue` 会被
     // 当成基础规则再写一遍。
@@ -1914,9 +1917,10 @@ function __lyricsApplyContainerPadding(r, mt, mb, ml, mr) {
     // 竖排 vertical-rl：居中余量在左右(45vw)，上下吃用户 vh 边距。
     r.style.padding = (mt||0) + 'vh calc(45vw + ' + (mr||0) + 'vw) ' + (mb||0) + 'vh calc(45vw + ' + (ml||0) + 'vw)';
   } else {
+    // 四值顺序「上 右 下 左」：第 2 位右边距 rv、第 4 位左边距 lv。
     var lv = (ml != null && ml > 0) ? ml : 2.5;
     var rv = (mr != null && mr > 0) ? mr : 2.5;
-    r.style.padding = 'calc(var(--ly-pad-top, 45vh) + ' + (mt||0) + 'vh) ' + lv + 'vw calc(var(--ly-pad-bottom, 45vh) + ' + (mb||0) + 'vh) ' + rv + 'vw';
+    r.style.padding = 'calc(var(--ly-pad-top, 45vh) + ' + (mt||0) + 'vh) ' + rv + 'vw calc(var(--ly-pad-bottom, 45vh) + ' + (mb||0) + 'vh) ' + lv + 'vw';
   }
 }
 window.__lyricsUpdateStyle = function(bgColor, textColor, accentColor, fontSize, mt, mb, ml, mr) {

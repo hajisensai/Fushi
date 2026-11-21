@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/collections/collection_detail_layout.dart'
-    show CollectionEpisodeNumberPill;
+import 'package:fushi/src/media/detail/media_poster_detail.dart'
+    show MediaPosterEpisodeTile;
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_detail_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
@@ -227,19 +227,24 @@ void main() {
     await tester.pumpWidget(harness(series));
     await tester.pumpAndSettle();
 
-    final Finder pills = find.byType(CollectionEpisodeNumberPill);
+    // 重设计外壳（非墨水屏默认）下集卡是 [MediaPosterEpisodeTile]：集号以
+    // 「N. 」前缀并进标题行，不再画 [CollectionEpisodeNumberPill]。
+    final Finder tiles = find.byType(MediaPosterEpisodeTile);
     expect(
       tester
-          .widgetList<CollectionEpisodeNumberPill>(pills)
-          .map((CollectionEpisodeNumberPill p) => p.number),
-      <String>['1', '2'],
+          .widgetList<MediaPosterEpisodeTile>(tiles)
+          .map((MediaPosterEpisodeTile tile) => tile.number),
+      <String?>['1', '2', null],
       reason: '有号的两集照常画集号；缺号那集不能画成列表位置「3」',
     );
     final Finder unnumbered = find.byKey(
       const ValueKey<String>('media-server-episode-sea1-nonum'),
     );
     expect(unnumbered, findsOneWidget);
-    expect(find.descendant(of: unnumbered, matching: pills), findsNothing);
+    expect(
+      find.descendant(of: unnumbered, matching: find.textContaining('3.')),
+      findsNothing,
+    );
     expect(
       find.descendant(
         of: unnumbered,
@@ -247,6 +252,58 @@ void main() {
       ),
       findsOneWidget,
       reason: '缺号的集靠集名区分',
+    );
+  });
+
+  testWidgets('BUG-4921：续播行写服务器给的真实集号，不拿列表下标冒充；缺号不写集号', (
+    WidgetTester tester,
+  ) async {
+    useTallView(tester);
+    MediaServerItem episode(String id, int? number, {bool played = false}) =>
+        MediaServerItem(
+          id: id,
+          name: 'Episode $id',
+          type: MediaServerItemType.episode,
+          seriesId: 's1',
+          seriesName: 'Series s1',
+          seasonId: 'sea1',
+          seasonNumber: 1,
+          episodeNumber: number,
+          played: played,
+        );
+    browser.seasons['s1'] = <MediaServerItem>[seasonOne];
+    // 服务器上这一季只有第 151、152 集（前面的没入库）；151 看完 → 续播 152。
+    browser.episodes['s1|sea1'] = <MediaServerItem>[
+      episode('e151', 151, played: true),
+      episode('e152', 152),
+    ];
+    await tester.pumpWidget(harness(series));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining(t.collection_continue_progress(n: 152)),
+      findsWidgets,
+    );
+    expect(
+      find.textContaining(t.collection_continue_progress(n: 2)),
+      findsNothing,
+      reason: '列表下标 +1 = 2 不是集号',
+    );
+
+    // 续播那集服务器没给集号 → 只写集名，不编一个集号。
+    browser.episodes['s1|sea1'] = <MediaServerItem>[
+      episode('e151', 151, played: true),
+      episode('nonum', null),
+    ];
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(harness(series));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('${t.video_continue_watching}  ·  Episode nonum'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining(t.collection_continue_progress(n: 2)),
+      findsNothing,
     );
   });
 

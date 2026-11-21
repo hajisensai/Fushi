@@ -16,6 +16,7 @@ library;
 import 'entities.dart';
 import 'field_edit.dart' show SrsEntityKind;
 import 'ids.dart';
+import 'kernel_ids.dart';
 
 /// Anki 不许笔记字段用的名字（会被模板的特殊字段遮住）。与 fushi_anki 的
 /// `kAnkiSpecialFieldNames` 同一份清单（fushi_srs 零依赖，这里另写一次）。
@@ -126,6 +127,8 @@ class SrsNewNoteType {
     required this.css,
     required this.termFieldId,
     this.freqFieldId,
+    this.sortFieldId,
+    this.browseFieldIds,
   });
 
   final SrsEntityRecord record;
@@ -137,6 +140,12 @@ class SrsNewNoteType {
 
   /// 显式的词频序字段（[SrsFieldKeys.freqField]）；null = 不写，按字段名认。
   final String? freqFieldId;
+
+  /// 显式的排序字段（[SrsFieldKeys.sortField]）；null = 不写，第一个字段。
+  final String? sortFieldId;
+
+  /// 显式的浏览副字段（[SrsFieldKeys.browseFields]）；null = 不写，自动。
+  final List<String>? browseFieldIds;
 
   String get id => record.id;
 }
@@ -160,7 +169,7 @@ SrsNewNoteType srsBuildNoteType({
 }) {
   final int Function() num = nextAnkiNum ?? randomAnkiNum;
   final int typeNum = num();
-  final String typeId = SrsIds.noteType(profileUid, typeNum);
+  final String typeId = SrsKernelIds(profileUid).noteType(typeNum);
   final List<SrsFieldDef> fields = <SrsFieldDef>[];
   final Map<String, String> nameToId = <String, String>{};
   for (int i = 0; i < fieldNames.length; i++) {
@@ -218,7 +227,7 @@ SrsNewNoteType srsCloneNoteType({
 }) {
   final int Function() num = nextAnkiNum ?? randomAnkiNum;
   final int typeNum = num();
-  final String typeId = SrsIds.noteType(profileUid, typeNum);
+  final String typeId = SrsKernelIds(profileUid).noteType(typeNum);
   final Map<String, String> oldToNew = <String, String>{};
   final List<SrsFieldDef> fields = <SrsFieldDef>[];
   for (int i = 0; i < source.fields.length; i++) {
@@ -269,6 +278,15 @@ SrsNewNoteType srsCloneNoteType({
     freqFieldId: source.freqFieldId == null
         ? null
         : oldToNew[source.freqFieldId],
+    sortFieldId: source.sortFieldId == null
+        ? null
+        : oldToNew[source.sortFieldId],
+    browseFieldIds: source.browseFieldIds == null
+        ? null
+        : <String>[
+            for (final String id in source.browseFieldIds!)
+              if (oldToNew[id] case final String mapped) mapped,
+          ],
   );
 }
 

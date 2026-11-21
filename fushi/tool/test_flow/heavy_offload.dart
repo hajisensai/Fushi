@@ -38,6 +38,32 @@ class HeavyOffload {
 /// held up a run a free slot here could have started.
 const int kHeavyOffloadBusyRetries = 0;
 
+/// `--busy-retries` of an attempt made while the run already queues here
+/// (heavy_offload_rival.dart): it waits in the workers' own queues
+/// (tool/dist_test/worker_slot.sh) for about ten minutes instead of coming
+/// back at the first "in use", so a worker gives it its checkout after the
+/// batch it is on. It costs this machine nothing -- the run queues here all
+/// the while, and dist_test leaves those queues the moment a slot here took
+/// the run (the claim file).
+const int kHeavyOffloadQueuedBusyRetries = 20;
+
+/// [distArgs] of a [HeavyOffload] with the patience of an attempt made while
+/// the run queues here ([kHeavyOffloadQueuedBusyRetries]), and without a
+/// local worker ([kDistNoLocalFlag]): the run's own queue here is this
+/// machine's bid, a local worker in dist_test would queue a second time.
+/// Only dist_test's own options are touched: nothing after a `--` (a
+/// build's command).
+List<String> heavyOffloadQueuedArgs(List<String> distArgs) {
+  final int end = distArgs.indexOf('--');
+  return <String>[
+    kDistNoLocalFlag,
+    for (int i = 0; i < distArgs.length; i++)
+      (end < 0 || i < end) && distArgs[i].startsWith('--busy-retries=')
+          ? '--busy-retries=$kHeavyOffloadQueuedBusyRetries'
+          : distArgs[i],
+  ];
+}
+
 /// How long heavy.dart lets an offloaded run go past `--max-minutes` before
 /// it kills it: dist_test enforces the same limit itself (killing the remote
 /// run, releasing the worker), so this is only for one that hangs doing so.

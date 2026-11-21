@@ -61,8 +61,7 @@ String trackingSiteLastSyncLabel(
 
 /// A last sync attempt at [lastSyncAt] (epoch ms), relative; "Never
 /// synced" for 0.
-String trackingLastSyncAtLabel(int lastSyncAt, DateTime now) =>
-    lastSyncAt <= 0
+String trackingLastSyncAtLabel(int lastSyncAt, DateTime now) => lastSyncAt <= 0
     ? t.media_tracking_never_synced
     : formatActivityRelativeTime(lastSyncAt, now);
 

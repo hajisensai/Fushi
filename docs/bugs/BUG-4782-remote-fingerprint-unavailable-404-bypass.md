@@ -1,0 +1,6 @@
+## BUG-4782 · 新 host 算指纹失败也回 404，client 当成老 host 直接放行，绕过字节核验
+- **报告**：2026-11-17（PR #3538 合入后只读核实遗留项）
+- **真实性**：✅ 真 bug。`packages/fushi_engine/lib/sync/fushi_sync_server/video.part.dart:698-709`（修前）`/fingerprint` 在 `resolveVideoFile` 返回 null 时回 404 `Video not found`，`FileSystemException`（文件不在 / 算的期间被改写）也回 404 `Video fingerprint unavailable`；client `fushi/lib/src/sync/interconnect_sync_backend.dart:3415`（修前）凡 404 都返回 null，`fushi/lib/src/anki/card_source_router.dart:83` `cardSourceHostFingerprintAccepted` 把 null 当「老 host 没这个端点」按 bookUid 放行。结果：host 上的文件正被替换、或换集后文件找不到时，回跳不经字节核验就按 bookUid 打开，可能放出别的片子。回的值不是 64 位 hex 时同样被当 null 放行。
+- **[x] ① 已修复** — host 对「担保不了这份字节」回 `kVideoFingerprintUnavailableStatus`（409）+ `{"reason": "not_found" | "unreadable"}`（常量在 `fushi_library_host_service.dart`），404 只留给老 host 的兜底；client 对 409 与不合法的指纹值抛 `RemoteVideoFingerprintUnavailable`（`remote_video_client.dart`），只有 404 才返回 null。回跳侧异常照「host 取不到」处理（记日志、按没有来源提示，不放行）；制卡侧照旧记日志、卡片不带来源链接。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/interconnect_video_fingerprint_test.dart`：真 `FushiSyncServer` 上条目不在 / 文件被删时端点回 409 + reason、client 抛带 reason 的 `RemoteVideoFingerprintUnavailable`；只回 404 的老 host 仍得 null；回不合法指纹抛异常。`fushi/test/anki/card_source_remote_video_test.dart`：`matchRemoteCardSourceVideo` 遇 host 担保不了时向上抛、不放行。
+- **备注**：真机 / 双机互联回跳未复测（本轮不做真机验证）。

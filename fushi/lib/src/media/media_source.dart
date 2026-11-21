@@ -400,17 +400,41 @@ abstract class MediaSource {
 
   /// Given a [MediaItem], return its thumbnail. Some media items may allow
   /// overriding of values for display purposes.
+  ///
+  /// [decodeWidth] 是解码宽度上限：本地文件一律经 [resizedFileImage] 按它降采样
+  /// （同时登记进驱逐表，[evictLocalCoverCache] 才清得到这个宽度的键）；远端 /
+  /// 内存图只在非默认宽度时套一层 [ResizeImage]。调用方**不得**在返回值外面再包
+  /// [ResizeImage]——那会与内层的 [ResizeImage] 嵌套（Flutter 断言禁止），且外层
+  /// 键不在驱逐表里，同路径覆盖写后仍画旧图。
   ImageProvider<Object> getDisplayThumbnailFromMediaItem({
     required AppModel appModel,
     required MediaItem item,
     String? fallbackUrl,
     bool noOverride = false,
+    bool noScraped = false,
+    int decodeWidth = kLocalCoverDecodePixelWidth,
   }) {
     if (!noOverride) {
       final ImageProvider<Object>? overrideThumbnail =
-          getOverrideThumbnailFromMediaItem(appModel: appModel, item: item);
+          getOverrideThumbnailFromMediaItem(
+            appModel: appModel,
+            item: item,
+            decodeWidth: decodeWidth,
+          );
       if (overrideThumbnail != null) {
         return overrideThumbnail;
+      }
+    }
+
+    // 刮削层（书 / 漫画的每卷封面）：在用户 override 之下、内嵌封面之上。
+    // `noOverride` 时仍显示——编辑弹窗的「默认图」就是不算用户覆盖时的样子。
+    if (!noScraped) {
+      final File? scraped = scrapedThumbnailFile(
+        appModel: appModel,
+        item: item,
+      );
+      if (scraped != null) {
+        return resizedFileImage(scraped, width: decodeWidth);
       }
     }
 
@@ -418,11 +442,14 @@ abstract class MediaSource {
       if (item.imageUrl!.startsWith('file://')) {
         final String filePath = Uri.parse(item.imageUrl!).toFilePath();
         // BUG-959: 按物理像素上限解码，避免 EPUB 原始封面(常 1600×2400)整帧撑爆 ImageCache。
-        return resizedFileImage(File(filePath));
+        return resizedFileImage(File(filePath), width: decodeWidth);
       } else {
-        return AppCachedHttpImage(
-          fallbackUrl ?? item.imageUrl!,
-          cacheKey: item.uniqueKey,
+        return _capNonFileThumbnail(
+          AppCachedHttpImage(
+            fallbackUrl ?? item.imageUrl!,
+            cacheKey: item.uniqueKey,
+          ),
+          decodeWidth,
         );
       }
     }
@@ -435,11 +462,23 @@ abstract class MediaSource {
     if (data != null) {
       /// A cached version of [MemoryImage] so that the image does not reload
       /// on every revisit
-      return CacheImageProvider(item.uniqueKey, data.contentAsBytes());
+      return _capNonFileThumbnail(
+        CacheImageProvider(item.uniqueKey, data.contentAsBytes()),
+        decodeWidth,
+      );
     } else {
       return MemoryImage(kTransparentImage);
     }
   }
+
+  /// 非本地文件缩略图（远端 / 内嵌 base64）的解码上限：默认宽度保持原样返回
+  /// （与历史行为一致），只有调用方要别的宽度时才套 [ResizeImage]。
+  ImageProvider<Object> _capNonFileThumbnail(
+    ImageProvider<Object> provider,
+    int decodeWidth,
+  ) => decodeWidth == kLocalCoverDecodePixelWidth
+      ? provider
+      : ResizeImage(provider, width: decodeWidth, allowUpscaling: false);
 
   /// Given a [MediaItem], return its thumbnail. Some media items may allow
   /// overriding of values for display purposes.
@@ -458,6 +497,11 @@ abstract class MediaSource {
       }
     }
 
+    final File? scraped = scrapedThumbnailFile(appModel: appModel, item: item);
+    if (scraped != null) {
+      return scraped.path;
+    }
+
     if (item.imageUrl != null) {
       return item.imageUrl!;
     }
@@ -468,6 +512,14 @@ abstract class MediaSource {
 
     return '';
   }
+
+  /// 刮削层封面（书 / 漫画「已获取的每卷封面」）。默认没有——只有书类源
+  /// （[ReaderMediaSource]）覆写，且只查内存索引、不在 build 里逐块 stat，视频 /
+  /// 音乐 / 在线漫画等其它源不多付一次文件系统调用。
+  File? scrapedThumbnailFile({
+    required AppModel appModel,
+    required MediaItem item,
+  }) => null;
 
   // ── override 身份（BUG-1317）─────────────────────────────────────────
   //
@@ -678,6 +730,7 @@ abstract class MediaSource {
   ImageProvider<Object>? getOverrideThumbnailFromMediaItem({
     required AppModel appModel,
     required MediaItem item,
+    int decodeWidth = kLocalCoverDecodePixelWidth,
   }) {
     final File? file = resolveOverrideThumbnailFile(
       appModel: appModel,
@@ -689,7 +742,7 @@ abstract class MediaSource {
 
     // BUG-959: 降采样解码；存在性判据保留——它区分「有无 override 封面」（同步 API，
     // 返回 null 表示无 override 由上层回落正常封面），改异步会牵动所有 build 调用点。
-    return resizedFileImage(file);
+    return resizedFileImage(file, width: decodeWidth);
   }
 
   /// Given a [MediaItem], set its override display title. If the title is

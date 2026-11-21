@@ -111,27 +111,12 @@ String newNoteGuid({Random? random}) {
   );
 }
 
-/// 铁律 C 的规则表。
+/// 铁律 C 的规则表里由父 ID 派生、不带盐的那部分。
+///
+/// 根上的规则（笔记、笔记类型、牌组、备选牌组、内置默认牌组）G5 起只在内核（native/fushi_fsrs/src/gen4_ids/rules.rs），
+/// 向内核要：[SrsKernelIds]（docs/specs/2026-11-11-srs-generation-break.md §5.2）。内置笔记类型的 ankiNum 是固定常量
+/// [builtinNoteTypeAnkiNum]，导出到 Anki 再导回来，派生出的仍是同一个 ID。
 abstract final class SrsIds {
-  /// 笔记：noteId = UUIDv5(NS, profileUid/note/guid)。Fushi 自建与 Anki 导入同一条规则。
-  static String note(String profileUid, String guid) =>
-      uuidV5(srsNamespace, _noteName(profileUid, guid));
-
-  static String _noteName(String profileUid, String guid) =>
-      '$profileUid/note/$guid';
-
-  /// 批量 [note]（一次 FFI），与逐个 [note] 逐值相同。
-  static List<String> notes(String profileUid, List<String> guids) =>
-      uuidV5Batch(<(String, String)>[
-        for (final String g in guids) (srsNamespace, _noteName(profileUid, g)),
-      ]);
-
-  /// 笔记类型：noteTypeId = UUIDv5(NS, profileUid/notetype/ankiNum)。
-  /// 内置笔记类型也走这一条（第六轮审查第 8 条）：它们的 ankiNum 是固定常量 [builtinNoteTypeAnkiNum]，
-  /// 导出到 Anki 再导回来，派生出的仍是同一个 ID。
-  static String noteType(String profileUid, int ankiNum) =>
-      uuidV5(srsNamespace, '$profileUid/notetype/$ankiNum');
-
   /// 字段：fieldId = UUIDv5(noteTypeId, field/ankiNum)。
   static String field(String noteTypeId, int ankiNum) =>
       uuidV5(noteTypeId, 'field/$ankiNum');
@@ -164,32 +149,13 @@ abstract final class SrsIds {
           (note, _cardName(tpl, ord)),
       ]);
 
-  /// 牌组：UUIDv5(NS, profileUid/deck/<规范全名>)，全名按「父::子」，每段去首尾空白。
-  ///
-  /// 两台设备离线各建（或各导入）同名牌组，合并后是同一个牌组（与 Anki 按名字合并牌组一致）。
-  /// 改名 / 挪父牌组不改 ID；之后有人再按旧全名新建时，这个 ID 已被一个全名不同的牌组占着，
-  /// 新建方改用 [deckAlternate]（见 SrsDbStore.createDeck），不会把挪走的牌组拽回来。
-  static String deck(String profileUid, String fullPath) =>
-      uuidV5(srsNamespace, '$profileUid/deck/${normalizeDeckPath(fullPath)}');
-
-  /// [deck] 派生的 ID 已被当前全名不同的牌组占着时，同一全名的第 [n] 个备选 ID（n ≥ 1）。
-  /// 只由全名与序号决定：看到同样牌组状态的两台设备按同一全名新建，得到同一个 ID。前缀与
-  /// [deck] 不同，任何真实全名都派生不到这里。
-  static String deckAlternate(String profileUid, String fullPath, int n) =>
-      uuidV5(
-        srsNamespace,
-        '$profileUid/deck-alt/$n/${normalizeDeckPath(fullPath)}',
-      );
-
+  /// 牌组全名的规范形（按 `::` 切、每段去首尾空白、丢掉空段）。牌组 ID 本身向内核要（[SrsKernelIds.deck]），
+  /// 内核按同一规则规范化。
   static String normalizeDeckPath(String fullPath) => fullPath
       .split('::')
       .map((String s) => s.trim())
       .where((String s) => s.isNotEmpty)
       .join('::');
-
-  /// 内置默认牌组。
-  static String builtinDefaultDeck(String profileUid) =>
-      uuidV5(srsNamespace, '$profileUid/builtin-deck/default');
 
   /// 内置笔记类型（例如 'lapis'）的固定 ankiNum。
   static int builtinNoteTypeAnkiNum(String key) =>
@@ -202,6 +168,16 @@ abstract final class SrsIds {
   /// 内置笔记类型模板的固定 ankiNum。
   static int builtinTemplateAnkiNum(String noteTypeKey, String templateKey) =>
       hash53('fushi/builtin-notetype/$noteTypeKey/template/$templateKey');
+
+  /// 来源包里已删除的 Anki 卡（revlog 还在、cards 表里已没有这张卡）：
+  /// UUIDv5(defaultDeckId, anki-deleted-card/<来源卡 id>)，[defaultDeckId] 是导入目标集合的内置默认牌组 ID。
+  ///
+  /// 只用作这些 revlog 导入后挂靠的卡 ID（BUG-4657）：它不由任何笔记 × 模板派生，所以永远没有卡片缓存行，
+  /// 挂在它上面的日志只进有效复习投影（统计 / 日历），不进任何卡的历史与排期。由父 ID 派生、公式里不带盐
+  /// （设计稿 §5.2）：协议 3 下默认牌组 ID 带 profile 盐，两个 profile 导入同一个包不撞号；换代后默认牌组是
+  /// 常量，同一个包在任何设备上得到同一个 ID。来源卡 id 不在任何操作里，别名层验不了它（§5.3「验算不上的」）。
+  static String deletedAnkiCard(String defaultDeckId, int ankiCardId) =>
+      uuidV5(defaultDeckId, 'anki-deleted-card/$ankiCardId');
 
   /// 从 Anki 导入的 revlog：UUIDv5(cardId, anki-revlog/<revlog id>)。
   static String importedRevlog(String cardId, int ankiRevlogId) =>

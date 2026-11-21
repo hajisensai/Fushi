@@ -283,9 +283,39 @@ class AdblockCore implements ffi.Finalizable {
     );
   }
 
-  /// 在后台 isolate 收尾同步：只把句柄地址与库路径带过去（零拷贝），快照 JSON 字节带回来。
+  /// 在后台 isolate 收尾同步（见 [_slowCommandInBackground]）。调用方须保证结束前不 [close]。
+  Future<AdblockSnapshot> finishSyncInBackground() =>
+      _slowCommandInBackground(_finishSyncCommand, 'finish_sync');
+
+  /// 暖机（后台 isolate）：不联网，把磁盘缓存对应的引擎装进内存，之后 [check] /
+  /// [cosmeticPayload] 立刻生效；无缓存 / 总开关关 / 已是最新 / 同步在跑时只回快照。
+  /// 应在 [beginSync] 之前调——否则联网刷新过期列表那几秒里引擎是空的、页面整页不拦。
   /// 调用方须保证结束前不 [close]。
-  Future<AdblockSnapshot> finishSyncInBackground() async {
+  Future<AdblockSnapshot> loadCachedInBackground() =>
+      _slowCommandInBackground(_loadCachedCommand, 'load_cached');
+
+  static ffi.Pointer<ffi.Uint8> _finishSyncCommand(
+    FushiWebCoreBindings b,
+    ffi.Pointer<FwcAdblockCore> h,
+    ffi.Pointer<ffi.Size> out,
+  ) => b.fwc_adblock_finish_sync(h, out);
+
+  static ffi.Pointer<ffi.Uint8> _loadCachedCommand(
+    FushiWebCoreBindings b,
+    ffi.Pointer<FwcAdblockCore> h,
+    ffi.Pointer<ffi.Size> out,
+  ) => b.fwc_adblock_load_cached(h, out);
+
+  /// 在后台 isolate 跑一条慢命令：只把句柄地址与库路径带过去（零拷贝），快照 JSON 字节带回来。
+  Future<AdblockSnapshot> _slowCommandInBackground(
+    ffi.Pointer<ffi.Uint8> Function(
+      FushiWebCoreBindings bindings,
+      ffi.Pointer<FwcAdblockCore> handle,
+      ffi.Pointer<ffi.Size> outLen,
+    )
+    command,
+    String name,
+  ) async {
     final int address = _live().address;
     final String? path = _library.libraryPath;
     final Uint8List? bytes = await Isolate.run<Uint8List?>(() {
@@ -295,12 +325,11 @@ class AdblockCore implements ffi.Finalizable {
       final ffi.Pointer<FwcAdblockCore> h =
           ffi.Pointer<FwcAdblockCore>.fromAddress(address);
       return lib.takeBytes(
-        (ffi.Pointer<ffi.Size> out) =>
-            lib.bindings.fwc_adblock_finish_sync(h, out),
+        (ffi.Pointer<ffi.Size> out) => command(lib.bindings, h, out),
       );
     });
     if (bytes == null) {
-      throw StateError('fwc adblock finish_sync returned no data');
+      throw StateError('fwc adblock $name returned no data');
     }
     final Object? json = const Utf8Decoder()
         .fuse(const JsonDecoder())

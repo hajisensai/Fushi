@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,6 +26,11 @@ import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/online/online_shelf_removal.dart';
 import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/src/media/online/online_work_detail.dart';
+import 'package:fushi/src/media/detail/media_poster_detail.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart'
+    show fushiPageBackgroundColor;
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/collections_page.dart'
     show buildCollectionReaderMediaItem;
@@ -87,6 +93,18 @@ class _LnReaderNovelDetailPageState
   bool _loading = true;
   Object? _error;
 
+  /// [_novel] 是从书架书的描述符拼出来的旧目录（[_showShelfCatalog]），源站的
+  /// 详情还没取回。只有章节列表可信：能读（序号就是那本书现在的 spine），不能
+  /// 下载（作者 / 简介 / 封面都还没有，打出来的 EPUB 元数据是残的）。
+  ///
+  /// 不变式：为 true 时 [_shelfBook] 一定非空——旧目录只属于那本书，书移出书架
+  /// 就一并撤掉。
+  bool _catalogFromShelf = false;
+
+  /// 章节列表进场动画的重播键：目录换了才换。旧目录 → 新目录而章节没变时保持
+  /// 不变，已经在屏上的列表不重播一次进场。
+  Object _chapterListKey = Object();
+
   /// 正在准备在线书（首次建占位书 / 同步章节列表）或移出书架，期间禁止重复点。
   bool _opening = false;
 
@@ -115,6 +133,9 @@ class _LnReaderNovelDetailPageState
       _backdrop = null;
     });
     try {
+      // 已上架的书先出旧目录：取详情要过插件（多页目录还是逐页串行取），这段
+      // 时间不该对着骨架干等。已经有内容在屏上（刷新）就不用再垫。
+      if (_novel == null) await _showShelfCatalog();
       await widget.manager.load(widget.plugin);
       final LnReaderNovel novel = await widget.manager.runtime.novel(
         widget.plugin.id,
@@ -127,11 +148,16 @@ class _LnReaderNovelDetailPageState
       final ReaderPosition? position = await _readPosition(shelfBook);
       if (!mounted) return;
       setState(() {
+        if (!_sameChapterPaths(_novel?.chapters, novel.chapters)) {
+          _chapterListKey = Object();
+        }
         _novel = novel;
+        _catalogFromShelf = false;
         _shelfBook = shelfBook;
         _position = position;
         _loading = false;
       });
+      if (shelfBook != null) await _refreshShelfDetails(novel);
     } on Object catch (error, stack) {
       ErrorLogService.instance.log(
         'LnReaderNovelDetailPage.load',
@@ -145,6 +171,65 @@ class _LnReaderNovelDetailPageState
       });
     }
   }
+
+  /// 源站详情回来后把头部信息记进书架书的描述符，下次进页的旧目录阶段就能
+  /// 画出完整头部。只是缓存：写失败记日志，不影响已经在屏上的源站详情。
+  Future<void> _refreshShelfDetails(LnReaderNovel novel) async {
+    try {
+      await _onlineLibrary().refreshDetails(widget.plugin.id, novel);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'LnReaderNovelDetailPage.refreshShelfDetails',
+        error,
+        stack,
+      );
+    }
+  }
+
+  /// 这部作品已在书架上时，用书里存着的章节列表（上次同步到的目录）与头部信息
+  /// （简介 / 作者 / 状态 / 类型标签）先渲染，源站详情回来时头部高度不变、章节
+  /// 列表不下移。不在书架 / 描述符读不出章节就什么都不做，照旧等源站。
+  Future<void> _showShelfCatalog() async {
+    final EpubBookRow? shelfBook = await _onlineLibrary().findBook(
+      widget.plugin.id,
+      widget.item.path,
+    );
+    final LnReaderOnlineBookDescriptor? descriptor =
+        LnReaderOnlineBookDescriptor.tryParse(shelfBook?.sourceMetadata);
+    final List<LnReaderChapter> chapters =
+        descriptor?.chapters ?? const <LnReaderChapter>[];
+    if (shelfBook == null || descriptor == null || chapters.isEmpty) return;
+    final ReaderPosition? position = await _readPosition(shelfBook);
+    if (!mounted || _novel != null) return;
+    setState(() {
+      _novel = LnReaderNovel(
+        // 书名可能带同名并存的后缀；列表给的名字才是作品名。
+        name: widget.item.name.isNotEmpty ? widget.item.name : shelfBook.title,
+        path: widget.item.path,
+        cover: widget.item.cover,
+        summary: descriptor.details.summary,
+        author: descriptor.details.author,
+        status: descriptor.details.status,
+        genres: descriptor.details.genres,
+        chapters: chapters,
+        totalPages: 1,
+      );
+      _catalogFromShelf = true;
+      _chapterListKey = Object();
+      _shelfBook = shelfBook;
+      _position = position;
+    });
+  }
+
+  static bool _sameChapterPaths(
+    List<LnReaderChapter>? a,
+    List<LnReaderChapter> b,
+  ) =>
+      a != null &&
+      listEquals(
+        <String>[for (final LnReaderChapter chapter in a) chapter.path],
+        <String>[for (final LnReaderChapter chapter in b) chapter.path],
+      );
 
   /// 菜单「登录」：登完立刻从源重取，用户不用自己想到去点刷新。
   Future<void> _login() async {
@@ -302,6 +387,7 @@ class _LnReaderNovelDetailPageState
           .deleteBook(
             db: appModel.database,
             bookKey: book.bookKey,
+            appModel: appModel,
             scope: decision.scope,
           );
       if (!mounted) return;
@@ -315,7 +401,15 @@ class _LnReaderNovelDetailPageState
         );
         return;
       }
-      setState(() => _shelfBook = null);
+      setState(() {
+        _shelfBook = null;
+        // 屏上还是那本书的旧目录：书没了，目录跟着撤（回到等源站 / 错误占位），
+        // 不留一份拿去「加入书架」会建出残缺元数据的假详情。
+        if (_catalogFromShelf) {
+          _novel = null;
+          _catalogFromShelf = false;
+        }
+      });
       ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
       ref.invalidate(srtBooksProvider);
     } on Object catch (error, stack) {
@@ -372,7 +466,7 @@ class _LnReaderNovelDetailPageState
 
   Future<void> _download({int startIndex = 0}) async {
     final LnReaderNovel? novel = _novel;
-    if (novel == null || novel.chapters.isEmpty) return;
+    if (novel == null || novel.chapters.isEmpty || _catalogFromShelf) return;
     final RangeValues? range = await showAppDialog<RangeValues>(
       context: context,
       builder: (BuildContext context) => LnReaderChapterRangeDialog(
@@ -428,6 +522,26 @@ class _LnReaderNovelDetailPageState
   @override
   Widget build(BuildContext context) {
     final LnReaderNovel? novel = _novel;
+    if (shellRedesignActive(context)) {
+      // 重设计外壳：海报面板版式（与漫画 / 视频作品详情同一套，见
+      // media_poster_detail.dart）。返回键是 [MediaPosterDetailChrome] 的裸图标
+      // 页头；整页套封面取色的面板配色。墨水屏走下面的原版式。
+      final String title = novel?.name.isNotEmpty == true
+          ? novel!.name
+          : widget.item.name;
+      return Scaffold(
+        backgroundColor: fushiPageBackgroundColor(context),
+        body: MediaPosterDetailTheme(
+          image: _backdropFor(novel?.cover ?? widget.item.cover),
+          fallbackKey: title,
+          child: MediaPosterDetailChrome(
+            title: title,
+            ownPrimaryScroll: true,
+            child: _buildBody(context),
+          ),
+        ),
+      );
+    }
     // 页头只留标题：「在网站打开」「刷新」收进作品头部的「⋯」菜单（M3E 详情骨架）。
     return FushiPageScaffold(
       // hero 里已有大标题：顶栏标题等它滚出视口再淡入（不同屏重复）。
@@ -465,32 +579,44 @@ class _LnReaderNovelDetailPageState
     final ImageProvider<Object>? backdrop = _backdropFor(
       novel?.cover ?? widget.item.cover,
     );
+    // 「继续 / 开始阅读」悬浮按钮：与 hero 主按钮同一动作（阅读器按存档恢复）。
+    final Widget? fab = chapters.isEmpty
+        ? null
+        : MediaDetailResumeFab(
+            buttonKey: const ValueKey<String>('novel_detail_resume_fab'),
+            watching: false,
+            started: _position != null,
+            itemLabel: chapters[_resumeChapterIndex(chapters)].name,
+            onPressed: _opening ? null : () => unawaited(_readOnline()),
+          );
+    final List<Widget> slivers = <Widget>[
+      SliverPadding(
+        padding: EdgeInsets.symmetric(horizontal: page),
+        sliver: SliverToBoxAdapter(
+          child: OnlineWorkSectionTitle(
+            t.mihon_chapters_title,
+            count: chapters.isEmpty ? null : chapters.length,
+          ),
+        ),
+      ),
+      _buildChapterList(chapters, page),
+    ];
+    if (shellRedesignActive(context)) {
+      return FushiEntranceScope(
+        child: MediaPosterDetailLayout(
+          bottomPadding: page,
+          fab: fab,
+          header: _buildHeader(chapters, backdrop),
+          slivers: slivers,
+        ),
+      );
+    }
     return MediaDetailLayout(
       backdrop: backdrop,
       backdropKey: _backdropUrl,
-      // 「继续 / 开始阅读」悬浮按钮：与 hero 主按钮同一动作（阅读器按存档恢复）。
-      fab: chapters.isEmpty
-          ? null
-          : MediaDetailResumeFab(
-              buttonKey: const ValueKey<String>('novel_detail_resume_fab'),
-              watching: false,
-              started: _position != null,
-              itemLabel: chapters[_resumeChapterIndex(chapters)].name,
-              onPressed: _opening ? null : () => unawaited(_readOnline()),
-            ),
+      fab: fab,
       header: _buildHeader(chapters, backdrop),
-      slivers: <Widget>[
-        SliverPadding(
-          padding: EdgeInsets.symmetric(horizontal: page),
-          sliver: SliverToBoxAdapter(
-            child: OnlineWorkSectionTitle(
-              t.mihon_chapters_title,
-              count: chapters.isEmpty ? null : chapters.length,
-            ),
-          ),
-        ),
-        _buildChapterList(chapters, page),
-      ],
+      slivers: slivers,
     );
   }
 
@@ -512,152 +638,164 @@ class _LnReaderNovelDetailPageState
     // 转圈落在发起的那个按钮上：在线阅读 = 主按钮，加入 / 移出书架 = 次按钮。
     final bool readBusy = _opening && !_shelfActionRunning;
     final bool shelfBusy = _opening && _shelfActionRunning;
+    final Widget cover = LnReaderCover(
+      url: novel?.cover ?? widget.item.cover,
+      site: widget.plugin.site,
+      pluginHeaders: widget.imageHeaders,
+      cloudflare: widget.manager.cloudflare,
+    );
+    final List<MediaDetailChip> chips = <MediaDetailChip>[
+      if (author != null && author.isNotEmpty)
+        MediaDetailChip(author, icon: FushiIcons.person),
+      if (status != null)
+        MediaDetailChip(status, tone: _lnReaderStatusTone(novel?.status)),
+      if (inShelf)
+        MediaDetailChip(
+          t.novel_detail_library_added,
+          key: const ValueKey<String>('novel_detail_in_shelf_chip'),
+          icon: FushiIcons.books,
+          tone: MediaDetailChipTone.primary,
+        ),
+      // LNReader 插件从第三方站点抓取（10-09「外部来源」提示）。
+      ...extensionSourceDetailChips(),
+    ];
+    final List<String> genres = splitOnlineWorkGenres(novel?.genres);
+    final Widget primaryAction = MediaDetailPrimaryButton(
+      buttonKey: const ValueKey<String>('novel_detail_read_online'),
+      icon: FushiIcons.readingMode,
+      label: chapters.isEmpty
+          ? t.novel_detail_read_online
+          : MediaDetailResumeFab.labelFor(
+              watching: false,
+              started: _position != null,
+              itemLabel: chapters[_resumeChapterIndex(chapters)].name,
+            ),
+      busy: readBusy,
+      onPressed: chapters.isEmpty || _opening
+          ? null
+          : () => unawaited(_readOnline()),
+    );
+    final List<Widget> secondaryActions = <Widget>[
+      // 同一个位置、同一个按钮：不在书架是「加入」，在书架是「移出」（与漫画
+      // 作品页同一口径；在书架时按钮是 selected 实心态）。
+      if (inShelf)
+        MediaDetailSecondaryButton(
+          buttonKey: const ValueKey<String>('novel_detail_library_remove'),
+          icon: FushiIcons.libraryAdd,
+          label: t.novel_detail_library_remove,
+          selected: true,
+          busy: shelfBusy,
+          onPressed: _opening ? null : () => unawaited(_removeFromShelf()),
+        )
+      else
+        MediaDetailSecondaryButton(
+          buttonKey: const ValueKey<String>('novel_detail_library_add'),
+          icon: FushiIcons.libraryAdd,
+          label: t.novel_detail_library_add,
+          busy: shelfBusy,
+          onPressed: chapters.isEmpty || _opening
+              ? null
+              : () => unawaited(_addToShelf()),
+        ),
+      MediaDetailSecondaryButton(
+        buttonKey: const ValueKey<String>('novel_detail_download'),
+        icon: FushiIcons.download,
+        label: t.novel_detail_download,
+        // 旧目录阶段不给下载：详情（作者 / 简介 / 封面）要等源站取回。
+        onPressed: chapters.isEmpty || _catalogFromShelf
+            ? null
+            : () => unawaited(_download()),
+      ),
+    ];
+    final List<MediaDetailMenuItem> moreItems = <MediaDetailMenuItem>[
+      MediaDetailMenuItem(
+        key: const ValueKey<String>('novel_detail_open_website'),
+        icon: FushiIcons.openInNew,
+        label: t.mihon_source_website_open,
+        onSelected: () => unawaited(_openWebsite()),
+      ),
+      // 源站要登录才给章节 / 正文时的常驻入口（与漫画作品页同一口径）。
+      if (lnReaderLoginTarget(
+            cloudflare: widget.manager.cloudflare,
+            site: widget.plugin.site,
+          ) !=
+          null)
+        MediaDetailMenuItem(
+          key: const ValueKey<String>('novel_detail_login'),
+          icon: FushiIcons.login,
+          label: t.mihon_source_login,
+          enabled: !_loading,
+          onSelected: () => unawaited(_login()),
+        ),
+      MediaDetailMenuItem(
+        key: const ValueKey<String>('novel_detail_refresh'),
+        icon: FushiIcons.refresh,
+        label: t.refresh,
+        enabled: !_loading,
+        onSelected: () => unawaited(_load()),
+      ),
+    ];
+    final Widget extra = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        // 已有章节时刷新失败：章节照常可读，只在头部挂一条提示（没有章节时
+        // 错误占据章节区，见 [_buildChapterList]）。
+        if (error != null && chapters.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: FushiInlineNotice(
+              severity: FushiNoticeSeverity.error,
+              message: describeOnlineSourceError(error),
+            ),
+          ),
+        // 详情 / 章节下载被 Cloudflare 拦下时给出验证；没有待解挑战时不占位。
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          // 只放真要显示的按钮：零尺寸子项照样占 spacing，会把登录按钮挤偏。
+          children: <Widget>[
+            if (LnReaderCloudflareAction.shows(
+              widget.manager.cloudflare,
+              widget.plugin.id,
+            ))
+              LnReaderCloudflareAction(
+                cloudflare: widget.manager.cloudflare,
+                pluginId: widget.plugin.id,
+                onVerified: () => unawaited(_load()),
+              ),
+            // 加载失败时在错误旁给登录入口（判不出是不是因为没登录，不猜）。
+            if (error != null &&
+                lnReaderLoginTarget(
+                      cloudflare: widget.manager.cloudflare,
+                      site: widget.plugin.site,
+                    ) !=
+                    null)
+              LnReaderLoginAction(
+                manager: widget.manager,
+                plugin: widget.plugin,
+                onLoggedIn: _load,
+              ),
+          ],
+        ),
+      ],
+    );
     return OnlineWorkHeader(
       coverMaterial: ShelfCoverMaterial.glossyBook,
-      cover: LnReaderCover(
-        url: novel?.cover ?? widget.item.cover,
-        site: widget.plugin.site,
-        pluginHeaders: widget.imageHeaders,
-        cloudflare: widget.manager.cloudflare,
-      ),
+      cover: cover,
       backdrop: backdrop,
       title: title,
       overline: widget.plugin.name,
-      chips: <MediaDetailChip>[
-        if (author != null && author.isNotEmpty)
-          MediaDetailChip(author, icon: FushiIcons.person),
-        if (status != null)
-          MediaDetailChip(status, tone: _lnReaderStatusTone(novel?.status)),
-        if (inShelf)
-          MediaDetailChip(
-            t.novel_detail_library_added,
-            key: const ValueKey<String>('novel_detail_in_shelf_chip'),
-            icon: FushiIcons.books,
-            tone: MediaDetailChipTone.primary,
-          ),
-        // LNReader 插件从第三方站点抓取（10-09「外部来源」提示）。
-        ...extensionSourceDetailChips(),
-      ],
-      genres: splitOnlineWorkGenres(novel?.genres),
+      chips: chips,
+      genres: genres,
       description: summary,
       selectableDescription: true,
-      primaryAction: MediaDetailPrimaryButton(
-        buttonKey: const ValueKey<String>('novel_detail_read_online'),
-        icon: FushiIcons.readingMode,
-        label: chapters.isEmpty
-            ? t.novel_detail_read_online
-            : MediaDetailResumeFab.labelFor(
-                watching: false,
-                started: _position != null,
-                itemLabel: chapters[_resumeChapterIndex(chapters)].name,
-              ),
-        busy: readBusy,
-        onPressed: chapters.isEmpty || _opening
-            ? null
-            : () => unawaited(_readOnline()),
-      ),
-      secondaryActions: <Widget>[
-        // 同一个位置、同一个按钮：不在书架是「加入」，在书架是「移出」（与漫画
-        // 作品页同一口径；在书架时按钮是 selected 实心态）。
-        if (inShelf)
-          MediaDetailSecondaryButton(
-            buttonKey: const ValueKey<String>('novel_detail_library_remove'),
-            icon: FushiIcons.libraryAdd,
-            label: t.novel_detail_library_remove,
-            selected: true,
-            busy: shelfBusy,
-            onPressed: _opening ? null : () => unawaited(_removeFromShelf()),
-          )
-        else
-          MediaDetailSecondaryButton(
-            buttonKey: const ValueKey<String>('novel_detail_library_add'),
-            icon: FushiIcons.libraryAdd,
-            label: t.novel_detail_library_add,
-            busy: shelfBusy,
-            onPressed: chapters.isEmpty || _opening
-                ? null
-                : () => unawaited(_addToShelf()),
-          ),
-        MediaDetailSecondaryButton(
-          buttonKey: const ValueKey<String>('novel_detail_download'),
-          icon: FushiIcons.download,
-          label: t.novel_detail_download,
-          onPressed: chapters.isEmpty ? null : () => unawaited(_download()),
-        ),
-      ],
-      moreItems: <MediaDetailMenuItem>[
-        MediaDetailMenuItem(
-          key: const ValueKey<String>('novel_detail_open_website'),
-          icon: FushiIcons.openInNew,
-          label: t.mihon_source_website_open,
-          onSelected: () => unawaited(_openWebsite()),
-        ),
-        // 源站要登录才给章节 / 正文时的常驻入口（与漫画作品页同一口径）。
-        if (lnReaderLoginTarget(
-              cloudflare: widget.manager.cloudflare,
-              site: widget.plugin.site,
-            ) !=
-            null)
-          MediaDetailMenuItem(
-            key: const ValueKey<String>('novel_detail_login'),
-            icon: FushiIcons.login,
-            label: t.mihon_source_login,
-            enabled: !_loading,
-            onSelected: () => unawaited(_login()),
-          ),
-        MediaDetailMenuItem(
-          key: const ValueKey<String>('novel_detail_refresh'),
-          icon: FushiIcons.refresh,
-          label: t.refresh,
-          enabled: !_loading,
-          onSelected: () => unawaited(_load()),
-        ),
-      ],
-      extra: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          // 已有章节时刷新失败：章节照常可读，只在头部挂一条提示（没有章节时
-          // 错误占据章节区，见 [_buildChapterList]）。
-          if (error != null && chapters.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: FushiInlineNotice(
-                severity: FushiNoticeSeverity.error,
-                message: describeOnlineSourceError(error),
-              ),
-            ),
-          // 详情 / 章节下载被 Cloudflare 拦下时给出验证；没有待解挑战时不占位。
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            // 只放真要显示的按钮：零尺寸子项照样占 spacing，会把登录按钮挤偏。
-            children: <Widget>[
-              if (LnReaderCloudflareAction.shows(
-                widget.manager.cloudflare,
-                widget.plugin.id,
-              ))
-                LnReaderCloudflareAction(
-                  cloudflare: widget.manager.cloudflare,
-                  pluginId: widget.plugin.id,
-                  onVerified: () => unawaited(_load()),
-                ),
-              // 加载失败时在错误旁给登录入口（判不出是不是因为没登录，不猜）。
-              if (error != null &&
-                  lnReaderLoginTarget(
-                        cloudflare: widget.manager.cloudflare,
-                        site: widget.plugin.site,
-                      ) !=
-                      null)
-                LnReaderLoginAction(
-                  manager: widget.manager,
-                  plugin: widget.plugin,
-                  onLoggedIn: _load,
-                ),
-            ],
-          ),
-        ],
-      ),
+      primaryAction: primaryAction,
+      secondaryActions: secondaryActions,
+      moreItems: moreItems,
+      extra: extra,
+      posterPanel: shellRedesignActive(context),
+      coverImage: backdrop,
     );
   }
 
@@ -698,7 +836,7 @@ class _LnReaderNovelDetailPageState
       );
     } else {
       body = FushiEntranceScope(
-        replayKey: _novel,
+        replayKey: _chapterListKey,
         child: SliverList.builder(
           itemCount: chapters.length,
           itemBuilder: (BuildContext context, int index) =>
@@ -733,7 +871,9 @@ class _LnReaderNovelDetailPageState
       trailing: FushiIconButtonControl(
         key: ValueKey<String>('novel_chapter_download_${chapter.path}'),
         tooltip: t.novel_detail_chapter_download,
-        onPressed: () => unawaited(_download(startIndex: index)),
+        onPressed: _catalogFromShelf
+            ? null
+            : () => unawaited(_download(startIndex: index)),
         icon: const FushiIcon(FushiIcons.download),
       ),
       onTap: _opening

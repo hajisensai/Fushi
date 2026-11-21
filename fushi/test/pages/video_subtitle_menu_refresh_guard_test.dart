@@ -114,9 +114,10 @@ void main() {
   });
 
   test('BUG-1329: YouTube 字幕轨 cue 解析抛错也要收掉加载条', () {
+    // 反馈 A41_cyNKcc：主 / 副字幕的 YouTube 轨共用取 cue 函数，加载态在那里收敛。
     final String body = region(
-      'Future<void> _applyYoutubeCaptionTrack(',
-      'Future<void> _importExternalSubtitle(',
+      'Future<List<AudioCue>?> _resolveYoutubeTrackCues(',
+      'Future<void> _applyYoutubeSecondaryCaptionTrack(',
     );
     final int resolve = body.indexOf('resolveYoutubeCaptionCues(');
     expect(

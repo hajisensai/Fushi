@@ -115,7 +115,7 @@ void main() {
         'scheduleTyped', () {
       final String body = bodyOf(
         appModel,
-        'Future<void> _scheduleDictPathsAsync(',
+        'Future<bool> _scheduleDictPathsAsync(',
       );
       expect(
         body.contains('bucketDictPaths('),

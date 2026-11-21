@@ -35,7 +35,6 @@ void main() {
     otherProfileId = await addProfile('B');
     srs = await openTestSrsStorage();
     store = await SrsDbStore.open(
-      db: srs.db,
       core: srs.core,
       profileUid: await db.profileUidOf(profileId),
       deviceId: 'dev',
@@ -78,7 +77,7 @@ void main() {
       db,
       activityLimit: 0,
       profileId: profileId,
-      reviewsFrom: srs.db,
+      reviewsFrom: srs.core,
     );
     expect(reviewMs(f), 2 * 3 * 5000 + 4000);
     // 日面 / 小时面各一份（与段同形），不并进同一列表。
@@ -123,7 +122,7 @@ void main() {
       db,
       activityLimit: 0,
       profileId: otherProfileId,
-      reviewsFrom: srs.db,
+      reviewsFrom: srs.core,
     );
     expect(reviews(other), isEmpty);
     // 对照：同一份 srs.db、本 profile 有复习。
@@ -131,7 +130,7 @@ void main() {
       db,
       activityLimit: 0,
       profileId: profileId,
-      reviewsFrom: srs.db,
+      reviewsFrom: srs.core,
     );
     expect(reviews(mine), isNotEmpty);
   });
@@ -149,7 +148,7 @@ void main() {
         db,
         activityLimit: 0,
         profileId: profileId,
-        reviewsFrom: srs.db,
+        reviewsFrom: srs.core,
       );
       return reviews(
         f,
@@ -176,7 +175,7 @@ void main() {
           db,
           activityLimit: 0,
           profileId: profileId,
-          reviewsFrom: srs.db,
+          reviewsFrom: srs.core,
         ),
       ).singleWhere((StatFact x) => x.lastActiveMs == late.occurredAt).dateKey;
     }

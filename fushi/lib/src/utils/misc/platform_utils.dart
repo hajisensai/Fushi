@@ -5,31 +5,33 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 
-// Architecture decision: platform branching uses runtime Platform.is* checks
-// centralized in this file, not Dart conditional imports.
+// Architecture decision: platform branching uses runtime platform checks
+// centralized in this file, not Dart conditional imports. The simple
+// platform-identity getters below read [hostPlatform] (one overridable seam, so
+// the settings catalog exporter can walk the settings per shipping platform);
+// in production it is the real platform.
 // Conditional imports (if (dart.library.io)) only distinguish web vs native,
 // which this app does not target. For platform-specific behavior beyond simple
 // boolean checks, use the service abstractions in package:fushi_platform with
 // implementations under lib/src/platform/{android,ios,desktop}/.
 
-bool get isDesktopPlatform =>
-    Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+bool get isDesktopPlatform => hostPlatform.isDesktop;
 
-bool get isMobilePlatform => Platform.isAndroid || Platform.isIOS;
+bool get isMobilePlatform => hostPlatform.isMobile;
 
-bool get isAndroidPlatform => Platform.isAndroid;
+bool get isAndroidPlatform => hostPlatform.isAndroid;
 
-bool get isIOSPlatform => Platform.isIOS;
+bool get isIOSPlatform => hostPlatform.isIOS;
 
-bool get supportsNativeAudio =>
-    Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
+bool get supportsNativeAudio => hostPlatform.isMobile || hostPlatform.isMacOS;
 
-bool get supportsFloatingOverlay => Platform.isAndroid;
+bool get supportsFloatingOverlay => hostPlatform.isAndroid;
 
-bool get isWindowsPlatform => Platform.isWindows;
+bool get isWindowsPlatform => hostPlatform.isWindows;
 
-bool get isMacOSPlatform => Platform.isMacOS;
+bool get isMacOSPlatform => hostPlatform.isMacOS;
 
 /// WebView 本地资源（EPUB / 漫画页 / 字体）走自定义 scheme 投递的平台。
 ///

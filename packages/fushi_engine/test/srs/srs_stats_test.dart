@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -54,48 +52,34 @@ SrsReviewLog rlog(
 SrsScheduleResult res(SrsQueue q, {int ivl = 0, int? dueDay}) =>
     SrsScheduleResult(queue: q, scheduledDays: ivl, dueDay: dueDay);
 
-/// 把内存里的日志（落库原文 = `canonical()`，与 `SrsDbStore` 写 `srs_review_logs` 同形）写进一份临时
-/// srs.db，经 Rust `SrsCore.statProjection` 走生产的投影路径，再按 [day] 口径展开成统计记录（展开在生产里由
-/// 内核 store/stats.rs 做，那边的单测钉同一组规则）。
-/// 全部日志合成一个归属组，归属卡 = 第一条日志的卡。
-({List<StatReviewRow> reviews, List<StatMaturityRow> maturity}) statsViaRust(
-  List<SrsReviewLog> logs,
-  SrsDayContext day,
-) {
-  final Directory dir = Directory.systemTemp.createTempSync('srs_stats_rust_');
-  final SrsCore core = SrsCore.open('${dir.path}/srs.db')..legacyMarkNone();
-  addTearDown(() {
-    core.close();
-    try {
-      dir.deleteSync(recursive: true);
-    } on FileSystemException {
-      // 句柄晚释放。
-    }
-  });
-  core.debugExecBatchRaw(
-    <String>[
-      'INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, '
-          'review_type, origin, duration_ms, jslim) VALUES (srs_id(?), srs_id(?), srs_id(?), ?, ?, ?, ?, ?, ?, ?)',
-    ],
-    <(int, List<Object?>)>[
-      for (final SrsReviewLog l in logs)
-        (
-          0,
-          <Object?>[
-            l.id,
-            l.profileUid,
-            l.cardId,
-            l.kind,
-            l.rating,
-            l.occurredAt,
-            l.reviewType,
-            l.origin,
-            l.durationMs,
-            l.canonical(),
-          ],
-        ),
-    ],
+/// 把内存里的日志经本机写路径（[SrsDbStore.importEvents]，与导入落日志同一条内核 `apply`）落进一份临时新代库，经
+/// Rust `SrsCore.statProjection`（按 profile 的集合读，页里带 `[-1, profile]` 行）走生产的投影路径，再按 [day] 口径
+/// 展开成统计记录（展开在生产里由内核做，那边的单测钉同一组规则）。全部日志合成一个归属组，归属卡 = 第一条日志的卡。
+///
+/// 协议 3 时这里直接往 `srs_review_logs` 表插行；新代没有那张表，只经写命令落日志。
+Future<({List<StatReviewRow> reviews, List<StatMaturityRow> maturity})>
+statsViaRust(List<SrsReviewLog> logs, SrsDayContext day) async {
+  final SrsCore core = openTestSrsIn(
+    newTestSrsDir('srs_stats_rust_').path,
+  ).core;
+  final SrsDbStore store = await SrsDbStore.open(
+    core: core,
+    profileUid: kProfile,
+    deviceId: 'dev',
+    engine: const _Engine(),
+    fallbackRolloverHour: () => 4,
   );
+  // 来源记成 Anki（导入的旧历史）：新代内核原样保留这类日志的排程结果；本机作答来源（fushi）的日志由内核按牌组
+  // 预设重新排程、改写结果，造不出这里要的「指定间隔」的历史。投影只看结果与评分，不看来源。
+  await store.importEvents(<SrsEvent>[
+    for (final SrsReviewLog l in logs)
+      SrsLogEvent(
+        SrsReviewLog.fromJson(<String, Object?>{
+          ...l.toJson(),
+          'origin': SrsLogOrigin.anki,
+        }),
+      ),
+  ]);
   final String owner = logs.first.cardId;
   final List<String> group = <String>[
     owner,
@@ -104,7 +88,7 @@ SrsScheduleResult res(SrsQueue q, {int ivl = 0, int? dueDay}) =>
     }.difference(<String>{owner}),
   ];
   final (int _, List<List<Object?>> rows) = srsDecodeRows(
-    core.statProjection(<List<String>>[group]),
+    core.statProjection(<List<String>>[group], profile: kProfile),
   );
   final List<StatReviewRow> reviews = <StatReviewRow>[];
   final List<StatMaturityRow> maturity = <StatMaturityRow>[];
@@ -134,8 +118,8 @@ SrsScheduleResult res(SrsQueue q, {int ivl = 0, int? dueDay}) =>
 }
 
 void main() {
-  group('有效复习投影分类（srs.db → Rust stat_projection）', () {
-    test('新卡 → 学习 → 年轻 → 成熟 → 重学，成熟事件 +1 / −1', () {
+  group('有效复习投影分类（经写命令落日志 → Rust stat_projection）', () {
+    test('新卡 → 学习 → 年轻 → 成熟 → 重学，成熟事件 +1 / −1', () async {
       final int d0 = jst(2026, 9, 1, 10);
       final List<SrsReviewLog> h = <SrsReviewLog>[
         rlog(
@@ -174,7 +158,7 @@ void main() {
           result: res(SrsQueue.review, ivl: 5),
         ),
       ];
-      final out = statsViaRust(h, kJst);
+      final out = await statsViaRust(h, kJst);
       expect(out.reviews.map((StatReviewRow r) => r.kind), <SrsStatReviewKind>[
         SrsStatReviewKind.newCard,
         SrsStatReviewKind.learn,
@@ -186,7 +170,7 @@ void main() {
       expect(out.maturity.first.day, kJst.dayIndexOf(d0 + 3 * kDayMs));
     });
 
-    test('被 undo 撤销的评分不计', () {
+    test('被 undo 撤销的评分不计', () async {
       final int t = jst(2026, 9, 1, 10);
       final List<SrsReviewLog> h = <SrsReviewLog>[
         rlog(
@@ -212,14 +196,14 @@ void main() {
           result: res(SrsQueue.learning),
         ),
       ];
-      final out = statsViaRust(h, kJst);
+      final out = await statsViaRust(h, kJst);
       expect(out.reviews, hasLength(1));
       expect(out.reviews.single.rating, 1);
       // 撤销后它仍是新卡的第一次评分。
       expect(out.reviews.single.kind, SrsStatReviewKind.newCard);
     });
 
-    test('翻日：凌晨 2 点算前一天；小时按日志自己的 UTC 偏移', () {
+    test('翻日：凌晨 2 点算前一天；小时按日志自己的 UTC 偏移', () async {
       final int lateNight = jst(2026, 10, 10, 2);
       final int morning = jst(2026, 10, 10, 5);
       final List<SrsReviewLog> h = <SrsReviewLog>[
@@ -240,14 +224,14 @@ void main() {
           result: res(SrsQueue.learning),
         ),
       ];
-      final out = statsViaRust(h, kJst);
+      final out = await statsViaRust(h, kJst);
       expect(out.reviews[0].day, srsDateToDay(2026, 10, 9));
       expect(out.reviews[0].hour, 2);
       expect(out.reviews[1].day, srsDateToDay(2026, 10, 10));
       expect(out.reviews[1].hour, 20);
     });
 
-    test('到期前复习记为提前复习', () {
+    test('到期前复习记为提前复习', () async {
       final int t = jst(2026, 9, 1, 10);
       final int day = kJst.dayIndexOf(t);
       final List<SrsReviewLog> h = <SrsReviewLog>[
@@ -273,7 +257,7 @@ void main() {
           result: res(SrsQueue.review, ivl: 40, dueDay: day + 62),
         ),
       ];
-      final out = statsViaRust(h, kJst);
+      final out = await statsViaRust(h, kJst);
       expect(out.reviews.map((StatReviewRow r) => r.early), <bool>[
         false,
         true,
@@ -281,7 +265,7 @@ void main() {
       ]);
     });
 
-    test('手动改期 / 不认识的复习类型不进复习数，但更新状态', () {
+    test('手动改期 / 不认识的复习类型不进复习数，但更新状态', () async {
       final int t = jst(2026, 9, 1, 10);
       final List<SrsReviewLog> h = <SrsReviewLog>[
         rlog(
@@ -299,7 +283,7 @@ void main() {
           result: res(SrsQueue.review, ivl: 60),
         ),
       ];
-      final out = statsViaRust(h, kJst);
+      final out = await statsViaRust(h, kJst);
       expect(out.reviews.single.kind, SrsStatReviewKind.mature);
     });
   });
@@ -314,7 +298,6 @@ void main() {
       now = jst(2026, 10, 14, 10);
       srsStorage = await openTestSrsStorage();
       store = await SrsDbStore.open(
-        db: srsStorage.db,
         core: srsStorage.core,
         profileUid: kProfile,
         deviceId: 'dev',
@@ -451,6 +434,8 @@ class _Engine implements FsrsEngine {
 
   @override
   String get fsrsRev => 'fake';
+  @override
+  bool isKnownFsrsRev(String rev) => rev == fsrsRev;
   @override
   List<double> defaultParams(SrsAlgorithm a) =>
       List<double>.filled(a.paramCount, 1);

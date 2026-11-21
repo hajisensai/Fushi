@@ -653,16 +653,19 @@ void main() {
         companion(_entry(_current, progress: 39), 40),
         _write(_current, progress: 40),
       );
-      expect(companion(_entry(_completed, progress: 10), 12), _write(_completed, progress: 12));
-      expect(companion(_entry(_repeating, progress: 10), 12), _write(_repeating, progress: 12));
+      expect(
+        companion(_entry(_completed, progress: 10), 12),
+        _write(_completed, progress: 12),
+      );
+      expect(
+        companion(_entry(_repeating, progress: 10), 12),
+        _write(_repeating, progress: 12),
+      );
     });
 
     test('a new entry is created as current; nothing to send when the site '
         'already has the count', () {
-      expect(
-        companion(null, 4),
-        _write(_current, create: true, progress: 4),
-      );
+      expect(companion(null, 4), _write(_current, create: true, progress: 4));
       expect(companion(_entry(_paused, progress: 9), 7), isNull);
     });
 

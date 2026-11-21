@@ -12,8 +12,6 @@
 /// 「不是重复」写进两条笔记的 `notDup/<对方>` 记录（集合语义、随同步走），之后不再建议这一对。
 library;
 
-import 'package:drift/drift.dart';
-import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -53,59 +51,60 @@ class SrsMergeReport {
   final int unmatchedCards;
 }
 
+/// `dup_groups` 的一行（native/fushi_fsrs/src/store/reads.rs）。
+typedef _DupRow = ({
+  String id,
+  String t,
+  String k,
+  String r,
+  int c,
+  String s,
+  int reps,
+});
+
 extension SrsDuplicateNotes on SrsDbStore {
   /// 「不是重复」标记的修改记录键。
   static String notDuplicateKey(String otherNoteId) => 'notDup/$otherNoteId';
 
   /// 当前的重复建议（排除标过「不是重复」的对）。
   Future<List<SrsDuplicateGroup>> duplicateNoteGroups() async {
-    final List<QueryRow> rows = await db
-        .customSelect(
-          'SELECT n.id AS id, n.note_type_id AS t, n.term_key AS k, '
-          'n.reading_key AS r, n.created_at AS c, n.sort_field AS s, '
-          '(SELECT COALESCE(SUM(x.reps), 0) FROM srs_cards_cache x '
-          'WHERE x.note_id = n.id) AS reps '
-          'FROM srs_notes_cache n JOIN ('
-          'SELECT note_type_id, term_key, reading_key FROM srs_notes_cache '
-          "WHERE profile_uid = ? AND deleted_at IS NULL AND term_key != '' "
-          'GROUP BY note_type_id, term_key, reading_key HAVING COUNT(*) > 1'
-          ') g ON g.note_type_id = n.note_type_id AND g.term_key = n.term_key '
-          'AND g.reading_key = n.reading_key '
-          'WHERE n.profile_uid = ? AND n.deleted_at IS NULL',
-          variables: <Variable<Object>>[
-            Variable<String>(profileUid, srsIdType),
-            Variable<String>(profileUid, srsIdType),
-          ],
-          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
-            db.srsNotesCache,
-            db.srsCardsCache,
-          },
-        )
-        .get();
-    final Map<String, List<QueryRow>> byKey = <String, List<QueryRow>>{};
-    for (final QueryRow r in rows) {
-      final String key =
-          '${r.read<String>('t')}\u0000${r.read<String>('k')}\u0000${r.read<String>('r')}';
-      (byKey[key] ??= <QueryRow>[]).add(r);
-    }
-    final List<String> all = <String>[
-      for (final QueryRow r in rows) r.read<String>('id'),
+    final SrsColumns c = await readTable('dup_groups');
+    final SrsStringColumn idCol = c.strings('id');
+    final SrsStringColumn tCol = c.strings('t');
+    final SrsStringColumn kCol = c.strings('k');
+    final SrsStringColumn rCol = c.strings('r');
+    final SrsIntColumn cCol = c.ints('c');
+    final SrsStringColumn sCol = c.strings('s');
+    final SrsIntColumn repsCol = c.ints('reps');
+    final List<_DupRow> rows = <_DupRow>[
+      for (int i = 0; i < c.rows; i++)
+        (
+          id: idCol[i],
+          t: tCol[i],
+          k: kCol[i],
+          r: rCol[i],
+          c: cCol[i],
+          s: sCol[i],
+          reps: repsCol[i],
+        ),
     ];
+    final Map<String, List<_DupRow>> byKey = <String, List<_DupRow>>{};
+    for (final _DupRow r in rows) {
+      final String key = '${r.t}\u0000${r.k}\u0000${r.r}';
+      (byKey[key] ??= <_DupRow>[]).add(r);
+    }
+    final List<String> all = <String>[for (final _DupRow r in rows) r.id];
     final Map<String, Set<String>> dismissed = await _dismissedPairs(all);
     final List<SrsDuplicateGroup> out = <SrsDuplicateGroup>[];
-    for (final List<QueryRow> g in byKey.values) {
-      g.sort((QueryRow a, QueryRow b) {
-        final int byReps = b.read<int>('reps').compareTo(a.read<int>('reps'));
+    for (final List<_DupRow> g in byKey.values) {
+      g.sort((_DupRow a, _DupRow b) {
+        final int byReps = b.reps.compareTo(a.reps);
         if (byReps != 0) return byReps;
-        final int byAge = a.read<int>('c').compareTo(b.read<int>('c'));
-        return byAge != 0
-            ? byAge
-            : a.read<String>('id').compareTo(b.read<String>('id'));
+        final int byAge = a.c.compareTo(b.c);
+        return byAge != 0 ? byAge : a.id.compareTo(b.id);
       });
       // 去掉与组里每一条都标过「不是重复」的笔记；剩不到两条就不算一组。
-      final List<String> ids = <String>[
-        for (final QueryRow r in g) r.read<String>('id'),
-      ];
+      final List<String> ids = <String>[for (final _DupRow r in g) r.id];
       final List<String> kept = <String>[
         for (final String id in ids)
           if (ids.any(
@@ -116,17 +115,15 @@ extension SrsDuplicateNotes on SrsDbStore {
       if (kept.length < 2) continue;
       out.add(
         SrsDuplicateGroup(
-          noteTypeId: g.first.read<String>('t'),
+          noteTypeId: g.first.t,
           noteIds: kept,
           reviews: <String, int>{
-            for (final QueryRow r in g)
-              if (kept.contains(r.read<String>('id')))
-                r.read<String>('id'): r.read<int>('reps'),
+            for (final _DupRow r in g)
+              if (kept.contains(r.id)) r.id: r.reps,
           },
           sortFields: <String, String>{
-            for (final QueryRow r in g)
-              if (kept.contains(r.read<String>('id')))
-                r.read<String>('id'): r.read<String>('s'),
+            for (final _DupRow r in g)
+              if (kept.contains(r.id)) r.id: r.s,
           },
         ),
       );

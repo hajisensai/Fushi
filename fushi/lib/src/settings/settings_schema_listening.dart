@@ -9,6 +9,9 @@ import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_style.dart';
+import 'package:fushi/src/media/listening_reminder.dart';
+import 'package:fushi/src/media/listening_reminder_app.dart'
+    show enableListeningReminder;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
@@ -22,6 +25,7 @@ import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_schema_reading.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 
 /// 「听书」一级分类：有声书播放、朗读声音、素材与转录、悬浮字幕。
 ///
@@ -93,7 +97,7 @@ SettingsDestination buildListeningDestination() {
             subtitle: t.settings_listening_volume_key_nav_hint,
             icon: FushiIcons.skipNext,
             // VolumeKeyChannel 仅 Android 实现，桌面隐藏此项（TODO-1155）。
-            visible: (_) => Platform.isAndroid,
+            visible: (_) => hostPlatform.isAndroid,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
               order: 10,
@@ -759,4 +763,44 @@ SettingsCustomItem _floatingLyricColorItem({
       () => c.appModel.prefsRepo.setFloatingLyricColor(role, color),
     ),
   );
+}
+
+/// 连续收听提醒（反馈 5_mzP54WVx）：音乐 / 有声书 / 视频都算，所以不挂在「听书」
+/// 一级分类下（那里随听书模块门显隐），由「通用 › 听力保护」装配。默认关。
+List<SettingsItem> buildListeningReminderItems() {
+  return <SettingsItem>[
+    SettingsSwitchItem(
+      id: 'general.listening_reminder',
+      title: t.listening_reminder_setting_title,
+      subtitle: t.listening_reminder_setting_hint,
+      icon: FushiIcons.audiobook,
+      defaultValue: false,
+      value: (SettingsContext c) => c.appModel.listeningReminderEnabled,
+      onChanged: (SettingsContext c, bool value) async {
+        await enableListeningReminder(c.appModel, value: value);
+        c.refresh();
+      },
+    ),
+    SettingsSegmentedItem<int>(
+      id: 'general.listening_reminder_minutes',
+      title: t.listening_reminder_interval_title,
+      icon: FushiIcons.timer,
+      dropdown: true,
+      defaultValue: kListeningReminderMinutesDefault,
+      // 开关关着时档位不生效：置灰但照旧显示所选值。
+      enabled: (SettingsContext c) => c.appModel.listeningReminderEnabled,
+      options: <SettingsSegmentOption<int>>[
+        for (final int minutes in kListeningReminderMinutesChoices)
+          SettingsSegmentOption<int>(
+            value: minutes,
+            label: t.listening_reminder_interval_option(n: minutes),
+          ),
+      ],
+      selected: (SettingsContext c) => c.appModel.listeningReminderMinutes,
+      onChanged: (SettingsContext c, int value) async {
+        await c.appModel.setListeningReminderMinutes(value);
+        c.refresh();
+      },
+    ),
+  ];
 }

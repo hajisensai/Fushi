@@ -86,6 +86,10 @@ Dictionary resolveCtlDictionary(List<Dictionary> dictionaries, String query) {
 /// 旧数据里的跨组交错一并消掉（管理页显示顺序 == 查词顺序）。
 /// 分区里只有一个语言组时就是整个分区内排序。
 ///
+/// 只排本机词典：返回的 `order` 是本机分区内的下标，调用方交给
+/// `AppModel.updateDictionaryOrder`（仓库按名字与先后连同同分区的服务器词典一起
+/// 重编号，见 `DictionaryRepository.reorderDictionarySection`），不直接当序号落库。
+///
 /// [sameType] 是一个分区（已按分区顺序排好）；[section] 是分区名（报错用），
 /// 缺省按 [target] 自身类型。混合词典在「汉字」分区排序时传 `kanji`。
 List<Dictionary> ctlReorderDictionaries(

@@ -2,6 +2,10 @@
 // 备份恢复的改 uid（srsCanAdoptProfileUid）只看有没有笔记。只建了牌组 / 改了预设、还没有笔记的 profile 被当成空的，
 // 自动采用对方 uid，经 profile_purge 删掉旧 uid 的全部行：自建牌组与预设一起没了。
 //
+// 新代（G9-5）里关联不改 profile uid：自动 / 用户选定之后经内核 `collection_adopt` 认领对方的集合——本机是空集合
+// （且目录名较大）就丢掉空集合、换绑过去；不是空集合就按 D27 并入（写 `Join`），本机数据一条不丢。「有数据」仍决定
+// 是自动认领还是交给用户选。
+//
 // 真数据库 + 真同步引擎，按 SrsSyncScheduler 的顺序跑：关联（link）→ 同步 v2 的一轮 → 发布说明文件（publish）。
 import 'dart:io';
 
@@ -14,13 +18,14 @@ import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
-import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_runner.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_srs/fushi_srs.dart' show SrsEntityKind, SrsFieldKeys;
 import 'package:test/test.dart';
 
 import 'support/srs_test_storage.dart';
+import 'support/srs_raw_sql.dart';
 
 class _Device {
   _Device._(this.db, this.srs, this.deviceId, this.profileId);
@@ -52,7 +57,6 @@ class _Device {
   }
 
   Future<SrsDbStore> _openStore() async => SrsDbStore.open(
-    db: srs.db,
     core: srs.core,
     profileUid: await db.profileUidOf(profileId),
     deviceId: deviceId,
@@ -66,11 +70,11 @@ class _Device {
     if (choose != null) {
       unlinked.addAll(choose.map((SrsRemoteProfile c) => c.uid));
     }
-    final SrsSync2Report r = await srsSync2Round(
-      host: store,
-      location: SrsAssetLocationStore(store: dir, profileUid: store.profileUid),
-      locationId: 'interconnect:host',
-      nowMs: () => store.now().$1,
+    // 与生产同一个入口：新根 `v4/`、旧根 `v3/` 的围栏与墓碑 head 都照生产写。
+    final SrsSync2Report r = await srsRunLocationRound(
+      SrsLocationBackend(dir),
+      store,
+      'interconnect:host',
     );
     expect(r.error, isNull, reason: '$deviceId sync');
     await linker.publish(dir, store, 'interconnect:host');
@@ -100,11 +104,31 @@ class _Device {
     store.defaultDeckId,
   ))[SrsFieldKeys.deckRetention]?.winner?.value;
 
-  Future<int> rows(String table, String uid) async =>
-      (await srs.db
+  /// 新代库里绑定的集合行数（[uid] 给了只数这个 profile 的）。
+  Future<int> collections([String? uid]) async =>
+      (await srs.core
               .customSelect(
-                'SELECT COUNT(*) AS c FROM "$table" WHERE profile_uid = ?',
-                variables: <Variable<Object>>[Variable<String>(uid, srsIdType)],
+                uid == null
+                    ? 'SELECT COUNT(*) AS c FROM collections'
+                    : 'SELECT COUNT(*) AS c FROM collections WHERE profile_uid = ?',
+                variables: <Variable<Object>>[
+                  if (uid != null) Variable<String>(uid),
+                ],
+              )
+              .getSingle())
+          .read<int>('c');
+
+  /// 新代库里绑着集合标识 [collection] 的行数。
+  Future<int> collectionRows(String collection) async =>
+      (await srs.core
+              .customSelect(
+                'SELECT COUNT(*) AS c FROM collections '
+                'WHERE lower(hex(collection)) = ?',
+                variables: <Variable<Object>>[
+                  Variable<String>(
+                    collection.replaceAll('-', '').toLowerCase(),
+                  ),
+                ],
               )
               .getSingle())
           .read<int>('c');
@@ -188,15 +212,19 @@ void main() {
     expect(await phone.db.profileUidOf(phone.profileId), phoneUid);
     expect(await phone.deckNames(), contains('自建'));
     expect(await phone.defaultDeckRetention(), 0.85);
-    expect(phone.unlinked, contains(host.store.profileUid), reason: '交给用户选');
+    expect(phone.unlinked, contains(host.store.sync2Dir), reason: '交给用户选');
 
-    // 用户在冲突里选电脑那份：本机有数据 → 并入，牌组与预设都带过去，电脑也收到。
+    // 用户在冲突里选电脑那份：本机有数据 → 并入（D27：手机目录名大，改绑到电脑的集合、写一条 Join），牌组与预设都
+    // 带过去，电脑也收到。profile uid 不变。
     final SrsProfileAdoptResult adopted = await phone.linker.adopt(
       phone.store,
-      host.store.profileUid,
+      host.store.sync2Dir!,
+      within: dir,
     );
     phone.store = adopted.store;
-    expect(phone.store.profileUid, host.store.profileUid);
+    expect(phone.store.profileUid, phoneUid);
+    expect(phone.store.sync2Collection, host.store.sync2Collection);
+    expect(await phone.defaultDeckRetention(), 0.85);
     expect(await phone.deckNames(), contains('自建'));
     for (int i = 0; i < 3; i++) {
       await phone.sync(dir);
@@ -211,27 +239,33 @@ void main() {
     await decks.store.createDeck('自建');
     await decks.sync(dir);
     await empty.sync(dir);
-    expect(empty.store.profileUid, decks.store.profileUid);
+    expect(empty.store.sync2Collection, decks.store.sync2Collection);
     for (int i = 0; i < 2; i++) {
       await empty.sync(dir);
       await decks.sync(dir);
     }
     expect(await empty.deckNames(), contains('自建'));
-    expect(decks.store.profileUid, isNot(isEmpty));
+    expect(decks.store.sync2Dir, decks.store.profileUid, reason: '有数据的一边不动');
     expect(await decks.deckNames(), contains('自建'));
   });
 
-  test('空设备经关联采用对方 uid 后，旧 uid 的 sync2_ops / sync2_self 行数为 0', () async {
+  // 「空」指没有用户数据：打开过的 profile 日志里已有内置实体的记录（[SrsDbStore.ensureBuiltins]），内核不把它当成可丢的
+  // 空集合（`discard.rs` `disposable` 只认只有 `Salts` 的），按 D27 改绑过去、本机的内置记录随身份带过去（与对方的内置
+  // 实体是同一个规范 ID）。要的是：只剩一个集合、原来的集合标识不再绑着、profile uid 不变。
+  test('空设备经关联认领对方集合后，原来的集合标识不再绑着、不留第二个集合，profile uid 不变', () async {
     final _Device host = await _Device.open('host');
     final _Device phone = await _Device.open('phone');
     await host.addNote('雪');
     await host.sync(dir);
-    final String oldUid = phone.store.profileUid;
-    expect(await phone.rows('sync2_ops', oldUid), greaterThan(0));
+    final String uid = phone.store.profileUid;
+    final String oldCollection = phone.store.sync2Collection!;
+    expect(await phone.collections(), 1);
+    expect(await phone.collectionRows(oldCollection), 1);
     await phone.sync(dir);
-    expect(phone.store.profileUid, host.store.profileUid);
-    expect(await phone.rows('sync2_ops', oldUid), 0);
-    expect(await phone.rows('sync2_self', oldUid), 0);
-    expect(await phone.rows('srs_entities', oldUid), 0);
+    expect(phone.store.profileUid, uid);
+    expect(phone.store.sync2Collection, host.store.sync2Collection);
+    expect(await phone.collections(), 1, reason: '不留第二个集合');
+    expect(await phone.collections(uid), 1);
+    expect(await phone.collectionRows(oldCollection), 0);
   });
 }

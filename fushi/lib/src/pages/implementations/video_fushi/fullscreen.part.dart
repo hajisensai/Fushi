@@ -26,7 +26,7 @@ part of '../video_fushi_page.dart';
 /// ([_enterVideoNativeFullscreen] / [_exitVideoNativeFullscreen]).
 ///
 /// The orientation lifecycle helpers that bracket the native callbacks
-/// ([_lockLandscapeForVideo] / [_applyVideoImmersiveMode] /
+/// ([_applyVideoOrientationLock] / [_applyVideoImmersiveMode] /
 /// [_restoreOrientationOnExit]) intentionally stay in the main shell — they are
 /// page enter/exit orientation ownership, not fullscreen toggling. The dangling
 /// doc comment that was orphaned above `_toggleVideoFullscreen` (it describes the
@@ -91,47 +91,53 @@ extension _VideoFullscreen on _VideoFushiPageState {
   /// 到本集页（否则 `pushReplacement` 会误替换栈顶全屏路由、漏栈旧集页，致 ESC 逐层退）；
   /// 新页则由本方法在就绪后重进全屏，端到端观感 = 换集全程全屏、ESC 一次退出。
   ///
-  /// 一次性（[_didInitialFullscreen]）；仅桌面（移动端无全屏路由，[_pushNeutralizedVideoFullscreen]
-  /// 本就 no-op）。controls 首建帧才设 [_videoControlsContext]、可能晚于就绪帧，故 context
-  /// 未就绪时逐帧重试，带上限（失败/缺失态或超时放弃，杜绝死循环）。两条就绪路径
-  /// （快路径直接翻真 / 慢路径 [_promoteVideoReady]）都调它，一次性闸门去重。
+  /// 一次性（[_initialFullscreen]）；仅桌面（移动端无全屏路由，[_pushNeutralizedVideoFullscreen]
+  /// 本就 no-op）。controls 首建帧才设 [_videoControlsContext]、可能晚于就绪帧，所以这里
+  /// 只开闸：真正的尝试由 context 赋值点 [_captureVideoControlsContext] 与失败 / 缺失态
+  /// 渲染事件触发，不逐帧轮询、也没有「30 帧没等到就放弃」的上限（video-36e）。两条就绪
+  /// 路径（快路径直接翻真 / 慢路径 [_promoteVideoReady]）都调它，闸门去重。
   void _scheduleInitialFullscreenIfNeeded() {
-    if (_didInitialFullscreen) return;
+    if (_initialFullscreen.isSettled) return;
     // 原盘会话（桌面、「播放原盘时自动全屏」开）同样在就绪后进全屏路由；退出会话时
     // 路由 pop → runner 按进入前保存的 WINDOWPLACEMENT 还原最大化 / 尺寸 / 位置。
     if (!(widget.initialFullscreen || _wantsDiscAutoFullscreen) ||
         isMobilePlatform) {
-      _didInitialFullscreen = true;
+      _initialFullscreen.settle();
       return;
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_didInitialFullscreen || !mounted) return;
-      // 失败/缺失态 controls 永不建 → context 永为 null；超时兜底防逐帧死循环。
-      // BUG-2043：放弃重进全屏路由时必须把接管来的原生全屏还回去，否则窗口停在
-      // 无全屏路由的原生全屏态（标题栏隐着、ESC 退页后书架铺满整屏）。
-      if (_failed || _missingResource || _initialFullscreenRetries > 30) {
-        _didInitialFullscreen = true;
-        _releaseHandedOverNativeFullscreen();
-        return;
-      }
-      final BuildContext? ctx = _videoControlsContext;
-      if (ctx == null || !ctx.mounted) {
-        _initialFullscreenRetries++;
-        _scheduleInitialFullscreenIfNeeded();
-        return;
-      }
-      _didInitialFullscreen = true;
-      if (isFullscreen(ctx)) {
-        // 栈上已有全屏路由（退出由它的 pop 收口）：接管来的所有权本就归路由，放手。
-        _ownsHandedOverNativeFullscreen = false;
-        return;
-      }
-      // 所有权在 [_pushNeutralizedVideoFullscreen] 真的建出全屏路由的那一刻才翻假，
-      // 不在这里提前翻——该方法开头还有 `_videoFullscreenTransitioning` 一道提前
-      // return，提前翻假会让窗口停在「原生全屏但栈上无全屏路由」的悬空态，且
-      // dispose 的 [_releaseHandedOverNativeFullscreen] 已成 no-op、退不回去。
-      unawaited(_pushNeutralizedVideoFullscreen(ctx));
-    });
+    _initialFullscreen.arm();
+  }
+
+  /// controls 子树 [Builder] 捕获 context 的唯一写入点：写完通知重进全屏闸门（未开闸 /
+  /// 已关闸时是 no-op，同帧多次捕获合并成一次帧后尝试）。
+  void _captureVideoControlsContext(BuildContext captured) {
+    _videoControlsContext = captured;
+    _initialFullscreen.notify();
+  }
+
+  /// 闸门的一次尝试（帧后回调里跑）：context 还没到就等下一个事件，不排下一帧。
+  VideoInitialFullscreenStep _attemptInitialFullscreen() {
+    if (!mounted) return VideoInitialFullscreenStep.settled;
+    // 失败/缺失态 controls 永不建 → context 永为 null，放弃。
+    // BUG-2043：放弃重进全屏路由时必须把接管来的原生全屏还回去，否则窗口停在
+    // 无全屏路由的原生全屏态（标题栏隐着、ESC 退页后书架铺满整屏）。
+    if (_failed || _missingResource) {
+      _releaseHandedOverNativeFullscreen();
+      return VideoInitialFullscreenStep.settled;
+    }
+    final BuildContext? ctx = _videoControlsContext;
+    if (ctx == null || !ctx.mounted) return VideoInitialFullscreenStep.waiting;
+    if (isFullscreen(ctx)) {
+      // 栈上已有全屏路由（退出由它的 pop 收口）：接管来的所有权本就归路由，放手。
+      _ownsHandedOverNativeFullscreen = false;
+      return VideoInitialFullscreenStep.settled;
+    }
+    // 所有权在 [_pushNeutralizedVideoFullscreen] 真的建出全屏路由的那一刻才翻假，
+    // 不在这里提前翻——该方法开头还有 `_videoFullscreenTransitioning` 一道提前
+    // return，提前翻假会让窗口停在「原生全屏但栈上无全屏路由」的悬空态，且
+    // dispose 的 [_releaseHandedOverNativeFullscreen] 已成 no-op、退不回去。
+    unawaited(_pushNeutralizedVideoFullscreen(ctx));
+    return VideoInitialFullscreenStep.settled;
   }
 
   /// BUG-2043：从全屏页换集而来的新页（[VideoFushiPage.initialFullscreen]）在 initState
@@ -341,6 +347,8 @@ extension _VideoFullscreen on _VideoFushiPageState {
                                         ),
                                         child: fullscreenVideo,
                                       ),
+                                      // 窗口侧仍挂着、画面 GlobalKey 归它；这里不带。
+                                      surfaceKey: null,
                                     );
                                   },
                                 ),
@@ -451,7 +459,7 @@ extension _VideoFullscreen on _VideoFushiPageState {
   }
 
   Widget _buildFullscreenButton({required bool desktop}) {
-    // BUG-221: 移动端不提供全屏按钮。移动端视频全程横屏沉浸（[_lockLandscapeForVideo] +
+    // BUG-221: 移动端不提供全屏按钮。移动端视频沉浸（[_applyVideoOrientationLock] +
     // [_applyVideoImmersiveMode]），画面已占满，「全屏」无额外语义；进 media_kit 全屏路由
     // 反而引入「退全屏弹回竖屏 + 两段式返回」（全屏路由吞第一次返回）。移动端永不进全屏，
     // 故隐藏入口（与双击不再全屏、[_toggleVideoFullscreen] 移动端 no-op 一致）。
@@ -473,9 +481,10 @@ extension _VideoFullscreen on _VideoFushiPageState {
   /// [defaultEnterNativeFullscreen]。窗口侧与自建全屏路由的 [Video] 都传这个，
   /// 经由 media_kit 的 `state.widget.onEnterFullscreen` 链路生效。
   ///
-  /// 移动端：语义与 [_lockLandscapeForVideo] + [_applyVideoImmersiveMode] 一致——
-  /// 只允许两个横屏 + 沉浸隐栏，**永不 `setPreferredOrientations([])`**（病根是
-  /// media_kit 默认退全屏时放开全部方向把设备弹回竖屏）。
+  /// 移动端：语义与 [_applyVideoOrientationLock] + [_applyVideoImmersiveMode] 一致——
+  /// 方向集取当前方向策略（[videoDeviceOrientationsFor]）+ 沉浸隐栏，**永不
+  /// `setPreferredOrientations([])`**（病根是 media_kit 默认退全屏时放开全部方向把设备
+  /// 弹回竖屏）。
   ///
   /// 桌面：**保留** media_kit 默认 [defaultEnterNativeFullscreen]，它经 MethodChannel
   /// `Utils.EnterNativeFullscreen` 把 OS 窗口切真原生全屏（覆盖任务栏）。桌面分支不碰
@@ -515,18 +524,18 @@ extension _VideoFullscreen on _VideoFushiPageState {
     if (!VideoDisplayClaim.owns(this)) return;
     await _applyVideoImmersiveMode();
     if (!VideoDisplayClaim.owns(this)) return;
-    await SystemChrome.setPreferredOrientations(<DeviceOrientation>[
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
+    // 方向集与进页同一出口（拍板台 P9AS-fvjJh 起不再写死横屏，但仍永不空列表）。
+    await SystemChrome.setPreferredOrientations(
+      videoDeviceOrientationsFor(_videoOrientationLock),
+    );
   }
 
   /// BUG-221: media_kit 全屏「退出」回调，**替换** media_kit 默认
   /// [defaultExitNativeFullscreen]。
   ///
   /// 移动端：media_kit 默认退全屏时调 `setPreferredOrientations([])` 放开全部方向
-  /// （含竖屏/倒置），让设备转回竖屏 = 用户感知的「竖屏模式」。本回调退全屏时**仍只允许
-  /// 两个横屏**（视频页全程横屏，方向唯一拥有者），系统栏保持沉浸隐藏（与窗口态一致，
+  /// （含竖屏/倒置），让设备转回竖屏。本回调退全屏时**仍按当前方向策略锁**（视频页是方向
+  /// 唯一拥有者，[videoDeviceOrientationsFor]），系统栏保持沉浸隐藏（与窗口态一致，
   /// 不在退全屏瞬间闪回系统栏）。真正放开方向交给退页时的 [_restoreOrientationOnExit]。
   ///
   /// 桌面：**保留** media_kit 默认 [defaultExitNativeFullscreen]（MethodChannel
@@ -560,9 +569,9 @@ extension _VideoFullscreen on _VideoFushiPageState {
     if (!VideoDisplayClaim.owns(this)) return;
     await _applyVideoImmersiveMode();
     if (!VideoDisplayClaim.owns(this)) return;
-    await SystemChrome.setPreferredOrientations(<DeviceOrientation>[
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
+    // 方向集与进页同一出口（拍板台 P9AS-fvjJh 起不再写死横屏，但仍永不空列表）。
+    await SystemChrome.setPreferredOrientations(
+      videoDeviceOrientationsFor(_videoOrientationLock),
+    );
   }
 }

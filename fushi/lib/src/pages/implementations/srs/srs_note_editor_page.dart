@@ -26,7 +26,9 @@ import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
+import 'package:fushi_engine/srs/srs_canonical_ids.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
@@ -44,6 +46,8 @@ import 'package:fushi/src/srs/srs_change_note_type.dart';
 import 'package:fushi/src/srs/srs_field_catalog.dart' as catalog;
 import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -62,6 +66,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 class SrsNoteEditorPage extends ConsumerStatefulWidget {
   const SrsNoteEditorPage({
@@ -104,6 +109,9 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
 
   /// fieldId → 制卡映射（ⓘ 里的「制卡时自动填入」）；按笔记类型缓存，换类型清空。
   Map<String, String>? _miningSlots;
+
+  /// 制卡落点换成规范 ID 之后的样子（G9-6，载入时问一次）：字段映射按规范的 type.id 查。
+  SrsMiningDestination _mining = const SrsMiningDestination();
 
   /// 预览常驻在宽窗右栏、且一屏看得到（不是横屏手机那种矮窗）；否则顶栏多一个「预览」
   /// 打开底部抽屉。
@@ -154,9 +162,15 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
                 .firstOrNull ??
             types.firstOrNull;
       }
+      final SrsMiningDestination mining =
+          await srsCanonicalizeMiningDestination(
+            ref.read(appProvider).srsMiningDestination,
+            srsStoreCanonicalIds(store),
+          );
       if (!mounted) return;
       setState(() {
         _store = store;
+        _mining = mining;
         _types = types;
         _decks = decks;
         _note = note;
@@ -372,7 +386,10 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
       }
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsNoteEditorPage.save', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -554,10 +571,12 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    final bool masthead = shellRedesignActive(context);
     return FushiPageScaffold(
       title: _title,
+      masthead: true,
       header: apple ? null : _buildTopBar(context),
-      actions: apple
+      actions: apple || masthead
           ? <Widget>[
               for (final FushiToolbarItem item in <FushiToolbarItem>[
                 ?_previewItem,
@@ -839,6 +858,7 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
       fieldLabel: catalog.srsFieldDisplayName(field),
       fieldName: field.name,
       current: model.value,
+      promptStore: ref.read(appProvider).prefsRepo,
       run: (AiSrsFieldTask task, String instruction) async {
         final AiChatClient client = AiChatClient();
         try {
@@ -894,10 +914,7 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
       type: type,
       builtinKey: type.builtinKey,
       profileUid: store.profileUid,
-      stored: ref
-          .read(appProvider)
-          .srsMiningDestination
-          .fieldMappingsByType[type.id],
+      stored: _mining.fieldMappingsByType[type.id],
     );
   }
 

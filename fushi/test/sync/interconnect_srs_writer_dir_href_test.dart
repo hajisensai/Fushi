@@ -106,7 +106,6 @@ void main() {
 
       final SrsStorage srs = await openSrsTestStorage();
       final SrsDbStore store = await SrsDbStore.open(
-        db: srs.db,
         core: srs.core,
         profileUid: 'href-profile',
         deviceId: 'probe_abc=',

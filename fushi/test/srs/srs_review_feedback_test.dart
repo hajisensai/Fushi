@@ -42,6 +42,7 @@ import 'package:material_ui/material_ui.dart';
 import '../helpers/node_runtime.dart';
 import '../helpers/test_platform_services.dart';
 import 'srs_test_support.dart';
+import 'support/srs_write_settle.dart';
 
 Future<SrsDbStore> _openStore(WidgetTester tester) async {
   final (FushiDatabase db, SrsDbStore store) = (await tester.runAsync(
@@ -68,12 +69,7 @@ Future<void> _addFushiCard(
 }
 
 Future<void> _settle(WidgetTester tester, {int rounds = 12}) async {
-  for (int i = 0; i < rounds; i++) {
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 5)),
-    );
-    await tester.pump(const Duration(milliseconds: 60));
-  }
+  await srsSettle(tester, minRounds: rounds);
 }
 
 /// 底栏重播键位置偏好钉在内存里（测试里偏好层没初始化）。
@@ -229,8 +225,13 @@ void main() {
       expect(_showingAnswer(tester), isTrue);
 
       nativeRequests.clear();
-      await tester.tap(find.byKey(const ValueKey<String>('srs-rate-3')));
-      await _settle(tester, rounds: 20);
+      await srsUntilStoreWritten(
+        tester,
+        store,
+        () => tester.tap(find.byKey(const ValueKey<String>('srs-rate-3'))),
+        until: () => !_showingAnswer(tester),
+        settleRounds: 20,
+      );
       expect(_showingAnswer(tester), isFalse);
       expect(
         nativeRequests,
@@ -322,8 +323,19 @@ void main() {
           // 3 张卡 × (翻面 + 评分)：每一下空格都必须生效，焦点始终在本页子树里。
           bool shown = answerShown();
           for (int i = 0; i < 6; i++) {
-            await tester.sendKeyEvent(LogicalKeyboardKey.space);
-            await _settle(tester, rounds: 20);
+            if (shown) {
+              // 答案面上的空格 = 评「良好」：写库后才换到下一张。
+              await srsUntilStoreWritten(
+                tester,
+                store,
+                () => tester.sendKeyEvent(LogicalKeyboardKey.space),
+                until: () => !answerShown(),
+                settleRounds: 20,
+              );
+            } else {
+              await tester.sendKeyEvent(LogicalKeyboardKey.space);
+              await _settle(tester, rounds: 20);
+            }
             shown = !shown;
             expect(
               answerShown(),
@@ -345,8 +357,13 @@ void main() {
             await _settle(tester, rounds: 20);
           }
           expect(answerShown(), isTrue);
-          await tester.sendKeyEvent(LogicalKeyboardKey.digit3);
-          await _settle(tester, rounds: 20);
+          await srsUntilStoreWritten(
+            tester,
+            store,
+            () => tester.sendKeyEvent(LogicalKeyboardKey.digit3),
+            until: () => !answerShown(),
+            settleRounds: 20,
+          );
           expect(answerShown(), isFalse, reason: '答案面按 3 应评「良好」');
           await _unmount(tester);
         });

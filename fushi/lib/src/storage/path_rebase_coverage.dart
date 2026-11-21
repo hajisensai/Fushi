@@ -271,6 +271,14 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
     '<documents>/audiobooks/<hash>/ 下的字幕副本绝对路径。',
   ),
 
+  // ── audio_cues ────────────────────────────────────────────────────
+  PathRebaseColumn(
+    'AudioCues',
+    'tokenTimingJson',
+    PathRebaseKind.notAPath,
+    'v160 逐 token 发射时间 JSON（token 文本 + 相对毫秒偏移），无路径。',
+  ),
+
   // ── srt_books ─────────────────────────────────────────────────────
   PathRebaseColumn(
     'SrtBooks',
@@ -323,10 +331,32 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
     '语言代码列表 JSON，无路径。',
   ),
   PathRebaseColumn(
+    'RemoteDictionaryMetadata',
+    'sourceLanguage',
+    PathRebaseKind.notAPath,
+    '服务器托管词典的词头语言（BCP-47 标签），无路径。',
+  ),
+  PathRebaseColumn(
     'DictionaryHistory',
     'resultJson',
     PathRebaseKind.notAPath,
     '查询结果快照 JSON（词条文本），无路径。',
+  ),
+
+  // ── media_tracking_mappings / media_tracking_suggestions（媒体追踪）────
+  PathRebaseColumn(
+    'MediaTrackingMappings',
+    'linkSource',
+    PathRebaseKind.notAPath,
+    'v145 关联来源标记 manual / id / auto / suggestion（TrackingLinkSource），'
+        '不是来源路径。',
+  ),
+  PathRebaseColumn(
+    'MediaTrackingSuggestions',
+    'detailsJson',
+    PathRebaseKind.notAPath,
+    '远端条目事实 JSON（titles / authors / totalChapters / finalVolume / '
+        'finished，见 toDetailsJson），无路径。',
   ),
 
   // ── epub_books ────────────────────────────────────────────────────
@@ -457,6 +487,12 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
   ),
 
   // ── 统计 / 收藏 ────────────────────────────────────────────────────
+  PathRebaseColumn(
+    'FavoriteSentences',
+    'source',
+    PathRebaseKind.notAPath,
+    '收藏来源枚举值（book/video/audiobook/lyrics/game/manga/music/web），不是路径。',
+  ),
   PathRebaseColumn(
     'FavoriteWords',
     'sourceType',
@@ -637,8 +673,53 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
     PathRebaseKind.notAPath,
     '来源远程 URL（重下/诊断用），不是本机路径。',
   ),
+  // ── item_scrape_meta / item_images（单本书 / 字幕书 / 游戏刮削资料，v155）──
+  PathRebaseColumn(
+    'ItemScrapeMeta',
+    'source',
+    PathRebaseKind.notAPath,
+    '刮削源名（bangumi / dlsite / vndb / manual …），不是路径。',
+  ),
+  PathRebaseColumn(
+    'ItemScrapeMeta',
+    'tagsJson',
+    PathRebaseKind.notAPath,
+    '标签 JSON 数组，无路径。',
+  ),
+  PathRebaseColumn(
+    'ItemScrapeMeta',
+    'detailUrl',
+    PathRebaseKind.notAPath,
+    '远端条目详情页 URL，不是本机路径。',
+  ),
+  PathRebaseColumn(
+    'ItemImages',
+    'path',
+    PathRebaseKind.documentsRooted,
+    'v161 条目附加图落盘位：<documents>/video_covers/items/（与 media_images '
+        '同目录族）→ 不改写 = 换数据根后书架 / 游戏库系列色块的横版背景全部死链，'
+        '静默退回书封摆法（DataRootMigrator._rebaseItemImages）。',
+  ),
+  PathRebaseColumn(
+    'ItemImages',
+    'sourceUrl',
+    PathRebaseKind.notAPath,
+    '来源远程 URL（重下/诊断用），不是本机路径。',
+  ),
 
   // ── collection_relations（合集相关作品边表，schema v66 / TODO-2484）──
+  PathRebaseColumn(
+    'CollectionRelations',
+    'bookUid',
+    PathRebaseKind.notAPath,
+    'v162 单视频起点的 bookUid 外键，不是路径。',
+  ),
+  PathRebaseColumn(
+    'CollectionRelations',
+    'targetBookUid',
+    PathRebaseKind.notAPath,
+    'v162 已绑定单视频目标的 bookUid 外键，不是路径。',
+  ),
   PathRebaseColumn(
     'CollectionRelations',
     'source',
