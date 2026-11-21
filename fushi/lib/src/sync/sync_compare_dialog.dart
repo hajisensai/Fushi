@@ -1,5 +1,6 @@
 import 'dart:developer' as developer;
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -617,11 +618,13 @@ Future<_LiveCompareExtras> _fetchLiveCompareExtras(
 ) async {
   final Map<String, int> statCountByTitle = <String, int>{};
   try {
-    final Map<String, dynamic>? json = await backend.getRemoteAggregate();
-    if (json != null) {
-      for (final ReadingStatRecord r in AggregateSnapshot.fromJson(
-        json,
-      ).readingStats) {
+    final Uint8List? body = await backend.getRemoteAggregateBody();
+    // HBK-AUDIT-028：整份快照在后台解码；顶层非 object 当空快照（无统计）。
+    final AggregateSnapshot? snapshot = body == null
+        ? null
+        : await AggregateSyncService.decodeWireSnapshotOff(body);
+    if (snapshot != null) {
+      for (final ReadingStatRecord r in snapshot.readingStats) {
         statCountByTitle[r.title] = (statCountByTitle[r.title] ?? 0) + 1;
       }
     }
@@ -1188,8 +1191,8 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
           scope: syncChannelScopeOf(backend),
           localApplyLock: runExclusiveWithSyncStateApply,
         ).syncOverClient(
-          fetchRemote: backend.getRemoteAggregate,
-          pushMerged: backend.putRemoteAggregate,
+          fetchRemote: backend.getRemoteAggregateBody,
+          pushMerged: backend.putRemoteAggregateBody,
           shareStats: true,
           shareFavorites: false,
           shareWebHistory: false,

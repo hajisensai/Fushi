@@ -1,10 +1,12 @@
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/aggregate_sync_service.dart';
+import 'package:fushi_engine/sync/aggregate_wire_codec.dart';
 
 import 'fake_asset_store.dart';
 import 'temp_dir_cleanup.dart';
@@ -68,14 +70,16 @@ void main() {
     final _RecordingIsolateRunner runner = _RecordingIsolateRunner();
     final List<Object> pushed = <Object>[];
     await AggregateSyncService(db, pureRunner: runner.call).syncOverClient(
-      fetchRemote: () async => hostJson,
-      pushMerged: (Object json) async => pushed.add(json),
+      fetchRemote: () async => encodeAggregateWireJson(hostJson),
+      pushMerged: (Uint8List body) async =>
+          pushed.add(decodeAggregateWireJson(body)!),
     );
 
-    expect(runner.executedOn, <String?>[
-      'agg-test-worker',
-      'agg-test-worker',
-    ], reason: '折叠（含 host 指纹）与上行判定各一次，都不在调用方 isolate');
+    expect(
+      runner.executedOn,
+      <String?>['agg-test-worker', 'agg-test-worker', 'agg-test-worker'],
+      reason: '报文体解码 + 折叠（含 host 指纹）、锁内重读后的合并 / 差集、上行判定 + 编码各一次，都不在调用方 isolate',
+    );
     expect(await _miningCount(db, '2026-10-02'), 5, reason: 'host 的值折进本地');
     expect(pushed, hasLength(1), reason: '本机有 host 没有的数据就 PUT');
     final AggregateSnapshot sent = AggregateSnapshot.fromJson(pushed.single);
@@ -99,8 +103,8 @@ void main() {
     final _RecordingIsolateRunner runner = _RecordingIsolateRunner();
     int pushes = 0;
     await AggregateSyncService(db, pureRunner: runner.call).syncOverClient(
-      fetchRemote: () async => same,
-      pushMerged: (Object _) async => pushes++,
+      fetchRemote: () async => encodeAggregateWireJson(same),
+      pushMerged: (Uint8List _) async => pushes++,
     );
 
     expect(runner.executedOn, hasLength(2));
@@ -129,7 +133,11 @@ void main() {
       pureRunner: runner.call,
     ).sync(store: store, deviceId: 'dev-A');
 
-    expect(runner.executedOn, <String?>['agg-test-worker', 'agg-test-worker']);
+    expect(runner.executedOn, <String?>[
+      'agg-test-worker',
+      'agg-test-worker',
+      'agg-test-worker',
+    ], reason: '对端折叠、写回时的合并 / 差集、上行编码 / 哈希');
     expect(uploaded, isTrue);
     expect(await _miningCount(db, '2026-10-03'), 7, reason: '对端的值折进本地');
   });
@@ -188,5 +196,129 @@ void main() {
     );
     expect(noop.applyNeeded, isFalse);
     expect(noop.peerFingerprint, isNull);
+  });
+
+  // HBK-AUDIT-028：写锁内「重读本地 → 合并 → 差集」以前直接在调用方 isolate 同步算
+  // （host 的 PUT 折叠与本机出站同步的锁内写回都走 foldIntoLocal）。钉住：合并 / 差集
+  // 经 runner 在后台算，且这一步发生在锁**持有期间**（事务内合并一致性不变）。
+  test('锁内的合并 / 差集在后台 isolate 执行，且仍在写锁持有期间', () async {
+    final FushiDatabase db = await _freshDb('agg_offui_lock_');
+    await db.setMiningCount(
+      sourceType: 'book',
+      dateKey: '2026-10-01',
+      count: 1,
+    );
+    final Map<String, Object?> hostJson = const AggregateSnapshot(
+      miningStats: <MiningRecord>[
+        MiningRecord(sourceType: 'book', dateKey: '2026-10-05', count: 9),
+      ],
+    ).toJson();
+
+    bool lockHeld = false;
+    final List<bool> lockHeldPerHop = <bool>[];
+    final _RecordingIsolateRunner inner = _RecordingIsolateRunner();
+    Future<R> runner<R>(R Function() computation) {
+      lockHeldPerHop.add(lockHeld);
+      return inner.call<R>(computation);
+    }
+
+    await AggregateSyncService(
+      db,
+      pureRunner: runner,
+      localApplyLock: (Future<void> Function() body) async {
+        lockHeld = true;
+        try {
+          await body();
+        } finally {
+          lockHeld = false;
+        }
+      },
+    ).syncOverClient(
+      fetchRemote: () async => encodeAggregateWireJson(hostJson),
+      pushMerged: (Uint8List _) async {},
+    );
+
+    expect(inner.executedOn, everyElement('agg-test-worker'));
+    expect(lockHeldPerHop, <bool>[
+      false,
+      true,
+      false,
+    ], reason: '折叠在锁外、锁内合并 / 差集在锁内、上行编码在锁外');
+    expect(await _miningCount(db, '2026-10-05'), 9);
+  });
+
+  test('host 侧 foldIntoLocal：合并 / 差集经 runner，结果照常落库', () async {
+    final FushiDatabase db = await _freshDb('agg_offui_host_fold_');
+    await db.setMiningCount(
+      sourceType: 'book',
+      dateKey: '2026-10-01',
+      count: 4,
+    );
+    final _RecordingIsolateRunner runner = _RecordingIsolateRunner();
+    await AggregateSyncService(db, pureRunner: runner.call).foldIntoLocal(
+      const AggregateSnapshot(
+        miningStats: <MiningRecord>[
+          MiningRecord(sourceType: 'book', dateKey: '2026-10-01', count: 2),
+          MiningRecord(sourceType: 'book', dateKey: '2026-10-07', count: 3),
+        ],
+      ),
+    );
+    expect(runner.executedOn, <String?>['agg-test-worker']);
+    expect(await _miningCount(db, '2026-10-01'), 4, reason: 'MAX 不缩小');
+    expect(await _miningCount(db, '2026-10-07'), 3);
+  });
+
+  test('报文体编解码：上行判定直接给字节；坏 JSON 抛错、非 object 当空快照', () {
+    const AggregateSnapshot local = AggregateSnapshot(
+      miningStats: <MiningRecord>[
+        MiningRecord(sourceType: 'book', dateKey: '2026-10-01', count: 2),
+      ],
+    );
+    const AggregateSnapshot remote = AggregateSnapshot(
+      miningStats: <MiningRecord>[
+        MiningRecord(sourceType: 'video', dateKey: '2026-10-02', count: 1),
+      ],
+    );
+    final AggregateFoldPlan plan = AggregateSyncService.planLiveFold(
+      local: local,
+      remoteBody: encodeAggregateWireJson(remote.toJson()),
+      stats: true,
+      favorites: true,
+      webHistory: false,
+    );
+    expect(
+      plan.merged.toJson(),
+      AggregateSyncService.mergeSnapshots(local, remote).toJson(),
+    );
+    final Uint8List? body = AggregateSyncService.liveOutgoingIfChanged(
+      plan.merged,
+      plan.peerFingerprint!,
+    );
+    expect(body, isNotNull);
+    expect(decodeAggregateWireJson(body!), plan.merged.toJson());
+
+    expect(
+      () => AggregateSyncService.planLiveFold(
+        local: local,
+        remoteBody: Uint8List.fromList('{oops'.codeUnits),
+        stats: true,
+        favorites: true,
+        webHistory: false,
+      ),
+      throwsFormatException,
+    );
+    final AggregateFoldPlan nonObject = AggregateSyncService.planLiveFold(
+      local: local,
+      remoteBody: Uint8List.fromList('[1]'.codeUnits),
+      stats: true,
+      favorites: true,
+      webHistory: false,
+    );
+    expect(nonObject.merged.toJson(), local.toJson());
+    expect(nonObject.applyNeeded, isFalse);
+    expect(
+      decodeAggregateWireSnapshot(Uint8List.fromList('[1]'.codeUnits)),
+      isNull,
+    );
   });
 }

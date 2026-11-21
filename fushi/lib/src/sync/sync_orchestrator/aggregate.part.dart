@@ -99,8 +99,8 @@ extension _SyncOrchestratorAggregate on SyncOrchestrator {
   /// 复用 [AggregateSyncService.syncOverClient] 的通道无关核心（materialize 本地 →
   /// GET host 快照 → [AggregateMergeService] 并集折叠 → 写回本地 DB（只 MAX / 并集
   /// upsert，幂等）→ PUT 合并后快照回 host）。IO 由本方法注入：GET 走
-  /// [InterconnectSyncBackend.getRemoteAggregate]（老 host 无端点返回 404 → null →
-  /// 只推不拉，优雅降级），PUT 走 [InterconnectSyncBackend.putRemoteAggregate]。
+  /// [InterconnectSyncBackend.getRemoteAggregateBody]（老 host 无端点返回 404 → null →
+  /// 只推不拉，优雅降级），PUT 走 [InterconnectSyncBackend.putRemoteAggregateBody]。
   ///
   /// 无 baseline / 无冲突弹窗（集合 + 单调语义无损）；删除不跨端传播；无 schema 变更。
   /// 整段 try/catch，逐轮错误进 [report.errors] 不中断整体 sweep（与其它维度同纪律）。
@@ -114,8 +114,8 @@ extension _SyncOrchestratorAggregate on SyncOrchestrator {
         scope: _scope,
         localApplyLock: runExclusiveWithSyncStateApply,
       ).syncOverClient(
-        fetchRemote: backend.getRemoteAggregate,
-        pushMerged: backend.putRemoteAggregate,
+        fetchRemote: backend.getRemoteAggregateBody,
+        pushMerged: backend.putRemoteAggregateBody,
         shareStats: syncStats,
         shareFavorites: syncFavorites,
         shareWebHistory: syncWebHistory,

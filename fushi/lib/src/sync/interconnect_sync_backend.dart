@@ -352,6 +352,23 @@ class InterconnectSyncBackend extends SyncBackend
         });
   }
 
+  /// [_readBodyBounded] 的原始字节版：同一超时与连通性上报，但不在本 isolate 做
+  /// UTF-8 / JSON 解码——整份快照级的响应体（聚合，HBK-AUDIT-028）交给后台解码。
+  Future<Uint8List> _readBodyBytesBounded(HttpClientResponse res) {
+    final WebDavOps? ops = _ops;
+    return res
+        .fold<BytesBuilder>(
+          BytesBuilder(copy: false),
+          (BytesBuilder b, List<int> chunk) => b..add(chunk),
+        )
+        .then((BytesBuilder b) => b.takeBytes())
+        .timeout(requestTimeout)
+        .catchError((Object e, StackTrace stack) {
+          ops?.reportConnectivityFailure(e);
+          Error.throwWithStackTrace(e, stack);
+        });
+  }
+
   /// 下载健壮性（弱网，TODO-819 续）超时：
   /// - [downloadStallTimeout]：数据流两个 chunk 之间的最大空闲。超过即判定连接卡死并
   ///   中断（[ResumableDownloader] 保留 .part 可续传），而不是干等到 OS 级 TCP 超时
@@ -2123,11 +2140,14 @@ class InterconnectSyncBackend extends SyncBackend
 
   // ── 聚合（统计 + 收藏，TODO-1056 phase C）────────────────────────────────────
 
-  /// 拉取 host 端聚合快照原始 JSON（TODO-1056 phase C）。老 host 无该端点返回 404
-  /// 时优雅降级返回 null（调用方跳过聚合步骤，与 [remoteBookProgress] 的 404 降级
-  /// 同纪律）——绝不因老 server 缺端点崩溃。返回的是未解码 Map，快照 decode 由上层
-  /// orchestrator 用 AggregateSnapshot.fromJson 处理，本 backend 只搬运 JSON。
-  Future<Map<String, dynamic>?> getRemoteAggregate() async {
+  /// 拉取 host 端聚合快照的**原始响应体**（UTF-8 JSON 字节，TODO-1056 phase C）。
+  /// 老 host 无该端点返回 404 时优雅降级返回 null（调用方跳过聚合步骤，与
+  /// [remoteBookProgress] 的 404 降级同纪律）——绝不因老 server 缺端点崩溃。
+  ///
+  /// HBK-AUDIT-028：本 backend 只搬字节、不解码。整份快照的 UTF-8 / JSON 解码在
+  /// [AggregateSyncService.syncOverClient] 里与折叠同一次后台计算完成（对比弹窗走
+  /// [AggregateSyncService.decodeWireSnapshotOff]），不落在调用方（UI）isolate。
+  Future<Uint8List?> getRemoteAggregateBody() async {
     await _ensureResolved();
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
@@ -2139,24 +2159,21 @@ class InterconnectSyncBackend extends SyncBackend
       return null; // 老 host 无聚合端点：降级跳过，不崩。
     }
     _ops!.checkStatus(res.statusCode, 'GET /api/library/aggregate');
-    final String body = await _readBodyBounded(res);
-    final dynamic decoded = jsonDecode(body);
-    if (decoded is Map<String, dynamic>) return decoded;
-    if (decoded is Map) return Map<String, dynamic>.from(decoded);
-    return null; // 非对象返回体：当作空快照处理（上层 fromJson 也会降级）。
+    return _readBodyBytesBounded(res);
   }
 
-  /// 向 host 上报（已在 client 端与 host 并集合并的）聚合快照 JSON（TODO-1056
-  /// phase C）。host 端用 MAX / 并集 upsert 折叠进自己 DB（幂等）。[json] 是
-  /// AggregateSnapshot.toJson() 的结果，本 backend 只负责 PUT 搬运。
-  Future<void> putRemoteAggregate(Object? json) async {
+  /// 向 host 上报（已在 client 端与 host 并集合并的）聚合快照（TODO-1056 phase C）。
+  /// host 端用 MAX / 并集 upsert 折叠进自己 DB（幂等）。[body] 是在后台 isolate
+  /// 编码好的 UTF-8 JSON 报文体（HBK-AUDIT-028），本 backend 只负责 PUT 搬运。
+  Future<void> putRemoteAggregateBody(Uint8List body) async {
     await _ensureResolved();
     final HttpClientRequest req = await _ops!.buildRequest(
       'PUT',
       '$_apiBase/api/library/aggregate',
     );
     req.headers.set('Content-Type', 'application/json; charset=utf-8');
-    req.add(utf8.encode(jsonEncode(json)));
+    req.contentLength = body.length;
+    req.add(body);
     final HttpClientResponse res = await _sendBounded(req);
     await res.drain<void>();
     _ops!.checkStatus(res.statusCode, 'PUT /api/library/aggregate');
@@ -2168,7 +2185,7 @@ class InterconnectSyncBackend extends SyncBackend
   // 不同）。读-合并-写：GET host 清单 → 引擎合并 → 应用本地 → POST 合并后清单。
 
   /// GET 对端 host 当前合集清单（读）。老 host 无该端点返回 404 时优雅降级返回 null
-  /// （调用方跳过整个合集同步步骤，绝不因老 server 缺端点崩溃，与 [getRemoteAggregate]
+  /// （调用方跳过整个合集同步步骤，绝不因老 server 缺端点崩溃，与 [getRemoteAggregateBody]
   /// 的 404 降级同纪律）。返回的清单已按 [CollectionManifest.fromJson] 解码。
   Future<CollectionManifest?> getRemoteCollectionManifest() async {
     await _ensureResolved();
@@ -2759,7 +2776,7 @@ class InterconnectSyncBackend extends SyncBackend
   // token URL，media_kit 可直接播放，不依赖自定义 HTTP header。
 
   /// 列出对端 host 当前视频清单（直打 `/api/library/videos`）。老 host 无该端点返回
-  /// 404 时优雅降级返回空表（与 [getRemoteAggregate] / [getRemoteCollectionManifest]
+  /// 404 时优雅降级返回空表（与 [getRemoteAggregateBody] / [getRemoteCollectionManifest]
   /// 的 404 降级同纪律——绝不因老 server 缺端点抛异常让整页占位卡消失/转圈）。请求
   /// 用 [requestTimeout] 封顶，防止 host 接受连接后卡住响应导致视频页无限等待。
   /// 拉取 host 最近活动事件（新首页 Activity 面板互联数据源；display-only）。

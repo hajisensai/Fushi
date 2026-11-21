@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
@@ -11,6 +12,7 @@ import 'package:fushi/src/sync/playback_position_conflict_dialog.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
+import 'package:fushi_engine/sync/aggregate_wire_codec.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_compare_dialog.dart';
@@ -123,16 +125,14 @@ class _FakeInterconnectBackend extends InterconnectSyncBackend
   }
 
   @override
-  Future<Map<String, dynamic>?> getRemoteAggregate() async {
+  Future<Uint8List?> getRemoteAggregateBody() async {
     aggregateGets++;
     final AggregateSnapshot? snapshot = hostAggregate;
-    return snapshot == null
-        ? null
-        : Map<String, dynamic>.from(snapshot.toJson());
+    return snapshot == null ? null : encodeAggregateWireJson(snapshot.toJson());
   }
 
   @override
-  Future<void> putRemoteAggregate(Object? json) async {
+  Future<void> putRemoteAggregateBody(Uint8List body) async {
     aggregatePuts++;
   }
 

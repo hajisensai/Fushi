@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,6 +7,7 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/aggregate_sync_service.dart';
+import 'package:fushi_engine/sync/aggregate_wire_codec.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
@@ -78,11 +80,14 @@ void main() {
     Future<Map<String, Object?>?> runRound({required bool history}) async {
       Map<String, Object?>? pushed;
       await AggregateSyncService(db).syncOverClient(
-        fetchRemote: () async => const AggregateSnapshot(
-          webHistory: <WebHistoryRecord>[_remoteVisit],
-        ).toJson(),
-        pushMerged: (Object json) async =>
-            pushed = (json as Map<Object?, Object?>).cast<String, Object?>(),
+        fetchRemote: () async => encodeAggregateWireJson(
+          const AggregateSnapshot(
+            webHistory: <WebHistoryRecord>[_remoteVisit],
+          ).toJson(),
+        ),
+        pushMerged: (Uint8List body) async =>
+            pushed = (decodeAggregateWireJson(body)! as Map<Object?, Object?>)
+                .cast<String, Object?>(),
         shareStats: true,
         shareFavorites: true,
         shareWebHistory: history,
@@ -117,8 +122,9 @@ void main() {
       Map<String, Object?>? pushed;
       await AggregateSyncService(db).syncOverClient(
         fetchRemote: () async => null,
-        pushMerged: (Object json) async =>
-            pushed = (json as Map<Object?, Object?>).cast<String, Object?>(),
+        pushMerged: (Uint8List body) async =>
+            pushed = (decodeAggregateWireJson(body)! as Map<Object?, Object?>)
+                .cast<String, Object?>(),
         shareStats: false,
         shareFavorites: false,
         shareWebHistory: true,
