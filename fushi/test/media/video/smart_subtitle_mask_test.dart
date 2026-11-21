@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -287,6 +288,43 @@ void main() {
       expect(s.rect.value, isNull);
       await pumpEventQueue();
       expect(s.rect.value, isNull);
+      s.dispose();
+    });
+
+    // HBK-AUDIT-007：识别还在跑时 seek，旧帧的结果回来不能把遮布盖回新时间点。
+    test('a detection started before a seek is discarded', () async {
+      final VideoPlayerController c = _controller(
+        playing: false,
+        position: 1000,
+      );
+      final List<Completer<List<Rect>>> pending = <Completer<List<Rect>>>[];
+      final SmartSubtitleMaskSampler s = SmartSubtitleMaskSampler(
+        controller: c,
+        region: _region,
+        detect: (RawVideoFrameCrop crop) {
+          final Completer<List<Rect>> done = Completer<List<Rect>>();
+          pending.add(done);
+          return done.future;
+        },
+        capture: (Rect r) async => _capture(r),
+        minInterval: Duration.zero,
+      );
+      await pumpEventQueue();
+      expect(pending, hasLength(1));
+      // 旧帧（1000 ms）的识别还没回来就 seek 到 60 s。
+      c.debugSetPositionForTesting(60000);
+      expect(s.rect.value, isNull);
+      pending.single.complete(const <Rect>[_line]);
+      await pumpEventQueue();
+      expect(s.rect.value, isNull, reason: '旧帧的行框不能盖到 seek 后的画面');
+      // 作废后按新画面重新识别；新帧有字才显示。
+      expect(pending, hasLength(2));
+      pending.last.complete(const <Rect>[_line]);
+      await pumpEventQueue();
+      expect(
+        s.rect.value,
+        smartSubtitleMaskRectForLines(const <Rect>[_line], _region),
+      );
       s.dispose();
     });
 
