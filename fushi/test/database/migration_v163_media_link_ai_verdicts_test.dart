@@ -115,4 +115,43 @@ void main() {
     expect(await db.pruneMediaLinkAiVerdicts(250), 1);
     expect((await db.mediaLinkAiVerdictsSince(0)).single.bKey, '1');
   });
+
+  // HBK-AUDIT-043：按端点对查，只读回请求的对；超过单条 SELECT 的对数分批、重复的对只算一次。
+  test('按端点对批查：只读回请求的、有效期内的对；多于一批的对数照样齐', () async {
+    final FushiDatabase db = FushiDatabase.atFile(
+      p.join(tmp.path, 'fushi.db'),
+      isMainProcess: false,
+    );
+    addTearDown(db.close);
+    await db.upsertMediaLinkAiVerdicts(<MediaLinkAiVerdictsCompanion>[
+      for (int i = 0; i < 600; i++) row(judgedAt: 300, bKey: '$i'),
+      row(judgedAt: 100, bKey: 'old'),
+    ]);
+    MediaLinkAiVerdictPair pair(String bKey) =>
+        (aKind: 'game', aKey: 'g', bKind: 'video_collection', bKey: bKey);
+
+    final List<MediaLinkAiVerdictRow> some = await db
+        .mediaLinkAiVerdictsForPairs(<MediaLinkAiVerdictPair>[
+          pair('3'),
+          pair('3'),
+          pair('7'),
+          pair('old'),
+          pair('missing'),
+        ], 200);
+    expect(some.map((MediaLinkAiVerdictRow r) => r.bKey).toSet(), <String>{
+      '3',
+      '7',
+    });
+    expect(some, hasLength(2), reason: '重复的对只读一次；过期 / 不存在的不读');
+
+    final List<MediaLinkAiVerdictRow> many = await db
+        .mediaLinkAiVerdictsForPairs(<MediaLinkAiVerdictPair>[
+          for (int i = 0; i < 450; i++) pair('$i'),
+        ], 200);
+    expect(many, hasLength(450));
+    expect(
+      await db.mediaLinkAiVerdictsForPairs(<MediaLinkAiVerdictPair>[], 0),
+      isEmpty,
+    );
+  });
 }
