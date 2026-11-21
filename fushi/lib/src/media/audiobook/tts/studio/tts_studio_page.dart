@@ -2485,6 +2485,8 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
             icon: FushiIcons.refresh,
             showIcon: true,
             title: t.audiobook_studio_retry,
+            // 续跑按章：编码完的章重试时直接跳过，逐句缓存被淘汰也不影响它们。
+            subtitle: t.audiobook_studio_retry_resume_hint,
             onTap: () => unawaited(_queue.retry(job.id)),
           ),
       ],
