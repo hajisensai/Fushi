@@ -436,25 +436,33 @@ extension _VideoQuality on _VideoFushiPageState {
       // `adaptiveQualityIndex` 回到原档，页面重试与下一次同 scope 起播不会沿用
       // 一个没起来的档。只覆盖取流 / 起播阶段；起播之后播放器异步暴露的失败
       // （转码分段出错）走页面既有的播放失败路径。
-      final bool ok = await runAdaptiveQualitySwitch(
-        read: () => client.adaptiveQualityIndex,
-        write: (int? index) => client.adaptiveQualityIndex = index,
-        targetIndex: decision.targetIndex,
-        reload: () async {
-          // 重载 = 丢掉旧档的流（同步释放，BUG-4461）→ 停止上报 → 回到原位置重新
-          // 取流；整程绑定采样时的播放会话，期间换了集就不再动播放器、按没换成回滚
-          // （HBK-AUDIT-005）。
-          final bool reloaded = await _reloadRemoteEpisodeInSession(
-            generation: generation,
-            positionMs: posMs,
+      final AdaptiveQualitySwitchOutcome outcome =
+          await runAdaptiveQualitySwitch(
+            read: () => client.adaptiveQualityIndex,
+            write: (int? index) => client.adaptiveQualityIndex = index,
+            targetIndex: decision.targetIndex,
+            reload: () async {
+              // 重载 = 丢掉旧档的流（同步释放，BUG-4461）→ 停止上报 → 回到原位置
+              // 重新取流；整程绑定采样时的播放会话（HBK-AUDIT-005）。页面还在而
+              // 重载没收尾 = 被换集 / 重试接管：共享档归接管的那一程，不回滚。
+              final bool reloaded = await _reloadRemoteEpisodeInSession(
+                generation: generation,
+                positionMs: posMs,
+              );
+              if (!reloaded) {
+                return mounted
+                    ? AdaptiveQualitySwitchOutcome.superseded
+                    : AdaptiveQualitySwitchOutcome.failed;
+              }
+              // `_loadRemoteEpisode` 的失败只落在 `_failed`（自适应只在播放中采样，
+              // 进来时它是 false）。
+              return _failed
+                  ? AdaptiveQualitySwitchOutcome.failed
+                  : AdaptiveQualitySwitchOutcome.applied;
+            },
           );
-          // `_loadRemoteEpisode` 的失败只落在 `_failed`（自适应只在播放中采样，
-          // 进来时它是 false）。
-          return reloaded && !_failed;
-        },
-      );
       if (!mounted) return;
-      if (!ok) {
+      if (outcome != AdaptiveQualitySwitchOutcome.applied) {
         // 没换成：不报「已自动调整」，观察窗从头来，别拿失败前的拍再判一次。
         _adaptiveQuality.reset();
         return;
