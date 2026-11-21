@@ -52,6 +52,7 @@ class SettingsIndexVirtual {
     required this.options,
     required this.write,
     this.valueLabel,
+    this.linkedKeys = const <String>[],
   });
 
   final String Function(AppModel appModel) read;
@@ -64,7 +65,15 @@ class SettingsIndexVirtual {
   /// 当前值不在 [options] 里时（旧预设键、裸 `custom-theme`）它的标签；null =
   /// 原样显示值。
   final String? Function(AppModel appModel, String value)? valueLabel;
+
+  /// 写这一项时会顺带改掉的其他设置项（键）。`settings.set` 的撤销把它们与本项一并
+  /// 快照、一并写回（[settingsIndexLinkedKeys]），否则撤销只还原了一半。
+  final List<String> linkedKeys;
 }
+
+/// [key] 写入时会联动改掉的设置项（见 [SettingsIndexVirtual.linkedKeys]）。
+List<String> settingsIndexLinkedKeys(String key) =>
+    settingsIndexVirtuals[key]?.linkedKeys ?? const <String>[];
 
 final Map<String, SettingsIndexVirtual> settingsIndexVirtuals =
     <String, SettingsIndexVirtual>{
@@ -116,10 +125,15 @@ final Map<String, SettingsIndexVirtual> settingsIndexVirtuals =
           if (value.startsWith('custom-theme:')) return null;
           return AppModel.themeLabel(value);
         },
+        // 与设置页点色卡同一入口：用户选主题会关掉正在生效的背景图 / 图标取色。
         write: (SettingsContext context, String value) async {
-          await context.appModel.setAppThemeKey(value);
+          await context.appModel.pickAppThemeKey(value);
           notifyReaderSettingsChanged(context);
         },
+        linkedKeys: const <String>[
+          'appearance.page_backdrop.follow_accent',
+          'appearance.follow_app_icon_accent',
+        ],
       ),
       // buildLanguageSelector：界面语言。
       'appearance.language': SettingsIndexVirtual(

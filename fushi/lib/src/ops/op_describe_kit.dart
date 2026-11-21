@@ -51,15 +51,25 @@ class OpDescribeKit {
   /// 通用快照撤销：执行前 [read] 旧值，撤销时 [write] 写回。撤销前再读一次：
   /// 当前值已不是这次执行的结果（[newValue]，之后被手动改过）就报 superseded、
   /// 不覆盖用户的修改（spec §5.3）。[read] / [write] 拿到的是本次调用的路径参数。
+  ///
+  /// [linked]：这次写入会顺带改掉的其他条目（同一组读写路由，各自的路径参数）。
+  /// 执行前一并快照；撤销时本项写回后，把**当前值与快照不同**的联动条目逐个写回
+  /// （没被改动、或之后已被手动改回的不碰）。联动条目写回失败报 partial。
   OpUndo snapshotUndo({
     required Future<Object?> Function(Map<String, String> params) read,
     required Future<void> Function(Map<String, String> params, Object? old)
     write,
     required Object? Function(CtlCall call, Object? result) newValue,
+    List<Map<String, String>> Function(Map<String, String> params)? linked,
   }) => OpUndo(
     capture: (CtlCall call) async => <String, Object?>{
       'params': call.params,
       'old': await read(call.params),
+      if (linked != null)
+        'linked': <Map<String, Object?>>[
+          for (final Map<String, String> params in linked(call.params))
+            <String, Object?>{'params': params, 'old': await read(params)},
+        ],
     },
     record: (CtlCall call, Map<String, Object?> before, Object? result) {
       final Object? after = newValue(call, result);
@@ -70,23 +80,40 @@ class OpDescribeKit {
       );
     },
     revert: (Map<String, Object?> payload) async {
-      final Map<String, String> params = <String, String>{
-        for (final MapEntry<Object?, Object?> e
-            in (payload['params'] as Map? ?? const <Object?, Object?>{})
-                .entries)
-          '${e.key}': '${e.value}',
-      };
+      final Map<String, String> params = _stringMap(payload['params']);
       try {
         if (!sameJson(await read(params), payload['new'])) {
           return const OpUndoOutcome.superseded();
         }
         await write(params, payload['old']);
-        return const OpUndoOutcome.done();
       } on CtlFailure catch (failure) {
         return OpUndoOutcome.failed(failure.message ?? failure.code);
       }
+      final List<String> failed = <String>[];
+      for (final Object? snapshot
+          in payload['linked'] as List? ?? const <Object?>[]) {
+        if (snapshot is! Map) continue;
+        final Map<String, String> linkedParams = _stringMap(snapshot['params']);
+        try {
+          if (sameJson(await read(linkedParams), snapshot['old'])) continue;
+          await write(linkedParams, snapshot['old']);
+        } on CtlFailure catch (failure) {
+          failed.add(
+            '${linkedParams.values.join('/')}: '
+            '${failure.message ?? failure.code}',
+          );
+        }
+      }
+      if (failed.isNotEmpty) return OpUndoOutcome.partial(failed.join('; '));
+      return const OpUndoOutcome.done();
     },
   );
+
+  static Map<String, String> _stringMap(Object? raw) => <String, String>{
+    for (final MapEntry<Object?, Object?> e
+        in (raw as Map? ?? const <Object?, Object?>{}).entries)
+      '${e.key}': '${e.value}',
+  };
 
   /// [snapshotUndo] 的常见形态：读路由与写路由共用同一组路径参数，值都在应答的
   /// [field] 字段里；写路由把值放进 body 的 [writeField]（默认同 [field]）。
@@ -98,7 +125,9 @@ class OpDescribeKit {
     String field = 'value',
     String? writeField,
     Map<String, Object?> extraWriteBody = const <String, Object?>{},
+    List<Map<String, String>> Function(Map<String, String> params)? linked,
   }) => snapshotUndo(
+    linked: linked,
     read: (Map<String, String> params) async {
       final Object? current = await callRoute(
         readMethod,

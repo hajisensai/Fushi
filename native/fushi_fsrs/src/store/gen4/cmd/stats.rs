@@ -17,8 +17,8 @@
 //!   ID)（协议 3 只按时刻，同一时刻的先后随计划）。卡片上的浮点和按行序累加，所以与协议 3 的差最多是同一组数换个
 //!   顺序相加的末位误差，对拍按 1e-9 的相对误差比。
 //! - **原料缓存**（协议 3 `StatsCache`：按 profile + 统计指纹 + 写入代数留一份原料）不在这里：这里每条命令在一个读快照
-//!   里现读一份。缓存要知道「写连接上改过原料」，那是分发器与写路径的事，接线时（规划 §2.2 S1）由命令层持有，读
-//!   原料仍调 [snapshot_of]。`stats_release` 随缓存一起归命令层。
+//!   里现读一份。缓存由命令层持有（`kernel.rs` `G4Core` 的 `stats`，按集合 + 统计指纹 + 写入代数 + 缓存层代号命中），
+//!   分发器（`dispatch.rs` `stats`）没命中时调 [snapshot_of] 读原料；`stats_release` 也在分发器里丢掉它。
 //!
 //! # 代价
 //!
@@ -75,8 +75,8 @@ pub fn stats_rows(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String>
 }
 
 /// 原料与归一后的请求：同一个读快照里读原料、归一请求里的 ID（别名表与原料是同一个版本）。原料经 [snapshot_of]
-/// 读——它在已开的事务里直接沿用（[snapshot] 的约定），所以这里与接线后命令层的原料缓存走同一个入口：缓存（协议 3
-/// `StatsCache` 的新代对应物，要知道写连接上改没改过原料，归 S1 的命令层）没命中时也调它。
+/// 读——它在已开的事务里直接沿用（[snapshot] 的约定），与分发器的原料缓存（`G4Core` 的 `stats`，协议 3 `StatsCache`
+/// 的新代对应物）没命中时走同一个入口。分发器的统计命令走缓存，不经这里；这里是不带缓存的直读（测试与对拍）。
 fn load(t: &Truth<'_>, col: i64, req: &Value) -> Result<(Snapshot, Value), String> {
     snapshot(t, |t| {
         let req = canon_req(&Index::new(t, col), req)?;
