@@ -272,7 +272,7 @@ void main() {
     expect(findCoverBlockTitle('Night Album'), findsOneWidget);
 
     await tester.tap(
-      findCoverBlockTitle('Night Album'),
+      find.byKey(const ValueKey<String>('music-album-meta-al')),
       buttons: kSecondaryMouseButton,
       kind: PointerDeviceKind.mouse,
     );

@@ -499,7 +499,8 @@ Future<void> showMusicAlbumMenu({
       children: <Widget>[
         FushiIcon(icon, size: 20),
         const SizedBox(width: 12),
-        Text(label),
+        // 菜单最宽 280：长文案（大字号 / 长语种）换行，不撑破行。
+        Flexible(child: Text(label)),
       ],
     ),
   );
