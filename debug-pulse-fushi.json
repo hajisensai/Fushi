@@ -1,12 +1,82 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-21T20:54:31Z",
+ "generatedAt": "2026-11-21T22:33:11Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "b2a6d23d7dcfe273334e0399efa7d8317fd8a667",
-  "seq": 31026
+  "sha": "7cebc8dfc9b69202a62e7743b7b2362198e07efa",
+  "seq": 31027
  },
  "builds": [
+  {
+   "seq": 30766,
+   "version": "3.4.0",
+   "sha": "669c2527eb9b2c30081d03b00dbb0c104305daf7",
+   "unknown": false,
+   "publishedAt": "2026-11-21T22:32:56Z",
+   "testflight": true,
+   "baseSeq": 30680,
+   "prs": [
+    4086,
+    4067,
+    4080,
+    4044,
+    4055,
+    4072,
+    4052,
+    4076,
+    4065,
+    4071,
+    4060,
+    4045,
+    4046,
+    4053,
+    4054,
+    4057,
+    4073
+   ],
+   "direct": [
+    {
+     "sha": "669c2527eb9b2c30081d03b00dbb0c104305daf7",
+     "subject": "test(tts): 整书分拣纯函数测试改用 package:test（纯 Dart 测试守卫）"
+    },
+    {
+     "sha": "e666bfa2dbd7ec380074a047693b943a0fbfcad1",
+     "subject": "docs(bugs): 合并第 6 批后重建 BUGS 索引"
+    },
+    {
+     "sha": "c80387a24ccd306067f8d83f6f337326e7d13726",
+     "subject": "chore(bugs): settle BUG number collisions on 8a50939c3"
+    },
+    {
+     "sha": "8a50939c3e2364aac23e8c36baaac693e80be6bf",
+     "subject": "Merge remote-tracking branch 'origin/develop' into review-4058"
+    },
+    {
+     "sha": "0bc29ac6cee0222b488e052860776618c4f2d360",
+     "subject": "tool(heavy): 结果缓存键计入会改变结论的项目环境变量；读产物 / 机器输出的命令不进缓存"
+    },
+    {
+     "sha": "61a869553bca457da1d96115e01a92e9786c6846",
+     "subject": "tool(heavy): test / analyze 绿结果按工作树内容缓存，同内容同命令不再排队重跑；审查代理不重跑已绿测试"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44942269234"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "ok"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
   {
    "seq": 30680,
    "version": "3.4.0",
@@ -82,44 +152,9 @@
    "unknown": false,
    "publishedAt": "2026-11-21T14:44:44Z",
    "testflight": false,
-   "baseSeq": 30650,
-   "prs": [
-    4038
-   ],
-   "direct": [
-    {
-     "sha": "854b707f792c2bf8b39eebc2c3f5a89e0d7b2344",
-     "subject": "chore(bugs): settle BUG number collisions on c68133e6a"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44910863176"
-    },
-    "macos": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44910863176"
-    },
-    "ios": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44910863176"
-    }
-   }
-  },
-  {
-   "seq": 30650,
-   "version": "3.4.0",
-   "sha": "c68133e6a430df425b0959828ec81dc89d5ce8ba",
-   "unknown": false,
-   "publishedAt": "2026-11-21T13:51:43Z",
-   "testflight": false,
    "baseSeq": 29224,
    "prs": [
+    4038,
     4037,
     4021,
     4020,
@@ -379,6 +414,10 @@
    ],
    "direct": [
     {
+     "sha": "854b707f792c2bf8b39eebc2c3f5a89e0d7b2344",
+     "subject": "chore(bugs): settle BUG number collisions on c68133e6a"
+    },
+    {
      "sha": "c8a39f3df1fbaf8c178b21239de005f2ba82f094",
      "subject": "Merge remote-tracking branch 'origin/develop' into integrate-4"
     },
@@ -522,26 +561,26 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44901279888"
+     "state": "ok"
     },
     "windows": {
-     "state": "ok"
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44910863176"
     },
     "macos": {
      "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44901279831"
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44910863176"
     },
     "ios": {
      "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/44901279831"
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/44910863176"
     }
    }
   }
  ],
  "pending": {
-  "headSha": "b2a6d23d7dcfe273334e0399efa7d8317fd8a667",
-  "headSeq": 31026,
+  "headSha": "7cebc8dfc9b69202a62e7743b7b2362198e07efa",
+  "headSeq": 31027,
   "prs": [
    4088,
    4033,
@@ -580,26 +619,13 @@
    4050,
    4048,
    4066,
-   4059,
-   4086,
-   4067,
-   4080,
-   4044,
-   4055,
-   4072,
-   4052,
-   4076,
-   4065,
-   4071,
-   4060,
-   4045,
-   4046,
-   4053,
-   4054,
-   4057,
-   4073
+   4059
   ],
   "direct": [
+   {
+    "sha": "7cebc8dfc9b69202a62e7743b7b2362198e07efa",
+    "subject": "chore(bugs): settle BUG number collisions on b2a6d23d7"
+   },
    {
     "sha": "b2a6d23d7dcfe273334e0399efa7d8317fd8a667",
     "subject": "docs(bugs): 合并第 8 批后重建 BUGS 索引"
@@ -611,30 +637,6 @@
    {
     "sha": "0db9f53d2b84a336a62d865e0c4146fa01d4b085",
     "subject": "docs(bugs): 合并第 7 批后重建 BUGS 索引"
-   },
-   {
-    "sha": "669c2527eb9b2c30081d03b00dbb0c104305daf7",
-    "subject": "test(tts): 整书分拣纯函数测试改用 package:test（纯 Dart 测试守卫）"
-   },
-   {
-    "sha": "e666bfa2dbd7ec380074a047693b943a0fbfcad1",
-    "subject": "docs(bugs): 合并第 6 批后重建 BUGS 索引"
-   },
-   {
-    "sha": "c80387a24ccd306067f8d83f6f337326e7d13726",
-    "subject": "chore(bugs): settle BUG number collisions on 8a50939c3"
-   },
-   {
-    "sha": "8a50939c3e2364aac23e8c36baaac693e80be6bf",
-    "subject": "Merge remote-tracking branch 'origin/develop' into review-4058"
-   },
-   {
-    "sha": "0bc29ac6cee0222b488e052860776618c4f2d360",
-    "subject": "tool(heavy): 结果缓存键计入会改变结论的项目环境变量；读产物 / 机器输出的命令不进缓存"
-   },
-   {
-    "sha": "61a869553bca457da1d96115e01a92e9786c6846",
-    "subject": "tool(heavy): test / analyze 绿结果按工作树内容缓存，同内容同命令不再排队重跑；审查代理不重跑已绿测试"
    }
   ],
   "truncated": false,
