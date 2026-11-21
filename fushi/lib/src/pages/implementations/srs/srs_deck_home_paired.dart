@@ -3,8 +3,10 @@ part of 'srs_deck_list_page.dart';
 // 复习首页「已配对设备」分区（用户 2026-11-07 拍板方案 A；取代同步菜单里「复习已配对设备的卡组」那两层页面）：
 //
 // - 本机牌组树下面，每台声明了远程复习能力的已配对主机一组：组头是设备名、连接状态与三色计数，点组头展开 /
-//   收起；展开后是这台主机的牌组树，用的就是本机牌组树的行组件 [_DeckRow]（缩进、折叠箭头、徽章、播放按钮），
-//   不再是按深度缩进的平铺列表；
+//   收起；展开后是这台主机的牌组树，用的就是本机牌组树的行组件 [_DeckRow] 与同一套色块编排
+//   [_srsDeckBandGroups]（设计稿 11-20 #17：以前这里固定走分段卡外壳，成了直角深色条、计数不进药丸、
+//   徽章退成主题紫，和本机行两个样子）。数据源换成主机的牌组快照，色块按牌组名取色、与本机同名牌组同色；
+//   墨水屏两边一起退回分段卡行；
 // - 卡组不下载：组里的行跑在 [SrsRemoteCollectionScope] 里，点行 / 播放 / 自定义学习 / 浏览 / 牌组设置压出的
 //   都是本机同一套页面，读写主机的库（见 srs_remote_review_page.dart）；
 // - 主机的数字只在它自己那组里显示，不并进本机的「今日计划」（用户同日拍板不要「另有 N 张在别的设备」那行）；
@@ -27,8 +29,8 @@ part of 'srs_deck_list_page.dart';
 /// 不必点「立即同步」。没进分区的主机（新配对 / 上次没应答）不受它限制，每次进页面都探。
 const Duration kSrsPairedProbeTtl = Duration(minutes: 15);
 
-/// 首页缓存落盘格式的版本（[kSrsHomePairedCachePrefKey]）；对不上的整份不读。
-const int _kPairedCacheVersion = 1;
+/// 首页缓存落盘格式的版本（[kSrsHomePairedCachePrefKey]）；对不上的整份不读。2 = 远程复习 V2：牌组树按视图存（G10-2）。
+const int _kPairedCacheVersion = 2;
 
 /// 进行中的加载被代际判定作废（[_PairedHost.epoch] 变了）。
 class _SrsPairedLoadStale implements Exception {
@@ -568,6 +570,10 @@ class _SrsPairedDeviceGroup extends StatelessWidget {
     final Map<String, int> rootIndex = _srsDeckRootIndex(decks);
     final String hostId = host.target.hostId;
 
+    // 色块版式（与本机牌组树同一判据）：组头自成一张设备卡，牌组按顶层切成色块排在下面；
+    // 墨水屏仍是组头 + 牌组行连成的一组分段卡。
+    final bool bands = shellRedesignActive(context);
+    final int headerCount = bands ? 1 : count;
     final List<Widget> rows = <Widget>[];
     if (ref != null) {
       final _PairedDeckActions actions = _PairedDeckActions(
@@ -577,37 +583,62 @@ class _SrsPairedDeviceGroup extends StatelessWidget {
         paired: paired,
       );
       int shown = 0;
-      for (int i = 0; i < decks.length; i++) {
+      Widget rowAt(int i, {required int index, _DeckBand? band}) {
         final SrsDeckSummary d = decks[i];
-        final int index = 1 + (visible[i] ? shown++ : shown);
         final int? rootAt = rootIndex[d.deck.id];
-        rows.add(
-          FushiTreeReveal(
-            key: ValueKey<String>('srs-paired-deck-$hostId-${d.deck.id}'),
-            visible: visible[i],
-            child: _DeckRow(
-              deck: d,
-              depth: d.depth,
-              badge: rootAt == null ? null : _srsDeckBadgeShape(rootAt),
-              doneToday: null,
-              selected: false,
-              deleting: null,
-              index: index,
-              count: count,
-              isDefault: false,
-              hasTree: parents.isNotEmpty,
-              hasChildren: parents.contains(d.deck.id),
-              collapsed: host.isCollapsed(d),
-              onSetCollapsed: (bool c) => paired.setCollapsed(host, d, c),
-              onOpen: actions.review,
-              onReview: actions.review,
-              onAction: actions.run,
-              canMoveUp: false,
-              canMoveDown: false,
-              remote: true,
-            ),
+        return FushiTreeReveal(
+          key: ValueKey<String>('srs-paired-deck-$hostId-${d.deck.id}'),
+          visible: visible[i],
+          child: _DeckRow(
+            deck: d,
+            depth: d.depth,
+            badge: rootAt == null ? null : _srsDeckBadgeShape(rootAt),
+            doneToday: null,
+            selected: false,
+            deleting: null,
+            index: index,
+            count: band == null ? count : 1,
+            isDefault: false,
+            hasTree: parents.isNotEmpty,
+            hasChildren: parents.contains(d.deck.id),
+            collapsed: host.isCollapsed(d),
+            onSetCollapsed: (bool c) => paired.setCollapsed(host, d, c),
+            onOpen: actions.review,
+            onReview: actions.review,
+            onAction: actions.run,
+            canMoveUp: false,
+            canMoveDown: false,
+            remote: true,
+            band: band,
           ),
         );
+      }
+
+      if (bands) {
+        final List<Widget> groups = _srsDeckBandGroups(
+          context,
+          decks: decks,
+          baseDepth: 0,
+          keyPrefix: 'srs-paired-band-$hostId-',
+          rowAt: rowAt,
+        );
+        for (final Widget g in groups) {
+          // 组收起时整块色块跟着弹簧收起（块里的行另按子牌组折叠各自收放）。
+          rows.add(
+            FushiTreeReveal(
+              key: ValueKey<Object?>(('srs-paired-reveal', g.key)),
+              visible: open,
+              child: Padding(
+                padding: const EdgeInsets.only(top: kFushiCoverBlockSpacing),
+                child: g,
+              ),
+            ),
+          );
+        }
+      } else {
+        for (int i = 0; i < decks.length; i++) {
+          rows.add(rowAt(i, index: 1 + (visible[i] ? shown++ : shown)));
+        }
       }
     }
 
@@ -617,19 +648,22 @@ class _SrsPairedDeviceGroup extends StatelessWidget {
         _SrsPairedDeviceHeader(
           host: host,
           paired: paired,
-          count: count,
+          count: headerCount,
           ref: ref,
         ),
         ...rows,
         FushiTreeReveal(
           key: ValueKey<String>('srs-paired-empty-$hostId'),
           visible: empty,
-          child: FushiGroupedListItem(
-            index: 1,
-            count: count,
-            child: FushiListItem(
-              density: srsListDensityOf(context),
-              title: Text(t.srs_remote_review_decks_empty),
+          child: Padding(
+            padding: EdgeInsets.only(top: bands ? kFushiCoverBlockSpacing : 0),
+            child: FushiGroupedListItem(
+              index: bands ? 0 : 1,
+              count: bands ? 1 : count,
+              child: FushiListItem(
+                density: srsListDensityOf(context),
+                title: Text(t.srs_remote_review_decks_empty),
+              ),
             ),
           ),
         ),

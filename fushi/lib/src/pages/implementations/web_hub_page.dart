@@ -1,9 +1,9 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/browser_extension_page.dart';
 import 'package:fushi/src/pages/implementations/fushi_web_browser_page.dart';
-import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
     show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
@@ -38,15 +38,15 @@ enum WebHubSection {
   /// 由浏览页自己按在线漫画源合规门控。
   browse,
 
-  /// 浏览器扩展安装与连接状态（[BrowserExtensionPage]），仅桌面。
+  /// 浏览器扩展安装与连接状态（[BrowserExtensionPage]），桌面与安卓有、iOS 没有。
   browserExtension,
 }
 
-/// 本平台上 [section] 是否存在。浏览器扩展问 [browserExtensionSupportedOn]。
+/// 本平台上 [section] 是否存在。浏览器扩展问 [browserExtensionInstallAvailableOn]。
 bool webHubSectionAvailable(WebHubSection section) => switch (section) {
   WebHubSection.browse => true,
-  WebHubSection.browserExtension => browserExtensionSupportedOn(
-    isDesktop: DesktopLookupService.isDesktop,
+  WebHubSection.browserExtension => browserExtensionInstallAvailableOn(
+    defaultTargetPlatform,
   ),
 };
 

@@ -372,11 +372,16 @@ abstract final class AudiobookStorage {
     return paths.where((String path) => !probe(path)).toList();
   }
 
-  /// [paths] 中是否存在任一断链文件（引用导入后原文件被移动/删除）。
+  /// [paths] 中是否存在任一断链文件（引用导入后原文件被移动/删除）。遇到第一个
+  /// 断链文件就停，不像 [missingPaths] 那样把整组探完。
   static bool hasMissingPaths(
     List<String> paths, {
     bool Function(String path)? exists,
-  }) => missingPaths(paths, exists: exists).isNotEmpty;
+  }) {
+    final bool Function(String) probe =
+        exists ?? (String path) => File(path).existsSync();
+    return paths.any((String path) => !probe(path));
+  }
 
   /// 两组音频路径是否是**同一套音频**（BUG-1679 的进度作废判据）。
   /// 有序比较：顺序就是 `AudioCue.audioFileIndex` 的含义，换序即换时间轴。
@@ -681,6 +686,22 @@ abstract final class AudiobookStorage {
     } catch (e) {
       fushiDebugPrint('[fushi-import] swap cleanup: ${dir.path} failed: $e');
     }
+  }
+
+  /// [path] 是否落在 [bookUid] 的持久目录里：现行哈希目录或旧版 `hashCode` 目录，
+  /// 与 [deletePersistDir] 删的是同两处。整目录删除前用它排除「还有登记指着里面的
+  /// 文件」，否则会连用户刚选的音频一起删掉。
+  static Future<bool> persistDirContains(String bookUid, String path) async {
+    final Directory docs = await _documentsRoot();
+    for (final String name in <String>[
+      _stableHash(bookUid),
+      bookUid.hashCode.toRadixString(16),
+    ]) {
+      if (_isInside(Directory(p.join(docs.path, 'audiobooks', name)), path)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   static Future<void> deletePersistDir(String bookUid) async {

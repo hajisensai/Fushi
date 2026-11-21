@@ -19,6 +19,8 @@ import 'package:fushi_engine/media/video/ffmpeg_backend.dart'
     show FfmpegBackend, FfmpegRunResult, resolveFfmpegBackend;
 import 'package:fushi_engine/tts/cast/cast_line_voicing.dart';
 import 'package:fushi_engine/tts/cast/series_cast.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_narrator.dart'
+    show MangaNarratorVoice;
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render_plan.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_renderer.dart';
@@ -405,6 +407,15 @@ class _NoBackend implements MangaRenderBackend {
     required List<MangaRenderItem> items,
     required TtsRenderCancelToken cancel,
   }) async {}
+
+  @override
+  bool get canCloneNarrator => false;
+
+  @override
+  Future<bool> prepareNarrator({
+    required MangaNarratorVoice narrator,
+    required TtsRenderCancelToken cancel,
+  }) async => false;
 }
 
 /// 系列里的卷，按阅读顺序：合集派生的系列先按合集内顺序，再补上显式关联进来的卷；

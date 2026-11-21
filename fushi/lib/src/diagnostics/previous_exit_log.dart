@@ -100,11 +100,12 @@ enum PreviousExitKind {
   /// 被厂商系统按应用结束：ColorOS / OxygenOS / realme UI 的 `o-stop`（Android 记成
   /// `OTHER` +「`stop <包名> due to o-stop(<码>)`」，OPlus 框架主动停应用——划掉最近任务、
   /// 一键清理、后台 / 耗电管理），MIUI / HyperOS 的 `SwipeUpClean`（`OTHER` +
-  /// 「`SwipeUpClean`」，在最近任务里上划清掉应用），MIUI / HyperOS 熄屏耗电检查（`OTHER` +
+  /// 「`SwipeUpClean`」，在最近任务里上划清掉应用；「`OneKeyClean`」，一键清理 / 全部清除），
+  /// MIUI / HyperOS 熄屏耗电检查（`OTHER` +
   /// 「`ScreenOffCPUCheckKill over … used … (…%) threshold …`」）。平台给了明确原因，不是
   /// 闪退；真崩溃 / ANR 系统另记 `CRASH*` / `ANR`。否则用户每在最近任务里划掉一次（死时界面
   /// 还在最上层、importance=100，或在跑前台服务、importance=125），下次启动都弹「意外退出」
-  /// （反馈 HqhXJvwgq3 / lN8b_hBgKD）。耗电检查杀进程说明熄屏时真的在吃 CPU，那条记录按
+  /// （反馈 HqhXJvwgq3 / lN8b_hBgKD / PojVLNyNtZ）。耗电检查杀进程说明熄屏时真的在吃 CPU，那条记录按
   /// [androidExitSevere] 落进用户可见的错误日志，不因为不弹闪退报告就藏起来（反馈
   /// Z9FwhY9377）。
   vendorStopped,
@@ -114,6 +115,14 @@ enum PreviousExitKind {
   /// 权限」等 appop）。平台给了明确原因、是系统对用户操作的标准反应，不是闪退——否则
   /// 用户每改一次权限，下次启动都弹「意外退出」（反馈 DyamYE6bPL / g8AEGUyQBU）。
   permissionChanged,
+
+  /// 被系统安全组件当成恶意软件按 uid 结束（Android `OTHER` + 描述整串是
+  /// `[KILL UID] malware`：Play Protect 或厂商「设备保护」类组件扫描后杀进程；这串不是
+  /// AOSP 框架写的，具体是哪家拿不到）。不是应用内崩溃（没有 Java / Dart / 原生栈），
+  /// 上报只会进闪退队列当噪音（反馈 5wMNgObn0U，三星 SM-S9180，启动约 2.7 s 被杀）。
+  /// 不弹闪退报告，改在首页出来后提示用户去安全设置里放行
+  /// （[offerSecurityKillNoticeAfterStartup]）。
+  securityKilled,
 
   /// 安装新版本时被系统停掉（Android `PACKAGE_UPDATED`：`installPackageLI`，自动更新 /
   /// 覆盖安装）。平台给了明确原因，压过会话标记的「停在前台时没了」——否则每次应用内
@@ -146,6 +155,7 @@ enum PreviousExitKind {
     userStopped ||
     vendorStopped ||
     permissionChanged ||
+    securityKilled ||
     appUpdated ||
     systemSessionEnd ||
     exitInterrupted ||
@@ -298,7 +308,17 @@ const int kSessionMemorySampleCount = 6;
 /// 内存采样间隔。
 const Duration kMemorySampleInterval = Duration(seconds: 30);
 
-/// 会话标记文件：每次状态变化**同步**整份覆写（几十字节），进程下一刻被杀也已落盘。
+/// 会话标记文件：每次状态变化**同步**整份覆写（几十字节），写进内核页缓存后进程下一刻被杀
+/// 也不丢。
+///
+/// 诊断标记（会话标记、活动 / 查词 / 导入 / 启动步进面包屑、致命错误同步追加）的落盘语义
+/// （BUG-4943，反馈 OU6bZvpCd0）：**同步 `write` 进内核页缓存，不 fsync**。这些标记要防的是「进程下一刻没了」——Dart 接不到的原生崩溃、SIGKILL、系统回收、
+/// 看门狗强杀。进程死不丢页缓存：`write(2)` 返回后数据归内核，进程怎么死都会照常回写。
+/// fsync 只多防「整机掉电 / 内核崩溃」，而那种情况下「上次怎么没的」本来就判不准。
+/// 代价却落在主线程上：Flutter 3.29 起 Android 的 UI isolate 跑在平台主线程，低端机
+/// IO 拥塞时一次 fsync 能卡几秒，每 30 秒的内存采样、每次生命周期 / 内存压力都同步
+/// fsync 会话标记，被系统判 ANR（主线程 state=D 停在 `libc fsync`）。所以这些标记一律
+/// 只同步写、不带 `flush: true`；守卫见 `test/diagnostics/diagnostic_marker_no_fsync_guard_test.dart`。
 class SessionMarker {
   SessionMarker(this.file, {required this.pid, required this.version});
 
@@ -440,7 +460,7 @@ class SessionMarker {
           'launchDetail': _launchDetail,
           if (_memorySamples.isNotEmpty) 'memorySamples': _memorySamples,
         }),
-        flush: true,
+        // 不 fsync（BUG-4943）：进程死不丢页缓存，见 [SessionMarker] 文档。
       );
     } on FileSystemException catch (e) {
       debugPrint('[PreviousExitLog] session marker write failed: $e');
@@ -458,10 +478,18 @@ class SessionMarker {
 ///
 /// [androidUiVisibleAtDeath]：同一进程死前界面可不可见的原生证据
 /// （[androidSessionUiVisibleAtDeath]），按 [androidDiedInForeground] 的次序压过标记推断。
+///
+/// [currentVersion]：本次进程的版本（与标记里的 [PreviousSession.version] 同一来源）。
+/// 两边都已知且不同 = 上次进程之后装了新版本：iOS（TestFlight / App Store）与 macOS
+/// 装新版时由系统结束旧进程，平台不留原因（没有 Android `PACKAGE_UPDATED` 那样的记录），
+/// 标记只会停在 resumed，按「停在前台时没了」会每次更新都误报一次闪退（反馈
+/// QL5TsHwY78）。这时归 [PreviousExitKind.appUpdated]；真有崩溃证据（MetricKit、`.ips`、
+/// Android `CRASH*`）时 [classifyPreviousExit] 按优先级照常压过它。
 ExitReportEntry? describeUncleanPreviousSession(
   PreviousSession? previous, {
   int? androidImportanceAtDeath,
   bool? androidUiVisibleAtDeath,
+  String? currentVersion,
 }) {
   if (previous == null || previous.clean) return null;
   final bool diedInForeground = androidDiedInForeground(
@@ -528,6 +556,25 @@ ExitReportEntry? describeUncleanPreviousSession(
       atMs: previous.lifecycleAt,
     );
   }
+  final String? previousVersion = knownSessionVersion(previous.version);
+  final String? runningVersion = knownSessionVersion(currentVersion);
+  if (previousVersion != null &&
+      runningVersion != null &&
+      previousVersion != runningVersion) {
+    b.write(
+      '（本次已是 $runningVersion：上次进程之后装了新版本，'
+      '多半是安装更新时被系统结束，按更新处理）',
+    );
+    return ExitReportEntry(
+      kPreviousExitUncleanSource,
+      b.toString(),
+      severe: false,
+      kind: PreviousExitKind.appUpdated,
+      foreground: diedInForeground,
+      duringStartup: !previous.initialised,
+      atMs: previous.lifecycleAt,
+    );
+  }
   b.write(
     diedInForeground
         ? '（停在前台时没了，疑似闪退）'
@@ -546,6 +593,15 @@ ExitReportEntry? describeUncleanPreviousSession(
     duringStartup: !previous.initialised,
     atMs: previous.lifecycleAt,
   );
+}
+
+/// 版本拿不到（没注入 `FUSHI_BUILD_VERSION`）时会话标记里记的占位值。
+const String kUnknownSessionVersion = 'unknown';
+
+/// 会话标记里的版本能不能参与比较：空串 / [kUnknownSessionVersion] 是「不知道」，返回 null。
+String? knownSessionVersion(String? version) {
+  final String? v = version?.trim();
+  return v == null || v.isEmpty || v == kUnknownSessionVersion ? null : v;
 }
 
 /// 日志 source：上次退出链超出预算、被退出看门狗结束（有意退出，只作诊断）。
@@ -597,6 +653,12 @@ final RegExp _aospKillUidOpChanged = RegExp(
   r'^(?:\[KILL UID\] )?[A-Z][A-Z0-9_]* changed\.?$',
 );
 
+/// 安全组件按 uid 结束「恶意软件」时写下的 `ApplicationExitInfo` 描述：原因码
+/// `REASON_OTHER`，描述 `[KILL UID] malware`（`[KILL UID]` 是 `AppExitInfoTracker` 的
+/// `SUBREASON_KILL_UID` 前缀，后面是调用方传给 `killUid` 的原因串；反馈 5wMNgObn0U）。
+/// 整串锚定、区分大小写；前缀可缺（同 BUG-4491：有的 ROM 的 `AppExitInfoTracker` 不加前缀）。
+final RegExp _securityKillMalware = RegExp(r'^(?:\[KILL UID\] )?malware$');
+
 /// AOSP `ProcessErrorStateRecord.scheduleCrashLocked` 想让进程自己崩（例如广播投递失败时
 /// 的 `can't deliver broadcast`）、但连 `IApplicationThread.scheduleCrash` 这次 binder 调用
 /// 都失败了——进程已死或被冻结（缓存进程冻结器，importance=400）——于是系统直接
@@ -620,6 +682,12 @@ final RegExp _oplusAppStop = RegExp(
 /// `#hw7f_pogDW` 也是它）。整串锚定，子原因前缀可有可无。
 final RegExp _miuiSwipeUpClean = RegExp(r'^(?:\[[A-Z0-9_ ]+\] )?SwipeUpClean$');
 
+/// MIUI / HyperOS 一键清理（最近任务里的「全部清除」、安全中心加速）结束应用时写下的
+/// `ApplicationExitInfo` 描述：原因码 `REASON_OTHER`，描述是 `OneKeyClean`（反馈
+/// PojVLNyNtZ，Xiaomi 22041219G，SDK 34；死时在跑前台服务，importance=125）。整串锚定，
+/// 子原因前缀可有可无。
+final RegExp _miuiOneKeyClean = RegExp(r'^(?:\[[A-Z0-9_ ]+\] )?OneKeyClean$');
+
 /// MIUI / HyperOS 熄屏 CPU 检查杀进程时写下的 `ApplicationExitInfo` 描述：原因码
 /// `REASON_OTHER`，描述形如 `ScreenOffCPUCheckKill over +25m0s475ms used +45m1s910ms
 /// (180.07031%) threshold 6.0`（熄屏窗口里进程 CPU 占比超过阈值，反馈 Z9FwhY9377）。
@@ -633,6 +701,7 @@ final RegExp _miuiScreenOffCpuKill = RegExp(
 final List<RegExp> _vendorStopDescriptions = <RegExp>[
   _oplusAppStop,
   _miuiSwipeUpClean,
+  _miuiOneKeyClean,
   _miuiScreenOffCpuKill,
 ];
 
@@ -643,12 +712,14 @@ bool _isVendorStopDescription(String description) =>
 /// 这条 Android 退出记录要不要走 `log`（落盘、用户可见）：[kSevereAndroidExitReasons]，
 /// 外加厂商按 CPU 耗电杀进程（MIUI `ScreenOffCPUCheckKill`）——它按
 /// [PreviousExitKind.vendorStopped] 不弹闪退报告，但说明熄屏时真的在吃 CPU，是要查的
-/// 耗电问题，不能只留在诊断段里。
+/// 耗电问题，不能只留在诊断段里；以及安全组件按「恶意软件」杀进程（
+/// [PreviousExitKind.securityKilled]）——不弹闪退报告，但用户要能在错误日志里看到原因。
 bool androidExitSevere(String reason, {String? description}) =>
     kSevereAndroidExitReasons.contains(reason) ||
     (reason == 'OTHER' &&
         description != null &&
-        _miuiScreenOffCpuKill.hasMatch(description.trim()));
+        (_miuiScreenOffCpuKill.hasMatch(description.trim()) ||
+            _securityKillMalware.hasMatch(description.trim())));
 
 /// Android 退出原因 → [PreviousExitKind]；包更新 / 权限变更映射成
 /// [PreviousExitKind.appUpdated] / [PreviousExitKind.permissionChanged]（明确的良性原因，
@@ -657,8 +728,9 @@ bool androidExitSevere(String reason, {String? description}) =>
 /// 「scheduleCrash for '…' failed」——系统结束了够不着的进程，应用里没崩）返回 null，
 /// 交给会话标记。`OTHER` 只在
 /// [description] 是 AOSP 自己写的 appop 变更杀进程描述时才算权限变更、是 OPlus 的
-/// `o-stop` 停应用描述、MIUI / HyperOS 的 `SwipeUpClean` / 熄屏耗电检查描述时算厂商停止
-/// （[PreviousExitKind.vendorStopped]，见 [_vendorStopDescriptions]），其它照旧 null。
+/// `o-stop` 停应用描述、MIUI / HyperOS 的 `SwipeUpClean` / `OneKeyClean` / 熄屏耗电检查描述时算厂商停止
+/// （[PreviousExitKind.vendorStopped]，见 [_vendorStopDescriptions]），是安全组件的
+/// `[KILL UID] malware` 时算 [PreviousExitKind.securityKilled]，其它照旧 null。
 PreviousExitKind? androidExitKind(String reason, {String? description}) =>
     switch (reason) {
       'CRASH_NATIVE' => PreviousExitKind.nativeCrash,
@@ -680,6 +752,10 @@ PreviousExitKind? androidExitKind(String reason, {String? description}) =>
           when description != null &&
               _isVendorStopDescription(description.trim()) =>
         PreviousExitKind.vendorStopped,
+      'OTHER'
+          when description != null &&
+              _securityKillMalware.hasMatch(description.trim()) =>
+        PreviousExitKind.securityKilled,
       _ => null,
     };
 
@@ -1569,10 +1645,8 @@ abstract final class ActivityBreadcrumb {
     final File? f = _file(activity);
     if (f == null) return;
     try {
-      f.writeAsStringSync(
-        '[${DateTime.now().toIso8601String()}] $detail',
-        flush: true,
-      );
+      // 不 fsync（BUG-4943）：进程死不丢页缓存，见 [SessionMarker] 文档。
+      f.writeAsStringSync('[${DateTime.now().toIso8601String()}] $detail');
     } on FileSystemException catch (e) {
       debugPrint('[ActivityBreadcrumb] mark $activity failed: $e');
     }
@@ -1589,9 +1663,19 @@ abstract final class ActivityBreadcrumb {
   }
 }
 
-/// 读出并删除 [dir] 里上次进程留下的活动面包屑。
-List<ExitReportEntry> collectActivityBreadcrumbs(Directory dir) {
-  final List<ExitReportEntry> out = <ExitReportEntry>[];
+/// 上次进程留下的一个活动面包屑：活动名 + 文件内容（[ActivityBreadcrumb.mark] 写的那行）。
+@immutable
+class ActivityBreadcrumbRecord {
+  const ActivityBreadcrumbRecord(this.activity, this.detail);
+
+  final String activity;
+  final String detail;
+}
+
+/// 读出并删除 [dir] 里上次进程留下的活动面包屑。只读文件、不下结论：严重级要等上次
+/// 会话的前后台判定出来后由 [describeActivityBreadcrumb] 定。
+List<ActivityBreadcrumbRecord> takeActivityBreadcrumbs(Directory dir) {
+  final List<ActivityBreadcrumbRecord> out = <ActivityBreadcrumbRecord>[];
   if (!dir.existsSync()) return out;
   for (final FileSystemEntity e in dir.listSync(followLinks: false)) {
     if (e is! File) continue;
@@ -1601,23 +1685,69 @@ List<ExitReportEntry> collectActivityBreadcrumbs(Directory dir) {
     try {
       final String detail = e.readAsStringSync().trim();
       e.deleteSync();
-      out.add(
-        ExitReportEntry(
-          kActivityCrashRecoveredSource,
-          _cap(
-            redactExitReportPaths(
-              '上次进程在「$activity」进行中没了（原生崩溃 / 被系统杀 / 强杀）：$detail',
-            ),
-          ),
-          severe: true,
-        ),
-      );
+      out.add(ActivityBreadcrumbRecord(activity, detail));
     } on FileSystemException catch (err) {
       debugPrint('[ActivityBreadcrumb] recover $activity failed: $err');
     }
   }
   return out;
 }
+
+/// 把面包屑折成日志条目，严重级与上次会话的判定统一（拍板台 left3525）：面包屑只说明
+/// 「死的时候在做什么」，不说明怎么死的，所以不自带严重级，跟同一次启动的会话判定走——
+/// - 有会话判定（[unclean]，[describeUncleanPreviousSession] 的结果，已服从 Android
+///   死时重要性 / 界面可见性）：它算严重（停在前台时没了）才严重；后台被系统回收、退出
+///   途中没了、停在闪退提示上被关掉都只作诊断，内容（模型 / need / headroom 等）照样进日志。
+/// - 上次会话标了 clean（[previous] 非 null 且 clean）：活动没收尾但退出链走完了，只作诊断。
+/// - 没有上次会话标记（[previous] 为 null）：前后台不知道，按严重记（与
+///   [ExitReportEntry.foreground] 的缺省一致，宁可多记一次）。
+/// 面包屑条目不带 [ExitReportEntry.kind]，不参与 [classifyPreviousExit] 选种类。
+ExitReportEntry describeActivityBreadcrumb(
+  ActivityBreadcrumbRecord record, {
+  required PreviousSession? previous,
+  required ExitReportEntry? unclean,
+}) {
+  final bool severe;
+  final bool foreground;
+  final String judgement;
+  if (unclean != null) {
+    severe = unclean.severe;
+    foreground = unclean.foreground;
+    judgement = severe
+        ? '（会话判定：停在前台时没了，疑似原生崩溃 / 被杀）'
+        : '（会话判定：${unclean.kind?.name ?? 'unknown'}，'
+              '${foreground ? '' : '停在后台、'}不按崩溃记，只作诊断）';
+  } else if (previous != null) {
+    severe = false;
+    foreground = previous.diedInForeground;
+    judgement = '（上次会话已标正常退出：活动没收尾就走完了退出链，只作诊断）';
+  } else {
+    severe = true;
+    foreground = true;
+    judgement = '（没有上次会话标记，前后台未知：原生崩溃 / 被系统杀 / 强杀）';
+  }
+  return ExitReportEntry(
+    kActivityCrashRecoveredSource,
+    _cap(
+      redactExitReportPaths(
+        '上次进程在「${record.activity}」进行中没了$judgement：${record.detail}',
+      ),
+    ),
+    severe: severe,
+    foreground: foreground,
+  );
+}
+
+/// 读出、删除并折成日志条目（[takeActivityBreadcrumbs] + [describeActivityBreadcrumb]）。
+/// 不传会话判定时按「没有上次会话标记」处理。
+List<ExitReportEntry> collectActivityBreadcrumbs(
+  Directory dir, {
+  PreviousSession? previous,
+  ExitReportEntry? unclean,
+}) => <ExitReportEntry>[
+  for (final ActivityBreadcrumbRecord r in takeActivityBreadcrumbs(dir))
+    describeActivityBreadcrumb(r, previous: previous, unclean: unclean),
+];
 
 // ───────────────────────── 判定 ─────────────────────────
 
@@ -1943,14 +2073,14 @@ abstract final class PreviousExitLog {
           ? await collector(appDir)
           : await collect(
               appDir: appDir,
-              version: fushiRunningCodeVersion ?? 'unknown',
+              version: fushiRunningCodeVersion ?? kUnknownSessionVersion,
             );
       final String? previousVersion = _previous?.version;
       _verdict = classifyPreviousExit(
         entries,
         version: previousVersion != null && previousVersion.isNotEmpty
             ? previousVersion
-            : fushiRunningCodeVersion ?? 'unknown',
+            : fushiRunningCodeVersion ?? kUnknownSessionVersion,
         nowMs: DateTime.now().millisecondsSinceEpoch,
       );
       for (final ExitReportEntry e in entries) {
@@ -2002,8 +2132,11 @@ abstract final class PreviousExitLog {
     final int now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
     final List<ExitReportEntry> out = <ExitReportEntry>[];
 
-    // 启动早期（复习同步等长活动开跑之前）收走上次进程留下的活动面包屑。
-    out.addAll(collectActivityBreadcrumbs(appDir));
+    // 启动早期（复习同步等长活动开跑之前）收走上次进程留下的活动面包屑；严重级等下面
+    // 会话判定出来后统一定（[describeActivityBreadcrumb]）。
+    final List<ActivityBreadcrumbRecord> breadcrumbs = takeActivityBreadcrumbs(
+      appDir,
+    );
 
     final SessionMarker marker = SessionMarker(
       File('${appDir.path}${Platform.pathSeparator}session_marker.json'),
@@ -2044,6 +2177,7 @@ abstract final class PreviousExitLog {
 
     final ExitReportEntry? unclean = describeUncleanPreviousSession(
       previous,
+      currentVersion: version,
       androidImportanceAtDeath: previous == null || androidPayload == null
           ? null
           : androidImportanceAtDeath(
@@ -2059,6 +2193,11 @@ abstract final class PreviousExitLog {
               startedAtMs: previous.startedAt,
             ),
     );
+    for (final ActivityBreadcrumbRecord r in breadcrumbs) {
+      out.add(
+        describeActivityBreadcrumb(r, previous: previous, unclean: unclean),
+      );
+    }
     if (unclean != null) out.add(unclean);
     final ExitReportEntry? forced = describeForcedPreviousExit(previous);
     if (forced != null) out.add(forced);

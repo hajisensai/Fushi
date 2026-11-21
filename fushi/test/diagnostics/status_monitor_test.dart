@@ -20,6 +20,10 @@ class _Fake {
   final ImageCache cache = ImageCache();
 
   List<ThreadCpuTime>? threads;
+
+  /// 开过几个线程读数来源 / 关掉了几个（采样启停时各一次）。
+  int threadSourcesOpened = 0;
+  int threadSourcesClosed = 0;
   UiActivitySnapshot ui = (pages: <String>[], tickers: <String, int>{});
 
   StatusMonitor monitor({int cores = 4, double refreshRate = 60}) =>
@@ -39,11 +43,27 @@ class _Fake {
           imageCache: () => cache,
           cores: cores,
           refreshRate: () => refreshRate,
-          threadTimes: () async => threads ?? const <ThreadCpuTime>[],
+          threadTimes: () {
+            threadSourcesOpened++;
+            return _FakeThreadSource(this);
+          },
           uiActivity: () => ui,
           memoryNotes: () => <String>['srs=1/1'],
         ),
       );
+}
+
+class _FakeThreadSource implements ThreadCpuSource {
+  _FakeThreadSource(this._fake);
+
+  final _Fake _fake;
+
+  @override
+  Future<List<ThreadCpuTime>> read() async =>
+      _fake.threads ?? const <ThreadCpuTime>[];
+
+  @override
+  void close() => _fake.threadSourcesClosed++;
 }
 
 void main() {
@@ -324,6 +344,55 @@ void main() {
 
       m.clearStutters();
       expect(m.stutters, isEmpty);
+    });
+
+    test('线程读数来源只在采样期间存在：开始时开一个，停止时关掉', () async {
+      final _Fake f = _Fake();
+      final StatusMonitor m = f.monitor();
+      addTearDown(m.resetForTest);
+      expect(f.threadSourcesOpened, 0, reason: '没人看时不起后台 isolate');
+      m
+        ..acquire()
+        ..acquire();
+      expect(f.threadSourcesOpened, 1, reason: '多个持有者共用一个来源');
+      m.release();
+      expect(f.threadSourcesClosed, 0);
+      m.release();
+      expect(f.threadSourcesClosed, 1);
+      m.acquire();
+      expect(f.threadSourcesOpened, 2);
+      m.release();
+      expect(f.threadSourcesClosed, 2);
+    });
+
+    test('ThreadCpuWorker：常驻 isolate 反复读数，close 后读取以错误结束', () async {
+      final ThreadCpuWorker w = ThreadCpuWorker(uiThreadId: currentThreadId());
+      final List<ThreadCpuTime> first = await w.read();
+      final List<ThreadCpuTime> second = await w.read();
+      if (Platform.isWindows ||
+          Platform.isLinux ||
+          Platform.isMacOS ||
+          Platform.isAndroid ||
+          Platform.isIOS) {
+        expect(first, isNotEmpty);
+        expect(second, isNotEmpty);
+        // 后台 isolate 读到的同一进程：测试主 isolate 的线程被标成 UI 线程。
+        expect(
+          second.where((ThreadCpuTime t) => t.name == kMainIsolateThreadName),
+          hasLength(1),
+        );
+      } else {
+        expect(first, isEmpty);
+      }
+      w.close();
+      await expectLater(w.read(), throwsStateError);
+    });
+
+    test('ThreadCpuWorker：还在等的读取在 close 时以错误结束，不会挂住', () async {
+      final ThreadCpuWorker w = ThreadCpuWorker();
+      final Future<List<ThreadCpuTime>> pending = w.read();
+      w.close();
+      await expectLater(pending, throwsStateError);
     });
 
     test('isStutterSample 判据', () {

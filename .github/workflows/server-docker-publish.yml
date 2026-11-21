@@ -1,0 +1,186 @@
+name: fushi_server Docker image (publish)
+
+# Manual only: builds a prebuilt fushi_server image, smoke-tests it, and pushes
+# it to GHCR only when the `push` input is ticked. Never runs on push / PR.
+#
+#   build_from = release  packages a published hajisensai/fushi-server release
+#                         (packages/fushi_server/docker/Dockerfile). Fast, and the
+#                         image matches a versioned release. Tags: <release tag>
+#                         and, if `latest` is ticked, latest.
+#   build_from = source   builds this checkout (Dockerfile.source): the Linux
+#                         toolchain image, then libtorrent and the native
+#                         libraries, cold (an hour or more). Tag: source-<sha>.
+#
+# Image: ghcr.io/<registry_owner or this repository's owner>/fushi-server.
+# Outside hajisensai/* a push needs `registry_owner` spelled out, so a run in a
+# fork cannot publish to the fork owner's namespace by accident.
+#
+# No Actions cache on purpose (the repo's 10 GB cache quota; see
+# workflow_cache_quota_guard_test.dart): a release build takes minutes anyway.
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_from:
+        description: 'release = package a fushi-server release; source = build this checkout'
+        type: choice
+        options: ['release', 'source']
+        default: 'release'
+      release_tag:
+        description: 'fushi-server release tag (release mode; empty = newest with a linux-x64 asset)'
+        type: string
+        default: ''
+      registry_owner:
+        description: 'GHCR namespace (empty = this repository owner; required outside hajisensai)'
+        type: string
+        default: ''
+      push:
+        description: 'Push to GHCR (unticked = build and smoke-test only)'
+        type: boolean
+        default: false
+      latest:
+        description: 'Also tag :latest (release mode only)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: server-docker-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      SERVER_REPO: hajisensai/fushi-server
+    steps:
+      - name: Resolve image name
+        id: name
+        env:
+          OWNER_INPUT: ${{ inputs.registry_owner }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          WANT_PUSH: ${{ inputs.push }}
+        run: |
+          set -euo pipefail
+          owner="${OWNER_INPUT:-$REPO_OWNER}"
+          if [ "$WANT_PUSH" = true ] && [ -z "$OWNER_INPUT" ] && [ "${REPO_OWNER,,}" != hajisensai ]; then
+            echo "::error title=registry_owner required::pushing from $REPO_OWNER needs registry_owner set explicitly"
+            exit 1
+          fi
+          echo "image=ghcr.io/${owner,,}/fushi-server" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Resolve release
+        id: release
+        if: inputs.build_from == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_INPUT: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          if [ -n "$TAG_INPUT" ]; then
+            tag="$TAG_INPUT"
+            gh release view "$tag" --repo "$SERVER_REPO" --json tagName >/dev/null
+          else
+            tag="$(gh api "repos/$SERVER_REPO/releases?per_page=30" \
+              --jq '[.[] | select(.draft | not) | select(any(.assets[]; .name | endswith("-linux-x64.tar.gz")))][0].tag_name')"
+          fi
+          [ -n "$tag" ] && [ "$tag" != null ] || { echo "::error::no $SERVER_REPO release with a linux-x64 asset"; exit 1; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Packaging $SERVER_REPO $tag"
+
+      - name: Build (release bundle)
+        if: inputs.build_from == 'release'
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+          IMAGE: ${{ steps.name.outputs.image }}
+          REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker build -t fushi-server:publish \
+            --build-arg FUSHI_SERVER_REPO="$SERVER_REPO" \
+            --build-arg FUSHI_SERVER_TAG="$TAG" \
+            --label org.opencontainers.image.source=https://github.com/hajisensai/Fushi \
+            --label org.opencontainers.image.revision="$REVISION" \
+            --label org.opencontainers.image.version="$TAG" \
+            --label org.opencontainers.image.title=fushi-server \
+            --label org.opencontainers.image.description="Headless Fushi server (packages/fushi_server)" \
+            packages/fushi_server/docker
+          echo "TAGS=$TAG" >> "$GITHUB_ENV"
+
+      - name: Free disk space (source build)
+        if: inputs.build_from == 'source'
+        run: |
+          set -euo pipefail
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          docker image prune --all --force >/dev/null
+          df -h /
+
+      - name: Build (source)
+        if: inputs.build_from == 'source'
+        env:
+          REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker build -t fushi-linux-build:trixie -f tool/linux/Dockerfile tool/linux
+          docker buildx build --load -t fushi-server:publish \
+            --build-context toolchain=docker-image://fushi-linux-build:trixie \
+            --build-arg FUSHI_SOURCE_COMMIT="$REVISION" \
+            --label org.opencontainers.image.source=https://github.com/hajisensai/Fushi \
+            --label org.opencontainers.image.revision="$REVISION" \
+            --label org.opencontainers.image.version="source-${REVISION:0:12}" \
+            --label org.opencontainers.image.title=fushi-server \
+            --label org.opencontainers.image.description="Headless Fushi server (packages/fushi_server)" \
+            -f packages/fushi_server/docker/Dockerfile.source .
+          echo "TAGS=source-${REVISION:0:12}" >> "$GITHUB_ENV"
+
+      # A release may predate the language setting, so only the source image is
+      # checked with a (non-default) first-start language.
+      - name: Smoke test
+        env:
+          BUILD_FROM: ${{ inputs.build_from }}
+        run: |
+          set -euo pipefail
+          if [ "$BUILD_FROM" = source ]; then
+            bash packages/fushi_server/docker/smoke_test.sh fushi-server:publish --language zh
+          else
+            bash packages/fushi_server/docker/smoke_test.sh fushi-server:publish
+          fi
+
+      - name: Log in to GHCR
+        if: inputs.push
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Push
+        if: inputs.push
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+          BUILD_FROM: ${{ inputs.build_from }}
+          WANT_LATEST: ${{ inputs.latest }}
+        run: |
+          set -euo pipefail
+          tags=("$TAGS")
+          if [ "$BUILD_FROM" = release ] && [ "$WANT_LATEST" = true ]; then
+            tags+=(latest)
+          fi
+          for t in "${tags[@]}"; do
+            docker tag fushi-server:publish "$IMAGE:$t"
+            docker push "$IMAGE:$t"
+            echo "pushed $IMAGE:$t" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Summary (not pushed)
+        if: ${{ !inputs.push }}
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+        run: echo "Built and smoke-tested $IMAGE:$TAGS; not pushed (push input unticked)." >> "$GITHUB_STEP_SUMMARY"

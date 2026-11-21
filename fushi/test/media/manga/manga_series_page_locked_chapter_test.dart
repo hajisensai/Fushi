@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -40,11 +41,20 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
   @override
   Future<String?> sourceLabel(OnlineMangaLibraryEntry entry) async => 'Fake';
 
+  /// 非 null 时进页的后台刷新等它放行：把「刷新在途」这段窗口钉住，不靠墙钟赌
+  /// 刷新已经跑完。
+  Completer<void>? refreshGate;
+
   @override
   Future<OnlineMangaRefreshResult> refresh(
     OnlineMangaLibraryEntry entry,
-  ) async =>
-      OnlineMangaRefreshResult(series: entry.series, chapters: entry.chapters);
+  ) async {
+    await refreshGate?.future;
+    return OnlineMangaRefreshResult(
+      series: entry.series,
+      chapters: entry.chapters,
+    );
+  }
 
   @override
   Future<List<OnlineMangaPageRef>> resolveChapterPages({
@@ -171,6 +181,14 @@ Future<void> _pumpUntil(WidgetTester tester, Finder finder) async {
   }
 }
 
+Future<void> _pumpUntilGone(WidgetTester tester, Finder finder) async {
+  for (int i = 0; i < 60; i++) {
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    await tester.pump();
+    if (finder.evaluate().isEmpty) return;
+  }
+}
+
 Future<void> _settle(WidgetTester tester) async {
   for (int i = 0; i < 10; i++) {
     await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -218,6 +236,9 @@ void main() {
   );
   const ValueKey<String> appBarLoginKey = ValueKey<String>(
     'manga_series_login',
+  );
+  const ValueKey<String> refreshingKey = ValueKey<String>(
+    'manga_series_refreshing',
   );
 
   Future<String> openPage(
@@ -297,18 +318,28 @@ void main() {
   });
 
   // BUG-2497：登录入口要在作品页 AppBar 上直接可见，不能只藏在锁章弹窗里。
-  testWidgets('适配器给得出登录目标 → AppBar 有「登录」按钮', (WidgetTester tester) async {
+  // 按钮在刷新途中是禁用的（刷新与登录都要动源的会话）。旧写法在章节一出现就断言
+  // 「可点」，等于赌后台刷新已经落库——高并发下刷新慢一拍就红。这里把刷新钉住，
+  // 先验「在途禁用」，放行后等刷新条消失再验「可点」。
+  testWidgets('适配器给得出登录目标 → AppBar 有「登录」按钮，刷新途中禁用、刷新完可点', (
+    WidgetTester tester,
+  ) async {
+    VoidCallback? loginPressed() => tester
+        .widget<IconButton>(glassUnwrap<IconButton>(find.byKey(appBarLoginKey)))
+        .onPressed;
     await tester.runAsync(() async {
-      await openPage(tester, _LoginAdapter());
+      final _LoginAdapter adapter = _LoginAdapter()
+        ..refreshGate = Completer<void>();
+      await openPage(tester, adapter);
       expect(find.byKey(appBarLoginKey), findsOneWidget);
-      expect(
-        tester
-            .widget<IconButton>(
-              glassUnwrap<IconButton>(find.byKey(appBarLoginKey)),
-            )
-            .onPressed,
-        isNotNull,
-      );
+      expect(find.byKey(refreshingKey), findsOneWidget);
+      expect(loginPressed(), isNull, reason: '刷新在途时禁用');
+
+      adapter.refreshGate!.complete();
+      await _pumpUntilGone(tester, find.byKey(refreshingKey));
+      expect(find.byKey(refreshingKey), findsNothing);
+      expect(find.byKey(appBarLoginKey), findsOneWidget);
+      expect(loginPressed(), isNotNull);
     });
   });
 

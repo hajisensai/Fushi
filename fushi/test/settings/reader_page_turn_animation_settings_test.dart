@@ -17,7 +17,7 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart'
-    show SettingsChoiceMenuRow;
+    show AdaptiveSettingsSegmentedRow, SettingsChoiceMenuRow;
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -314,13 +314,20 @@ void main() {
     await tester.pump();
     final Switch toggle = tester.widget<Switch>(find.byType(Switch).first);
     expect(toggle.onChanged, isNull);
-    // 五个效果（含卷页）超过分段条上限，MD3 下渲染成单选菜单行：整行置灰、
-    // 点不开菜单。
-    final SettingsChoiceMenuRow menu = tester.widget<SettingsChoiceMenuRow>(
-      find.byType(SettingsChoiceMenuRow),
-    );
-    expect(menu.labels, hasLength(PageTurnAnimation.values.length));
-    expect(menu.enabled, isFalse);
+    // 五个效果（含卷页）超过行内分段上限：按宽度换到标题下方撑满整行，或连整行
+    // 都放不下时退成菜单行——两种形态都整条置灰、点不动。
+    final AdaptiveSettingsSegmentedRow<Object> row = tester
+        .widget<AdaptiveSettingsSegmentedRow<Object>>(
+          find.byWidgetPredicate(
+            (Widget w) => w is AdaptiveSettingsSegmentedRow<Object>,
+          ),
+        );
+    expect(row.segments, hasLength(PageTurnAnimation.values.length));
+    expect(row.segments.every((ButtonSegment<Object> s) => !s.enabled), isTrue);
+    final Finder menu = find.byType(SettingsChoiceMenuRow);
+    if (menu.evaluate().isNotEmpty) {
+      expect(tester.widget<SettingsChoiceMenuRow>(menu).enabled, isFalse);
+    }
     expect(find.text(t.page_turn_animation_paginated_only), findsWidgets);
   });
 }

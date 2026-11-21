@@ -41,7 +41,7 @@ void main() {
   Future<void> seedRelations({int? boundTarget}) => db
       .replaceCollectionRelations(collectionId, <CollectionRelationsCompanion>[
         CollectionRelationsCompanion.insert(
-          collectionId: collectionId,
+          collectionId: Value<int?>(collectionId),
           relationType: 'sequel',
           sortIndex: const Value<int>(0),
           targetCollectionId: Value<int?>(boundTarget),
@@ -50,7 +50,7 @@ void main() {
           title: '某作品 第二季',
         ),
         CollectionRelationsCompanion.insert(
-          collectionId: collectionId,
+          collectionId: Value<int?>(collectionId),
           relationType: 'movie',
           sortIndex: const Value<int>(1),
           targetCollectionId: const Value<int?>(null),
@@ -118,6 +118,58 @@ void main() {
     expect(opened, otherCollectionId);
   });
 
+  testWidgets('目标是本机散装电影（v162 targetBookUid）→ onOpenVideo(bookUid)', (
+    WidgetTester tester,
+  ) async {
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value<String>('movie-1'),
+        title: Value<String>('movie-1'),
+        videoPath: Value<String>('D:/movie-1.mkv'),
+      ),
+    );
+    await db.replaceCollectionRelations(
+      collectionId,
+      <CollectionRelationsCompanion>[
+        CollectionRelationsCompanion.insert(
+          collectionId: Value<int?>(collectionId),
+          relationType: 'movie',
+          targetBookUid: const Value<String?>('movie-1'),
+          source: 'anidb',
+          subjectId: '300',
+          title: '某作品 剧场版',
+        ),
+      ],
+    );
+    String? openedVideo;
+    int? openedCollection;
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: CollectionRelationsSection(
+                database: db,
+                collectionId: collectionId,
+                onOpenCollection: (int id) => openedCollection = id,
+                onDownload: (CollectionRelationRow _) {},
+                onOpenVideo: (String uid) => openedVideo = uid,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('某作品 剧场版'));
+    await tester.pumpAndSettle();
+
+    expect(openedVideo, 'movie-1');
+    expect(openedCollection, isNull);
+    expect(find.text('绑定到已有合集'), findsNothing, reason: '已绑定，不弹未绑定菜单');
+  });
+
   testWidgets('未绑定边点击 → 菜单「绑定到已有合集」真写穿 targetCollectionId', (
     WidgetTester tester,
   ) async {
@@ -177,7 +229,7 @@ void main() {
         List<CollectionRelationsCompanion>.generate(
           count,
           (int i) => CollectionRelationsCompanion.insert(
-            collectionId: collectionId,
+            collectionId: Value<int?>(collectionId),
             relationType: 'sequel',
             sortIndex: Value<int>(i),
             targetCollectionId: const Value<int?>(null),

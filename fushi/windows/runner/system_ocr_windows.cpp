@@ -143,7 +143,13 @@ struct DecodedImage {
   std::vector<BYTE> pixels;  // 32bpp 预乘 BGRA，stride = ocr_width * 4
 };
 
-bool DecodeImage(const std::vector<uint8_t>& bytes, UINT max_dimension,
+bool DecodeFrame(IWICImagingFactory* wic, const std::vector<uint8_t>& bytes,
+                 ComPtr<IWICBitmapSource>* source, DecodedImage* out,
+                 std::string* error);
+bool ConvertForOcr(IWICImagingFactory* wic, IWICBitmapSource* frame,
+                   UINT max_dimension, DecodedImage* out, std::string* error);
+
+bool DecodeImage(const SystemOcrImage& input, UINT max_dimension,
                  DecodedImage* out, std::string* error) {
   ComPtr<IWICImagingFactory> wic;
   HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr,
@@ -152,6 +158,39 @@ bool DecodeImage(const std::vector<uint8_t>& bytes, UINT max_dimension,
     *error = HresultMessage("WIC factory create failed", hr);
     return false;
   }
+  ComPtr<IWICBitmapSource> frame;
+  if (!input.rgba.empty()) {
+    // 原始像素：包成 WIC 位图（拷一次），之后与解码出的帧走同一条缩放 / 转换。
+    const uint64_t rgba_stride = static_cast<uint64_t>(input.width) * 4;
+    if (input.width == 0 || input.height == 0 ||
+        rgba_stride * input.height != input.rgba.size() ||
+        input.rgba.size() > 0x7FFFFFFFull) {
+      *error = "pixel buffer does not match width * height * 4";
+      return false;
+    }
+    ComPtr<IWICBitmap> bitmap;
+    hr = wic->CreateBitmapFromMemory(
+        input.width, input.height, GUID_WICPixelFormat32bppRGBA,
+        static_cast<UINT>(rgba_stride), static_cast<UINT>(input.rgba.size()),
+        const_cast<BYTE*>(input.rgba.data()), bitmap.GetAddressOf());
+    if (FAILED(hr)) {
+      *error = HresultMessage("could not wrap pixel buffer", hr);
+      return false;
+    }
+    out->width = input.width;
+    out->height = input.height;
+    frame = bitmap;
+  } else if (!DecodeFrame(wic.Get(), input.bytes, &frame, out, error)) {
+    return false;
+  }
+  return ConvertForOcr(wic.Get(), frame.Get(), max_dimension, out, error);
+}
+
+// 编码字节 → WIC 解码出的第 0 帧（不按 EXIF 旋转）与它的像素尺寸。
+bool DecodeFrame(IWICImagingFactory* wic, const std::vector<uint8_t>& bytes,
+                 ComPtr<IWICBitmapSource>* source, DecodedImage* out,
+                 std::string* error) {
+  HRESULT hr = S_OK;
   ComPtr<IStream> stream;
   stream.Attach(SHCreateMemStream(bytes.data(), static_cast<UINT>(bytes.size())));
   if (!stream) {
@@ -173,6 +212,14 @@ bool DecodeImage(const std::vector<uint8_t>& bytes, UINT max_dimension,
     *error = HresultMessage("could not decode image bytes", hr);
     return false;
   }
+  *source = frame;
+  return true;
+}
+
+// 源位图 → 缩到 OCR 上限内的 32bpp 预乘 BGRA（[DecodedImage::pixels]）。
+bool ConvertForOcr(IWICImagingFactory* wic, IWICBitmapSource* frame,
+                   UINT max_dimension, DecodedImage* out, std::string* error) {
+  HRESULT hr = S_OK;
   // 与 Swift 实现同口径：不按 EXIF 旋转，坐标分母就是解码出的像素缓冲。
   out->scale = so::FitScaleForMaxDimension(out->width, out->height,
                                            max_dimension);
@@ -185,7 +232,7 @@ bool DecodeImage(const std::vector<uint8_t>& bytes, UINT max_dimension,
     ComPtr<IWICBitmapScaler> scaler;
     hr = wic->CreateBitmapScaler(scaler.GetAddressOf());
     if (SUCCEEDED(hr)) {
-      hr = scaler->Initialize(frame.Get(), out->ocr_width, out->ocr_height,
+      hr = scaler->Initialize(frame, out->ocr_width, out->ocr_height,
                               WICBitmapInterpolationModeFant);
     }
     if (FAILED(hr)) {
@@ -419,8 +466,8 @@ void CollectLines(WMO::IOcrResult* ocr, const DecodedImage& image,
   }
 }
 
-SystemOcrResult RecognizeOnInitializedThread(
-    const std::vector<uint8_t>& image_bytes, const std::string& language) {
+SystemOcrResult RecognizeOnInitializedThread(const SystemOcrImage& input,
+                                             const std::string& language) {
   ComPtr<WMO::IOcrEngineStatics> statics;
   HRESULT hr = GetOcrStatics(&statics);
   if (FAILED(hr)) {
@@ -453,7 +500,7 @@ SystemOcrResult RecognizeOnInitializedThread(
 
   DecodedImage image;
   std::string error;
-  if (!DecodeImage(image_bytes, max_dimension, &image, &error)) {
+  if (!DecodeImage(input, max_dimension, &image, &error)) {
     return Failure("INVALID_IMAGE", error);
   }
   ComPtr<WGI::ISoftwareBitmap> bitmap;
@@ -491,9 +538,9 @@ bool SystemOcrIsAvailable() {
   return !tags.empty();
 }
 
-SystemOcrResult RecognizeImageText(const std::vector<uint8_t>& image_bytes,
+SystemOcrResult RecognizeImageText(const SystemOcrImage& image,
                                    const std::string& language) {
-  if (image_bytes.empty()) {
+  if (image.bytes.empty() && image.rgba.empty()) {
     return Failure("INVALID_IMAGE", "empty image bytes");
   }
   const HRESULT ro = RoInitialize(RO_INIT_MULTITHREADED);
@@ -501,7 +548,7 @@ SystemOcrResult RecognizeImageText(const std::vector<uint8_t>& image_bytes,
   if (FAILED(ro) && ro != RPC_E_CHANGED_MODE) {
     return Failure("OCR_UNAVAILABLE", HresultMessage("RoInitialize failed", ro));
   }
-  SystemOcrResult result = RecognizeOnInitializedThread(image_bytes, language);
+  SystemOcrResult result = RecognizeOnInitializedThread(image, language);
   if (SUCCEEDED(ro)) {
     RoUninitialize();
   }

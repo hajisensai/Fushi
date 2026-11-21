@@ -99,6 +99,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/web_browser/tab_view/web_browser_tab_view_logic_test.dart（forceDark 进 WebView 设置）',
   'webBrowser/Open desktop sites by default':
       'test/pages/fushi_web_browser_shell_test.dart（新标签页默认桌面版）',
+  'webBrowser/Fushi handles video full screen':
+      'test/web_browser/web_browser_fullscreen_test.dart（页内全屏脚本：接管 → 伪全屏；'
+      '不接管 → 不改全屏 API）+ test/pages/web_browser_settings_page_test.dart（偏好写穿）',
   'webBrowser/Restore tabs from last time':
       'test/web_browser/web_browser_tabs_controller_test.dart（关闭会话持久化时不读不写）+ '
       'test/pages/fushi_web_browser_shell_test.dart（恢复上次的标签页）',
@@ -225,6 +228,22 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 设置页 harness 里没有展开的悬浮球。行为由 floating_ball_labels_test 咬住。
   'floatingBall/Show button labels':
       'test/floating_ball/floating_ball_labels_test.dart',
+  // 「跳转记录」顶栏图标开关（小说 / 漫画 / 视频三页共用，页面现读 jumpHistoryToolbar）：
+  // 生效点在阅读 / 播放页顶栏，harness 设置页里没有这些页。行为由三页各自的专项测试咬住。
+  'floatingBall/Jump history':
+      'test/utils/jump_history_controls_test.dart + '
+      'test/media/video/video_jump_history_test.dart + '
+      'test/media/manga/reader/manga_jump_history_chrome_test.dart',
+  // 视频「续播」（关 / 仅长视频 / 全部）：生效点是打开剧集时的起点，harness 里没有播放页。
+  // 判据 resolveVideoStart 由 video_resume_test 咬住，播放页读偏好走它由静态守卫咬住。
+  'video/Resume playback':
+      'test/media/video/video_resume_test.dart + '
+      'test/media/video/video_lifecycle_static_test.dart（播放页起点认 resolveVideoStart）',
+  // 视频「下一集顺序」（顺序 / 随机）：生效点是自动连播选下一集，harness 里没有播放页。
+  // 选集判据由 video_playlist_order_test 咬住，连播接线由静态守卫咬住。
+  'video/Next episode order':
+      'test/media/video/video_playlist_order_test.dart + '
+      'test/pages/video_playlist_auto_advance_guard_static_test.dart',
   // 吉祥物图标换色开关：生效点是全局 appLogoFollowsAccent 与 AccentLogoImage
   // 的着色——harness 设置页里没有 logo 渲染面，渲染输入无变化。行为由
   // theme_app_icon_link_test（发布到全局开关）与 accent_logo_image_test 咬住。
@@ -698,6 +717,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/video/video_subtitle_mask_test.dart（关闭不画 / 开启按内容区落位）',
   'video/Mask look':
       'test/media/video/video_subtitle_mask_test.dart（模糊 / 纯色两种外观各出各的层）',
+  // 遮布定位方式（手动 / 智能）：同样写 video_subtitle_mask JSON 偏好（mode 字段），
+  // 生效点是遮布层是否建采样器 + 识别器（要真播放器抽帧），harness 无适用探针。
+  'video/Positioning':
+      'test/media/video/smart_subtitle_mask_test.dart（偏好 mode 字段往返 / 旧偏好'
+      '缺省手动；遮布层只在开启 + 智能模式时建识别器，切回手动即拆）',
   'video/Mask strength':
       'test/media/video/video_subtitle_mask_test.dart（强度 → 纯色不透明度）',
   'video/Tap picture to show subtitles':
@@ -1012,11 +1036,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 没有在线视频播放器可探；判定、队列落卡、弹窗与引擎暂存契约都在专项测试里。
   'cardCreation/Online video mining':
       'test/media/video/mpv_cache_snapshot_test.dart + test/mining/video_mine_queue_test.dart + test/mining/immersion_mining_cached_snapshot_test.dart',
-  // 挖词目标（Anki / Fushi 复习 / 两者，复习模块开着才出现）：写 prefsRepo
-  // （changed=true），生效点是 ankiRepositoryProvider 最外层的 SrsMiningAnkiRepository
+  // 「保存到」（挖词目标，Anki / Fushi 复习，制卡页「卡片去向」的分段行）：写 prefsRepo；
+  // 复习模块关着时切到 Fushi 复习先弹确认框（harness 取消它，按没有变化判）。生效点是 ankiRepositoryProvider 最外层的 SrsMiningAnkiRepository
   // ——制卡时卡片落进复习库还是 Anki。harness 里没有复习库可探；三种目标的落卡、
   // 判重、合并规则与「模块关着时链上没有这一层」由专项测试咬死。
-  'cardCreation/Mining target': 'test/srs/srs_mining_test.dart',
+  'cardCreation/Save to': 'test/srs/srs_mining_test.dart',
   'cardCreation/Audio padding before sentence':
       'test/settings/mining_audio_padding_guard_test.dart',
   'cardCreation/Audio padding after sentence':
@@ -1371,6 +1395,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // harness 里可达——全部登记（含反吸血二级开关，超集登记无害）。
   'downloads/Enable upload / seeding':
       'test/media/torrent/torrent_upload_policy_test.dart',
+  // 「下载引擎」分段行（内置引擎 / 外接 qBittorrent / 互联设备）：写
+  // QbConnectionConfig.backend（changed=true），生效点是下载后端的装配
+  // （resolveBackend → 哪个引擎接任务），widget 树里没有可探的渲染输入；平台门控与
+  // 后端规约由专项测试咬住。
+  'downloads/Download engine':
+      'test/pages/torrent_settings_android_backend_gating_test.dart + test/media/torrent/anime_download_config_backend_test.dart',
   // 「自动为新任务添加订阅 tracker」：生效点是 addTorrent 之后**多打一次**
   // `/api/v2/torrents/addTrackers`（qB 后端）／把 tracker 追加进 magnet（内置引擎），
   // 都在 widget 树之外。torrent_backend_test 咬住的是真行为而不只是编解码：开关为真时
@@ -2492,6 +2522,16 @@ _FocusedRow? _focusedSettingsRow() {
   return found;
 }
 
+/// 当前在树里的路由（页面 + 对话框 / 菜单）个数：每个 [ModalRoute] 建一个
+/// `_ModalScope`。驱动后变多 = 弹出了模态框。
+int _modalScopeCount() => find
+    .byWidgetPredicate(
+      (Widget w) => w.runtimeType.toString().startsWith('_ModalScope<'),
+      skipOffstage: false,
+    )
+    .evaluate()
+    .length;
+
 Future<ItemVerdict> _verifyFocusedNode({
   required WidgetTester tester,
   required FocusDriver driver,
@@ -2511,6 +2551,7 @@ Future<ItemVerdict> _verifyFocusedNode({
   // 覆盖结论就会变成「几十条从没见过的新项」，而磁盘上什么都没少覆盖。所以驱动完立刻
   // 把渲染语言复位，让身份键在整轮里恒是同一种语言；语言 pref 本身由全局还原兜底。
   final AppLocale localeBefore = LocaleSettings.currentLocale;
+  final int routesBefore = _modalScopeCount();
 
   if (row.kind == _RowKind.switchRow) {
     await driver.activate();
@@ -2554,6 +2595,17 @@ Future<ItemVerdict> _verifyFocusedNode({
         before: before,
       );
     }
+  }
+  // 有的选项切过去要先确认（制卡页「保存到」切到 Fushi 复习而复习模块关着时，
+  // 弹「开启 Fushi 复习」确认框）。驱动后等收尾动画走完（下拉 / 菜单的退场），
+  // 还多出来的路由就是驱动弹出的模态框：取消它（设置不变，按没有变化判），
+  // 否则它挡住后面所有行，整轮焦点都卡在框里。
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 500));
+  if (_modalScopeCount() > routesBefore) {
+    await tester.state<NavigatorState>(find.byType(Navigator).first).maybePop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
   }
   if (LocaleSettings.currentLocale != localeBefore) {
     LocaleSettings.setLocale(localeBefore);

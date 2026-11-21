@@ -179,7 +179,7 @@ void main() {
       reason: '交接后本页不得在 dispose 里再释放原生全屏（所有权已传给新页）',
     );
     expect(
-      switchBody.contains('_didInitialFullscreen = true'),
+      switchBody.contains('_initialFullscreen.settle()'),
       isTrue,
       reason: '交接后本页挂着的一次性重进全屏回调不得再压路由',
     );
@@ -222,21 +222,23 @@ void main() {
     );
   });
 
-  test('重进全屏方法存在且一次性、带上限防死循环', () {
+  test('重进全屏方法存在且一次性、由事件驱动', () {
     expect(
       fullscreenSrc.contains('void _scheduleInitialFullscreenIfNeeded()'),
       isTrue,
       reason: '应在 fullscreen 域定义 _scheduleInitialFullscreenIfNeeded',
     );
     expect(
-      fullscreenSrc.contains('_didInitialFullscreen'),
+      fullscreenSrc.contains('_initialFullscreen.arm()'),
       isTrue,
-      reason: '重进全屏必须一次性（_didInitialFullscreen 闸门）',
+      reason:
+          '重进全屏必须一次性（VideoInitialFullscreenGate 闸门，行为见 '
+          'video_initial_fullscreen_gate_test.dart）',
     );
     expect(
-      fullscreenSrc.contains('_initialFullscreenRetries'),
+      fullscreenSrc.contains('_initialFullscreen.notify()'),
       isTrue,
-      reason: 'controls 未就绪时的重试必须有上限（_initialFullscreenRetries），杜绝死循环',
+      reason: 'controls context 赋值点必须通知闸门（video-36e：事件驱动，不逐帧轮询）',
     );
     expect(
       fullscreenSrc.contains('_pushNeutralizedVideoFullscreen('),
@@ -289,9 +291,9 @@ void main() {
       greaterThan(releaseIdx),
       reason: 'restore native fullscreen before disposing the video controller',
     );
-    // 放弃重进全屏（失败 / 缺失 / 超时）同样释放。
+    // 放弃重进全屏（失败 / 缺失态）同样释放。
     final int giveUpIdx = fullscreenSrc.indexOf(
-      '_initialFullscreenRetries > 30',
+      'if (_failed || _missingResource) {',
     );
     expect(giveUpIdx, isNonNegative);
     final int giveUpReleaseIdx = fullscreenSrc.indexOf(

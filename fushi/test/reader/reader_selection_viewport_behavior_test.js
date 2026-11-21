@@ -504,7 +504,7 @@ for (const writingMode of ['horizontal-tb', 'vertical-rl', 'vertical-lr']) {
         const f = fixture({continuous: false, writingMode}); const ctx = f.paged(100);
         for (const name of ['contentFirstPageScroll', 'contentLastPageScroll', 'alignToPage',
           'scrollToProgressPaged', 'scrollToCharOffset', 'alignToFragmentTarget',
-          '_alignRangeToPage', '_realignRevealTarget', '_settleAndNotify',
+          '_alignRangeToPage', '_realignRevealTarget', '_settleAndNotify', '_restoreCallback',
           'registerImageLateAnchor', 'reapplyImageLateAnchor', 'turnSpan', 'pagedAxisOf'])
           f.reader[name] = f.fn('pagination', name);
         // Geometry only: the target is on the preceding page; all navigation,

@@ -143,6 +143,7 @@ pub(crate) fn targets_foreign(
 
 /// `apply` 形状的输入项（[super::apply_local_on] 的 [items]）每一项都指向别的 profile 的实体。空批为否。意图命令
 /// 在落库前用它决定要不要做「整条命令的附带写入」（`change` 的还原点）：全是别人的就什么都不写。
+#[cfg(test)]
 pub(crate) fn items_all_foreign(
     c: &Connection,
     profile: &str,

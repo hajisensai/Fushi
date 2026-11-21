@@ -22,7 +22,7 @@ void main() {
       contains('visible: (_) => platformSupportsUpdateCheck()'),
     );
     expect(
-      systemDest.contains('visible: (_) => Platform.isAndroid'),
+      systemDest.contains('visible: (_) => hostPlatform.isAndroid'),
       isFalse,
       reason: '更新分区不应再硬绑 Android（已扩展到全平台）',
     );

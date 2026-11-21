@@ -136,6 +136,11 @@ enum WorkNetworkRole {
 
   /// 只经建议态连接与成员相连（`includeSuggested` 时才出现，界面画虚线）。
   suggested,
+
+  /// 系列栏：沿系列关系（续作 / 前传 / 外传 / 剧场版…，`media_links` 的
+  /// [workSeriesRelations] 与刮削的合集相关作品）展开到的别的作品条目。[WorkGraph.networkOf]
+  /// 不产出，由关系网页的计划层（`planWorkNetwork`）补进来；不并进作品。
+  series,
 }
 
 /// 关系网节点。
@@ -207,6 +212,22 @@ const Set<MediaLinkRelation> workSatelliteRelations = <MediaLinkRelation>{
   MediaLinkRelation.soundtrack,
   MediaLinkRelation.cast,
 };
+
+/// 系列关系（续作 / 外传）：两端是不同的作品条目，不并作品、不出卫星，只在关系网
+/// 的「系列」栏画出来（见 [WorkGraph.seriesLinksOf]）。
+const Set<MediaLinkRelation> workSeriesRelations = <MediaLinkRelation>{
+  MediaLinkRelation.sequel,
+  MediaLinkRelation.sideStory,
+};
+
+/// 一条系列连接（[WorkGraph.seriesLinksOf] 的结果）。
+typedef WorkSeriesLink = ({
+  MediaLinkEndpoint from,
+  MediaLinkRelation relation,
+  MediaLinkEndpoint to,
+  WorkLinkStatus status,
+  String source,
+});
 
 /// 规范化后的一条连接（内部用）。
 final class _Link {
@@ -378,6 +399,25 @@ final class WorkGraph {
   /// [endpoint] 所在的作品。出现在输入里（任一连接或系列合集）但没有成边的端点
   /// 返回只有它自己的单成员作品；输入里根本没有的端点返回 null。
   Work? workOf(MediaLinkEndpoint endpoint) => _workByEndpoint[endpoint];
+
+  /// 挂在 [endpoint] 上的系列连接（[workSeriesRelations]，已生效与建议态，两个
+  /// 方向都算），按 [compareWorkLinks] 升序。
+  List<WorkSeriesLink> seriesLinksOf(MediaLinkEndpoint endpoint) {
+    final List<_Link> links = <_Link>[
+      for (final _Link l in _adjacency[endpoint] ?? const <_Link>[])
+        if (workSeriesRelations.contains(l.relation)) l,
+    ]..sort((_Link a, _Link b) => compareWorkLinks(a.id, b.id));
+    return <WorkSeriesLink>[
+      for (final _Link l in links)
+        (
+          from: l.from,
+          relation: l.relation,
+          to: l.to,
+          status: l.status,
+          source: l.source,
+        ),
+    ];
+  }
 
   /// [endpoint] 所在作品的关系网（spec §4.4）。输入里没有这个端点返回 null。
   ///

@@ -781,10 +781,66 @@ Map<String, String> buildMpvProperties(
   return out;
 }
 
+/// mpv 拒绝写入的常见错误码（`client.h` 的 `mpv_error`），只给日志起名字用。
+const Map<int, String> _kMpvErrorNames = <int, String>{
+  -1: 'event queue full',
+  -2: 'out of memory',
+  -3: 'uninitialized',
+  -4: 'invalid parameter',
+  -5: 'option not found',
+  -6: 'unsupported option format',
+  -7: 'option error',
+  -8: 'property not found',
+  -9: 'unsupported property format',
+  -10: 'property unavailable',
+  -11: 'property error',
+  -12: 'command error',
+};
+
+/// 按 [props] 的**顺序**逐条把 mpv 属性写进 [player]（仅 libmpv 后端生效），全仓
+/// 批量下发属性的唯一实现（BUG-4911）。
+///
+/// - 逐条 await：libmpv 的异步写不保序（`client.h`：「Asynchronous calls may be
+///   reordered」），`volume-max` 先于 `volume`、rawConf 最后覆盖结构化项这类依赖顺序
+///   的组合只有等上一条回包再发下一条才成立。
+/// - 拒绝写入留痕：经 media_kit 补丁的 `setPropertyWithResult` 拿 mpv 的结果码，被拒
+///   （属性名拼错 / 值非法 / 运行时不可设）的那条写一行 `[mpv-prop]` 日志，再继续下一
+///   条——一条坏值不拖累其余配置。只记属性名与错误，不记值（`http-header-fields` /
+///   `http-proxy` 的值带凭据）。
+/// - 播放器已销毁（结果码 `uninitialized` 或写入抛出）：后面的写都没有意义，整批放弃。
+///
+/// `player.platform` 为 null 或不是 libmpv 后端时整批 no-op。
+Future<void> setMpvPropertiesInOrder(
+  Player player,
+  Map<String, String> props,
+) async {
+  final dynamic native = player.platform;
+  if (native == null) return;
+  for (final MapEntry<String, String> e in props.entries) {
+    final int code;
+    try {
+      code = await native.setPropertyWithResult(e.key, e.value) as int;
+    } on NoSuchMethodError {
+      // 不是 libmpv 后端（网页播放器的 PlatformPlayer 没有 mpv 属性）：整批 no-op。
+      return;
+    } catch (error) {
+      debugPrint('[mpv-prop] ${e.key}: write aborted ($error)');
+      return;
+    }
+    if (code >= 0) continue;
+    if (code == _kMpvErrorUninitialized) return;
+    debugPrint(
+      '[mpv-prop] ${e.key} rejected: ${_kMpvErrorNames[code] ?? 'error'} ($code)',
+    );
+  }
+}
+
+/// `MPV_ERROR_UNINITIALIZED`：补丁在播放器销毁后返回它。
+const int _kMpvErrorUninitialized = -3;
+
 /// 把 [config] 应用到 media_kit [player]（仅 libmpv 后端/桌面生效）。
 ///
-/// best-effort：`player.platform` 非 libmpv（无 setProperty）或某属性不被接受时
-/// 单条静默吞掉，不影响其余属性与播放。与 [applyShadersToPlayer] 同范式。
+/// 经 [setMpvPropertiesInOrder] 按序下发：被拒的单条留痕后跳过，不影响其余属性与播放。
 ///
 /// [playbackSpeed] / [outputVolume] 是当前倍速与实际可听音量，只用来判定直通是否
 /// 生效（[resolveAudioSpdif]）。
@@ -794,20 +850,14 @@ Future<void> applyMpvConfigToPlayer(
   double playbackSpeed = 1.0,
   double outputVolume = 100.0,
 }) async {
-  final dynamic native = player.platform;
-  if (native == null) return;
-  final Map<String, String> props = buildMpvProperties(
-    config,
-    playbackSpeed: playbackSpeed,
-    outputVolume: outputVolume,
+  await setMpvPropertiesInOrder(
+    player,
+    buildMpvProperties(
+      config,
+      playbackSpeed: playbackSpeed,
+      outputVolume: outputVolume,
+    ),
   );
-  for (final MapEntry<String, String> e in props.entries) {
-    try {
-      await native.setProperty(e.key, e.value);
-    } catch (_) {
-      // 非 libmpv / 该属性不支持运行时设置：跳过这条，继续下一条。
-    }
-  }
 }
 
 /// 判断 [uri] 是否为 http(s) 网络流（远端直传）。本地 `file://` / 裸路径返回 false。
@@ -887,22 +937,13 @@ Map<String, String> buildNetworkCacheProperties({bool? isMobile}) {
 /// 调用点必须在 `player.open` 之前（见 [buildNetworkCacheProperties] 文档与守卫
 /// `video_network_timeout_before_open_guard_test.dart`）。
 ///
-/// best-effort：与 [applyMpvConfigToPlayer] 同范式，单条属性失败静默吞掉。
+/// 经 [setMpvPropertiesInOrder] 按序下发（被拒的单条留痕后跳过）。
 Future<void> applyNetworkCachePropertiesToPlayer(
   Player player,
   String sourceUri,
 ) async {
   if (!isNetworkStreamUri(sourceUri)) return;
-  final dynamic native = player.platform;
-  if (native == null) return;
-  final Map<String, String> props = buildNetworkCacheProperties();
-  for (final MapEntry<String, String> e in props.entries) {
-    try {
-      await native.setProperty(e.key, e.value);
-    } catch (_) {
-      // 非 libmpv / 该属性不支持运行时设置：跳过这条，继续下一条。
-    }
-  }
+  await setMpvPropertiesInOrder(player, buildNetworkCacheProperties());
 }
 
 /// 构建「彻底关闭 libmpv 内置字幕渲染 + 禁止自动重选字幕轨」的属性 map。纯函数。
@@ -1019,23 +1060,12 @@ Map<String, String> buildSubtitleDelayProperty(int delayMs) {
 
 /// 把 [props]（字幕抑制/可见性属性）逐条 best-effort 注入 media_kit [player]。
 ///
-/// 与 [applyMpvConfigToPlayer] / [applyNetworkCachePropertiesToPlayer] 同范式：经
-/// `player.platform`（NativePlayer）的 `setProperty`，仅 libmpv 后端生效；非 libmpv /
-/// 不支持属性单条静默吞掉，不影响播放。
+/// 经 [setMpvPropertiesInOrder] 按序下发，仅 libmpv 后端生效；被拒的单条留痕后跳过，
+/// 不影响播放。
 Future<void> applySubtitleMpvPropertiesToPlayer(
   Player player,
   Map<String, String> props,
-) async {
-  final dynamic native = player.platform;
-  if (native == null) return;
-  for (final MapEntry<String, String> e in props.entries) {
-    try {
-      await native.setProperty(e.key, e.value);
-    } catch (_) {
-      // 非 libmpv / 该属性不支持运行时设置：跳过这条，继续下一条。
-    }
-  }
-}
+) => setMpvPropertiesInOrder(player, props);
 
 /// 构建防盗链 header 注入用的 libmpv `http-header-fields` 属性 map（TODO-850 阶段①）。
 /// 纯函数。
@@ -1092,39 +1122,26 @@ String encodeMpvListItem(String item) => item.replaceAll(',', '\\,');
 /// 仅当 [headers] 非空时，把 [buildHttpHeaderFieldsProperty] 注入 media_kit [player]
 /// （仅 libmpv 后端/桌面生效）。空 header 直接 no-op（普通流/本地文件零影响）。
 ///
-/// best-effort：与 [applyMpvConfigToPlayer] / [applyNetworkCachePropertiesToPlayer]
-/// 同范式，单条属性失败静默吞掉。
+/// 经 [setMpvPropertiesInOrder] 下发（被拒留痕，不记值）。
 Future<void> applyHttpHeaderFieldsToPlayer(
   Player player,
   Map<String, String> headers,
 ) async {
   final Map<String, String> props = buildHttpHeaderFieldsProperty(headers);
   if (props.isEmpty) return;
-  await _setMpvProperties(player, props);
+  await setMpvPropertiesInOrder(player, props);
 }
 
 /// 清掉上一片下发的 `http-header-fields`：libmpv 属性跨 `open` 持久，换集复用同一
 /// Player 时上一站的 Referer 会带到下一站（在线源扩展多集连播换 hoster 是常态，
 /// 严格防盗链 CDN 直接 403）。只在此前真下发过时调用（见 controller）。
 Future<void> clearHttpHeaderFieldsOnPlayer(Player player) =>
-    _setMpvProperties(player, kClearHttpHeaderFieldsProperty);
+    setMpvPropertiesInOrder(player, kClearHttpHeaderFieldsProperty);
 
 /// [clearHttpHeaderFieldsOnPlayer] 下发的属性（测试可见）。
 const Map<String, String> kClearHttpHeaderFieldsProperty = <String, String>{
   'http-header-fields': '',
 };
-
-Future<void> _setMpvProperties(Player player, Map<String, String> props) async {
-  final dynamic native = player.platform;
-  if (native == null) return;
-  for (final MapEntry<String, String> e in props.entries) {
-    try {
-      await native.setProperty(e.key, e.value);
-    } catch (_) {
-      // 非 libmpv / 该属性不支持运行时设置：跳过这条，继续下一条。
-    }
-  }
-}
 
 // ── 恢复起播位置：作为**加载参数**下发（BUG-1288）──────────────────────────────
 

@@ -73,6 +73,7 @@ import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
         DialogActionGroup,
         DialogDangerAction,
         DialogListAction,
+        ItemMenuSlot,
         MediaItemDialogFrame,
         showMediaItemActions;
 import 'package:fushi/src/pages/implementations/collection_relations_section.dart';
@@ -99,6 +100,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
     show currentRevealHost, revealFirstOf;
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_error_text.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
@@ -136,12 +138,13 @@ import 'package:fushi/src/pages/implementations/ai_settings_route.dart'
 import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_service.dart'
     show
         RemoteVideoSubtitleEpisode,
+        RemoteVideoSubtitleSeasonMember,
         RemoteVideoSubtitleTarget,
         appRemoteVideoSubtitleService;
 import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_sheet.dart'
     show showRemoteVideoSubtitleSheet;
 import 'package:fushi/src/media/links/media_link_entries.dart'
-    show MediaLinkEntry;
+    show MediaLinkEntry, resolveMediaLinkEntry;
 import 'package:fushi/src/media/links/media_link_inference_host.dart'
     show mediaLinkInferCallback;
 import 'package:fushi/src/media/links/media_link_opener.dart'
@@ -1096,6 +1099,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   int _episodeDisplayNumber(CollectionEpisodeSlot slot, int index) =>
       _episodeNumbers[slot.entryKey] ?? index + 1;
 
+  /// 「继续看 第 N 集」的 N（BUG-4921）：与集卡序号同一个 [_episodeDisplayNumber]，
+  /// 不是续播成员在列表里的顺位号——只导入了后半季（第 151 集起）时顺位号是 1，
+  /// 续播行写「第1集」而集卡写「151」。
+  int get _continueEpisodeNumber =>
+      _episodeDisplayNumber(_slots[_continueIndex], _continueIndex);
+
   /// [_slots] 整批解析出的集号（entryKey → 集号），按 [_slots] 的**对象身份**
   /// 缓存：`_slots` 每次变更都是整体替换成新列表，所以 identical 即可当缓存键，
   /// 四个赋值点都不必记得手动失效。
@@ -1384,7 +1393,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       ErrorLogService.instance.log('collectionDetail.setCover', e, stack);
       if (!mounted) return;
       FushiToast.show(
-        msg: t.collection_cover_failed,
+        msg: videoScrapeMaintenanceText(e) ?? t.collection_cover_failed,
         severity: ToastSeverity.error,
       );
       return;
@@ -1527,22 +1536,22 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   }
 
   Future<void> _generateRemoteSeasonJaSubtitles(AppModel appModel) async {
-    bool hasJapanese(RemoteVideoInfo m) =>
-        m.subtitleFileName?.toLowerCase().endsWith('.ja.srt') ?? false;
+    // 「已有字幕跳过」按面板里选的语言算（[RemoteVideoSubtitleTarget.forLanguage]）。
     await showRemoteVideoSubtitleSheet(
       context: context,
       service: appRemoteVideoSubtitleService(appModel),
-      target: RemoteVideoSubtitleTarget(
+      target: RemoteVideoSubtitleTarget.season(
         title: _canonicalWork?.title ?? _name,
-        wholeSeason: true,
-        episodes: <RemoteVideoSubtitleEpisode>[
+        originalLanguage: _canonicalWork?.originalLanguage,
+        members: <RemoteVideoSubtitleSeasonMember>[
           for (final RemoteVideoInfo m in _remoteMembers)
-            if (!hasJapanese(m))
-              RemoteVideoSubtitleEpisode(videoId: m.id, title: m.title),
-        ],
-        skippedExisting: <String>[
-          for (final RemoteVideoInfo m in _remoteMembers)
-            if (hasJapanese(m)) m.title,
+            RemoteVideoSubtitleSeasonMember(
+              episode: RemoteVideoSubtitleEpisode(
+                videoId: m.id,
+                title: m.title,
+              ),
+              subtitleFileName: m.subtitleFileName,
+            ),
         ],
       ),
       prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
@@ -2179,7 +2188,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           ? discMenuUnavailableText(discUnavailable)
           : discPrimary && _discs.length > 1 && disc != null
           ? '${t.video_disc_play}  ·  ${disc.label}'
-          : '${t.collection_continue_progress(n: _continueIndex + 1)}  ·  '
+          : '${t.collection_continue_progress(n: _continueEpisodeNumber)}  ·  '
                 '${_episodeDisplayTitle(episode)}',
       // 续播行已写明是哪一集，按钮只给动作：有进度「继续观看」、没看过「开始观看」。
       playLabel: discPrimary
@@ -2977,11 +2986,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               title: _episodeDisplayTitle(episode),
               showLaunchAction: false,
               listActions: <DialogListAction>[
+                // 互联下载的发起 / 暂停 / 继续 / 取消显式进主操作行：不写 slot 时内容组
+                // 一律被推断进「更多 ›」二级菜单（#4b 骨架），BUG-3698 要的「就地能停」
+                // 就又藏起来了。同一时刻最多两项（暂停或继续 + 取消），不超主操作上限。
                 if (canDownloadToDevice)
                   DialogListAction(
                     label: t.remote_video_download,
                     icon: FushiIcons.cloudDownload,
                     group: DialogActionGroup.content,
+                    slot: ItemMenuSlot.primary,
                     onPressed: () => pick(_EpisodeMenuAction.downloadToDevice),
                   ),
                 if (taskId != null && downloads!.canPause(taskId))
@@ -2989,6 +3002,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                     label: t.download_task_pause,
                     icon: FushiIcons.pause,
                     group: DialogActionGroup.content,
+                    slot: ItemMenuSlot.primary,
                     onPressed: () => pick(_EpisodeMenuAction.pauseDownload),
                   ),
                 if (taskId != null && downloads!.canRestart(taskId))
@@ -2996,6 +3010,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                     label: t.download_task_resume,
                     icon: FushiIcons.play,
                     group: DialogActionGroup.content,
+                    slot: ItemMenuSlot.primary,
                     onPressed: () => pick(_EpisodeMenuAction.resumeDownload),
                   ),
                 if (taskId != null && downloads!.canCancel(taskId))
@@ -3003,6 +3018,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                     label: t.interconnect_download_cancel,
                     icon: FushiIcons.close,
                     group: DialogActionGroup.content,
+                    slot: ItemMenuSlot.primary,
                     onPressed: () => pick(_EpisodeMenuAction.cancelDownload),
                   ),
                 if (_downloadsAvailable && !hasLocalFiles)
@@ -3727,11 +3743,28 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     SliverToBoxAdapter(child: _buildExtrasSection(tokens)),
     // 相关作品横滚（TODO-2484）：无关系边整块不渲染（区块内部判空）。
     SliverToBoxAdapter(
-      child: CollectionRelationsSection(
-        database: widget.database,
-        collectionId: widget.collection.id,
-        onOpenCollection: (int id) => _openRelatedCollection(id),
-        onDownload: _downloadsAvailable ? _downloadRelation : null,
+      child: Consumer(
+        builder: (BuildContext context, WidgetRef ref, Widget? _) =>
+            CollectionRelationsSection(
+              database: widget.database,
+              collectionId: widget.collection.id,
+              onOpenCollection: (int id) => _openRelatedCollection(id),
+              onDownload: _downloadsAvailable ? _downloadRelation : null,
+              // v162：目标是本机散装电影（单视频作品）——与作品图谱打开单个视频
+              // 同一个出口。
+              onOpenVideo: (String bookUid) async {
+                final MediaLinkEntry entry = await resolveMediaLinkEntry(
+                  widget.database,
+                  (kind: MediaLinkKind.videoEpisode, key: bookUid),
+                );
+                if (!context.mounted) return;
+                await openMediaLinkEntry(
+                  context: context,
+                  ref: ref,
+                  entry: entry,
+                );
+              },
+            ),
       ),
     ),
     // 跨模块「同一作品」（作品图谱 media_links）：原作 / 改编 / 游戏…
@@ -3873,7 +3906,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             },
             child: MediaPosterUpNextCard(
               key: const ValueKey<String>('collection-hero-up-next'),
-              label: t.collection_continue_progress(n: _continueIndex + 1),
+              label: t.collection_continue_progress(n: _continueEpisodeNumber),
               title: _episodeDisplayTitle(episode),
               image: _episodeCover(episode) ?? _heroBackdrop ?? _heroCover,
               meta: _episodeMeta(episode),

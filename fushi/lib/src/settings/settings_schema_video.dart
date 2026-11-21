@@ -8,11 +8,15 @@ import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_horizontal_seek_gesture.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
+import 'package:fushi/src/media/video/video_playlist_order.dart';
 import 'package:fushi/src/media/video/video_lua_script_manager.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_clip_export_preferences.dart';
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
+import 'package:fushi/src/media/video/video_orientation_policy.dart'
+    show VideoEntryOrientation;
+import 'package:fushi/src/media/video/video_resume.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
 import 'package:fushi/src/media/video/video_settings_cli.dart';
 import 'package:fushi/src/media/video/video_settings_cli_ops.dart'
@@ -97,6 +101,63 @@ SettingsDestination buildVideoDestination() {
               await settingsContext.appModel.setVideoAutoPlayNext(value);
             },
             defaultValue: true,
+          ),
+          // 断点续播（拍板台 IVRHvZ3pmd，三档与音乐 `music.resume_mode` 对齐）：只影响之后
+          // 打开的视频；进度照常记，制卡回看 / 画质重载的明确起点不受影响。
+          SettingsSegmentedItem<VideoResumeMode>(
+            id: 'video.playback.resume_mode',
+            title: t.video_resume_mode_title,
+            subtitle: t.video_resume_mode_hint,
+            icon: FushiIcons.history,
+            options: <SettingsSegmentOption<VideoResumeMode>>[
+              SettingsSegmentOption<VideoResumeMode>(
+                value: VideoResumeMode.off,
+                label: t.video_resume_mode_off,
+              ),
+              SettingsSegmentOption<VideoResumeMode>(
+                value: VideoResumeMode.longVideos,
+                label: t.video_resume_mode_long_videos,
+              ),
+              SettingsSegmentOption<VideoResumeMode>(
+                value: VideoResumeMode.all,
+                label: t.video_resume_mode_all,
+              ),
+            ],
+            defaultValue: VideoResumeMode.all,
+            selected: (SettingsContext c) => c.appModel.videoResumeMode,
+            onChanged: (SettingsContext c, VideoResumeMode v) =>
+                c.appModel.setVideoResumeMode(v),
+          ),
+          // 连播顺序（拍板台 QHbRRctQdW）：自动连播时下一集按合集顺序还是随机挑
+          // （一轮内不重复、播完一轮再开一轮）。与「自动连播」「单文件循环」合起来就是
+          // 音乐播放器的顺序 / 随机 / 单曲循环。纯 pref，播放页快捷面板也能切（不加控制栏
+          // 常驻按钮）；手动上 / 下一集仍按合集顺序。
+          SettingsSegmentedItem<VideoPlaylistOrder>(
+            id: 'video.playback.playlist_order',
+            title: t.video_setting_playlist_order,
+            subtitle: t.video_setting_playlist_order_hint,
+            icon: FushiIcons.shuffle,
+            video: VideoPlacement(group: VideoGroup.playback, order: 98),
+            options: <SettingsSegmentOption<VideoPlaylistOrder>>[
+              SettingsSegmentOption<VideoPlaylistOrder>(
+                value: VideoPlaylistOrder.sequential,
+                label: t.video_playlist_order_sequential,
+              ),
+              SettingsSegmentOption<VideoPlaylistOrder>(
+                value: VideoPlaylistOrder.shuffle,
+                label: t.video_playlist_order_shuffle,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoPlaylistOrder,
+            onChanged:
+                (
+                  SettingsContext settingsContext,
+                  VideoPlaylistOrder order,
+                ) async {
+                  await settingsContext.appModel.setVideoPlaylistOrder(order);
+                },
+            defaultValue: VideoPlaylistOrder.fallback,
           ),
           // 作品图谱 L2：音乐库里的 OP / ED 经声纹识别出每集起止后自动跳过。纯 pref，
           // 播放页面板不单列（与原盘会话三项同理：它们决定的是进入 OP 时怎么办）。
@@ -1586,6 +1647,68 @@ SettingsDestination buildVideoPictureDestination() {
             },
             defaultValue: false,
           ),
+          // 拍板台 P9AS-fvjJh：竖屏播放三项，仅手机 / 平板（桌面窗口不走设备方向）。
+          // 进入方向只在下次打开视频时生效；播放中转屏用控件栏的转屏按钮。
+          SettingsSegmentedItem<String>(
+            id: 'video.playback.entry_orientation',
+            title: t.video_setting_entry_orientation,
+            subtitle: t.video_setting_entry_orientation_hint,
+            icon: Icons.screen_rotation_outlined,
+            visible: (_) => isMobilePlatform,
+            video: VideoPlacement(group: VideoGroup.playback, order: 41),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: VideoEntryOrientation.landscape.storageValue,
+                label: t.video_setting_entry_orientation_landscape,
+              ),
+              SettingsSegmentOption<String>(
+                value: VideoEntryOrientation.videoAspect.storageValue,
+                label: t.video_setting_entry_orientation_video,
+              ),
+              SettingsSegmentOption<String>(
+                value: VideoEntryOrientation.sensor.storageValue,
+                label: t.video_setting_entry_orientation_sensor,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                VideoEntryOrientation.fromStorage(
+                  settingsContext.appModel.videoEntryOrientation,
+                ).storageValue,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await settingsContext.appModel.setVideoEntryOrientation(value);
+            },
+            defaultValue: VideoEntryOrientation.landscape.storageValue,
+          ),
+          SettingsSwitchItem(
+            id: 'video.playback.portrait_subtitle_list',
+            title: t.video_setting_portrait_subtitle_list,
+            subtitle: t.video_setting_portrait_subtitle_list_hint,
+            icon: Icons.splitscreen_outlined,
+            visible: (_) => isMobilePlatform,
+            video: VideoPlacement(group: VideoGroup.playback, order: 42),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoPortraitSubtitleList,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoPortraitSubtitleList(
+                value,
+              );
+            },
+            defaultValue: true,
+          ),
+          SettingsSwitchItem(
+            id: 'video.playback.remember_orientation',
+            title: t.video_setting_remember_orientation,
+            subtitle: t.video_setting_remember_orientation_hint,
+            icon: Icons.bookmark_outline,
+            visible: (_) => isMobilePlatform,
+            video: VideoPlacement(group: VideoGroup.playback, order: 43),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoRememberOrientation,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoRememberOrientation(value);
+            },
+            defaultValue: false,
+          ),
           SettingsSegmentedItem<String>(
             id: 'video.geometry.aspect',
             title: t.video_setting_mpv_aspect,
@@ -2661,13 +2784,50 @@ SettingsDestination buildVideoSubtitleDestination() {
             },
             defaultValue: false,
           ),
+          // 智能遮布（所有者 2026-11-20，设计 docs/specs/2026-11-20-video-desub-design.md
+          // §3）：框变成搜索区域，播放中本机 OCR 找字，只在有字时盖住那几行。
+          SettingsSegmentedItem<VideoSubtitleMaskMode>(
+            id: 'video.subtitle.mask_mode',
+            title: t.video_setting_subtitle_mask_mode,
+            subtitle: t.video_setting_subtitle_mask_mode_hint,
+            icon: FushiIcons.subtitleMask,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 152,
+              section: t.video_setting_subtitle_mask,
+            ),
+            options: <SettingsSegmentOption<VideoSubtitleMaskMode>>[
+              SettingsSegmentOption<VideoSubtitleMaskMode>(
+                value: VideoSubtitleMaskMode.manual,
+                label: t.video_setting_subtitle_mask_mode_manual,
+              ),
+              SettingsSegmentOption<VideoSubtitleMaskMode>(
+                value: VideoSubtitleMaskMode.smart,
+                label: t.video_setting_subtitle_mask_mode_smart,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoSubtitleMask.mode,
+            onChanged:
+                (
+                  SettingsContext settingsContext,
+                  VideoSubtitleMaskMode mode,
+                ) async {
+                  final AppModel m = settingsContext.appModel;
+                  await m.setVideoSubtitleMask(
+                    m.videoSubtitleMask.copyWith(mode: mode),
+                  );
+                  settingsContext.refresh();
+                },
+            defaultValue: VideoSubtitleMaskMode.manual,
+          ),
           SettingsSegmentedItem<VideoSubtitleMaskStyle>(
             id: 'video.subtitle.mask_style',
             title: t.video_setting_subtitle_mask_style,
             icon: FushiIcons.blur,
             video: VideoPlacement(
               group: VideoGroup.subtitle,
-              order: 152,
+              order: 153,
               section: t.video_setting_subtitle_mask,
             ),
             options: <SettingsSegmentOption<VideoSubtitleMaskStyle>>[
@@ -2701,7 +2861,7 @@ SettingsDestination buildVideoSubtitleDestination() {
             icon: FushiIcons.opacity,
             video: VideoPlacement(
               group: VideoGroup.subtitle,
-              order: 153,
+              order: 154,
               section: t.video_setting_subtitle_mask,
             ),
             min: 0.1,
@@ -2727,7 +2887,7 @@ SettingsDestination buildVideoSubtitleDestination() {
             icon: FushiIcons.move,
             video: VideoPlacement(
               group: VideoGroup.subtitle,
-              order: 154,
+              order: 155,
               section: t.video_setting_subtitle_mask,
             ),
             visible: (SettingsContext c) =>

@@ -14,12 +14,14 @@ WebVideoPlaybackState _state({
   String audio = 'a-ja',
   List<String> texts = const <String>['ja', 'en'],
   List<String> audios = const <String>['a-ja', 'a-en'],
+  bool paused = true,
+  bool hasVideo = true,
 }) => WebVideoPlaybackState(
   href: 'https://www.netflix.com/watch/1',
   videoKey: videoKey,
-  hasVideo: true,
+  hasVideo: hasVideo,
   positionMs: positionMs,
-  paused: true,
+  paused: paused,
   durationMs: 1400000,
   videoWidth: 1920,
   videoHeight: 1080,
@@ -92,6 +94,49 @@ void main() {
       );
       expect(plan.selectTextTrack, isNull);
       expect(plan.selectAudioTrack, isNull);
+    });
+
+    test('snapshot carries play / pause; paused() only flips that', () {
+      final WebMineReturnState playing = WebMineReturnState.of(
+        _state(paused: false),
+      );
+      expect(playing.playing, isTrue);
+      expect(want.playing, isFalse);
+      final WebMineReturnState held = playing.paused();
+      expect(held.playing, isFalse);
+      expect(held.positionMs, playing.positionMs);
+      expect(held.siteTextTrack, playing.siteTextTrack);
+      expect(held.siteAudioTrack, playing.siteAudioTrack);
+      expect(held.href, playing.href);
+    });
+
+    test('rebuilt page auto-plays while original was paused: pause it', () {
+      expect(
+        planWebMineRestore(want, _state(paused: false)).setPlaying,
+        isFalse,
+      );
+      final WebMineReturnState playing = WebMineReturnState.of(
+        _state(paused: false),
+      );
+      expect(planWebMineRestore(playing, _state()).setPlaying, isTrue);
+      expect(planWebMineRestore(want, _state()).setPlaying, isNull);
+    });
+
+    test('no video element yet / other episode: play state left alone', () {
+      expect(
+        planWebMineRestore(
+          want,
+          _state(paused: false, hasVideo: false),
+        ).setPlaying,
+        isNull,
+      );
+      expect(
+        planWebMineRestore(
+          want,
+          _state(videoKey: 'nf:2', paused: false),
+        ).setPlaying,
+        isNull,
+      );
     });
 
     test('unknown original audio track never forces a switch', () {
@@ -190,8 +235,62 @@ void main() {
       );
       expect(
         finish,
-        contains('mineReturnState: widget.mineReturnState ?? _replayOrigin'),
+        contains(
+          'final WebMineReturnState? origin = _replayOrigin ?? widget.mineReturnState;',
+        ),
       );
+      expect(
+        finish,
+        contains('mineReturnState: auto ? origin?.paused() : origin'),
+      );
+    });
+
+    // 拍板 design-nmv-webmine-rebuild-paused：空闲自动制卡途中 WebView 进程死掉，重建出的
+    // 页面不能在用户不在场时自动播放出声。
+    test('idle auto round restores to paused, rebuilt surface held paused', () {
+      final String run = body(
+        page,
+        'Future<void> _runMineQueue(',
+        'Future<String?> _mineQueuedRow(',
+      );
+      expect(
+        run,
+        contains('_replayOrigin = auto ? origin?.paused() : origin;'),
+      );
+      expect(run, contains('if (sawError || surfaceLost()) await _pause();'));
+      final String fin = run.substring(
+        run.indexOf('cleanup: <Future<void> Function()>['),
+      );
+      final int clear = fin.indexOf('_holdRebuiltSurfacePaused = false;');
+      expect(clear, greaterThanOrEqualTo(0));
+      expect(clear, lessThan(fin.indexOf('_beginRestore(_replayOrigin)')));
+      final String recover = body(
+        page,
+        'Future<void> _onSurfaceGone()',
+        'void _onSurfaceCreated(',
+      );
+      expect(
+        recover,
+        contains('if (_mineRunning) _holdRebuiltSurfacePaused = true;'),
+      );
+      final String onState = body(page, 'void _onState(', 'void _onKeyToken(');
+      expect(
+        onState,
+        contains('if (_holdRebuiltSurfacePaused && state.isPlaying)'),
+      );
+      final String apply = body(
+        page,
+        'void _applyPendingRestore(',
+        'Future<void> _preStartSilentAudio()',
+      );
+      expect(apply, contains('switch (plan.setPlaying)'));
+      final String nativeApply = body(
+        webSource,
+        'void _applyWebPendingRestore(',
+        '\n  }\n',
+      );
+      expect(nativeApply, contains('switch (plan.setPlaying)'));
+      expect(nativeApply, contains('controller.pause()'));
     });
 
     // 后台空闲制卡页（closeAfterMining，用户不在场）：开页前就要静音、开不了跑要按时收尾、
@@ -206,7 +305,7 @@ void main() {
       );
       final String created = body(
         page,
-        'onWebViewCreated: (InAppWebViewController controller) {',
+        'void _onSurfaceCreated(InAppWebViewController _) {',
         'unawaited(_applyShaderTier());',
       );
       expect(created, contains('if (_isMiningHost && !_windowed'));
@@ -362,6 +461,41 @@ void main() {
       expect(nav?.navigateHref, 'https://www.netflix.com/watch/1');
       expect(tr.step(_state(videoKey: 'nf:2'), at(5000))?.navigateHref, isNull);
       expect(tr.step(_state(positionMs: 0), at(6000))?.seekMs, 600000);
+    });
+
+    test('重建页先报暂停、seek 途中才自动播放：照样暂停（没发过不算对齐）', () {
+      final WebMineRestoreTracker tr = WebMineRestoreTracker(target, now: t0);
+      final WebMineRestorePlan? first = tr.step(_state(positionMs: 0), at(0));
+      expect(first?.seekMs, 600000);
+      expect(first?.setPlaying, isNull);
+      final WebMineRestorePlan? auto = tr.step(
+        _state(positionMs: 600100, paused: false),
+        at(500),
+      );
+      expect(auto?.setPlaying, isFalse);
+    });
+
+    test('暂停落地后用户自己按播放：不再被拉回暂停', () {
+      final WebMineRestoreTracker tr = WebMineRestoreTracker(target, now: t0);
+      expect(
+        tr.step(_state(positionMs: 600000, paused: false), at(0))?.setPlaying,
+        isFalse,
+      );
+      // 暂停落地，其余都已一致 → 本轮结束。
+      expect(tr.step(_state(positionMs: 600000), at(500)), isNull);
+    });
+
+    test('暂停一直没落地：只发两次', () {
+      final WebMineRestoreTracker tr = WebMineRestoreTracker(target, now: t0);
+      final List<int> pauses = <int>[];
+      WebMineRestorePlan? last;
+      for (int ms = 0; ms <= 12000; ms += 250) {
+        last = tr.step(_state(positionMs: 600000, paused: false), at(ms));
+        if (last == null) break;
+        if (last.setPlaying == false) pauses.add(ms);
+      }
+      expect(pauses, <int>[0, kWebMineRestoreRetryGap.inMilliseconds]);
+      expect(last, isNull);
     });
 
     test('过了期限就结束', () {

@@ -591,13 +591,13 @@ void main() {
       web
           .split('void _maybeRequestDefaultSiteTrack()')[1]
           .split('void _syncWebAudioTracks(')[0],
-      contains('webVideoGeneratedTrackKey(_webVideoKey)'),
+      contains('webVideoGeneratedTrackKey(_webTrackSel.videoKey)'),
     );
     final String install = web
         .split('void _installWebGeneratedTrack(')[1]
         .split('void _onWebPageLookup(')[0];
-    expect(install, contains('_webPendingTrackKey = null'));
-    expect(install, contains('_webPinnedTrackKey = key'));
+    expect(install, contains('_webTrackSel.pendingKey = null'));
+    expect(install, contains('_webTrackSel.pinnedKey = key'));
     expect(install, contains('_reselectWebTrack()'));
 
     // 工作台拆分的日语字幕在网页档作为本机轨选中（与手机下载字幕同一个 helper）。

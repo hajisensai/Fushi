@@ -197,6 +197,8 @@ fn truth_lines(t: &Truth<'_>, col: i64) -> Vec<String> {
             Ok(())
         })
         .unwrap();
+        // 含别的设备的原生日志上、合并空洞时记下的区间内部链值（`Truth::insert_void_run`，交接 §33）：导出流第 2 版
+        // 起随空洞带走（第五波）。
         for (seq, c) in t.marks(col, &d.id).unwrap() {
             out.push(format!("  mark {seq} {c:?}"));
         }
@@ -213,6 +215,33 @@ fn truth_lines(t: &Truth<'_>, col: i64) -> Vec<String> {
     forks.sort();
     out.extend(forks);
     out
+}
+
+/// [seq] 在设备 [device] 的日志里落在一个空洞区间内部（它与下一格都是空洞，[last] = 日志末尾）。
+fn void_interior(t: &Truth<'_>, col: i64, device: &Id, seq: u64, last: u64) -> bool {
+    let void = |s: u64| {
+        t.entry(
+            col,
+            &crate::sync2::vv::OpId {
+                device: *device,
+                seq: s,
+            },
+        )
+        .unwrap()
+        .is_some_and(|e| !e.is_whole())
+    };
+    seq < last && void(seq) && void(seq + 1)
+}
+
+/// [t] 里设备 [device] 原生日志上空洞区间内部的链值记号。
+fn void_interior_marks(t: &Truth<'_>, col: i64, device: &Id) -> Vec<u64> {
+    let last = t.last_of(col, device).unwrap();
+    t.marks(col, device)
+        .unwrap()
+        .into_iter()
+        .map(|(s, _)| s)
+        .filter(|s| void_interior(t, col, device, *s, last))
+        .collect()
 }
 
 fn ops_rows(conn: &Connection) -> i64 {
@@ -265,6 +294,15 @@ fn export_then_import_round_trips_byte_for_byte_and_row_for_row() {
     assert_eq!(rows(&tb, col_b), rows(&ta, col_a));
     assert!(!rows(&tb, col_b).is_empty());
     assert_eq!(truth_lines(&tb, col_b), truth_lines(&ta, col_a));
+    // PEER 的 5、6 两格空洞分两次落、合并时记下的 5 处链值（转发按作者切点重切用，交接 §33）：第 2 版的流随空洞带走，
+    // 导入方的 `chain_known` 在空洞内部给出同一个值（第 1 版只带区间末 6 处的，5 处是 None → 那位作者整台不转发）。
+    assert_eq!(stats.void_marks, 1);
+    assert_eq!(got.void_marks, 1);
+    assert_eq!(void_interior_marks(&ta, col_a, &id(PEER)), vec![5]);
+    assert_eq!(void_interior_marks(&tb, col_b, &id(PEER)), vec![5]);
+    let at5 = ta.chain_known(col_a, &id(PEER), 5).unwrap();
+    assert!(at5.is_some());
+    assert_eq!(tb.chain_known(col_b, &id(PEER), 5).unwrap(), at5);
     assert_rebuild_is_identity(&tb, col_b);
 
     // 再导一遍：什么都不改。
@@ -278,6 +316,382 @@ fn export_then_import_round_trips_byte_for_byte_and_row_for_row() {
     let own = import_ops(&ta, col_a, &bytes).unwrap();
     assert!(own.unchanged(), "{own:?}");
     assert_eq!(export(&ta, col_a), bytes);
+}
+
+/// 转发材料（流的第 3 版）随导出走：本机清除过一位作者的操作（日志里是空洞、记着剔除记录与作者签名版本），导出
+/// 再导入空库之后，从日志重切那一段（`recut_from_log`）照样拼得出来、作者签名照样验得过——以前（第 2 版）还原的库
+/// 缺这两样，重切退回「不转发」。只带落在空洞上的剔除记录；本机这一格有完整内容的剔除记录不收；再导一遍什么都不多。
+#[test]
+fn relay_material_survives_export_and_import_so_a_restored_library_can_still_recut() {
+    use crate::gen4::recut::Stub;
+    use crate::gen4::segment::tests::{DEV, coll, items_of as seg_items, ops as seg_ops};
+    use crate::gen4::segment::{open_native_verified, pack_native};
+    use crate::store::gen4::sync_state::AuthorVersion;
+    use crate::store::gen4::truth::Peer;
+    use crate::sync2::keys::DeviceKey;
+    use crate::sync2::segment::chain_tag;
+    let signer = DeviceKey::from_seed(&[7; 32]);
+    let a = id(DEV);
+    let ops = seg_ops();
+    let (header, seg) =
+        pack_native(coll(), a, 1, &seg_items(&ops), CHAIN_ZERO, &signer, None).unwrap();
+    let sig = open_native_verified(&seg, &signer.public(), None)
+        .unwrap()
+        .author_sig();
+    let tag = chain_tag(&header.last_chain);
+    let purge = OpId {
+        device: id(0x22),
+        seq: 7,
+    };
+    // 导出方：收下作者 a 的一段（seq 1..=5），之后清除了 seq 2（剔除记录 + 空洞）。
+    let setup = |t: &Truth<'_>, me: u8| -> i64 {
+        let col = fresh(t, me);
+        t.tx(|t| {
+            t.set_peer(
+                col,
+                &Peer {
+                    device: a,
+                    public: signer.public(),
+                    name: None,
+                    ext: None,
+                    head_gen: None,
+                    first_seen: None,
+                },
+            )
+            .map(|_| ())
+        })
+        .unwrap();
+        col
+    };
+    let ca = open_in_memory().unwrap();
+    let ta = Truth::new(&ca);
+    // 本机身份不能是作者 a（`DEV` 与 `ME_A` 同号）。
+    let col_a = setup(&ta, ME_B);
+    ta.tx(|t| {
+        for op in &ops {
+            t.append_native(col_a, op)?;
+        }
+        t.note_author_version(
+            col_a,
+            &AuthorVersion {
+                header: header.clone(),
+                sig,
+                voids: Vec::new(),
+            },
+        )?;
+        t.put_stub(col_a, &Stub::of(&ops[1], purge))?;
+        // seq 1 这一格本机还有完整内容：它的剔除记录不随导出走。
+        t.put_stub(col_a, &Stub::of(&ops[0], purge))?;
+        t.advance_purge(col_a, &ops[1].id)?;
+        Ok(())
+    })
+    .unwrap();
+    let cut_a = ta.recut_from_log(col_a, &a, (1, 5, &tag)).unwrap();
+    assert!(cut_a.is_some(), "the exporter can recut");
+    let (bytes, stats) = export_ops(&ta, col_a, Vec::new()).unwrap();
+    assert_eq!((stats.relay_versions, stats.relay_stubs), (1, 1));
+
+    // 还原：空库 + 导入。
+    let cb = open_in_memory().unwrap();
+    let tb = Truth::new(&cb);
+    let col_b = fresh(&tb, 0xc3);
+    let got = import_ops(&tb, col_b, &bytes).unwrap();
+    assert_eq!((got.relay_versions, got.relay_stubs), (1, 1));
+    let cut_b = tb.recut_from_log(col_b, &a, (1, 5, &tag)).unwrap();
+    let (cut_a, cut_b) = (
+        cut_a.unwrap(),
+        cut_b.expect("the restored library can recut"),
+    );
+    assert_eq!(cut_b.items, cut_a.items);
+    assert_eq!(cut_b.author_sig, cut_a.author_sig);
+    assert!(tb.stub_at(col_b, &a, 1).unwrap().is_none());
+    // 再导出逐字节相同；再导一遍什么都不改。
+    assert_eq!(export(&tb, col_b), bytes);
+    let again = import_ops(&tb, col_b, &bytes).unwrap();
+    assert!(again.unchanged(), "{again:?}");
+    assert_eq!(export(&tb, col_b), bytes);
+}
+
+/// 一条带转发材料的真实流：导出方收下作者（`DEV`）的一段 seq 1..=5、清除了 seq 2（剔除记录 + 空洞）。回流的字节、
+/// 作者、作者签名版本与那条剔除记录（[forged_relay_material_is_verified_before_it_lands] 用）。
+fn relay_stream() -> (
+    Vec<u8>,
+    Id,
+    crate::store::gen4::sync_state::AuthorVersion,
+    crate::gen4::recut::Stub,
+) {
+    use crate::gen4::recut::Stub;
+    use crate::gen4::segment::tests::{DEV, coll, items_of as seg_items, ops as seg_ops};
+    use crate::gen4::segment::{open_native_verified, pack_native};
+    use crate::store::gen4::sync_state::AuthorVersion;
+    use crate::sync2::keys::DeviceKey;
+    let signer = DeviceKey::from_seed(&[7; 32]);
+    let a = id(DEV);
+    let ops = seg_ops();
+    let (header, seg) =
+        pack_native(coll(), a, 1, &seg_items(&ops), CHAIN_ZERO, &signer, None).unwrap();
+    let sig = open_native_verified(&seg, &signer.public(), None)
+        .unwrap()
+        .author_sig();
+    let version = AuthorVersion {
+        header,
+        sig,
+        voids: Vec::new(),
+    };
+    let stub = Stub::of(
+        &ops[1],
+        OpId {
+            device: id(0x22),
+            seq: 7,
+        },
+    );
+    let ca = open_in_memory().unwrap();
+    let ta = Truth::new(&ca);
+    let col = fresh(&ta, ME_B);
+    ta.tx(|t| {
+        t.set_peer(
+            col,
+            &Peer {
+                device: a,
+                public: signer.public(),
+                name: None,
+                ext: None,
+                head_gen: None,
+                first_seen: None,
+            },
+        )?;
+        for op in &ops {
+            t.append_native(col, op)?;
+        }
+        t.note_author_version(col, &version)?;
+        t.put_stub(col, &stub)?;
+        t.advance_purge(col, &ops[1].id)?;
+        Ok(())
+    })
+    .unwrap();
+    (export(&ta, col), a, version, stub)
+}
+
+/// [bytes] 的每一项过一遍 [f] 再写回一条流（语法照旧核对）。
+fn rewrite(bytes: &[u8], mut f: impl FnMut(&mut crate::gen4::export::ExportItem)) -> Vec<u8> {
+    let (h, mut items) = items_of(bytes);
+    for it in &mut items {
+        f(it);
+    }
+    let mut w = crate::gen4::export::Export4Writer::new(Vec::new(), &h).unwrap();
+    for it in &items {
+        w.item(it).unwrap();
+    }
+    w.finish().unwrap()
+}
+
+/// 第六波安全复核：导入流里的转发材料不可信。作者签名版本先拿本机记着的作者公钥、本机日志与剔除记录验过作者签名
+/// 才记，验不过（签名被改、作者公钥本机不知道；段头作者不是所在日志的作者由流语法整笔拒）的跳过并计数，**不替换本机已有的有效行**
+/// （伪造的版本空洞更多，以前会按「空洞多的换掉」顶掉本机那份）；剔除记录要被验过的版本担保（信封 / 载荷哈希 /
+/// 清除目标正是作者签过的那条）才记，本机已有的不换。
+#[test]
+fn forged_relay_material_is_verified_before_it_lands() {
+    use crate::gen4::export::ExportItem;
+    let (bytes, a, version, stub) = relay_stream();
+    let seq2 = stub.id().seq;
+
+    // 1. 本机已有有效的一份（先导入真实流）；再导入伪造的：版本空洞更多、签名乱填；同一格的剔除记录换了 Purge。
+    let cb = open_in_memory().unwrap();
+    let tb = Truth::new(&cb);
+    let col = fresh(&tb, 0xc3);
+    let got = import_ops(&tb, col, &bytes).unwrap();
+    assert_eq!(
+        (got.relay_versions, got.relay_stubs, got.relay_skipped),
+        (1, 1, 0)
+    );
+    let chain2 = tb.chain_at(col, &a, seq2).unwrap();
+    let other_purge = OpId {
+        device: id(0x23),
+        seq: 9,
+    };
+    let forged = rewrite(&bytes, |it| match it {
+        ExportItem::AuthorVersion { sig, voids, .. } => {
+            sig[0] ^= 0xff;
+            voids.push((seq2, 1, chain2));
+        }
+        ExportItem::Stub(s) => s.purge = other_purge,
+        _ => {}
+    });
+    let got = import_ops(&tb, col, &forged).unwrap();
+    assert_eq!(got.relay_versions, 0, "{got:?}");
+    assert_eq!(got.relay_stubs, 0, "{got:?}");
+    assert_eq!(
+        got.relay_skipped, 1,
+        "the forged version (the stub is already here: left alone)"
+    );
+    assert_eq!(
+        tb.author_version(col, &a, 1, 5).unwrap(),
+        Some(version.clone()),
+        "the valid row stays"
+    );
+    assert_eq!(tb.stub_at(col, &a, seq2).unwrap(), Some(stub.clone()));
+    // 有效版本 + 换了 Purge 的剔除记录：版本验得过（拼项时本机那条优先），剔除记录照样不换。
+    let other = rewrite(&bytes, |it| {
+        if let ExportItem::Stub(s) = it {
+            s.purge = other_purge;
+        }
+    });
+    let got = import_ops(&tb, col, &other).unwrap();
+    assert_eq!((got.relay_versions, got.relay_skipped), (1, 0), "{got:?}");
+    assert_eq!(tb.stub_at(col, &a, seq2).unwrap(), Some(stub.clone()));
+
+    // 2. 空库：剔除记录的载荷哈希与作者签过的不一致 → 版本验不过、剔除记录没担保，都不记；重切不出来。
+    let fresh_lib = |b: &[u8]| -> (Connection, ImportedOps) {
+        let c = open_in_memory().unwrap();
+        let got = {
+            let t = Truth::new(&c);
+            let col = fresh(&t, 0xc4);
+            import_ops(&t, col, b).unwrap()
+        };
+        (c, got)
+    };
+    let tag = crate::sync2::segment::chain_tag(&version.header.last_chain);
+    let bad_stub = rewrite(&bytes, |it| {
+        if let ExportItem::Stub(s) = it {
+            s.payload_hash[0] ^= 1;
+        }
+    });
+    let (c, got) = fresh_lib(&bad_stub);
+    assert_eq!(
+        (got.relay_versions, got.relay_stubs, got.relay_skipped),
+        (0, 0, 2),
+        "{got:?}"
+    );
+    {
+        let t = Truth::new(&c);
+        let col = t.binding_of(P).unwrap().unwrap().col;
+        assert_eq!(t.author_version(col, &a, 1, 5).unwrap(), None);
+        assert_eq!(t.stub_at(col, &a, seq2).unwrap(), None);
+        assert!(t.recut_from_log(col, &a, (1, 5, &tag)).unwrap().is_none());
+    }
+
+    // 3. 空库：签名被改 → 不记。
+    let bad_sig = rewrite(&bytes, |it| {
+        if let ExportItem::AuthorVersion { sig, .. } = it {
+            sig[63] ^= 1;
+        }
+    });
+    let (_, got) = fresh_lib(&bad_sig);
+    assert_eq!(
+        (got.relay_versions, got.relay_stubs, got.relay_skipped),
+        (0, 0, 2),
+        "{got:?}"
+    );
+
+    // 4. 空库：文件不带作者公钥（本机也不知道）→ 验不了，不记。
+    let no_key = rewrite(&bytes, |it| {
+        if let ExportItem::NativeLog { device, public, .. } = it {
+            if *device == a {
+                *public = None;
+            }
+        }
+    });
+    let (_, got) = fresh_lib(&no_key);
+    assert_eq!(
+        (got.relay_versions, got.relay_stubs, got.relay_skipped),
+        (0, 0, 2),
+        "{got:?}"
+    );
+
+    // 对照：真实流导进空库全记下。
+    let (_, got) = fresh_lib(&bytes);
+    assert_eq!(
+        (got.relay_versions, got.relay_stubs, got.relay_skipped),
+        (1, 1, 0)
+    );
+}
+
+/// 读出一条流的头与全部项。
+fn items_of(
+    bytes: &[u8],
+) -> (
+    crate::gen4::export::ExportHeader,
+    Vec<crate::gen4::export::ExportItem>,
+) {
+    let (mut r, h) = crate::gen4::export::Export4Reader::open(bytes).unwrap();
+    let mut items = Vec::new();
+    while let Some(it) = r.next_item().unwrap() {
+        items.push(it);
+    }
+    (h, items)
+}
+
+/// 第 1 版的流（第五波之前的开发构建导出的，空洞只带区间末链值）照读：真相与第 2 版导入的相同，只是空洞内部的记号
+/// 没有（那一格 `chain_known` 是 None，与改前一样）；再导出写成第 2 版。
+#[test]
+fn a_version_1_stream_still_imports() {
+    use crate::gen4::export::{ExportItem, encode_version_1};
+    let (a_dev, _, _) = pair();
+    let ca = open_in_memory().unwrap();
+    let ta = Truth::new(&ca);
+    let col_a = library(&ta, ME_A, &a_dev);
+    let (h, mut items) = items_of(&export(&ta, col_a));
+    let mut dropped = 0;
+    for it in &mut items {
+        if let ExportItem::NativeVoid { marks, .. } = it {
+            dropped += marks.len();
+            marks.clear();
+        }
+    }
+    assert_eq!(dropped, 1);
+    // 第 1 版没有转发材料（第 3 版起才有）。
+    items.retain(|it| {
+        !matches!(
+            it,
+            ExportItem::NativeRelay { .. } | ExportItem::AuthorVersion { .. } | ExportItem::Stub(_)
+        )
+    });
+    let v1 = encode_version_1(&h, &items).unwrap();
+    let cb = open_in_memory().unwrap();
+    let tb = Truth::new(&cb);
+    let col_b = fresh(&tb, ME_B);
+    let got = import_ops(&tb, col_b, &v1).unwrap();
+    assert_eq!(got.void_marks, 0);
+    assert_eq!(rows(&tb, col_b), rows(&ta, col_a));
+    assert_eq!(
+        void_interior_marks(&tb, col_b, &id(PEER)),
+        Vec::<u64>::new()
+    );
+    assert_eq!(tb.chain_known(col_b, &id(PEER), 5).unwrap(), None);
+    let again = export(&tb, col_b);
+    let (r, _) = crate::gen4::export::Export4Reader::open(&again).unwrap();
+    assert_eq!(r.version(), crate::gen4::export::EXPORT4_VER);
+    // 之后再导入第 2 版：补上那一个记号，别的什么都不改。
+    let more = import_ops(&tb, col_b, &export(&ta, col_a)).unwrap();
+    assert_eq!(more.void_marks, 1);
+    assert_eq!(truth_lines(&tb, col_b), truth_lines(&ta, col_a));
+}
+
+/// 流里的空洞内部记号与本机已知的链值不同（伪造 / 分叉的流）：与区间末一样整笔拒，什么都不落。
+#[test]
+fn a_void_mark_that_disagrees_with_this_library_is_refused() {
+    use crate::gen4::export::{Export4Writer, ExportItem};
+    let (a_dev, _, _) = pair();
+    let ca = open_in_memory().unwrap();
+    let ta = Truth::new(&ca);
+    let col_a = library(&ta, ME_A, &a_dev);
+    let (h, mut items) = items_of(&export(&ta, col_a));
+    for it in &mut items {
+        if let ExportItem::NativeVoid { marks, .. } = it {
+            for (_, c) in marks.iter_mut() {
+                c[0] ^= 0xff;
+            }
+        }
+    }
+    let mut w = Export4Writer::new(Vec::new(), &h).unwrap();
+    for it in &items {
+        w.item(it).unwrap();
+    }
+    let forged = w.finish().unwrap();
+    let before = dump(&ca, col_a);
+    let e = import_ops(&ta, col_a, &forged).unwrap_err();
+    assert!(e.contains("diverges"), "{e}");
+    assert_eq!(dump(&ca, col_a), before);
 }
 
 /// 两边各有自己的数据：互相导入之后真相相同、派生表逐行相同、导出逐字节相同（并入 = 操作并集）。
@@ -584,6 +998,83 @@ fn unreadable_or_foreign_files_are_refused_and_nothing_lands() {
     // 没绑过的集合。
     let e = import_ops(&tc, col_c + 1, &bytes).unwrap_err();
     assert!(e.contains("no collection"), "{e}");
+}
+
+/// 文件里有一条载荷超过 [crate::gen4::op::MAX_OP_PAYLOAD] 的操作（写者签不出这样的流，手拼）：导入、预检读流都拒，
+/// 报错说清楚是「一条改动太大」（以 [crate::gen4::op::ERR_OP_TOO_LARGE] 开头、带大小与上限、说明什么都没导入），不是
+/// 笼统的「坏文件」；一条都不落，库照常能用（同一个会话接着导入正常的流）。
+#[test]
+fn an_op_over_the_payload_cap_is_refused_with_a_readable_reason_and_nothing_lands() {
+    use crate::gen4::export::{ExportHeader, ExportItem, encode_unchecked};
+    use crate::gen4::op::{ERR_OP_TOO_LARGE, MAX_OP_PAYLOAD};
+    let cb = open_in_memory().unwrap();
+    let tb = Truth::new(&cb);
+    let col = fresh(&tb, ME_B);
+    let ok = peer_ops();
+    let mut big = ok[1].clone();
+    big.payload = vec![b'x'; MAX_OP_PAYLOAD + 1].into();
+    let header = ExportHeader {
+        collection: collection_of(P),
+        logs: 1,
+    };
+    let bytes = encode_unchecked(
+        &header,
+        &[
+            ExportItem::NativeLog {
+                device: id(PEER),
+                public: Some(PEER_KEY),
+                count: 2,
+            },
+            ExportItem::NativeOp(ok[0].clone()),
+            ExportItem::NativeOp(big.clone()),
+            ExportItem::NativeTail(chain_next4(&peer_chains()[0], &big)),
+            ExportItem::NativeRelay {
+                versions: 0,
+                stubs: 0,
+            },
+        ],
+    );
+    let before = ops_rows(&cb);
+    for e in [
+        import_ops(&tb, col, &bytes).unwrap_err(),
+        check_ops_stream(&bytes).unwrap_err(),
+    ] {
+        assert!(
+            e.starts_with(&format!("gen4 import: {ERR_OP_TOO_LARGE}: ")),
+            "{e}"
+        );
+        assert!(e.contains(&format!("{} bytes", MAX_OP_PAYLOAD + 1)), "{e}");
+        assert!(e.contains("16 MiB limit"), "{e}");
+        assert!(e.contains("nothing was imported"), "{e}");
+        assert!(!e.contains("corrupt"), "{e}");
+    }
+    assert_eq!(ops_rows(&cb), before);
+    assert_eq!(tb.last_of(col, &id(PEER)).unwrap(), 0);
+    // 本机写入同一条线：落不进日志，报错同样看得懂，整笔回滚。
+    let e = tb.tx(|t| t.append_native(col, &big)).unwrap_err();
+    assert!(
+        e.contains(ERR_OP_TOO_LARGE) && e.contains("nothing was saved"),
+        "{e}"
+    );
+    // 库照常能用：正常的流照导。
+    let fine = encode_unchecked(
+        &header,
+        &[
+            ExportItem::NativeLog {
+                device: id(PEER),
+                public: Some(PEER_KEY),
+                count: 1,
+            },
+            ExportItem::NativeOp(ok[0].clone()),
+            ExportItem::NativeTail(peer_chains()[0]),
+            ExportItem::NativeRelay {
+                versions: 0,
+                stubs: 0,
+            },
+        ],
+    );
+    import_ops(&tb, col, &fine).unwrap();
+    assert_eq!(tb.last_of(col, &id(PEER)).unwrap(), 1);
 }
 
 /// 文件里某台设备的原生日志与本机记的分叉了（克隆 / 回滚过的设备）：整个导入拒绝，一条都不落。

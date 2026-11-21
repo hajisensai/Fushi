@@ -232,6 +232,7 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLocalEvents(
         engine: 'local_onnx',
         engineSignature: engineSignature,
         schemaVersion: 1,
+        completedAt: DateTime.now().toUtc(),
       ),
     );
     final String output = await writeMangaOcrCachedOutput(dir, payload);
@@ -336,6 +337,7 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLensEvents(
         engine: 'google_lens',
         engineSignature: googleLensEngineSignature(spec.lensLanguage),
         schemaVersion: 1,
+        completedAt: DateTime.now().toUtc(),
       ),
     );
     final String output = await writeMangaOcrCachedOutput(dir, payload);

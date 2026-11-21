@@ -7,7 +7,7 @@
 /// `media/<sha256 前 2 位>/<sha256>`（加密时 `media-e/<密钥指纹>/<前 2 位>/<sha256>`）。
 ///
 /// 协议 1 的集合根是 `fushi-srs/<profileUid>/v2/`（[kSrsSync2V1Folder]）：2026-10-30 断代后只剩一份让旧版本停下的
-/// `meta.json`（文件夹位置另有一个同名普通文件 `media`），旧数据由一次性迁移搬进新根（srs_location_migration.dart）。
+/// `meta.json`（文件夹位置另有一个同名普通文件 `media`，srs_v1_fence.dart）；只有它的位置新代一律拒绝（D21）。
 library;
 
 import 'dart:async';
@@ -155,8 +155,8 @@ String srsLocationDirOf(String profileUid) =>
     SrsKernelIds(profileUid).locationDir;
 const String kSrsSync2Folder = 'v3';
 
-/// 协议 1 的集合根（`fushi-srs/<profileUid>/v2/`）：旧版本只认这里。新版本只在这里写一份让旧版本停下的 `meta.json`，
-/// 并把里面的旧数据迁进 [kSrsSync2Folder]（srs_location_migration.dart）。
+/// 协议 1 的集合根（`fushi-srs/<profileUid>/v2/`）：旧版本只认这里。新版本只在这里写一份让旧版本停下的 `meta.json`
+/// （srs_v1_fence.dart）；只有它的位置一律拒绝（D21）。
 const String kSrsSync2V1Folder = 'v2';
 
 /// 各后端身份上在途的「确保子文件夹」（`<父定位符>\0<名字>` → 结果）。只记在途的：跑完就移走，下一次照常问后端
@@ -239,6 +239,7 @@ class SrsAssetLocationStore implements SrsLocationStore, SrsLocationFileStore {
     required this.profileUid,
     this.folder = kSrsSync2Folder,
     this.maxConcurrentWrites,
+    this.locationDir,
     Object? backendIdentity,
     Directory? tempDir,
   }) : backendIdentity = backendIdentity ?? store,
@@ -250,6 +251,10 @@ class SrsAssetLocationStore implements SrsLocationStore, SrsLocationFileStore {
   /// （防扫盘混淆每次新建一层、`ensureFolder` 原样透传给里层的单例后端）时传里层那个。
   final Object backendIdentity;
   final String profileUid;
+
+  /// 集合在位置上的目录名（`fushi-srs/<它>/`），调用方已经从内核 `identity` 的 `dir` 拿到时直接给（新代一轮同步，
+  /// srs_location_runner.dart）；null = 按 [profileUid] 向内核要（[srsLocationDirOf]）。给了就原样用，不再映射一次。
+  final String? locationDir;
 
   /// 集合根目录名（`fushi-srs/<profileUid>/<folder>/`）：[kSrsSync2Folder]，迁移时也开一个 [kSrsSync2V1Folder] 的。
   final String folder;
@@ -307,7 +312,7 @@ class SrsAssetLocationStore implements SrsLocationStore, SrsLocationFileStore {
     );
     final List<String> profiles = await _childFoldersOrCreate(<String>[
       ns,
-    ], srsLocationDirOf(profileUid));
+    ], locationDir ?? srsLocationDirOf(profileUid));
     return _childFoldersOrCreate(profiles, folder);
   }
 

@@ -16,7 +16,9 @@ void main() {
 
   test('只有一个「词典」页：一个导航项、一个 section、一套 loadDictionaries', () {
     expect(
-      '<button data-s="dictionaries">'.allMatches(adminWebUiHtml),
+      '<button class="nav-item" data-s="dictionaries">'.allMatches(
+        adminWebUiHtml,
+      ),
       hasLength(1),
     );
     expect(
@@ -24,7 +26,7 @@ void main() {
       hasLength(1),
     );
     expect(
-      '<symbol id="i-dictionaries"'.allMatches(adminWebUiHtml),
+      'data-fushi-icon="dictionary"'.allMatches(adminWebUiHtml),
       hasLength(1),
     );
     expect(
@@ -37,7 +39,10 @@ void main() {
     );
     expect('const DICT_TYPE'.allMatches(adminWebUiHtml), hasLength(1));
     final String section = dictionariesSection();
-    expect(section, contains('<div class="list" id="dicts">'));
+    expect(
+      section,
+      contains('<div class="setting-list is-surface" id="dicts">'),
+    );
     expect(section, contains('id="btn-dict-reload"'));
     expect(section, contains('id="dict-q"'));
   });
@@ -148,12 +153,12 @@ void main() {
     expect(
       adminWebUiHtml,
       contains(
-        '<button class="icon-btn sm" data-dict-rename="\${esc(d.name)}" '
+        '<button class="icon-button is-small" data-dict-rename="\${esc(d.name)}" '
         "title=\"\${esc(T('修改显示名'))}\" aria-label=\"\${esc(T('修改显示名'))}\">"
         "\${icon('edit')}</button>",
       ),
     );
-    expect(adminWebUiHtml, contains('<symbol id="i-edit"'));
+    expect(adminWebUiHtml, contains("edit:'edit'"));
     expect(adminWebUiHtml, contains("if (v===name) v='';"));
     expect(
       adminWebUiHtml,
@@ -162,11 +167,8 @@ void main() {
       ),
     );
     expect(adminWebUiHtml, contains('input.onblur = submit;'));
-    // 隐藏属性要压过 .icon-btn 的 display:grid。
-    expect(
-      adminWebUiHtml,
-      contains('.icon-btn[hidden],input.dict-name-edit[hidden]{display:none}'),
-    );
+    // 隐藏属性要压过 .icon-button 的 display:grid。
+    expect(adminWebUiHtml, contains('[hidden]{display:none!important}'));
   });
 
   test('新文案都有英文', () {

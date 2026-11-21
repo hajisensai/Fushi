@@ -60,6 +60,16 @@ public class ScreenCaptureRequestActivity extends Activity {
             @Nullable Map<String, String> labels) {
         if (!Settings.canDrawOverlays(context)) return false;
         if (flowActive) return false;
+        // App 外内录开着：它手里就是一份有效的投屏授权。直接借它取帧——再弹确认框拿新
+        // 授权会让系统停掉内录那份（BUG-4922）。
+        if (ScreenOcrService.hasSharedProjection()) {
+            flowActive = true;
+            if (ScreenOcrService.captureWithSharedProjection(context, language, labels)) {
+                FloatingBallService.setCaptureHidden(true);
+                return true;
+            }
+            flowActive = false;
+        }
         // 保持着截屏会话（「保持截屏会话」开着、之前同意过且系统没停掉）：直接取帧，不弹
         // 确认框、不从后台起本 Activity——也就不会被 ROM 的后台弹窗管控拦下。
         if (ScreenOcrService.hasKeptSession()) {

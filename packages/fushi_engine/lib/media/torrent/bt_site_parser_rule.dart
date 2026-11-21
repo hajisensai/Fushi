@@ -59,6 +59,32 @@ import 'package:fushi_engine/media/torrent/bt_site_config.dart'
 const String kBtSiteParserRuleMarker = 'fushiBtSiteParser';
 const int kBtSiteParserRuleVersion = 1;
 
+/// 通用规则模板：app 设置对话框的「怎么写解析规则」与服务端 WebUI 都直接展示 /
+/// 填入这一份。只用占位选择器、不对应任何真实站点（所有者 2026-11 拍板：给通用
+/// 写法，不维护逐站示例——站点改版就失效）。必须能被 [BtSiteParserRule.fromJson]
+/// 解析，`custom_bt_site_test.dart` 守着。
+const String kBtSiteParserRuleTemplate = r'''{
+  "fushiBtSiteParser": 1,
+  "name": "My tracker",
+  "encoding": "utf-8",
+  "search": "/search?q={query}",
+  "testQuery": "test",
+  "rows": "table.results tbody tr",
+  "fields": {
+    "title": "td.title a",
+    "details": "td.title a@href",
+    "magnet": "a[href^='magnet:']@href",
+    "torrent": "a[href$='.torrent']@href",
+    "size": "td.size",
+    "seeders": "td.seeders",
+    "leechers": "td.leechers"
+  },
+  "detail": {
+    "magnet": "a[href^='magnet:']@href",
+    "torrent": "a[href*='download']@href"
+  }
+}''';
+
 /// 规则能服务的媒体域：只有三个视频域（发现页走 Nyaa 式分类，不接自定义规则）。
 const Set<BtSiteDomain> kBtSiteParserDomains = <BtSiteDomain>{
   BtSiteDomain.anime,

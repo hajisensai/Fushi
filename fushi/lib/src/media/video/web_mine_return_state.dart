@@ -13,6 +13,7 @@ class WebMineReturnState {
     required this.positionMs,
     required this.siteTextTrack,
     required this.siteAudioTrack,
+    required this.playing,
   });
 
   /// 从站点状态快照取（[WebVideoPlaybackState.siteTrackCurrent] 等）。
@@ -23,7 +24,19 @@ class WebMineReturnState {
         positionMs: state.positionMs,
         siteTextTrack: state.siteTrackCurrent,
         siteAudioTrack: state.siteAudioTrackCurrent,
+        playing: state.isPlaying,
       );
+
+  /// 同一状态但要求停在暂停：空闲自动制卡（用户不在场）收尾 / 换回原档时一律用它——表面
+  /// 重建或换档后的整页重载会让站点自动播放，用户不在就是无人外放。
+  WebMineReturnState paused() => WebMineReturnState(
+    videoKey: videoKey,
+    href: href,
+    positionMs: positionMs,
+    siteTextTrack: siteTextTrack,
+    siteAudioTrack: siteAudioTrack,
+    playing: false,
+  );
 
   /// 重放前在看的视频（glue 的 videoKey）；重放导航到别的集后据此判断要不要先导航回来。
   final String videoKey;
@@ -39,6 +52,10 @@ class WebMineReturnState {
 
   /// 站点音轨 id；空串 = 未知（不动音轨）。
   final String siteAudioTrack;
+
+  /// 当时在播（true）还是暂停（false）。站点整页重载 / WebView 进程死后重建都会按站点自己的
+  /// 规则自动播放，不带着走的话原来暂停着的也会在回来时出声。
+  final bool playing;
 }
 
 /// 把 [want] 落到当前站点状态 [now] 上要做的动作；null = 那一项已经一致 / 无从恢复。
@@ -47,6 +64,7 @@ typedef WebMineRestorePlan = ({
   String? selectTextTrack,
   String? selectAudioTrack,
   int? seekMs,
+  bool? setPlaying,
 });
 
 /// [planWebMineRestore] 的位置容差：站点状态 250 ms 一拍，再加 seek 落点误差。
@@ -59,6 +77,7 @@ const int kWebMineRestoreSeekToleranceMs = 1500;
 ///   开着 → 下发空串（glue 选 none 轨）；[want] 的轨不在清单里（换集了）不动。
 /// - 音轨：同上，但空串 = 原来就不知道，永不下发。
 /// - 位置：差超过 [kWebMineRestoreSeekToleranceMs] 才 seek。
+/// - 播放 / 暂停：与 [WebMineReturnState.playing] 不一致就下发（true = 播放，false = 暂停）。
 WebMineRestorePlan planWebMineRestore(
   WebMineReturnState want,
   WebVideoPlaybackState now,
@@ -69,6 +88,7 @@ WebMineRestorePlan planWebMineRestore(
       selectTextTrack: null,
       selectAudioTrack: null,
       seekMs: null,
+      setPlaying: null,
     );
   }
   String? text;
@@ -93,11 +113,15 @@ WebMineRestorePlan planWebMineRestore(
       (pos == null || (pos - target).abs() > kWebMineRestoreSeekToleranceMs)) {
     seek = target;
   }
+  final bool? playing = now.hasVideo && now.isPlaying != want.playing
+      ? want.playing
+      : null;
   return (
     navigateHref: null,
     selectTextTrack: text,
     selectAudioTrack: audio,
     seekMs: seek,
+    setPlaying: playing,
   );
 }
 
@@ -106,7 +130,8 @@ bool webMineRestoreDone(WebMineRestorePlan plan) =>
     plan.navigateHref == null &&
     plan.selectTextTrack == null &&
     plan.selectAudioTrack == null &&
-    plan.seekMs == null;
+    plan.seekMs == null &&
+    plan.setPlaying == null;
 
 /// 每项恢复动作（选字幕轨 / 选音轨 / seek）最多下发几次：首发 + 一次补发。
 const int kWebMineRestoreMaxAttempts = 2;
@@ -153,6 +178,7 @@ class WebMineRestoreTracker {
         selectTextTrack: null,
         selectAudioTrack: null,
         seekMs: null,
+        setPlaying: null,
       );
     }
     // seek：位置已知且在容差内即对齐；轨：发过之后计划里不再有它即对齐（没发过时计划为空
@@ -163,6 +189,11 @@ class WebMineRestoreTracker {
     }
     if (plan.selectAudioTrack == null && _sent.containsKey('audio')) {
       _settled.add('audio');
+    }
+    // 播放 / 暂停：同轨，发过之后观察到一致才算对齐（之后用户自己按播放 / 暂停不再被拉回）。
+    // 没发过时一致不算：重建 / 重载的页面常是先报暂停、过一会儿才自动播放。
+    if (plan.setPlaying == null && _sent.containsKey('play')) {
+      _settled.add('play');
     }
     bool exhausted = true;
     bool allow(String key, Object? value) {
@@ -186,12 +217,16 @@ class WebMineRestoreTracker {
         ? plan.selectAudioTrack
         : null;
     final int? seek = allow('seek', plan.seekMs) ? plan.seekMs : null;
+    final bool? playing = allow('play', plan.setPlaying)
+        ? plan.setPlaying
+        : null;
     if (exhausted) return null;
     return (
       navigateHref: null,
       selectTextTrack: text,
       selectAudioTrack: audio,
       seekMs: seek,
+      setPlaying: playing,
     );
   }
 
@@ -200,5 +235,6 @@ class WebMineRestoreTracker {
     selectTextTrack: null,
     selectAudioTrack: null,
     seekMs: null,
+    setPlaying: null,
   );
 }

@@ -21,8 +21,8 @@ jobs:
   build:
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
-      - uses: msys2/setup-msys2@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
         with:
           msystem: MINGW64
           update: true
@@ -54,7 +54,7 @@ jobs:
           test "$(find out/bin -maxdepth 1 -type f -name '*.dll' | wc -l)" -eq 1
           ! ldd out/bin/libplacebo-*.dll | grep -qi '/mingw64/'
           objdump -p out/bin/libplacebo-*.dll | grep -E 'pl_d3d11_create|pl_mpv_user_shader_parse|pl_render_image|pl_log_create_'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: libplacebo-win-x64
           path: out

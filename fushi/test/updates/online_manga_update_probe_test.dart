@@ -8,10 +8,13 @@ import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/updates/update_probes.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 
-/// 在线漫画探针的订阅自动下载（设计稿 2026-09-12 §5）：真 in-memory DB +
-/// 真 `OnlineMangaLibraryService`，只把运行时换成可编排的假 adapter。
+/// 在线漫画订阅自动下载（设计稿 2026-09-12 §5；拍板
+/// design-nmv-series-refresh-autodl 选 a）：入队挂在书架服务的落库之后，后台探针
+/// 与作品页刷新同走一处。真 in-memory DB + 真 `OnlineMangaLibraryService`，只把
+/// 运行时换成可编排的假 adapter。
 void main() {
   const OnlineMangaChapter c1 = OnlineMangaChapter(
     key: '/chapter/1',
@@ -53,6 +56,7 @@ void main() {
   late OnlineMangaLibraryService service;
   late List<({String seriesKey, List<String> chapterKeys})> enqueued;
   late List<({Object error, String bookKey})> errors;
+  late OnlineMangaAutoDownload enqueueHook;
 
   Future<void> autoDownload(
     OnlineMangaLibraryEntry entry,
@@ -97,13 +101,18 @@ void main() {
     EpubStorage.debugBaseDirectoryOverride = root.path;
     database = FushiDatabase.forTesting(NativeDatabase.memory());
     adapter = _ScriptedAdapter();
+    enqueueHook = autoDownload;
     service = OnlineMangaLibraryService(
       database: database,
       rootDirectory: root,
       adapter: adapter,
+      autoDownload:
+          (OnlineMangaLibraryEntry entry, List<OnlineMangaChapter> chapters) =>
+              enqueueHook(entry, chapters),
     );
     enqueued = <({String seriesKey, List<String> chapterKeys})>[];
     errors = <({Object error, String bookKey})>[];
+    await ErrorLogService.instance.clear();
   });
 
   tearDown(() async {
@@ -133,7 +142,6 @@ void main() {
     final int refreshed = await runOnlineMangaUpdateProbe(
       database: database,
       serviceFor: (OnlineMangaRuntimeKind _) => service,
-      autoDownload: autoDownload,
       onError: onError,
     );
 
@@ -153,6 +161,75 @@ void main() {
     expect((await stored(keyA)).autoDownload, isTrue, reason: '探针刷新不冲掉订阅');
   });
 
+  // BUG-5024（gap-mangamisc-1）：探针开跑时读的快照在刷新的几秒里会过时。
+  test('刷新途中用户关了自动下载 / 作品页已把新章刷进库：探针按库里的描述符办', () async {
+    final String key = await addBook(
+      entryFor('/series/a', chapters: const <OnlineMangaChapter>[c2, c1]),
+      autoDownload: true,
+    );
+    adapter.script = (OnlineMangaLibraryEntry entry) async {
+      // 探针的快照是 [c2, c1] + autoDownload；源答话之前作品页先刷进了 c3、
+      // 用户又关掉了自动下载。
+      await service.refresh(
+        bookKey: key,
+        existing: entry,
+        series: entry.series,
+        chapters: const <OnlineMangaChapter>[c3, c2, c1],
+      );
+      await service.setSubscription(
+        bookKey: key,
+        entry: await stored(key),
+        subscribed: true,
+        autoDownload: false,
+      );
+      return OnlineMangaRefreshResult(
+        series: entry.series,
+        chapters: const <OnlineMangaChapter>[c3, c2, c1],
+      );
+    };
+    await runOnlineMangaUpdateProbe(
+      database: database,
+      serviceFor: (OnlineMangaRuntimeKind _) => service,
+      onError: onError,
+    );
+    expect(errors, isEmpty);
+    // 作品页那次刷新时自动下载还开着，c3 由它入队（拍板 design-nmv-series-refresh-autodl）；
+    // 探针这次落库时自动下载已关、c3 也不是相对库里的新章，不得再入队。
+    expect(enqueued, hasLength(1), reason: '只有作品页那次刷新入队');
+    expect(enqueued.single.chapterKeys, <String>['/chapter/3']);
+    final OnlineMangaLibraryEntry after = await stored(key);
+    expect(after.autoDownload, isFalse, reason: '探针的旧快照把自动下载写回了 true');
+    expect(after.subscribed, isTrue);
+    expect(after.chapters, hasLength(3));
+  });
+
+  test('刷新途中用户关了自动下载：新章照常落库但不入队', () async {
+    final String key = await addBook(
+      entryFor('/series/a', chapters: const <OnlineMangaChapter>[c2, c1]),
+      autoDownload: true,
+    );
+    adapter.script = (OnlineMangaLibraryEntry entry) async {
+      await service.setSubscription(
+        bookKey: key,
+        entry: await stored(key),
+        subscribed: true,
+        autoDownload: false,
+      );
+      return OnlineMangaRefreshResult(
+        series: entry.series,
+        chapters: const <OnlineMangaChapter>[c3, c2, c1],
+      );
+    };
+    await runOnlineMangaUpdateProbe(
+      database: database,
+      serviceFor: (OnlineMangaRuntimeKind _) => service,
+      onError: onError,
+    );
+    expect(errors, isEmpty);
+    expect(enqueued, isEmpty, reason: '落库时库里的自动下载位已是关');
+    expect((await stored(key)).chapters, hasLength(3));
+  });
+
   test('新出现多章时按旧→新章序入队', () async {
     await addBook(
       entryFor('/series/a', chapters: const <OnlineMangaChapter>[c1]),
@@ -167,7 +244,6 @@ void main() {
     await runOnlineMangaUpdateProbe(
       database: database,
       serviceFor: (OnlineMangaRuntimeKind _) => service,
-      autoDownload: autoDownload,
       onError: onError,
     );
 
@@ -193,7 +269,6 @@ void main() {
     final int refreshed = await runOnlineMangaUpdateProbe(
       database: database,
       serviceFor: (OnlineMangaRuntimeKind _) => service,
-      autoDownload: autoDownload,
       onError: onError,
     );
 
@@ -217,13 +292,12 @@ void main() {
     final int refreshed = await runOnlineMangaUpdateProbe(
       database: database,
       serviceFor: (OnlineMangaRuntimeKind _) => service,
-      autoDownload: autoDownload,
     );
     expect(refreshed, 1);
     expect(enqueued, isEmpty);
   });
 
-  test('不传 autoDownload 回调时探针照常刷新、不炸', () async {
+  test('服务没装 autoDownload 回调时探针照常刷新、不炸', () async {
     await addBook(
       entryFor('/series/a', chapters: const <OnlineMangaChapter>[c2, c1]),
       autoDownload: true,
@@ -233,11 +307,63 @@ void main() {
           series: entry.series,
           chapters: const <OnlineMangaChapter>[c3, c2, c1],
         );
+    final OnlineMangaLibraryService bare = OnlineMangaLibraryService(
+      database: database,
+      rootDirectory: root,
+      adapter: adapter,
+    );
     final int refreshed = await runOnlineMangaUpdateProbe(
       database: database,
-      serviceFor: (OnlineMangaRuntimeKind _) => service,
+      serviceFor: (OnlineMangaRuntimeKind _) => bare,
     );
     expect(refreshed, 1);
+    expect(enqueued, isEmpty);
+  });
+
+  // 拍板 design-nmv-series-refresh-autodl（选 a）：作品页 / 历史页刷新先发现的
+  // 新章也要自动下载；只在探针里入队时，这些章探针再看已不算「新」，永远漏下。
+  test('作品页刷新先发现新章：订阅了自动下载就入队，之后探针不重复入队', () async {
+    final String key = await addBook(
+      entryFor('/series/a', chapters: const <OnlineMangaChapter>[c2, c1]),
+      autoDownload: true,
+    );
+    adapter.script = (OnlineMangaLibraryEntry entry) async =>
+        OnlineMangaRefreshResult(
+          series: entry.series,
+          chapters: const <OnlineMangaChapter>[c3, c2, c1],
+        );
+
+    // 作品页 `_refreshFromSource` 走的就是这个口。
+    final OnlineMangaLibraryEntry updated = await service.refreshFromSource(
+      bookKey: key,
+      entry: await stored(key),
+    );
+    expect(updated.chapters, hasLength(3));
+    expect(enqueued, hasLength(1));
+    expect(enqueued.single.seriesKey, '/series/a');
+    expect(enqueued.single.chapterKeys, <String>['/chapter/3']);
+
+    await runOnlineMangaUpdateProbe(
+      database: database,
+      serviceFor: (OnlineMangaRuntimeKind _) => service,
+      onError: onError,
+    );
+    expect(errors, isEmpty);
+    expect(enqueued, hasLength(1), reason: 'c3 已入过队，探针不得再排一遍');
+  });
+
+  test('作品页刷新：没订阅自动下载的条目不入队', () async {
+    final String key = await addBook(
+      entryFor('/series/a', chapters: const <OnlineMangaChapter>[c2, c1]),
+    );
+    adapter.script = (OnlineMangaLibraryEntry entry) async =>
+        OnlineMangaRefreshResult(
+          series: entry.series,
+          chapters: const <OnlineMangaChapter>[c3, c2, c1],
+        );
+    await service.refreshFromSource(bookKey: key, entry: await stored(key));
+    expect(enqueued, isEmpty);
+    expect((await stored(key)).chapters, hasLength(3));
   });
 
   test('一条刷新抛错 → onError 收到它的 bookKey，其它条目照常刷新入队', () async {
@@ -266,7 +392,6 @@ void main() {
     final int refreshed = await runOnlineMangaUpdateProbe(
       database: database,
       serviceFor: (OnlineMangaRuntimeKind _) => service,
-      autoDownload: autoDownload,
       onError: onError,
     );
 
@@ -281,8 +406,8 @@ void main() {
     expect((await stored(keyB)).chapters, hasLength(3));
   });
 
-  test('autoDownload 回调自己抛错也只算这一条失败，不阻断后面的条目', () async {
-    await addBook(
+  test('入队抛错记进错误日志：章表已落库、刷新照算成功，不阻断后面的条目', () async {
+    final String keyA = await addBook(
       entryFor('/series/a', chapters: const <OnlineMangaChapter>[c2, c1]),
       autoDownload: true,
     );
@@ -296,23 +421,36 @@ void main() {
           chapters: const <OnlineMangaChapter>[c3, c2, c1],
         );
 
-    await runOnlineMangaUpdateProbe(
+    enqueueHook =
+        (
+          OnlineMangaLibraryEntry entry,
+          List<OnlineMangaChapter> chapters,
+        ) async {
+          if (entry.series.key == '/series/a') throw StateError('queue full');
+          await autoDownload(entry, chapters);
+        };
+
+    final int refreshed = await runOnlineMangaUpdateProbe(
       database: database,
       serviceFor: (OnlineMangaRuntimeKind _) => service,
-      autoDownload:
-          (
-            OnlineMangaLibraryEntry entry,
-            List<OnlineMangaChapter> chapters,
-          ) async {
-            if (entry.series.key == '/series/a') throw StateError('queue full');
-            await autoDownload(entry, chapters);
-          },
       onError: onError,
     );
 
-    expect(errors, hasLength(1));
-    expect(errors.single.error, isA<StateError>());
+    expect(refreshed, 2, reason: '刷新本身成功，入队失败不该把这条算成没刷到');
+    expect(errors, isEmpty);
+    expect(
+      ErrorLogService.instance.entries
+          .where(
+            (ErrorLogEntry e) =>
+                e.source.startsWith('OnlineMangaLibraryService.autoDownload') &&
+                e.error.contains('queue full'),
+          )
+          .length,
+      1,
+      reason: '入队失败要留痕，不能静默吞掉',
+    );
     expect(enqueued.single.seriesKey, '/series/b');
+    expect((await stored(keyA)).chapters, hasLength(3));
     expect((await stored(keyB)).chapters, hasLength(3));
   });
 }

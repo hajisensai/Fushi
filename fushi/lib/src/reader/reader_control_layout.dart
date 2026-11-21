@@ -72,6 +72,13 @@ enum ReaderControlItem implements ControlItemSpec<ReaderControlSlot> {
   /// （宽窗 / 窄窗都是）；存量布局 JSON 缺这颗时按出厂表回填到「更多」。
   bookmarks('bookmarks', recoverySlot: ReaderControlSlot.topRight),
 
+  /// 跳转记录面板（返回 / 前进历史的完整列表）。出厂在「更多」（宽窗 / 窄窗都是，
+  /// 与改造前写死在 ⋯ 里的位置一致）；可拖去顶栏 / 底栏。没跳转过时照常显示、置灰，
+  /// 不消失（与歌词模式 `LyricsControlItem.jumpHistory` 同一口径，拍板台 ymMpf0raAu）。
+  /// 存量布局 JSON 缺这颗时按出厂表回填到「更多」。顶栏最前的 ↶ / ↷ 是另一套
+  /// （设置「跳转记录 → 顶栏按钮」），不归布局管。
+  jumpHistory('jumpHistory', recoverySlot: ReaderControlSlot.topRight),
+
   /// 插图册。
   gallery('gallery', recoverySlot: ReaderControlSlot.topLeft),
 
@@ -236,7 +243,8 @@ class ReaderControlLayout {
 
   /// 宽窗（≥ [kReaderControlCompactWidth]）出厂布局（2026-10 工具栏精简，按使用频率
   /// 重排）：左「← 返回」，中「书名」（点它 = 打开导航），右主操作组「导航 /
-  /// 有声书 / 阅读设置」；中频的「歌词模式 / 统计 / 插图 / 全屏 / 书签」收进「更多」；
+  /// 有声书 / 阅读设置」；中频的「歌词模式 / 统计 / 插图 / 全屏 / 书签 / 跳转记录」收进
+  /// 「更多」；
   /// 计时 / 开关栏 / 有声书传输键留在托盘（传输键由播放条与 FAB 承担）。
   ///
   /// 只影响**没有存过布局**的用户：存量布局 JSON 把每颗按钮都显式列在某个槽或
@@ -260,6 +268,7 @@ class ReaderControlLayout {
           ReaderControlItem.gallery,
           ReaderControlItem.fullscreen,
           ReaderControlItem.bookmarks,
+          ReaderControlItem.jumpHistory,
         ],
       },
     ),
@@ -287,6 +296,7 @@ class ReaderControlLayout {
           ReaderControlItem.gallery,
           ReaderControlItem.fullscreen,
           ReaderControlItem.bookmarks,
+          ReaderControlItem.jumpHistory,
         ],
       },
     ),

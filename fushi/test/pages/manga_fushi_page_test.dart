@@ -30,6 +30,7 @@ import 'package:fushi/src/media/manga/reader/manga_reader_chrome.dart'
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show FushiToolbarItem;
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRgbaImage;
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/src/pages/implementations/manga_fushi_page.dart';
@@ -147,6 +148,13 @@ class _AutoOcrAppModel extends _MangaTestAppModel {
 /// 系统 OCR / Lens 两个整卷 runner 的 fake：记下每次整卷请求，事件由测试推。
 class _FakeVolumeRunner
     implements SystemOcrMangaRunner, GoogleLensMangaOcrRunner {
+  @override
+  Future<MokuroImage> recognizePagePixels(
+    OcrRgbaImage image, {
+    required String relativeUrl,
+    required String language,
+  }) => throw UnimplementedError();
+
   final List<(String, int)> requests = <(String, int)>[];
   final StreamController<MangaOcrVolumeEvent> events =
       StreamController<MangaOcrVolumeEvent>.broadcast();

@@ -63,9 +63,18 @@ use rusqlite::Connection;
 /// 「设备下标 × 2^40 + seq」，不随落库单调，晚到的低下标设备的日志会落在游标之前）；G7-4g 起 `40019`
 /// （AnkiConnect 数字 id 的成员反查表 `anki_members` 与它按笔记维护用的 `anki_members_note`——`cmd/columns.rs`
 /// 按号点查，不再扫别名表逐个算号，`cache.rs` 文件头「表」；`entity_count {kind, limit}` 按种类数到 `limit` 就停用的
-/// `ent_ix` 部分索引 `ent_kind`，`cmd/reads.rs` `each_class`）；G8-3 修复起 `40020`（`media_seen` 从每作者一个水位
-/// 改成按代号一行的集合，主键多一列 `gen`）。整批推送前每个改表的 PR 各自用分到的号。
-pub const SCHEMA: i64 = 40_020;
+/// `ent_ix` 部分索引 `ent_kind`，`cmd/reads.rs` `each_class`）；G8-7b 起 `40021`（转发要的作者段原文 `relay_segs`，
+/// [SYNC]，`cmd/sync_relay.rs`；没有显式索引，[PLANNER_STATS] 不变；40020 预分配给同批别的 PR）；第五波 G9 身份收尾起
+/// `40023`（实体归属闸 `cmd/writes_owner.rs` 按 ID 跨集合查：`ent_ix` 的 `ent_id`、`alias_ix` 的 `alias_canon_any`、
+/// 缓存层 `cards` 的 `cards_id` 三个索引；40022 预分配给同批别的 PR）；第五波 K2 根治起 `40024`（重切的材料
+/// `relay_auth` / `relay_stubs`，[SYNC]，`sync_state.rs`；主键点查与主键前缀，没有显式索引，[PLANNER_STATS] 不变）；
+/// 第六波转发收尾起 `40026`（重切件的停放 `relay_park`，[SYNC]，`cmd/sync_park.rs`：读者记下一个位置上的重切件在等
+/// 哪条 Purge / 哪台设备的信任变化，只在那件事发生时再拉；主键点查与主键前缀，没有显式索引，[PLANNER_STATS] 不变；
+/// 40025 分给同批别的 PR、最后没用）；第六波合流起 `40027`（`40026` 的形状再加 develop 上 G8-3 修复的 `media_seen`
+/// 按代号一行的集合、主键多一列 `gen`——那次修复在 develop 上单独用了 `40020`，与本线 40020 的预分配撞号，合流后
+/// 两边的表合起来才是终态，另起新号，不复用任何一边进过构建的号）。
+/// 整批推送前每个改表的 PR 各自用分到的号。
+pub const SCHEMA: i64 = 40_027;
 
 /// 新代的号段从这里起：`schema` 小于它的都不是新代库（协议 3 的 1～29 与封存值 39999）。
 pub const GEN_FLOOR: i64 = 40_000;
@@ -206,7 +215,10 @@ CREATE TABLE IF NOT EXISTS op_forks (
 /// - `media_listed`：哪些「位置/媒体目录」有人完整列举过（协议 3 的 SEEDED）；`pend` = 是本机列的、还没随清单发出。
 /// - `media_gen`：本机在每个位置上已预留的最大清单代号（只升不降，换根 / 对账也不清：一个代号只对应一个文件）。
 /// - `loc_state`：每个位置的加密记忆（`location_seal`）：`loc_ids` = 位置 ID 的 JSON，`sealed` 0/1，`kdf` = 派生参数 JSON，
-///   `check_` = 口令校验串，`last_ok` = 上次核对通过的时刻。
+///   `check_` = 口令校验串，`last_ok` = 本机最近一次在这个位置上跑完一轮的时刻（G8-7b 起由 `cmd/sync.rs` `head`
+///   记，写了 head 或判定不变都算；判定不变、离上次记不满一天时不为它开写事务，所以最多滞后一天）。转发的活跃窗口
+///   （`cmd/sync_relay.rs`）只认它；迁移灌入（`carry.rs`）与别的命令（`cmd/sync.rs` 记 loc 标记、`location_seal`）新建的行是空的。不再是协议 3
+///   「上次口令核对通过」的意思（列名冻结）。
 pub(crate) const LOCAL: &str = "
 CREATE TABLE IF NOT EXISTS self_ (
   col INTEGER PRIMARY KEY,
@@ -307,6 +319,19 @@ CREATE TABLE IF NOT EXISTS loc_state (
 /// - `relay_out`：本机转发到各位置的文件（`rly-` 中继件 / `rhd-` 转发 head）与当时转发的 head 代号；`gone` = 1 是被更新的
 ///   转发取代、等调用方删掉位置上的文件（两段式删除，协议 3 `sync2_relay_out` + `sync2_relay_gone`）。
 /// - `oldroot_fp`：每个位置旧根（`v3/`）上一次核对时的清单指纹与时刻（设计 §6.2 第 4 步「每轮核对旧根」）。
+/// - `relay_segs`（G8-7b 起）：收段时留下的、可以转发给别的位置的作者段原文（不封装的中继件 `FRL4`，`piece`），按
+///   （作者, 区间, 链尾标签）唯一；每个位置都有了就删（`cmd/sync_relay.rs`）。行里是几 KB 到几 MB 的 blob，所以是普通
+///   rowid 表（唯一约束的自动索引承担全部查找：前缀 `(col, device)` 与整键等值），不用 `WITHOUT ROWID`。协议 3
+///   `sync2_relay_segs` 的对应物。
+/// - `relay_auth`（第五波 K2 根治起）：收下的别的设备的每一段的作者签名、原段头与作者签的空洞（`voids` =
+///   `n uv | (起始 seq uv | 条数 uv | 区间末链值[32]) × n`），同一区间只留作者签的空洞最多的那份。本机清除了这位作者的
+///   操作之后从日志重切这一段（`gen4/recut.rs` 的 `FRX4` 带作者原签名）用（`sync_state.rs` `recut_from_log`）。
+/// - `relay_stubs`（同上）：被挖掉的别的设备的操作的剔除记录（`gen4/recut.rs` `Stub` 的独立编码：信封、载荷哈希、
+///   清除目标、清掉它的 Purge），按操作主键 `k`。本机清除别人的操作时（`truth.rs` `advance_purge`）与收重切件落下别人
+///   挖掉的那些时写；重切要它把被挖掉的那一项照样算进作者签名的摘要与链里。
+/// - `relay_park`（第六波起）：一个位置上收不了的重切件（`FRX4`）在等什么——等一条本机还没有的 Purge（`wait` /
+///   `wait_seq` > 0）或一台设备的信任状态变化（`wait_seq` = 0，`trust` = 停放时的状态，0 = 可信）；按 (集合, 位置,
+///   作者, 文件名) 一行，`last` = 件的区间末尾。`plan` 对被转发来的 head 只在等的事发生之后才再拉这一件（`cmd/sync_park.rs`）。
 pub(crate) const SYNC: &str = "
 CREATE TABLE IF NOT EXISTS loc_heads (
   col INTEGER NOT NULL,
@@ -334,6 +359,41 @@ CREATE TABLE IF NOT EXISTS relay_out (
   gone INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (col, loc_key, device, name)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS relay_segs (
+  id INTEGER PRIMARY KEY,
+  col INTEGER NOT NULL,
+  device BLOB NOT NULL,
+  first INTEGER NOT NULL,
+  last INTEGER NOT NULL,
+  tag TEXT NOT NULL,
+  piece BLOB NOT NULL,
+  UNIQUE (col, device, first, last, tag)
+);
+CREATE TABLE IF NOT EXISTS relay_auth (
+  col INTEGER NOT NULL,
+  device BLOB NOT NULL,
+  first INTEGER NOT NULL,
+  last INTEGER NOT NULL,
+  head BLOB NOT NULL,
+  sig BLOB NOT NULL,
+  voids BLOB NOT NULL,
+  PRIMARY KEY (col, device, first, last)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS relay_stubs (
+  k INTEGER PRIMARY KEY,
+  stub BLOB NOT NULL
+);
+CREATE TABLE IF NOT EXISTS relay_park (
+  col INTEGER NOT NULL,
+  loc_key TEXT NOT NULL,
+  device BLOB NOT NULL,
+  name TEXT NOT NULL,
+  last INTEGER NOT NULL,
+  wait BLOB NOT NULL,
+  wait_seq INTEGER NOT NULL,
+  trust INTEGER NOT NULL,
+  PRIMARY KEY (col, loc_key, device, name)
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS oldroot_fp (
   col INTEGER NOT NULL,
   loc_key TEXT NOT NULL,
@@ -354,6 +414,9 @@ CREATE TABLE IF NOT EXISTS ent_ix (
   PRIMARY KEY (col, id, k)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS ent_kind ON ent_ix (col, kind, id) WHERE win = 1;
+-- 实体归属闸（cmd/writes_owner.rs）：按 ID 问别的集合有没有它的身份记录。部分索引的条件 col > 0 只有归属闸的查询写
+-- （集合号从 1 起，恒成立）：带 col = ? 的既有查询推不出它、用不上这个索引，计划不受影响。
+CREATE INDEX IF NOT EXISTS ent_id ON ent_ix (id) WHERE col > 0;
 CREATE TABLE IF NOT EXISTS reg_ix (
   col INTEGER NOT NULL,
   ekind INTEGER NOT NULL,
@@ -449,6 +512,8 @@ CREATE TABLE IF NOT EXISTS alias_ix (
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS alias_canon ON alias_ix (col, canon, id) WHERE canon != id;
 CREATE INDEX IF NOT EXISTS alias_pool ON alias_ix (col, id) WHERE how >= 3;
+-- 实体归属闸（cmd/writes_owner.rs）：按规范 ID 问别的集合里有没有它的成员（迁移来的带盐存量）。col > 0 同 ent_id。
+CREATE INDEX IF NOT EXISTS alias_canon_any ON alias_ix (canon) WHERE canon != id AND col > 0;
 CREATE TABLE IF NOT EXISTS alias_writer_ix (
   col INTEGER NOT NULL,
   name TEXT NOT NULL,
@@ -591,8 +656,9 @@ pub(crate) fn check_ready(conn: &Connection) -> Result<(), String> {
 /// 平均剩下的行数；`WITHOUT ROWID` 表的主键那一行 `idx` = 表名。量级取样本库，数字只表达形状、不随数据更新：计划因此
 /// 是 schema 的函数，不因某台设备数据多少而变（`tests::lookups_with_a_key_never_walk_the_whole_collection` 钉住）。
 /// 对这个文件跑 `ANALYZE` / `PRAGMA optimize` 会把它们换成随数据变的统计——下次打开时 [install] 会写回来。
-const PLANNER_STATS: [(&str, &str, &str); 42] = [
+const PLANNER_STATS: [(&str, &str, &str); 45] = [
     ("alias_ix", "alias_canon", "1000000 1000000 2 1"),
+    ("alias_ix", "alias_canon_any", "1000000 2"),
     ("alias_ix", "alias_ix", "1000000 1000000 1"),
     ("alias_ix", "alias_pool", "5000 5000 1"),
     ("anki_members", "anki_members", "100000 100000 50000 1 1"),
@@ -601,6 +667,7 @@ const PLANNER_STATS: [(&str, &str, &str); 42] = [
     ("cards", "cards", "100000 100000 1"),
     ("cards", "cards_anki", "100000 100000 1"),
     ("cards", "cards_deck", "100000 100000 5000"),
+    ("cards", "cards_id", "100000 2"),
     ("cards", "cards_learning", "500 500 2 1"),
     ("cards", "cards_new_freq", "30000 30000 15000 2 2 1 1"),
     ("cards", "cards_new_position", "30000 30000 15000 2 1"),
@@ -609,6 +676,7 @@ const PLANNER_STATS: [(&str, &str, &str); 42] = [
     ("cards", "cards_tally", "100000 100000 5000 1500 20"),
     ("cards", "cards_template", "100000 100000 5000"),
     ("dg_ix", "dg_ix", "200000 200000 40000 1"),
+    ("ent_ix", "ent_id", "50000 2"),
     ("ent_ix", "ent_ix", "50000 50000 1 1"),
     ("ent_ix", "ent_kind", "40000 40000 10000 1"),
     ("ent_ops", "ent_ops", "1000000 1000000 500000 20 20 1"),
@@ -721,7 +789,20 @@ pub fn open(path: &Path) -> Result<Connection, String> {
     conn.busy_timeout(BUSY_TIMEOUT).map_err(sql)?;
     check_kind(&conn)?;
     configure(&conn)?;
-    in_write_tx(&conn, install)?;
+    in_write_tx(&conn, |c| {
+        // 还没有任何表 = 这一笔建库：从第一页起就开着 `secure_delete`，记下来（`scrub.rs` 第 3 条：有这个标记的库
+        // 清除时不必整库整理）。
+        let born = !c
+            .query_row("SELECT EXISTS (SELECT 1 FROM sqlite_schema)", [], |r| {
+                r.get::<_, bool>(0)
+            })
+            .map_err(sql)?;
+        install(c)?;
+        if born {
+            super::scrub::mark_secure_from_birth(c)?;
+        }
+        Ok(())
+    })?;
     Ok(conn)
 }
 
@@ -771,6 +852,13 @@ pub(crate) fn configure(conn: &Connection) -> Result<(), String> {
     }
     conn.execute_batch("PRAGMA synchronous = NORMAL; PRAGMA cache_size = -16384;")
         .map_err(sql)?;
+    // 删行 / 改行 / 释放页时把旧内容写零（彻底清除的字节层，`scrub.rs`）。按连接生效，每条写连接都经这里。
+    let on: i64 = conn
+        .query_row("PRAGMA secure_delete = ON", [], |r| r.get(0))
+        .map_err(sql)?;
+    if on != 1 {
+        return Err(format!("gen4 store: secure_delete is {on}, expected 1"));
+    }
     Ok(())
 }
 
@@ -1043,7 +1131,7 @@ mod tests {
                 .collect::<Result<_, _>>()
                 .unwrap()
         };
-        let want: [(&str, &[&str]); 15] = [
+        let want: [(&str, &[&str]); 19] = [
             (
                 "collections",
                 &[
@@ -1196,6 +1284,44 @@ mod tests {
                 ],
             ),
             (
+                "relay_segs",
+                &[
+                    "id INTEGER PK1",
+                    "col INTEGER NN",
+                    "device BLOB NN",
+                    "first INTEGER NN",
+                    "last INTEGER NN",
+                    "tag TEXT NN",
+                    "piece BLOB NN",
+                ],
+            ),
+            (
+                "relay_auth",
+                &[
+                    "col INTEGER NN PK1",
+                    "device BLOB NN PK2",
+                    "first INTEGER NN PK3",
+                    "last INTEGER NN PK4",
+                    "head BLOB NN",
+                    "sig BLOB NN",
+                    "voids BLOB NN",
+                ],
+            ),
+            ("relay_stubs", &["k INTEGER PK1", "stub BLOB NN"]),
+            (
+                "relay_park",
+                &[
+                    "col INTEGER NN PK1",
+                    "loc_key TEXT NN PK2",
+                    "device BLOB NN PK3",
+                    "name TEXT NN PK4",
+                    "last INTEGER NN",
+                    "wait BLOB NN",
+                    "wait_seq INTEGER NN",
+                    "trust INTEGER NN",
+                ],
+            ),
+            (
                 "oldroot_fp",
                 &[
                     "col INTEGER NN PK1",
@@ -1222,6 +1348,8 @@ mod tests {
             "loc_heads",
             "op_wait",
             "relay_out",
+            "relay_auth",
+            "relay_park",
             "oldroot_fp",
         ] {
             let sql: String = conn

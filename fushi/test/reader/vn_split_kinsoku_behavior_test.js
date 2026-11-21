@@ -4,8 +4,8 @@
 // 从生成的 VN shell 原文里切出 `splitScreenToViewport` 起到 `textItemsForScreen` 前的
 // 整段方法（含 viewportSplitKinsokuBoundary / 禁则字表 / 单元分组），只把量尺与屏描述
 // 换成替身：一屏装得下 = 字数 <= capacity。这样断言跑的是生产切点逻辑本身。
-const fs = require('fs');
-const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const { readPayload, compileScript } = require('./reader_harness_support.js');
+const data = readPayload();
 function assert(value, message) {
   if (!value) throw new Error(message);
 }
@@ -17,7 +17,11 @@ const start = shell.indexOf(startMarker);
 assert(start >= 0, 'splitScreenToViewport not found in the generated VN shell');
 const end = shell.indexOf(endMarker, start);
 assert(end > start, 'textItemsForScreen not found after splitScreenToViewport');
-const methods = new Function('return {' + shell.slice(start, end) + '\n};')();
+const methods = compileScript(
+  [],
+  'return {' + shell.slice(start, end) + '\n};',
+  'vn_split_kinsoku_behavior_test-1.js',
+)();
 
 function split(text, capacity) {
   const vn = Object.assign({}, methods, {

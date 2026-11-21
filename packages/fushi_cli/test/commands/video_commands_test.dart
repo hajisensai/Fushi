@@ -105,6 +105,44 @@ void main() {
       expect(cancel.path, '/api/admin/video/scrape/cancel');
     });
 
+    test('relations：POST 补齐系列关系，渲染 TMDB 与补填计数', () {
+      final CtlRequestSpec spec = _build('relations', <String>[]);
+      expect(spec.method, 'POST');
+      expect(spec.path, '/api/admin/video/relations/refresh');
+
+      final String full = _spec('relations').render!(<String, Object?>{
+        'tmdb': <String, Object?>{
+          'missing': 29,
+          'refreshed': 29,
+          'requests': 5,
+          'failed': 0,
+        },
+        'works': 40,
+        'worksWithRelations': 29,
+        'rows': 58,
+        'bound': 3,
+      });
+      expect(
+        full,
+        allOf(
+          contains('缺 29 部'),
+          contains('请求 5 次'),
+          contains('有关系 29 部'),
+          contains('写入 58 行'),
+          contains('新绑定 3 行'),
+        ),
+      );
+      expect(
+        _spec('relations').render!(<String, Object?>{
+          'works': 0,
+          'worksWithRelations': 0,
+          'rows': 0,
+          'bound': 0,
+        }),
+        contains('未配置 TMDB'),
+      );
+    });
+
     test('candidates：作品 id 编码进路径，provider 白名单', () {
       final CtlRequestSpec spec = _build('candidates', <String>[
         'book:a b',
