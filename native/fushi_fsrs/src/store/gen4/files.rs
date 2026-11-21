@@ -35,7 +35,7 @@
 //! - **Secondary**（查词弹窗等辅助进程，只读）：不建库、不迁移、不建表；没有新代库就按锁的状态报
 //!   [OpenError::Migrating] / [OpenError::NotMigrated]。打开的连接 `query_only`，写不进去。
 
-use std::fs::{File, OpenOptions, TryLockError};
+use std::fs::{File, OpenOptions};
 use std::path::Path;
 
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
@@ -65,7 +65,8 @@ pub const MIGRATED_FROM_KEY: &str = "migrated_from";
 /// 水位就对不上，不封（那几笔写入没进新代）。
 pub const MIGRATED_LOG_KEY: &str = "migrated_log";
 
-/// 换代锁：`srs.gen.lock` 上的跨进程独占文件锁（`File::try_lock`：Unix 上是 `flock`，Windows 上是 `LockFileEx`）。
+/// 换代锁：`srs.gen.lock` 上的跨进程独占文件锁（Unix / Android 直接调 `flock`，避免 Rust 标准库
+/// `File::try_lock` 在 Android 上返回 `try_lock() not supported`；Windows 用 `File::try_lock` / `LockFileEx`）。
 /// 句柄在就持有，drop 即释放；进程死掉时由操作系统释放。同一进程里另开一个句柄也拿不到。
 #[derive(Debug)]
 pub struct GenLock {
@@ -83,11 +84,44 @@ impl GenLock {
             .truncate(false)
             .open(&path)
             .map_err(|e| format!("gen4 lock: open {}: {e}", path.display()))?;
-        match file.try_lock() {
-            Ok(()) => Ok(Some(GenLock { _file: file })),
-            Err(TryLockError::WouldBlock) => Ok(None),
-            Err(TryLockError::Error(e)) => Err(format!("gen4 lock: lock {}: {e}", path.display())),
+        match try_lock_exclusive(&file) {
+            Ok(true) => Ok(Some(GenLock { _file: file })),
+            Ok(false) => Ok(None),
+            Err(e) => Err(format!("gen4 lock: lock {}: {e}", path.display())),
         }
+    }
+}
+
+/// 非阻塞独占锁：拿到 = `Ok(true)`，已被别的句柄持有 = `Ok(false)`。
+#[cfg(unix)]
+fn try_lock_exclusive(file: &File) -> std::io::Result<bool> {
+    use std::io::ErrorKind;
+    use std::os::fd::AsRawFd;
+
+    let fd = file.as_raw_fd();
+    loop {
+        // SAFETY: fd 来自有效打开的 File 句柄，本调用期间未被关闭；flock 仅操作内核文件锁。
+        if unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+            return Ok(true);
+        }
+        let err = std::io::Error::last_os_error();
+        match err.kind() {
+            ErrorKind::Interrupted => continue,
+            ErrorKind::WouldBlock => return Ok(false),
+            _ => return Err(err),
+        }
+    }
+}
+
+/// 非阻塞独占锁：拿到 = `Ok(true)`，已被别的句柄持有 = `Ok(false)`。
+#[cfg(not(unix))]
+fn try_lock_exclusive(file: &File) -> std::io::Result<bool> {
+    use std::fs::TryLockError;
+
+    match file.try_lock() {
+        Ok(()) => Ok(true),
+        Err(TryLockError::WouldBlock) => Ok(false),
+        Err(TryLockError::Error(e)) => Err(e),
     }
 }
 
