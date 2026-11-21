@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4417 条。点号进各自文件。
+> 共 4418 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5152](bugs/BUG-5152-windows-shader-multi-return-angle-crash.md) | 🚧 | 🚧 | Windows Impeller(ANGLE) 下带采样器且 main() 多处 return 的片元着色器可能让 d3dcompiler_47 崩溃（flutter#190809） |
 | [BUG-5148](bugs/BUG-5148-android-agp9-followup.md) | 🚧 | 🚧 | Flutter 3.50 下 Android 构建仍用即将停支持的 Gradle 9.3.1 / AGP 9.1.1 / KGP 2.4.10，且关着 built-in Kotlin / newDsl |
 | [BUG-5140](bugs/BUG-5140-favorite-sentence-recolor.md) | 🚧 | 🚧 | 收藏句改色：已收藏的书摘不能改颜色（同步缺颜色更新时间） |
 | [BUG-5088](bugs/BUG-5088-readintosync-blocks-gc-safepoint.md) | ✅ | ✅ | readintosync-blocks-gc-safepoint |
