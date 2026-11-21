@@ -9351,6 +9351,7 @@
   "shortcut_action_global_external_audiobook_prev_sentence": "Audiobook: previous sentence",
   "shortcut_action_global_external_audiobook_replay_sentence": "Audiobook: replay current sentence",
   "shortcut_action_global_external_floating_lyric_toggle": "Audiobook: show / hide floating subtitles",
+  "shortcut_action_global_external_galgame_overlay_toggle": "Galgame: show or hide the line overlay",
   "shortcut_action_global_external_galgame_speak_line": "Galgame: đọc to câu thoại hiện tại",
   "shortcut_action_global_external_lookup": "App-external lookup hotkey",
   "shortcut_action_global_external_open_lookup_page": "Đưa lên trước và mở trang tra từ",

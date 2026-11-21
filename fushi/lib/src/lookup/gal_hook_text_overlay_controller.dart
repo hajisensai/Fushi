@@ -1770,6 +1770,19 @@ class GalHookTextOverlayController extends ChangeNotifier {
     _scheduleSync();
   }
 
+  /// 全局快捷键「显示 / 隐藏台词浮窗」（反馈 fMicnouU6V）：可见就按浮窗「关闭」
+  /// 收起（[closeForCurrentSession]，本局不再自动弹），否则按「显示 Hook 浮窗」
+  /// 重新放出（[showManually]）。`_visible` 是 native 窗口的派生镜像（BUG-1981，
+  /// 窗口被外部销毁时由 `overlayDestroyed` 复位），据它判断当前是否可见。
+  Future<void> toggleVisibility() async {
+    if (!_started) return;
+    if (_visible) {
+      await closeForCurrentSession();
+    } else {
+      await showManually();
+    }
+  }
+
   Future<void> closeForCurrentSession() async {
     if (!_started) return;
     _suppressedForSession = true;
