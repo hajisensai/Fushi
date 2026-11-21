@@ -103,6 +103,16 @@ void main() {
       expect(mangaBlockAt(_image, const Offset(280, 350)), 2);
       expect(mangaBlockAt(_image, const Offset(700, 1000)), 1);
       expect(mangaBlockAt(_image, const Offset(500, 50)), isNull);
+      // zIndex 高的排在前面时也取它（不是靠「后画的在上」碰巧对）。
+      final MokuroImage reversed = MokuroImage(
+        url: 'p2.jpg',
+        size: const MokuroSize(1000, 1500),
+        blocks: <MokuroBlock>[
+          _block(250, 300, 350, 500, z: 2),
+          _block(100, 100, 300, 400),
+        ],
+      );
+      expect(mangaBlockAt(reversed, const Offset(280, 350)), 0);
     });
   });
 
