@@ -302,6 +302,86 @@ fn conflicts_across_alias_members_are_found_through_the_alias_branch() {
     });
 }
 
+/// 同一个实体上两个原值键（键里嵌的字段 ID 一个带盐、一个规范）归一成同一个规范键：按原值各是一个寄存器、各自只有
+/// 胜者，类里也只有这一个成员有行——候选靠「嵌 ID 的键归一后撞在一起」找到（`Reads::merged_key_candidates`）。
+/// 同值的并发写入（两台设备各写同一个所属牌组）不交回。
+#[test]
+fn conflicts_from_two_raw_keys_of_one_entity_are_found_and_same_value_writes_are_not() {
+    with(|t, col| {
+        let w = twin();
+        let cfg = json!({"defaultDeck": id(DECK).text()}).to_string();
+        t.tx(|t| {
+            t.set_derive_cfg(col, CFG_KEY, Some(&cfg))?;
+            let mut ix = Index::new(t, col);
+            let base = base_ops(&w);
+            for (i, b) in base.iter().enumerate() {
+                native(
+                    t,
+                    &mut ix,
+                    col,
+                    &op(0xa1, i as u64 + 1, 100 + i as i64, &[], b),
+                );
+            }
+            let seen = [base_seen(&w)];
+            let salted = set(
+                EntKind::Note,
+                u(w.note[0]),
+                &format!("f/{}", w.field[0].text()),
+                json!("A"),
+            );
+            let canon = set(
+                EntKind::Note,
+                u(w.note[0]),
+                &format!("f/{}", w.c_field.text()),
+                json!("B"),
+            );
+            native(t, &mut ix, col, &op(0xb1, 1, 300, &seen, &salted));
+            native(t, &mut ix, col, &op(0xb2, 1, 301, &seen, &canon));
+            let deck = set(EntKind::Note, u(w.note[0]), "deck", json!(id(DECK).text()));
+            native(t, &mut ix, col, &op(0xb1, 2, 302, &seen, &deck));
+            native(t, &mut ix, col, &op(0xb2, 2, 303, &seen, &deck));
+            ix.settle()?;
+            Ok(())
+        })
+        .unwrap();
+        let raw: i64 = t
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM reg_ix WHERE col = ?1 AND state = 3",
+                [col],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(raw, 0, "no raw conflict");
+        let rules = json!([{"kind": "note", "drop": []}]);
+        let (_, rows) = read(t, col, json!({"q": "conflict_edits", "rules": rules}));
+        let c_key = format!("f/{}", w.c_field.text());
+        assert_eq!(rows.len(), 2, "{rows:?}");
+        for r in &rows {
+            assert_eq!(
+                (r[0].as_str(), r[1].as_str(), r[2].as_str()),
+                ("note", w.c_note.text().as_str(), c_key.as_str())
+            );
+        }
+        let (_, one) = read(
+            t,
+            col,
+            json!({"q": "conflict_edits", "rules": rules, "kind": "note", "id": w.note[0].text()}),
+        );
+        assert_eq!(one, rows);
+        // 只追踪所属牌组：两条同值的写入都活着，但不是冲突。
+        let deck_only = json!([{"kind": "note", "keep": ["deck"]}]);
+        let (_, rows) = read(t, col, json!({"q": "conflict_edits", "rules": deck_only}));
+        assert!(rows.is_empty(), "{rows:?}");
+        let (_, edits) = read(
+            t,
+            col,
+            json!({"q": "edits", "kind": "note", "ids": [w.note[0].text()], "key": "deck"}),
+        );
+        assert_eq!(edits.len(), 2, "both same-value writes are live: {edits:?}");
+    });
+}
+
 #[test]
 fn logs_by_time_give_one_representative_per_class() {
     with(|t, col| {
@@ -1296,4 +1376,186 @@ fn preview_of_any_member_is_the_preview_of_the_canonical_card() {
         }
         assert!(t.conn().is_autocommit());
     });
+}
+
+/// 真库基准（手动跑，默认忽略）：`FUSHI_G4_BENCH_DB` 指向一份新代库的**副本**（会被 `schema::open` 装触发器 / 统计，
+/// 不要指向在用的库），量 `conflict_edits`（牌组列表冲突角标同一份规则：flag + setting 两类）与寄存器内核裁决的
+/// 耗时、行数，再与「修前」口径对拍裁决后的冲突集合：修前 = 旧候选（有 `R_LIVE` 写入的实体 ∪ 别名表里有别名的
+/// 实体）× 每个寄存器都按类重判（[Index::class_lines_by] 不走捷径）× 一个键上活着两条以上就交回。
+/// `FUSHI_G4_BENCH_LIMIT` = 修前只跑前 N 个候选（对拍限在这些实体上）；`FUSHI_G4_BENCH_SKIP_OLD` = 不跑修前。
+///
+/// ```text
+/// FUSHI_G4_BENCH_DB=<副本> cargo test --profile quick --lib real_db_conflict_edits_bench -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "needs FUSHI_G4_BENCH_DB (a copy of a real gen4 library)"]
+fn real_db_conflict_edits_bench() {
+    use std::collections::BTreeMap;
+    use std::time::Instant;
+
+    use crate::registers::registers_report;
+    use crate::store::gen4::class::Pick;
+    use crate::store::gen4::derive::Ref;
+    use crate::store::gen4::schema;
+
+    let path = std::env::var("FUSHI_G4_BENCH_DB").expect("FUSHI_G4_BENCH_DB");
+    let limit: Option<usize> = std::env::var("FUSHI_G4_BENCH_LIMIT")
+        .ok()
+        .map(|s| s.parse().unwrap());
+    let skip_old = std::env::var("FUSHI_G4_BENCH_SKIP_OLD").is_ok();
+    let conn = schema::open(std::path::Path::new(&path)).unwrap();
+    let t = Truth::new(&conn);
+    let col: i64 = conn
+        .query_row("SELECT MIN(col) FROM collections", [], |r| r.get(0))
+        .unwrap();
+    // Dart `srsFieldClassRules({flag, setting})`。
+    let rules = json!([
+        {"kind": "profile", "drop": []},
+        {"kind": "deck", "drop": ["collapsed", "position", "extendLimits"]},
+        {"kind": "notetype", "keep": ["name", "termField", "freqField"]},
+        {"kind": "note", "keep": ["deck", "noteType"]},
+        {"kind": "card", "drop": ["newPos"]},
+    ]);
+    // 一组 (k, i, f, j) 行 → 寄存器内核对每个寄存器的裁决：`k/i/f` → (活着的, 冲突, 可见败者)，按记录 ID。
+    type Verdicts = BTreeMap<String, (String, bool, String)>;
+    let judge = |rows: &[(String, String, String, String)]| -> Verdicts {
+        let mut by: BTreeMap<String, Vec<&str>> = BTreeMap::new();
+        for (k, i, f, j) in rows {
+            by.entry(format!("{k}/{i}/{f}")).or_default().push(j);
+        }
+        let mut out = Verdicts::new();
+        for (reg, js) in by {
+            let stored: Vec<crate::registers::StoredEdit<'_>> =
+                js.iter().map(|j| (*j, None, None)).collect();
+            let rep = registers_report(&stored).unwrap();
+            let r = &rep["regs"][0];
+            out.insert(
+                reg,
+                (r[1].to_string(), r[2].as_bool().unwrap(), r[3].to_string()),
+            );
+        }
+        out
+    };
+
+    // 修后：读命令本身。
+    let mut read_ms = Vec::new();
+    let mut rows = Vec::new();
+    for _ in 0..3 {
+        let started = Instant::now();
+        rows = read(&t, col, json!({"q": "conflict_edits", "rules": rules})).1;
+        read_ms.push(started.elapsed().as_millis());
+    }
+    let bytes: usize = rows.iter().flatten().map(String::len).sum();
+    let new_rows: Vec<(String, String, String, String)> = rows
+        .iter()
+        .map(|r| (r[0].clone(), r[1].clone(), r[2].clone(), r[3].clone()))
+        .collect();
+    let started = Instant::now();
+    let new_verdicts = judge(&new_rows);
+    let judge_ms = started.elapsed().as_millis();
+    println!(
+        "NEW conflict_edits: {read_ms:?} ms (cold, warm, warm), {} rows, {bytes} bytes, {} registers; kernel judge {judge_ms} ms; visible conflicts {}",
+        new_rows.len(),
+        new_verdicts.len(),
+        new_verdicts.values().filter(|v| v.2 != "[]").count()
+    );
+    for (reg, v) in &new_verdicts {
+        println!("  NEW register {reg} {v:?}");
+    }
+    if skip_old {
+        return;
+    }
+
+    // 修前口径。
+    let mut ix = Index::new(&t, col);
+    let parsed = reads::Rules::parse(&ix, &rules).unwrap();
+    let started = Instant::now();
+    let mut cands: BTreeSet<(i64, Ref)> = BTreeSet::new();
+    for q in [
+        "SELECT DISTINCT ekind, ent FROM reg_ix WHERE col = ?1 AND state = 1",
+        "SELECT DISTINCT r.ekind, a.id FROM alias_ix a CROSS JOIN reg_ix r \
+         ON r.col = a.col AND r.ent = a.id WHERE a.col = ?1 AND a.canon != a.id",
+    ] {
+        let mut stmt = conn.prepare(q).unwrap();
+        let got: Vec<(i64, Ref)> = stmt
+            .query_map([col], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        for (k, e) in got {
+            cands.insert((k, ix.canonical(&e).unwrap()));
+        }
+    }
+    let total = cands.len();
+    let cand_ms = started.elapsed().as_millis();
+    ix.pass_writers = Some(std::rc::Rc::new(ix.writer_aliases().unwrap()));
+    ix.pass_rules_begin().unwrap();
+    let mut old_rows: Vec<(String, String, String, String)> = Vec::new();
+    let mut covered: BTreeSet<String> = BTreeSet::new();
+    let started = Instant::now();
+    for (n, (k, c)) in cands.into_iter().enumerate() {
+        if limit.is_some_and(|l| n >= l) {
+            break;
+        }
+        let kind = EntKind::ALL.into_iter().find(|x| *x as i64 == k).unwrap();
+        covered.insert(format!("{}/{}", kind.wire(), c.text()));
+        let (lines, _) = ix.class_lines_by(kind, &c, &Pick::All, false).unwrap();
+        let mut by: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for (f, j, _) in lines {
+            if kind == EntKind::Note && f == "tags" {
+                continue;
+            }
+            by.entry(f).or_default().push(j);
+        }
+        for (f, js) in by {
+            if js.len() < 2 || !parsed.tracks(kind, &f) {
+                continue;
+            }
+            for j in js {
+                old_rows.push((kind.wire().to_owned(), c.text(), f.clone(), j));
+            }
+        }
+    }
+    let old_ms = started.elapsed().as_millis();
+    let old_verdicts = judge(&old_rows);
+    let old_bytes: usize = old_rows
+        .iter()
+        .map(|r| r.0.len() + r.1.len() + r.2.len() + r.3.len())
+        .sum();
+    println!(
+        "OLD (all class-judged, old candidates {total}, ran {}): candidates {cand_ms} ms + lines {old_ms} ms, {} rows, {old_bytes} bytes, {} registers; conflicted {}, visible conflicts {}",
+        covered.len(),
+        old_rows.len(),
+        old_verdicts.len(),
+        old_verdicts.values().filter(|v| v.1).count(),
+        old_verdicts.values().filter(|v| v.2 != "[]").count()
+    );
+    // 对拍：限在修前跑过的实体上。修后交回的寄存器是修前的子集、裁决逐个相同；修前判出冲突（含全是机器产出、
+    // 没有可见败者的）的寄存器修后一个不少。
+    let in_scope = |reg: &String| covered.iter().any(|e| reg.starts_with(&format!("{e}/")));
+    let new_scoped: Verdicts = new_verdicts
+        .iter()
+        .filter(|(r, _)| in_scope(r))
+        .map(|(a, b)| (a.clone(), b.clone()))
+        .collect();
+    for (reg, v) in &new_scoped {
+        assert_eq!(old_verdicts.get(reg), Some(v), "{reg}");
+    }
+    let conflicted = |v: &Verdicts| -> Verdicts {
+        v.iter()
+            .filter(|(_, x)| x.1)
+            .map(|(a, b)| (a.clone(), b.clone()))
+            .collect()
+    };
+    assert_eq!(
+        conflicted(&new_scoped),
+        conflicted(&old_verdicts),
+        "conflicted registers differ"
+    );
+    println!(
+        "MATCH: {} conflicted registers ({} with visible losers) identical; {} new registers all identical to old",
+        conflicted(&old_verdicts).len(),
+        old_verdicts.values().filter(|v| v.2 != "[]").count(),
+        new_scoped.len()
+    );
 }
