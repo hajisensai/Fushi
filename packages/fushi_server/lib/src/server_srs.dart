@@ -488,6 +488,12 @@ class ServerSrsProfile {
                 _media!.root,
                 locationId: key,
                 uploadOnly: true,
+                // 与 app 同一预算（BUG-5061 / HBK-AUDIT-011）：首次哈希大媒体库、积压的上传不挡复习记录段，剩下的由
+                // 发段之后的完整对账接着做。
+                deferRemaining: srsMediaDeadline(
+                  kSrsMediaBeforeUploadBudget,
+                  shouldStop: () => _closed || s.isWindingDown,
+                ),
               ).then((_) {}),
         shouldStop: () => _closed || s.isWindingDown,
       );
