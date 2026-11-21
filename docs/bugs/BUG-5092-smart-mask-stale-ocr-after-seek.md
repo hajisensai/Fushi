@@ -1,0 +1,6 @@
+## BUG-5092 · 智能遮布：seek 后旧帧 OCR 结果把遮布盖回新时间点（HBK-AUDIT-007）
+- **报告**：2026-11-22（外部审计 Codex 2026-11-21 PR 审查 HBK-AUDIT-007，来源 PR #3842）
+- **真实性**：✅ 真 bug。`fushi/lib/src/media/video/smart_subtitle_mask_sampler.dart:174-176`（修前）seek / 倒退时只 `_tracker.reset()` 并清空遮布，但已在飞的抽样在 `:206`（修前）回来时只比较搜索区域 `region != _region`；区域没变就把旧帧的行框喂进刚清空的 tracker 并发布，遮布在 seek 后的新时间点被旧帧的框重新盖上（暂停时还会一直停在那里，直到下一帧识别）。结果没有「属于哪一段画面」的身份。
+- **[x] ① 已修复** — 抽样结果以「画面代际」`_generation` 为身份：画面不连续（seek / 倒退）与换搜索区域都 +1，抽样在截帧前记下代际，截帧回来、识别回来两处代际不符就整帧作废（不喂 tracker、不发布），随后按新画面重新抽样。替代原先只比区域的判断。提交 `6c5dd6addb`（测试 `964d387a1e`）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/smart_subtitle_mask_test.dart`「a detection started before a seek is discarded」：识别挂起时 seek，再完成旧识别，断言遮布仍为空、随后重新识别新帧并按新结果显示。变异实测：撤掉修复（还原 sampler）该用例变红。
+- **备注**：未做真机复测（本轮约定不做真机），播放器 seek 时序由 `VideoPlayerController` 测试桩模拟。
