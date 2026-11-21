@@ -85,6 +85,7 @@ import 'dart:io';
 
 import 'test_flow/dist_plan.dart' show kDistOffloadDeclined;
 import 'test_flow/heavy_analyze_path.dart';
+import 'test_flow/heavy_android_key.dart';
 import 'test_flow/heavy_budget.dart';
 import 'test_flow/heavy_command_check.dart';
 import 'test_flow/heavy_history.dart';
@@ -273,6 +274,39 @@ Future<void> main(List<String> args) async {
         '$label against a missing / stale lib/i18n/strings.g.dart',
       );
       exit(gen);
+    }
+  }
+
+  // A release build of the app needs android/key.properties; without the real
+  // key, sign with this machine's reusable check key instead of having every
+  // agent make (and delete) a throwaway one (test_flow/heavy_android_key.dart).
+  if (checkout != null &&
+      heavyCommandSignsAndroidRelease(
+        command,
+        cwd: Directory.current.absolute.path,
+        checkout: checkout,
+        isWindows: Platform.isWindows,
+      )) {
+    final Map<String, String> env = Platform.environment;
+    final String? home = env['USERPROFILE'] ?? env['HOME'];
+    if (home != null) {
+      final String keytool = heavyKeytool(
+        env: env,
+        isWindows: Platform.isWindows,
+      );
+      final String? note = await heavyEnsureAndroidCheckKey(
+        androidDir: '$checkout/fushi/android',
+        home: home,
+        keytool: (List<String> args) async {
+          try {
+            final ProcessResult r = await Process.run(keytool, args);
+            return r.exitCode;
+          } on ProcessException {
+            return 127;
+          }
+        },
+      );
+      if (note != null) stderr.writeln('heavy: $note');
     }
   }
 

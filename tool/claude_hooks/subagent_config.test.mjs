@@ -115,3 +115,23 @@ test('hooks answer on stdin as real processes', () => {
   assert.equal(JSON.parse(rt.stdout).hookSpecificOutput.updatedInput.model, 'sonnet');
   assert.equal(wfHandle('{"tool_name":"Bash"}'), '');
 });
+
+test('agent definitions carry the current root CLAUDE.md and omit the loaded copy', async () => {
+  const { AGENTS, BEGIN, END, plan, render } = await import('./sync_agent_claude_md.mjs');
+  const stale = plan().filter((p) => p.current !== p.wanted).map((p) => p.file);
+  assert.deepEqual(stale, [], 'CLAUDE.md 改了但代理定义没同步：跑 node tool/claude_hooks/sync_agent_claude_md.mjs');
+  for (const p of plan()) {
+    assert.match(p.current, /^---\n[\s\S]*?\nomitClaudeMd: true\n[\s\S]*?\n---\n/, p.file);
+    assert.equal(p.current.split(BEGIN).length, 2, p.file);
+    assert.equal(p.current.split(END).length, 2, p.file);
+  }
+  assert.equal(AGENTS.length, 4);
+  // Re-rendering replaces the old block instead of stacking a second one.
+  const once = render('---\nname: x\nmodel: opus\n---\nbody\n', 'RULES v1\n');
+  const twice = render(once, 'RULES v2\n');
+  assert.equal(twice.split(BEGIN).length, 2);
+  assert.match(twice, /RULES v2/);
+  assert.doesNotMatch(twice, /RULES v1/);
+  const front = /^---\n([\s\S]*?)\n---\n/.exec(twice)[1];
+  assert.equal(front.match(/^omitClaudeMd: true$/gm).length, 1);
+});
