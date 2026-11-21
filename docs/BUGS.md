@@ -39,6 +39,12 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5068](bugs/BUG-5068-interconnect-mdns-fallback-new-network.md) | ✅ | ✅ | 电脑改连手机热点后手机连不上已配对的互联主机（只拨旧地址，从不在局域网上重新找它） |
+> 共 4387 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5073](bugs/BUG-5073-stat-day-reset-hour-profile-switch.md) | ✅ | ✅ | 切 Profile 后统计日界仍按旧 Profile 的值直到重启 |
+| [BUG-5070](bugs/BUG-5070-stat-trend-iso-week-dst.md) | ✅ | ✅ | 统计趋势按周聚合在有夏令时的时区把相邻两周并成一桶、周号少一 |
 > 共 4393 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
