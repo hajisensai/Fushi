@@ -43,12 +43,10 @@ import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
         musicDetailHeroGap;
 import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart'
-    show MusicMenuAction;
+    show MusicItemMenu, MusicMenuAction;
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_row_surface.dart';
 import 'package:fushi/src/pages/implementations/music/music_collection_view.dart';
-import 'package:fushi/src/utils/adaptive/shell_style.dart'
-    show shellContentLayoutOf;
 import 'package:fushi/src/utils/components/fushi_cover_block.dart'
     show FushiCoverBlockSize;
 import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'
@@ -619,7 +617,7 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
         if (musicTrackRowSurfaceActive(context))
           musicViewStyleToggle(MusicViewKind.tracks, style),
       ],
-      body: _withSelection(
+      body: (BuildContext context) => _withSelection(
         albumMap,
         FushiEntranceScope(
           // Builder：顶部让位读的是脚手架给正文的 MediaQuery（页头高度在里面），
@@ -767,9 +765,9 @@ class _AlbumDiscListState extends ConsumerState<_AlbumDiscList> {
       key: ValueKey<String>('music-album-track-check-${tracks[i].trackUid}'),
       selected: sel.isSelected(tracks[i].trackUid),
     );
-    // 与曲目列表同一份本地曲目菜单（右键 / 上下文菜单键）：播放 / 入队 / 详情 / 加入歌单
-    // / 从音乐库移除，末尾追加「多选」。
-    Widget withMenu(int i, Widget row) => musicLocalTrackMenu(
+    // 与曲目列表同一份本地曲目菜单（右键 / 上下文菜单键 / 行尾「⋯」/ 色块长按）：播放 /
+    // 入队 / 详情 / 加入歌单 / 从音乐库移除，末尾追加「多选」。
+    MusicItemMenu menuOf(int i) => musicLocalTrackMenu(
       context,
       tracks[i],
       onPlay: () => play(i),
@@ -781,7 +779,8 @@ class _AlbumDiscListState extends ConsumerState<_AlbumDiscList> {
           run: (_) async => sel.enter(tracks[i].trackUid),
         ),
       ],
-    ).contextMenu(child: row);
+    );
+    Widget withMenu(int i, Widget row) => menuOf(i).contextMenu(child: row);
     Widget? subtitleOf(int i) => musicTrackSubtitleWithResume(
       tracks[i],
       tracks[i].artistCredit == null ||
@@ -790,12 +789,10 @@ class _AlbumDiscListState extends ConsumerState<_AlbumDiscList> {
           : Text(tracks[i].artistCredit!),
       resumes[i],
     );
-    if (widget.style == MusicViewStyle.blocks &&
-        musicTrackRowSurfaceActive(context)) {
+    if (musicCoverBlocksActive(context, widget.style)) {
       // 一碟十几首、排在外层列表里：盒子版色块（一次建完），与库页同一套几何。
       // 外层列表已整块错峰进场，格子不再各自进场。
       return FushiCoverBlocks(
-        layout: shellContentLayoutOf(context),
         staggerEntrance: false,
         itemCount: tracks.length,
         itemBuilder: (BuildContext context, int i, FushiCoverBlockSize size) =>
@@ -826,7 +823,9 @@ class _AlbumDiscListState extends ConsumerState<_AlbumDiscList> {
                         ),
                         playing: playing,
                         onTap: () => tap(i),
-                        onLongPress: () => longPress(i),
+                        // 色块不放「⋯」：平时长按弹菜单（多选在菜单里），多选态长按 = 勾选。
+                        onLongPress: sel.active ? () => longPress(i) : null,
+                        menu: menuOf(i),
                       ),
                 ),
               ),
@@ -859,7 +858,10 @@ class _AlbumDiscListState extends ConsumerState<_AlbumDiscList> {
                       playing: playing,
                       onTap: () => tap(i),
                       onLongPress: () => longPress(i),
-                      trailing: <Widget>[if (sel.active) check(i)],
+                      // 触屏没有右键：行尾「⋯」打开与右键同一份菜单。
+                      trailing: sel.active
+                          ? <Widget>[check(i)]
+                          : <Widget>[menuOf(i).button()],
                     ),
               ),
             ),
@@ -903,7 +905,7 @@ class _AlbumDiscListState extends ConsumerState<_AlbumDiscList> {
                         musicTrackTimeLabel(tracks[i].durationMs, resumes[i]),
                         style: context.fushiType.bodySmall,
                       ),
-                      if (sel.active) check(i),
+                      if (sel.active) check(i) else menuOf(i).button(),
                     ],
                   ),
                 ),

@@ -32,13 +32,20 @@ class EpubImporter {
   /// 公开给漫画导入（`MangaImporter` / `MangaArchiveImporter`）共用：所有「往书库根
   /// 落一本书」的入口走同一种暂存 + 同一把落位锁。
   static Future<String> createStagingDir(FushiDatabase db) async {
-    await EpubStorage.ensureImportResidueSwept(
-      () async => <String>[
-        for (final EpubBookMeta b in await db.getEpubBookMetas()) b.extractDir,
-      ],
-    );
+    await ensureImportResidueSwept(db);
     return EpubStorage.createStagingDirectory();
   }
+
+  /// 本进程（本书库根）的导入残留清扫，活行取自 [db] 的全部 `extract_dir`。每进程
+  /// 只真跑一次，之后立即返回；失败只记日志。app 启动开库后调一次（BUG-4841 的启动
+  /// 挂点，#3722 c07 遗留），导入入口建暂存目录前也经这里等它跑完。
+  static Future<void> ensureImportResidueSwept(FushiDatabase db) =>
+      EpubStorage.ensureImportResidueSwept(
+        () async => <String>[
+          for (final EpubBookMeta b in await db.getEpubBookMetas())
+            b.extractDir,
+        ],
+      );
 
   /// Import an EPUB file into the database.
   ///

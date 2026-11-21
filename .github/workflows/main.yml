@@ -146,9 +146,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
     - uses: ./.github/actions/fushi-web-core-linux
-    - uses: actions/upload-artifact@v7
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: fushi-web-core-linux-x64
         path: native/fushi_web_core/prebuilt/linux-x64/libfushi_web_core.so
@@ -161,9 +161,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
     - uses: ./.github/actions/test-native-linux
-    - uses: actions/upload-artifact@v7
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: fushi-test-native-linux-x64
         path: |
@@ -182,9 +182,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
     - uses: ./.github/actions/fushidicts-linux
-    - uses: actions/upload-artifact@v7
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: fushidicts-linux-x64
         path: native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so
@@ -198,7 +198,7 @@ jobs:
     env:
       FUSHI_WEB_CORE_LIB: ${{ github.workspace }}/native/fushi_web_core/prebuilt/linux-x64/libfushi_web_core.so
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       with:
         # TODO-414: versionCode derives from the commit count, so the validation
         # builds below need the FULL history. A shallow checkout would make
@@ -228,12 +228,12 @@ jobs:
         # main.yml's validation APKs carry the identical versionCode formula.
         echo "RELEASE_SEQUENCE=$RELEASE_SEQUENCE" >> "$GITHUB_ENV"
 
-    - uses: actions/setup-java@v5
+    - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
       with:
         distribution: 'zulu'
         java-version: '17'
 
-    - uses: subosito/flutter-action@v2
+    - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
       with:
         flutter-version: '3.47.6'
         cache: true
@@ -274,7 +274,7 @@ jobs:
     # fushi/test/build/workflow_cache_quota_guard_test.dart。
     # 只读（2026-09-30）：只有 release.yml 的 push 写 Gradle 缓存，见 workflow_cache_quota_guard_test。
     - name: Cache Gradle caches
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: |
           ~/.gradle/caches/modules-2
@@ -309,12 +309,12 @@ jobs:
     # 主应用单测不在这个 job 里跑了：见下面的 unit-tests 矩阵（按文件分 4 片并行）。
 
     - name: Fetch fushi_web_core linux-x64 library (hard dependency of the unit tests)
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
       with:
         name: fushi-web-core-linux-x64
         path: native/fushi_web_core/prebuilt/linux-x64
     - name: Fetch fushidicts linux-x64 library (hard dependency of the package tests)
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
       with:
         name: fushidicts-linux-x64
         path: native/fushidicts/prebuilt/linux-x64
@@ -325,7 +325,7 @@ jobs:
     # 快门下 packages/ 没改动就整段跳过（plan 的 packages 输出；全量时恒为 true）。
     - name: Cache Rust build (fushi_fsrs)
       if: needs.plan.outputs.packages == 'true'
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         workspaces: native/fushi_fsrs -> target
         key: fushi-fsrs-linux-x64
@@ -373,7 +373,7 @@ jobs:
     # fetch_model.sh 按钉死 URL 下载并校验（~13 MB）。
     - name: Restore RWKV weights cache
       if: needs.plan.outputs.packages == 'true'
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: native/fushi_rwkv/model
         key: fushi-rwkv-model-749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec-b2f335bd712b9d602150201de41ab5a0f0a4c291644705e2aa1ed2a1bf1592c3-c7d8df407966fccd8f98227241816e114ce9ed1dfea799587e481c1d5926a453-77703dd2f2a21a1bcadaedfed1cec93ee0fd6fd6d3c840be221e72b5e1c05066-18de8ae77a1a40986dc432531116dfb009beae2385001ef425389a3ad7919a9e
@@ -499,24 +499,24 @@ jobs:
         cd android
         ./gradlew :app:testDebugUnitTest -Ptarget-platform=android-arm64 --no-daemon
 
-    # 网页内容核心是硬依赖：fushi/android/app/build.gradle 的 requireWebCoreSo 在 release 构建里
+    # 网页内容核心是硬依赖：fushi/android/app/build.gradle 的 checkFushiWebCoreNative 在 release 构建里
     # 逐 ABI 核对 prebuilt/android/<abi>/libfushi_web_core.so，缺就拒绝出包。本验证构建只出
     # arm64，先编这一个 ABI（工具链与 native-web-core-gate.yml / release.yml 一致）。
     - name: Set up Rust (fushi_web_core, Android arm64)
       if: github.event_name == 'pull_request' && steps.r8.outputs.needed == 'true'
-      uses: dtolnay/rust-toolchain@master
+      uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
       with:
         toolchain: '1.95.0'
         targets: aarch64-linux-android
     - name: Cache Rust build (fushi_web_core, Android)
       if: github.event_name == 'pull_request' && steps.r8.outputs.needed == 'true'
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         workspaces: native/fushi_web_core -> target
         key: fushi-web-core-android
     - name: Install cargo-ndk (fushi_web_core)
       if: github.event_name == 'pull_request' && steps.r8.outputs.needed == 'true'
-      uses: taiki-e/install-action@v2
+      uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
       with:
         tool: cargo-ndk@4.1.2
     - name: Build fushi_web_core Android .so (arm64-v8a)
@@ -626,7 +626,7 @@ jobs:
         shard: [0, 1, 2, 3]
     name: unit-tests (${{ matrix.shard }}/4)
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
     # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
     - name: Fetch vendored binaries
       uses: ./.github/actions/fetch-vendored-binaries
@@ -673,7 +673,7 @@ jobs:
     # always mismatch, so exclude them here. They still run on a plain local
     # `flutter test`. See fushi/dart_test.yaml.
     - name: Fetch fushi_web_core linux-x64 library (hard dependency of the unit tests)
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
       with:
         name: fushi-web-core-linux-x64
         path: native/fushi_web_core/prebuilt/linux-x64
@@ -682,7 +682,7 @@ jobs:
     # fushi_rwkv 是硬依赖（无 Dart 回退）：都由 test-native-linux 编好，这里只下载（路径与 job 级
     # FUSHI_FSRS_LIB / FUSHI_COMPUTE_LIB / FUSHI_RWKV_LIB 对应）。
     - name: Fetch fushi_fsrs + fushi_compute + fushi_rwkv linux-x64 libraries (hard dependencies of the unit tests)
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
       with:
         name: fushi-test-native-linux-x64
         path: native
@@ -727,7 +727,7 @@ jobs:
     # tool/test_flow/suite_timings.json（--file-shard 按它均衡各片）。失败时也传，排障用。
     - name: Upload test event log
       if: always()
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: unit-test-events-${{ matrix.shard }}
         path: .codex-test/flutter-test/flutter_test.jsonl
@@ -807,7 +807,7 @@ jobs:
       FUSHI_MUSIC_LIB: ${{ github.workspace }}/native/fushi_music/prebuilt/linux-x64/libfushi_music.so
       FUSHI_CORPUS_LIB: ${{ github.workspace }}/native/fushi_corpus/prebuilt/linux-x64/libfushi_corpus.so
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
     - name: Fetch vendored binaries
       uses: ./.github/actions/fetch-vendored-binaries
       with:
@@ -845,12 +845,12 @@ jobs:
       uses: ./.github/actions/gen-i18n
 
     - name: Fetch fushi_web_core linux-x64 library (hard dependency of the unit tests)
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
       with:
         name: fushi-web-core-linux-x64
         path: native/fushi_web_core/prebuilt/linux-x64
     - name: Fetch fushi_fsrs + fushi_compute + fushi_rwkv linux-x64 libraries (hard dependencies of the unit tests)
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
       with:
         name: fushi-test-native-linux-x64
         path: native
@@ -869,7 +869,7 @@ jobs:
 
     - name: Upload test event logs
       if: failure()
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: affected-test-events
         path: .codex-test/pre-push

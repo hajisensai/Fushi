@@ -30,6 +30,7 @@ struct C {
     stab: Option<f64>,
     diff: Option<f64>,
     r: Option<f64>,
+    r_ahead: [Option<f64>; RWKV_AHEAD],
     suspended: bool,
     buried: bool,
     added_day: i64,
@@ -96,6 +97,7 @@ fn fixture(
                 buried: c.buried,
                 by_recall: c.by_recall,
                 r: c.r,
+                r_ahead: c.r_ahead,
                 added_day: c.added_day,
                 desired: c.desired.unwrap_or(0.8),
             })
@@ -502,6 +504,47 @@ fn rwkv_now_due_near_and_daily_average() {
         Value::Null,
         "没有按 R 排队的卡"
     );
+    assert_eq!(r["rwkvNow"][4], Value::Null, "没给将来时刻的 R");
+    // 直方图每格 5%：0.8 → 第 16 格，0.84 → 16，0.9 → 18；暂停的 e 不算。
+    let bins: Vec<i64> = r["rwkvNow"][5]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x.as_i64().unwrap())
+        .collect();
+    assert_eq!(bins.len(), 20);
+    assert_eq!((bins[16], bins[18], bins.iter().sum::<i64>()), (2, 1, 3));
+}
+
+#[test]
+fn rwkv_now_counts_cards_dropping_below_target_later() {
+    let now = jst(2026, 10, 15, 21);
+    let rwkv = |id: &'static str, r: f64, ahead: [Option<f64>; RWKV_AHEAD]| C {
+        id,
+        note: id,
+        deck: "d",
+        state: Some(State::Mature),
+        days: 30,
+        r: Some(r),
+        r_ahead: ahead,
+        desired: Some(0.8),
+        by_recall: true,
+        ..C::default()
+    };
+    let cards = [
+        // 已在线下：现在就出，不算「之后新增」。
+        rwkv("a", 0.7, [Some(0.6), Some(0.5), Some(0.4)]),
+        // 1 小时后掉到线下（= 目标也算）。
+        rwkv("b", 0.82, [Some(0.8), Some(0.78), Some(0.7)]),
+        // 3 小时后才掉。
+        rwkv("c", 0.85, [Some(0.83), Some(0.79), Some(0.75)]),
+        // 到明天都在线上；某个时刻打不了分的照样只看给了的。
+        rwkv("d", 0.95, [Some(0.94), None, Some(0.9)]),
+    ];
+    let (s, v) = fixture(now, &cards, &[], &[], Vec::new());
+    let r = agg(&s, &v, json!({}));
+    assert_eq!(r["rwkvNow"][1], 1);
+    assert_eq!(r["rwkvNow"][4], json!([1, 2, 2]));
 }
 
 #[test]

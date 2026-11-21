@@ -5,7 +5,6 @@ import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
@@ -32,11 +31,6 @@ import '../helpers/test_platform_services.dart';
 ///   completer 模拟），不触发任何切书回调。
 /// - 点别的卷的章 / 「打开本卷」/ 「跳到此插图」= 带卷号的切书回调。
 /// - 当前卷的行为与从前逐字相同（回调仍走原路）。
-class _FakeInAppWebViewController implements InAppWebViewController {
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
 AppModel _testAppModel(FushiDatabase db) {
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
     ..loadFromPrefsSnapshot(<String, String>{
@@ -90,7 +84,6 @@ void main() {
                       onJumpSection: (int index, String? _) async =>
                           jumpedSections.add(index),
                       onExitReader: () {},
-                      webViewController: _FakeInAppWebViewController(),
                       appModel: model,
                       ref: ref,
                       isFushiReader: true,
@@ -282,7 +275,6 @@ void main() {
                       readerProgress: const (0, 1),
                       onJumpSection: (int _, String? __) async {},
                       onExitReader: () {},
-                      webViewController: _FakeInAppWebViewController(),
                       appModel: model,
                       ref: ref,
                       isFushiReader: true,
@@ -424,7 +416,6 @@ void main() {
                       readerProgress: const (0, 1),
                       onJumpSection: (int _, String? __) async {},
                       onExitReader: () {},
-                      webViewController: _FakeInAppWebViewController(),
                       appModel: model,
                       ref: ref,
                       isFushiReader: true,

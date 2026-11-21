@@ -36,6 +36,7 @@ import 'package:fushi/src/media/alist/alist_api_client.dart';
 import 'package:fushi/src/media/audio_cd/audio_cd_import.dart';
 import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
 import 'package:fushi/src/media/import/import_inbox.dart';
+import 'package:fushi/src/media/import/import_inbox_text.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/media/source_library/game_source_scanner.dart'
     show countGamesOfSource;
@@ -71,6 +72,7 @@ import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -277,11 +279,47 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     );
     _observedActiveScans = sourceScanActivity.activeSourceIds;
     sourceScanActivity.addListener(_onSourceScanActivityChanged);
+    sourceScanActivity.progressListenable.addListener(
+      _onSourceScanProgressChanged,
+    );
     _load();
   }
 
   /// 上一次看到的 [sourceScanActivity] 快照，用来找出「刚扫完」的来源。
   Set<int> _observedActiveScans = const <int>{};
+
+  /// 扫描进度（已找到几个文件 / 导入到第几条）变了：重画行内进度。占用表那边已
+  /// 节流，这里直接重建。
+  void _onSourceScanProgressChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// [row] 在扫时（本页发起或别处发起）的行内进度文案；没在扫返回 null。
+  /// 扫描器还没报进度（解析连接、激活书签）或是不报进度的音乐 / 游戏来源时显示
+  /// 「正在扫描…」（拍板台 design-nmv-scan-progress）。
+  String? _scanProgressText(SourceLibraryRow row) {
+    if (!_scanning.contains(row.id) && !sourceScanActivity.isScanning(row.id)) {
+      return null;
+    }
+    final SourceScanProgress? progress = sourceScanActivity.progressOf(row.id);
+    if (progress == null) return t.media_source_scan_progress_started;
+    final String head = switch (progress.phase) {
+      SourceScanPhase.listing => t.media_source_scan_progress_listing(
+        count: progress.filesFound,
+      ),
+      SourceScanPhase.importing => t.media_source_scan_progress_importing(
+        current: progress.processed,
+        total: progress.total,
+      ),
+    };
+    final String? path = progress.currentPath;
+    final String name = path == null ? '' : scanProgressPathLabel(path);
+    return name.isEmpty ? head : '$head  ·  $name';
+  }
+
+  /// [row] 在扫时行底进度条的完成比例；列目录阶段与没在扫时为 null（不定 / 不画）。
+  double? _scanProgressValue(SourceLibraryRow row) =>
+      sourceScanActivity.progressOf(row.id)?.fraction;
 
   /// 别处（首页的自动扫描）扫本页来源时：行级 loading 跟着亮，扫完重读该行与累计数。
   void _onSourceScanActivityChanged() {
@@ -321,6 +359,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   @override
   void dispose() {
     sourceScanActivity.removeListener(_onSourceScanActivityChanged);
+    sourceScanActivity.progressListenable.removeListener(
+      _onSourceScanProgressChanged,
+    );
     widget.scrapeTaskController?.removeListener(_onScrapeTaskChanged);
     if (widget.mediaKind == 'video') {
       videoScrapeCleanupRevision.removeListener(_onVideoScrapeCleanupChanged);
@@ -571,7 +612,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// 同一批字段、同一组动作。
   ImportSourceBlockData _blockDataFor(SourceLibraryRow row) {
     final bool isVideo = widget.mediaKind == 'video';
-    final bool scanning = _scanning.contains(row.id);
+    final bool scanning =
+        _scanning.contains(row.id) || sourceScanActivity.isScanning(row.id);
     final bool scraping = _isScrapingSource(row.id);
     final bool exporting = _exportingDiagnostics.contains(row.id);
     final bool busy = scanning || scraping || exporting || isBusy;
@@ -596,6 +638,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       progressText = title == null || title.isEmpty
           ? progress
           : '$progress  ·  $title';
+    } else {
+      progressText = _scanProgressText(row);
     }
     final VideoSourceScrapeRunRow? latest = isVideo
         ? _latestScrapeRuns[row.id]
@@ -615,7 +659,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
           : t.media_source_auto_added_from(source: owner),
       scanError: row.lastScanError != null,
       working: scanning || scraping || exporting,
-      scrapeProgressText: progressText,
+      progressValue: scraping || exporting ? null : _scanProgressValue(row),
+      progressText: progressText,
       scrapeSummaryText: latest == null
           ? null
           : t.video_source_scrape_last_summary(
@@ -948,7 +993,11 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
                       top: tokens.spacing.gap,
                       end: tokens.spacing.gap,
                     ),
-                    child: const FushiLinearProgressIndicator(),
+                    child: FushiLinearProgressIndicator(
+                      value: scraping || exporting
+                          ? null
+                          : _scanProgressValue(row),
+                    ),
                   )
                 : const SizedBox(width: double.infinity),
           ),
@@ -1083,6 +1132,15 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       final String? title = active.currentWorkTitle;
       return Text(
         title == null || title.isEmpty ? progress : '$progress  ·  $title',
+        style: subStyle,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+    if (_scanProgressText(row) case final String scanProgress) {
+      return Text(
+        scanProgress,
+        key: ValueKey<String>('media_source_scan_progress_${row.id}'),
         style: subStyle,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
@@ -1520,7 +1578,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   }
 
   void _showInboxEmpty(String folder) => FushiToast.show(
-    msg: t.media_import_inbox_empty(folder: folder),
+    msg: importInboxEmptyText(folder: folder),
     severity: ToastSeverity.info,
   );
 
@@ -1798,6 +1856,10 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     final Future<void> Function(SourceLibraryRow, SourceScanSummary)?
     onVideoScanCompleted = widget.onVideoScanCompleted;
     SourceScanSummary? summary;
+    // 视频刮削资料正在清理：扫描没开始。两条路——带刮削 controller 时由它的互斥门抛
+    // 类型化错误，不带时扫描器回 [SourceScanSummary.blocked]——都要告诉用户，
+    // 否则点了「重新扫描」什么也不发生。
+    bool blockedByScrapeCleanup = false;
     setState(() => _scanning.add(row.id));
     try {
       // 扫描器自己登记进全局扫描占用表（[sourceScanActivity]，每来源锁）：首页的自动
@@ -1811,6 +1873,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       summary = controller == null
           ? await scan()
           : await controller.runSourceScan(row.id, scan);
+    } on VideoScrapeMaintenanceActiveError {
+      blockedByScrapeCleanup = true;
     } finally {
       try {
         final SourceLibraryRow? updated = await _db.getMediaSourceById(row.id);
@@ -1836,6 +1900,15 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
           await _refreshCount(row.id);
           final SourceScanSummary? done = summary;
           if (done != null && done.succeeded) _showBookAudiobookSummary(done);
+          if (blockedByScrapeCleanup || done?.blocked != null) {
+            // 扫描器给的 error 就是按 blocked 种类写的本地化文案（清理中 / 来源已移除）。
+            FushiToast.show(
+              msg: done?.blocked != null && done?.error != null
+                  ? done!.error!
+                  : t.media_source_scan_blocked_scrape_cleanup,
+              severity: ToastSeverity.warning,
+            );
+          }
         }
       } finally {
         onLibraryChanged?.call();

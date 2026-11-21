@@ -178,6 +178,7 @@ class MangaReadAloudController extends ChangeNotifier {
     required MangaReadAloudHost host,
     required MangaReadAloudVoiceRig rig,
     required List<TtsPronunciationRule> pronunciation,
+    List<TtsPronunciationRule> preSynthesis = const <TtsPronunciationRule>[],
     required MangaReadAloudPlayToEnd playToEnd,
     required MangaReadAloudStopPlayback stopPlayback,
     required double Function() readSpeed,
@@ -186,6 +187,7 @@ class MangaReadAloudController extends ChangeNotifier {
        _follower = MangaSentenceFollower(host),
        _rig = rig,
        _pronunciation = pronunciation,
+       _preSynthesis = preSynthesis,
        _playToEnd = playToEnd,
        _stopPlayback = stopPlayback,
        _readSpeed = readSpeed,
@@ -195,6 +197,7 @@ class MangaReadAloudController extends ChangeNotifier {
   final MangaSentenceFollower _follower;
   MangaReadAloudVoiceRig _rig;
   final List<TtsPronunciationRule> _pronunciation;
+  final List<TtsPronunciationRule> _preSynthesis;
   final MangaReadAloudPlayToEnd _playToEnd;
   final MangaReadAloudStopPlayback _stopPlayback;
   final double Function() _readSpeed;
@@ -291,6 +294,38 @@ class MangaReadAloudController extends ChangeNotifier {
       _plans[_page]?.scheduler?.resume();
     }
     _launch();
+  }
+
+  /// 暂停 / 失败停住时，从第 [pageIndex] 页与 [blocks] 交集最大的那句句首续读（查词后
+  /// 从被查那句重播，BUG-4909）。那页的朗读计划还没建好、或没有对得上的句子时同
+  /// [resume]（从当前句开头重读）。
+  void resumeFromSentence(int pageIndex, List<int> blocks) {
+    if (_disposed) return;
+    if (_state != MangaReadAloudState.paused &&
+        _state != MangaReadAloudState.failed) {
+      return;
+    }
+    final _PagePlan? plan = _plans[pageIndex];
+    if (plan != null && blocks.isNotEmpty) {
+      final Set<int> wanted = blocks.toSet();
+      int best = -1;
+      int bestOverlap = 0;
+      for (int i = 0; i < plan.utterances.length; i++) {
+        final int overlap = plan.utterances[i].blocks
+            .where(wanted.contains)
+            .length;
+        if (overlap > bestOverlap) {
+          best = i;
+          bestOverlap = overlap;
+        }
+      }
+      if (best >= 0) {
+        _page = pageIndex;
+        _index = best;
+        _backward = false;
+      }
+    }
+    resume();
   }
 
   void next() {
@@ -588,6 +623,7 @@ class MangaReadAloudController extends ChangeNotifier {
           pageIndex: page,
           rightToLeft: _host.rightToLeft,
           pronunciation: _pronunciation,
+          preSynthesis: _preSynthesis,
           maxInputLength: _rig.maxInputLength,
         );
         final List<int> chunkStart = <int>[];

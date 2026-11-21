@@ -138,11 +138,16 @@ void main() {
       // 2026-11-10: the 8 GB ceiling killed one full analyze in five.
       expect(analyze.capMb, 16384);
       expect(analyze.bookedMb, 8192);
-      // Still never three test runs at once on a 64 GB machine (2026-10-19);
-      // two tests and an analyze fit, as do a test and both light slots.
+      // On a 64 GB machine (40 GB since 2026-11-20, the owner's call): three
+      // test runs at their fixed booking fit, as the replay that set the
+      // budget assumed; a fourth never does, nor do three next to an
+      // analyze. Two tests and an analyze fit, as do a test and both light
+      // slots.
       final int test = heavyNeedFor(HeavyKind.test).bookedMb;
       final int budget = defaultHeavyBudgetMb(65156);
-      expect(3 * test, greaterThan(budget));
+      expect(3 * test, lessThanOrEqualTo(budget));
+      expect(4 * test, greaterThan(budget));
+      expect(3 * test + analyze.bookedMb, greaterThan(budget));
       expect(2 * test + analyze.bookedMb, lessThanOrEqualTo(budget));
       expect(
         test + kLightSlotCount * analyze.bookedMb,
@@ -158,10 +163,10 @@ void main() {
     expect(defaultHeavySlots(256 * 1024), 4);
   });
 
-  test('defaultHeavyBudgetMb: half the RAM in whole GB', () {
-    expect(defaultHeavyBudgetMb(65156), 32768);
-    expect(defaultHeavyBudgetMb(32 * 1024), 16384);
-    expect(defaultHeavyBudgetMb(8 * 1024), 4096);
+  test('defaultHeavyBudgetMb: 5/8 of the RAM in whole GB', () {
+    expect(defaultHeavyBudgetMb(65156), 40960);
+    expect(defaultHeavyBudgetMb(32 * 1024), 20480);
+    expect(defaultHeavyBudgetMb(8 * 1024), 5120);
   });
 
   // 2026-10-19 (owner's call): three 12-16 GB ceilings promised 48 GB on a

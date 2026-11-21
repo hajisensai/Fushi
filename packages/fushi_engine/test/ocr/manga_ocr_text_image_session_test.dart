@@ -21,6 +21,9 @@ import 'package:test/test.dart';
 /// 会话整体失败——「不加载检测器」由此可观测。
 const String _kForbiddenDetector = 'forbidden_detector.onnx';
 const String _kDetector = 'detector.onnx';
+
+/// 会真跑的漫画检测器（整页管线用）：回一条低于阈值的检测 = 这页没有检测框。
+const String _kEmptyDetector = 'empty_detector.onnx';
 const String _kLineDet = 'pp_det.onnx';
 const String _kLineRec = 'ctc_rec.onnx';
 
@@ -31,6 +34,28 @@ class _NeverRunSession implements OcrSession {
   @override
   Future<Map<String, OcrTensor>> run(Map<String, OcrTensor> inputs) async =>
       throw StateError('the manga detector must not run for text images');
+
+  @override
+  Future<void> close() async {}
+}
+
+/// RT-DETR 后处理输出形状（scores / labels / boxes），唯一一条检测分数 0：低于强弱两道
+/// 阈值，等于这页什么都没检到。
+class _EmptyDetectorSession implements OcrSession {
+  @override
+  Future<Map<String, OcrTensor>> run(Map<String, OcrTensor> inputs) async {
+    return <String, OcrTensor>{
+      'scores': OcrTensor.float32(Float32List.fromList(<double>[0]), <int>[
+        1,
+        1,
+      ]),
+      'labels': OcrTensor.int64(Int64List.fromList(<int>[0]), <int>[1, 1]),
+      'boxes': OcrTensor.float32(
+        Float32List.fromList(<double>[0, 0, 1, 1]),
+        <int>[1, 1, 4],
+      ),
+    };
+  }
 
   @override
   Future<void> close() async {}
@@ -91,6 +116,8 @@ class _FakeOcrSessionFactory implements OcrSessionFactory {
         throw StateError('text-image session loaded the manga detector');
       case _kDetector:
         return _NeverRunSession();
+      case _kEmptyDetector:
+        return _EmptyDetectorSession();
       case _kLineDet:
         return _BandLineDetSession();
       case _kLineRec:
@@ -328,6 +355,61 @@ void main() {
         throwsA(isA<StateError>()),
       );
       await session.close().timeout(const Duration(seconds: 20));
+    });
+  });
+
+  group('内存整页（视频暂停帧，MangaOcrPagePixelsSession）', () {
+    test('像素直接进整页管线：结果是像素尺寸，不读页图、不落逐页缓存', () async {
+      final MangaOcrPageSession session =
+          const IsolateMangaOcrPageSessionRunner().open(
+            request(textImagesOnly: false, detector: _kEmptyDetector),
+          );
+      addTearDown(session.close);
+      final OcrPageResult result = await (session as MangaOcrPagePixelsSession)
+          .ocrPagePixels(
+            OcrRgbaImage(rgba: _rgba(320, 180), width: 320, height: 180),
+          )
+          .timeout(const Duration(seconds: 30));
+      expect((result.imageWidth, result.imageHeight), (320, 180));
+      expect(
+        Directory(p.join(dir.path, 'manga_ocr_out')).existsSync(),
+        isFalse,
+        reason: '内存页不写逐页缓存',
+      );
+    });
+
+    test('textImagesOnly 会话上 ocrPagePixels 以清楚的 StateError 失败', () async {
+      final MangaOcrPageSession session =
+          const IsolateMangaOcrPageSessionRunner().open(
+            request(textImagesOnly: true),
+          );
+      addTearDown(session.close);
+      await expectLater(
+        (session as MangaOcrPagePixelsSession).ocrPagePixels(
+          OcrRgbaImage(rgba: _rgba(32, 18), width: 32, height: 18),
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (StateError e) => e.message,
+            'message',
+            contains('textImagesOnly'),
+          ),
+        ),
+      );
+    });
+
+    test('close 让挂起的内存页请求失败', () async {
+      final MangaOcrPageSession session =
+          const IsolateMangaOcrPageSessionRunner().open(
+            request(textImagesOnly: false, detector: _kEmptyDetector),
+          );
+      final Future<OcrPageResult> pending =
+          (session as MangaOcrPagePixelsSession).ocrPagePixels(
+            OcrRgbaImage(rgba: _rgba(64, 36), width: 64, height: 36),
+          );
+      final Future<void> closed = session.close();
+      await expectLater(pending, throwsA(isA<StateError>()));
+      await closed.timeout(const Duration(seconds: 20));
     });
   });
 

@@ -935,6 +935,9 @@ class _DictionaryDialogPageState extends BasePageState {
       if (!cupertino) _buildActionBar(compact: compact),
       // 收进后台的下载/更新任务的回程入口（BUG-1499）；无任务时是零高度。
       _buildDownloadStatusRow(),
+      // 还停在旧磁盘格式的词典的升级入口（拍板台 pr3554：升级前先问；启动期点了
+      // 「以后再说」之后只剩这里）。没有待升级的、或有写任务在跑时是零高度。
+      _buildFormatUpgradeRow(),
       if (_hasAnyRows) _buildCategorySelector(),
       // 「来源」条：每台有目录的服务器一张卡片（状态 / 本数 / 用于查词 / 刷新），
       // 取代以前列表底部的按 host 提示。
@@ -2106,6 +2109,58 @@ class _DictionaryDialogPageState extends BasePageState {
           ),
         );
       },
+    );
+  }
+
+  /// 「N 本词典可以升级到新格式」+「升级」。点按钮本身就是同意（说明见启动期确认框），
+  /// 升级经 [AppModel.upgradeDictionaryFormatsNow]，进度走上面那条状态行。
+  Widget _buildFormatUpgradeRow() {
+    final DictionaryDownloadController controller =
+        appModel.dictionaryDownloadController;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return ValueListenableBuilder<int>(
+      valueListenable: appModel.dictFormatUpgradePending,
+      builder: (_, int pending, __) =>
+          ValueListenableBuilder<DictionaryDownloadPhase>(
+            valueListenable: controller.phase,
+            builder: (_, DictionaryDownloadPhase phase, __) {
+              final bool show =
+                  pending > 0 && phase == DictionaryDownloadPhase.idle;
+              return AnimatedSize(
+                duration: fushiMotionDuration(context, FushiMotion.medium),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: !show
+                    ? const SizedBox(width: double.infinity)
+                    : Padding(
+                        padding: EdgeInsets.only(
+                          bottom: tokens.spacing.gap + tokens.spacing.gap / 2,
+                        ),
+                        child: FushiCard(
+                          padding: EdgeInsets.zero,
+                          child: FushiListItem(
+                            minHeight: 44,
+                            leading: const FushiIcon(
+                              Icons.upgrade_rounded,
+                              size: 18,
+                            ),
+                            title: Text(
+                              t.dict_upgrade_format_banner(count: pending),
+                              style: textTheme.bodySmall,
+                            ),
+                            titleMaxLines: 2,
+                            trailing: FushiTextButton(
+                              onPressed: () => unawaited(
+                                appModel.upgradeDictionaryFormatsNow(),
+                              ),
+                              child: Text(t.dict_upgrade_format_prompt_confirm),
+                            ),
+                          ),
+                        ),
+                      ),
+              );
+            },
+          ),
     );
   }
 

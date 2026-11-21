@@ -1283,6 +1283,9 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
         rubySpans: rubySpans,
         // 不带 `language`：被查的字幕在电脑上播放，查词语言归电脑（电脑视频页按字幕
         // 语言登记查词来源语言）。遥控端本机的查词语言与这次查词无关。
+        // 词典选择则归遥控端：用户在词典管理里对这台电脑关掉 / 排过的词典照样生效
+        // （拍板台 pr3602）。老 host 忽略该字段。
+        dictionaryConfigFor: _appModel.remoteLookupDictionaryConfigFor,
       );
     } catch (e) {
       // 电脑不可达 / 配对被拒：横幅报原因，弹框按「没查到」收尾（不留半截搜索态）。

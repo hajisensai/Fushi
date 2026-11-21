@@ -374,26 +374,6 @@ extension _ReaderJumpBack on _ReaderFushiPageState {
       ),
   ];
 
-  /// 「⋯」菜单里的「跳转记录」（有历史时才有；顶栏图标关掉 / 隐藏后仍能开面板）。
-  List<FushiToolbarItem> _jumpHistoryMenuItems() => _jumpHistory.isEmpty
-      ? const <FushiToolbarItem>[]
-      : <FushiToolbarItem>[
-          jumpHistoryPanelMenuItem(
-            onOpen: () => unawaited(_openJumpHistoryPanel()),
-          ),
-        ];
-
-  /// [_jumpHistoryMenuItems] 的 [ReaderHeaderAction] 版（桌面经典顶栏 ⋮、歌词 ⋯）。
-  List<ReaderHeaderAction> _jumpHistoryMenuActions() => <ReaderHeaderAction>[
-    for (final FushiToolbarItem item in _jumpHistoryMenuItems())
-      ReaderHeaderAction(
-        key: item.key,
-        icon: item.icon,
-        label: item.label,
-        onPressed: item.onPressed,
-      ),
-  ];
-
   /// 刻度开关（设置「进度条刻度」）。
   bool get _jumpMarksEnabled =>
       _jumpPrefs.value.progressMarks && !_jumpHistory.isEmpty;

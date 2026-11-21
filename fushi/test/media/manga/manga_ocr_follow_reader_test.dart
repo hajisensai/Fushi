@@ -32,6 +32,12 @@ class _NeverRecognizer implements OcrRecognizer {
 
 /// 逐页可控的识别器：每页一个 completer，测试决定何时完成。
 class _ControlledRecognizer implements MangaStreamPageRecognizer {
+  @override
+  Future<MokuroImage> recognizePixels(
+    OcrRgbaImage image, {
+    required String url,
+  }) => throw UnimplementedError();
+
   final List<String> started = <String>[];
   final Map<String, Completer<MokuroImage>> pending =
       <String, Completer<MokuroImage>>{};

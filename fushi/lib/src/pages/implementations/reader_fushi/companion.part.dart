@@ -87,7 +87,6 @@ class _ReaderCompanionPageAdapter implements ReaderCompanionPage {
   @override
   Future<ReaderCompanionBookInfo> loadBookInfo() async {
     final EpubBook? book = _state._book;
-    final String? extractDir = _state._extractDir;
     final String? author = book?.author?.trim();
     final String? series = book?.series?.name.trim();
     return ReaderCompanionBookInfo(
@@ -96,12 +95,7 @@ class _ReaderCompanionPageAdapter implements ReaderCompanionPage {
       seriesIndex: series == null || series.isEmpty
           ? null
           : book?.series?.index,
-      cover: extractDir == null
-          ? null
-          : ReaderFushiSource.resolveCoverFilePath(
-              extractDir: extractDir,
-              coverPath: book?.coverHref,
-            ),
+      cover: _state._bookCoverFilePath,
     );
   }
 

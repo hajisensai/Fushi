@@ -364,6 +364,45 @@ void main() {
     expect(ctx.output('Show 01.ja.srt').existsSync(), isTrue);
   });
 
+  test('skipExisting：videoId 那一集已有所选语言的字幕就跳过，不识别、不改写', () async {
+    final Directory lib = Directory(p.join(tmp.path, 'lib', 'Show'))
+      ..createSync(recursive: true);
+    final File video = File(p.join(lib.path, 'Show 01.mkv'))
+      ..writeAsBytesSync(<int>[1, 2, 3]);
+    final File existing = File(p.join(lib.path, 'Show 01.zh.srt'))
+      ..writeAsStringSync('1\n00:00:01,000 --> 00:00:02,000\n已有\n');
+    Future<String?> resolve(String id, {int episodeIndex = 0}) async =>
+        id == 'v1' ? video.path : null;
+
+    final (HostJobContext ctx, _) = context(const <String, Object?>{
+      'proofread': false,
+      'videoId': 'v1',
+      'language': 'zh',
+      'skipExisting': true,
+    });
+    final HostJobOutcome outcome = await runner(resolveVideo: resolve).run(ctx);
+    final Map<String, Object?> summary =
+        jsonDecode(ctx.output('summary.json').readAsStringSync())
+            as Map<String, Object?>;
+    final Map<String, Object?> episode =
+        (summary['episodes']! as List<Object?>).single! as Map<String, Object?>;
+    expect(episode['status'], 'skippedExistingSubtitle');
+    expect(outcome.outputs.keys.toList(), <String>['summary.json']);
+    expect(existing.readAsStringSync(), contains('已有'));
+    expect(File(p.join(lib.path, 'Show 01.zh.asr.srt')).existsSync(), isFalse);
+
+    // 别的语言没有字幕：照常生成。
+    final (HostJobContext ja, _) = context(const <String, Object?>{
+      'proofread': false,
+      'videoId': 'v1',
+      'skipExisting': true,
+    }, jobId: 'j2');
+    final HostJobOutcome jaOutcome = await runner(
+      resolveVideo: resolve,
+    ).run(ja);
+    expect(jaOutcome.outputs, contains('Show 01.ja.srt'));
+  });
+
   test('库里的蓝光 title：字幕不写进盘里，落在管线任务根的 disc_out 并拷进产物', () async {
     final Directory disc = Directory(p.join(tmp.path, 'lib', 'Show Disc 1'));
     final Directory playlist = Directory(p.join(disc.path, 'BDMV', 'PLAYLIST'))
@@ -894,6 +933,12 @@ void main() {
     expect(cap['acceptsDiscTitleDvdAngle'], isFalse);
     // 没接 resolveVideoPath：不认 videoId，也就不认 audioTrack。
     expect(cap['acceptsAudioTrack'], isFalse);
+    // `language` 认的取值：提交方据此决定显不显示语言选择、能不能发非日语任务。
+    expect(cap['languages'], containsAll(<String>['ja', 'zh']));
+    // 声明的每个取值都必须真被 `language` 参数接受（否则提交方会发出被拒的任务）。
+    for (final Object? tag in cap['languages']! as List<Object?>) {
+      expect(VideoSubtitleLanguage.fromTag(tag as String?), isNotNull);
+    }
     expect(
       (await runner(
         resolveVideo: (String _, {int episodeIndex = 0}) async => null,

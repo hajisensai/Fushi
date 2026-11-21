@@ -84,6 +84,42 @@ void main() {
     expect(() => _build('note', <String>[]), _usageError());
   });
 
+  test('retained / retained-delete：删除必须 --yes，带 confirm；render 人类可读', () {
+    final CtlRequestSpec state = _build('retained', <String>[]);
+    expect((state.method, state.path), ('GET', '/api/admin/srs/retained'));
+    expect(() => _build('retained-delete', <String>[]), _usageError());
+    final CtlRequestSpec del = _build('retained-delete', <String>['--yes']);
+    expect((del.method, del.path), ('POST', '/api/admin/srs/retained/delete'));
+    expect(del.body, <String, Object?>{'confirm': true});
+    expect(
+      _render('retained', <String, Object?>{
+        'copy': 'sealed',
+        'bytes': 4096,
+        'dueAtMs': null,
+        'error': 'disk full',
+      }),
+      allOf(contains('4096'), contains('不会自动到期'), contains('disk full')),
+    );
+    expect(
+      _render('retained', <String, Object?>{'copy': 'none'}),
+      contains('没有旧版本保留副本'),
+    );
+    expect(
+      _render('retained-delete', <String, Object?>{
+        'deleted': true,
+        'freedBytes': 4096,
+      }),
+      contains('4096'),
+    );
+    expect(
+      _render('retained-delete', <String, Object?>{
+        'deleted': false,
+        'reason': 'check failed',
+      }),
+      contains('check failed'),
+    );
+  });
+
   test('conflict-delete / conflict-keep：keep 必须 --yes，带 confirm', () {
     final CtlRequestSpec del = _build('conflict-delete', <String>['c1']);
     expect(

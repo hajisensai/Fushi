@@ -806,6 +806,123 @@ void main() {
       );
     });
 
+    test('BUG-4991：互联 sync-data 拆成共享 / 复习同步 / 旧版残留 / 其他，总量不少算', () async {
+      final String syncData = p.join(
+        support.path,
+        kInterconnectSyncDataSupportChild,
+      );
+      final String root = p.join(syncData, 'fushi-data');
+      writeFile(p.join(support.path, 'fushi.db'), 1000);
+      // 共享命名空间（__x__）。
+      writeFile(p.join(root, '__dictionaries__', 'a.bin'), 300);
+      writeFile(p.join(root, '__fonts__', 'sub', 'f.ttf'), 20);
+      // 复习同步。
+      writeFile(p.join(root, 'fushi-srs', 'log', 'b.bin'), 50);
+      // 旧版残留：平的书文件夹两个。
+      writeFile(p.join(root, '吾輩は猫である', 'book.epub'), 4000);
+      writeFile(p.join(root, '吾輩は猫である', 'progress_x.json'), 6);
+      writeFile(p.join(root, 'Book B', 'cover_1.jpg'), 700);
+      // 其他：带子目录的未知目录、根下散落文件、同步根以外的东西。
+      writeFile(p.join(root, 'unknown', 'deep', 'c.bin'), 9);
+      writeFile(p.join(root, 'spill.json'), 2);
+      writeFile(p.join(syncData, 'manga_ocr_jobs', 'p.png'), 30);
+
+      final List<StorageCategoryUsage> all = await service()
+          .scanCategories(
+            books: const <StorageBookRef>[],
+            dictionaryNames: const <String>[],
+          )
+          .toList();
+      final StorageCategoryUsage db = all.singleWhere(
+        (StorageCategoryUsage u) => u.id == StorageCategoryId.database,
+      );
+      StorageEntryUsage byId(String id) =>
+          db.entries.singleWhere((StorageEntryUsage e) => e.id == id);
+
+      final StorageEntryUsage shared = byId(
+        StorageUsageService.kInterconnectSharedEntryId,
+      );
+      final StorageEntryUsage srs = byId(
+        StorageUsageService.kInterconnectSrsEntryId,
+      );
+      final StorageEntryUsage legacy = byId(
+        StorageUsageService.kInterconnectLegacyEntryId,
+      );
+      final StorageEntryUsage other = byId(
+        StorageUsageService.kInterconnectOtherEntryId,
+      );
+      expect(shared.bytes, 320);
+      expect(shared.kind, StorageEntryKind.readOnly);
+      expect(srs.bytes, 50);
+      expect(srs.kind, StorageEntryKind.readOnly);
+      expect(legacy.bytes, 4706);
+      expect(legacy.itemCount, 2);
+      expect(legacy.kind, StorageEntryKind.interconnectLegacyFileBox);
+      expect(legacy.paths, <String>[syncData]);
+      expect(other.bytes, 41);
+      expect(other.kind, StorageEntryKind.readOnly);
+
+      // 不再整块一行；类目总量 = 主库 + sync-data 整树，一字节不少。
+      expect(
+        db.entries.where((StorageEntryUsage e) => e.paths.contains(syncData)),
+        hasLength(4),
+      );
+      expect(
+        db.entries.map((StorageEntryUsage e) => e.label),
+        isNot(contains('support/sync-data')),
+      );
+      expect(db.bytes, 1000 + 320 + 50 + 4706 + 41);
+      expect(
+        db.bytes,
+        db.entries.fold<int>(
+          0,
+          (int sum, StorageEntryUsage e) => sum + e.bytes,
+        ),
+      );
+
+      // 旧版残留不进「可直接裸删」的口径（一键清缓存不会碰它）。
+      expect(kDirectlyDeletableEntryKinds, isNot(contains(legacy.kind)));
+    });
+
+    test('BUG-4991：无旧版残留 / 无其他时只出共享与复习同步两条（0 也显示）', () async {
+      final String syncData = p.join(
+        support.path,
+        kInterconnectSyncDataSupportChild,
+      );
+      Directory(p.join(syncData, 'fushi-data')).createSync(recursive: true);
+
+      final List<StorageCategoryUsage> all = await service()
+          .scanCategories(
+            books: const <StorageBookRef>[],
+            dictionaryNames: const <String>[],
+          )
+          .toList();
+      final StorageCategoryUsage db = all.singleWhere(
+        (StorageCategoryUsage u) => u.id == StorageCategoryId.database,
+      );
+      expect(db.entries.map((StorageEntryUsage e) => e.id).toSet(), <String>{
+        StorageUsageService.kInterconnectSharedEntryId,
+        StorageUsageService.kInterconnectSrsEntryId,
+      });
+      expect(db.bytes, 0);
+    });
+
+    test('BUG-4991：没有 sync-data 时不出任何互联条目', () async {
+      writeFile(p.join(support.path, 'fushi.db'), 10);
+      final List<StorageCategoryUsage> all = await service()
+          .scanCategories(
+            books: const <StorageBookRef>[],
+            dictionaryNames: const <String>[],
+          )
+          .toList();
+      final StorageCategoryUsage db = all.singleWhere(
+        (StorageCategoryUsage u) => u.id == StorageCategoryId.database,
+      );
+      expect(db.entries.map((StorageEntryUsage e) => e.label), <String>[
+        'support/fushi.db',
+      ]);
+    });
+
     test('每个类目恰好产出一次结果', () async {
       final List<StorageCategoryUsage> all = await service()
           .scanCategories(

@@ -26,6 +26,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
+import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/media/audiobook/tts/cast/cast_substitutions_page.dart';
 import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/audiobook_m4b_export_flow.dart';
@@ -35,6 +36,7 @@ import 'package:fushi/src/media/audiobook/tts/studio/tts_render_unvoiced.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_series_cast.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_series_run.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_layout.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_rate_limit_panel.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_text.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_unvoiced_backfill.dart';
@@ -42,6 +44,7 @@ import 'package:fushi/src/media/audiobook/tts/studio/tts_unvoiced_page.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
 import 'package:fushi/src/media/audiobook/tts/irodori_voice_packs.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_text_rules_page.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -51,6 +54,7 @@ import 'package:fushi/src/settings/glass_settings_renderer.dart'
 import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart'
     show SettingsSectionFooter;
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -64,14 +68,11 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
-import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 export 'package:fushi/src/media/audiobook/tts/studio/tts_studio_text.dart';
 
@@ -135,8 +136,18 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
   bool _selectionTouched = false;
 
   late bool _verify = isAsrSupported;
-  List<TtsPronunciationRule> _rules = const <TtsPronunciationRule>[];
   bool _starting = false;
+
+  /// 文本处理规则（与设置页同一份）变了：发音词典 / 合成前替换改了合成文本，重建计划。
+  StreamSubscription<TtsTextRuleKind>? _textRulesSub;
+
+  /// 在线声音的限流参数（沿用本书上一次任务的选择）：null = 声音预设自己的并发。
+  int? _onlineConcurrency;
+  int _sentenceGapMs = 0;
+  TtsRateLimitAction _rateLimitAction = TtsRateLimitAction.waitRetry;
+
+  /// 章节分组头（「只做选中的章节」滚到这里）。
+  final GlobalKey _chaptersHeaderKey = GlobalKey();
 
   /// 校对结果里勾选重新生成的句序；随任务 id 换掉。
   final Set<int> _regenSelected = <int>{};
@@ -198,14 +209,21 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
     if (last != null) {
       _pause = TtsPausePreset.parse(last.pausePreset);
       _loudness = last.normalizeLoudness;
+      _onlineConcurrency = last.onlineConcurrency;
+      _sentenceGapMs = last.sentenceGapMs;
+      _rateLimitAction = last.rateLimitAction;
     }
     _reloadPresets(preferJobPreset: true);
-    _rules = _tts.pronunciation.load();
+    _textRulesSub = _tts.textRules.changes.listen((TtsTextRuleKind kind) {
+      if (kind == TtsTextRuleKind.postRecognition || !mounted) return;
+      unawaited(_rebuildPlan());
+    });
     unawaited(_loadBook());
   }
 
   @override
   void dispose() {
+    unawaited(_textRulesSub?.cancel());
     _annotateCancelled = true;
     _previewCancel?.cancel();
     unawaited(_releasePreview());
@@ -385,38 +403,6 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
     });
   }
 
-  Future<void> _editRule([int? index]) async {
-    final TtsPronunciationRule? current = index == null ? null : _rules[index];
-    final TtsPronunciationRule? edited =
-        await showAppDialog<TtsPronunciationRule>(
-          context: context,
-          builder: (_) => _PronunciationRuleDialog(initial: current),
-        );
-    if (edited == null || !mounted) return;
-    final List<TtsPronunciationRule> next = List<TtsPronunciationRule>.of(
-      _rules,
-    );
-    if (index == null) {
-      next.add(edited);
-    } else {
-      next[index] = edited;
-    }
-    await _saveRules(next);
-  }
-
-  Future<void> _deleteRule(int index) async {
-    final List<TtsPronunciationRule> next = List<TtsPronunciationRule>.of(
-      _rules,
-    )..removeAt(index);
-    await _saveRules(next);
-  }
-
-  Future<void> _saveRules(List<TtsPronunciationRule> next) async {
-    setState(() => _rules = next);
-    await _tts.pronunciation.save(next);
-    if (mounted) await _rebuildPlan();
-  }
-
   Future<void> _start() async {
     final TtsVoicePreset? preset = _preset;
     final ({EpubBookRow row, EpubBook book})? loaded = _loaded;
@@ -442,6 +428,9 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
         verify: _verify && isAsrSupported,
         pausePreset: _pause.name,
         normalizeLoudness: _loudness,
+        onlineConcurrency: _onlineConcurrency,
+        sentenceGapMs: _sentenceGapMs,
+        rateLimitAction: _rateLimitAction,
       );
       // 排进队列后切到「结果」看进度。
       if (mounted) setState(() => _step = TtsStudioStep.result);
@@ -462,6 +451,9 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
       regenerate: _regenSelected.toList()..sort(),
       pausePreset: job.pausePreset,
       normalizeLoudness: job.normalizeLoudness,
+      onlineConcurrency: job.onlineConcurrency,
+      sentenceGapMs: job.sentenceGapMs,
+      rateLimitAction: job.rateLimitAction,
     );
   }
 
@@ -1429,7 +1421,7 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
 
   List<Widget> _contentSlivers(BuildContext context) => <Widget>[
     for (final Widget w in _voiceSection()) _box(w),
-    _box(_pronunciationSection()),
+    _box(TtsTextRulesSection(store: _tts.textRules)),
     ..._chaptersSlivers(context),
   ];
 
@@ -1478,6 +1470,7 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
         context,
         key: const ValueKey<String>('tts-studio-chapters'),
         child: Row(
+          key: _chaptersHeaderKey,
           children: <Widget>[
             Expanded(
               child: Column(
@@ -1632,14 +1625,81 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
           ),
         ],
       ),
-      if (_usesOnlineVoice)
-        _notice(
-          'tts-studio-online-warning',
-          t.audiobook_studio_online_warning,
-          FushiNoticeSeverity.warning,
-        ),
+      if (_usesOnlineVoice) _rateLimitPanel(context),
     ];
   }
+
+  /// 默认声音（在线时）当前生效的并发：任务参数优先，否则声音预设自己的并发。
+  int get _effectiveOnlineConcurrency {
+    final TtsVoicePreset? preset = _preset;
+    final TtsProviderDescriptor? descriptor = _descriptor;
+    final int base = preset == null || descriptor == null
+        ? 1
+        : ttsEffectiveConcurrency(descriptor, preset);
+    return _onlineConcurrency ?? base;
+  }
+
+  /// 本机 / 自建声音（非在线服务）的预设。
+  List<TtsVoicePreset> get _localPresets => <TtsVoicePreset>[
+    for (final TtsVoicePreset p in _presets)
+      if (_tts.productionDescriptor(p.providerId)?.category !=
+          TtsProviderCategory.online)
+        p,
+  ];
+
+  /// 「改用本机声音」：只列本机声音；一个都没有就去朗读声音页添加。
+  Future<void> _pickLocalPreset() async {
+    final List<TtsVoicePreset> local = _localPresets;
+    if (local.isEmpty) {
+      FushiToast.show(msg: t.audiobook_studio_rate_limit_no_local);
+      await _openVoiceSettings();
+      return;
+    }
+    final String? picked = await showFushiChoiceDialog<String>(
+      context: context,
+      title: t.audiobook_studio_rate_limit_use_local,
+      icon: FushiIcons.devices,
+      options: <FushiChoiceOption<String>>[
+        for (final TtsVoicePreset p in local)
+          FushiChoiceOption<String>(
+            value: p.id,
+            label: _presetName(p),
+            subtitle: ttsProviderLabel(p.providerId),
+          ),
+      ],
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _presetId = picked);
+  }
+
+  /// 「只做选中的章节」：滚到章节分组，挑要做的章。
+  void _revealChapters() {
+    final BuildContext? target = _chaptersHeaderKey.currentContext;
+    if (target == null) return;
+    unawaited(
+      FushiFocusScroll.ensureVisible(
+        target,
+        duration: fushiMotionDuration(context, FushiMotion.medium),
+        curve: FushiMotion.enter,
+        alignment: 0,
+      ),
+    );
+  }
+
+  /// 在线服务限流面板（[TtsStudioRateLimitPanel]）：参数是本书的制作参数，随任务存、
+  /// 下次沿用；只作用于在线声音。
+  Widget _rateLimitPanel(BuildContext context) => TtsStudioRateLimitPanel(
+    sentences: _selectedTotals.sentences,
+    concurrency: _effectiveOnlineConcurrency,
+    sentenceGapMs: _sentenceGapMs,
+    action: _rateLimitAction,
+    onConcurrencyChanged: (int n) => setState(() => _onlineConcurrency = n),
+    onGapChanged: (int ms) => setState(() => _sentenceGapMs = ms),
+    onActionChanged: (TtsRateLimitAction v) =>
+        setState(() => _rateLimitAction = v),
+    onUseLocalVoice: () => unawaited(_pickLocalPreset()),
+    onSelectedChaptersOnly: _revealChapters,
+  );
 
   Widget _chevron(BuildContext context) => isGlassDesign(context)
       ? const FushiAppleChevron()
@@ -2542,123 +2602,4 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
       ),
     );
   }
-
-  Widget _pronunciationSection() => AdaptiveSettingsSection(
-    key: const ValueKey<String>('tts-studio-pronunciation'),
-    title: t.audiobook_studio_pronunciation,
-    titlePlacement: SettingsSectionTitlePlacement.inside,
-    collapsible: true,
-    initiallyExpanded: false,
-    summary: t.audiobook_studio_pronunciation_hint,
-    children: <Widget>[
-      for (int i = 0; i < _rules.length; i++)
-        AdaptiveSettingsRow(
-          key: ValueKey<String>('tts-studio-rule-$i'),
-          title: '${_rules[i].written} → ${_rules[i].spoken}',
-          onTap: () => unawaited(_editRule(i)),
-          trailing: FushiIconButtonControl(
-            key: ValueKey<String>('tts-studio-rule-$i-delete'),
-            tooltip: t.dialog_delete,
-            icon: const FushiIcon(FushiIcons.delete),
-            onPressed: () => unawaited(_deleteRule(i)),
-          ),
-        ),
-      AdaptiveSettingsRow(
-        key: const ValueKey<String>('tts-studio-rule-add'),
-        icon: FushiIcons.add,
-        showIcon: true,
-        title: t.audiobook_studio_pronunciation_add,
-        subtitle: _rules.isEmpty ? t.audiobook_studio_pronunciation_hint : null,
-        onTap: () => unawaited(_editRule()),
-      ),
-    ],
-  );
-}
-
-class _PronunciationRuleDialog extends StatefulWidget {
-  const _PronunciationRuleDialog({required this.initial});
-
-  final TtsPronunciationRule? initial;
-
-  @override
-  State<_PronunciationRuleDialog> createState() =>
-      _PronunciationRuleDialogState();
-}
-
-class _PronunciationRuleDialogState extends State<_PronunciationRuleDialog> {
-  late final TextEditingController _written = TextEditingController(
-    text: widget.initial?.written ?? '',
-  );
-  late final TextEditingController _spoken = TextEditingController(
-    text: widget.initial?.spoken ?? '',
-  );
-
-  @override
-  void dispose() {
-    _written.dispose();
-    _spoken.dispose();
-    super.dispose();
-  }
-
-  bool get _valid =>
-      _written.text.trim().isNotEmpty && _spoken.text.trim().isNotEmpty;
-
-  void _submit() {
-    if (!_valid) return;
-    Navigator.of(context).pop(
-      TtsPronunciationRule(
-        written: _written.text.trim(),
-        spoken: _spoken.text.trim(),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) => FushiAlertDialog(
-    icon: const FushiDialogHeroIcon(icon: FushiIcons.dictionary),
-    title: Text(
-      widget.initial == null
-          ? t.audiobook_studio_pronunciation_add
-          : t.audiobook_studio_pronunciation,
-    ),
-    content: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        FushiTextFormFieldControl(
-          key: const ValueKey<String>('tts-studio-rule-written'),
-          controller: _written,
-          autofocus: true,
-          textInputAction: TextInputAction.next,
-          decoration: InputDecoration(
-            labelText: t.audiobook_studio_pronunciation_written,
-            border: const OutlineInputBorder(),
-          ),
-          onChanged: (_) => setState(() {}),
-        ),
-        const SizedBox(height: 12),
-        FushiTextFormFieldControl(
-          key: const ValueKey<String>('tts-studio-rule-spoken'),
-          controller: _spoken,
-          textInputAction: TextInputAction.done,
-          decoration: InputDecoration(
-            labelText: t.audiobook_studio_pronunciation_spoken,
-            border: const OutlineInputBorder(),
-          ),
-          onChanged: (_) => setState(() {}),
-          onFieldSubmitted: (_) => _submit(),
-        ),
-      ],
-    ),
-    actions: <Widget>[
-      FushiDialogAction(
-        label: t.dialog_cancel,
-        onPressed: () => Navigator.of(context).pop(),
-      ),
-      FushiDialogAction(
-        label: t.dialog_ok,
-        kind: FushiDialogActionKind.primary,
-        onPressed: _valid ? _submit : null,
-      ),
-    ],
-  );
 }

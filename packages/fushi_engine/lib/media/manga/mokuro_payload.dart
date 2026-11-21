@@ -41,11 +41,21 @@ class MangaOcrMetadata {
     required this.engine,
     required this.engineSignature,
     required this.schemaVersion,
+    this.completedAt,
   });
 
   final String engine;
   final String engineSignature;
   final int schemaVersion;
+
+  /// 这份整卷结果正式落盘（引擎整卷跑完、组装出 payload）的时刻。
+  ///
+  /// 重开书恢复逐页缓存时的判据：只回填与本卷同引擎、或比这一刻更新的缓存，
+  /// 别的引擎更早留下的逐页结果不得填进整卷判为无字的页
+  /// （`recoverCachedMangaOcr`）。manga.json 之后的读-改-写（大模型重读、PDF
+  /// 文字层回填等）原样带着它，所以它不随文件 mtime 漂移。旧 manga.json 与
+  /// `.mokuro` 导入没有这个字段（null）。
+  final DateTime? completedAt;
 }
 
 /// Contains all information needed to render an image, including any text
@@ -257,12 +267,29 @@ String joinMokuroPageRoot(List<String> root, String url) =>
 /// (which has no mokuro field) is assigned from the block's array index.
 /// `img_path` is normalised to a forward-slash relative URL via
 /// [normalizeMangaUrl]. `lines_coords` is preserved when present.
-MokuroPayload parseMokuro(String jsonStr) {
+MokuroPayload parseMokuro(String jsonStr) =>
+    parseMokuroDocument(jsonStr).payload;
+
+/// 一份 `.mokuro` 文档**解析一次**的全部产物：页 / 框模型 [MokuroPayload] 与顶层
+/// 对象 `root`（`title` / `volume` 等元数据从这里读）。顶层不是对象（罕见的数组 /
+/// 标量）时 `root` 为空、`payload` 无页。
+typedef MokuroDocument = ({MokuroPayload payload, Map<String, Object?> root});
+
+/// [parseMokuro] 的完整版：连顶层对象一起带出（manga-29b）。导入要页模型也要顶层
+/// 标题，此前是 `parseMokuro` 之后再对同一份文本 `jsonDecode` 一遍取顶层。
+MokuroDocument parseMokuroDocument(String jsonStr) {
   final Object? decoded = jsonDecode(jsonStr);
   if (decoded is! Map) {
-    return const MokuroPayload(images: <MokuroImage>[]);
+    return (
+      payload: const MokuroPayload(images: <MokuroImage>[]),
+      root: const <String, Object?>{},
+    );
   }
+  final Map<String, Object?> root = decoded.cast<String, Object?>();
+  return (payload: _mokuroPayloadFromRoot(root), root: root);
+}
 
+MokuroPayload _mokuroPayloadFromRoot(Map<String, Object?> decoded) {
   final Object? rawPages = decoded['pages'];
   if (rawPages is! List) {
     return const MokuroPayload(images: <MokuroImage>[]);
@@ -362,6 +389,8 @@ Map<String, Object?> mangaPayloadToJson(MokuroPayload payload) {
         'engine': payload.ocr!.engine,
         'engine_signature': payload.ocr!.engineSignature,
         'schema_version': payload.ocr!.schemaVersion,
+        if (payload.ocr!.completedAt != null)
+          'completed_at_ms': payload.ocr!.completedAt!.millisecondsSinceEpoch,
       },
     if (payload.pdfTextLayerVersion != null)
       'pdf_text_layer_version': payload.pdfTextLayerVersion,
@@ -420,10 +449,14 @@ MangaOcrMetadata? _parseOcrMetadata(Object? raw) {
   if (engine == null || signature == null || version == null) {
     return null;
   }
+  final int? completedAtMs = (raw['completed_at_ms'] as num?)?.toInt();
   return MangaOcrMetadata(
     engine: engine,
     engineSignature: signature,
     schemaVersion: version,
+    completedAt: completedAtMs == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(completedAtMs, isUtc: true),
   );
 }
 

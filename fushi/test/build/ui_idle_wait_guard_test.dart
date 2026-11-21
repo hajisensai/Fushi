@@ -5,11 +5,12 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/scan_scale.dart';
 import '../helpers/source_guard.dart';
 
-/// BUG-4387 / BUG-4893：Windows 上「画面在动、鼠标键盘全失灵」的两道结构守卫。
+/// BUG-4387 / BUG-4725 / BUG-4893：Windows 上「画面在动、鼠标键盘全失灵」的两道结构守卫。
 ///
-/// 1. `lib` 下不得调 `SchedulerBinding.scheduleTask`。它在调度策略不放行时用零延迟
-///    定时器把自己一圈圈重排，Windows 嵌入层每圈一条 posted 消息，输入永远排不上。
-///    等空闲用 `waitForUiIdle`（按帧复查，不空转）。
+/// 1. 所有入口都用带 `FramePacedTaskScheduler` 的 binding：`lib` 下不得调裸
+///    `WidgetsFlutterBinding.ensureInitialized()`。裸 binding 的调度器在策略不放行时用零延迟
+///    定时器把任务一圈圈重排，Windows 嵌入层每圈一条 posted 消息，输入永远排不上；「怎么等」
+///    只靠 binding 层这一套（`waitForUiIdle` 也只是往里排一个 idle 任务）。
 /// 2. 每个调 `.repeat(` 的文件都要表态：应用级常驻装饰（必须走 ambient ticker，不算
 ///    「有动画在跑」），还是随某个状态存续（播放 / 加载 / 录制，状态结束就停）。
 ///    吉祥物光晕就是没表态的常驻装饰——开着它启动，等空闲的工作永远等不到。
@@ -40,37 +41,36 @@ const Map<String, String> _stateBoundRepeatFiles = <String, String>{
   'lib/src/utils/components/glass/fushi_glass_feedback.dart': '玻璃进度条：不定态',
 };
 
-final RegExp _scheduleTaskCall = RegExp(
-  r'(?<![A-Za-z0-9_$])scheduleTask\s*(?:<[^>()]*>)?\s*\(',
+final RegExp _bareBindingInit = RegExp(
+  r'(?<![A-Za-z0-9_$])WidgetsFlutterBinding\s*\.\s*ensureInitialized\s*\(',
 );
 final RegExp _repeatCall = RegExp(r'\.\s*repeat\s*\(');
 
 void main() {
-  test('判据自校验：只认真正的 scheduleTask 调用', () {
+  test('判据自校验：只认裸 WidgetsFlutterBinding.ensureInitialized 调用', () {
     expect(
-      _scheduleTaskCalls('''
-// SchedulerBinding.instance.scheduleTask(() {}, Priority.idle);
-/* binding.scheduleTask<void>(() {}, Priority.idle) */
-final String hint = 'scheduleTask(() {}, Priority.idle)';
-void _scheduleTask() {}
-void run() => _scheduleTask();
-final Future<void> a = SchedulerBinding.instance.scheduleTask<void>(
-  () {},
-  Priority.idle,
-);
-final Future<int> b = binding.scheduleTask(() => 1, Priority.animation);
-final Future<void> c = binding.scheduleTask <void> (() {}, Priority.touch);
+      _bareBindingInits('''
+// WidgetsFlutterBinding.ensureInitialized();
+/* WidgetsFlutterBinding.ensureInitialized() */
+final String hint = 'WidgetsFlutterBinding.ensureInitialized()';
+void a() => FushiWidgetsFlutterBinding.ensureInitialized();
+void b() => FushiSecondaryWidgetsFlutterBinding.ensureInitialized();
+void c() => WidgetsFlutterBinding.ensureInitialized();
+void d() {
+  WidgetsFlutterBinding
+      .ensureInitialized();
+}
 '''),
-      3,
+      2,
     );
   });
 
-  test('lib 下不调 SchedulerBinding.scheduleTask（等空闲用 waitForUiIdle）', () {
+  test('lib 下所有入口都用带按帧调度的 binding（不调裸 WidgetsFlutterBinding）', () {
     final List<String> offenders = <String>[];
     int scanned = 0;
     for (final File file in _dartFiles()) {
       scanned++;
-      if (_scheduleTaskCalls(file.readAsStringSync()) > 0) {
+      if (_bareBindingInits(file.readAsStringSync()) > 0) {
         offenders.add(_normalize(file.path));
       }
     }
@@ -84,9 +84,9 @@ final Future<void> c = binding.scheduleTask <void> (() {}, Priority.touch);
       offenders,
       isEmpty,
       reason:
-          'scheduleTask 在调度策略不放行时零延迟空转，饿死 Windows 输入（BUG-4387 / '
-          'BUG-4893）。等空闲改用 lib/src/utils/scheduling/ambient_ticker.dart 的 '
-          'waitForUiIdle。',
+          '裸 WidgetsFlutterBinding 的调度器碰上常驻动画会零延迟空转，饿死 Windows 输入'
+          '（BUG-4725 / BUG-4893）。主引擎用 FushiWidgetsFlutterBinding，副引擎入口用 '
+          'FushiSecondaryWidgetsFlutterBinding（lib/src/diagnostics/fushi_binding.dart）。',
     );
   });
 
@@ -162,9 +162,9 @@ void run(AnimationController controller) {
   });
 }
 
-/// 私有同名 helper（`_scheduleTask()`）由正则的前瞻排除，不算。
-int _scheduleTaskCalls(String source) =>
-    _scheduleTaskCall.allMatches(maskCommentsAndStrings(source)).length;
+/// `FushiWidgetsFlutterBinding.ensureInitialized()` 这类子类入口由正则的前瞻排除，不算。
+int _bareBindingInits(String source) =>
+    _bareBindingInit.allMatches(maskCommentsAndStrings(source)).length;
 
 int _repeatCalls(String source) =>
     _repeatCall.allMatches(maskCommentsAndStrings(source)).length;

@@ -5,7 +5,8 @@
 ///                                   `defaultProfile`、`rolloverHour`、`rwkvModel`（`small` / `tiny`：RWKV 模型
 ///                                   档位，写的是整台设备的 `<support>/srs_rwkv/model_size`，当场生效）、
 ///                                   `miningTarget`、`miningDecks`（整份替换）/ `miningDecksPatch`（只改给了的
-///                                   那几份，空串 = 删掉那一项）、`ankiConnect: {enabled, bind, port, apiKey,
+///                                   那几份，空串 = 删掉那一项）、`profileNames`（整份替换，空串 = 不起名、用设备报的；
+///                                   服务端发布的 profile 说明文件与选择列表用它）、`ankiConnect: {enabled, bind, port, apiKey,
 ///                                   profileKeys, corsOrigins}`；
 /// - `GET  /api/admin/srs/profiles`  同步目录里能选的 profile（名字、设备、笔记数、是否已提供）；
 /// - `POST /api/admin/srs/sync`      立即同步（正文 `{"profile": uid}` 只同步那份）；
@@ -13,6 +14,15 @@
 ///                                   首次出现、扣着几条删除 / 彻底清除、待确认还是已拒绝；
 /// - `POST /api/admin/srs/devices/trust`  信任 / 拒绝一台：`{"device": id, "trust": true|false, "profile": uid}`；
 ///                                   `profile` 可省（只在一份里待确认 / 已拒绝时自动认出那份）。
+/// - `GET  /api/admin/srs/migration` 复习库换代（协议 3 → 新代）的状态：`generation`（状态、步骤进度、上次结论、内核
+///                                   `code` / 原因、报告路径、处置说明 `advice`）+ 各份 profile 的状态；
+/// - `POST /api/admin/srs/migration/start`   开始 / 重新开始迁移（后台跑，202 后看状态）；在跑 / 不需要 / 别的进程在迁
+///                                   → 409 `srs_migration_running` / `srs_migration_not_needed` / `srs_migrating_elsewhere`；
+///                                   整机备份正在拷库目录 → 409 `srs_backup_running`（备份完再开始）；
+/// - `POST /api/admin/srs/migration/cancel`  叫停（提交点之前）；没在跑 / 过了提交点 → 409。
+///
+/// 复习库在升级 / 升级受阻时，按 profile 取库的端点回 503 `srs_upgrading` / `srs_upgrade_blocked`（server_srs.dart
+/// [ServerSrsUpgradeRefusal]），不是 409 `profile_unavailable`。
 ///
 /// 设备信任（BUG-4306，native/fushi_fsrs/src/store/sync2/trust.rs）：服务端开库后第一次见到的设备，它的删除与彻底
 /// 清除在服务端的库里扣着，直到这里确认。逻辑在 engine `srs_devices.dart`，与 app 冲突中心同一条路径。
@@ -65,6 +75,22 @@ class AdminSrs {
         }
         await srs.syncNow(uid as String?);
         return _json(status());
+      case ('GET', '$kAdminSrsPath/migration'):
+        final ServerSrs? srs = ctx.host.srs;
+        if (srs == null) return _err(409, 'srs_unavailable');
+        return _json(_migrationView(srs));
+      case ('POST', '$kAdminSrsPath/migration/start'):
+        final ServerSrs? srs = ctx.host.srs;
+        if (srs == null) return _err(409, 'srs_unavailable');
+        final String? refused = await srs.startMigration();
+        if (refused != null) return _err(409, refused);
+        return _json(_migrationView(srs), status: 202);
+      case ('POST', '$kAdminSrsPath/migration/cancel'):
+        final ServerSrs? srs = ctx.host.srs;
+        if (srs == null) return _err(409, 'srs_unavailable');
+        final String? refused = srs.cancelMigration();
+        if (refused != null) return _err(409, refused);
+        return _json(_migrationView(srs));
       case ('GET', '$kAdminSrsPath/devices'):
         return _devices(request.url.queryParameters['profile']);
       case ('POST', '$kAdminSrsPath/devices/trust'):
@@ -83,7 +109,7 @@ class AdminSrs {
     } else {
       final ServerSrsProfile? prof = srs.profile(uid);
       if (prof == null) return _err(404, 'profile_not_served');
-      if (prof.store == null) return _err(409, 'profile_unavailable');
+      if (prof.store == null) return _unavailable(srs);
       targets = <ServerSrsProfile>[prof];
     }
     return _json(<String, Object?>{
@@ -127,7 +153,7 @@ class AdminSrs {
     if (uid is String && uid.isNotEmpty) {
       final ServerSrsProfile? hit = srs.profile(uid);
       if (hit == null) return _err(404, 'profile_not_served');
-      if (hit.store == null) return _err(409, 'profile_unavailable');
+      if (hit.store == null) return _unavailable(srs);
       prof = hit;
     } else {
       // 没点名：在哪份里还没信任就是哪份；几份里都有（同一台设备在几门语言里都待确认）要点名。
@@ -171,6 +197,7 @@ class AdminSrs {
         'rolloverHour': cfg.rolloverHour,
         'miningTarget': cfg.miningTarget.wire,
         'miningDecks': cfg.miningDecks,
+        'profileNames': cfg.profileNames,
         // RWKV 模型档位：不在 config.yaml 里，是整台设备的设置文件（`<support>/srs_rwkv/model_size`，与 app
         // 同一个），这里读写的就是它。
         'rwkvModel': ctx.host.srs?.rwkvModelSize.persistedName,
@@ -275,6 +302,18 @@ class AdminSrs {
     final Map<String, String>? nextDecks = decks == null && deckPatch == null
         ? null
         : <String, String>{...(decks ?? cur.miningDecks), ...?deckPatch};
+    final Map<String, String>? names = _uidMap(
+      body['profileNames'],
+      'profileNames',
+    );
+    for (final String name in names?.values ?? const <String>[]) {
+      // 发布到同步位置给别的设备看：限长，不收控制字符。
+      if (!serverSrsProfileNameOk(name)) {
+        throw const FormatException(
+          'profileNames: a name must be at most $kServerSrsProfileNameMax characters without control characters',
+        );
+      }
+    }
     final ServerSrsConfig nextSrs = cur.copyWith(
       profiles: nextProfiles,
       // 默认那份被取消了：清空（= 列表第一份），别留一个不再提供的 uid。
@@ -290,6 +329,12 @@ class AdminSrs {
           ? null
           : <String, String>{
               for (final MapEntry<String, String> e in nextDecks.entries)
+                if (e.value.isNotEmpty) e.key: e.value,
+            },
+      profileNames: names == null
+          ? null
+          : <String, String>{
+              for (final MapEntry<String, String> e in names.entries)
                 if (e.value.isNotEmpty) e.key: e.value,
             },
     );
@@ -447,3 +492,22 @@ shelf.Response _json(Map<String, Object?> body, {int status = 200}) =>
 
 shelf.Response _err(int status, String reason) =>
     _json(<String, Object?>{'error': reason, 'reason': reason}, status: status);
+
+/// 那份 profile 不可用：复习库在升级 / 升级受阻时回类型化的 503（[ServerSrsUpgradeRefusal]），其余 409。
+shelf.Response _unavailable(ServerSrs srs) => switch (srs.upgradeRefusal) {
+  final ServerSrsUpgradeRefusal r => _err(r.status, r.reason),
+  null => _err(409, 'profile_unavailable'),
+};
+
+/// `GET /api/admin/srs/migration` 等的回包：代际状态 + 各份 profile 的状态。
+Map<String, Object?> _migrationView(ServerSrs srs) => <String, Object?>{
+  'generation': srs.generation.toJson(),
+  'profiles': <Map<String, Object?>>[
+    for (final ServerSrsProfile prof in srs.profiles)
+      <String, Object?>{
+        'uid': prof.uid,
+        'state': prof.state.wire,
+        'lastError': prof.lastError,
+      },
+  ],
+};

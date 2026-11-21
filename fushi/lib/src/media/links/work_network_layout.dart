@@ -1,8 +1,9 @@
 /// 关系网页的确定性布局（AI 库管家 spec §4.4）：分栏 + 贝塞尔连线。
 ///
 /// - 栏从左到右：建议态节点 → 作品成员按媒体分组（小说 / 漫画 / 动画 / 游戏 /
-///   有声书 / 音乐）→ 卫星（主题曲 / 原声 / 配音）。成员在中间，卫星与建议态分居
-///   两侧。
+///   有声书 / 音乐）→ 系列（续作 / 前传 / 外传 / 剧场版…，含未入库的相关作品）→
+///   卫星（主题曲 / 原声 / 配音）。成员在中间，系列紧挨成员，卫星与建议态分居两侧。
+/// - 系列栏内：「另有 N 部」恒在最后。
 /// - 栏内自上而下：本条目 → 原作 → 其余按节点 id；各栏纵向居中对齐。
 /// - 边从左节点右沿中点连到右节点左沿中点（同栏两节点之间向右鼓出一道弧），标签
 ///   放在曲线中点，与先放的标签重叠就往下错开。
@@ -37,6 +38,11 @@ final class WorkNetworkGroupLane extends WorkNetworkLaneKind {
 /// 卫星栏。
 final class WorkNetworkSatelliteLane extends WorkNetworkLaneKind {
   const WorkNetworkSatelliteLane();
+}
+
+/// 系列栏（续作 / 前传 / 外传 / 剧场版…）。
+final class WorkNetworkSeriesLane extends WorkNetworkLaneKind {
+  const WorkNetworkSeriesLane();
 }
 
 /// 一栏的位置。
@@ -98,13 +104,15 @@ abstract final class WorkNetworkMetrics {
 int _laneRank(WorkNetworkNodeSpec n) => switch (n.role) {
   WorkNetworkRole.suggested => -1,
   WorkNetworkRole.member => n.group.index,
-  WorkNetworkRole.satellite => WorkMediaGroup.values.length,
+  WorkNetworkRole.series => WorkMediaGroup.values.length,
+  WorkNetworkRole.satellite => WorkMediaGroup.values.length + 1,
 };
 
 WorkNetworkLaneKind _laneKind(WorkNetworkNodeSpec n) => switch (n.role) {
   WorkNetworkRole.suggested => const WorkNetworkSuggestedLane(),
   WorkNetworkRole.member => WorkNetworkGroupLane(n.group),
   WorkNetworkRole.satellite => const WorkNetworkSatelliteLane(),
+  WorkNetworkRole.series => const WorkNetworkSeriesLane(),
 };
 
 /// 算 [plan] 的布局。
@@ -121,6 +129,8 @@ WorkNetworkLayout layoutWorkNetwork(WorkNetworkPlan plan) {
   final List<int> laneRanks = byLane.keys.toList()..sort();
   for (final List<WorkNetworkNodeSpec> lane in byLane.values) {
     lane.sort((WorkNetworkNodeSpec a, WorkNetworkNodeSpec b) {
+      final bool aMore = a.moreCount > 0;
+      if (aMore != (b.moreCount > 0)) return aMore ? 1 : -1;
       if (a.isSelf != b.isSelf) return a.isSelf ? -1 : 1;
       if (a.original != b.original) return a.original ? -1 : 1;
       return a.id.compareTo(b.id);

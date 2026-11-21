@@ -53,11 +53,10 @@ void main() {
       return mergeSrc.substring(start, end);
     }
 
-    // merge() = 主库事务（_mergeMainDatabase）+ srs.db（另一个文件，不能进主库事务）。
+    // merge() = 主库事务（_mergeMainDatabase）。复习数据（新代 srs4.db，另一个文件）不在这里并，由调用方在主库
+    // 事务提交之后另走 mergeSrsIntoLocal（复习换代 G11-4）。
     expect(
-      bodyOf(
-        'Future<void> merge() async {',
-      ).contains('await _mergeMainDatabase();'),
+      mergeSrc.contains('Future<void> merge() => _mergeMainDatabase();'),
       isTrue,
       reason: 'merge() 必须执行主库合并 _mergeMainDatabase()',
     );
@@ -181,8 +180,13 @@ void main() {
       isTrue,
       reason: '首页行卡统一 2:3 竖封面，卡宽走 videoHomePosterCardWidth',
     );
+    // 刮削展示映射收在 [VideoLibraryScrapeMaps]（整表与增量刷新共用）。
     expect(
-      homeSrc.contains('getAllCollectionScrapeMeta'),
+      homeSrc.contains('VideoLibraryScrapeMaps.load(') &&
+          homeSrc.contains('_collectionScrapeMetaById') &&
+          File(
+            'lib/src/media/video/video_library_scrape_maps.dart',
+          ).readAsStringSync().contains('getAllCollectionScrapeMeta'),
       isTrue,
       reason: '视频首页必须消费合集刮削资料（作品名 / 年份筛选）',
     );
@@ -794,9 +798,13 @@ void main() {
       isTrue,
       reason: 'BUG-790：合集进度分母必须是 memberCount（本地 + 远端占位）',
     );
-    final int progressFn = homeSrc.indexOf(
-      ' _collectionProgress(\n    CollectionGroup',
-    );
+    // 签名换行由 dart format 决定（返回类型长短会让参数单行 / 折行），只认
+    // 「_collectionProgress(」后紧跟 CollectionGroup 参数的那一处定义。
+    final int progressFn =
+        RegExp(
+          r'\s_collectionProgress\(\s*CollectionGroup',
+        ).firstMatch(homeSrc)?.start ??
+        -1;
     expect(progressFn, isNonNegative);
     expect(
       homeSrc

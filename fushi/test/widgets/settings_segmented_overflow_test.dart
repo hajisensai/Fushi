@@ -57,25 +57,42 @@ void main() {
     );
   }
 
-  // 2026-10 MD3 Expressive 刷新（Android 16 设置）：多选一行只问
-  // [settingsChoiceUsesSegments] 一条判据——少而短、且估宽不超过行宽 55% 的选项是
-  // 行右侧紧凑的分段按钮；否则退回「当前值写进说明行、点整行弹出菜单」的
-  // [SettingsChoiceMenuRow]。BUG-008 / 溢出两条回归的契约因此变成：任何宽度下都
-  // 不溢出，且每个选项都可达（要么整条分段可见，要么全部出现在菜单里）。
-  //
-  // 选中项写在说明行（「当前值\n说明」同一个 Text），菜单里逐项核对其余选项。
+  // 分段行三档摆放（[settingsSegmentedPlacement]）：少而短、估宽不超过行宽 55%
+  // 时在行右侧；行内放不下但整行放得下每段文字时，分段换到标题下方并撑满整行
+  // （2026-11-20 用户反馈：不再一律退成菜单）；连整行都放不下才退回「当前值写进
+  // 说明行、点整行弹出菜单」的 [SettingsChoiceMenuRow]。BUG-008 / 溢出两条回归的
+  // 契约因此是：任何宽度下都不溢出，且每个选项都可达（要么整条分段完整可见，
+  // 要么全部出现在菜单里）。
   Future<void> expectOptionsReachable(
     WidgetTester tester, {
     required String selectedLabel,
     required List<String> otherLabels,
   }) async {
-    expect(
-      find.byType(SettingsChoiceMenuRow),
-      findsOneWidget,
-      reason: 'a strip that cannot fit falls back to the choice menu row',
+    final Finder strip = find.byWidgetPredicate(
+      (Widget w) => w is SegmentedButton<String>,
     );
+    if (find.byType(SettingsChoiceMenuRow).evaluate().isEmpty) {
+      // 分段形态：整条可见，每段文字完整落在分段条里（没有被裁到画布外）。
+      expect(strip, findsOneWidget, reason: 'either a whole strip or a menu');
+      final Rect stripRect = tester.getRect(strip);
+      final Rect screen = tester.getRect(find.byType(Scaffold));
+      expect(stripRect.left, greaterThanOrEqualTo(screen.left - 0.5));
+      expect(stripRect.right, lessThanOrEqualTo(screen.right + 0.5));
+      for (final String label in <String>[selectedLabel, ...otherLabels]) {
+        final Finder text = find.descendant(
+          of: strip,
+          matching: find.text(label),
+        );
+        expect(text, findsOneWidget, reason: 'segment visible: $label');
+        final Rect r = tester.getRect(text);
+        expect(r.left, greaterThanOrEqualTo(stripRect.left - 0.5));
+        expect(r.right, lessThanOrEqualTo(stripRect.right + 0.5));
+      }
+      expect(tester.takeException(), isNull);
+      return;
+    }
     expect(
-      find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>),
+      strip,
       findsNothing,
       reason: 'no clipped / half-visible strip is left on the row',
     );
@@ -130,6 +147,17 @@ void main() {
         );
         await tester.pump();
         expect(tester.takeException(), isNull, reason: 'no overflow');
+        // 宽面板：分段要么在行内靠右，要么换到标题下方撑满整行——右缘都贴着
+        // 行的右内边距，不会退成菜单、也不会靠左一小块留半行空白。
+        final Rect strip = tester.getRect(
+          find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>),
+        );
+        final Rect rowRect = tester.getRect(
+          find.byWidgetPredicate(
+            (Widget w) => w is AdaptiveSettingsSegmentedRow<String>,
+          ),
+        );
+        expect(strip.right, moreOrLessEquals(rowRect.right - 16, epsilon: 1));
         await expectOptionsReachable(
           tester,
           selectedLabel: 'Material Design 3',

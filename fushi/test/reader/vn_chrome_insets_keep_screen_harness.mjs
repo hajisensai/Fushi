@@ -14,7 +14,7 @@
 // - 当前屏的内容真的变了（长段落在更矮的盒里要多拆）→ 重渲，仍从同一个字开始。
 import assert from 'node:assert/strict';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
-import { readPayload, vnShellConfig, vnShellPage } from './vn_shell_harness_support.mjs';
+import { readPayload, vnShellConfig, vnShellPage } from './reader_harness_support.js';
 
 const scripts = readPayload();
 if (!resolveChrome()) {

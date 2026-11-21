@@ -33,7 +33,7 @@ void main() {
     expect(webModuleOnboardingHint(windows), t.onboarding_feature_web_hint);
     expect(
       webModuleOnboardingHint(macLinux),
-      t.onboarding_feature_web_reader_desktop_hint,
+      t.onboarding_feature_web_reader_extension_hint,
     );
     expect(
       webModuleOnboardingHint(android),

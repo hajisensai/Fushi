@@ -2232,6 +2232,9 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
     game: game,
     onDetail: () => unawaited(_openDetail(game)),
     onChanged: () => unawaited(_afterItemAction()),
+    onLaunch: () => unawaited(_launchGame(game)),
+    onOpenWorkbench: () =>
+        unawaited(_openDetail(game, initialTab: kGalgameDetailEditTab)),
   );
 
   Future<void> _afterItemAction() async {

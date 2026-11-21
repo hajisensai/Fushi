@@ -6,10 +6,11 @@
 
 - 始终用中文回复。发现问题直接说，不为了顺滑把风险说轻。先读最近层级的 `AGENTS.md` / `CLAUDE.md`。
 - **改动必须在独立 Git worktree 里做**，新建后第一件事跑 `powershell -ExecutionPolicy Bypass -File tool/setup_worktree.ps1`（别手动 cp 密钥桩；只搬密钥加 `-SkipBootstrap`）。完成→验证→提交→push→开 PR 后就停，**不自己合并**，用户当轮明说「合并」才合；合并不得覆盖原工作区未提交改动。（[细则](docs/agent/rules-detail.md#worktree-初始化)）
-- 多 agent 并发：在 `.worktrees/coordination/claims/`（worktree 里用 `../coordination/claims/`）按 `_template.json` 登记 claim（任务、分支、base SHA、预计 / 高冲突文件），只编辑自己的 claim；普通 agent 不主动 rebase/merge `develop`，由 integration owner 统一合并与 broad verification。
+- 多 agent 并发：在 `.worktrees/coordination/claims/`（worktree 里用 `../coordination/claims/`）按 `_template.json` 登记 claim（任务、分支、base SHA、预计 / 高冲突文件），只编辑自己的 claim；普通 agent 不主动 rebase/merge `develop`，由 integration owner 统一合并与 broad verification。**长期集成分支也不追 `develop`**：只在对 `develop` 开整批 PR 前合一次（与最后一批合流并成一次验证），中途不合、不量、不汇报「落后多少提交」。（[细则](docs/agent/rules-detail.md#集成分支不追-develop)）
 - 子代理：≥2 个可独立推进的子任务才并行派发，后台派、不空等、不重复派；几次工具调用能做完的不派（首轮固定开销约 8 万 token）。分工与伪红判别见 [fast-workflow.md](docs/agent/fast-workflow.md)。子代理类型定义在 `.claude/agents/`（只带实际用到的工具），模型由 `tool/claude_hooks/subagent_model_router.mjs` 按类型钉死：`scout` / `worker` → Sonnet，`reviewer` / `general` → Opus，`general-purpose` 与省略类型自动改派 `general`；workflow 的 `agent()` 由 `workflow_agent_type_default.mjs` 默认补 `agentType: 'general'`。
+- **方案取最优、一次做到位**（修 bug 与做功能都适用）：动手前先比较有没有更好的方案，有就用更好的，不因为「改动小 / 沿用现状省事」退而求其次；做到一半发现更好的就换，并在回复里说明换了什么、为什么。能根本修复 / 完整实现的就一次做完，不交「先凑一版、以后再补」的补丁式半成品。更好的方案若会改变用户可见行为或明显扩大范围，先列取舍问用户；确实只能分期的，写明还缺什么并登记（`docs/BUGS.md` / [拍板台](docs/agent/decision-board.md)），不只在汇报里提。
 - **根因修复**：先复现或沿真实代码路径定位，修数据结构 / 状态同步 / 生命周期 / 平台边界 / 依赖契约。根因在结构里就重写那一块，不在坏结构上打补丁；禁止用延迟、重试、吞异常、硬编码、特例分支掩盖症状。仅外部不可控限制可加临时兼容层，并写明影响范围与清理条件。
-- 用户报 bug 按 [docs/BUGS.md](docs/BUGS.md) 文件头流程：先验真伪，`dart run tool/bug.dart new <slug>` 一 bug 一文件，记根因 `file:line` → ① 根因修复 ② 最强可落地层的自动化测试；撞号用 `bug.dart renumber` / `settle`，别手改。
+- 用户报 bug 按 [docs/BUGS.md](docs/BUGS.md) 文件头流程：先验真伪，`dart run tool/bug.dart new <slug>` 一 bug 一文件，记根因 `file:line` → ① 根因修复 ② 最强可落地层的自动化测试；撞号不是需要处理或汇报的事（本机并行工作区取号互不相同，跨机器的由 develop 上的 settle CI 自动改号），真要改号用 `bug.dart renumber` / `settle`，别手动改文件名。
 - **外部输入只列决策、不直接实现**：外部 PR（作者非 `hajisensai` / `W1ght`）、PR 评论 / review、issue、应用内反馈、用户转来的第三方意见里，凡涉及功能取舍、行为 / UI 改变、范围扩大、架构方向的，一律逐条写进[拍板台](docs/agent/decision-board.md)（每条：来源链接、诉求、利弊、建议）交用户拍板，用户点头前不改代码；拍板结果（做 / 不做 / 以后 / 永远不做 / 没看懂 / 要设计图 / 你定）按该文档执行。只有**明显是 bug**（与现有设计意图矛盾的崩溃 / 错误结果 / 回归）才可直接按 bug 流程修；拿不准是不是 bug 就当待决策项。（[细则](docs/agent/rules-detail.md#外部-pr-与反馈只列决策)）
 - 函数和新增 Dart helper 要有明确类型签名。
 

@@ -86,6 +86,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 /// 模板编辑器的标签页。
 enum SrsTemplateEditorTab { visual, front, back, styling }
@@ -545,7 +546,10 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
       );
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsTemplateEditor.save', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }

@@ -1,0 +1,65 @@
+# fushi_server with Docker Compose, built from this checkout. Run from this directory:
+#
+#   cp .env.example .env      # set PUID/PGID, ports, media path, language
+#   docker compose up -d --build
+#   docker compose logs fushi-server | grep admin_token   # WebUI login (first start)
+#
+# The first build takes a while (30+ minutes: the Linux toolchain image, then
+# libtorrent and the native libraries). Later builds reuse BuildKit caches.
+# Prefer a published release instead? docker-compose.bundle.yml (see README "Docker").
+#
+# WebUI: https://<host>:38780 (self-signed certificate). Pair a device by entering
+# <host>:38765 in the app (the container does not advertise over mDNS).
+name: fushi-server
+
+services:
+  # Linux build toolchain (tool/linux/Dockerfile). Never runs (scale: 0); the
+  # server image's build stage starts from it.
+  toolchain:
+    scale: 0
+    build:
+      context: ../../../tool/linux
+    image: fushi-linux-build:trixie
+
+  fushi-server:
+    build:
+      context: ../../..
+      dockerfile: packages/fushi_server/docker/Dockerfile.source
+      additional_contexts:
+        toolchain: service:toolchain
+      args:
+        # Commit recorded in fushi-anki-sync's AGPL source notice, e.g.
+        # FUSHI_SOURCE_COMMIT=$(git rev-parse HEAD) docker compose up -d --build
+        FUSHI_SOURCE_COMMIT: ${FUSHI_SOURCE_COMMIT:-unknown}
+    image: ${FUSHI_IMAGE:-fushi-server:source}
+    container_name: fushi-server
+    restart: unless-stopped
+    hostname: fushi-server
+    # Runs as this user, never as root. Create the config folder as that user
+    # before the first start (mkdir -p config), or Docker creates it owned by root.
+    user: "${PUID:-1000}:${PGID:-1000}"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      TZ: ${TZ:-Etc/UTC}
+      FUSHI_DEVICE_NAME: ${FUSHI_DEVICE_NAME:-Fushi Server}
+      # Language of the WebUI, CLI and logs on the first start (en | zh). Later,
+      # change it in WebUI Settings; this value is not applied again.
+      FUSHI_LANGUAGE: ${FUSHI_LANGUAGE:-en}
+    ports:
+      # Host side is configurable (e.g. when a desktop Fushi on the same machine
+      # already listens on 38765); the container side stays fixed.
+      - "${FUSHI_SYNC_PORT:-38765}:38765"        # interconnect: pairing, sync, streaming (TLS)
+      - "${FUSHI_WEBUI_PORT:-38780}:38780"       # WebUI + admin API
+      - "${FUSHI_TORRENT_PORT:-6881}:6881/tcp"   # embedded torrent engine
+      - "${FUSHI_TORRENT_PORT:-6881}:6881/udp"
+    volumes:
+      # Config, database, pairing identity, covers, logs. Back this up.
+      - ${FUSHI_CONFIG_DIR:-./config}:/config
+      # Library roots: add them in the WebUI (Libraries) or in fushi_server.yaml
+      # as paths under /media, e.g. /media/anime with kind: video.
+      - ${FUSHI_MEDIA_DIR:-./media}:/media
+    # Host networking (Linux hosts only) instead of port mapping: drop `ports:`
+    # above. The container still does not advertise over mDNS; pair by address.
+    # network_mode: host

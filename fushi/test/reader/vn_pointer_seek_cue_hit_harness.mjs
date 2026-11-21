@@ -13,15 +13,15 @@
 // BUG-4839：合成书（SRT / VTT / LRC）的句子不进 sentenceAudioCues，身份在 [data-cue-id]
 // 上。BUG-3738 只补了 frag 这一半，合成书在 VN 下中键与「从此句播放」仍恒拿到 null。
 // 第二个页面不下发任何 cue，只在正文里带 [data-cue-id]，断言两个入口都回 `{type:'sid'}`。
-import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
+import { readPayload } from './reader_harness_support.js';
 
+const scripts = readPayload();
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
-const scripts = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const W = 1200;
 const H = 800;
 const body = '<p>　<ruby>赤<rt>しやく</rt>銅<rt>どう</rt></ruby>色の髪をした彼の従兄が、大きな弦楽器を抱えて' +

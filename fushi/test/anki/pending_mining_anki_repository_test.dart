@@ -151,6 +151,24 @@ void main() {
     expect(utf8.decode(payload!.coverBytes!), 'cover-a');
   });
 
+  test('已配对主机连上了但不收卡（例如复习库要升级）：确定没送到，卡冻结进队列', () async {
+    final _FakeBackend backend = _FakeBackend(
+      outcomes: <MineOutcome>[
+        MineOutcome.failure(
+          'not accepting cards',
+          errorCode: AnkiErrorCode.pairedDeviceMiningUnavailable,
+        ),
+      ],
+    );
+    final MineOutcome outcome = await mine(repoOver(backend), 'upgrade');
+
+    expect(outcome.result, MineResult.queued);
+    expect(
+      (await store.all()).map((PendingMineRow r) => r.expression),
+      <String>['upgrade'],
+    );
+  });
+
   test('「连不上时暂存」默认关：拒绝连接原样报失败，不入队', () async {
     expect(const AnkiSettings().queueUndeliveredMinesEnabled, isFalse);
     expect(

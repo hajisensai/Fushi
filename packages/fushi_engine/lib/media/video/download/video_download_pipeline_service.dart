@@ -4932,10 +4932,11 @@ class VideoDownloadPipelineService {
     // 抢先按别的（重叠的）来源建了行、或旧行挂在已删来源上时，计划器按
     // `source_id` 过滤会看不到它们，整条任务就落成「映射不回来源」。
     final List<String> unindexed = <String>[];
+    // 整表只读一次建查表，不逐个文件 findByVideoPath（每次都整表读 + 逐行归一）。
+    // 循环里只改 source_id，不增删行，查表全程有效。
+    final VideoPathIndex pathIndex = await _videoRepository.videoPathIndex();
     for (final String importedPath in importedPaths) {
-      final VideoBookRow? book = await _videoRepository.findByVideoPath(
-        importedPath,
-      );
+      final VideoBookRow? book = pathIndex.find(importedPath);
       if (book == null) {
         unindexed.add(importedPath);
         continue;

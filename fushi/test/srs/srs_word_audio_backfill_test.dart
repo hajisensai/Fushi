@@ -202,7 +202,7 @@ void main() {
       );
 
       final SrsWordAudioBackfillFields fields =
-          SrsWordAudioBackfillFields.forProfile(store.profileUid);
+          await SrsWordAudioBackfillFields.ofStore(store);
       final SrsWordAudioBackfillResult r = await runSrsWordAudioBackfill(
         items,
         SrsWordAudioBackfillDeps(

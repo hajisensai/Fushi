@@ -19,6 +19,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/pages/shared/library_section_tabs.dart';
 import 'package:fushi/src/utils/components/library_section_tab.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
@@ -79,6 +80,8 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     required this.host,
     this.initialCategory,
     this.groups = VideoQuickSettingsSheet.settingsGroups,
+    this.webBackend = false,
+    this.onSwitchToBuiltinWebPlayer,
     super.key,
   });
 
@@ -108,6 +111,15 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   /// 用默认 `playback`。由「音频轨」「字幕轨」按钮驱动，把
   /// 原来「外面浮的轨切换器」收进本面板对应 tab。
   final String? initialCategory;
+
+  /// 网页站点后端（窗口档，站点画面由 WebView2 自己画）：「画质增强」页不画着色器管理视图
+  /// （着色器作用在 libmpv 上，对站点画面不生效），改画说明态——为什么不生效 +
+  /// [onSwitchToBuiltinWebPlayer] 入口（拍板 kp-No6loQi：页签整页消失会被当成功能没了）。
+  final bool webBackend;
+
+  /// 网页档「画质增强」说明态里的「切换到内置网页播放器」（内置档有自己的超分）。null =
+  /// 不给入口（站点入口没有库里的书，内置档读不到）。只在 [webBackend] 时用到。
+  final VoidCallback? onSwitchToBuiltinWebPlayer;
 
   @override
   State<VideoQuickSettingsSheet> createState() =>
@@ -534,6 +546,10 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
             else
               s,
         ];
+      case VideoGroup.shaders when widget.webBackend:
+        // 网页档：着色器与其余着色器行都作用在 libmpv 上，对站点画面不生效，整页换成说明态。
+        sections = const <SettingsSection>[];
+        shaderBody = (SettingsContext _) => _buildWebShadersNotice();
       case VideoGroup.shaders:
         // 着色器管理视图自带三个分组（画质档位 / 进阶 / 已安装着色器），各是一个
         // 标题在卡片外的 [AdaptiveSettingsSection]。若当成 schema 行渲染，整个视图
@@ -580,6 +596,33 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
           : sections,
       body: shaderBody,
       bodyBeforeSections: true,
+    );
+  }
+
+  /// 网页档「画质增强」页的说明态：一行说明着色器为什么不生效，有入口时再给一行
+  /// 「切换到内置网页播放器」。走共享分组 / 行组件，MD3 与 Apple 两套随设计系统自适应。
+  Widget _buildWebShadersNotice() {
+    final VoidCallback? onSwitch = widget.onSwitchToBuiltinWebPlayer;
+    return AdaptiveSettingsSection(
+      children: <Widget>[
+        AdaptiveSettingsRow(
+          key: const ValueKey<String>('video.player.web_shaders_notice'),
+          icon: Icons.info_outline,
+          showIcon: true,
+          title: t.video_settings_web_shaders_unavailable,
+          subtitle: t.video_settings_web_shaders_unavailable_hint,
+        ),
+        if (onSwitch != null)
+          AdaptiveSettingsRow(
+            key: const ValueKey<String>('video.player.web_switch_builtin'),
+            icon: Icons.swap_horiz,
+            showIcon: true,
+            title: t.video_settings_web_switch_builtin,
+            subtitle: t.video_settings_web_switch_builtin_hint,
+            trailing: const FushiIcon(Icons.chevron_right),
+            onTap: onSwitch,
+          ),
+      ],
     );
   }
 

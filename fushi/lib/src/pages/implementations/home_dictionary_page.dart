@@ -795,6 +795,15 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       canPop: !sectionVisible || (!_hasActiveQuery && !_popup.hasVisiblePopup),
       onPopInvokedWithResult: (didPop, _) {
         if (didPop || !sectionVisible) return;
+        // BUG-4930（反馈 r3wf1i68Qn）：软键盘弹着、搜索框持焦时，返回的语义是
+        // 「收起键盘」（Android 惯例），只收键盘、保留查询与结果。输入第一个字后
+        // canPop 翻成 false，Flutter 才向系统登记 OnBackInvokedCallback——比键盘
+        // 弹起时 IME 登记的回调晚、同优先级后登记者先收，于是导航栏的收键盘 ﹀
+        // 被分发给本页，此前直接落进下面的 _clearSearch 把输入清掉。
+        if (_softKeyboardVisible && _searchFocusNode.hasFocus) {
+          _hideSoftKeyboard();
+          return;
+        }
         if (_popup.hasVisiblePopup) {
           _popNestedPopupAt(_popup.lastVisibleIndex);
         } else if (_hasActiveQuery) {
@@ -1009,34 +1018,31 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   /// 词典管理是弹层），主按钮位也不另造（稿里的「OCR 查词」本页没有）。独立
   /// 路由的返回键作前导。
   Widget _buildMasthead() {
-    return Padding(
-      padding: EdgeInsets.only(top: FushiDesignTokens.of(context).spacing.gap),
-      child: FushiStaticMasthead(
-        key: const ValueKey<String>('home-dictionary-masthead'),
-        title: t.nav_lookup,
-        leading: widget.showBackButton
-            ? FushiIconButton(
-                key: const ValueKey<String>('home-dictionary-route-back'),
-                tooltip: t.back,
-                icon: FushiIcons.back,
-                onTap: () => Navigator.of(context).maybePop(),
-              )
-            : null,
-        actions: <Widget>[
-          if (isGlassDesign(context))
-            FushiIconButton(
-              key: const ValueKey<String>('home-dictionary-manage'),
-              tooltip: t.dictionaries,
-              icon: CupertinoIcons.book,
-              onTap: appModel.showDictionaryMenu,
-            ),
+    return FushiStaticMasthead(
+      key: const ValueKey<String>('home-dictionary-masthead'),
+      title: t.nav_lookup,
+      leading: widget.showBackButton
+          ? FushiIconButton(
+              key: const ValueKey<String>('home-dictionary-route-back'),
+              tooltip: t.back,
+              icon: FushiIcons.back,
+              onTap: () => Navigator.of(context).maybePop(),
+            )
+          : null,
+      actions: <Widget>[
+        if (isGlassDesign(context))
           FushiIconButton(
-            tooltip: t.clear_dictionary_title,
-            icon: FushiIcons.deleteSweep,
-            onTap: _showDeleteDictionaryHistoryPrompt,
+            key: const ValueKey<String>('home-dictionary-manage'),
+            tooltip: t.dictionaries,
+            icon: CupertinoIcons.book,
+            onTap: appModel.showDictionaryMenu,
           ),
-        ],
-      ),
+        FushiIconButton(
+          tooltip: t.clear_dictionary_title,
+          icon: FushiIcons.deleteSweep,
+          onTap: _showDeleteDictionaryHistoryPrompt,
+        ),
+      ],
     );
   }
 

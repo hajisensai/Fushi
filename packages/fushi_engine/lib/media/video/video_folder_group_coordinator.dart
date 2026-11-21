@@ -285,7 +285,20 @@ class VideoFolderGroupCoordinator {
           )
           .map((MediaCollectionItemRow item) => item.entryKey)
           .toSet();
+      // 用户 / AI 从这个合集里移出过的成员不由重扫按文件名并回去（目录合集早有
+      // 这道门；系列合集缺它时，把错挂在某部剧下的电影拆出去，下一次扫描就又被
+      // 文件名里的系列名拉回来，`addToCollection` 还会顺手清掉墓碑）。刚新建的
+      // 合集没有历史，`createMediaCollection` 已清同名墓碑；显式「恢复自动分组」
+      // 照旧越过。
+      final Set<String> removedMembers =
+          createdCollection || restoreDissolvedGroups
+          ? const <String>{}
+          : await _removedFolderMembers(
+              collection.name,
+              collection.collectionType,
+            );
       for (final VideoBookRow row in groupRows) {
+        if (removedMembers.contains(row.bookUid)) continue;
         if (currentVideoUids.add(row.bookUid)) {
           await _database.addToCollection(
             collection.id,

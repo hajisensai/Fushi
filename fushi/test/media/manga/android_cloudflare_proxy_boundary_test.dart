@@ -63,4 +63,58 @@ void main() {
       expect(source, contains('cf-mitigated'));
     },
   );
+
+  // BUG-4952：验证 Activity 在 `:network_challenge` 进程里把匿名
+  // `object : ResultReceiver` 塞进 Bundle 回发，主进程反序列化时只有 boot
+  // classloader，找不到 app 私有类名 → 主线程 BadParcelableException → 一点
+  // 「网站验证」主进程就闪退。跨进程的 ResultReceiver 一律先 `.forIpc()`。
+  test('ResultReceivers cross process boundaries only as the framework type', () {
+    final String helper = File(
+      'android/app/src/main/kotlin/app/fushi/reader/mihon/IpcResultReceiver.kt',
+    ).readAsStringSync();
+    expect(helper, contains('fun ResultReceiver.forIpc(): ResultReceiver'));
+    expect(helper, contains('ResultReceiver.CREATOR.createFromParcel(parcel)'));
+
+    final List<File> native = Directory('android/app/src/main')
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where(
+          (File file) =>
+              file.path.endsWith('.kt') || file.path.endsWith('.java'),
+        )
+        .toList();
+    final RegExp declaration = RegExp(
+      r'(?:val|var)\s+(\w+)\s*(?::\s*ResultReceiver\??\s*)?=\s*object\s*:\s*ResultReceiver\(',
+    );
+    final RegExp putCall = RegExp(
+      r'\b(?:putExtra|putParcelable)\(\s*"[^"]*"\s*,\s*(object\b|\w+(?:\.forIpc\(\))?)',
+    );
+    final List<String> violations = <String>[];
+    int wrapped = 0;
+    for (final File file in native) {
+      final String source = file.readAsStringSync();
+      final Set<String> receivers = declaration
+          .allMatches(source)
+          .map((RegExpMatch m) => m.group(1)!)
+          .toSet();
+      for (final RegExpMatch call in putCall.allMatches(source)) {
+        final String argument = call.group(1)!.trim();
+        if (argument.startsWith('object')) {
+          violations.add('${file.path}: inline ResultReceiver in $argument');
+          continue;
+        }
+        final String name = RegExp(r'^\w+').stringMatch(argument) ?? '';
+        if (!receivers.contains(name)) continue;
+        if (argument.startsWith('$name.forIpc()')) {
+          wrapped++;
+        } else {
+          violations.add('${file.path}: $name sent without forIpc()');
+        }
+      }
+    }
+    expect(violations, isEmpty);
+    // 协调器 → 验证进程的 receiver、验证进程 → 协调器的 control 两处都得命中，
+    // 否则说明上面的扫描失效（变成空守卫）。
+    expect(wrapped, greaterThanOrEqualTo(2));
+  });
 }

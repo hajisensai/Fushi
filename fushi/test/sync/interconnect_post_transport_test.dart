@@ -491,6 +491,17 @@ void main() {
       expect(o.mayHaveDelivered, isTrue);
     });
 
+    test('对端回 404 / 405（没有这个端点 / 没接线）→ 确定没送到，但不是连不上', () async {
+      for (final int status in <int>[404, 405]) {
+        final InterconnectPostOutcome o = await postWith(
+          (_) async => http.Response('Mining off', status),
+        );
+        expect(o.json, isNull, reason: '$status');
+        expect(o.allUnreachable, isFalse, reason: '$status');
+        expect(o.mayHaveDelivered, isFalse, reason: '$status');
+      }
+    });
+
     test('拿到结果 → 已送达', () async {
       final InterconnectPostOutcome o = await postWith(
         (_) async => http.Response(jsonEncode(<String, dynamic>{'r': 1}), 200),

@@ -540,6 +540,7 @@ class FushiScrollAwayChrome extends StatefulWidget {
     required this.child,
     super.key,
     this.enabled = true,
+    this.capsuleScale = true,
   });
 
   final FushiScrollAwayController controller;
@@ -547,6 +548,12 @@ class FushiScrollAwayChrome extends StatefulWidget {
 
   /// false 时恒显示（Apple 设计系统 / 调用方关掉收起）；树结构不变。
   final bool enabled;
+
+  /// 页头是浮动胶囊行时整行按 [kFushiFloatingCapsuleScale] 缩（默认）。页头
+  /// 大字（`FushiStaticMasthead`）不是胶囊，字号 / 主按钮按共用规格
+  /// （`FushiPageTitleMetrics`）原样画，传 false——与库页根工具区
+  /// （`FushiFloatingChromeOverlay(masthead: true)` 不缩）同一口径。
+  final bool capsuleScale;
 
   @override
   State<FushiScrollAwayChrome> createState() => _FushiScrollAwayChromeState();
@@ -620,7 +627,9 @@ class _FushiScrollAwayChromeState extends State<FushiScrollAwayChrome>
           _shown.animation,
           _fade.animation,
         ]),
-        child: FushiCapsuleScale(child: widget.child),
+        child: widget.capsuleScale
+            ? FushiCapsuleScale(child: widget.child)
+            : widget.child,
         builder: (BuildContext context, Widget? child) {
           final double v = widget.enabled ? _shown.value : 1;
           final double factor = v.clamp(0.0, 1.0);

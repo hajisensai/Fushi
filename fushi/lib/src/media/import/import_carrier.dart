@@ -205,20 +205,35 @@ const Set<String> _ambiguousArchiveExtensions = <String>{'.zip', '.epub'};
 class ImportCarrierResolver {
   ImportCarrierResolver({
     required this.isDirectory,
-    required this.isImageArchive,
+    this.isImageArchive,
+    this.probeImageArchive,
     required this.directoryHasPageImages,
     required this.directoryCarrierFileCount,
     required this.directoryMokuroFileCount,
-  });
+  }) : assert(
+         isImageArchive != null || probeImageArchive != null,
+         'ImportCarrierResolver needs a sync or an async image-archive probe',
+       );
 
   final bool Function(String path) isDirectory;
-  final bool Function(String path) isImageArchive;
+
+  /// 同步开包判据，供 [resolve]。只给了 [probeImageArchive] 的 resolver 不能调
+  /// [resolve]（那正是要避免的「在 UI isolate 上同步开包」）。
+  final bool Function(String path)? isImageArchive;
+
+  /// 异步开包判据（生产上跑在后台 isolate，见 `looksLikeImageArchiveInBackground`），
+  /// 供 [resolveAsync]。没给时 [resolveAsync] 退回同步判据。
+  final Future<bool> Function(String path)? probeImageArchive;
   final bool Function(String path) directoryHasPageImages;
   final int Function(String path) directoryCarrierFileCount;
   final int Function(String path) directoryMokuroFileCount;
 
   String? _cachedKey;
   ImportCarrier? _cachedCarrier;
+
+  /// [resolveAsync] 正在进行的那次判定（同一个键的并发提问共用它，不重复开包）。
+  String? _pendingKey;
+  Future<ImportCarrier>? _pending;
 
   /// 记忆键：路径 + 内容指纹（mtime + 字节数）。
   ///
@@ -247,23 +262,79 @@ class ImportCarrierResolver {
     final String key = _memoKey(path);
     final ImportCarrier? cached = _cachedCarrier;
     if (cached != null && _cachedKey == key) return cached;
-    final ImportCarrier carrier = classifyImportCarrier(
-      path,
-      isDirectory: isDirectory,
-      isImageArchive: isImageArchive,
-      directoryHasPageImages: directoryHasPageImages,
-      directoryCarrierFileCount: directoryCarrierFileCount,
-      directoryMokuroFileCount: directoryMokuroFileCount,
-    );
+    final bool Function(String path)? probe = isImageArchive;
+    if (probe == null) {
+      throw StateError(
+        'ImportCarrierResolver.resolve needs a sync isImageArchive; '
+        'use resolveAsync',
+      );
+    }
+    final ImportCarrier carrier = _classify(path, probe);
     _cachedKey = key;
     _cachedCarrier = carrier;
     return carrier;
   }
+
+  /// [resolve] 的异步版：`.zip` / `.epub` 的开包判定交给 [probeImageArchive]
+  /// （后台 isolate），UI isolate 只做 stat 与按扩展名的分派（manga-3：选中一本
+  /// 几百 MB 的文字 EPUB，界面不再停住）。
+  ///
+  /// 与 [resolve] 共用同一份记忆（键 = 路径 + 内容指纹）；同一个键的判定还在跑时
+  /// 再问，拿到的是同一个 Future，不另开一次包。
+  Future<ImportCarrier> resolveAsync(String path) async {
+    final String key = _memoKey(path);
+    final ImportCarrier? cached = _cachedCarrier;
+    if (cached != null && _cachedKey == key) return cached;
+    final Future<ImportCarrier>? inFlight = _pending;
+    if (inFlight != null && _pendingKey == key) return inFlight;
+    final Future<ImportCarrier> run = _classifyAsync(path);
+    _pendingKey = key;
+    _pending = run;
+    try {
+      final ImportCarrier carrier = await run;
+      _cachedKey = key;
+      _cachedCarrier = carrier;
+      return carrier;
+    } finally {
+      if (identical(_pending, run)) {
+        _pending = null;
+        _pendingKey = null;
+      }
+    }
+  }
+
+  Future<ImportCarrier> _classifyAsync(String path) async {
+    final bool needsProbe =
+        _ambiguousArchiveExtensions.contains(p.extension(path).toLowerCase()) &&
+        !isDirectory(path);
+    final Future<bool> Function(String path)? asyncProbe = probeImageArchive;
+    final bool Function(String path)? syncProbe = isImageArchive;
+    final bool imageArchive =
+        needsProbe &&
+        (asyncProbe != null ? await asyncProbe(path) : syncProbe!(path));
+    // 判据本身仍是 [classifyImportCarrier]：开包的答案先在后台算好，再当常量谓词
+    // 喂回去（它只会对二义扩展名问）。
+    return _classify(path, (String _) => imageArchive);
+  }
+
+  ImportCarrier _classify(
+    String path,
+    bool Function(String path) imageArchive,
+  ) => classifyImportCarrier(
+    path,
+    isDirectory: isDirectory,
+    isImageArchive: imageArchive,
+    directoryHasPageImages: directoryHasPageImages,
+    directoryCarrierFileCount: directoryCarrierFileCount,
+    directoryMokuroFileCount: directoryMokuroFileCount,
+  );
 
   /// 丢弃记忆。键已经带内容指纹，正常不需要调它；留给「内容没变但判据本身变了」
   /// 这种场景（例如用户在对话框里改了受理规则）。
   void invalidate() {
     _cachedKey = null;
     _cachedCarrier = null;
+    _pendingKey = null;
+    _pending = null;
   }
 }

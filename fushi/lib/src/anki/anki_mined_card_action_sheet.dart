@@ -117,6 +117,9 @@ class _MinedCardActionDialog extends StatefulWidget {
 
 class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
   bool _busy = false;
+
+  /// 拍板 lt2wobUYfE：「覆写哪些字段」一个都没勾时覆写按钮禁用。
+  bool _nothingSelected = false;
   int? _viewingNoteId;
 
   /// 还在的命中卡：删掉一张就从这里摘掉，删光了关对话框。
@@ -323,6 +326,8 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
                 repo: widget.repo,
                 noteId: matches.first.noteId,
                 enabled: !_busy,
+                onNothingSelectedChanged: (bool nothing) =>
+                    setState(() => _nothingSelected = nothing),
               ),
             // AlertDialog 的 content 拿到的是**有界**高度（Dialog 已按屏幕减 inset 收口），
             // 故此处 Flexible + shrinkWrap 列表安全：命中少时按内容高，多时自身滚动。
@@ -357,7 +362,7 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
                           FushiIconButtonControl.filledTonal(
                             tooltip: t.anki_mined_action_overwrite,
                             icon: const FushiIcon(FushiIcons.edit),
-                            onPressed: _busy
+                            onPressed: _busy || _nothingSelected
                                 ? null
                                 : () => _runOverwrite(note.noteId),
                           ),
@@ -457,6 +462,9 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
   Map<String, String>? _fields;
   bool _loading = true;
   bool _busy = false;
+
+  /// 拍板 lt2wobUYfE：「覆写哪些字段」一个都没勾时覆写按钮禁用。
+  bool _nothingSelected = false;
 
   @override
   void initState() {
@@ -578,6 +586,8 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
               repo: widget.repo,
               noteId: widget.noteId,
               enabled: !_busy,
+              onNothingSelectedChanged: (bool nothing) =>
+                  setState(() => _nothingSelected = nothing),
             ),
             Flexible(child: _buildFields(nonEmpty)),
           ],
@@ -602,7 +612,7 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
             }),
           ),
         FushiFilledButton(
-          onPressed: _busy ? null : _overwrite,
+          onPressed: _busy || _nothingSelected ? null : _overwrite,
           child: Text(t.anki_mined_action_overwrite),
         ),
       ],

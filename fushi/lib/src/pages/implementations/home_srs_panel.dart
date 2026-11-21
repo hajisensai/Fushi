@@ -75,6 +75,9 @@ String? homePosterUnitOf(String counted, String number) {
   return rest.isEmpty ? null : rest;
 }
 
+///
+/// 两行（设计稿 11-20 #12：一行装不下时末尾的「正确率」被省略号吃掉）：第一行
+/// 「今日已复习 N 张 · N 分钟」，有复习时第二行「正确率 N%」。
 String homeSrsTodayLine(SrsTodayReviewSummary s) {
   final String time = s.durationMs < 60000
       ? t.srs_stats_seconds(n: (s.durationMs / 1000).round())
@@ -83,7 +86,7 @@ String homeSrsTodayLine(SrsTodayReviewSummary s) {
   return <String>[
     t.home_srs_panel_today(count: s.count, time: time),
     if (rate != null) '${t.srs_stats_today_correct} ${(rate * 100).round()}%',
-  ].join(' · ');
+  ].join('\n');
 }
 
 /// 旧首页可选面板「自动」档的判据（纯函数）：挖词目标 = Fushi 复习，或库里已有复习卡。
@@ -281,20 +284,22 @@ class _HomeSrsBody extends StatelessWidget {
           },
         );
       } else {
+        // 新 / 学习中 / 到期三个计数与大字同一行（设计稿 11-20 #12），省出的一行给
+        // 下面两行的「今日已复习 · 正确率」。放不下时整组等比缩小，不出省略号。
         content = Row(
           key: const ValueKey<String>('counts'),
           spacing: 10,
           children: <Widget>[
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: <Widget>[
-                  Flexible(child: figure),
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: AlignmentDirectional.centerStart,
-                    child: SrsCountTriple(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: AlignmentDirectional.centerStart,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  spacing: 8,
+                  children: <Widget>[
+                    figure,
+                    SrsCountTriple(
                       key: const ValueKey<String>('home-srs-panel-counts'),
                       newCount: d.todayNew,
                       learnCount: d.todayLearn,
@@ -302,8 +307,8 @@ class _HomeSrsBody extends StatelessWidget {
                       reviewPending: d.rwkvPending,
                       dense: true,
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             ?start,
@@ -329,7 +334,10 @@ class _HomeSrsBody extends StatelessWidget {
         ),
         if (wide && !dense)
           SizedBox(
-            height: 16,
+            // 固定两行高：骨架与加载完、有没有正确率都同一高度，不跳布局。
+            height: MediaQuery.textScalerOf(
+              context,
+            ).scale((caption.fontSize ?? 12) * (caption.height ?? 1.34) * 2),
             child: s == null
                 ? const FushiSkeletonShimmer(
                     key: ValueKey<String>('home-srs-today-skeleton'),
@@ -338,12 +346,15 @@ class _HomeSrsBody extends StatelessWidget {
                       child: FushiSkeleton(width: 140, height: 10),
                     ),
                   )
-                : Text(
-                    homeSrsTodayLine(s),
-                    key: const ValueKey<String>('home-srs-panel-today'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: caption,
+                : Align(
+                    alignment: AlignmentDirectional.bottomStart,
+                    child: Text(
+                      homeSrsTodayLine(s),
+                      key: const ValueKey<String>('home-srs-panel-today'),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: caption,
+                    ),
                   ),
           ),
       ],

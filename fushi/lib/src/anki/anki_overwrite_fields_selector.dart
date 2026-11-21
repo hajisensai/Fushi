@@ -14,12 +14,6 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 
-/// 反馈 nWWjBp3Clo：覆写已有卡时「只改哪些字段」的一次勾选结果。
-///
-/// [selection] 为 `null` = 全部字段（[AnkiSettings.overwriteFieldsFor] 同一口径）；
-/// [rejectedEmpty] = 这次操作会让一个字段都不勾，已被拒绝（选择原样不变）。
-typedef OverwriteFieldToggle = ({Set<String>? selection, bool rejectedEmpty});
-
 /// 存下来的选择对照这张卡**实际有的**字段：笔记类型改过字段名后，旧名字不再算数
 /// （与后端 `fieldsForOverwrite` 只点名卡上有的字段同口径）。`null`（全部字段）原样返回。
 Set<String>? effectiveOverwriteSelection({
@@ -33,12 +27,13 @@ Set<String>? effectiveOverwriteSelection({
   };
 }
 
-/// 勾 / 取消勾一个字段后的选择（纯函数）。
+/// 反馈 nWWjBp3Clo：勾 / 取消勾一个字段后的选择（纯函数）。返回值 `null` = 全部字段，
+/// 空集 = 一个都不写（[AnkiSettings.overwriteFieldsFor] 同一口径）。
 ///
 /// - 从「全部字段」取消勾一个 → 其余字段；
 /// - 勾满全部字段 → 收回 `null`（全部字段，不在设置里留一份等价清单）；
-/// - 会变成一个都不勾 → 拒绝（覆写按钮本身就是「要写」，空选择没有意义）。
-OverwriteFieldToggle toggleOverwriteField({
+/// - 取消勾最后一个 → 空集（拍板 lt2wobUYfE：允许暂时空选，覆写入口随之禁用）。
+Set<String>? toggleOverwriteField({
   required List<String> allFields,
   required Set<String>? selection,
   required String field,
@@ -50,12 +45,18 @@ OverwriteFieldToggle toggleOverwriteField({
   } else {
     next.remove(field);
   }
-  if (next.isEmpty) return (selection: selection, rejectedEmpty: true);
-  if (allFields.every(next.contains)) {
-    return (selection: null, rejectedEmpty: false);
-  }
-  return (selection: next, rejectedEmpty: false);
+  if (next.isNotEmpty && allFields.every(next.contains)) return null;
+  return next;
 }
+
+/// 拍板 lt2wobUYfE：「全部字段」行的勾选——勾上 = 全部字段（`null`），取消 = 一个都
+/// 不写（空集），即常见的「全选 / 全不选」开关。
+Set<String>? toggleAllOverwriteFields({required bool checked}) =>
+    checked ? null : <String>{};
+
+/// 一个字段都没勾（覆写按钮应禁用）。
+bool isOverwriteSelectionEmpty(Set<String>? selection) =>
+    selection != null && selection.isEmpty;
 
 /// 覆写对话框里的「覆写哪些字段」行：收起时一行摘要，展开后逐字段勾选，改动当场写进
 /// 设置（按笔记类型记住，[AnkiSettings.withOverwriteFields]）——对话框里的覆写按钮、
@@ -63,17 +64,22 @@ OverwriteFieldToggle toggleOverwriteField({
 ///
 /// [noteId] 是用来取字段清单与笔记类型的那张已有卡。后端读不到字段（远端制卡等不
 /// 支持覆写的后端）时整行不出。
+///
+/// [onNothingSelectedChanged]：「一个字段都没勾」状态变化时回调（加载完成时也报一次），
+/// 父对话框据此禁用覆写按钮（拍板 lt2wobUYfE）。
 class AnkiOverwriteFieldsSelector extends StatefulWidget {
   const AnkiOverwriteFieldsSelector({
     super.key,
     required this.repo,
     required this.noteId,
     this.enabled = true,
+    this.onNothingSelectedChanged,
   });
 
   final BaseAnkiRepository repo;
   final int noteId;
   final bool enabled;
+  final ValueChanged<bool>? onNothingSelectedChanged;
 
   @override
   State<AnkiOverwriteFieldsSelector> createState() =>
@@ -87,7 +93,7 @@ class _AnkiOverwriteFieldsSelectorState
   List<String> _fields = const <String>[];
   Set<String>? _selection;
   bool _expanded = false;
-  bool _rejectedEmpty = false;
+  bool _reportedNothingSelected = false;
 
   @override
   void initState() {
@@ -122,18 +128,27 @@ class _AnkiOverwriteFieldsSelectorState
         allFields: names,
         stored: settings?.overwriteFieldsFor(noteTypeName),
       );
+      // 一个都没勾时默认展开，让用户直接看到为什么覆写按钮是灰的。
+      if (_visible && isOverwriteSelectionEmpty(_selection)) _expanded = true;
     });
+    _reportNothingSelected(force: true);
   }
 
-  Future<void> _apply(OverwriteFieldToggle result) async {
+  /// 这一行真的出现（读到了字段与笔记类型）；不出时不拦父对话框的覆写。
+  bool get _visible => _noteTypeName != null && _fields.isNotEmpty;
+
+  void _reportNothingSelected({bool force = false}) {
+    final bool nothing = _visible && isOverwriteSelectionEmpty(_selection);
+    if (!force && nothing == _reportedNothingSelected) return;
+    _reportedNothingSelected = nothing;
+    widget.onNothingSelectedChanged?.call(nothing);
+  }
+
+  Future<void> _apply(Set<String>? selection) async {
     final String? name = _noteTypeName;
     if (name == null) return;
-    final Set<String>? selection = result.selection;
-    setState(() {
-      _rejectedEmpty = result.rejectedEmpty;
-      if (!result.rejectedEmpty) _selection = selection;
-    });
-    if (result.rejectedEmpty) return;
+    setState(() => _selection = selection);
+    _reportNothingSelected();
     try {
       await widget.repo.updateSettings(
         (AnkiSettings s) => s.withOverwriteFields(name, selection),
@@ -158,8 +173,8 @@ class _AnkiOverwriteFieldsSelectorState
     ),
   );
 
-  void _selectAll() =>
-      unawaited(_apply((selection: null, rejectedEmpty: false)));
+  void _toggleAll(bool checked) =>
+      unawaited(_apply(toggleAllOverwriteFields(checked: checked)));
 
   String _summary() {
     final Set<String>? selection = _selection;
@@ -170,12 +185,13 @@ class _AnkiOverwriteFieldsSelectorState
 
   @override
   Widget build(BuildContext context) {
-    if (_loading || _noteTypeName == null || _fields.isEmpty) {
+    if (_loading || !_visible) {
       return const SizedBox.shrink();
     }
     final ThemeData theme = Theme.of(context);
     final bool enabled = widget.enabled;
     final Set<String>? selection = _selection;
+    final bool nothingSelected = isOverwriteSelectionEmpty(selection);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -191,6 +207,9 @@ class _AnkiOverwriteFieldsSelectorState
             _summary(),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
+            style: nothingSelected
+                ? TextStyle(color: theme.colorScheme.error)
+                : null,
           ),
           trailing: AnimatedRotation(
             turns: _expanded ? 0.5 : 0,
@@ -219,11 +238,11 @@ class _AnkiOverwriteFieldsSelectorState
                           Padding(
                             padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
                             child: Text(
-                              _rejectedEmpty
+                              nothingSelected
                                   ? t.anki_overwrite_fields_none_selected
                                   : t.anki_overwrite_fields_hint,
                               style: theme.textTheme.bodySmall?.copyWith(
-                                color: _rejectedEmpty
+                                color: nothingSelected
                                     ? theme.colorScheme.error
                                     : theme.colorScheme.onSurfaceVariant,
                               ),
@@ -237,11 +256,7 @@ class _AnkiOverwriteFieldsSelectorState
                               ),
                               label: t.anki_overwrite_fields_all,
                               checked: selection == null,
-                              onChanged: !enabled
-                                  ? null
-                                  : (bool checked) {
-                                      if (checked) _selectAll();
-                                    },
+                              onChanged: !enabled ? null : _toggleAll,
                             ),
                           ),
                           for (int i = 0; i < _fields.length; i++)

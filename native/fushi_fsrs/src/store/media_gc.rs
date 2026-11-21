@@ -20,16 +20,22 @@ use std::ops::Bound;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
+#[cfg(test)]
 use rusqlite::{Connection, params};
-use serde_json::{Value, json};
+use serde_json::Value;
+#[cfg(test)]
+use serde_json::json;
 
+#[cfg(test)]
 use super::caches::{self, CacheConfig};
+#[cfg(test)]
 use super::sync2::transport;
 use crate::card_cache;
 
 /// 本机状态行里的键（内核持有）。
 pub(crate) const KEY: &str = "mediaGc";
 
+#[cfg(test)]
 fn sql(e: rusqlite::Error) -> String {
     e.to_string()
 }
@@ -45,6 +51,7 @@ fn is_bare_file(n: &str) -> bool {
 }
 
 /// 待回收集合（没有本机状态行、没有这个键、行损坏 = 空）。
+#[cfg(test)]
 pub(crate) fn pending(c: &Connection, profile: &str) -> Result<BTreeSet<String>, String> {
     let row: Option<String> = c
         .prepare_cached("SELECT json FROM srs_local_state WHERE profile_uid = srs_id(?1)")
@@ -67,6 +74,7 @@ pub(crate) fn pending(c: &Connection, profile: &str) -> Result<BTreeSet<String>,
 }
 
 /// 写下待回收集合（只动 [KEY] 这一个键）。还没有本机状态行且集合非空时先建行（local_state.rs `ensure_row`）。
+#[cfg(test)]
 fn save(c: &Connection, profile: &str, names: &BTreeSet<String>) -> Result<(), String> {
     if names.is_empty() {
         c.prepare_cached(
@@ -89,7 +97,8 @@ fn save(c: &Connection, profile: &str, names: &BTreeSet<String>) -> Result<(), S
     Ok(())
 }
 
-fn add_refs(out: &mut BTreeSet<String>, media_refs: &str) {
+/// 一列 `media_refs`（换行分隔）并进 [out]。
+pub(crate) fn add_refs(out: &mut BTreeSet<String>, media_refs: &str) {
     out.extend(
         media_refs
             .split('\n')
@@ -98,20 +107,26 @@ fn add_refs(out: &mut BTreeSet<String>, media_refs: &str) {
     );
 }
 
+/// 请求里直接给的文件名（`names`）并进 [set]（协议 3 与新代共用）。
+pub(crate) fn add_names(set: &mut BTreeSet<String>, req: &Value) {
+    for n in req["names"].as_array().into_iter().flatten() {
+        if let Some(n) = n.as_str() {
+            set.insert(n.to_owned());
+        }
+    }
+}
+
 /// `media_gc_queue`：把候选并进待回收集合。[req]（都可省）：
 /// - `names`：文件名；
 /// - `notes`：这些笔记此刻的字段引用的媒体（彻底清除之前调：清除会抹掉字段，之后就读不到它们引用过什么了）；
 /// - `expiredBefore`：删除时刻不晚于它的已删笔记的 `media_refs`（过了保留期的候选）。
 ///
 /// 是否真删由 [collect] 再扣掉存活引用。回包 `{"pending": [...]}`（三个都不给 = 只读集合）。
+#[cfg(test)]
 pub(crate) fn queue(c: &Connection, profile: &str, req: &Value) -> Result<Value, String> {
     let mut set = pending(c, profile)?;
     let before = set.len();
-    for n in req["names"].as_array().into_iter().flatten() {
-        if let Some(n) = n.as_str() {
-            set.insert(n.to_owned());
-        }
-    }
+    add_names(&mut set, req);
     // 这些笔记的引用从字段现值算（不读缓存列：缓存行可能还没刷到），口径与缓存列相同（[card_cache::media_refs]）。
     let notes: Vec<String> = req["notes"]
         .as_array()
@@ -146,6 +161,7 @@ pub(crate) fn queue(c: &Connection, profile: &str, req: &Value) -> Result<Value,
 }
 
 /// 存活引用（见模块文档）：[alive_after] = 删除时刻晚于它的已删笔记也算（保留期内恢复笔记媒体还在）。只留裸文件名。
+#[cfg(test)]
 pub(crate) fn live_refs(
     c: &Connection,
     profile: &str,
@@ -165,13 +181,19 @@ pub(crate) fn live_refs(
             add_refs(&mut out, &r.get::<_, String>(0).map_err(sql)?);
         }
     }
+    finish_live_refs(&mut out, &caches::note_type_texts(c, profile, cfg)?);
+    Ok(out)
+}
+
+/// 存活引用的后一半（协议 3 与新代共用）：笔记类型模板与 CSS 的文本 [type_texts] 里的引用（含下划线开头的静态文件）
+/// 并进 [out]，再只留裸文件名。
+pub(crate) fn finish_live_refs(out: &mut BTreeSet<String>, type_texts: &[String]) {
     let mut refs: Vec<String> = Vec::new();
-    for text in caches::note_type_texts(c, profile, cfg)? {
-        card_cache::media_refs_with_static(&text, &mut refs);
+    for text in type_texts {
+        card_cache::media_refs_with_static(text, &mut refs);
     }
     out.extend(refs);
     out.retain(|n| is_bare_ref(n));
-    Ok(out)
 }
 
 /// `media_gc_collect`：回收待回收集合里此刻没有任何存活引用、且过了宽限期的文件（只删 [root] 下的裸文件名）。[req]：
@@ -190,24 +212,14 @@ pub(crate) fn live_refs(
 /// - 读不到文件信息（不存在等）：移出；
 /// - 修改时间晚于 `freshAfter`（刚写 / 刚复用，引用它的笔记可能还没提交）：留到下一轮；
 /// - 删掉了：计数、移出；删不掉（Windows 上正在播放 / 预览）：留在集合里，下一轮再试。
+#[cfg(test)]
 pub(crate) fn collect(
     c: &Connection,
     profile: &str,
     cfg: &CacheConfig,
     req: &Value,
 ) -> Result<Value, String> {
-    let root = req["root"]
-        .as_str()
-        .ok_or("media_gc_collect: missing root")?;
-    let alive_after = req["aliveAfter"]
-        .as_i64()
-        .ok_or("media_gc_collect: missing aliveAfter")?;
-    let fresh_after = req["freshAfter"]
-        .as_i64()
-        .ok_or("media_gc_collect: missing freshAfter")?;
-    let limit = req["limit"]
-        .as_u64()
-        .map_or(usize::MAX, |n| (n as usize).max(1));
+    let args = CollectArgs::of(req)?;
     let mut set = pending(c, profile)?;
     if set.is_empty() {
         return Ok(json!({"deleted": 0, "next": Value::Null}));
@@ -216,33 +228,87 @@ pub(crate) fn collect(
     if transport::cache_is_pending(c, profile)? {
         return Ok(json!({"deleted": 0, "next": Value::Null, "deferred": true}));
     }
-    let alive: HashSet<String> = live_refs(c, profile, cfg, alive_after)?
-        .iter()
-        .map(|n| n.to_lowercase())
-        .collect();
-    let from = match req["after"].as_str() {
+    let alive = live_refs(c, profile, cfg, args.alive_after)?;
+    let swept = sweep(&set, &args, &alive);
+    if !swept.settled.is_empty() {
+        for n in &swept.settled {
+            set.remove(n);
+        }
+        save(c, profile, &set)?;
+    }
+    Ok(json!({"deleted": swept.deleted, "next": swept.next}))
+}
+
+/// `media_gc_collect` 的参数（协议 3 与新代同一份解析）。
+pub(crate) struct CollectArgs<'a> {
+    pub(crate) root: &'a str,
+    pub(crate) alive_after: i64,
+    fresh_after: i64,
+    after: Option<&'a str>,
+    limit: usize,
+}
+
+impl<'a> CollectArgs<'a> {
+    pub(crate) fn of(req: &'a Value) -> Result<CollectArgs<'a>, String> {
+        Ok(CollectArgs {
+            root: req["root"]
+                .as_str()
+                .ok_or("media_gc_collect: missing root")?,
+            alive_after: req["aliveAfter"]
+                .as_i64()
+                .ok_or("media_gc_collect: missing aliveAfter")?,
+            fresh_after: req["freshAfter"]
+                .as_i64()
+                .ok_or("media_gc_collect: missing freshAfter")?,
+            after: req["after"].as_str(),
+            limit: req["limit"]
+                .as_u64()
+                .map_or(usize::MAX, |n| (n as usize).max(1)),
+        })
+    }
+}
+
+/// 一批回收的结果（[sweep]）。
+pub(crate) struct Swept {
+    pub(crate) deleted: i64,
+    /// 还有剩的：下一条命令的 `after`。
+    pub(crate) next: Option<String>,
+    /// 要移出待回收集合的名字。
+    pub(crate) settled: Vec<String>,
+}
+
+/// 「核对存活引用 → 删文件」的一批（[collect] 的逐名规则，协议 3 与新代 `gen4/cmd/media_gc.rs` 共用）：[set] 里排在
+/// `after` 之后的至多 `limit` 个名字，对照存活引用 [alive]（比较不区分大小写）逐个判。调用方持着写锁、在同一个事务里
+/// 读 [alive] 并按 [Swept::settled] 改集合。
+pub(crate) fn sweep(
+    set: &BTreeSet<String>,
+    args: &CollectArgs<'_>,
+    alive: &BTreeSet<String>,
+) -> Swept {
+    let alive: HashSet<String> = alive.iter().map(|n| n.to_lowercase()).collect();
+    let from = match args.after {
         Some(a) => Bound::Excluded(a),
         None => Bound::Unbounded,
     };
     let mut batch: Vec<String> = set
         .range::<str, _>((from, Bound::Unbounded))
-        .take(limit.saturating_add(1))
+        .take(args.limit.saturating_add(1))
         .cloned()
         .collect();
-    let next = if batch.len() > limit {
-        batch.truncate(limit);
+    let next = if batch.len() > args.limit {
+        batch.truncate(args.limit);
         batch.last().cloned()
     } else {
         None
     };
     let mut deleted = 0i64;
-    let mut settled: Vec<&String> = Vec::new();
-    for name in &batch {
-        if !is_bare_file(name) || alive.contains(&name.to_lowercase()) {
+    let mut settled: Vec<String> = Vec::new();
+    for name in batch {
+        if !is_bare_file(&name) || alive.contains(&name.to_lowercase()) {
             settled.push(name);
             continue;
         }
-        let path = Path::new(root).join(name);
+        let path = Path::new(args.root).join(&name);
         let Ok(meta) = std::fs::metadata(&path) else {
             settled.push(name);
             continue;
@@ -256,7 +322,7 @@ pub(crate) fn collect(
         else {
             continue;
         };
-        if modified_ms > fresh_after {
+        if modified_ms > args.fresh_after {
             continue;
         }
         if std::fs::remove_file(&path).is_ok() {
@@ -264,13 +330,11 @@ pub(crate) fn collect(
             settled.push(name);
         }
     }
-    if !settled.is_empty() {
-        for n in settled {
-            set.remove(n);
-        }
-        save(c, profile, &set)?;
+    Swept {
+        deleted,
+        next,
+        settled,
     }
-    Ok(json!({"deleted": deleted, "next": next}))
 }
 
 #[cfg(test)]
@@ -293,7 +357,8 @@ mod tests {
     fn dispatch(d: &Device, mut req: Value) -> Value {
         req["profile"] = json!(P);
         req["caches"] = json!({"defaultDeck": default_deck()});
-        crate::store::ffi::sync2_dispatch(&d.core, &req, &mut Vec::new(), &mut Vec::new()).unwrap()
+        crate::store::legacy3::sync2_dispatch(&d.core, &req, &mut Vec::new(), &mut Vec::new())
+            .unwrap()
     }
 
     fn apply(d: &Device, now: i64, events: Vec<Value>) -> Value {
@@ -302,7 +367,7 @@ mod tests {
             .map(|e| json!({"e": e, "note": null}))
             .collect();
         let mut blobs = vec![Value::Array(items).to_string().into_bytes()];
-        crate::store::ffi::sync2_dispatch(
+        crate::store::legacy3::sync2_dispatch(
             &d.core,
             &json!({
                 "op": "apply", "profile": P, "now": now, "caches": {"defaultDeck": default_deck()},

@@ -123,7 +123,7 @@ jobs:
       CC: gcc-14
       CXX: g++-14
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - name: Resolve native artifact store names
         id: native_store
         uses: ./.github/actions/native-store-names
@@ -159,7 +159,7 @@ jobs:
             ninja-build cmake pkg-config \
             gcc-14 g++-14 libstdc++-14-dev
       # FFI 真调用测试（与 PR 门同一套）要 Dart；只在真要构建 torrent / p2p 时装。
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         if: steps.torrent_store.outputs.hit != 'true' || steps.p2p_store.outputs.hit != 'true'
         with:
           flutter-version: '3.47.6'
@@ -179,7 +179,7 @@ jobs:
           echo "image=$image" >> "$GITHUB_OUTPUT"
       - name: Cache vcpkg source distfiles (libtorrent linux)
         if: steps.torrent_store.outputs.hit != 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ${{ runner.temp }}/vcpkg-downloads
@@ -189,7 +189,7 @@ jobs:
             ${{ runner.os }}-vcpkg-downloads-libtorrent-linux-v1-
       - name: Cache vcpkg binary archives (libtorrent linux)
         if: steps.torrent_store.outputs.hit != 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/vcpkg/archives
           key: ${{ runner.os }}-vcpkg-libtorrent-x64-linux-fpic-v1-${{ steps.vcpkg_cache_id.outputs.image }}-${{ hashFiles('native/fushi_torrent/vcpkg.json', 'native/fushi_torrent/vcpkg-ports/**', 'native/fushi_torrent/vcpkg-triplets/**') }}
@@ -227,7 +227,7 @@ jobs:
       # ---- fushi_p2p .so
       - name: Set up Rust (fushi_p2p)
         if: steps.p2p_store.outputs.hit != 'true'
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
       - name: Build and verify fushi_p2p (Linux x64)
@@ -286,7 +286,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - name: Resolve native artifact store names
         id: native_store
         uses: ./.github/actions/native-store-names
@@ -323,7 +323,7 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - name: Resolve native artifact store names
         id: native_store
         uses: ./.github/actions/native-store-names

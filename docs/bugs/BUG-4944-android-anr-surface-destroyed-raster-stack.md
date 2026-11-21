@@ -1,0 +1,7 @@
+## BUG-4944 · Android ANR：surfaceDestroyed 主线程等 raster 线程，ANR 摘要丢了被等线程的栈
+- **报告**：2026-11-21（应用内反馈 #TQVbIm9NrT，Infinix X6833B / Android 14 / 3.3.0）
+- **真实性**：✅ 真 ANR（`ApplicationExitInfo` reason=ANR，「Input dispatching timed out (Application does not have a focused window)」）。主线程停在 `SurfaceView.onWindowVisibilityChanged → FlutterSurfaceView.surfaceDestroyed → FlutterRenderer.stopRenderingToSurface → FlutterJNI.nativeSurfaceDestroyed → pthread_cond_wait`（libflutter），即窗口隐藏时平台线程同步等引擎线程（raster）拆 surface，等满 5 秒。**ANR 本身的根因未定位**：被等的 raster 线程在做什么（卡在 EGL / Vulkan 驱动、视频外部纹理、还是别的锁）报告里没有任何证据。另：分诊里「停在 HomeVideoPage」来自同机前一次（11-18 20:56 的 CRASH_NATIVE）进程的内存快照，本次 ANR 进程只有启动时一条快照，没有页面信息，不能据此归到视频页。
+- **证据缺口的根因（采集侧，已修）**：`fushi/android/app/src/main/java/app/fushi/reader/ProcessExitChannel.java:330`（旧 `readTraceSummary` 文本分支）只读 trace 前 64 KB、从 `"main"` 起截 3400 字——主线程段本身就超长（这份报告连 Java 帧都没截完），排在后面的 `1.raster` / `1.ui` 线程段永远进不了退出报告，所以这一类「主线程等引擎线程」的 ANR 每份都缺关键栈。
+- **[ ] ① ANR 根因未修复**（缺证据，不猜着改）— 采集侧已修：新增 `AnrTraceSummary`（`fushi/android/app/src/main/java/app/fushi/reader/AnrTraceSummary.java`），ANR 摘要改为主线程段 + 全部 Flutter 引擎线程段（`N.raster` / `N.ui` / `N.io`），去掉 `| ...` 状态行、BuildId 与安装路径噪音、每段限帧；ANR trace 读取上限 64 KB → 1 MB。下一份同签名报告应带 raster 线程栈，届时据此定位真正根因。
+- **[ ] ② ANR 根因测试待定** — 采集侧测试：`fushi/android/app/src/test/java/app/fushi/reader/AnrTraceSummaryTest.java`（引擎线程排在 3400 字之后仍保留、噪音剥离、限帧）。
+- **备注**：缺的证据——同签名 ANR 的 `1.raster`（以及 `1.ui`）线程栈；若带上后看到停在厂商 GPU 驱动（mali `eglDestroySurface` / `vkDestroySwapchain`），属引擎 / 驱动边界，再评估。

@@ -82,7 +82,9 @@ const MangaOcrModelGeneration _tinySuperseded = MangaOcrModelGeneration(
   cacheSignature: 'test-superseded-signature',
   recFileName: kMangaCtcSupersededRecFileName,
   recDictFileName: kPpOcrRecDictFileName,
-  recDictFormat: PpOcrCharacterDictFormat.paddleYaml,
+  recognizer: MangaOcrCtcColumnSpec(
+    dictFormat: PpOcrCharacterDictFormat.paddleYaml,
+  ),
 );
 
 /// 进程内可编排的 fake 任务。
@@ -616,6 +618,127 @@ void main() {
         reason: 'CTC 不能把已删除的 manga-ocr 留下的 v4 旧缓存当成自己的结果补几何',
       );
     });
+
+    for (final MangaOcrLocalModel model in <MangaOcrLocalModel>[
+      MangaOcrLocalModel.charspotSmall,
+      MangaOcrLocalModel.charspotNano,
+    ]) {
+      test('${model.key}：charspot 路径、不带 PP rec、忽略振假名开关不生效', () async {
+        final List<MangaOcrModelFile> tiny = <MangaOcrModelFile>[
+          for (final MangaOcrModelFile file in model.manifest)
+            MangaOcrModelFile(
+              fileName: file.fileName,
+              url: 'http://unused.invalid/${file.fileName}',
+              expectedBytes: 1,
+              role: file.role,
+            ),
+        ];
+        for (final MangaOcrModelFile file in tiny) {
+          File(
+            p.join(modelsDir.path, file.fileName),
+          ).writeAsBytesSync(<int>[7]);
+        }
+        final _FakePageSessionRunner pages = _FakePageSessionRunner();
+        final MangaOcrServiceImpl service = MangaOcrServiceImpl(
+          localModel: model,
+          modelsDirProvider: () async => modelsDir,
+          manifest: tiny,
+          jobRunner: _FakeRunner(),
+          pageSessionRunner: pages,
+          platformSupport: () => true,
+          // 开着也不生效：振假名由模型自己去掉。
+          ignoreFurigana: () => true,
+        );
+        expect((await service.modelStatus()).allReady, isTrue);
+
+        await service.openPageSession(imageDirPath: 'D:/vol');
+        final MangaOcrModelPaths paths =
+            pages.sessions.single.request.modelPaths;
+        final CharspotModelPaths charspot = paths.charspot!;
+        expect(
+          charspot.modelPath,
+          p.join(modelsDir.path, model.generation.recFileName),
+        );
+        expect(
+          charspot.vocabPath,
+          p.join(modelsDir.path, model.generation.recDictFileName),
+        );
+        expect(
+          charspot.cellBudget,
+          (model.generation.recognizer as MangaOcrCharspotSpec).cellBudget,
+        );
+        expect(paths.blockRecognizerPath, charspot.modelPath);
+        expect(paths.ctcRecPath, isEmpty);
+        expect(paths.ppRecPath, isEmpty);
+        expect(paths.ppDetPath, p.join(modelsDir.path, kPpOcrDetFileName));
+        expect(paths.ignoreFurigana, isFalse);
+        // 缓存签名按权重落盘名反查得到这个模型。
+        expect(
+          mangaOcrGenerationForRecFile(p.basename(paths.blockRecognizerPath)),
+          same(model.generation),
+        );
+
+        final String cache = await service.resolvePageCacheDirPath(
+          imageDirPath: 'D:/vol',
+        );
+        expect(p.basename(cache), startsWith('${model.cacheSignature}-'));
+        expect(p.basename(cache), isNot(endsWith('_noruby')));
+      });
+    }
+  });
+
+  test('nar_small：nar 路径、不带 PP rec、忽略振假名开关不生效', () async {
+    const MangaOcrLocalModel model = MangaOcrLocalModel.narSmall;
+    final List<MangaOcrModelFile> tiny = <MangaOcrModelFile>[
+      for (final MangaOcrModelFile file in model.manifest)
+        MangaOcrModelFile(
+          fileName: file.fileName,
+          url: 'http://unused.invalid/${file.fileName}',
+          expectedBytes: 1,
+          role: file.role,
+        ),
+    ];
+    for (final MangaOcrModelFile file in tiny) {
+      File(p.join(modelsDir.path, file.fileName)).writeAsBytesSync(<int>[7]);
+    }
+    final _FakePageSessionRunner pages = _FakePageSessionRunner();
+    final MangaOcrServiceImpl service = MangaOcrServiceImpl(
+      localModel: model,
+      modelsDirProvider: () async => modelsDir,
+      manifest: tiny,
+      jobRunner: _FakeRunner(),
+      pageSessionRunner: pages,
+      platformSupport: () => true,
+      // 开着也不生效：模型本来就不读振假名。
+      ignoreFurigana: () => true,
+    );
+    expect((await service.modelStatus()).allReady, isTrue);
+
+    await service.openPageSession(imageDirPath: 'D:/vol');
+    final MangaOcrModelPaths paths = pages.sessions.single.request.modelPaths;
+    final NarModelPaths nar = paths.nar!;
+    expect(nar.modelPath, p.join(modelsDir.path, kNarSmallRecFileName));
+    expect(nar.vocabPath, p.join(modelsDir.path, kNarSmallVocabFileName));
+    expect(paths.blockRecognizerPath, nar.modelPath);
+    expect(paths.charspot, isNull);
+    expect(paths.ctcRecPath, isEmpty);
+    expect(paths.ppRecPath, isEmpty);
+    expect(paths.ppDetPath, p.join(modelsDir.path, kPpOcrDetFileName));
+    expect(paths.ignoreFurigana, isFalse);
+    expect(
+      mangaOcrGenerationForRecFile(p.basename(paths.blockRecognizerPath)),
+      same(model.generation),
+    );
+    final String cache = await service.resolvePageCacheDirPath(
+      imageDirPath: 'D:/vol',
+    );
+    expect(p.basename(cache), startsWith('${model.cacheSignature}-'));
+    expect(p.basename(cache), isNot(endsWith('_noruby')));
+    expect(
+      pages.sessions.single.request.engineSignature,
+      p.basename(cache),
+      reason: 'the session writes where the reader looks',
+    );
   });
 
   group('页级常驻会话', () {

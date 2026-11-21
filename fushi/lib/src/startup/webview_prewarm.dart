@@ -29,9 +29,8 @@ bool shouldPrewarmWebView({
 /// `endOfFrame` 会在**首帧还没上屏**时就完成。所以这里等的是
 /// [firstFrameRasterized]（生产传 `binding.waitUntilFirstFrameRasterized`），再等
 /// [whenIdle]（生产传 `waitForUiIdle`：有动画在跑时不完成，正好避开首屏入场动效。
-/// 主页背景、吉祥物光晕这类常驻装饰动画登记成 ambient ticker、不算「在跑」。不能传
-/// `SchedulerBinding.scheduleTask(..., Priority.idle)`：它等的是同一个条件，但忙时用
-/// 零延迟定时器空转，把 Windows 输入饿死，BUG-4387 / BUG-4893）。
+/// 主页背景、吉祥物光晕这类常驻装饰动画登记成 ambient ticker、不算「在跑」；忙时由生产
+/// binding 的 `FramePacedTaskScheduler` 按帧重查、不空转，BUG-4387 / BUG-4725 / BUG-4893）。
 ///
 /// [prewarm] 抛错原样外抛，由调用方（main.dart 已有 try/catch + session 收口）处理。
 Future<void> runWebViewPrewarmWhenIdle({

@@ -6,6 +6,8 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
+import 'package:fushi_engine/media/manga/manga_archive_probe.dart'
+    show looksLikeImageArchiveInBackground;
 import 'package:fushi/src/media/manga/import/manga_folder_batch.dart';
 import 'package:fushi/src/media/manga/import/manga_pdf_importer.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
@@ -40,6 +42,11 @@ abstract final class MangaModule {
 
   static bool isImageArchive(String path) =>
       MangaArchiveImporter.looksLikeImageArchive(path);
+
+  /// [isImageArchive] 的后台版（manga-3）：开包判定跑在一次性 isolate 上，`.epub`
+  /// 探测的解压落点建在 [db] 的书库根下（`.tmp-*`），不进系统临时目录。
+  static Future<bool> probeImageArchive(FushiDatabase db, String path) =>
+      looksLikeImageArchiveInBackground(path, db: db);
 
   /// 目录里有没有页图（[ImportCarrier] 的目录分支判据）。
   static bool directoryHasPageImages(String path) =>

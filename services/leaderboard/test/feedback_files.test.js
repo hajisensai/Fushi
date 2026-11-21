@@ -32,8 +32,9 @@ function submit(env, opts = {}) {
   });
 }
 
-function putFile(env, f, bytes, { slot = 'f0', name = 'notes.md', length = bytes.length, now = NOW } = {}) {
+function putFile(env, f, bytes, { slot = 'f0', name = 'notes.md', length = bytes.length, now = NOW, ip = null } = {}) {
   const headers = { 'X-Fushi-Ticket': f.ticket };
+  if (ip !== null) headers['CF-Connecting-IP'] = ip;
   if (name !== null) headers['X-Fushi-File-Name'] = encodeURIComponent(name);
   if (length !== null) headers['Content-Length'] = String(length);
   return call(env, 'PUT', `/v1/feedback/${f.id}/attachments/${slot}`, { body: bytes, headers, now });
@@ -120,12 +121,50 @@ describe('样本文件上传', () => {
     expect((await putFile(env, f, MD)).status).toBe(201);
   });
 
+  it('每 IP 每天样本文件字节单独一份额度（拍板台 left3660）：超了 429 upload_quota_daily，视频不受影响', async () => {
+    const env = makeEnv();
+    const f = (await submit(env)).data;
+    const ip = '198.51.100.9';
+    // 声明满额、实际只发几字节：每次 400 bad_length，但额度按声明长度记上、不退。单个上限（1e8）
+    // 不整除日额度（100 MiB），最后一次声明余数把额度恰好占满（count == limit 不拒）。
+    const big = FEEDBACK_LIMITS.fileMaxBytes;
+    const attempts = Math.floor(FEEDBACK_LIMITS.fileBytesPerIpDay / big);
+    const rest = FEEDBACK_LIMITS.fileBytesPerIpDay - attempts * big;
+    for (const length of [...Array(attempts).fill(big), ...(rest > 0 ? [rest] : [])]) {
+      const filled = await putFile(env, f, MD, { length, ip });
+      expect(filled.status).toBe(400);
+      expect(filled.data.error).toBe('bad_length');
+    }
+    const limited = await putFile(env, f, MD, { slot: 'f1', ip });
+    expect(limited.status).toBe(429);
+    expect(limited.data.error).toBe('upload_quota_daily');
+    expect(env.MEDIA.store.size).toBe(0);
+    // 视频那份额度没动：同 IP 照传录屏。
+    const mp4 = new Uint8Array(32);
+    mp4.set([0, 0, 0, 0x18], 0);
+    mp4.set(enc('ftypisom'), 4);
+    const video = await call(env, 'PUT', `/v1/feedback/${f.id}/attachments/v0`, {
+      body: mp4,
+      headers: { 'X-Fushi-Ticket': f.ticket, 'Content-Length': String(mp4.length), 'Content-Type': 'video/mp4', 'CF-Connecting-IP': ip },
+      now: NOW,
+    });
+    expect(video.status).toBe(201);
+    // 别的 IP、次日窗口照传。
+    expect((await putFile(env, f, MD, { slot: 'f1', ip: '198.51.100.10' })).status).toBe(201);
+    const g = (await submit(env, { now: NOW + DAY })).data;
+    expect((await putFile(env, g, MD, { ip, now: NOW + DAY })).status).toBe(201);
+  });
+
   it('上限与客户端常量同值；扩展名白名单与客户端同一份', () => {
     expect(FEEDBACK_LIMITS.fileMaxBytes).toBe(100 * 1000 * 1000);
     expect(FEEDBACK_LIMITS.files).toBe(3);
+    expect(FEEDBACK_LIMITS.fileBytesPerIpDay).toBe(100 * 1024 * 1024);
+    expect(FEEDBACK_LIMITS.videoBytesPerIpDay).toBe(200 * 1024 * 1024);
     const dart = readFileSync(new URL('../../../packages/fushi_engine/lib/feedback/feedback_models.dart', import.meta.url), 'utf8');
     expect(dart).toMatch(/static const int fileMaxBytes = 100 \* 1000 \* 1000;/);
     expect(dart).toMatch(/static const int files = 3;/);
+    // 撰写页按它提醒「样本文件合计超过今天额度」，必须与服务端同值。
+    expect(dart).toMatch(/static const int fileBytesPerDay = 100 \* 1024 \* 1024;/);
     const m = /static const Set<String> fileExtensions = <String>\{([^}]*)\};/.exec(dart);
     expect(m).not.toBeNull();
     // 字幕部分在客户端是展开有声书字幕格式真相源（...kAudiobookSubtitleExtensions），

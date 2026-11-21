@@ -63,6 +63,7 @@ void main() {
     required GalgameScrapeController controller,
     HttpClient? coverHttpClient,
     Directory? coverDirectory,
+    bool coverOnly = false,
   }) async {
     Future<bool?>? result;
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
@@ -80,6 +81,7 @@ void main() {
                     builder: (_) => GalgameScrapeDialog(
                       game: game,
                       repo: repo,
+                      coverOnly: coverOnly,
                       controllerOverride: controller,
                       coverHttpClientOverride: coverHttpClient,
                       coverDirectoryOverride: coverDirectory,
@@ -235,6 +237,157 @@ void main() {
     expect(File(coverPath!).readAsBytesSync(), imageBytes);
     expect(await applied(), isTrue);
     await tester.pump(const Duration(seconds: 4)); // 放掉桌面 toast 计时器
+  });
+
+  testWidgets('在线搜索封面模式：「使用」只换封面，不落源快照、不改显示名（拍板 left3612）', (
+    WidgetTester tester,
+  ) async {
+    final Directory coverDir = Directory.systemTemp.createTempSync(
+      'gal_online_cover_new_',
+    );
+    addTearDown(() => coverDir.deleteSync(recursive: true));
+    final Directory oldDir = Directory.systemTemp.createTempSync(
+      'gal_online_cover_old_',
+    );
+    addTearDown(() => oldDir.deleteSync(recursive: true));
+    final File oldCover = File('${oldDir.path}/manual.png')
+      ..writeAsBytesSync(<int>[1, 2, 3]);
+    final (GalgameRepository repo, _) = await buildRepo();
+    await repo.setCoverPath('g1', oldCover.path);
+
+    final List<int> imageBytes = _fakePngBytes(2048);
+    final _FakeCoverHttpClient http = _FakeCoverHttpClient(imageBytes);
+    const String url = 'https://example.com/covers/alpha_full.png';
+    final _FakeAdapter bgm = _FakeAdapter(GalgameMetadataSource.bgm)
+      ..results = const <SourceCandidate>[
+        SourceCandidate(
+          source: GalgameMetadataSource.bgm,
+          externalId: '4885',
+          name: 'alpha',
+          nameCn: '阿尔法物语',
+        ),
+      ]
+      ..draft = const GalgameMetadataDraft(
+        name: 'alpha',
+        nameCn: '阿尔法物语',
+        summary: '简介',
+        externalId: '4885',
+        coverUrl: url,
+      );
+    final GalgameScrapeController controller = GalgameScrapeController(
+      adapters: <GalgameMetadataAdapter>[bgm],
+    );
+    final Future<bool?> Function() applied = await pumpDialogOpener(
+      tester,
+      repo: repo,
+      game: repo.byId('g1')!,
+      controller: controller,
+      coverHttpClient: http,
+      coverDirectory: coverDir,
+      coverOnly: true,
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.game_cover_online_search), findsOneWidget);
+    expect(find.text(t.game_cover_online_hint), findsOneWidget);
+    expect(bgm.searchedNames, <String>['alpha']);
+
+    await tester.tap(find.text(t.game_scrape_use));
+    for (
+      int i = 0;
+      i < 250 && find.byType(GalgameScrapeDialog).evaluate().isNotEmpty;
+      i++
+    ) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+
+    expect(find.byType(GalgameScrapeDialog), findsNothing);
+    expect(await applied(), isTrue);
+    expect(http.requests, 1, reason: '候选摘要没带图时取详情里的完整封面 URL 下载。');
+    final GalgameEntry after = repo.byId('g1')!;
+    expect(after.coverPath, isNot(oldCover.path));
+    expect(File(after.coverPath!).readAsBytesSync(), imageBytes);
+    // 只取图：不落源快照、不改显示名与主显示源。
+    expect(await repo.sourcesOf('g1'), isEmpty);
+    expect(after.displayName, 'alpha');
+    expect(after.primarySource, isNot(GalgameMetadataSource.bgm.key));
+    await tester.pump(const Duration(seconds: 4)); // 放掉桌面 toast 计时器
+  });
+
+  test('在线搜索封面：详情与候选都没有封面图 → noCover，不下载、旧封面保留', () async {
+    final Directory oldDir = Directory.systemTemp.createTempSync(
+      'gal_online_cover_none_',
+    );
+    addTearDown(() => oldDir.deleteSync(recursive: true));
+    final File oldCover = File('${oldDir.path}/manual.png')
+      ..writeAsBytesSync(<int>[1, 2, 3]);
+    final (GalgameRepository repo, _) = await buildRepo();
+    await repo.setCoverPath('g1', oldCover.path);
+    final _FakeAdapter bgm = _FakeAdapter(GalgameMetadataSource.bgm)
+      ..draft = const GalgameMetadataDraft(name: 'alpha', externalId: '4885');
+    final _FakeCoverHttpClient http = _FakeCoverHttpClient(_fakePngBytes(2048));
+
+    final GalgameCandidateCoverOutcome outcome =
+        await applyGalgameCandidateCover(
+          repo: repo,
+          gameId: 'g1',
+          candidate: const SourceCandidate(
+            source: GalgameMetadataSource.bgm,
+            externalId: '4885',
+          ),
+          controller: GalgameScrapeController(
+            adapters: <GalgameMetadataAdapter>[bgm],
+          ),
+          coverHttpClient: http,
+        );
+
+    expect(outcome, GalgameCandidateCoverOutcome.noCover);
+    expect(http.requests, 0);
+    expect(repo.byId('g1')!.coverPath, oldCover.path);
+    expect(await repo.sourcesOf('g1'), isEmpty);
+  });
+
+  test('在线搜索封面：下载失败 → failed，旧封面原样保留、不落元数据', () async {
+    final HttpOverrides? previous = HttpOverrides.current;
+    HttpOverrides.global = _ExplodingHttpOverrides();
+    addTearDown(() => HttpOverrides.global = previous);
+    final Directory oldDir = Directory.systemTemp.createTempSync(
+      'gal_online_cover_fail_',
+    );
+    addTearDown(() => oldDir.deleteSync(recursive: true));
+    final File oldCover = File('${oldDir.path}/manual.png')
+      ..writeAsBytesSync(<int>[1, 2, 3]);
+    final (GalgameRepository repo, _) = await buildRepo();
+    await repo.setCoverPath('g1', oldCover.path);
+    final _FakeAdapter bgm = _FakeAdapter(GalgameMetadataSource.bgm)
+      ..draft = const GalgameMetadataDraft(
+        name: 'alpha',
+        externalId: '4885',
+        coverUrl: 'https://example.invalid/unreachable.jpg',
+      );
+
+    final GalgameCandidateCoverOutcome outcome =
+        await applyGalgameCandidateCover(
+          repo: repo,
+          gameId: 'g1',
+          candidate: const SourceCandidate(
+            source: GalgameMetadataSource.bgm,
+            externalId: '4885',
+          ),
+          controller: GalgameScrapeController(
+            adapters: <GalgameMetadataAdapter>[bgm],
+          ),
+        );
+
+    expect(outcome, GalgameCandidateCoverOutcome.failed);
+    expect(repo.byId('g1')!.coverPath, oldCover.path);
+    expect(oldCover.readAsBytesSync(), <int>[1, 2, 3]);
+    expect(await repo.sourcesOf('g1'), isEmpty);
   });
 
   test('批量自动应用只更新元数据，不覆盖已有游戏封面', () async {

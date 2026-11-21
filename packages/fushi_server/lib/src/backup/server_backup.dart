@@ -8,13 +8,18 @@
 /// manifest.json                 格式标记、创建时间、数据库 schema、是否含 documents/
 /// config/fushi_server.yaml      配置文件（含 admin_token / 凭据——备份文件要当密钥保管）
 /// data/support/fushi.db         数据库：`VACUUM INTO` 出的一致快照（serve 在跑也安全）
-/// data/support/srs.db           复习库（有才带）：Rust `VACUUM INTO` 的一致快照，设备本地表照留
-///                               （整机还原是同一台设备，同步游标 / 设备 id 要原样回来）
+/// data/support/srs4.db          复习库（新代，有才带）：内核 `VACUUM INTO` 的一致快照（`ffsrs_store_snapshot`），
+///                               设备本地状态与签名密钥照留（整机还原是同一台设备，身份要原样回来）
+/// data/support/srs.db           协议 3 的旧复习库（有才带）：迁移之后是原位封存的回退副本，没人打开它，原样拷
 /// data/<其余数据目录文件>        互联身份 / TLS / 配对、词典、任务、寄存的配置方案……
 /// ```
 ///
-/// 不进包：`tmp/`、`logs/`、`backups/`（备份自己）、数据目录锁文件、主库与复习库的
-/// `-wal` / `-shm` / `-journal`（快照已含）。`documents/`（书 / 封面 / 有声书 / 下载）
+/// 不进包：`tmp/`、`logs/`、`backups/`（备份自己）、数据目录锁文件、主库与新代复习库的
+/// `-wal` / `-shm` / `-journal`（快照已含）、旧复习库的 `-shm` / `-journal`、换代迁移的过程文件（临时库、补完副本）。
+/// 复习库正在换代迁移时 admin API 不开始备份（`ServerSrs.holdForBackup`，G10-4）。
+///
+/// **格式第 2 版**（G11-4）：复习库换成新代 `srs4.db`。旧版本（只认 v1）见到 v2 在动任何东西之前拒绝、提示升级；
+/// 这一版照样还原 v1 的包（包里只有协议 3 的 `srs.db`，下次启动按迁移处理）。`documents/`（书 / 封面 / 有声书 / 下载）
 /// 体积大，可用 `includeDocuments: false` 跳过——只剩设置与状态，还原后库里的条目会
 /// 指向缺失的文件，需要重新扫描 / 下载。
 ///
@@ -30,7 +35,8 @@ import 'dart:isolate';
 import 'package:archive/archive_io.dart';
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_engine/srs/srs_storage.dart' show kSrsDatabaseFileName;
+import 'package:fushi_engine/srs/srs_storage.dart'
+    show kSrsDatabaseFileName, kSrsGen4DatabaseFileName;
 import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/server_data_lock.dart';
@@ -42,7 +48,7 @@ import 'package:fushi_server/src/server_language.dart';
 const String kServerBackupFormat = 'fushi_server_backup';
 
 /// 当前包格式版本（读侧只认 ≤ 它的）。
-const int kServerBackupFormatVersion = 1;
+const int kServerBackupFormatVersion = 2;
 
 const String _manifestEntry = 'manifest.json';
 const String _configEntry = 'config/fushi_server.yaml';
@@ -59,20 +65,35 @@ const Set<String> _excludedTopLevel = <String>{
 /// 数据目录下存放 admin API 生成的备份的子目录。
 const String kServerBackupDirName = 'backups';
 
-/// 主库、复习库及其伴生文件（快照替代它们）。
+/// 主库、新代复习库及其伴生文件（快照替代它们），以及旧复习库的 `-shm` / `-journal`（旧库本体与 `-wal` 原样拷：
+/// 它不开着，两样合起来就是一致的）。
 final Set<String> _liveDbFiles = <String>{
-  for (final String db in <String>[fushiDatabaseFileName, kSrsDatabaseFileName])
+  for (final String db in <String>[
+    fushiDatabaseFileName,
+    kSrsGen4DatabaseFileName,
+  ])
     for (final String suffix in <String>['', '-wal', '-shm', '-journal'])
       '$db$suffix',
+  '$kSrsDatabaseFileName-shm',
+  '$kSrsDatabaseFileName-journal',
+  // 换代迁移的过程文件（native/fushi_fsrs/src/store/gen4/files.rs `GEN4_TEMP` / `GEN4_CREATING` / `PREPARE_COPY`）：
+  // 只在迁移进行中或被杀之后存在，下次迁移取锁后先清掉；拷进包里还原回来也只是要清的垃圾（G10-4）。
+  for (final String temp in <String>[
+    'srs4.db-migrating',
+    'srs4.db-creating',
+    'srs.db-gen4-prepare',
+  ])
+    for (final String suffix in <String>['', '-wal', '-shm', '-journal'])
+      '$temp$suffix',
 };
 
 /// 把复习库一致地快照到 [path]（必须不存在）。serve 在跑时由 `ServerSrs.snapshotInto` 走它那份打开的连接。
 typedef ServerSrsSnapshot = Future<void> Function(String path);
 
-/// 没有在跑的复习库连接时（离线 `backup create`）：临时打开 srs.db 快照完就关。
-Future<void> _snapshotSrsOffline(String source, String path) =>
+/// 没有在跑的复习库连接时（离线 `backup create`）：临时打开库目录 [supportDir] 的新代库快照完就关。
+Future<void> _snapshotSrsOffline(String supportDir, String path) =>
     Isolate.run<void>(() {
-      final SrsCore core = SrsCore.open(source);
+      final SrsCore core = SrsCore.open(supportDir);
       try {
         core.snapshotInto(path, stripDeviceLocal: false);
       } finally {
@@ -159,7 +180,7 @@ int currentServerSchemaVersion() {
 ///
 /// [db] 是正在用的库（serve 在跑时就是它那份连接）：`VACUUM INTO` 在它上面跑，
 /// 得到一致快照，不用停服。复习库同理：[snapshotSrs] 给了（serve 在跑、复习库开着）就走那份连接，
-/// 否则 `support/srs.db` 存在时临时打开它出快照。
+/// 否则 `support/srs4.db` 存在时临时打开库目录出快照。
 Future<File> createServerBackup({
   required FushiDatabase db,
   required String dataDir,
@@ -176,7 +197,9 @@ Future<File> createServerBackup({
     p.join(scratch.path, 'backup-${DateTime.now().microsecondsSinceEpoch}.db'),
   );
   final File srsSnapshot = File('${snapshot.path}.srs');
-  final File liveSrs = File(p.join(dataDir, 'support', kSrsDatabaseFileName));
+  final File liveSrs = File(
+    p.join(dataDir, 'support', kSrsGen4DatabaseFileName),
+  );
   final File partial = File('${output.path}.partial');
   try {
     await db.customStatement(
@@ -187,13 +210,13 @@ Future<File> createServerBackup({
       await snapshotSrs(srsSnapshot.path);
       hasSrs = true;
     } else if (liveSrs.existsSync()) {
-      await _snapshotSrsOffline(liveSrs.path, srsSnapshot.path);
+      await _snapshotSrsOffline(liveSrs.parent.path, srsSnapshot.path);
       hasSrs = true;
     }
     final Map<String, String> entries = <String, String>{
       '${_dataPrefix}support/$fushiDatabaseFileName': snapshot.path,
       if (hasSrs)
-        '${_dataPrefix}support/$kSrsDatabaseFileName': srsSnapshot.path,
+        '${_dataPrefix}support/$kSrsGen4DatabaseFileName': srsSnapshot.path,
       for (final MapEntry<String, String> e in _dataFiles(
         data,
         includeDocuments: includeDocuments,

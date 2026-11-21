@@ -51,7 +51,7 @@ void main() {
       expect(body, contains('_downloadRemoteWebOnlineSubtitle(controller,id)'));
       expect(
         compactCode(methodBody(remote, 'String _videoRemoteIdentity(')),
-        contains('controller.isWebBackend?_webVideoKey'),
+        contains('controller.isWebBackend?_webTrackSel.videoKey'),
       );
     });
 
@@ -67,7 +67,7 @@ void main() {
         webSource,
         'void _selectWebLocalSubtitleTrack(',
       );
-      expect(register, contains('_webTracks[key] = WebVideoTrack('));
+      expect(register, contains('_webTrackSel.tracks[key] = WebVideoTrack('));
       expect(register, contains('_selectWebTrack(key);'));
       expect(register, isNot(contains('setCues(')));
     });
@@ -124,9 +124,21 @@ void main() {
     });
 
     test('手机关字幕后不再自动挑轨', () {
+      // 手机关字幕经共享选轨的 choose(null)；重选（两个宿主页同一份）关着就不挑轨。
       expect(
-        compactCode(methodBody(page, 'void _reselectTrack(')),
-        contains('_subtitlesOff?null:chooseWebVideoTrackKey('),
+        compactCode(methodBody(page, 'void _selectTrack(')),
+        contains('_trackSel.choose(key);'),
+      );
+      expect(
+        compactCode(
+          methodBody(
+            File(
+              'lib/src/media/video/web_video_track_selection.dart',
+            ).readAsStringSync(),
+            'WebVideoTrackReselect reselect(',
+          ),
+        ),
+        contains('subtitlesOff?null:chooseWebVideoTrackKey('),
       );
     });
   });

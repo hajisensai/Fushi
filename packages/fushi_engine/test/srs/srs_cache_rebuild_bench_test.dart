@@ -88,7 +88,7 @@ void main() {
         Platform.environment['FUSHI_SRS_CACHE_BENCH_REVS'] ?? '10',
       );
       final Directory tmp = Directory.systemTemp.createTempSync('srs_cache_');
-      final TestSrs srs = await openTestSrsAt('${tmp.path}/srs.db');
+      final TestSrs srs = openTestSrsIn(tmp.path);
       addTearDown(() async {
         try {
           tmp.deleteSync(recursive: true);

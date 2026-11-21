@@ -234,8 +234,13 @@ void main() {
         'private static List<ScreenOcrLayout.Line> toLines',
       );
       final int success = recognize.indexOf('addOnSuccessListener');
-      final int guard = recognize.indexOf('if (finished)', success);
+      final int guard = recognize.indexOf('if (stale(flow))', success);
       expect(guard, greaterThan(success));
+      // 过期 = 流程已收尾，或已换成下一次流程（BUG-4790：通知上取消后识别器晚到的结果）。
+      expect(
+        service,
+        contains('return finished || !recognition.isCurrent(flow);'),
+      );
       expect(recognize.indexOf('showSelection(lines)'), greaterThan(guard));
     },
   );

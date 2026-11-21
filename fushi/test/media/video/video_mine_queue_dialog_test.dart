@@ -5,8 +5,10 @@ import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/video_mine_queue_dialog.dart';
 import 'package:fushi/src/mining/video_mine_queue.dart';
+import 'package:fushi/src/mining/web_mine_queue_store.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
 import 'package:fushi_anki/fushi_anki.dart';
@@ -110,6 +112,79 @@ void main() {
     expect(commits, 1);
     expect(returned?.succeeded, 1);
     expect(find.byType(VideoMineQueueDialog), findsNothing);
+  });
+
+  testWidgets('没送到的行（后端不可达）显示「未送达、自动重试」；全部写入仍没送到时弹窗不关', (
+    WidgetTester tester,
+  ) async {
+    late FushiDatabase db;
+    late Directory tmp;
+    late VideoMineQueue queue;
+    await tester.runAsync(() async {
+      db = FushiDatabase.forTesting(
+        DatabaseConnection(NativeDatabase.memory()),
+      );
+      tmp = await Directory.systemTemp.createTemp('mine_queue_dialog');
+      queue = VideoMineQueue(db: db, root: Directory('${tmp.path}/q'));
+      final File audio = File('${tmp.path}/a.aac')..writeAsStringSync('x');
+      final int id = await queue.stage(
+        bookUid: 'remote/1',
+        videoKey: 'remote/1#0',
+        fields: <String, String>{'expression': '走る'},
+        context: AnkiMiningContext(
+          sentence: '走るの文。',
+          sentenceAudioPath: audio.path,
+          source: AnkiMiningSource.video,
+        ),
+        meta: const VideoMineStagedMeta(),
+      );
+      await WebMineQueueStore(db).markUndelivered(id, 'Anki is closed');
+    });
+    addTearDown(() async {
+      await tester.runAsync(() async {
+        await db.close();
+        if (tmp.existsSync()) await tmp.delete(recursive: true);
+      });
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VideoMineQueueDialog(
+            queue: queue,
+            bookUid: 'remote/1',
+            commit: (void Function(int, int) onProgress) async {
+              onProgress(1, 1);
+              return const VideoMineCommitSummary(
+                succeeded: 0,
+                failed: 0,
+                undelivered: 1,
+                firstError: 'Anki is closed',
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(Duration.zero);
+    expect(
+      find.text(t.video_mine_queue_undelivered(reason: 'Anki is closed')),
+      findsOneWidget,
+    );
+    expect(
+      find.text(t.video_mine_queue_failed(reason: 'Anki is closed')),
+      findsNothing,
+    );
+
+    await tester.tap(find.byType(FilledButton));
+    await tester.pump();
+    await tester.pump(Duration.zero);
+    expect(find.byType(VideoMineQueueDialog), findsOneWidget);
+    expect(
+      find.text(t.video_mine_queue_undelivered(reason: 'Anki is closed')),
+      findsOneWidget,
+    );
   });
 }
 
