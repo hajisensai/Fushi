@@ -22,6 +22,7 @@ import 'package:fushi/src/web_browser/tab_view/web_browser_find_bar.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_tab_view.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab_host.dart';
+import 'package:fushi/src/web_browser/web_browser_fullscreen.dart';
 
 import '../../helpers/test_platform_services.dart';
 
@@ -86,8 +87,12 @@ class _Host implements WebBrowserTabHost {
     required int dy,
   }) {}
 
+  /// 视图通知壳的全屏切换（壳据此进退沉浸模式、锁 / 还原方向）。
+  final List<bool> fullscreenChanges = <bool>[];
+
   @override
-  void onFullscreenChanged(WebBrowserTab tab, {required bool fullscreen}) {}
+  void onFullscreenChanged(WebBrowserTab tab, {required bool fullscreen}) =>
+      fullscreenChanges.add(fullscreen);
 }
 
 Widget _wrap(Widget child, {List<Override> overrides = const <Override>[]}) =>
@@ -250,6 +255,71 @@ void main() {
       await tester.pump();
       expect(feature.events, <String>['a:webview-disposed']);
       expect(a.controller, isNull);
+    });
+
+    testWidgets('整页跳转（主文档换代）收尾伪全屏，旧页面迟到的进全屏被拒收（HBK-AUDIT-037）', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = _Host(<WebBrowserFeature>[])..activeId = 'a';
+      final WebBrowserTab a = WebBrowserTab(
+        id: 'a',
+        url: Uri.parse('https://a.test/'),
+      );
+      await tester.pumpWidget(
+        _wrap(
+          WebBrowserTabView(
+            key: const ValueKey<String>('a'),
+            tab: a,
+            host: host,
+          ),
+          overrides: <Override>[
+            appProvider.overrideWith((Ref ref) => appModel),
+          ],
+        ),
+      );
+      await tester.pump();
+      final WebBrowserTabViewState state = tester.state(
+        find.byKey(const ValueKey<String>('a')),
+      );
+
+      // 旧页面：初始化通告 → 进伪全屏（横视频）。
+      state.handlePageFullscreenReport(<dynamic>[false, '', 'old', true]);
+      state.handlePageFullscreenReport(<dynamic>[
+        true,
+        'landscape',
+        'old',
+        false,
+      ]);
+      expect(a.fullscreen, isTrue);
+      expect(a.fullscreenFit, WebBrowserFullscreenFit.landscape);
+      expect(host.fullscreenChanges, <bool>[true]);
+
+      // 整页导航：新文档初始化通告。旧页面连同伪全屏一起没了，壳要退全屏。
+      state.handlePageFullscreenReport(<dynamic>[false, '', 'new', true]);
+      expect(a.fullscreen, isFalse, reason: '新文档提交即收尾标签页全屏');
+      expect(a.fullscreenFit, WebBrowserFullscreenFit.unknown);
+      expect(host.fullscreenChanges, <bool>[true, false]);
+
+      // 旧页面卸载前发出、晚到的进全屏：拒收。
+      state.handlePageFullscreenReport(<dynamic>[
+        true,
+        'portrait',
+        'old',
+        false,
+      ]);
+      expect(a.fullscreen, isFalse);
+      expect(host.fullscreenChanges, <bool>[true, false]);
+
+      // 新页面自己的全屏照常。
+      state.handlePageFullscreenReport(<dynamic>[
+        true,
+        'portrait',
+        'new',
+        false,
+      ]);
+      expect(a.fullscreen, isTrue);
+      expect(a.fullscreenFit, WebBrowserFullscreenFit.portrait);
+      expect(host.fullscreenChanges, <bool>[true, false, true]);
     });
   });
 
