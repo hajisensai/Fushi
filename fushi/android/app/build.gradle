@@ -549,29 +549,23 @@ def checkFushiWebCoreNative = tasks.register("checkFushiWebCoreNative") {
     }
 }
 
-// 缺库时先自己备，再由上面五个 check 判定：Windows 开发机上调 tool/native_libs.ps1 -Android
-// （本机缓存 → 兄弟 worktree → cargo-ndk 现编，同一份 native/<crate> 源码一台机器只编一次）。
-// 新 worktree 从不带这些 .so，以前本机出包必然死在 check 上，只能手动逐个 crate 去编。
-// 库齐了（CI 在出包前自己编好）就什么都不做；非 Windows 主机不代劳，仍由 check 报错说明怎么编。
+// 出包前先让 .so 与当前源码对上，再由上面五个 check 判定：Windows 开发机上每次都调
+// tool/native_libs.ps1 -Android，由它按源码树戳记决定（同源码 → 几秒跳过；源码变了 / 缺库 →
+// 本机缓存 → 兄弟 worktree → cargo-ndk 现编，同一份 native/<crate> 源码一台机器只编一次）。
+// 不能只在缺库时才调：.so 在但源码已变（合进了改 native/<crate> 的提交）时，check 只看文件在不在，
+// 旧库会被静默打进包（2026-11-21 合 #3951 时 fushi_compute 就是这样）。
+// 非 Windows 主机（CI 在出包前自己编好）不代劳，缺库仍由 check 报错说明怎么编。
 def fushiAndroidNativeCrates = ['fushi_compute', 'fushi_rwkv', 'fushi_music', 'fushi_corpus', 'fushi_web_core']
 def ensureFushiAndroidNative = tasks.register("ensureFushiAndroidNative") {
     doLast {
-        String platforms = (project.findProperty('target-platform') ?: 'android-arm,android-arm64,android-x64').toString()
-        List<String> abis = platforms.split(',').collect { it.trim() }.findAll { !it.isEmpty() }
-            .collect { fushiComputeAbiOfPlatform[it] ?: it }
-        boolean missing = fushiAndroidNativeCrates.any { String crate ->
-            abis.any { String abi ->
-                !file("../../../native/${crate}/prebuilt/android/${abi}/lib${crate}.so").isFile()
-            }
-        }
-        if (!missing) {
-            return
-        }
         if (!System.getProperty('os.name').toLowerCase().contains('windows')) {
             return
         }
+        String platforms = (project.findProperty('target-platform') ?: 'android-arm,android-arm64,android-x64').toString()
+        List<String> abis = platforms.split(',').collect { it.trim() }.findAll { !it.isEmpty() }
+            .collect { fushiComputeAbiOfPlatform[it] ?: it }
         File script = file('../../../tool/native_libs.ps1')
-        logger.lifecycle("Android native libraries missing; running ${script} -Android -Abis ${abis.join(',')}")
+        logger.lifecycle("Matching the Android native libraries (${fushiAndroidNativeCrates.join(', ')}) to the source: ${script} -Android -Abis ${abis.join(',')}")
         ProcessBuilder pb = new ProcessBuilder(
             'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script.absolutePath,
             '-Android', '-Abis', abis.join(','))

@@ -90,6 +90,17 @@ void main() {
     final String gradle = read('android/app/build.gradle');
     expect(gradle, contains('tasks.register("ensureFushiAndroidNative")'));
     expect(gradle, contains("file('../../../tool/native_libs.ps1')"));
+    // 每次都交给 native_libs.ps1 按源码戳记判，不能「库在就不管」：check 只看文件在不在，
+    // 源码变了的旧 .so 会被静默打进包（合 #3951 时 fushi_compute 就是这样）。
+    final int ensure = gradle.indexOf(
+      'tasks.register("ensureFushiAndroidNative")',
+    );
+    final String ensureBody = gradle.substring(
+      ensure,
+      gradle.indexOf('\n}\n', ensure),
+    );
+    expect(ensureBody, isNot(contains('.isFile()')));
+    expect(ensureBody, isNot(contains('if (!missing)')));
     expect(gradle, contains("'-Android', '-Abis', abis.join(',')"));
     expect(
       gradle,
