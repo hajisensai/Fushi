@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-21T08:31:43Z",
+ "generatedAt": "2026-11-21T08:35:33Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "62a2ac1320ef486e5e37fc5911db952bf2ed692c",
-  "seq": 30478
+  "sha": "53303a6ea4d5cde262849da3f17d38af980e5963",
+  "seq": 30479
  },
  "builds": [
   {
@@ -412,8 +412,8 @@
   }
  ],
  "pending": {
-  "headSha": "62a2ac1320ef486e5e37fc5911db952bf2ed692c",
-  "headSeq": 30478,
+  "headSha": "53303a6ea4d5cde262849da3f17d38af980e5963",
+  "headSeq": 30479,
   "prs": [
    3989,
    3844,
@@ -431,6 +431,10 @@
   ],
   "direct": [
    {
+    "sha": "53303a6ea4d5cde262849da3f17d38af980e5963",
+    "subject": "chore(bugs): settle BUG number collisions on 62a2ac132"
+   },
+   {
     "sha": "62a2ac1320ef486e5e37fc5911db952bf2ed692c",
     "subject": "fix(develop-red): 扩展取主题不再碰未就绪的 dictRepo；iOS umbrella 锁文件与原生许可汇编跟上 fushi_compute 的 ort 依赖"
    },
@@ -442,7 +446,7 @@
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "queued",
+    "state": "building",
     "url": "https://github.com/hajisensai/Fushi/actions/runs/44885059655"
    },
    "windows": {
