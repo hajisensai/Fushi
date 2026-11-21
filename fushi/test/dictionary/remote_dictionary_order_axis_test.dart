@@ -1,5 +1,5 @@
-// 本机词典与服务器托管词典共用一条 `order` 数轴：所有改分区顺序的写入（改语言换组、
-// AppModel / ctl 重排、导入取下一个序号）都要连同服务器词典一起重编号，否则服务器
+// 本机词典与服务器托管词典共用一条 `order` 数轴：所有改分区顺序的写入（AppModel /
+// ctl 重排、导入取下一个序号）都要连同服务器词典一起重编号，否则服务器
 // 词典在查词序里漂移。复现场景：混排 A0 B1 R2(服务器) C3 D4，只给本机重编号后 R 从
 // C 之前跑到 D 之后。另含 App 当 host 时纯汉字词典的排除集（BUG-3573）。
 
@@ -93,61 +93,22 @@ void main() {
       await db.close();
     });
 
-    test('改语言换组：A 去新组最后，R 仍在 B 与 C 之间（两表同一数轴重编号）', () async {
+    test('改语言不动任何序号：语言只是标签（拍板台 zBzX4B7037）', () async {
+      final Map<String, int> before = await dbOrders();
       await repo.setDictionaryLanguageOverride(named('A'), 'en');
+      expect(named('A').languageOverride, 'en');
       expect(repo.lookupFilters.termDictionaryOrder, <String>[
+        'A',
         'B',
         'R',
         'C',
         'D',
-        'A',
       ]);
-      expect(await dbOrders(), <String, int>{
-        'B': 0,
-        'R': 1,
-        'C': 2,
-        'D': 3,
-        'A': 4,
-      });
-      expect(repo.remoteDictionaries.single.order, 1);
-      expect(repo.filtersForHost('h1')!.order, <String>[
-        'B',
-        'R',
-        'C',
-        'D',
-        'A',
-      ]);
+      expect(await dbOrders(), before);
+      expect(repo.remoteDictionaries.single.order, 2);
     });
 
-    test('改语言换组：紧挨在被改那本前面的服务器词典不被它带走', () async {
-      // R 原本在 A 正前方（R0 A1 B2 …）：A 改语言后 R 仍在 B 之前。
-      await repo.updateDictionaryOrder(
-        <Dictionary>[
-          named('A').copyWith(order: 1),
-          named('B').copyWith(order: 2),
-          named('C').copyWith(order: 3),
-          named('D').copyWith(order: 4),
-        ],
-        remoteDictionaries: <RemoteDictionary>[
-          repo.remoteDictionaries.single.copyWith(order: 0),
-        ],
-      );
-      expect(repo.lookupFilters.termDictionaryOrder.take(3), <String>[
-        'R',
-        'A',
-        'B',
-      ]);
-      await repo.setDictionaryLanguageOverride(named('A'), 'en');
-      expect(repo.lookupFilters.termDictionaryOrder, <String>[
-        'R',
-        'B',
-        'C',
-        'D',
-        'A',
-      ]);
-    });
-
-    test('ctl position：A 挪到组尾，R 守在 C 之前', () async {
+    test('ctl position：A 挪到分区尾，R 守在 C 之前', () async {
       final List<Dictionary> reordered = ctlReorderDictionaries(
         repo.termDictionaries,
         named('A'),
