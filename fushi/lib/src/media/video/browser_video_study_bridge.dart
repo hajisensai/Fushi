@@ -114,6 +114,66 @@ class BrowserVideoSample {
   }
 }
 
+/// 扩展查词 / 制卡请求随带的网页视频学习身份（请求体字段 `study`，反馈 PtsjrnVmH9）：
+/// `{mediaKey, title}`，与同一标签页 `POST /api/extension/study` 样本的 `mediaKey` /
+/// `title` 同值（扩展 background 按发请求的标签页取该页正在统计的那条视频；没有在统计
+/// 的视频就不带这个字段）。app 侧据此把这次查词 / 制卡记到该视频名下
+/// （`lookup_mining_counters`，来源 video、`book_key` = mediaKey），与 app 内视频页
+/// 的查词 / 制卡计数同一张表、同一身份口径（[BrowserVideoStudyBridge.onActivity]）。
+@immutable
+class BrowserVideoStudyIdentity {
+  const BrowserVideoStudyIdentity({
+    required this.mediaKey,
+    required this.title,
+  });
+
+  /// 与样本 `mediaKey` 同值（扩展已加 `web:` 前缀，原样用作统计身份）。
+  final String mediaKey;
+
+  /// 页面标题快照；可空串。
+  final String title;
+
+  /// mediaKey / title 的长度上限：超出即不是扩展发的合法身份，整项按缺省处理。
+  static const int maxFieldLength = 2048;
+
+  /// 统计里的显示标题，与 [BrowserVideoSample.displayTitle] 同律。
+  String get displayTitle => title.isEmpty ? mediaKey : title;
+
+  /// 解析请求体的 `study` 字段；缺省 / 不合契约返回 null（= 这次查词 / 制卡不归属到
+  /// 任何网页视频，请求本身照常处理）。
+  static BrowserVideoStudyIdentity? tryParse(Object? raw) {
+    if (raw is! Map) return null;
+    final Object? key = raw['mediaKey'];
+    if (key is! String || key.isEmpty || key.length > maxFieldLength) {
+      return null;
+    }
+    final Object? title = raw['title'];
+    if (title != null && (title is! String || title.length > maxFieldLength)) {
+      return null;
+    }
+    return BrowserVideoStudyIdentity(
+      mediaKey: key,
+      title: (title as String?) ?? '',
+    );
+  }
+}
+
+/// 归属到网页视频的一次学习动作（[BrowserVideoStudyBridge.onActivity]）。
+enum BrowserVideoStudyActivity {
+  /// 一次有结果的查词（顶层 / 嵌套各算一次，与 app 内弹窗计数同口径）。
+  lookup,
+
+  /// 一次成功制卡（新卡落进 Anki / 复习；重复卡不算）。
+  mine,
+}
+
+/// 扩展查词 / 制卡归属网页视频的 sink（[BrowserVideoStudyBridge.onActivity]）。
+typedef BrowserVideoStudyActivitySink =
+    void Function(
+      BrowserVideoStudyIdentity identity,
+      BrowserVideoStudyActivity activity,
+    );
+
 /// 样本里「此刻正在出的那一句」（[BrowserVideoSample.cue]）。
 @immutable
 class BrowserVideoCue {
@@ -239,6 +299,7 @@ class RemoteVideoPlaybackSource extends ChangeNotifier
 class _ActiveSession {
   _ActiveSession({
     required this.mediaKey,
+    required this.title,
     required this.tracker,
     required this.source,
     required this.claim,
@@ -246,6 +307,9 @@ class _ActiveSession {
   });
 
   final String mediaKey;
+
+  /// 开会话时的显示标题（= 时钟的 `title`，也是查词 / 制卡计数归属用的标题）。
+  final String title;
   final VideoWatchTracker tracker;
   final RemoteVideoPlaybackSource source;
 
@@ -314,6 +378,9 @@ class BrowserVideoStudyBridge {
 
   _ActiveSession? _active;
 
+  /// 查词 / 制卡计数的写链（[onActivity]），[stopAll] 一并 await。
+  Future<void> _activityChain = Future<void>.value();
+
   /// 已发起但尚未完成的停表写链（换 key / 空闲 / ended 触发的 stop），[stopAll]
   /// 统一 await，保证进程退出前最后一笔落库完成。
   Future<void> _stopChain = Future<void>.value();
@@ -369,6 +436,60 @@ class BrowserVideoStudyBridge {
     final _ActiveSession? session = _active;
     if (session != null) _stopSession(session, reason: 'stopAll');
     await _stopChain;
+    await _activityChain;
+  }
+
+  /// 扩展里的一次查词 / 制卡归属到网页视频 [identity]（反馈 PtsjrnVmH9）：记进
+  /// `lookup_mining_counters`（来源 video、`book_key` = mediaKey），与 app 内视频页
+  /// `_studyStatsIdentity` 名下的查词 / 制卡同一张表、同一来源，统计中心观看页与总览
+  /// 的查词 / 制卡数、按媒体那一行都从这里读。制卡走 [FushiDatabase.recordMiningEvent]
+  /// （全局按日汇总 + 按媒体计数同一事务）。
+  ///
+  /// 不要求 [identity] 是此刻正在计时的那条：批量制卡（YouTube 队列）在看完之后才落卡，
+  /// 身份在入队那一刻冻结。标题优先取同 key 的在计时会话（与 `study_segments.title`
+  /// 同一份快照），否则用请求带来的标题。时刻取现在（统计日按 [FushiDatabase.statDateKeyOf]）。
+  ///
+  /// 跨面不需要去重：扩展里的一次查词 / 制卡只发生在浏览器这一个面上，app 内视频页的
+  /// 计数不会再记它。同步入口，写入在后台写链上串行；失败只记日志（旁路埋点，不影响
+  /// 查词 / 制卡响应）。
+  void onActivity(
+    BrowserVideoStudyIdentity identity,
+    BrowserVideoStudyActivity activity,
+  ) {
+    final DateTime at = _now();
+    final _ActiveSession? session = _active;
+    final String title =
+        session != null && session.mediaKey == identity.mediaKey
+        ? session.title
+        : identity.displayTitle;
+    studyDiag('browser-video', '${activity.name} ${identity.mediaKey}');
+    _activityChain = _activityChain.then((_) async {
+      try {
+        final FushiDatabase db = _database();
+        switch (activity) {
+          case BrowserVideoStudyActivity.lookup:
+            await db.addLookupCount(
+              bookKey: identity.mediaKey,
+              title: title,
+              sourceType: kStatSourceVideo,
+              dateKey: FushiDatabase.statDateKeyOf(at),
+            );
+          case BrowserVideoStudyActivity.mine:
+            await db.recordMiningEvent(
+              bookKey: identity.mediaKey,
+              title: title,
+              sourceType: kStatSourceVideo,
+              at: at,
+            );
+        }
+      } catch (e, st) {
+        ErrorLogService.instance.log(
+          'BrowserVideoStudyBridge.onActivity(${activity.name})',
+          e,
+          st,
+        );
+      }
+    });
   }
 
   _ActiveSession _startSession(BrowserVideoSample sample) {
@@ -416,6 +537,7 @@ class BrowserVideoStudyBridge {
     // tracker.start() 只起采样；起停表由 onSample 的 [_applyAttendance] 按样本决定。
     final _ActiveSession session = _ActiveSession(
       mediaKey: key,
+      title: sample.displayTitle,
       tracker: tracker,
       source: source,
       claim: claim,
