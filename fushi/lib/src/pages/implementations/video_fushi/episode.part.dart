@@ -15,10 +15,19 @@ part of '../video_fushi_page.dart';
 /// domain) keeps calling the extracted `_episodeOverlayPanel` through shared private
 /// scope.
 extension _VideoEpisode on _VideoFushiPageState {
-  void _handlePlaybackCompleted() {
+  void _handlePlaybackCompleted() => _handlePlaybackEnded(
+    positionMs: _controller?.positionMs,
+    durationMs: _controller?.durationMs,
+  );
+
+  /// 播放器报 EOF（[_handlePlaybackCompleted]）：[positionMs] / [durationMs] 是 EOF
+  /// 那一刻的位置与时长。
+  void _handlePlaybackEnded({
+    required int? positionMs,
+    required int? durationMs,
+  }) {
     if (_controller?.isBlurayNavigationSession == true) return;
     if (_sourceReviewActive) return;
-    final int? positionMs = _controller?.positionMs;
     // 媒体服务器的流在播放途中断了（EOF 远在片尾之前）：先问一次线路故障转移器，
     // 换到另一条可达线路就按当前位置重新取流接着播；换不了才按「播完」处理
     // （拍板台 design-media-server-failover-transport）。
@@ -27,7 +36,7 @@ extension _VideoEpisode on _VideoFushiPageState {
         !_streamRouteFailoverInFlight &&
         isInterruptedStreamEnd(
           positionMs: positionMs,
-          durationMs: _controller?.durationMs,
+          durationMs: durationMs,
         )) {
       unawaited(
         _recoverInterruptedStream(
