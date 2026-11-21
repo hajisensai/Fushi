@@ -52,6 +52,7 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_dropdown.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
@@ -2175,9 +2176,9 @@ class _DictionaryDialogPageState extends BasePageState {
             builder: (_, DictionaryDownloadPhase phase, __) {
               final bool show =
                   pending > 0 && phase == DictionaryDownloadPhase.idle;
-              return AnimatedSize(
-                duration: fushiMotionDuration(context, FushiMotion.medium),
-                curve: Curves.easeOutCubic,
+              return FushiAnimatedSize(
+                duration: context.fushiMotion.spatialDefault.duration,
+                curve: context.fushiMotion.spatialDefault.curve,
                 alignment: Alignment.topCenter,
                 child: !show
                     ? const SizedBox(width: double.infinity)

@@ -42,6 +42,7 @@ import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -408,7 +409,7 @@ class _BarLabel extends StatelessWidget {
       _LabelTone.secondary => colors.secondaryForeground,
       _LabelTone.warning => colors.warning,
     };
-    return Tooltip(
+    return FushiTooltip(
       message: tooltip ?? text,
       child: Semantics(
         liveRegion: true,

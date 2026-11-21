@@ -1343,23 +1343,35 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     } catch (e, st) {
       // 连退回入队都失败（库写不进去）。
       ErrorLogService.instance.log('web_video.mine', e, st);
-      if (mounted) FushiToast.show(msg: t.card_export_failed);
+      if (mounted) {
+        FushiToast.showMine(
+          msg: t.card_export_failed,
+          status: MineToastStatus.failed,
+        );
+      }
       return;
     }
     if (!mounted) return;
     if (res == null) {
       FushiToast.show(msg: t.web_video_mine_queued(count: _minePending));
     } else if (res.result == 'duplicate') {
-      FushiToast.show(msg: t.card_duplicate);
+      FushiToast.showMine(
+        msg: t.card_duplicate,
+        status: MineToastStatus.duplicate,
+      );
     } else if (res.result == 'success') {
-      FushiToast.show(msg: t.card_exported(deck: res.deckName ?? ''));
+      FushiToast.showMine(
+        msg: t.card_exported(deck: res.deckName ?? ''),
+        status: MineToastStatus.added,
+      );
       // 与队列落卡同一笔统计（[_mineQueuedRow]）：改走直裁不该让 YouTube 的卡不再计数。
       unawaited(recordMined());
     } else {
-      FushiToast.show(
+      FushiToast.showMine(
         msg: t.card_export_failed_detail(
           reason: res.message ?? res.detail ?? res.result,
         ),
+        status: MineToastStatus.failed,
       );
     }
   }

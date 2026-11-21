@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:fushi_compute/fushi_compute.dart';
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 import 'package:test/test.dart';
 
 /// 迁到 Rust 之前 `fushi/lib/src/media/video/raw_video_frame.dart` 里的 Dart 逐字节循环
@@ -82,7 +83,7 @@ void main() {
     const int height = 20, stride = 40 * 4 + 32;
     final Pointer<Uint8> native = malloc<Uint8>(height * stride);
     try {
-      final Uint8List view = native.asTypedList(height * stride);
+      final Uint8List view = native.asTypedListOutOfLine(height * stride);
       _fillRandom(view, math.Random(7));
       final Uint8List got = kernel.bgraToRgba8(
         view,

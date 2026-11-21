@@ -1515,7 +1515,9 @@ class _VideoDownloadJobCard extends StatelessWidget {
                             ),
                           )
                         : FushiIcon(
-                            _seedingControl ? Icons.pause : Icons.close,
+                            _seedingControl
+                                ? FushiIcons.pause
+                                : FushiIcons.close,
                             size: 18,
                           ),
                     label: Text(

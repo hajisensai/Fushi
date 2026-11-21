@@ -173,7 +173,7 @@ extension _VideoPortrait on _VideoFushiPageState {
                 title: t.video_episode_list,
                 emptyHint: t.video_episode_list_empty,
                 seasonLabelOf: _episodeSeasonLabel,
-                fontSize: 14 * _videoUiScale,
+                fontSize: _episodePanelFontSize,
               ),
             ),
           ),
@@ -206,8 +206,8 @@ extension _VideoPortrait on _VideoFushiPageState {
           child: FushiIconButtonControl(
             key: const ValueKey<String>('video-portrait-mine-queue'),
             tooltip: t.video_mine_queue_title,
-            icon: Badge(
-              label: Text('$count'),
+            icon: FushiBadgeControl.count(
+              count: count,
               child: const FushiIcon(FushiIcons.ankiCard),
             ),
             onPressed: () => unawaited(_openVideoMineQueue()),

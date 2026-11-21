@@ -1617,7 +1617,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Row(
             children: <Widget>[
-              FushiIcon(Icons.crop_free, size: 18, color: colors.primary),
+              FushiIcon(FushiIcons.crop, size: 18, color: colors.primary),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -1971,14 +1971,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       // 第三个起点：Hook 进不去的游戏走 OCR（不注入）。
       if (_hookCapture && !primaryStart)
         _SessionTool(
-          icon: Icons.document_scanner_outlined,
+          icon: FushiIcons.ocr,
           label: t.game_ocr_capture,
           focusId: const FushiFocusId('game-toolbar-ocr'),
           onTap: _startOcrCapture,
         ),
       if (state.isActive && state.isOcrMode)
         _SessionTool(
-          icon: Icons.crop_free,
+          icon: FushiIcons.crop,
           label: t.game_ocr_region_adjust,
           focusId: const FushiFocusId('game-toolbar-ocr-region'),
           onTap: _adjustOcrRegion,
@@ -3560,7 +3560,7 @@ class _SessionOverviewCard extends StatelessWidget {
         ),
       if (state.isOcrMode)
         GalWorkbenchStatusChip(
-          icon: Icons.document_scanner_outlined,
+          icon: FushiIcons.ocr,
           label: t.game_ocr_mode_chip,
           tone: FushiTagTone.accent,
           tooltip: t.game_workbench_ocr_hint,
@@ -3707,7 +3707,7 @@ class _SessionOverviewCard extends StatelessWidget {
         GalWorkbenchStartTile(
           key: const ValueKey<String>('game-action-ocr'),
           focusId: const FushiFocusId('game-action-ocr'),
-          icon: Icons.document_scanner_outlined,
+          icon: FushiIcons.ocr,
           title: t.game_ocr_capture,
           hint: t.game_workbench_ocr_hint,
           onTap: onOcr!,
