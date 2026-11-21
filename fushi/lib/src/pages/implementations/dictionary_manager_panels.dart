@@ -17,6 +17,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/content_language_picker.dart';
 import 'package:fushi/src/utils/components/fushi_tag.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -415,7 +416,7 @@ class DictionaryOrderSection extends StatelessWidget {
     super.key,
   });
 
-  /// 在语言组里的下标（0 起）与组内本数。
+  /// 在分区里的下标（0 起）与分区本数。
   final int position;
   final int count;
   final ValueChanged<int> onMoveTo;
@@ -948,12 +949,13 @@ class _DictionaryPositionDialogState extends State<DictionaryPositionDialog> {
   }
 }
 
-// ── 服务器托管词典：与本机词典同一条按语言分组的混排列表 ─────────────────
+// ── 服务器托管词典：与本机词典同一条混排列表 ───────────────────────────
 //
 // 服务器词典（[RemoteDictionary]，`remote_dictionary_metadata`）不下载到本机，
 // 但与本机词典共用一条查词优先级（同一数轴的 `order`，见
 // `DictionaryRepository.lookupFiltersOf`）。管理页因此只有一条列表：每行是本机
-// 词典或服务器词典，按「有效语言」分组、组内可拖动，来源只在行内的标签里说明
+// 词典或服务器词典，整个分区里任意拖动（语言只是行内标签与筛选项），来源只在
+// 行内的标签里说明
 // ——不分「已安装 / 服务器上」两段。
 
 /// 一行词典的来源（行副标题里的来源标签）。
@@ -1022,11 +1024,13 @@ class DictionaryManagerRow {
         : DictionarySourceKind.both;
   }
 
-  /// 归哪个语言组：本机行同 [dictionaryLanguageGroupOf]（手动指定优先），服务器
-  /// 行按 host 报的 `sourceLanguage`，同一套规范化（[canonicalDictionaryLanguageTag]）。
-  String? get languageGroup {
+  /// 语言标签（行上的 tag 与语言筛选用，不参与排序）：本机行同
+  /// [dictionaryLanguageTagOf]（手动指定优先），服务器行按 host 报的
+  /// `sourceLanguage`，同一套规范化（[canonicalDictionaryLanguageTag]）；null =
+  /// 未标注语言。
+  String? get languageTag {
     final Dictionary? l = local;
-    if (l != null) return dictionaryLanguageGroupOf(l);
+    if (l != null) return dictionaryLanguageTagOf(l);
     return canonicalDictionaryLanguageTag(remote!.sourceLanguage);
   }
 }
@@ -1082,84 +1086,124 @@ List<DictionaryManagerRow> mixDictionaryManagerRows({
   return out;
 }
 
-/// 一组混排行（同一「有效语言」）。
-class DictionaryManagerLanguageGroup {
-  const DictionaryManagerLanguageGroup({
-    required this.language,
-    required this.rows,
+/// 列表上方的语言筛选：全部语言 / 某一种语言 / 未标注语言。语言只是标签，筛选
+/// 只决定列表里显示哪些行，排序仍在整个分区里进行（拍板台 zBzX4B7037）。
+@immutable
+class DictionaryLanguageFilter {
+  const DictionaryLanguageFilter._all() : all = true, language = null;
+
+  /// 只看语言标签为 [language] 的行；null = 只看未标注语言的行。
+  const DictionaryLanguageFilter.only(this.language) : all = false;
+
+  static const DictionaryLanguageFilter allLanguages =
+      DictionaryLanguageFilter._all();
+
+  /// true = 不筛（全部语言）。
+  final bool all;
+
+  /// 规范化语言标签（[DictionaryManagerRow.languageTag] 口径）；null 且 ![all] =
+  /// 未标注语言。
+  final String? language;
+
+  bool matches(DictionaryManagerRow row) => all || row.languageTag == language;
+
+  /// 筛选键（ValueKey 后缀）。
+  String get id => all ? 'all' : (language ?? 'unset');
+
+  @override
+  bool operator ==(Object other) =>
+      other is DictionaryLanguageFilter &&
+      other.all == all &&
+      other.language == language;
+
+  @override
+  int get hashCode => Object.hash(all, language);
+}
+
+/// 一个语言标签的显示名：语言自称（与内容语言选择器同一套，见
+/// [contentLanguageLabelOf]）；null = 「未标注语言」。
+String dictionaryLanguageTagLabel(String? language) => language == null
+    ? t.dict_language_filter_unset
+    : contentLanguageLabelOf(language);
+
+/// 行副标题里的语言标签（只在当前分区出现两种及以上语言时画，未标注的行不画）。
+class DictionaryLanguageTag extends StatelessWidget {
+  const DictionaryLanguageTag({required this.language, super.key});
+
+  /// 规范化语言标签。
+  final String language;
+
+  @override
+  Widget build(BuildContext context) => FushiTag(
+    text: dictionaryLanguageTagLabel(language),
+    icon: FushiIcons.language,
+    tone: FushiTagTone.neutral,
+    dense: true,
+    message: t.dict_language_tooltip,
+  );
+}
+
+/// 列表上方的语言筛选条：全部语言 / 分区里出现过的每种语言一枚 / 未标注语言。
+/// 单选 chip（按下下沉），放不下时横向滚动。只在分区里有两种及以上语言（含未标注）
+/// 时由页面挂出来。
+class DictionaryLanguageFilterBar extends StatelessWidget {
+  const DictionaryLanguageFilterBar({
+    required this.languages,
+    required this.selected,
+    required this.onSelected,
+    super.key,
   });
 
-  /// 规范化语言标签；null = 「未标注语言」组。
-  final String? language;
-  final List<DictionaryManagerRow> rows;
-}
+  /// 分区里出现过的语言标签，按显示顺序（`dictionaryLanguageTagsIn`）；null =
+  /// 未标注语言。
+  final List<String?> languages;
+  final DictionaryLanguageFilter selected;
+  final ValueChanged<DictionaryLanguageFilter> onSelected;
 
-/// 混排行按语言分组：与 [groupDictionariesByLanguage] 同一规则（组序按首次出现、
-/// 「未标注语言」组放最后、组内保持分区顺序），服务器行按 `sourceLanguage` 参与。
-List<DictionaryManagerLanguageGroup> groupDictionaryManagerRowsByLanguage(
-  List<DictionaryManagerRow> section,
-) {
-  final Map<String, List<DictionaryManagerRow>> labelled =
-      <String, List<DictionaryManagerRow>>{};
-  final List<DictionaryManagerRow> unlabelled = <DictionaryManagerRow>[];
-  for (final DictionaryManagerRow row in section) {
-    final String? language = row.languageGroup;
-    if (language == null) {
-      unlabelled.add(row);
-    } else {
-      labelled.putIfAbsent(language, () => <DictionaryManagerRow>[]).add(row);
-    }
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final List<(DictionaryLanguageFilter, String)> options =
+        <(DictionaryLanguageFilter, String)>[
+          (DictionaryLanguageFilter.allLanguages, t.dict_language_filter_all),
+          for (final String? language in languages)
+            (
+              DictionaryLanguageFilter.only(language),
+              dictionaryLanguageTagLabel(language),
+            ),
+        ];
+    return Padding(
+      padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+      child: HorizontalDragScrollable(
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: <Widget>[
+              for (final (DictionaryLanguageFilter filter, String label)
+                  in options)
+                Padding(
+                  padding: EdgeInsetsDirectional.only(
+                    end: tokens.spacing.gap / 2,
+                  ),
+                  child: FushiPressScale(
+                    child: FushiChoiceChip(
+                      key: ValueKey<String>(
+                        'dict-language-filter-${filter.id}',
+                      ),
+                      label: Text(label),
+                      selected: filter == selected,
+                      onSelected: (bool _) {
+                        if (filter != selected) onSelected(filter);
+                      },
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
-  return <DictionaryManagerLanguageGroup>[
-    for (final MapEntry<String, List<DictionaryManagerRow>> e
-        in labelled.entries)
-      DictionaryManagerLanguageGroup(language: e.key, rows: e.value),
-    if (unlabelled.isNotEmpty)
-      DictionaryManagerLanguageGroup(language: null, rows: unlabelled),
-  ];
-}
-
-/// [section] 里与 [row] 同语言组的全部行（分区顺序）。
-List<DictionaryManagerRow> dictionaryManagerLanguageGroupOf(
-  List<DictionaryManagerRow> section,
-  DictionaryManagerRow row,
-) {
-  final String? language = row.languageGroup;
-  return <DictionaryManagerRow>[
-    for (final DictionaryManagerRow r in section)
-      if (r.languageGroup == language) r,
-  ];
-}
-
-/// 把 [section] 里键为 [key] 的行挪到它所在语言组的最终下标 [to]（钳到组两端），
-/// 返回整个分区的新规范顺序（各组首尾相接，同 [moveDictionaryWithinLanguageGroup]）。
-/// null = 不用写（行已不在分区里，或位置不变）。调用方按返回下标重编号。
-List<DictionaryManagerRow>? moveDictionaryManagerRowWithinLanguageGroup(
-  List<DictionaryManagerRow> section,
-  String key,
-  int to,
-) {
-  final int index = section.indexWhere(
-    (DictionaryManagerRow r) => r.key == key,
-  );
-  if (index < 0) return null;
-  final DictionaryManagerRow moved = section[index];
-  final List<DictionaryManagerRow> group = dictionaryManagerLanguageGroupOf(
-    section,
-    moved,
-  );
-  final int from = group.indexOf(moved);
-  final int target = to.clamp(0, group.length - 1);
-  if (target == from) return null;
-  group
-    ..removeAt(from)
-    ..insert(target, moved);
-  final String? language = moved.languageGroup;
-  return <DictionaryManagerRow>[
-    for (final DictionaryManagerLanguageGroup g
-        in groupDictionaryManagerRowsByLanguage(section))
-      ...(g.language == language ? group : g.rows),
-  ];
 }
 
 /// 列表上方来源筛选的种类。
