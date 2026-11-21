@@ -20,7 +20,7 @@ Fushi 的 Rust 计算内核：CPU 密集操作（哈希 / 图像 / 文本匹配 
 
 | 符号 | 作用 |
 |---|---|
-| `ffc_abi_version() -> i32` | ABI 版本（当前 1）；Dart 侧不一致即抛加载异常 |
+| `ffc_abi_version() -> i32` | ABI 版本（当前 3）；Dart 侧不一致即抛加载异常 |
 | `ffc_free_bytes(u8*, usize)` | 释放本库分配并交给调用方的缓冲区 |
 | `ffc_hash_ed2k_new() -> ctx*` | 新建 AniDB ED2K 上下文（panic 时 NULL） |
 | `ffc_hash_ed2k_update(ctx*, const u8*, usize) -> i32` | 追加字节 |

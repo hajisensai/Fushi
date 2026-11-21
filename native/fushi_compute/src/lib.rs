@@ -14,7 +14,8 @@
 //!   从 Dart 迁过来的内核要先用旧 Dart 实现冻结输入 → 输出向量做回归测试，再删 Dart。
 //! - 新增符号不升 [ABI_VERSION]（Dart 侧按域 lookup，库比绑定旧时那个域抛缺符号异常）；
 //!   改动既有符号的签名或语义、或删掉符号才升（v2：有声书 cue 吸附 / 修边 / 余量的三个
-//!   `ffc_signal_cue_*` 迁到上游 crate 后删除，改由 `fcp_*` 提供）。
+//!   `ffc_signal_cue_*` 迁到上游 crate 后删除，改由 `fcp_*` 提供；v3：`ffc_upscale_configure` 加
+//!   `out_generation` 出参，`EVENT_MODELS_FAILED` 的 token 改为失败那一代的代际）。
 
 // 让 cargo 的新鲜度指纹带上「这是哪个 worktree」：多个 worktree 共用一个 CARGO_TARGET_DIR 时，没有它会把别的
 // worktree 编出的产物当成本 worktree 的直接用（假绿 / 假红）。值来自仓库根 .cargo/config.toml 的 [env]，不进产物。
@@ -39,12 +40,15 @@ pub mod text;
 pub mod ts;
 pub mod upscale;
 
+#[cfg(test)]
+mod test_alloc;
+
 // 上游 crate 的 `fcp_*` C 导出随本库一起导出（cdylib / staticlib / iOS 伞形库都靠这一行把它
 // 链进来；不引用就会被当成没用的依赖丢掉）。见 Cargo.toml 的说明。
 pub extern crate fushi_asr_cue_post;
 
 /// C ABI 版本。Dart 侧加载时比对，不一致抛带原因的加载异常。
-pub const ABI_VERSION: i32 = 2;
+pub const ABI_VERSION: i32 = 3;
 
 /// 各导出函数共用的返回码。
 pub mod status {
