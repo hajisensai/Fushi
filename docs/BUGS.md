@@ -61,6 +61,11 @@
 |---|:--:|:--:|---|
 | [BUG-5115](bugs/BUG-5115-local-audio-delete-tombstone-by-display-name.md) | ✅ | ✅ | local-audio-delete-tombstone-by-display-name |
 | [BUG-5114](bugs/BUG-5114-local-audio-identity-ignores-recordings.md) | ✅ | ✅ | local-audio-identity-ignores-recordings |
+> 共 4415 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5095](bugs/BUG-5095-text-to-epub-implied-body.md) | ✅ | ✅ | text-to-epub-implied-body |
 | [BUG-5088](bugs/BUG-5088-readintosync-blocks-gc-safepoint.md) | ✅ | ✅ | readintosync-blocks-gc-safepoint |
 | [BUG-5087](bugs/BUG-5087-sync-video-sweep-tests-teardown-temp-locked.md) | ✅ | ✅ | sync-video-sweep-tests-teardown-temp-locked |
 | [BUG-5086](bugs/BUG-5086-dist-test-verdict-coverage-shared-log.md) | ✅ | ✅ | 「dist 请求 7 个测试文件只跑 2 个仍判 PASSED」是并发代理共用日志名读串了；dist_test 判绿改为逐个核对请求的 suite |
