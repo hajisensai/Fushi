@@ -851,10 +851,7 @@ class VideoSourceScrapeCoordinator
       return SourceScrapeReport(
         sourceIds: <int>[source.id],
         warnings: <SourceScrapeIssue>[
-          SourceScrapeIssue(
-            workTitle: source.label,
-            message: '只允许刮削已登记的本地视频来源',
-          ),
+          SourceScrapeIssue.scope(source, message: '只允许刮削已登记的本地视频来源'),
         ],
       );
     }
@@ -966,8 +963,8 @@ class VideoSourceScrapeCoordinator
       if (!hasProvider && works.isNotEmpty) {
         failed = works.length;
         errors.add(
-          SourceScrapeIssue(
-            workTitle: source.label,
+          SourceScrapeIssue.scope(
+            source,
             message: _issueNote(
               works,
               VideoScrapePendingCause.providerUnavailable,
@@ -1284,8 +1281,8 @@ class VideoSourceScrapeCoordinator
       if (banRemaining != null && hasProvider && skippedByBan > 0) {
         failed += skippedByBan;
         errors.add(
-          SourceScrapeIssue(
-            workTitle: source.label,
+          SourceScrapeIssue.scope(
+            source,
             message: _issueNote(
               works.skip(startedWorks),
               VideoScrapePendingCause.providerUnavailable,
@@ -1347,7 +1344,7 @@ class VideoSourceScrapeCoordinator
         warnings: warnings,
         errors: <SourceScrapeIssue>[
           ...errors,
-          SourceScrapeIssue(workTitle: source.label, message: error.toString()),
+          SourceScrapeIssue.scope(source, message: error.toString()),
         ],
       );
       await _finishRun(
