@@ -284,3 +284,33 @@ fn ordinary_study_never_walks_the_whole_list_of_todays_answers() {
         "custom study reads the session's answers"
     );
 }
+
+/// HBK-AUDIT-010：增量重读按卡的作答索引找「碰到的卡上今天的作答」。一张卡接上另一张卡的历史（`historyFrom`），它今天
+/// 那条学习步的重放 `res.reps` 跟着变（不再是 1，这张卡不再算今天引入的新卡）；那条日志自己没被改、只有卡记下了，只有
+/// 按卡找到它重折算，会话才与无状态基准相同（索引查空时这里的计数会多算一张）。
+#[test]
+fn a_linked_history_refolds_todays_answers_on_the_touched_card() {
+    let m = migrated_prepared(false, &prep);
+    let core = crate::store::ffi::core_of(m.h).unwrap();
+    let col = col_of(&core);
+    check(m.h, &core, col, NOW, "initial");
+    let b0 = builds(&core);
+    let at = NOW + 60 * 60_000;
+    for (i, n) in NEWER.iter().enumerate().take(2) {
+        let id = format!("x{i}");
+        answer(m.h, &core, col, &id, n, "t1", at + i as i64, 3, "learn");
+    }
+    let pick = |now: i64| study_req(now, json!({"deck": default_deck_id(P), "pick": true}));
+    let before = stateless(&core, col, &pick(at + 10));
+    check(m.h, &core, col, at + 10, "two new cards introduced");
+    // 第二张卡接上第一张的历史：它今天那条学习步的重放 `res.reps` 不再是 1。日志本身没改，只有这张卡记下了。
+    let (a, b) = (card(NEWER[0], "t1"), card(NEWER[1], "t1"));
+    let items = vec![
+        json!({"e": edit("card", &b, &format!("historyFrom/{a}"), json!(true)), "note": NEWER[1]}),
+    ];
+    call(m.h, &g4req("apply", at + 20, json!({})), Some(&items)).unwrap();
+    let after = stateless(&core, col, &pick(at + 10));
+    assert_ne!(before, after, "the linked history changes today's counts");
+    check(m.h, &core, col, at + 30, "linked history");
+    assert_eq!(builds(&core), b0, "still incremental");
+}
