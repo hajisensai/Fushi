@@ -23,9 +23,10 @@ tools: Bash, PowerShell, Read, Edit, Write, Grep, Glob, Agent, SendMessage, Moni
 - 被 harness 隔离在某个 worktree 时，命令里只要出现 `git`，就写成一条朴素命令（不接 `;` / `&&` / `|` / `$?` / `cd` / heredoc / `python -c`），否则整条被判「too complex」拒跑、白耗一轮；多步就分几次调用。要改的文件必须在你自己的 worktree 或仓库目录之外：主 checkout（含它下面的 `.worktrees/`）里的路径一律被拒写。
 - worktree 会话里路径一律写字面量绝对路径，不用变量拼路径、不写 `cd X && <复杂命令>`（不然静态检查判不了、整条拒跑）；默认用 Bash，PowerShell 只做 Windows 专属操作（PS 5.1 里 `-ErrorAction SilentlyContinue` 或原生命令写 stderr 时退出码是 1，要用 `try { ... -ErrorAction Stop } catch {}` 包住）。
 - 输出太长被落盘（结果里给出 `tool-results/…` 路径）时，用 `grep -n` / `sed -n` 只取需要的部分，不整份 Read 回来。
+- 测试一个交付物只跑一次：代码写完后把所有定向目标攒成一条命令跑；之后只在改了代码时重跑受影响的文件。内容和命令都没变时 `heavy.dart` 直接回 `CACHED PASS`（同内容同命令已经绿过，任何 worktree 跑的都算），那就是绿，照抄它给出的末行当证据，不加 `--no-cache` 重跑。全量 / 成片目录不在子代理里跑，写进回报交委托方汇总。
 - 重活一条命令跑完并取摘要：`<命令> > <日志> 2>&1; echo "exit=$?" >> <日志>; tail -n 40 <日志>`，`timeout` 给 270000（子代理的缓存只保 5 分钟，前台一等超过 5 分钟，下一轮就要把整段上下文重写一遍；到点命令不会被杀，会自动转后台接着跑）；`flutter test` / `analyze` / `build` 照 CLAUDE.md 包 `dart tool/heavy.dart --`。不拆成「起跑 / 轮询 / 看日志」三轮，要跑的测试攒齐一次跑。
 - 转了后台就先做别的；确实无事可做时一片一片地等，每片不超过 4 分钟：`timeout 240 bash -c "until grep -q '^exit=' <日志>; do sleep 20; done"; tail -n 40 <日志>`，没等到就原样再发一片，不短间隔反复看。
-- 累计等了约 30 分钟还没完就不再等（再切片比让缓存失效一次还贵）：回报 `部分完成`，写明还在跑的命令、日志路径和判绿办法，由委托方接手。除此之外不带着还在跑的后台任务结束——委托方会为它被白白唤醒一次。
+- 累计等了约 15 分钟还没完就不再等（25 万上下文的代理每 4 分钟一片、每片按缓存价重读一遍，等 15 分钟的花费已接近新开一个代理；2026-11-22 从 30 分钟下调）：回报 `部分完成`，写明还在跑的命令、日志路径和判绿办法，由委托方接手。除此之外不带着还在跑的后台任务结束——委托方会为它被白白唤醒一次。
 
 回报（委托方只看得到这一段）：
 - 第一行写状态：`完成` / `部分完成` / `受阻` / `需改派`。
@@ -93,6 +94,7 @@ tools: Bash, PowerShell, Read, Edit, Write, Grep, Glob, Agent, SendMessage, Moni
 - **等待不烧缓存**（2026-11-20，实测与依据见 [fast-workflow.md](docs/agent/fast-workflow.md#等待与缓存)）：① 开发会话 push + 开 PR 后就结束，不挂 `wait-ci` / `gh run watch` / `gh pr checks --watch`，不开 Auto-fix 与 PR 监视；PR CI 的红由**合并任务**在合并前读一次、按根因修。② 主会话里预计 <2 分钟且期间没别的事可推进的命令前台跑；要后台跑的几条合成一条命令、一个日志，只被唤醒一次。③ 子代理的缓存只保 5 分钟：前台 `timeout` 不超过 270000，等待切成不超过 4 分钟一片（写在 `.claude/agents/*.md`，`tool/claude_hooks/subagent_wait_slice.mjs` 兜底）。
 - **PR CI 默认只跑快门**（analyze + 守卫 + 直接受影响的测试），全量在合并后的 `develop` 上跑；改了原生 / Android / pubspec / `fushi/tool/` 等才在 PR 上自动跑全量。**不为全量空等**：快门绿就算 PR CI 过；要在分支上跑全量用 `gh workflow run main.yml --ref <分支>` 或 `full-ci` 标签。（[build.md](docs/agent/build.md#pr-主门分层快门每推必跑全量按需--合并后跑2026-11-18)）
 - Dart 改动：`dart format` 改动文件；测试只定向跑新增 / 改动的文件并合成一次 `flutter test a_test.dart b_test.dart --no-pub`，本地不跑全量（全量走 `dart tool/dist_test.dart --config=D:/fushi-dist/workers.local.json`）。**判绿只认退出码 + 实际执行数**，零执行的红不算红，也不许拿伪红跳过真红。（[细则](docs/agent/rules-detail.md#dartflutter-改动的测试纪律)）
+- **绿结果不重跑**（2026-11-22）：`heavy.dart` 把 test / analyze 的绿结果按「工作树内容 + 命令」记住，任何 worktree 同内容同命令再跑直接回 `CACHED PASS`、不排队，那就是绿，不加 `--no-cache`。审查代理不重跑实现方已贴出绿结果的测试；全量 / 成片目录不在子代理里等，交委托方汇总一次跑。（[heavy-lease.md](docs/agent/heavy-lease.md#绿结果缓存)）
 - Rust 改动（`native/fushi_*`）：「编译—测试」循环用 `cargo test --profile quick --lib <过滤>`（不做 fat LTO、增量编译，fushi_fsrs 改一行重编约 8 秒；`--release` 是 7～15 分钟），一大批测试用 `bash tool/rust_test.sh <crate> [过滤]`（分进程跑，全量快一倍多），**不拿 `cargo test --release` 当循环**，`id_audit` 与默认构建本地只跑一种。`--release` 只用于出产物（`build_*` / `tool/native_libs.ps1`）和量性能，全量 release 测试交给 PR CI 的 `native-*-gate`。一个 worktree 一个 target 目录，不另设共用的 `CARGO_TARGET_DIR`。（[build.md](docs/agent/build.md#rust-本地开发循环quick-profile)）
 - PR 合入 `develop` 后加跑目录枚举型守卫整批（清单在 [fast-workflow.md](docs/agent/fast-workflow.md)「合并后必跑」）。
 - Android 资源 / manifest / Gradle / 权限 / 前台服务 / 打包改动：加 `gradlew :app:assembleRelease`（`fushi/android/` 下 `dart ../tool/heavy.dart --check-only -- .\gradlew.bat :app:assembleRelease`）。
