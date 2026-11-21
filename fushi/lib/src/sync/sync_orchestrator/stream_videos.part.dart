@@ -15,7 +15,7 @@ part of '../sync_orchestrator.dart';
 /// 两边都有之后 [_syncVideoProgressLive] 原样接管进度、播放偏好与看完标记。
 extension _SyncOrchestratorStreamVideos on SyncOrchestrator {
   /// 对齐流媒体书的行，返回之后进度阶段该用的 host 清单：推过东西就重取（刚注册的
-  /// 行这一轮就要对上进度），否则原样返回 [hostList]。
+  /// 行这一轮就要对上进度，也要进拉取基线），否则原样返回 [hostList]。
   ///
   /// 整段错误进 [report] 不中断 sweep；失败时返回 [hostList]，进度照旧按它同步。
   Future<List<RemoteVideoInfo>> _reconcileStreamVideosLive(
@@ -54,16 +54,22 @@ extension _SyncOrchestratorStreamVideos on SyncOrchestrator {
       report.noteError('live push stream videos', e);
     }
 
+    // 推过东西就先重取清单再拉：本机刚推上去的行要进拉取基线（它们在 [localUids]
+    // 里，不会被拉，但拥有时刻推进基线）。拿推之前的清单拉，基线漏掉它们，推完到
+    // 下一轮之间「仅本机删除」的那条会在下一轮被当成 host 新有的拉回来。
+    final List<RemoteVideoInfo> current = pushed
+        ? await backend.listRemoteVideos()
+        : hostList;
+
     try {
-      await _pullStreamVideosLive(report, hostList, localUids);
+      await _pullStreamVideosLive(report, current, localUids);
     } on SyncCancelledException {
       rethrow;
     } catch (e) {
       report.noteError('live pull stream videos', e);
     }
 
-    if (!pushed) return hostList;
-    return backend.listRemoteVideos();
+    return current;
   }
 
   /// 把 [rows]（本机有、host 没有的流媒体书）注册给 host。返回是否改变了 host 清单。

@@ -259,6 +259,31 @@ void main() {
     expect(await local.allVideoBooks(), isEmpty);
   });
 
+  // 本机推给 host 的那条也要进拉取基线：否则推完、下一轮之前「仅本机删除」，
+  // 下一轮 host 清单里它的拥有时刻晚于基线（首轮基线还是 0），会被当成 host 新有的
+  // 拉回本机。
+  test('本机推给 host 的流媒体书仅本机删除后，下一轮不被拉回', () async {
+    final FushiDatabase local = _memDb();
+    addTearDown(local.close);
+    await local.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: _streamUid,
+        title: 'Stream',
+        videoPath: _streamUrl,
+      ),
+    );
+    final InterconnectSyncBackend backend = await _clientBackend(base, token);
+    final SyncRunReport first = await _orchestrator(local, backend, work).run();
+    expect(first.errors, isEmpty, reason: first.errors.join('\n'));
+    expect(first.streamVideosPushed, 1);
+
+    await local.deleteVideoBooks(<String>[_streamUid]);
+    final SyncRunReport after = await _orchestrator(local, backend, work).run();
+    expect(after.errors, isEmpty, reason: after.errors.join('\n'));
+    expect(after.streamVideosPulled, 0);
+    expect(await local.allVideoBooks(), isEmpty);
+  });
+
   test('本机「从所有设备删除」的墓碑挡住拉取', () async {
     await hostDb.upsertVideoBook(
       VideoBooksCompanion.insert(
