@@ -411,7 +411,9 @@ or below the API version of the downloaded DirectML core.
       `Schedule()` calls return false), then `Shutdown()`s every `WorkQueue`
       (refuse new posts, drain queued tasks), all while every member is alive.
       Native test: `windows/test/async_dispatch_teardown_test.cc` (build line in
-      its header; `/DFUSHI_TEARDOWN_LEGACY` reproduces the old order).
+      its header; `/DFUSHI_TEARDOWN_LEGACY` reproduces the old order), run on
+      PRs by `.github/workflows/native-onnx-plugin-gate.yml` (which also
+      requires the legacy build to stay red).
     - `releaseCudaRuntime({resetContext})` does the same on demand; refused
       (`released: false`, `openCudaSessions > 0`) while a CUDA session is open.
     - Guard: `fushi/test/onnx/cuda_idle_release_guard_test.dart`; device probe:

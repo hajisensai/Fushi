@@ -9,6 +9,6 @@
   - 原生行为测试 `third_party/flutter_onnxruntime/windows/test/async_dispatch_teardown_test.cc`（真 `async_dispatch.cc`；`Owner` 按 Impl 的成员与析构顺序复刻空闲释放接线）：在途 CUDA 关会话、析构时定时器正在触发、两个原语的 Shutdown 契约，共 12 条断言。修后 100/100 绿；`/DFUSHI_TEARDOWN_LEGACY` 100/100 红（2 条断言）。编译命令见文件头（MSVC x64，需 `/utf-8`）。
   - 源码守卫 `fushi/test/onnx/cuda_idle_release_guard_test.dart`「析构先停延时任务，再让工作队列停止接活并排空」钉住真实 Impl 析构里的顺序与 `Schedule` 的停后拒绝（替换掉原来钉「延时任务最后声明」的那条）。
 - **备注**：
-  - 原生测试目前不在 CI 里跑（vendored 插件没有原生测试 job），只有源码守卫进 CI；Impl 本身依赖 Flutter wrapper 与 ORT 头，不能在测试里直接实例化，所以原生测试测的是复刻的接线 + 真原语。
+  - 原生测试由 `.github/workflows/native-onnx-plugin-gate.yml` 在 PR 上跑（改 `windows/src/async_dispatch.*` 或 `windows/test/**` 时触发；MSVC x64 `/W4 /WX`，修后版必须绿、`/DFUSHI_TEARDOWN_LEGACY` 版必须红，防止测试退化成永远绿）。Impl 本身依赖 Flutter wrapper 与 ORT 头，不能在测试里直接实例化，所以原生测试测的是复刻的接线 + 真原语。
   - 排空语义沿用原状：退出时已排队的推理 / 关会话任务会跑完再退出；投回平台线程的回复在消息窗口销毁后被丢弃（不调用），与修前一致。
   - 真机（引擎退出瞬间恰有 CUDA 关会话在途）未复测。
