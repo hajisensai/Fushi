@@ -160,6 +160,8 @@ Map<String, String> floatingBallNativeLabels() => <String, String>{
   'notification': t.floating_ball_notification,
   'ocr_notification': t.floating_ball_ocr_notification,
   'ocr_hint': t.floating_ball_ocr_pick_hint,
+  // 选取层顶部提示条尾的 ✕ 关闭（反馈 Z0JMfFZXQ9，原生 ScreenOcrService.LABEL_CLOSE）。
+  'ocr_close': t.floating_ball_ocr_close,
   'ocr_no_text': t.floating_ball_ocr_empty,
   'ocr_model_unavailable': t.floating_ball_ocr_model_unavailable,
   'ocr_failed': t.floating_ball_ocr_failed,

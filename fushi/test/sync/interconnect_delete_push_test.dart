@@ -337,9 +337,19 @@ void main() {
 
     // 能力缺失如实记进 report（用户/日志可见），但不是暂时性故障，故不阻塞基线：
     // 否则书/有声书的删除会被一条永远推不成的视频删除拖着每轮重推。
+    // 这台 host 是现版本 server 跑着不带视频删除的实现：能力位 `videoDeletion` 在、
+    // 但为 false → 记「对端不支持」（升级解决不了），每轮至多一条（拍板
+    // other-sync-peer-version-errors）。真正的旧版本（没有这一位）记「版本过旧」，见
+    // sync_peer_gap_test.dart。
+    final List<SyncPeerGap> videoGaps = <SyncPeerGap>[
+      for (final SyncPeerGap g in report.peerGaps)
+        if (g.dimension == SyncPeerGapDimension.videoDeletion) g,
+    ];
+    expect(videoGaps, hasLength(1), reason: '${report.errors}');
+    expect(videoGaps.single.outdated, isFalse);
     expect(
-      report.errors.any((String e) => e.contains('too old')),
-      isTrue,
+      report.errors.where((String e) => e == videoGaps.single.message),
+      hasLength(1),
       reason: '对端不支持必须留下可见记录，不能静默吞掉',
     );
     expect(

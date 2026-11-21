@@ -57,6 +57,8 @@ pub mod status {
     pub const BAD_INPUT: i32 = -3;
     /// 调用方给的输出缓冲区不够大。
     pub const BUFFER_TOO_SMALL: i32 = -4;
+    /// 文件打不开 / 读失败（读盘的接口，如 `ffc_hash_sha256_file`）。
+    pub const IO_ERROR: i32 = -5;
     /// Rust 侧 panic（已接住）。
     pub const PANIC: i32 = -100;
 }

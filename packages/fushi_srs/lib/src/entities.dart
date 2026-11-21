@@ -275,6 +275,9 @@ class SrsNoteTypeView {
     required this.edits,
     this.freqFieldId,
     this.effectiveFreqFieldId,
+    this.sortFieldId,
+    this.effectiveSortFieldId,
+    this.browseFieldIds,
     this.definedFields = const <SrsFieldDef>[],
     this.definedTemplates = const <SrsTemplateDef>[],
   });
@@ -300,6 +303,17 @@ class SrsNoteTypeView {
   /// 算好（native/fushi_fsrs/src/registers.rs `effective_frequency_field`），缓存行 `freq_rank` 也按它解析，
   /// Dart 不另写一份判据。
   final String? effectiveFreqFieldId;
+
+  /// 显式设的排序字段（[SrsFieldKeys.sortField]）；null = 没设。实际取哪个字段见 [effectiveSortFieldId]。
+  final String? sortFieldId;
+
+  /// 实际生效的排序字段（显式设的还在就用它，否则第一个字段；没有字段 = null）。由内核物化时算好
+  /// （registers.rs `note_type_view` 的 `se`），笔记缓存 `sort_field` 也按它取，Dart 不另写一份判据。
+  final String? effectiveSortFieldId;
+
+  /// 浏览预览的副字段（[SrsFieldKeys.browseFields]，内核已按字段顺序排好、去掉排序字段与已删字段、截到
+  /// [srsBrowseFieldsMax] 个）；null = 自动。
+  final List<String>? browseFieldIds;
   final int? deletedAt;
   final String? builtinKey;
   final SrsEntityEdits edits;

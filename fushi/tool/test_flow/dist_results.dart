@@ -315,7 +315,7 @@ List<String> expandDistItestReports(List<String> lines) {
 class DistRunVerdict {
   DistRunVerdict({
     required this.results,
-    required this.unplaced,
+    required this.requested,
     this.filtered = false,
   });
 
@@ -325,8 +325,40 @@ class DistRunVerdict {
   /// as a whole must still run at least one (as `flutter test` here would).
   final bool filtered;
 
-  /// Suites no live worker could take (platform / capability), never run.
-  final List<String> unplaced;
+  /// Every suite placement the run was asked to run, one entry per placement
+  /// (a suite pinned to two platforms is listed twice), whatever became of
+  /// it. Green needs each of them back in some batch's result ([notRun]).
+  final List<String> requested;
+
+  /// [requested] placements no batch result accounts for, in request order:
+  /// no eligible worker, left in the queue, or lost on the way. Derived from
+  /// what came back rather than from the scheduler's queue, so a placement
+  /// lost anywhere can never pass as green. A suite a batch was given but
+  /// never got to is red in that batch already
+  /// ([DistBatchResult.missingSuites]).
+  late final List<String> notRun = _notRun();
+
+  List<String> _notRun() {
+    final Map<String, int> ran = <String, int>{};
+    for (final DistBatchResult r in results) {
+      for (final String f in r.files) {
+        ran[f] = (ran[f] ?? 0) + 1;
+      }
+    }
+    final List<String> missing = <String>[];
+    for (final String path in requested) {
+      final int left = ran[path] ?? 0;
+      if (left == 0) {
+        missing.add(path);
+      } else {
+        ran[path] = left - 1;
+      }
+    }
+    return missing;
+  }
+
+  /// [requested] placements that came back in a batch result.
+  int get suitesRan => requested.length - notRun.length;
 
   List<DistBatchResult> get failedBatches => <DistBatchResult>[
     for (final DistBatchResult r in results)
@@ -348,9 +380,10 @@ class DistRunVerdict {
     if (filtered && testsCompleted == 0) {
       return 'no test matched the name / tag filter in any suite';
     }
-    if (unplaced.isNotEmpty) {
-      return '${unplaced.length} suite(s) had no eligible worker and never '
-          'ran';
+    if (notRun.isNotEmpty) {
+      return '${notRun.length} of ${requested.length} suite(s) never ran: '
+          '${notRun.take(5).join(', ')}'
+          '${notRun.length > 5 ? ', ...' : ''}';
     }
     return null;
   }
@@ -396,6 +429,9 @@ String renderDistSummary({
     ..writeln()
     ..writeln('- snapshot: `$snapshot`')
     ..writeln('- wall: ${_fmt(wall)}')
+    ..writeln(
+      '- suites ran: ${verdict.suitesRan} of ${verdict.requested.length}',
+    )
     ..writeln('- tests completed: ${verdict.testsCompleted}')
     ..writeln(
       '- verdict: ${verdict.failure == null ? 'PASSED' : 'FAILED - '
@@ -440,12 +476,12 @@ String renderDistSummary({
       }
     }
   }
-  if (verdict.unplaced.isNotEmpty) {
+  if (verdict.notRun.isNotEmpty) {
     out
       ..writeln()
-      ..writeln('## Never ran (no eligible worker)')
+      ..writeln('## Never ran')
       ..writeln();
-    for (final String path in verdict.unplaced) {
+    for (final String path in verdict.notRun) {
       out.writeln('- `$path`');
     }
   }

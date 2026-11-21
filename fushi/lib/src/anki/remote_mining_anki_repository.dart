@@ -181,7 +181,7 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     final String? hostCode = json['errorCode'] as String?;
     return MineOutcome.failure(
       reason,
-      // BUG-5069：主机上卡要去的是 Fushi 复习、复习库在换代途中——不是「那台设备上的 Anki」失败，文案改说
+      // BUG-5085：主机上卡要去的是 Fushi 复习、复习库在换代途中——不是「那台设备上的 Anki」失败，文案改说
       // 那台设备上的复习要先完成升级（原因仍是主机回的那句）。
       errorCode: isSrsGenerationErrorCode(hostCode)
           ? AnkiErrorCode.pairedDeviceReviewBlocked

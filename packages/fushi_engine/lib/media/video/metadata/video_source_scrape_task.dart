@@ -8,6 +8,7 @@ import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart'
     show VideoSourceScrapeWork;
 import 'package:fushi_core/fushi_core.dart';
@@ -552,10 +553,7 @@ class VideoSourceScrapeTaskController extends EngineChangeNotifier {
     bool interactive = false,
     bool allowProtectedOverwrite = false,
   }) => _start(
-    sources.where(
-      (SourceLibraryRow source) =>
-          source.mediaKind == 'video' && source.transport == 'local',
-    ),
+    sources.where(isVideoScrapeScope),
     interactive: interactive,
     allowProtectedOverwrite: allowProtectedOverwrite,
   );
@@ -566,10 +564,7 @@ class VideoSourceScrapeTaskController extends EngineChangeNotifier {
   Future<SourceScrapeReport> scrapeWorkSubsets(
     Map<SourceLibraryRow, List<VideoSourceScrapeWork>> worksBySource,
   ) => _start(
-    worksBySource.keys.where(
-      (SourceLibraryRow source) =>
-          source.mediaKind == 'video' && source.transport == 'local',
-    ),
+    worksBySource.keys.where(isVideoScrapeScope),
     interactive: false,
     allowProtectedOverwrite: false,
     plannedWorksBySource: <int, List<VideoSourceScrapeWork>>{

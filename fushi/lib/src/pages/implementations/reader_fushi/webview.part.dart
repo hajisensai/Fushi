@@ -228,6 +228,11 @@ extension _ReaderWebView on _ReaderFushiPageState {
     final OnlineNovelChapterLoader? onlineChapters = _onlineChapterLoader;
     if (onlineChapters != null) {
       await _ensureOnlineChapter(onlineChapters, filePath);
+    } else if (_onlineMissingImages
+        case final OnlineNovelMissingImagesController missing) {
+      // 没有取章加载器的网文书（LNReader 下载成的 EPUB）：正文本来就在盘上，
+      // 直接交给缺图状态机。
+      _noteOnlineChapterServed(missing.retrier.chapterIndexForFile(filePath));
     }
     final File file = File(filePath);
     if (!file.existsSync()) {
@@ -423,7 +428,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
     onError: (Object error) {
       if (!mounted) return;
       FushiToast.show(
-        msg: t.novel_online_chapter_failed(
+        msg: t.novel_online_images_retry_failed(
           error: describeOnlineSourceError(error),
         ),
         severity: ToastSeverity.error,
@@ -435,13 +440,14 @@ extension _ReaderWebView on _ReaderFushiPageState {
   /// 正在读这一章就按当前位置原地重载，让图显示出来。
   void _onOnlineChapterImagesRecovered(int index) {
     if (!mounted) return;
-    final OnlineNovelChapterLoader? loader = _onlineChapterLoader;
+    final OnlineNovelMissingImagesRetrier? retrier =
+        _onlineMissingImages?.retrier;
     final EpubBook? book = _book;
-    if (loader == null || book == null || index >= book.chapters.length) {
+    if (retrier == null || book == null || index >= book.chapters.length) {
       return;
     }
     _sanitizedHtmlCache.removeWhere(
-      (String path, Uint8List _) => loader.chapterIndexForFile(path) == index,
+      (String path, Uint8List _) => retrier.chapterIndexForFile(path) == index,
     );
     book.chapters[index].discardCachedHtml();
     if (index == _currentChapter && !_restoreInFlight) {

@@ -152,6 +152,8 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
     ("brokenImage", "broken_image", "broken_image_outlined", "broken_image", "图片损坏"),
     ("flag", "flag", "flag_outlined", "flag", "标记"),
     ("verified", "verified", "verified_outlined", "verified", "已验证"),
+    ("verifiedUser", "verified_user", "verified_user_outlined", "verified_user", "人机验证 / 安全校验（如 Cloudflare 验证）"),
+    ("upgrade", "upgrade", "upgrade_outlined", "upgrade", "升级（数据格式 / 版本）"),
     ("notifications", "notifications", "notifications_outlined", "notifications", "通知"),
     # ── 设置分组 ─────────────────────────────────────────────────────
     ("appearance", "palette", "palette_outlined", "palette", "外观 / 配色"),
@@ -330,6 +332,8 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
     ("alignCenterVertical", "vertical_align_center", "vertical_align_center_outlined", "vertical_align_center", "居中对齐 / 跟随当前"),
     ("alignTop", "vertical_align_top", "vertical_align_top_outlined", "vertical_align_top", "顶部对齐"),
     ("viewAgenda", "view_agenda", "view_agenda_outlined", "view_agenda", "卡片列表视图"),
+    ("splitscreen", "splitscreen", "splitscreen_outlined", "splitscreen", "上下分屏（竖屏视频 + 字幕列表）"),
+    ("screenRotation", "screen_rotation", "screen_rotation_outlined", "screen_rotation", "屏幕方向 / 转屏"),
     ("viewColumn", "view_column", "view_column_outlined", "view_column", "分栏视图"),
     ("webAsset", "web_asset", "web_asset_outlined", "web_asset", "窗口 / 页面元素"),
     ("webAssetOff", "web_asset_off", "web_asset_off_outlined", "web_asset_off", "隐藏页面元素"),
@@ -439,6 +443,10 @@ APPLE_OVERRIDES: dict[str, tuple[str, str]] = {
     "sidebar": ("sidebar_left", "sidebar_left"),
     "tab": ("square_on_square", "square_fill_on_square_fill"),
     "findInPage": ("doc_text_search", "doc_text_search"),
+    # 旧映射表里没有 upgrade / splitscreen / screen_rotation，取 SF 风格对应字形。
+    "upgrade": ("arrow_up_circle", "arrow_up_circle_fill"),
+    "splitscreen": ("rectangle_grid_1x2", "rectangle_grid_1x2_fill"),
+    "screenRotation": ("rotate_right", "rotate_right_fill"),
 }
 
 
