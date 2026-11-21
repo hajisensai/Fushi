@@ -4681,7 +4681,6 @@
   "home_today": "Vandaag",
   "home_today_goal_page": "$goal tonen",
   "home_today_goal_target": "Doel $goal",
-  "home_today_goal_target_weekly": "Weekdoel $goal",
   "home_today_goals_title": "Doelen van vandaag",
   "home_tracking_mark_failed": "Last send to $site failed",
   "home_tracking_mark_linked": "Tracked on $site",

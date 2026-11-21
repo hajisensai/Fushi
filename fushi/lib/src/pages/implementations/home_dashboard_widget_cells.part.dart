@@ -1381,9 +1381,12 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
     }
     final bool hasGoal = goal > 0;
     final String todayTime = formatStatTime(todayMs);
+    // 副行只写目标（设计稿 11-20 #12）：大字已经是今日字数，副行再写一遍
+    // 「800 / 1000 字」只会把时长挤成省略号；读到多少由起始侧的目标环给。经典外观
+    // 只承载一条每日字数目标（周 / 月目标走目标翻页），所以只有「目标 N」一种写法。
     final String? goalLine = !hasGoal
         ? null
-        : statGoalProgressLabel(unit: unit, read: goalChars, goal: goal);
+        : t.home_today_goal_target(goal: formatStatCharsAxis(goal));
     return Builder(
       builder: (BuildContext context) {
         final HomeWidgetStyle? style = HomeWidgetStyle.maybeOf(context);

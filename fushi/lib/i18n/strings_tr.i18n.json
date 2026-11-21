@@ -4681,7 +4681,6 @@
   "home_today": "Bugün",
   "home_today_goal_page": "$goal göster",
   "home_today_goal_target": "Hedef $goal",
-  "home_today_goal_target_weekly": "Haftalık hedef $goal",
   "home_today_goals_title": "Bugünün hedefleri",
   "home_tracking_mark_failed": "Last send to $site failed",
   "home_tracking_mark_linked": "Tracked on $site",

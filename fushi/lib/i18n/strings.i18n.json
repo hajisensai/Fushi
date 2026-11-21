@@ -4681,7 +4681,6 @@
   "home_today": "Today",
   "home_today_goal_page": "Show $goal",
   "home_today_goal_target": "Goal $goal",
-  "home_today_goal_target_weekly": "Weekly goal $goal",
   "home_today_goals_title": "Today's goals",
   "home_tracking_mark_failed": "Last send to $site failed",
   "home_tracking_mark_linked": "Tracked on $site",

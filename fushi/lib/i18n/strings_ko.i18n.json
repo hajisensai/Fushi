@@ -4681,7 +4681,6 @@
   "home_today": "오늘",
   "home_today_goal_page": "$goal 표시",
   "home_today_goal_target": "목표 $goal",
-  "home_today_goal_target_weekly": "주간 목표 $goal",
   "home_today_goals_title": "오늘의 목표",
   "home_tracking_mark_failed": "Last send to $site failed",
   "home_tracking_mark_linked": "Tracked on $site",

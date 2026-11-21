@@ -4681,7 +4681,6 @@
   "home_today": "今天",
   "home_today_goal_page": "顯示$goal",
   "home_today_goal_target": "目標 $goal",
-  "home_today_goal_target_weekly": "本週目標 $goal",
   "home_today_goals_title": "今日目標",
   "home_tracking_mark_failed": "Last send to $site failed",
   "home_tracking_mark_linked": "Tracked on $site",

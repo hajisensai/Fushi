@@ -4681,7 +4681,6 @@
   "home_today": "วันนี้",
   "home_today_goal_page": "แสดง $goal",
   "home_today_goal_target": "เป้าหมาย $goal",
-  "home_today_goal_target_weekly": "เป้าหมายรายสัปดาห์ $goal",
   "home_today_goals_title": "เป้าหมายวันนี้",
   "home_tracking_mark_failed": "Last send to $site failed",
   "home_tracking_mark_linked": "Tracked on $site",
