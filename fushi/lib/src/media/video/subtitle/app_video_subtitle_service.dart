@@ -313,6 +313,11 @@ enum AppVideoSubtitleStartProblem {
 
   /// 「只重跑写法统一」：还没有任何一集跑过校对。
   nothingToRerun,
+
+  /// 同作品同语言的专名表正在单独重新生成（[AppVideoSubtitleService.regenerateGlossary]）：
+  /// 它读整表、异步生成、整表写回，期间别的写方（校对任务的 S0、保存、再一次重新
+  /// 生成）都会与它互相覆盖（HBK-AUDIT-039）。
+  glossaryRegenerating,
 }
 
 class AppVideoSubtitleStartRefused implements Exception {
@@ -1113,7 +1118,28 @@ class AppVideoSubtitleService {
         activeJob: writer,
       );
     }
+    if (isGlossaryRegenerating(work, language: language)) {
+      throw const AppVideoSubtitleStartRefused(
+        AppVideoSubtitleStartProblem.glossaryRegenerating,
+      );
+    }
   }
+
+  /// 正在单独重新生成的专名表（[regenerateGlossary] 在飞期间登记的 glossaryKey）。
+  ///
+  /// HBK-AUDIT-039：专名表的写方有三种——校对任务的 S0（[glossaryWriterFor]）、
+  /// [saveGlossary]、[regenerateGlossary]。S0 与重新生成都是「读整表 → 异步生成
+  /// → 整表写回」，与任何别的写方同时在飞，后写的就把先写的整张盖掉。所以同一张表同时
+  /// 只许一个写方：[regenerateGlossary] 在第一个 await 之前登记、结束（含失败 /
+  /// 取消）时注销；[_launch]、[saveGlossary]、[regenerateGlossary] 进来时都先查
+  /// 两种在飞写方（Dart 单线程，查与登记之间没有 await，不会两边都放行）。
+  final Set<String> _regeneratingGlossaries = <String>{};
+
+  /// [work] 的 [language] 专名表是否正在单独重新生成（[regenerateGlossary]）。
+  bool isGlossaryRegenerating(
+    SubtitleWorkContext work, {
+    VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  }) => _regeneratingGlossaries.contains(language.glossaryKey(work.workKey));
 
   /// 保存用户编辑后的表。与 [previous] 不同（新增 / 改过）的条目标 `userEdited`，
   /// 重新生成时原样保留；`userEditedAt` 记本次时刻。
@@ -1122,7 +1148,8 @@ class AppVideoSubtitleService {
   /// 指纹——用户认可的表在资料变化前一直被复用，不会下一次运行就被 AI 重新生成盖掉。
   ///
   /// 同作品同语言的生成任务还没过 S0（[glossaryWriterFor]）时抛
-  /// [AppVideoSubtitleStartRefused]（[AppVideoSubtitleStartProblem.busy]），不写。
+  /// [AppVideoSubtitleStartRefused]（[AppVideoSubtitleStartProblem.busy]），正在单独
+  /// 重新生成时抛 [AppVideoSubtitleStartProblem.glossaryRegenerating]，都不写。
   Future<SubtitleGlossary> saveGlossary(
     SubtitleWorkContext work,
     List<SubtitleGlossaryEntry> entries, {
@@ -1173,8 +1200,10 @@ class AppVideoSubtitleService {
       listEquals(a.misrecognitions, b.misrecognitions);
 
   /// 只重新生成专名表（编辑页「重新生成」）：ASR 文本取已识别的字幕稿（没有就只凭
-  /// 资料）。用户编辑过的条目保留。没指派提供商、或同作品同语言的生成任务还没过
-  /// S0（[glossaryWriterFor]）时抛 [AppVideoSubtitleStartRefused]。
+  /// 资料）。用户编辑过的条目保留。没指派提供商、同作品同语言的生成任务还没过
+  /// S0（[glossaryWriterFor]）、或这张表已经在重新生成时抛
+  /// [AppVideoSubtitleStartRefused]。在飞期间登记为这张表的写方
+  /// （[_regeneratingGlossaries]），别的写方进不来。
   Future<SubtitleGlossary> regenerateGlossary(
     AppVideoSubtitleTarget target, {
     SubtitleCancelToken cancel = const SubtitleNeverCancel(),
@@ -1187,12 +1216,15 @@ class AppVideoSubtitleService {
       );
     }
     _refuseWhileGlossaryWriter(target.work, language);
-    final ({AiTextCompleter completer, void Function() close}) ai =
-        _completerFactory(provider);
-    final List<WebKnowledgeSite> sites = _settings.webKnowledgeSites;
-    final WebKnowledgeClient? web = sites.isEmpty ? null : _webKnowledge(sites);
     final String glossaryKey = language.glossaryKey(target.work.workKey);
+    // 查完立即登记（中间没有 await）：之后的读整表 / 生成 / 写回都在锁内。
+    _regeneratingGlossaries.add(glossaryKey);
+    ({AiTextCompleter completer, void Function() close})? ai;
+    WebKnowledgeClient? web;
     try {
+      ai = _completerFactory(provider);
+      final List<WebKnowledgeSite> sites = _settings.webKnowledgeSites;
+      web = sites.isEmpty ? null : _webKnowledge(sites);
       final Directory root = await _jobsRoot();
       final List<List<String>> texts = <List<String>>[
         for (final AppVideoSubtitleEpisode e in target.episodes)
@@ -1215,7 +1247,8 @@ class AppVideoSubtitleService {
       await glossaryStore.save(glossaryKey, built.glossary);
       return built.glossary;
     } finally {
-      ai.close();
+      _regeneratingGlossaries.remove(glossaryKey);
+      ai?.close();
       web?.close();
     }
   }
@@ -1429,6 +1462,14 @@ class AppVideoSubtitleService {
       throw AppVideoSubtitleStartRefused(
         AppVideoSubtitleStartProblem.busy,
         activeJob: active,
+      );
+    }
+    // 校对任务的 S0 会读整表、生成、整表写回：同一张表正在单独重新生成时不起
+    // （HBK-AUDIT-039；反方向见 [glossaryWriterFor]）。
+    if (options.proofread &&
+        isGlossaryRegenerating(target.work, language: options.language)) {
+      throw const AppVideoSubtitleStartRefused(
+        AppVideoSubtitleStartProblem.glossaryRegenerating,
       );
     }
     if (target.episodes.isEmpty) {

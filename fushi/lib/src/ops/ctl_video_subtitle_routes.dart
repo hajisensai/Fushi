@@ -197,6 +197,8 @@ class CtlVideoSubtitleHandlers {
         ),
         AppVideoSubtitleStartProblem.nothingToRerun =>
           const CtlFailure.rejected('还没有任何一集跑过校对'),
+        AppVideoSubtitleStartProblem.glossaryRegenerating =>
+          const CtlFailure.conflict('这部作品的专名表正在重新生成，完成后再开校对任务'),
       };
     }
     if (call.optBool('wait') == true) {
@@ -301,11 +303,13 @@ class CtlVideoSubtitleHandlers {
         language: language,
       );
     } on AppVideoSubtitleStartRefused catch (refused) {
-      // 同作品的生成任务还没过专名表阶段，现在存会被它盖掉。
-      throw CtlFailure.conflict(
-        '生成任务 ${refused.activeJob?.mirror.id} 还在生成这张专名表，'
-        '等它进入校对阶段后再保存（video job <id> 看进度）',
-      );
+      // 这张表还有别的写方在飞，现在存会被它盖掉。
+      throw refused.problem == AppVideoSubtitleStartProblem.glossaryRegenerating
+          ? const CtlFailure.conflict('这张专名表正在重新生成，完成后再保存')
+          : CtlFailure.conflict(
+              '生成任务 ${refused.activeJob?.mirror.id} 还在生成这张专名表，'
+              '等它进入校对阶段后再保存（video job <id> 看进度）',
+            );
     }
     return _glossaryJson(target, saved, language);
   }
