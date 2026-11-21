@@ -15,7 +15,8 @@ import 'package:material_ui/material_ui.dart';
 /// 1 px（`kPrecisePointerHitSlop`），长按 500 ms 计时里手一抖超过 1 px，
 /// `DelayedMultiDragGestureRecognizer` 就自行认输，同一下位移让横滚胜出。即时
 /// 版的 recognizer 比滚动区深，指针路由先到它，越过 slop 的同一帧先认领，横滚
-/// 抢不到；鼠标横滚标签条改走滚轮和 chip 之间的空白处拖动。
+/// 抢不到。代价：鼠标在 chip 上拖不再横滚标签条，横滚改走 Shift+滚轮（横向
+/// `Scrollable` 只取滚轮 dx，裸滚轮不横滚）、触控板横扫和 chip 之间的空白处拖动。
 ///
 /// 两条路径的设备集不重叠，互不进同一竞技场。落点由调用方 chip 上的
 /// `DragTarget<T>` 接，本件只负责「起拖」。

@@ -361,8 +361,9 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
         ),
       ),
       // 标签多了必须横向拖动才够用，而桌面默认 dragDevices 不含鼠标（拖不动，
-      // 只能滚轮）。HorizontalDragScrollable 放开鼠标拖动：鼠标在 chip 上按住
-      // 拖归拖标签（即时 Draggable 更深、先认领），在 chip 间空白处拖 / 滚轮归横滚；
+      // 只能 Shift+滚轮）。HorizontalDragScrollable 放开鼠标拖动：鼠标在 chip 上
+      // 按住拖归拖标签（即时 Draggable 更深、先认领），在 chip 间空白处拖 /
+      // Shift+滚轮归横滚；
       // 触屏短滑归横滚、长按归拖标签。
       child: widget.pinActions
           ? Row(
