@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-21T22:41:14Z",
+ "generatedAt": "2026-11-21T23:24:21Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "7cebc8dfc9b69202a62e7743b7b2362198e07efa",
-  "seq": 31027
+  "sha": "570a5bbe952a942cc4b80adb95e46445603169b8",
+  "seq": 31044
  },
  "builds": [
   {
@@ -579,9 +579,17 @@
   }
  ],
  "pending": {
-  "headSha": "7cebc8dfc9b69202a62e7743b7b2362198e07efa",
-  "headSeq": 31027,
+  "headSha": "570a5bbe952a942cc4b80adb95e46445603169b8",
+  "headSeq": 31044,
   "prs": [
+   4099,
+   4094,
+   4098,
+   4092,
+   4095,
+   4097,
+   4096,
+   4093,
    4088,
    4033,
    3996,
@@ -623,6 +631,10 @@
   ],
   "direct": [
    {
+    "sha": "e8d7878ace5b7ea77c19f84a328db82f19dbcad6",
+    "subject": "fix(ci): 回看早退守卫跟上 EOF 分层转调；扩展「自动字幕分句整合」开关搬进内置浏览器设置"
+   },
+   {
     "sha": "7cebc8dfc9b69202a62e7743b7b2362198e07efa",
     "subject": "chore(bugs): settle BUG number collisions on b2a6d23d7"
    },
@@ -642,20 +654,20 @@
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "failed",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44947857702"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44959463285"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44947857885"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44959463277"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44947857885"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44959463277"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/44947857885"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/44959463277"
    }
   }
  },
@@ -3539,6 +3551,78 @@
    "mergedAt": "2026-11-21T20:44:19Z",
    "additions": 263,
    "deletions": 20,
+   "labels": []
+  },
+  "4092": {
+   "number": 4092,
+   "title": "fix(ci): galgame 守卫三条红（OCR 装配下沉 mining、夹具补总开关、停源守卫改结构判据）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T22:42:56Z",
+   "additions": 124,
+   "deletions": 20,
+   "labels": []
+  },
+  "4093": {
+   "number": 4093,
+   "title": "fix(ci): 查词弹窗 controller 改持窄接口，import 环 624 降到 622",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T22:42:56Z",
+   "additions": 141,
+   "deletions": 83,
+   "labels": []
+  },
+  "4094": {
+   "number": 4094,
+   "title": "fix(ci): 修 develop 全量的行为红（视频进度 sweep 多读、bug.dart 爬外层仓库、SRS 向量按 BUG-5052 重录等）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T22:42:56Z",
+   "additions": 178,
+   "deletions": 54,
+   "labels": []
+  },
+  "4095": {
+   "number": 4095,
+   "title": "fix(ci): 视频 / 网页播放器 / 源码锚点守卫 13 条红按根因修",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T22:42:56Z",
+   "additions": 247,
+   "deletions": 62,
+   "labels": []
+  },
+  "4096": {
+   "number": 4096,
+   "title": "fix(ci): 新合入代码改回共享组件 / token，UI 棘轮守卫转绿",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T22:42:56Z",
+   "additions": 133,
+   "deletions": 91,
+   "labels": []
+  },
+  "4097": {
+   "number": 4097,
+   "title": "fix(ci): 阅读器 / 制卡源码守卫跟上合法重构，引擎 shell 只剥外层 script 标签",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T22:42:56Z",
+   "additions": 182,
+   "deletions": 82,
+   "labels": []
+  },
+  "4098": {
+   "number": 4098,
+   "title": "fix(ci): 页面 widget 红——遥控查词词典仓库未就绪不再抛错，测试替身 / 菜单判据跟上合法改动",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T22:42:56Z",
+   "additions": 74,
+   "deletions": 27,
+   "labels": []
+  },
+  "4099": {
+   "number": 4099,
+   "title": "fix(test): wight-mac 上 4 个 dist 伪红按根因修",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-21T22:58:43Z",
+   "additions": 115,
+   "deletions": 7,
    "labels": []
   }
  }
