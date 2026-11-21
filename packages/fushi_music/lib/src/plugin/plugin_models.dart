@@ -120,6 +120,19 @@ abstract final class MusicPluginTextLimits {
 
   /// 艺人「其它介绍」段落数。
   static const int maxIntroSections = 20;
+
+  /// 作品 / 曲目的可点标签（标签 / 声优 / 社团……）：条数与名字长度。
+  static const int maxEntityTags = 40;
+  static const int entityTag = 64;
+
+  /// 作品编号、语言、曲目分组名、关联作品说明这类短标记。
+  static const int label = 64;
+
+  /// 专辑的关联作品（原版 / 译制版 / 同系列）条数。
+  static const int maxRelated = 20;
+
+  /// 原站链接长度。
+  static const int url = 2048;
 }
 
 /// 插件清单（Rust 侧已校验过，这里只取用）。
@@ -282,7 +295,11 @@ enum MusicPluginCapability {
   artistSimilar('artistSimilar'),
 
   /// 收藏 / 取消收藏歌单、专辑，关注 / 取消关注艺人。需同时声明 `login` / `account`。
-  collect('collect');
+  collect('collect'),
+
+  /// 原生浏览：筛选项定义（`schema`）、带条件且分页的作品列表（`list`）与标签 / 声优 /
+  /// 社团等分类目录（`catalog`）。不依赖别的能力。
+  browse('browse');
 
   const MusicPluginCapability(this.wire);
 
@@ -364,6 +381,85 @@ class MusicPluginPackageInfo {
       signer != null && kMusicPluginTrustedSigners.contains(signer);
 }
 
+/// 原站链接：只收 https，其余当缺失（宿主只在用户点按钮后外部打开）。
+String? _httpsUrl(Object? v) {
+  final String? s = _text(v, MusicPluginTextLimits.url);
+  if (s == null) return null;
+  final Uri? u = Uri.tryParse(s);
+  return u != null && u.scheme == 'https' && u.host.isNotEmpty ? s : null;
+}
+
+/// 可点的分类条件：标签、声优、社团……（[facet] 是插件自己定义的分类 id，宿主不解释；
+/// [id] 是该分类下的值，回传给 `browse` 的 `list`）。
+class MusicPluginTag {
+  const MusicPluginTag({
+    required this.facet,
+    required this.id,
+    required this.name,
+  });
+
+  static MusicPluginTag? fromJson(Object? raw) {
+    final Map<String, Object?> j = _map(raw);
+    final String? facet = _text(j['facet'], MusicPluginTextLimits.label);
+    final String? id = _text(j['id'], MusicPluginTextLimits.url);
+    final String? name = _text(j['name'], MusicPluginTextLimits.entityTag);
+    if (facet == null || id == null || name == null) return null;
+    return MusicPluginTag(facet: facet, id: id, name: name);
+  }
+
+  /// 逐项清洗、按 (facet, id) 去重、最多 [max] 项。
+  static List<MusicPluginTag> listFrom(
+    Object? v, {
+    int max = MusicPluginTextLimits.maxEntityTags,
+  }) {
+    final List<MusicPluginTag> out = <MusicPluginTag>[];
+    for (final Object? x in _list(v)) {
+      if (out.length >= max) break;
+      final MusicPluginTag? tag = fromJson(x);
+      if (tag != null && !out.contains(tag)) out.add(tag);
+    }
+    return out;
+  }
+
+  final String facet;
+  final String id;
+  final String name;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'facet': facet,
+    'id': id,
+    'name': name,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is MusicPluginTag && other.facet == facet && other.id == id;
+
+  @override
+  int get hashCode => Object.hash(facet, id);
+}
+
+/// 专辑详情里的一条关联作品（原版 / 译制版 / 同系列……）。
+class MusicPluginRelatedAlbum {
+  const MusicPluginRelatedAlbum({required this.album, this.label});
+
+  static List<MusicPluginRelatedAlbum> listFrom(Object? v) =>
+      <MusicPluginRelatedAlbum>[
+        for (final Object? x in _list(v))
+          if (MusicPluginAlbum._fromJson(_map(x)['album'], nested: true)
+              case final MusicPluginAlbum album)
+            MusicPluginRelatedAlbum(
+              album: album,
+              label: _text(_map(x)['label'], MusicPluginTextLimits.label),
+            ),
+      ].take(MusicPluginTextLimits.maxRelated).toList();
+
+  final MusicPluginAlbum album;
+
+  /// 关系说明（如「原版」「简中译制」「同系列」）；没给为 null。
+  final String? label;
+}
+
 class MusicPluginArtistRef {
   const MusicPluginArtistRef({required this.name, this.id});
 
@@ -396,6 +492,7 @@ class MusicPluginTrack {
     this.playable = true,
     this.note,
     this.mvId,
+    this.group,
   });
 
   static MusicPluginTrack? fromJson(Object? raw) {
@@ -418,6 +515,7 @@ class MusicPluginTrack {
       playable: _bool(j['playable']) ?? true,
       note: _str(j['note']),
       mvId: _str(j['mvId']),
+      group: _text(j['group'], MusicPluginTextLimits.label),
     );
   }
 
@@ -442,6 +540,10 @@ class MusicPluginTrack {
   /// 这首歌对应的 MV（插件声明了 `mvStream` 才有意义）；没有为 null。
   final String? mvId;
 
+  /// 专辑详情里的曲目分组（如「正篇」「环境音版」「特典」）：同名相邻归一组，组按首次出现
+  /// 的顺序排；没给为 null（按碟分组或不分组）。
+  final String? group;
+
   String get artistText => joinArtistNames(artists);
 }
 
@@ -457,9 +559,20 @@ class MusicPluginAlbum {
     this.company,
     this.description,
     this.collected,
+    this.tags = const <MusicPluginTag>[],
+    this.code,
+    this.language,
+    this.durationMs,
+    this.hasSubtitles,
+    this.sourceUrl,
+    this.related = const <MusicPluginRelatedAlbum>[],
   });
 
-  static MusicPluginAlbum? fromJson(Object? raw) {
+  static MusicPluginAlbum? fromJson(Object? raw) =>
+      _fromJson(raw, nested: false);
+
+  /// [nested] = 关联作品里的专辑：不再解析它自己的关联作品（不递归）。
+  static MusicPluginAlbum? _fromJson(Object? raw, {required bool nested}) {
     final Map<String, Object?> j = _map(raw);
     final String? id = _str(j['id']);
     final String? title = _str(j['title']);
@@ -475,6 +588,15 @@ class MusicPluginAlbum {
       company: _text(j['company'], MusicPluginTextLimits.short),
       description: _text(j['description'], MusicPluginTextLimits.description),
       collected: _bool(j['collected']),
+      tags: MusicPluginTag.listFrom(j['tags']),
+      code: _text(j['code'], MusicPluginTextLimits.label),
+      language: _text(j['language'], MusicPluginTextLimits.label),
+      durationMs: _count(j['durationMs']),
+      hasSubtitles: _bool(j['hasSubtitles']),
+      sourceUrl: _httpsUrl(j['sourceUrl']),
+      related: nested
+          ? const <MusicPluginRelatedAlbum>[]
+          : MusicPluginRelatedAlbum.listFrom(j['related']),
     );
   }
 
@@ -502,10 +624,34 @@ class MusicPluginAlbum {
   /// 当前登录账号是否已收藏这张专辑；未登录或插件不知道时为 null。
   final bool? collected;
 
+  /// 可点的分类条件（标签 / 声优 / 社团……），卡片显示前几个、详情显示全部。
+  final List<MusicPluginTag> tags;
+
+  /// 作品编号（如 RJ 号）。
+  final String? code;
+
+  /// 作品语言（插件给的展示文本，如「日本語」「简体中文」）。
+  final String? language;
+
+  /// 总时长（毫秒）。
+  final int? durationMs;
+
+  /// 是否带字幕；插件不知道时为 null。
+  final bool? hasSubtitles;
+
+  /// 原站页面（https）。
+  final String? sourceUrl;
+
+  /// 关联作品（原版 / 译制版 / 同系列……），只在 `album` 详情里有。
+  final List<MusicPluginRelatedAlbum> related;
+
   String get artistText => joinArtistNames(artists);
 
-  /// 换封面（其余字段原样）：宿主按网络授权清洗封面用。
-  MusicPluginAlbum withCover(String? cover) => MusicPluginAlbum(
+  /// 换封面与关联作品（其余字段原样）：宿主按网络授权清洗封面用。
+  MusicPluginAlbum withCover(
+    String? cover, {
+    List<MusicPluginRelatedAlbum>? related,
+  }) => MusicPluginAlbum(
     id: id,
     title: title,
     artists: artists,
@@ -516,6 +662,13 @@ class MusicPluginAlbum {
     company: company,
     description: description,
     collected: collected,
+    tags: tags,
+    code: code,
+    language: language,
+    durationMs: durationMs,
+    hasSubtitles: hasSubtitles,
+    sourceUrl: sourceUrl,
+    related: related ?? this.related,
   );
 }
 
@@ -954,6 +1107,7 @@ class MusicPluginHomeSection {
     required this.kind,
     required this.items,
     this.subtitle,
+    this.more,
   });
 
   /// 宿主最多取的段数与每段条数（docs/specs/2026-10-28-music-plugins.md §4）。
@@ -965,6 +1119,200 @@ class MusicPluginHomeSection {
   final String? subtitle;
   final MusicPluginHomeKind kind;
   final List<Object> items;
+
+  /// 「查看全部」打开的带条件列表（插件声明了 `browse` 才有）：列表保留这组条件并按
+  /// `hasMore` 续载；null = 「查看全部」只看本段已给的条目。
+  final MusicPluginBrowseQuery? more;
+}
+
+/// 浏览筛选项里的一个选项（排序方式、开关、单选值、分类目录）。
+class MusicPluginBrowseOption {
+  const MusicPluginBrowseOption({required this.id, required this.label});
+
+  static List<MusicPluginBrowseOption> listFrom(Object? v, {int max = 20}) {
+    final List<MusicPluginBrowseOption> out = <MusicPluginBrowseOption>[];
+    for (final Object? x in _list(v)) {
+      if (out.length >= max) break;
+      final Map<String, Object?> j = _map(x);
+      final String? id = _text(j['id'], MusicPluginTextLimits.label);
+      final String? label = _text(j['label'], MusicPluginTextLimits.entityTag);
+      if (id == null || label == null) continue;
+      if (out.any((MusicPluginBrowseOption o) => o.id == id)) continue;
+      out.add(MusicPluginBrowseOption(id: id, label: label));
+    }
+    return out;
+  }
+
+  final String id;
+  final String label;
+}
+
+/// 单选筛选（如语言）：[values] 里选一个，或不选（= 不限）。
+class MusicPluginBrowseChoice {
+  const MusicPluginBrowseChoice({
+    required this.id,
+    required this.label,
+    required this.values,
+  });
+
+  final String id;
+  final String label;
+  final List<MusicPluginBrowseOption> values;
+}
+
+/// 插件 `browse({op:'schema'})` 给的筛选项定义：分类目录（标签 / 声优 / 社团……）、排序方式、
+/// 开关（如「只看带字幕」）与单选筛选（如语言）。全部可选，没给的控件不出现。
+class MusicPluginBrowseSchema {
+  const MusicPluginBrowseSchema({
+    this.facets = const <MusicPluginBrowseOption>[],
+    this.sorts = const <MusicPluginBrowseOption>[],
+    this.toggles = const <MusicPluginBrowseOption>[],
+    this.choices = const <MusicPluginBrowseChoice>[],
+  });
+
+  static MusicPluginBrowseSchema fromJson(Object? raw) {
+    final Map<String, Object?> j = _map(raw);
+    final List<MusicPluginBrowseChoice> choices = <MusicPluginBrowseChoice>[];
+    for (final Object? x in _list(j['choices'])) {
+      if (choices.length >= 10) break;
+      final Map<String, Object?> c = _map(x);
+      final String? id = _text(c['id'], MusicPluginTextLimits.label);
+      final String? label = _text(c['label'], MusicPluginTextLimits.entityTag);
+      final List<MusicPluginBrowseOption> values =
+          MusicPluginBrowseOption.listFrom(c['values'], max: 50);
+      if (id == null || label == null || values.isEmpty) continue;
+      if (choices.any((MusicPluginBrowseChoice o) => o.id == id)) continue;
+      choices.add(
+        MusicPluginBrowseChoice(id: id, label: label, values: values),
+      );
+    }
+    return MusicPluginBrowseSchema(
+      facets: MusicPluginBrowseOption.listFrom(j['facets']),
+      sorts: MusicPluginBrowseOption.listFrom(j['sorts']),
+      toggles: MusicPluginBrowseOption.listFrom(j['toggles'], max: 10),
+      choices: choices,
+    );
+  }
+
+  final List<MusicPluginBrowseOption> facets;
+  final List<MusicPluginBrowseOption> sorts;
+  final List<MusicPluginBrowseOption> toggles;
+  final List<MusicPluginBrowseChoice> choices;
+
+  /// [facet] 的显示名；schema 里没有时返回 null。
+  String? facetLabel(String facet) {
+    for (final MusicPluginBrowseOption f in facets) {
+      if (f.id == facet) return f.label;
+    }
+    return null;
+  }
+}
+
+/// 一组浏览条件：分类条件（AND）、排序、打开的开关与单选筛选的取值。不可变，改条件返回新对象。
+class MusicPluginBrowseQuery {
+  const MusicPluginBrowseQuery({
+    this.filters = const <MusicPluginTag>[],
+    this.sort,
+    this.toggles = const <String>{},
+    this.choices = const <String, String>{},
+  });
+
+  static MusicPluginBrowseQuery fromJson(Object? raw) {
+    final Map<String, Object?> j = _map(raw);
+    return MusicPluginBrowseQuery(
+      filters: MusicPluginTag.listFrom(j['filters'], max: 20),
+      sort: _text(j['sort'], MusicPluginTextLimits.label),
+      toggles: <String>{
+        ..._textList(j['toggles'], 10, MusicPluginTextLimits.label),
+      },
+      choices: <String, String>{
+        for (final MapEntry<String, Object?> e in _map(j['choices']).entries)
+          if (_text(e.value, MusicPluginTextLimits.label) case final String v)
+            e.key: v,
+      },
+    );
+  }
+
+  final List<MusicPluginTag> filters;
+  final String? sort;
+  final Set<String> toggles;
+  final Map<String, String> choices;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'filters': <Object?>[for (final MusicPluginTag f in filters) f.toJson()],
+    'sort': ?sort,
+    'toggles': toggles.toList(),
+    'choices': choices,
+  };
+
+  MusicPluginBrowseQuery withFilter(MusicPluginTag tag) => filters.contains(tag)
+      ? this
+      : _copy(filters: <MusicPluginTag>[...filters, tag]);
+
+  MusicPluginBrowseQuery withoutFilter(MusicPluginTag tag) => _copy(
+    filters: <MusicPluginTag>[
+      for (final MusicPluginTag f in filters)
+        if (f != tag) f,
+    ],
+  );
+
+  MusicPluginBrowseQuery withSort(String? sort) => MusicPluginBrowseQuery(
+    filters: filters,
+    sort: sort,
+    toggles: toggles,
+    choices: choices,
+  );
+
+  MusicPluginBrowseQuery withToggle(String id, {required bool on}) => _copy(
+    toggles: <String>{
+      for (final String x in toggles)
+        if (x != id) x,
+      if (on) id,
+    },
+  );
+
+  /// [value] 为 null = 不限。
+  MusicPluginBrowseQuery withChoice(String id, String? value) => _copy(
+    choices: <String, String>{
+      for (final MapEntry<String, String> e in choices.entries)
+        if (e.key != id) e.key: e.value,
+      if (value != null) id: value,
+    },
+  );
+
+  MusicPluginBrowseQuery _copy({
+    List<MusicPluginTag>? filters,
+    Set<String>? toggles,
+    Map<String, String>? choices,
+  }) => MusicPluginBrowseQuery(
+    filters: filters ?? this.filters,
+    sort: sort,
+    toggles: toggles ?? this.toggles,
+    choices: choices ?? this.choices,
+  );
+}
+
+/// 浏览列表的一页：条目按 [kind] 是 [MusicPluginAlbum] / [MusicPluginTrack] / [MusicPluginPlaylist]。
+class MusicPluginBrowseResult {
+  const MusicPluginBrowseResult({
+    required this.kind,
+    required this.items,
+    required this.hasMore,
+    this.total,
+  });
+
+  final MusicPluginHomeKind kind;
+  final List<Object> items;
+  final bool hasMore;
+  final int? total;
+}
+
+/// 分类目录里的一项（一个标签 / 声优 / 社团）与它的作品数。
+class MusicPluginCatalogEntry {
+  const MusicPluginCatalogEntry({required this.tag, this.count});
+
+  final MusicPluginTag tag;
+  final int? count;
 }
 
 class MusicPluginStream {
