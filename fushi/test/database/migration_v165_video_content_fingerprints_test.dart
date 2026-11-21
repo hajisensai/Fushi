@@ -56,12 +56,12 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 166);
+    expect(migrated.schemaVersion, 167);
     await migrated.upsertVideoContentFingerprint(fp('video/a'));
     await migrated.close();
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
-    expect(probe.select('PRAGMA user_version').first.values.first, 166);
+    expect(probe.select('PRAGMA user_version').first.values.first, 167);
     expect(tableExists(probe, 'video_content_fingerprints'), isTrue);
     expect(
       probe.select('PRAGMA foreign_key_list(video_content_fingerprints)'),

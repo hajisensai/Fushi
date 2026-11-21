@@ -3462,6 +3462,19 @@ class FushiDatabase extends _$FushiDatabase
         }
         await _migrateFavoriteSentencesPrefToTable();
       }
+      if (from < 167) {
+        // v167：favorite_sentences.color_updated_at_us——收藏句颜色的 LWW 时钟
+        // （BUG-5081）。同步 / 备份合并按内容键去重，同一条收藏两端 createdAt 相同，
+        // 没有颜色时钟就只能各留本机行，改色传不出去。纯加列、存量 NULL（= 没改过色，
+        // 时钟按 created_at_us 算）；按列存在性守卫，幂等。
+        if (await _tableExists('favorite_sentences') &&
+            !await _columnExists('favorite_sentences', 'color_updated_at_us')) {
+          await m.addColumn(
+            favoriteSentences,
+            favoriteSentences.colorUpdatedAtUs,
+          );
+        }
+      }
       // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建
       // （video-36i），每次升 schema 都幂等补一次。
       await _ensureStatIndexes();

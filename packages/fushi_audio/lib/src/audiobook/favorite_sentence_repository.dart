@@ -85,6 +85,10 @@ class FavoriteSentence {
         normCharOffset: json['normCharOffset'] as int?,
         normCharLength: json['normCharLength'] as int?,
         color: json['color'] as String?,
+        colorUpdatedAt: switch (json['colorUpdatedAt']) {
+          final String raw => DateTime.tryParse(raw),
+          _ => null,
+        },
         // 向后兼容：旧条目无 source → 默认书籍；无 dateKey → 留空（不计入按日统计）。
         source: (json['source'] as String?) ?? kFavoriteSentenceSourceBook,
         dateKey: json['dateKey'] as String?,
@@ -101,6 +105,7 @@ class FavoriteSentence {
     this.normCharOffset,
     this.normCharLength,
     this.color,
+    this.colorUpdatedAt,
     String? id,
     String? source,
     this.dateKey,
@@ -119,6 +124,15 @@ class FavoriteSentence {
   final int? normCharOffset;
   final int? normCharLength;
   final String? color;
+
+  /// [color] 最后一次被用户改的时刻（BUG-5081）。null = 收藏后没改过色，颜色时钟按
+  /// [createdAt] 算（见 [colorClock]）。同步 / 备份合并按内容键去重时，颜色取这个时钟
+  /// 较新的一侧；wire 上是可选字段 `colorUpdatedAt`，旧版本读到会忽略。
+  final DateTime? colorUpdatedAt;
+
+  /// 颜色的 LWW 时钟：改过色取 [colorUpdatedAt]，没改过取 [createdAt]（收藏时选的颜色
+  /// 就是那一刻写下的）。
+  DateTime get colorClock => colorUpdatedAt ?? createdAt;
 
   /// 收藏来源（[kFavoriteSentenceSourceBook]/`Video`/`Audiobook`/`Lyrics`）。旧条目
   /// 反序列化时默认 [kFavoriteSentenceSourceBook]，保证既有书内收藏行为不变。
@@ -152,11 +166,33 @@ class FavoriteSentence {
     if (normCharOffset != null) 'normCharOffset': normCharOffset,
     if (normCharLength != null) 'normCharLength': normCharLength,
     if (color != null) 'color': color,
+    if (colorUpdatedAt != null)
+      'colorUpdatedAt': colorUpdatedAt!.toIso8601String(),
     'source': source,
     if (dateKey != null) 'dateKey': dateKey,
     if (expression != null) 'expression': expression,
     if (reading != null) 'reading': reading,
   };
+
+  /// 只换颜色与颜色时钟的副本（合并取较新颜色、收藏夹改色后更新本地镜像用）。
+  FavoriteSentence withColor(String? color, DateTime? colorUpdatedAt) =>
+      FavoriteSentence(
+        id: id,
+        text: text,
+        bookTitle: bookTitle,
+        chapterLabel: chapterLabel,
+        createdAt: createdAt,
+        bookKey: bookKey,
+        sectionIndex: sectionIndex,
+        normCharOffset: normCharOffset,
+        normCharLength: normCharLength,
+        color: color,
+        colorUpdatedAt: colorUpdatedAt,
+        source: source,
+        dateKey: dateKey,
+        expression: expression,
+        reading: reading,
+      );
 }
 
 class FavoriteSentenceRepository {
@@ -180,6 +216,10 @@ class FavoriteSentenceRepository {
     dateKey: r.dateKey,
     expression: r.expression,
     reading: r.reading,
+    colorUpdatedAt: switch (r.colorUpdatedAtUs) {
+      final int us => DateTime.fromMicrosecondsSinceEpoch(us),
+      null => null,
+    },
   );
 
   /// 模型 → 表行。
@@ -195,6 +235,7 @@ class FavoriteSentenceRepository {
         normCharOffset: Value<int?>(s.normCharOffset),
         normCharLength: Value<int?>(s.normCharLength),
         color: Value<String?>(s.color),
+        colorUpdatedAtUs: Value<int?>(s.colorUpdatedAt?.microsecondsSinceEpoch),
         source: Value<String>(s.source),
         dateKey: Value<String?>(s.dateKey),
         expression: Value<String?>(s.expression),
@@ -260,6 +301,17 @@ class FavoriteSentenceRepository {
       itemKeyOf(sentence),
     );
   }
+
+  /// 给已收藏的句子改色（BUG-5081）：写新颜色并把颜色时钟记成 [at]（默认现在），
+  /// 同步 / 备份合并据此让这次改色压过别的设备上的旧颜色。返回是否改到了（id 不存在
+  /// = false）。颜色名的合法性由调用方保证（收藏五色之一）。
+  Future<bool> setColor(String id, String color, {DateTime? at}) async =>
+      await _db.updateFavoriteSentenceColor(
+        id,
+        color: color,
+        colorUpdatedAtUs: (at ?? DateTime.now()).microsecondsSinceEpoch,
+      ) >
+      0;
 
   /// 查已收藏项：返回**匹配到的条目 id**（未收藏 → null）。按内容键（含 normCharOffset）
   /// 精确匹配，命中即返回该条 id 供 [removeById] 精确删除，杜绝 Bug C 的身份键坍缩误删 /
