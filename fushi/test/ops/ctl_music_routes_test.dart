@@ -249,12 +249,12 @@ void main() {
         '$kMusicCtlRoot/albums/:uid/dlsite',
         params: <String, String>{'uid': uid},
       );
-      expect(() => post('al-2'), _status(400));
-      expect(() => post('nope'), _status(404));
+      await expectLater(() => post('al-2'), _status(400));
+      await expectLater(() => post('nope'), _status(404));
       scraper.dlsiteFails = true;
-      expect(() => post('al-1'), _status(409));
+      await expectLater(() => post('al-1'), _status(409));
       readonly = true;
-      expect(() => post('al-1'), _status(422));
+      await expectLater(() => post('al-1'), _status(422));
     });
 
     test('整库识别后台跑：重复启动 409、进度可查、取消后停在 cancelled', () async {
