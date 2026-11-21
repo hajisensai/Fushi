@@ -768,6 +768,13 @@ HT_EXPORT int ht_apply_memory_settings(void* session, int connections_limit,
   }
 }
 
+// ht_apply_session_settings 的活跃名额入参 → settings_pack 值（见调用处）。
+static int active_limit_value(int requested, int key) {
+  if (requested > 0) return requested;
+  if (requested < 0) return -1;
+  return lt::default_settings().get_int(key);
+}
+
 HT_EXPORT int ht_apply_session_settings(
     void* session, int listen_port, int enable_dht, int enable_lsd,
     int enable_upnp, int enable_natpmp, int enc_policy, int anonymous_mode,
@@ -792,12 +799,16 @@ HT_EXPORT int ht_apply_session_settings(
     sp.set_int(lt::settings_pack::out_enc_policy, policy);
     sp.set_int(lt::settings_pack::in_enc_policy, policy);
     sp.set_bool(lt::settings_pack::anonymous_mode, anonymous_mode != 0);
-    if (active_downloads > 0) {
-      sp.set_int(lt::settings_pack::active_downloads, active_downloads);
-    }
-    if (active_seeds > 0) {
-      sp.set_int(lt::settings_pack::active_seeds, active_seeds);
-    }
+    // 活跃名额是**状态**不是增量：每次都写全值，热更新才能从任意旧值切回
+    // 默认（HBK-AUDIT-020：旧实现 <=0 不写，从「不限 / 10」改回 0 时旧名额
+    // 一直用到重启）。>0 原值；0 = libtorrent 默认（取 default_settings，不在
+    // 本桥抄常量）；<0 = 不限（libtorrent 读这两项时把负数当 int 最大值）。
+    sp.set_int(lt::settings_pack::active_downloads,
+               active_limit_value(active_downloads,
+                                  lt::settings_pack::active_downloads));
+    sp.set_int(lt::settings_pack::active_seeds,
+               active_limit_value(active_seeds,
+                                  lt::settings_pack::active_seeds));
     if (max_upload_slots > 0) {
       sp.set_int(lt::settings_pack::unchoke_slots_limit, max_upload_slots);
     }
@@ -1934,6 +1945,10 @@ HT_EXPORT char* ht_session_status(void* session) {
            (sp.get_bool(lt::settings_pack::enable_upnp) ? "true" : "false");
     out += std::string(",\"natpmp_enabled\":") +
            (sp.get_bool(lt::settings_pack::enable_natpmp) ? "true" : "false");
+    out += ",\"active_downloads\":" +
+           std::to_string(sp.get_int(lt::settings_pack::active_downloads));
+    out += ",\"active_seeds\":" +
+           std::to_string(sp.get_int(lt::settings_pack::active_seeds));
     // 本桥建 session 一律带默认插件（含 ut_pex），无运行时开关。
     out += ",\"pex_enabled\":true";
     out += ",\"down_rate\":" + std::to_string(ctx->down_rate);

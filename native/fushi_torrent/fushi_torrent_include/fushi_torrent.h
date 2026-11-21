@@ -121,8 +121,9 @@ HT_EXPORT int ht_apply_memory_settings(void* session, int connections_limit,
 // 应用会话级设置（抄 qBittorrent 关键项）。[listen_port]>0 时重设监听端口；
 // [enable_dht]/[enable_lsd]/[enable_upnp]/[enable_natpmp] 0/1 开关；[enc_policy]
 // 0=首选(pe_enabled) 1=强制(pe_forced) 2=禁用(pe_disabled)（出入站同设）；
-// [anonymous_mode] 0/1；[active_downloads]/[active_seeds]/[max_upload_slots]
-// >0 时设、<=0 保持默认。返回 1 成功 0 失败。
+// [anonymous_mode] 0/1；[active_downloads]/[active_seeds] 每次都写全值：>0 原值、
+// 0 = libtorrent 默认（热切回默认也生效）、<0 = 不限；[max_upload_slots] >0 时设、
+// <=0 不动。返回 1 成功 0 失败。
 HT_EXPORT int ht_apply_session_settings(
     void* session, int listen_port, int enable_dht, int enable_lsd,
     int enable_upnp, int enable_natpmp, int enc_policy, int anonymous_mode,
@@ -330,6 +331,7 @@ HT_EXPORT int ht_set_file_priority(void* session, const char* info_hash,
 // {"ok":true,"listen_port","dht_running"(bool),
 //  "dht_nodes"(DHT 路由表节点数，-1 = 尚未统计到),
 //  "lsd_enabled","upnp_enabled","natpmp_enabled"(settings 现值),
+//  "active_downloads","active_seeds"(settings 现值；-1 = 不限),
 //  "pex_enabled"(恒 true：本桥建 session 一律带默认插件，含 ut_pex),
 //  "down_rate"/"up_rate"(会话级全局速率，字节/秒，含协议开销；由相邻两次
 //  session_stats 采样差分，-1 = 未知),

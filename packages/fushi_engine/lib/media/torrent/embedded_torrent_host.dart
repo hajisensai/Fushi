@@ -1325,11 +1325,12 @@ void writeUserPausedFile(String resumeDir, Set<String> infoHashes) {
 
 /// 活跃名额配置值 → `ht_apply_session_settings` 的入参（BUG-5071）。
 ///
-/// native 只在入参 `> 0` 时写 `active_downloads` / `active_seeds`（`<= 0` 保持
-/// libtorrent 默认 3 / 5）。「不限」（负数，见
-/// [QbConnectionConfig.activeLimitUnlimited]）因此换成 int32 最大值下发：
-/// libtorrent 读这两项时本来就把负数映射成 int 最大值，两者等价，且新老 DLL
-/// 都走 `> 0` 分支生效，不依赖 native 改动。0 原样传（= 引擎默认）。
+/// native 每次都写全值：`> 0` 原值、`0` = libtorrent 默认（取
+/// `lt::default_settings()`，从「不限 / 自定义」热切回 0 也真恢复默认，
+/// HBK-AUDIT-020）、`< 0` = 不限。「不限」（负数，见
+/// [QbConnectionConfig.activeLimitUnlimited]）仍换成 int32 最大值下发：
+/// libtorrent 读这两项时本来就把负数映射成 int 最大值，两者等价，且老 DLL
+/// （`<= 0` 不写）也走 `> 0` 分支生效。0 原样传。
 int libtorrentActiveLimitArg(int configured) =>
     configured < 0 ? 0x7fffffff : configured;
 
