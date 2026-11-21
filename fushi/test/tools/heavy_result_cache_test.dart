@@ -71,6 +71,74 @@ void main() {
       );
     });
 
+    test(
+      'runs whose report the caller reads from a file or as JSON are not',
+      () {
+        // A hit only repeats a text tail: the json file would be missing / stale
+        // and stdout would not be JSON.
+        for (final List<String> extra in <List<String>>[
+          <String>['--file-reporter', 'json:out.json'],
+          <String>['--file-reporter=json:out.json'],
+          <String>['-r', 'json'],
+          <String>['--reporter', 'json'],
+          <String>['--reporter=json'],
+          <String>['-rjson'],
+          <String>['--machine'],
+        ]) {
+          expect(
+            _cacheable(<String>['flutter', 'test', ...extra, 'a_test.dart']),
+            isFalse,
+            reason: extra.join(' '),
+          );
+        }
+        expect(
+          _cacheable(<String>['flutter', 'test', '-r', 'expanded']),
+          isTrue,
+        );
+        expect(
+          _cacheable(<String>[
+            'flutter',
+            'analyze',
+            '--write=issues.txt',
+          ], kind: HeavyKind.analyze),
+          isFalse,
+        );
+      },
+    );
+
+    test(
+      'runs a project variable tells to write vectors / previews are not',
+      () {
+        final List<String> argv = <String>['flutter', 'test', 'a_test.dart'];
+        for (final String name in <String>[
+          'SRS_STUDY_VECTORS_WRITE',
+          'FUSHI_SRS_PREVIEW_OUT',
+          'FUSHI_PREVIEW',
+          'FUSHI_DESIGN_PREVIEW_OUT',
+          'FUSHI_SRS_HTML_SHOTS_OUT',
+          'FUSHI_VECTORS_OUT',
+        ]) {
+          expect(
+            _cacheable(argv, env: <String, String>{name: '1'}),
+            isFalse,
+            reason: name,
+          );
+        }
+        // Switched off explicitly / an unrelated variable: still cacheable.
+        expect(
+          _cacheable(
+            argv,
+            env: <String, String>{'SRS_STUDY_VECTORS_WRITE': '0'},
+          ),
+          isTrue,
+        );
+        expect(
+          _cacheable(argv, env: <String, String>{'OTHER_OUT': '1'}),
+          isTrue,
+        );
+      },
+    );
+
     test('--no-cache, FUSHI_HEAVY_CACHE=off, CI, FUSHI_HEAVY=off opt out', () {
       final List<String> argv = <String>['flutter', 'test'];
       expect(_cacheable(argv, own: <String>['--no-cache']), isFalse);
@@ -99,6 +167,52 @@ void main() {
       );
       expect(key(cwd: 'packages/fushi_core'), isNot(key()));
     });
+
+    test(
+      'a variable that gates tests splits the key; tooling knobs do not',
+      () {
+        String key(Map<String, String> env) => heavyResultKey(
+          tree: 'aaa',
+          argv: const <String>['flutter', 'test'],
+          cwdInCheckout: 'fushi',
+          environment: env,
+        );
+
+        final String bare = key(const <String, String>{});
+        // A green run with the ffmpeg / real-DB / id_audit tests skipped says
+        // nothing about a run that turns them on.
+        for (final String gate in <String>[
+          'FUSHI_TEST_FFMPEG',
+          'FUSHI_SRS_REAL_DB',
+          'FUSHI_FSRS_ID_AUDIT',
+          'FUSHI_FLUTTER',
+        ]) {
+          expect(key(<String, String>{gate: '1'}), isNot(bare), reason: gate);
+        }
+        expect(
+          key(<String, String>{'FUSHI_TEST_FFMPEG': 'a'}),
+          isNot(key(<String, String>{'FUSHI_TEST_FFMPEG': 'b'})),
+        );
+        // How heavy / dist / bug tooling runs, and non-project variables, do
+        // not change the conclusion.
+        expect(
+          key(<String, String>{
+            'FUSHI_HEAVY_OFFLOAD': 'off',
+            'FUSHI_HEAVY_SLOTS': '3',
+            'FUSHI_DIST_CONFIG': 'x.json',
+            'FUSHI_BUG_BASE': 'origin/develop',
+            'PATH': '/bin',
+            'TEMP': 'C:/t',
+          }),
+          bare,
+        );
+        // Order-independent.
+        expect(
+          key(<String, String>{'FUSHI_A': '1', 'SRS_B': '2'}),
+          key(<String, String>{'SRS_B': '2', 'FUSHI_A': '1'}),
+        );
+      },
+    );
   });
 
   group('heavyCwdInCheckout', () {

@@ -1166,7 +1166,12 @@ Future<String?> _resultCacheKey({
     scratch: Directory('${heavyStateDir().path}/$kHeavyResultDir/index'),
   );
   if (tree == null) return null;
-  return heavyResultKey(tree: tree, argv: argv, cwdInCheckout: rel);
+  return heavyResultKey(
+    tree: tree,
+    argv: argv,
+    cwdInCheckout: rel,
+    environment: Platform.environment,
+  );
 }
 
 /// One line per cache hit next to the history (what the cache saved).

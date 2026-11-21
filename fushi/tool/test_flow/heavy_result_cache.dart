@@ -13,12 +13,16 @@
 // The key is the content, not the worktree: the tree object of the working
 // tree as it is (tracked + untracked, .gitignore honoured, written through a
 // throw-away copy of the index so the real one is never touched), the command
-// as resolved (SDK path included) and the directory it ran from relative to
-// the checkout. So two worktrees on the same content share a result.
+// as resolved (SDK path included), the directory it ran from relative to
+// the checkout, and the project variables that gate or point tests at real
+// libraries / data (FUSHI_* / SRS_* minus the heavy / dist / bug tooling
+// knobs). So two worktrees on the same content share a result.
 //
 // Only exit 0 is kept (a red run always runs again), only for test / analyze
-// kinds and never for a command that writes files the caller wants
-// (--coverage, --update-goldens). heavy.dart --no-cache, FUSHI_HEAVY_CACHE=off,
+// kinds and never for a command whose files or machine output the caller
+// reads (--coverage, --update-goldens, --file-reporter, a JSON reporter,
+// --machine, analyze --write, *_WRITE / *_OUT / preview / shot variables).
+// heavy.dart --no-cache, FUSHI_HEAVY_CACHE=off,
 // CI and FUSHI_HEAVY=off skip it.
 //
 // Pure apart from the files and git; unit-tested
@@ -39,14 +43,76 @@ const Duration kHeavyResultTtl = Duration(days: 7);
 /// How many trailing output lines are kept to repeat on a hit.
 const int kHeavyResultTailLines = 15;
 
-/// Arguments whose run writes files the caller wants: never answered from
-/// the cache.
+/// Arguments whose run writes files or machine output the caller reads: never
+/// answered from the cache (a hit only repeats a text tail, so a
+/// `--file-reporter json:x` file would be missing or stale, and a JSON
+/// reporter's stdout would not be JSON).
 const List<String> kHeavyUncacheableArgs = <String>[
   '--coverage',
   '--update-goldens',
   '--update-golden',
   '--merge-coverage',
+  '--file-reporter',
+  '--machine',
+  '--write',
 ];
+
+/// Environment-variable name prefixes whose variables steer only how heavy /
+/// dist / bug tooling runs, never what a test or analyze run concludes: left
+/// out of the key so they do not split it.
+const List<String> kHeavyKeyIgnoredEnvPrefixes = <String>[
+  'FUSHI_HEAVY',
+  'FUSHI_DIST_',
+  'FUSHI_BUG_',
+];
+
+bool _projectEnvName(String name) =>
+    name.startsWith('FUSHI_') || name.startsWith('SRS_');
+
+bool _envSet(String? v) {
+  if (v == null) return false;
+  final String s = v.trim().toLowerCase();
+  return s.isNotEmpty && s != '0' && s != 'false' && s != 'off';
+}
+
+/// Whether the project variable [name] makes a run write files the caller
+/// wants (golden vectors, previews, screenshots, reports): `*_WRITE`,
+/// `*_OUT`, preview and shot switches.
+bool heavyEnvWritesFiles(String name) =>
+    _projectEnvName(name) &&
+    (name.endsWith('_WRITE') ||
+        name.endsWith('_OUT') ||
+        name.contains('_SHOTS') ||
+        name.startsWith('FUSHI_PREVIEW') ||
+        name.startsWith('FUSHI_SRS_PREVIEW') ||
+        name.startsWith('FUSHI_DESIGN_PREVIEW'));
+
+/// The project variables that can change what a run concludes (they gate or
+/// point tests at real libraries / data: FUSHI_TEST_FFMPEG, FUSHI_SRS_REAL_DB,
+/// FUSHI_FSRS_ID_AUDIT, FUSHI_FLUTTER ...), sorted by name, for the key. A
+/// green run without such a switch says nothing about a run with it.
+Map<String, String> heavyResultKeyEnvironment(Map<String, String> env) {
+  final List<String> names =
+      env.keys
+          .where(_projectEnvName)
+          .where((String n) => !kHeavyKeyIgnoredEnvPrefixes.any(n.startsWith))
+          .toList()
+        ..sort();
+  return <String, String>{for (final String n in names) n: env[n]!};
+}
+
+bool _jsonReporter(List<String> argv) {
+  for (int i = 0; i < argv.length; i++) {
+    final String a = argv[i];
+    if (a == '--reporter=json' || a == '-rjson') return true;
+    if ((a == '-r' || a == '--reporter') &&
+        i + 1 < argv.length &&
+        argv[i + 1] == 'json') {
+      return true;
+    }
+  }
+  return false;
+}
 
 /// Whether a run of [kind] with [argv] may be answered from / stored in the
 /// cache, given heavy.dart's own options [own] and [environment].
@@ -70,21 +136,28 @@ bool heavyResultCacheable({
       if (a == bad || a.startsWith('$bad=')) return false;
     }
   }
+  if (_jsonReporter(argv)) return false;
+  for (final MapEntry<String, String> e in environment.entries) {
+    if (heavyEnvWritesFiles(e.key) && _envSet(e.value)) return false;
+  }
   return true;
 }
 
 /// The cache key of [argv] run from [cwdInCheckout] (relative, `/`-separated,
-/// '' for the root) on the working tree [tree].
+/// '' for the root) on the working tree [tree] with the project variables
+/// [environment] (only [heavyResultKeyEnvironment] of it counts).
 String heavyResultKey({
   required String tree,
   required List<String> argv,
   required String cwdInCheckout,
+  Map<String, String> environment = const <String, String>{},
 }) {
   final String raw = jsonEncode(<String, Object>{
-    'v': 1,
+    'v': 2,
     'tree': tree,
     'cwd': cwdInCheckout,
     'argv': argv,
+    'env': heavyResultKeyEnvironment(environment),
   });
   return sha256.convert(utf8.encode(raw)).toString();
 }
