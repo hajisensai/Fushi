@@ -9,6 +9,25 @@ MokuroImage _img(double w, double h) => MokuroImage(
 );
 
 void main() {
+  group('isMangaStripPage', () {
+    test('普通竖版页 / 宽页不是长条', () {
+      expect(isMangaStripPage(width: 1000, height: 1500), isFalse);
+      expect(isMangaStripPage(width: 2000, height: 1500), isFalse);
+    });
+
+    test('高宽比严格大于阈值才是长条', () {
+      expect(isMangaStripPage(width: 800, height: 1600), isFalse);
+      expect(isMangaStripPage(width: 800, height: 1601), isTrue);
+      expect(isMangaStripPage(width: 720, height: 12000), isTrue);
+    });
+
+    test('缺尺寸（宽或高非正）当普通页', () {
+      expect(isMangaStripPage(width: 0, height: 5000), isFalse);
+      expect(isMangaStripPage(width: 800, height: 0), isFalse);
+      expect(isMangaStripPage(width: -1, height: -1), isFalse);
+    });
+  });
+
   group('detectReadingMode', () {
     test('threshold constant initial value is 2.0', () {
       expect(kWebtoonAspectThreshold, 2.0);

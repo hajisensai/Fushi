@@ -178,6 +178,7 @@ import 'package:fushi/src/second_screen/second_screen_controller.dart';
 import 'package:fushi/src/second_screen/second_screen_host.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
+import 'package:fushi/src/srs/srs_generation_kind.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_profile_stores.dart';
@@ -462,11 +463,15 @@ import 'package:fushi/src/sync/video_remote_host.dart';
 import 'package:fushi/src/sync/video_remote_library_port.dart';
 import 'package:fushi/src/models/theme_notifier.dart' as theme_notifier;
 import 'package:fushi/src/models/theme_notifier.dart'
-    show ThemeNotifier, CustomThemeEntry, ThemePreset;
+    show
+        ThemeNotifier,
+        CustomThemeEntry,
+        ThemePreset,
+        ThemeAccentOverrideSource;
 // TODO-930: re-export the multi-theme value type so `fushi/models.dart`
 // consumers (theme swatch row, CustomThemePage) can name it.
 export 'package:fushi/src/models/theme_notifier.dart'
-    show CustomThemeEntry, ThemePreset;
+    show CustomThemeEntry, ThemePreset, ThemeAccentOverrideSource;
 import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart'
     show MusicAssRenderPreference;
@@ -6193,6 +6198,10 @@ class AppModel
   /// switch has written new values.
   Future<void> refreshPrefCache() async {
     await prefsRepo.refreshFromDb();
+    // 统计日界随 Profile 走：切 Profile / 别的进程改过偏好后重新镜像进
+    // FushiDatabase.statDayResetHour，否则新 Profile 一直按旧日界切「今天」直到重启
+    // （BUG-5073）。
+    _applyStatDayResetHour();
     navRailExpandedNotifier.value = prefsRepo.navRailExpanded;
     for (final sourceMap in mediaSources.values) {
       for (final source in sourceMap.values) {
@@ -6300,7 +6309,20 @@ class AppModel
   static String themeLabel(String key) => ThemeNotifier.themeLabel(key);
 
   String get appThemeKey => themeNotifier.appThemeKey;
+
+  /// 只换主题键、不碰取色覆盖：给「不是用户在选主题」的写入（删掉当前自定义主题后
+  /// 指回剩余主题）。用户选主题一律走 [pickAppThemeKey]。
   Future<void> setAppThemeKey(String key) => themeNotifier.setAppThemeKey(key);
+
+  /// 用户选主题的唯一入口（设置页色卡、自定义主题编辑页「应用」、`config set
+  /// appearance.theme`、控制通道 `select=true`）：先关掉正在生效的背景图 / 图标取色
+  /// 覆盖，再切主题键，同一批落库，见 [ThemeNotifier.pickAppThemeKey]。
+  Future<void> pickAppThemeKey(String key) =>
+      themeNotifier.pickAppThemeKey(key);
+
+  /// 正在覆盖所选主题配色的取色来源（没有覆盖为 null），主题选择处据此提示。
+  ThemeAccentOverrideSource? get activeAccentOverrideSource =>
+      themeNotifier.activeAccentOverrideSource;
 
   /// 阅读器纸色用的主题键：偏好原值（可能是已删的旧预设 id，如 ecru-theme），
   /// 让存量用户的阅读器纸色照旧生效（2026-10 预设精简时阅读器纸色不动）。
@@ -13265,7 +13287,8 @@ class AppModel
       '$kSrsDayRolloverSeenPrefKeyPrefix$profileUid';
 
   /// 把偏好镜像到 [FushiDatabase.statDayResetHour]——dateKey 派生的唯一输入。
-  /// 偏好加载后（主进程 / 弹窗进程两条初始化路径）与用户改设置时各调一次。
+  /// 偏好加载后（主进程 / 弹窗进程两条初始化路径）、偏好缓存整体重载后
+  /// （[refreshPrefCache]：切 Profile、别的进程改过偏好）与用户改设置时各调一次。
   void _applyStatDayResetHour() {
     FushiDatabase.statDayResetHour = statDayResetHour;
   }
@@ -14234,7 +14257,8 @@ class AppModel
     return view == null ? null : _reviewMiningRepositoryForView(view);
   }
 
-  /// [profileUid] 那份复习的制卡器（落点读那份配置的设置）。打不开时 null。
+  /// [profileUid] 那份复习的制卡器（落点读那份配置的设置）。打不开时 null；库在换代途中原样抛出代际异常
+  /// （[SrsMinerResolver] 的契约，BUG-5069：替对端制卡回带分类码的失败，而不是「复习不可用」）。
   Future<SrsMiner?> _hostReviewMiningMiner(String profileUid) async {
     final SrsProfileStores Function()? reader = srsProfileStoresReader;
     if (reader == null) return null;
@@ -14251,6 +14275,7 @@ class AppModel
       );
       return view == null ? null : await extensionSrsMinerForView(view);
     } catch (e, stack) {
+      if (isSrsGenerationBlocked(e)) rethrow;
       ErrorLogService.instance.log('hostReviewMiningMiner', e, stack);
       return null;
     }
@@ -14275,7 +14300,8 @@ class AppModel
 
   /// [view] 那份配置的复习制卡器：同一个 srs.db 句柄上那个配置 uid 的副本 + 它的媒体目录，
   /// 落点 / 日界读 [view]。复习不可用（模块关着 / 未注入）时为 null；打开失败留痕后同样为 null
-  /// （制卡回「复习不可用」失败、查重回不重复——与激活配置的 `_readSrsMiner` 同一契约）。
+  /// （制卡回「复习不可用」失败、查重回不重复——与激活配置的 `_readSrsMiner` 同一契约）。库在换代途中
+  /// 原样抛出代际异常（[SrsMinerResolver] 的契约，BUG-5069）：制卡据它回「去复习页完成升级」。
   Future<SrsMiner?> extensionSrsMinerForView(ProfileSettingsView view) async {
     final SrsProfileStores Function()? reader = srsProfileStoresReader;
     if (reader == null) return null;
@@ -14286,8 +14312,20 @@ class AppModel
         fallbackRolloverHour: () => view.prefs.statDayResetHour,
       );
     } catch (e, stack) {
+      if (isSrsGenerationBlocked(e)) rethrow;
       ErrorLogService.instance.log('extensionSrsMinerForView', e, stack);
       return null;
+    }
+  }
+
+  /// 打开笔记 / 词状态这类探测用的 [extensionSrsMinerForView]：库在换代途中与复习不可用同一个答案（null → 打不开 /
+  /// 没有状态），与激活配置那条链的探测同口径（`SrsMiningAnkiRepository._probeMiner`）。
+  Future<SrsMiner?> _extensionSrsMinerProbe(ProfileSettingsView view) async {
+    try {
+      return await extensionSrsMinerForView(view);
+    } on Object catch (e) {
+      if (isSrsGenerationBlocked(e)) return null;
+      rethrow;
     }
   }
 
@@ -14298,7 +14336,7 @@ class AppModel
   ) async {
     final Future<bool> Function(SrsMiner, String)? open = srsProfileNoteOpener;
     if (open == null) return false;
-    final SrsMiner? miner = await extensionSrsMinerForView(view);
+    final SrsMiner? miner = await _extensionSrsMinerProbe(view);
     return miner != null && await open(miner, noteId);
   }
 
@@ -14307,7 +14345,7 @@ class AppModel
   SrsExtensionApi? extensionSrsApiForView(ProfileSettingsView view) {
     if (SrsAppHost.current == null) return null;
     return SrsAppHost(
-      readStore: () async => (await extensionSrsMinerForView(view))?.store,
+      readStore: () async => (await _extensionSrsMinerProbe(view))?.store,
       openNote: (String noteId) => extensionSrsOpenNote(view, noteId),
       // 扩展不经这个入口打开浏览页。
       openBrowse: () async => false,
@@ -14883,7 +14921,10 @@ class AppModel
             msg: described.message,
             status: described.status,
             // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
-            action: minedCardUndoToastAction(repo, outcome, expression: word),
+            action:
+                minedCardUndoToastAction(repo, outcome, expression: word) ??
+                // BUG-5069：复习库要升级时带「打开复习」。
+                mineFailureToastAction(outcome),
           );
         } catch (e, stack) {
           ErrorLogService.instance.log('FloatingDict.ankiExport', e, stack);
