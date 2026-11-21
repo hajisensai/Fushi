@@ -1,4 +1,4 @@
-## BUG-5079 · sync-video-sweep-tests-teardown-temp-locked
+## BUG-5087 · sync-video-sweep-tests-teardown-temp-locked
 - **报告**：2026-11-21（用户：拍板台执行代理在 other-sync-peer-version-errors 分支跑定向测试时发现）
 - **真实性**：✅ 在 origin/develop（77a0a0ad80）源码上 Windows 本机 `--concurrency=1` 复现：
   `test/sync/interconnect_video_resume_stale_cache_test.dart:170`、

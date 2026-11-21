@@ -1,4 +1,4 @@
-## BUG-5074 · 「dist 请求 7 个测试文件只跑 2 个仍判 PASSED」是并发代理共用日志名读串了；dist_test 判绿改为逐个核对请求的 suite
+## BUG-5086 · 「dist 请求 7 个测试文件只跑 2 个仍判 PASSED」是并发代理共用日志名读串了；dist_test 判绿改为逐个核对请求的 suite
 - **报告**：2026-11-21（合并 PR #3763 的审查代理：`heavy.dart -- flutter test <7 个文件>` 外包到 dist，输出 2 个文件、54 个测试、`DIST TEST VERDICT: PASSED`）
 - **真实性**：❌ dist_test 没有漏跑后判绿，报告看到的是**另一个代理那次运行的结尾**。✅ 但 dist_test 的覆盖核对是隐式的，已改成显式。证据：
   - 审查代理（worktree `wf_3db34525-377-4`）把输出重定向到会话 scratchpad 的固定名 `test.log`；同一 workflow 的另一个代理（`wf_3db34525-377-3`）同时把它自己的 `flutter test <2 个字体测试>` 也写进同一个 `scratchpad/test.log`（workflow 子代理共用父会话的 scratchpad）。审查代理读到的内容前半是自己的运行（`7 suite placements`、快照 `9f0b222851fa`、日志目录 `377-4/.codex-test/dist/20261121-162236-e964`），中间一段 NUL 字节（两个进程各自 `O_TRUNC` 后在不同偏移写，留下空洞），后半是 377-3 的运行（快照 `070956597bcd`、`batch 1 (2 suites)`、54 tests、PASSED、`exit=0`）。
