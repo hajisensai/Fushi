@@ -941,12 +941,41 @@ class FushiDicts {
   static Future<FushiDictUpgradeReport> upgradeDictionaryFormats(
     List<String> dictDirs, {
     FushiDictUpgradeProgress? onProgress,
-  }) async {
+  }) {
     if (lookupUpgradeDictionary() == null) {
       throw UnsupportedError(
         'fushidicts_upgrade_dictionary is not available in this build',
       );
     }
+    return _runPerDictionary(dictDirs, _upgradeDictionaryIn, onProgress);
+  }
+
+  /// 只检查 + 清理（原生 `fushidicts_tidy_dictionary`）：已是新格式的词典顺带清掉遗留
+  /// 旧文件、把完成标记换成新名字（[FushiDictUpgradeOutcome.upToDate]）；旧式词典**一个
+  /// 字节都不写**，报 [FushiDictUpgradeOutcome.pending]，由宿主征得用户同意后再交给
+  /// [upgradeDictionaryFormats]（拍板台 pr3554：升级会整本改写用户词典目录，先提示）。
+  ///
+  /// 串行化、作用域 deferred、进度回调口径与 [upgradeDictionaryFormats] 完全相同。
+  /// 随包原生库没有这个导出时抛 [UnsupportedError]。
+  static Future<FushiDictUpgradeReport> tidyDictionaryFormats(
+    List<String> dictDirs, {
+    FushiDictUpgradeProgress? onProgress,
+  }) {
+    if (lookupTidyDictionary() == null) {
+      throw UnsupportedError(
+        'fushidicts_tidy_dictionary is not available in this build',
+      );
+    }
+    return _runPerDictionary(dictDirs, _tidyDictionaryIn, onProgress);
+  }
+
+  /// [upgradeDictionaryFormats] / [tidyDictionaryFormats] 的公共循环：逐本在后台 isolate
+  /// 跑 [entry]，登记进后台借用账本。
+  static Future<FushiDictUpgradeReport> _runPerDictionary(
+    List<String> dictDirs,
+    int Function(String? libraryPath, String dir) entry,
+    FushiDictUpgradeProgress? onProgress,
+  ) async {
     final String? libraryPath = FushidictsFfiBindings.libraryPathOverride;
     final Map<String, FushiDictUpgradeOutcome> results =
         <String, FushiDictUpgradeOutcome>{};
@@ -961,7 +990,7 @@ class FushiDicts {
       }
       final int code = await _backgroundBorrows.track(
         Isolate.run(
-          () => _upgradeDictionaryIn(libraryPath, dir),
+          () => entry(libraryPath, dir),
           debugName: kDictUpgradeIsolateName,
         ),
       );
@@ -981,6 +1010,17 @@ class FushiDicts {
     try {
       // allow_meta_rewrite = 1：纯 freq / pitch / ipa 词典顺带预解析记录。
       return upgrade(p, 1);
+    } finally {
+      calloc.free(p);
+    }
+  }
+
+  static int _tidyDictionaryIn(String? libraryPath, String dir) {
+    FushidictsFfiBindings.libraryPathOverride = libraryPath;
+    final TidyDictionaryDart tidy = lookupTidyDictionary()!;
+    final Pointer<Utf8> p = dir.toNativeUtf8(allocator: calloc);
+    try {
+      return tidy(p);
     } finally {
       calloc.free(p);
     }
@@ -1641,7 +1681,7 @@ class FushiRedirectFlagReport {
 /// [FushiDicts.upgradeDictionaryFormats] 的后台 isolate debugName。
 const String kDictUpgradeIsolateName = 'fushi-dict-format-upgrade';
 
-/// 单本词典原地升级的结果（原生 `fushidicts::UpgradeResult` 的四个值）。
+/// 单本词典原地升级 / 检查的结果（原生 `fushidicts::UpgradeResult` 的五个值）。
 enum FushiDictUpgradeOutcome {
   /// -1：读不了 / 写不了；词典原样可用（旧格式照常查词），下次再试。
   failed(-1),
@@ -1653,7 +1693,10 @@ enum FushiDictUpgradeOutcome {
   upgraded(1),
 
   /// 2：新格式装不下这本词典，保持旧式、照常可用。
-  notApplicable(2);
+  notApplicable(2),
+
+  /// 3：只检查（[FushiDicts.tidyDictionaryFormats]）时：旧式词典待升级，本次什么都没写。
+  pending(3);
 
   const FushiDictUpgradeOutcome(this.code);
 
@@ -1705,6 +1748,9 @@ class FushiDictUpgradeReport {
   /// 不适用、保持旧式的目录。
   List<String> get notApplicable =>
       _where(FushiDictUpgradeOutcome.notApplicable);
+
+  /// 待升级（只检查时报的）目录。
+  List<String> get pending => _where(FushiDictUpgradeOutcome.pending);
 
   /// 是否有任何一本升级过。
   bool get anyUpgraded =>

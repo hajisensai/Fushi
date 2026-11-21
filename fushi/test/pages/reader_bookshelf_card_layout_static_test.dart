@@ -169,10 +169,15 @@ void main() {
       contains('InkWell('),
       reason: 'tap/long-press/right-click must still cover the whole card',
     );
+    // 非多选态右键 = 长按同一份上下文菜单；多选态下参与勾选的卡右键弹批量菜单，
+    // 不参与勾选的卡（slot == null）右键让位（#3803）。
     expect(
       shell,
-      contains(
-        'onInvoke: contextMenuInvoker(_selectionMode ? null : onLongPress)',
+      matches(
+        RegExp(
+          r'onInvoke: contextMenuInvoker\(\s*_selectionMode\s*\?\s*'
+          r'\(slot == null \? null : _showBatchMenu\)\s*:\s*onLongPress,?\s*\)',
+        ),
       ),
     );
     expect(

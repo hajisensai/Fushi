@@ -56,6 +56,9 @@ extension _VideoChapter on _VideoFushiPageState {
   /// 的片时也跟着隐藏）。只在「有无章节」真变化时 setState，避免 cue 同步等高频通知抖动。
   void _onControllerChaptersChanged(VideoPlayerController controller) {
     _syncControllerChapterAvailability(controller);
+    // 同一条 controller 通知里顺带看画面尺寸（拍板台 P9AS-fvjJh 竖版视频判据），
+    // 只在比例真变时重建。
+    _syncVideoAspectRatio(controller);
   }
 
   void _syncControllerChapterAvailability(VideoPlayerController controller) {
@@ -240,6 +243,8 @@ extension _VideoChapter on _VideoFushiPageState {
     VideoPlayerController _, {
     VideoControlSlot? sourceSlot,
   }) {
+    // 竖屏学习版式：章节是下半屏的一个页签（拍板台 P9AS-fvjJh）。
+    if (_routeToPortraitPane(VideoPortraitTab.chapters)) return;
     _showVideoSidePanel(_VideoSidePanelKind.chapters, sourceSlot: sourceSlot);
   }
 }

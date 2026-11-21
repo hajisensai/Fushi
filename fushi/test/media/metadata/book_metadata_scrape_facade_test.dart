@@ -67,6 +67,70 @@ void main() {
     });
   });
 
+  group('NSFW 候选跟随作品 NSFW 标记（拍板台 pr3497）', () {
+    BookMetadataScrapeFacade mixed() => BookMetadataScrapeFacade(
+      scraper: offlineScraper(
+        subjects: <String, Map<String, Object?>>{
+          '12': <String, Object?>{
+            ...bangumiSubject('12', 'Adult work'),
+            'nsfw': true,
+          },
+        },
+        searchHits: <Map<String, Object?>>[
+          bangumiSubject('11', 'Plain'),
+          <String, Object?>{
+            ...bangumiSubject('12', 'Adult work'),
+            'nsfw': true,
+          },
+        ],
+      ),
+    );
+
+    test('默认藏 NSFW 候选并报条数；includeNsfw 全回', () async {
+      final BookScrapeSearchResult hidden = await mixed().searchDetailed(
+        source: BookScrapeSource.bangumi,
+        query: 'x',
+      );
+      expect(
+        <String>[
+          for (final BookScrapeCandidate c in hidden.candidates) c.subjectId,
+        ],
+        <String>['11'],
+      );
+      expect(hidden.hiddenNsfw, 1);
+
+      final BookScrapeSearchResult all = await mixed().searchDetailed(
+        source: BookScrapeSource.bangumi,
+        query: 'x',
+        includeNsfw: true,
+      );
+      expect(all.candidates, hasLength(2));
+      expect(all.candidates.last.isAdult, isTrue);
+      expect(all.hiddenNsfw, 0);
+    });
+
+    test('贴 id 直取到的 NSFW 条目同样跟随规则', () async {
+      final BookScrapeSearchResult got = await mixed().searchDetailed(
+        source: BookScrapeSource.bangumi,
+        query: 'https://bgm.tv/subject/12',
+      );
+      expect(got.candidates, isEmpty);
+      expect(got.hiddenNsfw, 1);
+    });
+
+    test('isNsfwHost：书自己标了 / 在 NSFW 合集里才算；认不出的书不算', () async {
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      addTearDown(db.close);
+      const BookNsfwHost host = (kind: TagHostKind.epub, entryKey: 'nsfw-book');
+      expect(await BookMetadataScrapeFacade.isNsfwHost(db, host), isFalse);
+      expect(await BookMetadataScrapeFacade.isNsfwHost(db, null), isFalse);
+      await db.setMediaNsfw(TagHostKind.epub, 'nsfw-book', true);
+      expect(await BookMetadataScrapeFacade.isNsfwHost(db, host), isTrue);
+    });
+  });
+
   group('applyToBook / restore', () {
     late FushiDatabase db;
     late Directory thumbs;

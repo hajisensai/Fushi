@@ -56,7 +56,7 @@ void main() {
     addTearDown(tv.close);
 
     final Map<String, Completer<bool>> pending = <String, Completer<bool>>{};
-    final List<(String, String, String)> probed = <(String, String, String)>[];
+    final List<(String, String)> probed = <(String, String)>[];
     List<PlexServerConfig>? saved;
     final Future<void> run =
         savePlexAccountServers(
@@ -64,8 +64,8 @@ void main() {
           tv: tv,
           accountToken: 'acct-token',
           info: info,
-          probe: (String uri, String token, String machineIdentifier) {
-            probed.add((uri, token, machineIdentifier));
+          probe: (String uri, String machineIdentifier) {
+            probed.add((uri, machineIdentifier));
             return (pending[uri] = Completer<bool>()).future;
           },
         ).then((List<PlexServerConfig> configs) {
@@ -82,14 +82,8 @@ void main() {
         'https://$mid.relay',
       ],
     });
-    // 每台用自己的 token，并核对自己的 machineIdentifier。
-    expect(
-      probed.every(
-        ((String, String, String) p) =>
-            p.$2 == 'token-${p.$3}' && p.$1.contains(p.$3),
-      ),
-      isTrue,
-    );
+    // 每台核对自己的 machineIdentifier（探测拿不到 token，见 BUG-4997）。
+    expect(probed.every(((String, String) p) => p.$1.contains(p.$2)), isTrue);
 
     // 不在家：局域网地址都不通；B 的公网先回，A 的 relay 先回。
     pending['https://mid-b.wan']!.complete(true);
@@ -113,6 +107,9 @@ void main() {
     expect(saved![0].activeServerUrl, 'https://mid-a.relay');
     expect(saved![1].activeServerUrl, 'https://mid-b.wan');
     expect(saved![0].accountName, 'carol');
+    // 落库的是各台自己的 token。
+    expect(saved![0].token, 'token-mid-a');
+    expect(saved![1].token, 'token-mid-b');
     expect(saved![0].connections, <String>[
       'http://mid-a.lan-a',
       'http://mid-a.lan-b',

@@ -16,12 +16,23 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 /// 跳过（CI 不带 ffmpeg 不误红）。桌面走系统 ffmpeg（`ffmpeg_backend` resolveFfmpegBackend）。
 class _FakeRepo implements BaseAnkiRepository {
   AnkiMiningContext? minedContext;
+
+  /// 落卡那一刻封面 / 句子音频的字节数。引擎落卡后就删掉本张卡的私有临时目录
+  /// （video-30），事后按路径量会扑空。
+  int? coverLengthAtImport;
+  int? audioLengthAtImport;
+
+  static int? _lengthOf(String? path) =>
+      path != null && File(path).existsSync() ? File(path).lengthSync() : null;
+
   @override
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
   }) async {
     minedContext = context;
+    coverLengthAtImport = _lengthOf(context.coverPath);
+    audioLengthAtImport = _lengthOf(context.sentenceAudioPath);
     return const MineOutcome.success(noteId: 1);
   }
 
@@ -124,18 +135,12 @@ void main() {
         expect(res.aborted, isFalse);
         expect(repo.minedContext, isNotNull);
         expect(repo.minedContext!.coverPath, endsWith('.gif'));
-        expect(
-          File(repo.minedContext!.coverPath!).lengthSync(),
-          greaterThan(100),
-        );
+        expect(repo.coverLengthAtImport, greaterThan(100));
         expect(
           repo.minedContext!.sentenceAudioPath,
           endsWith('immersion_audio.${immersionMiningAudioExtension()}'),
         );
-        expect(
-          File(repo.minedContext!.sentenceAudioPath!).lengthSync(),
-          greaterThan(100),
-        );
+        expect(repo.audioLengthAtImport, greaterThan(100));
       },
       skip: ffmpeg == null ? 'ffmpeg unavailable' : false,
     );

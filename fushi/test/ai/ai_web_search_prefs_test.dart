@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/ai_web_search_section.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/web_search.dart';
 
@@ -132,5 +133,20 @@ void main() {
 
     await setAiWebSearchKind(prefs, kAiWebSearchOff);
     expect(prefs.aiWebSearchConfig, isNull);
+  });
+
+  test('AI 助手联网搜索的首次确认：同意记住；关 = off；再开回到还没同意；设备本地', () async {
+    expect(prefs.aiAgentWebSearchConsent, '');
+    await prefs.grantAiAgentWebSearch();
+    expect(prefs.aiAgentWebSearchConsent, kAiAgentWebSearchAllow);
+    expect((await reloaded()).aiAgentWebSearchConsent, kAiAgentWebSearchAllow);
+
+    await prefs.setAiAgentWebSearchEnabled(false);
+    expect(prefs.aiAgentWebSearchConsent, kAiAgentWebSearchOff);
+    await prefs.setAiAgentWebSearchEnabled(true);
+    expect(prefs.aiAgentWebSearchConsent, '', reason: '再打开要重新确认，不直接算已同意');
+
+    expect(kKnownPreferenceKeys, contains(kAiAgentWebSearchPref));
+    expect(SyncRepository.deviceLocalPrefKeys, contains(kAiAgentWebSearchPref));
   });
 }

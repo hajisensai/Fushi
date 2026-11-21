@@ -21,10 +21,13 @@ description(asHtml: false)
 staff(perPage: 12) { edges { role node { name { full native } } } }
 ''';
 
-/// 搜轻小说（只要 NOVEL 形态）。
-const String kAniListNovelSearchQuery =
+/// 搜轻小说（只要 NOVEL 形态）。[includeAdult] 为 false 时在服务端就排除
+/// `isAdult` 条目（`isAdult: false`），一页结果不会被成人向条目占掉名额；为 true 时
+/// 不带这个过滤（AniList 默认两者都回）。
+String aniListNovelSearchQuery({required bool includeAdult}) =>
     r'query ($search: String, $perPage: Int) { Page(perPage: $perPage) { '
-    r'media(search: $search, type: MANGA, format: NOVEL, sort: SEARCH_MATCH) { '
+    r'media(search: $search, type: MANGA, format: NOVEL, sort: SEARCH_MATCH'
+    '${includeAdult ? '' : ', isAdult: false'}) { '
     '$_mediaFields} } }';
 
 /// 按 id 直取（不限 format：用户贴的 id 是什么就是什么）。
@@ -38,14 +41,19 @@ class AniListNovelClient {
 
   final BookCatalogHttp _http;
 
-  /// 按名搜。失败抛 [BookCatalogException]。
-  Future<List<BookCatalogRecord>> search(String query, {int limit = 10}) async {
+  /// 按名搜。[includeAdult] 默认 false = 不要成人向条目（见
+  /// [aniListNovelSearchQuery]）。失败抛 [BookCatalogException]。
+  Future<List<BookCatalogRecord>> search(
+    String query, {
+    int limit = 10,
+    bool includeAdult = false,
+  }) async {
     final String term = query.trim();
     if (term.isEmpty) return const <BookCatalogRecord>[];
     final BookCatalogResponse res = await _http.postJson(
       kAniListGraphQlEndpoint,
       <String, Object?>{
-        'query': kAniListNovelSearchQuery,
+        'query': aniListNovelSearchQuery(includeAdult: includeAdult),
         'variables': <String, Object?>{'search': term, 'perPage': limit},
       },
     );

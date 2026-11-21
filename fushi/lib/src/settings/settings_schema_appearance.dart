@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
@@ -40,6 +39,7 @@ import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/content_language_picker.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 
 /// 「功能模块」开关行的 item id。
 ///
@@ -124,10 +124,10 @@ String _moduleItemId(ModuleId module) => switch (module) {
 /// 中心不进 App Store）。判据与读取端同源（[ModuleId.availableOn]），不在这里
 /// 另写一份 Platform 判断。
 bool _moduleAvailableHere(ModuleId module) => module.availableOn(
-  isWindows: Platform.isWindows,
+  isWindows: hostPlatform.isWindows,
   isDesktop: DesktopLookupService.isDesktop,
-  isIOS: Platform.isIOS,
-  isAndroid: Platform.isAndroid,
+  isIOS: hostPlatform.isIOS,
+  isAndroid: hostPlatform.isAndroid,
 );
 
 /// 翻转一个模块开关。导航模块的拖拽列表与无 tab 模块的开关行共用这一份。
@@ -717,7 +717,7 @@ SettingsDestination buildAppearanceDestination() {
             title: t.app_icon_label,
             subtitle: t.settings_appearance_app_icon_hint,
             icon: FushiIcons.widgets,
-            visible: (_) => Platform.isAndroid || Platform.isWindows,
+            visible: (_) => hostPlatform.isAndroid || hostPlatform.isWindows,
             builder: (_) => const MiscellaneousSettingsPage(),
           ),
           // 应用图标 ↔ 主题色的两个开关，紧挨「应用图标」入口，默认都关。
@@ -1147,7 +1147,7 @@ List<SettingsItem> buildSteamShortcutItems() {
       subtitle: t.settings_steam_shortcut_add_hint,
       icon: FushiIcons.games,
       visible: (_) =>
-          Platform.isLinux &&
+          hostPlatform.isLinux &&
           !LinuxSteamShortcut.forThisProcess().isInstalled(),
       // 写的是 Steam 的配置（Fushi 数据之外），CLI 要带 --yes。
       cli: const SettingsCliAction.tap(confirm: true),
@@ -1159,7 +1159,8 @@ List<SettingsItem> buildSteamShortcutItems() {
       subtitle: t.settings_steam_shortcut_remove_hint,
       icon: FushiIcons.games,
       visible: (_) =>
-          Platform.isLinux && LinuxSteamShortcut.forThisProcess().isInstalled(),
+          hostPlatform.isLinux &&
+          LinuxSteamShortcut.forThisProcess().isInstalled(),
       cli: const SettingsCliAction.tap(confirm: true),
       onTap: _removeFushiFromSteam,
     ),

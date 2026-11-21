@@ -1,0 +1,11 @@
+## BUG-4999 · 远端换集：作废那一程的失败仍把页面置成失败态
+- **报告**：2026-11-20（来源：路线图 #3722 c31 的 gap-remote-2，代码审读复核成立）
+- **真实性**：✅ 真 bug。根因（基准 `origin/develop@7745effa2e`，`fushi/lib/src/pages/implementations/video_fushi_page.dart`）：
+  - `:5348` `_loadRemoteEpisode` 的 catch 置 `_failed` 不看 `seq == _episodeLoadSeq`：用户在第 A 集取流途中换到第 B 集，A 晚到的失败把页面打成失败态，盖住正在载入 / 已在播的 B。
+  - `:5287` / `:5325` / `:5331` `_applyLoad` 之后的字幕选择态、制卡音频源、制卡视频源写入不看代际，作废的一程会写到新一集上。
+  - `:6426` `_applyLoad` 自己的失败分支与成功分支（`:6505` 起的 setState：标题、字幕选择态、当前视频路径……）同样不看代际；`:6363` / `:6369` 两次 await 之后仍无条件发起 `controller.load`，作废的一程会让控制器 loadToken 前进，反过来把新一集正在进行的 load 判成过期。
+  - `:4936-4978` 取流之前的本机字幕档重建 / 开播位置判定在 try 之外，换集调用方都是 fire-and-forget，抛出即未处理异常、页面卡在换集 OSD。
+  - 首帧自愈监听：`:4288` 网络流「没打开」判失败后挂上的 `_promoteVideoReadyOnFirstFrame` 永不摘除，且 `:4310` 自愈对任何失败都生效——之后一次换集取流失败（控制器里仍是早已打开的上一集）会被下一次通知抹掉；而换集 / 重试复用同一控制器时 `_applyLoad` 开头撤掉了「没打开」看护却从不重挂（只有首开 `:6548` 挂），新一集的流打不开只剩黑屏 00:00。
+- **[x] ① 已修复** — 失败态与上述收尾写入前判 seq（`_applyLoad` 入口记 `loadSeq`，load 前 / 后 / setState 前都校验，作废即撤掉自己首开新建的控制器并返回）；`_loadRemoteEpisode` 整程一个 try；新增 `_failureHealsOnOpen`，只有「到点仍没打开」那种失败才自愈；换集 / 重试 / 换档载入网络流后重新挂 `_armNetworkOpenDiagnosis`。提交 `6e3b58612c`（分支 `pr/video-page-load-failures`）。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/video_page_load_failures_test.dart`「作废的远端换集失败不置失败态，最新一程失败仍报」：远端合集两集、取流按集挂起，第 2 集开始后让第 1 集失败，断言页面不进失败态；再让第 2 集失败，断言进失败态。去掉 catch 的 seq 判断的变异下该用例红（实测）。
+- **备注**：复核里「制卡源串集」那一半标「需先量」，本条只按代际收口了写入，未另做测量。换集后重挂「没打开」看护与自愈分流没有 widget 级自动化（需要真 libmpv 控制器），未做设备复测（本轮所有者定不做）。

@@ -215,7 +215,6 @@ extension _ReaderTtsExtension on _ReaderFushiPageState {
       section: _currentChapter,
       studyOffset: _tocCharOffsetFor(_currentChapter) ?? 0,
     );
-    final String? extractDir = _extractDir;
     final SessionBookInfo info = SessionBookInfo(
       bookKey: widget.bookKey,
       audiobook: Audiobook()
@@ -228,12 +227,7 @@ extension _ReaderTtsExtension on _ReaderFushiPageState {
       mediaIdentifier: 'fushi://book/${widget.bookKey}',
       isTtsSource: true,
       author: book.author,
-      coverPath: extractDir == null
-          ? null
-          : ReaderFushiSource.resolveCoverFilePath(
-              extractDir: extractDir,
-              coverPath: book.coverHref,
-            ),
+      coverPath: _bookCoverFilePath,
       statsMediaKey: widget.bookKey,
     );
 

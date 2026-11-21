@@ -48,6 +48,114 @@ void main() {
     expect(find.text(t.book_scrape_use), findsOneWidget);
   });
 
+  // 拍板台 pr3497：NSFW 候选跟随书自己的 NSFW 标记，对所有源一视同仁。
+  const String nsfwMixedBody =
+      '{"data":[{"id":1,"name":"Yotsuba to!","name_cn":"四叶妹妹！",'
+      '"images":{"large":"https://i/l.jpg"},"date":"2003-08-10"},'
+      '{"id":2,"name":"Adult work","nsfw":true,'
+      '"images":{"large":"https://i/a.jpg"},"date":"2010-01-01"}]}';
+
+  testWidgets('书没标 NSFW：NSFW 候选藏起来并提示条数；「标为 NSFW」后显示且标 NSFW', (
+    WidgetTester tester,
+  ) async {
+    int marked = 0;
+    await tester.pumpWidget(
+      wrap(
+        BookCoverScrapeDialog(
+          initialQuery: '四叶',
+          scraperOverride: scraperReturning(nsfwMixedBody),
+          onMarkNsfw: () async => marked++,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('四叶妹妹！'), findsOneWidget);
+    expect(find.text('Adult work'), findsNothing);
+    expect(find.text(t.book_scrape_nsfw_hidden(count: 1)), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('book_scrape_nsfw_mark')),
+    );
+    await tester.pumpAndSettle();
+    expect(marked, 1);
+    expect(find.text('Adult work'), findsOneWidget);
+    expect(find.textContaining('NSFW'), findsWidgets);
+    expect(
+      find.byKey(const ValueKey<String>('book_scrape_nsfw_hidden')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('书已是 NSFW：直接显示 NSFW 候选，标「NSFW」而不是 R18', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      wrap(
+        BookCoverScrapeDialog(
+          initialQuery: '四叶',
+          scraperOverride: scraperReturning(nsfwMixedBody),
+          includeNsfw: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Adult work'), findsOneWidget);
+    expect(find.text('NSFW · 2010'), findsOneWidget);
+    expect(find.textContaining('R18'), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('book_scrape_nsfw_hidden')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('标 NSFW 失败：候选仍藏着，不重搜成显示', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      wrap(
+        BookCoverScrapeDialog(
+          initialQuery: '四叶',
+          scraperOverride: scraperReturning(nsfwMixedBody),
+          onMarkNsfw: () async => throw StateError('db locked'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('book_scrape_nsfw_mark')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Adult work'), findsNothing);
+    expect(find.text(t.book_scrape_nsfw_hidden(count: 1)), findsOneWidget);
+  });
+
+  testWidgets('楽天没填凭据：提示只在选中楽天时出现，且不发请求', (WidgetTester tester) async {
+    final List<Uri> requests = <Uri>[];
+    final BookMetadataScraper scraper = BookMetadataScraper(
+      client: MockClient((http.Request req) async {
+        requests.add(req.url);
+        return http.Response.bytes(
+          utf8.encode('{"data":[]}'),
+          200,
+          headers: const <String, String>{'content-type': 'application/json'},
+        );
+      }),
+    );
+    await tester.pumpWidget(
+      wrap(BookCoverScrapeDialog(initialQuery: '四叶', scraperOverride: scraper)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(t.book_scrape_rakuten_unavailable), findsNothing);
+    final int before = requests.length;
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('book_scrape_source_picker')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(BookScrapeSource.rakuten.label).last);
+    await tester.pumpAndSettle();
+    expect(find.text(t.book_scrape_rakuten_unavailable), findsOneWidget);
+    expect(requests.length, before);
+  });
+
   testWidgets('空结果显示空状态文案', (WidgetTester tester) async {
     final BookMetadataScraper scraper = scraperReturning('{"data":[]}');
     await tester.pumpWidget(

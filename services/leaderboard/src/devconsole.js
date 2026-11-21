@@ -884,7 +884,7 @@ async function noticesPage(env, now) {
     + `<td>${esc(r.firstDay)} ~ ${esc(r.lastDay)}</td></tr>`).join('');
   return html(layout('公告', `<h1>服务端公告</h1>
 <p class="muted">App 按构建信息来问有没有公告，服务端按下面的规则匹配后下发（notices.js）。本页只读；增改规则与登记摘要走管理端
-<code>/admin/api/notices/**</code>。</p>
+<code>/admin/api/notices/**</code>。block（全屏锁）只能用「未登记摘要」「两组摘要不相交」或具体的非官方摘要；请求里带着已登记摘要时 block 一律不下发。</p>
 <h2>规则</h2>
 <div class="card">${ruleRows ? `<table class="grid"><tr><th>id</th><th>匹配</th><th>平台</th><th>级别</th><th>标题</th><th>状态</th></tr>${ruleRows}</table>`
     : '<p class="muted">还没有规则。</p>'}</div>
@@ -892,7 +892,7 @@ async function noticesPage(env, now) {
 <div class="card">${knownRows ? `<table class="grid"><tr><th>摘要</th><th>备注</th><th>登记于</th></tr>${knownRows}</table>`
     : '<p class="muted">还没有登记。</p>'}</div>
 <h2>近 ${NOTICE_LIMITS.seenDays} 天的构建信息</h2>
-<p class="muted">按「应用 id × 首个摘要 × 两组摘要是否不相交 × 版本 × 平台 × 国家 / 地区」合计的请求次数（不存 IP；当天计数预算用完后只匹配不计数）。</p>
+<p class="muted">按「应用 id × 首个摘要 × 两组摘要是否不相交 × 版本 × 平台 × 国家 / 地区」合计的请求次数（只计开着「发送使用统计」的客户端，是下限；不存 IP；当天计数预算用完后只匹配不计数）。</p>
 <div class="card">${seenRows ? `<table class="grid"><tr><th>应用 id</th><th>摘要</th><th>备注</th><th>不相交</th><th>版本</th><th>平台</th>`
     + `<th>国家 / 地区</th><th>次数</th><th>日期</th></tr>${seenRows}</table>` : '<p class="muted">还没有数据。</p>'}</div>`,
   { signedIn: true }));

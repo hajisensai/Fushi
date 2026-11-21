@@ -228,7 +228,7 @@ fn cmd(d: &Device, req: Value, blobs: Vec<Vec<u8>>) -> Value {
     req["profile"] = json!(P);
     req["caches"] = json!({"defaultDeck": super::config::default_deck_id(P)});
     let (mut blobs, mut files) = (blobs, Vec::new());
-    crate::store::ffi::sync2_dispatch(&d.core, &req, &mut blobs, &mut files).unwrap()
+    crate::store::legacy3::sync2_dispatch(&d.core, &req, &mut blobs, &mut files).unwrap()
 }
 
 /// 新设备经生产的分批收段会话收完 [b]（走收段通道，channel.rs）。

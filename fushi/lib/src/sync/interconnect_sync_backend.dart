@@ -616,6 +616,7 @@ class InterconnectSyncBackend extends SyncBackend
     if (signature != _configSignature) {
       _configSignature = signature;
       _sessionResolved = false;
+      _resolveFlight = null;
       // BUG-1180：身份变了 = 远端清单缓存里的东西属于**上一个**对端，必须作废。
       // 监听者同步收到通知，所以本次 restoreAuth 返回时缓存已经是空的，紧随其后的
       // 那次 read() 必然重新向新对端取数。
@@ -710,10 +711,34 @@ class InterconnectSyncBackend extends SyncBackend
     requestTimeout: requestTimeout,
   );
 
+  /// 在途的那一轮选路（[_ensureResolved] 单飞）。配置身份变了（[_loadConfig]）、
+  /// 登出、关闭一次性会话时丢掉它，之后的调用方按新配置另起一轮。
+  Future<void>? _resolveFlight;
+
+  /// 会话没选路时，并发调用方共享同一轮选路（单飞）。
+  ///
+  /// 起播并行取流与开播位置（路线图 #3722 m3 gap-remote-4）后，两条请求会同时撞上
+  /// 「还没选路」：各跑一轮 [_resolveSession] 不只是探测做两遍——两轮选中的候选
+  /// 若不同（组内排序随谁先答而变），后完成的那轮会 `_ops?.close()` 掉前一轮刚交给
+  /// 调用方的连接句柄，在途请求被拒连、`onConnectivityError` 再把会话置脏。
+  /// 一轮结束（成功或失败）就清掉，下一次调用按 [_sessionResolved] 重新判断。
+  Future<void> _ensureResolved() {
+    if (_sessionResolved) return Future<void>.value();
+    final Future<void>? inFlight = _resolveFlight;
+    if (inFlight != null) return inFlight;
+    late final Future<void> flight;
+    flight = _resolveSession().whenComplete(() {
+      if (identical(_resolveFlight, flight)) _resolveFlight = null;
+    });
+    _resolveFlight = flight;
+    return flight;
+  }
+
   /// Probes the candidate addresses (in order) and settles the session on the
   /// first reachable one. Switching addresses rebuilds [_ops] and clears the
-  /// folder cache, whose paths embed the previous base URL.
-  Future<void> _ensureResolved() async {
+  /// folder cache, whose paths embed the previous base URL. 只经 [_ensureResolved]
+  /// 调用（单飞）。
+  Future<void> _resolveSession() async {
     if (_sessionResolved) return;
     if (!_hasAnyCredential) {
       throw SyncAuthError(
@@ -820,6 +845,7 @@ class InterconnectSyncBackend extends SyncBackend
     _candidates = const <FushiClientUrl>[];
     _token = null;
     _sessionResolved = false;
+    _resolveFlight = null;
     _activeCandidate = null;
     // 登出后配置身份归零，下次 restoreAuth 必然重探测（BUG-1183）。
     _configSignature = null;
@@ -840,6 +866,7 @@ class InterconnectSyncBackend extends SyncBackend
       _ops?.close();
       _ops = null;
       _sessionResolved = false;
+      _resolveFlight = null;
       return false;
     }
     // BUG-1559：已经探明可达的会话不得被重建成「候选[0]」。
@@ -869,6 +896,7 @@ class InterconnectSyncBackend extends SyncBackend
     _ops?.close();
     _ops = null;
     _sessionResolved = false;
+    _resolveFlight = null;
     _activeCandidate = null;
   }
 
@@ -929,6 +957,16 @@ class InterconnectSyncBackend extends SyncBackend
   Future<bool> hostAcceptsPdfBooks() async {
     await _ensureResolved();
     return interconnectHostAcceptsPdfBooks(await _readHostCapabilities());
+  }
+
+  /// 对端 host 的本地音频清单是否带内容身份（`liveLibrary.localAudioContentId`，
+  /// 拍板 pr3481）。老 host = false：只能按显示名匹配。能力每轮现问、不跨轮缓存
+  /// （同 [hostAcceptsPdfBooks]）。
+  Future<bool> hostReportsLocalAudioContentId() async {
+    await _ensureResolved();
+    return interconnectHostReportsLocalAudioContentId(
+      await _readHostCapabilities(),
+    );
   }
 
   /// `GET /api/capabilities` 的解码结果；老 host（404 / 405）返回 null。网络 / 鉴权
@@ -2447,16 +2485,17 @@ class InterconnectSyncBackend extends SyncBackend
   Future<List<RemoteLocalAudioInfo>> listRemoteLocalAudio() =>
       _listRemote('/api/library/localaudio', RemoteLocalAudioInfo.fromJson);
 
-  /// 从对端 host 下载 displayName 为 [displayName] 的本地音频库到 [dest] 文件。
+  /// 从对端 host 下载 [key] 指向的本地音频库到 [dest] 文件。[key] 用清单条目的
+  /// `RemoteLocalAudioInfo.key`：新 host 给了内容身份就是 contentId，旧 host 是
+  /// displayName。
   Future<void> getRemoteLocalAudio(
-    String displayName,
+    String key,
     File dest, {
     SyncTransferProgress? onProgress,
   }) async {
     await _ensureResolved();
     await downloadContentFile(
-      fileId:
-          '$_apiBase/api/library/localaudio/${Uri.encodeComponent(displayName)}',
+      fileId: '$_apiBase/api/library/localaudio/${Uri.encodeComponent(key)}',
       destination: dest,
       onProgress: onProgress,
     );
@@ -3416,16 +3455,23 @@ class InterconnectSyncBackend extends SyncBackend
   static const Duration _videoFingerprintTimeout = Duration(minutes: 5);
 
   /// GET `/api/library/videos/<id>/fingerprint`（拍板台 IFCPPprIpT）。404（老 host
-  /// 无此端点）→ null；新 host 担保不了字节（[kVideoFingerprintUnavailableStatus]）或
+  /// 无此端点）→ null；`wait: false` 时 host 回 [kVideoFingerprintPendingStatus]
+  /// （还没算好、已在后台开算，拍板台 left3657）→ null；老 host 不认 `wait=0`，照旧
+  /// 算完再答。新 host 担保不了字节（[kVideoFingerprintUnavailableStatus]）或
   /// 回的不是 64 位小写 hex → 抛 [RemoteVideoFingerprintUnavailable]，不把不可担保的
   /// 值写进卡片、也不让回跳当老 host 放行（BUG-4782）。
   @override
   Future<String?> fetchRemoteVideoFingerprint(
     String id, {
     int episodeIndex = 0,
+    bool wait = true,
   }) async {
     await _ensureResolved();
-    final String query = episodeIndex > 0 ? '?episode=$episodeIndex' : '';
+    final List<String> params = <String>[
+      if (episodeIndex > 0) 'episode=$episodeIndex',
+      if (!wait) '$kVideoFingerprintWaitQueryParam=0',
+    ];
+    final String query = params.isEmpty ? '' : '?${params.join('&')}';
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
       '$_apiBase/api/library/videos/${_encodeVideoId(id)}/fingerprint$query',
@@ -3434,7 +3480,8 @@ class InterconnectSyncBackend extends SyncBackend
       req,
       timeout: _videoFingerprintTimeout,
     );
-    if (res.statusCode == 404) {
+    if (res.statusCode == 404 ||
+        (!wait && res.statusCode == kVideoFingerprintPendingStatus)) {
       await res.drain<void>();
       return null;
     }

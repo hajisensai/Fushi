@@ -589,6 +589,23 @@ final String kSeamlessChaptersInstallJs =
       if (prev) mount(prev.index, -1);
     });
   };
+  // 网页小说书阅读中途 spine 末尾长出新章（novel-d6）：阅读序只在装页时下发一次，
+  // 这里把宿主追加的尾部章接到 ORDER 末尾（只收章号比现有末章大的），再按新的
+  // 邻章补挂——正读着原来的末章时，它后面的新章照常无缝接上。
+  S.extendOrder = function(entries) {
+    if (!Array.isArray(entries)) return;
+    var last = ORDER.length ? ORDER[ORDER.length - 1].index : -1;
+    var added = false;
+    for (var i = 0; i < entries.length; i++) {
+      var e = entries[i];
+      if (!e || typeof e.index !== 'number' || typeof e.url !== 'string') continue;
+      if (e.index <= last) continue;
+      ORDER.push({index: e.index, url: e.url});
+      last = e.index;
+      added = true;
+    }
+    if (added) S.ensureWindow();
+  };
 
   function syncBodyClasses(fromData, toData) {
     var cl = document.body.classList;

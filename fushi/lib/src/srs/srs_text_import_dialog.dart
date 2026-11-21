@@ -395,6 +395,7 @@ class _SrsTextImportDialogState extends State<SrsTextImportDialog> {
                           'srs-text-import-tags-column',
                         ),
                         title: t.srs_text_import_tags_column,
+                        subtitle: t.srs_text_import_tags_column_hint,
                         options: columns,
                         selected: _clampColumn(_tagsColumn),
                         materialWidth: 220,

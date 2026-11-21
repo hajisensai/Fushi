@@ -437,8 +437,13 @@ double mediaServerContinueCardHeight(BuildContext context) =>
 /// 「继续观看」横卡的候选图，按优先级排好；前一张取不回来（兼容层会报 tag 却
 /// 404，BUG-2602）就换下一张，见 [MediaServerFallbackImage]。
 ///
-/// - 集：剧海报（服务器报了才有）→ 自身 Thumb → 自身 Primary（Jellyfin / Emby 的集主图就是一帧 16:9 截图）
-///   → 剧的 Thumb → 剧的 Backdrop。
+/// 选图跟槽位朝向走（拍板台 IBfIfzXdp2「做成自适应」）：这是 16:9 横槽，横图优先，
+/// 竖版剧海报只在横图全落空时兜底；竖槽（服务器条目卡、首页「继续」色块的海报位）
+/// 仍用 [MediaServerItem.coverItem] 的剧海报。
+///
+/// - 集：自身 Thumb → 自身 Primary（Jellyfin / Emby 的集主图就是一帧 16:9 截图，
+///   一眼认出停在哪一集）→ 剧的 Thumb → 剧的 Backdrop → 剧海报（服务器报了才有，
+///   横槽里由 [PortraitCoverImage] 模糊垫底后完整显示）。
 /// - 电影：Thumb → Backdrop → Primary（2:3 海报，横槽里由
 ///   [PortraitCoverImage] 模糊垫底后完整显示）。
 ///
@@ -460,11 +465,6 @@ List<ImageProvider> mediaServerContinueImages(
   }
 
   if (item.type == MediaServerItemType.episode) {
-    // 剧的竖版海报排第一（用户 2026-10-28：继续观看 / 接下来看要剧封面，不要集截图）；
-    // 服务器没报剧海报时 coverItem 就是集自己，下面的截图序列照旧兜底。
-    if (item.seriesCoverItemId != null) {
-      add(item.coverItem, MediaServerImageKind.primary);
-    }
     add(item, MediaServerImageKind.thumb);
     add(item, MediaServerImageKind.primary);
     final String? parentThumb = item.parentThumbItemId;
@@ -490,6 +490,10 @@ List<ImageProvider> mediaServerContinueImages(
         ),
         MediaServerImageKind.backdrop,
       );
+    }
+    // 竖版剧海报垫底：集与剧都没有横图（或全 404）时，至少认得出是哪部剧。
+    if (item.seriesCoverItemId != null) {
+      add(item.coverItem, MediaServerImageKind.primary);
     }
   } else {
     add(item, MediaServerImageKind.thumb);

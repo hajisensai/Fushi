@@ -253,6 +253,43 @@ void main() {
     expect(selected.single.url, 'high-neutral-backdrop');
   });
 
+  test('背景图无字版（无语言标签）先于高分带字版（设计稿 #3 ①）', () {
+    // TMDB 只给印着文字的 backdrop 打语言标签；背景图上要叠 logo / 标题，
+    // 带字的会和叠加标题重复，所以无字版先选，带字的只在无字版不够时补位。
+    final List<VideoMetadataImage> selected = selectVideoMetadataImages(
+      primary: const <VideoMetadataImage>[
+        VideoMetadataImage(
+          kind: VideoMetadataImageKind.backdrop,
+          url: 'high-ja-text-backdrop',
+          provider: VideoMetadataProviderKind.tmdb,
+          language: 'ja',
+          voteAverage: 9.5,
+          voteCount: 200,
+        ),
+        VideoMetadataImage(
+          kind: VideoMetadataImageKind.backdrop,
+          url: 'low-textless-backdrop',
+          provider: VideoMetadataProviderKind.tmdb,
+          voteAverage: 4,
+          voteCount: 3,
+        ),
+        VideoMetadataImage(
+          kind: VideoMetadataImageKind.backdrop,
+          url: 'mid-textless-backdrop',
+          provider: VideoMetadataProviderKind.tmdb,
+          voteAverage: 6,
+          voteCount: 3,
+        ),
+      ],
+      languageOrder: const VideoMetadataLanguages('ja').imageLanguages,
+    );
+    expect(selected.map((VideoMetadataImage i) => i.url).toList(), <String>[
+      'mid-textless-backdrop',
+      'low-textless-backdrop',
+      'high-ja-text-backdrop',
+    ]);
+  });
+
   // Shoko TMDB.MaxAutoPosters / Backdrops / Logos：每类保留张数可配，0 = 不限；
   // 分集剧照恒 1（MaxAutoThumbnails）；同一 URL 只算一张。
   test('每类图按上限保留，0 不限，剧照恒 1，同 URL 去重', () {

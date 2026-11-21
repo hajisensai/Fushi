@@ -3,6 +3,7 @@
 // 高亮哪几块 / 翻到哪页、用户翻页重定位、纯听跳过页停留、占位句照常高亮）→
 // 后台入口（AudiobookSessionLauncher 遇到漫画格式走同一条编排）。
 // 翻页式（spread 两页一组）与条漫（spread 只有一页，isSameSpread 语义）各验一遍。
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -78,9 +79,14 @@ class _Player extends ChangeNotifier implements MangaAudioPlayerPort {
     notifyListeners();
   }
 
+  /// 设了就模拟跨文件跳转：落地（闸门放开）前位置不变，旧文件照常往下报。
+  Completer<void>? seekGate;
+
   @override
   Future<void> seekMs(int ms) async {
     seeks.add(ms);
+    final Completer<void>? gate = seekGate;
+    if (gate != null) await gate.future;
     pos = ms;
     notifyListeners();
   }
@@ -308,6 +314,76 @@ void main() {
         await Future<void>.delayed(Duration.zero);
         expect(player.seeks, isEmpty, reason: '关掉跟随翻页时用户翻页不动音频');
       });
+
+      test('$mode：翻页后跳转落地前旧位置跨句，不把阅读器拉回旧页（BUG-4906）', () async {
+        final _Host host = _Host(pairs: pairs);
+        host.onPageChanged = driver.onPageChanged;
+        driver.attachHost(host, visible: true);
+        player.playing = true;
+        player.at(plan.lineStartMs(0) + 10);
+        await Future<void>.delayed(Duration.zero);
+
+        final Completer<void> gate = Completer<void>();
+        player.seekGate = gate;
+        host.visible = 4;
+        driver.onPageChanged(4);
+        await Future<void>.delayed(Duration.zero);
+        expect(player.seeks, <int>[plan.pageStartMs(4)]);
+        expect(driver.positionMs, plan.pageStartMs(4), reason: '播放条先显示目标');
+
+        // 旧文件还在往下播，跨进第 0 页第二句。
+        final int shownBefore = host.shown.length;
+        player.at(plan.lineStartMs(1) + 10);
+        await Future<void>.delayed(Duration.zero);
+        expect(host.shown.length, shownBefore, reason: '在途期间不显示旧句');
+        expect(host.visible, 4, reason: '不被拉回旧页');
+
+        player.seekGate = null;
+        gate.complete();
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+        expect(host.visible, 4);
+        expect(driver.currentPage, 4);
+        expect(player.seeks, <int>[plan.pageStartMs(4)], reason: '没有被拉回后再跳一次');
+      });
+
+      test('$mode：连续翻页（滚轮）时先发的跳转后落地，不把阅读器拉回中间页（BUG-4906）', () async {
+        final _Host host = _Host(pairs: pairs);
+        host.onPageChanged = driver.onPageChanged;
+        driver.attachHost(host, visible: true);
+        // 暂停中翻页同样会重定位（截图里的场景）。
+        player.at(plan.lineStartMs(0) + 10);
+        await Future<void>.delayed(Duration.zero);
+
+        final Completer<void> first = Completer<void>();
+        player.seekGate = first;
+        host.visible = 2;
+        driver.onPageChanged(2);
+        final Completer<void> second = Completer<void>();
+        player.seekGate = second;
+        host.visible = 4;
+        driver.onPageChanged(4);
+        await Future<void>.delayed(Duration.zero);
+        expect(player.seeks, <int>[plan.pageStartMs(2), plan.pageStartMs(4)]);
+        expect(driver.positionMs, plan.pageStartMs(4));
+
+        // 先发的那次落地：用户已经在第 4 页，不显示第 2 页、不翻回去。
+        final int shownBefore = host.shown.length;
+        first.complete();
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+        expect(host.shown.length, shownBefore);
+        expect(host.visible, 4);
+        expect(driver.positionMs, plan.pageStartMs(4), reason: '播放条仍显示最后一次目标');
+
+        player.seekGate = null;
+        second.complete();
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+        expect(host.visible, 4);
+        expect(driver.currentPage, 4);
+        expect(host.shown.last.$1, 4, reason: '落地后显示的是第 4 页页段');
+      });
     }
 
     test('纯听（无宿主 / 阅读器不可见）跳过页时间，边看边听不跳', () async {
@@ -350,6 +426,28 @@ void main() {
       await driver.seekTo(plan.totalMs + 999);
       expect(player.pos, plan.totalMs);
       expect(driver.skipLine(-1), isTrue);
+    });
+
+    test('查后从句首重播：指定句 / 当前页刚读过的句 / 本页还没读到句子原地播（BUG-4909）', () async {
+      // 边看边听（挂着可见的阅读器）：纯听形态起播会照设计跳过页停留，混进 seeks。
+      driver.attachHost(_Host(pairs: true), visible: true);
+      player.at(plan.lineStartMs(1) + 300);
+      await driver.playFromLine(0);
+      expect(player.pos, plan.lineStartMs(0));
+      expect(player.playing, isTrue);
+
+      player.playing = false;
+      player.at(plan.lineStartMs(1) + 300);
+      await driver.playFromLine(null);
+      expect(player.pos, plan.lineStartMs(1), reason: '当前句句首');
+
+      // 第 1 页无台词（页停留里）：往回找会跨到第 0 页，不为重播把读者拉回上一页。
+      player.playing = false;
+      player.seeks.clear();
+      player.at(plan.pageStartMs(1) + 10);
+      await driver.playFromLine(null);
+      expect(player.seeks, isEmpty);
+      expect(player.playing, isTrue);
     });
   });
 

@@ -7,6 +7,7 @@ import 'package:fushi/src/utils/misc/app_icon_preferences.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/shortcut_icon_sync.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 
 /// 应用图标「真正换上去」的执行体：原生图标切换 + 偏好落盘 + 发布当前选择。
 ///
@@ -28,7 +29,8 @@ class AppIconApplyException implements Exception {
 }
 
 /// 本平台支不支持换应用图标（Android launcher alias / Windows 窗口图标）。
-bool get appIconSwitchSupported => Platform.isAndroid || Platform.isWindows;
+bool get appIconSwitchSupported =>
+    hostPlatform.isAndroid || hostPlatform.isWindows;
 
 /// 原生图标已切换成功后落盘选择。偏好写失败时降级为只发布本次运行态（原生
 /// 窗口 / launcher 图标已经换了，rail 与设置不能继续显示旧值），并留诊断日志。

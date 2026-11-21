@@ -24,6 +24,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
+import 'package:path/path.dart' show PathMap;
 
 import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
@@ -51,6 +52,23 @@ Directory mangaChapterDirectory(String bookDir, String chapterKey) =>
 Directory mangaChapterDirectoryByDigest(String bookDir, String digest) =>
     Directory(p.join(bookDir, kMangaChaptersDirName, digest));
 
+/// 一批章的「章目录 → 章 key」索引（gap-mangamisc-4）。
+///
+/// OCR 任务只认目录、章节行只认 key：逐章 `p.equals(mangaChapterDirectory(...))`
+/// 是每次查询 N 次 sha256 + 路径规范化。这里一次建好，查询走 [PathMap]——它的相等
+/// 与哈希就是 `p.equals` / `p.hash`，大小写（Windows）、`..`、分隔符的口径与逐章比较
+/// 完全一致。同一目录对应多个 key 时取先出现的（与逐章扫描「第一个命中」一致）。
+PathMap<String> mangaChapterKeysByDirectory(
+  String bookDir,
+  Iterable<String> chapterKeys,
+) {
+  final PathMap<String> index = PathMap<String>();
+  for (final String key in chapterKeys) {
+    index.putIfAbsent(mangaChapterDirectory(bookDir, key).path, () => key);
+  }
+  return index;
+}
+
 /// 章目录里的 `manga.json`。
 File mangaChapterJsonFile(Directory chapterDir) =>
     File(p.join(chapterDir.path, MangaStorage.kMangaJsonFileName));
@@ -65,14 +83,20 @@ Directory mangaChapterImagesDirectory(Directory chapterDir) =>
 /// 三个条件缺一不可：只看 `manga.json` 会把「写完 payload 前进程被杀」的半成品
 /// 当成已下载；只看 `images/` 非空会把「下了两页就断网」当成已下载。页文件用
 /// [MangaStorage.resolvePageFilePath] 解析，越界的 url 视同缺页。
+///
+/// [parse] 给了就用它解析 `manga.json`（阅读器传后台 isolate 版，几 MB 的 JSON 不在
+/// UI isolate 上解析）；判过关的 payload 由调用方直接拿去装载，不再读第二遍
+/// （manga-4）。缺省同步 [parseMangaJson]。
 Future<MokuroPayload?> readDownloadedChapterPayload(
-  Directory chapterDir,
-) async {
+  Directory chapterDir, {
+  Future<MokuroPayload> Function(String source)? parse,
+}) async {
   final File json = mangaChapterJsonFile(chapterDir);
   if (!await json.exists()) return null;
   final MokuroPayload payload;
   try {
-    payload = parseMangaJson(await json.readAsString());
+    final String source = await json.readAsString();
+    payload = parse == null ? parseMangaJson(source) : await parse(source);
   } on Object {
     return null;
   }

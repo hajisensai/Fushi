@@ -38,12 +38,18 @@ void main() {
   });
 
   test('重算：对齐产物 → 暂存持久化调轴并归零；换回别的档 → 恢复', () {
+    // 检查拆成「起跑（代次前进 + 结果 future）」与「按结果调轴」两段（video-20：
+    // 载入链上先起跑、与 load 并行），两段连在一起看。
     final String body = region(
       'Future<void> _refreshPrimarySubtitleAlignment(String? source)',
-      '\n  }\n',
+      'Future<void> _importSubtitleVariant(',
     );
+    expect(body, contains('++_subtitleAlignmentCheckGeneration'));
     expect(body, contains('isSubtitleAlignmentProduct(source)'));
-    expect(body, contains('generation != _subtitleAlignmentCheckGeneration'));
+    expect(
+      body,
+      contains('check.generation != _subtitleAlignmentCheckGeneration'),
+    );
     expect(body, contains('_delayBeforeAlignedSubtitleMs = _delayMs;'));
     expect(body, contains('_delayMs = 0;'));
     expect(body, contains('_delayMs = _delayBeforeAlignedSubtitleMs;'));
@@ -51,20 +57,28 @@ void main() {
   });
 
   test('首开 / 换集：应用调轴之前按本次选中的档重算', () {
-    final int refresh = code.indexOf(
-      'await _refreshPrimarySubtitleAlignment(\n'
-      '      externalSubtitlePath ?? _currentSubtitleSource,',
+    // 检查在 controller.load 之前起跑（与 load 并行），load 之后、应用调轴之前按结果
+    // 调轴（video-20）。
+    final int start = code.indexOf(
+      '_startPrimarySubtitleAlignmentCheck(\n'
+      '          externalSubtitlePath ?? _currentSubtitleSource,',
     );
-    final int apply = code.indexOf('controller.setDelayMs(_delayMs);');
-    expect(refresh, greaterThan(0));
+    final int load = code.indexOf('await controller.load(', start);
+    final int refresh = code.indexOf(
+      'await _applyPrimarySubtitleAlignment(alignmentCheck);',
+    );
+    final int apply = code.indexOf('controller.setDelayMs(_delayMs);', refresh);
+    expect(start, greaterThan(0));
+    expect(load, greaterThan(start));
+    expect(refresh, greaterThan(load));
     expect(apply, greaterThan(refresh));
     // 按持久化值重设调轴前作废旧结论与在途检查。
-    final String load = region(
+    final String reset = region(
       '_currentAudioTrackId = row.audioTrackId;',
       '_delayMs = row.delayMs;',
     );
-    expect(load, contains('_primarySubtitleAligned = false;'));
-    expect(load, contains('_subtitleAlignmentCheckGeneration++;'));
+    expect(reset, contains('_primarySubtitleAligned = false;'));
+    expect(reset, contains('_subtitleAlignmentCheckGeneration++;'));
   });
 
   test('对齐产物生效期间的微调不落盘（不写系列级 / 本集）', () {

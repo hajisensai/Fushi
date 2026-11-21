@@ -89,13 +89,17 @@ void main() {
         textDirection: TextDirection.ltr,
       )..layout(maxWidth: width ?? box.width);
       final TextPainter fit = layout(size!);
-      expect(fit.height, lessThanOrEqualTo(box.height));
+      // 原型 `span { padding-top: .1em }`：总高 + 0.1 × 字号不超过盒高。
+      expect(
+        fit.height + size * kFushiFitTitleTopPad,
+        lessThanOrEqualTo(box.height),
+      );
       // 词不拆开：最长的词整个放得进盒宽。
       expect(fit.minIntrinsicWidth, lessThanOrEqualTo(box.width + 0.5));
       // 再大一档就放不下（取的是最大值）：要么超高，要么得把词拆开。
       final TextPainter bigger = layout(size * 1.05);
       expect(
-        bigger.height > box.height ||
+        bigger.height + size * 1.05 * kFushiFitTitleTopPad > box.height ||
             bigger.minIntrinsicWidth > box.width + 0.5,
         isTrue,
       );
@@ -334,7 +338,7 @@ void main() {
 
           final Rect cover = tester.getRect(find.byKey(coverKey));
           final Rect discRest = tester.getRect(find.byKey(discKey));
-          // 唱片在封面右侧（后方）。
+          // 唱片在封面右侧。
           expect(discRest.center.dx, greaterThan(cover.center.dx));
           await hover(tester);
           final Rect discHover = tester.getRect(find.byKey(discKey));
@@ -344,7 +348,9 @@ void main() {
       );
     }
 
-    testWidgets('唱片画在封面后面', (WidgetTester tester) async {
+    testWidgets('唱片压在封面之上（W 原型「扇形」：唱片 z 2、封面 z 1）', (
+      WidgetTester tester,
+    ) async {
       await pumpBlock(
         tester,
         const FushiCoverBlock(
@@ -363,7 +369,7 @@ void main() {
       }
 
       tester.element(find.byKey(blockKey)).visitChildren(visit);
-      expect(order.map((Element e) => e.widget.key), <Key>[discKey, coverKey]);
+      expect(order.map((Element e) => e.widget.key), <Key>[coverKey, discKey]);
     });
   });
 

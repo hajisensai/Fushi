@@ -9,7 +9,6 @@
 library;
 
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
 
@@ -18,6 +17,7 @@ import 'package:fushi/src/media/video/video_pause_ocr_scope.dart';
 import 'package:fushi/src/media/video/video_graphic_subtitle_ocr_progress.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRgbaImage;
 
 /// 识别触发的防抖：逐帧步进 / 连续 seek 时只识别停下来的那一帧。
 const Duration kGraphicSubtitleOcrSettleDelay = Duration(milliseconds: 250);
@@ -113,12 +113,12 @@ class VideoGraphicSubtitleOcrOverlay extends StatefulWidget {
   final void Function(Object error, StackTrace stack)? onError;
 
   /// 截帧；默认走 [VideoPlayerController.captureFrameWithSubtitles]（测试注入用）。
-  final Future<Uint8List?> Function()? captureFrame;
+  final Future<OcrRgbaImage?> Function()? captureFrame;
 
   /// 识别一帧；默认走 [GraphicSubtitleOcrSession.recognize]（测试注入用，不触发
   /// AI 重读回调）。
   @visibleForTesting
-  final Future<GraphicSubtitleOcrFrame?> Function(Uint8List frameBytes)?
+  final Future<GraphicSubtitleOcrFrame?> Function(OcrRgbaImage frame)?
   recognizeFrame;
 
   /// 状态标记（识别中 / 已识别）距顶部的距离——页面传顶栏高度，标记落在顶栏下方、
@@ -352,18 +352,18 @@ class _VideoGraphicSubtitleOcrOverlayState
     _inFlight = true;
     bool retrying = false;
     try {
-      final Uint8List? bytes =
+      final OcrRgbaImage? captured =
           await (widget.captureFrame ??
               widget.controller.captureFrameWithSubtitles)();
       if (stale()) return;
-      if (bytes == null) {
+      if (captured == null) {
         retrying = _retryCapture(attempt);
         return;
       }
       _statusGraphic = graphic;
       _setStatus(GraphicSubtitlePauseOcrStatus.recognizing);
-      final GraphicSubtitleOcrFrame? frame = await _recognizeBytes(
-        bytes,
+      final GraphicSubtitleOcrFrame? frame = await _recognizeFrame(
+        captured,
         stale,
       );
       if (frame == null || stale()) return;
@@ -410,17 +410,17 @@ class _VideoGraphicSubtitleOcrOverlayState
     return false;
   }
 
-  Future<GraphicSubtitleOcrFrame?> _recognizeBytes(
-    Uint8List bytes,
+  Future<GraphicSubtitleOcrFrame?> _recognizeFrame(
+    OcrRgbaImage captured,
     bool Function() stale,
   ) {
-    final Future<GraphicSubtitleOcrFrame?> Function(Uint8List)? injected =
+    final Future<GraphicSubtitleOcrFrame?> Function(OcrRgbaImage)? injected =
         widget.recognizeFrame;
-    if (injected != null) return injected(bytes);
+    if (injected != null) return injected(captured);
     final GraphicSubtitleOcrSession session = _session ??=
         GraphicSubtitleOcrSession(prepare: widget.prepare);
     return session.recognize(
-      bytes,
+      captured,
       onRefined: (GraphicSubtitleOcrFrame refined) {
         if (!stale()) setState(() => _frame = refined);
       },

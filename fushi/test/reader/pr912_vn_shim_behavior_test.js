@@ -6,8 +6,8 @@
 // - CSS.highlights.set('fushi-search', new Highlight(range));     （搜索高亮）
 // - await this.ensureReady();                （highlightSelectorCue 的就绪等待）
 // - this.screenIndexForProgress(this.totalChapterChars           （restore 兜底）
-const fs = require('fs');
-const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const { readPayload, compileScript } = require('./reader_harness_support.js');
+const data = readPayload();
 function assert(value, message) {
   if (!value) throw new Error(message);
 }
@@ -103,7 +103,11 @@ function makeVn(options) {
     notifyRestoreComplete() { log.restored++; }
   };
   window.fushiReader = vn;
-  new Function('window', 'document', 'CSS', 'Highlight', 'NodeFilter', shim)(
+  compileScript(
+    ['window', 'document', 'CSS', 'Highlight', 'NodeFilter'],
+    shim,
+    'pr912_vn_shim_behavior_test-1.js',
+  )(
     window, document, CSS, Highlight, NodeFilter);
   const real = vn.screenIndexForCharOffset;
   assert(typeof real === 'function',

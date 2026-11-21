@@ -206,10 +206,16 @@ class VideoWatchTracker {
     _episodeCompletionReported = false;
   }
 
-  void dispose() {
-    unawaited(stop());
+  void dispose() => unawaited(close());
+
+  /// 同 [dispose]，但把最后一次停表 / 完成判定 / 覆盖落库的 future 交回：离开时的
+  /// 完成判定可能还要经远端客户端取追番身份（[onEpisodeCompleted]），宿主据此等它
+  /// 用完再关客户端（BUG-5012）。
+  Future<void> close() {
+    final Future<void> stopped = stop();
     _source?.removeListener(_onSourceChanged);
     _source = null;
+    return stopped;
   }
 
   // ── 位置采样：首次覆盖区间（字幕字数用）+ 完成判定 + 空闲门 ────────────────

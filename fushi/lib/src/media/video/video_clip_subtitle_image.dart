@@ -239,11 +239,14 @@ SubtitleMarkup? clipCueStyledMarkup(ClipSubtitleCue cue) {
 ///
 /// 字号、字体、位置、旋转、动画**不**跟随 ASS：导出件的排版仍按用户的统一外观换算
 /// （见 [computeClipSubtitleLayout]），字幕在导出画面里的大小与位置可预期。
-/// 硬换行（[SubtitleMarkup.lineBreakGraphemes]，plainText 里是空格）还原成换行。
+/// 硬换行（[SubtitleMarkup.lineBreakGraphemes]，plainText 里是空格）默认还原成换行；
+/// [hardBreaks] 为 false 时保留空格，拍平后的文本与 [SubtitleMarkup.plainText] 逐字一致
+/// （字幕列表按 plainText 做逐字命中，见 `subtitleListEffectSpan`）。
 TextSpan buildClipSubtitleStyledSpan({
   required SubtitleMarkup markup,
   required TextStyle base,
   required double shadowThickness,
+  bool hardBreaks = true,
 }) {
   final SubtitleCueStyle? cue = markup.cueStyle;
   final TextStyle cueBase = base.copyWith(
@@ -265,7 +268,9 @@ TextSpan buildClipSubtitleStyledSpan({
   );
 
   final List<String> graphemes = markup.plainText.characters.toList();
-  final Set<int> breaks = markup.lineBreakGraphemes.toSet();
+  final Set<int> breaks = hardBreaks
+      ? markup.lineBreakGraphemes.toSet()
+      : const <int>{};
   String slice(int from, int to) {
     final StringBuffer out = StringBuffer();
     for (int i = from; i < to; i++) {

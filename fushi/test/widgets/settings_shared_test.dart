@@ -558,12 +558,21 @@ void main() {
       );
       expect(find.byType(Switch), findsOneWidget);
       // 长 CJK 选项在 2x 下放不进行宽 55%：分段行按唯一判据
-      // settingsChoiceUsesSegments 退回菜单行（当前值写进说明行），不溢出。
-      expect(find.byType(SettingsChoiceMenuRow), findsOneWidget);
-      expect(
-        find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>),
-        findsNothing,
+      // settingsSegmentedPlacement 换到标题下方撑满整行，整行也放不下时退回
+      // 菜单行（当前值写进说明行）；两种都不越出设置卡片。
+      final Finder strip = find.byWidgetPredicate(
+        (Widget w) => w is SegmentedButton<String>,
       );
+      if (strip.evaluate().isEmpty) {
+        expect(find.byType(SettingsChoiceMenuRow), findsOneWidget);
+      } else {
+        final Rect section = tester.getRect(
+          find.byType(AdaptiveSettingsSection),
+        );
+        final Rect stripRect = tester.getRect(strip);
+        expect(stripRect.left, greaterThanOrEqualTo(section.left));
+        expect(stripRect.right, lessThanOrEqualTo(section.right));
+      }
       expect(find.byType(Slider), findsOneWidget);
       expect(find.byType(DropdownMenu<int>), findsOneWidget);
     },

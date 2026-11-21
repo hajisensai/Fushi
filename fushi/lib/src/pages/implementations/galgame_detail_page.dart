@@ -92,6 +92,10 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 /// [GalgameRepository]：条目本身读缓存，会话流水与每日聚合按需查 DB。
 /// 启动按钮不自带启动逻辑——[onLaunch] 由库页传入，复用那边带再入守卫的
 /// `_launchGame`，避免两处各写一套 helper 确认 / 注入流程。
+/// 详情页「编辑」tab 的下标（文本处理 / 制卡覆盖都在这里；菜单的「文本 Hook 与
+/// 制卡」工作台入口直达它）。
+const int kGalgameDetailEditTab = 2;
+
 class GalgameDetailPage extends ConsumerStatefulWidget {
   const GalgameDetailPage({
     required this.gameId,
@@ -1818,7 +1822,8 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
   late final TextEditingController _launchArgs = TextEditingController(
     text: widget.game.launchArgs,
   );
-  late bool _nsfw = widget.game.customData.nsfw ?? false;
+  // 显示有效值（覆盖层 ?? 刮削分级）：与卡菜单 NSFW 开关同一口径。
+  late bool _nsfw = widget.game.isNsfw;
 
   @override
   void dispose() {
@@ -1858,7 +1863,9 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
       summary: _trimmedOrNull(_summary.text),
       tags: parseGalgameTagInput(_tags.text),
       developer: _trimmedOrNull(_developer.text),
-      nsfw: _nsfw ? true : null,
+      // 没动过就原样保留覆盖层（含 null = 跟随刮削）；动过写显式值，关掉能压过
+      // 刮削源的成人向分级（与卡菜单 [GalgameRepository.setNsfw] 同一语义）。
+      nsfw: _nsfw == game.isNsfw ? game.customData.nsfw : _nsfw,
       userRating: parseGalgameRating(_rating.text),
       userReview: _trimmedOrNull(_review.text),
     );

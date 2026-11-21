@@ -58,6 +58,7 @@ import 'package:fushi/src/utils/misc/update_checker.dart';
 import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 
 /// 「首页入口」：首页模块关掉后，首页浮动工具栏上那四个入口的落脚处。
 ///
@@ -664,7 +665,7 @@ SettingsDestination buildSystemDestination() {
               n: CrashDumpLocator.listCurrentPlatformDumps().length,
             ),
             icon: Icons.bug_report_outlined,
-            visible: (_) => Platform.isWindows,
+            visible: (_) => hostPlatform.isWindows,
             builder: (_) => const CrashDumpPage(),
           ),
           // 用户 2026-11-16：「加一个状态检测，在 app 内看 CPU 占用、内存占用，检测卡顿」。

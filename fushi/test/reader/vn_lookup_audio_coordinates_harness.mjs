@@ -1,15 +1,15 @@
 // Run the complete generated VN factory, including content-stream/range-map
 // dependencies and host shims, against Chrome's actual cloned DOM and Ranges.
 // Only the Flutter bridge is replaced with a recorder.
-import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
+import { readPayload } from './reader_harness_support.js';
 
+const scripts = readPayload();
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
-const scripts = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const fixtures = [
   {
     name: 'blocks with ruby and repeated sentences',

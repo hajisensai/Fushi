@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/mihon/desktop_mihon_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
@@ -211,6 +212,129 @@ void main() {
         expect((await runtime.getCapabilities()).isUsable, isTrue);
       } finally {
         if (!releasePending.isCompleted) releasePending.complete();
+        await runtime.dispose();
+        realClient.close();
+        await data.delete(recursive: true);
+      }
+    },
+    skip: bridgeAvailable
+        ? false
+        : 'Built desktop Mihon Java bundle is unavailable',
+  );
+  test(
+    'an APK crosses to the sidecar once per process; calls carry only its '
+    'digest (manga-28) and leave no request-body temp files (BUG-5046)',
+    () async {
+      final Directory data = await Directory.systemTemp.createTemp(
+        'mihon-apk-digest-',
+      );
+      // Not a valid APK: /inspect stores and verifies it declaratively and
+      // reports it as invalid, which is enough to see the wire.
+      final File apk = File('${data.path}/fixture.apk')
+        ..writeAsBytesSync(List<int>.generate(48 * 1024, (int i) => i % 251));
+      final String digest = sha256.convert(apk.readAsBytesSync()).toString();
+      final http.Client realClient = http.Client();
+      final List<(String, String, int, int)> wire =
+          <(String, String, int, int)>[];
+      final DesktopMihonRuntime runtime = DesktopMihonRuntime(
+        dataDirectory: data,
+        resourceDirectory: resourceDirectory,
+        httpClient: MockClient((http.Request request) async {
+          final http.Request forwarded =
+              http.Request(request.method, request.url)
+                ..headers.addAll(request.headers)
+                ..bodyBytes = request.bodyBytes;
+          final http.Response response = await http.Response.fromStream(
+            await realClient.send(forwarded),
+          );
+          wire.add((
+            request.method,
+            request.url.path,
+            request.bodyBytes.length,
+            response.statusCode,
+          ));
+          return response;
+        }),
+      );
+      final MihonExtensionRef extension = MihonExtensionRef(
+        packageName: 'fixture',
+        apkPath: apk.path,
+      );
+      final Matcher invalidApk = throwsA(
+        isA<MihonRuntimeException>().having(
+          (MihonRuntimeException e) => e.code,
+          'code',
+          'BRIDGE_HTTP_400',
+        ),
+      );
+      List<(String, String, int)> calls() => wire
+          .where(((String, String, int, int) e) => e.$2 != '/capabilities')
+          .map(((String, String, int, int) e) => (e.$1, e.$2, e.$4))
+          .toList();
+      try {
+        await runtime.getCapabilities();
+
+        await expectLater(runtime.inspectExtension(apk.path), invalidApk);
+        expect(calls(), <(String, String, int)>[
+          ('POST', '/inspect', 409),
+          ('PUT', '/apk/$digest', 200),
+          ('POST', '/inspect', 400),
+        ]);
+        final (String, String, int, int) upload = wire.firstWhere(
+          ((String, String, int, int) e) => e.$1 == 'PUT',
+        );
+        expect(upload.$3, apk.lengthSync(), reason: 'raw bytes, not base64');
+        expect(
+          wire
+              .where(((String, String, int, int) e) => e.$1 != 'PUT')
+              .every(((String, String, int, int) e) => e.$3 < 1024),
+          isTrue,
+          reason: 'bridge calls must carry the digest, not the APK',
+        );
+
+        // Same process: no second upload.
+        wire.clear();
+        await expectLater(runtime.inspectExtension(apk.path), invalidApk);
+        expect(calls(), <(String, String, int)>[('POST', '/inspect', 400)]);
+
+        // The /source-image path detects the miss on a streamed response too.
+        // Loading the (invalid) extension then fails as a plain image error.
+        wire.clear();
+        await runtime.invalidateExtension('unrelated');
+        await expectLater(
+          runtime.fetchSourceImage(
+            extension,
+            const MihonSource(
+              extensionPackage: 'fixture',
+              id: '1',
+              name: 'fixture',
+              language: 'en',
+              baseUrl: '',
+            ),
+            'https://example.invalid/cover.jpg',
+          ),
+          throwsA(
+            isA<MihonRuntimeException>().having(
+              (MihonRuntimeException e) => e.code,
+              'code',
+              'IMAGE_HTTP_500',
+            ),
+          ),
+        );
+        expect(calls(), <(String, String, int)>[
+          ('POST', '/source-image', 409),
+          ('PUT', '/apk/$digest', 200),
+          ('POST', '/source-image', 500),
+        ]);
+
+        final Directory tempRoot = Directory('${data.path}/sidecar-tmp');
+        final List<String> spooled = tempRoot
+            .listSync(recursive: true)
+            .map((FileSystemEntity e) => e.path.split(RegExp(r'[\\/]')).last)
+            .where((String name) => name.startsWith('NanoHTTPD-'))
+            .toList();
+        expect(spooled, isEmpty);
+      } finally {
         await runtime.dispose();
         realClient.close();
         await data.delete(recursive: true);

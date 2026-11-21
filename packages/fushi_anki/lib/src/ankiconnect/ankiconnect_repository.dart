@@ -751,6 +751,14 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           'overwrite a card of a different note type.',
         );
       }
+      // 拍板 lt2wobUYfE：一个字段都没勾就不渲染、不写，直接拒绝。
+      final Set<String>? onlyFields = settings.overwriteFieldsFor(
+        existing.modelName ?? targetModel,
+      );
+      final MineOutcome? noneSelected = rejectNoOverwriteFieldsSelectedOutcome(
+        onlyFields,
+      );
+      if (noneSelected != null) return noneSelected;
       final Map<String, String> existingFields = existing.fields;
       if (context.sourceLink != null ||
           settings.fieldMappings.values.any(
@@ -785,9 +793,6 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         keepEmpty: true,
       );
       final RenderedMinedFields rendered = prepared.rendered;
-      final Set<String>? onlyFields = settings.overwriteFieldsFor(
-        existing.modelName ?? targetModel,
-      );
       final Map<String, String> toWrite = BaseAnkiRepository.fieldsForOverwrite(
         existingFieldNames: existingFields.keys,
         rendered: rendered.fields,

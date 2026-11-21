@@ -23,7 +23,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 /// - 批量改笔记：撤销 = 实际写下的字段写回原值。
 ///
 /// 撤销不了、标 irreversible：被扣住的删除选「保留」——另一台设备的删除作废、冲突项消失，
-/// 内核没有「重新扣住」的操作，回不到「待定」状态。
+/// 内核没有「重新扣住」的操作，回不到「待定」状态；删除旧版本保留副本——原路径换成墓碑库，没有命令能换回来。
 ///
 /// [idPrefix]：操作 id 的前缀（app 为空 → `srs.decks.list`；服务端 `server.` → `server.srs.decks.list`），
 /// 说明文字里互相引用的 id 一并带上。[availability]：宿主的可用性门（app 的模块开关、服务端有没有可用的
@@ -38,6 +38,40 @@ List<OpDescription> srsCtlOpDescriptions(
 }) {
   String op(String id) => '$idPrefix$id';
   return <OpDescription>[
+    OpDescription(
+      id: op('srs.retained.status'),
+      method: 'GET',
+      pattern: '$kSrsCtlRoot/retained',
+      summary:
+          'Show the old-version retained copy of the review library (the '
+          'sealed old-version library file kept after the upgrade): copy = sealed / tombstone / '
+          'absent / other, its size in bytes, when it expires (14 days after '
+          'the first successful sync, or 30 days after the upgrade without '
+          'one) and the last automatic deletion error. It still holds the '
+          'pre-upgrade text of anything purged since. Profile is ignored.',
+      availability: availability,
+      params: scopeParams,
+    ),
+    OpDescription(
+      id: op('srs.retained.delete'),
+      method: 'POST',
+      pattern: '$kSrsCtlRoot/retained/delete',
+      summary:
+          'Delete the old-version retained copy now (see '
+          '${op('srs.retained.status')}) after checking the current library '
+          'opens cleanly; it is replaced by a small tombstone so old versions '
+          'still refuse to start on it. Cannot be undone: going back to the old '
+          'version is no longer possible. Profile is ignored.',
+      availability: availability,
+      risk: OpRisk.irreversible,
+      params: <OpParam>[
+        OpParam.userGate(
+          'confirm',
+          description: 'User confirmed deleting the retained copy for good.',
+        ),
+        ...scopeParams,
+      ],
+    ),
     OpDescription(
       id: op('srs.decks.list'),
       method: 'GET',

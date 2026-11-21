@@ -41,19 +41,18 @@ void main() {
       reason:
           'review and unbound disc menus both reject study collection before creating a tracker',
     );
-    final int stop = video.indexOf(
-      'Future<void> _reportRemotePlaybackStopped(',
-    );
-    final int stopGuard = video.indexOf(
-      'if (_sourceReviewActive) return;',
+    // BUG-5020：停止上报在回看中由闸门压住（闸门回看分支只摘会话、停转码，行为见
+    // source_review_remote_report_gate_test）；页面这里只能经闸门发，不能绕过它。
+    final String stop = _body(video, '_reportRemotePlaybackStopped');
+    expect(stop, contains('_remoteReportGate.stop(stopClient,'));
+    expect(
       stop,
+      isNot(contains('_sourceReviewActive')),
+      reason: 'review must reach the gate so it can detach the transcode',
     );
-    final int stopRequest = video.indexOf(
-      '_remoteReportGate.stop(stopClient,',
-      stop,
-    );
-    expect(stopGuard, greaterThan(stop));
-    expect(stopGuard, lessThan(stopRequest));
+    expect(stop, contains('RemoteVideoPlaybackDetach'));
+    expect(stop, isNot(contains('stopRemoteVideoPlayback(')));
+    expect(stop, isNot(contains('detachRemoteVideoPlayback(')));
   });
 
   test(

@@ -11,6 +11,7 @@ import 'package:fushi/src/media/async_file_existence_cache.dart';
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/media/people/person_detail_page.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
+import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -40,6 +41,12 @@ VideoCreditCardImage? videoCreditCardImage(
       : _imageFor(character.imagePath, character.imageUrl, fileExists);
 }
 
+/// 人物头像（[MediaDetailCastStrip] 默认 76 逻辑像素圆形）的解码上限（物理像素宽）：
+/// 76 × 3 倍屏 ≈ 228，向上取整。TMDB / AniDB / MAL 的人物照默认给 original 尺寸，
+/// 裸 [FileImage] / [AppCachedHttpImage] 会整帧解进 [ImageCache]，演职员一多就把缓存
+/// 压满（与刮削作品图同一个问题，#3722 video-18）。只降解码尺寸，磁盘字节不动。
+const int kVideoCreditAvatarDecodePixelWidth = 256;
+
 /// 卡片图与它的来源（本地路径或 URL，只用于诊断日志）。
 typedef VideoCreditCardImage = ({ImageProvider image, String source});
 
@@ -53,12 +60,27 @@ VideoCreditCardImage? _imageFor(
       case null:
         return (image: kPendingCoverImage, source: path);
       case true:
-        return (image: FileImage(File(path)), source: path);
+        return (
+          image: resizedFileImage(
+            File(path),
+            width: kVideoCreditAvatarDecodePixelWidth,
+          ),
+          source: path,
+        );
       case false:
         break;
     }
   }
-  return url == null ? null : (image: AppCachedHttpImage(url), source: url);
+  if (url == null) return null;
+  // 不给 AppCachedHttpImage 传 maxWidth：那会让缓存管理器另存一份缩放后的磁盘文件。
+  return (
+    image: ResizeImage(
+      AppCachedHttpImage(url),
+      width: kVideoCreditAvatarDecodePixelWidth,
+      allowUpscaling: false,
+    ),
+    source: url,
+  );
 }
 
 /// 人物横滑轨道（M3E）：区块标题 + 计数胶囊，一人一枚圆形头像卡（照片 + 姓名 +

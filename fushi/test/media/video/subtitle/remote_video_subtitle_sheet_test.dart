@@ -577,4 +577,138 @@ void main() {
       findsOneWidget,
     );
   });
+
+  group('生成语言', () {
+    testWidgets('老 host（没列 languages）：不显示语言选择，提交不带 language', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = _Host(const <String>['video_subtitle']);
+      await pump(tester, service(host));
+      expect(
+        find.byKey(const ValueKey<String>('remote-subtitle-language')),
+        findsNothing,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-start')),
+      );
+      await tester.pumpAndSettle();
+      expect(host.runs.single.containsKey('language'), isFalse);
+    });
+
+    testWidgets('新 host：显示语言选择，选普通话后提交带 language=zh', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = _Host(
+        const <String>['video_subtitle'],
+        capability: const <String, Object?>{
+          'video_subtitle': <String, Object?>{
+            'languages': <String>['ja', 'zh'],
+          },
+        },
+      );
+      await pump(tester, service(host));
+      expect(
+        find.byKey(const ValueKey<String>('remote-subtitle-language')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-language-zh')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-start')),
+      );
+      await tester.pumpAndSettle();
+      expect(host.runs.single['language'], 'zh');
+    });
+
+    const Map<String, Object?> multiLanguageHost = <String, Object?>{
+      'video_subtitle': <String, Object?>{
+        'languages': <String>['ja', 'zh'],
+      },
+    };
+
+    testWidgets('播放器音轨是普通话：新 host 上默认选普通话并说明来由，直接提交带 zh', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = _Host(const <String>[
+        'video_subtitle',
+      ], capability: multiLanguageHost);
+      await pump(
+        tester,
+        service(host),
+        sheetTarget: const RemoteVideoSubtitleTarget(
+          title: 'Dub 01',
+          episodes: <RemoteVideoSubtitleEpisode>[
+            RemoteVideoSubtitleEpisode(videoId: 'v9', title: 'Dub 01'),
+          ],
+          audioLanguages: <String>['chi'],
+        ),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('remote-subtitle-language-source')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-start')),
+      );
+      await tester.pumpAndSettle();
+      expect(host.runs.single['language'], 'zh');
+    });
+
+    testWidgets('刮削原语言是中文（合集页没有音轨）：新 host 上默认选普通话', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = _Host(const <String>[
+        'video_subtitle',
+      ], capability: multiLanguageHost);
+      await pump(
+        tester,
+        service(host),
+        sheetTarget: RemoteVideoSubtitleTarget.season(
+          title: 'Show',
+          members: const <RemoteVideoSubtitleSeasonMember>[
+            RemoteVideoSubtitleSeasonMember(
+              episode: RemoteVideoSubtitleEpisode(videoId: 'a', title: 'E1'),
+            ),
+          ],
+          originalLanguage: 'zh',
+        ),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-start')),
+      );
+      await tester.pumpAndSettle();
+      expect(host.runs.single['language'], 'zh');
+    });
+
+    testWidgets('猜到普通话但 host 只认日语：退回日语，不挂「host 太旧」拦截', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = _Host(const <String>['video_subtitle']);
+      await pump(
+        tester,
+        service(host),
+        sheetTarget: const RemoteVideoSubtitleTarget(
+          title: 'Dub 01',
+          episodes: <RemoteVideoSubtitleEpisode>[
+            RemoteVideoSubtitleEpisode(videoId: 'v9', title: 'Dub 01'),
+          ],
+          audioLanguages: <String>['chi'],
+        ),
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('remote-subtitle-language-unsupported'),
+        ),
+        findsNothing,
+      );
+      expect(startPressed(tester), isNotNull);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-start')),
+      );
+      await tester.pumpAndSettle();
+      expect(host.runs.single.containsKey('language'), isFalse);
+    });
+  });
 }

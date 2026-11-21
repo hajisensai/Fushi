@@ -1,9 +1,12 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/diagnostics/fushi_binding.dart'
+    show FushiSecondaryWidgetsFlutterBinding;
 import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/engine_bindings.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart'
@@ -33,7 +36,10 @@ import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
 void popupMain() {
   runZonedGuarded<Future<void>>(
     () async {
-      WidgetsFlutterBinding.ensureInitialized();
+      FushiSecondaryWidgetsFlutterBinding.ensureInitialized();
+      // 本 engine 不跑 main()：引擎数据根 / 日志等装配点自己装，否则在线 TTS
+      // 兜底取缓存目录即抛，app 外查词没有兜底发音（BUG-4940）。
+      installEntryPointHostBindings();
       // BUG-2790：本引擎缓存复用、关窗只 detach，查词 WebView 必须走 TLHC，见
       // [dictionaryPopupWebViewUsesHybridComposition]。
       dictionaryPopupWebViewUsesHybridComposition = false;

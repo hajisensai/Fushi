@@ -7,6 +7,8 @@
 ///
 /// 「把抓到的网页交给 AI」开关是首次确认（`ai_web_search_consent.dart`，开 AI 生成字幕
 /// 前问一次）落下的那个决定，之后在这里改；关着 / 没答过时联网搜索对 AI 功能不生效。
+/// 「允许 AI 助手自主联网搜索」管的是助手的 `web.search` / `web.read`（首次确认在助手
+/// 对话里的确认卡上，见 `ctl_web_search_routes.dart`），与上面那个开关互相独立。
 ///
 /// 选项是声明式 item（后端分段 + 两个文本框），不手画控件：分段单选走
 /// `SettingsSegmentedItem`（渲染器内部用 `adaptiveSegmentedButton`，MD3 / Apple
@@ -15,7 +17,7 @@ library;
 
 import 'package:fushi_engine/ai/web_search.dart';
 import 'package:fushi/src/models/preference_keys.dart'
-    show kAiWebSearchPageFetchAllow;
+    show kAiAgentWebSearchOff, kAiWebSearchPageFetchAllow;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -130,5 +132,23 @@ List<SettingsItem> buildAiWebSearchItems() => <SettingsItem>[
         kAiWebSearchPageFetchAllow,
     onChanged: (SettingsContext c, bool value) =>
         c.appModel.prefsRepo.setAiWebSearchPageFetchAllowed(value),
+  ),
+  // AI 助手自主联网搜索（操作 web.search / web.read）：开着 = 助手可以用，第一次用时
+  // 在对话里出确认卡（同意后记住）；关 = 两条操作不可用；再打开回到「还没同意」，
+  // 下次用时重新确认（所有者 2026-11-20「第一次要确认吧」）。
+  SettingsSwitchItem(
+    id: 'ai.web_search.agent',
+    title: t.ai_web_search_agent,
+    subtitle: t.ai_web_search_agent_hint,
+    icon: FushiIcons.travelExplore,
+    // 授权类开关：只能用户自己拨，AI 助手的 settings.set 写不进去。
+    userOnly: true,
+    defaultValue: true,
+    visible: (SettingsContext c) =>
+        c.appModel.prefsRepo.aiWebSearchConfig != null,
+    value: (SettingsContext c) =>
+        c.appModel.prefsRepo.aiAgentWebSearchConsent != kAiAgentWebSearchOff,
+    onChanged: (SettingsContext c, bool value) =>
+        c.appModel.prefsRepo.setAiAgentWebSearchEnabled(value),
   ),
 ];

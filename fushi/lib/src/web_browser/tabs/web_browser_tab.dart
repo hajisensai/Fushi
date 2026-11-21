@@ -2,6 +2,7 @@ import 'dart:ui' show Rect;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:fushi/src/web_browser/web_browser_fullscreen.dart';
 
 /// 浏览器里的一个标签页：只放跨组件共享的「可观察状态」。
 ///
@@ -43,6 +44,7 @@ class WebBrowserTab extends ChangeNotifier {
   bool _desktopMode = false;
   int _textZoom = 100;
   bool _fullscreen = false;
+  WebBrowserFullscreenFit _fullscreenFit = WebBrowserFullscreenFit.unknown;
   bool _findOpen = false;
   InAppWebViewController? _controller;
 
@@ -79,6 +81,11 @@ class WebBrowserTab extends ChangeNotifier {
   /// 网页请求了全屏（HTML5 视频全屏）：浏览器 chrome 全部让位。
   bool get fullscreen => _fullscreen;
 
+  /// 全屏中视频的方向（页内全屏脚本上报；不在全屏时恒为 unknown）。浏览页据此
+  /// 锁屏幕方向、决定竖拿横视频时是否分屏。
+  WebBrowserFullscreenFit get fullscreenFit =>
+      _fullscreen ? _fullscreenFit : WebBrowserFullscreenFit.unknown;
+
   /// 页内查找条开着（壳在此时显示 `WebBrowserFindBar`）。
   bool get findOpen => _findOpen;
 
@@ -96,6 +103,7 @@ class WebBrowserTab extends ChangeNotifier {
     bool? desktopMode,
     int? textZoom,
     bool? fullscreen,
+    WebBrowserFullscreenFit? fullscreenFit,
     bool? findOpen,
   }) {
     bool changed = false;
@@ -138,6 +146,10 @@ class WebBrowserTab extends ChangeNotifier {
     }
     if (fullscreen != null && fullscreen != _fullscreen) {
       _fullscreen = fullscreen;
+      changed = true;
+    }
+    if (fullscreenFit != null && fullscreenFit != _fullscreenFit) {
+      _fullscreenFit = fullscreenFit;
       changed = true;
     }
     if (findOpen != null && findOpen != _findOpen) {

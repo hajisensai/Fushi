@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/ffmpeg_hdr_tone_map.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show MiningClipFormat;
 import 'package:fushi_engine/media/video/video_clip_exporter.dart';
@@ -29,6 +30,9 @@ List<String> buildSynchronizedVideoClipArgs({
   String? tlsPinSha256,
   String? audioTlsPinSha256,
   MiningClipFormat format = MiningClipFormat.mp4H264,
+  // HDR10 / HLG 源映射到 SDR（[kFfmpegHdrToSdrScaleFilter]），排在缩放之后、转 8-bit
+  // 4:2:0 之前。只由 [exportSynchronizedVideoClip] 按 [ffmpegShouldToneMapToSdr] 置 true。
+  bool toneMapToSdr = false,
 }) {
   final String soundPath = audioPath ?? videoPath;
   // FFmpeg normalizes a source's start time and seek for both streams. Keep
@@ -90,6 +94,7 @@ List<String> buildSynchronizedVideoClipArgs({
         '${cropFilter == null || cropFilter.isEmpty ? "" : "$cropFilter,"}'
         'fps=$fps,'
         "scale=w='trunc(min($maxWidth,iw)/2)*2':h=-2,"
+        '${toneMapToSdr ? "$kFfmpegHdrToSdrScaleFilter," : ""}'
         'format=yuv420p',
     '-af', 'asetpts=$pts',
     ...synchronizedClipVideoArgs(format),
@@ -320,6 +325,17 @@ Future<VideoClipExportResult> exportSynchronizedVideoClip({
   }
   try {
     await output.parent.create(recursive: true);
+    // 注入的 [backend]（测试 / 宿主指定）不走进程级探测：探测查的是进程级后端。
+    final bool toneMapToSdr =
+        backend == null &&
+        await ffmpegShouldToneMapToSdr(
+          videoPath,
+          inputArgs: buildFfmpegRemoteInputArgs(
+            videoPath,
+            tlsPinSha256: tlsPinSha256,
+            httpHeaders: headers,
+          ),
+        );
     final FfmpegRunResult result = await (backend ?? resolveFfmpegBackend())
         .run(
           buildSynchronizedVideoClipArgs(
@@ -340,6 +356,7 @@ Future<VideoClipExportResult> exportSynchronizedVideoClip({
             tlsPinSha256: tlsPinSha256,
             audioTlsPinSha256: audioTlsPinSha256,
             format: format,
+            toneMapToSdr: toneMapToSdr,
           ),
           timeout,
         );

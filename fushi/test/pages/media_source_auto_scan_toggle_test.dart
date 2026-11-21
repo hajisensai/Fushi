@@ -135,4 +135,68 @@ void main() {
     expect(find.byType(FushiLinearProgressIndicator), findsNothing);
     expect(sourceScanActivity.isIdle, isTrue);
   }, variant: platforms);
+
+  // 拍板台 design-nmv-scan-progress：长扫描在行内显示进度——列目录阶段「已找到 N 个
+  // 文件 · 当前目录」+ 不定进度条，导入阶段「正在导入 i/n · 当前条目」+ 定量进度条。
+  testWidgets('a running scan shows listing / importing progress on the row', (
+    WidgetTester tester,
+  ) async {
+    await pumpView(tester);
+    final Completer<void> hold = Completer<void>();
+    addTearDown(() {
+      if (!hold.isCompleted) hold.complete();
+    });
+    final Future<void> scan = sourceScanActivity.run(source, () => hold.future);
+    await tester.pump();
+    expect(find.text(t.media_source_scan_progress_started), findsOneWidget);
+
+    sourceScanActivity.reportListing(source, 'D:/Books/Series A', 12);
+    await tester.pump();
+    expect(
+      find.text(
+        '${t.media_source_scan_progress_listing(count: 12)}  ·  Series A',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<FushiLinearProgressIndicator>(
+            find.byType(FushiLinearProgressIndicator),
+          )
+          .value,
+      isNull,
+      reason: '列目录阶段总量未知，画不定进度条',
+    );
+
+    await tester.pump(const Duration(milliseconds: 300));
+    sourceScanActivity.beginImport(source, 4);
+    sourceScanActivity.reportImportItem(source, 'D:/Books/Series A/v1.epub');
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(
+      find.text(
+        '${t.media_source_scan_progress_importing(current: 1, total: 4)}'
+        '  ·  v1.epub',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<FushiLinearProgressIndicator>(
+            find.byType(FushiLinearProgressIndicator),
+          )
+          .value,
+      0.25,
+    );
+
+    hold.complete();
+    await scan;
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 1));
+    expect(
+      find.byKey(ValueKey<String>('media_source_scan_progress_$source')),
+      findsNothing,
+    );
+    expect(find.byType(FushiLinearProgressIndicator), findsNothing);
+  }, variant: platforms);
 }

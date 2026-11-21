@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:fushi_compute/fushi_compute.dart';
+import 'package:fushi_engine/media/video/video_fingerprint_store.dart';
 
 /// 对 [absolutePath]（调用前 stat 得到 [stat]）算全文件身份；返回前须确认文件状态
 /// 未变，变了就抛 [FileSystemException]。
@@ -36,38 +37,28 @@ class VideoSourceFingerprint {
   final Map<String, _PendingFingerprint> _inFlight =
       <String, _PendingFingerprint>{};
 
+  /// 落盘缓存（拍板台 left3657）：互联 host 起服务时挂上、停服务时摘掉。挂着时算过的
+  /// 指纹进程重启后仍可直接命中；null = 只有内存缓存（单测 / host 未启用）。
+  VideoFingerprintStore? store;
+
   static bool isLocalPath(String? path) =>
       path != null &&
       path.isNotEmpty &&
       !RegExp(r'^[a-zA-Z][a-zA-Z0-9+.-]*://').hasMatch(path);
 
   Future<String> fingerprint(String path) async {
-    if (!isLocalPath(path)) {
-      throw const FileSystemException(
-        'Card sources require a local video file',
-      );
-    }
-    final String absolutePath = File(path).absolute.path;
-    final FileStat stat = await File(absolutePath).stat();
-    if (stat.type != FileSystemEntityType.file) {
-      throw FileSystemException('Card source video is missing', path);
-    }
-    final (FileStat, String)? cached = _cache.remove(absolutePath);
-    if (cached != null && _sameFileState(stat, cached.$1)) {
-      _cache[absolutePath] = cached;
-      return cached.$2;
-    }
+    final (String absolutePath, FileStat stat) = await _statLocal(path);
+    final String? known = await _knownFor(absolutePath, stat);
+    if (known != null) return known;
     final _PendingFingerprint? running = _inFlight[absolutePath];
     if (running != null && _sameFileState(stat, running.stat)) {
       return running.digest;
     }
     final _PendingFingerprint pending = _PendingFingerprint(
       stat,
-      _compute(absolutePath, stat).then((String digest) {
-        _cache[absolutePath] = (stat, digest);
-        while (_cache.length > maxCachedFiles) {
-          _cache.remove(_cache.keys.first);
-        }
+      _compute(absolutePath, stat).then((String digest) async {
+        _remember(absolutePath, stat, digest);
+        await store?.put(absolutePath, stat, digest);
         return digest;
       }),
     );
@@ -79,6 +70,47 @@ class VideoSourceFingerprint {
       if (identical(_inFlight[absolutePath], pending)) {
         _inFlight.remove(absolutePath);
       }
+    }
+  }
+
+  /// 不算、只查：[path] 当前状态下已经算过（内存或落盘缓存）的指纹，没算过返回 null。
+  /// 文件不在 / 不是本地文件同 [fingerprint] 一样抛 [FileSystemException]。回跳问 host
+  /// 时用它，不让用户干等整文件哈希（拍板台 left3657）。
+  Future<String?> known(String path) async {
+    final (String absolutePath, FileStat stat) = await _statLocal(path);
+    return _knownFor(absolutePath, stat);
+  }
+
+  Future<(String, FileStat)> _statLocal(String path) async {
+    if (!isLocalPath(path)) {
+      throw const FileSystemException(
+        'Card sources require a local video file',
+      );
+    }
+    final String absolutePath = File(path).absolute.path;
+    final FileStat stat = await File(absolutePath).stat();
+    if (stat.type != FileSystemEntityType.file) {
+      throw FileSystemException('Card source video is missing', path);
+    }
+    return (absolutePath, stat);
+  }
+
+  Future<String?> _knownFor(String absolutePath, FileStat stat) async {
+    final (FileStat, String)? cached = _cache.remove(absolutePath);
+    if (cached != null && _sameFileState(stat, cached.$1)) {
+      _cache[absolutePath] = cached;
+      return cached.$2;
+    }
+    final String? stored = await store?.lookup(absolutePath, stat);
+    if (stored != null) _remember(absolutePath, stat, stored);
+    return stored;
+  }
+
+  void _remember(String absolutePath, FileStat stat, String digest) {
+    _cache.remove(absolutePath);
+    _cache[absolutePath] = (stat, digest);
+    while (_cache.length > maxCachedFiles) {
+      _cache.remove(_cache.keys.first);
     }
   }
 

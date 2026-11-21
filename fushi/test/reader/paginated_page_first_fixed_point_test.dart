@@ -1,12 +1,11 @@
 @Tags(<String>['chrome'])
 library;
 
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
+
+import '../helpers/node_runtime.dart';
 
 /// 翻页模式「存→取」不动点 + 竖排对开（折叠屏书本姿态）几何，真 Chrome 跑生产分页 shell。
 ///
@@ -25,64 +24,36 @@ void main() {
     'paginated restore of every page-first char lands on the same page, '
     'including the foldable vertical spread, in real Chrome',
     () async {
-      final String? nodeExe = _resolveNode();
+      final String? nodeExe = resolveNodeExecutable();
       if (nodeExe == null) {
         markTestSkipped('node not found on PATH; skipping JS execution');
         return;
       }
-      final Directory temp = Directory.systemTemp.createTempSync('pfixed-');
-      try {
-        final File payload = File('${temp.path}/engine.json')
-          ..writeAsStringSync(
-            jsonEncode(<String, String>{
-              'engine': ReaderPaginationScripts.engineShell(
-                vnMode: false,
-                continuousMode: false,
-              ),
-              'spreadCss': ReaderContentStyles.verticalSpreadCss(
-                marginLeftCss: '20px',
-                marginRightCss: '28px',
-                gapPx: 40,
-              ),
-            }),
-          );
-        final ProcessResult result = await Process.run(nodeExe, <String>[
-          'test/reader/paginated_page_first_fixed_point_harness.mjs',
-          payload.path,
-        ]).timeout(const Duration(seconds: 80));
-        if (result.exitCode == 77) {
-          markTestSkipped('Chrome unavailable: ${result.stdout}');
-          return;
-        }
-        expect(
-          result.exitCode,
-          0,
-          reason: '${result.stdout}\n${result.stderr}',
-        );
-        expect(
-          result.stdout,
-          contains('PASS paginated page-first fixed point'),
-        );
-      } finally {
-        temp.deleteSync(recursive: true);
+      final Map<String, String> payload = <String, String>{
+        'engine': ReaderPaginationScripts.engineShell(
+          vnMode: false,
+          continuousMode: false,
+        ),
+        'spreadCss': ReaderContentStyles.verticalSpreadCss(
+          marginLeftCss: '20px',
+          marginRightCss: '28px',
+          gapPx: 40,
+        ),
+      };
+      final NodeHarnessResult result = await runNodeHarness(
+        nodeExe,
+        'test/reader/paginated_page_first_fixed_point_harness.mjs',
+        payload,
+        timeout: const Duration(seconds: 80),
+      );
+      if (result.exitCode == 77) {
+        markTestSkipped('Chrome unavailable: ${result.stdout}');
+        return;
       }
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+      expect(result.stdout, contains('PASS paginated page-first fixed point'));
     },
     // 起真 Chrome 的套件在机器忙时会互相饿死；外层 90s，内层进程 80s。
     timeout: const Timeout(Duration(seconds: 90)),
   );
-}
-
-String? _resolveNode() {
-  final List<String> candidates = Platform.isWindows
-      ? <String>['node.exe', 'node']
-      : <String>['node'];
-  for (final String name in candidates) {
-    try {
-      final ProcessResult probe = Process.runSync(name, <String>['--version']);
-      if (probe.exitCode == 0) return name;
-    } on ProcessException {
-      // Try the next executable name.
-    }
-  }
-  return null;
 }

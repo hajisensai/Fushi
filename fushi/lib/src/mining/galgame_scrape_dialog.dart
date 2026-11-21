@@ -23,6 +23,7 @@ import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -53,6 +54,88 @@ Future<bool> showGalgameScrapeDialog({
         GalgameScrapeDialog(game: game, repo: repo, initialQuery: initialQuery),
   );
   return applied ?? false;
+}
+
+/// 游戏「在线搜索封面」弹窗（拍板 left3612：设置封面也能用刮削源的封面）。
+///
+/// 与 [showGalgameScrapeDialog] 同一个搜索界面（同一组刮削源、同样认条目 URL /
+/// 源 ID），区别只在「使用」：**只取所选候选的封面**落到 `game_covers`，不写源
+/// 快照、不改显示名 / 简介 / 背景，也不改 primarySource（见
+/// [applyGalgameCandidateCover]）。对应视频单集的「在线搜索封面」（只取图、不改作品
+/// 身份）。
+///
+/// 返回 true = 封面已换；false / 取消 = 无写入。
+Future<bool> showGalgameOnlineCoverDialog({
+  required BuildContext context,
+  required GalgameEntry game,
+  required GalgameRepository repo,
+}) async {
+  final bool? applied = await showAppDialog<bool>(
+    context: context,
+    builder: (BuildContext ctx) =>
+        GalgameScrapeDialog(game: game, repo: repo, coverOnly: true),
+  );
+  return applied ?? false;
+}
+
+/// [applyGalgameCandidateCover] 的结局：已换 / 该条目在源上没有封面图 / 失败（查
+/// 详情或下载失败，旧封面原样保留）。
+enum GalgameCandidateCoverOutcome { applied, noCover, failed }
+
+/// 「在线搜索封面」的落地：只把 [candidate] 的封面换成游戏封面，不碰元数据。
+///
+/// 封面 URL 与 [applyGalgameScrapeCandidate] 同口径：先 `fetchById` 取详情里的完整
+/// 封面，详情没有再退回候选缩略图 URL。下载走 [downloadGalgameCoverToFile]（统一
+/// 封面落盘入口、`game_covers/<id>.<ext>`），成功才 `setCoverPath`；任何一步失败
+/// 都不动旧封面。用户手选的封面本来就受保护——自动补图只在「没有可用封面文件」
+/// 时才下载（[shouldAutoDownloadScrapedCover]），所以这里不需要额外标记。
+/// [coverHttpClient] / [coverDirectory] 是测试接缝。
+Future<GalgameCandidateCoverOutcome> applyGalgameCandidateCover({
+  required GalgameRepository repo,
+  required String gameId,
+  required SourceCandidate candidate,
+  GalgameScrapeController? controller,
+  HttpClient? coverHttpClient,
+  Directory? coverDirectory,
+}) async {
+  if (repo.byId(gameId) == null) return GalgameCandidateCoverOutcome.failed;
+  final GalgameScrapeController used =
+      controller ?? GalgameScrapeController.instance;
+  String? url;
+  bool lookupFailed = false;
+  try {
+    final GalgameMetadataDraft? draft = await used.fetchById(
+      candidate.source,
+      candidate.externalId,
+    );
+    url = _nonEmptyUrl(draft?.coverUrl);
+  } catch (e, stack) {
+    // 详情取失败不致命：候选自带缩略图 URL 时照样能换；两头都没有才算失败。
+    lookupFailed = true;
+    ErrorLogService.instance.log('galgame.onlineCover.lookup', e, stack);
+  }
+  url ??= _nonEmptyUrl(candidate.coverUrl);
+  if (url == null) {
+    return lookupFailed
+        ? GalgameCandidateCoverOutcome.failed
+        : GalgameCandidateCoverOutcome.noCover;
+  }
+  final String? saved = await downloadGalgameCoverToFile(
+    gameId: gameId,
+    url: url,
+    client: coverHttpClient,
+    coverDirectory: coverDirectory,
+  );
+  if (saved == null) return GalgameCandidateCoverOutcome.failed;
+  // 下载期间条目可能已被移除：行不在就不写。
+  if (repo.byId(gameId) == null) return GalgameCandidateCoverOutcome.failed;
+  await repo.setCoverPath(gameId, saved);
+  return GalgameCandidateCoverOutcome.applied;
+}
+
+String? _nonEmptyUrl(String? url) {
+  final String? trimmed = url?.trim();
+  return trimmed == null || trimmed.isEmpty ? null : trimmed;
 }
 
 /// 纯函数：把用户贴进搜索框的**条目页 URL** 归一化成源裸 ID，其余输入原样透传。
@@ -254,6 +337,7 @@ class GalgameScrapeDialog extends StatefulWidget {
     required this.game,
     required this.repo,
     this.initialQuery,
+    this.coverOnly = false,
     this.controllerOverride,
     this.coverHttpClientOverride,
     this.coverDirectoryOverride,
@@ -261,6 +345,10 @@ class GalgameScrapeDialog extends StatefulWidget {
 
   final GalgameEntry game;
   final GalgameRepository repo;
+
+  /// true = 「在线搜索封面」模式：「使用」只换封面（[applyGalgameCandidateCover]），
+  /// 不落元数据。见 [showGalgameOnlineCoverDialog]。
+  final bool coverOnly;
 
   /// 搜索框预填词；null 用 [GalgameEntry.displayName]。
   final String? initialQuery;
@@ -338,6 +426,10 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
   Future<void> _use(SourceCandidate candidate) async {
     if (_applyingCandidate != null) return; // 再入守卫：一次应用含多次网络往返。
     setState(() => _applyingCandidate = candidate);
+    if (widget.coverOnly) {
+      await _useCoverOnly(candidate);
+      return;
+    }
     bool applied = false;
     String? failureMessage;
     try {
@@ -371,6 +463,41 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
     );
   }
 
+  /// 「在线搜索封面」模式的「使用」：只换封面。失败 / 没图时复位转圈、弹窗保留，
+  /// 让用户改选别的候选。
+  Future<void> _useCoverOnly(SourceCandidate candidate) async {
+    final GalgameCandidateCoverOutcome outcome =
+        await applyGalgameCandidateCover(
+          repo: widget.repo,
+          gameId: widget.game.id,
+          candidate: candidate,
+          controller: _controller,
+          coverHttpClient: widget.coverHttpClientOverride,
+          coverDirectory: widget.coverDirectoryOverride,
+        );
+    if (!mounted) return;
+    switch (outcome) {
+      case GalgameCandidateCoverOutcome.applied:
+        Navigator.of(context).pop(true);
+        FushiToast.show(
+          msg: t.game_cover_updated,
+          severity: ToastSeverity.success,
+        );
+      case GalgameCandidateCoverOutcome.noCover:
+        setState(() => _applyingCandidate = null);
+        FushiToast.show(
+          msg: t.game_cover_online_no_image,
+          severity: ToastSeverity.warning,
+        );
+      case GalgameCandidateCoverOutcome.failed:
+        setState(() => _applyingCandidate = null);
+        FushiToast.show(
+          msg: t.book_scrape_failed,
+          severity: ToastSeverity.error,
+        );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -378,8 +505,10 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
       maxWidth: 560,
       scrollable: false,
       child: FushiModalSheetFrame(
-        title: t.game_scrape,
-        leadingIcon: FushiIcons.cloudDownload,
+        title: widget.coverOnly ? t.game_cover_online_search : t.game_scrape,
+        leadingIcon: widget.coverOnly
+            ? FushiIcons.travelExplore
+            : FushiIcons.cloudDownload,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           0,
@@ -397,6 +526,15 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             _buildSearchRow(),
+            if (widget.coverOnly) ...<Widget>[
+              SizedBox(height: tokens.spacing.gap),
+              Text(
+                t.game_cover_online_hint,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
             SizedBox(height: tokens.spacing.gap),
             Flexible(
               child: ConstrainedBox(

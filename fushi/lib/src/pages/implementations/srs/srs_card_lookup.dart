@@ -27,6 +27,8 @@ import 'package:fushi_dictionary/fushi_dictionary.dart'
     show DictionarySearchResult, FushiRubySpan, shiftRubySpans;
 
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/favorites/favorite_lookup_context.dart'
+    show FavoriteLookupContext;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/lookup/sentence_extraction.dart';
 import 'package:fushi/src/lookup/source_lookup_sentence.dart'
@@ -38,7 +40,10 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/popup_body_static_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
-    show MinePopupResult;
+    show
+        DictionaryPopupWebViewState,
+        MinePopupResult,
+        OpenAdvancedMiningCallback;
 import 'package:fushi/src/reader/reader_host_hover_lookup.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart'
     show ReaderSelectionScripts;
@@ -113,6 +118,10 @@ abstract interface class SrsCardLookupSurface {
 /// 查词结果的数据源（测试注入；生产走 [AppModel.searchDictionary]）。
 typedef SrsCardLookupSearch =
     Future<DictionarySearchResult> Function(String term, int maximumTerms);
+
+/// 卡面查词宿主的「高级制卡」语境：查词所在那句（空串 = 没有语境）。
+FavoriteLookupContext? srsLookupMiningContext(String sentence) =>
+    sentence.isEmpty ? null : FavoriteLookupContext(sentence: sentence);
 
 /// 卡面查词的数据源覆写点：null（生产）= 本机词典。widget 测试覆写成假词典。
 final Provider<SrsCardLookupSearch?> srsCardLookupSearchProvider =
@@ -377,6 +386,19 @@ class _SrsCardLookupHostState extends ConsumerState<SrsCardLookupHost>
     withFallbackMiningSentence(fields, _sentence),
   );
 
+  /// 「高级制卡」字段预填的例句兜底：与 [onMineEntry] 同一句（[_sentence]）。不给时
+  /// mixin 退回宿主级 [favoriteLookupContext]（本宿主为 null），预填里 Sentence 恒空，
+  /// 而真正落卡时 [onMineEntry] 又补上了这句——预填与落卡不一致（BUG-4942）。
+  /// 按表面传、不覆写宿主级 getter：收藏行为不变。
+  @override
+  OpenAdvancedMiningCallback? advancedMiningOpenerFor(
+    GlobalKey<DictionaryPopupWebViewState> webViewKey, {
+    FavoriteLookupContext? Function()? lookupContext,
+  }) => super.advancedMiningOpenerFor(
+    webViewKey,
+    lookupContext: lookupContext ?? () => srsLookupMiningContext(_sentence),
+  );
+
   int get _visibleDepth =>
       _popup.entries.where((DictionaryPopupEntry e) => e.visible).length;
 
@@ -407,12 +429,17 @@ class _SrsCardLookupHostState extends ConsumerState<SrsCardLookupHost>
     super.didChangeDependencies();
     // 本页之上压了别的路由（编辑页 / 浏览 / 来源跳转 / 对话框）：弹窗栈挂在根 Overlay，
     // 不收起会盖在新路由上面。
+    //
+    // 例外：查词会话自己弹的对话框（高级制卡 / 制卡动作 / 笔记查看……都经
+    // [runWithLookupPopupHidden]）也是压在本页之上的路由，但它属于这次查词——弹窗只停靠、
+    // 不关栈。关栈会触发 [SrsCardLookupHost.onClosed]（浏览器里 = 扩展续播视频），且
+    // 对话框确认时要回点的那层弹窗已被关掉（BUG-4942：点「高级制卡」视频自己播起来）。
     final bool current = ModalRoute.of(context)?.isCurrent ?? true;
     if (current != _routeCurrent) {
       _routeCurrent = current;
-      if (!current && _stackOpen) {
+      if (!current && _stackOpen && !lookupPopupHiddenByDialog) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _closeAll();
+          if (mounted && !lookupPopupHiddenByDialog) _closeAll();
         });
       }
       _scheduleOverlayRebuild();

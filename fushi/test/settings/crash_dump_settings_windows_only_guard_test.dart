@@ -25,7 +25,7 @@ void main() {
     final int next = schema.indexOf("id: '", idx + 5);
     final String item = schema.substring(idx, next < 0 ? schema.length : next);
     expect(
-      item.contains('visible: (_) => Platform.isWindows'),
+      item.contains('visible: (_) => hostPlatform.isWindows'),
       isTrue,
       reason: '崩溃转储项必须 Windows-only（native dump 仅 Windows runner 写）',
     );

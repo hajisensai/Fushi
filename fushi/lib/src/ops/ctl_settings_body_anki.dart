@@ -38,6 +38,7 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart'
         VideoMiningImageMode;
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
     show kMiningPadMaxMs;
+import 'package:fushi/src/platform/host_platform.dart';
 
 /// Anki 设置页（`SettingsDestination.body` 逃生口，正文自绘 widget）在控制通道上的条目。
 ///
@@ -63,7 +64,8 @@ AnkiViewModel _vm(SettingsContext c) =>
 AnkiSettings _cfg(SettingsContext c) =>
     c.ref.read(ankiViewModelProvider).settings;
 
-bool _isDesktop() => Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+bool _isDesktop() =>
+    hostPlatform.isWindows || hostPlatform.isMacOS || hostPlatform.isLinux;
 
 /// 全部 Anki 设置页条目，按页面面板分页。
 List<CtlBodyPage> buildCtlAnkiBodyPages() => <CtlBodyPage>[
@@ -206,7 +208,7 @@ CtlBodyPage _connectionPage() => CtlBodyPage(
       id: 'connect_addon_install',
       title: t.anki_connect_addon_install,
       subtitle: t.anki_connect_addon_install_hint,
-      visible: (SettingsContext _) => Platform.isWindows,
+      visible: (SettingsContext _) => hostPlatform.isWindows,
       cli: SettingsCliAction(run: _installAddon),
     ),
     SettingsSwitchItem(
@@ -232,7 +234,7 @@ CtlBodyPage _connectionPage() => CtlBodyPage(
       id: 'desktop_executable_detect',
       title: t.anki_desktop_executable_detect,
       visible: (SettingsContext _) =>
-          AnkiDesktopLauncher.isSupported && Platform.isWindows,
+          AnkiDesktopLauncher.isSupported && hostPlatform.isWindows,
       cli: SettingsCliAction(run: _detectExecutable),
     ),
     _action(
@@ -419,7 +421,7 @@ CtlBodyPage _deckPage() => CtlBodyPage(
       id: 'backup_import',
       title: t.anki_backup_import,
       subtitle: t.anki_backup_import_hint(count: 0),
-      visible: (SettingsContext _) => Platform.isIOS,
+      visible: (SettingsContext _) => hostPlatform.isIOS,
       cli: const SettingsCliAction.unsupported(
         '仅 iOS（AnkiMobile 查重账本）有这一项；控制通道只存在于桌面端',
       ),
@@ -742,7 +744,7 @@ CtlBodyPage _mediaPage() {
       _choice<VideoMiningImageMode>(
         id: 'gal_mining_image_mode',
         title: t.gal_mining_image_mode,
-        visible: (SettingsContext _) => Platform.isWindows,
+        visible: (SettingsContext _) => hostPlatform.isWindows,
         options: <SettingsSegmentOption<VideoMiningImageMode>>[
           SettingsSegmentOption<VideoMiningImageMode>(
             value: VideoMiningImageMode.gif,
@@ -773,7 +775,7 @@ CtlBodyPage _mediaPage() {
       _clipFormatChoice(
         id: 'gal_mining_clip_format',
         title: t.gal_mining_clip_format,
-        visible: (SettingsContext _) => Platform.isWindows,
+        visible: (SettingsContext _) => hostPlatform.isWindows,
         read: (SettingsContext c) => c.appModel.galMiningClipFormat,
         write: (SettingsContext c, MiningClipFormat v) =>
             c.appModel.setGalMiningClipFormat(v),
@@ -781,7 +783,7 @@ CtlBodyPage _mediaPage() {
       _animatedFormatChoice(
         id: 'gal_mining_animated_format',
         title: t.gal_mining_animated_format,
-        visible: (SettingsContext _) => Platform.isWindows,
+        visible: (SettingsContext _) => hostPlatform.isWindows,
         read: (SettingsContext c) => c.appModel.galMiningAnimatedFormat,
         write: (SettingsContext c, MiningAnimatedFormat v) =>
             c.appModel.setGalMiningAnimatedFormat(v),
@@ -789,7 +791,7 @@ CtlBodyPage _mediaPage() {
       _stillFormatChoice(
         id: 'gal_mining_still_format',
         title: t.gal_mining_still_format,
-        visible: (SettingsContext _) => Platform.isWindows,
+        visible: (SettingsContext _) => hostPlatform.isWindows,
         read: (SettingsContext c) => c.appModel.galMiningStillFormat,
         write: (SettingsContext c, MiningStillFormat v) =>
             c.appModel.setGalMiningStillFormat(v),
@@ -798,7 +800,7 @@ CtlBodyPage _mediaPage() {
         id: 'gal_mining_audio_mode',
         title: t.gal_mining_audio_mode,
         subtitle: t.gal_mining_audio_mode_hint,
-        visible: (SettingsContext _) => Platform.isWindows,
+        visible: (SettingsContext _) => hostPlatform.isWindows,
         options: <SettingsSegmentOption<GalMiningAudioMode>>[
           for (final GalMiningAudioMode mode in GalMiningAudioMode.values)
             SettingsSegmentOption<GalMiningAudioMode>(
@@ -814,7 +816,7 @@ CtlBodyPage _mediaPage() {
         id: _id('gal_mining_audio_seconds'),
         title: t.gal_mining_audio_seconds,
         subtitle: t.gal_mining_audio_seconds_hint,
-        visible: (SettingsContext _) => Platform.isWindows,
+        visible: (SettingsContext _) => hostPlatform.isWindows,
         min: kGalMiningAudioSecondsMin.toDouble(),
         max: kGalMiningAudioSecondsMax.toDouble(),
         divisions: kGalMiningAudioSecondsMax - kGalMiningAudioSecondsMin,

@@ -276,9 +276,12 @@ class FloatingBallChannel {
   ///  - `screenOcrEngine`（Android 截屏 OCR 截到帧，问这次用哪个引擎）→
   ///    [onScreenOcrEngine]，回 `{engine}` 或 `{message, openApp}`（见
   ///    `ScreenOcrService.recognize`）；
-  ///  - `recognizeScreenOcrFrame {png, engine, fallback}`（Android 截屏 OCR 把定格帧
-  ///    交给 Dart 侧的本机模型 / Lens 识别）→ [onRecognizeScreenOcrFrame]，回
-  ///    `{lines}`（[screenOcrLinesToNative]）/ `{message}` / `{unavailable: true}`；
+  ///  - `recognizeScreenOcrFrame {png, engine, fallback, flow}`（Android 截屏 OCR 把
+  ///    定格帧交给 Dart 侧的本机模型 / Lens 识别）→ [onRecognizeScreenOcrFrame]，回
+  ///    `{lines}`（[screenOcrLinesToNative]）/ `{message}` / `{unavailable: true}` /
+  ///    `{cancelled: true}`；
+  ///  - `cancelScreenOcrRecognition {flow}`（用户在识别中的通知上取消了那次流程，
+  ///    BUG-4790）→ [onCancelScreenOcrRecognition]；
   ///  - `systemBallClosedByUser`（系统球 / 常驻通知上点了关闭）→
   ///    [onSystemBallClosedByUser]；
   ///  - `systemBallAction {id, anchor}`（桌面系统球上点了某个动作；anchor 是球在
@@ -312,8 +315,10 @@ class FloatingBallChannel {
       Uint8List png,
       String engine, {
       required bool fallback,
+      required int flow,
     })?
     onRecognizeScreenOcrFrame,
+    void Function(int flow)? onCancelScreenOcrRecognition,
     void Function()? onSystemBallClosedByUser,
     void Function(String id, Rect? anchor)? onSystemBallAction,
     void Function(String dock, double fraction)? onSystemBallPositionChanged,
@@ -357,12 +362,18 @@ class FloatingBallChannel {
           final Object? png = args['png'];
           final Object? engine = args['engine'];
           if (png is Uint8List && engine is String) {
+            final Object? flow = args['flow'];
             return await onRecognizeScreenOcrFrame?.call(
               png,
               engine,
               fallback: args['fallback'] == true,
+              flow: flow is int ? flow : 0,
             );
           }
+        case 'cancelScreenOcrRecognition':
+          final Object? args = call.arguments;
+          final Object? flow = args is Map ? args['flow'] : null;
+          if (flow is int) onCancelScreenOcrRecognition?.call(flow);
         case 'systemBallClosedByUser':
           onSystemBallClosedByUser?.call();
         case 'systemBallAction':

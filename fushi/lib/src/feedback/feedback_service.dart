@@ -100,8 +100,8 @@ String newFeedbackSubmissionKey([Random? random]) {
 }
 
 /// 提交进行到哪一步（提交页的进度文案）。[videoPrepare] 在发正文之前（转码失败 / 太大
-/// 要在反馈交上去之前告诉用户），[video] 在 [files]（样本文件）之前：两者共用服务端每 IP
-/// 每天的大附件额度，录屏是主证据，先传（BUG-4784）。
+/// 要在反馈交上去之前告诉用户），[video] 在 [files]（样本文件）之前：录屏是主证据，先传
+/// （BUG-4784；服务端每 IP 日额度已按视频 / 样本文件分开记，见 BUG-4797）。
 enum FeedbackSubmitStage {
   videoPrepare,
   sending,
@@ -128,6 +128,7 @@ class FeedbackRetryResult {
     this.uploaded = 0,
     this.remaining = 0,
     this.dropped = 0,
+    this.quotaResetAt,
   });
 
   /// 这次传成功的附件数。
@@ -138,6 +139,10 @@ class FeedbackRetryResult {
 
   /// 服务端明确拒收、不会再重试而丢掉的附件数（超过 24 小时补传窗口等）。
   final int dropped;
+
+  /// 有附件因每 IP 每天的上传额度用完没传上去时，额度的重置时刻（见
+  /// [FeedbackService.uploadQuotaResetAt]）；没撞额度为 null。
+  final DateTime? quotaResetAt;
 }
 
 /// 一次视频准备的选项：档位（默认原件）、取消、选 1080p 却退回 720p 时的通知。
@@ -192,12 +197,19 @@ class FeedbackStagedVideo {
 }
 
 class FeedbackSubmitResult {
-  const FeedbackSubmitResult(this.ticket, {this.failedAttachments = 0});
+  const FeedbackSubmitResult(
+    this.ticket, {
+    this.failedAttachments = 0,
+    this.quotaResetAt,
+  });
 
   final FeedbackTicket ticket;
 
   /// 正文已提交、但没传上去的附件数（网络中断等）。
   final int failedAttachments;
+
+  /// 有附件因每 IP 每天的上传额度用完没传上去时，额度的重置时刻；没撞额度为 null。
+  final DateTime? quotaResetAt;
 }
 
 class FeedbackService extends ChangeNotifier {
@@ -294,6 +306,19 @@ class FeedbackService extends ChangeNotifier {
 
   /// 视频附件进行中的转码 / 上传（没有返回 null）。
   FeedbackVideoTransfer? videoTransfer(String id) => _transfers[id];
+
+  /// 反馈 id → 上次补传大附件撞上每 IP 日额度（429 [FeedbackLimits.dailyQuotaError]）时
+  /// 算出的额度重置时刻。下一次补传开始时清掉、撞上再记；待传大附件都了结了也清掉。
+  final Map<String, DateTime> _quotaResetAt = <String, DateTime>{};
+
+  /// 这条反馈还有大附件因为今天的上传额度用完而留在本机时，额度何时重置（之后再点重试就能
+  /// 传）；没撞额度、或重置时刻已过返回 null。界面据此提醒「今天额度用完，几点后重试」，
+  /// 而不是笼统的「检查网络」。
+  DateTime? uploadQuotaResetAt(String id) {
+    final DateTime? at = _quotaResetAt[id];
+    if (at == null || !at.isAfter(DateTime.now())) return null;
+    return at;
+  }
 
   /// 这条反馈还在服务端的补传窗口内（见 [FeedbackLimits.attachWindow]），且是本机回执
   /// （账户列表里的条目不能补传：补传只认 ticket）。
@@ -678,10 +703,10 @@ class FeedbackService extends ChangeNotifier {
         if (gz != null) await _stash(receipt.id, 'log', gz);
       }
     }
-    // 视频先于样本文件传：服务端按上传 IP 每天给大附件一份共用的字节额度
-    // （services/leaderboard/src/feedback.js 的 videoBytesPerIpDay，视频与 f0..f2 共用），
-    // 3 个满额样本文件就能吃光它；录屏是复现过程的主证据，不能排在最后被 429 挤掉、
-    // 再等额度恢复时补传窗口（FeedbackLimits.attachWindow）已经过了。
+    // 视频先于样本文件传：录屏是复现过程的主证据。服务端按上传 IP 每天给视频与样本文件
+    // 各一份字节额度（services/leaderboard/src/feedback.js 的 videoBytesPerIpDay /
+    // fileBytesPerIpDay，拍板台 left3660），撞上了回 429 upload_quota_daily，留在待传区并记下
+    // 重置时刻（[uploadQuotaResetAt]）提醒用户。
     if (video != null) {
       onStage?.call(FeedbackSubmitStage.video);
       onVideoProgress?.call(0);
@@ -707,7 +732,11 @@ class FeedbackService extends ChangeNotifier {
           await _uploadPendingLarge(ticket, slot) == _SlotOutcome.uploaded;
       if (!ok) failed++;
     }
-    return FeedbackSubmitResult(ticket, failedAttachments: failed);
+    return FeedbackSubmitResult(
+      ticket,
+      failedAttachments: failed,
+      quotaResetAt: uploadQuotaResetAt(receipt.id),
+    );
   }
 
   /// 本机转码用的临时目录（`<数据根>/feedback/video_work/<时刻>`，用完即删）。
@@ -924,6 +953,12 @@ class FeedbackService extends ChangeNotifier {
       ErrorLogService.instance.log(logTag, e, st);
       if (isPermanentAttachmentRejection(e.status)) {
         outcome = _SlotOutcome.dropped;
+      } else if (e.status == 429 && e.code == FeedbackLimits.dailyQuotaError) {
+        // 今天的额度用完：留在待传区，记下重置时刻好提醒用户几点后重试。
+        _quotaResetAt[t.id] = FeedbackLimits.dailyQuotaResetAfter(
+          DateTime.now(),
+        );
+        notifyListeners();
       }
     } on ArgumentError catch (e, st) {
       // 待传文件大小越界（被别的程序改过）：再传也一样，丢掉。
@@ -949,8 +984,13 @@ class FeedbackService extends ChangeNotifier {
     await store.remove(id, slot);
     _pending[id]?.remove(slot);
     if (_pending[id]?.isEmpty ?? false) _pending.remove(id);
+    if (!_hasPendingLarge(id)) _quotaResetAt.remove(id);
     notifyListeners();
   }
+
+  bool _hasPendingLarge(String id) => (_pending[id] ?? const <String>{}).any(
+    (String s) => s == FeedbackLimits.videoSlot || FeedbackLimits.isFileSlot(s),
+  );
 
   /// 把这条反馈所有待传附件再传一遍。服务端同一槽位只收一次（重复传拿到 409
   /// `slot_taken` 已按成功处理）；被服务端永久拒收的（[isPermanentAttachmentRejection]）
@@ -966,7 +1006,9 @@ class FeedbackService extends ChangeNotifier {
     final LeaderboardClient client = _client();
     int uploaded = 0;
     int dropped = 0;
-    // 视频排第一个，理由同 [_submit]：它和样本文件共用服务端每 IP 每天的大附件额度。
+    // 上次撞额度的记号作废：这一轮再撞上会重新记。
+    _quotaResetAt.remove(id);
+    // 视频排第一个：录屏是复现过程的主证据，先传。
     final List<String> slots = (_pending[id] ?? <String>{}).toList()
       ..sort(
         (String a, String b) => a == b
@@ -1017,6 +1059,7 @@ class FeedbackService extends ChangeNotifier {
       uploaded: uploaded,
       remaining: _pending[id]?.length ?? 0,
       dropped: dropped,
+      quotaResetAt: uploadQuotaResetAt(id),
     );
   }
 

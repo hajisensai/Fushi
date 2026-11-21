@@ -108,10 +108,11 @@ class BookImportDialog extends StatefulWidget {
   /// （BUG-2266）。
   final List<String>? initialAudioPaths;
 
-  /// 测试计数缝：生产始终走 [MangaModule.isImageArchive]；回归测试只在外层计数后
-  /// 委托同一个真判据，证明真实对话框没有重复执行昂贵的整包载体判定。
+  /// 测试计数缝：生产始终走 [MangaModule.probeImageArchive]（后台 isolate，`.epub`
+  /// 探测解进书库根的 `.tmp-*`）；回归测试只在外层计数后委托同一个真判据，证明真实
+  /// 对话框没有重复执行昂贵的整包载体判定。
   @visibleForTesting
-  final bool Function(String path)? imageArchiveProbe;
+  final Future<bool> Function(String path)? imageArchiveProbe;
 
   /// 记住「引用原文件（不复制）」上次选择的偏好仓库（[PreferencesRepository.
   /// audiobookImportReferenceOriginal]）。null = 不读不写（测试 / 无应用上下文）。
@@ -213,7 +214,12 @@ class _BookImportDialogState extends State<BookImportDialog>
         (widget.prefs?.audiobookImportReferenceOriginal ?? false);
     _carrierResolver = ImportCarrierResolver(
       isDirectory: (String pth) => Directory(pth).existsSync(),
-      isImageArchive: widget.imageArchiveProbe ?? MangaModule.isImageArchive,
+      // 开包定性只给异步判据：`.epub` 要整本解析 spine 才分得清纯图 / 有正文，在
+      // UI isolate 上同步跑，选一本几百 MB 的文字 EPUB 界面就停住；探测的解压落点
+      // 也从系统临时目录挪进书库根（崩溃残留归导入残留清扫管）。BUG-4909 遗留。
+      probeImageArchive:
+          widget.imageArchiveProbe ??
+          (String pth) => MangaModule.probeImageArchive(widget.db, pth),
       directoryHasPageImages: MangaModule.directoryHasPageImages,
       directoryCarrierFileCount: MangaModule.directoryCarrierFileCount,
       directoryMokuroFileCount: MangaModule.directoryMokuroFileCount,
@@ -282,7 +288,11 @@ class _BookImportDialogState extends State<BookImportDialog>
             // OCR 归 [MangaImportDialog]，在线目录归下载页。书籍框只做书。
             // 2026-10 体验优化：导入中取消键禁用（见 buildImportPopGuard）。
             buildCancelAction(context),
-            buildImportAction(context, onImport: _doImport),
+            buildImportAction(
+              context,
+              onImport: _doImport,
+              enabled: _classifyingCount == 0,
+            ),
           ],
         ),
       ),
@@ -299,8 +309,21 @@ class _BookImportDialogState extends State<BookImportDialog>
   /// 同形，拖到书架时分类层按扩展名归 books（它刻意不为每次拖 EPUB 白开一次包）。
   /// 此前这里是**静默**转漫画导入；现在改成用户可见的一次确认——识别照旧，分派不
   /// 再背着用户发生。
-  Future<bool> _handoffIfManga(String path) async {
-    final ImportCarrier carrier = _classifyCarrier(path);
+  ///
+  /// [generation] 是发起这次判定时的 [_selectionGeneration]。定性在后台 isolate 里
+  /// 跑，回来时对话框可能已经关了、用户又选了别的、或已经点了导入：这时结果作废并
+  /// 返回 `true`（调用方不收下这个路径）——过期的「这是漫画」不能再弹确认框，更不能
+  /// 把旧路径转交漫画流程、关掉正在导入的书籍框。
+  Future<bool> _handoffIfManga(String path, int generation) async {
+    if (!mounted) return true;
+    setState(() => _classifyingCount++);
+    final ImportCarrier carrier;
+    try {
+      carrier = await _classifyCarrier(path);
+    } finally {
+      if (mounted) setState(() => _classifyingCount--);
+    }
+    if (!mounted || _isStaleSelection(generation)) return true;
     if (!carrier.isManga) return false;
     final bool canImportAsBook = canImportMangaCarrierAsBook(path, carrier);
     final _MangaDetectedChoice? choice =
@@ -364,12 +387,27 @@ class _BookImportDialogState extends State<BookImportDialog>
   /// ——它不进 `_importEpubOnly`，那几次开包纯属白开。记忆按路径失效，换文件会重算。
   late final ImportCarrierResolver _carrierResolver;
 
+  /// 选文件 / 拖入的代数。载体定性是异步的（后台 isolate），定性期间用户可能又选了
+  /// 别的、或对旧选择点了导入：回来的结果只在它仍是最新一次选择、且没在导入时才收下，
+  /// 否则界面显示的与正在导入的不是同一本。
+  int _selectionGeneration = 0;
+
+  /// 正在后台定性的载体数。定性要开包（大 EPUB 好几秒），期间 `importing` 还是
+  /// false：不拦的话导入键照样能点，`_doImport` 兜底闸门那次定性没回来前再点一次
+  /// 就会开出第二条 `_doImport`，两条一起进 [runImport]，同一本书并发导入两次。
+  /// 非零时导入键禁用、`_doImport` 直接返回——定性改成异步前它是同步的，没有这个窗口。
+  int _classifyingCount = 0;
+
+  bool _isStaleSelection(int generation) =>
+      !mounted || importing || generation != _selectionGeneration;
+
   /// 用户在「这看起来是漫画」确认框里坚持按书籍导入的路径（见 [_handoffIfManga]）。
   String? _forcedBookPath;
 
-  ImportCarrier _classifyCarrier(String path) => path == _forcedBookPath
+  Future<ImportCarrier> _classifyCarrier(String path) async =>
+      path == _forcedBookPath
       ? ImportCarrier.epub
-      : _carrierResolver.resolve(path);
+      : await _carrierResolver.resolveAsync(path);
 
   /// 拖文件进本对话框 → 分类 → 按字段覆盖（仅填命中类，不清用户已选）。
   /// 纯解析交给 [resolveBookDialogDrop]；此处只 setState + sidecar/封面副作用。
@@ -380,7 +418,10 @@ class _BookImportDialogState extends State<BookImportDialog>
     if (r.isEmpty) return;
     final String? droppedEpub = r.epubPath;
     // 拖进来的「书」其实是漫画（图片型 zip / 扫描版 epub）→ 确认后转交漫画流程。
-    if (droppedEpub != null && await _handoffIfManga(droppedEpub)) return;
+    if (droppedEpub != null) {
+      final int generation = ++_selectionGeneration;
+      if (await _handoffIfManga(droppedEpub, generation)) return;
+    }
     if (!mounted) return;
     final bool gotAudio = r.audioPaths.isNotEmpty;
     setState(() {
@@ -688,7 +729,7 @@ class _BookImportDialogState extends State<BookImportDialog>
   /// 不让「猜个初值」这种锦上添花的事挡住转录入口。
   Future<AsrLanguage?> _asrLanguageHintFromPendingBook() async {
     final String? path = _epubPath;
-    if (path == null || _classifyCarrier(path) != ImportCarrier.epub) {
+    if (path == null || await _classifyCarrier(path) != ImportCarrier.epub) {
       return null;
     }
     try {
@@ -713,7 +754,7 @@ class _BookImportDialogState extends State<BookImportDialog>
   /// 来源（epub）：用户手打过的标题不动；读取期间重选了别的文件也不回写。读取在
   /// 后台 isolate；包坏了照旧保留文件名并记日志，真正的失败交给导入那一步报。
   Future<void> _fillTitleFromEpubMetadata(String path) async {
-    if (_classifyCarrier(path) != ImportCarrier.epub) return;
+    if (await _classifyCarrier(path) != ImportCarrier.epub) return;
     final String? title;
     try {
       title = await readEpubTitleInBackground(path);
@@ -809,8 +850,8 @@ class _BookImportDialogState extends State<BookImportDialog>
       final String? path = file?.path;
       if (path != null && file != null && mounted) {
         // 选中的其实是漫画载体 → 明确确认后转交漫画流程，不再静默按书导入。
-        if (await _handoffIfManga(path)) return;
-        if (!mounted) return;
+        final int generation = ++_selectionGeneration;
+        if (await _handoffIfManga(path, generation)) return;
         setState(() {
           _epubPath = path;
           _epubName = file.name;
@@ -1138,6 +1179,9 @@ class _BookImportDialogState extends State<BookImportDialog>
   }
 
   Future<void> _doImport() async {
+    // 重入闸：按键已按 [_classifyingCount] / importing 禁用，这里再守一次（键盘默认
+    // 动作、递归重入都经此处）。
+    if (importing || _classifyingCount > 0) return;
     if (widget.requireBook && _epubPath == null) {
       await _pickEpub();
       if (!mounted || _epubPath == null) return;
@@ -1168,7 +1212,10 @@ class _BookImportDialogState extends State<BookImportDialog>
     // 是构造参数直接塞进来的（书架拖入决策层刻意不为每个 EPUB 开包，图片型 .epub 会
     // 以 books 身份到达这里）。同一个闸门在此再守一次，漫画绝不会走进书籍导入分支。
     final String? epubPath = _epubPath;
-    if (epubPath != null && await _handoffIfManga(epubPath)) return;
+    if (epubPath != null &&
+        await _handoffIfManga(epubPath, _selectionGeneration)) {
+      return;
+    }
     if (!mounted) return;
     if (_epubPath != null && !_hasSubtitles && _audioPaths.isNotEmpty) {
       // 有音频没字幕：本机能转录就直接问字幕来源（选文件 / 转录），拿到字幕后接着
@@ -1300,7 +1347,7 @@ class _BookImportDialogState extends State<BookImportDialog>
     // 载体身份此前是在这里靠 4 个 if（含一次真读包）现场嗅出来的；现在它在**选中
     // 文件那一刻**就已由 [classifyImportCarrier] 定死，且漫画载体根本进不来（三个
     // 入口都过 [_handoffIfManga]）。这里只剩书籍侧的三种去向。
-    final ImportCarrier carrier = _classifyCarrier(_epubPath!);
+    final ImportCarrier carrier = await _classifyCarrier(_epubPath!);
 
     // PDF 阅读器 Phase 1：.pdf 走独立 PdfImporter（pdfrx 真渲染 + 落库 format='pdf'）。
     // PDF 封面在 PdfImporter 内栅格化首页得到，故不走 _applyBestCoverToEpub。
@@ -1369,7 +1416,7 @@ class _BookImportDialogState extends State<BookImportDialog>
     // PDF + 字幕 + 音频：PDF 走自己的导入器（落库 format='pdf'），对齐时引擎按
     // format 取 PDF 文本层逐页全文（`loadBookTextSections`），PDF 阅读器播放 + 高亮。
     // 以前这里只认 EPUB / 文本，PDF 被塞进 EpubImporter 当 zip 解包直接失败。
-    final bool isPdf = _classifyCarrier(_epubPath!) == ImportCarrier.pdf;
+    final bool isPdf = await _classifyCarrier(_epubPath!) == ImportCarrier.pdf;
     if (isPdf) {
       reportProgress(0.2, t.import_step_importing_book);
       bookKey = await PdfImporter.importFromPath(

@@ -18,7 +18,10 @@
 //!
 //! 并入一个**正在用的**集合（还原 = 空库 + 并入、合并还原 = 并入，D34），与迁移灌入（往临时文件里分批灌）不同：
 //!
-//! - [import_ops]：`.fushisrs` 第 2 版的内核流 `FSRS4EXP`（导出在 `export.rs`）。
+//! - [import_ops] / [import_ops_from]：`.fushisrs` 第 2 版的内核流 `FSRS4EXP`（导出在 `export.rs`）；来源可以是任何
+//!   [Read]（G11-3 的导入命令直接读文件，内存不随文件大小增长）。命令层（`cmd/fushisrs.rs`）在同一个事务里先认领
+//!   （`identity::adopt_foreign`）、记清单带的设备公钥（[import_peers]，缺口 G-12）、本机身份分叉了先换身份
+//!   （[own_fork_point]），再调它。
 //! - [import_v1]：`.fushisrs` 第 1 版的内核流 `FSRS2EXP`（协议 3，冻结读入器 `legacy_export.rs`），逐条转译进承袭日志。
 //! - [import_backup]：旧整包备份 / 服务端备份里的协议 3 `srs.db`（调用方用冻结代码在临时副本上备好），与迁移灌入共用
 //!   同一份逐设备转译（`land_legacy`）。
@@ -28,19 +31,24 @@
 //! 逐格核对），所以中断之后重来不产生重复。测试在 `import_tests.rs`。
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::Read;
 
 use rusqlite::Connection;
 
 use super::carry::{legacy_peers, legacy_self};
 use super::derive::{Index, Settled};
+use super::fork::ForkScan;
 use super::ingest::{Settle, ingest_settle};
 use super::legacy::{self, Placement};
 use super::legacy_export::{for_each_v1, v1_collection};
 use super::schema::sql;
+use super::sync_state::AuthorVersion;
 use super::truth::{DEV_HERITAGE, DEV_NATIVE, Peer, PeerPut, Put, Truth};
 use crate::gen4::export::{Export4Reader, ExportHeader, ExportItem, ExportKind, sniff};
 use crate::gen4::heritage::{Fp, HeritageSlot, SlotBody, fingerprint};
 use crate::gen4::op::chain_next4;
+use crate::gen4::recut::Stub;
+use crate::gen4::segment::{NativeHeader, NativeItem};
 use crate::gen4::translate::{T_VERSION, translate};
 use crate::store::sync2::collection_of;
 use crate::sync2::id::Id;
@@ -390,8 +398,17 @@ pub struct ImportedOps {
     pub slots_forked: u64,
     /// 新记的链值记号（含重记的）。
     pub marks: u64,
+    /// 新记下的原生日志空洞内部链值记号（流的第 2 版，第五波）。
+    pub void_marks: u64,
     /// 第一次记下的设备公钥。
     pub peers: u64,
+    /// 记下的转发材料（流的第 3 版）：作者签名版本（含换成空洞更多的那份）与剔除记录。本机状态，不算「改了什么」
+    /// （[ImportedOps::unchanged]）。
+    pub relay_versions: u64,
+    pub relay_stubs: u64,
+    /// 没记的转发材料（第六波安全复核）：作者公钥本机不知道 / 作者签名验不过 / 不属于所在那条日志的作者签名版本，
+    /// 与没有任何验过的版本担保的剔除记录。文件不可信，这些只计数、不落库。
+    pub relay_skipped: u64,
     /// 收尾时派生层的收法统计。
     pub settled: Settled,
 }
@@ -401,6 +418,7 @@ impl ImportedOps {
     pub fn unchanged(&self) -> bool {
         self.native_landed == 0
             && self.voids_landed == 0
+            && self.void_marks == 0
             && self.slots_inserted == 0
             && self.slots_replaced == 0
             && self.slots_forked == 0
@@ -437,18 +455,53 @@ struct NativeRun {
 /// 别的连接并发提交会 `SQLITE_BUSY_SNAPSHOT` 整笔失败；嵌进调用方的事务时，拿锁的口径归调用方（命令层要么在事务外调，
 /// 要么自己用 `BEGIN IMMEDIATE` 开最外层）。
 ///
-/// 内存口径（交给 G11-3 / G11-4 接线）：[bytes] 是整条已读进内存的 `ops.bin`（G11-1 的 [Export4Reader] 借用切片，
-/// 不收 `Read`），解码只走**一遍**（边读边落，坏在中途也是整笔回滚）；峰值 ≈ 文件字节数 + 一帧解压缓冲 + 本机设备 /
-/// 分叉清单。移动端（D4）按文件大小预算，要真流式得先给 `Export4Reader` 加 `Read` 版（G11-1 的格式代码）。
+/// 内存口径（G11-3 定案）：解码只走**一遍**（边读边落，坏在中途也是整笔回滚）。来源是 [Read]（[import_ops_from]，
+/// 导入命令直接读文件），内存只有一个解压读窗口与一项、外加本机设备 / 分叉清单，不随文件大小增长；[import_ops] 是
+/// 内存切片的便利形（测试、整包备份里已经在内存的流）。
 pub fn import_ops(t: &Truth<'_>, col: i64, bytes: &[u8]) -> Result<ImportedOps, String> {
-    let header = open_ops_stream(bytes)?.1;
+    import_ops_from(t, col, open_ops_stream(bytes)?)
+}
+
+/// 第 2 版流头的集合 [collection] 是不是集合 [col] 自己的（本集合或被它并入过的）：[import_ops_from] 的判据；导入命令的
+/// 预检（`cmd/fushisrs.rs`）也经这里，两处不各写一份。
+pub fn check_stream_collection(t: &Truth<'_>, col: i64, collection: &Id) -> Result<(), String> {
+    if !native_sources(t, col)?.contains(collection) {
+        return Err(format!(
+            "gen4 import: this file belongs to another collection ({collection})"
+        ));
+    }
+    Ok(())
+}
+
+/// 第 1 版流 [bytes] 的集合是不是集合 [col] 认作自己历史的（[legacy_sources]）：[import_v1] 的判据，预检同上。
+pub fn check_v1_collection(t: &Truth<'_>, col: i64, bytes: &[u8]) -> Result<(), String> {
+    let collection =
+        v1_collection(bytes).map_err(|e| format!("gen4 import: unreadable export ({e})"))?;
+    if !legacy_sources(t, col)?.contains(&collection) {
+        return Err(format!(
+            "gen4 import: this file belongs to another collection ({collection})"
+        ));
+    }
+    Ok(())
+}
+
+/// 打开一条来自任意 [Read] 的 `FSRS4EXP` 流（[import_ops_from] / [own_fork_point] 的输入）。不认魔数（含协议 3 的
+/// `FSRS2EXP`）、版本、标志位都拒；分辨第 1 版与第 2 版用 `crate::gen4::export::sniff_reader`。
+pub fn open_ops_reader<'s, R: Read>(
+    src: R,
+) -> Result<(Export4Reader<'s, R>, ExportHeader), String> {
+    Export4Reader::open_reader(src).map_err(|e| format!("gen4 import: unreadable export ({e})"))
+}
+
+/// [import_ops] 的一般形：流已由 [open_ops_reader]（或切片的 `open_ops_stream`）打开、读过头。
+pub fn import_ops_from<R: Read>(
+    t: &Truth<'_>,
+    col: i64,
+    opened: (Export4Reader<'_, R>, ExportHeader),
+) -> Result<ImportedOps, String> {
+    let (mut reader, header) = opened;
     t.tx_immediate(|t| {
-        if !native_sources(t, col)?.contains(&header.collection) {
-            return Err(format!(
-                "gen4 import: this file belongs to another collection ({})",
-                header.collection
-            ));
-        }
+        check_stream_collection(t, col, &header.collection)?;
         let me = t.self_identity(col)?.map(|s| (s.device, s.public()));
         let kinds: BTreeMap<Id, (Option<i64>, Option<Id>)> = t
             .devices(col)?
@@ -456,9 +509,13 @@ pub fn import_ops(t: &Truth<'_>, col: i64, bytes: &[u8]) -> Result<ImportedOps, 
             .map(|d| (d.id, (d.kind, d.src)))
             .collect();
         let forks = known_forks(t, col)?;
-        let (mut reader, _) = open_ops_stream(bytes)?;
         let mut out = ImportedOps::default();
         let mut native: Option<NativeRun> = None;
+        // 链尾之后的转发材料属于哪台设备（流的第 3 版；刚写完的那条原生日志）。
+        let mut relay_of: Option<Id> = None;
+        // 这条日志的转发材料先攒着，整条读完（下一条日志开始 / 流读完）再验签落库（[land_relay]）：剔除记录排在作者
+        // 签名版本后面，验版本要用到它们。
+        let mut relay = RelayBuf::default();
         // 当前承袭日志：(设备, 来源集合, 这条日志的记号)。
         let mut heritage: Option<(Id, Id, Vec<(u64, Chain)>)> = None;
         let finish_heritage = |h: &mut Option<(Id, Id, Vec<(u64, Chain)>)>,
@@ -473,10 +530,7 @@ pub fn import_ops(t: &Truth<'_>, col: i64, bytes: &[u8]) -> Result<ImportedOps, 
             }
             Ok(())
         };
-        while let Some(item) = reader
-            .next_item()
-            .map_err(|e| format!("gen4 import: corrupt export ({e})"))?
-        {
+        while let Some(item) = reader.next_item().map_err(|e| stream_refused(&e))? {
             match item {
                 ExportItem::NativeLog {
                     device,
@@ -484,6 +538,7 @@ pub fn import_ops(t: &Truth<'_>, col: i64, bytes: &[u8]) -> Result<ImportedOps, 
                     count: _,
                 } => {
                     finish_heritage(&mut heritage, &mut out)?;
+                    land_relay(t, col, me, relay_of.take(), &mut relay, &mut out)?;
                     if let Some((Some(kind), _)) = kinds.get(&device) {
                         if *kind != DEV_NATIVE {
                             return Err(format!(
@@ -527,7 +582,11 @@ pub fn import_ops(t: &Truth<'_>, col: i64, bytes: &[u8]) -> Result<ImportedOps, 
                     run.next = seq + 1;
                     run.chain = after;
                 }
-                ExportItem::NativeVoid { n, chain_after } => {
+                ExportItem::NativeVoid {
+                    n,
+                    chain_after,
+                    marks,
+                } => {
                     let run = native.as_mut().ok_or("gen4 import: void outside a native log")?;
                     let (start, end) = (run.next, run.next + n - 1);
                     if start <= run.local_last + 1 {
@@ -544,14 +603,41 @@ pub fn import_ops(t: &Truth<'_>, col: i64, bytes: &[u8]) -> Result<ImportedOps, 
                         out.voids_landed += 1;
                     }
                     out.native_known += run.local_last.min(end).saturating_sub(start - 1);
+                    // 区间内部的链值记号（第 2 版）：本机在那一格有链值就必须相同（与上面的区间末同一条判断）；本机那里也是
+                    // 空洞内部、没有记号的才记下（[Truth::land_void_mark]）。
+                    for (seq, chain) in &marks {
+                        match t.chain_known(col, &run.device, *seq)? {
+                            Some(_) => compare_native(t, col, &run.device, *seq, chain)?,
+                            None => {
+                                if t.land_void_mark(col, &run.device, *seq, chain)? {
+                                    out.void_marks += 1;
+                                }
+                            }
+                        }
+                    }
                     run.next = end + 1;
                     run.chain = chain_after;
                 }
-                ExportItem::NativeTail(_) => native = None,
+                ExportItem::NativeTail(_) => {
+                    land_relay(t, col, me, relay_of.take(), &mut relay, &mut out)?;
+                    relay_of = native.take().map(|r| r.device);
+                }
+                ExportItem::NativeRelay { .. } => {}
+                ExportItem::AuthorVersion { header, sig, voids } => {
+                    relay_of.ok_or("gen4 import: author version outside a native log")?;
+                    relay
+                        .versions
+                        .push(AuthorVersion { header, sig, voids });
+                }
+                ExportItem::Stub(stub) => {
+                    relay_of.ok_or("gen4 import: stub outside a native log")?;
+                    relay.stubs.push(stub);
+                }
                 ExportItem::HeritageLog {
                     source, device, ..
                 } => {
                     finish_heritage(&mut heritage, &mut out)?;
+                    land_relay(t, col, me, relay_of.take(), &mut relay, &mut out)?;
                     match kinds.get(&device) {
                         Some((Some(kind), _)) if *kind != DEV_HERITAGE => {
                             return Err(format!(
@@ -583,9 +669,105 @@ pub fn import_ops(t: &Truth<'_>, col: i64, bytes: &[u8]) -> Result<ImportedOps, 
             }
         }
         finish_heritage(&mut heritage, &mut out)?;
-        out.settled = ingest_settle(t, &mut Index::new(t, col), col, Settle::Rebuild)?;
+        land_relay(t, col, me, relay_of.take(), &mut relay, &mut out)?;
+        out.settled = settle_imported(t, col)?;
         Ok(out)
     })
+}
+
+/// 一条原生日志链尾之后的转发材料（流的第 3 版），整条读完再交 [land_relay]。
+#[derive(Default)]
+struct RelayBuf {
+    versions: Vec<AuthorVersion>,
+    stubs: Vec<Stub>,
+}
+
+/// 落一条原生日志（作者 [device]）的转发材料。文件不可信（第六波安全复核），所以：
+///
+/// - 作者签名版本：段头的作者必须是这条日志的作者；拿本机记着的这位作者的公钥（`peers`，导入流里同一设备撞上另一把
+///   公钥时整笔已经拒了）、本机日志（这条日志此时已灌完）与剔除记录拼出全部项，**作者签名验得过才记**
+///   （[Truth::vouch_author_version]）；记的时候照旧只换成空洞更多的那份（[Truth::note_author_version]）——验过的
+///   才有资格替换本机已有的行，没验过的一律不碰本机。
+/// - 剔除记录：属于这位作者、本机这一格是空洞、**被某个验过的版本的作者签名担保**（拼项时用到了它，即它的信封、载荷
+///   哈希与清除目标正是作者签过的那条）才记，而且**本机已有的不换**（[Truth::put_stub_if_absent]；拼项时本机已有的
+///   优先，文件里那条与本机不同就担保不了）。
+/// - 本机自己的日志不记（收段同口径，`receive.rs`）。
+///
+/// 没记的计入 [ImportedOps::relay_skipped]，不报错（材料只是本机以后替作者重切用的缓存，缺了重切退回「缺」）。
+fn land_relay(
+    t: &Truth<'_>,
+    col: i64,
+    me: Option<(Id, [u8; 32])>,
+    device: Option<Id>,
+    buf: &mut RelayBuf,
+    out: &mut ImportedOps,
+) -> Result<(), String> {
+    let RelayBuf { versions, stubs } = std::mem::take(buf);
+    let Some(device) = device else {
+        return Ok(());
+    };
+    if me.is_some_and(|(m, _)| m == device) {
+        return Ok(());
+    }
+    // 候选剔除记录：这位作者的、本机这一格是空洞的；同一 seq 只认文件里的第一条。本机已经有这一格的剔除记录：
+    // 不动（不算跳过，再导一遍同一份文件不报跳过）。
+    let mut extra: BTreeMap<u64, Stub> = BTreeMap::new();
+    for s in stubs {
+        let id = s.id();
+        if id.device == device && t.stub_at(col, &device, id.seq)?.is_some() {
+            continue;
+        }
+        if id.device != device
+            || !t.entry(col, &id)?.is_some_and(|e| e.op().is_none())
+            || extra.contains_key(&id.seq)
+        {
+            out.relay_skipped += 1;
+            continue;
+        }
+        extra.insert(id.seq, s);
+    }
+    let mut vouched: BTreeSet<u64> = BTreeSet::new();
+    for v in versions {
+        if v.header.device != device {
+            out.relay_skipped += 1;
+            continue;
+        }
+        match t.vouch_author_version(col, &v, &extra)? {
+            Some(used) => {
+                vouched.extend(used);
+                t.note_author_version(col, &v)?;
+                out.relay_versions += 1;
+            }
+            None => out.relay_skipped += 1,
+        }
+    }
+    for (seq, s) in extra {
+        if !vouched.contains(&seq) {
+            out.relay_skipped += 1;
+        } else if t.put_stub_if_absent(col, &s)? {
+            out.relay_stubs += 1;
+        }
+    }
+    Ok(())
+}
+
+/// 读流时的拒收理由：一条操作超过载荷上限（[crate::gen4::op::ERR_OP_TOO_LARGE]）单独说清楚（文件本身没坏，是这一条
+/// 太大，Dart 导入页按它给专门的提示），其余按坏流报。两种都是整笔回滚、什么都没导入。
+fn stream_refused(e: &str) -> String {
+    match e.find(crate::gen4::op::ERR_OP_TOO_LARGE) {
+        Some(at) => format!("gen4 import: {}; nothing was imported", &e[at..]),
+        None => format!("gen4 import: corrupt export ({e})"),
+    }
+}
+
+/// 灌入的收尾：从真相整个重建派生层（[Settle::Rebuild]），再把派生层判成「已清除」的操作在真相层落成空洞（同
+/// `cmd/writes.rs` 的 `finish`、`receive.rs` 的收尾，[Index::execute_purges]）。灌进来的 `Purge` 由此在同一个事务里
+/// 生效，不留到下一条写命令；落了空洞的会话提交之后由内核做字节层收尾（`scrub.rs`）。
+fn settle_imported(t: &Truth<'_>, col: i64) -> Result<Settled, String> {
+    let mut ix = Index::new(t, col);
+    let settled = ingest_settle(t, &mut ix, col, Settle::Rebuild)?;
+    ix.execute_purges()?;
+    Ok(settled)
 }
 
 /// 本机这台设备原生日志在 [seq] 处的链值与流里的比：本机那格在空洞内部（没有链值）时比不了，不算分叉。
@@ -611,10 +793,123 @@ pub fn check_ops_stream(bytes: &[u8]) -> Result<ExportHeader, String> {
     let (mut reader, header) = open_ops_stream(bytes)?;
     while reader
         .next_item()
-        .map_err(|e| format!("gen4 import: corrupt export ({e})"))?
+        .map_err(|e| stream_refused(&e))?
         .is_some()
     {}
     Ok(header)
+}
+
+/// [own_fork_point] 每攒这么多项喂一次 [ForkScan]（内存不随本机日志长度增长）。
+const FORK_SCAN_CHUNK: usize = 4096;
+
+/// 流里本机当前身份那条原生日志的一块（[own_fork_point] 内部）。
+struct ForkChunk {
+    /// 这一块第一项的 seq 与它前一格的链值。
+    first: u64,
+    prev: Chain,
+    /// 走到的 seq 与那一格的链值。
+    seq: u64,
+    chain: Chain,
+    items: Vec<NativeItem>,
+}
+
+impl ForkChunk {
+    fn new() -> ForkChunk {
+        ForkChunk {
+            first: 1,
+            prev: CHAIN_ZERO,
+            seq: 0,
+            chain: CHAIN_ZERO,
+            items: Vec::new(),
+        }
+    }
+
+    fn flush(
+        &mut self,
+        t: &Truth<'_>,
+        col: i64,
+        scan: &mut ForkScan,
+        collection: Id,
+        device: Id,
+    ) -> Result<(), String> {
+        if self.items.is_empty() {
+            return Ok(());
+        }
+        let h = NativeHeader {
+            encrypted: false,
+            collection,
+            device,
+            first: self.first,
+            last: self.seq,
+            prev_chain: self.prev,
+            last_chain: self.chain,
+        };
+        scan.feed(t, col, &h, &self.items)?;
+        self.items.clear();
+        self.first = self.seq + 1;
+        self.prev = self.chain;
+        Ok(())
+    }
+}
+
+/// 导入之前看流里**本机当前身份**的原生日志与本机日志分没分叉（G11-3；协议 3 `import_on` 的「包里有本机身份的操作时
+/// 先换身份」，§7.3）。只读，按块喂 G8-6 的 [ForkScan]（与位置上发现分叉同一个判据）：
+///
+/// - 流里没有本机身份的日志、或它是本机日志的前缀：None，照常导入；
+/// - 两边在某个 seq 上不同（数据目录被拷过、从旧备份还原后两边都写过），或流里比本机长（另一个安装接着写了）：
+///   `Some(keep)` = 两边确认相同的最大 seq。调用方先 `Truth::rotate_identity(col, keep, now)`（本机 `keep` 之后的操作以
+///   新身份重签发、旧身份冻结在 `keep`），再导入：流里旧身份 `keep` 之后的操作按普通设备接在冻结点后面。
+///
+/// 本机还没有身份（不会发生在已绑定的 profile 上）也是 None。读到本机那条日志的末尾就停，不读流的其余部分。
+pub fn own_fork_point<R: Read>(
+    t: &Truth<'_>,
+    col: i64,
+    opened: (Export4Reader<'_, R>, ExportHeader),
+) -> Result<Option<u64>, String> {
+    let Some(me) = t.self_identity(col)? else {
+        return Ok(None);
+    };
+    let (mut reader, header) = opened;
+    let mut scan = ForkScan::new(t, col)?;
+    let mut mine: Option<ForkChunk> = None;
+    while let Some(item) = reader.next_item().map_err(|e| stream_refused(&e))? {
+        match item {
+            ExportItem::NativeLog { device, .. } if device == me.device => {
+                mine = Some(ForkChunk::new());
+            }
+            ExportItem::NativeOp(op) => {
+                if let Some(c) = mine.as_mut() {
+                    c.chain = chain_next4(&c.chain, &op);
+                    c.seq += 1;
+                    c.items.push(NativeItem::Op(op));
+                }
+            }
+            ExportItem::NativeVoid { n, chain_after, .. } => {
+                if let Some(c) = mine.as_mut() {
+                    c.seq += n;
+                    c.chain = chain_after;
+                    c.items.push(NativeItem::Void {
+                        count: n,
+                        chain_after,
+                    });
+                }
+            }
+            ExportItem::NativeTail(_) => {
+                if let Some(mut c) = mine.take() {
+                    c.flush(t, col, &mut scan, header.collection, me.device)?;
+                    // 每台设备在流里只有一条原生日志：本机的读完就够了。
+                    break;
+                }
+            }
+            _ => {}
+        }
+        if let Some(c) = mine.as_mut() {
+            if c.items.len() >= FORK_SCAN_CHUNK {
+                c.flush(t, col, &mut scan, header.collection, me.device)?;
+            }
+        }
+    }
+    Ok(scan.fork_point())
 }
 
 /// 认出 `FSRS4EXP` 流、读头：协议 3 的流（`FSRS2EXP`）与不认识的东西给出可读的拒绝理由。
@@ -650,14 +945,8 @@ pub fn import_v1(t: &Truth<'_>, col: i64, bytes: &[u8]) -> Result<ImportedOps, S
         }
         Err(e) => return Err(format!("gen4 import: not a Fushi SRS export ({e})")),
     }
-    let collection =
-        v1_collection(bytes).map_err(|e| format!("gen4 import: unreadable export ({e})"))?;
     t.tx_immediate(|t| {
-        if !legacy_sources(t, col)?.contains(&collection) {
-            return Err(format!(
-                "gen4 import: this file belongs to another collection ({collection})"
-            ));
-        }
+        check_v1_collection(t, col, bytes)?;
         let kinds: BTreeMap<Id, (Option<i64>, Option<Id>)> = t
             .devices(col)?
             .into_iter()
@@ -719,7 +1008,7 @@ pub fn import_v1(t: &Truth<'_>, col: i64, bytes: &[u8]) -> Result<ImportedOps, S
         }
         // 没有操作的设备抬头也算进来（读入器不为它们回调）。
         out.heritage_logs = stats.devices;
-        out.settled = ingest_settle(t, &mut Index::new(t, col), col, Settle::Rebuild)?;
+        out.settled = settle_imported(t, col)?;
         Ok(out)
     })
 }
@@ -775,7 +1064,7 @@ pub fn import_backup(
             out.untrusted += 1;
         }
         out.peers = backup_peers(src, profile, t, col)?;
-        ingest_settle(t, &mut Index::new(t, col), col, Settle::Rebuild)?;
+        settle_imported(t, col)?;
         Ok(out)
     })
 }
@@ -798,16 +1087,38 @@ fn backup_peers(src: &Connection, profile: &str, t: &Truth<'_>, col: i64) -> Res
         .filter(|s| s.last == 0)
         .map(|s| s.device);
     let (peers, _) = legacy_peers(src, profile)?;
+    let peers = peers
+        .into_iter()
+        .filter(|p| Some(p.device) != scratch)
+        .collect();
+    land_peers(t, col, me, peers, "backup")
+}
+
+/// 记下 `.fushisrs` 第 2 版清单带的设备（缺口 G-12，G11-3 定案：`FSRS4EXP` 的承袭日志抬头不带公钥，协议 3 设备的公钥
+/// 放在清单的 `peers` 里随文件走，格式不升版本）。与旧备份读入（[backup_peers]）同一口径：公钥先到先得、冲突整个拒绝、
+/// 本机身份必须是本机的公钥、名字 / 扩展信息只补空缺。在调用方的事务里调（导入命令与 [import_ops_from] 同一个事务）。
+///
+/// 返回新记下的设备数。
+pub fn import_peers(t: &Truth<'_>, col: i64, peers: Vec<Peer>) -> Result<u64, String> {
+    let me = t.self_identity(col)?.map(|s| (s.device, s.public()));
+    land_peers(t, col, me, peers, "file")
+}
+
+/// [backup_peers] / [import_peers] 共用的落库（[what] 只进报错文本）。
+fn land_peers(
+    t: &Truth<'_>,
+    col: i64,
+    me: Option<(Id, [u8; 32])>,
+    peers: Vec<Peer>,
+    what: &str,
+) -> Result<u64, String> {
     let mut learned = 0u64;
     for mut peer in peers {
-        if Some(peer.device) == scratch {
-            continue;
-        }
         if let Some((mine, key)) = me {
             if mine == peer.device {
                 if key != peer.public {
                     return Err(format!(
-                        "gen4 import: the backup carries another public key for this device ({mine})"
+                        "gen4 import: the {what} carries another public key for this device ({mine})"
                     ));
                 }
                 continue;

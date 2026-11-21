@@ -22,6 +22,8 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_actions.dart'
+    show MusicItemMenu, musicMenuAnchorOf;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart'
     show MusicCover, MusicCoverTintSource, kMusicHoverLiftScale;
 import 'package:fushi/src/pages/implementations/music/music_detail_chrome.dart'
@@ -240,7 +242,9 @@ class MusicTrackGridPanel extends StatelessWidget {
 /// `music_collection_view.dart`）：与推荐页 / 曲库同款的封面色块——方形专辑
 /// 摆法、封面取色底、曲名水印大字；副行是歌手 · 专辑，底行 chip 是时长，正在播放
 /// 时顶上多一枚「正在播放」chip。点块 = 从这首起播（[onTap] 为 null 的不可播曲目
-/// 不响应）；右键菜单由调用方包（[musicWithContextMenu]）。几千首的歌单由
+/// 不响应）；右键菜单由调用方包（[musicWithContextMenu]）。长按 = 弹 [menu]（触屏
+/// 没有右键、色块上也不放「⋯」，拍板台 left3648：长按开菜单，详情 / 多选都在菜单里）；
+/// 调用方给了 [onLongPress]（多选态 = 勾选）时以它为准。几千首的歌单由
 /// `SliverFushiCoverBlocks` 按行惰性构建（2026-11-12 用户：「做成多列的……色块弄大，
 /// 跟外面一样并且有大字」）。
 class MusicTrackBlock extends StatelessWidget {
@@ -255,6 +259,7 @@ class MusicTrackBlock extends StatelessWidget {
     this.playing = false,
     this.onTap,
     this.onLongPress,
+    this.menu,
     this.focusId,
   });
 
@@ -269,6 +274,9 @@ class MusicTrackBlock extends StatelessWidget {
   final bool playing;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+
+  /// 这首的动作菜单（与右键同一份）：[onLongPress] 为 null 时长按从色块处弹它。
+  final MusicItemMenu? menu;
   final FushiFocusId? focusId;
 
   static String? _nonEmpty(String? value) =>
@@ -281,7 +289,12 @@ class MusicTrackBlock extends StatelessWidget {
       shape: fushiCoverBlockShape(context, size),
       focusId: focusId,
       onTap: onTap,
-      onLongPress: onLongPress,
+      onLongPress:
+          onLongPress ??
+          switch (menu) {
+            final MusicItemMenu m => () => m.open(musicMenuAnchorOf(context)),
+            null => null,
+          },
       child: MusicCoverTintSource(
         coverPath: coverPath,
         embeddedFromPath: embeddedFromPath,

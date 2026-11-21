@@ -25,43 +25,96 @@ class PgsSubtitleParser {
   static const int openCueCapMs = 5000;
 
   /// 解析整份 `.sup` 字节。损坏 / 截断的尾段被忽略，已解析出的 cue 照常返回。
-  static List<PgsCue> parse(Uint8List data) {
-    final _PgsState state = _PgsState();
-    final List<_PgsEvent> events = <_PgsEvent>[];
-    int offset = 0;
-    while (offset + 13 <= data.length) {
-      if (data[offset] != 0x50 || data[offset + 1] != 0x47) break;
-      final int pts = _u32(data, offset + 2);
-      final int type = data[offset + 10];
-      final int size = _u16(data, offset + 11);
-      final int bodyStart = offset + 13;
-      if (bodyStart + size > data.length) break;
-      final Uint8List body = Uint8List.sublistView(
-        data,
-        bodyStart,
-        bodyStart + size,
-      );
-      offset = bodyStart + size;
-      final _PgsEvent? event = state.apply(type, pts, body);
-      if (event != null) events.add(event);
-    }
-    return _groupCues(events);
+  static List<PgsCue> parse(Uint8List data) =>
+      (PgsSubtitleParseSession()..add(data)).cues;
+}
+
+/// 增量解析会话（边抽边识别）：抽轨文件还在长时，每次只读、只解析上次之后新写出的
+/// 字节（[offset] 起），段流状态机（epoch 内的对象 / 调色板、没收尾的显示集、跨段分片的
+/// 对象）与「还开着的那条 cue」都留在会话里。任意切分喂进来的结果与一次
+/// [PgsSubtitleParser.parse] 整份字节逐条相同（[PgsSubtitleParser.parse] 本身就是喂一次）。
+///
+/// 段解析可经 [addWith] 挪到别的 isolate：送过去的只有状态机（当前 epoch 的几个对象）
+/// 与这段新字节，送回来的只有这段产生的显示集，已攒下的 cue 不来回拷贝。
+class PgsSubtitleParseSession {
+  _PgsState _state = _PgsState();
+  int _offset = 0;
+  final List<PgsCue> _closed = <PgsCue>[];
+  _PgsCueBuilder? _open;
+
+  /// 已消费的字节数：下一段从文件的这个偏移读起（没写完的尾段不算消费，下次重读）。
+  int get offset => _offset;
+
+  /// 目前的全部 cue（升序）；最后一条若还没有清屏收尾，按 [PgsSubtitleParser.openCueCapMs]
+  /// 兜底时长给出，后续字节到了会改它的结束时间。
+  List<PgsCue> get cues => <PgsCue>[
+    ..._closed,
+    if (_open case final _PgsCueBuilder open) open.build(endPts: null),
+  ];
+
+  /// 就地解析文件从 [offset] 起读到的字节 [chunk]。
+  void add(Uint8List chunk) => _absorb(_parsePgsChunk(_state, chunk));
+
+  /// 同 [add]，段解析交给 [run] 执行（生产传 `Isolate.run`）。
+  Future<void> addWith(
+    Uint8List chunk,
+    Future<PgsParsedChunk> Function(PgsParsedChunk Function() parse) run,
+  ) async {
+    if (chunk.isEmpty) return;
+    _absorb(await run(_pgsChunkParser(_state, chunk)));
   }
 
-  static List<PgsCue> _groupCues(List<_PgsEvent> events) {
-    final List<PgsCue> cues = <PgsCue>[];
-    _PgsCueBuilder? open;
-    for (final _PgsEvent event in events) {
+  void _absorb(PgsParsedChunk parsed) {
+    _state = parsed._state;
+    _offset += parsed._consumed;
+    for (final _PgsEvent event in parsed._events) {
+      final _PgsCueBuilder? open = _open;
       if (open != null && open.sameContent(event)) {
         open.absorb(event);
         continue;
       }
-      if (open != null) cues.add(open.build(endPts: event.pts));
-      open = event.placements.isEmpty ? null : _PgsCueBuilder(event);
+      if (open != null) _closed.add(open.build(endPts: event.pts));
+      _open = event.placements.isEmpty ? null : _PgsCueBuilder(event);
     }
-    if (open != null) cues.add(open.build(endPts: null));
-    return cues;
   }
+}
+
+/// 一段字节的解析产物（[PgsSubtitleParseSession.addWith] 跨 isolate 传回的东西）。
+final class PgsParsedChunk {
+  PgsParsedChunk._(this._state, this._events, this._consumed);
+
+  final _PgsState _state;
+  final List<_PgsEvent> _events;
+  final int _consumed;
+}
+
+/// 顶层构造闭包：闭包只捕获状态机与这段字节（送进 isolate 时不带上会话本身）。
+PgsParsedChunk Function() _pgsChunkParser(_PgsState state, Uint8List chunk) =>
+    () => _parsePgsChunk(state, chunk);
+
+/// 解析 [data] 里完整的段，喂给 [state]；返回收束的显示集与消费的字节数（停在第一个
+/// 不完整 / 损坏的段前）。
+PgsParsedChunk _parsePgsChunk(_PgsState state, Uint8List data) {
+  final List<_PgsEvent> events = <_PgsEvent>[];
+  int offset = 0;
+  while (offset + 13 <= data.length) {
+    if (data[offset] != 0x50 || data[offset + 1] != 0x47) break;
+    final int pts = _u32(data, offset + 2);
+    final int type = data[offset + 10];
+    final int size = _u16(data, offset + 11);
+    final int bodyStart = offset + 13;
+    if (bodyStart + size > data.length) break;
+    final Uint8List body = Uint8List.sublistView(
+      data,
+      bodyStart,
+      bodyStart + size,
+    );
+    offset = bodyStart + size;
+    final _PgsEvent? event = state.apply(type, pts, body);
+    if (event != null) events.add(event);
+  }
+  state.detachPending();
+  return PgsParsedChunk._(state, events, offset);
 }
 
 /// 一条图形字幕：显示区间 + 惰性渲染的位图。
@@ -90,6 +143,13 @@ class PgsCue implements BitmapSubtitleCue {
   final int canvasHeight;
   final List<PgsPlacement> _placements;
   final Uint32List _palette;
+
+  /// 屏上对象的摆放（只读；渲染见 [renderRgba]）。
+  List<PgsPlacement> get placements =>
+      List<PgsPlacement>.unmodifiable(_placements);
+
+  /// 渲染用的调色板（淡入淡出取最不透明的一帧）。
+  Uint32List get palette => Uint32List.fromList(_palette);
 
   /// PGS 的强制标志在 PCS 对象级，整轨识别不区分，恒为 false。
   @override
@@ -244,6 +304,15 @@ class _PgsState {
   int _canvasWidth = 0;
   int _canvasHeight = 0;
   List<_PgsCompositionObject>? _composition;
+
+  /// 跨段分片还没拼完的对象此刻只引用着这段字节的视图：拷成独立字节，状态机不再
+  /// 拖着整段输入（下一段可能在别的 isolate 里解析，视图会把整个缓冲一起带过去）。
+  void detachPending() {
+    for (final _PgsPendingObject pending in _pending.values) {
+      final Uint8List bytes = Uint8List.fromList(pending.rle.takeBytes());
+      pending.rle.add(bytes);
+    }
+  }
 
   _PgsEvent? apply(int type, int pts, Uint8List body) {
     switch (type) {

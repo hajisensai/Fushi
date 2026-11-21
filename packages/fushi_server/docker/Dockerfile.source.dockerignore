@@ -1,0 +1,54 @@
+# Build context for Dockerfile.source is the repo root (docker-compose.yml:
+# context ../../..). Docker reads this file because it sits next to
+# Dockerfile.source and shares its name; the repo's other Docker builds are not
+# affected.
+#
+# The server build runs `pub get` over the whole Dart workspace (root pubspec),
+# so the tracked tree stays in. What goes out: VCS data, worktrees, and local
+# build output / caches that can be gigabytes and would make the image differ
+# from a clean checkout. Anchor patterns: tracked folders such as
+# native/fushidicts/fushidicts_external/zstd/build are needed.
+
+.git
+.worktrees
+.claude
+.vscode
+.idea
+CLAUDE.local.md
+*.log
+*.ipynb
+fushi/android/local.properties
+**/.dart_tool
+**/.gradle
+**/node_modules
+**/__pycache__
+
+# App / package build output and generated files
+build
+fushi/build
+fushi/.codex-test
+fushi/lib/i18n/strings.g.dart
+fushi/*/flutter/ephemeral
+fushi/macos/Flutter/ephemeral
+third_party/media_kit_libs_windows_video/vendored
+third_party/ffmpeg_kit_next_flutter/android/libs
+fushi/ios/Pods
+fushi/macos/Pods
+packages/*/build
+packages/*/example/build
+third_party/*/build
+third_party/*/example/build
+third_party/ffmpeg_kit_flutter
+
+# Native build trees (the image rebuilds them; BuildKit caches them)
+native/*/target
+native/*/build-*
+native/*/.anki-src
+native/*/prebuilt
+
+# Server Docker files that must not end up in the image
+packages/fushi_server/docker/.env
+packages/fushi_server/docker/config
+packages/fushi_server/docker/media
+packages/fushi_server/docker/dist
+packages/fushi_server/dist

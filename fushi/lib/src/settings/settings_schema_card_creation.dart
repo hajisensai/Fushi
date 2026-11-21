@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/anki/sync_client/anki_sync_host.dart';
@@ -20,6 +18,7 @@ import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_providers.dart'
     show srsMiningToReviewProvider;
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 
 SettingsDestination buildCardCreationDestination() {
   return SettingsDestination(
@@ -230,7 +229,7 @@ SettingsDestination buildCardCreationDestination() {
       SettingsBodySearchEntry(
         id: 'card_creation.anki.backup_import',
         visible: (SettingsContext c) =>
-            Platform.isIOS &&
+            hostPlatform.isIOS &&
             !_toReview(c) &&
             c.ref.watch(ankiViewModelProvider).isConfigured &&
             ankiMobileLedgerIsDuplicateSource(
@@ -393,13 +392,15 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
           title: t.anki_connect_port_auto_fix,
           hasRevealTarget: true,
           visible: (_) =>
-              Platform.isWindows || Platform.isMacOS || Platform.isLinux,
+              hostPlatform.isWindows ||
+              hostPlatform.isMacOS ||
+              hostPlatform.isLinux,
         ),
         SettingsBodySearchEntry(
           id: 'card_creation.anki.connect_addon_install',
           title: t.anki_connect_addon_install,
           hasRevealTarget: true,
-          visible: (_) => Platform.isWindows,
+          visible: (_) => hostPlatform.isWindows,
         ),
         SettingsBodySearchEntry(
           id: 'card_creation.anki.desktop_auto_launch',
@@ -407,21 +408,27 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
           subtitle: t.anki_desktop_auto_launch_hint,
           hasRevealTarget: true,
           visible: (_) =>
-              Platform.isWindows || Platform.isMacOS || Platform.isLinux,
+              hostPlatform.isWindows ||
+              hostPlatform.isMacOS ||
+              hostPlatform.isLinux,
         ),
         SettingsBodySearchEntry(
           id: 'card_creation.anki.desktop_executable',
           title: t.anki_desktop_executable,
           hasRevealTarget: true,
           visible: (_) =>
-              Platform.isWindows || Platform.isMacOS || Platform.isLinux,
+              hostPlatform.isWindows ||
+              hostPlatform.isMacOS ||
+              hostPlatform.isLinux,
         ),
         SettingsBodySearchEntry(
           id: 'card_creation.anki.desktop_launch',
           title: t.anki_desktop_launch,
           hasRevealTarget: true,
           visible: (_) =>
-              Platform.isWindows || Platform.isMacOS || Platform.isLinux,
+              hostPlatform.isWindows ||
+              hostPlatform.isMacOS ||
+              hostPlatform.isLinux,
         ),
       ],
       if (panel == AnkiSettingsPanel.media) ...[
@@ -440,40 +447,40 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
           id: 'card_creation.anki.gal_mining_image_mode',
           title: t.gal_mining_image_mode,
           hasRevealTarget: true,
-          visible: (_) => Platform.isWindows,
+          visible: (_) => hostPlatform.isWindows,
         ),
         SettingsBodySearchEntry(
           id: 'card_creation.anki.gal_mining_clip_format',
           title: t.gal_mining_clip_format,
           subtitle: t.mining_clip_format_hint,
           hasRevealTarget: true,
-          visible: (_) => Platform.isWindows,
+          visible: (_) => hostPlatform.isWindows,
         ),
         SettingsBodySearchEntry(
           id: 'card_creation.anki.gal_mining_animated_format',
           title: t.gal_mining_animated_format,
           hasRevealTarget: true,
-          visible: (_) => Platform.isWindows,
+          visible: (_) => hostPlatform.isWindows,
         ),
         SettingsBodySearchEntry(
           id: 'card_creation.anki.gal_mining_still_format',
           title: t.gal_mining_still_format,
           hasRevealTarget: true,
-          visible: (_) => Platform.isWindows,
+          visible: (_) => hostPlatform.isWindows,
         ),
         SettingsBodySearchEntry(
           id: 'card_creation.anki.gal_mining_audio_mode',
           title: t.gal_mining_audio_mode,
           subtitle: t.gal_mining_audio_mode_hint,
           hasRevealTarget: true,
-          visible: (_) => Platform.isWindows,
+          visible: (_) => hostPlatform.isWindows,
         ),
         SettingsBodySearchEntry(
           id: 'card_creation.anki.gal_mining_audio_seconds',
           title: t.gal_mining_audio_seconds,
           subtitle: t.gal_mining_audio_seconds_hint,
           hasRevealTarget: true,
-          visible: (_) => Platform.isWindows,
+          visible: (_) => hostPlatform.isWindows,
         ),
       ],
       if (panel == AnkiSettingsPanel.connection) ...[
@@ -564,7 +571,7 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
         ),
       ],
       if (panel == AnkiSettingsPanel.connection &&
-          (Platform.isAndroid || Platform.isIOS))
+          (hostPlatform.isAndroid || hostPlatform.isIOS))
         SettingsBodySearchEntry(
           id: 'card_creation.anki.connect_mobile',
           title: t.anki_connect_use_on_mobile,
@@ -628,7 +635,7 @@ List<AnkiSectionRow> _ankiConfiguredRows(SettingsContext c) {
     AnkiSectionRow.reposition,
     AnkiSectionRow.autoReposition,
     AnkiSectionRow.duplicateScope,
-    if (Platform.isIOS &&
+    if (hostPlatform.isIOS &&
         ankiMobileLedgerIsDuplicateSource(
           useAnkiConnectOnMobile: s.settings.useAnkiConnectOnMobile,
           mineToServer: c.appModel.mineToServerEnabled,

@@ -17,16 +17,12 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'support/srs_bulk_fixture.dart';
-import 'support/srs_raw_sql.dart';
 import 'package:fushi_engine/srs/srs_reads.dart';
 
 const int _day = 24 * 60 * 60 * 1000;
 
-Future<int> _ops(SrsDbStore s) async =>
-    (await s.core
-            .customSelect('SELECT COUNT(*) AS n FROM sync2_ops')
-            .getSingle())
-        .read<int>('n');
+/// 本机操作日志条数（内核 `status` 的 `ops`）。
+Future<int> _ops(SrsDbStore s) async => (await s.sync2Status())['ops']! as int;
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;

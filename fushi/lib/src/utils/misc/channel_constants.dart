@@ -148,4 +148,11 @@ abstract final class FushiChannels {
   static const MethodChannel windowActivation = MethodChannel(
     '$_prefix/window_activation',
   );
+
+  /// 通知渠道显示名跟界面语言（拍板台 left3621）：主引擎启动时把「渠道 id → 名字」
+  /// 整表推给原生 `NotificationChannelNames.java`。Dart 门面
+  /// `lib/src/platform/android/android_notification_channels.dart`。
+  static const MethodChannel notificationChannels = MethodChannel(
+    '$_prefix/notification_channels',
+  );
 }

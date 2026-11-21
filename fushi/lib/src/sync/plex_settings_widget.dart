@@ -24,7 +24,9 @@ import 'package:fushi/src/settings/settings_cli_tasks.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/sync/jellyfin_settings_widget.dart'
-    show findMediaServerById;
+    show findMediaServerById, probeJellyfinRoute;
+import 'package:fushi/src/sync/jellyfin_video_client.dart'
+    show JellyfinServerConfig;
 import 'package:fushi/src/sync/plex_video_client.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -92,7 +94,8 @@ Future<PlexServerConfig> connectPlexServerManually(
     if (machineIdentifier.isEmpty) {
       throw const FormatException('Plex /identity has no machineIdentifier');
     }
-    // `/identity` 不验 token；列库才是真正的鉴权请求。
+    // `/identity` 不带 token（PMS 也不要求）；列库才是真正的鉴权请求。手动连接
+    // 没有预期的 machineIdentifier 可核对：地址与 token 都是用户亲手填的。
     await api.sections();
     String? serverName;
     try {
@@ -123,27 +126,70 @@ Future<PlexServerConfig> connectPlexServerManually(
   }
 }
 
-/// [uri] 可达且确实是 [machineIdentifier] 那台服务器（`/identity` 比对）。
+/// [uri] 可达且确实是 [machineIdentifier] 那台服务器：无凭据 `/identity` 比对
+/// （[verifyPlexServerIdentity]）。签名里没有 token——探测阶段拿不到凭据，
+/// 只有核对通过、被选为当前线路的地址之后才会收到带 token 的请求。
 Future<bool> probePlexConnection(
   String uri,
-  String token,
   String machineIdentifier,
   PlexClientInfo info, {
   required Duration timeout,
   http.Client Function()? httpClientFactory,
+}) => verifyPlexServerIdentity(
+  uri,
+  machineIdentifier,
+  info,
+  timeout: timeout,
+  client: httpClientFactory?.call(),
+);
+
+/// 媒体服务器请求在当前线路上失败之后自动换线路（gap-remote-7）：[config] 是
+/// Plex 且 [error] 是传输失败时，在它已存的连接里探测（核对 machineIdentifier），
+/// 找到另一条可达线路就写回配置、失效这台的远端清单缓存槽（槽里的封面 / 流 URL
+/// 烤着旧线路的 host，与手动「切换线路」同口径），返回新配置供调用方重建客户端；
+/// 其余情况返回 null、不写任何东西。
+///
+/// 只换 `activeServerUrl`，不存账号 token、不改连接清单。Jellyfin 家族同理：在用户
+/// 手填的线路（登录地址 + 备用线路）里探（带现有令牌读一次媒体库，同时核对是同一台、
+/// 令牌仍有效），见 [JellyfinServerConfig.rerouteAfterFailure]。
+Future<MediaServerConfig?> rerouteMediaServerAfterFailure(
+  MediaServerConfig config,
+  Object error, {
+  required SyncRepository repo,
+  required RemoteLibraryCache cache,
+  Duration probeTimeout = const Duration(seconds: 5),
+  http.Client Function()? httpClientFactory,
 }) async {
-  final PlexApi api = PlexApi(
-    serverUrl: uri,
-    token: token,
-    clientInfo: info,
-    client: httpClientFactory?.call(),
-  );
-  try {
-    final String id = await api.identity().timeout(timeout);
-    return id == machineIdentifier;
-  } finally {
-    api.close();
+  if (config is JellyfinServerConfig) {
+    final JellyfinServerConfig? rerouted = await config.rerouteAfterFailure(
+      error,
+      probe: (String url) => probeJellyfinRoute(
+        config,
+        url,
+        timeout: probeTimeout,
+        httpClientFactory: httpClientFactory,
+      ),
+    );
+    if (rerouted == null) return null;
+    await repo.upsertMediaServer(rerouted);
+    cache.invalidateSource(rerouted.sourceId);
+    return rerouted;
   }
+  if (config is! PlexServerConfig) return null;
+  final PlexServerConfig? rerouted = await config.rerouteAfterFailure(
+    error,
+    probe: (String uri) => probePlexConnection(
+      uri,
+      config.machineIdentifier,
+      PlexClientInfo(clientIdentifier: config.clientIdentifier),
+      timeout: probeTimeout,
+      httpClientFactory: httpClientFactory,
+    ),
+  );
+  if (rerouted == null) return null;
+  await repo.upsertMediaServer(rerouted);
+  cache.invalidateSource(rerouted.sourceId);
+  return rerouted;
 }
 
 /// plex.tv 账号授权拿到账号 token 之后：列出账号下的服务器，各台按连接优先级探测
@@ -158,12 +204,7 @@ Future<List<PlexServerConfig>> savePlexAccountServers(
   required PlexTvApi tv,
   required String accountToken,
   required PlexClientInfo info,
-  required Future<bool> Function(
-    String uri,
-    String token,
-    String machineIdentifier,
-  )
-  probe,
+  required Future<bool> Function(String uri, String machineIdentifier) probe,
 }) async {
   // 账号名只用于卡片副标题，查不到不妨碍登录。
   final Future<PlexTvUser?> userFuture = Future<PlexTvUser?>.sync(
@@ -174,8 +215,7 @@ Future<List<PlexServerConfig>> savePlexAccountServers(
     for (final PlexResource r in resources)
       firstReachablePlexConnection(
         orderPlexConnections(r.connections),
-        (String uri) =>
-            probe(uri, r.accessToken ?? accountToken, r.clientIdentifier),
+        (String uri) => probe(uri, r.clientIdentifier),
       ),
   ];
   final PlexTvUser? user = await userFuture;
@@ -284,15 +324,13 @@ Future<SettingsCliTask> startPlexAccountSignInForCli(
           tv: tv,
           accountToken: result.token!,
           info: info,
-          probe: (String uri, String token, String machineIdentifier) =>
-              probePlexConnection(
-                uri,
-                token,
-                machineIdentifier,
-                info,
-                timeout: probeTimeout,
-                httpClientFactory: httpClientFactory,
-              ),
+          probe: (String uri, String machineIdentifier) => probePlexConnection(
+            uri,
+            machineIdentifier,
+            info,
+            timeout: probeTimeout,
+            httpClientFactory: httpClientFactory,
+          ),
         );
         if (saved.isEmpty) throw StateError(t.plex_servers_none_reachable);
         return <String, Object?>{
@@ -489,12 +527,10 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
   /// [uri] 可达且确实是 [machineIdentifier] 那台服务器。
   Future<bool> _probe(
     String uri,
-    String token,
     String machineIdentifier,
     PlexClientInfo info,
   ) => probePlexConnection(
     uri,
-    token,
     machineIdentifier,
     info,
     timeout: widget.probeTimeout,
@@ -539,8 +575,8 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
         tv: tv,
         accountToken: result.token!,
         info: info,
-        probe: (String uri, String token, String machineIdentifier) =>
-            _probe(uri, token, machineIdentifier, info),
+        probe: (String uri, String machineIdentifier) =>
+            _probe(uri, machineIdentifier, info),
       )).length;
       if (!mounted) return;
       if (added == 0) {
