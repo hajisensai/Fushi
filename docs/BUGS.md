@@ -46,6 +46,7 @@
 |---|:--:|:--:|---|
 | [BUG-5084](bugs/BUG-5084-interconnect-client-collection-sections-ignore-host-override.md) | ✅ | ✅ | 互联客户端看 host 合集时分栏不认 host 上的手动分栏 |
 > 共 4414 条。点号进各自文件。
+> 共 4416 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -132,6 +133,7 @@
 |---|:--:|:--:|---|
 | [BUG-5157](bugs/BUG-5157-web-pseudo-fullscreen-survives-navigation.md) | ✅ | ✅ | web-pseudo-fullscreen-survives-navigation |
 | [BUG-5140](bugs/BUG-5140-favorite-sentence-recolor.md) | 🚧 | 🚧 | 收藏句改色：已收藏的书摘不能改颜色（同步缺颜色更新时间） |
+| [BUG-5135](bugs/BUG-5135-torrent-active-slots-hot-reset-zero.md) | ✅ | ✅ | 活跃下载 / 做种名额热更新回 0（引擎默认）不生效 |
 | [BUG-5088](bugs/BUG-5088-readintosync-blocks-gc-safepoint.md) | ✅ | ✅ | readintosync-blocks-gc-safepoint |
 | [BUG-5087](bugs/BUG-5087-sync-video-sweep-tests-teardown-temp-locked.md) | ✅ | ✅ | sync-video-sweep-tests-teardown-temp-locked |
 | [BUG-5086](bugs/BUG-5086-dist-test-verdict-coverage-shared-log.md) | ✅ | ✅ | 「dist 请求 7 个测试文件只跑 2 个仍判 PASSED」是并发代理共用日志名读串了；dist_test 判绿改为逐个核对请求的 suite |
@@ -152,6 +154,7 @@
 | [BUG-5072](bugs/BUG-5072-completed-seeding-not-pausable.md) | ✅ | ✅ | 下载页已完成仍做种的视频任务无法暂停/恢复做种（单条与批量） |
 | [BUG-5072](bugs/BUG-5072-torrent-resume-offline-save-path-zeroes-progress.md) | ✅ | ✅ | 重启时 save_path 暂不可达：fast-resume 被拒后在空路径全检得 0 片，周期快照把全 0 位图写回 .resume，路径恢复后永久跳过校验从 0% 重下 |
 | [BUG-5071](bugs/BUG-5071-torrent-upload-block-starves-download.md) | ✅ | ✅ | 单种子停上传（分享率达标）用 set_upload_limit(1) 把下载一起饿死 |
+| [BUG-5071](bugs/BUG-5071-server-torrent-upload-off-ignored.md) | ✅ | ✅ | 无头服务端内置 BT：上传关不住、下载被队列卡住、会话设置不可配 |
 | [BUG-5070](bugs/BUG-5070-stat-trend-iso-week-dst.md) | ✅ | ✅ | 统计趋势按周聚合在有夏令时的时区把相邻两周并成一桶、周号少一 |
 | [BUG-5069](bugs/BUG-5069-txt-oversized-single-paragraph.md) | ✅ | ✅ | TXT 超长段落绕过分章上限 |
 | [BUG-5068](bugs/BUG-5068-interconnect-mdns-fallback-new-network.md) | ✅ | ✅ | 电脑改连手机热点后手机连不上已配对的互联主机（只拨旧地址，从不在局域网上重新找它） |

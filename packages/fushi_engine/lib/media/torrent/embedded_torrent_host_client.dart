@@ -176,6 +176,52 @@ class EmbeddedTorrentHostClient {
   /// 见 [EmbeddedTorrentHost.sweepUploadPolicy]。
   Future<int> sweepUploadPolicy() => _worker.run(_sweepUploadPolicy);
 
+  /// 把一份完整的内置引擎配置按序铺到常驻会话：限速 / 连接数 → 内存预算 →
+  /// 会话级设置（端口 / 发现协议 / 加密 / 活跃数 / 上传槽）→ 反吸血 → 上传 /
+  /// 做种策略。app 与无头服务端共用这一处（BUG-5071：服务端此前只铺会话级
+  /// 设置、从不下发上传策略，「关上传」在服务端从未生效）。
+  ///
+  /// 顺序有依赖：[applySessionSettings] 会把已下发的上传开关缓存置空（native
+  /// 可能改写 unchoke 槽位），必须紧跟一次 [setUploadPolicy] 重新裁决。命令在
+  /// 工作 isolate 里按发送顺序执行，这里只投递、不等回执。
+  ///
+  /// [totalRamMb] 测试缝；缺省现探本机物理内存（探不到按保守预算）。
+  void postConfig(QbConnectionConfig config, {int? totalRamMb}) {
+    post(
+      'applyLimits',
+      applyLimits(
+        downloadKbps: config.downloadLimitKbps,
+        uploadKbps: config.uploadLimitKbps,
+        maxConnections: config.maxConnections,
+        limitLocalPeers: config.limitLocalPeers,
+      ),
+    );
+    // 内存占用上限（按物理内存或用户设定推导；避免 libtorrent 吃满内存）。
+    // 用户显式设了 maxConnections 就不用内存预算的连接数覆盖它（传 0）。
+    final TorrentMemorySettings mem = computeTorrentMemorySettings(
+      memoryLimitMb: config.memoryLimitMb,
+      totalRamMb: totalRamMb ?? detectTotalMemoryMb() ?? 0,
+    );
+    post(
+      'applyMemorySettings',
+      applyMemorySettings(
+        mem,
+        connectionsLimit: config.maxConnections > 0 ? 0 : mem.connectionsLimit,
+      ),
+    );
+    post('applySessionSettings', applySessionSettings(config));
+    post('applyAntiLeechConfig', applyAntiLeechConfig(config));
+    post('setUploadPolicy', setUploadPolicy(config));
+  }
+
+  /// 维护 tick：反吸血封禁 + 上传 / 做种策略各扫一轮（做种时长 / 分享率上限
+  /// 只能靠周期扫描兑现）。持有方每个维护周期调一次；两轮扫描在工作 isolate
+  /// 里按序执行，这里只投递。
+  void postMaintenanceSweep() {
+    post('sweepAntiLeech', sweepAntiLeech());
+    post('sweepUploadPolicy', sweepUploadPolicy());
+  }
+
   /// 见 [EmbeddedTorrentHost.setActiveSaveRoot]。
   Future<void> setActiveSaveRoot(String newActiveRoot) =>
       _worker.run(_setActiveSaveRoot(newActiveRoot));

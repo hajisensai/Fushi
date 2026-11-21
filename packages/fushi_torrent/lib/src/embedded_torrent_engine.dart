@@ -563,6 +563,8 @@ class FtSessionStatus {
     required this.pexEnabled,
     this.uploadGates,
     this.offlineResumeFrozen,
+    this.activeDownloads,
+    this.activeSeeds,
     required this.downRate,
     required this.upRate,
     required this.portMappings,
@@ -583,6 +585,11 @@ class FtSessionStatus {
   final int? uploadGates;
   final int? offlineResumeFrozen;
 
+  /// libtorrent `active_downloads` / `active_seeds` 现值（-1 = 不限；null =
+  /// 老 DLL 不报这两项）。热更新名额后据此核对真正生效的值（HBK-AUDIT-020）。
+  final int? activeDownloads;
+  final int? activeSeeds;
+
   /// 会话级全局速率（字节/秒，含协议开销；-1 = 未知）。
   final int downRate;
   final int upRate;
@@ -600,6 +607,8 @@ class FtSessionStatus {
       pexEnabled: json['pex_enabled'] == true,
       uploadGates: (json['upload_gates'] as num?)?.toInt(),
       offlineResumeFrozen: (json['offline_resume_frozen'] as num?)?.toInt(),
+      activeDownloads: (json['active_downloads'] as num?)?.toInt(),
+      activeSeeds: (json['active_seeds'] as num?)?.toInt(),
       downRate: (json['down_rate'] as num?)?.toInt() ?? -1,
       upRate: (json['up_rate'] as num?)?.toInt() ?? -1,
       portMappings: mappings is List
@@ -813,8 +822,11 @@ class EmbeddedTorrentSession {
   }
 
   /// 应用会话级设置（端口/DHT/LSD/UPnP/NAT-PMP/加密/匿名/活跃数/上传槽）。
-  /// [encPolicy] 0=首选 1=强制 2=禁用；[listenPort]/[activeDownloads]/
-  /// [activeSeeds]/[maxUploadSlots] <=0 保持默认。1 成功 0 失败。
+  /// [encPolicy] 0=首选 1=强制 2=禁用；[listenPort]/[maxUploadSlots] <=0 不动。
+  /// [activeDownloads]/[activeSeeds] 每次都写全值：>0 原值、0 = libtorrent 默认
+  /// （从任意旧值热切回默认也生效，HBK-AUDIT-020）、<0 = 不限。两者是**状态**
+  /// 不是增量、没有「不动」档，故为 required：只想切别的项的调用方也必须传
+  /// 当前名额，否则缺省值 0 会把用户名额静默冲回默认。1 成功 0 失败。
   bool applySessionSettings({
     int listenPort = 0,
     bool enableDht = true,
@@ -823,8 +835,8 @@ class EmbeddedTorrentSession {
     bool enableNatpmp = true,
     int encPolicy = 0,
     bool anonymousMode = false,
-    int activeDownloads = 0,
-    int activeSeeds = 0,
+    required int activeDownloads,
+    required int activeSeeds,
     int maxUploadSlots = 0,
   }) {
     if (isClosed) return false;

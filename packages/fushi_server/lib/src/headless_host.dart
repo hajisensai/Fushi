@@ -463,6 +463,8 @@ class HeadlessHost {
       subtitleRegistryFactory: _subtitleRegistryFactory,
       // 远程任务的落盘白名单现读配置：`ctl settings set` 改完下一条命令即生效。
       peerTorrentRoots: () => config.torrentPeerRoots,
+      // 内置引擎会话设置现读配置：WebUI 改完经 applyConfig 重铺到常驻会话。
+      torrentSession: () => config.torrentSession,
     );
     await downloads.start();
     _downloads = downloads;
@@ -780,6 +782,11 @@ class HeadlessHost {
   Future<void> applyConfig(ServerConfig next) async {
     final ServerConfig prev = _config;
     _config = next;
+    // 内置 BT 引擎的会话设置（上传开关 / 限速 / 活跃名额…）保存即重铺到常驻
+    // 会话（BUG-5071）。与互联 host 是否在跑无关，放在下面的早退之前。
+    if (prev.torrentSession != next.torrentSession) {
+      _downloads?.applyTorrentSessionSettings();
+    }
     final FushiSyncServer? server = _server;
     if (server == null) return;
     // 复习库选的 profile 变了：新加的打开、去掉的关掉（不重启）。
