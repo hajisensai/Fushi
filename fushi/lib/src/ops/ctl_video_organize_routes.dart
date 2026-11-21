@@ -121,6 +121,11 @@ Map<String, Object?> videoOrganizePlanToJson(VideoFilenameOrganizePlan plan) =>
                   'from': m.move.from,
                   'to': m.move.to,
                   'isVideo': m.move.isVideo,
+                  if (m.sourceFingerprint case final VideoFileFingerprint fp)
+                    'identity': <String, Object?>{
+                      'size': fp.size,
+                      'modifiedMs': fp.modifiedMs,
+                    },
                   if (m.torrent case final VideoFilenameTorrentLink t)
                     'torrent': <String, Object?>{
                       'infoHash': t.infoHash,
@@ -158,6 +163,7 @@ VideoFilenameOrganizePlan? videoOrganizePlanFromJson(Object? raw) {
     for (final Object? m in item['moves'] as List) {
       if (m is! Map || m['from'] is! String || m['to'] is! String) return null;
       final Object? t = m['torrent'];
+      final Object? identity = m['identity'];
       moves.add(
         VideoFilenamePlannedMove(
           move: VideoFileMove(
@@ -171,6 +177,17 @@ VideoFilenameOrganizePlan? videoOrganizePlanFromJson(Object? raw) {
                   fileIndex: (t['fileIndex'] as num).toInt(),
                   currentRelativePath: '${t['current']}',
                   newRelativePath: '${t['next']}',
+                )
+              : null,
+          // 本修复（HBK-AUDIT-031）之前落库的旧载荷没有身份：只能按存在与否
+          // 判断，目标不覆盖的保护照旧生效。
+          sourceFingerprint:
+              identity is Map &&
+                  identity['size'] is num &&
+                  identity['modifiedMs'] is num
+              ? VideoFileFingerprint(
+                  size: (identity['size'] as num).toInt(),
+                  modifiedMs: (identity['modifiedMs'] as num).toInt(),
                 )
               : null,
         ),
@@ -966,14 +983,22 @@ Future<({int reverted, List<String> errors})> revertVideoOrganize(
   );
 }
 
-/// 撤销前的快检：撤销计划里每个视频本体是否还在「搬过去的位置」。一个都不在 =
-/// 用户之后自己又挪过，整次撤销算已被处理。
+/// 撤销前的快检：撤销计划里是否还有视频本体仍在「搬过去的位置」，且仍是当初
+/// 搬过去的那个文件（按执行时记下的身份核对；旧载荷没有身份时只看存在）。
+/// 一个都不是 = 用户之后自己又挪过 / 同名位置换成了别的文件，整次撤销算已被
+/// 处理。逐文件的身份在服务执行撤销时还会再核一次。
 Future<bool> videoOrganizeUndoStillApplies(
   VideoFilenameOrganizePlan undoPlan,
 ) async {
   for (final VideoFilenameItemPlan item in undoPlan.items) {
     for (final VideoFilenamePlannedMove m in item.moves) {
-      if (m.move.isVideo && await File(m.move.from).exists()) return true;
+      if (!m.move.isVideo) continue;
+      final VideoFileFingerprint? actual = await VideoFileFingerprint.of(
+        m.move.from,
+      );
+      if (actual == null) continue;
+      final VideoFileFingerprint? expected = m.sourceFingerprint;
+      if (expected == null || expected == actual) return true;
     }
   }
   return false;
