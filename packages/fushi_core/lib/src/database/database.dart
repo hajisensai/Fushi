@@ -3653,7 +3653,7 @@ class FushiDatabase extends _$FushiDatabase
       if (from < 170) {
         // v170：music_tracks.scan_album_uid——扫描时按标签算出的专辑 uid（归组前的原始
         // 归属，HBK-AUDIT-027）。存量行回填为当前 album_uid（升级前没有归组步骤，
-        // album_uid 就是按标签算的值），再整库归组一次：BUG-5080 拆开的专辑存量也并回
+        // album_uid 就是按标签算的值），再整库归组一次：BUG-5164 拆开的专辑存量也并回
         // 一张，之后只在扫描改动到的目录上重算。按列存在性守卫加列；回填只补 NULL、
         // 归组按当前状态重算，重跑幂等。
         if (await _tableExists('music_tracks')) {

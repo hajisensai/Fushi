@@ -900,7 +900,7 @@ class EmbeddedTorrentSession {
   bool get supportsTorrentUploadBlock => _b.hasTorrentUploadBlock;
 
   /// 单种子停止上传、继续下载（fRmEhU4XIK）。[blocked] true = 桥内上传闸
-  /// 只拦 piece payload（BUG-5071：不再用 1 B/s 限速，那会连握手 / request
+  /// 只拦 piece payload（BUG-5160：不再用 1 B/s 限速，那会连握手 / request
   /// 一起饿死下载），false = 解除。库不支持返回 false。
   bool setTorrentUploadBlocked(String infoHash, {required bool blocked}) {
     if (isClosed || !_b.hasTorrentUploadBlock) return false;

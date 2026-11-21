@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
 
 /// vendored `flutter_onnxruntime` 的 CUDA 空闲释放（PATCHES.md delta #18，
-/// BUG-5078）。
+/// BUG-5163）。
 ///
 /// CUDA 主上下文由 cudart retain、进程不退就不还：用过一次 GPU 转录之后，本进程
 /// 常驻约 180 MiB 显存 + 约 620 MiB 私有提交。插件在最后一个 CUDA 会话关闭、空闲

@@ -213,7 +213,7 @@ mixin _FushiDbMusic on _$FushiDatabase {
     });
   }
 
-  /// 同一张 CD 因专辑艺人标签不齐被拆开时并回一张（BUG-5080），只在 [dirsBySource]
+  /// 同一张 CD 因专辑艺人标签不齐被拆开时并回一张（BUG-5164），只在 [dirsBySource]
   /// （来源 id → 目录前缀，见 [musicTrackDirPrefix]）这些目录上按当前在库状态重算。
   ///
   /// 专辑 uid 由 Rust 按单首曲目算（`native/fushi_music` `uid.rs` 的 `album_uid`）：有专辑
@@ -240,7 +240,7 @@ mixin _FushiDbMusic on _$FushiDatabase {
     return changed;
   }
 
-  /// 全部来源整库归组一次（v167 迁移：存量里 BUG-5080 拆开的专辑并回去）。日常扫描只走
+  /// 全部来源整库归组一次（v167 迁移：存量里 BUG-5164 拆开的专辑并回去）。日常扫描只走
   /// [_regroupMusicAlbumDirs]。返回改了生效专辑的曲目数。
   Future<int> regroupAllMusicAlbums() async =>
       _applyMusicAlbumGrouping(await _musicGroupingRows());

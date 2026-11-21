@@ -180,7 +180,7 @@ class QbConnectionConfig {
 
   /// 最大活跃下载数（0 = 引擎默认，libtorrent 为 3；[activeLimitUnlimited] =
   /// 不限）。种子一律 auto-managed，超出名额的下载会被队列管理器挂起（不连
-  /// peer、状态 pausedDL），见 BUG-5071。
+  /// peer、状态 pausedDL），见 BUG-5160。
   final int maxActiveDownloads;
 
   /// 最大活跃做种数（0 = 引擎默认，libtorrent 为 5；[activeLimitUnlimited] =

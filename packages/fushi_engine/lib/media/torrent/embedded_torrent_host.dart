@@ -1331,7 +1331,7 @@ void writeUserPausedFile(String resumeDir, Set<String> infoHashes) {
   }
 }
 
-/// 活跃名额配置值 → `ht_apply_session_settings` 的入参（BUG-5071）。
+/// 活跃名额配置值 → `ht_apply_session_settings` 的入参（BUG-5160）。
 ///
 /// native 每次都写全值：`> 0` 原值、`0` = libtorrent 默认（取
 /// `lt::default_settings()`，从「不限 / 自定义」热切回 0 也真恢复默认，

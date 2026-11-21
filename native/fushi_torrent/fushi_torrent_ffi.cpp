@@ -286,7 +286,7 @@ struct StorageOp {
   }
 };
 
-// ── BUG-5071：单种子「停上传、续下载」闸（fRmEhU4XIK）──────────────────────
+// ── BUG-5160：单种子「停上传、续下载」闸（fRmEhU4XIK）──────────────────────
 //
 // libtorrent 没有 per-torrent 的「零上传」原语。旧实现拿 set_upload_limit(1)
 // 冒充，但 per-torrent 限速走的是该种子 peer class 的上传带宽通道，管的是
@@ -448,10 +448,10 @@ struct ht_session_ctx {
 
   lt::session ses;
 
-  // BUG-5071：单种子停上传闸（ht_set_torrent_upload_blocked 翻转）。
+  // BUG-5160：单种子停上传闸（ht_set_torrent_upload_blocked 翻转）。
   std::shared_ptr<UploadGatePlugin> upload_gate;
 
-  // BUG-5072 / HBK-AUDIT-030：加载时数据不可达而保持暂停的种子（infohash
+  // BUG-5161 / HBK-AUDIT-030：加载时数据不可达而保持暂停的种子（infohash
   // hex）。这些种子的 fast-resume 还没被 libtorrent 核过，此时 save_resume_data
   // 写出的是空位图——把它写回盘就丢掉了原 .resume 里的进度：下次启动若数据
   // 仍不可达，空位图让它照常开跑、在空挂载点上从 0 下载。所以冻结期间
@@ -1180,7 +1180,7 @@ HT_EXPORT int ht_set_torrent_upload_blocked(void* session,
   try {
     lt::torrent_handle h = find_torrent(as_session(session), info_hash);
     if (!h.is_valid()) return 0;
-    // BUG-5071：只拦 payload（见 UploadGate），绝不用 per-torrent 限速 ——
+    // BUG-5160：只拦 payload（见 UploadGate），绝不用 per-torrent 限速 ——
     // 那会连握手 / request 一起饿死，下载随之永久卡住。
     const std::shared_ptr<UploadGate> gate = as_ctx(session)->upload_gate->find(h);
     if (!gate) return 0;
@@ -1960,7 +1960,7 @@ HT_EXPORT char* ht_load_resume_dir(void* session, const char* dir) {
       // 与 add_with_params 同一语义：本引擎的 add = 「开始跑」。resume 里
       // 存的 paused 旗标必须清掉，否则加回来是暂停态，既不续传也不做种。
       //
-      // BUG-5072 例外：resume 声称持有数据、而 save_path 此刻不存在（盘未
+      // BUG-5161 例外：resume 声称持有数据、而 save_path 此刻不存在（盘未
       // 挂载 / 网络盘未重连 / 目录被挪走）。照常开跑的话 libtorrent 拒掉
       // fast-resume 后在空路径上全检得 0 片（torrent.cpp on_resume_data_checked
       // → start_checking），周期快照随即把「全长全 0」位图写回 .resume；
@@ -1988,7 +1988,7 @@ HT_EXPORT char* ht_load_resume_dir(void* session, const char* dir) {
       // BUG-1293：旧版本把「关上传」误写成置 upload_mode（实际语义是停止
       // 下载），已升级用户的 resume 里可能带着残留 flag，加载时一律治愈。
       params.flags &= ~lt::torrent_flags::upload_mode;
-      // BUG-5071：旧版本单种子停上传用 set_upload_limit(1)，随 fastResume 落盘
+      // BUG-5160：旧版本单种子停上传用 set_upload_limit(1)，随 fastResume 落盘
       // 后种子一加载就饿死。本桥没有任何 per-torrent 限速功能（限速只走会话
       // 级 ht_apply_limits），所以 resume 里的单种子限速一律是那条 bug 的残留，
       // 清掉；截停意图由宿主首轮 sweep 经 ht_set_torrent_upload_blocked 重下。

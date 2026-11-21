@@ -7573,7 +7573,7 @@ class AppModel
     final EmbeddedTorrentHostClient? host = _embeddedTorrentHost;
     if (host == null) return;
     // 限速 / 内存预算 / 会话级设置 / 反吸血 / 上传策略：与无头服务端共用同一份
-    // 下发序列（BUG-5071），见 [EmbeddedTorrentHostClient.postConfig]。
+    // 下发序列（BUG-5160），见 [EmbeddedTorrentHostClient.postConfig]。
     host.postConfig(effectiveTorrentConfig(config));
     // P2P 代理（默认直连；用户在系统设置里单独开启才跟全局代理）。
     _applyEmbeddedTorrentProxy();

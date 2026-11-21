@@ -318,7 +318,7 @@ class ServerDownloadHost implements HostDownloadHost {
     return true;
   }
 
-  /// 维护 tick（BUG-5071）：上传 / 做种策略只能靠周期扫描兑现（做种时长、分享
+  /// 维护 tick（BUG-5160）：上传 / 做种策略只能靠周期扫描兑现（做种时长、分享
   /// 率上限，以及新加进来的已完成种子按「关上传」暂停），反吸血同理；resume
   /// 周期落盘（宿主内部按 resumeSaveInterval 节流），进程被强杀也不丢续传进度。
   /// 引擎没起时什么也不做，不为维护拉起 session。
@@ -552,7 +552,7 @@ class ServerDownloadHost implements HostDownloadHost {
       return null;
     }
     // 整套配置（限速 / 内存 / 会话 / 反吸血 / 上传策略）与 app 同一份下发序列。
-    // BUG-5071：此前这里只铺会话级设置，上传策略从未下发、也没有维护 tick，
+    // BUG-5160：此前这里只铺会话级设置，上传策略从未下发、也没有维护 tick，
     // unchoke 槽位停在 libtorrent 默认值，「关上传」在服务端从未生效。
     host.postConfig(_qbConfig);
     engineLog.logDiagnostic(

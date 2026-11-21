@@ -7,7 +7,7 @@ import 'package:sqlite3/sqlite3.dart' as sqlite;
 import 'package:test/test.dart';
 
 /// v170：`music_tracks.scan_album_uid`——扫描时按标签算出的专辑 uid（归组前的原始归属，
-/// HBK-AUDIT-027）。同一张 CD 只有部分曲目写了专辑艺人时（BUG-5080）的「同目录同名」
+/// HBK-AUDIT-027）。同一张 CD 只有部分曲目写了专辑艺人时（BUG-5164）的「同目录同名」
 /// 并组改写的是生效专辑 `album_uid`，原始归属不动，组里艺人变了能退回。
 void main() {
   test('v169 → v170：加列、存量回填为当前 album_uid，并整库归组一次（存量拆开的专辑并回）；'
@@ -107,7 +107,7 @@ void main() {
   });
 }
 
-/// 同一目录 /music/CD 下的一张盘：01 写了专辑艺人 X，02 没写（BUG-5080 的拆分）。
+/// 同一目录 /music/CD 下的一张盘：01 写了专辑艺人 X，02 没写（BUG-5164 的拆分）。
 MusicScanBatchWrite _splitCd() => MusicScanBatchWrite(
   tracks: <MusicTracksCompanion>[
     _track('h1', 'x-uid', 'one'),

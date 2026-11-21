@@ -287,7 +287,7 @@ class ServerConfig {
   final List<String> torrentPeerRoots;
 
   /// `torrent:` 段里内置引擎的会话设置（上传开关 / 限速 / 活跃名额 / 做种上限，
-  /// BUG-5071）。保存即生效，不进重启集合。
+  /// BUG-5160）。保存即生效，不进重启集合。
   final ServerTorrentSessionConfig torrentSession;
 
   /// 公网 / 反代 / DDNS 地址，经 `/api/host/addresses` 公布给已配对设备自动学习

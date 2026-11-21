@@ -1538,7 +1538,7 @@ class AdminApi {
       // 已配对设备借本机引擎下载时，除下载根外允许落盘的目录（保存即生效）。
       'peerRoots': ctx.config.torrentPeerRoots,
       'embeddedLibraryFound': locateBundledLibrary(torrentLibraryName()),
-      // 内置引擎会话设置（上传开关 / 限速 / 活跃名额 / 做种上限，BUG-5071）：
+      // 内置引擎会话设置（上传开关 / 限速 / 活跃名额 / 做种上限，BUG-5160）：
       // 保存即重新铺到常驻会话，不用重启。
       ...ctx.config.torrentSession.toAdminJson(),
     },

@@ -1,4 +1,4 @@
-// BUG-5071：`torrent:` 段的内置引擎会话设置（上传开关 / 限速 / 活跃名额 / 做种上限）
+// BUG-5160：`torrent:` 段的内置引擎会话设置（上传开关 / 限速 / 活跃名额 / 做种上限）
 // 经 yaml、admin API（WebUI「设置」页 / `ctl settings set`）读写，保存即推进 host
 // 实时配置、不进「需重启」清单。
 import 'dart:convert';

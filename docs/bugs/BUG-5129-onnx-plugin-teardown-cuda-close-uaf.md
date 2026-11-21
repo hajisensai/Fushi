@@ -1,5 +1,5 @@
 ## BUG-5129 · ONNX 插件析构时 GPU 队列排空在途 CUDA 关会话任务，碰到已析构的空闲释放 mutex 与定时器
-- **报告**：2026-11-22（外部审计 Codex 2026-11-21 PR 审查 HBK-AUDIT-015，针对 PR #4023 / BUG-5078 的 CUDA 空闲释放）
+- **报告**：2026-11-22（外部审计 Codex 2026-11-21 PR 审查 HBK-AUDIT-015，针对 PR #4023 / BUG-5163 的 CUDA 空闲释放）
 - **真实性**：✅ 真 bug（源码路径确认 + 原生行为测试复现）。
   - 根因：`FlutterOnnxruntimePluginImpl` 只靠隐式成员析构收尾。PR 头 `fcf9784dff` 的成员顺序是 `gpuQueue_`（`third_party/flutter_onnxruntime/windows/flutter_onnxruntime_plugin.cpp:132`）→ `cudaIdleMutex_`（:219）→ `cudaIdleRelease_`（:223，最后声明、最先析构）。析构时定时器与 mutex 先没，`gpuQueue_` 的析构函数（`WorkQueue::~WorkQueue` 置 stopping 后 join，worker 会把队列里剩下的任务**跑完**）再排空：此时若队列里还有 `HandleCloseSession` 的 CUDA 关会话任务（:1315 `impl->ArmCudaIdleRelease(...)`），它会锁已析构的 `cudaIdleMutex_` 并对已析构的 `DelayedTask` 调 `Schedule`（:197）——未定义行为（MSVC 上多半静默，sanitizer 也抓不到：Impl 的内存要等全部成员析构完才释放）。
   - 原注释「延时任务最后声明，先于它要投递的队列析构」只顾了「定时器 → 队列」一个方向；「队列任务 → 定时器 / mutex」这个反方向同时存在，所以任何声明顺序单独都不安全（定时器放前面，触发中的定时器又会往已析构的队列投递）。

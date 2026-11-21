@@ -1,4 +1,4 @@
-## BUG-5071 · 无头服务端内置 BT：上传关不住、下载被队列卡住、会话设置不可配
+## BUG-5160 · 无头服务端内置 BT：上传关不住、下载被队列卡住、会话设置不可配
 - **报告**：2026-11-21（用户：PVE 上的 fushi_server 经 `/api/torrent-engine` 给已配对 app 代下，默认关上传却持续上传 15～18 MB/s；未完成种子大多 0 连接、下载 0）
 - **真实性**：✅ 真 bug，三个缺陷：
   - **根因一（关上传不生效）**：服务端从不执行上传 / 做种策略。`packages/fushi_server/lib/src/download_host.dart:494`（修复前）起引擎时只投递一次 `applySessionSettings`，从不 `setUploadPolicy`，也没有任何维护 tick 调 `sweepUploadPolicy` / `sweepAntiLeech`（app 侧由 `AnimeDownloadService.onTick` 驱动，服务端没有对应物）。「关上传」的原语是会话级 unchoke 槽位清零 + 已完成种子暂停（BUG-1293），两者都只在 `EmbeddedTorrentHost.sweepUploadPolicy` 里下发，于是 unchoke 槽位一直停在 libtorrent 默认值、120 个已完成种子全部 auto-managed 做种。宿主里 `_uploadConfig` 的默认值确实是 `uploadEnabled=false`，只是没人让它生效。同一处还漏了 `applyLimits` / `applyMemorySettings` / `applyAntiLeechConfig` 和周期性 resume 落盘（进程被强杀会丢续传进度）。

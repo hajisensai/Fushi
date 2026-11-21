@@ -10,7 +10,7 @@
 //      全 0 位图无片可核 → fast-resume 被**接受** → 不做任何哈希检查，进度永久 0。
 //
 // 本文件第二个用例断言的是**正确行为**（路径回来后种子必须回到完整），修复前
-// 的桥上是红的——红即复现（BUG-5072）。第一个用例是对照：串行的 rename/move/save 写出
+// 的桥上是红的——红即复现（BUG-5161）。第一个用例是对照：串行的 rename/move/save 写出
 // 的是新 save_path 与新文件名、重启可直接做种（排除「同步序列里的旧路径快照」）。
 //
 // 全本地确定性（127.0.0.1、零外网）；FUSHI_TORRENT_LIB 指向 DLL，缺库整组 skip。
@@ -286,7 +286,7 @@ void main() {
         describe: () => describe(degraded, id),
       );
       final String degradedState = describe(degraded, id);
-      // BUG-5072：数据不可达时不开跑（开跑 = 在空路径上全检得 0 片）。
+      // BUG-5161：数据不可达时不开跑（开跑 = 在空路径上全检得 0 片）。
       expect(
         statusOf(degraded, id)!.isPaused,
         isTrue,

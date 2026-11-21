@@ -222,7 +222,7 @@ void main() {
     );
   });
 
-  test('BUG-5080：同目录同一张 CD 只有部分曲目写了专辑艺人，扫完并回一张；'
+  test('BUG-5164：同目录同一张 CD 只有部分曲目写了专辑艺人，扫完并回一张；'
       '不同目录、专辑艺人不止一位的不动', () async {
     final _ScriptedScanner s = _ScriptedScanner(<List<MusicScanRecord>>[
       <MusicScanRecord>[

@@ -1,4 +1,4 @@
-## BUG-5078 · ASR/TTS 校对用过 CUDA 后进程常驻约 180 MiB 显存与约 850 MiB 私有提交
+## BUG-5163 · ASR/TTS 校对用过 CUDA 后进程常驻约 180 MiB 显存与约 850 MiB 私有提交
 - **报告**：2026-11-21（用户的 gen4 `conflict_edits` 性能报告第四节附带观察：`3.4.0-debug.30040`，TTS 渲染 + ASR 校验任务 15:44 取消后回到空闲，`fushi.exe` 仍占 GPU 专用显存 956 MB、私有提交约 2.07 GB；CUDA 13 + ORT 模块（`cublasLt64_13.dll` 等）常驻，另有大块全零 `VirtualAlloc` 与 `PAGE_WRITECOMBINE` 页）
 - **真实性**：✅ 真 bug（本进程那部分）。
   - 进程内用 GPU 的只有 ASR：TTS 引擎全在进程外（Irodori 声音包 / GPT-SoVITS / VOICEVOX 等走本地服务或 HTTP），「制作有声书」的校对才在进程内起 CUDA 转录（`fushi/lib/src/media/audiobook/tts/studio/tts_render_runner.dart` `_transcribe`）。

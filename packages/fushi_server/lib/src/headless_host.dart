@@ -783,7 +783,7 @@ class HeadlessHost {
     final ServerConfig prev = _config;
     _config = next;
     // 内置 BT 引擎的会话设置（上传开关 / 限速 / 活跃名额…）保存即重铺到常驻
-    // 会话（BUG-5071）。与互联 host 是否在跑无关，放在下面的早退之前。
+    // 会话（BUG-5160）。与互联 host 是否在跑无关，放在下面的早退之前。
     if (prev.torrentSession != next.torrentSession) {
       _downloads?.applyTorrentSessionSettings();
     }

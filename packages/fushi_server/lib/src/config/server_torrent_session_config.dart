@@ -1,4 +1,4 @@
-/// `fushi_server.yaml` 的 `torrent:` 段里内置 libtorrent 引擎的会话设置（BUG-5071）。
+/// `fushi_server.yaml` 的 `torrent:` 段里内置 libtorrent 引擎的会话设置（BUG-5160）。
 ///
 /// ```yaml
 /// torrent:
@@ -35,7 +35,7 @@ class ServerTorrentSessionConfig {
 
   /// 服务端默认不限同时下载数：它是已配对设备借用的 BT 引擎，远程任务交进来
   /// 就该跑；libtorrent 默认的 3 个名额会把其余未完成种子静默挂成 pausedDL
-  /// （不连 peer，WebUI 与对端都看不出原因），BUG-5071 线上实测即此。
+  /// （不连 peer，WebUI 与对端都看不出原因），BUG-5160 线上实测即此。
   static const int defaultMaxActiveDownloads =
       QbConnectionConfig.activeLimitUnlimited;
 

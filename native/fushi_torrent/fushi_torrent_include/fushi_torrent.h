@@ -99,7 +99,7 @@ HT_EXPORT int ht_pause_torrent(void* session, const char* info_hash,
 // 单种子「停止上传、继续下载」（fRmEhU4XIK：分享率按整个生命周期计算，下载
 // 途中达到上限也要停上传）。libtorrent 没有 per-torrent 的「零上传」原语，且
 // per-torrent 限速（set_upload_limit）管的是连接上全部出向字节 —— 握手 /
-// request 也走它，限到 1 B/s 会把下载一起饿死（BUG-5071）。故桥内挂一个
+// request 也走它，限到 1 B/s 会把下载一起饿死（BUG-5160）。故桥内挂一个
 // session 插件只拦 piece payload：截停期间吞掉对端 request、生效时 choke 已
 // unchoke 的连接并把该种子 unchoke 名额压到 1；解除时恢复名额、给已表态
 // interested 的连接补 unchoke。控制消息与本端下载一概不受影响。
@@ -284,7 +284,7 @@ HT_EXPORT char* ht_save_resume_data(void* session, const char* out_dir,
 // added=0 而非错误。坏文件逐个跳过并计入 failed，绝不因一个坏文件整批失败。
 //
 // add 语义与 ht_add_magnet 一致：清 paused 旗标，加回来即开始跑。已在 session
-// 里的重复种子按成功计（幂等，可重复调用）。例外（BUG-5072 / HBK-AUDIT-030）：
+// 里的重复种子按成功计（幂等，可重复调用）。例外（BUG-5161 / HBK-AUDIT-030）：
 // resume 声称持有数据而数据此刻不可达——save_path 不是目录，或（有元数据时）
 // 一个种子文件都不在盘上（盘 / 网络挂载不在而空挂载点目录还在）——时保持暂停
 // 并清 auto_managed，且**冻结**它的 resume：之后的 ht_save_resume_data 跳过

@@ -381,7 +381,7 @@ or below the API version of the downloaded DirectML core.
 18. `windows/src/cuda_provider.{h,cc}`, `windows/src/session_manager.{h,cc}`,
     `windows/src/async_dispatch.{h,cc}`, `windows/flutter_onnxruntime_plugin.{h,cpp}`
     + `lib/src/onnxruntime.dart` / platform interface / method channel:
-    **CUDA idle release** (BUG-5078).
+    **CUDA idle release** (BUG-5163).
 
     - What stays behind after the last CUDA session closes is the CUDA primary
       context: cudart retains it and never lets go for the life of the process.
