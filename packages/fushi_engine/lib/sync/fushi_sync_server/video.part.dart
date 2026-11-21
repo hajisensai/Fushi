@@ -716,16 +716,20 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           request.url.queryParameters[kVideoFingerprintWaitQueryParam] != '0';
       try {
         final VideoSourceFingerprint fingerprints = _videoFingerprints;
-        final String? digest = wait
-            ? await _trackVideoFingerprintWork(
-                fingerprints.fingerprint(file.path),
+        final Future<String?>? lookup = wait
+            ? _startVideoFingerprintWork(
+                () => fingerprints.fingerprint(file.path),
               )
-            : await _trackVideoFingerprintWork(fingerprints.known(file.path));
+            : _startVideoFingerprintWork(() => fingerprints.known(file.path));
+        if (lookup == null) return _videoFingerprintHostStopping();
+        final String? digest = await lookup;
         if (digest == null) {
+          final Future<String>? background = _startVideoFingerprintWork(
+            () => fingerprints.fingerprint(file.path),
+          );
+          if (background == null) return _videoFingerprintHostStopping();
           unawaited(
-            _trackVideoFingerprintWork(
-              fingerprints.fingerprint(file.path),
-            ).then<void>(
+            background.then<void>(
               (String _) {},
               onError: (Object error, StackTrace stack) =>
                   engineLog.log('video.fingerprint.background', error, stack),
@@ -1847,6 +1851,7 @@ int _episodeIndexFromRequest(shelf.Request request) {
 /// 后开始后台低优先级预热（拍板台 left3657）。host 不提供媒体库时只挂缓存。
 extension _FushiSyncServerVideoFingerprintWarmup on FushiSyncServer {
   void _startVideoFingerprintWarmup() {
+    _videoFingerprintsClosed = false;
     _videoFingerprints.store = _videoFingerprintStore;
     final FushiLibraryHostService? svc = _libraryService;
     if (svc == null) return;
@@ -1864,6 +1869,8 @@ extension _FushiSyncServerVideoFingerprintWarmup on FushiSyncServer {
   /// 停机收尾：返回后本 host 发起的指纹计算全部结束（不再开着任何视频文件），落盘
   /// 缓存也不再被写（BUG-5078 / BUG-5087）。最多等正在算的那一个文件。
   Future<void> _stopVideoFingerprintWarmup() async {
+    // 先关闸再排空：之后到达的端点请求不再开算，排空循环看到的就是全部在途计算。
+    _videoFingerprintsClosed = true;
     _videoFingerprintWarmStart?.cancel();
     _videoFingerprintWarmStart = null;
     final VideoFingerprintWarmer? warmer = _videoFingerprintWarmer;
@@ -1880,9 +1887,13 @@ extension _FushiSyncServerVideoFingerprintWarmup on FushiSyncServer {
     await _videoFingerprintStore.idle();
   }
 
-  /// 登记一次 `/fingerprint` 端点发起的指纹计算，[stop] 等它收尾。返回 [work] 本身：
-  /// 成败照常交给调用方处理，登记的只是「何时结束」。
-  Future<T> _trackVideoFingerprintWork<T>(Future<T> work) {
+  /// 开一次 `/fingerprint` 端点的指纹计算并登记，[stop] 等它收尾；停机已开始时不开、
+  /// 返回 null（调用方回 503）。闸门检查与开算 + 登记同步完成，与 [stop] 的「关闸 →
+  /// 排空」之间没有空隙。返回的就是 [start] 的结果：成败照常交给调用方处理，登记的只是
+  /// 「何时结束」。
+  Future<T>? _startVideoFingerprintWork<T>(Future<T> Function() start) {
+    if (_videoFingerprintsClosed) return null;
+    final Future<T> work = start();
     final Future<void> settled = work.then<void>(
       (T _) {},
       onError: (Object error, StackTrace stack) {},
@@ -1893,6 +1904,11 @@ extension _FushiSyncServerVideoFingerprintWarmup on FushiSyncServer {
     );
     return work;
   }
+
+  /// host 正在停机：不再开新的指纹计算。503 = 暂时不可用，client 按网络错误处理、稍后
+  /// 重试；不能回 [kVideoFingerprintUnavailableStatus]（那是「这份字节担保不了」）。
+  shelf.Response _videoFingerprintHostStopping() =>
+      shelf.Response(503, body: 'Host is stopping');
 }
 
 /// 预热要算的文件：对端能经 host 播放的每条视频的每一集，取与 `/streamurl`、

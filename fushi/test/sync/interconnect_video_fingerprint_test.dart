@@ -21,7 +21,7 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart';
 
 /// 只实现本测试触达的 [resolveVideoFile]；其余经 noSuchMethod 抛（触达即协议走偏）。
 class _Host implements FushiLibraryHostService {
-  _Host(this.files, {this.videos});
+  _Host(this.files, {this.videos, this.beforeResolve});
 
   /// `(id, episodeIndex)` → host 上的原文件。
   final Map<(String, int), File> files;
@@ -30,6 +30,9 @@ class _Host implements FushiLibraryHostService {
   /// 视频清单（后台预热用）；null = 本测试不触达清单。
   final List<RemoteVideoInfo>? videos;
 
+  /// 解析文件前先等它（模拟慢的库查询）；null = 立即解析。
+  final Future<void> Function()? beforeResolve;
+
   @override
   Future<List<RemoteVideoInfo>> listVideos() async =>
       videos ?? (throw UnimplementedError('listVideos'));
@@ -37,6 +40,7 @@ class _Host implements FushiLibraryHostService {
   @override
   Future<File?> resolveVideoFile(String id, {int episodeIndex = 0}) async {
     calls.add((id, episodeIndex));
+    await beforeResolve?.call();
     return files[(id, episodeIndex)];
   }
 
@@ -447,6 +451,62 @@ void main() {
       );
       expect(pending.status, kVideoFingerprintPendingStatus);
       await expectStopWaitsFor(h);
+    });
+
+    /// `close(force: true)` 留下的在途 handler 在 [FushiSyncServer.stop] 排空登记之后才
+    /// 解析完文件：它不能再开算——否则 stop 返回后仍会开着视频文件。
+    test('停机后才解析完文件的在途请求不再开算', () async {
+      final File file = File('${dir.path}/late.mkv')
+        ..writeAsBytesSync(List<int>.filled(4096, 7));
+      final Directory root = Directory.systemTemp.createTempSync(
+        'hbk_vfp_stop',
+      );
+      addTearDown(() => root.deleteSync(recursive: true));
+      final Completer<void> resolving = Completer<void>();
+      final Completer<void> resolveGate = Completer<void>();
+      final Completer<void> computed = Completer<void>();
+      final FushiSyncServer server = FushiSyncServer(
+        syncDataDir: root.path,
+        port: 0,
+        token: token,
+        allowLan: false,
+        libraryService: _Host(
+          <(String, int), File>{('video/late', 0): file},
+          beforeResolve: () {
+            if (!resolving.isCompleted) resolving.complete();
+            return resolveGate.future;
+          },
+        ),
+        videoFingerprints: VideoSourceFingerprint(
+          compute: (String absolutePath, FileStat stat) async {
+            if (!computed.isCompleted) computed.complete();
+            return 'd' * 64;
+          },
+        ),
+      );
+      await server.start();
+      // 停机会强关连接，请求本身以错误结束；这里只关心 host 侧的 handler。
+      final Future<Object?> request =
+          _rawRequest(
+            'http://127.0.0.1:${server.port}',
+            '/api/library/videos/video/late/fingerprint',
+            token: token,
+          ).then<Object?>(
+            (({int status, String body}) r) => r,
+            onError: (Object error) => error,
+          );
+      await resolving.future;
+      await server.stop();
+      resolveGate.complete();
+      await request;
+      for (int i = 0; i < 20; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      expect(computed.isCompleted, isFalse, reason: 'stop 之后不许再开视频文件算指纹');
+      expect(
+        File('${root.path}/video_fingerprints.json').existsSync(),
+        isFalse,
+      );
     });
   });
 }
