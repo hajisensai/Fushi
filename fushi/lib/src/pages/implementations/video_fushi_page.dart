@@ -110,14 +110,12 @@ import 'package:fushi/src/media/video/video_subtitle_restore_plan.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
-import 'package:fushi/src/media/video/media_server/media_server_config.dart'
-    show MediaServerConfig;
+import 'package:fushi/src/media/video/media_server/media_server_route_failover.dart'
+    show isInterruptedStreamEnd;
+import 'package:fushi_engine/media/video/media_server/media_server_route_failover.dart'
+    show MediaServerStreamInterrupted;
 import 'package:fushi/src/media/video/media_server/media_server_library.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/src/sync/plex_settings_widget.dart'
-    show rerouteMediaServerAfterFailure;
-import 'package:fushi/src/sync/remote_library_cache.dart'
-    show RemoteLibraryCache, remoteLibraryCacheProvider;
 import 'package:fushi_engine/media/video/media_server_video_path.dart';
 import 'package:fushi_engine/media/video/video_source_fingerprint.dart';
 import 'package:fushi/src/media/video/danmaku_manual_match_panel.dart';
@@ -3661,6 +3659,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   bool _autoAdvanceInFlight = false;
 
+  /// 流断了之后正在问线路故障转移器（[_recoverInterruptedStream]）：期间再来的
+  /// EOF 不重复问。
+  bool _streamRouteFailoverInFlight = false;
+
   /// 本地换集（pushReplacement / 接管全屏路由）在飞标志，见 [_switchEpisode]。
   bool _localEpisodeSwitchInFlight = false;
   String? _lastPrewarmedEpisodePath;
@@ -4776,10 +4778,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // （流地址带令牌、换线路就变，不落库），合集里同一部剧的入库行作连播成员。
       if (isMediaServerVideoPath(row.videoPath)) {
         _setLoadingPhase(_VideoLoadPhase.connecting);
-        // 换线路要失效清单缓存：provider 在 await 之前取（跨 async gap 不碰 ref）。
-        final RemoteLibraryCache remoteCache = ref.read(
-          remoteLibraryCacheProvider,
-        );
+        // 当前线路不通时由客户端的请求漏斗自动换线路（MediaServerRouteFailover），
+        // 这里不用管。
         final SyncRepository syncRepo = SyncRepository(appModel.database);
         try {
           final ({
@@ -4794,13 +4794,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             repository: widget.repo,
             loadConfigs: syncRepo.getMediaServers,
             playlistCollectionId: widget.playlistCollectionId,
-            rerouteAfterFailure: (MediaServerConfig config, Object error) =>
-                rerouteMediaServerAfterFailure(
-                  config,
-                  error,
-                  repo: syncRepo,
-                  cache: remoteCache,
-                ),
           );
           if (!mounted) {
             // 页面在协商途中已关：这只现建的客户端没人会再用（BUG-5012）。

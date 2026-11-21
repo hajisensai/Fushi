@@ -12709,6 +12709,7 @@
   "video_marked_unwatched": "ทำเครื่องหมายว่ายังไม่ได้ดูแล้ว",
   "video_marked_watched": "ทำเครื่องหมายว่าดูแล้ว",
   "video_media_server_launch_unavailable": "This media server is no longer signed in. Sign in again in Settings › Services, then try again.",
+  "video_media_server_route_switched": "Connection dropped. Switched to another server address and resumed.",
   "video_menu_fullscreen": "สลับเต็มจอ",
   "video_menu_lock": "โหมดดื่มด่ำ / ล็อก",
   "video_menu_play_pause": "เล่น / หยุดชั่วคราว",

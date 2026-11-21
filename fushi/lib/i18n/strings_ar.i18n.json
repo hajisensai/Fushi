@@ -12709,6 +12709,7 @@
   "video_marked_unwatched": "تم وضع علامة كغير مُشاهَد",
   "video_marked_watched": "تم وضع علامة كمُشاهَد",
   "video_media_server_launch_unavailable": "This media server is no longer signed in. Sign in again in Settings › Services, then try again.",
+  "video_media_server_route_switched": "Connection dropped. Switched to another server address and resumed.",
   "video_menu_fullscreen": "تبديل ملء الشاشة",
   "video_menu_lock": "وضع الانغماس / القفل",
   "video_menu_play_pause": "تشغيل / إيقاف مؤقت",
