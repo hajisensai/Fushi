@@ -975,6 +975,9 @@ class GalHookSessionController extends ChangeNotifier {
     _lastObservedLineId = initialEntries.isEmpty
         ? null
         : initialEntries.last.id;
+    _lastObservedLineText = initialEntries.isEmpty
+        ? null
+        : initialEntries.last.text;
     _state = _state.copyWith(textSignalReceived: initialEntries.isNotEmpty);
     _textService.addListener(_onTextBufferChanged);
     _endpointListenable.addListener(_onEndpointStatusChanged);
@@ -1265,6 +1268,10 @@ class GalHookSessionController extends ChangeNotifier {
   int _eventId = 0;
   int _operationGeneration = 0;
   String? _lastObservedLineId;
+
+  /// [_lastObservedLineId] 那一行上次看到的文本：外部行被渐进折叠（screenOcr 的打字机续写）
+  /// 时行 id 不变、文本变长，靠它发现「同一行长出了新尾巴」并补计字数。
+  String? _lastObservedLineText;
   String? _selectedTextThreadKey;
   int? _selectedNativeTextThreadId;
 
@@ -6630,10 +6637,13 @@ class GalHookSessionController extends ChangeNotifier {
     // DOM 源跟会话走：停源 / 换游戏 / 游戏退出（stopCapture）都在这里收。
     await _stopTyranoDom();
     // OCR 泵同理：任何新会话（launch / attach / OCR）与停止监听都先经过这里。
+    // OCR 模式按**状态**退出，不按泵在不在：startOcrCapture 先把 ocrRegion 写进状态、
+    // 再经过身份解析 / 回录启动这些 await 才建泵，被停止或新会话抢先时泵从没建起来，
+    // 只看泵会把「OCR 模式」留给下一局附着 / 启动。
     final GalOcrLineSource? ocr = _ocrSource;
     _ocrSource = null;
-    if (ocr != null) {
-      await ocr.stop();
+    if (ocr != null) await ocr.stop();
+    if (_state.isOcrMode) {
       _setState(_state.copyWith(clearOcrRegion: true));
     }
     // 补录窗口挂在会话音源上，会话停就必须先收束（丢弃取音）：否则临时 loopback
@@ -7720,8 +7730,20 @@ class GalHookSessionController extends ChangeNotifier {
         _recordExternalLine(latest);
         _scheduleLoopbackFreeze(latest);
       }
+    } else if (latestId != null) {
+      final TexthookerLineEntry latest = entries.last;
+      // 同一行文本变了 = 外部行被渐进折叠（OCR 游戏模式的打字机续写：先识别到半句、再识别到
+      // 整句，台词流把它并进最早那条、沿用其 id）。字数门按整行前缀算增量
+      // （[GalgameLineCharCounter.countLine] / 学习门的前缀续写判据），所以把整句再记一次，
+      // 只补新尾巴；不重排回录冻结——这一句的起点没变。引擎行的增量由上游折叠
+      // （[_recordEngineDelta]）记，这里不碰。
+      if (latest.source != TexthookerLineSource.engineHook &&
+          latest.text != _lastObservedLineText) {
+        _recordExternalLine(latest);
+      }
     }
     _lastObservedLineId = latestId;
+    _lastObservedLineText = latestId == null ? null : entries.last.text;
     notifyListeners();
   }
 

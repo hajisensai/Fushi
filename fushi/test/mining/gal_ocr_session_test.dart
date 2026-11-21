@@ -37,12 +37,14 @@ void main() {
   late GalOcrLineSource source;
   late void Function(String text) emitLine;
   late void Function(GalOcrSourceIssue issue, Object? detail) emitIssue;
+  late LoopbackGalAudioSource Function() loopbackFactory;
 
   setUp(() {
     service = TexthookerService.test();
     endpoints = ChangeNotifier();
     injections = <String>[];
     createdSources = <({int hwnd, GalOcrRegion region})>[];
+    loopbackFactory = _QuietLoopback.new;
     controller = GalHookSessionController(
       textService: service,
       isWindows: true,
@@ -71,7 +73,7 @@ void main() {
             injections.add('engine');
             throw StateError('OCR mode must not inject');
           },
-      loopbackSourceFactory: () => _QuietLoopback(),
+      loopbackSourceFactory: () => loopbackFactory(),
       gameProcessProbe: _AliveProbe(),
       endpointListenable: endpoints,
       endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
@@ -182,6 +184,31 @@ void main() {
     expect(controller.state.phase, GalHookSessionPhase.idle);
   });
 
+  test('OCR 会话启动途中停止监听：不留下 OCR 模式（泵还没建起来也要退出）', () async {
+    final Completer<void> entered = Completer<void>();
+    final Completer<void> release = Completer<void>();
+    loopbackFactory = () =>
+        _GatedStartLoopback(entered: entered, release: release);
+    final Future<void> starting = controller.startOcrCapture(
+      window,
+      region: region,
+      recognize: recognize,
+    );
+    await entered.future;
+    expect(controller.state.isOcrMode, isTrue);
+    final Future<void> stopping = controller.stopCapture();
+    release.complete();
+    await starting;
+    await stopping;
+    expect(createdSources, isEmpty, reason: '被停止抢先的启动不得再建泵');
+    expect(controller.state.phase, GalHookSessionPhase.idle);
+    expect(
+      controller.state.isOcrMode,
+      isFalse,
+      reason: '泵没建起来时停止也必须清掉 ocrRegion，否则下一局附着会挂着「OCR 模式」',
+    );
+  });
+
   test('从 OCR 模式切到附着捕获：先停泵、退出 OCR 模式', () async {
     await controller.startOcrCapture(
       window,
@@ -197,6 +224,21 @@ void main() {
     expect(controller.state.isOcrMode, isFalse);
     await controller.stopCapture();
   });
+}
+
+/// 回录 start 卡在 [release] 上：用来把「停止监听」插进 OCR 会话启动途中。
+class _GatedStartLoopback extends _QuietLoopback {
+  _GatedStartLoopback({required this.entered, required this.release});
+
+  final Completer<void> entered;
+  final Completer<void> release;
+
+  @override
+  Future<PcmFormat?> start() async {
+    if (!entered.isCompleted) entered.complete();
+    await release.future;
+    return super.start();
+  }
 }
 
 class _QuietLoopback extends LoopbackGalAudioSource {
