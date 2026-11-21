@@ -417,7 +417,11 @@ void main() {
             await setUpManager();
         final LnReaderEpubChapter chapter = await fetchSecond(manager);
         expect(chapter.images, hasLength(1));
-        expect(chapter.xhtmlBody, isNot(contains('images/c2-1.png')));
+        expect(chapter.xhtmlBody, isNot(contains('src="images/c2-1.png"')));
+        expect(
+          parseLnReaderMissingImages(chapter.xhtmlBody).single.fileName,
+          'images/c2-1.png',
+        );
         final ErrorLogEntry entry = ErrorLogService.instance.entries.lastWhere(
           (ErrorLogEntry e) => e.source == 'LnReaderBookDownload.imagesDropped',
         );

@@ -21,6 +21,9 @@ class _FakeRetrier implements OnlineNovelMissingImagesRetrier {
       <({int index, bool automatic})>[];
 
   @override
+  int? chapterIndexForFile(String filePath) => null;
+
+  @override
   Future<OnlineNovelMissingImages> missingImages(int index) async =>
       OnlineNovelMissingImages(
         index: index,
